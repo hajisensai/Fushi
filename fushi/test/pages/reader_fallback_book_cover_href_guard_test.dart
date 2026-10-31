@@ -30,45 +30,63 @@ void main() {
     return f.readAsStringSync().replaceAll('\r\n', '\n');
   }
 
-  test('回退路径 _buildBookFromDb / _buildLegacyBook 构造 EpubBook 时携带 coverHref',
-      () {
-    final String src =
-        read('lib/src/pages/implementations/reader_fushi_page.dart');
+  test('回退路径 _buildBookFromDb / _buildLegacyBook 构造 EpubBook 时携带 coverHref', () {
+    final String src = read(
+      'lib/src/pages/implementations/reader_fushi_page.dart',
+    );
 
     // 界定三段函数体的切片边界（按定义顺序：_buildBookFromDb -> _buildLegacyBook ->
     // _persistRecomputedCharCounts）。
     final int fromDbStart = src.indexOf('Future<EpubBook?> _buildBookFromDb(');
     expect(fromDbStart, greaterThan(-1), reason: '找不到 _buildBookFromDb 定义');
     final int legacyStart = src.indexOf('EpubBook _buildLegacyBook(');
-    expect(legacyStart, greaterThan(fromDbStart),
-        reason: '找不到 _buildLegacyBook 定义');
-    final int legacyEnd =
-        src.indexOf('_persistRecomputedCharCounts', legacyStart);
-    expect(legacyEnd, greaterThan(legacyStart),
-        reason: '找不到 _buildLegacyBook 之后的边界方法');
+    expect(
+      legacyStart,
+      greaterThan(fromDbStart),
+      reason: '找不到 _buildLegacyBook 定义',
+    );
+    final int legacyEnd = src.indexOf(
+      '_persistRecomputedCharCounts',
+      legacyStart,
+    );
+    expect(
+      legacyEnd,
+      greaterThan(legacyStart),
+      reason: '找不到 _buildLegacyBook 之后的边界方法',
+    );
 
     final String fromDbBody = src.substring(fromDbStart, legacyStart);
     final String legacyBody = src.substring(legacyStart, legacyEnd);
 
     // (1) _buildBookFromDb 从 DB 行取封面：EpubBook 携带 coverHref: row.coverPath。
-    expect(fromDbBody.contains('coverHref: row.coverPath'), isTrue,
-        reason:
-            '_buildBookFromDb 必须给 EpubBook 传 coverHref: row.coverPath，否则回退路径制卡无封面');
+    expect(
+      fromDbBody.contains('coverHref: row.coverPath'),
+      isTrue,
+      reason:
+          '_buildBookFromDb 必须给 EpubBook 传 coverHref: row.coverPath，否则回退路径制卡无封面',
+    );
 
     // (2) _buildLegacyBook 声明可选 coverHref 形参并透传给 EpubBook。
     expect(
-        RegExp(r'_buildLegacyBook\(\s*String extractDir\s*,\s*\{\s*String\?\s+coverHref\s*\}')
-            .hasMatch(legacyBody),
-        isTrue,
-        reason: '_buildLegacyBook 必须接受 {String? coverHref} 形参');
-    expect(legacyBody.contains('coverHref: coverHref'), isTrue,
-        reason: '_buildLegacyBook 必须把 coverHref 透传给 EpubBook');
+      RegExp(
+        r'_buildLegacyBook\(\s*String extractDir\s*,\s*\{\s*String\?\s+coverHref\s*\}',
+      ).hasMatch(legacyBody),
+      isTrue,
+      reason: '_buildLegacyBook 必须接受 {String? coverHref} 形参',
+    );
+    expect(
+      legacyBody.contains('coverHref: coverHref'),
+      isTrue,
+      reason: '_buildLegacyBook 必须把 coverHref 透传给 EpubBook',
+    );
 
     // (3) 调用点把 DB 行的 coverPath 喂给 _buildLegacyBook。
     expect(
-        src.contains(
-            '_buildLegacyBook(extractDir, coverHref: bookRow?.coverPath)'),
-        isTrue,
-        reason: '_buildLegacyBook 调用点必须传 coverHref: bookRow?.coverPath');
+      src.contains(
+        '_buildLegacyBook(extractDir, coverHref: bookRow?.coverPath)',
+      ),
+      isTrue,
+      reason: '_buildLegacyBook 调用点必须传 coverHref: bookRow?.coverPath',
+    );
   });
 }

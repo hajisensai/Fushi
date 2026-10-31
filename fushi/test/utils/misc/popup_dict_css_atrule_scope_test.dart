@@ -28,28 +28,29 @@ void main() {
       final String? nodeExe = _resolveNode();
       if (nodeExe == null) {
         markTestSkipped(
-            'node not found on PATH; skipping JS behavior execution');
+          'node not found on PATH; skipping JS behavior execution',
+        );
         return;
       }
 
-      final File jsTest =
-          File('test/utils/misc/popup_dict_css_atrule_scope_test.js');
+      final File jsTest = File(
+        'test/utils/misc/popup_dict_css_atrule_scope_test.js',
+      );
       expect(
         jsTest.existsSync(),
         isTrue,
         reason: 'behavior harness ${jsTest.path} must exist',
       );
 
-      final ProcessResult result = await Process.run(
-        nodeExe,
-        <String>[jsTest.path],
-        workingDirectory: Directory.current.path,
-      );
+      final ProcessResult result = await Process.run(nodeExe, <String>[
+        jsTest.path,
+      ], workingDirectory: Directory.current.path);
 
       expect(
         result.exitCode,
         0,
-        reason: 'dict CSS at-rule scoping JS behavior test failed.\n'
+        reason:
+            'dict CSS at-rule scoping JS behavior test failed.\n'
             'stdout:\n${result.stdout}\nstderr:\n${result.stderr}',
       );
       expect(
@@ -84,8 +85,9 @@ void main() {
     // 子串都塞进缓存。这里钉的不变量没变：条件组 at-rule 必须**递归**，内部规则才
     // 会被加上作用域前缀。
     final int recurse = js.indexOf(
-        'constructDictCssUncached(atBlockContent, dictName, scopePrefix)',
-        atBranch);
+      'constructDictCssUncached(atBlockContent, dictName, scopePrefix)',
+      atBranch,
+    );
     expect(
       recurse,
       greaterThan(atBranch),
@@ -103,8 +105,9 @@ void main() {
 
 /// Resolve a usable `node` executable, returning null when none is on PATH.
 String? _resolveNode() {
-  final List<String> candidates =
-      Platform.isWindows ? <String>['node.exe', 'node'] : <String>['node'];
+  final List<String> candidates = Platform.isWindows
+      ? <String>['node.exe', 'node']
+      : <String>['node'];
   for (final String name in candidates) {
     try {
       final ProcessResult probe = Process.runSync(name, <String>['--version']);

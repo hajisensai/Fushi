@@ -25,22 +25,22 @@ class _ConfiguredAnkiRepository extends AnkiRepository {
 }
 
 AnkiSettings _settings({bool allowDupes = true}) => AnkiSettings(
-      selectedDeckId: 1,
-      selectedNoteTypeId: 2,
-      availableDecks: const <AnkiDeck>[AnkiDeck(id: 1, name: 'Mining')],
-      availableNoteTypes: const <AnkiNoteType>[
-        AnkiNoteType(
-          id: 2,
-          name: 'Fushi',
-          fields: <String>['Expression', 'Reading'],
-        ),
-      ],
-      fieldMappings: const <String, String>{
-        'Expression': '{expression}',
-        'Reading': '{reading}',
-      },
-      allowDupes: allowDupes,
-    );
+  selectedDeckId: 1,
+  selectedNoteTypeId: 2,
+  availableDecks: const <AnkiDeck>[AnkiDeck(id: 1, name: 'Mining')],
+  availableNoteTypes: const <AnkiNoteType>[
+    AnkiNoteType(
+      id: 2,
+      name: 'Fushi',
+      fields: <String>['Expression', 'Reading'],
+    ),
+  ],
+  fieldMappings: const <String, String>{
+    'Expression': '{expression}',
+    'Reading': '{reading}',
+  },
+  allowDupes: allowDupes,
+);
 
 const String _payload = '{"expression":"勉強","reading":"べんきょう"}';
 
@@ -52,13 +52,13 @@ void _mockChannel(
 ) {
   TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
       .setMockMethodCallHandler(_channel, (MethodCall call) async {
-    // BUG-2098：申请权限成了每个碰 provider 的入口的前置条件。本文件断言的是业务调用
-    // 序列（addNote / checkForDuplicates / updateNote…），权限只是前置，故统一答
-    // 「已授权」且不记账，既有断言继续描述它们真正关心的调用。
-    if (call.method == 'requestAnkidroidPermissions') return true;
-    calls.add(call);
-    return responder(call);
-  });
+        // BUG-2098：申请权限成了每个碰 provider 的入口的前置条件。本文件断言的是业务调用
+        // 序列（addNote / checkForDuplicates / updateNote…），权限只是前置，故统一答
+        // 「已授权」且不记账，既有断言继续描述它们真正关心的调用。
+        if (call.method == 'requestAnkidroidPermissions') return true;
+        calls.add(call);
+        return responder(call);
+      });
   addTearDown(() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(_channel, null);
@@ -69,192 +69,219 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   group('TODO-270 B: mineEntry returns the real AnkiDroid note id', () {
-    test('addNote returning an int id surfaces it on MineOutcome.noteId',
-        () async {
-      final calls = <MethodCall>[];
-      _mockChannel(calls, (call) async {
-        switch (call.method) {
-          case 'checkForDuplicates':
-            return false;
-          case 'addNote':
-            return 1654000000123; // AnkiDroid epoch-ms note id (Long).
-          default:
-            fail('unexpected channel call: ${call.method}');
-        }
-      });
+    test(
+      'addNote returning an int id surfaces it on MineOutcome.noteId',
+      () async {
+        final calls = <MethodCall>[];
+        _mockChannel(calls, (call) async {
+          switch (call.method) {
+            case 'checkForDuplicates':
+              return false;
+            case 'addNote':
+              return 1654000000123; // AnkiDroid epoch-ms note id (Long).
+            default:
+              fail('unexpected channel call: ${call.method}');
+          }
+        });
 
-      final repo = _ConfiguredAnkiRepository(_settings());
-      final outcome = await repo.mineEntry(
-        rawPayloadJson: _payload,
-        context: const AnkiMiningContext(sentence: 's'),
-      );
+        final repo = _ConfiguredAnkiRepository(_settings());
+        final outcome = await repo.mineEntry(
+          rawPayloadJson: _payload,
+          context: const AnkiMiningContext(sentence: 's'),
+        );
 
-      expect(outcome.result, MineResult.success);
-      expect(outcome.noteId, 1654000000123);
-    });
+        expect(outcome.result, MineResult.success);
+        expect(outcome.noteId, 1654000000123);
+      },
+    );
 
-    test('legacy native addNote (string "Added note") degrades to noteId=null',
-        () async {
-      final calls = <MethodCall>[];
-      _mockChannel(calls, (call) async {
-        switch (call.method) {
-          case 'checkForDuplicates':
-            return false;
-          case 'addNote':
-            return 'Added note'; // Pre-TODO-270 native return.
-          default:
-            fail('unexpected channel call: ${call.method}');
-        }
-      });
+    test(
+      'legacy native addNote (string "Added note") degrades to noteId=null',
+      () async {
+        final calls = <MethodCall>[];
+        _mockChannel(calls, (call) async {
+          switch (call.method) {
+            case 'checkForDuplicates':
+              return false;
+            case 'addNote':
+              return 'Added note'; // Pre-TODO-270 native return.
+            default:
+              fail('unexpected channel call: ${call.method}');
+          }
+        });
 
-      final repo = _ConfiguredAnkiRepository(_settings());
-      final outcome = await repo.mineEntry(
-        rawPayloadJson: _payload,
-        context: const AnkiMiningContext(sentence: 's'),
-      );
+        final repo = _ConfiguredAnkiRepository(_settings());
+        final outcome = await repo.mineEntry(
+          rawPayloadJson: _payload,
+          context: const AnkiMiningContext(sentence: 's'),
+        );
 
-      expect(outcome.result, MineResult.success);
-      expect(outcome.noteId, isNull);
-    });
+        expect(outcome.result, MineResult.success);
+        expect(outcome.noteId, isNull);
+      },
+    );
 
-    test('native addNote returning true (test stubs) degrades to null',
-        () async {
-      final calls = <MethodCall>[];
-      _mockChannel(calls, (call) async {
-        if (call.method == 'checkForDuplicates') return false;
-        if (call.method == 'addNote') return true;
-        fail('unexpected channel call: ${call.method}');
-      });
+    test(
+      'native addNote returning true (test stubs) degrades to null',
+      () async {
+        final calls = <MethodCall>[];
+        _mockChannel(calls, (call) async {
+          if (call.method == 'checkForDuplicates') return false;
+          if (call.method == 'addNote') return true;
+          fail('unexpected channel call: ${call.method}');
+        });
 
-      final repo = _ConfiguredAnkiRepository(_settings());
-      final outcome = await repo.mineEntry(
-        rawPayloadJson: _payload,
-        context: const AnkiMiningContext(sentence: 's'),
-      );
+        final repo = _ConfiguredAnkiRepository(_settings());
+        final outcome = await repo.mineEntry(
+          rawPayloadJson: _payload,
+          context: const AnkiMiningContext(sentence: 's'),
+        );
 
-      expect(outcome.result, MineResult.success);
-      expect(outcome.noteId, isNull);
-    });
+        expect(outcome.result, MineResult.success);
+        expect(outcome.noteId, isNull);
+      },
+    );
   });
 
   group('TODO-270 C2: updateMinedNote overwrites by id', () {
-    test('renders fields and calls updateNoteFields with the note id',
-        () async {
-      final calls = <MethodCall>[];
-      _mockChannel(calls, (call) async {
-        if (call.method == 'updateNoteFields') return null;
-        fail('unexpected channel call: ${call.method}');
-      });
+    test(
+      'renders fields and calls updateNoteFields with the note id',
+      () async {
+        final calls = <MethodCall>[];
+        _mockChannel(calls, (call) async {
+          if (call.method == 'updateNoteFields') return null;
+          fail('unexpected channel call: ${call.method}');
+        });
 
-      final repo = _ConfiguredAnkiRepository(_settings());
-      final outcome = await repo.updateMinedNote(
-        noteId: 42,
-        rawPayloadJson: _payload,
-        context: const AnkiMiningContext(sentence: 's'),
-      );
+        final repo = _ConfiguredAnkiRepository(_settings());
+        final outcome = await repo.updateMinedNote(
+          noteId: 42,
+          rawPayloadJson: _payload,
+          context: const AnkiMiningContext(sentence: 's'),
+        );
 
-      expect(outcome.result, MineResult.success);
-      expect(outcome.noteId, 42);
-      // Exactly one channel call: the overwrite. No addNote, no dupe check.
-      expect(calls.map((c) => c.method), <String>['updateNoteFields']);
-      final args = Map<String, dynamic>.from(calls.single.arguments as Map);
-      expect(args['noteId'], 42);
-      final fieldValues = Map<String, String>.from(args['fieldValues'] as Map);
-      // Both mapped fields rendered from the payload.
-      expect(fieldValues['Expression'], '勉強');
-      expect(fieldValues['Reading'], 'べんきょう');
-    });
+        expect(outcome.result, MineResult.success);
+        expect(outcome.noteId, 42);
+        // Exactly one channel call: the overwrite. No addNote, no dupe check.
+        expect(calls.map((c) => c.method), <String>['updateNoteFields']);
+        final args = Map<String, dynamic>.from(calls.single.arguments as Map);
+        expect(args['noteId'], 42);
+        final fieldValues = Map<String, String>.from(
+          args['fieldValues'] as Map,
+        );
+        // Both mapped fields rendered from the payload.
+        expect(fieldValues['Expression'], '勉強');
+        expect(fieldValues['Reading'], 'べんきょう');
+      },
+    );
 
     // BUG-858: AnkiDroid native updateNoteFields only overwrites the fields it
     // is GIVEN (unlisted fields keep their old value). So to make "覆盖" a true
     // integral replace, an empty {sentence} render must still be SENT (empty),
     // not dropped — otherwise a stale sentence survives while image/audio update.
-    test('overwrite sends an empty Sentence field to clear a stale sentence',
-        () async {
-      final calls = <MethodCall>[];
-      _mockChannel(calls, (call) async {
-        if (call.method == 'updateNoteFields') return null;
-        fail('unexpected channel call: ${call.method}');
-      });
+    test(
+      'overwrite sends an empty Sentence field to clear a stale sentence',
+      () async {
+        final calls = <MethodCall>[];
+        _mockChannel(calls, (call) async {
+          if (call.method == 'updateNoteFields') return null;
+          fail('unexpected channel call: ${call.method}');
+        });
 
-      final repo = _ConfiguredAnkiRepository(_settings().copyWith(
-        fieldMappings: const <String, String>{
-          'Expression': '{expression}',
-          'Sentence': '{sentence}',
-        },
-      ));
-      final outcome = await repo.updateMinedNote(
-        noteId: 42,
-        rawPayloadJson: _payload,
-        context: const AnkiMiningContext(sentence: ''),
-      );
+        final repo = _ConfiguredAnkiRepository(
+          _settings().copyWith(
+            fieldMappings: const <String, String>{
+              'Expression': '{expression}',
+              'Sentence': '{sentence}',
+            },
+          ),
+        );
+        final outcome = await repo.updateMinedNote(
+          noteId: 42,
+          rawPayloadJson: _payload,
+          context: const AnkiMiningContext(sentence: ''),
+        );
 
-      expect(outcome.result, MineResult.success);
-      final args = Map<String, dynamic>.from(calls.single.arguments as Map);
-      final fieldValues = Map<String, String>.from(args['fieldValues'] as Map);
-      expect(fieldValues['Expression'], '勉強');
-      expect(fieldValues.containsKey('Sentence'), isTrue,
-          reason: 'must send the empty Sentence so native clears it');
-      expect(fieldValues['Sentence'], '');
-    });
+        expect(outcome.result, MineResult.success);
+        final args = Map<String, dynamic>.from(calls.single.arguments as Map);
+        final fieldValues = Map<String, String>.from(
+          args['fieldValues'] as Map,
+        );
+        expect(fieldValues['Expression'], '勉強');
+        expect(
+          fieldValues.containsKey('Sentence'),
+          isTrue,
+          reason: 'must send the empty Sentence so native clears it',
+        );
+        expect(fieldValues['Sentence'], '');
+      },
+    );
 
-    test('empty render is refused (does not clear the existing card)',
-        () async {
-      final calls = <MethodCall>[];
-      _mockChannel(calls, (call) async {
-        fail('no channel call expected when render is empty: ${call.method}');
-      });
+    test(
+      'empty render is refused (does not clear the existing card)',
+      () async {
+        final calls = <MethodCall>[];
+        _mockChannel(calls, (call) async {
+          fail('no channel call expected when render is empty: ${call.method}');
+        });
 
-      // No field mappings -> buildMinedFields yields an empty map.
-      final repo = _ConfiguredAnkiRepository(_settings().copyWith(
-        fieldMappings: const <String, String>{},
-      ));
-      final outcome = await repo.updateMinedNote(
-        noteId: 42,
-        rawPayloadJson: _payload,
-        context: const AnkiMiningContext(sentence: 's'),
-      );
+        // No field mappings -> buildMinedFields yields an empty map.
+        final repo = _ConfiguredAnkiRepository(
+          _settings().copyWith(fieldMappings: const <String, String>{}),
+        );
+        final outcome = await repo.updateMinedNote(
+          noteId: 42,
+          rawPayloadJson: _payload,
+          context: const AnkiMiningContext(sentence: 's'),
+        );
 
-      expect(outcome.result, MineResult.error);
-      expect(outcome.errorDetail, contains('refusing to clear'));
-      expect(calls, isEmpty);
-    });
+        expect(outcome.result, MineResult.error);
+        expect(outcome.errorDetail, contains('refusing to clear'));
+        expect(calls, isEmpty);
+      },
+    );
 
-    test('a PlatformException from the channel becomes MineResult.error',
-        () async {
-      _mockChannel(<MethodCall>[], (call) async {
-        throw PlatformException(code: 'UPDATE_NOTE_FAILED', message: 'gone');
-      });
+    test(
+      'a PlatformException from the channel becomes MineResult.error',
+      () async {
+        _mockChannel(<MethodCall>[], (call) async {
+          throw PlatformException(code: 'UPDATE_NOTE_FAILED', message: 'gone');
+        });
 
-      final repo = _ConfiguredAnkiRepository(_settings());
-      final outcome = await repo.updateMinedNote(
-        noteId: 42,
-        rawPayloadJson: _payload,
-        context: const AnkiMiningContext(sentence: 's'),
-      );
+        final repo = _ConfiguredAnkiRepository(_settings());
+        final outcome = await repo.updateMinedNote(
+          noteId: 42,
+          rawPayloadJson: _payload,
+          context: const AnkiMiningContext(sentence: 's'),
+        );
 
-      expect(outcome.result, MineResult.error);
-      expect(outcome.errorDetail, contains('gone'));
-    });
+        expect(outcome.result, MineResult.error);
+        expect(outcome.errorDetail, contains('gone'));
+      },
+    );
   });
 
   group('TODO-270 C2: low-level updateNoteFields / notesInfo passthrough', () {
-    test('updateNoteFields forwards noteId + fieldValues to the channel',
-        () async {
-      final calls = <MethodCall>[];
-      _mockChannel(calls, (call) async {
-        if (call.method == 'updateNoteFields') return null;
-        fail('unexpected channel call: ${call.method}');
-      });
+    test(
+      'updateNoteFields forwards noteId + fieldValues to the channel',
+      () async {
+        final calls = <MethodCall>[];
+        _mockChannel(calls, (call) async {
+          if (call.method == 'updateNoteFields') return null;
+          fail('unexpected channel call: ${call.method}');
+        });
 
-      final repo = _ConfiguredAnkiRepository(_settings());
-      await repo.updateNoteFields(7, <String, String>{'Expression': 'x'});
+        final repo = _ConfiguredAnkiRepository(_settings());
+        await repo.updateNoteFields(7, <String, String>{'Expression': 'x'});
 
-      final args = Map<String, dynamic>.from(calls.single.arguments as Map);
-      expect(args['noteId'], 7);
-      expect(Map<String, String>.from(args['fieldValues'] as Map),
-          <String, String>{'Expression': 'x'});
-    });
+        final args = Map<String, dynamic>.from(calls.single.arguments as Map);
+        expect(args['noteId'], 7);
+        expect(
+          Map<String, String>.from(args['fieldValues'] as Map),
+          <String, String>{'Expression': 'x'},
+        );
+      },
+    );
 
     test('notesInfo maps the channel name->value map', () async {
       _mockChannel(<MethodCall>[], (call) async {

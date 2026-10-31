@@ -43,15 +43,17 @@ Future<void> _pump(
   c.setCues(cues);
   c.debugSetPositionForTesting(500);
   c.debugUpdateCueForPosition(500);
-  await tester.pumpWidget(MaterialApp(
-    home: Scaffold(
-      body: VideoSubtitleOverlay(
-        controller: c,
-        respectAssStyle: respect,
-        fontSize: fontSize,
+  await tester.pumpWidget(
+    MaterialApp(
+      home: Scaffold(
+        body: VideoSubtitleOverlay(
+          controller: c,
+          respectAssStyle: respect,
+          fontSize: fontSize,
+        ),
       ),
     ),
-  ));
+  );
   await tester.pump();
 }
 
@@ -69,8 +71,11 @@ void main() {
         respect: false,
         fontSize: 36,
       );
-      expect(_fill(tester, 'あ').style?.fontSize, 36,
-          reason: r'关闭「尊重字幕自带样式」后行内 \fs90 必须失效，用用户字号 36');
+      expect(
+        _fill(tester, 'あ').style?.fontSize,
+        36,
+        reason: r'关闭「尊重字幕自带样式」后行内 \fs90 必须失效，用用户字号 36',
+      );
     });
 
     testWidgets('改用户字号后真的跟着变（滑块没被架空）', (WidgetTester tester) async {
@@ -80,25 +85,34 @@ void main() {
         respect: false,
         fontSize: 60,
       );
-      expect(_fill(tester, 'あ').style?.fontSize, 60,
-          reason: '同一条带 \\fs 的字幕，滑块调到 60 就必须渲染 60');
+      expect(
+        _fill(tester, 'あ').style?.fontSize,
+        60,
+        reason: '同一条带 \\fs 的字幕，滑块调到 60 就必须渲染 60',
+      );
     });
 
     testWidgets('一行内多段 \\fs（大小混排）在纯字幕模式统一成用户字号', (WidgetTester tester) async {
       await _pump(
         tester,
-        _parse(r'Dialogue: 0,0:00:00.00,0:00:02.00,D,,0,0,0,,'
-            r'{\fs90}大{\fs20}小'),
+        _parse(
+          r'Dialogue: 0,0:00:00.00,0:00:02.00,D,,0,0,0,,'
+          r'{\fs90}大{\fs20}小',
+        ),
         respect: false,
         fontSize: 36,
       );
       expect(_fill(tester, '大').style?.fontSize, 36);
-      expect(_fill(tester, '小').style?.fontSize, 36,
-          reason: '纯字幕模式外观统一：同一行不得因作者 \\fs 出现大小混排');
+      expect(
+        _fill(tester, '小').style?.fontSize,
+        36,
+        reason: '纯字幕模式外观统一：同一行不得因作者 \\fs 出现大小混排',
+      );
     });
 
-    testWidgets('respect 开：\\fs 仍按作者字号生效（不回归 ON 路径）',
-        (WidgetTester tester) async {
+    testWidgets('respect 开：\\fs 仍按作者字号生效（不回归 ON 路径）', (
+      WidgetTester tester,
+    ) async {
       await _pump(
         tester,
         _parse(r'Dialogue: 0,0:00:00.00,0:00:02.00,D,,0,0,0,,{\fs90}あ'),
@@ -107,8 +121,11 @@ void main() {
       );
       // 显示区高 = 800×(720/1280) = 450 → 90×450/720 = 56.25（测试环境无真字体表，
       // cell 系数 1.0）。用户字号 36 不参与。
-      expect(_fill(tester, 'あ').style?.fontSize, closeTo(56.25, 0.01),
-          reason: r'尊重模式下 \fs90 仍按 PlayRes 缩放到 56.25');
+      expect(
+        _fill(tester, 'あ').style?.fontSize,
+        closeTo(56.25, 0.01),
+        reason: r'尊重模式下 \fs90 仍按 PlayRes 缩放到 56.25',
+      );
     });
   });
 }

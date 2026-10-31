@@ -22,8 +22,10 @@ import 'dart:io';
 import 'package:drift/drift.dart' show Value;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/collections/library_organize/library_organize_service.dart';
-import 'package:fushi_engine/media/collections/library_organize/library_organize_facts.dart' show organizeEntryKeysAddedSince;
-import 'package:fushi_engine/media/collections/library_organize/library_organize_plan.dart' show OrganizeTrigger;
+import 'package:fushi_engine/media/collections/library_organize/library_organize_facts.dart'
+    show organizeEntryKeysAddedSince;
+import 'package:fushi_engine/media/collections/library_organize/library_organize_plan.dart'
+    show OrganizeTrigger;
 import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
@@ -71,7 +73,8 @@ class ScanSummary {
   final List<String> errors = <String>[];
 
   @override
-  String toString() => 'videos +$videosAdded (skipped $videosSkipped, pruned $videosPruned), '
+  String toString() =>
+      'videos +$videosAdded (skipped $videosSkipped, pruned $videosPruned), '
       'books +$booksAdded (skipped $booksSkipped${booksPruned > 0 ? ', pruned $booksPruned' : ''}), '
       'manga +$mangaAdded (skipped $mangaSkipped${mangaPruned > 0 ? ', pruned $mangaPruned' : ''}), errors ${errors.length}'
       '${pruneSkipped > 0 ? ', prune-skipped $pruneSkipped' : ''}';
@@ -80,7 +83,12 @@ class ScanSummary {
 /// 一个书 / 漫画根的扫描产物：来源、索引、磁盘上现存的源（索引键形态）与导入前已被
 /// 认领的书 uid（对账基线）。
 class _BookScan {
-  _BookScan({required this.source, required this.index, required this.found, required this.baselineUids});
+  _BookScan({
+    required this.source,
+    required this.index,
+    required this.found,
+    required this.baselineUids,
+  });
 
   final SourceLibraryRow source;
   final BookSourceIndex index;
@@ -149,14 +157,30 @@ class LibraryScanner {
           if (pruneMissing) await _pruneVideoRoot(dir, root.id, scan, summary);
         case 'book':
           final _BookScan scan = await _scanBooks(dir, root, summary);
-          if (pruneMissing) await _pruneBookRoot(dir, root.id, SourceLibraryKind.book, scan, summary);
+          if (pruneMissing)
+            await _pruneBookRoot(
+              dir,
+              root.id,
+              SourceLibraryKind.book,
+              scan,
+              summary,
+            );
           await _groupBookSeries(summary);
         case 'manga':
           final _BookScan scan = await _scanManga(dir, root, summary);
-          if (pruneMissing) await _pruneBookRoot(dir, root.id, SourceLibraryKind.manga, scan, summary);
+          if (pruneMissing)
+            await _pruneBookRoot(
+              dir,
+              root.id,
+              SourceLibraryKind.manga,
+              scan,
+              summary,
+            );
           await _groupBookSeries(summary);
         default:
-          summary.errors.add('${root.id}: 未支持的 kind "${root.kind}"（只有 video / book / manga）');
+          summary.errors.add(
+            '${root.id}: 未支持的 kind "${root.kind}"（只有 video / book / manga）',
+          );
       }
     }
     await _organizeNewEntries(summary);
@@ -203,19 +227,31 @@ class LibraryScanner {
 
   /// 扫描一个视频根，返回**磁盘上现存**的视频文件路径集合（归一）与导入前已在库
   /// 的行 uid（对账的基线），供对账复用。
-  Future<_VideoScan> _scanVideos(Directory dir, LibraryRootConfig root, ScanSummary summary) async {
-    final SourceLibraryRow source = await _ensureSource(dir, root, SourceLibraryKind.video);
+  Future<_VideoScan> _scanVideos(
+    Directory dir,
+    LibraryRootConfig root,
+    ScanSummary summary,
+  ) async {
+    final SourceLibraryRow source = await _ensureSource(
+      dir,
+      root,
+      SourceLibraryKind.video,
+    );
     final List<String> createdPaths = <String>[];
     final List<File> files = <File>[];
-    await for (final FileSystemEntity e in dir.list(recursive: true, followLinks: false)) {
+    await for (final FileSystemEntity e in dir.list(
+      recursive: true,
+      followLinks: false,
+    )) {
       if (e is! File) continue;
       if (!_isVideo(e.path)) continue;
       files.add(e);
     }
     files.sort((File a, File b) => a.path.compareTo(b.path));
     final List<VideoBookRow> existingRows = await _videos.listAll();
-    final Set<String> existingKeys =
-        existingRows.map((VideoBookRow r) => r.bookUid).toSet();
+    final Set<String> existingKeys = existingRows
+        .map((VideoBookRow r) => r.bookUid)
+        .toSet();
     // 下面的循环会往 existingKeys 里追加本轮新行，基线要在这之前单独留一份。
     final Set<String> baselineKeys = Set<String>.of(existingKeys);
     // 物理路径集合一次算好、循环内查集合。此前逐文件调 `isDuplicateVideoPath`
@@ -234,29 +270,37 @@ class LibraryScanner {
           summary.videosSkipped++;
           continue;
         }
-        final String bookUid =
-            uniqueVideoBookUid(singleVideoBookUid(file.path), existingKeys);
+        final String bookUid = uniqueVideoBookUid(
+          singleVideoBookUid(file.path),
+          existingKeys,
+        );
         existingKeys.add(bookUid);
-        final String? sidecar =
-            await findSidecarSubtitle(file.path, langCode: subtitleLanguage);
+        final String? sidecar = await findSidecarSubtitle(
+          file.path,
+          langCode: subtitleLanguage,
+        );
         final String? subtitleFormat = sidecar == null
             ? null
             : p.extension(sidecar).replaceFirst('.', '').toLowerCase();
-        await _videos.saveVideoBook(VideoBooksCompanion(
-          bookUid: Value(bookUid),
-          title: Value(p.basenameWithoutExtension(file.path)),
-          videoPath: Value(file.path),
-          subtitleSource: Value<String?>(sidecar),
-          subtitleFormat: Value<String?>(subtitleFormat),
-          embeddedSubtitleTrack:
-              sidecar == null ? const Value<int?>(0) : const Value<int?>(null),
-          importedAt: Value(DateTime.now().millisecondsSinceEpoch),
-          sourceId: Value<int?>(source.id),
-        ));
+        await _videos.saveVideoBook(
+          VideoBooksCompanion(
+            bookUid: Value(bookUid),
+            title: Value(p.basenameWithoutExtension(file.path)),
+            videoPath: Value(file.path),
+            subtitleSource: Value<String?>(sidecar),
+            subtitleFormat: Value<String?>(subtitleFormat),
+            embeddedSubtitleTrack: sidecar == null
+                ? const Value<int?>(0)
+                : const Value<int?>(null),
+            importedAt: Value(DateTime.now().millisecondsSinceEpoch),
+            sourceId: Value<int?>(source.id),
+          ),
+        );
         createdPaths.add(file.path);
         summary.videosAdded++;
-        (_newMembers[CollectionShelfDomain.video] ??= <String>{})
-            .add('${MediaKind.video.dbValue}\u0000$bookUid');
+        (_newMembers[CollectionShelfDomain.video] ??= <String>{}).add(
+          '${MediaKind.video.dbValue}\u0000$bookUid',
+        );
         if (extractCovers) {
           final String? cover = await extractVideoCover(
             videoPath: file.path,
@@ -279,27 +323,45 @@ class LibraryScanner {
   }
 
   /// 库根 [path] 已登记的本地 `media_sources` 行（按 [kind] + 归一后的绝对路径）；没有返回 null。
-  static Future<SourceLibraryRow?> findLocalSource(FushiDatabase db, String path, SourceLibraryKind kind) async {
+  static Future<SourceLibraryRow?> findLocalSource(
+    FushiDatabase db,
+    String path,
+    SourceLibraryKind kind,
+  ) async {
     final String rootPath = p.normalize(Directory(path).absolute.path);
-    for (final SourceLibraryRow row in await db.getMediaSourcesByKind(kind.dbValue)) {
-      if (row.transport == 'local' && p.equals(p.normalize(row.rootPath), rootPath)) return row;
+    for (final SourceLibraryRow row in await db.getMediaSourcesByKind(
+      kind.dbValue,
+    )) {
+      if (row.transport == 'local' &&
+          p.equals(p.normalize(row.rootPath), rootPath))
+        return row;
     }
     return null;
   }
 
   /// 库根 → 一行本地 `media_sources`（按 kind + 归一后的绝对路径复用）。标签取库根 id。
-  Future<SourceLibraryRow> _ensureSource(Directory dir, LibraryRootConfig root, SourceLibraryKind kind) async {
-    final SourceLibraryRow? existing = await findLocalSource(db, dir.path, kind);
+  Future<SourceLibraryRow> _ensureSource(
+    Directory dir,
+    LibraryRootConfig root,
+    SourceLibraryKind kind,
+  ) async {
+    final SourceLibraryRow? existing = await findLocalSource(
+      db,
+      dir.path,
+      kind,
+    );
     if (existing != null) return existing;
     final String rootPath = p.normalize(dir.absolute.path);
-    final int id = await db.insertMediaSource(MediaSourcesCompanion(
-      label: Value(root.id),
-      mediaKind: Value(kind.dbValue),
-      transport: const Value('local'),
-      rootPath: Value(rootPath),
-      recursive: const Value(true),
-      createdAt: Value(DateTime.now().millisecondsSinceEpoch),
-    ));
+    final int id = await db.insertMediaSource(
+      MediaSourcesCompanion(
+        label: Value(root.id),
+        mediaKind: Value(kind.dbValue),
+        transport: const Value('local'),
+        rootPath: Value(rootPath),
+        recursive: const Value(true),
+        createdAt: Value(DateTime.now().millisecondsSinceEpoch),
+      ),
+    );
     return (await db.getMediaSourceById(id))!;
   }
 
@@ -314,10 +376,15 @@ class LibraryScanner {
   ) async {
     String? error;
     try {
-      await VideoFolderGroupCoordinator(database: db, repository: _videos).groupPaths(
+      await VideoFolderGroupCoordinator(
+        database: db,
+        repository: _videos,
+      ).groupPaths(
         videoPaths: <String>[
           for (final String path in videoPaths)
-            if (source.videoGroupingMode == 'folder' || classifyLocalVideoExtra(path) == null) path,
+            if (source.videoGroupingMode == 'folder' ||
+                classifyLocalVideoExtra(path) == null)
+              path,
         ],
         createdVideoPaths: createdPaths,
         sourceId: source.id,
@@ -418,11 +485,16 @@ class LibraryScanner {
       threshold: pruneThreshold,
       force: pruneForce,
     );
-    final String noun = kind == SourceLibraryKind.manga ? 'manga volume' : 'book';
+    final String noun = kind == SourceLibraryKind.manga
+        ? 'manga volume'
+        : 'book';
     if (report.skipped) {
       summary.pruneSkipped++;
       summary.pruneNotes.add('$rootId: ${report.skipReason}');
-      engineLog.logDiagnostic('LibraryScanner.prune', '$rootId: skipped (${report.skipReason})');
+      engineLog.logDiagnostic(
+        'LibraryScanner.prune',
+        '$rootId: skipped (${report.skipReason})',
+      );
       return;
     }
     if (kind == SourceLibraryKind.manga) {
@@ -437,7 +509,10 @@ class LibraryScanner {
       );
     }
     if (report.missing > 0) {
-      engineLog.logDiagnostic('LibraryScanner.prune', '$rootId: removed ${report.deleted} of ${report.missing} stale $noun(s)');
+      engineLog.logDiagnostic(
+        'LibraryScanner.prune',
+        '$rootId: removed ${report.deleted} of ${report.missing} stale $noun(s)',
+      );
     }
     for (final String e in report.errors) {
       summary.errors.add('$rootId: prune: $e');
@@ -447,18 +522,32 @@ class LibraryScanner {
 
   /// 书 / 漫画根扫描的公共前半：登记来源、读索引并丢掉指向已不在库的书的条目，
   /// 记下导入前已被认领的书（对账基线）。
-  Future<_BookScan> _beginBookScan(Directory dir, LibraryRootConfig root, SourceLibraryKind kind) async {
+  Future<_BookScan> _beginBookScan(
+    Directory dir,
+    LibraryRootConfig root,
+    SourceLibraryKind kind,
+  ) async {
     final SourceLibraryRow source = await _ensureSource(dir, root, kind);
     final BookSourceIndex index = await BookSourceIndex.load(db, source.id);
     index.retainUids(<String>{
       for (final BookSourceRow r in await loadBookSourceRows(db))
         if (r.uid.isNotEmpty) r.uid,
     });
-    return _BookScan(source: source, index: index, found: <String>{}, baselineUids: index.uids);
+    return _BookScan(
+      source: source,
+      index: index,
+      found: <String>{},
+      baselineUids: index.uids,
+    );
   }
 
   /// 书 / 漫画根扫描的公共后半：落索引、记来源扫描结果；认领不上的同名书如实留痕。
-  Future<void> _finishBookScan(String rootId, _BookScan scan, int added, int untracked) async {
+  Future<void> _finishBookScan(
+    String rootId,
+    _BookScan scan,
+    int added,
+    int untracked,
+  ) async {
     await scan.index.save(db);
     await db.updateMediaSourceScanResult(
       id: scan.source.id,
@@ -475,12 +564,22 @@ class LibraryScanner {
     }
   }
 
-  Future<_BookScan> _scanBooks(Directory dir, LibraryRootConfig root, ScanSummary summary) async {
-    final _BookScan scan = await _beginBookScan(dir, root, SourceLibraryKind.book);
+  Future<_BookScan> _scanBooks(
+    Directory dir,
+    LibraryRootConfig root,
+    ScanSummary summary,
+  ) async {
+    final _BookScan scan = await _beginBookScan(
+      dir,
+      root,
+      SourceLibraryKind.book,
+    );
     final int addedBefore = summary.booksAdded;
     int untracked = 0;
     final List<String> epubs = await listEpubSourceFiles(dir);
-    scan.present.addAll(<String>[for (final String path in epubs) bookSourceRelPath(dir.path, path)]);
+    scan.present.addAll(<String>[
+      for (final String path in epubs) bookSourceRelPath(dir.path, path),
+    ]);
     for (final String path in epubs) {
       final bool tracked = await _importTracked(
         scan,
@@ -500,7 +599,12 @@ class LibraryScanner {
       );
       if (!tracked) untracked++;
     }
-    await _finishBookScan(root.id, scan, summary.booksAdded - addedBefore, untracked);
+    await _finishBookScan(
+      root.id,
+      scan,
+      summary.booksAdded - addedBefore,
+      untracked,
+    );
     return scan;
   }
 
@@ -514,13 +618,25 @@ class LibraryScanner {
   /// 读它，不再另算一卷。`.zip` / `.epub` 先在后台 isolate 开包确认是页图包，词典包 /
   /// 文字书跳过并记进来源索引的负向表（指纹 = 字节数 + 修改时刻），文件不变就不再重判。
   /// PDF 不收：逐页栅格化在 app 侧（pdfium），服务端没有这条能力。
-  Future<_BookScan> _scanManga(Directory dir, LibraryRootConfig root, ScanSummary summary) async {
-    final _BookScan scan = await _beginBookScan(dir, root, SourceLibraryKind.manga);
+  Future<_BookScan> _scanManga(
+    Directory dir,
+    LibraryRootConfig root,
+    ScanSummary summary,
+  ) async {
+    final _BookScan scan = await _beginBookScan(
+      dir,
+      root,
+      SourceLibraryKind.manga,
+    );
     final int addedBefore = summary.mangaAdded;
     int untracked = 0;
     final MangaFolderPlan plan = planMangaFoldersInDirectory(dir);
     scan.present.addAll(<String>[
-      for (final String path in <String>[...plan.mokuroPaths, ...plan.carrierPaths, ...plan.imageFolders])
+      for (final String path in <String>[
+        ...plan.mokuroPaths,
+        ...plan.carrierPaths,
+        ...plan.imageFolders,
+      ])
         bookSourceRelPath(dir.path, path),
     ]);
     scan.index.retainRejected(scan.present);
@@ -546,7 +662,8 @@ class LibraryScanner {
       // 已在来源索引里的卷不再开包，由 [_importTracked] 直接按索引跳过；判过「不是
       // 漫画」且内容没变的也不再开包。
       final String rel = bookSourceRelPath(dir.path, carrierPath);
-      if (mangaArchiveNeedsContentProbe(carrierPath) && scan.index.uidOf(rel) == null) {
+      if (mangaArchiveNeedsContentProbe(carrierPath) &&
+          scan.index.uidOf(rel) == null) {
         final String? fingerprint = localSourceContentFingerprint(carrierPath);
         if (scan.index.isRejected(rel, fingerprint)) continue;
         if (!await looksLikeImageArchiveInBackground(carrierPath)) {
@@ -592,7 +709,12 @@ class LibraryScanner {
       if (!tracked) untracked++;
     }
     await _retireFlattenedSeries(dir, root.id, plan, scan, summary);
-    await _finishBookScan(root.id, scan, summary.mangaAdded - addedBefore, untracked);
+    await _finishBookScan(
+      root.id,
+      scan,
+      summary.mangaAdded - addedBefore,
+      untracked,
+    );
     return scan;
   }
 
@@ -608,19 +730,23 @@ class LibraryScanner {
   ) async {
     final Map<String, List<String>> volumeDirs = plan.seriesVolumeDirs;
     if (volumeDirs.isEmpty) return;
-    final ({List<String> retiredUids, List<String> errors}) result = await retireFlattenedMangaSeries(
-      db: db,
-      index: scan.index,
-      sourceId: scan.source.id,
-      series: <FlattenedMangaSeries>[
-        for (final MapEntry<String, List<String>> e in volumeDirs.entries)
-          (
-            seriesRel: bookSourceRelPath(dir.path, e.key),
-            seriesTitle: plan.seriesVolumes[e.value.first]!.seriesTitle,
-            volumeRels: <String>[for (final String v in e.value) bookSourceRelPath(dir.path, v)],
-          ),
-      ],
-    );
+    final ({List<String> retiredUids, List<String> errors}) result =
+        await retireFlattenedMangaSeries(
+          db: db,
+          index: scan.index,
+          sourceId: scan.source.id,
+          series: <FlattenedMangaSeries>[
+            for (final MapEntry<String, List<String>> e in volumeDirs.entries)
+              (
+                seriesRel: bookSourceRelPath(dir.path, e.key),
+                seriesTitle: plan.seriesVolumes[e.value.first]!.seriesTitle,
+                volumeRels: <String>[
+                  for (final String v in e.value)
+                    bookSourceRelPath(dir.path, v),
+                ],
+              ),
+          ],
+        );
     summary.mangaPruned += result.retiredUids.length;
     if (result.retiredUids.isNotEmpty) {
       engineLog.logDiagnostic(
@@ -667,8 +793,9 @@ class LibraryScanner {
       if (uid != null) {
         scan.index.put(rel, uid);
         (_newMembers[isManga
-                ? CollectionShelfDomain.manga
-                : CollectionShelfDomain.books] ??= <String>{})
+                    ? CollectionShelfDomain.manga
+                    : CollectionShelfDomain.books] ??=
+                <String>{})
             .add('${MediaKind.epub.dbValue}\u0000$uid');
       }
       isManga ? summary.mangaAdded++ : summary.booksAdded++;
@@ -709,7 +836,11 @@ class LibraryScanner {
       scan.index.put(rel, uid);
     } catch (err, stack) {
       summary.errors.add('$sourcePath: $err');
-      engineLog.log(isManga ? 'LibraryScanner.manga' : 'LibraryScanner.book', err, stack);
+      engineLog.log(
+        isManga ? 'LibraryScanner.manga' : 'LibraryScanner.book',
+        err,
+        stack,
+      );
     }
     return true;
   }

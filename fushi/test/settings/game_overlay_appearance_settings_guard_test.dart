@@ -3,10 +3,12 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  final String game =
-      File('lib/src/settings/settings_schema_game.dart').readAsStringSync();
-  final String lookup =
-      File('lib/src/settings/settings_schema_lookup.dart').readAsStringSync();
+  final String game = File(
+    'lib/src/settings/settings_schema_game.dart',
+  ).readAsStringSync();
+  final String lookup = File(
+    'lib/src/settings/settings_schema_lookup.dart',
+  ).readAsStringSync();
 
   test('game settings owns the complete hook overlay appearance section', () {
     for (final String id in <String>[
@@ -33,8 +35,11 @@ void main() {
     expect(game.contains('applyAppearanceFromPreferences()'), isTrue);
   });
 
-  test('legacy lookup destination no longer owns the overlay appearance UI', () {
-    expect(lookup.contains("'lookup.gal_hook_text_font_size'"), isFalse);
-    expect(lookup.contains('t.settings_section_gal_hook_overlay'), isFalse);
-  });
+  test(
+    'legacy lookup destination no longer owns the overlay appearance UI',
+    () {
+      expect(lookup.contains("'lookup.gal_hook_text_font_size'"), isFalse);
+      expect(lookup.contains('t.settings_section_gal_hook_overlay'), isFalse);
+    },
+  );
 }

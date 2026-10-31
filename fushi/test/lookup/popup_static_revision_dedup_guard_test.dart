@@ -79,7 +79,10 @@ void main() {
     final String src = render.readAsStringSync();
 
     expect(
-      containsCodeLine(src, 'required PopupStaticRevisionCache staticRevisions'),
+      containsCodeLine(
+        src,
+        'required PopupStaticRevisionCache staticRevisions',
+      ),
       isTrue,
       reason:
           '宿主账本必须是必填参数——一旦退回可选（带默认值），'

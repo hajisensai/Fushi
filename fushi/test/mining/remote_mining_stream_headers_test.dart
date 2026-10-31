@@ -24,8 +24,7 @@ class _FakeRepo implements BaseAnkiRepository {
   Future<MineOutcome> mineEntry({
     required String rawPayloadJson,
     required AnkiMiningContext context,
-  }) async =>
-      const MineOutcome.success(noteId: 1);
+  }) async => const MineOutcome.success(noteId: 1);
 
   @override
   dynamic noSuchMethod(Invocation i) => super.noSuchMethod(i);
@@ -91,8 +90,7 @@ Future<String?> _noMaterialize({
   required String audioUrl,
   required String outputPath,
   FfmpegFailureReporter? onFailure,
-}) async =>
-    null;
+}) async => null;
 
 const Map<String, String> _extensionHeaders = <String, String>{
   'Referer': 'https://anime-site.example/watch/1',
@@ -102,21 +100,20 @@ const Map<String, String> _extensionHeaders = <String, String>{
 ImmersionMiningRequest _request({
   required Map<String, String> headers,
   VideoMiningImageMode imageMode = VideoMiningImageMode.gif,
-}) =>
-    ImmersionMiningRequest(
-      fields: const <String, String>{'expression': 'x'},
-      // 在线源的制卡源就是 hoster 直链（`setMiningSourceOverride(mediaUri)`），
-      // 视频与音频同一条 muxed 流、无单独 audioSource。
-      mediaSource: 'https://cdn.example-hoster.net/hls/master.m3u8',
-      clipStartMs: 1000,
-      clipEndMs: 3000,
-      sentence: 's',
-      documentTitle: 'Episode 1',
-      source: AnkiMiningSource.video,
-      requireAudio: true,
-      imageMode: imageMode,
-      mediaSourceHttpHeaders: headers,
-    );
+}) => ImmersionMiningRequest(
+  fields: const <String, String>{'expression': 'x'},
+  // 在线源的制卡源就是 hoster 直链（`setMiningSourceOverride(mediaUri)`），
+  // 视频与音频同一条 muxed 流、无单独 audioSource。
+  mediaSource: 'https://cdn.example-hoster.net/hls/master.m3u8',
+  clipStartMs: 1000,
+  clipEndMs: 3000,
+  sentence: 's',
+  documentTitle: 'Episode 1',
+  source: AnkiMiningSource.video,
+  requireAudio: true,
+  imageMode: imageMode,
+  mediaSourceHttpHeaders: headers,
+);
 
 void main() {
   late Directory tmp;
@@ -148,8 +145,11 @@ void main() {
     test('动图 + 句子音频两条链都收到头', () async {
       final _HeaderSpy spy = _HeaderSpy();
       await mine(spy, _request(headers: _extensionHeaders));
-      expect(spy.audio, _extensionHeaders,
-          reason: '句子音频抽不出来就是用户看到的 `required audio missing` 那条中止');
+      expect(
+        spy.audio,
+        _extensionHeaders,
+        reason: '句子音频抽不出来就是用户看到的 `required audio missing` 那条中止',
+      );
       expect(spy.gif, _extensionHeaders, reason: '封面动图与音频同源同头，漏了会静默降级成静态帧');
     });
 
@@ -173,12 +173,15 @@ void main() {
     });
 
     test('frozen() 保留头：入队后换集也用点击那一刻的头', () {
-      final ImmersionMiningRequest frozen =
-          _request(headers: _extensionHeaders).frozen();
+      final ImmersionMiningRequest frozen = _request(
+        headers: _extensionHeaders,
+      ).frozen();
       expect(frozen.mediaSourceHttpHeaders, _extensionHeaders);
-      expect(() => frozen.mediaSourceHttpHeaders['Referer'] = 'x',
-          throwsUnsupportedError,
-          reason: '冻结后不可变——否则换集时的头改动会反向污染队列里的旧卡');
+      expect(
+        () => frozen.mediaSourceHttpHeaders['Referer'] = 'x',
+        throwsUnsupportedError,
+        reason: '冻结后不可变——否则换集时的头改动会反向污染队列里的旧卡',
+      );
     });
   });
 
@@ -190,12 +193,15 @@ void main() {
       final String src = File(
         'lib/src/pages/implementations/video_fushi/lookup_mining.part.dart',
       ).readAsStringSync();
-      final String body =
-          methodBody(maskComments(src), 'ImmersionMiningRequest(');
+      final String body = methodBody(
+        maskComments(src),
+        'ImmersionMiningRequest(',
+      );
       expect(
         body,
         contains('mediaSourceHttpHeaders: _streamHttpHeaderFields'),
-        reason: '制卡请求必须带上播放器取流用的同一组头，否则在线视频源扩展的剧集'
+        reason:
+            '制卡请求必须带上播放器取流用的同一组头，否则在线视频源扩展的剧集'
             '恒 403（BUG-2625）。头的来源必须是 `_streamHttpHeaderFields`（当前已解析'
             '流的头），不是某个常量。',
       );

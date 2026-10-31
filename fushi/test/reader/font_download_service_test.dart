@@ -19,14 +19,38 @@ Uint8List _bytes(List<int> header, {int pad = 16}) =>
 
 final Uint8List kTtf = _bytes(<int>[0x00, 0x01, 0x00, 0x00]);
 final Uint8List kOtf = _bytes(<int>[0x4F, 0x54, 0x54, 0x4F]);
-final Uint8List kWoff =
-    _bytes(<int>[0x77, 0x4F, 0x46, 0x46, 0x00, 0x01, 0x00, 0x00]);
+final Uint8List kWoff = _bytes(<int>[
+  0x77,
+  0x4F,
+  0x46,
+  0x46,
+  0x00,
+  0x01,
+  0x00,
+  0x00,
+]);
 // WOFF1 包 CFF：flavor 是 'OTTO'，仍是 WOFF1（旧实现误判成 woff2）。
-final Uint8List kWoffOtto =
-    _bytes(<int>[0x77, 0x4F, 0x46, 0x46, 0x4F, 0x54, 0x54, 0x4F]);
+final Uint8List kWoffOtto = _bytes(<int>[
+  0x77,
+  0x4F,
+  0x46,
+  0x46,
+  0x4F,
+  0x54,
+  0x54,
+  0x4F,
+]);
 // 真正的 WOFF2 魔数是 'wOF2'（旧实现根本不认，WOFF2 直链一律被判非字体）。
-final Uint8List kWoff2 =
-    _bytes(<int>[0x77, 0x4F, 0x46, 0x32, 0x00, 0x01, 0x00, 0x00]);
+final Uint8List kWoff2 = _bytes(<int>[
+  0x77,
+  0x4F,
+  0x46,
+  0x32,
+  0x00,
+  0x01,
+  0x00,
+  0x00,
+]);
 final Uint8List kTtc = _bytes(<int>[0x74, 0x74, 0x63, 0x66]);
 
 Future<File> _write(Directory dir, String name, List<int> bytes) async {
@@ -109,8 +133,11 @@ void main() {
       expect(out, hasLength(1));
       expect(out.single.name, 'KleeOne-Regular');
       final String base = p.basename(out.single.path);
-      expect(RegExp(r'^KleeOne-Regular_\d+\.ttf$').hasMatch(base), isTrue,
-          reason: base);
+      expect(
+        RegExp(r'^KleeOne-Regular_\d+\.ttf$').hasMatch(base),
+        isTrue,
+        reason: base,
+      );
       expect(p.dirname(out.single.path), fontsDir.path);
       expect(await File(out.single.path).readAsBytes(), kTtf);
       // 源文件不动。
@@ -142,10 +169,10 @@ void main() {
         zip,
         fileName: 'pack.zip',
       );
-      expect(
-        out.map((ImportedFontFile f) => f.name).toList(),
-        <String>['Foo-Regular', 'Foo-Bold'],
-      );
+      expect(out.map((ImportedFontFile f) => f.name).toList(), <String>[
+        'Foo-Regular',
+        'Foo-Bold',
+      ]);
       for (final ImportedFontFile f in out) {
         expect(await File(f.path).exists(), isTrue);
       }
@@ -177,8 +204,10 @@ void main() {
         () => service.importFile(junk, fileName: 'x.7z'),
         throwsA(isA<FormatException>()),
       );
-      expect(fontsDir.existsSync() ? fontsDir.listSync() : <FileSystemEntity>[],
-          isEmpty);
+      expect(
+        fontsDir.existsSync() ? fontsDir.listSync() : <FileSystemEntity>[],
+        isEmpty,
+      );
     });
   });
 
@@ -203,11 +232,13 @@ void main() {
             req.response.headers.contentType = ContentType('font', 'ttf');
             req.response.add(kTtf);
           case '/pack.zip':
-            req.response.headers.contentType =
-                ContentType('application', 'zip');
-            req.response.add(_zipOf(<String, List<int>>{
-              'Bar-Regular.ttf': kTtf,
-            }));
+            req.response.headers.contentType = ContentType(
+              'application',
+              'zip',
+            );
+            req.response.add(
+              _zipOf(<String, List<int>>{'Bar-Regular.ttf': kTtf}),
+            );
           default:
             req.response.statusCode = HttpStatus.notFound;
         }
@@ -235,14 +266,16 @@ void main() {
       expect(progress.where((double? v) => v == null).length, 3);
       // 临时文件已清理，目录里只剩落地字体。
       expect(
-          fontsDir.listSync().map((FileSystemEntity e) => p.basename(e.path)),
-          isNot(contains(startsWith('_tmp_'))));
+        fontsDir.listSync().map((FileSystemEntity e) => p.basename(e.path)),
+        isNot(contains(startsWith('_tmp_'))),
+      );
     });
 
     test('全部源都不是字体 → error，且不落任何文件', () async {
-      final FontDownloadResult r = await service.download(
-        <String>['$base/html', '$base/missing'],
-      );
+      final FontDownloadResult r = await service.download(<String>[
+        '$base/html',
+        '$base/missing',
+      ]);
       expect(r.error, isNotNull);
       expect(r.files, isEmpty);
       expect(r.succeeded, isFalse);
@@ -254,34 +287,38 @@ void main() {
     // 反馈 f4ybrMM0mP：全部源连不上时要能区分出来（UI 据此提示配代理 / 手动导入），
     // 且把每个源的失败原因写进错误日志（以前只走 debugPrint，用户日志里无迹可查）。
     test('全部源连不上 → unreachable，并写错误日志', () async {
-      final ServerSocket probe =
-          await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+      final ServerSocket probe = await ServerSocket.bind(
+        InternetAddress.loopbackIPv4,
+        0,
+      );
       final int deadPort = probe.port;
       await probe.close();
       final int before = ErrorLogService.instance.entries.length;
 
-      final FontDownloadResult r = await service.download(
-        <String>['http://127.0.0.1:$deadPort/a.ttf'],
-      );
+      final FontDownloadResult r = await service.download(<String>[
+        'http://127.0.0.1:$deadPort/a.ttf',
+      ]);
 
       expect(r.error, isNotNull);
       expect(r.unreachable, isTrue);
       expect(r.files, isEmpty);
-      final List<ErrorLogEntry> added =
-          ErrorLogService.instance.entries.skip(before).toList();
+      final List<ErrorLogEntry> added = ErrorLogService.instance.entries
+          .skip(before)
+          .toList();
       expect(
-        added.where((ErrorLogEntry e) =>
-            e.source == 'FontDownloadService.download' &&
-            e.error.contains('127.0.0.1:$deadPort')),
+        added.where(
+          (ErrorLogEntry e) =>
+              e.source == 'FontDownloadService.download' &&
+              e.error.contains('127.0.0.1:$deadPort'),
+        ),
         isNotEmpty,
       );
     });
 
     test('zip 源按 overrideName 解出一份', () async {
-      final FontDownloadResult r = await service.download(
-        <String>['$base/pack.zip'],
-        overrideName: 'Bar',
-      );
+      final FontDownloadResult r = await service.download(<String>[
+        '$base/pack.zip',
+      ], overrideName: 'Bar');
       expect(r.succeeded, isTrue);
       expect(r.files.single.name, 'Bar');
       expect(p.basename(r.files.single.path), startsWith('Bar_'));
@@ -289,10 +326,9 @@ void main() {
 
     test('取消 → cancelled，不报错不落地', () async {
       final CancelToken token = CancelToken()..cancel();
-      final FontDownloadResult r = await service.download(
-        <String>['$base/font.ttf'],
-        cancelToken: token,
-      );
+      final FontDownloadResult r = await service.download(<String>[
+        '$base/font.ttf',
+      ], cancelToken: token);
       expect(r.cancelled, isTrue);
       expect(r.error, isNull);
       expect(r.files, isEmpty);

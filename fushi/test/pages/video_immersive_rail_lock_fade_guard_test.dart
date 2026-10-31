@@ -32,42 +32,53 @@ void main() {
   test('存在 _withImmersiveLockAutoHide wrapper', () {
     expect(
       src.contains(
-          'Widget _withImmersiveLockAutoHide({required Widget child})'),
+        'Widget _withImmersiveLockAutoHide({required Widget child})',
+      ),
       isTrue,
       reason: '应有沉浸退出按钮自动淡出 wrapper _withImmersiveLockAutoHide',
     );
   });
 
   test(
-      '_withImmersiveLockAutoHide 与默认锁按钮同款门控（判据 / 时长 / 曲线 / IgnorePointer / hover 保活）',
-      () {
-    final String body = _section(
-      src,
-      'Widget _withImmersiveLockAutoHide({required Widget child})',
-      'Widget _buildVideoSideActionRail(',
-    );
-    expect(
-      body.contains('_lockButtonVisible.value || _lockButtonHovered.value'),
-      isTrue,
-      reason: '可见性判据应与默认锁按钮一致：_lockButtonVisible OR _lockButtonHovered',
-    );
-    expect(
-      body.contains('duration: _videoControlsTransitionDuration'),
-      isTrue,
-      reason: '淡入淡出时长应读控制条同源真相源（不再硬编码）',
-    );
-    // BUG-1301：曲线 / IgnorePointer / AnimatedOpacity 三项搬进共享
-    // FadingChromeGate，调用点只剩 visible + duration。断言随之拆两半：
-    // 这里断「走了共享门控且没覆盖默认曲线」，组件那半由
-    // expectFadingChromeGateContract 断。
-    expect(body.contains('FadingChromeGate('), isTrue,
-        reason: 'on-rail 沉浸退出钮应走共享门控 FadingChromeGate');
-    expect(body.contains('curve:'), isFalse,
-        reason: '调用点不得覆盖曲线，否则绕开 FadingChromeGate 的 easeInOut 默认值');
-    expectFadingChromeGateContract();
-    expect(body.contains('_lockButtonHoverKeepAlive(child: child)'), isTrue,
-        reason: 'hover 保活让鼠标悬在按钮上时顶住可见并续命淡出定时');
-  });
+    '_withImmersiveLockAutoHide 与默认锁按钮同款门控（判据 / 时长 / 曲线 / IgnorePointer / hover 保活）',
+    () {
+      final String body = _section(
+        src,
+        'Widget _withImmersiveLockAutoHide({required Widget child})',
+        'Widget _buildVideoSideActionRail(',
+      );
+      expect(
+        body.contains('_lockButtonVisible.value || _lockButtonHovered.value'),
+        isTrue,
+        reason: '可见性判据应与默认锁按钮一致：_lockButtonVisible OR _lockButtonHovered',
+      );
+      expect(
+        body.contains('duration: _videoControlsTransitionDuration'),
+        isTrue,
+        reason: '淡入淡出时长应读控制条同源真相源（不再硬编码）',
+      );
+      // BUG-1301：曲线 / IgnorePointer / AnimatedOpacity 三项搬进共享
+      // FadingChromeGate，调用点只剩 visible + duration。断言随之拆两半：
+      // 这里断「走了共享门控且没覆盖默认曲线」，组件那半由
+      // expectFadingChromeGateContract 断。
+      expect(
+        body.contains('FadingChromeGate('),
+        isTrue,
+        reason: 'on-rail 沉浸退出钮应走共享门控 FadingChromeGate',
+      );
+      expect(
+        body.contains('curve:'),
+        isFalse,
+        reason: '调用点不得覆盖曲线，否则绕开 FadingChromeGate 的 easeInOut 默认值',
+      );
+      expectFadingChromeGateContract();
+      expect(
+        body.contains('_lockButtonHoverKeepAlive(child: child)'),
+        isTrue,
+        reason: 'hover 保活让鼠标悬在按钮上时顶住可见并续命淡出定时',
+      );
+    },
+  );
 
   test('沉浸态侧栏整层必须经 _withImmersiveLockAutoHide 包裹（不再裸渲染常驻可见）', () {
     final String railBody = _section(
@@ -77,18 +88,29 @@ void main() {
     );
     final int lockedIdx = railBody.indexOf('if (_immersiveLocked.value)');
     expect(lockedIdx, greaterThanOrEqualTo(0), reason: '沉浸锁定态必须单独分支');
-    final int wrapIdx =
-        railBody.indexOf('_withImmersiveLockAutoHide(', lockedIdx);
-    expect(wrapIdx, greaterThan(lockedIdx),
-        reason: '沉浸态侧栏必须经 _withImmersiveLockAutoHide 自动淡出');
+    final int wrapIdx = railBody.indexOf(
+      '_withImmersiveLockAutoHide(',
+      lockedIdx,
+    );
+    expect(
+      wrapIdx,
+      greaterThan(lockedIdx),
+      reason: '沉浸态侧栏必须经 _withImmersiveLockAutoHide 自动淡出',
+    );
     // wrapper 内包的是沉浸布局的两条侧栏（左右都走同一个循环）。
-    final int railsIdx =
-        railBody.indexOf('VideoImmersiveSlot.railSlots', wrapIdx);
-    final int itemsIdx =
-        railBody.indexOf('items: _immersiveRailItems(', wrapIdx);
-    expect(railsIdx, greaterThan(wrapIdx),
-        reason: 'wrapper 应包住沉浸布局的左右侧栏');
-    expect(itemsIdx, greaterThan(wrapIdx),
-        reason: '沉浸态侧栏按钮应取自沉浸布局（_immersiveRailItems）');
+    final int railsIdx = railBody.indexOf(
+      'VideoImmersiveSlot.railSlots',
+      wrapIdx,
+    );
+    final int itemsIdx = railBody.indexOf(
+      'items: _immersiveRailItems(',
+      wrapIdx,
+    );
+    expect(railsIdx, greaterThan(wrapIdx), reason: 'wrapper 应包住沉浸布局的左右侧栏');
+    expect(
+      itemsIdx,
+      greaterThan(wrapIdx),
+      reason: '沉浸态侧栏按钮应取自沉浸布局（_immersiveRailItems）',
+    );
   });
 }

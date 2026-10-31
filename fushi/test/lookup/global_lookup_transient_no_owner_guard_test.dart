@@ -37,16 +37,25 @@ void main() {
   // `global_lookup_window_->`。owner 契约反而更要紧：这一处同时管着两个窗。
   test('瞬态 win->ShowAt 用 nullptr owner（不拉主窗前台）', () {
     final String seg = callArgs(cpp, 'win->ShowAt(');
-    expect(seg, contains('nullptr'),
-        reason: 'BUG-741：owner 必须 nullptr，否则 owned 窗 Z 序连带拉主窗前台');
-    expect(seg.contains('GetHandle()'), isFalse,
-        reason: '不得把主窗 HWND 当 owner（回归 signature）');
+    expect(
+      seg,
+      contains('nullptr'),
+      reason: 'BUG-741：owner 必须 nullptr，否则 owned 窗 Z 序连带拉主窗前台',
+    );
+    expect(
+      seg.contains('GetHandle()'),
+      isFalse,
+      reason: '不得把主窗 HWND 当 owner（回归 signature）',
+    );
   });
 
   test('瞬态 win->PrewarmWebView 用 nullptr owner', () {
     final String seg = callArgs(cpp, 'win->PrewarmWebView(');
-    expect(seg, contains('nullptr'),
-        reason: 'prewarm 与 showAt owner 必须一致，否则 ForgetDeadWindow 重建 owner 漂移');
+    expect(
+      seg,
+      contains('nullptr'),
+      reason: 'prewarm 与 showAt owner 必须一致，否则 ForgetDeadWindow 重建 owner 漂移',
+    );
     expect(seg.contains('GetHandle()'), isFalse, reason: '不得把主窗 HWND 当 owner');
   });
 
@@ -54,8 +63,10 @@ void main() {
     // 离屏卡片窗是懒建的第三个 GlobalLookupWindow 实例，建出来就立刻预热一次。
     // 它挂上主窗当 owner 的话，游戏全屏时会把 Fushi 主窗一起拉到前台——那正是
     // BUG-741 在游戏内查词上的同形复发。
-    final String seg =
-        callArgs(cpp, 'gal_lookup_card_window_->PrewarmWebView(');
+    final String seg = callArgs(
+      cpp,
+      'gal_lookup_card_window_->PrewarmWebView(',
+    );
     expect(seg, contains('nullptr'), reason: '离屏卡片窗不得有 owner');
     expect(seg.contains('GetHandle()'), isFalse, reason: '不得把主窗 HWND 当 owner');
   });

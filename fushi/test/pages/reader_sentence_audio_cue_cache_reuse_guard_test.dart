@@ -21,10 +21,12 @@ import 'reader_fushi_page_source_corpus.dart';
 void main() {
   final String src = readReaderPageSource();
 
-  final int prepStart =
-      src.indexOf('Future<String?> _prepareSentenceAudioCuesJson() async {');
-  final int injectStart =
-      src.indexOf('Future<void> _injectAudiobookBridge() async {');
+  final int prepStart = src.indexOf(
+    'Future<String?> _prepareSentenceAudioCuesJson() async {',
+  );
+  final int injectStart = src.indexOf(
+    'Future<void> _injectAudiobookBridge() async {',
+  );
 
   test('方法边界可定位（防守卫因重命名失效）', () {
     expect(prepStart, greaterThanOrEqualTo(0));
@@ -36,30 +38,48 @@ void main() {
       : src;
 
   test('① prepare 复用 _cachedAllCues，不再每章先清缓存', () {
-    expect(prepBody.contains('_cachedAllCues = null'), isFalse,
-        reason: '方法内不得丢弃缓存——丢弃即退回「每章全书重查 + 失败静默跳过」');
-    expect(prepBody.contains('= _cachedAllCues;'), isTrue,
-        reason: '必须先读缓存（复用 _primeAudioCuesForCurrentBook 已查的全书 cue）');
-    expect(prepBody.contains('allCues = await _loadHighlightCues();'), isTrue,
-        reason: '缓存缺失时仍要兜底加载（不变量是复用，不是砍掉加载能力）');
+    expect(
+      prepBody.contains('_cachedAllCues = null'),
+      isFalse,
+      reason: '方法内不得丢弃缓存——丢弃即退回「每章全书重查 + 失败静默跳过」',
+    );
+    expect(
+      prepBody.contains('= _cachedAllCues;'),
+      isTrue,
+      reason: '必须先读缓存（复用 _primeAudioCuesForCurrentBook 已查的全书 cue）',
+    );
+    expect(
+      prepBody.contains('allCues = await _loadHighlightCues();'),
+      isTrue,
+      reason: '缓存缺失时仍要兜底加载（不变量是复用，不是砍掉加载能力）',
+    );
   });
 
   test('② 缓存生命周期 = 音频槽绑定：detach 块失效、prime 重灌', () {
-    final int slotStart = src
-        .indexOf('Future<void> _resolveAudioSlot({bool forceReload = false})');
+    final int slotStart = src.indexOf(
+      'Future<void> _resolveAudioSlot({bool forceReload = false})',
+    );
     final int attachStart = src.indexOf(
-        'Future<void> _attachExistingSession(AudiobookSession session)');
+      'Future<void> _attachExistingSession(AudiobookSession session)',
+    );
     expect(slotStart, greaterThanOrEqualTo(0));
     expect(attachStart, greaterThan(slotStart));
     final String slotBody = src.substring(slotStart, attachStart);
-    expect(slotBody.contains('_cachedAllCues = null;'), isTrue,
-        reason: 'detach 旧音频槽时必须失效 cue 缓存（换音频源后不得用旧 cue）');
+    expect(
+      slotBody.contains('_cachedAllCues = null;'),
+      isTrue,
+      reason: 'detach 旧音频槽时必须失效 cue 缓存（换音频源后不得用旧 cue）',
+    );
 
-    final int primeStart =
-        src.indexOf('Future<void> _primeAudioCuesForCurrentBook() async {');
+    final int primeStart = src.indexOf(
+      'Future<void> _primeAudioCuesForCurrentBook() async {',
+    );
     expect(primeStart, greaterThanOrEqualTo(0));
     final String primeBody = src.substring(primeStart, primeStart + 2400);
-    expect(primeBody.contains('_cachedAllCues = '), isTrue,
-        reason: 'prime 必须重灌缓存（prepare 复用的就是这份）');
+    expect(
+      primeBody.contains('_cachedAllCues = '),
+      isTrue,
+      reason: 'prime 必须重灌缓存（prepare 复用的就是这份）',
+    );
   });
 }

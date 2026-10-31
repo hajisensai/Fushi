@@ -74,17 +74,20 @@ CREATE TABLE video_watch_statistics (
 }
 
 Future<int?> _lastPlayedAt(FushiDatabase db, String uid) async {
-  final QueryRow row = await db.customSelect(
-    'SELECT last_played_at FROM video_books WHERE book_uid = ?',
-    variables: <Variable<Object>>[Variable<String>(uid)],
-  ).getSingle();
+  final QueryRow row = await db
+      .customSelect(
+        'SELECT last_played_at FROM video_books WHERE book_uid = ?',
+        variables: <Variable<Object>>[Variable<String>(uid)],
+      )
+      .getSingle();
   return row.readNullable<int>('last_played_at');
 }
 
 void main() {
   FushiDatabase openUpgraded() {
-    final FushiDatabase db =
-        FushiDatabase.forTesting(NativeDatabase.memory(setup: _seedV84));
+    final FushiDatabase db = FushiDatabase.forTesting(
+      NativeDatabase.memory(setup: _seedV84),
+    );
     addTearDown(db.close);
     return db;
   }
@@ -92,15 +95,17 @@ void main() {
   test('v84 -> v85：加列无损，存量视频行与进度逐列不变', () async {
     final FushiDatabase db = openUpgraded();
 
-    final QueryRow version =
-        await db.customSelect('PRAGMA user_version').getSingle();
+    final QueryRow version = await db
+        .customSelect('PRAGMA user_version')
+        .getSingle();
     expect(version.read<int>('user_version'), 142);
     expect(db.schemaVersion, 142);
 
     final List<VideoBookRow> rows = await db.select(db.videoBooks).get();
     expect(rows, hasLength(4), reason: '迁移丢一行就是丢一部视频的观看记录');
-    final VideoBookRow ep0 =
-        rows.firstWhere((VideoBookRow r) => r.bookUid == 'video/ep0');
+    final VideoBookRow ep0 = rows.firstWhere(
+      (VideoBookRow r) => r.bookUid == 'video/ep0',
+    );
     expect(ep0.title, 'PV 01');
     expect(ep0.videoPath, '/abs/ep0.mkv');
     expect(ep0.lastPositionMs, 24000);
@@ -108,8 +113,11 @@ void main() {
 
   test('存量回填：取该 bookUid 的 MAX(last_modified)', () async {
     final FushiDatabase db = openUpgraded();
-    expect(await _lastPlayedAt(db, 'video/ep0'), 9000,
-        reason: '同一视频跨天多条统计行，取最新那条');
+    expect(
+      await _lastPlayedAt(db, 'video/ep0'),
+      9000,
+      reason: '同一视频跨天多条统计行，取最新那条',
+    );
     expect(await _lastPlayedAt(db, 'video/ep1'), 1000);
   });
 

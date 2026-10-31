@@ -62,7 +62,7 @@ class AniDbTitle {
 
 class AniDbTitleRecord {
   AniDbTitleRecord({required this.animeId, required List<AniDbTitle> titles})
-      : titles = List<AniDbTitle>.unmodifiable(titles);
+    : titles = List<AniDbTitle>.unmodifiable(titles);
 
   final int animeId;
   final List<AniDbTitle> titles;
@@ -111,11 +111,11 @@ class AniDbTitleCatalog {
     AniDbCatalogNow? now,
     this.cacheTtl = const Duration(hours: 24),
     this.downloadTimeout = const Duration(seconds: 30),
-  })  : _client = client ?? createAppHttpIoClient(),
-        _ownsClient = client == null,
-        _cacheDirectory = cacheDirectory,
-        sourceUrl = sourceUrl ?? defaultSourceUrl,
-        _now = now ?? DateTime.now;
+  }) : _client = client ?? createAppHttpIoClient(),
+       _ownsClient = client == null,
+       _cacheDirectory = cacheDirectory,
+       sourceUrl = sourceUrl ?? defaultSourceUrl,
+       _now = now ?? DateTime.now;
 
   static final Uri defaultSourceUrl = Uri.parse(
     'https://anidb.net/api/anime-titles.xml.gz',
@@ -164,8 +164,10 @@ class AniDbTitleCatalog {
 
     final AniDbCatalogNative catalog = await _records();
     _ensureOpen();
-    final List<AniDbNativeSearchHit> hits =
-        catalog.search(normalizedQuery, limit);
+    final List<AniDbNativeSearchHit> hits = catalog.search(
+      normalizedQuery,
+      limit,
+    );
     return <AniDbTitleSearchResult>[
       for (final AniDbNativeSearchHit hit in hits) _result(hit),
     ];
@@ -192,8 +194,8 @@ class AniDbTitleCatalog {
       return cached;
     }
 
-    final Future<_LoadedTitleCatalog> loading =
-        _loadFuture ??= _loadFromDiskOrNetwork();
+    final Future<_LoadedTitleCatalog> loading = _loadFuture ??=
+        _loadFromDiskOrNetwork();
     try {
       final _LoadedTitleCatalog loaded = await loading;
       _ensureOpen();
@@ -223,7 +225,8 @@ class AniDbTitleCatalog {
     if (await cacheFile.exists()) {
       modifiedAt = await cacheFile.lastModified();
     }
-    final bool isFresh = modifiedAt != null &&
+    final bool isFresh =
+        modifiedAt != null &&
         now.toUtc().difference(modifiedAt.toUtc()) < cacheTtl;
 
     if (isFresh) {
@@ -248,7 +251,8 @@ class AniDbTitleCatalog {
     final Duration? sinceAttempt = lastAttempt == null
         ? null
         : now.toUtc().difference(lastAttempt.toUtc());
-    final bool attemptedRecently = sinceAttempt != null &&
+    final bool attemptedRecently =
+        sinceAttempt != null &&
         (sinceAttempt.isNegative || sinceAttempt < cacheTtl);
     if (attemptedRecently) {
       if (await cacheFile.exists()) {
@@ -323,12 +327,14 @@ class AniDbTitleCatalog {
   Future<_DownloadedTitleCatalog> _download() async {
     final http.Response response;
     try {
-      response = await _client.get(
-        sourceUrl,
-        headers: const <String, String>{
-          'Accept': 'application/gzip, application/xml;q=0.9, */*;q=0.1',
-        },
-      ).timeout(downloadTimeout);
+      response = await _client
+          .get(
+            sourceUrl,
+            headers: const <String, String>{
+              'Accept': 'application/gzip, application/xml;q=0.9, */*;q=0.1',
+            },
+          )
+          .timeout(downloadTimeout);
     } on Object catch (error) {
       throw AniDbTitleCatalogException(
         'AniDB title catalog download failed',
@@ -357,10 +363,7 @@ class AniDbTitleCatalog {
       () => _parseTitleCatalogBytes(transferable),
       debugName: 'anidb-title-catalog',
     );
-    return _DownloadedTitleCatalog(
-      cacheBytes: body,
-      parsed: payload.adopt(),
-    );
+    return _DownloadedTitleCatalog(cacheBytes: body, parsed: payload.adopt());
   }
 
   Future<_ParsedTitleCatalog> _readCache(File cacheFile) async {
@@ -436,7 +439,9 @@ bool _looksLikeGzip(List<int> bytes) =>
     bytes.length >= 2 && bytes[0] == 0x1f && bytes[1] == 0x8b;
 
 /// 后台 isolate 入口：解析刚下载的压缩体（或明文 XML），返回原生目录句柄地址与物化好的记录。
-Future<_ParsedPayload> _parseTitleCatalogBytes(TransferableTypedData transferable) {
+Future<_ParsedPayload> _parseTitleCatalogBytes(
+  TransferableTypedData transferable,
+) {
   final Uint8List bytes = transferable.materialize().asUint8List();
   return _parseTitleCatalogSource(
     Stream<List<int>>.value(bytes),
@@ -454,8 +459,10 @@ Future<_ParsedPayload> _parseTitleCatalogFile(String path) async {
   } finally {
     await handle.close();
   }
-  return _parseTitleCatalogSource(file.openRead(),
-      isGzip: _looksLikeGzip(magic));
+  return _parseTitleCatalogSource(
+    file.openRead(),
+    isGzip: _looksLikeGzip(magic),
+  );
 }
 
 /// 解压 → 逐块喂给原生构建器（UTF-8 解码、XML 事件、记录、索引都在 Rust 里），
@@ -468,8 +475,9 @@ Future<_ParsedPayload> _parseTitleCatalogSource(
   required bool isGzip,
 }) async {
   int expandedBytes = 0;
-  final Stream<List<int>> expanded =
-      isGzip ? source.transform(gzip.decoder) : source;
+  final Stream<List<int>> expanded = isGzip
+      ? source.transform(gzip.decoder)
+      : source;
   final AniDbCatalogBuilderNative builder = AniDbCatalogBuilderNative();
   try {
     try {
@@ -547,50 +555,45 @@ AniDbTitle _catalogTitle(
   String type,
   String language,
   String normalized,
-) =>
-    AniDbTitle._catalog(
-      value: value,
-      type: type,
-      language: language,
-      normalizedValue: normalized,
-    );
+) => AniDbTitle._catalog(
+  value: value,
+  type: type,
+  language: language,
+  normalizedValue: normalized,
+);
 
 AniDbTitleCatalogException _catalogException(
   AniDbCatalogNativeError error,
-) =>
-    switch (error.kind) {
-      AniDbCatalogNativeError.forbiddenDeclaration =>
-        const AniDbTitleCatalogException(
-          'AniDB title catalog contains a forbidden declaration',
-        ),
-      AniDbCatalogNativeError.unexpectedRoot =>
-        const AniDbTitleCatalogException(
-          'AniDB title catalog has an unexpected root element',
-        ),
-      AniDbCatalogNativeError.tooManyRecords =>
-        const AniDbTitleCatalogException(
-          'AniDB title catalog contains too many anime records',
-        ),
-      AniDbCatalogNativeError.tooManyTitles => const AniDbTitleCatalogException(
-          'AniDB title catalog contains too many titles for one anime',
-        ),
-      AniDbCatalogNativeError.invalidXml => AniDbTitleCatalogException(
-          'AniDB title catalog contains invalid XML',
-          error.detail,
-        ),
-      AniDbCatalogNativeError.invalidData => AniDbTitleCatalogException(
-          'AniDB title catalog is not valid gzip / UTF-8 data',
-          error.detail,
-        ),
-      AniDbCatalogNativeError.noUsableRecords =>
-        const AniDbTitleCatalogException(
-          'AniDB title catalog contains no usable records',
-        ),
-      _ => AniDbTitleCatalogException(
-          'Unable to parse the AniDB title catalog',
-          error.toString(),
-        ),
-    };
+) => switch (error.kind) {
+  AniDbCatalogNativeError.forbiddenDeclaration =>
+    const AniDbTitleCatalogException(
+      'AniDB title catalog contains a forbidden declaration',
+    ),
+  AniDbCatalogNativeError.unexpectedRoot => const AniDbTitleCatalogException(
+    'AniDB title catalog has an unexpected root element',
+  ),
+  AniDbCatalogNativeError.tooManyRecords => const AniDbTitleCatalogException(
+    'AniDB title catalog contains too many anime records',
+  ),
+  AniDbCatalogNativeError.tooManyTitles => const AniDbTitleCatalogException(
+    'AniDB title catalog contains too many titles for one anime',
+  ),
+  AniDbCatalogNativeError.invalidXml => AniDbTitleCatalogException(
+    'AniDB title catalog contains invalid XML',
+    error.detail,
+  ),
+  AniDbCatalogNativeError.invalidData => AniDbTitleCatalogException(
+    'AniDB title catalog is not valid gzip / UTF-8 data',
+    error.detail,
+  ),
+  AniDbCatalogNativeError.noUsableRecords => const AniDbTitleCatalogException(
+    'AniDB title catalog contains no usable records',
+  ),
+  _ => AniDbTitleCatalogException(
+    'Unable to parse the AniDB title catalog',
+    error.toString(),
+  ),
+};
 
 /// 后台 isolate 交回的解析产物：原生目录句柄地址 + 物化好的记录（经 Isolate.exit 原样移交）。
 class _ParsedPayload {

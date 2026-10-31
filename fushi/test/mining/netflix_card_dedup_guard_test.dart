@@ -22,24 +22,38 @@ void main() {
   group('TODO-1270 Netflix 制卡三修守卫', () {
     for (final String root in roots) {
       test('[$root] Bug A：extractNetflixCueText 只取叶子 span 去重嵌套', () {
-        final String src =
-            File('$root/subtitle-adapters.js').readAsStringSync();
+        final String src = File(
+          '$root/subtitle-adapters.js',
+        ).readAsStringSync();
         expect(
-            src.contains("s.querySelector && s.querySelector('span')"), isTrue,
-            reason: '$root subtitle-adapters.js 未按无后代 span 过滤叶子（Bug A 未修）');
-        expect(src.contains('const leaves = Array.from(spans).filter('), isTrue,
-            reason: '$root subtitle-adapters.js 缺 leaves 叶子过滤');
+          src.contains("s.querySelector && s.querySelector('span')"),
+          isTrue,
+          reason: '$root subtitle-adapters.js 未按无后代 span 过滤叶子（Bug A 未修）',
+        );
+        expect(
+          src.contains('const leaves = Array.from(spans).filter('),
+          isTrue,
+          reason: '$root subtitle-adapters.js 缺 leaves 叶子过滤',
+        );
       });
 
       test('[$root] Bug B：批量隐藏样式含 #fushi-toast + Netflix 返回/举报', () {
         final String src = File('$root/content.js').readAsStringSync();
         expect(
-            src.contains('#fushi-toast{visibility:hidden!important}'), isTrue,
-            reason: '$root content.js hideStyle 未隐藏 Fushi 自己的生成中浮层（Bug B）');
-        expect(src.contains('.watch-video--back-container'), isTrue,
-            reason: '$root content.js hideStyle 未隐藏 Netflix 返回按钮（Bug B）');
-        expect(src.contains('.watch-video--flag-container'), isTrue,
-            reason: '$root content.js hideStyle 未隐藏 Netflix 举报旗帜容器（Bug B）');
+          src.contains('#fushi-toast{visibility:hidden!important}'),
+          isTrue,
+          reason: '$root content.js hideStyle 未隐藏 Fushi 自己的生成中浮层（Bug B）',
+        );
+        expect(
+          src.contains('.watch-video--back-container'),
+          isTrue,
+          reason: '$root content.js hideStyle 未隐藏 Netflix 返回按钮（Bug B）',
+        );
+        expect(
+          src.contains('.watch-video--flag-container'),
+          isTrue,
+          reason: '$root content.js hideStyle 未隐藏 Netflix 举报旗帜容器（Bug B）',
+        );
       });
 
       test('[$root] Bug C：确认在播即刻 beginClip，不用固定 warmup 吃掉头部提前量', () {
@@ -47,18 +61,24 @@ void main() {
         // TODO-1361（BUG-685）后「确认在播」由 fushiWaitForPlaying 承担：以 currentTime
         // 真正前进为唯一判据，条件满足即返回 → 即刻 beginClip，仍无固定 warmup。
         expect(
-            src.contains(
-                'const advancing = await fushiWaitForPlaying(v, 4000);'),
-            isTrue,
-            reason: '$root content.js 缺确认在播（currentTime 前进）门（Bug C）');
-        final int playIdx =
-            src.indexOf('const advancing = await fushiWaitForPlaying');
+          src.contains('const advancing = await fushiWaitForPlaying(v, 4000);'),
+          isTrue,
+          reason: '$root content.js 缺确认在播（currentTime 前进）门（Bug C）',
+        );
+        final int playIdx = src.indexOf(
+          'const advancing = await fushiWaitForPlaying',
+        );
         final int beginIdx = src.indexOf("type: 'beginClip'");
-        expect(playIdx >= 0 && beginIdx > playIdx, isTrue,
-            reason: '$root content.js beginClip 顺序异常');
-        expect(src.substring(playIdx, beginIdx).contains('await sleep(200)'),
-            isFalse,
-            reason: '$root content.js beginClip 前仍残留固定 200ms warmup（Bug C 未修）');
+        expect(
+          playIdx >= 0 && beginIdx > playIdx,
+          isTrue,
+          reason: '$root content.js beginClip 顺序异常',
+        );
+        expect(
+          src.substring(playIdx, beginIdx).contains('await sleep(200)'),
+          isFalse,
+          reason: '$root content.js beginClip 前仍残留固定 200ms warmup（Bug C 未修）',
+        );
         // 锚点里**不带声明关键字**：不变式是「默认边距仍是 200ms」，var/let/const 是格式
         // 而非语义；带上它，一次 lint 清理（S3504 `var`→`const`）就能把守卫扫红。
         // PR#1172：头部提前量收成共享原语 `fushiClipWindowWithMargin`（入队批量剪辑与
@@ -66,16 +86,19 @@ void main() {
         // + 「原语的默认边距仍是 200ms」，而不是钉死字面算式——语义不变，位置换了。
         // 多句合一制卡后裁切基准是「上下文并集 || 当前句窗」（clipBase），原语不变。
         expect(
-            src.contains(
-                'fushiClipWindowWithMargin(clipBase.startV, clipBase.endV)'),
-            isTrue,
-            reason: '$root content.js 入队窗不再走共享边距原语（Bug C 头部提前量丢失）');
+          src.contains(
+            'fushiClipWindowWithMargin(clipBase.startV, clipBase.endV)',
+          ),
+          isTrue,
+          reason: '$root content.js 入队窗不再走共享边距原语（Bug C 头部提前量丢失）',
+        );
         expect(
-            File('$root/subtitle-providers.js')
-                .readAsStringSync()
-                .contains('FUSHI_CLIP_WINDOW_MARGIN_MS = 200;'),
-            isTrue,
-            reason: '$root 入队/出卡的头部提前量不再是 200ms');
+          File(
+            '$root/subtitle-providers.js',
+          ).readAsStringSync().contains('FUSHI_CLIP_WINDOW_MARGIN_MS = 200;'),
+          isTrue,
+          reason: '$root 入队/出卡的头部提前量不再是 200ms',
+        );
       });
     }
   });

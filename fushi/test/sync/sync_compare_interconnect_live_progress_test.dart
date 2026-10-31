@@ -27,7 +27,7 @@ const String _chaptersJson = '[{"characters":1000}]';
 
 class _FakeInterconnectBackend extends InterconnectSyncBackend {
   _FakeInterconnectBackend({required this.hostProgress})
-      : super.withProbe((String url, String token) async => true);
+    : super.withProbe((String url, String token) async => true);
 
   /// host DB 里各书的进度（bookKey → 进度；不在表里 = host 无记录）。
   final Map<String, RemoteBookProgress> hostProgress;
@@ -48,9 +48,9 @@ class _FakeInterconnectBackend extends InterconnectSyncBackend {
   // ── live 端点（本测试的主角）──────────────────────────────────────
   @override
   Future<List<RemoteBookInfo>> listRemoteBooks() async => <RemoteBookInfo>[
-        for (final String key in hostProgress.keys)
-          RemoteBookInfo(title: key, hasContent: true, bookKey: key),
-      ];
+    for (final String key in hostProgress.keys)
+      RemoteBookInfo(title: key, hasContent: true, bookKey: key),
+  ];
 
   @override
   Future<RemoteBookProgress> remoteBookProgress(String bookKey) async {
@@ -116,8 +116,7 @@ class _FakeInterconnectBackend extends InterconnectSyncBackend {
     required String bookTitle,
     required String rootFolderId,
     SyncCoverDataProvider? readCoverData,
-  }) async =>
-      'folder-$bookTitle';
+  }) async => 'folder-$bookTitle';
   @override
   Future<void> updateProgressFile({
     required String folderId,
@@ -188,16 +187,15 @@ Future<void> _seedPosition(
   String bookUid, {
   required int norm,
   required int updatedAt,
-}) =>
-    db.upsertReaderPosition(
-      ReaderPositionsCompanion(
-        bookUid: Value(bookUid),
-        sectionIndex: const Value(0),
-        normCharOffset: Value(norm),
-        charOffset: const Value(-1),
-        updatedAt: Value(updatedAt),
-      ),
-    );
+}) => db.upsertReaderPosition(
+  ReaderPositionsCompanion(
+    bookUid: Value(bookUid),
+    sectionIndex: const Value(0),
+    normCharOffset: Value(norm),
+    charOffset: const Value(-1),
+    updatedAt: Value(updatedAt),
+  ),
+);
 
 Future<void> _seedBaseline(FushiDatabase db, String bookKey, int norm) =>
     db.setSyncBaseline(
@@ -207,11 +205,11 @@ Future<void> _seedBaseline(FushiDatabase db, String bookKey, int norm) =>
     );
 
 RemoteBookProgress _host(int norm, int updatedAt) => RemoteBookProgress(
-      sectionIndex: 0,
-      normCharOffset: norm,
-      charOffset: -1,
-      updatedAtMs: updatedAt,
-    );
+  sectionIndex: 0,
+  normCharOffset: norm,
+  charOffset: -1,
+  updatedAtMs: updatedAt,
+);
 
 void main() {
   setUp(() {
@@ -243,8 +241,7 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  testWidgets(
-      'both sides moved off the position baseline -> conflict row '
+  testWidgets('both sides moved off the position baseline -> conflict row '
       'with host DB progress in the remote column', (
     WidgetTester tester,
   ) async {
@@ -265,8 +262,7 @@ void main() {
     expect(find.text('30.0%'), findsOneWidget);
   });
 
-  testWidgets(
-      'host merely reopened (position on baseline) while local read '
+  testWidgets('host merely reopened (position on baseline) while local read '
       'on -> not a conflict', (WidgetTester tester) async {
     final FushiDatabase db = _memDb();
     addTearDown(db.close);
@@ -297,8 +293,7 @@ void main() {
     expect(find.text(t.sync_compare_conflicts), findsOneWidget);
   });
 
-  testWidgets(
-      'Apply "use local" pushes local progress to host DB with a '
+  testWidgets('Apply "use local" pushes local progress to host DB with a '
       'strictly newer timestamp and records the baseline', (
     WidgetTester tester,
   ) async {
@@ -349,35 +344,43 @@ void main() {
   // 与云通道共用同一行 `(assetKey, 'progress')` 基线；两条通道并存时互相把对方的
   // 基线抬走，文件箱旧进度倒灌回本机、同一本书每轮都报冲突。现在互联通道的文件箱
   // 基线是自己的一行。
-  test('interconnect channel keeps its file-box baseline in its own row',
-      () async {
-    final FushiDatabase db = _memDb();
-    addTearDown(db.close);
-    final EpubBookRow book = await _seedBook(db, 'BookA');
-    await _seedPosition(db, book.uid, norm: 3000, updatedAt: 1000);
-    final _FakeInterconnectBackend fake = _FakeInterconnectBackend(
-      hostProgress: <String, RemoteBookProgress>{},
-    );
-    expect(progressBaselineDimensionOf(fake), 'progress__fushiServer');
-    // 云通道那一行已有值：互联通道的导出不得碰它。
-    await db.setSyncBaseline('BookA', 'progress', 42);
+  test(
+    'interconnect channel keeps its file-box baseline in its own row',
+    () async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final EpubBookRow book = await _seedBook(db, 'BookA');
+      await _seedPosition(db, book.uid, norm: 3000, updatedAt: 1000);
+      final _FakeInterconnectBackend fake = _FakeInterconnectBackend(
+        hostProgress: <String, RemoteBookProgress>{},
+      );
+      expect(progressBaselineDimensionOf(fake), 'progress__fushiServer');
+      // 云通道那一行已有值：互联通道的导出不得碰它。
+      await db.setSyncBaseline('BookA', 'progress', 42);
 
-    final SyncBookResult result =
-        await SyncManager(db: db, backend: fake).syncBook(
-      book: book,
-      direction: SyncDirection.exportToTtu,
-      syncStats: false,
-      statsSyncMode: StatisticsSyncMode.merge,
-      syncAudioBook: false,
-    );
+      final SyncBookResult result = await SyncManager(db: db, backend: fake)
+          .syncBook(
+            book: book,
+            direction: SyncDirection.exportToTtu,
+            syncStats: false,
+            statsSyncMode: StatisticsSyncMode.merge,
+            syncAudioBook: false,
+          );
 
-    expect(result.direction, SyncResult.exported);
-    expect(fake.exportedByFolder['folder-BookA']?.lastBookmarkModified, 1000);
-    expect(await db.getSyncBaseline('BookA', 'progress__fushiServer'), 1000,
-        reason: '互联文件箱基线记在自己的行');
-    expect(await db.getSyncBaseline('BookA', 'progress'), 42,
-        reason: '云通道的基线行原样不动');
-  });
+      expect(result.direction, SyncResult.exported);
+      expect(fake.exportedByFolder['folder-BookA']?.lastBookmarkModified, 1000);
+      expect(
+        await db.getSyncBaseline('BookA', 'progress__fushiServer'),
+        1000,
+        reason: '互联文件箱基线记在自己的行',
+      );
+      expect(
+        await db.getSyncBaseline('BookA', 'progress'),
+        42,
+        reason: '云通道的基线行原样不动',
+      );
+    },
+  );
 
   // 升级路径：互联通道换了新基线行之后，存量用户只有旧行 `'progress'`、新行为空。
   // 文件箱里躺着本 client 升级前最后一次导出（ts 500），之后本机又读过（ts 1000）
@@ -386,85 +389,99 @@ void main() {
   // 基线。判成冲突的后果是永久幻象（冲突弹窗对互联行只看 live、不显示这一行；
   // 自动 sweep 遇冲突早退不写基线 → 每轮都报、每次「立即同步」后都弹空弹窗）。
   test(
-      'legacy baseline row + empty new row: interconnect auto sweep exports '
-      'and seeds the new row instead of reporting a phantom conflict',
-      () async {
-    final FushiDatabase db = _memDb();
-    addTearDown(db.close);
-    final EpubBookRow book = await _seedBook(db, 'BookA');
-    await _seedPosition(db, book.uid, norm: 3000, updatedAt: 1000);
-    final _FakeInterconnectBackend fake = _FakeInterconnectBackend(
-      hostProgress: <String, RemoteBookProgress>{},
-    );
-    fake.fileBoxProgress['BookA'] = TtuProgress(
-      dataId: 0,
-      exploredCharCount: 500,
-      progress: 0.5,
-      lastBookmarkModified: 500,
-    );
-    // 升级前两条通道共用的旧行；新行 `progress__fushiServer` 不存在。
-    await db.setSyncBaseline('BookA', 'progress', 500);
-    expect(await db.getSyncBaseline('BookA', 'progress__fushiServer'), isNull);
+    'legacy baseline row + empty new row: interconnect auto sweep exports '
+    'and seeds the new row instead of reporting a phantom conflict',
+    () async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final EpubBookRow book = await _seedBook(db, 'BookA');
+      await _seedPosition(db, book.uid, norm: 3000, updatedAt: 1000);
+      final _FakeInterconnectBackend fake = _FakeInterconnectBackend(
+        hostProgress: <String, RemoteBookProgress>{},
+      );
+      fake.fileBoxProgress['BookA'] = TtuProgress(
+        dataId: 0,
+        exploredCharCount: 500,
+        progress: 0.5,
+        lastBookmarkModified: 500,
+      );
+      // 升级前两条通道共用的旧行；新行 `progress__fushiServer` 不存在。
+      await db.setSyncBaseline('BookA', 'progress', 500);
+      expect(
+        await db.getSyncBaseline('BookA', 'progress__fushiServer'),
+        isNull,
+      );
 
-    // direction 不传 = 自动 sweep 的三方判定路径。
-    final SyncBookResult result =
-        await SyncManager(db: db, backend: fake).syncBook(
-      book: book,
-      syncStats: false,
-      statsSyncMode: StatisticsSyncMode.merge,
-      syncAudioBook: false,
-    );
+      // direction 不传 = 自动 sweep 的三方判定路径。
+      final SyncBookResult result = await SyncManager(db: db, backend: fake)
+          .syncBook(
+            book: book,
+            syncStats: false,
+            statsSyncMode: StatisticsSyncMode.merge,
+            syncAudioBook: false,
+          );
 
-    expect(result.direction, SyncResult.exported,
-        reason: '文件箱是本 client 自己写的，无基线不等只能是本机又读了');
-    expect(fake.exportedByFolder['folder-BookA']?.lastBookmarkModified, 1000);
-    expect(await db.getSyncBaseline('BookA', 'progress__fushiServer'), 1000,
-        reason: '第一条新维度基线落下，下一轮才有 base 可比');
-    expect(await db.getSyncBaseline('BookA', 'progress'), 500,
-        reason: '云通道那一行原样不动');
-  });
-
-  testWidgets(
-      'live GET failing at load degrades the row to the file box, but Apply '
-      '"use local" still pushes to host DB', (WidgetTester tester) async {
-    final FushiDatabase db = _memDb();
-    addTearDown(db.close);
-    final EpubBookRow book = await _seedBook(db, 'BookA');
-    await _seedPosition(db, book.uid, norm: 3000, updatedAt: 1000);
-    final _FakeInterconnectBackend fake = _FakeInterconnectBackend(
-      hostProgress: <String, RemoteBookProgress>{'BookA': _host(9000, 5000)},
-    );
-    // 文件箱里 client 自己上次导出的旧进度（ts 500）；文件箱基线 100 → 与本机
-    // (1000) 两边都偏离 → 文件箱口径也是冲突，这一行才会在 conflictsOnly 下出现。
-    fake.fileBoxProgress['BookA'] = TtuProgress(
-      dataId: 0,
-      exploredCharCount: 900,
-      progress: 0.9,
-      lastBookmarkModified: 500,
-    );
-    await db.setSyncBaseline('BookA', 'progress__fushiServer', 100);
-    // 加载期那一次 live GET 失败 → 这一行被静默降级成文件箱行（liveAction null）。
-    fake.failRemoteProgressReads = 1;
-    await pumpDialog(tester, db, fake, conflictsOnly: true);
-    expect(find.text(t.sync_compare_conflicts), findsOneWidget);
-    expect(find.text('BookA'), findsOneWidget);
-
-    await tester.tap(find.text(t.sync_compare_use_local).last);
-    await tester.pumpAndSettle();
-    await tester.tap(find.text(t.sync_compare_apply(count: 1)));
-    await tester.pumpAndSettle();
-
-    // 此前这里只写了 host 上谁都不读的文件箱，host DB 原样不动 → 下一轮 sweep 的
-    // live 三方判定照旧报同一条冲突。现在 host 有这本书就推。
-    expect(fake.exportedByFolder['folder-BookA']?.lastBookmarkModified, 1000);
-    final RemoteBookProgress? pushed = fake.putProgress['BookA'];
-    expect(pushed, isNotNull, reason: '选本机必须推到 host DB，不能只写文件箱');
-    expect(pushed!.normCharOffset, 3000);
-    expect(fake.hostProgress['BookA']!.normCharOffset, 3000);
-  });
+      expect(
+        result.direction,
+        SyncResult.exported,
+        reason: '文件箱是本 client 自己写的，无基线不等只能是本机又读了',
+      );
+      expect(fake.exportedByFolder['folder-BookA']?.lastBookmarkModified, 1000);
+      expect(
+        await db.getSyncBaseline('BookA', 'progress__fushiServer'),
+        1000,
+        reason: '第一条新维度基线落下，下一轮才有 base 可比',
+      );
+      expect(
+        await db.getSyncBaseline('BookA', 'progress'),
+        500,
+        reason: '云通道那一行原样不动',
+      );
+    },
+  );
 
   testWidgets(
-      'Apply "use remote" lands host DB progress locally and records '
+    'live GET failing at load degrades the row to the file box, but Apply '
+    '"use local" still pushes to host DB',
+    (WidgetTester tester) async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final EpubBookRow book = await _seedBook(db, 'BookA');
+      await _seedPosition(db, book.uid, norm: 3000, updatedAt: 1000);
+      final _FakeInterconnectBackend fake = _FakeInterconnectBackend(
+        hostProgress: <String, RemoteBookProgress>{'BookA': _host(9000, 5000)},
+      );
+      // 文件箱里 client 自己上次导出的旧进度（ts 500）；文件箱基线 100 → 与本机
+      // (1000) 两边都偏离 → 文件箱口径也是冲突，这一行才会在 conflictsOnly 下出现。
+      fake.fileBoxProgress['BookA'] = TtuProgress(
+        dataId: 0,
+        exploredCharCount: 900,
+        progress: 0.9,
+        lastBookmarkModified: 500,
+      );
+      await db.setSyncBaseline('BookA', 'progress__fushiServer', 100);
+      // 加载期那一次 live GET 失败 → 这一行被静默降级成文件箱行（liveAction null）。
+      fake.failRemoteProgressReads = 1;
+      await pumpDialog(tester, db, fake, conflictsOnly: true);
+      expect(find.text(t.sync_compare_conflicts), findsOneWidget);
+      expect(find.text('BookA'), findsOneWidget);
+
+      await tester.tap(find.text(t.sync_compare_use_local).last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(t.sync_compare_apply(count: 1)));
+      await tester.pumpAndSettle();
+
+      // 此前这里只写了 host 上谁都不读的文件箱，host DB 原样不动 → 下一轮 sweep 的
+      // live 三方判定照旧报同一条冲突。现在 host 有这本书就推。
+      expect(fake.exportedByFolder['folder-BookA']?.lastBookmarkModified, 1000);
+      final RemoteBookProgress? pushed = fake.putProgress['BookA'];
+      expect(pushed, isNotNull, reason: '选本机必须推到 host DB，不能只写文件箱');
+      expect(pushed!.normCharOffset, 3000);
+      expect(fake.hostProgress['BookA']!.normCharOffset, 3000);
+    },
+  );
+
+  testWidgets('Apply "use remote" lands host DB progress locally and records '
       'the baseline', (WidgetTester tester) async {
     final FushiDatabase db = _memDb();
     addTearDown(db.close);

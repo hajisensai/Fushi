@@ -54,43 +54,46 @@ void main() {
 
     // Dart 层不做编码猜测：坏字节只能就地变成 U+FFFD。断言「不等于任何一种
     // code page 的猜测结果」，因此在 936 与 1252 下含义一致。
-    test('the malformed field degrades to U+FFFD instead of a code page guess',
-        () {
-      final Map<String, Object?> json =
-          decodeNativeTorrentJsonBytes(_mixedPayload())!
-              as Map<String, Object?>;
+    test(
+      'the malformed field degrades to U+FFFD instead of a code page guess',
+      () {
+        final Map<String, Object?> json =
+            decodeNativeTorrentJsonBytes(_mixedPayload())!
+                as Map<String, Object?>;
 
-      final List<Object?> trackers = json['trackers']! as List<Object?>;
-      final Map<String, Object?> tracker =
-          trackers.single! as Map<String, Object?>;
-      final String lastError = tracker['last_error']! as String;
+        final List<Object?> trackers = json['trackers']! as List<Object?>;
+        final Map<String, Object?> tracker =
+            trackers.single! as Map<String, Object?>;
+        final String lastError = tracker['last_error']! as String;
 
-      expect(lastError, contains('�'));
-      expect(lastError, isNot(contains('中文')), reason: 'CP936 猜测结果');
-      expect(lastError, isNot(contains('ÖÐÎÄ')), reason: 'CP1252 猜测结果');
-      expect(lastError.replaceAll('�', ''), isEmpty);
-    });
+        expect(lastError, contains('�'));
+        expect(lastError, isNot(contains('中文')), reason: 'CP936 猜测结果');
+        expect(lastError, isNot(contains('ÖÐÎÄ')), reason: 'CP1252 猜测结果');
+        expect(lastError.replaceAll('�', ''), isEmpty);
+      },
+    );
 
     // native 侧修好后的正常路径：整包合法 UTF-8，原样解出，一个字节不改。
     test('valid UTF-8 payloads round-trip untouched', () {
-      final Map<String, Object?> json = decodeNativeTorrentJsonBytes(
-        Uint8List.fromList(
-          utf8.encode(
-            '{"ok":true,"torrents":[{"name":"$_validUtf8Name"}],'
-            '"trackers":[{"url":"udp://tracker",'
-            '"last_error":"中文 �"}]}',
-          ),
-        ),
-      )! as Map<String, Object?>;
+      final Map<String, Object?> json =
+          decodeNativeTorrentJsonBytes(
+                Uint8List.fromList(
+                  utf8.encode(
+                    '{"ok":true,"torrents":[{"name":"$_validUtf8Name"}],'
+                    '"trackers":[{"url":"udp://tracker",'
+                    '"last_error":"中文 �"}]}',
+                  ),
+                ),
+              )!
+              as Map<String, Object?>;
 
       final List<Object?> torrents = json['torrents']! as List<Object?>;
       expect(
-          (torrents.single! as Map<String, Object?>)['name'], _validUtf8Name);
-      final List<Object?> trackers = json['trackers']! as List<Object?>;
-      expect(
-        (trackers.single! as Map<String, Object?>)['last_error'],
-        '中文 �',
+        (torrents.single! as Map<String, Object?>)['name'],
+        _validUtf8Name,
       );
+      final List<Object?> trackers = json['trackers']! as List<Object?>;
+      expect((trackers.single! as Map<String, Object?>)['last_error'], '中文 �');
     });
 
     test('non-JSON payloads decode to null instead of throwing', () {

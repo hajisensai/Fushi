@@ -36,8 +36,9 @@ void main() {
     String label,
   ) {
     final List<String> lines = yaml.split('\n');
-    final int at =
-        lines.indexWhere((String l) => l.trimRight() == 'concurrency:');
+    final int at = lines.indexWhere(
+      (String l) => l.trimRight() == 'concurrency:',
+    );
     expect(at, isNot(-1), reason: '$label 没有顶层 `concurrency:` 块');
     String? group;
     String? cancel;
@@ -52,8 +53,11 @@ void main() {
       }
     }
     expect(group, isNotNull, reason: '$label 的 concurrency 块里没有 group:');
-    expect(cancel, isNotNull,
-        reason: '$label 的 concurrency 块里没有 cancel-in-progress:');
+    expect(
+      cancel,
+      isNotNull,
+      reason: '$label 的 concurrency 块里没有 cancel-in-progress:',
+    );
     return (group: group!, cancel: cancel!);
   }
 
@@ -68,50 +72,83 @@ void main() {
       r"fushi-release-${{ github.workflow }}-${{ github.event_name == 'push' && github.ref || github.event.release.tag_name || github.event.inputs.tag_name || github.sha }}";
 
   for (final String name in releaseWorkflows) {
-    test('$name 的 concurrency 组名带 workflow 名、push 按分支 / 其余按 tag/sha 分组、不取消 in-progress',
-        () {
-      final File f = File('${workflowsDir.path}/$name');
-      expect(f.existsSync(), isTrue, reason: '$name 不在了');
-      final ({String group, String cancel}) c =
-          topLevelConcurrency(f.readAsStringSync(), name);
+    test(
+      '$name 的 concurrency 组名带 workflow 名、push 按分支 / 其余按 tag/sha 分组、不取消 in-progress',
+      () {
+        final File f = File('${workflowsDir.path}/$name');
+        expect(f.existsSync(), isTrue, reason: '$name 不在了');
+        final ({String group, String cancel}) c = topLevelConcurrency(
+          f.readAsStringSync(),
+          name,
+        );
 
-      expect(c.group, contains(r'${{ github.workflow }}'),
-          reason: '$name 的 concurrency 组名 `${c.group}` 没带 workflow 名。'
+        expect(
+          c.group,
+          contains(r'${{ github.workflow }}'),
+          reason:
+              '$name 的 concurrency 组名 `${c.group}` 没带 workflow 名。'
               'GitHub 的 concurrency 组是仓库级的：与另一条发布 workflow 同名就会串行，'
               '正式版 `release: published` 同时点燃两条时桌面/Apple 要等 Android 整条跑完，'
               '而且同组第二个 pending 会把第一个 pending 取消（2026-09-03 实测 cancelled + 0 job）。'
-              'push 按分支分组后这一条更要紧：同一分支上 Android 与桌面会算出同一个组名。');
-      expect(c.group, contains("github.event_name == 'push' && github.ref"),
-          reason: '$name 的 push 事件必须按分支分组：按 sha 分组时 develop 每推一次都各跑满'
-              '一整轮发布，排队中的旧 run 永远不会被后来者顶掉。');
-      expect(c.group, contains('github.sha'),
-          reason: '$name 的组名必须仍按 tag/sha 分组：同一条 workflow 同 tag 两次 dispatch '
-              '要串行，否则两次同 tag 发布会互相踩资产。');
-      expect(c.group, contains('github.event.release.tag_name'),
-          reason: '$name 的组名要优先用 release 事件的 tag：同一个 tag 上 release 事件与'
-              '手动 dispatch 必须落在同一组里串行。');
-      expect(c.cancel, 'false',
-          reason: '$name 不能 cancel-in-progress：正在上传资产的发布被取消会留下半个 release，'
+              'push 按分支分组后这一条更要紧：同一分支上 Android 与桌面会算出同一个组名。',
+        );
+        expect(
+          c.group,
+          contains("github.event_name == 'push' && github.ref"),
+          reason:
+              '$name 的 push 事件必须按分支分组：按 sha 分组时 develop 每推一次都各跑满'
+              '一整轮发布，排队中的旧 run 永远不会被后来者顶掉。',
+        );
+        expect(
+          c.group,
+          contains('github.sha'),
+          reason:
+              '$name 的组名必须仍按 tag/sha 分组：同一条 workflow 同 tag 两次 dispatch '
+              '要串行，否则两次同 tag 发布会互相踩资产。',
+        );
+        expect(
+          c.group,
+          contains('github.event.release.tag_name'),
+          reason:
+              '$name 的组名要优先用 release 事件的 tag：同一个 tag 上 release 事件与'
+              '手动 dispatch 必须落在同一组里串行。',
+        );
+        expect(
+          c.cancel,
+          'false',
+          reason:
+              '$name 不能 cancel-in-progress：正在上传资产的发布被取消会留下半个 release，'
               'rolling debug 资产与 update-manifest 只写一半。push 按分支分组后仍必须是 false——'
-              '只让后来者顶掉排队中的 pending，不许掐掉正在跑的那轮。');
-    });
+              '只让后来者顶掉排队中的 pending，不许掐掉正在跑的那轮。',
+        );
+      },
+    );
   }
 
   test('tool/check_release_policy.ps1 要求的是同一个组名字面量——它是两条 workflow 的第一步', () {
     // 这条 PowerShell 守卫在每次发布的第一步跑；它 Require-Text 的组名字面量若停在旧写法，
     // 组名一改、每次发布第一步就红，而本文件上面那几条 Dart 断言全绿——2026-09-08 改组名
     // 时就漏过一次。两处必须一起改。PowerShell 单引号串里的 `'` 写作 `''`。
-    final String policy =
-        File('../tool/check_release_policy.ps1').readAsStringSync();
-    expect(policy, contains("'group: ${sharedGroup.replaceAll("'", "''")}'"),
-        reason: 'check_release_policy.ps1 要求的组名与 workflow 里的不一致，发布第一步必红');
+    final String policy = File(
+      '../tool/check_release_policy.ps1',
+    ).readAsStringSync();
+    expect(
+      policy,
+      contains("'group: ${sharedGroup.replaceAll("'", "''")}'"),
+      reason: 'check_release_policy.ps1 要求的组名与 workflow 里的不一致，发布第一步必红',
+    );
     for (final String name in releaseWorkflows) {
       final ({String group, String cancel}) c = topLevelConcurrency(
-          File('${workflowsDir.path}/$name').readAsStringSync(), name);
+        File('${workflowsDir.path}/$name').readAsStringSync(),
+        name,
+      );
       // release-desktop.yml 在共用前缀后追加了 testflight_only 后缀（见下一条测试），
       // 所以按「以共用字面量开头」比，而不是整串相等。
-      expect(c.group, startsWith(sharedGroup),
-          reason: '$name 的组名 `${c.group}` 不以 check_release_policy.ps1 要求的共用组名开头');
+      expect(
+        c.group,
+        startsWith(sharedGroup),
+        reason: '$name 的组名 `${c.group}` 不以 check_release_policy.ps1 要求的共用组名开头',
+      );
     }
   });
 
@@ -121,31 +158,45 @@ void main() {
     // 下一个 pending 顶掉。testflight_only 只签 iOS、只传 TestFlight，不碰 Release /
     // update-manifest，没有串行的理由。
     final ({String group, String cancel}) c = topLevelConcurrency(
-        File('${workflowsDir.path}/release-desktop.yml').readAsStringSync(),
-        'release-desktop.yml');
+      File('${workflowsDir.path}/release-desktop.yml').readAsStringSync(),
+      'release-desktop.yml',
+    );
     expect(
-        c.group,
-        endsWith(
-            r"${{ github.event.inputs.testflight_only == 'true' && '-testflight' || '' }}"),
-        reason: 'testflight_only 的 run 没有单独成组，又会排在同 sha 的完整构建后面');
-    final String policy =
-        File('../tool/check_release_policy.ps1').readAsStringSync();
-    expect(policy,
-        contains(r"github.event.inputs.testflight_only == 'true' && '-testflight' || ''"),
-        reason: 'check_release_policy.ps1 没钉住 testflight_only 的独立组后缀');
+      c.group,
+      endsWith(
+        r"${{ github.event.inputs.testflight_only == 'true' && '-testflight' || '' }}",
+      ),
+      reason: 'testflight_only 的 run 没有单独成组，又会排在同 sha 的完整构建后面',
+    );
+    final String policy = File(
+      '../tool/check_release_policy.ps1',
+    ).readAsStringSync();
+    expect(
+      policy,
+      contains(
+        r"github.event.inputs.testflight_only == 'true' && '-testflight' || ''",
+      ),
+      reason: 'check_release_policy.ps1 没钉住 testflight_only 的独立组后缀',
+    );
   });
 
   test('两条发布 workflow 的 name 不同——否则 `github.workflow` 分不开它们', () {
     final List<String> names = <String>[];
     for (final String name in releaseWorkflows) {
       final String yaml = File('${workflowsDir.path}/$name').readAsStringSync();
-      final RegExpMatch? m =
-          RegExp(r'^name:\s*(.+?)\s*$', multiLine: true).firstMatch(yaml);
+      final RegExpMatch? m = RegExp(
+        r'^name:\s*(.+?)\s*$',
+        multiLine: true,
+      ).firstMatch(yaml);
       expect(m, isNotNull, reason: '$name 没有顶层 name:');
       names.add(m!.group(1)!);
     }
-    expect(names.toSet().length, names.length,
-        reason: '两条 workflow 的 name 相同（$names）：组名里的 `github.workflow` 就是这个 '
-            'name，相同就又回到同一个组里串行了。');
+    expect(
+      names.toSet().length,
+      names.length,
+      reason:
+          '两条 workflow 的 name 相同（$names）：组名里的 `github.workflow` 就是这个 '
+          'name，相同就又回到同一个组里串行了。',
+    );
   });
 }

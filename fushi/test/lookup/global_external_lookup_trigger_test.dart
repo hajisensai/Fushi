@@ -101,9 +101,10 @@ void main() {
         TargetPlatform.macOS,
         TargetPlatform.linux,
       ]) {
-        final ShortcutBindingSet set = (FushiShortcutRegistry()
-              ..loadDefaults(platform))
-            .bindingsFor(ShortcutAction.globalExternalLookup);
+        final ShortcutBindingSet set =
+            (FushiShortcutRegistry()..loadDefaults(platform)).bindingsFor(
+              ShortcutAction.globalExternalLookup,
+            );
         expect(
           set.keyboardBindings,
           isNotEmpty,
@@ -131,17 +132,23 @@ void main() {
       final String code = maskComments(
         File('lib/src/shortcuts/gamepad_service.dart').readAsStringSync(),
       );
-      final int branch = code
-          .indexOf('tryGlobalExternalLookupGamepadButton(registry, button)');
-      final int ctx =
-          code.indexOf('final BuildContext? ctx = _dispatchContext;');
-      expect(branch, greaterThanOrEqualTo(0),
-          reason: '手柄触发分支不见了：globalExternal 的手柄绑定会变成死绑定');
+      final int branch = code.indexOf(
+        'tryGlobalExternalLookupGamepadButton(registry, button)',
+      );
+      final int ctx = code.indexOf(
+        'final BuildContext? ctx = _dispatchContext;',
+      );
+      expect(
+        branch,
+        greaterThanOrEqualTo(0),
+        reason: '手柄触发分支不见了：globalExternal 的手柄绑定会变成死绑定',
+      );
       expect(ctx, greaterThanOrEqualTo(0));
       expect(
         branch,
         lessThan(ctx),
-        reason: '分支被挪到取焦点之后：主窗失焦时 MainWindowFocusGate 会让整条 '
+        reason:
+            '分支被挪到取焦点之后：主窗失焦时 MainWindowFocusGate 会让整条 '
             'Actions 路径落空，而"用户在别的程序里"正是本功能唯一的使用场景',
       );
     });
@@ -165,8 +172,9 @@ void main() {
       final String code = maskComments(
         File('lib/src/lookup/global_lookup_controller.dart').readAsStringSync(),
       );
-      final int call =
-          code.indexOf('SelectionCapture.captureForegroundSelection');
+      final int call = code.indexOf(
+        'SelectionCapture.captureForegroundSelection',
+      );
       expect(call, greaterThanOrEqualTo(0));
       expect(
         code.substring(call, call + 200).contains('stillWanted:'),

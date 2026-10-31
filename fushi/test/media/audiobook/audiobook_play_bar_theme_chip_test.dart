@@ -32,10 +32,9 @@ class _FakeInAppWebViewController implements InAppWebViewController {
 }
 
 AppModel _testAppModel({FushiDatabase? database}) {
-  final FushiDatabase db = database ??
-      FushiDatabase.forTesting(
-        DatabaseConnection(NativeDatabase.memory()),
-      );
+  final FushiDatabase db =
+      database ??
+      FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
   final ThemeNotifier themeNotifier = ThemeNotifier(db, () => const TextTheme())
     ..loadFromPrefsSnapshot(<String, String>{
       'design_system': PrefCodec.encode('material'),
@@ -46,8 +45,9 @@ AppModel _testAppModel({FushiDatabase? database}) {
   // 阅读器快捷设置里已有在 visible/value 里读偏好的条目（查词瞬时滚动步长），
   // 生产路径抽屉只在 initialise() 之后打开、偏好必已就绪；夹具同样装上。
   final PreferencesRepository prefsRepo = PreferencesRepository(db);
-  final Directory tmpDir =
-      Directory.systemTemp.createTempSync('fushi_play_bar_theme_chip_');
+  final Directory tmpDir = Directory.systemTemp.createTempSync(
+    'fushi_play_bar_theme_chip_',
+  );
   final AppModel appModel = AppModel(testPlatformServices())
     ..themeNotifier = themeNotifier
     ..wireLocalAudioForTesting(prefsRepo: prefsRepo, databaseDirectory: tmpDir);
@@ -61,8 +61,9 @@ AppModel _testAppModel({FushiDatabase? database}) {
 
 void main() {
   for (final bool lyricsMode in <bool>[false, true]) {
-    testWidgets('320 宽${lyricsMode ? '歌词' : '正文'}设置主题下可切换日间、跟随系统和夜间',
-        (WidgetTester tester) async {
+    testWidgets('320 宽${lyricsMode ? '歌词' : '正文'}设置主题下可切换日间、跟随系统和夜间', (
+      WidgetTester tester,
+    ) async {
       await tester.binding.setSurfaceSize(const Size(320, 720));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       final FushiDatabase db = FushiDatabase.forTesting(
@@ -126,8 +127,10 @@ void main() {
             widget.title == t.dark_mode,
       );
       expect(brightnessRow, findsOneWidget);
-      expect(tester.getTopLeft(brightnessRow).dy,
-          greaterThan(tester.getTopLeft(find.text(t.reader_theme)).dy));
+      expect(
+        tester.getTopLeft(brightnessRow).dy,
+        greaterThan(tester.getTopLeft(find.text(t.reader_theme)).dy),
+      );
       // 272 宽抽屉里三段图标条放不进行宽 55%，按设计系统的唯一判据
       // （settingsChoiceUsesSegments）退回「点整行弹菜单」形态：整行仍须完整落在
       // 抽屉内（左侧保留 48px 点外关闭区），三个选项都能从菜单里选到。
@@ -161,7 +164,9 @@ void main() {
 
         expect(model.themeNotifier.brightnessMode, choice.$1);
         expect(
-            await db.getPref('brightness_mode'), PrefCodec.encode(choice.$1));
+          await db.getPref('brightness_mode'),
+          PrefCodec.encode(choice.$1),
+        );
         expect(
           tester
               .widget<AdaptiveSettingsSegmentedRow<String>>(brightnessRow)
@@ -215,8 +220,10 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
     expect(find.text(t.reader_theme), findsOneWidget);
-    expect(find.byKey(const ValueKey<String>('fushi_side_sheet_tabs')),
-        findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('fushi_side_sheet_tabs')),
+      findsOneWidget,
+    );
     final Finder close = find.byKey(
       const ValueKey<String>('fushi_side_sheet_close'),
     );
@@ -224,17 +231,17 @@ void main() {
 
     // 272 宽放不下全部页签时进入「前 N 段 + 更多」溢出档：「查词」页签可能
     // 收进末尾的「更多」菜单，从菜单里同样能切过去。
-    final Finder tabs =
-        find.byKey(const ValueKey<String>('fushi_side_sheet_tabs'));
+    final Finder tabs = find.byKey(
+      const ValueKey<String>('fushi_side_sheet_tabs'),
+    );
     final Finder lookupTab = find.descendant(
       of: tabs,
       matching: find.text(t.settings_destination_lookup),
     );
     if (lookupTab.hitTestable().evaluate().isEmpty) {
-      await tester.tap(find.descendant(
-        of: tabs,
-        matching: find.byIcon(Icons.expand_more),
-      ));
+      await tester.tap(
+        find.descendant(of: tabs, matching: find.byIcon(Icons.expand_more)),
+      );
       await tester.pumpAndSettle();
       await tester.tap(find.text(t.settings_destination_lookup).last);
     } else {
@@ -245,18 +252,16 @@ void main() {
     expect(find.text(t.auto_read_on_lookup), findsOneWidget);
   });
 
-  testWidgets('audiobook play bar keeps lyrics mode out of bottom bar',
-      (tester) async {
+  testWidgets('audiobook play bar keeps lyrics mode out of bottom bar', (
+    tester,
+  ) async {
     final controller = AudiobookPlayerController();
     addTearDown(controller.dispose);
 
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: AudiobookPlayBar(
-            controller: controller,
-            onOpenSettings: () {},
-          ),
+          body: AudiobookPlayBar(controller: controller, onOpenSettings: () {}),
         ),
       ),
     );
@@ -265,8 +270,9 @@ void main() {
     expect(find.byIcon(Icons.auto_stories), findsNothing);
   });
 
-  testWidgets('in-book settings sheet uses adaptive settings rows',
-      (tester) async {
+  testWidgets('in-book settings sheet uses adaptive settings rows', (
+    tester,
+  ) async {
     // 窄窗：< 640 走单列内联 + push（本用例的语义）。宽窗 master-detail 由
     // 单独的 wide 用例覆盖。
     await tester.binding.setSurfaceSize(const Size(420, 1600));
@@ -334,10 +340,7 @@ void main() {
     expect(find.text(t.reader_view_mode_label), findsOneWidget);
     // Schema-projected segmented items render as AdaptiveSettingsSegmentedRow
     // with the renderer's erased <Object> type arg, not the bespoke <String>.
-    expect(
-      find.byType(AdaptiveSettingsSegmentedRow<Object>),
-      findsWidgets,
-    );
+    expect(find.byType(AdaptiveSettingsSegmentedRow<Object>), findsWidgets);
     expect(find.byType(AdaptiveSettingsStepperRow), findsWidgets);
     expect(find.byType(ListTile), findsNothing);
   });
@@ -382,10 +385,14 @@ void main() {
     // 「设置」抽屉：标题下一条标签栏把分类摊平同屏切换（导航 / 有声书不在这里，
     // 它们各有自己的 presentation），默认落在第一组「布局显示」上。不再用分段条。
     expect(find.byType(FushiSegmentedStrip<String>), findsNothing);
-    final TabBar tabBar = tester.widget<TabBar>(glassUnwrap<TabBar>(find.descendant(
-      of: find.byKey(const ValueKey<String>('fushi_side_sheet_tabs')),
-      matching: find.byType(TabBar),
-    )));
+    final TabBar tabBar = tester.widget<TabBar>(
+      glassUnwrap<TabBar>(
+        find.descendant(
+          of: find.byKey(const ValueKey<String>('fushi_side_sheet_tabs')),
+          matching: find.byType(TabBar),
+        ),
+      ),
+    );
     // 2026-10 侧板重设计：按任务分组（主题与字体 / 排版 / 翻页与手势 / 有声书 /
     // 查词），默认落「主题与字体」。
     expect(tabBar.tabs, hasLength(5));
@@ -439,10 +446,12 @@ void main() {
     expect(changes, isEmpty);
 
     // 点击标签：动画开始 / 结束两次通知只回写一次。
-    await tester.tap(find.descendant(
-      of: find.byKey(const ValueKey<String>('fushi_side_sheet_tabs')),
-      matching: find.text(t.reader_panel_tab_appearance),
-    ));
+    await tester.tap(
+      find.descendant(
+        of: find.byKey(const ValueKey<String>('fushi_side_sheet_tabs')),
+        matching: find.text(t.reader_panel_tab_appearance),
+      ),
+    );
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
     expect(find.text(t.reader_theme), findsOneWidget);
@@ -463,8 +472,9 @@ void main() {
     expect(changes, <String>['appearance', 'layout']);
   });
 
-  testWidgets('reader exit is deferred and only scheduled once',
-      (tester) async {
+  testWidgets('reader exit is deferred and only scheduled once', (
+    tester,
+  ) async {
     await tester.binding.setSurfaceSize(const Size(420, 1600));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
@@ -563,8 +573,9 @@ void main() {
     );
   });
 
-  testWidgets('in-book navigation lists avoid legacy Material tiles',
-      (tester) async {
+  testWidgets('in-book navigation lists avoid legacy Material tiles', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       ProviderScope(
         child: MaterialApp(

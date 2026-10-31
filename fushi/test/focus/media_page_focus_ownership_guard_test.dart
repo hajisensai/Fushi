@@ -37,8 +37,9 @@ void main() {
   ];
 
   Iterable<File> dartFilesUnder(String path) {
-    final FileSystemEntity entity =
-        FileSystemEntity.isDirectorySync(path) ? Directory(path) : File(path);
+    final FileSystemEntity entity = FileSystemEntity.isDirectorySync(path)
+        ? Directory(path)
+        : File(path);
     if (entity is File) return <File>[entity];
     return (entity as Directory)
         .listSync(recursive: true)
@@ -71,7 +72,8 @@ void main() {
     expect(
       violations,
       isEmpty,
-      reason: '焦点请求必须经 _focusOwnership.reclaim / reclaimAfterFrame / '
+      reason:
+          '焦点请求必须经 _focusOwnership.reclaim / reclaimAfterFrame / '
           'guardOverlay —— 任何形式的 requestFocus（含 FocusScope.of(context)'
           '.requestFocus(node) 与经局部变量中转）都会绕过该页的 _canOwn*Focus 判据'
           '（播放器/内容就绪、查词浮层可见、光标态、所有者路由 isCurrent），正是'
@@ -86,10 +88,16 @@ void main() {
       'lib/src/media/manga/reader/manga_fushi_page.dart',
     ]) {
       final String source = File(page).readAsStringSync();
-      expect(source, contains('PageFocusOwnership'),
-          reason: '$page 必须用统一的焦点所有者');
-      expect(source, contains('FocusReclaimCause'),
-          reason: '$page 的回收必须自证原因（cause），判据按 cause 分流');
+      expect(
+        source,
+        contains('PageFocusOwnership'),
+        reason: '$page 必须用统一的焦点所有者',
+      );
+      expect(
+        source,
+        contains('FocusReclaimCause'),
+        reason: '$page 的回收必须自证原因（cause），判据按 cause 分流',
+      );
     }
   });
 }

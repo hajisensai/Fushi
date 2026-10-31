@@ -35,7 +35,8 @@ void main() {
     expect(
       json.keys.toSet(),
       expected,
-      reason: '$what 的 wire key 集合变了。若这是有意的协议变更，请连同老 host/老 '
+      reason:
+          '$what 的 wire key 集合变了。若这是有意的协议变更，请连同老 host/老 '
           'client 的兼容影响一起评估后再改本断言；若只是新加字段，请先想清楚它该在'
           '什么条件下省略。',
     );
@@ -71,28 +72,27 @@ void main() {
         progressUpdatedAtMs: 123,
         kind: MediaKind.srt,
       ).toJson();
-      expectKeys(
-        json,
-        <String>{
-          'title',
-          'bookKey',
-          'hasContent',
-          'hasCover',
-          'coverUrl',
-          'hasAudiobook',
-          'tags',
-          'tagsAddedAt',
-          'tagTombstones',
-          'collection',
-          'progressPercent',
-          'progressUpdatedAtMs',
-          'kind',
-        },
-        what: 'RemoteBookInfo 最大实例',
-      );
+      expectKeys(json, <String>{
+        'title',
+        'bookKey',
+        'hasContent',
+        'hasCover',
+        'coverUrl',
+        'hasAudiobook',
+        'tags',
+        'tagsAddedAt',
+        'tagTombstones',
+        'collection',
+        'progressPercent',
+        'progressUpdatedAtMs',
+        'kind',
+      }, what: 'RemoteBookInfo 最大实例');
       // coverPath 是 host 本地绝对路径：fromJson 读、toJson **永不写**（不外泄）。
-      expect(json.containsKey('coverPath'), isFalse,
-          reason: 'host 本地路径绝不能出现在 wire 上');
+      expect(
+        json.containsKey('coverPath'),
+        isFalse,
+        reason: 'host 本地路径绝不能出现在 wire 上',
+      );
     });
 
     test('epub 是默认 kind，不写 kind 键（旧 wire 字节不变）', () {
@@ -101,8 +101,11 @@ void main() {
         isNot(contains('kind')),
       );
       expect(
-        const RemoteBookInfo(title: 'T', hasContent: true, kind: MediaKind.epub)
-            .toJson(),
+        const RemoteBookInfo(
+          title: 'T',
+          hasContent: true,
+          kind: MediaKind.epub,
+        ).toJson(),
         isNot(contains('kind')),
       );
     });
@@ -174,32 +177,31 @@ void main() {
           sortIndex: 0,
         ),
       ).toJson();
-      expectKeys(
-        json,
-        <String>{
-          'id',
-          'title',
-          'sizeBytes',
-          'hasSubtitle',
-          'subtitleFileName',
-          'embeddedSubtitleTracks',
-          'durationMs',
-          'hasCover',
-          'coverUrl',
-          'positionMs',
-          'positionUpdatedAtMs',
-          'delayMs',
-          'episodes',
-          'currentEpisode',
-          'tags',
-          'tagsAddedAt',
-          'tagTombstones',
-          'collection',
-        },
-        what: 'RemoteVideoInfo 最大实例',
+      expectKeys(json, <String>{
+        'id',
+        'title',
+        'sizeBytes',
+        'hasSubtitle',
+        'subtitleFileName',
+        'embeddedSubtitleTracks',
+        'durationMs',
+        'hasCover',
+        'coverUrl',
+        'positionMs',
+        'positionUpdatedAtMs',
+        'delayMs',
+        'episodes',
+        'currentEpisode',
+        'tags',
+        'tagsAddedAt',
+        'tagTombstones',
+        'collection',
+      }, what: 'RemoteVideoInfo 最大实例');
+      expect(
+        json.containsKey('coverPath'),
+        isFalse,
+        reason: 'host 本地路径绝不能出现在 wire 上',
       );
-      expect(json.containsKey('coverPath'), isFalse,
-          reason: 'host 本地路径绝不能出现在 wire 上');
     });
 
     test('单视频（episodes<=1）不写 episodes / currentEpisode（旧 client 兼容）', () {
@@ -207,12 +209,15 @@ void main() {
         id: 'video/x',
         title: 'T',
         episodes: <RemoteVideoEpisode>[
-          RemoteVideoEpisode(index: 0, title: 'e')
+          RemoteVideoEpisode(index: 0, title: 'e'),
         ],
         currentEpisode: 0,
       ).toJson();
-      expect(single.containsKey('episodes'), isFalse,
-          reason: '只有一集时 wire 上不应出现播放列表键');
+      expect(
+        single.containsKey('episodes'),
+        isFalse,
+        reason: '只有一集时 wire 上不应出现播放列表键',
+      );
       expect(single.containsKey('currentEpisode'), isFalse);
     });
 
@@ -231,8 +236,11 @@ void main() {
         currentEpisode: 0,
       ).toJson();
       expect(json.containsKey('episodes'), isTrue, reason: '多集必须写播放列表键（外层门已开）');
-      expect(json.containsKey('currentEpisode'), isFalse,
-          reason: 'currentEpisode 为 0 时不写键——0 与「没有当前集」在 wire 上同义');
+      expect(
+        json.containsKey('currentEpisode'),
+        isFalse,
+        reason: 'currentEpisode 为 0 时不写键——0 与「没有当前集」在 wire 上同义',
+      );
     });
 
     test('无内封字幕轨时不写 embeddedSubtitleTracks', () {
@@ -248,8 +256,11 @@ void main() {
         isNot(contains('delayMs')),
       );
       expect(
-        const RemoteVideoInfo(id: 'v', title: 'T', delayMs: -250)
-            .toJson()['delayMs'],
+        const RemoteVideoInfo(
+          id: 'v',
+          title: 'T',
+          delayMs: -250,
+        ).toJson()['delayMs'],
         -250,
         reason: '负 delay 是合法的字幕提前量，不能被当成「无值」省掉',
       );
@@ -259,8 +270,10 @@ void main() {
   group('RemoteVideoEmbeddedSubtitleTrack', () {
     test('最小实例：streamIndex / codec / isText', () {
       expectKeys(
-        const RemoteVideoEmbeddedSubtitleTrack(streamIndex: 0, codec: 'subrip')
-            .toJson(),
+        const RemoteVideoEmbeddedSubtitleTrack(
+          streamIndex: 0,
+          codec: 'subrip',
+        ).toJson(),
         <String>{'streamIndex', 'codec', 'isText'},
         what: '内封字幕轨最小实例',
       );
@@ -298,69 +311,77 @@ void main() {
       // 旧 host / 兼容层没换算容器内序号 → null，消费端按 streamIndex 兜底；
       // 带上时原样往返（Emby 全局流号 2 可能对应容器内第 0 条字幕轨）。
       expect(
-        RemoteVideoEmbeddedSubtitleTrack.fromJson(
-          const <String, Object?>{'streamIndex': 2, 'codec': 'subrip'},
-        ).containerTrackOrdinal,
+        RemoteVideoEmbeddedSubtitleTrack.fromJson(const <String, Object?>{
+          'streamIndex': 2,
+          'codec': 'subrip',
+        }).containerTrackOrdinal,
         isNull,
       );
       final RemoteVideoEmbeddedSubtitleTrack round =
           RemoteVideoEmbeddedSubtitleTrack.fromJson(
-        const RemoteVideoEmbeddedSubtitleTrack(
-          streamIndex: 2,
-          codec: 'subrip',
-          containerTrackOrdinal: 0,
-        ).toJson(),
-      );
+            const RemoteVideoEmbeddedSubtitleTrack(
+              streamIndex: 2,
+              codec: 'subrip',
+              containerTrackOrdinal: 0,
+            ).toJson(),
+          );
       expect(round.containerTrackOrdinal, 0);
-      expect(round.copyWith(url: 'u').containerTrackOrdinal, 0,
-          reason: 'copyWith 不得丢掉序号');
+      expect(
+        round.copyWith(url: 'u').containerTrackOrdinal,
+        0,
+        reason: 'copyWith 不得丢掉序号',
+      );
     });
 
     test('isExternalFile 缺失解成 false（旧 host 的轨都在容器里）；true 原样往返', () {
       // 外挂文件轨（在线源字幕链接 / Emby 外挂字幕）下载失败时不得交给 libmpv
       // 自绘：流里没有它。旧 host 不发这个键 → 按容器轨处理（BUG-2590 行为不变）。
       expect(
-        RemoteVideoEmbeddedSubtitleTrack.fromJson(
-          const <String, Object?>{'streamIndex': 2, 'codec': 'subrip'},
-        ).isExternalFile,
+        RemoteVideoEmbeddedSubtitleTrack.fromJson(const <String, Object?>{
+          'streamIndex': 2,
+          'codec': 'subrip',
+        }).isExternalFile,
         isFalse,
       );
       expect(
-        const RemoteVideoEmbeddedSubtitleTrack(streamIndex: 0, codec: 'vtt')
-            .toJson()
-            .containsKey('isExternalFile'),
+        const RemoteVideoEmbeddedSubtitleTrack(
+          streamIndex: 0,
+          codec: 'vtt',
+        ).toJson().containsKey('isExternalFile'),
         isFalse,
         reason: '默认值不上线，老 client 看到的 wire 不变',
       );
       final RemoteVideoEmbeddedSubtitleTrack round =
           RemoteVideoEmbeddedSubtitleTrack.fromJson(
-        const RemoteVideoEmbeddedSubtitleTrack(
-          streamIndex: 0,
-          codec: 'vtt',
-          isExternalFile: true,
-        ).toJson(),
-      );
+            const RemoteVideoEmbeddedSubtitleTrack(
+              streamIndex: 0,
+              codec: 'vtt',
+              isExternalFile: true,
+            ).toJson(),
+          );
       expect(round.isExternalFile, isTrue);
-      expect(round.copyWith(url: 'u').isExternalFile, isTrue,
-          reason: 'copyWith 不得丢掉外挂标记');
+      expect(
+        round.copyWith(url: 'u').isExternalFile,
+        isTrue,
+        reason: 'copyWith 不得丢掉外挂标记',
+      );
     });
 
     test('isText 缺失解成 true（反向默认，不是 false）', () {
       // 老 host 不下发 isText → 必须当文本轨处理，否则字幕全被当图形轨丢掉。
       expect(
-        RemoteVideoEmbeddedSubtitleTrack.fromJson(
-          const <String, Object?>{'streamIndex': 0, 'codec': 'subrip'},
-        ).isText,
+        RemoteVideoEmbeddedSubtitleTrack.fromJson(const <String, Object?>{
+          'streamIndex': 0,
+          'codec': 'subrip',
+        }).isText,
         isTrue,
       );
       expect(
-        RemoteVideoEmbeddedSubtitleTrack.fromJson(
-          const <String, Object?>{
-            'streamIndex': 0,
-            'codec': 'hdmv_pgs',
-            'isText': false,
-          },
-        ).isText,
+        RemoteVideoEmbeddedSubtitleTrack.fromJson(const <String, Object?>{
+          'streamIndex': 0,
+          'codec': 'hdmv_pgs',
+          'isText': false,
+        }).isText,
         isFalse,
       );
     });
@@ -368,11 +389,10 @@ void main() {
 
   group('RemoteAudiobookInfo', () {
     test('uid 为空时省略（旧 host 不下发此字段）', () {
-      expectKeys(
-        const RemoteAudiobookInfo(bookKey: 'k').toJson(),
-        <String>{'bookKey', 'title'},
-        what: 'RemoteAudiobookInfo 无 uid',
-      );
+      expectKeys(const RemoteAudiobookInfo(bookKey: 'k').toJson(), <String>{
+        'bookKey',
+        'title',
+      }, what: 'RemoteAudiobookInfo 无 uid');
       expectKeys(
         const RemoteAudiobookInfo(bookKey: 'k', uid: 'u', title: 't').toJson(),
         <String>{'bookKey', 'uid', 'title'},
@@ -422,7 +442,7 @@ void main() {
           'timestampMs',
           'mediaKey',
           'durationMs',
-          'charsDelta'
+          'charsDelta',
         },
         what: 'RemoteActivityEvent 最大实例',
       );
@@ -463,33 +483,40 @@ void main() {
       );
     });
 
-    test('RemoteDictionaryInfo / RemoteLocalAudioInfo / RemoteVideoEpisode',
-        () {
-      expectKeys(
-        const RemoteDictionaryInfo(name: 'n', type: 't').toJson(),
-        <String>{'name', 'type'},
-        what: 'RemoteDictionaryInfo',
-      );
-      expectKeys(
-        const RemoteLocalAudioInfo(displayName: 'd').toJson(),
-        <String>{'displayName'},
-        what: 'RemoteLocalAudioInfo',
-      );
-      expectKeys(
-        const RemoteVideoEpisode(index: 0, title: 't').toJson(),
-        <String>{'index', 'title'},
-        what: 'RemoteVideoEpisode',
-      );
-    });
+    test(
+      'RemoteDictionaryInfo / RemoteLocalAudioInfo / RemoteVideoEpisode',
+      () {
+        expectKeys(
+          const RemoteDictionaryInfo(name: 'n', type: 't').toJson(),
+          <String>{'name', 'type'},
+          what: 'RemoteDictionaryInfo',
+        );
+        expectKeys(
+          const RemoteLocalAudioInfo(displayName: 'd').toJson(),
+          <String>{'displayName'},
+          what: 'RemoteLocalAudioInfo',
+        );
+        expectKeys(
+          const RemoteVideoEpisode(index: 0, title: 't').toJson(),
+          <String>{'index', 'title'},
+          what: 'RemoteVideoEpisode',
+        );
+      },
+    );
   });
 
   group('round-trip：省略的键在 fromJson 侧还原成等价缺省', () {
     test('RemoteBookInfo 最小实例 round-trip 不产生新键', () {
-      const RemoteBookInfo original =
-          RemoteBookInfo(title: 'T', hasContent: true);
+      const RemoteBookInfo original = RemoteBookInfo(
+        title: 'T',
+        hasContent: true,
+      );
       final RemoteBookInfo back = RemoteBookInfo.fromJson(original.toJson());
-      expect(back.toJson(), original.toJson(),
-          reason: 'toJson→fromJson→toJson 必须是幂等的，否则同一本书在两端会写出不同 wire');
+      expect(
+        back.toJson(),
+        original.toJson(),
+        reason: 'toJson→fromJson→toJson 必须是幂等的，否则同一本书在两端会写出不同 wire',
+      );
     });
 
     test('RemoteVideoInfo 最小实例 round-trip 不产生新键', () {
@@ -523,8 +550,11 @@ void main() {
       Map<String, Type> types, {
       required String what,
     }) {
-      expect(json.keys.toSet(), types.keys.toSet(),
-          reason: '$what：类型锁覆盖的键与实际写出的键不一致，请同步补齐');
+      expect(
+        json.keys.toSet(),
+        types.keys.toSet(),
+        reason: '$what：类型锁覆盖的键与实际写出的键不一致，请同步补齐',
+      );
       types.forEach((String key, Type expected) {
         final Object? value = json[key];
         final bool ok = switch (expected) {
@@ -535,11 +565,15 @@ void main() {
           const (Map<String, Object?>) => value is Map,
           _ => false,
         };
-        expect(ok, isTrue,
-            reason: '$what 的 wire 键 `$key` 类型变了：期望 $expected，实际写出 '
-                '${value.runtimeType}（值 $value）。对端按固定类型解析'
-                '（`as num?` / `== true` 之类），类型一变解析就静默失效——'
-                '这是**协议变更**，不是实现细节。');
+        expect(
+          ok,
+          isTrue,
+          reason:
+              '$what 的 wire 键 `$key` 类型变了：期望 $expected，实际写出 '
+              '${value.runtimeType}（值 $value）。对端按固定类型解析'
+              '（`as num?` / `== true` 之类），类型一变解析就静默失效——'
+              '这是**协议变更**，不是实现细节。',
+        );
       });
     }
 
@@ -721,23 +755,33 @@ void main() {
       );
     });
 
-    test('RemoteAudiobookInfo / RemoteDictionaryInfo / RemoteLocalAudioInfo',
-        () {
-      expectWireTypes(
-        const RemoteAudiobookInfo(bookKey: 'k', uid: 'u', title: 't').toJson(),
-        const <String, Type>{'bookKey': String, 'uid': String, 'title': String},
-        what: 'RemoteAudiobookInfo',
-      );
-      expectWireTypes(
-        const RemoteDictionaryInfo(name: 'n', type: 't').toJson(),
-        const <String, Type>{'name': String, 'type': String},
-        what: 'RemoteDictionaryInfo',
-      );
-      expectWireTypes(
-        const RemoteLocalAudioInfo(displayName: 'd').toJson(),
-        const <String, Type>{'displayName': String},
-        what: 'RemoteLocalAudioInfo',
-      );
-    });
+    test(
+      'RemoteAudiobookInfo / RemoteDictionaryInfo / RemoteLocalAudioInfo',
+      () {
+        expectWireTypes(
+          const RemoteAudiobookInfo(
+            bookKey: 'k',
+            uid: 'u',
+            title: 't',
+          ).toJson(),
+          const <String, Type>{
+            'bookKey': String,
+            'uid': String,
+            'title': String,
+          },
+          what: 'RemoteAudiobookInfo',
+        );
+        expectWireTypes(
+          const RemoteDictionaryInfo(name: 'n', type: 't').toJson(),
+          const <String, Type>{'name': String, 'type': String},
+          what: 'RemoteDictionaryInfo',
+        );
+        expectWireTypes(
+          const RemoteLocalAudioInfo(displayName: 'd').toJson(),
+          const <String, Type>{'displayName': String},
+          what: 'RemoteLocalAudioInfo',
+        );
+      },
+    );
   });
 }

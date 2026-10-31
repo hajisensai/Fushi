@@ -59,12 +59,12 @@ class TtsCastLine {
           evidence == TtsCastEvidence.implicit);
 
   Map<String, Object?> toJson() => <String, Object?>{
-        's': speaker,
-        'src': source.name,
-        if (emotion != null) 'e': emotion,
-        if (confidence != null) 'c': confidence,
-        if (evidence != null) 'ev': evidence!.name,
-      };
+    's': speaker,
+    'src': source.name,
+    if (emotion != null) 'e': emotion,
+    if (confidence != null) 'c': confidence,
+    if (evidence != null) 'ev': evidence!.name,
+  };
 
   static TtsCastLine? fromJson(Object? raw) {
     if (raw is! Map || raw['s'] is! String) return null;
@@ -108,12 +108,12 @@ class TtsCastCharacter {
   final String? description;
 
   Map<String, Object?> toJson() => <String, Object?>{
-        'n': name,
-        if (aliases.isNotEmpty) 'a': aliases,
-        if (gender != null) 'g': gender,
-        if (age != null) 'age': age,
-        if (description != null) 'd': description,
-      };
+    'n': name,
+    if (aliases.isNotEmpty) 'a': aliases,
+    if (gender != null) 'g': gender,
+    if (age != null) 'age': age,
+    if (description != null) 'd': description,
+  };
 
   static TtsCastCharacter? fromJson(Object? raw) {
     if (raw is! Map || raw['n'] is! String) return null;
@@ -138,9 +138,9 @@ class TtsCast {
     Map<String, String>? voices,
     Map<String, TtsCastCharacter>? roster,
     this.annotatedSections = const <int>{},
-  })  : lines = lines ?? <String, TtsCastLine>{},
-        voices = voices ?? <String, String>{},
-        roster = roster ?? <String, TtsCastCharacter>{};
+  }) : lines = lines ?? <String, TtsCastLine>{},
+       voices = voices ?? <String, String>{},
+       roster = roster ?? <String, TtsCastCharacter>{};
 
   /// 行键（[ttsLineKey]）→ 角色。
   final Map<String, TtsCastLine> lines;
@@ -171,10 +171,11 @@ class TtsCast {
       if (line.speaker == kTtsNarrator) continue;
       counts[line.speaker] = (counts[line.speaker] ?? 0) + 1;
     }
-    final List<({String speaker, int count})> out = <({String speaker, int count})>[
-      for (final MapEntry<String, int> e in counts.entries)
-        (speaker: e.key, count: e.value),
-    ]..sort((a, b) => b.count.compareTo(a.count));
+    final List<({String speaker, int count})> out =
+        <({String speaker, int count})>[
+          for (final MapEntry<String, int> e in counts.entries)
+            (speaker: e.key, count: e.value),
+        ]..sort((a, b) => b.count.compareTo(a.count));
     return out;
   }
 
@@ -216,8 +217,10 @@ class TtsCast {
 
   /// 用户手动改一句的角色。
   void setUserSpeaker(int section, int matchStart, String speaker) {
-    lines[ttsLineKey(section, matchStart)] =
-        TtsCastLine(speaker: speaker, source: TtsCastSource.user);
+    lines[ttsLineKey(section, matchStart)] = TtsCastLine(
+      speaker: speaker,
+      source: TtsCastSource.user,
+    );
   }
 
   /// 把一个角色改名 / 合并进另一个角色（LLM 常把同一人标成两个名字）。
@@ -252,17 +255,17 @@ class TtsCast {
   }
 
   Map<String, Object?> toJson() => <String, Object?>{
-        'v': 1,
-        'lines': <String, Object?>{
-          for (final MapEntry<String, TtsCastLine> e in lines.entries)
-            e.key: e.value.toJson(),
-        },
-        'voices': voices,
-        'roster': <Object?>[
-          for (final TtsCastCharacter c in roster.values) c.toJson(),
-        ],
-        'annotated': annotatedSections.toList()..sort(),
-      };
+    'v': 1,
+    'lines': <String, Object?>{
+      for (final MapEntry<String, TtsCastLine> e in lines.entries)
+        e.key: e.value.toJson(),
+    },
+    'voices': voices,
+    'roster': <Object?>[
+      for (final TtsCastCharacter c in roster.values) c.toJson(),
+    ],
+    'annotated': annotatedSections.toList()..sort(),
+  };
 
   static TtsCast fromJson(Object? raw) {
     if (raw is! Map) return TtsCast();
@@ -305,9 +308,8 @@ class TtsCastStore {
 
   final Directory root;
 
-  File _file(String bookKey) => File(
-        p.join(root.path, '${sha1.convert(utf8.encode(bookKey))}.json'),
-      );
+  File _file(String bookKey) =>
+      File(p.join(root.path, '${sha1.convert(utf8.encode(bookKey))}.json'));
 
   Future<TtsCast> load(String bookKey) async {
     final File f = _file(bookKey);

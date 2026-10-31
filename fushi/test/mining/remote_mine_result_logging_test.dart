@@ -12,8 +12,9 @@ void main() {
 
   test('error outcome -> RemoteMineResult error + 写进 ErrorLogService', () {
     final int before = ErrorLogService.instance.entries.length;
-    final RemoteMineResult r =
-        remoteMineResultFromOutcome(MineOutcome.failure('boom'));
+    final RemoteMineResult r = remoteMineResultFromOutcome(
+      MineOutcome.failure('boom'),
+    );
     expect(r.result, 'error');
     expect(r.detail, 'boom');
     expect(r.message, isNotNull);
@@ -41,15 +42,17 @@ void main() {
 
   test('success + audioWarning -> message 带警告、result success（部分成功）', () {
     final RemoteMineResult r = remoteMineResultFromOutcome(
-        const MineOutcome.success(audioWarning: 'audio 404'));
+      const MineOutcome.success(audioWarning: 'audio 404'),
+    );
     expect(r.result, 'success');
     expect(r.message, 'audio 404');
     expect(r.detail, isNull);
   });
 
   test('纯成功 -> 无 message/detail', () {
-    final RemoteMineResult r =
-        remoteMineResultFromOutcome(const MineOutcome.success());
+    final RemoteMineResult r = remoteMineResultFromOutcome(
+      const MineOutcome.success(),
+    );
     expect(r.result, 'success');
     expect(r.message, isNull);
     expect(r.detail, isNull);
@@ -57,11 +60,14 @@ void main() {
 
   test('duplicate/notConfigured -> 结果名直出、不写错误日志', () {
     final int before = ErrorLogService.instance.entries.length;
-    expect(remoteMineResultFromOutcome(const MineOutcome.duplicate()).result,
-        'duplicate');
     expect(
-        remoteMineResultFromOutcome(const MineOutcome.notConfigured()).result,
-        'notConfigured');
+      remoteMineResultFromOutcome(const MineOutcome.duplicate()).result,
+      'duplicate',
+    );
+    expect(
+      remoteMineResultFromOutcome(const MineOutcome.notConfigured()).result,
+      'notConfigured',
+    );
     expect(ErrorLogService.instance.entries.length, before);
   });
 }

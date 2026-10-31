@@ -70,8 +70,11 @@ void main() {
 
     expect(outcome, TagAddOutcome.failed);
     expect(told, hasLength(1));
-    expect(told.single.$2, ToastSeverity.error,
-        reason: '落库失败必须是 error 语义，不能与「已存在」的 warning 混同');
+    expect(
+      told.single.$2,
+      ToastSeverity.error,
+      reason: '落库失败必须是 error 语义，不能与「已存在」的 warning 混同',
+    );
   });
 
   group('reorderTagsSafely', () {

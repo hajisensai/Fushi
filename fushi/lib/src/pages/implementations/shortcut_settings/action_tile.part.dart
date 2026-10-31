@@ -79,7 +79,8 @@ class _ActionTileState extends State<_ActionTile> {
       return _ConflictStrip(
         pending: pending,
         brand: w.brand,
-        canSwap: pending.replace &&
+        canSwap:
+            pending.replace &&
             current.length == 1 &&
             current.single != pending.binding,
         onResolve: w.onResolve,
@@ -142,8 +143,8 @@ class _ActionTileState extends State<_ActionTile> {
             child: Text(
               w.warning!,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.error,
-                  ),
+                color: Theme.of(context).colorScheme.error,
+              ),
             ),
           ),
       ],
@@ -220,8 +221,8 @@ class _ActionTileState extends State<_ActionTile> {
     final String state = w.recorder != null
         ? 'recording'
         : w.pending != null
-            ? 'conflict'
-            : 'chips';
+        ? 'conflict'
+        : 'chips';
     final Duration motion = fushiMotionDuration(context, FushiMotion.short);
     return MouseRegion(
       onEnter: (_) => setState(() => _hovered = true),
@@ -280,10 +281,10 @@ class _MouseChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => _InputIconChip(
-        icon: binding.icon,
-        label: binding.label,
-        onDeleted: onDeleted,
-      );
+    icon: binding.icon,
+    label: binding.label,
+    onDeleted: onDeleted,
+  );
 }
 
 /// 「图标 + 名称」的小 chip（FushiTagChip 无 leading icon 位，这里用同款 surface

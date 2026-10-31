@@ -27,43 +27,39 @@ void main() {
       'Show',
       collectionType: 'playlist',
     );
-    await database.addToCollection(
-      collectionId,
-      MediaKind.video,
-      'show-e1',
-    );
+    await database.addToCollection(collectionId, MediaKind.video, 'show-e1');
   });
 
   tearDown(() => database.close());
 
   Future<List<VideoBookRow>> loadMembers() async => <VideoBookRow>[
-        (await database.getVideoBookByBookUid('show-e1'))!,
-      ];
+    (await database.getVideoBookByBookUid('show-e1'))!,
+  ];
 
   Widget buildApp() => TranslationProvider(
-        child: MaterialApp(
-          home: MediaCollectionDetailPage(
-            database: database,
-            collection: MediaCollectionRow(
-              origin: 'user',
-              organizeAliases: '',
-              id: collectionId,
-              name: 'Show',
-              collectionType: 'playlist',
-              coverSource: null,
-              sortOrder: 0,
-              createdAt: 0,
-              orderUpdatedAt: 0,
-            ),
-            loadEpisodes: () async => <CollectionEpisodeSlot>[
-              for (final VideoBookRow row in await (loadMembers)())
-                CollectionEpisodeSlot.local(row),
-            ],
-            onOpenEpisode: (_) {},
-            onChanged: () {},
-          ),
+    child: MaterialApp(
+      home: MediaCollectionDetailPage(
+        database: database,
+        collection: MediaCollectionRow(
+          origin: 'user',
+          organizeAliases: '',
+          id: collectionId,
+          name: 'Show',
+          collectionType: 'playlist',
+          coverSource: null,
+          sortOrder: 0,
+          createdAt: 0,
+          orderUpdatedAt: 0,
         ),
-      );
+        loadEpisodes: () async => <CollectionEpisodeSlot>[
+          for (final VideoBookRow row in await (loadMembers)())
+            CollectionEpisodeSlot.local(row),
+        ],
+        onOpenEpisode: (_) {},
+        onChanged: () {},
+      ),
+    ),
+  );
 
   Future<void> pumpWide(WidgetTester tester) async {
     tester.view.physicalSize = const Size(1600, 1000);
@@ -107,12 +103,12 @@ void main() {
     ]);
     await database
         .upsertVideoMetadataCharacters(<VideoMetadataCharactersCompanion>[
-      VideoMetadataCharactersCompanion.insert(
-        characterKey: 'hero',
-        name: 'Hero',
-        updatedAt: 1,
-      ),
-    ]);
+          VideoMetadataCharactersCompanion.insert(
+            characterKey: 'hero',
+            name: 'Hero',
+            updatedAt: 1,
+          ),
+        ]);
     await database.replaceVideoMetadataCredits(
       workId: workId,
       credits: <VideoMetadataCreditsCompanion>[
@@ -145,8 +141,9 @@ void main() {
 
     await pumpWide(tester);
 
-    final Finder heroCredits =
-        find.byKey(const ValueKey<String>('collection-hero-credits'));
+    final Finder heroCredits = find.byKey(
+      const ValueKey<String>('collection-hero-credits'),
+    );
     expect(heroCredits, findsNothing, reason: '人物卡已经在 hero 下方完整展示，不应重复');
     expect(find.text('Director Name'), findsOneWidget);
     expect(find.text('Actor Name'), findsOneWidget);

@@ -44,11 +44,12 @@ void main() {
     db = FushiDatabase.forTesting(NativeDatabase.memory());
     // 文字层提取同样碰 PDFium：默认给一份「每页都没字」的假实现。
     MangaPdfTextLayer.debugGlyphLoader =
-        (String pdfPath, List<MokuroSize> sizes) async =>
-            <List<PdfTextLayerGlyph>>[
-              for (int i = 0; i < sizes.length; i++)
-                const <PdfTextLayerGlyph>[],
-            ];
+        (
+          String pdfPath,
+          List<MokuroSize> sizes,
+        ) async => <List<PdfTextLayerGlyph>>[
+          for (int i = 0; i < sizes.length; i++) const <PdfTextLayerGlyph>[],
+        ];
   });
 
   tearDown(() async {
@@ -76,8 +77,9 @@ void main() {
         chaptersJson: chaptersJson,
         importedAt: 1700000000000,
         format: Value<String>(format.dbValue),
-        coverPath:
-            coverPath == null ? const Value.absent() : Value<String>(coverPath),
+        coverPath: coverPath == null
+            ? const Value.absent()
+            : Value<String>(coverPath),
         author: const Value<String>('作者'),
       ),
     );
@@ -174,8 +176,7 @@ void main() {
 
   // ── 验收口径 ────────────────────────────────────────────────────────
 
-  test(
-      '验收①②③④：双向转化后身份逐字节不变、书架恰好一条、进度与最后阅读时刻不丢、'
+  test('验收①②③④：双向转化后身份逐字节不变、书架恰好一条、进度与最后阅读时刻不丢、'
       '阅读器路由跟着 format 走', () async {
     writeExtractedImageEpub(bookDir);
     await seedRow(
@@ -201,8 +202,9 @@ void main() {
     // v83：合集成员 epub 域 entryKey = uid（与进度键同域）；转化不动 uid。
     await db.addToCollection(collectionId, MediaKind.epub, bookUid);
 
-    final String identifierBefore =
-        ReaderFushiSource.mediaIdentifierFor(bookKey);
+    final String identifierBefore = ReaderFushiSource.mediaIdentifierFor(
+      bookKey,
+    );
 
     await BookFormatRebuild.convert(
       db: db,
@@ -213,8 +215,10 @@ void main() {
 
     // ① 身份逐字节不变。
     expect(asManga.bookKey, bookKey);
-    expect(ReaderFushiSource.mediaIdentifierFor(asManga.bookKey),
-        identifierBefore);
+    expect(
+      ReaderFushiSource.mediaIdentifierFor(asManga.bookKey),
+      identifierBefore,
+    );
     // ② 书架恰好一条（书架列的就是 EpubBooks 行）。
     expect(await db.getAllEpubBooks(), hasLength(1));
     // ③ 进度与最后阅读时刻不丢。
@@ -226,12 +230,15 @@ void main() {
     // ④ 跳回原文进正确阅读器。
     expect(
       ReaderFushiSource.mediaSourceKeyFor(
-          BookFormat.parseOrEpub(asManga.format)),
+        BookFormat.parseOrEpub(asManga.format),
+      ),
       MangaFushiSource.kUniqueKey,
     );
     // 合集成员没断（v83 成员键 = uid）。
     expect(
-        (await db.getCollectionItems(collectionId)).single.entryKey, bookUid);
+      (await db.getCollectionItems(collectionId)).single.entryKey,
+      bookUid,
+    );
 
     // ── 转回书 ──
     await BookFormatRebuild.convert(
@@ -243,7 +250,9 @@ void main() {
 
     expect(asBook.bookKey, bookKey, reason: '①往返后主键仍逐字节不变');
     expect(
-        ReaderFushiSource.mediaIdentifierFor(asBook.bookKey), identifierBefore);
+      ReaderFushiSource.mediaIdentifierFor(asBook.bookKey),
+      identifierBefore,
+    );
     expect(await db.getAllEpubBooks(), hasLength(1), reason: '②往返后仍恰好一条');
     final ReaderPositionRow posAsBook = (await db.getReaderPosition(bookUid))!;
     expect(posAsBook.sectionIndex, 3);
@@ -251,12 +260,15 @@ void main() {
     expect(posAsBook.updatedAt, 1712345678901, reason: '③最后阅读时刻不丢');
     expect(
       ReaderFushiSource.mediaSourceKeyFor(
-          BookFormat.parseOrEpub(asBook.format)),
+        BookFormat.parseOrEpub(asBook.format),
+      ),
       ReaderFushiSource.instance.uniqueKey,
       reason: '④转回书后必须回到 EPUB 阅读器',
     );
     expect(
-        (await db.getCollectionItems(collectionId)).single.entryKey, bookUid);
+      (await db.getCollectionItems(collectionId)).single.entryKey,
+      bookUid,
+    );
 
     // 转回书是**重建**：chaptersJson 由重新解析解压树得到，不是留着漫画的 '[]'。
     expect(asBook.format, BookFormat.epub.dbValue);
@@ -308,17 +320,22 @@ void main() {
     );
 
     final MokuroPayload after = parseMangaJson(json.readAsStringSync());
-    expect(after.images.first.blocks, hasLength(1),
-        reason: '转回书从不删漫画产物、转回漫画复用完好的 manga.json——'
-            '否则一次往返就把用户跑了几小时的整卷 OCR 冲干净了');
+    expect(
+      after.images.first.blocks,
+      hasLength(1),
+      reason:
+          '转回书从不删漫画产物、转回漫画复用完好的 manga.json——'
+          '否则一次往返就把用户跑了几小时的整卷 OCR 冲干净了',
+    );
     expect(after.images.first.blocks.single.lines.single, '小時間跑出來的識別結果');
   });
 
   test('绝不覆盖书自己的文件：书目录已有同名页图且无 manga.json 时硬失败', () async {
     writeExtractedImageEpub(bookDir);
     // 这本 EPUB 恰好自带顶层 images/page_000000.png（页图落点与它撞名）。
-    final File owned =
-        File(p.join(bookDir, MangaStorage.kImagesDirName, 'page_000000.png'));
+    final File owned = File(
+      p.join(bookDir, MangaStorage.kImagesDirName, 'page_000000.png'),
+    );
     owned.parent.createSync(recursive: true);
     owned.writeAsBytesSync(const <int>[1, 2, 3]);
     await seedRow(
@@ -336,18 +353,23 @@ void main() {
       ),
       throwsA(isA<MangaImportException>()),
     );
-    expect(owned.readAsBytesSync(), <int>[1, 2, 3],
-        reason: '宁可硬失败也不静默覆盖书自己的资源');
+    expect(owned.readAsBytesSync(), <int>[
+      1,
+      2,
+      3,
+    ], reason: '宁可硬失败也不静默覆盖书自己的资源');
     expect((await row()).format, BookFormat.epub.dbValue);
   });
 
   // ── PDF ↔ 漫画（原生依赖注入） ──────────────────────────────────────
 
   test('PDF 转成漫画：逐页栅格化的页图落进书目录，行按页数写穿', () async {
-    File(p.join(bookDir, PdfImporter.kPdfFileName))
-        .writeAsBytesSync(const <int>[0x25, 0x50, 0x44, 0x46]);
-    File(p.join(bookDir, PdfImporter.kCoverFileName))
-        .writeAsBytesSync(pngBytes(20, 40));
+    File(
+      p.join(bookDir, PdfImporter.kPdfFileName),
+    ).writeAsBytesSync(const <int>[0x25, 0x50, 0x44, 0x46]);
+    File(
+      p.join(bookDir, PdfImporter.kCoverFileName),
+    ).writeAsBytesSync(pngBytes(20, 40));
     await seedRow(
       format: BookFormat.pdf,
       epubPath: PdfImporter.kPdfFileName,
@@ -355,18 +377,20 @@ void main() {
       chaptersJson: '[]',
       coverPath: PdfImporter.kCoverFileName,
     );
-    BookFormatRebuild.debugPdfPageStager = (
-      String pdfPath,
-      Directory staging,
-      void Function(int, int)? onProgress,
-    ) async {
-      for (int i = 0; i < 3; i++) {
-        File(p.join(staging.path, 'page_${i.toString().padLeft(6, '0')}.png'))
-            .writeAsBytesSync(pngBytes(50 + i, 100));
-        onProgress?.call(i + 1, 3);
-      }
-      return 3;
-    };
+    BookFormatRebuild.debugPdfPageStager =
+        (
+          String pdfPath,
+          Directory staging,
+          void Function(int, int)? onProgress,
+        ) async {
+          for (int i = 0; i < 3; i++) {
+            File(
+              p.join(staging.path, 'page_${i.toString().padLeft(6, '0')}.png'),
+            ).writeAsBytesSync(pngBytes(50 + i, 100));
+            onProgress?.call(i + 1, 3);
+          }
+          return 3;
+        };
 
     final List<int> reported = <int>[];
     await BookFormatRebuild.convert(
@@ -384,45 +408,50 @@ void main() {
     final MokuroPayload payload = parseMangaJson(
       File(p.join(bookDir, MangaStorage.kMangaJsonFileName)).readAsStringSync(),
     );
-    expect(payload.images.map((MokuroImage e) => e.size.width).toList(),
-        <double>[50, 51, 52]);
+    expect(
+      payload.images.map((MokuroImage e) => e.size.width).toList(),
+      <double>[50, 51, 52],
+    );
   });
 
   test('PDF 转成漫画：带文字层的页直接写成文字块（真实逐字坐标），不等 OCR', () async {
-    File(p.join(bookDir, PdfImporter.kPdfFileName))
-        .writeAsBytesSync(const <int>[0x25, 0x50, 0x44, 0x46]);
+    File(
+      p.join(bookDir, PdfImporter.kPdfFileName),
+    ).writeAsBytesSync(const <int>[0x25, 0x50, 0x44, 0x46]);
     await seedRow(
       format: BookFormat.pdf,
       epubPath: PdfImporter.kPdfFileName,
       chapterCount: 2,
       chaptersJson: '[]',
     );
-    BookFormatRebuild.debugPdfPageStager = (
-      String pdfPath,
-      Directory staging,
-      void Function(int, int)? onProgress,
-    ) async {
-      for (int i = 0; i < 2; i++) {
-        File(p.join(staging.path, 'page_${i.toString().padLeft(6, '0')}.png'))
-            .writeAsBytesSync(pngBytes(100, 200));
-      }
-      return 2;
-    };
+    BookFormatRebuild.debugPdfPageStager =
+        (
+          String pdfPath,
+          Directory staging,
+          void Function(int, int)? onProgress,
+        ) async {
+          for (int i = 0; i < 2; i++) {
+            File(
+              p.join(staging.path, 'page_${i.toString().padLeft(6, '0')}.png'),
+            ).writeAsBytesSync(pngBytes(100, 200));
+          }
+          return 2;
+        };
     List<MokuroSize>? requestedSizes;
     MangaPdfTextLayer.debugGlyphLoader =
         (String pdfPath, List<MokuroSize> sizes) async {
-      requestedSizes = sizes;
-      return <List<PdfTextLayerGlyph>>[
-        <PdfTextLayerGlyph>[
-          for (int i = 0; i < 3; i++)
-            PdfTextLayerGlyph(
-              text: '字',
-              rect: MokuroRect.fromLTWH(80, 10.0 + i * 12, 10, 10),
-            ),
-        ],
-        const <PdfTextLayerGlyph>[],
-      ];
-    };
+          requestedSizes = sizes;
+          return <List<PdfTextLayerGlyph>>[
+            <PdfTextLayerGlyph>[
+              for (int i = 0; i < 3; i++)
+                PdfTextLayerGlyph(
+                  text: '字',
+                  rect: MokuroRect.fromLTWH(80, 10.0 + i * 12, 10, 10),
+                ),
+            ],
+            const <PdfTextLayerGlyph>[],
+          ];
+        };
 
     await BookFormatRebuild.convert(
       db: db,
@@ -446,10 +475,12 @@ void main() {
   });
 
   test('漫画转回 PDF：指回 document.pdf、页数由 PDF 现算、封面回到 cover.png', () async {
-    File(p.join(bookDir, PdfImporter.kPdfFileName))
-        .writeAsBytesSync(const <int>[0x25, 0x50, 0x44, 0x46]);
-    File(p.join(bookDir, PdfImporter.kCoverFileName))
-        .writeAsBytesSync(pngBytes(20, 40));
+    File(
+      p.join(bookDir, PdfImporter.kPdfFileName),
+    ).writeAsBytesSync(const <int>[0x25, 0x50, 0x44, 0x46]);
+    File(
+      p.join(bookDir, PdfImporter.kCoverFileName),
+    ).writeAsBytesSync(pngBytes(20, 40));
     writeMangaArtifacts(bookDir, pageCount: 2);
     await seedRow(
       format: BookFormat.manga,
@@ -535,12 +566,19 @@ void main() {
       chaptersJson: '[]',
     );
     final BookConvertProbe probed = BookFormatRebuild.probeSource(await row());
-    expect(File(p.join(bookDir, 'scan.epub')).existsSync(), isFalse,
-        reason: '本仓的 EPUB 导入即解压，书目录里从来没有一份独立 .epub（BUG-088）');
+    expect(
+      File(p.join(bookDir, 'scan.epub')).existsSync(),
+      isFalse,
+      reason: '本仓的 EPUB 导入即解压，书目录里从来没有一份独立 .epub（BUG-088）',
+    );
     expect(probed.sourcePath, bookDir);
-    expect(probed.probe.sourceExists, isTrue,
-        reason: '照 extractDir/epubPath 探测的话这里会是 false，'
-            '于是每一本 EPUB 都被判成 sourceMissing、转化全线不可用');
+    expect(
+      probed.probe.sourceExists,
+      isTrue,
+      reason:
+          '照 extractDir/epubPath 探测的话这里会是 false，'
+          '于是每一本 EPUB 都被判成 sourceMissing、转化全线不可用',
+    );
     expect(probed.probe.sourceIsImageArchive, isTrue);
   });
 
@@ -552,15 +590,16 @@ void main() {
     expect(BookFormatRebuild.recoverableBookSource(bookDir), bookDir);
 
     File(p.join(bookDir, PdfImporter.kPdfFileName)).writeAsBytesSync(<int>[1]);
-    expect(BookFormatRebuild.recoverableBookSource(bookDir),
-        p.join(bookDir, PdfImporter.kPdfFileName));
+    expect(
+      BookFormatRebuild.recoverableBookSource(bookDir),
+      p.join(bookDir, PdfImporter.kPdfFileName),
+    );
   });
 }
 
 /// 一张 [width]x[height] 的合法 PNG（页图解码要拿真实宽高）。
-Uint8List pngBytes(int width, int height) => Uint8List.fromList(
-      img.encodePng(img.Image(width: width, height: height)),
-    );
+Uint8List pngBytes(int width, int height) =>
+    Uint8List.fromList(img.encodePng(img.Image(width: width, height: height)));
 
 /// 直接往 [dir] 铺一棵**已解压**的纯图 EPUB 树（container.xml + OPF + 两个只含
 /// `<img>` 的 spine 页 + 两张图）。spine 顺序是 page2 → page1，好让「按 spine 铺页」
@@ -575,12 +614,17 @@ void writeExtractedImageEpub(
     file.writeAsBytesSync(bytes);
   }
 
-  write('META-INF/container.xml', utf8.encode('''
+  write(
+    'META-INF/container.xml',
+    utf8.encode('''
 <?xml version="1.0"?>
 <container xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
   <rootfiles><rootfile full-path="OEBPS/content.opf"/></rootfiles>
-</container>'''));
-  write('OEBPS/content.opf', utf8.encode('''
+</container>'''),
+  );
+  write(
+    'OEBPS/content.opf',
+    utf8.encode('''
 <?xml version="1.0"?>
 <package xmlns="http://www.idpf.org/2007/opf" version="3.0">
   <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
@@ -596,7 +640,8 @@ void writeExtractedImageEpub(
     <itemref idref="page2"/>
     <itemref idref="page1"/>
   </spine>
-</package>'''));
+</package>'''),
+  );
   write(
     'OEBPS/text/1.xhtml',
     utf8.encode(
@@ -606,8 +651,10 @@ void writeExtractedImageEpub(
   );
   write(
     'OEBPS/text/2.xhtml',
-    utf8.encode('<html xmlns="http://www.w3.org/1999/xhtml"><body>'
-        '<img src="../images/2.png"/></body></html>'),
+    utf8.encode(
+      '<html xmlns="http://www.w3.org/1999/xhtml"><body>'
+      '<img src="../images/2.png"/></body></html>',
+    ),
   );
   write('OEBPS/images/1.png', pngBytes(20, 40));
   write('OEBPS/images/2.png', pngBytes(30, 40));
@@ -629,6 +676,7 @@ void writeMangaArtifacts(String dir, {required int pageCount}) {
       'blocks': <Object?>[],
     });
   }
-  File(p.join(dir, MangaStorage.kMangaJsonFileName))
-      .writeAsStringSync(jsonEncode(<String, Object?>{'pages': pages}));
+  File(
+    p.join(dir, MangaStorage.kMangaJsonFileName),
+  ).writeAsStringSync(jsonEncode(<String, Object?>{'pages': pages}));
 }

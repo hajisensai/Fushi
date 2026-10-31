@@ -46,8 +46,9 @@ Future<Map<String, String>> resolveSourceStreamHeaders({
   }
   final Map<String, Object?> cfg = decodeSourceConfig(source.configJson);
   final String username = (cfg['username'] as String?) ?? '';
-  final SourceLibrarySecret secret =
-      await SourceLibraryCredentialStore(db).readSecret(source.id);
+  final SourceLibrarySecret secret = await SourceLibraryCredentialStore(
+    db,
+  ).readSecret(source.id);
   final String password = secret.password ?? '';
   if (username.isEmpty && password.isEmpty) return const <String, String>{};
   final String token = base64Encode(utf8.encode('$username:$password'));
@@ -75,8 +76,9 @@ Future<StreamUrlResolver?> resolveSourceStreamUrlResolver({
   if (source == null) return null;
   if (source.transport == 'sftp') {
     final Map<String, Object?> cfg = decodeSourceConfig(source.configJson);
-    final SourceLibrarySecret secret =
-        await SourceLibraryCredentialStore(db).readSecret(source.id);
+    final SourceLibrarySecret secret = await SourceLibraryCredentialStore(
+      db,
+    ).readSecret(source.id);
     final SourceFileSystem fs = SourceLibraryScanner.buildNetworkFileSystem(
       transport: source.transport,
       config: cfg,
@@ -94,8 +96,9 @@ Future<StreamUrlResolver?> resolveSourceStreamUrlResolver({
   final String baseUrl = (cfg['baseUrl'] as String?) ?? '';
   if (baseUrl.trim().isEmpty) return null;
   final String username = (cfg['username'] as String?) ?? '';
-  final SourceLibrarySecret secret =
-      await SourceLibraryCredentialStore(db).readSecret(source.id);
+  final SourceLibrarySecret secret = await SourceLibraryCredentialStore(
+    db,
+  ).readSecret(source.id);
   return AListStreamUrlResolver(
     baseUrl: baseUrl,
     username: username,

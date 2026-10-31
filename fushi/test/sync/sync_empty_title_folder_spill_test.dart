@@ -58,24 +58,21 @@ class _RecordingBackend implements SyncBackend {
     required String folderId,
     required String? fileId,
     required TtuProgress progress,
-  }) async =>
-      writeFolderIds.add(folderId);
+  }) async => writeFolderIds.add(folderId);
 
   @override
   Future<void> updateStatsFile({
     required String folderId,
     required String? fileId,
     required List<TtuStatistics> stats,
-  }) async =>
-      writeFolderIds.add(folderId);
+  }) async => writeFolderIds.add(folderId);
 
   @override
   Future<void> updateAudioBookFile({
     required String folderId,
     required String? fileId,
     required TtuAudioBook audioBook,
-  }) async =>
-      writeFolderIds.add(folderId);
+  }) async => writeFolderIds.add(folderId);
 
   @override
   Future<void> uploadContentFile({
@@ -83,15 +80,16 @@ class _RecordingBackend implements SyncBackend {
     required String fileName,
     required File file,
     void Function(double progress)? onProgress,
-  }) async =>
-      writeFolderIds.add(folderId);
+  }) async => writeFolderIds.add(folderId);
 
   // ── Cache (reached by _restore/_persistDriveCache) ──────────────────
   @override
   void clearCache() {}
   @override
-  void restoreCache(
-      {String? rootFolderId, Map<String, String>? titleToFolderId}) {}
+  void restoreCache({
+    String? rootFolderId,
+    Map<String, String>? titleToFolderId,
+  }) {}
   @override
   String? get cachedRootFolderId => null;
   @override
@@ -126,15 +124,15 @@ class _RecordingBackend implements SyncBackend {
       throw UnimplementedError();
   @override
   Future<SyncFileRef?> findContentFile(
-          String folderId, String fileName) async =>
-      throw UnimplementedError();
+    String folderId,
+    String fileName,
+  ) async => throw UnimplementedError();
   @override
   Future<void> downloadContentFile({
     required String fileId,
     required File destination,
     void Function(double progress)? onProgress,
-  }) async =>
-      throw UnimplementedError();
+  }) async => throw UnimplementedError();
   @override
   void cacheBookFolderIds(List<SyncFileRef> folders) =>
       throw UnimplementedError();
@@ -153,20 +151,27 @@ class _RecordingBackend implements SyncBackend {
   Future<AssetEntry?> findAsset(String namespaceId, String name) async =>
       throw UnimplementedError();
   @override
-  Future<void> putAsset(String namespaceId, String name, File file,
-          {void Function(double progress)? onProgress}) async =>
-      throw UnimplementedError();
+  Future<void> putAsset(
+    String namespaceId,
+    String name,
+    File file, {
+    void Function(double progress)? onProgress,
+  }) async => throw UnimplementedError();
   @override
-  Future<void> getAsset(String assetId, File destination,
-          {void Function(double progress)? onProgress}) async =>
-      throw UnimplementedError();
+  Future<void> getAsset(
+    String assetId,
+    File destination, {
+    void Function(double progress)? onProgress,
+  }) async => throw UnimplementedError();
   @override
   Future<Object?> getJsonAsset(String assetId) async =>
       throw UnimplementedError();
   @override
   Future<void> putJsonAsset(
-          String namespaceId, String name, Object? json) async =>
-      throw UnimplementedError();
+    String namespaceId,
+    String name,
+    Object? json,
+  ) async => throw UnimplementedError();
   @override
   Future<void> deleteAsset(String id, {bool isFolder = false}) async =>
       throw UnimplementedError();
@@ -174,17 +179,20 @@ class _RecordingBackend implements SyncBackend {
 
 Future<EpubBookRow> _insertBook(FushiDatabase db, String title) async {
   final String bookKey = sanitizeTtuFilename(title);
-  await db.insertEpubBook(EpubBooksCompanion.insert(
-    bookKey: bookKey,
-    title: title,
-    epubPath: '/fake/book.epub',
-    extractDir: '/fake/extract',
-    chapterCount: 1,
-    chaptersJson: '[]',
-    importedAt: DateTime.now().millisecondsSinceEpoch,
-  ));
-  return (await db.getAllEpubBooks())
-      .firstWhere((EpubBookRow b) => b.bookKey == bookKey && b.title == title);
+  await db.insertEpubBook(
+    EpubBooksCompanion.insert(
+      bookKey: bookKey,
+      title: title,
+      epubPath: '/fake/book.epub',
+      extractDir: '/fake/extract',
+      chapterCount: 1,
+      chaptersJson: '[]',
+      importedAt: DateTime.now().millisecondsSinceEpoch,
+    ),
+  );
+  return (await db.getAllEpubBooks()).firstWhere(
+    (EpubBookRow b) => b.bookKey == bookKey && b.title == title,
+  );
 }
 
 void main() {
@@ -217,73 +225,87 @@ void main() {
   });
 
   group('SyncManager skips empty-title books (no root spill)', () {
-    test('empty title: skipped, backend never resolves or writes a folder',
-        () async {
-      final FushiDatabase db = _testDb();
-      addTearDown(db.close);
+    test(
+      'empty title: skipped, backend never resolves or writes a folder',
+      () async {
+        final FushiDatabase db = _testDb();
+        addTearDown(db.close);
 
-      // A degenerate empty-title row that WOULD export (has a reading position
-      // and an audiobook position), to prove the skip fires before any write.
-      final EpubBookRow book = await _insertBook(db, '');
-      await db.upsertReaderPosition(ReaderPositionsCompanion(
-        bookUid: Value(book.uid),
-        sectionIndex: const Value(0),
-        normCharOffset: const Value(0),
-        updatedAt: Value(DateTime.now().millisecondsSinceEpoch),
-      ));
-      await SyncRepository(db).setAudiobookPosition(book.bookKey, 42000);
+        // A degenerate empty-title row that WOULD export (has a reading position
+        // and an audiobook position), to prove the skip fires before any write.
+        final EpubBookRow book = await _insertBook(db, '');
+        await db.upsertReaderPosition(
+          ReaderPositionsCompanion(
+            bookUid: Value(book.uid),
+            sectionIndex: const Value(0),
+            normCharOffset: const Value(0),
+            updatedAt: Value(DateTime.now().millisecondsSinceEpoch),
+          ),
+        );
+        await SyncRepository(db).setAudiobookPosition(book.bookKey, 42000);
 
-      final _RecordingBackend backend = _RecordingBackend();
-      final SyncManager manager = SyncManager(db: db, backend: backend);
+        final _RecordingBackend backend = _RecordingBackend();
+        final SyncManager manager = SyncManager(db: db, backend: backend);
 
-      final SyncBookResult result = await manager.syncBook(
-        book: book,
-        direction: SyncDirection.exportToTtu,
-        syncStats: true,
-        statsSyncMode: StatisticsSyncMode.merge,
-        syncAudioBook: true,
-      );
+        final SyncBookResult result = await manager.syncBook(
+          book: book,
+          direction: SyncDirection.exportToTtu,
+          syncStats: true,
+          statsSyncMode: StatisticsSyncMode.merge,
+          syncAudioBook: true,
+        );
 
-      expect(result.direction, SyncResult.skipped);
-      expect(backend.ensureBookFolderTitles, isEmpty,
-          reason: 'must never resolve a folder for an empty title');
-      expect(backend.writeFolderIds, isEmpty,
-          reason: 'nothing may be written to the sync root');
-    });
+        expect(result.direction, SyncResult.skipped);
+        expect(
+          backend.ensureBookFolderTitles,
+          isEmpty,
+          reason: 'must never resolve a folder for an empty title',
+        );
+        expect(
+          backend.writeFolderIds,
+          isEmpty,
+          reason: 'nothing may be written to the sync root',
+        );
+      },
+    );
 
-    test('normal title: exports into the per-book folder, never the root',
-        () async {
-      final FushiDatabase db = _testDb();
-      addTearDown(db.close);
+    test(
+      'normal title: exports into the per-book folder, never the root',
+      () async {
+        final FushiDatabase db = _testDb();
+        addTearDown(db.close);
 
-      final EpubBookRow book = await _insertBook(db, 'Normal Book');
-      await db.upsertReaderPosition(ReaderPositionsCompanion(
-        bookUid: Value(book.uid),
-        sectionIndex: const Value(0),
-        normCharOffset: const Value(0),
-        updatedAt: Value(DateTime.now().millisecondsSinceEpoch),
-      ));
-      await SyncRepository(db).setAudiobookPosition(book.bookKey, 42000);
+        final EpubBookRow book = await _insertBook(db, 'Normal Book');
+        await db.upsertReaderPosition(
+          ReaderPositionsCompanion(
+            bookUid: Value(book.uid),
+            sectionIndex: const Value(0),
+            normCharOffset: const Value(0),
+            updatedAt: Value(DateTime.now().millisecondsSinceEpoch),
+          ),
+        );
+        await SyncRepository(db).setAudiobookPosition(book.bookKey, 42000);
 
-      final _RecordingBackend backend = _RecordingBackend();
-      final SyncManager manager = SyncManager(db: db, backend: backend);
+        final _RecordingBackend backend = _RecordingBackend();
+        final SyncManager manager = SyncManager(db: db, backend: backend);
 
-      final SyncBookResult result = await manager.syncBook(
-        book: book,
-        direction: SyncDirection.exportToTtu,
-        syncStats: false,
-        statsSyncMode: StatisticsSyncMode.merge,
-        syncAudioBook: true,
-      );
+        final SyncBookResult result = await manager.syncBook(
+          book: book,
+          direction: SyncDirection.exportToTtu,
+          syncStats: false,
+          statsSyncMode: StatisticsSyncMode.merge,
+          syncAudioBook: true,
+        );
 
-      expect(result.direction, SyncResult.exported);
-      expect(backend.ensureBookFolderTitles, contains('Normal Book'));
-      expect(backend.writeFolderIds, isNotEmpty);
-      const String perBookFolder = '${_RecordingBackend.root}Normal Book/';
-      for (final String folderId in backend.writeFolderIds) {
-        expect(folderId, perBookFolder);
-        expect(folderId, isNot(_RecordingBackend.root));
-      }
-    });
+        expect(result.direction, SyncResult.exported);
+        expect(backend.ensureBookFolderTitles, contains('Normal Book'));
+        expect(backend.writeFolderIds, isNotEmpty);
+        const String perBookFolder = '${_RecordingBackend.root}Normal Book/';
+        for (final String folderId in backend.writeFolderIds) {
+          expect(folderId, perBookFolder);
+          expect(folderId, isNot(_RecordingBackend.root));
+        }
+      },
+    );
   });
 }

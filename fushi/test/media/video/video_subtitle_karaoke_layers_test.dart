@@ -31,8 +31,10 @@ Dialogue: 5,0:00:01.00,0:00:05.00,OP - JP,color,0,0,0,,{\c&H5659FF&\clip(m 571 4
 
 void main() {
   test(r'parser captures Layer / \1a fill opacity / \clip objects', () {
-    final List<AudioCue> cues =
-        AssParser.parseString(content: _kAss, bookKey: 'k');
+    final List<AudioCue> cues = AssParser.parseString(
+      content: _kAss,
+      bookKey: 'k',
+    );
     expect(cues, hasLength(3));
     expect(cues.map((c) => c.markup!.layer).toList(), <int>[3, 4, 5]);
     // \1a&HFF& → 填充全透明。
@@ -78,10 +80,13 @@ void main() {
     expect(clipOf(r'\clip(l 1 2)', 100, 100), isNull);
   });
 
-  testWidgets('layered karaoke copies overlap in place with real ClipPath',
-      (WidgetTester tester) async {
-    final List<AudioCue> cues =
-        AssParser.parseString(content: _kAss, bookKey: 'k');
+  testWidgets('layered karaoke copies overlap in place with real ClipPath', (
+    WidgetTester tester,
+  ) async {
+    final List<AudioCue> cues = AssParser.parseString(
+      content: _kAss,
+      bookKey: 'k',
+    );
     final VideoPlayerController c = VideoPlayerController();
     addTearDown(c.dispose);
     c.setCues(cues);
@@ -97,8 +102,10 @@ void main() {
 
     // 真 \clip 裁剪后三层全渲染（shadow + 主文字 + 点缀），点缀被 ClipPath 限制。
     final List<Element> fills = find
-        .byWidgetPredicate((Widget w) =>
-            w is Text && w.data == 'め' && w.style?.foreground == null)
+        .byWidgetPredicate(
+          (Widget w) =>
+              w is Text && w.data == 'め' && w.style?.foreground == null,
+        )
         .evaluate()
         .toList();
     expect(fills, hasLength(3), reason: '三层（含裁剪点缀层）都应渲染');
@@ -106,8 +113,9 @@ void main() {
     // \clip 与 \iclip 各挂一个 ClipPath（真矢量裁剪）。
     expect(
       find.descendant(
-          of: find.byType(VideoSubtitleOverlay),
-          matching: find.byType(ClipPath)),
+        of: find.byType(VideoSubtitleOverlay),
+        matching: find.byType(ClipPath),
+      ),
       findsNWidgets(2),
     );
 

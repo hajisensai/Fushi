@@ -24,7 +24,7 @@ import '../helpers/test_platform_services.dart';
 
 class _MemorySubscriptionStore extends AnimeDownloadSubscriptionStore {
   _MemorySubscriptionStore()
-      : super(baseDir: Directory('unused-subscription-store'));
+    : super(baseDir: Directory('unused-subscription-store'));
 
   final Map<String, AnimeDownloadSubscription> values =
       <String, AnimeDownloadSubscription>{};
@@ -62,8 +62,7 @@ class _NoopBackend implements TorrentBackend {
     String? savePath,
     bool sequential = false,
     bool firstLastPiecePrio = false,
-  }) async =>
-      true;
+  }) async => true;
 
   @override
   void close() {}
@@ -72,13 +71,16 @@ class _NoopBackend implements TorrentBackend {
   // 假装成功——真要测这条链路的用例应当显式覆盖它。
   @override
   Future<TorrentStorageResult> renameFile(
-          String torrentId, int fileIndex, String newPath) async =>
-      const TorrentStorageResult.failure('not supported by fake');
+    String torrentId,
+    int fileIndex,
+    String newPath,
+  ) async => const TorrentStorageResult.failure('not supported by fake');
 
   @override
   Future<TorrentStorageResult> moveStorage(
-          String torrentId, String newSavePath) async =>
-      const TorrentStorageResult.failure('not supported by fake');
+    String torrentId,
+    String newSavePath,
+  ) async => const TorrentStorageResult.failure('not supported by fake');
 
   @override
   Future<List<TorrentFileEntry>> listFiles(String torrentId) async =>
@@ -97,7 +99,7 @@ class _NoopBackend implements TorrentBackend {
 
 class _FakeAppModel extends AppModel {
   _FakeAppModel(this.store, this.planStore, this.service)
-      : super(testPlatformServices());
+    : super(testPlatformServices());
 
   final _MemorySubscriptionStore store;
   final _MemoryPlanStore planStore;
@@ -146,8 +148,9 @@ class _FakeAppModel extends AppModel {
   Directory? testDatabaseDirectory;
 
   @override
-  Directory get databaseDirectory => testDatabaseDirectory ??=
-      Directory.systemTemp.createTempSync('fushi_browse_test_');
+  Directory get databaseDirectory => testDatabaseDirectory ??= Directory
+      .systemTemp
+      .createTempSync('fushi_browse_test_');
 
   /// 测试直接给定可见模块（浏览页的页签随它增减）。
   ModuleVisibility? visibilityOverride;
@@ -184,39 +187,37 @@ void main() {
     if (withSubscription) {
       final AnimeDownloadSubscription subscription =
           AnimeDownloadSubscription.fromSelection(
-        anilistId: 42,
-        seriesTitle: 'A Rather Long Example Anime Series Title',
-        nyaaQuery: 'Example',
-        category: '1_2',
-        releaseGroup: 'A-Rather-Long-Release-Group',
-        resolution: '1080p',
-        startAfterEpisode: 12,
-        jimakuEntryId: 77,
-        jimakuEntryName: 'Complete season pack',
-        jimakuLanguage: 'ja',
-        now: DateTime.utc(2026, 7, 1),
-      ).copyWith(
-        processedEpisodes: <int>{13},
-        lastCheckedAtMs: DateTime.utc(2026, 7, 23).millisecondsSinceEpoch,
-        lastError: lastError,
-      );
+            anilistId: 42,
+            seriesTitle: 'A Rather Long Example Anime Series Title',
+            nyaaQuery: 'Example',
+            category: '1_2',
+            releaseGroup: 'A-Rather-Long-Release-Group',
+            resolution: '1080p',
+            startAfterEpisode: 12,
+            jimakuEntryId: 77,
+            jimakuEntryName: 'Complete season pack',
+            jimakuLanguage: 'ja',
+            now: DateTime.utc(2026, 7, 1),
+          ).copyWith(
+            processedEpisodes: <int>{13},
+            lastCheckedAtMs: DateTime.utc(2026, 7, 23).millisecondsSinceEpoch,
+            lastError: lastError,
+          );
       store.values[subscription.id] = subscription;
     }
     final _MemoryPlanStore planStore = _MemoryPlanStore();
     final AnimeDownloadSubscriptionService service =
         AnimeDownloadSubscriptionService(
-      store: store,
-      planStore: planStore,
-      configProvider: () => const QbConnectionConfig(),
-      backendFactory: (_) => _NoopBackend(),
-      search: (_) async => const [],
-    );
+          store: store,
+          planStore: planStore,
+          configProvider: () => const QbConnectionConfig(),
+          backendFactory: (_) => _NoopBackend(),
+          search: (_) async => const [],
+        );
     final _FakeAppModel appModel = _FakeAppModel(store, planStore, service);
     await tester.pumpWidget(
       ProviderScope(
-        overrides: <Override>[
-          appProvider.overrideWith((ref) => appModel),
-        ],
+        overrides: <Override>[appProvider.overrideWith((ref) => appModel)],
         child: TranslationProvider(
           child: const MaterialApp(
             home: Scaffold(body: DownloadSubscriptionsPanel()),
@@ -228,16 +229,16 @@ void main() {
     return (appModel, service);
   }
 
-  testWidgets('subscription card has no overflow on a narrow phone',
-      (WidgetTester tester) async {
+  testWidgets('subscription card has no overflow on a narrow phone', (
+    WidgetTester tester,
+  ) async {
     final (_FakeAppModel appModel, AnimeDownloadSubscriptionService service) =
-        await pumpPanel(
-      tester,
-      size: const Size(360, 720),
-    );
+        await pumpPanel(tester, size: const Size(360, 720));
 
     expect(
-        find.text('A Rather Long Example Anime Series Title'), findsOneWidget);
+      find.text('A Rather Long Example Anime Series Title'),
+      findsOneWidget,
+    );
     expect(find.textContaining('A-Rather-Long-Release-Group'), findsOneWidget);
     expect(find.textContaining('Complete season pack'), findsOneWidget);
     expect(tester.takeException(), isNull);
@@ -247,48 +248,50 @@ void main() {
   });
 
   // 没有可用 BT 站而暂停：不显示引擎的英文标记，显示本地化提示 + 去 BT 站设置。
-  testWidgets('BT-site-missing pause shows a localized hint with a settings link',
-      (WidgetTester tester) async {
+  testWidgets(
+    'BT-site-missing pause shows a localized hint with a settings link',
+    (WidgetTester tester) async {
+      final (
+        _FakeAppModel appModel,
+        AnimeDownloadSubscriptionService service,
+      ) = await pumpPanel(
+        tester,
+        size: const Size(1200, 800),
+        lastError: kVideoSubscriptionBtSiteMissingError,
+      );
+
+      expect(find.text(t.bt_site_missing_status), findsOneWidget);
+      expect(find.text(t.bt_site_open_settings_action), findsOneWidget);
+      expect(find.text(kVideoSubscriptionBtSiteMissingError), findsNothing);
+      expect(tester.takeException(), isNull);
+
+      service.checking.dispose();
+      appModel.store.revision.dispose();
+    },
+  );
+
+  testWidgets('subscription panel remains bounded on desktop', (
+    WidgetTester tester,
+  ) async {
     final (_FakeAppModel appModel, AnimeDownloadSubscriptionService service) =
-        await pumpPanel(
-      tester,
-      size: const Size(1200, 800),
-      lastError: kVideoSubscriptionBtSiteMissingError,
-    );
-
-    expect(find.text(t.bt_site_missing_status), findsOneWidget);
-    expect(find.text(t.bt_site_open_settings_action), findsOneWidget);
-    expect(find.text(kVideoSubscriptionBtSiteMissingError), findsNothing);
-    expect(tester.takeException(), isNull);
-
-    service.checking.dispose();
-    appModel.store.revision.dispose();
-  });
-
-  testWidgets('subscription panel remains bounded on desktop',
-      (WidgetTester tester) async {
-    final (_FakeAppModel appModel, AnimeDownloadSubscriptionService service) =
-        await pumpPanel(
-      tester,
-      size: const Size(1200, 800),
-    );
+        await pumpPanel(tester, size: const Size(1200, 800));
 
     final Finder card = find.byType(FushiCard);
     expect(card, findsWidgets);
-    expect(
-      tester.getSize(card.last).width,
-      lessThanOrEqualTo(760),
-    );
+    expect(tester.getSize(card.last).width, lessThanOrEqualTo(760));
     expect(tester.takeException(), isNull);
 
     service.checking.dispose();
     appModel.store.revision.dispose();
   });
 
-  testWidgets('empty state explains how to create a subscription',
-      (WidgetTester tester) async {
-    final (_FakeAppModel appModel, AnimeDownloadSubscriptionService service) =
-        await pumpPanel(
+  testWidgets('empty state explains how to create a subscription', (
+    WidgetTester tester,
+  ) async {
+    final (
+      _FakeAppModel appModel,
+      AnimeDownloadSubscriptionService service,
+    ) = await pumpPanel(
       tester,
       size: const Size(360, 720),
       withSubscription: false,
@@ -302,149 +305,150 @@ void main() {
   });
 
   testWidgets(
-      'browse page downloads tab switches between tasks and subscriptions',
-      (WidgetTester tester) async {
-    final _MemorySubscriptionStore store = _MemorySubscriptionStore();
-    final _MemoryPlanStore planStore = _MemoryPlanStore();
-    final AnimeDownloadSubscriptionService service =
-        AnimeDownloadSubscriptionService(
-      store: store,
-      planStore: planStore,
-      configProvider: () => const QbConnectionConfig(),
-      backendFactory: (_) => _NoopBackend(),
-      search: (_) async => const [],
-    );
-    final _FakeAppModel appModel = _FakeAppModel(store, planStore, service);
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: <Override>[
-          appProvider.overrideWith((ref) => appModel),
-        ],
-        child: TranslationProvider(
-          child: const MaterialApp(
-            home: BrowsePage(initialTab: BrowseTab.downloads),
+    'browse page downloads tab switches between tasks and subscriptions',
+    (WidgetTester tester) async {
+      final _MemorySubscriptionStore store = _MemorySubscriptionStore();
+      final _MemoryPlanStore planStore = _MemoryPlanStore();
+      final AnimeDownloadSubscriptionService service =
+          AnimeDownloadSubscriptionService(
+            store: store,
+            planStore: planStore,
+            configProvider: () => const QbConnectionConfig(),
+            backendFactory: (_) => _NoopBackend(),
+            search: (_) async => const [],
+          );
+      final _FakeAppModel appModel = _FakeAppModel(store, planStore, service);
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: <Override>[appProvider.overrideWith((ref) => appModel)],
+          child: TranslationProvider(
+            child: const MaterialApp(
+              home: BrowsePage(initialTab: BrowseTab.downloads),
+            ),
           ),
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
+      );
+      await tester.pumpAndSettle();
 
-    expect(find.text(t.nav_downloads), findsOneWidget);
-    // 任务是「下载」页签的默认段。
-    expect(find.text(t.download_tasks_tab), findsOneWidget);
-    expect(find.text(t.anime_download_no_tasks), findsOneWidget);
+      expect(find.text(t.nav_downloads), findsOneWidget);
+      // 任务是「下载」页签的默认段。
+      expect(find.text(t.download_tasks_tab), findsOneWidget);
+      expect(find.text(t.anime_download_no_tasks), findsOneWidget);
 
-    await tester.tap(find.text(t.download_subscriptions_tab));
-    await tester.pumpAndSettle();
-    expect(find.text(t.download_subscription_empty_title), findsOneWidget);
-    expect(tester.takeException(), isNull);
+      await tester.tap(find.text(t.download_subscriptions_tab));
+      await tester.pumpAndSettle();
+      expect(find.text(t.download_subscription_empty_title), findsOneWidget);
+      expect(tester.takeException(), isNull);
 
-    service.checking.dispose();
-    store.revision.dispose();
-    await appModel.testDatabase?.close();
-  });
+      service.checking.dispose();
+      store.revision.dispose();
+      await appModel.testDatabase?.close();
+    },
+  );
 
   // 二级标签页可横滑切段；滑过首 / 末段继续滑时交给相邻的顶层页签（内层
   // TabBarView 在手势竞技场里恒先胜出，不接力就永远滑不出当前页签）。
   testWidgets(
-      'browse sub-tabs swipe and hand off to the adjacent top-level tab',
-      (WidgetTester tester) async {
-    final _MemorySubscriptionStore store = _MemorySubscriptionStore();
-    final _MemoryPlanStore planStore = _MemoryPlanStore();
-    final AnimeDownloadSubscriptionService service =
-        AnimeDownloadSubscriptionService(
-      store: store,
-      planStore: planStore,
-      configProvider: () => const QbConnectionConfig(),
-      backendFactory: (_) => _NoopBackend(),
-      search: (_) async => const [],
-    );
-    final _FakeAppModel appModel = _FakeAppModel(store, planStore, service)
-      ..visibilityOverride =
-          const ModuleVisibility(<ModuleId>{ModuleId.browse, ModuleId.books});
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: <Override>[
-          appProvider.overrideWith((ref) => appModel),
-        ],
-        child: TranslationProvider(
-          child: const MaterialApp(
-            home: BrowsePage(initialTab: BrowseTab.downloads),
+    'browse sub-tabs swipe and hand off to the adjacent top-level tab',
+    (WidgetTester tester) async {
+      final _MemorySubscriptionStore store = _MemorySubscriptionStore();
+      final _MemoryPlanStore planStore = _MemoryPlanStore();
+      final AnimeDownloadSubscriptionService service =
+          AnimeDownloadSubscriptionService(
+            store: store,
+            planStore: planStore,
+            configProvider: () => const QbConnectionConfig(),
+            backendFactory: (_) => _NoopBackend(),
+            search: (_) async => const [],
+          );
+      final _FakeAppModel appModel = _FakeAppModel(store, planStore, service)
+        ..visibilityOverride = const ModuleVisibility(<ModuleId>{
+          ModuleId.browse,
+          ModuleId.books,
+        });
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: <Override>[appProvider.overrideWith((ref) => appModel)],
+          child: TranslationProvider(
+            child: const MaterialApp(
+              home: BrowsePage(initialTab: BrowseTab.downloads),
+            ),
           ),
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
-    TabController outer() =>
-        tester.widget<TabBarView>(find.byType(TabBarView).first).controller!;
-    final int downloadsIndex = outer().index;
-    expect(outer().length, greaterThan(1));
-    expect(find.text(t.anime_download_no_tasks), findsOneWidget);
+      );
+      await tester.pumpAndSettle();
+      TabController outer() =>
+          tester.widget<TabBarView>(find.byType(TabBarView).first).controller!;
+      final int downloadsIndex = outer().index;
+      expect(outer().length, greaterThan(1));
+      expect(find.text(t.anime_download_no_tasks), findsOneWidget);
 
-    // 左滑：任务 → 订阅（仍在「下载」页签）。
-    await tester.drag(
-      find.text(t.anime_download_no_tasks),
-      const Offset(-500, 0),
-    );
-    await tester.pumpAndSettle();
-    expect(find.text(t.download_subscription_empty_title), findsOneWidget);
-    expect(outer().index, downloadsIndex);
+      // 左滑：任务 → 订阅（仍在「下载」页签）。
+      await tester.drag(
+        find.text(t.anime_download_no_tasks),
+        const Offset(-500, 0),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text(t.download_subscription_empty_title), findsOneWidget);
+      expect(outer().index, downloadsIndex);
 
-    // 订阅是最后一个页签的末段：再往左滑没有下一个页签，原地不动。
-    await tester.drag(
-      find.text(t.download_subscription_empty_title),
-      const Offset(-500, 0),
-    );
-    await tester.pumpAndSettle();
-    expect(outer().index, downloadsIndex);
-    expect(find.text(t.download_subscription_empty_title), findsOneWidget);
+      // 订阅是最后一个页签的末段：再往左滑没有下一个页签，原地不动。
+      await tester.drag(
+        find.text(t.download_subscription_empty_title),
+        const Offset(-500, 0),
+      );
+      await tester.pumpAndSettle();
+      expect(outer().index, downloadsIndex);
+      expect(find.text(t.download_subscription_empty_title), findsOneWidget);
 
-    // 右滑回任务；在首段继续右滑 → 交给上一个顶层页签（发现排第一后，
-    // 有在线源的平台上是「扩展」，没有时是「发现」）。
-    await tester.drag(
-      find.text(t.download_subscription_empty_title),
-      const Offset(500, 0),
-    );
-    await tester.pumpAndSettle();
-    expect(find.text(t.anime_download_no_tasks), findsOneWidget);
-    expect(outer().index, downloadsIndex);
-    await tester.drag(
-      find.text(t.anime_download_no_tasks),
-      const Offset(500, 0),
-    );
-    await tester.pumpAndSettle();
-    expect(outer().index, downloadsIndex - 1);
-    expect(tester.takeException(), isNull);
+      // 右滑回任务；在首段继续右滑 → 交给上一个顶层页签（发现排第一后，
+      // 有在线源的平台上是「扩展」，没有时是「发现」）。
+      await tester.drag(
+        find.text(t.download_subscription_empty_title),
+        const Offset(500, 0),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text(t.anime_download_no_tasks), findsOneWidget);
+      expect(outer().index, downloadsIndex);
+      await tester.drag(
+        find.text(t.anime_download_no_tasks),
+        const Offset(500, 0),
+      );
+      await tester.pumpAndSettle();
+      expect(outer().index, downloadsIndex - 1);
+      expect(tester.takeException(), isNull);
 
-    service.checking.dispose();
-    store.revision.dispose();
-    await appModel.testDatabase?.close();
-  });
+      service.checking.dispose();
+      store.revision.dispose();
+      await appModel.testDatabase?.close();
+    },
+  );
 
   // PR #1707 审查：首页保活浏览页后，「管理订阅」等跳转要原地切到目标段，
   // 不再靠换 key 整页重建（那会丢掉各页签的搜索与结果）。
-  testWidgets('navigation request switches a mounted browse page in place',
-      (WidgetTester tester) async {
+  testWidgets('navigation request switches a mounted browse page in place', (
+    WidgetTester tester,
+  ) async {
     final _MemorySubscriptionStore store = _MemorySubscriptionStore();
     final _MemoryPlanStore planStore = _MemoryPlanStore();
     final AnimeDownloadSubscriptionService service =
         AnimeDownloadSubscriptionService(
-      store: store,
-      planStore: planStore,
-      configProvider: () => const QbConnectionConfig(),
-      backendFactory: (_) => _NoopBackend(),
-      search: (_) async => const [],
-    );
-    final _FakeAppModel appModel = _FakeAppModel(store, planStore, service)
-      ..visibilityOverride =
-          const ModuleVisibility(<ModuleId>{ModuleId.browse});
+          store: store,
+          planStore: planStore,
+          configProvider: () => const QbConnectionConfig(),
+          backendFactory: (_) => _NoopBackend(),
+          search: (_) async => const [],
+        );
+    final _FakeAppModel appModel = _FakeAppModel(
+      store,
+      planStore,
+      service,
+    )..visibilityOverride = const ModuleVisibility(<ModuleId>{ModuleId.browse});
     BrowseNavigationRequest? request;
     late StateSetter setHost;
     await tester.pumpWidget(
       ProviderScope(
-        overrides: <Override>[
-          appProvider.overrideWith((ref) => appModel),
-        ],
+        overrides: <Override>[appProvider.overrideWith((ref) => appModel)],
         child: TranslationProvider(
           child: MaterialApp(
             home: StatefulBuilder(
@@ -472,8 +476,11 @@ void main() {
     });
     await tester.pumpAndSettle();
     expect(find.text(t.download_subscription_empty_title), findsOneWidget);
-    expect(identical(tester.state(find.byType(BrowsePage)), mounted), isTrue,
-        reason: '跳转是原地切段，不是重建整页');
+    expect(
+      identical(tester.state(find.byType(BrowsePage)), mounted),
+      isTrue,
+      reason: '跳转是原地切段，不是重建整页',
+    );
 
     // 宿主用后即清（传 null）不得把页面拽回别的段。
     setHost(() => request = null);
@@ -489,26 +496,27 @@ void main() {
   // PR #1707 审查：页签随模块开关增减时按页签 id 保留选中，DefaultTabController
   // 只保留下标——前面多出来源 / 扩展 / 发现三个页签，旧实现会从「下载」静默
   // 落到「来源」。
-  testWidgets('browse page keeps the selected tab by id when tabs change',
-      (WidgetTester tester) async {
+  testWidgets('browse page keeps the selected tab by id when tabs change', (
+    WidgetTester tester,
+  ) async {
     final _MemorySubscriptionStore store = _MemorySubscriptionStore();
     final _MemoryPlanStore planStore = _MemoryPlanStore();
     final AnimeDownloadSubscriptionService service =
         AnimeDownloadSubscriptionService(
-      store: store,
-      planStore: planStore,
-      configProvider: () => const QbConnectionConfig(),
-      backendFactory: (_) => _NoopBackend(),
-      search: (_) async => const [],
-    );
-    final _FakeAppModel appModel = _FakeAppModel(store, planStore, service)
-      ..visibilityOverride =
-          const ModuleVisibility(<ModuleId>{ModuleId.browse});
+          store: store,
+          planStore: planStore,
+          configProvider: () => const QbConnectionConfig(),
+          backendFactory: (_) => _NoopBackend(),
+          search: (_) async => const [],
+        );
+    final _FakeAppModel appModel = _FakeAppModel(
+      store,
+      planStore,
+      service,
+    )..visibilityOverride = const ModuleVisibility(<ModuleId>{ModuleId.browse});
     await tester.pumpWidget(
       ProviderScope(
-        overrides: <Override>[
-          appProvider.overrideWith((ref) => appModel),
-        ],
+        overrides: <Override>[appProvider.overrideWith((ref) => appModel)],
         child: TranslationProvider(
           child: const MaterialApp(home: BrowsePage()),
         ),
@@ -527,8 +535,9 @@ void main() {
     // 来源 / 扩展是否出现取决于测试宿主平台的在线宿主门，「发现」一定出现；
     // 「下载」恒在最后。
     // 最外层是顶层页签的 TabBarView，每个页签里还有自己的二级 TabBarView。
-    final TabBarView view =
-        tester.widget<TabBarView>(find.byType(TabBarView).first);
+    final TabBarView view = tester.widget<TabBarView>(
+      find.byType(TabBarView).first,
+    );
     expect(view.children.length, greaterThan(1));
     expect(view.controller!.index, view.children.length - 1);
     expect(tester.takeException(), isNull);

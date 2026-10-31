@@ -234,9 +234,7 @@ class FushiDownloadCoverOverlay extends StatelessWidget {
           child: AnimatedOpacity(
             // 下满 100% 即淡出（随后的入库收尾不再压着封面）。
             opacity: v != null && v >= 1 ? 0 : 1,
-            duration: reduceMotion
-                ? Duration.zero
-                : FushiMotion.longReverse,
+            duration: reduceMotion ? Duration.zero : FushiMotion.longReverse,
             curve: FushiSpringCurve.effects,
             child: SizedBox.expand(
               child: LayoutBuilder(

@@ -21,8 +21,9 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   /// 只认**裸** `File('lib/src/…')`：形如 `_asrCoreFile('lib/src/…')` 的是
   /// 另一个包的路径解析器，那串相对的是那个包，不是 fushi/。
-  final RegExp pattern =
-      RegExp(r"""(?<![A-Za-z0-9_])File\(\s*'lib/src/([^']+)'""");
+  final RegExp pattern = RegExp(
+    r"""(?<![A-Za-z0-9_])File\(\s*'lib/src/([^']+)'""",
+  );
 
   /// 路径里带插值的跳过：那是运行期拼出来的一批文件名，静态判不了。
   bool interpolated(String rel) => rel.contains(r'$');
@@ -78,14 +79,17 @@ void main() {
           if (directoryPrefix(rel)) continue;
           if (File('lib/src/$rel').existsSync()) continue;
           if (intentionallyAbsent(source, rel)) continue;
-          offenders.add('${entity.path.replaceAll(r'\', '/')}  ->  lib/src/$rel');
+          offenders.add(
+            '${entity.path.replaceAll(r'\', '/')}  ->  lib/src/$rel',
+          );
         }
       }
     }
     expect(
       offenders,
       isEmpty,
-      reason: '这些守卫按磁盘路径读源码，但路径指不到文件——多半是某次搬家只改了 import、'
+      reason:
+          '这些守卫按磁盘路径读源码，但路径指不到文件——多半是某次搬家只改了 import、'
           '漏了这里。编译期看不出来，跑到那条用例才 PathNotFoundException：\n'
           '${offenders.join('\n')}\n'
           '若文件确实搬走了，把路径改成新位置（如 '

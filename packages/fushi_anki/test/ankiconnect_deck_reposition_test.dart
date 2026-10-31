@@ -47,21 +47,20 @@ Map<String, Object?> _card({
   int due = 0,
   int type = 0,
   Map<String, String> fields = const <String, String>{'Expression': '猫'},
-}) =>
-    <String, Object?>{
-      'cardId': id,
-      'note': note,
-      'ord': ord,
-      'due': due,
-      'type': type,
-      'queue': type == 0 ? 0 : 2,
-      'modelName': 'Lapis',
-      'deckName': 'Mining',
-      'fields': <String, Object?>{
-        for (final MapEntry<String, String> e in fields.entries)
-          e.key: <String, Object?>{'value': e.value, 'order': 0},
-      },
-    };
+}) => <String, Object?>{
+  'cardId': id,
+  'note': note,
+  'ord': ord,
+  'due': due,
+  'type': type,
+  'queue': type == 0 ? 0 : 2,
+  'modelName': 'Lapis',
+  'deckName': 'Mining',
+  'fields': <String, Object?>{
+    for (final MapEntry<String, String> e in fields.entries)
+      e.key: <String, Object?>{'value': e.value, 'order': 0},
+  },
+};
 
 void main() {
   group('ankiDeckNewCardsQuery', () {
@@ -116,8 +115,9 @@ void main() {
         ];
       });
       final int n = AnkiConnectService.kCardsInfoBatchSize * 2 + 1;
-      final List<AnkiCardInfo> infos =
-          await s.cardsInfo(List<int>.generate(n, (int i) => i + 1));
+      final List<AnkiCardInfo> infos = await s.cardsInfo(
+        List<int>.generate(n, (int i) => i + 1),
+      );
       expect(rec.requests.length, 3, reason: '2 满批 + 1 尾批');
       expect(infos.length, n);
       final AnkiCardInfo first = infos.first;
@@ -131,32 +131,29 @@ void main() {
 
     test('setCardsDueMany 打成 multi，每条带 warning_check 与 keys=[due]', () async {
       final _Recording rec = _Recording();
-      final AnkiConnectService s = _service(
-        rec,
-        (Map<String, dynamic> body) {
-          final List<dynamic> actions = (body['params']
-              as Map<String, dynamic>)['actions'] as List<dynamic>;
-          // 真 AnkiConnect 的形状：成功 [true]；异常 [[false, msg]]，error 仍为 null。
-          return <Object?>[
-            for (int i = 0; i < actions.length; i++)
-              <String, Object?>{
-                'result': i == 1
-                    ? <Object?>[
-                        <Object?>[false, 'card was not found: 2']
-                      ]
-                    : <Object?>[true],
-                'error': null,
-              },
-          ];
-        },
-      );
-      final List<AnkiConnectBatchResult> results = await s.setCardsDueMany(
-        const <AnkiCardDueUpdate>[
-          AnkiCardDueUpdate(cardId: 1, due: 1),
-          AnkiCardDueUpdate(cardId: 2, due: 2),
-          AnkiCardDueUpdate(cardId: 3, due: 3),
-        ],
-      );
+      final AnkiConnectService s = _service(rec, (Map<String, dynamic> body) {
+        final List<dynamic> actions =
+            (body['params'] as Map<String, dynamic>)['actions']
+                as List<dynamic>;
+        // 真 AnkiConnect 的形状：成功 [true]；异常 [[false, msg]]，error 仍为 null。
+        return <Object?>[
+          for (int i = 0; i < actions.length; i++)
+            <String, Object?>{
+              'result': i == 1
+                  ? <Object?>[
+                      <Object?>[false, 'card was not found: 2'],
+                    ]
+                  : <Object?>[true],
+              'error': null,
+            },
+        ];
+      });
+      final List<AnkiConnectBatchResult> results = await s
+          .setCardsDueMany(const <AnkiCardDueUpdate>[
+            AnkiCardDueUpdate(cardId: 1, due: 1),
+            AnkiCardDueUpdate(cardId: 2, due: 2),
+            AnkiCardDueUpdate(cardId: 3, due: 3),
+          ]);
       expect(rec.requests.length, 1, reason: '3 条打成一次 multi 往返');
       final Map<String, dynamic> body = rec.body(0);
       expect(body['action'], 'multi');
@@ -172,10 +169,11 @@ void main() {
         'newValues': <int>[1],
         'warning_check': true,
       });
-      expect(
-        results.map(ankiSetSpecificValueFailure).toList(),
-        <String?>[null, 'card was not found: 2', null],
-      );
+      expect(results.map(ankiSetSpecificValueFailure).toList(), <String?>[
+        null,
+        'card was not found: 2',
+        null,
+      ]);
     });
 
     test('配置了 apiKey 时 multi 的每条子 action 都带 key（真机实测：不带整批被拒）', () async {
@@ -188,15 +186,16 @@ void main() {
           issued.add(request);
           final Map<String, dynamic> body =
               jsonDecode(request.body) as Map<String, dynamic>;
-          final List<dynamic> actions = (body['params']
-              as Map<String, dynamic>)['actions'] as List<dynamic>;
+          final List<dynamic> actions =
+              (body['params'] as Map<String, dynamic>)['actions']
+                  as List<dynamic>;
           return http.Response(
             jsonEncode(<String, Object?>{
               'result': <Object?>[
                 for (int i = 0; i < actions.length; i++)
                   <String, Object?>{
                     'result': <Object?>[true],
-                    'error': null
+                    'error': null,
                   },
               ],
               'error': null,
@@ -268,8 +267,10 @@ void main() {
       expect(cards.map((AnkiCardInfo c) => c.cardId).toList(), <int>[1, 3]);
       final Map<String, dynamic> find = rec.body(1);
       expect(find['action'], 'findCards');
-      expect((find['params'] as Map<String, dynamic>)['query'],
-          '(did:1 OR did:2) is:new -deck:filtered');
+      expect(
+        (find['params'] as Map<String, dynamic>)['query'],
+        '(did:1 OR did:2) is:new -deck:filtered',
+      );
     });
 
     test('listNewCards：卡组不存在时不发 findCards、返回空', () async {
@@ -279,37 +280,39 @@ void main() {
         (Map<String, dynamic> body) =>
             body['action'] == 'deckNamesAndIds' ? <String, int>{'X': 1} : null,
       );
-      final List<AnkiCardInfo> cards =
-          await _Repo(service: s).listNewCards('Mining');
+      final List<AnkiCardInfo> cards = await _Repo(
+        service: s,
+      ).listNewCards('Mining');
       expect(cards, isEmpty);
-      expect(rec.requests.map((http.Request r) => jsonDecode(r.body)['action']),
-          <String>['deckNamesAndIds']);
+      expect(
+        rec.requests.map((http.Request r) => jsonDecode(r.body)['action']),
+        <String>['deckNamesAndIds'],
+      );
     });
 
     test('setNewCardPositions：逐条映射失败到 cardId', () async {
       final _Recording rec = _Recording();
       final AnkiConnectService s = _service(rec, (Map<String, dynamic> body) {
-        final List<dynamic> actions = (body['params']
-            as Map<String, dynamic>)['actions'] as List<dynamic>;
+        final List<dynamic> actions =
+            (body['params'] as Map<String, dynamic>)['actions']
+                as List<dynamic>;
         return <Object?>[
           for (int i = 0; i < actions.length; i++)
             <String, Object?>{
               'result': i == 0
                   ? <Object?>[
-                      <Object?>[false, 'boom']
+                      <Object?>[false, 'boom'],
                     ]
                   : <Object?>[true],
               'error': null,
             },
         ];
       });
-      final AnkiCardDueWriteResult r =
-          await _Repo(service: s).setNewCardPositions(
-        const <AnkiCardDueUpdate>[
-          AnkiCardDueUpdate(cardId: 7, due: 1),
-          AnkiCardDueUpdate(cardId: 8, due: 2),
-        ],
-      );
+      final AnkiCardDueWriteResult r = await _Repo(service: s)
+          .setNewCardPositions(const <AnkiCardDueUpdate>[
+            AnkiCardDueUpdate(cardId: 7, due: 1),
+            AnkiCardDueUpdate(cardId: 8, due: 2),
+          ]);
       expect(r.written, 1);
       expect(r.failures, <int, String>{7: 'boom'});
     });
@@ -317,8 +320,9 @@ void main() {
     test('空更新不发请求', () async {
       final _Recording rec = _Recording();
       final AnkiConnectService s = _service(rec, (_) => null);
-      final AnkiCardDueWriteResult r = await _Repo(service: s)
-          .setNewCardPositions(const <AnkiCardDueUpdate>[]);
+      final AnkiCardDueWriteResult r = await _Repo(
+        service: s,
+      ).setNewCardPositions(const <AnkiCardDueUpdate>[]);
       expect(r.written, 0);
       expect(rec.requests, isEmpty);
     });
@@ -352,11 +356,14 @@ void main() {
     });
 
     test('老存档没有这些键时回落缺省，不炸', () {
-      final AnkiSettings s =
-          AnkiSettings.fromJson(<String, dynamic>{'selectedDeckId': 1});
+      final AnkiSettings s = AnkiSettings.fromJson(<String, dynamic>{
+        'selectedDeckId': 1,
+      });
       expect(s.repositionSource, AnkiRepositionSource.dictionaries);
-      expect(AnkiRepositionSource.fromName('garbage'),
-          AnkiRepositionSource.dictionaries);
+      expect(
+        AnkiRepositionSource.fromName('garbage'),
+        AnkiRepositionSource.dictionaries,
+      );
     });
   });
 }
@@ -377,8 +384,7 @@ class _Plain extends BaseAnkiRepository {
   Future<MineOutcome> mineEntry({
     required String rawPayloadJson,
     required AnkiMiningContext context,
-  }) async =>
-      MineOutcome.failure('unused');
+  }) async => MineOutcome.failure('unused');
 
   @override
   Future<bool> isDuplicate(String expression, String reading) async => false;

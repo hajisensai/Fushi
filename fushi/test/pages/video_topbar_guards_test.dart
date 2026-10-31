@@ -49,22 +49,29 @@ void main() {
     test('返回按钮进入视频内顶栏（桌面+移动两套主题各一）', () {
       // 删了 AppBar 自带的返回箭头后，返回必须改由视频内顶栏提供，且全屏可达。
       expect(
-        RegExp(r'_topBarSlotGroup\(\s*VideoControlSlot\.topLeft')
-            .allMatches(src)
-            .length,
+        RegExp(
+          r'_topBarSlotGroup\(\s*VideoControlSlot\.topLeft',
+        ).allMatches(src).length,
         greaterThanOrEqualTo(2),
         reason: '桌面与移动两套 controls 主题的顶栏都应渲染 topLeft slot',
       );
       expect(
-          VideoControlLayout.currentChrome
-              .itemsIn(VideoControlSlot.topLeft)
-              .contains(VideoControlItem.back),
-          isTrue,
-          reason: '默认 topLeft slot 应承载返回按钮');
-      expect(src.contains('case VideoControlItem.back:'), isTrue,
-          reason: '返回按钮应继续接入 item dispatcher');
-      expect(src.contains('_handleBackOrExit()'), isTrue,
-          reason: 'topLeft 返回按钮应走视频退出 / 返回处理器');
+        VideoControlLayout.currentChrome
+            .itemsIn(VideoControlSlot.topLeft)
+            .contains(VideoControlItem.back),
+        isTrue,
+        reason: '默认 topLeft slot 应承载返回按钮',
+      );
+      expect(
+        src.contains('case VideoControlItem.back:'),
+        isTrue,
+        reason: '返回按钮应继续接入 item dispatcher',
+      );
+      expect(
+        src.contains('_handleBackOrExit()'),
+        isTrue,
+        reason: 'topLeft 返回按钮应走视频退出 / 返回处理器',
+      );
     });
 
     test('标题进入视频内顶栏（响应式，全屏可刷新）', () {
@@ -76,8 +83,11 @@ void main() {
         greaterThanOrEqualTo(2),
         reason: '桌面与移动顶栏都应调用同一标题 helper（内部监听 _titleNotifier）',
       );
-      expect(src.contains('valueListenable: _titleNotifier'), isTrue,
-          reason: '标题 helper 内部仍应监听 _titleNotifier（BUG-120）');
+      expect(
+        src.contains('valueListenable: _titleNotifier'),
+        isTrue,
+        reason: '标题 helper 内部仍应监听 _titleNotifier（BUG-120）',
+      );
     });
 
     test('标题彻底退出顶栏 flex 分配，按钮先拿宽、标题吃剩余（TODO-642 续）', () {
@@ -89,77 +99,129 @@ void main() {
       // 现在整条顶栏交给 VideoTopBarSlots 按优先级分宽（左按钮 → 右按钮 → 标题吃剩余），
       // 布局行为本身由 test/pages/video_top_bar_slots_test.dart 用真实尺寸断言。
       final int titleStart = src.indexOf('Widget _topBarTitle()');
-      expect(titleStart, greaterThanOrEqualTo(0),
-          reason: '应存在 _topBarTitle() helper');
+      expect(
+        titleStart,
+        greaterThanOrEqualTo(0),
+        reason: '应存在 _topBarTitle() helper',
+      );
       final int titleEnd = src.indexOf('Widget _topBarTitleText(', titleStart);
-      expect(titleEnd, greaterThan(titleStart),
-          reason: '_topBarTitle() 方法体应正常闭合在 _topBarTitleText 之前');
+      expect(
+        titleEnd,
+        greaterThan(titleStart),
+        reason: '_topBarTitle() 方法体应正常闭合在 _topBarTitleText 之前',
+      );
       // 只看代码：方法体注释里必然复述 `Flexible(` / `Spacer()` 这些被禁写法的历史，
       // 带着注释扫会把「解释为什么禁用」误判成「还在用」。掩码走共享原语（块注释/行尾
       // 注释都能盖住，且不移动下标）。
-      final String titleBody =
-          maskComments(src.substring(titleStart, titleEnd));
-      expect(titleBody.contains('return const SizedBox.shrink();'), isTrue,
-          reason: '标题项没配置时须交回零宽占位，整条顶栏宽都归按钮');
-      expect(titleBody.contains('Spacer()'), isFalse,
-          reason: 'Spacer(=FlexFit.tight) 会让空白中段继续霸占一份顶栏宽');
-      expect(titleBody.contains('return Expanded('), isFalse,
-          reason: '标题不能用 Expanded（FlexFit.tight 会抢固定 1/3 顶栏宽）');
-      expect(titleBody.contains('Flexible('), isFalse,
-          reason: '标题不能再参与顶栏 Flex 平分（loose 也会锁死在 1/3）');
+      final String titleBody = maskComments(
+        src.substring(titleStart, titleEnd),
+      );
+      expect(
+        titleBody.contains('return const SizedBox.shrink();'),
+        isTrue,
+        reason: '标题项没配置时须交回零宽占位，整条顶栏宽都归按钮',
+      );
+      expect(
+        titleBody.contains('Spacer()'),
+        isFalse,
+        reason: 'Spacer(=FlexFit.tight) 会让空白中段继续霸占一份顶栏宽',
+      );
+      expect(
+        titleBody.contains('return Expanded('),
+        isFalse,
+        reason: '标题不能用 Expanded（FlexFit.tight 会抢固定 1/3 顶栏宽）',
+      );
+      expect(
+        titleBody.contains('Flexible('),
+        isFalse,
+        reason: '标题不能再参与顶栏 Flex 平分（loose 也会锁死在 1/3）',
+      );
       // 两套 controls 主题都必须把三槽交给同一个优先级布局。
       expect(
-          'VideoTopBarSlots('.allMatches(src).length, greaterThanOrEqualTo(2),
-          reason: '桌面与移动顶栏都应经 VideoTopBarSlots 分宽');
-      expect(RegExp(r'title:\s*_topBarTitle\(\)').hasMatch(src), isTrue,
-          reason: '标题应作为 VideoTopBarSlots 的 title 槽传入');
+        'VideoTopBarSlots('.allMatches(src).length,
+        greaterThanOrEqualTo(2),
+        reason: '桌面与移动顶栏都应经 VideoTopBarSlots 分宽',
+      );
+      expect(
+        RegExp(r'title:\s*_topBarTitle\(\)').hasMatch(src),
+        isTrue,
+        reason: '标题应作为 VideoTopBarSlots 的 title 槽传入',
+      );
       // 标题被拖进左/右按钮槽时也走同一条路径：不能再有「组内固定宽内联标题」这个
       // 特例——它会跟同组按钮抢横向空间，把按钮挤进横滚区（名称挡按钮的另一半根因）。
-      expect(src.contains('_topBarInlineTitle('), isFalse,
-          reason: '内联标题特例应已删除，标题统一由 VideoTopBarSlots 的 title 槽渲染');
-      expect(containsCodeLine(src, 'maxWidth: 220'), isFalse,
-          reason: '标题不得再有固定宽上限，宽度只能是「按钮分完之后剩下的」');
-      // 按钮组按 lead / tail 两段渲染，标题的槽内位置才能保住。
-      expect(src.contains('segment: VideoTopBarSegment.lead'), isTrue,
-          reason: '顶栏两槽应分别渲染标题之前的按钮段');
-      expect(src.contains('segment: VideoTopBarSegment.tail'), isTrue,
-          reason: '顶栏两槽应分别渲染标题之后的按钮段');
       expect(
-          RegExp(r'titlePlacement:\s*_topBarTitlePlacement\(\)').hasMatch(src),
-          isTrue,
-          reason: '标题所在槽应驱动它在顶栏里的位置');
+        src.contains('_topBarInlineTitle('),
+        isFalse,
+        reason: '内联标题特例应已删除，标题统一由 VideoTopBarSlots 的 title 槽渲染',
+      );
+      expect(
+        containsCodeLine(src, 'maxWidth: 220'),
+        isFalse,
+        reason: '标题不得再有固定宽上限，宽度只能是「按钮分完之后剩下的」',
+      );
+      // 按钮组按 lead / tail 两段渲染，标题的槽内位置才能保住。
+      expect(
+        src.contains('segment: VideoTopBarSegment.lead'),
+        isTrue,
+        reason: '顶栏两槽应分别渲染标题之前的按钮段',
+      );
+      expect(
+        src.contains('segment: VideoTopBarSegment.tail'),
+        isTrue,
+        reason: '顶栏两槽应分别渲染标题之后的按钮段',
+      );
+      expect(
+        RegExp(r'titlePlacement:\s*_topBarTitlePlacement\(\)').hasMatch(src),
+        isTrue,
+        reason: '标题所在槽应驱动它在顶栏里的位置',
+      );
       // 标题截断兜底仍在（窄窗让位后靠 ellipsis 优雅收尾）。
       final int textStart = src.indexOf('Widget _topBarTitleText(');
       expect(textStart, greaterThanOrEqualTo(0));
-      final int textEnd =
-          src.indexOf('Widget _buildBottomSlotButton(', textStart);
+      final int textEnd = src.indexOf(
+        'Widget _buildBottomSlotButton(',
+        textStart,
+      );
       expect(textEnd, greaterThan(textStart));
       final String textBody = src.substring(textStart, textEnd);
       expect(textBody.contains('maxLines: 1'), isTrue, reason: '标题单行');
-      expect(textBody.contains('overflow: TextOverflow.ellipsis'), isTrue,
-          reason: '标题溢出省略号');
+      expect(
+        textBody.contains('overflow: TextOverflow.ellipsis'),
+        isTrue,
+        reason: '标题溢出省略号',
+      );
     });
 
     test('标题使用稳定 helper，不靠右侧空槽占位维持位置（TODO-491）', () {
-      expect(src.contains('Widget _topBarTitle('), isTrue,
-          reason: '标题应集中到 helper，桌面/移动共用同一稳定布局');
-      expect('_topBarTitle()'.allMatches(src).length, greaterThanOrEqualTo(2),
-          reason: '桌面与移动顶栏都应使用同一标题 helper');
+      expect(
+        src.contains('Widget _topBarTitle('),
+        isTrue,
+        reason: '标题应集中到 helper，桌面/移动共用同一稳定布局',
+      );
+      expect(
+        '_topBarTitle()'.allMatches(src).length,
+        greaterThanOrEqualTo(2),
+        reason: '桌面与移动顶栏都应使用同一标题 helper',
+      );
 
       final int groupStart = src.indexOf('Widget _topBarSlotGroup(');
       expect(groupStart, greaterThanOrEqualTo(0));
-      final int groupEnd =
-          src.indexOf('String get _clipExportTooltip', groupStart);
+      final int groupEnd = src.indexOf(
+        'String get _clipExportTooltip',
+        groupStart,
+      );
       expect(groupEnd, greaterThan(groupStart));
       final String group = src.substring(groupStart, groupEnd);
       // 原盘会话的「主菜单 / 弹出菜单」条目（BUG-3229）也算组内内容。
       expect(
-          RegExp(r'if \(items\.isEmpty && folded\.isEmpty && disc\.isEmpty\) '
-                  r'\{\s*'
-                  r'return const SizedBox\.shrink\(\);')
-              .hasMatch(group),
-          isTrue,
-          reason: '清空 topRight 时不能留下右侧空白占位挤歪标题');
+        RegExp(
+          r'if \(items\.isEmpty && folded\.isEmpty && disc\.isEmpty\) '
+          r'\{\s*'
+          r'return const SizedBox\.shrink\(\);',
+        ).hasMatch(group),
+        isTrue,
+        reason: '清空 topRight 时不能留下右侧空白占位挤歪标题',
+      );
     });
   });
 
@@ -167,38 +229,52 @@ void main() {
     String read(String rel) => File(rel).readAsStringSync();
 
     test('数据模型把 topLeft / topRight 纳入 editableSlots', () {
-      final String model =
-          read('lib/src/media/video/video_control_customization.dart');
+      final String model = read(
+        'lib/src/media/video/video_control_customization.dart',
+      );
       final int start = model.indexOf('editableSlots = <VideoControlSlot>[');
       expect(start, greaterThan(0));
       final int end = model.indexOf('];', start);
       expect(end, greaterThan(start));
       final String block = model.substring(start, end);
-      expect(block.contains('VideoControlSlot.topLeft'), isTrue,
-          reason: 'editableSlots 应含 topLeft（TODO-388）');
-      expect(block.contains('VideoControlSlot.topRight'), isTrue,
-          reason: 'editableSlots 应含 topRight（TODO-388）');
+      expect(
+        block.contains('VideoControlSlot.topLeft'),
+        isTrue,
+        reason: 'editableSlots 应含 topLeft（TODO-388）',
+      );
+      expect(
+        block.contains('VideoControlSlot.topRight'),
+        isTrue,
+        reason: 'editableSlots 应含 topRight（TODO-388）',
+      );
       // topCenter 也在集合里：两个编辑器一直把它画成可投放区域，`canMoveToSlot`
       // 也一直允许标题进 topCenter——旧断言钉住的是一份与真实能力相反的清单。
       // 「区域被暴露」与「这个按钮能不能放进去」是两个维度，后者仍由
       // `canMoveToSlot` 单独把关（topCenter 依旧只收标题，见
       // video_control_layout_test.dart 的「两个维度」用例）。
-      expect(block.contains('VideoControlSlot.topCenter'), isTrue,
-          reason: 'topCenter 是编辑器真实暴露的槽（标题能放），清单必须与之一致');
+      expect(
+        block.contains('VideoControlSlot.topCenter'),
+        isTrue,
+        reason: 'topCenter 是编辑器真实暴露的槽（标题能放），清单必须与之一致',
+      );
     });
 
     test('控件拖拽编辑器呈现顶部两槽放置区', () {
       // 阶段B：拖拽编辑器从 video_quick_settings_sheet 原样抽为独立控件
       // video_control_layout_editor.dart（经 schema 投影接入面板），守卫改锁新位置。
-      final String editor =
-          read('lib/src/media/video/video_control_layout_editor.dart');
+      final String editor = read(
+        'lib/src/media/video/video_control_layout_editor.dart',
+      );
       // 钉不变式而不是调用写法：BUG-2448（#1417）把宽窗舞台改成按行堆叠之后，
       // 槽位是**变量**传进 `_buildStageRow(left: …, right: …)` 再转给
       // `_buildSlotRegion(left, …)`，原先那句字面量匹配不到了，但顶部两槽一个
       // 没少。这里改判「两个槽都出现在文件里，且造放置区的入口确实存在」。
       for (final String slot in <String>['topLeft', 'topRight']) {
-        expect(editor.contains('VideoControlSlot.$slot'), isTrue,
-            reason: '编辑器应有 $slot 放置区（TODO-388）');
+        expect(
+          editor.contains('VideoControlSlot.$slot'),
+          isTrue,
+          reason: '编辑器应有 $slot 放置区（TODO-388）',
+        );
       }
       // 放置区本体现在由泛型 ControlLayoutEditor（src/controls/）造，视频编辑器经
       // stageBuilder 拿到 buildSlotRegion 回调再按槽位排布；两边各守一半。
@@ -207,13 +283,18 @@ void main() {
             (editor.contains('_buildStageRow(') ||
                 editor.contains('_buildCompactSlotGrid(')),
         isTrue,
-        reason: '造放置区的入口不见了——上面两条只证明枚举值还被提到，'
+        reason:
+            '造放置区的入口不见了——上面两条只证明枚举值还被提到，'
             '不证明它真的被做成了可投放区域',
       );
-      final String genericEditor =
-          read('lib/src/controls/control_layout_editor.dart');
-      expect(genericEditor.contains('Widget _buildSlotRegion('), isTrue,
-          reason: '泛型编辑器必须提供槽位放置区的实现');
+      final String genericEditor = read(
+        'lib/src/controls/control_layout_editor.dart',
+      );
+      expect(
+        genericEditor.contains('Widget _buildSlotRegion('),
+        isTrue,
+        reason: '泛型编辑器必须提供槽位放置区的实现',
+      );
       // 顶部两槽有面向用户的标签（i18n）。
       expect(editor.contains('t.video_control_slot_top_left'), isTrue);
       expect(editor.contains('t.video_control_slot_top_right'), isTrue);
@@ -231,42 +312,55 @@ void main() {
         reason: '应有把顶部槽渲染进顶栏行的 helper（_topBarSlotGroup）',
       );
       expect(
-          '_topBarSlotGroup('.allMatches(page).length, greaterThanOrEqualTo(5),
-          reason: 'helper 定义 1 处 + 桌面/移动各注入 topLeft/topRight 共 4 处');
+        '_topBarSlotGroup('.allMatches(page).length,
+        greaterThanOrEqualTo(5),
+        reason: 'helper 定义 1 处 + 桌面/移动各注入 topLeft/topRight 共 4 处',
+      );
       // 顶部两槽经 media_kit chrome 按钮渲染（吃主题色/尺寸/随控制条淡入淡出），且复用
       // 所有 chip-renderable 项的统一激活路径（学习键 + transport/nav 键都不丢）。
       expect(page.contains('_slotChipItems(slot)'), isTrue);
       expect(
-          RegExp(r'_activateVideoControlItem\(\s*item,\s*controller,')
-              .hasMatch(page),
-          isTrue);
+        RegExp(
+          r'_activateVideoControlItem\(\s*item,\s*controller,',
+        ).hasMatch(page),
+        isTrue,
+      );
 
       // 旧的「固定顶栏下方浮动竖条」已删：浮动 Stack 只剩屏幕左 / 右两条
       // （[left, right]，不再有 topLeft / topRight 两条浮条）。
-      expect(page.contains('children: <Widget>[left(), right()]'), isTrue,
-          reason: '浮动侧栏 Stack 应只剩屏幕左/右两条（顶部两条已移入顶栏行）');
+      expect(
+        page.contains('children: <Widget>[left(), right()]'),
+        isTrue,
+        reason: '浮动侧栏 Stack 应只剩屏幕左/右两条（顶部两条已移入顶栏行）',
+      );
       // 顶部浮条专属的「让出固定顶栏高度」内边距随浮条一并删除（OSD 通知层用的
       // Alignment.topLeft 与本浮条无关，故不据 Alignment 判删除）。
       // UI 巡检 PR-4：OSD 通知卡的 top 现在也从顶栏高推导
       // （`_videoButtonBarHeight + 8 * _videoUiScale`，吃界面缩放）——它是合法几何
       // 联动、不是复活的顶部浮条；本禁令收紧为旧浮条的**不吃缩放**字面形态。
-      expect(page.contains('_videoButtonBarHeight + 8)'), isFalse,
-          reason: '顶部浮条的「让出顶栏高度」定值内边距应随浮条一并删除');
+      expect(
+        page.contains('_videoButtonBarHeight + 8)'),
+        isFalse,
+        reason: '顶部浮条的「让出顶栏高度」定值内边距应随浮条一并删除',
+      );
     });
 
     test('顶栏右侧按钮来自 topRight slot 的同一横排，不再硬编码第二套', () {
       final String page = readVideoFushiSource();
       final int desktopStart = page.indexOf(
-          'MaterialDesktopVideoControlsThemeData _desktopControlsTheme');
-      final int desktopEnd =
-          page.indexOf('MaterialVideoControlsThemeData _mobileControlsTheme');
+        'MaterialDesktopVideoControlsThemeData _desktopControlsTheme',
+      );
+      final int desktopEnd = page.indexOf(
+        'MaterialVideoControlsThemeData _mobileControlsTheme',
+      );
       expect(desktopStart, greaterThanOrEqualTo(0));
       expect(desktopEnd, greaterThan(desktopStart));
       final String desktopTheme = page.substring(desktopStart, desktopEnd);
 
       expect(
-        RegExp(r'_topBarSlotGroup\(\s*VideoControlSlot\.topRight')
-            .hasMatch(desktopTheme),
+        RegExp(
+          r'_topBarSlotGroup\(\s*VideoControlSlot\.topRight',
+        ).hasMatch(desktopTheme),
         isTrue,
         reason: 'topRight 应作为固定顶栏右侧横排的一段渲染',
       );
@@ -290,16 +384,19 @@ void main() {
     test('topRight 作为整体右侧按钮组对齐，不让按钮逐个参与顶栏 flex 分配', () {
       final String page = readVideoFushiSource();
       final int desktopStart = page.indexOf(
-          'MaterialDesktopVideoControlsThemeData _desktopControlsTheme');
-      final int desktopEnd =
-          page.indexOf('MaterialVideoControlsThemeData _mobileControlsTheme');
+        'MaterialDesktopVideoControlsThemeData _desktopControlsTheme',
+      );
+      final int desktopEnd = page.indexOf(
+        'MaterialVideoControlsThemeData _mobileControlsTheme',
+      );
       expect(desktopStart, greaterThanOrEqualTo(0));
       expect(desktopEnd, greaterThan(desktopStart));
       final String desktopTheme = page.substring(desktopStart, desktopEnd);
 
       expect(
-        RegExp(r'_topBarSlotGroup\(\s*VideoControlSlot\.topRight')
-            .hasMatch(desktopTheme),
+        RegExp(
+          r'_topBarSlotGroup\(\s*VideoControlSlot\.topRight',
+        ).hasMatch(desktopTheme),
         isTrue,
         reason: 'topRight 必须作为一个右侧按钮组注入顶栏',
       );
@@ -311,8 +408,10 @@ void main() {
 
       final int groupStart = page.indexOf('Widget _topBarSlotGroup(');
       expect(groupStart, greaterThanOrEqualTo(0));
-      final int groupEnd =
-          page.indexOf('String get _clipExportTooltip', groupStart);
+      final int groupEnd = page.indexOf(
+        'String get _clipExportTooltip',
+        groupStart,
+      );
       expect(groupEnd, greaterThan(groupStart));
       final String groupHelper = page.substring(groupStart, groupEnd);
 

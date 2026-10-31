@@ -28,10 +28,14 @@ void main() {
     }
 
     test('over the cap → tooLong, never unsupportedRange', () {
-      final AudiobookClipBoundaryResult result =
-          classify(kAudiobookClipMaxDurationMs + 1);
-      expect(result.kind, AudiobookClipBoundaryKind.tooLong,
-          reason: '「太长」与「跨章/跨文件」是两种事实，混成一类会误报跨章');
+      final AudiobookClipBoundaryResult result = classify(
+        kAudiobookClipMaxDurationMs + 1,
+      );
+      expect(
+        result.kind,
+        AudiobookClipBoundaryKind.tooLong,
+        reason: '「太长」与「跨章/跨文件」是两种事实，混成一类会误报跨章',
+      );
       expect(result.isExportable, isFalse);
     });
 
@@ -89,12 +93,14 @@ void main() {
       // 改常量必须同步文案，本测试让漂移当场红。
       expect(kAudiobookClipMaxDurationMs, 5 * 60 * 1000);
 
-      final Map<String, dynamic> en = json.decode(
-        File('lib/i18n/strings.i18n.json').readAsStringSync(),
-      ) as Map<String, dynamic>;
-      final Map<String, dynamic> zh = json.decode(
-        File('lib/i18n/strings_zh-CN.i18n.json').readAsStringSync(),
-      ) as Map<String, dynamic>;
+      final Map<String, dynamic> en =
+          json.decode(File('lib/i18n/strings.i18n.json').readAsStringSync())
+              as Map<String, dynamic>;
+      final Map<String, dynamic> zh =
+          json.decode(
+                File('lib/i18n/strings_zh-CN.i18n.json').readAsStringSync(),
+              )
+              as Map<String, dynamic>;
       expect(en['audiobook_export_clip_too_long'], contains('5 minutes'));
       expect(zh['audiobook_export_clip_too_long'], contains('5 分钟'));
     });
@@ -104,16 +110,22 @@ void main() {
         'lib/src/pages/implementations/reader_fushi/audiobook.part.dart',
       ).readAsStringSync().replaceAll('\r\n', '\n');
       // tooLong 分支必须弹专属文案；不允许再把超长路由回 unsupported_range 文案。
-      final int caseAt =
-          part.indexOf('case AudiobookClipBoundaryKind.tooLong:');
-      expect(caseAt, greaterThanOrEqualTo(0),
-          reason: 'dispatcher 必须显式处理 tooLong 分支');
+      final int caseAt = part.indexOf(
+        'case AudiobookClipBoundaryKind.tooLong:',
+      );
+      expect(
+        caseAt,
+        greaterThanOrEqualTo(0),
+        reason: 'dispatcher 必须显式处理 tooLong 分支',
+      );
       final int caseEnd = part.indexOf('case ', caseAt + 1);
       final String caseBody = part.substring(caseAt, caseEnd);
       expect(caseBody, contains('t.audiobook_export_clip_too_long'));
-      expect(caseBody,
-          isNot(contains('t.audiobook_export_clip_unsupported_range')),
-          reason: '超长选区绝不能再弹「跨章或跨音频文件」误导文案');
+      expect(
+        caseBody,
+        isNot(contains('t.audiobook_export_clip_unsupported_range')),
+        reason: '超长选区绝不能再弹「跨章或跨音频文件」误导文案',
+      );
     });
   });
 
@@ -153,10 +165,8 @@ void main() {
     /// 复刻 `_exportAudiobookClip` 的真实调度：计划窗口优先，只有真没窗口才回落单句锚。
     AudiobookClipBoundaryKind dispatch(AudioPlaybackRange? globalRange) {
       final AudiobookClipMultiCueResult result = multiCue(globalRange);
-      final AudioPlaybackRange sentenceRange = audiobookClipPlanRange(
-            kind: result.kind,
-            globalRange: globalRange,
-          ) ??
+      final AudioPlaybackRange sentenceRange =
+          audiobookClipPlanRange(kind: result.kind, globalRange: globalRange) ??
           shortSentenceAnchor;
       return classifyAudiobookClipSelection(
         selectedText: selectedText,
@@ -170,7 +180,8 @@ void main() {
       expect(
         dispatch(longGlobalRange),
         AudiobookClipBoundaryKind.tooLong,
-        reason: '旧实现把 tooLong 压成 null → 回落 3 秒单句锚 → 判 exportable → '
+        reason:
+            '旧实现把 tooLong 压成 null → 回落 3 秒单句锚 → 判 exportable → '
             '静默导出「整段文字的卡片 + 只有一句声音」，用户永远看不到诚实文案',
       );
     });
@@ -220,38 +231,45 @@ void main() {
       ).readAsStringSync().replaceAll('\r\n', '\n');
     });
 
-    test('_buildAudiobookClipPlan 用 audiobookClipPlanRange，而不是裸 return null',
-        () {
-      final String body = methodBody(part, '_buildAudiobookClipPlan({');
-      expect(
-        containsIdentifierCall(body, 'audiobookClipPlanRange'),
-        isTrue,
-        reason: 'BUG-1320：不可导出时若直接 return null，tooLong 与 unsupportedRange '
-            '会被压成同一个信号，超长选区又会回落单句锚',
-      );
-      expect(
-        containsCodeLine(body, 'if (!result.isExportable) return null;'),
-        isFalse,
-        reason: '这行正是吞掉 tooLong 信号的那一行，不得复活',
-      );
-      // 可导出时也必须把窗口带回去（调度方只认 clipPlan.range）。这条同时证明上面的
-      // methodBody 窗口一路覆盖到方法末尾的 return，没有被字符串/嵌套花括号截断——
-      // 否则上面的 isFalse 会静默变绿。
-      expect(
-        containsCodeLine(body, 'range: planRange,'),
-        isTrue,
-        reason: 'BUG-1320：计划非空时窗口也必须随记录带回，否则 exportable 路径同样会'
-            '回落单句锚',
-      );
-    });
+    test(
+      '_buildAudiobookClipPlan 用 audiobookClipPlanRange，而不是裸 return null',
+      () {
+        final String body = methodBody(part, '_buildAudiobookClipPlan({');
+        expect(
+          containsIdentifierCall(body, 'audiobookClipPlanRange'),
+          isTrue,
+          reason:
+              'BUG-1320：不可导出时若直接 return null，tooLong 与 unsupportedRange '
+              '会被压成同一个信号，超长选区又会回落单句锚',
+        );
+        expect(
+          containsCodeLine(body, 'if (!result.isExportable) return null;'),
+          isFalse,
+          reason: '这行正是吞掉 tooLong 信号的那一行，不得复活',
+        );
+        // 可导出时也必须把窗口带回去（调度方只认 clipPlan.range）。这条同时证明上面的
+        // methodBody 窗口一路覆盖到方法末尾的 return，没有被字符串/嵌套花括号截断——
+        // 否则上面的 isFalse 会静默变绿。
+        expect(
+          containsCodeLine(body, 'range: planRange,'),
+          isTrue,
+          reason:
+              'BUG-1320：计划非空时窗口也必须随记录带回，否则 exportable 路径同样会'
+              '回落单句锚',
+        );
+      },
+    );
 
     test('_exportAudiobookClip 只在计划没窗口时才回落单句锚', () {
       final String body = methodBody(part, 'void _exportAudiobookClip() {');
       expect(
         containsCodeLine(
-            body, 'clipPlan.range ?? _currentSentenceAudioRange()'),
+          body,
+          'clipPlan.range ?? _currentSentenceAudioRange()',
+        ),
         isTrue,
-        reason: 'BUG-1320：窗口必须以多句计划为准，plan 为空不等于「没窗口」——'
+        reason:
+            'BUG-1320：窗口必须以多句计划为准，plan 为空不等于「没窗口」——'
             '超上限时 plan 为空但窗口有效，回落单句锚会把「太长」洗掉',
       );
     });
@@ -266,8 +284,11 @@ void main() {
     test('long clips shrink fps to keep total frames within budget', () {
       final int fps300 = clipExportFps(durationMs: 300 * 1000);
       expect(fps300, lessThan(24));
-      expect(fps300 * 300, lessThanOrEqualTo(2880),
-          reason: '总帧数不得超过提限前的既有最坏情况（120s×24fps）');
+      expect(
+        fps300 * 300,
+        lessThanOrEqualTo(2880),
+        reason: '总帧数不得超过提限前的既有最坏情况（120s×24fps）',
+      );
       expect(fps300, greaterThanOrEqualTo(6));
     });
 

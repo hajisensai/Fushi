@@ -18,16 +18,16 @@ void main() {
         provider: VideoMetadataProviderKind.tmdb,
         kind: VideoMetadataMediaKind.movie,
         title: 'TMDB movie match',
-        ids: const <VideoMetadataId>[
-          VideoMetadataId(type: 'tmdb', value: '2'),
-        ],
+        ids: const <VideoMetadataId>[VideoMetadataId(type: 'tmdb', value: '2')],
       ),
     );
 
     expect(merged.kind, VideoMetadataMediaKind.tv);
     expect(merged.provider, VideoMetadataProviderKind.anidb);
-    expect(merged.ids.map((VideoMetadataId id) => id.type),
-        containsAll(<String>['anidb', 'tmdb']));
+    expect(
+      merged.ids.map((VideoMetadataId id) => id.type),
+      containsAll(<String>['anidb', 'tmdb']),
+    );
   });
 
   // AniDB 只有标题目录摘要（没有年份）、TMDB 补充是整部剧：剧本体的首播年等
@@ -257,13 +257,13 @@ void main() {
   // 分集剧照恒 1（MaxAutoThumbnails）；同一 URL 只算一张。
   test('每类图按上限保留，0 不限，剧照恒 1，同 URL 去重', () {
     VideoMetadataImage cover(String url, double score) => VideoMetadataImage(
-          kind: VideoMetadataImageKind.cover,
-          url: url,
-          provider: VideoMetadataProviderKind.tmdb,
-          language: 'ja',
-          voteAverage: score,
-          voteCount: 10,
-        );
+      kind: VideoMetadataImageKind.cover,
+      url: url,
+      provider: VideoMetadataProviderKind.tmdb,
+      language: 'ja',
+      voteAverage: score,
+      voteCount: 10,
+    );
     final List<VideoMetadataImage> covers = <VideoMetadataImage>[
       for (int i = 1; i <= 12; i++) cover('c$i', i.toDouble()),
       // TMDB 详情的 poster_path 与 images.posters 会重复：同一 URL 不算两张。
@@ -282,7 +282,9 @@ void main() {
           voteAverage: i.toDouble(),
         ),
     ];
-    final List<String> order = const VideoMetadataLanguages('ja').imageLanguages;
+    final List<String> order = const VideoMetadataLanguages(
+      'ja',
+    ).imageLanguages;
     final List<VideoMetadataImage> ten = selectVideoMetadataImages(
       primary: covers,
       languageOrder: order,
@@ -292,53 +294,69 @@ void main() {
       },
     );
     expect(
-        ten
-            .where((VideoMetadataImage i) => i.kind == VideoMetadataImageKind.cover)
-            .map((VideoMetadataImage i) => i.url)
-            .toList(),
-        <String>['c12', 'c11', 'c10', 'c9', 'c8', 'c7', 'c6', 'c5', 'c4', 'c3'],
-        reason: '评分高的 10 张，c12 只出现一次');
+      ten
+          .where(
+            (VideoMetadataImage i) => i.kind == VideoMetadataImageKind.cover,
+          )
+          .map((VideoMetadataImage i) => i.url)
+          .toList(),
+      <String>['c12', 'c11', 'c10', 'c9', 'c8', 'c7', 'c6', 'c5', 'c4', 'c3'],
+      reason: '评分高的 10 张，c12 只出现一次',
+    );
     expect(
-        ten
-            .where((VideoMetadataImage i) => i.kind == VideoMetadataImageKind.thumb)
-            .map((VideoMetadataImage i) => i.url),
-        <String>['t3'],
-        reason: '剧照上限传 5 也只留 1（Shoko MaxAutoThumbnails = 1）');
+      ten
+          .where(
+            (VideoMetadataImage i) => i.kind == VideoMetadataImageKind.thumb,
+          )
+          .map((VideoMetadataImage i) => i.url),
+      <String>['t3'],
+      reason: '剧照上限传 5 也只留 1（Shoko MaxAutoThumbnails = 1）',
+    );
     expect(
-        selectVideoMetadataImages(
-          primary: covers,
-          languageOrder: order,
-          maxPerKind: const <VideoMetadataImageKind, int>{
-            VideoMetadataImageKind.cover: 0,
-          },
-        ).where((VideoMetadataImage i) => i.kind == VideoMetadataImageKind.cover),
-        hasLength(12),
-        reason: '0 = 不限');
+      selectVideoMetadataImages(
+        primary: covers,
+        languageOrder: order,
+        maxPerKind: const <VideoMetadataImageKind, int>{
+          VideoMetadataImageKind.cover: 0,
+        },
+      ).where((VideoMetadataImage i) => i.kind == VideoMetadataImageKind.cover),
+      hasLength(12),
+      reason: '0 = 不限',
+    );
     expect(
-        selectVideoMetadataImages(primary: covers, languageOrder: order)
-            .where((VideoMetadataImage i) => i.kind == VideoMetadataImageKind.cover),
-        hasLength(1),
-        reason: '没给上限的图种默认 1');
+      selectVideoMetadataImages(
+        primary: covers,
+        languageOrder: order,
+      ).where((VideoMetadataImage i) => i.kind == VideoMetadataImageKind.cover),
+      hasLength(1),
+      reason: '没给上限的图种默认 1',
+    );
   });
 
   // Shoko 图片语言序的 Main 槽：作品原语插在资料语言之后、英文之前。
   test('原语（Main 槽）插在资料语言之后：zh 用户的日本动画先 zh 再 ja 再 en', () {
     expect(
-        imageLanguageOrderWithMain(
-            const VideoMetadataLanguages('zh-CN').imageLanguages,
-            mainLanguage: 'ja'),
-        <String>['zh', 'ja', 'en', '']);
+      imageLanguageOrderWithMain(
+        const VideoMetadataLanguages('zh-CN').imageLanguages,
+        mainLanguage: 'ja',
+      ),
+      <String>['zh', 'ja', 'en', ''],
+    );
     expect(
-        imageLanguageOrderWithMain(
-            const VideoMetadataLanguages('ja').imageLanguages,
-            mainLanguage: 'ja'),
-        <String>['ja', 'en', ''],
-        reason: '已在序里不重复');
+      imageLanguageOrderWithMain(
+        const VideoMetadataLanguages('ja').imageLanguages,
+        mainLanguage: 'ja',
+      ),
+      <String>['ja', 'en', ''],
+      reason: '已在序里不重复',
+    );
     expect(
-        imageLanguageOrderWithMain(
-            const VideoMetadataLanguages('de-DE').imageLanguages,
-            mainLanguage: null),
-        <String>['de', 'en', '']);
+      imageLanguageOrderWithMain(
+        const VideoMetadataLanguages('de-DE').imageLanguages,
+        mainLanguage: null,
+      ),
+      <String>['de', 'en', ''],
+    );
     final List<VideoMetadataImage> selected = selectVideoMetadataImages(
       primary: const <VideoMetadataImage>[
         VideoMetadataImage(
@@ -359,8 +377,11 @@ void main() {
       languageOrder: const VideoMetadataLanguages('zh-CN').imageLanguages,
       mainLanguage: 'ja',
     );
-    expect(selected.single.url, 'ja-cover',
-        reason: '没有 zh 海报时原语海报压过英文海报（Shoko Main 在 English 前）');
+    expect(
+      selected.single.url,
+      'ja-cover',
+      reason: '没有 zh 海报时原语海报压过英文海报（Shoko Main 在 English 前）',
+    );
   });
 
   test('续季单主源先重映射到本地季号再与 TMDB 全剧骨架合并', () {
@@ -706,50 +727,45 @@ void main() {
       List<String> genres = const <String>[],
       List<String> aliases = const <String>[],
       double? rating,
-    }) =>
-        VideoMetadataWork(
-          provider: VideoMetadataProviderKind.mal,
-          kind: VideoMetadataMediaKind.tv,
-          title: 'MAL title',
-          originalTitle: '日本語原題',
-          plot: plot,
-          tagline: tagline,
-          genres: genres,
-          aliases: aliases,
-          rating: rating,
-          ratingVotes: rating == null ? null : 1000,
-          studios: const <String>['MAPPA'],
-          ids: const <VideoMetadataId>[
-            VideoMetadataId(type: 'mal', value: '1')
-          ],
-        );
+    }) => VideoMetadataWork(
+      provider: VideoMetadataProviderKind.mal,
+      kind: VideoMetadataMediaKind.tv,
+      title: 'MAL title',
+      originalTitle: '日本語原題',
+      plot: plot,
+      tagline: tagline,
+      genres: genres,
+      aliases: aliases,
+      rating: rating,
+      ratingVotes: rating == null ? null : 1000,
+      studios: const <String>['MAPPA'],
+      ids: const <VideoMetadataId>[VideoMetadataId(type: 'mal', value: '1')],
+    );
     VideoMetadataWork tmdb({
       String? plot,
       String? tagline,
       List<String> genres = const <String>[],
       List<String> aliases = const <String>[],
-    }) =>
-        VideoMetadataWork(
-          provider: VideoMetadataProviderKind.tmdb,
-          kind: VideoMetadataMediaKind.tv,
-          title: 'TMDB title',
-          plot: plot,
-          tagline: tagline,
-          genres: genres,
-          aliases: aliases,
-          studios: const <String>['mappa', 'Studio B'],
-          ids: const <VideoMetadataId>[
-            VideoMetadataId(type: 'tmdb', value: '2')
-          ],
-        );
+    }) => VideoMetadataWork(
+      provider: VideoMetadataProviderKind.tmdb,
+      kind: VideoMetadataMediaKind.tv,
+      title: 'TMDB title',
+      plot: plot,
+      tagline: tagline,
+      genres: genres,
+      aliases: aliases,
+      studios: const <String>['mappa', 'Studio B'],
+      ids: const <VideoMetadataId>[VideoMetadataId(type: 'tmdb', value: '2')],
+    );
 
     test('对称：TMDB 主源时 MAL 补评分、日文原名、别名', () {
       final VideoMetadataWork merged = supplementVideoMetadata(
         tmdb(plot: 'TMDB plot'),
         mal(
-            plot: 'MAL synopsis',
-            rating: 8.7,
-            aliases: const <String>['Alias']),
+          plot: 'MAL synopsis',
+          rating: 8.7,
+          aliases: const <String>['Alias'],
+        ),
       );
 
       expect(merged.provider, VideoMetadataProviderKind.tmdb);
@@ -759,8 +775,10 @@ void main() {
       expect(merged.ratingVotes, 1000);
       expect(merged.originalTitle, '日本語原題');
       expect(merged.aliases, <String>['Alias']);
-      expect(merged.ids.map((VideoMetadataId id) => id.type),
-          <String>['tmdb', 'mal']);
+      expect(merged.ids.map((VideoMetadataId id) => id.type), <String>[
+        'tmdb',
+        'mal',
+      ]);
     });
 
     test('集合并集去重：primary 在前，supplement 只追加归一化后不重复的项', () {
@@ -801,11 +819,17 @@ void main() {
 
       expect(merged.title, 'TMDB title');
       expect(merged.originalTitle, '日本語原題', reason: '主源自带原名优先保留');
-      expect(merged.aliases, contains('MAL title'),
-          reason: '被换下来的主源标题进别名池，exact gate 匹配面不缩');
+      expect(
+        merged.aliases,
+        contains('MAL title'),
+        reason: '被换下来的主源标题进别名池，exact gate 匹配面不缩',
+      );
       expect(merged.aliases, isNot(contains('TMDB title')));
-      expect(merged.provider, VideoMetadataProviderKind.mal,
-          reason: '只换标题文字，主源身份不变');
+      expect(
+        merged.provider,
+        VideoMetadataProviderKind.mal,
+        reason: '只换标题文字，主源身份不变',
+      );
     });
 
     test('标题语言感知：ja / en 首选下 MAL 给的就是本语言标题，不被 TMDB 替换', () {
@@ -815,7 +839,11 @@ void main() {
           tmdb(),
           preferredLanguage: preferred,
         );
-        expect(merged.title, 'MAL title', reason: 'preferredLanguage=$preferred');
+        expect(
+          merged.title,
+          'MAL title',
+          reason: 'preferredLanguage=$preferred',
+        );
       }
     });
 
@@ -828,7 +856,9 @@ void main() {
         provider: VideoMetadataProviderKind.anidb,
         kind: VideoMetadataMediaKind.tv,
         title: '紫罗兰永恒花园',
-        ids: const <VideoMetadataId>[VideoMetadataId(type: 'anidb', value: '9')],
+        ids: const <VideoMetadataId>[
+          VideoMetadataId(type: 'anidb', value: '9'),
+        ],
       );
       final VideoMetadataWork merged = supplementVideoMetadata(
         anidb,
@@ -842,34 +872,37 @@ void main() {
       VideoMetadataWork withEpisodes(
         VideoMetadataProviderKind provider,
         Map<int, String> titles,
-      ) =>
-          VideoMetadataWork(
-            provider: provider,
-            kind: VideoMetadataMediaKind.tv,
-            title: provider.name,
-            ids: <VideoMetadataId>[
-              VideoMetadataId(type: provider.name, value: '1')
+      ) => VideoMetadataWork(
+        provider: provider,
+        kind: VideoMetadataMediaKind.tv,
+        title: provider.name,
+        ids: <VideoMetadataId>[
+          VideoMetadataId(type: provider.name, value: '1'),
+        ],
+        seasons: <VideoMetadataSeason>[
+          VideoMetadataSeason(
+            seasonNumber: 1,
+            title: 'S1',
+            episodes: <VideoMetadataEpisode>[
+              for (final MapEntry<int, String> entry in titles.entries)
+                VideoMetadataEpisode(
+                  seasonNumber: 1,
+                  episodeNumber: entry.key,
+                  title: entry.value,
+                ),
             ],
-            seasons: <VideoMetadataSeason>[
-              VideoMetadataSeason(
-                seasonNumber: 1,
-                title: 'S1',
-                episodes: <VideoMetadataEpisode>[
-                  for (final MapEntry<int, String> entry in titles.entries)
-                    VideoMetadataEpisode(
-                      seasonNumber: 1,
-                      episodeNumber: entry.key,
-                      title: entry.value,
-                    ),
-                ],
-              ),
-            ],
-          );
+          ),
+        ],
+      );
       final VideoMetadataWork merged = supplementVideoMetadata(
-        withEpisodes(
-            VideoMetadataProviderKind.mal, <int, String>{1: '第一話', 2: '第二話'}),
-        withEpisodes(
-            VideoMetadataProviderKind.tmdb, <int, String>{1: '第一集', 2: '  '}),
+        withEpisodes(VideoMetadataProviderKind.mal, <int, String>{
+          1: '第一話',
+          2: '第二話',
+        }),
+        withEpisodes(VideoMetadataProviderKind.tmdb, <int, String>{
+          1: '第一集',
+          2: '  ',
+        }),
         preferredLanguage: 'zh-CN',
       );
       final List<VideoMetadataEpisode> episodes =
@@ -916,17 +949,17 @@ void main() {
         ).plot,
         'English synopsis',
       );
-      expect(
-        supplementVideoMetadata(mal(), tmdb(plot: '中文简介')).plot,
-        '中文简介',
-      );
+      expect(supplementVideoMetadata(mal(), tmdb(plot: '中文简介')).plot, '中文简介');
     });
 
     test('同 provider 原样返回', () {
       final VideoMetadataWork primary = mal(plot: 'a');
       expect(
-        supplementVideoMetadata(primary, mal(plot: 'b'),
-            preferredLanguage: 'zh'),
+        supplementVideoMetadata(
+          primary,
+          mal(plot: 'b'),
+          preferredLanguage: 'zh',
+        ),
         same(primary),
       );
       expect(supplementVideoMetadata(primary, null), same(primary));
@@ -1063,11 +1096,12 @@ void main() {
           'Toyosaki, Aki',
         ],
       );
-      expect(
-        merged.map((VideoMetadataCredit c) => c.order).toList(),
-        <int>[0, 1, 2, 3],
-        reason: '落库后 ORDER BY sortOrder 才不会让第二季配角插进第一季主角中间',
-      );
+      expect(merged.map((VideoMetadataCredit c) => c.order).toList(), <int>[
+        0,
+        1,
+        2,
+        3,
+      ], reason: '落库后 ORDER BY sortOrder 才不会让第二季配角插进第一季主角中间');
     });
 
     test('MAL「姓, 名」声优与 TMDB「名 姓」演员 + (voice) 角色认成同一条', () {
@@ -1079,11 +1113,17 @@ void main() {
       );
       expect(merged, hasLength(1));
       final VideoMetadataCredit credit = merged.single;
-      expect(credit.kind, VideoMetadataCreditKind.voiceActor,
-          reason: '主源的 kind 与名字保留');
+      expect(
+        credit.kind,
+        VideoMetadataCreditKind.voiceActor,
+        reason: '主源的 kind 与名字保留',
+      );
       expect(credit.person.name, 'Tanezaki, Atsumi');
-      expect(credit.person.profileUrl, 'tmdb-photo',
-          reason: 'MAL 没照片（占位已归 null）时用 TMDB 的补');
+      expect(
+        credit.person.profileUrl,
+        'tmdb-photo',
+        reason: 'MAL 没照片（占位已归 null）时用 TMDB 的补',
+      );
       expect(
         credit.person.ids.map((VideoMetadataId id) => id.type),
         containsAll(<String>['mal', 'tmdb']),
@@ -1128,32 +1168,30 @@ void main() {
       String? plot,
       List<String> genres = const <String>[],
       List<VideoMetadataCredit> credits = const <VideoMetadataCredit>[],
-    }) =>
-        VideoMetadataWork(
-          provider: provider,
-          kind: VideoMetadataMediaKind.tv,
-          title: provider.name,
-          plot: plot,
-          genres: genres,
-          credits: credits,
-        );
+    }) => VideoMetadataWork(
+      provider: provider,
+      kind: VideoMetadataMediaKind.tv,
+      title: provider.name,
+      plot: plot,
+      genres: genres,
+      credits: credits,
+    );
     VideoMetadataCredit voice(
       String name,
       String role, {
       String? originalName,
       String? photo,
       VideoMetadataCreditKind kind = VideoMetadataCreditKind.voiceActor,
-    }) =>
-        VideoMetadataCredit(
-          kind: kind,
-          person: VideoMetadataPerson(
-            name: name,
-            originalName: originalName,
-            profileUrl: photo,
-          ),
-          character: VideoMetadataCharacter(name: role),
-          roleName: role,
-        );
+    }) => VideoMetadataCredit(
+      kind: kind,
+      person: VideoMetadataPerson(
+        name: name,
+        originalName: originalName,
+        profileUrl: photo,
+      ),
+      character: VideoMetadataCharacter(name: role),
+      roleName: role,
+    );
     VideoMetadataCredit staff(VideoMetadataCreditKind kind, String name) =>
         VideoMetadataCredit(
           kind: kind,
@@ -1293,8 +1331,11 @@ void main() {
       final List<VideoMetadataCredit> merged = mergeVideoMetadataCredits(
         <VideoMetadataCredit>[voice('Suzuki, Aina', 'Fukuga, Kurumi')],
         <VideoMetadataCredit>[
-          voice('Miyu Tomita', 'Another (voice)',
-              kind: VideoMetadataCreditKind.actor),
+          voice(
+            'Miyu Tomita',
+            'Another (voice)',
+            kind: VideoMetadataCreditKind.actor,
+          ),
         ],
       );
       expect(merged, hasLength(2));

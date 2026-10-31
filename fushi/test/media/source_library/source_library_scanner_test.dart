@@ -42,11 +42,11 @@ import '../../helpers/source_guard.dart';
 FushiDatabase _memDb() => FushiDatabase.forTesting(NativeDatabase.memory());
 
 SourceFileEntry _file(String path, {int size = 1}) => SourceFileEntry(
-      name: p.basename(path),
-      path: path,
-      isDirectory: false,
-      sizeBytes: size,
-    );
+  name: p.basename(path),
+  path: path,
+  isDirectory: false,
+  sizeBytes: size,
+);
 
 SourceFileEntry _dir(String path) =>
     SourceFileEntry(name: p.basename(path), path: path, isDirectory: true);
@@ -64,13 +64,15 @@ ArchiveFile _textFile(String name, String content) {
   return ArchiveFile(name, bytes.length, bytes);
 }
 
-const String _containerXml = '<?xml version="1.0" encoding="UTF-8"?>'
+const String _containerXml =
+    '<?xml version="1.0" encoding="UTF-8"?>'
     '<container version="1.0" '
     'xmlns="urn:oasis:names:tc:opendocument:xmlns:container">'
     '<rootfiles><rootfile full-path="OEBPS/content.opf" '
     'media-type="application/oebps-package+xml"/></rootfiles></container>';
 
-String _contentOpf(String title) => '<?xml version="1.0" encoding="UTF-8"?>'
+String _contentOpf(String title) =>
+    '<?xml version="1.0" encoding="UTF-8"?>'
     '<package xmlns="http://www.idpf.org/2007/opf" version="3.0" '
     'unique-identifier="book-id">'
     '<metadata xmlns:dc="http://purl.org/dc/elements/1.1/">'
@@ -79,7 +81,8 @@ String _contentOpf(String title) => '<?xml version="1.0" encoding="UTF-8"?>'
     'media-type="application/xhtml+xml"/></manifest>'
     '<spine><itemref idref="chapter"/></spine></package>';
 
-const String _chapterXhtml = '<?xml version="1.0" encoding="UTF-8"?>'
+const String _chapterXhtml =
+    '<?xml version="1.0" encoding="UTF-8"?>'
     '<html xmlns="http://www.w3.org/1999/xhtml"><head><title>C</title></head>'
     '<body><p>Hello world.</p></body></html>';
 
@@ -121,9 +124,9 @@ String _writeMokuro(String dir, {required String title}) {
 
 void _writeMangaPage(String dir, String name) {
   Directory(dir).createSync(recursive: true);
-  File(p.join(dir, name)).writeAsBytesSync(
-    img.encodePng(img.Image(width: 20, height: 40)),
-  );
+  File(
+    p.join(dir, name),
+  ).writeAsBytesSync(img.encodePng(img.Image(width: 20, height: 40)));
 }
 
 void main() {
@@ -139,13 +142,18 @@ void main() {
         _file('/lib/book.epub'),
       ]);
 
-      expect(plan.books.map((ScanBookItem b) => b.bookPath),
-          containsAll(<String>['/lib/scan.pdf', '/lib/book.epub']));
-      final ScanBookItem pdf =
-          plan.books.firstWhere((ScanBookItem b) => b.isPdf);
+      expect(
+        plan.books.map((ScanBookItem b) => b.bookPath),
+        containsAll(<String>['/lib/scan.pdf', '/lib/book.epub']),
+      );
+      final ScanBookItem pdf = plan.books.firstWhere(
+        (ScanBookItem b) => b.isPdf,
+      );
       expect(pdf.bookPath, '/lib/scan.pdf');
-      expect(plan.books.firstWhere((ScanBookItem b) => !b.isPdf).bookPath,
-          '/lib/book.epub');
+      expect(
+        plan.books.firstWhere((ScanBookItem b) => !b.isPdf).bookPath,
+        '/lib/book.epub',
+      );
     });
 
     test('PDF 旁边有同名字幕+音频也不挂有声书（PDF 行没有可对齐的正文）', () {
@@ -157,8 +165,11 @@ void main() {
 
       final ScanBookItem pdf = plan.books.single;
       expect(pdf.isPdf, isTrue);
-      expect(pdf.isAudiobook, isFalse,
-          reason: '对齐拿 EPUB 章节正文与字幕逐句配，PDF 的 chaptersJson 是 []');
+      expect(
+        pdf.isAudiobook,
+        isFalse,
+        reason: '对齐拿 EPUB 章节正文与字幕逐句配，PDF 的 chaptersJson 是 []',
+      );
     });
 
     test('classifies epub / video; subtitle attaches as video sidecar', () {
@@ -185,28 +196,29 @@ void main() {
       expect(plan.videos.single.subtitlePath, '/lib/movie.srt');
     });
 
-    test('video source: audio tracks plan as videos (no picture, no subtitle)',
-        () {
-      final ScanPlan plan = planScanFromFileList(
-        <SourceFileEntry>[
+    test(
+      'video source: audio tracks plan as videos (no picture, no subtitle)',
+      () {
+        final ScanPlan plan = planScanFromFileList(<SourceFileEntry>[
           _file('/music/album/01 - One more tea.flac'),
           _file('/music/album/02 - Tostada.MP3'),
           _file('/music/album/02 - Tostada.lrc'),
           _file('/music/album/cover.jpg'),
           _file('/music/album/export-report.txt'),
-        ],
-        includeAudioAsVideo: true,
-      );
+        ], includeAudioAsVideo: true);
 
-      expect(plan.videos.map((ScanVideoItem v) => v.videoPath), <String>[
-        '/music/album/01 - One more tea.flac',
-        '/music/album/02 - Tostada.MP3',
-      ]);
-      // 视频字幕白名单不含 lrc：lrc 不挂到音频条目上（与视频一致）。
-      expect(plan.videos.every((ScanVideoItem v) => v.subtitlePath == null),
-          isTrue);
-      expect(plan.books, isEmpty);
-    });
+        expect(plan.videos.map((ScanVideoItem v) => v.videoPath), <String>[
+          '/music/album/01 - One more tea.flac',
+          '/music/album/02 - Tostada.MP3',
+        ]);
+        // 视频字幕白名单不含 lrc：lrc 不挂到音频条目上（与视频一致）。
+        expect(
+          plan.videos.every((ScanVideoItem v) => v.subtitlePath == null),
+          isTrue,
+        );
+        expect(plan.books, isEmpty);
+      },
+    );
 
     test('book source keeps audio as EPUB sidecar only, never as videos', () {
       final ScanPlan plan = planScanFromFileList(<SourceFileEntry>[
@@ -216,8 +228,11 @@ void main() {
         _file('/lib/ost.flac'),
       ]);
 
-      expect(plan.videos, isEmpty,
-          reason: 'includeAudioAsVideo defaults off: book sources unchanged');
+      expect(
+        plan.videos,
+        isEmpty,
+        reason: 'includeAudioAsVideo defaults off: book sources unchanged',
+      );
       expect(plan.books.single.audioPaths, <String>['/lib/book.mp3']);
     });
 
@@ -283,10 +298,9 @@ void main() {
         p.join(root, 'd.epub'),
         p.join(root, 'e.PDF'),
       ];
-      final ScanPlan plan = planScanFromFileList(
-        <SourceFileEntry>[for (final String v in volumes) _file(v)],
-        mangaRootPath: root,
-      );
+      final ScanPlan plan = planScanFromFileList(<SourceFileEntry>[
+        for (final String v in volumes) _file(v),
+      ], mangaRootPath: root);
 
       expect(
         plan.mangaArchives
@@ -294,16 +308,24 @@ void main() {
             .toSet(),
         volumes.toSet(),
       );
-      expect(plan.books, isEmpty,
-          reason: '漫画来源里的 epub / pdf 是漫画卷，不能落进书籍清单后被丢掉');
+      expect(
+        plan.books,
+        isEmpty,
+        reason: '漫画来源里的 epub / pdf 是漫画卷，不能落进书籍清单后被丢掉',
+      );
       expect(plan.mangaFolders, isEmpty);
     });
 
     test('载体表与手动导入同源（kMangaCarrierFileExtensions 去掉 .mokuro）', () {
-      expect(
-        kScanMangaCarrierExtensions,
-        <String>{'cbz', 'zip', 'rar', 'cbr', 'cb7', 'epub', 'pdf'},
-      );
+      expect(kScanMangaCarrierExtensions, <String>{
+        'cbz',
+        'zip',
+        'rar',
+        'cbr',
+        'cb7',
+        'epub',
+        'pdf',
+      });
     });
 
     test('书籍来源不受漫画载体影响：epub / pdf 仍是书，压缩包不计划', () {
@@ -314,10 +336,10 @@ void main() {
         _file('/lib/vol2.rar'),
       ]);
 
-      expect(
-        plan.books.map((ScanBookItem b) => b.bookPath),
-        <String>['/lib/book.epub', '/lib/scan.pdf'],
-      );
+      expect(plan.books.map((ScanBookItem b) => b.bookPath), <String>[
+        '/lib/book.epub',
+        '/lib/scan.pdf',
+      ]);
       expect(plan.mangaArchives, isEmpty);
     });
 
@@ -326,49 +348,39 @@ void main() {
       final String cbz = p.join(root, 'vol1.cbz');
       final String zip = p.join(root, 'vol2.zip');
       final String rar = p.join(root, 'vol3.rar');
-      final ScanPlan plan = planScanFromFileList(
-        <SourceFileEntry>[
-          _file(cbz),
-          _file(p.join(root, 'vol1.mokuro')),
-          _file(zip),
-          _file(p.join(root, 'vol2.zip.mokuro')),
-          // 7-Zip 分支不读 sidecar：rar 旁的 mokuro 照旧是独立一卷。
-          _file(rar),
-          _file(p.join(root, 'vol3.mokuro')),
-        ],
-        mangaRootPath: root,
-      );
+      final ScanPlan plan = planScanFromFileList(<SourceFileEntry>[
+        _file(cbz),
+        _file(p.join(root, 'vol1.mokuro')),
+        _file(zip),
+        _file(p.join(root, 'vol2.zip.mokuro')),
+        // 7-Zip 分支不读 sidecar：rar 旁的 mokuro 照旧是独立一卷。
+        _file(rar),
+        _file(p.join(root, 'vol3.mokuro')),
+      ], mangaRootPath: root);
 
-      expect(
-        plan.mangaArchives,
-        <ScanMangaArchiveItem>[
-          ScanMangaArchiveItem(
-            archivePath: cbz,
-            mokuroSidecarPath: p.join(root, 'vol1.mokuro'),
-          ),
-          ScanMangaArchiveItem(
-            archivePath: zip,
-            mokuroSidecarPath: p.join(root, 'vol2.zip.mokuro'),
-          ),
-          ScanMangaArchiveItem(archivePath: rar),
-        ],
-      );
-      expect(
-        plan.mangas.map((ScanMangaItem m) => m.mokuroPath),
-        <String>[p.join(root, 'vol3.mokuro')],
-      );
+      expect(plan.mangaArchives, <ScanMangaArchiveItem>[
+        ScanMangaArchiveItem(
+          archivePath: cbz,
+          mokuroSidecarPath: p.join(root, 'vol1.mokuro'),
+        ),
+        ScanMangaArchiveItem(
+          archivePath: zip,
+          mokuroSidecarPath: p.join(root, 'vol2.zip.mokuro'),
+        ),
+        ScanMangaArchiveItem(archivePath: rar),
+      ]);
+      expect(plan.mangas.map((ScanMangaItem m) => m.mokuroPath), <String>[
+        p.join(root, 'vol3.mokuro'),
+      ]);
     });
 
     test('与压缩包卷同目录的散图（封面）不再计划成一卷裸图', () {
       final String root = p.join('lib', 'Veil');
-      final ScanPlan plan = planScanFromFileList(
-        <SourceFileEntry>[
-          _file(p.join(root, 'cover.jpg')),
-          _file(p.join(root, 'Veil (1).cbz')),
-          _file(p.join(root, 'Veil (2).cbz')),
-        ],
-        mangaRootPath: root,
-      );
+      final ScanPlan plan = planScanFromFileList(<SourceFileEntry>[
+        _file(p.join(root, 'cover.jpg')),
+        _file(p.join(root, 'Veil (1).cbz')),
+        _file(p.join(root, 'Veil (2).cbz')),
+      ], mangaRootPath: root);
 
       expect(plan.mangaArchives, hasLength(2));
       expect(plan.mangaFolders, isEmpty, reason: '只有一张封面的「漫画」是垃圾条目');
@@ -376,32 +388,25 @@ void main() {
 
     test('纯页图扫描根本身作为一卷', () {
       final String root = p.join('library', 'volume-01');
-      final ScanPlan plan = planScanFromFileList(
-        <SourceFileEntry>[
-          _file(p.join(root, '001.jpg')),
-          _file(p.join(root, 'chapter', '002.png')),
-        ],
-        mangaRootPath: root,
-      );
+      final ScanPlan plan = planScanFromFileList(<SourceFileEntry>[
+        _file(p.join(root, '001.jpg')),
+        _file(p.join(root, 'chapter', '002.png')),
+      ], mangaRootPath: root);
 
-      expect(
-        plan.mangaFolders,
-        <ScanMangaFolderItem>[ScanMangaFolderItem(folderPath: root)],
-      );
+      expect(plan.mangaFolders, <ScanMangaFolderItem>[
+        ScanMangaFolderItem(folderPath: root),
+      ]);
     });
 
     test('选择页图卷的上级目录时，每个直接子目录各计划成一本', () {
       final String root = p.join('library', 'series');
       final String volume1 = p.join(root, 'volume-01');
       final String volume2 = p.join(root, 'volume-02');
-      final ScanPlan plan = planScanFromFileList(
-        <SourceFileEntry>[
-          _file(p.join(volume2, 'images', '001.webp')),
-          _file(p.join(volume1, '001.jpg')),
-          _file(p.join(volume1, 'notes.txt')),
-        ],
-        mangaRootPath: root,
-      );
+      final ScanPlan plan = planScanFromFileList(<SourceFileEntry>[
+        _file(p.join(volume2, 'images', '001.webp')),
+        _file(p.join(volume1, '001.jpg')),
+        _file(p.join(volume1, 'notes.txt')),
+      ], mangaRootPath: root);
 
       expect(
         plan.mangaFolders.map((ScanMangaFolderItem i) => i.folderPath),
@@ -411,13 +416,10 @@ void main() {
 
     test('mokuro 所在目录树的页图不再重复计划成裸图卷', () {
       final String root = p.join('library', 'series');
-      final ScanPlan plan = planScanFromFileList(
-        <SourceFileEntry>[
-          _file(p.join(root, 'volume-01.mokuro')),
-          _file(p.join(root, 'images', '001.jpg')),
-        ],
-        mangaRootPath: root,
-      );
+      final ScanPlan plan = planScanFromFileList(<SourceFileEntry>[
+        _file(p.join(root, 'volume-01.mokuro')),
+        _file(p.join(root, 'images', '001.jpg')),
+      ], mangaRootPath: root);
 
       expect(plan.mangas, hasLength(1));
       expect(plan.mangaFolders, isEmpty);
@@ -471,8 +473,11 @@ void main() {
       final ScanBookItem b = plan.books.single;
       expect(b.subtitlePath, '/lib/book.srt');
       expect(b.audioPaths, isEmpty);
-      expect(b.isAudiobook, isFalse,
-          reason: 'audio is required to import as an audiobook');
+      expect(
+        b.isAudiobook,
+        isFalse,
+        reason: 'audio is required to import as an audiobook',
+      );
     });
 
     test('EPUB + mp3 but no subtitle -> plain book (audio needs subtitle)', () {
@@ -484,23 +489,28 @@ void main() {
       final ScanBookItem b = plan.books.single;
       expect(b.subtitlePath, isNull);
       // Audio is collected, but without a subtitle it cannot align -> plain EPUB.
-      expect(b.isAudiobook, isFalse,
-          reason: 'audio must be paired with a subtitle (sidecar semantics)');
+      expect(
+        b.isAudiobook,
+        isFalse,
+        reason: 'audio must be paired with a subtitle (sidecar semantics)',
+      );
     });
 
-    test('multi-part audio (book + book 01 / book-02) attaches to the book',
-        () {
-      final List<SourceFileEntry> files = <SourceFileEntry>[
-        _file('/lib/book.epub'),
-        _file('/lib/book.srt'),
-        _file('/lib/book 01.mp3'),
-        _file('/lib/book-02.mp3'),
-      ];
-      final ScanPlan plan = planScanFromFileList(files);
-      final ScanBookItem b = plan.books.single;
-      expect(b.audioPaths, hasLength(2));
-      expect(b.isAudiobook, isTrue);
-    });
+    test(
+      'multi-part audio (book + book 01 / book-02) attaches to the book',
+      () {
+        final List<SourceFileEntry> files = <SourceFileEntry>[
+          _file('/lib/book.epub'),
+          _file('/lib/book.srt'),
+          _file('/lib/book 01.mp3'),
+          _file('/lib/book-02.mp3'),
+        ];
+        final ScanPlan plan = planScanFromFileList(files);
+        final ScanBookItem b = plan.books.single;
+        expect(b.audioPaths, hasLength(2));
+        expect(b.isAudiobook, isTrue);
+      },
+    );
   });
 
   group('sourceId backfill is opt-in (backward compatible)', () {
@@ -509,12 +519,14 @@ void main() {
       addTearDown(db.close);
       final VideoBookRepository repo = VideoBookRepository(db);
 
-      await repo.saveVideoBook(VideoBooksCompanion(
-        bookUid: const Value('video/manual'),
-        title: const Value('Manual'),
-        videoPath: const Value('/m/manual.mp4'),
-        importedAt: Value(DateTime.now().millisecondsSinceEpoch),
-      ));
+      await repo.saveVideoBook(
+        VideoBooksCompanion(
+          bookUid: const Value('video/manual'),
+          title: const Value('Manual'),
+          videoPath: const Value('/m/manual.mp4'),
+          importedAt: Value(DateTime.now().millisecondsSinceEpoch),
+        ),
+      );
 
       final VideoBookRow? row = await repo.getByBookUid('video/manual');
       expect(row, isNotNull);
@@ -526,12 +538,14 @@ void main() {
       addTearDown(db.close);
       final VideoBookRepository repo = VideoBookRepository(db);
 
-      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
-        label: 'Vids',
-        mediaKind: 'video',
-        rootPath: '/srv/vids',
-        createdAt: 1000,
-      ));
+      final int sid = await db.insertMediaSource(
+        MediaSourcesCompanion.insert(
+          label: 'Vids',
+          mediaKind: 'video',
+          rootPath: '/srv/vids',
+          createdAt: 1000,
+        ),
+      );
 
       await repo.saveVideoBook(
         VideoBooksCompanion(
@@ -563,139 +577,172 @@ void main() {
     // Tz04dfBf2f：扫描根不存在 / 读不到（iOS 沙盒外未授权路径、盘没挂上）时以前
     // listFiles 回空列表，来源记成「0 个媒体、无错误」，用户看不出是读不到。
     for (final String kind in <String>['book', 'video', 'manga']) {
-      test('$kind source: unreadable root records lastScanError, not 0 silently',
-          () async {
-        final FushiDatabase db = _memDb();
-        addTearDown(db.close);
-        final String missing = p.join(tmp.path, 'not-mounted');
-        final int sid = await db.insertMediaSource(
+      test(
+        '$kind source: unreadable root records lastScanError, not 0 silently',
+        () async {
+          final FushiDatabase db = _memDb();
+          addTearDown(db.close);
+          final String missing = p.join(tmp.path, 'not-mounted');
+          final int sid = await db.insertMediaSource(
             MediaSourcesCompanion.insert(
-                label: 'Gone',
-                mediaKind: kind,
-                rootPath: missing,
-                createdAt: 1000));
-        final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
+              label: 'Gone',
+              mediaKind: kind,
+              rootPath: missing,
+              createdAt: 1000,
+            ),
+          );
+          final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
 
-        final SourceScanSummary summary =
-            await SourceLibraryScanner(db).scan(source);
+          final SourceScanSummary summary = await SourceLibraryScanner(
+            db,
+          ).scan(source);
 
-        expect(summary.succeeded, isFalse);
-        expect(summary.importedMediaCount, 0);
-        final SourceLibraryRow after = (await db.getMediaSourceById(sid))!;
-        expect(after.lastScanError, contains('not accessible'));
-        expect(after.lastScanError, contains(missing));
-      });
+          expect(summary.succeeded, isFalse);
+          expect(summary.importedMediaCount, 0);
+          final SourceLibraryRow after = (await db.getMediaSourceById(sid))!;
+          expect(after.lastScanError, contains('not accessible'));
+          expect(after.lastScanError, contains(missing));
+        },
+      );
     }
 
-    test('video source: inserts videos with sourceId + cues + scan result',
-        () async {
-      final FushiDatabase db = _memDb();
-      addTearDown(db.close);
-      final VideoBookRepository repo = VideoBookRepository(db);
+    test(
+      'video source: inserts videos with sourceId + cues + scan result',
+      () async {
+        final FushiDatabase db = _memDb();
+        addTearDown(db.close);
+        final VideoBookRepository repo = VideoBookRepository(db);
 
-      // movie.mp4 + same-stem movie.srt -> one video with parsed cues.
-      File(p.join(tmp.path, 'movie.mp4')).writeAsStringSync('fake-mp4');
-      File(p.join(tmp.path, 'movie.srt')).writeAsStringSync(_srt);
+        // movie.mp4 + same-stem movie.srt -> one video with parsed cues.
+        File(p.join(tmp.path, 'movie.mp4')).writeAsStringSync('fake-mp4');
+        File(p.join(tmp.path, 'movie.srt')).writeAsStringSync(_srt);
 
-      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
-        label: 'Vids',
-        mediaKind: 'video',
-        rootPath: tmp.path,
-        createdAt: 1000,
-      ));
-      final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
+        final int sid = await db.insertMediaSource(
+          MediaSourcesCompanion.insert(
+            label: 'Vids',
+            mediaKind: 'video',
+            rootPath: tmp.path,
+            createdAt: 1000,
+          ),
+        );
+        final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
 
-      final SourceScanSummary summary =
-          await SourceLibraryScanner(db).scan(source);
+        final SourceScanSummary summary = await SourceLibraryScanner(
+          db,
+        ).scan(source);
 
-      final List<VideoBookRow> videos = await repo.listAll();
-      expect(videos, hasLength(1));
-      expect(videos.single.sourceId, sid,
-          reason: 'scanned video must be backfilled with its source id');
-      expect(videos.single.videoPath, p.join(tmp.path, 'movie.mp4'));
-      expect(videos.single.subtitleSource, p.join(tmp.path, 'movie.srt'));
-      // Sidecar srt was parsed into cues.
-      final List<AudioCueRow> cues =
-          await db.getCuesForBook(videos.single.bookUid);
-      expect(cues, isNotEmpty);
+        final List<VideoBookRow> videos = await repo.listAll();
+        expect(videos, hasLength(1));
+        expect(
+          videos.single.sourceId,
+          sid,
+          reason: 'scanned video must be backfilled with its source id',
+        );
+        expect(videos.single.videoPath, p.join(tmp.path, 'movie.mp4'));
+        expect(videos.single.subtitleSource, p.join(tmp.path, 'movie.srt'));
+        // Sidecar srt was parsed into cues.
+        final List<AudioCueRow> cues = await db.getCuesForBook(
+          videos.single.bookUid,
+        );
+        expect(cues, isNotEmpty);
 
-      // Scan result written back.
-      final SourceLibraryRow after = (await db.getMediaSourceById(sid))!;
-      expect(after.mediaCount, 1);
-      expect(after.lastScannedAt, isNotNull);
-      expect(after.lastScanError, isNull);
-      expect(summary.sourceId, sid);
-      expect(summary.succeeded, isTrue);
-      expect(summary.discoveredPaths, contains(p.join(tmp.path, 'movie.mp4')));
-      expect(summary.createdVideoUids, <String>[videos.single.bookUid]);
-      expect(summary.reusedVideoUids, isEmpty);
-      expect(summary.createdCollectionIds, isEmpty);
-    });
+        // Scan result written back.
+        final SourceLibraryRow after = (await db.getMediaSourceById(sid))!;
+        expect(after.mediaCount, 1);
+        expect(after.lastScannedAt, isNotNull);
+        expect(after.lastScanError, isNull);
+        expect(summary.sourceId, sid);
+        expect(summary.succeeded, isTrue);
+        expect(
+          summary.discoveredPaths,
+          contains(p.join(tmp.path, 'movie.mp4')),
+        );
+        expect(summary.createdVideoUids, <String>[videos.single.bookUid]);
+        expect(summary.reusedVideoUids, isEmpty);
+        expect(summary.createdCollectionIds, isEmpty);
+      },
+    );
 
-    test('video source: an album folder of audio tracks imports as videos',
-        () async {
-      final FushiDatabase db = _memDb();
-      addTearDown(db.close);
-      final VideoBookRepository repo = VideoBookRepository(db);
+    test(
+      'video source: an album folder of audio tracks imports as videos',
+      () async {
+        final FushiDatabase db = _memDb();
+        addTearDown(db.close);
+        final VideoBookRepository repo = VideoBookRepository(db);
 
-      final Directory album = Directory(p.join(tmp.path, 'OST Vol.1 (2010)'))
-        ..createSync();
-      File(p.join(album.path, '01 - One more tea.flac'))
-          .writeAsStringSync('fake-flac');
-      File(p.join(album.path, '02 - Tostada.flac'))
-          .writeAsStringSync('fake-flac');
-      File(p.join(album.path, 'cover.jpg')).writeAsStringSync('not-a-video');
+        final Directory album = Directory(p.join(tmp.path, 'OST Vol.1 (2010)'))
+          ..createSync();
+        File(
+          p.join(album.path, '01 - One more tea.flac'),
+        ).writeAsStringSync('fake-flac');
+        File(
+          p.join(album.path, '02 - Tostada.flac'),
+        ).writeAsStringSync('fake-flac');
+        File(p.join(album.path, 'cover.jpg')).writeAsStringSync('not-a-video');
 
-      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
-        label: 'Music',
-        mediaKind: 'video',
-        rootPath: tmp.path,
-        createdAt: 1000,
-      ));
-      final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
+        final int sid = await db.insertMediaSource(
+          MediaSourcesCompanion.insert(
+            label: 'Music',
+            mediaKind: 'video',
+            rootPath: tmp.path,
+            createdAt: 1000,
+          ),
+        );
+        final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
 
-      final SourceScanSummary summary =
-          await SourceLibraryScanner(db).scan(source);
+        final SourceScanSummary summary = await SourceLibraryScanner(
+          db,
+        ).scan(source);
 
-      final List<VideoBookRow> videos = await repo.listAll();
-      expect(
-        videos.map((VideoBookRow v) => p.basename(v.videoPath)).toSet(),
-        <String>{'01 - One more tea.flac', '02 - Tostada.flac'},
-      );
-      expect(videos.every((VideoBookRow v) => v.sourceId == sid), isTrue);
-      expect(summary.succeeded, isTrue);
-      expect(summary.discoveredPaths,
-          contains(p.join(album.path, '01 - One more tea.flac')));
-      expect(summary.discoveredPaths,
-          isNot(contains(p.join(album.path, 'cover.jpg'))));
-    });
+        final List<VideoBookRow> videos = await repo.listAll();
+        expect(
+          videos.map((VideoBookRow v) => p.basename(v.videoPath)).toSet(),
+          <String>{'01 - One more tea.flac', '02 - Tostada.flac'},
+        );
+        expect(videos.every((VideoBookRow v) => v.sourceId == sid), isTrue);
+        expect(summary.succeeded, isTrue);
+        expect(
+          summary.discoveredPaths,
+          contains(p.join(album.path, '01 - One more tea.flac')),
+        );
+        expect(
+          summary.discoveredPaths,
+          isNot(contains(p.join(album.path, 'cover.jpg'))),
+        );
+      },
+    );
 
-    test('maintenance lease blocks the real video scanner before any IO',
-        () async {
-      final FushiDatabase db = _memDb();
-      addTearDown(db.close);
-      final VideoBookRepository repo = VideoBookRepository(db);
-      File(p.join(tmp.path, 'blocked.mp4')).writeAsStringSync('fake-mp4');
-      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
-        label: 'Blocked videos',
-        mediaKind: 'video',
-        rootPath: tmp.path,
-        createdAt: 1000,
-      ));
-      final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
-      final VideoScrapeOperationLease lease =
-          VideoScrapeOperationGate.tryEnterMaintenance()!;
-      addTearDown(lease.release);
+    test(
+      'maintenance lease blocks the real video scanner before any IO',
+      () async {
+        final FushiDatabase db = _memDb();
+        addTearDown(db.close);
+        final VideoBookRepository repo = VideoBookRepository(db);
+        File(p.join(tmp.path, 'blocked.mp4')).writeAsStringSync('fake-mp4');
+        final int sid = await db.insertMediaSource(
+          MediaSourcesCompanion.insert(
+            label: 'Blocked videos',
+            mediaKind: 'video',
+            rootPath: tmp.path,
+            createdAt: 1000,
+          ),
+        );
+        final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
+        final VideoScrapeOperationLease lease =
+            VideoScrapeOperationGate.tryEnterMaintenance()!;
+        addTearDown(lease.release);
 
-      final SourceScanSummary summary =
-          await SourceLibraryScanner(db).scan(source);
+        final SourceScanSummary summary = await SourceLibraryScanner(
+          db,
+        ).scan(source);
 
-      expect(summary.succeeded, isFalse);
-      expect(summary.error, contains('正在清理'));
-      expect(summary.discoveredPaths, isEmpty);
-      expect(await repo.listAll(), isEmpty);
-      expect(await db.getAllVideoMetadataWorks(), isEmpty);
-    });
+        expect(summary.succeeded, isFalse);
+        expect(summary.error, contains('正在清理'));
+        expect(summary.discoveredPaths, isEmpty);
+        expect(await repo.listAll(), isEmpty);
+        expect(await db.getAllVideoMetadataWorks(), isEmpty);
+      },
+    );
 
     test('nested episodic videos form one additive, stable playlist', () async {
       final FushiDatabase db = _memDb();
@@ -707,27 +754,31 @@ void main() {
         ..writeAsBytesSync(<int>[0]);
       File(p.join(season.path, 'Show S01E02.mkv')).writeAsBytesSync(<int>[0]);
 
-      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
-        label: 'Shows',
-        mediaKind: 'video',
-        rootPath: tmp.path,
-        createdAt: 1000,
-      ));
+      final int sid = await db.insertMediaSource(
+        MediaSourcesCompanion.insert(
+          label: 'Shows',
+          mediaKind: 'video',
+          rootPath: tmp.path,
+          createdAt: 1000,
+        ),
+      );
       SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
 
-      final SourceScanSummary firstSummary =
-          await SourceLibraryScanner(db).scan(source);
+      final SourceScanSummary firstSummary = await SourceLibraryScanner(
+        db,
+      ).scan(source);
       expect(await repo.listAll(), hasLength(2));
-      final List<MediaCollectionRow> firstCollections =
-          await db.getAllMediaCollections();
+      final List<MediaCollectionRow> firstCollections = await db
+          .getAllMediaCollections();
       expect(firstCollections, hasLength(1));
       final int collectionId = firstCollections.single.id;
       expect(firstCollections.single.name, 'Show');
       expect(firstSummary.createdVideoUids, hasLength(2));
       expect(firstSummary.createdCollectionIds, <int>[collectionId]);
       final List<String> firstTitles = <String>[];
-      for (final MediaCollectionItemRow member
-          in await db.getCollectionItems(collectionId)) {
+      for (final MediaCollectionItemRow member in await db.getCollectionItems(
+        collectionId,
+      )) {
         firstTitles.add((await repo.getByBookUid(member.entryKey))!.title);
       }
       expect(firstTitles, <String>['Show S01E01', 'Show S01E02']);
@@ -745,28 +796,27 @@ void main() {
       source = (await db.getMediaSourceById(sid))!;
       await SourceLibraryScanner(db).scan(source);
       expect(await repo.listAll(), hasLength(3), reason: '暂缺磁盘文件不得破坏观看进度与用户资料');
-      final List<MediaCollectionItemRow> members =
-          await db.getCollectionItems(collectionId);
+      final List<MediaCollectionItemRow> members = await db.getCollectionItems(
+        collectionId,
+      );
       expect(members, hasLength(3), reason: '暂缺旧分集仍保留合集成员关系');
       final List<String> titles = <String>[];
       for (final MediaCollectionItemRow member in members) {
         titles.add((await repo.getByBookUid(member.entryKey))!.title);
       }
-      expect(titles, <String>[
-        'Show S01E01',
-        'Show S01E02',
-        'Show S01E03',
-      ]);
+      expect(titles, <String>['Show S01E01', 'Show S01E02', 'Show S01E03']);
       expect((await db.getMediaSourceById(sid))!.mediaCount, 0);
       for (final VideoBookRow row in await repo.listAll()) {
         expect(row.sourceId, sid);
       }
     });
 
-    testWidgets('book source: imports EPUB with sourceId + scan result',
-        (WidgetTester tester) async {
-      final Directory pp =
-          Directory.systemTemp.createTempSync('m1b_scanner_pp_');
+    testWidgets('book source: imports EPUB with sourceId + scan result', (
+      WidgetTester tester,
+    ) async {
+      final Directory pp = Directory.systemTemp.createTempSync(
+        'm1b_scanner_pp_',
+      );
       binding.defaultBinaryMessenger.setMockMethodCallHandler(
         const MethodChannel('plugins.flutter.io/path_provider'),
         (MethodCall call) async => pp.path,
@@ -786,12 +836,14 @@ void main() {
 
       _writeEpub(p.join(tmp.path, 'novel.epub'), 'ScannerNovel');
 
-      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
-        label: 'Books',
-        mediaKind: 'book',
-        rootPath: tmp.path,
-        createdAt: 1000,
-      ));
+      final int sid = await db.insertMediaSource(
+        MediaSourcesCompanion.insert(
+          label: 'Books',
+          mediaKind: 'book',
+          rootPath: tmp.path,
+          createdAt: 1000,
+        ),
+      );
       final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
 
       // EpubImporter.importFromPath runs on a real isolate (compute); drive it
@@ -803,8 +855,11 @@ void main() {
       final List<EpubBookRow> books = await db.getAllEpubBooks();
       expect(books, hasLength(1));
       expect(books.single.title, 'ScannerNovel');
-      expect(books.single.sourceId, sid,
-          reason: 'scanned book must be backfilled with its source id');
+      expect(
+        books.single.sourceId,
+        sid,
+        reason: 'scanned book must be backfilled with its source id',
+      );
 
       final SourceLibraryRow after = (await db.getMediaSourceById(sid))!;
       expect(after.mediaCount, 1);
@@ -846,19 +901,22 @@ void main() {
       }
     });
 
-    testWidgets('re-scanning an already-imported title imports no duplicate',
-        (WidgetTester tester) async {
+    testWidgets('re-scanning an already-imported title imports no duplicate', (
+      WidgetTester tester,
+    ) async {
       final FushiDatabase db = _memDb();
       addTearDown(db.close);
 
       _writeEpub(p.join(tmp.path, 'dup.epub'), 'DupNovel');
 
-      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
-        label: 'Books',
-        mediaKind: 'book',
-        rootPath: tmp.path,
-        createdAt: 1000,
-      ));
+      final int sid = await db.insertMediaSource(
+        MediaSourcesCompanion.insert(
+          label: 'Books',
+          mediaKind: 'book',
+          rootPath: tmp.path,
+          createdAt: 1000,
+        ),
+      );
       final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
 
       // First scan imports the book.
@@ -873,8 +931,11 @@ void main() {
       });
 
       final List<EpubBookRow> books = await db.getAllEpubBooks();
-      expect(books, hasLength(1),
-          reason: 'folder re-scan must dedup by title key, not create X (2)');
+      expect(
+        books,
+        hasLength(1),
+        reason: 'folder re-scan must dedup by title key, not create X (2)',
+      );
       expect(books.single.title, 'DupNovel');
       expect(
         books.where((EpubBookRow b) => b.title.contains('(2)')),
@@ -883,24 +944,30 @@ void main() {
       );
       // mediaCount reflects only the newly-inserted (0 on the dedup re-scan).
       final SourceLibraryRow after = (await db.getMediaSourceById(sid))!;
-      expect(after.mediaCount, 0,
-          reason: 'second scan inserted nothing (all duplicates skipped)');
+      expect(
+        after.mediaCount,
+        0,
+        reason: 'second scan inserted nothing (all duplicates skipped)',
+      );
       expect(after.lastScanError, isNull);
     });
 
-    testWidgets('a new title still imports while the duplicate is skipped',
-        (WidgetTester tester) async {
+    testWidgets('a new title still imports while the duplicate is skipped', (
+      WidgetTester tester,
+    ) async {
       final FushiDatabase db = _memDb();
       addTearDown(db.close);
 
       // Pre-import "DupNovel" manually.
       _writeEpub(p.join(tmp.path, 'dup.epub'), 'DupNovel');
-      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
-        label: 'Books',
-        mediaKind: 'book',
-        rootPath: tmp.path,
-        createdAt: 1000,
-      ));
+      final int sid = await db.insertMediaSource(
+        MediaSourcesCompanion.insert(
+          label: 'Books',
+          mediaKind: 'book',
+          rootPath: tmp.path,
+          createdAt: 1000,
+        ),
+      );
       SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
       await tester.runAsync(() async {
         await SourceLibraryScanner(db).scan(source);
@@ -915,19 +982,26 @@ void main() {
       });
 
       final List<EpubBookRow> books = await db.getAllEpubBooks();
-      expect(books, hasLength(2),
-          reason: 'new title imports; duplicate skipped');
       expect(
-        books.map((EpubBookRow b) => b.title).toSet(),
-        <String>{'DupNovel', 'FreshNovel'},
+        books,
+        hasLength(2),
+        reason: 'new title imports; duplicate skipped',
       );
+      expect(books.map((EpubBookRow b) => b.title).toSet(), <String>{
+        'DupNovel',
+        'FreshNovel',
+      });
       final SourceLibraryRow after = (await db.getMediaSourceById(sid))!;
-      expect(after.mediaCount, 1,
-          reason: 'only the one new book counted on the second scan');
+      expect(
+        after.mediaCount,
+        1,
+        reason: 'only the one new book counted on the second scan',
+      );
     });
 
-    testWidgets('two same-title EPUBs in one scan import only one',
-        (WidgetTester tester) async {
+    testWidgets('two same-title EPUBs in one scan import only one', (
+      WidgetTester tester,
+    ) async {
       final FushiDatabase db = _memDb();
       addTearDown(db.close);
 
@@ -935,12 +1009,14 @@ void main() {
       _writeEpub(p.join(tmp.path, 'a.epub'), 'SameTitle');
       _writeEpub(p.join(tmp.path, 'b.epub'), 'SameTitle');
 
-      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
-        label: 'Books',
-        mediaKind: 'book',
-        rootPath: tmp.path,
-        createdAt: 1000,
-      ));
+      final int sid = await db.insertMediaSource(
+        MediaSourcesCompanion.insert(
+          label: 'Books',
+          mediaKind: 'book',
+          rootPath: tmp.path,
+          createdAt: 1000,
+        ),
+      );
       final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
 
       await tester.runAsync(() async {
@@ -948,8 +1024,11 @@ void main() {
       });
 
       final List<EpubBookRow> books = await db.getAllEpubBooks();
-      expect(books, hasLength(1),
-          reason: 'same-batch duplicate title imports once, no X (2)');
+      expect(
+        books,
+        hasLength(1),
+        reason: 'same-batch duplicate title imports once, no X (2)',
+      );
       expect(books.single.title, 'SameTitle');
       final SourceLibraryRow after = (await db.getMediaSourceById(sid))!;
       expect(after.mediaCount, 1);
@@ -973,30 +1052,29 @@ void main() {
       } catch (_) {}
     });
 
-    test(
-        'm3u8 manifest imports as N per-episode rows + a playlist collection '
+    test('m3u8 manifest imports as N per-episode rows + a playlist collection '
         '(统一合集 Phase 2)', () async {
       final FushiDatabase db = _memDb();
       addTearDown(db.close);
       final VideoBookRepository repo = VideoBookRepository(db);
 
       // A 2-episode m3u8; relative paths resolve against the manifest's dir.
-      File(p.join(tmp.path, 'series.m3u8')).writeAsStringSync(
-        '''
+      File(p.join(tmp.path, 'series.m3u8')).writeAsStringSync('''
 #EXTM3U
 #EXTINF:-1,Episode 1
 ep1.mp4
 #EXTINF:-1,Episode 2
 ep2.mp4
-''',
-      );
+''');
 
-      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
-        label: 'Vids',
-        mediaKind: 'video',
-        rootPath: tmp.path,
-        createdAt: 1000,
-      ));
+      final int sid = await db.insertMediaSource(
+        MediaSourcesCompanion.insert(
+          label: 'Vids',
+          mediaKind: 'video',
+          rootPath: tmp.path,
+          createdAt: 1000,
+        ),
+      );
       final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
 
       await SourceLibraryScanner(db).scan(source);
@@ -1013,20 +1091,25 @@ ep2.mp4
         expect(r.sourceId, sid, reason: 'scanned episodes backfilled sourceId');
         expect(r.playlistJson, isNull, reason: '拆集后不再写 playlistJson');
       }
-      expect(byUid['video/ep1']!.videoPath,
-          p.normalize(p.join(tmp.path, 'ep1.mp4')));
+      expect(
+        byUid['video/ep1']!.videoPath,
+        p.normalize(p.join(tmp.path, 'ep1.mp4')),
+      );
 
       // playlist 合集：type=playlist，名=m3u8 basename，成员按序 = 各集 uid。
-      final List<MediaCollectionRow> collections =
-          await db.getAllMediaCollections();
+      final List<MediaCollectionRow> collections = await db
+          .getAllMediaCollections();
       expect(collections, hasLength(1));
       final MediaCollectionRow playlist = collections.single;
       expect(playlist.collectionType, 'playlist');
       expect(playlist.name, 'series');
-      final List<MediaCollectionItemRow> members =
-          await db.getCollectionItems(playlist.id);
-      expect(members.map((MediaCollectionItemRow m) => m.entryKey).toList(),
-          <String>['video/ep1', 'video/ep2']);
+      final List<MediaCollectionItemRow> members = await db.getCollectionItems(
+        playlist.id,
+      );
+      expect(
+        members.map((MediaCollectionItemRow m) => m.entryKey).toList(),
+        <String>['video/ep1', 'video/ep2'],
+      );
 
       final SourceLibraryRow after = (await db.getMediaSourceById(sid))!;
       expect(after.mediaCount, 1, reason: '1 个 playlist 合集导入');
@@ -1034,8 +1117,9 @@ ep2.mp4
 
       // BUG-1351：扫描首导的新 playlist 合集要落 1 条 added 活动事件（整本一条，
       // title=合集名、mediaKey=首集 uid），喂首页 Activity 时间轴。
-      final List<ActivityEventRow> events =
-          await db.getRecentActivityEvents(limit: 10);
+      final List<ActivityEventRow> events = await db.getRecentActivityEvents(
+        limit: 10,
+      );
       expect(events, hasLength(1), reason: '首导 1 个 playlist 合集 = 1 条 added 事件');
       expect(events.single.eventType, 'added');
       expect(events.single.mediaType, 'video');
@@ -1053,12 +1137,14 @@ ep1.mp4
 #EXTINF:-1,Episode 2
 ep2.mp4
 ''');
-      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
-        label: 'Vids',
-        mediaKind: 'video',
-        rootPath: tmp.path,
-        createdAt: 1000,
-      ));
+      final int sid = await db.insertMediaSource(
+        MediaSourcesCompanion.insert(
+          label: 'Vids',
+          mediaKind: 'video',
+          rootPath: tmp.path,
+          createdAt: 1000,
+        ),
+      );
       final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
       await SourceLibraryScanner(db).scan(source);
       final MediaCollectionRow playlist =
@@ -1068,8 +1154,11 @@ ep2.mp4
       // importSplitPlaylist 的 createMediaCollection 把删除静默撤销。
       await db.deleteMediaCollection(playlist.id);
       await SourceLibraryScanner(db).scan(source);
-      expect(await db.getAllMediaCollections(), isEmpty,
-          reason: '重扫不得复活用户删除的 playlist 合集');
+      expect(
+        await db.getAllMediaCollections(),
+        isEmpty,
+        reason: '重扫不得复活用户删除的 playlist 合集',
+      );
     });
 
     test('实体分集同时被同名 m3u8 引用时复用路径，不建重复视频或合集', () async {
@@ -1086,104 +1175,133 @@ Show S01E01.mkv
 Show S01E02.mkv
 ''');
 
-      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
-        label: 'Shows',
-        mediaKind: 'video',
-        rootPath: tmp.path,
-        createdAt: 1000,
-      ));
+      final int sid = await db.insertMediaSource(
+        MediaSourcesCompanion.insert(
+          label: 'Shows',
+          mediaKind: 'video',
+          rootPath: tmp.path,
+          createdAt: 1000,
+        ),
+      );
       final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
 
       await SourceLibraryScanner(db).scan(source);
 
-      expect(await repo.listAll(), hasLength(2),
-          reason: '清单必须复用文件夹扫描已入库的同物理路径');
-      final List<MediaCollectionRow> collections =
-          await db.getAllMediaCollections();
+      expect(
+        await repo.listAll(),
+        hasLength(2),
+        reason: '清单必须复用文件夹扫描已入库的同物理路径',
+      );
+      final List<MediaCollectionRow> collections = await db
+          .getAllMediaCollections();
       expect(collections, hasLength(1));
       expect(collections.single.name, 'Show');
       expect(await db.getCollectionItems(collections.single.id), hasLength(2));
     });
 
-    test('empty / comment-only m3u8 imports nothing (skipped, no error)',
-        () async {
-      final FushiDatabase db = _memDb();
-      addTearDown(db.close);
-      final VideoBookRepository repo = VideoBookRepository(db);
+    test(
+      'empty / comment-only m3u8 imports nothing (skipped, no error)',
+      () async {
+        final FushiDatabase db = _memDb();
+        addTearDown(db.close);
+        final VideoBookRepository repo = VideoBookRepository(db);
 
-      // Only the header -> parseM3u8 yields no entries -> nothing inserted.
-      File(p.join(tmp.path, 'empty.m3u8')).writeAsStringSync('''
+        // Only the header -> parseM3u8 yields no entries -> nothing inserted.
+        File(p.join(tmp.path, 'empty.m3u8')).writeAsStringSync('''
 #EXTM3U
 ''');
 
-      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
-        label: 'Vids',
-        mediaKind: 'video',
-        rootPath: tmp.path,
-        createdAt: 1000,
-      ));
-      final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
+        final int sid = await db.insertMediaSource(
+          MediaSourcesCompanion.insert(
+            label: 'Vids',
+            mediaKind: 'video',
+            rootPath: tmp.path,
+            createdAt: 1000,
+          ),
+        );
+        final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
 
-      await SourceLibraryScanner(db).scan(source);
+        await SourceLibraryScanner(db).scan(source);
 
-      expect(await repo.listAll(), isEmpty,
-          reason: 'an empty manifest must not create an orphan VideoBook');
-      final SourceLibraryRow after = (await db.getMediaSourceById(sid))!;
-      expect(after.mediaCount, 0);
-      expect(after.lastScanError, isNull);
-    });
+        expect(
+          await repo.listAll(),
+          isEmpty,
+          reason: 'an empty manifest must not create an orphan VideoBook',
+        );
+        final SourceLibraryRow after = (await db.getMediaSourceById(sid))!;
+        expect(after.mediaCount, 0);
+        expect(after.lastScanError, isNull);
+      },
+    );
 
     // TODO-1237 ②: re-scanning the same video folder must NOT create `X (2)`
     // duplicates — already-imported single videos are skipped (path dedup),
     // mirroring _importBooks' skip policy (BUG-443).
-    test('re-scan skips already-imported single videos (no X (2) dup)',
-        () async {
-      final FushiDatabase db = _memDb();
-      addTearDown(db.close);
-      final VideoBookRepository repo = VideoBookRepository(db);
+    test(
+      're-scan skips already-imported single videos (no X (2) dup)',
+      () async {
+        final FushiDatabase db = _memDb();
+        addTearDown(db.close);
+        final VideoBookRepository repo = VideoBookRepository(db);
 
-      // Two standalone videos (empty files: cover extraction just yields null,
-      // dedup is path-based, not content-based).
-      File(p.join(tmp.path, 'A.mp4')).writeAsBytesSync(<int>[0]);
-      File(p.join(tmp.path, 'B.mkv')).writeAsBytesSync(<int>[0]);
+        // Two standalone videos (empty files: cover extraction just yields null,
+        // dedup is path-based, not content-based).
+        File(p.join(tmp.path, 'A.mp4')).writeAsBytesSync(<int>[0]);
+        File(p.join(tmp.path, 'B.mkv')).writeAsBytesSync(<int>[0]);
 
-      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
-        label: 'Vids',
-        mediaKind: 'video',
-        rootPath: tmp.path,
-        createdAt: 1000,
-      ));
-      final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
+        final int sid = await db.insertMediaSource(
+          MediaSourcesCompanion.insert(
+            label: 'Vids',
+            mediaKind: 'video',
+            rootPath: tmp.path,
+            createdAt: 1000,
+          ),
+        );
+        final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
 
-      await SourceLibraryScanner(db).scan(source);
-      expect(await repo.listAll(), hasLength(2));
+        await SourceLibraryScanner(db).scan(source);
+        expect(await repo.listAll(), hasLength(2));
 
-      // Second scan of the unchanged folder: every file already imported.
-      await SourceLibraryScanner(db).scan(source);
-      final List<VideoBookRow> after = await repo.listAll();
-      expect(after, hasLength(2),
-          reason: 're-scan must import nothing new (dedup), not X (2) rows');
-      expect(after.map((VideoBookRow r) => r.bookUid).toSet(), hasLength(2),
-          reason: 'no suffixed duplicate book_uid');
-      final SourceLibraryRow afterSrc = (await db.getMediaSourceById(sid))!;
-      expect(afterSrc.mediaCount, 0,
-          reason: 'second scan reports 0 newly-imported media');
+        // Second scan of the unchanged folder: every file already imported.
+        await SourceLibraryScanner(db).scan(source);
+        final List<VideoBookRow> after = await repo.listAll();
+        expect(
+          after,
+          hasLength(2),
+          reason: 're-scan must import nothing new (dedup), not X (2) rows',
+        );
+        expect(
+          after.map((VideoBookRow r) => r.bookUid).toSet(),
+          hasLength(2),
+          reason: 'no suffixed duplicate book_uid',
+        );
+        final SourceLibraryRow afterSrc = (await db.getMediaSourceById(sid))!;
+        expect(
+          afterSrc.mediaCount,
+          0,
+          reason: 'second scan reports 0 newly-imported media',
+        );
 
-      // BUG-1351 边界：散装单视频扫描保持静默（首扫可达数百文件，逐条 emit 才是
-      // 刷屏）——added 活动事件只给 playlist 合集首导。
-      expect(await db.getRecentActivityEvents(limit: 10), isEmpty,
-          reason: '散装文件扫描不 emit added 事件');
-    });
+        // BUG-1351 边界：散装单视频扫描保持静默（首扫可达数百文件，逐条 emit 才是
+        // 刷屏）——added 活动事件只给 playlist 合集首导。
+        expect(
+          await db.getRecentActivityEvents(limit: 10),
+          isEmpty,
+          reason: '散装文件扫描不 emit added 事件',
+        );
+      },
+    );
 
     // TODO-1237 ②: re-scanning a folder whose only manifest is a playlist must
     // not duplicate the playlist VideoBook either.
-    test('re-scan skips already-imported m3u8 playlist (no duplicate)',
-        () async {
-      final FushiDatabase db = _memDb();
-      addTearDown(db.close);
-      final VideoBookRepository repo = VideoBookRepository(db);
+    test(
+      're-scan skips already-imported m3u8 playlist (no duplicate)',
+      () async {
+        final FushiDatabase db = _memDb();
+        addTearDown(db.close);
+        final VideoBookRepository repo = VideoBookRepository(db);
 
-      File(p.join(tmp.path, 'series.m3u8')).writeAsStringSync('''
+        File(p.join(tmp.path, 'series.m3u8')).writeAsStringSync('''
 #EXTM3U
 #EXTINF:-1,Episode 1
 ep1.mp4
@@ -1191,47 +1309,61 @@ ep1.mp4
 ep2.mp4
 ''');
 
-      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
-        label: 'Vids',
-        mediaKind: 'video',
-        rootPath: tmp.path,
-        createdAt: 1000,
-      ));
-      final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
+        final int sid = await db.insertMediaSource(
+          MediaSourcesCompanion.insert(
+            label: 'Vids',
+            mediaKind: 'video',
+            rootPath: tmp.path,
+            createdAt: 1000,
+          ),
+        );
+        final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
 
-      await SourceLibraryScanner(db).scan(source);
-      expect(await repo.listAll(), hasLength(2)); // 2 集拆成 2 行
+        await SourceLibraryScanner(db).scan(source);
+        expect(await repo.listAll(), hasLength(2)); // 2 集拆成 2 行
 
-      await SourceLibraryScanner(db).scan(source);
-      expect(await repo.listAll(), hasLength(2),
-          reason: 're-scan must not duplicate the split episode rows');
-      // 同名 playlist 合集仍只有一个（未重复建）。
-      expect(
-          (await db.getAllMediaCollections())
-              .where((MediaCollectionRow c) => c.collectionType == 'playlist'),
-          hasLength(1));
-      final SourceLibraryRow afterSrc = (await db.getMediaSourceById(sid))!;
-      expect(afterSrc.mediaCount, 0,
-          reason: 'second scan reports 0 newly-imported playlists');
+        await SourceLibraryScanner(db).scan(source);
+        expect(
+          await repo.listAll(),
+          hasLength(2),
+          reason: 're-scan must not duplicate the split episode rows',
+        );
+        // 同名 playlist 合集仍只有一个（未重复建）。
+        expect(
+          (await db.getAllMediaCollections()).where(
+            (MediaCollectionRow c) => c.collectionType == 'playlist',
+          ),
+          hasLength(1),
+        );
+        final SourceLibraryRow afterSrc = (await db.getMediaSourceById(sid))!;
+        expect(
+          afterSrc.mediaCount,
+          0,
+          reason: 'second scan reports 0 newly-imported playlists',
+        );
 
-      // BUG-1351：重扫走 reconcile 分支，不重复 emit added 事件——仍只有首导那 1 条。
-      expect(await db.getRecentActivityEvents(limit: 10), hasLength(1),
-          reason: '重扫不重复记 added 活动事件');
-    });
+        // BUG-1351：重扫走 reconcile 分支，不重复 emit added 事件——仍只有首导那 1 条。
+        expect(
+          await db.getRecentActivityEvents(limit: 10),
+          hasLength(1),
+          reason: '重扫不重复记 added 活动事件',
+        );
+      },
+    );
 
     // TODO-1237 ②: the user's real bug — a manifest whose EPISODE PATHS change
     // between scans (they edited relative paths into absolute ones) must still
     // dedup by the STABLE m3u8 identity, NOT by the volatile first-episode path.
     // The old first-episode-path key produced an `X (2)` duplicate here.
     test(
-        're-scan after manifest episode paths change: identity dedup, no X (2)',
-        () async {
-      final FushiDatabase db = _memDb();
-      addTearDown(db.close);
-      final VideoBookRepository repo = VideoBookRepository(db);
+      're-scan after manifest episode paths change: identity dedup, no X (2)',
+      () async {
+        final FushiDatabase db = _memDb();
+        addTearDown(db.close);
+        final VideoBookRepository repo = VideoBookRepository(db);
 
-      final File manifest = File(p.join(tmp.path, 'series.m3u8'));
-      manifest.writeAsStringSync('''
+        final File manifest = File(p.join(tmp.path, 'series.m3u8'));
+        manifest.writeAsStringSync('''
 #EXTM3U
 #EXTINF:-1,Episode 1
 sub_a/ep1.mp4
@@ -1239,25 +1371,27 @@ sub_a/ep1.mp4
 sub_a/ep2.mp4
 ''');
 
-      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
-        label: 'Vids',
-        mediaKind: 'video',
-        rootPath: tmp.path,
-        createdAt: 1000,
-      ));
-      final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
+        final int sid = await db.insertMediaSource(
+          MediaSourcesCompanion.insert(
+            label: 'Vids',
+            mediaKind: 'video',
+            rootPath: tmp.path,
+            createdAt: 1000,
+          ),
+        );
+        final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
 
-      await SourceLibraryScanner(db).scan(source);
-      final List<VideoBookRow> first = await repo.listAll();
-      expect(first, hasLength(2)); // 2 集拆成 2 行
-      final Map<String, String> firstPathByUid = <String, String>{
-        for (final VideoBookRow r in first) r.bookUid: r.videoPath,
-      };
+        await SourceLibraryScanner(db).scan(source);
+        final List<VideoBookRow> first = await repo.listAll();
+        expect(first, hasLength(2)); // 2 集拆成 2 行
+        final Map<String, String> firstPathByUid = <String, String>{
+          for (final VideoBookRow r in first) r.bookUid: r.videoPath,
+        };
 
-      // The user edits the manifest so every episode path differs (here a
-      // different subdirectory), changing the resolved first-episode path. The
-      // playlist collection identity (its basename-derived name) is unchanged.
-      manifest.writeAsStringSync('''
+        // The user edits the manifest so every episode path differs (here a
+        // different subdirectory), changing the resolved first-episode path. The
+        // playlist collection identity (its basename-derived name) is unchanged.
+        manifest.writeAsStringSync('''
 #EXTM3U
 #EXTINF:-1,Episode 1
 sub_b/ep1.mp4
@@ -1265,52 +1399,75 @@ sub_b/ep1.mp4
 sub_b/ep2.mp4
 ''');
 
-      await SourceLibraryScanner(db).scan(source);
-      final List<VideoBookRow> after = await repo.listAll();
-      expect(after, hasLength(2),
-          reason: 'name dedup: same m3u8 basename => skip even though episode '
-              'paths changed (a path-only key would make X (2) duplicates)');
-      expect(
-          after.where((VideoBookRow r) => r.bookUid.contains('(2)')), isEmpty,
-          reason: 'no suffixed duplicate book_uid');
-      // The surviving rows are the ORIGINAL import (skip, not overwrite): paths
-      // still point at sub_a, not the edited sub_b.
-      expect(<String, String>{
-        for (final VideoBookRow r in after) r.bookUid: r.videoPath
-      }, firstPathByUid,
-          reason: 're-scan skips (does not rewrite) the already-imported rows');
-      final SourceLibraryRow afterSrc = (await db.getMediaSourceById(sid))!;
-      expect(afterSrc.mediaCount, 0,
-          reason: 'second scan imported nothing new');
-    });
+        await SourceLibraryScanner(db).scan(source);
+        final List<VideoBookRow> after = await repo.listAll();
+        expect(
+          after,
+          hasLength(2),
+          reason:
+              'name dedup: same m3u8 basename => skip even though episode '
+              'paths changed (a path-only key would make X (2) duplicates)',
+        );
+        expect(
+          after.where((VideoBookRow r) => r.bookUid.contains('(2)')),
+          isEmpty,
+          reason: 'no suffixed duplicate book_uid',
+        );
+        // The surviving rows are the ORIGINAL import (skip, not overwrite): paths
+        // still point at sub_a, not the edited sub_b.
+        expect(
+          <String, String>{
+            for (final VideoBookRow r in after) r.bookUid: r.videoPath,
+          },
+          firstPathByUid,
+          reason: 're-scan skips (does not rewrite) the already-imported rows',
+        );
+        final SourceLibraryRow afterSrc = (await db.getMediaSourceById(sid))!;
+        expect(
+          afterSrc.mediaCount,
+          0,
+          reason: 'second scan imported nothing new',
+        );
+      },
+    );
   });
 
   // Source guard: _importBooks must keep the BUG-443 dedup wiring so a future
   // edit can't silently drop it and re-introduce X (2) folder-scan duplicates.
-  test('source guard: _importBooks requests DuplicatePolicy.skip (BUG-443)',
-      () {
+  test('source guard: _importBooks requests DuplicatePolicy.skip (BUG-443)', () {
     final String src = File(
       'lib/src/media/source_library/source_library_scanner.dart',
     ).readAsStringSync();
     // 旧锚点是 `skipIfExists: true`；三态收敛成单参 DuplicatePolicy 后换成
     // `DuplicatePolicy.skip()`。守的仍是同一件事：批量扫描必须向导入器要「静默跳过」，
     // 而不是加后缀（否则复扫一次就多一批 `X (2)`）。
-    expect(src.contains('DuplicatePolicy.skip()'), isTrue,
-        reason: '_importBooks must request silent dedup from the importer');
-    expect(src.contains('DuplicateImportCancelledException'), isTrue,
-        reason: '_importBooks must catch+skip the duplicate-cancel signal');
+    expect(
+      src.contains('DuplicatePolicy.skip()'),
+      isTrue,
+      reason: '_importBooks must request silent dedup from the importer',
+    );
+    expect(
+      src.contains('DuplicateImportCancelledException'),
+      isTrue,
+      reason: '_importBooks must catch+skip the duplicate-cancel signal',
+    );
     // TODO-1237 ②: _importVideos keeps the physical-path re-scan dedup
     // (existingPaths.add short-circuit) so a future edit can't silently
     // reintroduce X (2) single-video folder-scan duplicates.
     // BUG-2979 把 `normalizeVideoPath(item.videoPath)` 提成局部 `normalizedPath`
     // （搬家重链也要用同一个键），锚点随之拆成「键的来源 + 短路跳过」两段。
     expect(
-        src.contains(
-            'final String normalizedPath = normalizeVideoPath(item.videoPath)'),
-        isTrue,
-        reason: 'single-video scan must key dedup on the normalized path');
-    expect(src.contains('if (!existingPaths.add(normalizedPath))'), isTrue,
-        reason: 'single-video scan must skip already-imported physical paths');
+      src.contains(
+        'final String normalizedPath = normalizeVideoPath(item.videoPath)',
+      ),
+      isTrue,
+      reason: 'single-video scan must key dedup on the normalized path',
+    );
+    expect(
+      src.contains('if (!existingPaths.add(normalizedPath))'),
+      isTrue,
+      reason: 'single-video scan must skip already-imported physical paths',
+    );
     // TODO-1237 ② / 统一合集 Phase 2 / BUG-830: _importPlaylists keys on the
     // STABLE playlist COLLECTION name (m3u8 basename). First import splits into
     // per-episode rows + a collection; a re-scan of an ALREADY-imported manifest
@@ -1318,30 +1475,46 @@ sub_b/ep2.mp4
     // suffixing an X (2) duplicate. Guard the name-keyed collection map + the
     // reconcile wiring so a future edit can neither regress to a volatile
     // first-episode-path key nor drop the member-sync that BUG-830 restored.
-    expect(src.contains('existingPlaylistIds[collectionName]'), isTrue,
-        reason: 'playlist scan must key dedup by stable collection name');
-    expect(src.contains('reconcileSplitPlaylist('), isTrue,
-        reason: 'a re-scanned existing playlist must reconcile members to the '
-            'current manifest (BUG-830), not silently skip');
-    expect(src.contains('importSplitPlaylist('), isTrue,
-        reason:
-            'playlist scan must split into per-episode rows + a collection');
+    expect(
+      src.contains('existingPlaylistIds[collectionName]'),
+      isTrue,
+      reason: 'playlist scan must key dedup by stable collection name',
+    );
+    expect(
+      src.contains('reconcileSplitPlaylist('),
+      isTrue,
+      reason:
+          'a re-scanned existing playlist must reconcile members to the '
+          'current manifest (BUG-830), not silently skip',
+    );
+    expect(
+      src.contains('importSplitPlaylist('),
+      isTrue,
+      reason: 'playlist scan must split into per-episode rows + a collection',
+    );
   });
 
   // TODO-1284: the duplicate-skip branch must still attach a sidecar srt+audio
   // added after first import. Guard the attach helper wiring so a future edit
   // can't collapse the catch back to a bare skip that drops the new subtitle.
-  test('source guard: duplicate-skip attaches sidecar audiobook (TODO-1284)',
-      () {
-    final String src = File(
-      'lib/src/media/source_library/source_library_scanner.dart',
-    ).readAsStringSync();
-    expect(src.contains('_attachSidecarAudiobookToExisting'), isTrue,
-        reason:
-            'the duplicate-skip branch must call the sidecar-attach helper');
-    expect(src.contains('alignAndPersistAudiobook'), isTrue,
-        reason: 'the attach helper must align+persist the newly-added sidecar');
-  });
+  test(
+    'source guard: duplicate-skip attaches sidecar audiobook (TODO-1284)',
+    () {
+      final String src = File(
+        'lib/src/media/source_library/source_library_scanner.dart',
+      ).readAsStringSync();
+      expect(
+        src.contains('_attachSidecarAudiobookToExisting'),
+        isTrue,
+        reason: 'the duplicate-skip branch must call the sidecar-attach helper',
+      );
+      expect(
+        src.contains('alignAndPersistAudiobook'),
+        isTrue,
+        reason: 'the attach helper must align+persist the newly-added sidecar',
+      );
+    },
+  );
 
   // ── TODO-817 M1c T5: subtitle charset detection via copyToLocal ────────────
   // A real Shift-JIS .srt (Japanese cue) must decode correctly. These bytes
@@ -1381,37 +1554,57 @@ sub_b/ep2.mp4
       final List<int> sjis = <int>[];
       sjis.addAll('1\n00:00:01,000 --> 00:00:02,000\n'.codeUnits);
       // こんにちは in Shift-JIS / CP932.
-      sjis.addAll(
-          <int>[0x82, 0xb1, 0x82, 0xf1, 0x82, 0xc9, 0x82, 0xbf, 0x82, 0xcd]);
+      sjis.addAll(<int>[
+        0x82,
+        0xb1,
+        0x82,
+        0xf1,
+        0x82,
+        0xc9,
+        0x82,
+        0xbf,
+        0x82,
+        0xcd,
+      ]);
       sjis.add(0x0a);
       File(p.join(tmp.path, 'movie.mp4')).writeAsStringSync('fake-mp4');
       File(p.join(tmp.path, 'movie.srt')).writeAsBytesSync(sjis);
 
-      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
-        label: 'Vids',
-        mediaKind: 'video',
-        rootPath: tmp.path,
-        createdAt: 1000,
-      ));
+      final int sid = await db.insertMediaSource(
+        MediaSourcesCompanion.insert(
+          label: 'Vids',
+          mediaKind: 'video',
+          rootPath: tmp.path,
+          createdAt: 1000,
+        ),
+      );
       final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
 
       await SourceLibraryScanner(db).scan(source);
 
       // Scan succeeded (no error) and the SJIS cue decoded to Japanese.
       final SourceLibraryRow after = (await db.getMediaSourceById(sid))!;
-      expect(after.lastScanError, isNull,
-          reason:
-              'SJIS subtitle must decode via readTextWithEncoding fallback, '
-              'not throw on a UTF-8-only read');
+      expect(
+        after.lastScanError,
+        isNull,
+        reason:
+            'SJIS subtitle must decode via readTextWithEncoding fallback, '
+            'not throw on a UTF-8-only read',
+      );
       final VideoBookRepository repo = VideoBookRepository(db);
       final List<VideoBookRow> videos = await repo.listAll();
       expect(videos, hasLength(1));
-      final List<AudioCueRow> cues =
-          await db.getCuesForBook(videos.single.bookUid);
+      final List<AudioCueRow> cues = await db.getCuesForBook(
+        videos.single.bookUid,
+      );
       expect(cues, isNotEmpty);
-      expect(cues.first.cueText, contains('こんにちは'),
-          reason: 'cue text must be the decoded Japanese, proving the scanner '
-              'routed through readTextWithEncoding (SJIS), not fs.readText');
+      expect(
+        cues.first.cueText,
+        contains('こんにちは'),
+        reason:
+            'cue text must be the decoded Japanese, proving the scanner '
+            'routed through readTextWithEncoding (SJIS), not fs.readText',
+      );
     });
   });
 
@@ -1447,8 +1640,9 @@ sub_b/ep2.mp4
       }
     });
 
-    testWidgets('book.epub + book.srt + book.mp3 -> audiobook (cues + SrtBook)',
-        (WidgetTester tester) async {
+    testWidgets('book.epub + book.srt + book.mp3 -> audiobook (cues + SrtBook)', (
+      WidgetTester tester,
+    ) async {
       final FushiDatabase db = _memDb();
       addTearDown(db.close);
 
@@ -1458,12 +1652,14 @@ sub_b/ep2.mp4
       // matcher; it never decodes the audio, so raw bytes are sufficient.
       File(p.join(tmp.path, 'book.mp3')).writeAsStringSync('fake-mp3-bytes');
 
-      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
-        label: 'Books',
-        mediaKind: 'book',
-        rootPath: tmp.path,
-        createdAt: 1000,
-      ));
+      final int sid = await db.insertMediaSource(
+        MediaSourcesCompanion.insert(
+          label: 'Books',
+          mediaKind: 'book',
+          rootPath: tmp.path,
+          createdAt: 1000,
+        ),
+      );
       final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
 
       await tester.runAsync(() async {
@@ -1477,28 +1673,41 @@ sub_b/ep2.mp4
 
       // The sibling audio promoted this book to an audiobook.
       final AudiobookRow? ab = await db.getAudiobookByBookKey(bookKey);
-      expect(ab, isNotNull,
-          reason: 'sibling srt + mp3 must auto-import as an audiobook');
-      expect(ab!.audioPathsJson, isNotNull,
-          reason: 'the sibling audio must be persisted onto the audiobook');
+      expect(
+        ab,
+        isNotNull,
+        reason: 'sibling srt + mp3 must auto-import as an audiobook',
+      );
+      expect(
+        ab!.audioPathsJson,
+        isNotNull,
+        reason: 'the sibling audio must be persisted onto the audiobook',
+      );
 
       // Cues parsed from the sidecar srt are stored under the bookKey.
       final List<AudioCueRow> cues = await db.getCuesForBook(bookKey);
-      expect(cues, isNotEmpty,
-          reason: 'the sidecar subtitle must be parsed into cues');
+      expect(
+        cues,
+        isNotEmpty,
+        reason: 'the sidecar subtitle must be parsed into cues',
+      );
 
       // TODO-894 paired SrtBook row written so sync push can find it.
       final SrtBookRow? srtBook = await db.getSrtBookByBookKey(bookKey);
-      expect(srtBook, isNotNull,
-          reason: 'epub-backed audiobook needs a paired srt_books row');
+      expect(
+        srtBook,
+        isNotNull,
+        reason: 'epub-backed audiobook needs a paired srt_books row',
+      );
 
       final SourceLibraryRow after = (await db.getMediaSourceById(sid))!;
       expect(after.mediaCount, 1);
       expect(after.lastScanError, isNull);
     });
 
-    testWidgets('book.epub with NO sibling audio stays a plain EPUB',
-        (WidgetTester tester) async {
+    testWidgets('book.epub with NO sibling audio stays a plain EPUB', (
+      WidgetTester tester,
+    ) async {
       final FushiDatabase db = _memDb();
       addTearDown(db.close);
 
@@ -1506,12 +1715,14 @@ sub_b/ep2.mp4
       _writeEpub(p.join(tmp.path, 'plain.epub'), 'PlainNovel');
       File(p.join(tmp.path, 'plain.srt')).writeAsStringSync(_srt);
 
-      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
-        label: 'Books',
-        mediaKind: 'book',
-        rootPath: tmp.path,
-        createdAt: 1000,
-      ));
+      final int sid = await db.insertMediaSource(
+        MediaSourcesCompanion.insert(
+          label: 'Books',
+          mediaKind: 'book',
+          rootPath: tmp.path,
+          createdAt: 1000,
+        ),
+      );
       final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
 
       await tester.runAsync(() async {
@@ -1520,10 +1731,14 @@ sub_b/ep2.mp4
 
       final List<EpubBookRow> books = await db.getAllEpubBooks();
       expect(books, hasLength(1));
-      final AudiobookRow? ab =
-          await db.getAudiobookByBookKey(books.single.bookKey);
-      expect(ab, isNull,
-          reason: 'no sibling audio -> plain EPUB, no audiobook promotion');
+      final AudiobookRow? ab = await db.getAudiobookByBookKey(
+        books.single.bookKey,
+      );
+      expect(
+        ab,
+        isNull,
+        reason: 'no sibling audio -> plain EPUB, no audiobook promotion',
+      );
     });
   });
 
@@ -1562,70 +1777,97 @@ sub_b/ep2.mp4
     });
 
     testWidgets(
-        'srt+mp3 added after first import -> re-scan promotes to audiobook',
-        (WidgetTester tester) async {
-      final FushiDatabase db = _memDb();
-      addTearDown(db.close);
+      'srt+mp3 added after first import -> re-scan promotes to audiobook',
+      (WidgetTester tester) async {
+        final FushiDatabase db = _memDb();
+        addTearDown(db.close);
 
-      // First scan: only the EPUB is present -> imports as a plain text EPUB.
-      _writeEpub(p.join(tmp.path, 'book.epub'), 'RescanNovel');
+        // First scan: only the EPUB is present -> imports as a plain text EPUB.
+        _writeEpub(p.join(tmp.path, 'book.epub'), 'RescanNovel');
 
-      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
-        label: 'Books',
-        mediaKind: 'book',
-        rootPath: tmp.path,
-        createdAt: 1000,
-      ));
-      SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
+        final int sid = await db.insertMediaSource(
+          MediaSourcesCompanion.insert(
+            label: 'Books',
+            mediaKind: 'book',
+            rootPath: tmp.path,
+            createdAt: 1000,
+          ),
+        );
+        SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
 
-      await tester.runAsync(() async {
-        await SourceLibraryScanner(db).scan(source);
-      });
+        await tester.runAsync(() async {
+          await SourceLibraryScanner(db).scan(source);
+        });
 
-      final List<EpubBookRow> books = await db.getAllEpubBooks();
-      expect(books, hasLength(1));
-      final String bookKey = books.single.bookKey;
-      expect(await db.getAudiobookByBookKey(bookKey), isNull,
-          reason: 'no sidecar yet -> plain EPUB after first scan');
+        final List<EpubBookRow> books = await db.getAllEpubBooks();
+        expect(books, hasLength(1));
+        final String bookKey = books.single.bookKey;
+        expect(
+          await db.getAudiobookByBookKey(bookKey),
+          isNull,
+          reason: 'no sidecar yet -> plain EPUB after first scan',
+        );
 
-      // The user drops a same-stem .srt + .mp3 next to the book, then hits
-      // "重新扫描" (re-scan).
-      File(p.join(tmp.path, 'book.srt')).writeAsStringSync(_srt);
-      File(p.join(tmp.path, 'book.mp3')).writeAsStringSync('fake-mp3-bytes');
+        // The user drops a same-stem .srt + .mp3 next to the book, then hits
+        // "重新扫描" (re-scan).
+        File(p.join(tmp.path, 'book.srt')).writeAsStringSync(_srt);
+        File(p.join(tmp.path, 'book.mp3')).writeAsStringSync('fake-mp3-bytes');
 
-      source = (await db.getMediaSourceById(sid))!;
-      await tester.runAsync(() async {
-        await SourceLibraryScanner(db).scan(source);
-      });
+        source = (await db.getMediaSourceById(sid))!;
+        await tester.runAsync(() async {
+          await SourceLibraryScanner(db).scan(source);
+        });
 
-      // Same book row (no X (2) duplicate), now promoted to an audiobook.
-      final List<EpubBookRow> after = await db.getAllEpubBooks();
-      expect(after, hasLength(1),
-          reason: 're-scan must not create a duplicate book row');
-      final AudiobookRow? ab = await db.getAudiobookByBookKey(bookKey);
-      expect(ab, isNotNull,
-          reason: 're-scan must promote the existing book to an audiobook '
-              'once the sidecar srt+audio appear');
-      expect(ab!.audioPathsJson, isNotNull,
-          reason: 'the newly-added sibling audio must be persisted');
+        // Same book row (no X (2) duplicate), now promoted to an audiobook.
+        final List<EpubBookRow> after = await db.getAllEpubBooks();
+        expect(
+          after,
+          hasLength(1),
+          reason: 're-scan must not create a duplicate book row',
+        );
+        final AudiobookRow? ab = await db.getAudiobookByBookKey(bookKey);
+        expect(
+          ab,
+          isNotNull,
+          reason:
+              're-scan must promote the existing book to an audiobook '
+              'once the sidecar srt+audio appear',
+        );
+        expect(
+          ab!.audioPathsJson,
+          isNotNull,
+          reason: 'the newly-added sibling audio must be persisted',
+        );
 
-      final List<AudioCueRow> cues = await db.getCuesForBook(bookKey);
-      expect(cues, isNotEmpty,
-          reason: 'the newly-added sidecar subtitle must be parsed into cues');
-      final SrtBookRow? srtBook = await db.getSrtBookByBookKey(bookKey);
-      expect(srtBook, isNotNull,
-          reason: 'epub-backed audiobook needs a paired srt_books row');
+        final List<AudioCueRow> cues = await db.getCuesForBook(bookKey);
+        expect(
+          cues,
+          isNotEmpty,
+          reason: 'the newly-added sidecar subtitle must be parsed into cues',
+        );
+        final SrtBookRow? srtBook = await db.getSrtBookByBookKey(bookKey);
+        expect(
+          srtBook,
+          isNotNull,
+          reason: 'epub-backed audiobook needs a paired srt_books row',
+        );
 
-      // Re-scan inserted no NEW book, so mediaCount reflects zero new inserts.
-      final SourceLibraryRow scanned = (await db.getMediaSourceById(sid))!;
-      expect(scanned.mediaCount, 0,
-          reason: 'attaching an audiobook to an existing book is not a new '
-              'media insert');
-      expect(scanned.lastScanError, isNull);
-    });
+        // Re-scan inserted no NEW book, so mediaCount reflects zero new inserts.
+        final SourceLibraryRow scanned = (await db.getMediaSourceById(sid))!;
+        expect(
+          scanned.mediaCount,
+          0,
+          reason:
+              'attaching an audiobook to an existing book is not a new '
+              'media insert',
+        );
+        expect(scanned.lastScanError, isNull);
+      },
+    );
 
-    testWidgets('a third re-scan is idempotent (already-attached audiobook)',
-        (WidgetTester tester) async {
+    testWidgets('a third re-scan is idempotent (already-attached audiobook)', (
+      WidgetTester tester,
+    ) async {
       final FushiDatabase db = _memDb();
       addTearDown(db.close);
 
@@ -1635,12 +1877,14 @@ sub_b/ep2.mp4
       File(p.join(tmp.path, 'book.srt')).writeAsStringSync(_srt);
       File(p.join(tmp.path, 'book.mp3')).writeAsStringSync('fake-mp3-bytes');
 
-      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
-        label: 'Books',
-        mediaKind: 'book',
-        rootPath: tmp.path,
-        createdAt: 1000,
-      ));
+      final int sid = await db.insertMediaSource(
+        MediaSourcesCompanion.insert(
+          label: 'Books',
+          mediaKind: 'book',
+          rootPath: tmp.path,
+          createdAt: 1000,
+        ),
+      );
 
       for (int i = 0; i < 2; i++) {
         final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
@@ -1650,10 +1894,14 @@ sub_b/ep2.mp4
       }
 
       final List<EpubBookRow> books = await db.getAllEpubBooks();
-      expect(books, hasLength(1),
-          reason: 'repeat scans keep a single book row');
-      final AudiobookRow? ab =
-          await db.getAudiobookByBookKey(books.single.bookKey);
+      expect(
+        books,
+        hasLength(1),
+        reason: 'repeat scans keep a single book row',
+      );
+      final AudiobookRow? ab = await db.getAudiobookByBookKey(
+        books.single.bookKey,
+      );
       expect(ab, isNotNull);
       final SourceLibraryRow after = (await db.getMediaSourceById(sid))!;
       expect(after.lastScanError, isNull);
@@ -1681,39 +1929,49 @@ sub_b/ep2.mp4
       }
     });
 
-    test('manga source: imports .mokuro volume with sourceId + scan result',
-        () async {
-      final FushiDatabase db = _memDb();
-      addTearDown(db.close);
+    test(
+      'manga source: imports .mokuro volume with sourceId + scan result',
+      () async {
+        final FushiDatabase db = _memDb();
+        addTearDown(db.close);
 
-      _writeMokuro(tmp.path, title: 'ScanVolume');
+        _writeMokuro(tmp.path, title: 'ScanVolume');
 
-      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
-        label: 'Manga',
-        mediaKind: 'manga',
-        rootPath: tmp.path,
-        createdAt: 1000,
-      ));
-      final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
+        final int sid = await db.insertMediaSource(
+          MediaSourcesCompanion.insert(
+            label: 'Manga',
+            mediaKind: 'manga',
+            rootPath: tmp.path,
+            createdAt: 1000,
+          ),
+        );
+        final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
 
-      await SourceLibraryScanner(db).scan(source);
+        await SourceLibraryScanner(db).scan(source);
 
-      final List<EpubBookRow> books = await db.getAllEpubBooks();
-      expect(books, hasLength(1));
-      expect(books.single.format, 'manga',
-          reason: 'mokuro 卷落 EpubBooks format=manga（第三种书）');
-      expect(books.single.title, 'ScanVolume');
-      expect(books.single.sourceId, sid,
-          reason: 'scanned manga must be backfilled with its source id');
+        final List<EpubBookRow> books = await db.getAllEpubBooks();
+        expect(books, hasLength(1));
+        expect(
+          books.single.format,
+          'manga',
+          reason: 'mokuro 卷落 EpubBooks format=manga（第三种书）',
+        );
+        expect(books.single.title, 'ScanVolume');
+        expect(
+          books.single.sourceId,
+          sid,
+          reason: 'scanned manga must be backfilled with its source id',
+        );
 
-      final SourceLibraryRow after = (await db.getMediaSourceById(sid))!;
-      expect(after.mediaCount, 1);
-      expect(after.lastScannedAt, isNotNull);
-      expect(after.lastScanError, isNull);
+        final SourceLibraryRow after = (await db.getMediaSourceById(sid))!;
+        expect(after.mediaCount, 1);
+        expect(after.lastScannedAt, isNotNull);
+        expect(after.lastScanError, isNull);
 
-      // DAO 计数分支：manga 源按 epub_books(format='manga') 反向 COUNT。
-      expect(await db.countMediaBySourceId(sid, 'manga'), 1);
-    });
+        // DAO 计数分支：manga 源按 epub_books(format='manga') 反向 COUNT。
+        expect(await db.countMediaBySourceId(sid, 'manga'), 1);
+      },
+    );
 
     test('纯页图文件夹本身可扫描成漫画并回填 sourceId', () async {
       final FushiDatabase db = _memDb();
@@ -1721,17 +1979,20 @@ sub_b/ep2.mp4
       _writeMangaPage(tmp.path, '001.png');
       _writeMangaPage(p.join(tmp.path, 'chapter'), '002.jpg');
 
-      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
-        label: 'Manga images',
-        mediaKind: 'manga',
-        rootPath: tmp.path,
-        recursive: const Value(true),
-        createdAt: 1000,
-      ));
+      final int sid = await db.insertMediaSource(
+        MediaSourcesCompanion.insert(
+          label: 'Manga images',
+          mediaKind: 'manga',
+          rootPath: tmp.path,
+          recursive: const Value(true),
+          createdAt: 1000,
+        ),
+      );
       final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
 
-      final SourceScanSummary summary =
-          await SourceLibraryScanner(db).scan(source);
+      final SourceScanSummary summary = await SourceLibraryScanner(
+        db,
+      ).scan(source);
 
       expect(summary.error, isNull);
       expect(summary.importedMediaCount, 1);
@@ -1748,8 +2009,7 @@ sub_b/ep2.mp4
       addTearDown(db.close);
       final File rar = File(p.join(tmp.path, 'volume-03.rar'))
         ..writeAsBytesSync(<int>[0x52, 0x61, 0x72, 0x21]);
-      final List<int> png =
-          img.encodePng(img.Image(width: 20, height: 40));
+      final List<int> png = img.encodePng(img.Image(width: 20, height: 40));
       final MangaSevenZipExtractor extractor = MangaSevenZipExtractor(
         sevenZipOverride: 'fake-7z',
         runProcess: (String executable, List<String> arguments) async {
@@ -1764,21 +2024,23 @@ Size = ${png.length}
 Attributes = A
 ''', '');
           }
-          final String outputArg =
-              arguments.firstWhere((String arg) => arg.startsWith('-o'));
-          File(p.join(outputArg.substring(2), '001.png'))
-              .writeAsBytesSync(png);
+          final String outputArg = arguments.firstWhere(
+            (String arg) => arg.startsWith('-o'),
+          );
+          File(p.join(outputArg.substring(2), '001.png')).writeAsBytesSync(png);
           return ProcessResult(2, 0, '', '');
         },
       );
 
-      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
-        label: 'RAR manga',
-        mediaKind: 'manga',
-        rootPath: tmp.path,
-        recursive: const Value(true),
-        createdAt: 1000,
-      ));
+      final int sid = await db.insertMediaSource(
+        MediaSourcesCompanion.insert(
+          label: 'RAR manga',
+          mediaKind: 'manga',
+          rootPath: tmp.path,
+          recursive: const Value(true),
+          createdAt: 1000,
+        ),
+      );
       final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
 
       final SourceScanSummary summary = await SourceLibraryScanner(
@@ -1799,14 +2061,15 @@ Attributes = A
     // 以前整个系列导成一本 ~2000 页的漫画。
     group('系列目录/卷目录', () {
       Future<SourceLibraryRow> seriesSource(FushiDatabase db) async {
-        final int sid =
-            await db.insertMediaSource(MediaSourcesCompanion.insert(
-          label: 'Manga series',
-          mediaKind: 'manga',
-          rootPath: tmp.path,
-          recursive: const Value(true),
-          createdAt: 1000,
-        ));
+        final int sid = await db.insertMediaSource(
+          MediaSourcesCompanion.insert(
+            label: 'Manga series',
+            mediaKind: 'manga',
+            rootPath: tmp.path,
+            recursive: const Value(true),
+            createdAt: 1000,
+          ),
+        );
         return (await db.getMediaSourceById(sid))!;
       }
 
@@ -1826,8 +2089,9 @@ Attributes = A
             b.uid: b.title,
         };
         return <String>[
-          for (final MediaCollectionItemRow i
-              in await db.getCollectionItems(collection.id))
+          for (final MediaCollectionItemRow i in await db.getCollectionItems(
+            collection.id,
+          ))
             titleByUid[i.entryKey] ?? '?${i.entryKey}',
         ];
       }
@@ -1838,22 +2102,24 @@ Attributes = A
         writeSeries();
         final SourceLibraryRow source = await seriesSource(db);
 
-        final SourceScanSummary summary =
-            await SourceLibraryScanner(db).scan(source);
+        final SourceScanSummary summary = await SourceLibraryScanner(
+          db,
+        ).scan(source);
 
         expect(summary.error, isNull);
         expect(summary.importedMediaCount, 3);
         final List<EpubBookRow> books = await db.getAllEpubBooks();
-        expect(
-          books.map((EpubBookRow b) => b.title).toList()..sort(),
-          <String>['ONE PIECE Vol01', 'ONE PIECE Vol02', 'ONE PIECE Vol03'],
-        );
+        expect(books.map((EpubBookRow b) => b.title).toList()..sort(), <String>[
+          'ONE PIECE Vol01',
+          'ONE PIECE Vol02',
+          'ONE PIECE Vol03',
+        ]);
         for (final EpubBookRow b in books) {
           expect(b.chapterCount, 2, reason: '${b.title} 只含自己那一卷的页');
           expect(b.sourceId, source.id);
         }
-        final List<MediaCollectionRow> collections =
-            await db.getAllMediaCollections();
+        final List<MediaCollectionRow> collections = await db
+            .getAllMediaCollections();
         expect(collections, hasLength(1));
         expect(collections.single.name, 'ONE PIECE');
         expect(collections.single.collectionType, 'playlist');
@@ -1864,8 +2130,9 @@ Attributes = A
         ]);
 
         // 重扫幂等：不新增书、不重复建合集。
-        final SourceScanSummary again =
-            await SourceLibraryScanner(db).scan(source);
+        final SourceScanSummary again = await SourceLibraryScanner(
+          db,
+        ).scan(source);
         expect(again.importedMediaCount, 0);
         expect(await db.getAllEpubBooks(), hasLength(3));
         expect(await db.getAllMediaCollections(), hasLength(1));
@@ -1887,33 +2154,35 @@ Attributes = A
         );
         final EpubBookRow oldBook = (await db.getEpubBook(oldKey))!;
         expect(oldBook.chapterCount, 6);
-        final BookSourceIndex index =
-            await BookSourceIndex.load(db, source.id);
+        final BookSourceIndex index = await BookSourceIndex.load(db, source.id);
         index.put('ONE PIECE', oldBook.uid);
         await index.save(db);
 
-        final SourceScanSummary summary =
-            await SourceLibraryScanner(db).scan(source);
+        final SourceScanSummary summary = await SourceLibraryScanner(
+          db,
+        ).scan(source);
 
         expect(summary.error, isNull);
         expect(summary.importedMediaCount, 3);
-        expect(await db.getEpubBook(oldKey), isNull,
-            reason: '合订本被分卷取代；留着就是同一批页在书架上两份');
+        expect(
+          await db.getEpubBook(oldKey),
+          isNull,
+          reason: '合订本被分卷取代；留着就是同一批页在书架上两份',
+        );
         expect(
           (await db.getAllEpubBooks()).map((EpubBookRow b) => b.title).toList()
             ..sort(),
           <String>['ONE PIECE Vol01', 'ONE PIECE Vol02', 'ONE PIECE Vol03'],
         );
-        final BookSourceIndex after =
-            await BookSourceIndex.load(db, source.id);
+        final BookSourceIndex after = await BookSourceIndex.load(db, source.id);
         expect(after.uidOf('ONE PIECE'), isNull);
         expect(after.entries.keys.toSet(), <String>{
           'ONE PIECE/Vol01',
           'ONE PIECE/Vol02',
           'ONE PIECE/Vol03',
         });
-        final List<MediaCollectionRow> collections =
-            await db.getAllMediaCollections();
+        final List<MediaCollectionRow> collections = await db
+            .getAllMediaCollections();
         expect(collections, hasLength(1));
         expect(await collectionTitles(db, collections.single), hasLength(3));
       });
@@ -1957,23 +2226,26 @@ Attributes = A
     });
 
     ArchiveFile pngEntry(String name, {int width = 20, int height = 40}) {
-      final List<int> png =
-          img.encodePng(img.Image(width: width, height: height));
+      final List<int> png = img.encodePng(
+        img.Image(width: width, height: height),
+      );
       return ArchiveFile(name, png.length, png);
     }
 
     Uint8List pagesZip(List<String> names) => _encodeArchive(<ArchiveFile>[
-          for (final String name in names) pngEntry(name),
-        ]);
+      for (final String name in names) pngEntry(name),
+    ]);
 
     Future<SourceLibraryRow> mangaSource(FushiDatabase db) async {
-      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
-        label: 'Manga',
-        mediaKind: 'manga',
-        rootPath: tmp.path,
-        recursive: const Value(true),
-        createdAt: 1000,
-      ));
+      final int sid = await db.insertMediaSource(
+        MediaSourcesCompanion.insert(
+          label: 'Manga',
+          mediaKind: 'manga',
+          rootPath: tmp.path,
+          recursive: const Value(true),
+          createdAt: 1000,
+        ),
+      );
       return (await db.getMediaSourceById(sid))!;
     }
 
@@ -1990,17 +2262,18 @@ Attributes = A
       _writeMangaPage(series.path, 'cover.jpg');
       final SourceLibraryRow source = await mangaSource(db);
 
-      final SourceScanSummary summary =
-          await SourceLibraryScanner(db).scan(source);
+      final SourceScanSummary summary = await SourceLibraryScanner(
+        db,
+      ).scan(source);
 
       expect(summary.error, isNull);
       expect(summary.importedMediaCount, 2);
       expect(summary.discoveredPaths.toSet(), <String>{zip.path, cbz.path});
       final List<EpubBookRow> books = await db.getAllEpubBooks();
-      expect(
-        books.map((EpubBookRow b) => b.title).toSet(),
-        <String>{'Veil（1）オレンジの体温', 'Veil（2）凪いだノワール'},
-      );
+      expect(books.map((EpubBookRow b) => b.title).toSet(), <String>{
+        'Veil（1）オレンジの体温',
+        'Veil（2）凪いだノワール',
+      });
       expect(books.every((EpubBookRow b) => b.sourceId == source.id), isTrue);
       expect(
         books.every((EpubBookRow b) => b.format == BookFormat.manga.dbValue),
@@ -2008,8 +2281,9 @@ Attributes = A
       );
 
       // 重扫静默去重。
-      final SourceScanSummary again = await SourceLibraryScanner(db)
-          .scan((await db.getMediaSourceById(source.id))!);
+      final SourceScanSummary again = await SourceLibraryScanner(
+        db,
+      ).scan((await db.getMediaSourceById(source.id))!);
       expect(again.error, isNull);
       expect(again.importedMediaCount, 0);
       expect(await db.getAllEpubBooks(), hasLength(2));
@@ -2022,13 +2296,16 @@ Attributes = A
         ..writeAsBytesSync(pagesZip(<String>['001.png', '002.png']));
       final SourceLibraryRow source = await mangaSource(db);
       expect(
-          (await SourceLibraryScanner(db).scan(source)).importedMediaCount, 1);
+        (await SourceLibraryScanner(db).scan(source)).importedMediaCount,
+        1,
+      );
 
       // 把同名包换成打不开的字节：只要重扫还去开包（此前每次重扫都整包解压到
       // 临时目录、解压完才由导入器判重复），这里就会冒出一条导入失败。
       cbz.writeAsBytesSync(<int>[1, 2, 3, 4, 5]);
-      final SourceScanSummary again = await SourceLibraryScanner(db)
-          .scan((await db.getMediaSourceById(source.id))!);
+      final SourceScanSummary again = await SourceLibraryScanner(
+        db,
+      ).scan((await db.getMediaSourceById(source.id))!);
 
       expect(again.error, isNull);
       expect(again.importedMediaCount, 0);
@@ -2045,19 +2322,24 @@ Attributes = A
       }
       final SourceLibraryRow source = await mangaSource(db);
 
-      final SourceScanSummary first =
-          await SourceLibraryScanner(db).scan(source);
+      final SourceScanSummary first = await SourceLibraryScanner(
+        db,
+      ).scan(source);
 
       expect(first.error, isNull);
-      expect(first.importedMediaCount, 2,
-          reason: '此前只按标题判重复，SeriesB 的第 1 卷被静默跳过');
+      expect(
+        first.importedMediaCount,
+        2,
+        reason: '此前只按标题判重复，SeriesB 的第 1 卷被静默跳过',
+      );
       final List<EpubBookRow> books = await db.getAllEpubBooks();
       expect(books, hasLength(2));
       expect(books.map((EpubBookRow b) => b.title), contains('Vol 1'));
       expect(books.every((EpubBookRow b) => b.sourceId == source.id), isTrue);
 
-      final SourceScanSummary again = await SourceLibraryScanner(db)
-          .scan((await db.getMediaSourceById(source.id))!);
+      final SourceScanSummary again = await SourceLibraryScanner(
+        db,
+      ).scan((await db.getMediaSourceById(source.id))!);
       expect(again.error, isNull);
       expect(again.importedMediaCount, 0);
       expect(await db.getAllEpubBooks(), hasLength(2));
@@ -2066,23 +2348,26 @@ Attributes = A
     test('手动导入的同名漫画不被来源抢走：来源卷按重复跳过、手动那本仍无来源', () async {
       final FushiDatabase db = _memDb();
       addTearDown(db.close);
-      final Directory manual = Directory(p.join(tmp.path, '..',
-          '${p.basename(tmp.path)}_manual', 'Vol 1'))
-        ..createSync(recursive: true);
+      final Directory manual = Directory(
+        p.join(tmp.path, '..', '${p.basename(tmp.path)}_manual', 'Vol 1'),
+      )..createSync(recursive: true);
       addTearDown(() => manual.parent.deleteSync(recursive: true));
-      File(p.join(manual.path, '001.png'))
-          .writeAsBytesSync(img.encodePng(img.Image(width: 20, height: 40)));
+      File(
+        p.join(manual.path, '001.png'),
+      ).writeAsBytesSync(img.encodePng(img.Image(width: 20, height: 40)));
       await MangaImporter.importFromImageFolder(
         db: db,
         imageDirPath: manual.path,
         title: 'Vol 1',
       );
-      File(p.join(tmp.path, 'Vol 1.cbz'))
-          .writeAsBytesSync(pagesZip(<String>['001.png']));
+      File(
+        p.join(tmp.path, 'Vol 1.cbz'),
+      ).writeAsBytesSync(pagesZip(<String>['001.png']));
       final SourceLibraryRow source = await mangaSource(db);
 
-      final SourceScanSummary summary =
-          await SourceLibraryScanner(db).scan(source);
+      final SourceScanSummary summary = await SourceLibraryScanner(
+        db,
+      ).scan(source);
 
       expect(summary.error, isNull);
       expect(summary.importedMediaCount, 0);
@@ -2101,15 +2386,18 @@ Attributes = A
       // 尾部补零让两份字节数相同（EOCD 从尾部回扫，尾随填充不影响读包）。换内容后
       // 字节数与修改时刻都还原 → 指纹不变 → 不该重判。
       final int size = dict.length > pages.length ? dict.length : pages.length;
-      List<int> padded(Uint8List bytes) =>
-          <int>[...bytes, ...List<int>.filled(size - bytes.length, 0)];
+      List<int> padded(Uint8List bytes) => <int>[
+        ...bytes,
+        ...List<int>.filled(size - bytes.length, 0),
+      ];
       final File zip = File(p.join(tmp.path, 'vol.zip'))
         ..writeAsBytesSync(padded(dict));
       final DateTime mtime = DateTime(2026, 1, 2, 3, 4, 5);
       zip.setLastModifiedSync(mtime);
       final SourceLibraryRow source = await mangaSource(db);
-      Future<SourceScanSummary> rescan() async => SourceLibraryScanner(db)
-          .scan((await db.getMediaSourceById(source.id))!);
+      Future<SourceScanSummary> rescan() async => SourceLibraryScanner(
+        db,
+      ).scan((await db.getMediaSourceById(source.id))!);
 
       final SourceScanSummary first = await rescan();
       expect(first.error, isNull);
@@ -2129,13 +2417,23 @@ Attributes = A
 
     test('载体定性不在调用方 isolate 上同步开包（只经后台 isolate 入口）', () {
       // 注释（含块注释与行尾注释）里提到被禁调用不算违规。
-      final String src = maskComments(File(
-        p.join('lib', 'src', 'media', 'source_library',
-            'source_library_scanner.dart'),
-      ).readAsStringSync());
+      final String src = maskComments(
+        File(
+          p.join(
+            'lib',
+            'src',
+            'media',
+            'source_library',
+            'source_library_scanner.dart',
+          ),
+        ).readAsStringSync(),
+      );
       // 直接调用与 tear-off（`isImageArchive: MangaArchiveImporter.looks…`）都算。
-      expect(src, isNot(contains('MangaArchiveImporter.looksLikeImageArchive')),
-          reason: '同步判定会在 UI isolate 上整本解析文字 EPUB');
+      expect(
+        src,
+        isNot(contains('MangaArchiveImporter.looksLikeImageArchive')),
+        reason: '同步判定会在 UI isolate 上整本解析文字 EPUB',
+      );
       expect(src, contains('looksLikeImageArchiveInBackground('));
     });
 
@@ -2143,18 +2441,19 @@ Attributes = A
       final FushiDatabase db = _memDb();
       addTearDown(db.close);
       // 带插图的 Yomitan 词典包：有图片但一票否决。
-      File(p.join(tmp.path, 'dict.zip')).writeAsBytesSync(_encodeArchive(
-        <ArchiveFile>[
+      File(p.join(tmp.path, 'dict.zip')).writeAsBytesSync(
+        _encodeArchive(<ArchiveFile>[
           _textFile('index.json', '{"title":"d","revision":"1"}'),
           _textFile('term_bank_1.json', '[]'),
           pngEntry('img/a.png', width: 4, height: 4),
-        ],
-      ));
+        ]),
+      );
       _writeEpub(p.join(tmp.path, 'novel.epub'), 'Novel');
       final SourceLibraryRow source = await mangaSource(db);
 
-      final SourceScanSummary summary =
-          await SourceLibraryScanner(db).scan(source);
+      final SourceScanSummary summary = await SourceLibraryScanner(
+        db,
+      ).scan(source);
 
       expect(summary.error, isNull);
       expect(summary.importedMediaCount, 0);
@@ -2164,14 +2463,17 @@ Attributes = A
     test('一卷坏包不中断其余卷：好卷照常入库，错误汇总指名坏卷', () async {
       final FushiDatabase db = _memDb();
       addTearDown(db.close);
-      File(p.join(tmp.path, 'a-broken.cbz'))
-          .writeAsBytesSync(<int>[1, 2, 3, 4, 5]);
-      File(p.join(tmp.path, 'b-good.cbz'))
-          .writeAsBytesSync(pagesZip(<String>['001.png']));
+      File(
+        p.join(tmp.path, 'a-broken.cbz'),
+      ).writeAsBytesSync(<int>[1, 2, 3, 4, 5]);
+      File(
+        p.join(tmp.path, 'b-good.cbz'),
+      ).writeAsBytesSync(pagesZip(<String>['001.png']));
       final SourceLibraryRow source = await mangaSource(db);
 
-      final SourceScanSummary summary =
-          await SourceLibraryScanner(db).scan(source);
+      final SourceScanSummary summary = await SourceLibraryScanner(
+        db,
+      ).scan(source);
 
       expect(summary.importedMediaCount, 1, reason: '排在坏包后面的卷此前会整批丢掉');
       expect((await db.getAllEpubBooks()).single.title, 'b-good');
@@ -2185,10 +2487,11 @@ Attributes = A
     test('cbz + 包旁 .mokuro sidecar 只入库一卷', () async {
       final FushiDatabase db = _memDb();
       addTearDown(db.close);
-      File(p.join(tmp.path, 'vol.cbz'))
-          .writeAsBytesSync(pagesZip(<String>['p001.png']));
-      File(p.join(tmp.path, 'vol.mokuro')).writeAsStringSync(jsonEncode(
-        <String, Object?>{
+      File(
+        p.join(tmp.path, 'vol.cbz'),
+      ).writeAsBytesSync(pagesZip(<String>['p001.png']));
+      File(p.join(tmp.path, 'vol.mokuro')).writeAsStringSync(
+        jsonEncode(<String, Object?>{
           'version': '0.2.0',
           'title': 'SidecarVolume',
           'pages': <Object?>[
@@ -2199,17 +2502,21 @@ Attributes = A
               'blocks': <Object?>[],
             },
           ],
-        },
-      ));
+        }),
+      );
       final SourceLibraryRow source = await mangaSource(db);
 
-      final SourceScanSummary summary =
-          await SourceLibraryScanner(db).scan(source);
+      final SourceScanSummary summary = await SourceLibraryScanner(
+        db,
+      ).scan(source);
 
       expect(summary.error, isNull);
       expect(summary.importedMediaCount, 1);
-      expect(await db.getAllEpubBooks(), hasLength(1),
-          reason: 'sidecar 是包的文字层，不是第二卷');
+      expect(
+        await db.getAllEpubBooks(),
+        hasLength(1),
+        reason: 'sidecar 是包的文字层，不是第二卷',
+      );
     });
 
     test('选择上级目录可逐卷导入纯页图子目录，重扫静默去重', () async {
@@ -2221,79 +2528,93 @@ Attributes = A
       _writeMangaPage(p.join(volume1.path, 'chapter'), '002.png');
       _writeMangaPage(volume2.path, '001.png');
 
-      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
-        label: 'Manga parent',
-        mediaKind: 'manga',
-        rootPath: tmp.path,
-        recursive: const Value(true),
-        createdAt: 1000,
-      ));
+      final int sid = await db.insertMediaSource(
+        MediaSourcesCompanion.insert(
+          label: 'Manga parent',
+          mediaKind: 'manga',
+          rootPath: tmp.path,
+          recursive: const Value(true),
+          createdAt: 1000,
+        ),
+      );
       SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
 
-      final SourceScanSummary first =
-          await SourceLibraryScanner(db).scan(source);
+      final SourceScanSummary first = await SourceLibraryScanner(
+        db,
+      ).scan(source);
       expect(first.error, isNull);
       expect(first.importedMediaCount, 2);
       expect(first.discoveredPaths, <String>[volume1.path, volume2.path]);
       expect(
-        (await db.getAllEpubBooks())
-            .map((EpubBookRow b) => b.title)
-            .toList()
+        (await db.getAllEpubBooks()).map((EpubBookRow b) => b.title).toList()
           ..sort(),
         <String>['volume-01', 'volume-02'],
       );
 
       source = (await db.getMediaSourceById(sid))!;
-      final SourceScanSummary second =
-          await SourceLibraryScanner(db).scan(source);
+      final SourceScanSummary second = await SourceLibraryScanner(
+        db,
+      ).scan(source);
       expect(second.error, isNull);
       expect(second.importedMediaCount, 0);
       expect(await db.getAllEpubBooks(), hasLength(2));
     });
 
-    test('re-scan skips the already-imported volume (silent dedup, 0 new)',
-        () async {
-      final FushiDatabase db = _memDb();
-      addTearDown(db.close);
+    test(
+      're-scan skips the already-imported volume (silent dedup, 0 new)',
+      () async {
+        final FushiDatabase db = _memDb();
+        addTearDown(db.close);
 
-      _writeMokuro(tmp.path, title: 'RescanVolume');
+        _writeMokuro(tmp.path, title: 'RescanVolume');
 
-      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
-        label: 'Manga',
-        mediaKind: 'manga',
-        rootPath: tmp.path,
-        createdAt: 1000,
-      ));
+        final int sid = await db.insertMediaSource(
+          MediaSourcesCompanion.insert(
+            label: 'Manga',
+            mediaKind: 'manga',
+            rootPath: tmp.path,
+            createdAt: 1000,
+          ),
+        );
 
-      // 第一遍导入。
-      SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
-      await SourceLibraryScanner(db).scan(source);
-      expect(await db.getAllEpubBooks(), hasLength(1));
+        // 第一遍导入。
+        SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
+        await SourceLibraryScanner(db).scan(source);
+        expect(await db.getAllEpubBooks(), hasLength(1));
 
-      // 第二遍重扫：同标题身份 key 命中 -> 静默跳过，不产生 X (2)、不算错误。
-      source = (await db.getMediaSourceById(sid))!;
-      await SourceLibraryScanner(db).scan(source);
+        // 第二遍重扫：同标题身份 key 命中 -> 静默跳过，不产生 X (2)、不算错误。
+        source = (await db.getMediaSourceById(sid))!;
+        await SourceLibraryScanner(db).scan(source);
 
-      final List<EpubBookRow> books = await db.getAllEpubBooks();
-      expect(books, hasLength(1),
-          reason: 'manga re-scan must dedup by title key, not create X (2)');
-      expect(books.single.title, 'RescanVolume');
-      final SourceLibraryRow after = (await db.getMediaSourceById(sid))!;
-      expect(after.mediaCount, 0,
-          reason: 'second scan inserted nothing (duplicate skipped)');
-      expect(after.lastScanError, isNull);
-    });
+        final List<EpubBookRow> books = await db.getAllEpubBooks();
+        expect(
+          books,
+          hasLength(1),
+          reason: 'manga re-scan must dedup by title key, not create X (2)',
+        );
+        expect(books.single.title, 'RescanVolume');
+        final SourceLibraryRow after = (await db.getMediaSourceById(sid))!;
+        expect(
+          after.mediaCount,
+          0,
+          reason: 'second scan inserted nothing (duplicate skipped)',
+        );
+        expect(after.lastScanError, isNull);
+      },
+    );
 
     test('empty folder: 0 media, no error', () async {
       final FushiDatabase db = _memDb();
       addTearDown(db.close);
 
-      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
-        label: 'Manga',
-        mediaKind: 'manga',
-        rootPath: tmp.path,
-        createdAt: 1000,
-      ));
+      final int sid = await db.insertMediaSource(
+        MediaSourcesCompanion.insert(
+          label: 'Manga',
+          mediaKind: 'manga',
+          rootPath: tmp.path,
+          createdAt: 1000,
+        ),
+      );
       final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
 
       await SourceLibraryScanner(db).scan(source);
@@ -2310,12 +2631,14 @@ Attributes = A
       final FushiDatabase db = _memDb();
       addTearDown(db.close);
 
-      final int sid = await db.insertMediaSource(MediaSourcesCompanion.insert(
-        label: 'Manga',
-        mediaKind: 'manga',
-        rootPath: '/srv/manga',
-        createdAt: 1000,
-      ));
+      final int sid = await db.insertMediaSource(
+        MediaSourcesCompanion.insert(
+          label: 'Manga',
+          mediaKind: 'manga',
+          rootPath: '/srv/manga',
+          createdAt: 1000,
+        ),
+      );
       final SourceLibraryRow source = (await db.getMediaSourceById(sid))!;
 
       await SourceLibraryScanner(db).scan(source, fs: _FakeRemoteFs());
@@ -2333,16 +2656,31 @@ Attributes = A
     final String src = File(
       'lib/src/media/source_library/source_library_scanner.dart',
     ).readAsStringSync();
-    expect(src.contains('MangaImporter.importFromMokuroPath'), isTrue,
-        reason: 'mokuro 扫描必须复用既有导入链');
-    expect(src.contains('MangaImporter.importFromImageFolder'), isTrue,
-        reason: '纯页图扫描必须复用既有目录导入链');
-    expect(src.contains('MangaArchiveImporter.importArchive'), isTrue,
-        reason: '单文件卷扫描必须复用既有压缩包导入链');
-    expect(src.contains('classifyImportCarrier('), isTrue,
-        reason: '单文件卷的载体身份必须与手动导入同一份判据');
-    expect(src.contains('policy: const DuplicatePolicy.skip()'), isTrue,
-        reason: '后台扫描必须静默去重，不能重扫生成 X (2)');
+    expect(
+      src.contains('MangaImporter.importFromMokuroPath'),
+      isTrue,
+      reason: 'mokuro 扫描必须复用既有导入链',
+    );
+    expect(
+      src.contains('MangaImporter.importFromImageFolder'),
+      isTrue,
+      reason: '纯页图扫描必须复用既有目录导入链',
+    );
+    expect(
+      src.contains('MangaArchiveImporter.importArchive'),
+      isTrue,
+      reason: '单文件卷扫描必须复用既有压缩包导入链',
+    );
+    expect(
+      src.contains('classifyImportCarrier('),
+      isTrue,
+      reason: '单文件卷的载体身份必须与手动导入同一份判据',
+    );
+    expect(
+      src.contains('policy: const DuplicatePolicy.skip()'),
+      isTrue,
+      reason: '后台扫描必须静默去重，不能重扫生成 X (2)',
+    );
   });
 }
 
@@ -2402,8 +2740,7 @@ class _FakeRemoteFs implements SourceFileSystem {
   Future<List<SourceFileEntry>> listFiles(
     String dirPath, {
     bool recursive = false,
-  }) async =>
-      const <SourceFileEntry>[];
+  }) async => const <SourceFileEntry>[];
 
   @override
   Future<List<String>> listSiblingNames(String filePath) async =>

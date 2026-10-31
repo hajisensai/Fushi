@@ -30,13 +30,15 @@ void main() {
   }
 
   test('binding UI lists every ProfileMediaKind value (exhaustive)', () {
-    final String src =
-        read('lib/src/pages/implementations/profile_management_page.dart');
+    final String src = read(
+      'lib/src/pages/implementations/profile_management_page.dart',
+    );
     for (final ProfileMediaKind kind in ProfileMediaKind.values) {
       expect(
         src.contains('ProfileMediaKind.${kind.name}'),
         isTrue,
-        reason: 'binding row for "${kind.name}" missing from the media-type '
+        reason:
+            'binding row for "${kind.name}" missing from the media-type '
             'binding list — every enum value needs a row (TODO-2936)',
       );
     }
@@ -48,7 +50,8 @@ void main() {
       src.contains('autoApplyBinding(') &&
           src.contains('mediaType: ProfileMediaKind.manga'),
       isTrue,
-      reason: 'MangaFushiPage must call autoApplyBinding(mediaType: '
+      reason:
+          'MangaFushiPage must call autoApplyBinding(mediaType: '
           'ProfileMediaKind.manga) on open, else the manga binding row is '
           'dead UI (TODO-2936)',
     );
@@ -71,17 +74,20 @@ void main() {
         src.contains('autoApplyBinding(') &&
             src.contains('mediaType: ProfileMediaKind.game'),
         isTrue,
-        reason: '$path starts a gal hook session but never applies the '
+        reason:
+            '$path starts a gal hook session but never applies the '
             '"game" media-type Profile binding (TODO-2936)',
       );
     }
     // texthooker has TWO session entries (launch + attach) — both must apply.
-    final String texthooker =
-        read('lib/src/pages/implementations/texthooker_page.dart');
+    final String texthooker = read(
+      'lib/src/pages/implementations/texthooker_page.dart',
+    );
     expect(
       'mediaType: ProfileMediaKind.game'.allMatches(texthooker).length,
       greaterThanOrEqualTo(2),
-      reason: 'texthooker must apply the game binding on BOTH the launch and '
+      reason:
+          'texthooker must apply the game binding on BOTH the launch and '
           'the attach-to-running-game entry (TODO-2936)',
     );
   });
@@ -92,43 +98,54 @@ void main() {
       server.contains('_kProfileScopedPaths') &&
           server.contains('profileApi.resolveScope('),
       isTrue,
-      reason: 'yomitan-api server must resolve the profile scope on lookup / '
+      reason:
+          'yomitan-api server must resolve the profile scope on lookup / '
           'mine endpoints (biLEesNqWb / TODO-2936)',
     );
     // The SW-startup ping is not "the user is looking words up in the browser".
     expect(
-      RegExp(r'_kProfileScopedPaths = <String>\{[^}]*extension/status')
-          .hasMatch(server),
+      RegExp(
+        r'_kProfileScopedPaths = <String>\{[^}]*extension/status',
+      ).hasMatch(server),
       isFalse,
-      reason: '/api/extension/status is a liveness ping and must not be '
+      reason:
+          '/api/extension/status is a liveness ping and must not be '
           'profile-scoped (TODO-2936)',
     );
 
-    final String adapter = read('lib/src/profile/extension_profile_adapter.dart');
+    final String adapter = read(
+      'lib/src/profile/extension_profile_adapter.dart',
+    );
     expect(
       adapter.contains('mediaType: ProfileMediaKind.browser'),
       isTrue,
       reason: 'the extension profile adapter must honour the browser binding',
     );
     expect(
-      RegExp(r'\b(applyProfile|switchProfile|setActiveProfile|autoApplyBinding)\(')
-          .hasMatch(adapter),
+      RegExp(
+        r'\b(applyProfile|switchProfile|setActiveProfile|autoApplyBinding)\(',
+      ).hasMatch(adapter),
       isFalse,
-      reason: 'resolving an extension request must never switch the app '
+      reason:
+          'resolving an extension request must never switch the app '
           'profile (biLEesNqWb)',
     );
 
     final String main = read('lib/main.dart');
     expect(
-      main.contains('appModel.browserExtensionProfileApi = AppExtensionProfileApi('),
+      main.contains(
+        'appModel.browserExtensionProfileApi = AppExtensionProfileApi(',
+      ),
       isTrue,
-      reason: 'main.dart must inject the extension profile adapter before '
+      reason:
+          'main.dart must inject the extension profile adapter before '
           'initialise()',
     );
     expect(
       main.contains('mediaType: ProfileMediaKind.browser'),
       isFalse,
-      reason: 'main.dart must not auto-apply the browser binding to the app '
+      reason:
+          'main.dart must not auto-apply the browser binding to the app '
           '(biLEesNqWb: it only scopes extension requests)',
     );
   });

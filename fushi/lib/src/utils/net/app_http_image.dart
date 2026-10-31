@@ -42,16 +42,15 @@ class AppHttpImage extends ImageProvider<AppHttpImage> {
   ImageStreamCompleter loadImage(
     AppHttpImage key,
     ImageDecoderCallback decode,
-  ) =>
-      MultiFrameImageStreamCompleter(
-        codec: _loadCodec(key, decode),
-        scale: key.scale,
-        debugLabel: key.url,
-        informationCollector: () => <DiagnosticsNode>[
-          DiagnosticsProperty<ImageProvider>('Image provider', this),
-          DiagnosticsProperty<String>('URL', key.url),
-        ],
-      );
+  ) => MultiFrameImageStreamCompleter(
+    codec: _loadCodec(key, decode),
+    scale: key.scale,
+    debugLabel: key.url,
+    informationCollector: () => <DiagnosticsNode>[
+      DiagnosticsProperty<ImageProvider>('Image provider', this),
+      DiagnosticsProperty<String>('URL', key.url),
+    ],
+  );
 
   Future<ui.Codec> _loadCodec(
     AppHttpImage key,
@@ -101,17 +100,17 @@ class AppHttpImage extends ImageProvider<AppHttpImage> {
 
   @override
   int get hashCode => Object.hash(
-        url,
-        scale,
-        headers == null
-            ? null
-            : Object.hashAllUnordered(
-                headers!.entries.map(
-                  (MapEntry<String, String> entry) =>
-                      Object.hash(entry.key, entry.value),
-                ),
-              ),
-      );
+    url,
+    scale,
+    headers == null
+        ? null
+        : Object.hashAllUnordered(
+            headers!.entries.map(
+              (MapEntry<String, String> entry) =>
+                  Object.hash(entry.key, entry.value),
+            ),
+          ),
+  );
 
   @override
   String toString() =>
@@ -144,17 +143,19 @@ class AppCachedHttpImage extends CachedNetworkImageProvider {
 /// 由测试装配（`test/flutter_test_config.dart`）统一换成与宿主无关的实现。
 class AppImageCacheManager extends CacheManager with ImageCacheManager {
   AppImageCacheManager._(CacheInfoRepository? repo)
-      : super(
-          // Config 的 repo 形参不可空（缺省才走平台默认），所以按有无注入分两种构造。
-          repo == null
-              ? Config(DefaultCacheManager.key,
-                  fileService: AppImageFileService())
-              : Config(
-                  DefaultCacheManager.key,
-                  repo: repo,
-                  fileService: AppImageFileService(),
-                ),
-        );
+    : super(
+        // Config 的 repo 形参不可空（缺省才走平台默认），所以按有无注入分两种构造。
+        repo == null
+            ? Config(
+                DefaultCacheManager.key,
+                fileService: AppImageFileService(),
+              )
+            : Config(
+                DefaultCacheManager.key,
+                repo: repo,
+                fileService: AppImageFileService(),
+              ),
+      );
 
   static AppImageCacheManager? _instance;
 
@@ -162,11 +163,11 @@ class AppImageCacheManager extends CacheManager with ImageCacheManager {
   /// 只在测试装配里设置，且必须早于第一次 `AppImageCacheManager()`。
   @visibleForTesting
   static CacheInfoRepository Function(String databaseName)?
-      debugRepositoryOverride;
+  debugRepositoryOverride;
 
   factory AppImageCacheManager() => _instance ??= AppImageCacheManager._(
-        debugRepositoryOverride?.call(DefaultCacheManager.key),
-      );
+    debugRepositoryOverride?.call(DefaultCacheManager.key),
+  );
 }
 
 /// 磁盘缓存图片的首响应 / 正文空闲超时（BUG-2450）。
@@ -191,10 +192,7 @@ class AppImageFileService extends FileService {
   final RetryWait retryWait;
 
   @override
-  Future<FileServiceResponse> get(
-    String url, {
-    Map<String, String>? headers,
-  }) =>
+  Future<FileServiceResponse> get(String url, {Map<String, String>? headers}) =>
       retryTransient<FileServiceResponse>(
         () => _getOnce(url, headers: headers),
         backoff: retryBackoff,
@@ -214,7 +212,7 @@ class AppImageFileService extends FileService {
       Map<String, String> currentHeaders = headers ?? const <String, String>{};
       http.Request request;
       http.StreamedResponse response;
-      for (int hop = 0;; hop++) {
+      for (int hop = 0; ; hop++) {
         request = http.Request('GET', current)..followRedirects = false;
         request.headers.addAll(currentHeaders);
         response = await client.send(request).timeout(kAppImageHeaderTimeout);
@@ -254,7 +252,9 @@ class AppImageFileService extends FileService {
         http.StreamedResponse(
           hasImage
               ? _closeAfter(
-                  response.stream.timeout(kAppImageIdleTimeout), client)
+                  response.stream.timeout(kAppImageIdleTimeout),
+                  client,
+                )
               : const Stream<List<int>>.empty(),
           response.statusCode,
           headers: response.headers,

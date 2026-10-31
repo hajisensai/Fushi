@@ -15,8 +15,9 @@ import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart
 void main() {
   group('encode / decode', () {
     test('字段填满的作品 decode(encode(w)) 逐字段相等，rawPayload 不上 wire', () {
-      final VideoMetadataWork work =
-          _fullWork(rawPayload: const <String, Object?>{'raw': 1});
+      final VideoMetadataWork work = _fullWork(
+        rawPayload: const <String, Object?>{'raw': 1},
+      );
       final Map<String, Object?> json = encodeVideoMetadataWork(work);
       expect(json.containsKey('rawPayload'), isFalse);
       expect(json['provider'], 'tmdb');
@@ -78,24 +79,25 @@ void main() {
         }),
         throwsFormatException,
       );
-      final VideoMetadataWork lenient =
-          decodeVideoMetadataWork(<String, Object?>{
-        'provider': 'mal',
-        'kind': 'movie',
-        'title': 'x',
-        'year': 'abc',
-        'rating': <int>[1],
-        'genres': <Object?>['a', null, 2, ' b '],
-        'ids': <Object?>[
-          <String, Object?>{'type': 'mal', 'value': '1'},
-          <String, Object?>{'type': 'imdb'},
-          'junk',
-        ],
-        'images': <Object?>[
-          <String, Object?>{'kind': 'nope', 'url': 'u', 'provider': 'mal'},
-        ],
-        'seasons': 'not-a-list',
-      });
+      final VideoMetadataWork lenient = decodeVideoMetadataWork(
+        <String, Object?>{
+          'provider': 'mal',
+          'kind': 'movie',
+          'title': 'x',
+          'year': 'abc',
+          'rating': <int>[1],
+          'genres': <Object?>['a', null, 2, ' b '],
+          'ids': <Object?>[
+            <String, Object?>{'type': 'mal', 'value': '1'},
+            <String, Object?>{'type': 'imdb'},
+            'junk',
+          ],
+          'images': <Object?>[
+            <String, Object?>{'kind': 'nope', 'url': 'u', 'provider': 'mal'},
+          ],
+          'seasons': 'not-a-list',
+        },
+      );
       expect(lenient.year, isNull);
       expect(lenient.rating, isNull);
       expect(lenient.genres, <String>['a', 'b']);
@@ -113,8 +115,9 @@ void main() {
         mediaKind: VideoMetadataMediaKind.tv,
         episodeGroupId: 'grp',
       );
-      final VideoMetadataLookup? decoded =
-          decodeVideoMetadataLookup(encodeVideoMetadataLookup(lookup));
+      final VideoMetadataLookup? decoded = decodeVideoMetadataLookup(
+        encodeVideoMetadataLookup(lookup),
+      );
       expect(decoded, isNotNull);
       expect(decoded!.provider, lookup.provider);
       expect(decoded.externalId, lookup.externalId);
@@ -164,14 +167,17 @@ void main() {
         );
         members.add((await db.getVideoBookByBookUid(stem))!);
       }
-      final int collectionId =
-          await db.createMediaCollection('Show', collectionType: 'playlist');
+      final int collectionId = await db.createMediaCollection(
+        'Show',
+        collectionType: 'playlist',
+      );
       for (final VideoBookRow member in members) {
         await db.addToCollection(collectionId, MediaKind.video, member.bookUid);
       }
       final SourceLibraryRow source = (await db.getMediaSourceById(sourceId))!;
-      final MediaCollectionRow collection =
-          (await db.getMediaCollectionById(collectionId))!;
+      final MediaCollectionRow collection = (await db.getMediaCollectionById(
+        collectionId,
+      ))!;
       localWork = VideoSourceScrapeWork(
         source: source,
         collection: collection,
@@ -184,10 +190,13 @@ void main() {
 
     test('可持久化字段读回与原件一致', () async {
       final VideoMetadataWork work = _fullWork();
-      final PersistedVideoMetadata persisted =
-          await store.apply(localWork, work);
-      final VideoMetadataWorkRow row =
-          (await db.getVideoMetadataWorkById(persisted.workId))!;
+      final PersistedVideoMetadata persisted = await store.apply(
+        localWork,
+        work,
+      );
+      final VideoMetadataWorkRow row = (await db.getVideoMetadataWorkById(
+        persisted.workId,
+      ))!;
       final VideoMetadataWork loaded = (await loadVideoMetadataWork(db, row))!;
 
       expect(loaded.provider, work.provider, reason: '主身份 provider');
@@ -259,8 +268,9 @@ void main() {
         <String>['https://img.example/s1-poster.jpg'],
       );
       expect(
-        loaded.seasons[0].episodes[0].images
-            .map((VideoMetadataImage i) => i.url),
+        loaded.seasons[0].episodes[0].images.map(
+          (VideoMetadataImage i) => i.url,
+        ),
         <String>['https://img.example/s1e1-thumb.jpg'],
       );
 
@@ -274,8 +284,9 @@ void main() {
       expect(cover.provider, VideoMetadataProviderKind.tmdb);
       expect(cover.voteAverage, 5.5);
       expect(cover.voteCount, 12);
-      final VideoMetadataImage backdrop =
-          imageOf(VideoMetadataImageKind.backdrop);
+      final VideoMetadataImage backdrop = imageOf(
+        VideoMetadataImageKind.backdrop,
+      );
       expect(backdrop.url, 'https://img.example/backdrop.jpg');
       expect(backdrop.language, isNull);
       expect(backdrop.provider, VideoMetadataProviderKind.fanart);
@@ -315,8 +326,11 @@ void main() {
       // extras：原件两条，其中一条没 remoteUrl，apply 只落在线附件。
       expect(loaded.extras.length, 1);
       final VideoMetadataExtra extra = loaded.extras.single;
-      expect(extra.kind, VideoMetadataExtraKind.behindTheScenes,
-          reason: 'snake_case 列值映回枚举');
+      expect(
+        extra.kind,
+        VideoMetadataExtraKind.behindTheScenes,
+        reason: 'snake_case 列值映回枚举',
+      );
       expect(extra.title, 'Making of');
       expect(extra.provider, VideoMetadataProviderKind.tmdb);
       expect(extra.providerVideoId, 'yt-1');
@@ -331,14 +345,17 @@ void main() {
     });
 
     test('apply → load → encode → decode → apply → load 稳定（幂等）', () async {
-      final PersistedVideoMetadata first =
-          await store.apply(localWork, _fullWork());
+      final PersistedVideoMetadata first = await store.apply(
+        localWork,
+        _fullWork(),
+      );
       final VideoMetadataWork loaded1 = (await loadVideoMetadataWork(
         db,
         (await db.getVideoMetadataWorkById(first.workId))!,
       ))!;
-      final VideoMetadataWork wired =
-          decodeVideoMetadataWork(encodeVideoMetadataWork(loaded1));
+      final VideoMetadataWork wired = decodeVideoMetadataWork(
+        encodeVideoMetadataWork(loaded1),
+      );
       expect(wired, loaded1, reason: 'load 结果本身应能无损上 wire');
       final PersistedVideoMetadata second = await store.apply(localWork, wired);
       final VideoMetadataWork loaded2 = (await loadVideoMetadataWork(
@@ -349,10 +366,14 @@ void main() {
     });
 
     test('lookupOfWork 返回主身份；没主身份 / 不存在返回 null', () async {
-      final PersistedVideoMetadata persisted =
-          await store.apply(localWork, _fullWork());
-      final VideoMetadataLookup? lookup =
-          await lookupOfWork(db, persisted.workId);
+      final PersistedVideoMetadata persisted = await store.apply(
+        localWork,
+        _fullWork(),
+      );
+      final VideoMetadataLookup? lookup = await lookupOfWork(
+        db,
+        persisted.workId,
+      );
       expect(lookup, isNotNull);
       expect(lookup!.provider, VideoMetadataProviderKind.tmdb);
       expect(lookup.externalId, '31911');
@@ -373,8 +394,9 @@ void main() {
         ],
       );
       expect(await lookupOfWork(db, persisted.workId), isNull);
-      final VideoMetadataWorkRow row =
-          (await db.getVideoMetadataWorkById(persisted.workId))!;
+      final VideoMetadataWorkRow row = (await db.getVideoMetadataWorkById(
+        persisted.workId,
+      ))!;
       expect(
         await loadVideoMetadataWork(db, row),
         isNull,
@@ -391,17 +413,21 @@ void main() {
           title: 'Show',
         ),
       );
-      final VideoMetadataWorkRow row =
-          (await db.getVideoMetadataWorkById(persisted.workId))!;
+      final VideoMetadataWorkRow row = (await db.getVideoMetadataWorkById(
+        persisted.workId,
+      ))!;
       expect(await loadVideoMetadataWork(db, row), isNull);
       expect(await lookupOfWork(db, persisted.workId), isNull);
     });
 
     test('mediaType 损坏仍抛 StateError（真损坏不被静默吞掉）', () async {
-      final PersistedVideoMetadata persisted =
-          await store.apply(localWork, _fullWork());
-      final VideoMetadataWorkRow row =
-          (await db.getVideoMetadataWorkById(persisted.workId))!;
+      final PersistedVideoMetadata persisted = await store.apply(
+        localWork,
+        _fullWork(),
+      );
+      final VideoMetadataWorkRow row = (await db.getVideoMetadataWorkById(
+        persisted.workId,
+      ))!;
       expect(
         () => loadVideoMetadataWork(db, row.copyWith(mediaType: 'bogus')),
         throwsStateError,

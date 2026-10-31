@@ -25,31 +25,44 @@ void main() {
     );
   });
 
-  test('normalizes near-integer page quotient with the existing 1px contract',
-      () {
-    expect(paginate, contains('var pageCoordinate = stepScroll / pitch;'));
-    expect(paginate, contains('var nearestPage = Math.round(pageCoordinate);'));
-    expect(
-      onePixelPageCoordinateNormalization.hasMatch(paginate),
-      isTrue,
-      reason: '条件必须严格是 1px；<=10 或 <=1.5 不得通过源码守卫',
-    );
-  });
+  test(
+    'normalizes near-integer page quotient with the existing 1px contract',
+    () {
+      expect(paginate, contains('var pageCoordinate = stepScroll / pitch;'));
+      expect(
+        paginate,
+        contains('var nearestPage = Math.round(pageCoordinate);'),
+      );
+      expect(
+        onePixelPageCoordinateNormalization.hasMatch(paginate),
+        isTrue,
+        reason: '条件必须严格是 1px；<=10 或 <=1.5 不得通过源码守卫',
+      );
+    },
+  );
 
   test('forward and backward consume the normalized page coordinate', () {
-    final RegExpMatch? normalization =
-        onePixelPageCoordinateNormalization.firstMatch(paginate);
+    final RegExpMatch? normalization = onePixelPageCoordinateNormalization
+        .firstMatch(paginate);
     final int normalizationEnd = normalization?.end ?? -1;
-    final int forwardTarget =
-        paginate.indexOf('Math.floor(pageCoordinate) + 1');
-    final int backwardTarget =
-        paginate.indexOf('Math.ceil(pageCoordinate) - 1');
+    final int forwardTarget = paginate.indexOf(
+      'Math.floor(pageCoordinate) + 1',
+    );
+    final int backwardTarget = paginate.indexOf(
+      'Math.ceil(pageCoordinate) - 1',
+    );
 
     expect(normalizationEnd, greaterThanOrEqualTo(0));
-    expect(forwardTarget, greaterThan(normalizationEnd),
-        reason: 'forward 目标必须在近整数商规范化之后计算');
-    expect(backwardTarget, greaterThan(normalizationEnd),
-        reason: 'backward 目标必须在近整数商规范化之后计算');
+    expect(
+      forwardTarget,
+      greaterThan(normalizationEnd),
+      reason: 'forward 目标必须在近整数商规范化之后计算',
+    );
+    expect(
+      backwardTarget,
+      greaterThan(normalizationEnd),
+      reason: 'backward 目标必须在近整数商规范化之后计算',
+    );
   });
 
   test('sub-pixel drift is normalized before stepping', () {
@@ -76,10 +89,12 @@ void main() {
   group('TODO-729: single量纲下 paginate 翻不动即直接 return limit（删 settle 复核）', () {
     test('forward 翻不动时直接 return "limit"，不再走 _stepWithFreshMetrics', () {
       expect(
-        paginate
-            .contains('if (targetForward <= stepScroll + 1) return "limit"'),
+        paginate.contains(
+          'if (targetForward <= stepScroll + 1) return "limit"',
+        ),
         isTrue,
-        reason: 'forward 末页应直接 return "limit"（安卓式），单一量纲下 metrics 与对齐量'
+        reason:
+            'forward 末页应直接 return "limit"（安卓式），单一量纲下 metrics 与对齐量'
             '同源、永不低估，无需二次 settle 复核',
       );
     });
@@ -120,18 +135,29 @@ void main() {
         '  getScrollContext: function() {',
         '\n  getPagePosition:',
       );
-      expect(ctx.contains('columnPitch'), isFalse,
-          reason: 'columnPitch 双量纲已废，只保留单一 pageStep');
+      expect(
+        ctx.contains('columnPitch'),
+        isFalse,
+        reason: 'columnPitch 双量纲已废，只保留单一 pageStep',
+      );
       // TODO-1285：单量纲泛化为「一页 N 列」——pageStep = columnCount × (content-box +
       // gap)。N 从 getComputedStyle(body).columnCount 读；pageColumns=0/1 时 N=1，
       // pageStep 退回 content-box + gap（与旧单列字节等价）。仍是唯一步进量纲。
       expect(
-          ctx.contains('var pageStep = columns * (contentBox + gap);'), isTrue,
-          reason: 'pageStep = columnCount × (content-box + gap) 是唯一步进量纲');
-      expect(ctx.contains('parseInt(cs.columnCount, 10)'), isTrue,
-          reason: '每页列数 N 必须从 computed columnCount 读（与 columnWidth/gap 同源）');
-      expect(ctx.contains('totalSize - pageStep'), isTrue,
-          reason: 'maxScroll 减项必须是 pageStep（与对齐量同源），不是 clientSize');
+        ctx.contains('var pageStep = columns * (contentBox + gap);'),
+        isTrue,
+        reason: 'pageStep = columnCount × (content-box + gap) 是唯一步进量纲',
+      );
+      expect(
+        ctx.contains('parseInt(cs.columnCount, 10)'),
+        isTrue,
+        reason: '每页列数 N 必须从 computed columnCount 读（与 columnWidth/gap 同源）',
+      );
+      expect(
+        ctx.contains('totalSize - pageStep'),
+        isTrue,
+        reason: 'maxScroll 减项必须是 pageStep（与对齐量同源），不是 clientSize',
+      );
       expect(ctx.contains('clientSize'), isFalse, reason: 'clientSize 双量纲减项已删');
     });
 
@@ -150,23 +176,32 @@ void main() {
         '  getPagePosition: function(',
       );
       // 旧的灾难性塌缩兜底必须删除：columnCount='auto' 时绝不能直接 columns=1。
-      expect(ctx.contains('if (!(columns > 0)) columns = 1;'), isFalse,
-          reason: 'columnCount 回读失败塌成 columns=1 = pageStep 塌成单列步长 → 相邻页泄露；'
-              '必须改为从几何反推 N');
+      expect(
+        ctx.contains('if (!(columns > 0)) columns = 1;'),
+        isFalse,
+        reason:
+            'columnCount 回读失败塌成 columns=1 = pageStep 塌成单列步长 → 相邻页泄露；'
+            '必须改为从几何反推 N',
+      );
       // 反推公式：N = round((整 content-box + gap)/(used 子列宽 + gap))，代数上 == 名义列数。
       expect(
-          ctx.contains('Math.round((fullTurnBox + gap) / (contentBox + gap))'),
-          isTrue,
-          reason:
-              'columnCount 不可读时必须用 round((整 content-box+gap)/(子列宽+gap)) 反推 N');
+        ctx.contains('Math.round((fullTurnBox + gap) / (contentBox + gap))'),
+        isTrue,
+        reason: 'columnCount 不可读时必须用 round((整 content-box+gap)/(子列宽+gap)) 反推 N',
+      );
       // 横排整 content-box 用 getBoundingClientRect().width（分数精度，避开整数 clientWidth
       // 的 TODO-753 漂移）；竖排用 this.viewportHeight（与竖排 contentBox 兜底同源）。
-      expect(ctx.contains('scrollEl.getBoundingClientRect().width'), isTrue,
-          reason: '横排整 content-box 必须取分数精度 getBoundingClientRect().width 反推 N');
+      expect(
+        ctx.contains('scrollEl.getBoundingClientRect().width'),
+        isTrue,
+        reason: '横排整 content-box 必须取分数精度 getBoundingClientRect().width 反推 N',
+      );
       // pageStep 仍是 columns × (contentBox + gap) 单一量纲（columns 现在健壮）。
       expect(
-          ctx.contains('var pageStep = columns * (contentBox + gap);'), isTrue,
-          reason: 'pageStep 单一量纲不变，只是 columns 来源变健壮');
+        ctx.contains('var pageStep = columns * (contentBox + gap);'),
+        isTrue,
+        reason: 'pageStep 单一量纲不变，只是 columns 来源变健壮',
+      );
     });
   });
 
@@ -229,27 +264,36 @@ void main() {
       );
     });
 
-    test('注入半边：initialize/updatePageSize setProperty(--reader-viewport-height)',
-        () {
-      final int count = '--reader-viewport-height'.allMatches(source).length;
-      // setProperty 至少出现在 initialize 与 updatePageSize 两处（注释引用不计精确数，
-      // 用 setProperty 调用形态确认确实写穿到 DOM）。
-      expect(
-        source.contains(
-            "document.documentElement.style.setProperty('--reader-viewport-height'"),
-        isTrue,
-        reason: 'V 必须经 setProperty 注入 DOM，CSS 变量才非空（否则回退 100vh 失配）',
-      );
-      expect(count >= 2, isTrue,
-          reason:
-              'initialize 与 updatePageSize 两处都要注入 --reader-viewport-height');
-    });
+    test(
+      '注入半边：initialize/updatePageSize setProperty(--reader-viewport-height)',
+      () {
+        final int count = '--reader-viewport-height'.allMatches(source).length;
+        // setProperty 至少出现在 initialize 与 updatePageSize 两处（注释引用不计精确数，
+        // 用 setProperty 调用形态确认确实写穿到 DOM）。
+        expect(
+          source.contains(
+            "document.documentElement.style.setProperty('--reader-viewport-height'",
+          ),
+          isTrue,
+          reason: 'V 必须经 setProperty 注入 DOM，CSS 变量才非空（否则回退 100vh 失配）',
+        );
+        expect(
+          count >= 2,
+          isTrue,
+          reason: 'initialize 与 updatePageSize 两处都要注入 --reader-viewport-height',
+        );
+      },
+    );
 
     test('viewportHeight 属性两 fushiReader 实例都声明（防 stale NaN）', () {
       final int decls = 'viewportHeight: 0,'.allMatches(source).length;
-      expect(decls >= 2, isTrue,
-          reason: '翻页 + 连续两个 fushiReader 实例都要声明 viewportHeight: 0，'
-              '否则首帧读 undefined→NaN→pageStep 退化成 1');
+      expect(
+        decls >= 2,
+        isTrue,
+        reason:
+            '翻页 + 连续两个 fushiReader 实例都要声明 viewportHeight: 0，'
+            '否则首帧读 undefined→NaN→pageStep 退化成 1',
+      );
     });
   });
 }

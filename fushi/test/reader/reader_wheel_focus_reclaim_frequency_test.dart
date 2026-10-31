@@ -84,13 +84,16 @@ void main() {
         paginationInFlight: (_) => false,
       );
       expect(counts.pageTurns, 1);
-      expect(counts.focusReclaims, 1,
-          reason: '闸门在 reclaim 之上游：一次触控板惯性只认领一次手势，'
-              '所以正常路径下 26 个 tick 只回收一次焦点');
+      expect(
+        counts.focusReclaims,
+        1,
+        reason:
+            '闸门在 reclaim 之上游：一次触控板惯性只认领一次手势，'
+            '所以正常路径下 26 个 tick 只回收一次焦点',
+      );
     });
 
-    test(
-        'a burst fully covered by an in-flight navigation reclaims on every '
+    test('a burst fully covered by an in-flight navigation reclaims on every '
         'tick (accepted: reclaim is idempotent when already focused)', () {
       final ReaderWheelGestureGate gate = ReaderWheelGestureGate();
       const int totalMs = 600;
@@ -105,7 +108,8 @@ void main() {
       expect(
         counts.focusReclaims,
         _tickCount(totalMs: totalMs, tickIntervalMs: tickIntervalMs),
-        reason: 'BUG-1380 之后 in-flight 期间闸门只查询不认领 ⇒ 每个 tick 都穿过闸门、'
+        reason:
+            'BUG-1380 之后 in-flight 期间闸门只查询不认领 ⇒ 每个 tick 都穿过闸门、'
             '都调一次 reclaim。这是**有意接受**的频次：节点此时已持焦，'
             'requestFocus 在 hasPrimaryFocus 上快返，且 FocusManager 合并同帧请求。'
             '若这里退回 1，说明 token 又被翻不动页的 tick 提前吃掉了（BUG-1380 回归）',
@@ -113,21 +117,27 @@ void main() {
     });
 
     test(
-        'a burst that opens during chapter loading reclaims once per swallowed '
-        'tick plus once for the landed turn', () {
-      final ReaderWheelGestureGate gate = ReaderWheelGestureGate();
-      // 前 300ms 换章加载在飞（elapsed 0/60/…/300 共 6 个 tick 被丢弃），之后落定。
-      final _BurstCounts counts = _replayBurst(
-        gate: gate,
-        totalMs: 1500,
-        tickIntervalMs: 60,
-        paginationInFlight: (int elapsedMs) => elapsedMs <= 300,
-      );
-      expect(counts.pageTurns, 1, reason: '加载落定后恰好补翻一页（BUG-1380）');
-      expect(counts.focusReclaims, 7,
-          reason: '6 个被 _paginate 丢弃的 in-flight tick 各 reclaim 一次，'
-              '外加真正落地那一次；上界是 tick 数，不随时间无限增长');
-    });
+      'a burst that opens during chapter loading reclaims once per swallowed '
+      'tick plus once for the landed turn',
+      () {
+        final ReaderWheelGestureGate gate = ReaderWheelGestureGate();
+        // 前 300ms 换章加载在飞（elapsed 0/60/…/300 共 6 个 tick 被丢弃），之后落定。
+        final _BurstCounts counts = _replayBurst(
+          gate: gate,
+          totalMs: 1500,
+          tickIntervalMs: 60,
+          paginationInFlight: (int elapsedMs) => elapsedMs <= 300,
+        );
+        expect(counts.pageTurns, 1, reason: '加载落定后恰好补翻一页（BUG-1380）');
+        expect(
+          counts.focusReclaims,
+          7,
+          reason:
+              '6 个被 _paginate 丢弃的 in-flight tick 各 reclaim 一次，'
+              '外加真正落地那一次；上界是 tick 数，不随时间无限增长',
+        );
+      },
+    );
 
     test('reclaim count never exceeds the tick count of the burst', () {
       for (final int inFlightUntilMs in <int>[0, 120, 300, 600, 1500]) {
@@ -143,8 +153,10 @@ void main() {
         expect(
           counts.focusReclaims,
           lessThanOrEqualTo(
-              _tickCount(totalMs: totalMs, tickIntervalMs: tickIntervalMs)),
-          reason: 'reclaim 频次的上界是输入事件数本身（O(tick)），'
+            _tickCount(totalMs: totalMs, tickIntervalMs: tickIntervalMs),
+          ),
+          reason:
+              'reclaim 频次的上界是输入事件数本身（O(tick)），'
               '不存在「一个 tick 放大成多次回收」的路径',
         );
       }
@@ -163,58 +175,81 @@ void main() {
 
     setUpAll(() {
       final String source = maskCommentsAndScriptLines(readReaderPageSource());
-      final EnclosingCall handler =
-          enclosingCallOf(source, "handlerName: 'onWheelPaginate'");
-      expect(handler.name, endsWith('addJavaScriptHandler'),
-          reason: 'onWheelPaginate 必须仍以 addJavaScriptHandler 的具名实参注册');
+      final EnclosingCall handler = enclosingCallOf(
+        source,
+        "handlerName: 'onWheelPaginate'",
+      );
+      expect(
+        handler.name,
+        endsWith('addJavaScriptHandler'),
+        reason: 'onWheelPaginate 必须仍以 addJavaScriptHandler 的具名实参注册',
+      );
       handlerBody = handler.text;
     });
 
-    test('the handler reclaims focus exactly once, after the gate early-return',
-        () {
-      expect(
-        containsCodeLine(
-            handlerBody, '_focusOwnership.reclaim(FocusReclaimCause.gesture)'),
-        isTrue,
-        reason: 'BUG-136：滚轮翻页同样把 OS 焦点交给了 WebView，必须夺回来',
-      );
-      expect(
-        '_focusOwnership.reclaim('.allMatches(handlerBody).length,
-        1,
-        reason: '只允许一处回收点。多写一处（例如闸门之前补一个）就把频次从「一次手势一次」'
-            '抬成「一个 tick 一次」，且两处的门控必然漂移——正是 PageFocusOwnership 要消灭的老路',
-      );
+    test(
+      'the handler reclaims focus exactly once, after the gate early-return',
+      () {
+        expect(
+          containsCodeLine(
+            handlerBody,
+            '_focusOwnership.reclaim(FocusReclaimCause.gesture)',
+          ),
+          isTrue,
+          reason: 'BUG-136：滚轮翻页同样把 OS 焦点交给了 WebView，必须夺回来',
+        );
+        expect(
+          '_focusOwnership.reclaim('.allMatches(handlerBody).length,
+          1,
+          reason:
+              '只允许一处回收点。多写一处（例如闸门之前补一个）就把频次从「一次手势一次」'
+              '抬成「一个 tick 一次」，且两处的门控必然漂移——正是 PageFocusOwnership 要消灭的老路',
+        );
 
-      final int gate =
-          handlerBody.indexOf('_pagedWheelGestureGate.shouldStartNewGesture');
-      final int reclaim =
-          handlerBody.indexOf('_focusOwnership.reclaim(FocusReclaimCause');
-      expect(gate, isNonNegative);
-      expect(reclaim, isNonNegative);
-      expect(reclaim, greaterThan(gate),
-          reason: 'reclaim 必须排在手势闸门之后：闸门早退的 tick（已认领手势内的惯性余波）'
-              '不该再回收焦点，否则一次 1.5s 惯性会从 1 次回收变成 26 次');
-    });
+        final int gate = handlerBody.indexOf(
+          '_pagedWheelGestureGate.shouldStartNewGesture',
+        );
+        final int reclaim = handlerBody.indexOf(
+          '_focusOwnership.reclaim(FocusReclaimCause',
+        );
+        expect(gate, isNonNegative);
+        expect(reclaim, isNonNegative);
+        expect(
+          reclaim,
+          greaterThan(gate),
+          reason:
+              'reclaim 必须排在手势闸门之后：闸门早退的 tick（已认领手势内的惯性余波）'
+              '不该再回收焦点，否则一次 1.5s 惯性会从 1 次回收变成 26 次',
+        );
+      },
+    );
 
-    test('the gate branch really early-returns before reaching the reclaim',
-        () {
-      final int gate =
-          handlerBody.indexOf('_pagedWheelGestureGate.shouldStartNewGesture');
-      expect(gate, isNonNegative);
-      // 闸门所在 `if (...)` 的块本体：从条件表达式之后的第一个 `{` 起做花括号配对。
-      final String branch = balancedBlockFrom(
-        handlerBody,
-        gate,
-        what: 'onWheelPaginate 手势闸门分支',
-      );
-      expect(containsCodeLine(branch, 'return;'), isTrue,
-          reason: '闸门判「属于已认领手势」必须直接 return；'
-              '改成继续往下走就等于闸门对 reclaim 频次完全失效');
-      expect(
-        containsCodeLine(branch, '_focusOwnership.reclaim('),
-        isFalse,
-        reason: '回收点不得落进闸门的早退分支里（那是「这一 tick 不处理」的分支）',
-      );
-    });
+    test(
+      'the gate branch really early-returns before reaching the reclaim',
+      () {
+        final int gate = handlerBody.indexOf(
+          '_pagedWheelGestureGate.shouldStartNewGesture',
+        );
+        expect(gate, isNonNegative);
+        // 闸门所在 `if (...)` 的块本体：从条件表达式之后的第一个 `{` 起做花括号配对。
+        final String branch = balancedBlockFrom(
+          handlerBody,
+          gate,
+          what: 'onWheelPaginate 手势闸门分支',
+        );
+        expect(
+          containsCodeLine(branch, 'return;'),
+          isTrue,
+          reason:
+              '闸门判「属于已认领手势」必须直接 return；'
+              '改成继续往下走就等于闸门对 reclaim 频次完全失效',
+        );
+        expect(
+          containsCodeLine(branch, '_focusOwnership.reclaim('),
+          isFalse,
+          reason: '回收点不得落进闸门的早退分支里（那是「这一 tick 不处理」的分支）',
+        );
+      },
+    );
   });
 }

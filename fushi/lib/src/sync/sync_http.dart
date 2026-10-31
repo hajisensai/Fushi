@@ -47,15 +47,16 @@ Future<http.Client> obtainSyncHttpClient() {
   final Future<http.Client>? cached = _sharedClient;
   if (cached != null) return cached;
   late final Future<http.Client> creating;
-  creating = createSyncHttpClient().onError<Object>(
-    (Object error, StackTrace stackTrace) {
-      // 构造失败不能被永久钉进缓存：`await` 版本失败时压根没写缓存，下次调用会重试，
-      // 这里必须保住同一行为，否则一次瞬时失败会让之后每次取用都复读同一个错误。
-      // 只在缓存仍指向本次构造时清，免得踩掉期间 reset 后新建的那个。
-      if (identical(_sharedClient, creating)) _sharedClient = null;
-      Error.throwWithStackTrace(error, stackTrace);
-    },
-  );
+  creating = createSyncHttpClient().onError<Object>((
+    Object error,
+    StackTrace stackTrace,
+  ) {
+    // 构造失败不能被永久钉进缓存：`await` 版本失败时压根没写缓存，下次调用会重试，
+    // 这里必须保住同一行为，否则一次瞬时失败会让之后每次取用都复读同一个错误。
+    // 只在缓存仍指向本次构造时清，免得踩掉期间 reset 后新建的那个。
+    if (identical(_sharedClient, creating)) _sharedClient = null;
+    Error.throwWithStackTrace(error, stackTrace);
+  });
   _sharedClient = creating;
   return creating;
 }
@@ -71,10 +72,7 @@ void resetSyncHttpClient() {
   // 可能仍在构造中，所以是 `then` 而不是直接 `close()`：正在建的那个也必须被关掉，
   // 否则「改代理」这一下就漏一个 client。构造失败的错误已经报给了当初的调用方，
   // 这里吞掉只是避免它变成 unhandled async error。
-  pending?.then(
-    (http.Client client) => client.close(),
-    onError: (Object _) {},
-  );
+  pending?.then((http.Client client) => client.close(), onError: (Object _) {});
 }
 
 /// Stream [file] as the body of a pre-configured [request] (headers/content
@@ -94,11 +92,13 @@ Future<http.Response> streamUpload(
   var sent = 0;
   Object? pumpError;
   try {
-    await request.sink.addStream(file.openRead().map((chunk) {
-      sent += chunk.length;
-      onProgress?.call(fileLength > 0 ? sent / fileLength : 0, sent);
-      return chunk;
-    }));
+    await request.sink.addStream(
+      file.openRead().map((chunk) {
+        sent += chunk.length;
+        onProgress?.call(fileLength > 0 ? sent / fileLength : 0, sent);
+        return chunk;
+      }),
+    );
   } catch (e) {
     pumpError = e;
   } finally {

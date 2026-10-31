@@ -18,19 +18,21 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 ///
 /// [alignment] 是区内按钮的排布方向（左区靠左、中区居中、右区靠右——与真实栏里
 /// 的位置一致）；[direction] 为 [Axis.vertical] 时按钮竖排（视频屏幕两侧的竖条）。
-typedef ControlSlotRegionBuilder<S> = Widget Function(
-  S slot, {
-  bool growToContent,
-  WrapAlignment alignment,
-  Axis direction,
-});
+typedef ControlSlotRegionBuilder<S> =
+    Widget Function(
+      S slot, {
+      bool growToContent,
+      WrapAlignment alignment,
+      Axis direction,
+    });
 
 /// 宿主描述舞台预览：拿到 [ControlSlotRegionBuilder]，把各槽位排成播放器 / 阅读器
 /// 的方位图。hidden 槽不在舞台上（编辑器自己画成「移出」放置区）。
-typedef ControlStageBuilder<S> = Widget Function(
-  BuildContext context,
-  ControlSlotRegionBuilder<S> buildSlotRegion,
-);
+typedef ControlStageBuilder<S> =
+    Widget Function(
+      BuildContext context,
+      ControlSlotRegionBuilder<S> buildSlotRegion,
+    );
 
 /// 编辑器上方说明文字的样式：与设置行的说明一致（Apple 13 号 secondaryLabel；
 /// MD3 bodyMedium onSurfaceVariant）。
@@ -236,8 +238,9 @@ class ControlStageBar extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
                   Align(
-                      alignment: AlignmentDirectional.centerStart,
-                      child: start),
+                    alignment: AlignmentDirectional.centerStart,
+                    child: start,
+                  ),
                   if (middle != null) ...<Widget>[
                     const SizedBox(height: 4),
                     Align(alignment: Alignment.center, child: middle),
@@ -365,8 +368,9 @@ class ControlStageTextLines extends StatelessWidget {
     return ExcludeSemantics(
       child: Column(
         mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment:
-            centered ? CrossAxisAlignment.center : CrossAxisAlignment.start,
+        crossAxisAlignment: centered
+            ? CrossAxisAlignment.center
+            : CrossAxisAlignment.start,
         children: <Widget>[
           for (final double factor in widthFactors)
             Padding(
@@ -406,8 +410,11 @@ enum _DropState { idle, armed, hover, reject, dimmed }
 /// Esc（手柄 B）取消。
 ///
 /// 视频页 `VideoControlLayoutEditor` 是第一个宿主；阅读器工具栏编辑器复用同一份。
-class ControlLayoutEditor<S extends ControlSlotSpec,
-    I extends ControlItemSpec<S>> extends StatefulWidget {
+class ControlLayoutEditor<
+  S extends ControlSlotSpec,
+  I extends ControlItemSpec<S>
+>
+    extends StatefulWidget {
   const ControlLayoutEditor({
     required this.layout,
     required this.onLayoutChanged,
@@ -476,8 +483,11 @@ class ControlLayoutEditor<S extends ControlSlotSpec,
       _ControlLayoutEditorState<S, I>();
 }
 
-class _ControlLayoutEditorState<S extends ControlSlotSpec,
-    I extends ControlItemSpec<S>> extends State<ControlLayoutEditor<S, I>> {
+class _ControlLayoutEditorState<
+  S extends ControlSlotSpec,
+  I extends ControlItemSpec<S>
+>
+    extends State<ControlLayoutEditor<S, I>> {
   late ControlLayout<S, I> _layout = widget.layout;
   String? _rejectionMessage;
 
@@ -678,9 +688,9 @@ class _ControlLayoutEditorState<S extends ControlSlotSpec,
           child: Text(
             message,
             style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  color: style.error,
-                  fontWeight: FontWeight.w600,
-                ),
+              color: style.error,
+              fontWeight: FontWeight.w600,
+            ),
           ),
         ),
       ],
@@ -787,163 +797,174 @@ class _ControlLayoutEditorState<S extends ControlSlotSpec,
           setState(() => _hoverRejectSlot = null);
         }
       },
-      builder: (
-        BuildContext context,
-        List<ControlDragData<S, I>?> candidate,
-        List<dynamic> rejected,
-      ) {
-        final _DropState state = _dropStateOf(
-          slot,
-          hoverAccept: candidate.isNotEmpty,
-          hoverReject: rejected.isNotEmpty,
-        );
-        final Widget chips = Wrap(
-          direction: direction,
-          alignment: alignment,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          spacing: tray ? 6 : 2,
-          runSpacing: tray ? 6 : 2,
-          children: <Widget>[
-            for (final ({I item, int sourceIndex}) entry in entries)
-              KeyedSubtree(
-                key: ValueKey<String>(
-                  'placed-${slot.storageValue}-${entry.sourceIndex}-'
-                  '${entry.item.storageValue}',
-                ),
-                child: _buildPlacedChip(
-                  entry.item,
-                  sourceSlot: slot,
-                  sourceIndex: entry.sourceIndex,
-                ),
-              ),
-          ],
-        );
-
-        if (tray || !growToContent) {
-          // 「移出（隐藏）」放置区：虚线圆角框 + 眼睛划线图标 + 文案，拖进来即隐藏。
-          // 归一化后 hidden 槽恒空，下面的 chip 区只给旧数据兜底；按钮多时在区内
-          // 小范围滚动，不撑爆外层。滚动区不挂主控制器——编辑器嵌在设置弹窗 /
-          // 设置详情页里，那里外层用 PrimaryScrollController 挂 Scrollbar。
-          final bool active =
-              state == _DropState.hover || state == _DropState.armed;
-          final Color tint = state == _DropState.reject
-              ? style.error
-              : active
-                  ? style.accent
-                  : style.secondaryLabel;
-          final Widget body = Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+      builder:
+          (
+            BuildContext context,
+            List<ControlDragData<S, I>?> candidate,
+            List<dynamic> rejected,
+          ) {
+            final _DropState state = _dropStateOf(
+              slot,
+              hoverAccept: candidate.isNotEmpty,
+              hoverReject: rejected.isNotEmpty,
+            );
+            final Widget chips = Wrap(
+              direction: direction,
+              alignment: alignment,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: tray ? 6 : 2,
+              runSpacing: tray ? 6 : 2,
               children: <Widget>[
-                Row(
-                  children: <Widget>[
-                    Icon(
-                      style.apple
-                          ? CupertinoIcons.eye_slash
-                          : Icons.visibility_off_outlined,
-                      size: 20,
-                      color: tint,
+                for (final ({I item, int sourceIndex}) entry in entries)
+                  KeyedSubtree(
+                    key: ValueKey<String>(
+                      'placed-${slot.storageValue}-${entry.sourceIndex}-'
+                      '${entry.item.storageValue}',
                     ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        widget.slotLabelOf(slot),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.labelLarge?.copyWith(
-                          color: active ? style.accent : style.label,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                if (entries.isNotEmpty) ...<Widget>[
-                  const SizedBox(height: 8),
-                  ConstrainedBox(
-                    constraints: BoxConstraints(maxHeight: tray ? 120 : 148),
-                    child: SingleChildScrollView(
-                      primary: false,
-                      child: chips,
+                    child: _buildPlacedChip(
+                      entry.item,
+                      sourceSlot: slot,
+                      sourceIndex: entry.sourceIndex,
                     ),
                   ),
-                ],
               ],
-            ),
-          );
-          return _decorateRegion(
-            state: state,
-            style: style,
-            radius: BorderRadius.all(Radius.circular(style.apple ? 12 : 16)),
-            alwaysDashed: true,
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(minHeight: 56),
-              child: Align(
-                alignment: AlignmentDirectional.centerStart,
-                heightFactor: 1,
-                child: body,
-              ),
-            ),
-          );
-        }
+            );
 
-        final Widget content;
-        if (entries.isEmpty) {
-          // 空区：淡虚线占位，写着槽位名（「拖到这里」的位置提示）。
-          final double extent = style.buttonExtent;
-          content = ConstrainedBox(
-            constraints: BoxConstraints(
-              minWidth: vertical ? extent : 72,
-              minHeight: vertical ? 72 : extent,
-            ),
-            child: Align(
-              widthFactor: 1,
-              heightFactor: 1,
-              child: vertical
-                  ? Icon(
-                      style.apple ? CupertinoIcons.plus : Icons.add,
-                      size: 16,
-                      color: style.secondaryLabel.withValues(alpha: 0.7),
-                    )
-                  : Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 10),
-                      child: Text(
-                        widget.slotLabelOf(slot),
-                        maxLines: 1,
-                        softWrap: false,
-                        overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: style.secondaryLabel,
+            if (tray || !growToContent) {
+              // 「移出（隐藏）」放置区：虚线圆角框 + 眼睛划线图标 + 文案，拖进来即隐藏。
+              // 归一化后 hidden 槽恒空，下面的 chip 区只给旧数据兜底；按钮多时在区内
+              // 小范围滚动，不撑爆外层。滚动区不挂主控制器——编辑器嵌在设置弹窗 /
+              // 设置详情页里，那里外层用 PrimaryScrollController 挂 Scrollbar。
+              final bool active =
+                  state == _DropState.hover || state == _DropState.armed;
+              final Color tint = state == _DropState.reject
+                  ? style.error
+                  : active
+                  ? style.accent
+                  : style.secondaryLabel;
+              final Widget body = Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 12,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    Row(
+                      children: <Widget>[
+                        Icon(
+                          style.apple
+                              ? CupertinoIcons.eye_slash
+                              : Icons.visibility_off_outlined,
+                          size: 20,
+                          color: tint,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            widget.slotLabelOf(slot),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.labelLarge?.copyWith(
+                              color: active ? style.accent : style.label,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (entries.isNotEmpty) ...<Widget>[
+                      const SizedBox(height: 8),
+                      ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxHeight: tray ? 120 : 148,
+                        ),
+                        child: SingleChildScrollView(
+                          primary: false,
+                          child: chips,
                         ),
                       ),
-                    ),
-            ),
-          );
-        } else {
-          content = chips;
-        }
-        final double r = vertical
-            ? style.buttonExtent / 2 + 2
-            : (style.apple ? style.buttonExtent / 2 + 2 : 10);
-        return _decorateRegion(
-          state: state,
-          style: style,
-          radius: BorderRadius.all(Radius.circular(r)),
-          alwaysDashed: entries.isEmpty,
-          child: AnimatedSize(
-            duration: style.duration(220),
-            curve: FushiSpringCurve.spatial,
-            alignment: switch (alignment) {
-              WrapAlignment.center => Alignment.center,
-              WrapAlignment.end => AlignmentDirectional.centerEnd,
-              _ => AlignmentDirectional.centerStart,
-            },
-            child: Padding(padding: const EdgeInsets.all(2), child: content),
-          ),
-        );
-      },
+                    ],
+                  ],
+                ),
+              );
+              return _decorateRegion(
+                state: state,
+                style: style,
+                radius: BorderRadius.all(
+                  Radius.circular(style.apple ? 12 : 16),
+                ),
+                alwaysDashed: true,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(minHeight: 56),
+                  child: Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    heightFactor: 1,
+                    child: body,
+                  ),
+                ),
+              );
+            }
+
+            final Widget content;
+            if (entries.isEmpty) {
+              // 空区：淡虚线占位，写着槽位名（「拖到这里」的位置提示）。
+              final double extent = style.buttonExtent;
+              content = ConstrainedBox(
+                constraints: BoxConstraints(
+                  minWidth: vertical ? extent : 72,
+                  minHeight: vertical ? 72 : extent,
+                ),
+                child: Align(
+                  widthFactor: 1,
+                  heightFactor: 1,
+                  child: vertical
+                      ? Icon(
+                          style.apple ? CupertinoIcons.plus : Icons.add,
+                          size: 16,
+                          color: style.secondaryLabel.withValues(alpha: 0.7),
+                        )
+                      : Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                          child: Text(
+                            widget.slotLabelOf(slot),
+                            maxLines: 1,
+                            softWrap: false,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: style.secondaryLabel,
+                            ),
+                          ),
+                        ),
+                ),
+              );
+            } else {
+              content = chips;
+            }
+            final double r = vertical
+                ? style.buttonExtent / 2 + 2
+                : (style.apple ? style.buttonExtent / 2 + 2 : 10);
+            return _decorateRegion(
+              state: state,
+              style: style,
+              radius: BorderRadius.all(Radius.circular(r)),
+              alwaysDashed: entries.isEmpty,
+              child: AnimatedSize(
+                duration: style.duration(220),
+                curve: FushiSpringCurve.spatial,
+                alignment: switch (alignment) {
+                  WrapAlignment.center => Alignment.center,
+                  WrapAlignment.end => AlignmentDirectional.centerEnd,
+                  _ => AlignmentDirectional.centerStart,
+                },
+                child: Padding(
+                  padding: const EdgeInsets.all(2),
+                  child: content,
+                ),
+              ),
+            );
+          },
     );
   }
 
@@ -1033,7 +1054,8 @@ class _ControlLayoutEditorState<S extends ControlSlotSpec,
     required int sourceIndex,
   }) {
     final ({S slot, int index})? placed = _justPlaced;
-    final bool justPlaced = placed != null &&
+    final bool justPlaced =
+        placed != null &&
         placed.slot == sourceSlot &&
         placed.index == sourceIndex;
     final ControlEditorStyle style = ControlEditorStyle.of(context);
@@ -1044,27 +1066,28 @@ class _ControlLayoutEditorState<S extends ControlSlotSpec,
       onAcceptWithDetails: (DragTargetDetails<ControlDragData<S, I>> details) {
         _moveItem(details.data, sourceSlot, targetIndex: sourceIndex);
       },
-      builder: (
-        BuildContext context,
-        List<ControlDragData<S, I>?> candidate,
-        List<dynamic> rejected,
-      ) {
-        // 落位弹簧：新落下的那颗从 0.6 弹到 1（只在挂载时跑一次）。
-        return TweenAnimationBuilder<double>(
-          tween: Tween<double>(begin: justPlaced ? 0.6 : 1, end: 1),
-          duration: style.duration(420),
-          curve: FushiSpringCurve.spatialFast,
-          builder: (BuildContext context, double scale, Widget? child) =>
-              Transform.scale(scale: scale, child: child),
-          child: _buildDraggableChip(
-            item,
-            sourceSlot: sourceSlot,
-            sourceIndex: sourceIndex,
-            highlighted: candidate.isNotEmpty,
-            focusOnMount: justPlaced && _focusJustPlaced,
-          ),
-        );
-      },
+      builder:
+          (
+            BuildContext context,
+            List<ControlDragData<S, I>?> candidate,
+            List<dynamic> rejected,
+          ) {
+            // 落位弹簧：新落下的那颗从 0.6 弹到 1（只在挂载时跑一次）。
+            return TweenAnimationBuilder<double>(
+              tween: Tween<double>(begin: justPlaced ? 0.6 : 1, end: 1),
+              duration: style.duration(420),
+              curve: FushiSpringCurve.spatialFast,
+              builder: (BuildContext context, double scale, Widget? child) =>
+                  Transform.scale(scale: scale, child: child),
+              child: _buildDraggableChip(
+                item,
+                sourceSlot: sourceSlot,
+                sourceIndex: sourceIndex,
+                highlighted: candidate.isNotEmpty,
+                focusOnMount: justPlaced && _focusJustPlaced,
+              ),
+            );
+          },
     );
   }
 
@@ -1242,8 +1265,8 @@ class _ControlLayoutEditorState<S extends ControlSlotSpec,
     final Color fill = highlighted
         ? style.dropFill
         : hovered || lifted
-            ? style.hoverFill
-            : Colors.transparent;
+        ? style.hoverFill
+        : Colors.transparent;
     return AnimatedScale(
       scale: lifted ? 1.08 : 1,
       duration: style.duration(260),
@@ -1376,16 +1399,14 @@ class _ControlLayoutEditorState<S extends ControlSlotSpec,
 
   /// 按钮上的按键：没在搬运时 Enter 拿起；搬运中一律放行，冒泡给编辑器根节点
   /// （方向键换目标 / Enter 放下 / Esc 取消）。
-  KeyEventResult _handleChipKey(
-    ControlDragData<S, I> payload,
-    KeyEvent event,
-  ) {
+  KeyEventResult _handleChipKey(ControlDragData<S, I> payload, KeyEvent event) {
     if (event is! KeyDownEvent || _keyboardDrag != null) {
       return KeyEventResult.ignored;
     }
     if (!_isActivateKey(event.logicalKey)) return KeyEventResult.ignored;
     final List<S> slots = _navSlots;
-    final S start = payload.sourceSlot ??
+    final S start =
+        payload.sourceSlot ??
         slots.firstWhere(
           (S slot) => slot != _hiddenSlot,
           orElse: () => slots.first,
@@ -1428,8 +1449,8 @@ class _ControlLayoutEditorState<S extends ControlSlotSpec,
 
   String? _messageFor(ControlDragData<S, I> payload, S target) =>
       _canAcceptPayload(payload, target)
-          ? null
-          : widget.rejectionMessageOf(payload.item, target);
+      ? null
+      : widget.rejectionMessageOf(payload.item, target);
 
   void _stepKeyboardTarget(int delta) {
     final ControlDragData<S, I>? payload = _keyboardDrag;
@@ -1491,8 +1512,9 @@ class _ControlLayoutEditorState<S extends ControlSlotSpec,
 
   bool _handleDragWillAccept(ControlDragData<S, I> payload, S target) {
     final bool accepted = _canAcceptPayload(payload, target);
-    final String? message =
-        accepted ? null : widget.rejectionMessageOf(payload.item, target);
+    final String? message = accepted
+        ? null
+        : widget.rejectionMessageOf(payload.item, target);
     final S? hoverReject = accepted ? null : target;
     if (_rejectionMessage != message || _hoverRejectSlot != hoverReject) {
       setState(() {
@@ -1510,11 +1532,15 @@ class _ControlLayoutEditorState<S extends ControlSlotSpec,
     int? targetIndex,
     bool byKeyboard = false,
   }) {
-    final ControlLayout<S, I> next =
-        _layout.moveDraggedItem(payload, target, targetIndex: targetIndex);
+    final ControlLayout<S, I> next = _layout.moveDraggedItem(
+      payload,
+      target,
+      targetIndex: targetIndex,
+    );
     if (next == _layout) return false;
-    final int placedIndex =
-        target == _hiddenSlot ? -1 : next.itemsIn(target).indexOf(payload.item);
+    final int placedIndex = target == _hiddenSlot
+        ? -1
+        : next.itemsIn(target).indexOf(payload.item);
     setState(() {
       _layout = next;
       _rejectionMessage = null;
@@ -1538,7 +1564,7 @@ class _ChipFocusShell extends StatefulWidget {
 
   final KeyEventResult Function(KeyEvent event) onKeyEvent;
   final Widget Function(BuildContext context, bool hovered, bool focused)
-      builder;
+  builder;
   final bool focusOnMount;
 
   @override
@@ -1609,8 +1635,9 @@ class _DashedBorderPainter extends CustomPainter {
       ..color = color
       ..style = PaintingStyle.stroke
       ..strokeWidth = strokeWidth;
-    final RRect rrect =
-        radius.toRRect(Offset.zero & size).deflate(strokeWidth / 2);
+    final RRect rrect = radius
+        .toRRect(Offset.zero & size)
+        .deflate(strokeWidth / 2);
     final Path path = Path()..addRRect(rrect);
     for (final PathMetric metric in path.computeMetrics()) {
       double distance = 0;

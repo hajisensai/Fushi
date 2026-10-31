@@ -60,16 +60,22 @@ void main() {
       '127.0.0.1', // 缺端口
     ]) {
       await prefs.setPref('update_custom_proxy', stored);
-      expect(prefs.networkProxyMode, 'auto',
-          reason: '$stored 归一失败，推成 manual 会让这批存量用户升级即断网');
+      expect(
+        prefs.networkProxyMode,
+        'auto',
+        reason: '$stored 归一失败，推成 manual 会让这批存量用户升级即断网',
+      );
     }
   });
 
   test('显式存了模式就以它为准，不再看地址', () async {
     await prefs.setPref('update_custom_proxy', 'not a proxy');
     await prefs.setPref('network_proxy_mode', 'manual');
-    expect(prefs.networkProxyMode, 'manual',
-        reason: '用户显式选的 manual 该 fail-closed，这是新语义');
+    expect(
+      prefs.networkProxyMode,
+      'manual',
+      reason: '用户显式选的 manual 该 fail-closed，这是新语义',
+    );
     await prefs.setPref('network_proxy_mode', 'direct');
     expect(prefs.networkProxyMode, 'direct');
   });
@@ -87,10 +93,13 @@ void main() {
       expect(appUserProxyPasswordReader(), 'secret');
       expect(hasResolvedProxyMode(), isTrue);
       expect(
-          resolveAppProxyDirective(Uri.parse('https://example.com/')), 'DIRECT',
-          reason: '绑定点在「偏好变得可读的那一刻」，不是某一个调用点——弹窗词典进程'
-              '同样建仓库、同样读偏好，以前却没绑，整段生命周期都靠 unresolved 兜底'
-              '猜模式，而那个哨兵表达不了 direct');
+        resolveAppProxyDirective(Uri.parse('https://example.com/')),
+        'DIRECT',
+        reason:
+            '绑定点在「偏好变得可读的那一刻」，不是某一个调用点——弹窗词典进程'
+            '同样建仓库、同样读偏好，以前却没绑，整段生命周期都靠 unresolved 兜底'
+            '猜模式，而那个哨兵表达不了 direct',
+      );
     });
   });
 }

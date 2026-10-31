@@ -192,7 +192,7 @@ GalgameMetadataDraft mergeDrafts(
   final GalgameMetadataSource? preferred = overlay.coverSource;
   final String? coverUrl =
       (preferred == null ? null : bySource[preferred]?.coverUrl) ??
-          pick<String>((GalgameMetadataDraft d) => d.coverUrl);
+      pick<String>((GalgameMetadataDraft d) => d.coverUrl);
 
   return GalgameMetadataDraft(
     name: overlay.name ?? pick<String>((GalgameMetadataDraft d) => d.name),
@@ -209,7 +209,8 @@ GalgameMetadataDraft mergeDrafts(
       ...overlay.tags,
     ]),
     // developer 是唯一反向优先的字段：vndb 的开发商数据比 bgm infobox 干净。
-    developer: overlay.developer ??
+    developer:
+        overlay.developer ??
         vndb?.developer ??
         bgm?.developer ??
         dlsite?.developer,
@@ -217,7 +218,8 @@ GalgameMetadataDraft mergeDrafts(
     score: pick<double>((GalgameMetadataDraft d) => d.score),
     rank: bgm?.rank,
     // 任一源明确标成人向就算成人向：「隐藏 NSFW」漏放一部比多藏一部更糟。
-    nsfw: overlay.nsfw ??
+    nsfw:
+        overlay.nsfw ??
         (inOrder.any((GalgameMetadataDraft d) => d.nsfw == true)
             ? true
             : pick<bool>((GalgameMetadataDraft d) => d.nsfw)),

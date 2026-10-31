@@ -8,13 +8,14 @@ import 'package:fushi/models.dart';
 class CollapsedMeaningField extends Field {
   /// Initialise this field with the predetermined and hardset values.
   CollapsedMeaningField._privateConstructor()
-      : super(
-          uniqueKey: key,
-          label: 'Collapsed Meaning',
-          description: 'Dictionary definitions only from collapsed'
-              ' dictionaries.',
-          icon: Icons.close_fullscreen_outlined,
-        );
+    : super(
+        uniqueKey: key,
+        label: 'Collapsed Meaning',
+        description:
+            'Dictionary definitions only from collapsed'
+            ' dictionaries.',
+        icon: Icons.close_fullscreen_outlined,
+      );
 
   /// Get the singleton instance of this field.
   static CollapsedMeaningField get instance => _instance;

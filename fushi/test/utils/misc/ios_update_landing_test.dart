@@ -40,7 +40,8 @@ void main() {
         uri.scheme == 'itms-beta' ||
             (uri.scheme == 'https' && uri.host == 'testflight.apple.com'),
         isTrue,
-        reason: 'TestFlight 入口只能是 itms-beta:// 或 testflight.apple.com 链接，'
+        reason:
+            'TestFlight 入口只能是 itms-beta:// 或 testflight.apple.com 链接，'
             '当前是 ${iosTestFlightUrl()}',
       );
     });
@@ -95,13 +96,15 @@ void main() {
 
     test('IosUpdater 按安装来源分流', () async {
       IosInstallSourceResolver.setForTest(IosInstallSource.testFlight);
-      final UpdateLanding tf =
-          await IosUpdater().resolveDownloadLanding(releaseUrl);
+      final UpdateLanding tf = await IosUpdater().resolveDownloadLanding(
+        releaseUrl,
+      );
       expect(tf.kind, UpdateLandingKind.testFlight);
 
       IosInstallSourceResolver.setForTest(IosInstallSource.sideload);
-      final UpdateLanding side =
-          await IosUpdater().resolveDownloadLanding(releaseUrl);
+      final UpdateLanding side = await IosUpdater().resolveDownloadLanding(
+        releaseUrl,
+      );
       expect(side.kind, UpdateLandingKind.releasePage);
       expect(side.url, releaseUrl);
     });
@@ -113,10 +116,14 @@ void main() {
         MacUpdater(),
         UnsupportedUpdater(),
       ]) {
-        final UpdateLanding landing =
-            await updater.resolveDownloadLanding(releaseUrl);
-        expect(landing.kind, UpdateLandingKind.releasePage,
-            reason: '${updater.runtimeType} 不该改动落地入口');
+        final UpdateLanding landing = await updater.resolveDownloadLanding(
+          releaseUrl,
+        );
+        expect(
+          landing.kind,
+          UpdateLandingKind.releasePage,
+          reason: '${updater.runtimeType} 不该改动落地入口',
+        );
         expect(landing.url, releaseUrl);
       }
     });

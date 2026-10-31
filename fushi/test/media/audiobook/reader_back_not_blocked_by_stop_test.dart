@@ -91,8 +91,9 @@ void main() {
 
   group('AudiobookSession.stop 的会话归零契约 (BUG-1273)', () {
     test('native 释放挂起时 stop() 不完成，但会话已清空并通知', () async {
-      const MethodChannel sessionChannel =
-          MethodChannel('com.ryanheise.audio_session');
+      const MethodChannel sessionChannel = MethodChannel(
+        'com.ryanheise.audio_session',
+      );
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(sessionChannel, (_) async => null);
       addTearDown(() {
@@ -103,8 +104,9 @@ void main() {
       // 模拟「播放中释放 native 解码器很慢 / 挂住」：disposePlayer 挂在 completer 上。
       final Completer<void> releaseGate = Completer<void>();
       final JustAudioPlatform prev = JustAudioPlatform.instance;
-      final _StallingReleasePlatform platform =
-          _StallingReleasePlatform(releaseGate);
+      final _StallingReleasePlatform platform = _StallingReleasePlatform(
+        releaseGate,
+      );
       JustAudioPlatform.instance = platform;
       addTearDown(() {
         if (!releaseGate.isCompleted) releaseGate.complete();
@@ -144,10 +146,16 @@ void main() {
       final AudiobookPlayerController controller = session.controller!;
       await controller.play();
       await Future<void>.delayed(const Duration(milliseconds: 50));
-      expect(controller.debugMainPlayerPlaying, isTrue,
-          reason: 'precondition: 播放器应处于播放态');
-      expect(platform.players, isNotEmpty,
-          reason: 'precondition: play 应激活 native 平台（创建 player）');
+      expect(
+        controller.debugMainPlayerPlaying,
+        isTrue,
+        reason: 'precondition: 播放器应处于播放态',
+      );
+      expect(
+        platform.players,
+        isNotEmpty,
+        reason: 'precondition: play 应激活 native 平台（创建 player）',
+      );
 
       int notifications = 0;
       void listener() => notifications++;
@@ -163,18 +171,27 @@ void main() {
       // 会话并通知——只隔一个微任务，远早于 pop 动画首帧，书架 NowListeningMiniBar
       // 照样从首帧就见空会话（TODO-831 不闪播放条）。
       await Future<void>.delayed(Duration.zero);
-      expect(session.isActive, isFalse,
-          reason: '_stopInternal 首段必须清空会话（不能等 native 释放完成）');
+      expect(
+        session.isActive,
+        isFalse,
+        reason: '_stopInternal 首段必须清空会话（不能等 native 释放完成）',
+      );
       expect(session.controller, isNull);
       expect(session.book, isNull);
-      expect(notifications, greaterThanOrEqualTo(1),
-          reason: '_stopInternal 首段必须 notifyListeners，让书架立刻收起播放条');
+      expect(
+        notifications,
+        greaterThanOrEqualTo(1),
+        reason: '_stopInternal 首段必须 notifyListeners，让书架立刻收起播放条',
+      );
 
       // 而 stop() 本身仍挂在 native 释放上——旧实现 `await` 它，等于把用户的返回
       // 一起挂住（并被 _popInProgress 吞掉后续每一次返回），正是 BUG-1273 的症状。
       await Future<void>.delayed(const Duration(milliseconds: 50));
-      expect(stopped, isFalse,
-          reason: 'native 释放未完成时 stop() 不应完成——退出路径绝不能 await 它');
+      expect(
+        stopped,
+        isFalse,
+        reason: 'native 释放未完成时 stop() 不应完成——退出路径绝不能 await 它',
+      );
 
       // 放行后 stop 正常收尾（fire-and-forget 不丢释放语义）。
       releaseGate.complete();
@@ -229,16 +246,18 @@ class _StallingPlayer extends AudioPlayerPlatform {
 
   void _emit(int ms, {required bool playing}) {
     if (_disposed) return;
-    _events.add(PlaybackEventMessage(
-      processingState: ProcessingStateMessage.ready,
-      updateTime: DateTime.now(),
-      updatePosition: Duration(milliseconds: ms),
-      bufferedPosition: Duration(milliseconds: ms),
-      duration: const Duration(seconds: 10),
-      icyMetadata: null,
-      currentIndex: 0,
-      androidAudioSessionId: null,
-    ));
+    _events.add(
+      PlaybackEventMessage(
+        processingState: ProcessingStateMessage.ready,
+        updateTime: DateTime.now(),
+        updatePosition: Duration(milliseconds: ms),
+        bufferedPosition: Duration(milliseconds: ms),
+        duration: const Duration(seconds: 10),
+        icyMetadata: null,
+        currentIndex: 0,
+        androidAudioSessionId: null,
+      ),
+    );
   }
 
   @override
@@ -268,22 +287,19 @@ class _StallingPlayer extends AudioPlayerPlatform {
   @override
   Future<SetAndroidAudioAttributesResponse> setAndroidAudioAttributes(
     SetAndroidAudioAttributesRequest request,
-  ) async =>
-      SetAndroidAudioAttributesResponse();
+  ) async => SetAndroidAudioAttributesResponse();
 
   @override
   Future<SetAutomaticallyWaitsToMinimizeStallingResponse>
-      setAutomaticallyWaitsToMinimizeStalling(
+  setAutomaticallyWaitsToMinimizeStalling(
     SetAutomaticallyWaitsToMinimizeStallingRequest request,
-  ) async =>
-          SetAutomaticallyWaitsToMinimizeStallingResponse();
+  ) async => SetAutomaticallyWaitsToMinimizeStallingResponse();
 
   @override
   Future<SetCanUseNetworkResourcesForLiveStreamingWhilePausedResponse>
-      setCanUseNetworkResourcesForLiveStreamingWhilePaused(
+  setCanUseNetworkResourcesForLiveStreamingWhilePaused(
     SetCanUseNetworkResourcesForLiveStreamingWhilePausedRequest request,
-  ) async =>
-          SetCanUseNetworkResourcesForLiveStreamingWhilePausedResponse();
+  ) async => SetCanUseNetworkResourcesForLiveStreamingWhilePausedResponse();
 
   @override
   Future<SetLoopModeResponse> setLoopMode(SetLoopModeRequest request) async =>
@@ -296,26 +312,22 @@ class _StallingPlayer extends AudioPlayerPlatform {
   @override
   Future<SetPreferredPeakBitRateResponse> setPreferredPeakBitRate(
     SetPreferredPeakBitRateRequest request,
-  ) async =>
-      SetPreferredPeakBitRateResponse();
+  ) async => SetPreferredPeakBitRateResponse();
 
   @override
   Future<SetShuffleModeResponse> setShuffleMode(
     SetShuffleModeRequest request,
-  ) async =>
-      SetShuffleModeResponse();
+  ) async => SetShuffleModeResponse();
 
   @override
   Future<SetShuffleOrderResponse> setShuffleOrder(
     SetShuffleOrderRequest request,
-  ) async =>
-      SetShuffleOrderResponse();
+  ) async => SetShuffleOrderResponse();
 
   @override
   Future<SetSkipSilenceResponse> setSkipSilence(
     SetSkipSilenceRequest request,
-  ) async =>
-      SetSkipSilenceResponse();
+  ) async => SetSkipSilenceResponse();
 
   @override
   Future<SetSpeedResponse> setSpeed(SetSpeedRequest request) async =>
@@ -328,8 +340,7 @@ class _StallingPlayer extends AudioPlayerPlatform {
   @override
   Future<SetWebCrossOriginResponse> setWebCrossOrigin(
     SetWebCrossOriginRequest request,
-  ) async =>
-      SetWebCrossOriginResponse();
+  ) async => SetWebCrossOriginResponse();
 
   @override
   Future<DisposeResponse> dispose(DisposeRequest request) async {

@@ -216,7 +216,8 @@ class AudiobookshelfItem {
       libraryId: _nonEmpty(raw['libraryId']),
       mediaType: _nonEmpty(raw['mediaType']),
       // 播客的创作者在 `author`，书在 `authorName`。
-      authorName: _nonEmpty(metadata['authorName']) ?? _nonEmpty(metadata['author']),
+      authorName:
+          _nonEmpty(metadata['authorName']) ?? _nonEmpty(metadata['author']),
       narratorName: _nonEmpty(metadata['narratorName']),
       seriesName: _nonEmpty(metadata['seriesName']),
       publishedYear: _nonEmpty(metadata['publishedYear']),

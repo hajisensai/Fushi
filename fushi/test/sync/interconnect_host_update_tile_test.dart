@@ -263,50 +263,49 @@ void main() {
     },
   );
 
-  testWidgets(
-    'PR #2100 review: a reconnect resets the disconnect clock',
-    (WidgetTester tester) async {
-      DateTime clock = DateTime(2026, 10, 13, 12);
-      final _FakeRemote remote = _FakeRemote()
-        ..statuses.addAll(<Object?>[
-          _status(nonce: 'stale'),
-          _status(nonce: 'fresh'),
-          const SocketException('blip'),
-        ])
-        ..triggerResult = _status(
-          phase: HostUpdatePhase.downloading,
-          progress: 0,
-        );
-      await pumpTile(tester, remote, now: () => clock);
-      await confirmTrigger(tester);
-
-      await pollOnce(tester);
-      expect(find.text(t.interconnect_host_update_restarting), findsOneWidget);
-
-      // 断了 25 秒后又问到了 host：断线时钟清零。
-      clock = clock.add(const Duration(seconds: 25));
-      remote.statuses[0] = _status(
+  testWidgets('PR #2100 review: a reconnect resets the disconnect clock', (
+    WidgetTester tester,
+  ) async {
+    DateTime clock = DateTime(2026, 10, 13, 12);
+    final _FakeRemote remote = _FakeRemote()
+      ..statuses.addAll(<Object?>[
+        _status(nonce: 'stale'),
+        _status(nonce: 'fresh'),
+        const SocketException('blip'),
+      ])
+      ..triggerResult = _status(
         phase: HostUpdatePhase.downloading,
-        progress: 0.5,
+        progress: 0,
       );
-      await pollOnce(tester);
-      expect(
-        find.text(t.interconnect_host_update_downloading(percent: 50)),
-        findsOneWidget,
-      );
+    await pumpTile(tester, remote, now: () => clock);
+    await confirmTrigger(tester);
 
-      // 再断：从这次断线重新起算，25 + 10 秒不算超时。
-      remote.statuses[0] = const SocketException('restarting');
-      await pollOnce(tester);
-      clock = clock.add(const Duration(seconds: 10));
-      await pollOnce(tester);
-      expect(find.text(t.interconnect_host_update_restarting), findsOneWidget);
-      expect(
-        find.textContaining(t.interconnect_host_update_reconnect_timeout),
-        findsNothing,
-      );
-    },
-  );
+    await pollOnce(tester);
+    expect(find.text(t.interconnect_host_update_restarting), findsOneWidget);
+
+    // 断了 25 秒后又问到了 host：断线时钟清零。
+    clock = clock.add(const Duration(seconds: 25));
+    remote.statuses[0] = _status(
+      phase: HostUpdatePhase.downloading,
+      progress: 0.5,
+    );
+    await pollOnce(tester);
+    expect(
+      find.text(t.interconnect_host_update_downloading(percent: 50)),
+      findsOneWidget,
+    );
+
+    // 再断：从这次断线重新起算，25 + 10 秒不算超时。
+    remote.statuses[0] = const SocketException('restarting');
+    await pollOnce(tester);
+    clock = clock.add(const Duration(seconds: 10));
+    await pollOnce(tester);
+    expect(find.text(t.interconnect_host_update_restarting), findsOneWidget);
+    expect(
+      find.textContaining(t.interconnect_host_update_reconnect_timeout),
+      findsNothing,
+    );
+  });
 
   testWidgets(
     'PR #2100 review: awaiting on-host confirmation stops polling and gives '

@@ -148,12 +148,15 @@ Future<void> _runWritingMode(
 
     await _switchViewMode(tester, 'continuous');
     final int continuous = await _firstVisibleChar();
-    debugPrint('[modeswitch] $writingMode #$cycle paged=$paged '
-        'continuous=$continuous');
+    debugPrint(
+      '[modeswitch] $writingMode #$cycle paged=$paged '
+      'continuous=$continuous',
+    );
     expect(
       continuous,
       paged,
-      reason: '$writingMode cycle $cycle: switching to scroll mode must keep '
+      reason:
+          '$writingMode cycle $cycle: switching to scroll mode must keep '
           'the reading position (was pinned to the chapter start)',
     );
 
@@ -161,7 +164,8 @@ Future<void> _runWritingMode(
     expect(
       await _firstVisibleChar(),
       paged,
-      reason: '$writingMode cycle $cycle: switching back to paged mode must '
+      reason:
+          '$writingMode cycle $cycle: switching back to paged mode must '
           'keep the reading position',
     );
   }
@@ -176,23 +180,22 @@ Future<void> _runWritingMode(
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets(
-    'in-book paged <-> scroll switch keeps the reading position',
-    (WidgetTester tester) async {
-      await runFushiItest(
-        label: 'modeswitch',
-        body: () async {
-          await launchFushiTestApp();
-          expect(await waitForHome(tester), isTrue);
-          await tester.pump(const Duration(seconds: 2));
+  testWidgets('in-book paged <-> scroll switch keeps the reading position', (
+    WidgetTester tester,
+  ) async {
+    await runFushiItest(
+      label: 'modeswitch',
+      body: () async {
+        await launchFushiTestApp();
+        expect(await waitForHome(tester), isTrue);
+        await tester.pump(const Duration(seconds: 2));
 
-          final AppModel appModel = await readyAppModel(tester);
-          await showBooksTab(tester);
-          await _runWritingMode(tester, appModel, 'vertical-rl');
-          await showBooksTab(tester);
-          await _runWritingMode(tester, appModel, 'horizontal-tb');
-        },
-      );
-    },
-  );
+        final AppModel appModel = await readyAppModel(tester);
+        await showBooksTab(tester);
+        await _runWritingMode(tester, appModel, 'vertical-rl');
+        await showBooksTab(tester);
+        await _runWritingMode(tester, appModel, 'horizontal-tb');
+      },
+    );
+  });
 }

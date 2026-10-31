@@ -31,10 +31,12 @@ void main() {
     });
 
     test('. 段丢弃，.. 段回退上一级', () {
-      expect(
-        galgamePathComponents(r'C:\Games\.\Game\sub\..\bin'),
-        <String>['c:', 'games', 'game', 'bin'],
-      );
+      expect(galgamePathComponents(r'C:\Games\.\Game\sub\..\bin'), <String>[
+        'c:',
+        'games',
+        'game',
+        'bin',
+      ]);
     });
 
     test('顶到头的 .. 原样保留，不静默吞掉', () {
@@ -44,10 +46,7 @@ void main() {
 
   group('galgamePathIsWithin', () {
     test('目录下的 exe 命中', () {
-      expect(
-        galgamePathIsWithin(p.join(gameDir, 'game.exe'), gameDir),
-        isTrue,
-      );
+      expect(galgamePathIsWithin(p.join(gameDir, 'game.exe'), gameDir), isTrue);
       expect(
         galgamePathIsWithin(p.join(gameDir, 'bin', 'x86', 'game.exe'), gameDir),
         isTrue,
@@ -87,8 +86,10 @@ void main() {
     });
 
     test('不同盘符/不同根不互相匹配', () {
-      expect(galgamePathIsWithin(r'D:\Games\Game\game.exe', r'C:\Games\Game'),
-          isFalse);
+      expect(
+        galgamePathIsWithin(r'D:\Games\Game\game.exe', r'C:\Games\Game'),
+        isFalse,
+      );
     });
   });
 }

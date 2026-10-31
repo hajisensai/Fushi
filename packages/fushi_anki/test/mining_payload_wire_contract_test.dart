@@ -21,8 +21,7 @@ void main() {
     final Map<String, String> flattened = Map<String, String>.from(
       fromJs.map((String k, Object? v) => MapEntry(k, v?.toString() ?? '')),
     );
-    return Map<String, dynamic>.from(
-        jsonDecode(jsonEncode(flattened)) as Map);
+    return Map<String, dynamic>.from(jsonDecode(jsonEncode(flattened)) as Map);
   }
 
   group('BUG-2089：制卡 payload 的两条线都必须能解析', () {
@@ -36,34 +35,44 @@ void main() {
           }),
         );
         expect(p.expression, '三文芝居');
-        expect(p.glossarySelectionHighlighted, value,
-            reason: '桥上是 "${value.toString()}"，解析后必须还原成 $value');
+        expect(
+          p.glossarySelectionHighlighted,
+          value,
+          reason: '桥上是 "${value.toString()}"，解析后必须还原成 $value',
+        );
       }
     });
 
     test('保类型 JSON（扩展/远端）：原生布尔照旧', () {
       final AnkiMiningPayload t = AnkiMiningPayload.fromJson(
-          jsonDecode('{"expression":"語","glossarySelectionHighlighted":true}')
-              as Map<String, dynamic>);
+        jsonDecode('{"expression":"語","glossarySelectionHighlighted":true}')
+            as Map<String, dynamic>,
+      );
       expect(t.glossarySelectionHighlighted, isTrue);
       final AnkiMiningPayload f = AnkiMiningPayload.fromJson(
-          jsonDecode('{"expression":"語","glossarySelectionHighlighted":false}')
-              as Map<String, dynamic>);
+        jsonDecode('{"expression":"語","glossarySelectionHighlighted":false}')
+            as Map<String, dynamic>,
+      );
       expect(f.glossarySelectionHighlighted, isFalse);
     });
 
     test('字段缺失 / 空串 / 垃圾值一律 false，不做「非空即真」的宽松解析', () {
       expect(
-          AnkiMiningPayload.fromJson(<String, dynamic>{'expression': 'x'})
-              .glossarySelectionHighlighted,
-          isFalse);
+        AnkiMiningPayload.fromJson(<String, dynamic>{
+          'expression': 'x',
+        }).glossarySelectionHighlighted,
+        isFalse,
+      );
       for (final String junk in <String>['', 'TRUE', 'yes', '1', 'null']) {
         expect(
-            AnkiMiningPayload.fromJson(throughInAppBridge(<String, Object?>{
+          AnkiMiningPayload.fromJson(
+            throughInAppBridge(<String, Object?>{
               'glossarySelectionHighlighted': junk,
-            })).glossarySelectionHighlighted,
-            isFalse,
-            reason: '"$junk" 不是这两条线会产生的形态，必须判 false 而不是 true');
+            }),
+          ).glossarySelectionHighlighted,
+          isFalse,
+          reason: '"$junk" 不是这两条线会产生的形态，必须判 false 而不是 true',
+        );
       }
     });
 
@@ -82,10 +91,12 @@ void main() {
       expect(end, greaterThan(start), reason: '取不到 fromJson 函数体');
       final String body = src.substring(start, end);
       // 自校验：窗口没塌成空壳（下面的否定断言在空串上恒真）。
-      expect(body, contains('expression:'),
-          reason: 'fromJson 函数体窗口切歪了，判据已失效');
-      expect(body, contains('dictionaryMedia'),
-          reason: 'fromJson 函数体被截短了，判据覆盖不全');
+      expect(body, contains('expression:'), reason: 'fromJson 函数体窗口切歪了，判据已失效');
+      expect(
+        body,
+        contains('dictionaryMedia'),
+        reason: 'fromJson 函数体被截短了，判据覆盖不全',
+      );
 
       for (final String banned in <String>[
         'as bool?',
@@ -97,9 +108,13 @@ void main() {
         'as double?',
         'as double',
       ]) {
-        expect(body.contains(banned), isFalse,
-            reason: '$banned 在「全字符串」那条线上必抛 —— '
-                '改用与 _boolFromPayloadWire 同源的两分支解析');
+        expect(
+          body.contains(banned),
+          isFalse,
+          reason:
+              '$banned 在「全字符串」那条线上必抛 —— '
+              '改用与 _boolFromPayloadWire 同源的两分支解析',
+        );
       }
     });
   });

@@ -109,31 +109,33 @@ class StatCounterFacts {
   /// 按统计来源过滤 per-book 计数行（[source] 为 null = 跨域全取）。
   List<LookupMiningCounterRow> lookupCountersFor(StatSourceKind? source) =>
       source == null
-          ? lookupCounters
-          : lookupCounters
-              .where(
-                  (LookupMiningCounterRow c) => c.sourceType == source.dbValue)
-              .toList();
+      ? lookupCounters
+      : lookupCounters
+            .where((LookupMiningCounterRow c) => c.sourceType == source.dbValue)
+            .toList();
 
   /// 按统计来源过滤收藏词行（[source] 为 null = 跨域全取）。
   List<FavoriteWordRow> favoriteWordsFor(StatSourceKind? source) =>
       source == null
-          ? favoriteWords
-          : favoriteWords
-              .where((FavoriteWordRow f) => f.sourceType == source.dbValue)
-              .toList();
+      ? favoriteWords
+      : favoriteWords
+            .where((FavoriteWordRow f) => f.sourceType == source.dbValue)
+            .toList();
 
   /// 查词数事件流（喂 `bucketActivityByDateKey`）。[source] 为 null = 跨域求和。
   Iterable<(String, int)> lookupEvents({StatSourceKind? source}) =>
-      lookupCountersFor(source)
-          .map((LookupMiningCounterRow c) => (c.dateKey, c.lookupCount));
+      lookupCountersFor(
+        source,
+      ).map((LookupMiningCounterRow c) => (c.dateKey, c.lookupCount));
 
   /// 制卡数事件流。真相源是 `mining_statistics`（域页历史口径），**不是**
   /// `lookup_mining_counters.mineCount`——后者是 per-book 分摊面，无书制卡进
   /// title='' 行，两张表在「哪些制卡能归到书上」这一点上不等价。
   Iterable<(String, int)> minedEvents({StatSourceKind? source}) => mining
-      .where((MiningStatisticRow m) =>
-          source == null || m.sourceType == source.dbValue)
+      .where(
+        (MiningStatisticRow m) =>
+            source == null || m.sourceType == source.dbValue,
+      )
       .map((MiningStatisticRow m) => (m.dateKey, m.count));
 
   /// 收藏词事件流（每行计 1）。
@@ -154,22 +156,23 @@ class StatCounterFacts {
   /// 否则老收藏全被滤掉、统计恒 0。
   Iterable<(String, int)> favoriteSentenceEvents({StatSourceKind? source}) =>
       favoriteSentences
-          .where((FavoriteSentence s) => switch (source) {
-                null => true,
-                StatSourceKind.video =>
-                  s.source == kFavoriteSentenceSourceVideo,
-                StatSourceKind.game => s.source == kFavoriteSentenceSourceGame,
-                // 音乐（v130）还没有收藏句来源值（歌词收藏句随 P1 歌词页一起加）；
-                // 加的时候阅读域分支要同时把它排除，否则恒等式破掉。
-                StatSourceKind.music => false,
-                StatSourceKind.book =>
-                  s.source != kFavoriteSentenceSourceVideo &&
-                      s.source != kFavoriteSentenceSourceGame,
-              })
-          .map((FavoriteSentence s) => (
-                s.dateKey ?? FushiDatabase.statDateKeyOf(s.createdAt),
-                1,
-              ));
+          .where(
+            (FavoriteSentence s) => switch (source) {
+              null => true,
+              StatSourceKind.video => s.source == kFavoriteSentenceSourceVideo,
+              StatSourceKind.game => s.source == kFavoriteSentenceSourceGame,
+              // 音乐（v130）还没有收藏句来源值（歌词收藏句随 P1 歌词页一起加）；
+              // 加的时候阅读域分支要同时把它排除，否则恒等式破掉。
+              StatSourceKind.music => false,
+              StatSourceKind.book =>
+                s.source != kFavoriteSentenceSourceVideo &&
+                    s.source != kFavoriteSentenceSourceGame,
+            },
+          )
+          .map(
+            (FavoriteSentence s) =>
+                (s.dateKey ?? FushiDatabase.statDateKeyOf(s.createdAt), 1),
+          );
 }
 
 /// 库表按 title 分桶（BUG-2216：legacy 阅读行只有 title，反查库表补身份时同名
@@ -186,8 +189,9 @@ Map<String, List<EpubBookMeta>> _booksByTitle(Iterable<EpubBookMeta> rows) {
 /// 无身份行 / 无身份 tile 反查 bookKey（合集归属、override 书名、删除）都只许用它。
 Map<String, String> uniqueBookKeyByTitle(Iterable<EpubBookMeta> rows) =>
     <String, String>{
-      for (final MapEntry<String, List<EpubBookMeta>> e
-          in _booksByTitle(rows).entries)
+      for (final MapEntry<String, List<EpubBookMeta>> e in _booksByTitle(
+        rows,
+      ).entries)
         if (e.value.length == 1) e.key: e.value.single.bookKey,
     };
 
@@ -195,10 +199,11 @@ Map<String, String> uniqueBookKeyByTitle(Iterable<EpubBookMeta> rows) =>
 /// `computeVideoStats(ambiguousTitles:)` 同判据——库表判同名时，legacy 无身份行不许
 /// 吸进任何身份组）。
 Set<String> ambiguousBookTitles(Iterable<EpubBookMeta> rows) => <String>{
-      for (final MapEntry<String, List<EpubBookMeta>> e
-          in _booksByTitle(rows).entries)
-        if (e.value.length >= 2) e.key,
-    };
+  for (final MapEntry<String, List<EpubBookMeta>> e in _booksByTitle(
+    rows,
+  ).entries)
+    if (e.value.length >= 2) e.key,
+};
 
 /// 一次加载得到的全部统计事实，分**两面**：
 ///  * [daily]：日总量 / per-media / 热力图 / 趋势用——legacy 日汇总行 + 全部段；
@@ -255,24 +260,25 @@ class StatFacts {
   /// **活动流的唯一数据源**：legacy 活动行 ∪ 段合成行 ∪ 游玩会话合成行，按精确
   /// 时刻倒序、截到 [activityLimit]。首页时间轴与游戏首页时间线都只吃它。
   List<ActivityEventRow> get activityRows {
-    final List<ActivityEventRow> all = <ActivityEventRow>[
-      ...legacyActivity,
-      ...segmentsAsActivityRows(segments),
-      ...galgameSessionsAsActivityRows(recentGameSessions, gameNamesById),
-    ]..sort(
-        (ActivityEventRow a, ActivityEventRow b) =>
-            b.timestampMs.compareTo(a.timestampMs),
-      );
+    final List<ActivityEventRow> all =
+        <ActivityEventRow>[
+          ...legacyActivity,
+          ...segmentsAsActivityRows(segments),
+          ...galgameSessionsAsActivityRows(recentGameSessions, gameNamesById),
+        ]..sort(
+          (ActivityEventRow a, ActivityEventRow b) =>
+              b.timestampMs.compareTo(a.timestampMs),
+        );
     return all.length <= activityLimit ? all : all.sublist(0, activityLimit);
   }
 
   /// **会话流的唯一数据源**（统计中心总览 + 三个域 tab + 按媒体的会话列表都吃它）：
   /// 段按 [kStudySessionGap] 归并 + 最近游玩会话骨架，按结束时刻倒序；写零的段不进。
   List<StudySession> get sessions => deriveStudySessions(
-        segments: segments,
-        gameSessions: recentGameSessions,
-        gameNamesById: gameNamesById,
-      );
+    segments: segments,
+    gameSessions: recentGameSessions,
+    gameNamesById: gameNamesById,
+  );
 
   final List<StatFact> daily;
   final List<StatFact> hourly;
@@ -351,28 +357,30 @@ Future<StatFacts> loadStatFacts(
   final Future<List<VideoHourlyLogRow>> videoHourlyF = legacyVisible
       ? db.getAllVideoHourlyLogs()
       : Future<List<VideoHourlyLogRow>>.value(<VideoHourlyLogRow>[]);
-  final Future<List<(String, String, int)>> gameDailyF =
-      db.getGalgameDailySecondsByGame(profileId: scope);
+  final Future<List<(String, String, int)>> gameDailyF = db
+      .getGalgameDailySecondsByGame(profileId: scope);
   // v113：已从库移除的游戏，其会话留着、名字在会话行的快照上。
-  final Future<Map<String, String>> gameSessionTitlesF =
-      db.getGalgameSessionTitles();
-  final Future<List<ActivityEventRow>> activityF =
-      db.getRecentActivityEvents(limit: activityLimit);
+  final Future<Map<String, String>> gameSessionTitlesF = db
+      .getGalgameSessionTitles();
+  final Future<List<ActivityEventRow>> activityF = db.getRecentActivityEvents(
+    limit: activityLimit,
+  );
   final Future<List<ActivityEventRow>> gameActivityF = legacyVisible
       ? db.getRecentActivityEvents(
           limit: 1 << 31,
           eventTypes: const <String>[kActivityGame],
         )
       : Future<List<ActivityEventRow>>.value(<ActivityEventRow>[]);
-  final Future<List<StudySegmentRow>> segmentsF =
-      db.getStudySegments(profileId: scope);
-  // 最近游玩会话不随 [activityLimit] 门控：会话流（[StatFacts.sessions]）在统计页
-  // 也要它——统计页传 0 只是不要 legacy 活动行。
-  final Future<List<GalgameSessionRow>> recentGameSessionsF =
-      db.getRecentGalgameSessions(
-    limit: activityLimit <= 0 ? kRecentGameSessionsLimit : activityLimit,
+  final Future<List<StudySegmentRow>> segmentsF = db.getStudySegments(
     profileId: scope,
   );
+  // 最近游玩会话不随 [activityLimit] 门控：会话流（[StatFacts.sessions]）在统计页
+  // 也要它——统计页传 0 只是不要 legacy 活动行。
+  final Future<List<GalgameSessionRow>> recentGameSessionsF = db
+      .getRecentGalgameSessions(
+        limit: activityLimit <= 0 ? kRecentGameSessionsLimit : activityLimit,
+        profileId: scope,
+      );
   // 计数面：四个来源一起挂进同一批并发读（统计页要，首页时间轴不要）。
   final Future<StatCounterFacts> countersF = includeCounters
       ? _loadCounterFacts(db)
@@ -400,8 +408,9 @@ Future<StatFacts> loadStatFacts(
   final List<EpubBookMeta> epubRows = await epubRowsF;
   // BUG-2216：同名 ≥2 本时不反查（后者覆盖前者 = 把一本书的历史错贴给另一本）。
   final Map<String, EpubBookMeta> bookByTitle = <String, EpubBookMeta>{
-    for (final MapEntry<String, List<EpubBookMeta>> e
-        in _booksByTitle(epubRows).entries)
+    for (final MapEntry<String, List<EpubBookMeta>> e in _booksByTitle(
+      epubRows,
+    ).entries)
       if (e.value.length == 1) e.key: e.value.single,
   };
   final List<StatFact> daily = <StatFact>[];
@@ -603,10 +612,12 @@ Future<List<StatFact>> loadStatReviewFacts(
   SrsDatabase srs, {
   required int profileId,
 }) async {
-  final QueryRow? profile = await db.customSelect(
-    'SELECT uid FROM profiles WHERE id = ?',
-    variables: <Variable<Object>>[Variable<int>(profileId)],
-  ).getSingleOrNull();
+  final QueryRow? profile = await db
+      .customSelect(
+        'SELECT uid FROM profiles WHERE id = ?',
+        variables: <Variable<Object>>[Variable<int>(profileId)],
+      )
+      .getSingleOrNull();
   final String? uid = profile?.read<String?>('uid');
   if (uid == null || uid.isEmpty) return const <StatFact>[];
   const int dayMs = 86400000;
@@ -654,8 +665,8 @@ Future<List<StatFact>> loadStatReviewFacts(
 /// 其余三张是按日聚合的小表。
 Future<StatCounterFacts> _loadCounterFacts(FushiDatabase db) async {
   final Future<List<MiningStatisticRow>> miningF = db.getAllMiningStatistics();
-  final Future<List<LookupMiningCounterRow>> countersF =
-      db.getAllLookupMiningCounters();
+  final Future<List<LookupMiningCounterRow>> countersF = db
+      .getAllLookupMiningCounters();
   final Future<List<FavoriteWordRow>> favoriteWordsF = db.getAllFavoriteWords();
   final Future<List<FavoriteSentence>> favoriteSentencesF =
       FavoriteSentenceRepository(db).getAll();

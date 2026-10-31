@@ -47,33 +47,32 @@ Future<void> _insertSubscription(
   String mode = 'ongoing',
   bool enabled = true,
   int? nextCheckAt = 1000,
-}) =>
-    database.upsertVideoDownloadSubscription(
-      VideoDownloadSubscriptionsCompanion.insert(
-        subscriptionId: id,
-        resourceProvider: 'torznab:indexer-a',
-        metadataProvider: const Value<String?>('anilist'),
-        externalId: Value<String?>('media-$id'),
-        mediaKind: 'tv',
-        discoveryCategory: const Value<String?>('anime'),
-        title: 'Example Show',
-        season: const Value<int?>(1),
-        searchQuery: 'Example Show',
-        filterJson: Value<String>(
-          jsonEncode(<String, Object?>{'strict': true, 'quality': '1080p'}),
-        ),
-        mode: Value<String>(mode),
-        backendKind: 'embedded',
-        backendProfileId: const Value<String?>('embedded'),
-        fingerprint: 'backend-fingerprint',
-        category: const Value<String?>('fushi-video'),
-        targetSourceId: Value<int?>(sourceId),
-        enabled: Value<bool>(enabled),
-        createdAt: 1000,
-        updatedAt: 1000,
-        nextCheckAt: Value<int?>(nextCheckAt),
-      ),
-    );
+}) => database.upsertVideoDownloadSubscription(
+  VideoDownloadSubscriptionsCompanion.insert(
+    subscriptionId: id,
+    resourceProvider: 'torznab:indexer-a',
+    metadataProvider: const Value<String?>('anilist'),
+    externalId: Value<String?>('media-$id'),
+    mediaKind: 'tv',
+    discoveryCategory: const Value<String?>('anime'),
+    title: 'Example Show',
+    season: const Value<int?>(1),
+    searchQuery: 'Example Show',
+    filterJson: Value<String>(
+      jsonEncode(<String, Object?>{'strict': true, 'quality': '1080p'}),
+    ),
+    mode: Value<String>(mode),
+    backendKind: 'embedded',
+    backendProfileId: const Value<String?>('embedded'),
+    fingerprint: 'backend-fingerprint',
+    category: const Value<String?>('fushi-video'),
+    targetSourceId: Value<int?>(sourceId),
+    enabled: Value<bool>(enabled),
+    createdAt: 1000,
+    updatedAt: 1000,
+    nextCheckAt: Value<int?>(nextCheckAt),
+  ),
+);
 
 /// 预置若干「每周同一时刻发布」的历史条目。
 Future<void> _insertWeeklyHistory(
@@ -111,18 +110,18 @@ VideoDownloadSubscriptionService _service(
 }) {
   final VideoDownloadSubscriptionService service =
       VideoDownloadSubscriptionService(
-    database: database,
-    resourceRegistry: VideoResourceRegistry(<VideoResourceProvider>[
-      provider ?? _EmptyResourceProvider(),
-    ]),
-    // 本套件断言的是「下一次什么时候查」，不是入队；provider 恒返空候选，
-    // 检查必定成功且不命中，nextCheckAt 就只由历史样本决定。
-    enqueue: (VideoDownloadEnqueueRequest request) async =>
-        fail('no candidate should be enqueued'),
-    workerId: 'cadence-test-worker',
-    cadence: cadence,
-    now: now == null ? null : () => now,
-  );
+        database: database,
+        resourceRegistry: VideoResourceRegistry(<VideoResourceProvider>[
+          provider ?? _EmptyResourceProvider(),
+        ]),
+        // 本套件断言的是「下一次什么时候查」，不是入队；provider 恒返空候选，
+        // 检查必定成功且不命中，nextCheckAt 就只由历史样本决定。
+        enqueue: (VideoDownloadEnqueueRequest request) async =>
+            fail('no candidate should be enqueued'),
+        workerId: 'cadence-test-worker',
+        cadence: cadence,
+        now: now == null ? null : () => now,
+      );
   addTearDown(service.dispose);
   return service;
 }
@@ -209,8 +208,8 @@ Future<int> _expectSampleCount(
   String subscriptionId,
   int expected,
 ) async {
-  final List<int> samples =
-      await database.getVideoDownloadSubscriptionPublishedAt(subscriptionId);
+  final List<int> samples = await database
+      .getVideoDownloadSubscriptionPublishedAt(subscriptionId);
   expect(samples.length, expected, reason: '取样路径本身应当是通的');
   return samples.length;
 }
@@ -221,8 +220,8 @@ Future<int?> _checkAndReadNextCheckAt(
   required DateTime now,
 }) async {
   await _service(database, now: now).checkNow();
-  final VideoDownloadSubscriptionRow row =
-      (await database.getVideoDownloadSubscription(subscriptionId))!;
+  final VideoDownloadSubscriptionRow row = (await database
+      .getVideoDownloadSubscription(subscriptionId))!;
   expect(row.lastCheckedAt, now.millisecondsSinceEpoch, reason: '这一轮检查应当真的跑到了');
   // 失败路径首次退避同样是 15 分钟，与「退回均匀间隔」肉眼无法区分——必须显式
   // 排除，否则一条抛异常的检查会被读成「节奏退化」而悄悄通过。
@@ -420,11 +419,7 @@ void main() {
       final int afterStop = provider.searchCount;
 
       await Future<void>.delayed(const Duration(milliseconds: 600));
-      expect(
-        provider.searchCount,
-        afterStop,
-        reason: 'stop() 之后调度器又自己醒了',
-      );
+      expect(provider.searchCount, afterStop, reason: 'stop() 之后调度器又自己醒了');
     });
 
     test('下一次到期近在眼前时，唤醒不会快过热窗（下界 clamp）', () async {
@@ -517,15 +512,14 @@ void main() {
       final FushiDatabase database = await _openDatabase();
       VideoDownloadSubscriptionService build(
         SubscriptionCheckCadence cadence,
-      ) =>
-          VideoDownloadSubscriptionService(
-            database: database,
-            resourceRegistry: VideoResourceRegistry(<VideoResourceProvider>[
-              _EmptyResourceProvider(),
-            ]),
-            enqueue: (VideoDownloadEnqueueRequest request) async => 'unused',
-            cadence: cadence,
-          );
+      ) => VideoDownloadSubscriptionService(
+        database: database,
+        resourceRegistry: VideoResourceRegistry(<VideoResourceProvider>[
+          _EmptyResourceProvider(),
+        ]),
+        enqueue: (VideoDownloadEnqueueRequest request) async => 'unused',
+        cadence: cadence,
+      );
 
       // maxSamples: 0 会让每次取样抛 ArgumentError 并被降级吞掉——整个特性静默
       // 变成 no-op。必须在构造时就拒绝。
@@ -538,9 +532,8 @@ void main() {
         throwsArgumentError,
       );
       expect(
-        () => build(
-          const SubscriptionCheckCadence(baseInterval: Duration.zero),
-        ),
+        () =>
+            build(const SubscriptionCheckCadence(baseInterval: Duration.zero)),
         throwsArgumentError,
       );
       expect(
@@ -562,8 +555,8 @@ void main() {
       await _insertSubscription(database, id: 'weekly', sourceId: sourceId);
       await _insertWeeklyHistory(database, 'weekly');
 
-      final List<int> samples =
-          await database.getVideoDownloadSubscriptionPublishedAt('weekly');
+      final List<int> samples = await database
+          .getVideoDownloadSubscriptionPublishedAt('weekly');
       expect(samples, <int>[
         kRelease.millisecondsSinceEpoch,
         kRelease.subtract(const Duration(days: 7)).millisecondsSinceEpoch,
@@ -581,8 +574,7 @@ void main() {
         (await database.getVideoDownloadSubscriptionPublishedAt(
           'weekly',
           limit: 2,
-        ))
-            .length,
+        )).length,
         2,
       );
     });

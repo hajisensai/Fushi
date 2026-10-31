@@ -9,13 +9,13 @@ import 'package:fushi/utils.dart';
 class SearchDictionaryEnhancement extends Enhancement {
   /// Initialise this enhancement with the hardset parameters.
   SearchDictionaryEnhancement()
-      : super(
-          uniqueKey: key,
-          label: 'Search Dictionary',
-          description: 'Search the dictionary with the content of a field.',
-          icon: Icons.search,
-          field: TermField.instance,
-        );
+    : super(
+        uniqueKey: key,
+        label: 'Search Dictionary',
+        description: 'Search the dictionary with the content of a field.',
+        icon: Icons.search,
+        field: TermField.instance,
+      );
 
   /// Used to identify this enhancement and to allow a constant value for the
   /// default mappings value of [AnkiMapping].

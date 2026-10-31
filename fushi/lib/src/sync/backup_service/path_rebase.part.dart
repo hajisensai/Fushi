@@ -96,7 +96,10 @@ Future<void> _rebaseGameCoverPaths({
 /// 结果在本机不存在、而该确定位置存在时，用后者。**原路径有效时一律不动**，
 /// 普通备份恢复的行为不变。
 String _resolveExtractDirOnDevice(
-    String rebased, String bookKey, String newBooksRoot) {
+  String rebased,
+  String bookKey,
+  String newBooksRoot,
+) {
   if (rebased.isNotEmpty && Directory(rebased).existsSync()) return rebased;
   if (bookKey.isEmpty) return rebased;
   final String byKey = p.join(newBooksRoot, bookKey);
@@ -130,8 +133,13 @@ Future<void> _rebaseContentPaths({
           ),
           coverPath: b.coverPath == null
               ? null
-              : _rebaseEither(b.coverPath!, oldBooks, newBooksRoot, oldAudio,
-                  newAudiobooksRoot),
+              : _rebaseEither(
+                  b.coverPath!,
+                  oldBooks,
+                  newBooksRoot,
+                  oldAudio,
+                  newAudiobooksRoot,
+                ),
         );
       }
     }
@@ -143,9 +151,16 @@ Future<void> _rebaseContentPaths({
               ? null
               : rebasePath(a.audioRoot!, oldAudio, newAudiobooksRoot),
           audioPathsJson: _rebaseAudioPathsJson(
-              a.audioPathsJson, oldAudio, newAudiobooksRoot, a.bookKey),
-          alignmentPath:
-              rebasePath(a.alignmentPath, oldAudio, newAudiobooksRoot),
+            a.audioPathsJson,
+            oldAudio,
+            newAudiobooksRoot,
+            a.bookKey,
+          ),
+          alignmentPath: rebasePath(
+            a.alignmentPath,
+            oldAudio,
+            newAudiobooksRoot,
+          ),
         );
       }
       // BUG-1575: srt_books carries its OWN copy of the audio paths and was
@@ -169,12 +184,21 @@ Future<void> _rebaseContentPaths({
               ? null
               : rebasePath(srt.audioRoot!, oldAudio, newAudiobooksRoot),
           audioPathsJson: _rebaseAudioPathsJson(
-              srt.audioPathsJson, oldAudio, newAudiobooksRoot, srt.uid),
+            srt.audioPathsJson,
+            oldAudio,
+            newAudiobooksRoot,
+            srt.uid,
+          ),
           srtPath: rebasePath(srt.srtPath, oldAudio, newAudiobooksRoot),
           coverPath: srt.coverPath == null
               ? null
-              : _rebaseEither(srt.coverPath!, oldAudio, newAudiobooksRoot,
-                  oldBooks, newBooksRoot),
+              : _rebaseEither(
+                  srt.coverPath!,
+                  oldAudio,
+                  newAudiobooksRoot,
+                  oldBooks,
+                  newBooksRoot,
+                ),
         );
       }
     }
@@ -199,13 +223,16 @@ String? _rebaseAudioPathsJson(
   try {
     final dynamic decoded = jsonDecode(json);
     if (decoded is! List) return json;
-    return jsonEncode(decoded
-        .whereType<String>()
-        .map((String s) => rebasePath(s, oldRoot, newRoot))
-        .toList());
+    return jsonEncode(
+      decoded
+          .whereType<String>()
+          .map((String s) => rebasePath(s, oldRoot, newRoot))
+          .toList(),
+    );
   } catch (e) {
     debugPrint(
-        'BackupService: skipped rebasing audioPathsJson for $rowKey: $e');
+      'BackupService: skipped rebasing audioPathsJson for $rowKey: $e',
+    );
     return json;
   }
 }
@@ -343,8 +370,11 @@ Future<void> _rebaseVideoPaths({
   final FushiDatabase db = FushiDatabase(dbDirectory);
   try {
     for (final VideoBookRow row in await db.allVideoBooks()) {
-      final String videoPath =
-          _rebaseVideoPath(row.videoPath, meta.videoFiles, newVideosRoot);
+      final String videoPath = _rebaseVideoPath(
+        row.videoPath,
+        meta.videoFiles,
+        newVideosRoot,
+      );
       final String? playlistJson = _rebaseVideoPlaylistJson(
         row.playlistJson,
         meta.videoFiles,
@@ -390,8 +420,11 @@ String? _rebaseVideoPlaylistJson(
       final Map<String, dynamic> row = Map<String, dynamic>.from(entry);
       final Object? path = row['path'];
       if (path is! String) return row;
-      final String rebased =
-          _rebaseVideoPath(path, sourcePathToArchiveRelative, newVideosRoot);
+      final String rebased = _rebaseVideoPath(
+        path,
+        sourcePathToArchiveRelative,
+        newVideosRoot,
+      );
       if (rebased != path) {
         row['path'] = rebased;
         changed = true;
@@ -404,10 +437,7 @@ String? _rebaseVideoPlaylistJson(
   }
 }
 
-String _reappliedVideoPath(
-  String videosRoot,
-  String archiveRelativePath,
-) {
+String _reappliedVideoPath(String videosRoot, String archiveRelativePath) {
   final String relative = archiveRelativePath.replaceAll(r'\', '/');
   final String normalizedRelative = p.posix.normalize(relative);
   if (relative.isEmpty ||

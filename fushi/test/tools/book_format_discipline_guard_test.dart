@@ -95,8 +95,9 @@ List<String> _codeHits(List<String> roots, RegExp pattern) {
   final List<String> hits = <String>[];
   for (final File e in _scannedDartFiles(roots)) {
     final String rel = e.path.replaceAll(r'\', '/');
-    final List<String> lines =
-        maskCommentsAndScriptLines(e.readAsStringSync()).split('\n');
+    final List<String> lines = maskCommentsAndScriptLines(
+      e.readAsStringSync(),
+    ).split('\n');
     for (int i = 0; i < lines.length; i++) {
       if (pattern.hasMatch(lines[i])) hits.add('$rel:${i + 1}');
     }
@@ -117,10 +118,12 @@ void main() {
   ];
 
   test('扫描规模哨兵：三个扫描根确实都被枚举到了', () {
-    expectScanScale(_scannedDartFiles(roots).length,
-        what: 'lib/ + test/ + fushi_core/lib 下的 .dart（已排除生成物与冻结文件）',
-        atLeast: 3590,
-        measured: 4492);
+    expectScanScale(
+      _scannedDartFiles(roots).length,
+      what: 'lib/ + test/ + fushi_core/lib 下的 .dart（已排除生成物与冻结文件）',
+      atLeast: 3590,
+      measured: 4492,
+    );
   });
 
   test('落库入口收 BookFormat 而非裸 String（未知值编译期不可表达）', () {
@@ -132,35 +135,40 @@ void main() {
     final int bodyAt = dao.indexOf('}) {', at);
     expect(bodyAt, isNonNegative, reason: '找不到 updateEpubBookFormat 的签名结尾');
     final String signature = dao.substring(at, bodyAt);
-    expect(signature.contains('required BookFormat format'), isTrue,
-        reason: 'format 落库入口必须收 BookFormat：收裸 String 就等于把「写进未知值」'
-            '留到运行期，而未知值会让阅读器路由静默 fallback 到 EPUB。');
-    expect(signature.contains('String format'), isFalse,
-        reason: '不得退回裸 String 参数');
+    expect(
+      signature.contains('required BookFormat format'),
+      isTrue,
+      reason:
+          'format 落库入口必须收 BookFormat：收裸 String 就等于把「写进未知值」'
+          '留到运行期，而未知值会让阅读器路由静默 fallback 到 EPUB。',
+    );
+    expect(
+      signature.contains('String format'),
+      isFalse,
+      reason: '不得退回裸 String 参数',
+    );
   });
 
   test('不得用裸字符串字面量落库 format', () {
     // 形如 `format: Value('manga')` / `format: const Value("pdf")`。
-    final RegExp bare = RegExp(
-      r'''format:\s*(const\s+)?Value\s*\(\s*['"]''',
-    );
+    final RegExp bare = RegExp(r'''format:\s*(const\s+)?Value\s*\(\s*['"]''');
     expect(
       _codeHits(roots, bare),
       isEmpty,
-      reason: '落库 format 请用 `BookFormat.<x>.dbValue`，别写裸字面量——'
+      reason:
+          '落库 format 请用 `BookFormat.<x>.dbValue`，别写裸字面量——'
           '裸字面量绕开枚举，拼错一个字母就是一本永远用错阅读器打开的书。',
     );
   });
 
   test('不得用裸字符串比较 format', () {
     // 形如 `book.format == 'manga'` / `source.format != "pdf"`。
-    final RegExp bare = RegExp(
-      r'''\.format\s*[!=]=\s*['"]''',
-    );
+    final RegExp bare = RegExp(r'''\.format\s*[!=]=\s*['"]''');
     expect(
       _codeHits(roots, bare),
       isEmpty,
-      reason: '请用 `BookFormat.parseOrEpub(x.format)` 再比枚举。裸比较正是'
+      reason:
+          '请用 `BookFormat.parseOrEpub(x.format)` 再比枚举。裸比较正是'
           '「只挡了 manga、漏掉 pdf」那类 bug 的温床（tracking 两个调用点即为此坏过）。',
     );
   });
@@ -169,8 +177,11 @@ void main() {
     expect(BookFormat.epub.dbValue, 'epub');
     expect(BookFormat.pdf.dbValue, 'pdf');
     expect(BookFormat.manga.dbValue, 'manga');
-    expect(BookFormat.values.length, 3,
-        reason: '新增格式要同步 reader_fushi_source 的路由与 isPagedImageBook 判据');
+    expect(
+      BookFormat.values.length,
+      3,
+      reason: '新增格式要同步 reader_fushi_source 的路由与 isPagedImageBook 判据',
+    );
   });
 
   test('按页翻的书判据覆盖 pdf 与 manga（章计数下游全靠它排除）', () {
@@ -189,7 +200,10 @@ void main() {
   test('枚举文件写明了「为什么没加 CHECK 约束」（别让后人当遗漏又去重建书表）', () {
     final String src = File(kEnumFile).readAsStringSync();
     expect(src.contains('ALTER TABLE ADD CONSTRAINT'), isTrue);
-    expect(src.contains('user_version=60'), isTrue,
-        reason: '生产库实证是「值不值得补 CHECK」的判断依据，要留在代码里');
+    expect(
+      src.contains('user_version=60'),
+      isTrue,
+      reason: '生产库实证是「值不值得补 CHECK」的判断依据，要留在代码里',
+    );
   });
 }

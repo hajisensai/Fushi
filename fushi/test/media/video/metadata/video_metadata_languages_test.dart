@@ -37,10 +37,14 @@ void main() {
     });
 
     test('空白 locale 回落到全局兜底，而不是回落到某一种自然语言', () {
-      expect(const VideoMetadataLanguages('').normalizedLocale,
-          kFallbackVideoMetadataLocale);
-      expect(const VideoMetadataLanguages('   ').normalizedLocale,
-          kFallbackVideoMetadataLocale);
+      expect(
+        const VideoMetadataLanguages('').normalizedLocale,
+        kFallbackVideoMetadataLocale,
+      );
+      expect(
+        const VideoMetadataLanguages('   ').normalizedLocale,
+        kFallbackVideoMetadataLocale,
+      );
       expect(kFallbackVideoMetadataLocale, 'en-US');
     });
 
@@ -53,39 +57,57 @@ void main() {
       // `en-US`——整串会让 include_image_language 带一个死条目。
       const VideoMetadataLanguages hollow = VideoMetadataLanguages('-');
       expect(
-          hollow.primarySubtag,
-          const VideoMetadataLanguages(kFallbackVideoMetadataLocale)
-              .primarySubtag);
+        hollow.primarySubtag,
+        const VideoMetadataLanguages(
+          kFallbackVideoMetadataLocale,
+        ).primarySubtag,
+      );
       expect(hollow.tmdbIncludeImageLanguage, 'en,null');
     });
 
     test('搜索别名语言：本语言在前，只补 en-US / ja-JP 两个有领域理由的', () {
-      expect(const VideoMetadataLanguages('de-DE').searchLocales,
-          <String>['de-DE', 'en-US', 'ja-JP']);
+      expect(const VideoMetadataLanguages('de-DE').searchLocales, <String>[
+        'de-DE',
+        'en-US',
+        'ja-JP',
+      ]);
       // 此前这个列表尾部无条件追加 zh-CN，非中文用户每次搜索白搭一次请求。
-      expect(const VideoMetadataLanguages('de-DE').searchLocales,
-          isNot(contains('zh-CN')));
+      expect(
+        const VideoMetadataLanguages('de-DE').searchLocales,
+        isNot(contains('zh-CN')),
+      );
     });
 
     test('日语 ja 与别名表的 ja-JP 整串不等，也不对同一语言请求两次', () {
-      final List<String> locales =
-          const VideoMetadataLanguages('ja').searchLocales;
-      expect(locales.where((String tag) => tag.toLowerCase().startsWith('ja')),
-          hasLength(1));
+      final List<String> locales = const VideoMetadataLanguages(
+        'ja',
+      ).searchLocales;
+      expect(
+        locales.where((String tag) => tag.toLowerCase().startsWith('ja')),
+        hasLength(1),
+      );
       expect(locales, <String>['ja', 'en-US']);
     });
 
     test('本语言与兜底语言重合时不重复请求同一种语言', () {
-      expect(const VideoMetadataLanguages('en-US').searchLocales,
-          <String>['en-US', 'ja-JP']);
-      expect(const VideoMetadataLanguages('ja-JP').searchLocales,
-          <String>['ja-JP', 'en-US']);
+      expect(const VideoMetadataLanguages('en-US').searchLocales, <String>[
+        'en-US',
+        'ja-JP',
+      ]);
+      expect(const VideoMetadataLanguages('ja-JP').searchLocales, <String>[
+        'ja-JP',
+        'en-US',
+      ]);
       // 地区不同但主语言相同，同样只请求一次。
-      expect(const VideoMetadataLanguages('en-GB').searchLocales,
-          <String>['en-GB', 'ja-JP']);
+      expect(const VideoMetadataLanguages('en-GB').searchLocales, <String>[
+        'en-GB',
+        'ja-JP',
+      ]);
       // 大小写不同也算同一种语言，不该请求两次。
-      expect(const VideoMetadataLanguages('EN-us').searchLocales,
-          <String>['EN-us', 'ja-JP']);
+      expect(const VideoMetadataLanguages('EN-us').searchLocales, <String>[
+        'EN-us',
+        'ja-JP',
+      ]);
     });
   });
 }

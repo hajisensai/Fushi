@@ -31,16 +31,15 @@ void main() {
     List<AnkiDeck> decks = const [lapisDeck, userDeck],
     List<AnkiNoteType> noteTypes = const [lapis, basic],
     Map<String, String> mappings = const {'Expression': '{expression}'},
-  }) =>
-      AnkiSettings(
-        selectedDeckId: deckId,
-        selectedDeckName: deckName,
-        selectedNoteTypeId: noteTypeId,
-        selectedNoteTypeName: noteTypeName,
-        availableDecks: decks,
-        availableNoteTypes: noteTypes,
-        fieldMappings: mappings,
-      );
+  }) => AnkiSettings(
+    selectedDeckId: deckId,
+    selectedDeckName: deckName,
+    selectedNoteTypeId: noteTypeId,
+    selectedNoteTypeName: noteTypeName,
+    availableDecks: decks,
+    availableNoteTypes: noteTypes,
+    fieldMappings: mappings,
+  );
 
   test('首字段接了模板 → 能制卡', () {
     expect(settings().canMineCards, isTrue);

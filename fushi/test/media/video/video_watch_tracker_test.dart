@@ -46,8 +46,12 @@ void _advanceWall(int ms) =>
     _fakeNow = _fakeNow.add(Duration(milliseconds: ms));
 
 /// 模拟真实播放推进：isPlaying=true，位置逐步前进并通知，**墙钟同步走**。
-void _playThrough(_FakeSource src,
-    {required int fromMs, required int toMs, int stepMs = 500}) {
+void _playThrough(
+  _FakeSource src, {
+  required int fromMs,
+  required int toMs,
+  int stepMs = 500,
+}) {
   src.isPlaying = true;
   for (int pos = fromMs; pos <= toMs; pos += stepMs) {
     if (pos > fromMs) _advanceWall(stepMs);
@@ -211,10 +215,7 @@ void main() {
       src = _FakeSource();
       sink = _Sink();
       clock = _clock(sink);
-      tracker = VideoWatchTracker(
-        bookUid: 'u1',
-        clock: clock,
-      )..attach(src);
+      tracker = VideoWatchTracker(bookUid: 'u1', clock: clock)..attach(src);
       _fakeNow = DateTime(2026, 1, 1, 12);
       tracker.debugNowForTesting = () => _fakeNow;
     });
@@ -285,14 +286,22 @@ void main() {
     // 于是这条路径在真机上恒为 0 —— 字幕字数永远计不上，而每 500ms emit 一次的假源
     // 测试照样全绿。这条用例按生产真实节奏驱动：一句只通知两次。
     test('生产通知节奏（一句只通知两次）下仍能计入字幕字数', () {
-      _playCueProductionCadence(src,
-          index: 0, cue: _cue('あいう'), enterPosMs: 0, watchedMs: 2000);
+      _playCueProductionCadence(
+        src,
+        index: 0,
+        cue: _cue('あいう'),
+        enterPosMs: 0,
+        watchedMs: 2000,
+      );
       // 换句：这是上一句能收到的最后一次通知，停留量在此结算。
       src.currentCueIndex = 1;
       src.currentCue = _cue('か', startMs: 10000, endMs: 20000);
       src.emit();
-      expect(tracker.debugSubtitleChars, 3,
-          reason: '一句只通知两次时也必须计入，否则真机上字幕字数恒 0');
+      expect(
+        tracker.debugSubtitleChars,
+        3,
+        reason: '一句只通知两次时也必须计入，否则真机上字幕字数恒 0',
+      );
     });
 
     test('生产节奏下拖进度条掠过整句仍不计（墙钟没走）', () {
@@ -343,87 +352,103 @@ void main() {
   group('shouldCountCueDwell（纯谓词）', () {
     test('长 cue 固定门槛 kCueDwellMs', () {
       expect(
-          shouldCountCueDwell(playedMs: 1499, cueStartMs: 0, cueEndMs: 10000),
-          isFalse);
+        shouldCountCueDwell(playedMs: 1499, cueStartMs: 0, cueEndMs: 10000),
+        isFalse,
+      );
       expect(
-          shouldCountCueDwell(playedMs: 1500, cueStartMs: 0, cueEndMs: 10000),
-          isTrue);
+        shouldCountCueDwell(playedMs: 1500, cueStartMs: 0, cueEndMs: 10000),
+        isTrue,
+      );
     });
     test('短 cue 门槛 = 自身时长', () {
-      expect(shouldCountCueDwell(playedMs: 799, cueStartMs: 0, cueEndMs: 800),
-          isFalse);
-      expect(shouldCountCueDwell(playedMs: 800, cueStartMs: 0, cueEndMs: 800),
-          isTrue);
+      expect(
+        shouldCountCueDwell(playedMs: 799, cueStartMs: 0, cueEndMs: 800),
+        isFalse,
+      );
+      expect(
+        shouldCountCueDwell(playedMs: 800, cueStartMs: 0, cueEndMs: 800),
+        isTrue,
+      );
     });
     test('起止时刻缺失/非法回退固定门槛', () {
       expect(
-          shouldCountCueDwell(playedMs: 1500, cueStartMs: null, cueEndMs: null),
-          isTrue);
-      expect(shouldCountCueDwell(playedMs: 1499, cueStartMs: 500, cueEndMs: 0),
-          isFalse);
+        shouldCountCueDwell(playedMs: 1500, cueStartMs: null, cueEndMs: null),
+        isTrue,
+      );
+      expect(
+        shouldCountCueDwell(playedMs: 1499, cueStartMs: 500, cueEndMs: 0),
+        isFalse,
+      );
     });
   });
 
   group('exit flush awaits async stat writes (TODO-086/BUG-192)', () {
-    test('stop() future completes only after the async segment write commits',
-        () async {
-      // sink 模拟异步落库（后台 isolate 写 Drift）：只有当 tracker.stop 真的
-      // await 了时钟写链，stop() 返回时 writes 才非空。撤掉 stop 的 await（改回
-      // fire-and-forget）会让本断言转红——锁住退出时统计不丢。
-      final _Sink sink = _Sink(delay: const Duration(milliseconds: 20));
-      final _FakeSource src = _FakeSource()
-        ..isPlaying = true
-        ..positionMs = 0;
-      // 段时长走注入时钟，不靠墙钟：落库门槛是「≥1 秒或有内容账」，等 30ms 真实
-      // 时间造出来的段过不了门槛，测的就成了墙钟而不是接线。
-      _fakeNow = DateTime(2026, 1, 1, 12);
-      final VideoWatchTracker tracker = VideoWatchTracker(
-        bookUid: 'u1',
-        clock: _clock(sink, now: () => _fakeNow),
-      )..debugNowForTesting = () => _fakeNow;
-      tracker.attach(src);
-      await tracker.debugCoverageLoaded;
+    test(
+      'stop() future completes only after the async segment write commits',
+      () async {
+        // sink 模拟异步落库（后台 isolate 写 Drift）：只有当 tracker.stop 真的
+        // await 了时钟写链，stop() 返回时 writes 才非空。撤掉 stop 的 await（改回
+        // fire-and-forget）会让本断言转红——锁住退出时统计不丢。
+        final _Sink sink = _Sink(delay: const Duration(milliseconds: 20));
+        final _FakeSource src = _FakeSource()
+          ..isPlaying = true
+          ..positionMs = 0;
+        // 段时长走注入时钟，不靠墙钟：落库门槛是「≥1 秒或有内容账」，等 30ms 真实
+        // 时间造出来的段过不了门槛，测的就成了墙钟而不是接线。
+        _fakeNow = DateTime(2026, 1, 1, 12);
+        final VideoWatchTracker tracker = VideoWatchTracker(
+          bookUid: 'u1',
+          clock: _clock(sink, now: () => _fakeNow),
+        )..debugNowForTesting = () => _fakeNow;
+        tracker.attach(src);
+        await tracker.debugCoverageLoaded;
 
-      tracker.start();
-      // 制造一段连续播放：位置与墙钟同步推进 30s（首次覆盖 → 记账）。
-      for (int i = 1; i <= 30; i++) {
-        _advanceWall(1000);
-        src.positionMs = i * 1000;
-        src.emit();
-      }
-      await tracker.stop();
+        tracker.start();
+        // 制造一段连续播放：位置与墙钟同步推进 30s（首次覆盖 → 记账）。
+        for (int i = 1; i <= 30; i++) {
+          _advanceWall(1000);
+          src.positionMs = i * 1000;
+          src.emit();
+        }
+        await tracker.stop();
 
-      expect(sink.writes, isNotEmpty,
-          reason: 'stop() 必须 await 异步统计写——否则 exit(0) 丢观看时长');
-      expect(sink.writes.first.durationMs.value, greaterThan(0));
-    });
+        expect(
+          sink.writes,
+          isNotEmpty,
+          reason: 'stop() 必须 await 异步统计写——否则 exit(0) 丢观看时长',
+        );
+        expect(sink.writes.first.durationMs.value, greaterThan(0));
+      },
+    );
   });
 
   group('external episode completion callback', () {
-    test('fires once at 90% and resets only when the episode changes',
-        () async {
-      int completed = 0;
-      final _FakeSource src = _FakeSource()
-        ..positionMs = 90
-        ..durationMs = 100;
-      final VideoWatchTracker tracker = VideoWatchTracker(
-        bookUid: 'u1',
-        clock: _clock(_Sink()),
-        onEpisodeCompleted: () => completed++,
-      )..attach(src);
+    test(
+      'fires once at 90% and resets only when the episode changes',
+      () async {
+        int completed = 0;
+        final _FakeSource src = _FakeSource()
+          ..positionMs = 90
+          ..durationMs = 100;
+        final VideoWatchTracker tracker = VideoWatchTracker(
+          bookUid: 'u1',
+          clock: _clock(_Sink()),
+          onEpisodeCompleted: () => completed++,
+        )..attach(src);
 
-      tracker.start();
-      await tracker.stop();
-      tracker.start();
-      await tracker.stop();
-      expect(completed, 1);
+        tracker.start();
+        await tracker.stop();
+        tracker.start();
+        await tracker.stop();
+        expect(completed, 1);
 
-      tracker.onEpisodeChanged();
-      tracker.start();
-      await tracker.stop();
-      expect(completed, 2);
-      tracker.dispose();
-    });
+        tracker.onEpisodeChanged();
+        tracker.start();
+        await tracker.stop();
+        expect(completed, 2);
+        tracker.dispose();
+      },
+    );
   });
 
   group('观看时长 = 首次覆盖（BUG-2108：重听 / 拖回 / 重看不计）', () {
@@ -447,8 +472,11 @@ void main() {
       // 再往前看 3s 新内容：只有这 3s 计。
       s.play(fromMs: 20000, toMs: 23000, wallMs: 3000);
       await s.tracker.stop();
-      expect(s.sink.writes.single.durationMs.value, 23000,
-          reason: '20s 首看 + 3s 新内容；5s 重听不计');
+      expect(
+        s.sink.writes.single.durationMs.value,
+        23000,
+        reason: '20s 首看 + 3s 新内容；5s 重听不计',
+      );
     });
 
     test('向前 seek 跳过的内容不算看过，也不计时', () async {
@@ -458,9 +486,10 @@ void main() {
       s.play(fromMs: 60000, toMs: 65000, wallMs: 5000);
       await s.tracker.stop();
       expect(s.sink.writes.single.durationMs.value, 15000);
-      expect(s.tracker.debugCoverage.ranges,
-          <(int, int)>[(0, 10000), (60000, 65000)],
-          reason: '跳过的 10000..60000 不在并集里，之后真看到时仍按首看计');
+      expect(s.tracker.debugCoverage.ranges, <(int, int)>[
+        (0, 10000),
+        (60000, 65000),
+      ], reason: '跳过的 10000..60000 不在并集里，之后真看到时仍按首看计');
     });
 
     test('两次采样之间发生的 seek（墙钟走了 1s、位置跳了 10s）判为跳变：不覆盖、不计时', () async {
@@ -473,9 +502,10 @@ void main() {
       s.play(fromMs: 20000, toMs: 25000, wallMs: 5000);
       await s.tracker.stop();
       expect(s.sink.writes.single.durationMs.value, 15000);
-      expect(s.tracker.debugCoverage.ranges,
-          <(int, int)>[(0, 10000), (20000, 25000)],
-          reason: '10000..20000 是跳过去的，不在并集里');
+      expect(s.tracker.debugCoverage.ranges, <(int, int)>[
+        (0, 10000),
+        (20000, 25000),
+      ], reason: '10000..20000 是跳过去的，不在并集里');
     });
 
     test('倍速播放：媒体推进 = 墙钟 × 倍速仍算连续，按墙钟记账', () async {
@@ -504,8 +534,11 @@ void main() {
       s.play(fromMs: 0, toMs: 60000, wallMs: 60000);
       s.play(fromMs: 60000, toMs: 61000, wallMs: 1000);
       await s.tracker.stop();
-      expect(s.sink.writes.single.durationMs.value, 1000,
-          reason: '前 60s 昨天看过 → 0；只有 60..61s 是首看');
+      expect(
+        s.sink.writes.single.durationMs.value,
+        1000,
+        reason: '前 60s 昨天看过 → 0；只有 60..61s 是首看',
+      );
       expect(cov.saved, '[[0,61000]]');
     });
 
@@ -525,7 +558,8 @@ void main() {
       expect(
         s.sink.writes.single.durationMs.value,
         1500,
-        reason: '只有这 1.5s 是真的新看到的内容；没有封顶会记满 8 小时，'
+        reason:
+            '只有这 1.5s 是真的新看到的内容；没有封顶会记满 8 小时，'
             '还会被 addActiveMs 塞进单个小时桶造出一条跨小时的段',
       );
       expect(s.tracker.debugCoverage.ranges, <(int, int)>[(0, 1500)]);
@@ -568,8 +602,9 @@ void main() {
     });
 
     test('本次会话前已整段看过的 cue 不再计字幕字数（字数与时长同律）', () async {
-      final _Session s =
-          await _Session.start(_Coverage(initial: '[[0,10000]]'));
+      final _Session s = await _Session.start(
+        _Coverage(initial: '[[0,10000]]'),
+      );
       // 已覆盖的句：0..4000
       s.src
         ..currentCueIndex = 0

@@ -254,8 +254,9 @@ void main() {
       expect(approvals, 0, reason: '票据路径不弹审批');
       expect(pinGenerated, 0);
       final List<FushiClientUrl> urls = await repo.getFushiClientUrls();
-      expect(urls.map((FushiClientUrl u) => u.url), <String>[live],
-          reason: '死的明文地址不学（明文 learned 地址换网可能是别人的机器）');
+      expect(urls.map((FushiClientUrl u) => u.url), <String>[
+        live,
+      ], reason: '死的明文地址不学（明文 learned 地址换网可能是别人的机器）');
       expect(urls.single.hostId, 'HOST-1');
       expect(
         urls.firstWhere((FushiClientUrl u) => u.url == live).learned,
@@ -321,8 +322,10 @@ void main() {
         <String>['https://real.example', 'https://10.0.0.2:1'],
         reason: '真 host 的组原封不动：没被删地址，也没混进冒名者的地址',
       );
-      expect(urls.any((FushiClientUrl u) => u.url == 'https://evil.example'),
-          isFalse);
+      expect(
+        urls.any((FushiClientUrl u) => u.url == 'https://evil.example'),
+        isFalse,
+      );
     });
 
     test('链接里的 host 身份与实际应答不符 → unreachable（不向冒名者配对）', () async {

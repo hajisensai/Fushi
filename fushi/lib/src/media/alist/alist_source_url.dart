@@ -32,10 +32,7 @@ String alistSourceUrlFor({required String baseUrl, required String path}) {
 ///
 /// 纯字符串前缀判定（不走 `Uri`，见文件头）；主机大小写无关由调用方保证站点根
 /// 写法一致——两边都出自同一份 configJson。
-String? alistPathFromSourceUrl({
-  required String baseUrl,
-  required String url,
-}) {
+String? alistPathFromSourceUrl({required String baseUrl, required String url}) {
   final String prefix =
       '${normalizeAListBaseUrl(baseUrl)}$kAListSourceDownloadSegment';
   if (url == prefix) return '/';

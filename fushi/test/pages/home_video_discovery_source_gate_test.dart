@@ -57,7 +57,7 @@ import '../helpers/test_platform_services.dart';
 /// 补的正是那块空缺。两者互补，都要留。
 class _DiscoveryGateAppModel extends AppModel {
   _DiscoveryGateAppModel(this._dir, {required this.managedSources})
-      : super(testPlatformServices());
+    : super(testPlatformServices());
 
   final Directory _dir;
 
@@ -90,16 +90,19 @@ class _DiscoveryGateAppModel extends AppModel {
       _testSubscriptions;
 
   void wireVideoDownloadRuntimeForTesting(FushiDatabase db) {
-    final VideoResourceRegistry registry =
-        VideoResourceRegistry(const <VideoResourceProvider>[]);
+    final VideoResourceRegistry registry = VideoResourceRegistry(
+      const <VideoResourceProvider>[],
+    );
     final VideoSourceScrapeCoordinator coordinator =
         VideoSourceScrapeCoordinator(
-      database: db,
-      config: const VideoSourceScrapeGlobalConfig(),
-      // 显式给空 registry：默认会按 config 造真的 TMDB/AniDB provider（含
-      // HttpClient），单测不需要也不该造。
-      registry: VideoMetadataProviderRegistry(const <VideoMetadataProvider>[]),
-    );
+          database: db,
+          config: const VideoSourceScrapeGlobalConfig(),
+          // 显式给空 registry：默认会按 config 造真的 TMDB/AniDB provider（含
+          // HttpClient），单测不需要也不该造。
+          registry: VideoMetadataProviderRegistry(
+            const <VideoMetadataProvider>[],
+          ),
+        );
     _testRegistry = registry;
     _testScrapeCoordinator = coordinator;
     _testPipeline = VideoDownloadPipelineService(
@@ -129,11 +132,11 @@ class _DiscoveryGateAppModel extends AppModel {
 
   @override
   PackageInfo get packageInfo => PackageInfo(
-        appName: 'Fushi',
-        packageName: 'app.hibiki.reader',
-        version: '1.0.0',
-        buildNumber: '1',
-      );
+    appName: 'Fushi',
+    packageName: 'app.hibiki.reader',
+    version: '1.0.0',
+    buildNumber: '1',
+  );
 
   @override
   Directory get appDirectory => _dir;
@@ -164,8 +167,8 @@ class _DiscoveryGateAppModel extends AppModel {
 
   @override
   List<Dictionary> get dictionaries => <Dictionary>[
-        Dictionary(name: 'Test', formatKey: 'test', order: 0),
-      ];
+    Dictionary(name: 'Test', formatKey: 'test', order: 0),
+  ];
 
   @override
   int get maximumTerms => 10;
@@ -186,8 +189,7 @@ class _DiscoveryGateAppModel extends AppModel {
     int? overrideMaximumTerms,
     bool useCache = true,
     bool allowRemoteLookup = true,
-  }) async =>
-      DictionarySearchResult(searchTerm: searchTerm);
+  }) async => DictionarySearchResult(searchTerm: searchTerm);
 }
 
 const MediaSourceRow _managedSource = MediaSourceRow(
@@ -205,16 +207,16 @@ const MediaSourceRow _managedSource = MediaSourceRow(
 );
 
 VideoDiscoveryItem _item() => VideoDiscoveryItem(
-      reference: VideoMediaReference(
-        providerId: 'anilist',
-        mediaId: '100',
-        mediaKind: VideoMetadataMediaKind.tv,
-        discoveryCategory: VideoDiscoveryCategory.anime,
-        title: '测试动画',
-        year: 2026,
-        anilistId: 100,
-      ),
-    );
+  reference: VideoMediaReference(
+    providerId: 'anilist',
+    mediaId: '100',
+    mediaKind: VideoMetadataMediaKind.tv,
+    discoveryCategory: VideoDiscoveryCategory.anime,
+    title: '测试动画',
+    year: 2026,
+    anilistId: 100,
+  ),
+);
 
 Future<_DiscoveryGateAppModel> _pumpHome(
   WidgetTester tester, {
@@ -224,20 +226,22 @@ Future<_DiscoveryGateAppModel> _pumpHome(
   addTearDown(db.close);
   final PreferencesRepository prefsRepo = PreferencesRepository(db);
   await prefsRepo.loadFromDb();
-  final Directory tmpDir =
-      Directory.systemTemp.createTempSync('fushi_home_video_source_gate_');
+  final Directory tmpDir = Directory.systemTemp.createTempSync(
+    'fushi_home_video_source_gate_',
+  );
   addTearDown(() {
     try {
       tmpDir.deleteSync(recursive: true);
     } catch (_) {}
   });
 
-  final _DiscoveryGateAppModel appModel = _DiscoveryGateAppModel(
-    tmpDir,
-    managedSources: managedSources,
-  )
-    ..wireLocalAudioForTesting(prefsRepo: prefsRepo, databaseDirectory: tmpDir)
-    ..wireDatabaseForTesting(db);
+  final _DiscoveryGateAppModel appModel =
+      _DiscoveryGateAppModel(tmpDir, managedSources: managedSources)
+        ..wireLocalAudioForTesting(
+          prefsRepo: prefsRepo,
+          databaseDirectory: tmpDir,
+        )
+        ..wireDatabaseForTesting(db);
   appModel.wireVideoDownloadRuntimeForTesting(db);
   addTearDown(appModel.disposeVideoDownloadRuntimeForTesting);
 
@@ -265,8 +269,11 @@ Future<_DiscoveryGateAppModel> _pumpHome(
   );
   await tester.pump();
   await tester.pump();
-  expect(HomePage.debugVideoDiscoveryActions, isNotNull,
-      reason: 'HomePage 必须已挂载并注册 debugVideoDiscoveryActions 生产钩子');
+  expect(
+    HomePage.debugVideoDiscoveryActions,
+    isNotNull,
+    reason: 'HomePage 必须已挂载并注册 debugVideoDiscoveryActions 生产钩子',
+  );
   return appModel;
 }
 
@@ -347,13 +354,17 @@ void main() {
 
     final VideoDiscoveryActions actions = _productionActions();
     final BuildContext homeContext = tester.element(find.byType(HomePage));
-    final Future<void> pending = actions.onSearchResource!(homeContext, _item());
+    final Future<void> pending = actions.onSearchResource!(
+      homeContext,
+      _item(),
+    );
     await _settle(tester);
 
     await expectPromptedInsteadOfOpening(
       tester,
       page: find.byType(VideoDiscoveryResourceSearchPage),
-      pageReason: '来源为空就打开资源搜索页 = 来源下拉是空的、提交按钮永远灰着，'
+      pageReason:
+          '来源为空就打开资源搜索页 = 来源下拉是空的、提交按钮永远灰着，'
           '用户看不出缺什么。`if (!context.mounted || sources.isEmpty) return;` '
           '必须留在 push 之前。',
     );
@@ -370,7 +381,10 @@ void main() {
 
     final VideoDiscoveryActions actions = _productionActions();
     final BuildContext homeContext = tester.element(find.byType(HomePage));
-    final Future<void> pending = actions.onSearchResource!(homeContext, _item());
+    final Future<void> pending = actions.onSearchResource!(
+      homeContext,
+      _item(),
+    );
     await _settle(tester);
 
     expect(

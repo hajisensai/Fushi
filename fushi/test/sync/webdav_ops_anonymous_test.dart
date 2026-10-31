@@ -17,18 +17,23 @@ class _FakeDav {
   final List<String?> authHeaders = <String?>[];
 
   static Future<_FakeDav> start() async {
-    final HttpServer srv =
-        await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final HttpServer srv = await HttpServer.bind(
+      InternetAddress.loopbackIPv4,
+      0,
+    );
     final _FakeDav fake = _FakeDav(srv, 'http://127.0.0.1:${srv.port}');
     srv.listen((HttpRequest req) async {
       fake.authHeaders.add(req.headers.value(HttpHeaders.authorizationHeader));
       await req.drain<Object?>();
       // Minimal 207 multistatus so testConnection treats it as success.
       req.response.statusCode = 207;
-      req.response.headers
-          .set(HttpHeaders.contentTypeHeader, 'application/xml; charset=utf-8');
+      req.response.headers.set(
+        HttpHeaders.contentTypeHeader,
+        'application/xml; charset=utf-8',
+      );
       req.response.write(
-          '<?xml version="1.0"?><d:multistatus xmlns:d="DAV:"></d:multistatus>');
+        '<?xml version="1.0"?><d:multistatus xmlns:d="DAV:"></d:multistatus>',
+      );
       await req.response.close();
     });
     return fake;
@@ -48,18 +53,27 @@ void main() {
   });
 
   test('空用户名+空密码 → 不带 Authorization 头，且连接成功（匿名 WebDAV）', () async {
-    final WebDavOps ops =
-        WebDavOps(baseUrl: '${dav.origin}/dav', username: '', password: '');
+    final WebDavOps ops = WebDavOps(
+      baseUrl: '${dav.origin}/dav',
+      username: '',
+      password: '',
+    );
     await ops.testConnection();
     ops.close();
     expect(dav.authHeaders, isNotEmpty);
-    expect(dav.authHeaders.every((String? h) => h == null), isTrue,
-        reason: '匿名 WebDAV 请求不应带 Authorization 头');
+    expect(
+      dav.authHeaders.every((String? h) => h == null),
+      isTrue,
+      reason: '匿名 WebDAV 请求不应带 Authorization 头',
+    );
   });
 
   test('有用户名密码 → 照发 Basic 头（行为不变）', () async {
     final WebDavOps ops = WebDavOps(
-        baseUrl: '${dav.origin}/dav', username: 'reader', password: 'pw');
+      baseUrl: '${dav.origin}/dav',
+      username: 'reader',
+      password: 'pw',
+    );
     await ops.testConnection();
     ops.close();
     expect(dav.authHeaders, isNotEmpty);
@@ -68,7 +82,10 @@ void main() {
 
   test('只有密码（用户名空）→ 仍发 Basic 头（非匿名）', () async {
     final WebDavOps ops = WebDavOps(
-        baseUrl: '${dav.origin}/dav', username: '', password: 'token');
+      baseUrl: '${dav.origin}/dav',
+      username: '',
+      password: 'token',
+    );
     await ops.testConnection();
     ops.close();
     expect(dav.authHeaders.first, startsWith('Basic '));

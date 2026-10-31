@@ -22,27 +22,28 @@ void main() {
       }
     });
 
-    test('treats file-like parent entries as directories when children exist',
-        () {
-      final Uint8List bytes = _encodeArchive(<ArchiveFile>[
-        _textFile('META-INF', ''),
-        _textFile('META-INF/container.xml', _containerXml),
-        _textFile('OEBPS/content.opf', _contentOpf),
-        _textFile('OEBPS/chapter.xhtml', _chapterXhtml),
-      ]);
-
-      final EpubBook book = EpubParser.parseSync(bytes, extractDir.path);
-
-      expect(book.title, 'Directory Placeholder Book');
-      expect(book.chapters, hasLength(1));
-      expect(
-        FileSystemEntity.typeSync(p.join(extractDir.path, 'META-INF')),
-        FileSystemEntityType.directory,
-      );
-    });
-
     test(
-        'percent-encoded TOC hrefs resolve to non-ASCII chapter files '
+      'treats file-like parent entries as directories when children exist',
+      () {
+        final Uint8List bytes = _encodeArchive(<ArchiveFile>[
+          _textFile('META-INF', ''),
+          _textFile('META-INF/container.xml', _containerXml),
+          _textFile('OEBPS/content.opf', _contentOpf),
+          _textFile('OEBPS/chapter.xhtml', _chapterXhtml),
+        ]);
+
+        final EpubBook book = EpubParser.parseSync(bytes, extractDir.path);
+
+        expect(book.title, 'Directory Placeholder Book');
+        expect(book.chapters, hasLength(1));
+        expect(
+          FileSystemEntity.typeSync(p.join(extractDir.path, 'META-INF')),
+          FileSystemEntityType.directory,
+        );
+      },
+    );
+
+    test('percent-encoded TOC hrefs resolve to non-ASCII chapter files '
         '(HBK-AUDIT-010)', () {
       final Uint8List bytes = _encodeArchive(<ArchiveFile>[
         _textFile('META-INF/container.xml', _containerXml),
@@ -62,8 +63,10 @@ void main() {
 
     test('non-UTF-8 chapter bytes do not crash the parse (HBK-AUDIT-033)', () {
       final List<int> malformed = <int>[
-        ...utf8.encode('<?xml version="1.0"?>'
-            '<html xmlns="http://www.w3.org/1999/xhtml"><body><p>'),
+        ...utf8.encode(
+          '<?xml version="1.0"?>'
+          '<html xmlns="http://www.w3.org/1999/xhtml"><body><p>',
+        ),
         0x82, 0xA0, // lone Shift_JIS-style bytes: invalid as standalone UTF-8
         ...utf8.encode('</p></body></html>'),
       ];

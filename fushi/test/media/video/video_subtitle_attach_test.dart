@@ -30,96 +30,110 @@ void main() {
     return f;
   }
 
-  test('single video: attaches subtitle to the SAME bookUid (no duplicate row)',
-      () async {
-    final db = FushiDatabase.forTesting(NativeDatabase.memory());
-    addTearDown(db.close);
-    final repo = VideoBookRepository(db);
+  test(
+    'single video: attaches subtitle to the SAME bookUid (no duplicate row)',
+    () async {
+      final db = FushiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      final repo = VideoBookRepository(db);
 
-    // 现有单视频卡（无字幕）。
-    await repo.saveVideoBook(const VideoBooksCompanion(
-      bookUid: Value('video/My Movie'),
-      title: Value('My Movie'),
-      videoPath: Value('/movies/My Movie.mkv'),
-    ));
-    final VideoBookRow book = (await repo.getByBookUid('video/My Movie'))!;
+      // 现有单视频卡（无字幕）。
+      await repo.saveVideoBook(
+        const VideoBooksCompanion(
+          bookUid: Value('video/My Movie'),
+          title: Value('My Movie'),
+          videoPath: Value('/movies/My Movie.mkv'),
+        ),
+      );
+      final VideoBookRow book = (await repo.getByBookUid('video/My Movie'))!;
 
-    final File srt = await writeSrt(
-      'My Movie.srt',
-      '1\n00:00:00,000 --> 00:00:02,000\nこんにちは\n\n'
-          '2\n00:00:02,000 --> 00:00:04,000\nさようなら\n',
-    );
-    final String destDir = p.join(tmp.path, 'video_subtitles');
+      final File srt = await writeSrt(
+        'My Movie.srt',
+        '1\n00:00:00,000 --> 00:00:02,000\nこんにちは\n\n'
+            '2\n00:00:02,000 --> 00:00:04,000\nさようなら\n',
+      );
+      final String destDir = p.join(tmp.path, 'video_subtitles');
 
-    final SubtitleAttachResult result = await attachSubtitleToVideoBook(
-      repo: repo,
-      book: book,
-      subtitlePath: srt.path,
-      destDirOverride: destDir,
-    );
+      final SubtitleAttachResult result = await attachSubtitleToVideoBook(
+        repo: repo,
+        book: book,
+        subtitlePath: srt.path,
+        destDirOverride: destDir,
+      );
 
-    expect(result.outcome, SubtitleAttachOutcome.attached);
-    expect(result.cueCount, 2);
+      expect(result.outcome, SubtitleAttachOutcome.attached);
+      expect(result.cueCount, 2);
 
-    // 没有新建任何视频书：仍然只有 1 行，且就是原 bookUid。
-    final all = await repo.listAll();
-    expect(all, hasLength(1));
-    expect(all.single.bookUid, 'video/My Movie');
+      // 没有新建任何视频书：仍然只有 1 行，且就是原 bookUid。
+      final all = await repo.listAll();
+      expect(all, hasLength(1));
+      expect(all.single.bookUid, 'video/My Movie');
 
-    // 字幕源指针 + cue 都落到了原视频书上（saveSubtitleSelection 原子写）。
-    final updated = (await repo.getByBookUid('video/My Movie'))!;
-    expect(updated.subtitleSource, p.join(destDir, 'My Movie.srt'));
-    final cues = await repo.loadCues('video/My Movie');
-    expect(cues, hasLength(2));
-    expect(cues.first.text, 'こんにちは');
+      // 字幕源指针 + cue 都落到了原视频书上（saveSubtitleSelection 原子写）。
+      final updated = (await repo.getByBookUid('video/My Movie'))!;
+      expect(updated.subtitleSource, p.join(destDir, 'My Movie.srt'));
+      final cues = await repo.loadCues('video/My Movie');
+      expect(cues, hasLength(2));
+      expect(cues.first.text, 'こんにちは');
 
-    // 字幕文件被拷进持久目录（源被移走也能恢复，BUG-132 同处）。
-    expect(File(p.join(destDir, 'My Movie.srt')).existsSync(), isTrue);
-  });
+      // 字幕文件被拷进持久目录（源被移走也能恢复，BUG-132 同处）。
+      expect(File(p.join(destDir, 'My Movie.srt')).existsSync(), isTrue);
+    },
+  );
 
-  test('playlist card: does NOT persist, asks to attach per-episode in player',
-      () async {
-    final db = FushiDatabase.forTesting(NativeDatabase.memory());
-    addTearDown(db.close);
-    final repo = VideoBookRepository(db);
+  test(
+    'playlist card: does NOT persist, asks to attach per-episode in player',
+    () async {
+      final db = FushiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      final repo = VideoBookRepository(db);
 
-    await repo.saveVideoBook(const VideoBooksCompanion(
-      bookUid: Value('video/playlist/Show'),
-      title: Value('Show'),
-      videoPath: Value('/show/e0.mkv'),
-      playlistJson: Value('[{"title":"e0","path":"/show/e0.mkv"},'
-          '{"title":"e1","path":"/show/e1.mkv"}]'),
-    ));
-    final VideoBookRow book = (await repo.getByBookUid('video/playlist/Show'))!;
+      await repo.saveVideoBook(
+        const VideoBooksCompanion(
+          bookUid: Value('video/playlist/Show'),
+          title: Value('Show'),
+          videoPath: Value('/show/e0.mkv'),
+          playlistJson: Value(
+            '[{"title":"e0","path":"/show/e0.mkv"},'
+            '{"title":"e1","path":"/show/e1.mkv"}]',
+          ),
+        ),
+      );
+      final VideoBookRow book = (await repo.getByBookUid(
+        'video/playlist/Show',
+      ))!;
 
-    final File srt = await writeSrt(
-      'sub.srt',
-      '1\n00:00:00,000 --> 00:00:01,000\nhi\n',
-    );
+      final File srt = await writeSrt(
+        'sub.srt',
+        '1\n00:00:00,000 --> 00:00:01,000\nhi\n',
+      );
 
-    final SubtitleAttachResult result = await attachSubtitleToVideoBook(
-      repo: repo,
-      book: book,
-      subtitlePath: srt.path,
-      destDirOverride: p.join(tmp.path, 'video_subtitles'),
-    );
+      final SubtitleAttachResult result = await attachSubtitleToVideoBook(
+        repo: repo,
+        book: book,
+        subtitlePath: srt.path,
+        destDirOverride: p.join(tmp.path, 'video_subtitles'),
+      );
 
-    expect(result.outcome, SubtitleAttachOutcome.playlistNeedsPlayer);
-    // 不落库：源指针仍为 null，cue 仍为空。
-    final row = (await repo.getByBookUid('video/playlist/Show'))!;
-    expect(row.subtitleSource, isNull);
-    expect(await repo.loadCues('video/playlist/Show'), isEmpty);
-  });
+      expect(result.outcome, SubtitleAttachOutcome.playlistNeedsPlayer);
+      // 不落库：源指针仍为 null，cue 仍为空。
+      final row = (await repo.getByBookUid('video/playlist/Show'))!;
+      expect(row.subtitleSource, isNull);
+      expect(await repo.loadCues('video/playlist/Show'), isEmpty);
+    },
+  );
 
   test('unsupported extension -> cueLoadFailed(unsupportedFormat)', () async {
     final db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final repo = VideoBookRepository(db);
-    await repo.saveVideoBook(const VideoBooksCompanion(
-      bookUid: Value('video/x'),
-      title: Value('X'),
-      videoPath: Value('/x.mkv'),
-    ));
+    await repo.saveVideoBook(
+      const VideoBooksCompanion(
+        bookUid: Value('video/x'),
+        title: Value('X'),
+        videoPath: Value('/x.mkv'),
+      ),
+    );
     final book = (await repo.getByBookUid('video/x'))!;
 
     final File notSub = await writeSrt('cover.png', 'not a subtitle');
@@ -135,33 +149,37 @@ void main() {
     expect((await repo.getByBookUid('video/x'))!.subtitleSource, isNull);
   });
 
-  test('empty/garbage subtitle parses 0 cues -> parseFailed, not persisted',
-      () async {
-    final db = FushiDatabase.forTesting(NativeDatabase.memory());
-    addTearDown(db.close);
-    final repo = VideoBookRepository(db);
-    await repo.saveVideoBook(const VideoBooksCompanion(
-      bookUid: Value('video/e'),
-      title: Value('E'),
-      videoPath: Value('/e.mkv'),
-    ));
-    final book = (await repo.getByBookUid('video/e'))!;
+  test(
+    'empty/garbage subtitle parses 0 cues -> parseFailed, not persisted',
+    () async {
+      final db = FushiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      final repo = VideoBookRepository(db);
+      await repo.saveVideoBook(
+        const VideoBooksCompanion(
+          bookUid: Value('video/e'),
+          title: Value('E'),
+          videoPath: Value('/e.mkv'),
+        ),
+      );
+      final book = (await repo.getByBookUid('video/e'))!;
 
-    // .srt 扩展名但内容无任何有效 cue。
-    final File empty = await writeSrt('garbage.srt', 'no timestamps here\n');
-    final result = await attachSubtitleToVideoBook(
-      repo: repo,
-      book: book,
-      subtitlePath: empty.path,
-      destDirOverride: p.join(tmp.path, 'video_subtitles'),
-    );
+      // .srt 扩展名但内容无任何有效 cue。
+      final File empty = await writeSrt('garbage.srt', 'no timestamps here\n');
+      final result = await attachSubtitleToVideoBook(
+        repo: repo,
+        book: book,
+        subtitlePath: empty.path,
+        destDirOverride: p.join(tmp.path, 'video_subtitles'),
+      );
 
-    expect(result.outcome, SubtitleAttachOutcome.cueLoadFailed);
-    expect(result.cueFailure, SubtitleCueLoadFailure.parseFailed);
-    // 不覆盖现有（此处本就空）：源指针仍 null、无 cue。
-    expect((await repo.getByBookUid('video/e'))!.subtitleSource, isNull);
-    expect(await repo.loadCues('video/e'), isEmpty);
-  });
+      expect(result.outcome, SubtitleAttachOutcome.cueLoadFailed);
+      expect(result.cueFailure, SubtitleCueLoadFailure.parseFailed);
+      // 不覆盖现有（此处本就空）：源指针仍 null、无 cue。
+      expect((await repo.getByBookUid('video/e'))!.subtitleSource, isNull);
+      expect(await repo.loadCues('video/e'), isEmpty);
+    },
+  );
 
   // ---------------------------------------------------------------------
   // BUG-1504：拖放调用方是 fire-and-forget（同步 drop 回调里发起），异步异常没有
@@ -173,11 +191,13 @@ void main() {
     final db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final repo = VideoBookRepository(db);
-    await repo.saveVideoBook(const VideoBooksCompanion(
-      bookUid: Value('video/m'),
-      title: Value('M'),
-      videoPath: Value('/m.mkv'),
-    ));
+    await repo.saveVideoBook(
+      const VideoBooksCompanion(
+        bookUid: Value('video/m'),
+        title: Value('M'),
+        videoPath: Value('/m.mkv'),
+      ),
+    );
     final book = (await repo.getByBookUid('video/m'))!;
 
     // 用户拖进来的文件在拷盘后被移走/删除（或干脆是失效的快捷方式）：拷贝这步
@@ -197,11 +217,13 @@ void main() {
     final db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final repo = VideoBookRepository(db);
-    await repo.saveVideoBook(const VideoBooksCompanion(
-      bookUid: Value('video/r'),
-      title: Value('R'),
-      videoPath: Value('/r.mkv'),
-    ));
+    await repo.saveVideoBook(
+      const VideoBooksCompanion(
+        bookUid: Value('video/r'),
+        title: Value('R'),
+        videoPath: Value('/r.mkv'),
+      ),
+    );
     final book = (await repo.getByBookUid('video/r'))!;
     final File srt = await writeSrt(
       'ok.srt',
@@ -226,11 +248,13 @@ void main() {
   test('落库抛异常 -> persistFailed，不作为异步异常逃逸', () async {
     final db = FushiDatabase.forTesting(NativeDatabase.memory());
     final repo = VideoBookRepository(db);
-    await repo.saveVideoBook(const VideoBooksCompanion(
-      bookUid: Value('video/s'),
-      title: Value('S'),
-      videoPath: Value('/s.mkv'),
-    ));
+    await repo.saveVideoBook(
+      const VideoBooksCompanion(
+        bookUid: Value('video/s'),
+        title: Value('S'),
+        videoPath: Value('/s.mkv'),
+      ),
+    );
     final book = (await repo.getByBookUid('video/s'))!;
     final File srt = await writeSrt(
       'save.srt',
@@ -288,7 +312,10 @@ void main() {
     for (final String m in messages) {
       expect(m.trim(), isNotEmpty);
     }
-    expect(messages.toSet(), hasLength(messages.length),
-        reason: '四种失败给同一句话 = 用户分不清该换字幕还是查权限（BUG-1490 教训）');
+    expect(
+      messages.toSet(),
+      hasLength(messages.length),
+      reason: '四种失败给同一句话 = 用户分不清该换字幕还是查权限（BUG-1490 教训）',
+    );
   });
 }

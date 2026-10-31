@@ -57,15 +57,15 @@ class _GzipListService implements FushiLibraryHostService {
 
   @override
   Future<List<RemoteVideoInfo>> listVideos() async => <RemoteVideoInfo>[
-        RemoteVideoInfo(
-          id: 'video/a',
-          title: ''.padRight(512, 'A'), // 足够长，确保 gzip 真正生效
-          sizeBytes: 1,
-          hasSubtitle: false,
-          hasCover: true,
-          coverPath: cover.path,
-        ),
-      ];
+    RemoteVideoInfo(
+      id: 'video/a',
+      title: ''.padRight(512, 'A'), // 足够长，确保 gzip 真正生效
+      sizeBytes: 1,
+      hasSubtitle: false,
+      hasCover: true,
+      coverPath: cover.path,
+    ),
+  ];
 
   @override
   Future<String?> videoCoverPath(String id) async =>
@@ -118,8 +118,9 @@ void main() {
 
     test('视频封面 200 且不 materialize listVideos()', () async {
       final HttpClient c = HttpClient();
-      final HttpClientRequest req = await c
-          .getUrl(Uri.parse('$base/api/library/videos/video%2Fknown/cover'));
+      final HttpClientRequest req = await c.getUrl(
+        Uri.parse('$base/api/library/videos/video%2Fknown/cover'),
+      );
       req.headers.set('authorization', authHeader());
       final HttpClientResponse res = await req.close();
       final List<int> body = <int>[
@@ -133,8 +134,9 @@ void main() {
 
     test('书封面 200 且不 materialize listBooks()', () async {
       final HttpClient c = HttpClient();
-      final HttpClientRequest req =
-          await c.getUrl(Uri.parse('$base/api/library/books/book-key/cover'));
+      final HttpClientRequest req = await c.getUrl(
+        Uri.parse('$base/api/library/books/book-key/cover'),
+      );
       req.headers.set('authorization', authHeader());
       final HttpClientResponse res = await req.close();
       final List<int> body = <int>[
@@ -148,8 +150,9 @@ void main() {
 
     test('未知 id 404（单查返回 null）', () async {
       final HttpClient c = HttpClient();
-      final HttpClientRequest req = await c
-          .getUrl(Uri.parse('$base/api/library/videos/video%2Fnope/cover'));
+      final HttpClientRequest req = await c.getUrl(
+        Uri.parse('$base/api/library/videos/video%2Fnope/cover'),
+      );
       req.headers.set('authorization', authHeader());
       final HttpClientResponse res = await req.close();
       await res.drain<void>();
@@ -182,8 +185,9 @@ void main() {
     /// 原始 socket 级请求：dart HttpClient 会自动解压并隐藏 Content-Encoding，
     /// 这里要断言的恰是线上的字节形态，必须绕开它。
     Future<({int status, Map<String, String> headers, List<int> body})> rawGet(
-        String path,
-        {String? acceptEncoding}) async {
+      String path, {
+      String? acceptEncoding,
+    }) async {
       final Socket socket = await Socket.connect('127.0.0.1', server.port);
       final StringBuffer req = StringBuffer()
         ..write('GET $path HTTP/1.1\r\n')
@@ -211,15 +215,17 @@ void main() {
         }
       }
       expect(split, greaterThan(0), reason: '响应必须有头/体分界');
-      final List<String> headLines =
-          utf8.decode(raw.sublist(0, split)).split('\r\n');
+      final List<String> headLines = utf8
+          .decode(raw.sublist(0, split))
+          .split('\r\n');
       final int status = int.parse(headLines.first.split(' ')[1]);
       final Map<String, String> headers = <String, String>{};
       for (final String line in headLines.skip(1)) {
         final int colon = line.indexOf(':');
         if (colon <= 0) continue;
-        headers[line.substring(0, colon).trim().toLowerCase()] =
-            line.substring(colon + 1).trim();
+        headers[line.substring(0, colon).trim().toLowerCase()] = line
+            .substring(colon + 1)
+            .trim();
       }
       List<int> body = raw.sublist(split + 4);
       if (headers['transfer-encoding'] == 'chunked') {
@@ -247,8 +253,10 @@ void main() {
 
     test('封面文件流即使带 Accept-Encoding 也不压（Range/断点续传语义）', () async {
       final ({int status, Map<String, String> headers, List<int> body}) res =
-          await rawGet('/api/library/videos/video%2Fa/cover',
-              acceptEncoding: 'gzip');
+          await rawGet(
+            '/api/library/videos/video%2Fa/cover',
+            acceptEncoding: 'gzip',
+          );
       expect(res.status, 200);
       expect(res.headers.containsKey('content-encoding'), isFalse);
       expect(res.body, List<int>.filled(64, 9));
@@ -266,8 +274,9 @@ List<int> _dechunk(List<int> body) {
         !(body[lineEnd] == 13 && body[lineEnd + 1] == 10)) {
       lineEnd++;
     }
-    final String sizeHex =
-        String.fromCharCodes(body.sublist(i, lineEnd)).split(';').first.trim();
+    final String sizeHex = String.fromCharCodes(
+      body.sublist(i, lineEnd),
+    ).split(';').first.trim();
     final int size = int.parse(sizeHex, radix: 16);
     if (size == 0) break;
     final int dataStart = lineEnd + 2;

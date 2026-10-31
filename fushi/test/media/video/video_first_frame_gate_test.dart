@@ -35,51 +35,83 @@ void main() {
     });
 
     test('未解码 / 零 / 负 / 单轴缺失一律未就绪', () {
-      expect(VideoPlayerController.framePresent(null, null), isFalse,
-          reason: '未解码：宽高均 null');
-      expect(VideoPlayerController.framePresent(1920, null), isFalse,
-          reason: '高未就绪');
-      expect(VideoPlayerController.framePresent(null, 1080), isFalse,
-          reason: '宽未就绪');
-      expect(VideoPlayerController.framePresent(0, 0), isFalse,
-          reason: '零尺寸不算出画');
+      expect(
+        VideoPlayerController.framePresent(null, null),
+        isFalse,
+        reason: '未解码：宽高均 null',
+      );
+      expect(
+        VideoPlayerController.framePresent(1920, null),
+        isFalse,
+        reason: '高未就绪',
+      );
+      expect(
+        VideoPlayerController.framePresent(null, 1080),
+        isFalse,
+        reason: '宽未就绪',
+      );
+      expect(
+        VideoPlayerController.framePresent(0, 0),
+        isFalse,
+        reason: '零尺寸不算出画',
+      );
       expect(VideoPlayerController.framePresent(1920, 0), isFalse);
       expect(VideoPlayerController.framePresent(0, 1080), isFalse);
-      expect(VideoPlayerController.framePresent(-1, -1), isFalse,
-          reason: '负尺寸异常值不算出画');
+      expect(
+        VideoPlayerController.framePresent(-1, -1),
+        isFalse,
+        reason: '负尺寸异常值不算出画',
+      );
     });
   });
 
   group('页面首开单圈门控 (TODO-1276)', () {
-    final String src =
-        read('lib/src/pages/implementations/video_fushi_page.dart');
+    final String src = read(
+      'lib/src/pages/implementations/video_fushi_page.dart',
+    );
 
     test('转圈判据并入 !_videoReadyToShow（首帧就绪前保持页级加载态）', () {
-      expect(src.contains('!_videoReadyToShow'), isTrue,
-          reason: '页级转圈必须保持到首帧就绪，否则会与 media_kit 缓冲圈接力成两次转圈');
-      expect(src.contains('bool _videoReadyToShow = false'), isTrue,
-          reason: '_videoReadyToShow 必须默认 false（首开未就绪即转圈）');
+      expect(
+        src.contains('!_videoReadyToShow'),
+        isTrue,
+        reason: '页级转圈必须保持到首帧就绪，否则会与 media_kit 缓冲圈接力成两次转圈',
+      );
+      expect(
+        src.contains('bool _videoReadyToShow = false'),
+        isTrue,
+        reason: '_videoReadyToShow 必须默认 false（首开未就绪即转圈）',
+      );
     });
 
     test('仅首开门控：换集复用 controller 不重置可见态（不破坏全屏路由复用）', () {
-      expect(src.contains('isInitialVideoOpen'), isTrue,
-          reason: '必须区分首开与换集：换集不得把 _videoReadyToShow 打回 false，'
-              '否则会卸载正在复用的 Video（BUG-120/121 全屏路由风险）');
       expect(
-          src.contains('if (isInitialVideoOpen) {') &&
-              src.contains(
-                  '_videoReadyToShow = controller.isReadyForFirstPaint'),
-          isTrue,
-          reason: '可见态赋值必须门控在首开分支内');
+        src.contains('isInitialVideoOpen'),
+        isTrue,
+        reason:
+            '必须区分首开与换集：换集不得把 _videoReadyToShow 打回 false，'
+            '否则会卸载正在复用的 Video（BUG-120/121 全屏路由风险）',
+      );
+      expect(
+        src.contains('if (isInitialVideoOpen) {') &&
+            src.contains('_videoReadyToShow = controller.isReadyForFirstPaint'),
+        isTrue,
+        reason: '可见态赋值必须门控在首开分支内',
+      );
     });
 
     test('就绪监听 + 兜底定时器齐备（始终不就绪也绝不无限转圈）', () {
       // TODO-1297：页面就绪判据从仅 hasFirstFrame 收紧为 isReadyForFirstPaint
       // （首帧已出画且缓冲结束），故页级慢路径靠它翻真可见态。
-      expect(src.contains('isReadyForFirstPaint'), isTrue,
-          reason: '首开慢路径靠 isReadyForFirstPaint（首帧就绪且缓冲结束）后翻真可见态');
-      expect(src.contains('_firstFramePromoteTimer'), isTrue,
-          reason: '解码异常机型 / 纯音频容器 / 缓冲久拖始终不就绪时须有兜底超时，避免无限转圈');
+      expect(
+        src.contains('isReadyForFirstPaint'),
+        isTrue,
+        reason: '首开慢路径靠 isReadyForFirstPaint（首帧就绪且缓冲结束）后翻真可见态',
+      );
+      expect(
+        src.contains('_firstFramePromoteTimer'),
+        isTrue,
+        reason: '解码异常机型 / 纯音频容器 / 缓冲久拖始终不就绪时须有兜底超时，避免无限转圈',
+      );
     });
   });
 }

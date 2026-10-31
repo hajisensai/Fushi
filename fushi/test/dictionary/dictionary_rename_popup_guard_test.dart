@@ -50,11 +50,7 @@ void main() {
         'function __fushiDictDisplayName(',
         lexicon: SourceLexicon.js,
       );
-      expect(
-        body.contains('return name'),
-        isTrue,
-        reason: '无映射时必须回落真名',
-      );
+      expect(body.contains('return name'), isTrue, reason: '无映射时必须回落真名');
     });
 
     test('四个给人看的词典名都过翻译', () {
@@ -106,15 +102,12 @@ void main() {
       expect(
         offenders,
         isEmpty,
-        reason: '词典显示名只能进 textContent。这些行把它用在了别处——那个字符串'
+        reason:
+            '词典显示名只能进 textContent。这些行把它用在了别处——那个字符串'
             '同时是 CSS 作用域键 / 媒体目录键 / 分组键 / Anki token 键，翻译了'
             '会让用户样式静默失效、词典图音 404、已配置的制卡字段对不上：$offenders',
       );
-      expect(
-        callSites,
-        allowedAnchors.length,
-        reason: '调用点数量应恰好等于允许的渲染点数量',
-      );
+      expect(callSites, allowedAnchors.length, reason: '调用点数量应恰好等于允许的渲染点数量');
     });
 
     test('负向：CSS 作用域键的每一种写法都仍是真名', () {
@@ -122,7 +115,8 @@ void main() {
       // 选择器、以及已导出 Anki 卡片里的属性同源），且有属性名和模板串两种形态。
       final String js = _readPopupJs();
       for (final String line in js.split('\n')) {
-        final bool mentionsScopeKey = line.contains("'data-dictionary'") ||
+        final bool mentionsScopeKey =
+            line.contains("'data-dictionary'") ||
             line.contains('data-dictionary=') ||
             line.contains('dataset.dictionary');
         if (!mentionsScopeKey) continue;
@@ -185,9 +179,9 @@ void main() {
 
   group('宿主侧注入', () {
     test('注入了映射表，且它进了 memo 判定', () {
-      final String source =
-          File('lib/src/pages/implementations/popup_settings_injection.dart')
-              .readAsStringSync();
+      final String source = File(
+        'lib/src/pages/implementations/popup_settings_injection.dart',
+      ).readAsStringSync();
       // 注入语句本身住在一段 JS 模板**字符串字面量**里，所以这一条只能掩注释
       // （掩了字符串就什么都找不到——这正是本守卫第一版的假红）。
       final String withStrings = maskComments(source);
@@ -201,7 +195,9 @@ void main() {
       // 静态设置块是 memo 过的：不把映射表纳入命中判定，改完名会一直命中旧
       // memo，表现就是「改了没反应」——与 languageFingerprint 当年同一个坑。
       expect(
-        dart.contains('cached.dictionaryDisplayNames == dictionaryDisplayNames'),
+        dart.contains(
+          'cached.dictionaryDisplayNames == dictionaryDisplayNames',
+        ),
         isTrue,
         reason: '映射表必须进 memo 判定，否则改名不生效',
       );

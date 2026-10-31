@@ -42,20 +42,24 @@ void main() {
     r':where\([^)]*\bglossary-group\b[^)]*,[^)]*\bglossary-content\b[^)]*\)\s*rt\s*\{([^}]*)\}',
   );
 
-  test(
-      'glossary .ruby-unit reserves vertical room with an em padding-top, not '
+  test('glossary .ruby-unit reserves vertical room with an em padding-top, not '
       'the fragile line-height:2 leading (BUG-108 / BUG-363)', () {
     final RegExpMatch? match = glossaryRubyUnitRule.firstMatch(css);
-    expect(match, isNotNull,
-        reason: 'popup.css must scope a .ruby-unit block to the glossary '
-            'surfaces (.glossary-group / .glossary-content)');
+    expect(
+      match,
+      isNotNull,
+      reason:
+          'popup.css must scope a .ruby-unit block to the glossary '
+          'surfaces (.glossary-group / .glossary-content)',
+    );
     final String body = match!.group(1)!;
     // The reserve must be an em-relative padding-top on the unit itself, so it
     // scales 1:1 with the popup zoom and never borrows the line box.
     expect(
       RegExp(r'padding-top\s*:\s*[\d.]+em').hasMatch(body),
       isTrue,
-      reason: 'glossary .ruby-unit must reserve furigana room with an '
+      reason:
+          'glossary .ruby-unit must reserve furigana room with an '
           'em-relative padding-top (intrinsic + zoom-immune), not the implicit '
           'line box leading (BUG-363 / TODO-643)',
     );
@@ -64,55 +68,66 @@ void main() {
     expect(
       RegExp(r'line-height\s*:\s*1\b').hasMatch(body),
       isTrue,
-      reason: 'glossary .ruby-unit must use line-height:1 so the vertical '
+      reason:
+          'glossary .ruby-unit must use line-height:1 so the vertical '
           'reserve comes only from the em padding-top, not the line box (BUG-363)',
     );
     // The old fragile reserve must be gone.
     expect(
       RegExp(r'line-height\s*:\s*2\b').hasMatch(body),
       isFalse,
-      reason: 'glossary .ruby-unit must NOT use the old line-height:2 leading '
+      reason:
+          'glossary .ruby-unit must NOT use the old line-height:2 leading '
           'reserve — it drifts under zoom (BUG-363)',
     );
   });
 
-  test(
-      'glossary reading box anchors to the unit top (top:0), not bottom:100% '
+  test('glossary reading box anchors to the unit top (top:0), not bottom:100% '
       'which drifts under zoom (BUG-363)', () {
     final RegExpMatch? match = glossaryRtBoxRule.firstMatch(css);
-    expect(match, isNotNull,
-        reason: 'popup.css must scope a .ruby-rt block to the glossary '
-            'surfaces — that span is the positioned annotation box (BUG-1487)');
+    expect(
+      match,
+      isNotNull,
+      reason:
+          'popup.css must scope a .ruby-rt block to the glossary '
+          'surfaces — that span is the positioned annotation box (BUG-1487)',
+    );
     final String body = match!.group(1)!;
     expect(
       RegExp(r'position\s*:\s*absolute').hasMatch(body),
       isTrue,
-      reason: 'the glossary reading box stays out of the inline flow so it '
+      reason:
+          'the glossary reading box stays out of the inline flow so it '
           'cannot widen the ruby base box (BUG-345)',
     );
     expect(
       RegExp(r'top\s*:\s*0\b').hasMatch(body),
       isTrue,
-      reason: 'the glossary reading box must anchor to the .ruby-unit top '
+      reason:
+          'the glossary reading box must anchor to the .ruby-unit top '
           '(top:0), inside the em padding-top reserve, so its position scales '
           'cleanly with zoom (BUG-363)',
     );
     expect(
       RegExp(r'bottom\s*:\s*100%').hasMatch(body),
       isFalse,
-      reason: 'the glossary reading box must NOT use bottom:100% — that '
+      reason:
+          'the glossary reading box must NOT use bottom:100% — that '
           'percentage resolves against a per-fragment-rounded line box and '
           'drifts under zoom (BUG-363)',
     );
   });
 
-  test(
-      'the absolute anchor is NOT declared on <rt> itself — WebKit drops it '
+  test('the absolute anchor is NOT declared on <rt> itself — WebKit drops it '
       '(BUG-1487)', () {
     final RegExpMatch? match = glossaryRtRule.firstMatch(css);
-    expect(match, isNotNull,
-        reason: 'popup.css must still scope an rt block to the glossary '
-            'surfaces (it carries the fallback font-size / line-height)');
+    expect(
+      match,
+      isNotNull,
+      reason:
+          'popup.css must still scope an rt block to the glossary '
+          'surfaces (it carries the fallback font-size / line-height)',
+    );
     final String body = match!.group(1)!;
     // Measured on a real WKWebView (macOS 15.7 + iOS 18.6): WebKit resets
     // `position` to static on <rt> at the renderer level, so ANY positioning
@@ -123,14 +138,16 @@ void main() {
     expect(
       RegExp(r'position\s*:').hasMatch(body),
       isFalse,
-      reason: 'glossary <rt> must not declare `position` — WebKit force-resets '
+      reason:
+          'glossary <rt> must not declare `position` — WebKit force-resets '
           'it to static, so the anchor belongs on the neutral .ruby-rt span '
           '(BUG-1487)',
     );
     expect(
       RegExp(r'\b(top|left|right|bottom)\s*:').hasMatch(body),
       isFalse,
-      reason: 'glossary <rt> must not declare box offsets — they only mean '
+      reason:
+          'glossary <rt> must not declare box offsets — they only mean '
           'anything on a positioned box, and <rt> can never be one in WebKit '
           '(BUG-1487)',
     );

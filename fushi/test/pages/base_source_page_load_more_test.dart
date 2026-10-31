@@ -45,7 +45,7 @@ List<DictionaryEntry> _buildEntries(int count) {
 
 class LoadMoreTestAppModel extends AppModel {
   LoadMoreTestAppModel({required this.totalAvailable})
-      : super(testPlatformServices());
+    : super(testPlatformServices());
 
   /// Total headwords the (fake) dictionary can return for the query. A request
   /// with `overrideMaximumTerms < totalAvailable` is truncated (allLoaded
@@ -181,15 +181,11 @@ Widget _buildApp({
   required GlobalKey<LoadMoreHostPageState> hostKey,
 }) {
   return ProviderScope(
-    overrides: [
-      appProvider.overrideWith((ref) => appModel),
-    ],
+    overrides: [appProvider.overrideWith((ref) => appModel)],
     child: TranslationProvider(
       child: MaterialApp(
         builder: (context, child) => child ?? const SizedBox.shrink(),
-        home: Scaffold(
-          body: LoadMoreHostPage(key: hostKey),
-        ),
+        home: Scaffold(body: LoadMoreHostPage(key: hostKey)),
       ),
     ),
   );
@@ -201,26 +197,31 @@ void main() {
   });
 
   testWidgets(
-      'truncated first page reports allLoaded=false (not hard-coded true)',
-      (WidgetTester tester) async {
-    // 25 available, cap 10 → first page is truncated.
-    final appModel = LoadMoreTestAppModel(totalAvailable: 25);
-    final hostKey = GlobalKey<LoadMoreHostPageState>();
+    'truncated first page reports allLoaded=false (not hard-coded true)',
+    (WidgetTester tester) async {
+      // 25 available, cap 10 → first page is truncated.
+      final appModel = LoadMoreTestAppModel(totalAvailable: 25);
+      final hostKey = GlobalKey<LoadMoreHostPageState>();
 
-    await tester.pumpWidget(_buildApp(appModel: appModel, hostKey: hostKey));
-    await tester.pump();
-    await tester.pump();
+      await tester.pumpWidget(_buildApp(appModel: appModel, hostKey: hostKey));
+      await tester.pump();
+      await tester.pump();
 
-    await hostKey.currentState!.search('高');
-    final stack = hostKey.currentState!.debugPopupStack;
-    expect(stack, hasLength(1));
-    expect(stack.single.entryCount, 10);
-    expect(stack.single.allLoaded, isFalse,
-        reason: 'a truncated first page must keep load-more open');
-  });
+      await hostKey.currentState!.search('高');
+      final stack = hostKey.currentState!.debugPopupStack;
+      expect(stack, hasLength(1));
+      expect(stack.single.entryCount, 10);
+      expect(
+        stack.single.allLoaded,
+        isFalse,
+        reason: 'a truncated first page must keep load-more open',
+      );
+    },
+  );
 
-  testWidgets('full first page reports allLoaded=true',
-      (WidgetTester tester) async {
+  testWidgets('full first page reports allLoaded=true', (
+    WidgetTester tester,
+  ) async {
     // Only 4 available, cap 10 → full set fits the first page.
     final appModel = LoadMoreTestAppModel(totalAvailable: 4);
     final hostKey = GlobalKey<LoadMoreHostPageState>();
@@ -232,12 +233,16 @@ void main() {
     await hostKey.currentState!.search('稀');
     final stack = hostKey.currentState!.debugPopupStack;
     expect(stack.single.entryCount, 4);
-    expect(stack.single.allLoaded, isTrue,
-        reason: 'a non-truncated first page must close load-more');
+    expect(
+      stack.single.allLoaded,
+      isTrue,
+      reason: 'a non-truncated first page must close load-more',
+    );
   });
 
-  testWidgets('loadMoreForLayer grows the headword count and ends correctly',
-      (WidgetTester tester) async {
+  testWidgets('loadMoreForLayer grows the headword count and ends correctly', (
+    WidgetTester tester,
+  ) async {
     // 25 available: page 1 = 10, page 2 = 20, page 3 = 25 (then allLoaded).
     final appModel = LoadMoreTestAppModel(totalAvailable: 25);
     final hostKey = GlobalKey<LoadMoreHostPageState>();
@@ -259,8 +264,11 @@ void main() {
 
     await state.loadMoreForLayer(0);
     expect(state.debugPopupStack.single.entryCount, 25);
-    expect(state.debugPopupStack.single.allLoaded, isTrue,
-        reason: 'reaching the real end must flip allLoaded true');
+    expect(
+      state.debugPopupStack.single.allLoaded,
+      isTrue,
+      reason: 'reaching the real end must flip allLoaded true',
+    );
 
     // A further load-more is a no-op once allLoaded.
     await state.loadMoreForLayer(0);
@@ -288,43 +296,61 @@ void main() {
 
     await state.loadMoreForLayer(0);
     expect(state.debugPopupStack.single.entryCount, 20);
-    expect(appModel.rubyQueries, <List<FushiRubySpan>>[ruby, ruby],
-        reason: '续查必须带首查那组 ruby');
+    expect(appModel.rubyQueries, <List<FushiRubySpan>>[
+      ruby,
+      ruby,
+    ], reason: '续查必须带首查那组 ruby');
     expect(firstReading(), 'reading5', reason: '加载更多后顺序不变');
   });
 
-  test('source guard: base_source_page wires onScrolledToBottom to load-more',
-      () {
-    final base = File('lib/src/pages/base_source_page.dart').readAsStringSync();
+  test(
+    'source guard: base_source_page wires onScrolledToBottom to load-more',
+    () {
+      final base = File(
+        'lib/src/pages/base_source_page.dart',
+      ).readAsStringSync();
 
-    // allLoaded 仍必须反映真实截断（TODO-962 的原意），但判据从「按长度反推」
-    // 升级成「读构造方给出的显式事实」（BUG-1472/BUG-1478）：预算单位改成词头之后
-    // `entries.length < cap` 跨了单位、永久错位——一个词头能带 N 条 entries。
-    expect(base.contains('allLoaded: !dictionaryResult.truncated'), isTrue,
-        reason: 'allLoaded must reflect real truncation, not be hard-coded');
-    expect(
-      base.contains('entries.length < overrideMaximumTerms'),
-      isFalse,
-      reason: '不得退回按 glossary 行数反推截断',
-    );
-    // load-more 的递增单位也必须是词头，不是 entries 条数。
-    expect(
-        base.contains('current.headwordCount + appModel.maximumTerms'), isTrue,
-        reason: '按 entries.length 递增会让上限一次暴涨十几倍');
-    // The popup layer receives a non-null onScrolledToBottom when not allLoaded.
-    expect(
-        RegExp(r'item\.allLoaded[\s\S]{0,80}?loadMoreForLayer\(index\)')
-            .hasMatch(base),
+      // allLoaded 仍必须反映真实截断（TODO-962 的原意），但判据从「按长度反推」
+      // 升级成「读构造方给出的显式事实」（BUG-1472/BUG-1478）：预算单位改成词头之后
+      // `entries.length < cap` 跨了单位、永久错位——一个词头能带 N 条 entries。
+      expect(
+        base.contains('allLoaded: !dictionaryResult.truncated'),
+        isTrue,
+        reason: 'allLoaded must reflect real truncation, not be hard-coded',
+      );
+      expect(
+        base.contains('entries.length < overrideMaximumTerms'),
+        isFalse,
+        reason: '不得退回按 glossary 行数反推截断',
+      );
+      // load-more 的递增单位也必须是词头，不是 entries 条数。
+      expect(
+        base.contains('current.headwordCount + appModel.maximumTerms'),
+        isTrue,
+        reason: '按 entries.length 递增会让上限一次暴涨十几倍',
+      );
+      // The popup layer receives a non-null onScrolledToBottom when not allLoaded.
+      expect(
+        RegExp(
+          r'item\.allLoaded[\s\S]{0,80}?loadMoreForLayer\(index\)',
+        ).hasMatch(base),
         isTrue,
         reason:
-            'the popup layer must wire onScrolledToBottom to loadMoreForLayer');
-    // load-more re-queries with a grown cap and refills the same layer.
-    expect(base.contains('Future<void> loadMoreForLayer(int index)'), isTrue,
-        reason: 'a loadMoreForLayer entry point must exist');
-    // 递增基数已在上面按词头钉过（BUG-1478）；这里只再确认**不得**退回按
-    // entries 条数递增——那是 glossary 行数，与上限不是同一个单位。
-    expect(base.contains('current.entries.length + appModel.maximumTerms'),
+            'the popup layer must wire onScrolledToBottom to loadMoreForLayer',
+      );
+      // load-more re-queries with a grown cap and refills the same layer.
+      expect(
+        base.contains('Future<void> loadMoreForLayer(int index)'),
+        isTrue,
+        reason: 'a loadMoreForLayer entry point must exist',
+      );
+      // 递增基数已在上面按词头钉过（BUG-1478）；这里只再确认**不得**退回按
+      // entries 条数递增——那是 glossary 行数，与上限不是同一个单位。
+      expect(
+        base.contains('current.entries.length + appModel.maximumTerms'),
         isFalse,
-        reason: 'load-more 的递增基数必须是词头数，不是 glossary 行数');
-  });
+        reason: 'load-more 的递增基数必须是词头数，不是 glossary 行数',
+      );
+    },
+  );
 }

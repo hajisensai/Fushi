@@ -33,7 +33,10 @@ Future<FushiDatabase> _openDatabase() async {
   return database;
 }
 
-Future<int> _seed(FushiDatabase database, {String provider = 'nyaa:nyaa.si'}) async {
+Future<int> _seed(
+  FushiDatabase database, {
+  String provider = 'nyaa:nyaa.si',
+}) async {
   final int sourceId = await database.insertMediaSource(
     MediaSourcesCompanion.insert(
       label: 'Managed videos',
@@ -75,40 +78,40 @@ Future<int> _seed(FushiDatabase database, {String provider = 'nyaa:nyaa.si'}) as
 }
 
 BtSiteConfig _nyaaSite(String id, {bool enabled = true}) => BtSiteConfig(
-      id: id,
-      baseUrl: Uri.parse('https://$id.example'),
-      format: BtSiteFormat.nyaa,
-      domains: const <BtSiteDomain>{BtSiteDomain.anime},
-      nyaaCategories: const <BtSiteDomain, String>{BtSiteDomain.anime: '1_0'},
-      enabled: enabled,
-    );
+  id: id,
+  baseUrl: Uri.parse('https://$id.example'),
+  format: BtSiteFormat.nyaa,
+  domains: const <BtSiteDomain>{BtSiteDomain.anime},
+  nyaaCategories: const <BtSiteDomain, String>{BtSiteDomain.anime: '1_0'},
+  enabled: enabled,
+);
 
 BtSiteConfig _jsonSite(String id) => BtSiteConfig(
-      id: id,
-      baseUrl: Uri.parse('https://$id.example'),
-      format: BtSiteFormat.apibay,
-      domains: const <BtSiteDomain>{BtSiteDomain.movie, BtSiteDomain.tv},
-    );
+  id: id,
+  baseUrl: Uri.parse('https://$id.example'),
+  format: BtSiteFormat.apibay,
+  domains: const <BtSiteDomain>{BtSiteDomain.movie, BtSiteDomain.tv},
+);
 
 /// 假站点：Nyaa 式搜索页回一条第 2 集的 trusted 发布。
 http.Client _fakeNetwork() => MockClient((http.Request request) async {
-      if (request.url.path == '/') {
-        return http.Response.bytes(
-          utf8.encode(
-            nyaaSearchHtml(const <NyaaHtmlRow>[
-              NyaaHtmlRow(
-                title: '[SubsPlease] Example Show - 02 [1080p].mkv',
-                infoHash: _episode2Hash,
-                seeders: 20,
-                trusted: true,
-              ),
-            ]),
+  if (request.url.path == '/') {
+    return http.Response.bytes(
+      utf8.encode(
+        nyaaSearchHtml(const <NyaaHtmlRow>[
+          NyaaHtmlRow(
+            title: '[SubsPlease] Example Show - 02 [1080p].mkv',
+            infoHash: _episode2Hash,
+            seeders: 20,
+            trusted: true,
           ),
-          200,
-        );
-      }
-      return http.Response('[]', 200);
-    });
+        ]),
+      ),
+      200,
+    );
+  }
+  return http.Response('[]', 200);
+});
 
 Future<VideoDownloadSubscriptionService> _service(
   FushiDatabase database,
@@ -122,38 +125,41 @@ Future<VideoDownloadSubscriptionService> _service(
   addTearDown(registry.close);
   final VideoDownloadSubscriptionService service =
       VideoDownloadSubscriptionService(
-    database: database,
-    resourceRegistry: registry,
-    enqueue: (VideoDownloadEnqueueRequest request) async {
-      enqueued.add(request);
-      final String jobId = 'job-${enqueued.length}';
-      await database.upsertVideoDownloadJob(
-        VideoDownloadJobsCompanion.insert(
-          jobId: jobId,
-          resourceProvider: persistedVideoResourceProviderId(request.resource),
-          selectedResourceId: request.resource.remoteId,
-          torrentHash: Value<String?>(request.resource.infoHash),
-          metadataProvider: Value<String?>(request.media.providerId),
-          externalId: Value<String?>(request.media.mediaId),
-          mediaKind: request.media.mediaKind.name,
-          discoveryCategory:
-              Value<String?>(request.media.discoveryCategory.name),
-          title: request.media.title,
-          backendKind: request.backendTarget.kind,
-          backendProfileId: Value<String?>(request.backendTarget.profileId),
-          fingerprint: request.backendTarget.fingerprint,
-          category: Value<String?>(request.backendTarget.category),
-          targetSourceId: Value<int?>(request.targetSourceId),
-          subtitlePolicy: Value<String>(request.subtitlePolicy.name),
-          createdAt: nowAt,
-          updatedAt: nowAt,
-        ),
+        database: database,
+        resourceRegistry: registry,
+        enqueue: (VideoDownloadEnqueueRequest request) async {
+          enqueued.add(request);
+          final String jobId = 'job-${enqueued.length}';
+          await database.upsertVideoDownloadJob(
+            VideoDownloadJobsCompanion.insert(
+              jobId: jobId,
+              resourceProvider: persistedVideoResourceProviderId(
+                request.resource,
+              ),
+              selectedResourceId: request.resource.remoteId,
+              torrentHash: Value<String?>(request.resource.infoHash),
+              metadataProvider: Value<String?>(request.media.providerId),
+              externalId: Value<String?>(request.media.mediaId),
+              mediaKind: request.media.mediaKind.name,
+              discoveryCategory: Value<String?>(
+                request.media.discoveryCategory.name,
+              ),
+              title: request.media.title,
+              backendKind: request.backendTarget.kind,
+              backendProfileId: Value<String?>(request.backendTarget.profileId),
+              fingerprint: request.backendTarget.fingerprint,
+              category: Value<String?>(request.backendTarget.category),
+              targetSourceId: Value<int?>(request.targetSourceId),
+              subtitlePolicy: Value<String>(request.subtitlePolicy.name),
+              createdAt: nowAt,
+              updatedAt: nowAt,
+            ),
+          );
+          return jobId;
+        },
+        workerId: 'bt-site-test-worker',
+        now: () => DateTime.fromMillisecondsSinceEpoch(nowAt),
       );
-      return jobId;
-    },
-    workerId: 'bt-site-test-worker',
-    now: () => DateTime.fromMillisecondsSinceEpoch(nowAt),
-  );
   addTearDown(service.dispose);
   return service;
 }
@@ -178,8 +184,8 @@ void main() {
       'nyaa:mysite',
     );
     expect(enqueued.single.resource.remoteId, _episode2Hash);
-    final VideoDownloadSubscriptionRow row =
-        (await database.getVideoDownloadSubscription('legacy'))!;
+    final VideoDownloadSubscriptionRow row = (await database
+        .getVideoDownloadSubscription('legacy'))!;
     expect(row.lastError, isNull);
   });
 
@@ -210,8 +216,10 @@ void main() {
 
     await service.checkNow();
 
-    expect(enqueued.map((VideoDownloadEnqueueRequest r) => r.resource.remoteId),
-        <String>[_episode2Hash]);
+    expect(
+      enqueued.map((VideoDownloadEnqueueRequest r) => r.resource.remoteId),
+      <String>[_episode2Hash],
+    );
     expect(
       (await database.getVideoDownloadSubscription('legacy'))!.lastError,
       isNull,
@@ -223,20 +231,26 @@ void main() {
     await _seed(database);
     final List<VideoDownloadEnqueueRequest> enqueued =
         <VideoDownloadEnqueueRequest>[];
-    await (await _service(database, <BtSiteConfig>[_jsonSite('jsonsite')],
-            enqueued))
-        .checkNow();
-    VideoDownloadSubscriptionRow row =
-        (await database.getVideoDownloadSubscription('legacy'))!;
+    await (await _service(database, <BtSiteConfig>[
+      _jsonSite('jsonsite'),
+    ], enqueued)).checkNow();
+    VideoDownloadSubscriptionRow row = (await database
+        .getVideoDownloadSubscription('legacy'))!;
     expect(enqueued, isEmpty);
     expect(isVideoSubscriptionBtSiteMissingError(row.lastError), isTrue);
-    expect(row.nextCheckAt, _nowAt + const Duration(minutes: 15).inMilliseconds);
+    expect(
+      row.nextCheckAt,
+      _nowAt + const Duration(minutes: 15).inMilliseconds,
+    );
 
     // 第二轮仍然没有站点：间隔不翻倍。
     final int later = row.nextCheckAt!;
-    await (await _service(database, <BtSiteConfig>[_jsonSite('jsonsite')],
-            enqueued, nowAt: later))
-        .checkNow();
+    await (await _service(
+      database,
+      <BtSiteConfig>[_jsonSite('jsonsite')],
+      enqueued,
+      nowAt: later,
+    )).checkNow();
     row = (await database.getVideoDownloadSubscription('legacy'))!;
     expect(row.retryCount, 2);
     expect(row.nextCheckAt, later + const Duration(minutes: 15).inMilliseconds);
@@ -247,12 +261,9 @@ void main() {
     await _seed(database);
     final List<VideoDownloadEnqueueRequest> enqueued =
         <VideoDownloadEnqueueRequest>[];
-    await (await _service(
-      database,
-      <BtSiteConfig>[_nyaaSite('mysite', enabled: false)],
-      enqueued,
-    ))
-        .checkNow();
+    await (await _service(database, <BtSiteConfig>[
+      _nyaaSite('mysite', enabled: false),
+    ], enqueued)).checkNow();
     expect(enqueued, isEmpty);
     expect(
       isVideoSubscriptionBtSiteMissingError(
@@ -267,8 +278,11 @@ void main() {
     await _seed(database);
     final List<VideoDownloadEnqueueRequest> enqueued =
         <VideoDownloadEnqueueRequest>[];
-    final VideoDownloadSubscriptionService before =
-        await _service(database, const <BtSiteConfig>[], enqueued);
+    final VideoDownloadSubscriptionService before = await _service(
+      database,
+      const <BtSiteConfig>[],
+      enqueued,
+    );
     await before.checkNow();
     await before.dispose();
     expect(

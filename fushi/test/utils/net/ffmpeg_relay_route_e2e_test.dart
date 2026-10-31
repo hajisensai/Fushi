@@ -333,5 +333,4 @@ void main() {
   );
 }
 
-String? _bundledFfmpeg() =>
-    resolveBundledUnifiedFfmpegForTests()?.ffmpeg;
+String? _bundledFfmpeg() => resolveBundledUnifiedFfmpegForTests()?.ffmpeg;

@@ -11,9 +11,7 @@ void main() {
   });
 
   Widget buildApp(Widget home) {
-    return TranslationProvider(
-      child: MaterialApp(home: home),
-    );
+    return TranslationProvider(child: MaterialApp(home: home));
   }
 
   ProfileRow profile(int index) {

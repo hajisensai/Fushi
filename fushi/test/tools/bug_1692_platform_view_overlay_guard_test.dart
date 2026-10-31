@@ -31,8 +31,9 @@ import 'package:fushi/src/utils/components/fushi_material_components.dart';
 ///    （[FushiPopupSurface.borderOnForeground] = false）。
 void main() {
   group('BUG-1692 FushiPopupSurface.borderOnForeground', () {
-    testWidgets('默认 true —— 与 Material 默认一致，纯 Flutter 子树观感不变',
-        (WidgetTester tester) async {
+    testWidgets('默认 true —— 与 Material 默认一致，纯 Flutter 子树观感不变', (
+      WidgetTester tester,
+    ) async {
       await tester.pumpWidget(
         const MaterialApp(
           home: FushiPopupSurface(child: SizedBox(width: 40, height: 40)),
@@ -47,8 +48,9 @@ void main() {
       expect(material.borderOnForeground, isTrue);
     });
 
-    testWidgets('传 false 时必须真的透到 Material —— 否则描边仍画在平台视图之后',
-        (WidgetTester tester) async {
+    testWidgets('传 false 时必须真的透到 Material —— 否则描边仍画在平台视图之后', (
+      WidgetTester tester,
+    ) async {
       await tester.pumpWidget(
         const MaterialApp(
           home: FushiPopupSurface(
@@ -66,7 +68,8 @@ void main() {
       expect(
         material.borderOnForeground,
         isFalse,
-        reason: '参数没透下去 ⇒ 描边回到 foregroundPainter ⇒ 查词浮层在 macOS 上'
+        reason:
+            '参数没透下去 ⇒ 描边回到 foregroundPainter ⇒ 查词浮层在 macOS 上'
             '整块失去鼠标输入（BUG-1692 回归）',
       );
     });
@@ -87,7 +90,8 @@ void main() {
       expect(
         call.contains('borderOnForeground: false'),
         isTrue,
-        reason: '查词浮层里装的是原生 WebView（平台视图）。描边走 foregroundPainter 时'
+        reason:
+            '查词浮层里装的是原生 WebView（平台视图）。描边走 foregroundPainter 时'
             '会画在 WebView 之后、bounds 覆盖整个浮层，macOS engine 据此把整块浮层写进'
             '_hitTestIgnoreRegion，hitTest: 处处 return nil ⇒「点哪都没反应」（BUG-1692）',
       );
@@ -104,7 +108,8 @@ void main() {
       expect(
         before.contains('RepaintBoundary'),
         isTrue,
-        reason: '把手画在浮层 WebView 之后。不自带 RepaintBoundary 就会并进 cull rect ='
+        reason:
+            '把手画在浮层 WebView 之后。不自带 RepaintBoundary 就会并进 cull rect ='
             '整个浮层的 PictureLayer，macOS 上整块 WebView 收不到鼠标事件（BUG-1692）',
       );
     });
@@ -120,7 +125,8 @@ void main() {
       expect(
         chrome.substring(bottomAt, bottomAt + 900).contains('RepaintBoundary'),
         isTrue,
-        reason: '底栏画在阅读器 WebView 之后。少了 RepaintBoundary，其 cull rect 就是'
+        reason:
+            '底栏画在阅读器 WebView 之后。少了 RepaintBoundary，其 cull rect 就是'
             '整窗，macOS 上整块正文 WebView 失去点击/划词/翻页（BUG-1692）',
       );
 
@@ -150,7 +156,8 @@ void main() {
       expect(
         page.contains('fushi_reader_window_drag_area'),
         isFalse,
-        reason: '阅读器页内又出现 macOS 拖拽区 = 自绘顶栏之下再压一条不透明带；'
+        reason:
+            '阅读器页内又出现 macOS 拖拽区 = 自绘顶栏之下再压一条不透明带；'
             '若确要恢复，必须同时恢复它的 RepaintBoundary 与本守卫的正向判据',
       );
     });

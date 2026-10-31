@@ -27,8 +27,9 @@ Future<String> _insertBookWithExtractDir({
 }) async {
   Directory(extractDir).createSync(recursive: true);
   // 写入 mimetype（repackageExtractedEpub 靠它识别 EPUB 格式）
-  File(p.join(extractDir, 'mimetype'))
-      .writeAsStringSync('application/epub+zip');
+  File(
+    p.join(extractDir, 'mimetype'),
+  ).writeAsStringSync('application/epub+zip');
   // 写入最小 content.opf（让产出的 zip 非空且可识别）
   final Directory metaInf = Directory(p.join(extractDir, 'META-INF'))
     ..createSync();
@@ -133,8 +134,10 @@ void main() {
   // ── RemoteBookInfo JSON round-trip ──────────────────────────────────────
   group('RemoteBookInfo', () {
     test('toJson / fromJson round-trip', () {
-      const RemoteBookInfo info =
-          RemoteBookInfo(title: '夏目漱石', hasContent: true);
+      const RemoteBookInfo info = RemoteBookInfo(
+        title: '夏目漱石',
+        hasContent: true,
+      );
       final RemoteBookInfo decoded = RemoteBookInfo.fromJson(info.toJson());
       expect(decoded.title, info.title);
       expect(decoded.hasContent, info.hasContent);
@@ -166,8 +169,10 @@ void main() {
       final RemoteBookInfo decoded = RemoteBookInfo.fromJson(info.toJson());
       expect(decoded.hasAudiobook, isTrue);
 
-      const RemoteBookInfo plain =
-          RemoteBookInfo(title: 'NoAudio', hasContent: true);
+      const RemoteBookInfo plain = RemoteBookInfo(
+        title: 'NoAudio',
+        hasContent: true,
+      );
       expect(plain.toJson()['hasAudiobook'], isNot(true));
       expect(RemoteBookInfo.fromJson(plain.toJson()).hasAudiobook, isFalse);
     });
@@ -183,8 +188,10 @@ void main() {
 
       // additive 纪律：不带该字段的书清单 wire 字节不变，解出来是 null（而不是 0
       // ——0 会被书架当成「1970 年入库」排到最后，比没有更糟）。
-      const RemoteBookInfo legacy =
-          RemoteBookInfo(title: 'Legacy', hasContent: true);
+      const RemoteBookInfo legacy = RemoteBookInfo(
+        title: 'Legacy',
+        hasContent: true,
+      );
       expect(legacy.toJson().containsKey('importedAt'), isFalse);
       expect(RemoteBookInfo.fromJson(legacy.toJson()).importedAt, isNull);
     });
@@ -230,10 +237,11 @@ void main() {
       Directory(extractDir).createSync(recursive: true);
       final Directory images = Directory(p.join(extractDir, 'images'))
         ..createSync();
-      File(p.join(images.path, 'p1.jpg'))
-          .writeAsBytesSync(<int>[0xFF, 0xD8, 0xFF, 1]);
-      File(p.join(extractDir, 'manga.json')).writeAsStringSync(jsonEncode(
-        <String, Object?>{
+      File(
+        p.join(images.path, 'p1.jpg'),
+      ).writeAsBytesSync(<int>[0xFF, 0xD8, 0xFF, 1]);
+      File(p.join(extractDir, 'manga.json')).writeAsStringSync(
+        jsonEncode(<String, Object?>{
           'pages': <Object?>[
             <String, Object?>{
               'url': 'images/p1.jpg',
@@ -242,52 +250,61 @@ void main() {
               'blocks': <Object?>[],
             },
           ],
-        },
-      ));
+        }),
+      );
       if (withEpubTree) {
         // 由 EPUB 转化来的漫画：书目录里仍留着 EPUB 解压树。
         final Directory metaInf = Directory(p.join(extractDir, 'META-INF'))
           ..createSync();
         File(p.join(metaInf.path, 'container.xml')).writeAsStringSync('<xml/>');
       }
-      return db.insertEpubBook(EpubBooksCompanion.insert(
-        bookKey: title,
-        title: title,
-        epubPath: 'manga.json',
-        extractDir: extractDir,
-        chapterCount: 1,
-        chaptersJson: '[]',
-        importedAt: DateTime.now().millisecondsSinceEpoch,
-        format: Value(BookFormat.manga.dbValue),
-        coverPath: const Value('images/p1.jpg'),
-        mangaReadingMode: Value(mangaReadingMode),
-      ));
+      return db.insertEpubBook(
+        EpubBooksCompanion.insert(
+          bookKey: title,
+          title: title,
+          epubPath: 'manga.json',
+          extractDir: extractDir,
+          chapterCount: 1,
+          chaptersJson: '[]',
+          importedAt: DateTime.now().millisecondsSinceEpoch,
+          format: Value(BookFormat.manga.dbValue),
+          coverPath: const Value('images/p1.jpg'),
+          mangaReadingMode: Value(mangaReadingMode),
+        ),
+      );
     }
 
-    test('listBooks 漫画行：format/hasMangaContent 下发、hasContent 恒 false',
-        () async {
-      await insertMangaBook(
-        title: 'MangaVol1',
-        extractDir: p.join(tmp.path, 'MangaVol1'),
-        mangaReadingMode: 'webtoon',
-      );
-      final LocalLibraryHostService svc = _buildSvc(db: db);
-      final RemoteBookInfo info = (await svc.listBooks()).single;
-      expect(info.format, 'manga');
-      expect(info.hasMangaContent, isTrue, reason: '新 client 据此在漫画架渲染可下载占位卡');
-      expect(info.hasContent, isFalse,
-          reason: '旧 client 只认 hasContent——漫画对它必须完全无感知');
-      expect(info.mangaReadingMode, 'webtoon');
-      // wire 往返（additive 字段向后兼容）。
-      final RemoteBookInfo back = RemoteBookInfo.fromJson(info.toJson());
-      expect(back.format, 'manga');
-      expect(back.hasMangaContent, isTrue);
-      expect(back.mangaReadingMode, 'webtoon');
-      final RemoteBookInfo legacy = RemoteBookInfo.fromJson(
-          <String, Object?>{'title': 'x', 'hasContent': true});
-      expect(legacy.format, 'epub');
-      expect(legacy.hasMangaContent, isFalse);
-    });
+    test(
+      'listBooks 漫画行：format/hasMangaContent 下发、hasContent 恒 false',
+      () async {
+        await insertMangaBook(
+          title: 'MangaVol1',
+          extractDir: p.join(tmp.path, 'MangaVol1'),
+          mangaReadingMode: 'webtoon',
+        );
+        final LocalLibraryHostService svc = _buildSvc(db: db);
+        final RemoteBookInfo info = (await svc.listBooks()).single;
+        expect(info.format, 'manga');
+        expect(info.hasMangaContent, isTrue, reason: '新 client 据此在漫画架渲染可下载占位卡');
+        expect(
+          info.hasContent,
+          isFalse,
+          reason: '旧 client 只认 hasContent——漫画对它必须完全无感知',
+        );
+        expect(info.mangaReadingMode, 'webtoon');
+        // wire 往返（additive 字段向后兼容）。
+        final RemoteBookInfo back = RemoteBookInfo.fromJson(info.toJson());
+        expect(back.format, 'manga');
+        expect(back.hasMangaContent, isTrue);
+        expect(back.mangaReadingMode, 'webtoon');
+        final RemoteBookInfo legacy = RemoteBookInfo.fromJson(<String, Object?>{
+          'title': 'x',
+          'hasContent': true,
+        });
+        expect(legacy.format, 'epub');
+        expect(legacy.hasMangaContent, isFalse);
+      },
+    );
 
     test('listBooks 在线漫画合集只有空 pages 标记时不可下载', () async {
       final String extractDir = p.join(tmp.path, 'OnlineSeries');
@@ -313,24 +330,33 @@ void main() {
       final RemoteBookInfo info = (await svc.listBooks()).single;
       expect(info.format, 'manga');
       expect(info.hasContent, isFalse);
-      expect(info.hasMangaContent, isFalse,
-          reason: '只有 manifest 但正文页图缺失的包无法成功导入');
+      expect(
+        info.hasMangaContent,
+        isFalse,
+        reason: '只有 manifest 但正文页图缺失的包无法成功导入',
+      );
     });
 
-    test('EPUB 转化漫画（extractDir 残留 container.xml）hasContent 必须 false（坏包防线）',
-        () async {
-      await insertMangaBook(
-        title: 'ConvertedManga',
-        extractDir: p.join(tmp.path, 'ConvertedManga'),
-        withEpubTree: true,
-      );
-      final LocalLibraryHostService svc = _buildSvc(db: db);
-      final RemoteBookInfo info = (await svc.listBooks()).single;
-      expect(info.hasContent, isFalse,
-          reason: '旧判据会把它当可下载 EPUB 打包——client 落地成夹带整套页图的'
-              '文字书、漫画身份静默丢失');
-      expect(info.hasMangaContent, isTrue);
-    });
+    test(
+      'EPUB 转化漫画（extractDir 残留 container.xml）hasContent 必须 false（坏包防线）',
+      () async {
+        await insertMangaBook(
+          title: 'ConvertedManga',
+          extractDir: p.join(tmp.path, 'ConvertedManga'),
+          withEpubTree: true,
+        );
+        final LocalLibraryHostService svc = _buildSvc(db: db);
+        final RemoteBookInfo info = (await svc.listBooks()).single;
+        expect(
+          info.hasContent,
+          isFalse,
+          reason:
+              '旧判据会把它当可下载 EPUB 打包——client 落地成夹带整套页图的'
+              '文字书、漫画身份静默丢失',
+        );
+        expect(info.hasMangaContent, isTrue);
+      },
+    );
 
     test('exportBook 漫画 → 整树 zip（isMangaPackage 嗅中）；再 import 落库保真', () async {
       await insertMangaBook(
@@ -340,27 +366,37 @@ void main() {
       final LocalLibraryHostService svc = _buildSvc(db: db);
       final File pkg = await svc.exportBook('ExportManga');
       addTearDown(() => pkg.parent.deleteSync(recursive: true));
-      expect(await isMangaPackage(pkg), isTrue,
-          reason: '导入侧（host importBook / client 下载）按内容嗅探分流');
+      expect(
+        await isMangaPackage(pkg),
+        isTrue,
+        reason: '导入侧（host importBook / client 下载）按内容嗅探分流',
+      );
 
       // 端到端：包导入到另一个库，漫画身份/页图/封面保真。落库根钉到临时目录
       // （importFromMangaJson 经 EpubStorage 解析书目录根）。
-      final Directory booksRoot =
-          Directory.systemTemp.createTempSync('hbk_books_import_root');
+      final Directory booksRoot = Directory.systemTemp.createTempSync(
+        'hbk_books_import_root',
+      );
       EpubStorage.debugBaseDirectoryOverride = booksRoot.path;
       addTearDown(() {
         EpubStorage.debugBaseDirectoryOverride = null;
         if (booksRoot.existsSync()) booksRoot.deleteSync(recursive: true);
       });
-      final FushiDatabase db2 =
-          FushiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase db2 = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
       addTearDown(db2.close);
       final String key = await importMangaPackageFile(
-          db: db2, file: pkg, title: 'ExportManga');
+        db: db2,
+        file: pkg,
+        title: 'ExportManga',
+      );
       final EpubBookRow? row = await db2.getEpubBook(key);
       expect(row!.format, 'manga');
-      expect(File(p.join(row.extractDir, 'images', 'p1.jpg')).existsSync(),
-          isTrue);
+      expect(
+        File(p.join(row.extractDir, 'images', 'p1.jpg')).existsSync(),
+        isTrue,
+      );
     });
 
     // ── listBooks ──────────────────────────────────────────────────────────
@@ -404,94 +440,104 @@ void main() {
       expect(list.first.hasContent, isTrue);
     });
 
-    test('listBooks 对有有声书的书填 hasAudiobook==true，无的填 false（TODO-655a）',
-        () async {
-      final String audioExtract = p.join(tmp.path, 'AudioBook');
-      final String audioKey = await _insertBookWithExtractDir(
-        db: db,
-        title: 'AudioBook',
-        extractDir: audioExtract,
-      );
-      final String plainExtract = p.join(tmp.path, 'PlainBook');
-      await _insertBookWithExtractDir(
-        db: db,
-        title: 'PlainBook',
-        extractDir: plainExtract,
-      );
-      // 给 AudioBook 这本书注册可经 live-sync 导出的有声书：Audiobooks + SrtBooks
-      // 两表齐备（与 listAudiobooks / exportAudiobook 同源，TODO-778）。
-      final Directory audioDir = Directory(p.join(tmp.path, 'audio'))
-        ..createSync(recursive: true);
-      final File track = File(p.join(audioDir.path, 'track.m4b'))
-        ..writeAsBytesSync(<int>[1, 2, 3, 4]);
-      final File align = File(p.join(audioDir.path, 'align.srt'))
-        ..writeAsStringSync('1\n00:00:00,000 --> 00:00:01,000\nhi\n');
-      await db.upsertAudiobook(AudiobooksCompanion.insert(
-        bookKey: audioKey,
-        audioRoot: Value(audioDir.path),
-        audioPathsJson: Value(jsonEncode(<String>[track.path])),
-        alignmentFormat: 'srt',
-        alignmentPath: align.path,
-      ));
-      await db.upsertSrtBook(SrtBooksCompanion.insert(
-        uid: 'srt-audiobook',
-        title: 'AudioBook',
-        audioRoot: Value(audioDir.path),
-        audioPathsJson: Value(jsonEncode(<String>[track.path])),
-        srtPath: align.path,
-        importedAt: 0,
-        bookKey: Value(audioKey),
-      ));
+    test(
+      'listBooks 对有有声书的书填 hasAudiobook==true，无的填 false（TODO-655a）',
+      () async {
+        final String audioExtract = p.join(tmp.path, 'AudioBook');
+        final String audioKey = await _insertBookWithExtractDir(
+          db: db,
+          title: 'AudioBook',
+          extractDir: audioExtract,
+        );
+        final String plainExtract = p.join(tmp.path, 'PlainBook');
+        await _insertBookWithExtractDir(
+          db: db,
+          title: 'PlainBook',
+          extractDir: plainExtract,
+        );
+        // 给 AudioBook 这本书注册可经 live-sync 导出的有声书：Audiobooks + SrtBooks
+        // 两表齐备（与 listAudiobooks / exportAudiobook 同源，TODO-778）。
+        final Directory audioDir = Directory(p.join(tmp.path, 'audio'))
+          ..createSync(recursive: true);
+        final File track = File(p.join(audioDir.path, 'track.m4b'))
+          ..writeAsBytesSync(<int>[1, 2, 3, 4]);
+        final File align = File(p.join(audioDir.path, 'align.srt'))
+          ..writeAsStringSync('1\n00:00:00,000 --> 00:00:01,000\nhi\n');
+        await db.upsertAudiobook(
+          AudiobooksCompanion.insert(
+            bookKey: audioKey,
+            audioRoot: Value(audioDir.path),
+            audioPathsJson: Value(jsonEncode(<String>[track.path])),
+            alignmentFormat: 'srt',
+            alignmentPath: align.path,
+          ),
+        );
+        await db.upsertSrtBook(
+          SrtBooksCompanion.insert(
+            uid: 'srt-audiobook',
+            title: 'AudioBook',
+            audioRoot: Value(audioDir.path),
+            audioPathsJson: Value(jsonEncode(<String>[track.path])),
+            srtPath: align.path,
+            importedAt: 0,
+            bookKey: Value(audioKey),
+          ),
+        );
 
-      final LocalLibraryHostService svc = _buildSvc(db: db);
-      final List<RemoteBookInfo> list = await svc.listBooks();
-      final Map<String, RemoteBookInfo> byTitle = <String, RemoteBookInfo>{
-        for (final RemoteBookInfo b in list) b.title: b,
-      };
+        final LocalLibraryHostService svc = _buildSvc(db: db);
+        final List<RemoteBookInfo> list = await svc.listBooks();
+        final Map<String, RemoteBookInfo> byTitle = <String, RemoteBookInfo>{
+          for (final RemoteBookInfo b in list) b.title: b,
+        };
 
-      expect(byTitle['AudioBook']!.hasAudiobook, isTrue);
-      expect(byTitle['PlainBook']!.hasAudiobook, isFalse);
-    });
+        expect(byTitle['AudioBook']!.hasAudiobook, isTrue);
+        expect(byTitle['PlainBook']!.hasAudiobook, isFalse);
+      },
+    );
 
     test(
-        'listBooks 对孤儿有声书（有 Audiobook 无 SrtBook）填 hasAudiobook==false（TODO-778）',
-        () async {
-      // EPUB 对齐有声书的形态：有 Audiobooks 行但没有 SrtBooks 行。
-      // exportAudiobook 要求两表齐备，缺 SrtBook 即抛 StateError → 服务端 404；
-      // 故 hasAudiobook 徽章必须排除它，否则 client 亮耳机却下载 404。
-      final String orphanExtract = p.join(tmp.path, 'OrphanAudio');
-      final String orphanKey = await _insertBookWithExtractDir(
-        db: db,
-        title: 'OrphanAudio',
-        extractDir: orphanExtract,
-      );
-      final Directory audioDir = Directory(p.join(tmp.path, 'orphan-audio'))
-        ..createSync(recursive: true);
-      final File align = File(p.join(audioDir.path, 'align.srt'))
-        ..writeAsStringSync('1\n00:00:00,000 --> 00:00:01,000\nhi\n');
-      await db.upsertAudiobook(AudiobooksCompanion.insert(
-        bookKey: orphanKey,
-        audioRoot: Value(audioDir.path),
-        alignmentFormat: 'srt',
-        alignmentPath: align.path,
-      ));
-      // 故意不插 SrtBooks 行。
+      'listBooks 对孤儿有声书（有 Audiobook 无 SrtBook）填 hasAudiobook==false（TODO-778）',
+      () async {
+        // EPUB 对齐有声书的形态：有 Audiobooks 行但没有 SrtBooks 行。
+        // exportAudiobook 要求两表齐备，缺 SrtBook 即抛 StateError → 服务端 404；
+        // 故 hasAudiobook 徽章必须排除它，否则 client 亮耳机却下载 404。
+        final String orphanExtract = p.join(tmp.path, 'OrphanAudio');
+        final String orphanKey = await _insertBookWithExtractDir(
+          db: db,
+          title: 'OrphanAudio',
+          extractDir: orphanExtract,
+        );
+        final Directory audioDir = Directory(p.join(tmp.path, 'orphan-audio'))
+          ..createSync(recursive: true);
+        final File align = File(p.join(audioDir.path, 'align.srt'))
+          ..writeAsStringSync('1\n00:00:00,000 --> 00:00:01,000\nhi\n');
+        await db.upsertAudiobook(
+          AudiobooksCompanion.insert(
+            bookKey: orphanKey,
+            audioRoot: Value(audioDir.path),
+            alignmentFormat: 'srt',
+            alignmentPath: align.path,
+          ),
+        );
+        // 故意不插 SrtBooks 行。
 
-      final LocalLibraryHostService svc = _buildSvc(db: db);
-      final List<RemoteBookInfo> list = await svc.listBooks();
-      final RemoteBookInfo orphan =
-          list.firstWhere((RemoteBookInfo b) => b.title == 'OrphanAudio');
+        final LocalLibraryHostService svc = _buildSvc(db: db);
+        final List<RemoteBookInfo> list = await svc.listBooks();
+        final RemoteBookInfo orphan = list.firstWhere(
+          (RemoteBookInfo b) => b.title == 'OrphanAudio',
+        );
 
-      // 徽章判据修复后：孤儿有声书不亮 hasAudiobook。
-      expect(orphan.hasAudiobook, isFalse);
+        // 徽章判据修复后：孤儿有声书不亮 hasAudiobook。
+        expect(orphan.hasAudiobook, isFalse);
 
-      // 印证根因链：徽章亮起本会触发的 exportAudiobook 此时确实抛 StateError
-      //（即服务端 404 的来源），证明排除它不误伤——被排除的本就 100% 下载失败。
-      await expectLater(
-        svc.exportAudiobook(orphanKey),
-        throwsA(isA<StateError>()),
-      );
-    });
+        // 印证根因链：徽章亮起本会触发的 exportAudiobook 此时确实抛 StateError
+        //（即服务端 404 的来源），证明排除它不误伤——被排除的本就 100% 下载失败。
+        await expectLater(
+          svc.exportAudiobook(orphanKey),
+          throwsA(isA<StateError>()),
+        );
+      },
+    );
 
     test('#4 listBooks 把 EPUB 内部相对 href 封面解析成可服务的绝对路径', () async {
       // 这是真实 EPUB 书的封面存储形式：coverPath = EPUB 内相对 href，封面文件在
@@ -572,25 +618,27 @@ void main() {
       expect(pkg.path, endsWith('.epub'));
     });
 
-    test('exportBook accepts stable bookKey for special display titles',
-        () async {
-      const String displayTitle = r'Vol 1/2\3?..: Finale';
-      const String bookKey = 'Vol_1_2_3_Finale';
-      final String extractDir = p.join(tmp.path, 'SpecialTitle');
-      await _insertBookWithExtractDir(
-        db: db,
-        title: displayTitle,
-        bookKey: bookKey,
-        extractDir: extractDir,
-      );
+    test(
+      'exportBook accepts stable bookKey for special display titles',
+      () async {
+        const String displayTitle = r'Vol 1/2\3?..: Finale';
+        const String bookKey = 'Vol_1_2_3_Finale';
+        final String extractDir = p.join(tmp.path, 'SpecialTitle');
+        await _insertBookWithExtractDir(
+          db: db,
+          title: displayTitle,
+          bookKey: bookKey,
+          extractDir: extractDir,
+        );
 
-      final LocalLibraryHostService svc = _buildSvc(db: db);
-      final File pkg = await svc.exportBook(bookKey);
-      addTearDown(() => pkg.parent.deleteSync(recursive: true));
+        final LocalLibraryHostService svc = _buildSvc(db: db);
+        final File pkg = await svc.exportBook(bookKey);
+        addTearDown(() => pkg.parent.deleteSync(recursive: true));
 
-      expect(pkg.existsSync(), isTrue);
-      expect(pkg.lengthSync(), greaterThan(0));
-    });
+        expect(pkg.existsSync(), isTrue);
+        expect(pkg.lengthSync(), greaterThan(0));
+      },
+    );
 
     test('exportBook 自动使用 extractDir 下的真实 EPUB 根目录', () async {
       final String outerDir = p.join(tmp.path, 'NestedExport');
@@ -601,10 +649,7 @@ void main() {
         extractDir: realEpubRoot,
       );
       final EpubBookRow row = (await db.getAllEpubBooks()).single;
-      await db.updateEpubBookContentPaths(
-        row.bookKey,
-        extractDir: outerDir,
-      );
+      await db.updateEpubBookContentPaths(row.bookKey, extractDir: outerDir);
 
       final LocalLibraryHostService svc = _buildSvc(db: db);
       final List<RemoteBookInfo> list = await svc.listBooks();
@@ -665,8 +710,10 @@ void main() {
       );
 
       final List<EpubBookRow> deletedRows = <EpubBookRow>[];
-      final LocalLibraryHostService svc =
-          _buildSvc(db: db, deletedRows: deletedRows);
+      final LocalLibraryHostService svc = _buildSvc(
+        db: db,
+        deletedRows: deletedRows,
+      );
 
       await svc.deleteBook('DeleteMe');
 
@@ -695,8 +742,10 @@ void main() {
     // ── importBook（fake importer 回调）─────────────────────────────────────
     test('importBook 调用注入的 importer 回调', () async {
       final List<File> imported = <File>[];
-      final LocalLibraryHostService svc =
-          _buildSvc(db: db, importedFiles: imported);
+      final LocalLibraryHostService svc = _buildSvc(
+        db: db,
+        importedFiles: imported,
+      );
 
       final File fakeEpub = File(p.join(tmp.path, 'fake.epub'))
         ..writeAsBytesSync(<int>[0, 1, 2]);

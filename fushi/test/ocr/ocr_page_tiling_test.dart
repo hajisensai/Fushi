@@ -13,8 +13,8 @@ OcrTextLine line(String text, OcrRect rect, [int? tile]) =>
     OcrTextLine(text: text, rect: rect, tile: tile);
 
 List<List<double>> edges(List<OcrRect> tiles) => <List<double>>[
-      for (final OcrRect t in tiles) <double>[t.left, t.top, t.right, t.bottom],
-    ];
+  for (final OcrRect t in tiles) <double>[t.left, t.top, t.right, t.bottom],
+];
 
 void main() {
   group('planOcrPageTiles', () {
@@ -43,17 +43,25 @@ void main() {
       expect(tiles.first.top, 0);
       expect(tiles.last.bottom, 30000);
       for (int i = 1; i < tiles.length; i++) {
-        expect(tiles[i].top, lessThan(tiles[i - 1].bottom),
-            reason: '第 $i 片与上一片之间必须有重叠');
+        expect(
+          tiles[i].top,
+          lessThan(tiles[i - 1].bottom),
+          reason: '第 $i 片与上一片之间必须有重叠',
+        );
       }
     });
 
     test('重叠至少容得下一个字（下限像素）', () {
-      final List<OcrRect> tiles =
-          planOcrPageTiles(400, 1600, targetTileHeight: 300);
+      final List<OcrRect> tiles = planOcrPageTiles(
+        400,
+        1600,
+        targetTileHeight: 300,
+      );
       for (int i = 1; i < tiles.length; i++) {
-        expect(tiles[i - 1].bottom - tiles[i].top,
-            greaterThanOrEqualTo(2 * kOcrTileMinOverlap - 1));
+        expect(
+          tiles[i - 1].bottom - tiles[i].top,
+          greaterThanOrEqualTo(2 * kOcrTileMinOverlap - 1),
+        );
       }
     });
   });
@@ -66,7 +74,9 @@ void main() {
       ];
       expect(mergeTiledOcrLines(lines, const <OcrRect>[]), same(lines));
       expect(
-          mergeTiledOcrLines(lines, planOcrPageTiles(1370, 2000)), same(lines));
+        mergeTiledOcrLines(lines, planOcrPageTiles(1370, 2000)),
+        same(lines),
+      );
     });
 
     test('跨切线的竖列：两截按文字重叠精确拼回（真实输出 c2 p4）', () {
@@ -101,12 +111,17 @@ void main() {
       final List<OcrTextLine> merged = mergeTiledOcrLines(<OcrTextLine>[
         // 切边 751 上的「サ」只剩半个，Vision 读成了「：」。
         line('★ユニバー：', ltrb(69.3, 584.1, 104.0, 749.0), 0),
-        line('ユニバーサル・スタジオ・ジャパンにて『ワンピース・プレミ', ltrb(69.3, 614.0, 106.0, 1432.0),
-            1),
+        line(
+          'ユニバーサル・スタジオ・ジャパンにて『ワンピース・プレミ',
+          ltrb(69.3, 614.0, 106.0, 1432.0),
+          1,
+        ),
         line('ス・プレミア・サマーツ』7月30日（木）開幕！！', ltrb(63.2, 1297.0, 110.1, 1932.0), 2),
       ], tiles);
-      expect(merged.single.text,
-          '★ユニバーサル・スタジオ・ジャパンにて『ワンピース・プレミア・サマーツ』7月30日（木）開幕！！');
+      expect(
+        merged.single.text,
+        '★ユニバーサル・スタジオ・ジャパンにて『ワンピース・プレミア・サマーツ』7月30日（木）開幕！！',
+      );
       expect(merged.single.rect.top, 584.1);
       expect(merged.single.rect.bottom, 1932.0);
     });

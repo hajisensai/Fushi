@@ -98,11 +98,11 @@ class InterconnectAssistantClient {
     http.Client Function(String expectedFingerprint)? pinnedClientFactory,
     Duration probeTimeout = const Duration(seconds: 4),
     Duration requestTimeout = const Duration(seconds: 30),
-  })  : _repo = repo,
-        _httpClient = httpClient ?? http.Client(),
-        _pinnedClientFactory = pinnedClientFactory ?? _defaultPinnedClient,
-        _probeTimeout = probeTimeout,
-        _requestTimeout = requestTimeout;
+  }) : _repo = repo,
+       _httpClient = httpClient ?? http.Client(),
+       _pinnedClientFactory = pinnedClientFactory ?? _defaultPinnedClient,
+       _probeTimeout = probeTimeout,
+       _requestTimeout = requestTimeout;
 
   final SyncRepository _repo;
   final http.Client _httpClient;
@@ -176,15 +176,14 @@ class InterconnectAssistantClient {
     HostAssistantTarget target, {
     required String feature,
     required String locale,
-  }) async =>
-      HostAssistantEnvelope.fromJson(
-        await _call(
-          target,
-          'POST',
-          '/api/assistant/sessions',
-          jsonBody: <String, Object?>{'feature': feature, 'locale': locale},
-        ),
-      );
+  }) async => HostAssistantEnvelope.fromJson(
+    await _call(
+      target,
+      'POST',
+      '/api/assistant/sessions',
+      jsonBody: <String, Object?>{'feature': feature, 'locale': locale},
+    ),
+  );
 
   /// 长轮询：快照越过 [after] 或等满 [wait] 就返回。
   Future<HostAssistantEnvelope> read(
@@ -192,33 +191,31 @@ class InterconnectAssistantClient {
     String id, {
     int? after,
     Duration wait = Duration.zero,
-  }) async =>
-      HostAssistantEnvelope.fromJson(
-        await _call(
-          target,
-          'GET',
-          '/api/assistant/sessions/${Uri.encodeComponent(id)}',
-          query: <String, String>{
-            if (after != null) 'after': '$after',
-            if (wait > Duration.zero) 'wait': '${wait.inSeconds}',
-          },
-          timeout: _requestTimeout + wait,
-        ),
-      );
+  }) async => HostAssistantEnvelope.fromJson(
+    await _call(
+      target,
+      'GET',
+      '/api/assistant/sessions/${Uri.encodeComponent(id)}',
+      query: <String, String>{
+        if (after != null) 'after': '$after',
+        if (wait > Duration.zero) 'wait': '${wait.inSeconds}',
+      },
+      timeout: _requestTimeout + wait,
+    ),
+  );
 
   Future<HostAssistantEnvelope> act(
     HostAssistantTarget target,
     String id,
     Map<String, Object?> action,
-  ) async =>
-      HostAssistantEnvelope.fromJson(
-        await _call(
-          target,
-          'POST',
-          '/api/assistant/sessions/${Uri.encodeComponent(id)}/actions',
-          jsonBody: action,
-        ),
-      );
+  ) async => HostAssistantEnvelope.fromJson(
+    await _call(
+      target,
+      'POST',
+      '/api/assistant/sessions/${Uri.encodeComponent(id)}/actions',
+      jsonBody: action,
+    ),
+  );
 
   /// 关 host 上的会话。
   ///
@@ -274,8 +271,9 @@ class InterconnectAssistantClient {
         }
         throw HostAssistantException('http_${response.statusCode}', detail);
       }
-      final dynamic decoded =
-          text.isEmpty ? <String, dynamic>{} : jsonDecode(text);
+      final dynamic decoded = text.isEmpty
+          ? <String, dynamic>{}
+          : jsonDecode(text);
       if (decoded is! Map) return <String, dynamic>{};
       return Map<String, dynamic>.from(decoded);
     } finally {
@@ -294,12 +292,13 @@ class InterconnectAssistantClient {
   }
 
   Map<String, String> _headers(String token) => <String, String>{
-        'Authorization': 'Basic ${base64Encode(utf8.encode('hibiki:$token'))}',
-      };
+    'Authorization': 'Basic ${base64Encode(utf8.encode('hibiki:$token'))}',
+  };
 
   (http.Client, bool) _clientFor(String baseUrl, {String? fingerprint}) {
     final Uri? base = _parse(baseUrl);
-    final bool usePinned = base != null &&
+    final bool usePinned =
+        base != null &&
         base.isScheme('https') &&
         fingerprint != null &&
         fingerprint.isNotEmpty;

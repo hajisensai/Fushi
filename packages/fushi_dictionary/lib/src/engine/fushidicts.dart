@@ -27,8 +27,7 @@ import 'transform_asset_loader_stub.dart'
 import 'fushidicts_models.dart';
 
 export 'fushidicts_models.dart';
-export 'background_borrow.dart'
-    show BackgroundBorrowLedger, borrowNativeHandle;
+export 'background_borrow.dart' show BackgroundBorrowLedger, borrowNativeHandle;
 export 'lookup_scheduler.dart' show LookupJobScheduler;
 export 'ruby_spans.dart';
 
@@ -62,12 +61,14 @@ FushiTermResult _convertTerm(FfiTermResult ffi) {
   if (ffi.glossaryCount > 0 && ffi.glossaries != nullptr) {
     for (int i = 0; i < ffi.glossaryCount; i++) {
       final g = ffi.glossaries[i];
-      glossaries.add(FushiGlossaryEntry(
-        dictName: _utf8OrEmpty(g.dictName),
-        glossary: _utf8OrEmpty(g.glossary),
-        definitionTags: _utf8OrEmpty(g.definitionTags),
-        termTags: _utf8OrEmpty(g.termTags),
-      ));
+      glossaries.add(
+        FushiGlossaryEntry(
+          dictName: _utf8OrEmpty(g.dictName),
+          glossary: _utf8OrEmpty(g.glossary),
+          definitionTags: _utf8OrEmpty(g.definitionTags),
+          termTags: _utf8OrEmpty(g.termTags),
+        ),
+      );
     }
   }
 
@@ -77,15 +78,19 @@ FushiTermResult _convertTerm(FfiTermResult ffi) {
       final f = ffi.frequencies[i];
       final freqs = <FushiFrequency>[];
       for (int j = 0; j < f.count; j++) {
-        freqs.add(FushiFrequency(
-          value: f.values[j],
-          displayValue: _utf8OrEmpty(f.displayValues[j]),
-        ));
+        freqs.add(
+          FushiFrequency(
+            value: f.values[j],
+            displayValue: _utf8OrEmpty(f.displayValues[j]),
+          ),
+        );
       }
-      frequencies.add(FushiFrequencyEntry(
-        dictName: _utf8OrEmpty(f.dictName),
-        frequencies: freqs,
-      ));
+      frequencies.add(
+        FushiFrequencyEntry(
+          dictName: _utf8OrEmpty(f.dictName),
+          frequencies: freqs,
+        ),
+      );
     }
   }
 
@@ -109,12 +114,14 @@ FushiTermResult _convertTerm(FfiTermResult ffi) {
           patterns.add(_utf8OrEmpty(p.patterns[j]));
         }
       }
-      pitches.add(FushiPitchEntry(
-        dictName: _utf8OrEmpty(p.dictName),
-        pitchPositions: positions,
-        patterns: patterns,
-        transcriptions: transcriptions,
-      ));
+      pitches.add(
+        FushiPitchEntry(
+          dictName: _utf8OrEmpty(p.dictName),
+          pitchPositions: positions,
+          patterns: patterns,
+          transcriptions: transcriptions,
+        ),
+      );
     }
   }
 
@@ -182,7 +189,8 @@ class FushiDicts {
     // ffi_guard 接不住信号。在入口判掉，把不可诊断的段错误换成可诊断的异常。
     if (handle == nullptr) {
       throw StateError(
-          'fushidicts_create returned nullptr (native engine unavailable)');
+        'fushidicts_create returned nullptr (native engine unavailable)',
+      );
     }
     _handle = handle;
   }
@@ -246,7 +254,8 @@ class FushiDicts {
     final ZstdDecompressFileDart? decompress = lookupZstdDecompressFile();
     if (decompress == null) {
       throw UnsupportedError(
-          'fushidicts_zstd_decompress_file is not available in this build');
+        'fushidicts_zstd_decompress_file is not available in this build',
+      );
     }
     final Pointer<Utf8> nativeIn = inPath.toNativeUtf8(allocator: calloc);
     final Pointer<Utf8> nativeOut = outPath.toNativeUtf8(allocator: calloc);
@@ -429,7 +438,9 @@ class FushiDicts {
     try {
       shadow._loadCachedTransforms();
       Future<bool> loadAll(
-          List<String> paths, void Function(String) add) async {
+        List<String> paths,
+        void Function(String) add,
+      ) async {
         for (final String p in paths) {
           // 代次查在 add **之前**：让出期间若有人 releaseAllMappings /
           // disposeInstance，shadow 已被同步销毁（handle 置空），此时再 add 就会
@@ -451,7 +462,8 @@ class FushiDicts {
       _instance?.dispose();
       _instance = shadow;
       handedOver = true;
-      _loadedDictCount = pending.termPaths.length +
+      _loadedDictCount =
+          pending.termPaths.length +
           pending.freqPaths.length +
           pending.pitchPaths.length +
           pending.kanjiPaths.length;
@@ -469,16 +481,24 @@ class FushiDicts {
       // 映射保持释放的作用域里（[withMappingsReleased]）：待办留到作用域结束。没有
       // 实例时给一个空的，查词退化成空结果，与 [releaseAllMappings] 之后一致。
       if (_instance == null) {
-        _applyTyped(const <String>[], const <String>[], const <String>[],
-            const <String>[]);
+        _applyTyped(
+          const <String>[],
+          const <String>[],
+          const <String>[],
+          const <String>[],
+        );
       }
       return;
     }
     // 先清待办再装载：装载过程若抛异常，待办不该留在原地被下一次访问重放一遍
     // （同一份坏数据会把每一次查词都变成一次全量重建尝试）。
     _pending = null;
-    _applyTyped(pending.termPaths, pending.freqPaths, pending.pitchPaths,
-        pending.kanjiPaths);
+    _applyTyped(
+      pending.termPaths,
+      pending.freqPaths,
+      pending.pitchPaths,
+      pending.kanjiPaths,
+    );
   }
 
   static void _applyTyped(
@@ -506,7 +526,8 @@ class FushiDicts {
       h.addKanjiDict(p);
     }
     _instance = h;
-    _loadedDictCount = termPaths.length +
+    _loadedDictCount =
+        termPaths.length +
         freqPaths.length +
         pitchPaths.length +
         kanjiPaths.length;
@@ -678,7 +699,8 @@ class FushiDicts {
         lookupCorpusTerms();
     if (fns == null) {
       throw UnsupportedError(
-          'fushidicts_corpus_terms is not available in this build');
+        'fushidicts_corpus_terms is not available in this build',
+      );
     }
     final List<Uint8List> encoded = <Uint8List>[
       for (final String s in sentences) utf8.encode(s),
@@ -800,7 +822,8 @@ class FushiDicts {
   ) async {
     if (lookupEnsureRedirectFlag() == null) {
       throw UnsupportedError(
-          'fushidicts_ensure_redirect_flag is not available in this build');
+        'fushidicts_ensure_redirect_flag is not available in this build',
+      );
     }
     final String? libraryPath = FushidictsFfiBindings.libraryPathOverride;
     final Map<String, int> results = <String, int>{};
@@ -848,8 +871,10 @@ class FushiDicts {
   // The C++ side spawns a pthread with 32 MB stack to handle deep
   // recursion in zip/JSON parsing, so this can safely run in any isolate.
   static Future<FushiImportResult> importDictionary(
-      String zipPath, String outputDir,
-      {String breadcrumbDir = ''}) async {
+    String zipPath,
+    String outputDir, {
+    String breadcrumbDir = '',
+  }) async {
     // 宿主指定的原生库绝对路径是 isolate 局部的静态量，新 isolate 里要重新带上，
     // 否则后台导入按裸名 dlopen（无头服务端的 bundle/lib 不在系统搜索路径上）。
     final String? libraryPath = FushidictsFfiBindings.libraryPathOverride;
@@ -969,19 +994,18 @@ class FushiDicts {
     String? primaryReading,
     bool chineseSimpToTrad = false,
     List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
-  }) =>
-      _lookupWith(
-        _bindings!,
-        _handle!,
-        text,
-        maxResults: maxResults,
-        scanLength: scanLength,
-        frequencyDictionary: frequencyDictionary,
-        frequencyOrder: frequencyOrder,
-        primaryReading: primaryReading,
-        chineseSimpToTrad: chineseSimpToTrad,
-        rubySpans: rubySpans,
-      );
+  }) => _lookupWith(
+    _bindings!,
+    _handle!,
+    text,
+    maxResults: maxResults,
+    scanLength: scanLength,
+    frequencyDictionary: frequencyDictionary,
+    frequencyOrder: frequencyOrder,
+    primaryReading: primaryReading,
+    chineseSimpToTrad: chineseSimpToTrad,
+    rubySpans: rubySpans,
+  );
 
   /// 同步路径（[lookup]）与后台查词共用的一次原生 lookup（同一份封送与转换）。
   static List<FushiLookupResult> _lookupWith(
@@ -996,7 +1020,8 @@ class FushiDicts {
     bool chineseSimpToTrad = false,
     List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
   }) {
-    final bool useOptions = frequencyDictionary != null ||
+    final bool useOptions =
+        frequencyDictionary != null ||
         frequencyOrder != FushiLookupFrequencyOrder.auto ||
         primaryReading != null;
     // 原文振假名：UTF-16 区间换成引擎用的码点偏移，一次 FFI 整批带过去。
@@ -1009,23 +1034,50 @@ class FushiDicts {
     final Pointer<Utf8> rr = rubyCount == 0
         ? nullptr
         : ruby.readings.toNativeUtf8(allocator: calloc);
-    final Pointer<Int32> rb =
-        rubyCount == 0 ? nullptr : calloc<Int32>(ruby.bounds.length);
+    final Pointer<Int32> rb = rubyCount == 0
+        ? nullptr
+        : calloc<Int32>(ruby.bounds.length);
     if (rubyCount > 0) {
       rb.asTypedListOutOfLine(ruby.bounds.length).setAll(0, ruby.bounds);
     }
     final int flags = chineseSimpToTrad ? _lookupFlagChineseSimpToTrad : 0;
     try {
       final r = rubyCount > 0
-          ? bindings.lookupWithRuby(handle, tp, maxResults, scanLength, fd,
-              frequencyOrder.index, pr, flags, rb, rr, rubyCount)
+          ? bindings.lookupWithRuby(
+              handle,
+              tp,
+              maxResults,
+              scanLength,
+              fd,
+              frequencyOrder.index,
+              pr,
+              flags,
+              rb,
+              rr,
+              rubyCount,
+            )
           : chineseSimpToTrad
-              ? bindings.lookupWithFlags(handle, tp, maxResults, scanLength,
-                  fd, frequencyOrder.index, pr, flags)
-              : useOptions
-                  ? bindings.lookupWithOptions(handle, tp, maxResults,
-                      scanLength, fd, frequencyOrder.index, pr)
-                  : bindings.lookup(handle, tp, maxResults, scanLength);
+          ? bindings.lookupWithFlags(
+              handle,
+              tp,
+              maxResults,
+              scanLength,
+              fd,
+              frequencyOrder.index,
+              pr,
+              flags,
+            )
+          : useOptions
+          ? bindings.lookupWithOptions(
+              handle,
+              tp,
+              maxResults,
+              scanLength,
+              fd,
+              frequencyOrder.index,
+              pr,
+            )
+          : bindings.lookup(handle, tp, maxResults, scanLength);
 
       final rPtr = calloc<FfiLookupResults>();
       rPtr.ref = r;
@@ -1035,18 +1087,22 @@ class FushiDicts {
           final src = r.results[i];
           final trace = <FushiTransformGroup>[];
           for (int j = 0; j < src.traceCount; j++) {
-            trace.add(FushiTransformGroup(
-              name: _utf8OrEmpty(src.trace[j].name),
-              description: _utf8OrEmpty(src.trace[j].description),
-            ));
+            trace.add(
+              FushiTransformGroup(
+                name: _utf8OrEmpty(src.trace[j].name),
+                description: _utf8OrEmpty(src.trace[j].description),
+              ),
+            );
           }
-          results.add(FushiLookupResult(
-            matched: _utf8OrEmpty(src.matched),
-            deinflected: _utf8OrEmpty(src.deinflected),
-            trace: trace,
-            term: _convertTerm(src.term),
-            preprocessorSteps: src.preprocessorSteps,
-          ));
+          results.add(
+            FushiLookupResult(
+              matched: _utf8OrEmpty(src.matched),
+              deinflected: _utf8OrEmpty(src.deinflected),
+              trace: trace,
+              term: _convertTerm(src.term),
+              preprocessorSteps: src.preprocessorSteps,
+            ),
+          );
         }
         return results;
       } finally {
@@ -1099,8 +1155,13 @@ class FushiDicts {
   }) {
     final tp = text.toNativeUtf8(allocator: calloc);
     try {
-      final ptr = _bindings!
-          .lookupPopupJson(_handle!, tp, maxResults, scanLength, maxTerms);
+      final ptr = _bindings!.lookupPopupJson(
+        _handle!,
+        tp,
+        maxResults,
+        scanLength,
+        maxTerms,
+      );
       if (ptr == nullptr) return '[]';
       try {
         // 容错解码：词典 popupJson 数据可能含非法 UTF-8 字节（非标准编码导入的
@@ -1128,8 +1189,7 @@ class FushiDicts {
   ({List<int> lengths, List<String> readings})? _tokenize(
     String text, {
     required bool withReadings,
-  }) =>
-      _tokenizeWith(_bindings!, _handle!, text, withReadings: withReadings);
+  }) => _tokenizeWith(_bindings!, _handle!, text, withReadings: withReadings);
 
   /// 批量分词 + 每段读音（每段再查一次 `lookup(段, 1)` 的首条读音，未命中为空串），
   /// 切分与 [tokenizeLengths] 逐位相同。原生分词（浏览器扩展整页分词实测约 177 ms）
@@ -1143,15 +1203,17 @@ class FushiDicts {
   /// 返回与 [texts] 等长的列表，某段原生失败为 null（与同步路径同一闸门）；本实例已
   /// dispose（借不到引用）时返回 null。
   Future<List<({List<int> lengths, List<String> readings})?>?>
-      tokenizeWithReadingsInBackground(List<String> texts) {
+  tokenizeWithReadingsInBackground(List<String> texts) {
     final Pointer<Void>? handle = _handle;
     if (handle == null) {
-      return Future<List<({List<int> lengths, List<String> readings})?>?>
-          .value();
+      return Future<
+        List<({List<int> lengths, List<String> readings})?>?
+      >.value();
     }
     final FushidictsFfiBindings bindings = _bindings!;
     return borrowNativeHandle<
-        List<({List<int> lengths, List<String> readings})?>>(
+      List<({List<int> lengths, List<String> readings})?>
+    >(
       ledger: _backgroundBorrows,
       retain: () => bindings.retain(handle) == 1,
       release: () => bindings.release(handle),
@@ -1166,7 +1228,7 @@ class FushiDicts {
   /// 单独成静态函数：交给 `Isolate.run` 的闭包只捕获地址 / 库路径 / 文本这三样
   /// 可发送的值，不把实例（与它的 Pointer）拖过 isolate 边界。
   static Future<List<({List<int> lengths, List<String> readings})?>>
-      _runBorrowedTokenize(
+  _runBorrowedTokenize(
     int address,
     String? libraryPath,
     List<String> texts,
@@ -1174,7 +1236,8 @@ class FushiDicts {
     final ({
       List<({List<int> lengths, List<String> readings})?> results,
       String isolateName,
-    }) out = await Isolate.run(
+    })
+    out = await Isolate.run(
       () => _tokenizeBorrowedBatch(address, libraryPath, texts),
       debugName: kBackgroundTokenizeIsolateName,
     );
@@ -1188,11 +1251,8 @@ class FushiDicts {
   static ({
     List<({List<int> lengths, List<String> readings})?> results,
     String isolateName,
-  }) _tokenizeBorrowedBatch(
-    int address,
-    String? libraryPath,
-    List<String> texts,
-  ) {
+  })
+  _tokenizeBorrowedBatch(int address, String? libraryPath, List<String> texts) {
     FushidictsFfiBindings.libraryPathOverride = libraryPath;
     final FushidictsFfiBindings bindings = FushidictsFfiBindings();
     final Pointer<Void> handle = Pointer<Void>.fromAddress(address);
@@ -1293,10 +1353,12 @@ class FushiDicts {
     try {
       final styles = <FushiDictStyle>[];
       for (int i = 0; i < r.count; i++) {
-        styles.add(FushiDictStyle(
-          dictName: _utf8OrEmpty(r.items[i].dictName),
-          styles: _utf8OrEmpty(r.items[i].styles),
-        ));
+        styles.add(
+          FushiDictStyle(
+            dictName: _utf8OrEmpty(r.items[i].dictName),
+            styles: _utf8OrEmpty(r.items[i].styles),
+          ),
+        );
       }
       return styles;
     } finally {
@@ -1384,9 +1446,9 @@ class FushiRedirectFlagReport {
 
   /// 读不了的目录（-1）。
   List<String> get unreadable => <String>[
-        for (final MapEntry<String, int> e in results.entries)
-          if (e.value < 0) e.key,
-      ];
+    for (final MapEntry<String, int> e in results.entries)
+      if (e.value < 0) e.key,
+  ];
 }
 
 /// [FushiDicts.scheduleTyped] 排下的待装载词典集合（不可变快照）。

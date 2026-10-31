@@ -51,8 +51,9 @@ class _RecordingFfmpegBackend implements FfmpegBackend {
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  const MethodChannel channel =
-      MethodChannel('app.fushi.reader/window_capture');
+  const MethodChannel channel = MethodChannel(
+    'app.fushi.reader/window_capture',
+  );
   late _RecordingFfmpegBackend backend;
   late int captureCalls;
 
@@ -61,13 +62,13 @@ void main() {
     captureCalls = 0;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (MethodCall call) async {
-      if (call.method != 'captureWindow') return null;
-      captureCalls++;
-      onCall?.call(captureCalls);
-      return <Object?, Object?>{
-        'pngBytes': Uint8List.fromList(<int>[0x89, 0x50, 0x4E, 0x47]),
-      };
-    });
+          if (call.method != 'captureWindow') return null;
+          captureCalls++;
+          onCall?.call(captureCalls);
+          return <Object?, Object?>{
+            'pngBytes': Uint8List.fromList(<int>[0x89, 0x50, 0x4E, 0x47]),
+          };
+        });
   }
 
   setUp(() {
@@ -98,12 +99,14 @@ void main() {
   test('时长未定期间继续采样，定下来后按预算收口并把落盘帧裁到预算', () async {
     // 3190 ms @ 8 fps → ceil(3190*8/1000) = 26 帧。
     final Completer<Duration?> target = Completer<Duration?>();
-    installCaptureMock(onCall: (int call) {
-      // 远超 frames=4 之后才给出时长：此前预算是 8 s 上限（64 帧）。
-      if (call == 12 && !target.isCompleted) {
-        target.complete(const Duration(milliseconds: 3190));
-      }
-    });
+    installCaptureMock(
+      onCall: (int call) {
+        // 远超 frames=4 之后才给出时长：此前预算是 8 s 上限（64 帧）。
+        if (call == 12 && !target.isCompleted) {
+          target.complete(const Duration(milliseconds: 3190));
+        }
+      },
+    );
 
     final GalWindowAnimatedCapture? out = await captureWindowGifBytes(
       hwnd: 1,
@@ -122,10 +125,12 @@ void main() {
 
   test('时长解析为 null 时，已多抓的帧必须被裁回基线帧数', () async {
     final Completer<Duration?> target = Completer<Duration?>();
-    installCaptureMock(onCall: (int call) {
-      // 第 12 帧才知道「读不出时长」：此时已经比基线多抓了 8 帧。
-      if (call == 12 && !target.isCompleted) target.complete(null);
-    });
+    installCaptureMock(
+      onCall: (int call) {
+        // 第 12 帧才知道「读不出时长」：此时已经比基线多抓了 8 帧。
+        if (call == 12 && !target.isCompleted) target.complete(null);
+      },
+    );
 
     final GalWindowAnimatedCapture? out = await captureWindowGifBytes(
       hwnd: 1,
@@ -142,16 +147,18 @@ void main() {
   });
 
   test('trimSurplusAnimationFrames 只删尾部超额帧并返回保留数', () async {
-    final Directory dir =
-        await Directory.systemTemp.createTemp('fushi_trim_test_');
+    final Directory dir = await Directory.systemTemp.createTemp(
+      'fushi_trim_test_',
+    );
     addTearDown(() async {
       try {
         await dir.delete(recursive: true);
       } catch (_) {}
     });
     for (int i = 0; i < 7; i++) {
-      await File(p.join(dir.path, galAnimationFrameName(i)))
-          .writeAsBytes(<int>[i]);
+      await File(
+        p.join(dir.path, galAnimationFrameName(i)),
+      ).writeAsBytes(<int>[i]);
     }
 
     final int kept = await trimSurplusAnimationFrames(
@@ -168,18 +175,14 @@ void main() {
     // 既去掉平台依赖，又保住「不多不少正是这三个」的判别力（用 unorderedEquals 会
     // 丢掉「删的是尾部而不是中间」这层，因为剩下哪三个正是本用例的判据）。
     expect(
-      (dir.listSync().whereType<File>().map((File f) => p.basename(f.path)))
-          .toList()
-        ..sort(),
+      (dir.listSync().whereType<File>().map(
+        (File f) => p.basename(f.path),
+      )).toList()..sort(),
       <String>['frame_000.png', 'frame_001.png', 'frame_002.png'],
     );
     // 预算没收缩时一帧都不删。
     expect(
-      await trimSurplusAnimationFrames(
-        directory: dir,
-        captured: 3,
-        budget: 10,
-      ),
+      await trimSurplusAnimationFrames(directory: dir, captured: 3, budget: 10),
       3,
     );
     expect(dir.listSync().whereType<File>().length, 3);

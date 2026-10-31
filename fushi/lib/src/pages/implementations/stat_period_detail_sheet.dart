@@ -107,11 +107,11 @@ class _PeriodEntry {
   int ms = 0;
 
   StatPeriodEntryTarget get deleteTarget => StatPeriodEntryTarget(
-        mediaKind: mediaKind,
-        mediaKey: mediaKey,
-        title: rawTitle,
-        dateKeys: Set<String>.unmodifiable(dateKeys),
-      );
+    mediaKind: mediaKind,
+    mediaKey: mediaKey,
+    title: rawTitle,
+    dateKeys: Set<String>.unmodifiable(dateKeys),
+  );
 }
 
 /// 弹出时段明细 sheet。[facts] 传什么域就展示什么域：域统计页传本域切片、
@@ -200,8 +200,9 @@ class _PeriodDetailSheetBody extends StatefulWidget {
 }
 
 class _PeriodDetailSheetBodyState extends State<_PeriodDetailSheetBody> {
-  late final List<_PeriodEntry> _entries =
-      List<_PeriodEntry>.of(widget.entries);
+  late final List<_PeriodEntry> _entries = List<_PeriodEntry>.of(
+    widget.entries,
+  );
 
   StatPeriodDetailResolvers get _resolvers => widget.resolvers;
 
@@ -222,12 +223,16 @@ class _PeriodDetailSheetBodyState extends State<_PeriodDetailSheetBody> {
     final List<Widget> sections = <Widget>[
       for (final (String label, IconData icon, String kind)
           in <(String, IconData, String)>[
-        (t.home_filter_read, Icons.menu_book_outlined, kActivityMediaBook),
-        (t.home_filter_watch, Icons.movie_outlined, kActivityMediaVideo),
-        (t.home_filter_game, Icons.sports_esports_outlined, kActivityMediaGame),
-        // 统计中心总览读时并进来的 SRS 复习时长（BUG-3771）。
-        (t.nav_srs, FushiIcons.repeat, kStatMediaReview),
-      ])
+            (t.home_filter_read, Icons.menu_book_outlined, kActivityMediaBook),
+            (t.home_filter_watch, Icons.movie_outlined, kActivityMediaVideo),
+            (
+              t.home_filter_game,
+              Icons.sports_esports_outlined,
+              kActivityMediaGame,
+            ),
+            // 统计中心总览读时并进来的 SRS 复习时长（BUG-3771）。
+            (t.nav_srs, FushiIcons.repeat, kStatMediaReview),
+          ])
         if (_section(context, tokens, label, icon, kind) case final Widget w) w,
     ];
     return SafeArea(
@@ -262,8 +267,9 @@ class _PeriodDetailSheetBodyState extends State<_PeriodDetailSheetBody> {
     IconData icon,
     String mediaKind,
   ) {
-    final List<_PeriodEntry> rows =
-        _entries.where((_PeriodEntry e) => e.mediaKind == mediaKind).toList();
+    final List<_PeriodEntry> rows = _entries
+        .where((_PeriodEntry e) => e.mediaKind == mediaKind)
+        .toList();
     if (rows.isEmpty) return null;
     final Map<String, List<_PeriodEntry>> byCollection =
         <String, List<_PeriodEntry>>{};
@@ -320,9 +326,7 @@ class _PeriodDetailSheetBodyState extends State<_PeriodDetailSheetBody> {
               name,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: tokens.type.metadata.copyWith(
-                fontWeight: FontWeight.w600,
-              ),
+              style: tokens.type.metadata.copyWith(fontWeight: FontWeight.w600),
             ),
           ),
           if (ms > 0) Text(formatStatTime(ms), style: tokens.type.metadata),
@@ -339,13 +343,14 @@ class _PeriodDetailSheetBodyState extends State<_PeriodDetailSheetBody> {
     final bool hasCollections = e.collection != null || _sectionHasGroups(e);
     final String meta = e.ms > 0
         ? (e.chars > 0
-            ? '${formatStatChars(e.chars)} · ${formatStatTime(e.ms)}'
-            : formatStatTime(e.ms))
+              ? '${formatStatChars(e.chars)} · ${formatStatTime(e.ms)}'
+              : formatStatTime(e.ms))
         : formatStatChars(e.chars);
     // 复习时长归 SRS 管（读的是复习日志的有效投影）：这里既不能删，也没有可打开的作品。
     final bool review = e.mediaKind == kStatMediaReview;
-    final Future<void> Function(String, String)? onTap =
-        review ? null : _resolvers.onEntryTap;
+    final Future<void> Function(String, String)? onTap = review
+        ? null
+        : _resolvers.onEntryTap;
     final bool canDelete = !review && _resolvers.onEntryDelete != null;
     // 2026-10 体验优化：删除入口统一成可见按钮（会话列表本就有），不再只藏在
     // 长按 / 右键里；行最小高度 48，满足触控目标。长按 / 右键仍保留。
@@ -416,9 +421,9 @@ class _PeriodDetailSheetBodyState extends State<_PeriodDetailSheetBody> {
 
   /// 该条目所在的来源节里有没有任何合集组（决定条目是否缩进对齐）。
   bool _sectionHasGroups(_PeriodEntry e) => _entries.any(
-        (_PeriodEntry other) =>
-            other.mediaKind == e.mediaKind &&
-            other.collection != null &&
-            other.collection!.isNotEmpty,
-      );
+    (_PeriodEntry other) =>
+        other.mediaKind == e.mediaKind &&
+        other.collection != null &&
+        other.collection!.isNotEmpty,
+  );
 }

@@ -96,16 +96,17 @@ class AnidbEpisodeShare {
 
   /// 三语集名里非空的那几条。
   List<String> get titles => <String>[
-        for (final String? title in <String?>[
-          englishTitle,
-          romajiTitle,
-          kanjiTitle
-        ])
-          if (title != null && title.trim().isNotEmpty) title,
-      ];
+    for (final String? title in <String?>[
+      englishTitle,
+      romajiTitle,
+      kanjiTitle,
+    ])
+      if (title != null && title.trim().isNotEmpty) title,
+  ];
 
   /// 把 `EPISODE` 应答填进来（eid 不同则原样返回）。
-  AnidbEpisodeShare withInfo(AnidbEpisodeInfo info) => info.episodeId != episodeId
+  AnidbEpisodeShare withInfo(AnidbEpisodeInfo info) =>
+      info.episodeId != episodeId
       ? this
       : AnidbEpisodeShare(
           episodeId: episodeId,
@@ -207,19 +208,19 @@ class AnidbFileIdentity {
   bool? get crcMatches => (fileState & AnidbFileState.crcMatch) != 0
       ? true
       : (fileState & AnidbFileState.crcError) != 0
-          ? false
-          : null;
+      ? false
+      : null;
 
   /// 文件版本 v1–v5（AniDB 只标 v2 起）。
   int get fileVersion => (fileState & AnidbFileState.isV5) != 0
       ? 5
       : (fileState & AnidbFileState.isV4) != 0
-          ? 4
-          : (fileState & AnidbFileState.isV3) != 0
-              ? 3
-              : (fileState & AnidbFileState.isV2) != 0
-                  ? 2
-                  : 1;
+      ? 4
+      : (fileState & AnidbFileState.isV3) != 0
+      ? 3
+      : (fileState & AnidbFileState.isV2) != 0
+      ? 2
+      : 1;
 
   /// 集播出日（UTC 零点；UDP `EPISODE` 的 `aired`）。FILE 应答里没有这一项，
   /// 由 [AnidbUdpFileClient.episode] 另问一次补上；null = 尚未取到 / AniDB
@@ -237,24 +238,23 @@ class AnidbFileIdentity {
     DateTime? episodeAiredAt,
     List<AnidbEpisodeShare>? otherEpisodes,
     String? animeType,
-  }) =>
-      AnidbFileIdentity(
-        fileId: fileId,
-        animeId: animeId,
-        episodeId: episodeId,
-        episodeNumber: episodeNumber,
-        romajiTitle: romajiTitle,
-        kanjiTitle: kanjiTitle,
-        englishTitle: englishTitle,
-        episodeTitle: episodeTitle,
-        episodeRomajiTitle: episodeRomajiTitle,
-        episodeKanjiTitle: episodeKanjiTitle,
-        animeType: animeType ?? this.animeType,
-        episodeAiredAt: episodeAiredAt ?? this.episodeAiredAt,
-        otherEpisodes: otherEpisodes ?? this.otherEpisodes,
-        isDeprecated: isDeprecated,
-        fileState: fileState,
-      );
+  }) => AnidbFileIdentity(
+    fileId: fileId,
+    animeId: animeId,
+    episodeId: episodeId,
+    episodeNumber: episodeNumber,
+    romajiTitle: romajiTitle,
+    kanjiTitle: kanjiTitle,
+    englishTitle: englishTitle,
+    episodeTitle: episodeTitle,
+    episodeRomajiTitle: episodeRomajiTitle,
+    episodeKanjiTitle: episodeKanjiTitle,
+    animeType: animeType ?? this.animeType,
+    episodeAiredAt: episodeAiredAt ?? this.episodeAiredAt,
+    otherEpisodes: otherEpisodes ?? this.otherEpisodes,
+    isDeprecated: isDeprecated,
+    fileState: fileState,
+  );
 }
 
 /// UDP `EPISODE` 应答（wiki UDP_API_Definition：
@@ -288,8 +288,8 @@ abstract interface class AnidbUdpTransport {
   Future<void> close();
 }
 
-typedef AnidbUdpTransportFactory = Future<AnidbUdpTransport> Function(
-    AnidbUdpConfig config);
+typedef AnidbUdpTransportFactory =
+    Future<AnidbUdpTransport> Function(AnidbUdpConfig config);
 
 /// One persistent socket/session, with serialized commands and no automatic
 /// retries. Keep a client for a scan batch, then await [close]. Cache successful
@@ -301,10 +301,10 @@ class AnidbUdpFileClient {
     AnidbUdpTransportFactory? transportFactory,
     @visibleForTesting bool sharedRateGate = false,
     this.idleLogout = const Duration(minutes: 5),
-  })  : _factory = transportFactory ?? AnidbDatagramTransport.connect,
-        // 进程级节流 / 退避 / 封禁只对真实 UDP 传输生效；内存传输默认不走
-        // （没有网络也就没有 flood），测试要验退避时显式打开。
-        _gated = sharedRateGate || transportFactory == null;
+  }) : _factory = transportFactory ?? AnidbDatagramTransport.connect,
+       // 进程级节流 / 退避 / 封禁只对真实 UDP 传输生效；内存传输默认不走
+       // （没有网络也就没有 flood），测试要验退避时显式打开。
+       _gated = sharedRateGate || transportFactory == null;
   final AnidbUdpConfig config;
   final AnidbUdpTransportFactory _factory;
   final bool _gated;
@@ -395,53 +395,52 @@ class AnidbUdpFileClient {
   Future<AnidbFileIdentity?> lookup({
     required int size,
     required String ed2k,
-  }) =>
-      _serialize(() async {
-        if (_closed) throw const AnidbUdpException(AnidbUdpFailure.closed);
-        if (!config.isAvailable) {
-          throw const AnidbUdpException(AnidbUdpFailure.unavailable);
-        }
-        if (_terminalFailure != null) throw _terminalFailure!;
-        if (size <= 0 || !RegExp(r'^[a-fA-F0-9]{32}$').hasMatch(ed2k)) {
-          throw const AnidbUdpException(AnidbUdpFailure.invalidInput);
-        }
-        final String key = '$size:${ed2k.toLowerCase()}';
-        if (_cache.containsKey(key)) {
-          final AnidbFileIdentity? cached = _cache[key];
-          if (cached != null || _nowMs - (_missAt[key] ?? 0) < _missCacheMs) {
-            return cached;
-          }
-          _cache.remove(key);
-          _missAt.remove(key);
-        }
-        if (_cache.length >= 2048) {
-          _missAt.remove(_cache.keys.first);
-          _cache.remove(_cache.keys.first);
-        }
-        await _ensureSession();
-        _Reply file = await _requestFile(size, ed2k);
-        if (file.code == 501 || file.code == 506 || file.code == 505) {
-          // The virtual connection expires after 35 idle minutes (wiki
-          // UDP_API_Definition), and this client lives as long as the scrape
-          // coordinator, so the first FILE of a later batch routinely lands on
-          // a dead session. Re-authenticate once and resend; a second
-          // rejection is a real session failure (BUG-2586). 505 follows Shoko
-          // (`UDPRequest.ParseResponse`: ILLEGAL INPUT OR ACCESS DENIED ⇒
-          // invalid session ⇒ log in again and resend).
-          _session = null;
-          await _ensureSession();
-          file = await _requestFile(size, ed2k);
-        }
-        if (file.code == 320) {
-          _cache[key] = null;
-          _missAt[key] = _nowMs;
-          return null;
-        }
-        if (file.code != 220) _fail(file.code);
-        final AnidbFileIdentity identity = parseFileReply(file.data);
-        _cache[key] = identity;
-        return identity;
-      });
+  }) => _serialize(() async {
+    if (_closed) throw const AnidbUdpException(AnidbUdpFailure.closed);
+    if (!config.isAvailable) {
+      throw const AnidbUdpException(AnidbUdpFailure.unavailable);
+    }
+    if (_terminalFailure != null) throw _terminalFailure!;
+    if (size <= 0 || !RegExp(r'^[a-fA-F0-9]{32}$').hasMatch(ed2k)) {
+      throw const AnidbUdpException(AnidbUdpFailure.invalidInput);
+    }
+    final String key = '$size:${ed2k.toLowerCase()}';
+    if (_cache.containsKey(key)) {
+      final AnidbFileIdentity? cached = _cache[key];
+      if (cached != null || _nowMs - (_missAt[key] ?? 0) < _missCacheMs) {
+        return cached;
+      }
+      _cache.remove(key);
+      _missAt.remove(key);
+    }
+    if (_cache.length >= 2048) {
+      _missAt.remove(_cache.keys.first);
+      _cache.remove(_cache.keys.first);
+    }
+    await _ensureSession();
+    _Reply file = await _requestFile(size, ed2k);
+    if (file.code == 501 || file.code == 506 || file.code == 505) {
+      // The virtual connection expires after 35 idle minutes (wiki
+      // UDP_API_Definition), and this client lives as long as the scrape
+      // coordinator, so the first FILE of a later batch routinely lands on
+      // a dead session. Re-authenticate once and resend; a second
+      // rejection is a real session failure (BUG-2586). 505 follows Shoko
+      // (`UDPRequest.ParseResponse`: ILLEGAL INPUT OR ACCESS DENIED ⇒
+      // invalid session ⇒ log in again and resend).
+      _session = null;
+      await _ensureSession();
+      file = await _requestFile(size, ed2k);
+    }
+    if (file.code == 320) {
+      _cache[key] = null;
+      _missAt[key] = _nowMs;
+      return null;
+    }
+    if (file.code != 220) _fail(file.code);
+    final AnidbFileIdentity identity = parseFileReply(file.data);
+    _cache[key] = identity;
+    return identity;
+  });
 
   /// 220 FILE 数据行 → 身份。列序由 [_requestFile] 的掩码决定：
   /// `fid|aid|eid|other eps|deprecated|state|type|romaji|kanji|english|epno|ep|ep romaji|ep kanji`
@@ -500,7 +499,7 @@ class AnidbUdpFileClient {
     if (single != null) {
       return single > 0
           ? <AnidbEpisodeShare>[
-              AnidbEpisodeShare(episodeId: single, percentage: 100)
+              AnidbEpisodeShare(episodeId: single, percentage: 100),
             ]
           : const <AnidbEpisodeShare>[];
     }
@@ -549,12 +548,12 @@ class AnidbUdpFileClient {
   // amask byte1 bit4 = anime type（Shoko 的作品形态来源；本仓 kind 跟它走）；
   // byte2 bits7/6/5 = anime titles; byte3 bits7..4 = epno/titles.
   Future<_Reply> _requestFile(int size, String ed2k) => _request('FILE', {
-        'size': '$size',
-        'ed2k': ed2k.toLowerCase(),
-        'fmask': '6700000000',
-        'amask': '10e0f000',
-        's': _session!,
-      });
+    'size': '$size',
+    'ed2k': ed2k.toLowerCase(),
+    'fmask': '6700000000',
+    'amask': '10e0f000',
+    's': _session!,
+  });
 
   /// 按 eid 取集信息（主要是播出日）。240 → 信息；340 NO SUCH EPISODE → null。
   /// 与 [lookup] 同一条串行队列、同一套节流 / 退避 / 会话续期；每 eid 在客户端
@@ -608,22 +607,20 @@ class AnidbUdpFileClient {
         );
       });
 
-  Future<_Reply> _requestEpisode(int episodeId) => _request('EPISODE', {
-        'eid': '$episodeId',
-        's': _session!,
-      });
+  Future<_Reply> _requestEpisode(int episodeId) =>
+      _request('EPISODE', {'eid': '$episodeId', 's': _session!});
 
   /// Settings "test login": AUTH only, no FILE query. The caller must still
   /// await [close] so the session is released with a LOGOUT. Same flood/ban
   /// bookkeeping as a scan batch; a bad password is terminal for this client.
   Future<void> verifyLogin() => _serialize(() async {
-        if (_closed) throw const AnidbUdpException(AnidbUdpFailure.closed);
-        if (!config.isAvailable) {
-          throw const AnidbUdpException(AnidbUdpFailure.unavailable);
-        }
-        if (_terminalFailure != null) throw _terminalFailure!;
-        await _ensureSession();
-      });
+    if (_closed) throw const AnidbUdpException(AnidbUdpFailure.closed);
+    if (!config.isAvailable) {
+      throw const AnidbUdpException(AnidbUdpFailure.unavailable);
+    }
+    if (_terminalFailure != null) throw _terminalFailure!;
+    await _ensureSession();
+  });
 
   Future<void> _ensureSession() async {
     if (_session != null) return;
@@ -709,8 +706,10 @@ class AnidbUdpFileClient {
   static void _backoffAfterTimeout() {
     _timeoutStreak++;
     final int factor = 1 << (_timeoutStreak - 1).clamp(0, 30);
-    final int ms = (_timeoutBackoffBase.inMilliseconds * factor)
-        .clamp(0, _timeoutBackoffMax.inMilliseconds);
+    final int ms = (_timeoutBackoffBase.inMilliseconds * factor).clamp(
+      0,
+      _timeoutBackoffMax.inMilliseconds,
+    );
     _block(AnidbUdpFailure.backoff, Duration(milliseconds: ms));
   }
 
@@ -722,20 +721,26 @@ class AnidbUdpFileClient {
     if (_blockedReason == AnidbUdpFailure.backoff) _blockedUntilMs = 0;
   }
 
-  Future<_Reply> _request(String command, Map<String, String> values,
-      {bool responseRequired = true, bool backoffOnTimeout = true}) async {
+  Future<_Reply> _request(
+    String command,
+    Map<String, String> values, {
+    bool responseRequired = true,
+    bool backoffOnTimeout = true,
+  }) async {
     final String tag = 'f${++_tag}';
-    final String packet = '$command ${({
-      ...values,
-      'tag': tag
-    }).entries.map((MapEntry<String, String> entry) => '${entry.key}=${_escape(entry.value)}').join('&')}';
+    final String packet =
+        '$command ${({...values, 'tag': tag}).entries.map((MapEntry<String, String> entry) => '${entry.key}=${_escape(entry.value)}').join('&')}';
     if (utf8.encode(packet).length > 1400) {
       throw const AnidbUdpException(AnidbUdpFailure.invalidInput);
     }
-    for (int attempt = 0;; attempt++) {
+    for (int attempt = 0; ; attempt++) {
       try {
-        return await _exchangeOnce(command, packet, tag,
-            responseRequired: responseRequired);
+        return await _exchangeOnce(
+          command,
+          packet,
+          tag,
+          responseRequired: responseRequired,
+        );
       } on AnidbUdpException catch (error) {
         if (error.reason == AnidbUdpFailure.network) _session = null;
         rethrow;
@@ -753,8 +758,12 @@ class AnidbUdpFileClient {
     }
   }
 
-  Future<_Reply> _exchangeOnce(String command, String packet, String tag,
-      {required bool responseRequired}) async {
+  Future<_Reply> _exchangeOnce(
+    String command,
+    String packet,
+    String tag, {
+    required bool responseRequired,
+  }) async {
     _transport ??= await _factory(config);
     if (_closed && command != 'LOGOUT') {
       throw const AnidbUdpException(AnidbUdpFailure.closed);
@@ -876,8 +885,9 @@ class _Reply {
   static _Reply parse(String text, String tag) {
     final List<String> lines = text.trimRight().split('\n');
     final String header = lines.first;
-    final String bare =
-        header.startsWith('$tag ') ? header.substring(tag.length + 1) : header;
+    final String bare = header.startsWith('$tag ')
+        ? header.substring(tag.length + 1)
+        : header;
     final RegExpMatch? match = RegExp(r'^(\d{3}) (.*)$').firstMatch(bare);
     if (match == null ||
         (!header.startsWith('$tag ') && !bare.startsWith('6'))) {
@@ -907,14 +917,18 @@ class AnidbDatagramTransport implements AnidbUdpTransport {
   static void _registerClosing(int port, Future<void> closing) {
     // A failed best-effort logout must not prevent a new owner using the port
     // after the socket has been released. The caller still receives its error.
-    final Future<void> released =
-        closing.then<void>((_) {}, onError: (Object _, StackTrace __) {});
+    final Future<void> released = closing.then<void>(
+      (_) {},
+      onError: (Object _, StackTrace __) {},
+    );
     _closingByPort[port] = released;
-    unawaited(released.then((_) {
-      if (identical(_closingByPort[port], released)) {
-        _closingByPort.remove(port);
-      }
-    }));
+    unawaited(
+      released.then((_) {
+        if (identical(_closingByPort[port], released)) {
+          _closingByPort.remove(port);
+        }
+      }),
+    );
   }
 
   static Future<AnidbUdpTransport> connect(AnidbUdpConfig config) async {

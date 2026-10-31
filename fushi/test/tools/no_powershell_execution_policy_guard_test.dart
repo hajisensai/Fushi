@@ -42,10 +42,7 @@ Directory _repoRoot() {
 }
 
 /// 随 app 出货的代码根。**不含** tool/ 与 .github/：那些是开发期/CI 脚本。
-const List<String> _shippedRoots = <String>[
-  'fushi/lib',
-  'fushi/windows',
-];
+const List<String> _shippedRoots = <String>['fushi/lib', 'fushi/windows'];
 
 /// 只看文本源码；二进制与生成物跳过。
 bool _isTextSource(String path) {
@@ -101,7 +98,8 @@ void main() {
     expect(
       offenders,
       isEmpty,
-      reason: '这些出货代码给 powershell 传了执行策略绕过参数：\n'
+      reason:
+          '这些出货代码给 powershell 传了执行策略绕过参数：\n'
           '${offenders.join('\n')}\n\n'
           '它对 `-Command` 内联字符串**本来就不生效**（执行策略只管 .ps1 文件加载），'
           '却是 AV/EDR 行为检测里的高权重信号——卡巴 PDM 已因此把 app 进程判成木马并结束。\n'

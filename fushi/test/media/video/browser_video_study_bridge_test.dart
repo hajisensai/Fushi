@@ -24,16 +24,15 @@ BrowserVideoSample _sample({
   bool playing = true,
   double speed = 1.0,
   bool ended = false,
-}) =>
-    BrowserVideoSample(
-      mediaKey: mediaKey,
-      title: title,
-      positionMs: positionMs,
-      durationMs: durationMs,
-      playing: playing,
-      speed: speed,
-      ended: ended,
-    );
+}) => BrowserVideoSample(
+  mediaKey: mediaKey,
+  title: title,
+  positionMs: positionMs,
+  durationMs: durationMs,
+  playing: playing,
+  speed: speed,
+  ended: ended,
+);
 
 Future<List<StudySegmentRow>> _segments(FushiDatabase db) async =>
     (await db.select(db.studySegments).get())
@@ -86,11 +85,13 @@ class _Rig {
   }) {
     for (int i = 1; i <= seconds; i++) {
       _fakeNow = _fakeNow.add(const Duration(seconds: 1));
-      bridge.onSample(_sample(
-        mediaKey: mediaKey,
-        title: title,
-        positionMs: fromMs + i * 1000,
-      ));
+      bridge.onSample(
+        _sample(
+          mediaKey: mediaKey,
+          title: title,
+          positionMs: fromMs + i * 1000,
+        ),
+      );
     }
   }
 }
@@ -99,17 +100,18 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   test('BrowserVideoSample.tryParse 契约', () {
-    final BrowserVideoSample? ok =
-        BrowserVideoSample.tryParse(<String, dynamic>{
-      'mediaKind': 'video',
-      'mediaKey': 'web:x',
-      'title': 'T',
-      'positionMs': 1000,
-      'durationMs': 5000.0, // JSON 里带 .0 的整数值也认
-      'playing': true,
-      'speed': 2,
-      'ended': true,
-    });
+    final BrowserVideoSample? ok = BrowserVideoSample.tryParse(
+      <String, dynamic>{
+        'mediaKind': 'video',
+        'mediaKey': 'web:x',
+        'title': 'T',
+        'positionMs': 1000,
+        'durationMs': 5000.0, // JSON 里带 .0 的整数值也认
+        'playing': true,
+        'speed': 2,
+        'ended': true,
+      },
+    );
     expect(ok, isNotNull);
     expect(ok!.durationMs, 5000);
     expect(ok.speed, 2.0);
@@ -152,19 +154,23 @@ void main() {
     final List<StudySegmentRow> rows = await _segments(rig.db);
     expect(rows, isNotEmpty);
     expect(
-        rows.every((StudySegmentRow r) => r.mediaKey == 'web:yt-abc'), isTrue);
+      rows.every((StudySegmentRow r) => r.mediaKey == 'web:yt-abc'),
+      isTrue,
+    );
     expect(rows.first.title, 'Video A');
     expect(_totalMs(rows, 'web:yt-abc'), 5000);
     // 覆盖并集已按视频身份持久化。
-    expect(await rig.db.getPref(videoWatchCoveragePrefKey('web:yt-abc')),
-        isNotNull);
+    expect(
+      await rig.db.getPref(videoWatchCoveragePrefKey('web:yt-abc')),
+      isNotNull,
+    );
   });
 
-  test('RemoteVideoPlaybackSource 播放中按经过墙钟 × 倍速外推位置、暂停不外推、封顶片长',
-      () {
+  test('RemoteVideoPlaybackSource 播放中按经过墙钟 × 倍速外推位置、暂停不外推、封顶片长', () {
     _fakeNow = DateTime(2026, 1, 1, 12);
-    final RemoteVideoPlaybackSource source =
-        RemoteVideoPlaybackSource(now: () => _fakeNow);
+    final RemoteVideoPlaybackSource source = RemoteVideoPlaybackSource(
+      now: () => _fakeNow,
+    );
     source.apply(_sample(positionMs: 1000, speed: 2.0, durationMs: 2500));
     _fakeNow = _fakeNow.add(const Duration(milliseconds: 700));
     expect(source.positionMs, 2400, reason: '1000 + 700 × 2.0');

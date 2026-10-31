@@ -21,13 +21,12 @@ Future<FushiDatabase> _openDb() async {
 DictionaryMetadataCompanion _meta({
   String name = 'JMdict [2026-05-17]',
   String? displayName,
-}) =>
-    DictionaryMetadataCompanion.insert(
-      name: name,
-      formatKey: 'yomitan',
-      order: 0,
-      displayName: Value<String?>(displayName),
-    );
+}) => DictionaryMetadataCompanion.insert(
+  name: name,
+  formatKey: 'yomitan',
+  order: 0,
+  displayName: Value<String?>(displayName),
+);
 
 void main() {
   group('dictionary_metadata.display_name (v95)', () {
@@ -76,11 +75,11 @@ void main() {
 
   group('Dictionary.effectiveDisplayName', () {
     Dictionary make({String? displayName}) => Dictionary(
-          name: 'JMdict [2026-05-17]',
-          formatKey: 'yomitan',
-          order: 0,
-          displayName: displayName,
-        );
+      name: 'JMdict [2026-05-17]',
+      formatKey: 'yomitan',
+      order: 0,
+      displayName: displayName,
+    );
 
     test('没改过名 → 显示真名', () {
       expect(make().effectiveDisplayName, 'JMdict [2026-05-17]');
@@ -119,7 +118,8 @@ void main() {
       expect(
         a == b,
         isTrue,
-        reason: '同一本词典改了显示名后必须仍等于自己——一堆集合运算（hidden / '
+        reason:
+            '同一本词典改了显示名后必须仍等于自己——一堆集合运算（hidden / '
             'collapsed / 排序）按 Dictionary 相等性去重',
       );
       expect(a.hashCode, b.hashCode);
@@ -164,11 +164,7 @@ void main() {
       expect(migrated.type, DictionaryType.term);
       expect(migrated.metadata, const <String, String>{'revision': '2'});
       // 必须原样带过的——这两条是丢数据的那两列
-      expect(
-        migrated.displayName,
-        '日汉大辞典',
-        reason: '类型自愈只想换 type，不能顺手抹掉用户的改名',
-      );
+      expect(migrated.displayName, '日汉大辞典', reason: '类型自愈只想换 type，不能顺手抹掉用户的改名');
       expect(
         migrated.languageOverride,
         'ja',
@@ -201,16 +197,12 @@ void main() {
     setUp(() async {
       db = FushiDatabase.forTesting(NativeDatabase.memory());
       repo = DictionaryRepository(db);
-      await repo.persistDictionary(Dictionary(
-        name: 'JMdict [2026-05-17]',
-        formatKey: 'yomitan',
-        order: 0,
-      ));
-      await repo.persistDictionary(Dictionary(
-        name: '明鏡',
-        formatKey: 'yomitan',
-        order: 1,
-      ));
+      await repo.persistDictionary(
+        Dictionary(name: 'JMdict [2026-05-17]', formatKey: 'yomitan', order: 0),
+      );
+      await repo.persistDictionary(
+        Dictionary(name: '明鏡', formatKey: 'yomitan', order: 1),
+      );
     });
 
     tearDown(() async => db.close());
@@ -219,27 +211,23 @@ void main() {
       expect(
         repo.displayNameOverrides,
         isEmpty,
-        reason: '空条目要被序列化进 JS、还要进 memo key——装等值条目既占带宽又'
+        reason:
+            '空条目要被序列化进 JS、还要进 memo key——装等值条目既占带宽又'
             '让指纹无谓地变',
       );
     });
 
     test('只装改过名的那本', () async {
       await repo.setDictionaryDisplayName(repo.dictionaries.first, '日汉大辞典');
-      expect(
-        repo.displayNameOverrides,
-        <String, String>{'JMdict [2026-05-17]': '日汉大辞典'},
-      );
+      expect(repo.displayNameOverrides, <String, String>{
+        'JMdict [2026-05-17]': '日汉大辞典',
+      });
     });
 
     test('改成与真名相同 → 存 null，投影里不出现', () async {
       final Dictionary d = repo.dictionaries.first;
       await repo.setDictionaryDisplayName(d, d.name);
-      expect(
-        d.displayName,
-        isNull,
-        reason: '等值不该留一行冗余覆盖，否则投影会装进一条永远等于真名的条目',
-      );
+      expect(d.displayName, isNull, reason: '等值不该留一行冗余覆盖，否则投影会装进一条永远等于真名的条目');
       expect(repo.displayNameOverrides, isEmpty);
     });
 

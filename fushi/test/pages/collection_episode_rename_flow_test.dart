@@ -23,14 +23,18 @@ void main() {
       ('video/e1', 'raw_file_01'),
       ('video/e2', 'raw_file_02'),
     ]) {
-      await db.upsertVideoBook(VideoBooksCompanion(
-        bookUid: Value(uid),
-        title: Value(title),
-        videoPath: Value('/v/$title.mkv'),
-      ));
+      await db.upsertVideoBook(
+        VideoBooksCompanion(
+          bookUid: Value(uid),
+          title: Value(title),
+          videoPath: Value('/v/$title.mkv'),
+        ),
+      );
     }
-    collectionId =
-        await db.createMediaCollection('Show', collectionType: 'playlist');
+    collectionId = await db.createMediaCollection(
+      'Show',
+      collectionType: 'playlist',
+    );
     await db.addToCollection(collectionId, MediaKind.video, 'video/e1');
     await db.addToCollection(collectionId, MediaKind.video, 'video/e2');
   });
@@ -38,27 +42,32 @@ void main() {
   tearDown(() => db.close());
 
   Future<void> seedEpisodeMeta() async {
-    await db.upsertVideoScrapeMeta(VideoScrapeMetaCompanion.insert(
-      bookUid: 'video/e1',
-      source: 'bangumi',
-      subjectId: '100',
-      title: '出会い',
-      episodeNumber: const Value<int?>(1),
-      scrapedAt: DateTime(2026),
-    ));
-    await db.upsertVideoScrapeMeta(VideoScrapeMetaCompanion.insert(
-      bookUid: 'video/e2',
-      source: 'bangumi',
-      subjectId: '100',
-      title: '別れ',
-      episodeNumber: const Value<int?>(2),
-      scrapedAt: DateTime(2026),
-    ));
+    await db.upsertVideoScrapeMeta(
+      VideoScrapeMetaCompanion.insert(
+        bookUid: 'video/e1',
+        source: 'bangumi',
+        subjectId: '100',
+        title: '出会い',
+        episodeNumber: const Value<int?>(1),
+        scrapedAt: DateTime(2026),
+      ),
+    );
+    await db.upsertVideoScrapeMeta(
+      VideoScrapeMetaCompanion.insert(
+        bookUid: 'video/e2',
+        source: 'bangumi',
+        subjectId: '100',
+        title: '別れ',
+        episodeNumber: const Value<int?>(2),
+        scrapedAt: DateTime(2026),
+      ),
+    );
   }
 
   Future<List<VideoBookRow>> loadMembers() async {
-    final List<MediaCollectionItemRow> items =
-        await db.getCollectionItems(collectionId);
+    final List<MediaCollectionItemRow> items = await db.getCollectionItems(
+      collectionId,
+    );
     final List<VideoBookRow> all = await db.allVideoBooks();
     final Map<String, VideoBookRow> byUid = <String, VideoBookRow>{
       for (final VideoBookRow r in all) r.bookUid: r,
@@ -70,29 +79,29 @@ void main() {
   }
 
   Widget buildApp() => TranslationProvider(
-        child: MaterialApp(
-          home: MediaCollectionDetailPage(
-            database: db,
-            collection: MediaCollectionRow(
-              origin: 'user',
-              organizeAliases: '',
-              id: collectionId,
-              name: 'Show',
-              collectionType: 'playlist',
-              coverSource: null,
-              sortOrder: 0,
-              createdAt: 0,
-              orderUpdatedAt: 0,
-            ),
-            loadEpisodes: () async => <CollectionEpisodeSlot>[
-              for (final VideoBookRow row in await (loadMembers)())
-                CollectionEpisodeSlot.local(row),
-            ],
-            onOpenEpisode: (VideoBookRow _) {},
-            onChanged: () {},
-          ),
+    child: MaterialApp(
+      home: MediaCollectionDetailPage(
+        database: db,
+        collection: MediaCollectionRow(
+          origin: 'user',
+          organizeAliases: '',
+          id: collectionId,
+          name: 'Show',
+          collectionType: 'playlist',
+          coverSource: null,
+          sortOrder: 0,
+          createdAt: 0,
+          orderUpdatedAt: 0,
         ),
-      );
+        loadEpisodes: () async => <CollectionEpisodeSlot>[
+          for (final VideoBookRow row in await (loadMembers)())
+            CollectionEpisodeSlot.local(row),
+        ],
+        onOpenEpisode: (VideoBookRow _) {},
+        onChanged: () {},
+      ),
+    ),
+  );
 
   Future<void> pumpWide(WidgetTester tester) async {
     tester.view.physicalSize = const Size(1400, 1600);
@@ -136,9 +145,9 @@ void main() {
 
     await invokeEpisodeRename(tester);
 
-    await tester.tap(find.byKey(
-      const ValueKey<String>('episode-rename-row-video/e2'),
-    ));
+    await tester.tap(
+      find.byKey(const ValueKey<String>('episode-rename-row-video/e2')),
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.text(t.collection_episode_rename_apply(n: 1)));
     await tester.pumpAndSettle();

@@ -80,8 +80,10 @@ void main() {
   });
 
   test('没改过名（displayTitle 为 null 或等于 title）不写 wire 键', () {
-    const RemoteBookInfo plain =
-        RemoteBookInfo(title: '原始书名', hasContent: true);
+    const RemoteBookInfo plain = RemoteBookInfo(
+      title: '原始书名',
+      hasContent: true,
+    );
     expect(plain.toJson().containsKey('displayTitle'), isFalse);
     expect(plain.displayName, '原始书名');
 
@@ -107,10 +109,7 @@ void main() {
   test('host 清单下发用户改过的书名，身份键仍是 raw title', () async {
     final FushiDatabase db = await openDb('bug1488_host_');
     await db.insertEpubBook(book('原始书名', '原始书名'));
-    await db.setPref(
-      overridePrefKey('原始书名'),
-      PrefCodec.encode('我改的名字'),
-    );
+    await db.setPref(overridePrefKey('原始书名'), PrefCodec.encode('我改的名字'));
 
     final List<RemoteBookInfo> books = await buildHost(db).listBooks();
     expect(books, hasLength(1));
@@ -144,18 +143,25 @@ void main() {
     );
 
     final Map<String, String> rest = await db.getAllPrefs();
-    expect(rest.containsKey(overridePrefKey('原始书名')), isTrue,
-        reason: '书名 override 是内容，必须活下来');
-    expect(rest.containsKey('reader_font_size'), isFalse,
-        reason: '普通阅读设置仍归 settings 分类');
+    expect(
+      rest.containsKey(overridePrefKey('原始书名')),
+      isTrue,
+      reason: '书名 override 是内容，必须活下来',
+    );
+    expect(
+      rest.containsKey('reader_font_size'),
+      isFalse,
+      reason: '普通阅读设置仍归 settings 分类',
+    );
   });
 
   // ── 备份合并导入：母设备的改名并进子设备，且绝不 clobber 本机改名 ──────────
 
   test('合并导入：母设备 override 并入子设备，子设备自己的改名不被覆盖', () async {
     // 母设备（src）：两本书都改过名。
-    final Directory srcDir =
-        await Directory.systemTemp.createTemp('bug1488_src_');
+    final Directory srcDir = await Directory.systemTemp.createTemp(
+      'bug1488_src_',
+    );
     addTearDown(() => cleanupTempDir(srcDir));
     final FushiDatabase src = FushiDatabase(srcDir.path);
     await src.insertEpubBook(book('书甲', '书甲'));
@@ -168,13 +174,11 @@ void main() {
     final FushiDatabase target = await openDb('bug1488_dst_');
     await target.insertEpubBook(book('书甲', '书甲'));
     await target.insertEpubBook(book('书乙', '书乙'));
-    await target.setPref(
-      overridePrefKey('书乙'),
-      PrefCodec.encode('子设备自己起的名'),
-    );
+    await target.setPref(overridePrefKey('书乙'), PrefCodec.encode('子设备自己起的名'));
 
-    final String srcDbPath =
-        p.join(srcDir.path, 'fushi.db').replaceAll(r'\', '/');
+    final String srcDbPath = p
+        .join(srcDir.path, 'fushi.db')
+        .replaceAll(r'\', '/');
     await target.customStatement("ATTACH DATABASE '$srcDbPath' AS mergesrc");
     await BackupMergeEngine(target).merge();
     await target.customStatement('DETACH DATABASE mergesrc');

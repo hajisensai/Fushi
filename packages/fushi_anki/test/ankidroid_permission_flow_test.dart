@@ -44,26 +44,32 @@ void main() {
       'unavailable': AnkiErrorCode.ankiDroidUnavailable,
       'no_activity': AnkiErrorCode.permissionDenied,
     }.entries) {
-      test('native 回 "${entry.key}" → 不查 provider，分类成 ${entry.value}',
-          () async {
-        final List<String> calls = <String>[];
-        _mockChannel((MethodCall call) async {
-          calls.add(call.method);
-          if (call.method == 'requestAnkidroidPermissions') return entry.key;
-          return null;
-        });
+      test(
+        'native 回 "${entry.key}" → 不查 provider，分类成 ${entry.value}',
+        () async {
+          final List<String> calls = <String>[];
+          _mockChannel((MethodCall call) async {
+            calls.add(call.method);
+            if (call.method == 'requestAnkidroidPermissions') return entry.key;
+            return null;
+          });
 
-        final AnkiFetchResult result =
-            await AnkiRepository().fetchConfiguration();
+          final AnkiFetchResult result = await AnkiRepository()
+              .fetchConfiguration();
 
-        expect(result, isA<AnkiFetchError>());
-        expect((result as AnkiFetchError).code, entry.value,
-            reason: '错误码必须过 classifyPlatformError，否则本地化表查不中');
-        // 关键断言：权限没拿到就一个 provider 方法都不该发出去。此前的
-        // fire-and-forget 契约下 getDecks/getModelList 会照发不误。
-        expect(calls, <String>['requestAnkidroidPermissions'],
-            reason: '权限未授予时不得继续访问 AnkiDroid provider');
-      });
+          expect(result, isA<AnkiFetchError>());
+          expect(
+            (result as AnkiFetchError).code,
+            entry.value,
+            reason: '错误码必须过 classifyPlatformError，否则本地化表查不中',
+          );
+          // 关键断言：权限没拿到就一个 provider 方法都不该发出去。此前的
+          // fire-and-forget 契约下 getDecks/getModelList 会照发不误。
+          expect(calls, <String>[
+            'requestAnkidroidPermissions',
+          ], reason: '权限未授予时不得继续访问 AnkiDroid provider');
+        },
+      );
     }
 
     test('native 回 "granted" → 正常继续查 provider', () async {
@@ -83,7 +89,8 @@ void main() {
         return null;
       });
 
-      final AnkiFetchResult result = await AnkiRepository().fetchConfiguration();
+      final AnkiFetchResult result = await AnkiRepository()
+          .fetchConfiguration();
 
       expect(result, isA<AnkiFetchSuccess>());
       expect(calls, contains('getDecks'));
@@ -108,8 +115,10 @@ void main() {
         });
 
         expect(
-            await AnkiRepository().fetchConfiguration(), isA<AnkiFetchSuccess>(),
-            reason: '旧契约返回值 $legacy 不得被判成拒绝');
+          await AnkiRepository().fetchConfiguration(),
+          isA<AnkiFetchSuccess>(),
+          reason: '旧契约返回值 $legacy 不得被判成拒绝',
+        );
         expect(calls, contains('getDecks'));
       }
     });
@@ -119,42 +128,55 @@ void main() {
     test('native 裸码全部映射到带 ANKI_ 前缀的稳定码', () {
       expect(
         AnkiRepository.classifyPlatformError(
-            PlatformException(code: 'PERMISSION_DENIED')),
+          PlatformException(code: 'PERMISSION_DENIED'),
+        ),
         AnkiErrorCode.permissionDenied,
       );
       expect(
         AnkiRepository.classifyPlatformError(
-            PlatformException(code: 'PERMISSION_PERMANENTLY_DENIED')),
+          PlatformException(code: 'PERMISSION_PERMANENTLY_DENIED'),
+        ),
         AnkiErrorCode.permissionPermanentlyDenied,
       );
       expect(
         AnkiRepository.classifyPlatformError(
-            PlatformException(code: 'ANKI_NOT_INSTALLED')),
+          PlatformException(code: 'ANKI_NOT_INSTALLED'),
+        ),
         AnkiErrorCode.ankiDroidUnavailable,
       );
       expect(
         AnkiRepository.classifyPlatformError(
-            PlatformException(code: AnkiErrorCode.collectionUnavailable)),
+          PlatformException(code: AnkiErrorCode.collectionUnavailable),
+        ),
         AnkiErrorCode.collectionUnavailable,
       );
     });
 
     test('三个权限态互不相等——合并了就等于给用户指错路', () {
-      expect(AnkiErrorCode.permissionDenied,
-          isNot(AnkiErrorCode.permissionPermanentlyDenied));
-      expect(AnkiErrorCode.permissionDenied,
-          isNot(AnkiErrorCode.ankiDroidUnavailable));
-      expect(AnkiErrorCode.permissionPermanentlyDenied,
-          isNot(AnkiErrorCode.ankiDroidUnavailable));
+      expect(
+        AnkiErrorCode.permissionDenied,
+        isNot(AnkiErrorCode.permissionPermanentlyDenied),
+      );
+      expect(
+        AnkiErrorCode.permissionDenied,
+        isNot(AnkiErrorCode.ankiDroidUnavailable),
+      );
+      expect(
+        AnkiErrorCode.permissionPermanentlyDenied,
+        isNot(AnkiErrorCode.ankiDroidUnavailable),
+      );
     });
 
     test('漏了守卫时 provider 的英文原文仍按 message 兜底分类', () {
       expect(
-        AnkiRepository.classifyPlatformError(PlatformException(
-          code: 'ANKI_PROVIDER_ERROR',
-          message: 'Permission not granted for: CardContentProvider.query '
-              '/decks (app.fushi.reader)',
-        )),
+        AnkiRepository.classifyPlatformError(
+          PlatformException(
+            code: 'ANKI_PROVIDER_ERROR',
+            message:
+                'Permission not granted for: CardContentProvider.query '
+                '/decks (app.fushi.reader)',
+          ),
+        ),
         AnkiErrorCode.permissionDenied,
       );
     });
@@ -162,7 +184,8 @@ void main() {
     test('无关异常保持未分类（null），不冒领', () {
       expect(
         AnkiRepository.classifyPlatformError(
-            PlatformException(code: 'ADD_NOTE_FAILED', message: 'boom')),
+          PlatformException(code: 'ADD_NOTE_FAILED', message: 'boom'),
+        ),
         isNull,
       );
     });
@@ -176,11 +199,15 @@ void main() {
         );
       });
 
-      final AnkiFetchResult result = await AnkiRepository().fetchConfiguration();
+      final AnkiFetchResult result = await AnkiRepository()
+          .fetchConfiguration();
 
       expect(result, isA<AnkiFetchError>());
-      expect((result as AnkiFetchError).code, AnkiErrorCode.permissionDenied,
-          reason: '直传 e.code 会让本地化表恒查不中，英文原文外泄给用户');
+      expect(
+        (result as AnkiFetchError).code,
+        AnkiErrorCode.permissionDenied,
+        reason: '直传 e.code 会让本地化表恒查不中，英文原文外泄给用户',
+      );
     });
   });
 
@@ -203,10 +230,16 @@ void main() {
 
     test('权限请求把 Result 挂起，等 onRequestPermissionsResult 再 resolve', () {
       final String src = handler.readAsStringSync();
-      expect(src.contains('pendingPermissionResult = result;'), isTrue,
-          reason: '不挂起就等于回到「发完就返回」，权限框还开着错误已经报完');
-      expect(src.contains('boolean onRequestPermissionsResult('), isTrue,
-          reason: '没有回调入口，授权结果永远回不到 Dart');
+      expect(
+        src.contains('pendingPermissionResult = result;'),
+        isTrue,
+        reason: '不挂起就等于回到「发完就返回」，权限框还开着错误已经报完',
+      );
+      expect(
+        src.contains('boolean onRequestPermissionsResult('),
+        isTrue,
+        reason: '没有回调入口，授权结果永远回不到 Dart',
+      );
     });
 
     test('MainActivity 转发系统权限回调——全 app 曾经一个实现都没有', () {
@@ -220,11 +253,17 @@ void main() {
 
     test('永久拒绝与普通拒绝在 native 侧被分开', () {
       final String src = handler.readAsStringSync();
-      expect(src.contains('canAskPermissionAgain('), isTrue,
-          reason: '不查 rationale 就分不出「还能再问」和「不再询问」');
+      expect(
+        src.contains('canAskPermissionAgain('),
+        isTrue,
+        reason: '不查 rationale 就分不出「还能再问」和「不再询问」',
+      );
       expect(src.contains('PERM_PERMANENTLY_DENIED'), isTrue);
-      expect(src.contains('PERM_UNAVAILABLE'), isTrue,
-          reason: 'AnkiDroid 没装时该权限根本不存在，报「去设置授权」是误导');
+      expect(
+        src.contains('PERM_UNAVAILABLE'),
+        isTrue,
+        reason: 'AnkiDroid 没装时该权限根本不存在，报「去设置授权」是误导',
+      );
     });
 
     test('requirePermission 守卫不再自己发起请求（避免一次操作弹两次框）', () {
@@ -232,9 +271,13 @@ void main() {
       final int idx = src.indexOf('private boolean requirePermission(');
       expect(idx, greaterThanOrEqualTo(0));
       final String body = src.substring(idx, idx + 600);
-      expect(body.contains('requestPermission('), isFalse,
-          reason: '发起与等待是 requestAnkidroidPermissions 的单一职责；'
-              '守卫里再发一次既弹两次框，那次请求也无人等待');
+      expect(
+        body.contains('requestPermission('),
+        isFalse,
+        reason:
+            '发起与等待是 requestAnkidroidPermissions 的单一职责；'
+            '守卫里再发一次既弹两次框，那次请求也无人等待',
+      );
     });
   });
 }

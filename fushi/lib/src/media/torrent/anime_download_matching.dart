@@ -57,16 +57,16 @@ class TorrentEpisodeScope {
 
   /// 集号区间已知（`01-13`）。
   const TorrentEpisodeScope.range((int, int) range)
-      : this._(TorrentEpisodeScopeKind.range, range: range);
+    : this._(TorrentEpisodeScopeKind.range, range: range);
 
   /// 单集。
   const TorrentEpisodeScope.single(int episode)
-      : this._(TorrentEpisodeScopeKind.single, episode: episode);
+    : this._(TorrentEpisodeScopeKind.single, episode: episode);
 
   /// 整季包（集号未知）。[episodeCount] 是标题自报的包内集数（`全13話`），
   /// 标题没写为 null。
   const TorrentEpisodeScope.season({int? episodeCount})
-      : this._(TorrentEpisodeScopeKind.season, episode: episodeCount);
+    : this._(TorrentEpisodeScopeKind.season, episode: episodeCount);
 
   /// 无集数概念。
   const TorrentEpisodeScope.unknown() : this._(TorrentEpisodeScopeKind.unknown);
@@ -110,8 +110,9 @@ TorrentEpisodeScope torrentEpisodeScope(NyaaTorrent t) {
   if (t.isBatch || t.season != null || _seasonPackMarker.hasMatch(t.title)) {
     final RegExpMatch? countMatch = _seasonPackEpisodeCount.firstMatch(t.title);
     return TorrentEpisodeScope.season(
-      episodeCount:
-          countMatch == null ? null : int.tryParse(countMatch.group(1)!),
+      episodeCount: countMatch == null
+          ? null
+          : int.tryParse(countMatch.group(1)!),
     );
   }
   return const TorrentEpisodeScope.unknown();
@@ -152,8 +153,10 @@ List<int> _seasonEpisodes(
   int? seriesEpisodeCount,
 ) {
   final List<int> episodes = index.byEpisode.keys.toList()..sort();
-  final int? cap =
-      seasonSubtitleCap(scope, seriesEpisodeCount: seriesEpisodeCount);
+  final int? cap = seasonSubtitleCap(
+    scope,
+    seriesEpisodeCount: seriesEpisodeCount,
+  );
   if (cap == null || episodes.length <= cap) return episodes;
   return episodes.sublist(0, cap);
 }
@@ -187,11 +190,14 @@ List<int> _seasonEpisodes(
     case TorrentEpisodeScopeKind.single:
       return (
         covered: index.byEpisode.containsKey(scope.episode!) ? 1 : 0,
-        total: 1
+        total: 1,
       );
     case TorrentEpisodeScopeKind.season:
-      final List<int> episodes =
-          _seasonEpisodes(index, scope, seriesEpisodeCount);
+      final List<int> episodes = _seasonEpisodes(
+        index,
+        scope,
+        seriesEpisodeCount,
+      );
       if (episodes.isNotEmpty) {
         return (covered: episodes.length, total: null);
       }
@@ -244,8 +250,11 @@ List<(int?, JimakuFile)> chooseSubtitlesFor(
       }
       return <(int?, JimakuFile)>[(episode, candidates.first)];
     case TorrentEpisodeScopeKind.season:
-      final List<int> episodes =
-          _seasonEpisodes(index, scope, seriesEpisodeCount);
+      final List<int> episodes = _seasonEpisodes(
+        index,
+        scope,
+        seriesEpisodeCount,
+      );
       if (episodes.isNotEmpty) {
         return <(int?, JimakuFile)>[
           for (final int episode in episodes)
@@ -350,11 +359,13 @@ List<ResolvedSubtitleMatch> matchJimakuFilesToVideoNames(
       soleTarget: false,
     );
     if (match.kind != JimakuEpisodeMatchKind.exact) continue;
-    out.add(ResolvedSubtitleMatch(
-      videoFileName: name,
-      file: match.file!,
-      episode: episode,
-    ));
+    out.add(
+      ResolvedSubtitleMatch(
+        videoFileName: name,
+        file: match.file!,
+        episode: episode,
+      ),
+    );
   }
   if (out.isNotEmpty) return out;
 

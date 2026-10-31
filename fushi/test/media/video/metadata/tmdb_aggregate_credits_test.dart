@@ -11,10 +11,11 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
-http.Response _json(Object payload) =>
-    http.Response(jsonEncode(payload), 200, headers: <String, String>{
-      'content-type': 'application/json; charset=utf-8',
-    });
+http.Response _json(Object payload) => http.Response(
+  jsonEncode(payload),
+  200,
+  headers: <String, String>{'content-type': 'application/json; charset=utf-8'},
+);
 
 Map<String, Object?> _person(int id, String name, {String? profile}) =>
     <String, Object?>{
@@ -125,64 +126,71 @@ void main() {
       contains('aggregate_credits'),
     );
     final Iterable<VideoMetadataCredit> voice = work.credits.where(
-        (VideoMetadataCredit c) =>
-            c.kind == VideoMetadataCreditKind.voiceActor);
-    expect(
-      voice.map((VideoMetadataCredit c) => c.roleName),
-      <String>['Frieren', 'Ubel', 'Young Ubel'],
-      reason: '一人多角色展开成多条，(voice) 后缀剥掉',
+      (VideoMetadataCredit c) => c.kind == VideoMetadataCreditKind.voiceActor,
     );
+    expect(voice.map((VideoMetadataCredit c) => c.roleName), <String>[
+      'Frieren',
+      'Ubel',
+      'Young Ubel',
+    ], reason: '一人多角色展开成多条，(voice) 后缀剥掉');
     expect(voice.first.character?.name, 'Frieren');
-    expect(voice.first.person.profileUrl,
-        'https://image.tmdb.org/t/p/original/atsumi.jpg');
+    expect(
+      voice.first.person.profileUrl,
+      'https://image.tmdb.org/t/p/original/atsumi.jpg',
+    );
     expect(voice.first.providerCreditId, 'c-main');
     final VideoMetadataCredit live = work.credits.singleWhere(
-        (VideoMetadataCredit c) => c.kind == VideoMetadataCreditKind.actor);
+      (VideoMetadataCredit c) => c.kind == VideoMetadataCreditKind.actor,
+    );
     expect(live.roleName, 'Host', reason: '没有 (voice) 的仍是 actor');
     final VideoMetadataCredit director = work.credits.singleWhere(
-        (VideoMetadataCredit c) => c.kind == VideoMetadataCreditKind.director);
+      (VideoMetadataCredit c) => c.kind == VideoMetadataCreditKind.director,
+    );
     expect(director.job, 'Series Director');
     expect(director.providerCreditId, 'c-dir');
     // `credits` 里的常驻主演与汇总表重叠时不重复。
     expect(
-      work.credits
-          .where((VideoMetadataCredit c) => c.person.name == 'Atsumi Tanezaki'),
+      work.credits.where(
+        (VideoMetadataCredit c) => c.person.name == 'Atsumi Tanezaki',
+      ),
       hasLength(1),
     );
     provider.close();
   });
 
-  test('movies keep plain credits and do not request aggregate_credits',
-      () async {
-    final List<Uri> requests = <Uri>[];
-    final TmdbVideoMetadataProvider provider = TmdbVideoMetadataProvider(
-      apiKey: 'KEY',
-      client: MockClient((http.Request request) async {
-        requests.add(request.url);
-        return _json(<String, Object?>{
-          'id': 200,
-          'title': 'Movie',
-          'credits': <String, Object?>{
-            'cast': <Object?>[
-              <String, Object?>{
-                ..._person(5, 'Someone'),
-                'character': 'Lead',
-                'credit_id': 'm-1',
-                'order': 0,
-              },
-            ],
-            'crew': <Object?>[],
-          },
-        });
-      }),
-    );
-    final VideoMetadataWork work = (await provider.fetchWork(movie))!;
-    expect(
-      requests.single.queryParameters['append_to_response'],
-      isNot(contains('aggregate_credits')),
-    );
-    expect(work.credits.single.kind, VideoMetadataCreditKind.actor);
-    expect(work.credits.single.roleName, 'Lead');
-    provider.close();
-  });
+  test(
+    'movies keep plain credits and do not request aggregate_credits',
+    () async {
+      final List<Uri> requests = <Uri>[];
+      final TmdbVideoMetadataProvider provider = TmdbVideoMetadataProvider(
+        apiKey: 'KEY',
+        client: MockClient((http.Request request) async {
+          requests.add(request.url);
+          return _json(<String, Object?>{
+            'id': 200,
+            'title': 'Movie',
+            'credits': <String, Object?>{
+              'cast': <Object?>[
+                <String, Object?>{
+                  ..._person(5, 'Someone'),
+                  'character': 'Lead',
+                  'credit_id': 'm-1',
+                  'order': 0,
+                },
+              ],
+              'crew': <Object?>[],
+            },
+          });
+        }),
+      );
+      final VideoMetadataWork work = (await provider.fetchWork(movie))!;
+      expect(
+        requests.single.queryParameters['append_to_response'],
+        isNot(contains('aggregate_credits')),
+      );
+      expect(work.credits.single.kind, VideoMetadataCreditKind.actor);
+      expect(work.credits.single.roleName, 'Lead');
+      provider.close();
+    },
+  );
 }

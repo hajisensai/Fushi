@@ -89,9 +89,14 @@ List<RemoteContinueCandidate> remoteContinueCandidates({
   }
   for (final List<RemoteBookInfo> group in bookGroups.values) {
     final List<RemoteBookInfo> sorted = List<RemoteBookInfo>.of(group)
-      ..sort((RemoteBookInfo a, RemoteBookInfo b) =>
-          _compareMembers(a.collection!, a.downloadId, b.collection!,
-              b.downloadId));
+      ..sort(
+        (RemoteBookInfo a, RemoteBookInfo b) => _compareMembers(
+          a.collection!,
+          a.downloadId,
+          b.collection!,
+          b.downloadId,
+        ),
+      );
     final List<CollectionMemberProgress> progress = <CollectionMemberProgress>[
       for (final RemoteBookInfo b in sorted)
         CollectionMemberProgress(
@@ -102,10 +107,14 @@ List<RemoteContinueCandidate> remoteContinueCandidates({
     ];
     final int? idx = _collectionContinueIndex(progress);
     if (idx == null) continue;
-    out.add(_bookCandidate(
-      sorted[idx],
-      recentMs: _maxOf(sorted.map((RemoteBookInfo b) => b.progressUpdatedAtMs)),
-    ));
+    out.add(
+      _bookCandidate(
+        sorted[idx],
+        recentMs: _maxOf(
+          sorted.map((RemoteBookInfo b) => b.progressUpdatedAtMs),
+        ),
+      ),
+    );
   }
 
   final Map<String, List<RemoteVideoInfo>> videoGroups =
@@ -123,8 +132,10 @@ List<RemoteContinueCandidate> remoteContinueCandidates({
   }
   for (final List<RemoteVideoInfo> group in videoGroups.values) {
     final List<RemoteVideoInfo> sorted = List<RemoteVideoInfo>.of(group)
-      ..sort((RemoteVideoInfo a, RemoteVideoInfo b) =>
-          _compareMembers(a.collection!, a.id, b.collection!, b.id));
+      ..sort(
+        (RemoteVideoInfo a, RemoteVideoInfo b) =>
+            _compareMembers(a.collection!, a.id, b.collection!, b.id),
+      );
     final List<CollectionMemberProgress> progress = <CollectionMemberProgress>[
       for (final RemoteVideoInfo v in sorted)
         CollectionMemberProgress(
@@ -136,13 +147,16 @@ List<RemoteContinueCandidate> remoteContinueCandidates({
     ];
     final int? idx = _collectionContinueIndex(progress);
     if (idx == null) continue;
-    out.add(_videoCandidate(
-      sorted[idx],
-      // 单元活跃时刻 = 组内最近一次播放（含看完的那集——Next-Up 卡按「刚看完
-      // 上一集」的时刻参与混排），与本地合集卡同口径。
-      recentMs:
-          _maxOf(sorted.map((RemoteVideoInfo v) => v.positionUpdatedAtMs)),
-    ));
+    out.add(
+      _videoCandidate(
+        sorted[idx],
+        // 单元活跃时刻 = 组内最近一次播放（含看完的那集——Next-Up 卡按「刚看完
+        // 上一集」的时刻参与混排），与本地合集卡同口径。
+        recentMs: _maxOf(
+          sorted.map((RemoteVideoInfo v) => v.positionUpdatedAtMs),
+        ),
+      ),
+    );
   }
   return out;
 }
@@ -198,31 +212,29 @@ int _maxOf(Iterable<int> values) =>
 RemoteContinueCandidate _bookCandidate(
   RemoteBookInfo b, {
   required int recentMs,
-}) =>
-    RemoteContinueCandidate(
-      kind: b.kind,
-      id: b.downloadId,
-      // BUG-1488：[title] 是 display-only（去重/封面缓存键走 [id]），所以取 host
-      // 下发的显示名——母设备改过的书名在子设备首页「继续」上也得跟着变。
-      title: b.displayName,
-      recentMs: recentMs,
-      percent: b.progressPercent,
-      coverUrl: b.coverUrl,
-      collectionName: b.collection?.collectionName,
-    );
+}) => RemoteContinueCandidate(
+  kind: b.kind,
+  id: b.downloadId,
+  // BUG-1488：[title] 是 display-only（去重/封面缓存键走 [id]），所以取 host
+  // 下发的显示名——母设备改过的书名在子设备首页「继续」上也得跟着变。
+  title: b.displayName,
+  recentMs: recentMs,
+  percent: b.progressPercent,
+  coverUrl: b.coverUrl,
+  collectionName: b.collection?.collectionName,
+);
 
 RemoteContinueCandidate _videoCandidate(
   RemoteVideoInfo v, {
   required int recentMs,
-}) =>
-    RemoteContinueCandidate(
-      kind: MediaKind.video,
-      id: v.id,
-      title: v.title,
-      recentMs: recentMs,
-      coverUrl: v.coverUrl,
-      collectionName: v.collection?.collectionName,
-    );
+}) => RemoteContinueCandidate(
+  kind: MediaKind.video,
+  id: v.id,
+  title: v.title,
+  recentMs: recentMs,
+  coverUrl: v.coverUrl,
+  collectionName: v.collection?.collectionName,
+);
 
 /// 远端活动事件 → 本地行结构（id=0 哨兵，display-only **不落库**——追加式
 /// `activity_events` 表无跨端去重键，落库会在每次浏览时重复导入）。
@@ -251,7 +263,9 @@ List<ActivityEventRow> mergeActivityEvents(
   int limit = 200,
 }) {
   final List<ActivityEventRow> merged = <ActivityEventRow>[...local, ...remote]
-    ..sort((ActivityEventRow a, ActivityEventRow b) =>
-        b.timestampMs.compareTo(a.timestampMs));
+    ..sort(
+      (ActivityEventRow a, ActivityEventRow b) =>
+          b.timestampMs.compareTo(a.timestampMs),
+    );
   return merged.length <= limit ? merged : merged.sublist(0, limit);
 }

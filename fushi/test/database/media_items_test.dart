@@ -18,24 +18,25 @@ MediaOpenHistoryCompanion _entry(
   int position = 0,
   int duration = 0,
   String snapshot = '{}',
-}) =>
-    MediaOpenHistoryCompanion(
-      mediaType: Value(type),
-      mediaSource: Value(source),
-      mediaId: Value(id),
-      openedAt: Value(openedAt),
-      position: Value(position),
-      duration: Value(duration),
-      snapshotJson: Value(snapshot),
-    );
+}) => MediaOpenHistoryCompanion(
+  mediaType: Value(type),
+  mediaSource: Value(source),
+  mediaId: Value(id),
+  openedAt: Value(openedAt),
+  position: Value(position),
+  duration: Value(duration),
+  snapshotJson: Value(snapshot),
+);
 
 void main() {
   test('upsert 按 (mediaSource, mediaId) 幂等覆盖，重开刷新行', () async {
     final FushiDatabase db = await _openDb();
-    await db
-        .upsertMediaOpenHistory(_entry('src', 'a', openedAt: 1, position: 10));
-    await db
-        .upsertMediaOpenHistory(_entry('src', 'a', openedAt: 2, position: 20));
+    await db.upsertMediaOpenHistory(
+      _entry('src', 'a', openedAt: 1, position: 10),
+    );
+    await db.upsertMediaOpenHistory(
+      _entry('src', 'a', openedAt: 2, position: 20),
+    );
 
     final rows = await db.getAllMediaOpenHistory();
     expect(rows, hasLength(1));
@@ -65,27 +66,40 @@ void main() {
 
     await db.upsertMediaOpenHistory(_entry('src1', 'x'));
     await db.deleteMediaOpenHistoryByMediaId('x');
-    expect(await db.getAllMediaOpenHistory(), isEmpty,
-        reason: 'ByMediaId 跨 source 全删（removeFromReadingList 语义）');
+    expect(
+      await db.getAllMediaOpenHistory(),
+      isEmpty,
+      reason: 'ByMediaId 跨 source 全删（removeFromReadingList 语义）',
+    );
   });
 
   test('trimMediaHistory 按类型保最近 N 条（openedAt 序，跨类型隔离）', () async {
     final FushiDatabase db = await _openDb();
     for (int i = 0; i < 5; i++) {
       await db.upsertMediaOpenHistory(
-          _entry('src', 'r$i', type: 'reader', openedAt: i));
+        _entry('src', 'r$i', type: 'reader', openedAt: i),
+      );
     }
     await db.upsertMediaOpenHistory(
-        _entry('src', 'p1', type: 'player', openedAt: 0));
+      _entry('src', 'p1', type: 'player', openedAt: 0),
+    );
 
     await db.trimMediaHistory('reader', 3);
 
     final rows = await db.getAllMediaOpenHistory();
-    expect(rows.where((r) => r.mediaType == 'reader').map((r) => r.mediaId),
-        containsAll(<String>['r4', 'r3', 'r2']));
-    expect(rows.where((r) => r.mediaType == 'reader'), hasLength(3),
-        reason: '最旧的 r0/r1 被 trim');
-    expect(rows.where((r) => r.mediaType == 'player'), hasLength(1),
-        reason: '别的类型不受影响');
+    expect(
+      rows.where((r) => r.mediaType == 'reader').map((r) => r.mediaId),
+      containsAll(<String>['r4', 'r3', 'r2']),
+    );
+    expect(
+      rows.where((r) => r.mediaType == 'reader'),
+      hasLength(3),
+      reason: '最旧的 r0/r1 被 trim',
+    );
+    expect(
+      rows.where((r) => r.mediaType == 'player'),
+      hasLength(1),
+      reason: '别的类型不受影响',
+    );
   });
 }

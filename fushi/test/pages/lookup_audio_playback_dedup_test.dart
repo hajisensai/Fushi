@@ -10,9 +10,7 @@ void main() {
   final playback = File(
     'lib/src/utils/misc/lookup_audio_playback.dart',
   ).readAsStringSync();
-  final base = File(
-    'lib/src/pages/base_source_page.dart',
-  ).readAsStringSync();
+  final base = File('lib/src/pages/base_source_page.dart').readAsStringSync();
   final mixin = File(
     'lib/src/pages/implementations/dictionary_page_mixin.dart',
   ).readAsStringSync();
@@ -24,27 +22,44 @@ void main() {
         contains('Future<void> playLookupAudio('),
         reason: 'playLookupAudio 顶层函数应定义在 lookup_audio_playback.dart',
       );
-      expect(playback, contains('WordAudioResolver('),
-          reason: 'WordAudioResolver 装配应只住在 playLookupAudio 这一处');
+      expect(
+        playback,
+        contains('WordAudioResolver('),
+        reason: 'WordAudioResolver 装配应只住在 playLookupAudio 这一处',
+      );
       expect(playback, contains('playAudioRef('));
     });
 
     test(
-        'base_source_page 的 _playAutoReadWord 转调统一入口 autoReadWordUnified 且不再自建 WordAudioResolver',
-        () {
-      expect(base, contains('autoReadWordUnified('),
-          reason: 'base 应转调统一入口 autoReadWordUnified');
-      expect(base.contains('WordAudioResolver('), isFalse,
-          reason: 'base 不应再手抄一份 WordAudioResolver 装配');
-    });
+      'base_source_page 的 _playAutoReadWord 转调统一入口 autoReadWordUnified 且不再自建 WordAudioResolver',
+      () {
+        expect(
+          base,
+          contains('autoReadWordUnified('),
+          reason: 'base 应转调统一入口 autoReadWordUnified',
+        );
+        expect(
+          base.contains('WordAudioResolver('),
+          isFalse,
+          reason: 'base 不应再手抄一份 WordAudioResolver 装配',
+        );
+      },
+    );
 
     test(
-        'dictionary_page_mixin 的 _playAutoReadWord 转调统一入口 autoReadWordUnified 且不再自建 WordAudioResolver',
-        () {
-      expect(mixin, contains('autoReadWordUnified('),
-          reason: 'mixin 应转调统一入口 autoReadWordUnified');
-      expect(mixin.contains('WordAudioResolver('), isFalse,
-          reason: 'mixin 不应再手抄一份 WordAudioResolver 装配');
-    });
+      'dictionary_page_mixin 的 _playAutoReadWord 转调统一入口 autoReadWordUnified 且不再自建 WordAudioResolver',
+      () {
+        expect(
+          mixin,
+          contains('autoReadWordUnified('),
+          reason: 'mixin 应转调统一入口 autoReadWordUnified',
+        );
+        expect(
+          mixin.contains('WordAudioResolver('),
+          isFalse,
+          reason: 'mixin 不应再手抄一份 WordAudioResolver 装配',
+        );
+      },
+    );
   });
 }

@@ -341,9 +341,9 @@ void main() {
       ..createSync(recursive: true);
     final File injector = File('${plain.path}/fushi_voice_injector.exe');
     // ping.exe 只是「一个能长期运行的真 exe」：文件名才是运行期判据。
-    File('${Platform.environment['WINDIR']}\\System32\\ping.exe').copySync(
-      injector.path,
-    );
+    File(
+      '${Platform.environment['WINDIR']}\\System32\\ping.exe',
+    ).copySync(injector.path);
 
     final Process holder = await Process.start(injector.path, <String>[
       '-n',
@@ -444,21 +444,13 @@ void main() {
     );
     final String stderr = '${result.stderr}';
     expect(stderr, contains('Cannot disable the stale galgame helper'));
-    expect(
-      stderr,
-      contains('voice_hook'),
-      reason: '错误必须指出是哪个目录，否则用户无从知道该关掉什么',
-    );
+    expect(stderr, contains('voice_hook'), reason: '错误必须指出是哪个目录，否则用户无从知道该关掉什么');
     expect(
       stderr,
       contains('fushi_voice_injector.exe'),
       reason: '错误必须提示先退出游戏 / helper 进程',
     );
-    expect(
-      dll.existsSync(),
-      isTrue,
-      reason: '硬失败时不得留下半删状态',
-    );
+    expect(dll.existsSync(), isTrue, reason: '硬失败时不得留下半删状态');
   });
 
   test('组包与安装必须共享当前源码指纹契约 (BUG-1881)', () {

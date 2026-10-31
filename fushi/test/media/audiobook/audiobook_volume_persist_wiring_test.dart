@@ -8,8 +8,9 @@ import 'package:flutter_test/flutter_test.dart';
 /// 这三件，配合 reader 侧接线守卫 + repo 往复测试形成完整防回归。
 void main() {
   test('AudiobookPlayerController has volume persistence primitives', () {
-    final String src = File('lib/src/media/audiobook/audiobook_controller.dart')
-        .readAsStringSync();
+    final String src = File(
+      'lib/src/media/audiobook/audiobook_controller.dart',
+    ).readAsStringSync();
 
     // 回调声明存在。
     expect(src, contains('onVolumePersist'));
@@ -20,8 +21,11 @@ void main() {
     expect(setVolumeStart, isNonNegative);
     final int setVolumeEnd = src.indexOf('\n  }', setVolumeStart);
     final String setVolumeBody = src.substring(setVolumeStart, setVolumeEnd);
-    expect(setVolumeBody, contains('onVolumePersist'),
-        reason: 'setVolume 必须在值变化时落 onVolumePersist');
+    expect(
+      setVolumeBody,
+      contains('onVolumePersist'),
+      reason: 'setVolume 必须在值变化时落 onVolumePersist',
+    );
 
     // speed 既有原语不许被回归删除。
     expect(src, contains('onSpeedPersist'));

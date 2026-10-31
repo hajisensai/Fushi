@@ -68,20 +68,19 @@ Future<void> _insertJobFile(
   required int season,
   required int episode,
   String status = VideoDownloadJobFileStatus.downloaded,
-}) =>
-    database.upsertVideoDownloadJobFile(
-      VideoDownloadJobFilesCompanion.insert(
-        jobId: jobId,
-        originalRelativePath: 'Example.S0${season}E0$episode.mkv',
-        currentRelativePath: 'Example.S0${season}E0$episode.mkv',
-        kind: const Value<String>('video'),
-        season: Value<int?>(season),
-        episode: Value<int?>(episode),
-        status: Value<String>(status),
-        createdAt: _nowAt,
-        updatedAt: _nowAt,
-      ),
-    );
+}) => database.upsertVideoDownloadJobFile(
+  VideoDownloadJobFilesCompanion.insert(
+    jobId: jobId,
+    originalRelativePath: 'Example.S0${season}E0$episode.mkv',
+    currentRelativePath: 'Example.S0${season}E0$episode.mkv',
+    kind: const Value<String>('video'),
+    season: Value<int?>(season),
+    episode: Value<int?>(episode),
+    status: Value<String>(status),
+    createdAt: _nowAt,
+    updatedAt: _nowAt,
+  ),
+);
 
 /// 建作品 + provider 身份 + 合集，并把给定文件名的视频条目挂进合集。
 Future<({int workId, int collectionId})> _insertLibraryWork(
@@ -135,13 +134,12 @@ Future<VideoLibraryPresence> _resolve(
   String provider = _provider,
   String externalId = _externalId,
   VideoMetadataMediaKind mediaKind = VideoMetadataMediaKind.tv,
-}) =>
-    resolveVideoLibraryPresence(
-      database,
-      metadataProvider: provider,
-      externalId: externalId,
-      mediaKind: mediaKind,
-    );
+}) => resolveVideoLibraryPresence(
+  database,
+  metadataProvider: provider,
+  externalId: externalId,
+  mediaKind: mediaKind,
+);
 
 void main() {
   test('videoEpisodeKey pads season and episode to two digits', () {
@@ -149,13 +147,15 @@ void main() {
     expect(videoEpisodeKey(12, 103), 'S12E103');
   });
 
-  test('none has no episodes, no library membership and no highest episode',
-      () {
-    expect(VideoLibraryPresence.none.managedEpisodeKeys, isEmpty);
-    expect(VideoLibraryPresence.none.inLibrary, isFalse);
-    expect(VideoLibraryPresence.none.highestEpisode, isNull);
-    expect(VideoLibraryPresence.none.workId, isNull);
-  });
+  test(
+    'none has no episodes, no library membership and no highest episode',
+    () {
+      expect(VideoLibraryPresence.none.managedEpisodeKeys, isEmpty);
+      expect(VideoLibraryPresence.none.inLibrary, isFalse);
+      expect(VideoLibraryPresence.none.highestEpisode, isNull);
+      expect(VideoLibraryPresence.none.workId, isNull);
+    },
+  );
 
   test('highestEpisode takes the largest episode number across keys', () {
     const VideoLibraryPresence presence = VideoLibraryPresence(
@@ -168,25 +168,22 @@ void main() {
     final FushiDatabase database = await _openDatabase();
     for (final (String jobId, String lifecycle, int episode)
         in <(String, String, int)>[
-      ('job-active', VideoDownloadJobLifecycle.active, 1),
-      ('job-completed', VideoDownloadJobLifecycle.completed, 2),
-      ('job-cancelled', VideoDownloadJobLifecycle.cancelled, 3),
-      ('job-failed', VideoDownloadJobLifecycle.failed, 4),
-      ('job-attention', VideoDownloadJobLifecycle.needsAttention, 5),
-    ]) {
+          ('job-active', VideoDownloadJobLifecycle.active, 1),
+          ('job-completed', VideoDownloadJobLifecycle.completed, 2),
+          ('job-cancelled', VideoDownloadJobLifecycle.cancelled, 3),
+          ('job-failed', VideoDownloadJobLifecycle.failed, 4),
+          ('job-attention', VideoDownloadJobLifecycle.needsAttention, 5),
+        ]) {
       await _insertJob(database, jobId: jobId, lifecycle: lifecycle);
-      await _insertJobFile(
-        database,
-        jobId: jobId,
-        season: 1,
-        episode: episode,
-      );
+      await _insertJobFile(database, jobId: jobId, season: 1, episode: episode);
     }
 
     final VideoLibraryPresence presence = await _resolve(database);
 
-    expect(presence.managedEpisodeKeys, <String>{'S01E01', 'S01E02'},
-        reason: 'cancelled / failed / needsAttention 的任务不算「文件有人管」');
+    expect(presence.managedEpisodeKeys, <String>{
+      'S01E01',
+      'S01E02',
+    }, reason: 'cancelled / failed / needsAttention 的任务不算「文件有人管」');
     expect(presence.inLibrary, isFalse, reason: '只有任务、没有作品入库');
     expect(presence.workId, isNull);
     expect(presence.highestEpisode, 2);
@@ -258,8 +255,10 @@ void main() {
     expect(presence.inLibrary, isTrue);
     expect(presence.workId, ids.workId);
     expect(presence.collectionId, ids.collectionId);
-    expect(presence.managedEpisodeKeys, <String>{'S03E02', 'S01E07'},
-        reason: '无季号的文件名默认 S01；解析不出集号的条目不计');
+    expect(presence.managedEpisodeKeys, <String>{
+      'S03E02',
+      'S01E07',
+    }, reason: '无季号的文件名默认 S01；解析不出集号的条目不计');
     expect(presence.highestEpisode, 7);
   });
 
@@ -283,48 +282,50 @@ void main() {
     expect(presence.highestEpisode, 2);
   });
 
-  test('a work bound to a single book reports workId but not inLibrary',
-      () async {
-    final FushiDatabase database = await _openDatabase();
-    final int sourceId = await _insertVideoSource(database);
-    // 作品要么挂合集要么挂单本；单本作品没有合集，集号无从解析。
-    await database.upsertVideoBook(
-      VideoBooksCompanion(
-        bookUid: const Value<String>('video/example-single'),
-        title: const Value<String>('Example Show'),
-        videoPath: const Value<String>(r'D:\Videos\Example.S01E01.mkv'),
-        sourceId: Value<int?>(sourceId),
-      ),
-    );
-    final int workId = await database.upsertVideoMetadataWork(
-      VideoMetadataWorksCompanion.insert(
-        bookUid: const Value<String?>('video/example-single'),
-        mediaType: 'tv',
-        title: 'Example Show',
-        updatedAt: _nowAt,
-      ),
-    );
-    await database.replaceVideoMetadataProviderIdentities(
-      workId: workId,
-      identities: <VideoMetadataProviderIdentitiesCompanion>[
-        VideoMetadataProviderIdentitiesCompanion.insert(
-          identityKey: 'work:$workId:$_provider',
-          provider: _provider,
-          externalId: _externalId,
-          isPrimary: const Value<bool>(true),
+  test(
+    'a work bound to a single book reports workId but not inLibrary',
+    () async {
+      final FushiDatabase database = await _openDatabase();
+      final int sourceId = await _insertVideoSource(database);
+      // 作品要么挂合集要么挂单本；单本作品没有合集，集号无从解析。
+      await database.upsertVideoBook(
+        VideoBooksCompanion(
+          bookUid: const Value<String>('video/example-single'),
+          title: const Value<String>('Example Show'),
+          videoPath: const Value<String>(r'D:\Videos\Example.S01E01.mkv'),
+          sourceId: Value<int?>(sourceId),
+        ),
+      );
+      final int workId = await database.upsertVideoMetadataWork(
+        VideoMetadataWorksCompanion.insert(
+          bookUid: const Value<String?>('video/example-single'),
+          mediaType: 'tv',
+          title: 'Example Show',
           updatedAt: _nowAt,
         ),
-      ],
-    );
+      );
+      await database.replaceVideoMetadataProviderIdentities(
+        workId: workId,
+        identities: <VideoMetadataProviderIdentitiesCompanion>[
+          VideoMetadataProviderIdentitiesCompanion.insert(
+            identityKey: 'work:$workId:$_provider',
+            provider: _provider,
+            externalId: _externalId,
+            isPrimary: const Value<bool>(true),
+            updatedAt: _nowAt,
+          ),
+        ],
+      );
 
-    final VideoLibraryPresence presence = await _resolve(database);
+      final VideoLibraryPresence presence = await _resolve(database);
 
-    expect(presence.workId, workId);
-    expect(presence.collectionId, isNull);
-    // 单本作品也是「已刮到」：inLibrary 看作品身份，不看合集归属。
-    expect(presence.inLibrary, isTrue);
-    expect(presence.managedEpisodeKeys, isEmpty);
-  });
+      expect(presence.workId, workId);
+      expect(presence.collectionId, isNull);
+      // 单本作品也是「已刮到」：inLibrary 看作品身份，不看合集归属。
+      expect(presence.inLibrary, isTrue);
+      expect(presence.managedEpisodeKeys, isEmpty);
+    },
+  );
 
   test('movies keep the work identity but never carry episode keys', () async {
     final FushiDatabase database = await _openDatabase();
@@ -400,8 +401,10 @@ void main() {
       externalId: ' $_externalId',
     );
 
-    expect(presence.managedEpisodeKeys, <String>{'S01E01', 'S01E02'},
-        reason: '任务扫描与作品身份查询都用归一后的 provider / externalId');
+    expect(presence.managedEpisodeKeys, <String>{
+      'S01E01',
+      'S01E02',
+    }, reason: '任务扫描与作品身份查询都用归一后的 provider / externalId');
     expect(presence.inLibrary, isTrue);
   });
 }

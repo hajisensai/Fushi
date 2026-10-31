@@ -97,7 +97,8 @@ void main() {
           modeReader: modeReader,
           bridge: _NotRunningBridge(),
           isWindowsOverride: true,
-          configPathOverride: '${Directory.systemTemp.path}'
+          configPathOverride:
+              '${Directory.systemTemp.path}'
               '${Platform.pathSeparator}fushi_magpie_absent_config.json',
           processLauncher: (String exe, List<String> args) async {
             throw StateError('档位没生效才会走到这');
@@ -105,17 +106,21 @@ void main() {
         );
 
     test('读到 auto → failed/bundleMissing（证明这套替身分得清 auto 和 off）', () async {
-      final MagpieUpscalingService service =
-          build(() => MagpieUpscalingMode.auto);
+      final MagpieUpscalingService service = build(
+        () => MagpieUpscalingMode.auto,
+      );
       await service.onGameWindowReady(hwnd: 1234);
       expect(service.report.status, MagpieUpscalingStatus.failed);
-      expect(service.report.failureReason,
-          MagpieUpscalingFailureReason.bundleMissing);
+      expect(
+        service.report.failureReason,
+        MagpieUpscalingFailureReason.bundleMissing,
+      );
     });
 
     test('读到 off → disabled，一次都不碰安装器/进程', () async {
-      final MagpieUpscalingService service =
-          build(() => MagpieUpscalingMode.off);
+      final MagpieUpscalingService service = build(
+        () => MagpieUpscalingMode.off,
+      );
       await service.onGameWindowReady(hwnd: 1234);
       expect(service.report.status, MagpieUpscalingStatus.disabled);
     });
@@ -137,8 +142,9 @@ void main() {
     test('读档抛异常（DB 未就绪 / 库里没这行）→ 关闭，绝不兜底成 auto', () async {
       // 这是本轮最硬的一条：兜底成 auto 等于替用户默默打开一个吃 GPU 的东西。
       // 兜底若改成 auto，状态会变成 unavailable（走了下载分支），本条立刻转红。
-      final MagpieUpscalingService service =
-          build(() => throw StateError('database not ready'));
+      final MagpieUpscalingService service = build(
+        () => throw StateError('database not ready'),
+      );
       await service.onGameWindowReady(hwnd: 1234);
       expect(service.report.status, MagpieUpscalingStatus.disabled);
     });
@@ -176,8 +182,9 @@ void main() {
       expect(find.byType(MagpieUpscalingModeDialog), findsOneWidget);
       if (tapLabel == null) {
         // 点遮罩取消。
-        Navigator.of(tester.element(find.byType(MagpieUpscalingModeDialog)))
-            .pop();
+        Navigator.of(
+          tester.element(find.byType(MagpieUpscalingModeDialog)),
+        ).pop();
       } else {
         await tester.tap(find.text(tapLabel));
       }
@@ -205,8 +212,10 @@ void main() {
     });
 
     testWidgets('取消 → null（调用方据此一个字节都不写）', (WidgetTester tester) async {
-      final MagpieUpscalingMode? picked =
-          await pump(tester, current: MagpieUpscalingMode.auto);
+      final MagpieUpscalingMode? picked = await pump(
+        tester,
+        current: MagpieUpscalingMode.auto,
+      );
       expect(picked, isNull);
     });
 
@@ -222,12 +231,18 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(find.text(t.game_upscaling_pick_title(name: 'テストゲーム')),
-          findsOneWidget);
-      final RadioListTile<MagpieUpscalingMode> selected =
-          tester.widget<RadioListTile<MagpieUpscalingMode>>(glassUnwrap<RadioListTile<MagpieUpscalingMode>>(find.byKey(const ValueKey<String>(
-          'magpie-upscaling-mode-installed_only',
-        ))),);
+      expect(
+        find.text(t.game_upscaling_pick_title(name: 'テストゲーム')),
+        findsOneWidget,
+      );
+      final RadioListTile<MagpieUpscalingMode> selected = tester
+          .widget<RadioListTile<MagpieUpscalingMode>>(
+            glassUnwrap<RadioListTile<MagpieUpscalingMode>>(
+              find.byKey(
+                const ValueKey<String>('magpie-upscaling-mode-installed_only'),
+              ),
+            ),
+          );
       expect(selected.groupValue, MagpieUpscalingMode.installedOnly);
       expect(selected.value, MagpieUpscalingMode.installedOnly);
     });
@@ -263,10 +278,14 @@ void main() {
         reason: '旧全局偏好也不得留下写入点',
       );
 
-      final String appModel =
-          await File('lib/src/models/app_model.dart').readAsString();
-      expect(appModel.contains(obsoleteKey), isFalse,
-          reason: 'AppModel 不得重新暴露旧全局超分状态');
+      final String appModel = await File(
+        'lib/src/models/app_model.dart',
+      ).readAsString();
+      expect(
+        appModel.contains(obsoleteKey),
+        isFalse,
+        reason: 'AppModel 不得重新暴露旧全局超分状态',
+      );
 
       final Iterable<File> settingsFiles = Directory('lib/src/settings')
           .listSync(recursive: true)
@@ -301,21 +320,26 @@ void main() {
       expect(
         cmake.contains('install_into_bundle.ps1'),
         isTrue,
-        reason: '落点必须由构建期的 install 步骤装好；只在 CI 的 YAML 里拷贝等于'
+        reason:
+            '落点必须由构建期的 install 步骤装好；只在 CI 的 YAML 里拷贝等于'
             '开发构建拿不到 helper（BUG-1196 的原始形态）',
       );
       // 目录名不再在测试里硬编码：从运行期真相源常量读出来，再要求安装脚本用的是
       // 同一个名字。这样「改布局漏改一处」会红，而「改布局两处都改了」不会假红。
-      final String installerSource =
-          await File('lib/src/mining/galgame_helper_installer.dart')
-              .readAsString();
+      final String installerSource = await File(
+        'lib/src/mining/galgame_helper_installer.dart',
+      ).readAsString();
       final RegExp nameLiteral = RegExp(
         r"kGalgameHelperInstallDirectoryName\s*=\s*'([^']+)'",
       );
       final RegExpMatch? match = nameLiteral.firstMatch(installerSource);
-      expect(match, isNotNull,
-          reason: '运行期落点目录名必须仍是单一常量'
-              '（kGalgameHelperInstallDirectoryName）');
+      expect(
+        match,
+        isNotNull,
+        reason:
+            '运行期落点目录名必须仍是单一常量'
+            '（kGalgameHelperInstallDirectoryName）',
+      );
       final String bundledDirName = match!.group(1)!;
       final String installScript = await File(
         '../native/galgame_hook/tools/install_into_bundle.ps1',
@@ -323,7 +347,8 @@ void main() {
       expect(
         installScript.contains(bundledDirName),
         isTrue,
-        reason: '安装脚本的落点目录必须与运行期 _bundledDirectory() 同名'
+        reason:
+            '安装脚本的落点目录必须与运行期 _bundledDirectory() 同名'
             '（当前是 $bundledDirName）；不一致时 helper 装了也找不到',
       );
     });

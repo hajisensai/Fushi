@@ -8,10 +8,7 @@ import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi_server/src/server_prefs.dart';
 
 class ServerIdentity {
-  ServerIdentity._({
-    required this.deviceId,
-    required this.hostToken,
-  });
+  ServerIdentity._({required this.deviceId, required this.hostToken});
 
   /// 与 app `SyncRepository._keyDeviceId` 同键。
   static const String kDeviceIdKey = 'sync_device_id';

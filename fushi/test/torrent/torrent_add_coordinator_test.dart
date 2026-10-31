@@ -32,19 +32,16 @@ void main() {
     );
 
     expect(
-      await TorrentAddCoordinator(_FakeBackend()).add(
-        payload,
-        category: 'anime',
-      ),
+      await TorrentAddCoordinator(
+        _FakeBackend(),
+      ).add(payload, category: 'anime'),
       isFalse,
     );
     final _FakeMetainfoBackend capable = _FakeMetainfoBackend();
     expect(
-      await TorrentAddCoordinator(capable).add(
-        payload,
-        category: 'anime',
-        firstLastPiecePrio: true,
-      ),
+      await TorrentAddCoordinator(
+        capable,
+      ).add(payload, category: 'anime', firstLastPiecePrio: true),
       isTrue,
     );
     expect(capable.received, same(payload));

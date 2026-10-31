@@ -23,8 +23,11 @@ Future<void> _exportZip(
   String srcDir,
   String zipPath,
 ) async {
-  await BackupService(db: srcDb, dbDirectory: srcDir, appVersion: '2.0.0')
-      .createBackup(zipPath);
+  await BackupService(
+    db: srcDb,
+    dbDirectory: srcDir,
+    appVersion: '2.0.0',
+  ).createBackup(zipPath);
 }
 
 /// Builds a minimal valid backup zip from a raw `hibiki.db` file (used to drive
@@ -33,22 +36,23 @@ Future<void> _zipDbWithMeta(String dbFilePath, String zipPath) async {
   final ZipFileEncoder enc = ZipFileEncoder();
   enc.create(zipPath);
   enc.addFile(File(dbFilePath), 'hibiki.db');
-  final List<int> meta = '{"appVersion":"2.0.0","schemaVersion":29,'
-          '"createdAt":"2026-01-01T00:00:00.000","bookCount":0,"statsCount":0}'
-      .codeUnits;
+  final List<int> meta =
+      '{"appVersion":"2.0.0","schemaVersion":29,'
+              '"createdAt":"2026-01-01T00:00:00.000","bookCount":0,"statsCount":0}'
+          .codeUnits;
   enc.addArchiveFile(ArchiveFile('backup_meta.json', meta.length, meta));
   enc.closeSync();
 }
 
 EpubBooksCompanion _book(String key) => EpubBooksCompanion.insert(
-      bookKey: key,
-      title: key,
-      epubPath: '/fake/$key.epub',
-      extractDir: '/fake/$key',
-      chapterCount: 1,
-      chaptersJson: '[]',
-      importedAt: _now(),
-    );
+  bookKey: key,
+  title: key,
+  epubPath: '/fake/$key.epub',
+  extractDir: '/fake/$key',
+  chapterCount: 1,
+  chaptersJson: '[]',
+  importedAt: _now(),
+);
 
 void main() {
   test('union: device keeps its books, backup adds the missing ones', () async {
@@ -82,448 +86,542 @@ void main() {
 
     // No temp/bak leak.
     expect(File(p.join(curDir.path, 'fushi.db.merge-src')).existsSync(), false);
-    expect(File(p.join(curDir.path, 'fushi.db.pre-merge.bak')).existsSync(),
-        false);
     expect(
-        File(p.join(curDir.path, 'fushi.db.merge-preserve.json')).existsSync(),
-        false);
-  });
-
-  test('reading statistics: same {title,dateKey} take MAX, never SUM',
-      () async {
-    final curDir = await _tempDir('mg_cur_');
-    addTearDown(() => cleanupTempDir(curDir));
-    final cur = FushiDatabase(curDir.path);
-    await cur.setReadingStatistic(ReadingStatisticsCompanion.insert(
-      title: 'A',
-      dateKey: '2026-01-01',
-      charactersRead: 100,
-      readingTimeMs: 6000,
-      lastStatisticModified: 10,
-    ));
-    await cur.close();
-
-    final srcDir = await _tempDir('mg_src_');
-    addTearDown(() => cleanupTempDir(srcDir));
-    final src = FushiDatabase(srcDir.path);
-    await src.setReadingStatistic(ReadingStatisticsCompanion.insert(
-      title: 'A',
-      dateKey: '2026-01-01',
-      charactersRead: 80,
-      readingTimeMs: 9000,
-      lastStatisticModified: 20,
-    ));
-    final zipDir = await _tempDir('mg_zip_');
-    addTearDown(() => cleanupTempDir(zipDir));
-    final zip = p.join(zipDir.path, 'b.zip');
-    await _exportZip(src, srcDir.path, zip);
-    await src.close();
-
-    await BackupRestoreService.mergeRestoreBackup(
-        dbDirectory: curDir.path, zipPath: zip);
-    // Re-import the SAME backup again — must stay idempotent.
-    await BackupRestoreService.mergeRestoreBackup(
-        dbDirectory: curDir.path, zipPath: zip);
-
-    final after = FushiDatabase(curDir.path);
-    addTearDown(after.close);
-    final rows = await after.getAllReadingStatistics();
-    expect(rows, hasLength(1));
-    expect(rows.single.charactersRead, 100); // max(100, 80)
-    expect(rows.single.readingTimeMs, 9000); // max(6000, 9000)
-  });
-
-  test('hourly logs MAX-union per {dateKey, hour, format}; video stays 2-key',
-      () async {
-    final curDir = await _tempDir('mg_cur_');
-    addTearDown(() => cleanupTempDir(curDir));
-    final cur = FushiDatabase(curDir.path);
-    // v92 起累加 DAO 已删（legacy 小时表只剩同步落地的 OVERWRITE 版 set*），
-    // 造数改绝对值；MAX-union 语义原样。
-    await cur.setReadingHourlyLog(
-        dateKey: '2026-01-01',
-        hour: 9,
-        readingTimeMs: 20000,
-        format: BookFormat.epub.dbValue);
-    await cur.setReadingHourlyLog(
-        dateKey: '2026-01-01',
-        hour: 9,
-        readingTimeMs: 10000,
-        format: BookFormat.manga.dbValue);
-    await cur.setVideoHourlyLog(
-        dateKey: '2026-01-01', hour: 21, watchTimeMs: 1000);
-    await cur.close();
-
-    final srcDir = await _tempDir('mg_src_');
-    addTearDown(() => cleanupTempDir(srcDir));
-    final src = FushiDatabase(srcDir.path);
-    await src.setReadingHourlyLog(
-        dateKey: '2026-01-01',
-        hour: 9,
-        readingTimeMs: 30000,
-        format: BookFormat.epub.dbValue);
-    // 迁移自旧库的未区分行（format=''）也是普通一桶，照常并入。
-    await src.addUnattributedHourlyReadingTime(
-        dateKey: '2026-01-01', hour: 10, deltaMs: 5000);
-    await src.setVideoHourlyLog(
-        dateKey: '2026-01-01', hour: 21, watchTimeMs: 4000);
-    final zipDir = await _tempDir('mg_zip_');
-    addTearDown(() => cleanupTempDir(zipDir));
-    final zip = p.join(zipDir.path, 'b.zip');
-    await _exportZip(src, srcDir.path, zip);
-    await src.close();
-
-    await BackupRestoreService.mergeRestoreBackup(
-        dbDirectory: curDir.path, zipPath: zip);
-    // Re-import the SAME backup again — must stay idempotent.
-    await BackupRestoreService.mergeRestoreBackup(
-        dbDirectory: curDir.path, zipPath: zip);
-
-    final after = FushiDatabase(curDir.path);
-    addTearDown(after.close);
-    final rows = await after.getAllReadingHourlyLogs();
-    expect(rows, hasLength(3));
-    expect(
-      rows
-          .singleWhere(
-              (r) => r.hour == 9 && r.format == BookFormat.epub.dbValue)
-          .readingTimeMs,
-      30000, // MAX(20000, 30000)，不 SUM
+      File(p.join(curDir.path, 'fushi.db.pre-merge.bak')).existsSync(),
+      false,
     );
     expect(
-      rows
-          .singleWhere(
-              (r) => r.hour == 9 && r.format == BookFormat.manga.dbValue)
-          .readingTimeMs,
-      10000, // 仅本机持有，原样保留
+      File(p.join(curDir.path, 'fushi.db.merge-preserve.json')).existsSync(),
+      false,
     );
-    expect(
-      rows.singleWhere((r) => r.hour == 10 && r.format.isEmpty).readingTimeMs,
-      5000, // 仅备份持有，原样并入
-    );
-    final videoRows = await after.getAllVideoHourlyLogs();
-    expect(videoRows.single.watchTimeMs, 4000); // MAX(1000, 4000)
-  });
-
-  test('reading statistics: many titles under one dateKey are NOT folded',
-      () async {
-    final curDir = await _tempDir('mg_cur_');
-    addTearDown(() => cleanupTempDir(curDir));
-    final cur = FushiDatabase(curDir.path);
-    await cur.setReadingStatistic(ReadingStatisticsCompanion.insert(
-      title: 'BookA',
-      dateKey: '2026-02-02',
-      charactersRead: 50,
-      readingTimeMs: 1000,
-      lastStatisticModified: 1,
-    ));
-    await cur.close();
-
-    final srcDir = await _tempDir('mg_src_');
-    addTearDown(() => cleanupTempDir(srcDir));
-    final src = FushiDatabase(srcDir.path);
-    // Two DIFFERENT titles, SAME dateKey.
-    await src.setReadingStatistic(ReadingStatisticsCompanion.insert(
-      title: 'BookA',
-      dateKey: '2026-02-02',
-      charactersRead: 70,
-      readingTimeMs: 500,
-      lastStatisticModified: 2,
-    ));
-    await src.setReadingStatistic(ReadingStatisticsCompanion.insert(
-      title: 'BookB',
-      dateKey: '2026-02-02',
-      charactersRead: 999,
-      readingTimeMs: 3000,
-      lastStatisticModified: 3,
-    ));
-    final zipDir = await _tempDir('mg_zip_');
-    addTearDown(() => cleanupTempDir(zipDir));
-    final zip = p.join(zipDir.path, 'b.zip');
-    await _exportZip(src, srcDir.path, zip);
-    await src.close();
-
-    await BackupRestoreService.mergeRestoreBackup(
-        dbDirectory: curDir.path, zipPath: zip);
-
-    final after = FushiDatabase(curDir.path);
-    addTearDown(after.close);
-    final rows = await after.getAllReadingStatistics();
-    // Two distinct (title, dateKey) rows — NOT folded into one.
-    expect(rows, hasLength(2));
-    final byTitle = {for (final r in rows) r.title: r};
-    expect(byTitle['BookA']!.charactersRead, 70); // max(50, 70)
-    expect(byTitle['BookB']!.charactersRead, 999); // backup-only inserted
-  });
-
-  test('mining statistics MAX-union (not double-counted on re-import)',
-      () async {
-    final curDir = await _tempDir('mg_cur_');
-    addTearDown(() => cleanupTempDir(curDir));
-    final cur = FushiDatabase(curDir.path);
-    await cur.setMiningCount(
-        sourceType: 'book', dateKey: '2026-03-03', count: 5);
-    await cur.close();
-
-    final srcDir = await _tempDir('mg_src_');
-    addTearDown(() => cleanupTempDir(srcDir));
-    final src = FushiDatabase(srcDir.path);
-    await src.setMiningCount(
-        sourceType: 'book', dateKey: '2026-03-03', count: 3);
-    final zipDir = await _tempDir('mg_zip_');
-    addTearDown(() => cleanupTempDir(zipDir));
-    final zip = p.join(zipDir.path, 'b.zip');
-    await _exportZip(src, srcDir.path, zip);
-    await src.close();
-
-    await BackupRestoreService.mergeRestoreBackup(
-        dbDirectory: curDir.path, zipPath: zip);
-    await BackupRestoreService.mergeRestoreBackup(
-        dbDirectory: curDir.path, zipPath: zip);
-
-    final after = FushiDatabase(curDir.path);
-    addTearDown(after.close);
-    final rows = await after.getMiningStatisticsBySource('book');
-    expect(rows, hasLength(1));
-    expect(rows.single.count, 5); // max(5, 3), never 8
-  });
-
-  test('lookup/mining counters MAX-union both columns (idempotent re-import)',
-      () async {
-    final curDir = await _tempDir('mg_cur_');
-    addTearDown(() => cleanupTempDir(curDir));
-    final cur = FushiDatabase(curDir.path);
-    // Device: lookup 10, mine 2 on Book A; a no-book lookup bucket (title='').
-    await cur.setLookupCount(
-      bookKey: 'keyA',
-      title: 'Book A',
-      sourceType: 'book',
-      dateKey: '2026-03-03',
-      count: 10,
-    );
-    await cur.setMineCountPerBook(
-      bookKey: 'keyA',
-      title: 'Book A',
-      sourceType: 'book',
-      dateKey: '2026-03-03',
-      count: 2,
-    );
-    await cur.setLookupCount(
-      title: '',
-      sourceType: 'book',
-      dateKey: '2026-03-03',
-      count: 3,
-    );
-    await cur.close();
-
-    final srcDir = await _tempDir('mg_src_');
-    addTearDown(() => cleanupTempDir(srcDir));
-    final src = FushiDatabase(srcDir.path);
-    // Backup: lookup 4 (lower), mine 9 (higher) on the same Book A bucket, and a
-    // brand-new Book B bucket the device lacks.
-    await src.setLookupCount(
-      bookKey: 'keyA',
-      title: 'Book A',
-      sourceType: 'book',
-      dateKey: '2026-03-03',
-      count: 4,
-    );
-    await src.setMineCountPerBook(
-      bookKey: 'keyA',
-      title: 'Book A',
-      sourceType: 'book',
-      dateKey: '2026-03-03',
-      count: 9,
-    );
-    await src.setLookupCount(
-      bookKey: 'keyB',
-      title: 'Book B',
-      sourceType: 'book',
-      dateKey: '2026-03-04',
-      count: 6,
-    );
-    final zipDir = await _tempDir('mg_zip_');
-    addTearDown(() => cleanupTempDir(zipDir));
-    final zip = p.join(zipDir.path, 'b.zip');
-    await _exportZip(src, srcDir.path, zip);
-    await src.close();
-
-    // Import twice — must stay idempotent (MAX, never SUM).
-    await BackupRestoreService.mergeRestoreBackup(
-        dbDirectory: curDir.path, zipPath: zip);
-    await BackupRestoreService.mergeRestoreBackup(
-        dbDirectory: curDir.path, zipPath: zip);
-
-    final after = FushiDatabase(curDir.path);
-    addTearDown(after.close);
-    final rows = await after.getLookupMiningCountersBySource('book');
-    final byTitle = {for (final r in rows) r.title: r};
-    // Shared bucket: lookup MAX(10,4)=10, mine MAX(2,9)=9 (each column).
-    expect(byTitle['Book A']!.lookupCount, 10);
-    expect(byTitle['Book A']!.mineCount, 9);
-    expect(byTitle['Book A']!.bookKey, 'keyA');
-    // Backup-only Book B bucket inserted verbatim.
-    expect(byTitle['Book B']!.lookupCount, 6);
-    // Device-only no-book bucket untouched.
-    expect(byTitle['']!.lookupCount, 3);
-    expect(rows, hasLength(3));
   });
 
   test(
-      'v76 regression: same-title multi-identity counters merge per bucket — '
-      'src unattributed row neither drops identity rows nor inflates them',
-      () async {
-    final curDir = await _tempDir('mg_cur_');
-    addTearDown(() => cleanupTempDir(curDir));
-    final cur = FushiDatabase(curDir.path);
-    // 同名双视频各自的身份桶（v76 唯一键世界）。
-    await cur.addLookupCount(
+    'reading statistics: same {title,dateKey} take MAX, never SUM',
+    () async {
+      final curDir = await _tempDir('mg_cur_');
+      addTearDown(() => cleanupTempDir(curDir));
+      final cur = FushiDatabase(curDir.path);
+      await cur.setReadingStatistic(
+        ReadingStatisticsCompanion.insert(
+          title: 'A',
+          dateKey: '2026-01-01',
+          charactersRead: 100,
+          readingTimeMs: 6000,
+          lastStatisticModified: 10,
+        ),
+      );
+      await cur.close();
+
+      final srcDir = await _tempDir('mg_src_');
+      addTearDown(() => cleanupTempDir(srcDir));
+      final src = FushiDatabase(srcDir.path);
+      await src.setReadingStatistic(
+        ReadingStatisticsCompanion.insert(
+          title: 'A',
+          dateKey: '2026-01-01',
+          charactersRead: 80,
+          readingTimeMs: 9000,
+          lastStatisticModified: 20,
+        ),
+      );
+      final zipDir = await _tempDir('mg_zip_');
+      addTearDown(() => cleanupTempDir(zipDir));
+      final zip = p.join(zipDir.path, 'b.zip');
+      await _exportZip(src, srcDir.path, zip);
+      await src.close();
+
+      await BackupRestoreService.mergeRestoreBackup(
+        dbDirectory: curDir.path,
+        zipPath: zip,
+      );
+      // Re-import the SAME backup again — must stay idempotent.
+      await BackupRestoreService.mergeRestoreBackup(
+        dbDirectory: curDir.path,
+        zipPath: zip,
+      );
+
+      final after = FushiDatabase(curDir.path);
+      addTearDown(after.close);
+      final rows = await after.getAllReadingStatistics();
+      expect(rows, hasLength(1));
+      expect(rows.single.charactersRead, 100); // max(100, 80)
+      expect(rows.single.readingTimeMs, 9000); // max(6000, 9000)
+    },
+  );
+
+  test(
+    'hourly logs MAX-union per {dateKey, hour, format}; video stays 2-key',
+    () async {
+      final curDir = await _tempDir('mg_cur_');
+      addTearDown(() => cleanupTempDir(curDir));
+      final cur = FushiDatabase(curDir.path);
+      // v92 起累加 DAO 已删（legacy 小时表只剩同步落地的 OVERWRITE 版 set*），
+      // 造数改绝对值；MAX-union 语义原样。
+      await cur.setReadingHourlyLog(
+        dateKey: '2026-01-01',
+        hour: 9,
+        readingTimeMs: 20000,
+        format: BookFormat.epub.dbValue,
+      );
+      await cur.setReadingHourlyLog(
+        dateKey: '2026-01-01',
+        hour: 9,
+        readingTimeMs: 10000,
+        format: BookFormat.manga.dbValue,
+      );
+      await cur.setVideoHourlyLog(
+        dateKey: '2026-01-01',
+        hour: 21,
+        watchTimeMs: 1000,
+      );
+      await cur.close();
+
+      final srcDir = await _tempDir('mg_src_');
+      addTearDown(() => cleanupTempDir(srcDir));
+      final src = FushiDatabase(srcDir.path);
+      await src.setReadingHourlyLog(
+        dateKey: '2026-01-01',
+        hour: 9,
+        readingTimeMs: 30000,
+        format: BookFormat.epub.dbValue,
+      );
+      // 迁移自旧库的未区分行（format=''）也是普通一桶，照常并入。
+      await src.addUnattributedHourlyReadingTime(
+        dateKey: '2026-01-01',
+        hour: 10,
+        deltaMs: 5000,
+      );
+      await src.setVideoHourlyLog(
+        dateKey: '2026-01-01',
+        hour: 21,
+        watchTimeMs: 4000,
+      );
+      final zipDir = await _tempDir('mg_zip_');
+      addTearDown(() => cleanupTempDir(zipDir));
+      final zip = p.join(zipDir.path, 'b.zip');
+      await _exportZip(src, srcDir.path, zip);
+      await src.close();
+
+      await BackupRestoreService.mergeRestoreBackup(
+        dbDirectory: curDir.path,
+        zipPath: zip,
+      );
+      // Re-import the SAME backup again — must stay idempotent.
+      await BackupRestoreService.mergeRestoreBackup(
+        dbDirectory: curDir.path,
+        zipPath: zip,
+      );
+
+      final after = FushiDatabase(curDir.path);
+      addTearDown(after.close);
+      final rows = await after.getAllReadingHourlyLogs();
+      expect(rows, hasLength(3));
+      expect(
+        rows
+            .singleWhere(
+              (r) => r.hour == 9 && r.format == BookFormat.epub.dbValue,
+            )
+            .readingTimeMs,
+        30000, // MAX(20000, 30000)，不 SUM
+      );
+      expect(
+        rows
+            .singleWhere(
+              (r) => r.hour == 9 && r.format == BookFormat.manga.dbValue,
+            )
+            .readingTimeMs,
+        10000, // 仅本机持有，原样保留
+      );
+      expect(
+        rows.singleWhere((r) => r.hour == 10 && r.format.isEmpty).readingTimeMs,
+        5000, // 仅备份持有，原样并入
+      );
+      final videoRows = await after.getAllVideoHourlyLogs();
+      expect(videoRows.single.watchTimeMs, 4000); // MAX(1000, 4000)
+    },
+  );
+
+  test(
+    'reading statistics: many titles under one dateKey are NOT folded',
+    () async {
+      final curDir = await _tempDir('mg_cur_');
+      addTearDown(() => cleanupTempDir(curDir));
+      final cur = FushiDatabase(curDir.path);
+      await cur.setReadingStatistic(
+        ReadingStatisticsCompanion.insert(
+          title: 'BookA',
+          dateKey: '2026-02-02',
+          charactersRead: 50,
+          readingTimeMs: 1000,
+          lastStatisticModified: 1,
+        ),
+      );
+      await cur.close();
+
+      final srcDir = await _tempDir('mg_src_');
+      addTearDown(() => cleanupTempDir(srcDir));
+      final src = FushiDatabase(srcDir.path);
+      // Two DIFFERENT titles, SAME dateKey.
+      await src.setReadingStatistic(
+        ReadingStatisticsCompanion.insert(
+          title: 'BookA',
+          dateKey: '2026-02-02',
+          charactersRead: 70,
+          readingTimeMs: 500,
+          lastStatisticModified: 2,
+        ),
+      );
+      await src.setReadingStatistic(
+        ReadingStatisticsCompanion.insert(
+          title: 'BookB',
+          dateKey: '2026-02-02',
+          charactersRead: 999,
+          readingTimeMs: 3000,
+          lastStatisticModified: 3,
+        ),
+      );
+      final zipDir = await _tempDir('mg_zip_');
+      addTearDown(() => cleanupTempDir(zipDir));
+      final zip = p.join(zipDir.path, 'b.zip');
+      await _exportZip(src, srcDir.path, zip);
+      await src.close();
+
+      await BackupRestoreService.mergeRestoreBackup(
+        dbDirectory: curDir.path,
+        zipPath: zip,
+      );
+
+      final after = FushiDatabase(curDir.path);
+      addTearDown(after.close);
+      final rows = await after.getAllReadingStatistics();
+      // Two distinct (title, dateKey) rows — NOT folded into one.
+      expect(rows, hasLength(2));
+      final byTitle = {for (final r in rows) r.title: r};
+      expect(byTitle['BookA']!.charactersRead, 70); // max(50, 70)
+      expect(byTitle['BookB']!.charactersRead, 999); // backup-only inserted
+    },
+  );
+
+  test(
+    'mining statistics MAX-union (not double-counted on re-import)',
+    () async {
+      final curDir = await _tempDir('mg_cur_');
+      addTearDown(() => cleanupTempDir(curDir));
+      final cur = FushiDatabase(curDir.path);
+      await cur.setMiningCount(
+        sourceType: 'book',
+        dateKey: '2026-03-03',
+        count: 5,
+      );
+      await cur.close();
+
+      final srcDir = await _tempDir('mg_src_');
+      addTearDown(() => cleanupTempDir(srcDir));
+      final src = FushiDatabase(srcDir.path);
+      await src.setMiningCount(
+        sourceType: 'book',
+        dateKey: '2026-03-03',
+        count: 3,
+      );
+      final zipDir = await _tempDir('mg_zip_');
+      addTearDown(() => cleanupTempDir(zipDir));
+      final zip = p.join(zipDir.path, 'b.zip');
+      await _exportZip(src, srcDir.path, zip);
+      await src.close();
+
+      await BackupRestoreService.mergeRestoreBackup(
+        dbDirectory: curDir.path,
+        zipPath: zip,
+      );
+      await BackupRestoreService.mergeRestoreBackup(
+        dbDirectory: curDir.path,
+        zipPath: zip,
+      );
+
+      final after = FushiDatabase(curDir.path);
+      addTearDown(after.close);
+      final rows = await after.getMiningStatisticsBySource('book');
+      expect(rows, hasLength(1));
+      expect(rows.single.count, 5); // max(5, 3), never 8
+    },
+  );
+
+  test(
+    'lookup/mining counters MAX-union both columns (idempotent re-import)',
+    () async {
+      final curDir = await _tempDir('mg_cur_');
+      addTearDown(() => cleanupTempDir(curDir));
+      final cur = FushiDatabase(curDir.path);
+      // Device: lookup 10, mine 2 on Book A; a no-book lookup bucket (title='').
+      await cur.setLookupCount(
+        bookKey: 'keyA',
+        title: 'Book A',
+        sourceType: 'book',
+        dateKey: '2026-03-03',
+        count: 10,
+      );
+      await cur.setMineCountPerBook(
+        bookKey: 'keyA',
+        title: 'Book A',
+        sourceType: 'book',
+        dateKey: '2026-03-03',
+        count: 2,
+      );
+      await cur.setLookupCount(
+        title: '',
+        sourceType: 'book',
+        dateKey: '2026-03-03',
+        count: 3,
+      );
+      await cur.close();
+
+      final srcDir = await _tempDir('mg_src_');
+      addTearDown(() => cleanupTempDir(srcDir));
+      final src = FushiDatabase(srcDir.path);
+      // Backup: lookup 4 (lower), mine 9 (higher) on the same Book A bucket, and a
+      // brand-new Book B bucket the device lacks.
+      await src.setLookupCount(
+        bookKey: 'keyA',
+        title: 'Book A',
+        sourceType: 'book',
+        dateKey: '2026-03-03',
+        count: 4,
+      );
+      await src.setMineCountPerBook(
+        bookKey: 'keyA',
+        title: 'Book A',
+        sourceType: 'book',
+        dateKey: '2026-03-03',
+        count: 9,
+      );
+      await src.setLookupCount(
+        bookKey: 'keyB',
+        title: 'Book B',
+        sourceType: 'book',
+        dateKey: '2026-03-04',
+        count: 6,
+      );
+      final zipDir = await _tempDir('mg_zip_');
+      addTearDown(() => cleanupTempDir(zipDir));
+      final zip = p.join(zipDir.path, 'b.zip');
+      await _exportZip(src, srcDir.path, zip);
+      await src.close();
+
+      // Import twice — must stay idempotent (MAX, never SUM).
+      await BackupRestoreService.mergeRestoreBackup(
+        dbDirectory: curDir.path,
+        zipPath: zip,
+      );
+      await BackupRestoreService.mergeRestoreBackup(
+        dbDirectory: curDir.path,
+        zipPath: zip,
+      );
+
+      final after = FushiDatabase(curDir.path);
+      addTearDown(after.close);
+      final rows = await after.getLookupMiningCountersBySource('book');
+      final byTitle = {for (final r in rows) r.title: r};
+      // Shared bucket: lookup MAX(10,4)=10, mine MAX(2,9)=9 (each column).
+      expect(byTitle['Book A']!.lookupCount, 10);
+      expect(byTitle['Book A']!.mineCount, 9);
+      expect(byTitle['Book A']!.bookKey, 'keyA');
+      // Backup-only Book B bucket inserted verbatim.
+      expect(byTitle['Book B']!.lookupCount, 6);
+      // Device-only no-book bucket untouched.
+      expect(byTitle['']!.lookupCount, 3);
+      expect(rows, hasLength(3));
+    },
+  );
+
+  test(
+    'v76 regression: same-title multi-identity counters merge per bucket — '
+    'src unattributed row neither drops identity rows nor inflates them',
+    () async {
+      final curDir = await _tempDir('mg_cur_');
+      addTearDown(() => cleanupTempDir(curDir));
+      final cur = FushiDatabase(curDir.path);
+      // 同名双视频各自的身份桶（v76 唯一键世界）。
+      await cur.addLookupCount(
         bookKey: 'uid-1',
         title: '同名',
         sourceType: 'video',
         dateKey: '2026-03-03',
-        delta: 3);
-    await cur.addLookupCount(
+        delta: 3,
+      );
+      await cur.addLookupCount(
         bookKey: 'uid-2',
         title: '同名',
         sourceType: 'video',
         dateKey: '2026-03-03',
-        delta: 4);
-    await cur.close();
+        delta: 4,
+      );
+      await cur.close();
 
-    final srcDir = await _tempDir('mg_src_');
-    addTearDown(() => cleanupTempDir(srcDir));
-    final src = FushiDatabase(srcDir.path);
-    // 备份侧：同 title 的无身份桶（迁移歧义遗留 / 旧端产物）。用身份感知的
-    // add* 写入器构造（set* 是 sync 的 title 粒度落地器，单行时按 title 抬、
-    // 忽略身份，造不出「'' 桶 + 身份桶并存」的 fixture）。
-    await src.addLookupCount(
+      final srcDir = await _tempDir('mg_src_');
+      addTearDown(() => cleanupTempDir(srcDir));
+      final src = FushiDatabase(srcDir.path);
+      // 备份侧：同 title 的无身份桶（迁移歧义遗留 / 旧端产物）。用身份感知的
+      // add* 写入器构造（set* 是 sync 的 title 粒度落地器，单行时按 title 抬、
+      // 忽略身份，造不出「'' 桶 + 身份桶并存」的 fixture）。
+      await src.addLookupCount(
         bookKey: '',
         title: '同名',
         sourceType: 'video',
         dateKey: '2026-03-03',
-        delta: 7);
-    // 身份桶：与 cur 的 uid-1 同桶但 mine 更高 → 逐列 MAX 抬升。
-    await src.addMineCountPerBook(
+        delta: 7,
+      );
+      // 身份桶：与 cur 的 uid-1 同桶但 mine 更高 → 逐列 MAX 抬升。
+      await src.addMineCountPerBook(
         bookKey: 'uid-1',
         title: '同名',
         sourceType: 'video',
         dateKey: '2026-03-03',
-        delta: 5);
-    final zipDir = await _tempDir('mg_zip_');
-    addTearDown(() => cleanupTempDir(zipDir));
-    final zip = p.join(zipDir.path, 'b.zip');
-    await _exportZip(src, srcDir.path, zip);
-    await src.close();
+        delta: 5,
+      );
+      final zipDir = await _tempDir('mg_zip_');
+      addTearDown(() => cleanupTempDir(zipDir));
+      final zip = p.join(zipDir.path, 'b.zip');
+      await _exportZip(src, srcDir.path, zip);
+      await src.close();
 
-    // 导两遍——幂等（MAX，绝不 SUM）。
-    await BackupRestoreService.mergeRestoreBackup(
-        dbDirectory: curDir.path, zipPath: zip);
-    await BackupRestoreService.mergeRestoreBackup(
-        dbDirectory: curDir.path, zipPath: zip);
+      // 导两遍——幂等（MAX，绝不 SUM）。
+      await BackupRestoreService.mergeRestoreBackup(
+        dbDirectory: curDir.path,
+        zipPath: zip,
+      );
+      await BackupRestoreService.mergeRestoreBackup(
+        dbDirectory: curDir.path,
+        zipPath: zip,
+      );
 
-    final after = FushiDatabase(curDir.path);
-    addTearDown(after.close);
-    final rows = (await after.getLookupMiningCountersBySource('video'))
-        .where((LookupMiningCounterRow r) => r.title == '同名')
-        .toList();
-    final byKey = {for (final r in rows) r.bookKey: r};
-    expect(rows, hasLength(3), reason: '三个桶各自独立，src 身份行不被三列键静默丢弃');
-    expect(byKey['uid-1']!.lookupCount, 3, reason: '身份桶不被同 title 标量抬升');
-    expect(byKey['uid-1']!.mineCount, 5, reason: '同桶逐列 MAX 正常抬升');
-    expect(byKey['uid-2']!.lookupCount, 4, reason: '旁桶不动');
-    expect(byKey['']!.lookupCount, 7, reason: 'src 无身份桶按自己的桶并入');
-  });
+      final after = FushiDatabase(curDir.path);
+      addTearDown(after.close);
+      final rows = (await after.getLookupMiningCountersBySource(
+        'video',
+      )).where((LookupMiningCounterRow r) => r.title == '同名').toList();
+      final byKey = {for (final r in rows) r.bookKey: r};
+      expect(rows, hasLength(3), reason: '三个桶各自独立，src 身份行不被三列键静默丢弃');
+      expect(byKey['uid-1']!.lookupCount, 3, reason: '身份桶不被同 title 标量抬升');
+      expect(byKey['uid-1']!.mineCount, 5, reason: '同桶逐列 MAX 正常抬升');
+      expect(byKey['uid-2']!.lookupCount, 4, reason: '旁桶不动');
+      expect(byKey['']!.lookupCount, 7, reason: 'src 无身份桶按自己的桶并入');
+    },
+  );
 
   test(
-      'game tags cross-machine: scrape identity lands the tag on the '
-      "target's own game row; an unmatched game is inserted with its tag",
-      () async {
-    final curDir = await _tempDir('mg_cur_');
-    addTearDown(() => cleanupTempDir(curDir));
-    final cur = FushiDatabase(curDir.path);
-    // B 机：同一部游戏，本机局域 id 不同，但刮削到同一个 bgm 条目。
-    await cur.upsertGalgame(GalgamesCompanion.insert(
-      id: '222000000',
-      name: 'GameB',
-      exePath: r'D:\g.exe',
-      workdir: r'D:\g',
-      addedAt: 2,
-    ));
-    await cur.upsertGalgameSource(GalgameSourcesCompanion.insert(
-      gameId: '222000000',
-      source: 'bgm',
-      externalId: const Value('12345'),
-      dataJson: '{}',
-      fetchedAt: 2,
-    ));
-    // 干扰游戏：无刮削身份，绝不许被打上标签。
-    await cur.upsertGalgame(GalgamesCompanion.insert(
-      id: '333000000',
-      name: 'Bystander',
-      exePath: r'D:\g\c.exe',
-      workdir: r'D:\g',
-      addedAt: 3,
-    ));
-    await cur.close();
+    'game tags cross-machine: scrape identity lands the tag on the '
+    "target's own game row; an unmatched game is inserted with its tag",
+    () async {
+      final curDir = await _tempDir('mg_cur_');
+      addTearDown(() => cleanupTempDir(curDir));
+      final cur = FushiDatabase(curDir.path);
+      // B 机：同一部游戏，本机局域 id 不同，但刮削到同一个 bgm 条目。
+      await cur.upsertGalgame(
+        GalgamesCompanion.insert(
+          id: '222000000',
+          name: 'GameB',
+          exePath: r'D:\g.exe',
+          workdir: r'D:\g',
+          addedAt: 2,
+        ),
+      );
+      await cur.upsertGalgameSource(
+        GalgameSourcesCompanion.insert(
+          gameId: '222000000',
+          source: 'bgm',
+          externalId: const Value('12345'),
+          dataJson: '{}',
+          fetchedAt: 2,
+        ),
+      );
+      // 干扰游戏：无刮削身份，绝不许被打上标签。
+      await cur.upsertGalgame(
+        GalgamesCompanion.insert(
+          id: '333000000',
+          name: 'Bystander',
+          exePath: r'D:\g\c.exe',
+          workdir: r'D:\g',
+          addedAt: 3,
+        ),
+      );
+      await cur.close();
 
-    final srcDir = await _tempDir('mg_src_');
-    addTearDown(() => cleanupTempDir(srcDir));
-    final src = FushiDatabase(srcDir.path);
-    // A 机：不同的本机 id + 同 bgm 条目 + 标签；另一部无刮削的游戏带标签
-    // （跨机无身份可匹配 → games 类别默认勾选，游戏行随备份插入，标签落在
-    // 它自己头上）。
-    await src.upsertGalgame(GalgamesCompanion.insert(
-      id: '111000000',
-      name: 'GameA',
-      exePath: r'E:\games.exe',
-      workdir: r'E:\games',
-      addedAt: 1,
-    ));
-    await src.upsertGalgameSource(GalgameSourcesCompanion.insert(
-      gameId: '111000000',
-      source: 'bgm',
-      externalId: const Value('12345'),
-      dataJson: '{}',
-      fetchedAt: 1,
-    ));
-    final int tagId = await src.getOrCreateTagByName('神作');
-    await src.addTagToGame('111000000', tagId);
-    await src.upsertGalgame(GalgamesCompanion.insert(
-      id: '444000000',
-      name: 'Unscraped',
-      exePath: r'E:\games\d.exe',
-      workdir: r'E:\games',
-      addedAt: 4,
-    ));
-    await src.addTagToGame('444000000', tagId);
-    final zipDir = await _tempDir('mg_zip_');
-    addTearDown(() => cleanupTempDir(zipDir));
-    final zip = p.join(zipDir.path, 'b.zip');
-    await _exportZip(src, srcDir.path, zip);
-    await src.close();
+      final srcDir = await _tempDir('mg_src_');
+      addTearDown(() => cleanupTempDir(srcDir));
+      final src = FushiDatabase(srcDir.path);
+      // A 机：不同的本机 id + 同 bgm 条目 + 标签；另一部无刮削的游戏带标签
+      // （跨机无身份可匹配 → games 类别默认勾选，游戏行随备份插入，标签落在
+      // 它自己头上）。
+      await src.upsertGalgame(
+        GalgamesCompanion.insert(
+          id: '111000000',
+          name: 'GameA',
+          exePath: r'E:\games.exe',
+          workdir: r'E:\games',
+          addedAt: 1,
+        ),
+      );
+      await src.upsertGalgameSource(
+        GalgameSourcesCompanion.insert(
+          gameId: '111000000',
+          source: 'bgm',
+          externalId: const Value('12345'),
+          dataJson: '{}',
+          fetchedAt: 1,
+        ),
+      );
+      final int tagId = await src.getOrCreateTagByName('神作');
+      await src.addTagToGame('111000000', tagId);
+      await src.upsertGalgame(
+        GalgamesCompanion.insert(
+          id: '444000000',
+          name: 'Unscraped',
+          exePath: r'E:\games\d.exe',
+          workdir: r'E:\games',
+          addedAt: 4,
+        ),
+      );
+      await src.addTagToGame('444000000', tagId);
+      final zipDir = await _tempDir('mg_zip_');
+      addTearDown(() => cleanupTempDir(zipDir));
+      final zip = p.join(zipDir.path, 'b.zip');
+      await _exportZip(src, srcDir.path, zip);
+      await src.close();
 
-    // 导两遍——幂等。
-    await BackupRestoreService.mergeRestoreBackup(
-        dbDirectory: curDir.path, zipPath: zip);
-    await BackupRestoreService.mergeRestoreBackup(
-        dbDirectory: curDir.path, zipPath: zip);
+      // 导两遍——幂等。
+      await BackupRestoreService.mergeRestoreBackup(
+        dbDirectory: curDir.path,
+        zipPath: zip,
+      );
+      await BackupRestoreService.mergeRestoreBackup(
+        dbDirectory: curDir.path,
+        zipPath: zip,
+      );
 
-    final after = FushiDatabase(curDir.path);
-    addTearDown(after.close);
-    final tagged = (await after.getTagAssignmentsForKind(TagHostKind.game));
-    expect(tagged.map((TagAssignmentRow r) => r.entryKey).toSet(),
+      final after = FushiDatabase(curDir.path);
+      addTearDown(after.close);
+      final tagged = (await after.getTagAssignmentsForKind(TagHostKind.game));
+      expect(
+        tagged.map((TagAssignmentRow r) => r.entryKey).toSet(),
         <String>{'222000000', '444000000'},
-        reason: '同 bgm 12345 的游戏落在 B 机自己的行上（不是 A 机的局域 id）；'
-            '无身份的游戏被插入后标签落在它自己头上；重导不双计');
-    expect((await after.getTagsForGame('222000000')).single.name, '神作');
-    expect(await after.getTagsForGame('333000000'), isEmpty,
-        reason: '无刮削身份的旁观游戏不被误标');
-    expect(
+        reason:
+            '同 bgm 12345 的游戏落在 B 机自己的行上（不是 A 机的局域 id）；'
+            '无身份的游戏被插入后标签落在它自己头上；重导不双计',
+      );
+      expect((await after.getTagsForGame('222000000')).single.name, '神作');
+      expect(
+        await after.getTagsForGame('333000000'),
+        isEmpty,
+        reason: '无刮削身份的旁观游戏不被误标',
+      );
+      expect(
         (await after.getAllGalgames()).map((GalgameRow g) => g.id).toSet(),
         <String>{'222000000', '333000000', '444000000'},
-        reason: 'A 机与 B 机同身份的游戏去重，A 机独有的游戏插入（id 原样保留）');
-  });
+        reason: 'A 机与 B 机同身份的游戏去重，A 机独有的游戏插入（id 原样保留）',
+      );
+    },
+  );
 
   test('favorite words dedupe-union keeps earlier createdAt', () async {
     final curDir = await _tempDir('mg_cur_');
@@ -562,7 +660,9 @@ void main() {
     await src.close();
 
     await BackupRestoreService.mergeRestoreBackup(
-        dbDirectory: curDir.path, zipPath: zip);
+      dbDirectory: curDir.path,
+      zipPath: zip,
+    );
 
     final after = FushiDatabase(curDir.path);
     addTearDown(after.close);
@@ -572,227 +672,261 @@ void main() {
     expect(dup.glossary, 'local'); // earlier (device) row kept
   });
 
-  test('tagId is remapped across DBs (no dangling FK on book tag mappings)',
-      () async {
-    final curDir = await _tempDir('mg_cur_');
-    addTearDown(() => cleanupTempDir(curDir));
-    final cur = FushiDatabase(curDir.path);
-    // Device already has SOME tags so its autoincrement ids differ from src.
-    await cur.createTag('existing-a', 0xFF111111);
-    await cur.createTag('existing-b', 0xFF222222);
-    await cur.insertEpubBook(_book('book1'));
-    await cur.close();
+  test(
+    'tagId is remapped across DBs (no dangling FK on book tag mappings)',
+    () async {
+      final curDir = await _tempDir('mg_cur_');
+      addTearDown(() => cleanupTempDir(curDir));
+      final cur = FushiDatabase(curDir.path);
+      // Device already has SOME tags so its autoincrement ids differ from src.
+      await cur.createTag('existing-a', 0xFF111111);
+      await cur.createTag('existing-b', 0xFF222222);
+      await cur.insertEpubBook(_book('book1'));
+      await cur.close();
 
-    final srcDir = await _tempDir('mg_src_');
-    addTearDown(() => cleanupTempDir(srcDir));
-    final src = FushiDatabase(srcDir.path);
-    final int srcTagId = await src.createTag('shared-tag', 0xFF333333);
-    await src.insertEpubBook(_book('book1'));
-    await src.addTagToBook('book1', srcTagId);
-    final zipDir = await _tempDir('mg_zip_');
-    addTearDown(() => cleanupTempDir(zipDir));
-    final zip = p.join(zipDir.path, 'b.zip');
-    await _exportZip(src, srcDir.path, zip);
-    await src.close();
+      final srcDir = await _tempDir('mg_src_');
+      addTearDown(() => cleanupTempDir(srcDir));
+      final src = FushiDatabase(srcDir.path);
+      final int srcTagId = await src.createTag('shared-tag', 0xFF333333);
+      await src.insertEpubBook(_book('book1'));
+      await src.addTagToBook('book1', srcTagId);
+      final zipDir = await _tempDir('mg_zip_');
+      addTearDown(() => cleanupTempDir(zipDir));
+      final zip = p.join(zipDir.path, 'b.zip');
+      await _exportZip(src, srcDir.path, zip);
+      await src.close();
 
-    await BackupRestoreService.mergeRestoreBackup(
-        dbDirectory: curDir.path, zipPath: zip);
+      await BackupRestoreService.mergeRestoreBackup(
+        dbDirectory: curDir.path,
+        zipPath: zip,
+      );
 
-    final after = FushiDatabase(curDir.path);
-    addTearDown(after.close);
-    // The new tag landed with a FRESH id (not the src id).
-    final tagRows = await after
-        .customSelect("SELECT id FROM book_tags WHERE name = 'shared-tag'")
-        .get();
-    expect(tagRows, hasLength(1));
-    final int targetTagId = tagRows.single.data['id'] as int;
-    // The mapping points at the REMAPPED target id, not the src id.
-    final maps = await after
-        .customSelect('SELECT tag_id FROM tag_assignments '
-            "WHERE media_kind = 'epub' AND entry_key = 'book1'")
-        .get();
-    expect(maps, hasLength(1));
-    expect(maps.single.data['tag_id'], targetTagId);
-    // No dangling FK: every mapping tag_id resolves to a real tag.
-    final dangling = await after
-        .customSelect('SELECT COUNT(*) AS c FROM tag_assignments m '
-            'WHERE NOT EXISTS (SELECT 1 FROM book_tags t WHERE t.id = m.tag_id)')
-        .getSingle();
-    expect(dangling.data['c'], 0);
-  });
-
-  test('profileId is remapped across DBs (no dangling FK on child tables)',
-      () async {
-    final curDir = await _tempDir('mg_cur_');
-    addTearDown(() => cleanupTempDir(curDir));
-    final cur = FushiDatabase(curDir.path);
-    // Device already has a profile so its ids diverge from src.
-    await cur.insertProfile(
-        ProfilesCompanion.insert(name: 'Default', createdAt: 1, updatedAt: 1));
-    await cur.insertEpubBook(_book('pbook'));
-    await cur.close();
-
-    final srcDir = await _tempDir('mg_src_');
-    addTearDown(() => cleanupTempDir(srcDir));
-    final src = FushiDatabase(srcDir.path);
-    final int srcProfileId = await src.insertProfile(
-        ProfilesCompanion.insert(name: 'Reading', createdAt: 2, updatedAt: 2));
-    await src.upsertProfileSetting(ProfileSettingsCompanion.insert(
-      profileId: srcProfileId,
-      category: 'reader',
-      key: 'fontSize',
-      value: '18',
-    ));
-    await src.insertEpubBook(_book('pbook'));
-    await src.setBookProfile('pbook', srcProfileId);
-    final zipDir = await _tempDir('mg_zip_');
-    addTearDown(() => cleanupTempDir(zipDir));
-    final zip = p.join(zipDir.path, 'b.zip');
-    await _exportZip(src, srcDir.path, zip);
-    await src.close();
-
-    await BackupRestoreService.mergeRestoreBackup(
-        dbDirectory: curDir.path, zipPath: zip);
-
-    final after = FushiDatabase(curDir.path);
-    addTearDown(after.close);
-    final pr = await after
-        .customSelect("SELECT id FROM profiles WHERE name = 'Reading'")
-        .get();
-    expect(pr, hasLength(1));
-    final int targetPid = pr.single.data['id'] as int;
-    // profile_settings child remapped to the new profile id.
-    final ps = await after
-        .customSelect('SELECT profile_id FROM profile_settings '
-            "WHERE key = 'fontSize'")
-        .get();
-    expect(ps, hasLength(1));
-    expect(ps.single.data['profile_id'], targetPid);
-    // book_profiles child remapped too.
-    final bp = await after
-        .customSelect('SELECT profile_id FROM book_profiles '
-            "WHERE book_key = 'pbook'")
-        .get();
-    expect(bp, hasLength(1));
-    expect(bp.single.data['profile_id'], targetPid);
-    // No dangling FK across all three child tables.
-    for (final t in [
-      'profile_settings',
-      'media_type_profiles',
-      'book_profiles'
-    ]) {
-      final d = await after
-          .customSelect('SELECT COUNT(*) AS c FROM $t x '
-              'WHERE NOT EXISTS (SELECT 1 FROM profiles p '
-              'WHERE p.id = x.profile_id)')
+      final after = FushiDatabase(curDir.path);
+      addTearDown(after.close);
+      // The new tag landed with a FRESH id (not the src id).
+      final tagRows = await after
+          .customSelect("SELECT id FROM book_tags WHERE name = 'shared-tag'")
+          .get();
+      expect(tagRows, hasLength(1));
+      final int targetTagId = tagRows.single.data['id'] as int;
+      // The mapping points at the REMAPPED target id, not the src id.
+      final maps = await after
+          .customSelect(
+            'SELECT tag_id FROM tag_assignments '
+            "WHERE media_kind = 'epub' AND entry_key = 'book1'",
+          )
+          .get();
+      expect(maps, hasLength(1));
+      expect(maps.single.data['tag_id'], targetTagId);
+      // No dangling FK: every mapping tag_id resolves to a real tag.
+      final dangling = await after
+          .customSelect(
+            'SELECT COUNT(*) AS c FROM tag_assignments m '
+            'WHERE NOT EXISTS (SELECT 1 FROM book_tags t WHERE t.id = m.tag_id)',
+          )
           .getSingle();
-      expect(d.data['c'], 0, reason: '$t has a dangling profile_id');
-    }
-  });
+      expect(dangling.data['c'], 0);
+    },
+  );
 
-  test('mined sentences dedupe by fingerprint (no INSERT OR IGNORE reliance)',
-      () async {
-    final curDir = await _tempDir('mg_cur_');
-    addTearDown(() => cleanupTempDir(curDir));
-    final cur = FushiDatabase(curDir.path);
-    await cur.addMinedSentence(
-      source: 'book',
-      dateKey: '2026-01-01',
-      expression: '語',
-      reading: 'ご',
-    );
-    // Read back its created_at so the backup can carry an IDENTICAL fingerprint.
-    final int sharedCreatedAt =
-        (await cur.getAllMinedSentences()).single.createdAt;
-    await cur.close();
+  test(
+    'profileId is remapped across DBs (no dangling FK on child tables)',
+    () async {
+      final curDir = await _tempDir('mg_cur_');
+      addTearDown(() => cleanupTempDir(curDir));
+      final cur = FushiDatabase(curDir.path);
+      // Device already has a profile so its ids diverge from src.
+      await cur.insertProfile(
+        ProfilesCompanion.insert(name: 'Default', createdAt: 1, updatedAt: 1),
+      );
+      await cur.insertEpubBook(_book('pbook'));
+      await cur.close();
 
-    final srcDir = await _tempDir('mg_src_');
-    addTearDown(() => cleanupTempDir(srcDir));
-    final src = FushiDatabase(srcDir.path);
-    // Same fingerprint (duplicate) — must be dropped.
-    await src.into(src.minedSentences).insert(MinedSentencesCompanion.insert(
-          source: 'book',
-          dateKey: '2026-01-01',
-          expression: const Value('語'),
-          reading: const Value('ご'),
-          createdAt: sharedCreatedAt,
-        ));
-    // Different created_at — must be kept.
-    await src.addMinedSentence(
-      source: 'book',
-      dateKey: '2026-01-02',
-      expression: '別',
-      reading: 'べつ',
-    );
-    final zipDir = await _tempDir('mg_zip_');
-    addTearDown(() => cleanupTempDir(zipDir));
-    final zip = p.join(zipDir.path, 'b.zip');
-    await _exportZip(src, srcDir.path, zip);
-    await src.close();
+      final srcDir = await _tempDir('mg_src_');
+      addTearDown(() => cleanupTempDir(srcDir));
+      final src = FushiDatabase(srcDir.path);
+      final int srcProfileId = await src.insertProfile(
+        ProfilesCompanion.insert(name: 'Reading', createdAt: 2, updatedAt: 2),
+      );
+      await src.upsertProfileSetting(
+        ProfileSettingsCompanion.insert(
+          profileId: srcProfileId,
+          category: 'reader',
+          key: 'fontSize',
+          value: '18',
+        ),
+      );
+      await src.insertEpubBook(_book('pbook'));
+      await src.setBookProfile('pbook', srcProfileId);
+      final zipDir = await _tempDir('mg_zip_');
+      addTearDown(() => cleanupTempDir(zipDir));
+      final zip = p.join(zipDir.path, 'b.zip');
+      await _exportZip(src, srcDir.path, zip);
+      await src.close();
 
-    await BackupRestoreService.mergeRestoreBackup(
-        dbDirectory: curDir.path, zipPath: zip);
+      await BackupRestoreService.mergeRestoreBackup(
+        dbDirectory: curDir.path,
+        zipPath: zip,
+      );
 
-    final after = FushiDatabase(curDir.path);
-    addTearDown(after.close);
-    final rows = await after.getAllMinedSentences();
-    expect(rows, hasLength(2)); // dup dropped, distinct one added
-  });
+      final after = FushiDatabase(curDir.path);
+      addTearDown(after.close);
+      final pr = await after
+          .customSelect("SELECT id FROM profiles WHERE name = 'Reading'")
+          .get();
+      expect(pr, hasLength(1));
+      final int targetPid = pr.single.data['id'] as int;
+      // profile_settings child remapped to the new profile id.
+      final ps = await after
+          .customSelect(
+            'SELECT profile_id FROM profile_settings '
+            "WHERE key = 'fontSize'",
+          )
+          .get();
+      expect(ps, hasLength(1));
+      expect(ps.single.data['profile_id'], targetPid);
+      // book_profiles child remapped too.
+      final bp = await after
+          .customSelect(
+            'SELECT profile_id FROM book_profiles '
+            "WHERE book_key = 'pbook'",
+          )
+          .get();
+      expect(bp, hasLength(1));
+      expect(bp.single.data['profile_id'], targetPid);
+      // No dangling FK across all three child tables.
+      for (final t in [
+        'profile_settings',
+        'media_type_profiles',
+        'book_profiles',
+      ]) {
+        final d = await after
+            .customSelect(
+              'SELECT COUNT(*) AS c FROM $t x '
+              'WHERE NOT EXISTS (SELECT 1 FROM profiles p '
+              'WHERE p.id = x.profile_id)',
+            )
+            .getSingle();
+        expect(d.data['c'], 0, reason: '$t has a dangling profile_id');
+      }
+    },
+  );
+
+  test(
+    'mined sentences dedupe by fingerprint (no INSERT OR IGNORE reliance)',
+    () async {
+      final curDir = await _tempDir('mg_cur_');
+      addTearDown(() => cleanupTempDir(curDir));
+      final cur = FushiDatabase(curDir.path);
+      await cur.addMinedSentence(
+        source: 'book',
+        dateKey: '2026-01-01',
+        expression: '語',
+        reading: 'ご',
+      );
+      // Read back its created_at so the backup can carry an IDENTICAL fingerprint.
+      final int sharedCreatedAt =
+          (await cur.getAllMinedSentences()).single.createdAt;
+      await cur.close();
+
+      final srcDir = await _tempDir('mg_src_');
+      addTearDown(() => cleanupTempDir(srcDir));
+      final src = FushiDatabase(srcDir.path);
+      // Same fingerprint (duplicate) — must be dropped.
+      await src
+          .into(src.minedSentences)
+          .insert(
+            MinedSentencesCompanion.insert(
+              source: 'book',
+              dateKey: '2026-01-01',
+              expression: const Value('語'),
+              reading: const Value('ご'),
+              createdAt: sharedCreatedAt,
+            ),
+          );
+      // Different created_at — must be kept.
+      await src.addMinedSentence(
+        source: 'book',
+        dateKey: '2026-01-02',
+        expression: '別',
+        reading: 'べつ',
+      );
+      final zipDir = await _tempDir('mg_zip_');
+      addTearDown(() => cleanupTempDir(zipDir));
+      final zip = p.join(zipDir.path, 'b.zip');
+      await _exportZip(src, srcDir.path, zip);
+      await src.close();
+
+      await BackupRestoreService.mergeRestoreBackup(
+        dbDirectory: curDir.path,
+        zipPath: zip,
+      );
+
+      final after = FushiDatabase(curDir.path);
+      addTearDown(after.close);
+      final rows = await after.getAllMinedSentences();
+      expect(rows, hasLength(2)); // dup dropped, distinct one added
+    },
+  );
 
   // P4 B3：activity_events 补 union 合并（此前 merge 对它零处理 = 静默丢弃）。
-  test(
-      'activity events dedupe-union by {type, media, title, ms}; idempotent '
+  test('activity events dedupe-union by {type, media, title, ms}; idempotent '
       'and never derives projection rows', () async {
     final curDir = await _tempDir('mg_cur_');
     addTearDown(() => cleanupTempDir(curDir));
     final cur = FushiDatabase(curDir.path);
     await cur.addActivityEvent(
-        eventType: 'read',
-        mediaType: 'book',
-        title: 'A',
-        mediaKey: 'A',
-        dateKey: '2026-01-01',
-        timestampMs: 1111,
-        durationMs: 60000,
-        charsDelta: 100);
+      eventType: 'read',
+      mediaType: 'book',
+      title: 'A',
+      mediaKey: 'A',
+      dateKey: '2026-01-01',
+      timestampMs: 1111,
+      durationMs: 60000,
+      charsDelta: 100,
+    );
     // 两侧共有的同一事件（四元自然键完全一致）→ 只留一条。
     await cur.addActivityEvent(
-        eventType: 'watch',
-        mediaType: 'video',
-        title: 'V',
-        dateKey: '2026-01-02',
-        timestampMs: 2222,
-        durationMs: 30000,
-        charsDelta: 50);
+      eventType: 'watch',
+      mediaType: 'video',
+      title: 'V',
+      dateKey: '2026-01-02',
+      timestampMs: 2222,
+      durationMs: 30000,
+      charsDelta: 50,
+    );
     await cur.close();
 
     final srcDir = await _tempDir('mg_src_');
     addTearDown(() => cleanupTempDir(srcDir));
     final src = FushiDatabase(srcDir.path);
     await src.addActivityEvent(
-        eventType: 'watch',
-        mediaType: 'video',
-        title: 'V',
-        dateKey: '2026-01-02',
-        timestampMs: 2222,
-        durationMs: 30000,
-        charsDelta: 50);
+      eventType: 'watch',
+      mediaType: 'video',
+      title: 'V',
+      dateKey: '2026-01-02',
+      timestampMs: 2222,
+      durationMs: 30000,
+      charsDelta: 50,
+    );
     // 备份独有事件 → 并入。
     await src.addActivityEvent(
-        eventType: 'read',
-        mediaType: 'book',
-        title: 'B',
-        dateKey: '2026-01-03',
-        timestampMs: 3333,
-        durationMs: 90000,
-        charsDelta: 200);
+      eventType: 'read',
+      mediaType: 'book',
+      title: 'B',
+      dateKey: '2026-01-03',
+      timestampMs: 3333,
+      durationMs: 90000,
+      charsDelta: 200,
+    );
     // 同题同毫秒但不同 event_type —— 是不同事件，自然键必须含 event_type。
     await src.addActivityEvent(
-        eventType: 'added',
-        mediaType: 'video',
-        title: 'V',
-        dateKey: '2026-01-02',
-        timestampMs: 2222);
+      eventType: 'added',
+      mediaType: 'video',
+      title: 'V',
+      dateKey: '2026-01-02',
+      timestampMs: 2222,
+    );
     final zipDir = await _tempDir('mg_zip_');
     addTearDown(() => cleanupTempDir(zipDir));
     final zip = p.join(zipDir.path, 'b.zip');
@@ -801,283 +935,334 @@ void main() {
 
     // 导两遍——幂等（dedupe-UNION，绝不翻倍）。
     await BackupRestoreService.mergeRestoreBackup(
-        dbDirectory: curDir.path, zipPath: zip);
+      dbDirectory: curDir.path,
+      zipPath: zip,
+    );
     await BackupRestoreService.mergeRestoreBackup(
-        dbDirectory: curDir.path, zipPath: zip);
+      dbDirectory: curDir.path,
+      zipPath: zip,
+    );
 
     final after = FushiDatabase(curDir.path);
     addTearDown(after.close);
     final rows = await after.getRecentActivityEvents(limit: 100);
     expect(rows, hasLength(4), reason: '并集去重：共享事件只留一条，重导同一备份幂等');
-    expect(rows.where((r) => r.eventType == 'watch'), hasLength(1),
-        reason: '两侧同一 watch 事件不双计');
-    expect(rows.where((r) => r.eventType == 'added'), hasLength(1),
-        reason: '同题同毫秒不同 type 是不同事件，必须保留');
+    expect(
+      rows.where((r) => r.eventType == 'watch'),
+      hasLength(1),
+      reason: '两侧同一 watch 事件不双计',
+    );
+    expect(
+      rows.where((r) => r.eventType == 'added'),
+      hasLength(1),
+      reason: '同题同毫秒不同 type 是不同事件，必须保留',
+    );
     expect(rows.map((r) => r.title).toSet(), <String>{'A', 'V', 'B'});
     // 不产投影：activity 事实行合并绝不派生 reading_statistics 等投影。
-    expect(await after.getAllReadingStatistics(), isEmpty,
-        reason: 'activity 合并只搬事实行，不得生成投影');
+    expect(
+      await after.getAllReadingStatistics(),
+      isEmpty,
+      reason: 'activity 合并只搬事实行，不得生成投影',
+    );
   });
 
-  test(
-      'galgame_sessions merge under the game identity map: the src game is '
+  test('galgame_sessions merge under the game identity map: the src game is '
       'inserted and its session follows; local rows untouched', () async {
     final curDir = await _tempDir('mg_cur_');
     addTearDown(() => cleanupTempDir(curDir));
     final cur = FushiDatabase(curDir.path);
     // 本机自己的游戏 + 会话必须原样保留。
-    await cur.upsertGalgame(GalgamesCompanion.insert(
-      id: '222000000',
-      name: 'LocalGame',
-      exePath: r'D:\g\g.exe',
-      workdir: r'D:\g',
-      addedAt: 2,
-    ));
-    await cur.insertGalgameSession(GalgameSessionsCompanion.insert(
-      gameId: '222000000',
-      startMs: 1000,
-      endMs: 61000,
-      durationSeconds: 60,
-      dateKey: '2026-01-01',
-    ));
+    await cur.upsertGalgame(
+      GalgamesCompanion.insert(
+        id: '222000000',
+        name: 'LocalGame',
+        exePath: r'D:\g\g.exe',
+        workdir: r'D:\g',
+        addedAt: 2,
+      ),
+    );
+    await cur.insertGalgameSession(
+      GalgameSessionsCompanion.insert(
+        gameId: '222000000',
+        startMs: 1000,
+        endMs: 61000,
+        durationSeconds: 60,
+        dateKey: '2026-01-01',
+      ),
+    );
     await cur.close();
 
     final srcDir = await _tempDir('mg_src_');
     addTearDown(() => cleanupTempDir(srcDir));
     final src = FushiDatabase(srcDir.path);
-    await src.upsertGalgame(GalgamesCompanion.insert(
-      id: '111000000',
-      name: 'RemoteGame',
-      exePath: r'E:\games\r.exe',
-      workdir: r'E:\games',
-      addedAt: 1,
-    ));
-    await src.insertGalgameSession(GalgameSessionsCompanion.insert(
-      gameId: '111000000',
-      startMs: 5000,
-      endMs: 125000,
-      durationSeconds: 120,
-      dateKey: '2026-02-02',
-    ));
+    await src.upsertGalgame(
+      GalgamesCompanion.insert(
+        id: '111000000',
+        name: 'RemoteGame',
+        exePath: r'E:\games\r.exe',
+        workdir: r'E:\games',
+        addedAt: 1,
+      ),
+    );
+    await src.insertGalgameSession(
+      GalgameSessionsCompanion.insert(
+        gameId: '111000000',
+        startMs: 5000,
+        endMs: 125000,
+        durationSeconds: 120,
+        dateKey: '2026-02-02',
+      ),
+    );
     final zipDir = await _tempDir('mg_zip_');
     addTearDown(() => cleanupTempDir(zipDir));
     final zip = p.join(zipDir.path, 'b.zip');
     await _exportZip(src, srcDir.path, zip);
-    await src.close();
-
-    await BackupRestoreService.mergeRestoreBackup(
-        dbDirectory: curDir.path, zipPath: zip);
-
-    final after = FushiDatabase(curDir.path);
-    addTearDown(after.close);
-    expect(
-        (await after.getAllGalgames()).map((GalgameRow g) => g.id).toSet(),
-        <String>{'222000000', '111000000'},
-        reason: '本机游戏原样保留；src 独有的游戏插入');
-    final QueryRow sessions = await after
-        .customSelect('SELECT COUNT(*) AS c FROM galgame_sessions')
-        .getSingle();
-    expect(sessions.data['c'], 2,
-        reason: '本机那条原样保留 + src 会话跟着它的宿主落地');
-    expect(
-        (await after.getGalgameSessions('111000000')).single.durationSeconds,
-        120);
-  });
-
-  test('reader position LWW: newer updatedAt wins, older does not clobber',
-      () async {
-    final curDir = await _tempDir('mg_cur_');
-    addTearDown(() => cleanupTempDir(curDir));
-    final cur = FushiDatabase(curDir.path);
-    await cur.insertEpubBook(_book('lwwbook'));
-    // v82：两库各自 insertEpubBook 自动生成互异 uid，位置行挂各自 uid——
-    // 「同 book_key、uid 不同仍命中」的双侧 JOIN 换键正是被测行为。
-    await cur.upsertReaderPosition(ReaderPositionsCompanion.insert(
-      bookUid: (await cur.resolveEpubBookUid('lwwbook'))!,
-      sectionIndex: 2,
-      normCharOffset: 5000,
-      updatedAt: 100,
-    ));
-    await cur.close();
-
-    final srcDir = await _tempDir('mg_src_');
-    addTearDown(() => cleanupTempDir(srcDir));
-    final src = FushiDatabase(srcDir.path);
-    await src.insertEpubBook(_book('lwwbook'));
-    await src.upsertReaderPosition(ReaderPositionsCompanion.insert(
-      bookUid: (await src.resolveEpubBookUid('lwwbook'))!,
-      sectionIndex: 9,
-      normCharOffset: 9999,
-      updatedAt: 200, // newer → wins
-    ));
-    final zipDir = await _tempDir('mg_zip_');
-    addTearDown(() => cleanupTempDir(zipDir));
-    final zip = p.join(zipDir.path, 'b.zip');
-    await _exportZip(src, srcDir.path, zip);
-    await src.close();
-
-    await BackupRestoreService.mergeRestoreBackup(
-        dbDirectory: curDir.path, zipPath: zip);
-
-    final after = FushiDatabase(curDir.path);
-    addTearDown(after.close);
-    // 本库位置行仍挂本库 uid（合并只换值不换键）。
-    final String afterUid = (await after.resolveEpubBookUid('lwwbook'))!;
-    final pos = await after.getReaderPosition(afterUid);
-    expect(pos!.sectionIndex, 9); // backup (newer) won
-    expect(pos.normCharOffset, 9999);
-
-    // Now re-merge a backup whose updatedAt is OLDER — must not clobber.
-    final src2Dir = await _tempDir('mg_src2_');
-    addTearDown(() => cleanupTempDir(src2Dir));
-    final src2 = FushiDatabase(src2Dir.path);
-    await src2.insertEpubBook(_book('lwwbook'));
-    await src2.upsertReaderPosition(ReaderPositionsCompanion.insert(
-      bookUid: (await src2.resolveEpubBookUid('lwwbook'))!,
-      sectionIndex: 0,
-      normCharOffset: 1,
-      updatedAt: 50, // older → must lose
-    ));
-    final zip2 = p.join(zipDir.path, 'b2.zip');
-    await _exportZip(src2, src2Dir.path, zip2);
-    await src2.close();
-    await BackupRestoreService.mergeRestoreBackup(
-        dbDirectory: curDir.path, zipPath: zip2);
-    final pos2 = await after.getReaderPosition(afterUid);
-    expect(pos2!.sectionIndex, 9); // unchanged — older backup ignored
-  });
-
-  test('content tree restore is copy-if-absent (never overwrites existing)',
-      () async {
-    final curDir = await _tempDir('mg_cur_');
-    addTearDown(() => cleanupTempDir(curDir));
-    final cur = FushiDatabase(curDir.path);
-    await cur.close();
-
-    // This device's books tree: one existing file with LOCAL content.
-    final booksRoot = await _tempDir('mg_books_');
-    addTearDown(() => cleanupTempDir(booksRoot));
-    final existing = File(p.join(booksRoot.path, 'shared.txt'));
-    await existing.writeAsString('LOCAL');
-
-    // Backup carries the SAME relative file (different content) + a NEW file.
-    final srcDir = await _tempDir('mg_src_');
-    addTearDown(() => cleanupTempDir(srcDir));
-    final src = FushiDatabase(srcDir.path);
-    final srcBooks = await _tempDir('mg_srcbooks_');
-    addTearDown(() => cleanupTempDir(srcBooks));
-    await File(p.join(srcBooks.path, 'shared.txt')).writeAsString('BACKUP');
-    await File(p.join(srcBooks.path, 'new.txt')).writeAsString('NEW');
-    final zipDir = await _tempDir('mg_zip_');
-    addTearDown(() => cleanupTempDir(zipDir));
-    final zip = p.join(zipDir.path, 'b.zip');
-    await BackupService(
-      db: src,
-      dbDirectory: srcDir.path,
-      appVersion: '2.0.0',
-      booksRootDirectory: srcBooks.path,
-    ).createBackup(zip);
     await src.close();
 
     await BackupRestoreService.mergeRestoreBackup(
       dbDirectory: curDir.path,
       zipPath: zip,
-      booksRootDirectory: booksRoot.path,
     );
-
-    // Existing file untouched; new file added.
-    expect(await existing.readAsString(), 'LOCAL');
-    expect(await File(p.join(booksRoot.path, 'new.txt')).readAsString(), 'NEW');
-  });
-
-  test('bookmark for a book the backup omitted is skipped (no FK violation)',
-      () async {
-    final curDir = await _tempDir('mg_cur_');
-    addTearDown(() => cleanupTempDir(curDir));
-    final cur = FushiDatabase(curDir.path);
-    await cur.insertEpubBook(_book('owned'));
-    await cur.close();
-
-    final srcDir = await _tempDir('mg_src_');
-    addTearDown(() => cleanupTempDir(srcDir));
-    final src = FushiDatabase(srcDir.path);
-    // Bookmark whose owning book is NOT in the backup (and not on device).
-    await src.insertEpubBook(_book('owned'));
-    await src.customStatement(
-      'INSERT INTO bookmarks (book_uid, section_index, norm_char_offset, '
-      'label, created_at) VALUES (?, ?, ?, ?, ?)',
-      <Object?>[await src.resolveEpubBookUid('owned'), 1, 100, 'kept', 10],
-    );
-    // For the skip case, craft a bookmark whose book_uid joins no epub_books
-    // row on either side（v82 后 bookmarks 无 SQL FK，孤儿防线在 merge 的
-    // uid 存在性 guard——这正是被测行为）。
-    await src.customStatement(
-      'INSERT INTO bookmarks (book_uid, section_index, norm_char_offset, '
-      'label, created_at) VALUES (?, ?, ?, ?, ?)',
-      <Object?>['ghost', 5, 500, 'skipme', 20],
-    );
-    final zipDir = await _tempDir('mg_zip_');
-    addTearDown(() => cleanupTempDir(zipDir));
-    final zip = p.join(zipDir.path, 'b.zip');
-    await _exportZip(src, srcDir.path, zip);
-    await src.close();
-
-    // Must NOT throw (FK preserved) and must skip the ghost bookmark.
-    await BackupRestoreService.mergeRestoreBackup(
-        dbDirectory: curDir.path, zipPath: zip);
 
     final after = FushiDatabase(curDir.path);
     addTearDown(after.close);
-    final labels =
-        (await after.customSelect('SELECT label FROM bookmarks').get())
-            .map((r) => r.data['label'] as String)
-            .toSet();
-    expect(labels.contains('kept'), true);
-    expect(labels.contains('skipme'), false); // ghost-book bookmark skipped
-    // No dangling reference（v82：bookmarks.book_uid ↔ epub_books.uid）.
-    final dangling = await after
-        .customSelect('SELECT COUNT(*) AS c FROM bookmarks b '
-            'WHERE NOT EXISTS (SELECT 1 FROM epub_books e '
-            'WHERE e.uid = b.book_uid)')
+    expect(
+      (await after.getAllGalgames()).map((GalgameRow g) => g.id).toSet(),
+      <String>{'222000000', '111000000'},
+      reason: '本机游戏原样保留；src 独有的游戏插入',
+    );
+    final QueryRow sessions = await after
+        .customSelect('SELECT COUNT(*) AS c FROM galgame_sessions')
         .getSingle();
-    expect(dangling.data['c'], 0);
-  });
-
-  test('crash mid-merge rolls back: device DB unchanged, bak retained',
-      () async {
-    final curDir = await _tempDir('mg_cur_');
-    addTearDown(() => cleanupTempDir(curDir));
-    final cur = FushiDatabase(curDir.path);
-    await cur.insertEpubBook(_book('survivor'));
-    await cur.close();
-
-    // A backup zip whose hibiki.db is NOT a valid SQLite file → opening it to
-    // migrate throws. The orchestrator must surface the error WITHOUT touching
-    // the live DB (snapshot/mutation happen only after a successful migrate).
-    final corruptDir = await _tempDir('mg_corrupt_');
-    addTearDown(() => cleanupTempDir(corruptDir));
-    final corruptDb = File(p.join(corruptDir.path, 'hibiki.db'));
-    await corruptDb.writeAsBytes(List<int>.filled(64, 0x7a)); // garbage
-    final zipDir = await _tempDir('mg_zip_');
-    addTearDown(() => cleanupTempDir(zipDir));
-    final zip = p.join(zipDir.path, 'corrupt.zip');
-    await _zipDbWithMeta(corruptDb.path, zip);
-
-    await expectLater(
-      BackupRestoreService.mergeRestoreBackup(
-          dbDirectory: curDir.path, zipPath: zip),
-      throwsA(anything),
+    expect(sessions.data['c'], 2, reason: '本机那条原样保留 + src 会话跟着它的宿主落地');
+    expect(
+      (await after.getGalgameSessions('111000000')).single.durationSeconds,
+      120,
     );
-
-    // Live DB still has exactly the original content.
-    final after = FushiDatabase(curDir.path);
-    addTearDown(after.close);
-    final keys = (await after.getAllEpubBooks()).map((b) => b.bookKey).toSet();
-    expect(keys, <String>{'survivor'});
   });
 
-  test('engine-level transaction rolls back a partial merge on failure',
-      () async {
+  test(
+    'reader position LWW: newer updatedAt wins, older does not clobber',
+    () async {
+      final curDir = await _tempDir('mg_cur_');
+      addTearDown(() => cleanupTempDir(curDir));
+      final cur = FushiDatabase(curDir.path);
+      await cur.insertEpubBook(_book('lwwbook'));
+      // v82：两库各自 insertEpubBook 自动生成互异 uid，位置行挂各自 uid——
+      // 「同 book_key、uid 不同仍命中」的双侧 JOIN 换键正是被测行为。
+      await cur.upsertReaderPosition(
+        ReaderPositionsCompanion.insert(
+          bookUid: (await cur.resolveEpubBookUid('lwwbook'))!,
+          sectionIndex: 2,
+          normCharOffset: 5000,
+          updatedAt: 100,
+        ),
+      );
+      await cur.close();
+
+      final srcDir = await _tempDir('mg_src_');
+      addTearDown(() => cleanupTempDir(srcDir));
+      final src = FushiDatabase(srcDir.path);
+      await src.insertEpubBook(_book('lwwbook'));
+      await src.upsertReaderPosition(
+        ReaderPositionsCompanion.insert(
+          bookUid: (await src.resolveEpubBookUid('lwwbook'))!,
+          sectionIndex: 9,
+          normCharOffset: 9999,
+          updatedAt: 200, // newer → wins
+        ),
+      );
+      final zipDir = await _tempDir('mg_zip_');
+      addTearDown(() => cleanupTempDir(zipDir));
+      final zip = p.join(zipDir.path, 'b.zip');
+      await _exportZip(src, srcDir.path, zip);
+      await src.close();
+
+      await BackupRestoreService.mergeRestoreBackup(
+        dbDirectory: curDir.path,
+        zipPath: zip,
+      );
+
+      final after = FushiDatabase(curDir.path);
+      addTearDown(after.close);
+      // 本库位置行仍挂本库 uid（合并只换值不换键）。
+      final String afterUid = (await after.resolveEpubBookUid('lwwbook'))!;
+      final pos = await after.getReaderPosition(afterUid);
+      expect(pos!.sectionIndex, 9); // backup (newer) won
+      expect(pos.normCharOffset, 9999);
+
+      // Now re-merge a backup whose updatedAt is OLDER — must not clobber.
+      final src2Dir = await _tempDir('mg_src2_');
+      addTearDown(() => cleanupTempDir(src2Dir));
+      final src2 = FushiDatabase(src2Dir.path);
+      await src2.insertEpubBook(_book('lwwbook'));
+      await src2.upsertReaderPosition(
+        ReaderPositionsCompanion.insert(
+          bookUid: (await src2.resolveEpubBookUid('lwwbook'))!,
+          sectionIndex: 0,
+          normCharOffset: 1,
+          updatedAt: 50, // older → must lose
+        ),
+      );
+      final zip2 = p.join(zipDir.path, 'b2.zip');
+      await _exportZip(src2, src2Dir.path, zip2);
+      await src2.close();
+      await BackupRestoreService.mergeRestoreBackup(
+        dbDirectory: curDir.path,
+        zipPath: zip2,
+      );
+      final pos2 = await after.getReaderPosition(afterUid);
+      expect(pos2!.sectionIndex, 9); // unchanged — older backup ignored
+    },
+  );
+
+  test(
+    'content tree restore is copy-if-absent (never overwrites existing)',
+    () async {
+      final curDir = await _tempDir('mg_cur_');
+      addTearDown(() => cleanupTempDir(curDir));
+      final cur = FushiDatabase(curDir.path);
+      await cur.close();
+
+      // This device's books tree: one existing file with LOCAL content.
+      final booksRoot = await _tempDir('mg_books_');
+      addTearDown(() => cleanupTempDir(booksRoot));
+      final existing = File(p.join(booksRoot.path, 'shared.txt'));
+      await existing.writeAsString('LOCAL');
+
+      // Backup carries the SAME relative file (different content) + a NEW file.
+      final srcDir = await _tempDir('mg_src_');
+      addTearDown(() => cleanupTempDir(srcDir));
+      final src = FushiDatabase(srcDir.path);
+      final srcBooks = await _tempDir('mg_srcbooks_');
+      addTearDown(() => cleanupTempDir(srcBooks));
+      await File(p.join(srcBooks.path, 'shared.txt')).writeAsString('BACKUP');
+      await File(p.join(srcBooks.path, 'new.txt')).writeAsString('NEW');
+      final zipDir = await _tempDir('mg_zip_');
+      addTearDown(() => cleanupTempDir(zipDir));
+      final zip = p.join(zipDir.path, 'b.zip');
+      await BackupService(
+        db: src,
+        dbDirectory: srcDir.path,
+        appVersion: '2.0.0',
+        booksRootDirectory: srcBooks.path,
+      ).createBackup(zip);
+      await src.close();
+
+      await BackupRestoreService.mergeRestoreBackup(
+        dbDirectory: curDir.path,
+        zipPath: zip,
+        booksRootDirectory: booksRoot.path,
+      );
+
+      // Existing file untouched; new file added.
+      expect(await existing.readAsString(), 'LOCAL');
+      expect(
+        await File(p.join(booksRoot.path, 'new.txt')).readAsString(),
+        'NEW',
+      );
+    },
+  );
+
+  test(
+    'bookmark for a book the backup omitted is skipped (no FK violation)',
+    () async {
+      final curDir = await _tempDir('mg_cur_');
+      addTearDown(() => cleanupTempDir(curDir));
+      final cur = FushiDatabase(curDir.path);
+      await cur.insertEpubBook(_book('owned'));
+      await cur.close();
+
+      final srcDir = await _tempDir('mg_src_');
+      addTearDown(() => cleanupTempDir(srcDir));
+      final src = FushiDatabase(srcDir.path);
+      // Bookmark whose owning book is NOT in the backup (and not on device).
+      await src.insertEpubBook(_book('owned'));
+      await src.customStatement(
+        'INSERT INTO bookmarks (book_uid, section_index, norm_char_offset, '
+        'label, created_at) VALUES (?, ?, ?, ?, ?)',
+        <Object?>[await src.resolveEpubBookUid('owned'), 1, 100, 'kept', 10],
+      );
+      // For the skip case, craft a bookmark whose book_uid joins no epub_books
+      // row on either side（v82 后 bookmarks 无 SQL FK，孤儿防线在 merge 的
+      // uid 存在性 guard——这正是被测行为）。
+      await src.customStatement(
+        'INSERT INTO bookmarks (book_uid, section_index, norm_char_offset, '
+        'label, created_at) VALUES (?, ?, ?, ?, ?)',
+        <Object?>['ghost', 5, 500, 'skipme', 20],
+      );
+      final zipDir = await _tempDir('mg_zip_');
+      addTearDown(() => cleanupTempDir(zipDir));
+      final zip = p.join(zipDir.path, 'b.zip');
+      await _exportZip(src, srcDir.path, zip);
+      await src.close();
+
+      // Must NOT throw (FK preserved) and must skip the ghost bookmark.
+      await BackupRestoreService.mergeRestoreBackup(
+        dbDirectory: curDir.path,
+        zipPath: zip,
+      );
+
+      final after = FushiDatabase(curDir.path);
+      addTearDown(after.close);
+      final labels =
+          (await after.customSelect('SELECT label FROM bookmarks').get())
+              .map((r) => r.data['label'] as String)
+              .toSet();
+      expect(labels.contains('kept'), true);
+      expect(labels.contains('skipme'), false); // ghost-book bookmark skipped
+      // No dangling reference（v82：bookmarks.book_uid ↔ epub_books.uid）.
+      final dangling = await after
+          .customSelect(
+            'SELECT COUNT(*) AS c FROM bookmarks b '
+            'WHERE NOT EXISTS (SELECT 1 FROM epub_books e '
+            'WHERE e.uid = b.book_uid)',
+          )
+          .getSingle();
+      expect(dangling.data['c'], 0);
+    },
+  );
+
+  test(
+    'crash mid-merge rolls back: device DB unchanged, bak retained',
+    () async {
+      final curDir = await _tempDir('mg_cur_');
+      addTearDown(() => cleanupTempDir(curDir));
+      final cur = FushiDatabase(curDir.path);
+      await cur.insertEpubBook(_book('survivor'));
+      await cur.close();
+
+      // A backup zip whose hibiki.db is NOT a valid SQLite file → opening it to
+      // migrate throws. The orchestrator must surface the error WITHOUT touching
+      // the live DB (snapshot/mutation happen only after a successful migrate).
+      final corruptDir = await _tempDir('mg_corrupt_');
+      addTearDown(() => cleanupTempDir(corruptDir));
+      final corruptDb = File(p.join(corruptDir.path, 'hibiki.db'));
+      await corruptDb.writeAsBytes(List<int>.filled(64, 0x7a)); // garbage
+      final zipDir = await _tempDir('mg_zip_');
+      addTearDown(() => cleanupTempDir(zipDir));
+      final zip = p.join(zipDir.path, 'corrupt.zip');
+      await _zipDbWithMeta(corruptDb.path, zip);
+
+      await expectLater(
+        BackupRestoreService.mergeRestoreBackup(
+          dbDirectory: curDir.path,
+          zipPath: zip,
+        ),
+        throwsA(anything),
+      );
+
+      // Live DB still has exactly the original content.
+      final after = FushiDatabase(curDir.path);
+      addTearDown(after.close);
+      final keys = (await after.getAllEpubBooks())
+          .map((b) => b.bookKey)
+          .toSet();
+      expect(keys, <String>{'survivor'});
+    },
+  );
+
+  test('engine-level transaction rolls back a partial merge on failure', () async {
     final tDir = await _tempDir('mg_eng_');
     addTearDown(() => cleanupTempDir(tDir));
     final target = FushiDatabase(tDir.path);
@@ -1115,68 +1300,80 @@ void main() {
     expect(keys, <String>{'orig'}); // 'from-src' rolled back
   });
 
-  test('overwrite import path is unchanged (whole DB replaced, no merge)',
-      () async {
-    final curDir = await _tempDir('mg_cur_');
-    addTearDown(() => cleanupTempDir(curDir));
-    final cur = FushiDatabase(curDir.path);
-    await cur.insertEpubBook(_book('device-book'));
-    await cur.close();
+  test(
+    'overwrite import path is unchanged (whole DB replaced, no merge)',
+    () async {
+      final curDir = await _tempDir('mg_cur_');
+      addTearDown(() => cleanupTempDir(curDir));
+      final cur = FushiDatabase(curDir.path);
+      await cur.insertEpubBook(_book('device-book'));
+      await cur.close();
 
-    final srcDir = await _tempDir('mg_src_');
-    addTearDown(() => cleanupTempDir(srcDir));
-    final src = FushiDatabase(srcDir.path);
-    await src.insertEpubBook(_book('backup-book'));
-    final zipDir = await _tempDir('mg_zip_');
-    addTearDown(() => cleanupTempDir(zipDir));
-    final zip = p.join(zipDir.path, 'b.zip');
-    await _exportZip(src, srcDir.path, zip);
-    await src.close();
+      final srcDir = await _tempDir('mg_src_');
+      addTearDown(() => cleanupTempDir(srcDir));
+      final src = FushiDatabase(srcDir.path);
+      await src.insertEpubBook(_book('backup-book'));
+      final zipDir = await _tempDir('mg_zip_');
+      addTearDown(() => cleanupTempDir(zipDir));
+      final zip = p.join(zipDir.path, 'b.zip');
+      await _exportZip(src, srcDir.path, zip);
+      await src.close();
 
-    await BackupRestoreService.restoreBackup(
-        dbDirectory: curDir.path, zipPath: zip);
+      await BackupRestoreService.restoreBackup(
+        dbDirectory: curDir.path,
+        zipPath: zip,
+      );
 
-    final after = FushiDatabase(curDir.path);
-    addTearDown(after.close);
-    // OVERWRITE: only the backup's book survives (device book gone).
-    final keys = (await after.getAllEpubBooks()).map((b) => b.bookKey).toSet();
-    expect(keys, <String>{'backup-book'});
-  });
+      final after = FushiDatabase(curDir.path);
+      addTearDown(after.close);
+      // OVERWRITE: only the backup's book survives (device book gone).
+      final keys = (await after.getAllEpubBooks())
+          .map((b) => b.bookKey)
+          .toSet();
+      expect(keys, <String>{'backup-book'});
+    },
+  );
 
   // ── TODO-1195 part B: tombstones + merge preview ─────────────────────────
-  test('merge does NOT resurrect a book the user deleted (tombstone)',
-      () async {
-    final curDir = await _tempDir('mg_cur_');
-    addTearDown(() => cleanupTempDir(curDir));
-    final cur = FushiDatabase(curDir.path);
-    await cur.insertEpubBook(_book('deleted-book'));
-    await cur.insertEpubBook(_book('kept-book'));
-    // User deletes one book → a tombstone is recorded.
-    await cur.deleteEpubBook('deleted-book', tombstone: true);
-    expect(await cur.getBookTombstoneKeys(), <String>{'deleted-book'});
-    await cur.close();
+  test(
+    'merge does NOT resurrect a book the user deleted (tombstone)',
+    () async {
+      final curDir = await _tempDir('mg_cur_');
+      addTearDown(() => cleanupTempDir(curDir));
+      final cur = FushiDatabase(curDir.path);
+      await cur.insertEpubBook(_book('deleted-book'));
+      await cur.insertEpubBook(_book('kept-book'));
+      // User deletes one book → a tombstone is recorded.
+      await cur.deleteEpubBook('deleted-book', tombstone: true);
+      expect(await cur.getBookTombstoneKeys(), <String>{'deleted-book'});
+      await cur.close();
 
-    // An OLDER backup still carries the deleted book plus a brand-new one.
-    final srcDir = await _tempDir('mg_src_');
-    addTearDown(() => cleanupTempDir(srcDir));
-    final src = FushiDatabase(srcDir.path);
-    await src.insertEpubBook(_book('deleted-book'));
-    await src.insertEpubBook(_book('new-book'));
-    final zipDir = await _tempDir('mg_zip_');
-    addTearDown(() => cleanupTempDir(zipDir));
-    final zip = p.join(zipDir.path, 'b.zip');
-    await _exportZip(src, srcDir.path, zip);
-    await src.close();
+      // An OLDER backup still carries the deleted book plus a brand-new one.
+      final srcDir = await _tempDir('mg_src_');
+      addTearDown(() => cleanupTempDir(srcDir));
+      final src = FushiDatabase(srcDir.path);
+      await src.insertEpubBook(_book('deleted-book'));
+      await src.insertEpubBook(_book('new-book'));
+      final zipDir = await _tempDir('mg_zip_');
+      addTearDown(() => cleanupTempDir(zipDir));
+      final zip = p.join(zipDir.path, 'b.zip');
+      await _exportZip(src, srcDir.path, zip);
+      await src.close();
 
-    await BackupRestoreService.mergeRestoreBackup(
-        dbDirectory: curDir.path, zipPath: zip);
+      await BackupRestoreService.mergeRestoreBackup(
+        dbDirectory: curDir.path,
+        zipPath: zip,
+      );
 
-    final after = FushiDatabase(curDir.path);
-    addTearDown(after.close);
-    final keys = (await after.getAllEpubBooks()).map((b) => b.bookKey).toSet();
-    // deleted-book stays gone; the new book is still added.
-    expect(keys, <String>{'kept-book', 'new-book'});
-  });
+      final after = FushiDatabase(curDir.path);
+      addTearDown(after.close);
+      final keys = (await after.getAllEpubBooks())
+          .map((b) => b.bookKey)
+          .toSet();
+      // deleted-book stays gone; the new book is still added.
+      expect(keys, <String>{'kept-book', 'new-book'});
+    },
+  );
 
   test('re-adding a deleted book clears its tombstone', () async {
     final curDir = await _tempDir('mg_cur_');
@@ -1198,12 +1395,14 @@ void main() {
     addTearDown(cur.close);
     await cur.insertEpubBook(_book('shared'));
     // v82：两库 uid 互异，preview 的双侧 JOIN 换键按 book_key 对上同一本书。
-    await cur.upsertReaderPosition(ReaderPositionsCompanion.insert(
-      bookUid: (await cur.resolveEpubBookUid('shared'))!,
-      sectionIndex: 1,
-      normCharOffset: 100,
-      updatedAt: 100,
-    ));
+    await cur.upsertReaderPosition(
+      ReaderPositionsCompanion.insert(
+        bookUid: (await cur.resolveEpubBookUid('shared'))!,
+        sectionIndex: 1,
+        normCharOffset: 100,
+        updatedAt: 100,
+      ),
+    );
 
     final srcDir = await _tempDir('mg_src_');
     addTearDown(() => cleanupTempDir(srcDir));
@@ -1212,12 +1411,14 @@ void main() {
     await src.insertEpubBook(_book('new1'));
     await src.insertEpubBook(_book('new2'));
     // Newer position for the shared book → counts as an update.
-    await src.upsertReaderPosition(ReaderPositionsCompanion.insert(
-      bookUid: (await src.resolveEpubBookUid('shared'))!,
-      sectionIndex: 5,
-      normCharOffset: 999,
-      updatedAt: 200,
-    ));
+    await src.upsertReaderPosition(
+      ReaderPositionsCompanion.insert(
+        bookUid: (await src.resolveEpubBookUid('shared'))!,
+        sectionIndex: 5,
+        normCharOffset: 999,
+        updatedAt: 200,
+      ),
+    );
     final zipDir = await _tempDir('mg_zip_');
     addTearDown(() => cleanupTempDir(zipDir));
     final zip = p.join(zipDir.path, 'b.zip');
@@ -1235,41 +1436,44 @@ void main() {
     expect(preview.newBooks, 2);
     expect(preview.updatedReaderPositions, 1); // shared position advanced
     // Preview leaves no temp/attached state behind.
-    expect(File(p.join(curDir.path, 'fushi.db.merge-preview-src')).existsSync(),
-        false);
-  });
-
-  test('previewMergeRestore excludes tombstoned books from the new-book count',
-      () async {
-    final curDir = await _tempDir('mg_cur_');
-    addTearDown(() => cleanupTempDir(curDir));
-    final cur = FushiDatabase(curDir.path);
-    addTearDown(cur.close);
-    // The device deleted 'gone' earlier (tombstoned) and never had 'fresh'.
-    await cur.insertBookTombstone('gone');
-
-    final srcDir = await _tempDir('mg_src_');
-    addTearDown(() => cleanupTempDir(srcDir));
-    final src = FushiDatabase(srcDir.path);
-    await src.insertEpubBook(_book('gone'));
-    await src.insertEpubBook(_book('fresh'));
-    final zipDir = await _tempDir('mg_zip_');
-    addTearDown(() => cleanupTempDir(zipDir));
-    final zip = p.join(zipDir.path, 'b.zip');
-    await _exportZip(src, srcDir.path, zip);
-    await src.close();
-
-    final preview = await BackupRestoreService.previewMergeRestore(
-      liveDb: cur,
-      dbDirectory: curDir.path,
-      zipPath: zip,
+    expect(
+      File(p.join(curDir.path, 'fushi.db.merge-preview-src')).existsSync(),
+      false,
     );
-    expect(preview != null, true);
-    expect(preview!.newEpubBooks, 1); // only 'fresh' — 'gone' is tombstoned
   });
 
   test(
-      'a tombstoned book stat is not resurrected by a backup merge '
+    'previewMergeRestore excludes tombstoned books from the new-book count',
+    () async {
+      final curDir = await _tempDir('mg_cur_');
+      addTearDown(() => cleanupTempDir(curDir));
+      final cur = FushiDatabase(curDir.path);
+      addTearDown(cur.close);
+      // The device deleted 'gone' earlier (tombstoned) and never had 'fresh'.
+      await cur.insertBookTombstone('gone');
+
+      final srcDir = await _tempDir('mg_src_');
+      addTearDown(() => cleanupTempDir(srcDir));
+      final src = FushiDatabase(srcDir.path);
+      await src.insertEpubBook(_book('gone'));
+      await src.insertEpubBook(_book('fresh'));
+      final zipDir = await _tempDir('mg_zip_');
+      addTearDown(() => cleanupTempDir(zipDir));
+      final zip = p.join(zipDir.path, 'b.zip');
+      await _exportZip(src, srcDir.path, zip);
+      await src.close();
+
+      final preview = await BackupRestoreService.previewMergeRestore(
+        liveDb: cur,
+        dbDirectory: curDir.path,
+        zipPath: zip,
+      );
+      expect(preview != null, true);
+      expect(preview!.newEpubBooks, 1); // only 'fresh' — 'gone' is tombstoned
+    },
+  );
+
+  test('a tombstoned book stat is not resurrected by a backup merge '
       '(TODO-1204 后续)', () async {
     final curDir = await _tempDir('mg_cur_');
     addTearDown(() => cleanupTempDir(curDir));
@@ -1277,41 +1481,52 @@ void main() {
     // Device once had "A" stats then the user deleted them -> tombstone, and a
     // surviving "Keep" book.（v92 起累加 DAO 已删，legacy 行用 OVERWRITE 版 set*
     // 造数，值与原用例相同。）
-    await cur.setReadingStatistic(ReadingStatisticsCompanion.insert(
+    await cur.setReadingStatistic(
+      ReadingStatisticsCompanion.insert(
         title: 'A',
         dateKey: '2026-01-01',
         charactersRead: 100,
         readingTimeMs: 6000,
-        lastStatisticModified: 1));
+        lastStatisticModified: 1,
+      ),
+    );
     await cur.addLookupCount(
-        bookKey: 'book/A',
-        title: 'A',
-        sourceType: 'book',
-        dateKey: '2026-01-01');
+      bookKey: 'book/A',
+      title: 'A',
+      sourceType: 'book',
+      dateKey: '2026-01-01',
+    );
     await cur.deleteReadingStatisticsForTitle('A');
-    await cur.setReadingStatistic(ReadingStatisticsCompanion.insert(
+    await cur.setReadingStatistic(
+      ReadingStatisticsCompanion.insert(
         title: 'Keep',
         dateKey: '2026-01-01',
         charactersRead: 10,
         readingTimeMs: 600,
-        lastStatisticModified: 1));
+        lastStatisticModified: 1,
+      ),
+    );
     await cur.close();
 
     // An old backup still carries A's stats + counters.
     final srcDir = await _tempDir('mg_src_');
     addTearDown(() => cleanupTempDir(srcDir));
     final src = FushiDatabase(srcDir.path);
-    await src.setReadingStatistic(ReadingStatisticsCompanion.insert(
+    await src.setReadingStatistic(
+      ReadingStatisticsCompanion.insert(
         title: 'A',
         dateKey: '2026-01-01',
         charactersRead: 999,
         readingTimeMs: 99999,
-        lastStatisticModified: 1));
+        lastStatisticModified: 1,
+      ),
+    );
     await src.addLookupCount(
-        bookKey: 'book/A',
-        title: 'A',
-        sourceType: 'book',
-        dateKey: '2026-01-01');
+      bookKey: 'book/A',
+      title: 'A',
+      sourceType: 'book',
+      dateKey: '2026-01-01',
+    );
     final zipDir = await _tempDir('mg_zip_');
     addTearDown(() => cleanupTempDir(zipDir));
     final zip = p.join(zipDir.path, 'b.zip');
@@ -1328,78 +1543,97 @@ void main() {
     final Set<String> titles = (await after.getAllReadingStatistics())
         .map((ReadingStatisticRow r) => r.title)
         .toSet();
-    expect(titles, <String>{'Keep'},
-        reason: 'tombstoned "A" must not be re-inserted from the backup');
+    expect(titles, <String>{
+      'Keep',
+    }, reason: 'tombstoned "A" must not be re-inserted from the backup');
     final Set<String> counterTitles =
-        (await after.getLookupMiningCountersBySource('book'))
-            .map((LookupMiningCounterRow r) => r.title)
-            .toSet();
-    expect(counterTitles.contains('A'), false,
-        reason: 'tombstoned "A" lookup counter must not resurrect either');
-  });
-
-  test('media collections merge: (name,type) 幂等 + collection_id 跨库 remap',
-      () async {
-    // 目标：先建 Filler(collection) 占掉 id 1，让 Dupe 落 id 2，从而与 src 的 id 分叉，
-    // 真正检验 remap（不是靠 id 数字巧合相等蒙混）。Dupe(playlist) 含成员 keep-target。
-    final curDir = await _tempDir('mg_cur_');
-    addTearDown(() => cleanupTempDir(curDir));
-    final cur = FushiDatabase(curDir.path);
-    await cur.createMediaCollection('Filler');
-    final int tDupe =
-        await cur.createMediaCollection('Dupe', collectionType: 'playlist');
-    await cur.addToCollection(tDupe, MediaKind.video, 'keep-target');
-    await cur.close();
-
-    // 备份：同名同类型 Dupe(playlist)（src 里落 id 1）含 from-src；另有全新
-    // NewOne(collection)（src id 2）含 b1。
-    final srcDir = await _tempDir('mg_src_');
-    addTearDown(() => cleanupTempDir(srcDir));
-    final src = FushiDatabase(srcDir.path);
-    final int sDupe =
-        await src.createMediaCollection('Dupe', collectionType: 'playlist');
-    await src.addToCollection(sDupe, MediaKind.video, 'from-src');
-    final int sNew = await src.createMediaCollection('NewOne');
-    // 'book' 是本机未知的种类（旧值域/对端未来值）：raw 版原样落库，
-    // 检验合并导入对未知种类的透传（typed 版收 MediaKind 表达不了它）。
-    await src.addToCollectionRaw(sNew, 'book', 'b1');
-    expect(sDupe, isNot(tDupe),
-        reason: 'src/target 的 Dupe id 必须不同，才能真正检验 remap');
-    final zipDir = await _tempDir('mg_zip_');
-    addTearDown(() => cleanupTempDir(zipDir));
-    final zip = p.join(zipDir.path, 'b.zip');
-    await _exportZip(src, srcDir.path, zip);
-    await src.close();
-
-    await BackupRestoreService.mergeRestoreBackup(
-      dbDirectory: curDir.path,
-      zipPath: zip,
-    );
-
-    final after = FushiDatabase(curDir.path);
-    addTearDown(after.close);
-    final List<MediaCollectionRow> cols = await after.getAllMediaCollections();
-    // Dupe 按自然键幂等（不重复），NewOne 新增 → 连同 Filler 恰好三个。
-    expect(cols.map((MediaCollectionRow c) => c.name).toList()..sort(),
-        <String>['Dupe', 'Filler', 'NewOne']);
-    final MediaCollectionRow dupe =
-        cols.firstWhere((MediaCollectionRow c) => c.name == 'Dupe');
-    expect(dupe.id, tDupe, reason: '同名同类型必须复用目标既有 id，绝不新建重复合集');
-    // Dupe 成员并集 {keep-target, from-src}：from-src 落进目标 Dupe(id=tDupe)，
-    // 证明 src Dupe(sDupe) 已 remap 到 tDupe，而非新建一个 id=sDupe 的孤儿合集。
-    final Set<String> dupeMembers = (await after.getCollectionItems(dupe.id))
-        .map((MediaCollectionItemRow r) => r.entryKey)
-        .toSet();
-    expect(dupeMembers, <String>{'keep-target', 'from-src'});
-    // NewOne 带 b1，collection_id 指向目标新分配的 id（非 src 的 sNew）。
-    final MediaCollectionRow newOne =
-        cols.firstWhere((MediaCollectionRow c) => c.name == 'NewOne');
-    final List<MediaCollectionItemRow> newItems =
-        await after.getCollectionItems(newOne.id);
+        (await after.getLookupMiningCountersBySource(
+          'book',
+        )).map((LookupMiningCounterRow r) => r.title).toSet();
     expect(
-        newItems.map((MediaCollectionItemRow r) => r.entryKey), <String>['b1']);
-    expect(newItems.single.collectionId, newOne.id);
+      counterTitles.contains('A'),
+      false,
+      reason: 'tombstoned "A" lookup counter must not resurrect either',
+    );
   });
+
+  test(
+    'media collections merge: (name,type) 幂等 + collection_id 跨库 remap',
+    () async {
+      // 目标：先建 Filler(collection) 占掉 id 1，让 Dupe 落 id 2，从而与 src 的 id 分叉，
+      // 真正检验 remap（不是靠 id 数字巧合相等蒙混）。Dupe(playlist) 含成员 keep-target。
+      final curDir = await _tempDir('mg_cur_');
+      addTearDown(() => cleanupTempDir(curDir));
+      final cur = FushiDatabase(curDir.path);
+      await cur.createMediaCollection('Filler');
+      final int tDupe = await cur.createMediaCollection(
+        'Dupe',
+        collectionType: 'playlist',
+      );
+      await cur.addToCollection(tDupe, MediaKind.video, 'keep-target');
+      await cur.close();
+
+      // 备份：同名同类型 Dupe(playlist)（src 里落 id 1）含 from-src；另有全新
+      // NewOne(collection)（src id 2）含 b1。
+      final srcDir = await _tempDir('mg_src_');
+      addTearDown(() => cleanupTempDir(srcDir));
+      final src = FushiDatabase(srcDir.path);
+      final int sDupe = await src.createMediaCollection(
+        'Dupe',
+        collectionType: 'playlist',
+      );
+      await src.addToCollection(sDupe, MediaKind.video, 'from-src');
+      final int sNew = await src.createMediaCollection('NewOne');
+      // 'book' 是本机未知的种类（旧值域/对端未来值）：raw 版原样落库，
+      // 检验合并导入对未知种类的透传（typed 版收 MediaKind 表达不了它）。
+      await src.addToCollectionRaw(sNew, 'book', 'b1');
+      expect(
+        sDupe,
+        isNot(tDupe),
+        reason: 'src/target 的 Dupe id 必须不同，才能真正检验 remap',
+      );
+      final zipDir = await _tempDir('mg_zip_');
+      addTearDown(() => cleanupTempDir(zipDir));
+      final zip = p.join(zipDir.path, 'b.zip');
+      await _exportZip(src, srcDir.path, zip);
+      await src.close();
+
+      await BackupRestoreService.mergeRestoreBackup(
+        dbDirectory: curDir.path,
+        zipPath: zip,
+      );
+
+      final after = FushiDatabase(curDir.path);
+      addTearDown(after.close);
+      final List<MediaCollectionRow> cols = await after
+          .getAllMediaCollections();
+      // Dupe 按自然键幂等（不重复），NewOne 新增 → 连同 Filler 恰好三个。
+      expect(
+        cols.map((MediaCollectionRow c) => c.name).toList()..sort(),
+        <String>['Dupe', 'Filler', 'NewOne'],
+      );
+      final MediaCollectionRow dupe = cols.firstWhere(
+        (MediaCollectionRow c) => c.name == 'Dupe',
+      );
+      expect(dupe.id, tDupe, reason: '同名同类型必须复用目标既有 id，绝不新建重复合集');
+      // Dupe 成员并集 {keep-target, from-src}：from-src 落进目标 Dupe(id=tDupe)，
+      // 证明 src Dupe(sDupe) 已 remap 到 tDupe，而非新建一个 id=sDupe 的孤儿合集。
+      final Set<String> dupeMembers = (await after.getCollectionItems(
+        dupe.id,
+      )).map((MediaCollectionItemRow r) => r.entryKey).toSet();
+      expect(dupeMembers, <String>{'keep-target', 'from-src'});
+      // NewOne 带 b1，collection_id 指向目标新分配的 id（非 src 的 sNew）。
+      final MediaCollectionRow newOne = cols.firstWhere(
+        (MediaCollectionRow c) => c.name == 'NewOne',
+      );
+      final List<MediaCollectionItemRow> newItems = await after
+          .getCollectionItems(newOne.id);
+      expect(newItems.map((MediaCollectionItemRow r) => r.entryKey), <String>[
+        'b1',
+      ]);
+      expect(newItems.single.collectionId, newOne.id);
+    },
+  );
 
   test('media collections merge: 重复导入同一备份幂等（成员不翻倍）', () async {
     final curDir = await _tempDir('mg_cur_');
@@ -1410,8 +1644,10 @@ void main() {
     final srcDir = await _tempDir('mg_src_');
     addTearDown(() => cleanupTempDir(srcDir));
     final src = FushiDatabase(srcDir.path);
-    final int sCol =
-        await src.createMediaCollection('Show', collectionType: 'playlist');
+    final int sCol = await src.createMediaCollection(
+      'Show',
+      collectionType: 'playlist',
+    );
     await src.addToCollection(sCol, MediaKind.video, 'e1');
     await src.addToCollection(sCol, MediaKind.video, 'e2');
     final zipDir = await _tempDir('mg_zip_');
@@ -1422,17 +1658,21 @@ void main() {
 
     // 连续合并两次同一备份：合集不翻倍、成员不重复。
     await BackupRestoreService.mergeRestoreBackup(
-        dbDirectory: curDir.path, zipPath: zip);
+      dbDirectory: curDir.path,
+      zipPath: zip,
+    );
     await BackupRestoreService.mergeRestoreBackup(
-        dbDirectory: curDir.path, zipPath: zip);
+      dbDirectory: curDir.path,
+      zipPath: zip,
+    );
 
     final after = FushiDatabase(curDir.path);
     addTearDown(after.close);
     final List<MediaCollectionRow> cols = await after.getAllMediaCollections();
     expect(cols, hasLength(1), reason: '同名同类型合集第二次导入必须复用，不新建');
-    final Set<String> members = (await after.getCollectionItems(cols.single.id))
-        .map((MediaCollectionItemRow r) => r.entryKey)
-        .toSet();
+    final Set<String> members = (await after.getCollectionItems(
+      cols.single.id,
+    )).map((MediaCollectionItemRow r) => r.entryKey).toSet();
     expect(members, <String>{'e1', 'e2'}, reason: '成员复合主键去重，不翻倍');
   });
 
@@ -1455,15 +1695,17 @@ void main() {
     final srcDir = await _tempDir('mg_src_');
     addTearDown(() => cleanupTempDir(srcDir));
     final src = FushiDatabase(srcDir.path);
-    await src.insertEpubBook(EpubBooksCompanion.insert(
-      bookKey: 'novel',
-      title: 'novel',
-      epubPath: '/data/user/0/app.old.pkg/app_flutter/fushi_books/novel.epub',
-      extractDir: '/data/user/0/app.old.pkg/app_flutter/fushi_books/novel',
-      chapterCount: 1,
-      chaptersJson: '[]',
-      importedAt: _now(),
-    ));
+    await src.insertEpubBook(
+      EpubBooksCompanion.insert(
+        bookKey: 'novel',
+        title: 'novel',
+        epubPath: '/data/user/0/app.old.pkg/app_flutter/fushi_books/novel.epub',
+        extractDir: '/data/user/0/app.old.pkg/app_flutter/fushi_books/novel',
+        chapterCount: 1,
+        chaptersJson: '[]',
+        importedAt: _now(),
+      ),
+    );
     // 声明的书根与行里前缀对不上（模拟导出端写了改名前的旧目录名）。
     final srcBooks = await _tempDir('mg_srcbooks_');
     addTearDown(() => cleanupTempDir(srcBooks));
@@ -1487,9 +1729,13 @@ void main() {
     final after = FushiDatabase(curDir.path);
     addTearDown(after.close);
     final List<EpubBookRow> rows = await after.getAllEpubBooks();
-    expect(rows.single.extractDir, p.join(booksRoot.path, 'novel'),
-        reason: 'rebase 前缀失配时必须落回本机确定位置，'
-            '不能留着导出设备的绝对路径（那是另一个应用的沙箱）');
+    expect(
+      rows.single.extractDir,
+      p.join(booksRoot.path, 'novel'),
+      reason:
+          'rebase 前缀失配时必须落回本机确定位置，'
+          '不能留着导出设备的绝对路径（那是另一个应用的沙箱）',
+    );
   });
 
   test('rebase 结果在本机存在时不被 book_key 回退改写', () async {
@@ -1503,8 +1749,9 @@ void main() {
     final booksRoot = await _tempDir('mg_books_');
     addTearDown(() => cleanupTempDir(booksRoot));
     // 两个都存在：rebase 结果（嵌套）与 book_key 直落位置。必须选前者。
-    await Directory(p.join(booksRoot.path, 'sub', 'novel'))
-        .create(recursive: true);
+    await Directory(
+      p.join(booksRoot.path, 'sub', 'novel'),
+    ).create(recursive: true);
     await Directory(p.join(booksRoot.path, 'novel')).create(recursive: true);
 
     final srcDir = await _tempDir('mg_src_');
@@ -1512,15 +1759,17 @@ void main() {
     final src = FushiDatabase(srcDir.path);
     final srcBooks = await _tempDir('mg_srcbooks_');
     addTearDown(() => cleanupTempDir(srcBooks));
-    await src.insertEpubBook(EpubBooksCompanion.insert(
-      bookKey: 'novel',
-      title: 'novel',
-      epubPath: p.join(srcBooks.path, 'sub', 'novel.epub'),
-      extractDir: p.join(srcBooks.path, 'sub', 'novel'),
-      chapterCount: 1,
-      chaptersJson: '[]',
-      importedAt: _now(),
-    ));
+    await src.insertEpubBook(
+      EpubBooksCompanion.insert(
+        bookKey: 'novel',
+        title: 'novel',
+        epubPath: p.join(srcBooks.path, 'sub', 'novel.epub'),
+        extractDir: p.join(srcBooks.path, 'sub', 'novel'),
+        chapterCount: 1,
+        chaptersJson: '[]',
+        importedAt: _now(),
+      ),
+    );
     final zipDir = await _tempDir('mg_zip_');
     addTearDown(() => cleanupTempDir(zipDir));
     final zip = p.join(zipDir.path, 'b.zip');
@@ -1541,8 +1790,11 @@ void main() {
     final after = FushiDatabase(curDir.path);
     addTearDown(after.close);
     final List<EpubBookRow> rows = await after.getAllEpubBooks();
-    expect(rows.single.extractDir, p.join(booksRoot.path, 'sub', 'novel'),
-        reason: '正常 rebase 的结果有效，兜底不得把它顶成 book_key 直落位置');
+    expect(
+      rows.single.extractDir,
+      p.join(booksRoot.path, 'sub', 'novel'),
+      reason: '正常 rebase 的结果有效，兜底不得把它顶成 book_key 直落位置',
+    );
   });
 
   test('adoptSourcePreferences：补齐老包设置，但绝不盖掉本库自己的状态标记', () async {
@@ -1551,19 +1803,22 @@ void main() {
     final cur = FushiDatabase(curDir.path);
     // 新包自己的状态标记（描述「本库处于什么状态」，被老包值盖掉会毁库）。
     await cur.customStatement(
-        'INSERT OR REPLACE INTO preferences ("key", "value") VALUES (?, ?)',
-        <Object?>['prefs_version', 'NEW']);
+      'INSERT OR REPLACE INTO preferences ("key", "value") VALUES (?, ?)',
+      <Object?>['prefs_version', 'NEW'],
+    );
     await cur.close();
 
     final srcDir = await _tempDir('mg_src_');
     addTearDown(() => cleanupTempDir(srcDir));
     final src = FushiDatabase(srcDir.path);
     await src.customStatement(
-        'INSERT OR REPLACE INTO preferences ("key", "value") VALUES (?, ?)',
-        <Object?>['prefs_version', 'OLD']);
+      'INSERT OR REPLACE INTO preferences ("key", "value") VALUES (?, ?)',
+      <Object?>['prefs_version', 'OLD'],
+    );
     await src.customStatement(
-        'INSERT OR REPLACE INTO preferences ("key", "value") VALUES (?, ?)',
-        <Object?>['src:reader_fushi:font_size', '22']);
+      'INSERT OR REPLACE INTO preferences ("key", "value") VALUES (?, ?)',
+      <Object?>['src:reader_fushi:font_size', '22'],
+    );
     final zipDir = await _tempDir('mg_zip_');
     addTearDown(() => cleanupTempDir(zipDir));
     final zip = p.join(zipDir.path, 'b.zip');
@@ -1579,8 +1834,11 @@ void main() {
     final after = FushiDatabase(curDir.path);
     addTearDown(after.close);
     final Map<String, String> prefs = await after.getAllPrefs();
-    expect(prefs['src:reader_fushi:font_size'], '22',
-        reason: '老包独有的用户设置必须补进来，否则迁移完全是默认值');
+    expect(
+      prefs['src:reader_fushi:font_size'],
+      '22',
+      reason: '老包独有的用户设置必须补进来，否则迁移完全是默认值',
+    );
     expect(prefs['prefs_version'], 'NEW', reason: '本库自己的状态标记不得被老包的值覆盖');
   });
 
@@ -1601,11 +1859,13 @@ void main() {
     addTearDown(() => cleanupTempDir(srcDir));
     final src = FushiDatabase(srcDir.path);
     await src.customStatement(
-        'INSERT OR REPLACE INTO preferences ("key", "value") VALUES (?, ?)',
-        <Object?>[kProfileFallbackIdPrefKey, '7']);
+      'INSERT OR REPLACE INTO preferences ("key", "value") VALUES (?, ?)',
+      <Object?>[kProfileFallbackIdPrefKey, '7'],
+    );
     await src.customStatement(
-        'INSERT OR REPLACE INTO preferences ("key", "value") VALUES (?, ?)',
-        <Object?>['src:reader_fushi:font_size', '22']);
+      'INSERT OR REPLACE INTO preferences ("key", "value") VALUES (?, ?)',
+      <Object?>['src:reader_fushi:font_size', '22'],
+    );
     final zipDir = await _tempDir('mg_zip_');
     addTearDown(() => cleanupTempDir(zipDir));
     final zip = p.join(zipDir.path, 'b.zip');
@@ -1621,10 +1881,16 @@ void main() {
     final after = FushiDatabase(curDir.path);
     addTearDown(after.close);
     final Map<String, String> prefs = await after.getAllPrefs();
-    expect(prefs['src:reader_fushi:font_size'], '22',
-        reason: '同一趟接管的普通用户设置照常补进来');
-    expect(prefs.containsKey(kProfileFallbackIdPrefKey), isFalse,
-        reason: 'profiles 按名字合并、id 重新分配，源库的回退点 id 在本库指向别的配置');
+    expect(
+      prefs['src:reader_fushi:font_size'],
+      '22',
+      reason: '同一趟接管的普通用户设置照常补进来',
+    );
+    expect(
+      prefs.containsKey(kProfileFallbackIdPrefKey),
+      isFalse,
+      reason: 'profiles 按名字合并、id 重新分配，源库的回退点 id 在本库指向别的配置',
+    );
   });
 
   test('默认不接管源库设置（共享备份 merge 不动本机设置）', () async {
@@ -1637,8 +1903,9 @@ void main() {
     addTearDown(() => cleanupTempDir(srcDir));
     final src = FushiDatabase(srcDir.path);
     await src.customStatement(
-        'INSERT OR REPLACE INTO preferences ("key", "value") VALUES (?, ?)',
-        <Object?>['src:reader_fushi:font_size', '22']);
+      'INSERT OR REPLACE INTO preferences ("key", "value") VALUES (?, ?)',
+      <Object?>['src:reader_fushi:font_size', '22'],
+    );
     final zipDir = await _tempDir('mg_zip_');
     addTearDown(() => cleanupTempDir(zipDir));
     final zip = p.join(zipDir.path, 'b.zip');
@@ -1646,12 +1913,17 @@ void main() {
     await src.close();
 
     await BackupRestoreService.mergeRestoreBackup(
-        dbDirectory: curDir.path, zipPath: zip);
+      dbDirectory: curDir.path,
+      zipPath: zip,
+    );
 
     final after = FushiDatabase(curDir.path);
     addTearDown(after.close);
     final Map<String, String> prefs = await after.getAllPrefs();
-    expect(prefs.containsKey('src:reader_fushi:font_size'), false,
-        reason: '别人设备的备份 merge 进来不该改本机设置（这是 merge 的既有语义）');
+    expect(
+      prefs.containsKey('src:reader_fushi:font_size'),
+      false,
+      reason: '别人设备的备份 merge 进来不该改本机设置（这是 merge 的既有语义）',
+    );
   });
 }

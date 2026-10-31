@@ -48,8 +48,11 @@ void main() {
         );
       }
       final List<ActivityEventRow> rows = await db.getRecentActivityEvents();
-      expect(rows.map((ActivityEventRow r) => r.timestampMs).toList(),
-          <int>[300, 200, 100]);
+      expect(rows.map((ActivityEventRow r) => r.timestampMs).toList(), <int>[
+        300,
+        200,
+        100,
+      ]);
     });
 
     test('limit 截断最近 N 条', () async {
@@ -63,12 +66,15 @@ void main() {
           timestampMs: i,
         );
       }
-      final List<ActivityEventRow> rows =
-          await db.getRecentActivityEvents(limit: 2);
+      final List<ActivityEventRow> rows = await db.getRecentActivityEvents(
+        limit: 2,
+      );
       expect(rows, hasLength(2));
       // 最近两条 = timestamp 4, 3
-      expect(rows.map((ActivityEventRow r) => r.timestampMs).toList(),
-          <int>[4, 3]);
+      expect(rows.map((ActivityEventRow r) => r.timestampMs).toList(), <int>[
+        4,
+        3,
+      ]);
     });
 
     test('eventTypes 过滤只取指定类别', () async {
@@ -94,15 +100,20 @@ void main() {
         dateKey: '2026-07-18',
         timestampMs: 3,
       );
-      final List<ActivityEventRow> onlyWatch = await db
-          .getRecentActivityEvents(eventTypes: <String>[kActivityWatch]);
-      expect(onlyWatch.map((ActivityEventRow r) => r.title).toList(),
-          <String>['W']);
+      final List<ActivityEventRow> onlyWatch = await db.getRecentActivityEvents(
+        eventTypes: <String>[kActivityWatch],
+      );
+      expect(onlyWatch.map((ActivityEventRow r) => r.title).toList(), <String>[
+        'W',
+      ]);
       final List<ActivityEventRow> readOrAdded = await db
           .getRecentActivityEvents(
-              eventTypes: <String>[kActivityRead, kActivityAdded]);
-      expect(readOrAdded.map((ActivityEventRow r) => r.title).toSet(),
-          <String>{'R', 'A'});
+            eventTypes: <String>[kActivityRead, kActivityAdded],
+          );
+      expect(readOrAdded.map((ActivityEventRow r) => r.title).toSet(), <String>{
+        'R',
+        'A',
+      });
     });
 
     test('deleteActivityEventsForTitle / clearAllActivityEvents', () async {
@@ -167,8 +178,9 @@ void main() {
         durationMs: 99999,
         charsDelta: 9999,
       );
-      final List<(String, int, int)> totals =
-          await db.getActivityDailyTotals(kActivityGame);
+      final List<(String, int, int)> totals = await db.getActivityDailyTotals(
+        kActivityGame,
+      );
       final Map<String, (int, int)> byDay = <String, (int, int)>{
         for (final (String dateKey, int chars, int durationMs) in totals)
           dateKey: (chars, durationMs),
@@ -220,8 +232,8 @@ void main() {
         durationMs: 111,
         charsDelta: 111,
       );
-      final List<(String, int, int)> totals =
-          await db.getActivityTitleTotalsForDay(kActivityGame, '2026-07-18');
+      final List<(String, int, int)> totals = await db
+          .getActivityTitleTotalsForDay(kActivityGame, '2026-07-18');
       // 时长降序：Long(40000) 先于 Short(5000)。
       expect(totals.map((r) => r.$1).toList(), <String>['Long', 'Short']);
       expect(totals[0], ('Long', 500, 40000));
@@ -232,8 +244,8 @@ void main() {
       final db = await _openDb();
       // .first 订阅后即挂上 tableUpdates；写入活动事件触发表变更 → 流 emit → 完成。
       final Future<void> emitted = db.watchDashboardDataChanges().first.timeout(
-            const Duration(seconds: 3),
-          );
+        const Duration(seconds: 3),
+      );
       await db.addActivityEvent(
         eventType: kActivityRead,
         mediaType: kActivityMediaBook,
@@ -245,51 +257,52 @@ void main() {
       await emitted;
     });
 
-    test('watchDashboardDataChanges 在写入学习事实段（study_segments）时也 emit',
-        () async {
+    test('watchDashboardDataChanges 在写入学习事实段（study_segments）时也 emit', () async {
       // v92：本地统计写入面只写 study_segments（累加 DAO 已删），首页热力图 /
       // 今日 / 活动流全部从它派生，它必须在监听表集里。
       final db = await _openDb();
       final Future<void> emitted = db.watchDashboardDataChanges().first.timeout(
-            const Duration(seconds: 3),
-          );
-      await db.upsertStudySegment(StudySegmentsCompanion.insert(
-        uid: FushiDatabase.newStudySegmentUid(),
-        deviceId: 'dev-test',
-        mediaKind: kActivityMediaBook,
-        mediaKey: 'book-y',
-        title: 'Y',
-        startAt: 1000,
-        endAt: 2000,
-        dateKey: '2026-07-20',
-        hour: 10,
-        durationMs: const Value(1000),
-        chars: const Value(10),
-        updatedAt: 2000,
-      ));
+        const Duration(seconds: 3),
+      );
+      await db.upsertStudySegment(
+        StudySegmentsCompanion.insert(
+          uid: FushiDatabase.newStudySegmentUid(),
+          deviceId: 'dev-test',
+          mediaKind: kActivityMediaBook,
+          mediaKey: 'book-y',
+          title: 'Y',
+          startAt: 1000,
+          endAt: 2000,
+          dateKey: '2026-07-20',
+          hour: 10,
+          durationMs: const Value(1000),
+          chars: const Value(10),
+          updatedAt: 2000,
+        ),
+      );
       await emitted;
     });
 
-    test(
-        'watchDashboardDataChanges 在写入阅读位置（reader_positions）时也 emit '
+    test('watchDashboardDataChanges 在写入阅读位置（reader_positions）时也 emit '
         '（同步回灌对端更远进度后首页「继续」自动刷新的根通道——此前不在表集里，'
         '要重启 app 才生效）', () async {
       final db = await _openDb();
       final Future<void> emitted = db.watchDashboardDataChanges().first.timeout(
-            const Duration(seconds: 3),
-          );
-      await db.upsertReaderPosition(ReaderPositionsCompanion(
-        bookUid: const Value('uid-progress-sync'),
-        sectionIndex: const Value(3),
-        normCharOffset: const Value(4200),
-        charOffset: const Value(88),
-        updatedAt: Value(DateTime.now().millisecondsSinceEpoch),
-      ));
+        const Duration(seconds: 3),
+      );
+      await db.upsertReaderPosition(
+        ReaderPositionsCompanion(
+          bookUid: const Value('uid-progress-sync'),
+          sectionIndex: const Value(3),
+          normCharOffset: const Value(4200),
+          charOffset: const Value(88),
+          updatedAt: Value(DateTime.now().millisecondsSinceEpoch),
+        ),
+      );
       await emitted;
     });
 
-    test(
-        'watchDashboardDataChanges 在视频改名（updateVideoBookTitle）时也 emit '
+    test('watchDashboardDataChanges 在视频改名（updateVideoBookTitle）时也 emit '
         '（P4：别页改名后首页 _videos 缓存自动失效重载的根通道）', () async {
       final db = await _openDb();
       await db.upsertVideoBook(
@@ -301,8 +314,8 @@ void main() {
       );
       // 先插行再订阅：只验证「改名写穿 videoBooks 表 → 表级信号」这一步。
       final Future<void> emitted = db.watchDashboardDataChanges().first.timeout(
-            const Duration(seconds: 3),
-          );
+        const Duration(seconds: 3),
+      );
       await db.updateVideoBookTitle('v-rename', '新名');
       await emitted;
       expect((await db.getVideoBookByBookUid('v-rename'))!.title, '新名');

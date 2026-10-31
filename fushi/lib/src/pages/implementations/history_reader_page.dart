@@ -11,9 +11,7 @@ import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 /// as a source in the main menu.
 class HistoryReaderPage extends BaseHistoryPage {
   /// Create an instance of this tab page.
-  const HistoryReaderPage({
-    super.key,
-  });
+  const HistoryReaderPage({super.key});
 
   @override
   BaseHistoryPageState<BaseHistoryPage> createState() =>
@@ -118,53 +116,60 @@ class HistoryReaderPageState<T extends BaseHistoryPage>
             fit: BoxFit.fitHeight,
           ),
         ),
-        LayoutBuilder(builder: (context, constraints) {
-          // BUG-1184：标题条高度原先是 `maxHeight * 0.25` 的纯比例值，与里面那两行
-          // metadata 字号文字毫无关系。窄屏 cell（320dp 屏上约 134×218）只剩约 48px，
-          // textScale 稍大两行就装不下、下半截被 Container 裁掉。改为「比例值与两行
-          // 文字实际所需高度取大者」：宽松时维持原来的 25% 观感，紧时按需长高。
-          final double titleLine =
-              textLineHeight(context, tokens.type.metadata);
-          final double needed = titleLine * 2 +
-              tokens.spacing.gap / 4 +
-              tokens.spacing.gap / 2 +
-              kTextBlockSlack;
-          final double bandHeight = constraints.maxHeight.isFinite
-              ? math.max(constraints.maxHeight * 0.25, needed)
-              : needed;
-          return Container(
-            alignment: Alignment.center,
-            padding: EdgeInsets.fromLTRB(
-              tokens.spacing.gap / 4,
-              tokens.spacing.gap / 4,
-              tokens.spacing.gap / 4,
-              tokens.spacing.gap / 2,
-            ),
-            height: bandHeight,
-            width: double.maxFinite,
-            color: theme.colorScheme.scrim.withValues(alpha: 0.6),
-            child: Text(
-              mediaSource.getDisplayTitleFromMediaItem(item),
-              overflow: TextOverflow.ellipsis,
-              maxLines: 2,
-              textAlign: TextAlign.center,
-              softWrap: true,
-              style: tokens.type.metadata.copyWith(
-                color: theme.colorScheme.onInverseSurface,
+        LayoutBuilder(
+          builder: (context, constraints) {
+            // BUG-1184：标题条高度原先是 `maxHeight * 0.25` 的纯比例值，与里面那两行
+            // metadata 字号文字毫无关系。窄屏 cell（320dp 屏上约 134×218）只剩约 48px，
+            // textScale 稍大两行就装不下、下半截被 Container 裁掉。改为「比例值与两行
+            // 文字实际所需高度取大者」：宽松时维持原来的 25% 观感，紧时按需长高。
+            final double titleLine = textLineHeight(
+              context,
+              tokens.type.metadata,
+            );
+            final double needed =
+                titleLine * 2 +
+                tokens.spacing.gap / 4 +
+                tokens.spacing.gap / 2 +
+                kTextBlockSlack;
+            final double bandHeight = constraints.maxHeight.isFinite
+                ? math.max(constraints.maxHeight * 0.25, needed)
+                : needed;
+            return Container(
+              alignment: Alignment.center,
+              padding: EdgeInsets.fromLTRB(
+                tokens.spacing.gap / 4,
+                tokens.spacing.gap / 4,
+                tokens.spacing.gap / 4,
+                tokens.spacing.gap / 2,
               ),
-            ),
-          );
-        }),
+              height: bandHeight,
+              width: double.maxFinite,
+              color: theme.colorScheme.scrim.withValues(alpha: 0.6),
+              child: Text(
+                mediaSource.getDisplayTitleFromMediaItem(item),
+                overflow: TextOverflow.ellipsis,
+                maxLines: 2,
+                textAlign: TextAlign.center,
+                softWrap: true,
+                style: tokens.type.metadata.copyWith(
+                  color: theme.colorScheme.onInverseSurface,
+                ),
+              ),
+            );
+          },
+        ),
         FushiLinearProgressIndicator(
-          value: (item.position / item.duration).isNaN ||
+          value:
+              (item.position / item.duration).isNaN ||
                   (item.position / item.duration) == double.infinity ||
                   (item.position == 0 && item.duration == 0)
               ? 0
               : ((item.position / item.duration) > 0.97)
-                  ? 1
-                  : (item.position / item.duration),
-          backgroundColor:
-              theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
+              ? 1
+              : (item.position / item.duration),
+          backgroundColor: theme.colorScheme.surfaceContainerHighest.withValues(
+            alpha: 0.6,
+          ),
           color: theme.colorScheme.primary,
           minHeight: 2,
         ),

@@ -170,7 +170,7 @@ class AppPaths {
   static const String documentsLayoutFlat = 'flat';
 
   /// 当前默认布局：documents 根 = `<Documents>/Fushi/data`（Fushi 专属容器；存量 nested
-/// 安装的容器名仍是 `Hibiki`，见 [documentsContainerPrefKey]）。
+  /// 安装的容器名仍是 `Hibiki`，见 [documentsContainerPrefKey]）。
   ///
   /// BUG-1188：迁移把数据归一化到默认位置时，提交阶段必须把这个锚点写成本值——否则下次
   /// 启动仍按 `flat` 把 documents 根解析回共享 `Documents`，而数据已经在 `<容器>/data` 里。
@@ -186,9 +186,9 @@ class AppPaths {
   /// `Hibiki`，由 [documentsContainerPrefKey] 锚点冻结（同 flat/nested 锚点
   /// 哲学：存量布局一经判定永不漂移，改名不搬书库——DB 里的绝对路径都指着它）。
   static List<String> get defaultDocumentsChildSegments => <String>[
-        _documentsContainerName ?? 'Fushi',
-        'data',
-      ];
+    _documentsContainerName ?? 'Fushi',
+    'data',
+  ];
 
   /// nested 容器名锚点（SharedPreferences，与布局锚点同通道）。值 `Hibiki`
   /// （存量安装）或 `Fushi`（新装/已迁移）。
@@ -241,7 +241,8 @@ class AppPaths {
         final SharedPreferences prefs = await SharedPreferences.getInstance();
         raw = prefs.getString(dataRootPrefKey);
         if (raw != null && raw.trim().isNotEmpty && Platform.isMacOS) {
-          raw = await MacOSDataRootAccess.startAccessingStoredBookmark(prefs) ??
+          raw =
+              await MacOSDataRootAccess.startAccessingStoredBookmark(prefs) ??
               raw;
         }
       } catch (_) {
@@ -264,9 +265,10 @@ class AppPaths {
   /// 都返回 false。
   static Future<bool> _probeDataRootExists(Directory dir) async {
     try {
-      return await dir
-          .exists()
-          .timeout(const Duration(seconds: 2), onTimeout: () => false);
+      return await dir.exists().timeout(
+        const Duration(seconds: 2),
+        onTimeout: () => false,
+      );
     } catch (_) {
       // 断链盘的异步 stat 也可能直接抛（而非挂起）→ 同样当作不可用。
       return false;
@@ -335,10 +337,12 @@ class AppPaths {
     if (test != null) return test;
     final Directory platformDocuments =
         await getApplicationDocumentsDirectory();
-    return Directory(p.joinAll(<String>[
-      platformDocuments.path,
-      ...defaultDocumentsChildSegments,
-    ]));
+    return Directory(
+      p.joinAll(<String>[
+        platformDocuments.path,
+        ...defaultDocumentsChildSegments,
+      ]),
+    );
   }
 
   /// 本机默认布局是否为历史扁平布局。**纯读取、绝不探测文件系统**（见 [resolve] 里对
@@ -397,8 +401,10 @@ class AppPaths {
     // 固化锚点（best-effort）。写失败只意味着下次启动再探一次，不改变本次结果——而下次
     // 探测的判据（主库文件是否存在）此时只会更成立，不会翻转成新布局。
     try {
-      await prefs?.setString(documentsLayoutPrefKey,
-          flat ? documentsLayoutFlat : documentsLayoutNested);
+      await prefs?.setString(
+        documentsLayoutPrefKey,
+        flat ? documentsLayoutFlat : documentsLayoutNested,
+      );
     } catch (e) {
       debugPrint('AppPaths: 固化 documents 布局失败（下次启动重新判定）: $e');
     }
@@ -416,7 +422,8 @@ class AppPaths {
   /// 探测失败按存量处理（保守——误锚 Fushi 会让存量书库集体消失，反向只是新装
   /// 目录名旧了点）。
   static Future<void> _ensureDocumentsContainerDecided(
-      SharedPreferences? prefs) async {
+    SharedPreferences? prefs,
+  ) async {
     if (_documentsContainerName != null) return;
     final String? stored = prefs?.getString(documentsContainerPrefKey);
     if (stored == 'Hibiki' || stored == 'Fushi') {
@@ -427,14 +434,12 @@ class AppPaths {
     try {
       final Directory platformDocuments =
           await getApplicationDocumentsDirectory();
-      final bool legacyExists =
-          await Directory(p.join(platformDocuments.path, 'Hibiki', 'data'))
-              .exists()
-              .timeout(const Duration(seconds: 2), onTimeout: () => true);
-      final bool newExists =
-          await Directory(p.join(platformDocuments.path, 'Fushi', 'data'))
-              .exists()
-              .timeout(const Duration(seconds: 2), onTimeout: () => false);
+      final bool legacyExists = await Directory(
+        p.join(platformDocuments.path, 'Hibiki', 'data'),
+      ).exists().timeout(const Duration(seconds: 2), onTimeout: () => true);
+      final bool newExists = await Directory(
+        p.join(platformDocuments.path, 'Fushi', 'data'),
+      ).exists().timeout(const Duration(seconds: 2), onTimeout: () => false);
       decided = (legacyExists && !newExists) ? 'Hibiki' : 'Fushi';
     } catch (_) {
       decided = 'Hibiki';
@@ -458,10 +463,9 @@ class AppPaths {
   static Future<bool> existingInstallHasDatabase() async {
     try {
       final Directory support = await _resolveSupportRoot();
-      Future<bool> dbExists(String fileName) =>
-          File(p.join(support.path, fileName))
-              .exists()
-              .timeout(const Duration(seconds: 2), onTimeout: () => true);
+      Future<bool> dbExists(String fileName) => File(
+        p.join(support.path, fileName),
+      ).exists().timeout(const Duration(seconds: 2), onTimeout: () => true);
       return await dbExists(fushiDatabaseFileName) ||
           await dbExists(legacyHibikiDatabaseFileName);
     } catch (_) {
@@ -500,11 +504,10 @@ class AppPaths {
   /// [_resolveSupportRoot] 的 dataRoot 分支逐字节一致。
   static (Directory documents, Directory support) rootsForDataRoot(
     String dataRootPath,
-  ) =>
-      (
-        Directory(p.join(dataRootPath, dataRootDocumentsChild)),
-        Directory(p.join(dataRootPath, dataRootSupportChild)),
-      );
+  ) => (
+    Directory(p.join(dataRootPath, dataRootDocumentsChild)),
+    Directory(p.join(dataRootPath, dataRootSupportChild)),
+  );
 
   /// TODO-1226：documents 根顶层**属于 Fushi 的目录名全集**（数据根迁移白名单）。
   ///
@@ -615,10 +618,13 @@ class AppPaths {
     final String canonRoot = p.canonicalize(sharedDocumentsRoot);
     final String canonNew = p.canonicalize(newDataRoot);
     if (!p.isWithin(canonRoot, canonNew)) return false;
-    final String firstSegment =
-        p.split(p.relative(canonNew, from: canonRoot)).first.toLowerCase();
-    return !ownedEntries
-        .any((String owned) => owned.toLowerCase() == firstSegment);
+    final String firstSegment = p
+        .split(p.relative(canonNew, from: canonRoot))
+        .first
+        .toLowerCase();
+    return !ownedEntries.any(
+      (String owned) => owned.toLowerCase() == firstSegment,
+    );
   }
 
   // ---- 静态便捷层（给无 AppModel 实例的 static 存储助手） ----

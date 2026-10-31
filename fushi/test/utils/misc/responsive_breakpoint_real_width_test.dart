@@ -80,35 +80,46 @@ void main() {
       WidgetTester tester,
     ) async {
       await pumpAt(tester, const Size(480, 900));
-      expect(find.byKey(const ValueKey<String>('layout-bottom-bar')),
-          findsOneWidget);
       expect(
-          find.byKey(const ValueKey<String>('layout-nav-rail')), findsNothing);
+        find.byKey(const ValueKey<String>('layout-bottom-bar')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('layout-nav-rail')),
+        findsNothing,
+      );
     });
 
-    testWidgets(
-      'real 560px-wide desktop window uses the bottom-bar layout '
-      '(old logical-width path mislabeled this medium)',
-      (WidgetTester tester) async {
-        // At 560 real width the desktop auto-scale (~0.92) inflates the logical
-        // canvas past 600; the pre-fix code read that and stayed on the nav-rail
-        // layout. The real width is the discriminator.
-        await pumpAt(tester, const Size(560, 900));
-        expect(find.byKey(const ValueKey<String>('layout-bottom-bar')),
-            findsOneWidget);
-        expect(find.byKey(const ValueKey<String>('layout-nav-rail')),
-            findsNothing);
-      },
-    );
+    testWidgets('real 560px-wide desktop window uses the bottom-bar layout '
+        '(old logical-width path mislabeled this medium)', (
+      WidgetTester tester,
+    ) async {
+      // At 560 real width the desktop auto-scale (~0.92) inflates the logical
+      // canvas past 600; the pre-fix code read that and stayed on the nav-rail
+      // layout. The real width is the discriminator.
+      await pumpAt(tester, const Size(560, 900));
+      expect(
+        find.byKey(const ValueKey<String>('layout-bottom-bar')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('layout-nav-rail')),
+        findsNothing,
+      );
+    });
 
     testWidgets('real 1280px-wide desktop window uses the nav-rail layout', (
       WidgetTester tester,
     ) async {
       await pumpAt(tester, const Size(1280, 800));
-      expect(find.byKey(const ValueKey<String>('layout-nav-rail')),
-          findsOneWidget);
-      expect(find.byKey(const ValueKey<String>('layout-bottom-bar')),
-          findsNothing);
+      expect(
+        find.byKey(const ValueKey<String>('layout-nav-rail')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('layout-bottom-bar')),
+        findsNothing,
+      );
     });
   });
 }

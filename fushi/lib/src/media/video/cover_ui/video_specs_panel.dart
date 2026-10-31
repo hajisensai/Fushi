@@ -91,8 +91,9 @@ class _VideoSpecsPanelState extends State<VideoSpecsPanel> {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
 
     final List<(String, String)> rows = <(String, String)>[
-      for (final (VideoSpecField field, String value)
-          in videoSpecsFields(facts))
+      for (final (VideoSpecField field, String value) in videoSpecsFields(
+        facts,
+      ))
         (
           switch (field) {
             VideoSpecField.resolution => t.video_specs_resolution,
@@ -108,10 +109,12 @@ class _VideoSpecsPanelState extends State<VideoSpecsPanel> {
         ),
     ];
 
-    final List<TrackDisplay> audio =
-        facts.audioTracks.map(audioTrackDisplay).toList();
-    final List<TrackDisplay> subtitles =
-        facts.subtitleTracks.map(subtitleTrackDisplay).toList();
+    final List<TrackDisplay> audio = facts.audioTracks
+        .map(audioTrackDisplay)
+        .toList();
+    final List<TrackDisplay> subtitles = facts.subtitleTracks
+        .map(subtitleTrackDisplay)
+        .toList();
 
     if (rows.isEmpty && audio.isEmpty && subtitles.isEmpty) {
       return const SizedBox.shrink();
@@ -303,10 +306,11 @@ class _VideoSpecsInlineLineState extends State<VideoSpecsInlineLine> {
           summary,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: widget.style ??
+          style:
+              widget.style ??
               Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  ),
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
         );
       },
     );

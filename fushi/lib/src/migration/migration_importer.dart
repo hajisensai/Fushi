@@ -33,9 +33,9 @@ class MigrationScanResult {
   /// N 条一模一样的「清单损坏」——既是假话（文件没坏），又把唯一该做的动作
   /// （去授权）淹没在批次列表里。所以把它提升成结果的顶层状态。
   const MigrationScanResult.permissionDenied()
-      : ready = const <MigrationImportBatch>[],
-        problems = const <String, List<String>>{},
-        storagePermissionGranted = false;
+    : ready = const <MigrationImportBatch>[],
+      problems = const <String, List<String>>{},
+      storagePermissionGranted = false;
 
   final List<MigrationImportBatch> ready;
 
@@ -68,10 +68,9 @@ class MigrationImporter {
   bool hasTransferData(Directory transferDir) {
     if (!transferDir.existsSync()) return false;
     try {
-      return transferDir
-          .listSync()
-          .whereType<File>()
-          .any((File f) => f.path.endsWith('.zip'));
+      return transferDir.listSync().whereType<File>().any(
+        (File f) => f.path.endsWith('.zip'),
+      );
     } on FileSystemException {
       // 列不出来 ≠ 没有。保守显示。
       return true;
@@ -112,9 +111,11 @@ class MigrationImporter {
       onProgress?.call(batch, done, MigrationBatch.values.length);
       done++;
       final File archive = File(
-          p.join(transferDir.path, MigrationExporter.archiveNameFor(batch)));
+        p.join(transferDir.path, MigrationExporter.archiveNameFor(batch)),
+      );
       final File manifestFile = File(
-          p.join(transferDir.path, MigrationExporter.manifestNameFor(batch)));
+        p.join(transferDir.path, MigrationExporter.manifestNameFor(batch)),
+      );
       if (!archive.existsSync() && !manifestFile.existsSync()) {
         continue; // 该批不存在（如 localAudio 默认不导）。
       }
@@ -148,11 +149,13 @@ class MigrationImporter {
         problems[batch.name] = archiveProblems;
         continue;
       }
-      ready.add(MigrationImportBatch(
-        batch: batch,
-        archivePath: archive.path,
-        manifest: manifest,
-      ));
+      ready.add(
+        MigrationImportBatch(
+          batch: batch,
+          archivePath: archive.path,
+          manifest: manifest,
+        ),
+      );
     }
     return MigrationScanResult(ready: ready, problems: problems);
   }
@@ -161,7 +164,8 @@ class MigrationImporter {
   /// 重复携带，内容行只在自己批次里非零；merge 幂等 upsert 后最终库应逐表
   /// **不少于**该期望）。
   static Map<String, int> aggregateExpectedCounts(
-      Iterable<MigrationImportBatch> batches) {
+    Iterable<MigrationImportBatch> batches,
+  ) {
     final Map<String, int> expected = <String, int>{};
     for (final MigrationImportBatch b in batches) {
       for (final MapEntry<String, int> e in b.manifest.tableCounts.entries) {
@@ -226,10 +230,11 @@ class MigrationImporter {
       );
       final int next = current.isEmpty
           ? 1
-          : (int.tryParse((current.first['value'] as String)
-                      .replaceFirst('i:', '')) ??
-                  0) +
-              1;
+          : (int.tryParse(
+                      (current.first['value'] as String).replaceFirst('i:', ''),
+                    ) ??
+                    0) +
+                1;
       db.execute(
         'INSERT INTO preferences (key, value, updated_at) VALUES (?, ?, ?) '
         'ON CONFLICT(key) DO UPDATE SET value = excluded.value, '
@@ -260,10 +265,9 @@ class MigrationImporter {
   /// 仍有问题批（保留待重传）则不动。
   void cleanupTransferDirIfEmpty(Directory transferDir) {
     if (!transferDir.existsSync()) return;
-    final bool hasBatchFiles = transferDir
-        .listSync()
-        .whereType<File>()
-        .any((File f) => f.path.endsWith('.zip'));
+    final bool hasBatchFiles = transferDir.listSync().whereType<File>().any(
+      (File f) => f.path.endsWith('.zip'),
+    );
     if (!hasBatchFiles) {
       try {
         transferDir.deleteSync(recursive: true);

@@ -11,15 +11,21 @@ import 'package:flutter_test/flutter_test.dart';
 /// 各自分支即报红。
 void main() {
   test('FushiShare.shareFiles is only reached in the non-desktop branch', () {
-    final String src = File('lib/src/utils/misc/collection_exporter.dart')
-        .readAsStringSync()
-        .replaceAll('\r\n', '\n');
+    final String src = File(
+      'lib/src/utils/misc/collection_exporter.dart',
+    ).readAsStringSync().replaceAll('\r\n', '\n');
 
     // 二分判据存在。
-    expect(src, contains('bool get _isDesktop =>'),
-        reason: '必须保留 _isDesktop 桌面判据');
-    expect(src, contains('if (_isDesktop) {'),
-        reason: '导出 IO 必须以 if (_isDesktop) 二分');
+    expect(
+      src,
+      contains('bool get _isDesktop =>'),
+      reason: '必须保留 _isDesktop 桌面判据',
+    );
+    expect(
+      src,
+      contains('if (_isDesktop) {'),
+      reason: '导出 IO 必须以 if (_isDesktop) 二分',
+    );
 
     // 桌面分支 = FilePicker；移动分支 = Share。
     final int desktopBranch = src.indexOf('if (_isDesktop) {');
@@ -30,12 +36,21 @@ void main() {
     final String desktopBody = src.substring(desktopBranch, elseBranch);
     final String mobileBody = src.substring(elseBranch);
 
-    expect(desktopBody, contains('FilePicker.platform.saveFile'),
-        reason: '桌面分支必须走 FilePicker.saveFile');
-    expect(desktopBody, isNot(contains('Share.')),
-        reason: '桌面分支绝不能调 Share.（Linux 无 share_plus 注册会崩）');
+    expect(
+      desktopBody,
+      contains('FilePicker.platform.saveFile'),
+      reason: '桌面分支必须走 FilePicker.saveFile',
+    );
+    expect(
+      desktopBody,
+      isNot(contains('Share.')),
+      reason: '桌面分支绝不能调 Share.（Linux 无 share_plus 注册会崩）',
+    );
 
-    expect(mobileBody, contains('FushiShare.shareFiles'),
-        reason: '移动分支才用 FushiShare.shareFiles');
+    expect(
+      mobileBody,
+      contains('FushiShare.shareFiles'),
+      reason: '移动分支才用 FushiShare.shareFiles',
+    );
   });
 }

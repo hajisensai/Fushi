@@ -66,15 +66,19 @@ void main() {
       ]);
 
       expect(input.droppedCount, 4);
-      expect(
-          input.cues.map((SubtitleCue c) => c.text), <String>['keep', 'tail']);
+      expect(input.cues.map((SubtitleCue c) => c.text), <String>[
+        'keep',
+        'tail',
+      ]);
       // 序号必须连续，否则渲染出的 SRT 序号会有洞。
       expect(input.cues.map((SubtitleCue c) => c.index), <int>[1, 2]);
     });
 
     test('全部退化时判空，调用方据此不跑对轴', () {
-      expect(retimingCuesFromAudioCues(<AudioCue>[_cue('', 0, 0)]).isEmpty,
-          isTrue);
+      expect(
+        retimingCuesFromAudioCues(<AudioCue>[_cue('', 0, 0)]).isEmpty,
+        isTrue,
+      );
       expect(retimingCuesFromAudioCues(<AudioCue>[]).isEmpty, isTrue);
     });
   });
@@ -88,8 +92,10 @@ void main() {
 
     test('档名被占用时补序号，不覆盖上一次的结果', () {
       expect(
-        retimedSubtitleFileName('ep01.mkv',
-            taken: <String>{'ep01.retimed.srt'}),
+        retimedSubtitleFileName(
+          'ep01.mkv',
+          taken: <String>{'ep01.retimed.srt'},
+        ),
         'ep01.retimed-2.srt',
       );
       expect(
@@ -109,11 +115,11 @@ void main() {
 
   group('retimedSubtitleSummary', () {
     RetimedSubtitleFile file(Map<String, Object?> stats) => RetimedSubtitleFile(
-          path: 'x.srt',
-          cueCount: 0,
-          droppedInputCues: 0,
-          stats: stats,
-        );
+      path: 'x.srt',
+      cueCount: 0,
+      droppedInputCues: 0,
+      stats: stats,
+    );
 
     test('命中率取整成百分比', () {
       final summary = retimedSubtitleSummary(
@@ -170,10 +176,12 @@ void main() {
 
     test('合法 SRT 读出 cue；没有 sidecar 时 tokenTimings 为 null', () async {
       final File file = File(p.join(dir.path, 'ok.srt'));
-      await file.writeAsString(_srt(<(String, int, int)>[
-        ('hello there', 1200, 2200),
-        ('second line', 3200, 4200),
-      ]));
+      await file.writeAsString(
+        _srt(<(String, int, int)>[
+          ('hello there', 1200, 2200),
+          ('second line', 3200, 4200),
+        ]),
+      );
 
       final AsrRetimingTranscription? transcription =
           await AsrRetimingTranscription.fromTranscriptSrt(file.path);
@@ -232,8 +240,9 @@ void main() {
       expect(out.droppedInputCues, 0);
       expect(out.matchedCues, greaterThan(0));
 
-      final List<SubtitleCue> written =
-          parseRetimingSubtitles(await File(out.path).readAsString());
+      final List<SubtitleCue> written = parseRetimingSubtitles(
+        await File(out.path).readAsString(),
+      );
       expect(written.length, 3);
       // 正文一个字都不许动。
       expect(written.map((SubtitleCue c) => c.text), lines);
@@ -256,14 +265,16 @@ void main() {
       expect(out, isNull);
       expect(
         dir.listSync().where(
-            (FileSystemEntity e) => p.basename(e.path).contains('retimed')),
+          (FileSystemEntity e) => p.basename(e.path).contains('retimed'),
+        ),
         isEmpty,
       );
     });
 
     test('输入 cue 全退化时不跑对轴', () async {
-      final String transcript = await writeTranscript(
-          <(String, int, int)>[('anything at all', 0, 1000)]);
+      final String transcript = await writeTranscript(<(String, int, int)>[
+        ('anything at all', 0, 1000),
+      ]);
 
       expect(
         await retimeVideoSubtitleToFile(
@@ -278,8 +289,9 @@ void main() {
 
     test('同一部片跑两次留下两份档，不覆盖上一次', () async {
       const String line = 'the quick brown fox jumps';
-      final String transcript =
-          await writeTranscript(<(String, int, int)>[(line, 10000, 12000)]);
+      final String transcript = await writeTranscript(<(String, int, int)>[
+        (line, 10000, 12000),
+      ]);
       final List<AudioCue> cues = <AudioCue>[_cue(line, 8000, 10000)];
 
       final RetimedSubtitleFile? first = await retimeVideoSubtitleToFile(

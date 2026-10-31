@@ -36,8 +36,10 @@ void main() {
   /// 建一个真实的 v95 形状库：当前 schema 建满、塞一本存量词典（显式折叠了 ja），
   /// 再把新列 DROP 掉、版本写回 95。
   Future<void> seedV95() async {
-    final FushiDatabase fresh =
-        FushiDatabase.atFile(dbPath, isMainProcess: false);
+    final FushiDatabase fresh = FushiDatabase.atFile(
+      dbPath,
+      isMainProcess: false,
+    );
     await fresh.customStatement(
       'INSERT INTO dictionary_metadata '
       '(name, format_key, "order", type, metadata_json, '
@@ -51,7 +53,8 @@ void main() {
     final sqlite3.Database raw = sqlite3.sqlite3.open(dbPath);
     try {
       raw.execute(
-          'ALTER TABLE dictionary_metadata DROP COLUMN expanded_languages_json');
+        'ALTER TABLE dictionary_metadata DROP COLUMN expanded_languages_json',
+      );
       raw.execute('PRAGMA user_version = 95');
     } finally {
       raw.dispose();
@@ -61,16 +64,21 @@ void main() {
   test('v95 库确实没有 expanded_languages_json（前提自检）', () async {
     await seedV95();
 
-    final sqlite3.Database probe =
-        sqlite3.sqlite3.open(dbPath, mode: sqlite3.OpenMode.readOnly);
+    final sqlite3.Database probe = sqlite3.sqlite3.open(
+      dbPath,
+      mode: sqlite3.OpenMode.readOnly,
+    );
     try {
       expect(probe.select('PRAGMA user_version').first.values.first, 95);
-      expect(hasColumn(probe, 'dictionary_metadata', 'expanded_languages_json'),
-          isFalse);
       expect(
-          hasColumn(probe, 'dictionary_metadata', 'collapsed_languages_json'),
-          isTrue,
-          reason: '存量列还在');
+        hasColumn(probe, 'dictionary_metadata', 'expanded_languages_json'),
+        isFalse,
+      );
+      expect(
+        hasColumn(probe, 'dictionary_metadata', 'collapsed_languages_json'),
+        isTrue,
+        reason: '存量列还在',
+      );
     } finally {
       probe.dispose();
     }
@@ -79,27 +87,40 @@ void main() {
   test('v95 -> v96：加列、存量词典无损、新列默认 [] = 全部继承', () async {
     await seedV95();
 
-    final FushiDatabase migrated =
-        FushiDatabase.atFile(dbPath, isMainProcess: false);
+    final FushiDatabase migrated = FushiDatabase.atFile(
+      dbPath,
+      isMainProcess: false,
+    );
 
-    final List<DictionaryMetaRow> dicts =
-        await migrated.select(migrated.dictionaryMetadata).get();
+    final List<DictionaryMetaRow> dicts = await migrated
+        .select(migrated.dictionaryMetadata)
+        .get();
     expect(dicts, hasLength(1), reason: '迁移丢一行就是丢一本词典的全部用户设置');
     expect(dicts.single.name, '明鏡国語辞典');
     expect(dicts.single.order, 3, reason: '排序是用户拖出来的，不能被迁移动到');
-    expect(dicts.single.collapsedLanguagesJson, '["ja"]',
-        reason: '既有的显式折叠必须原样保留');
-    expect(dicts.single.expandedLanguagesJson, '[]',
-        reason: '新列默认空名单 = 全部继承 = 与升级前的折叠行为逐字节一致');
+    expect(
+      dicts.single.collapsedLanguagesJson,
+      '["ja"]',
+      reason: '既有的显式折叠必须原样保留',
+    );
+    expect(
+      dicts.single.expandedLanguagesJson,
+      '[]',
+      reason: '新列默认空名单 = 全部继承 = 与升级前的折叠行为逐字节一致',
+    );
 
     await migrated.close();
 
-    final sqlite3.Database probe =
-        sqlite3.sqlite3.open(dbPath, mode: sqlite3.OpenMode.readOnly);
+    final sqlite3.Database probe = sqlite3.sqlite3.open(
+      dbPath,
+      mode: sqlite3.OpenMode.readOnly,
+    );
     try {
       expect(probe.select('PRAGMA user_version').first.values.first, 142);
-      expect(hasColumn(probe, 'dictionary_metadata', 'expanded_languages_json'),
-          isTrue);
+      expect(
+        hasColumn(probe, 'dictionary_metadata', 'expanded_languages_json'),
+        isTrue,
+      );
     } finally {
       probe.dispose();
     }
@@ -108,14 +129,17 @@ void main() {
   test('迁移后新列可正常读写', () async {
     await seedV95();
 
-    final FushiDatabase migrated =
-        FushiDatabase.atFile(dbPath, isMainProcess: false);
+    final FushiDatabase migrated = FushiDatabase.atFile(
+      dbPath,
+      isMainProcess: false,
+    );
     await migrated.customStatement(
       "UPDATE dictionary_metadata SET expanded_languages_json = '[\"ja\"]' "
       "WHERE name = '明鏡国語辞典'",
     );
-    final List<DictionaryMetaRow> dicts =
-        await migrated.select(migrated.dictionaryMetadata).get();
+    final List<DictionaryMetaRow> dicts = await migrated
+        .select(migrated.dictionaryMetadata)
+        .get();
     expect(dicts.single.expandedLanguagesJson, '["ja"]');
     await migrated.close();
   });

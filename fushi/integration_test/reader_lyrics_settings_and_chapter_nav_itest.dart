@@ -123,8 +123,11 @@ Future<List<AudioCue>> _rematchedFixtureCues({
     for (final AudioCue cue in cues) {
       final String needle = AudioTextNormalizer.normalize(cue.text);
       final int start = matchable.indexOf(needle, cursor);
-      expect(start, greaterThanOrEqualTo(0),
-          reason: 'fixture 句子必须能在合成章正文里按序找到：${cue.text}');
+      expect(
+        start,
+        greaterThanOrEqualTo(0),
+        reason: 'fixture 句子必须能在合成章正文里按序找到：${cue.text}',
+      );
       cue.textFragmentId = SubtitleRematchCodec.encodeHit(
         sectionIndex: 0,
         normCharStart: start,
@@ -139,11 +142,11 @@ Future<List<AudioCue>> _rematchedFixtureCues({
 }
 
 Future<int> _studyCharsForBook(AppModel appModel, String bookKey) async {
-  final List<StudySegmentRow> rows =
-      await appModel.database.getStudySegmentsForMedia(
-    mediaKind: kActivityMediaBook,
-    mediaKey: bookKey,
-  );
+  final List<StudySegmentRow> rows = await appModel.database
+      .getStudySegmentsForMedia(
+        mediaKind: kActivityMediaBook,
+        mediaKey: bookKey,
+      );
   int chars = 0;
   for (final StudySegmentRow row in rows) {
     chars += row.chars;
@@ -316,7 +319,8 @@ void main() {
           expect(
             after,
             closeTo(26, 0.5),
-            reason: '歌词字号 stepper 推两步后 WebView 的 --cue-font-size 必须跟到 26px'
+            reason:
+                '歌词字号 stepper 推两步后 WebView 的 --cue-font-size 必须跟到 26px'
                 '（before=$before after=$after）',
           );
 
@@ -370,7 +374,8 @@ void main() {
           expect(
             (posMs - firstMs).abs(),
             lessThan(500),
-            reason: '歌词模式跳章必须把音频定位到该章首句（pos=$posMs '
+            reason:
+                '歌词模式跳章必须把音频定位到该章首句（pos=$posMs '
                 'first=$firstMs）',
           );
 
@@ -386,8 +391,11 @@ void main() {
           for (int i = 0; i < 40 && controller.allBookCueIdx < 2; i++) {
             await tester.pump(const Duration(milliseconds: 250));
           }
-          expect(controller.allBookCueIdx, greaterThanOrEqualTo(2),
-              reason: '前置：播放要真的推进到第 3 句');
+          expect(
+            controller.allBookCueIdx,
+            greaterThanOrEqualTo(2),
+            reason: '前置：播放要真的推进到第 3 句',
+          );
           await controller.pause();
           await tester.pump(const Duration(milliseconds: 500));
           expect(ReaderFushiPage.debugFlushReadingStats, isNotNull);
@@ -397,9 +405,13 @@ void main() {
             await tester.pump(const Duration(milliseconds: 250));
             chars = await _studyCharsForBook(appModel, bookKey);
           }
-          expect(chars, expectedChars,
-              reason: '歌词模式听过前两句后 study_segments 里这本书的字数必须是 '
-                  '$expectedChars（章标题 3 + 两句各 7）');
+          expect(
+            chars,
+            expectedChars,
+            reason:
+                '歌词模式听过前两句后 study_segments 里这本书的字数必须是 '
+                '$expectedChars（章标题 3 + 两句各 7）',
+          );
         },
       );
     },

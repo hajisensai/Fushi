@@ -15,8 +15,9 @@ Widget _harness(Widget child) {
 }
 
 void main() {
-  testWidgets('TODO-1213: shows title + phase text + back button',
-      (WidgetTester tester) async {
+  testWidgets('TODO-1213: shows title + phase text + back button', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(
       _harness(
         VideoLoadingOverlay(
@@ -32,15 +33,12 @@ void main() {
     expect(find.byIcon(Icons.arrow_back), findsOneWidget);
   });
 
-  testWidgets('TODO-1213: empty title hides the title row',
-      (WidgetTester tester) async {
+  testWidgets('TODO-1213: empty title hides the title row', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(
       _harness(
-        VideoLoadingOverlay(
-          title: '',
-          phaseText: 'Preparing…',
-          onBack: () {},
-        ),
+        VideoLoadingOverlay(title: '', phaseText: 'Preparing…', onBack: () {}),
       ),
     );
 
@@ -49,15 +47,12 @@ void main() {
     expect(find.byType(Text), findsOneWidget);
   });
 
-  testWidgets('TODO-1213: null progress renders indeterminate spinner, no %',
-      (WidgetTester tester) async {
+  testWidgets('TODO-1213: null progress renders indeterminate spinner, no %', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(
       _harness(
-        VideoLoadingOverlay(
-          title: 'X',
-          phaseText: 'Buffering…',
-          onBack: () {},
-        ),
+        VideoLoadingOverlay(title: 'X', phaseText: 'Buffering…', onBack: () {}),
       ),
     );
 
@@ -73,31 +68,33 @@ void main() {
   });
 
   testWidgets(
-      'TODO-1213: subtitle download progress drives determinate bar + percent',
-      (WidgetTester tester) async {
-    await tester.pumpWidget(
-      _harness(
-        VideoLoadingOverlay(
-          title: 'X',
-          phaseText: 'Downloading subtitles…',
-          progress: 0.42,
-          onBack: () {},
+    'TODO-1213: subtitle download progress drives determinate bar + percent',
+    (WidgetTester tester) async {
+      await tester.pumpWidget(
+        _harness(
+          VideoLoadingOverlay(
+            title: 'X',
+            phaseText: 'Downloading subtitles…',
+            progress: 0.42,
+            onBack: () {},
+          ),
         ),
-      ),
-    );
+      );
 
-    // MD3 Expressive：加载圈经 FushiCircularProgressIndicator 渲染成表达式
-    // 波浪圈 FushiWavyCircularProgress，确定 / 不定态仍由 value 区分。
-    final FushiWavyCircularProgress indicator = tester.widget(
-      find.byType(FushiWavyCircularProgress),
-    );
-    expect(indicator.value, 0.42);
-    expect(find.textContaining('Downloading subtitles…'), findsOneWidget);
-    expect(find.textContaining('42%'), findsOneWidget);
-  });
+      // MD3 Expressive：加载圈经 FushiCircularProgressIndicator 渲染成表达式
+      // 波浪圈 FushiWavyCircularProgress，确定 / 不定态仍由 value 区分。
+      final FushiWavyCircularProgress indicator = tester.widget(
+        find.byType(FushiWavyCircularProgress),
+      );
+      expect(indicator.value, 0.42);
+      expect(find.textContaining('Downloading subtitles…'), findsOneWidget);
+      expect(find.textContaining('42%'), findsOneWidget);
+    },
+  );
 
-  testWidgets('TODO-1213: tapping back invokes onBack (exit not stuck)',
-      (WidgetTester tester) async {
+  testWidgets('TODO-1213: tapping back invokes onBack (exit not stuck)', (
+    WidgetTester tester,
+  ) async {
     int taps = 0;
     await tester.pumpWidget(
       _harness(
@@ -114,8 +111,9 @@ void main() {
     expect(taps, 1);
   });
 
-  testWidgets('BUG-2609: network read speed row follows the notifier',
-      (WidgetTester tester) async {
+  testWidgets('BUG-2609: network read speed row follows the notifier', (
+    WidgetTester tester,
+  ) async {
     final ValueNotifier<double?> speed = ValueNotifier<double?>(null);
     addTearDown(speed.dispose);
     await tester.pumpWidget(
@@ -148,19 +146,21 @@ void main() {
   });
 
   testWidgets(
-      'BUG-2609: buffering indicator keeps the plain spinner for local files',
-      (WidgetTester tester) async {
-    // 2026-10-05 M3E 重做：MD3（非墨水屏）下缓冲指示是 Expressive 形变加载指示，
-    // Apple / 墨水屏仍是转圈；守的是「本地文件只有指示、不带速度文字」。
-    await tester.pumpWidget(_harness(const VideoBufferingIndicator()));
-    expect(find.byType(FushiExpressiveLoadingIndicator), findsOneWidget);
-    expect(find.byType(Text), findsNothing);
+    'BUG-2609: buffering indicator keeps the plain spinner for local files',
+    (WidgetTester tester) async {
+      // 2026-10-05 M3E 重做：MD3（非墨水屏）下缓冲指示是 Expressive 形变加载指示，
+      // Apple / 墨水屏仍是转圈；守的是「本地文件只有指示、不带速度文字」。
+      await tester.pumpWidget(_harness(const VideoBufferingIndicator()));
+      expect(find.byType(FushiExpressiveLoadingIndicator), findsOneWidget);
+      expect(find.byType(Text), findsNothing);
 
-    final ValueNotifier<double?> speed = ValueNotifier<double?>(524288);
-    addTearDown(speed.dispose);
-    await tester
-        .pumpWidget(_harness(VideoBufferingIndicator(readSpeed: speed)));
-    expect(find.byType(FushiExpressiveLoadingIndicator), findsOneWidget);
-    expect(find.text('512.0 KB/s'), findsOneWidget);
-  });
+      final ValueNotifier<double?> speed = ValueNotifier<double?>(524288);
+      addTearDown(speed.dispose);
+      await tester.pumpWidget(
+        _harness(VideoBufferingIndicator(readSpeed: speed)),
+      );
+      expect(find.byType(FushiExpressiveLoadingIndicator), findsOneWidget);
+      expect(find.text('512.0 KB/s'), findsOneWidget);
+    },
+  );
 }

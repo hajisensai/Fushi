@@ -92,11 +92,11 @@ void main() {
       final ({int positionMs, int updatedAtMs}) r =
           // ignore: deprecated_member_use_from_same_package
           resolveAudiobookPositionSync(
-        localPositionMs: 300000,
-        localUpdatedAtMs: 5000,
-        remotePositionMs: 700000,
-        remoteUpdatedAtMs: 5000,
-      );
+            localPositionMs: 300000,
+            localUpdatedAtMs: 5000,
+            remotePositionMs: 700000,
+            remoteUpdatedAtMs: 5000,
+          );
       expect(r.positionMs, 700000);
       expect(r.updatedAtMs, 5000);
     });

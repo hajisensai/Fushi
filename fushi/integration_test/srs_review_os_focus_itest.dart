@@ -300,7 +300,9 @@ void main() {
         final Rect rect = tester.getRect(web.first);
         _log('[srs-os-focus] $mode tap webview at $rect');
         // 点 WebView 底部空白（点在释义文字上会开查词弹窗，弹窗开着时数字键按设计不评分）。
-        await tester.tapAt(Offset(rect.center.dx, rect.bottom - 40)); // itest-tap-allow: 指针点进平台 WebView，验证 OS 焦点是否被它夺走（没有焦点等价操作）
+        await tester.tapAt(
+          Offset(rect.center.dx, rect.bottom - 40),
+        ); // itest-tap-allow: 指针点进平台 WebView，验证 OS 焦点是否被它夺走（没有焦点等价操作）
         await _pumpFor(tester, const Duration(milliseconds: 1500));
         focusLine('$mode 01-after-click-webview');
         await captureFlutterFrame(tester, 'os-focus-$mode-01-back');

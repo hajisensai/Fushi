@@ -32,9 +32,9 @@ class KeyboardKeySpec {
 
   /// 留白占位构造：无逻辑键、无标签，只占 [flex] 宽。
   const KeyboardKeySpec.spacer(this.flex)
-      : key = null,
-        label = '',
-        kind = KeyCapKind.spacer;
+    : key = null,
+      label = '',
+      kind = KeyCapKind.spacer;
 
   /// 本键帽代表的逻辑键；null = 留白占位（不绑定、不可点）。
   final LogicalKeyboardKey? key;
@@ -296,9 +296,7 @@ const List<List<KeyboardKeySpec>> _pcNavClusterRows = <List<KeyboardKeySpec>>[
     KeyboardKeySpec(LogicalKeyboardKey.end, 'End'),
     KeyboardKeySpec(LogicalKeyboardKey.pageDown, 'PgDn'),
   ],
-  <KeyboardKeySpec>[
-    KeyboardKeySpec.spacer(3),
-  ],
+  <KeyboardKeySpec>[KeyboardKeySpec.spacer(3)],
   <KeyboardKeySpec>[
     KeyboardKeySpec.spacer(1),
     KeyboardKeySpec(LogicalKeyboardKey.arrowUp, 'Up'),
@@ -322,9 +320,7 @@ const List<List<KeyboardKeySpec>> _macNavClusterRows = <List<KeyboardKeySpec>>[
     KeyboardKeySpec(LogicalKeyboardKey.end, 'end'),
     KeyboardKeySpec(LogicalKeyboardKey.pageDown, 'page\ndown'),
   ],
-  <KeyboardKeySpec>[
-    KeyboardKeySpec.spacer(3),
-  ],
+  <KeyboardKeySpec>[KeyboardKeySpec.spacer(3)],
   <KeyboardKeySpec>[
     KeyboardKeySpec.spacer(1),
     KeyboardKeySpec(LogicalKeyboardKey.arrowUp, '↑'),
@@ -357,7 +353,10 @@ class KeyboardLayoutView extends StatelessWidget {
 
   /// 点击一个已绑键位（回传该键上的 action 列表，走 action-first 编辑）。
   final void Function(
-      LogicalKeyboardKey key, List<ShortcutAction> boundActions)? onKeyTap;
+    LogicalKeyboardKey key,
+    List<ShortcutAction> boundActions,
+  )?
+  onKeyTap;
 
   /// 点击一个未绑键位（key-first：回传裸逻辑键，由上层选 action 后分配）。
   /// null 时空键位恒不可点（旧「空键不可点」行为，TODO-1060② 前）。
@@ -366,29 +365,30 @@ class KeyboardLayoutView extends StatelessWidget {
   /// 图上呈现的全部可绑逻辑键（主区 + 导航簇的并集，排除留白占位与修饰键——修饰键
   /// 只读分区不进绑定索引）。导航簇的键也必须在内，否则导航键从绑定索引消失。
   static Set<LogicalKeyboardKey> get presentedKeys => <LogicalKeyboardKey>{
-        for (final List<KeyboardKeySpec> row in buildPhysicalKeyboardRows())
-          for (final KeyboardKeySpec spec in row)
-            if (!spec.isSpacer && spec.kind != KeyCapKind.modifier) spec.key!,
-        for (final List<KeyboardKeySpec> row in buildNavClusterRows())
-          for (final KeyboardKeySpec spec in row)
-            if (!spec.isSpacer && spec.kind != KeyCapKind.modifier) spec.key!,
-      };
+    for (final List<KeyboardKeySpec> row in buildPhysicalKeyboardRows())
+      for (final KeyboardKeySpec spec in row)
+        if (!spec.isSpacer && spec.kind != KeyCapKind.modifier) spec.key!,
+    for (final List<KeyboardKeySpec> row in buildNavClusterRows())
+      for (final KeyboardKeySpec spec in row)
+        if (!spec.isSpacer && spec.kind != KeyCapKind.modifier) spec.key!,
+  };
 
   /// 一组行里最宽行的总 flex（含留白）。
   static double _maxRowFlex(List<List<KeyboardKeySpec>> rows) =>
-      rows.fold<double>(
-        1,
-        (double acc, List<KeyboardKeySpec> row) {
-          final double rowFlex =
-              row.fold<double>(0, (double a, KeyboardKeySpec s) => a + s.flex);
-          return rowFlex > acc ? rowFlex : acc;
-        },
-      );
+      rows.fold<double>(1, (double acc, List<KeyboardKeySpec> row) {
+        final double rowFlex = row.fold<double>(
+          0,
+          (double a, KeyboardKeySpec s) => a + s.flex,
+        );
+        return rowFlex > acc ? rowFlex : acc;
+      });
 
   @override
   Widget build(BuildContext context) {
-    final ReverseBindingIndex index =
-        ReverseBindingIndex.fromRegistry(registry, scope);
+    final ReverseBindingIndex index = ReverseBindingIndex.fromRegistry(
+      registry,
+      scope,
+    );
     final List<List<KeyboardKeySpec>> mainRows = buildPhysicalKeyboardRows();
     final List<List<KeyboardKeySpec>> navRows = buildNavClusterRows();
 
@@ -403,8 +403,9 @@ class KeyboardLayoutView extends StatelessWidget {
         const double minReadableUnit = 30;
         const double idealUnit = 44;
 
-        final double available =
-            constraints.maxWidth.isFinite ? constraints.maxWidth : 640;
+        final double available = constraints.maxWidth.isFinite
+            ? constraints.maxWidth
+            : 640;
         final double totalFlex = mainFlex + navFlex;
         final double fixed = gap * ((mainFlex - 1) + (navFlex - 1)) + blockGap;
         final double fitUnit = (available - fixed) / totalFlex;
@@ -416,8 +417,14 @@ class KeyboardLayoutView extends StatelessWidget {
         return HorizontalDragScrollable(
           child: SingleChildScrollView(
             scrollDirection: Axis.horizontal,
-            child:
-                _buildBoard(index, mainRows, navRows, idealUnit, gap, blockGap),
+            child: _buildBoard(
+              index,
+              mainRows,
+              navRows,
+              idealUnit,
+              gap,
+              blockGap,
+            ),
           ),
         );
       },

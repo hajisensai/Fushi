@@ -116,14 +116,15 @@ void main() {
     final Map<String, Object?> json =
         (jsonDecode(await res.transform(utf8.decoder).join()) as Map)
             .cast<String, Object?>();
-    final Map<String, Object?> live =
-        (json['liveLibrary']! as Map).cast<String, Object?>();
+    final Map<String, Object?> live = (json['liveLibrary']! as Map)
+        .cast<String, Object?>();
     expect(live['manga'], isTrue);
   });
 
   test('页表带页序、尺寸与阅读模式', () async {
-    final HttpClientResponse res =
-        await get('/api/library/manga/vol1/manifest');
+    final HttpClientResponse res = await get(
+      '/api/library/manga/vol1/manifest',
+    );
     expect(res.statusCode, 200);
     final RemoteMangaManifest manifest = RemoteMangaManifest.fromJson(
       (jsonDecode(await res.transform(utf8.decoder).join()) as Map)
@@ -170,13 +171,17 @@ void main() {
 
   test('未鉴权一律 401——漫画页图没有视频 stream 那种 token 豁免', () async {
     expect(
-      (await get('/api/library/manga/vol1/manifest', authorize: false))
-          .statusCode,
+      (await get(
+        '/api/library/manga/vol1/manifest',
+        authorize: false,
+      )).statusCode,
       401,
     );
     expect(
-      (await get('/api/library/manga/vol1/pages/0', authorize: false))
-          .statusCode,
+      (await get(
+        '/api/library/manga/vol1/pages/0',
+        authorize: false,
+      )).statusCode,
       401,
     );
   });
@@ -240,7 +245,9 @@ void main() {
         isFalse,
       );
       expect(
-          (await bareGet('/api/library/manga/vol1/manifest')).statusCode, 404);
+        (await bareGet('/api/library/manga/vol1/manifest')).statusCode,
+        404,
+      );
     });
   });
 }

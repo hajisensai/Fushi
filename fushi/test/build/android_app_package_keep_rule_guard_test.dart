@@ -34,9 +34,10 @@ void main() {
       .toList();
 
   String? singleQuotedValue(String source, String key) {
-    final RegExpMatch? match =
-        RegExp(r'^\s*' + key + r'\s+"([^"]+)"', multiLine: true)
-            .firstMatch(source);
+    final RegExpMatch? match = RegExp(
+      r'^\s*' + key + r'\s+"([^"]+)"',
+      multiLine: true,
+    ).firstMatch(source);
     return match?.group(1);
   }
 
@@ -45,18 +46,26 @@ void main() {
     final String? applicationId = singleQuotedValue(gradle, 'applicationId');
     final String? namespace = singleQuotedValue(gradle, 'namespace');
 
-    expect(applicationId, isNotNull,
-        reason: 'android/app/build.gradle must declare applicationId.');
-    expect(namespace, applicationId,
-        reason: 'namespace and applicationId must be the same package, '
-            'otherwise a single keep rule cannot cover the app.');
+    expect(
+      applicationId,
+      isNotNull,
+      reason: 'android/app/build.gradle must declare applicationId.',
+    );
+    expect(
+      namespace,
+      applicationId,
+      reason:
+          'namespace and applicationId must be the same package, '
+          'otherwise a single keep rule cannot cover the app.',
+    );
 
     final List<String> rules = activeRules(proguard.readAsStringSync());
 
     expect(
       rules,
       contains('-keep class $applicationId.** { *; }'),
-      reason: 'proguard-rules.pro must keep the whole app package '
+      reason:
+          'proguard-rules.pro must keep the whole app package '
           '($applicationId). Without it R8 class-merges the anonymous '
           'FullTypeReference subclasses Injekt inlines into '
           'MihonChannelHandler and the app crashes on launch. If the app is '
@@ -82,14 +91,14 @@ void main() {
     expect(
       stale,
       isEmpty,
-      reason: 'These keep rules name an app package that is not the current '
+      reason:
+          'These keep rules name an app package that is not the current '
           'applicationId ($applicationId), so they match zero classes and '
           'silently drop the app out of R8 protection: $stale',
     );
   });
 
-  test('Injekt FullTypeReference subclasses are excluded from class merging',
-      () {
+  test('Injekt FullTypeReference subclasses are excluded from class merging', () {
     final List<String> rules = activeRules(proguard.readAsStringSync());
 
     // Package-independent backstop: even if the app package keep rule is ever
@@ -102,17 +111,21 @@ void main() {
     expect(
       rules,
       contains('-keep,allowshrinking,allowobfuscation class * extends $base'),
-      reason: 'Subclasses of $base are generated at every reified '
+      reason:
+          'Subclasses of $base are generated at every reified '
           'addSingleton/addSingletonFactory call site and are read back via '
           'javaClass.genericSuperclass. R8 class merging destroys that '
           'signature.',
     );
     expect(
-        rules, contains('-keep,allowshrinking,allowobfuscation class $base'));
+      rules,
+      contains('-keep,allowshrinking,allowobfuscation class $base'),
+    );
     expect(
       rules,
       contains(
-          '-keep,allowshrinking,allowobfuscation class uy.kohesive.injekt.api.TypeReference'),
+        '-keep,allowshrinking,allowobfuscation class uy.kohesive.injekt.api.TypeReference',
+      ),
     );
   });
 
@@ -133,21 +146,27 @@ void main() {
       'android/app/src/main/kotlin/${applicationId.replaceAll('.', '/')}'
       '/mihon/MihonChannelHandler.kt',
     );
-    expect(handler.existsSync(), isTrue,
-        reason: 'MihonChannelHandler must live under the applicationId package '
-            'so the app-wide keep rule covers it.');
+    expect(
+      handler.existsSync(),
+      isTrue,
+      reason:
+          'MihonChannelHandler must live under the applicationId package '
+          'so the app-wide keep rule covers it.',
+    );
 
     final String source = handler.readAsStringSync();
     expect(
       source,
       contains('uy.kohesive.injekt'),
-      reason: 'If Injekt usage disappears from the app, the FullTypeReference '
+      reason:
+          'If Injekt usage disappears from the app, the FullTypeReference '
           'keep rules above become dead weight and should be revisited.',
     );
     expect(
       RegExp(r'addSingleton(Factory)?\s*[({]').hasMatch(source),
       isTrue,
-      reason: 'These reified inline calls are what generate the '
+      reason:
+          'These reified inline calls are what generate the '
           'FullTypeReference subclasses the keep rules protect.',
     );
   });
@@ -160,9 +179,9 @@ void main() {
     // contained: construction guarded, field left null, registration skipped.
     // The Dart side already turns an unregistered channel into
     // MihonRuntimeException('UNAVAILABLE'), so degrading is a supported state.
-    final String activity =
-        File('android/app/src/main/java/app/fushi/reader/MainActivity.java')
-            .readAsStringSync();
+    final String activity = File(
+      'android/app/src/main/java/app/fushi/reader/MainActivity.java',
+    ).readAsStringSync();
 
     final int construct = activity.indexOf('new MihonChannelHandler(');
     expect(construct, isNonNegative);
@@ -173,16 +192,21 @@ void main() {
     expect(
       tryIndex,
       greaterThan(stmtEnd),
-      reason: 'new MihonChannelHandler(...) must be the first statement inside '
+      reason:
+          'new MihonChannelHandler(...) must be the first statement inside '
           'a try block, otherwise an Injekt/extension-loader failure escapes '
           'into onCreate and the whole app fails to start.',
     );
 
     final int catchIndex = activity.indexOf('catch (Throwable', construct);
-    expect(catchIndex, isNonNegative,
-        reason: 'The guard must catch Throwable: the observed failure was an '
-            'IllegalArgumentException thrown from a static initializer path, '
-            'and R8/linkage failures surface as Errors, not Exceptions.');
+    expect(
+      catchIndex,
+      isNonNegative,
+      reason:
+          'The guard must catch Throwable: the observed failure was an '
+          'IllegalArgumentException thrown from a static initializer path, '
+          'and R8/linkage failures surface as Errors, not Exceptions.',
+    );
 
     final int register = activity.indexOf('mihonChannelHandler.register(');
     expect(register, isNonNegative);
@@ -192,7 +216,8 @@ void main() {
     expect(
       activity.substring(register < 120 ? 0 : register - 120, register),
       contains('mihonChannelHandler != null'),
-      reason: 'If construction was skipped the field is null; registering it '
+      reason:
+          'If construction was skipped the field is null; registering it '
           'unconditionally would just move the crash to configureFlutterEngine.',
     );
   });

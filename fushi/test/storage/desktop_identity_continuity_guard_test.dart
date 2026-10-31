@@ -25,33 +25,35 @@ void main() {
   final File runnerRc = File('windows/runner/Runner.rc');
   final File macosAppInfo = File('macos/Runner/Configs/AppInfo.xcconfig');
   final File linuxCMake = File('linux/CMakeLists.txt');
-  final File migration =
-      File('lib/src/storage/legacy_support_dir_migration.dart');
-  final File coreDatabase =
-      File('../packages/fushi_core/lib/src/database/database.dart');
+  final File migration = File(
+    'lib/src/storage/legacy_support_dir_migration.dart',
+  );
+  final File coreDatabase = File(
+    '../packages/fushi_core/lib/src/database/database.dart',
+  );
   final File mainDart = File('lib/main.dart');
 
   /// Runner.rc 的 VERSIONINFO 字段（形如 VALUE "Key", "Value" 后跟 NUL 串）。
   String? versionInfoValue(String rc, String key) => RegExp(
-        r'VALUE\s+"' + key + r'"\s*,\s*"([^"]*)"',
-      ).firstMatch(rc)?.group(1);
+    r'VALUE\s+"' + key + r'"\s*,\s*"([^"]*)"',
+  ).firstMatch(rc)?.group(1);
 
   /// xcconfig 一行：KEY = value。
   String? xcconfigValue(String source, String key) => RegExp(
-        r'^\s*' + key + r'\s*=\s*(\S+)\s*' + r'$',
-        multiLine: true,
-      ).firstMatch(source)?.group(1);
+    r'^\s*' + key + r'\s*=\s*(\S+)\s*' + r'$',
+    multiLine: true,
+  ).firstMatch(source)?.group(1);
 
   /// CMake 一行：set(NAME "value")。
   String? cmakeSetValue(String source, String name) => RegExp(
-        r'^\s*set\(\s*' + name + r'\s+"([^"]*)"\s*\)',
-        multiLine: true,
-      ).firstMatch(source)?.group(1);
+    r'^\s*set\(\s*' + name + r'\s+"([^"]*)"\s*\)',
+    multiLine: true,
+  ).firstMatch(source)?.group(1);
 
   /// Dart 顶层字符串常量：const String NAME = 'value';
   String? dartStringConst(String source, String name) => RegExp(
-        r'const\s+String\s+' + name + r"\s*=\s*'([^']*)'\s*;",
-      ).firstMatch(source)?.group(1);
+    r'const\s+String\s+' + name + r"\s*=\s*'([^']*)'\s*;",
+  ).firstMatch(source)?.group(1);
 
   /// Dart 顶层字符串列表常量。
   List<String>? dartStringListConst(String source, String name) {
@@ -59,10 +61,9 @@ void main() {
       r'const\s+List<String>\s+' + name + r'\s*=\s*<String>\[([^\]]*)\]\s*;',
     ).firstMatch(source);
     if (match == null) return null;
-    return RegExp(r"'([^']*)'")
-        .allMatches(match.group(1)!)
-        .map((RegExpMatch m) => m.group(1)!)
-        .toList();
+    return RegExp(
+      r"'([^']*)'",
+    ).allMatches(match.group(1)!).map((RegExpMatch m) => m.group(1)!).toList();
   }
 
   test('Windows：Runner.rc 的 CompanyName/ProductName 就是搬迁目标的两段', () {
@@ -73,14 +74,21 @@ void main() {
     expect(product, isNotNull, reason: 'Runner.rc 必须声明 ProductName。');
 
     final List<String>? target = dartStringListConst(
-        migration.readAsStringSync(), 'kFushiWindowsAppDataSegments');
-    expect(target, isNotNull,
-        reason: 'legacy_support_dir_migration.dart 必须声明 '
-            'kFushiWindowsAppDataSegments。');
+      migration.readAsStringSync(),
+      'kFushiWindowsAppDataSegments',
+    );
+    expect(
+      target,
+      isNotNull,
+      reason:
+          'legacy_support_dir_migration.dart 必须声明 '
+          'kFushiWindowsAppDataSegments。',
+    );
     expect(
       target,
       <String>[company!, product!],
-      reason: 'path_provider 在 Windows 上把 app-support 根解析成 APPDATA 下的 '
+      reason:
+          'path_provider 在 Windows 上把 app-support 根解析成 APPDATA 下的 '
           'CompanyName/ProductName 两段，两个字符串取自 exe 版本资源。Runner.rc '
           '改了而搬迁代码没跟着改，存量用户的主库与 shared_preferences.json'
           '（自定义数据根的唯一指针）就会留在旧目录，app 静默打开一个空库。'
@@ -91,15 +99,21 @@ void main() {
 
   test('macOS：AppInfo.xcconfig 的 bundle id 就是搬迁目标目录名', () {
     final String? bundleId = xcconfigValue(
-        macosAppInfo.readAsStringSync(), 'PRODUCT_BUNDLE_IDENTIFIER');
-    expect(bundleId, isNotNull,
-        reason: 'AppInfo.xcconfig 必须声明 PRODUCT_BUNDLE_IDENTIFIER。');
+      macosAppInfo.readAsStringSync(),
+      'PRODUCT_BUNDLE_IDENTIFIER',
+    );
+    expect(
+      bundleId,
+      isNotNull,
+      reason: 'AppInfo.xcconfig 必须声明 PRODUCT_BUNDLE_IDENTIFIER。',
+    );
 
     final String source = migration.readAsStringSync();
     expect(
       dartStringConst(source, 'kFushiMacosBundleId'),
       bundleId,
-      reason: 'macOS 的 app-support 根是 Library/Application Support 下以 '
+      reason:
+          'macOS 的 app-support 根是 Library/Application Support 下以 '
           'CFBundleIdentifier 命名的目录。bundle id 改了而 kFushiMacosBundleId '
           '没跟着改，搬迁会认不出新根、直接 no-op。',
     );
@@ -113,14 +127,18 @@ void main() {
   test('Linux：CMake 身份与搬迁对照表的新身份一致（改身份必须同步补搬迁）', () {
     final String cmake = linuxCMake.readAsStringSync();
     final String? applicationId = cmakeSetValue(cmake, 'APPLICATION_ID');
-    expect(applicationId, isNotNull,
-        reason: 'linux/CMakeLists.txt 必须声明 APPLICATION_ID。');
+    expect(
+      applicationId,
+      isNotNull,
+      reason: 'linux/CMakeLists.txt 必须声明 APPLICATION_ID。',
+    );
 
     final String migrationSrc = migration.readAsStringSync();
     expect(
       applicationId,
       dartStringConst(migrationSrc, 'kFushiLinuxApplicationId'),
-      reason: 'path_provider 在 Linux 上把 app-support 根解析成 XDG_DATA_HOME '
+      reason:
+          'path_provider 在 Linux 上把 app-support 根解析成 XDG_DATA_HOME '
           '下以 APPLICATION_ID 命名的目录。PR #790 把 Linux 身份改成 fushi 后，'
           'legacy_support_dir_migration.dart 已补 Linux 搬迁分支——CMake 再改'
           '身份，这里的新身份常量必须同一个 commit 跟上，否则 Linux 用户的库'
@@ -135,9 +153,11 @@ void main() {
 
   test('改名前旧主库的拒绝判定是开库路径上的第一件事', () {
     final String source = coreDatabase.readAsStringSync();
-    expect(dartStringConst(source, 'legacyHibikiDatabaseFileName'),
-        isNot(dartStringConst(source, 'fushiDatabaseFileName')),
-        reason: '新旧主库文件名必须不同，否则「只有旧库」的判据永远不成立。');
+    expect(
+      dartStringConst(source, 'legacyHibikiDatabaseFileName'),
+      isNot(dartStringConst(source, 'fushiDatabaseFileName')),
+      reason: '新旧主库文件名必须不同，否则「只有旧库」的判据永远不成立。',
+    );
 
     final int openDbIndex = source.indexOf('LazyDatabase _openDb(');
     expect(openDbIndex, greaterThan(0), reason: '找不到 _openDb —— 守卫已失效。');
@@ -153,7 +173,8 @@ void main() {
     expect(
       firstStatement,
       'await _rejectPreRenameDatabase(dbDirectory)',
-      reason: '只有改名前 hibiki.db 的目录必须在任何 SQLite 连接打开之前被拒绝'
+      reason:
+          '只有改名前 hibiki.db 的目录必须在任何 SQLite 连接打开之前被拒绝'
           '（UnsupportedLegacySchemaException）：一旦先走到开库，SQLite 会在旁边'
           '建一个空 fushi.db，用户看到的是数据全没了，且下次启动判据不再命中。'
           '所以它必须是 _openDb 的 LazyDatabase 回调里的第一句。',
@@ -163,24 +184,34 @@ void main() {
   test('app-support 根搬迁跑在第一次读 SharedPreferences 之前', () {
     final String source = mainDart.readAsStringSync();
     final int migrateIndex = source.indexOf('await migrateLegacySupportDir();');
-    expect(migrateIndex, greaterThan(0),
-        reason: 'main() 必须调用 migrateLegacySupportDir()——它是桌面改名升级里'
-            '唯一防止「打开一个空 app」的东西。');
+    expect(
+      migrateIndex,
+      greaterThan(0),
+      reason:
+          'main() 必须调用 migrateLegacySupportDir()——它是桌面改名升级里'
+          '唯一防止「打开一个空 app」的东西。',
+    );
 
     // applyInitialPlacement 读窗口几何偏好，是 main() 里第一个碰
     // SharedPreferences 的调用；prefs 插件一旦在新根建出空文件并缓存，
     // 之后再搬目录也救不回 data_root / documents 布局锚点。
     // 匹配**调用**而不是裸名字：上面那段注释里也写着 applyInitialPlacement，
     // 只找名字会命中注释、把顺序判反。
-    final int firstPrefsUse =
-        source.indexOf('DesktopWindowPlacement.applyInitialPlacement(');
-    expect(firstPrefsUse, greaterThan(0),
-        reason: '找不到 DesktopWindowPlacement.applyInitialPlacement( —— 守卫已'
-            '失效，请重新确定 main() 里第一个读 SharedPreferences 的调用。');
+    final int firstPrefsUse = source.indexOf(
+      'DesktopWindowPlacement.applyInitialPlacement(',
+    );
+    expect(
+      firstPrefsUse,
+      greaterThan(0),
+      reason:
+          '找不到 DesktopWindowPlacement.applyInitialPlacement( —— 守卫已'
+          '失效，请重新确定 main() 里第一个读 SharedPreferences 的调用。',
+    );
     expect(
       migrateIndex,
       lessThan(firstPrefsUse),
-      reason: 'migrateLegacySupportDir() 必须排在任何 SharedPreferences 读取'
+      reason:
+          'migrateLegacySupportDir() 必须排在任何 SharedPreferences 读取'
           '之前。晚一步，插件就会在新根缓存一份空 prefs，用户的自定义数据根'
           '指针与 documents 布局锚点当场作废。',
     );

@@ -22,8 +22,11 @@ void main() {
 
   test('真实形状的 token 必然带 = 结尾（下面几条的前提）', () {
     for (int i = 0; i < 20; i++) {
-      expect(realToken(), endsWith('='),
-          reason: '32 字节 base64Url 必有一个填充字符；前提不成立的话往返用例测的是空气');
+      expect(
+        realToken(),
+        endsWith('='),
+        reason: '32 字节 base64Url 必有一个填充字符；前提不成立的话往返用例测的是空气',
+      );
     }
   });
 
@@ -34,11 +37,7 @@ void main() {
       final String setCookie = adminSetCookieValue(token, secure: false);
       final String sent = setCookie.split(';').first.trim();
       expect(
-        adminRequestAuthorized(
-          authorization: null,
-          cookie: sent,
-          token: token,
-        ),
+        adminRequestAuthorized(authorization: null, cookie: sent, token: token),
         isTrue,
         reason: '写侧编码、读侧不解码 = WebUI 登录死循环（token=$token）',
       );
@@ -67,8 +66,10 @@ void main() {
 
   test('别的 cookie 混在一起不影响', () {
     final String token = realToken();
-    final String sent =
-        adminSetCookieValue(token, secure: false).split(';').first.trim();
+    final String sent = adminSetCookieValue(
+      token,
+      secure: false,
+    ).split(';').first.trim();
     expect(
       adminRequestAuthorized(
         authorization: null,

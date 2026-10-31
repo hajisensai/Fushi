@@ -29,8 +29,9 @@ void main() {
     // 测试的 cwd 是 `fushi/`，仓库根是它的上一级。
     repoRoot = Directory.current.parent;
     expect(
-      File(p.join(repoRoot.path, 'tool', 'publish_update_manifest.sh'))
-          .existsSync(),
+      File(
+        p.join(repoRoot.path, 'tool', 'publish_update_manifest.sh'),
+      ).existsSync(),
       isTrue,
       reason: 'repo root resolved wrong: ${repoRoot.path}',
     );
@@ -48,8 +49,11 @@ void main() {
     ];
 
     test('三个通道的每个镜像 URL 都不是 hibiki 族的历史文件名', () {
-      expect(UpdateChannel.values.length, frozenHibikiManifests.length,
-          reason: '新增通道时必须同步补一条冻结名，否则新通道会漏出守卫');
+      expect(
+        UpdateChannel.values.length,
+        frozenHibikiManifests.length,
+        reason: '新增通道时必须同步补一条冻结名，否则新通道会漏出守卫',
+      );
       for (final UpdateChannel channel in UpdateChannel.values) {
         final Map<String, String> urls = manifestUrlsForChannel(channel);
         expect(urls, isNotEmpty, reason: '$channel 必须有镜像清单 URL');
@@ -58,7 +62,8 @@ void main() {
           expect(
             frozenHibikiManifests,
             isNot(contains(fileName)),
-            reason: '$channel 的 ${entry.key} 镜像读的是 $fileName——'
+            reason:
+                '$channel 的 ${entry.key} 镜像读的是 $fileName——'
                 '这是老 Hibiki 客户端编译进包里的 URL，本体读它就会两族互相覆盖，'
                 '老用户从此更新不到迁移桥包',
           );
@@ -79,9 +84,9 @@ void main() {
 
   group('CI 侧与客户端同族', () {
     test('publish_update_manifest.sh 写的每个清单名都带同一个产品族后缀', () {
-      final String script =
-          File(p.join(repoRoot.path, 'tool', 'publish_update_manifest.sh'))
-              .readAsStringSync();
+      final String script = File(
+        p.join(repoRoot.path, 'tool', 'publish_update_manifest.sh'),
+      ).readAsStringSync();
 
       // 只看真正的清单名赋值，不做全文 grep——否则脚本里解释性的注释会把守卫喂饱。
       // 限定 `latest-` 开头是为了排除把变量原样透传给子进程的
@@ -91,26 +96,27 @@ void main() {
       // 不带族后缀的老清单名，用于把桌面产物镜像回 hibiki 族。没有左边界时子串会把它
       // 当成本条要管的「广告用清单名」判红——本条守的是「客户端读哪个文件」，
       // 镜像写入由下面 `desktopMirror` 一组单独立规矩。
-      final List<String> assigned =
-          RegExp(r'(?<![A-Z_])MANIFEST_FILE="(latest-[^"]+)"')
-              .allMatches(script)
-              .map((RegExpMatch m) => m.group(1)!)
-              .toList();
+      final List<String> assigned = RegExp(
+        r'(?<![A-Z_])MANIFEST_FILE="(latest-[^"]+)"',
+      ).allMatches(script).map((RegExpMatch m) => m.group(1)!).toList();
       expect(
         assigned.length,
         greaterThanOrEqualTo(3),
-        reason: '应至少给 debug/beta/formal 三个通道各定一个清单名，'
+        reason:
+            '应至少给 debug/beta/formal 三个通道各定一个清单名，'
             '实际解析到 $assigned',
       );
 
-      final String suffix = RegExp(r'MANIFEST_PRODUCT_SUFFIX="([^"]*)"')
-              .firstMatch(script)
-              ?.group(1) ??
+      final String suffix =
+          RegExp(
+            r'MANIFEST_PRODUCT_SUFFIX="([^"]*)"',
+          ).firstMatch(script)?.group(1) ??
           '';
       expect(
         suffix,
         kFushiManifestSuffix,
-        reason: 'CI 脚本的产品族后缀与客户端常量必须一致，'
+        reason:
+            'CI 脚本的产品族后缀与客户端常量必须一致，'
             '否则 CI 写一个文件、客户端读另一个，更新链路整条断掉',
       );
 
@@ -130,14 +136,18 @@ void main() {
       //  * Windows/macOS 必须放行——它们换包名靠安装器覆盖安装，Hibiki 桌面客户端
       //    选中 fushi-*-windows-setup.exe 装下去**就是**迁移本身，桌面没有桥。
       // 一刀切按文件拆的后果是 BUG-1516：桌面槽位冻在拆族前的包上，被 prune 后 404。
-      final String script =
-          File(p.join(repoRoot.path, 'tool', 'publish_update_manifest.sh'))
-              .readAsStringSync();
+      final String script = File(
+        p.join(repoRoot.path, 'tool', 'publish_update_manifest.sh'),
+      ).readAsStringSync();
 
-      final Iterable<RegExpMatch> legacyNames =
-          RegExp(r'LEGACY_MANIFEST_FILE="(latest-[^"]+)"').allMatches(script);
-      expect(legacyNames.length, greaterThanOrEqualTo(3),
-          reason: '三个通道都该有对应的老清单名，才谈得上镜像');
+      final Iterable<RegExpMatch> legacyNames = RegExp(
+        r'LEGACY_MANIFEST_FILE="(latest-[^"]+)"',
+      ).allMatches(script);
+      expect(
+        legacyNames.length,
+        greaterThanOrEqualTo(3),
+        reason: '三个通道都该有对应的老清单名，才谈得上镜像',
+      );
       for (final RegExpMatch m in legacyNames) {
         expect(
           m.group(1)!.endsWith('$kFushiManifestSuffix.json'),
@@ -151,7 +161,8 @@ void main() {
       expect(
         script.contains('ADVERTISE_TOP_LEVEL="false"'),
         isTrue,
-        reason: '镜像必须以「只贡献资产」模式写入；一旦漏掉这个开关，'
+        reason:
+            '镜像必须以「只贡献资产」模式写入；一旦漏掉这个开关，'
             '本体的 seq 会把桥清单的顶层顶掉',
       );
       expect(
@@ -165,10 +176,12 @@ void main() {
       // `(… "-macos.zip", ".apk")` 下照样为真，那种写法拦不住往白名单里加东西——
       // 实测过，加 `.apk` 后子串版一声不吭。
       expect(
-        RegExp(r'suffixes = \("-windows-setup\.exe", "-macos-arm64\.zip"\)')
-            .hasMatch(script),
+        RegExp(
+          r'suffixes = \("-windows-setup\.exe", "-macos-arm64\.zip"\)',
+        ).hasMatch(script),
         isTrue,
-        reason: '镜像的资产白名单必须恰好是 Windows/macOS 两种桌面安装包；'
+        reason:
+            '镜像的资产白名单必须恰好是 Windows/macOS 两种桌面安装包；'
             '放进 APK 就把安卓装不上的包塞给了桥的客户端',
       );
     });
@@ -186,21 +199,26 @@ void main() {
         final String body = file.readAsStringSync();
 
         // 同样只解析赋值右值，绕开注释。
-        for (final RegExpMatch m
-            in RegExp(r'ROLLING_DEBUG_TAG=(\S+)').allMatches(body)) {
+        for (final RegExpMatch m in RegExp(
+          r'ROLLING_DEBUG_TAG=(\S+)',
+        ).allMatches(body)) {
           assignments++;
           final String tag = m.group(1)!;
           expect(
             tag.contains('fushi'),
             isTrue,
-            reason: '${parts.last} 的 rolling tag 是 $tag——'
+            reason:
+                '${parts.last} 的 rolling tag 是 $tag——'
                 '不带产品族的 tag 会让两族资产挂在同一个 release 上，'
                 'prune 按平台取 top N seq 时低 seq 的那一族每次被删光',
           );
         }
       }
-      expect(assignments, greaterThanOrEqualTo(5),
-          reason: 'android 1 处 + desktop 4 处，共 5 处赋值；实际 $assignments');
+      expect(
+        assignments,
+        greaterThanOrEqualTo(5),
+        reason: 'android 1 处 + desktop 4 处，共 5 处赋值；实际 $assignments',
+      );
     });
   });
 }

@@ -27,8 +27,9 @@ void main() {
 
   late Directory pathProviderDir;
   setUpAll(() {
-    pathProviderDir =
-        Directory.systemTemp.createTempSync('fushi_remote_video_dl_pp');
+    pathProviderDir = Directory.systemTemp.createTempSync(
+      'fushi_remote_video_dl_pp',
+    );
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
       (MethodCall call) async => pathProviderDir.path,
@@ -55,8 +56,9 @@ void main() {
     db = FushiDatabase.forTesting(NativeDatabase.memory());
     final PreferencesRepository prefs = PreferencesRepository(db);
     await prefs.loadFromDb();
-    final Directory storeDir =
-        Directory.systemTemp.createTempSync('fushi_remote_video_dl_store');
+    final Directory storeDir = Directory.systemTemp.createTempSync(
+      'fushi_remote_video_dl_store',
+    );
     appModel = AppModel(testPlatformServices())
       ..wireDatabaseForTesting(db)
       ..wireLocalAudioForTesting(prefsRepo: prefs, databaseDirectory: storeDir);
@@ -67,38 +69,42 @@ void main() {
   });
 
   Widget buildApp({required RemoteVideoClient client}) => ProviderScope(
-        overrides: <Override>[appProvider.overrideWith((ref) => appModel)],
-        child: TranslationProvider(
-          child: MaterialApp(
-            home: Scaffold(
-              body: HomeVideoPage(
-                repo: VideoBookRepository(db),
-                // #792 分区化：home 分区只渲染 dashboard 概览，远端占位卡所在的
-                // 混排墙（_buildLocalVideoSlivers）搬进了 series 分区，钉住它。
-                section: VideoLibrarySection.allVideos,
-                remoteVideoClientLoader: () async => client,
-                remoteVideoDownloadDestination: (RemoteVideoInfo v) async =>
-                    File('${pathProviderDir.path}/${v.id.hashCode}.mp4'),
-              ),
-            ),
+    overrides: <Override>[appProvider.overrideWith((ref) => appModel)],
+    child: TranslationProvider(
+      child: MaterialApp(
+        home: Scaffold(
+          body: HomeVideoPage(
+            repo: VideoBookRepository(db),
+            // #792 分区化：home 分区只渲染 dashboard 概览，远端占位卡所在的
+            // 混排墙（_buildLocalVideoSlivers）搬进了 series 分区，钉住它。
+            section: VideoLibrarySection.allVideos,
+            remoteVideoClientLoader: () async => client,
+            remoteVideoDownloadDestination: (RemoteVideoInfo v) async =>
+                File('${pathProviderDir.path}/${v.id.hashCode}.mp4'),
           ),
         ),
-      );
+      ),
+    ),
+  );
 
   testWidgets('#6 远端与本地同 bookUid 的视频在配对区被去重隐藏', (WidgetTester tester) async {
     // 本地已有 video/dup（与远端某条同 id）。
-    await db.upsertVideoBook(const VideoBooksCompanion(
-      bookUid: Value('video/dup'),
-      title: Value('Local Dup'),
-      videoPath: Value('/abs/dup.mp4'),
-    ));
+    await db.upsertVideoBook(
+      const VideoBooksCompanion(
+        bookUid: Value('video/dup'),
+        title: Value('Local Dup'),
+        videoPath: Value('/abs/dup.mp4'),
+      ),
+    );
 
-    await tester.pumpWidget(buildApp(
-      client: _ListFakeRemoteVideoClient(<RemoteVideoInfo>[
-        RemoteVideoInfo(id: 'video/dup', title: 'Dup On Remote'),
-        RemoteVideoInfo(id: 'video/only-remote', title: 'Only Remote'),
-      ]),
-    ));
+    await tester.pumpWidget(
+      buildApp(
+        client: _ListFakeRemoteVideoClient(<RemoteVideoInfo>[
+          RemoteVideoInfo(id: 'video/dup', title: 'Dup On Remote'),
+          RemoteVideoInfo(id: 'video/only-remote', title: 'Only Remote'),
+        ]),
+      ),
+    );
     await tester.pumpAndSettle();
 
     // 去重：远端的 Dup 卡片不再出现，只剩 only-remote。
@@ -124,9 +130,9 @@ void main() {
       find.byKey(const ValueKey<String>('remote_video_card_remote_video-1')),
     );
     await tester.pumpAndSettle();
-    await tester.longPress(find.byKey(
-      const ValueKey<String>('remote_video_card_remote_video-1'),
-    ));
+    await tester.longPress(
+      find.byKey(const ValueKey<String>('remote_video_card_remote_video-1')),
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.text(t.remote_video_download));
     await tester.pump();
@@ -134,7 +140,8 @@ void main() {
 
     expect(
       find.byKey(
-          const ValueKey<String>('remote_video_downloading_remote_video-1')),
+        const ValueKey<String>('remote_video_downloading_remote_video-1'),
+      ),
       findsOneWidget,
     );
 
@@ -144,9 +151,9 @@ void main() {
   });
 
   test('#3 源码守卫：视频/书下载 client==null 走明确提示分支（不再静默 return）', () {
-    final String video =
-        File('lib/src/pages/implementations/home_video_page.dart')
-            .readAsStringSync();
+    final String video = File(
+      'lib/src/pages/implementations/home_video_page.dart',
+    ).readAsStringSync();
     // _downloadRemote 的 client==null 分支里必须弹 remote_video_unavailable。
     expect(video, contains('t.remote_video_unavailable'));
     // 下载必须接 onProgress 才能给进行中反馈。
@@ -169,9 +176,10 @@ class _ListFakeRemoteVideoClient implements RemoteVideoClient {
   Future<List<RemoteVideoInfo>> listRemoteVideos() async => _videos;
 
   @override
-  Future<RemoteVideoStreamUrls> remoteVideoStreamUrls(String id,
-          {int episodeIndex = 0}) async =>
-      const RemoteVideoStreamUrls(streamUrl: 'http://x/stream');
+  Future<RemoteVideoStreamUrls> remoteVideoStreamUrls(
+    String id, {
+    int episodeIndex = 0,
+  }) async => const RemoteVideoStreamUrls(streamUrl: 'http://x/stream');
 
   @override
   Future<void> getRemoteVideoSubtitle(
@@ -197,8 +205,7 @@ class _ListFakeRemoteVideoClient implements RemoteVideoClient {
   Future<({int positionMs, int updatedAtMs})> remoteVideoPosition(
     String id, {
     int episodeIndex = 0,
-  }) async =>
-      (positionMs: 0, updatedAtMs: 0);
+  }) async => (positionMs: 0, updatedAtMs: 0);
 
   @override
   Future<void> putRemoteVideoPosition(
@@ -217,13 +224,14 @@ class _GatedFakeRemoteVideoClient implements RemoteVideoClient {
 
   @override
   Future<List<RemoteVideoInfo>> listRemoteVideos() async => <RemoteVideoInfo>[
-        RemoteVideoInfo(id: 'remote/video-1', title: 'Gated'),
-      ];
+    RemoteVideoInfo(id: 'remote/video-1', title: 'Gated'),
+  ];
 
   @override
-  Future<RemoteVideoStreamUrls> remoteVideoStreamUrls(String id,
-          {int episodeIndex = 0}) async =>
-      const RemoteVideoStreamUrls(streamUrl: 'http://x/stream');
+  Future<RemoteVideoStreamUrls> remoteVideoStreamUrls(
+    String id, {
+    int episodeIndex = 0,
+  }) async => const RemoteVideoStreamUrls(streamUrl: 'http://x/stream');
 
   @override
   Future<void> getRemoteVideoSubtitle(
@@ -250,8 +258,7 @@ class _GatedFakeRemoteVideoClient implements RemoteVideoClient {
   Future<({int positionMs, int updatedAtMs})> remoteVideoPosition(
     String id, {
     int episodeIndex = 0,
-  }) async =>
-      (positionMs: 0, updatedAtMs: 0);
+  }) async => (positionMs: 0, updatedAtMs: 0);
 
   @override
   Future<void> putRemoteVideoPosition(

@@ -7,13 +7,14 @@ import 'package:fushi/utils.dart';
 class AudioField extends BaseAudioField {
   /// Initialise this field with the predetermined and hardset values.
   AudioField._privateConstructor()
-      : super(
-          uniqueKey: key,
-          label: 'Term Audio',
-          description: 'Audio pertaining to the term. Text field can be used'
-              ' to enter search terms for audio sources.',
-          icon: Icons.audiotrack_outlined,
-        );
+    : super(
+        uniqueKey: key,
+        label: 'Term Audio',
+        description:
+            'Audio pertaining to the term. Text field can be used'
+            ' to enter search terms for audio sources.',
+        icon: Icons.audiotrack_outlined,
+      );
 
   /// Get the singleton instance of this field.
   static AudioField get instance => _instance;

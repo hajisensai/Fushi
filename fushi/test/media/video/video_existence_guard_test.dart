@@ -8,8 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// `isLocalVideoResourceMissing(` 短路；以及缺失态 spinner 短路与缺失对话框复用既有
 /// 删除序列。纯字符串静态守卫，不跑 libmpv。
 void main() {
-  const String pagePath =
-      'lib/src/pages/implementations/video_fushi_page.dart';
+  const String pagePath = 'lib/src/pages/implementations/video_fushi_page.dart';
   late String source;
 
   setUpAll(() {
@@ -30,8 +29,11 @@ void main() {
     final int checkAt = body.indexOf('isLocalVideoResourceMissing(');
     final int loadAt = body.indexOf('controller.load(');
     expect(checkAt, greaterThanOrEqualTo(0), reason: '缺存在性校验 → 文件缺失会无限转圈');
-    expect(loadAt, greaterThan(checkAt),
-        reason: '存在性校验必须在 controller.load 之前短路');
+    expect(
+      loadAt,
+      greaterThan(checkAt),
+      reason: '存在性校验必须在 controller.load 之前短路',
+    );
   });
 
   test('缺失态 _missingResource 在 spinner 判据之前短路', () {
@@ -42,10 +44,16 @@ void main() {
     // `_buildLoadingBody()` 调用点；顺序契约（缺失分支必须在加载分支前）不变。
     final int branchAt = source.indexOf(': _missingResource');
     final int loadingAt = source.indexOf('_buildLoadingBody()');
-    expect(branchAt, greaterThanOrEqualTo(0),
-        reason: 'build 必须有 _missingResource 分支');
-    expect(loadingAt, greaterThan(branchAt),
-        reason: '_missingResource 分支必须在加载转圈判据之前（否则仍无限转圈）');
+    expect(
+      branchAt,
+      greaterThanOrEqualTo(0),
+      reason: 'build 必须有 _missingResource 分支',
+    );
+    expect(
+      loadingAt,
+      greaterThan(branchAt),
+      reason: '_missingResource 分支必须在加载转圈判据之前（否则仍无限转圈）',
+    );
   });
 
   test('缺失态删除复用既有删除序列 + 二次确认', () {
@@ -53,8 +61,11 @@ void main() {
     // 压缩）已从页面收进仓储的单一入口 deleteVideoBookAndReclaimAssets，页面只
     // 调它一处；断言因此拆成两半，避免盯着页面里那三行字面量、被一次正当的收口
     // 重构撞成假红，也避免只认入口名而放过「入口自己少做了一步」。
-    expect(source.contains('deleteVideoBookAndReclaimAssets('), isTrue,
-        reason: '缺失态删除必须复用仓储的完整删除入口，不得在页面另写删除序列');
+    expect(
+      source.contains('deleteVideoBookAndReclaimAssets('),
+      isTrue,
+      reason: '缺失态删除必须复用仓储的完整删除入口，不得在页面另写删除序列',
+    );
 
     final String repo = File(
       '../packages/fushi_engine/lib/media/video/video_book_repository.dart',
@@ -62,15 +73,15 @@ void main() {
     const String implSignature =
         'Future<int> _deleteVideoBooksAndReclaimAssetsUnlocked(';
     final int implAt = repo.indexOf(implSignature);
-    expect(implAt, greaterThanOrEqualTo(0),
-        reason: '删除入口的实现体消失了；改名了就同步改本守卫');
+    expect(implAt, greaterThanOrEqualTo(0), reason: '删除入口的实现体消失了；改名了就同步改本守卫');
     // 必须把范围夹到**方法体内**：截到文件末尾的话，后面那些方法的**定义行**
     // （`Future<void> compactAfterVideoDeleteBestEffort()`）会让 contains 恒真，
     // 断言变空——实测把调用删掉后守卫照样绿，就是这么发现的。
-    final int implEnd = repo.indexOf(RegExp(r'\n  (?:///|Future<|@)'),
-        implAt + implSignature.length);
-    expect(implEnd, greaterThan(implAt),
-        reason: '找不到删除入口实现体的结尾（下一个同级成员）');
+    final int implEnd = repo.indexOf(
+      RegExp(r'\n  (?:///|Future<|@)'),
+      implAt + implSignature.length,
+    );
+    expect(implEnd, greaterThan(implAt), reason: '找不到删除入口实现体的结尾（下一个同级成员）');
     final String impl = repo.substring(implAt, implEnd);
     for (final String step in <String>[
       // BUG-2754：删行收成单事务批量 deleteVideoBooks、回收收成批量版。
@@ -78,8 +89,11 @@ void main() {
       '_reclaimDeletedVideoBooksAssetsUnlocked(',
       'compactAfterVideoDeleteBestEffort(',
     ]) {
-      expect(impl.contains(step), isTrue,
-          reason: '删除入口少了「$step」这一步——缺失态删除会留下 app-owned 残留');
+      expect(
+        impl.contains(step),
+        isTrue,
+        reason: '删除入口少了「$step」这一步——缺失态删除会留下 app-owned 残留',
+      );
     }
 
     // 二次确认走既有 video_delete_confirm。

@@ -34,17 +34,20 @@ void main() {
     await tester.pump(const Duration(seconds: 2));
     final AppModel appModel = await readyAppModel(tester);
 
-    final Directory bookDir =
-        Directory.systemTemp.createTempSync('manga_chrome_shot_');
+    final Directory bookDir = Directory.systemTemp.createTempSync(
+      'manga_chrome_shot_',
+    );
     const TestImageGenerator gen = TestImageGenerator();
     final Directory images = Directory(p.join(bookDir.path, 'images'))
       ..createSync();
-    File(p.join(images.path, 'p001.png'))
-        .writeAsBytesSync(gen.pngBytes(width: 800, height: 1200, seed: 1));
-    File(p.join(images.path, 'p002.png'))
-        .writeAsBytesSync(gen.pngBytes(width: 800, height: 1200, seed: 2));
-    File(p.join(bookDir.path, 'manga.json')).writeAsStringSync(jsonEncode(
-      <String, Object?>{
+    File(
+      p.join(images.path, 'p001.png'),
+    ).writeAsBytesSync(gen.pngBytes(width: 800, height: 1200, seed: 1));
+    File(
+      p.join(images.path, 'p002.png'),
+    ).writeAsBytesSync(gen.pngBytes(width: 800, height: 1200, seed: 2));
+    File(p.join(bookDir.path, 'manga.json')).writeAsStringSync(
+      jsonEncode(<String, Object?>{
         'pages': <Map<String, Object?>>[
           for (final String name in <String>['p001.png', 'p002.png'])
             <String, Object?>{
@@ -54,19 +57,21 @@ void main() {
               'blocks': <Object?>[],
             },
         ],
-      },
-    ));
+      }),
+    );
     const String bookKey = 'chrome-shot-manga';
-    await appModel.database.insertEpubBook(EpubBooksCompanion.insert(
-      bookKey: bookKey,
-      title: 'ゆるキャン△ 第1巻',
-      epubPath: 'manga.json',
-      extractDir: bookDir.path,
-      chapterCount: 2,
-      chaptersJson: '[]',
-      importedAt: DateTime.now().millisecondsSinceEpoch,
-      format: const Value<String>('manga'),
-    ));
+    await appModel.database.insertEpubBook(
+      EpubBooksCompanion.insert(
+        bookKey: bookKey,
+        title: 'ゆるキャン△ 第1巻',
+        epubPath: 'manga.json',
+        extractDir: bookDir.path,
+        chapterCount: 2,
+        chaptersJson: '[]',
+        importedAt: DateTime.now().millisecondsSinceEpoch,
+        format: const Value<String>('manga'),
+      ),
+    );
 
     final bool floatingBefore = appModel.mangaChromeFloating;
     try {
@@ -75,12 +80,17 @@ void main() {
         final NavigatorState nav = appModel.navigatorKey.currentState!;
         final BuildContext navContext = nav.context;
         if (!navContext.mounted) fail('navigator context unmounted');
-        unawaited(nav.push(adaptivePageRoute<void>(
-          context: navContext,
-          builder: (BuildContext context) => const FushiAppUiScaleNeutralizer(
-            child: MangaFushiPage(item: null, bookKey: bookKey),
+        unawaited(
+          nav.push(
+            adaptivePageRoute<void>(
+              context: navContext,
+              builder: (BuildContext context) =>
+                  const FushiAppUiScaleNeutralizer(
+                    child: MangaFushiPage(item: null, bookKey: bookKey),
+                  ),
+            ),
           ),
-        )));
+        );
         for (int i = 0; i < 40; i++) {
           await tester.pump(const Duration(milliseconds: 250));
           if (find
@@ -92,19 +102,23 @@ void main() {
         }
         await tester.pump(const Duration(seconds: 2));
         final String tag = floating ? 'floating' : 'pinned';
-        final ObserveShot shot =
-            await captureFlutterFrame(tester, '01-manga-chrome-$tag');
+        final ObserveShot shot = await captureFlutterFrame(
+          tester,
+          '01-manga-chrome-$tag',
+        );
         expect(shot.saved, isTrue);
         final bool barPainted = find
             .byKey(const ValueKey<String>('manga_reader_top_bar'))
             .evaluate()
             .isNotEmpty;
         final Rect body = tester.getRect(
-            find.byKey(const ValueKey<String>('manga_content_ready')));
-        debugPrint('[manga-chrome] floating=$floating barPainted=$barPainted '
-            'bodyTop=${body.top} shot=${shot.path}');
-        expect(barPainted, !floating,
-            reason: '固定态栏常驻；悬浮态默认收起');
+          find.byKey(const ValueKey<String>('manga_content_ready')),
+        );
+        debugPrint(
+          '[manga-chrome] floating=$floating barPainted=$barPainted '
+          'bodyTop=${body.top} shot=${shot.path}',
+        );
+        expect(barPainted, !floating, reason: '固定态栏常驻；悬浮态默认收起');
         expect(body.top > 0, !floating, reason: '固定态正文让位；悬浮态全出血');
         nav.pop();
         await tester.pump(const Duration(seconds: 1));

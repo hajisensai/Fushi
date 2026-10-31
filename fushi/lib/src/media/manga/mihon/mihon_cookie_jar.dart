@@ -56,11 +56,10 @@ List<MangaCookie> decodeMihonCookieWire(String raw) {
 }
 
 String encodeMihonCookieWire(List<MangaCookie> cookies) => base64Encode(
-      utf8.encode(
-        jsonEncode(
-            cookies.map((MangaCookie cookie) => cookie.toJson()).toList()),
-      ),
-    );
+  utf8.encode(
+    jsonEncode(cookies.map((MangaCookie cookie) => cookie.toJson()).toList()),
+  ),
+);
 
 /// Mihon 扩展的登录态真值（BUG-2425）。
 ///

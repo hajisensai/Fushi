@@ -11,7 +11,11 @@ import 'package:fushi_server/src/server_runtime.dart';
 
 /// 一次命令调用的上下文。
 class CliContext {
-  const CliContext({required this.configFile, required this.verbose, this.commandLabel});
+  const CliContext({
+    required this.configFile,
+    required this.verbose,
+    this.commandLabel,
+  });
 
   final File configFile;
   final bool verbose;

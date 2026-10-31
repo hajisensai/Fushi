@@ -9,30 +9,36 @@ import 'package:fushi_core/fushi_core.dart';
 import '../helpers/test_platform_services.dart';
 
 void main() {
-  testWidgets('folder mode saves to source and disables metadata actions',
-      (WidgetTester tester) async {
+  testWidgets('folder mode saves to source and disables metadata actions', (
+    WidgetTester tester,
+  ) async {
     final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
-    final int sourceId =
-        await db.insertMediaSource(MediaSourcesCompanion.insert(
-      label: 'Lessons',
-      mediaKind: 'video',
-      rootPath: '/lessons',
-      createdAt: 1,
-    ));
+    final int sourceId = await db.insertMediaSource(
+      MediaSourcesCompanion.insert(
+        label: 'Lessons',
+        mediaKind: 'video',
+        rootPath: '/lessons',
+        createdAt: 1,
+      ),
+    );
     final AppModel appModel = AppModel(testPlatformServices())
       ..wireDatabaseForTesting(db);
     int libraryChanges = 0;
-    await tester.pumpWidget(ProviderScope(
-      overrides: <Override>[appProvider.overrideWith((ref) => appModel)],
-      child: MaterialApp(
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: <Override>[appProvider.overrideWith((ref) => appModel)],
+        child: MaterialApp(
           home: Scaffold(
-              body: MediaSourcesView(
-        mediaKind: 'video',
-        onScrapeSource: (source) async {},
-        onLibraryChanged: () => libraryChanges++,
-      ))),
-    ));
+            body: MediaSourcesView(
+              mediaKind: 'video',
+              onScrapeSource: (source) async {},
+              onLibraryChanged: () => libraryChanges++,
+            ),
+          ),
+        ),
+      ),
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('Source scrape settings'));
     await tester.pumpAndSettle();
@@ -44,7 +50,9 @@ void main() {
     await tester.tap(find.text('SAVE'));
     await tester.pumpAndSettle();
     expect(
-        (await db.getMediaSourceById(sourceId))!.videoGroupingMode, 'folder');
+      (await db.getMediaSourceById(sourceId))!.videoGroupingMode,
+      'folder',
+    );
     expect(find.byTooltip('Scrape this source'), findsNothing);
     expect(libraryChanges, 1);
     await tester.tap(find.byTooltip('Source scrape settings'));
@@ -54,7 +62,9 @@ void main() {
     await tester.tap(find.text('CANCEL'));
     await tester.pumpAndSettle();
     expect(
-        (await db.getMediaSourceById(sourceId))!.videoGroupingMode, 'folder');
+      (await db.getMediaSourceById(sourceId))!.videoGroupingMode,
+      'folder',
+    );
     expect(libraryChanges, 1, reason: '取消不触发媒体库刷新');
   });
 }

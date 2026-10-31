@@ -14,10 +14,12 @@ import 'package:fushi_core/fushi_core.dart';
 /// - typed DAO 落库后 DB 里 media_type 列仍是裸字符串（回归证明枚举化零串漂移）。
 void main() {
   test('dbValue 集合守卫：恰为 {epub, srt, video, game}', () {
-    expect(
-      MediaKind.values.map((MediaKind k) => k.dbValue).toSet(),
-      <String>{'epub', 'srt', 'video', 'game'},
-    );
+    expect(MediaKind.values.map((MediaKind k) => k.dbValue).toSet(), <String>{
+      'epub',
+      'srt',
+      'video',
+      'game',
+    });
     // 显式钉每个成员的串（防有人调换赋值）。
     expect(MediaKind.epub.dbValue, 'epub');
     expect(MediaKind.srt.dbValue, 'srt');
@@ -32,8 +34,10 @@ void main() {
     expect(MediaKind.tryParse('game'), MediaKind.game);
     expect(MediaKind.tryParse(null), isNull);
     expect(
-        MediaKind.tryParse(FushiDatabase.collectionTombstoneSentinel), isNull,
-        reason: "'' 哨兵（合集级墓碑占位）不是种类");
+      MediaKind.tryParse(FushiDatabase.collectionTombstoneSentinel),
+      isNull,
+      reason: "'' 哨兵（合集级墓碑占位）不是种类",
+    );
     // 其它值域的字符串绝不误命中语义（'book' 是活动事件域、'srtbook' 是
     // Profile 绑定域），也涵盖对端未来新增的未知种类。
     expect(MediaKind.tryParse('book'), isNull);
@@ -45,39 +49,49 @@ void main() {
     expect(MediaKind.epub.compositeKey('bookKey'), 'epub|bookKey');
     expect(MediaKind.srt.compositeKey('uid-1'), 'srt|uid-1');
     expect(MediaKind.video.compositeKey('video/ep1'), 'video|video/ep1');
-    expect(MediaKind.game.compositeKey('1753400000000001'),
-        'game|1753400000000001');
+    expect(
+      MediaKind.game.compositeKey('1753400000000001'),
+      'game|1753400000000001',
+    );
     // entryKey 原样拼接，不做任何转义（含 '|' 的键也照旧——与旧插值同语义）。
     expect(MediaKind.epub.compositeKey('a|b'), 'epub|a|b');
   });
 
-  test('typed DAO 落库串不变：addToCollection(MediaKind.game) → DB 读回 game 串',
-      () async {
-    final FushiDatabase db =
-        FushiDatabase.forTesting(NativeDatabase.memory());
-    addTearDown(db.close);
-    final int c = await db.createMediaCollection('C');
-    await db.addToCollection(c, MediaKind.game, 'g1');
-    await db.addToCollection(c, MediaKind.epub, 'b1');
-    await db.upsertShelfOrder(MediaKind.video, 'v1', 3);
+  test(
+    'typed DAO 落库串不变：addToCollection(MediaKind.game) → DB 读回 game 串',
+    () async {
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
+      addTearDown(db.close);
+      final int c = await db.createMediaCollection('C');
+      await db.addToCollection(c, MediaKind.game, 'g1');
+      await db.addToCollection(c, MediaKind.epub, 'b1');
+      await db.upsertShelfOrder(MediaKind.video, 'v1', 3);
 
-    final List<MediaCollectionItemRow> items = await db.getCollectionItems(c);
-    expect(
-      items.map((MediaCollectionItemRow m) => m.mediaType).toList(),
-      <String>['game', 'epub'],
-      reason: 'media_collection_items.media_type 列仍是裸字符串',
-    );
-    final ShelfEntryRow shelf =
-        (await db.getShelfEntry(MediaKind.video, 'v1'))!;
-    expect(shelf.mediaType, 'video',
-        reason: 'shelf_entries.media_type 列仍是裸字符串');
+      final List<MediaCollectionItemRow> items = await db.getCollectionItems(c);
+      expect(
+        items.map((MediaCollectionItemRow m) => m.mediaType).toList(),
+        <String>['game', 'epub'],
+        reason: 'media_collection_items.media_type 列仍是裸字符串',
+      );
+      final ShelfEntryRow shelf = (await db.getShelfEntry(
+        MediaKind.video,
+        'v1',
+      ))!;
+      expect(
+        shelf.mediaType,
+        'video',
+        reason: 'shelf_entries.media_type 列仍是裸字符串',
+      );
 
-    // raw 版对未知种类原样透传（合并/转移路径的行为契约）。
-    await db.addToCollectionRaw(c, 'book', 'legacy');
-    final List<MediaCollectionItemRow> after = await db.getCollectionItems(c);
-    expect(
-      after.map((MediaCollectionItemRow m) => m.mediaType).toList(),
-      <String>['game', 'epub', 'book'],
-    );
-  });
+      // raw 版对未知种类原样透传（合并/转移路径的行为契约）。
+      await db.addToCollectionRaw(c, 'book', 'legacy');
+      final List<MediaCollectionItemRow> after = await db.getCollectionItems(c);
+      expect(
+        after.map((MediaCollectionItemRow m) => m.mediaType).toList(),
+        <String>['game', 'epub', 'book'],
+      );
+    },
+  );
 }

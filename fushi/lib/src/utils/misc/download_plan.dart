@@ -14,7 +14,7 @@ import 'package:flutter/foundation.dart';
 @immutable
 class DownloadSource {
   const DownloadSource({required this.url, this.remoteOffset = 0})
-      : assert(remoteOffset >= 0, 'remoteOffset 不能为负');
+    : assert(remoteOffset >= 0, 'remoteOffset 不能为负');
 
   final String url;
 
@@ -46,8 +46,8 @@ class DownloadPart {
     required this.length,
     required this.sources,
     this.sha256,
-  })  : assert(offset >= 0, 'offset 不能为负'),
-        assert(length > 0, 'length 必须为正');
+  }) : assert(offset >= 0, 'offset 不能为负'),
+       assert(length > 0, 'length 必须为正');
 
   final int index;
 
@@ -106,17 +106,20 @@ class DownloadPlan {
     int offset = 0;
     int index = 0;
     while (offset < totalBytes) {
-      final int length =
-          offset + partSize > totalBytes ? totalBytes - offset : partSize;
-      parts.add(DownloadPart(
-        index: index,
-        offset: offset,
-        length: length,
-        sources: <DownloadSource>[
-          for (final String url in urls)
-            DownloadSource(url: url, remoteOffset: offset),
-        ],
-      ));
+      final int length = offset + partSize > totalBytes
+          ? totalBytes - offset
+          : partSize;
+      parts.add(
+        DownloadPart(
+          index: index,
+          offset: offset,
+          length: length,
+          sources: <DownloadSource>[
+            for (final String url in urls)
+              DownloadSource(url: url, remoteOffset: offset),
+          ],
+        ),
+      );
       offset += length;
       index += 1;
     }
@@ -135,14 +138,13 @@ class DownloadPlan {
     required int totalBytes,
     String? sha256,
     String? version,
-  }) =>
-      DownloadPlan.ranged(
-        urls: urls,
-        totalBytes: totalBytes,
-        partSize: totalBytes,
-        sha256: sha256,
-        version: version,
-      );
+  }) => DownloadPlan.ranged(
+    urls: urls,
+    totalBytes: totalBytes,
+    partSize: totalBytes,
+    sha256: sha256,
+    version: version,
+  );
 
   /// 目标文件总字节数。
   final int totalBytes;
@@ -183,9 +185,7 @@ class DownloadPlan {
       expected = part.end;
     }
     if (expected != totalBytes) {
-      throw ArgumentError(
-        '分片总长 $expected 与 totalBytes $totalBytes 不符',
-      );
+      throw ArgumentError('分片总长 $expected 与 totalBytes $totalBytes 不符');
     }
     final Set<int> indices = parts.map((DownloadPart p) => p.index).toSet();
     if (indices.length != parts.length) {

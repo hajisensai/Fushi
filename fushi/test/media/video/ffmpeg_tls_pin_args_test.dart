@@ -12,7 +12,8 @@ import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
 /// 不出现」这两条不变量；配合 ffmpeg 源码补丁存在性守卫，覆盖到「重编时补丁不丢」。
 /// 真正的握手/钉扎生效需真机（自编 ffmpeg-kit 加载）验证，见 BUG-891。
 void main() {
-  const String pin = 'aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99:'
+  const String pin =
+      'aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99:'
       'aa:bb:cc:dd:ee:ff:00:11:22:33:44:55:66:77:88:99';
   const String remote =
       'https://192.168.31.160:38765/api/library/videos/x/stream?token=t';
@@ -23,12 +24,13 @@ void main() {
 
   group('buildFfmpegRemoteInputArgs 的 tls pin 透传（BUG-891）', () {
     test('远端 https + pin → -tls_pin_sha256 <pin>，且在 -user_agent 之前', () {
-      final List<String> args =
-          buildFfmpegRemoteInputArgs(remote, tlsPinSha256: pin);
+      final List<String> args = buildFfmpegRemoteInputArgs(
+        remote,
+        tlsPinSha256: pin,
+      );
       final int p = args.indexOf('-tls_pin_sha256');
       expect(p, greaterThanOrEqualTo(0), reason: '远端自签流必须下发 -tls_pin_sha256');
-      expect(args[p + 1], canonicalPin,
-          reason: '指纹在 Dart 侧规范成 64 位小写 hex 再下发');
+      expect(args[p + 1], canonicalPin, reason: '指纹在 Dart 侧规范成 64 位小写 hex 再下发');
       final int ua = args.indexOf('-user_agent');
       expect(p, lessThan(ua), reason: 'TLS 输入选项必须在其它输入选项/`-i` 之前');
     });
@@ -43,13 +45,19 @@ void main() {
 
     test('空/空白 pin → 不含 -tls_pin_sha256', () {
       expect(
-          buildFfmpegRemoteInputArgs(remote, tlsPinSha256: '')
-              .contains('-tls_pin_sha256'),
-          isFalse);
+        buildFfmpegRemoteInputArgs(
+          remote,
+          tlsPinSha256: '',
+        ).contains('-tls_pin_sha256'),
+        isFalse,
+      );
       expect(
-          buildFfmpegRemoteInputArgs(remote, tlsPinSha256: '   ')
-              .contains('-tls_pin_sha256'),
-          isFalse);
+        buildFfmpegRemoteInputArgs(
+          remote,
+          tlsPinSha256: '   ',
+        ).contains('-tls_pin_sha256'),
+        isFalse,
+      );
     });
 
     test('本地路径输入 → 空参数（pin 被忽略，本地无 TLS）', () {
@@ -75,10 +83,15 @@ void main() {
         ':$pin',
       ];
       for (final String spelling in spellings) {
-        expect(ffmpegTlsPinArg(spelling), canonicalPin,
-            reason: '「$spelling」应规范成唯一形态');
-        final List<String> args =
-            buildFfmpegRemoteInputArgs(remote, tlsPinSha256: spelling);
+        expect(
+          ffmpegTlsPinArg(spelling),
+          canonicalPin,
+          reason: '「$spelling」应规范成唯一形态',
+        );
+        final List<String> args = buildFfmpegRemoteInputArgs(
+          remote,
+          tlsPinSha256: spelling,
+        );
         expect(args[args.indexOf('-tls_pin_sha256') + 1], canonicalPin);
       }
     });
@@ -89,8 +102,7 @@ void main() {
       expect(ffmpegTlsPinArg(' \t\n'), isNull);
     });
 
-    test('非法指纹不丢弃（丢了 = 退回 tls_verify=0 接受任意证书），原样下发让 ffmpeg 拒绝',
-        () {
+    test('非法指纹不丢弃（丢了 = 退回 tls_verify=0 接受任意证书），原样下发让 ffmpeg 拒绝', () {
       final List<String> malformed = <String>[
         'not-a-fingerprint',
         canonicalPin.substring(0, 62), // 短了一字节
@@ -98,12 +110,20 @@ void main() {
         canonicalPin.replaceRange(0, 1, 'g'), // 非 hex
       ];
       for (final String bad in malformed) {
-        expect(ffmpegTlsPinArg(' $bad '), bad,
-            reason: '非法指纹「$bad」必须原样（trim 后）下发，不得静默丢弃');
-        final List<String> args =
-            buildFfmpegRemoteInputArgs(remote, tlsPinSha256: bad);
-        expect(args.contains('-tls_pin_sha256'), isTrue,
-            reason: '丢掉 pin 会让钉扎静默降级成无校验');
+        expect(
+          ffmpegTlsPinArg(' $bad '),
+          bad,
+          reason: '非法指纹「$bad」必须原样（trim 后）下发，不得静默丢弃',
+        );
+        final List<String> args = buildFfmpegRemoteInputArgs(
+          remote,
+          tlsPinSha256: bad,
+        );
+        expect(
+          args.contains('-tls_pin_sha256'),
+          isTrue,
+          reason: '丢掉 pin 会让钉扎静默降级成无校验',
+        );
       }
     });
   });
@@ -119,47 +139,55 @@ void main() {
     }
 
     test('句子音频 buildFfmpegClipArgs', () {
-      expectPinBeforeInput(buildFfmpegClipArgs(
-        inputPath: remote,
-        startMs: 1000,
-        endMs: 3000,
-        outputPath: '/tmp/a.aac',
-        tlsPinSha256: pin,
-      ));
+      expectPinBeforeInput(
+        buildFfmpegClipArgs(
+          inputPath: remote,
+          startMs: 1000,
+          endMs: 3000,
+          outputPath: '/tmp/a.aac',
+          tlsPinSha256: pin,
+        ),
+      );
     });
 
     test('单帧 buildFfmpegFrameArgs', () {
-      expectPinBeforeInput(buildFfmpegFrameArgs(
-        inputPath: remote,
-        outputPath: '/tmp/f.jpg',
-        atSeconds: 1.0,
-        tlsPinSha256: pin,
-      ));
+      expectPinBeforeInput(
+        buildFfmpegFrameArgs(
+          inputPath: remote,
+          outputPath: '/tmp/f.jpg',
+          atSeconds: 1.0,
+          tlsPinSha256: pin,
+        ),
+      );
     });
 
     test('cue 动图 buildFfmpegClipGifArgs', () {
-      expectPinBeforeInput(buildFfmpegClipGifArgs(
-        inputPath: remote,
-        startMs: 1000,
-        endMs: 3000,
-        outputPath: '/tmp/c.gif',
-        tlsPinSha256: pin,
-      ));
+      expectPinBeforeInput(
+        buildFfmpegClipGifArgs(
+          inputPath: remote,
+          startMs: 1000,
+          endMs: 3000,
+          outputPath: '/tmp/c.gif',
+          tlsPinSha256: pin,
+        ),
+      );
     });
 
     test('无 pin 时三个 builder 输出与旧行为一致（不含 -tls_pin_sha256）', () {
       final List<List<String>> all = <List<String>>[
         buildFfmpegClipArgs(
-            inputPath: remote,
-            startMs: 0,
-            endMs: 1000,
-            outputPath: '/tmp/a.aac'),
+          inputPath: remote,
+          startMs: 0,
+          endMs: 1000,
+          outputPath: '/tmp/a.aac',
+        ),
         buildFfmpegFrameArgs(inputPath: remote, outputPath: '/tmp/f.jpg'),
         buildFfmpegClipGifArgs(
-            inputPath: remote,
-            startMs: 0,
-            endMs: 1000,
-            outputPath: '/tmp/c.gif'),
+          inputPath: remote,
+          startMs: 0,
+          endMs: 1000,
+          outputPath: '/tmp/c.gif',
+        ),
       ];
       for (final List<String> args in all) {
         expect(args.contains('-tls_pin_sha256'), isFalse);
@@ -177,20 +205,29 @@ void main() {
           .whereType<File>()
           .where((File f) => f.path.contains('tls_pin_sha256'))
           .toList();
-      expect(hits, hasLength(1),
-          reason: '统一 FFmpeg 必须恰有一个 tls_pin_sha256 补丁，实测 $hits');
+      expect(
+        hits,
+        hasLength(1),
+        reason: '统一 FFmpeg 必须恰有一个 tls_pin_sha256 补丁，实测 $hits',
+      );
       return hits.single;
     }
 
     test('补丁文件存在', () {
-      expect(patchFile().existsSync(), isTrue,
-          reason: '统一 FFmpeg 需要此补丁加 tls_pin_sha256；不得删除');
+      expect(
+        patchFile().existsSync(),
+        isTrue,
+        reason: '统一 FFmpeg 需要此补丁加 tls_pin_sha256；不得删除',
+      );
     });
 
     test('补丁定义 AVOption + 共享助手 + 覆盖五后端 + FFmpeg 8+ 默认校验被 pin 接管', () {
       final String src = patchFile().readAsStringSync();
-      expect(src.contains('tls_pin_sha256'), isTrue,
-          reason: '必须定义 -tls_pin_sha256 AVOption');
+      expect(
+        src.contains('tls_pin_sha256'),
+        isTrue,
+        reason: '必须定义 -tls_pin_sha256 AVOption',
+      );
       expect(src.contains('ff_tls_check_cert_pin'), isTrue, reason: '共享指纹比对助手');
       // openssl=Android/iOS（FFmpegKitNext --enable-lib-openssl），gnutls=Windows
       // （MSYS2 同款配置）/ Linux，securetransport=macOS，schannel / mbedtls 也补齐。
@@ -202,13 +239,18 @@ void main() {
       // FFmpeg >= 8 默认 tls_verify=1：不在共享 open 路径里把它让给 pin，自签主机
       // 会在握手阶段就被 CA 校验拒掉，根本走不到指纹比对。
       expect(
-          RegExp(r'if \(ff_tls_has_cert_pin\(c\)\)\r?\n\+\s+c->verify = 0;')
-              .hasMatch(src),
-          isTrue,
-          reason: '设了 pin 必须在 ff_tls_open_underlying 里关掉 CA/主机名校验');
+        RegExp(
+          r'if \(ff_tls_has_cert_pin\(c\)\)\r?\n\+\s+c->verify = 0;',
+        ).hasMatch(src),
+        isTrue,
+        reason: '设了 pin 必须在 ff_tls_open_underlying 里关掉 CA/主机名校验',
+      );
       // Android 的 OpenSSL 没有可用 CA 包，默认校验开启后公网 HTTPS 全挂。
-      expect(src.contains('openssl_load_android_system_cas'), isTrue,
-          reason: 'Android 必须显式加载系统 CA 目录');
+      expect(
+        src.contains('openssl_load_android_system_cas'),
+        isTrue,
+        reason: 'Android 必须显式加载系统 CA 目录',
+      );
     });
   });
 }

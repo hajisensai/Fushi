@@ -20,10 +20,7 @@ void main() {
     });
 
     test('安全字符（日文/空格/点/下划线）原样保留——既有磁盘产物文件名不漂移', () {
-      expect(
-        safeWindowsFileName('響け！ユーフォニアム 第1話.mp4'),
-        '響け！ユーフォニアム 第1話.mp4',
-      );
+      expect(safeWindowsFileName('響け！ユーフォニアム 第1話.mp4'), '響け！ユーフォニアム 第1話.mp4');
       expect(
         safeWindowsFileName('video_playlist_list_abc123'),
         'video_playlist_list_abc123',

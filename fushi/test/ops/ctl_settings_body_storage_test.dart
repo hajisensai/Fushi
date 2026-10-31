@@ -170,18 +170,23 @@ void main() {
       await entries.remove!(sc, 'books:keyA');
       expect(deletedBooks, <String>['keyA']);
 
-      await expectLater(entries.remove!(sc, 'no-separator'), throwsArgumentError);
-      await expectLater(entries.remove!(sc, 'covers:/gone'), throwsArgumentError);
+      await expectLater(
+        entries.remove!(sc, 'no-separator'),
+        throwsArgumentError,
+      );
+      await expectLater(
+        entries.remove!(sc, 'covers:/gone'),
+        throwsArgumentError,
+      );
     });
   });
 
-  testWidgets('anime4k_delete 是破坏性动作，执行后回报删除清单', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('anime4k_delete 是破坏性动作，执行后回报删除清单', (WidgetTester tester) async {
     await pumpContext(tester);
     final SettingsActionItem item =
         items().singleWhere(
-              (SettingsItem i) => i.id == '${kCtlStorageIdPrefix}anime4k_delete',
+              (SettingsItem i) =>
+                  i.id == '${kCtlStorageIdPrefix}anime4k_delete',
             )
             as SettingsActionItem;
     expect(item.cli!.confirm, isTrue);
@@ -198,6 +203,9 @@ void main() {
   test('ids 唯一且都带 storage.cli. 前缀', () {
     final List<String> ids = items().map((SettingsItem i) => i.id).toList();
     expect(ids.toSet().length, ids.length);
-    expect(ids.every((String id) => id.startsWith(kCtlStorageIdPrefix)), isTrue);
+    expect(
+      ids.every((String id) => id.startsWith(kCtlStorageIdPrefix)),
+      isTrue,
+    );
   });
 }

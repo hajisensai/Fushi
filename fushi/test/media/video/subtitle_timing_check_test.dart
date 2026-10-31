@@ -74,8 +74,9 @@ Dialogue: 0,0:23:11.00,0:23:14.20,Default,,0,0,0,,おわり
       expect(summarizeSubtitleTiming('').isEmpty, isTrue);
       expect(summarizeSubtitleTiming('   \n  ').isEmpty, isTrue);
       expect(
-        summarizeSubtitleTiming('<html><body>403 Forbidden</body></html>')
-            .isEmpty,
+        summarizeSubtitleTiming(
+          '<html><body>403 Forbidden</body></html>',
+        ).isEmpty,
         isTrue,
       );
     });
@@ -84,8 +85,9 @@ Dialogue: 0,0:23:11.00,0:23:14.20,Default,,0,0,0,,おわり
   group('checkSubtitleTiming', () {
     // 一集 24 分钟，字幕最后一句 23:20 —— 正常形状。
     const int episodeMs = 24 * 60 * 1000;
-    final SubtitleTimingSummary healthy =
-        summarizeSubtitleTiming(_srt(count: 300, lastEndSeconds: 23 * 60 + 20));
+    final SubtitleTimingSummary healthy = summarizeSubtitleTiming(
+      _srt(count: 300, lastEndSeconds: 23 * 60 + 20),
+    );
 
     test('正常一集 → ok', () {
       expect(
@@ -112,8 +114,9 @@ Dialogue: 0,0:23:11.00,0:23:14.20,Default,,0,0,0,,おわり
     });
 
     test('只覆盖到一半以下 → 可疑但**不拒收**（signs/歌词轨是合法的）', () {
-      final SubtitleTimingSummary partial =
-          summarizeSubtitleTiming(_srt(count: 12, lastEndSeconds: 90));
+      final SubtitleTimingSummary partial = summarizeSubtitleTiming(
+        _srt(count: 12, lastEndSeconds: 90),
+      );
       final SubtitleTimingCheck check = checkSubtitleTiming(
         partial,
         video: const KnownVideoDuration.probed(episodeMs),
@@ -125,13 +128,16 @@ Dialogue: 0,0:23:11.00,0:23:14.20,Default,,0,0,0,,おわり
     test('视频时长未知 → 只做内容自检，绝不因为探测失败就拒收', () {
       expect(checkSubtitleTiming(healthy).verdict, SubtitleTimingVerdict.ok);
       expect(
-        checkSubtitleTiming(healthy, video: const KnownVideoDuration.probed(0))
-            .verdict,
+        checkSubtitleTiming(
+          healthy,
+          video: const KnownVideoDuration.probed(0),
+        ).verdict,
         SubtitleTimingVerdict.ok,
       );
       // 时长未知时，即便字幕长达 5 小时也只能放行——没有可比对的事实。
-      final SubtitleTimingSummary huge =
-          summarizeSubtitleTiming(_srt(count: 10, lastEndSeconds: 5 * 3600));
+      final SubtitleTimingSummary huge = summarizeSubtitleTiming(
+        _srt(count: 10, lastEndSeconds: 5 * 3600),
+      );
       expect(checkSubtitleTiming(huge).verdict, SubtitleTimingVerdict.ok);
     });
 
@@ -146,8 +152,9 @@ Dialogue: 0,0:23:11.00,0:23:14.20,Default,,0,0,0,,おわり
 
     test('刮削 runtime 的容差必须比 ffprobe 宽（播出时长含广告位、只精确到分钟）', () {
       // 字幕跑到 30 分钟，视频「24 分钟」。
-      final SubtitleTimingSummary long =
-          summarizeSubtitleTiming(_srt(count: 50, lastEndSeconds: 30 * 60));
+      final SubtitleTimingSummary long = summarizeSubtitleTiming(
+        _srt(count: 50, lastEndSeconds: 30 * 60),
+      );
       expect(
         checkSubtitleTiming(
           long,
@@ -194,11 +201,14 @@ Dialogue: 0,0:23:11.00,0:23:14.20,Default,,0,0,0,,おわり
 
     test('短片不被比例项误伤（5 分钟 PV 的 15% 只有 45 秒）', () {
       const int pvMs = 5 * 60 * 1000;
-      final SubtitleTimingSummary s =
-          summarizeSubtitleTiming(_srt(count: 20, lastEndSeconds: 5 * 60 + 30));
+      final SubtitleTimingSummary s = summarizeSubtitleTiming(
+        _srt(count: 20, lastEndSeconds: 5 * 60 + 30),
+      );
       expect(
-        checkSubtitleTiming(s, video: const KnownVideoDuration.probed(pvMs))
-            .verdict,
+        checkSubtitleTiming(
+          s,
+          video: const KnownVideoDuration.probed(pvMs),
+        ).verdict,
         SubtitleTimingVerdict.ok,
       );
     });

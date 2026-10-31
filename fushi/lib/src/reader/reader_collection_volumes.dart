@@ -73,12 +73,14 @@ Future<ReaderVolumeContext?> loadReaderVolumeContext(
   final Map<String, int> primary = await db.getPrimaryCollectionIdByEntry();
   final int? collectionId = primary['${MediaKind.epub.dbValue}|$bookUid'];
   if (collectionId == null) return null;
-  final MediaCollectionRow? collection =
-      await db.getMediaCollectionById(collectionId);
+  final MediaCollectionRow? collection = await db.getMediaCollectionById(
+    collectionId,
+  );
   if (collection == null) return null;
   final List<ReaderVolume> volumes = <ReaderVolume>[];
-  for (final MediaCollectionItemRow item
-      in await db.getCollectionItems(collectionId)) {
+  for (final MediaCollectionItemRow item in await db.getCollectionItems(
+    collectionId,
+  )) {
     if (item.mediaType != MediaKind.epub.dbValue) continue;
     final EpubBookRow? row = await db.getEpubBookByUid(item.entryKey);
     if (row == null) continue; // 孤儿成员（书已删）→ 读取期过滤。
@@ -93,8 +95,9 @@ Future<ReaderVolumeContext?> loadReaderVolumeContext(
     );
   }
   if (volumes.length < 2) return null;
-  final int currentIndex =
-      volumes.indexWhere((ReaderVolume v) => v.uid == bookUid);
+  final int currentIndex = volumes.indexWhere(
+    (ReaderVolume v) => v.uid == bookUid,
+  );
   if (currentIndex < 0) return null;
   return ReaderVolumeContext(
     collectionId: collectionId,
@@ -134,8 +137,10 @@ VolumePeekParse parseVolumeBookForPeek(
     book.images;
     return (book: book, cacheFailures: const <EpubImageIndexCacheFailure>[]);
   }
-  final EpubImageIndexLoad load =
-      loadEpubImagesWithCache(book, File(cacheFile));
+  final EpubImageIndexLoad load = loadEpubImagesWithCache(
+    book,
+    File(cacheFile),
+  );
   return (book: book, cacheFailures: load.failures);
 }
 
@@ -149,10 +154,10 @@ typedef VolumePeekParse = ({
 /// 根 isolate 解析，所以在这里算好再传进去；带回的缓存失败也在这里记日志。
 Future<EpubBook> parseVolumeBookForPeekOffUi(String extractDir) async {
   final File? cacheFile = await epubImageIndexCacheFileFor(extractDir);
-  final VolumePeekParse parsed = await compute(
-    parseVolumeBookForPeek,
-    (extractDir: extractDir, cacheFile: cacheFile?.path),
-  );
+  final VolumePeekParse parsed = await compute(parseVolumeBookForPeek, (
+    extractDir: extractDir,
+    cacheFile: cacheFile?.path,
+  ));
   reportEpubImageIndexCacheFailures(
     'parseVolumeBookForPeek',
     parsed.cacheFailures,
@@ -166,12 +171,16 @@ class ReaderVolumeBookCache {
 
   Future<EpubBook> bookFor(ReaderVolume volume) {
     return _pending.putIfAbsent(volume.uid, () {
-      final Future<EpubBook> parsed =
-          parseVolumeBookForPeekOffUi(volume.extractDir);
+      final Future<EpubBook> parsed = parseVolumeBookForPeekOffUi(
+        volume.extractDir,
+      );
       unawaited(
-        parsed.then<void>((_) {}, onError: (Object _) {
-          _pending.remove(volume.uid);
-        }),
+        parsed.then<void>(
+          (_) {},
+          onError: (Object _) {
+            _pending.remove(volume.uid);
+          },
+        ),
       );
       return parsed;
     });

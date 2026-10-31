@@ -101,11 +101,11 @@ class InterconnectDownloadClient {
     http.Client Function(String expectedFingerprint)? pinnedClientFactory,
     Duration probeTimeout = const Duration(seconds: 4),
     Duration requestTimeout = const Duration(seconds: 30),
-  })  : _repo = repo,
-        _httpClient = httpClient ?? http.Client(),
-        _pinnedClientFactory = pinnedClientFactory ?? _defaultPinnedClient,
-        _probeTimeout = probeTimeout,
-        _requestTimeout = requestTimeout;
+  }) : _repo = repo,
+       _httpClient = httpClient ?? http.Client(),
+       _pinnedClientFactory = pinnedClientFactory ?? _defaultPinnedClient,
+       _probeTimeout = probeTimeout,
+       _requestTimeout = requestTimeout;
 
   final SyncRepository _repo;
   final http.Client _httpClient;
@@ -133,10 +133,13 @@ class InterconnectDownloadClient {
   /// 地址（在家可能是 LAN），出门后同一台 host 仍可经 IPv6 / 组网 / P2P 到达，
   /// 按组内可达性依次试。
   Future<HostDownloadTarget?> probeUrl(String baseUrl) async {
-    final List<FushiClientUrl> host =
-        interconnectPeerAddressesOf(await _enabledCandidates(), baseUrl);
-    for (final FushiClientUrl candidate
-        in await rankInterconnectCandidates(host)) {
+    final List<FushiClientUrl> host = interconnectPeerAddressesOf(
+      await _enabledCandidates(),
+      baseUrl,
+    );
+    for (final FushiClientUrl candidate in await rankInterconnectCandidates(
+      host,
+    )) {
       final HostDownloadTarget? target = await _probeCandidate(candidate);
       if (target != null) return target;
     }
@@ -148,9 +151,12 @@ class InterconnectDownloadClient {
   /// 按 host 去重：同一台 host 的多条地址只产出一个目标（组内已按可达性排序）。
   Future<List<HostDownloadTarget>> probeAll() async {
     final List<HostDownloadTarget> targets = <HostDownloadTarget>[];
-    final List<FushiClientUrl> candidates =
-        await rankInterconnectCandidates(await _enabledCandidates());
-    for (final List<FushiClientUrl> host in groupInterconnectPeers(candidates)) {
+    final List<FushiClientUrl> candidates = await rankInterconnectCandidates(
+      await _enabledCandidates(),
+    );
+    for (final List<FushiClientUrl> host in groupInterconnectPeers(
+      candidates,
+    )) {
       for (final FushiClientUrl candidate in host) {
         final HostDownloadTarget? target = await _probeCandidate(candidate);
         if (target == null) continue;
@@ -168,8 +174,10 @@ class InterconnectDownloadClient {
 
   Future<HostDownloadTarget?> _probeCandidate(FushiClientUrl candidate) async {
     final Uri? uri = _uri(candidate.url, '/api/capabilities');
-    final String? token =
-        interconnectTokenFor(candidate, await _repo.getFushiClientToken());
+    final String? token = interconnectTokenFor(
+      candidate,
+      await _repo.getFushiClientToken(),
+    );
     if (uri == null || token == null) return null;
     final (http.Client client, bool closeAfter) = _clientFor(
       candidate.url,
@@ -247,16 +255,16 @@ class InterconnectDownloadClient {
   }
 
   Future<void> cancel(HostDownloadTarget target, String jobId) => _call(
-        target,
-        'POST',
-        '/api/downloads/${Uri.encodeComponent(jobId)}/cancel',
-      );
+    target,
+    'POST',
+    '/api/downloads/${Uri.encodeComponent(jobId)}/cancel',
+  );
 
   Future<void> retry(HostDownloadTarget target, String jobId) => _call(
-        target,
-        'POST',
-        '/api/downloads/${Uri.encodeComponent(jobId)}/retry',
-      );
+    target,
+    'POST',
+    '/api/downloads/${Uri.encodeComponent(jobId)}/retry',
+  );
 
   /// [deleteFiles] 只在 host 宣告 [HostDownloadTarget.deleteFilesParam] 时才发出；
   /// 对老 host 传它会被静默忽略，所以调用方给了却 host 不认时直接报错，而不是
@@ -319,8 +327,9 @@ class InterconnectDownloadClient {
         }
         throw HostDownloadException('http_${response.statusCode}', detail);
       }
-      final dynamic decoded =
-          text.isEmpty ? <String, dynamic>{} : jsonDecode(text);
+      final dynamic decoded = text.isEmpty
+          ? <String, dynamic>{}
+          : jsonDecode(text);
       if (decoded is! Map) return <String, dynamic>{};
       return Map<String, dynamic>.from(decoded);
     } finally {
@@ -342,12 +351,13 @@ class InterconnectDownloadClient {
   }
 
   Map<String, String> _headers(String token) => <String, String>{
-        'Authorization': 'Basic ${base64Encode(utf8.encode('hibiki:$token'))}',
-      };
+    'Authorization': 'Basic ${base64Encode(utf8.encode('hibiki:$token'))}',
+  };
 
   (http.Client, bool) _clientFor(String baseUrl, {String? fingerprint}) {
     final Uri? base = _parse(baseUrl);
-    final bool usePinned = base != null &&
+    final bool usePinned =
+        base != null &&
         base.isScheme('https') &&
         fingerprint != null &&
         fingerprint.isNotEmpty;

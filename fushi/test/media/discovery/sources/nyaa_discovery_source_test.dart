@@ -38,12 +38,11 @@ const NyaaHtmlRow _mangaRow = NyaaHtmlRow(
 NyaaClient _client(
   Future<http.Response> Function(http.Request request) handler, {
   String baseUrl = 'https://nyaa.si',
-}) =>
-    NyaaClient(
-      baseUrl: baseUrl,
-      minRequestInterval: Duration.zero,
-      client: MockClient(handler),
-    );
+}) => NyaaClient(
+  baseUrl: baseUrl,
+  minRequestInterval: Duration.zero,
+  client: MockClient(handler),
+);
 
 void main() {
   test('搜索映射:分类按媒体域取,条目产 torrent payload 并透传新字段', () async {
@@ -60,9 +59,7 @@ void main() {
         return http.Response.bytes(
           utf8.encode(nyaaSearchHtml(const <NyaaHtmlRow>[_novelRow])),
           200,
-          headers: <String, String>{
-            'content-type': 'text/html; charset=utf-8',
-          },
+          headers: <String, String>{'content-type': 'text/html; charset=utf-8'},
         );
       }),
     );
@@ -123,8 +120,8 @@ void main() {
     final ProviderBatchResult<DiscoveryResultPage> result = await source.search(
       const DiscoveryRequest(kind: DiscoveryMediaKind.novel, query: 'x'),
     );
-    final List<DiscoveryResourceItem> items =
-        result.items.single.entries.cast<DiscoveryResourceItem>();
+    final List<DiscoveryResourceItem> items = result.items.single.entries
+        .cast<DiscoveryResourceItem>();
     expect(items, hasLength(2));
     expect(items[0].contentHint, DiscoveryContentHint.novel);
     expect(items[0].remake, isFalse);
@@ -142,10 +139,8 @@ void main() {
         DiscoveryMediaKind.audiobook: '2_0',
       },
       client: _client(
-        (http.Request request) async => http.Response(
-          nyaaSearchHtml(const <NyaaHtmlRow>[_mangaRow]),
-          200,
-        ),
+        (http.Request request) async =>
+            http.Response(nyaaSearchHtml(const <NyaaHtmlRow>[_mangaRow]), 200),
       ),
     );
 
@@ -166,30 +161,29 @@ void main() {
       categoryByKind: const <DiscoveryMediaKind, String>{
         DiscoveryMediaKind.game: '1_3',
       },
-      client: _client(
-        baseUrl: 'https://sukebei.nyaa.si',
-        (http.Request request) async {
-          captured = request.url;
-          return http.Response.bytes(
-            utf8.encode(
-              nyaaSearchHtml(const <NyaaHtmlRow>[
-                NyaaHtmlRow(
-                  title: '[260826][天粋球児] 魔族ギルド 魔王の采配SLG [RJ01704616]',
-                  infoHash: 'b5e79758ededc8b0084b5dff18c87bcf49397384',
-                  id: '4697046',
-                  seeders: 49,
-                  leechers: 19,
-                  downloads: 110,
-                  size: '472.7 MiB',
-                  categoryId: '1_3',
-                ),
-              ]),
-            ),
-            200,
-            headers: <String, String>{'content-type': 'text/html'},
-          );
-        },
-      ),
+      client: _client(baseUrl: 'https://sukebei.nyaa.si', (
+        http.Request request,
+      ) async {
+        captured = request.url;
+        return http.Response.bytes(
+          utf8.encode(
+            nyaaSearchHtml(const <NyaaHtmlRow>[
+              NyaaHtmlRow(
+                title: '[260826][天粋球児] 魔族ギルド 魔王の采配SLG [RJ01704616]',
+                infoHash: 'b5e79758ededc8b0084b5dff18c87bcf49397384',
+                id: '4697046',
+                seeders: 49,
+                leechers: 19,
+                downloads: 110,
+                size: '472.7 MiB',
+                categoryId: '1_3',
+              ),
+            ]),
+          ),
+          200,
+          headers: <String, String>{'content-type': 'text/html'},
+        );
+      }),
     );
 
     final ProviderBatchResult<DiscoveryResultPage> result = await source.search(
@@ -225,10 +219,9 @@ void main() {
       client: _client((http.Request request) async => http.Response('', 500)),
     );
 
-    expect(
-      source.capabilities.kinds,
-      const <DiscoveryMediaKind>{DiscoveryMediaKind.novel},
-    );
+    expect(source.capabilities.kinds, const <DiscoveryMediaKind>{
+      DiscoveryMediaKind.novel,
+    });
     final ProviderBatchResult<DiscoveryResultPage> result = await source.search(
       const DiscoveryRequest(kind: DiscoveryMediaKind.game, query: 'x'),
     );
@@ -276,8 +269,10 @@ void main() {
         return http.Response(kNyaaNoResultsHtml, 200);
       }),
     );
-    const DiscoveryRequest request =
-        DiscoveryRequest(kind: DiscoveryMediaKind.novel, query: 'x');
+    const DiscoveryRequest request = DiscoveryRequest(
+      kind: DiscoveryMediaKind.novel,
+      query: 'x',
+    );
 
     await source.search(request);
     current = NyaaQualityFilter.noRemakes;

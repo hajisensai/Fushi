@@ -111,9 +111,7 @@ void _writeDartFixtures(Directory dir) {
   final img.Image g = _grayPage(600, 900);
   _drawQr(g, left: 180, top: 520, module: 7);
   png('t_graypage_qr_600x900.png', g);
-  File(
-    '${dir.path}/t_garbage_3bytes.bin',
-  ).writeAsBytesSync(<int>[1, 2, 3]);
+  File('${dir.path}/t_garbage_3bytes.bin').writeAsBytesSync(<int>[1, 2, 3]);
   final img.Image p3 = _colorfulPoster(600, 900);
   _drawQr(p3, left: 180, top: 520, module: 7);
   img.fillRect(
@@ -153,9 +151,8 @@ void main(List<String> args) {
   final Directory dir = Directory(args.single);
   final Directory inputs = Directory('${dir.path}/inputs');
   _writeDartFixtures(inputs);
-  final List<File> files =
-      inputs.listSync().whereType<File>().toList()
-        ..sort((File a, File b) => a.path.compareTo(b.path));
+  final List<File> files = inputs.listSync().whereType<File>().toList()
+    ..sort((File a, File b) => a.path.compareTo(b.path));
   final List<Map<String, Object?>> cases = <Map<String, Object?>>[];
   for (final File f in files) {
     final Uint8List bytes = f.readAsBytesSync();
@@ -186,7 +183,7 @@ void main(List<String> args) {
     'cases': cases,
     'candidates': candidates,
   };
-  File('${dir.path}/dart_outputs.json').writeAsStringSync(
-    const JsonEncoder.withIndent('  ').convert(out),
-  );
+  File(
+    '${dir.path}/dart_outputs.json',
+  ).writeAsStringSync(const JsonEncoder.withIndent('  ').convert(out));
 }

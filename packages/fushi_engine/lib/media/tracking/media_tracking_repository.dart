@@ -88,15 +88,9 @@ typedef AutoVideoTrackingSource = ({
   int? bangumiEpisodeCount,
 });
 
-typedef AutoBookTrackingSource = ({
-  String title,
-  String format,
-});
+typedef AutoBookTrackingSource = ({String title, String format});
 
-typedef AutoGameTrackingSource = ({
-  String name,
-  int? bangumiSubjectId,
-});
+typedef AutoGameTrackingSource = ({String name, int? bangumiSubjectId});
 
 typedef PersistedGameTrackingStatus = ({
   String gameId,
@@ -122,10 +116,7 @@ typedef PersistedBookTrackingProgress = ({
   int evidenceAt,
 });
 
-typedef BookTrackingSnapshot = ({
-  BookFormat format,
-  int? chapterProgress,
-});
+typedef BookTrackingSnapshot = ({BookFormat format, int? chapterProgress});
 
 /// 把书籍格式、映射模式和明确完成状态收敛成唯一的本地上报值。
 ///
@@ -260,10 +251,7 @@ int estimateCompletedBookChapters({
 }
 
 class PendingTrackingUpdate {
-  const PendingTrackingUpdate({
-    required this.outbox,
-    required this.mapping,
-  });
+  const PendingTrackingUpdate({required this.outbox, required this.mapping});
 
   final MediaTrackingOutboxRow outbox;
   final MediaTrackingMappingRow mapping;
@@ -283,11 +271,10 @@ class MediaTrackingRepository {
   Future<MediaPrivacySnapshot> loadPrivacy() => MediaPrivacySnapshot.load(_db);
 
   Future<List<MediaTrackingMappingRow>> listMappings() =>
-      (_db.select(_db.mediaTrackingMappings)
-            ..orderBy([
-              (t) => OrderingTerm(expression: t.kind),
-              (t) => OrderingTerm(expression: t.mediaTitle),
-            ]))
+      (_db.select(_db.mediaTrackingMappings)..orderBy([
+            (t) => OrderingTerm(expression: t.kind),
+            (t) => OrderingTerm(expression: t.mediaTitle),
+          ]))
           .get();
 
   /// 列出全部「已有本地观看/阅读/游玩事实，但没有 Bangumi 映射」的条目。
@@ -306,10 +293,10 @@ class MediaTrackingRepository {
     final Map<String, VideoBookRow> videosByUid = <String, VideoBookRow>{
       for (final VideoBookRow video in videos) video.bookUid: video,
     };
-    final List<MediaCollectionRow> collections =
-        await _db.getAllMediaCollections();
-    final List<MediaCollectionItemRow> members =
-        await _db.getAllCollectionItems();
+    final List<MediaCollectionRow> collections = await _db
+        .getAllMediaCollections();
+    final List<MediaCollectionItemRow> members = await _db
+        .getAllCollectionItems();
     final Map<int, List<MediaCollectionItemRow>> videoMembersByCollection =
         <int, List<MediaCollectionItemRow>>{};
     for (final MediaCollectionItemRow member in members) {
@@ -342,7 +329,7 @@ class MediaTrackingRepository {
       if (isMapped(TrackingMediaType.videoCollection, key)) continue;
       final List<MediaCollectionItemRow> collectionMembers =
           videoMembersByCollection[collection.id] ??
-              const <MediaCollectionItemRow>[];
+          const <MediaCollectionItemRow>[];
       int lastCompletedAt = 0;
       final Set<String> completedMembers = <String>{};
       for (final MediaCollectionItemRow member in collectionMembers) {
@@ -354,8 +341,10 @@ class MediaTrackingRepository {
           continue;
         }
         completedMembers.add(member.entryKey);
-        lastCompletedAt =
-            math.max(lastCompletedAt, completedAt.millisecondsSinceEpoch);
+        lastCompletedAt = math.max(
+          lastCompletedAt,
+          completedAt.millisecondsSinceEpoch,
+        );
       }
       if (completedMembers.isEmpty) continue;
       videosCoveredByPlaylist.addAll(completedMembers);
@@ -391,13 +380,14 @@ class MediaTrackingRepository {
     // v82：reader_positions 键 = 书 uid，按行 uid 直查（空 uid 视同无阅读记录）。
     final Map<String, ReaderPositionRow> positions =
         <String, ReaderPositionRow>{
-      for (final ReaderPositionRow position
-          in await _db.getAllReaderPositions())
-        position.bookUid: position,
-    };
+          for (final ReaderPositionRow position
+              in await _db.getAllReaderPositions())
+            position.bookUid: position,
+        };
     for (final EpubBookMeta book in await _db.getEpubBookMetas()) {
-      final ReaderPositionRow? position =
-          book.uid.isEmpty ? null : positions[book.uid];
+      final ReaderPositionRow? position = book.uid.isEmpty
+          ? null
+          : positions[book.uid];
       final DateTime? completedAt = book.completedAt;
       if ((position == null && completedAt == null) ||
           isMapped(TrackingMediaType.book, book.bookKey)) {
@@ -446,11 +436,12 @@ class MediaTrackingRepository {
     required String mediaKey,
     String provider = kTrackingProviderBangumi,
   }) =>
-      (_db.select(_db.mediaTrackingMappings)
-            ..where((t) =>
+      (_db.select(_db.mediaTrackingMappings)..where(
+            (t) =>
                 t.provider.equals(provider) &
                 t.mediaType.equals(mediaType.value) &
-                t.mediaKey.equals(mediaKey)))
+                t.mediaKey.equals(mediaKey),
+          ))
           .getSingleOrNull();
 
   Future<int> saveMapping({
@@ -472,7 +463,10 @@ class MediaTrackingRepository {
     }
     if (progressOffset < 0) {
       throw ArgumentError.value(
-          progressOffset, 'progressOffset', 'must be non-negative');
+        progressOffset,
+        'progressOffset',
+        'must be non-negative',
+      );
     }
     final int now = DateTime.now().millisecondsSinceEpoch;
     final MediaTrackingMappingRow? existing = await findMapping(
@@ -481,7 +475,9 @@ class MediaTrackingRepository {
       provider: provider,
     );
     if (existing == null) {
-      return _db.into(_db.mediaTrackingMappings).insert(
+      return _db
+          .into(_db.mediaTrackingMappings)
+          .insert(
             MediaTrackingMappingsCompanion.insert(
               provider: Value<String>(provider),
               mediaType: mediaType.value,
@@ -497,9 +493,9 @@ class MediaTrackingRepository {
             ),
           );
     }
-    await (_db.update(_db.mediaTrackingMappings)
-          ..where((t) => t.id.equals(existing.id)))
-        .write(
+    await (_db.update(
+      _db.mediaTrackingMappings,
+    )..where((t) => t.id.equals(existing.id))).write(
       MediaTrackingMappingsCompanion(
         mediaTitle: Value<String>(mediaTitle),
         kind: Value<String>(kind.value),
@@ -538,7 +534,9 @@ class MediaTrackingRepository {
       throw ArgumentError('Invalid automatic media tracking mapping');
     }
     final int now = DateTime.now().millisecondsSinceEpoch;
-    await _db.into(_db.mediaTrackingMappings).insert(
+    await _db
+        .into(_db.mediaTrackingMappings)
+        .insert(
           MediaTrackingMappingsCompanion.insert(
             provider: Value<String>(provider),
             mediaType: mediaType.value,
@@ -589,8 +587,8 @@ class MediaTrackingRepository {
       if (scrape!.episodeNumber == null) {
         bangumiSubjectName = scrape.title;
       } else if (collection != null) {
-        final CollectionScrapeMetaRow? collectionScrape =
-            await _db.getCollectionScrapeMeta(collection.id);
+        final CollectionScrapeMetaRow? collectionScrape = await _db
+            .getCollectionScrapeMeta(collection.id);
         if (collectionScrape?.source == kTrackingProviderBangumi) {
           bangumiSubjectName = collectionScrape!.title;
         }
@@ -599,8 +597,9 @@ class MediaTrackingRepository {
     return (
       mediaTitle: collectionTitle.isEmpty ? video.title : collectionTitle,
       videoTitle: video.title,
-      bangumiSubjectId:
-          isBangumi ? int.tryParse(scrape!.subjectId.trim()) : null,
+      bangumiSubjectId: isBangumi
+          ? int.tryParse(scrape!.subjectId.trim())
+          : null,
       bangumiSubjectName: bangumiSubjectName,
       bangumiEpisodeCount: isBangumi ? scrape!.episodeCount : null,
     );
@@ -610,13 +609,15 @@ class MediaTrackingRepository {
   /// 文件名的纯函数、不落库，语义见 collection_season_groups.dart）。service 据此
   /// 判定「多季合集」并绕开结构性失真的合集级映射；存量合集零迁移即受保护。
   Future<List<String>> loadCollectionVideoGroupKeys(int collectionId) async {
-    final List<MediaCollectionItemRow> items =
-        await _db.getCollectionItems(collectionId);
+    final List<MediaCollectionItemRow> items = await _db.getCollectionItems(
+      collectionId,
+    );
     final List<String> keys = <String>[];
     for (final MediaCollectionItemRow item in items) {
       if (item.mediaType != MediaKind.video.dbValue) continue;
-      final VideoBookRow? video =
-          await _db.getVideoBookByBookUid(item.entryKey);
+      final VideoBookRow? video = await _db.getVideoBookByBookUid(
+        item.entryKey,
+      );
       if (video == null) continue;
       keys.add(collectionGroupKeyForFilename(video.videoPath));
     }
@@ -648,8 +649,9 @@ class MediaTrackingRepository {
     if (game == null) return null;
     return (
       name: game.name,
-      bangumiSubjectId:
-          _bangumiSubjectIdOf(await _db.getGalgameSources(gameId)),
+      bangumiSubjectId: _bangumiSubjectIdOf(
+        await _db.getGalgameSources(gameId),
+      ),
     );
   }
 
@@ -665,8 +667,8 @@ class MediaTrackingRepository {
   }) async {
     final List<GalgameRow> games = await _db.getAllGalgames();
     if (games.isEmpty) return const <PersistedGameTrackingStatus>[];
-    final Map<String, List<GalgameSourceRow>> sources =
-        await _db.getAllGalgameSources();
+    final Map<String, List<GalgameSourceRow>> sources = await _db
+        .getAllGalgameSources();
     final Map<String, MediaTrackingMappingRow> mappings =
         <String, MediaTrackingMappingRow>{};
     for (final MediaTrackingMappingRow mapping in await listMappings()) {
@@ -688,8 +690,9 @@ class MediaTrackingRepository {
       result.add((
         gameId: game.id,
         name: game.name,
-        bangumiSubjectId:
-            _bangumiSubjectIdOf(sources[game.id] ?? const <GalgameSourceRow>[]),
+        bangumiSubjectId: _bangumiSubjectIdOf(
+          sources[game.id] ?? const <GalgameSourceRow>[],
+        ),
         status: game.playStatus,
         evidenceAt: evidenceAt,
       ));
@@ -708,12 +711,10 @@ class MediaTrackingRepository {
   Future<int?> loadBookChapterProgress({
     required String bookKey,
     required int fallbackProgress,
-  }) async =>
-      (await loadBookTrackingSnapshot(
-        bookKey: bookKey,
-        fallbackProgress: fallbackProgress,
-      ))
-          .chapterProgress;
+  }) async => (await loadBookTrackingSnapshot(
+    bookKey: bookKey,
+    fallbackProgress: fallbackProgress,
+  )).chapterProgress;
 
   /// 读取即时上报所需的格式与逻辑章节快照。
   ///
@@ -735,13 +736,11 @@ class MediaTrackingRepository {
       return (format: format, chapterProgress: null);
     }
     // v82：位置键 = 书 uid（行在手直接取；空 uid 视同无阅读记录）。
-    final ReaderPositionRow? position =
-        book.uid.isEmpty ? null : await _db.getReaderPosition(book.uid);
+    final ReaderPositionRow? position = book.uid.isEmpty
+        ? null
+        : await _db.getReaderPosition(book.uid);
     if (position == null) {
-      return (
-        format: format,
-        chapterProgress: math.max(0, fallbackProgress),
-      );
+      return (format: format, chapterProgress: math.max(0, fallbackProgress));
     }
     return (
       format: format,
@@ -762,9 +761,7 @@ class MediaTrackingRepository {
   /// 早已清空的条目不会再自然触发。这里从 `completed_at` 的本地事实重建一次增量，
   /// 同时把 mapping.updatedAt 纳入 evidence，使“给旧完成条目新增/修改映射”也会补发。
   Future<List<CompletedVideoTrackingProgress>>
-      loadCompletedVideoTrackingProgress({
-    required int afterMs,
-  }) async {
+  loadCompletedVideoTrackingProgress({required int afterMs}) async {
     final List<MediaTrackingMappingRow> mappings = await listMappings();
     final List<CompletedVideoTrackingProgress> result =
         <CompletedVideoTrackingProgress>[];
@@ -776,12 +773,15 @@ class MediaTrackingRepository {
       }
 
       if (mapping.mediaType == TrackingMediaType.video.value) {
-        final VideoBookRow? video =
-            await _db.getVideoBookByBookUid(mapping.mediaKey);
+        final VideoBookRow? video = await _db.getVideoBookByBookUid(
+          mapping.mediaKey,
+        );
         final DateTime? completedAt = video?.completedAt;
         if (completedAt == null) continue;
-        final int evidenceAt =
-            math.max(mapping.updatedAt, completedAt.millisecondsSinceEpoch);
+        final int evidenceAt = math.max(
+          mapping.updatedAt,
+          completedAt.millisecondsSinceEpoch,
+        );
         if (evidenceAt <= afterMs) continue;
         result.add((
           mediaType: TrackingMediaType.video,
@@ -800,8 +800,10 @@ class MediaTrackingRepository {
       if (collectionId == null) continue;
       final List<MediaCollectionItemRow> items =
           (await _db.getCollectionItems(collectionId))
-              .where((MediaCollectionItemRow item) =>
-                  item.mediaType == MediaKind.video.dbValue)
+              .where(
+                (MediaCollectionItemRow item) =>
+                    item.mediaType == MediaKind.video.dbValue,
+              )
               .toList(growable: false);
       final List<VideoBookRow?> videos = <VideoBookRow?>[
         for (final MediaCollectionItemRow item in items)
@@ -822,8 +824,10 @@ class MediaTrackingRepository {
         final DateTime? completedAt = videos[index]?.completedAt;
         if (completedAt == null) continue;
         highestCompletedIndex = index;
-        latestCompletedAt =
-            math.max(latestCompletedAt, completedAt.millisecondsSinceEpoch);
+        latestCompletedAt = math.max(
+          latestCompletedAt,
+          completedAt.millisecondsSinceEpoch,
+        );
       }
       if (highestCompletedIndex < 0) continue;
       final int evidenceAt = math.max(mapping.updatedAt, latestCompletedAt);
@@ -844,19 +848,17 @@ class MediaTrackingRepository {
   /// chapter 模式按已完成章节数恢复；volume 模式在读时用 -1 配合卷号 offset，
   /// 只报告“此前卷数”，当前卷读完才用 0 把本卷计入，避免刚打开第 N 卷就误报 N 卷。
   Future<List<PersistedBookTrackingProgress>>
-      loadPersistedBookTrackingProgress({
-    required int afterMs,
-  }) async {
+  loadPersistedBookTrackingProgress({required int afterMs}) async {
     final List<MediaTrackingMappingRow> mappings = await listMappings();
     final List<PersistedBookTrackingProgress> result =
         <PersistedBookTrackingProgress>[];
     for (final MediaTrackingMappingRow mapping in mappings) {
       final TrackingMediaType? mediaType =
           mapping.mediaType == TrackingMediaType.book.value
-              ? TrackingMediaType.book
-              : mapping.mediaType == TrackingMediaType.bookChapter.value
-                  ? TrackingMediaType.bookChapter
-                  : null;
+          ? TrackingMediaType.book
+          : mapping.mediaType == TrackingMediaType.bookChapter.value
+          ? TrackingMediaType.bookChapter
+          : null;
       if (mapping.provider != kTrackingProviderBangumi || mediaType == null) {
         continue;
       }
@@ -864,8 +866,9 @@ class MediaTrackingRepository {
       if (book == null) continue;
       // v82：mapping.mediaKey 是 bookKey（映射面貌冻结）；位置键 = 书 uid，
       // 从刚查到的行取（空 uid 视同无阅读记录）。
-      final ReaderPositionRow? position =
-          book.uid.isEmpty ? null : await _db.getReaderPosition(book.uid);
+      final ReaderPositionRow? position = book.uid.isEmpty
+          ? null
+          : await _db.getReaderPosition(book.uid);
       final DateTime? completedAt = book.completedAt;
       if (position == null && completedAt == null) continue;
       final int localEvidenceAt = math.max(
@@ -879,10 +882,12 @@ class MediaTrackingRepository {
           mediaType == TrackingMediaType.bookChapter;
       final bool completed = completedAt != null;
       final BookFormat format = BookFormat.parseOrEpub(book.format);
-      final TrackingProgressMode? storedMode =
-          TrackingProgressMode.tryParse(mapping.progressMode);
-      final TrackingProgressMode? effectiveMode =
-          isChapterCompanion ? TrackingProgressMode.chapter : storedMode;
+      final TrackingProgressMode? storedMode = TrackingProgressMode.tryParse(
+        mapping.progressMode,
+      );
+      final TrackingProgressMode? effectiveMode = isChapterCompanion
+          ? TrackingProgressMode.chapter
+          : storedMode;
       if (effectiveMode == null) continue;
       final int? chapterProgress = format.isPagedImageBook
           ? null
@@ -892,7 +897,8 @@ class MediaTrackingRepository {
               sectionIndex: position?.sectionIndex ?? 0,
               sectionCompleted: (position?.normCharOffset ?? 0) >= 9990,
               bookCompleted: completed,
-              fallbackProgress: (position?.sectionIndex ?? 0) +
+              fallbackProgress:
+                  (position?.sectionIndex ?? 0) +
                   ((position?.normCharOffset ?? 0) >= 9990 ? 1 : 0),
             );
       final int? localProgress = resolveBookTrackingLocalProgress(
@@ -914,25 +920,25 @@ class MediaTrackingRepository {
   }
 
   Future<void> deleteMapping(int id) async {
-    final MediaTrackingMappingRow? mapping =
-        await (_db.select(_db.mediaTrackingMappings)
-              ..where((t) => t.id.equals(id)))
-            .getSingleOrNull();
+    final MediaTrackingMappingRow? mapping = await (_db.select(
+      _db.mediaTrackingMappings,
+    )..where((t) => t.id.equals(id))).getSingleOrNull();
     if (mapping == null) return;
     if (mapping.mediaType != TrackingMediaType.book.value) {
-      await (_db.delete(_db.mediaTrackingMappings)
-            ..where((t) => t.id.equals(id)))
-          .go();
+      await (_db.delete(
+        _db.mediaTrackingMappings,
+      )..where((t) => t.id.equals(id))).go();
       return;
     }
-    await (_db.delete(_db.mediaTrackingMappings)
-          ..where((t) =>
+    await (_db.delete(_db.mediaTrackingMappings)..where(
+          (t) =>
               t.provider.equals(mapping.provider) &
               t.mediaKey.equals(mapping.mediaKey) &
               t.mediaType.isIn(<String>[
                 TrackingMediaType.book.value,
                 TrackingMediaType.bookChapter.value,
-              ])))
+              ]),
+        ))
         .go();
   }
 
@@ -961,12 +967,13 @@ class MediaTrackingRepository {
     final int progress = math.max(0, localProgress + mapping.progressOffset);
     final int now = DateTime.now().millisecondsSinceEpoch;
     await _db.transaction(() async {
-      final MediaTrackingOutboxRow? existing =
-          await (_db.select(_db.mediaTrackingOutbox)
-                ..where((t) => t.mappingId.equals(mapping.id)))
-              .getSingleOrNull();
+      final MediaTrackingOutboxRow? existing = await (_db.select(
+        _db.mediaTrackingOutbox,
+      )..where((t) => t.mappingId.equals(mapping.id))).getSingleOrNull();
       if (existing == null) {
-        await _db.into(_db.mediaTrackingOutbox).insert(
+        await _db
+            .into(_db.mediaTrackingOutbox)
+            .insert(
               MediaTrackingOutboxCompanion.insert(
                 mappingId: mapping.id,
                 progress: progress,
@@ -976,15 +983,17 @@ class MediaTrackingRepository {
             );
         return;
       }
-      final int mergedProgress =
-          monotonic ? math.max(existing.progress, progress) : progress;
-      final bool mergedCompleted =
-          monotonic ? (existing.completed || completed) : completed;
+      final int mergedProgress = monotonic
+          ? math.max(existing.progress, progress)
+          : progress;
+      final bool mergedCompleted = monotonic
+          ? (existing.completed || completed)
+          : completed;
       // 毫秒时钟可能在同一 tick 连收两次事件；乐观锁版本必须严格递增，不能只写 now。
       final int eventVersion = math.max(now, existing.updatedAt + 1);
-      await (_db.update(_db.mediaTrackingOutbox)
-            ..where((t) => t.id.equals(existing.id)))
-          .write(
+      await (_db.update(
+        _db.mediaTrackingOutbox,
+      )..where((t) => t.id.equals(existing.id))).write(
         MediaTrackingOutboxCompanion(
           progress: Value<int>(mergedProgress),
           completed: Value<bool>(mergedCompleted),
@@ -1004,18 +1013,22 @@ class MediaTrackingRepository {
     int? nowMs,
   }) async {
     final int now = nowMs ?? DateTime.now().millisecondsSinceEpoch;
-    final query = _db.select(_db.mediaTrackingOutbox).join(<Join>[
-      innerJoin(
-        _db.mediaTrackingMappings,
-        _db.mediaTrackingMappings.id
-            .equalsExp(_db.mediaTrackingOutbox.mappingId),
-      ),
-    ])
-      ..where(_db.mediaTrackingOutbox.nextAttemptAt.isSmallerOrEqualValue(now))
-      ..orderBy(<OrderingTerm>[
-        OrderingTerm(expression: _db.mediaTrackingOutbox.updatedAt),
-      ])
-      ..limit(limit);
+    final query =
+        _db.select(_db.mediaTrackingOutbox).join(<Join>[
+            innerJoin(
+              _db.mediaTrackingMappings,
+              _db.mediaTrackingMappings.id.equalsExp(
+                _db.mediaTrackingOutbox.mappingId,
+              ),
+            ),
+          ])
+          ..where(
+            _db.mediaTrackingOutbox.nextAttemptAt.isSmallerOrEqualValue(now),
+          )
+          ..orderBy(<OrderingTerm>[
+            OrderingTerm(expression: _db.mediaTrackingOutbox.updatedAt),
+          ])
+          ..limit(limit);
     final List<TypedResult> rows = await query.get();
     final List<PendingTrackingUpdate> updates = rows
         .map(
@@ -1033,16 +1046,19 @@ class MediaTrackingRepository {
     final List<int> discarded = <int>[];
     for (final PendingTrackingUpdate u in updates) {
       if (isTrackedMediaPrivate(
-          privacy, u.mapping.mediaType, u.mapping.mediaKey)) {
+        privacy,
+        u.mapping.mediaType,
+        u.mapping.mediaKey,
+      )) {
         discarded.add(u.outbox.id);
       } else {
         due.add(u);
       }
     }
     if (discarded.isNotEmpty) {
-      await (_db.delete(_db.mediaTrackingOutbox)
-            ..where((t) => t.id.isIn(discarded)))
-          .go();
+      await (_db.delete(
+        _db.mediaTrackingOutbox,
+      )..where((t) => t.id.isIn(discarded))).go();
     }
     return due;
   }
@@ -1053,20 +1069,22 @@ class MediaTrackingRepository {
   /// 若 UI 也只看 due 的行，用户在退避窗口里看到的会是「零待办、零错误」，正好把
   /// 失败原因藏起来。按 updatedAt 倒序，最近的事件排在前面。
   Future<List<PendingTrackingUpdate>> allPending({int limit = 50}) async {
-    final query = _db.select(_db.mediaTrackingOutbox).join(<Join>[
-      innerJoin(
-        _db.mediaTrackingMappings,
-        _db.mediaTrackingMappings.id
-            .equalsExp(_db.mediaTrackingOutbox.mappingId),
-      ),
-    ])
-      ..orderBy(<OrderingTerm>[
-        OrderingTerm(
-          expression: _db.mediaTrackingOutbox.updatedAt,
-          mode: OrderingMode.desc,
-        ),
-      ])
-      ..limit(limit);
+    final query =
+        _db.select(_db.mediaTrackingOutbox).join(<Join>[
+            innerJoin(
+              _db.mediaTrackingMappings,
+              _db.mediaTrackingMappings.id.equalsExp(
+                _db.mediaTrackingOutbox.mappingId,
+              ),
+            ),
+          ])
+          ..orderBy(<OrderingTerm>[
+            OrderingTerm(
+              expression: _db.mediaTrackingOutbox.updatedAt,
+              mode: OrderingMode.desc,
+            ),
+          ])
+          ..limit(limit);
     final List<TypedResult> rows = await query.get();
     return rows
         .map(
@@ -1080,17 +1098,17 @@ class MediaTrackingRepository {
 
   Future<int> pendingCount() async {
     final Expression<int> count = _db.mediaTrackingOutbox.id.count();
-    final TypedResult row = await (_db.selectOnly(_db.mediaTrackingOutbox)
-          ..addColumns(<Expression>[count]))
-        .getSingle();
+    final TypedResult row = await (_db.selectOnly(
+      _db.mediaTrackingOutbox,
+    )..addColumns(<Expression>[count])).getSingle();
     return row.read(count) ?? 0;
   }
 
-  Future<void> markSucceeded(MediaTrackingOutboxRow sent) => (_db
-          .delete(_db.mediaTrackingOutbox)
-        ..where(
-            (t) => t.id.equals(sent.id) & t.updatedAt.equals(sent.updatedAt)))
-      .go();
+  Future<void> markSucceeded(MediaTrackingOutboxRow sent) =>
+      (_db.delete(_db.mediaTrackingOutbox)..where(
+            (t) => t.id.equals(sent.id) & t.updatedAt.equals(sent.updatedAt),
+          ))
+          .go();
 
   Future<void> markFailed(
     MediaTrackingOutboxRow sent,
@@ -1100,38 +1118,38 @@ class MediaTrackingRepository {
     final int now = nowMs ?? DateTime.now().millisecondsSinceEpoch;
     final int attempts = sent.attemptCount + 1;
     // 30s, 1m, 2m… 最长 6h；设置页“立即同步”会忽略此门槛主动重置。
-    final int backoffSeconds =
-        math.min(6 * 60 * 60, 30 * math.pow(2, attempts - 1).toInt());
-    final String message = error.toString();
-    await (_db.update(_db.mediaTrackingOutbox)
-          ..where(
-              (t) => t.id.equals(sent.id) & t.updatedAt.equals(sent.updatedAt)))
-        .write(
-      MediaTrackingOutboxCompanion(
-        attemptCount: Value<int>(attempts),
-        nextAttemptAt: Value<int>(now + backoffSeconds * 1000),
-        lastError: Value<String>(
-          message.length <= 500 ? message : message.substring(0, 500),
-        ),
-      ),
+    final int backoffSeconds = math.min(
+      6 * 60 * 60,
+      30 * math.pow(2, attempts - 1).toInt(),
     );
+    final String message = error.toString();
+    await (_db.update(_db.mediaTrackingOutbox)..where(
+          (t) => t.id.equals(sent.id) & t.updatedAt.equals(sent.updatedAt),
+        ))
+        .write(
+          MediaTrackingOutboxCompanion(
+            attemptCount: Value<int>(attempts),
+            nextAttemptAt: Value<int>(now + backoffSeconds * 1000),
+            lastError: Value<String>(
+              message.length <= 500 ? message : message.substring(0, 500),
+            ),
+          ),
+        );
   }
 
-  Future<void> retryAllNow() => _db.update(_db.mediaTrackingOutbox).write(
-        const MediaTrackingOutboxCompanion(
-          nextAttemptAt: Value<int>(0),
-        ),
-      );
+  Future<void> retryAllNow() => _db
+      .update(_db.mediaTrackingOutbox)
+      .write(const MediaTrackingOutboxCompanion(nextAttemptAt: Value<int>(0)));
 
   /// 待同步行中最早的下次尝试时刻（毫秒）；outbox 为空时返回 null。
   ///
   /// 服务发送侧用它在每轮同步收尾时安排退避到期的自动重试（BUG-1647）。
   Future<int?> earliestNextAttemptAt() async {
-    final Expression<int> earliest =
-        _db.mediaTrackingOutbox.nextAttemptAt.min();
-    final TypedResult? row = await (_db.selectOnly(_db.mediaTrackingOutbox)
-          ..addColumns(<Expression<Object>>[earliest]))
-        .getSingleOrNull();
+    final Expression<int> earliest = _db.mediaTrackingOutbox.nextAttemptAt
+        .min();
+    final TypedResult? row = await (_db.selectOnly(
+      _db.mediaTrackingOutbox,
+    )..addColumns(<Expression<Object>>[earliest])).getSingleOrNull();
     return row?.read(earliest);
   }
 }

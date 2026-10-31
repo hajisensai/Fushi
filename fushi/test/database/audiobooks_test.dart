@@ -1,4 +1,4 @@
-﻿import 'package:drift/native.dart';
+import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -37,11 +37,13 @@ void main() {
     test('upsert replaces existing audiobook', () async {
       final db = await _openDb();
       await db.upsertAudiobook(_audiobook());
-      await db.upsertAudiobook(AudiobooksCompanion.insert(
-        bookKey: 'book/1',
-        alignmentFormat: 'vtt',
-        alignmentPath: '/tmp/new.vtt',
-      ));
+      await db.upsertAudiobook(
+        AudiobooksCompanion.insert(
+          bookKey: 'book/1',
+          alignmentFormat: 'vtt',
+          alignmentPath: '/tmp/new.vtt',
+        ),
+      );
 
       final row = await db.getAudiobookByBookKey('book/1');
       expect(row!.alignmentFormat, 'vtt');
@@ -66,37 +68,39 @@ void main() {
   });
 
   group('AudioCues table', () {
-    test('replaceCuesForBook inserts batch and getCuesForBook reads them',
-        () async {
-      final db = await _openDb();
-      final cues = [
-        AudioCuesCompanion.insert(
-          bookKey: 'b1',
-          chapterHref: 'ch1.xhtml',
-          sentenceIndex: 0,
-          textFragmentId: 'p1s1',
-          cueText: 'Hello',
-          startMs: 0,
-          endMs: 1000,
-          audioFileIndex: 0,
-        ),
-        AudioCuesCompanion.insert(
-          bookKey: 'b1',
-          chapterHref: 'ch1.xhtml',
-          sentenceIndex: 1,
-          textFragmentId: 'p1s2',
-          cueText: 'World',
-          startMs: 1000,
-          endMs: 2000,
-          audioFileIndex: 0,
-        ),
-      ];
+    test(
+      'replaceCuesForBook inserts batch and getCuesForBook reads them',
+      () async {
+        final db = await _openDb();
+        final cues = [
+          AudioCuesCompanion.insert(
+            bookKey: 'b1',
+            chapterHref: 'ch1.xhtml',
+            sentenceIndex: 0,
+            textFragmentId: 'p1s1',
+            cueText: 'Hello',
+            startMs: 0,
+            endMs: 1000,
+            audioFileIndex: 0,
+          ),
+          AudioCuesCompanion.insert(
+            bookKey: 'b1',
+            chapterHref: 'ch1.xhtml',
+            sentenceIndex: 1,
+            textFragmentId: 'p1s2',
+            cueText: 'World',
+            startMs: 1000,
+            endMs: 2000,
+            audioFileIndex: 0,
+          ),
+        ];
 
-      await db.replaceCuesForBook('b1', cues);
+        await db.replaceCuesForBook('b1', cues);
 
-      final result = await db.getCuesForBook('b1');
-      expect(result, hasLength(2));
-    });
+        final result = await db.getCuesForBook('b1');
+        expect(result, hasLength(2));
+      },
+    );
 
     test('getCuesForChapter filters by chapter href', () async {
       final db = await _openDb();

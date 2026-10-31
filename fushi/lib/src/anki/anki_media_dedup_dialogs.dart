@@ -35,54 +35,60 @@ Future<AnkiMediaDedupReport?> runAnkiMediaDedupWithProgress(
   final ValueNotifier<bool> cancelRequested = ValueNotifier<bool>(false);
   BuildContext? dialogContext;
   bool dialogClosed = false;
-  unawaited(showAppDialog<void>(
-    context: context,
-    barrierDismissible: false,
-    builder: (BuildContext ctx) {
-      dialogContext = ctx;
-      return PopScope(
-        canPop: false,
-        child: FushiAlertDialog(
-          icon: const FushiDialogHeroIcon(icon: FushiIcons.deleteSweep),
-          title: Text(t.anki_dedup_progress_title),
-          content: SizedBox(
-            width: 420,
-            child: _AnkiMediaDedupProgressBody(
-              progress: progress,
-              dryRun: dryRun,
-            ),
-          ),
-          actions: [
-            // 后端不支持中途叫停（整轮在主机进程里跑）时**不画**取消按钮：
-            // 一个点了没反应的取消按钮比没有更糟，用户会以为已经停了。
-            if (runner.supportsProgress)
-              ValueListenableBuilder<bool>(
-                valueListenable: cancelRequested,
-                builder:
-                    (BuildContext context, bool requested, Widget? child) =>
-                        FushiTextButton(
-                  onPressed:
-                      requested ? null : () => cancelRequested.value = true,
-                  child: Text(
-                      requested ? t.anki_dedup_cancelling : t.dialog_cancel),
-                ),
-              )
-            else
-              // 但也不能一颗按钮都不给：本框是 `barrierDismissible: false` +
-              // `PopScope(canPop: false)`，iOS 既没有系统返回键、对话框路由也没有
-              // 侧滑返回，于是唯一的关闭点只剩任务结束时 finally 里那次 pop——而
-              // 远端制卡后端（iOS 上的主力，本机无 AnkiDroid）那条请求超时是 30
-              // 分钟，主机一休眠/掉线就是半小时全屏死锁，只能杀进程。这颗按钮只把
-              // UI 与请求解绑（任务照跑），不谎称能停任务，与上面那条注释不冲突。
-              FushiTextButton(
-                onPressed: () => Navigator.of(ctx).pop(),
-                child: Text(t.dialog_background_close),
+  unawaited(
+    showAppDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext ctx) {
+        dialogContext = ctx;
+        return PopScope(
+          canPop: false,
+          child: FushiAlertDialog(
+            icon: const FushiDialogHeroIcon(icon: FushiIcons.deleteSweep),
+            title: Text(t.anki_dedup_progress_title),
+            content: SizedBox(
+              width: 420,
+              child: _AnkiMediaDedupProgressBody(
+                progress: progress,
+                dryRun: dryRun,
               ),
-          ],
-        ),
-      );
-    },
-  ).then((void _) => dialogClosed = true));
+            ),
+            actions: [
+              // 后端不支持中途叫停（整轮在主机进程里跑）时**不画**取消按钮：
+              // 一个点了没反应的取消按钮比没有更糟，用户会以为已经停了。
+              if (runner.supportsProgress)
+                ValueListenableBuilder<bool>(
+                  valueListenable: cancelRequested,
+                  builder:
+                      (BuildContext context, bool requested, Widget? child) =>
+                          FushiTextButton(
+                            onPressed: requested
+                                ? null
+                                : () => cancelRequested.value = true,
+                            child: Text(
+                              requested
+                                  ? t.anki_dedup_cancelling
+                                  : t.dialog_cancel,
+                            ),
+                          ),
+                )
+              else
+                // 但也不能一颗按钮都不给：本框是 `barrierDismissible: false` +
+                // `PopScope(canPop: false)`，iOS 既没有系统返回键、对话框路由也没有
+                // 侧滑返回，于是唯一的关闭点只剩任务结束时 finally 里那次 pop——而
+                // 远端制卡后端（iOS 上的主力，本机无 AnkiDroid）那条请求超时是 30
+                // 分钟，主机一休眠/掉线就是半小时全屏死锁，只能杀进程。这颗按钮只把
+                // UI 与请求解绑（任务照跑），不谎称能停任务，与上面那条注释不冲突。
+                FushiTextButton(
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  child: Text(t.dialog_background_close),
+                ),
+            ],
+          ),
+        );
+      },
+    ).then((void _) => dialogClosed = true),
+  );
   try {
     return await runner.runNow(
       dryRun: dryRun,
@@ -119,79 +125,94 @@ class _AnkiMediaDedupProgressBody extends StatelessWidget {
       valueListenable: progress,
       builder:
           (BuildContext context, AnkiMediaDedupProgress? p, Widget? child) {
-        // scanning 阶段总量未知，走不定型进度条。
-        final double? value = (p != null &&
-                p.stage != AnkiMediaDedupStage.scanning &&
-                p.total > 0)
-            ? p.done / p.total
-            : null;
-        final String line;
-        if (p == null || p.stage == AnkiMediaDedupStage.scanning) {
-          line = t.anki_dedup_progress_scanning(count: '${p?.done ?? 0}');
-        } else if (p.stage == AnkiMediaDedupStage.hashing) {
-          line = t.anki_dedup_progress_hashing(
-              done: '${p.done}', total: '${p.total}');
-        } else if (p.stage == AnkiMediaDedupStage.indexing) {
-          line = t.anki_dedup_progress_indexing(
-              done: '${p.done}', total: '${p.total}');
-        } else {
-          line = t.anki_dedup_progress_resolving(
-              done: '${p.done}', total: '${p.total}');
-        }
-        final ColorScheme scheme = Theme.of(context).colorScheme;
-        return Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // M3E 波浪进度条；阶段文案 titleSmall 强调、计数等宽数字。
-            FushiLinearProgressIndicator(value: value),
-            const SizedBox(height: 12),
-            Text(line, style: context.fushiType.titleSmallEmphasized.tabular),
-            if (p?.currentFile != null) ...[
-              const SizedBox(height: 8),
-              // 当前文件：小件 12 圆角的 secondaryContainer 色块，与阶段行分层。
-              DecoratedBox(
-                decoration: BoxDecoration(
-                  color: scheme.secondaryContainer,
-                  borderRadius: FushiM3eShape.smallRadius,
+            // scanning 阶段总量未知，走不定型进度条。
+            final double? value =
+                (p != null &&
+                    p.stage != AnkiMediaDedupStage.scanning &&
+                    p.total > 0)
+                ? p.done / p.total
+                : null;
+            final String line;
+            if (p == null || p.stage == AnkiMediaDedupStage.scanning) {
+              line = t.anki_dedup_progress_scanning(count: '${p?.done ?? 0}');
+            } else if (p.stage == AnkiMediaDedupStage.hashing) {
+              line = t.anki_dedup_progress_hashing(
+                done: '${p.done}',
+                total: '${p.total}',
+              );
+            } else if (p.stage == AnkiMediaDedupStage.indexing) {
+              line = t.anki_dedup_progress_indexing(
+                done: '${p.done}',
+                total: '${p.total}',
+              );
+            } else {
+              line = t.anki_dedup_progress_resolving(
+                done: '${p.done}',
+                total: '${p.total}',
+              );
+            }
+            final ColorScheme scheme = Theme.of(context).colorScheme;
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // M3E 波浪进度条；阶段文案 titleSmall 强调、计数等宽数字。
+                FushiLinearProgressIndicator(value: value),
+                const SizedBox(height: 12),
+                Text(
+                  line,
+                  style: context.fushiType.titleSmallEmphasized.tabular,
                 ),
-                child: Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  child: Row(
-                    children: [
-                      FushiIcon(
-                        FushiIcons.file,
-                        size: 18,
-                        color: scheme.onSecondaryContainer,
+                if (p?.currentFile != null) ...[
+                  const SizedBox(height: 8),
+                  // 当前文件：小件 12 圆角的 secondaryContainer 色块，与阶段行分层。
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: scheme.secondaryContainer,
+                      borderRadius: FushiM3eShape.smallRadius,
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
                       ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          p!.currentFile!,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: context.fushiType.bodySmall
-                              .copyWith(color: scheme.onSecondaryContainer),
-                        ),
+                      child: Row(
+                        children: [
+                          FushiIcon(
+                            FushiIcons.file,
+                            size: 18,
+                            color: scheme.onSecondaryContainer,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              p!.currentFile!,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: context.fushiType.bodySmall.copyWith(
+                                color: scheme.onSecondaryContainer,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
-                ),
-              ),
-            ],
-            if (!dryRun && (p?.bytesFreed ?? 0) > 0) ...[
-              const SizedBox(height: 8),
-              Text(
-                t.anki_dedup_progress_freed(
-                    size: formatAnkiMediaDedupBytes(p!.bytesFreed)),
-                style: context.fushiType.bodyMedium
-                    .copyWith(color: scheme.primary),
-              ),
-            ],
-          ],
-        );
-      },
+                ],
+                if (!dryRun && (p?.bytesFreed ?? 0) > 0) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    t.anki_dedup_progress_freed(
+                      size: formatAnkiMediaDedupBytes(p!.bytesFreed),
+                    ),
+                    style: context.fushiType.bodyMedium.copyWith(
+                      color: scheme.primary,
+                    ),
+                  ),
+                ],
+              ],
+            );
+          },
     );
   }
 }
@@ -238,10 +259,12 @@ Future<bool> showAnkiMediaDedupPlanDialog(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
-              Text(t.anki_dedup_plan_intro(
-                count: '${plan.duplicatesRemoved}',
-                size: formatAnkiMediaDedupBytes(plan.bytesSaved),
-              )),
+              Text(
+                t.anki_dedup_plan_intro(
+                  count: '${plan.duplicatesRemoved}',
+                  size: formatAnkiMediaDedupBytes(plan.bytesSaved),
+                ),
+              ),
               const SizedBox(height: 12),
               // 逐条清单走分段卡片（首尾大圆角、行间 2px），一条一段。
               FushiGroupedList(
@@ -249,7 +272,9 @@ Future<bool> showAnkiMediaDedupPlanDialog(
                   for (final MediaDedupDeletion d in plan.deletions)
                     Padding(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 14, vertical: 10),
+                        horizontal: 14,
+                        vertical: 10,
+                      ),
                       child: Text(
                         t.anki_dedup_plan_entry(
                           file: d.filename,
@@ -262,9 +287,11 @@ Future<bool> showAnkiMediaDedupPlanDialog(
                 ],
               ),
               const SizedBox(height: 12),
-              Text(offerDelete
-                  ? t.anki_dedup_plan_journal
-                  : t.anki_dedup_report_dry_note),
+              Text(
+                offerDelete
+                    ? t.anki_dedup_plan_journal
+                    : t.anki_dedup_report_dry_note,
+              ),
               if (offerDelete) ...[
                 const SizedBox(height: 8),
                 // BUG-1263：AnkiConnect 在 Anki 主线程执行，真删期间 Anki

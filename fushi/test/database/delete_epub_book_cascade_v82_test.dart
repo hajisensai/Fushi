@@ -26,18 +26,24 @@ void main() {
     );
     addTearDown(db.close);
     // 自证前提：FK 真开着（memory DB 默认关，setup 回调开启后不许静默失效）。
-    final QueryRow fk =
-        await db.customSelect('PRAGMA foreign_keys').getSingle();
-    expect(fk.read<int>('foreign_keys'), 1,
-        reason: '本测试必须在 foreign_keys=ON 下跑（plan 9⑤）');
+    final QueryRow fk = await db
+        .customSelect('PRAGMA foreign_keys')
+        .getSingle();
+    expect(
+      fk.read<int>('foreign_keys'),
+      1,
+      reason: '本测试必须在 foreign_keys=ON 下跑（plan 9⑤）',
+    );
     return db;
   }
 
   Future<int> countByUid(FushiDatabase db, String table, String uid) async {
-    final QueryRow row = await db.customSelect(
-      'SELECT COUNT(*) AS c FROM $table WHERE book_uid = ?',
-      variables: <Variable<Object>>[Variable<String>(uid)],
-    ).getSingle();
+    final QueryRow row = await db
+        .customSelect(
+          'SELECT COUNT(*) AS c FROM $table WHERE book_uid = ?',
+          variables: <Variable<Object>>[Variable<String>(uid)],
+        )
+        .getSingle();
     return row.read<int>('c');
   }
 
@@ -45,42 +51,52 @@ void main() {
     final FushiDatabase db = await openDb();
 
     const String uid = 'uid-book-a';
-    await db.insertEpubBook(EpubBooksCompanion.insert(
-      bookKey: 'book-a',
-      uid: const Value(uid),
-      title: '书A',
-      epubPath: '/fake/book-a.epub',
-      extractDir: '/fake/book-a',
-      chapterCount: 1,
-      chaptersJson: '[]',
-      importedAt: 1000,
-    ));
+    await db.insertEpubBook(
+      EpubBooksCompanion.insert(
+        bookKey: 'book-a',
+        uid: const Value(uid),
+        title: '书A',
+        epubPath: '/fake/book-a.epub',
+        extractDir: '/fake/book-a',
+        chapterCount: 1,
+        chaptersJson: '[]',
+        importedAt: 1000,
+      ),
+    );
 
     // 四表各造行（全部用行 uid 键）。
-    await db.upsertReaderPosition(ReaderPositionsCompanion.insert(
-      bookUid: uid,
-      sectionIndex: 3,
-      normCharOffset: 5000,
-      charOffset: const Value(42),
-      updatedAt: 111,
-    ));
-    await db.into(db.bookmarks).insert(BookmarksCompanion.insert(
-          bookUid: uid,
-          sectionIndex: 1,
-          normCharOffset: 100,
-          label: '第一章',
-          createdAt: 10,
-        ));
+    await db.upsertReaderPosition(
+      ReaderPositionsCompanion.insert(
+        bookUid: uid,
+        sectionIndex: 3,
+        normCharOffset: 5000,
+        charOffset: const Value(42),
+        updatedAt: 111,
+      ),
+    );
+    await db
+        .into(db.bookmarks)
+        .insert(
+          BookmarksCompanion.insert(
+            bookUid: uid,
+            sectionIndex: 1,
+            normCharOffset: 100,
+            label: '第一章',
+            createdAt: 10,
+          ),
+        );
     await db.upsertBookCss(uid, 'OEBPS/styles/main.css', 'body{}', 10);
     await db.markImageRevealed(uid, 'OEBPS/img/1.jpg', 20);
 
     // 非本书的 SRT 域 reader_positions 行：键不属于 book-a，必须幸存。
-    await db.upsertReaderPosition(ReaderPositionsCompanion.insert(
-      bookUid: 'srt-other-book',
-      sectionIndex: 0,
-      normCharOffset: 100,
-      updatedAt: 222,
-    ));
+    await db.upsertReaderPosition(
+      ReaderPositionsCompanion.insert(
+        bookUid: 'srt-other-book',
+        sectionIndex: 0,
+        normCharOffset: 100,
+        updatedAt: 222,
+      ),
+    );
 
     final int deleted = await db.deleteEpubBook('book-a');
     expect(deleted, 1, reason: '书行本身删除成功');
@@ -92,8 +108,11 @@ void main() {
       'book_custom_css',
       'revealed_images',
     ]) {
-      expect(await countByUid(db, table, uid), 0,
-          reason: 'deleteEpubBook 后 $table 不得残留该书 uid 的行');
+      expect(
+        await countByUid(db, table, uid),
+        0,
+        reason: 'deleteEpubBook 后 $table 不得残留该书 uid 的行',
+      );
     }
 
     // ── 相邻不误伤：SRT 域行照旧 ──

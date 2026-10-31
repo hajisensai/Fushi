@@ -25,14 +25,14 @@ import 'package:fushi/utils.dart';
 /// [getActions]/[buildHistoryPage] 极少被触达，实现取与 EPUB 源一致的安全回退。
 class ReaderPdfSource extends ReaderMediaSource {
   ReaderPdfSource._()
-      : super(
-          uniqueKey: kUniqueKey,
-          sourceName: t.source_name_bookshelf,
-          description: t.source_description_epub,
-          icon: Icons.picture_as_pdf_outlined,
-          implementsSearch: false,
-          implementsHistory: false,
-        );
+    : super(
+        uniqueKey: kUniqueKey,
+        sourceName: t.source_name_bookshelf,
+        description: t.source_description_epub,
+        icon: Icons.picture_as_pdf_outlined,
+        implementsSearch: false,
+        implementsHistory: false,
+      );
 
   /// 媒体源唯一键（持久化标识，永不复用 `reader_fushi`）。[ReaderFushiSource] 的
   /// `_bookToMediaItem` 用它把 `format=='pdf'` 的行路由到本源。
@@ -62,10 +62,7 @@ class ReaderPdfSource extends ReaderMediaSource {
   }) async {}
 
   @override
-  Widget buildLaunchPage({
-    MediaItem? item,
-    Bookmark? initialBookmarkJump,
-  }) {
+  Widget buildLaunchPage({MediaItem? item, Bookmark? initialBookmarkJump}) {
     final String bookKey =
         ReaderFushiSource.parseBookKey(item?.mediaIdentifier ?? '') ?? '';
     return FushiAppUiScaleNeutralizer(

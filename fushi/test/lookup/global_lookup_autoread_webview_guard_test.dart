@@ -66,8 +66,11 @@ void main() {
         js.contains("postToHost('wordAudioPlayed', [token, false,"),
         isTrue,
       );
-      expect(js.contains('FrameNotLoaded'), isTrue,
-          reason: 'an unloaded frame must report its own distinct reason');
+      expect(
+        js.contains('FrameNotLoaded'),
+        isTrue,
+        reason: 'an unloaded frame must report its own distinct reason',
+      );
     });
 
     test('iframe realm plays via __fushiPlayWordAudioUrl and reports back', () {
@@ -89,7 +92,8 @@ void main() {
       expect(
         js.contains('window.__fushiPlayWordAudioUrl = playWordAudio'),
         isTrue,
-        reason: 'the host-driven auto-read entry (shared with the in-app '
+        reason:
+            'the host-driven auto-read entry (shared with the in-app '
             'popup) must not be renamed/removed',
       );
     });
@@ -106,7 +110,8 @@ void main() {
       expect(
         src.contains('return await TtsChannel.instance.playAudioRef('),
         isTrue,
-        reason: 'the Dart fallback must propagate playAudioRef\'s real result '
+        reason:
+            'the Dart fallback must propagate playAudioRef\'s real result '
             '(with the SAME already-resolved ref — never re-resolve)',
       );
     });
@@ -114,10 +119,13 @@ void main() {
 
   group('BUG-1127 dedupe window releases on silent failure', () {
     test('coordinator rolls back acceptedAt when play reports false', () {
-      final String src =
-          read('lib/src/utils/misc/lookup_auto_read_coordinator.dart');
-      expect(src.contains('typedef LookupAutoReadPlayback = Future<bool>'),
-          isTrue);
+      final String src = read(
+        'lib/src/utils/misc/lookup_auto_read_coordinator.dart',
+      );
+      expect(
+        src.contains('typedef LookupAutoReadPlayback = Future<bool>'),
+        isTrue,
+      );
       expect(src.contains('if (!played)'), isTrue);
       // Behavior itself is covered by lookup_auto_read_coordinator_test.dart;
       // this pins the wiring so a refactor back to Future<void> fails loudly.

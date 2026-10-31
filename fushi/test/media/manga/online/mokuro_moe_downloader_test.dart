@@ -29,8 +29,10 @@ class _VolumeServer {
   final Completer<void> release = Completer<void>();
 
   static Future<_VolumeServer> start() async {
-    final HttpServer server =
-        await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final HttpServer server = await HttpServer.bind(
+      InternetAddress.loopbackIPv4,
+      0,
+    );
     return _VolumeServer(server);
   }
 
@@ -54,8 +56,9 @@ class _VolumeServer {
 
       int offset = 0;
       if (range != null && supportRange) {
-        final RegExpMatch? match =
-            RegExp(r'^bytes=(\d+)-$').firstMatch(range.trim());
+        final RegExpMatch? match = RegExp(
+          r'^bytes=(\d+)-$',
+        ).firstMatch(range.trim());
         offset = match == null ? 0 : int.parse(match.group(1)!);
         if (offset >= payload.length) {
           request.response.statusCode = HttpStatus.requestedRangeNotSatisfiable;
@@ -151,27 +154,33 @@ void main() {
   MokuroMoeVolumeDownloader downloader({int interval = 4}) =>
       MokuroMoeVolumeDownloader(
         client: MokuroMoeClient(
-            baseUrl: server.baseUrl, createClient: HttpClient.new),
+          baseUrl: server.baseUrl,
+          createClient: HttpClient.new,
+        ),
         createClient: HttpClient.new,
         stagingRoot: stagingRoot,
         progressByteInterval: interval,
       );
 
-  Directory stagingDir() => Directory(p.join(
-        stagingRoot.path,
-        sanitizeTtuFilename(series),
-        sanitizeTtuFilename(volume),
-      ));
+  Directory stagingDir() => Directory(
+    p.join(
+      stagingRoot.path,
+      sanitizeTtuFilename(series),
+      sanitizeTtuFilename(volume),
+    ),
+  );
 
   void serveVolume({List<int>? cbz}) {
-    final List<int> zipBytes = cbz ??
+    final List<int> zipBytes =
+        cbz ??
         _buildCbz(volume, <String, List<int>>{
           '001.jpg': <int>[1, 2, 3],
           '002.jpg': <int>[4, 5, 6],
         });
     server.payloads['/mokuro-reader/$series/$volume.cbz'] = zipBytes;
-    server.payloads['/mokuro-reader/$series/$volume.mokuro'] =
-        utf8.encode(_buildMokuro(volume, <String>['001.jpg', '002.jpg']));
+    server.payloads['/mokuro-reader/$series/$volume.mokuro'] = utf8.encode(
+      _buildMokuro(volume, <String>['001.jpg', '002.jpg']),
+    );
   }
 
   test('端到端：下载 → 解包 → importFromMokuroPath 落库，阶段有序、staging 清理', () async {
@@ -182,8 +191,9 @@ void main() {
         .toList();
 
     // 阶段按序出现且以 done 收尾。
-    final List<MokuroMoeDownloadStage> stages =
-        events.map((MokuroMoeVolumeDownloadEvent e) => e.stage).toList();
+    final List<MokuroMoeDownloadStage> stages = events
+        .map((MokuroMoeVolumeDownloadEvent e) => e.stage)
+        .toList();
     expect(stages.first, MokuroMoeDownloadStage.downloadingMokuro);
     expect(stages, contains(MokuroMoeDownloadStage.downloadingCbz));
     expect(stages, contains(MokuroMoeDownloadStage.extracting));
@@ -195,9 +205,11 @@ void main() {
     final String bookKey = done.bookKey!;
     // 标题 = `<系列> <卷>`（volumeTitle 口径）。
     expect(
-        bookKey,
-        sanitizeTtuFilename(
-            MokuroMoeVolumeDownloader.volumeTitle(series, volume)));
+      bookKey,
+      sanitizeTtuFilename(
+        MokuroMoeVolumeDownloader.volumeTitle(series, volume),
+      ),
+    );
 
     final EpubBookRow? row = await db.getEpubBook(bookKey);
     expect(row, isNotNull);
@@ -208,23 +220,25 @@ void main() {
     expect(stagingDir().existsSync(), isFalse);
   });
 
-  test('同卷重跑：DuplicatePolicy.skip() 命中 → done(skippedExisting=true)，不建重复行',
-      () async {
-    serveVolume();
-    await downloader()
-        .run(db: db, seriesName: series, volumeName: volume)
-        .drain<void>();
-    serveVolume(); // 重新供流（上一轮已消费）。
+  test(
+    '同卷重跑：DuplicatePolicy.skip() 命中 → done(skippedExisting=true)，不建重复行',
+    () async {
+      serveVolume();
+      await downloader()
+          .run(db: db, seriesName: series, volumeName: volume)
+          .drain<void>();
+      serveVolume(); // 重新供流（上一轮已消费）。
 
-    final List<MokuroMoeVolumeDownloadEvent> events = await downloader()
-        .run(db: db, seriesName: series, volumeName: volume)
-        .toList();
+      final List<MokuroMoeVolumeDownloadEvent> events = await downloader()
+          .run(db: db, seriesName: series, volumeName: volume)
+          .toList();
 
-    expect(events.last.stage, MokuroMoeDownloadStage.done);
-    expect(events.last.skippedExisting, isTrue);
-    expect(events.last.bookKey, isNull);
-    expect((await db.getAllEpubBooks()).length, 1);
-  });
+      expect(events.last.stage, MokuroMoeDownloadStage.done);
+      expect(events.last.skippedExisting, isTrue);
+      expect(events.last.bookKey, isNull);
+      expect((await db.getAllEpubBooks()).length, 1);
+    },
+  );
 
   test('断点续传：预置 .part 触发 Range bytes=N-，拼接后 zip 完整可导入', () async {
     final List<int> zipBytes = _buildCbz(volume, <String, List<int>>{
@@ -233,8 +247,9 @@ void main() {
     });
     serveVolume(cbz: zipBytes);
     final Directory staging = stagingDir()..createSync(recursive: true);
-    File(p.join(staging.path, 'volume.cbz.part'))
-        .writeAsBytesSync(zipBytes.sublist(0, 10));
+    File(
+      p.join(staging.path, 'volume.cbz.part'),
+    ).writeAsBytesSync(zipBytes.sublist(0, 10));
 
     final List<MokuroMoeVolumeDownloadEvent> events = await downloader()
         .run(db: db, seriesName: series, volumeName: volume)
@@ -263,7 +278,9 @@ void main() {
     // 失败只清解包半成品，已下完的 cbz 保留供重试。
     expect(File(p.join(stagingDir().path, 'volume.cbz')).existsSync(), isTrue);
     expect(
-        Directory(p.join(stagingDir().path, 'extract')).existsSync(), isFalse);
+      Directory(p.join(stagingDir().path, 'extract')).existsSync(),
+      isFalse,
+    );
   });
 
   test('取消：流以 MokuroMoeDownloadCancelled 结束，.part 保留供续传', () async {
@@ -273,7 +290,9 @@ void main() {
     final MokuroMoeVolumeDownloader dl = downloader(interval: 1);
     final Completer<Object> streamError = Completer<Object>();
     bool cancelled = false;
-    dl.run(db: db, seriesName: series, volumeName: volume).listen(
+    dl
+        .run(db: db, seriesName: series, volumeName: volume)
+        .listen(
           (MokuroMoeVolumeDownloadEvent event) {
             // CBZ 阶段一开（服务器挂起前段）→ 请求取消 → 放行余量：下载循环在
             // 下一个 chunk 处看到取消标志并抛错，.part 保留。
@@ -287,8 +306,9 @@ void main() {
           onError: (Object e) => streamError.complete(e),
           onDone: () {
             if (!streamError.isCompleted) {
-              streamError
-                  .complete(StateError('stream completed without error'));
+              streamError.complete(
+                StateError('stream completed without error'),
+              );
             }
           },
         );

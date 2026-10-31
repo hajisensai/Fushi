@@ -25,7 +25,7 @@ class FushiTofuOutcome {
   const FushiTofuOutcome.captured(String this.fingerprint) : failure = null;
 
   const FushiTofuOutcome.failed(FushiTofuFailure this.failure)
-      : fingerprint = null;
+    : fingerprint = null;
 
   /// 捕获到的 host 证书 SHA-256 指纹（`aa:bb:..`）；失败时为 null。
   final String? fingerprint;
@@ -91,15 +91,17 @@ class FushiTofuProbe {
       // resolve 出一个真 socket，没人 destroy 就是句柄泄漏。这个兜底必须注册在
       // `.timeout` **之后**——注册顺序即回调顺序，抢在前面会在成功路径上先把我们
       // 正要用的 socket 销毁掉。
-      unawaited(connecting.then<void>(
-        (SecureSocket abandoned) {
-          if (timedOut) abandoned.destroy();
-        },
-        onError: (Object _) {
-          // 超时之后底层 connect 才真失败：结论已由上面的 TimeoutException 代表，
-          // 这里只负责别让它变成 unhandled async error。
-        },
-      ));
+      unawaited(
+        connecting.then<void>(
+          (SecureSocket abandoned) {
+            if (timedOut) abandoned.destroy();
+          },
+          onError: (Object _) {
+            // 超时之后底层 connect 才真失败：结论已由上面的 TimeoutException 代表，
+            // 这里只负责别让它变成 unhandled async error。
+          },
+        ),
+      );
       socket = await connected;
       // 自签证书会先触发 onBadCertificate（此时已捕获）；若证书恰好被系统信任则
       // 回调不触发，从 socket.peerCertificate 兜底取。

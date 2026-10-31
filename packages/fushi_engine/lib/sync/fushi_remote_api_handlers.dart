@@ -95,8 +95,8 @@ class RemotePopupDictionaryCss {
 
 /// 查词响应 `theme` 字段的供给器。参数是请求体里扩展显式要求的明暗
 /// （`'light'` / `'dark'`，经 [remoteLookupColorSchemeOf] 校验），null = 跟随 app 当前明暗。
-typedef RemoteThemeColorsProvider = Map<String, String> Function(
-    String? colorScheme);
+typedef RemoteThemeColorsProvider =
+    Map<String, String> Function(String? colorScheme);
 
 /// 从查词请求体取扩展显式要求的明暗：只接受字符串 `'light'` / `'dark'`，其它
 /// （缺省 / 非字符串 / 别的值）一律 null。
@@ -130,8 +130,9 @@ Future<Map<String, dynamic>> buildRemoteDictionaryLookupResponse(
   RemotePopupDictionaryCss Function()? popupDictionaryCssProvider,
   String? Function()? appLocaleProvider,
 }) async {
-  final Map<String, String>? theme =
-      themeColorsProvider?.call(remoteLookupColorSchemeOf(body));
+  final Map<String, String>? theme = themeColorsProvider?.call(
+    remoteLookupColorSchemeOf(body),
+  );
   // 单词音频：把 app 当前已启用的音频源随查词响应下发，扩展 content.js 据此设
   // window.audioSources（非空 → popup.js 渲染 ♪ 按钮）。null（未注入，如 sync host）
   // 时不带该字段（向后兼容）。
@@ -164,7 +165,8 @@ Future<Map<String, dynamic>> buildRemoteDictionaryLookupResponse(
   //   - 字段**缺失** ⇒ 老客户端不认识该契约 ⇒ 一个字节都不发（向后兼容，旧扩展行为不变）；
   //   - 字段在且与当前 revision 不同 ⇒ 全量下发一次，之后一直命中缓存。
   final RemotePopupDictionaryCss? popupCss = popupDictionaryCssProvider?.call();
-  final bool cssStale = popupCss != null &&
+  final bool cssStale =
+      popupCss != null &&
       body.containsKey('stylesRevision') &&
       body['stylesRevision']?.toString() != popupCss.revision;
   final Map<String, Object?> envelope = <String, Object?>{
@@ -216,14 +218,14 @@ Future<Map<String, dynamic>> buildRemoteDictionaryLookupResponse(
       hasPopupFastPath(lookup, language: language, rubySpans: rubySpans)) {
     final RemoteDictionaryPopupLookup? popup =
         await searchRemoteDictionaryPopupForRequest(
-      lookup,
-      term: term,
-      wildcards: wildcards,
-      maximumTerms: maximumTerms,
-      language: language,
-      timing: popupTiming,
-      rubySpans: rubySpans,
-    );
+          lookup,
+          term: term,
+          wildcards: wildcards,
+          maximumTerms: maximumTerms,
+          language: language,
+          timing: popupTiming,
+          rubySpans: rubySpans,
+        );
     return <String, dynamic>{
       'type': 'dictionaryResult',
       'result': popup == null
@@ -249,8 +251,8 @@ Future<Map<String, dynamic>> buildRemoteDictionaryLookupResponse(
     'result': result == null
         ? null
         : popupOnly
-            ? <String, dynamic>{'bestLength': result.bestLength}
-            : jsonDecode(result.toJson()),
+        ? <String, dynamic>{'bestLength': result.bestLength}
+        : jsonDecode(result.toJson()),
     'popupJson': result?.popupJson,
     ...envelope,
   };
@@ -273,11 +275,12 @@ Future<Map<String, dynamic>> buildRemoteDictionaryLookupResponse(
 ///
 /// 只处理本机 token 端点的引用（[remoteAudioTokenIdFromRef] 非 null）；其余（外部 http、
 /// data:、本地路径）不是短命的，原样透传。
-typedef RemoteMineWordAudioResolver = Future<String?> Function(
-  String tokenId, {
-  required String expression,
-  required String reading,
-});
+typedef RemoteMineWordAudioResolver =
+    Future<String?> Function(
+      String tokenId, {
+      required String expression,
+      required String reading,
+    });
 
 /// 若 [audioRef] 是本机 server 签发的单词音频 token URL（`/api/lookup/audio/file?id=…`），
 /// 返回其 token id；否则 null。只看路径与 `id` 查询参数，不看 host/port——扩展配的可能是
@@ -333,14 +336,17 @@ Future<Map<String, dynamic>> buildRemoteMineResponse(
   RemoteMineWordAudioResolver? wordAudio,
 }) async {
   final ImmersionMinePayload payload = ImmersionMinePayload.fromJson(
-      await resolveRemoteMineWordAudio(body, wordAudio: wordAudio));
+    await resolveRemoteMineWordAudio(body, wordAudio: wordAudio),
+  );
   // TODO-1303：结果不再是裸字符串——摊开诊断（失败原因 / 音频落空警告）到响应体，
   // 让扩展 content.js 能 toast 显因、区分「真成功」与「卡建了但没音频」。返回类型仍是
   // Map（未改契约），只是多了可选 message/detail 字段（向后兼容：旧扩展忽略即可）。
   final RemoteMineResult r = payload.isImmersion
       ? await mining.mineImmersion(payload)
       : await mining.mineEntry(
-          fields: payload.fields, sentence: payload.sentence);
+          fields: payload.fields,
+          sentence: payload.sentence,
+        );
   return <String, dynamic>{
     'result': r.result,
     if (r.message != null) 'message': r.message,
@@ -421,8 +427,10 @@ Future<Map<String, dynamic>> buildRemoteDuplicateResponse(
   if (expression.trim().isEmpty) {
     return <String, dynamic>{'duplicate': false};
   }
-  final bool duplicate =
-      await mining.isDuplicate(expression: expression, reading: reading);
+  final bool duplicate = await mining.isDuplicate(
+    expression: expression,
+    reading: reading,
+  );
   return <String, dynamic>{'duplicate': duplicate};
 }
 
@@ -440,8 +448,10 @@ Future<Map<String, dynamic>> buildRemoteOpenInAnkiResponse(
   if (expression.trim().isEmpty) {
     throw const FormatException('Missing expression');
   }
-  final AnkiOpenWordOutcome outcome =
-      await mining.openWordInAnki(expression: expression, reading: reading);
+  final AnkiOpenWordOutcome outcome = await mining.openWordInAnki(
+    expression: expression,
+    reading: reading,
+  );
   return <String, dynamic>{'outcome': outcome.name};
 }
 
@@ -454,8 +464,9 @@ Future<Map<String, dynamic>> buildAnkiNoteTypeReadResponse(
   Map<String, dynamic> body, {
   required FushiRemoteMiningService mining,
 }) async {
-  final AnkiNoteTypeDefinition? def =
-      await mining.readNoteTypeDefinition(_requiredModelName(body));
+  final AnkiNoteTypeDefinition? def = await mining.readNoteTypeDefinition(
+    _requiredModelName(body),
+  );
   return <String, dynamic>{'noteType': def?.toJson()};
 }
 
@@ -516,8 +527,9 @@ Future<Map<String, dynamic>> buildAnkiMediaDedupRunResponse(
   if (rawDryRun != null && rawDryRun is! bool) {
     throw const FormatException('Malformed dryRun');
   }
-  final AnkiMediaDedupReport? report =
-      await mining.runMediaDedup(dryRun: (rawDryRun as bool?) ?? true);
+  final AnkiMediaDedupReport? report = await mining.runMediaDedup(
+    dryRun: (rawDryRun as bool?) ?? true,
+  );
   return <String, dynamic>{'report': report?.toJson()};
 }
 

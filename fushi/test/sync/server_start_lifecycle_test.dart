@@ -14,9 +14,11 @@ import 'package:fushi_core/fushi_core.dart';
 ///   **异常**完成，而两个调用点（设置页开关 / app init）都只处理
 ///   [FushiServerStartOutcome]、都没有 catch → 开关停在「已开启」、无任何提示。
 /// - `dispose()` 之后 `stop()` 尾部的 notifyListeners 会撞 ChangeNotifier 断言。
-FushiDatabase _memDb() => FushiDatabase.forTesting(NativeDatabase.memory(
-      setup: (dynamic rawDb) => rawDb.execute('PRAGMA foreign_keys = ON'),
-    ));
+FushiDatabase _memDb() => FushiDatabase.forTesting(
+  NativeDatabase.memory(
+    setup: (dynamic rawDb) => rawDb.execute('PRAGMA foreign_keys = ON'),
+  ),
+);
 
 /// 查词服务工厂恒抛：它在 [FushiSyncServer] 构造期被调用，即 `server.start()` 绑端口
 /// **之前**——正是原来没被 try 罩住的那一段。
@@ -43,8 +45,11 @@ void main() {
 
     final FushiServerStartOutcome outcome = await controller.start();
 
-    expect(outcome, isA<FushiServerStartError>(),
-        reason: '前半段失败与后半段失败对用户是同一件事：没起来');
+    expect(
+      outcome,
+      isA<FushiServerStartError>(),
+      reason: '前半段失败与后半段失败对用户是同一件事：没起来',
+    );
     expect((outcome as FushiServerStartError).message, isNotEmpty);
     expect(controller.isRunning, isFalse);
     // 用户的 hosting 意图不因一次启动失败被抹掉（BUG-160 / HBK-AUDIT-167）。
@@ -68,11 +73,9 @@ void main() {
     final FushiSyncServerController controller = _controller(db);
     addTearDown(controller.dispose);
 
-    final List<FushiServerStartOutcome> outcomes =
-        await Future.wait(<Future<FushiServerStartOutcome>>[
-      controller.start(),
-      controller.start()
-    ]);
+    final List<FushiServerStartOutcome> outcomes = await Future.wait(
+      <Future<FushiServerStartOutcome>>[controller.start(), controller.start()],
+    );
     expect(outcomes[0], isA<FushiServerStartError>());
     expect(outcomes[1], isA<FushiServerStartError>());
   });
@@ -109,8 +112,9 @@ void main() {
     setUpAll(() {
       expect(file.existsSync(), isTrue, reason: '需从 fushi/ 包根运行');
       final String src = file.readAsStringSync();
-      final int start =
-          src.indexOf('Future<ManualSyncResult> runManualFullSync');
+      final int start = src.indexOf(
+        'Future<ManualSyncResult> runManualFullSync',
+      );
       expect(start, greaterThanOrEqualTo(0));
       final int end = src.indexOf('enum ', start) >= 0
           ? src.indexOf('Timer? _collectionsSyncDebounce', start)
@@ -120,15 +124,24 @@ void main() {
     });
 
     test('通道循环体被 try/catch 包住', () {
-      expect(manualBody.contains('} catch (e, stack) {'), isTrue,
-          reason: '一条通道失败不得让其余通道的 channelReports 一起被丢弃');
-      expect(manualBody.contains('merged.noteError('), isTrue,
-          reason: '失败通道必须进汇总报告的 errors/authFailures，不许静默');
+      expect(
+        manualBody.contains('} catch (e, stack) {'),
+        isTrue,
+        reason: '一条通道失败不得让其余通道的 channelReports 一起被丢弃',
+      );
+      expect(
+        manualBody.contains('merged.noteError('),
+        isTrue,
+        reason: '失败通道必须进汇总报告的 errors/authFailures，不许静默',
+      );
     });
 
     test('一条通道都没跑成时把原异常抛回 UI 层', () {
-      expect(manualBody.contains('Error.throwWithStackTrace('), isTrue,
-          reason: '全失败时必须保留原异常，否则 SyncAuthError 登出分支走不到');
+      expect(
+        manualBody.contains('Error.throwWithStackTrace('),
+        isTrue,
+        reason: '全失败时必须保留原异常，否则 SyncAuthError 登出分支走不到',
+      );
     });
 
     test('有通道跑成时仍返回 completed + 逐通道报告', () {

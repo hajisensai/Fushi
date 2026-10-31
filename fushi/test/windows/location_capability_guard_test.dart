@@ -67,14 +67,18 @@ void main() {
           '= default;',
         ),
         isTrue,
-        reason: '构造函数在 RegisterPlugins 期间跑；在这里做任何 Geolocator '
+        reason:
+            '构造函数在 RegisterPlugins 期间跑；在这里做任何 Geolocator '
             '订阅就是让 Windows 从启动到退出一直记「正在使用定位」——'
             '这正是 BUG-1887 的根因。构造函数必须是空的',
       );
       // 全文件只允许有一处订阅，且必须在 EnsureGeolocator 里（懒创建的落点）。
-      final int subscribeAt = plugin.indexOf('PositionChanged(winrt::auto_revoke');
-      final int lazyAt =
-          plugin.indexOf('void PermissionHandlerWindowsPlugin::EnsureGeolocator()');
+      final int subscribeAt = plugin.indexOf(
+        'PositionChanged(winrt::auto_revoke',
+      );
+      final int lazyAt = plugin.indexOf(
+        'void PermissionHandlerWindowsPlugin::EnsureGeolocator()',
+      );
       expect(
         'PositionChanged(winrt::auto_revoke'.allMatches(plugin).length,
         1,
@@ -83,22 +87,27 @@ void main() {
       expect(
         subscribeAt > lazyAt && lazyAt >= 0,
         isTrue,
-        reason: '唯一那处订阅必须落在 EnsureGeolocator 函数体里（懒创建），'
+        reason:
+            '唯一那处订阅必须落在 EnsureGeolocator 函数体里（懒创建），'
             '不能回到构造函数或任何启动期路径',
       );
     });
 
     test('订阅推迟到 EnsureGeolocator，且 Geolocator 是懒句柄', () {
       expect(
-        plugin.contains('void PermissionHandlerWindowsPlugin::EnsureGeolocator()'),
+        plugin.contains(
+          'void PermissionHandlerWindowsPlugin::EnsureGeolocator()',
+        ),
         isTrue,
-        reason: '订阅本身不是无用代码（LocationStatus 只有存在会话时才报真实状态），'
+        reason:
+            '订阅本身不是无用代码（LocationStatus 只有存在会话时才报真实状态），'
             '所以是「推迟」不是「删掉」；推迟的落点就是这个函数',
       );
       expect(
         plugin.contains('Geolocator geolocator{nullptr}'),
         isTrue,
-        reason: '成员必须是空句柄才谈得上懒创建；写成值类型成员就又变成'
+        reason:
+            '成员必须是空句柄才谈得上懒创建；写成值类型成员就又变成'
             '「插件一构造就构造 Geolocator」',
       );
     });
@@ -112,7 +121,8 @@ void main() {
       expect(
         reader.contains('EnsureGeolocator()'),
         isTrue,
-        reason: '这是唯一读 geolocator 的地方；不在这里创建，'
+        reason:
+            '这是唯一读 geolocator 的地方；不在这里创建，'
             '真有人问「定位服务开没开」时会对空句柄取值',
       );
       expect(
@@ -126,7 +136,8 @@ void main() {
       expect(
         rootPubspec.contains('path: third_party/permission_handler_windows'),
         isTrue,
-        reason: 'vendored 源码改了但没接上 override = 构建用的还是上游那份，'
+        reason:
+            'vendored 源码改了但没接上 override = 构建用的还是上游那份，'
             '定位显示照旧。pub workspace 只认根 pubspec 的 dependency_overrides',
       );
     });
@@ -142,7 +153,8 @@ void main() {
       expect(
         configure.contains('add_PermissionRequested'),
         isTrue,
-        reason: 'ConfigureWebView 是两条创建路径（composition / windowed）+ '
+        reason:
+            'ConfigureWebView 是两条创建路径（composition / windowed）+ '
             'BUG-693 自愈重建的唯一漏斗；不在这里装门，WebView2 的默认行为是'
             '弹系统权限提示条，而这个窗是无边框置顶浮窗还开了防截屏',
       );
@@ -161,7 +173,8 @@ void main() {
       expect(
         fork.contains('add_PermissionRequested'),
         isTrue,
-        reason: 'fork 这道门比 BUG-1887 早就存在（Dart 不接管时 put_State(DENY)），'
+        reason:
+            'fork 这道门比 BUG-1887 早就存在（Dart 不接管时 put_State(DENY)），'
             '是 app 内阅读器/词典 WebView 的兜底',
       );
     });

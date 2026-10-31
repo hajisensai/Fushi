@@ -50,42 +50,75 @@ void main() {
 
       test('#7 词典卡片：.glossary-group 是 Niratan 描边卡（描边+圆角+inset高光投影，无填充）', () {
         final String body = ruleBody(css, r'\.glossary-group');
-        expect(RegExp(r'(^|[;{\s])border\s*:').hasMatch(body), isTrue,
-            reason: 'Niratan 描边卡靠 1px 描边定形，非 background 填充');
-        expect(RegExp(r'border-radius\s*:').hasMatch(body), isTrue,
-            reason: '卡片要有圆角');
-        expect(RegExp(r'box-shadow\s*:').hasMatch(body), isTrue,
-            reason: '卡片要有薄贴地投影 + 顶部 inset 白高光');
-        expect(body.contains('inset'), isTrue,
-            reason: 'box-shadow 含 inset 顶部内高光（照抄 Niratan）');
-        expect(RegExp(r'background\s*:').hasMatch(body), isFalse,
-            reason: 'Niratan 描边卡无 background 填充；有填充即退回玻璃卡');
+        expect(
+          RegExp(r'(^|[;{\s])border\s*:').hasMatch(body),
+          isTrue,
+          reason: 'Niratan 描边卡靠 1px 描边定形，非 background 填充',
+        );
+        expect(
+          RegExp(r'border-radius\s*:').hasMatch(body),
+          isTrue,
+          reason: '卡片要有圆角',
+        );
+        expect(
+          RegExp(r'box-shadow\s*:').hasMatch(body),
+          isTrue,
+          reason: '卡片要有薄贴地投影 + 顶部 inset 白高光',
+        );
+        expect(
+          body.contains('inset'),
+          isTrue,
+          reason: 'box-shadow 含 inset 顶部内高光（照抄 Niratan）',
+        );
+        expect(
+          RegExp(r'background\s*:').hasMatch(body),
+          isFalse,
+          reason: 'Niratan 描边卡无 background 填充；有填充即退回玻璃卡',
+        );
       });
 
       test('#5 当前词条蓝三角 = 纯 CSS 边框三角 #1a73e8（零字体依赖）', () {
-        final String body =
-            ruleBody(css, r'\.entry-current \.entry-header::before');
-        expect(body, contains("content: ''"),
-            reason: '::before 空 content 承载纯边框三角，不用字体字形');
-        expect(body.contains('#1a73e8'), isTrue,
-            reason: '当前词条指示用 Niratan 同款蓝 #1a73e8');
-        expect(RegExp(r'border-left\s*:\s*7px solid #1a73e8').hasMatch(body),
-            isTrue,
-            reason: '右向三角：左边框实心蓝（顶点朝右指向词条）');
+        final String body = ruleBody(
+          css,
+          r'\.entry-current \.entry-header::before',
+        );
+        expect(
+          body,
+          contains("content: ''"),
+          reason: '::before 空 content 承载纯边框三角，不用字体字形',
+        );
+        expect(
+          body.contains('#1a73e8'),
+          isTrue,
+          reason: '当前词条指示用 Niratan 同款蓝 #1a73e8',
+        );
+        expect(
+          RegExp(r'border-left\s*:\s*7px solid #1a73e8').hasMatch(body),
+          isTrue,
+          reason: '右向三角：左边框实心蓝（顶点朝右指向词条）',
+        );
       });
 
       test('#1338 制卡按钮钉单色符号字体栈，切断注入词典字体继承', () {
         // 直接找「含 font-family 的独立 .mine-button 规则块」——不能用通用 ruleBody，因为
         // 它会先命中 `.audio-button,.favorite-button,.mine-button` 合并块（无 font-family）。
         final RegExp rule = RegExp(
-            r'\.mine-button\s*\{[^}]*font-family[^}]*Segoe UI Symbol[^}]*!important');
-        expect(rule.hasMatch(css), isTrue,
-            reason: '.mine-button 显式声明单色符号字体栈(含 Segoe UI Symbol)+!important，'
-                '切断对 html,body 注入词典字体的继承（否则制卡后 ✓/✓↩ 缺码位乱码）');
+          r'\.mine-button\s*\{[^}]*font-family[^}]*Segoe UI Symbol[^}]*!important',
+        );
+        expect(
+          rule.hasMatch(css),
+          isTrue,
+          reason:
+              '.mine-button 显式声明单色符号字体栈(含 Segoe UI Symbol)+!important，'
+              '切断对 html,body 注入词典字体的继承（否则制卡后 ✓/✓↩ 缺码位乱码）',
+        );
         // 不得含彩色 emoji 字体（否则 ↩ 又走 emoji 呈现）。
         final Match? m = rule.firstMatch(css);
-        expect(m!.group(0)!.contains('Emoji'), isFalse,
-            reason: '字体栈不含彩色 emoji 字体');
+        expect(
+          m!.group(0)!.contains('Emoji'),
+          isFalse,
+          reason: '字体栈不含彩色 emoji 字体',
+        );
       });
 
       test('#8 静息制卡 + 有独立的静息态规则块（BUG-932/1923）', () {
@@ -97,17 +130,25 @@ void main() {
         // （见 popup_mine_button_visual_guard_test.dart），这里的 font-size 只剩下
         // 「决定按钮盒宽高、进而决定标题行行高」一个作用，改它不再影响加号本身。
         // 本条只保证静息态仍有自己的规则块且字号未被并回 18px（并回去会改变行高）。
-        final RegExpMatch? m =
-            RegExp(r'\.mine-button:not\(\.duplicate\)\s*\{([^}]*)\}')
-                .firstMatch(css);
-        expect(m, isNotNull,
-            reason: '缺 .mine-button:not(.duplicate) 静息态放大规则，加号会比 SVG 图标小');
-        final RegExpMatch? fs =
-            RegExp(r'font-size\s*:\s*(\d+)px').firstMatch(m!.group(1)!);
+        final RegExpMatch? m = RegExp(
+          r'\.mine-button:not\(\.duplicate\)\s*\{([^}]*)\}',
+        ).firstMatch(css);
+        expect(
+          m,
+          isNotNull,
+          reason: '缺 .mine-button:not(.duplicate) 静息态放大规则，加号会比 SVG 图标小',
+        );
+        final RegExpMatch? fs = RegExp(
+          r'font-size\s*:\s*(\d+)px',
+        ).firstMatch(m!.group(1)!);
         expect(fs, isNotNull, reason: '静息加号规则必须声明 font-size');
-        expect(int.parse(fs!.group(1)!), greaterThan(18),
-            reason: '静息 + 字号须大于图标共用的 18px 以补偿文本字形空白，'
-                '否则加号目测比 audio/favorite/tune 图标小（BUG-932 回退）');
+        expect(
+          int.parse(fs!.group(1)!),
+          greaterThan(18),
+          reason:
+              '静息 + 字号须大于图标共用的 18px 以补偿文本字形空白，'
+              '否则加号目测比 audio/favorite/tune 图标小（BUG-932 回退）',
+        );
       });
     });
   });
@@ -118,24 +159,40 @@ void main() {
       setUpAll(() => js = read(relPath));
 
       test(
-          '#5 暴露 fushiFocusDictionaryEntry/Move/Reset + data-fushi-entry-index',
-          () {
-        expect(js.contains('window.fushiFocusDictionaryEntry ='), isTrue,
-            reason: '聚焦指定下标词条 API');
-        expect(js.contains('window.fushiFocusDictionaryEntryMove ='), isTrue,
-            reason: '相对上/下一条词条 API（Dart 焦点驱动调用点）');
-        expect(js.contains('window.fushiFocusDictionaryEntryReset ='), isTrue,
-            reason: '清除当前词条焦点 API');
-        expect(js.contains('data-fushi-entry-index'), isTrue,
-            reason: '词条打索引属性，DOM 可观测');
-      });
+        '#5 暴露 fushiFocusDictionaryEntry/Move/Reset + data-fushi-entry-index',
+        () {
+          expect(
+            js.contains('window.fushiFocusDictionaryEntry ='),
+            isTrue,
+            reason: '聚焦指定下标词条 API',
+          );
+          expect(
+            js.contains('window.fushiFocusDictionaryEntryMove ='),
+            isTrue,
+            reason: '相对上/下一条词条 API（Dart 焦点驱动调用点）',
+          );
+          expect(
+            js.contains('window.fushiFocusDictionaryEntryReset ='),
+            isTrue,
+            reason: '清除当前词条焦点 API',
+          );
+          expect(
+            js.contains('data-fushi-entry-index'),
+            isTrue,
+            reason: '词条打索引属性，DOM 可观测',
+          );
+        },
+      );
 
       test('#1338 制卡按钮保留 ✓/✓↩ 文本标记且 ↩ 带 VS15（不回退字体乱码）', () {
         // 保留文本标记（应用户要求不走 SVG）。
         expect(js.contains('\u{2713}'), isTrue, reason: '制卡态仍用 ✓(U+2713) 文本标记');
         // ↩ 后必须紧跟 VS15(U+FE0E) 强制文本呈现，杜绝 emoji 回退乱码。
-        expect(js.contains('\u{21A9}\u{FE0E}'), isTrue,
-            reason: '↩(U+21A9) 后必须追加 VS15(U+FE0E) 强制文本呈现');
+        expect(
+          js.contains('\u{21A9}\u{FE0E}'),
+          isTrue,
+          reason: '↩(U+21A9) 后必须追加 VS15(U+FE0E) 强制文本呈现',
+        );
       });
     });
   });
@@ -154,40 +211,57 @@ void main() {
     allCssMirrors.forEach((String name, String relPath) {
       test('[$name] .mine-button 栈：桌面字体 → Hibiki Symbols → 通用回退', () {
         final String css = read(relPath);
-        final RegExpMatch? m =
-            RegExp(r'\.mine-button\s*\{[^}]*font-family\s*:([^;}]*)!important')
-                .firstMatch(css);
+        final RegExpMatch? m = RegExp(
+          r'\.mine-button\s*\{[^}]*font-family\s*:([^;}]*)!important',
+        ).firstMatch(css);
         expect(m, isNotNull, reason: '.mine-button 显式 font-family 规则丢失');
         final String stack = m!.group(1)!;
-        expect(stack, contains('"Hibiki Symbols"'),
-            reason: 'Android WebView 解析不到任何桌面符号字体、Roboto 又不含 '
-                'U+2713/U+21A9——必须保留内嵌 "Hibiki Symbols" 兜底，否则手机制完卡'
-                '✓ 在部分 ROM 上变豆腐（BUG-691）');
-        expect(stack.indexOf('"DejaVu Sans"'),
-            lessThan(stack.indexOf('"Hibiki Symbols"')),
-            reason: '内嵌字体排在桌面符号字体之后：桌面三平台仍先命中系统字体，'
-                '保持 BUG-655 修复后的现状（零回归）');
-        expect(stack.indexOf('"Hibiki Symbols"'),
-            lessThan(stack.indexOf('sans-serif')),
-            reason: '内嵌字体必须在通用回退 sans-serif 之前，否则 Android 上'
-                '轮不到它兜底');
+        expect(
+          stack,
+          contains('"Hibiki Symbols"'),
+          reason:
+              'Android WebView 解析不到任何桌面符号字体、Roboto 又不含 '
+              'U+2713/U+21A9——必须保留内嵌 "Hibiki Symbols" 兜底，否则手机制完卡'
+              '✓ 在部分 ROM 上变豆腐（BUG-691）',
+        );
+        expect(
+          stack.indexOf('"DejaVu Sans"'),
+          lessThan(stack.indexOf('"Hibiki Symbols"')),
+          reason:
+              '内嵌字体排在桌面符号字体之后：桌面三平台仍先命中系统字体，'
+              '保持 BUG-655 修复后的现状（零回归）',
+        );
+        expect(
+          stack.indexOf('"Hibiki Symbols"'),
+          lessThan(stack.indexOf('sans-serif')),
+          reason:
+              '内嵌字体必须在通用回退 sans-serif 之前，否则 Android 上'
+              '轮不到它兜底',
+        );
       });
 
       test('[$name] @font-face 内嵌 WOFF 真含 U+2713/U+21A9/U+FE0E 字形', () {
         final String css = read(relPath);
-        final RegExpMatch? m =
-            RegExp(r'@font-face\s*\{[^}]*font-family:\s*"Hibiki Symbols"[^}]*'
-                    r'url\("data:font/woff;base64,([A-Za-z0-9+/=]+)"\)\s*'
-                    r'format\("woff"\)')
-                .firstMatch(css);
-        expect(m, isNotNull,
-            reason: '@font-face "Hibiki Symbols"（data: URI WOFF）规则丢失');
+        final RegExpMatch? m = RegExp(
+          r'@font-face\s*\{[^}]*font-family:\s*"Hibiki Symbols"[^}]*'
+          r'url\("data:font/woff;base64,([A-Za-z0-9+/=]+)"\)\s*'
+          r'format\("woff"\)',
+        ).firstMatch(css);
+        expect(
+          m,
+          isNotNull,
+          reason: '@font-face "Hibiki Symbols"（data: URI WOFF）规则丢失',
+        );
         final Uint8List woff = base64Decode(m!.group(1)!);
         final Uint8List cmap = woffTable(woff, 'cmap');
         for (final int cp in const <int>[0x2713, 0x21A9, 0xFE0E]) {
-          expect(cmapGlyphId(cmap, cp), greaterThan(0),
-              reason: '内嵌字体缺 U+${cp.toRadixString(16).toUpperCase()} 字形'
-                  '——制卡按钮文本标记会在无系统符号字体的 WebView 上变豆腐');
+          expect(
+            cmapGlyphId(cmap, cp),
+            greaterThan(0),
+            reason:
+                '内嵌字体缺 U+${cp.toRadixString(16).toUpperCase()} 字形'
+                '——制卡按钮文本标记会在无系统符号字体的 WebView 上变豆腐',
+          );
         }
       });
     });
@@ -197,8 +271,11 @@ void main() {
 /// 从 WOFF1 字节流取出指定表的原始（解压后）字节。
 Uint8List woffTable(Uint8List woff, String tag) {
   final ByteData d = ByteData.sublistView(woff);
-  expect(String.fromCharCodes(woff.sublist(0, 4)), 'wOFF',
-      reason: 'data URI 不是 WOFF1 字体');
+  expect(
+    String.fromCharCodes(woff.sublist(0, 4)),
+    'wOFF',
+    reason: 'data URI 不是 WOFF1 字体',
+  );
   final int numTables = d.getUint16(12);
   for (int i = 0; i < numTables; i++) {
     final int off = 44 + i * 20;
@@ -206,8 +283,11 @@ Uint8List woffTable(Uint8List woff, String tag) {
     final int dataOff = d.getUint32(off + 4);
     final int compLen = d.getUint32(off + 8);
     final int origLen = d.getUint32(off + 12);
-    final Uint8List rawBytes =
-        Uint8List.sublistView(woff, dataOff, dataOff + compLen);
+    final Uint8List rawBytes = Uint8List.sublistView(
+      woff,
+      dataOff,
+      dataOff + compLen,
+    );
     if (compLen == origLen) return rawBytes;
     return Uint8List.fromList(zlib.decode(rawBytes));
   }
@@ -241,8 +321,9 @@ int cmapGlyphId(Uint8List cmap, int cp) {
     if (rangeOffset == 0) {
       return (cp + d.getInt16(deltaBase + i * 2)) & 0xFFFF;
     }
-    final int gid =
-        d.getUint16(rangeBase + i * 2 + rangeOffset + (cp - start) * 2);
+    final int gid = d.getUint16(
+      rangeBase + i * 2 + rangeOffset + (cp - start) * 2,
+    );
     return gid == 0 ? 0 : (gid + d.getInt16(deltaBase + i * 2)) & 0xFFFF;
   }
   return 0;

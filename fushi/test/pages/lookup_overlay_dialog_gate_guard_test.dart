@@ -78,8 +78,9 @@ final RegExp _kWidgetMethodDecl = RegExp(
 );
 
 /// 直接调用（排除 `x.foo(`，那是别的对象的方法，不在本文件的方法表里）。
-final RegExp _kDirectCall =
-    RegExp(r'(?<![A-Za-z0-9_$.])(_?[A-Za-z][A-Za-z0-9_]*)\s*\(');
+final RegExp _kDirectCall = RegExp(
+  r'(?<![A-Za-z0-9_$.])(_?[A-Za-z][A-Za-z0-9_]*)\s*\(',
+);
 
 String _read(String path) => File(path).readAsStringSync();
 
@@ -269,17 +270,23 @@ List<int> _overlayListOpens(String structural, String label) {
     }
   }
   if (opens.isEmpty) {
-    fail('$label：找不到浮层 children 列表（包含 `…entries.length; i++)` 的 '
-        '`<Widget>[` 字面量${sawLoop ? "；有循环但外层列表不是 `<Widget>[`" : ""}）。'
-        '查词浮层的存在理由就是画弹窗层，找不到说明宿主结构变了——必须调整本守卫的锚点，'
-        '而不是让它静默跳过这个宿主');
+    fail(
+      '$label：找不到浮层 children 列表（包含 `…entries.length; i++)` 的 '
+      '`<Widget>[` 字面量${sawLoop ? "；有循环但外层列表不是 `<Widget>[`" : ""}）。'
+      '查词浮层的存在理由就是画弹窗层，找不到说明宿主结构变了——必须调整本守卫的锚点，'
+      '而不是让它静默跳过这个宿主',
+    );
   }
   return opens.toList()..sort();
 }
 
 /// 按括号配对把列表字面量切成**顶层元素**（原文切片）。
 List<String> _topLevelElements(
-    String src, String structural, int open, String label) {
+  String src,
+  String structural,
+  int open,
+  String label,
+) {
   final int close = _matchingListClose(structural, open, label);
   final List<String> parts = <String>[];
   int depth = 0;
@@ -354,8 +361,9 @@ _ChildVerdict _judgeChild(
   } else if (rest.startsWith('...')) {
     rest = rest.substring(3).trim();
   }
-  final RegExpMatch? callee =
-      RegExp(r'^(_?[A-Za-z][A-Za-z0-9_]*)').firstMatch(rest);
+  final RegExpMatch? callee = RegExp(
+    r'^(_?[A-Za-z][A-Za-z0-9_]*)',
+  ).firstMatch(rest);
   final String name = callee?.group(1) ?? '<非标识符表达式>';
   if (reachable.contains(name)) {
     return _ChildVerdict(ok: true, why: '`$name` 顺调用链接到对话框隐藏计数');
@@ -363,35 +371,45 @@ _ChildVerdict _judgeChild(
   if (alwaysHidden.contains(name)) {
     return _ChildVerdict(
       ok: true,
-      why: '`$name` 铺的是恒不可见（`visible: false`）的屏外层：它不挡任何东西，'
+      why:
+          '`$name` 铺的是恒不可见（`visible: false`）的屏外层：它不挡任何东西，'
           '而且**不能**被对话框门摘掉——摘掉 = 停驻的 WebView 当帧销毁',
     );
   }
   return _ChildVerdict(
     ok: false,
-    why: '`$name` 既没在显示条件里引用对话框隐藏计数，'
+    why:
+        '`$name` 既没在显示条件里引用对话框隐藏计数，'
         '其调用链也走不到 ${_kGateTokens.join(" / ")}，也不是恒不可见的屏外层',
   );
 }
 
 void main() {
   final String mixinSrc = _read(_kMixinPath);
-  final Map<String, String> mixinBodies =
-      _widgetMethodBodies(mixinSrc, maskCommentsAndStrings(mixinSrc));
+  final Map<String, String> mixinBodies = _widgetMethodBodies(
+    mixinSrc,
+    maskCommentsAndStrings(mixinSrc),
+  );
   // 共享层原语（`parkedRealmPopupLayer(s)` / `parkedPopupLayer` …）是顶层函数，
   // 住在 layer 文件里；不把它们并进方法表，恒不可见的判定就只能靠猜名字。
   final String layerSrc = _read(_kPopupLayerPath);
-  final Map<String, String> layerBodies =
-      _widgetMethodBodies(layerSrc, maskCommentsAndStrings(layerSrc));
+  final Map<String, String> layerBodies = _widgetMethodBodies(
+    layerSrc,
+    maskCommentsAndStrings(layerSrc),
+  );
 
   group('查词浮层子项 × 对话框隐藏计数（TODO-2584 收口守卫）', () {
     final List<String> hosts = _discoverHosts();
 
     test('宿主发现规则不得塌成空集', () {
       for (final String known in _kKnownHosts) {
-        expect(hosts, contains(known),
-            reason: '正向发现规则（`with DictionaryPageMixin`）漏掉了已知宿主 $known；'
-                '守卫范围一旦缩水，后面每条断言都会静默变成"没什么可查"');
+        expect(
+          hosts,
+          contains(known),
+          reason:
+              '正向发现规则（`with DictionaryPageMixin`）漏掉了已知宿主 $known；'
+              '守卫范围一旦缩水，后面每条断言都会静默变成"没什么可查"',
+        );
       }
     });
 
@@ -410,13 +428,20 @@ void main() {
         final Set<String> reachable = _gateReachable(bodies);
         final Set<String> alwaysHidden = _alwaysHiddenLayers(bodies);
         for (final int open in _overlayListOpens(structural, host)) {
-          final List<String> children =
-              _topLevelElements(src, structural, open, host);
+          final List<String> children = _topLevelElements(
+            src,
+            structural,
+            open,
+            host,
+          );
           expect(children, isNotEmpty, reason: '$host：浮层 children 列表被切成空');
           totalChildren += children.length;
           for (final String child in children) {
-            final _ChildVerdict verdict =
-                _judgeChild(child, reachable, alwaysHidden);
+            final _ChildVerdict verdict = _judgeChild(
+              child,
+              reachable,
+              alwaysHidden,
+            );
             if (verdict.ok) continue;
             final String head = maskComments(child)
                 .split('\n')
@@ -429,7 +454,8 @@ void main() {
       expect(
         failures,
         isEmpty,
-        reason: '查词浮层子树整体排在 `showAppDialog` 推的路由之上（根 Overlay / 根 '
+        reason:
+            '查词浮层子树整体排在 `showAppDialog` 推的路由之上（根 Overlay / 根 '
             'builder），对话框打开期间**每个**子项都必须让位——漏一个就是 BUG-797 / '
             '1040 / 1327 / 1364 再来一次。修法二选一：\n'
             '  ① 把子项收进 `DictionaryPageMixin` 的构建方法，在那里与 '
@@ -437,18 +463,29 @@ void main() {
             '  ② 子项的显示条件里显式与 `!lookupPopupHiddenByDialog` 相与'
             '（barrier 的做法）。\n未通过项：\n${failures.join("\n")}',
       );
-      expect(totalChildren, greaterThanOrEqualTo(10),
-          reason: '五个宿主今天共 12 个浮层子项；切出的子项数骤降说明列表锚点漂了，'
-              '守卫在对着空气跑');
+      expect(
+        totalChildren,
+        greaterThanOrEqualTo(10),
+        reason:
+            '五个宿主今天共 12 个浮层子项；切出的子项数骤降说明列表锚点漂了，'
+            '守卫在对着空气跑',
+      );
     });
 
     test('不动点真的解析出了两个共享构建方法（否则"可达"是假的）', () {
       final Set<String> reachable = _gateReachable(mixinBodies);
-      expect(reachable, contains('buildNestedPopupLayer'),
-          reason: '弹窗层构建方法必须自带 `_popupHidingDialogDepth` 判据');
-      expect(reachable, contains('buildPopupLoadingPlaceholder'),
-          reason: '搜索期占位卡构建方法必须自带 `_popupHidingDialogDepth` 判据'
-              '（BUG-1364）');
+      expect(
+        reachable,
+        contains('buildNestedPopupLayer'),
+        reason: '弹窗层构建方法必须自带 `_popupHidingDialogDepth` 判据',
+      );
+      expect(
+        reachable,
+        contains('buildPopupLoadingPlaceholder'),
+        reason:
+            '搜索期占位卡构建方法必须自带 `_popupHidingDialogDepth` 判据'
+            '（BUG-1364）',
+      );
     });
 
     test('恒不可见不动点真的解析出了停驻层（否则那条豁免是假的）', () {
@@ -456,15 +493,27 @@ void main() {
         ...layerBodies,
         ...mixinBodies,
       });
-      expect(hidden, contains('parkedRealmPopupLayer'),
-          reason: '停驻层原语必须自带 `visible: false`——它是整条豁免的根据');
-      expect(hidden, contains('parkedRealmPopupLayers'),
-          reason: '共享复数原语必须顺调用链继承「恒不可见」');
-      expect(hidden, contains('buildParkedRealmLayers'),
-          reason: 'mixin 侧薄封装同上');
+      expect(
+        hidden,
+        contains('parkedRealmPopupLayer'),
+        reason: '停驻层原语必须自带 `visible: false`——它是整条豁免的根据',
+      );
+      expect(
+        hidden,
+        contains('parkedRealmPopupLayers'),
+        reason: '共享复数原语必须顺调用链继承「恒不可见」',
+      );
+      expect(
+        hidden,
+        contains('buildParkedRealmLayers'),
+        reason: 'mixin 侧薄封装同上',
+      );
       // 自校验：可见的弹窗层不许混进来，否则这条豁免就成了万能通行证。
-      expect(hidden, isNot(contains('buildNestedPopupLayer')),
-          reason: '真正会挡住对话框的可见层绝不能落进恒不可见集');
+      expect(
+        hidden,
+        isNot(contains('buildNestedPopupLayer')),
+        reason: '真正会挡住对话框的可见层绝不能落进恒不可见集',
+      );
       expect(hidden, isNot(contains('buildPopupLoadingPlaceholder')));
     });
 
@@ -474,12 +523,18 @@ void main() {
       final String src = _read(_kPopupLayerPath);
       final String masked = maskComments(src);
       final int start = masked.indexOf('bool shouldShowLookupDismissBarrier(');
-      expect(start, greaterThanOrEqualTo(0),
-          reason: '找不到 barrier 判据函数（注释里的同名文本不算）');
+      expect(
+        start,
+        greaterThanOrEqualTo(0),
+        reason: '找不到 barrier 判据函数（注释里的同名文本不算）',
+      );
       final int end = masked.indexOf(';', start);
       expect(end, greaterThan(start));
-      expect(src.substring(start, end), contains('!hiddenByDialog'),
-          reason: 'BUG-1327：对话框打开时一律不挂 barrier');
+      expect(
+        src.substring(start, end),
+        contains('!hiddenByDialog'),
+        reason: 'BUG-1327：对话框打开时一律不挂 barrier',
+      );
     });
   });
 }

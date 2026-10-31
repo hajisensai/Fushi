@@ -134,24 +134,43 @@ void main() {
 
     // 回退 helper 存在，且经沉浸锁门控触发与页级覆盖同语义的 playOrPause。
     final int start = src.indexOf('bool _handleVideoImeSpacePlayPause(');
-    expect(start, greaterThanOrEqualTo(0),
-        reason: '_handleVideoImeSpacePlayPause 回退 helper 必须存在');
+    expect(
+      start,
+      greaterThanOrEqualTo(0),
+      reason: '_handleVideoImeSpacePlayPause 回退 helper 必须存在',
+    );
     final int end = src.indexOf('\n  }', start);
     expect(end, greaterThan(start));
     final String body = src.substring(start, end);
-    expect(body, contains('isVideoImeSpacePlayPause'),
-        reason: '必须复用可单测的纯谓词识别 IME 空格');
-    expect(body, contains('focusedEditableText()'),
-        reason: '必须在文本框 composing 时关闭回退');
-    expect(body, contains('_runWhenImmersiveAllowsShortcuts'),
-        reason: '必须经沉浸锁快捷键门控（与主通道 _handleVideoKeyboardShortcut 走的 '
-            'videoActionCallbacks 执行体同语义）');
-    expect(body, contains('controller.playOrPause()'),
-        reason: 'IME 空格应触发播放/暂停');
+    expect(
+      body,
+      contains('isVideoImeSpacePlayPause'),
+      reason: '必须复用可单测的纯谓词识别 IME 空格',
+    );
+    expect(
+      body,
+      contains('focusedEditableText()'),
+      reason: '必须在文本框 composing 时关闭回退',
+    );
+    expect(
+      body,
+      contains('_runWhenImmersiveAllowsShortcuts'),
+      reason:
+          '必须经沉浸锁快捷键门控（与主通道 _handleVideoKeyboardShortcut 走的 '
+          'videoActionCallbacks 执行体同语义）',
+    );
+    expect(
+      body,
+      contains('controller.playOrPause()'),
+      reason: 'IME 空格应触发播放/暂停',
+    );
 
     // 真正接入最外层手柄 Focus 的 onKeyEvent（否则 helper 是死代码，IME 空格到不了它）。
-    expect(src, contains('_handleVideoImeSpacePlayPause(event)'),
-        reason: '_wrapVideoGamepadControls 的 Focus.onKeyEvent 必须先调 IME 空格回退');
+    expect(
+      src,
+      contains('_handleVideoImeSpacePlayPause(event)'),
+      reason: '_wrapVideoGamepadControls 的 Focus.onKeyEvent 必须先调 IME 空格回退',
+    );
   });
 
   test('BUG-1239 native IME Space channel 只派发约定方法并按 owner 清理', () async {
@@ -202,10 +221,7 @@ void main() {
     }
 
     test('当前视频、无编辑焦点且允许快捷键 → 只触发播放暂停', () {
-      expect(
-        resolve(),
-        WindowsImeSpaceDispatchAction.togglePlayPause,
-      );
+      expect(resolve(), WindowsImeSpaceDispatchAction.togglePlayPause);
     });
 
     test('IME composing / 输入框 / 字幕搜索编辑焦点 → 放行', () {
@@ -247,10 +263,7 @@ void main() {
         'WindowsImeSpaceChannel.setHandler(this, _handleWindowsImeSpaceDown)',
       ),
     );
-    expect(
-      src,
-      contains('WindowsImeSpaceChannel.clearHandler(this)'),
-    );
+    expect(src, contains('WindowsImeSpaceChannel.clearHandler(this)'));
 
     final int start = src.indexOf('void _handleWindowsImeSpaceDown()');
     final int end = src.indexOf('\n  }', start);

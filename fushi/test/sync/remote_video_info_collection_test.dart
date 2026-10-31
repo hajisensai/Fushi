@@ -39,8 +39,9 @@ void main() {
         'sortIndex': 2,
       },
     });
-    final RemoteVideoInfo restored =
-        RemoteVideoInfo.fromJson(original.toJson());
+    final RemoteVideoInfo restored = RemoteVideoInfo.fromJson(
+      original.toJson(),
+    );
     expect(restored.collection?.collectionName, 'C');
     expect(restored.collection?.collectionType, 'collection');
     expect(restored.collection?.sortIndex, 2);

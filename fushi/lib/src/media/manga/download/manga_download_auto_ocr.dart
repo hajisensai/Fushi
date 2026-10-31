@@ -20,9 +20,8 @@ import 'package:fushi/src/media/manga/ocr/manga_ocr_job_registry.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// 事件流构造口（测试注入；生产是 [mangaOcrBackgroundEvents]）。
-typedef MangaOcrEventsBuilder = Stream<MangaOcrBackgroundEvent> Function(
-  MangaOcrJobSpec spec,
-);
+typedef MangaOcrEventsBuilder =
+    Stream<MangaOcrBackgroundEvent> Function(MangaOcrJobSpec spec);
 
 /// 为刚下载完的一章排一个整卷 OCR 任务。返回排上的任务；跳过返回 null。
 ///
@@ -39,8 +38,9 @@ Future<MangaOcrRunningJob?> runAutoMangaOcrForDownloadedChapter({
   required String lensLanguage,
   MangaOcrEventsBuilder buildEvents = mangaOcrBackgroundEvents,
 }) async {
-  final MangaOcrEngineAvailability availability =
-      await probeMangaOcrEngines(engines);
+  final MangaOcrEngineAvailability availability = await probeMangaOcrEngines(
+    engines,
+  );
   final MangaOcrEngineId? engine = resolveBackgroundMangaOcrEngine(
     preference: preference,
     availability: availability,

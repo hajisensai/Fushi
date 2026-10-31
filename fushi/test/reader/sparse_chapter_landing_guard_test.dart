@@ -14,55 +14,82 @@ import 'package:fushi/src/reader/reader_pagination_scripts.dart';
 void main() {
   String norm(String s) => s.replaceAll(RegExp(r'\s+'), ' ');
   final String paged = norm(ReaderPaginationScripts.paginatedShellSource());
-  final String continuous =
-      norm(ReaderPaginationScripts.continuousShellSource());
+  final String continuous = norm(
+    ReaderPaginationScripts.continuousShellSource(),
+  );
 
   group('BUG-671 sparse cover chapter backward-turn lands at chapter end', () {
-    test('continuous restoreProgress(>=0.99) registers reanchor + lands at end',
-        () {
-      expect(
+    test(
+      'continuous restoreProgress(>=0.99) registers reanchor + lands at end',
+      () {
+        expect(
           continuous.contains(
-              'this.registerImageLateAnchor({progress: progress}); this.scrollToChapterEnd();'),
+            'this.registerImageLateAnchor({progress: progress}); this.scrollToChapterEnd();',
+          ),
           isTrue,
-          reason: '连续 restoreProgress 章末分支须置重锚资格 + 落章末');
-    });
+          reason: '连续 restoreProgress 章末分支须置重锚资格 + 落章末',
+        );
+      },
+    );
 
     test('image load callback reanchors continuous via scrollToChapterEnd', () {
       // BUG-1140 第二轮：分派从 load 回调内联搬进共享的 reapplyImageLateAnchor，
       // 但「连续判别必须先于分页」这条不变——scrollToProgressPaged 两 shell 都有，
       // 用它判别会让连续误走分页分支不重锚。
       for (final String shell in <String>[paged, continuous]) {
-        expect(shell.contains('r.reapplyImageLateAnchor()'), isTrue,
-            reason: 'load 回调须触发语义重锚');
-        final int reapplyIdx =
-            shell.indexOf('reapplyImageLateAnchor: function');
-        expect(reapplyIdx, greaterThan(0));
-        final int contIdx =
-            shell.indexOf('this._isContinuousShell()', reapplyIdx);
-        final int pagedIdx =
-            shell.indexOf('this.scrollToProgressPaged(rctx, p)', reapplyIdx);
-        expect(contIdx, greaterThan(0),
-            reason: 'reapply 须有连续分支（_isContinuousShell 判别）');
-        expect(pagedIdx, greaterThan(0), reason: 'reapply 须保留分页分支');
-        expect(contIdx < pagedIdx, isTrue,
-            reason: '连续判别须在分页 scrollToProgressPaged 之前');
-        expect(shell.contains("typeof this.scrollToChapterEnd === 'function'"),
-            isTrue,
-            reason: '判别判据必须是连续独有的 scrollToChapterEnd');
         expect(
-            shell.contains('if (p >= 0.99) this.scrollToChapterEnd();'), isTrue,
-            reason: '连续重锚分支须在 >=0.99 时调 scrollToChapterEnd');
+          shell.contains('r.reapplyImageLateAnchor()'),
+          isTrue,
+          reason: 'load 回调须触发语义重锚',
+        );
+        final int reapplyIdx = shell.indexOf(
+          'reapplyImageLateAnchor: function',
+        );
+        expect(reapplyIdx, greaterThan(0));
+        final int contIdx = shell.indexOf(
+          'this._isContinuousShell()',
+          reapplyIdx,
+        );
+        final int pagedIdx = shell.indexOf(
+          'this.scrollToProgressPaged(rctx, p)',
+          reapplyIdx,
+        );
+        expect(
+          contIdx,
+          greaterThan(0),
+          reason: 'reapply 须有连续分支（_isContinuousShell 判别）',
+        );
+        expect(pagedIdx, greaterThan(0), reason: 'reapply 须保留分页分支');
+        expect(
+          contIdx < pagedIdx,
+          isTrue,
+          reason: '连续判别须在分页 scrollToProgressPaged 之前',
+        );
+        expect(
+          shell.contains("typeof this.scrollToChapterEnd === 'function'"),
+          isTrue,
+          reason: '判别判据必须是连续独有的 scrollToChapterEnd',
+        );
+        expect(
+          shell.contains('if (p >= 0.99) this.scrollToChapterEnd();'),
+          isTrue,
+          reason: '连续重锚分支须在 >=0.99 时调 scrollToChapterEnd',
+        );
       }
     });
 
     test('continuous paginate clears the image late anchor', () {
       final int pIdx = continuous.indexOf('paginate: function(direction) {');
       expect(pIdx, greaterThan(0));
-      final String window =
-          continuous.substring(pIdx, (pIdx + 200).clamp(0, continuous.length));
-      expect(window.contains('this.clearImageLateAnchor();'), isTrue,
-          reason: '连续 paginate 须清重锚资格（避免尾图 late-load 拽回用户已翻走的位置）');
+      final String window = continuous.substring(
+        pIdx,
+        (pIdx + 200).clamp(0, continuous.length),
+      );
+      expect(
+        window.contains('this.clearImageLateAnchor();'),
+        isTrue,
+        reason: '连续 paginate 须清重锚资格（避免尾图 late-load 拽回用户已翻走的位置）',
+      );
     });
-
   });
 }

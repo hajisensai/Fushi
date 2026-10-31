@@ -13,7 +13,9 @@ void main() {
 
       expect(source, contains("hintText: 'http://192.168.1.100:38765'"));
       expect(
-          source, isNot(contains("hintText: 'https://192.168.1.100:38765'")));
+        source,
+        isNot(contains("hintText: 'https://192.168.1.100:38765'")),
+      );
     });
 
     test('manual add/edit normalizes raw user text before storing it', () {

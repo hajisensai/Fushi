@@ -24,12 +24,21 @@ void main() {
   late String dartSource;
 
   setUpAll(() {
-    expect(cpp.existsSync(), isTrue,
-        reason: '找不到 ${cpp.path}（cwd=${Directory.current.path}）');
-    expect(header.existsSync(), isTrue,
-        reason: '找不到 ${header.path}（cwd=${Directory.current.path}）');
-    expect(dartChannel.existsSync(), isTrue,
-        reason: '找不到 ${dartChannel.path}（cwd=${Directory.current.path}）');
+    expect(
+      cpp.existsSync(),
+      isTrue,
+      reason: '找不到 ${cpp.path}（cwd=${Directory.current.path}）',
+    );
+    expect(
+      header.existsSync(),
+      isTrue,
+      reason: '找不到 ${header.path}（cwd=${Directory.current.path}）',
+    );
+    expect(
+      dartChannel.existsSync(),
+      isTrue,
+      reason: '找不到 ${dartChannel.path}（cwd=${Directory.current.path}）',
+    );
     source = cpp.readAsStringSync();
     headerSource = header.readAsStringSync();
     dartSource = dartChannel.readAsStringSync();
@@ -37,17 +46,25 @@ void main() {
 
   group('flutter_window.cpp Magpie 监听结构', () {
     test('注册了 Magpie 的广播消息名', () {
-      expect(source.contains('MagpieScalingChanged'), isTrue,
-          reason: '必须 RegisterWindowMessageW(L"MagpieScalingChanged")');
-      expect(source.contains('RegisterWindowMessageW(L"MagpieScalingChanged")'),
-          isTrue,
-          reason: '广播消息号必须来自 RegisterWindowMessageW，不能写死常量');
+      expect(
+        source.contains('MagpieScalingChanged'),
+        isTrue,
+        reason: '必须 RegisterWindowMessageW(L"MagpieScalingChanged")',
+      );
+      expect(
+        source.contains('RegisterWindowMessageW(L"MagpieScalingChanged")'),
+        isTrue,
+        reason: '广播消息号必须来自 RegisterWindowMessageW，不能写死常量',
+      );
     });
 
     test('对该消息放行 UIPI 消息过滤器', () {
-      expect(source.contains('ChangeWindowMessageFilterEx'), isTrue,
-          reason:
-              '跨完整性级别收广播必须 ChangeWindowMessageFilterEx(..., MSGFLT_ALLOW, nullptr)');
+      expect(
+        source.contains('ChangeWindowMessageFilterEx'),
+        isTrue,
+        reason:
+            '跨完整性级别收广播必须 ChangeWindowMessageFilterEx(..., MSGFLT_ALLOW, nullptr)',
+      );
       expect(source.contains('MSGFLT_ALLOW'), isTrue);
     });
 
@@ -58,21 +75,30 @@ void main() {
       const String methodName = 'onScalingChanged';
       expect(source.contains(channelName), isTrue);
       expect(source.contains(methodName), isTrue);
-      expect(dartSource.contains("MethodChannel('$channelName')"), isTrue,
-          reason: 'Dart 侧 channel 名必须与 native 逐字节一致');
-      expect(dartSource.contains("call.method != '$methodName'"), isTrue,
-          reason: 'Dart 侧方法名必须与 native InvokeMethod 逐字节一致');
+      expect(
+        dartSource.contains("MethodChannel('$channelName')"),
+        isTrue,
+        reason: 'Dart 侧 channel 名必须与 native 逐字节一致',
+      );
+      expect(
+        dartSource.contains("call.method != '$methodName'"),
+        isTrue,
+        reason: 'Dart 侧方法名必须与 native InvokeMethod 逐字节一致',
+      );
       // 广播消息名同理：native 的 RegisterWindowMessageW 与 Dart 侧的常量必须同源。
       expect(kMagpieScalingChangedMessage, 'MagpieScalingChanged');
       expect(
-          source.contains(
-              'RegisterWindowMessageW(L"$kMagpieScalingChangedMessage")'),
-          isTrue);
+        source.contains(
+          'RegisterWindowMessageW(L"$kMagpieScalingChangedMessage")',
+        ),
+        isTrue,
+      );
     });
 
     test('退出期不许 use-after-free：channel 与引擎都要判空', () {
-      final int idx =
-          source.indexOf('void FlutterWindow::NotifyMagpieScalingChanged(');
+      final int idx = source.indexOf(
+        'void FlutterWindow::NotifyMagpieScalingChanged(',
+      );
       expect(idx, greaterThan(0));
       final int end = source.indexOf('InvokeMethod(', idx);
       expect(end, greaterThan(idx));
@@ -88,28 +114,41 @@ void main() {
     test('wParam==0 且 lParam!=0 仍算缩放中（只是源窗口转后台）', () {
       // 载荷表达式本身是根因所在：把它简化成 `wparam != 0` 就会把「源窗口转后台」
       // 误判成「缩放结束」。
-      expect(source.contains('(wparam == 0) ? (lparam != 0) : true'), isTrue,
-          reason: 'scaling 判定必须保留 lParam 区分，不能退化成只看 wParam');
-      expect(source.contains('仅源窗口切到后台'), isTrue,
-          reason: '语义注释锚点丢失说明这段被重写过，需重新确认 Magpie 契约');
+      expect(
+        source.contains('(wparam == 0) ? (lparam != 0) : true'),
+        isTrue,
+        reason: 'scaling 判定必须保留 lParam 区分，不能退化成只看 wParam',
+      );
+      expect(
+        source.contains('仅源窗口切到后台'),
+        isTrue,
+        reason: '语义注释锚点丢失说明这段被重写过，需重新确认 Magpie 契约',
+      );
     });
 
     test('广播不被消费（不 return，落到基类默认处理）', () {
-      final int idx =
-          source.indexOf('if (magpie_scaling_message_ != 0 && message ==');
+      final int idx = source.indexOf(
+        'if (magpie_scaling_message_ != 0 && message ==',
+      );
       expect(idx, greaterThanOrEqualTo(0), reason: '缺少运行时消息号匹配分支');
       final int braceEnd = source.indexOf('}', idx);
       expect(braceEnd, greaterThan(idx));
       final String branch = source.substring(idx, braceEnd);
-      expect(branch.contains('return'), isFalse,
-          reason: '系统广播必须透传给基类，不得在此 return 消费');
+      expect(
+        branch.contains('return'),
+        isFalse,
+        reason: '系统广播必须透传给基类，不得在此 return 消费',
+      );
     });
 
     test('注册函数在 OnCreate 里被调用，且声明落在 header', () {
       expect(source.contains('  RegisterMagpieChannel();'), isTrue);
       expect(headerSource.contains('void RegisterMagpieChannel();'), isTrue);
-      expect(headerSource.contains('magpie_scaling_message_ = 0;'), isTrue,
-          reason: '消息号成员必须零初始化，否则未注册时会误匹配');
+      expect(
+        headerSource.contains('magpie_scaling_message_ = 0;'),
+        isTrue,
+        reason: '消息号成员必须零初始化，否则未注册时会误匹配',
+      );
     });
   });
 
@@ -119,25 +158,34 @@ void main() {
     test('onScalingChanged 原样解析 state/handle/scaling', () async {
       MagpieScalingEvent? got;
       MagpieScalingChannel.setHandler((MagpieScalingEvent e) => got = e);
-      await MagpieScalingChannel.debugDispatch(const MethodCall(
-        'onScalingChanged',
-        <Object?, Object?>{'state': 0, 'handle': 1234, 'scaling': true},
-      ));
+      await MagpieScalingChannel.debugDispatch(
+        const MethodCall('onScalingChanged', <Object?, Object?>{
+          'state': 0,
+          'handle': 1234,
+          'scaling': true,
+        }),
+      );
       expect(
-          got, const MagpieScalingEvent(state: 0, handle: 1234, scaling: true));
+        got,
+        const MagpieScalingEvent(state: 0, handle: 1234, scaling: true),
+      );
     });
 
     test('字段缺失取保守缺省，未知方法名忽略', () async {
       MagpieScalingEvent? got;
       MagpieScalingChannel.setHandler((MagpieScalingEvent e) => got = e);
       await MagpieScalingChannel.debugDispatch(
-          const MethodCall('onScalingChanged', <Object?, Object?>{}));
+        const MethodCall('onScalingChanged', <Object?, Object?>{}),
+      );
       expect(
-          got, const MagpieScalingEvent(state: 0, handle: 0, scaling: false));
+        got,
+        const MagpieScalingEvent(state: 0, handle: 0, scaling: false),
+      );
 
       got = null;
       await MagpieScalingChannel.debugDispatch(
-          const MethodCall('somethingElse', <Object?, Object?>{'state': 1}));
+        const MethodCall('somethingElse', <Object?, Object?>{'state': 1}),
+      );
       expect(got, isNull);
     });
 
@@ -145,10 +193,13 @@ void main() {
       MagpieScalingEvent? got;
       MagpieScalingChannel.setHandler((MagpieScalingEvent e) => got = e);
       MagpieScalingChannel.clearHandler();
-      await MagpieScalingChannel.debugDispatch(const MethodCall(
-        'onScalingChanged',
-        <Object?, Object?>{'state': 1, 'handle': 7, 'scaling': true},
-      ));
+      await MagpieScalingChannel.debugDispatch(
+        const MethodCall('onScalingChanged', <Object?, Object?>{
+          'state': 1,
+          'handle': 7,
+          'scaling': true,
+        }),
+      );
       expect(got, isNull);
     });
   });

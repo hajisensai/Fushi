@@ -96,8 +96,9 @@ void main() {
       );
       // ……wheel 监听调它……
       expect(
-        webviewSrc
-            .contains('window.__fushiPopupZoomStep(e.deltaY < 0 ? 1 : -1)'),
+        webviewSrc.contains(
+          'window.__fushiPopupZoomStep(e.deltaY < 0 ? 1 : -1)',
+        ),
         isTrue,
       );
       // ……Dart 手动按钮入口也调它（不得另写一份步进语义）。
@@ -194,24 +195,23 @@ void main() {
     ).readAsStringSync();
 
     Widget buildLayer() => buildTestApp(
-          SizedBox(
-            width: 320,
-            height: 240,
-            child: DictionaryPopupLayer(
-              result: null,
-              isSearching: false,
-              webViewKey: GlobalKey<DictionaryPopupWebViewState>(),
-              onDismiss: () {},
-              onClose: () {},
-              onTextSelected: (String text, Rect rect, List<Object?> _) {},
-              onLinkClick: (String query, Rect rect) {},
-              onMineEntry: (Map<String, String> fields) async =>
-                  const MinePopupResult(),
-              onDuplicateCheck: (String expression, String reading) async =>
-                  false,
-            ),
-          ),
-        );
+      SizedBox(
+        width: 320,
+        height: 240,
+        child: DictionaryPopupLayer(
+          result: null,
+          isSearching: false,
+          webViewKey: GlobalKey<DictionaryPopupWebViewState>(),
+          onDismiss: () {},
+          onClose: () {},
+          onTextSelected: (String text, Rect rect, List<Object?> _) {},
+          onLinkClick: (String query, Rect rect) {},
+          onMineEntry: (Map<String, String> fields) async =>
+              const MinePopupResult(),
+          onDuplicateCheck: (String expression, String reading) async => false,
+        ),
+      ),
+    );
 
     testWidgets('按钮出现在静止光标下时不弹气泡（真实悬停后才弹）', (WidgetTester tester) async {
       // 先量出 A− 的中心（此时尚无鼠标指针参与）。
@@ -219,10 +219,12 @@ void main() {
       final Offset center = tester.getCenter(find.byIcon(Icons.text_decrease));
 
       // 换成空壳，把鼠标停到那个坐标——此处当前什么都没有。
-      await tester
-          .pumpWidget(buildTestApp(const SizedBox(width: 320, height: 240)));
-      final TestGesture mouse =
-          await tester.createGesture(kind: PointerDeviceKind.mouse);
+      await tester.pumpWidget(
+        buildTestApp(const SizedBox(width: 320, height: 240)),
+      );
+      final TestGesture mouse = await tester.createGesture(
+        kind: PointerDeviceKind.mouse,
+      );
       await mouse.addPointer(location: center);
       addTearDown(() => mouse.removePointer());
       await tester.pump();
@@ -246,8 +248,9 @@ void main() {
       );
     });
 
-    testWidgets('A−/A+ 只有一层 Tooltip，且桌面上真能看到 Ctrl+滚轮提示',
-        (WidgetTester tester) async {
+    testWidgets('A−/A+ 只有一层 Tooltip，且桌面上真能看到 Ctrl+滚轮提示', (
+      WidgetTester tester,
+    ) async {
       await tester.pumpWidget(buildLayer());
 
       // 每个按钮恰好一层 Tooltip：两层嵌套时内层先吃 hover，外层的 hint 永远显示不出来。
@@ -255,9 +258,11 @@ void main() {
           .widgetList<Tooltip>(glassUnwrapAll<Tooltip>(find.byType(Tooltip)))
           .map((Tooltip w) => w.message)
           .whereType<String>()
-          .where((String m) =>
-              m.contains(t.popup_font_size_decrease) ||
-              m.contains(t.popup_font_size_increase))
+          .where(
+            (String m) =>
+                m.contains(t.popup_font_size_decrease) ||
+                m.contains(t.popup_font_size_increase),
+          )
           .toList();
       expect(
         zoomMessages.length,

@@ -76,7 +76,7 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
   /// 范围选择：统计中心传进来的共享那份，或独立页自持的一份。
   late final ValueNotifier<StatRangeSelection> _rangeSelection =
       widget.rangeSelection ??
-          ValueNotifier<StatRangeSelection>(const StatRangeSelection());
+      ValueNotifier<StatRangeSelection>(const StatRangeSelection());
 
   /// 游戏域逐日合计（范围图表 / 所选范围卡 / 学习日历共用）。
   Map<String, StatDayData> _byDay = <String, StatDayData>{};
@@ -91,10 +91,10 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
 
   /// 当前范围：共享选择 × 本轮今日 × 游戏域最早有数据的一天。
   StatRange get _range => StatRange.resolve(
-        _rangeSelection.value,
-        todayKey: _window.todayKey,
-        earliestKey: earliestStatDateKey(_byDay.keys),
-      );
+    _rangeSelection.value,
+    todayKey: _window.todayKey,
+    earliestKey: earliestStatDateKey(_byDay.keys),
+  );
 
   @override
   void initState() {
@@ -184,12 +184,15 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
         includeCounters: true,
       );
       final StatCounterFacts counterFacts = facts.counters;
-      _lookupEvents =
-          counterFacts.lookupEvents(source: StatSourceKind.game).toList();
-      _minedEvents =
-          counterFacts.minedEvents(source: StatSourceKind.game).toList();
-      _favoritedEvents =
-          counterFacts.favoriteWordEvents(source: StatSourceKind.game).toList();
+      _lookupEvents = counterFacts
+          .lookupEvents(source: StatSourceKind.game)
+          .toList();
+      _minedEvents = counterFacts
+          .minedEvents(source: StatSourceKind.game)
+          .toList();
+      _favoritedEvents = counterFacts
+          .favoriteWordEvents(source: StatSourceKind.game)
+          .toList();
       _favoritedSentenceEvents = counterFacts
           .favoriteSentenceEvents(source: StatSourceKind.game)
           .toList();
@@ -225,10 +228,7 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
       contentBuilder: _buildContent,
     );
     if (widget.embedded) return buildEmbeddedStatTab(context, body);
-    return FushiPageScaffold(
-      title: t.game_statistics,
-      body: body,
-    );
+    return FushiPageScaffold(title: t.game_statistics, body: body);
   }
 
   /// 骨架与总览 / 阅读 / 观看 tab 同一套（2026-10 统计中心重设计，
@@ -246,7 +246,8 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
     );
     // counters 也算有数据（与视频页 review4-6 同一个坑）：只在游戏域查过词 /
     // 制过卡而还没玩满一次会话时，四个计数明明有数却显示空状态。
-    final bool empty = _aggregate.allSessions == 0 &&
+    final bool empty =
+        _aggregate.allSessions == 0 &&
         _lookupEvents.isEmpty &&
         _minedEvents.isEmpty &&
         _favoritedEvents.isEmpty &&
@@ -401,10 +402,11 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
       title: row.title,
       meta: row.chars > 0
           ? '${formatStatChars(row.chars)} · '
-              '${t.game_stat_last_played}: $lastPlayed'
+                '${t.game_stat_last_played}: $lastPlayed'
           : '${t.game_stat_last_played}: $lastPlayed',
-      meta2:
-          game == null ? null : '${t.game_stat_sessions}: ${game.sessionCount}',
+      meta2: game == null
+          ? null
+          : '${t.game_stat_sessions}: ${game.sessionCount}',
       trailing: formatStatTime(row.ms),
       onTap: game == null ? null : () => unawaited(_openGame(game)),
     );
@@ -433,14 +435,14 @@ class _GameStatisticsPageState extends BasePageState<GameStatisticsPage> {
   /// 会话行封面：与 [_sessionTitle] 同一次库内查找（游戏已删则无封面画占位），
   /// 与「按游戏」行同一条游戏封面解析链。
   ImageProvider? _sessionCover(StudySession s) => resolveMediaCoverImage(
-        kind: MediaKind.game,
-        localPath: findGalgameForActivity(
-          _games,
-          mediaKey: s.mediaKey,
-          title: s.title,
-        )?.coverPath,
-        decodeWidth: kActivityCoverDecodePixelWidth,
-      );
+    kind: MediaKind.game,
+    localPath: findGalgameForActivity(
+      _games,
+      mediaKey: s.mediaKey,
+      title: s.title,
+    )?.coverPath,
+    decodeWidth: kActivityCoverDecodePixelWidth,
+  );
 
   /// 会话行的所属合集名（BUG-2417：同一系列的分作单看名字认不出属于哪套）。
   /// 'game|<galgames.id>' 键契约，与时段明细 sheet 的 collectionOf 同一映射。

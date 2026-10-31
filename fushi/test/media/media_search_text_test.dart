@@ -36,15 +36,9 @@ void main() {
 
   group('matchesMediaSearch', () {
     test('空查询恒命中（搜索框为空 = 不过滤）', () {
-      expect(
-        matchesMediaSearch(query: '', titles: <String>['任意']),
-        isTrue,
-      );
+      expect(matchesMediaSearch(query: '', titles: <String>['任意']), isTrue);
       // 纯标点的查询归一化后为空，同样视作不过滤。
-      expect(
-        matchesMediaSearch(query: '・・・', titles: <String>['任意']),
-        isTrue,
-      );
+      expect(matchesMediaSearch(query: '・・・', titles: <String>['任意']), isTrue);
     });
 
     test('排版差异不挡命中：全角/片假名/中点/空格', () {
@@ -55,8 +49,11 @@ void main() {
         'staynight',
         'FATE',
       ]) {
-        expect(matchesMediaSearch(query: q, titles: titles), isTrue,
-            reason: '「$q」应命中 Fate／stay night');
+        expect(
+          matchesMediaSearch(query: q, titles: titles),
+          isTrue,
+          reason: '「$q」应命中 Fate／stay night',
+        );
       }
     });
 
@@ -85,20 +82,23 @@ void main() {
     test('空/纯空白查询原样返回（同一 List 实例，不重建）', () {
       final List<String> items = <String>['a', 'b'];
       expect(
-          identical(filterByMediaSearch(items, '', (String s) => [s]), items),
-          isTrue);
+        identical(filterByMediaSearch(items, '', (String s) => [s]), items),
+        isTrue,
+      );
       expect(
-          identical(
-              filterByMediaSearch(items, ' 　 ', (String s) => [s]), items),
-          isTrue);
+        identical(filterByMediaSearch(items, ' 　 ', (String s) => [s]), items),
+        isTrue,
+      );
     });
 
     test('按归一化口径过滤：片假名/全角差异不挡命中', () {
       final List<String> items = <String>['フェイト', 'ＦＡＴＥ', 'unrelated'];
-      expect(filterByMediaSearch(items, 'ふぇいと', (String s) => [s]),
-          <String>['フェイト']);
-      expect(filterByMediaSearch(items, 'fate', (String s) => [s]),
-          <String>['ＦＡＴＥ']);
+      expect(filterByMediaSearch(items, 'ふぇいと', (String s) => [s]), <String>[
+        'フェイト',
+      ]);
+      expect(filterByMediaSearch(items, 'fate', (String s) => [s]), <String>[
+        'ＦＡＴＥ',
+      ]);
     });
 
     test('多标题任一命中即留', () {
@@ -124,8 +124,11 @@ void main() {
       '「括弧」〜波ダッシュ…',
       '',
     ]) {
-      expect(normalizeGalgameSearchText(s), normalizeMediaSearchText(s),
-          reason: '委托必须逐字符一致：$s');
+      expect(
+        normalizeGalgameSearchText(s),
+        normalizeMediaSearchText(s),
+        reason: '委托必须逐字符一致：$s',
+      );
     }
   });
 }

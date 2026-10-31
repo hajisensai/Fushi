@@ -31,8 +31,11 @@ void main() {
 
     test('每个扩展会引用的宿主类都被一条不可改名的 keep 覆盖', () {
       final List<_KeepRule> keeps = _parseKeepRules(rules.readAsStringSync());
-      expect(keeps, isNotEmpty,
-          reason: 'proguard-rules.pro 里一条 -keep class 都没解析出来');
+      expect(
+        keeps,
+        isNotEmpty,
+        reason: 'proguard-rules.pro 里一条 -keep class 都没解析出来',
+      );
 
       final List<String> uncovered = <String>[
         for (final String type in _hostAbiReferences)
@@ -42,7 +45,8 @@ void main() {
       expect(
         uncovered,
         isEmpty,
-        reason: '这些类扩展要用、宿主却没有以原名保住，release APK 上会让扩展加载失败：\n'
+        reason:
+            '这些类扩展要用、宿主却没有以原名保住，release APK 上会让扩展加载失败：\n'
             '${uncovered.join('\n')}\n'
             '修法：在 android/app/proguard-rules.pro 的「Mihon 扩展宿主 ABI」区块补 keep。',
       );

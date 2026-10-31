@@ -30,8 +30,12 @@ void main() {
       .toList();
 
   test('扫描规模哨兵：lib/ 确实被枚举到了', () {
-    expectScanScale(dartFiles().length,
-        what: 'lib/ 下的 .dart', atLeast: 750, measured: 939);
+    expectScanScale(
+      dartFiles().length,
+      what: 'lib/ 下的 .dart',
+      atLeast: 750,
+      measured: 939,
+    );
   });
 
   test('没有任何页面把 pop 排在 await onWillPop() 之后', () {
@@ -53,7 +57,8 @@ void main() {
     expect(
       offenders,
       isEmpty,
-      reason: 'BUG-2362：退出不能等落库。`await onWillPop()` 一旦挂住，'
+      reason:
+          'BUG-2362：退出不能等落库。`await onWillPop()` 一旦挂住，'
           '`canPop: false` 下的 iOS 页面就没有任何出口了（没有系统返回键，'
           '侧滑也被 canPop 关掉）。改用 exitAfterPersist(persist: onWillPop, ...)。',
     );
@@ -79,15 +84,17 @@ void main() {
       expect(
         source.contains('exitAfterPersist('),
         isTrue,
-        reason: 'BUG-2362：$path 的退出必须走 exitAfterPersist，'
+        reason:
+            'BUG-2362：$path 的退出必须走 exitAfterPersist，'
             '否则一次卡住的 drift 写就能让 iOS 用户永久困在页内。',
       );
     }
   });
 
   test('小说阅读器在内容就绪前也挂着返回键', () {
-    final File reader =
-        File('lib/src/pages/implementations/reader_fushi_page.dart');
+    final File reader = File(
+      'lib/src/pages/implementations/reader_fushi_page.dart',
+    );
     final String source = reader.readAsStringSync();
     // 顶栏（含返回箭头）的可见条件里有 `_hasEverLoaded`，它只在 WebView 首屏渲染
     // 成功后才置位；书打不开时整页只剩一个转圈。出口必须挂在**未就绪**这一侧。
@@ -99,7 +106,8 @@ void main() {
     expect(
       source.contains("'reader_unloaded_back'"),
       isTrue,
-      reason: 'BUG-2362：未就绪态的返回键（key: reader_unloaded_back）不见了。'
+      reason:
+          'BUG-2362：未就绪态的返回键（key: reader_unloaded_back）不见了。'
           'iOS 上没有系统返回键、canPop:false 关掉了侧滑、点空白唤顶栏又依赖'
           '尚不存在的页内 JS——它是坏书场景下唯一的出口。',
     );

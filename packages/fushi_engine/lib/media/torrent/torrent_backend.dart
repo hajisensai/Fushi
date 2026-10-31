@@ -292,9 +292,9 @@ class TorrentStorageResult {
   const TorrentStorageResult({required this.ok, this.path, this.error});
 
   const TorrentStorageResult.failure(String reason)
-      : ok = false,
-        path = null,
-        error = reason;
+    : ok = false,
+      path = null,
+      error = reason;
 
   /// 是否成功落地。
   final bool ok;

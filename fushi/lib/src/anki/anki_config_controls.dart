@@ -36,18 +36,19 @@ class AnkiDeckPickerRow extends StatelessWidget {
     final int? selectedId = settings.selectedDeckId;
     // 选中的 id 不在当前列表里（牌组在 Anki 里被删/改名）→ 不给 picker 一个它认不出的
     // 值，否则 Material 的 DropdownButton 会断言失败。
-    final int? validSelectedId =
-        decks.any((AnkiDeck d) => d.id == selectedId) ? selectedId : null;
+    final int? validSelectedId = decks.any((AnkiDeck d) => d.id == selectedId)
+        ? selectedId
+        : null;
 
     return AdaptiveSettingsPickerRow<int?>(
       title: t.anki_deck,
       controlBelow: true,
       selected: validSelectedId,
       options: decks
-          .map((AnkiDeck d) => AdaptiveSettingsPickerOption<int?>(
-                value: d.id,
-                label: d.name,
-              ))
+          .map(
+            (AnkiDeck d) =>
+                AdaptiveSettingsPickerOption<int?>(value: d.id, label: d.name),
+          )
           .toList(),
       onChanged: (int? id) {
         if (id == null) return;
@@ -74,18 +75,18 @@ class AnkiNoteTypePickerRow extends StatelessWidget {
     final int? selectedId = settings.selectedNoteTypeId;
     final int? validSelectedId =
         noteTypes.any((AnkiNoteType n) => n.id == selectedId)
-            ? selectedId
-            : null;
+        ? selectedId
+        : null;
 
     return AdaptiveSettingsPickerRow<int?>(
       title: t.anki_note_type,
       controlBelow: true,
       selected: validSelectedId,
       options: noteTypes
-          .map((AnkiNoteType n) => AdaptiveSettingsPickerOption<int?>(
-                value: n.id,
-                label: n.name,
-              ))
+          .map(
+            (AnkiNoteType n) =>
+                AdaptiveSettingsPickerOption<int?>(value: n.id, label: n.name),
+          )
           .toList(),
       onChanged: (int? id) {
         if (id == null) return;
@@ -188,18 +189,21 @@ void showLapisSetupResult(
   // 唯一出路是应用设置页里的权限项，所以直接把它做成 snackbar 上的一个按钮。
   final bool needsSettings =
       result.code == AnkiErrorCode.permissionPermanentlyDenied;
-  messenger.showSnackBar(FushiSnackBar(
-    content: Text(message),
-    duration: needsSettings
-        ? const Duration(seconds: 10)
-        : const Duration(seconds: 4),
-    action: needsSettings
-        ? SnackBarAction(
-            label: t.anki_action_open_settings,
-            onPressed: () => unawaited(AnkiRepository.openPermissionSettings()),
-          )
-        : null,
-  ));
+  messenger.showSnackBar(
+    FushiSnackBar(
+      content: Text(message),
+      duration: needsSettings
+          ? const Duration(seconds: 10)
+          : const Duration(seconds: 4),
+      action: needsSettings
+          ? SnackBarAction(
+              label: t.anki_action_open_settings,
+              onPressed: () =>
+                  unawaited(AnkiRepository.openPermissionSettings()),
+            )
+          : null,
+    ),
+  );
 }
 
 /// BUG-2380：当前 Anki 配置**制不出卡**时，劝用户建并选用 Lapis 的弹窗——

@@ -23,14 +23,13 @@ void main() {
       required int ms,
       required bool direct,
       bool relay = false,
-    }) =>
-        UpdateProbeOutcome(
-          url: url,
-          total: total,
-          elapsed: Duration(milliseconds: ms),
-          isDirect: direct,
-          isRelay: relay,
-        );
+    }) => UpdateProbeOutcome(
+      url: url,
+      total: total,
+      elapsed: Duration(milliseconds: ms),
+      isDirect: direct,
+      isRelay: relay,
+    );
 
     test('首选档（Cloudflare / GitHub）可用时，中转镜像再快也不胜出', () {
       final String? winner = selectRaceWinnerUrl(<UpdateProbeOutcome>[
@@ -38,8 +37,11 @@ void main() {
         outcome('github', total: 100, ms: 3000, direct: false),
         outcome('r2', total: 100, ms: 4000, direct: true),
       ]);
-      expect(winner, 'github',
-          reason: '中转只在首选档全部不可用时启用；首选档内仍按最快 + 锚点 tie-break');
+      expect(
+        winner,
+        'github',
+        reason: '中转只在首选档全部不可用时启用；首选档内仍按最快 + 锚点 tie-break',
+      );
     });
 
     test('首选档无一可用 → 在中转镜像里取最快', () {
@@ -99,26 +101,29 @@ void main() {
 
   group('reorderCandidatesByRaceWinner (纯函数：胜出提首位、其余原序、不删减)', () {
     test('胜出镜像提首位，其余保持原相对顺序', () {
-      final List<String> reordered = reorderCandidatesByRaceWinner(
-        <String>['direct', 'm1', 'm2', 'm3'],
+      final List<String> reordered = reorderCandidatesByRaceWinner(<String>[
+        'direct',
+        'm1',
         'm2',
-      );
+        'm3',
+      ], 'm2');
       expect(reordered, <String>['m2', 'direct', 'm1', 'm3']);
     });
 
     test('胜出已是首位 → 列表不变', () {
-      final List<String> reordered = reorderCandidatesByRaceWinner(
-        <String>['direct', 'm1', 'm2'],
+      final List<String> reordered = reorderCandidatesByRaceWinner(<String>[
         'direct',
-      );
+        'm1',
+        'm2',
+      ], 'direct');
       expect(reordered, <String>['direct', 'm1', 'm2']);
     });
 
     test('胜出 url 不在列表里 → 原样返回（防御）', () {
-      final List<String> reordered = reorderCandidatesByRaceWinner(
-        <String>['a', 'b'],
-        'zzz',
-      );
+      final List<String> reordered = reorderCandidatesByRaceWinner(<String>[
+        'a',
+        'b',
+      ], 'zzz');
       expect(reordered, <String>['a', 'b']);
     });
 
@@ -193,8 +198,10 @@ void main() {
         },
       );
 
-      expect(result, <String>[direct, relay],
-          reason: '中转只在连不上 Cloudflare 与 GitHub 时才启用');
+      expect(result, <String>[
+        direct,
+        relay,
+      ], reason: '中转只在连不上 Cloudflare 与 GitHub 时才启用');
     });
 
     test('首选档全部失败 → 中转镜像胜出', () async {
@@ -290,8 +297,7 @@ void main() {
       expect(result, isNull);
     });
 
-    test(
-        'BUG-534 探针只请求单字节 bytes=0-0（不是 bytes=0- 整包，否则 drain 会把整个'
+    test('BUG-534 探针只请求单字节 bytes=0-0（不是 bytes=0- 整包，否则 drain 会把整个'
         '安装包下下来、流量在跑而 UI 卡在 connecting）', () async {
       const String direct =
           'https://github.com/x/y/releases/download/v1/app.exe';
@@ -309,9 +315,13 @@ void main() {
       expect(result, isNotNull);
       expect(observedRanges, isNotEmpty, reason: '竞速必发探针');
       for (final String range in observedRanges) {
-        expect(range, 'bytes=0-0',
-            reason: '探针 Range 必须是单字节 0-0；bytes=0- 会让服务器把整包当开放区间返回，'
-                '随后 drain 整包下载→流量在跑但状态停 connecting（用户报告）');
+        expect(
+          range,
+          'bytes=0-0',
+          reason:
+              '探针 Range 必须是单字节 0-0；bytes=0- 会让服务器把整包当开放区间返回，'
+              '随后 drain 整包下载→流量在跑但状态停 connecting（用户报告）',
+        );
       }
     });
 
@@ -354,8 +364,9 @@ void main() {
     testWidgets('首信号前显 connecting、首个非零信号后翻 downloading', (
       WidgetTester tester,
     ) async {
-      final ValueNotifier<String> status =
-          ValueNotifier<String>(t.update_connecting);
+      final ValueNotifier<String> status = ValueNotifier<String>(
+        t.update_connecting,
+      );
       addTearDown(status.dispose);
       final UpdateDownloadStatusController controller =
           UpdateDownloadStatusController(status);
@@ -389,8 +400,9 @@ void main() {
     testWidgets('onFirstByte 幂等：多次调用不重复 notify、文案稳定', (
       WidgetTester tester,
     ) async {
-      final ValueNotifier<String> status =
-          ValueNotifier<String>(t.update_connecting);
+      final ValueNotifier<String> status = ValueNotifier<String>(
+        t.update_connecting,
+      );
       addTearDown(status.dispose);
       final UpdateDownloadStatusController controller =
           UpdateDownloadStatusController(status);
@@ -519,8 +531,9 @@ void main() {
       );
 
       expect(await file.readAsBytes(), payload);
-      expect(segmentHosts.toSet(), <String>{'github.com'},
-          reason: '中转只在连不上 Cloudflare 与 GitHub 时才启用');
+      expect(segmentHosts.toSet(), <String>{
+        'github.com',
+      }, reason: '中转只在连不上 Cloudflare 与 GitHub 时才启用');
       expect(segmentHosts, isNot(contains(relayHost)));
     });
 
@@ -552,10 +565,14 @@ void main() {
       );
 
       expect(await file.readAsBytes(), payload);
-      expect(segmentHosts.toSet(), <String>{'github.com'},
-          reason: '显式选择优先于测速：所选源再慢也先用它');
-      expect(allHosts, isNot(contains('fast.example')),
-          reason: '竞速被跳过 → 其它候选连探针都不该发');
+      expect(segmentHosts.toSet(), <String>{
+        'github.com',
+      }, reason: '显式选择优先于测速：所选源再慢也先用它');
+      expect(
+        allHosts,
+        isNot(contains('fast.example')),
+        reason: '竞速被跳过 → 其它候选连探针都不该发',
+      );
     });
 
     test('竞速全失败（坏镜像 + 直连失败）→ failures 锚定直连（TODO-666 不破坏）', () async {
@@ -563,8 +580,9 @@ void main() {
       final UpdateAsset asset = _asset(payload);
       final String direct = asset.url;
       final String mirror = 'https://ghproxy.homeboyc.cn/$direct';
-      final Exception directError =
-          Exception('direct github unreachable (needs proxy)');
+      final Exception directError = Exception(
+        'direct github unreachable (needs proxy)',
+      );
 
       Object? thrown;
       try {
@@ -587,8 +605,11 @@ void main() {
         thrown = e;
       }
 
-      expect(thrown, same(directError),
-          reason: '竞速全失败退串行后，代表性错误仍锚定直连（不取末尾死镜像）');
+      expect(
+        thrown,
+        same(directError),
+        reason: '竞速全失败退串行后，代表性错误仍锚定直连（不取末尾死镜像）',
+      );
     });
   });
 }
@@ -598,13 +619,13 @@ void main() {
 const int _minSeg = 2;
 
 UpdateDownloadResponse _probe206(int total) => UpdateDownloadResponse(
-      statusCode: HttpStatus.partialContent,
-      headers: <String, String>{
-        HttpHeaders.contentRangeHeader: 'bytes 0-${total - 1}/$total',
-        HttpHeaders.etagHeader: '"v1"',
-      },
-      stream: Stream<List<int>>.value(<int>[0]),
-    );
+  statusCode: HttpStatus.partialContent,
+  headers: <String, String>{
+    HttpHeaders.contentRangeHeader: 'bytes 0-${total - 1}/$total',
+    HttpHeaders.etagHeader: '"v1"',
+  },
+  stream: Stream<List<int>>.value(<int>[0]),
+);
 
 UpdateDownloadResponse _probe206ThatErrorsOnDrain(int total) {
   final StreamController<List<int>> controller = StreamController<List<int>>();
@@ -624,12 +645,12 @@ UpdateDownloadResponse _probe206ThatErrorsOnDrain(int total) {
 }
 
 UpdateAsset _asset(List<int> payload) => UpdateAsset(
-      name: 'hibiki-1.2.0-windows-setup.exe',
-      url:
-          'https://github.com/hajisensai/hibiki/releases/download/v1.2.0/hibiki-1.2.0-windows-setup.exe',
-      sizeBytes: payload.length,
-      sha256Digest: _sha256Hex(payload),
-    );
+  name: 'hibiki-1.2.0-windows-setup.exe',
+  url:
+      'https://github.com/hajisensai/hibiki/releases/download/v1.2.0/hibiki-1.2.0-windows-setup.exe',
+  sizeBytes: payload.length,
+  sha256Digest: _sha256Hex(payload),
+);
 
 List<int> _largePayload() =>
     List<int>.generate(32, (int i) => (i * 7 + 0x4D) & 0xFF, growable: false);
@@ -647,8 +668,9 @@ UpdateDownloadResponse _rangeResponse(List<int> payload, String? range) {
   }
   final RegExpMatch m = RegExp(r'bytes=(\d+)-(\d*)').firstMatch(range)!;
   final int start = int.parse(m.group(1)!);
-  final int end =
-      m.group(2)!.isEmpty ? payload.length - 1 : int.parse(m.group(2)!);
+  final int end = m.group(2)!.isEmpty
+      ? payload.length - 1
+      : int.parse(m.group(2)!);
   final List<int> slice = payload.sublist(start, end + 1);
   return UpdateDownloadResponse(
     statusCode: HttpStatus.partialContent,

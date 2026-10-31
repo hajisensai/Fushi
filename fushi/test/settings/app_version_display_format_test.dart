@@ -45,14 +45,14 @@ void main() {
   /// 资源照样报新版本。关于页是用户唯一能自查这件事的地方。
   group('运行中代码版本优先展示', () {
     PackageInfo windowsInfo(String version) => PackageInfo(
-          appName: 'Fushi',
-          packageName: 'app.hibiki.reader',
-          // Windows 的 VERSIONINFO **字符串**字段保留完整 build-name（丢后缀的只是
-          // FILEVERSION 那四段数字），package_info 读的正是字符串字段。实测本机
-          // fushi.exe: ProductVersion = 2.2.1-debug.12215+12215。
-          version: version,
-          buildNumber: '12215',
-        );
+      appName: 'Fushi',
+      packageName: 'app.hibiki.reader',
+      // Windows 的 VERSIONINFO **字符串**字段保留完整 build-name（丢后缀的只是
+      // FILEVERSION 那四段数字），package_info 读的正是字符串字段。实测本机
+      // fushi.exe: ProductVersion = 2.2.1-debug.12215+12215。
+      version: version,
+      buildNumber: '12215',
+    );
 
     test('同一次构建：显示代码版本，不加警告', () {
       expect(
@@ -105,11 +105,11 @@ void main() {
   /// BUG-1786 想避开的「警告退化成噪音」。判据必须吃下这层有损渲染。
   group('版本资源的有损渲染（Apple 只收数字段）', () {
     PackageInfo appleInfo(String version, String buildNumber) => PackageInfo(
-          appName: 'Fushi',
-          packageName: 'app.hibiki.reader',
-          version: version,
-          buildNumber: buildNumber,
-        );
+      appName: 'Fushi',
+      packageName: 'app.hibiki.reader',
+      version: version,
+      buildNumber: buildNumber,
+    );
 
     test('iOS beta：Info.plist 剥了预发布段，不是半更新态 ⇒ 不告警', () {
       expect(
@@ -193,28 +193,36 @@ void main() {
 
   group('source guard', () {
     test(
-        'settings_schema_system.dart no longer concatenates version+buildNumber',
-        () {
-      final File source = File('lib/src/settings/settings_schema_system.dart');
-      expect(source.existsSync(), isTrue,
-          reason: 'source path resolved relative to package root');
-      final String contents = source.readAsStringSync();
+      'settings_schema_system.dart no longer concatenates version+buildNumber',
+      () {
+        final File source = File(
+          'lib/src/settings/settings_schema_system.dart',
+        );
+        expect(
+          source.existsSync(),
+          isTrue,
+          reason: 'source path resolved relative to package root',
+        );
+        final String contents = source.readAsStringSync();
 
-      // 守住根因：禁止 `${packageInfo.version}+${packageInfo.buildNumber}`
-      // 这种把 versionCode 拼进 semver `+` build-metadata 的展示形态。
-      expect(
-        contents
-            .contains(r"'${packageInfo.version}+${packageInfo.buildNumber}'"),
-        isFalse,
-        reason: '不得把 versionCode 拼进 semver 的 + build-metadata 段',
-      );
-      // 任意把这两个字段直接 `+` 串接的写法都拦下（防止变量改名后绕过）。
-      expect(
-        RegExp(r'\.version[^\n]*\}\+\$\{[^\n]*\.buildNumber')
-            .hasMatch(contents),
-        isFalse,
-        reason: 'version 与 buildNumber 不得用 + 直接串接',
-      );
-    });
+        // 守住根因：禁止 `${packageInfo.version}+${packageInfo.buildNumber}`
+        // 这种把 versionCode 拼进 semver `+` build-metadata 的展示形态。
+        expect(
+          contents.contains(
+            r"'${packageInfo.version}+${packageInfo.buildNumber}'",
+          ),
+          isFalse,
+          reason: '不得把 versionCode 拼进 semver 的 + build-metadata 段',
+        );
+        // 任意把这两个字段直接 `+` 串接的写法都拦下（防止变量改名后绕过）。
+        expect(
+          RegExp(
+            r'\.version[^\n]*\}\+\$\{[^\n]*\.buildNumber',
+          ).hasMatch(contents),
+          isFalse,
+          reason: 'version 与 buildNumber 不得用 + 直接串接',
+        );
+      },
+    );
   });
 }

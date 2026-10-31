@@ -20,16 +20,21 @@ import 'package:flutter_test/flutter_test.dart';
 ///
 /// headless 无真 InAppWebView，逐句翻屏须真机复验；本守卫只锁接线不变量。
 void main() {
-  final String source =
-      File('lib/src/media/audiobook/audiobook_bridge.dart').readAsStringSync();
+  final String source = File(
+    'lib/src/media/audiobook/audiobook_bridge.dart',
+  ).readAsStringSync();
 
   final int start = source.indexOf('  static Future<void> highlight(');
-  final int end =
-      source.indexOf('  static Future<void> resetImagePauseAnchor(');
+  final int end = source.indexOf(
+    '  static Future<void> resetImagePauseAnchor(',
+  );
 
   test('方法边界可定位（防守卫因重命名失效）', () {
-    expect(start, greaterThanOrEqualTo(0),
-        reason: 'AudiobookBridge.highlight 丢失');
+    expect(
+      start,
+      greaterThanOrEqualTo(0),
+      reason: 'AudiobookBridge.highlight 丢失',
+    );
     expect(end, greaterThan(start));
   });
 
@@ -43,7 +48,8 @@ void main() {
     );
     expect(
       body.contains(
-          'typeof window.fushiReader.highlightSelectorCue==="function"'),
+        'typeof window.fushiReader.highlightSelectorCue==="function"',
+      ),
       isTrue,
       reason: '必须带存在性判定，否则分页/连续模式会抛 TypeError',
     );
@@ -57,8 +63,11 @@ void main() {
     );
     final int vnCall = body.indexOf('highlightSelectorCue(');
     final int fallback = body.indexOf('}else if(typeof __fushiHighlight');
-    expect(fallback, greaterThan(vnCall),
-        reason: 'VN 原语必须在前、__fushiHighlight 作为 else 回落');
+    expect(
+      fallback,
+      greaterThan(vnCall),
+      reason: 'VN 原语必须在前、__fushiHighlight 作为 else 回落',
+    );
   });
 
   test('清除高亮仍走原路径（VN 侧无需特例）', () {

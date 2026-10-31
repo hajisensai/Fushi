@@ -71,7 +71,8 @@ String sftpSourceUrlOf(String remotePath, String urlRoot) {
         ? '$urlRoot$_sftpRelativeMarker'
         : '$urlRoot$_sftpRelativeMarker/$remotePath';
   }
-  final bool collides = remotePath == _sftpRelativeMarker ||
+  final bool collides =
+      remotePath == _sftpRelativeMarker ||
       remotePath.startsWith('$_sftpRelativeMarker/') ||
       remotePath.startsWith('//');
   return collides ? '$urlRoot/$remotePath' : '$urlRoot$remotePath';
@@ -97,17 +98,18 @@ class SftpUrlNamespaceFileSystem implements SourceFileSystem {
   Future<List<SourceFileEntry>> listFiles(
     String dirPath, {
     bool recursive = false,
-  }) async =>
-      <SourceFileEntry>[
-        for (final SourceFileEntry e
-            in await inner.listFiles(_remote(dirPath), recursive: recursive))
-          SourceFileEntry(
-            name: e.name,
-            path: sftpSourceUrlOf(e.path, urlRoot),
-            isDirectory: e.isDirectory,
-            sizeBytes: e.sizeBytes,
-          ),
-      ];
+  }) async => <SourceFileEntry>[
+    for (final SourceFileEntry e in await inner.listFiles(
+      _remote(dirPath),
+      recursive: recursive,
+    ))
+      SourceFileEntry(
+        name: e.name,
+        path: sftpSourceUrlOf(e.path, urlRoot),
+        isDirectory: e.isDirectory,
+        sizeBytes: e.sizeBytes,
+      ),
+  ];
 
   @override
   Future<List<String>> listSiblingNames(String filePath) =>
@@ -145,12 +147,8 @@ class SftpSourceRangeReader implements SyncAssetRangeReader {
       throw StateError('SFTP stream reader was closed');
     }
     try {
-      final ({
-        int totalBytes,
-        int start,
-        int end,
-        Stream<List<int>> bytes
-      }) range = await fs.openSftpRange(assetId, start: start, end: end);
+      final ({int totalBytes, int start, int end, Stream<List<int>> bytes})
+      range = await fs.openSftpRange(assetId, start: start, end: end);
       return SyncAssetRange(
         start: range.start,
         end: range.end,
@@ -170,9 +168,9 @@ class SftpStreamUrlResolver implements StreamUrlResolver {
     required this.urlRoot,
     required NetworkSourceFileSystem fs,
     Future<CloudVideoStreamRelay> Function()? relay,
-  })  : _fs = fs,
-        _reader = SftpSourceRangeReader(fs),
-        _relay = relay ?? CloudVideoStreamRelay.instance;
+  }) : _fs = fs,
+       _reader = SftpSourceRangeReader(fs),
+       _relay = relay ?? CloudVideoStreamRelay.instance;
 
   final int sourceId;
   final String urlRoot;

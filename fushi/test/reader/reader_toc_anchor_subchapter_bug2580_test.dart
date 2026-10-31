@@ -60,20 +60,48 @@ const List<TtuTocEntry> _anchoredToc = <TtuTocEntry>[
   TtuTocEntry(index: 0, label: '表紙'),
   TtuTocEntry(index: 7, label: 'CONTENTS'),
   TtuTocEntry(
-      index: 9, label: '第二十三章　青年期', fragment: 'id-a001', anchorCharOffset: 0),
+    index: 9,
+    label: '第二十三章　青年期',
+    fragment: 'id-a001',
+    anchorCharOffset: 0,
+  ),
   TtuTocEntry(index: 9, label: '第一話', fragment: 'id-a002', anchorCharOffset: 8),
   TtuTocEntry(
-      index: 9, label: '第二話', fragment: 'id-a003', anchorCharOffset: 7614),
+    index: 9,
+    label: '第二話',
+    fragment: 'id-a003',
+    anchorCharOffset: 7614,
+  ),
   TtuTocEntry(
-      index: 9, label: '第六話', fragment: 'id-a007', anchorCharOffset: 44440),
+    index: 9,
+    label: '第六話',
+    fragment: 'id-a007',
+    anchorCharOffset: 44440,
+  ),
   TtuTocEntry(
-      index: 10, label: '第七話', fragment: 'id-a008', anchorCharOffset: 0),
+    index: 10,
+    label: '第七話',
+    fragment: 'id-a008',
+    anchorCharOffset: 0,
+  ),
   TtuTocEntry(
-      index: 10, label: '第八話', fragment: 'id-a009', anchorCharOffset: 9688),
+    index: 10,
+    label: '第八話',
+    fragment: 'id-a009',
+    anchorCharOffset: 9688,
+  ),
   TtuTocEntry(
-      index: 10, label: '第九話', fragment: 'id-a010', anchorCharOffset: 25600),
+    index: 10,
+    label: '第九話',
+    fragment: 'id-a010',
+    anchorCharOffset: 25600,
+  ),
   TtuTocEntry(
-      index: 10, label: '第十話', fragment: 'id-a011', anchorCharOffset: 40770),
+    index: 10,
+    label: '第十話',
+    fragment: 'id-a011',
+    anchorCharOffset: 40770,
+  ),
   TtuTocEntry(index: 11, label: '間話', fragment: 'id-a012', anchorCharOffset: 0),
   TtuTocEntry(index: 13, label: '奥付'),
 ];
@@ -162,7 +190,8 @@ void main() {
         );
 
     test('锚点前的实义字数 = countStudyChars(锚点前纯文本)，振假名不计', () {
-      const String html = '<html><body>'
+      const String html =
+          '<html><body>'
           '<h3 id="id-a008">第七話「狂犬古巣に帰る」</h3>'
           '<p>　<ruby>剣<rt>けん</rt></ruby>の聖地へ、エリスは帰ってきた。</p>'
           '<p>「んん？」</p>'
@@ -188,7 +217,8 @@ void main() {
     });
 
     test('kobo 自闭合 <script/> 章节也能找到锚点（走 parseChapterHtml）', () {
-      const String html = '<?xml version="1.0"?><html><head>'
+      const String html =
+          '<?xml version="1.0"?><html><head>'
           '<script src="../js/kobo.js"/></head><body>'
           '<p>前置。</p><div id="id-a011">第十話</div></body></html>';
       expect(
@@ -198,19 +228,21 @@ void main() {
     });
 
     test('computeTocAnchorCharOffsets 只算带 fragment 的目录项、按章分组一次遍历', () {
-      const String html = '<html><body><p>甲乙丙</p>'
+      const String html =
+          '<html><body><p>甲乙丙</p>'
           '<h3 id="a">A</h3><p>丁戊</p><h3 id="b">B</h3></body></html>';
       final EpubBook book = bookWith(
         html,
         toc: <EpubTocItem>[
           EpubTocItem(label: '表紙', href: 'xhtml/cover.xhtml'),
           EpubTocItem(
-              label: '本文',
-              href: 'xhtml/p-003.xhtml',
-              children: <EpubTocItem>[
-                EpubTocItem(label: 'A', href: 'xhtml/p-003.xhtml#a'),
-                EpubTocItem(label: 'B', href: 'xhtml/p-003.xhtml#b'),
-              ]),
+            label: '本文',
+            href: 'xhtml/p-003.xhtml',
+            children: <EpubTocItem>[
+              EpubTocItem(label: 'A', href: 'xhtml/p-003.xhtml#a'),
+              EpubTocItem(label: 'B', href: 'xhtml/p-003.xhtml#b'),
+            ],
+          ),
         ],
       );
       final Map<String, int> offsets = computeTocAnchorCharOffsets(book);
@@ -226,10 +258,11 @@ void main() {
             offsets[tocAnchorKey(chapter, fragment)],
       );
       // 「表紙」的 href 不在 spine 里，压平时照旧丢掉。
-      expect(
-        toc.map((TtuTocEntry e) => e.anchorCharOffset).toList(),
-        <int?>[null, 3, 6],
-      );
+      expect(toc.map((TtuTocEntry e) => e.anchorCharOffset).toList(), <int?>[
+        null,
+        3,
+        6,
+      ]);
       expect(resolveCurrentTocEntry(toc, 0, 5), 1, reason: '甲乙丙丁戊 第 5 字仍在 A');
       expect(resolveCurrentTocEntry(toc, 0, 6), 2);
     });
@@ -258,21 +291,21 @@ void main() {
             body: Consumer(
               builder: (BuildContext context, WidgetRef ref, _) =>
                   ReaderQuickSettingsSheet(
-                controller: null,
-                toc: _anchoredToc,
-                readerProgress: const (10, 16),
-                readerCharOffset: 7923,
-                onJumpSection: (_, __) async {},
-                onExitReader: () {},
-                webViewController: _FakeInAppWebViewController(),
-                appModel: model,
-                ref: ref,
-                isFushiReader: true,
-                presentation:
-                    ReaderQuickSettingsPresentation.sideSheetNavigation,
-                onStyleChanged: () async {},
-                onThemeChanged: () async {},
-              ),
+                    controller: null,
+                    toc: _anchoredToc,
+                    readerProgress: const (10, 16),
+                    readerCharOffset: 7923,
+                    onJumpSection: (_, __) async {},
+                    onExitReader: () {},
+                    webViewController: _FakeInAppWebViewController(),
+                    appModel: model,
+                    ref: ref,
+                    isFushiReader: true,
+                    presentation:
+                        ReaderQuickSettingsPresentation.sideSheetNavigation,
+                    onStyleChanged: () async {},
+                    onThemeChanged: () async {},
+                  ),
             ),
           ),
         ),

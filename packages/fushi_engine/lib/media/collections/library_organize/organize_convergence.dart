@@ -46,15 +46,15 @@ class ConvergenceCollection {
   final Set<String> memberWireKeys;
 
   Set<String> get identityKeys => <String>{
-        if (organizeKey != null) organizeKey!,
-        ...organizeAliases,
-      };
+    if (organizeKey != null) organizeKey!,
+    ...organizeAliases,
+  };
 
   /// 粗粒度域（只看 wire 成员种类）：书 / 视频 / 游戏。
   Set<String> get wireDomains => <String>{
-        for (final String k in memberWireKeys)
-          wireDomainOfMediaType(k.substring(0, k.indexOf('\u0000'))),
-      };
+    for (final String k in memberWireKeys)
+      wireDomainOfMediaType(k.substring(0, k.indexOf('\u0000'))),
+  };
 
   bool get participates =>
       origin.isOrganizerManaged ||
@@ -130,7 +130,8 @@ List<ConvergenceMerge> planOrganizeConvergence(
         final ConvergenceCollection y = parts[holders[b]];
         if (!_sameDomain(x, y)) continue;
         // 用户合集与别的合集相连只认双方主键相同。
-        final bool anyUser = x.origin == CollectionOrigin.user ||
+        final bool anyUser =
+            x.origin == CollectionOrigin.user ||
             y.origin == CollectionOrigin.user;
         if (anyUser && (x.organizeKey != e.key || y.organizeKey != e.key)) {
           continue;
@@ -158,8 +159,8 @@ List<ConvergenceMerge> planOrganizeConvergence(
   }
   shared.forEach((int a, Map<int, int> row) {
     row.forEach((int b, int count) {
-      final int smaller = parts[a].memberWireKeys.length <
-              parts[b].memberWireKeys.length
+      final int smaller =
+          parts[a].memberWireKeys.length < parts[b].memberWireKeys.length
           ? parts[a].memberWireKeys.length
           : parts[b].memberWireKeys.length;
       if (count >= smaller * kConvergenceOverlapRatio) union(a, b);
@@ -348,8 +349,9 @@ Future<int> convergeOrganizedCollections(
   );
   if (plan.isEmpty) return 0;
   final int now = DateTime.now().millisecondsSinceEpoch;
-  final int stamp =
-      notBeforeMs != null && notBeforeMs > now ? notBeforeMs : now;
+  final int stamp = notBeforeMs != null && notBeforeMs > now
+      ? notBeforeMs
+      : now;
   int merged = 0;
   for (final ConvergenceMerge m in plan) {
     merged += await mergeMediaCollectionsInto(

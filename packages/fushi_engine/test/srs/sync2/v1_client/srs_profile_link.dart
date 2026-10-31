@@ -34,8 +34,7 @@ import 'package:fushi_core/fushi_core.dart' show FushiDatabase;
 import 'package:fushi_engine/srs/srs_backup_merge.dart' show srsAdoptProfileUid;
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_profile_merge.dart';
-import 'srs_location_store.dart'
-    show kSrsSync2Folder, kSrsSync2Namespace;
+import 'srs_location_store.dart' show kSrsSync2Folder, kSrsSync2Namespace;
 import 'package:fushi_engine/sync/sync_asset_store.dart';
 
 /// srs.db `srs_meta`：本设备改用别的 uid 之前用过的同步 v2 设备身份（JSON 数组）。换 uid 后本机在新集合里是新的

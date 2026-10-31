@@ -33,34 +33,33 @@ void main() {
   String collapse(String src) => src.replaceAll(RegExp(r'\s+'), ' ');
 
   group('BUG-214 floating lyric lookup charIndex wiring', () {
-    test(
-      'FloatingLyricService routes the tap into the Flutter popup and ships '
-      'the tapped charIndex',
-      () {
-        final String service = read('FloatingLyricService.java');
+    test('FloatingLyricService routes the tap into the Flutter popup and ships '
+        'the tapped charIndex', () {
+      final String service = read('FloatingLyricService.java');
 
-        final int startIndex = service.indexOf('private void handleTap');
-        expect(startIndex, isNonNegative,
-            reason: 'handleTap is the strip tap handler');
-        // Inspect only the handleTap body so unrelated comments elsewhere do
-        // not satisfy the assertions.
-        final int endIndex = service.indexOf('private int getCharIndexAt');
-        expect(endIndex, greaterThan(startIndex));
-        final String handleTap = service.substring(startIndex, endIndex);
+      final int startIndex = service.indexOf('private void handleTap');
+      expect(
+        startIndex,
+        isNonNegative,
+        reason: 'handleTap is the strip tap handler',
+      );
+      // Inspect only the handleTap body so unrelated comments elsewhere do
+      // not satisfy the assertions.
+      final int endIndex = service.indexOf('private int getCharIndexAt');
+      expect(endIndex, greaterThan(startIndex));
+      final String handleTap = service.substring(startIndex, endIndex);
 
-        expect(
-          handleTap,
-          contains('new Intent(this, PopupDictFlutterActivity.class)'),
-          reason: 'must launch the keyboard-free Flutter popup',
-        );
-        expect(
-          handleTap,
-          contains(
-              'putExtra(PopupDictFlutterActivity.EXTRA_CHAR_INDEX, index)'),
-          reason: 'the tapped glyph index must travel with the intent',
-        );
-      },
-    );
+      expect(
+        handleTap,
+        contains('new Intent(this, PopupDictFlutterActivity.class)'),
+        reason: 'must launch the keyboard-free Flutter popup',
+      );
+      expect(
+        handleTap,
+        contains('putExtra(PopupDictFlutterActivity.EXTRA_CHAR_INDEX, index)'),
+        reason: 'the tapped glyph index must travel with the intent',
+      );
+    });
 
     test(
       'PopupDictFlutterActivity reads charIndex from the intent and forwards it '
@@ -72,7 +71,8 @@ void main() {
         expect(
           activity,
           contains('intent?.getIntExtra(EXTRA_CHAR_INDEX, -1)'),
-          reason: 'charIndex must be parsed from the intent (default -1 for '
+          reason:
+              'charIndex must be parsed from the intent (default -1 for '
               'whole-sentence system lookups)',
         );
         expect(
@@ -88,40 +88,38 @@ void main() {
       },
     );
 
-    test(
-      'PopupEngineHolder forwards the real charIndex to Dart instead of the '
-      'hardcoded -1 it carried before BUG-214',
-      () {
-        final String holder = collapse(read('PopupEngineHolder.kt'));
+    test('PopupEngineHolder forwards the real charIndex to Dart instead of the '
+        'hardcoded -1 it carried before BUG-214', () {
+      final String holder = collapse(read('PopupEngineHolder.kt'));
 
-        expect(holder, contains('private var pendingCharIndex: Int = -1'));
-        expect(
-          holder,
-          contains('fun setPendingText( text: String, charIndex: Int = -1'),
-        );
-        expect(
-          holder,
-          contains('fun pushProcessText( text: String, charIndex: Int = -1'),
-        );
-        expect(
-          holder,
-          contains('map["charIndex"] = pendingCharIndex'),
-          reason: 'getInitialProcessText (cold start poll) must return the '
-              'real pending charIndex',
-        );
-        expect(
-          holder,
-          contains('args["charIndex"] = charIndex'),
-          reason: 'onNewProcessText (warm reuse) must push the real charIndex',
-        );
-        expect(
-          holder.contains('map["charIndex"] = -1') ||
-              holder.contains('args["charIndex"] = -1'),
-          isFalse,
-          reason: 'charIndex must never be hardcoded to -1 in the wire payload',
-        );
-      },
-    );
+      expect(holder, contains('private var pendingCharIndex: Int = -1'));
+      expect(
+        holder,
+        contains('fun setPendingText( text: String, charIndex: Int = -1'),
+      );
+      expect(
+        holder,
+        contains('fun pushProcessText( text: String, charIndex: Int = -1'),
+      );
+      expect(
+        holder,
+        contains('map["charIndex"] = pendingCharIndex'),
+        reason:
+            'getInitialProcessText (cold start poll) must return the '
+            'real pending charIndex',
+      );
+      expect(
+        holder,
+        contains('args["charIndex"] = charIndex'),
+        reason: 'onNewProcessText (warm reuse) must push the real charIndex',
+      );
+      expect(
+        holder.contains('map["charIndex"] = -1') ||
+            holder.contains('args["charIndex"] = -1'),
+        isFalse,
+        reason: 'charIndex must never be hardcoded to -1 in the wire payload',
+      );
+    });
   });
 
   group('TODO-872 floating lyric lookup glyph-anchor wiring', () {
@@ -131,14 +129,21 @@ void main() {
       () {
         final String service = read('FloatingLyricService.java');
 
-        expect(service, contains('private Rect glyphScreenRect(int index)'),
-            reason: 'the tapped glyph rect helper must live next to '
-                'getCharIndexAt');
+        expect(
+          service,
+          contains('private Rect glyphScreenRect(int index)'),
+          reason:
+              'the tapped glyph rect helper must live next to '
+              'getCharIndexAt',
+        );
         // The anchor must come from the layout geometry, mirroring
         // getCharIndexAt in reverse + the view screen origin.
         expect(service, contains('layout.getPrimaryHorizontal(index)'));
-        expect(service, contains('lyricText.getLocationOnScreen(loc)'),
-            reason: 'anchor must be in screen (overlay) coordinate space');
+        expect(
+          service,
+          contains('lyricText.getLocationOnScreen(loc)'),
+          reason: 'anchor must be in screen (overlay) coordinate space',
+        );
 
         final int startIndex = service.indexOf('private void handleTap');
         final int endIndex = service.indexOf('private Rect glyphScreenRect');
@@ -176,29 +181,30 @@ void main() {
       },
     );
 
-    test(
-      'PopupEngineHolder carries a nullable anchor and only emits the wire '
-      'field when an anchor is present',
-      () {
-        final String holder = collapse(read('PopupEngineHolder.kt'));
+    test('PopupEngineHolder carries a nullable anchor and only emits the wire '
+        'field when an anchor is present', () {
+      final String holder = collapse(read('PopupEngineHolder.kt'));
 
-        expect(holder, contains('private var pendingAnchor: IntArray? = null'));
-        expect(
-          holder,
-          contains('fun setPendingText( text: String, charIndex: Int = -1, '
-              'anchor: IntArray? = null,'),
-        );
-        expect(
-          holder,
-          contains('fun pushProcessText( text: String, charIndex: Int = -1, '
-              'anchor: IntArray? = null,'),
-        );
-        // putAnchor omits the key when there is no anchor → Dart reads null →
-        // default top-center placement for non-floating entries.
-        expect(holder, contains('putAnchor(map, pendingAnchor)'));
-        expect(holder, contains('putAnchor(args, anchor)'));
-        expect(holder, contains('map["anchor"] = listOf'));
-      },
-    );
+      expect(holder, contains('private var pendingAnchor: IntArray? = null'));
+      expect(
+        holder,
+        contains(
+          'fun setPendingText( text: String, charIndex: Int = -1, '
+          'anchor: IntArray? = null,',
+        ),
+      );
+      expect(
+        holder,
+        contains(
+          'fun pushProcessText( text: String, charIndex: Int = -1, '
+          'anchor: IntArray? = null,',
+        ),
+      );
+      // putAnchor omits the key when there is no anchor → Dart reads null →
+      // default top-center placement for non-floating entries.
+      expect(holder, contains('putAnchor(map, pendingAnchor)'));
+      expect(holder, contains('putAnchor(args, anchor)'));
+      expect(holder, contains('map["anchor"] = listOf'));
+    });
   });
 }

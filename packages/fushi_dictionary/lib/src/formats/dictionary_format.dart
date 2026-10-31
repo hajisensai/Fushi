@@ -32,5 +32,6 @@ abstract class DictionaryFormat {
   void Function({
     required PrepareDictionaryParams params,
     required dynamic database,
-  }) prepareEntries;
+  })
+  prepareEntries;
 }

@@ -41,7 +41,8 @@ void main() {
       expect(
         src,
         contains("'$tag'"),
-        reason: '$tag 守卫缺失：reader 异步异常会逃 zone（半销毁 WebView 上 '
+        reason:
+            '$tag 守卫缺失：reader 异步异常会逃 zone（半销毁 WebView 上 '
             'evaluateJavascript 抛 PlatformException）。见 a5b046c40 / 972147a8d，'
             '勿退回裸 fire-and-forget / 裸 eval。',
       );
@@ -51,12 +52,19 @@ void main() {
     // 合并触发（unawaited trigger），_applyStylesLive() 在 runner 动作内 await 且被
     // try/catch 归集到 'ReaderFushi.onSettingsChangedLive' 日志 tag（上面 guardTags
     // 已断言 tag 在位）。两处都不能退回裸 fire-and-forget（await 边界后异常无主逃逸）。
-    expect(src, contains('unawaited(_liveSettingsRunner.trigger()'),
-        reason:
-            'onSettingsChangedLive 必须经 _liveSettingsRunner.trigger() 合并注册，不能裸调');
-    expect(src, contains('await _applyStylesLive();'),
-        reason: '_applyStylesLive() 必须在 runner 动作内 await 且被 try/catch 归集，'
-            '不能裸 fire-and-forget');
+    expect(
+      src,
+      contains('unawaited(_liveSettingsRunner.trigger()'),
+      reason:
+          'onSettingsChangedLive 必须经 _liveSettingsRunner.trigger() 合并注册，不能裸调',
+    );
+    expect(
+      src,
+      contains('await _applyStylesLive();'),
+      reason:
+          '_applyStylesLive() 必须在 runner 动作内 await 且被 try/catch 归集，'
+          '不能裸 fire-and-forget',
+    );
   });
 
   // BUG-023 / TODO-736 B-1：字体大小/行间/余白 live 变更经 _applyStylesLive 注入新 CSS 后
@@ -65,16 +73,18 @@ void main() {
   // 两阶段 settle-aware 编排 _reanchorForStyleChange（begin 同步换 CSS+采锚+置旗 → postFrame
   // settle → commit 滚回+清旗+打 _reanchorClearedAt）。谁把重锚去掉、退回只设 textContent，本断言红。
   test(
-      'applyStylesLive routes live CSS through _reanchorForStyleChange orchestration',
-      () {
-    expect(
-      src,
-      contains('_reanchorForStyleChange('),
-      reason: '_applyStylesLive 必须走 _reanchorForStyleChange 两阶段编排（begin/commit '
-          'settle-aware 重锚），让字体/行间/余白变更后重排能重锚到分页边界，否则最上一行被裁'
-          '（BUG-023）。勿退回只 el.textContent = css。',
-    );
-  });
+    'applyStylesLive routes live CSS through _reanchorForStyleChange orchestration',
+    () {
+      expect(
+        src,
+        contains('_reanchorForStyleChange('),
+        reason:
+            '_applyStylesLive 必须走 _reanchorForStyleChange 两阶段编排（begin/commit '
+            'settle-aware 重锚），让字体/行间/余白变更后重排能重锚到分页边界，否则最上一行被裁'
+            '（BUG-023）。勿退回只 el.textContent = css。',
+      );
+    },
+  );
 
   // BUG-866：余白/主题改完不实时生效须退出重进。根因=有 window.fushiReader 时
   // _applyStylesLive 把「换 CSS」全托付给门控后的 beginStyleReanchor，门控
@@ -82,26 +92,28 @@ void main() {
   // CSS 被静默丢弃。修复=换 CSS 与重锚就绪门控解耦：算 reanchorWillRun，其为 false
   // （重锚不会跑）时内联就地裸换 CSS。任一处退回（不算门控 / 兜底只 !window.fushiReader），本组红。
   test(
-      'BUG-866: applyStylesLive swaps CSS even when the reanchor gate is closed',
-      () {
-    // 1) _applyStylesLive 必须计算 reanchorWillRun 门控（与重锚同一真值表）。
-    expect(
-      src,
-      contains('readerStyleReanchorAllowed('),
-      reason:
-          '_applyStylesLive 必须算 reanchorWillRun = readerStyleReanchorAllowed(...)，'
-          '据此决定裸换 CSS 兜底是否覆盖「重锚不会跑」（BUG-866）。',
-    );
-    // 2) 内联兜底换 CSS 的条件必须覆盖「重锚不会跑」，不能退回只在 !window.fushiReader
-    //    时才换（那样 gate 关闭时 CSS 被静默丢弃 → 主题/余白改完须退出重进）。
-    expect(
-      src,
-      contains(r'!window.fushiReader || ${!reanchorWillRun}'),
-      reason: '裸换 CSS 兜底条件必须是 `!window.fushiReader || \${!reanchorWillRun}`，'
-          '否则门控关闭（内容未就绪/重排在飞）时主题/余白 live 变更被丢弃（BUG-866）。'
-          '勿退回只 `if (!window.fushiReader)`。',
-    );
-  });
+    'BUG-866: applyStylesLive swaps CSS even when the reanchor gate is closed',
+    () {
+      // 1) _applyStylesLive 必须计算 reanchorWillRun 门控（与重锚同一真值表）。
+      expect(
+        src,
+        contains('readerStyleReanchorAllowed('),
+        reason:
+            '_applyStylesLive 必须算 reanchorWillRun = readerStyleReanchorAllowed(...)，'
+            '据此决定裸换 CSS 兜底是否覆盖「重锚不会跑」（BUG-866）。',
+      );
+      // 2) 内联兜底换 CSS 的条件必须覆盖「重锚不会跑」，不能退回只在 !window.fushiReader
+      //    时才换（那样 gate 关闭时 CSS 被静默丢弃 → 主题/余白改完须退出重进）。
+      expect(
+        src,
+        contains(r'!window.fushiReader || ${!reanchorWillRun}'),
+        reason:
+            '裸换 CSS 兜底条件必须是 `!window.fushiReader || \${!reanchorWillRun}`，'
+            '否则门控关闭（内容未就绪/重排在飞）时主题/余白 live 变更被丢弃（BUG-866）。'
+            '勿退回只 `if (!window.fushiReader)`。',
+      );
+    },
+  );
 
   // TODO-842：「反转阅读器底栏」改完不实时生效须退出重进。根因=该项 onChanged
   // 只调 quick-settings sheet 自身 refresh()，不触碰下层 reader 页；reader 底栏裸读
@@ -110,8 +122,7 @@ void main() {
   // 不动 WebView），reader 注册+dispose 置 null，settings_actions 新增
   // notifyReaderChromeChanged，reverse_reader_bottom_bar 的 onChanged 改走它。
   // 任何一处接线退回（漏注册 / 漏 dispose 置 null / onChanged 退回裸 c.refresh()），本组红。
-  test('TODO-842: reverse-bottom-bar toggle wired through onChromeReloadLive',
-      () {
+  test('TODO-842: reverse-bottom-bar toggle wired through onChromeReloadLive', () {
     // 1) reader 页把 chromeReload 随整组 hook 登记进持有者栈、dispose 只注销自己
     //    那组（BUG-3001：无条件置 null 会在切卷时抹掉新页的 hook）。
     expect(
@@ -138,9 +149,9 @@ void main() {
     );
 
     // 2) settings_actions.dart 新增 notifyReaderChromeChanged 且体内 fire hook。
-    final String actions = File('lib/src/settings/settings_actions.dart')
-        .readAsStringSync()
-        .replaceAll('\r\n', '\n');
+    final String actions = File(
+      'lib/src/settings/settings_actions.dart',
+    ).readAsStringSync().replaceAll('\r\n', '\n');
     expect(
       actions,
       contains('void notifyReaderChromeChanged('),
@@ -156,13 +167,17 @@ void main() {
 
     // 3) reverse_reader_bottom_bar 的 onChanged 走 notifyReaderChromeChanged，
     //    不再裸 c.refresh()（裸 refresh 只重建设置浮层，不碰 reader 页）。
-    final String schema = File('lib/src/settings/settings_schema_reading.dart')
-        .readAsStringSync()
-        .replaceAll('\r\n', '\n');
-    final int idx =
-        schema.indexOf("'reading_display.reverse_reader_bottom_bar'");
-    expect(idx, greaterThanOrEqualTo(0),
-        reason: 'reverse_reader_bottom_bar 设置项缺失。');
+    final String schema = File(
+      'lib/src/settings/settings_schema_reading.dart',
+    ).readAsStringSync().replaceAll('\r\n', '\n');
+    final int idx = schema.indexOf(
+      "'reading_display.reverse_reader_bottom_bar'",
+    );
+    expect(
+      idx,
+      greaterThanOrEqualTo(0),
+      reason: 'reverse_reader_bottom_bar 设置项缺失。',
+    );
     // 取该项 onChanged 闭包到下一个 `),` 块尾的切片，断言走 hook 而非裸 refresh。
     final int onChangedIdx = schema.indexOf('onChanged:', idx);
     final String slice = schema.substring(onChangedIdx, onChangedIdx + 200);

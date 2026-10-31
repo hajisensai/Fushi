@@ -26,8 +26,9 @@ void main() {
 
   late Directory pathProviderDir;
   setUpAll(() {
-    pathProviderDir =
-        Directory.systemTemp.createTempSync('fushi_collection_date');
+    pathProviderDir = Directory.systemTemp.createTempSync(
+      'fushi_collection_date',
+    );
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
       (MethodCall call) async => pathProviderDir.path,
@@ -72,9 +73,11 @@ void main() {
       FavoriteSentence(
         id: 'fav_date_test',
         text: 'これはテスト用の収集された文章です。',
-        bookTitle: 'とても長い本のタイトルでありこれは画面の横幅を完全に埋め尽くすために'
+        bookTitle:
+            'とても長い本のタイトルでありこれは画面の横幅を完全に埋め尽くすために'
             '意図的に長くしてあります十二点四インチのタブレットでも収まらないほど長い',
-        chapterLabel: '第一章 これもまた非常に長い章のタイトルであり日付を画面外へ押し出すための'
+        chapterLabel:
+            '第一章 これもまた非常に長い章のタイトルであり日付を画面外へ押し出すための'
             'もの',
         source: kFavoriteSentenceSourceBook,
         createdAt: createdAt,
@@ -83,13 +86,11 @@ void main() {
   }
 
   Widget buildPage() => ProviderScope(
-        overrides: <Override>[
-          appProvider.overrideWith((ref) => appModel),
-        ],
-        child: TranslationProvider(
-          child: const MaterialApp(home: CollectionsPage()),
-        ),
-      );
+    overrides: <Override>[appProvider.overrideWith((ref) => appModel)],
+    child: TranslationProvider(
+      child: const MaterialApp(home: CollectionsPage()),
+    ),
+  );
 
   // 期望的日期文本：与 CollectionsPage 的本地化格式（当年条目 Md + Hm，随 app
   // 语言 en）一致（巡检 PR-3 起不再是硬编码 'MM/dd HH:mm'）。
@@ -99,29 +100,31 @@ void main() {
   }
 
   testWidgets(
-      'collection date stays visible on a narrow screen with long book/chapter',
-      (WidgetTester tester) async {
-    tester.view.devicePixelRatio = 1;
-    // 窄屏：模拟 12.4" 平板横向空间不足的极端窄宽度。
-    tester.view.physicalSize = const Size(600, 800);
-    addTearDown(tester.view.reset);
+    'collection date stays visible on a narrow screen with long book/chapter',
+    (WidgetTester tester) async {
+      tester.view.devicePixelRatio = 1;
+      // 窄屏：模拟 12.4" 平板横向空间不足的极端窄宽度。
+      tester.view.physicalSize = const Size(600, 800);
+      addTearDown(tester.view.reset);
 
-    await seedLongMetadataFavorite();
-    await tester.pumpWidget(buildPage());
-    await tester.pumpAndSettle();
+      await seedLongMetadataFavorite();
+      await tester.pumpWidget(buildPage());
+      await tester.pumpAndSettle();
 
-    // 收藏句条目渲染出来。
-    expect(find.text('これはテスト用の収集された文章です。'), findsOneWidget);
+      // 收藏句条目渲染出来。
+      expect(find.text('これはテスト用の収集された文章です。'), findsOneWidget);
 
-    // 关键断言：收藏日期是独立、未被截断的文本，窄屏下仍然可见且有正的渲染宽度。
-    final Finder dateFinder = find.text(await expectedDateText());
-    expect(dateFinder, findsOneWidget);
-    final Size dateSize = tester.getSize(dateFinder);
-    expect(dateSize.width, greaterThan(0));
-  });
+      // 关键断言：收藏日期是独立、未被截断的文本，窄屏下仍然可见且有正的渲染宽度。
+      final Finder dateFinder = find.text(await expectedDateText());
+      expect(dateFinder, findsOneWidget);
+      final Size dateSize = tester.getSize(dateFinder);
+      expect(dateSize.width, greaterThan(0));
+    },
+  );
 
-  testWidgets('collection date also visible on a wide screen (no regression)',
-      (WidgetTester tester) async {
+  testWidgets('collection date also visible on a wide screen (no regression)', (
+    WidgetTester tester,
+  ) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(1200, 800);
     addTearDown(tester.view.reset);

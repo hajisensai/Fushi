@@ -21,14 +21,13 @@ void main() {
     required double surfaceWidth,
     required Duration duration,
     required Duration position,
-  }) =>
-      VideoHorizontalSeekGesture.resolveDelta(
-        dragDx: dragDx,
-        surfaceWidth: surfaceWidth,
-        duration: duration,
-        position: position,
-        sensitivity: VideoSeekSensitivity.medium,
-      );
+  }) => VideoHorizontalSeekGesture.resolveDelta(
+    dragDx: dragDx,
+    surfaceWidth: surfaceWidth,
+    duration: duration,
+    position: position,
+    sensitivity: VideoSeekSensitivity.medium,
+  );
 
   late List<Duration> seeks;
   late List<double> volumes;
@@ -119,8 +118,11 @@ void main() {
       await gesture.moveBy(const Offset(30, 0));
       await tester.pump();
     }
-    expect(find.textContaining('seek '), findsOneWidget,
-        reason: '拖动中应显示目标时间预览（宿主 seekIndicatorBuilder）');
+    expect(
+      find.textContaining('seek '),
+      findsOneWidget,
+      reason: '拖动中应显示目标时间预览（宿主 seekIndicatorBuilder）',
+    );
     expect(seeks, isEmpty, reason: '松手前不 seek');
     await gesture.up();
     await tester.pump();
@@ -145,9 +147,7 @@ void main() {
     expect(seeks.single, greaterThanOrEqualTo(Duration.zero));
   });
 
-  testWidgets('touch 右半竖滑调音量：上滑增大，从当前音量起算', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('touch 右半竖滑调音量：上滑增大，从当前音量起算', (WidgetTester tester) async {
     await tester.pumpWidget(harness());
     await tester.dragFrom(
       at(tester, 600, 400),
@@ -172,9 +172,7 @@ void main() {
     expect(volumes.last, lessThan(0.5), reason: '下滑减小');
   });
 
-  testWidgets('左半竖滑：亮度不可控（桌面）时无动作，可控时调亮度', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('左半竖滑：亮度不可控（桌面）时无动作，可控时调亮度', (WidgetTester tester) async {
     await tester.pumpWidget(harness());
     await tester.dragFrom(
       at(tester, 200, 400),
@@ -245,9 +243,7 @@ void main() {
     expect(controlTaps, 1);
   });
 
-  testWidgets('起点落在底栏控件区空隙的拖动作废（不 seek / 不调音量）', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('起点落在底栏控件区空隙的拖动作废（不 seek / 不调音量）', (WidgetTester tester) async {
     await tester.pumpWidget(harness());
     await tester.dragFrom(
       at(tester, 200, 540),
@@ -273,9 +269,7 @@ void main() {
     expect(seeks, hasLength(1));
   });
 
-  testWidgets('纯点击不被滑动层吞掉：touch 单击仍切控制条', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('纯点击不被滑动层吞掉：touch 单击仍切控制条', (WidgetTester tester) async {
     await tester.pumpWidget(harness());
     await tester.tapAt(at(tester, 400, 300), kind: PointerDeviceKind.touch);
     await tester.pump();

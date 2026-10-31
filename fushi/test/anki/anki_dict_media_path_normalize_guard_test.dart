@@ -26,11 +26,17 @@ void main() {
   /// 抽取 `function getMediaFilename(...) { ... }` 的函数体（单层花括号，该函数无嵌套块）。
   String getMediaFilenameBody(String source, String label) {
     final int start = source.indexOf('function getMediaFilename(');
-    expect(start, greaterThanOrEqualTo(0),
-        reason: '$label 应存在 getMediaFilename 函数');
+    expect(
+      start,
+      greaterThanOrEqualTo(0),
+      reason: '$label 应存在 getMediaFilename 函数',
+    );
     final int brace = source.indexOf('{', start);
-    expect(brace, greaterThanOrEqualTo(0),
-        reason: '$label getMediaFilename 应有函数体');
+    expect(
+      brace,
+      greaterThanOrEqualTo(0),
+      reason: '$label getMediaFilename 应有函数体',
+    );
     int depth = 0;
     for (int i = brace; i < source.length; i++) {
       final String ch = source[i];
@@ -50,16 +56,25 @@ void main() {
       final String body = getMediaFilenameBody(f.readAsStringSync(), rel);
 
       // 必须调用 normalizeDictMediaPath(path) 并把归一化结果作为 key/登记的 path。
-      expect(body.contains('normalizeDictMediaPath(path)'), isTrue,
-          reason: '$rel getMediaFilename 必须用 normalizeDictMediaPath(path) 归一化，'
-              '否则脏 path 的词典制卡掉图（BUG-902）');
+      expect(
+        body.contains('normalizeDictMediaPath(path)'),
+        isTrue,
+        reason:
+            '$rel getMediaFilename 必须用 normalizeDictMediaPath(path) 归一化，'
+            '否则脏 path 的词典制卡掉图（BUG-902）',
+      );
       // 登记进 currentDictionaryMedia 的 path 字段必须是归一化后的值，不能是生 path。
-      expect(body.contains('path: normalizedPath'), isTrue,
-          reason:
-              '$rel 登记的 path 必须是归一化后的 normalizedPath（与 writer/repo 命名契约一致）');
+      expect(
+        body.contains('path: normalizedPath'),
+        isTrue,
+        reason: '$rel 登记的 path 必须是归一化后的 normalizedPath（与 writer/repo 命名契约一致）',
+      );
       // 显式挡住旧写法：裸 `path,`（登记生 path）不得再出现在对象字面量里。
-      expect(RegExp(r'\n\s*path,\s*\n').hasMatch(body), isFalse,
-          reason: '$rel 不得再用生 path 登记（BUG-902 回归）');
+      expect(
+        RegExp(r'\n\s*path,\s*\n').hasMatch(body),
+        isFalse,
+        reason: '$rel 不得再用生 path 登记（BUG-902 回归）',
+      );
     }
   });
 
@@ -69,9 +84,13 @@ void main() {
         getMediaFilenameBody(File(rel).readAsStringSync(), rel),
     ];
     for (int i = 1; i < bodies.length; i++) {
-      expect(bodies[i], bodies.first,
-          reason: 'popup.js 镜像 ${popupMirrors[i]} 的 getMediaFilename 与主 '
-              '${popupMirrors.first} 不一致；三镜像必须逐字同步');
+      expect(
+        bodies[i],
+        bodies.first,
+        reason:
+            'popup.js 镜像 ${popupMirrors[i]} 的 getMediaFilename 与主 '
+            '${popupMirrors.first} 不一致；三镜像必须逐字同步',
+      );
     }
   });
 }

@@ -50,7 +50,11 @@ import 'package:fushi_server/src/server_runtime.dart';
 import 'package:path/path.dart' as p;
 
 /// 支持的字幕来源 id（与引擎 provider 的 `id` 一致）。
-const List<String> kSubsProviderIds = <String>['opensubtitles', kSubdlSubtitleProviderId, 'jimaku'];
+const List<String> kSubsProviderIds = <String>[
+  'opensubtitles',
+  kSubdlSubtitleProviderId,
+  'jimaku',
+];
 
 const String kOpenSubtitlesApiKeyEnv = 'FUSHI_OPENSUBTITLES_API_KEY';
 const String kOpenSubtitlesUsernameEnv = 'FUSHI_OPENSUBTITLES_USERNAME';
@@ -94,15 +98,25 @@ class SubsCliModule extends CliModule {
       return Future<int>.value(kExitUsage);
     }
     final CliIo io = CliIo(json: jsonFlag(sub));
-    return ctx.withRuntime((ServerRuntime rt) => runSubsCommand(sub, rt: rt, io: io));
+    return ctx.withRuntime(
+      (ServerRuntime rt) => runSubsCommand(sub, rt: rt, io: io),
+    );
   }
 }
 
 /// 给 `subs` 登记五个子命令的参数表。
 void buildSubsParser(ArgParser subs) {
   addJsonFlag(subs.addCommand('search'))
-    ..addMultiOption('provider', help: '只问这些来源（缺省 = 全部已配置的）', allowed: kSubsProviderIds)
-    ..addMultiOption('language', abbr: 'l', help: '语言代码（ja / en / zh …），可重复或逗号分隔')
+    ..addMultiOption(
+      'provider',
+      help: '只问这些来源（缺省 = 全部已配置的）',
+      allowed: kSubsProviderIds,
+    )
+    ..addMultiOption(
+      'language',
+      abbr: 'l',
+      help: '语言代码（ja / en / zh …），可重复或逗号分隔',
+    )
     ..addOption('query', abbr: 'q', help: '覆盖按文件名解析出的标题')
     ..addOption('season', help: '季号')
     ..addOption('episode', help: '集号');
@@ -114,7 +128,9 @@ void buildSubsParser(ArgParser subs) {
     ..addFlag('dry-run', negatable: false, help: '只报告判定，不写盘')
     ..addFlag('force', negatable: false, help: '证据只够「待确认」档时也照样应用')
     ..addOption('out', abbr: 'o', help: '写到别处（缺省原地改写，原稿另存可 subs restore）');
-  addJsonFlag(subs.addCommand('restore')).addOption('out', abbr: 'o', help: '写到别处（缺省原地还原）');
+  addJsonFlag(
+    subs.addCommand('restore'),
+  ).addOption('out', abbr: 'o', help: '写到别处（缺省原地还原）');
   addJsonFlag(subs.addCommand('check'));
 }
 
@@ -129,7 +145,11 @@ class SubsDeps {
   });
 
   /// 按来源 id 与凭据造一个 provider。
-  final VideoSubtitleProvider Function(String providerId, SubsCredentials credentials) providerFactory;
+  final VideoSubtitleProvider Function(
+    String providerId,
+    SubsCredentials credentials,
+  )
+  providerFactory;
 
   /// 读凭据用的环境变量（null = 进程环境）。
   final Map<String, String>? environment;
@@ -146,7 +166,8 @@ class SubsDeps {
   Map<String, String> get env => environment ?? Platform.environment;
 }
 
-Future<int?> _probeDurationMs(String videoPath) => probeVideoDurationMs(videoPath);
+Future<int?> _probeDurationMs(String videoPath) =>
+    probeVideoDurationMs(videoPath);
 
 /// 试跑一次 `ffmpeg -version`（[probe] 为 true 时是 ffprobe），起不来返回原因。
 ///
@@ -157,8 +178,12 @@ Future<String?> ffmpegUnavailableReason({required bool probe}) async {
   try {
     final FfmpegBackend backend = resolveFfmpegBackend();
     final FfmpegRunResult result = probe
-        ? await backend.runProbe(const <String>['-version'], const Duration(seconds: 15))
-        : await backend.run(const <String>['-version'], const Duration(seconds: 15));
+        ? await backend.runProbe(const <String>[
+            '-version',
+          ], const Duration(seconds: 15))
+        : await backend.run(const <String>[
+            '-version',
+          ], const Duration(seconds: 15));
     if (result.isSuccess) return null;
     return '$tool 跑不起来：${result.failureSummary}';
   } on ProcessException catch (e) {
@@ -186,17 +211,20 @@ class SubsCredentials {
   String? unavailableReason(String providerId) {
     switch (providerId) {
       case 'opensubtitles':
-        if (!openSubtitles.enabled) return 'OpenSubtitles 已在偏好里关闭（设 $kOpenSubtitlesApiKeyEnv 可临时启用）';
+        if (!openSubtitles.enabled)
+          return 'OpenSubtitles 已在偏好里关闭（设 $kOpenSubtitlesApiKeyEnv 可临时启用）';
         if (openSubtitles.effectiveApiKey.isEmpty) {
           return 'OpenSubtitles 没有 API key：设环境变量 $kOpenSubtitlesApiKeyEnv，或从已配好的 Fushi 经互联同步';
         }
         return null;
       case kSubdlSubtitleProviderId:
-        if (subdlApiKey.isEmpty) return 'SubDL 没有 API key：设环境变量 $kSubdlApiKeyEnv，或从已配好的 Fushi 经互联同步';
+        if (subdlApiKey.isEmpty)
+          return 'SubDL 没有 API key：设环境变量 $kSubdlApiKeyEnv，或从已配好的 Fushi 经互联同步';
         if (!subdlEnabled) return 'SubDL 已在偏好里关闭（设 $kSubdlApiKeyEnv 可临时启用）';
         return null;
       case 'jimaku':
-        if (jimakuApiKey.isEmpty) return 'Jimaku 没有 API key：设环境变量 $kJimakuApiKeyEnv，或从已配好的 Fushi 经互联同步';
+        if (jimakuApiKey.isEmpty)
+          return 'Jimaku 没有 API key：设环境变量 $kJimakuApiKeyEnv，或从已配好的 Fushi 经互联同步';
         if (!jimakuEnabled) return 'Jimaku 已在偏好里关闭（设 $kJimakuApiKeyEnv 可临时启用）';
         return null;
     }
@@ -207,7 +235,10 @@ class SubsCredentials {
 String _env(Map<String, String> env, String name) => (env[name] ?? '').trim();
 
 /// 读凭据：环境变量是显式意图，给了就视为启用；否则按偏好表（与 app 同一判据）。
-SubsCredentials resolveSubsCredentials(PrefStore prefs, Map<String, String> env) {
+SubsCredentials resolveSubsCredentials(
+  PrefStore prefs,
+  Map<String, String> env,
+) {
   OpenSubtitlesConfig openSubtitles = _openSubtitlesFromPrefs(prefs);
   final String osKey = _env(env, kOpenSubtitlesApiKeyEnv);
   final String osUser = _env(env, kOpenSubtitlesUsernameEnv);
@@ -227,10 +258,18 @@ SubsCredentials resolveSubsCredentials(PrefStore prefs, Map<String, String> env)
   final String jimakuEnv = _env(env, kJimakuApiKeyEnv);
   return SubsCredentials(
     openSubtitles: openSubtitles,
-    subdlApiKey: subdlEnv.isNotEmpty ? subdlEnv : _prefString(prefs, kSubdlApiKeyPref),
-    subdlEnabled: subdlEnv.isNotEmpty || _prefBool(prefs, kSubdlEnabledPref, defaultValue: true),
-    jimakuApiKey: jimakuEnv.isNotEmpty ? jimakuEnv : _prefString(prefs, kJimakuApiKeyPref),
-    jimakuEnabled: jimakuEnv.isNotEmpty || _prefBool(prefs, kJimakuEnabledPref, defaultValue: true),
+    subdlApiKey: subdlEnv.isNotEmpty
+        ? subdlEnv
+        : _prefString(prefs, kSubdlApiKeyPref),
+    subdlEnabled:
+        subdlEnv.isNotEmpty ||
+        _prefBool(prefs, kSubdlEnabledPref, defaultValue: true),
+    jimakuApiKey: jimakuEnv.isNotEmpty
+        ? jimakuEnv
+        : _prefString(prefs, kJimakuApiKeyPref),
+    jimakuEnabled:
+        jimakuEnv.isNotEmpty ||
+        _prefBool(prefs, kJimakuEnabledPref, defaultValue: true),
   );
 }
 
@@ -253,7 +292,8 @@ OpenSubtitlesConfig _openSubtitlesFromPrefs(PrefStore prefs) {
     final Object? decoded = jsonDecode(raw);
     if (decoded is! Map) return OpenSubtitlesConfig.unconfigured();
     return OpenSubtitlesConfig.fromJson(<String, Object?>{
-      for (final MapEntry<Object?, Object?> e in decoded.entries) e.key.toString(): e.value,
+      for (final MapEntry<Object?, Object?> e in decoded.entries)
+        e.key.toString(): e.value,
     });
   } on Object catch (e) {
     stderr.writeln('偏好 $kOpenSubtitlesConfigPref 解不开，按未配置处理：$e');
@@ -262,14 +302,22 @@ OpenSubtitlesConfig _openSubtitlesFromPrefs(PrefStore prefs) {
 }
 
 /// 生产的 provider 装配（出站一律经 `createAppHttpIoClient`，跟随全应用代理）。
-VideoSubtitleProvider createSubsProvider(String providerId, SubsCredentials credentials) {
+VideoSubtitleProvider createSubsProvider(
+  String providerId,
+  SubsCredentials credentials,
+) {
   switch (providerId) {
     case 'opensubtitles':
       return OpenSubtitlesClient(config: credentials.openSubtitles);
     case kSubdlSubtitleProviderId:
       return SubdlClient(apiKey: credentials.subdlApiKey);
     case 'jimaku':
-      return JimakuCliSubtitleProvider(JimakuClient(apiKey: credentials.jimakuApiKey, client: createAppHttpIoClient()));
+      return JimakuCliSubtitleProvider(
+        JimakuClient(
+          apiKey: credentials.jimakuApiKey,
+          client: createAppHttpIoClient(),
+        ),
+      );
   }
   throw ArgumentError.value(providerId, 'providerId', '未知字幕来源');
 }
@@ -294,7 +342,9 @@ class JimakuCliSubtitleProvider implements VideoSubtitleProvider {
   bool get allowsFreeProbeDownload => true;
 
   @override
-  Future<ProviderBatchResult<VideoSubtitleCandidate>> search(VideoSubtitleSearchRequest request) async {
+  Future<ProviderBatchResult<VideoSubtitleCandidate>> search(
+    VideoSubtitleSearchRequest request,
+  ) async {
     final List<String> titles = jimakuQueryVariants(<String>[
       request.effectiveQuery,
       ...request.alternateTitles,
@@ -310,7 +360,10 @@ class JimakuCliSubtitleProvider implements VideoSubtitleProvider {
         },
       );
       // 与 app 侧 provider 同一条配额约束：只列与标题最像的几个条目。
-      final List<JimakuEntry> entries = pickJimakuEntriesForTitles(found, titles);
+      final List<JimakuEntry> entries = pickJimakuEntriesForTitles(
+        found,
+        titles,
+      );
       final List<VideoSubtitleCandidate> out = <VideoSubtitleCandidate>[];
       for (final JimakuEntry entry in entries) {
         final List<JimakuFile> files = await _client.listFiles(
@@ -321,20 +374,35 @@ class JimakuCliSubtitleProvider implements VideoSubtitleProvider {
         for (final JimakuFile file in files) {
           if (!file.isTextSubtitle) continue;
           final String language = detectSubtitleLanguage(file.name) ?? '';
-          if (request.languages.isNotEmpty && !request.languages.contains(language)) continue;
-          out.add(_JimakuCliCandidate(entry: entry, file: file, language: language, providerPriority: priority));
+          if (request.languages.isNotEmpty &&
+              !request.languages.contains(language))
+            continue;
+          out.add(
+            _JimakuCliCandidate(
+              entry: entry,
+              file: file,
+              language: language,
+              providerPriority: priority,
+            ),
+          );
         }
       }
       return ProviderBatchResult<VideoSubtitleCandidate>.success(out);
     } on Object catch (error) {
       return ProviderBatchResult<VideoSubtitleCandidate>.failure(
-        ExternalProviderFailure.fromException(providerId: id, operation: 'search', error: error),
+        ExternalProviderFailure.fromException(
+          providerId: id,
+          operation: 'search',
+          error: error,
+        ),
       );
     }
   }
 
   @override
-  Future<VideoSubtitleDownload> download(VideoSubtitleCandidate candidate) async {
+  Future<VideoSubtitleDownload> download(
+    VideoSubtitleCandidate candidate,
+  ) async {
     if (candidate is! _JimakuCliCandidate) {
       throw const ExternalProviderFailure(
         providerId: 'jimaku',
@@ -343,7 +411,10 @@ class JimakuCliSubtitleProvider implements VideoSubtitleProvider {
         message: 'candidate belongs to another provider',
       );
     }
-    final Uint8List? bytes = await _client.downloadFile(candidate.file.url, throwOnError: true);
+    final Uint8List? bytes = await _client.downloadFile(
+      candidate.file.url,
+      throwOnError: true,
+    );
     if (bytes == null || bytes.isEmpty) {
       throw const ExternalProviderFailure(
         providerId: 'jimaku',
@@ -353,7 +424,11 @@ class JimakuCliSubtitleProvider implements VideoSubtitleProvider {
         retryable: true,
       );
     }
-    return VideoSubtitleDownload(bytes: bytes, fileName: candidate.file.name, language: candidate.language);
+    return VideoSubtitleDownload(
+      bytes: bytes,
+      fileName: candidate.file.name,
+      language: candidate.language,
+    );
   }
 
   @override
@@ -422,7 +497,9 @@ class SubsSearchSpec {
     query: json['query'] as String? ?? '',
     season: json['season'] as int?,
     episode: json['episode'] as int?,
-    languages: (json['languages'] as List<Object?>? ?? const <Object?>[]).whereType<String>().toList(),
+    languages: (json['languages'] as List<Object?>? ?? const <Object?>[])
+        .whereType<String>()
+        .toList(),
     videoPath: json['videoPath'] as String?,
     fileSize: json['fileSize'] as int?,
     movieHash: json['movieHash'] as String?,
@@ -462,7 +539,8 @@ class SubsSearchSpec {
 }
 
 /// 搜索缓存的落点：`<support>/cli/subs_last_search.json`。
-File subsSearchCacheFile(ServerRuntime rt) => File(p.join(rt.paths.support.path, 'cli', 'subs_last_search.json'));
+File subsSearchCacheFile(ServerRuntime rt) =>
+    File(p.join(rt.paths.support.path, 'cli', 'subs_last_search.json'));
 
 /// 把 `-l ja,en -l zh` 摊平成去重的小写列表。
 List<String> splitLanguages(Iterable<String> raw) => <String>{
@@ -475,12 +553,22 @@ int? _intOption(ArgResults sub, String name) {
   final String? raw = sub[name] as String?;
   if (raw == null) return null;
   final int? value = int.tryParse(raw.trim());
-  if (value == null || value < 0) throw FormatException('--$name 需要非负整数，收到 "$raw"');
+  if (value == null || value < 0)
+    throw FormatException('--$name 需要非负整数，收到 "$raw"');
   return value;
 }
 
-Future<int> subsSearch(ArgResults sub, {required ServerRuntime rt, required CliIo io, required SubsDeps deps}) async {
-  if (sub.rest.length != 1) return io.fail(kExitUsage, '用法: subs search <videoId|file> [--provider …] [-l ja]');
+Future<int> subsSearch(
+  ArgResults sub, {
+  required ServerRuntime rt,
+  required CliIo io,
+  required SubsDeps deps,
+}) async {
+  if (sub.rest.length != 1)
+    return io.fail(
+      kExitUsage,
+      '用法: subs search <videoId|file> [--provider …] [-l ja]',
+    );
   final int? season;
   final int? episode;
   try {
@@ -501,7 +589,9 @@ Future<int> subsSearch(ArgResults sub, {required ServerRuntime rt, required CliI
     libraryTitle = book.title;
     if (videoPathFileExistsSync(book.videoPath)) videoPath = book.videoPath;
   }
-  final VideoNameInfo? parsed = videoPath == null ? null : parseVideoFilename(p.basename(videoPath));
+  final VideoNameInfo? parsed = videoPath == null
+      ? null
+      : parseVideoFilename(p.basename(videoPath));
   final String query = ((sub['query'] as String?)?.trim().isNotEmpty ?? false)
       ? (sub['query'] as String).trim()
       : (parsed?.series.trim().isNotEmpty ?? false)
@@ -530,7 +620,10 @@ Future<int> subsSearch(ArgResults sub, {required ServerRuntime rt, required CliI
     return io.fail(kExitUsage, '解析不出标题：用 --query 指定');
   }
 
-  final SubsCredentials credentials = resolveSubsCredentials(rt.prefs, deps.env);
+  final SubsCredentials credentials = resolveSubsCredentials(
+    rt.prefs,
+    deps.env,
+  );
   final List<String> wanted = (sub['provider'] as List<String>).isEmpty
       ? kSubsProviderIds
       : (sub['provider'] as List<String>);
@@ -546,7 +639,11 @@ Future<int> subsSearch(ArgResults sub, {required ServerRuntime rt, required CliI
     }
   }
   if (usable.isEmpty || (explicit && skipped.isNotEmpty)) {
-    return io.fail(kExitUnavailable, skipped.values.join('\n'), extra: <String, Object?>{'unavailable': skipped});
+    return io.fail(
+      kExitUnavailable,
+      skipped.values.join('\n'),
+      extra: <String, Object?>{'unavailable': skipped},
+    );
   }
   for (final MapEntry<String, String> e in skipped.entries) {
     io.err.writeln('跳过 ${e.key}：${e.value}');
@@ -557,9 +654,11 @@ Future<int> subsSearch(ArgResults sub, {required ServerRuntime rt, required CliI
     '${spec.season == null ? '' : ' S${spec.season}'}${spec.episode == null ? '' : ' E${spec.episode}'}'
     ' @ ${usable.join(', ')} …',
   );
-  final VideoSubtitleRegistry registry = VideoSubtitleRegistry(<VideoSubtitleProvider>[
-    for (final String id in usable) deps.providerFactory(id, credentials),
-  ]);
+  final VideoSubtitleRegistry registry = VideoSubtitleRegistry(
+    <VideoSubtitleProvider>[
+      for (final String id in usable) deps.providerFactory(id, credentials),
+    ],
+  );
   final ProviderBatchResult<VideoSubtitleCandidate> result;
   try {
     result = await registry.search(spec.toRequest());
@@ -571,7 +670,11 @@ Future<int> subsSearch(ArgResults sub, {required ServerRuntime rt, required CliI
   ];
   final List<Map<String, Object?>> failures = <Map<String, Object?>>[
     for (final ExternalProviderFailure f in result.failures)
-      <String, Object?>{'provider': f.providerId, 'kind': f.kind.name, 'message': f.message},
+      <String, Object?>{
+        'provider': f.providerId,
+        'kind': f.kind.name,
+        'message': f.message,
+      },
   ];
   final File cache = subsSearchCacheFile(rt);
   await cache.parent.create(recursive: true);
@@ -585,8 +688,11 @@ Future<int> subsSearch(ArgResults sub, {required ServerRuntime rt, required CliI
   );
 
   // 全部来源都失败（没有任何一家成功应答）才算依赖不可用；部分失败照常出结果。
-  final bool allFailed = result.successfulProviderCount == 0 && failures.isNotEmpty;
-  final int code = allFailed ? kExitUnavailable : (rows.isEmpty ? kExitFailure : kExitOk);
+  final bool allFailed =
+      result.successfulProviderCount == 0 && failures.isNotEmpty;
+  final int code = allFailed
+      ? kExitUnavailable
+      : (rows.isEmpty ? kExitFailure : kExitOk);
   if (io.json) {
     io.writeJson(<String, Object?>{
       'ok': code == kExitOk,
@@ -612,74 +718,120 @@ Future<int> subsSearch(ArgResults sub, {required ServerRuntime rt, required CliI
 }
 
 /// 一条候选的 JSON 形状（`id` = `subs download` 认的 resultId）。
-Map<String, Object?> subsCandidateJson(VideoSubtitleCandidate c) => <String, Object?>{
-  'id': c.identityKey,
-  'provider': c.providerId,
-  'remoteId': c.remoteId,
-  'fileName': c.fileName,
-  'language': c.language,
-  if (c.releaseName != null) 'releaseName': c.releaseName,
-  if (c.season != null) 'season': c.season,
-  if (c.episode != null) 'episode': c.episode,
-  if (c.fileSize != null) 'fileSize': c.fileSize,
-  'downloadCount': c.downloadCount,
-  if (c.hearingImpaired) 'hearingImpaired': true,
-  if (c.aiTranslated) 'aiTranslated': true,
-  if (c.fromTrusted) 'fromTrusted': true,
-  if (c.uploadedAtMs != null)
-    'uploadedAt': DateTime.fromMillisecondsSinceEpoch(c.uploadedAtMs!, isUtc: true).toIso8601String(),
-};
+Map<String, Object?> subsCandidateJson(VideoSubtitleCandidate c) =>
+    <String, Object?>{
+      'id': c.identityKey,
+      'provider': c.providerId,
+      'remoteId': c.remoteId,
+      'fileName': c.fileName,
+      'language': c.language,
+      if (c.releaseName != null) 'releaseName': c.releaseName,
+      if (c.season != null) 'season': c.season,
+      if (c.episode != null) 'episode': c.episode,
+      if (c.fileSize != null) 'fileSize': c.fileSize,
+      'downloadCount': c.downloadCount,
+      if (c.hearingImpaired) 'hearingImpaired': true,
+      if (c.aiTranslated) 'aiTranslated': true,
+      if (c.fromTrusted) 'fromTrusted': true,
+      if (c.uploadedAtMs != null)
+        'uploadedAt': DateTime.fromMillisecondsSinceEpoch(
+          c.uploadedAtMs!,
+          isUtc: true,
+        ).toIso8601String(),
+    };
 
 /// 下载字幕的缺省落点：`<视频目录>/<视频名>.<语言>.<扩展名>`（语言未知则省略）。
-String defaultSubtitleOutputPath({required String videoPath, required String fileName, required String language}) {
+String defaultSubtitleOutputPath({
+  required String videoPath,
+  required String fileName,
+  required String language,
+}) {
   String ext = p.extension(fileName).toLowerCase();
-  if (!const <String>{'.srt', '.ass', '.ssa', '.vtt', '.sub', '.lrc'}.contains(ext)) ext = '.srt';
-  final String lang = language.trim().toLowerCase().replaceAll(RegExp(r'[^a-z0-9-]'), '');
-  return p.join(p.dirname(videoPath), '${p.basenameWithoutExtension(videoPath)}${lang.isEmpty ? '' : '.$lang'}$ext');
+  if (!const <String>{
+    '.srt',
+    '.ass',
+    '.ssa',
+    '.vtt',
+    '.sub',
+    '.lrc',
+  }.contains(ext))
+    ext = '.srt';
+  final String lang = language.trim().toLowerCase().replaceAll(
+    RegExp(r'[^a-z0-9-]'),
+    '',
+  );
+  return p.join(
+    p.dirname(videoPath),
+    '${p.basenameWithoutExtension(videoPath)}${lang.isEmpty ? '' : '.$lang'}$ext',
+  );
 }
 
-Future<int> subsDownload(ArgResults sub, {required ServerRuntime rt, required CliIo io, required SubsDeps deps}) async {
-  if (sub.rest.length != 1) return io.fail(kExitUsage, '用法: subs download <resultId> --to <video>');
+Future<int> subsDownload(
+  ArgResults sub, {
+  required ServerRuntime rt,
+  required CliIo io,
+  required SubsDeps deps,
+}) async {
+  if (sub.rest.length != 1)
+    return io.fail(kExitUsage, '用法: subs download <resultId> --to <video>');
   final String? to = sub['to'] as String?;
-  if (to == null || to.trim().isEmpty) return io.fail(kExitUsage, 'subs download 需要 --to <video>');
+  if (to == null || to.trim().isEmpty)
+    return io.fail(kExitUsage, 'subs download 需要 --to <video>');
   final String videoPath = p.absolute(to);
-  if (!File(videoPath).existsSync()) return io.fail(kExitNoInput, '找不到视频文件: $videoPath');
+  if (!File(videoPath).existsSync())
+    return io.fail(kExitNoInput, '找不到视频文件: $videoPath');
   final String resultId = sub.rest.single;
   final int colon = resultId.indexOf(':');
-  if (colon <= 0) return io.fail(kExitUsage, 'resultId 形如 <provider>:<remoteId>（取自 subs search 的第一列）');
+  if (colon <= 0)
+    return io.fail(
+      kExitUsage,
+      'resultId 形如 <provider>:<remoteId>（取自 subs search 的第一列）',
+    );
   final String providerId = resultId.substring(0, colon);
-  if (!kSubsProviderIds.contains(providerId)) return io.fail(kExitUsage, '未知字幕来源 $providerId');
+  if (!kSubsProviderIds.contains(providerId))
+    return io.fail(kExitUsage, '未知字幕来源 $providerId');
 
   final File cache = subsSearchCacheFile(rt);
-  if (!cache.existsSync()) return io.fail(kExitNoInput, '没有搜索记录：先跑 subs search');
+  if (!cache.existsSync())
+    return io.fail(kExitNoInput, '没有搜索记录：先跑 subs search');
   final Map<String, Object?> cached;
   try {
-    cached = (jsonDecode(await cache.readAsString()) as Map<Object?, Object?>).cast<String, Object?>();
+    cached = (jsonDecode(await cache.readAsString()) as Map<Object?, Object?>)
+        .cast<String, Object?>();
   } on Object catch (e) {
     return io.fail(kExitNoInput, '搜索记录损坏（${cache.path}）：$e；重新跑 subs search');
   }
-  final List<Map<String, Object?>> rows = (cached['results'] as List<Object?>? ?? const <Object?>[])
-      .whereType<Map<Object?, Object?>>()
-      .map((Map<Object?, Object?> m) => m.cast<String, Object?>())
-      .toList();
+  final List<Map<String, Object?>> rows =
+      (cached['results'] as List<Object?>? ?? const <Object?>[])
+          .whereType<Map<Object?, Object?>>()
+          .map((Map<Object?, Object?> m) => m.cast<String, Object?>())
+          .toList();
   if (!rows.any((Map<String, Object?> r) => r['id'] == resultId)) {
     return io.fail(kExitNoInput, '$resultId 不在上一次 subs search 的结果里');
   }
   final SubsSearchSpec spec = SubsSearchSpec.fromJson(
-    (cached['spec'] as Map<Object?, Object?>? ?? const <Object?, Object?>{}).cast<String, Object?>(),
+    (cached['spec'] as Map<Object?, Object?>? ?? const <Object?, Object?>{})
+        .cast<String, Object?>(),
   );
 
-  final SubsCredentials credentials = resolveSubsCredentials(rt.prefs, deps.env);
+  final SubsCredentials credentials = resolveSubsCredentials(
+    rt.prefs,
+    deps.env,
+  );
   final String? reason = credentials.unavailableReason(providerId);
   if (reason != null) return io.fail(kExitUnavailable, reason);
 
   // 候选对象只能由 provider 自己造（下载需要它私有的定位信息），所以按缓存的请求
   // 重问一次这一家，再按 identityKey 认回同一条。
-  final VideoSubtitleProvider provider = deps.providerFactory(providerId, credentials);
+  final VideoSubtitleProvider provider = deps.providerFactory(
+    providerId,
+    credentials,
+  );
   final VideoSubtitleDownload download;
   try {
     io.err.writeln('重新定位 $resultId …');
-    final ProviderBatchResult<VideoSubtitleCandidate> result = await provider.search(spec.toRequest());
+    final ProviderBatchResult<VideoSubtitleCandidate> result = await provider
+        .search(spec.toRequest());
     VideoSubtitleCandidate? candidate;
     for (final VideoSubtitleCandidate c in result.items) {
       if (c.identityKey == resultId) {
@@ -689,7 +841,10 @@ Future<int> subsDownload(ArgResults sub, {required ServerRuntime rt, required Cl
     }
     if (candidate == null) {
       if (result.items.isEmpty && result.failures.isNotEmpty) {
-        return io.fail(kExitUnavailable, '$providerId 搜索失败：${result.failures.first.message}');
+        return io.fail(
+          kExitUnavailable,
+          '$providerId 搜索失败：${result.failures.first.message}',
+        );
       }
       return io.fail(kExitFailure, '$resultId 已不在 $providerId 的搜索结果里');
     }
@@ -697,7 +852,8 @@ Future<int> subsDownload(ArgResults sub, {required ServerRuntime rt, required Cl
     download = await provider.download(candidate);
   } on ExternalProviderFailure catch (e) {
     return io.fail(
-      e.kind == ExternalProviderFailureKind.unauthorized || e.kind == ExternalProviderFailureKind.unavailable
+      e.kind == ExternalProviderFailureKind.unauthorized ||
+              e.kind == ExternalProviderFailureKind.unavailable
           ? kExitUnavailable
           : kExitFailure,
       '$providerId 下载失败：${e.kind.name} ${e.message}',
@@ -708,7 +864,11 @@ Future<int> subsDownload(ArgResults sub, {required ServerRuntime rt, required Cl
 
   final String outPath = (sub['out'] as String?)?.trim().isNotEmpty ?? false
       ? p.absolute(sub['out'] as String)
-      : defaultSubtitleOutputPath(videoPath: videoPath, fileName: download.fileName, language: download.language);
+      : defaultSubtitleOutputPath(
+          videoPath: videoPath,
+          fileName: download.fileName,
+          language: download.language,
+        );
   if (File(outPath).existsSync() && !(sub['force'] as bool)) {
     return io.fail(kExitFailure, '已存在: $outPath（加 --force 覆盖）');
   }
@@ -716,7 +876,11 @@ Future<int> subsDownload(ArgResults sub, {required ServerRuntime rt, required Cl
   await File(outPath).writeAsBytes(download.bytes, flush: true);
 
   // 落盘后的时长自检只做提示：这是用户亲手挑的那一条，不替他拒收。
-  final SubtitleTimingCheck check = await _timingCheck(download.bytes, videoPath, deps);
+  final SubtitleTimingCheck check = await _timingCheck(
+    download.bytes,
+    videoPath,
+    deps,
+  );
   if (io.json) {
     io.writeJson(<String, Object?>{
       'ok': true,
@@ -726,21 +890,35 @@ Future<int> subsDownload(ArgResults sub, {required ServerRuntime rt, required Cl
       'fileName': download.fileName,
       'language': download.language,
       'bytes': download.bytes.length,
-      'timing': <String, Object?>{'verdict': check.verdict.name, if (check.detail != null) 'detail': check.detail},
+      'timing': <String, Object?>{
+        'verdict': check.verdict.name,
+        if (check.detail != null) 'detail': check.detail,
+      },
     });
   } else {
     io.out.writeln('已写入 $outPath（${download.bytes.length} 字节）');
   }
   if (check.verdict != SubtitleTimingVerdict.ok) {
-    io.err.writeln('注意：时长自检 ${check.verdict.name}${check.detail == null ? '' : '（${check.detail}）'}');
+    io.err.writeln(
+      '注意：时长自检 ${check.verdict.name}${check.detail == null ? '' : '（${check.detail}）'}',
+    );
   }
   return kExitOk;
 }
 
-Future<SubtitleTimingCheck> _timingCheck(Uint8List bytes, String videoPath, SubsDeps deps) async {
-  final SubtitleTimingSummary summary = summarizeSubtitleTiming(utf8.decode(bytes, allowMalformed: true));
+Future<SubtitleTimingCheck> _timingCheck(
+  Uint8List bytes,
+  String videoPath,
+  SubsDeps deps,
+) async {
+  final SubtitleTimingSummary summary = summarizeSubtitleTiming(
+    utf8.decode(bytes, allowMalformed: true),
+  );
   final int? durationMs = await deps.probeDurationMs(videoPath);
-  return checkSubtitleTiming(summary, video: durationMs == null ? null : KnownVideoDuration.probed(durationMs));
+  return checkSubtitleTiming(
+    summary,
+    video: durationMs == null ? null : KnownVideoDuration.probed(durationMs),
+  );
 }
 
 // ─── sync / restore / check ─────────────────────────────────────────
@@ -749,50 +927,71 @@ Future<SubtitleTimingCheck> _timingCheck(Uint8List bytes, String videoPath, Subs
 int? _requireFiles(ArgResults sub, CliIo io, List<String> names, String usage) {
   if (sub.rest.length != names.length) return io.fail(kExitUsage, '用法: $usage');
   for (int i = 0; i < names.length; i++) {
-    if (!File(sub.rest[i]).existsSync()) return io.fail(kExitNoInput, '找不到${names[i]}: ${sub.rest[i]}');
+    if (!File(sub.rest[i]).existsSync())
+      return io.fail(kExitNoInput, '找不到${names[i]}: ${sub.rest[i]}');
   }
   return null;
 }
 
 /// 对齐结果的 JSON 形状。
-Map<String, Object?> referenceSyncJson(EmbeddedReferenceSyncResult result) => <String, Object?>{
-  'status': result.status.name,
-  'kind': result.kind.name,
-  'changesTiming': result.changesTiming,
-  if (result.decision != null) ...<String, Object?>{
-    'agreeingGroups': result.decision!.agreeingGroups,
-    'conflicting': result.decision!.conflicting,
-    'offsets': <Map<String, Object?>>[
-      for (final s in result.decision!.segments)
-        <String, Object?>{'offsetSeconds': s.offsetSeconds, if (s.splitSeconds != null) 'splitSeconds': s.splitSeconds},
-    ],
-    'offsetsText': formatAlignmentOffsets(result.decision!.segments),
-  },
-  'shifted': result.retime?.shiftedCount ?? 0,
-  'dropped': result.retime?.droppedCount ?? 0,
-};
+Map<String, Object?> referenceSyncJson(EmbeddedReferenceSyncResult result) =>
+    <String, Object?>{
+      'status': result.status.name,
+      'kind': result.kind.name,
+      'changesTiming': result.changesTiming,
+      if (result.decision != null) ...<String, Object?>{
+        'agreeingGroups': result.decision!.agreeingGroups,
+        'conflicting': result.decision!.conflicting,
+        'offsets': <Map<String, Object?>>[
+          for (final s in result.decision!.segments)
+            <String, Object?>{
+              'offsetSeconds': s.offsetSeconds,
+              if (s.splitSeconds != null) 'splitSeconds': s.splitSeconds,
+            },
+        ],
+        'offsetsText': formatAlignmentOffsets(result.decision!.segments),
+      },
+      'shifted': result.retime?.shiftedCount ?? 0,
+      'dropped': result.retime?.droppedCount ?? 0,
+    };
 
-Future<int> subsSync(ArgResults sub, {required CliIo io, required SubsDeps deps}) async {
-  final int? bad = _requireFiles(sub, io, <String>['视频文件', '字幕文件'], 'subs sync <video> <subtitle>');
+Future<int> subsSync(
+  ArgResults sub, {
+  required CliIo io,
+  required SubsDeps deps,
+}) async {
+  final int? bad = _requireFiles(sub, io, <String>[
+    '视频文件',
+    '字幕文件',
+  ], 'subs sync <video> <subtitle>');
   if (bad != null) return bad;
   final String videoPath = p.absolute(sub.rest[0]);
   final String subtitlePath = p.absolute(sub.rest[1]);
   final Uint8List bytes = await File(subtitlePath).readAsBytes();
   if (await findSubtitleAlignmentOriginal(bytes) != null) {
-    return io.fail(kExitFailure, '这份字幕已经是按内嵌轨对齐写下的产物；要重来先 subs restore $subtitlePath');
+    return io.fail(
+      kExitFailure,
+      '这份字幕已经是按内嵌轨对齐写下的产物；要重来先 subs restore $subtitlePath',
+    );
   }
-  final String? ffmpeg = await deps.ffmpegProblem(probe: false) ?? await deps.ffmpegProblem(probe: true);
+  final String? ffmpeg =
+      await deps.ffmpegProblem(probe: false) ??
+      await deps.ffmpegProblem(probe: true);
   if (ffmpeg != null) return io.fail(kExitUnavailable, ffmpeg);
 
   io.err.writeln('抽取内嵌字幕轨并判定（整片 demux，可能要几十秒）…');
-  final EmbeddedReferenceSyncResult result = await syncSubtitleToEmbeddedReferences(
-    subtitleBytes: bytes,
-    videoPath: videoPath,
-    videoDurationMs: await deps.probeDurationMs(videoPath),
-    loadReferences: deps.loadReferences,
-  );
+  final EmbeddedReferenceSyncResult result =
+      await syncSubtitleToEmbeddedReferences(
+        subtitleBytes: bytes,
+        videoPath: videoPath,
+        videoDurationMs: await deps.probeDurationMs(videoPath),
+        loadReferences: deps.loadReferences,
+      );
   final Map<String, Object?> payload = referenceSyncJson(result);
-  final (int, String)? problem = _syncProblem(result, force: sub['force'] as bool);
+  final (int, String)? problem = _syncProblem(
+    result,
+    force: sub['force'] as bool,
+  );
   if (problem != null) {
     if (io.json) {
       io.writeJson(<String, Object?>{
@@ -811,9 +1010,17 @@ Future<int> subsSync(ArgResults sub, {required CliIo io, required SubsDeps deps}
   final String offsets = formatAlignmentOffsets(result.decision!.segments);
   if (sub['dry-run'] as bool) {
     if (io.json) {
-      io.writeJson(<String, Object?>{'ok': true, 'exitCode': kExitOk, ...payload, 'applied': false, 'dryRun': true});
+      io.writeJson(<String, Object?>{
+        'ok': true,
+        'exitCode': kExitOk,
+        ...payload,
+        'applied': false,
+        'dryRun': true,
+      });
     } else {
-      io.out.writeln('将平移 $offsets（${result.retime!.shiftedCount} 条），--dry-run 未写盘');
+      io.out.writeln(
+        '将平移 $offsets（${result.retime!.shiftedCount} 条），--dry-run 未写盘',
+      );
     }
     return kExitOk;
   }
@@ -829,7 +1036,13 @@ Future<int> subsSync(ArgResults sub, {required CliIo io, required SubsDeps deps}
   }
   await File(outPath).writeAsBytes(aligned, flush: true);
   if (io.json) {
-    io.writeJson(<String, Object?>{'ok': true, 'exitCode': kExitOk, ...payload, 'applied': true, 'output': outPath});
+    io.writeJson(<String, Object?>{
+      'ok': true,
+      'exitCode': kExitOk,
+      ...payload,
+      'applied': true,
+      'output': outPath,
+    });
   } else {
     io.out.writeln('已对齐 $offsets，写入 $outPath（原稿可用 subs restore 找回）');
   }
@@ -837,7 +1050,10 @@ Future<int> subsSync(ArgResults sub, {required CliIo io, required SubsDeps deps}
 }
 
 /// 不能（或不必）应用时的退出码与说明；可以应用返回 null。
-(int, String)? _syncProblem(EmbeddedReferenceSyncResult result, {required bool force}) {
+(int, String)? _syncProblem(
+  EmbeddedReferenceSyncResult result, {
+  required bool force,
+}) {
   switch (result.status) {
     case EmbeddedReferenceSyncStatus.noReference:
       return (kExitFailure, '视频没有可当参考的内嵌文本字幕轨（生肉 / 只有图形字幕 / 抽取失败），无法对齐');
@@ -847,7 +1063,8 @@ Future<int> subsSync(ArgResults sub, {required CliIo io, required SubsDeps deps}
       break;
   }
   final String kind = result.kind.name;
-  if (kind == 'refused') return (kExitFailure, '证据不足或互相矛盾，拒绝改动（${result.describe()}）');
+  if (kind == 'refused')
+    return (kExitFailure, '证据不足或互相矛盾，拒绝改动（${result.describe()}）');
   if (!result.changesTiming) return (kExitOk, '时间轴已经贴着视频，无需改动');
   if (kind == 'needsConfirmation' && !force) {
     return (
@@ -860,10 +1077,14 @@ Future<int> subsSync(ArgResults sub, {required CliIo io, required SubsDeps deps}
 }
 
 Future<int> subsRestore(ArgResults sub, {required CliIo io}) async {
-  final int? bad = _requireFiles(sub, io, <String>['字幕文件'], 'subs restore <subtitle>');
+  final int? bad = _requireFiles(sub, io, <String>[
+    '字幕文件',
+  ], 'subs restore <subtitle>');
   if (bad != null) return bad;
   final String subtitlePath = p.absolute(sub.rest.single);
-  final Uint8List? original = await findSubtitleAlignmentOriginal(await File(subtitlePath).readAsBytes());
+  final Uint8List? original = await findSubtitleAlignmentOriginal(
+    await File(subtitlePath).readAsBytes(),
+  );
   if (original == null) {
     return io.fail(kExitFailure, '这份字幕不是 subs sync / 自动对齐写下的产物（或原稿备份已不在）');
   }
@@ -872,18 +1093,33 @@ Future<int> subsRestore(ArgResults sub, {required CliIo io}) async {
       : subtitlePath;
   await File(outPath).writeAsBytes(original, flush: true);
   if (io.json) {
-    io.writeJson(<String, Object?>{'ok': true, 'exitCode': kExitOk, 'output': outPath, 'bytes': original.length});
+    io.writeJson(<String, Object?>{
+      'ok': true,
+      'exitCode': kExitOk,
+      'output': outPath,
+      'bytes': original.length,
+    });
   } else {
     io.out.writeln('已还原原稿到 $outPath');
   }
   return kExitOk;
 }
 
-Future<int> subsCheck(ArgResults sub, {required CliIo io, required SubsDeps deps}) async {
-  final int? bad = _requireFiles(sub, io, <String>['视频文件', '字幕文件'], 'subs check <video> <subtitle>');
+Future<int> subsCheck(
+  ArgResults sub, {
+  required CliIo io,
+  required SubsDeps deps,
+}) async {
+  final int? bad = _requireFiles(sub, io, <String>[
+    '视频文件',
+    '字幕文件',
+  ], 'subs check <video> <subtitle>');
   if (bad != null) return bad;
   final String videoPath = p.absolute(sub.rest[0]);
-  final String text = utf8.decode(await File(sub.rest[1]).readAsBytes(), allowMalformed: true);
+  final String text = utf8.decode(
+    await File(sub.rest[1]).readAsBytes(),
+    allowMalformed: true,
+  );
   final SubtitleTimingSummary summary = summarizeSubtitleTiming(text);
   final int? durationMs = await deps.probeDurationMs(videoPath);
   final SubtitleTimingCheck check = checkSubtitleTiming(
@@ -909,7 +1145,9 @@ Future<int> subsCheck(ArgResults sub, {required CliIo io, required SubsDeps deps
       'videoDurationMs': durationMs,
     });
   } else {
-    io.out.writeln('${check.verdict.name}${check.detail == null ? '' : ': ${check.detail}'}');
+    io.out.writeln(
+      '${check.verdict.name}${check.detail == null ? '' : ': ${check.detail}'}',
+    );
     io.out.writeln(
       '字幕 ${summary.cueCount} 条，${formatClockMs(summary.firstStartMs)} → ${formatClockMs(summary.lastEndMs)}；'
       '视频 ${durationMs == null ? '时长未知' : formatClockMs(durationMs)}',

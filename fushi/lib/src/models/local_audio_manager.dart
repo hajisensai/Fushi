@@ -28,13 +28,12 @@ class InvalidLocalAudioDbException implements Exception {
       '($sourcePath)';
 }
 
-
 class LocalAudioManager {
   LocalAudioManager({
     required PreferencesRepository prefsRepo,
     required Directory databaseDirectory,
-  })  : _prefsRepo = prefsRepo,
-        _databaseDirectory = databaseDirectory;
+  }) : _prefsRepo = prefsRepo,
+       _databaseDirectory = databaseDirectory;
 
   final PreferencesRepository _prefsRepo;
   final Directory _databaseDirectory;
@@ -50,7 +49,9 @@ class LocalAudioManager {
       <String, Future<void>>{};
 
   Future<void> _withMigrationLock(Future<void> Function() action) async {
-    final String directory = path.canonicalize(_databaseDirectory.absolute.path);
+    final String directory = path.canonicalize(
+      _databaseDirectory.absolute.path,
+    );
     final String key = Platform.isWindows ? directory.toLowerCase() : directory;
     final Future<void> previous = _migrationQueues[key] ?? Future<void>.value();
     final Completer<void> released = Completer<void>();
@@ -85,8 +86,9 @@ class LocalAudioManager {
   /// 内部副本命名（[importFile] 生成、[pruneOrphans] 回收的形状）：
   /// `local_audio_<数字标识>.db`（兼容旧时间戳；新文件附加进程 ID）。
   /// 是判定「可跨机按文件名归一」的唯一真值。
-  static final RegExp _internalCopyNamePattern =
-      RegExp(r'^local_audio_\d+\.db$');
+  static final RegExp _internalCopyNamePattern = RegExp(
+    r'^local_audio_\d+\.db$',
+  );
 
   /// 同时容忍 `/` 与 `\` 的 basename（不依赖运行平台的 [path.basename] 语义，
   /// 兼容跨 OS 备份：Windows 备份在 POSIX 机导入时反斜杠也要被切掉）。
@@ -130,21 +132,25 @@ class LocalAudioManager {
   /// 本机库目录（内部副本认文件名，跨机安全），sourceOrder 只含**启用**的子来源，
   /// 按存储顺序（=优先级）。空 sources → 空 order → native 退回全启用自然序。
   LocalAudioDbConfig _configFor(LocalAudioDbEntry e) => LocalAudioDbConfig(
-        path: resolveInternalPath(e.path, _databaseDirectory.path),
-        sourceOrder: e.sources
-            .where((LocalAudioSourcePref s) => s.enabled)
-            .map((LocalAudioSourcePref s) => s.name)
-            .toList(),
-      );
+    path: resolveInternalPath(e.path, _databaseDirectory.path),
+    sourceOrder: e.sources
+        .where((LocalAudioSourcePref s) => s.enabled)
+        .map((LocalAudioSourcePref s) => s.name)
+        .toList(),
+  );
 
   List<LocalAudioDbEntry> get entries {
     final String raw = _prefsRepo.getPref('local_audio_dbs', defaultValue: '');
     if (raw.isEmpty) {
-      final String oldPath =
-          _prefsRepo.getPref('local_audio_db_path', defaultValue: '');
+      final String oldPath = _prefsRepo.getPref(
+        'local_audio_db_path',
+        defaultValue: '',
+      );
       if (oldPath.isNotEmpty) {
-        final String oldName =
-            _prefsRepo.getPref('local_audio_db_display_name', defaultValue: '');
+        final String oldName = _prefsRepo.getPref(
+          'local_audio_db_display_name',
+          defaultValue: '',
+        );
         return [LocalAudioDbEntry(path: oldPath, displayName: oldName)];
       }
       return [];
@@ -152,8 +158,10 @@ class LocalAudioManager {
     try {
       final List<dynamic> list = jsonDecode(raw) as List<dynamic>;
       return list
-          .map((dynamic e) =>
-              LocalAudioDbEntry.fromJson(e as Map<String, dynamic>))
+          .map(
+            (dynamic e) =>
+                LocalAudioDbEntry.fromJson(e as Map<String, dynamic>),
+          )
           .toList();
     } catch (e) {
       return [];
@@ -166,18 +174,20 @@ class LocalAudioManager {
   /// BUG-3702）：互联同步判「本端有没有这份库」、推送时打包文件，都必须看本机
   /// 真实落点，而不是那串源机路径。
   List<LocalAudioDbEntry> get entriesOnThisDevice => <LocalAudioDbEntry>[
-        for (final LocalAudioDbEntry e in entries)
-          e.copyWith(
-              path: resolveInternalPath(e.path, _databaseDirectory.path)),
-      ];
+    for (final LocalAudioDbEntry e in entries)
+      e.copyWith(path: resolveInternalPath(e.path, _databaseDirectory.path)),
+  ];
 
   Future<void> setEntries(List<LocalAudioDbEntry> dbs) async {
     await _prefsRepo.setPref(
-        'local_audio_dbs', jsonEncode(dbs.map((e) => e.toJson()).toList()));
+      'local_audio_dbs',
+      jsonEncode(dbs.map((e) => e.toJson()).toList()),
+    );
     await _prefsRepo.setPref('local_audio_db_path', '');
     await _prefsRepo.setPref('local_audio_db_display_name', '');
-    await TtsChannel.instance
-        .setLocalAudioDbs(dbs.where((e) => e.enabled).map(_configFor).toList());
+    await TtsChannel.instance.setLocalAudioDbs(
+      dbs.where((e) => e.enabled).map(_configFor).toList(),
+    );
   }
 
   /// 把旧版本误存的临时引用收进持久库。调用方传本机实际临时目录，并在
@@ -185,9 +195,11 @@ class LocalAudioManager {
   /// 缺失或不可复制的文件保留原配置供重新选择；不会删除源文件或推送 native。
   Future<void> migrateTemporaryReferences(Directory temporaryDirectory) async {
     final String temporaryRoot = path.canonicalize(temporaryDirectory.path);
-    if (!entries.any((LocalAudioDbEntry entry) =>
-        entry.path.isNotEmpty &&
-        path.isWithin(temporaryRoot, path.canonicalize(entry.path)))) {
+    if (!entries.any(
+      (LocalAudioDbEntry entry) =>
+          entry.path.isNotEmpty &&
+          path.isWithin(temporaryRoot, path.canonicalize(entry.path)),
+    )) {
       // 正常配置的 warm popup 不应为了已完成的迁移重新读整张偏好表。
       return;
     }
@@ -198,7 +210,8 @@ class LocalAudioManager {
   }
 
   Future<void> _migrateTemporaryReferencesLocked(
-      Directory temporaryDirectory) async {
+    Directory temporaryDirectory,
+  ) async {
     final Map<String, String> snapshot = _prefsRepo.prefsSnapshot;
     final Map<String, String?> expectedRaw = <String, String?>{
       for (final String key in <String>[
@@ -283,7 +296,9 @@ class LocalAudioManager {
 
   /// 只改某个库的子来源偏好（优先级序 + 逐源启用），立即持久化并重推 native。
   Future<void> setSourcesFor(
-      String path, List<LocalAudioSourcePref> prefs) async {
+    String path,
+    List<LocalAudioSourcePref> prefs,
+  ) async {
     final List<LocalAudioDbEntry> dbs = List<LocalAudioDbEntry>.of(entries);
     final int i = dbs.indexWhere((LocalAudioDbEntry e) => e.path == path);
     if (i < 0) return;
@@ -330,7 +345,9 @@ class LocalAudioManager {
     // catch 记录真因（路径/选择问题）并把可见反馈带给用户。两种模式共用此校验。
     if (!await sourceFile.exists()) {
       throw FileSystemException(
-          'local audio db source file not found', sourcePath);
+        'local audio db source file not found',
+        sourcePath,
+      );
     }
     // BUG-779：导入前校验内容，拒绝「没用的 zip / 备份 zip / 空库」。旧实现只查存在性
     // 就复制并报成功，无效性要等查询时才在 LocalAudioDb 的 catch 里被吞成空音频源。
@@ -353,8 +370,10 @@ class LocalAudioManager {
     // Android 主进程与 :popup 可同毫秒复制；数字段附加 pid 隔离两者，
     // 仍满足既有内部副本识别/孤儿清理的 local_audio_\d+.db 契约。
     final String internalName = 'local_audio_$stamp$pid.db';
-    final String internalPath =
-        path.join(_databaseDirectory.path, internalName);
+    final String internalPath = path.join(
+      _databaseDirectory.path,
+      internalName,
+    );
     try {
       await sourceFile.copy(internalPath);
     } on FileSystemException catch (e) {
@@ -394,8 +413,11 @@ class LocalAudioManager {
     // 归一后再规范化：跨机导入后 keepPaths 里内部副本仍带**源机**绝对前缀，
     // 若不归一，本机已落地的同名副本会被判为孤儿误删（TODO-1171 数据丢失）。
     final Set<String> keep = keepPaths
-        .map((String p) =>
-            path.canonicalize(resolveInternalPath(p, _databaseDirectory.path)))
+        .map(
+          (String p) => path.canonicalize(
+            resolveInternalPath(p, _databaseDirectory.path),
+          ),
+        )
         .toSet();
     if (!await _databaseDirectory.exists()) return;
     final RegExp namePattern = _internalCopyNamePattern;
@@ -424,8 +446,10 @@ class LocalAudioManager {
   }
 
   Future<void> add(String sourcePath, {required String displayName}) async {
-    final LocalAudioDbEntry entry =
-        await importFile(sourcePath, displayName: displayName);
+    final LocalAudioDbEntry entry = await importFile(
+      sourcePath,
+      displayName: displayName,
+    );
     final dbs = List<LocalAudioDbEntry>.of(entries)..add(entry);
     await setEntries(dbs);
   }
@@ -461,11 +485,15 @@ class LocalAudioManager {
       if (!entry.enabled) continue;
       // 存在性判定认归一后的本机路径（内部副本按文件名重挂），而非可能来自别机
       // 的存储 path——否则跨机导入的同名库虽已落地却被判缺失静默跳过（TODO-1171）。
-      final String resolved =
-          resolveInternalPath(entry.path, _databaseDirectory.path);
+      final String resolved = resolveInternalPath(
+        entry.path,
+        _databaseDirectory.path,
+      );
       if (!await File(resolved).exists()) {
-        debugPrint('[fushi-audio] DB missing, retaining source slot: $resolved'
-            '${resolved == entry.path ? '' : ' (stored: ${entry.path})'}');
+        debugPrint(
+          '[fushi-audio] DB missing, retaining source slot: $resolved'
+          '${resolved == entry.path ? '' : ' (stored: ${entry.path})'}',
+        );
       }
       // BUG-2265: resolver 的 dbIndex 按启用来源计数，缺失项也必须占位；
       // 否则前一个缓存库失效会把后面的正常库错配到其它来源。

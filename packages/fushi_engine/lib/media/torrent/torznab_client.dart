@@ -172,13 +172,12 @@ List<TorznabIndexerConfig> decodeTorznabIndexerConfigs(Object? value) {
 List<Map<String, Object?>> encodeTorznabIndexerConfigs(
   Iterable<TorznabIndexerConfig> configs, {
   bool includeSecrets = true,
-}) =>
-    configs
-        .map(
-          (TorznabIndexerConfig config) =>
-              config.toJson(includeSecrets: includeSecrets),
-        )
-        .toList(growable: false);
+}) => configs
+    .map(
+      (TorznabIndexerConfig config) =>
+          config.toJson(includeSecrets: includeSecrets),
+    )
+    .toList(growable: false);
 
 bool isLoopbackProviderHost(String host) {
   final String normalized = host.toLowerCase();
@@ -205,15 +204,15 @@ class TorznabCapabilities {
     Map<int, String> categories = const <int, String>{},
     this.maximumPageSize = 100,
     this.defaultPageSize = 100,
-  })  : modes = Set<TorznabSearchMode>.unmodifiable(modes),
-        supportedParameters = Map<TorznabSearchMode, Set<String>>.unmodifiable(
-          <TorznabSearchMode, Set<String>>{
-            for (final MapEntry<TorznabSearchMode, Set<String>> entry
-                in supportedParameters.entries)
-              entry.key: Set<String>.unmodifiable(entry.value),
-          },
-        ),
-        categories = Map<int, String>.unmodifiable(categories) {
+  }) : modes = Set<TorznabSearchMode>.unmodifiable(modes),
+       supportedParameters = Map<TorznabSearchMode, Set<String>>.unmodifiable(
+         <TorznabSearchMode, Set<String>>{
+           for (final MapEntry<TorznabSearchMode, Set<String>> entry
+               in supportedParameters.entries)
+             entry.key: Set<String>.unmodifiable(entry.value),
+         },
+       ),
+       categories = Map<int, String>.unmodifiable(categories) {
     if (maximumPageSize <= 0 || defaultPageSize <= 0) {
       throw ArgumentError('Torznab page sizes must be positive');
     }
@@ -306,8 +305,10 @@ TorznabCapabilities _parseTorznabCapabilities(String body) {
   final XmlElement? limits = _firstDescendant(root, 'limits');
   final int maximumPageSize = _positiveIntAttribute(limits, 'max') ?? 100;
   final int defaultPageSize =
-      (_positiveIntAttribute(limits, 'default') ?? maximumPageSize)
-          .clamp(1, maximumPageSize);
+      (_positiveIntAttribute(limits, 'default') ?? maximumPageSize).clamp(
+        1,
+        maximumPageSize,
+      );
   if (modes.isEmpty) modes.add(TorznabSearchMode.search);
   return TorznabCapabilities(
     modes: modes,
@@ -354,8 +355,9 @@ List<TorznabSearchItem> _parseTorznabSearchResponse(String body) {
       enclosure == null ? null : _attribute(enclosure, 'url'),
       _childText(item, 'link'),
     ]);
-    final Uri? downloadUri =
-        rawDownload == null ? null : Uri.tryParse(rawDownload.trim());
+    final Uri? downloadUri = rawDownload == null
+        ? null
+        : Uri.tryParse(rawDownload.trim());
     final String? rawHash = _firstNonEmpty(<String?>[
       attributes['infohash'],
       attributes['torrenthash'],
@@ -366,9 +368,11 @@ List<TorznabSearchItem> _parseTorznabSearchResponse(String body) {
     final String opaqueSeed = guid.isNotEmpty
         ? guid
         : infoHash ?? rawDownload ?? '$title:${output.length}';
-    final String remoteId =
-        crypto.sha1.convert(utf8.encode(opaqueSeed)).toString();
-    final String sizeText = _firstNonEmpty(<String?>[
+    final String remoteId = crypto.sha1
+        .convert(utf8.encode(opaqueSeed))
+        .toString();
+    final String sizeText =
+        _firstNonEmpty(<String?>[
           attributes['size'],
           _childText(item, 'size'),
           enclosure == null ? null : _attribute(enclosure, 'length'),
@@ -386,7 +390,7 @@ List<TorznabSearchItem> _parseTorznabSearchResponse(String body) {
         seeders: int.tryParse(attributes['seeders'] ?? '') ?? 0,
         leechers:
             int.tryParse(attributes['peers'] ?? attributes['leechers'] ?? '') ??
-                0,
+            0,
         completed: int.tryParse(attributes['grabs'] ?? '') ?? 0,
         publishedAt: parseNyaaPubDate(_childText(item, 'pubDate')),
         category: _firstNonEmpty(<String?>[
@@ -417,9 +421,9 @@ class TorznabClient implements VideoResourceProvider {
     this.requestTimeout = const Duration(seconds: 20),
     this.priorityOffset = 0,
     bool closesClient = true,
-  })  : indexers = List<TorznabIndexerConfig>.unmodifiable(indexers),
-        _client = client ?? http.Client(),
-        _closesClient = client == null || closesClient;
+  }) : indexers = List<TorznabIndexerConfig>.unmodifiable(indexers),
+       _client = client ?? http.Client(),
+       _closesClient = client == null || closesClient;
 
   final List<TorznabIndexerConfig> indexers;
   final http.Client _client;
@@ -457,11 +461,13 @@ class TorznabClient implements VideoResourceProvider {
       orElse: () => throw StateError('unknown Torznab indexer'),
     );
     final Uri uri = _buildUri(config, <String, String>{'t': 'caps'});
-    final http.Response response =
-        await _client.get(uri).timeout(requestTimeout);
+    final http.Response response = await _client
+        .get(uri)
+        .timeout(requestTimeout);
     _requireSuccess(config.id, 'capabilities', response);
-    final TorznabCapabilities capabilities =
-        parseTorznabCapabilities(utf8.decode(response.bodyBytes));
+    final TorznabCapabilities capabilities = parseTorznabCapabilities(
+      utf8.decode(response.bodyBytes),
+    );
     _capsCache[config.id] = capabilities;
     return capabilities;
   }
@@ -488,17 +494,17 @@ class TorznabClient implements VideoResourceProvider {
           );
     final List<ProviderBatchResult<VideoResourceCandidate>> batches =
         await Future.wait(
-      enabled.map(
-        (TorznabIndexerConfig config) => _searchIndexer(config, request),
-      ),
-    );
+          enabled.map(
+            (TorznabIndexerConfig config) => _searchIndexer(config, request),
+          ),
+        );
     final ProviderBatchResult<VideoResourceCandidate> merged =
         ProviderBatchResult.merge<VideoResourceCandidate>(batches);
     final int globalOffset = (request.page - 1) * request.limit;
     return ProviderBatchResult<VideoResourceCandidate>(
-      items: deduplicateVideoResources(merged.items)
-          .skip(globalOffset)
-          .take(request.limit),
+      items: deduplicateVideoResources(
+        merged.items,
+      ).skip(globalOffset).take(request.limit),
       failures: merged.failures,
       successfulProviderCount: merged.successfulProviderCount,
     );
@@ -509,13 +515,14 @@ class TorznabClient implements VideoResourceProvider {
     VideoResourceSearchRequest request,
   ) async {
     try {
-      final TorznabCapabilities capabilities =
-          await fetchCapabilities(config.id);
+      final TorznabCapabilities capabilities = await fetchCapabilities(
+        config.id,
+      );
       final TorznabSearchMode preferred = request.media == null
           ? TorznabSearchMode.search
           : request.media!.mediaKind == VideoMetadataMediaKind.movie
-              ? TorznabSearchMode.movie
-              : TorznabSearchMode.tv;
+          ? TorznabSearchMode.movie
+          : TorznabSearchMode.tv;
       final List<TorznabSearchMode> modes = <TorznabSearchMode>[
         if (capabilities.modes.contains(preferred)) preferred,
         if (preferred != TorznabSearchMode.search &&
@@ -551,9 +558,7 @@ class TorznabClient implements VideoResourceProvider {
           successfulProviderCount: items.isEmpty ? 0 : 1,
         );
       }
-      return ProviderBatchResult<VideoResourceCandidate>.success(
-        candidates,
-      );
+      return ProviderBatchResult<VideoResourceCandidate>.success(candidates);
     } on Object catch (error) {
       return ProviderBatchResult<VideoResourceCandidate>.failure(
         ExternalProviderFailure.fromException(
@@ -572,10 +577,7 @@ class TorznabClient implements VideoResourceProvider {
     VideoResourceSearchRequest request,
   ) async {
     final int targetLength = request.page * request.limit;
-    final int pageSize = request.limit.clamp(
-      1,
-      capabilities.maximumPageSize,
-    );
+    final int pageSize = request.limit.clamp(1, capabilities.maximumPageSize);
     final List<TorznabSearchItem> items = <TorznabSearchItem>[];
     final Set<String> seen = <String>{};
     for (int offset = 0; items.length < targetLength; offset += pageSize) {
@@ -699,8 +701,9 @@ class TorznabClient implements VideoResourceProvider {
         candidate.config,
         downloadUri,
       );
-      final String body =
-          utf8.decode(responseBytes, allowMalformed: true).trim();
+      final String body = utf8
+          .decode(responseBytes, allowMalformed: true)
+          .trim();
       if (body.toLowerCase().startsWith('magnet:')) {
         final String? hash = parseMagnetInfoHash(body);
         if (hash != null &&
@@ -750,8 +753,9 @@ class TorznabClient implements VideoResourceProvider {
       final http.Request request = http.Request('GET', current)
         ..followRedirects = false
         ..maxRedirects = 0;
-      final http.StreamedResponse response =
-          await _client.send(request).timeout(requestTimeout);
+      final http.StreamedResponse response = await _client
+          .send(request)
+          .timeout(requestTimeout);
       if (_isRedirectStatus(response.statusCode)) {
         final String? rawLocation = response.headers['location'];
         await _cancelStream(response.stream);
@@ -764,8 +768,9 @@ class TorznabClient implements VideoResourceProvider {
           );
         }
         final Uri? location = Uri.tryParse(rawLocation);
-        final Uri? next =
-            location == null ? null : current.resolveUri(location);
+        final Uri? next = location == null
+            ? null
+            : current.resolveUri(location);
         if (next == null ||
             next.host.isEmpty ||
             next.userInfo.isNotEmpty ||
@@ -804,9 +809,7 @@ class TorznabClient implements VideoResourceProvider {
     throw StateError('unreachable Torznab redirect loop');
   }
 
-  Future<Uint8List> _readLimitedTorrentBody(
-    Stream<List<int>> stream,
-  ) async {
+  Future<Uint8List> _readLimitedTorrentBody(Stream<List<int>> stream) async {
     final BytesBuilder body = BytesBuilder(copy: false);
     int length = 0;
     await for (final List<int> chunk in stream) {
@@ -830,10 +833,7 @@ class TorznabClient implements VideoResourceProvider {
     await subscription.cancel();
   }
 
-  Uri _buildUri(
-    TorznabIndexerConfig config,
-    Map<String, String> parameters,
-  ) =>
+  Uri _buildUri(TorznabIndexerConfig config, Map<String, String> parameters) =>
       config.endpoint.replace(
         queryParameters: <String, String>{
           ...parameters,
@@ -845,13 +845,12 @@ class TorznabClient implements VideoResourceProvider {
     String indexerId,
     String operation,
     http.Response response,
-  ) =>
-      _requireStatus(
-        indexerId,
-        operation,
-        response.statusCode,
-        response.headers,
-      );
+  ) => _requireStatus(
+    indexerId,
+    operation,
+    response.statusCode,
+    response.headers,
+  );
 
   void _requireStatus(
     String indexerId,
@@ -889,21 +888,21 @@ class _TorznabResourceCandidate extends VideoResourceCandidate {
     required this.item,
     required int providerPriority,
   }) : super(
-          providerId: 'torznab',
-          providerInstanceId: config.id,
-          remoteId: item.remoteId,
-          title: item.title,
-          providerPriority: providerPriority,
-          infoHash: item.infoHash,
-          sizeBytes: item.sizeBytes,
-          seeders: item.seeders,
-          leechers: item.leechers,
-          completed: item.completed,
-          publishedAt: item.publishedAt,
-          category: item.category,
-          detailsUrl: item.detailsUrl,
-          magnetUri: _persistableMagnet(item),
-        );
+         providerId: 'torznab',
+         providerInstanceId: config.id,
+         remoteId: item.remoteId,
+         title: item.title,
+         providerPriority: providerPriority,
+         infoHash: item.infoHash,
+         sizeBytes: item.sizeBytes,
+         seeders: item.seeders,
+         leechers: item.leechers,
+         completed: item.completed,
+         publishedAt: item.publishedAt,
+         category: item.category,
+         detailsUrl: item.detailsUrl,
+         magnetUri: _persistableMagnet(item),
+       );
 
   final TorznabIndexerConfig config;
   final TorznabSearchItem item;
@@ -1010,8 +1009,9 @@ String? _safePublicDetailsUrl(String raw) {
     'signature',
     'sig',
   };
-  if (uri.queryParameters.keys
-      .any((String key) => secretKeys.contains(key.toLowerCase()))) {
+  if (uri.queryParameters.keys.any(
+    (String key) => secretKeys.contains(key.toLowerCase()),
+  )) {
     return null;
   }
   return uri.toString();

@@ -58,8 +58,9 @@ class SyncConflictPrompter with PromptQueue {
     if (source == ConflictSource.auto) {
       if (inBook) return false; // 阅读中不打断
       // 整组都被本会话忽略过才压制；任一新指纹则仍弹。
-      final bool allSnoozed =
-          conflicts.every((SyncConflict c) => _snoozed.contains(c.fingerprint));
+      final bool allSnoozed = conflicts.every(
+        (SyncConflict c) => _snoozed.contains(c.fingerprint),
+      );
       if (allSnoozed) return false;
     }
     return true; // manual 不受 in-book/snooze 约束
@@ -96,15 +97,15 @@ class SyncConflictPrompter with PromptQueue {
     required bool inBook,
     Map<String, SyncChoice>? decisions,
     SyncConflictDecider? decider,
-  }) =>
-      enqueuePrompt(() => decider != null
-          ? decider.decide(
-              db: db,
-              backend: backend,
-              conflicts: conflicts,
-              decisions: decisions,
-            )
-          : _presentNow(
+  }) => enqueuePrompt(
+    () => decider != null
+        ? decider.decide(
+            db: db,
+            backend: backend,
+            conflicts: conflicts,
+            decisions: decisions,
+          )
+        : _presentNow(
             navigatorKey: navigatorKey,
             db: db,
             backend: backend,
@@ -112,7 +113,8 @@ class SyncConflictPrompter with PromptQueue {
             source: source,
             inBook: inBook,
             decisions: decisions,
-          ));
+          ),
+  );
 
   Future<void> _presentNow({
     required GlobalKey<NavigatorState> navigatorKey,
@@ -167,10 +169,10 @@ class SyncConflictPrompter with PromptQueue {
   }) async {
     final List<PlaybackPositionConflictView> views =
         await loadPlaybackPositionConflicts(
-      db: db,
-      backend: backend,
-      conflicts: conflicts,
-    );
+          db: db,
+          backend: backend,
+          conflicts: conflicts,
+        );
     if (views.isEmpty) return;
     final BuildContext? ctx = navigatorKey.currentContext;
     if (ctx == null || !ctx.mounted) return;
@@ -179,10 +181,10 @@ class SyncConflictPrompter with PromptQueue {
     try {
       final Map<int, SyncChoice>? decisions =
           await showAppDialog<Map<int, SyncChoice>>(
-        context: ctx,
-        barrierDismissible: false,
-        builder: (_) => PlaybackPositionConflictDialog(views: views),
-      );
+            context: ctx,
+            barrierDismissible: false,
+            builder: (_) => PlaybackPositionConflictDialog(views: views),
+          );
       if (decisions != null && decisions.isNotEmpty) {
         applied = await applyPlaybackPositionDecisions(views, decisions);
       }

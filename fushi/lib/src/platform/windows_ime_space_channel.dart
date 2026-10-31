@@ -9,8 +9,9 @@ import 'package:flutter/services.dart';
 /// the framework event. The runner still has the original scan code and emits
 /// [onImeSpaceDown] only for the unmodified Space make-code.
 abstract final class WindowsImeSpaceChannel {
-  static const MethodChannel _channel =
-      MethodChannel('app.fushi/windows_ime_space');
+  static const MethodChannel _channel = MethodChannel(
+    'app.fushi/windows_ime_space',
+  );
 
   static Object? _owner;
   static VoidCallback? _handler;

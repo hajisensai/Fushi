@@ -33,8 +33,11 @@ void main() {
       final int start = src.indexOf('_settleAndNotify: function(', from);
       if (start < 0) break;
       final int end = src.indexOf('restoreProgress:', start);
-      expect(end, greaterThan(start),
-          reason: '_settleAndNotify 之后应紧跟 restoreProgress（用于界定函数体范围）');
+      expect(
+        end,
+        greaterThan(start),
+        reason: '_settleAndNotify 之后应紧跟 restoreProgress（用于界定函数体范围）',
+      );
       bodies.add(src.substring(start, end));
       from = end;
     }
@@ -46,9 +49,13 @@ void main() {
     final List<String> bodies = settleBodies(src);
     expect(bodies.length, 2, reason: '分页 / 连续两个 shell 各有一处 _settleAndNotify');
     for (final String body in bodies) {
-      expect('setTimeout('.allMatches(body).length, 1,
-          reason: '_settleAndNotify 里出现了不止一层 setTimeout —— 第二层历史上是**空等**，'
-              '删它正是 BUG-1140 的提速主体。要加回来必须先在 BUG 文档里说明它等的是什么。');
+      expect(
+        'setTimeout('.allMatches(body).length,
+        1,
+        reason:
+            '_settleAndNotify 里出现了不止一层 setTimeout —— 第二层历史上是**空等**，'
+            '删它正是 BUG-1140 的提速主体。要加回来必须先在 BUG 文档里说明它等的是什么。',
+      );
     }
   });
 
@@ -60,14 +67,19 @@ void main() {
     final int notify = body.indexOf('notifyRestoreComplete(');
     expect(setPos, greaterThan(-1), reason: 'settle 必须同步重设落点');
     expect(snap, greaterThan(setPos), reason: 'snap 基线须在落点写入之后注册');
-    expect(notify, greaterThan(snap),
-        reason: '通知 Dart 必须排在落点写入与 snap 注册之后 —— 顺序一乱，'
-            '「Dart 收到就绪时落点已定」就从 program-order 保证退化成时间赌');
+    expect(
+      notify,
+      greaterThan(snap),
+      reason:
+          '通知 Dart 必须排在落点写入与 snap 注册之后 —— 顺序一乱，'
+          '「Dart 收到就绪时落点已定」就从 program-order 保证退化成时间赌',
+    );
   });
 
   test('延后一帧的跨章收尾必须带 _navigateGeneration 代际守卫', () {
     final String src = read(
-        'lib/src/pages/implementations/reader_fushi/navigation.part.dart');
+      'lib/src/pages/implementations/reader_fushi/navigation.part.dart',
+    );
     final int start = src.indexOf('void _onRestoreComplete() {');
     expect(start, greaterThan(-1), reason: '找不到 _onRestoreComplete');
     // 以收尾内容定位块（_onRestoreComplete 里不只一个 postFrame 回调），
@@ -75,9 +87,14 @@ void main() {
     final int highlight = src.indexOf('_applyChapterHighlights();', start);
     expect(highlight, greaterThan(start), reason: '收尾块里应重新应用收藏高亮');
     final int postFrame = src.lastIndexOf(
-        'WidgetsBinding.instance.addPostFrameCallback', highlight);
-    expect(postFrame, greaterThan(start),
-        reason: '跨章收尾应在 _onRestoreComplete 里延后一帧执行');
+      'WidgetsBinding.instance.addPostFrameCallback',
+      highlight,
+    );
+    expect(
+      postFrame,
+      greaterThan(start),
+      reason: '跨章收尾应在 _onRestoreComplete 里延后一帧执行',
+    );
     final int end = src.indexOf('\n    });', postFrame);
     expect(end, greaterThan(postFrame));
     final String block = src.substring(postFrame, end);
@@ -89,17 +106,27 @@ void main() {
       '_refreshProgress()',
       '_startProgressPoll()',
     ]) {
-      expect(block.contains(call), isTrue,
-          reason: '延后一帧的收尾块里少了 $call —— 挪帧不该丢功能');
+      expect(
+        block.contains(call),
+        isTrue,
+        reason: '延后一帧的收尾块里少了 $call —— 挪帧不该丢功能',
+      );
     }
 
     // 代际守卫：mounted 之外还要比对 _navigateGeneration 快照。
     expect(block.contains('mounted'), isTrue);
-    expect(block.contains('_navigateGeneration'), isTrue,
-        reason: '收尾晚一帧执行时可能已经起了新导航；只有 mounted 守卫会把旧章位置'
-            '写进新导航（_refreshProgress 落库）。必须比对入口快照的代际。');
+    expect(
+      block.contains('_navigateGeneration'),
+      isTrue,
+      reason:
+          '收尾晚一帧执行时可能已经起了新导航；只有 mounted 守卫会把旧章位置'
+          '写进新导航（_refreshProgress 落库）。必须比对入口快照的代际。',
+    );
     final int snapshot = src.lastIndexOf('= _navigateGeneration;', postFrame);
-    expect(snapshot, greaterThan(start),
-        reason: '代际快照必须在 addPostFrameCallback 之前取（回调里再读就恒相等）');
+    expect(
+      snapshot,
+      greaterThan(start),
+      reason: '代际快照必须在 addPostFrameCallback 之前取（回调里再读就恒相等）',
+    );
   });
 }

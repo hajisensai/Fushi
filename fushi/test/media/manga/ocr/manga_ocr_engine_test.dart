@@ -5,17 +5,16 @@ MangaOcrEngineCapability capability(
   MangaOcrEngineId id, {
   bool supported = true,
   bool ready = true,
-}) =>
-    MangaOcrEngineCapability(
-      id: id,
-      supported: supported,
-      ready: ready,
-      requiresNetwork: id == MangaOcrEngineId.googleLens ||
-          id == MangaOcrEngineId.pairedHost,
-      uploadsImages: id == MangaOcrEngineId.googleLens ||
-          id == MangaOcrEngineId.pairedHost,
-      supportsIncremental: id != MangaOcrEngineId.externalMokuro,
-    );
+}) => MangaOcrEngineCapability(
+  id: id,
+  supported: supported,
+  ready: ready,
+  requiresNetwork:
+      id == MangaOcrEngineId.googleLens || id == MangaOcrEngineId.pairedHost,
+  uploadsImages:
+      id == MangaOcrEngineId.googleLens || id == MangaOcrEngineId.pairedHost,
+  supportsIncremental: id != MangaOcrEngineId.externalMokuro,
+);
 
 void main() {
   test('stable preference keys round-trip without enum indexes', () {
@@ -29,29 +28,31 @@ void main() {
     );
   });
 
-  test('automatic route never selects Lens even when it is the only ready one',
-      () {
-    final MangaOcrEngineId? selected = resolveMangaOcrEngine(
-      preference: MangaOcrEnginePreference.auto,
-      hasExistingMetadata: false,
-      capabilities: <MangaOcrEngineCapability>[
-        capability(MangaOcrEngineId.localOnnx, ready: false),
-        capability(MangaOcrEngineId.googleLens),
-        capability(MangaOcrEngineId.externalMokuro, ready: false),
-        capability(MangaOcrEngineId.pairedHost, ready: false),
-      ],
-    );
-    expect(selected, isNull);
-  });
+  test(
+    'automatic route never selects Lens even when it is the only ready one',
+    () {
+      final MangaOcrEngineId? selected = resolveMangaOcrEngine(
+        preference: MangaOcrEnginePreference.auto,
+        hasExistingMetadata: false,
+        capabilities: <MangaOcrEngineCapability>[
+          capability(MangaOcrEngineId.localOnnx, ready: false),
+          capability(MangaOcrEngineId.googleLens),
+          capability(MangaOcrEngineId.externalMokuro, ready: false),
+          capability(MangaOcrEngineId.pairedHost, ready: false),
+        ],
+      );
+      expect(selected, isNull);
+    },
+  );
 
   test('automatic route is local, external, then paired host', () {
     final List<MangaOcrEngineCapability> capabilities =
         <MangaOcrEngineCapability>[
-      capability(MangaOcrEngineId.localOnnx, ready: false),
-      capability(MangaOcrEngineId.googleLens),
-      capability(MangaOcrEngineId.externalMokuro),
-      capability(MangaOcrEngineId.pairedHost),
-    ];
+          capability(MangaOcrEngineId.localOnnx, ready: false),
+          capability(MangaOcrEngineId.googleLens),
+          capability(MangaOcrEngineId.externalMokuro),
+          capability(MangaOcrEngineId.pairedHost),
+        ];
     expect(
       resolveMangaOcrEngine(
         preference: MangaOcrEnginePreference.auto,

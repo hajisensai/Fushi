@@ -20,46 +20,47 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets(
-      'BUG-2766: network source transport labels stay on one line at phone width',
-      (WidgetTester tester) async {
-    tester.view.physicalSize = const Size(360, 800);
-    tester.view.devicePixelRatio = 1.0;
-    addTearDown(tester.view.reset);
+    'BUG-2766: network source transport labels stay on one line at phone width',
+    (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(360, 800);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
 
-    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
-    addTearDown(db.close);
-    final AppModel appModel = AppModel(testPlatformServices())
-      ..wireDatabaseForTesting(db);
-    final GlobalKey<MediaSourcesViewState> viewKey =
-        GlobalKey<MediaSourcesViewState>();
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
+      addTearDown(db.close);
+      final AppModel appModel = AppModel(testPlatformServices())
+        ..wireDatabaseForTesting(db);
+      final GlobalKey<MediaSourcesViewState> viewKey =
+          GlobalKey<MediaSourcesViewState>();
 
-    await tester.pumpWidget(
-      ProviderScope(
-        overrides: <Override>[
-          appProvider.overrideWith((ref) => appModel),
-        ],
-        child: MaterialApp(
-          home: Scaffold(
-            // book 域开放全部 4 个协议，最容易挤。
-            body: MediaSourcesView(key: viewKey, mediaKind: 'book'),
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: <Override>[appProvider.overrideWith((ref) => appModel)],
+          child: MaterialApp(
+            home: Scaffold(
+              // book 域开放全部 4 个协议，最容易挤。
+              body: MediaSourcesView(key: viewKey, mediaKind: 'book'),
+            ),
           ),
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
+      );
+      await tester.pumpAndSettle();
 
-    viewKey.currentState!.addSource();
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Network'));
-    await tester.pumpAndSettle();
+      viewKey.currentState!.addSource();
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Network'));
+      await tester.pumpAndSettle();
 
-    expect(tester.takeException(), isNull);
-    for (final String label in <String>['SFTP', 'FTP', 'WebDAV', 'AList']) {
-      final Finder text = find.text(label);
-      expect(text, findsOneWidget, reason: label);
-      final Size size = tester.getSize(text);
-      // 竖排时文字框窄而高；横排单行必然宽大于高。
-      expect(size.width, greaterThan(size.height), reason: '$label: $size');
-    }
-  });
+      expect(tester.takeException(), isNull);
+      for (final String label in <String>['SFTP', 'FTP', 'WebDAV', 'AList']) {
+        final Finder text = find.text(label);
+        expect(text, findsOneWidget, reason: label);
+        final Size size = tester.getSize(text);
+        // 竖排时文字框窄而高；横排单行必然宽大于高。
+        expect(size.width, greaterThan(size.height), reason: '$label: $size');
+      }
+    },
+  );
 }

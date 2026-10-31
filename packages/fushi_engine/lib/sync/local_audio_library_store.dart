@@ -32,14 +32,15 @@ class LocalAudioLibraryStore {
   LocalAudioLibraryStore({
     required PrefStore prefs,
     required Directory databaseDirectory,
-  })  : _prefs = prefs,
-        _databaseDirectory = databaseDirectory;
+  }) : _prefs = prefs,
+       _databaseDirectory = databaseDirectory;
 
   /// 与 app `LocalAudioManager` 共用的登记偏好键。
   static const String entriesPrefKey = 'local_audio_dbs';
 
-  static final RegExp _internalCopyNamePattern =
-      RegExp(r'^local_audio_\d+\.db$');
+  static final RegExp _internalCopyNamePattern = RegExp(
+    r'^local_audio_\d+\.db$',
+  );
 
   static const List<int> _sqliteMagic = <int>[
     0x53, 0x51, 0x4c, 0x69, 0x74, 0x65, 0x20, 0x66, // "SQLite f"
@@ -54,17 +55,18 @@ class LocalAudioLibraryStore {
   /// 当前登记的本地音频库（登记顺序 = 优先级序）。内部副本的 path 按文件名
   /// 重挂到本机库目录——数据根整体搬家后源绝对前缀失效，只有文件名可信。
   List<LocalAudioDbEntry> get entries => <LocalAudioDbEntry>[
-        for (final LocalAudioDbEntry e in _readStored())
-          e.copyWith(path: _resolve(e.path)),
-      ];
+    for (final LocalAudioDbEntry e in _readStored())
+      e.copyWith(path: _resolve(e.path)),
+  ];
 
   /// 登记一个已解包的本地音频包：把 DB 拷进库目录并追加登记。按 displayName
   /// 去重（已存在则跳过，与 app `importSyncedLocalAudioDb` 同语义），返回是否
   /// 真的新增了。
   Future<bool> importPackage(LocalAudioPackageContents contents) async {
     final List<LocalAudioDbEntry> stored = _readStored();
-    if (stored
-        .any((LocalAudioDbEntry e) => e.displayName == contents.displayName)) {
+    if (stored.any(
+      (LocalAudioDbEntry e) => e.displayName == contents.displayName,
+    )) {
       return false;
     }
     if (!await _isSqliteFile(contents.dbFile)) {
@@ -74,8 +76,10 @@ class LocalAudioLibraryStore {
     // 文件名只要唯一：毫秒相同强制 +1，撞上已有文件（上次进程留下）也跳过。
     int stamp = DateTime.now().millisecondsSinceEpoch;
     if (stamp <= _lastStamp) stamp = _lastStamp + 1;
-    String internalPath =
-        p.join(_databaseDirectory.path, 'local_audio_$stamp.db');
+    String internalPath = p.join(
+      _databaseDirectory.path,
+      'local_audio_$stamp.db',
+    );
     while (await File(internalPath).exists()) {
       stamp++;
       internalPath = p.join(_databaseDirectory.path, 'local_audio_$stamp.db');
@@ -104,8 +108,9 @@ class LocalAudioLibraryStore {
   /// 库目录之外的路径（外部引用）只摘登记、不动文件。找不到时幂等返回。
   Future<void> remove(String displayName) async {
     final List<LocalAudioDbEntry> stored = _readStored();
-    final int index = stored
-        .indexWhere((LocalAudioDbEntry e) => e.displayName == displayName);
+    final int index = stored.indexWhere(
+      (LocalAudioDbEntry e) => e.displayName == displayName,
+    );
     if (index < 0) return;
     final LocalAudioDbEntry removed = stored.removeAt(index);
     await _writeStored(stored);
@@ -131,11 +136,11 @@ class LocalAudioLibraryStore {
   }
 
   Future<void> _writeStored(List<LocalAudioDbEntry> entries) => _prefs.setPref(
-        entriesPrefKey,
-        jsonEncode(<Map<String, dynamic>>[
-          for (final LocalAudioDbEntry e in entries) e.toJson(),
-        ]),
-      );
+    entriesPrefKey,
+    jsonEncode(<Map<String, dynamic>>[
+      for (final LocalAudioDbEntry e in entries) e.toJson(),
+    ]),
+  );
 
   static String _basenameAnySep(String path) {
     final int cut = path.lastIndexOf('/') > path.lastIndexOf('\\')

@@ -24,10 +24,7 @@ int? collectionIdOfTagEntryKey(String entryKey) => int.tryParse(entryKey);
 
 /// 一个标签宿主的同步时钟：当前标签「名 → 加入毫秒戳」与移除墓碑「名 → 移除
 /// 毫秒戳」（LWW-element-set 的两半，互联标签同步清单的载荷单位）。
-typedef TagClockSet = ({
-  Map<String, int> addedAt,
-  Map<String, int> tombstones,
-});
+typedef TagClockSet = ({Map<String, int> addedAt, Map<String, int> tombstones});
 
 /// 一个宿主的「私密」标记时钟（[MediaPrivacyFlags] 一行；互联标签同步清单条目上的
 /// `privacy` 载荷）。两只戳都为 null = 从没标过。
@@ -42,8 +39,7 @@ bool isPrivateByClock(MediaPrivacyClock clock) {
 }
 
 /// 两只私密时钟逐戳取大（LWW 合并；重放幂等、与顺序无关）。
-MediaPrivacyClock mergePrivacyClocks(
-    MediaPrivacyClock a, MediaPrivacyClock b) {
+MediaPrivacyClock mergePrivacyClocks(MediaPrivacyClock a, MediaPrivacyClock b) {
   int? maxOf(int? x, int? y) => x == null ? y : (y == null || x >= y ? x : y);
   return (
     privateAt: maxOf(a.privateAt, b.privateAt),

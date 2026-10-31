@@ -64,106 +64,92 @@ void main() {
       expect((await db.getAllCollectionItems()).single.entryKey, video.id);
     },
   );
-  test(
-    'BUG-3443 同类：无合集归属的下载书也记下落地键与对端键的对应，'
-    '删除墓碑据此写对端键 / 把对端墓碑换算回本机',
-    () async {
-      const RemoteBookInfo book = RemoteBookInfo(
-        title: '吾輩は猫である',
-        bookKey: '吾輩は猫である(2)',
-        hasContent: true,
-      );
-      final EpubBookRow row = await insertBook('吾輩は猫である');
-      // 目录刷新（无 localBook）不建立对应：按对端键反查本来就查不到本机行。
-      await service.adoptBook(book);
-      expect(await db.getCollectionBookAliases(), isEmpty);
-      await service.adoptBook(book, localBook: row);
-      expect(await db.getAllCollectionItems(), isEmpty);
-      expect(
-        await db.syncDeletionBookKeyOf('吾輩は猫である'),
-        '吾輩は猫である(2)',
-      );
-      expect(await db.getPeerToLocalBookKeys(), <String, String>{
-        '吾輩は猫である(2)': '吾輩は猫である',
-      });
-      // 没有对应的书照旧写本机键。
-      await insertBook('Kokoro');
-      expect(await db.syncDeletionBookKeyOf('Kokoro'), 'Kokoro');
-    },
-  );
-  test(
-    'BUG-3429：删了又重新下载（落地键≠对端键）撤销那条对端键墓碑；'
-    '目录刷新不算重新入库、不碰墓碑',
-    () async {
-      const RemoteBookInfo book = RemoteBookInfo(
-        title: '吾輩は猫である',
-        bookKey: '吾輩は猫である(2)',
-        hasContent: true,
-      );
-      Future<Set<String>> pendingBookTombstones() async => <String>{
-        for (final SyncDeletionTombstoneRow r
-            in await db.getSyncDeletionTombstonesOfType(
-              SyncTombstoneKind.book.dbValue,
-            ))
-          r.itemKey,
-      };
-      // 上一次「从所有设备删除」写下的对端键墓碑（还没推给 host）+ 一条无关的。
-      await db.writeSyncDeletionTombstone(
-        SyncTombstoneKind.book.dbValue,
-        '吾輩は猫である(2)',
-        100,
-      );
-      await db.writeSyncDeletionTombstone(
-        SyncTombstoneKind.book.dbValue,
-        'Other',
-        100,
-      );
-      final EpubBookRow row = await insertBook('吾輩は猫である');
+  test('BUG-3443 同类：无合集归属的下载书也记下落地键与对端键的对应，'
+      '删除墓碑据此写对端键 / 把对端墓碑换算回本机', () async {
+    const RemoteBookInfo book = RemoteBookInfo(
+      title: '吾輩は猫である',
+      bookKey: '吾輩は猫である(2)',
+      hasContent: true,
+    );
+    final EpubBookRow row = await insertBook('吾輩は猫である');
+    // 目录刷新（无 localBook）不建立对应：按对端键反查本来就查不到本机行。
+    await service.adoptBook(book);
+    expect(await db.getCollectionBookAliases(), isEmpty);
+    await service.adoptBook(book, localBook: row);
+    expect(await db.getAllCollectionItems(), isEmpty);
+    expect(await db.syncDeletionBookKeyOf('吾輩は猫である'), '吾輩は猫である(2)');
+    expect(await db.getPeerToLocalBookKeys(), <String, String>{
+      '吾輩は猫である(2)': '吾輩は猫である',
+    });
+    // 没有对应的书照旧写本机键。
+    await insertBook('Kokoro');
+    expect(await db.syncDeletionBookKeyOf('Kokoro'), 'Kokoro');
+  });
+  test('BUG-3429：删了又重新下载（落地键≠对端键）撤销那条对端键墓碑；'
+      '目录刷新不算重新入库、不碰墓碑', () async {
+    const RemoteBookInfo book = RemoteBookInfo(
+      title: '吾輩は猫である',
+      bookKey: '吾輩は猫である(2)',
+      hasContent: true,
+    );
+    Future<Set<String>> pendingBookTombstones() async => <String>{
+      for (final SyncDeletionTombstoneRow r
+          in await db.getSyncDeletionTombstonesOfType(
+            SyncTombstoneKind.book.dbValue,
+          ))
+        r.itemKey,
+    };
+    // 上一次「从所有设备删除」写下的对端键墓碑（还没推给 host）+ 一条无关的。
+    await db.writeSyncDeletionTombstone(
+      SyncTombstoneKind.book.dbValue,
+      '吾輩は猫である(2)',
+      100,
+    );
+    await db.writeSyncDeletionTombstone(
+      SyncTombstoneKind.book.dbValue,
+      'Other',
+      100,
+    );
+    final EpubBookRow row = await insertBook('吾輩は猫である');
 
-      await service.adoptBook(book);
-      expect(
-        await pendingBookTombstones(),
-        <String>{'吾輩は猫である(2)', 'Other'},
-        reason: '目录刷新没有重新入库，不得撤销删除',
-      );
+    await service.adoptBook(book);
+    expect(await pendingBookTombstones(), <String>{
+      '吾輩は猫である(2)',
+      'Other',
+    }, reason: '目录刷新没有重新入库，不得撤销删除');
 
-      await service.adoptBook(book, localBook: row);
-      expect(
-        await pendingBookTombstones(),
-        <String>{'Other'},
-        reason: '重新下载入库后那条对端键墓碑若留着，下一轮会推给 host 把书删掉',
-      );
-    },
-  );
-  test(
-    'BUG-3429：重新给落地键≠对端键的书配上有声书，撤销那条对端键有声书墓碑',
-    () async {
-      // deleteAudiobook 的尾活会回收持久目录：把文档根钉到临时目录。
-      final Directory docs =
-          await Directory.systemTemp.createTemp('fushi-adopt-ab-');
-      AudiobookStorage.documentsRootResolver = () async => docs;
-      addTearDown(() async {
-        AudiobookStorage.documentsRootResolver = null;
-        if (await docs.exists()) await docs.delete(recursive: true);
-      });
-      final EpubBookRow row = await insertBook('Neko');
-      await db.setCollectionBookAlias(row.uid, 'Neko(2)');
-      final AudiobookRepository audiobooks = AudiobookRepository(db);
-      await audiobooks.ensureAudiobook('Neko');
-      await audiobooks.deleteAudiobook('Neko', propagateDeletion: true);
-      Future<Set<String>> pending() async => <String>{
-        for (final SyncDeletionTombstoneRow r
-            in await db.getSyncDeletionTombstonesOfType(
-              SyncTombstoneKind.audiobook.dbValue,
-            ))
-          r.itemKey,
-      };
-      expect(await pending(), <String>{'Neko(2)'});
+    await service.adoptBook(book, localBook: row);
+    expect(await pendingBookTombstones(), <String>{
+      'Other',
+    }, reason: '重新下载入库后那条对端键墓碑若留着，下一轮会推给 host 把书删掉');
+  });
+  test('BUG-3429：重新给落地键≠对端键的书配上有声书，撤销那条对端键有声书墓碑', () async {
+    // deleteAudiobook 的尾活会回收持久目录：把文档根钉到临时目录。
+    final Directory docs = await Directory.systemTemp.createTemp(
+      'fushi-adopt-ab-',
+    );
+    AudiobookStorage.documentsRootResolver = () async => docs;
+    addTearDown(() async {
+      AudiobookStorage.documentsRootResolver = null;
+      if (await docs.exists()) await docs.delete(recursive: true);
+    });
+    final EpubBookRow row = await insertBook('Neko');
+    await db.setCollectionBookAlias(row.uid, 'Neko(2)');
+    final AudiobookRepository audiobooks = AudiobookRepository(db);
+    await audiobooks.ensureAudiobook('Neko');
+    await audiobooks.deleteAudiobook('Neko', propagateDeletion: true);
+    Future<Set<String>> pending() async => <String>{
+      for (final SyncDeletionTombstoneRow r
+          in await db.getSyncDeletionTombstonesOfType(
+            SyncTombstoneKind.audiobook.dbValue,
+          ))
+        r.itemKey,
+    };
+    expect(await pending(), <String>{'Neko(2)'});
 
-      await audiobooks.ensureAudiobook('Neko');
-      expect(await pending(), isEmpty);
-    },
-  );
+    await audiobooks.ensureAudiobook('Neko');
+    expect(await pending(), isEmpty);
+  });
   for (final String format in ['epub', 'manga']) {
     test(
       '$format placeholder promotes using actual imported row UID',

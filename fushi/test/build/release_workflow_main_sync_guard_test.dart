@@ -35,36 +35,56 @@ void main() {
 
   test('只在 release.yml 有同步步，release-desktop.yml 没有', () {
     expect(read('release.yml'), contains('- name: $stepName'));
-    expect(read('release-desktop.yml'), isNot(contains(stepName)),
-        reason: '两条正式版 workflow 并行，各推一次 main 就是两条合并提交；只留 release.yml 那一份');
+    expect(
+      read('release-desktop.yml'),
+      isNot(contains(stepName)),
+      reason: '两条正式版 workflow 并行，各推一次 main 就是两条合并提交；只留 release.yml 那一份',
+    );
   });
 
   test('只在正式通道跑，且排在更新清单发布之后', () {
     final String yaml = read('release.yml');
     final String body = stepBody(yaml, stepName);
-    expect(body,
-        contains("if: steps.channel.outputs.manifest_channel == 'formal'"),
-        reason: 'debug / beta / 手动 prerelease 绝不能动 main');
-    final int manifestAt =
-        yaml.indexOf('- name: Publish mirror update manifest (Android assets)');
+    expect(
+      body,
+      contains("if: steps.channel.outputs.manifest_channel == 'formal'"),
+      reason: 'debug / beta / 手动 prerelease 绝不能动 main',
+    );
+    final int manifestAt = yaml.indexOf(
+      '- name: Publish mirror update manifest (Android assets)',
+    );
     final int syncAt = yaml.indexOf('- name: $stepName');
     expect(manifestAt, isNot(-1));
-    expect(syncAt, greaterThan(manifestAt),
-        reason: '清单落地 = 资产上传完；同步 main 必须在它之后，否则「发布失败但 main 已推进」');
+    expect(
+      syncAt,
+      greaterThan(manifestAt),
+      reason: '清单落地 = 资产上传完；同步 main 必须在它之后，否则「发布失败但 main 已推进」',
+    );
   });
 
   test('合并方式：--no-ff -X theirs，失败 abort 报错，绝不 force-push', () {
     final String body = stepBody(read('release.yml'), stepName);
-    expect(body, contains('git -C "\$WORK" merge --no-ff -X theirs'),
-        reason: 'main 上的机器人图表提交让纯快进永远失败；-X theirs 只让图表 SVG 取 develop 的');
+    expect(
+      body,
+      contains('git -C "\$WORK" merge --no-ff -X theirs'),
+      reason: 'main 上的机器人图表提交让纯快进永远失败；-X theirs 只让图表 SVG 取 develop 的',
+    );
     expect(body, contains('merge --abort'));
     expect(body, contains('::error title=main sync failed::'));
-    expect(body, contains('merge-base --is-ancestor origin/develop HEAD'),
-        reason: 'develop 已在 main 里时要幂等跳过，不能空合并');
-    expect(RegExp(r'push[^\n]*(--force|-f\b|\+refs/heads/main)').hasMatch(body),
-        isFalse,
-        reason: 'force-push 会抹掉 main 的历史（人工合并提交与图表提交）');
-    expect(body, contains('x-access-token:\${GITHUB_TOKEN}@github.com'),
-        reason: '必须用 GITHUB_TOKEN 推：它的 push 不级联触发 main 的 push 构建');
+    expect(
+      body,
+      contains('merge-base --is-ancestor origin/develop HEAD'),
+      reason: 'develop 已在 main 里时要幂等跳过，不能空合并',
+    );
+    expect(
+      RegExp(r'push[^\n]*(--force|-f\b|\+refs/heads/main)').hasMatch(body),
+      isFalse,
+      reason: 'force-push 会抹掉 main 的历史（人工合并提交与图表提交）',
+    );
+    expect(
+      body,
+      contains('x-access-token:\${GITHUB_TOKEN}@github.com'),
+      reason: '必须用 GITHUB_TOKEN 推：它的 push 不级联触发 main 的 push 构建',
+    );
   });
 }

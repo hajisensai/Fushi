@@ -22,7 +22,9 @@ void main() {
       expect(kRecommendedPackGoogleDriveDirectUrl, contains('confirm=t'));
       // BUG-3758：回退线路也必须带钉死的摘要，不能整包不校验就进备份导入。
       expect(
-          kRecommendedPackWholeFileSha256, matches(RegExp(r'^[0-9a-f]{64}$')));
+        kRecommendedPackWholeFileSha256,
+        matches(RegExp(r'^[0-9a-f]{64}$')),
+      );
       // 分享页与直下链指向同一个文件 id，换包时两处一起换。
       expect(
         kRecommendedPackGoogleDriveUrl,
@@ -30,92 +32,104 @@ void main() {
       );
     });
 
-    test('every route names the pack file the same, whatever the URL is',
-        () async {
-      final Directory dir =
-          await Directory.systemTemp.createTemp('recommended_pack_test');
-      addTearDown(() => dir.delete(recursive: true));
-      // 落盘名恒定，不再从 URL 尾段推导。推导过一次，代价是清单线路把包落成了
-      // `recommended_pack/download`（清单的 url 是 Drive 直下地址，尾段就是
-      // 'download'），于是两条线路各存一份半截，跨线路续传从来没成立过。
-      final RecommendedPackDownloader google = RecommendedPackDownloader(
-        packDir: dir,
-        url: kRecommendedPackGoogleDriveDirectUrl,
-        sha256Hex: kRecommendedPackWholeFileSha256,
-      );
-      expect(p.basename(google.packFile.path), kRecommendedPackFileName);
-      expect(kRecommendedPackFileName, endsWith('.fushi.zip'));
+    test(
+      'every route names the pack file the same, whatever the URL is',
+      () async {
+        final Directory dir = await Directory.systemTemp.createTemp(
+          'recommended_pack_test',
+        );
+        addTearDown(() => dir.delete(recursive: true));
+        // 落盘名恒定，不再从 URL 尾段推导。推导过一次，代价是清单线路把包落成了
+        // `recommended_pack/download`（清单的 url 是 Drive 直下地址，尾段就是
+        // 'download'），于是两条线路各存一份半截，跨线路续传从来没成立过。
+        final RecommendedPackDownloader google = RecommendedPackDownloader(
+          packDir: dir,
+          url: kRecommendedPackGoogleDriveDirectUrl,
+          sha256Hex: kRecommendedPackWholeFileSha256,
+        );
+        expect(p.basename(google.packFile.path), kRecommendedPackFileName);
+        expect(kRecommendedPackFileName, endsWith('.fushi.zip'));
 
-      final RecommendedPackDownloader bare = RecommendedPackDownloader(
-        packDir: dir,
-        url: 'https://example.invalid/a.zip',
-        sha256Hex: _sha,
-      );
-      expect(p.basename(bare.packFile.path), kRecommendedPackFileName);
-    });
-
-    test('fromManifest names the pack file after the constant, not the URL',
-        () async {
-      final Directory dir =
-          await Directory.systemTemp.createTemp('recommended_pack_test');
-      addTearDown(() => dir.delete(recursive: true));
-      // 线上清单的 url 就是 Drive 直下地址（整包镜像）。回归点：这里曾落成
-      // 'download'，两条线路因此各下各的 9.5 GB。
-      final RecommendedPackManifest? manifest = parseRecommendedPackManifest(
-        '{"version":"2026-08-14",'
-        '"url":"$kRecommendedPackGoogleDriveDirectUrl",'
-        '"sha256":"$_sha","size_bytes":10220484385}',
-      );
-      expect(manifest, isNotNull);
-      final RecommendedPackDownloader fromManifest =
-          RecommendedPackDownloader.fromManifest(
-        packDir: dir,
-        manifest: manifest!,
-      );
-      expect(
-        p.basename(fromManifest.packFile.path),
-        kRecommendedPackFileName,
-      );
-      expect(p.basename(fromManifest.packFile.path), isNot('download'));
-    });
-
-    test('migrateLegacyArtifacts moves the old download* half files over',
-        () async {
-      final Directory dir =
-          await Directory.systemTemp.createTemp('recommended_pack_test');
-      addTearDown(() => dir.delete(recursive: true));
-      File(p.join(dir.path, 'download.mpart')).writeAsStringSync('halfway');
-      File(p.join(dir.path, 'download.mpart.json')).writeAsStringSync('{}');
-
-      RecommendedPackDownloader.migrateLegacyArtifacts(dir);
-
-      // 升级不该让已下的 9.5 GB 作废。
-      expect(
-        File(p.join(dir.path, '$kRecommendedPackFileName.mpart'))
-            .readAsStringSync(),
-        'halfway',
-      );
-      expect(
-        File(p.join(dir.path, '$kRecommendedPackFileName.mpart.json'))
-            .existsSync(),
-        isTrue,
-      );
-      expect(File(p.join(dir.path, 'download.mpart')).existsSync(), isFalse);
-
-      // 幂等：再跑一次不会把已经搬好的文件弄坏。
-      RecommendedPackDownloader.migrateLegacyArtifacts(dir);
-      expect(
-        File(p.join(dir.path, '$kRecommendedPackFileName.mpart'))
-            .readAsStringSync(),
-        'halfway',
-      );
-    });
+        final RecommendedPackDownloader bare = RecommendedPackDownloader(
+          packDir: dir,
+          url: 'https://example.invalid/a.zip',
+          sha256Hex: _sha,
+        );
+        expect(p.basename(bare.packFile.path), kRecommendedPackFileName);
+      },
+    );
 
     test(
-        'migrateLegacyArtifacts 不搬没有包体的孤儿进度文件'
+      'fromManifest names the pack file after the constant, not the URL',
+      () async {
+        final Directory dir = await Directory.systemTemp.createTemp(
+          'recommended_pack_test',
+        );
+        addTearDown(() => dir.delete(recursive: true));
+        // 线上清单的 url 就是 Drive 直下地址（整包镜像）。回归点：这里曾落成
+        // 'download'，两条线路因此各下各的 9.5 GB。
+        final RecommendedPackManifest? manifest = parseRecommendedPackManifest(
+          '{"version":"2026-08-14",'
+          '"url":"$kRecommendedPackGoogleDriveDirectUrl",'
+          '"sha256":"$_sha","size_bytes":10220484385}',
+        );
+        expect(manifest, isNotNull);
+        final RecommendedPackDownloader fromManifest =
+            RecommendedPackDownloader.fromManifest(
+              packDir: dir,
+              manifest: manifest!,
+            );
+        expect(
+          p.basename(fromManifest.packFile.path),
+          kRecommendedPackFileName,
+        );
+        expect(p.basename(fromManifest.packFile.path), isNot('download'));
+      },
+    );
+
+    test(
+      'migrateLegacyArtifacts moves the old download* half files over',
+      () async {
+        final Directory dir = await Directory.systemTemp.createTemp(
+          'recommended_pack_test',
+        );
+        addTearDown(() => dir.delete(recursive: true));
+        File(p.join(dir.path, 'download.mpart')).writeAsStringSync('halfway');
+        File(p.join(dir.path, 'download.mpart.json')).writeAsStringSync('{}');
+
+        RecommendedPackDownloader.migrateLegacyArtifacts(dir);
+
+        // 升级不该让已下的 9.5 GB 作废。
+        expect(
+          File(
+            p.join(dir.path, '$kRecommendedPackFileName.mpart'),
+          ).readAsStringSync(),
+          'halfway',
+        );
+        expect(
+          File(
+            p.join(dir.path, '$kRecommendedPackFileName.mpart.json'),
+          ).existsSync(),
+          isTrue,
+        );
+        expect(File(p.join(dir.path, 'download.mpart')).existsSync(), isFalse);
+
+        // 幂等：再跑一次不会把已经搬好的文件弄坏。
+        RecommendedPackDownloader.migrateLegacyArtifacts(dir);
+        expect(
+          File(
+            p.join(dir.path, '$kRecommendedPackFileName.mpart'),
+          ).readAsStringSync(),
+          'halfway',
+        );
+      },
+    );
+
+    test('migrateLegacyArtifacts 不搬没有包体的孤儿进度文件'
         '（否则配出「全零包体 + 满进度」的静默坏包）', () async {
-      final Directory dir =
-          await Directory.systemTemp.createTemp('recommended_pack_test');
+      final Directory dir = await Directory.systemTemp.createTemp(
+        'recommended_pack_test',
+      );
       addTearDown(() => dir.delete(recursive: true));
       // 只有进度、没有包体：`.mpart` 搬失败（Windows 上别的句柄占着 9.5 GB 是
       // 常态）或者上一轮预分配完就被杀，都会落在这个形状上。
@@ -127,8 +141,9 @@ void main() {
       // 收满了 —— 一片都不下；清单切片线路每片自带 sha256，整包校验被跳过，
       // 全零的坏包会被直接扶正。所以这里必须一动不动。
       expect(
-        File(p.join(dir.path, '$kRecommendedPackFileName.mpart.json'))
-            .existsSync(),
+        File(
+          p.join(dir.path, '$kRecommendedPackFileName.mpart.json'),
+        ).existsSync(),
         isFalse,
         reason: '没有包体的进度文件描述的是一份不存在的字节，搬过去只会配错',
       );
@@ -138,27 +153,32 @@ void main() {
       );
     });
 
-    test('migrateLegacyArtifacts 目标已存在时整组不搬，并清掉旧名那份',
-        () async {
-      final Directory dir =
-          await Directory.systemTemp.createTemp('recommended_pack_test');
+    test('migrateLegacyArtifacts 目标已存在时整组不搬，并清掉旧名那份', () async {
+      final Directory dir = await Directory.systemTemp.createTemp(
+        'recommended_pack_test',
+      );
       addTearDown(() => dir.delete(recursive: true));
       File(p.join(dir.path, 'download.mpart')).writeAsStringSync('old');
-      File(p.join(dir.path, 'download.mpart.json')).writeAsStringSync('{"o":1}');
-      File(p.join(dir.path, '$kRecommendedPackFileName.mpart'))
-          .writeAsStringSync('current');
+      File(
+        p.join(dir.path, 'download.mpart.json'),
+      ).writeAsStringSync('{"o":1}');
+      File(
+        p.join(dir.path, '$kRecommendedPackFileName.mpart'),
+      ).writeAsStringSync('current');
 
       RecommendedPackDownloader.migrateLegacyArtifacts(dir);
 
       // 新名那一份才是当前进度的真相源；拿旧名的进度去补它必然配错。
       expect(
-        File(p.join(dir.path, '$kRecommendedPackFileName.mpart'))
-            .readAsStringSync(),
+        File(
+          p.join(dir.path, '$kRecommendedPackFileName.mpart'),
+        ).readAsStringSync(),
         'current',
       );
       expect(
-        File(p.join(dir.path, '$kRecommendedPackFileName.mpart.json'))
-            .existsSync(),
+        File(
+          p.join(dir.path, '$kRecommendedPackFileName.mpart.json'),
+        ).existsSync(),
         isFalse,
         reason: '旧名的进度描述的是旧名那份包体，不能配到新名的包体上',
       );
@@ -170,10 +190,10 @@ void main() {
       );
     });
 
-    test('migrateLegacyArtifacts 单流组：.part 搬走时 .part.etag 跟着走',
-        () async {
-      final Directory dir =
-          await Directory.systemTemp.createTemp('recommended_pack_test');
+    test('migrateLegacyArtifacts 单流组：.part 搬走时 .part.etag 跟着走', () async {
+      final Directory dir = await Directory.systemTemp.createTemp(
+        'recommended_pack_test',
+      );
       addTearDown(() => dir.delete(recursive: true));
       File(p.join(dir.path, 'download.part')).writeAsStringSync('half');
       File(p.join(dir.path, 'download.part.etag')).writeAsStringSync('"abc"');
@@ -181,13 +201,15 @@ void main() {
       RecommendedPackDownloader.migrateLegacyArtifacts(dir);
 
       expect(
-        File(p.join(dir.path, '$kRecommendedPackFileName.part'))
-            .readAsStringSync(),
+        File(
+          p.join(dir.path, '$kRecommendedPackFileName.part'),
+        ).readAsStringSync(),
         'half',
       );
       expect(
-        File(p.join(dir.path, '$kRecommendedPackFileName.part.etag'))
-            .readAsStringSync(),
+        File(
+          p.join(dir.path, '$kRecommendedPackFileName.part.etag'),
+        ).readAsStringSync(),
         '"abc"',
       );
     });
@@ -203,7 +225,9 @@ void main() {
       );
       expect(m, isNotNull);
       expect(
-          m!.url, 'https://dl.wrds.xyz/fushi-recommended-2026-09-01.fushi.zip');
+        m!.url,
+        'https://dl.wrds.xyz/fushi-recommended-2026-09-01.fushi.zip',
+      );
       expect(m.version, '2026-09-01');
       expect(m.sha256, 'a' * 64);
       expect(m.sizeBytes, 10200000000);
@@ -221,7 +245,8 @@ void main() {
       // 长度不对 / 非 hex：与其带着一个坏校验值下 9.5 GB，不如整体回退内置直链。
       expect(
         parseRecommendedPackManifest(
-            '{"url":"https://dl.wrds.xyz/a.zip","sha256":"zz"}'),
+          '{"url":"https://dl.wrds.xyz/a.zip","sha256":"zz"}',
+        ),
         isNull,
       );
     });
@@ -235,15 +260,17 @@ void main() {
       );
       expect(
         parseRecommendedPackManifest(
-            '{"url":"https://dl.wrds.xyz/a.zip","sha256":""}'),
+          '{"url":"https://dl.wrds.xyz/a.zip","sha256":""}',
+        ),
         isNull,
       );
     });
 
     test('optional fields tolerate absence and wrong types', () {
       final RecommendedPackManifest? m = parseRecommendedPackManifest(
-          '{"url":"https://dl.wrds.xyz/a.zip","sha256":"$_sha",'
-          '"size_bytes":"big","version":3}');
+        '{"url":"https://dl.wrds.xyz/a.zip","sha256":"$_sha",'
+        '"size_bytes":"big","version":3}',
+      );
       expect(m, isNotNull);
       expect(m!.sha256, _sha);
       expect(m.sizeBytes, isNull);
@@ -270,7 +297,8 @@ void main() {
     });
 
     test('deflate_pack 缺失或不合法时退回顶层 STORE 包，而不是整体失败', () {
-      const String store = '"version":"store",'
+      const String store =
+          '"version":"store",'
           '"url":"https://a.example/store.fushi.zip","sha256":"$_sha"';
       for (final String extra in <String>[
         '',
@@ -298,8 +326,10 @@ void main() {
       expect(m, isNotNull);
       expect(m!.mirrors, <String>['https://m1/a.zip']);
       expect(m.partBaseUrls, <String>['https://gh/dl/']);
-      expect(m.wholeFileUrls,
-          <String>['https://dl.wrds.xyz/a.zip', 'https://m1/a.zip']);
+      expect(m.wholeFileUrls, <String>[
+        'https://dl.wrds.xyz/a.zip',
+        'https://m1/a.zip',
+      ]);
     });
 
     test('parts 里有一条坏记录就整表作废（半张切片表比没有更危险）', () {
@@ -341,8 +371,9 @@ void main() {
     });
 
     test('没有总长时返回 null（调用方去探测或走单流）', () {
-      const RecommendedPackManifest m =
-          RecommendedPackManifest(url: 'https://dl.wrds.xyz/a.zip');
+      const RecommendedPackManifest m = RecommendedPackManifest(
+        url: 'https://dl.wrds.xyz/a.zip',
+      );
       expect(m.toDownloadPlan(), isNull);
     });
 
@@ -360,12 +391,17 @@ void main() {
       expect(plan, isNotNull);
       expect(plan!.parts.length, 2);
       // 切片来源在前（首选），整包来源垫底当镜像。
-      expect(plan.parts[1].sources.first,
-          const DownloadSource(url: 'https://gh/dl/a.001'));
       expect(
-          plan.parts[1].sources.last,
-          const DownloadSource(
-              url: 'https://dl.wrds.xyz/a.zip', remoteOffset: 100));
+        plan.parts[1].sources.first,
+        const DownloadSource(url: 'https://gh/dl/a.001'),
+      );
+      expect(
+        plan.parts[1].sources.last,
+        const DownloadSource(
+          url: 'https://dl.wrds.xyz/a.zip',
+          remoteOffset: 100,
+        ),
+      );
     });
 
     test('切片总长与声明总长打架时退回 Range 模式，不拿矛盾清单下包', () {
@@ -413,8 +449,10 @@ void main() {
       expect(plan!.totalBytes, 307200);
       expect(plan.parts.length, 3);
       expect(plan.hasPerPartDigests, isTrue, reason: '切片清单带逐片摘要，才能省掉整包重读');
-      expect(plan.parts.first.sources.first.url,
-          'https://gh/dl/pack-demo/demo.fushi.zip.000');
+      expect(
+        plan.parts.first.sources.first.url,
+        'https://gh/dl/pack-demo/demo.fushi.zip.000',
+      );
     });
 
     test('tool/make_download_manifest.dart 的真实产物能被解析成计划（range）', () {
@@ -459,13 +497,18 @@ void main() {
   group('清单候选地址', () {
     test('官网优先、GitHub 兜底，且两者不同主机', () {
       expect(kRecommendedPackManifestUrls.length, greaterThanOrEqualTo(2));
-      expect(kRecommendedPackManifestUrls.first,
-          startsWith('https://fushi.moe/pack/'));
+      expect(
+        kRecommendedPackManifestUrls.first,
+        startsWith('https://fushi.moe/pack/'),
+      );
       final Set<String> hosts = kRecommendedPackManifestUrls
           .map((String u) => Uri.parse(u).host)
           .toSet();
-      expect(hosts.length, kRecommendedPackManifestUrls.length,
-          reason: '候选全挤在一个主机上就不叫兜底了');
+      expect(
+        hosts.length,
+        kRecommendedPackManifestUrls.length,
+        reason: '候选全挤在一个主机上就不叫兜底了',
+      );
       expect(hosts, contains('github.com'));
     });
 
@@ -474,13 +517,20 @@ void main() {
       expect(kRecommendedPackWholeFileUrl, isNot(contains('dl.wrds.xyz')));
       expect(kRecommendedPackWholeFileUrl, startsWith('https://'));
       // 整包回退只能落在还存得下 9.5 GB 单文件的主机上。
-      expect(kRecommendedPackWholeFileUrl,
-          contains('drive.usercontent.google.com'));
-      expect(kRecommendedPackWholeFileUrl, contains('confirm=t'),
-          reason: '少了 confirm=t 会拿到病毒扫描确认页而不是文件');
+      expect(
+        kRecommendedPackWholeFileUrl,
+        contains('drive.usercontent.google.com'),
+      );
+      expect(
+        kRecommendedPackWholeFileUrl,
+        contains('confirm=t'),
+        reason: '少了 confirm=t 会拿到病毒扫描确认页而不是文件',
+      );
       // 换包不该再改文件名——版本隔离由清单的 version + sha256 负责。
-      expect(kRecommendedPackFileName,
-          isNot(matches(RegExp(r'\d{4}-\d{2}-\d{2}'))));
+      expect(
+        kRecommendedPackFileName,
+        isNot(matches(RegExp(r'\d{4}-\d{2}-\d{2}'))),
+      );
       expect(kRecommendedPackFileName, endsWith('.fushi.zip'));
     });
 

@@ -230,8 +230,9 @@ void main() {
         deletedPaths: <String>{e1.path.toLowerCase()},
       );
 
-      final String status =
-          (await db.getVideoDownloadJobFiles('job')).single.status;
+      final String status = (await db.getVideoDownloadJobFiles(
+        'job',
+      )).single.status;
       expect(
         status,
         Platform.isWindows

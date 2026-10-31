@@ -14,8 +14,9 @@ Future<void> main(List<String> args) async {
     }
   }
 
-  final FixtureGenerationResult result =
-      await generateComprehensiveFixtures(outputDir: outputDir);
+  final FixtureGenerationResult result = await generateComprehensiveFixtures(
+    outputDir: outputDir,
+  );
   stdout
     ..writeln('marker.epub: ${result.markerEpub.path}')
     ..writeln('test-yomitan.zip: ${result.dictionaryZip.path}')

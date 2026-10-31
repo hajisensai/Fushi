@@ -113,10 +113,14 @@ void main() {
       t.ai_assist_no_provider,
     );
     // 什么都没改，保存按钮保持灰。
-    final FilledButton saveButton = tester.widget<FilledButton>(glassUnwrap<FilledButton>(find.ancestor(
-        of: find.byIcon(FushiIcons.save),
-        matching: find.byType(FilledButton),
-      )),);
+    final FilledButton saveButton = tester.widget<FilledButton>(
+      glassUnwrap<FilledButton>(
+        find.ancestor(
+          of: find.byIcon(FushiIcons.save),
+          matching: find.byType(FilledButton),
+        ),
+      ),
+    );
     expect(saveButton.onPressed, isNull);
   });
 

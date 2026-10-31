@@ -80,14 +80,14 @@ Future<PortKillDecision> decidePortKill(
 
   final FushiDestructiveConfirmResult? confirmed =
       await showAppDialog<FushiDestructiveConfirmResult>(
-    context: context,
-    builder: (_) => FushiDestructiveConfirmDialog(
-      title: t.yomitan_port_kill_confirm_title(port: port),
-      message: message.toString(),
-      confirmLabel: t.yomitan_port_kill_confirm,
-      leadingIcon: Icons.stop_circle_outlined,
-    ),
-  );
+        context: context,
+        builder: (_) => FushiDestructiveConfirmDialog(
+          title: t.yomitan_port_kill_confirm_title(port: port),
+          message: message.toString(),
+          confirmLabel: t.yomitan_port_kill_confirm,
+          leadingIcon: Icons.stop_circle_outlined,
+        ),
+      );
   if (confirmed == null) {
     return const PortKillDecision(PortKillDecisionKind.cancelled);
   }

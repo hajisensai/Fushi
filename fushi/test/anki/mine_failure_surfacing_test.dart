@@ -69,64 +69,68 @@ void main() {
   });
 
   group(
-      'every mine error branch routes through describeMineOutcome → logMineFailure',
-      () {
-    // Source-scan guard (BUG-089): the cause must still surface via
-    // logMineFailure — now consolidated inside the single describeMineOutcome
-    // helper, which all 5 call sites route through (no bare
-    // `t.card_export_failed` toast). These pages embed real WebViews / platform
-    // channels and cannot be widget-tested directly, so we guard at the source.
-    final List<String> callSites = <String>[
-      'lib/src/pages/implementations/dictionary_page_mixin.dart',
-      'lib/src/pages/implementations/reader_fushi_page.dart',
-      'lib/src/pages/implementations/floating_dict_page.dart',
-      'lib/src/pages/implementations/video_fushi_page.dart',
-      'lib/src/models/app_model.dart',
-    ];
+    'every mine error branch routes through describeMineOutcome → logMineFailure',
+    () {
+      // Source-scan guard (BUG-089): the cause must still surface via
+      // logMineFailure — now consolidated inside the single describeMineOutcome
+      // helper, which all 5 call sites route through (no bare
+      // `t.card_export_failed` toast). These pages embed real WebViews / platform
+      // channels and cannot be widget-tested directly, so we guard at the source.
+      final List<String> callSites = <String>[
+        'lib/src/pages/implementations/dictionary_page_mixin.dart',
+        'lib/src/pages/implementations/reader_fushi_page.dart',
+        'lib/src/pages/implementations/floating_dict_page.dart',
+        'lib/src/pages/implementations/video_fushi_page.dart',
+        'lib/src/models/app_model.dart',
+      ];
 
-    test('describeMineOutcome 的 error 分支仍经 logMineFailure 浮现原因', () {
-      final String src = File(
-        'lib/src/utils/misc/error_log_service.dart',
-      ).readAsStringSync();
-      expect(src.contains('describeMineOutcome('), isTrue);
-      expect(
-        src.contains('logMineFailure(outcome)'),
-        isTrue,
-        reason: 'describeMineOutcome 的 MineResult.error 分支必须经 logMineFailure '
-            '记录完整诊断并回简短原因 (BUG-089)',
-      );
-    });
-
-    for (final String path in callSites) {
-      test('$path routes mine outcome through describeMineOutcome', () {
-        final File f = File(path);
-        expect(f.existsSync(), isTrue, reason: 'missing call site: $path');
-        // TODO-589 batch2 / TODO-590 batch14: reader 与 video 的制卡方法分别搬进
-        // reader_fushi/mining.part.dart 与 video_fushi/lookup_mining.part.dart，
-        // 读合并语料（主壳 + 全部 part）才能命中搬出去的 mineEntry / describeMineOutcome。
-        final String src = path.endsWith('reader_fushi_page.dart')
-            ? readReaderPageSource()
-            : path.endsWith('video_fushi_page.dart')
-                ? readVideoFushiSource()
-                : f.readAsStringSync();
-        // Only inspect files that actually mine entries. TODO-1000：video 页把
-        // repo.mineEntry 调用搬进 ImmersionMiningEngine（引擎内落卡 + 经
-        // describeMineOutcome 路由错误），故委托引擎也算「本页会制卡」。
+      test('describeMineOutcome 的 error 分支仍经 logMineFailure 浮现原因', () {
+        final String src = File(
+          'lib/src/utils/misc/error_log_service.dart',
+        ).readAsStringSync();
+        expect(src.contains('describeMineOutcome('), isTrue);
         expect(
-            src.contains('mineEntry') || src.contains('ImmersionMiningEngine'),
-            isTrue,
-            reason: '$path no longer calls mineEntry nor delegates to '
-                'ImmersionMiningEngine — update this guard');
-        expect(
-          src.contains('describeMineOutcome('),
+          src.contains('logMineFailure(outcome)'),
           isTrue,
           reason:
-              '$path must route MineResult through describeMineOutcome, whose '
-              'error branch surfaces the cause via logMineFailure (BUG-089)',
+              'describeMineOutcome 的 MineResult.error 分支必须经 logMineFailure '
+              '记录完整诊断并回简短原因 (BUG-089)',
         );
       });
-    }
-  });
+
+      for (final String path in callSites) {
+        test('$path routes mine outcome through describeMineOutcome', () {
+          final File f = File(path);
+          expect(f.existsSync(), isTrue, reason: 'missing call site: $path');
+          // TODO-589 batch2 / TODO-590 batch14: reader 与 video 的制卡方法分别搬进
+          // reader_fushi/mining.part.dart 与 video_fushi/lookup_mining.part.dart，
+          // 读合并语料（主壳 + 全部 part）才能命中搬出去的 mineEntry / describeMineOutcome。
+          final String src = path.endsWith('reader_fushi_page.dart')
+              ? readReaderPageSource()
+              : path.endsWith('video_fushi_page.dart')
+              ? readVideoFushiSource()
+              : f.readAsStringSync();
+          // Only inspect files that actually mine entries. TODO-1000：video 页把
+          // repo.mineEntry 调用搬进 ImmersionMiningEngine（引擎内落卡 + 经
+          // describeMineOutcome 路由错误），故委托引擎也算「本页会制卡」。
+          expect(
+            src.contains('mineEntry') || src.contains('ImmersionMiningEngine'),
+            isTrue,
+            reason:
+                '$path no longer calls mineEntry nor delegates to '
+                'ImmersionMiningEngine — update this guard',
+          );
+          expect(
+            src.contains('describeMineOutcome('),
+            isTrue,
+            reason:
+                '$path must route MineResult through describeMineOutcome, whose '
+                'error branch surfaces the cause via logMineFailure (BUG-089)',
+          );
+        });
+      }
+    },
+  );
 
   // TODO-752a: 制卡连接失败的乱码根因——后端把 socket/http 原文（含英文/latin1
   // 乱码）透传进 toast。修复后后端只回**稳定 errorCode**，logMineFailure 据码映射
@@ -149,8 +153,10 @@ void main() {
         final MineOutcome outcome = MineOutcome.failure(
           'raw english fallback should be ignored',
           errorCode: code,
-          error: SocketException('Connection refused',
-              osError: const OSError('Connection refused', 111)),
+          error: SocketException(
+            'Connection refused',
+            osError: const OSError('Connection refused', 111),
+          ),
         );
         final String msg = logMineFailure(outcome);
         // The localized message wins over the backend-provided errorDetail.
@@ -210,10 +216,14 @@ void main() {
     test('localizeAnkiMineError returns null for an unmapped code', () {
       expect(localizeAnkiMineError(null), isNull);
       expect(localizeAnkiMineError('SOME_UNMAPPED_CODE'), isNull);
-      expect(localizeAnkiMineError(AnkiErrorCode.connectionRefused),
-          t.anki_error_connection_refused);
-      expect(localizeAnkiMineError(AnkiErrorCode.permissionDenied),
-          t.anki_error_permission_denied);
+      expect(
+        localizeAnkiMineError(AnkiErrorCode.connectionRefused),
+        t.anki_error_connection_refused,
+      );
+      expect(
+        localizeAnkiMineError(AnkiErrorCode.permissionDenied),
+        t.anki_error_permission_denied,
+      );
     });
   });
 }

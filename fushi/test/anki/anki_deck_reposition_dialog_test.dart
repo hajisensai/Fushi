@@ -16,7 +16,7 @@ import '../helpers/glass_unwrap.dart';
 
 class _FakeRepo extends BaseAnkiRepository {
   _FakeRepo({required this.supported, AnkiSettings? settings})
-      : _settings = settings ?? const AnkiSettings();
+    : _settings = settings ?? const AnkiSettings();
 
   final bool supported;
   AnkiSettings _settings;
@@ -38,8 +38,7 @@ class _FakeRepo extends BaseAnkiRepository {
   Future<MineOutcome> mineEntry({
     required String rawPayloadJson,
     required AnkiMiningContext context,
-  }) async =>
-      MineOutcome.failure('unused');
+  }) async => MineOutcome.failure('unused');
 
   @override
   Future<bool> isDuplicate(String expression, String reading) async => false;
@@ -74,16 +73,20 @@ Future<AnkiViewModel> _pumpDialog(
     rareFirst: false,
   );
   late BuildContext hostContext;
-  await tester.pumpWidget(TranslationProvider(
-    child: MaterialApp(
-      home: Scaffold(
-        body: Builder(builder: (BuildContext ctx) {
-          hostContext = ctx;
-          return const SizedBox.shrink();
-        }),
+  await tester.pumpWidget(
+    TranslationProvider(
+      child: MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (BuildContext ctx) {
+              hostContext = ctx;
+              return const SizedBox.shrink();
+            },
+          ),
+        ),
       ),
     ),
-  ));
+  );
   showAnkiDeckRepositionDialog(
     hostContext,
     viewModel: vm,
@@ -99,20 +102,36 @@ void main() {
   testWidgets('没有词频词典时预览禁用；切到笔记字段来源后可用', (WidgetTester tester) async {
     await _pumpDialog(tester, loaded: const <String>[]);
     expect(find.text(t.anki_reposition_dicts_none), findsOneWidget);
-    FilledButton preview = tester.widget<FilledButton>(glassUnwrap<FilledButton>(find.byKey(const Key('anki_reposition_preview'))),);
+    FilledButton preview = tester.widget<FilledButton>(
+      glassUnwrap<FilledButton>(
+        find.byKey(const Key('anki_reposition_preview')),
+      ),
+    );
     expect(preview.onPressed, isNull);
 
     await tester.tap(find.text(t.anki_reposition_source_field));
     await tester.pumpAndSettle();
     expect(find.text(t.anki_reposition_source_field_hint), findsOneWidget);
-    preview = tester.widget<FilledButton>(glassUnwrap<FilledButton>(find.byKey(const Key('anki_reposition_preview'))),);
+    preview = tester.widget<FilledButton>(
+      glassUnwrap<FilledButton>(
+        find.byKey(const Key('anki_reposition_preview')),
+      ),
+    );
     expect(preview.onPressed, isNotNull);
   });
 
   testWidgets('按词典名渲染 chip，勾选状态从设置恢复，多本时显示复合方式', (WidgetTester tester) async {
     await _pumpDialog(tester, loaded: const <String>['JPDB', 'BCCWJ']);
-    final FilterChip jpdb = tester.widget<FilterChip>(glassUnwrap<FilterChip>(find.byKey(const Key('anki_reposition_dict_JPDB'))),);
-    final FilterChip bccwj = tester.widget<FilterChip>(glassUnwrap<FilterChip>(find.byKey(const Key('anki_reposition_dict_BCCWJ'))),);
+    final FilterChip jpdb = tester.widget<FilterChip>(
+      glassUnwrap<FilterChip>(
+        find.byKey(const Key('anki_reposition_dict_JPDB')),
+      ),
+    );
+    final FilterChip bccwj = tester.widget<FilterChip>(
+      glassUnwrap<FilterChip>(
+        find.byKey(const Key('anki_reposition_dict_BCCWJ')),
+      ),
+    );
     expect(jpdb.selected, isTrue);
     expect(bccwj.selected, isFalse);
     // 只勾一本：复合方式无意义，不显示。
@@ -121,15 +140,23 @@ void main() {
     await tester.tap(find.byKey(const Key('anki_reposition_dict_BCCWJ')));
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('anki_reposition_aggregate')), findsOneWidget);
-    final FilledButton preview = tester.widget<FilledButton>(glassUnwrap<FilledButton>(find.byKey(const Key('anki_reposition_preview'))),);
+    final FilledButton preview = tester.widget<FilledButton>(
+      glassUnwrap<FilledButton>(
+        find.byKey(const Key('anki_reposition_preview')),
+      ),
+    );
     expect(preview.onPressed, isNotNull);
   });
 
   test('view model 的支持位随后端走', () {
-    expect(AnkiViewModel(_FakeRepo(supported: false)).supportsDeckReposition,
-        isFalse);
-    expect(AnkiViewModel(_FakeRepo(supported: true)).supportsDeckReposition,
-        isTrue);
+    expect(
+      AnkiViewModel(_FakeRepo(supported: false)).supportsDeckReposition,
+      isFalse,
+    );
+    expect(
+      AnkiViewModel(_FakeRepo(supported: true)).supportsDeckReposition,
+      isTrue,
+    );
   });
 
   test('接线守卫：设置页接了入口行并按后端能力置灰', () {

@@ -77,27 +77,36 @@ class _MokuroMoeCatalogDialogState extends State<MokuroMoeCatalogDialog> {
         onClose: _close,
         snapshotNotifier: _snapshot,
       ),
-      builder: (BuildContext context, MokuroMoeCatalogSnapshot snapshot,
-          Widget? body) {
-        return ImportDialogFrame(
-          leadingIcon: FushiIcons.cloudDownload,
-          title: snapshot.seriesName ?? t.manga_online_catalog_title,
-          // BUG-1184：正文原先是死的 560×440。宽度会被对话框约束钳住（无害），但**高度**
-          // 440 是硬的——矮窗口 / 手机横屏下超出对话框可用高度就直接溢出。改为不超过屏高
-          // 的六成，宽屏行为不变。
-          body: SizedBox(
-            width: 560,
-            height: math.min(440.0, MediaQuery.sizeOf(context).height * 0.6),
-            child: body,
-          ),
-          actions: _buildActions(context, snapshot),
-        );
-      },
+      builder:
+          (
+            BuildContext context,
+            MokuroMoeCatalogSnapshot snapshot,
+            Widget? body,
+          ) {
+            return ImportDialogFrame(
+              leadingIcon: FushiIcons.cloudDownload,
+              title: snapshot.seriesName ?? t.manga_online_catalog_title,
+              // BUG-1184：正文原先是死的 560×440。宽度会被对话框约束钳住（无害），但**高度**
+              // 440 是硬的——矮窗口 / 手机横屏下超出对话框可用高度就直接溢出。改为不超过屏高
+              // 的六成，宽屏行为不变。
+              body: SizedBox(
+                width: 560,
+                height: math.min(
+                  440.0,
+                  MediaQuery.sizeOf(context).height * 0.6,
+                ),
+                child: body,
+              ),
+              actions: _buildActions(context, snapshot),
+            );
+          },
     );
   }
 
   List<Widget> _buildActions(
-      BuildContext context, MokuroMoeCatalogSnapshot snapshot) {
+    BuildContext context,
+    MokuroMoeCatalogSnapshot snapshot,
+  ) {
     if (!snapshot.inSeriesStage) {
       return <Widget>[
         adaptiveDialogAction(

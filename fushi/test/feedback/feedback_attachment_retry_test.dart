@@ -263,15 +263,14 @@ void main() {
       inFlight--;
       return _json(<String, dynamic>{'slot': 'x'}, 201);
     };
-    final List<FeedbackRetryResult> results =
-        await Future.wait(<Future<FeedbackRetryResult>>[
-          s.retryPending('abcdefghij'),
-          s.addScreenshots(
-            'abcdefghij',
-            <Uint8List>[_bytes(7)],
-            usedSlots: const <String>{},
-          ),
-        ]);
+    final List<FeedbackRetryResult> results = await Future.wait(
+      <Future<FeedbackRetryResult>>[
+        s.retryPending('abcdefghij'),
+        s.addScreenshots('abcdefghij', <Uint8List>[
+          _bytes(7),
+        ], usedSlots: const <String>{}),
+      ],
+    );
     expect(maxInFlight, 1);
     // s0 只传一次；新截图不会落进刚被补传占掉的 s0，而是进 s1。
     expect(

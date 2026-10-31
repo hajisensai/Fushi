@@ -33,8 +33,7 @@ String? coarseLanguageCode(SubtitleContentLanguage language) =>
       SubtitleContentLanguage.japanese => 'ja',
       SubtitleContentLanguage.simplifiedChinese ||
       SubtitleContentLanguage.traditionalChinese ||
-      SubtitleContentLanguage.bilingualJaZh =>
-        'zh',
+      SubtitleContentLanguage.bilingualJaZh => 'zh',
       SubtitleContentLanguage.english => 'en',
       SubtitleContentLanguage.unknown => null,
     };
@@ -51,12 +50,14 @@ String? subtitleContentLanguageNativeLabel(SubtitleContentLanguage language) =>
     };
 
 /// 简体判别集：只在简体文本出现、繁体文本写作另一形的常用字。
-const String _kSimplifiedOnlyChars = '们这对时东乐买卖医还见观说话读书写马鸟龙风'
+const String _kSimplifiedOnlyChars =
+    '们这对时东乐买卖医还见观说话读书写马鸟龙风'
     '电开关门问间众优传体华单卫压发变经给绝统继绿网义习学为点让边远运进军农'
     '动劳办务历层岁带帮广应张当录隐忆态怀恶悬爱战抢护报担拟拥挂币帅师归';
 
 /// 繁体判别集：与 [_kSimplifiedOnlyChars] 一一对应的繁体形。
-const String _kTraditionalOnlyChars = '們這對時東樂買賣醫還見觀說話讀書寫馬鳥龍風'
+const String _kTraditionalOnlyChars =
+    '們這對時東樂買賣醫還見觀說話讀書寫馬鳥龍風'
     '電開關門問間眾優傳體華單衛壓發變經給絕統繼綠網義習學為點讓邊遠運進軍農'
     '動勞辦務歷層歲帶幫廣應張當錄隱憶態懷惡懸愛戰搶護報擔擬擁掛幣帥師歸';
 
@@ -157,7 +158,8 @@ SubtitleContentLanguage detectSubtitleContentLanguage(String text) {
     // 6% 的日文歌词行不构成日语轨，25% 的汉字拟声行也不构成中文轨（后者靠 >=3 行的
     // 最低行数挡住）。
     final bool bothTracksPresent = kanaLines >= 3 && hanOnlyLines >= 3;
-    final bool bothTracksSubstantial = contentLines > 0 &&
+    final bool bothTracksSubstantial =
+        contentLines > 0 &&
         kanaLines * 5 >= contentLines &&
         hanOnlyLines * 5 >= contentLines;
     if (bothTracksPresent && bothTracksSubstantial) {
@@ -194,14 +196,15 @@ SubtitleContentLanguage detectSubtitleContentLanguage(String text) {
 bool subtitleContentContradictsLanguage(
   SubtitleContentLanguage detected,
   String wanted,
-) =>
-    switch (detected) {
-      SubtitleContentLanguage.japanese => wanted != 'ja',
-      SubtitleContentLanguage.simplifiedChinese ||
-      SubtitleContentLanguage.traditionalChinese =>
-        wanted != 'zh',
-      SubtitleContentLanguage.bilingualJaZh => wanted != 'ja' && wanted != 'zh',
-      SubtitleContentLanguage.english =>
-        const <String>{'ja', 'zh', 'ko'}.contains(wanted),
-      SubtitleContentLanguage.unknown => false,
-    };
+) => switch (detected) {
+  SubtitleContentLanguage.japanese => wanted != 'ja',
+  SubtitleContentLanguage.simplifiedChinese ||
+  SubtitleContentLanguage.traditionalChinese => wanted != 'zh',
+  SubtitleContentLanguage.bilingualJaZh => wanted != 'ja' && wanted != 'zh',
+  SubtitleContentLanguage.english => const <String>{
+    'ja',
+    'zh',
+    'ko',
+  }.contains(wanted),
+  SubtitleContentLanguage.unknown => false,
+};

@@ -29,8 +29,9 @@ const int _durationMs = 120000;
 
 /// 帧中心像素亮度（`[0,255]`）。素材是全屏灰度纯色，中心像素即代表整帧。
 Future<int?> _centerLuma(ui.Image image) async {
-  final ByteData? data =
-      await image.toByteData(format: ui.ImageByteFormat.rawRgba);
+  final ByteData? data = await image.toByteData(
+    format: ui.ImageByteFormat.rawRgba,
+  );
   if (data == null) return null;
   final int offset =
       ((image.height ~/ 2) * image.width + (image.width ~/ 2)) * 4;
@@ -64,12 +65,18 @@ void main() {
 
   group('缩略图取帧真机实测', () {
     test('B1/B2 冷取正确且有界，回扫命中缓存', () async {
-      final OffscreenVideoFrameGrabber grabber =
-          OffscreenVideoFrameGrabber(videoPath: videoPath!);
+      final OffscreenVideoFrameGrabber grabber = OffscreenVideoFrameGrabber(
+        videoPath: videoPath!,
+      );
       // 与调度器同源的量化：同一格才谈得上缓存命中。
-      final List<int> targets = <double>[0.1, 0.25, 0.4, 0.55, 0.7, 0.85]
-          .map((double f) => thumbnailBucketTargetMs(f, _durationMs)!)
-          .toList();
+      final List<int> targets = <double>[
+        0.1,
+        0.25,
+        0.4,
+        0.55,
+        0.7,
+        0.85,
+      ].map((double f) => thumbnailBucketTargetMs(f, _durationMs)!).toList();
 
       final List<int> coldLatency = <int>[];
       final List<String> wrong = <String>[];
@@ -107,10 +114,16 @@ void main() {
 
       final List<int> warmSorted = List<int>.of(warmLatency)..sort();
       final List<int> coldSorted = List<int>.of(coldLatency)..sort();
-      expect(warmSorted[warmSorted.length ~/ 2], lessThan(10),
-          reason: '回扫必须命中缓存（中位数 <10ms），否则来回移动会反复起 ffmpeg');
-      expect(warmSorted.last, lessThan(coldSorted.first),
-          reason: '最慢的缓存命中也应快过最快的冷取');
+      expect(
+        warmSorted[warmSorted.length ~/ 2],
+        lessThan(10),
+        reason: '回扫必须命中缓存（中位数 <10ms），否则来回移动会反复起 ffmpeg',
+      );
+      expect(
+        warmSorted.last,
+        lessThan(coldSorted.first),
+        reason: '最慢的缓存命中也应快过最快的冷取',
+      );
 
       // 同步查询是「不闪 spinner」的前提，必须真的同步返回。
       final ui.Image? sync = grabber.cachedFrame(targets.first);
@@ -121,15 +134,16 @@ void main() {
     }, skip: haveAsset ? false : 'FUSHI_BENCH_VIDEO 未设置或素材不存在');
 
     test('B3 匀速划过进度条不停手 → 预览图持续更新', () async {
-      final OffscreenVideoFrameGrabber grabber =
-          OffscreenVideoFrameGrabber(videoPath: videoPath!);
+      final OffscreenVideoFrameGrabber grabber = OffscreenVideoFrameGrabber(
+        videoPath: videoPath!,
+      );
       final VideoThumbnailPreviewController controller =
           VideoThumbnailPreviewController(
-        grabber: grabber.grab,
-        cachedFrameLookup: grabber.cachedFrame,
-        durationMsProvider: () => _durationMs,
-        onWarmUp: () => unawaited(grabber.warmUp()),
-      );
+            grabber: grabber.grab,
+            cachedFrameLookup: grabber.cachedFrame,
+            durationMsProvider: () => _durationMs,
+            onWarmUp: () => unawaited(grabber.warmUp()),
+          );
 
       // 记录浮层真正换过几张图（按 image 实例身份计）。
       final Set<int> distinctFrames = <int>{};
@@ -148,11 +162,17 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 400));
 
       // ignore: avoid_print
-      print('[BENCH] B3 distinct frames during a single sweep: '
-          '${distinctFrames.length}');
-      expect(distinctFrames.length, greaterThanOrEqualTo(3),
-          reason: '匀速划过 ~800ms 期间预览图必须换过几次。旧实现的 120ms 防抖要求'
-              '指针停下才取帧，这一段里一帧都不会换（用户报的「鼠标动了还不会重新加载」）');
+      print(
+        '[BENCH] B3 distinct frames during a single sweep: '
+        '${distinctFrames.length}',
+      );
+      expect(
+        distinctFrames.length,
+        greaterThanOrEqualTo(3),
+        reason:
+            '匀速划过 ~800ms 期间预览图必须换过几次。旧实现的 120ms 防抖要求'
+            '指针停下才取帧，这一段里一帧都不会换（用户报的「鼠标动了还不会重新加载」）',
+      );
       expect(controller.state.phase, isNot(ThumbnailPreviewPhase.hidden));
 
       controller.dispose();

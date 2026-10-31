@@ -63,14 +63,18 @@ class LocalSeedRig {
 
     final String torrentPath = '${workDir.path}/rig-content.torrent';
     final FtAddResult made = engine.makeTorrent(
-        contentPath: content.path, outTorrentPath: torrentPath);
+      contentPath: content.path,
+      outTorrentPath: torrentPath,
+    );
     if (!made.ok || made.id == null) {
       throw StateError('make_torrent failed: ${made.error}');
     }
 
     // 端口 0 = 系统分配；拿不到实际端口视为环境异常。
-    final EmbeddedTorrentSession? seeder =
-        EmbeddedTorrentSession.open(engine, listenInterfaces: '127.0.0.1:0');
+    final EmbeddedTorrentSession? seeder = EmbeddedTorrentSession.open(
+      engine,
+      listenInterfaces: '127.0.0.1:0',
+    );
     if (seeder == null) throw StateError('cannot create seeder session');
     try {
       final int port = await _waitFor<int>(
@@ -89,8 +93,10 @@ class LocalSeedRig {
         diagnose: _describeLoopbackBindHealth,
       );
 
-      final FtAddResult added =
-          seeder.addTorrentFile(torrentPath, savePath: seedDir.path);
+      final FtAddResult added = seeder.addTorrentFile(
+        torrentPath,
+        savePath: seedDir.path,
+      );
       if (!added.ok) throw StateError('seeder add failed: ${added.error}');
 
       // 等 hash 校验完、进入做种/完成态。
@@ -151,8 +157,10 @@ class LocalSeedRig {
   /// 探针成功 → 机器能 bind，那就真得去查 bridge/libtorrent。
   static Future<String> _describeLoopbackBindHealth() async {
     try {
-      final ServerSocket probe =
-          await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+      final ServerSocket probe = await ServerSocket.bind(
+        InternetAddress.loopbackIPv4,
+        0,
+      );
       final int probePort = probe.port;
       await probe.close();
       return 'dart loopback bind probe OK (got port $probePort): '

@@ -28,8 +28,7 @@ class _FakeAnkiRepository extends BaseAnkiRepository {
   Future<MineOutcome> mineEntry({
     required String rawPayloadJson,
     required AnkiMiningContext context,
-  }) =>
-      throw UnimplementedError();
+  }) => throw UnimplementedError();
 
   @override
   Future<bool> isDuplicate(String expression, String reading) async => false;
@@ -68,8 +67,7 @@ const List<String> _allNineCredentialKeys = <String>[
 
 void main() {
   group('ProfileRepository export — credential red line', () {
-    test(
-        'export of active profile strips EVERY sync credential key '
+    test('export of active profile strips EVERY sync credential key '
         '(white-list + LIKE fallback)', () async {
       final db = await _openDb();
       final repo = _repo(db);
@@ -132,101 +130,110 @@ void main() {
     });
 
     test(
-        'export of a NON-active profile reads its snapshot without polluting it',
-        () async {
-      final db = await _openDb();
-      final repo = _repo(db);
-      final active = await repo.createProfile('Active');
-      final other = await repo.createProfile('Other');
-      await repo.setActiveProfileId(active);
+      'export of a NON-active profile reads its snapshot without polluting it',
+      () async {
+        final db = await _openDb();
+        final repo = _repo(db);
+        final active = await repo.createProfile('Active');
+        final other = await repo.createProfile('Other');
+        await repo.setActiveProfileId(active);
 
-      // Snapshot 'Other' with its own value, then make the live state differ.
-      await db.setPref('font_size', '10');
-      await repo.snapshotCurrentSettings(other);
-      await db.setPref('font_size', '99'); // live state for the active profile
+        // Snapshot 'Other' with its own value, then make the live state differ.
+        await db.setPref('font_size', '10');
+        await repo.snapshotCurrentSettings(other);
+        await db.setPref(
+          'font_size',
+          '99',
+        ); // live state for the active profile
 
-      final String json = await repo.exportProfileToJson(other);
-      final Map<String, dynamic> doc = jsonDecode(json) as Map<String, dynamic>;
-      final List<dynamic> settings = doc['settings'] as List<dynamic>;
-      final Map<String, String> kv = <String, String>{
-        for (final dynamic e in settings)
-          (e as Map<String, dynamic>)['key'] as String: e['value'] as String,
-      };
-      // Reads the snapshot (10), NOT the current live value (99).
-      expect(kv['font_size'], '10');
+        final String json = await repo.exportProfileToJson(other);
+        final Map<String, dynamic> doc =
+            jsonDecode(json) as Map<String, dynamic>;
+        final List<dynamic> settings = doc['settings'] as List<dynamic>;
+        final Map<String, String> kv = <String, String>{
+          for (final dynamic e in settings)
+            (e as Map<String, dynamic>)['key'] as String: e['value'] as String,
+        };
+        // Reads the snapshot (10), NOT the current live value (99).
+        expect(kv['font_size'], '10');
 
-      // 'Other' snapshot is untouched by the export.
-      final rows = await db.getProfileSettings(other);
-      final other10 = rows.firstWhere((r) => r.key == 'font_size');
-      expect(other10.value, '10');
-    });
+        // 'Other' snapshot is untouched by the export.
+        final rows = await db.getProfileSettings(other);
+        final other10 = rows.firstWhere((r) => r.key == 'font_size');
+        expect(other10.value, '10');
+      },
+    );
 
-    test('A1 font path strip: catalog absolute paths become root-relative',
-        () async {
-      final db = await _openDb();
-      final repo = _repo(db);
-      final pid = await repo.createProfile('Fonts');
-      await repo.setActiveProfileId(pid);
+    test(
+      'A1 font path strip: catalog absolute paths become root-relative',
+      () async {
+        final db = await _openDb();
+        final repo = _repo(db);
+        final pid = await repo.createProfile('Fonts');
+        await repo.setActiveProfileId(pid);
 
-      const String fontsRoot = '/data/app/custom_fonts';
-      final String catalog = jsonEncode(<String, dynamic>{
-        'version': 1,
-        'fonts': <Map<String, dynamic>>[
-          <String, dynamic>{
-            'id': 'a',
-            'name': 'MyFont',
-            'path': '$fontsRoot/MyFont.ttf',
-          },
-        ],
-      });
-      await db.setPref('src:reader_fushi:font_catalog', catalog);
+        const String fontsRoot = '/data/app/custom_fonts';
+        final String catalog = jsonEncode(<String, dynamic>{
+          'version': 1,
+          'fonts': <Map<String, dynamic>>[
+            <String, dynamic>{
+              'id': 'a',
+              'name': 'MyFont',
+              'path': '$fontsRoot/MyFont.ttf',
+            },
+          ],
+        });
+        await db.setPref('src:reader_fushi:font_catalog', catalog);
 
-      final String json =
-          await repo.exportProfileToJson(pid, fontsRootDirectory: fontsRoot);
-      final Map<String, dynamic> doc = jsonDecode(json) as Map<String, dynamic>;
-      final List<dynamic> settings = doc['settings'] as List<dynamic>;
-      final Map<String, String> kv = <String, String>{
-        for (final dynamic e in settings)
-          (e as Map<String, dynamic>)['key'] as String: e['value'] as String,
-      };
-      final Map<String, dynamic> exportedCatalog =
-          jsonDecode(kv['src:reader_fushi:font_catalog']!)
-              as Map<String, dynamic>;
-      final String exportedPath =
-          (exportedCatalog['fonts'] as List<dynamic>).first['path'] as String;
-      // Absolute device root stripped → device topology not leaked, missing
-      // font degrades gracefully on import.
-      expect(exportedPath.contains(fontsRoot), isFalse);
-      expect(exportedPath, '/MyFont.ttf');
-    });
+        final String json = await repo.exportProfileToJson(
+          pid,
+          fontsRootDirectory: fontsRoot,
+        );
+        final Map<String, dynamic> doc =
+            jsonDecode(json) as Map<String, dynamic>;
+        final List<dynamic> settings = doc['settings'] as List<dynamic>;
+        final Map<String, String> kv = <String, String>{
+          for (final dynamic e in settings)
+            (e as Map<String, dynamic>)['key'] as String: e['value'] as String,
+        };
+        final Map<String, dynamic> exportedCatalog =
+            jsonDecode(kv['src:reader_fushi:font_catalog']!)
+                as Map<String, dynamic>;
+        final String exportedPath =
+            (exportedCatalog['fonts'] as List<dynamic>).first['path'] as String;
+        // Absolute device root stripped → device topology not leaked, missing
+        // font degrades gracefully on import.
+        expect(exportedPath.contains(fontsRoot), isFalse);
+        expect(exportedPath, '/MyFont.ttf');
+      },
+    );
   });
 
   group('ProfileRepository import', () {
-    String legacyUpscalingJson(String profileName) => jsonEncode(
-          <String, dynamic>{
-            'type': ProfileExport.fileType,
-            'formatVersion': ProfileExport.currentFormatVersion,
-            'schemaVersion': 62,
-            'profileName': profileName,
-            'settings': <Map<String, String>>[
-              <String, String>{
-                'category': ProfileKeys.categoryPref,
-                'key': ProfileKeys.obsoleteGalgameUpscalingModePrefKey,
-                'value': 's:auto',
-              },
-              <String, String>{
-                'category': 'legacy_non_pref',
-                'key': ProfileKeys.obsoleteGalgameUpscalingModePrefKey,
-                'value': 'must-survive',
-              },
-              <String, String>{
-                'category': ProfileKeys.categoryPref,
-                'key': 'font_size',
-                'value': '24',
-              },
-            ],
-          },
-        );
+    String legacyUpscalingJson(String profileName) =>
+        jsonEncode(<String, dynamic>{
+          'type': ProfileExport.fileType,
+          'formatVersion': ProfileExport.currentFormatVersion,
+          'schemaVersion': 62,
+          'profileName': profileName,
+          'settings': <Map<String, String>>[
+            <String, String>{
+              'category': ProfileKeys.categoryPref,
+              'key': ProfileKeys.obsoleteGalgameUpscalingModePrefKey,
+              'value': 's:auto',
+            },
+            <String, String>{
+              'category': 'legacy_non_pref',
+              'key': ProfileKeys.obsoleteGalgameUpscalingModePrefKey,
+              'value': 'must-survive',
+            },
+            <String, String>{
+              'category': ProfileKeys.categoryPref,
+              'key': 'font_size',
+              'value': '24',
+            },
+          ],
+        });
 
     Future<String> exportFixture(
       FushiDatabase db,
@@ -245,56 +252,63 @@ void main() {
       return json;
     }
 
-    test('default mode creates a NEW profile with the exported settings',
-        () async {
-      final db = await _openDb();
-      final repo = _repo(db);
-      // Seed a default so deleting the fixture profile is allowed.
-      await repo.ensureDefaultProfile();
-      final String json = await exportFixture(
-        db,
-        repo,
-        'Imported',
-        <String, String>{'font_size': '24', 'theme': 'sepia'},
-      );
-
-      final int newId = await repo.importProfileFromJson(json);
-      final row = await db.getProfileById(newId);
-      expect(row, isNotNull);
-      expect(row!.name, 'Imported');
-
-      final settings = await db.getProfileSettings(newId);
-      final kv = <String, String>{for (final s in settings) s.key: s.value};
-      expect(kv['font_size'], '24');
-      expect(kv['theme'], 'sepia');
-    });
-
     test(
-        'v63 create import drops only the obsolete pref row and keeps the '
+      'default mode creates a NEW profile with the exported settings',
+      () async {
+        final db = await _openDb();
+        final repo = _repo(db);
+        // Seed a default so deleting the fixture profile is allowed.
+        await repo.ensureDefaultProfile();
+        final String json = await exportFixture(
+          db,
+          repo,
+          'Imported',
+          <String, String>{'font_size': '24', 'theme': 'sepia'},
+        );
+
+        final int newId = await repo.importProfileFromJson(json);
+        final row = await db.getProfileById(newId);
+        expect(row, isNotNull);
+        expect(row!.name, 'Imported');
+
+        final settings = await db.getProfileSettings(newId);
+        final kv = <String, String>{for (final s in settings) s.key: s.value};
+        expect(kv['font_size'], '24');
+        expect(kv['theme'], 'sepia');
+      },
+    );
+
+    test('v63 create import drops only the obsolete pref row and keeps the '
         'same key in a non-pref category', () async {
       final db = await _openDb();
       final repo = _repo(db);
 
-      final int id =
-          await repo.importProfileFromJson(legacyUpscalingJson('Legacy'));
+      final int id = await repo.importProfileFromJson(
+        legacyUpscalingJson('Legacy'),
+      );
       final rows = await db.getProfileSettings(id);
 
       expect(
-        rows.where((r) =>
-            r.category == ProfileKeys.categoryPref &&
-            r.key == ProfileKeys.obsoleteGalgameUpscalingModePrefKey),
+        rows.where(
+          (r) =>
+              r.category == ProfileKeys.categoryPref &&
+              r.key == ProfileKeys.obsoleteGalgameUpscalingModePrefKey,
+        ),
         isEmpty,
       );
       expect(
-        rows.where((r) =>
-            r.category == 'legacy_non_pref' &&
-            r.key == ProfileKeys.obsoleteGalgameUpscalingModePrefKey),
+        rows.where(
+          (r) =>
+              r.category == 'legacy_non_pref' &&
+              r.key == ProfileKeys.obsoleteGalgameUpscalingModePrefKey,
+        ),
         hasLength(1),
         reason: '用户只授权删除 pref 分类，同名非 pref 行必须保留',
       );
       expect(
-        rows.where((r) =>
-            r.category == ProfileKeys.categoryPref && r.key == 'font_size'),
+        rows.where(
+          (r) => r.category == ProfileKeys.categoryPref && r.key == 'font_size',
+        ),
         hasLength(1),
       );
     });
@@ -303,12 +317,9 @@ void main() {
       final db = await _openDb();
       final repo = _repo(db);
       await repo.ensureDefaultProfile();
-      final String json = await exportFixture(
-        db,
-        repo,
-        'Dup',
-        <String, String>{'font_size': '12'},
-      );
+      final String json = await exportFixture(db, repo, 'Dup', <String, String>{
+        'font_size': '12',
+      });
       // Re-create a profile named 'Dup' so the import collides.
       await repo.createProfile('Dup');
 
@@ -344,62 +355,73 @@ void main() {
       expect(kv['new_key'], 'v');
     });
 
-    test('v63 overwrite import also cannot recreate the obsolete pref row',
-        () async {
-      final db = await _openDb();
-      final repo = _repo(db);
-      final int target = await repo.createProfile('Target');
-      await db.replaceProfileSettings(target, <ProfileSettingsCompanion>[
-        ProfileSettingsCompanion.insert(
-          profileId: target,
-          category: ProfileKeys.categoryPref,
-          key: ProfileKeys.obsoleteGalgameUpscalingModePrefKey,
-          value: 's:off',
-        ),
-      ]);
+    test(
+      'v63 overwrite import also cannot recreate the obsolete pref row',
+      () async {
+        final db = await _openDb();
+        final repo = _repo(db);
+        final int target = await repo.createProfile('Target');
+        await db.replaceProfileSettings(target, <ProfileSettingsCompanion>[
+          ProfileSettingsCompanion.insert(
+            profileId: target,
+            category: ProfileKeys.categoryPref,
+            key: ProfileKeys.obsoleteGalgameUpscalingModePrefKey,
+            value: 's:off',
+          ),
+        ]);
 
-      await repo.importProfileFromJson(
-        legacyUpscalingJson('Ignored'),
-        mode: ProfileImportMode.overwrite,
-        targetProfileId: target,
-      );
-      final rows = await db.getProfileSettings(target);
+        await repo.importProfileFromJson(
+          legacyUpscalingJson('Ignored'),
+          mode: ProfileImportMode.overwrite,
+          targetProfileId: target,
+        );
+        final rows = await db.getProfileSettings(target);
 
-      expect(
-        rows.where((r) =>
-            r.category == ProfileKeys.categoryPref &&
-            r.key == ProfileKeys.obsoleteGalgameUpscalingModePrefKey),
-        isEmpty,
-      );
-      expect(
-        rows.where((r) =>
-            r.category == 'legacy_non_pref' &&
-            r.key == ProfileKeys.obsoleteGalgameUpscalingModePrefKey),
-        hasLength(1),
-      );
-      expect(
-        rows
-            .singleWhere((r) =>
-                r.category == ProfileKeys.categoryPref && r.key == 'font_size')
-            .value,
-        '24',
-      );
-    });
+        expect(
+          rows.where(
+            (r) =>
+                r.category == ProfileKeys.categoryPref &&
+                r.key == ProfileKeys.obsoleteGalgameUpscalingModePrefKey,
+          ),
+          isEmpty,
+        );
+        expect(
+          rows.where(
+            (r) =>
+                r.category == 'legacy_non_pref' &&
+                r.key == ProfileKeys.obsoleteGalgameUpscalingModePrefKey,
+          ),
+          hasLength(1),
+        );
+        expect(
+          rows
+              .singleWhere(
+                (r) =>
+                    r.category == ProfileKeys.categoryPref &&
+                    r.key == 'font_size',
+              )
+              .value,
+          '24',
+        );
+      },
+    );
 
-    test('corrupt JSON throws ProfileImportException before touching the DB',
-        () async {
-      final db = await _openDb();
-      final repo = _repo(db);
-      await repo.ensureDefaultProfile();
-      final before = (await db.getAllProfiles()).length;
+    test(
+      'corrupt JSON throws ProfileImportException before touching the DB',
+      () async {
+        final db = await _openDb();
+        final repo = _repo(db);
+        await repo.ensureDefaultProfile();
+        final before = (await db.getAllProfiles()).length;
 
-      expect(
-        () => repo.importProfileFromJson('{ not valid json'),
-        throwsA(isA<ProfileImportException>()),
-      );
-      // No partial profile created.
-      expect((await db.getAllProfiles()).length, before);
-    });
+        expect(
+          () => repo.importProfileFromJson('{ not valid json'),
+          throwsA(isA<ProfileImportException>()),
+        );
+        // No partial profile created.
+        expect((await db.getAllProfiles()).length, before);
+      },
+    );
 
     test('wrong type magic is rejected (not any JSON file)', () async {
       final db = await _openDb();
@@ -445,35 +467,35 @@ void main() {
         'settings': <dynamic>[],
       });
       expect(
-        () => repo.importProfileFromJson(
-          json,
-          mode: ProfileImportMode.overwrite,
-        ),
+        () =>
+            repo.importProfileFromJson(json, mode: ProfileImportMode.overwrite),
         throwsA(isA<ProfileImportException>()),
       );
     });
 
-    test('round-trip: export then import reproduces non-credential settings',
-        () async {
-      final db = await _openDb();
-      final repo = _repo(db);
-      await repo.ensureDefaultProfile();
-      final String json = await exportFixture(
-        db,
-        repo,
-        'RT',
-        <String, String>{
-          'font_size': '18',
-          'theme': 'dark',
-          'sync_ftp_password': 'leak', // must be stripped on export
-        },
-      );
-      final int newId = await repo.importProfileFromJson(json);
-      final settings = await db.getProfileSettings(newId);
-      final kv = <String, String>{for (final s in settings) s.key: s.value};
-      expect(kv['font_size'], '18');
-      expect(kv['theme'], 'dark');
-      expect(kv.containsKey('sync_ftp_password'), isFalse);
-    });
+    test(
+      'round-trip: export then import reproduces non-credential settings',
+      () async {
+        final db = await _openDb();
+        final repo = _repo(db);
+        await repo.ensureDefaultProfile();
+        final String json = await exportFixture(
+          db,
+          repo,
+          'RT',
+          <String, String>{
+            'font_size': '18',
+            'theme': 'dark',
+            'sync_ftp_password': 'leak', // must be stripped on export
+          },
+        );
+        final int newId = await repo.importProfileFromJson(json);
+        final settings = await db.getProfileSettings(newId);
+        final kv = <String, String>{for (final s in settings) s.key: s.value};
+        expect(kv['font_size'], '18');
+        expect(kv['theme'], 'dark');
+        expect(kv.containsKey('sync_ftp_password'), isFalse);
+      },
+    );
   });
 }

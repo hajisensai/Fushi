@@ -30,22 +30,37 @@ void main() {
     test('.pitch-dict-label 不再 display:none，而是可见的填充药丸', () {
       final String body = _ruleBody(css, '.pitch-dict-label');
       // 关键：出处必须可见（回归就是有人把它改回 display:none）。
-      expect(body.contains('display: none'), isFalse,
-          reason: '.pitch-dict-label 必须可见，让用户看到音高出处词典名');
-      expect(body, contains('display: inline-block'),
-          reason: '药丸走 inline-block 行内展示');
+      expect(
+        body.contains('display: none'),
+        isFalse,
+        reason: '.pitch-dict-label 必须可见，让用户看到音高出处词典名',
+      );
+      expect(
+        body,
+        contains('display: inline-block'),
+        reason: '药丸走 inline-block 行内展示',
+      );
       // 填充 + 圆角 = 药丸观感。
       expect(body, contains('background-color'), reason: '药丸要有填充背景色');
-      expect(RegExp(r'border-radius:\s*999px').hasMatch(body), isTrue,
-          reason: '满圆 pill 圆角');
+      expect(
+        RegExp(r'border-radius:\s*999px').hasMatch(body),
+        isTrue,
+        reason: '满圆 pill 圆角',
+      );
     });
 
     test('药丸配色接 MD3 --md-* 变量（不写死 Niratan 的 #94a6eb）', () {
       final String body = _ruleBody(css, '.pitch-dict-label');
-      expect(body, contains('var(--md-primary'),
-          reason: '填充色接注入的 --md-primary 动态取色');
-      expect(body, contains('var(--md-on-primary'),
-          reason: '文字色接配对的 --md-on-primary，浅色白字 / 深色深字，两主题对比达标');
+      expect(
+        body,
+        contains('var(--md-primary'),
+        reason: '填充色接注入的 --md-primary 动态取色',
+      );
+      expect(
+        body,
+        contains('var(--md-on-primary'),
+        reason: '文字色接配对的 --md-on-primary，浅色白字 / 深色深字，两主题对比达标',
+      );
       expect(body.contains('#94a6eb'), isFalse, reason: '禁止照抄 Niratan 的硬编码颜色');
     });
 
@@ -55,21 +70,34 @@ void main() {
       final String injection = File(
         'lib/src/pages/implementations/popup_settings_injection.dart',
       ).readAsStringSync();
-      expect(injection, contains("'--md-on-primary'"),
-          reason: 'popup_settings_injection 应注入 --md-on-primary');
+      expect(
+        injection,
+        contains("'--md-on-primary'"),
+        reason: 'popup_settings_injection 应注入 --md-on-primary',
+      );
       final String webview = File(
         'lib/src/pages/implementations/dictionary_popup_webview.dart',
       ).readAsStringSync();
-      expect(webview, isNot(contains("setProperty('--md-on-primary'")),
-          reason: '弹窗 WebView 不得再维护第二份主题变量注入（会与真源漂移）');
-      expect(webview, contains('.themeVarsJs'),
-          reason: '弹窗 WebView 主题热切换必须消费静态段产物里的同一段');
+      expect(
+        webview,
+        isNot(contains("setProperty('--md-on-primary'")),
+        reason: '弹窗 WebView 不得再维护第二份主题变量注入（会与真源漂移）',
+      );
+      expect(
+        webview,
+        contains('.themeVarsJs'),
+        reason: '弹窗 WebView 主题热切换必须消费静态段产物里的同一段',
+      );
       // 取值已收敛到共享真源 popup_theme_css.dart：on-primary 仍取自
       // ColorScheme.onPrimary，注入点经 buildPopupThemeCssVars 消费。
-      final String shared =
-          File('lib/src/utils/popup_theme_css.dart').readAsStringSync();
-      expect(shared, contains('scheme.onPrimary'),
-          reason: '共享真源的 on-primary 应取自 ColorScheme.onPrimary');
+      final String shared = File(
+        'lib/src/utils/popup_theme_css.dart',
+      ).readAsStringSync();
+      expect(
+        shared,
+        contains('scheme.onPrimary'),
+        reason: '共享真源的 on-primary 应取自 ColorScheme.onPrimary',
+      );
     });
   });
 
@@ -77,13 +105,19 @@ void main() {
     test('popup.js 定义了 Material Symbols 图标路径与 setButtonIcon 助手', () {
       expect(js, contains('const ICON_PATHS'), reason: '内联 SVG 图标路径表');
       expect(js, contains('function iconSvg('), reason: 'iconSvg 生成 <svg> 标记');
-      expect(js, contains('function setButtonIcon('),
-          reason: 'setButtonIcon 记 data-icon 并换 innerHTML');
+      expect(
+        js,
+        contains('function setButtonIcon('),
+        reason: 'setButtonIcon 记 data-icon 并换 innerHTML',
+      );
       // 图标必须是矢量 SVG（fill:currentColor 随主题），不是 macOS-only 的 mask 分支。
       expect(js, contains('<svg'), reason: '用内联 SVG 矢量图标');
-      expect(js, contains('fill="currentColor"'),
-          reason:
-              'SVG 用 currentColor 跟随按钮颜色/主题（而非 SF-symbol 的 -webkit-mask macOS-only 分支）');
+      expect(
+        js,
+        contains('fill="currentColor"'),
+        reason:
+            'SVG 用 currentColor 跟随按钮颜色/主题（而非 SF-symbol 的 -webkit-mask macOS-only 分支）',
+      );
     });
 
     test('五类动作按钮挂 inline-action-button 共享基类（制卡按钮只借布局不借 SVG）', () {
@@ -120,8 +154,11 @@ void main() {
       expect(css, contains('.inline-action-button {'), reason: '共享基类规则');
       expect(css, contains('.inline-action-button:hover'), reason: 'hover 态');
       expect(css, contains('.inline-action-button:active'), reason: 'active 态');
-      expect(css, contains('.inline-action-button:disabled'),
-          reason: 'disabled 态');
+      expect(
+        css,
+        contains('.inline-action-button:disabled'),
+        reason: 'disabled 态',
+      );
       // SVG 随按钮 font-size 自适应。
       final String svgBody = _ruleBody(css, '.inline-action-button > svg');
       expect(svgBody, contains('width: 1em'));
@@ -144,11 +181,7 @@ void main() {
         contains("close.innerHTML = iconSvg('close');"),
         reason: '关闭按钮用内联 SVG（复用 ICON_PATHS.close）而非 × 文字字形',
       );
-      expect(
-        js,
-        isNot(contains("textContent = '×'")),
-        reason: '不得退回 × 文字字形',
-      );
+      expect(js, isNot(contains("textContent = '×'")), reason: '不得退回 × 文字字形');
     });
   });
 
@@ -166,57 +199,81 @@ void main() {
       // （队列里显示 ✓），锁死整行会把合法子态当回退误报。
       const String minedArm =
           "mineButton.textContent = isMined ? (latest ? '\u{2713}\u{21A9}\u{FE0E}' : '\u{2713}') : ";
-      expect(js, contains(minedArm),
-          reason: '制卡按钮状态切换用 ✓/✓↩ 文本字形，且 ↩ 带 VS15(U+FE0E)');
+      expect(
+        js,
+        contains(minedArm),
+        reason: '制卡按钮状态切换用 ✓/✓↩ 文本字形，且 ↩ 带 VS15(U+FE0E)',
+      );
       final int armIdx = js.indexOf(minedArm);
-      final String unminedArm =
-          js.substring(armIdx + minedArm.length, js.indexOf(';', armIdx));
+      final String unminedArm = js.substring(
+        armIdx + minedArm.length,
+        js.indexOf(';', armIdx),
+      );
       expect(unminedArm, contains("'+'"), reason: '可制卡态仍是文本 +');
-      expect(unminedArm.contains('<svg'), isFalse,
-          reason: '未制卡那一臂也必须是文本字形，不得塞 SVG');
+      expect(
+        unminedArm.contains('<svg'),
+        isFalse,
+        reason: '未制卡那一臂也必须是文本字形，不得塞 SVG',
+      );
       // class 列表允许带 inline-action-button 等布局基类前缀（BUG-1895）；这里守的
       // 是「初始 textContent 是文本 '+' 而非 SVG」，不是 class 名的确切拼写。
       expect(
-          RegExp(r"className: '[^']*\bmine-button',\s+textContent: '\+',")
-              .hasMatch(js),
-          isTrue,
-          reason: '制卡按钮初始文本为 +（可制卡）');
+        RegExp(
+          r"className: '[^']*\bmine-button',\s+textContent: '\+',",
+        ).hasMatch(js),
+        isTrue,
+        reason: '制卡按钮初始文本为 +（可制卡）',
+      );
     });
 
     test('制卡按钮不再走 SVG setButtonIcon（不回退 phase1 图标）', () {
-      expect(js.contains('setButtonIcon(mineButton'), isFalse,
-          reason: '制卡按钮不得再用 setButtonIcon 设 SVG 图标');
+      expect(
+        js.contains('setButtonIcon(mineButton'),
+        isFalse,
+        reason: '制卡按钮不得再用 setButtonIcon 设 SVG 图标',
+      );
       // check / restore 图标为制卡按钮专用，还原后应删除；add 仍供步进器 + 按钮。
       expect(js.contains("check: '"), isFalse, reason: 'check 图标制卡专用，已随还原删除');
-      expect(js.contains("restore: '"), isFalse,
-          reason: 'restore 图标制卡专用，已随还原删除');
+      expect(
+        js.contains("restore: '"),
+        isFalse,
+        reason: 'restore 图标制卡专用，已随还原删除',
+      );
     });
 
     test('MD3 着色 toast 保留作辅助反馈（✓✓↩ 为主、toast 为辅）', () {
-      final String mixin =
-          File('lib/src/pages/implementations/dictionary_page_mixin.dart')
-              .readAsStringSync();
-      expect(mixin, contains('FushiToast.showMine'),
-          reason: '制卡结果仍弹 MD3 着色 toast（added/duplicate/failed/pending）作辅助反馈');
+      final String mixin = File(
+        'lib/src/pages/implementations/dictionary_page_mixin.dart',
+      ).readAsStringSync();
+      expect(
+        mixin,
+        contains('FushiToast.showMine'),
+        reason: '制卡结果仍弹 MD3 着色 toast（added/duplicate/failed/pending）作辅助反馈',
+      );
     });
   });
 
   group('未破坏 Fushi 既有弹窗资产（回归护栏）', () {
     test('header-buttons 仍是单一来源的响应式 clamp gap（TODO-846 不回退）', () {
       final String body = _ruleBody(css, '.header-buttons');
-      expect(RegExp(r'gap\s*:\s*clamp\(').hasMatch(body), isTrue,
-          reason: '顶部按钮间距仍走 .header-buttons 的 clamp gap');
+      expect(
+        RegExp(r'gap\s*:\s*clamp\(').hasMatch(body),
+        isTrue,
+        reason: '顶部按钮间距仍走 .header-buttons 的 clamp gap',
+      );
     });
 
     test('.mine-button / .sentence-context-picker 仍不自带 margin-left', () {
       expect(
-          RegExp(r'\.mine-button\s*\{[^}]*margin-left').hasMatch(css), isFalse,
-          reason: '.mine-button 不得自带 margin-left（间距走 gap）');
+        RegExp(r'\.mine-button\s*\{[^}]*margin-left').hasMatch(css),
+        isFalse,
+        reason: '.mine-button 不得自带 margin-left（间距走 gap）',
+      );
       expect(
-          RegExp(r'\.sentence-context-picker\s*\{[^}]*margin-left')
-              .hasMatch(css),
-          isFalse,
-          reason: '.sentence-context-picker 不得自带 margin-left');
+        RegExp(r'\.sentence-context-picker\s*\{[^}]*margin-left').hasMatch(css),
+        isFalse,
+        reason: '.sentence-context-picker 不得自带 margin-left',
+      );
     });
 
     test('音高发音区仍 user-select:none（TODO-1305 不回退）', () {
@@ -226,8 +283,11 @@ void main() {
     });
 
     test('卡片圆角仍走 --fushi-radius-card token（未被本次改动破坏）', () {
-      expect(css, contains('var(--fushi-radius-card'),
-          reason: '弹窗卡片表面仍引用注入的圆角 token');
+      expect(
+        css,
+        contains('var(--fushi-radius-card'),
+        reason: '弹窗卡片表面仍引用注入的圆角 token',
+      );
     });
   });
 }

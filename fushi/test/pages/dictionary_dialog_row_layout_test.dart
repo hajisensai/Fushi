@@ -41,8 +41,9 @@ void main() {
     );
   }
 
-  testWidgets('collapse leading icon is laid out left of the dictionary name',
-      (WidgetTester tester) async {
+  testWidgets('collapse leading icon is laid out left of the dictionary name', (
+    WidgetTester tester,
+  ) async {
     tester.view.physicalSize = const Size(1200, 800);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -52,15 +53,20 @@ void main() {
 
     expect(tester.takeException(), isNull);
 
-    final double leadingX =
-        tester.getTopLeft(find.byIcon(Icons.unfold_less)).dx;
+    final double leadingX = tester
+        .getTopLeft(find.byIcon(Icons.unfold_less))
+        .dx;
     final double titleX = tester.getTopLeft(find.byType(Text).first).dx;
-    expect(leadingX, lessThan(titleX),
-        reason: 'collapse toggle must sit left of the name (leading/leftmost)');
+    expect(
+      leadingX,
+      lessThan(titleX),
+      reason: 'collapse toggle must sit left of the name (leading/leftmost)',
+    );
   });
 
-  testWidgets('long dictionary name does not overflow on a narrow width',
-      (WidgetTester tester) async {
+  testWidgets('long dictionary name does not overflow on a narrow width', (
+    WidgetTester tester,
+  ) async {
     tester.view.physicalSize = const Size(320, 480);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);

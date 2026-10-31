@@ -7,29 +7,41 @@ void main() {
   // build-multiplatform.yml 的 linux job 搬到 native-fushidicts-gate.yml 的 ctest-gcc。
   String readWorkflow() {
     final File file = File('../.github/workflows/native-fushidicts-gate.yml');
-    expect(file.existsSync(), isTrue,
-        reason: 'expected workflow at ${file.absolute.path}');
+    expect(
+      file.existsSync(),
+      isTrue,
+      reason: 'expected workflow at ${file.absolute.path}',
+    );
     return file.readAsStringSync();
   }
 
   String readFushidictsCmake() {
     final File file = File('../native/fushidicts/CMakeLists.txt');
-    expect(file.existsSync(), isTrue,
-        reason: 'expected fushidicts CMake at ${file.absolute.path}');
+    expect(
+      file.existsSync(),
+      isTrue,
+      reason: 'expected fushidicts CMake at ${file.absolute.path}',
+    );
     return file.readAsStringSync();
   }
 
   String readLinuxCmake() {
     final File file = File('linux/CMakeLists.txt');
-    expect(file.existsSync(), isTrue,
-        reason: 'expected Linux CMake at ${file.absolute.path}');
+    expect(
+      file.existsSync(),
+      isTrue,
+      reason: 'expected Linux CMake at ${file.absolute.path}',
+    );
     return file.readAsStringSync();
   }
 
   String readLinuxRunnerCmake() {
     final File file = File('linux/runner/CMakeLists.txt');
-    expect(file.existsSync(), isTrue,
-        reason: 'expected Linux runner CMake at ${file.absolute.path}');
+    expect(
+      file.existsSync(),
+      isTrue,
+      reason: 'expected Linux runner CMake at ${file.absolute.path}',
+    );
     return file.readAsStringSync();
   }
 
@@ -38,15 +50,21 @@ void main() {
     const String header = '\n  ctest-gcc:\n';
     final int linuxJobStart = workflow.indexOf(header);
 
-    expect(linuxJobStart, isNonNegative,
-        reason: 'native-fushidicts-gate.yml must keep the gcc-14 ctest job');
+    expect(
+      linuxJobStart,
+      isNonNegative,
+      reason: 'native-fushidicts-gate.yml must keep the gcc-14 ctest job',
+    );
 
     // 窗口截到下一个 job 头（没有就到文件尾）。
-    final Iterable<RegExpMatch> laterJobs =
-        RegExp(r'^  [A-Za-z0-9_-]+:\s*$', multiLine: true)
-            .allMatches(workflow, linuxJobStart + header.length);
-    final String linuxJob = workflow.substring(linuxJobStart,
-        laterJobs.isEmpty ? workflow.length : laterJobs.first.start);
+    final Iterable<RegExpMatch> laterJobs = RegExp(
+      r'^  [A-Za-z0-9_-]+:\s*$',
+      multiLine: true,
+    ).allMatches(workflow, linuxJobStart + header.length);
+    final String linuxJob = workflow.substring(
+      linuxJobStart,
+      laterJobs.isEmpty ? workflow.length : laterJobs.first.start,
+    );
 
     expect(linuxJob, contains('gcc-14 g++-14 libstdc++-14-dev'));
     expect(linuxJob, contains('CC: gcc-14'));
@@ -64,16 +82,21 @@ void main() {
 
   test('Linux fushidicts static archives are PIC before shared FFI link', () {
     final String cmake = readFushidictsCmake();
-    final int linuxGuardStart =
-        cmake.indexOf('if(CMAKE_SYSTEM_NAME STREQUAL "Linux")');
-    final int picSetting =
-        cmake.indexOf('set(CMAKE_POSITION_INDEPENDENT_CODE ON)');
-    final int bundledDepsStart =
-        cmake.indexOf('add_subdirectory(fushidicts_external/glaze');
-    final int staticTargetStart =
-        cmake.indexOf('add_library(fushidicts STATIC');
-    final int sharedTargetStart =
-        cmake.indexOf('add_library(fushidicts_ffi SHARED');
+    final int linuxGuardStart = cmake.indexOf(
+      'if(CMAKE_SYSTEM_NAME STREQUAL "Linux")',
+    );
+    final int picSetting = cmake.indexOf(
+      'set(CMAKE_POSITION_INDEPENDENT_CODE ON)',
+    );
+    final int bundledDepsStart = cmake.indexOf(
+      'add_subdirectory(fushidicts_external/glaze',
+    );
+    final int staticTargetStart = cmake.indexOf(
+      'add_library(fushidicts STATIC',
+    );
+    final int sharedTargetStart = cmake.indexOf(
+      'add_library(fushidicts_ffi SHARED',
+    );
 
     expect(linuxGuardStart, isNonNegative);
     expect(picSetting, greaterThan(linuxGuardStart));
@@ -85,7 +108,8 @@ void main() {
     expect(
       picSetting,
       lessThan(bundledDepsStart),
-      reason: 'Linux links fushidicts.a plus bundled static dependencies into '
+      reason:
+          'Linux links fushidicts.a plus bundled static dependencies into '
           'libfushidicts_ffi.so; PIC must be enabled before those static '
           'targets are created or ld fails during the Flutter Linux link step.',
     );
@@ -95,16 +119,19 @@ void main() {
     final String linuxCmake = readLinuxCmake();
     final String runnerCmake = readLinuxRunnerCmake();
 
-    final int standardSettingsStart =
-        linuxCmake.indexOf('function(APPLY_STANDARD_SETTINGS TARGET)');
+    final int standardSettingsStart = linuxCmake.indexOf(
+      'function(APPLY_STANDARD_SETTINGS TARGET)',
+    );
     final int standardSettingsEnd = linuxCmake.indexOf(
       'endfunction()',
       standardSettingsStart,
     );
-    final int runnerSubdirectory =
-        linuxCmake.indexOf('add_subdirectory("runner")');
-    final int generatedPlugins =
-        linuxCmake.indexOf('include(flutter/generated_plugins.cmake)');
+    final int runnerSubdirectory = linuxCmake.indexOf(
+      'add_subdirectory("runner")',
+    );
+    final int generatedPlugins = linuxCmake.indexOf(
+      'include(flutter/generated_plugins.cmake)',
+    );
 
     expect(standardSettingsStart, isNonNegative);
     expect(standardSettingsEnd, greaterThan(standardSettingsStart));
@@ -120,7 +147,8 @@ void main() {
     expect(
       standardSettings,
       isNot(contains('-Werror')),
-      reason: 'Flutter Linux pub-cache plugins call APPLY_STANDARD_SETTINGS; '
+      reason:
+          'Flutter Linux pub-cache plugins call APPLY_STANDARD_SETTINGS; '
           'their warnings must not be promoted to CI build failures.',
     );
     expect(

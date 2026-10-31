@@ -85,13 +85,12 @@ class PopupSettingsOptions {
 String buildInAppPopupThemeVariablesJs({
   required AppModel appModel,
   required ThemeData theme,
-}) =>
-    _themeVariablesJs(
-      appModel: appModel,
-      theme: theme,
-      globalLookup: false,
-      mobileExternal: false,
-    );
+}) => _themeVariablesJs(
+  appModel: appModel,
+  theme: theme,
+  globalLookup: false,
+  mobileExternal: false,
+);
 
 /// Builds the theme-derived CSS custom properties + `data-theme` (+ the
 /// `global-lookup` document class when [globalLookup]). Shared by both paths so
@@ -124,8 +123,8 @@ String _themeVariablesJs({
   final String classLine = globalLookup
       ? "document.documentElement.classList.add('global-lookup');\n"
       : (mobileExternal
-          ? "document.documentElement.classList.add('mobile-external');\n"
-          : '');
+            ? "document.documentElement.classList.add('mobile-external');\n"
+            : '');
   // 墨水屏模式：给 <html> 挂 eink class（popup.css 末尾的 html.eink 覆盖块吃它，
   // 纯黑白/方角/实线边框/关过渡）。用 toggle 而非 add——in-app 热槽 WebView 跨渲染
   // 持久，开关关掉后重注入必须能把 class 摘掉。标志从传入的 ThemeData 扩展读
@@ -148,14 +147,18 @@ String _themeVariablesJs({
   // 菜单模糊的是同一文档里的词条，在 Chromium 自己的合成器里完成，与 Flutter 无关。
   // 宿主在 WebView 下方垫了原生系统材质（NSVisualEffectView / UIVisualEffectView，
   // [fushiNativePopupMaterialAvailable]）时，背后是真模糊，走与其它平台同一档。
-  final bool solidBackdrop = (theme.platform == TargetPlatform.iOS ||
+  final bool solidBackdrop =
+      (theme.platform == TargetPlatform.iOS ||
           theme.platform == TargetPlatform.macOS) &&
       !(glassHost &&
           !mobileExternal &&
           fushiNativePopupMaterialAvailable(
             theme: theme,
             highContrast: WidgetsBinding
-                .instance.platformDispatcher.accessibilityFeatures.highContrast,
+                .instance
+                .platformDispatcher
+                .accessibilityFeatures
+                .highContrast,
           ));
   // Apple 设计系统（色板扩展 [FushiAppleColors] 只挂在 Apple 主题上）：popup.css 的
   // `html.fushi-glass-host.fushi-apple` 把顶栏 tonal 按钮（「调整上下文」）换成 Apple
@@ -170,7 +173,10 @@ String _themeVariablesJs({
   // fushi-reduced-motion，CSS 侧归零按压位移与过渡（CSS 不能写 @media，见生成器）。
   final bool m3e = !eink && theme.extension<FushiAppleColors>() == null;
   final bool reducedMotion = WidgetsBinding
-      .instance.platformDispatcher.accessibilityFeatures.disableAnimations;
+      .instance
+      .platformDispatcher
+      .accessibilityFeatures
+      .disableAnimations;
   final String glassLine =
       "document.documentElement.classList.toggle('fushi-glass-host', $glassHost);\n"
       "document.documentElement.classList.toggle('fushi-solid-backdrop', $solidBackdrop);\n"
@@ -222,8 +228,7 @@ String _themeVariablesJs({
 String dictionaryFontStyleJs(
   AppModel appModel, {
   String Function(String safePath)? fontUrlBuilder,
-}) =>
-    _dictionaryFontStyleJsMemo(appModel, fontUrlBuilder: fontUrlBuilder).js;
+}) => _dictionaryFontStyleJsMemo(appModel, fontUrlBuilder: fontUrlBuilder).js;
 
 /// BUG-717 ③：[dictionaryFontStyleJs] 最终产物的进程内 memo。
 ///
@@ -304,16 +309,15 @@ _DictionaryFontInputs _resolveDictionaryFontInputs(
       : appModel.isDictionaryRepoReady
       ? appModel.dictionaries
       : null;
-  final List<DictionaryLanguageEntry> dictionaryLanguages =
-      dictionaries != null
-          ? <DictionaryLanguageEntry>[
-              for (final Dictionary d in dictionaries)
-                DictionaryLanguageEntry(
-                  name: d.name,
-                  glossaryLanguage: d.effectiveTargetLanguage,
-                ),
-            ]
-          : const <DictionaryLanguageEntry>[];
+  final List<DictionaryLanguageEntry> dictionaryLanguages = dictionaries != null
+      ? <DictionaryLanguageEntry>[
+          for (final Dictionary d in dictionaries)
+            DictionaryLanguageEntry(
+              name: d.name,
+              glossaryLanguage: d.effectiveTargetLanguage,
+            ),
+        ]
+      : const <DictionaryLanguageEntry>[];
   final String languageFingerprint = dictionaryLanguages
       .map((DictionaryLanguageEntry e) => '${e.name}=${e.glossaryLanguage}')
       .join('|');
@@ -389,15 +393,15 @@ ExtensionDictionaryFont _extensionDictionaryFontFrom(
     String fontFaces,
     List<String> families,
     List<DictionaryFontFaceSource> faceSources,
-  }) css = DictionaryFontCss.build(
+  })
+  css = DictionaryFontCss.build(
     inputs.fonts,
     allowedDirectories: inputs.allowedDirectories,
     fontUrlBuilder: extensionDictionaryFontUrl,
   );
   final ExtensionDictionaryFont value = (
     faces: <Map<String, String>>[
-      for (final DictionaryFontFaceSource face
-          in css.faceSources)
+      for (final DictionaryFontFaceSource face in css.faceSources)
         <String, String>{
           'family': face.family,
           'src': face.src,
@@ -456,8 +460,9 @@ const ExtensionDictionaryFont _kNoExtensionDictionaryFont = (
   AppModel appModel, {
   String Function(String safePath)? fontUrlBuilder,
 }) {
-  final _FontStyleMemoSlot slot =
-      fontUrlBuilder == null ? _fontStyleMemoInline : _fontStyleMemoUrl;
+  final _FontStyleMemoSlot slot = fontUrlBuilder == null
+      ? _fontStyleMemoInline
+      : _fontStyleMemoUrl;
   // BUG: `ReaderFushiSource.readerSettings` is only populated while a book /
   // reader is open. In the app-external clipboard-lookup flow (VN / game, no
   // book), it is null, so the user's configured dictionary font was never
@@ -480,8 +485,10 @@ const ExtensionDictionaryFont _kNoExtensionDictionaryFont = (
       js: '',
     );
   }
-  final _DictionaryFontInputs inputs =
-      _resolveDictionaryFontInputs(appModel, settings);
+  final _DictionaryFontInputs inputs = _resolveDictionaryFontInputs(
+    appModel,
+    settings,
+  );
   final List<Map<String, dynamic>> fonts = inputs.fonts;
   final List<String> allowedDirectories = inputs.allowedDirectories;
   final String defaultContentLanguage = inputs.defaultContentLanguage;
@@ -489,7 +496,8 @@ const ExtensionDictionaryFont _kNoExtensionDictionaryFont = (
       inputs.dictionaryLanguages;
   // 词头语言 = 查词来源的语言（正在读的书/视频/游戏）> 全局默认。它与释义区的
   // 词典语言是两条独立的轴，不能混用同一个值。
-  final String lookupLanguage = resolveContentLanguage(
+  final String lookupLanguage =
+      resolveContentLanguage(
         explicit: appModel.currentLookupLanguage,
         globalDefault: defaultContentLanguage,
       ) ??
@@ -505,7 +513,8 @@ const ExtensionDictionaryFont _kNoExtensionDictionaryFont = (
     String fontFaces,
     List<String> families,
     List<DictionaryFontFaceSource> faceSources,
-  }) css = DictionaryFontCss.build(
+  })
+  css = DictionaryFontCss.build(
     fonts,
     allowedDirectories: allowedDirectories,
     fontUrlBuilder: fontUrlBuilder,
@@ -532,7 +541,8 @@ const ExtensionDictionaryFont _kNoExtensionDictionaryFont = (
       for (final DictionaryLanguageEntry e in dictionaryLanguages)
         if ((e.glossaryLanguage ?? '').isNotEmpty) e.name: e.glossaryLanguage!,
     });
-    js = '''
+    js =
+        '''
       (function(){
         window.__fushiDictionaryLanguages = $languageMapJson;
         window.__fushiLookupLanguage = ${jsonEncode(lookupLanguage)};
@@ -843,8 +853,9 @@ String popupEntryWheelBindingsJson(
   // 注册表还没装载时（弹窗进程的精简初始化早于 loadShortcutRegistry，或测试里的
   // 裸 registry）每个动作都读到空绑定 —— 而空表在 popup.js 那边的语义是「用户关掉
   // 了这个方向」，直接下发会让 Alt+滚轮静默失效。这种情况下回落到平台默认表。
-  final Map<ShortcutAction, ShortcutBindingSet>? fallback =
-      registry.isLoaded ? null : ShortcutDefaults.forPlatform(platform);
+  final Map<ShortcutAction, ShortcutBindingSet>? fallback = registry.isLoaded
+      ? null
+      : ShortcutDefaults.forPlatform(platform);
   List<WheelBinding> bindingsOf(ShortcutAction action) => fallback == null
       ? registry.bindingsFor(action).wheelBindings
       : (fallback[action]?.wheelBindings ?? const <WheelBinding>[]);
@@ -853,10 +864,11 @@ String popupEntryWheelBindingsJson(
         for (final WheelBinding b in bindingsOf(action))
           <String, Object>{
             'dir': b.direction == WheelDirection.up ? 'up' : 'down',
-            'mods': b.modifiers
-                .map((ModifierKey m) => m.label.toLowerCase())
-                .toList(growable: false)
-              ..sort(),
+            'mods':
+                b.modifiers
+                    .map((ModifierKey m) => m.label.toLowerCase())
+                    .toList(growable: false)
+                  ..sort(),
           },
       ];
   return jsonEncode(<String, Object>{
@@ -898,8 +910,9 @@ String popupKeyBindingsJson(
   FushiShortcutRegistry registry,
   TargetPlatform platform,
 ) {
-  final Map<ShortcutAction, ShortcutBindingSet>? fallback =
-      registry.isLoaded ? null : ShortcutDefaults.forPlatform(platform);
+  final Map<ShortcutAction, ShortcutBindingSet>? fallback = registry.isLoaded
+      ? null
+      : ShortcutDefaults.forPlatform(platform);
   List<InputBinding> bindingsOf(ShortcutAction action) => fallback == null
       ? registry.bindingsFor(action).keyboardBindings
       : (fallback[action]?.keyboardBindings ?? const <InputBinding>[]);
@@ -908,10 +921,11 @@ String popupKeyBindingsJson(
         for (final InputBinding b in bindingsOf(action))
           <String, Object>{
             'key': _webKeyName(b.key),
-            'mods': b.modifiers
-                .map((ModifierKey m) => m.label.toLowerCase())
-                .toList(growable: false)
-              ..sort(),
+            'mods':
+                b.modifiers
+                    .map((ModifierKey m) => m.label.toLowerCase())
+                    .toList(growable: false)
+                  ..sort(),
           },
       ];
   return jsonEncode(<String, Object>{
@@ -1024,6 +1038,7 @@ String _customDictCssJsonOf(Map<String, String> css) {
   _customDictCssJsonMemo = (source: css, json: json);
   return json;
 }
+
 int _staticSettingsRevision = 0;
 
 /// 测试专用：清空本文件的进程内 memo（字体注入串 + 静态设置产物），避免用例间
@@ -1079,7 +1094,8 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
       : 'null';
   final String audioSourcesJson = jsonEncode(appModel.enabledAudioSources);
   final String lookupAudioVolume = ReaderFushiSource
-      .instance.lookupAudioVolumeGain
+      .instance
+      .lookupAudioVolumeGain
       .clamp(0.0, 1.0)
       .toStringAsFixed(4);
   final String localeTag = LocaleSettings.currentLocale.languageTag;
@@ -1101,13 +1117,15 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
   // 恒为真名（它同时是 CSS 作用域 key、媒体 URL 参数、隐藏/折叠/排序 key 和
   // Anki `{single-glossary-<名>}` token 的 key，替换它会静默打断上述全部），
   // popup.js 只在**渲染词典名文本**的那几处查这张表。只装真正改过名的条目。
-  final String dictionaryDisplayNames =
-      jsonEncode(appModel.dictionaryDisplayNameOverrides);
+  final String dictionaryDisplayNames = jsonEncode(
+    appModel.dictionaryDisplayNameOverrides,
+  );
   // effective* = 可视化规则的编译产物 + 用户手写（产物在前、手写在后）。这里
   // 绝不能用裸 globalDictCSS / customDictCSS——那是编辑器回填用的原文。
   final String globalDictCSS = appModel.effectiveGlobalDictCSS;
-  final String customDictCSSJson =
-      _customDictCssJsonOf(appModel.effectiveCustomDictCSS);
+  final String customDictCSSJson = _customDictCssJsonOf(
+    appModel.effectiveCustomDictCSS,
+  );
 
   // 「制卡」功能模块（[ModuleId.cardCreation]）总开关。关掉时 popup.js 不渲染词条头
   // 上的「+」制卡按钮与「在 Anki 中打开」↗ 按钮，也不再每次查词去问 Anki 查重——
@@ -1190,10 +1208,12 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
   // BUG-1139：Ctrl+滚轮内容缩放只装给 app 外裸 WebView2 表面。in-app 三个表面由
   // dictionary_popup_webview 的 _zoomWheelJs 在 onLoadStop 装同名 guard 的另一套
   // （就地 zoom + 即时反馈），两边永不同装。
-  final String zoomWheelJs =
-      options.globalLookup ? _globalLookupZoomWheelJs : '';
+  final String zoomWheelJs = options.globalLookup
+      ? _globalLookupZoomWheelJs
+      : '';
 
-  final String head = '''
+  final String head =
+      '''
     $themeVarsJs
     $fontStyleJs
     // popupRendered is the host reveal gate. Let popup.js wait for the injected
@@ -1311,7 +1331,8 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     window.hiddenDictionaryNames = $hiddenNames;
     window.dictionaryDisplayNames = $dictionaryDisplayNames;
 ''';
-  final String tail = '''    window.dictionaryStyles = $stylesJson;
+  final String tail =
+      '''    window.dictionaryStyles = $stylesJson;
     window.globalDictCSS = ${jsonEncode(globalDictCSS)};
     window.customDictCSS = $customDictCSSJson;
 ''';

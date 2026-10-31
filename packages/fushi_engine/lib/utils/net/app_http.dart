@@ -63,8 +63,7 @@ HttpClient createAppHttpClient({
 /// [createAppHttpClient] 的 `package:http` 包装：裸 `http.Client()` 的逐点替换目标。
 http.Client createAppHttpIoClient({
   Duration? connectionTimeout = kAppHttpConnectionTimeout,
-}) =>
-    IOClient(createAppHttpClient(connectionTimeout: connectionTimeout));
+}) => IOClient(createAppHttpClient(connectionTimeout: connectionTimeout));
 
 /// 建一个走应用代理出口的 [Dio]：裸 `Dio()` / `Dio(BaseOptions(...))` 的替换目标。
 ///
@@ -76,8 +75,9 @@ Dio createAppDio({
   Duration? connectionTimeout = kAppHttpConnectionTimeout,
 }) {
   final Dio dio = options == null ? Dio() : Dio(options);
-  final HttpClient httpClient =
-      createAppHttpClient(connectionTimeout: connectionTimeout);
+  final HttpClient httpClient = createAppHttpClient(
+    connectionTimeout: connectionTimeout,
+  );
   dio.httpClientAdapter = IOHttpClientAdapter(
     onHttpClientCreate: (HttpClient _) => httpClient,
   );

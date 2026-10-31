@@ -64,8 +64,11 @@ void main() {
       );
       // 悬浮底栏不占正文位置 ⇒ bottomChromeReserve 已为 0，留白也必须为 0。
       expect(
-        insets(lyricsMode: true, chromeOccupiesLayout: true, bottomReserve: 0)
-            .bottom,
+        insets(
+          lyricsMode: true,
+          chromeOccupiesLayout: true,
+          bottomReserve: 0,
+        ).bottom,
         0,
       );
     });
@@ -84,9 +87,13 @@ void main() {
       // 顶栏过去在歌词模式整块不启用，歌词文档因此从 y=0 起画，系统状态栏 / 刘海
       // 直接压在首行歌词上；顶栏恢复在场后，独立文档必须像正文一样给它让位。
       expect(
-          insets(lyricsMode: true, chromeOccupiesLayout: true).top, topReserve);
-      expect(insets(lyricsMode: true, chromeOccupiesLayout: true, top: 12).top,
-          12);
+        insets(lyricsMode: true, chromeOccupiesLayout: true).top,
+        topReserve,
+      );
+      expect(
+        insets(lyricsMode: true, chromeOccupiesLayout: true, top: 12).top,
+        12,
+      );
     });
 
     test('顶部留白不受底栏占位门控（顶栏是否占位已由调用方算进 topReserve）', () {
@@ -121,8 +128,10 @@ void main() {
   });
 
   group('_buildBody 接线', () {
-    final String body =
-        methodBody(readReaderPageSource(), '  Widget _buildBody()');
+    final String body = methodBody(
+      readReaderPageSource(),
+      '  Widget _buildBody()',
+    );
 
     test('留白只能来自 independentDocumentInsets（单一真相源）', () {
       expect(
@@ -141,7 +150,8 @@ void main() {
       expect(
         containsIdentifierCall(body, 'EdgeInsets'),
         isFalse,
-        reason: '_buildBody 里出现 EdgeInsets 构造（如 EdgeInsets.only(bottom: …)）'
+        reason:
+            '_buildBody 里出现 EdgeInsets 构造（如 EdgeInsets.only(bottom: …)）'
             '意味着留白重新长回页面里，纯函数单测再绿也不代表真实渲染留了空间',
       );
     });

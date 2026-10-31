@@ -41,29 +41,30 @@ void main() {
   });
 
   SyncOrchestrator orchestrator() => SyncOrchestrator(
-        db: db,
-        backend: backend,
-        dictionaryResourceRoot: tmp,
-        audioDatabaseRoot: tmp,
-        tempDir: tmp,
-        syncStats: false,
-        syncAudioBookPosition: false,
-        syncContent: false,
-        syncMangaContent: false,
-        syncAudioBookFiles: false,
-        syncDictionary: false,
-      );
+    db: db,
+    backend: backend,
+    dictionaryResourceRoot: tmp,
+    audioDatabaseRoot: tmp,
+    tempDir: tmp,
+    syncStats: false,
+    syncAudioBookPosition: false,
+    syncContent: false,
+    syncMangaContent: false,
+    syncAudioBookFiles: false,
+    syncDictionary: false,
+  );
 
-  Future<void> addSrt(String uid, {String bookKey = ''}) =>
-      db.upsertSrtBook(SrtBooksCompanion.insert(
-        uid: uid,
-        title: uid,
-        srtPath: '/tmp/$uid.srt',
-        importedAt: 0,
-        // 墓碑仲裁读本机拥有时刻（v118）：0 = 一直都在，任何墓碑都管得着它。
-        localAddedAt: const Value<int?>(0),
-        bookKey: Value(bookKey),
-      ));
+  Future<void> addSrt(String uid, {String bookKey = ''}) => db.upsertSrtBook(
+    SrtBooksCompanion.insert(
+      uid: uid,
+      title: uid,
+      srtPath: '/tmp/$uid.srt',
+      importedAt: 0,
+      // 墓碑仲裁读本机拥有时刻（v118）：0 = 一直都在，任何墓碑都管得着它。
+      localAddedAt: const Value<int?>(0),
+      bookKey: Value(bookKey),
+    ),
+  );
 
   /// 造一条「对端删了这本纯字幕书」的远端标记。
   Future<void> putRemoteTombstone(String uid, int deletedAt) async {
@@ -77,18 +78,25 @@ void main() {
 
   test('发布：本机 srtbook 墓碑被写成远端标记并标记已发布', () async {
     await db.writeSyncDeletionTombstone(
-        SyncTombstoneKind.srtbook.dbValue, 'srt/gone', 1000);
+      SyncTombstoneKind.srtbook.dbValue,
+      'srt/gone',
+      1000,
+    );
 
     await orchestrator().syncDeletionTombstones(SyncRunReport());
 
     final String ns = await backend.ensureNamespace(kSyncTombstonesNamespace);
     final List<AssetEntry> children = await backend.listChildren(ns);
-    expect(children.where((AssetEntry e) => !e.isFolder), hasLength(1),
-        reason: '发布层按行遍历墓碑表，新种类无需改动就该被发出去');
+    expect(
+      children.where((AssetEntry e) => !e.isFolder),
+      hasLength(1),
+      reason: '发布层按行遍历墓碑表，新种类无需改动就该被发出去',
+    );
 
-    final SyncDeletionTombstoneRow row = (await db
-            .getSyncDeletionTombstonesOfType(SyncTombstoneKind.srtbook.dbValue))
-        .single;
+    final SyncDeletionTombstoneRow row =
+        (await db.getSyncDeletionTombstonesOfType(
+          SyncTombstoneKind.srtbook.dbValue,
+        )).single;
     expect(row.remotePublishedAt, isNot(0), reason: '发布后要标记，避免每轮重发');
   });
 
@@ -99,15 +107,20 @@ void main() {
     final SyncRunReport report = SyncRunReport();
     await orchestrator().syncDeletionTombstones(report);
 
-    expect(report.deletionCandidates, hasLength(1),
-        reason: '这是「另一台设备删了这本纯字幕书」在本机弹确认的唯一来源；'
-            '在库键漏收 srtbook 会让它永远不弹');
+    expect(
+      report.deletionCandidates,
+      hasLength(1),
+      reason:
+          '这是「另一台设备删了这本纯字幕书」在本机弹确认的唯一来源；'
+          '在库键漏收 srtbook 会让它永远不弹',
+    );
     final DeletionPropagationCandidate c = report.deletionCandidates.single;
     expect(c.mediaType, SyncTombstoneKind.srtbook.dbValue);
     expect(c.itemKey, 'srt/lonely');
     expect(c.direction, DeletionPropagationDirection.deleteLocal);
-    expect(report.deletionTombstonesHighWaterMsByScope,
-        <String, int>{SyncChannelScope.unscoped.id: 9000});
+    expect(report.deletionTombstonesHighWaterMsByScope, <String, int>{
+      SyncChannelScope.unscoped.id: 9000,
+    });
   });
 
   test('消费：srt-backed 行（bookKey 非空）不算 srtbook 在库键 → 不产候选', () async {
@@ -117,8 +130,11 @@ void main() {
     final SyncRunReport report = SyncRunReport();
     await orchestrator().syncDeletionTombstones(report);
 
-    expect(report.deletionCandidates, isEmpty,
-        reason: '它的身份是 bookKey、走 book 种类；两侧都收会让同一资产弹两条重复确认');
+    expect(
+      report.deletionCandidates,
+      isEmpty,
+      reason: '它的身份是 bookKey、走 book 种类；两侧都收会让同一资产弹两条重复确认',
+    );
   });
 
   test('消费：本地已无此书 → 不产候选（两端都删，已收敛）', () async {
@@ -133,14 +149,18 @@ void main() {
   test('消费：deletedAt 不晚于基线的旧标记不再弹', () async {
     await addSrt('srt/old');
     await putRemoteTombstone('srt/old', 500);
-    await SyncRepository(db)
-        .setDeletionTombstonesBaselineMs(SyncChannelScope.unscoped, 1000);
+    await SyncRepository(
+      db,
+    ).setDeletionTombstonesBaselineMs(SyncChannelScope.unscoped, 1000);
 
     final SyncRunReport report = SyncRunReport();
     await orchestrator().syncDeletionTombstones(report);
 
-    expect(report.deletionCandidates, isEmpty,
-        reason: '因果基线守卫：用户已复核过的删除不该反复骚扰');
+    expect(
+      report.deletionCandidates,
+      isEmpty,
+      reason: '因果基线守卫：用户已复核过的删除不该反复骚扰',
+    );
   });
 }
 

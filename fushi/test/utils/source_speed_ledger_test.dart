@@ -17,8 +17,11 @@ String runOnce(
   int perSourceLimit = 3,
   DateTime? now,
 }) {
-  final DownloadSource picked =
-      ledger.pick(all, perSourceLimit: perSourceLimit, now: now);
+  final DownloadSource picked = ledger.pick(
+    all,
+    perSourceLimit: perSourceLimit,
+    now: now,
+  );
   final double speed = bytesPerSecond[picked.url]!;
   ledger.recordSuccess(
     picked.url,
@@ -36,11 +39,14 @@ void main() {
       final SourceSpeedLedger ledger = SourceSpeedLedger();
       final List<String> picked = <String>[
         for (int i = 0; i < 3; i++)
-          runOnce(ledger, bytesPerSecond: <String, double>{
-            a.url: 1e6,
-            b.url: 1e6,
-            c.url: 1e6,
-          }),
+          runOnce(
+            ledger,
+            bytesPerSecond: <String, double>{
+              a.url: 1e6,
+              b.url: 1e6,
+              c.url: 1e6,
+            },
+          ),
       ];
       expect(picked.toSet(), <String>{a.url, b.url, c.url});
     });
@@ -48,8 +54,9 @@ void main() {
     test('样本小到全被丢弃时，摊开仍然成立', () {
       // 回归点：摊开若以「有没有速度样本」为准，样本一旦全被 minSampleBytes 丢掉，
       // 每家就永远算「没测过」，兜底的 url 定序会把所有片钉在 a 上。
-      final SourceSpeedLedger ledger =
-          SourceSpeedLedger(minSampleBytes: 1 << 20);
+      final SourceSpeedLedger ledger = SourceSpeedLedger(
+        minSampleBytes: 1 << 20,
+      );
       final List<String> picked = <String>[
         for (int i = 0; i < 3; i++)
           runOnce(
@@ -106,8 +113,9 @@ void main() {
     });
 
     test('样本过期后那家重新拿到探测机会', () {
-      final SourceSpeedLedger ledger =
-          SourceSpeedLedger(probeAfter: const Duration(minutes: 2));
+      final SourceSpeedLedger ledger = SourceSpeedLedger(
+        probeAfter: const Duration(minutes: 2),
+      );
       final DateTime t0 = DateTime(2026, 8, 30, 12);
       final Map<String, double> speeds = <String, double>{
         a.url: 9e6,
@@ -127,10 +135,7 @@ void main() {
       // 十分钟后样本全过期，重新进入探测：按试过次数排，轮到被冷落的 b/c——
       // 开局慢的来源不能被永久打入冷宫。
       final DateTime later = t0.add(const Duration(minutes: 10));
-      expect(
-        ledger.pick(all, perSourceLimit: 3, now: later).url,
-        isNot(a.url),
-      );
+      expect(ledger.pick(all, perSourceLimit: 3, now: later).url, isNot(a.url));
     });
   });
 
@@ -150,8 +155,11 @@ void main() {
       expect(ledger.isCoolingDown(c.url, now: t0), isTrue);
 
       // 最快的那家挂了，别的片不该继续撞上去。
-      final DownloadSource duringCooldown =
-          ledger.pick(all, perSourceLimit: 3, now: t0);
+      final DownloadSource duringCooldown = ledger.pick(
+        all,
+        perSourceLimit: 3,
+        now: t0,
+      );
       expect(duringCooldown.url, isNot(c.url));
       ledger.release(duringCooldown.url);
 
@@ -161,8 +169,9 @@ void main() {
     });
 
     test('连续失败退避加长但不超过上限', () {
-      final SourceSpeedLedger ledger =
-          SourceSpeedLedger(maxCooldown: const Duration(seconds: 4));
+      final SourceSpeedLedger ledger = SourceSpeedLedger(
+        maxCooldown: const Duration(seconds: 4),
+      );
       final DateTime t0 = DateTime(2026, 8, 30, 12);
       ledger.recordFailure(a.url, now: t0);
       expect(
@@ -214,8 +223,11 @@ void main() {
     // 在飞数都是 0，判据一路平手到 url 定序兜底，结果必须是字典序第一个。
     expect(
       picked.url,
-      <String>[a.url, b.url, c.url].reduce((String x, String y) =>
-          x.compareTo(y) <= 0 ? x : y),
+      <String>[
+        a.url,
+        b.url,
+        c.url,
+      ].reduce((String x, String y) => x.compareTo(y) <= 0 ? x : y),
     );
   });
 

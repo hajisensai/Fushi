@@ -84,8 +84,9 @@ void main() {
       expect(name, startsWith('fushi-backup-'));
       expect(name, endsWith('.fushi.zip'));
       expect(
-          RegExp(r'fushi-backup-\d{4}-\d{2}-\d{2}\.fushi\.zip').hasMatch(name),
-          isTrue);
+        RegExp(r'fushi-backup-\d{4}-\d{2}-\d{2}\.fushi\.zip').hasMatch(name),
+        isTrue,
+      );
     });
 
     test('validateBackup returns null for non-zip file', () async {
@@ -106,26 +107,29 @@ void main() {
       expect(result, isNull);
     });
 
-    test('validateBackup returns null for zip with metadata but no db',
-        () async {
-      final meta = BackupMeta(
-        appVersion: '1.0.0',
-        schemaVersion: 13,
-        createdAt: DateTime.now(),
-        bookCount: 0,
-        statsCount: 0,
-      );
-      final metaBytes = utf8.encode(jsonEncode(meta.toJson()));
-      final archive = Archive();
-      archive.addFile(
-          ArchiveFile('backup_meta.json', metaBytes.length, metaBytes));
-      final zipData = ZipEncoder().encode(archive)!;
-      final zipPath = '${tmpDir.path}/no_db.zip';
-      await File(zipPath).writeAsBytes(zipData);
+    test(
+      'validateBackup returns null for zip with metadata but no db',
+      () async {
+        final meta = BackupMeta(
+          appVersion: '1.0.0',
+          schemaVersion: 13,
+          createdAt: DateTime.now(),
+          bookCount: 0,
+          statsCount: 0,
+        );
+        final metaBytes = utf8.encode(jsonEncode(meta.toJson()));
+        final archive = Archive();
+        archive.addFile(
+          ArchiveFile('backup_meta.json', metaBytes.length, metaBytes),
+        );
+        final zipData = ZipEncoder().encode(archive)!;
+        final zipPath = '${tmpDir.path}/no_db.zip';
+        await File(zipPath).writeAsBytes(zipData);
 
-      final result = await BackupRestoreService.validateBackup(zipPath);
-      expect(result, isNull);
-    });
+        final result = await BackupRestoreService.validateBackup(zipPath);
+        expect(result, isNull);
+      },
+    );
 
     test('validateBackup returns metadata for valid backup zip', () async {
       final meta = BackupMeta(
@@ -139,7 +143,8 @@ void main() {
       final dbBytes = utf8.encode('fake sqlite data');
       final archive = Archive();
       archive.addFile(
-          ArchiveFile('backup_meta.json', metaBytes.length, metaBytes));
+        ArchiveFile('backup_meta.json', metaBytes.length, metaBytes),
+      );
       archive.addFile(ArchiveFile('hibiki.db', dbBytes.length, dbBytes));
       final zipData = ZipEncoder().encode(archive)!;
       final zipPath = '${tmpDir.path}/valid.zip';
@@ -155,7 +160,8 @@ void main() {
 
     test('validateBackup returns null for nonexistent file', () async {
       final result = await BackupRestoreService.validateBackup(
-          '${tmpDir.path}/nonexistent.zip');
+        '${tmpDir.path}/nonexistent.zip',
+      );
       expect(result, isNull);
     });
 
@@ -180,10 +186,12 @@ void main() {
       final metaBytes = utf8.encode(jsonEncode(meta.toJson()));
       final archive = Archive();
       // 条目名刻意用 legacy hibiki.db：老 Hibiki 备份必须仍可恢复（读侧回退）。
-      archive
-          .addFile(ArchiveFile('hibiki.db', newDbContent.length, newDbContent));
       archive.addFile(
-          ArchiveFile('backup_meta.json', metaBytes.length, metaBytes));
+        ArchiveFile('hibiki.db', newDbContent.length, newDbContent),
+      );
+      archive.addFile(
+        ArchiveFile('backup_meta.json', metaBytes.length, metaBytes),
+      );
       final zipData = ZipEncoder().encode(archive)!;
       final zipPath = '${tmpDir.path}/restore.zip';
       await File(zipPath).writeAsBytes(zipData);
@@ -200,8 +208,10 @@ void main() {
       // successful import (no disk leak). A dummy non-DB current file cannot
       // contain device-local tables, so its crash marker is safely cleaned.
       expect(File('$dbPath.pre-restore.bak').existsSync(), isFalse);
-      expect(File('${tmpDir.path}/fushi.db.sync-preserve.json').existsSync(),
-          isFalse);
+      expect(
+        File('${tmpDir.path}/fushi.db.sync-preserve.json').existsSync(),
+        isFalse,
+      );
     });
 
     test('createBackup produces valid zip with db and metadata', () async {
@@ -210,15 +220,17 @@ void main() {
       final onDiskDb = FushiDatabase(dbDir.path);
       try {
         // Insert a book so the metadata has a real count
-        await onDiskDb.insertEpubBook(EpubBooksCompanion.insert(
-          bookKey: 'Test Book',
-          title: 'Test Book',
-          epubPath: '/fake/path.epub',
-          extractDir: '/fake/extract',
-          chapterCount: 1,
-          chaptersJson: '[]',
-          importedAt: DateTime.now().millisecondsSinceEpoch,
-        ));
+        await onDiskDb.insertEpubBook(
+          EpubBooksCompanion.insert(
+            bookKey: 'Test Book',
+            title: 'Test Book',
+            epubPath: '/fake/path.epub',
+            extractDir: '/fake/extract',
+            chapterCount: 1,
+            chaptersJson: '[]',
+            importedAt: DateTime.now().millisecondsSinceEpoch,
+          ),
+        );
 
         final service = BackupService(
           db: onDiskDb,
@@ -244,8 +256,7 @@ void main() {
       }
     });
 
-    test(
-        'createBackup strips sync credentials from the DB copy '
+    test('createBackup strips sync credentials from the DB copy '
         '(HBK-AUDIT-012)', () async {
       final dbDir = await Directory.systemTemp.createTemp('backup_creds_');
       final onDiskDb = FushiDatabase(dbDir.path);
@@ -265,11 +276,13 @@ void main() {
         await service.createBackup(outputPath);
 
         // Extract the exported DB and inspect its preferences table.
-        final archive =
-            ZipDecoder().decodeBytes(await File(outputPath).readAsBytes());
+        final archive = ZipDecoder().decodeBytes(
+          await File(outputPath).readAsBytes(),
+        );
         final dbBytes = archive.findFile('fushi.db')!.content as List<int>;
-        final restoreDir =
-            await Directory.systemTemp.createTemp('backup_creds_r_');
+        final restoreDir = await Directory.systemTemp.createTemp(
+          'backup_creds_r_',
+        );
         await File('${restoreDir.path}/fushi.db').writeAsBytes(dbBytes);
         final restored = FushiDatabase(restoreDir.path);
         try {
@@ -292,217 +305,244 @@ void main() {
       }
     });
 
-    test('createBackup strips dictionary state without touching source DB',
-        () async {
-      final dbDir = await Directory.systemTemp.createTemp('backup_dict_');
-      final onDiskDb = FushiDatabase(dbDir.path);
-      try {
-        await onDiskDb.upsertDictionaryMeta(
-          DictionaryMetadataCompanion.insert(
-            name: 'JMdict',
-            formatKey: 'yomichan',
-            order: 0,
-          ),
-        );
-        await onDiskDb.replaceAllDictionaryHistory([
-          DictionaryHistoryCompanion.insert(
-            position: 0,
-            resultJson: '{"searchTerm":"cat"}',
-          ),
-        ]);
-
-        final service = BackupService(
-          db: onDiskDb,
-          dbDirectory: dbDir.path,
-          appVersion: '2.0.0',
-        );
-        final outputPath = '${tmpDir.path}/dictionary_test.zip';
-        await service.createBackup(outputPath);
-
-        expect(await onDiskDb.getAllDictionaryMetadata(), hasLength(1));
-        expect(await onDiskDb.getAllDictionaryHistory(), hasLength(1));
-
-        final archive =
-            ZipDecoder().decodeBytes(await File(outputPath).readAsBytes());
-        final dbBytes = archive.findFile('fushi.db')!.content as List<int>;
-        final restoreDir =
-            await Directory.systemTemp.createTemp('backup_dict_r_');
-        await File('${restoreDir.path}/fushi.db').writeAsBytes(dbBytes);
-        final restored = FushiDatabase(restoreDir.path);
+    test(
+      'createBackup strips dictionary state without touching source DB',
+      () async {
+        final dbDir = await Directory.systemTemp.createTemp('backup_dict_');
+        final onDiskDb = FushiDatabase(dbDir.path);
         try {
-          expect(await restored.getAllDictionaryMetadata(), isEmpty);
-          expect(await restored.getAllDictionaryHistory(), isEmpty);
-        } finally {
-          await restored.close();
-          if (restoreDir.existsSync()) {
-            await cleanupTempDir(restoreDir);
+          await onDiskDb.upsertDictionaryMeta(
+            DictionaryMetadataCompanion.insert(
+              name: 'JMdict',
+              formatKey: 'yomichan',
+              order: 0,
+            ),
+          );
+          await onDiskDb.replaceAllDictionaryHistory([
+            DictionaryHistoryCompanion.insert(
+              position: 0,
+              resultJson: '{"searchTerm":"cat"}',
+            ),
+          ]);
+
+          final service = BackupService(
+            db: onDiskDb,
+            dbDirectory: dbDir.path,
+            appVersion: '2.0.0',
+          );
+          final outputPath = '${tmpDir.path}/dictionary_test.zip';
+          await service.createBackup(outputPath);
+
+          expect(await onDiskDb.getAllDictionaryMetadata(), hasLength(1));
+          expect(await onDiskDb.getAllDictionaryHistory(), hasLength(1));
+
+          final archive = ZipDecoder().decodeBytes(
+            await File(outputPath).readAsBytes(),
+          );
+          final dbBytes = archive.findFile('fushi.db')!.content as List<int>;
+          final restoreDir = await Directory.systemTemp.createTemp(
+            'backup_dict_r_',
+          );
+          await File('${restoreDir.path}/fushi.db').writeAsBytes(dbBytes);
+          final restored = FushiDatabase(restoreDir.path);
+          try {
+            expect(await restored.getAllDictionaryMetadata(), isEmpty);
+            expect(await restored.getAllDictionaryHistory(), isEmpty);
+          } finally {
+            await restored.close();
+            if (restoreDir.existsSync()) {
+              await cleanupTempDir(restoreDir);
+            }
           }
+        } finally {
+          await onDiskDb.close();
+          if (dbDir.existsSync()) await cleanupTempDir(dbDir);
         }
-      } finally {
-        await onDiskDb.close();
-        if (dbDir.existsSync()) await cleanupTempDir(dbDir);
-      }
-    });
+      },
+    );
 
     test(
-        'createBackup keeps dictionary resources when dictionary sync is enabled',
-        () async {
-      final dbDir =
-          await Directory.systemTemp.createTemp('backup_dict_enabled_');
-      final dictDir =
-          await Directory.systemTemp.createTemp('backup_dict_resources_');
-      final onDiskDb = FushiDatabase(dbDir.path);
-      try {
-        await Directory('${dictDir.path}/JMdict/media').create(recursive: true);
-        await File('${dictDir.path}/JMdict/blobs.bin')
-            .writeAsString('dictionary index');
-        await File('${dictDir.path}/JMdict/media/pitch.png')
-            .writeAsString('pitch image');
-        await onDiskDb.upsertDictionaryMeta(
-          DictionaryMetadataCompanion.insert(
-            name: 'JMdict',
-            formatKey: 'yomichan',
-            order: 0,
-          ),
+      'createBackup keeps dictionary resources when dictionary sync is enabled',
+      () async {
+        final dbDir = await Directory.systemTemp.createTemp(
+          'backup_dict_enabled_',
         );
-        await onDiskDb.replaceAllDictionaryHistory([
-          DictionaryHistoryCompanion.insert(
-            position: 0,
-            resultJson: '{"searchTerm":"cat"}',
-          ),
-        ]);
-
-        final service = BackupService(
-          db: onDiskDb,
-          dbDirectory: dbDir.path,
-          dictionaryResourceDirectory: dictDir.path,
-          appVersion: '2.0.0',
+        final dictDir = await Directory.systemTemp.createTemp(
+          'backup_dict_resources_',
         );
-        final outputPath = '${tmpDir.path}/dictionary_enabled_test.zip';
-        await service.createBackup(outputPath);
-
-        final archive =
-            ZipDecoder().decodeBytes(await File(outputPath).readAsBytes());
-        expect(archive.findFile('dictionaryResources/JMdict/blobs.bin'),
-            isNotNull);
-        expect(archive.findFile('dictionaryResources/JMdict/media/pitch.png'),
-            isNotNull);
-
-        final dbBytes = archive.findFile('fushi.db')!.content as List<int>;
-        final restoreDir =
-            await Directory.systemTemp.createTemp('backup_dict_enabled_r_');
-        final restoredDictDir = await Directory.systemTemp
-            .createTemp('backup_dict_enabled_resources_r_');
-        await File('${restoreDir.path}/fushi.db').writeAsBytes(dbBytes);
-        await BackupRestoreService.restoreBackup(
-          dbDirectory: restoreDir.path,
-          zipPath: outputPath,
-          dictionaryResourceDirectory: restoredDictDir.path,
-        );
-        final restored = FushiDatabase(restoreDir.path);
+        final onDiskDb = FushiDatabase(dbDir.path);
         try {
-          expect(await restored.getAllDictionaryMetadata(), hasLength(1));
-          // BUG-832: recent-lookup history is a private usage trace and is
-          // ALWAYS wiped on export (like search history), so it never travels —
-          // even in a full backup where the dictionary itself is kept.
-          expect(await restored.getAllDictionaryHistory(), isEmpty);
-          expect(
-            await File('${restoredDictDir.path}/JMdict/blobs.bin')
-                .readAsString(),
-            'dictionary index',
+          await Directory(
+            '${dictDir.path}/JMdict/media',
+          ).create(recursive: true);
+          await File(
+            '${dictDir.path}/JMdict/blobs.bin',
+          ).writeAsString('dictionary index');
+          await File(
+            '${dictDir.path}/JMdict/media/pitch.png',
+          ).writeAsString('pitch image');
+          await onDiskDb.upsertDictionaryMeta(
+            DictionaryMetadataCompanion.insert(
+              name: 'JMdict',
+              formatKey: 'yomichan',
+              order: 0,
+            ),
+          );
+          await onDiskDb.replaceAllDictionaryHistory([
+            DictionaryHistoryCompanion.insert(
+              position: 0,
+              resultJson: '{"searchTerm":"cat"}',
+            ),
+          ]);
+
+          final service = BackupService(
+            db: onDiskDb,
+            dbDirectory: dbDir.path,
+            dictionaryResourceDirectory: dictDir.path,
+            appVersion: '2.0.0',
+          );
+          final outputPath = '${tmpDir.path}/dictionary_enabled_test.zip';
+          await service.createBackup(outputPath);
+
+          final archive = ZipDecoder().decodeBytes(
+            await File(outputPath).readAsBytes(),
           );
           expect(
-            await File('${restoredDictDir.path}/JMdict/media/pitch.png')
-                .readAsString(),
-            'pitch image',
+            archive.findFile('dictionaryResources/JMdict/blobs.bin'),
+            isNotNull,
           );
+          expect(
+            archive.findFile('dictionaryResources/JMdict/media/pitch.png'),
+            isNotNull,
+          );
+
+          final dbBytes = archive.findFile('fushi.db')!.content as List<int>;
+          final restoreDir = await Directory.systemTemp.createTemp(
+            'backup_dict_enabled_r_',
+          );
+          final restoredDictDir = await Directory.systemTemp.createTemp(
+            'backup_dict_enabled_resources_r_',
+          );
+          await File('${restoreDir.path}/fushi.db').writeAsBytes(dbBytes);
+          await BackupRestoreService.restoreBackup(
+            dbDirectory: restoreDir.path,
+            zipPath: outputPath,
+            dictionaryResourceDirectory: restoredDictDir.path,
+          );
+          final restored = FushiDatabase(restoreDir.path);
+          try {
+            expect(await restored.getAllDictionaryMetadata(), hasLength(1));
+            // BUG-832: recent-lookup history is a private usage trace and is
+            // ALWAYS wiped on export (like search history), so it never travels —
+            // even in a full backup where the dictionary itself is kept.
+            expect(await restored.getAllDictionaryHistory(), isEmpty);
+            expect(
+              await File(
+                '${restoredDictDir.path}/JMdict/blobs.bin',
+              ).readAsString(),
+              'dictionary index',
+            );
+            expect(
+              await File(
+                '${restoredDictDir.path}/JMdict/media/pitch.png',
+              ).readAsString(),
+              'pitch image',
+            );
+          } finally {
+            await restored.close();
+            if (restoreDir.existsSync()) {
+              await cleanupTempDir(restoreDir);
+            }
+            if (restoredDictDir.existsSync()) {
+              await cleanupTempDir(restoredDictDir);
+            }
+          }
         } finally {
-          await restored.close();
-          if (restoreDir.existsSync()) {
-            await cleanupTempDir(restoreDir);
-          }
-          if (restoredDictDir.existsSync()) {
-            await cleanupTempDir(restoredDictDir);
-          }
+          await onDiskDb.close();
+          if (dbDir.existsSync()) await cleanupTempDir(dbDir);
+          if (dictDir.existsSync()) await cleanupTempDir(dictDir);
         }
-      } finally {
-        await onDiskDb.close();
-        if (dbDir.existsSync()) await cleanupTempDir(dbDir);
-        if (dictDir.existsSync()) await cleanupTempDir(dictDir);
-      }
-    });
+      },
+    );
 
     test(
-        'createBackup strips dictionary state when enabled but resources are missing',
-        () async {
-      final dbDir =
-          await Directory.systemTemp.createTemp('backup_dict_missing_');
-      final missingDictDir =
-          Directory('${tmpDir.path}/missing_dictionary_resources');
-      final onDiskDb = FushiDatabase(dbDir.path);
-      try {
-        await Directory('${missingDictDir.path}/download_temp')
-            .create(recursive: true);
-        await File('${missingDictDir.path}/download_temp/leftover.bin')
-            .writeAsString('temporary file');
-        await onDiskDb.upsertDictionaryMeta(
-          DictionaryMetadataCompanion.insert(
-            name: 'MissingDict',
-            formatKey: 'yomichan',
-            order: 0,
-          ),
+      'createBackup strips dictionary state when enabled but resources are missing',
+      () async {
+        final dbDir = await Directory.systemTemp.createTemp(
+          'backup_dict_missing_',
         );
-        await onDiskDb.replaceAllDictionaryHistory([
-          DictionaryHistoryCompanion.insert(
-            position: 0,
-            resultJson: '{"searchTerm":"cat"}',
-          ),
-        ]);
-
-        final service = BackupService(
-          db: onDiskDb,
-          dbDirectory: dbDir.path,
-          dictionaryResourceDirectory: missingDictDir.path,
-          appVersion: '2.0.0',
+        final missingDictDir = Directory(
+          '${tmpDir.path}/missing_dictionary_resources',
         );
-        final outputPath = '${tmpDir.path}/dictionary_missing_test.zip';
-        await service.createBackup(outputPath);
-
-        final archive =
-            ZipDecoder().decodeBytes(await File(outputPath).readAsBytes());
-        final bool containsDictionaryResource = archive.files.any(
-          (ArchiveFile file) => file.name.replaceAll(r'\', '/').startsWith(
-                'dictionaryResources/',
-              ),
-        );
-        expect(containsDictionaryResource, isFalse);
-
-        final dbBytes = archive.findFile('fushi.db')!.content as List<int>;
-        final restoreDir =
-            await Directory.systemTemp.createTemp('backup_dict_missing_r_');
-        await File('${restoreDir.path}/fushi.db').writeAsBytes(dbBytes);
-        final restored = FushiDatabase(restoreDir.path);
+        final onDiskDb = FushiDatabase(dbDir.path);
         try {
-          expect(await restored.getAllDictionaryMetadata(), isEmpty);
-          expect(await restored.getAllDictionaryHistory(), isEmpty);
-        } finally {
-          await restored.close();
-          if (restoreDir.existsSync()) {
-            await cleanupTempDir(restoreDir);
-          }
-        }
-      } finally {
-        await onDiskDb.close();
-        if (dbDir.existsSync()) await cleanupTempDir(dbDir);
-      }
-    });
+          await Directory(
+            '${missingDictDir.path}/download_temp',
+          ).create(recursive: true);
+          await File(
+            '${missingDictDir.path}/download_temp/leftover.bin',
+          ).writeAsString('temporary file');
+          await onDiskDb.upsertDictionaryMeta(
+            DictionaryMetadataCompanion.insert(
+              name: 'MissingDict',
+              formatKey: 'yomichan',
+              order: 0,
+            ),
+          );
+          await onDiskDb.replaceAllDictionaryHistory([
+            DictionaryHistoryCompanion.insert(
+              position: 0,
+              resultJson: '{"searchTerm":"cat"}',
+            ),
+          ]);
 
-    test(
-        'restoreBackup PRESERVES existing dictionary resources when the '
+          final service = BackupService(
+            db: onDiskDb,
+            dbDirectory: dbDir.path,
+            dictionaryResourceDirectory: missingDictDir.path,
+            appVersion: '2.0.0',
+          );
+          final outputPath = '${tmpDir.path}/dictionary_missing_test.zip';
+          await service.createBackup(outputPath);
+
+          final archive = ZipDecoder().decodeBytes(
+            await File(outputPath).readAsBytes(),
+          );
+          final bool containsDictionaryResource = archive.files.any(
+            (ArchiveFile file) => file.name
+                .replaceAll(r'\', '/')
+                .startsWith('dictionaryResources/'),
+          );
+          expect(containsDictionaryResource, isFalse);
+
+          final dbBytes = archive.findFile('fushi.db')!.content as List<int>;
+          final restoreDir = await Directory.systemTemp.createTemp(
+            'backup_dict_missing_r_',
+          );
+          await File('${restoreDir.path}/fushi.db').writeAsBytes(dbBytes);
+          final restored = FushiDatabase(restoreDir.path);
+          try {
+            expect(await restored.getAllDictionaryMetadata(), isEmpty);
+            expect(await restored.getAllDictionaryHistory(), isEmpty);
+          } finally {
+            await restored.close();
+            if (restoreDir.existsSync()) {
+              await cleanupTempDir(restoreDir);
+            }
+          }
+        } finally {
+          await onDiskDb.close();
+          if (dbDir.existsSync()) await cleanupTempDir(dbDir);
+        }
+      },
+    );
+
+    test('restoreBackup PRESERVES existing dictionary resources when the '
         'backup carries none (BUG-454: an unselected-dictionary backup must '
         "not wipe this device's dictionaries)", () async {
-      final srcDir =
-          await Directory.systemTemp.createTemp('backup_no_dict_src_');
+      final srcDir = await Directory.systemTemp.createTemp(
+        'backup_no_dict_src_',
+      );
       final srcDb = FushiDatabase(srcDir.path);
       try {
         final service = BackupService(
@@ -513,17 +553,22 @@ void main() {
         final outputPath = '${tmpDir.path}/no_dictionary_resources.zip';
         await service.createBackup(outputPath);
 
-        final dstDir =
-            await Directory.systemTemp.createTemp('backup_no_dict_dst_');
-        final dstDictDir =
-            await Directory.systemTemp.createTemp('backup_no_dict_resources_');
+        final dstDir = await Directory.systemTemp.createTemp(
+          'backup_no_dict_dst_',
+        );
+        final dstDictDir = await Directory.systemTemp.createTemp(
+          'backup_no_dict_resources_',
+        );
         try {
-          await Directory('${dstDictDir.path}/OldDict/media')
-              .create(recursive: true);
-          await File('${dstDictDir.path}/OldDict/blobs.bin')
-              .writeAsString('stale index');
-          await File('${dstDictDir.path}/OldDict/media/old.png')
-              .writeAsString('stale image');
+          await Directory(
+            '${dstDictDir.path}/OldDict/media',
+          ).create(recursive: true);
+          await File(
+            '${dstDictDir.path}/OldDict/blobs.bin',
+          ).writeAsString('stale index');
+          await File(
+            '${dstDictDir.path}/OldDict/media/old.png',
+          ).writeAsString('stale image');
 
           await BackupRestoreService.restoreBackup(
             dbDirectory: dstDir.path,
@@ -558,85 +603,100 @@ void main() {
       }
     });
 
-    test('restoreBackup rejects invalid dictionary resource paths safely',
-        () async {
-      final dbBytes = utf8.encode('restored db content');
-      final meta = BackupMeta(
-        appVersion: '2.0.0',
-        schemaVersion: 13,
-        createdAt: DateTime.now(),
-        bookCount: 0,
-        statsCount: 0,
-      );
-      final archive = Archive()
-        ..addFile(ArchiveFile('hibiki.db', dbBytes.length, dbBytes))
-        ..addFile(ArchiveFile(
-          'backup_meta.json',
-          utf8.encode(jsonEncode(meta.toJson())).length,
-          utf8.encode(jsonEncode(meta.toJson())),
-        ))
-        ..addFile(ArchiveFile(
-          'dictionaryResources/../escape.txt',
-          6,
-          utf8.encode('escape'),
-        ));
-      final zipPath = '${tmpDir.path}/invalid_dictionary_path.zip';
-      await File(zipPath).writeAsBytes(ZipEncoder().encode(archive)!);
-
-      final dstDir =
-          await Directory.systemTemp.createTemp('backup_bad_dict_dst_');
-      final dstDictDir =
-          await Directory.systemTemp.createTemp('backup_bad_dict_resources_');
-      try {
-        await File('${dstDir.path}/fushi.db').writeAsString('current db');
-        await Directory('${dstDictDir.path}/OldDict').create(recursive: true);
-        await File('${dstDictDir.path}/OldDict/blobs.bin')
-            .writeAsString('stale index');
-
-        await expectLater(
-          BackupRestoreService.restoreBackup(
-            dbDirectory: dstDir.path,
-            zipPath: zipPath,
-            dictionaryResourceDirectory: dstDictDir.path,
-          ),
-          throwsA(isA<FormatException>()),
+    test(
+      'restoreBackup rejects invalid dictionary resource paths safely',
+      () async {
+        final dbBytes = utf8.encode('restored db content');
+        final meta = BackupMeta(
+          appVersion: '2.0.0',
+          schemaVersion: 13,
+          createdAt: DateTime.now(),
+          bookCount: 0,
+          statsCount: 0,
         );
+        final archive = Archive()
+          ..addFile(ArchiveFile('hibiki.db', dbBytes.length, dbBytes))
+          ..addFile(
+            ArchiveFile(
+              'backup_meta.json',
+              utf8.encode(jsonEncode(meta.toJson())).length,
+              utf8.encode(jsonEncode(meta.toJson())),
+            ),
+          )
+          ..addFile(
+            ArchiveFile(
+              'dictionaryResources/../escape.txt',
+              6,
+              utf8.encode('escape'),
+            ),
+          );
+        final zipPath = '${tmpDir.path}/invalid_dictionary_path.zip';
+        await File(zipPath).writeAsBytes(ZipEncoder().encode(archive)!);
 
-        expect(
-          await File('${dstDictDir.path}/OldDict/blobs.bin').readAsString(),
-          'stale index',
+        final dstDir = await Directory.systemTemp.createTemp(
+          'backup_bad_dict_dst_',
         );
-        expect(
-            await File('${dstDir.path}/fushi.db').readAsString(), 'current db');
-      } finally {
-        if (dstDir.existsSync()) await cleanupTempDir(dstDir);
-        if (dstDictDir.existsSync()) {
-          await cleanupTempDir(dstDictDir);
+        final dstDictDir = await Directory.systemTemp.createTemp(
+          'backup_bad_dict_resources_',
+        );
+        try {
+          await File('${dstDir.path}/fushi.db').writeAsString('current db');
+          await Directory('${dstDictDir.path}/OldDict').create(recursive: true);
+          await File(
+            '${dstDictDir.path}/OldDict/blobs.bin',
+          ).writeAsString('stale index');
+
+          await expectLater(
+            BackupRestoreService.restoreBackup(
+              dbDirectory: dstDir.path,
+              zipPath: zipPath,
+              dictionaryResourceDirectory: dstDictDir.path,
+            ),
+            throwsA(isA<FormatException>()),
+          );
+
+          expect(
+            await File('${dstDictDir.path}/OldDict/blobs.bin').readAsString(),
+            'stale index',
+          );
+          expect(
+            await File('${dstDir.path}/fushi.db').readAsString(),
+            'current db',
+          );
+        } finally {
+          if (dstDir.existsSync()) await cleanupTempDir(dstDir);
+          if (dstDictDir.existsSync()) {
+            await cleanupTempDir(dstDictDir);
+          }
         }
-      }
-    });
+      },
+    );
 
     test('export then import round-trip preserves database content', () async {
       // Source DB on disk: insert a book and a reading statistic.
       final srcDir = await Directory.systemTemp.createTemp('backup_src_');
       final srcDb = FushiDatabase(srcDir.path);
       try {
-        await srcDb.insertEpubBook(EpubBooksCompanion.insert(
-          bookKey: 'かがみの孤城',
-          title: 'かがみの孤城',
-          epubPath: '/fake/kagami.epub',
-          extractDir: '/fake/extract',
-          chapterCount: 12,
-          chaptersJson: '[]',
-          importedAt: DateTime.now().millisecondsSinceEpoch,
-        ));
-        await srcDb.setReadingStatistic(ReadingStatisticsCompanion.insert(
-          title: 'かがみの孤城',
-          dateKey: '2026-05-29',
-          charactersRead: 3456,
-          readingTimeMs: 1800000,
-          lastStatisticModified: DateTime.now().millisecondsSinceEpoch,
-        ));
+        await srcDb.insertEpubBook(
+          EpubBooksCompanion.insert(
+            bookKey: 'かがみの孤城',
+            title: 'かがみの孤城',
+            epubPath: '/fake/kagami.epub',
+            extractDir: '/fake/extract',
+            chapterCount: 12,
+            chaptersJson: '[]',
+            importedAt: DateTime.now().millisecondsSinceEpoch,
+          ),
+        );
+        await srcDb.setReadingStatistic(
+          ReadingStatisticsCompanion.insert(
+            title: 'かがみの孤城',
+            dateKey: '2026-05-29',
+            charactersRead: 3456,
+            readingTimeMs: 1800000,
+            lastStatisticModified: DateTime.now().millisecondsSinceEpoch,
+          ),
+        );
 
         final service = BackupService(
           db: srcDb,
@@ -696,7 +756,8 @@ void main() {
       final dbBytes = utf8.encode('test db');
       final archive = Archive();
       archive.addFile(
-          ArchiveFile('backup_meta.json', metaBytes.length, metaBytes));
+        ArchiveFile('backup_meta.json', metaBytes.length, metaBytes),
+      );
       archive.addFile(ArchiveFile('hibiki.db', dbBytes.length, dbBytes));
       final zipData = ZipEncoder().encode(archive)!;
       final zipPath = '${tmpDir.path}/small_valid.zip';
@@ -709,57 +770,72 @@ void main() {
   });
 
   group('export strips device-local config (privacy)', () {
-    test('no device-local key (incl. addresses/usernames) leaks into a backup',
-        () async {
-      final srcDir = await Directory.systemTemp.createTemp('fushi_strip_src_');
-      addTearDown(() => cleanupTempDir(srcDir));
-      final srcDb = FushiDatabase(srcDir.path);
-      // Seed every device-local key with a sentinel value.
-      for (final String key in SyncRepository.deviceLocalPrefKeys) {
-        await srcDb.setPref(key, 'sentinel-$key');
-      }
-      // Content that SHOULD travel with the backup.
-      await srcDb.setPrefTyped<bool>('sync_auto_enabled', true);
-      await srcDb.insertEpubBook(EpubBooksCompanion.insert(
-        bookKey: 'Keep Me',
-        title: 'Keep Me',
-        epubPath: '/x.epub',
-        extractDir: '/x',
-        chapterCount: 1,
-        chaptersJson: '[]',
-        importedAt: DateTime.now().millisecondsSinceEpoch,
-      ));
+    test(
+      'no device-local key (incl. addresses/usernames) leaks into a backup',
+      () async {
+        final srcDir = await Directory.systemTemp.createTemp(
+          'fushi_strip_src_',
+        );
+        addTearDown(() => cleanupTempDir(srcDir));
+        final srcDb = FushiDatabase(srcDir.path);
+        // Seed every device-local key with a sentinel value.
+        for (final String key in SyncRepository.deviceLocalPrefKeys) {
+          await srcDb.setPref(key, 'sentinel-$key');
+        }
+        // Content that SHOULD travel with the backup.
+        await srcDb.setPrefTyped<bool>('sync_auto_enabled', true);
+        await srcDb.insertEpubBook(
+          EpubBooksCompanion.insert(
+            bookKey: 'Keep Me',
+            title: 'Keep Me',
+            epubPath: '/x.epub',
+            extractDir: '/x',
+            chapterCount: 1,
+            chaptersJson: '[]',
+            importedAt: DateTime.now().millisecondsSinceEpoch,
+          ),
+        );
 
-      final zipDir = await Directory.systemTemp.createTemp('fushi_strip_zip_');
-      addTearDown(() => cleanupTempDir(zipDir));
-      final zipPath = '${zipDir.path}/b.zip';
-      await BackupService(
-        db: srcDb,
-        dbDirectory: srcDir.path,
-        appVersion: '1.0.0',
-      ).createBackup(zipPath);
-      await srcDb.close();
+        final zipDir = await Directory.systemTemp.createTemp(
+          'fushi_strip_zip_',
+        );
+        addTearDown(() => cleanupTempDir(zipDir));
+        final zipPath = '${zipDir.path}/b.zip';
+        await BackupService(
+          db: srcDb,
+          dbDirectory: srcDir.path,
+          appVersion: '1.0.0',
+        ).createBackup(zipPath);
+        await srcDb.close();
 
-      // Import into a FRESH dir: no current DB, so the backup is applied
-      // verbatim with nothing preserved — exposing exactly what the ZIP holds.
-      final dstDir = await Directory.systemTemp.createTemp('fushi_strip_dst_');
-      addTearDown(() => cleanupTempDir(dstDir));
-      await BackupRestoreService.restoreBackup(
-        dbDirectory: dstDir.path,
-        zipPath: zipPath,
-      );
+        // Import into a FRESH dir: no current DB, so the backup is applied
+        // verbatim with nothing preserved — exposing exactly what the ZIP holds.
+        final dstDir = await Directory.systemTemp.createTemp(
+          'fushi_strip_dst_',
+        );
+        addTearDown(() => cleanupTempDir(dstDir));
+        await BackupRestoreService.restoreBackup(
+          dbDirectory: dstDir.path,
+          zipPath: zipPath,
+        );
 
-      final dstDb = FushiDatabase(dstDir.path);
-      addTearDown(dstDb.close);
-      for (final String key in SyncRepository.deviceLocalPrefKeys) {
-        expect(await dstDb.getPref(key), isNull,
-            reason: '$key leaked into the exported backup');
-      }
-      // Content survived the round-trip.
-      expect(
-          await dstDb.getPrefTyped<bool>('sync_auto_enabled', false), isTrue);
-      expect((await dstDb.getAllEpubBooks()).single.title, 'Keep Me');
-    });
+        final dstDb = FushiDatabase(dstDir.path);
+        addTearDown(dstDb.close);
+        for (final String key in SyncRepository.deviceLocalPrefKeys) {
+          expect(
+            await dstDb.getPref(key),
+            isNull,
+            reason: '$key leaked into the exported backup',
+          );
+        }
+        // Content survived the round-trip.
+        expect(
+          await dstDb.getPrefTyped<bool>('sync_auto_enabled', false),
+          isTrue,
+        );
+        expect((await dstDb.getAllEpubBooks()).single.title, 'Keep Me');
+      },
+    );
 
     test('every secret-shaped key stripped on export is also preserved', () {
       // Strip (export) and preserve (import) now run the SAME predicate
@@ -780,8 +856,11 @@ void main() {
         'sync_desktop_credentials',
       ];
       for (final String k in secretKeys) {
-        expect(SyncRepository.deviceLocalPrefKeys, contains(k),
-            reason: '$k is stripped on export but missing from preserve list');
+        expect(
+          SyncRepository.deviceLocalPrefKeys,
+          contains(k),
+          reason: '$k is stripped on export but missing from preserve list',
+        );
         expect(PrefRedactionPolicy.isDeviceLocalOrCredential(k), isTrue);
       }
     });
@@ -820,311 +899,399 @@ void main() {
       final dstDir = await Directory.systemTemp.createTemp('fushi_ns_dst_');
       addTearDown(() => cleanupTempDir(dstDir));
       await BackupRestoreService.restoreBackup(
-          dbDirectory: dstDir.path, zipPath: zipPath);
+        dbDirectory: dstDir.path,
+        zipPath: zipPath,
+      );
 
       final dstDb = FushiDatabase(dstDir.path);
       addTearDown(dstDb.close);
       for (final String key in credentials.keys) {
-        expect(await dstDb.getPref(key), isNull,
-            reason: '$key leaked into the exported backup');
+        expect(
+          await dstDb.getPref(key),
+          isNull,
+          reason: '$key leaked into the exported backup',
+        );
       }
       expect(await dstDb.getPref('reader_font_size'), '18');
     });
 
-    test('credentials inside a Profile snapshot do not leak into a backup',
-        () async {
-      // THE leak this whole change exists for: `snapshotCurrentSettings` copies
-      // every pref into `profile_settings`, and `profiles` is ticked by default
-      // on export — so deleting the rows from `preferences` alone shipped the
-      // credentials in a second table. Simulates an upgrading device whose
-      // snapshot was taken BEFORE the writer learned to skip credentials.
-      final srcDir = await Directory.systemTemp.createTemp('fushi_ps_src_');
-      addTearDown(() => cleanupTempDir(srcDir));
-      final srcDb = FushiDatabase(srcDir.path);
-      final int nowMs = DateTime.now().millisecondsSinceEpoch;
-      final int profileId = await srcDb.insertProfile(ProfilesCompanion.insert(
-        name: 'Leaky',
-        createdAt: nowMs,
-        updatedAt: nowMs,
-      ));
-      const Map<String, String> snapshotCredentials = <String, String>{
-        'sync_webdav_password': 'WEBDAV-PW',
-        'sync_desktop_credentials': 'OAUTH-REFRESH-TOKEN',
-        'media_source_secret_1': 'BASE64-SFTP-PASSWORD',
-        'qb_connection_config': '{"password":"pw"}',
-        'yomitan_api_key': 'YOMITAN-KEY',
-      };
-      for (final MapEntry<String, String> e in snapshotCredentials.entries) {
-        await srcDb.upsertProfileSetting(ProfileSettingsCompanion.insert(
-          profileId: profileId,
-          category: BackupService.profilePrefCategory,
-          key: e.key,
-          value: e.value,
-        ));
-      }
-      // A genuine per-profile preference in the same snapshot must survive.
-      await srcDb.upsertProfileSetting(ProfileSettingsCompanion.insert(
-        profileId: profileId,
-        category: BackupService.profilePrefCategory,
-        key: 'reader_font_size',
-        value: '22',
-      ));
+    test(
+      'credentials inside a Profile snapshot do not leak into a backup',
+      () async {
+        // THE leak this whole change exists for: `snapshotCurrentSettings` copies
+        // every pref into `profile_settings`, and `profiles` is ticked by default
+        // on export — so deleting the rows from `preferences` alone shipped the
+        // credentials in a second table. Simulates an upgrading device whose
+        // snapshot was taken BEFORE the writer learned to skip credentials.
+        final srcDir = await Directory.systemTemp.createTemp('fushi_ps_src_');
+        addTearDown(() => cleanupTempDir(srcDir));
+        final srcDb = FushiDatabase(srcDir.path);
+        final int nowMs = DateTime.now().millisecondsSinceEpoch;
+        final int profileId = await srcDb.insertProfile(
+          ProfilesCompanion.insert(
+            name: 'Leaky',
+            createdAt: nowMs,
+            updatedAt: nowMs,
+          ),
+        );
+        const Map<String, String> snapshotCredentials = <String, String>{
+          'sync_webdav_password': 'WEBDAV-PW',
+          'sync_desktop_credentials': 'OAUTH-REFRESH-TOKEN',
+          'media_source_secret_1': 'BASE64-SFTP-PASSWORD',
+          'qb_connection_config': '{"password":"pw"}',
+          'yomitan_api_key': 'YOMITAN-KEY',
+        };
+        for (final MapEntry<String, String> e in snapshotCredentials.entries) {
+          await srcDb.upsertProfileSetting(
+            ProfileSettingsCompanion.insert(
+              profileId: profileId,
+              category: BackupService.profilePrefCategory,
+              key: e.key,
+              value: e.value,
+            ),
+          );
+        }
+        // A genuine per-profile preference in the same snapshot must survive.
+        await srcDb.upsertProfileSetting(
+          ProfileSettingsCompanion.insert(
+            profileId: profileId,
+            category: BackupService.profilePrefCategory,
+            key: 'reader_font_size',
+            value: '22',
+          ),
+        );
 
-      final zipDir = await Directory.systemTemp.createTemp('fushi_ps_zip_');
-      addTearDown(() => cleanupTempDir(zipDir));
-      final zipPath = '${zipDir.path}/b.zip';
-      await BackupService(
-        db: srcDb,
-        dbDirectory: srcDir.path,
-        appVersion: '1.0.0',
-      ).createBackup(zipPath);
-      await srcDb.close();
+        final zipDir = await Directory.systemTemp.createTemp('fushi_ps_zip_');
+        addTearDown(() => cleanupTempDir(zipDir));
+        final zipPath = '${zipDir.path}/b.zip';
+        await BackupService(
+          db: srcDb,
+          dbDirectory: srcDir.path,
+          appVersion: '1.0.0',
+        ).createBackup(zipPath);
+        await srcDb.close();
 
-      final dstDir = await Directory.systemTemp.createTemp('fushi_ps_dst_');
-      addTearDown(() => cleanupTempDir(dstDir));
-      await BackupRestoreService.restoreBackup(
-          dbDirectory: dstDir.path, zipPath: zipPath);
+        final dstDir = await Directory.systemTemp.createTemp('fushi_ps_dst_');
+        addTearDown(() => cleanupTempDir(dstDir));
+        await BackupRestoreService.restoreBackup(
+          dbDirectory: dstDir.path,
+          zipPath: zipPath,
+        );
 
-      final dstDb = FushiDatabase(dstDir.path);
-      addTearDown(dstDb.close);
-      final List<ProfileSettingRow> rows =
-          await dstDb.getProfileSettings(profileId);
-      final Map<String, String> restored = <String, String>{
-        for (final ProfileSettingRow r in rows)
-          if (r.category == BackupService.profilePrefCategory) r.key: r.value,
-      };
-      for (final String key in snapshotCredentials.keys) {
-        expect(restored.containsKey(key), isFalse,
-            reason: '$key leaked via profile_settings');
-      }
-      expect(restored['reader_font_size'], '22',
-          reason: 'a real per-profile preference must still travel');
-    });
+        final dstDb = FushiDatabase(dstDir.path);
+        addTearDown(dstDb.close);
+        final List<ProfileSettingRow> rows = await dstDb.getProfileSettings(
+          profileId,
+        );
+        final Map<String, String> restored = <String, String>{
+          for (final ProfileSettingRow r in rows)
+            if (r.category == BackupService.profilePrefCategory) r.key: r.value,
+        };
+        for (final String key in snapshotCredentials.keys) {
+          expect(
+            restored.containsKey(key),
+            isFalse,
+            reason: '$key leaked via profile_settings',
+          );
+        }
+        expect(
+          restored['reader_font_size'],
+          '22',
+          reason: 'a real per-profile preference must still travel',
+        );
+      },
+    );
 
-    test('import preserves THIS device credentials the export strips',
-        () async {
-      // Symmetry: broadening the strip without broadening the preserve would
-      // wipe the importing device's own SFTP password / API keys.
-      final srcDir = await Directory.systemTemp.createTemp('fushi_sym_src_');
-      addTearDown(() => cleanupTempDir(srcDir));
-      final srcDb = FushiDatabase(srcDir.path);
-      await srcDb.setPref('reader_font_size', '18');
-      final zipDir = await Directory.systemTemp.createTemp('fushi_sym_zip_');
-      addTearDown(() => cleanupTempDir(zipDir));
-      final zipPath = '${zipDir.path}/b.zip';
-      await BackupService(
-        db: srcDb,
-        dbDirectory: srcDir.path,
-        appVersion: '1.0.0',
-      ).createBackup(zipPath);
-      await srcDb.close();
+    test(
+      'import preserves THIS device credentials the export strips',
+      () async {
+        // Symmetry: broadening the strip without broadening the preserve would
+        // wipe the importing device's own SFTP password / API keys.
+        final srcDir = await Directory.systemTemp.createTemp('fushi_sym_src_');
+        addTearDown(() => cleanupTempDir(srcDir));
+        final srcDb = FushiDatabase(srcDir.path);
+        await srcDb.setPref('reader_font_size', '18');
+        final zipDir = await Directory.systemTemp.createTemp('fushi_sym_zip_');
+        addTearDown(() => cleanupTempDir(zipDir));
+        final zipPath = '${zipDir.path}/b.zip';
+        await BackupService(
+          db: srcDb,
+          dbDirectory: srcDir.path,
+          appVersion: '1.0.0',
+        ).createBackup(zipPath);
+        await srcDb.close();
 
-      // The importing device already has its own credentials configured.
-      final dstDir = await Directory.systemTemp.createTemp('fushi_sym_dst_');
-      addTearDown(() => cleanupTempDir(dstDir));
-      final localDb = FushiDatabase(dstDir.path);
-      const Map<String, String> localCredentials = <String, String>{
-        'sync_webdav_password': 'LOCAL-WEBDAV-PW',
-        'media_source_secret_1': 'LOCAL-SFTP-PASSWORD',
-        'qb_connection_config': '{"password":"local"}',
-        'yomitan_api_key': 'LOCAL-YOMITAN-KEY',
-      };
-      for (final MapEntry<String, String> e in localCredentials.entries) {
-        await localDb.setPref(e.key, e.value);
-      }
-      await localDb.close();
+        // The importing device already has its own credentials configured.
+        final dstDir = await Directory.systemTemp.createTemp('fushi_sym_dst_');
+        addTearDown(() => cleanupTempDir(dstDir));
+        final localDb = FushiDatabase(dstDir.path);
+        const Map<String, String> localCredentials = <String, String>{
+          'sync_webdav_password': 'LOCAL-WEBDAV-PW',
+          'media_source_secret_1': 'LOCAL-SFTP-PASSWORD',
+          'qb_connection_config': '{"password":"local"}',
+          'yomitan_api_key': 'LOCAL-YOMITAN-KEY',
+        };
+        for (final MapEntry<String, String> e in localCredentials.entries) {
+          await localDb.setPref(e.key, e.value);
+        }
+        await localDb.close();
 
-      await BackupRestoreService.restoreBackup(
-          dbDirectory: dstDir.path, zipPath: zipPath);
+        await BackupRestoreService.restoreBackup(
+          dbDirectory: dstDir.path,
+          zipPath: zipPath,
+        );
 
-      final dstDb = FushiDatabase(dstDir.path);
-      addTearDown(dstDb.close);
-      for (final MapEntry<String, String> e in localCredentials.entries) {
-        expect(await dstDb.getPref(e.key), e.value,
-            reason: '${e.key} was stripped from the backup but NOT restored '
-                'from this device → permanent credential loss');
-      }
-      expect(await dstDb.getPref('reader_font_size'), '18',
-          reason: 'the backup\'s settings still apply');
-    });
+        final dstDb = FushiDatabase(dstDir.path);
+        addTearDown(dstDb.close);
+        for (final MapEntry<String, String> e in localCredentials.entries) {
+          expect(
+            await dstDb.getPref(e.key),
+            e.value,
+            reason:
+                '${e.key} was stripped from the backup but NOT restored '
+                'from this device → permanent credential loss',
+          );
+        }
+        expect(
+          await dstDb.getPref('reader_font_size'),
+          '18',
+          reason: 'the backup\'s settings still apply',
+        );
+      },
+    );
   });
 
   group('import keeping local settings (importSettings:false)', () {
-    test('keeps local settings/profiles; content + audiobook pos from backup',
-        () async {
-      // ── This device: UI pref + profile + binding + sync + local book ──
-      final curDir = await Directory.systemTemp.createTemp('fushi_keep_cur_');
-      addTearDown(() => cleanupTempDir(curDir));
-      final curDb = FushiDatabase(curDir.path);
-      await curDb.setPref('reader_appearance', 'LOCAL'); // UI pref (keep)
-      await curDb.setPref('sync_backend_type', 'webDav'); // device-local (keep)
-      await curDb.setPrefTyped<int>('audiobook_pos_99', 999); // content (drop)
-      final int localProfileId = await curDb.insertProfile(
+    test(
+      'keeps local settings/profiles; content + audiobook pos from backup',
+      () async {
+        // ── This device: UI pref + profile + binding + sync + local book ──
+        final curDir = await Directory.systemTemp.createTemp('fushi_keep_cur_');
+        addTearDown(() => cleanupTempDir(curDir));
+        final curDb = FushiDatabase(curDir.path);
+        await curDb.setPref('reader_appearance', 'LOCAL'); // UI pref (keep)
+        await curDb.setPref(
+          'sync_backend_type',
+          'webDav',
+        ); // device-local (keep)
+        await curDb.setPrefTyped<int>(
+          'audiobook_pos_99',
+          999,
+        ); // content (drop)
+        final int localProfileId = await curDb.insertProfile(
           ProfilesCompanion.insert(
-              name: 'LocalProfile', createdAt: 1, updatedAt: 1));
-      await curDb.upsertProfileSetting(ProfileSettingsCompanion.insert(
-        profileId: localProfileId,
-        category: 'pref',
-        key: 'reader_appearance',
-        value: 'LOCAL',
-      ));
-      await curDb.setBookProfile('book-local', localProfileId);
-      await curDb.setPref('active_profile_id', localProfileId.toString());
-      await curDb.insertEpubBook(EpubBooksCompanion.insert(
-        bookKey: 'LocalBook',
-        title: 'LocalBook',
-        epubPath: '/l.epub',
-        extractDir: '/l',
-        chapterCount: 1,
-        chaptersJson: '[]',
-        importedAt: 1,
-      ));
-      await curDb.close();
+            name: 'LocalProfile',
+            createdAt: 1,
+            updatedAt: 1,
+          ),
+        );
+        await curDb.upsertProfileSetting(
+          ProfileSettingsCompanion.insert(
+            profileId: localProfileId,
+            category: 'pref',
+            key: 'reader_appearance',
+            value: 'LOCAL',
+          ),
+        );
+        await curDb.setBookProfile('book-local', localProfileId);
+        await curDb.setPref('active_profile_id', localProfileId.toString());
+        await curDb.insertEpubBook(
+          EpubBooksCompanion.insert(
+            bookKey: 'LocalBook',
+            title: 'LocalBook',
+            epubPath: '/l.epub',
+            extractDir: '/l',
+            chapterCount: 1,
+            chaptersJson: '[]',
+            importedAt: 1,
+          ),
+        );
+        await curDb.close();
 
-      // ── Backup from another device: different settings/profile/book ──
-      final srcDir = await Directory.systemTemp.createTemp('fushi_keep_src_');
-      addTearDown(() => cleanupTempDir(srcDir));
-      final srcDb = FushiDatabase(srcDir.path);
-      await srcDb.setPref('reader_appearance', 'BACKUP');
-      await srcDb.insertProfile(ProfilesCompanion.insert(
-          name: 'BackupProfile', createdAt: 2, updatedAt: 2));
-      await srcDb.insertEpubBook(EpubBooksCompanion.insert(
-        bookKey: 'BackupBook',
-        title: 'BackupBook',
-        epubPath: '/b.epub',
-        extractDir: '/b',
-        chapterCount: 5,
-        chaptersJson: '[]',
-        importedAt: 2,
-      ));
-      final String backupBookId =
-          (await srcDb.getAllEpubBooks()).single.bookKey;
-      await srcDb.setPrefTyped<int>('audiobook_pos_$backupBookId', 4242);
-      final zipDir = await Directory.systemTemp.createTemp('fushi_keep_zip_');
-      addTearDown(() => cleanupTempDir(zipDir));
-      final zipPath = '${zipDir.path}/b.zip';
-      await BackupService(
-        db: srcDb,
-        dbDirectory: srcDir.path,
-        appVersion: '1.0.0',
-      ).createBackup(zipPath);
-      await srcDb.close();
+        // ── Backup from another device: different settings/profile/book ──
+        final srcDir = await Directory.systemTemp.createTemp('fushi_keep_src_');
+        addTearDown(() => cleanupTempDir(srcDir));
+        final srcDb = FushiDatabase(srcDir.path);
+        await srcDb.setPref('reader_appearance', 'BACKUP');
+        await srcDb.insertProfile(
+          ProfilesCompanion.insert(
+            name: 'BackupProfile',
+            createdAt: 2,
+            updatedAt: 2,
+          ),
+        );
+        await srcDb.insertEpubBook(
+          EpubBooksCompanion.insert(
+            bookKey: 'BackupBook',
+            title: 'BackupBook',
+            epubPath: '/b.epub',
+            extractDir: '/b',
+            chapterCount: 5,
+            chaptersJson: '[]',
+            importedAt: 2,
+          ),
+        );
+        final String backupBookId =
+            (await srcDb.getAllEpubBooks()).single.bookKey;
+        await srcDb.setPrefTyped<int>('audiobook_pos_$backupBookId', 4242);
+        final zipDir = await Directory.systemTemp.createTemp('fushi_keep_zip_');
+        addTearDown(() => cleanupTempDir(zipDir));
+        final zipPath = '${zipDir.path}/b.zip';
+        await BackupService(
+          db: srcDb,
+          dbDirectory: srcDir.path,
+          appVersion: '1.0.0',
+        ).createBackup(zipPath);
+        await srcDb.close();
 
-      // ── Import keeping local settings, then simulate the startup restore ──
-      await BackupRestoreService.restoreBackup(
-        dbDirectory: curDir.path,
-        zipPath: zipPath,
-        importSettings: false,
-      );
-      await BackupRestoreService.recoverPendingRestore(curDir.path);
+        // ── Import keeping local settings, then simulate the startup restore ──
+        await BackupRestoreService.restoreBackup(
+          dbDirectory: curDir.path,
+          zipPath: zipPath,
+          importSettings: false,
+        );
+        await BackupRestoreService.recoverPendingRestore(curDir.path);
 
-      final after = FushiDatabase(curDir.path);
-      addTearDown(after.close);
+        final after = FushiDatabase(curDir.path);
+        addTearDown(after.close);
 
-      // Settings + profiles + binding kept local:
-      expect(await after.getPref('reader_appearance'), 'LOCAL');
-      expect(await after.getPref('sync_backend_type'), 'webDav');
-      final profileNames =
-          (await after.getAllProfiles()).map((p) => p.name).toList();
-      expect(profileNames, contains('LocalProfile'));
-      expect(profileNames, isNot(contains('BackupProfile')));
-      expect(await after.getBookProfile('book-local'), isNotNull);
+        // Settings + profiles + binding kept local:
+        expect(await after.getPref('reader_appearance'), 'LOCAL');
+        expect(await after.getPref('sync_backend_type'), 'webDav');
+        final profileNames = (await after.getAllProfiles())
+            .map((p) => p.name)
+            .toList();
+        expect(profileNames, contains('LocalProfile'));
+        expect(profileNames, isNot(contains('BackupProfile')));
+        expect(await after.getBookProfile('book-local'), isNotNull);
 
-      // Content from backup:
-      final bookTitles =
-          (await after.getAllEpubBooks()).map((b) => b.title).toList();
-      expect(bookTitles, contains('BackupBook'));
-      expect(bookTitles, isNot(contains('LocalBook')));
+        // Content from backup:
+        final bookTitles = (await after.getAllEpubBooks())
+            .map((b) => b.title)
+            .toList();
+        expect(bookTitles, contains('BackupBook'));
+        expect(bookTitles, isNot(contains('LocalBook')));
 
-      // audiobook position is content → follows the backup, local one dropped:
-      expect(await after.getPrefTyped<int>('audiobook_pos_$backupBookId', 0),
-          4242);
-      expect(await after.getPrefTyped<int>('audiobook_pos_99', 0), 0);
+        // audiobook position is content → follows the backup, local one dropped:
+        expect(
+          await after.getPrefTyped<int>('audiobook_pos_$backupBookId', 0),
+          4242,
+        );
+        expect(await after.getPrefTyped<int>('audiobook_pos_99', 0), 0);
 
-      // DB is valid + at the current schema after the migrate-then-copy, with
-      // no FK violations, and the scratch files are cleaned up:
-      final version =
-          await after.customSelect('PRAGMA user_version').getSingle();
-      expect(version.data['user_version'], after.schemaVersion);
-      final integrity =
-          await after.customSelect('PRAGMA integrity_check').get();
-      expect(
-          integrity.map((r) => r.data.values.first).toList(), <String>['ok']);
-      final fk = await after.customSelect('PRAGMA foreign_key_check').get();
-      expect(fk, isEmpty);
-      expect(File('${curDir.path}/fushi.db.pre-restore.bak').existsSync(),
-          isFalse);
-      expect(File('${curDir.path}/fushi.db.sync-preserve.json').existsSync(),
-          isFalse);
-    });
-
-    test('fresh install (no current DB) restores everything (toggle moot)',
-        () async {
-      // Backup with its own settings + content.
-      final srcDir = await Directory.systemTemp.createTemp('fushi_fresh_src_');
-      addTearDown(() => cleanupTempDir(srcDir));
-      final srcDb = FushiDatabase(srcDir.path);
-      await srcDb.setPref('reader_appearance', 'BACKUP');
-      await srcDb.insertEpubBook(EpubBooksCompanion.insert(
-        bookKey: 'BackupBook',
-        title: 'BackupBook',
-        epubPath: '/b.epub',
-        extractDir: '/b',
-        chapterCount: 1,
-        chaptersJson: '[]',
-        importedAt: 1,
-      ));
-      final zipDir = await Directory.systemTemp.createTemp('fushi_fresh_zip_');
-      addTearDown(() => cleanupTempDir(zipDir));
-      final zipPath = '${zipDir.path}/b.zip';
-      await BackupService(
-              db: srcDb, dbDirectory: srcDir.path, appVersion: '1.0')
-          .createBackup(zipPath);
-      await srcDb.close();
-
-      // Import into an EMPTY dir (no current DB) with importSettings:false.
-      final dstDir = await Directory.systemTemp.createTemp('fushi_fresh_dst_');
-      addTearDown(() => cleanupTempDir(dstDir));
-      await BackupRestoreService.restoreBackup(
-        dbDirectory: dstDir.path,
-        zipPath: zipPath,
-        importSettings: false,
-      );
-      await BackupRestoreService.recoverPendingRestore(dstDir.path);
-
-      final after = FushiDatabase(dstDir.path);
-      addTearDown(after.close);
-      // Nothing local to preserve → backup applied verbatim (settings included).
-      expect(await after.getPref('reader_appearance'), 'BACKUP');
-      expect((await after.getAllEpubBooks()).single.title, 'BackupBook');
-      expect(File('${dstDir.path}/fushi.db.pre-restore.bak').existsSync(),
-          isFalse);
-      expect(File('${dstDir.path}/fushi.db.sync-preserve.json').existsSync(),
-          isFalse);
-    });
+        // DB is valid + at the current schema after the migrate-then-copy, with
+        // no FK violations, and the scratch files are cleaned up:
+        final version = await after
+            .customSelect('PRAGMA user_version')
+            .getSingle();
+        expect(version.data['user_version'], after.schemaVersion);
+        final integrity = await after
+            .customSelect('PRAGMA integrity_check')
+            .get();
+        expect(integrity.map((r) => r.data.values.first).toList(), <String>[
+          'ok',
+        ]);
+        final fk = await after.customSelect('PRAGMA foreign_key_check').get();
+        expect(fk, isEmpty);
+        expect(
+          File('${curDir.path}/fushi.db.pre-restore.bak').existsSync(),
+          isFalse,
+        );
+        expect(
+          File('${curDir.path}/fushi.db.sync-preserve.json').existsSync(),
+          isFalse,
+        );
+      },
+    );
 
     test(
-        'recoverPendingRestore with a settings sidecar but missing bak is safe',
-        () async {
-      final dir = await Directory.systemTemp.createTemp('fushi_nobak_');
-      addTearDown(() => cleanupTempDir(dir));
-      final db = FushiDatabase(dir.path);
-      await db.setPref('reader_appearance', 'INTACT');
-      await db.close();
+      'fresh install (no current DB) restores everything (toggle moot)',
+      () async {
+        // Backup with its own settings + content.
+        final srcDir = await Directory.systemTemp.createTemp(
+          'fushi_fresh_src_',
+        );
+        addTearDown(() => cleanupTempDir(srcDir));
+        final srcDb = FushiDatabase(srcDir.path);
+        await srcDb.setPref('reader_appearance', 'BACKUP');
+        await srcDb.insertEpubBook(
+          EpubBooksCompanion.insert(
+            bookKey: 'BackupBook',
+            title: 'BackupBook',
+            epubPath: '/b.epub',
+            extractDir: '/b',
+            chapterCount: 1,
+            chaptersJson: '[]',
+            importedAt: 1,
+          ),
+        );
+        final zipDir = await Directory.systemTemp.createTemp(
+          'fushi_fresh_zip_',
+        );
+        addTearDown(() => cleanupTempDir(zipDir));
+        final zipPath = '${zipDir.path}/b.zip';
+        await BackupService(
+          db: srcDb,
+          dbDirectory: srcDir.path,
+          appVersion: '1.0',
+        ).createBackup(zipPath);
+        await srcDb.close();
 
-      // A crashed keep-settings import could leave the sidecar with no bak.
-      await File('${dir.path}/fushi.db.sync-preserve.json')
-          .writeAsString(jsonEncode(<String, dynamic>{'mode': 'settings'}));
+        // Import into an EMPTY dir (no current DB) with importSettings:false.
+        final dstDir = await Directory.systemTemp.createTemp(
+          'fushi_fresh_dst_',
+        );
+        addTearDown(() => cleanupTempDir(dstDir));
+        await BackupRestoreService.restoreBackup(
+          dbDirectory: dstDir.path,
+          zipPath: zipPath,
+          importSettings: false,
+        );
+        await BackupRestoreService.recoverPendingRestore(dstDir.path);
 
-      await BackupRestoreService.recoverPendingRestore(
-          dir.path); // must not throw
+        final after = FushiDatabase(dstDir.path);
+        addTearDown(after.close);
+        // Nothing local to preserve → backup applied verbatim (settings included).
+        expect(await after.getPref('reader_appearance'), 'BACKUP');
+        expect((await after.getAllEpubBooks()).single.title, 'BackupBook');
+        expect(
+          File('${dstDir.path}/fushi.db.pre-restore.bak').existsSync(),
+          isFalse,
+        );
+        expect(
+          File('${dstDir.path}/fushi.db.sync-preserve.json').existsSync(),
+          isFalse,
+        );
+      },
+    );
 
-      final after = FushiDatabase(dir.path);
-      addTearDown(after.close);
-      // DB untouched, sidecar cleaned up.
-      expect(await after.getPref('reader_appearance'), 'INTACT');
-      expect(File('${dir.path}/fushi.db.sync-preserve.json').existsSync(),
-          isFalse);
-    });
+    test(
+      'recoverPendingRestore with a settings sidecar but missing bak is safe',
+      () async {
+        final dir = await Directory.systemTemp.createTemp('fushi_nobak_');
+        addTearDown(() => cleanupTempDir(dir));
+        final db = FushiDatabase(dir.path);
+        await db.setPref('reader_appearance', 'INTACT');
+        await db.close();
+
+        // A crashed keep-settings import could leave the sidecar with no bak.
+        await File(
+          '${dir.path}/fushi.db.sync-preserve.json',
+        ).writeAsString(jsonEncode(<String, dynamic>{'mode': 'settings'}));
+
+        await BackupRestoreService.recoverPendingRestore(
+          dir.path,
+        ); // must not throw
+
+        final after = FushiDatabase(dir.path);
+        addTearDown(after.close);
+        // DB untouched, sidecar cleaned up.
+        expect(await after.getPref('reader_appearance'), 'INTACT');
+        expect(
+          File('${dir.path}/fushi.db.sync-preserve.json').existsSync(),
+          isFalse,
+        );
+      },
+    );
   });
 }

@@ -25,7 +25,6 @@ class SubtitleRematch {
 
   static bool isEligible(Audiobook ab) => SubtitleRematchPolicy.isEligible(ab);
 
-
   static Future<bool?> promptAndRun({
     required BuildContext context,
     required Audiobook ab,
@@ -77,8 +76,9 @@ class SubtitleRematch {
     int window = EpubSrtMatcher.defaultSearchWindow;
     double threshold = EpubSrtMatcher.defaultSimilarityThreshold;
     if (previousReason != null) {
-      final RegExpMatch? mw =
-          RegExp(r'window=(\d+)').firstMatch(previousReason);
+      final RegExpMatch? mw = RegExp(
+        r'window=(\d+)',
+      ).firstMatch(previousReason);
       final int? prev = mw == null ? null : int.tryParse(mw.group(1)!);
       if (prev != null) {
         window = prev.clamp(
@@ -86,8 +86,9 @@ class SubtitleRematch {
           SubtitleRematchWindowSlider.maxWindow,
         );
       }
-      final RegExpMatch? mt =
-          RegExp(r'threshold=([\d.]+)').firstMatch(previousReason);
+      final RegExpMatch? mt = RegExp(
+        r'threshold=([\d.]+)',
+      ).firstMatch(previousReason);
       final double? prevT = mt == null ? null : double.tryParse(mt.group(1)!);
       if (prevT != null) {
         threshold = prevT.clamp(0.1, 1.0);
@@ -101,9 +102,7 @@ class SubtitleRematch {
       Future<void> handleAuto() async {
         setSheet(() => autoBusy = true);
         try {
-          probedSections ??= await _loadSections(
-            extractDir: extractDir,
-          );
+          probedSections ??= await _loadSections(extractDir: extractDir);
           probedCues ??= await repo.cuesForBook(bookKey);
           final int? best = await runAutoProbe(
             sections: probedSections ?? const <EpubSection>[],
@@ -157,9 +156,9 @@ class SubtitleRematch {
               onPressed: autoBusy
                   ? null
                   : () => Navigator.pop(
-                        sheetCtx,
-                        _MatchParams(window, threshold),
-                      ),
+                      sheetCtx,
+                      _MatchParams(window, threshold),
+                    ),
             ),
           ],
         ),
@@ -431,10 +430,7 @@ class SubtitleRematchWindowSlider extends StatelessWidget {
       children: [
         Text(t.audiobook_rematch_search_window, style: tokens.type.listTitle),
         SizedBox(height: tokens.spacing.gap / 2),
-        Text(
-          t.audiobook_rematch_window_hint,
-          style: tokens.type.metadata,
-        ),
+        Text(t.audiobook_rematch_window_hint, style: tokens.type.metadata),
         SizedBox(height: tokens.spacing.gap),
         Row(
           children: [
@@ -464,7 +460,8 @@ class SubtitleRematchWindowSlider extends StatelessWidget {
             Expanded(
               child: Text(
                 t.audiobook_rematch_default_value(
-                    n: EpubSrtMatcher.defaultSearchWindow),
+                  n: EpubSrtMatcher.defaultSearchWindow,
+                ),
                 style: tokens.type.metadata,
               ),
             ),
@@ -475,13 +472,17 @@ class SubtitleRematchWindowSlider extends StatelessWidget {
                     ? SizedBox(
                         width: 14,
                         height: 14,
-                        child:
-                            adaptiveIndicator(context: context, strokeWidth: 2),
+                        child: adaptiveIndicator(
+                          context: context,
+                          strokeWidth: 2,
+                        ),
                       )
                     : const FushiIcon(Icons.auto_awesome_outlined, size: 16),
-                label: Text(autoBusy
-                    ? t.audiobook_rematch_matching
-                    : t.audiobook_rematch_auto_match),
+                label: Text(
+                  autoBusy
+                      ? t.audiobook_rematch_matching
+                      : t.audiobook_rematch_auto_match,
+                ),
               ),
           ],
         ),
@@ -508,13 +509,12 @@ class SubtitleRematchThresholdSlider extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(t.audiobook_rematch_similarity_threshold,
-            style: tokens.type.listTitle),
-        SizedBox(height: tokens.spacing.gap / 2),
         Text(
-          t.audiobook_rematch_threshold_hint,
-          style: tokens.type.metadata,
+          t.audiobook_rematch_similarity_threshold,
+          style: tokens.type.listTitle,
         ),
+        SizedBox(height: tokens.spacing.gap / 2),
+        Text(t.audiobook_rematch_threshold_hint, style: tokens.type.metadata),
         SizedBox(height: tokens.spacing.gap),
         Row(
           children: [
@@ -540,7 +540,8 @@ class SubtitleRematchThresholdSlider extends StatelessWidget {
         ),
         Text(
           t.audiobook_rematch_default_value(
-              n: EpubSrtMatcher.defaultSimilarityThreshold),
+            n: EpubSrtMatcher.defaultSimilarityThreshold,
+          ),
           style: tokens.type.metadata,
         ),
       ],

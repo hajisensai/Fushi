@@ -40,8 +40,9 @@ void main() {
     return ProviderScope.containerOf(element, listen: false).read(appProvider);
   }
 
-  testWidgets('home keyboard shortcuts switch tabs on real Android',
-      (WidgetTester tester) async {
+  testWidgets('home keyboard shortcuts switch tabs on real Android', (
+    WidgetTester tester,
+  ) async {
     // app.main() 会把 FlutterError.onError 换成 ErrorLogService 的处理器；
     // flutter_test binding 一旦发现 onError 被换而 _pendingExceptionDetails 为空，
     // 任何 TestFailure 都会变成一条不含真实原因的
@@ -66,51 +67,70 @@ void main() {
       // 本测试写于 dashboard tab 引入之前，「Books tab (0) is the default」premise
       // 已过时。用确定性钩子先切到书架，再验证快捷键在两个 tab 间切换。
       await showBooksTab(tester);
-      expect(find.byType(HomeReaderPage), findsOneWidget,
-          reason: 'books tab must be selected before driving shortcuts');
+      expect(
+        find.byType(HomeReaderPage),
+        findsOneWidget,
+        reason: 'books tab must be selected before driving shortcuts',
+      );
       expect(find.byType(HomeDictionaryPage), findsNothing);
 
       // Bind two free keys at runtime (android home defaults are empty).
       final AppModel appModel = appModelOf(tester);
       boundModel = appModel;
-      origDict =
-          appModel.shortcutRegistry.bindingsFor(ShortcutAction.homeTabDict);
-      origBooks =
-          appModel.shortcutRegistry.bindingsFor(ShortcutAction.homeTabBooks);
+      origDict = appModel.shortcutRegistry.bindingsFor(
+        ShortcutAction.homeTabDict,
+      );
+      origBooks = appModel.shortcutRegistry.bindingsFor(
+        ShortcutAction.homeTabBooks,
+      );
       appModel.shortcutRegistry.updateBinding(
         ShortcutAction.homeTabDict,
-        const ShortcutBindingSet(keyboardBindings: <InputBinding>[
-          InputBinding(key: LogicalKeyboardKey.keyJ),
-        ]),
+        const ShortcutBindingSet(
+          keyboardBindings: <InputBinding>[
+            InputBinding(key: LogicalKeyboardKey.keyJ),
+          ],
+        ),
       );
       appModel.shortcutRegistry.updateBinding(
         ShortcutAction.homeTabBooks,
-        const ShortcutBindingSet(keyboardBindings: <InputBinding>[
-          InputBinding(key: LogicalKeyboardKey.keyB),
-        ]),
+        const ShortcutBindingSet(
+          keyboardBindings: <InputBinding>[
+            InputBinding(key: LogicalKeyboardKey.keyB),
+          ],
+        ),
       );
       await tester.pump();
 
       // KeyJ → dictionary tab.
       await tester.sendKeyEvent(LogicalKeyboardKey.keyJ);
       await tester.pumpAndSettle();
-      expect(find.byType(HomeDictionaryPage), findsOneWidget,
-          reason: 'KeyJ (homeTabDict) must switch to the dictionary tab');
+      expect(
+        find.byType(HomeDictionaryPage),
+        findsOneWidget,
+        reason: 'KeyJ (homeTabDict) must switch to the dictionary tab',
+      );
       expect(find.byType(HomeReaderPage), findsNothing);
 
       // KeyB → back to the books tab.
       await tester.sendKeyEvent(LogicalKeyboardKey.keyB);
       await tester.pumpAndSettle();
-      expect(find.byType(HomeReaderPage), findsOneWidget,
-          reason: 'KeyB (homeTabBooks) must switch back to the books tab');
+      expect(
+        find.byType(HomeReaderPage),
+        findsOneWidget,
+        reason: 'KeyB (homeTabBooks) must switch back to the books tab',
+      );
       expect(find.byType(HomeDictionaryPage), findsNothing);
     } finally {
       // 还原运行时绑定，不让 J/B 泄漏进共享测试 DB / 后续测试进程状态。
       if (boundModel != null && origDict != null && origBooks != null) {
-        boundModel.shortcutRegistry
-            .updateBinding(ShortcutAction.homeTabDict, origDict);
-        boundModel.shortcutRegistry
-            .updateBinding(ShortcutAction.homeTabBooks, origBooks);
+        boundModel.shortcutRegistry.updateBinding(
+          ShortcutAction.homeTabDict,
+          origDict,
+        );
+        boundModel.shortcutRegistry.updateBinding(
+          ShortcutAction.homeTabBooks,
+          origBooks,
+        );
       }
       FlutterError.onError = oldHandler;
     }

@@ -67,11 +67,12 @@ AudioPlaybackRange? miningSentenceAudioRange({
 
   // When the word did not land in any cue (gap), the sentence span is the only
   // anchor we have; do not fall through to cue-relative expansion.
-  final AudioPlaybackRange? baseRange = positionRange ??
+  final AudioPlaybackRange? baseRange =
+      positionRange ??
       (cue == null
           ? null
           : (_expandAroundCue(cues: cues, cue: cue, sentence: sentence) ??
-              _cueRange(cue)));
+                _cueRange(cue)));
 
   if (baseRange == null) {
     return null;
@@ -89,8 +90,10 @@ AudioPlaybackRange? miningSentenceAudioRange({
   // audioFileIndex -- never fabricates a cross-file/cross-chapter range -- so
   // genuinely cross-file selections still fall through to the caller's
   // single-file/null routing untouched.
-  final AudioPlaybackRange positiveRange =
-      _ensurePositiveDuration(baseRange, cues);
+  final AudioPlaybackRange positiveRange = _ensurePositiveDuration(
+    baseRange,
+    cues,
+  );
   // Phase 0 (TODO-1115): widen the exported clip by a small head/tail padding so
   // the reader's first-mora onset and last-mora decay are not hard-cut, WITHOUT
   // bleeding an adjacent sentence in. Padding is clamped against the neighbouring
@@ -317,9 +320,9 @@ AudioPlaybackRange? _rangeFromSentencePosition({
     }
     final AudioPlaybackRange? textRange =
         CollectionAudioMatcher.findPlaybackRange(
-      cues: cues,
-      text: textFallback,
-    );
+          cues: cues,
+          text: textFallback,
+        );
     if (textRange != null) {
       return textRange;
     }
@@ -335,8 +338,9 @@ AudioPlaybackRange? _rangeFromSentencePosition({
   // reader's current chapter / lyrics fragment, which is authoritative for the
   // selection regardless of cue coverage.
   if (cue != null) {
-    final SubtitleRematchFragment? cueFragment =
-        SubtitleRematchCodec.tryDecode(cue.textFragmentId);
+    final SubtitleRematchFragment? cueFragment = SubtitleRematchCodec.tryDecode(
+      cue.textFragmentId,
+    );
     if (cueFragment == null) {
       // The cue carries no sasayaki position (plain SRT selector / empty): it
       // cannot vouch for the section, and the section's cues may not be sasayaki
@@ -423,7 +427,7 @@ AudioPlaybackRange? _expandAroundCue({
 /// `CollectionAudioMatcher._normalizedAdjacentMatch` 的第三份刻意保持包内独立
 /// （不跨包新增共享面；归一化本体 AudioTextNormalizer / BUG-060 白名单不动）。
 ({List<int> cueStarts, List<String> normTexts, String concat})
-    _normalizedCueConcat(List<AudioCue> cues) {
+_normalizedCueConcat(List<AudioCue> cues) {
   final List<int> cueStarts = <int>[];
   final List<String> normTexts = <String>[];
   final StringBuffer buf = StringBuffer();
@@ -628,10 +632,9 @@ List<AudioCue> miningSentenceCueSpan({
 
   // 单文件约束：以第一句所在文件为准，丢弃跨文件命中，再按 startMs 升序。
   final int fileIndex = hits.first.audioFileIndex;
-  final List<AudioCue> sameFile = hits
-      .where((AudioCue c) => c.audioFileIndex == fileIndex)
-      .toList()
-    ..sort((AudioCue a, AudioCue b) => a.startMs.compareTo(b.startMs));
+  final List<AudioCue> sameFile =
+      hits.where((AudioCue c) => c.audioFileIndex == fileIndex).toList()
+        ..sort((AudioCue a, AudioCue b) => a.startMs.compareTo(b.startMs));
   return List<AudioCue>.unmodifiable(sameFile);
 }
 
@@ -653,8 +656,9 @@ List<AudioCue> _collectSpanCues({
     final int rangeEnd = offset + sentenceNormCharLength;
     final List<AudioCue> hits = <AudioCue>[];
     for (final AudioCue c in cues) {
-      final SubtitleRematchFragment? frag =
-          SubtitleRematchCodec.tryDecode(c.textFragmentId);
+      final SubtitleRematchFragment? frag = SubtitleRematchCodec.tryDecode(
+        c.textFragmentId,
+      );
       if (frag == null || frag.sectionIndex != sectionIndex) {
         continue;
       }

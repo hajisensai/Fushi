@@ -321,65 +321,65 @@ class _BackupExportWidgetState extends State<_BackupExportWidget> {
                     // sub-option of its category instead of a duplicate top row.
                     for (final BackupCategory c in BackupCategory.values)
                       if (backupCategoryShownInExport(c, summary)) ...<Widget>[
-                      FushiStaggeredEntrance(
-                        index: c.index,
-                        child: AdaptiveSettingsSwitchRow(
-                          title: backupCategoryLabel(c),
-                          subtitle: summary.counts.containsKey(c)
-                              ? '${backupCategoryDescription(c)} '
-                                    '(${summary.countFor(c)})'
-                              : backupCategoryDescription(c),
-                          icon: backupCategoryIcon(c),
-                          showIcon: true,
-                          value: selected.contains(c),
-                          onChanged: (bool v) => setLocal(() {
-                            if (v) {
-                              selected.add(c);
-                            } else {
-                              selected.remove(c);
-                            }
-                          }),
+                        FushiStaggeredEntrance(
+                          index: c.index,
+                          child: AdaptiveSettingsSwitchRow(
+                            title: backupCategoryLabel(c),
+                            subtitle: summary.counts.containsKey(c)
+                                ? '${backupCategoryDescription(c)} '
+                                      '(${summary.countFor(c)})'
+                                : backupCategoryDescription(c),
+                            icon: backupCategoryIcon(c),
+                            showIcon: true,
+                            value: selected.contains(c),
+                            onChanged: (bool v) => setLocal(() {
+                              if (v) {
+                                selected.add(c);
+                              } else {
+                                selected.remove(c);
+                              }
+                            }),
+                          ),
                         ),
-                      ),
-                      // Per-book selection row (TODO-1195 part A): only meaningful
-                      // when the Books category itself is packed.
-                      if (c == BackupCategory.books &&
-                          selected.contains(BackupCategory.books))
-                        AdaptiveSettingsRow(
-                          title: t.backup_export_choose_books,
-                          subtitle: chosenBooks == null
-                              ? t.backup_export_books_all
-                              : t.backup_export_books_selected(
-                                  count: chosenBooks!.length.toString(),
-                                ),
-                          trailing: const FushiIcon(FushiIcons.chevronRight),
-                          onTap: () async {
-                            final Set<String>? picked = await _pickBooks(
-                              chosenBooks,
-                            );
-                            setLocal(() => chosenBooks = picked);
-                          },
-                        ),
-                      // Per-video selection row (books analogue): only meaningful
-                      // when the Videos category itself is packed.
-                      if (c == BackupCategory.videos &&
-                          selected.contains(BackupCategory.videos))
-                        AdaptiveSettingsRow(
-                          title: t.backup_export_choose_videos,
-                          subtitle: chosenVideos == null
-                              ? t.backup_export_videos_all
-                              : t.backup_export_videos_selected(
-                                  count: chosenVideos!.length.toString(),
-                                ),
-                          trailing: const FushiIcon(FushiIcons.chevronRight),
-                          onTap: () async {
-                            final Set<String>? picked = await _pickVideos(
-                              chosenVideos,
-                            );
-                            setLocal(() => chosenVideos = picked);
-                          },
-                        ),
-                    ],
+                        // Per-book selection row (TODO-1195 part A): only meaningful
+                        // when the Books category itself is packed.
+                        if (c == BackupCategory.books &&
+                            selected.contains(BackupCategory.books))
+                          AdaptiveSettingsRow(
+                            title: t.backup_export_choose_books,
+                            subtitle: chosenBooks == null
+                                ? t.backup_export_books_all
+                                : t.backup_export_books_selected(
+                                    count: chosenBooks!.length.toString(),
+                                  ),
+                            trailing: const FushiIcon(FushiIcons.chevronRight),
+                            onTap: () async {
+                              final Set<String>? picked = await _pickBooks(
+                                chosenBooks,
+                              );
+                              setLocal(() => chosenBooks = picked);
+                            },
+                          ),
+                        // Per-video selection row (books analogue): only meaningful
+                        // when the Videos category itself is packed.
+                        if (c == BackupCategory.videos &&
+                            selected.contains(BackupCategory.videos))
+                          AdaptiveSettingsRow(
+                            title: t.backup_export_choose_videos,
+                            subtitle: chosenVideos == null
+                                ? t.backup_export_videos_all
+                                : t.backup_export_videos_selected(
+                                    count: chosenVideos!.length.toString(),
+                                  ),
+                            trailing: const FushiIcon(FushiIcons.chevronRight),
+                            onTap: () async {
+                              final Set<String>? picked = await _pickVideos(
+                                chosenVideos,
+                              );
+                              setLocal(() => chosenVideos = picked);
+                            },
+                          ),
+                      ],
                   ],
                 ),
               ),

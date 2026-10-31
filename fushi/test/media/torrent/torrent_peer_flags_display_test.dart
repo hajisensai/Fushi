@@ -13,29 +13,33 @@ void main() {
     });
 
     test('感兴趣且对端未 choke 我们 = 正在下载 D', () {
-      final String flags =
-          formatTorrentPeerFlags(TorrentPeerFlagBits.interesting);
+      final String flags = formatTorrentPeerFlags(
+        TorrentPeerFlagBits.interesting,
+      );
       expect(flags.split(' '), contains('D'));
       expect(flags.split(' '), isNot(contains('d')));
     });
 
     test('感兴趣但被对端 choke = d（想下未遂）', () {
       final String flags = formatTorrentPeerFlags(
-          TorrentPeerFlagBits.interesting | TorrentPeerFlagBits.remoteChoked);
+        TorrentPeerFlagBits.interesting | TorrentPeerFlagBits.remoteChoked,
+      );
       expect(flags.split(' '), contains('d'));
       expect(flags.split(' '), isNot(contains('D')));
     });
 
     test('对端感兴趣且我们未 choke = 正在上传 U', () {
-      final String flags =
-          formatTorrentPeerFlags(TorrentPeerFlagBits.remoteInterested);
+      final String flags = formatTorrentPeerFlags(
+        TorrentPeerFlagBits.remoteInterested,
+      );
       expect(flags.split(' '), contains('U'));
       expect(flags.split(' '), isNot(contains('u')));
     });
 
     test('对端感兴趣但被我们 choke = u', () {
       final String flags = formatTorrentPeerFlags(
-          TorrentPeerFlagBits.remoteInterested | TorrentPeerFlagBits.choked);
+        TorrentPeerFlagBits.remoteInterested | TorrentPeerFlagBits.choked,
+      );
       expect(flags.split(' '), contains('u'));
       expect(flags.split(' '), isNot(contains('U')));
     });
@@ -44,7 +48,8 @@ void main() {
       // 双方常态开局：双向 choke —— 只置 remoteInterested 位时我们未 choke
       // 对端也未被对端解锁……用一个真实组合：seed 位 + 双向 choke。
       final String flags = formatTorrentPeerFlags(
-          TorrentPeerFlagBits.seed | TorrentPeerFlagBits.choked);
+        TorrentPeerFlagBits.seed | TorrentPeerFlagBits.choked,
+      );
       // 我们不感兴趣（bit0=0）且对端未 choke 我们（bit3=0）→ K。
       expect(flags.split(' '), contains('K'));
     });
@@ -67,7 +72,8 @@ void main() {
 
     test('入站连接（无 outgoing 位）标 I', () {
       final String flags = formatTorrentPeerFlags(
-          TorrentPeerFlagBits.interesting | TorrentPeerFlagBits.remoteChoked);
+        TorrentPeerFlagBits.interesting | TorrentPeerFlagBits.remoteChoked,
+      );
       expect(flags.split(' '), contains('I'));
     });
   });

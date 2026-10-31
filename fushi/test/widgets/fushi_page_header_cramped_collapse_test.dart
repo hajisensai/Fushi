@@ -35,13 +35,13 @@ void main() {
   }
 
   List<Widget> buildActions(List<String> tapped) => <Widget>[
-        for (int i = 0; i < 4; i++)
-          FushiIconButton(
-            icon: Icons.star_border,
-            tooltip: 'action-$i',
-            onTap: () => tapped.add('action-$i'),
-          ),
-      ];
+    for (int i = 0; i < 4; i++)
+      FushiIconButton(
+        icon: Icons.star_border,
+        tooltip: 'action-$i',
+        onTap: () => tapped.add('action-$i'),
+      ),
+  ];
 
   testWidgets('窄行放不下：动作收进 ⋯ 菜单，菜单项可触发原动作', (WidgetTester tester) async {
     final List<String> tapped = <String>[];
@@ -50,15 +50,24 @@ void main() {
     await tester.pump();
     await tester.pump();
 
-    expect(find.byIcon(FushiIcons.more), findsOneWidget,
-        reason: '360dp 行宽放不下 6 段 + 4 动作，必须出现 ⋯ 溢出按钮');
-    expect(find.byIcon(Icons.star_border), findsNothing,
-        reason: '被收纳的动作不应再以图标形态占页头宽度');
+    expect(
+      find.byIcon(FushiIcons.more),
+      findsOneWidget,
+      reason: '360dp 行宽放不下 6 段 + 4 动作，必须出现 ⋯ 溢出按钮',
+    );
+    expect(
+      find.byIcon(Icons.star_border),
+      findsNothing,
+      reason: '被收纳的动作不应再以图标形态占页头宽度',
+    );
 
     await tester.tap(find.byIcon(FushiIcons.more));
     await tester.pumpAndSettle();
-    expect(find.text('action-2'), findsOneWidget,
-        reason: '菜单项以动作的 tooltip 文案呈现');
+    expect(
+      find.text('action-2'),
+      findsOneWidget,
+      reason: '菜单项以动作的 tooltip 文案呈现',
+    );
     await tester.tap(find.text('action-2'));
     await tester.pumpAndSettle();
     expect(tapped, <String>['action-2'], reason: '菜单项必须触发原动作的 onTap');
@@ -70,8 +79,11 @@ void main() {
     await tester.pump();
     await tester.pump();
 
-    expect(find.byIcon(FushiIcons.more), findsNothing,
-        reason: '放得下时不收纳（仅在左边位置不够时才变）');
+    expect(
+      find.byIcon(FushiIcons.more),
+      findsNothing,
+      reason: '放得下时不收纳（仅在左边位置不够时才变）',
+    );
     expect(find.byIcon(Icons.star_border), findsNWidgets(4));
   });
 
@@ -94,8 +106,11 @@ void main() {
     );
     await tester.pump();
     await tester.pump();
-    expect(find.byIcon(FushiIcons.more), findsNothing,
-        reason: '文字标题自身可省略号收缩，只需保底宽（BUG-1184）；动作放得下就不收');
+    expect(
+      find.byIcon(FushiIcons.more),
+      findsNothing,
+      reason: '文字标题自身可省略号收缩，只需保底宽（BUG-1184）；动作放得下就不收',
+    );
     expect(find.byIcon(Icons.star_border), findsNWidgets(4));
   });
 }

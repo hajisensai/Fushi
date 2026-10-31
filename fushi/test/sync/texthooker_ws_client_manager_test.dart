@@ -26,8 +26,9 @@ void main() {
   test('restart keeps running with new urls', () async {
     TexthookerWsClientManager.instance.start(<String>['ws://127.0.0.1:59998']);
     expect(TexthookerWsClientManager.instance.isRunning, true);
-    await TexthookerWsClientManager.instance
-        .restart(<String>['ws://127.0.0.1:59997']);
+    await TexthookerWsClientManager.instance.restart(<String>[
+      'ws://127.0.0.1:59997',
+    ]);
     expect(TexthookerWsClientManager.instance.isRunning, true);
     await TexthookerWsClientManager.instance.stop();
     expect(TexthookerWsClientManager.instance.isRunning, false);

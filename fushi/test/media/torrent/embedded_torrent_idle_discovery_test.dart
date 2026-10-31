@@ -22,12 +22,16 @@ final Pointer<Void> _fakeSession = Pointer<Void>.fromAddress(0x1645);
 final List<String> _calls = <String>[];
 
 String _torrentsJson = '[]';
-String _addResultJson =
-    jsonEncode(<String, Object>{'ok': false, 'error': 'synthetic add failure'});
+String _addResultJson = jsonEncode(<String, Object>{
+  'ok': false,
+  'error': 'synthetic add failure',
+});
 bool _removeSucceeds = true;
 bool _listReadFails = false;
-String _loadResumeResultJson =
-    jsonEncode(<String, Object>{'ok': true, 'ids': <String>[]});
+String _loadResumeResultJson = jsonEncode(<String, Object>{
+  'ok': true,
+  'ids': <String>[],
+});
 
 Pointer<Void> _fakeSessionCreate(Pointer<Char> listen, int enableDht) {
   _calls.add('create:$enableDht');
@@ -51,11 +55,12 @@ int _fakeApplySessionSettings(
   return 1;
 }
 
-Pointer<Char> _fakeListTorrents(Pointer<Void> session) => (_listReadFails
-        ? jsonEncode(<String, Object>{'error': 'synthetic list failure'})
-        : _torrentsJson)
-    .toNativeUtf8()
-    .cast<Char>();
+Pointer<Char> _fakeListTorrents(Pointer<Void> session) =>
+    (_listReadFails
+            ? jsonEncode(<String, Object>{'error': 'synthetic list failure'})
+            : _torrentsJson)
+        .toNativeUtf8()
+        .cast<Char>();
 
 Pointer<Char> _fakeAddMagnet(
   Pointer<Void> session,
@@ -122,38 +127,50 @@ FushiTorrentBindings _fakeBindings() {
         ).cast<T>();
       case 'ht_apply_session_settings':
         return Pointer.fromFunction<
-            Int Function(Pointer<Void>, Int, Int, Int, Int, Int, Int, Int, Int,
-                Int, Int)>(
-          _fakeApplySessionSettings,
-          0,
-        ).cast<T>();
+              Int Function(
+                Pointer<Void>,
+                Int,
+                Int,
+                Int,
+                Int,
+                Int,
+                Int,
+                Int,
+                Int,
+                Int,
+                Int,
+              )
+            >(_fakeApplySessionSettings, 0)
+            .cast<T>();
       case 'ht_list_torrents':
         return Pointer.fromFunction<Pointer<Char> Function(Pointer<Void>)>(
           _fakeListTorrents,
         ).cast<T>();
       case 'ht_add_magnet':
         return Pointer.fromFunction<
-            Pointer<Char> Function(
-                Pointer<Void>, Pointer<Char>, Pointer<Char>, Int)>(
-          _fakeAddMagnet,
-        ).cast<T>();
+              Pointer<Char> Function(
+                Pointer<Void>,
+                Pointer<Char>,
+                Pointer<Char>,
+                Int,
+              )
+            >(_fakeAddMagnet)
+            .cast<T>();
       case 'ht_remove_torrent':
         return Pointer.fromFunction<
-            Int Function(Pointer<Void>, Pointer<Char>, Int)>(
-          _fakeRemoveTorrent,
-          0,
-        ).cast<T>();
+              Int Function(Pointer<Void>, Pointer<Char>, Int)
+            >(_fakeRemoveTorrent, 0)
+            .cast<T>();
       case 'ht_load_resume_dir':
         return Pointer.fromFunction<
-            Pointer<Char> Function(Pointer<Void>, Pointer<Char>)>(
-          _fakeLoadResumeDir,
-        ).cast<T>();
+              Pointer<Char> Function(Pointer<Void>, Pointer<Char>)
+            >(_fakeLoadResumeDir)
+            .cast<T>();
       case 'ht_set_upload_mode':
         return Pointer.fromFunction<
-            Int Function(Pointer<Void>, Pointer<Char>, Int)>(
-          _fakeSetUploadMode,
-          0,
-        ).cast<T>();
+              Int Function(Pointer<Void>, Pointer<Char>, Int)
+            >(_fakeSetUploadMode, 0)
+            .cast<T>();
       case 'ht_set_unchoke_slots':
         return Pointer.fromFunction<Int Function(Pointer<Void>, Int)>(
           _fakeSetUnchokeSlots,
@@ -161,10 +178,9 @@ FushiTorrentBindings _fakeBindings() {
         ).cast<T>();
       case 'ht_pause_torrent':
         return Pointer.fromFunction<
-            Int Function(Pointer<Void>, Pointer<Char>, Int)>(
-          _fakePauseTorrent,
-          0,
-        ).cast<T>();
+              Int Function(Pointer<Void>, Pointer<Char>, Int)
+            >(_fakePauseTorrent, 0)
+            .cast<T>();
       case 'ht_free_string':
         return Pointer.fromFunction<Void Function(Pointer<Char>)>(
           _fakeFreeString,
@@ -179,8 +195,9 @@ FushiTorrentBindings _fakeBindings() {
 late Directory _tempDir;
 
 EmbeddedTorrentHost _host({int clockMs = 1000000}) {
-  final EmbeddedTorrentEngine engine =
-      EmbeddedTorrentEngine.fromBindings(_fakeBindings());
+  final EmbeddedTorrentEngine engine = EmbeddedTorrentEngine.fromBindings(
+    _fakeBindings(),
+  );
   final EmbeddedTorrentSession? session = EmbeddedTorrentSession.open(engine);
   expect(session, isNotNull);
   return EmbeddedTorrentHost.forTesting(
@@ -202,16 +219,15 @@ const QbConnectionConfig _protocolConfig = QbConnectionConfig(
 QbConnectionConfig _seedingConfig({
   double ratioLimit = 0,
   int timeLimitMinutes = 0,
-}) =>
-    QbConnectionConfig(
-      uploadEnabled: true,
-      seedRatioLimit: ratioLimit,
-      seedTimeLimitMinutes: timeLimitMinutes,
-      enableDht: _protocolConfig.enableDht,
-      enableLsd: _protocolConfig.enableLsd,
-      enableUpnp: _protocolConfig.enableUpnp,
-      enableNatpmp: _protocolConfig.enableNatpmp,
-    );
+}) => QbConnectionConfig(
+  uploadEnabled: true,
+  seedRatioLimit: ratioLimit,
+  seedTimeLimitMinutes: timeLimitMinutes,
+  enableDht: _protocolConfig.enableDht,
+  enableLsd: _protocolConfig.enableLsd,
+  enableUpnp: _protocolConfig.enableUpnp,
+  enableNatpmp: _protocolConfig.enableNatpmp,
+);
 
 String _torrent({
   required String id,
@@ -252,12 +268,16 @@ void main() {
     _tempDir = Directory.systemTemp.createTempSync('torrent_idle_discovery_');
     _calls.clear();
     _torrentsJson = '[]';
-    _addResultJson = jsonEncode(
-        <String, Object>{'ok': false, 'error': 'synthetic add failure'});
+    _addResultJson = jsonEncode(<String, Object>{
+      'ok': false,
+      'error': 'synthetic add failure',
+    });
     _removeSucceeds = true;
     _listReadFails = false;
-    _loadResumeResultJson =
-        jsonEncode(<String, Object>{'ok': true, 'ids': <String>[]});
+    _loadResumeResultJson = jsonEncode(<String, Object>{
+      'ok': true,
+      'ids': <String>[],
+    });
   });
 
   tearDown(() {
@@ -342,8 +362,11 @@ void main() {
       host.setUploadPolicy(config);
 
       expect(_calls, contains('pause:timed:1'));
-      expect(_settingsCalls, isEmpty,
-          reason: '跨 fastResume 的累计时长已达限，不能重新开启 discovery');
+      expect(
+        _settingsCalls,
+        isEmpty,
+        reason: '跨 fastResume 的累计时长已达限，不能重新开启 discovery',
+      );
     });
 
     test('老 DLL 无累计时长字段时也持久化起点，重启不重新计时', () {
@@ -363,8 +386,11 @@ void main() {
       restarted.setUploadPolicy(config);
 
       expect(_calls, contains('pause:legacy:1'));
-      expect(_settingsCalls, isEmpty,
-          reason: '老 DLL fallback 也必须从落盘起点累计，不能按进程重置');
+      expect(
+        _settingsCalls,
+        isEmpty,
+        reason: '老 DLL fallback 也必须从落盘起点累计，不能按进程重置',
+      );
     });
 
     test('删除最后一个任务后 backend 立即触发关闭', () async {
@@ -386,36 +412,37 @@ void main() {
 
       expect(
         await host.backendView().addTorrent(
-              'magnet:?xt=urn:btih:deadbeef',
-              category: 'fushi',
-            ),
+          'magnet:?xt=urn:btih:deadbeef',
+          category: 'fushi',
+        ),
         isFalse,
       );
 
+      expect(_settingsCalls, <String>['settings:1010', 'settings:0000']);
       expect(
-        _settingsCalls,
-        <String>['settings:1010', 'settings:0000'],
+        _calls.indexOf('settings:1010'),
+        lessThan(_calls.indexOf('add')),
+        reason: 'native add 发出前必须已经唤醒发现协议',
       );
-      expect(_calls.indexOf('settings:1010'), lessThan(_calls.indexOf('add')),
-          reason: 'native add 发出前必须已经唤醒发现协议');
-      expect(_calls.indexOf('add'), lessThan(_calls.indexOf('settings:0000')),
-          reason: '失败 add 结束后才能收回发现协议');
+      expect(
+        _calls.indexOf('add'),
+        lessThan(_calls.indexOf('settings:0000')),
+        reason: '失败 add 结束后才能收回发现协议',
+      );
     });
 
     test('add 成功后状态读取失败时保持唤醒，不把错误当空 session', () async {
       final EmbeddedTorrentHost host = _host();
       expect(host.applySessionSettings(_protocolConfig), isTrue);
       _calls.clear();
-      _addResultJson = jsonEncode(
-        <String, Object>{'ok': true, 'id': 'active'},
-      );
+      _addResultJson = jsonEncode(<String, Object>{'ok': true, 'id': 'active'});
       _listReadFails = true;
 
       expect(
         await host.backendView().addTorrent(
-              'magnet:?xt=urn:btih:active',
-              category: 'fushi',
-            ),
+          'magnet:?xt=urn:btih:active',
+          category: 'fushi',
+        ),
         isTrue,
       );
 
@@ -427,19 +454,18 @@ void main() {
       final EmbeddedTorrentHost host = _host();
       expect(host.applySessionSettings(_protocolConfig), isTrue);
       _calls.clear();
-      _loadResumeResultJson = jsonEncode(
-        <String, Object>{
-          'ok': true,
-          'ids': <String>['restored']
-        },
-      );
+      _loadResumeResultJson = jsonEncode(<String, Object>{
+        'ok': true,
+        'ids': <String>['restored'],
+      });
       _listReadFails = true;
 
       expect(host.restoreFromResume(<String>{'restored'}), 1);
 
       expect(_calls, contains('restore'));
-      expect(_settingsCalls, <String>['settings:1010'],
-          reason: '恢复后首次状态读取失败也必须保留 restore wake，不能复用旧空快照');
+      expect(_settingsCalls, <String>[
+        'settings:1010',
+      ], reason: '恢复后首次状态读取失败也必须保留 restore wake，不能复用旧空快照');
     });
 
     test('重复 reconcile 与嵌套 wake 幂等，不重复下发 FFI', () {
@@ -454,17 +480,17 @@ void main() {
       host.beginNetworkWake();
       host.beginNetworkWake();
       host.endNetworkWake();
-      expect(_settingsCalls, <String>['settings:1010'],
-          reason: '嵌套 wake 中途结束一层仍需保持开启');
+      expect(_settingsCalls, <String>[
+        'settings:1010',
+      ], reason: '嵌套 wake 中途结束一层仍需保持开启');
 
       host.endNetworkWake();
       host.endNetworkWake();
       host.reconcileNetworkDiscoveryState();
-      expect(
-        _settingsCalls,
-        <String>['settings:1010', 'settings:0000'],
-        reason: '深度归零只关闭一次，额外 end/reconcile 不得重复 FFI',
-      );
+      expect(_settingsCalls, <String>[
+        'settings:1010',
+        'settings:0000',
+      ], reason: '深度归零只关闭一次，额外 end/reconcile 不得重复 FFI');
     });
   });
 }

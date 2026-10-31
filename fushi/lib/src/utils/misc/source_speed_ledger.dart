@@ -28,8 +28,8 @@ class SourceSpeedLedger {
     this.minSampleBytes = 1 << 20,
     this.probeAfter = const Duration(minutes: 2),
     this.maxCooldown = const Duration(seconds: 16),
-  })  : assert(smoothing > 0 && smoothing <= 1, 'smoothing 取值 (0, 1]'),
-        assert(minSampleBytes > 0, 'minSampleBytes 必须为正');
+  }) : assert(smoothing > 0 && smoothing <= 1, 'smoothing 取值 (0, 1]'),
+       assert(minSampleBytes > 0, 'minSampleBytes 必须为正');
 
   /// 新样本在 EWMA 里的权重。0.3 = 认过去、但一轮明显变慢/变快能在两三片内跟上。
   final double smoothing;
@@ -187,12 +187,14 @@ class SourceSpeedLedger {
   /// 规则 1（没测过/样本过期的先测）+ 规则 2（谁快派给谁）。同分时按 url 定序，
   /// 让选择在测试里是确定的。
   DownloadSource _bestOf(List<DownloadSource> pool, DateTime at) {
-    final List<DownloadSource> unmeasured = pool.where((DownloadSource s) {
-      final _SourceStat? stat = _stats[s.url];
-      if (stat?.bytesPerSecond == null) return true;
-      final DateTime? sampledAt = stat!.sampledAt;
-      return sampledAt == null || at.difference(sampledAt) >= probeAfter;
-    }).toList(growable: false);
+    final List<DownloadSource> unmeasured = pool
+        .where((DownloadSource s) {
+          final _SourceStat? stat = _stats[s.url];
+          if (stat?.bytesPerSecond == null) return true;
+          final DateTime? sampledAt = stat!.sampledAt;
+          return sampledAt == null || at.difference(sampledAt) >= probeAfter;
+        })
+        .toList(growable: false);
     if (unmeasured.isNotEmpty) {
       // 探测阶段按「试过几次」摊开，**不是**按有没有速度样本摊开：样本可能因为太小
       // （[minSampleBytes]）被丢掉，那时每家都永远算「没测过」，若再拿 url 定序当

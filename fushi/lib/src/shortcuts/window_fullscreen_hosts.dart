@@ -44,8 +44,8 @@ class WindowFullscreenHosts {
 
   /// 当前是否有**可见**的全屏宿主（栈顶那层就是内容模块）。
   static bool get hasVisibleHost => _hosts.values.any(
-        (ModalRoute<dynamic>? route) => route == null || route.isCurrent,
-      );
+    (ModalRoute<dynamic>? route) => route == null || route.isCurrent,
+  );
 
   @visibleForTesting
   static int get debugHostCount => _hosts.length;

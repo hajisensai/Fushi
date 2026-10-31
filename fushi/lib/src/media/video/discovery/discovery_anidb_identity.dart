@@ -58,29 +58,25 @@ class AniDbDiscoveryIdentityResult {
 VideoMediaReference videoReferenceWithAniDbId(
   VideoMediaReference reference,
   int anidbId,
-) =>
-    VideoMediaReference(
-      providerId: reference.providerId,
-      mediaId: reference.mediaId,
-      mediaKind: reference.mediaKind,
-      discoveryCategory: reference.discoveryCategory,
-      title: reference.title,
-      originalTitle: reference.originalTitle,
-      aliases: reference.aliases,
-      year: reference.year,
-      season: reference.season,
-      episode: reference.episode,
-      tmdbId: reference.tmdbId,
-      imdbId: reference.imdbId,
-      tvdbId: reference.tvdbId,
-      anidbId: anidbId,
-      anilistId: reference.anilistId,
-      bangumiId: reference.bangumiId,
-      externalIds: <String, String>{
-        ...reference.externalIds,
-        'anidb': '$anidbId',
-      },
-    );
+) => VideoMediaReference(
+  providerId: reference.providerId,
+  mediaId: reference.mediaId,
+  mediaKind: reference.mediaKind,
+  discoveryCategory: reference.discoveryCategory,
+  title: reference.title,
+  originalTitle: reference.originalTitle,
+  aliases: reference.aliases,
+  year: reference.year,
+  season: reference.season,
+  episode: reference.episode,
+  tmdbId: reference.tmdbId,
+  imdbId: reference.imdbId,
+  tvdbId: reference.tvdbId,
+  anidbId: anidbId,
+  anilistId: reference.anilistId,
+  bangumiId: reference.bangumiId,
+  externalIds: <String, String>{...reference.externalIds, 'anidb': '$anidbId'},
+);
 
 /// 纯解析（无 UI）：复用来源刮削管线的严格解析器与判据。
 ///
@@ -114,14 +110,15 @@ Future<AniDbDiscoveryIdentityResult> resolveAniDbDiscoveryIdentity({
   ];
   final VideoMetadataResolution resolution;
   try {
-    resolution = await VideoMetadataResolver(registry: registry)
-        .resolve(VideoMetadataResolveRequest(
-      selectedProvider: VideoMetadataProviderKind.anidb,
-      mediaKind: reference.mediaKind,
-      titleCandidates: candidates,
-      year: reference.year,
-      seasonNumber: reference.season,
-    ));
+    resolution = await VideoMetadataResolver(registry: registry).resolve(
+      VideoMetadataResolveRequest(
+        selectedProvider: VideoMetadataProviderKind.anidb,
+        mediaKind: reference.mediaKind,
+        titleCandidates: candidates,
+        year: reference.year,
+        seasonNumber: reference.season,
+      ),
+    );
   } catch (_) {
     // 标题目录首次下载失败/离线：明示降级，不阻断下载。
     return AniDbDiscoveryIdentityResult(
@@ -192,9 +189,9 @@ Future<VideoMediaReference> confirmAniDbDiscoveryIdentity({
 }) async {
   final AniDbDiscoveryIdentityResult result =
       await resolveAniDbDiscoveryIdentity(
-    reference: reference,
-    registry: registry,
-  );
+        reference: reference,
+        registry: registry,
+      );
   switch (result.status) {
     case AniDbDiscoveryIdentityStatus.confirmed:
     case AniDbDiscoveryIdentityStatus.notApplicable:
@@ -209,47 +206,49 @@ Future<VideoMediaReference> confirmAniDbDiscoveryIdentity({
       }
       final VideoSourceScrapeConfirmationCandidate? selected =
           await showAppDialog<VideoSourceScrapeConfirmationCandidate>(
-        context: context,
-        builder: (BuildContext context) => FushiAlertDialog(
-          title: Text(t.video_discovery_anidb_identity_confirm_title),
-          content: SizedBox(
-            width: 560,
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxHeight: 480),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[
-                  Text(t.video_discovery_anidb_identity_confirm_hint),
-                  const SizedBox(height: 12),
-                  Flexible(
-                    child: ListView.separated(
-                      shrinkWrap: true,
-                      itemCount: result.candidates.length,
-                      separatorBuilder: (_, __) => const FushiDividerControl(height: 1),
-                      itemBuilder: (BuildContext context, int index) =>
-                          VideoSourceScrapeCandidateTile(
-                        candidate: result.candidates[index],
-                        onSelected: (
-                          VideoSourceScrapeConfirmationCandidate candidate,
-                        ) =>
-                            Navigator.of(context).pop(candidate),
+            context: context,
+            builder: (BuildContext context) => FushiAlertDialog(
+              title: Text(t.video_discovery_anidb_identity_confirm_title),
+              content: SizedBox(
+                width: 560,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 480),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      Text(t.video_discovery_anidb_identity_confirm_hint),
+                      const SizedBox(height: 12),
+                      Flexible(
+                        child: ListView.separated(
+                          shrinkWrap: true,
+                          itemCount: result.candidates.length,
+                          separatorBuilder: (_, __) =>
+                              const FushiDividerControl(height: 1),
+                          itemBuilder: (BuildContext context, int index) =>
+                              VideoSourceScrapeCandidateTile(
+                                candidate: result.candidates[index],
+                                onSelected:
+                                    (
+                                      VideoSourceScrapeConfirmationCandidate
+                                      candidate,
+                                    ) => Navigator.of(context).pop(candidate),
+                              ),
+                        ),
                       ),
-                    ),
+                    ],
                   ),
-                ],
+                ),
               ),
+              actions: <Widget>[
+                FushiTextButton(
+                  key: const ValueKey<String>('discovery-anidb-identity-skip'),
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: Text(t.video_source_scrape_confirmation_skip),
+                ),
+              ],
             ),
-          ),
-          actions: <Widget>[
-            FushiTextButton(
-              key: const ValueKey<String>('discovery-anidb-identity-skip'),
-              onPressed: () => Navigator.of(context).pop(),
-              child: Text(t.video_source_scrape_confirmation_skip),
-            ),
-          ],
-        ),
-      );
+          );
       final int? id = int.tryParse(selected?.lookup.externalId ?? '');
       if (id == null) return result.reference;
       return videoReferenceWithAniDbId(result.reference, id);

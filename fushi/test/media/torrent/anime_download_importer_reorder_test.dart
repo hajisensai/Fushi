@@ -21,14 +21,14 @@ import 'package:fushi_core/fushi_core.dart';
 FushiDatabase _memDb() => FushiDatabase.forTesting(NativeDatabase.memory());
 
 AnimeDownloadPlan _plan({required String series}) => AnimeDownloadPlan(
-      id: 'infohash-$series',
-      createdAtMs: 0,
-      seriesTitle: series,
-      torrentTitle: series,
-      magnet: 'magnet:?xt=urn:btih:infohash-$series',
-      qbCategory: 'anime',
-      // coverUrl 留空：封面是 best-effort 旁路，本用例只关心成员顺序。
-    );
+  id: 'infohash-$series',
+  createdAtMs: 0,
+  seriesTitle: series,
+  torrentTitle: series,
+  magnet: 'magnet:?xt=urn:btih:infohash-$series',
+  qbCategory: 'anime',
+  // coverUrl 留空：封面是 best-effort 旁路，本用例只关心成员顺序。
+);
 
 Future<List<String>> _memberKeys(FushiDatabase db, int collectionId) async {
   final List<MediaCollectionItemRow> members = await db.getCollectionItems(
@@ -51,22 +51,19 @@ void main() {
     // 独立任务的完成顺序天然是乱的 —— 这正是用户截图里 13 排第一位的来源。
     final AnimeDownloadImportOutcome? outcome =
         await importer(_plan(series: 'Re Zero S4'), <String>[
-      '/dl/Re Zero S4 - S04E13.mkv',
-      '/dl/Re Zero S4 - S04E01.mkv',
-      '/dl/Re Zero S4 - S04E07.mkv',
-      '/dl/Re Zero S4 - S04E02.mkv',
-    ]);
+          '/dl/Re Zero S4 - S04E13.mkv',
+          '/dl/Re Zero S4 - S04E01.mkv',
+          '/dl/Re Zero S4 - S04E07.mkv',
+          '/dl/Re Zero S4 - S04E02.mkv',
+        ]);
 
     expect(outcome, isNotNull, reason: '入库应成功');
-    expect(
-        await _memberKeys(db, outcome!.collectionId),
-        <String>[
-          'video/Re Zero S4 - S04E01',
-          'video/Re Zero S4 - S04E02',
-          'video/Re Zero S4 - S04E07',
-          'video/Re Zero S4 - S04E13',
-        ],
-        reason: '合集成员顺序必须是集号序');
+    expect(await _memberKeys(db, outcome!.collectionId), <String>[
+      'video/Re Zero S4 - S04E01',
+      'video/Re Zero S4 - S04E02',
+      'video/Re Zero S4 - S04E07',
+      'video/Re Zero S4 - S04E13',
+    ], reason: '合集成员顺序必须是集号序');
   });
 
   test('分批到达：后到的低集号必须插回正确位置，而不是追加到表尾（BUG-1896 的真实形状）', () async {
@@ -91,14 +88,10 @@ void main() {
     expect(second, isNotNull);
     expect(second!.collectionId, first!.collectionId, reason: '同名系列必须复用同一个合集');
 
-    expect(
-      await _memberKeys(db, second.collectionId),
-      <String>[
-        'video/Re Zero S4 - S04E01',
-        'video/Re Zero S4 - S04E02',
-        'video/Re Zero S4 - S04E13',
-      ],
-      reason: '每次入库都要重排**整个合集**，否则跨批次顺序 = 下载完成先后',
-    );
+    expect(await _memberKeys(db, second.collectionId), <String>[
+      'video/Re Zero S4 - S04E01',
+      'video/Re Zero S4 - S04E02',
+      'video/Re Zero S4 - S04E13',
+    ], reason: '每次入库都要重排**整个合集**，否则跨批次顺序 = 下载完成先后');
   });
 }

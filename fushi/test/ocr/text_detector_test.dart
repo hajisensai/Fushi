@@ -115,8 +115,8 @@ void main() {
     final LetterboxTransform transform = computeLetterbox(1280, 1280);
 
     Float32List logitsFor(List<List<double>> perQuery) => Float32List.fromList(
-          <double>[for (final List<double> q in perQuery) ...q],
-        );
+      <double>[for (final List<double> q in perQuery) ...q],
+    );
 
     test('sigmoid + 阈值 + cxcywh 反变换回原图', () {
       final Float32List logits = logitsFor(<List<double>>[

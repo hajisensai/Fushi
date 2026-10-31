@@ -23,9 +23,7 @@ Set<String> _argumentsOf(String source, String name) {
 
 void main() {
   test('native torrent JSON normalizes and sanitizes per field', () {
-    final File bridge = File(
-      '../native/fushi_torrent/fushi_torrent_ffi.cpp',
-    );
+    final File bridge = File('../native/fushi_torrent/fushi_torrent_ffi.cpp');
     expect(bridge.existsSync(), isTrue);
     final String source = bridge.readAsStringSync();
     final int serializerAt = source.indexOf('void append_json_escaped(');
@@ -58,14 +56,14 @@ void main() {
     // 真正要挡住的回归：把判断/转换从「一个字段」挪到「拼好的整包」（`out`，
     // 或任何已经拼接过的缓冲）。实参集合只允许「定义处的形参」和「单字段 s」
     // 两种，出现 windows_ansi_to_utf8(out) 之类立刻红。
-    expect(
-      _argumentsOf(source, 'windows_ansi_to_utf8'),
-      <String>{'const std::string& s', 's'},
-    );
-    expect(
-      _argumentsOf(source, 'is_valid_utf8'),
-      <String>{'const std::string& s', 's'},
-    );
+    expect(_argumentsOf(source, 'windows_ansi_to_utf8'), <String>{
+      'const std::string& s',
+      's',
+    });
+    expect(_argumentsOf(source, 'is_valid_utf8'), <String>{
+      'const std::string& s',
+      's',
+    });
   });
 
   test('the Dart side decodes the payload as UTF-8 without guessing', () {
@@ -95,9 +93,8 @@ void main() {
 
     // 唯一允许的降级是逐字节 U+FFFD：坏字节就地损坏，不牵连同包合法字段。
     // 实参集合钉死「只有这一个解码点，且带 allowMalformed」。
-    expect(
-      _argumentsOf(source, 'utf8.decode'),
-      <String>{'bytes, allowMalformed: true'},
-    );
+    expect(_argumentsOf(source, 'utf8.decode'), <String>{
+      'bytes, allowMalformed: true',
+    });
   });
 }

@@ -20,7 +20,9 @@ void main() {
     test('empty cues returns empty', () {
       expect(
         JsonAlignmentParser.findActiveCueIndices(
-            cues: <AudioCue>[], positionMs: 0),
+          cues: <AudioCue>[],
+          positionMs: 0,
+        ),
         isEmpty,
       );
     });
@@ -28,26 +30,38 @@ void main() {
     test('single cue: before/inside(closed [start,end])/after', () {
       final List<AudioCue> single = <AudioCue>[_cue(1000, 2000)];
       expect(
-          JsonAlignmentParser.findActiveCueIndices(
-              cues: single, positionMs: 999),
-          isEmpty);
+        JsonAlignmentParser.findActiveCueIndices(cues: single, positionMs: 999),
+        isEmpty,
+      );
       expect(
-          JsonAlignmentParser.findActiveCueIndices(
-              cues: single, positionMs: 1000),
-          <int>[0]);
+        JsonAlignmentParser.findActiveCueIndices(
+          cues: single,
+          positionMs: 1000,
+        ),
+        <int>[0],
+      );
       expect(
-          JsonAlignmentParser.findActiveCueIndices(
-              cues: single, positionMs: 1500),
-          <int>[0]);
+        JsonAlignmentParser.findActiveCueIndices(
+          cues: single,
+          positionMs: 1500,
+        ),
+        <int>[0],
+      );
       // endMs 是闭区间（与 findCueIndex 一致，HBK-AUDIT-153）。
       expect(
-          JsonAlignmentParser.findActiveCueIndices(
-              cues: single, positionMs: 2000),
-          <int>[0]);
+        JsonAlignmentParser.findActiveCueIndices(
+          cues: single,
+          positionMs: 2000,
+        ),
+        <int>[0],
+      );
       expect(
-          JsonAlignmentParser.findActiveCueIndices(
-              cues: single, positionMs: 2001),
-          isEmpty);
+        JsonAlignmentParser.findActiveCueIndices(
+          cues: single,
+          positionMs: 2001,
+        ),
+        isEmpty,
+      );
     });
 
     test('non-overlapping cues: only the covering one, gap returns empty', () {
@@ -57,29 +71,30 @@ void main() {
         _cue(5000, 6000),
       ];
       expect(
-          JsonAlignmentParser.findActiveCueIndices(cues: cues, positionMs: 500),
-          isEmpty);
+        JsonAlignmentParser.findActiveCueIndices(cues: cues, positionMs: 500),
+        isEmpty,
+      );
       expect(
-          JsonAlignmentParser.findActiveCueIndices(
-              cues: cues, positionMs: 1500),
-          <int>[0]);
+        JsonAlignmentParser.findActiveCueIndices(cues: cues, positionMs: 1500),
+        <int>[0],
+      );
       // gap between cue0.end(2000) and cue1.start(3000).
       expect(
-          JsonAlignmentParser.findActiveCueIndices(
-              cues: cues, positionMs: 2500),
-          isEmpty);
+        JsonAlignmentParser.findActiveCueIndices(cues: cues, positionMs: 2500),
+        isEmpty,
+      );
       expect(
-          JsonAlignmentParser.findActiveCueIndices(
-              cues: cues, positionMs: 3500),
-          <int>[1]);
+        JsonAlignmentParser.findActiveCueIndices(cues: cues, positionMs: 3500),
+        <int>[1],
+      );
       expect(
-          JsonAlignmentParser.findActiveCueIndices(
-              cues: cues, positionMs: 5500),
-          <int>[2]);
+        JsonAlignmentParser.findActiveCueIndices(cues: cues, positionMs: 5500),
+        <int>[2],
+      );
       expect(
-          JsonAlignmentParser.findActiveCueIndices(
-              cues: cues, positionMs: 7000),
-          isEmpty);
+        JsonAlignmentParser.findActiveCueIndices(cues: cues, positionMs: 7000),
+        isEmpty,
+      );
     });
 
     test('overlapping cues on same track: ALL active returned (the fix)', () {
@@ -89,24 +104,29 @@ void main() {
       final List<AudioCue> ov = <AudioCue>[_cue(1000, 3000), _cue(2000, 4000)];
       // 只 cue0 覆盖。
       expect(
-          JsonAlignmentParser.findActiveCueIndices(cues: ov, positionMs: 1500),
-          <int>[0]);
+        JsonAlignmentParser.findActiveCueIndices(cues: ov, positionMs: 1500),
+        <int>[0],
+      );
       // 重叠区：两条都活动（核心修复点）。
       expect(
-          JsonAlignmentParser.findActiveCueIndices(cues: ov, positionMs: 2000),
-          <int>[0, 1]);
+        JsonAlignmentParser.findActiveCueIndices(cues: ov, positionMs: 2000),
+        <int>[0, 1],
+      );
       expect(
-          JsonAlignmentParser.findActiveCueIndices(cues: ov, positionMs: 2500),
-          <int>[0, 1]);
+        JsonAlignmentParser.findActiveCueIndices(cues: ov, positionMs: 2500),
+        <int>[0, 1],
+      );
       // cue0 已结束（>3000），只剩 cue1。此前 overlay 会因 findCueIndex 越过 cue0.end
       // 返回不同/gap 而闪烁；现在 cue1 仍在集里，连续不断。
       expect(
-          JsonAlignmentParser.findActiveCueIndices(cues: ov, positionMs: 3500),
-          <int>[1]);
+        JsonAlignmentParser.findActiveCueIndices(cues: ov, positionMs: 3500),
+        <int>[1],
+      );
       // 全部结束。
       expect(
-          JsonAlignmentParser.findActiveCueIndices(cues: ov, positionMs: 4500),
-          isEmpty);
+        JsonAlignmentParser.findActiveCueIndices(cues: ov, positionMs: 4500),
+        isEmpty,
+      );
     });
 
     test('nested cue fully inside another: no flicker when inner ends', () {
@@ -115,13 +135,19 @@ void main() {
       // overlay 清空闪烁；findActiveCueIndices 恒回 [0]（cue0 还没结束）。
       final List<AudioCue> nested = <AudioCue>[_cue(0, 5000), _cue(3000, 4000)];
       expect(
-          JsonAlignmentParser.findActiveCueIndices(
-              cues: nested, positionMs: 3500),
-          <int>[0, 1]);
+        JsonAlignmentParser.findActiveCueIndices(
+          cues: nested,
+          positionMs: 3500,
+        ),
+        <int>[0, 1],
+      );
       expect(
-          JsonAlignmentParser.findActiveCueIndices(
-              cues: nested, positionMs: 4500),
-          <int>[0]);
+        JsonAlignmentParser.findActiveCueIndices(
+          cues: nested,
+          positionMs: 4500,
+        ),
+        <int>[0],
+      );
     });
 
     test('three-way overlap returns all covering indices ascending', () {
@@ -131,12 +157,14 @@ void main() {
         _cue(2000, 6000),
       ];
       expect(
-          JsonAlignmentParser.findActiveCueIndices(cues: tri, positionMs: 3000),
-          <int>[0, 1, 2]);
+        JsonAlignmentParser.findActiveCueIndices(cues: tri, positionMs: 3000),
+        <int>[0, 1, 2],
+      );
       // cue0 结束(>4000)，剩 cue1/cue2。
       expect(
-          JsonAlignmentParser.findActiveCueIndices(cues: tri, positionMs: 4500),
-          <int>[1, 2]);
+        JsonAlignmentParser.findActiveCueIndices(cues: tri, positionMs: 4500),
+        <int>[1, 2],
+      );
     });
   });
 }

@@ -8,10 +8,7 @@ import 'package:fushi/utils.dart';
 /// [DictionaryDialogPage].
 class DictionaryDialogDeletePage extends BasePage {
   /// Create an instance of this page.
-  const DictionaryDialogDeletePage({
-    this.name,
-    super.key,
-  });
+  const DictionaryDialogDeletePage({this.name, super.key});
 
   /// Name of current dictionary being deleted.
   final String? name;

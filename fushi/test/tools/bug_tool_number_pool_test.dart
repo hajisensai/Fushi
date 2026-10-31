@@ -102,7 +102,11 @@ void main() {
     test(description, () {
       final List<String> myOut = out;
       final List<String> myWarn = warn;
-      return bug.runInBugRepoScope(body, logOut: myOut.add, logWarn: myWarn.add);
+      return bug.runInBugRepoScope(
+        body,
+        logOut: myOut.add,
+        logWarn: myWarn.add,
+      );
     }, timeout: const Timeout.factor(2));
   }
 
@@ -159,10 +163,12 @@ void main() {
   group('bug.dart renumber：一条命令改四处 + 自校验', () {
     repoTest('文件名 / 正文 H2 / 代码引用 / 测试名与测试文件名四处同步改，且 git 记为改名', () async {
       final root = enterRenumberFixture();
-      await runBug(() => bug.cmdRenumber(<String>[
-        '5',
-        '9',
-      ], scanner: stubScanner(bug.BranchScanStatus.fresh, <int>{5, 6})));
+      await runBug(
+        () => bug.cmdRenumber(<String>[
+          '5',
+          '9',
+        ], scanner: stubScanner(bug.BranchScanStatus.fresh, <int>{5, 6})),
+      );
 
       // ① 文件名
       expect(exists(root, 'docs/bugs/BUG-005-foo.md'), isFalse);
@@ -206,10 +212,12 @@ void main() {
     repoTest('自校验口径：改号前扫得到残留，改号后归零', () async {
       enterRenumberFixture();
       expect(await runBug(() => bug.findResidualRefs(5)), isNotEmpty);
-      await runBug(() => bug.cmdRenumber(<String>[
-        '5',
-        '9',
-      ], scanner: stubScanner(bug.BranchScanStatus.fresh, <int>{5, 6})));
+      await runBug(
+        () => bug.cmdRenumber(<String>[
+          '5',
+          '9',
+        ], scanner: stubScanner(bug.BranchScanStatus.fresh, <int>{5, 6})),
+      );
       expect(await runBug(() => bug.findResidualRefs(5)), isEmpty);
       expect(await runBug(() => bug.findResidualRefs(9)), isNotEmpty);
     });
@@ -219,10 +227,12 @@ void main() {
     repoTest('目标号本地已被占用 → 抛错且一个文件都不动', () async {
       final root = enterRenumberFixture();
       await expectLater(
-        runBug(() => bug.cmdRenumber(<String>[
-          '5',
-          '6',
-        ], scanner: stubScanner(bug.BranchScanStatus.fresh, <int>{5, 6}))),
+        runBug(
+          () => bug.cmdRenumber(<String>[
+            '5',
+            '6',
+          ], scanner: stubScanner(bug.BranchScanStatus.fresh, <int>{5, 6})),
+        ),
         throwsA(
           isA<bug.BugToolError>().having(
             (bug.BugToolError e) => e.message,
@@ -239,10 +249,12 @@ void main() {
     repoTest('目标号被其它分支占用（跨分支扫描口径）→ 抛错且不动文件', () async {
       final root = enterRenumberFixture();
       await expectLater(
-        runBug(() => bug.cmdRenumber(<String>[
-          '5',
-          '9',
-        ], scanner: stubScanner(bug.BranchScanStatus.fresh, <int>{5, 6, 9}))),
+        runBug(
+          () => bug.cmdRenumber(<String>[
+            '5',
+            '9',
+          ], scanner: stubScanner(bug.BranchScanStatus.fresh, <int>{5, 6, 9})),
+        ),
         throwsA(
           isA<bug.BugToolError>().having(
             (bug.BugToolError e) => e.message,
@@ -258,10 +270,12 @@ void main() {
     repoTest('<old> 不存在 → 抛错', () async {
       enterRenumberFixture();
       await expectLater(
-        runBug(() => bug.cmdRenumber(<String>[
-          '404',
-          '405',
-        ], scanner: stubScanner(bug.BranchScanStatus.fresh, <int>{}))),
+        runBug(
+          () => bug.cmdRenumber(<String>[
+            '404',
+            '405',
+          ], scanner: stubScanner(bug.BranchScanStatus.fresh, <int>{})),
+        ),
         throwsA(
           isA<bug.BugToolError>().having(
             (bug.BugToolError e) => e.message,
@@ -275,10 +289,12 @@ void main() {
     repoTest('非纯数字参数 → 抛错', () async {
       enterRenumberFixture();
       await expectLater(
-        runBug(() => bug.cmdRenumber(<String>[
-          'BUG-005',
-          '9',
-        ], scanner: stubScanner(bug.BranchScanStatus.fresh, <int>{}))),
+        runBug(
+          () => bug.cmdRenumber(<String>[
+            'BUG-005',
+            '9',
+          ], scanner: stubScanner(bug.BranchScanStatus.fresh, <int>{})),
+        ),
         throwsA(
           isA<bug.BugToolError>().having(
             (bug.BugToolError e) => e.message,
@@ -297,11 +313,13 @@ void main() {
       final beforeDoc = readFile(root, 'docs/bugs/BUG-005-foo.md');
       final beforeIndex = readFile(root, 'docs/BUGS.md');
 
-      await runBug(() => bug.cmdRenumber(<String>[
-        '5',
-        '9',
-        '--dry-run',
-      ], scanner: stubScanner(bug.BranchScanStatus.fresh, <int>{5, 6})));
+      await runBug(
+        () => bug.cmdRenumber(<String>[
+          '5',
+          '9',
+          '--dry-run',
+        ], scanner: stubScanner(bug.BranchScanStatus.fresh, <int>{5, 6})),
+      );
 
       final printed = out.join('\n');
       expect(printed, contains('[dry-run]'));
@@ -322,17 +340,20 @@ void main() {
   });
 
   group('bug 号引用正则口径', () {
-    repoTest('认 BUG-005 / bug_005 / bug-005，不认 debug-005 / BUG-0055 / BUG-5x', () {
-      final re = bug.bugRefPattern(5);
-      expect(re.hasMatch('修 BUG-005 的根因'), isTrue);
-      expect(re.hasMatch('BUG-5'), isTrue);
-      expect(re.hasMatch('bug_005_foo_test.dart'), isTrue);
-      expect(re.hasMatch('bug-005-slug'), isTrue);
-      expect(re.hasMatch('debug-005'), isFalse);
-      expect(re.hasMatch('BUG-0055'), isFalse);
-      expect(re.hasMatch('BUG-50'), isFalse);
-      expect(re.hasMatch('XBUG-005'), isFalse);
-    });
+    repoTest(
+      '认 BUG-005 / bug_005 / bug-005，不认 debug-005 / BUG-0055 / BUG-5x',
+      () {
+        final re = bug.bugRefPattern(5);
+        expect(re.hasMatch('修 BUG-005 的根因'), isTrue);
+        expect(re.hasMatch('BUG-5'), isTrue);
+        expect(re.hasMatch('bug_005_foo_test.dart'), isTrue);
+        expect(re.hasMatch('bug-005-slug'), isTrue);
+        expect(re.hasMatch('debug-005'), isFalse);
+        expect(re.hasMatch('BUG-0055'), isFalse);
+        expect(re.hasMatch('BUG-50'), isFalse);
+        expect(re.hasMatch('XBUG-005'), isFalse);
+      },
+    );
 
     repoTest('renameNumberInPath 只动文件名部分', () {
       expect(
@@ -449,9 +470,11 @@ void main() {
       writeFile(root, 'docs/bugs/BUG-003-base.md', bugDoc(3, '基线'));
       bug.bugRepoRoot = root.path;
 
-      await runBug(() => bug.cmdNew(<String>[
-        'stub-slug',
-      ], scanner: stubScanner(bug.BranchScanStatus.fresh, <int>{3, 41})));
+      await runBug(
+        () => bug.cmdNew(<String>[
+          'stub-slug',
+        ], scanner: stubScanner(bug.BranchScanStatus.fresh, <int>{3, 41})),
+      );
       expect(
         exists(root, 'docs/bugs/BUG-042-stub-slug.md'),
         isTrue,
@@ -735,10 +758,12 @@ void main() {
       );
       bug.bugRepoRoot = root.path;
 
-      await runBug(() => bug.cmdRenumber(<String>[
-        '5',
-        '9',
-      ], scanner: stubScanner(bug.BranchScanStatus.fresh, <int>{})));
+      await runBug(
+        () => bug.cmdRenumber(<String>[
+          '5',
+          '9',
+        ], scanner: stubScanner(bug.BranchScanStatus.fresh, <int>{})),
+      );
 
       expect(exists(root, 'docs/bugs/BUG-009-foo.md'), isTrue);
       expect(exists(root, 'docs/bugs/BUG-005-foo.md'), isFalse);
@@ -851,19 +876,29 @@ void main() {
       expect(bug.cmdCheck(), 0);
     }
 
-    repoTest('本地：合进基线（docs/BUGS.md 按 union 合并不冲突）后 settle，把我这份改到下一个空号', () async {
-      final root = makeCollisionFixture();
-      writeFile(root, '.gitattributes', 'docs/BUGS.md merge=union\n');
-      git(root, <String>['merge', '-q', '--no-edit', 'main']);
-      expect(bug.collidedBugNumbers(), <int>[5]);
+    repoTest(
+      '本地：合进基线（docs/BUGS.md 按 union 合并不冲突）后 settle，把我这份改到下一个空号',
+      () async {
+        final root = makeCollisionFixture();
+        writeFile(root, '.gitattributes', 'docs/BUGS.md merge=union\n');
+        git(root, <String>['merge', '-q', '--no-edit', 'main']);
+        expect(bug.collidedBugNumbers(), <int>[5]);
 
-      expect(await runBug(() => bug.cmdSettle(<String>['--base', 'main'])), 0);
+        expect(
+          await runBug(() => bug.cmdSettle(<String>['--base', 'main'])),
+          0,
+        );
 
-      expectSettled(root);
-      out.clear();
-      expect(await runBug(() => bug.cmdSettle(<String>['--base', 'main'])), 0, reason: '幂等');
-      expect(out.join('\n'), contains('无撞号'));
-    });
+        expectSettled(root);
+        out.clear();
+        expect(
+          await runBug(() => bug.cmdSettle(<String>['--base', 'main'])),
+          0,
+          reason: '幂等',
+        );
+        expect(out.join('\n'), contains('无撞号'));
+      },
+    );
 
     repoTest('CI：站在 develop 尖端上（HEAD == 基线）跑，后进入首父链的那份改号', () async {
       final root = makeCollisionFixture();
@@ -883,7 +918,12 @@ void main() {
       writeFile(root, '.gitattributes', 'docs/BUGS.md merge=union\n');
       git(root, <String>['merge', '-q', '--no-edit', 'main']);
 
-      expect(await runBug(() => bug.cmdSettle(<String>['--base', 'main', '--dry-run'])), 0);
+      expect(
+        await runBug(
+          () => bug.cmdSettle(<String>['--base', 'main', '--dry-run']),
+        ),
+        0,
+      );
 
       expect(exists(root, 'docs/bugs/BUG-005-mine.md'), isTrue);
       expect(readFile(root, 'lib/mine.dart'), contains('BUG-005'));
@@ -953,7 +993,11 @@ void main() {
     /// 再以 `--no-ff` 合进 main（等同 GitHub 的合并提交，PR 的改动在首父 diff 里）。
     void mergePr(Directory root, String forkAt, int number, String slug) {
       git(root, <String>['checkout', '-q', '-b', 'pr-$slug', forkAt]);
-      writeFile(root, 'docs/bugs/BUG-${pad(number)}-$slug.md', bugDoc(number, slug));
+      writeFile(
+        root,
+        'docs/bugs/BUG-${pad(number)}-$slug.md',
+        bugDoc(number, slug),
+      );
       writeFile(
         root,
         'lib/$slug.dart',
@@ -977,30 +1021,46 @@ void main() {
       );
     }
 
-    repoTest('相邻 push 积压：旧 job 推上去的「102」与同时合进来的 C 的 102 撞号 → 下一次 settle 收口', () async {
-      final root = makeDevelopFixture();
-      final seed = headSha(root);
-      mergePr(root, seed, 101, 'a'); // push1：A 合入，无撞号
-      final afterA = headSha(root);
-      mergePr(root, seed, 101, 'b'); // push2：B 合入，与 A 撞 101
-      mergePr(root, afterA, 102, 'c'); // push3：C（A 合入后 new 出 102）合入
-      // 旧 job2 只看 push2 的树，把 B 改成 102，rebase 到 push3 之后推了上去：
-      git(root, <String>['mv', 'docs/bugs/BUG-101-b.md', 'docs/bugs/BUG-102-b.md']);
-      writeFile(root, 'docs/bugs/BUG-102-b.md', bugDoc(102, 'b'));
-      writeFile(root, 'lib/b.dart', '// 修 BUG-102：b 的根因。\nvoid main() {}\n');
-      bug.cmdReindex();
-      git(root, <String>['add', '-A']);
-      git(root, <String>['commit', '-qm', 'chore(bugs): stale settle pushed after C']);
-      expect(bug.collidedBugNumbers(), <int>[102], reason: '前提：develop 上两份 102');
+    repoTest(
+      '相邻 push 积压：旧 job 推上去的「102」与同时合进来的 C 的 102 撞号 → 下一次 settle 收口',
+      () async {
+        final root = makeDevelopFixture();
+        final seed = headSha(root);
+        mergePr(root, seed, 101, 'a'); // push1：A 合入，无撞号
+        final afterA = headSha(root);
+        mergePr(root, seed, 101, 'b'); // push2：B 合入，与 A 撞 101
+        mergePr(root, afterA, 102, 'c'); // push3：C（A 合入后 new 出 102）合入
+        // 旧 job2 只看 push2 的树，把 B 改成 102，rebase 到 push3 之后推了上去：
+        git(root, <String>[
+          'mv',
+          'docs/bugs/BUG-101-b.md',
+          'docs/bugs/BUG-102-b.md',
+        ]);
+        writeFile(root, 'docs/bugs/BUG-102-b.md', bugDoc(102, 'b'));
+        writeFile(root, 'lib/b.dart', '// 修 BUG-102：b 的根因。\nvoid main() {}\n');
+        bug.cmdReindex();
+        git(root, <String>['add', '-A']);
+        git(root, <String>[
+          'commit',
+          '-qm',
+          'chore(bugs): stale settle pushed after C',
+        ]);
+        expect(bug.collidedBugNumbers(), <int>[
+          102,
+        ], reason: '前提：develop 上两份 102');
 
-      expect(await runBug(() => bug.cmdSettle(<String>['--base', 'main'])), 0);
+        expect(
+          await runBug(() => bug.cmdSettle(<String>['--base', 'main'])),
+          0,
+        );
 
-      expectBug(root, 101, 'a');
-      expectBug(root, 102, 'c'); // 先进首父链（merge C）的保留
-      expectBug(root, 103, 'b'); // 改号提交才进来的那份再改一次
-      expect(exists(root, 'docs/bugs/BUG-102-b.md'), isFalse);
-      expect(bug.cmdCheck(), 0);
-    });
+        expectBug(root, 101, 'a');
+        expectBug(root, 102, 'c'); // 先进首父链（merge C）的保留
+        expectBug(root, 103, 'b'); // 改号提交才进来的那份再改一次
+        expect(exists(root, 'docs/bugs/BUG-102-b.md'), isFalse);
+        expect(bug.cmdCheck(), 0);
+      },
+    );
 
     repoTest('被取消的 run 留下多组撞号：一次 settle 全部收口，先进来的保留（与文件名字典序无关）', () async {
       final root = makeDevelopFixture();
@@ -1039,7 +1099,11 @@ void main() {
       expect(bug.cmdCheck(), 0);
 
       out.clear();
-      expect(await runBug(() => bug.cmdSettle(<String>['--base', 'main'])), 0, reason: '幂等');
+      expect(
+        await runBug(() => bug.cmdSettle(<String>['--base', 'main'])),
+        0,
+        reason: '幂等',
+      );
       expect(out.join('\n'), contains('无撞号'));
     });
 
@@ -1049,9 +1113,17 @@ void main() {
       mergePr(root, seed, 101, 'old');
       mergePr(root, seed, 102, 'later');
       // 有人手动把 BUG-101-old 改名成 102（git mv）：改名提交在 later 之后。
-      git(root, <String>['mv', 'docs/bugs/BUG-101-old.md', 'docs/bugs/BUG-102-old.md']);
+      git(root, <String>[
+        'mv',
+        'docs/bugs/BUG-101-old.md',
+        'docs/bugs/BUG-102-old.md',
+      ]);
       writeFile(root, 'docs/bugs/BUG-102-old.md', bugDoc(102, 'old'));
-      writeFile(root, 'lib/old.dart', '// 修 BUG-102：old 的根因。\nvoid main() {}\n');
+      writeFile(
+        root,
+        'lib/old.dart',
+        '// 修 BUG-102：old 的根因。\nvoid main() {}\n',
+      );
       bug.cmdReindex();
       git(root, <String>['add', '-A']);
       git(root, <String>['commit', '-qm', 'manual rename']);
@@ -1067,7 +1139,11 @@ void main() {
       final seed = headSha(root);
       git(root, <String>['checkout', '-q', '-b', 'feature', seed]);
       writeFile(root, 'docs/bugs/BUG-101-mine.md', bugDoc(101, 'mine'));
-      writeFile(root, 'lib/mine.dart', '// 修 BUG-101：mine 的根因。\nvoid main() {}\n');
+      writeFile(
+        root,
+        'lib/mine.dart',
+        '// 修 BUG-101：mine 的根因。\nvoid main() {}\n',
+      );
       bug.cmdReindex();
       git(root, <String>['add', '-A']);
       git(root, <String>['commit', '-qm', 'mine']);
@@ -1077,7 +1153,9 @@ void main() {
       git(root, <String>['checkout', '-q', 'feature']);
       git(root, <String>['merge', '-q', '--no-edit', 'main']);
 
-      final code = await runBug(() => bug.cmdSettle(<String>['--base', 'main']));
+      final code = await runBug(
+        () => bug.cmdSettle(<String>['--base', 'main']),
+      );
 
       expectBug(root, 101, 'first');
       expectBug(root, 101, 'second'); // 不动：两边各改一次会在合并时撞成 rename/rename 冲突
@@ -1115,7 +1193,9 @@ void main() {
       mergePr(root, seed, 101, 'y');
       mergePr(root, seed, 101, 'z');
 
-      await runBug(() => bug.cmdRenumber(<String>['101', '150', '--base', 'main']));
+      await runBug(
+        () => bug.cmdRenumber(<String>['101', '150', '--base', 'main']),
+      );
 
       expectBug(root, 101, 'x');
       expectBug(root, 101, 'y');
@@ -1124,8 +1204,11 @@ void main() {
     });
 
     repoTest('先后比较：基线上的按首父序号，没进基线的排最后；同位置判为同时进来', () {
-      bug.BugFileArrival at(String path, int? position) =>
-          bug.BugFileArrival(path: path, commit: position == null ? '' : 'c$position', position: position);
+      bug.BugFileArrival at(String path, int? position) => bug.BugFileArrival(
+        path: path,
+        commit: position == null ? '' : 'c$position',
+        position: position,
+      );
       final ranked = <bug.BugFileArrival>[
         at('docs/bugs/BUG-101-local.md', null),
         at('docs/bugs/BUG-101-late.md', 7),
@@ -1140,7 +1223,10 @@ void main() {
       expect(bug.sameArrival(at('a', null), at('b', null)), isTrue);
       expect(bug.sameArrival(at('a', 3), at('b', null)), isFalse);
       expect(
-        () => bug.requireDistinctArrivals(101, <bug.BugFileArrival>[at('a', 3), at('b', 3)], 'main'),
+        () => bug.requireDistinctArrivals(101, <bug.BugFileArrival>[
+          at('a', 3),
+          at('b', 3),
+        ], 'main'),
         throwsA(isA<bug.BugToolError>()),
       );
     });

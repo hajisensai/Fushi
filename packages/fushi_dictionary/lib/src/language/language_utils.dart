@@ -70,7 +70,9 @@ class LanguageUtils {
   /// [multipleRanges] only contains lists that are two element list of
   /// integers.
   static bool isCodePointInRanges(
-      int codePoint, List<List<int>> multipleRanges) {
+    int codePoint,
+    List<List<int>> multipleRanges,
+  ) {
     for (List<int> ranges in multipleRanges) {
       if (isCodePointInRange(codePoint, ranges)) {
         return true;
@@ -85,8 +87,9 @@ class LanguageUtils {
   }
 
   /// Generate Furigana for a [DictionaryEntry].
-  static List<RubyTextData> distributeFurigana(
-      {required DictionaryEntry entry}) {
+  static List<RubyTextData> distributeFurigana({
+    required DictionaryEntry entry,
+  }) {
     if (_furiganaCache[entry] != null) {
       return _furiganaCache[entry]!;
     }
@@ -182,7 +185,9 @@ class LanguageUtils {
             segments.insert(0, RubyTextData(text));
           } else {
             segments.insertAll(
-                0, getFuriganaKanaSegments(text: text, reading: reading));
+              0,
+              getFuriganaKanaSegments(text: text, reading: reading),
+            );
           }
 
           return segments;

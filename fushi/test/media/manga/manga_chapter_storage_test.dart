@@ -19,16 +19,16 @@ void main() {
   });
 
   String chapterJson(List<String> urls) => jsonEncode(<String, Object?>{
-        'pages': <Map<String, Object?>>[
-          for (final String url in urls)
-            <String, Object?>{
-              'url': url,
-              'width': 100,
-              'height': 150,
-              'blocks': <Object?>[],
-            },
-        ],
-      });
+    'pages': <Map<String, Object?>>[
+      for (final String url in urls)
+        <String, Object?>{
+          'url': url,
+          'width': 100,
+          'height': 150,
+          'blocks': <Object?>[],
+        },
+    ],
+  });
 
   Future<Directory> writeChapter(
     String chapterKey, {
@@ -49,8 +49,10 @@ void main() {
   test('digest 与旧 chapterDirectory() 同算法：sha256(chapterKey) 前 24 位', () {
     const String key = '/manga/fixture/chapter-1?lang=ja';
     // 旧 `OnlineMangaLibraryService.chapterDirectory` 的推导，逐字节对拍。
-    final String legacy =
-        sha256.convert(utf8.encode(key)).toString().substring(0, 24);
+    final String legacy = sha256
+        .convert(utf8.encode(key))
+        .toString()
+        .substring(0, 24);
     expect(mangaChapterDigest(key), legacy);
     expect(mangaChapterDigest(key), hasLength(24));
     expect(
@@ -60,10 +62,10 @@ void main() {
   });
 
   test('判据：manga.json + 非空 pages + 每页文件都在 → 已下载', () async {
-    await writeChapter('/c/1', urls: <String>[
-      'images/page-000001.jpg',
-      'images/page-000002.jpg',
-    ]);
+    await writeChapter(
+      '/c/1',
+      urls: <String>['images/page-000001.jpg', 'images/page-000002.jpg'],
+    );
     expect(await isChapterDownloaded(bookDir.path, '/c/1'), isTrue);
   });
 
@@ -71,8 +73,9 @@ void main() {
     // ① 目录在、页图在，但 manga.json 没写完（进程被杀）。
     final Directory noJson = mangaChapterDirectory(bookDir.path, '/c/nojson');
     await mangaChapterImagesDirectory(noJson).create(recursive: true);
-    await File(p.join(noJson.path, 'images', 'page-000001.jpg'))
-        .writeAsBytes(<int>[1]);
+    await File(
+      p.join(noJson.path, 'images', 'page-000001.jpg'),
+    ).writeAsBytes(<int>[1]);
     expect(await isChapterDownloaded(bookDir.path, '/c/nojson'), isFalse);
 
     // ② manga.json 在但 pages 为空（占位形状）。
@@ -106,15 +109,17 @@ void main() {
     await mangaChapterImagesDirectory(dir).create(recursive: true);
     // 文件真的存在于章目录外；url 越界应当判 false。
     await File(p.join(bookDir.path, 'outside.jpg')).writeAsBytes(<int>[1]);
-    await mangaChapterJsonFile(dir)
-        .writeAsString(chapterJson(<String>['../../outside.jpg']));
+    await mangaChapterJsonFile(
+      dir,
+    ).writeAsString(chapterJson(<String>['../../outside.jpg']));
     expect(await isChapterDownloaded(bookDir.path, '/c/evil'), isFalse);
   });
 
   test('deleteChapterDownload 整目录删除，不存在时静默', () async {
-    final Directory dir = await writeChapter('/c/del', urls: <String>[
-      'images/page-000001.jpg',
-    ]);
+    final Directory dir = await writeChapter(
+      '/c/del',
+      urls: <String>['images/page-000001.jpg'],
+    );
     expect(dir.existsSync(), isTrue);
     await deleteChapterDownload(bookDir.path, '/c/del');
     expect(dir.existsSync(), isFalse);
@@ -126,8 +131,11 @@ void main() {
     await writeChapter('/c/a', urls: <String>['images/page-000001.jpg']);
     await writeChapter('/c/b', urls: const <String>[]);
     expect(
-      await downloadedChapterKeys(
-          bookDir.path, <String>['/c/a', '/c/b', '/c/c']),
+      await downloadedChapterKeys(bookDir.path, <String>[
+        '/c/a',
+        '/c/b',
+        '/c/c',
+      ]),
       <String>{'/c/a'},
     );
   });

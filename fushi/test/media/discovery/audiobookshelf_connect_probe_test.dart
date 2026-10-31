@@ -68,10 +68,7 @@ void main() {
           password: 'pw',
         );
     expect(outcome.ok, isFalse);
-    expect(
-      outcome.message,
-      t.discovery_audiobookshelf_sso_only_hint,
-    );
+    expect(outcome.message, t.discovery_audiobookshelf_sso_only_hint);
     expect(paths, <String>['GET /status'], reason: '没有去撞限频的 /login');
   });
 

@@ -42,8 +42,11 @@ Future<AppModel> readyAppModel(WidgetTester tester) async {
   for (int i = 0; i < 120 && !appModel.isInitialised; i++) {
     await tester.pump(const Duration(milliseconds: 500));
   }
-  expect(appModel.isInitialised, isTrue,
-      reason: 'AppModel must be initialised before seeding fixtures');
+  expect(
+    appModel.isInitialised,
+    isTrue,
+    reason: 'AppModel must be initialised before seeding fixtures',
+  );
   return appModel;
 }
 
@@ -54,8 +57,11 @@ Future<AppModel> readyAppModel(WidgetTester tester) async {
 /// 时 `book_entry_*` / `srt_entry_*` 书卡根本不在 widget 树中。共享播种 helper
 /// 自己调用本函数；其它直接写 DB 后等待书卡的测试也必须先调这里。
 Future<void> showBooksTab(WidgetTester tester) async {
-  expect(HomePage.debugSelectTab, isNotNull,
-      reason: 'HomePage.debugSelectTab 钩子应已注册（debug/profile build）');
+  expect(
+    HomePage.debugSelectTab,
+    isNotNull,
+    reason: 'HomePage.debugSelectTab 钩子应已注册（debug/profile build）',
+  );
   HomePage.debugSelectTab!(HomeTab.books);
   await tester.pump(const Duration(milliseconds: 500));
 }
@@ -72,10 +78,14 @@ Future<void> openBookViaProductionPath(
   WidgetTester tester,
   String bookKey,
 ) async {
-  final MediaItem? item =
-      await ReaderFushiSource.instance.mediaItemForBookKey(bookKey);
-  expect(item, isNotNull,
-      reason: 'seeded book must resolve to a MediaItem (key=$bookKey)');
+  final MediaItem? item = await ReaderFushiSource.instance.mediaItemForBookKey(
+    bookKey,
+  );
+  expect(
+    item,
+    isNotNull,
+    reason: 'seeded book must resolve to a MediaItem (key=$bookKey)',
+  );
 
   final ProviderContainer container = ProviderScope.containerOf(
     tester.element(find.byType(MaterialApp).first),
@@ -86,11 +96,13 @@ Future<void> openBookViaProductionPath(
   final ConsumerStatefulElement appElement =
       tester.element(find.byType(FushiReaderApp)) as ConsumerStatefulElement;
   final WidgetRef ref = appElement;
-  unawaited(appModel.openMedia(
-    ref: ref,
-    mediaSource: ReaderFushiSource.instance,
-    item: item,
-  ));
+  unawaited(
+    appModel.openMedia(
+      ref: ref,
+      mediaSource: ReaderFushiSource.instance,
+      item: item,
+    ),
+  );
   for (int i = 0; i < 8; i++) {
     await tester.pump(const Duration(milliseconds: 250));
   }
@@ -107,8 +119,9 @@ Future<String> seedReaderBook(
     tester.element(find.byType(MaterialApp).first),
   );
 
-  final Uint8List bytes =
-      EpubGenerator(withRealImages: withRealImages).generate();
+  final Uint8List bytes = EpubGenerator(
+    withRealImages: withRealImages,
+  ).generate();
   final String bookKey = await EpubImporter.import(
     db: appModel.database,
     bytes: bytes,
@@ -132,7 +145,8 @@ Future<String> seedReaderBook(
     }
   }
   debugPrint(
-      '[fixture] WARNING: seeded book key=$bookKey not visible after 20s');
+    '[fixture] WARNING: seeded book key=$bookKey not visible after 20s',
+  );
   return bookKey;
 }
 
@@ -219,8 +233,11 @@ Future<File?> _findExternalDictionaryFixture() async {
 
   const String testRoot = String.fromEnvironment('FUSHI_TEST_ROOT');
   if (testRoot.isNotEmpty) {
-    candidates.add(File(
-        '$testRoot${Platform.pathSeparator}fixtures${Platform.pathSeparator}test_dict.zip'));
+    candidates.add(
+      File(
+        '$testRoot${Platform.pathSeparator}fixtures${Platform.pathSeparator}test_dict.zip',
+      ),
+    );
     candidates.add(File('$testRoot${Platform.pathSeparator}test_dict.zip'));
   }
 
@@ -292,8 +309,10 @@ Future<String> seedAudiobook(
     chapterHref: kFixtureChapterHref,
     count: cueCount,
   );
-  final Uint8List epubBytes =
-      await buildAudiobookEpubBytes(title: title, cues: seedCues);
+  final Uint8List epubBytes = await buildAudiobookEpubBytes(
+    title: title,
+    cues: seedCues,
+  );
   final String bookKey = await EpubImporter.import(
     db: appModel.database,
     bytes: epubBytes,
@@ -318,8 +337,10 @@ Future<String> seedAudiobook(
   final AudiobookRepository repo = AudiobookRepository(appModel.database);
   // 窄写入：repository 没有「写一整行」的入口（BUG-1678），播种也按动作拆开。
   await repo.replaceAlignment(bookKey: bookKey, format: 'srt', path: audioPath);
-  await repo
-      .replaceAudio(bookKey: bookKey, audioPaths: <String>[audioFile.path]);
+  await repo.replaceAudio(
+    bookKey: bookKey,
+    audioPaths: <String>[audioFile.path],
+  );
   await repo.saveCues(bookKey: bookKey, cues: cues);
   debugPrint('[fixture] Saved audiobook meta + ${cues.length} cues');
 
@@ -339,7 +360,8 @@ Future<String> seedAudiobook(
     }
   }
   debugPrint(
-      '[fixture] WARNING: seeded audiobook key=$bookKey not visible after 20s');
+    '[fixture] WARNING: seeded audiobook key=$bookKey not visible after 20s',
+  );
   return bookKey;
 }
 
@@ -369,11 +391,13 @@ Future<String> seedVideo(
   debugPrint('[fixture] Seeded video uid=$bookUid ($title)');
 
   final VideoBookRepository repo = VideoBookRepository(appModel.database);
-  await repo.saveVideoBook(VideoBooksCompanion(
-    bookUid: Value(bookUid),
-    title: Value(title),
-    videoPath: Value(videoFile.absolute.path),
-  ));
+  await repo.saveVideoBook(
+    VideoBooksCompanion(
+      bookUid: Value(bookUid),
+      title: Value(title),
+      videoPath: Value(videoFile.absolute.path),
+    ),
+  );
 
   // 视频页用 initState 一次性 FutureBuilder（IndexedStack 保活），seed 晚于首次
   // 查询不会自动重查 → 经测试钩子 debugRefreshVideos 强制重查让视频出现；tag 筛选
@@ -391,7 +415,8 @@ Future<String> seedVideo(
     }
   }
   debugPrint(
-      '[fixture] WARNING: seeded video uid=$bookUid not visible after 20s '
-      '(expected if video page not yet open)');
+    '[fixture] WARNING: seeded video uid=$bookUid not visible after 20s '
+    '(expected if video page not yet open)',
+  );
   return bookUid;
 }

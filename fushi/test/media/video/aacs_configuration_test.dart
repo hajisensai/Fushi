@@ -387,28 +387,24 @@ void main() {
       },
     );
 
-    test(
-      'local KEYDB larger than 64 MiB is scanned, not rejected',
-      () async {
-        // 完整版 KEYDB 可达上百 MB；旧实现整读 + 64 MiB 上限会把它判成配置无效。
-        final File big = File(p.join(root.path, 'big', 'KEYDB.cfg'));
-        await big.parent.create();
-        final IOSink sink = big.openWrite();
-        final String filler = database(id: '0' * 40);
-        final String block = filler * ((1024 * 1024) ~/ filler.length + 1);
-        for (int i = 0; i < 65; i++) {
-          sink.write(block);
-        }
-        // 末条不带换行：走「文件尾残行」分支；填充行长度不整除 1 MiB 分块，
-        // 大量条目跨块边界。
-        sink.write(database().trimRight());
-        await sink.close();
-        expect(await big.length(), greaterThan(64 * 1024 * 1024));
-        aacsStandardConfigurationsForTesting = <String>[big.path];
-        final result = await loadAacsConfiguration(root.path);
-        expect(result.volumeUniqueKey, expectedVuk);
-      },
-      timeout: const Timeout(Duration(minutes: 2)),
-    );
+    test('local KEYDB larger than 64 MiB is scanned, not rejected', () async {
+      // 完整版 KEYDB 可达上百 MB；旧实现整读 + 64 MiB 上限会把它判成配置无效。
+      final File big = File(p.join(root.path, 'big', 'KEYDB.cfg'));
+      await big.parent.create();
+      final IOSink sink = big.openWrite();
+      final String filler = database(id: '0' * 40);
+      final String block = filler * ((1024 * 1024) ~/ filler.length + 1);
+      for (int i = 0; i < 65; i++) {
+        sink.write(block);
+      }
+      // 末条不带换行：走「文件尾残行」分支；填充行长度不整除 1 MiB 分块，
+      // 大量条目跨块边界。
+      sink.write(database().trimRight());
+      await sink.close();
+      expect(await big.length(), greaterThan(64 * 1024 * 1024));
+      aacsStandardConfigurationsForTesting = <String>[big.path];
+      final result = await loadAacsConfiguration(root.path);
+      expect(result.volumeUniqueKey, expectedVuk);
+    }, timeout: const Timeout(Duration(minutes: 2)));
   });
 }

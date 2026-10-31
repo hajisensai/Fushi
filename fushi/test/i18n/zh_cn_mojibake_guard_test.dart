@@ -56,10 +56,17 @@ void main() {
     setUpAll(() {
       final file = File(
         p.join(
-            Directory.current.path, 'lib', 'i18n', 'strings_zh-CN.i18n.json'),
+          Directory.current.path,
+          'lib',
+          'i18n',
+          'strings_zh-CN.i18n.json',
+        ),
       );
-      expect(file.existsSync(), isTrue,
-          reason: 'strings_zh-CN.i18n.json 应存在于 ${file.path}');
+      expect(
+        file.existsSync(),
+        isTrue,
+        reason: 'strings_zh-CN.i18n.json 应存在于 ${file.path}',
+      );
       zhStrings = _flattenStrings(
         jsonDecode(file.readAsStringSync()) as Map<String, dynamic>,
       );
@@ -73,15 +80,20 @@ void main() {
         if (bad.isNotEmpty) {
           final hex = bad
               .take(8)
-              .map((c) =>
-                  'U+${c.toRadixString(16).toUpperCase().padLeft(4, '0')}')
+              .map(
+                (c) => 'U+${c.toRadixString(16).toUpperCase().padLeft(4, '0')}',
+              )
               .join(' ');
           offenders.add('${entry.key}: [$hex]');
         }
       }
-      expect(offenders, isEmpty,
-          reason: '以下 zh-CN key 仍含 mojibake 字符，需用正确中文修复：\n'
-              '${offenders.join("\n")}');
+      expect(
+        offenders,
+        isEmpty,
+        reason:
+            '以下 zh-CN key 仍含 mojibake 字符，需用正确中文修复：\n'
+            '${offenders.join("\n")}',
+      );
     });
 
     test('previously-corrupted keys now contain CJK characters', () {
@@ -96,11 +108,18 @@ void main() {
         'popup_bottom_docked_hint',
       ];
       for (final key in repairedKeys) {
-        expect(zhStrings.containsKey(key), isTrue,
-            reason: 'key "$key" 应存在于 zh-CN');
-        expect(_cjk.hasMatch(zhStrings[key]!), isTrue,
-            reason: 'key "$key" 的 zh-CN 值应含中文字符，实际为：'
-                '"${zhStrings[key]}"');
+        expect(
+          zhStrings.containsKey(key),
+          isTrue,
+          reason: 'key "$key" 应存在于 zh-CN',
+        );
+        expect(
+          _cjk.hasMatch(zhStrings[key]!),
+          isTrue,
+          reason:
+              'key "$key" 的 zh-CN 值应含中文字符，实际为：'
+              '"${zhStrings[key]}"',
+        );
       }
     });
 
@@ -110,12 +129,16 @@ void main() {
     // → _retainBooks 剥离全部 epub_books 行，见 test/sync/backup_categories_test.dart 的
     // ghost-book 用例）。删掉「始终包含」的误导措辞后，本守卫防止其回潮。
     test(
-        'backup_export_categories_hint no longer claims book records are always kept',
-        () {
-      final String hint = zhStrings['backup_export_categories_hint']!;
-      expect(hint.contains('始终包含'), isFalse,
-          reason: '导出内容提示不得再声称书籍记录「始终包含」——书籍记录随「书籍」勾选联动：$hint');
-    });
+      'backup_export_categories_hint no longer claims book records are always kept',
+      () {
+        final String hint = zhStrings['backup_export_categories_hint']!;
+        expect(
+          hint.contains('始终包含'),
+          isFalse,
+          reason: '导出内容提示不得再声称书籍记录「始终包含」——书籍记录随「书籍」勾选联动：$hint',
+        );
+      },
+    );
 
     test('TODO-434 clip export keys use Chinese clip wording', () {
       const clipKeys = <String>[
@@ -128,16 +151,27 @@ void main() {
         'video_clip_export_remote_download_required',
         'video_clip_export_invalid_range',
       ];
-      final String formerPixelCaptureTerm =
-          String.fromCharCodes(<int>[0x5f55, 0x5c4f]);
+      final String formerPixelCaptureTerm = String.fromCharCodes(<int>[
+        0x5f55,
+        0x5c4f,
+      ]);
       for (final key in clipKeys) {
-        expect(zhStrings.containsKey(key), isTrue,
-            reason: 'key "$key" 应存在于 zh-CN');
+        expect(
+          zhStrings.containsKey(key),
+          isTrue,
+          reason: 'key "$key" 应存在于 zh-CN',
+        );
         final String value = zhStrings[key]!;
-        expect(_cjk.hasMatch(value), isTrue,
-            reason: 'key "$key" 的 zh-CN 值应含中文字符，实际为："$value"');
-        expect(value.contains(formerPixelCaptureTerm), isFalse,
-            reason: 'TODO-434 片段导出文案应保持源片段语义：$key="$value"');
+        expect(
+          _cjk.hasMatch(value),
+          isTrue,
+          reason: 'key "$key" 的 zh-CN 值应含中文字符，实际为："$value"',
+        );
+        expect(
+          value.contains(formerPixelCaptureTerm),
+          isFalse,
+          reason: 'TODO-434 片段导出文案应保持源片段语义：$key="$value"',
+        );
       }
     });
   });

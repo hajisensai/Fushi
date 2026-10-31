@@ -10,8 +10,8 @@ class CreatorFieldValues {
   CreatorFieldValues({
     Map<Field, String> textValues = const {},
     Map<String, String> extraValues = const {},
-  })  : textValues = Map<Field, String>.unmodifiable(textValues),
-        extraValues = Map<String, String>.unmodifiable(extraValues);
+  }) : textValues = Map<Field, String>.unmodifiable(textValues),
+       extraValues = Map<String, String>.unmodifiable(extraValues);
 
   /// Creates a deep copy of this context but with the given fields replaced
   /// with the new values.

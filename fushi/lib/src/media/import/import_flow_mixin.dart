@@ -157,10 +157,7 @@ mixin ImportFlowMixin<T extends StatefulWidget> on State<T> {
       SizedBox(height: tokens.spacing.gap / 2),
       ValueListenableBuilder<String>(
         valueListenable: progressMsg,
-        builder: (_, msg, __) => Text(
-          msg,
-          style: tokens.type.metadata,
-        ),
+        builder: (_, msg, __) => Text(msg, style: tokens.type.metadata),
       ),
     ];
   }

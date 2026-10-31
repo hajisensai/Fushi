@@ -22,9 +22,7 @@ import '../helpers/source_guard.dart';
 /// 4. Anki 设置页有这两个滑块行，wire 到 AppModel.miningImageQuality / miningAudioQuality。
 
 FushiDatabase _testDb() {
-  return FushiDatabase.forTesting(
-    DatabaseConnection(NativeDatabase.memory()),
-  );
+  return FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 }
 
 void main() {
@@ -68,14 +66,20 @@ void main() {
       expect(restored.miningImageQuality, 3, reason: '设过必须落盘且跨实例可见');
 
       final Map<String, String> prefs = await db.getAllPrefs();
-      expect(prefs.containsKey('mining_image_quality'), isTrue,
-          reason: 'DB key 必须是 mining_image_quality');
+      expect(
+        prefs.containsKey('mining_image_quality'),
+        isTrue,
+        reason: 'DB key 必须是 mining_image_quality',
+      );
       restored.dispose();
 
       repo.setMiningImageQuality(99); // 越界
       await Future<void>.delayed(const Duration(milliseconds: 50));
-      expect(repo.miningImageQuality, MiningMediaCompression.imageTierCount - 1,
-          reason: '越界写入必须夹到满档');
+      expect(
+        repo.miningImageQuality,
+        MiningMediaCompression.imageTierCount - 1,
+        reason: '越界写入必须夹到满档',
+      );
     });
 
     test('setMiningAudioQuality 写穿 Drift（往返 + DB key + 越界夹取）', () async {
@@ -88,8 +92,11 @@ void main() {
       expect(restored.miningAudioQuality, 2, reason: '设过必须落盘且跨实例可见');
 
       final Map<String, String> prefs = await db.getAllPrefs();
-      expect(prefs.containsKey('mining_audio_quality'), isTrue,
-          reason: 'DB key 必须是 mining_audio_quality');
+      expect(
+        prefs.containsKey('mining_audio_quality'),
+        isTrue,
+        reason: 'DB key 必须是 mining_audio_quality',
+      );
       restored.dispose();
 
       repo.setMiningAudioQuality(-5); // 越界
@@ -139,8 +146,11 @@ void main() {
         isTrue,
         reason: '视频 mining 必须据两档 resolve 选档',
       );
-      expect(src.contains('compression: mediaCompression'), isTrue,
-          reason: '选好的档必须喂进 ImmersionMiningEngine.mine');
+      expect(
+        src.contains('compression: mediaCompression'),
+        isTrue,
+        reason: '选好的档必须喂进 ImmersionMiningEngine.mine',
+      );
     });
 
     test('ImmersionMiningEngine 把档应用到三条媒体链路', () {
@@ -164,21 +174,31 @@ void main() {
         src,
         'Future<AnimatedClipExtraction?> extractAnimatedClipWithFallback(',
       );
-      expect(fallbackBody.contains('await extractor('), isTrue,
-          reason: '动图链路必须经注入的抽取器（引擎侧传 extractor: _gif）');
-      expect(fallbackBody.contains('fps: attempt.capFps(compression.gifFps)'),
-          isTrue,
-          reason: '帧率必须由 compression.gifFps 派生并夹到本次格式上限（BUG-1039）');
       expect(
-          fallbackBody
-              .contains('width: attempt.capWidth(compression.gifWidth)'),
-          isTrue,
-          reason: '宽度必须由 compression.gifWidth 派生并夹到本次格式上限（BUG-1039）');
-      expect(src.contains('extractor: _gif'), isTrue,
-          reason: '引擎必须把自己注入的 _gif 抽取器交给 fallback 链，测试才能替身');
+        fallbackBody.contains('await extractor('),
+        isTrue,
+        reason: '动图链路必须经注入的抽取器（引擎侧传 extractor: _gif）',
+      );
+      expect(
+        fallbackBody.contains('fps: attempt.capFps(compression.gifFps)'),
+        isTrue,
+        reason: '帧率必须由 compression.gifFps 派生并夹到本次格式上限（BUG-1039）',
+      );
+      expect(
+        fallbackBody.contains('width: attempt.capWidth(compression.gifWidth)'),
+        isTrue,
+        reason: '宽度必须由 compression.gifWidth 派生并夹到本次格式上限（BUG-1039）',
+      );
+      expect(
+        src.contains('extractor: _gif'),
+        isTrue,
+        reason: '引擎必须把自己注入的 _gif 抽取器交给 fallback 链，测试才能替身',
+      );
       // 截图链路。
-      expect(src.contains('maxLongEdge: compression.screenshotMaxLongEdge'),
-          isTrue);
+      expect(
+        src.contains('maxLongEdge: compression.screenshotMaxLongEdge'),
+        isTrue,
+      );
       expect(src.contains('quality: compression.screenshotQuality'), isTrue);
       // 音频链路。
       expect(src.contains('audioChannels: compression.audioChannels'), isTrue);
@@ -196,20 +216,30 @@ void main() {
         isTrue,
         reason: '阅读器句子音频必须据两档 resolve 选档',
       );
-      expect(src.contains('audioChannels: mediaCompression.audioChannels'),
-          isTrue);
       expect(
-          src.contains('audioBitrate: mediaCompression.audioBitrate'), isTrue);
+        src.contains('audioChannels: mediaCompression.audioChannels'),
+        isTrue,
+      );
+      expect(
+        src.contains('audioBitrate: mediaCompression.audioBitrate'),
+        isTrue,
+      );
     });
 
     test('Anki 设置页有两滑块行 wire 到 AppModel 两档', () {
       final String src = File(
         'lib/src/pages/implementations/anki_settings_page.dart',
       ).readAsStringSync();
-      expect(src.contains('t.mining_image_quality'), isTrue,
-          reason: '图片滑块标题用 i18n key mining_image_quality');
-      expect(src.contains('t.mining_audio_quality'), isTrue,
-          reason: '音频滑块标题用 i18n key mining_audio_quality');
+      expect(
+        src.contains('t.mining_image_quality'),
+        isTrue,
+        reason: '图片滑块标题用 i18n key mining_image_quality',
+      );
+      expect(
+        src.contains('t.mining_audio_quality'),
+        isTrue,
+        reason: '音频滑块标题用 i18n key mining_audio_quality',
+      );
       expect(src.contains('appModel.setMiningImageQuality'), isTrue);
       expect(src.contains('appModel.setMiningAudioQuality'), isTrue);
     });
@@ -221,14 +251,26 @@ void main() {
       final String src = File(
         'lib/src/pages/implementations/anki_settings_page.dart',
       ).readAsStringSync();
-      expect(src.contains('t.mining_image_quality_max'), isTrue,
-          reason: '图片满档标签必须用 mining_image_quality_max');
-      expect(src.contains('t.mining_audio_quality_max'), isTrue,
-          reason: '音频满档标签必须用 mining_audio_quality_max');
-      expect(src.contains('t.mining_image_quality_native'), isFalse,
-          reason: '「原片」是名不副实的旧名，不得复活');
-      expect(src.contains('t.mining_audio_quality_native'), isFalse,
-          reason: '「原片」是名不副实的旧名，不得复活');
+      expect(
+        src.contains('t.mining_image_quality_max'),
+        isTrue,
+        reason: '图片满档标签必须用 mining_image_quality_max',
+      );
+      expect(
+        src.contains('t.mining_audio_quality_max'),
+        isTrue,
+        reason: '音频满档标签必须用 mining_audio_quality_max',
+      );
+      expect(
+        src.contains('t.mining_image_quality_native'),
+        isFalse,
+        reason: '「原片」是名不副实的旧名，不得复活',
+      );
+      expect(
+        src.contains('t.mining_audio_quality_native'),
+        isFalse,
+        reason: '「原片」是名不副实的旧名，不得复活',
+      );
     });
 
     // 动图格式偏好的**接线**守卫。默认值（`MiningAnimatedFormat.gif`）铺在
@@ -265,19 +307,20 @@ void main() {
         // 换成字面量、换成另一个域的偏好、换成无关局部变量都不在集里 → 红。
         final Set<String> allowed = <String>{pref};
         for (final RegExpMatch m in RegExp(
-                r'final MiningAnimatedFormat (\w+)\s*=\s*([^;]*);',
-                multiLine: true)
-            .allMatches(src)) {
+          r'final MiningAnimatedFormat (\w+)\s*=\s*([^;]*);',
+          multiLine: true,
+        ).allMatches(src)) {
           if (m.group(2)!.contains(pref)) allowed.add(m.group(1)!);
         }
         for (final String param in <String>['format', 'animatedFormat']) {
-          final Iterable<String> actual = RegExp('\\b$param:\\s*([\\w.]+)')
-              .allMatches(src)
-              .map((RegExpMatch m) => m.group(1)!);
+          final Iterable<String> actual = RegExp(
+            '\\b$param:\\s*([\\w.]+)',
+          ).allMatches(src).map((RegExpMatch m) => m.group(1)!);
           expect(
             actual.isNotEmpty && actual.every(allowed.contains),
             isTrue,
-            reason: '$path 的 `$param:` 实参必须是 $pref（或由它派生的局部变量），'
+            reason:
+                '$path 的 `$param:` 实参必须是 $pref（或由它派生的局部变量），'
                 '实际是 ${actual.isEmpty ? "（一个都没传）" : actual.toSet()}；'
                 '漏传时形参默认 gif，用户选的格式静默失效',
           );
@@ -308,18 +351,19 @@ void main() {
         final String pref = '$owner.$getter';
         final Set<String> allowed = <String>{pref};
         for (final RegExpMatch m in RegExp(
-                r'final MiningStillFormat (\w+)\s*=\s*([^;]*);',
-                multiLine: true)
-            .allMatches(src)) {
+          r'final MiningStillFormat (\w+)\s*=\s*([^;]*);',
+          multiLine: true,
+        ).allMatches(src)) {
           if (m.group(2)!.contains(pref)) allowed.add(m.group(1)!);
         }
-        final Iterable<String> actual = RegExp(r'\bstillFormat:\s*([\w.]+)')
-            .allMatches(src)
-            .map((RegExpMatch m) => m.group(1)!);
+        final Iterable<String> actual = RegExp(
+          r'\bstillFormat:\s*([\w.]+)',
+        ).allMatches(src).map((RegExpMatch m) => m.group(1)!);
         expect(
           actual.isNotEmpty && actual.every(allowed.contains),
           isTrue,
-          reason: '$path 的 `stillFormat:` 实参必须是 $pref（或由它派生的局部变量），'
+          reason:
+              '$path 的 `stillFormat:` 实参必须是 $pref（或由它派生的局部变量），'
               '实际是 ${actual.isEmpty ? "（一个都没传）" : actual.toSet()}；'
               '漏传时形参默认 jpg，用户选的 PNG 静默失效',
         );
@@ -338,10 +382,16 @@ void main() {
       ).readAsStringSync();
       for (final MiningAnimatedFormat format in MiningAnimatedFormat.values) {
         final String ext = format.fileExtension;
-        expect(RegExp("'$ext':\\s*'image/").hasMatch(core), isTrue,
-            reason: 'fushi_core 的 MIME 表缺 $ext（$format 的产出扩展名）');
-        expect(RegExp("'$ext':\\s*'image/").hasMatch(anki), isTrue,
-            reason: 'fushi_anki 的 MIME 镜像表缺 $ext（$format 的产出扩展名）');
+        expect(
+          RegExp("'$ext':\\s*'image/").hasMatch(core),
+          isTrue,
+          reason: 'fushi_core 的 MIME 表缺 $ext（$format 的产出扩展名）',
+        );
+        expect(
+          RegExp("'$ext':\\s*'image/").hasMatch(anki),
+          isTrue,
+          reason: 'fushi_anki 的 MIME 镜像表缺 $ext（$format 的产出扩展名）',
+        );
       }
     });
   });

@@ -105,7 +105,8 @@ void main() {
       expect(
         source,
         contains('defaultTargetPlatform == TargetPlatform.iOS'),
-        reason: 'iOS WKWebView can fail the popup.html file:// main-frame '
+        reason:
+            'iOS WKWebView can fail the popup.html file:// main-frame '
             'load in Simulator; it must share the inline bootstrap path.',
       );
       expect(source, contains('final bool shouldInlinePopupAssets'));
@@ -113,12 +114,12 @@ void main() {
       expect(
         source,
         contains('initialUrlRequest: popupInitialData != null'),
-        reason: 'When inline data is available, the WebView must not also '
+        reason:
+            'When inline data is available, the WebView must not also '
             'navigate to assets/popup/popup.html as its main frame.',
       );
     });
-    test('iOS zero innerWidth uses a zoom-correct popup container width',
-        () {
+    test('iOS zero innerWidth uses a zoom-correct popup container width', () {
       final String source = File(
         'lib/src/pages/implementations/dictionary_popup_webview.dart',
       ).readAsStringSync();
@@ -130,10 +131,14 @@ void main() {
       expect(source, contains('bodyStyle.paddingLeft'));
       expect(source, contains('bodyStyle.paddingRight'));
       expect(source, contains("getElementById('entries-container')"));
-      expect(source, contains('LayoutBuilder('),
-          reason: 'the popup must measure its actual Flutter constraints');
-      final int completeLoadAt =
-          source.indexOf('Future<void> _completePopupLoad');
+      expect(
+        source,
+        contains('LayoutBuilder('),
+        reason: 'the popup must measure its actual Flutter constraints',
+      );
+      final int completeLoadAt = source.indexOf(
+        'Future<void> _completePopupLoad',
+      );
       // P2-G：视口注入与首推连发不等（同一 WebView 的 evaluateJavascript 按发出顺序
       // 执行），所以「先固定宽度再 renderPopup」靠的是**发出顺序**，不再靠 await。
       final int applyAt = source.indexOf(
@@ -173,25 +178,34 @@ void main() {
       // 视口滚动（热槽 DOM 残留旧滚动位置），(b) 归零 JS 句子上下文镜像标量（否则重建的
       // 「上 N / 下 N」选择器据残留值着色，与已清的宿主草稿不一致）。断言三者顺序：
       // __fushiResetPopupScroll → resetSentenceContextMirror → renderPopup。
-      final int scrollResetAt =
-          source.indexOf('window.__fushiResetPopupScroll();');
-      final int mirrorResetAt =
-          source.indexOf('window.resetSentenceContextMirror();');
+      final int scrollResetAt = source.indexOf(
+        'window.__fushiResetPopupScroll();',
+      );
+      final int mirrorResetAt = source.indexOf(
+        'window.resetSentenceContextMirror();',
+      );
       final int renderAt = source.indexOf('window.renderPopup();');
-      expect(scrollResetAt, greaterThanOrEqualTo(0),
-          reason:
-              'A preserved warm popup WebView keeps its DOM scroll position. '
-              'Fresh lookups must reset viewport scroll before renderPopup.');
-      expect(mirrorResetAt, greaterThanOrEqualTo(0),
-          reason:
-              'Fresh lookups must zero the JS sentence-context mirror so the '
-              'rebuilt picker matches the host-cleared draft (BUG-297).');
+      expect(
+        scrollResetAt,
+        greaterThanOrEqualTo(0),
+        reason:
+            'A preserved warm popup WebView keeps its DOM scroll position. '
+            'Fresh lookups must reset viewport scroll before renderPopup.',
+      );
+      expect(
+        mirrorResetAt,
+        greaterThanOrEqualTo(0),
+        reason:
+            'Fresh lookups must zero the JS sentence-context mirror so the '
+            'rebuilt picker matches the host-cleared draft (BUG-297).',
+      );
       expect(renderAt, greaterThan(mirrorResetAt));
       expect(mirrorResetAt, greaterThan(scrollResetAt));
       expect(
         source,
         contains("? 'window.updatePopupIncremental();'"),
-        reason: 'Loading more results for the same query must keep the current '
+        reason:
+            'Loading more results for the same query must keep the current '
             'scroll position instead of jumping back to the top.',
       );
     });
@@ -205,19 +219,22 @@ void main() {
       expect(
         source,
         contains(
-            'final bool enabled = ref.read(appProvider).popupInstantScroll'),
-        reason: 'Theme/dependency changes must re-push the current preference '
+          'final bool enabled = ref.read(appProvider).popupInstantScroll',
+        ),
+        reason:
+            'Theme/dependency changes must re-push the current preference '
             'into the already-loaded popup WebView.',
       );
       expect(source, contains('appModel.popupInstantScroll'));
       expect(
-          source,
-          contains(
-              'final bool popupInstantScroll = appModel.popupInstantScroll'));
+        source,
+        contains('final bool popupInstantScroll = appModel.popupInstantScroll'),
+      );
       expect(
         source,
         contains('ReaderCaretScripts.instantScrollInvocation('),
-        reason: 'The persisted e-ink setting must be pushed into the popup '
+        reason:
+            'The persisted e-ink setting must be pushed into the popup '
             'WebView through the shared caret invocation builder so LB/RB and '
             'edge-follow scroll without animation when enabled.',
       );
@@ -225,21 +242,29 @@ void main() {
         r'${ReaderCaretScripts.instantScrollInvocation(popupInstantScroll)};',
       );
       final int renderTokenAt = source.indexOf('window.__fushiRenderToken =');
-      final int resetAt =
-          source.indexOf('window.__fushiResetPopupScroll = function() {');
+      final int resetAt = source.indexOf(
+        'window.__fushiResetPopupScroll = function() {',
+      );
       expect(instantScrollAt, greaterThanOrEqualTo(0));
-      expect(renderTokenAt, greaterThan(instantScrollAt),
-          reason: 'BUG-480 render tokens must be stamped after the shared '
-              'settings / caret preference and before renderPopup().');
-      expect(resetAt, greaterThan(renderTokenAt),
-          reason: 'Initial result injection must set the caret scroll mode and '
-              'render token before rendering or resetting the warm popup DOM.');
+      expect(
+        renderTokenAt,
+        greaterThan(instantScrollAt),
+        reason:
+            'BUG-480 render tokens must be stamped after the shared '
+            'settings / caret preference and before renderPopup().',
+      );
+      expect(
+        resetAt,
+        greaterThan(renderTokenAt),
+        reason:
+            'Initial result injection must set the caret scroll mode and '
+            'render token before rendering or resetting the warm popup DOM.',
+      );
     });
   });
 
   group('dictionary popup empty-result rendering', () {
-    test('empty and kanji-only results are still injected into renderPopup',
-        () {
+    test('empty and kanji-only results are still injected into renderPopup', () {
       final source = File(
         'lib/src/pages/implementations/dictionary_popup_webview.dart',
       ).readAsStringSync();
@@ -247,7 +272,8 @@ void main() {
       expect(
         source,
         isNot(contains('if (widget.result.entries.isEmpty) return;')),
-        reason: 'A warm popup WebView must not keep a blank/stale DOM when the '
+        reason:
+            'A warm popup WebView must not keep a blank/stale DOM when the '
             'lookup has zero term entries. Empty and kanji-only results must '
             'still reach popup.js renderPopup(), which renders no-results or '
             'the kanji card and emits popupRendered.',
@@ -264,9 +290,13 @@ void main() {
       final int noResultsAt = injection.indexOf('window._noResultsMessage =');
       expect(entriesAt, greaterThanOrEqualTo(0));
       expect(noResultsAt, greaterThanOrEqualTo(0));
-      expect(kanjiAt, greaterThan(entriesAt),
-          reason: 'kanji results ride alongside the term entries in the shared '
-              'entries payload, not a separate code path.');
+      expect(
+        kanjiAt,
+        greaterThan(entriesAt),
+        reason:
+            'kanji results ride alongside the term entries in the shared '
+            'entries payload, not a separate code path.',
+      );
 
       final int pushStart = source.indexOf('void _pushResults()');
       expect(pushStart, greaterThanOrEqualTo(0));
@@ -285,39 +315,49 @@ void main() {
       // (a) 条件语义：判据是 revision 比较，不是别的东西。
       expect(
         pushBody,
-        matches(RegExp(
-          r'final\s+bool\s+staticChanged\s*=\s*'
-          r'staticSettings\.revision\s*!=\s*_lastSentStaticRevision\s*;',
-        )),
-        reason: '静态段是否重发只能由产物 revision 与「上次已发 revision」的比较决定'
+        matches(
+          RegExp(
+            r'final\s+bool\s+staticChanged\s*=\s*'
+            r'staticSettings\.revision\s*!=\s*_lastSentStaticRevision\s*;',
+          ),
+        ),
+        reason:
+            '静态段是否重发只能由产物 revision 与「上次已发 revision」的比较决定'
             '（BUG-717 ③ 用整数比较取代了 MB 级全串比对）',
       );
       // 门控命中后必须推进已发 revision，否则每次推送都重发 = 去重失效。
       expect(
         pushBody,
-        matches(RegExp(
-          r'if\s*\(\s*staticChanged\s*\)\s*\{\s*'
-          r'_lastSentStaticRevision\s*=\s*staticSettings\.revision\s*;',
-        )),
-        reason: '只有真发出去时才推进 _lastSentStaticRevision——'
+        matches(
+          RegExp(
+            r'if\s*\(\s*staticChanged\s*\)\s*\{\s*'
+            r'_lastSentStaticRevision\s*=\s*staticSettings\.revision\s*;',
+          ),
+        ),
+        reason:
+            '只有真发出去时才推进 _lastSentStaticRevision——'
             '无条件推进会让下一次真变更被静默吞掉',
       );
       // 未变时负载必须是空串（两种等价写法都放行）。
       expect(
         pushBody,
-        matches(RegExp(
-          r'final\s+String\s+staticSettingsJs\s*=\s*(?:'
-          r"staticChanged\s*\?\s*staticSettings\.combined\s*:\s*''"
-          r"|!staticChanged\s*\?\s*''\s*:\s*staticSettings\.combined"
-          r')\s*;',
-        )),
-        reason: '静态段未变时注入串必须为空——把 staticSettings.combined 无条件塞进'
+        matches(
+          RegExp(
+            r'final\s+String\s+staticSettingsJs\s*=\s*(?:'
+            r"staticChanged\s*\?\s*staticSettings\.combined\s*:\s*''"
+            r"|!staticChanged\s*\?\s*''\s*:\s*staticSettings\.combined"
+            r')\s*;',
+          ),
+        ),
+        reason:
+            '静态段未变时注入串必须为空——把 staticSettings.combined 无条件塞进'
             '推送就等于回退到「每次查词重发整段设置」',
       );
 
       // (b) 注入顺序：只看真正下发的那段模板，避免被声明顺序蒙混。
-      final int evalAt =
-          pushBody.indexOf('_controller!.evaluateJavascript(source:');
+      final int evalAt = pushBody.indexOf(
+        '_controller!.evaluateJavascript(source:',
+      );
       expect(evalAt, greaterThanOrEqualTo(0));
       final String evalTemplate = pushBody.substring(evalAt);
       final int staticAt = evalTemplate.indexOf(r'$staticSettingsJs');
@@ -330,24 +370,40 @@ void main() {
       expect(
         pushBody.substring(afterDefAt, evalAt),
         contains(r'$beforeRenderJs'),
-        reason: 'beforeRenderJs（renderPopup / updatePopupIncremental）属于'
+        reason:
+            'beforeRenderJs（renderPopup / updatePopupIncremental）属于'
             '「词条就绪后」的收尾',
       );
       final int beforeRenderAt = evalTemplate.indexOf('afterEntriesJs');
-      expect(staticAt, greaterThanOrEqualTo(0),
-          reason:
-              'the (conditional) static settings payload must be emitted into '
-              'the WebView push');
-      expect(extrasAt, greaterThan(staticAt),
-          reason: 'BUG-717 ③ 的 in-app 固定块（重置钩子 / 句子上下文 i18n）跟在静态'
-              '段之后，同属「变了才发」的一半');
-      expect(entriesJsAt, greaterThan(extrasAt),
-          reason: 'the entries/kanji/no-results payload must be emitted into '
-              'EVERY WebView push, after the (conditional) static payloads');
-      expect(beforeRenderAt, greaterThan(entriesJsAt),
-          reason: 'both payloads must precede the load-more / scroll-reset '
-              'beforeRenderJs so empty and kanji-only payloads reach '
-              'renderPopup().');
+      expect(
+        staticAt,
+        greaterThanOrEqualTo(0),
+        reason:
+            'the (conditional) static settings payload must be emitted into '
+            'the WebView push',
+      );
+      expect(
+        extrasAt,
+        greaterThan(staticAt),
+        reason:
+            'BUG-717 ③ 的 in-app 固定块（重置钩子 / 句子上下文 i18n）跟在静态'
+            '段之后，同属「变了才发」的一半',
+      );
+      expect(
+        entriesJsAt,
+        greaterThan(extrasAt),
+        reason:
+            'the entries/kanji/no-results payload must be emitted into '
+            'EVERY WebView push, after the (conditional) static payloads',
+      );
+      expect(
+        beforeRenderAt,
+        greaterThan(entriesJsAt),
+        reason:
+            'both payloads must precede the load-more / scroll-reset '
+            'beforeRenderJs so empty and kanji-only payloads reach '
+            'renderPopup().',
+      );
       expect(pushBody, contains('window.renderPopup();'));
     });
 
@@ -360,8 +416,10 @@ void main() {
       expect(
         source,
         contains(
-            'if (_controller == null || !_ready) {\n      _refreshWhenReady = true;\n      return;\n    }'),
-        reason: 'BUG-480: a visible warm slot can request a re-render before '
+          'if (_controller == null || !_ready) {\n      _refreshWhenReady = true;\n      return;\n    }',
+        ),
+        reason:
+            'BUG-480: a visible warm slot can request a re-render before '
             'popup.html has finished loading; that request must be queued '
             'instead of dropped.',
       );
@@ -372,17 +430,22 @@ void main() {
       expect(
         source,
         contains('_refreshWhenReady = true;\n    _pushResults();'),
-        reason: 'The host-triggered visible refresh must either run now or be '
+        reason:
+            'The host-triggered visible refresh must either run now or be '
             'replayed by the loadStop push.',
       );
       expect(
         source,
         contains('if (_refreshWhenReady || _lastSearchTerm == null) {'),
-        reason: 'loadStop must consume a queued visible refresh instead of '
+        reason:
+            'loadStop must consume a queued visible refresh instead of '
             'relying on an unrelated unconditional initial push.',
       );
-      expect(source, contains('_refreshWhenReady = false;'),
-          reason: 'A successful push must clear the queued refresh flag.');
+      expect(
+        source,
+        contains('_refreshWhenReady = false;'),
+        reason: 'A successful push must clear the queued refresh flag.',
+      );
     });
   });
 
@@ -521,7 +584,7 @@ void main() {
                 glossary: jsonEncode({
                   'tag': 'div',
                   'content': [
-                    {'tag': 'span', 'content': '食べること'}
+                    {'tag': 'span', 'content': '食べること'},
                   ],
                 }),
                 definitionTags: '',
@@ -539,7 +602,10 @@ void main() {
             ],
             pitches: [
               FushiPitchEntry(
-                  dictName: 'NHK', pitchPositions: [2], patterns: ['heiban']),
+                dictName: 'NHK',
+                pitchPositions: [2],
+                patterns: ['heiban'],
+              ),
               // IPA transcription dict: no pitch positions, only transcriptions.
               // Exercises the TODO-687 block3 passthrough end to end.
               FushiPitchEntry(
@@ -570,14 +636,15 @@ void main() {
             frequencies: [
               FushiFrequencyEntry(
                 dictName: 'JPDB',
-                frequencies: [
-                  FushiFrequency(value: 120, displayValue: '#120'),
-                ],
+                frequencies: [FushiFrequency(value: 120, displayValue: '#120')],
               ),
             ],
             pitches: [
               FushiPitchEntry(
-                  dictName: 'NHK', pitchPositions: [2], patterns: ['heiban']),
+                dictName: 'NHK',
+                pitchPositions: [2],
+                patterns: ['heiban'],
+              ),
               FushiPitchEntry(
                 dictName: 'IPA',
                 pitchPositions: [],
@@ -594,16 +661,18 @@ void main() {
       const maxTerms = 100;
 
       final newJson = buildPopupJsonFromLookup(
-          results: lookupResults,
-          maximumTerms: maxTerms,
-          hiddenDictionaries: const <String>{});
+        results: lookupResults,
+        maximumTerms: maxTerms,
+        hiddenDictionaries: const <String>{},
+      );
       final oldResult = buildResultFromLookup(
         searchTerm: '食べた',
         results: lookupResults,
         maximumTerms: maxTerms,
       );
-      final oldJson =
-          DictionaryPopupWebViewState.buildLookupEntriesJson(oldResult);
+      final oldJson = DictionaryPopupWebViewState.buildLookupEntriesJson(
+        oldResult,
+      );
 
       final newParsed = jsonDecode(newJson) as List;
       final oldParsed = jsonDecode(oldJson) as List;
@@ -658,8 +727,7 @@ void main() {
       }
     });
 
-    test(
-        'deinflectionTrace: single "matched → deinflected" step, '
+    test('deinflectionTrace: single "matched → deinflected" step, '
         'only when they differ and deinflected is non-empty', () {
       // 与 C++ build_popup_json（native/fushidicts/fushidicts_src/popup_json.cpp）
       // 语义对齐：仅在 matched != deinflected 且 deinflected 非空时生成**单条**
@@ -667,53 +735,67 @@ void main() {
       FushiLookupResult make({
         required String matched,
         required String deinflected,
-      }) =>
-          FushiLookupResult(
-            matched: matched,
-            deinflected: deinflected,
-            trace: [],
-            preprocessorSteps: 0,
-            term: FushiTermResult(
-              expression: '食べる',
-              reading: 'たべる',
-              rules: '',
-              glossaries: [
-                FushiGlossaryEntry(
-                  dictName: 'JMdict',
-                  glossary: jsonEncode(['to eat']),
-                  definitionTags: '',
-                  termTags: '',
-                ),
-              ],
-              frequencies: [],
-              pitches: [],
+      }) => FushiLookupResult(
+        matched: matched,
+        deinflected: deinflected,
+        trace: [],
+        preprocessorSteps: 0,
+        term: FushiTermResult(
+          expression: '食べる',
+          reading: 'たべる',
+          rules: '',
+          glossaries: [
+            FushiGlossaryEntry(
+              dictName: 'JMdict',
+              glossary: jsonEncode(['to eat']),
+              definitionTags: '',
+              termTags: '',
             ),
-          );
+          ],
+          frequencies: [],
+          pitches: [],
+        ),
+      );
 
       // ① 屈折命中（matched≠deinflected 且非空）→ 恰好一条痕迹。
-      final withTrace = jsonDecode(buildPopupJsonFromLookup(
-          results: [make(matched: '食べた', deinflected: '食べる')],
-          maximumTerms: 100,
-          hiddenDictionaries: const <String>{})) as List;
+      final withTrace =
+          jsonDecode(
+                buildPopupJsonFromLookup(
+                  results: [make(matched: '食べた', deinflected: '食べる')],
+                  maximumTerms: 100,
+                  hiddenDictionaries: const <String>{},
+                ),
+              )
+              as List;
       expect((withTrace.single as Map<String, dynamic>)['deinflectionTrace'], [
         {'name': '食べた → 食べる', 'description': ''},
       ]);
 
       // ② 原形直查（matched == deinflected）→ 空数组，不生成自指痕迹。
-      final noInflection = jsonDecode(buildPopupJsonFromLookup(
-          results: [make(matched: '食べる', deinflected: '食べる')],
-          maximumTerms: 100,
-          hiddenDictionaries: const <String>{})) as List;
+      final noInflection =
+          jsonDecode(
+                buildPopupJsonFromLookup(
+                  results: [make(matched: '食べる', deinflected: '食べる')],
+                  maximumTerms: 100,
+                  hiddenDictionaries: const <String>{},
+                ),
+              )
+              as List;
       expect(
         (noInflection.single as Map<String, dynamic>)['deinflectionTrace'],
         isEmpty,
       );
 
       // ③ 引擎未回填 deinflected（空串）→ 同样空数组，不生成「x → 」残缺痕迹。
-      final emptyDeinflected = jsonDecode(buildPopupJsonFromLookup(
-          results: [make(matched: '食べた', deinflected: '')],
-          maximumTerms: 100,
-          hiddenDictionaries: const <String>{})) as List;
+      final emptyDeinflected =
+          jsonDecode(
+                buildPopupJsonFromLookup(
+                  results: [make(matched: '食べた', deinflected: '')],
+                  maximumTerms: 100,
+                  hiddenDictionaries: const <String>{},
+                ),
+              )
+              as List;
       expect(
         (emptyDeinflected.single as Map<String, dynamic>)['deinflectionTrace'],
         isEmpty,
@@ -721,21 +803,20 @@ void main() {
 
       // ④ 与旧路径（buildResultFromLookup → buildLookupEntriesJson，即 P4 换掉的
       //    渲染真值）对同一输入产出完全一致的痕迹。
-      final oldParsed = jsonDecode(
-        DictionaryPopupWebViewState.buildLookupEntriesJson(
-          buildResultFromLookup(
-            searchTerm: '食べた',
-            results: [make(matched: '食べた', deinflected: '食べる')],
-            maximumTerms: 100,
-          ),
-        ),
-      ) as List;
-      expect(
-        (oldParsed.single as Map<String, dynamic>)['deinflectionTrace'],
-        [
-          {'name': '食べた → 食べる', 'description': ''},
-        ],
-      );
+      final oldParsed =
+          jsonDecode(
+                DictionaryPopupWebViewState.buildLookupEntriesJson(
+                  buildResultFromLookup(
+                    searchTerm: '食べた',
+                    results: [make(matched: '食べた', deinflected: '食べる')],
+                    maximumTerms: 100,
+                  ),
+                ),
+              )
+              as List;
+      expect((oldParsed.single as Map<String, dynamic>)['deinflectionTrace'], [
+        {'name': '食べた → 食べる', 'description': ''},
+      ]);
     });
 
     // BUG-1472：maximumTerms 的单位是**词头卡**，不是 glossary 注释行。
@@ -745,9 +826,10 @@ void main() {
     test('maximumTerms 约束词头卡数，不腰斩单个词头的注释', () {
       final lookupResults = makeLookupResults();
       final json = buildPopupJsonFromLookup(
-          results: lookupResults,
-          maximumTerms: 2,
-          hiddenDictionaries: const <String>{});
+        results: lookupResults,
+        maximumTerms: 2,
+        hiddenDictionaries: const <String>{},
+      );
       final parsed = jsonDecode(json) as List;
       expect(parsed.length, 1, reason: '两条结果同属一个词头，只该出一张卡');
       final entry = parsed.single as Map<String, dynamic>;
@@ -760,38 +842,42 @@ void main() {
 
     test('maximumTerms 真的截断词头卡数', () {
       final json = buildPopupJsonFromLookup(
-          results: <FushiLookupResult>[
-            ...makeLookupResults(),
-            FushiLookupResult(
-              matched: '食べた',
-              deinflected: '食べる',
-              trace: const [],
-              preprocessorSteps: 0,
-              term: FushiTermResult(
-                expression: '喰べる',
-                reading: 'くべる',
-                rules: '',
-                glossaries: [
-                  FushiGlossaryEntry(
-                    dictName: '大辞林',
-                    glossary: jsonEncode('別表記・別読み'),
-                    definitionTags: '',
-                    termTags: '',
-                  ),
-                ],
-                frequencies: const [],
-                pitches: const [],
-              ),
+        results: <FushiLookupResult>[
+          ...makeLookupResults(),
+          FushiLookupResult(
+            matched: '食べた',
+            deinflected: '食べる',
+            trace: const [],
+            preprocessorSteps: 0,
+            term: FushiTermResult(
+              expression: '喰べる',
+              reading: 'くべる',
+              rules: '',
+              glossaries: [
+                FushiGlossaryEntry(
+                  dictName: '大辞林',
+                  glossary: jsonEncode('別表記・別読み'),
+                  definitionTags: '',
+                  termTags: '',
+                ),
+              ],
+              frequencies: const [],
+              pitches: const [],
             ),
-          ],
-          maximumTerms: 1,
-          hiddenDictionaries: const <String>{});
+          ),
+        ],
+        maximumTerms: 1,
+        hiddenDictionaries: const <String>{},
+      );
       expect((jsonDecode(json) as List).length, 1);
     });
 
     test('returns empty array for empty results', () {
       final json = buildPopupJsonFromLookup(
-          results: [], maximumTerms: 100, hiddenDictionaries: const <String>{});
+        results: [],
+        maximumTerms: 100,
+        hiddenDictionaries: const <String>{},
+      );
       expect(json, '[]');
     });
   });
@@ -811,20 +897,25 @@ void main() {
       expect(
         source,
         contains('Factory<HorizontalDragGestureRecognizer>('),
-        reason: '正文区水平拖（框选）必须归 WebView，否则被 body-swipe detector '
+        reason:
+            '正文区水平拖（框选）必须归 WebView，否则被 body-swipe detector '
             '判成滑动关闭（症状①）。',
       );
       // 与 LongPress / VerticalDrag 并列在同一个 gestureRecognizers 集合里。
       final int setStart = source.indexOf(
-          'gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{');
+        'gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{',
+      );
       expect(setStart, greaterThanOrEqualTo(0));
       final int setEnd = source.indexOf('},', setStart);
       expect(setEnd, greaterThan(setStart));
       final String setBody = source.substring(setStart, setEnd);
       expect(setBody.contains('LongPressGestureRecognizer'), isTrue);
       expect(setBody.contains('VerticalDragGestureRecognizer'), isTrue);
-      expect(setBody.contains('HorizontalDragGestureRecognizer'), isTrue,
-          reason: '三个识别器必须同集合并列声明');
+      expect(
+        setBody.contains('HorizontalDragGestureRecognizer'),
+        isTrue,
+        reason: '三个识别器必须同集合并列声明',
+      );
     });
 
     test('症状②：Windows 禁原生菜单 + 走 Flutter showMenu（BUG-261 锚点范式）', () {
@@ -838,62 +929,102 @@ void main() {
       );
       // 右键入口：BUG-2111 后由 ContextMenuTrigger 按绑定表判定唤出键（默认右键），
       // 包裹范围不变（仍只在 Windows）。
-      expect(source, contains('ContextMenuTrigger('),
-          reason: '桌面右键经 ContextMenuTrigger（绑定表判定）进入 Flutter 菜单');
-      expect(source, contains('_showWindowsContextMenu(context, position)'),
-          reason: '按下处坐标仍作 showMenu 锚点');
-      expect(source, contains('if (isWindowsPlatform) {'),
-          reason: '右键包裹仅在 Windows 生效，其它平台返回裸 WebView');
+      expect(
+        source,
+        contains('ContextMenuTrigger('),
+        reason: '桌面右键经 ContextMenuTrigger（绑定表判定）进入 Flutter 菜单',
+      );
+      expect(
+        source,
+        contains('_showWindowsContextMenu(context, position)'),
+        reason: '按下处坐标仍作 showMenu 锚点',
+      );
+      expect(
+        source,
+        contains('if (isWindowsPlatform) {'),
+        reason: '右键包裹仅在 Windows 生效，其它平台返回裸 WebView',
+      );
 
       // 窗口由花括号配对给出，不再是 `menuStart + 1800` 的定长切片：该方法体实测
       // 1671 字符，旧窗口一头越界读进后面的 static 成员，另一头只给末尾的
       // Clipboard 断言留 ~180 字符余量——方法里多写四行就凭空变红。
-      final String body =
-          methodBody(source, 'Future<void> _showWindowsContextMenu(');
+      final String body = methodBody(
+        source,
+        'Future<void> _showWindowsContextMenu(',
+      );
       // BUG-261/260 锚点范式：取 showMenu 所用 Overlay 的 RenderBox，把右键点映射到该
       // Overlay 坐标系（吃掉界面大小 FittedBox 缩放残差），再据 Overlay 尺寸算 RelativeRect。
-      expect(body.contains('Overlay.of(context).context.findRenderObject()'),
-          isTrue,
-          reason: '锚点须落在 showMenu 所用 Overlay 坐标系（取该 Overlay 的 RenderBox）');
       expect(
-          body.contains('overlayObject.globalToLocal(globalPosition)'), isTrue,
-          reason: '右键 globalPosition 沿真实渲染链映射到 Overlay 空间（吸收缩放残差）');
-      expect(body.contains('RelativeRect.fromLTRB('), isTrue,
-          reason: '右键位置转 RelativeRect 作菜单锚点');
-      expect(body.contains('overlaySize.width - anchor.dx'), isTrue,
-          reason: 'right/bottom 以 Overlay 尺寸算，与 anchor 同系（缩放画布空间）');
+        body.contains('Overlay.of(context).context.findRenderObject()'),
+        isTrue,
+        reason: '锚点须落在 showMenu 所用 Overlay 坐标系（取该 Overlay 的 RenderBox）',
+      );
+      expect(
+        body.contains('overlayObject.globalToLocal(globalPosition)'),
+        isTrue,
+        reason: '右键 globalPosition 沿真实渲染链映射到 Overlay 空间（吸收缩放残差）',
+      );
+      expect(
+        body.contains('RelativeRect.fromLTRB('),
+        isTrue,
+        reason: '右键位置转 RelativeRect 作菜单锚点',
+      );
+      expect(
+        body.contains('overlaySize.width - anchor.dx'),
+        isTrue,
+        reason: 'right/bottom 以 Overlay 尺寸算，与 anchor 同系（缩放画布空间）',
+      );
       // 设计系统重做后 Flutter showMenu 换成共享的 showFushiMenu（同样吃
       // RelativeRect 锚点、在同一 Overlay 里弹出），守卫钉新入口。
-      expect(body.contains('showFushiMenu<_PopupContextMenuAction>('), isTrue,
-          reason: '用 Flutter 菜单（showFushiMenu）弹 Fushi 自绘菜单');
+      expect(
+        body.contains('showFushiMenu<_PopupContextMenuAction>('),
+        isTrue,
+        reason: '用 Flutter 菜单（showFushiMenu）弹 Fushi 自绘菜单',
+      );
     });
 
     test('症状②：Flutter 菜单含「查词」+「复制」两项（复制走 BUG-402 范式）', () {
       // 同上：窗口=方法体（花括号配对），与方法长度无关。
-      final String body =
-          methodBody(source, 'Future<void> _showWindowsContextMenu(');
+      final String body = methodBody(
+        source,
+        'Future<void> _showWindowsContextMenu(',
+      );
       // 「查词」平移自原 WebView2 自定义项；「复制」是原 WebView2 原生项，禁原生后自补。
-      expect(body.contains('_PopupContextMenuAction.search'), isTrue,
-          reason: '保留「查词」项（平移自原 WebView2 自定义项）');
+      expect(
+        body.contains('_PopupContextMenuAction.search'),
+        isTrue,
+        reason: '保留「查词」项（平移自原 WebView2 自定义项）',
+      );
       expect(body.contains('t.search'), isTrue);
-      expect(body.contains('_PopupContextMenuAction.copy'), isTrue,
-          reason: '「复制」必须自补（原是 WebView2 原生项，禁原生后丢失）');
+      expect(
+        body.contains('_PopupContextMenuAction.copy'),
+        isTrue,
+        reason: '「复制」必须自补（原是 WebView2 原生项，禁原生后丢失）',
+      );
       expect(body.contains('t.copy'), isTrue);
       // 复制/搜索取选区文本 + Clipboard.setData（BUG-402）。BUG-802：选区读取从早年的
       // getSelectedText（桌面 fork 未实现 + 只读顶层文档取不到词条卡 iframe 内选区）改为
       // 穿透同源 iframe 的 _selectedTextAcrossFrames，否则复制/搜索永远拿空串无效。
-      expect(body.contains('_selectedTextAcrossFrames()'), isTrue,
-          reason: '复制/搜索经穿透 iframe 的 _selectedTextAcrossFrames 取选区（BUG-802）');
+      expect(
+        body.contains('_selectedTextAcrossFrames()'),
+        isTrue,
+        reason: '复制/搜索经穿透 iframe 的 _selectedTextAcrossFrames 取选区（BUG-802）',
+      );
       // BUG-1451：写剪贴板从方法体内联收口到共用 `_copySelectionToClipboard`（三条复制
       // 入口 —— Windows 右键菜单 / Windows Ctrl+C / Android 原生菜单 —— 统一走它，带成功
       // 反馈）。不变式没变（右键复制最终把选区写系统剪贴板），只是落点变了；「全文件裸
       // Clipboard.setData 只许出现一处」这条更强的守卫在
       // test/pages/popup_copy_shortcut_and_menu_guard_test.dart。
-      expect(body.contains('_copySelectionToClipboard(text)'), isTrue,
-          reason: '把选区文本写系统剪贴板（BUG-402 范式，经 BUG-1451 收口的共用 helper）');
-      expect(source.contains('Clipboard.setData(ClipboardData(text: text))'),
-          isTrue,
-          reason: 'helper 内必须真的写系统剪贴板');
+      expect(
+        body.contains('_copySelectionToClipboard(text)'),
+        isTrue,
+        reason: '把选区文本写系统剪贴板（BUG-402 范式，经 BUG-1451 收口的共用 helper）',
+      );
+      expect(
+        source.contains('Clipboard.setData(ClipboardData(text: text))'),
+        isTrue,
+        reason: 'helper 内必须真的写系统剪贴板',
+      );
     });
   });
 }

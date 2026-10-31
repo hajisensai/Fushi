@@ -36,77 +36,96 @@ void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets(
-      'video page: focus-driven play/pause toggles the control icon on real app',
-      (WidgetTester tester) async {
-    final List<FlutterErrorDetails> errors = <FlutterErrorDetails>[];
-    final FlutterExceptionHandler? oldHandler = FlutterError.onError;
-    FlutterError.onError = (FlutterErrorDetails details) {
-      errors.add(details);
-      debugPrint('[video-player] ${details.exceptionAsString()}');
-    };
+    'video page: focus-driven play/pause toggles the control icon on real app',
+    (WidgetTester tester) async {
+      final List<FlutterErrorDetails> errors = <FlutterErrorDetails>[];
+      final FlutterExceptionHandler? oldHandler = FlutterError.onError;
+      FlutterError.onError = (FlutterErrorDetails details) {
+        errors.add(details);
+        debugPrint('[video-player] ${details.exceptionAsString()}');
+      };
 
-    try {
-      await launchFushiTestApp();
-      expect(await waitForHome(tester), isTrue);
-      await tester.pump(const Duration(seconds: 2));
+      try {
+        await launchFushiTestApp();
+        expect(await waitForHome(tester), isTrue);
+        await tester.pump(const Duration(seconds: 2));
 
-      final ProviderContainer container = ProviderScope.containerOf(
-        tester.element(find.byType(MaterialApp).first),
-      );
-      final AppModel appModel = container.read(appProvider);
-      final VideoBookRepository repo = VideoBookRepository(appModel.database);
+        final ProviderContainer container = ProviderScope.containerOf(
+          tester.element(find.byType(MaterialApp).first),
+        );
+        final AppModel appModel = container.read(appProvider);
+        final VideoBookRepository repo = VideoBookRepository(appModel.database);
 
-      // Seed a video book pointing at the device-side fixture.
-      final File fixture = File(_kVideoFixture);
-      await repo.saveVideoBook(VideoBooksCompanion(
-        bookUid: const Value(_kVideoBookUid),
-        title: const Value('itest sample'),
-        videoPath: Value(fixture.absolute.path),
-      ));
+        // Seed a video book pointing at the device-side fixture.
+        final File fixture = File(_kVideoFixture);
+        await repo.saveVideoBook(
+          VideoBooksCompanion(
+            bookUid: const Value(_kVideoBookUid),
+            title: const Value('itest sample'),
+            videoPath: Value(fixture.absolute.path),
+          ),
+        );
 
-      // Open the video page directly (shelf wiring is covered by widget tests;
-      // this test focuses on the player's focus-driven control).
-      final NavigatorState navigator =
-          tester.state<NavigatorState>(find.byType(Navigator).first);
-      unawaited(navigator.push<void>(MaterialPageRoute<void>(
-        builder: (_) => VideoFushiPage(bookUid: _kVideoBookUid, repo: repo),
-      )));
+        // Open the video page directly (shelf wiring is covered by widget tests;
+        // this test focuses on the player's focus-driven control).
+        final NavigatorState navigator = tester.state<NavigatorState>(
+          find.byType(Navigator).first,
+        );
+        unawaited(
+          navigator.push<void>(
+            MaterialPageRoute<void>(
+              builder: (_) =>
+                  VideoFushiPage(bookUid: _kVideoBookUid, repo: repo),
+            ),
+          ),
+        );
 
-      // Allow load() to instantiate the native player; the play bar appears
-      // (initially showing the play_arrow icon since playback is paused).
-      bool barReady = false;
-      for (int i = 0; i < 20; i++) {
-        await tester.pump(const Duration(milliseconds: 250));
-        if (find.byIcon(Icons.play_arrow).evaluate().isNotEmpty) {
-          barReady = true;
-          break;
+        // Allow load() to instantiate the native player; the play bar appears
+        // (initially showing the play_arrow icon since playback is paused).
+        bool barReady = false;
+        for (int i = 0; i < 20; i++) {
+          await tester.pump(const Duration(milliseconds: 250));
+          if (find.byIcon(Icons.play_arrow).evaluate().isNotEmpty) {
+            barReady = true;
+            break;
+          }
         }
+        expect(barReady, isTrue, reason: 'play bar should render after load');
+
+        // BUG-1106：Tab 遍历前必须先开实验焦点导航开关——关闭（默认）时裸 Tab 被全局
+        // 中和成 DoNothingIntent，而集成测试跑在全新隔离根上、偏好恒为默认值。
+        await enableFocusNavigation(tester);
+        final FocusDriver driver = FocusDriver(tester);
+
+        // Tab to the play control and activate it via Space; the icon should
+        // swap play_arrow → pause, proving the control fired and playback began.
+        final bool reachedButton = await driver.focusUntil(
+          () => FocusManager.instance.primaryFocus != null,
+        );
+        expect(
+          reachedButton,
+          isTrue,
+          reason: 'should be able to Tab to a focusable control',
+        );
+
+        await tester.sendKeyEvent(LogicalKeyboardKey.space);
+        await tester.pump(const Duration(milliseconds: 500));
+
+        expect(
+          find.byIcon(Icons.pause),
+          findsOneWidget,
+          reason: 'activating play should swap the icon to pause',
+        );
+
+        expect(
+          errors,
+          isEmpty,
+          reason: errors.map((e) => e.exceptionAsString()).join('\n'),
+        );
+      } finally {
+        FlutterError.onError = oldHandler;
       }
-      expect(barReady, isTrue, reason: 'play bar should render after load');
-
-      // BUG-1106：Tab 遍历前必须先开实验焦点导航开关——关闭（默认）时裸 Tab 被全局
-      // 中和成 DoNothingIntent，而集成测试跑在全新隔离根上、偏好恒为默认值。
-      await enableFocusNavigation(tester);
-      final FocusDriver driver = FocusDriver(tester);
-
-      // Tab to the play control and activate it via Space; the icon should
-      // swap play_arrow → pause, proving the control fired and playback began.
-      final bool reachedButton = await driver.focusUntil(
-        () => FocusManager.instance.primaryFocus != null,
-      );
-      expect(reachedButton, isTrue,
-          reason: 'should be able to Tab to a focusable control');
-
-      await tester.sendKeyEvent(LogicalKeyboardKey.space);
-      await tester.pump(const Duration(milliseconds: 500));
-
-      expect(find.byIcon(Icons.pause), findsOneWidget,
-          reason: 'activating play should swap the icon to pause');
-
-      expect(errors, isEmpty,
-          reason: errors.map((e) => e.exceptionAsString()).join('\n'));
-    } finally {
-      FlutterError.onError = oldHandler;
-    }
-  }, skip: true /* needs device + fixtures/sample.mp4 */);
+    },
+    skip: true /* needs device + fixtures/sample.mp4 */,
+  );
 }

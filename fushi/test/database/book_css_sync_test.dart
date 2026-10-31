@@ -48,9 +48,7 @@ void main() {
   });
 
   test('幂等：同一远端快照合并两次，第二次无变化', () async {
-    final snap = {
-      'a.css': (content: 'X', deleted: false, updatedAt: 100),
-    };
+    final snap = {'a.css': (content: 'X', deleted: false, updatedAt: 100)};
     final first = await db.mergeRemoteBookCss('BookA', snap);
     final second = await db.mergeRemoteBookCss('BookA', snap);
     expect(first, hasLength(1));

@@ -19,7 +19,11 @@ import 'package:path/path.dart' as p;
 
 /// 统一 FFmpeg 的 ffmpeg / ffprobe 路径（同一份构建）。
 class UnifiedFfmpegForTests {
-  const UnifiedFfmpegForTests(this.ffmpeg, this.ffprobe, {required this.bundled});
+  const UnifiedFfmpegForTests(
+    this.ffmpeg,
+    this.ffprobe, {
+    required this.bundled,
+  });
 
   final String ffmpeg;
   final String ffprobe;
@@ -48,9 +52,12 @@ UnifiedFfmpegForTests? resolveBundledUnifiedFfmpegForTests() {
 UnifiedFfmpegForTests? _resolve() {
   final String? override = Platform.environment['FUSHI_FFMPEG'];
   if (override != null && override.isNotEmpty) {
-    final String probe = Platform.environment['FUSHI_FFPROBE'] ??
-        p.join(p.dirname(override),
-            p.basename(override).replaceFirst('ffmpeg', 'ffprobe'));
+    final String probe =
+        Platform.environment['FUSHI_FFPROBE'] ??
+        p.join(
+          p.dirname(override),
+          p.basename(override).replaceFirst('ffmpeg', 'ffprobe'),
+        );
     return UnifiedFfmpegForTests(override, probe, bundled: false);
   }
   final UnifiedFfmpegForTests? bundled = _extractBundled();
@@ -74,20 +81,40 @@ UnifiedFfmpegForTests? _extractBundled() {
   final String archive;
   final String hash;
   if (Platform.isWindows) {
-    final File cmake = File(p.join(root, 'third_party',
-        'media_kit_libs_windows_video', 'windows', 'CMakeLists.txt'));
+    final File cmake = File(
+      p.join(
+        root,
+        'third_party',
+        'media_kit_libs_windows_video',
+        'windows',
+        'CMakeLists.txt',
+      ),
+    );
     if (!cmake.existsSync()) return null;
     final String src = cmake.readAsStringSync();
-    final RegExpMatch? name = RegExp(r'set\(LIBMPV "([^"]+)"\)').firstMatch(src);
-    final RegExpMatch? pinned =
-        RegExp(r'set\(LIBMPV_MD5 "([0-9a-f]+)"\)').firstMatch(src);
+    final RegExpMatch? name = RegExp(
+      r'set\(LIBMPV "([^"]+)"\)',
+    ).firstMatch(src);
+    final RegExpMatch? pinned = RegExp(
+      r'set\(LIBMPV_MD5 "([0-9a-f]+)"\)',
+    ).firstMatch(src);
     if (name == null || pinned == null) return null;
-    archive = p.join(root, 'third_party', 'media_kit_libs_windows_video',
-        'vendored', name.group(1)!);
+    archive = p.join(
+      root,
+      'third_party',
+      'media_kit_libs_windows_video',
+      'vendored',
+      name.group(1)!,
+    );
     hash = pinned.group(1)!;
   } else if (Platform.isMacOS) {
-    archive = p.join(root, 'third_party', 'media_kit_libs_macos_video',
-        'native', 'ffmpeg-unified-macos.tar.gz');
+    archive = p.join(
+      root,
+      'third_party',
+      'media_kit_libs_macos_video',
+      'native',
+      'ffmpeg-unified-macos.tar.gz',
+    );
     if (!File(archive).existsSync()) return null;
     hash = md5.convert(File(archive).readAsBytesSync()).toString();
   } else {
@@ -96,7 +123,8 @@ UnifiedFfmpegForTests? _extractBundled() {
   if (!File(archive).existsSync()) return null;
 
   final Directory dir = Directory(
-      p.join(root, 'fushi', '.dart_tool', 'unified-ffmpeg', hash));
+    p.join(root, 'fushi', '.dart_tool', 'unified-ffmpeg', hash),
+  );
   final String exe = Platform.isWindows ? '.exe' : '';
   final String sub = Platform.isWindows ? '' : 'MacOS';
   final File ffmpeg = File(p.join(dir.path, sub, 'ffmpeg$exe'));
@@ -106,8 +134,12 @@ UnifiedFfmpegForTests? _extractBundled() {
     final Directory staging = Directory('${dir.path}.tmp$pid');
     if (staging.existsSync()) staging.deleteSync(recursive: true);
     staging.createSync(recursive: true);
-    final ProcessResult r = Process.runSync(
-        'tar', <String>['-xf', archive, '-C', staging.path]);
+    final ProcessResult r = Process.runSync('tar', <String>[
+      '-xf',
+      archive,
+      '-C',
+      staging.path,
+    ]);
     if (r.exitCode != 0) {
       staging.deleteSync(recursive: true);
       return null;

@@ -69,8 +69,10 @@ void main() {
 
   group('parseM3uChannels', () {
     test('显示名 / tvg-name / basename 三级回退，属性与分组落位', () {
-      final List<M3uChannel> channels =
-          parseM3uChannels(content: _iptvList, baseDir: '/lists');
+      final List<M3uChannel> channels = parseM3uChannels(
+        content: _iptvList,
+        baseDir: '/lists',
+      );
       expect(channels, hasLength(4));
 
       expect(channels[0].title, 'NHK 総合');
@@ -109,7 +111,8 @@ void main() {
 
     test('远端列表：本地 / UNC / file:// 条目一条都不产出，标题不串位', () {
       final List<M3uChannel> channels = parseM3uChannels(
-        content: '#EXTM3U\n'
+        content:
+            '#EXTM3U\n'
             '#EXTINF:-1,UNC\n\\\\evil\\share\\a.mkv\n'
             '#EXTINF:-1,UNC slash\n//evil/share/b.mkv\n'
             '#EXTINF:-1,Drive\nC:\\Users\\victim\\secret.mkv\n'
@@ -126,8 +129,10 @@ void main() {
         'rtsp://cam.example/1',
         'https://lists.example/iptv/live/x.m3u8',
       ]);
-      expect(channels.map((M3uChannel c) => c.title).toList(),
-          <String>['Good', 'Relative']);
+      expect(channels.map((M3uChannel c) => c.title).toList(), <String>[
+        'Good',
+        'Relative',
+      ]);
       // 被拒条目的分组不串到下一个频道上。
       expect(channels.last.groupTitle, isNull);
     });
@@ -143,12 +148,17 @@ void main() {
         'http://h/b',
       ]);
       expect(
-        resolveM3uEntryPath(r'\\nas\share\a.mkv', r'D:\lists',
-            context: p.windows),
+        resolveM3uEntryPath(
+          r'\\nas\share\a.mkv',
+          r'D:\lists',
+          context: p.windows,
+        ),
         r'\\nas\share\a.mkv',
       );
-      expect(resolveM3uEntryPath('/srv/a.mkv', '/lists', context: p.posix),
-          '/srv/a.mkv');
+      expect(
+        resolveM3uEntryPath('/srv/a.mkv', '/lists', context: p.posix),
+        '/srv/a.mkv',
+      );
     });
   });
 
@@ -166,32 +176,48 @@ void main() {
         'smb://evil/share/a.mkv',
         'ftp://evil/a.mkv',
       ]) {
-        expect(resolveM3uEntryPath(entry, base, context: p.windows), '',
-            reason: entry);
-        expect(resolveM3uEntryPath(entry, base, context: p.posix), '',
-            reason: entry);
+        expect(
+          resolveM3uEntryPath(entry, base, context: p.windows),
+          '',
+          reason: entry,
+        );
+        expect(
+          resolveM3uEntryPath(entry, base, context: p.posix),
+          '',
+          reason: entry,
+        );
       }
     });
 
     test('网络流原样、相对条目按 URL 解析', () {
-      expect(resolveM3uEntryPath('rtmp://live.example/app', base),
-          'rtmp://live.example/app');
-      expect(resolveM3uEntryPath('udp://@239.0.0.1:1234', base),
-          'udp://@239.0.0.1:1234');
-      expect(resolveM3uEntryPath('ch 1/index.m3u8', base),
-          'https://lists.example/iptv/ch%201/index.m3u8');
-      expect(resolveM3uEntryPath('../../../x.ts', base),
-          'https://lists.example/x.ts');
+      expect(
+        resolveM3uEntryPath('rtmp://live.example/app', base),
+        'rtmp://live.example/app',
+      );
+      expect(
+        resolveM3uEntryPath('udp://@239.0.0.1:1234', base),
+        'udp://@239.0.0.1:1234',
+      );
+      expect(
+        resolveM3uEntryPath('ch 1/index.m3u8', base),
+        'https://lists.example/iptv/ch%201/index.m3u8',
+      );
+      expect(
+        resolveM3uEntryPath('../../../x.ts', base),
+        'https://lists.example/x.ts',
+      );
     });
 
     test('parseM3u8（WebDAV 清单同一解析层）同样丢弃远端清单里的本地条目', () {
       final List<PlaylistEntry> entries = parseM3u8(
-        content: '#EXTINF:-1,Bad\n\\\\evil\\share\\a.mkv\n'
+        content:
+            '#EXTINF:-1,Bad\n\\\\evil\\share\\a.mkv\n'
             '#EXTINF:-1,Ep1\nep1.mkv\n',
         baseDir: 'https://dav.example/show',
       );
-      expect(entries.map((PlaylistEntry e) => e.path).toList(),
-          <String>['https://dav.example/show/ep1.mkv']);
+      expect(entries.map((PlaylistEntry e) => e.path).toList(), <String>[
+        'https://dav.example/show/ep1.mkv',
+      ]);
       expect(entries.single.title, 'Ep1');
     });
   });
@@ -213,12 +239,15 @@ void main() {
 
   test('parseM3u8：带属性的 EXTINF 取引号外逗号后的标题', () {
     final List<PlaylistEntry> entries = parseM3u8(
-      content: '#EXTINF:-1 group-title="A, B",第1話\nep1.mkv\n'
+      content:
+          '#EXTINF:-1 group-title="A, B",第1話\nep1.mkv\n'
           '#EXTINF:-1 tvg-name="Fallback",\nep2.mkv\n',
       baseDir: '/v',
     );
-    expect(entries.map((PlaylistEntry e) => e.title).toList(),
-        <String>['第1話', 'Fallback']);
+    expect(entries.map((PlaylistEntry e) => e.title).toList(), <String>[
+      '第1話',
+      'Fallback',
+    ]);
   });
 
   group('strm_file', () {
@@ -233,18 +262,28 @@ void main() {
 
     test('classifyStrmTarget：网络流 / 本地路径 / 不支持', () {
       expect(
-          classifyStrmTarget('https://a/b.m3u8'), StrmTargetKind.networkStream);
-      expect(classifyStrmTarget('rtmp://live.example/app/key'),
-          StrmTargetKind.networkStream);
-      expect(classifyStrmTarget('udp://@239.0.0.1:1234'),
-          StrmTargetKind.networkStream);
+        classifyStrmTarget('https://a/b.m3u8'),
+        StrmTargetKind.networkStream,
+      );
+      expect(
+        classifyStrmTarget('rtmp://live.example/app/key'),
+        StrmTargetKind.networkStream,
+      );
+      expect(
+        classifyStrmTarget('udp://@239.0.0.1:1234'),
+        StrmTargetKind.networkStream,
+      );
       expect(classifyStrmTarget(r'D:\Movies\a.mkv'), StrmTargetKind.localPath);
       expect(classifyStrmTarget('/mnt/media/a.mkv'), StrmTargetKind.localPath);
       expect(classifyStrmTarget('file:///mnt/a.mkv'), StrmTargetKind.localPath);
       expect(
-          classifyStrmTarget(r'\\nas\share\a.mkv'), StrmTargetKind.localPath);
-      expect(classifyStrmTarget('plugin://plugin.video.x/?id=1'),
-          StrmTargetKind.unsupported);
+        classifyStrmTarget(r'\\nas\share\a.mkv'),
+        StrmTargetKind.localPath,
+      );
+      expect(
+        classifyStrmTarget('plugin://plugin.video.x/?id=1'),
+        StrmTargetKind.unsupported,
+      );
       expect(classifyStrmTarget('movies/a.mkv'), StrmTargetKind.unsupported);
     });
 

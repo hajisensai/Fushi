@@ -18,12 +18,12 @@ void main() {
   late String reader;
 
   setUpAll(() {
-    base = File('lib/src/pages/base_source_page.dart')
-        .readAsStringSync()
-        .replaceAll('\r\n', '\n');
-    reader = File('lib/src/pages/implementations/reader_fushi_page.dart')
-        .readAsStringSync()
-        .replaceAll('\r\n', '\n');
+    base = File(
+      'lib/src/pages/base_source_page.dart',
+    ).readAsStringSync().replaceAll('\r\n', '\n');
+    reader = File(
+      'lib/src/pages/implementations/reader_fushi_page.dart',
+    ).readAsStringSync().replaceAll('\r\n', '\n');
   });
 
   String bodyOf(String source, String signature) {
@@ -48,7 +48,9 @@ void main() {
     final String gate = reader.substring(
       reader.indexOf('bool get _dismissPopupOnScrollActive =>'),
       reader.indexOf(
-          ';', reader.indexOf('bool get _dismissPopupOnScrollActive')),
+        ';',
+        reader.indexOf('bool get _dismissPopupOnScrollActive'),
+      ),
     );
     expect(gate, contains('isContinuousMode == true'));
     expect(gate, contains('ReaderFushiSource.instance.dismissPopupOnScroll'));

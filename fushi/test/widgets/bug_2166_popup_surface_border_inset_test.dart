@@ -19,10 +19,7 @@ void main() {
   const Size boxSize = Size(200, 120);
   const Key childKey = ValueKey<String>('popup-surface-child');
 
-  Widget subject({
-    required bool borderOnForeground,
-    bool showBorder = true,
-  }) {
+  Widget subject({required bool borderOnForeground, bool showBorder = true}) {
     return MaterialApp(
       home: Center(
         child: SizedBox(
@@ -38,14 +35,16 @@ void main() {
     );
   }
 
-  testWidgets('borderOnForeground: false —— 子节点让出描边那一圈（BUG-2166）',
-      (WidgetTester tester) async {
+  testWidgets('borderOnForeground: false —— 子节点让出描边那一圈（BUG-2166）', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(subject(borderOnForeground: false));
 
     expect(
       tester.getSize(find.byKey(childKey)),
       Size(boxSize.width - 2 * borderWidth, boxSize.height - 2 * borderWidth),
-      reason: '子节点没内缩 ⇒ 铺满 surface 的不透明 WebView 把描边直边段整条盖住，'
+      reason:
+          '子节点没内缩 ⇒ 铺满 surface 的不透明 WebView 把描边直边段整条盖住，'
           '只在圆角处漏出几段弧 ⇒「查词框没包边」（BUG-2166 回归）',
     );
 
@@ -66,8 +65,9 @@ void main() {
     );
   });
 
-  testWidgets('borderOnForeground 默认 true —— 纯 Flutter 子树不内缩，观感不变',
-      (WidgetTester tester) async {
+  testWidgets('borderOnForeground 默认 true —— 纯 Flutter 子树不内缩，观感不变', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(subject(borderOnForeground: true));
 
     expect(
@@ -101,7 +101,10 @@ void main() {
       borderWidth,
       reason: '笔宽与内缩量脱钩 ⇒ 描边要么被盖回去、要么多出一条空隙',
     );
-    expect(shape.side.strokeAlign, BorderSide.strokeAlignInside,
-        reason: '描边不再画在 shape 内侧时，内缩一个笔宽就避让不干净了');
+    expect(
+      shape.side.strokeAlign,
+      BorderSide.strokeAlignInside,
+      reason: '描边不再画在 shape 内侧时，内缩一个笔宽就避让不干净了',
+    );
   });
 }

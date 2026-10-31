@@ -39,15 +39,15 @@ class _FakeAdapter implements OnlineMangaRuntimeAdapter {
 
   @override
   Future<OnlineMangaRefreshResult> refresh(
-          OnlineMangaLibraryEntry entry) async =>
+    OnlineMangaLibraryEntry entry,
+  ) async =>
       OnlineMangaRefreshResult(series: entry.series, chapters: entry.chapters);
 
   @override
   Future<List<OnlineMangaPageRef>> resolveChapterPages({
     required OnlineMangaLibraryEntry entry,
     required OnlineMangaChapter chapter,
-  }) =>
-      throw StateError('the series page must not resolve pages');
+  }) => throw StateError('the series page must not resolve pages');
 
   @override
   Future<Uint8List> fetchChapterPage(OnlineMangaPageRef page) =>
@@ -55,13 +55,14 @@ class _FakeAdapter implements OnlineMangaRuntimeAdapter {
 
   @override
   Future<List<int>> fetchCover(
-          OnlineMangaLibraryEntry entry, String url) async =>
-      <int>[0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+    OnlineMangaLibraryEntry entry,
+    String url,
+  ) async => <int>[0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 }
 
 class _TestAppModel extends AppModel {
   _TestAppModel(this._db, this._library, Directory root)
-      : super(testPlatformServices()) {
+    : super(testPlatformServices()) {
     // 阶段 C 起作品页读 `mangaDownloadAutoOcr`（经 prefsRepo）：把真仓库挂到同一个
     // 内存 DB 上，否则 `prefsRepo!` 在 build 里炸。
     wireLocalAudioForTesting(
@@ -80,8 +81,7 @@ class _TestAppModel extends AppModel {
   @override
   OnlineMangaLibraryService onlineMangaLibraryService(
     OnlineMangaRuntimeKind runtime,
-  ) =>
-      _library;
+  ) => _library;
 
   /// 开阅读器的副作用（沉浸模式 / wakelock / audio handler）与本测试无关，只记
   /// 「被调了」。
@@ -102,16 +102,16 @@ class _TestAppModel extends AppModel {
 }
 
 Widget _harness(AppModel appModel, String bookKey) => ProviderScope(
-      overrides: <Override>[
-        platformServicesProvider.overrideWithValue(testPlatformServices()),
-        appProvider.overrideWith((ref) => appModel),
-      ],
-      child: TranslationProvider(
-        child: MaterialApp(
-          home: MangaSeriesPage(target: ShelfMangaSeriesTarget(bookKey)),
-        ),
-      ),
-    );
+  overrides: <Override>[
+    platformServicesProvider.overrideWithValue(testPlatformServices()),
+    appProvider.overrideWith((ref) => appModel),
+  ],
+  child: TranslationProvider(
+    child: MaterialApp(
+      home: MangaSeriesPage(target: ShelfMangaSeriesTarget(bookKey)),
+    ),
+  ),
+);
 
 const List<OnlineMangaChapter> _chapters = <OnlineMangaChapter>[
   OnlineMangaChapter(
@@ -136,24 +136,24 @@ const List<OnlineMangaChapter> _chapters = <OnlineMangaChapter>[
 ];
 
 OnlineMangaLibraryEntry _entry() => const OnlineMangaLibraryEntry(
-      runtime: OnlineMangaRuntimeKind.mihon,
-      extensionPackage: 'org.example.fixture',
-      sourceId: '1',
-      series: OnlineMangaSeries(
-        key: '/series/fixture',
-        title: 'Fixture series',
-        raw: <String, Object?>{'url': '/series/fixture'},
-      ),
-      chapters: _chapters,
-    );
+  runtime: OnlineMangaRuntimeKind.mihon,
+  extensionPackage: 'org.example.fixture',
+  sourceId: '1',
+  series: OnlineMangaSeries(
+    key: '/series/fixture',
+    title: 'Fixture series',
+    raw: <String, Object?>{'url': '/series/fixture'},
+  ),
+  chapters: _chapters,
+);
 
 Future<void> _writeDownloadedChapter(String bookDir, String chapterKey) async {
   final Directory chapterDir = mangaChapterDirectory(bookDir, chapterKey);
   final Directory images = mangaChapterImagesDirectory(chapterDir);
   await images.create(recursive: true);
   await File(p.join(images.path, 'page-000001.jpg')).writeAsBytes(<int>[1]);
-  await mangaChapterJsonFile(chapterDir).writeAsString(jsonEncode(
-    <String, Object?>{
+  await mangaChapterJsonFile(chapterDir).writeAsString(
+    jsonEncode(<String, Object?>{
       'pages': <Map<String, Object?>>[
         <String, Object?>{
           'url': 'images/page-000001.jpg',
@@ -162,8 +162,8 @@ Future<void> _writeDownloadedChapter(String bookDir, String chapterKey) async {
           'blocks': <Object?>[],
         },
       ],
-    },
-  ));
+    }),
+  );
 }
 
 Future<void> _pumpUntil(WidgetTester tester, Finder finder) async {
@@ -230,9 +230,9 @@ void main() {
     expect(await db.listMangaDownloadJobs(), isEmpty, reason: '点章不再隐式入队');
     final EpubBookRow after = (await db.getEpubBook(bookKey))!;
     expect(
-      OnlineMangaLibraryEntry.tryParse(after.sourceMetadata)!
-          .currentChapter
-          ?.key,
+      OnlineMangaLibraryEntry.tryParse(
+        after.sourceMetadata,
+      )!.currentChapter?.key,
       '/chapter/1',
       reason: '开读前记下「选了这一章」，阅读器据此定位',
     );
@@ -308,9 +308,9 @@ void main() {
     expect(await db.listMangaDownloadJobs(), isEmpty, reason: '已下载不入队');
     final EpubBookRow after = (await db.getEpubBook(bookKey))!;
     expect(
-      OnlineMangaLibraryEntry.tryParse(after.sourceMetadata)!
-          .currentChapter
-          ?.key,
+      OnlineMangaLibraryEntry.tryParse(
+        after.sourceMetadata,
+      )!.currentChapter?.key,
       '/chapter/1',
       reason: '开读前记下「选了这一章」，阅读器据此定位',
     );

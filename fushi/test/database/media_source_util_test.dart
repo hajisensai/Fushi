@@ -21,10 +21,7 @@ void main() {
 
     test('local: preserves drive root trailing slash', () {
       expect(normalizeSourceRootPath('C:/', transport: 'local'), 'C:/');
-      expect(
-        normalizeSourceRootPath('C:\\', transport: 'local'),
-        'C:/',
-      );
+      expect(normalizeSourceRootPath('C:\\', transport: 'local'), 'C:/');
     });
 
     test('local: preserves POSIX root', () {
@@ -69,10 +66,7 @@ void main() {
     });
 
     test('normalizes backslashes before taking last segment', () {
-      expect(
-        defaultLabelFromRoot(r'D:\Books\JP', transport: 'local'),
-        'JP',
-      );
+      expect(defaultLabelFromRoot(r'D:\Books\JP', transport: 'local'), 'JP');
     });
 
     test('trailing slash does not produce an empty label', () {
@@ -123,8 +117,7 @@ void main() {
       expect(decoded['useTls'], true);
     });
 
-    test('🔴 red line: password / privateKey are stripped, never persisted',
-        () {
+    test('🔴 red line: password / privateKey are stripped, never persisted', () {
       final String? encoded = encodeSourceConfig(<String, Object?>{
         'host': 'h',
         'username': 'u',
@@ -156,8 +149,11 @@ void main() {
       expect(decodeSourceConfig(null), isEmpty);
       expect(decodeSourceConfig(''), isEmpty);
       expect(decodeSourceConfig('not-json'), isEmpty);
-      expect(decodeSourceConfig('[1,2,3]'), isEmpty,
-          reason: 'non-object top level -> empty map');
+      expect(
+        decodeSourceConfig('[1,2,3]'),
+        isEmpty,
+        reason: 'non-object top level -> empty map',
+      );
     });
 
     test('encoded config is valid JSON containing only allowed keys', () {
@@ -170,8 +166,12 @@ void main() {
       });
       final Map<String, dynamic> parsed =
           jsonDecode(encoded!) as Map<String, dynamic>;
-      expect(
-          parsed.keys.toSet(), <String>{'host', 'port', 'username', 'useTls'});
+      expect(parsed.keys.toSet(), <String>{
+        'host',
+        'port',
+        'username',
+        'useTls',
+      });
     });
   });
 }

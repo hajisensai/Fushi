@@ -24,9 +24,9 @@ void main() {
   const Map<String, ReaderThemeColors> presetMap =
       <String, ReaderThemeColors>{};
   ColorScheme darkScheme() => ColorScheme.fromSeed(
-        seedColor: const Color(0xFF1F4959),
-        brightness: Brightness.dark,
-      );
+    seedColor: const Color(0xFF1F4959),
+    brightness: Brightness.dark,
+  );
 
   group('resolveReaderThemeColors · custom-theme:<id> 分支', () {
     test('带 id 的 key 也进自定义分支，显式覆盖生效', () {
@@ -44,10 +44,7 @@ void main() {
       expect(c.bg, const Color(0xFFFFF8E1));
       expect(c.selection, const Color(0x5500AA00));
       // 链接没覆盖：跟随主题派生的 M3E 阅读配色（primary tone 80）。
-      expect(
-        c.link,
-        fushiReaderPaletteFor(darkScheme(), Brightness.dark).link,
-      );
+      expect(c.link, fushiReaderPaletteFor(darkScheme(), Brightness.dark).link);
     });
 
     test('只覆盖背景时字色按背景亮度取黑/白、dark 跟随最终纸色', () {

@@ -26,10 +26,17 @@ void main() {
         offenders.add(e.path);
       }
     }
-    expectScanScale(scanned,
-        what: 'lib/ 下的 .dart', atLeast: 750, measured: 939);
-    expect(offenders, isEmpty,
-        reason: 'desktop_drop should only be imported by FushiFileDropTarget');
+    expectScanScale(
+      scanned,
+      what: 'lib/ 下的 .dart',
+      atLeast: 750,
+      measured: 939,
+    );
+    expect(
+      offenders,
+      isEmpty,
+      reason: 'desktop_drop should only be imported by FushiFileDropTarget',
+    );
   });
 
   test('wrapper forwards globalPosition, gates route state, and logs', () {
@@ -39,30 +46,59 @@ void main() {
     // 派发多了一跳 [FushiFileDropTarget.runDrop]（异常收口在那里），坐标语义不变：
     // 进 runDrop 的仍是 detail.globalPosition，runDrop 原样交给 onDrop。两段都断，
     // 中间那一跳把坐标换成 local 也会当场红。
-    expect(src.contains('runDrop(paths, detail.globalPosition)'), isTrue,
-        reason: 'business handlers hit-test cards in Flutter global coords');
-    expect(src.contains('await onDrop(paths, globalPosition)'), isTrue,
-        reason: '必须 await：处理器是 FutureOr，不 await 则 async 抛出漏过 catch');
-    expect(src.contains('detail.localPosition'), isTrue,
-        reason: 'localPosition should still be logged for diagnostics');
-    expect(src.contains('onDrop(paths, detail.localPosition)'), isFalse,
-        reason:
-            'do not leak local coords to callers that already expect global');
-    expect(src.contains('enable: enabled'), isTrue,
-        reason:
-            'listener registration must not be lost if route visibility changes without a rebuild');
-    expect(src.contains('ModalRoute.of(context)'), isTrue,
-        reason: 'targets behind a pushed route must not consume OS drops');
+    expect(
+      src.contains('runDrop(paths, detail.globalPosition)'),
+      isTrue,
+      reason: 'business handlers hit-test cards in Flutter global coords',
+    );
+    expect(
+      src.contains('await onDrop(paths, globalPosition)'),
+      isTrue,
+      reason: '必须 await：处理器是 FutureOr，不 await 则 async 抛出漏过 catch',
+    );
+    expect(
+      src.contains('detail.localPosition'),
+      isTrue,
+      reason: 'localPosition should still be logged for diagnostics',
+    );
+    expect(
+      src.contains('onDrop(paths, detail.localPosition)'),
+      isFalse,
+      reason: 'do not leak local coords to callers that already expect global',
+    );
+    expect(
+      src.contains('enable: enabled'),
+      isTrue,
+      reason:
+          'listener registration must not be lost if route visibility changes without a rebuild',
+    );
+    expect(
+      src.contains('ModalRoute.of(context)'),
+      isTrue,
+      reason: 'targets behind a pushed route must not consume OS drops',
+    );
     // 门已从四个匿名回调里的手抄副本收敛成一个具名函数（测试够得到、能被 widget
     // 测试真正驱动）：路由可见性 + 表面可见性都在这里判。
-    expect(src.contains('bool dropSurfaceActive(BuildContext context)'), isTrue,
-        reason: 'route visibility is checked when each OS drop event arrives');
-    expect(src.contains('DropSurfaceScope.activeFor(context)'), isTrue,
-        reason: '同一条路由里被 Offstage/IndexedStack 保活的隐藏子树也必须被挡住');
-    expect(src.contains('onDragUpdated'), isTrue,
-        reason: 'hover/update logs are needed to diagnose Windows drop paths');
-    expect(src.contains('[fushi-drop]'), isTrue,
-        reason: 'Windows drag/drop failures need visible diagnostic logs');
+    expect(
+      src.contains('bool dropSurfaceActive(BuildContext context)'),
+      isTrue,
+      reason: 'route visibility is checked when each OS drop event arrives',
+    );
+    expect(
+      src.contains('DropSurfaceScope.activeFor(context)'),
+      isTrue,
+      reason: '同一条路由里被 Offstage/IndexedStack 保活的隐藏子树也必须被挡住',
+    );
+    expect(
+      src.contains('onDragUpdated'),
+      isTrue,
+      reason: 'hover/update logs are needed to diagnose Windows drop paths',
+    );
+    expect(
+      src.contains('[fushi-drop]'),
+      isTrue,
+      reason: 'Windows drag/drop failures need visible diagnostic logs',
+    );
   });
 
   test('library drop handlers use globalPosition without converting again', () {
@@ -87,15 +123,26 @@ void main() {
     expect(videoDrop.contains('Offset globalPosition'), isTrue);
     // BUG-3756：拖进来的常是网络盘上的文件 / 蓝光盘目录，同步 stat 冷目录要数秒、
     // 冻结 UI isolate。目录判定与盘根探测先 async 做完再交给纯函数分类器。
-    expect(videoDrop.contains('Sync('), isFalse,
-        reason: 'video drop must not stat dropped paths synchronously');
+    expect(
+      videoDrop.contains('Sync('),
+      isFalse,
+      reason: 'video drop must not stat dropped paths synchronously',
+    );
     expect(videoDrop.contains('FileSystemEntity.isDirectory('), isTrue);
-    expect(videoDrop.contains('_cardDropRegistry.hitTest(globalPosition)'),
-        isTrue);
-    expect(videoDrop.contains('localToGlobal('), isFalse,
-        reason: 'DropDoneDetails.globalPosition must not be converted again');
-    expect(videoDrop.contains('DropIntent.unsupportedSurface'), isTrue,
-        reason: 'recognized files on the wrong surface need visible feedback');
+    expect(
+      videoDrop.contains('_cardDropRegistry.hitTest(globalPosition)'),
+      isTrue,
+    );
+    expect(
+      videoDrop.contains('localToGlobal('),
+      isFalse,
+      reason: 'DropDoneDetails.globalPosition must not be converted again',
+    );
+    expect(
+      videoDrop.contains('DropIntent.unsupportedSurface'),
+      isTrue,
+      reason: 'recognized files on the wrong surface need visible feedback',
+    );
 
     // 书架落点要先离线程判「这个 .zip 是不是图片包」，故签名是 Future<void>；
     // 同步解包留在 drop 栈上会把 UI 线程卡死（见 image_archive_probe.dart）。
@@ -105,11 +152,19 @@ void main() {
       'Future<bool?> _openBookImportPrefilled(',
     );
     expect(shelfDrop.contains('Offset globalPosition'), isTrue);
-    expect(shelfDrop.contains('_cardDropRegistry.hitTest(globalPosition)'),
-        isTrue);
-    expect(shelfDrop.contains('localToGlobal('), isFalse,
-        reason: 'DropDoneDetails.globalPosition must not be converted again');
-    expect(shelfDrop.contains('DropIntent.unsupportedSurface'), isTrue,
-        reason: 'recognized files on the wrong surface need visible feedback');
+    expect(
+      shelfDrop.contains('_cardDropRegistry.hitTest(globalPosition)'),
+      isTrue,
+    );
+    expect(
+      shelfDrop.contains('localToGlobal('),
+      isFalse,
+      reason: 'DropDoneDetails.globalPosition must not be converted again',
+    );
+    expect(
+      shelfDrop.contains('DropIntent.unsupportedSurface'),
+      isTrue,
+      reason: 'recognized files on the wrong surface need visible feedback',
+    );
   });
 }

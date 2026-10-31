@@ -58,11 +58,12 @@ const double kPdfPageRasterWidth = 1600;
 /// 注入点：PDFium 是平台原生库，`flutter test` 里拉不起来（native assets 不布置、
 /// worker isolate 直接 open 失败）。把这一处原生依赖收成可替换函数，转化的编排、
 /// 产物布局与落库就都能被真单测覆盖，而不是只能靠真机跑一遍。
-typedef PdfPageStager = Future<int> Function(
-  String pdfPath,
-  Directory staging,
-  void Function(int done, int total)? onProgress,
-);
+typedef PdfPageStager =
+    Future<int> Function(
+      String pdfPath,
+      Directory staging,
+      void Function(int done, int total)? onProgress,
+    );
 
 /// 读 [pdfPath] 的页数（「漫画 → PDF」转回时算 `chapterCount`）。同上，可注入。
 typedef PdfPageCounter = Future<int> Function(String pdfPath);
@@ -191,9 +192,11 @@ abstract final class BookFormatRebuild {
     void Function(int done, int total)? onProgress,
   }) async {
     final String bookDir = row.extractDir;
-    final ({int pageCount, String coverRel})? reused =
-        _reusableMangaArtifacts(bookDir);
-    final ({int pageCount, String coverRel}) artifacts = reused ??
+    final ({int pageCount, String coverRel})? reused = _reusableMangaArtifacts(
+      bookDir,
+    );
+    final ({int pageCount, String coverRel}) artifacts =
+        reused ??
         await _buildMangaArtifacts(
           bookDir: bookDir,
           sourcePath: sourcePath,
@@ -252,8 +255,9 @@ abstract final class BookFormatRebuild {
     required BookFormat sourceFormat,
     void Function(int done, int total)? onProgress,
   }) async {
-    final Directory staging =
-        await Directory.systemTemp.createTemp('fushi_book_convert_');
+    final Directory staging = await Directory.systemTemp.createTemp(
+      'fushi_book_convert_',
+    );
     try {
       switch (sourceFormat) {
         case BookFormat.pdf:
@@ -273,8 +277,9 @@ abstract final class BookFormatRebuild {
           throw const MangaImportException('Already a manga');
       }
 
-      final MokuroPayload payload =
-          await MangaImporter.payloadFromImageFolder(staging);
+      final MokuroPayload payload = await MangaImporter.payloadFromImageFolder(
+        staging,
+      );
       final List<String> destRels = MangaImporter.planMangaDestRels(
         srcDir: staging,
         payload: payload,
@@ -374,15 +379,13 @@ abstract final class BookFormatRebuild {
       // PDF 无章字数，进度按页（与 PdfImporter 落库口径一致）。
       chaptersJson = '[]';
       epubPath = p.basename(sourcePath);
-      final File cover =
-          File(p.join(row.extractDir, PdfImporter.kCoverFileName));
+      final File cover = File(
+        p.join(row.extractDir, PdfImporter.kCoverFileName),
+      );
       coverPath = cover.existsSync() ? PdfImporter.kCoverFileName : null;
     } else {
-      final ({
-        int chapterCount,
-        String chaptersJson,
-        String? coverPath
-      }) parsed = await EpubImporter.reparseExtractedBook(sourcePath);
+      final ({int chapterCount, String chaptersJson, String? coverPath})
+      parsed = await EpubImporter.reparseExtractedBook(sourcePath);
       chapterCount = parsed.chapterCount;
       chaptersJson = parsed.chaptersJson;
       coverPath = parsed.coverPath;

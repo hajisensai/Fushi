@@ -75,16 +75,15 @@ Future<Map<Object?, Object?>> _key(
   bool shift = false,
   bool alt = false,
   bool ctrl = false,
-}) =>
-    _call('key', <String, Object?>{
-      'keyCode': keyCode,
-      'chars': chars,
-      if (ignoring != null) 'ignoring': ignoring,
-      'cmd': cmd,
-      'shift': shift,
-      'alt': alt,
-      'ctrl': ctrl,
-    });
+}) => _call('key', <String, Object?>{
+  'keyCode': keyCode,
+  'chars': chars,
+  if (ignoring != null) 'ignoring': ignoring,
+  'cmd': cmd,
+  'shift': shift,
+  'alt': alt,
+  'ctrl': ctrl,
+});
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -149,17 +148,20 @@ Future<void> _drive(WidgetTester tester, AppModel appModel) async {
     key: LogicalKeyboardKey.slash,
     modifiers: <ModifierKey>{ModifierKey.shift},
   );
-  final ShortcutBindingSet menuBefore =
-      appModel.shortcutRegistry.bindingsFor(ShortcutAction.readerOpenMenu);
+  final ShortcutBindingSet menuBefore = appModel.shortcutRegistry.bindingsFor(
+    ShortcutAction.readerOpenMenu,
+  );
   appModel.shortcutRegistry.updateBindingWithReassignments(
     ShortcutAction.readerOpenMenu,
-    menuBefore.copyWith(
-      keyboardBindings: <InputBinding>[shiftSlash],
-    ),
+    menuBefore.copyWith(keyboardBindings: <InputBinding>[shiftSlash]),
     removeKeyboardConflicts: <InputBinding>[shiftSlash],
   );
-  addTearDown(() => appModel.shortcutRegistry
-      .updateBinding(ShortcutAction.readerOpenMenu, menuBefore));
+  addTearDown(
+    () => appModel.shortcutRegistry.updateBinding(
+      ShortcutAction.readerOpenMenu,
+      menuBefore,
+    ),
+  );
   await tester.pump(const Duration(milliseconds: 300));
 
   final int barriersBefore = find.byType(ModalBarrier).evaluate().length;
@@ -174,15 +176,22 @@ Future<void> _drive(WidgetTester tester, AppModel appModel) async {
     (KeyEvent e) => e.physicalKey == PhysicalKeyboardKey.slash,
   );
   debugPrint(
-      '[mac-shortcuts] ① Shift+/ logical=${slashEvent.logicalKey.debugName} '
-      'physical=${slashEvent.physicalKey.debugName} sheetOpened=$sheetOpened');
-  expect(sheetOpened, isTrue,
-      reason: '绑定 Shift+/ 的阅读器菜单必须被真实 Shift+/ 打开'
-          '（macOS 逻辑键 ${slashEvent.logicalKey.debugName}）');
+    '[mac-shortcuts] ① Shift+/ logical=${slashEvent.logicalKey.debugName} '
+    'physical=${slashEvent.physicalKey.debugName} sheetOpened=$sheetOpened',
+  );
+  expect(
+    sheetOpened,
+    isTrue,
+    reason:
+        '绑定 Shift+/ 的阅读器菜单必须被真实 Shift+/ 打开'
+        '（macOS 逻辑键 ${slashEvent.logicalKey.debugName}）',
+  );
   await _key(_kVkEscape, '\u{1b}');
-  for (int i = 0;
-      i < 20 && find.byType(ModalBarrier).evaluate().length > barriersBefore;
-      i++) {
+  for (
+    int i = 0;
+    i < 20 && find.byType(ModalBarrier).evaluate().length > barriersBefore;
+    i++
+  ) {
     await tester.pump(const Duration(milliseconds: 250));
   }
 
@@ -193,11 +202,17 @@ Future<void> _drive(WidgetTester tester, AppModel appModel) async {
   debugPrint('[mac-shortcuts] ③ activate=$act3');
   downs.clear();
   downMods.clear();
-  final Map<Object?, Object?> spaceResult =
-      await _key(_kVkSpace, ' ', ignoring: ' ', alt: true);
+  final Map<Object?, Object?> spaceResult = await _key(
+    _kVkSpace,
+    ' ',
+    ignoring: ' ',
+    alt: true,
+  );
   await tester.pump(const Duration(milliseconds: 400));
-  debugPrint('[mac-shortcuts] ③ post=$spaceResult flutterSaw='
-      '${downs.map((KeyEvent e) => '${e.logicalKey.debugName}/${e.physicalKey.debugName}').toList()}');
+  debugPrint(
+    '[mac-shortcuts] ③ post=$spaceResult flutterSaw='
+    '${downs.map((KeyEvent e) => '${e.logicalKey.debugName}/${e.physicalKey.debugName}').toList()}',
+  );
   final int spaceAt = downs.lastIndexWhere(
     (KeyEvent e) => e.physicalKey == PhysicalKeyboardKey.space,
   );
@@ -210,8 +225,9 @@ Future<void> _drive(WidgetTester tester, AppModel appModel) async {
     physicalKey: space.physicalKey,
   );
   debugPrint(
-      '[mac-shortcuts] ③ Option+Space logical=${space.logicalKey.debugName} '
-      'mods=${downMods[spaceAt]} resolved=$resolved');
+    '[mac-shortcuts] ③ Option+Space logical=${space.logicalKey.debugName} '
+    'mods=${downMods[spaceAt]} resolved=$resolved',
+  );
   expect(resolved, ShortcutAction.audiobookPlayPause);
 
   // ── ② Ctrl+Cmd+F 切窗口全屏（macOS 新默认）──────────────────────

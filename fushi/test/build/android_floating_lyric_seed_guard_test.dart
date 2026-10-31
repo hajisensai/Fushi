@@ -30,16 +30,26 @@ void main() {
       File('$androidRoot/$relative').readAsStringSync();
 
   group('BUG-400 floating lyric current-line seeding', () {
-    test('PreferenceKeys declares the current-text (and playing) replay keys',
-        () {
-      final String keys = read('constants/PreferenceKeys.java');
-      expect(keys, contains('LYRIC_CURRENT_TEXT'),
-          reason: 'a prefs key is needed to carry the current line across the '
-              'startForegroundService gap');
-      expect(keys, contains('LYRIC_PLAYING'),
-          reason: 'playback state is replayed too so the play/pause icon is '
-              'correct on the first frame');
-    });
+    test(
+      'PreferenceKeys declares the current-text (and playing) replay keys',
+      () {
+        final String keys = read('constants/PreferenceKeys.java');
+        expect(
+          keys,
+          contains('LYRIC_CURRENT_TEXT'),
+          reason:
+              'a prefs key is needed to carry the current line across the '
+              'startForegroundService gap',
+        );
+        expect(
+          keys,
+          contains('LYRIC_PLAYING'),
+          reason:
+              'playback state is replayed too so the play/pause icon is '
+              'correct on the first frame',
+        );
+      },
+    );
 
     test('MainActivity.updateText persists the line unconditionally', () {
       final String main = read('MainActivity.java');
@@ -57,41 +67,67 @@ void main() {
       // prefix (tolerant of the extra interval args) while still pinning that
       // the *text* is the first thing persisted.
       final RegExp persistCall = RegExp(r'persistFloatingLyricText\(\s*text');
-      expect(persistCall.hasMatch(body), isTrue,
-          reason: 'the line must be persisted before checking the live '
-              'instance, so a not-yet-created service still gets it via '
-              'readInitialState');
+      expect(
+        persistCall.hasMatch(body),
+        isTrue,
+        reason:
+            'the line must be persisted before checking the live '
+            'instance, so a not-yet-created service still gets it via '
+            'readInitialState',
+      );
 
       // The persist call must precede the live-instance guard, otherwise an
       // early null-instance return would skip it.
       final int persistAt = persistCall.firstMatch(body)!.start;
       final int guardAt = body.indexOf('FloatingLyricService.getInstance()');
       expect(persistAt, isNonNegative);
-      expect(guardAt, greaterThan(persistAt),
-          reason: 'persist must run regardless of whether the service is live '
-              '(it runs before the svc != null branch)');
+      expect(
+        guardAt,
+        greaterThan(persistAt),
+        reason:
+            'persist must run regardless of whether the service is live '
+            '(it runs before the svc != null branch)',
+      );
 
-      expect(main, contains('private void persistFloatingLyricText('),
-          reason: 'the persist helper must exist (mirrors '
-              'persistFloatingLyricOptions)');
-      expect(main, contains('PreferenceKeys.LYRIC_CURRENT_TEXT'),
-          reason: 'the helper must write the current-text key');
+      expect(
+        main,
+        contains('private void persistFloatingLyricText('),
+        reason:
+            'the persist helper must exist (mirrors '
+            'persistFloatingLyricOptions)',
+      );
+      expect(
+        main,
+        contains('PreferenceKeys.LYRIC_CURRENT_TEXT'),
+        reason: 'the helper must write the current-text key',
+      );
 
       // TODO-708 P4: the persist helper must also thread the current-line
       // interval so the pre-onCreate replay renders the correct highlighted
       // line inside the multi-line context block, not just the raw text.
-      expect(main, contains('PreferenceKeys.LYRIC_CURRENT_LINE_START'),
-          reason: 'the helper must persist the current-line start offset '
-              '(TODO-708 P4 context-block highlighting)');
-      expect(main, contains('PreferenceKeys.LYRIC_CURRENT_LINE_LENGTH'),
-          reason: 'the helper must persist the current-line length '
-              '(TODO-708 P4 context-block highlighting)');
+      expect(
+        main,
+        contains('PreferenceKeys.LYRIC_CURRENT_LINE_START'),
+        reason:
+            'the helper must persist the current-line start offset '
+            '(TODO-708 P4 context-block highlighting)',
+      );
+      expect(
+        main,
+        contains('PreferenceKeys.LYRIC_CURRENT_LINE_LENGTH'),
+        reason:
+            'the helper must persist the current-line length '
+            '(TODO-708 P4 context-block highlighting)',
+      );
     });
 
     test('MainActivity.setPlaybackState persists the playing flag', () {
       final String main = read('MainActivity.java');
-      expect(main, contains('persistFloatingLyricPlaying('),
-          reason: 'playback state must be replayable on service startup');
+      expect(
+        main,
+        contains('persistFloatingLyricPlaying('),
+        reason: 'playback state must be replayable on service startup',
+      );
       expect(main, contains('PreferenceKeys.LYRIC_PLAYING'));
     });
 
@@ -102,19 +138,32 @@ void main() {
       expect(start, isNonNegative, reason: 'readInitialState must exist');
       // readInitialState 之后紧跟的方法（bringAppToFront 已随后台启动逻辑抽进
       // BackgroundActivityLauncher）。
-      final int end = service.indexOf('private static String extractLabel(', start);
+      final int end = service.indexOf(
+        'private static String extractLabel(',
+        start,
+      );
       expect(end, greaterThan(start));
       final String body = service.substring(start, end);
 
-      expect(body, contains('PreferenceKeys.LYRIC_CURRENT_TEXT'),
-          reason: 'currentText must be replayed so createContentView shows the '
-              'current line on the first frame instead of an empty string');
-      expect(body, contains('currentText = prefs.getString('),
-          reason: 'currentText field must be seeded from prefs');
-      expect(body, contains('PreferenceKeys.LYRIC_PLAYING'),
-          reason:
-              'isPlaying must be replayed so the play/pause icon is correct '
-              'on the first frame');
+      expect(
+        body,
+        contains('PreferenceKeys.LYRIC_CURRENT_TEXT'),
+        reason:
+            'currentText must be replayed so createContentView shows the '
+            'current line on the first frame instead of an empty string',
+      );
+      expect(
+        body,
+        contains('currentText = prefs.getString('),
+        reason: 'currentText field must be seeded from prefs',
+      );
+      expect(
+        body,
+        contains('PreferenceKeys.LYRIC_PLAYING'),
+        reason:
+            'isPlaying must be replayed so the play/pause icon is correct '
+            'on the first frame',
+      );
     });
   });
 }

@@ -203,7 +203,9 @@ void main() {
     test('合法键解析，大小写与空白容错', () {
       expect(GalgameMetadataSource.fromKey('bgm'), GalgameMetadataSource.bgm);
       expect(
-          GalgameMetadataSource.fromKey(' VNDB '), GalgameMetadataSource.vndb);
+        GalgameMetadataSource.fromKey(' VNDB '),
+        GalgameMetadataSource.vndb,
+      );
     });
 
     test('未知 / 空 / 非字符串 → null', () {

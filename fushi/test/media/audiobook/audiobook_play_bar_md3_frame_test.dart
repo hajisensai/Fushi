@@ -28,48 +28,50 @@ Material _backingMaterial(WidgetTester tester, IconData icon) {
 }
 
 void main() {
-  testWidgets('play/pause button is a filled-tonal MD3 frame (non-transparent)',
-      (tester) async {
-    final controller = AudiobookPlayerController();
-    addTearDown(controller.dispose);
+  testWidgets(
+    'play/pause button is a filled-tonal MD3 frame (non-transparent)',
+    (tester) async {
+      final controller = AudiobookPlayerController();
+      addTearDown(controller.dispose);
 
-    await tester.pumpWidget(
-      MaterialApp(
-        theme: ThemeData(useMaterial3: true),
-        home: Scaffold(
-          body: AudiobookPlayBar(
-            controller: controller,
-            onOpenSettings: () {},
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData(useMaterial3: true),
+          home: Scaffold(
+            body: AudiobookPlayBar(
+              controller: controller,
+              onOpenSettings: () {},
+            ),
           ),
         ),
-      ),
-    );
-
-    // 播放键用 IconButton.filledTonal → 背景容器非透明。
-    final Material play = _backingMaterial(tester, FushiIcons.play);
-    expect(
-      play.color,
-      isNot(Colors.transparent),
-      reason: '播放键应是 filled-tonal 圆框，背景非透明（TODO-297）',
-    );
-    expect(play.color, isNotNull);
-
-    // 上一句/下一句/设置键是无框原生 IconButton → 背景透明（或无填充）。
-    final Material prev =
-        _backingMaterial(tester, FushiIcons.skipPrevious);
-    final Material next = _backingMaterial(tester, FushiIcons.skipNext);
-    final Material settings = _backingMaterial(tester, FushiIcons.settings);
-    for (final Material m in <Material>[prev, next, settings]) {
-      expect(
-        m.color ?? Colors.transparent,
-        Colors.transparent,
-        reason: '非播放键应无框（背景透明）',
       );
-    }
-  });
 
-  testWidgets('play/pause keeps the MD3 frame when a paper foreground is set',
-      (tester) async {
+      // 播放键用 IconButton.filledTonal → 背景容器非透明。
+      final Material play = _backingMaterial(tester, FushiIcons.play);
+      expect(
+        play.color,
+        isNot(Colors.transparent),
+        reason: '播放键应是 filled-tonal 圆框，背景非透明（TODO-297）',
+      );
+      expect(play.color, isNotNull);
+
+      // 上一句/下一句/设置键是无框原生 IconButton → 背景透明（或无填充）。
+      final Material prev = _backingMaterial(tester, FushiIcons.skipPrevious);
+      final Material next = _backingMaterial(tester, FushiIcons.skipNext);
+      final Material settings = _backingMaterial(tester, FushiIcons.settings);
+      for (final Material m in <Material>[prev, next, settings]) {
+        expect(
+          m.color ?? Colors.transparent,
+          Colors.transparent,
+          reason: '非播放键应无框（背景透明）',
+        );
+      }
+    },
+  );
+
+  testWidgets('play/pause keeps the MD3 frame when a paper foreground is set', (
+    tester,
+  ) async {
     final controller = AudiobookPlayerController();
     addTearDown(controller.dispose);
 

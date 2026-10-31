@@ -76,7 +76,9 @@ void main() {
         's2',
       );
       expect(
-          collectionGroupKeyForFilename('Hibike! Euphonium 3 - 05.mkv'), 's3');
+        collectionGroupKeyForFilename('Hibike! Euphonium 3 - 05.mkv'),
+        's3',
+      );
     });
 
     test('多季混排 → isMultiSeasonGrouped 为真（详情页据此出季 tab）', () {
@@ -122,14 +124,18 @@ void main() {
 
   group('seasonNumberOfGroupKey', () {
     test('s2 → 2', () => expect(seasonNumberOfGroupKey('s2'), 2));
-    test('extras → null',
-        () => expect(seasonNumberOfGroupKey(kCollectionExtrasGroupKey), null));
+    test(
+      'extras → null',
+      () => expect(seasonNumberOfGroupKey(kCollectionExtrasGroupKey), null),
+    );
     test('裸 s → null', () => expect(seasonNumberOfGroupKey('s'), null));
   });
 
   group('isMultiSeasonGrouped', () {
-    test('空 → false',
-        () => expect(isMultiSeasonGrouped(const <String>[]), false));
+    test(
+      '空 → false',
+      () => expect(isMultiSeasonGrouped(const <String>[]), false),
+    );
     test('单组（单季/纯电影/全 PV）→ false', () {
       expect(isMultiSeasonGrouped(const <String>['s1', 's1']), false);
     });
@@ -148,13 +154,13 @@ void main() {
     test('按组键首次出现顺序聚合，组内保持相对序', () {
       final List<CollectionSeasonSection<String>> sections =
           buildCollectionSeasonSections<String>(
-        members: <String>['a1', 'a2', 'b1', 'a3', 'c1'],
-        keyOf: (String m) => switch (m[0]) {
-          'a' => 's1',
-          'b' => 's2',
-          _ => kCollectionExtrasGroupKey,
-        },
-      );
+            members: <String>['a1', 'a2', 'b1', 'a3', 'c1'],
+            keyOf: (String m) => switch (m[0]) {
+              'a' => 's1',
+              'b' => 's2',
+              _ => kCollectionExtrasGroupKey,
+            },
+          );
       expect(sections.map((s) => s.groupKey), <String>['s1', 's2', 'extras']);
       expect(sections[0].items, <String>['a1', 'a2', 'a3']);
       expect(sections[1].items, <String>['b1']);
@@ -181,23 +187,31 @@ void main() {
     test('只重排分节，不动节内成员相对序', () {
       final List<CollectionSeasonSection<String>> sorted =
           sortCollectionSeasonSections<String>(
-        <CollectionSeasonSection<String>>[
-          const CollectionSeasonSection<String>(
-              groupKey: 's2', items: <String>['b1', 'b2']),
-          const CollectionSeasonSection<String>(
-              groupKey: 's1', items: <String>['a2', 'a1']),
-        ],
-      );
+            <CollectionSeasonSection<String>>[
+              const CollectionSeasonSection<String>(
+                groupKey: 's2',
+                items: <String>['b1', 'b2'],
+              ),
+              const CollectionSeasonSection<String>(
+                groupKey: 's1',
+                items: <String>['a2', 'a1'],
+              ),
+            ],
+          );
       expect(sorted[0].items, <String>['a2', 'a1']);
       expect(sorted[1].items, <String>['b1', 'b2']);
     });
 
     test('不修改入参列表（调用方持有的分节序不被就地打乱）', () {
-      final List<CollectionSeasonSection<String>> input =
-          sectionsOf(<String>['s2', 's1']);
+      final List<CollectionSeasonSection<String>> input = sectionsOf(<String>[
+        's2',
+        's1',
+      ]);
       sortCollectionSeasonSections<String>(input);
-      expect(input.map((CollectionSeasonSection<String> s) => s.groupKey),
-          <String>['s2', 's1']);
+      expect(
+        input.map((CollectionSeasonSection<String> s) => s.groupKey),
+        <String>['s2', 's1'],
+      );
     });
   });
 
@@ -211,10 +225,10 @@ void main() {
       ];
       final CollectionSeasonRegroup<String> regroup =
           regroupMembersBySeason<String>(
-        members: files,
-        filenameOf: (String f) => f,
-        titleOf: (String f) => f,
-      );
+            members: files,
+            filenameOf: (String f) => f,
+            titleOf: (String f) => f,
+          );
       expect(regroup.ordered, <String>[
         'Show S01E01.mkv',
         'Show S02E01.mkv',
@@ -223,10 +237,7 @@ void main() {
       ]);
       expect(regroup.keyOf['Show S01E01.mkv'], 's1');
       expect(regroup.keyOf['Show S02E01.mkv'], 's2');
-      expect(
-        regroup.keyOf['Show PV Special.mkv'],
-        kCollectionExtrasGroupKey,
-      );
+      expect(regroup.keyOf['Show PV Special.mkv'], kCollectionExtrasGroupKey);
     });
   });
 }

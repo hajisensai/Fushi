@@ -3,7 +3,10 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/misc/platform_updater.dart';
 import 'package:fushi/src/utils/misc/update_handoff.dart'
-    show WindowsUpdateHandoff, WindowsUpdateHandoffRecord, WindowsUpdateHandoffResult;
+    show
+        WindowsUpdateHandoff,
+        WindowsUpdateHandoffRecord,
+        WindowsUpdateHandoffResult;
 
 /// 装进 `C:\Program Files\Fushi`（手动提权安装）后，普通权限的 app 写不进安装目录，
 /// 应用内更新旧行为是直接报 `Cannot write to installation directory` 并要求用户
@@ -236,13 +239,11 @@ void main() {
           '$kWindowsElevatedInstallLogPrefix',
         ),
       );
-      final List<String> innoArgs =
-          launchedArgs!.sublist(launchedArgs!.indexOf('--') + 1);
-      expect(innoArgs, contains('/LOG=$expectedLog'));
-      expect(
-        innoArgs.where((String a) => a.startsWith('/LOG=')),
-        hasLength(1),
+      final List<String> innoArgs = launchedArgs!.sublist(
+        launchedArgs!.indexOf('--') + 1,
       );
+      expect(innoArgs, contains('/LOG=$expectedLog'));
+      expect(innoArgs.where((String a) => a.startsWith('/LOG=')), hasLength(1));
       expect(
         innoArgs.any(
           (String a) => a.startsWith('/LOG=${prepared.installer.parent.path}'),
@@ -264,10 +265,10 @@ void main() {
       );
       final WindowsUpdateHandoffResult? result =
           await WindowsUpdateHandoff.reconcile(
-        markerFile: prepared.marker,
-        currentVersion: '3.0.0',
-        now: DateTime.utc(2026, 10, 19, 12, 5),
-      );
+            markerFile: prepared.marker,
+            currentVersion: '3.0.0',
+            now: DateTime.utc(2026, 10, 19, 12, 5),
+          );
       expect(result?.record.innoLogExists, isTrue);
       expect(result?.record.installerFailureType, 'deletefile_code_5');
     });
@@ -279,8 +280,9 @@ void main() {
         probe: WindowsInstallDirWriteProbe.writable,
         expectedSha256: digest,
       );
-      final String siblingLog =
-          windowsInstallerLogPath(prepared.installer.path);
+      final String siblingLog = windowsInstallerLogPath(
+        prepared.installer.path,
+      );
       expect(launchedArgs, contains('/LOG=$siblingLog'));
       expect(
         (await WindowsUpdateHandoff.read(prepared.marker))?.innoLogPath,
@@ -471,12 +473,18 @@ void main() {
         'windows/installer/fushi.iss',
       ).readAsStringSync();
       const String pattern =
-          r'{app}\' '$kWindowsElevatedInstallLogPrefix*.log';
+          r'{app}\'
+          '$kWindowsElevatedInstallLogPrefix*.log';
       expect(script, contains('Type: files; Name: "$pattern"'));
-      expect(script, contains("FindFirst(ExpandConstant('$pattern'), FindRec)"));
       expect(
         script,
-        contains("Current := Lowercase(ExtractFileName(ExpandConstant('{log}')));"),
+        contains("FindFirst(ExpandConstant('$pattern'), FindRec)"),
+      );
+      expect(
+        script,
+        contains(
+          "Current := Lowercase(ExtractFileName(ExpandConstant('{log}')));",
+        ),
       );
       expect(script, contains('  CleanupStaleElevatedInstallLogs();\n'));
     });

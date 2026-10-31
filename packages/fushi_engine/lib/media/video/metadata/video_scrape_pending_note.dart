@@ -115,7 +115,8 @@ final RegExp _pendingPattern = RegExp(
 /// 把挂起原因编码成运行记录里的一条 message。作品键可能带空格 / 逗号（book uid
 /// 是路径形），所以逐个 URI 编码后再用逗号连。
 String encodeVideoScrapePendingNote(VideoScrapePendingNote note) {
-  final String head = '$kVideoScrapePendingNotePrefix${note.cause.wire} '
+  final String head =
+      '$kVideoScrapePendingNotePrefix${note.cause.wire} '
       'ai=${note.aiOutcome.wire} '
       'candidates=${note.candidateCount} '
       'key=${note.workKeys.map(Uri.encodeComponent).join(',')}';
@@ -128,8 +129,9 @@ String encodeVideoScrapePendingNote(VideoScrapePendingNote note) {
 VideoScrapePendingNote? parseVideoScrapePendingNote(String message) {
   final RegExpMatch? match = _pendingPattern.firstMatch(message.trim());
   if (match == null) return null;
-  final VideoScrapePendingCause? cause =
-      VideoScrapePendingCause.fromWire(match.group(1)!);
+  final VideoScrapePendingCause? cause = VideoScrapePendingCause.fromWire(
+    match.group(1)!,
+  );
   final VideoScrapeAiOutcome? ai = VideoScrapeAiOutcome.fromWire(
     match.group(2)!,
   );

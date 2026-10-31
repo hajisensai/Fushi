@@ -370,10 +370,8 @@ SettingsCliList buildPlexCliList() {
     },
     remove: (SettingsContext c, String id) async {
       final SyncRepository repo = repoOf(c);
-      final PlexServerConfig config = await findMediaServerById<PlexServerConfig>(
-        repo,
-        id,
-      );
+      final PlexServerConfig config =
+          await findMediaServerById<PlexServerConfig>(repo, id);
       await repo.removeMediaServer(config.sourceId);
       invalidate(c, config.sourceId);
     },
@@ -716,7 +714,10 @@ class _PlexConfigWidgetState extends State<PlexConfigWidget> {
             ),
             const SizedBox(width: 12),
             Expanded(child: Text(t.plex_pin_waiting)),
-            FushiTextButton(onPressed: _cancelPin, child: Text(t.dialog_cancel)),
+            FushiTextButton(
+              onPressed: _cancelPin,
+              child: Text(t.dialog_cancel),
+            ),
           ],
         ),
         const SizedBox(height: 4),

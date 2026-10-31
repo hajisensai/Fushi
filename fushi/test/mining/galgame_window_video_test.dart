@@ -222,7 +222,8 @@ void main() {
 
   group('parseFfmpegDurationMs', () {
     test('优先取最后一条进度行 time=', () {
-      const String log = 'Duration: 00:00:05.00, bitrate: 128 kb/s\n'
+      const String log =
+          'Duration: 00:00:05.00, bitrate: 128 kb/s\n'
           'size=N/A time=00:00:01.50 bitrate=N/A speed=100x\n'
           'size=N/A time=00:00:03.42 bitrate=N/A speed=100x\n';
       expect(parseFfmpegDurationMs(log), 3420);

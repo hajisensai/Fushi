@@ -49,10 +49,13 @@ void main() {
 
   test('State 带泛型实参，widget.target 才可达', () {
     expect(
-      page.contains('class _CustomFontsPageState '
-          'extends BasePageState<CustomFontsPage>'),
+      page.contains(
+        'class _CustomFontsPageState '
+        'extends BasePageState<CustomFontsPage>',
+      ),
       isTrue,
-      reason: '裸 BasePageState 会让 T 退化成 BasePage，widget.target 不可达——'
+      reason:
+          '裸 BasePageState 会让 T 退化成 BasePage，widget.target 不可达——'
           '这正是 target 当初沦为死参数的机制',
     );
   });
@@ -61,7 +64,8 @@ void main() {
     expect(
       page.contains('FontTarget.body: true'),
       isFalse,
-      reason: '新增字体必须走 _newFontTargets()（跟随进入页面的作用域），'
+      reason:
+          '新增字体必须走 _newFontTargets()（跟随进入页面的作用域），'
           '硬编码 body 会让「从游戏入口导入的字体」挂到小说正文',
     );
   });
@@ -86,7 +90,8 @@ void main() {
     expect(
       uses,
       2,
-      reason: '_appendImported（文件类四入口的唯一汇点）+ 系统字体，共 2 处；'
+      reason:
+          '_appendImported（文件类四入口的唯一汇点）+ 系统字体，共 2 处；'
           '数目变了说明有新入口没接作用域，或旧入口被删',
     );
     expect(
@@ -112,7 +117,8 @@ void main() {
     expect(
       page.contains('isFontTargetAvailableOnPlatform(target)'),
       isTrue,
-      reason: 'gameLookup 只有 Windows 有 native 消费端，其余平台勾了等于写一个'
+      reason:
+          'gameLookup 只有 Windows 有 native 消费端，其余平台勾了等于写一个'
           '永远没人读的键',
     );
     expect(
@@ -132,7 +138,8 @@ void main() {
     expect(
       page.contains('AppFontLoader.nativeOverlayCanUse('),
       isTrue,
-      reason: 'WOFF/WOFF2 在 DirectWrite 用不了。UI 若不复用同一判据就会让用户勾一个'
+      reason:
+          'WOFF/WOFF2 在 DirectWrite 用不了。UI 若不复用同一判据就会让用户勾一个'
           '下游静默忽略的组合，表现为「设了不生效且没有任何反馈」',
     );
   });

@@ -41,10 +41,10 @@ class SubtitleAttachResult {
     this.label = '',
     this.cueFailure,
   }) : assert(
-          (outcome == SubtitleAttachOutcome.cueLoadFailed) ==
-              (cueFailure != null),
-          'cueFailure ⇔ cueLoadFailed',
-        );
+         (outcome == SubtitleAttachOutcome.cueLoadFailed) ==
+             (cueFailure != null),
+         'cueFailure ⇔ cueLoadFailed',
+       );
 
   final SubtitleAttachOutcome outcome;
   final int cueCount;

@@ -81,50 +81,67 @@ Map<String, int> _parseBindings(String source) {
 Set<String> _parseLookedUpSymbols(String source) {
   // 泛型实参是多层嵌套的（`_lookup<ffi.NativeFunction<... Function(...)>>`），
   // 别试图匹配尖括号配对 —— 用惰性跨行匹配吃到 `>(` 再取符号字面量。
-  return RegExp(r"_lookup<[\s\S]*?>\(\s*'(ht_\w+)'")
-      .allMatches(source)
-      .map((RegExpMatch m) => m.group(1)!)
-      .toSet();
+  return RegExp(
+    r"_lookup<[\s\S]*?>\(\s*'(ht_\w+)'",
+  ).allMatches(source).map((RegExpMatch m) => m.group(1)!).toSet();
 }
 
 void main() {
   // 测试的工作目录是 `fushi/`，native 与 packages 在它的上一级。
-  final File headerFile =
-      File('../native/fushi_torrent/fushi_torrent_include/fushi_torrent.h');
-  final File bindingsFile =
-      File('../packages/fushi_torrent/lib/src/ffi/fushi_torrent_bindings.dart');
+  final File headerFile = File(
+    '../native/fushi_torrent/fushi_torrent_include/fushi_torrent.h',
+  );
+  final File bindingsFile = File(
+    '../packages/fushi_torrent/lib/src/ffi/fushi_torrent_bindings.dart',
+  );
 
   test('C ABI 头文件与手写 FFI 绑定：符号集合必须完全一致', () {
-    expect(headerFile.existsSync(), isTrue,
-        reason: '找不到 ${headerFile.path} —— 守卫失去意义，先修路径');
-    expect(bindingsFile.existsSync(), isTrue,
-        reason: '找不到 ${bindingsFile.path}');
+    expect(
+      headerFile.existsSync(),
+      isTrue,
+      reason: '找不到 ${headerFile.path} —— 守卫失去意义，先修路径',
+    );
+    expect(
+      bindingsFile.existsSync(),
+      isTrue,
+      reason: '找不到 ${bindingsFile.path}',
+    );
 
     final List<_CExport> exports = _parseHeader(headerFile.readAsStringSync());
     expect(exports, isNotEmpty, reason: '头文件里一个 HT_EXPORT 都没解析到，正则失效了');
 
     final Set<String> exported = exports.map((_CExport e) => e.name).toSet();
-    final Set<String> lookedUp =
-        _parseLookedUpSymbols(bindingsFile.readAsStringSync());
+    final Set<String> lookedUp = _parseLookedUpSymbols(
+      bindingsFile.readAsStringSync(),
+    );
 
     final Set<String> missing = exported.difference(lookedUp);
-    expect(missing, isEmpty,
-        reason: '这些 C 导出没有对应的 Dart 绑定：$missing\n'
-            '新增 HT_EXPORT 之后必须同步 fushi_torrent_bindings.dart '
-            '（本机有 LLVM 就 `dart run ffigen --config ffigen.yaml`，'
-            '没有就照既有风格手写镜像）。漏了的话，只有装上新 DLL 的用户会在运行时'
-            '撞到 lookup 抛异常。');
+    expect(
+      missing,
+      isEmpty,
+      reason:
+          '这些 C 导出没有对应的 Dart 绑定：$missing\n'
+          '新增 HT_EXPORT 之后必须同步 fushi_torrent_bindings.dart '
+          '（本机有 LLVM 就 `dart run ffigen --config ffigen.yaml`，'
+          '没有就照既有风格手写镜像）。漏了的话，只有装上新 DLL 的用户会在运行时'
+          '撞到 lookup 抛异常。',
+    );
 
     final Set<String> stale = lookedUp.difference(exported);
-    expect(stale, isEmpty,
-        reason: '这些 Dart 绑定在 C 头文件里已不存在：$stale\n'
-            '删/改 C ABI 符号时必须同步删掉绑定，否则 lookup 会在运行时抛。');
+    expect(
+      stale,
+      isEmpty,
+      reason:
+          '这些 Dart 绑定在 C 头文件里已不存在：$stale\n'
+          '删/改 C ABI 符号时必须同步删掉绑定，否则 lookup 会在运行时抛。',
+    );
   });
 
   test('C ABI 头文件与手写 FFI 绑定：每个函数的参数个数必须一致', () {
     final List<_CExport> exports = _parseHeader(headerFile.readAsStringSync());
-    final Map<String, int> bindings =
-        _parseBindings(bindingsFile.readAsStringSync());
+    final Map<String, int> bindings = _parseBindings(
+      bindingsFile.readAsStringSync(),
+    );
 
     final List<String> mismatches = <String>[];
     for (final _CExport e in exports) {
@@ -134,13 +151,19 @@ void main() {
         continue;
       }
       if (dartArity != e.paramCount) {
-        mismatches.add('${e.name}: C 侧 ${e.paramCount} 个参数，'
-            'Dart asFunction 写了 $dartArity 个');
+        mismatches.add(
+          '${e.name}: C 侧 ${e.paramCount} 个参数，'
+          'Dart asFunction 写了 $dartArity 个',
+        );
       }
     }
-    expect(mismatches, isEmpty,
-        reason: '参数个数对不上：\n${mismatches.join('\n')}\n'
-            '这不是「会报错」的那种错 —— asFunction 拿错误签名去调是**未定义行为**'
-            '（栈错位/内存损坏），改 C ABI 参数后必须同步改绑定。');
+    expect(
+      mismatches,
+      isEmpty,
+      reason:
+          '参数个数对不上：\n${mismatches.join('\n')}\n'
+          '这不是「会报错」的那种错 —— asFunction 拿错误签名去调是**未定义行为**'
+          '（栈错位/内存损坏），改 C ABI 参数后必须同步改绑定。',
+    );
   });
 }

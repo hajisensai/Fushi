@@ -42,10 +42,10 @@ void main() {
 
   /// 推导：改了 [changed] 该跑哪些测试（仓库根相对的测试路径）。
   Set<RepoPath> derive(String changed) => selectTestsForChanges(
-        changedFiles: <RepoPath>[normalizeChangedPath(changed, fs)],
-        index: index,
-        fs: fs,
-      ).keys.toSet();
+    changedFiles: <RepoPath>[normalizeChangedPath(changed, fs)],
+    index: index,
+    fs: fs,
+  ).keys.toSet();
 
   /// 朴素侧：**独立枚举** fushi/test 下的测试文件，与 listAppTestFiles 无共享代码。
   ///
@@ -79,21 +79,33 @@ void main() {
 
   /// 结构化侧：索引里引用到 [tree] 下任意路径的测试文件数。
   int indexedTreeMentions(String tree) => index.entries
-      .where((MapEntry<RepoPath, TestTriggerFace> e) => e.value.referencedPaths
-          .any((RepoPath ref) => ref == tree || ref.startsWith('$tree/')))
+      .where(
+        (MapEntry<RepoPath, TestTriggerFace> e) => e.value.referencedPaths.any(
+          (RepoPath ref) => ref == tree || ref.startsWith('$tree/'),
+        ),
+      )
       .length;
 
   group('tests_for_changes 推导规则', () {
     test('索引规模哨兵：扫描面不得塌掉', () {
-      expect(index.length, greaterThanOrEqualTo(1700),
-          reason: 'fushi/test 下应有 2100+ 个 *_test.dart（实测 2180）；'
-              '数量塌掉说明 listAppTestFiles 的枚举坏了，'
-              '而坏掉的表现是「推导结果变少」——不会有人自己发现');
-      final int withFace =
-          index.values.where((TestTriggerFace f) => !f.isEmpty).length;
-      expect(withFace, greaterThanOrEqualTo(780),
-          reason: '实测 970 个测试文件有可提取的触发面；'
-              '掉到 780 以下说明路径提取器少认了一大类写法');
+      expect(
+        index.length,
+        greaterThanOrEqualTo(1700),
+        reason:
+            'fushi/test 下应有 2100+ 个 *_test.dart（实测 2180）；'
+            '数量塌掉说明 listAppTestFiles 的枚举坏了，'
+            '而坏掉的表现是「推导结果变少」——不会有人自己发现',
+      );
+      final int withFace = index.values
+          .where((TestTriggerFace f) => !f.isEmpty)
+          .length;
+      expect(
+        withFace,
+        greaterThanOrEqualTo(780),
+        reason:
+            '实测 970 个测试文件有可提取的触发面；'
+            '掉到 780 以下说明路径提取器少认了一大类写法',
+      );
     });
 
     test('三遍提取各自都必须活着（合成语料逐遍点名）', () {
@@ -117,7 +129,8 @@ void main() {
           fs,
         ),
         contains('fushi/windows/runner'),
-        reason: 'p.join 段链那一遍死了——这段语料里一个斜杠都没有，'
+        reason:
+            'p.join 段链那一遍死了——这段语料里一个斜杠都没有，'
             '只有这一遍认得，而本仓大量 native 守卫正是这么写路径的',
       );
       expect(
@@ -144,8 +157,8 @@ void main() {
     test('被替掉的 9 条手写规则，必须全部能被推导出来', () {
       // 这张表是**被替掉的那份文档清单的原文**，一条不改地抄在这里。
       // 推导规则可以比它多，绝不许比它少——少一条就是回到「名字表腐烂」的老路。
-      const Map<String, List<String>> replacedHandWrittenRules =
-          <String, List<String>>{
+      const Map<String, List<String>>
+      replacedHandWrittenRules = <String, List<String>>{
         '.github/workflows/build-multiplatform.yml': <String>[
           'fushi/test/build/workflow_sed_inplace_portability_guard_test.dart',
           'fushi/test/tools/powershell_51_compat_guard_test.dart',
@@ -179,9 +192,13 @@ void main() {
           if (!got.contains(want)) missing.add('$changed → $want');
         }
       });
-      expect(missing, isEmpty,
-          reason: '推导规则漏掉了原手写清单里的条目：\n${missing.join('\n')}\n'
-              '推导规则必须是那份清单的超集，否则这次替换是净损失');
+      expect(
+        missing,
+        isEmpty,
+        reason:
+            '推导规则漏掉了原手写清单里的条目：\n${missing.join('\n')}\n'
+            '推导规则必须是那份清单的超集，否则这次替换是净损失',
+      );
     });
 
     test('原先零触发规则的 native 树，现在每棵都推得出测试', () {
@@ -205,9 +222,13 @@ void main() {
         final int got = derive(changed).length;
         if (got < floor) tooThin.add('$changed → $got 个（下界 $floor）');
       });
-      expect(tooThin, isEmpty,
-          reason: '这些树曾经完全没有触发规则，PR 改到它们时一条守卫都不会被跑到。'
-              '推导结果掉到下界以下说明提取器又瞎了：\n${tooThin.join('\n')}');
+      expect(
+        tooThin,
+        isEmpty,
+        reason:
+            '这些树曾经完全没有触发规则，PR 改到它们时一条守卫都不会被跑到。'
+            '推导结果掉到下界以下说明提取器又瞎了：\n${tooThin.join('\n')}',
+      );
     });
 
     test('逐树规模哨兵：结构化提取不得少于独立朴素扫描', () {
@@ -234,9 +255,13 @@ void main() {
           regressions.add('$tree：结构化 $indexed < 朴素 $naive');
         }
       }
-      expect(regressions, isEmpty,
-          reason: '结构化提取比「逐字 contains」还少，说明含斜杠字面量那一遍漏了：\n'
-              '${regressions.join('\n')}');
+      expect(
+        regressions,
+        isEmpty,
+        reason:
+            '结构化提取比「逐字 contains」还少，说明含斜杠字面量那一遍漏了：\n'
+            '${regressions.join('\n')}',
+      );
     });
 
     test('逐树规模哨兵：绝对下界（实测值的约 80%）', () {
@@ -288,14 +313,18 @@ void main() {
             walk(e);
           } else if (e is File) {
             repoFiles.add(
-                e.path.replaceAll('\\', '/').replaceFirst('$rootPath/', ''));
+              e.path.replaceAll('\\', '/').replaceFirst('$rootPath/', ''),
+            );
           }
         }
       }
 
       walk(fs.root);
-      expect(repoFiles.length, greaterThanOrEqualTo(5000),
-          reason: '仓库文件枚举塌了（实测上万），下面的 glob 校验会假绿');
+      expect(
+        repoFiles.length,
+        greaterThanOrEqualTo(5000),
+        reason: '仓库文件枚举塌了（实测上万），下面的 glob 校验会假绿',
+      );
 
       final List<String> declared = <String>[];
       final List<String> dead = <String>[];
@@ -306,13 +335,21 @@ void main() {
           if (!repoFiles.any(re.hasMatch)) dead.add('$test: $glob');
         }
       });
-      expect(declared, isNotEmpty,
-          reason: '一条 `// tests-for-changes:` 声明都没有——'
-              '要么机制被删了，要么正则不认了；无论哪种，'
-              'powershell_51_compat_guard 这类运行时算扫描面的守卫就又没触发规则了');
-      expect(dead, isEmpty,
-          reason: '这些声明的 glob 在仓库里匹配不到任何文件，已经是死规则：\n'
-              '${dead.join('\n')}');
+      expect(
+        declared,
+        isNotEmpty,
+        reason:
+            '一条 `// tests-for-changes:` 声明都没有——'
+            '要么机制被删了，要么正则不认了；无论哪种，'
+            'powershell_51_compat_guard 这类运行时算扫描面的守卫就又没触发规则了',
+      );
+      expect(
+        dead,
+        isEmpty,
+        reason:
+            '这些声明的 glob 在仓库里匹配不到任何文件，已经是死规则：\n'
+            '${dead.join('\n')}',
+      );
     });
 
     test('声明的 tests-for-changes-ignore 必须对得上本文件真被提取到的引用', () {
@@ -327,12 +364,20 @@ void main() {
           if (!face.referencedPaths.contains(p)) dead.add('$test: $p');
         }
       });
-      expect(declared, isNotEmpty,
-          reason: '一条 `// tests-for-changes-ignore:` 声明都没有——机制被删了或'
-              '正则不认了，bug_tool_* 又会被每个 BUG 流程 PR 的 docs/BUGS.md 拉进来');
-      expect(dead, isEmpty,
-          reason: '这些忽略声明在本文件里提取不到对应引用，已经是死声明：\n'
-              '${dead.join('\n')}');
+      expect(
+        declared,
+        isNotEmpty,
+        reason:
+            '一条 `// tests-for-changes-ignore:` 声明都没有——机制被删了或'
+            '正则不认了，bug_tool_* 又会被每个 BUG 流程 PR 的 docs/BUGS.md 拉进来',
+      );
+      expect(
+        dead,
+        isEmpty,
+        reason:
+            '这些忽略声明在本文件里提取不到对应引用，已经是死声明：\n'
+            '${dead.join('\n')}',
+      );
     });
 
     test('fixture 忽略只剔除声明者：改 docs/BUGS.md 仍触发索引守卫', () {
@@ -340,8 +385,10 @@ void main() {
       const String scope = 'fushi/test/tools/bug_tool_renumber_scope_test.dart';
       final Set<RepoPath> byIndex = derive('docs/BUGS.md');
       expect(
-          byIndex, contains('fushi/test/tools/bugs_per_file_guard_test.dart'),
-          reason: '真正校验索引的守卫必须照旧被 docs/BUGS.md 触发');
+        byIndex,
+        contains('fushi/test/tools/bugs_per_file_guard_test.dart'),
+        reason: '真正校验索引的守卫必须照旧被 docs/BUGS.md 触发',
+      );
       expect(byIndex, isNot(contains(pool)));
       expect(byIndex, isNot(contains(scope)));
       // 它们真正守的对象照旧触发。
@@ -349,18 +396,27 @@ void main() {
     });
 
     test('Dart 源码树的改动不由本工具输出（默认整批 35 条兜底）', () {
-      expect(isDefaultBatchCoveredChange('fushi/lib/src/models/app_model.dart'),
-          isTrue);
       expect(
-          isDefaultBatchCoveredChange('fushi/test/tools/x_test.dart'), isTrue);
-      expect(isDefaultBatchCoveredChange('packages/fushi_core/lib/src/db.dart'),
-          isTrue);
-      expect(isDefaultBatchCoveredChange('fushi/windows/runner/x.cpp'), isFalse,
-          reason: 'native 树绝不能被当成「已被整批覆盖」而吞掉');
+        isDefaultBatchCoveredChange('fushi/lib/src/models/app_model.dart'),
+        isTrue,
+      );
       expect(
-          isDefaultBatchCoveredChange(
-              'packages/gamepads_windows/windows/x.cpp'),
-          isFalse);
+        isDefaultBatchCoveredChange('fushi/test/tools/x_test.dart'),
+        isTrue,
+      );
+      expect(
+        isDefaultBatchCoveredChange('packages/fushi_core/lib/src/db.dart'),
+        isTrue,
+      );
+      expect(
+        isDefaultBatchCoveredChange('fushi/windows/runner/x.cpp'),
+        isFalse,
+        reason: 'native 树绝不能被当成「已被整批覆盖」而吞掉',
+      );
+      expect(
+        isDefaultBatchCoveredChange('packages/gamepads_windows/windows/x.cpp'),
+        isFalse,
+      );
     });
 
     test('两处硬编码目录名必须仍对得上仓库布局', () {
@@ -370,11 +426,17 @@ void main() {
       for (final RepoPath container in kContainerDirs) {
         final Directory dir = Directory('${fs.root.path}/$container');
         expect(dir.existsSync(), isTrue, reason: '容器目录 $container 不在了');
-        final int subDirs =
-            dir.listSync(followLinks: false).whereType<Directory>().length;
-        expect(subDirs, greaterThanOrEqualTo(5),
-            reason: '$container 只剩 $subDirs 个子目录，'
-                '它可能已经不再是「装着互不相干多个域」的容器目录');
+        final int subDirs = dir
+            .listSync(followLinks: false)
+            .whereType<Directory>()
+            .length;
+        expect(
+          subDirs,
+          greaterThanOrEqualTo(5),
+          reason:
+              '$container 只剩 $subDirs 个子目录，'
+              '它可能已经不再是「装着互不相干多个域」的容器目录',
+        );
       }
     });
 
@@ -393,16 +455,22 @@ void main() {
           }
         }
       });
-      expect(polluted, isEmpty,
-          reason: '这些引用落在构建产物 / 机器本地目录里：\n${polluted.join('\n')}');
+      expect(
+        polluted,
+        isEmpty,
+        reason: '这些引用落在构建产物 / 机器本地目录里：\n${polluted.join('\n')}',
+      );
     });
 
     test('存在性判定必须逐段精确大小写（Windows NTFS 大小写不敏感）', () {
       // 直接用 existsSync 时，注释里的「Android/iOS/macOS/Windows/Linux」会让
       // `fushi/Linux` 在 Windows 上判为存在、在 Linux CI 上判为不存在——
       // 同一份索引两个平台两个样，本机全绿 CI 红。
-      expect(fs.exists('fushi/linux'), isTrue,
-          reason: '真实目录必须判存在，否则这条测试在守一个空契约');
+      expect(
+        fs.exists('fushi/linux'),
+        isTrue,
+        reason: '真实目录必须判存在，否则这条测试在守一个空契约',
+      );
       expect(fs.exists('fushi/Linux'), isFalse, reason: '大小写不匹配必须判不存在');
       expect(fs.exists('fushi/windows'), isTrue);
       expect(fs.exists('fushi/Windows'), isFalse);
@@ -412,14 +480,24 @@ void main() {
       final File doc = File('${fs.root.path}/docs/agent/fast-workflow.md');
       expect(doc.existsSync(), isTrue, reason: '文档没了，规则就没有入口');
       final String text = doc.readAsStringSync();
-      expect(text.contains('tool/tests_for_changes.dart'), isTrue,
-          reason: 'fast-workflow.md 必须给出推导命令，否则规则再对也没人执行');
+      expect(
+        text.contains('tool/tests_for_changes.dart'),
+        isTrue,
+        reason: 'fast-workflow.md 必须给出推导命令，否则规则再对也没人执行',
+      );
       final int anchor = text.indexOf('按触发条件加跑');
-      expect(anchor, greaterThanOrEqualTo(0),
-          reason: '「按触发条件加跑」这一节的锚点不见了，本断言在守空气');
-      expect(text.substring(anchor).contains('tests_for_changes.dart'), isTrue,
-          reason: '「按触发条件加跑」一节里必须是推导命令，'
-              '不许退回手写测试名清单——名字表必然腐烂，这次就是');
+      expect(
+        anchor,
+        greaterThanOrEqualTo(0),
+        reason: '「按触发条件加跑」这一节的锚点不见了，本断言在守空气',
+      );
+      expect(
+        text.substring(anchor).contains('tests_for_changes.dart'),
+        isTrue,
+        reason:
+            '「按触发条件加跑」一节里必须是推导命令，'
+            '不许退回手写测试名清单——名字表必然腐烂，这次就是',
+      );
     });
   });
 }

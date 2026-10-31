@@ -68,8 +68,8 @@ Future<String?> pickRealDirectoryPath({
 
   // 安卓：先确保 MANAGE_EXTERNAL_STORAGE（全文件访问）已授权——下游 dart:io 读盘需要。
   await appModel.requestExternalStoragePermissions();
-  final bool granted =
-      await appModel.platformServices.permission.hasExternalStoragePermission();
+  final bool granted = await appModel.platformServices.permission
+      .hasExternalStoragePermission();
   if (!granted) {
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -288,8 +288,8 @@ Future<PickedFilePath?> pickRealFilePathDetailed({
 
   // 安卓：先尝试确保 MANAGE_EXTERNAL_STORAGE（全文件访问）已授权。
   await appModel.requestExternalStoragePermissions();
-  final bool granted =
-      await appModel.platformServices.permission.hasExternalStoragePermission();
+  final bool granted = await appModel.platformServices.permission
+      .hasExternalStoragePermission();
   if (!granted) {
     // 降级逃生口：无全文件访问权限时回退 file_picker（仍复制到 cache 但可用）。
     // 这条路径是 cache 临时副本，出处必须如实标 false——调用方据此禁掉引用。
@@ -395,8 +395,7 @@ Future<PickedFilePath?> _pickFileViaSaf() async {
 Future<String?> pickSystemFilePath({
   required BuildContext context,
   Set<String>? allowedExtensions,
-}) =>
-    _fallbackPickFile(context: context, allowedExtensions: allowedExtensions);
+}) => _fallbackPickFile(context: context, allowedExtensions: allowedExtensions);
 
 /// [pickSystemFilePath] 的多选版：同为「当场消费」语义（选中即读进 app 存储 / 经
 /// FFI 导入，与原路径脱钩），因此不申请全文件访问、不走 SAF 真实路径解析——与
@@ -406,12 +405,11 @@ Future<String?> pickSystemFilePath({
 Future<List<String>> pickSystemFilePaths({
   required BuildContext context,
   Set<String>? allowedExtensions,
-}) =>
-    _fallbackPickFiles(
-      context: context,
-      allowedExtensions: allowedExtensions,
-      allowMultiple: true,
-    );
+}) => _fallbackPickFiles(
+  context: context,
+  allowedExtensions: allowedExtensions,
+  allowMultiple: true,
+);
 
 /// 平台安全的「按扩展名选文件」，语义等同
 /// `FilePicker.platform.pickFiles(type: FileType.custom, allowedExtensions: …)`，
@@ -528,13 +526,11 @@ Future<List<String>> _fallbackPickFiles({
   required BuildContext context,
   required bool allowMultiple,
   Set<String>? allowedExtensions,
-}) async =>
-    (await _fallbackPickRaw(
-      context: context,
-      allowMultiple: allowMultiple,
-      allowedExtensions: allowedExtensions,
-    ))
-        .paths;
+}) async => (await _fallbackPickRaw(
+  context: context,
+  allowMultiple: allowMultiple,
+  allowedExtensions: allowedExtensions,
+)).paths;
 
 /// [_fallbackPickRaw] 的返回：过滤后的可用路径 + 平台**原始**交回情况。
 ///
@@ -608,12 +604,15 @@ Future<_RawPickResult> _fallbackPickRaw({
   // 但「省一次空分配」正是那条纪律要挡掉的诱惑，不给下一个人留反例。
   final List<PlatformFile> files = result?.files ?? <PlatformFile>[];
   final int rawCount = files.length;
-  final int missingPathCount =
-      files.where((PlatformFile f) => f.path == null).length;
+  final int missingPathCount = files
+      .where((PlatformFile f) => f.path == null)
+      .length;
   // 取消（`result == null`）时同样返回可增长空列表：调用方会就地 sort（见
   // [pickRealFilePaths] 的说明）。`.toList()` 本身已是可增长的。
-  final List<String> paths =
-      files.map((PlatformFile file) => file.path).whereType<String>().toList();
+  final List<String> paths = files
+      .map((PlatformFile file) => file.path)
+      .whereType<String>()
+      .toList();
 
   List<String> accepted = paths;
   if (filterAfterPick) {

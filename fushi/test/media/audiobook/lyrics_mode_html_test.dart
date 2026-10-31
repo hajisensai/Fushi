@@ -26,42 +26,48 @@ void main() {
     // 机制（webview.part.dart 的 _finalizeLyricsDocumentIfReady 靠它丢弃过期
     // finalize）。只测默认值 0 等于什么都没测——把两处 `$loadGeneration` 写死成
     // 0 也照样绿。必须用一个非默认值把插值真正钉死。
-    test('load generation is interpolated, not hard-coded to the default 0',
-        () {
-      final String html = LyricsModeHtml.generate(
-        cues: <AudioCue>[_cue(0)],
-        currentIndex: 0,
-        loadGeneration: 7,
-        backgroundColor: 'rgba(255,255,255,1.00)',
-        textColor: 'rgba(0,0,0,1.00)',
-        accentColor: 'rgba(255,220,0,1.00)',
-        fontSize: 20,
-      );
+    test(
+      'load generation is interpolated, not hard-coded to the default 0',
+      () {
+        final String html = LyricsModeHtml.generate(
+          cues: <AudioCue>[_cue(0)],
+          currentIndex: 0,
+          loadGeneration: 7,
+          backgroundColor: 'rgba(255,255,255,1.00)',
+          textColor: 'rgba(0,0,0,1.00)',
+          accentColor: 'rgba(255,220,0,1.00)',
+          fontSize: 20,
+        );
 
-      expect(html, contains('window.__fushiLyricsLoadGeneration = 7;'));
-      expect(html, contains("callHandler('onLyricsReady', 7)"));
-      // 两处都不得残留默认值（写死成 0 的复发形态）。
-      expect(html, isNot(contains('window.__fushiLyricsLoadGeneration = 0;')));
-      expect(html, isNot(contains("callHandler('onLyricsReady', 0)")));
-    });
+        expect(html, contains('window.__fushiLyricsLoadGeneration = 7;'));
+        expect(html, contains("callHandler('onLyricsReady', 7)"));
+        // 两处都不得残留默认值（写死成 0 的复发形态）。
+        expect(
+          html,
+          isNot(contains('window.__fushiLyricsLoadGeneration = 0;')),
+        );
+        expect(html, isNot(contains("callHandler('onLyricsReady', 0)")));
+      },
+    );
 
-    test('includes reader selection highlight styles in the standalone page',
-        () {
-      final String html = LyricsModeHtml.generate(
-        cues: <AudioCue>[_cue(0)],
-        currentIndex: 0,
-        backgroundColor: 'rgba(255,255,255,1.00)',
-        textColor: 'rgba(0,0,0,1.00)',
-        accentColor: 'rgba(255,220,0,1.00)',
-        fontSize: 20,
-      );
+    test(
+      'includes reader selection highlight styles in the standalone page',
+      () {
+        final String html = LyricsModeHtml.generate(
+          cues: <AudioCue>[_cue(0)],
+          currentIndex: 0,
+          backgroundColor: 'rgba(255,255,255,1.00)',
+          textColor: 'rgba(0,0,0,1.00)',
+          accentColor: 'rgba(255,220,0,1.00)',
+          fontSize: 20,
+        );
 
-      expect(html, contains('::highlight(fushi-selection)'));
-      expect(html, contains('.fushi-dict-highlight'));
-    });
+        expect(html, contains('::highlight(fushi-selection)'));
+        expect(html, contains('.fushi-dict-highlight'));
+      },
+    );
 
-    test('current cue tap uses selection without disabling native selection',
-        () {
+    test('current cue tap uses selection without disabling native selection', () {
       final String html = LyricsModeHtml.generate(
         cues: <AudioCue>[_cue(0)],
         currentIndex: 0,
@@ -85,28 +91,30 @@ void main() {
     // 当 Flutter 端弹窗可见时整屏有一层 translucent 手势屏障会认领点按 → WebView 收
     // 不到 click → 只关弹窗不发新查词。修复=对齐阅读器正文，用原始 pointerup/touchend
     // （passive:false）+ 小位移门控触发查词，使屏障在场时 WebView 仍能拿到点按。
-    test('lyrics tap uses raw pointer/touch (not synthesized click) for lookup',
-        () {
-      final String html = LyricsModeHtml.generate(
-        cues: <AudioCue>[_cue(0), _cue(1)],
-        currentIndex: 0,
-        backgroundColor: 'rgba(255,255,255,1.00)',
-        textColor: 'rgba(0,0,0,1.00)',
-        accentColor: 'rgba(255,220,0,1.00)',
-        fontSize: 20,
-      );
+    test(
+      'lyrics tap uses raw pointer/touch (not synthesized click) for lookup',
+      () {
+        final String html = LyricsModeHtml.generate(
+          cues: <AudioCue>[_cue(0), _cue(1)],
+          currentIndex: 0,
+          backgroundColor: 'rgba(255,255,255,1.00)',
+          textColor: 'rgba(0,0,0,1.00)',
+          accentColor: 'rgba(255,220,0,1.00)',
+          fontSize: 20,
+        );
 
-      // Raw pointer-up / touch-end listeners on #lc drive the lookup so the
-      // gesture reaches the WebView even when the Flutter dismiss barrier is up.
-      expect(html, contains("_lc.addEventListener('pointerup'"));
-      expect(html, contains("_lc.addEventListener('touchend'"));
-      // Lookup must NOT be wired to the synthesized 'click' event (the broken
-      // path the dismiss barrier swallowed).
-      expect(html, isNot(contains("addEventListener('click'")));
-      // touchend / pointerup register passive:false so preventing/handling the
-      // gesture is allowed (mirrors the reader content gesture handlers).
-      expect(html, contains('{passive: false}'));
-    });
+        // Raw pointer-up / touch-end listeners on #lc drive the lookup so the
+        // gesture reaches the WebView even when the Flutter dismiss barrier is up.
+        expect(html, contains("_lc.addEventListener('pointerup'"));
+        expect(html, contains("_lc.addEventListener('touchend'"));
+        // Lookup must NOT be wired to the synthesized 'click' event (the broken
+        // path the dismiss barrier swallowed).
+        expect(html, isNot(contains("addEventListener('click'")));
+        // touchend / pointerup register passive:false so preventing/handling the
+        // gesture is allowed (mirrors the reader content gesture handlers).
+        expect(html, contains('{passive: false}'));
+      },
+    );
 
     // BUG-017: the active cue used `max-width: 92vw` while `.cue.current` was
     // scaled by `transform: scale(1.15)`. Scaling a near-full-width box past
@@ -114,80 +122,88 @@ void main() {
     // `overflow-x: hidden`). The cue width must be expressed relative to the
     // container content box AND discount the scale factor so the scaled box
     // never exceeds the available width.
-    test('active cue width reserves headroom for its scale (no edge clipping)',
-        () {
-      final String html = LyricsModeHtml.generate(
-        cues: <AudioCue>[_cue(0)],
-        currentIndex: 0,
-        backgroundColor: 'rgba(255,255,255,1.00)',
-        textColor: 'rgba(0,0,0,1.00)',
-        accentColor: 'rgba(255,220,0,1.00)',
-        fontSize: 20,
-      );
+    test(
+      'active cue width reserves headroom for its scale (no edge clipping)',
+      () {
+        final String html = LyricsModeHtml.generate(
+          cues: <AudioCue>[_cue(0)],
+          currentIndex: 0,
+          backgroundColor: 'rgba(255,255,255,1.00)',
+          textColor: 'rgba(0,0,0,1.00)',
+          accentColor: 'rgba(255,220,0,1.00)',
+          fontSize: 20,
+        );
 
-      final String cueRule = _cssBlock(html, '.cue {');
-      final String currentRule = _cssBlock(html, '.cue.current {');
+        final String cueRule = _cssBlock(html, '.cue {');
+        final String currentRule = _cssBlock(html, '.cue.current {');
 
-      // The current cue is enlarged via transform scale, keyed off a shared
-      // variable so the width headroom below stays in lock-step with it.
-      expect(currentRule, contains('transform: scale(var(--cue-scale))'));
-      expect(html, contains('--cue-scale:'));
+        // The current cue is enlarged via transform scale, keyed off a shared
+        // variable so the width headroom below stays in lock-step with it.
+        expect(currentRule, contains('transform: scale(var(--cue-scale))'));
+        expect(html, contains('--cue-scale:'));
 
-      // Width must be relative to the container content box (100%), never a
-      // viewport-fixed value that ignores both the scale and the margins.
-      expect(cueRule, contains('max-width: calc(100% / var(--cue-scale)'));
-      expect(cueRule, isNot(contains('92vw')));
-      expect(cueRule, isNot(contains('max-width: 100vw')));
-    });
+        // Width must be relative to the container content box (100%), never a
+        // viewport-fixed value that ignores both the scale and the margins.
+        expect(cueRule, contains('max-width: calc(100% / var(--cue-scale)'));
+        expect(cueRule, isNot(contains('92vw')));
+        expect(cueRule, isNot(contains('max-width: 100vw')));
+      },
+    );
 
     // The lyrics page is a standalone document (not ReaderContentStyles), so it
     // needs its own themed scrollbar or it shows the default grey bar over the
     // themed background. The classic WebView2 scrollbar honours
     // ::-webkit-scrollbar; the standard props cover overlay engines.
-    test('scrollbar is themed to the cue text colour with a transparent track',
-        () {
-      final String html = LyricsModeHtml.generate(
-        cues: <AudioCue>[_cue(0), _cue(1)],
-        currentIndex: 0,
-        backgroundColor: 'rgba(18,18,18,1.00)',
-        textColor: 'rgba(255,255,255,0.87)',
-        accentColor: 'rgba(255,220,0,1.00)',
-        fontSize: 20,
-      );
+    test(
+      'scrollbar is themed to the cue text colour with a transparent track',
+      () {
+        final String html = LyricsModeHtml.generate(
+          cues: <AudioCue>[_cue(0), _cue(1)],
+          currentIndex: 0,
+          backgroundColor: 'rgba(18,18,18,1.00)',
+          textColor: 'rgba(255,255,255,0.87)',
+          accentColor: 'rgba(255,220,0,1.00)',
+          fontSize: 20,
+        );
 
-      expect(html, contains('::-webkit-scrollbar-thumb'));
-      final String thumbRule = _cssBlock(html, '::-webkit-scrollbar-thumb {');
-      expect(thumbRule, contains('background-color: rgba(255,255,255,0.87)'));
+        expect(html, contains('::-webkit-scrollbar-thumb'));
+        final String thumbRule = _cssBlock(html, '::-webkit-scrollbar-thumb {');
+        expect(thumbRule, contains('background-color: rgba(255,255,255,0.87)'));
 
-      final String trackRule = _cssBlock(html, '::-webkit-scrollbar-track {');
-      expect(trackRule, contains('background: transparent'));
+        final String trackRule = _cssBlock(html, '::-webkit-scrollbar-track {');
+        expect(trackRule, contains('background: transparent'));
 
-      final String rootRule = _cssBlock(html, 'html, body {');
-      expect(rootRule, contains('scrollbar-width: thin;'));
-      expect(
-        rootRule,
-        contains('scrollbar-color: rgba(255,255,255,0.87) transparent;'),
-      );
-    });
+        final String rootRule = _cssBlock(html, 'html, body {');
+        expect(rootRule, contains('scrollbar-width: thin;'));
+        expect(
+          rootRule,
+          contains('scrollbar-color: rgba(255,255,255,0.87) transparent;'),
+        );
+      },
+    );
 
     test(
-        'live style update repaints the scrollbar thumb to the new text colour',
-        () {
-      final String html = LyricsModeHtml.generate(
-        cues: <AudioCue>[_cue(0)],
-        currentIndex: 0,
-        backgroundColor: 'rgba(255,255,255,1.00)',
-        textColor: 'rgba(0,0,0,0.87)',
-        accentColor: 'rgba(255,220,0,1.00)',
-        fontSize: 20,
-      );
+      'live style update repaints the scrollbar thumb to the new text colour',
+      () {
+        final String html = LyricsModeHtml.generate(
+          cues: <AudioCue>[_cue(0)],
+          currentIndex: 0,
+          backgroundColor: 'rgba(255,255,255,1.00)',
+          textColor: 'rgba(0,0,0,0.87)',
+          accentColor: 'rgba(255,220,0,1.00)',
+          fontSize: 20,
+        );
 
-      // __lyricsUpdateStyle must patch the scrollbar rules, not just .cue, so
-      // changing theme while in lyrics mode recolours the bar without reload.
-      expect(html, contains("r.selectorText === '::-webkit-scrollbar-thumb'"));
-      expect(html, contains("r.selectorText === 'html, body'"));
-      expect(html, contains("setProperty('scrollbar-color'"));
-    });
+        // __lyricsUpdateStyle must patch the scrollbar rules, not just .cue, so
+        // changing theme while in lyrics mode recolours the bar without reload.
+        expect(
+          html,
+          contains("r.selectorText === '::-webkit-scrollbar-thumb'"),
+        );
+        expect(html, contains("r.selectorText === 'html, body'"));
+        expect(html, contains("setProperty('scrollbar-color'"));
+      },
+    );
 
     // TODO-907: vertical lyrics mode is a separate `vertical` flag (default
     // false = horizontal, backward-compatible). Horizontal output must NOT
@@ -208,8 +224,7 @@ void main() {
       expect(rootRule, contains('overflow-x: hidden;'));
     });
 
-    test('vertical mode emits vertical-rl writing-mode and horizontal scroll',
-        () {
+    test('vertical mode emits vertical-rl writing-mode and horizontal scroll', () {
       final String html = LyricsModeHtml.generate(
         cues: <AudioCue>[_cue(0), _cue(1)],
         currentIndex: 0,
@@ -261,34 +276,42 @@ void main() {
       }
 
       LyricsHtmlTheme theme(bool alignStart) => LyricsHtmlTheme(
-            textColor: const Color(0xFFFFFFFF),
-            currentColor: const Color(0xFFFFFFFF),
-            accentColor: const Color(0x4DFFFFFF),
-            selectionTextColor: const Color(0xFFFFFFFF),
-            contextOpacities: const <double>[0.46, 0.36, 0.3, 0.26],
-            browsingOpacity: 0.6,
-            deselectedScale: 0.96,
-            anchorY: 0.46,
-            edgeFade: 0.08,
-            alignStart: alignStart,
-            contextBlurPx: 0,
-            rowRadius: 16,
-          );
+        textColor: const Color(0xFFFFFFFF),
+        currentColor: const Color(0xFFFFFFFF),
+        accentColor: const Color(0x4DFFFFFF),
+        selectionTextColor: const Color(0xFFFFFFFF),
+        contextOpacities: const <double>[0.46, 0.36, 0.3, 0.26],
+        browsingOpacity: 0.6,
+        deselectedScale: 0.96,
+        anchorY: 0.46,
+        edgeFade: 0.08,
+        alignStart: alignStart,
+        contextBlurPx: 0,
+        rowRadius: 16,
+      );
 
       test('vertical page caps the inline size and swaps cue spacing', () {
         final String html = build(vertical: true);
         final String cueRule = _cssBlock(html, '.lyrics-container > .cue {');
         expect(cueRule, contains('max-width: none;'));
-        expect(cueRule,
-            contains('max-inline-size: calc(100% / var(--cue-scale) - 1%);'));
+        expect(
+          cueRule,
+          contains('max-inline-size: calc(100% / var(--cue-scale) - 1%);'),
+        );
         expect(cueRule, contains('padding: 8px 12px;'));
         expect(
-            cueRule, contains('transform-origin: var(--ly-origin-v, center);'));
-        final String themedRule =
-            _cssBlock(html, 'body.ly-themed .lyrics-container > .cue {');
+          cueRule,
+          contains('transform-origin: var(--ly-origin-v, center);'),
+        );
+        final String themedRule = _cssBlock(
+          html,
+          'body.ly-themed .lyrics-container > .cue {',
+        );
         expect(themedRule, contains('margin: 0 2px;'));
-        final String starRule =
-            _cssBlock(html, '.lyrics-container > .cue.favorited::before {');
+        final String starRule = _cssBlock(
+          html,
+          '.lyrics-container > .cue.favorited::before {',
+        );
         expect(starRule, contains('bottom: -2px;'));
         expect(starRule, contains('left: 50%;'));
       });
@@ -298,7 +321,9 @@ void main() {
         // `.cue` rule would be rewritten as if it were the base rule.
         final String html = build(vertical: true);
         expect(
-            RegExp(r'^\.cue \{', multiLine: true).allMatches(html).length, 1);
+          RegExp(r'^\.cue \{', multiLine: true).allMatches(html).length,
+          1,
+        );
       });
 
       test('horizontal page carries none of the vertical geometry', () {
@@ -309,16 +334,22 @@ void main() {
         expect(containerRule, contains('flex-direction: column;'));
       });
 
-      test('theme exposes a vertical transform origin (top when start-aligned)',
-          () {
-        expect(LyricsModeHtml.themeVars(theme(true)).vars['--ly-origin-v'],
-            'center top');
-        expect(LyricsModeHtml.themeVars(theme(false)).vars['--ly-origin-v'],
-            'center');
-        final String html = build(vertical: true, theme: theme(true));
-        expect(html, contains('--ly-origin-v: center top;'));
-        expect(html, contains('ly-vertical'));
-      });
+      test(
+        'theme exposes a vertical transform origin (top when start-aligned)',
+        () {
+          expect(
+            LyricsModeHtml.themeVars(theme(true)).vars['--ly-origin-v'],
+            'center top',
+          );
+          expect(
+            LyricsModeHtml.themeVars(theme(false)).vars['--ly-origin-v'],
+            'center',
+          );
+          final String html = build(vertical: true, theme: theme(true));
+          expect(html, contains('--ly-origin-v: center top;'));
+          expect(html, contains('ly-vertical'));
+        },
+      );
 
       test('vertical wheel is projected onto horizontal scroll', () {
         final String html = build(vertical: true);
@@ -331,63 +362,69 @@ void main() {
 
       // BUG-3282：滚轮平滑的逐帧函数在真 JS 引擎里跑：单调逼近、有限帧内精确
       // 落到目标，两个方向都成立。无 node 时 skip。
-      test('wheel easing step converges monotonically onto the target',
-          () async {
-        final String? node = _resolveNode();
-        if (node == null) {
-          markTestSkipped('node not found on PATH');
-          return;
-        }
-        const String sig = 'function __lyricsWheelStep(';
-        final String fn = '$sig${_fnSource(build(vertical: true), sig)}';
-        final Directory dir =
-            Directory.systemTemp.createTempSync('lyrics_wheel_step');
-        final File js = File('${dir.path}${Platform.pathSeparator}harness.js')
-          ..writeAsStringSync('$fn\n$_wheelHarness');
-        try {
-          final ProcessResult r = await Process.run(node, <String>[js.path]);
-          expect(r.exitCode, 0, reason: '${r.stdout}\n${r.stderr}');
-          expect('${r.stdout}', contains('WHEEL_OK 2'));
-        } finally {
-          dir.deleteSync(recursive: true);
-        }
-      });
+      test(
+        'wheel easing step converges monotonically onto the target',
+        () async {
+          final String? node = _resolveNode();
+          if (node == null) {
+            markTestSkipped('node not found on PATH');
+            return;
+          }
+          const String sig = 'function __lyricsWheelStep(';
+          final String fn = '$sig${_fnSource(build(vertical: true), sig)}';
+          final Directory dir = Directory.systemTemp.createTempSync(
+            'lyrics_wheel_step',
+          );
+          final File js = File('${dir.path}${Platform.pathSeparator}harness.js')
+            ..writeAsStringSync('$fn\n$_wheelHarness');
+          try {
+            final ProcessResult r = await Process.run(node, <String>[js.path]);
+            expect(r.exitCode, 0, reason: '${r.stdout}\n${r.stderr}');
+            expect('${r.stdout}', contains('WHEEL_OK 2'));
+          } finally {
+            dir.deleteSync(recursive: true);
+          }
+        },
+      );
     });
 
     // 滚动居中纯函数在真 JS 引擎里跑：只产生增量、从不写绝对 scrollLeft，所以
     // vertical-rl 的两种 scrollLeft 约定（Chromium 85+ / WKWebView 的「起点 0、往左
     // 为负」，老 Chromium WebView 的「起点 max、往左变小」）下都把当前句居中，滚轮
     // 往下读也都往左走。无 node 时 skip。
-    test('center delta centers the cue under both RTL scrollLeft conventions',
-        () async {
-      final String? node = _resolveNode();
-      if (node == null) {
-        markTestSkipped('node not found on PATH');
-        return;
-      }
-      final String html = LyricsModeHtml.generate(
-        cues: <AudioCue>[_cue(0)],
-        currentIndex: 0,
-        backgroundColor: 'rgba(255,255,255,1.00)',
-        textColor: 'rgba(0,0,0,1.00)',
-        accentColor: 'rgba(255,220,0,1.00)',
-        fontSize: 20,
-        vertical: true,
-      );
-      const String sig = 'function __lyricsCenterDeltaFor(';
-      final String fn = '$sig${_fnSource(html, sig)}';
-      final Directory dir =
-          Directory.systemTemp.createTempSync('lyrics_center_delta');
-      final File js = File('${dir.path}${Platform.pathSeparator}harness.js')
-        ..writeAsStringSync('$fn\n$_centerHarness');
-      try {
-        final ProcessResult r = await Process.run(node, <String>[js.path]);
-        expect(r.exitCode, 0, reason: '${r.stdout}\n${r.stderr}');
-        expect('${r.stdout}', contains('CENTER_OK 4'));
-      } finally {
-        dir.deleteSync(recursive: true);
-      }
-    });
+    test(
+      'center delta centers the cue under both RTL scrollLeft conventions',
+      () async {
+        final String? node = _resolveNode();
+        if (node == null) {
+          markTestSkipped('node not found on PATH');
+          return;
+        }
+        final String html = LyricsModeHtml.generate(
+          cues: <AudioCue>[_cue(0)],
+          currentIndex: 0,
+          backgroundColor: 'rgba(255,255,255,1.00)',
+          textColor: 'rgba(0,0,0,1.00)',
+          accentColor: 'rgba(255,220,0,1.00)',
+          fontSize: 20,
+          vertical: true,
+        );
+        const String sig = 'function __lyricsCenterDeltaFor(';
+        final String fn = '$sig${_fnSource(html, sig)}';
+        final Directory dir = Directory.systemTemp.createTempSync(
+          'lyrics_center_delta',
+        );
+        final File js = File('${dir.path}${Platform.pathSeparator}harness.js')
+          ..writeAsStringSync('$fn\n$_centerHarness');
+        try {
+          final ProcessResult r = await Process.run(node, <String>[js.path]);
+          expect(r.exitCode, 0, reason: '${r.stdout}\n${r.stderr}');
+          expect('${r.stdout}', contains('CENTER_OK 4'));
+        } finally {
+          dir.deleteSync(recursive: true);
+        }
+      },
+    );
 
     // TODO-1080: an over-long sentence can be taller (vertical-rl) or wider than
     // the screen and gets clipped by the body's overflow-hidden. The page must
@@ -435,32 +472,41 @@ void main() {
       });
 
       test(
-          'fit measures the constraining axis (height vertical, width horizontal)',
-          () {
-        final String html = buildHtml();
-        // Scale-independent layout-box extents (offsetHeight/offsetWidth), not
-        // getBoundingClientRect which would fold in the .current scale.
-        expect(html,
-            contains('__lyricsVertical ? el.offsetHeight : el.offsetWidth'));
-        // Available extent is discounted by --cue-scale so a cue that fits
-        // un-scaled but overflows once enlarged still fits.
-        expect(html, contains('/ scale'));
-      });
+        'fit measures the constraining axis (height vertical, width horizontal)',
+        () {
+          final String html = buildHtml();
+          // Scale-independent layout-box extents (offsetHeight/offsetWidth), not
+          // getBoundingClientRect which would fold in the .current scale.
+          expect(
+            html,
+            contains('__lyricsVertical ? el.offsetHeight : el.offsetWidth'),
+          );
+          // Available extent is discounted by --cue-scale so a cue that fits
+          // un-scaled but overflows once enlarged still fits.
+          expect(html, contains('/ scale'));
+        },
+      );
 
-      test('live style update retargets the base var and re-fits (no reload)',
-          () {
-        final String html = buildHtml();
-        // Font-size live update writes the --cue-font-size prop (not a fixed
-        // .cue font-size) so the refit re-measures against the new base.
-        expect(
+      test(
+        'live style update retargets the base var and re-fits (no reload)',
+        () {
+          final String html = buildHtml();
+          // Font-size live update writes the --cue-font-size prop (not a fixed
+          // .cue font-size) so the refit re-measures against the new base.
+          expect(
             html,
             contains(
-                "root.style.setProperty('--cue-font-size', fontSize + 'px')"));
-        // __lyricsUpdateStyle re-runs the fit pass after mutating base/margins.
-        final String updateFn =
-            _fnBody(html, 'window.__lyricsUpdateStyle = function');
-        expect(updateFn, contains('__lyricsFitCues();'));
-      });
+              "root.style.setProperty('--cue-font-size', fontSize + 'px')",
+            ),
+          );
+          // __lyricsUpdateStyle re-runs the fit pass after mutating base/margins.
+          final String updateFn = _fnBody(
+            html,
+            'window.__lyricsUpdateStyle = function',
+          );
+          expect(updateFn, contains('__lyricsFitCues();'));
+        },
+      );
 
       test('re-fits on viewport resize (rotation / window resize)', () {
         final String html = buildHtml();
@@ -473,32 +519,35 @@ void main() {
       // 布局，竖排零视口下每字一列，600 句卡死 WebContent 主线程十几秒（真机更久），
       // 就绪握手 / resize / 切横排的 loadData 全排在它后面。真 JS 里跑：零视口不量
       // 不写不定位；有视口时常数次强制布局；初始居中等到真实视口才做且只做一次。
-      test('fit pass skips a zero viewport and batches reads (BUG-3416)',
-          () async {
-        final String? node = _resolveNode();
-        if (node == null) {
-          markTestSkipped('node not found on PATH');
-          return;
-        }
-        final String html = buildHtml(vertical: true);
-        final String fns = <String>[
-          'function __lyricsHasViewport(',
-          'function _lyricsFitCue(',
-          'function __lyricsFitCues(',
-          'function _lyInitialPosition(',
-        ].map((String sig) => '$sig${_fnSource(html, sig)}').join('\n');
-        final Directory dir =
-            Directory.systemTemp.createTempSync('lyrics_fit_viewport');
-        final File js = File('${dir.path}${Platform.pathSeparator}harness.js')
-          ..writeAsStringSync('$_fitHarnessPrelude\n$fns\n$_fitHarness');
-        try {
-          final ProcessResult r = await Process.run(node, <String>[js.path]);
-          expect(r.exitCode, 0, reason: '${r.stdout}\n${r.stderr}');
-          expect('${r.stdout}', contains('FIT_OK'));
-        } finally {
-          dir.deleteSync(recursive: true);
-        }
-      });
+      test(
+        'fit pass skips a zero viewport and batches reads (BUG-3416)',
+        () async {
+          final String? node = _resolveNode();
+          if (node == null) {
+            markTestSkipped('node not found on PATH');
+            return;
+          }
+          final String html = buildHtml(vertical: true);
+          final String fns = <String>[
+            'function __lyricsHasViewport(',
+            'function _lyricsFitCue(',
+            'function __lyricsFitCues(',
+            'function _lyInitialPosition(',
+          ].map((String sig) => '$sig${_fnSource(html, sig)}').join('\n');
+          final Directory dir = Directory.systemTemp.createTempSync(
+            'lyrics_fit_viewport',
+          );
+          final File js = File('${dir.path}${Platform.pathSeparator}harness.js')
+            ..writeAsStringSync('$_fitHarnessPrelude\n$fns\n$_fitHarness');
+          try {
+            final ProcessResult r = await Process.run(node, <String>[js.path]);
+            expect(r.exitCode, 0, reason: '${r.stdout}\n${r.stderr}');
+            expect('${r.stdout}', contains('FIT_OK'));
+          } finally {
+            dir.deleteSync(recursive: true);
+          }
+        },
+      );
     });
 
     // BUG-844: 歌词是独立文档，正文 setup 脚本（含 mousemove→onShiftHover 与
@@ -528,21 +577,23 @@ void main() {
         );
       });
 
-      test('hover is gated on the lookup key or the __hoverAutoLookup toggle',
-          () {
-        final String html = buildHtml();
-        // Same gate as the reader body: the configured lookup key held (setting
-        // 「悬停查词按键」, pushed as window.__fushiHoverKey, Shift by default)
-        // OR the "hover to look up" setting on; neither → reset the throttle
-        // anchor and bail.
-        expect(
-          html,
-          contains(
-            "!e[window.__fushiHoverKey || 'shiftKey'] && "
-            '!window.__hoverAutoLookup',
-          ),
-        );
-      });
+      test(
+        'hover is gated on the lookup key or the __hoverAutoLookup toggle',
+        () {
+          final String html = buildHtml();
+          // Same gate as the reader body: the configured lookup key held (setting
+          // 「悬停查词按键」, pushed as window.__fushiHoverKey, Shift by default)
+          // OR the "hover to look up" setting on; neither → reset the throttle
+          // anchor and bail.
+          expect(
+            html,
+            contains(
+              "!e[window.__fushiHoverKey || 'shiftKey'] && "
+              '!window.__hoverAutoLookup',
+            ),
+          );
+        },
+      );
 
       test('hover honours the 8px (64 px^2) movement throttle', () {
         final String html = buildHtml();
@@ -563,8 +614,11 @@ void main() {
         // The broken 3-arg forwarding must be gone.
         expect(
           html,
-          isNot(contains(
-              'origSelectText.call(window.fushiSelection, x, y, maxLen)')),
+          isNot(
+            contains(
+              'origSelectText.call(window.fushiSelection, x, y, maxLen)',
+            ),
+          ),
         );
       });
     });
@@ -574,14 +628,14 @@ void main() {
     // 逐句 hover / 点击（.revealed）才显形，与视频字幕整篇遮罩语义一致。
     group('BUG-852 listening blur hides all cues (not just current)', () {
       String buildBlurHtml() => LyricsModeHtml.generate(
-            cues: <AudioCue>[_cue(0), _cue(1), _cue(2), _cue(3), _cue(4)],
-            currentIndex: 2,
-            backgroundColor: 'rgba(255,255,255,1.00)',
-            textColor: 'rgba(0,0,0,1.00)',
-            accentColor: 'rgba(255,220,0,1.00)',
-            fontSize: 20,
-            blur: true,
-          );
+        cues: <AudioCue>[_cue(0), _cue(1), _cue(2), _cue(3), _cue(4)],
+        currentIndex: 2,
+        backgroundColor: 'rgba(255,255,255,1.00)',
+        textColor: 'rgba(0,0,0,1.00)',
+        accentColor: 'rgba(255,220,0,1.00)',
+        fontSize: 20,
+        blur: true,
+      );
 
       test('blur filter is gated on all .cue, not .cue.current only', () {
         final String html = buildBlurHtml();
@@ -594,21 +648,20 @@ void main() {
         // Regression guard: the blur must NOT be re-narrowed to only the current
         // cue — that was the bug (前后文暴露).
         expect(html, isNot(contains('body.lyrics-blur .cue.current {')));
-        expect(
-          html,
-          isNot(contains('body.lyrics-blur .cue.current:hover')),
-        );
+        expect(html, isNot(contains('body.lyrics-blur .cue.current:hover')));
       });
 
-      test('any cue reveals (unblurs) on hover or .revealed, not current-only',
-          () {
-        final String html = buildBlurHtml();
+      test(
+        'any cue reveals (unblurs) on hover or .revealed, not current-only',
+        () {
+          final String html = buildBlurHtml();
 
-        // Reveal selectors must match any cue, so tapping/hovering a non-current
-        // (前后文) line unblurs it just like the current line.
-        expect(html, contains('body.lyrics-blur .cue:hover'));
-        expect(html, contains('body.lyrics-blur .cue.revealed'));
-      });
+          // Reveal selectors must match any cue, so tapping/hovering a non-current
+          // (前后文) line unblurs it just like the current line.
+          expect(html, contains('body.lyrics-blur .cue:hover'));
+          expect(html, contains('body.lyrics-blur .cue.revealed'));
+        },
+      );
 
       test('runtime blur toggle still only flips the body class', () {
         final String html = buildBlurHtml();

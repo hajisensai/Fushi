@@ -26,9 +26,9 @@ void main() {
   group('A — overlay WebView2 is prewarmed off-screen (own ownership)', () {
     test('Dart channel exposes prewarmWebView', () {
       final String
-          ch = // spec 2026-07-10: channel 实现在 overlay_window_channel.dart（门面+实现拼接扫描）
+      ch = // spec 2026-07-10: channel 实现在 overlay_window_channel.dart（门面+实现拼接扫描）
           read('lib/src/lookup/global_lookup_channel.dart') +
-              read('lib/src/lookup/overlay_window_channel.dart');
+          read('lib/src/lookup/overlay_window_channel.dart');
       expect(
         ch.contains("_invoke<void>('prewarmWebView'"),
         isTrue,
@@ -62,8 +62,7 @@ void main() {
       );
     });
 
-    test('native window has a PrewarmWebView entry that navigates host.html',
-        () {
+    test('native window has a PrewarmWebView entry that navigates host.html', () {
       final String h = read('windows/runner/global_lookup_window.h');
       expect(h.contains('void PrewarmWebView('), isTrue);
       final String cpp = read('windows/runner/global_lookup_window.cpp');
@@ -93,9 +92,9 @@ void main() {
 
     test('a readiness query exists on the channel + native', () {
       final String
-          ch = // spec 2026-07-10: channel 实现在 overlay_window_channel.dart（门面+实现拼接扫描）
+      ch = // spec 2026-07-10: channel 实现在 overlay_window_channel.dart（门面+实现拼接扫描）
           read('lib/src/lookup/global_lookup_channel.dart') +
-              read('lib/src/lookup/overlay_window_channel.dart');
+          read('lib/src/lookup/overlay_window_channel.dart');
       expect(ch.contains("_invoke<bool>('isWebViewReady')"), isTrue);
       final String fw = read('windows/runner/flutter_window.cpp');
       expect(fw.contains('method == "isWebViewReady"'), isTrue);

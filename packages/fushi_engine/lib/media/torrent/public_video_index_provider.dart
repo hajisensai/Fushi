@@ -18,10 +18,9 @@ const List<int> kApibayTvCategories = <int>[208, 205];
 const int kKnabenMovieCategory = 3000000;
 const int kKnabenTvCategory = 2000000;
 
-String _normalizedPublicIndexTitle(String value) => foldFullWidthAscii(value)
-    .trim()
-    .replaceAll(RegExp(r'\s+'), ' ')
-    .toLowerCase();
+String _normalizedPublicIndexTitle(String value) => foldFullWidthAscii(
+  value,
+).trim().replaceAll(RegExp(r'\s+'), ' ').toLowerCase();
 
 /// 判据走共享的书写系统分类器，**不再枚举 CJK 区段**。
 ///

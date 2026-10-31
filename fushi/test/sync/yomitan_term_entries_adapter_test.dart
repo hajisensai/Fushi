@@ -19,12 +19,12 @@ DictionaryEntry _entry({
       {
         'dictName': 'Freq',
         'values': [
-          {'value': 1234, 'display': '1234'}
-        ]
-      }
+          {'value': 1234, 'display': '1234'},
+        ],
+      },
     ],
     'pitches': [
-      {'dictName': 'Pitch', 'positions': positions}
+      {'dictName': 'Pitch', 'positions': positions},
     ],
   });
   return DictionaryEntry(
@@ -55,11 +55,15 @@ void main() {
 
     test('maps display fields truthfully', () {
       final result = DictionarySearchResult(
-          searchTerm: 'わかる', entries: [_entry()], bestLength: 3);
+        searchTerm: 'わかる',
+        entries: [_entry()],
+        bestLength: 3,
+      );
       final de =
           (buildYomitanTermEntriesResponse(result, 0)['dictionaryEntries']
-                  as List)
-              .first as Map<String, dynamic>;
+                      as List)
+                  .first
+              as Map<String, dynamic>;
 
       expect(de['type'], 'term');
       final hw = (de['headwords'] as List).first as Map<String, dynamic>;
@@ -81,11 +85,15 @@ void main() {
 
     test('fills internal fields with sane defaults', () {
       final result = DictionarySearchResult(
-          searchTerm: 'わかる', entries: [_entry()], bestLength: 3);
+        searchTerm: 'わかる',
+        entries: [_entry()],
+        bestLength: 3,
+      );
       final de =
           (buildYomitanTermEntriesResponse(result, 0)['dictionaryEntries']
-                  as List)
-              .first as Map<String, dynamic>;
+                      as List)
+                  .first
+              as Map<String, dynamic>;
 
       expect(de['isPrimary'], true);
       expect(de['score'], 0);
@@ -96,23 +104,30 @@ void main() {
 
     test('plain-text meaning becomes a string entry, not parsed', () {
       final result = DictionarySearchResult(
-          searchTerm: 'x',
-          entries: [_entry(meaning: 'to understand')],
-          bestLength: 1);
+        searchTerm: 'x',
+        entries: [_entry(meaning: 'to understand')],
+        bestLength: 1,
+      );
       final def =
           ((buildYomitanTermEntriesResponse(result, 0)['dictionaryEntries']
-                  as List)
-              .first as Map<String, dynamic>)['definitions'] as List;
+                          as List)
+                      .first
+                  as Map<String, dynamic>)['definitions']
+              as List;
       expect((def.first as Map)['entries'], ['to understand']);
     });
 
     test('pronunciations follow official TermPronunciation shape', () {
       final result = DictionarySearchResult(
-          searchTerm: 'わかる', entries: [_entry()], bestLength: 3);
+        searchTerm: 'わかる',
+        entries: [_entry()],
+        bestLength: 3,
+      );
       final de =
           (buildYomitanTermEntriesResponse(result, 0)['dictionaryEntries']
-                  as List)
-              .first as Map<String, dynamic>;
+                      as List)
+                  .first
+              as Map<String, dynamic>;
 
       // 外层键改名 pitches -> pronunciations，旧顶层键不再存在。
       expect(de.containsKey('pitches'), isFalse);
@@ -141,17 +156,21 @@ void main() {
 
     test('multiple positions flatten to one pitch-accent object each', () {
       final result = DictionarySearchResult(
-          searchTerm: 'わかる',
-          entries: [
-            _entry(positions: [0, 2])
-          ],
-          bestLength: 3);
+        searchTerm: 'わかる',
+        entries: [
+          _entry(positions: [0, 2]),
+        ],
+        bestLength: 3,
+      );
       final de =
           (buildYomitanTermEntriesResponse(result, 0)['dictionaryEntries']
-                  as List)
-              .first as Map<String, dynamic>;
-      final inner = ((de['pronunciations'] as List).first
-          as Map<String, dynamic>)['pronunciations'] as List;
+                      as List)
+                  .first
+              as Map<String, dynamic>;
+      final inner =
+          ((de['pronunciations'] as List).first
+                  as Map<String, dynamic>)['pronunciations']
+              as List;
       expect(inner.length, 2);
       expect((inner[0] as Map)['type'], 'pitch-accent');
       expect((inner[0] as Map)['positions'], 0);

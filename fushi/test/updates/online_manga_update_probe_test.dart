@@ -35,18 +35,17 @@ void main() {
   OnlineMangaLibraryEntry entryFor(
     String seriesKey, {
     List<OnlineMangaChapter> chapters = const <OnlineMangaChapter>[],
-  }) =>
-      OnlineMangaLibraryEntry(
-        runtime: OnlineMangaRuntimeKind.mihon,
-        extensionPackage: 'org.example.fixture',
-        sourceId: '1',
-        series: OnlineMangaSeries(
-          key: seriesKey,
-          title: 'Series $seriesKey',
-          raw: <String, Object?>{'url': seriesKey},
-        ),
-        chapters: chapters,
-      );
+  }) => OnlineMangaLibraryEntry(
+    runtime: OnlineMangaRuntimeKind.mihon,
+    extensionPackage: 'org.example.fixture',
+    sourceId: '1',
+    series: OnlineMangaSeries(
+      key: seriesKey,
+      title: 'Series $seriesKey',
+      raw: <String, Object?>{'url': seriesKey},
+    ),
+    chapters: chapters,
+  );
 
   late Directory root;
   late FushiDatabase database;
@@ -61,8 +60,9 @@ void main() {
   ) async {
     enqueued.add((
       seriesKey: entry.series.key,
-      chapterKeys:
-          chapters.map((OnlineMangaChapter c) => c.key).toList(growable: false),
+      chapterKeys: chapters
+          .map((OnlineMangaChapter c) => c.key)
+          .toList(growable: false),
     ));
   }
 
@@ -124,11 +124,11 @@ void main() {
     expect((await stored(keyB)).autoDownload, isFalse);
 
     // 源这次多了一章 c3（源按新→旧返回）。
-    adapter.script =
-        (OnlineMangaLibraryEntry entry) async => OnlineMangaRefreshResult(
-              series: entry.series,
-              chapters: const <OnlineMangaChapter>[c3, c2, c1],
-            );
+    adapter.script = (OnlineMangaLibraryEntry entry) async =>
+        OnlineMangaRefreshResult(
+          series: entry.series,
+          chapters: const <OnlineMangaChapter>[c3, c2, c1],
+        );
 
     final int refreshed = await runOnlineMangaUpdateProbe(
       database: database,
@@ -158,11 +158,11 @@ void main() {
       entryFor('/series/a', chapters: const <OnlineMangaChapter>[c1]),
       autoDownload: true,
     );
-    adapter.script =
-        (OnlineMangaLibraryEntry entry) async => OnlineMangaRefreshResult(
-              series: entry.series,
-              chapters: const <OnlineMangaChapter>[c3, c2, c1],
-            );
+    adapter.script = (OnlineMangaLibraryEntry entry) async =>
+        OnlineMangaRefreshResult(
+          series: entry.series,
+          chapters: const <OnlineMangaChapter>[c3, c2, c1],
+        );
 
     await runOnlineMangaUpdateProbe(
       database: database,
@@ -171,8 +171,10 @@ void main() {
       onError: onError,
     );
 
-    expect(enqueued.single.chapterKeys, <String>['/chapter/2', '/chapter/3'],
-        reason: '源新→旧，入队要反过来：旧章先下');
+    expect(enqueued.single.chapterKeys, <String>[
+      '/chapter/2',
+      '/chapter/3',
+    ], reason: '源新→旧，入队要反过来：旧章先下');
   });
 
   test('首次入库 chapters 为空 → 刷新拿到整份列表不算新章、不入队', () async {
@@ -182,11 +184,11 @@ void main() {
     );
     expect((await stored(keyA)).chapters, isEmpty);
 
-    adapter.script =
-        (OnlineMangaLibraryEntry entry) async => OnlineMangaRefreshResult(
-              series: entry.series,
-              chapters: const <OnlineMangaChapter>[c2, c1],
-            );
+    adapter.script = (OnlineMangaLibraryEntry entry) async =>
+        OnlineMangaRefreshResult(
+          series: entry.series,
+          chapters: const <OnlineMangaChapter>[c2, c1],
+        );
 
     final int refreshed = await runOnlineMangaUpdateProbe(
       database: database,
@@ -208,7 +210,9 @@ void main() {
     );
     adapter.script = (OnlineMangaLibraryEntry entry) async =>
         OnlineMangaRefreshResult(
-            series: entry.series, chapters: entry.chapters);
+          series: entry.series,
+          chapters: entry.chapters,
+        );
 
     final int refreshed = await runOnlineMangaUpdateProbe(
       database: database,
@@ -224,11 +228,11 @@ void main() {
       entryFor('/series/a', chapters: const <OnlineMangaChapter>[c2, c1]),
       autoDownload: true,
     );
-    adapter.script =
-        (OnlineMangaLibraryEntry entry) async => OnlineMangaRefreshResult(
-              series: entry.series,
-              chapters: const <OnlineMangaChapter>[c3, c2, c1],
-            );
+    adapter.script = (OnlineMangaLibraryEntry entry) async =>
+        OnlineMangaRefreshResult(
+          series: entry.series,
+          chapters: const <OnlineMangaChapter>[c3, c2, c1],
+        );
     final int refreshed = await runOnlineMangaUpdateProbe(
       database: database,
       serviceFor: (OnlineMangaRuntimeKind _) => service,
@@ -286,20 +290,23 @@ void main() {
       entryFor('/series/b', chapters: const <OnlineMangaChapter>[c2, c1]),
       autoDownload: true,
     );
-    adapter.script =
-        (OnlineMangaLibraryEntry entry) async => OnlineMangaRefreshResult(
-              series: entry.series,
-              chapters: const <OnlineMangaChapter>[c3, c2, c1],
-            );
+    adapter.script = (OnlineMangaLibraryEntry entry) async =>
+        OnlineMangaRefreshResult(
+          series: entry.series,
+          chapters: const <OnlineMangaChapter>[c3, c2, c1],
+        );
 
     await runOnlineMangaUpdateProbe(
       database: database,
       serviceFor: (OnlineMangaRuntimeKind _) => service,
-      autoDownload: (OnlineMangaLibraryEntry entry,
-          List<OnlineMangaChapter> chapters) async {
-        if (entry.series.key == '/series/a') throw StateError('queue full');
-        await autoDownload(entry, chapters);
-      },
+      autoDownload:
+          (
+            OnlineMangaLibraryEntry entry,
+            List<OnlineMangaChapter> chapters,
+          ) async {
+            if (entry.series.key == '/series/a') throw StateError('queue full');
+            await autoDownload(entry, chapters);
+          },
       onError: onError,
     );
 
@@ -310,9 +317,8 @@ void main() {
   });
 }
 
-typedef _RefreshScript = Future<OnlineMangaRefreshResult> Function(
-  OnlineMangaLibraryEntry entry,
-);
+typedef _RefreshScript =
+    Future<OnlineMangaRefreshResult> Function(OnlineMangaLibraryEntry entry);
 
 /// 可编排的假运行时：`script` 决定每次 refresh 返回什么 / 抛什么。
 class _ScriptedAdapter implements OnlineMangaRuntimeAdapter {
@@ -340,8 +346,7 @@ class _ScriptedAdapter implements OnlineMangaRuntimeAdapter {
   Future<List<OnlineMangaPageRef>> resolveChapterPages({
     required OnlineMangaLibraryEntry entry,
     required OnlineMangaChapter chapter,
-  }) =>
-      throw UnimplementedError();
+  }) => throw UnimplementedError();
 
   @override
   Future<Uint8List> fetchChapterPage(OnlineMangaPageRef page) =>
@@ -351,6 +356,5 @@ class _ScriptedAdapter implements OnlineMangaRuntimeAdapter {
   Future<List<int>> fetchCover(
     OnlineMangaLibraryEntry entry,
     String url,
-  ) async =>
-      <int>[0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+  ) async => <int>[0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 }

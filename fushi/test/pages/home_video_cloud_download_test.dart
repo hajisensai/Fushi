@@ -46,8 +46,9 @@ void main() {
   late CloudVideoStreamRelay relay;
   setUpAll(() async {
     relay = await CloudVideoStreamRelay.start();
-    pathProviderDir =
-        Directory.systemTemp.createTempSync('fushi_cloud_video_pp');
+    pathProviderDir = Directory.systemTemp.createTempSync(
+      'fushi_cloud_video_pp',
+    );
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
       (MethodCall call) async => pathProviderDir.path,
@@ -97,28 +98,28 @@ void main() {
   });
 
   Widget buildApp(CloudRemoteVideoClient cloud) => ProviderScope(
-        overrides: <Override>[
-          platformServicesProvider.overrideWithValue(platformServices),
-          ankiRepositoryProvider.overrideWithValue(ankiRepository),
-          appProvider.overrideWith((ref) => appModel),
-        ],
-        child: TranslationProvider(
-          child: MaterialApp(
-            home: Scaffold(
-              body: HomeVideoPage(
-                repo: repo,
-                // #792 分区化：home 分区只渲染 dashboard 概览，云占位卡所在的
-                // 混排墙（_buildLocalVideoSlivers）搬进了 series 分区，钉住它。
-                section: VideoLibrarySection.allVideos,
-                // 互联 client 缺省 → _resolveRemoteVideoClient 返 null，走云后端分支。
-                cloudRemoteVideoClientLoader: () async => cloud,
-                remoteVideoDownloadDestination: (RemoteVideoInfo v) async =>
-                    File('${pathProviderDir.path}/${v.id.hashCode}.mp4'),
-              ),
-            ),
+    overrides: <Override>[
+      platformServicesProvider.overrideWithValue(platformServices),
+      ankiRepositoryProvider.overrideWithValue(ankiRepository),
+      appProvider.overrideWith((ref) => appModel),
+    ],
+    child: TranslationProvider(
+      child: MaterialApp(
+        home: Scaffold(
+          body: HomeVideoPage(
+            repo: repo,
+            // #792 分区化：home 分区只渲染 dashboard 概览，云占位卡所在的
+            // 混排墙（_buildLocalVideoSlivers）搬进了 series 分区，钉住它。
+            section: VideoLibrarySection.allVideos,
+            // 互联 client 缺省 → _resolveRemoteVideoClient 返 null，走云后端分支。
+            cloudRemoteVideoClientLoader: () async => cloud,
+            remoteVideoDownloadDestination: (RemoteVideoInfo v) async =>
+                File('${pathProviderDir.path}/${v.id.hashCode}.mp4'),
           ),
         ),
-      );
+      ),
+    ),
+  );
 
   /// 触发下载（点 [trigger]）并等到整条下载链在本 runAsync zone 内彻底排干为止。云视频
   /// 下载走 [_downloadRemote] → [InterconnectDownloadManager.startVideoDownload]，后者在标
@@ -127,9 +128,9 @@ void main() {
   /// 定时器粒度影响、早退保持快路径）——旧实现固定 200 次 20ms 迭代在满负载多 isolate 争用
   /// 下会被批量到期定时器瞬间连发饿死（下载续体尚未调度就退出）而误红。
   Future<void> tapAndAwaitDownload(WidgetTester tester, Finder trigger) async {
-    final InterconnectDownloadManager manager =
-        ProviderScope.containerOf(tester.element(find.byType(HomeVideoPage)))
-            .read(interconnectDownloadManagerProvider);
+    final InterconnectDownloadManager manager = ProviderScope.containerOf(
+      tester.element(find.byType(HomeVideoPage)),
+    ).read(interconnectDownloadManagerProvider);
     await tester.runAsync(() async {
       await tester.tap(trigger);
       final Stopwatch sw = Stopwatch()..start();
@@ -149,30 +150,37 @@ void main() {
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
-    await db.upsertVideoBook(const VideoBooksCompanion(
-      bookUid: Value('video/local-1'),
-      title: Value('Local One'),
-      videoPath: Value('/abs/local-1.mp4'),
-    ));
+    await db.upsertVideoBook(
+      const VideoBooksCompanion(
+        bookUid: Value('video/local-1'),
+        title: Value('Local One'),
+        videoPath: Value('/abs/local-1.mp4'),
+      ),
+    );
 
-    await tester.pumpWidget(buildApp(_FakeCloudRemoteVideoClient(
-      entries: <RemoteVideoManifestEntry>[
-        const RemoteVideoManifestEntry(
-          uid: 'cloud/vid1',
-          title: 'Cloud Vid',
-          videoAsset: 'cloud_vid1.mp4',
-          sizeBytes: 3,
+    await tester.pumpWidget(
+      buildApp(
+        _FakeCloudRemoteVideoClient(
+          entries: <RemoteVideoManifestEntry>[
+            const RemoteVideoManifestEntry(
+              uid: 'cloud/vid1',
+              title: 'Cloud Vid',
+              videoAsset: 'cloud_vid1.mp4',
+              sizeBytes: 3,
+            ),
+          ],
         ),
-      ],
-    )));
+      ),
+    );
     await tester.pumpAndSettle();
 
     expect(
       find.byKey(const ValueKey<String>('home_video_video/local-1')),
       findsOneWidget,
     );
-    final Finder cloudCard =
-        find.byKey(const ValueKey<String>('remote_video_card_cloud_vid1'));
+    final Finder cloudCard = find.byKey(
+      const ValueKey<String>('remote_video_card_cloud_vid1'),
+    );
     expect(cloudCard, findsOneWidget, reason: '云视频占位卡必须混排进主网格');
     expect(
       find.byKey(const ValueKey<String>('remote_video_cloud_badge_cloud_vid1')),
@@ -182,17 +190,18 @@ void main() {
     // BUG-1989 起「全部视频」散卡区是 16:9 等宽 SliverGrid（系列墙才留 Wrap）。
     // 只断言「有网格祖先」不够——云占位自成独立分区时也自带一个 SliverGrid；
     // 判据必须落在「与本地散卡同一个 SliverGrid 实例」上，才真的钉住混排。
-    final Finder localCard =
-        find.byKey(const ValueKey<String>('home_video_video/local-1'));
-    final Finder cloudGrid =
-        find.ancestor(of: cloudCard, matching: find.byType(SliverGrid));
-    final Finder localGrid =
-        find.ancestor(of: localCard, matching: find.byType(SliverGrid));
-    expect(
-      cloudGrid,
-      findsOneWidget,
-      reason: '云视频占位卡是主散卡网格的一个 cell（混排，非独立分区）',
+    final Finder localCard = find.byKey(
+      const ValueKey<String>('home_video_video/local-1'),
     );
+    final Finder cloudGrid = find.ancestor(
+      of: cloudCard,
+      matching: find.byType(SliverGrid),
+    );
+    final Finder localGrid = find.ancestor(
+      of: localCard,
+      matching: find.byType(SliverGrid),
+    );
+    expect(cloudGrid, findsOneWidget, reason: '云视频占位卡是主散卡网格的一个 cell（混排，非独立分区）');
     expect(
       tester.element(cloudGrid),
       same(tester.element(localGrid)),
@@ -200,8 +209,9 @@ void main() {
     );
   });
 
-  testWidgets('点击下载云视频写穿 VideoBooks（真 DB 行 bookUid=uid）',
-      (WidgetTester tester) async {
+  testWidgets('点击下载云视频写穿 VideoBooks（真 DB 行 bookUid=uid）', (
+    WidgetTester tester,
+  ) async {
     tester.view.physicalSize = const Size(1280, 800);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -229,10 +239,7 @@ void main() {
       find.byKey(const ValueKey<String>('remote_video_card_cloud_vid1')),
     );
     await tester.pumpAndSettle();
-    await tapAndAwaitDownload(
-      tester,
-      find.text(t.remote_video_download),
-    );
+    await tapAndAwaitDownload(tester, find.text(t.remote_video_download));
 
     // 撤掉 saveVideoBook 建行后此断言转红（行不存在）。
     final VideoBookRow? row = await repo.getByBookUid('cloud/vid1');
@@ -276,10 +283,16 @@ void main() {
       find.byKey(const ValueKey<String>('remote_video_card_cloud_vid1')),
     );
 
-    expect(cloud.downloadedUids, contains('cloud/vid1'),
-        reason: '#4：短按云占位卡分派下载（不再静默 return）');
-    expect(await repo.getByBookUid('cloud/vid1'), isNotNull,
-        reason: '短按下载后建 VideoBooks 行');
+    expect(
+      cloud.downloadedUids,
+      contains('cloud/vid1'),
+      reason: '#4：短按云占位卡分派下载（不再静默 return）',
+    );
+    expect(
+      await repo.getByBookUid('cloud/vid1'),
+      isNotNull,
+      reason: '短按下载后建 VideoBooks 行',
+    );
   });
 
   testWidgets('云盘能按 Range 读时面板给「播放（流播）」，点它流播而不下载', (WidgetTester tester) async {
@@ -298,10 +311,12 @@ void main() {
     await tester.runAsync(() async {
       final String ns = await store.ensureNamespace(kSyncVideosNamespace);
       await store.putJsonAsset(
-          ns,
-          kSyncVideosManifestName,
-          const RemoteVideoManifest(videos: <RemoteVideoManifestEntry>[entry])
-              .toJson());
+        ns,
+        kSyncVideosManifestName,
+        const RemoteVideoManifest(
+          videos: <RemoteVideoManifestEntry>[entry],
+        ).toJson(),
+      );
       final File blob = File('${pathProviderDir.path}/cloud_blob')
         ..writeAsBytesSync(<int>[0, 0, 0]);
       await store.putAsset(ns, entry.videoAsset, blob);
@@ -323,8 +338,11 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text(t.remote_video_stream_play), findsOneWidget);
-    expect(find.text(t.remote_video_download), findsOneWidget,
-        reason: '流播是新增动作，「下载」保留');
+    expect(
+      find.text(t.remote_video_download),
+      findsOneWidget,
+      reason: '流播是新增动作，「下载」保留',
+    );
 
     // 播放页交给播放内核的地址会在 controller.load 开头打一行 `[video-load] … uri=…`，
     // 用它钉住「真正 load 的是本机回环中继地址」，而不只是「client 被问过」。
@@ -335,19 +353,26 @@ void main() {
     };
     try {
       await tester.tap(find.text(t.remote_video_stream_play));
-      for (int i = 0;
-          i < 40 && !logs.any((String l) => l.contains('[video-load]'));
-          i++) {
+      for (
+        int i = 0;
+        i < 40 && !logs.any((String l) => l.contains('[video-load]'));
+        i++
+      ) {
         await tester.pump(const Duration(milliseconds: 50));
       }
     } finally {
       debugPrint = originalDebugPrint;
     }
-    expect(store.lookedUp, contains(entry.videoAsset),
-        reason: '播放页经流播 client 取流（解析云端视频资产）');
+    expect(
+      store.lookedUp,
+      contains(entry.videoAsset),
+      reason: '播放页经流播 client 取流（解析云端视频资产）',
+    );
     expect(cloud.downloadedUids, isEmpty, reason: '流播不触发整文件下载');
-    final String loadLine = logs
-        .firstWhere((String l) => l.contains('[video-load]'), orElse: () => '');
+    final String loadLine = logs.firstWhere(
+      (String l) => l.contains('[video-load]'),
+      orElse: () => '',
+    );
     expect(
       loadLine,
       contains('uri=http://127.0.0.1:${relay.port}/cloud/'),
@@ -372,10 +397,12 @@ void main() {
     await tester.runAsync(() async {
       final String ns = await store.ensureNamespace(kSyncVideosNamespace);
       await store.putJsonAsset(
-          ns,
-          kSyncVideosManifestName,
-          const RemoteVideoManifest(videos: <RemoteVideoManifestEntry>[entry])
-              .toJson());
+        ns,
+        kSyncVideosManifestName,
+        const RemoteVideoManifest(
+          videos: <RemoteVideoManifestEntry>[entry],
+        ).toJson(),
+      );
       final File blob = File('${pathProviderDir.path}/cloud_blob_auth')
         ..writeAsBytesSync(<int>[0, 0, 0]);
       await store.putAsset(ns, entry.videoAsset, blob);
@@ -398,13 +425,18 @@ void main() {
     );
     await tester.pumpAndSettle();
     await tester.tap(find.text(t.remote_video_stream_play));
-    for (int i = 0;
-        i < 40 && find.text(t.sync_err_auth_expired).evaluate().isEmpty;
-        i++) {
+    for (
+      int i = 0;
+      i < 40 && find.text(t.sync_err_auth_expired).evaluate().isEmpty;
+      i++
+    ) {
       await tester.pump(const Duration(milliseconds: 50));
     }
-    expect(find.text(t.sync_err_auth_expired), findsOneWidget,
-        reason: '登录失效要说「请重新登录」');
+    expect(
+      find.text(t.sync_err_auth_expired),
+      findsOneWidget,
+      reason: '登录失效要说「请重新登录」',
+    );
     expect(find.text(t.video_load_failed_generic), findsNothing);
     expect(cloud.downloadedUids, isEmpty);
   });
@@ -415,16 +447,20 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    await tester.pumpWidget(buildApp(_FakeCloudRemoteVideoClient(
-      entries: <RemoteVideoManifestEntry>[
-        const RemoteVideoManifestEntry(
-          uid: 'cloud/vid1',
-          title: 'Cloud Vid',
-          videoAsset: 'cloud_vid1.mp4',
-          sizeBytes: 3,
+    await tester.pumpWidget(
+      buildApp(
+        _FakeCloudRemoteVideoClient(
+          entries: <RemoteVideoManifestEntry>[
+            const RemoteVideoManifestEntry(
+              uid: 'cloud/vid1',
+              title: 'Cloud Vid',
+              videoAsset: 'cloud_vid1.mp4',
+              sizeBytes: 3,
+            ),
+          ],
         ),
-      ],
-    )));
+      ),
+    );
     await tester.pumpAndSettle();
     await tester.longPress(
       find.byKey(const ValueKey<String>('remote_video_card_cloud_vid1')),
@@ -442,20 +478,28 @@ void main() {
 
     // 流播时播放页按云端条目 uid 落的断点（键与临期直链 / 本地端口无关）。
     await prefs.setPref(
-        videoRemotePositionEpisodePrefKey('cloud/vid1', 0), 42000);
+      videoRemotePositionEpisodePrefKey('cloud/vid1', 0),
+      42000,
+    );
     await prefs.setPref(
-        videoRemotePositionEpisodeAtPrefKey('cloud/vid1', 0), 1700000000000);
+      videoRemotePositionEpisodeAtPrefKey('cloud/vid1', 0),
+      1700000000000,
+    );
 
-    await tester.pumpWidget(buildApp(_FakeCloudRemoteVideoClient(
-      entries: <RemoteVideoManifestEntry>[
-        const RemoteVideoManifestEntry(
-          uid: 'cloud/vid1',
-          title: 'Cloud Vid',
-          videoAsset: 'cloud_vid1.mp4',
-          sizeBytes: 3,
+    await tester.pumpWidget(
+      buildApp(
+        _FakeCloudRemoteVideoClient(
+          entries: <RemoteVideoManifestEntry>[
+            const RemoteVideoManifestEntry(
+              uid: 'cloud/vid1',
+              title: 'Cloud Vid',
+              videoAsset: 'cloud_vid1.mp4',
+              sizeBytes: 3,
+            ),
+          ],
         ),
-      ],
-    )));
+      ),
+    );
     await tester.pumpAndSettle();
     await tapAndAwaitDownload(
       tester,
@@ -500,15 +544,15 @@ class _FakeCloudRemoteVideoClient implements CloudRemoteVideoClient {
   /// fake 这里照搬同样的映射（页面不再自己适配，所以这份映射必须由 client 侧提供）。
   @override
   Future<List<RemoteVideoInfo>> listRemoteVideos() async => <RemoteVideoInfo>[
-        for (final RemoteVideoManifestEntry e in entries)
-          RemoteVideoInfo(
-            id: e.uid,
-            title: e.title,
-            sizeBytes: e.sizeBytes,
-            tagsAddedAt: e.tagsAddedAt,
-            tagTombstones: e.tagTombstones,
-          ),
-      ];
+    for (final RemoteVideoManifestEntry e in entries)
+      RemoteVideoInfo(
+        id: e.uid,
+        title: e.title,
+        sizeBytes: e.sizeBytes,
+        tagsAddedAt: e.tagsAddedAt,
+        tagTombstones: e.tagTombstones,
+      ),
+  ];
 
   @override
   Future<void> downloadRemoteVideo(
@@ -517,8 +561,7 @@ class _FakeCloudRemoteVideoClient implements CloudRemoteVideoClient {
     void Function(double progress)? onProgress,
     void Function(int received, int? total)? onBytes,
     Future<void>? cancelSignal,
-  }) =>
-      getRemoteVideo(id, dest, onProgress: onProgress);
+  }) => getRemoteVideo(id, dest, onProgress: onProgress);
 
   @override
   Future<void> getRemoteVideo(
@@ -560,20 +603,28 @@ class _RangeAssetStore extends FakeAssetStore implements SyncAssetRangeReader {
   }
 
   @override
-  Future<void> putAsset(String namespaceId, String name, File file,
-      {void Function(double progress)? onProgress}) async {
+  Future<void> putAsset(
+    String namespaceId,
+    String name,
+    File file, {
+    void Function(double progress)? onProgress,
+  }) async {
     await super.putAsset(namespaceId, name, file, onProgress: onProgress);
     _bytes['$namespaceId/$name'] = await file.readAsBytes();
   }
 
   @override
-  Future<SyncAssetRange> openAssetRange(String assetId,
-      {required int start, int? end}) async {
+  Future<SyncAssetRange> openAssetRange(
+    String assetId, {
+    required int start,
+    int? end,
+  }) async {
     final Exception? failure = failWith;
     if (failure != null) throw failure;
     final List<int> bytes = _bytes[assetId]!;
-    final int last =
-        end == null || end >= bytes.length ? bytes.length - 1 : end;
+    final int last = end == null || end >= bytes.length
+        ? bytes.length - 1
+        : end;
     return SyncAssetRange(
       start: start,
       end: last,

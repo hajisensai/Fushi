@@ -104,24 +104,28 @@ void main() {
       }
       c.debugUpdateCueForPosition(1000);
       final VideoSubtitleHitTester hitTester = VideoSubtitleHitTester();
-      await tester.pumpWidget(MaterialApp(
-        home: Scaffold(
-          body: VideoSubtitleOverlay(
-            controller: c,
-            hitTester: hitTester,
-            caretEntryIndex: caretEntryIndex,
-            blurEnabled: blurEnabled,
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: VideoSubtitleOverlay(
+              controller: c,
+              hitTester: hitTester,
+              caretEntryIndex: caretEntryIndex,
+              blurEnabled: blurEnabled,
+            ),
           ),
         ),
-      ));
+      );
       await tester.pump();
       return hitTester;
     }
 
-    Finder caretRing() => find.byWidgetPredicate((Widget w) =>
-        w is Container &&
-        w.foregroundDecoration is BoxDecoration &&
-        (w.foregroundDecoration as BoxDecoration?)?.border != null);
+    Finder caretRing() => find.byWidgetPredicate(
+      (Widget w) =>
+          w is Container &&
+          w.foregroundDecoration is BoxDecoration &&
+          (w.foregroundDecoration as BoxDecoration?)?.border != null,
+    );
 
     testWidgets('caretEntryIndex 命中字符画光标环；null 不画', (tester) async {
       await pumpWithCaret(tester, caretEntryIndex: 1);
@@ -136,8 +140,9 @@ void main() {
       expect(caretRing(), findsNothing);
     });
 
-    testWidgets('caret 视图：entryCount / hitAt / anchorEntry 与登记表同源',
-        (tester) async {
+    testWidgets('caret 视图：entryCount / hitAt / anchorEntry 与登记表同源', (
+      tester,
+    ) async {
       final VideoSubtitleHitTester t2 = await pumpWithCaret(tester);
       expect(t2.caretEntryCount(), 3, reason: '「あいう」逐 grapheme 登记 3 条');
       final SubtitleCharHit? hit = t2.caretHitAt(1);
@@ -150,8 +155,10 @@ void main() {
     });
 
     testWidgets('主+副字幕同时在屏：锚点优先主字幕层（副层是翻译参考）', (tester) async {
-      final VideoSubtitleHitTester t2 =
-          await pumpWithCaret(tester, withSecondary: true);
+      final VideoSubtitleHitTester t2 = await pumpWithCaret(
+        tester,
+        withSecondary: true,
+      );
       expect(t2.caretEntryCount(), 5, reason: '主 3 + 副 2');
       final int anchor = t2.caretAnchorEntry();
       final SubtitleCharHit? hit = t2.caretHitAt(anchor);
@@ -163,8 +170,10 @@ void main() {
     testWidgets('听力沉浸模糊开着但已暂停：字幕显形（BUG-199），锚点可用', (tester) async {
       // 进入选词光标前必暂停，而模糊只在播放中生效——暂停即显形，故听力沉浸
       // 模式下选词光标天然可用，不需要额外「先显形再选词」的特例分支。
-      final VideoSubtitleHitTester t2 =
-          await pumpWithCaret(tester, blurEnabled: true);
+      final VideoSubtitleHitTester t2 = await pumpWithCaret(
+        tester,
+        blurEnabled: true,
+      );
       expect(t2.caretAnchorEntry(), 0);
     });
 
@@ -172,11 +181,13 @@ void main() {
       final VideoPlayerController c = VideoPlayerController();
       addTearDown(c.dispose);
       final VideoSubtitleHitTester hitTester = VideoSubtitleHitTester();
-      await tester.pumpWidget(MaterialApp(
-        home: Scaffold(
-          body: VideoSubtitleOverlay(controller: c, hitTester: hitTester),
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: VideoSubtitleOverlay(controller: c, hitTester: hitTester),
+          ),
         ),
-      ));
+      );
       await tester.pump();
       expect(hitTester.caretEntryCount(), 0);
       expect(hitTester.caretAnchorEntry(), -1);
@@ -198,8 +209,10 @@ void main() {
           timeStamp: Duration.zero,
         );
 
-    final KeyDownEvent arrowLeft =
-        down(LogicalKeyboardKey.arrowLeft, PhysicalKeyboardKey.arrowLeft);
+    final KeyDownEvent arrowLeft = down(
+      LogicalKeyboardKey.arrowLeft,
+      PhysicalKeyboardKey.arrowLeft,
+    );
 
     test('激活期：裸方向键归光标，Ctrl 组合键放行给注册表', () {
       expect(
@@ -273,7 +286,9 @@ void main() {
           videoNavigablePanelOpen: false,
         ),
         const VideoKeyboardResolution(
-            VideoKeyboardDispatch.run, ShortcutAction.videoPreviousSubtitle),
+          VideoKeyboardDispatch.run,
+          ShortcutAction.videoPreviousSubtitle,
+        ),
         reason: '光标豁免只有在主通道真的把 Ctrl+← 解析成上一句时才有意义',
       );
     });
@@ -286,8 +301,9 @@ void main() {
   /// 续播后光标还活着、方向键继续被吞）。
   group('⑤ SubtitleCaretPauseTracker 暂停→再播放迁移', () {
     test('播放中进光标：pause 未落地那几个 tick 不得自退，落地后再播放才退', () {
-      final SubtitleCaretPauseTracker t =
-          SubtitleCaretPauseTracker(playingAtEntry: true);
+      final SubtitleCaretPauseTracker t = SubtitleCaretPauseTracker(
+        playingAtEntry: true,
+      );
       expect(t.sawPaused, isFalse);
       // fire-and-forget pause 还没落地：仍是 playing，不能当场自退。
       expect(t.onTick(playing: true), isFalse);
@@ -299,8 +315,9 @@ void main() {
     });
 
     test('本来就暂停时进光标：外部恢复播放**必须**退光标（C1 主诉）', () {
-      final SubtitleCaretPauseTracker t =
-          SubtitleCaretPauseTracker(playingAtEntry: false);
+      final SubtitleCaretPauseTracker t = SubtitleCaretPauseTracker(
+        playingAtEntry: false,
+      );
       expect(t.sawPaused, isTrue, reason: '进入时已暂停 = 暂停已生效，不能等一个永远不会来的暂停通知');
       // 暂停下的 tick（跳句 / seek 重锚）不退。
       expect(t.onTick(playing: false), isFalse);
@@ -309,13 +326,18 @@ void main() {
     });
 
     test('退出后再进入是全新会话（旧标记不串场）', () {
-      final SubtitleCaretPauseTracker first =
-          SubtitleCaretPauseTracker(playingAtEntry: false);
+      final SubtitleCaretPauseTracker first = SubtitleCaretPauseTracker(
+        playingAtEntry: false,
+      );
       expect(first.onTick(playing: true), isTrue);
-      final SubtitleCaretPauseTracker second =
-          SubtitleCaretPauseTracker(playingAtEntry: true);
-      expect(second.onTick(playing: true), isFalse,
-          reason: '新会话在播放中进入，pause 未落地前不得自退');
+      final SubtitleCaretPauseTracker second = SubtitleCaretPauseTracker(
+        playingAtEntry: true,
+      );
+      expect(
+        second.onTick(playing: true),
+        isFalse,
+        reason: '新会话在播放中进入，pause 未落地前不得自退',
+      );
     });
   });
 
@@ -331,8 +353,11 @@ void main() {
         'void _exitSubtitleCaret({required bool resume}) {',
         '/// 光标会话收尾的**唯一出口**',
       );
-      expect(exit, contains('_finishSubtitleCaretSession(resume: resume)'),
-          reason: '退出必须走唯一收尾出口，不得各写一份');
+      expect(
+        exit,
+        contains('_finishSubtitleCaretSession(resume: resume)'),
+        reason: '退出必须走唯一收尾出口，不得各写一份',
+      );
 
       final String finish = _sliceSource(
         src,
@@ -340,12 +365,21 @@ void main() {
         '/// 光标会话期间监听播放器',
       );
       // 收尾三件事必须绑在一起，少做任何一件就是僵尸态。
-      expect(finish, contains('removeListener(_onCaretControllerTick)'),
-          reason: '不摘监听器 → 下次进光标重复注册');
-      expect(finish, contains('_caretPauseTracker = null'),
-          reason: '不清追踪器 → 旧会话的暂停迁移状态串进下一次会话');
-      expect(finish, contains('_subtitleCaretEntry = null'),
-          reason: '不清锚点 → 字幕上留一圈光标环');
+      expect(
+        finish,
+        contains('removeListener(_onCaretControllerTick)'),
+        reason: '不摘监听器 → 下次进光标重复注册',
+      );
+      expect(
+        finish,
+        contains('_caretPauseTracker = null'),
+        reason: '不清追踪器 → 旧会话的暂停迁移状态串进下一次会话',
+      );
+      expect(
+        finish,
+        contains('_subtitleCaretEntry = null'),
+        reason: '不清锚点 → 字幕上留一圈光标环',
+      );
 
       final String popup = _sliceSource(
         src,
@@ -356,7 +390,8 @@ void main() {
       expect(
         popup,
         contains('if (!_videoCaretActive) _finishSubtitleCaretSession('),
-        reason: 'resumePopupCaretForHardwareNav 在弹窗已消失时把 surface 直接清成'
+        reason:
+            'resumePopupCaretForHardwareNav 在弹窗已消失时把 surface 直接清成'
             ' none 且不经 caretSetState；不在此补收尾就会留下光标环 + 未摘监听器 +'
             ' 未复位暂停的僵尸态',
       );
@@ -372,20 +407,19 @@ void main() {
         gp,
         contains('final CaretAction? caretAction = shoulderOnSubtitleSurface'),
       );
-      expect(
-        gp,
-        contains('? null'),
-      );
+      expect(gp, contains('? null'));
       expect(
         gp,
         contains(': ReaderCaretRouter.decideGamepad(button);'),
-        reason: '主面无词典段语义：LT/RT 走 decideGamepad 会被映射成 jumpDict* 并'
+        reason:
+            '主面无词典段语义：LT/RT 走 decideGamepad 会被映射成 jumpDict* 并'
             '静默 return（用户按 RT 全屏 / LT 重听毫无反应）',
       );
       expect(
         gp,
         contains('(shoulderOnSubtitleSurface ||'),
-        reason: '主面的放行白名单必须把这两个扳机算进去，否则末尾的 return true'
+        reason:
+            '主面的放行白名单必须把这两个扳机算进去，否则末尾的 return true'
             '仍会把它们吞掉',
       );
     });

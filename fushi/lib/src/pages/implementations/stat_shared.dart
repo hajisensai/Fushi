@@ -341,7 +341,8 @@ class StatSectionCard extends StatelessWidget {
     final ColorScheme colors = Theme.of(context).colorScheme;
     final String? sub = subtitle;
     return Padding(
-      padding: margin ??
+      padding:
+          margin ??
           EdgeInsets.fromLTRB(
             tokens.spacing.card,
             tokens.spacing.card,
@@ -663,8 +664,10 @@ List<StatIdentityGroup<T>> groupStatRowsByIdentity<T>(
       continue;
     }
     byIdentity
-        .putIfAbsent(identity,
-            () => StatIdentityGroup<T>(identity: identity, title: titleOf(row)))
+        .putIfAbsent(
+          identity,
+          () => StatIdentityGroup<T>(identity: identity, title: titleOf(row)),
+        )
         .rows
         .add(row);
   }
@@ -700,15 +703,14 @@ List<StatIdentityGroup<T>> groupStatRowsByIdentity<T>(
     } else {
       orphanGroups
           .putIfAbsent(
-              title, () => StatIdentityGroup<T>(identity: null, title: title))
+            title,
+            () => StatIdentityGroup<T>(identity: null, title: title),
+          )
           .rows
           .add(row);
     }
   }
-  return <StatIdentityGroup<T>>[
-    ...byIdentity.values,
-    ...orphanGroups.values,
-  ];
+  return <StatIdentityGroup<T>>[...byIdentity.values, ...orphanGroups.values];
 }
 
 /// 统一事实面行的按身份分组（BUG-2216）：阅读统计页「按书」与时段明细 sheet 都走
@@ -734,7 +736,8 @@ List<StatIdentityGroup<StatFact>> groupStatFactsByIdentity(
 /// 聚合。视频域标题可重复，必须走 [groupStatRowsByIdentity]，且观看/计数/收藏三个
 /// 行宇宙必须**同一次**分组（见 video_stat_aggregates 的 computeVideoStats）。
 Map<String, ({int lookups, int mines})> aggregateStatCountersByTitle(
-    List<LookupMiningCounterRow> rows) {
+  List<LookupMiningCounterRow> rows,
+) {
   final Map<String, ({int lookups, int mines})> out =
       <String, ({int lookups, int mines})>{};
   for (final LookupMiningCounterRow r in rows) {
@@ -776,8 +779,11 @@ String? statCollectionName(
   required Map<int, String> collectionNamesById,
 }) {
   return (
-    collectionName:
-        statCollectionName(entryKey, primaryByEntry, collectionNamesById),
+    collectionName: statCollectionName(
+      entryKey,
+      primaryByEntry,
+      collectionNamesById,
+    ),
     title: rawTitle,
   );
 }
@@ -791,18 +797,18 @@ String collectionQualifiedTitle({
   required Map<String, int> primaryByEntry,
   required Map<int, String> collectionNamesById,
 }) {
-  final String? name =
-      statCollectionName(entryKey, primaryByEntry, collectionNamesById);
+  final String? name = statCollectionName(
+    entryKey,
+    primaryByEntry,
+    collectionNamesById,
+  );
   if (name == null || name.isEmpty) return rawTitle;
   return '$name - $rawTitle';
 }
 
 /// 统计页 per-book / per-video tile 的「所属合集」小标签（文件夹图标 + 合集名），
 /// 阅读统计与视频统计共用（同一视觉）。合集名为 null 时调用方不渲染本 widget。
-Widget buildStatCollectionLabel(
-  BuildContext context,
-  String collectionName,
-) {
+Widget buildStatCollectionLabel(BuildContext context, String collectionName) {
   final ColorScheme colorScheme = Theme.of(context).colorScheme;
   return Row(
     mainAxisSize: MainAxisSize.min,
@@ -818,9 +824,9 @@ Widget buildStatCollectionLabel(
           collectionName,
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
-          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                color: colorScheme.onSurfaceVariant,
-              ),
+          style: Theme.of(
+            context,
+          ).textTheme.bodySmall?.copyWith(color: colorScheme.onSurfaceVariant),
         ),
       ),
     ],
@@ -937,8 +943,7 @@ class _StatGoalEditDialogState extends State<StatGoalEditDialog> {
     text: _initialText(widget.initialDailyChars),
   );
 
-  static String _initialText(int chars) =>
-      chars <= 0 ? '' : chars.toString();
+  static String _initialText(int chars) => chars <= 0 ? '' : chars.toString();
 
   static int _parse(TextEditingController c) {
     final int value = int.tryParse(c.text.trim()) ?? 0;
@@ -992,18 +997,18 @@ class _StatGoalEditDialogState extends State<StatGoalEditDialog> {
       theme.colorScheme.surface,
     );
     InputDecoration filled({required String label}) => InputDecoration(
-          labelText: label,
-          suffixText: t.stat_goal_unit_chars,
-          suffixStyle: theme.textTheme.titleMedium?.copyWith(
-            color: theme.colorScheme.onSurfaceVariant,
-          ),
-          filled: true,
-          fillColor: fill,
-          border: OutlineInputBorder(
-            borderRadius: tokens.radii.cardRadius,
-            borderSide: BorderSide.none,
-          ),
-        );
+      labelText: label,
+      suffixText: t.stat_goal_unit_chars,
+      suffixStyle: theme.textTheme.titleMedium?.copyWith(
+        color: theme.colorScheme.onSurfaceVariant,
+      ),
+      filled: true,
+      fillColor: fill,
+      border: OutlineInputBorder(
+        borderRadius: tokens.radii.cardRadius,
+        borderSide: BorderSide.none,
+      ),
+    );
     return FushiAlertDialog(
       icon: const FushiDialogHeroIcon(
         icon: FushiIcons.flag,
@@ -1022,8 +1027,7 @@ class _StatGoalEditDialogState extends State<StatGoalEditDialog> {
                 key: const ValueKey<String>('stat-goal-daily-field'),
                 controller: _daily,
                 keyboardType: TextInputType.number,
-                style: (theme.textTheme.headlineSmall ??
-                        tokens.type.listTitle)
+                style: (theme.textTheme.headlineSmall ?? tokens.type.listTitle)
                     .copyWith(fontWeight: FontWeight.w700),
                 decoration: filled(label: t.stat_goal_daily),
               ),
@@ -1075,9 +1079,9 @@ class _StatGoalEditDialogState extends State<StatGoalEditDialog> {
         ),
         FushiFilledButton(
           key: const ValueKey<String>('stat-goal-save'),
-          onPressed: () => Navigator.of(context).pop<StatGoalEditResult>(
-            (daily: _parse(_daily)),
-          ),
+          onPressed: () => Navigator.of(
+            context,
+          ).pop<StatGoalEditResult>((daily: _parse(_daily))),
           child: Text(t.dialog_save),
         ),
       ],
@@ -1097,8 +1101,7 @@ String formatStatChars(int chars) =>
 /// 阅读速度外显：四舍五入到整数字/小时，套 i18n 单位文案（`N 字/时`）。时段卡、
 /// 会话行、按书行都经这一处（用户 2026-09-12：统计中心顶部方框与每个会话都要
 /// 显示「每小时多少字」）。
-String formatStatCph(double cph) =>
-    t.stat_speed_cph(n: cph.round().toString());
+String formatStatCph(double cph) => t.stat_speed_cph(n: cph.round().toString());
 
 /// 一组事实行 / 一次会话的阅读速度外显：经 [computeCph]（最小样本 1 分钟，
 /// BUG-1107）算不出有效速度时返回 null，调用方不显示该行而不是显示 0。
@@ -1296,11 +1299,11 @@ Color statHourlyBandColor(StatHourlyFormatBand band, StatChartColors colors) =>
 
 /// 分带图例文案。
 String statHourlyBandLabel(StatHourlyFormatBand band) => switch (band) {
-      StatHourlyFormatBand.epub => t.stat_hourly_band_epub,
-      StatHourlyFormatBand.pdf => t.stat_hourly_band_pdf,
-      StatHourlyFormatBand.manga => t.stat_hourly_band_manga,
-      StatHourlyFormatBand.unattributed => t.stat_hourly_band_unattributed,
-    };
+  StatHourlyFormatBand.epub => t.stat_hourly_band_epub,
+  StatHourlyFormatBand.pdf => t.stat_hourly_band_pdf,
+  StatHourlyFormatBand.manga => t.stat_hourly_band_manga,
+  StatHourlyFormatBand.unattributed => t.stat_hourly_band_unattributed,
+};
 
 /// 该画哪些图例项。
 ///
@@ -1308,7 +1311,8 @@ String statHourlyBandLabel(StatHourlyFormatBand band) => switch (band) {
 /// 只是噪音。但只要含未区分历史就必须画，哪怕它是唯一一带：没有图例的中性柱子会被
 /// 当成某一类的读书时长，那正是这次要消除的误读。
 List<StatHourlyFormatBand> statHourlyLegendBands(
-    List<StatHourlyFormatBand> activeBands) {
+  List<StatHourlyFormatBand> activeBands,
+) {
   if (activeBands.length <= 1 &&
       !activeBands.contains(StatHourlyFormatBand.unattributed)) {
     return const <StatHourlyFormatBand>[];

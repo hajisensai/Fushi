@@ -33,48 +33,58 @@ void main() {
     await directory.delete(recursive: true);
   });
 
-  test(
-      'prequel-chain root title, no-year retry and season scoring pick the '
+  test('prequel-chain root title, no-year retry and season scoring pick the '
       'right TMDB show', () async {
     final _MalProvider mal = _MalProvider();
     final _TmdbProvider tmdb = _TmdbProvider();
-    final SourceLibraryRow source =
-        await _source(db, directory, <String>['HxH Chimera S01E01.mkv']);
+    final SourceLibraryRow source = await _source(db, directory, <String>[
+      'HxH Chimera S01E01.mkv',
+    ]);
     final VideoSourceScrapeCoordinator coordinator =
         VideoSourceScrapeCoordinator(
-      // 本用例测的是 MAL 主源形态（2026-09-20 起默认主源是 AniDB，MAL 仍可选）。
-      primaryProvider: VideoMetadataProviderKind.mal,
-      database: db,
-      config: const VideoSourceScrapeGlobalConfig(),
-      registry:
-          VideoMetadataProviderRegistry(<VideoMetadataProvider>[mal, tmdb]),
-      identityMapping: AnimeIdentityMapping(
-        httpClient: VideoMetadataHttpClient(
-          client: MockClient((_) async => http.Response('[]', 200)),
-        ),
-      ),
-    );
+          // 本用例测的是 MAL 主源形态（2026-09-20 起默认主源是 AniDB，MAL 仍可选）。
+          primaryProvider: VideoMetadataProviderKind.mal,
+          database: db,
+          config: const VideoSourceScrapeGlobalConfig(),
+          registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
+            mal,
+            tmdb,
+          ]),
+          identityMapping: AnimeIdentityMapping(
+            httpClient: VideoMetadataHttpClient(
+              client: MockClient((_) async => http.Response('[]', 200)),
+            ),
+          ),
+        );
     addTearDown(coordinator.close);
     final SourceScrapeReport report = await coordinator.scrapeSource(
       source,
       cancellationToken: VideoSourceScrapeCancellationToken(),
       onProgress: (_) {},
     );
-    expect(report.succeededWorks, 1,
-        reason:
-            '${report.errors.map((SourceScrapeIssue i) => i.message)} ${report.warnings.map((SourceScrapeIssue i) => i.message)}');
-    expect(mal.prequelLookups, <String>['99', '11'],
-        reason: '沿 Prequel 链走到根（11 没有前传即停）');
+    expect(
+      report.succeededWorks,
+      1,
+      reason:
+          '${report.errors.map((SourceScrapeIssue i) => i.message)} ${report.warnings.map((SourceScrapeIssue i) => i.message)}',
+    );
+    expect(mal.prequelLookups, <String>[
+      '99',
+      '11',
+    ], reason: '沿 Prequel 链走到根（11 没有前传即停）');
     expect(tmdb.searches, contains('Hunter x Hunter'), reason: '用根作品标题搜');
-    expect(tmdb.searchYears['Hunter x Hunter'], contains(null),
-        reason: '续作不带年份搜（MAL 2020 与剧首播 2011 差太远，年份门会挡掉）');
-    final MediaCollectionRow collection =
-        (await db.getMediaCollectionByNaturalKey('HxH Chimera', 'playlist'))!;
+    expect(
+      tmdb.searchYears['Hunter x Hunter'],
+      contains(null),
+      reason: '续作不带年份搜（MAL 2020 与剧首播 2011 差太远，年份门会挡掉）',
+    );
+    final MediaCollectionRow collection = (await db
+        .getMediaCollectionByNaturalKey('HxH Chimera', 'playlist'))!;
     final VideoMetadataWorkRow work =
         (await db.getVideoMetadataWorkByCollection(collection.id) ??
-            await db.getVideoMetadataWorkByBook('book-0'))!;
-    final List<VideoMetadataProviderIdentityRow> ids =
-        await db.getVideoMetadataProviderIdentities(workId: work.id);
+        await db.getVideoMetadataWorkByBook('book-0'))!;
+    final List<VideoMetadataProviderIdentityRow> ids = await db
+        .getVideoMetadataProviderIdentities(workId: work.id);
     expect(
       ids
           .where((VideoMetadataProviderIdentityRow id) => id.provider == 'tmdb')
@@ -83,8 +93,9 @@ void main() {
       reason: 'S1 148 集与 MAL 148 集最接近的那部',
     );
     expect(
-      report.warnings.any((SourceScrapeIssue issue) =>
-          issue.message.contains('按集数最接近的季与首播日选了')),
+      report.warnings.any(
+        (SourceScrapeIssue issue) => issue.message.contains('按集数最接近的季与首播日选了'),
+      ),
       isTrue,
       reason: '${report.warnings.map((SourceScrapeIssue i) => i.message)}',
     );
@@ -96,23 +107,29 @@ Future<SourceLibraryRow> _source(
   Directory root,
   List<String> fileNames,
 ) async {
-  final int sourceId = await db.insertMediaSource(MediaSourcesCompanion.insert(
-    label: 'Source',
-    mediaKind: 'video',
-    rootPath: root.path,
-    createdAt: 1,
-  ));
-  final int collectionId =
-      await db.createMediaCollection('HxH Chimera', collectionType: 'playlist');
+  final int sourceId = await db.insertMediaSource(
+    MediaSourcesCompanion.insert(
+      label: 'Source',
+      mediaKind: 'video',
+      rootPath: root.path,
+      createdAt: 1,
+    ),
+  );
+  final int collectionId = await db.createMediaCollection(
+    'HxH Chimera',
+    collectionType: 'playlist',
+  );
   for (int index = 0; index < fileNames.length; index++) {
     final File file = File(p.join(root.path, fileNames[index]));
     await file.writeAsBytes(<int>[0]);
-    await db.upsertVideoBook(VideoBooksCompanion(
-      bookUid: Value<String>('book-$index'),
-      title: const Value<String>('HxH Chimera'),
-      videoPath: Value<String>(file.path),
-      sourceId: Value<int?>(sourceId),
-    ));
+    await db.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: Value<String>('book-$index'),
+        title: const Value<String>('HxH Chimera'),
+        videoPath: Value<String>(file.path),
+        sourceId: Value<int?>(sourceId),
+      ),
+    );
     await db.addToCollection(collectionId, MediaKind.video, 'book-$index');
   }
   await db.upsertVideoSourceScrapeSettings(
@@ -138,35 +155,35 @@ class _MalProvider
   bool get isAvailable => true;
 
   VideoMetadataWork? _work(String id) => switch (id) {
-        '99' => VideoMetadataWork(
-            provider: providerKind,
-            kind: VideoMetadataMediaKind.tv,
-            title: 'Hunter x Hunter: Chimera Ant Arc',
-            aliases: const <String>['HxH Chimera'],
-            year: 2020,
-            premiered: '2020-04-05',
-            episodeCount: 148,
-            ids: const <VideoMetadataId>[
-              VideoMetadataId(type: 'mal', value: '99', isDefault: true),
-            ],
-          ),
-        '11' => VideoMetadataWork(
-            provider: providerKind,
-            kind: VideoMetadataMediaKind.tv,
-            title: 'Hunter x Hunter',
-            year: 2011,
-            episodeCount: 148,
-            ids: const <VideoMetadataId>[
-              VideoMetadataId(type: 'mal', value: '11', isDefault: true),
-            ],
-          ),
-        _ => null,
-      };
+    '99' => VideoMetadataWork(
+      provider: providerKind,
+      kind: VideoMetadataMediaKind.tv,
+      title: 'Hunter x Hunter: Chimera Ant Arc',
+      aliases: const <String>['HxH Chimera'],
+      year: 2020,
+      premiered: '2020-04-05',
+      episodeCount: 148,
+      ids: const <VideoMetadataId>[
+        VideoMetadataId(type: 'mal', value: '99', isDefault: true),
+      ],
+    ),
+    '11' => VideoMetadataWork(
+      provider: providerKind,
+      kind: VideoMetadataMediaKind.tv,
+      title: 'Hunter x Hunter',
+      year: 2011,
+      episodeCount: 148,
+      ids: const <VideoMetadataId>[
+        VideoMetadataId(type: 'mal', value: '11', isDefault: true),
+      ],
+    ),
+    _ => null,
+  };
 
   @override
   Future<List<VideoMetadataWork>> search(
-          VideoMetadataSearchRequest request) async =>
-      <VideoMetadataWork>[_work('99')!];
+    VideoMetadataSearchRequest request,
+  ) async => <VideoMetadataWork>[_work('99')!];
 
   @override
   Future<VideoMetadataWork?> fetchWork(VideoMetadataLookup lookup) async =>
@@ -174,33 +191,40 @@ class _MalProvider
 
   @override
   Future<List<VideoMetadataLookup>> fetchPrequels(
-      VideoMetadataLookup lookup) async {
+    VideoMetadataLookup lookup,
+  ) async {
     prequelLookups.add(lookup.externalId);
     return lookup.externalId == '99'
         ? const <VideoMetadataLookup>[
             VideoMetadataLookup(
-                provider: VideoMetadataProviderKind.mal,
-                externalId: '11',
-                mediaKind: VideoMetadataMediaKind.tv),
+              provider: VideoMetadataProviderKind.mal,
+              externalId: '11',
+              mediaKind: VideoMetadataMediaKind.tv,
+            ),
           ]
         : const <VideoMetadataLookup>[];
   }
 
   @override
   Future<List<VideoMetadataSeason>> fetchSeasons(
-      VideoMetadataLookup lookup) async {
+    VideoMetadataLookup lookup,
+  ) async {
     final VideoMetadataWork? work = _work(lookup.externalId);
     if (work == null) return const <VideoMetadataSeason>[];
     return <VideoMetadataSeason>[
       VideoMetadataSeason(
-          seasonNumber: 1, title: work.title, episodeCount: work.episodeCount),
+        seasonNumber: 1,
+        title: work.title,
+        episodeCount: work.episodeCount,
+      ),
     ];
   }
 
   @override
-  Future<List<VideoMetadataEpisode>> fetchEpisodes(VideoMetadataLookup lookup,
-          {required int seasonNumber}) async =>
-      const <VideoMetadataEpisode>[];
+  Future<List<VideoMetadataEpisode>> fetchEpisodes(
+    VideoMetadataLookup lookup, {
+    required int seasonNumber,
+  }) async => const <VideoMetadataEpisode>[];
 
   @override
   void close() {}
@@ -228,22 +252,24 @@ class _TmdbProvider implements VideoMetadataProvider {
         ],
         seasons: <VideoMetadataSeason>[
           VideoMetadataSeason(
-              seasonNumber: 1,
-              title: 'Season 1',
-              episodeCount: episodes,
-              airDate: aired),
+            seasonNumber: 1,
+            title: 'Season 1',
+            episodeCount: episodes,
+            airDate: aired,
+          ),
         ],
       );
 
   VideoMetadataWork? _byId(String id) => switch (id) {
-        '46298' => _show('46298', 2011, 148, '2011-10-02'),
-        '1234' => _show('1234', 2013, 62, '2013-01-01'),
-        _ => null,
-      };
+    '46298' => _show('46298', 2011, 148, '2011-10-02'),
+    '1234' => _show('1234', 2013, 62, '2013-01-01'),
+    _ => null,
+  };
 
   @override
   Future<List<VideoMetadataWork>> search(
-      VideoMetadataSearchRequest request) async {
+    VideoMetadataSearchRequest request,
+  ) async {
     searches.add(request.title);
     (searchYears[request.title] ??= <int?>[]).add(request.year);
     if (request.title != 'Hunter x Hunter') return const <VideoMetadataWork>[];
@@ -256,13 +282,14 @@ class _TmdbProvider implements VideoMetadataProvider {
 
   @override
   Future<List<VideoMetadataSeason>> fetchSeasons(
-          VideoMetadataLookup lookup) async =>
-      _byId(lookup.externalId)?.seasons ?? const <VideoMetadataSeason>[];
+    VideoMetadataLookup lookup,
+  ) async => _byId(lookup.externalId)?.seasons ?? const <VideoMetadataSeason>[];
 
   @override
-  Future<List<VideoMetadataEpisode>> fetchEpisodes(VideoMetadataLookup lookup,
-          {required int seasonNumber}) async =>
-      const <VideoMetadataEpisode>[];
+  Future<List<VideoMetadataEpisode>> fetchEpisodes(
+    VideoMetadataLookup lookup, {
+    required int seasonNumber,
+  }) async => const <VideoMetadataEpisode>[];
 
   @override
   void close() {}

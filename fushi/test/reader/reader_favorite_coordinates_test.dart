@@ -8,17 +8,18 @@ import 'package:fushi/src/reader/reader_study_unit_script.dart';
 /// Runs production scripts against real DOM Range and CSS Highlight APIs.
 /// Set CHROME_EXECUTABLE on machines where Chromium is not in a standard path.
 void main() {
-  final String? chrome = <String?>[
-    Platform.environment['CHROME_EXECUTABLE'],
-    r'C:\Program Files\Google\Chrome\Application\chrome.exe',
-    r'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe',
-    '/usr/bin/google-chrome',
-    '/usr/bin/chromium',
-    '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-  ]
-      .whereType<String>()
-      .where((String path) => File(path).existsSync())
-      .firstOrNull;
+  final String? chrome =
+      <String?>[
+            Platform.environment['CHROME_EXECUTABLE'],
+            r'C:\Program Files\Google\Chrome\Application\chrome.exe',
+            r'C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe',
+            '/usr/bin/google-chrome',
+            '/usr/bin/chromium',
+            '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+          ]
+          .whereType<String>()
+          .where((String path) => File(path).existsSync())
+          .firstOrNull;
 
   test(
     'favorite anchors and native selections preserve actual DOM text',

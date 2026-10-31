@@ -94,7 +94,8 @@ void main() {
 
   group('clipSelectionImagesFromResult (JS 契约解析)', () {
     test('解析合法JSON数组', () {
-      const String raw = '[{"src":"https://fushi.local/epub/a.png",'
+      const String raw =
+          '[{"src":"https://fushi.local/epub/a.png",'
           '"normOffset":42},{"src":"https://fushi.local/epub/b.jpg",'
           '"normOffset":100}]';
       final List<({String src, int normOffset})> out =
@@ -107,16 +108,23 @@ void main() {
 
     test('null 空 null字面量 空列表', () {
       expect(
-          ReaderSelectionScripts.clipSelectionImagesFromResult(null), isEmpty);
+        ReaderSelectionScripts.clipSelectionImagesFromResult(null),
+        isEmpty,
+      );
       expect(ReaderSelectionScripts.clipSelectionImagesFromResult(''), isEmpty);
-      expect(ReaderSelectionScripts.clipSelectionImagesFromResult('null'),
-          isEmpty);
       expect(
-          ReaderSelectionScripts.clipSelectionImagesFromResult('[]'), isEmpty);
+        ReaderSelectionScripts.clipSelectionImagesFromResult('null'),
+        isEmpty,
+      );
+      expect(
+        ReaderSelectionScripts.clipSelectionImagesFromResult('[]'),
+        isEmpty,
+      );
     });
 
     test('缺src跳过 缺normOffset归-1兜底挂前段', () {
-      const String raw = '[{"normOffset":5},'
+      const String raw =
+          '[{"normOffset":5},'
           '{"src":"https://fushi.local/epub/x.png"}]';
       final List<({String src, int normOffset})> out =
           ReaderSelectionScripts.clipSelectionImagesFromResult(raw);
@@ -126,8 +134,10 @@ void main() {
     });
 
     test('非法JSON 空列表不抛', () {
-      expect(ReaderSelectionScripts.clipSelectionImagesFromResult('{not json'),
-          isEmpty);
+      expect(
+        ReaderSelectionScripts.clipSelectionImagesFromResult('{not json'),
+        isEmpty,
+      );
     });
   });
 
@@ -181,78 +191,79 @@ void main() {
     });
   });
 
-  testWidgets(
-    'Flutter栅格帧含插图 段落带图渲出帧与无图逐字节不同 图真进帧 TODO-1127',
-    (WidgetTester tester) async {
-      final GlobalKey<OverlayState> overlayKey = GlobalKey<OverlayState>();
-      await tester.pumpWidget(
-        MaterialApp(
-          home: Overlay(
-            key: overlayKey,
-            initialEntries: <OverlayEntry>[
-              OverlayEntry(
-                builder: (BuildContext context) => const SizedBox.expand(),
-              ),
-            ],
-          ),
+  testWidgets('Flutter栅格帧含插图 段落带图渲出帧与无图逐字节不同 图真进帧 TODO-1127', (
+    WidgetTester tester,
+  ) async {
+    final GlobalKey<OverlayState> overlayKey = GlobalKey<OverlayState>();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Overlay(
+          key: overlayKey,
+          initialEntries: <OverlayEntry>[
+            OverlayEntry(
+              builder: (BuildContext context) => const SizedBox.expand(),
+            ),
+          ],
         ),
-      );
-      await tester.pumpAndSettle();
+      ),
+    );
+    await tester.pumpAndSettle();
 
-      final OverlayState overlay = overlayKey.currentState!;
-      final AudiobookClipTextLayout layout = computeClipTextLayout(
-        textLength: 3,
-        baseFontSize: 40,
-        vertical: false,
-        lineHeight: 1.6,
-        background: const Color(0xFF000000),
-        foreground: const Color(0xFFFFFFFF),
-        highlight: const Color(0xFFFF0000),
-      );
+    final OverlayState overlay = overlayKey.currentState!;
+    final AudiobookClipTextLayout layout = computeClipTextLayout(
+      textLength: 3,
+      baseFontSize: 40,
+      vertical: false,
+      lineHeight: 1.6,
+      background: const Color(0xFF000000),
+      foreground: const Color(0xFFFFFFFF),
+      highlight: const Color(0xFFFF0000),
+    );
 
-      final Uint8List greenPng = _solidPng(400, 400, 0, 255, 0);
+    final Uint8List greenPng = _solidPng(400, 400, 0, 255, 0);
 
-      Future<Uint8List?> renderOnce(
-        List<AudiobookClipTextSegment> segments,
-      ) async {
-        Uint8List? out;
-        await tester.runAsync(() async {
-          bool done = false;
-          final Future<void> future = renderAudiobookClipFrames(
-            overlay: overlay,
-            segments: segments,
-            layout: layout,
-            highlightIndices: <int>[0],
-            onFrame: (int highlightIndex, Uint8List? png) async {
-              out = png;
-              return false;
-            },
-          ).whenComplete(() => done = true);
-          for (int i = 0; i < 200 && !done; i++) {
-            await tester.pump(const Duration(milliseconds: 16));
-            await Future<void>.delayed(const Duration(milliseconds: 1));
-          }
-          await future;
-        });
-        return out;
-      }
+    Future<Uint8List?> renderOnce(
+      List<AudiobookClipTextSegment> segments,
+    ) async {
+      Uint8List? out;
+      await tester.runAsync(() async {
+        bool done = false;
+        final Future<void> future = renderAudiobookClipFrames(
+          overlay: overlay,
+          segments: segments,
+          layout: layout,
+          highlightIndices: <int>[0],
+          onFrame: (int highlightIndex, Uint8List? png) async {
+            out = png;
+            return false;
+          },
+        ).whenComplete(() => done = true);
+        for (int i = 0; i < 200 && !done; i++) {
+          await tester.pump(const Duration(milliseconds: 16));
+          await Future<void>.delayed(const Duration(milliseconds: 1));
+        }
+        await future;
+      });
+      return out;
+    }
 
-      final Uint8List? withImage = await renderOnce(<AudiobookClipTextSegment>[
-        AudiobookClipTextSegment(text: '第一句', images: <Uint8List>[greenPng]),
-      ]);
-      final Uint8List? withoutImage =
-          await renderOnce(<AudiobookClipTextSegment>[
-        const AudiobookClipTextSegment(text: '第一句'),
-      ]);
+    final Uint8List? withImage = await renderOnce(<AudiobookClipTextSegment>[
+      AudiobookClipTextSegment(text: '第一句', images: <Uint8List>[greenPng]),
+    ]);
+    final Uint8List? withoutImage = await renderOnce(<AudiobookClipTextSegment>[
+      const AudiobookClipTextSegment(text: '第一句'),
+    ]);
 
-      expect(withImage, isNotNull);
-      expect(withoutImage, isNotNull);
-      expect(withImage!.isNotEmpty, isTrue);
-      expect(withImage.sublist(0, 4), <int>[0x89, 0x50, 0x4E, 0x47]);
-      expect(withImage, isNot(equals(withoutImage)),
-          reason: 'segment image must be rendered into the frame');
-    },
-  );
+    expect(withImage, isNotNull);
+    expect(withoutImage, isNotNull);
+    expect(withImage!.isNotEmpty, isTrue);
+    expect(withImage.sublist(0, 4), <int>[0x89, 0x50, 0x4E, 0x47]);
+    expect(
+      withImage,
+      isNot(equals(withoutImage)),
+      reason: 'segment image must be rendered into the frame',
+    );
+  });
 
   test('source guard: JS侧抽取选区插图三函数在位 TODO-1127', () {
     final String source = ReaderSelectionScripts.source();

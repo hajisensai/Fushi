@@ -21,8 +21,9 @@ void main() {
     });
 
     test('audio-only drop fills only audioPaths', () {
-      final DroppedFiles files =
-          classifyDroppedFiles(<String>[r'C:\b\track.flac']);
+      final DroppedFiles files = classifyDroppedFiles(<String>[
+        r'C:\b\track.flac',
+      ]);
       final BookDialogDropResult r = resolveBookDialogDrop(files);
       expect(r.epubPath, isNull);
       expect(r.subtitlePath, isNull);
@@ -30,8 +31,9 @@ void main() {
     });
 
     test('unrecognized-only drop is empty', () {
-      final DroppedFiles files =
-          classifyDroppedFiles(<String>[r'C:\b\notes.foobar']);
+      final DroppedFiles files = classifyDroppedFiles(<String>[
+        r'C:\b\notes.foobar',
+      ]);
       expect(resolveBookDialogDrop(files).isEmpty, isTrue);
     });
   });
@@ -50,8 +52,9 @@ void main() {
     });
 
     test('subtitle-only drop fills only alignmentPath', () {
-      final DroppedFiles files =
-          classifyDroppedFiles(<String>[r'C:\a\only.vtt']);
+      final DroppedFiles files = classifyDroppedFiles(<String>[
+        r'C:\a\only.vtt',
+      ]);
       final AudiobookDialogDropResult r = resolveAudiobookDialogDrop(files);
       expect(r.audioPaths, isEmpty);
       expect(r.alignmentPath, r'C:\a\only.vtt');
@@ -67,8 +70,11 @@ void main() {
       ]);
       final VideoDialogDropResult r = resolveVideoDialogDrop(files);
       expect(r.playlistPath, r'C:\v\series.m3u8');
-      expect(r.videoPath, isNull,
-          reason: 'playlist path is one-shot, no video');
+      expect(
+        r.videoPath,
+        isNull,
+        reason: 'playlist path is one-shot, no video',
+      );
       expect(r.subtitlePath, isNull);
     });
 
@@ -84,8 +90,9 @@ void main() {
     });
 
     test('subtitle-only drop fills only subtitlePath', () {
-      final DroppedFiles files =
-          classifyDroppedFiles(<String>[r'C:\v\sub.srt']);
+      final DroppedFiles files = classifyDroppedFiles(<String>[
+        r'C:\v\sub.srt',
+      ]);
       final VideoDialogDropResult r = resolveVideoDialogDrop(files);
       expect(r.videoPath, isNull);
       expect(r.subtitlePath, r'C:\v\sub.srt');

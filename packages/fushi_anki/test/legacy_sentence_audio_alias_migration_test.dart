@@ -20,8 +20,7 @@ class _StubRepo extends BaseAnkiRepository {
   Future<MineOutcome> mineEntry({
     required String rawPayloadJson,
     required AnkiMiningContext context,
-  }) async =>
-      const MineOutcome.success();
+  }) async => const MineOutcome.success();
 
   @override
   Future<bool> isDuplicate(String expression, String reading) async => false;
@@ -50,14 +49,19 @@ void main() {
 
     final AnkiSettings settings = await _StubRepo().loadSettings();
     expect(settings.fieldMappings['SentenceAudio'], '{sentence-audio}');
-    expect(settings.fieldMappings['Front'],
-        '<div>{expression} {sentence-audio}</div>',
-        reason: '拼进 HTML 大模板的 token 也按子串改写');
+    expect(
+      settings.fieldMappings['Front'],
+      '<div>{expression} {sentence-audio}</div>',
+      reason: '拼进 HTML 大模板的 token 也按子串改写',
+    );
     expect(settings.fieldMappings['Back'], '{glossary}', reason: '无关字段不动');
 
     final SharedPreferences prefs = await SharedPreferences.getInstance();
-    expect(prefs.getString('hoshi_anki_settings'), isNull,
-        reason: 'W2-7 键搬移后旧键删除');
+    expect(
+      prefs.getString('hoshi_anki_settings'),
+      isNull,
+      reason: 'W2-7 键搬移后旧键删除',
+    );
     final String rewritten = prefs.getString('fushi_anki_settings')!;
     expect(rewritten.contains('{sasayaki-audio}'), isFalse);
     expect(rewritten.contains('{sentence-audio}'), isTrue);
@@ -76,8 +80,11 @@ void main() {
     expect(settings.selectedDeckName, 'MyDeck');
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     expect(prefs.getString('hoshi_anki_settings'), isNull);
-    expect(prefs.getString('fushi_anki_settings'), legacyJson,
-        reason: '搬移是字节等值，别名不在场时零改写');
+    expect(
+      prefs.getString('fushi_anki_settings'),
+      legacyJson,
+      reason: '搬移是字节等值，别名不在场时零改写',
+    );
   });
 
   test('new-key settings without residue are untouched', () async {
@@ -91,8 +98,11 @@ void main() {
     final AnkiSettings settings = await _StubRepo().loadSettings();
     expect(settings.fieldMappings['SentenceAudio'], '{sentence-audio}');
     final SharedPreferences prefs = await SharedPreferences.getInstance();
-    expect(prefs.getString('fushi_anki_settings'), cleanJson,
-        reason: '无残留时不回写（字节等值）');
+    expect(
+      prefs.getString('fushi_anki_settings'),
+      cleanJson,
+      reason: '无残留时不回写（字节等值）',
+    );
   });
 
   test('new key wins when both generations exist', () async {

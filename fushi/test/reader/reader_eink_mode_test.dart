@@ -73,18 +73,20 @@ void main() {
       expect(css, contains('--fushi-reader-eink-mode: 1'));
     });
 
-    test('einkMode=true overrides themed colors even for preset themes',
-        () async {
-      final ReaderSettings settings = await _defaultSettings();
-      final String css = ReaderContentStyles.css(
-        settings: settings,
-        themeOverride: 'ecru-theme',
-        einkMode: true,
-      );
-      // ecru 的手调底色被 eink 压掉。
-      expect(css, isNot(contains('#f7f6eb')));
-      expect(css, contains('background: #fff !important'));
-    });
+    test(
+      'einkMode=true overrides themed colors even for preset themes',
+      () async {
+        final ReaderSettings settings = await _defaultSettings();
+        final String css = ReaderContentStyles.css(
+          settings: settings,
+          themeOverride: 'ecru-theme',
+          einkMode: true,
+        );
+        // ecru 的手调底色被 eink 压掉。
+        expect(css, isNot(contains('#f7f6eb')));
+        expect(css, contains('background: #fff !important'));
+      },
+    );
 
     test('einkMode=false (default) leaves normal output untouched', () async {
       final ReaderSettings settings = await _defaultSettings();
@@ -130,27 +132,39 @@ void main() {
       // 注释掩掉再切：注释里提到调用名不算数；切片以「本项 id → 下一项 id」为界，
       // 不钉相邻项的类型，schema 重排 / 中间插项都不会让断言漂到别的 handler 上。
       final String schema = maskComments(
-        File('lib/src/settings/settings_schema_appearance.dart')
-            .readAsStringSync(),
+        File(
+          'lib/src/settings/settings_schema_appearance.dart',
+        ).readAsStringSync(),
       );
       final int id = schema.indexOf("id: 'appearance.eink_mode'");
       expect(id, isNonNegative);
       final int next = schema.indexOf("id: '", id + 5);
-      final String item =
-          next == -1 ? schema.substring(id) : schema.substring(id, next);
+      final String item = next == -1
+          ? schema.substring(id)
+          : schema.substring(id, next);
       expect(item, contains('setEinkMode(value)'));
-      expect(item, contains('notifyReaderSettingsChanged(settingsContext)'),
-          reason: 'eink toggle must re-inject reader CSS live, not only '
-              'refresh the settings sheet');
-      expect(item, isNot(contains('settingsContext.refresh()')),
-          reason: 'notifyReaderSettingsChanged already refreshes the sheet');
+      expect(
+        item,
+        contains('notifyReaderSettingsChanged(settingsContext)'),
+        reason:
+            'eink toggle must re-inject reader CSS live, not only '
+            'refresh the settings sheet',
+      );
+      expect(
+        item,
+        isNot(contains('settingsContext.refresh()')),
+        reason: 'notifyReaderSettingsChanged already refreshes the sheet',
+      );
     });
   });
 
   group('profile snapshot exclusion', () {
     test('eink_mode is app-global (excluded from per-profile snapshot)', () {
-      expect(ProfileKeys.isExcludedPref('eink_mode'), isTrue,
-          reason: 'eink_mode 描述物理屏幕，切 Profile 不得把整个 app 颜色翻转回去');
+      expect(
+        ProfileKeys.isExcludedPref('eink_mode'),
+        isTrue,
+        reason: 'eink_mode 描述物理屏幕，切 Profile 不得把整个 app 颜色翻转回去',
+      );
     });
   });
 }

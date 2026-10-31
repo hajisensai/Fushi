@@ -45,21 +45,23 @@ class GalgameMetadataService {
   GalgameMetadataService({
     Map<GalgameMetadataSource, GalgameMetadataAdapter>? adapters,
     String? bangumiAccessToken,
-  }) : _adapters = adapters ??
-            <GalgameMetadataSource, GalgameMetadataAdapter>{
-              GalgameMetadataSource.bgm:
-                  BangumiMetadataAdapter(accessToken: bangumiAccessToken),
-              GalgameMetadataSource.vndb: VndbMetadataAdapter(),
-              GalgameMetadataSource.dlsite: DlsiteMetadataAdapter(),
-            };
+  }) : _adapters =
+           adapters ??
+           <GalgameMetadataSource, GalgameMetadataAdapter>{
+             GalgameMetadataSource.bgm: BangumiMetadataAdapter(
+               accessToken: bangumiAccessToken,
+             ),
+             GalgameMetadataSource.vndb: VndbMetadataAdapter(),
+             GalgameMetadataSource.dlsite: DlsiteMetadataAdapter(),
+           };
 
   final Map<GalgameMetadataSource, GalgameMetadataAdapter> _adapters;
 
   /// 当前已注册的源（UI 列源选项直接读这个，加源零改动）。
   List<GalgameMetadataSource> get availableSources => <GalgameMetadataSource>[
-        for (final GalgameMetadataSource s in GalgameMetadataSource.values)
-          if (_adapters.containsKey(s)) s,
-      ];
+    for (final GalgameMetadataSource s in GalgameMetadataSource.values)
+      if (_adapters.containsKey(s)) s,
+  ];
 
   /// 取某源的 adapter；未注册抛 [GalgameMetadataException]（配置错误，不该静默）。
   GalgameMetadataAdapter adapterFor(GalgameMetadataSource source) {
@@ -149,8 +151,10 @@ class GalgameMetadataService {
 
     if (bySource.isEmpty && notFound.isEmpty && failures.isNotEmpty) {
       final String detail = failures.entries
-          .map((MapEntry<GalgameMetadataSource, String> e) =>
-              '${e.key.label}: ${e.value}')
+          .map(
+            (MapEntry<GalgameMetadataSource, String> e) =>
+                '${e.key.label}: ${e.value}',
+          )
           .join('; ');
       throw GalgameMetadataException('all metadata sources failed — $detail');
     }
@@ -174,10 +178,7 @@ class GalgameMetadataService {
     } on GalgameMetadataException catch (e) {
       return e;
     } catch (e) {
-      return GalgameMetadataException(
-        'unexpected failure: $e',
-        source: source,
-      );
+      return GalgameMetadataException('unexpected failure: $e', source: source);
     }
   }
 

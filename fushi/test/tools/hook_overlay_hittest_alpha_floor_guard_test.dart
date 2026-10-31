@@ -12,28 +12,35 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  final String src =
-      File('windows/runner/floating_lyric_window.cpp').readAsStringSync();
+  final String src = File(
+    'windows/runner/floating_lyric_window.cpp',
+  ).readAsStringSync();
 
   test('① alpha 下限常量存在且非 0（BUG-1046）', () {
-    final RegExp constant =
-        RegExp(r'constexpr\s+uint32_t\s+kHookTextMinCatchAlpha\s*=\s*(\d+)');
+    final RegExp constant = RegExp(
+      r'constexpr\s+uint32_t\s+kHookTextMinCatchAlpha\s*=\s*(\d+)',
+    );
     final RegExpMatch? m = constant.firstMatch(src);
     expect(m, isNotNull, reason: 'kHookTextMinCatchAlpha 常量不得被移除（隐藏背景时的可点击底线）');
-    expect(int.parse(m!.group(1)!), greaterThan(0),
-        reason: '下限为 0 等于没修：alpha 0 像素会被分层窗口命中测试穿透');
+    expect(
+      int.parse(m!.group(1)!),
+      greaterThan(0),
+      reason: '下限为 0 等于没修：alpha 0 像素会被分层窗口命中测试穿透',
+    );
   });
 
   test('② 钳制分支绑定 hook_text_mode_ && !pass_through_', () {
     expect(
       src.contains('hook_text_mode_ && !pass_through_ &&'),
       isTrue,
-      reason: '钳制必须只在「hook 文本模式且未开穿透」生效：'
+      reason:
+          '钳制必须只在「hook 文本模式且未开穿透」生效：'
           '开穿透时保持真 alpha 0（点击本就该穿到游戏）',
     );
     expect(
       src.contains(
-          'body_bg = (kHookTextMinCatchAlpha << 24) | (body_bg & 0x00FFFFFF);'),
+        'body_bg = (kHookTextMinCatchAlpha << 24) | (body_bg & 0x00FFFFFF);',
+      ),
       isTrue,
       reason: '主体背景 alpha 钳制表达式不得被移除',
     );

@@ -141,8 +141,9 @@ class IosInstallSourceResolver {
     if (!Platform.isIOS) return IosInstallSource.sideload;
     IosInstallSource resolved;
     try {
-      final String? raw =
-          await FushiChannels.update.invokeMethod<String>('getInstallSource');
+      final String? raw = await FushiChannels.update.invokeMethod<String>(
+        'getInstallSource',
+      );
       resolved = parseIosInstallSource(raw);
     } catch (e) {
       // 通道缺失（老 native / 测试环境）→ 保持旧行为走发布页，不阻断更新提示。

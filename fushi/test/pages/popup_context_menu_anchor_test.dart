@@ -21,9 +21,12 @@ import 'package:fushi/src/utils/app_ui_scale.dart';
 /// 与 `_showWindowsContextMenu` 完全同形的锚点算法（保持两处一致；算法一旦在实现里
 /// 改坏，这里的断言不会自动跟着坏 —— 故实现侧另有源码扫描守卫盯 `globalToLocal`）。
 Future<void> _showMenuLikePopup(
-    BuildContext context, Offset globalPosition) async {
-  final RenderObject? overlayObject =
-      Overlay.of(context).context.findRenderObject();
+  BuildContext context,
+  Offset globalPosition,
+) async {
+  final RenderObject? overlayObject = Overlay.of(
+    context,
+  ).context.findRenderObject();
   if (overlayObject is! RenderBox || !overlayObject.hasSize) return;
   final Offset anchor = overlayObject.globalToLocal(globalPosition);
   final Size overlaySize = overlayObject.size;
@@ -85,7 +88,9 @@ class _HostPageState extends State<_HostPage> {
                     behavior: HitTestBehavior.translucent,
                     onSecondaryTapDown: (TapDownDetails details) =>
                         _showMenuLikePopup(
-                            popupContext, details.globalPosition),
+                          popupContext,
+                          details.globalPosition,
+                        ),
                     child: const ColoredBox(color: Color(0xFF224466)),
                   ),
                 ),
@@ -120,7 +125,10 @@ class _HostPageState extends State<_HostPage> {
 Offset _menuTopLeftOffset(Offset tapAt, Rect menu) => menu.topLeft - tapAt;
 
 Future<Rect> _rightClickAndMeasureMenu(
-    WidgetTester tester, double scale, Offset tapAt) async {
+  WidgetTester tester,
+  double scale,
+  Offset tapAt,
+) async {
   await tester.pumpWidget(
     MaterialApp(
       builder: (BuildContext context, Widget? child) =>
@@ -140,14 +148,18 @@ Future<Rect> _rightClickAndMeasureMenu(
 
   expect(find.text('COPY'), findsOneWidget, reason: '右键必须弹出弹窗自己的菜单');
   // 菜单整体矩形：取两项的并集。
-  final Rect first = tester.getRect(find.ancestor(
-    of: find.text('SEARCH'),
-    matching: find.byType(PopupMenuItem<String>),
-  ));
-  final Rect second = tester.getRect(find.ancestor(
-    of: find.text('COPY'),
-    matching: find.byType(PopupMenuItem<String>),
-  ));
+  final Rect first = tester.getRect(
+    find.ancestor(
+      of: find.text('SEARCH'),
+      matching: find.byType(PopupMenuItem<String>),
+    ),
+  );
+  final Rect second = tester.getRect(
+    find.ancestor(
+      of: find.text('COPY'),
+      matching: find.byType(PopupMenuItem<String>),
+    ),
+  );
   return first.expandToInclude(second);
 }
 
@@ -160,31 +172,48 @@ void main() {
   void expectAnchored(Offset tapAt, Rect menu, double scale) {
     final Offset delta = _menuTopLeftOffset(tapAt, menu);
     final double tol = tolerance(scale);
-    expect(delta.dx.abs(), lessThanOrEqualTo(tol),
-        reason: '菜单左边缘应与点击点同列，实测偏移=$delta 菜单矩形=$menu');
-    expect(delta.dy, inInclusiveRange(0, tol),
-        reason: '菜单应紧贴点击点下方（只隔 8×scale 的 padding），'
-            '实测偏移=$delta 菜单矩形=$menu');
+    expect(
+      delta.dx.abs(),
+      lessThanOrEqualTo(tol),
+      reason: '菜单左边缘应与点击点同列，实测偏移=$delta 菜单矩形=$menu',
+    );
+    expect(
+      delta.dy,
+      inInclusiveRange(0, tol),
+      reason:
+          '菜单应紧贴点击点下方（只隔 8×scale 的 padding），'
+          '实测偏移=$delta 菜单矩形=$menu',
+    );
   }
 
   testWidgets('界面大小=100%：右键菜单贴住鼠标', (WidgetTester tester) async {
     const Offset tapAt = Offset(300, 250);
     expectAnchored(
-        tapAt, await _rightClickAndMeasureMenu(tester, 1.0, tapAt), 1.0);
+      tapAt,
+      await _rightClickAndMeasureMenu(tester, 1.0, tapAt),
+      1.0,
+    );
   });
 
-  testWidgets('界面大小=150%：菜单仍贴住鼠标（不得偏 factor=scale）',
-      (WidgetTester tester) async {
+  testWidgets('界面大小=150%：菜单仍贴住鼠标（不得偏 factor=scale）', (
+    WidgetTester tester,
+  ) async {
     // 回归形态：锚点没换算时菜单渲染在 (300,250)×1.5=(450,375) 附近，远超容差。
     const Offset tapAt = Offset(300, 250);
     expectAnchored(
-        tapAt, await _rightClickAndMeasureMenu(tester, 1.5, tapAt), 1.5);
+      tapAt,
+      await _rightClickAndMeasureMenu(tester, 1.5, tapAt),
+      1.5,
+    );
   });
 
   testWidgets('界面大小=80%：菜单仍贴住鼠标', (WidgetTester tester) async {
     // 回归形态：菜单渲染在 (300,250)×0.8=(240,200)，落在点击点**左上方**。
     const Offset tapAt = Offset(300, 250);
     expectAnchored(
-        tapAt, await _rightClickAndMeasureMenu(tester, 0.8, tapAt), 0.8);
+      tapAt,
+      await _rightClickAndMeasureMenu(tester, 0.8, tapAt),
+      0.8,
+    );
   });
 }

@@ -89,12 +89,12 @@ class HostDownloadAddRequest {
     required this.title,
     this.mediaKind = 'movie',
     this.discoveryKind,
-  })  : metainfo = null,
-        selectedFileIndexes = null,
-        year = null,
-        metadataProvider = null,
-        externalId = null,
-        subtitlePolicy = null;
+  }) : metainfo = null,
+       selectedFileIndexes = null,
+       year = null,
+       metadataProvider = null,
+       externalId = null,
+       subtitlePolicy = null;
 
   /// 解析并校验 wire JSON；不合法抛 [FormatException]（路由映射成 400，消息即原因）：
   ///
@@ -120,9 +120,7 @@ class HostDownloadAddRequest {
       throw const FormatException('Missing magnet');
     }
     if (magnet != null && torrent != null) {
-      throw const FormatException(
-        'give either magnet or torrent, not both',
-      );
+      throw const FormatException('give either magnet or torrent, not both');
     }
     final String? title = str('title');
     if (title == null) throw const FormatException('Missing title');
@@ -227,23 +225,22 @@ class HostDownloadAddRequest {
     required VideoDownloadBackendTarget backendTarget,
     required DiscoveryMediaKind? discoveryKind,
     required int? targetSourceId,
-  }) =>
-      VideoDownloadManualEnqueueRequest(
-        title: title,
-        backendTarget: backendTarget,
-        magnetUri: magnetUri,
-        metainfo: metainfo,
-        selectedFileIndexes: selectedFileIndexes,
-        metadataProvider: metadataProvider,
-        externalId: externalId,
-        year: year,
-        discoveryKind: discoveryKind,
-        mediaKind: mediaKind == 'tv'
-            ? VideoMetadataMediaKind.tv
-            : VideoMetadataMediaKind.movie,
-        targetSourceId: targetSourceId,
-        subtitlePolicy: subtitlePolicy ?? VideoDownloadSubtitlePolicy.none,
-      );
+  }) => VideoDownloadManualEnqueueRequest(
+    title: title,
+    backendTarget: backendTarget,
+    magnetUri: magnetUri,
+    metainfo: metainfo,
+    selectedFileIndexes: selectedFileIndexes,
+    metadataProvider: metadataProvider,
+    externalId: externalId,
+    year: year,
+    discoveryKind: discoveryKind,
+    mediaKind: mediaKind == 'tv'
+        ? VideoMetadataMediaKind.tv
+        : VideoMetadataMediaKind.movie,
+    targetSourceId: targetSourceId,
+    subtitlePolicy: subtitlePolicy ?? VideoDownloadSubtitlePolicy.none,
+  );
 }
 
 Set<int>? _parseFileIndexes(Object? raw, InspectedTorrentMetainfo? metainfo) {
@@ -288,8 +285,8 @@ int? _parseYear(Object? raw) {
 
 VideoDownloadSubtitlePolicy? _parseSubtitlePolicy(String? name) {
   if (name == null) return null;
-  final VideoDownloadSubtitlePolicy? policy =
-      VideoDownloadSubtitlePolicy.values.asNameMap()[name];
+  final VideoDownloadSubtitlePolicy? policy = VideoDownloadSubtitlePolicy.values
+      .asNameMap()[name];
   if (policy == null) {
     throw FormatException(
       'subtitlePolicy must be one of '
@@ -301,42 +298,40 @@ VideoDownloadSubtitlePolicy? _parseSubtitlePolicy(String? name) {
 
 /// 与 app 下载中心同一套字段名（`VideoDownloadJobLifecycle` / `VideoDownloadJobStage`
 /// 的字符串值原样上线）。
-Map<String, Object?> videoDownloadJobToWire(VideoDownloadJobRow row) =>
-    <String, Object?>{
-      'jobId': row.jobId,
-      'title': row.title,
-      'lifecycle': row.lifecycle,
-      'stage': row.stage,
-      'stageProgress': row.stageProgress,
-      'priority': row.priority,
-      'torrentHash': row.torrentHash,
-      'mediaKind': row.mediaKind,
-      if (row.year != null) 'year': row.year,
-      if (row.metadataProvider != null)
-        'metadataProvider': row.metadataProvider,
-      if (row.externalId != null) 'externalId': row.externalId,
-      if (row.lastError != null) 'lastError': row.lastError,
-      'createdAt': row.createdAt,
-      'updatedAt': row.updatedAt,
-      if (row.completedAt != null) 'completedAt': row.completedAt,
-    };
+Map<String, Object?> videoDownloadJobToWire(
+  VideoDownloadJobRow row,
+) => <String, Object?>{
+  'jobId': row.jobId,
+  'title': row.title,
+  'lifecycle': row.lifecycle,
+  'stage': row.stage,
+  'stageProgress': row.stageProgress,
+  'priority': row.priority,
+  'torrentHash': row.torrentHash,
+  'mediaKind': row.mediaKind,
+  if (row.year != null) 'year': row.year,
+  if (row.metadataProvider != null) 'metadataProvider': row.metadataProvider,
+  if (row.externalId != null) 'externalId': row.externalId,
+  if (row.lastError != null) 'lastError': row.lastError,
+  'createdAt': row.createdAt,
+  'updatedAt': row.updatedAt,
+  if (row.completedAt != null) 'completedAt': row.completedAt,
+};
 
 /// `video_download_job_subtitles` 一行的 wire 形状
 /// （`GET /api/downloads/<id>/subtitles`）。
 Map<String, Object?> videoDownloadJobSubtitleToWire(
   VideoDownloadJobSubtitleRow row,
-) =>
-    <String, Object?>{
-      'subtitleId': row.subtitleId,
-      'provider': row.provider,
-      'status': row.status,
-      if (row.language != null) 'language': row.language,
-      if (row.season != null) 'season': row.season,
-      if (row.episode != null) 'episode': row.episode,
-      if (row.originalFileName != null)
-        'originalFileName': row.originalFileName,
-      if (row.finalPath != null) 'finalPath': row.finalPath,
-      if (row.error != null) 'error': row.error,
-      'createdAt': row.createdAt,
-      'updatedAt': row.updatedAt,
-    };
+) => <String, Object?>{
+  'subtitleId': row.subtitleId,
+  'provider': row.provider,
+  'status': row.status,
+  if (row.language != null) 'language': row.language,
+  if (row.season != null) 'season': row.season,
+  if (row.episode != null) 'episode': row.episode,
+  if (row.originalFileName != null) 'originalFileName': row.originalFileName,
+  if (row.finalPath != null) 'finalPath': row.finalPath,
+  if (row.error != null) 'error': row.error,
+  'createdAt': row.createdAt,
+  'updatedAt': row.updatedAt,
+};

@@ -37,8 +37,10 @@ class GoogleDriveSyncBackend extends SyncBackend
     // 可重试 = 404 陈旧缓存（重解析 ID）∨ 瞬时故障（408/429/5xx，轮内重试一次）。
     // 二者语义正交：前者让重试重解析 folder ID，后者吸收超时/限流/网关抖动，避免一次
     // 瞬时超时把整本书 skip 到下一轮（BUG-1023）。507 配额不在瞬时集内，仍 skip。
-    return SyncBackendError(e.message,
-        isRetryable: e.isStaleCacheError || e.isTransientError);
+    return SyncBackendError(
+      e.message,
+      isRetryable: e.isStaleCacheError || e.isTransientError,
+    );
   }
 
   Future<T> _wrapErrors<T>(Future<T> Function() fn) async {
@@ -136,12 +138,13 @@ class GoogleDriveSyncBackend extends SyncBackend
     required String bookTitle,
     required String rootFolderId,
     SyncCoverDataProvider? readCoverData,
-  }) =>
-      _wrapErrors(() => _drive.ensureBookFolder(
-            bookTitle: bookTitle,
-            rootFolder: rootFolderId,
-            readCoverData: readCoverData,
-          ));
+  }) => _wrapErrors(
+    () => _drive.ensureBookFolder(
+      bookTitle: bookTitle,
+      rootFolder: rootFolderId,
+      readCoverData: readCoverData,
+    ),
+  );
 
   // ── Metadata sync ─────────────────────────────────────────────────
 
@@ -170,36 +173,39 @@ class GoogleDriveSyncBackend extends SyncBackend
     required String folderId,
     required String? fileId,
     required TtuProgress progress,
-  }) =>
-      _wrapVoidErrors(() => _drive.updateProgressFile(
-            folderId: folderId,
-            fileId: fileId,
-            progress: progress,
-          ));
+  }) => _wrapVoidErrors(
+    () => _drive.updateProgressFile(
+      folderId: folderId,
+      fileId: fileId,
+      progress: progress,
+    ),
+  );
 
   @override
   Future<void> updateStatsFile({
     required String folderId,
     required String? fileId,
     required List<TtuStatistics> stats,
-  }) =>
-      _wrapVoidErrors(() => _drive.updateStatsFile(
-            folderId: folderId,
-            fileId: fileId,
-            stats: stats,
-          ));
+  }) => _wrapVoidErrors(
+    () => _drive.updateStatsFile(
+      folderId: folderId,
+      fileId: fileId,
+      stats: stats,
+    ),
+  );
 
   @override
   Future<void> updateAudioBookFile({
     required String folderId,
     required String? fileId,
     required TtuAudioBook audioBook,
-  }) =>
-      _wrapVoidErrors(() => _drive.updateAudioBookFile(
-            folderId: folderId,
-            fileId: fileId,
-            audioBook: audioBook,
-          ));
+  }) => _wrapVoidErrors(
+    () => _drive.updateAudioBookFile(
+      folderId: folderId,
+      fileId: fileId,
+      audioBook: audioBook,
+    ),
+  );
 
   // ── Content file sync ──────────────────────────────────────────────
 
@@ -209,25 +215,27 @@ class GoogleDriveSyncBackend extends SyncBackend
     required String fileName,
     required File file,
     SyncTransferProgress? onProgress,
-  }) =>
-      _wrapVoidErrors(() => _drive.uploadContentFile(
-            folderId: folderId,
-            fileName: fileName,
-            file: file,
-            onProgress: onProgress,
-          ));
+  }) => _wrapVoidErrors(
+    () => _drive.uploadContentFile(
+      folderId: folderId,
+      fileName: fileName,
+      file: file,
+      onProgress: onProgress,
+    ),
+  );
 
   @override
   Future<void> downloadContentFile({
     required String fileId,
     required File destination,
     SyncTransferProgress? onProgress,
-  }) =>
-      _wrapVoidErrors(() => _drive.downloadContentFile(
-            fileId: fileId,
-            destination: destination,
-            onProgress: onProgress,
-          ));
+  }) => _wrapVoidErrors(
+    () => _drive.downloadContentFile(
+      fileId: fileId,
+      destination: destination,
+      onProgress: onProgress,
+    ),
+  );
 
   @override
   Future<SyncFileRef?> findContentFile(String folderId, String fileName) =>
@@ -242,11 +250,10 @@ class GoogleDriveSyncBackend extends SyncBackend
   void restoreCache({
     String? rootFolderId,
     Map<String, String>? titleToFolderId,
-  }) =>
-      _drive.restoreCache(
-        rootFolderId: rootFolderId,
-        titleToFolderId: titleToFolderId,
-      );
+  }) => _drive.restoreCache(
+    rootFolderId: rootFolderId,
+    titleToFolderId: titleToFolderId,
+  );
 
   @override
   String? get cachedRootFolderId => _drive.cachedRootFolderId;
@@ -265,9 +272,9 @@ class GoogleDriveSyncBackend extends SyncBackend
 
   @override
   Future<String> ensureNamespace(String name) => _wrapErrors(() async {
-        final root = await _drive.findOrCreateRootFolder();
-        return _drive.ensureChildFolder(root, name);
-      });
+    final root = await _drive.findOrCreateRootFolder();
+    return _drive.ensureChildFolder(root, name);
+  });
 
   @override
   Future<String> ensureFolder(String parentId, String name) =>
@@ -291,25 +298,27 @@ class GoogleDriveSyncBackend extends SyncBackend
     String name,
     File file, {
     SyncTransferProgress? onProgress,
-  }) =>
-      _wrapVoidErrors(() => _drive.uploadContentFile(
-            folderId: namespaceId,
-            fileName: name,
-            file: file,
-            onProgress: onProgress,
-          ));
+  }) => _wrapVoidErrors(
+    () => _drive.uploadContentFile(
+      folderId: namespaceId,
+      fileName: name,
+      file: file,
+      onProgress: onProgress,
+    ),
+  );
 
   @override
   Future<void> getAsset(
     String assetId,
     File destination, {
     SyncTransferProgress? onProgress,
-  }) =>
-      _wrapVoidErrors(() => _drive.downloadContentFile(
-            fileId: assetId,
-            destination: destination,
-            onProgress: onProgress,
-          ));
+  }) => _wrapVoidErrors(
+    () => _drive.downloadContentFile(
+      fileId: assetId,
+      destination: destination,
+      onProgress: onProgress,
+    ),
+  );
 
   // 云盘视频流播：区间读（appDataFolder 内资产，drive.appdata 授权即可读）。
   @override

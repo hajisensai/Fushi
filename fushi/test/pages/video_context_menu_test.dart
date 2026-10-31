@@ -22,18 +22,28 @@ void main() {
   // 方法里多一行注释就会把 _focusOwnership.reclaim 断言挤出窗口凭空变红；400 的
   // 窗口只覆盖开头 22%，2000 的窗口反过来越界读进下一个方法（负向断言指向错对象）。
   final String secondaryTap = methodBody(page, 'void _handleSecondaryTap(');
-  final String showContextMenu =
-      methodBody(page, 'void _showVideoContextMenu(');
+  final String showContextMenu = methodBody(
+    page,
+    'void _showVideoContextMenu(',
+  );
 
   group('右键菜单触发与门控', () {
     test('视频控制层挂 ContextMenuTrigger（菜单键触发，默认右键）', () {
-      expect(page.contains('ContextMenuTrigger('), isTrue,
-          reason: '桌面右键须经 ContextMenuTrigger（绑定表判定）进入菜单');
-      expect(page.contains('_handleSecondaryTap(position)'), isTrue,
-          reason: '按下处的 globalPosition 作 showMenu 锚点');
-      expect(page.contains('ladder: _VideoFushiPageState.kVideoMouseLadder'),
-          isTrue,
-          reason: '必须用视频页那条阶梯，右键改绑本页动作时菜单才会让位');
+      expect(
+        page.contains('ContextMenuTrigger('),
+        isTrue,
+        reason: '桌面右键须经 ContextMenuTrigger（绑定表判定）进入菜单',
+      );
+      expect(
+        page.contains('_handleSecondaryTap(position)'),
+        isTrue,
+        reason: '按下处的 globalPosition 作 showMenu 锚点',
+      );
+      expect(
+        page.contains('ladder: _VideoFushiPageState.kVideoMouseLadder'),
+        isTrue,
+        reason: '必须用视频页那条阶梯，右键改绑本页动作时菜单才会让位',
+      );
     });
 
     test('手柄映射器合成的同源右键在 showMenu 前去重（BUG-1453）', () {
@@ -43,16 +53,18 @@ void main() {
       final int suppress = secondaryTap.indexOf(
         '_videoGamepadSecondaryTapDeduper.shouldSuppressSecondaryTap(',
       );
-      final int show =
-          secondaryTap.indexOf('_showVideoContextMenu(globalPosition)');
-      expect(settle, greaterThanOrEqualTo(0),
-          reason: '须等待略大于桌面手柄 60ms 轮询周期，让 pointer-first 双投递可合并');
+      final int show = secondaryTap.indexOf(
+        '_showVideoContextMenu(globalPosition)',
+      );
+      expect(
+        settle,
+        greaterThanOrEqualTo(0),
+        reason: '须等待略大于桌面手柄 60ms 轮询周期，让 pointer-first 双投递可合并',
+      );
       expect(suppress, greaterThan(settle), reason: '等待后须按同一输入时钟检查手柄/右键是否同源');
       expect(show, greaterThan(suppress), reason: '同源去重必须发生在菜单构造之前，不能先闪菜单再关闭');
       expect(
-        page.contains(
-          '_videoGamepadSecondaryTapDeduper.recordGamepadPress(',
-        ),
+        page.contains('_videoGamepadSecondaryTapDeduper.recordGamepadPress('),
         isTrue,
         reason: '视频手柄入口须记录真实按钮边沿供右键入口关联',
       );
@@ -60,20 +72,31 @@ void main() {
 
     test('右键菜单仅桌面（移动端门控 no-op）', () {
       // _handleSecondaryTap 第一行必是桌面门控，移动端不弹菜单。
-      expect(secondaryTap.contains('if (!_isDesktopVideoControls) return;'),
-          isTrue,
-          reason: '移动端无右键，须 _isDesktopVideoControls 门控双保险');
+      expect(
+        secondaryTap.contains('if (!_isDesktopVideoControls) return;'),
+        isTrue,
+        reason: '移动端无右键，须 _isDesktopVideoControls 门控双保险',
+      );
     });
 
     test('菜单锚定 _videoControlsContext（全屏路由内可弹）', () {
       final String body = showContextMenu;
-      expect(body.contains('_videoControlsContext'), isTrue,
-          reason: 'showMenu 须用 controls 子树 context，全屏路由复用同一 builder 才能弹出');
+      expect(
+        body.contains('_videoControlsContext'),
+        isTrue,
+        reason: 'showMenu 须用 controls 子树 context，全屏路由复用同一 builder 才能弹出',
+      );
       // 玻璃重设计：菜单走共享 showFushiMenu（同 showMenu 签名的自绘菜单）。
-      expect(body.contains('showFushiMenu<VoidCallback>('), isTrue,
-          reason: '用 showMenu 弹 PopupMenu，自带锚点定位');
-      expect(body.contains('RelativeRect.fromLTRB('), isTrue,
-          reason: '右键位置须转成 RelativeRect 作菜单锚点');
+      expect(
+        body.contains('showFushiMenu<VoidCallback>('),
+        isTrue,
+        reason: '用 showMenu 弹 PopupMenu，自带锚点定位',
+      );
+      expect(
+        body.contains('RelativeRect.fromLTRB('),
+        isTrue,
+        reason: '右键位置须转成 RelativeRect 作菜单锚点',
+      );
     });
 
     // BUG-260：界面缩放（appUiScale ≠ 1）下右键菜单落点必须与鼠标对齐。
@@ -88,29 +111,40 @@ void main() {
       final String body = showContextMenu;
       // 取 showMenu 实际使用的 Navigator(rootNavigator:false) 的 Overlay RenderBox。
       expect(
-          _flat(body)
-              .contains(_flat('Overlay.of(ctx).context.findRenderObject()')),
-          isTrue,
-          reason: '锚点须落在 showMenu 所用 Overlay 的坐标系，故取该 Overlay 的 RenderBox');
+        _flat(
+          body,
+        ).contains(_flat('Overlay.of(ctx).context.findRenderObject()')),
+        isTrue,
+        reason: '锚点须落在 showMenu 所用 Overlay 的坐标系，故取该 Overlay 的 RenderBox',
+      );
       // 用 ancestor 变换把右键点映射到 Overlay 空间，沿真实渲染链吸收 FittedBox 缩放。
-      expect(_flat(body).contains(_flat('ancestor: overlayObject')), isTrue,
-          reason: 'localToGlobal(..., ancestor: overlay) 让锚点与菜单宿主同坐标系（吃掉缩放残差）');
+      expect(
+        _flat(body).contains(_flat('ancestor: overlayObject')),
+        isTrue,
+        reason: 'localToGlobal(..., ancestor: overlay) 让锚点与菜单宿主同坐标系（吃掉缩放残差）',
+      );
       // RelativeRect 须基于 Overlay 尺寸 + 映射后的 anchor，而非中和后真实视口的尺寸/local。
       expect(
-          _flat(body).contains(_flat('overlaySize.width - anchor.dx')), isTrue,
-          reason: 'right/bottom 须以 Overlay 尺寸算（缩放画布空间），与 anchor 同系');
+        _flat(body).contains(_flat('overlaySize.width - anchor.dx')),
+        isTrue,
+        reason: 'right/bottom 须以 Overlay 尺寸算（缩放画布空间），与 anchor 同系',
+      );
       // 不得回退到旧的「直接拿 controls 盒子真实 local 当锚点」写法（那正是 BUG-260 偏移源）。
-      expect(_flat(body).contains(_flat('renderObject.size.width - local.dx')),
-          isFalse,
-          reason: '旧的真实空间 local 锚点会偏离鼠标 factor≈scale，必须已替换');
+      expect(
+        _flat(body).contains(_flat('renderObject.size.width - local.dx')),
+        isFalse,
+        reason: '旧的真实空间 local 锚点会偏离鼠标 factor≈scale，必须已替换',
+      );
     });
 
     test('菜单关闭后归还键盘焦点', () {
       expect(
-          showContextMenu.contains(
-              '_focusOwnership.reclaim(FocusReclaimCause.overlayClosed)'),
-          isTrue,
-          reason: '覆盖层夺焦后不会自动归还，菜单关闭须经 _focusOwnership 归还');
+        showContextMenu.contains(
+          '_focusOwnership.reclaim(FocusReclaimCause.overlayClosed)',
+        ),
+        isTrue,
+        reason: '覆盖层夺焦后不会自动归还，菜单关闭须经 _focusOwnership 归还',
+      );
     });
   });
 
@@ -121,8 +155,10 @@ void main() {
     // 方法签名」当右边界。原来退而用「方法自身的 2 空格闭合」截断，赌的是菜单项列表里
     // 不出现同样缩进的 `}`；现在直接用花括号配对取整个方法体，赌注消失，同样覆盖整份
     // 菜单项列表、不被新增菜单项 / 注释挤出（TODO-389）。
-    final String items = methodBody(page,
-        'List<PopupMenuEntry<VoidCallback>> _buildVideoContextMenuItems(');
+    final String items = methodBody(
+      page,
+      'List<PopupMenuEntry<VoidCallback>> _buildVideoContextMenuItems(',
+    );
 
     test('含播放/暂停', () {
       expect(items.contains('t.video_menu_play_pause'), isTrue);
@@ -162,20 +198,36 @@ void main() {
     test('含片段导出且紧挨截图，文案保持源片段语义', () {
       final int screenshotIdx = items.indexOf('t.video_screenshot');
       final int clipIdx = items.indexOf('t.video_clip_export');
-      final String formerPixelCaptureTerm =
-          String.fromCharCodes(<int>[0x5f55, 0x5c4f]);
-      final String formerEnglishTerm =
-          <String>['screen', 'recording'].join(' ');
+      final String formerPixelCaptureTerm = String.fromCharCodes(<int>[
+        0x5f55,
+        0x5c4f,
+      ]);
+      final String formerEnglishTerm = <String>[
+        'screen',
+        'recording',
+      ].join(' ');
       expect(screenshotIdx, greaterThanOrEqualTo(0), reason: '菜单应含截图');
       expect(clipIdx, greaterThanOrEqualTo(0), reason: '菜单应含片段导出');
-      expect(clipIdx, greaterThan(screenshotIdx),
-          reason: '片段导出应放在截图之后，和截图入口相邻');
-      expect(items.contains('_toggleClipExport'), isTrue,
-          reason: '右键菜单须复用页面片段导出状态机');
-      expect(items.contains(formerPixelCaptureTerm), isFalse,
-          reason: 'TODO-434 菜单文案应保持源片段导出语义');
-      expect(items.contains(formerEnglishTerm), isFalse,
-          reason: 'TODO-434 menu copy should keep source clip semantics');
+      expect(
+        clipIdx,
+        greaterThan(screenshotIdx),
+        reason: '片段导出应放在截图之后，和截图入口相邻',
+      );
+      expect(
+        items.contains('_toggleClipExport'),
+        isTrue,
+        reason: '右键菜单须复用页面片段导出状态机',
+      );
+      expect(
+        items.contains(formerPixelCaptureTerm),
+        isFalse,
+        reason: 'TODO-434 菜单文案应保持源片段导出语义',
+      );
+      expect(
+        items.contains(formerEnglishTerm),
+        isFalse,
+        reason: 'TODO-434 menu copy should keep source clip semantics',
+      );
     });
 
     test('含锁定 / 沉浸模式（TODO-101）', () {
@@ -186,22 +238,37 @@ void main() {
     // TODO-389：右键菜单补「设置」项，打开视频设置侧栏（与右侧 rail 的
     // VideoControlButton.settings 走同一个 _showPlayerSettings）。
     test('含设置（TODO-389，打开视频设置侧栏）', () {
-      expect(items.contains('t.video_settings_title'), isTrue,
-          reason: '设置项标签复用既有 video_settings_title（与侧栏标题同 key）');
-      expect(items.contains('_showPlayerSettings'), isTrue,
-          reason: '设置项须接入既有 _showPlayerSettings 入口（不重造打开逻辑）');
-      expect(items.contains('Icons.tune'), isTrue,
-          reason: '图标用 Icons.tune，与 VideoControlButton.settings 控制按钮保持一致');
+      expect(
+        items.contains('t.video_settings_title'),
+        isTrue,
+        reason: '设置项标签复用既有 video_settings_title（与侧栏标题同 key）',
+      );
+      expect(
+        items.contains('_showPlayerSettings'),
+        isTrue,
+        reason: '设置项须接入既有 _showPlayerSettings 入口（不重造打开逻辑）',
+      );
+      expect(
+        items.contains('Icons.tune'),
+        isTrue,
+        reason: '图标用 Icons.tune，与 VideoControlButton.settings 控制按钮保持一致',
+      );
     });
 
     // BUG-261: 着色器「对比原画」项已从右键菜单移除（用户要求），改只走 `C` 快捷键 /
     // 设置页进入。原「对比仅在启用着色器时出现」用例随之删除，由下面的不变量守住
     // 「右键菜单不再含对比项」。
     test('不再含着色器对比项（BUG-261，改走 C 快捷键 / 设置）', () {
-      expect(items.contains('Icons.compare') || items.contains('FushiIcons.compare'), isFalse,
-          reason: '右键菜单已移除「对比原画」项（BUG-261）');
-      expect(items.contains('t.video_shader_compare'), isFalse,
-          reason: '右键菜单不再引用 video_shader_compare（i18n key 已随项移除）');
+      expect(
+        items.contains('Icons.compare') || items.contains('FushiIcons.compare'),
+        isFalse,
+        reason: '右键菜单已移除「对比原画」项（BUG-261）',
+      );
+      expect(
+        items.contains('t.video_shader_compare'),
+        isFalse,
+        reason: '右键菜单不再引用 video_shader_compare（i18n key 已随项移除）',
+      );
     });
   });
 }

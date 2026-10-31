@@ -59,18 +59,18 @@ class AppIconSelection {
   bool get usesCustomFile => presetKey == customIconKey && customPath != null;
 
   AppIconSelection withRevision(int value) => AppIconSelection(
-        presetKey: presetKey,
-        customPath: customPath,
-        revision: value,
-      );
+    presetKey: presetKey,
+    customPath: customPath,
+    revision: value,
+  );
 }
 
 /// 主窗口侧栏与设置页共享的运行时真值。启动恢复和每次成功切换都只发布到这里，
 /// 避免窗口图标、偏好和 Flutter 品牌位各维护一份互不通知的状态（BUG-1920）。
 final ValueNotifier<AppIconSelection> currentAppIconSelection =
     ValueNotifier<AppIconSelection>(
-  const AppIconSelection(presetKey: 'default'),
-);
+      const AppIconSelection(presetKey: 'default'),
+    );
 
 /// 是否为内置预设 key（custom / 未知都返回 false）。
 bool isPresetKey(String key) => presetIconAssets.containsKey(key);

@@ -46,8 +46,9 @@ void main() {
         const _ReentrantHoverHarness(deferDispatch: true),
       );
 
-      final TestGesture realMouse =
-          await tester.createGesture(kind: PointerDeviceKind.mouse);
+      final TestGesture realMouse = await tester.createGesture(
+        kind: PointerDeviceKind.mouse,
+      );
       addTearDown(() => realMouse.removePointer());
       await realMouse.addPointer(location: const Offset(10, 10));
       await tester.pump();
@@ -60,8 +61,11 @@ void main() {
 
       // 若延迟派发仍重入，testWidgets 会把框架重入错误当未捕获异常令本测试失败；
       // 走到这里且无失败即证明延迟派发安全。
-      expect(tester.takeException(), isNull,
-          reason: '微任务延迟派发不应触发 MouseTracker 重入/并发修改');
+      expect(
+        tester.takeException(),
+        isNull,
+        reason: '微任务延迟派发不应触发 MouseTracker 重入/并发修改',
+      );
     });
   });
 
@@ -72,28 +76,46 @@ void main() {
     });
 
     test(
-        '_pokeControlsVisible 体内无 handlePointerEvent / scheduleMicrotask，唯一出口是信号',
-        () {
-      final String body = methodBody(src, 'void _pokeControlsVisible()');
-      expect(containsCodeLine(body, 'handlePointerEvent('), isFalse,
-          reason: 'BUG-425 的重入根因是在 MouseRegion 回调里同步派指针事件；'
-              'poke 体内不得再有任何派发（注释提及不算）');
-      expect(containsCodeLine(body, 'scheduleMicrotask('), isFalse,
-          reason: 'BUG-425 的微任务延迟是合成派发的附属补丁；没有派发就没有东西要延迟'
-              '（BUG-2453）——它回来说明派发也回来了');
-      expect(containsCodeLine(body, '_restartHideTimerSignal.poke();'), isTrue,
-          reason: '唯一出口：Listenable 通知不碰 MouseTracker，在 hover 回调里同步调用'
-              '也不会重入 _deviceUpdatePhase');
-    });
+      '_pokeControlsVisible 体内无 handlePointerEvent / scheduleMicrotask，唯一出口是信号',
+      () {
+        final String body = methodBody(src, 'void _pokeControlsVisible()');
+        expect(
+          containsCodeLine(body, 'handlePointerEvent('),
+          isFalse,
+          reason:
+              'BUG-425 的重入根因是在 MouseRegion 回调里同步派指针事件；'
+              'poke 体内不得再有任何派发（注释提及不算）',
+        );
+        expect(
+          containsCodeLine(body, 'scheduleMicrotask('),
+          isFalse,
+          reason:
+              'BUG-425 的微任务延迟是合成派发的附属补丁；没有派发就没有东西要延迟'
+              '（BUG-2453）——它回来说明派发也回来了',
+        );
+        expect(
+          containsCodeLine(body, '_restartHideTimerSignal.poke();'),
+          isTrue,
+          reason:
+              '唯一出口：Listenable 通知不碰 MouseTracker，在 hover 回调里同步调用'
+              '也不会重入 _deviceUpdatePhase',
+        );
+      },
+    );
 
     test('MouseRegion 回调里的调用方仍在（否则上一条的「同步调用安全」是空话）', () {
       // BUG-425 的触发栈：字幕盒 hover → _handleSubtitleHover → _pokeControlsVisible。
       // 这个调用方还在，才证明「poke 可以在 MouseTracker 迭代期被同步调用」是一条真被
       // 走到的路径，而不是守卫在钉一个没人调的方法。
-      final String hover =
-          methodBody(src, 'void _handleSubtitleHover(bool hovering)');
-      expect(containsCodeLine(hover, '_pokeControlsVisible();'), isTrue,
-          reason: '字幕盒 hover 仍应经 poke 续命控制条（BUG-283）');
+      final String hover = methodBody(
+        src,
+        'void _handleSubtitleHover(bool hovering)',
+      );
+      expect(
+        containsCodeLine(hover, '_pokeControlsVisible();'),
+        isTrue,
+        reason: '字幕盒 hover 仍应经 poke 续命控制条（BUG-283）',
+      );
     });
 
     test('微任务延迟派发脚手架不得残留', () {
@@ -102,9 +124,13 @@ void main() {
         '_pendingPokeHover',
         '_pokeDispatchScheduled',
       ]) {
-        expect(containsIdentifier(src, needle), isFalse,
-            reason: '$needle 只在合成派发存在时有意义（BUG-425 脚手架）；'
-                '它回来 = 合成设备回来（BUG-2453）');
+        expect(
+          containsIdentifier(src, needle),
+          isFalse,
+          reason:
+              '$needle 只在合成派发存在时有意义（BUG-425 脚手架）；'
+              '它回来 = 合成设备回来（BUG-2453）',
+        );
       }
     });
   });

@@ -40,8 +40,9 @@ class DataRootMigrationView extends StatelessWidget {
     final ColorScheme cs = Theme.of(context).colorScheme;
     if (failure != null) return _buildFailure(context, cs, failure!);
     final ({int copied, int total})? p = progress;
-    final double? fraction =
-        p != null && p.total > 0 ? p.copied / p.total : null;
+    final double? fraction = p != null && p.total > 0
+        ? p.copied / p.total
+        : null;
     final FushiTypography type = context.fushiType;
     // 遮罩没有导航，不挂页头：全屏 Scaffold 只承担不透明底色（splash 色 / surface）。
     return Scaffold(
@@ -174,7 +175,8 @@ class DataRootMigrationView extends StatelessWidget {
                         // 跟卡片实际配对前景（Apple 淡染底时是系统红，
                         // 不是 onErrorContainer）；墨水屏无配对色回落原值。
                         style: type.bodyMedium.copyWith(
-                          color: fushiCardToneColors(
+                          color:
+                              fushiCardToneColors(
                                 context,
                                 FushiCardTone.error,
                               )?.onContainer ??

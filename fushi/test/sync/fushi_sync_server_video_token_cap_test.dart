@@ -29,8 +29,7 @@ class _StreamOnlyLibraryService implements FushiLibraryHostService {
     String id, {
     String langCode = '',
     int episodeIndex = 0,
-  }) async =>
-      null;
+  }) async => null;
 
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
@@ -89,9 +88,13 @@ void main() {
       for (int i = 0; i < 150; i++) {
         await mintOne(i);
       }
-      expect(server.videoStreamTokenCount, lessThanOrEqualTo(128),
-          reason: '签发侧必须先 prune 再 enforce cap，'
-              '否则 _videoStreamTokens 无界膨胀（BUG-1568）');
+      expect(
+        server.videoStreamTokenCount,
+        lessThanOrEqualTo(128),
+        reason:
+            '签发侧必须先 prune 再 enforce cap，'
+            '否则 _videoStreamTokens 无界膨胀（BUG-1568）',
+      );
       expect(server.videoStreamTokenCount, greaterThan(0));
     }, timeout: const Timeout(Duration(minutes: 2)));
   });

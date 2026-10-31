@@ -15,83 +15,129 @@ void main() {
   String read(String path) => File(path).readAsStringSync();
 
   test('page shell 定义选区章号快照字段 + _favoriteSectionIndex 消费 getter', () {
-    final String src =
-        read('lib/src/pages/implementations/reader_fushi_page.dart');
-    expect(src, contains('int? _cachedSelectionSectionIndex;'),
-        reason: '选区时刻快照所属章号的字段必须存在');
+    final String src = read(
+      'lib/src/pages/implementations/reader_fushi_page.dart',
+    );
     expect(
-        src,
-        contains(
-            'int get _favoriteSectionIndex =>\n      _cachedSelectionSectionIndex ?? _lookupSectionIndex;'),
-        reason: '消费 getter 优先用快照、无快照回退当前 _lookupSectionIndex');
+      src,
+      contains('int? _cachedSelectionSectionIndex;'),
+      reason: '选区时刻快照所属章号的字段必须存在',
+    );
+    expect(
+      src,
+      contains(
+        'int get _favoriteSectionIndex =>\n      _cachedSelectionSectionIndex ?? _lookupSectionIndex;',
+      ),
+      reason: '消费 getter 优先用快照、无快照回退当前 _lookupSectionIndex',
+    );
     // dispose/clear 时复位快照，避免跨句串味。
-    expect(src, contains('_cachedSelectionSectionIndex = null;'),
-        reason: 'clearDictionaryResult 必须复位选区章号快照');
+    expect(
+      src,
+      contains('_cachedSelectionSectionIndex = null;'),
+      reason: 'clearDictionaryResult 必须复位选区章号快照',
+    );
   });
 
   test(
-      '收藏 toggle 与制卡写入的 section 取自 _favoriteSectionIndex（非裸 _lookupSectionIndex）',
-      () {
-    final String chrome =
-        read('lib/src/pages/implementations/reader_fushi/chrome.part.dart');
-    final String mining =
-        read('lib/src/pages/implementations/reader_fushi/mining.part.dart');
-    expect(
+    '收藏 toggle 与制卡写入的 section 取自 _favoriteSectionIndex（非裸 _lookupSectionIndex）',
+    () {
+      final String chrome = read(
+        'lib/src/pages/implementations/reader_fushi/chrome.part.dart',
+      );
+      final String mining = read(
+        'lib/src/pages/implementations/reader_fushi/mining.part.dart',
+      );
+      expect(
         chrome,
         contains(
-            'final int section = selectionSection ?? _favoriteSectionIndex;'),
-        reason: '显式拖选必须使用菜单捕获的章号，查词收藏消费选区快照 getter');
-    expect(chrome, contains('final int favoriteSection = _lookupSectionIndex;'),
-        reason: '桌面右键必须在菜单接管焦点前捕获章号');
-    expect(chrome, contains('selectionSection: favoriteSection'),
-        reason: '桌面右键收藏传递本次捕获的章号');
-    expect(chrome, contains('selectionSection: selectionSection'),
-        reason: '移动端收藏传递菜单创建时的选区章号');
-    // 回看会话（BUG-2503）把卡片自带的章号放在前面：回写到原卡的 section 必须是
-    // 那张卡的章，不是当前查词位置；普通制卡仍取选区快照 getter。
-    expect(mining, contains(
+          'final int section = selectionSection ?? _favoriteSectionIndex;',
+        ),
+        reason: '显式拖选必须使用菜单捕获的章号，查词收藏消费选区快照 getter',
+      );
+      expect(
+        chrome,
+        contains('final int favoriteSection = _lookupSectionIndex;'),
+        reason: '桌面右键必须在菜单接管焦点前捕获章号',
+      );
+      expect(
+        chrome,
+        contains('selectionSection: favoriteSection'),
+        reason: '桌面右键收藏传递本次捕获的章号',
+      );
+      expect(
+        chrome,
+        contains('selectionSection: selectionSection'),
+        reason: '移动端收藏传递菜单创建时的选区章号',
+      );
+      // 回看会话（BUG-2503）把卡片自带的章号放在前面：回写到原卡的 section 必须是
+      // 那张卡的章，不是当前查词位置；普通制卡仍取选区快照 getter。
+      expect(
+        mining,
+        contains(
           'final int section =\n'
           '          context.sourceLink?.chapterIndex ?? _favoriteSectionIndex;',
         ),
-        reason: '制卡历史落库的 section 必须来自选区快照 getter（回看时卡片章号优先）');
-    // 不得再在这两处直接用裸 _lookupSectionIndex 当 section 写入。
-    expect(chrome.contains('final int section = _lookupSectionIndex;'), isFalse,
-        reason: '收藏写入点不得回退裸 _lookupSectionIndex');
-    expect(mining.contains('final int section = _lookupSectionIndex;'), isFalse,
-        reason: '制卡写入点不得回退裸 _lookupSectionIndex');
-  });
+        reason: '制卡历史落库的 section 必须来自选区快照 getter（回看时卡片章号优先）',
+      );
+      // 不得再在这两处直接用裸 _lookupSectionIndex 当 section 写入。
+      expect(
+        chrome.contains('final int section = _lookupSectionIndex;'),
+        isFalse,
+        reason: '收藏写入点不得回退裸 _lookupSectionIndex',
+      );
+      expect(
+        mining.contains('final int section = _lookupSectionIndex;'),
+        isFalse,
+        reason: '制卡写入点不得回退裸 _lookupSectionIndex',
+      );
+    },
+  );
 
   test('三个选区缓存点都同批快照 section；isFavorited 查询消费快照', () {
-    final String lookup =
-        read('lib/src/pages/implementations/reader_fushi/lookup.part.dart');
-    final String chrome =
-        read('lib/src/pages/implementations/reader_fushi/chrome.part.dart');
+    final String lookup = read(
+      'lib/src/pages/implementations/reader_fushi/lookup.part.dart',
+    );
+    final String chrome = read(
+      'lib/src/pages/implementations/reader_fushi/chrome.part.dart',
+    );
     // 主 onTextSelected 路径 + 歌词 cue 路径都写快照。
-    expect('x$lookup'.split('_cachedSelectionSectionIndex =').length - 1,
-        greaterThanOrEqualTo(2),
-        reason: 'lookup 主选区路径与歌词 cue 路径都要写 section 快照');
+    expect(
+      'x$lookup'.split('_cachedSelectionSectionIndex =').length - 1,
+      greaterThanOrEqualTo(2),
+      reason: 'lookup 主选区路径与歌词 cue 路径都要写 section 快照',
+    );
     // 原生选区路径（导出/制卡）也写快照。
     expect(
-        chrome, contains('_cachedSelectionSectionIndex = _lookupSectionIndex;'),
-        reason: '原生选区路径同样锁定所属章号');
+      chrome,
+      contains('_cachedSelectionSectionIndex = _lookupSectionIndex;'),
+      reason: '原生选区路径同样锁定所属章号',
+    );
     // isFavorited 查询用快照 getter，保证「是否已收藏」判定与写入同源 section。
-    expect(lookup, contains('sectionIndex: _favoriteSectionIndex,'),
-        reason: 'isFavorited 查询 section 与写入同源，避免星标判定错位');
+    expect(
+      lookup,
+      contains('sectionIndex: _favoriteSectionIndex,'),
+      reason: 'isFavorited 查询 section 与写入同源，避免星标判定错位',
+    );
   });
 
   test('恢复端对越界 charAnchor 有回退章首兜底（分页 + 连续两 shell）', () {
     final String js = read('lib/src/reader/reader_pagination_scripts.dart');
-    expect(js, contains('charOffsetInRange: function(charOffset)'),
-        reason: '共享越界判据必须存在');
+    expect(
+      js,
+      contains('charOffsetInRange: function(charOffset)'),
+      reason: '共享越界判据必须存在',
+    );
     // 连续 shell：越界回退章首。
-    expect(js, contains('if (!this.charOffsetInRange(charOffset)) {'),
-        reason: '连续恢复越界回退 scrollToChapterStart');
+    expect(
+      js,
+      contains('if (!this.charOffsetInRange(charOffset)) {'),
+      reason: '连续恢复越界回退 scrollToChapterStart',
+    );
     // 分页 shell：越界 / 章首(charOffset<=0，BUG-594) 回退章首（scrollToProgressPaged 0）。
     expect(
-        js,
-        contains(
-            'if (charOffset <= 0 || !this.charOffsetInRange(charOffset)) {'),
-        reason:
-            '分页恢复越界 / charOffset<=0 章首回退 scrollToProgressPaged(context, 0)');
+      js,
+      contains('if (charOffset <= 0 || !this.charOffsetInRange(charOffset)) {'),
+      reason: '分页恢复越界 / charOffset<=0 章首回退 scrollToProgressPaged(context, 0)',
+    );
   });
 }

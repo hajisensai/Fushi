@@ -19,54 +19,59 @@ void main() {
   // TODO-1292（退出图1重进图2）：精确锚绝不能比分数陈旧。同 section 无新精确锚，但
   // norm_char_offset 变了 → 位置真的推进了、旧精确锚陈旧 → 必须失效，恢复回退到最新分数。
   test(
-      'same-section null save with moved fraction invalidates stale charOffset',
-      () async {
-    await repo.save(
-      bookUid: 'book-42',
-      sectionIndex: 3,
-      normCharOffset: 100,
-      charOffset: 500,
-    );
-    var pos = await repo.findByBookUid('book-42');
-    expect(pos, isNotNull);
-    expect(pos!.charOffset, equals(500));
+    'same-section null save with moved fraction invalidates stale charOffset',
+    () async {
+      await repo.save(
+        bookUid: 'book-42',
+        sectionIndex: 3,
+        normCharOffset: 100,
+        charOffset: 500,
+      );
+      var pos = await repo.findByBookUid('book-42');
+      expect(pos, isNotNull);
+      expect(pos!.charOffset, equals(500));
 
-    await repo.save(
-      bookUid: 'book-42',
-      sectionIndex: 3,
-      normCharOffset: 200,
-    );
-    pos = await repo.findByBookUid('book-42');
-    expect(pos, isNotNull);
-    expect(pos!.sectionIndex, equals(3));
-    expect(pos.normCharOffset, equals(200),
-        reason: 'normCharOffset should update');
-    expect(pos.charOffset, isNull,
-        reason: 'position moved without a fresh precise anchor → stale '
-            'charOffset must be invalidated so restore uses the fresh fraction');
-  });
+      await repo.save(bookUid: 'book-42', sectionIndex: 3, normCharOffset: 200);
+      pos = await repo.findByBookUid('book-42');
+      expect(pos, isNotNull);
+      expect(pos!.sectionIndex, equals(3));
+      expect(
+        pos.normCharOffset,
+        equals(200),
+        reason: 'normCharOffset should update',
+      );
+      expect(
+        pos.charOffset,
+        isNull,
+        reason:
+            'position moved without a fresh precise anchor → stale '
+            'charOffset must be invalidated so restore uses the fresh fraction',
+      );
+    },
+  );
 
   // BUG-162 瞬态守护保留：同 section、分数不变（当帧测不到精确偏移但位置没动）→ 保留旧锚，
   // 避免一次性 caret 失败就丢掉精确恢复能力。
-  test('same-section null save with unchanged fraction preserves charOffset',
-      () async {
-    await repo.save(
-      bookUid: 'book-77',
-      sectionIndex: 3,
-      normCharOffset: 100,
-      charOffset: 500,
-    );
-    await repo.save(
-      bookUid: 'book-77',
-      sectionIndex: 3,
-      normCharOffset: 100,
-    );
-    final pos = await repo.findByBookUid('book-77');
-    expect(pos, isNotNull);
-    expect(pos!.normCharOffset, equals(100));
-    expect(pos.charOffset, equals(500),
-        reason: 'position unchanged (transient measure failure) → keep anchor');
-  });
+  test(
+    'same-section null save with unchanged fraction preserves charOffset',
+    () async {
+      await repo.save(
+        bookUid: 'book-77',
+        sectionIndex: 3,
+        normCharOffset: 100,
+        charOffset: 500,
+      );
+      await repo.save(bookUid: 'book-77', sectionIndex: 3, normCharOffset: 100);
+      final pos = await repo.findByBookUid('book-77');
+      expect(pos, isNotNull);
+      expect(pos!.normCharOffset, equals(100));
+      expect(
+        pos.charOffset,
+        equals(500),
+        reason: 'position unchanged (transient measure failure) → keep anchor',
+      );
+    },
+  );
 
   test('cross-section null save invalidates local charOffset', () async {
     await repo.save(
@@ -76,18 +81,20 @@ void main() {
       charOffset: 500,
     );
 
-    await repo.save(
-      bookUid: 'book-42',
-      sectionIndex: 4,
-      normCharOffset: 200,
-    );
+    await repo.save(bookUid: 'book-42', sectionIndex: 4, normCharOffset: 200);
     final pos = await repo.findByBookUid('book-42');
     expect(pos, isNotNull);
     expect(pos!.sectionIndex, equals(4), reason: 'sectionIndex should update');
-    expect(pos.normCharOffset, equals(200),
-        reason: 'normCharOffset should update');
-    expect(pos.charOffset, isNull,
-        reason: 'section-local charOffset must not survive section changes');
+    expect(
+      pos.normCharOffset,
+      equals(200),
+      reason: 'normCharOffset should update',
+    );
+    expect(
+      pos.charOffset,
+      isNull,
+      reason: 'section-local charOffset must not survive section changes',
+    );
   });
 
   test('save with charOffset then save with new value updates it', () async {
@@ -108,12 +115,16 @@ void main() {
   });
 
   test('DB default -1 maps to model null for old data', () async {
-    await db.into(db.readerPositions).insert(ReaderPositionsCompanion.insert(
-          bookUid: 'book-99',
-          sectionIndex: 0,
-          normCharOffset: 50,
-          updatedAt: DateTime.now().millisecondsSinceEpoch,
-        ));
+    await db
+        .into(db.readerPositions)
+        .insert(
+          ReaderPositionsCompanion.insert(
+            bookUid: 'book-99',
+            sectionIndex: 0,
+            normCharOffset: 50,
+            updatedAt: DateTime.now().millisecondsSinceEpoch,
+          ),
+        );
     final pos = await repo.findByBookUid('book-99');
     expect(pos, isNotNull);
     expect(pos!.charOffset, isNull, reason: 'DB -1 should map to model null');
@@ -124,11 +135,7 @@ void main() {
   });
 
   test('delete removes position', () async {
-    await repo.save(
-      bookUid: 'book-10',
-      sectionIndex: 1,
-      normCharOffset: 500,
-    );
+    await repo.save(bookUid: 'book-10', sectionIndex: 1, normCharOffset: 500);
     await repo.delete('book-10');
     expect(await repo.findByBookUid('book-10'), isNull);
   });
@@ -175,14 +182,21 @@ void main() {
   test('first save with null charOffset keeps DB default', () async {
     await repo.save(bookUid: 'book-50', sectionIndex: 0, normCharOffset: 100);
     final pos = await repo.findByBookUid('book-50');
-    expect(pos!.charOffset, isNull,
-        reason: 'first save without charOffset → DB default -1 → model null');
+    expect(
+      pos!.charOffset,
+      isNull,
+      reason: 'first save without charOffset → DB default -1 → model null',
+    );
   });
 
   // 书架列书一次取完（替代每本一查的 N+1）：批量读与单本读逐字段一致。
   test('findAllByBookUid matches per-book reads field by field', () async {
     await repo.save(
-        bookUid: 'a', sectionIndex: 3, normCharOffset: 1000, charOffset: 42);
+      bookUid: 'a',
+      sectionIndex: 3,
+      normCharOffset: 1000,
+      charOffset: 42,
+    );
     await repo.save(bookUid: 'b', sectionIndex: 7, normCharOffset: 5000);
 
     final Map<String, ReaderPosition> all = await repo.findAllByBookUid();

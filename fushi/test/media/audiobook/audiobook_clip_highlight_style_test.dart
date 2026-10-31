@@ -52,8 +52,9 @@ void main() {
 
       final ui.Codec codec = await ui.instantiateImageCodec(png!);
       final ui.FrameInfo frame = await codec.getNextFrame();
-      final ByteData? rgba =
-          await frame.image.toByteData(format: ui.ImageByteFormat.rawRgba);
+      final ByteData? rgba = await frame.image.toByteData(
+        format: ui.ImageByteFormat.rawRgba,
+      );
       decoded = _DecodedImage(
         width: frame.image.width,
         height: frame.image.height,
@@ -110,26 +111,31 @@ void main() {
     },
   );
 
-  testWidgets(
-    'highlight wash tracks the input color (not hardcoded) (真穿到渲染)',
-    (WidgetTester tester) async {
-      // 换一个与上例完全不同的哨兵色（青）：若渲染把 highlight 真穿下去，图里应出现青，
-      // 且**不该**出现上例的品红——从而证明衬底色跟随入参，不是写死的固定色。
-      final _DecodedImage img = await renderAndDecode(
-        tester,
-        text: '僕は学校へ',
-        layout: layoutWith(
-          background: const Color(0xFF101010),
-          foreground: const Color(0xFFF0F0F0),
-          highlight: const Color(0xFF00FFFF),
-        ),
-      );
-      expect(img.hasPixelCloseTo(const Color(0xFF00FFFF)), isTrue,
-          reason: '衬底色必须跟随传入的 highlight（青）。');
-      expect(img.hasPixelCloseTo(const Color(0xFFFF00FF)), isFalse,
-          reason: '衬底色不是写死的品红——换成青后不该再出现品红。');
-    },
-  );
+  testWidgets('highlight wash tracks the input color (not hardcoded) (真穿到渲染)', (
+    WidgetTester tester,
+  ) async {
+    // 换一个与上例完全不同的哨兵色（青）：若渲染把 highlight 真穿下去，图里应出现青，
+    // 且**不该**出现上例的品红——从而证明衬底色跟随入参，不是写死的固定色。
+    final _DecodedImage img = await renderAndDecode(
+      tester,
+      text: '僕は学校へ',
+      layout: layoutWith(
+        background: const Color(0xFF101010),
+        foreground: const Color(0xFFF0F0F0),
+        highlight: const Color(0xFF00FFFF),
+      ),
+    );
+    expect(
+      img.hasPixelCloseTo(const Color(0xFF00FFFF)),
+      isTrue,
+      reason: '衬底色必须跟随传入的 highlight（青）。',
+    );
+    expect(
+      img.hasPixelCloseTo(const Color(0xFFFF00FF)),
+      isFalse,
+      reason: '衬底色不是写死的品红——换成青后不该再出现品红。',
+    );
+  });
 }
 
 /// 解码后的 RGBA 图，带「是否存在接近某色的像素」查询。

@@ -61,29 +61,24 @@ void main() {
   group('POST /api/anki/media/dedup/run', () {
     test('缺 dryRun 字段 → 干跑（安全默认，一个文件都不动）', () async {
       final _FakeMining mining = _FakeMining()..report = _plan;
-      await buildAnkiMediaDedupRunResponse(
-        <String, dynamic>{},
-        mining: mining,
-      );
+      await buildAnkiMediaDedupRunResponse(<String, dynamic>{}, mining: mining);
       expect(mining.runs, <bool>[true]);
     });
 
     test('dryRun=false 才真跑', () async {
       final _FakeMining mining = _FakeMining()..report = _plan;
-      await buildAnkiMediaDedupRunResponse(
-        <String, dynamic>{'dryRun': false},
-        mining: mining,
-      );
+      await buildAnkiMediaDedupRunResponse(<String, dynamic>{
+        'dryRun': false,
+      }, mining: mining);
       expect(mining.runs, <bool>[false]);
     });
 
     test('dryRun 类型错 → FormatException（调用方转 400），绝不当成 false', () async {
       final _FakeMining mining = _FakeMining()..report = _plan;
       await expectLater(
-        buildAnkiMediaDedupRunResponse(
-          <String, dynamic>{'dryRun': 'false'},
-          mining: mining,
-        ),
+        buildAnkiMediaDedupRunResponse(<String, dynamic>{
+          'dryRun': 'false',
+        }, mining: mining),
         throwsA(isA<FormatException>()),
       );
       expect(mining.runs, isEmpty);

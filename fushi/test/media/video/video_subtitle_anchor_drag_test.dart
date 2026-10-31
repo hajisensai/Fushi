@@ -126,7 +126,10 @@ void main() {
     test('盒中心在上半屏 → 顶锚 + 离顶距离（盒顶到顶边）', () {
       final ({SubtitleLayerVAnchor anchor, double padding}) r =
           resolveDragAdjustDrop(
-              boxTop: 100, boxHeight: 40, containerHeight: 600);
+            boxTop: 100,
+            boxHeight: 40,
+            containerHeight: 600,
+          );
       expect(r.anchor, SubtitleLayerVAnchor.top);
       expect(r.padding, 100);
     });
@@ -134,7 +137,10 @@ void main() {
     test('盒中心在下半屏 → 底锚 + 离底距离（盒底到底边）', () {
       final ({SubtitleLayerVAnchor anchor, double padding}) r =
           resolveDragAdjustDrop(
-              boxTop: 500, boxHeight: 40, containerHeight: 600);
+            boxTop: 500,
+            boxHeight: 40,
+            containerHeight: 600,
+          );
       expect(r.anchor, SubtitleLayerVAnchor.bottom);
       expect(r.padding, 600 - 500 - 40);
     });
@@ -144,15 +150,24 @@ void main() {
       // 顶距 = 280，底距 = 600 - 280 - 40 = 280。两分支数值相等。
       final ({SubtitleLayerVAnchor anchor, double padding}) atMid =
           resolveDragAdjustDrop(
-              boxTop: 280, boxHeight: 40, containerHeight: 600);
+            boxTop: 280,
+            boxHeight: 40,
+            containerHeight: 600,
+          );
       expect(atMid.padding, 280);
       // 中线上方一像素 → 顶锚；下方一像素 → 底锚；padding 差 1（连续）。
       final ({SubtitleLayerVAnchor anchor, double padding}) above =
           resolveDragAdjustDrop(
-              boxTop: 279, boxHeight: 40, containerHeight: 600);
+            boxTop: 279,
+            boxHeight: 40,
+            containerHeight: 600,
+          );
       final ({SubtitleLayerVAnchor anchor, double padding}) below =
           resolveDragAdjustDrop(
-              boxTop: 281, boxHeight: 40, containerHeight: 600);
+            boxTop: 281,
+            boxHeight: 40,
+            containerHeight: 600,
+          );
       expect(above.anchor, SubtitleLayerVAnchor.top);
       expect(above.padding, 279);
       expect(below.anchor, SubtitleLayerVAnchor.bottom);
@@ -161,14 +176,19 @@ void main() {
 
     test('clamp 进 [0, kVideoSubtitleMaxPadding]：拖出屏 → 0，超上限 → 400', () {
       expect(
-        resolveDragAdjustDrop(boxTop: -50, boxHeight: 40, containerHeight: 600)
-            .padding,
+        resolveDragAdjustDrop(
+          boxTop: -50,
+          boxHeight: 40,
+          containerHeight: 600,
+        ).padding,
         0,
       );
       expect(
         resolveDragAdjustDrop(
-                boxTop: 1500, boxHeight: 40, containerHeight: 2000)
-            .padding,
+          boxTop: 1500,
+          boxHeight: 40,
+          containerHeight: 2000,
+        ).padding,
         kVideoSubtitleMaxPadding,
         reason: '底锚离底 460 超上限，夹到 400',
       );
@@ -182,8 +202,9 @@ void main() {
         secondaryAnchor: SubtitleLayerVAnchor.bottom,
         bottomPadding: 320,
       );
-      final VideoSubtitleStyle back =
-          VideoSubtitleStyle.decode(VideoSubtitleStyle.encode(s));
+      final VideoSubtitleStyle back = VideoSubtitleStyle.decode(
+        VideoSubtitleStyle.encode(s),
+      );
       expect(back.mainAnchor, SubtitleLayerVAnchor.top);
       expect(back.secondaryAnchor, SubtitleLayerVAnchor.bottom);
       expect(back.bottomPadding, 320);
@@ -212,8 +233,10 @@ void main() {
       expect(VideoSubtitleStyle.decode(high).bottomPadding, 399);
       const String over =
           '{"_v":2,"fontSize":36,"bottomPadding":9999,"backgroundOpacity":0}';
-      expect(VideoSubtitleStyle.decode(over).bottomPadding,
-          kVideoSubtitleMaxPadding);
+      expect(
+        VideoSubtitleStyle.decode(over).bottomPadding,
+        kVideoSubtitleMaxPadding,
+      );
     });
   });
 
@@ -222,21 +245,24 @@ void main() {
     const double kBoxPadTop = 6;
 
     double gapFromTop(WidgetTester tester, String text) {
-      final Rect overlayRect =
-          tester.getRect(find.byType(VideoSubtitleOverlay));
+      final Rect overlayRect = tester.getRect(
+        find.byType(VideoSubtitleOverlay),
+      );
       final Rect charRect = tester.getRect(find.text(text).first);
       return charRect.top - overlayRect.top;
     }
 
     double gapFromBottom(WidgetTester tester, String text) {
-      final Rect overlayRect =
-          tester.getRect(find.byType(VideoSubtitleOverlay));
+      final Rect overlayRect = tester.getRect(
+        find.byType(VideoSubtitleOverlay),
+      );
       final Rect charRect = tester.getRect(find.text(text).first);
       return overlayRect.bottom - charRect.bottom;
     }
 
-    testWidgets('mainAnchor=top：主字幕渲染在顶部，bottomPadding 语义 = 离顶距离',
-        (WidgetTester tester) async {
+    testWidgets('mainAnchor=top：主字幕渲染在顶部，bottomPadding 语义 = 离顶距离', (
+      WidgetTester tester,
+    ) async {
       final VideoPlayerController c = _controllerWithCue('A');
       addTearDown(c.dispose);
       await _pump(
@@ -247,12 +273,16 @@ void main() {
           mainAnchor: SubtitleLayerVAnchor.top,
         ),
       );
-      expect(gapFromTop(tester, 'A'), closeTo(50 + kBoxPadTop, 0.5),
-          reason: '顶锚时主字幕顶缘离顶 = 用户位置（+盒内 padding），镜像副字幕置顶路径');
+      expect(
+        gapFromTop(tester, 'A'),
+        closeTo(50 + kBoxPadTop, 0.5),
+        reason: '顶锚时主字幕顶缘离顶 = 用户位置（+盒内 padding），镜像副字幕置顶路径',
+      );
     });
 
-    testWidgets('mainAnchor=top + 控制条可见：避让 controlsTopReserve（取下限）',
-        (WidgetTester tester) async {
+    testWidgets('mainAnchor=top + 控制条可见：避让 controlsTopReserve（取下限）', (
+      WidgetTester tester,
+    ) async {
       final VideoPlayerController c = _controllerWithCue('A');
       addTearDown(c.dispose);
       final ValueNotifier<bool> visible = ValueNotifier<bool>(false);
@@ -277,12 +307,16 @@ void main() {
       expect(maxAnimatedTop(), 12, reason: '控制条隐藏：贴用户基线');
       visible.value = true;
       await tester.pump();
-      expect(maxAnimatedTop(), kTopReserve,
-          reason: '控制条可见：顶锚主字幕下移到顶栏下方（BUG-1069 同契约）');
+      expect(
+        maxAnimatedTop(),
+        kTopReserve,
+        reason: '控制条可见：顶锚主字幕下移到顶栏下方（BUG-1069 同契约）',
+      );
     });
 
-    testWidgets('mainAnchor=top 时副字幕自动落底（对侧规则，不与主字幕同点叠印）',
-        (WidgetTester tester) async {
+    testWidgets('mainAnchor=top 时副字幕自动落底（对侧规则，不与主字幕同点叠印）', (
+      WidgetTester tester,
+    ) async {
       final VideoPlayerController c = VideoPlayerController();
       addTearDown(c.dispose);
       c.setCues(<AudioCue>[_cue('主')]);
@@ -297,22 +331,32 @@ void main() {
           mainAnchor: SubtitleLayerVAnchor.top,
         ),
       );
-      expect(gapFromTop(tester, '主'), closeTo(50 + kBoxPadTop, 0.5),
-          reason: '主字幕在顶');
-      expect(gapFromBottom(tester, '副'), closeTo(80 + kBoxPadTop, 0.5),
-          reason: '副字幕自动对侧落底，吃自己的基线');
+      expect(
+        gapFromTop(tester, '主'),
+        closeTo(50 + kBoxPadTop, 0.5),
+        reason: '主字幕在顶',
+      );
+      expect(
+        gapFromBottom(tester, '副'),
+        closeTo(80 + kBoxPadTop, 0.5),
+        reason: '副字幕自动对侧落底，吃自己的基线',
+      );
     });
 
-    testWidgets('默认（mainAnchor=bottom）外观与历史像素级一致（零破坏守卫）',
-        (WidgetTester tester) async {
+    testWidgets('默认（mainAnchor=bottom）外观与历史像素级一致（零破坏守卫）', (
+      WidgetTester tester,
+    ) async {
       final VideoPlayerController c = _controllerWithCue('A');
       addTearDown(c.dispose);
       await _pump(
         tester,
         VideoSubtitleOverlay(controller: c, bottomPadding: 75),
       );
-      expect(gapFromBottom(tester, 'A'), closeTo(75 + kBoxPadTop, 0.5),
-          reason: '不传锚定 = 历史底部基线');
+      expect(
+        gapFromBottom(tester, 'A'),
+        closeTo(75 + kBoxPadTop, 0.5),
+        reason: '不传锚定 = 历史底部基线',
+      );
     });
   });
 
@@ -322,14 +366,16 @@ void main() {
       addTearDown(c.dispose);
       int taps = 0;
       Widget overlay({required bool dragMode}) => VideoSubtitleOverlay(
-            controller: c,
-            dragAdjustEnabled: dragMode,
-            onCharTap: (String s, int i, Rect r, AudioCue cue) => taps++,
-            onDragAdjustEnd: (
-                {required bool isSecondary,
-                required SubtitleLayerVAnchor anchor,
-                required double padding}) {},
-          );
+        controller: c,
+        dragAdjustEnabled: dragMode,
+        onCharTap: (String s, int i, Rect r, AudioCue cue) => taps++,
+        onDragAdjustEnd:
+            ({
+              required bool isSecondary,
+              required SubtitleLayerVAnchor anchor,
+              required double padding,
+            }) {},
+      );
 
       await _pump(tester, overlay(dragMode: true));
       await tester.tapAt(tester.getCenter(find.text('ス').first));
@@ -338,15 +384,17 @@ void main() {
 
       // 退出模式：同一棵树换参重建（State 保留），查词恢复。
       await tester.pumpWidget(
-          MaterialApp(home: Scaffold(body: overlay(dragMode: false))));
+        MaterialApp(home: Scaffold(body: overlay(dragMode: false))),
+      );
       await tester.pump();
       await tester.tapAt(tester.getCenter(find.text('ス').first));
       await tester.pump();
       expect(taps, 1, reason: '退出拖拽模式后查词手势恢复');
     });
 
-    testWidgets('竖直拖到顶部：实时预览 + 松手回报 top 锚 + clamp 后距离',
-        (WidgetTester tester) async {
+    testWidgets('竖直拖到顶部：实时预览 + 松手回报 top 锚 + clamp 后距离', (
+      WidgetTester tester,
+    ) async {
       final VideoPlayerController c = _controllerWithCue('テスト');
       addTearDown(c.dispose);
       bool? endIsSecondary;
@@ -358,14 +406,16 @@ void main() {
           controller: c,
           bottomPadding: 75,
           dragAdjustEnabled: true,
-          onDragAdjustEnd: (
-              {required bool isSecondary,
-              required SubtitleLayerVAnchor anchor,
-              required double padding}) {
-            endIsSecondary = isSecondary;
-            endAnchor = anchor;
-            endPadding = padding;
-          },
+          onDragAdjustEnd:
+              ({
+                required bool isSecondary,
+                required SubtitleLayerVAnchor anchor,
+                required double padding,
+              }) {
+                endIsSecondary = isSecondary;
+                endAnchor = anchor;
+                endPadding = padding;
+              },
         ),
       );
 
@@ -382,11 +432,15 @@ void main() {
       expect(endPadding, 0, reason: '拖出顶边 clamp 到 0（贴顶）');
 
       // 预览已生效：字幕盒贴顶渲染（离顶 = 0 + 盒内 padding 6）。
-      final Rect overlayRect =
-          tester.getRect(find.byType(VideoSubtitleOverlay));
+      final Rect overlayRect = tester.getRect(
+        find.byType(VideoSubtitleOverlay),
+      );
       final Rect charRect = tester.getRect(find.text('テ').first);
-      expect(charRect.top - overlayRect.top, closeTo(6, 0.5),
-          reason: '松手后预览保留在落点（顶锚 0 + 盒内 6px）');
+      expect(
+        charRect.top - overlayRect.top,
+        closeTo(6, 0.5),
+        reason: '松手后预览保留在落点（顶锚 0 + 盒内 6px）',
+      );
     });
 
     testWidgets('拖拽模式内字幕盒显示可拖指示边框', (WidgetTester tester) async {
@@ -397,18 +451,20 @@ void main() {
         VideoSubtitleOverlay(
           controller: c,
           dragAdjustEnabled: true,
-          onDragAdjustEnd: (
-              {required bool isSecondary,
-              required SubtitleLayerVAnchor anchor,
-              required double padding}) {},
+          onDragAdjustEnd:
+              ({
+                required bool isSecondary,
+                required SubtitleLayerVAnchor anchor,
+                required double padding,
+              }) {},
         ),
       );
       final bool hasBorder = tester
           .widgetList<Container>(find.byType(Container))
           .any((Container w) {
-        final Decoration? d = w.foregroundDecoration;
-        return d is BoxDecoration && d.border != null;
-      });
+            final Decoration? d = w.foregroundDecoration;
+            return d is BoxDecoration && d.border != null;
+          });
       expect(hasBorder, isTrue, reason: '模式内字幕盒需有可拖指示（边框）');
     });
   });

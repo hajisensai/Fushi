@@ -65,9 +65,7 @@ void main() {
     expect(results, <StudyRecordResetScope?>[StudyRecordResetScope.all]);
   });
 
-  testWidgets('只勾「最近一次」→ lastSession', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('只勾「最近一次」→ lastSession', (WidgetTester tester) async {
     final List<StudyRecordResetScope?> results = await pumpLauncher(tester);
     await tester.tap(find.text(t.library_progress_reset_records_last_session));
     await tester.pump();

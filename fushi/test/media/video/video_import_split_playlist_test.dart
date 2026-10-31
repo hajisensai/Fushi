@@ -30,7 +30,9 @@ void main() {
     ];
 
     final SplitPlaylistImportResult result = await repo.importSplitPlaylist(
-        collectionName: 'Show', entries: entries);
+      collectionName: 'Show',
+      entries: entries,
+    );
 
     // 每集 uid = video/<集文件名>，有序返回。
     expect(result.episodeUids, <String>[
@@ -111,7 +113,8 @@ void main() {
         entries: <PlaylistEntry>[
           PlaylistEntry(
             title: 'Episode $episode',
-            path: 'D:/Videos/Mushoku Tensei III - '
+            path:
+                'D:/Videos/Mushoku Tensei III - '
                 'S03E${episode.toString().padLeft(2, '0')}.mkv',
           ),
         ],
@@ -120,8 +123,9 @@ void main() {
       collectionId = result.collectionId;
     }
     expect(
-      (await db.getCollectionItems(collectionId!))
-          .map((MediaCollectionItemRow row) => row.entryKey),
+      (await db.getCollectionItems(
+        collectionId!,
+      )).map((MediaCollectionItemRow row) => row.entryKey),
       <String>[
         'video/Mushoku Tensei III - S03E04',
         'video/Mushoku Tensei III - S03E03',
@@ -137,8 +141,9 @@ void main() {
     await repo.reorderDownloadedCollectionEpisodes(collectionId);
 
     expect(
-      (await db.getCollectionItems(collectionId))
-          .map((MediaCollectionItemRow row) => row.entryKey),
+      (await db.getCollectionItems(
+        collectionId,
+      )).map((MediaCollectionItemRow row) => row.entryKey),
       <String>[
         for (int episode = 1; episode <= 7; episode++)
           'video/Mushoku Tensei III - '
@@ -169,8 +174,7 @@ void main() {
     expect(
       (await db.getCollectionItems(
         result.collectionId,
-      ))
-          .map((MediaCollectionItemRow m) => m.entryKey),
+      )).map((MediaCollectionItemRow m) => m.entryKey),
       <String>[result.episodeUids[1]],
     );
     expect(await db.getMediaCollectionById(result.collectionId), isNotNull);
@@ -214,14 +218,14 @@ void main() {
       );
 
       // 磁盘上编辑 m3u8：删 E01、留 E02、加 E03。
-      final ({int added, int removed}) recon =
-          await repo.reconcileSplitPlaylist(
-        collectionId: result.collectionId,
-        entries: const <PlaylistEntry>[
-          PlaylistEntry(title: 'E2', path: '/v/Show E02.mkv'),
-          PlaylistEntry(title: 'E3', path: '/v/Show E03.mkv'),
-        ],
-      );
+      final ({int added, int removed}) recon = await repo
+          .reconcileSplitPlaylist(
+            collectionId: result.collectionId,
+            entries: const <PlaylistEntry>[
+              PlaylistEntry(title: 'E2', path: '/v/Show E02.mkv'),
+              PlaylistEntry(title: 'E3', path: '/v/Show E03.mkv'),
+            ],
+          );
       expect(recon.added, 1);
       expect(recon.removed, 1);
 
@@ -250,13 +254,15 @@ void main() {
         PlaylistEntry(title: 'E2', path: '/v/b.mkv'),
       ];
       final SplitPlaylistImportResult result = await repo.importSplitPlaylist(
-          collectionName: 'Show', entries: entries);
-
-      final ({int added, int removed}) recon =
-          await repo.reconcileSplitPlaylist(
-        collectionId: result.collectionId,
+        collectionName: 'Show',
         entries: entries,
       );
+
+      final ({int added, int removed}) recon = await repo
+          .reconcileSplitPlaylist(
+            collectionId: result.collectionId,
+            entries: entries,
+          );
       expect(recon.added, 0);
       expect(recon.removed, 0);
       // 未变集不重跑 importSplitPlaylist → 不撞 uid 加后缀造重复行（旧代码整体跳过之因）。
@@ -278,33 +284,36 @@ void main() {
           PlaylistEntry(title: 'E1', path: '/v/Show E01.mkv'),
         ],
       );
-      await repo.saveVideoBook(const VideoBooksCompanion(
-        bookUid: Value<String>('manual-e2'),
-        title: Value<String>('Manual E2'),
-        videoPath: Value<String>('/v/Show E02.mkv'),
-        lastPositionMs: Value<int>(1234),
-      ));
-
-      final ({int added, int removed}) recon =
-          await repo.reconcileSplitPlaylist(
-        collectionId: result.collectionId,
-        entries: const <PlaylistEntry>[
-          PlaylistEntry(title: 'E1', path: '/v/Show E01.mkv'),
-          PlaylistEntry(title: 'E2', path: '/v/Show E02.mkv'),
-        ],
-        sourceId: 7,
+      await repo.saveVideoBook(
+        const VideoBooksCompanion(
+          bookUid: Value<String>('manual-e2'),
+          title: Value<String>('Manual E2'),
+          videoPath: Value<String>('/v/Show E02.mkv'),
+          lastPositionMs: Value<int>(1234),
+        ),
       );
+
+      final ({int added, int removed}) recon = await repo
+          .reconcileSplitPlaylist(
+            collectionId: result.collectionId,
+            entries: const <PlaylistEntry>[
+              PlaylistEntry(title: 'E1', path: '/v/Show E01.mkv'),
+              PlaylistEntry(title: 'E2', path: '/v/Show E02.mkv'),
+            ],
+            sourceId: 7,
+          );
 
       expect(recon, (added: 1, removed: 0));
       expect((await repo.listAll()).length, 2, reason: '清单对账必须复用库内同路径行');
-      final VideoBookRow reused = (await repo.listAll())
-          .singleWhere((VideoBookRow row) => row.bookUid == 'manual-e2');
+      final VideoBookRow reused = (await repo.listAll()).singleWhere(
+        (VideoBookRow row) => row.bookUid == 'manual-e2',
+      );
       expect(reused.sourceId, 7);
       expect(reused.lastPositionMs, 1234, reason: '回填来源不得覆盖观看进度');
-      expect(
-        await memberPaths(db, repo, result.collectionId),
-        <String>{'/v/Show E01.mkv', '/v/Show E02.mkv'},
-      );
+      expect(await memberPaths(db, repo, result.collectionId), <String>{
+        '/v/Show E01.mkv',
+        '/v/Show E02.mkv',
+      });
     });
 
     test('整批替换清单 → 先加后删，合集不被移空自删', () async {
@@ -320,14 +329,14 @@ void main() {
         ],
       );
 
-      final ({int added, int removed}) recon =
-          await repo.reconcileSplitPlaylist(
-        collectionId: result.collectionId,
-        entries: const <PlaylistEntry>[
-          PlaylistEntry(title: 'E3', path: '/v/c.mkv'),
-          PlaylistEntry(title: 'E4', path: '/v/d.mkv'),
-        ],
-      );
+      final ({int added, int removed}) recon = await repo
+          .reconcileSplitPlaylist(
+            collectionId: result.collectionId,
+            entries: const <PlaylistEntry>[
+              PlaylistEntry(title: 'E3', path: '/v/c.mkv'),
+              PlaylistEntry(title: 'E4', path: '/v/d.mkv'),
+            ],
+          );
       expect(recon.added, 2);
       expect(recon.removed, 2);
 

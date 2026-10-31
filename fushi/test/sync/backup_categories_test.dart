@@ -45,7 +45,7 @@ void main() {
   /// `_hasCompleteDictionaryResources` accepts it). Returns the built service +
   /// roots so each test can export with a different category set.
   Future<({BackupService service, FushiDatabase db, String dictRoot})>
-      buildFullSource() async {
+  buildFullSource() async {
     final String dbDir = p.join(src.path, 'db');
     final String books = p.join(src.path, 'fushi_books');
     final String audio = p.join(src.path, 'audiobooks');
@@ -62,38 +62,48 @@ void main() {
     await writeFile(p.join(videos, 'Episode1.mkv'), 'EP1');
 
     final db = FushiDatabase.forTesting(NativeDatabase.memory());
-    await db.insertEpubBook(EpubBooksCompanion.insert(
-      bookKey: 'Bk',
-      title: 'Bk',
-      epubPath: p.join(books, 'Bk', 'original.epub'),
-      extractDir: p.join(books, 'Bk'),
-      chapterCount: 1,
-      chaptersJson: '["c"]',
-      importedAt: 0,
-    ));
-    await db.upsertAudiobook(AudiobooksCompanion.insert(
-      bookKey: 'Bk',
-      alignmentFormat: 'srt',
-      alignmentPath: p.join(audio, 'h', 'align.srt'),
-      audioRoot: Value(p.join(audio, 'h')),
-    ));
+    await db.insertEpubBook(
+      EpubBooksCompanion.insert(
+        bookKey: 'Bk',
+        title: 'Bk',
+        epubPath: p.join(books, 'Bk', 'original.epub'),
+        extractDir: p.join(books, 'Bk'),
+        chapterCount: 1,
+        chaptersJson: '["c"]',
+        importedAt: 0,
+      ),
+    );
+    await db.upsertAudiobook(
+      AudiobooksCompanion.insert(
+        bookKey: 'Bk',
+        alignmentFormat: 'srt',
+        alignmentPath: p.join(audio, 'h', 'align.srt'),
+        audioRoot: Value(p.join(audio, 'h')),
+      ),
+    );
     // A dictionary meta row whose resource dir exists → counts as "complete".
-    await db.upsertDictionaryMeta(DictionaryMetadataCompanion.insert(
-      name: 'JMdict',
-      formatKey: 'yomitan',
-      order: 0,
-    ));
-    await db.upsertVideoBook(VideoBooksCompanion.insert(
-      bookUid: 'video/film',
-      title: 'Film',
-      videoPath: p.join(videos, 'Film.mp4'),
-      playlistJson: Value(jsonEncode(<Map<String, Object?>>[
-        <String, Object?>{
-          'title': 'Episode 1',
-          'path': p.join(videos, 'Episode1.mkv'),
-        },
-      ])),
-    ));
+    await db.upsertDictionaryMeta(
+      DictionaryMetadataCompanion.insert(
+        name: 'JMdict',
+        formatKey: 'yomitan',
+        order: 0,
+      ),
+    );
+    await db.upsertVideoBook(
+      VideoBooksCompanion.insert(
+        bookUid: 'video/film',
+        title: 'Film',
+        videoPath: p.join(videos, 'Film.mp4'),
+        playlistJson: Value(
+          jsonEncode(<Map<String, Object?>>[
+            <String, Object?>{
+              'title': 'Episode 1',
+              'path': p.join(videos, 'Episode1.mkv'),
+            },
+          ]),
+        ),
+      ),
+    );
     // The font catalog references MyFont.ttf: the export packs (and counts)
     // ONLY catalog-referenced files, so without this the font would be treated
     // as an orphan and skipped.
@@ -136,48 +146,66 @@ void main() {
     final ArchiveFile dbFile = archive.findFile('fushi.db')!;
     final Directory dir = Directory(p.join(into.path, 'exdb'))
       ..createSync(recursive: true);
-    File(p.join(dir.path, 'fushi.db'))
-        .writeAsBytesSync(dbFile.content as List<int>);
+    File(
+      p.join(dir.path, 'fushi.db'),
+    ).writeAsBytesSync(dbFile.content as List<int>);
     return FushiDatabase(dir.path);
   }
 
   Future<int> countRows(FushiDatabase db, String table) async {
-    final row =
-        await db.customSelect('SELECT COUNT(*) AS c FROM $table').getSingle();
+    final row = await db
+        .customSelect('SELECT COUNT(*) AS c FROM $table')
+        .getSingle();
     return row.data['c'] as int;
   }
 
   Future<({BackupService service, FushiDatabase db, String dbDir})>
-      buildDataSource() async {
+  buildDataSource() async {
     final String dbDir = p.join(src.path, 'db');
     Directory(dbDir).createSync(recursive: true);
     final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
-    await db.insertEpubBook(EpubBooksCompanion.insert(
-      bookKey: 'Bk',
-      title: 'Bk',
-      epubPath: 'x',
-      extractDir: 'y',
-      chapterCount: 1,
-      chaptersJson: '["c"]',
-      importedAt: 0,
-    ));
+    await db.insertEpubBook(
+      EpubBooksCompanion.insert(
+        bookKey: 'Bk',
+        title: 'Bk',
+        epubPath: 'x',
+        extractDir: 'y',
+        chapterCount: 1,
+        chaptersJson: '["c"]',
+        importedAt: 0,
+      ),
+    );
     // v82：reader_positions/bookmarks 键 = epub_books.uid（insertEpubBook 自动生成）。
     final String bkUid = (await db.resolveEpubBookUid('Bk'))!;
-    await db.upsertReaderPosition(ReaderPositionsCompanion.insert(
-        bookUid: bkUid, sectionIndex: 0, normCharOffset: 100, updatedAt: 1));
-    await db.into(db.bookmarks).insert(BookmarksCompanion.insert(
+    await db.upsertReaderPosition(
+      ReaderPositionsCompanion.insert(
         bookUid: bkUid,
         sectionIndex: 0,
         normCharOffset: 100,
-        label: 'bm',
-        createdAt: 1));
+        updatedAt: 1,
+      ),
+    );
+    await db
+        .into(db.bookmarks)
+        .insert(
+          BookmarksCompanion.insert(
+            bookUid: bkUid,
+            sectionIndex: 0,
+            normCharOffset: 100,
+            label: 'bm',
+            createdAt: 1,
+          ),
+        );
     await db.setPref('audiobook_pos_Bk', '12345');
-    await db.setReadingStatistic(ReadingStatisticsCompanion.insert(
+    await db.setReadingStatistic(
+      ReadingStatisticsCompanion.insert(
         title: 'Bk',
         dateKey: '2026-01-01',
         charactersRead: 10,
         readingTimeMs: 1000,
-        lastStatisticModified: 1));
+        lastStatisticModified: 1,
+      ),
+    );
     // P4 B3：统计类目还覆盖两条 session 粒度事实流——首页活动时间线与游戏
     // 游玩会话（galgames 游戏行本身是内容，不随统计裁剪）。
     await db.addActivityEvent(
@@ -190,29 +218,43 @@ void main() {
       durationMs: 1000,
       charsDelta: 10,
     );
-    await db.upsertGalgame(GalgamesCompanion.insert(
-      id: '111000000',
-      name: 'G1',
-      exePath: r'D:\g\g.exe',
-      workdir: r'D:\g',
-      addedAt: 1,
-    ));
-    await db.insertGalgameSession(GalgameSessionsCompanion.insert(
-      gameId: '111000000',
-      startMs: 1000,
-      endMs: 61000,
-      durationSeconds: 60,
-      dateKey: '2026-01-01',
-    ));
+    await db.upsertGalgame(
+      GalgamesCompanion.insert(
+        id: '111000000',
+        name: 'G1',
+        exePath: r'D:\g\g.exe',
+        workdir: r'D:\g',
+        addedAt: 1,
+      ),
+    );
+    await db.insertGalgameSession(
+      GalgameSessionsCompanion.insert(
+        gameId: '111000000',
+        startMs: 1000,
+        endMs: 61000,
+        durationSeconds: 60,
+        dateKey: '2026-01-01',
+      ),
+    );
     await db.setPref('theme_mode', 'dark');
     await db.setPref('favorite_sentences', '[]');
     await db.setPref('local_audio_dbs', '[]');
     final int pid = await db.insertProfile(
-        ProfilesCompanion.insert(name: 'P1', createdAt: 1, updatedAt: 1));
-    await db.upsertProfileSetting(ProfileSettingsCompanion.insert(
-        profileId: pid, category: 'reader', key: 'k', value: 'v'));
-    final BackupService service =
-        BackupService(db: db, dbDirectory: dbDir, appVersion: '1.0.0');
+      ProfilesCompanion.insert(name: 'P1', createdAt: 1, updatedAt: 1),
+    );
+    await db.upsertProfileSetting(
+      ProfileSettingsCompanion.insert(
+        profileId: pid,
+        category: 'reader',
+        key: 'k',
+        value: 'v',
+      ),
+    );
+    final BackupService service = BackupService(
+      db: db,
+      dbDirectory: dbDir,
+      appVersion: '1.0.0',
+    );
     return (service: service, db: db, dbDir: dbDir);
   }
 
@@ -231,8 +273,10 @@ void main() {
     expect(archive.findFile('custom_fonts/MyFont.ttf'), isNotNull);
     expect(archive.findFile('dictionaryResources/JMdict/index.bin'), isNotNull);
     expect(
-      archive.files.any((ArchiveFile f) =>
-          f.isFile && f.name.startsWith('videos/') && f.name.endsWith('.mp4')),
+      archive.files.any(
+        (ArchiveFile f) =>
+            f.isFile && f.name.startsWith('videos/') && f.name.endsWith('.mp4'),
+      ),
       isTrue,
     );
     expect(archive.findFile('fushi.db'), isNotNull);
@@ -242,33 +286,38 @@ void main() {
     expect(meta.fontsRoot, isNotNull);
   });
 
-  test('selecting only books packs books + db, excludes the other trees',
-      () async {
-    final built = await buildFullSource();
-    final zip = p.join(src.path, 'books_only.zip');
-    final meta = await built.service.createBackup(
-      zip,
-      categories: {BackupCategory.books},
-    );
-    await built.db.close();
+  test(
+    'selecting only books packs books + db, excludes the other trees',
+    () async {
+      final built = await buildFullSource();
+      final zip = p.join(src.path, 'books_only.zip');
+      final meta = await built.service.createBackup(
+        zip,
+        categories: {BackupCategory.books},
+      );
+      await built.db.close();
 
-    final archive = await readZip(zip);
-    expect(archive.findFile('fushi.db'), isNotNull,
-        reason: 'db is always packed');
-    expect(archive.findFile('fushi_books/Bk/original.epub'), isNotNull);
-    // Unselected trees are absent.
-    expect(archive.findFile('audiobooks/h/a.mp3'), isNull);
-    expect(archive.findFile('custom_fonts/MyFont.ttf'), isNull);
-    expect(archive.findFile('dictionaryResources/JMdict/index.bin'), isNull);
-    expect(
-      archive.files.any((ArchiveFile f) => f.name.startsWith('videos/')),
-      isFalse,
-    );
-    // Meta only records the packed tree's root; omitted trees are null.
-    expect(meta.booksRoot, isNotNull);
-    expect(meta.audiobooksRoot, isNull);
-    expect(meta.fontsRoot, isNull);
-  });
+      final archive = await readZip(zip);
+      expect(
+        archive.findFile('fushi.db'),
+        isNotNull,
+        reason: 'db is always packed',
+      );
+      expect(archive.findFile('fushi_books/Bk/original.epub'), isNotNull);
+      // Unselected trees are absent.
+      expect(archive.findFile('audiobooks/h/a.mp3'), isNull);
+      expect(archive.findFile('custom_fonts/MyFont.ttf'), isNull);
+      expect(archive.findFile('dictionaryResources/JMdict/index.bin'), isNull);
+      expect(
+        archive.files.any((ArchiveFile f) => f.name.startsWith('videos/')),
+        isFalse,
+      );
+      // Meta only records the packed tree's root; omitted trees are null.
+      expect(meta.booksRoot, isNotNull);
+      expect(meta.audiobooksRoot, isNull);
+      expect(meta.fontsRoot, isNull);
+    },
+  );
 
   test('empty category set packs db only (every tree excluded)', () async {
     final built = await buildFullSource();
@@ -288,57 +337,62 @@ void main() {
     );
   });
 
-  test('selecting videos packs video files and import rewrites videoPath',
-      () async {
-    final built = await buildFullSource();
-    final zip = p.join(src.path, 'videos.zip');
-    await built.service.createBackup(zip, categories: {BackupCategory.videos});
-    await built.db.close();
-
-    final Archive archive = await readZip(zip);
-    final ArchiveFile videoEntry = archive.files.singleWhere(
-      (ArchiveFile f) =>
-          f.isFile && f.name.startsWith('videos/') && f.name.endsWith('.mp4'),
-    );
-    final ArchiveFile playlistEntry = archive.files.singleWhere(
-      (ArchiveFile f) =>
-          f.isFile && f.name.startsWith('videos/') && f.name.endsWith('.mkv'),
-    );
-    expect(String.fromCharCodes(videoEntry.content as List<int>), 'MP4');
-    expect(String.fromCharCodes(playlistEntry.content as List<int>), 'EP1');
-    expect(archive.findFile('fushi_books/Bk/original.epub'), isNull);
-    expect(archive.findFile('audiobooks/h/a.mp3'), isNull);
-
-    final String dstDbDir = p.join(dst.path, 'db');
-    final String dstVideos = p.join(dst.path, 'videos');
-    Directory(dstDbDir).createSync(recursive: true);
-
-    await BackupRestoreService.restoreBackup(
-      dbDirectory: dstDbDir,
-      zipPath: zip,
-      videosRootDirectory: dstVideos,
-    );
-
-    final FushiDatabase restored = FushiDatabase(dstDbDir);
-    try {
-      final VideoBookRow? row =
-          await restored.getVideoBookByBookUid('video/film');
-      expect(row, isNotNull);
-      expect(row!.videoPath, startsWith(dstVideos));
-      expect(File(row.videoPath).readAsStringSync(), 'MP4');
-      final List<dynamic> playlist =
-          jsonDecode(row.playlistJson!) as List<dynamic>;
-      final String episodePath =
-          (playlist.single as Map<String, dynamic>)['path'] as String;
-      expect(episodePath, startsWith(dstVideos));
-      expect(File(episodePath).readAsStringSync(), 'EP1');
-    } finally {
-      await restored.close();
-    }
-  });
-
   test(
-      'importing a partial (books-only) backup leaves the existing audio tree '
+    'selecting videos packs video files and import rewrites videoPath',
+    () async {
+      final built = await buildFullSource();
+      final zip = p.join(src.path, 'videos.zip');
+      await built.service.createBackup(
+        zip,
+        categories: {BackupCategory.videos},
+      );
+      await built.db.close();
+
+      final Archive archive = await readZip(zip);
+      final ArchiveFile videoEntry = archive.files.singleWhere(
+        (ArchiveFile f) =>
+            f.isFile && f.name.startsWith('videos/') && f.name.endsWith('.mp4'),
+      );
+      final ArchiveFile playlistEntry = archive.files.singleWhere(
+        (ArchiveFile f) =>
+            f.isFile && f.name.startsWith('videos/') && f.name.endsWith('.mkv'),
+      );
+      expect(String.fromCharCodes(videoEntry.content as List<int>), 'MP4');
+      expect(String.fromCharCodes(playlistEntry.content as List<int>), 'EP1');
+      expect(archive.findFile('fushi_books/Bk/original.epub'), isNull);
+      expect(archive.findFile('audiobooks/h/a.mp3'), isNull);
+
+      final String dstDbDir = p.join(dst.path, 'db');
+      final String dstVideos = p.join(dst.path, 'videos');
+      Directory(dstDbDir).createSync(recursive: true);
+
+      await BackupRestoreService.restoreBackup(
+        dbDirectory: dstDbDir,
+        zipPath: zip,
+        videosRootDirectory: dstVideos,
+      );
+
+      final FushiDatabase restored = FushiDatabase(dstDbDir);
+      try {
+        final VideoBookRow? row = await restored.getVideoBookByBookUid(
+          'video/film',
+        );
+        expect(row, isNotNull);
+        expect(row!.videoPath, startsWith(dstVideos));
+        expect(File(row.videoPath).readAsStringSync(), 'MP4');
+        final List<dynamic> playlist =
+            jsonDecode(row.playlistJson!) as List<dynamic>;
+        final String episodePath =
+            (playlist.single as Map<String, dynamic>)['path'] as String;
+        expect(episodePath, startsWith(dstVideos));
+        expect(File(episodePath).readAsStringSync(), 'EP1');
+      } finally {
+        await restored.close();
+      }
+    },
+  );
+
+  test('importing a partial (books-only) backup leaves the existing audio tree '
       'intact and does not crash', () async {
     final built = await buildFullSource();
     final zip = p.join(src.path, 'books_only.zip');
@@ -360,13 +414,18 @@ void main() {
       audiobooksRootDirectory: dstAudio,
     );
 
-    expect(File(p.join(dstBooks, 'Bk', 'original.epub')).existsSync(), isTrue,
-        reason: 'books tree was in the partial backup → restored');
-    expect(File(p.join(dstAudio, 'keep', 'kept.mp3')).existsSync(), isTrue,
-        reason: 'audio tree absent from backup → existing tree untouched');
+    expect(
+      File(p.join(dstBooks, 'Bk', 'original.epub')).existsSync(),
+      isTrue,
+      reason: 'books tree was in the partial backup → restored',
+    );
+    expect(
+      File(p.join(dstAudio, 'keep', 'kept.mp3')).existsSync(),
+      isTrue,
+      reason: 'audio tree absent from backup → existing tree untouched',
+    );
   });
-  test(
-      'BackupCategory enumerates the seven content categories, the four '
+  test('BackupCategory enumerates the seven content categories, the four '
       'DB-only data categories and srs (db is never itself a category)', () {
     expect(BackupCategory.values.toSet(), <BackupCategory>{
       BackupCategory.dictionary,
@@ -394,8 +453,11 @@ void main() {
       'backup_category_settings',
       'backup_category_profiles',
     ]) {
-      expect(schemaSrc.contains(key), isTrue,
-          reason: '$key must be shown in the export category picker');
+      expect(
+        schemaSrc.contains(key),
+        isTrue,
+        reason: '$key must be shown in the export category picker',
+      );
     }
   });
 
@@ -406,8 +468,11 @@ void main() {
     // TODO-585: 导出 widget 现住 sync_settings_schema/backup.part.dart；
     // 读合并语料而不是单文件。
     final String src = readSyncSettingsSchemaSource();
-    expect(src.contains('_pickExportCategories('), isTrue,
-        reason: 'export must prompt for categories before running');
+    expect(
+      src.contains('_pickExportCategories('),
+      isTrue,
+      reason: 'export must prompt for categories before running',
+    );
     expect(
       src.contains('defaultBackupExportCategories()'),
       isTrue,
@@ -425,24 +490,35 @@ void main() {
       isTrue,
       reason: 'local audio databases must be an explicit opt-in (TODO-941)',
     );
-    expect(src.contains('categories: categories'), isTrue,
-        reason: 'the chosen set must be forwarded to createBackup');
+    expect(
+      src.contains('categories: categories'),
+      isTrue,
+      reason: 'the chosen set must be forwarded to createBackup',
+    );
   });
 
   // TODO-1195 part A: the export UI must offer a per-book picker and forward the
   // chosen book_keys to createBackup (dormant null = full export).
   test('export UI wires the per-book selection picker', () {
     final String src = readSyncSettingsSchemaSource();
-    expect(src.contains('_pickBooks('), isTrue,
-        reason: 'export must offer a per-book picker');
-    expect(src.contains('_selectedBookKeys'), isTrue,
-        reason: 'the picked set must be held on the widget state');
-    expect(src.contains('bookKeys:'), isTrue,
-        reason: 'the chosen books must be forwarded to createBackup');
+    expect(
+      src.contains('_pickBooks('),
+      isTrue,
+      reason: 'export must offer a per-book picker',
+    );
+    expect(
+      src.contains('_selectedBookKeys'),
+      isTrue,
+      reason: 'the picked set must be held on the widget state',
+    );
+    expect(
+      src.contains('bookKeys:'),
+      isTrue,
+      reason: 'the chosen books must be forwarded to createBackup',
+    );
   });
 
-  test(
-      'selecting localAudio packs the local_audio_*.db files (not fushi.db) '
+  test('selecting localAudio packs the local_audio_*.db files (not fushi.db) '
       'and import restores them + rebases the local_audio_dbs pref', () async {
     final String dbDir = p.join(src.path, 'db');
     Directory(dbDir).createSync(recursive: true);
@@ -476,8 +552,10 @@ void main() {
       appVersion: '1.0.0',
     );
     final String zip = p.join(src.path, 'la.zip');
-    final BackupMeta meta = await service
-        .createBackup(zip, categories: {BackupCategory.localAudio});
+    final BackupMeta meta = await service.createBackup(
+      zip,
+      categories: {BackupCategory.localAudio},
+    );
     await db.close();
 
     final Archive archive = await readZip(zip);
@@ -488,8 +566,10 @@ void main() {
     // fushi.db copy leaks under the localAudio/ prefix.
     expect(archive.findFile('localAudio/unrelated.db'), isNull);
     expect(
-      archive.files.any((ArchiveFile f) =>
-          f.name.startsWith('localAudio/') && f.name.endsWith('fushi.db')),
+      archive.files.any(
+        (ArchiveFile f) =>
+            f.name.startsWith('localAudio/') && f.name.endsWith('fushi.db'),
+      ),
       isFalse,
     );
     expect(meta.localAudioRoot, dbDir);
@@ -504,9 +584,13 @@ void main() {
     );
 
     expect(
-        File(p.join(dstDbDir, 'local_audio_111.db')).readAsStringSync(), 'LA1');
+      File(p.join(dstDbDir, 'local_audio_111.db')).readAsStringSync(),
+      'LA1',
+    );
     expect(
-        File(p.join(dstDbDir, 'local_audio_222.db')).readAsStringSync(), 'LA2');
+      File(p.join(dstDbDir, 'local_audio_222.db')).readAsStringSync(),
+      'LA2',
+    );
 
     final FushiDatabase restored = FushiDatabase(dstDbDir);
     try {
@@ -515,8 +599,11 @@ void main() {
           jsonDecode(prefs['local_audio_dbs']!) as List<dynamic>;
       for (final dynamic e in dbs) {
         final String path = (e as Map<String, dynamic>)['path'] as String;
-        expect(path, startsWith(dstDbDir),
-            reason: 'pref path rebased onto this device support dir');
+        expect(
+          path,
+          startsWith(dstDbDir),
+          reason: 'pref path rebased onto this device support dir',
+        );
         expect(File(path).existsSync(), isTrue);
       }
     } finally {
@@ -525,54 +612,63 @@ void main() {
   });
 
   test(
-      'importing a backup WITHOUT localAudio leaves the device local-audio DBs '
-      'and pref intact (preserve-on-absent)', () async {
-    // Source: books-only backup (no localAudio prefix).
-    final built = await buildFullSource();
-    final String zip = p.join(src.path, 'books_only.zip');
-    await built.service.createBackup(zip, categories: {BackupCategory.books});
-    await built.db.close();
+    'importing a backup WITHOUT localAudio leaves the device local-audio DBs '
+    'and pref intact (preserve-on-absent)',
+    () async {
+      // Source: books-only backup (no localAudio prefix).
+      final built = await buildFullSource();
+      final String zip = p.join(src.path, 'books_only.zip');
+      await built.service.createBackup(zip, categories: {BackupCategory.books});
+      await built.db.close();
 
-    // Destination already has a local-audio DB + matching pref that must
-    // survive the books-only restore.
-    final String dstDbDir = p.join(dst.path, 'db');
-    final String dstBooks = p.join(dst.path, 'fushi_books');
-    Directory(dstDbDir).createSync(recursive: true);
-    await writeFile(p.join(dstDbDir, 'local_audio_999.db'), 'KEEPLA');
+      // Destination already has a local-audio DB + matching pref that must
+      // survive the books-only restore.
+      final String dstDbDir = p.join(dst.path, 'db');
+      final String dstBooks = p.join(dst.path, 'fushi_books');
+      Directory(dstDbDir).createSync(recursive: true);
+      await writeFile(p.join(dstDbDir, 'local_audio_999.db'), 'KEEPLA');
 
-    // Seed the device pref BEFORE the import overwrites the DB. The overwrite
-    // import keeps the backup's preferences, so this exercises only the FILE
-    // preservation (the file must not be deleted by the import).
-    await BackupRestoreService.restoreBackup(
-      dbDirectory: dstDbDir,
-      zipPath: zip,
-      booksRootDirectory: dstBooks,
-    );
+      // Seed the device pref BEFORE the import overwrites the DB. The overwrite
+      // import keeps the backup's preferences, so this exercises only the FILE
+      // preservation (the file must not be deleted by the import).
+      await BackupRestoreService.restoreBackup(
+        dbDirectory: dstDbDir,
+        zipPath: zip,
+        booksRootDirectory: dstBooks,
+      );
 
-    expect(File(p.join(dstDbDir, 'local_audio_999.db')).existsSync(), isTrue,
-        reason: 'localAudio absent from backup → existing DB file untouched');
-  });
+      expect(
+        File(p.join(dstDbDir, 'local_audio_999.db')).existsSync(),
+        isTrue,
+        reason: 'localAudio absent from backup → existing DB file untouched',
+      );
+    },
+  );
 
   // ── TODO-1195 part C: ghost-book fix ──────────────────────────────────
-  test(
-      'unticking book content strips epub_books records from the DB blob '
+  test('unticking book content strips epub_books records from the DB blob '
       '(no ghost book) and zeroes the reported book count', () async {
     final built = await buildFullSource();
     final zip = p.join(src.path, 'no_books.zip');
     // Everything EXCEPT books.
-    final meta = await built.service.createBackup(zip, categories: {
-      BackupCategory.dictionary,
-      BackupCategory.audiobooks,
-      BackupCategory.fonts,
-    });
+    final meta = await built.service.createBackup(
+      zip,
+      categories: {
+        BackupCategory.dictionary,
+        BackupCategory.audiobooks,
+        BackupCategory.fonts,
+      },
+    );
     await built.db.close();
 
     expect(meta.bookCount, 0, reason: 'no book records were exported');
     final FushiDatabase db = await openBackupDb(zip, dst);
     try {
-      expect(await db.getAllEpubBooks(), isEmpty,
-          reason:
-              'book records must be stripped when book content is excluded');
+      expect(
+        await db.getAllEpubBooks(),
+        isEmpty,
+        reason: 'book records must be stripped when book content is excluded',
+      );
       // The audiobook + its cues key on the same bookKey, so the cascade drops
       // them too (an audiobook without its epub row is itself un-openable).
       expect(await db.getAllAudiobooks(), isEmpty);
@@ -596,16 +692,18 @@ void main() {
     );
     final FushiDatabase restored = FushiDatabase(dstDbDir);
     try {
-      expect(await restored.getAllEpubBooks(), isEmpty,
-          reason: 'a book-excluded backup must not resurrect books on merge');
+      expect(
+        await restored.getAllEpubBooks(),
+        isEmpty,
+        reason: 'a book-excluded backup must not resurrect books on merge',
+      );
     } finally {
       await restored.close();
     }
   });
 
   // ── TODO-1195 part A: per-book export ─────────────────────────────────
-  test(
-      'per-book export packs only the selected books (records + content); '
+  test('per-book export packs only the selected books (records + content); '
       'unselected books travel in neither the tree nor the DB blob', () async {
     final String dbDir = p.join(src.path, 'db');
     final String books = p.join(src.path, 'fushi_books');
@@ -615,24 +713,28 @@ void main() {
     await writeFile(p.join(books, 'Drop', 'd.epub'), 'DROP');
 
     final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
-    await db.insertEpubBook(EpubBooksCompanion.insert(
-      bookKey: 'Keep',
-      title: 'Keep',
-      epubPath: p.join(books, 'Keep', 'k.epub'),
-      extractDir: p.join(books, 'Keep'),
-      chapterCount: 1,
-      chaptersJson: '["c"]',
-      importedAt: 0,
-    ));
-    await db.insertEpubBook(EpubBooksCompanion.insert(
-      bookKey: 'Drop',
-      title: 'Drop',
-      epubPath: p.join(books, 'Drop', 'd.epub'),
-      extractDir: p.join(books, 'Drop'),
-      chapterCount: 1,
-      chaptersJson: '["c"]',
-      importedAt: 0,
-    ));
+    await db.insertEpubBook(
+      EpubBooksCompanion.insert(
+        bookKey: 'Keep',
+        title: 'Keep',
+        epubPath: p.join(books, 'Keep', 'k.epub'),
+        extractDir: p.join(books, 'Keep'),
+        chapterCount: 1,
+        chaptersJson: '["c"]',
+        importedAt: 0,
+      ),
+    );
+    await db.insertEpubBook(
+      EpubBooksCompanion.insert(
+        bookKey: 'Drop',
+        title: 'Drop',
+        epubPath: p.join(books, 'Drop', 'd.epub'),
+        extractDir: p.join(books, 'Drop'),
+        chapterCount: 1,
+        chaptersJson: '["c"]',
+        importedAt: 0,
+      ),
+    );
 
     final BackupService service = BackupService(
       db: db,
@@ -658,8 +760,9 @@ void main() {
     // And its record is stripped from the DB blob (no ghost).
     final FushiDatabase restored = await openBackupDb(zip, dst);
     try {
-      final Set<String> keys =
-          (await restored.getAllEpubBooks()).map((b) => b.bookKey).toSet();
+      final Set<String> keys = (await restored.getAllEpubBooks())
+          .map((b) => b.bookKey)
+          .toSet();
       expect(keys, <String>{'Keep'});
     } finally {
       await restored.close();
@@ -682,8 +785,9 @@ void main() {
     expect(archive.findFile('fushi_books/Bk/original.epub'), isNotNull);
     final FushiDatabase restored = await openBackupDb(zip, dst);
     try {
-      final Set<String> keys =
-          (await restored.getAllEpubBooks()).map((b) => b.bookKey).toSet();
+      final Set<String> keys = (await restored.getAllEpubBooks())
+          .map((b) => b.bookKey)
+          .toSet();
       expect(keys, <String>{'Bk'});
     } finally {
       await restored.close();
@@ -692,13 +796,14 @@ void main() {
 
   // ── TODO-1193: DB-only data categories (progress/statistics/settings/
   //    profiles) selectable to EXCLUDE ────────────────────────────────
-  test(
-      'unticking progress strips reader_positions/bookmarks/audiobook_pos_ '
+  test('unticking progress strips reader_positions/bookmarks/audiobook_pos_ '
       '(statistics + settings kept)', () async {
     final built = await buildDataSource();
     final zip = p.join(src.path, 'no_progress.zip');
-    await built.service
-        .createBackup(zip, categories: allExcept(BackupCategory.progress));
+    await built.service.createBackup(
+      zip,
+      categories: allExcept(BackupCategory.progress),
+    );
     await built.db.close();
 
     final FushiDatabase db = await openBackupDb(zip, dst);
@@ -706,63 +811,98 @@ void main() {
       expect(await countRows(db, 'reader_positions'), 0);
       expect(await countRows(db, 'bookmarks'), 0);
       final Map<String, String> prefs = await db.getAllPrefs();
-      expect(prefs.keys.any((String k) => k.startsWith('audiobook_pos_')),
-          isFalse);
+      expect(
+        prefs.keys.any((String k) => k.startsWith('audiobook_pos_')),
+        isFalse,
+      );
       expect(await countRows(db, 'reading_statistics'), 1);
-      expect(await countRows(db, 'activity_events'), 1,
-          reason: '统计勾选 → 活动事实流照常随包');
-      expect(await countRows(db, 'galgame_sessions'), 1,
-          reason: '统计勾选 → 游戏会话事实照常随包');
+      expect(
+        await countRows(db, 'activity_events'),
+        1,
+        reason: '统计勾选 → 活动事实流照常随包',
+      );
+      expect(
+        await countRows(db, 'galgame_sessions'),
+        1,
+        reason: '统计勾选 → 游戏会话事实照常随包',
+      );
       expect(prefs['theme_mode'], 'dark');
     } finally {
       await db.close();
     }
   });
 
-  test('unticking statistics strips the statistics tables (progress kept)',
-      () async {
-    final built = await buildDataSource();
-    final zip = p.join(src.path, 'no_stats.zip');
-    await built.service
-        .createBackup(zip, categories: allExcept(BackupCategory.statistics));
-    await built.db.close();
-
-    final FushiDatabase db = await openBackupDb(zip, dst);
-    try {
-      expect(await countRows(db, 'reading_statistics'), 0);
-      // P4 B3：取消勾选「统计」时，两条 session 粒度事实流也必须被裁掉——
-      // 勾选框说话算数，不能只裁投影表却让事实流随整库偷渡。
-      expect(await countRows(db, 'activity_events'), 0,
-          reason: '活动时间线事实流跟随统计类目裁剪');
-      expect(await countRows(db, 'galgame_sessions'), 0,
-          reason: '游戏会话事实流跟随统计类目裁剪');
-      expect(await countRows(db, 'galgames'), 1, reason: '游戏行是内容不是统计，不随统计类目裁剪');
-      expect(await countRows(db, 'reader_positions'), 1);
-    } finally {
-      await db.close();
-    }
-  });
-
   test(
-      'unticking settings strips pure settings prefs but keeps audiobook '
+    'unticking statistics strips the statistics tables (progress kept)',
+    () async {
+      final built = await buildDataSource();
+      final zip = p.join(src.path, 'no_stats.zip');
+      await built.service.createBackup(
+        zip,
+        categories: allExcept(BackupCategory.statistics),
+      );
+      await built.db.close();
+
+      final FushiDatabase db = await openBackupDb(zip, dst);
+      try {
+        expect(await countRows(db, 'reading_statistics'), 0);
+        // P4 B3：取消勾选「统计」时，两条 session 粒度事实流也必须被裁掉——
+        // 勾选框说话算数，不能只裁投影表却让事实流随整库偷渡。
+        expect(
+          await countRows(db, 'activity_events'),
+          0,
+          reason: '活动时间线事实流跟随统计类目裁剪',
+        );
+        expect(
+          await countRows(db, 'galgame_sessions'),
+          0,
+          reason: '游戏会话事实流跟随统计类目裁剪',
+        );
+        expect(
+          await countRows(db, 'galgames'),
+          1,
+          reason: '游戏行是内容不是统计，不随统计类目裁剪',
+        );
+        expect(await countRows(db, 'reader_positions'), 1);
+      } finally {
+        await db.close();
+      }
+    },
+  );
+
+  test('unticking settings strips pure settings prefs but keeps audiobook '
       'positions / favorite_sentences / local_audio_dbs', () async {
     final built = await buildDataSource();
     final zip = p.join(src.path, 'no_settings.zip');
-    await built.service
-        .createBackup(zip, categories: allExcept(BackupCategory.settings));
+    await built.service.createBackup(
+      zip,
+      categories: allExcept(BackupCategory.settings),
+    );
     await built.db.close();
 
     final FushiDatabase db = await openBackupDb(zip, dst);
     try {
       final Map<String, String> prefs = await db.getAllPrefs();
-      expect(prefs.containsKey('theme_mode'), isFalse,
-          reason: 'pure setting stripped');
-      expect(prefs['audiobook_pos_Bk'], '12345',
-          reason: 'progress pref preserved under a settings strip');
-      expect(prefs.containsKey('favorite_sentences'), isTrue,
-          reason: 'favorites content preserved');
-      expect(prefs.containsKey('local_audio_dbs'), isTrue,
-          reason: 'local-audio registry preserved');
+      expect(
+        prefs.containsKey('theme_mode'),
+        isFalse,
+        reason: 'pure setting stripped',
+      );
+      expect(
+        prefs['audiobook_pos_Bk'],
+        '12345',
+        reason: 'progress pref preserved under a settings strip',
+      );
+      expect(
+        prefs.containsKey('favorite_sentences'),
+        isTrue,
+        reason: 'favorites content preserved',
+      );
+      expect(
+        prefs.containsKey('local_audio_dbs'),
+        isTrue,
+        reason: 'local-audio registry preserved',
+      );
     } finally {
       await db.close();
     }
@@ -771,8 +911,10 @@ void main() {
   test('unticking profiles strips the four profile-layer tables', () async {
     final built = await buildDataSource();
     final zip = p.join(src.path, 'no_profiles.zip');
-    await built.service
-        .createBackup(zip, categories: allExcept(BackupCategory.profiles));
+    await built.service.createBackup(
+      zip,
+      categories: allExcept(BackupCategory.profiles),
+    );
     await built.db.close();
 
     final FushiDatabase db = await openBackupDb(zip, dst);
@@ -789,48 +931,61 @@ void main() {
   // Import-safety invariant (RED LINE): excluding settings/profiles on export
   // must NEVER wipe the importing device's local settings/profiles to empty.
   test(
-      'overwrite import (importSettings=true) of a settings+profiles-excluded '
-      'backup preserves the LOCAL settings + profiles (never wiped empty)',
-      () async {
-    final built = await buildDataSource();
-    final zip = p.join(src.path, 'no_set_prof.zip');
-    await built.service.createBackup(zip,
+    'overwrite import (importSettings=true) of a settings+profiles-excluded '
+    'backup preserves the LOCAL settings + profiles (never wiped empty)',
+    () async {
+      final built = await buildDataSource();
+      final zip = p.join(src.path, 'no_set_prof.zip');
+      await built.service.createBackup(
+        zip,
         categories: BackupCategory.values.toSet()
           ..remove(BackupCategory.settings)
-          ..remove(BackupCategory.profiles));
-    await built.db.close();
+          ..remove(BackupCategory.profiles),
+      );
+      await built.db.close();
 
-    final String dstDbDir = p.join(dst.path, 'db');
-    Directory(dstDbDir).createSync(recursive: true);
-    final FushiDatabase local = FushiDatabase(dstDbDir);
-    await local.setPref('theme_mode', 'local_dark');
-    await local.insertProfile(ProfilesCompanion.insert(
-        name: 'LocalProfile', createdAt: 9, updatedAt: 9));
-    await local.close();
+      final String dstDbDir = p.join(dst.path, 'db');
+      Directory(dstDbDir).createSync(recursive: true);
+      final FushiDatabase local = FushiDatabase(dstDbDir);
+      await local.setPref('theme_mode', 'local_dark');
+      await local.insertProfile(
+        ProfilesCompanion.insert(
+          name: 'LocalProfile',
+          createdAt: 9,
+          updatedAt: 9,
+        ),
+      );
+      await local.close();
 
-    await BackupRestoreService.restoreBackup(
-      dbDirectory: dstDbDir,
-      zipPath: zip,
-    );
+      await BackupRestoreService.restoreBackup(
+        dbDirectory: dstDbDir,
+        zipPath: zip,
+      );
 
-    final FushiDatabase restored = FushiDatabase(dstDbDir);
-    try {
-      expect((await restored.getAllEpubBooks()).map((b) => b.bookKey).toSet(),
-          contains('Bk'));
-      final Map<String, String> prefs = await restored.getAllPrefs();
-      expect(prefs['theme_mode'], 'local_dark',
-          reason:
-              'local setting preserved, not wiped by an empty backup layer');
-      expect((await restored.getAllProfiles()).map((r) => r.name).toSet(),
+      final FushiDatabase restored = FushiDatabase(dstDbDir);
+      try {
+        expect(
+          (await restored.getAllEpubBooks()).map((b) => b.bookKey).toSet(),
+          contains('Bk'),
+        );
+        final Map<String, String> prefs = await restored.getAllPrefs();
+        expect(
+          prefs['theme_mode'],
+          'local_dark',
+          reason: 'local setting preserved, not wiped by an empty backup layer',
+        );
+        expect(
+          (await restored.getAllProfiles()).map((r) => r.name).toSet(),
           contains('LocalProfile'),
-          reason: 'local profile preserved');
-    } finally {
-      await restored.close();
-    }
-  });
+          reason: 'local profile preserved',
+        );
+      } finally {
+        await restored.close();
+      }
+    },
+  );
 
-  test(
-      'overwrite import (importSettings=true) of an all-in backup applies the '
+  test('overwrite import (importSettings=true) of an all-in backup applies the '
       'backup settings (preserve does NOT trigger)', () async {
     final built = await buildDataSource();
     final zip = p.join(src.path, 'full.zip');
@@ -844,13 +999,18 @@ void main() {
     await local.close();
 
     await BackupRestoreService.restoreBackup(
-        dbDirectory: dstDbDir, zipPath: zip);
+      dbDirectory: dstDbDir,
+      zipPath: zip,
+    );
 
     final FushiDatabase restored = FushiDatabase(dstDbDir);
     try {
       final Map<String, String> prefs = await restored.getAllPrefs();
-      expect(prefs['theme_mode'], 'dark',
-          reason: 'all-in backup: settings come from backup, not preserved');
+      expect(
+        prefs['theme_mode'],
+        'dark',
+        reason: 'all-in backup: settings come from backup, not preserved',
+      );
     } finally {
       await restored.close();
     }
@@ -868,20 +1028,25 @@ void main() {
     await db.upsertShelfOrder(MediaKind.epub, 'Bk', 0);
     final int tid = await db.createTag('T1', 0xFF112233);
     await db.addTagToBook('Bk', tid);
-    await db.upsertSearchHistoryItem(SearchHistoryItemsCompanion.insert(
-        historyKey: 'dict', searchTerm: '猫', uniqueKey: 'dict:猫'));
+    await db.upsertSearchHistoryItem(
+      SearchHistoryItemsCompanion.insert(
+        historyKey: 'dict',
+        searchTerm: '猫',
+        uniqueKey: 'dict:猫',
+      ),
+    );
     await db.insertBookTombstone('OldBook');
     await db.insertStatisticsTombstone('OldBook', 'book');
     await db.upsertCollectionMemberTombstone(
-        collectionName: 'Gone',
-        collectionType: 'collection',
-        mediaType: 'epub',
-        entryKey: 'X',
-        deletedAt: 1);
+      collectionName: 'Gone',
+      collectionType: 'collection',
+      mediaType: 'epub',
+      entryKey: 'X',
+      deletedAt: 1,
+    );
   }
 
-  test(
-      'search history is ALWAYS stripped, but a full export KEEPS deletion '
+  test('search history is ALWAYS stripped, but a full export KEEPS deletion '
       'tombstones (they carry to the cross-device merge)', () async {
     final built = await buildDataSource();
     await seedOrphanRows(built.db);
@@ -892,116 +1057,151 @@ void main() {
     final FushiDatabase db = await openBackupDb(zip, dst);
     try {
       expect(await countRows(db, 'search_history_items'), 0);
-      expect(await countRows(db, 'book_tombstones'), 1,
-          reason: 'books ticked → tombstone travels');
-      expect(await countRows(db, 'statistics_tombstones'), 1,
-          reason: 'statistics ticked → tombstone travels');
-      expect(await countRows(db, 'collection_member_tombstones'), 1,
-          reason: 'book/video content travels → member tombstone travels');
+      expect(
+        await countRows(db, 'book_tombstones'),
+        1,
+        reason: 'books ticked → tombstone travels',
+      );
+      expect(
+        await countRows(db, 'statistics_tombstones'),
+        1,
+        reason: 'statistics ticked → tombstone travels',
+      );
+      expect(
+        await countRows(db, 'collection_member_tombstones'),
+        1,
+        reason: 'book/video content travels → member tombstone travels',
+      );
     } finally {
       await db.close();
     }
   });
 
   test(
-      'deletion tombstones are stripped when their content category is excluded',
-      () async {
-    final built = await buildDataSource();
-    await seedOrphanRows(built.db);
-    final zip = p.join(src.path, 'no_content_orphans.zip');
-    // Every content category unticked (the "dictionary + audio only" shape).
-    await built.service.createBackup(zip, categories: <BackupCategory>{});
-    await built.db.close();
+    'deletion tombstones are stripped when their content category is excluded',
+    () async {
+      final built = await buildDataSource();
+      await seedOrphanRows(built.db);
+      final zip = p.join(src.path, 'no_content_orphans.zip');
+      // Every content category unticked (the "dictionary + audio only" shape).
+      await built.service.createBackup(zip, categories: <BackupCategory>{});
+      await built.db.close();
 
-    final FushiDatabase db = await openBackupDb(zip, dst);
-    try {
-      expect(await countRows(db, 'search_history_items'), 0);
-      expect(await countRows(db, 'book_tombstones'), 0);
-      expect(await countRows(db, 'statistics_tombstones'), 0);
-      expect(await countRows(db, 'collection_member_tombstones'), 0);
-    } finally {
-      await db.close();
-    }
-  });
-
-  test(
-      'dangling srt member/shelf (no srt_books row) is stripped in a '
-      'content-excluding export but kept in a full export (merge-union)',
-      () async {
-    // Full export: the srt member survives (cross-device union).
-    final full = await buildDataSource();
-    final int fcid = await full.db.createMediaCollection('SrtCol');
-    await full.db.addToCollection(fcid, MediaKind.srt, 'ghost_srt');
-    await full.db.upsertShelfOrder(MediaKind.srt, 'ghost_srt', 0);
-    final fzip = p.join(src.path, 'srt_full.zip');
-    await full.service.createBackup(fzip);
-    await full.db.close();
-    final FushiDatabase fdb = await openBackupDb(fzip, dst);
-    try {
-      expect(await countRows(fdb, 'media_collection_items'), 1,
-          reason: 'full export keeps the dangling srt member for merge-union');
-      expect(await countRows(fdb, 'shelf_entries'), 1);
-    } finally {
-      await fdb.close();
-    }
-
-    // Content-excluding export: the dangling srt row is dropped.
-    final none = await buildDataSource();
-    final int ncid = await none.db.createMediaCollection('SrtCol');
-    await none.db.addToCollection(ncid, MediaKind.srt, 'ghost_srt');
-    await none.db.upsertShelfOrder(MediaKind.srt, 'ghost_srt', 0);
-    final nzip = p.join(src.path, 'srt_none.zip');
-    await none.service.createBackup(nzip, categories: <BackupCategory>{});
-    await none.db.close();
-    final FushiDatabase ndb = await openBackupDb(nzip, dst);
-    try {
-      expect(await countRows(ndb, 'media_collection_items'), 0,
-          reason: 'dangling srt member dropped (no srt_books to resolve)');
-      expect(await countRows(ndb, 'shelf_entries'), 0);
-      expect(await countRows(ndb, 'media_collections'), 0,
-          reason: 'collection emptied by the srt strip is dropped');
-    } finally {
-      await ndb.close();
-    }
-  });
+      final FushiDatabase db = await openBackupDb(zip, dst);
+      try {
+        expect(await countRows(db, 'search_history_items'), 0);
+        expect(await countRows(db, 'book_tombstones'), 0);
+        expect(await countRows(db, 'statistics_tombstones'), 0);
+        expect(await countRows(db, 'collection_member_tombstones'), 0);
+      } finally {
+        await db.close();
+      }
+    },
+  );
 
   test(
-      'a full export keeps a member-less, tag-only collection (never treated as '
-      'strip-emptied)', () async {
-    final built = await buildDataSource();
-    final int cid = await built.db.createMediaCollection('TagOnly');
-    final int tid = await built.db.createTag('Genre', 0xFF445566);
-    await built.db.addTagToCollection(cid, tid);
-    final zip = p.join(src.path, 'tagonly.zip');
-    await built.service.createBackup(zip);
-    await built.db.close();
+    'dangling srt member/shelf (no srt_books row) is stripped in a '
+    'content-excluding export but kept in a full export (merge-union)',
+    () async {
+      // Full export: the srt member survives (cross-device union).
+      final full = await buildDataSource();
+      final int fcid = await full.db.createMediaCollection('SrtCol');
+      await full.db.addToCollection(fcid, MediaKind.srt, 'ghost_srt');
+      await full.db.upsertShelfOrder(MediaKind.srt, 'ghost_srt', 0);
+      final fzip = p.join(src.path, 'srt_full.zip');
+      await full.service.createBackup(fzip);
+      await full.db.close();
+      final FushiDatabase fdb = await openBackupDb(fzip, dst);
+      try {
+        expect(
+          await countRows(fdb, 'media_collection_items'),
+          1,
+          reason: 'full export keeps the dangling srt member for merge-union',
+        );
+        expect(await countRows(fdb, 'shelf_entries'), 1);
+      } finally {
+        await fdb.close();
+      }
 
-    final FushiDatabase db = await openBackupDb(zip, dst);
-    try {
-      expect(await countRows(db, 'media_collections'), 1,
-          reason: 'always-empty tag carrier is preserved, not strip-dropped');
-    } finally {
-      await db.close();
-    }
-  });
+      // Content-excluding export: the dangling srt row is dropped.
+      final none = await buildDataSource();
+      final int ncid = await none.db.createMediaCollection('SrtCol');
+      await none.db.addToCollection(ncid, MediaKind.srt, 'ghost_srt');
+      await none.db.upsertShelfOrder(MediaKind.srt, 'ghost_srt', 0);
+      final nzip = p.join(src.path, 'srt_none.zip');
+      await none.service.createBackup(nzip, categories: <BackupCategory>{});
+      await none.db.close();
+      final FushiDatabase ndb = await openBackupDb(nzip, dst);
+      try {
+        expect(
+          await countRows(ndb, 'media_collection_items'),
+          0,
+          reason: 'dangling srt member dropped (no srt_books to resolve)',
+        );
+        expect(await countRows(ndb, 'shelf_entries'), 0);
+        expect(
+          await countRows(ndb, 'media_collections'),
+          0,
+          reason: 'collection emptied by the srt strip is dropped',
+        );
+      } finally {
+        await ndb.close();
+      }
+    },
+  );
+
+  test(
+    'a full export keeps a member-less, tag-only collection (never treated as '
+    'strip-emptied)',
+    () async {
+      final built = await buildDataSource();
+      final int cid = await built.db.createMediaCollection('TagOnly');
+      final int tid = await built.db.createTag('Genre', 0xFF445566);
+      await built.db.addTagToCollection(cid, tid);
+      final zip = p.join(src.path, 'tagonly.zip');
+      await built.service.createBackup(zip);
+      await built.db.close();
+
+      final FushiDatabase db = await openBackupDb(zip, dst);
+      try {
+        expect(
+          await countRows(db, 'media_collections'),
+          1,
+          reason: 'always-empty tag carrier is preserved, not strip-dropped',
+        );
+      } finally {
+        await db.close();
+      }
+    },
+  );
 
   // ── BUG-832: dictionary_history (private) + media_sources (local paths) ──
   Future<void> seedHistoryAndSources(FushiDatabase db) async {
     await db.replaceAllDictionaryHistory(<DictionaryHistoryCompanion>[
       DictionaryHistoryCompanion.insert(
-          position: 0, resultJson: '{"searchTerm":"猫"}'),
+        position: 0,
+        resultJson: '{"searchTerm":"猫"}',
+      ),
     ]);
-    await db.insertMediaSource(MediaSourcesCompanion.insert(
-        label: 'Books', mediaKind: 'book', rootPath: 'D:/books', createdAt: 1));
-    await db.insertMediaSource(MediaSourcesCompanion.insert(
+    await db.insertMediaSource(
+      MediaSourcesCompanion.insert(
+        label: 'Books',
+        mediaKind: 'book',
+        rootPath: 'D:/books',
+        createdAt: 1,
+      ),
+    );
+    await db.insertMediaSource(
+      MediaSourcesCompanion.insert(
         label: 'Videos',
         mediaKind: 'video',
         rootPath: 'D:/videos',
-        createdAt: 1));
+        createdAt: 1,
+      ),
+    );
   }
 
-  test(
-      'dictionary_history is always wiped; media_sources are kept in a full '
+  test('dictionary_history is always wiped; media_sources are kept in a full '
       'export (BUG-832)', () async {
     final built = await buildDataSource();
     await seedHistoryAndSources(built.db);
@@ -1011,58 +1211,74 @@ void main() {
 
     final FushiDatabase db = await openBackupDb(zip, dst);
     try {
-      expect(await countRows(db, 'dictionary_history'), 0,
-          reason: 'recent lookups are a private trace, never travel');
-      expect(await countRows(db, 'media_sources'), 2,
-          reason: 'full export keeps both library roots for restore');
+      expect(
+        await countRows(db, 'dictionary_history'),
+        0,
+        reason: 'recent lookups are a private trace, never travel',
+      );
+      expect(
+        await countRows(db, 'media_sources'),
+        2,
+        reason: 'full export keeps both library roots for restore',
+      );
     } finally {
       await db.close();
     }
   });
 
   test(
-      'media_sources follow the content category: book/video roots dropped when '
-      'their category is excluded (BUG-832)', () async {
-    final built = await buildDataSource();
-    await seedHistoryAndSources(built.db);
-    final zip = p.join(src.path, 'bug832_none.zip');
-    await built.service.createBackup(zip, categories: <BackupCategory>{});
-    await built.db.close();
+    'media_sources follow the content category: book/video roots dropped when '
+    'their category is excluded (BUG-832)',
+    () async {
+      final built = await buildDataSource();
+      await seedHistoryAndSources(built.db);
+      final zip = p.join(src.path, 'bug832_none.zip');
+      await built.service.createBackup(zip, categories: <BackupCategory>{});
+      await built.db.close();
 
-    final FushiDatabase db = await openBackupDb(zip, dst);
-    try {
-      expect(await countRows(db, 'dictionary_history'), 0);
-      expect(await countRows(db, 'media_sources'), 0,
-          reason: 'both book & video source roots (local paths) dropped');
-    } finally {
-      await db.close();
-    }
-  });
-
-  test(
-      'excluding only videos drops the video source root but keeps the book one '
-      '(BUG-832)', () async {
-    final built = await buildDataSource();
-    await seedHistoryAndSources(built.db);
-    final zip = p.join(src.path, 'bug832_novideo.zip');
-    await built.service
-        .createBackup(zip, categories: allExcept(BackupCategory.videos));
-    await built.db.close();
-
-    final FushiDatabase db = await openBackupDb(zip, dst);
-    try {
-      final rows =
-          await db.customSelect('SELECT media_kind FROM media_sources').get();
-      final kinds = rows.map((r) => r.data['media_kind'] as String).toList();
-      expect(kinds, <String>['book'],
-          reason: 'only the video root is dropped; the book root stays');
-    } finally {
-      await db.close();
-    }
-  });
+      final FushiDatabase db = await openBackupDb(zip, dst);
+      try {
+        expect(await countRows(db, 'dictionary_history'), 0);
+        expect(
+          await countRows(db, 'media_sources'),
+          0,
+          reason: 'both book & video source roots (local paths) dropped',
+        );
+      } finally {
+        await db.close();
+      }
+    },
+  );
 
   test(
-      'collections / shelf / tags FOLLOW their book: kept when the book is '
+    'excluding only videos drops the video source root but keeps the book one '
+    '(BUG-832)',
+    () async {
+      final built = await buildDataSource();
+      await seedHistoryAndSources(built.db);
+      final zip = p.join(src.path, 'bug832_novideo.zip');
+      await built.service.createBackup(
+        zip,
+        categories: allExcept(BackupCategory.videos),
+      );
+      await built.db.close();
+
+      final FushiDatabase db = await openBackupDb(zip, dst);
+      try {
+        final rows = await db
+            .customSelect('SELECT media_kind FROM media_sources')
+            .get();
+        final kinds = rows.map((r) => r.data['media_kind'] as String).toList();
+        expect(kinds, <String>[
+          'book',
+        ], reason: 'only the video root is dropped; the book root stays');
+      } finally {
+        await db.close();
+      }
+    },
+  );
+
+  test('collections / shelf / tags FOLLOW their book: kept when the book is '
       'exported', () async {
     final built = await buildDataSource();
     await seedOrphanRows(built.db);
@@ -1083,31 +1299,43 @@ void main() {
   });
 
   test(
-      'collections / shelf / tags are stripped when their book is NOT exported '
-      '(unticking books empties the collection + drains the tag pool)',
-      () async {
-    final built = await buildDataSource();
-    await seedOrphanRows(built.db);
-    final zip = p.join(src.path, 'orphans_stripped.zip');
-    // Book excluded → 'Bk' is stripped → its membership/shelf/tag mapping go,
-    // the now-empty collection is dropped, and the orphaned tag pool row too.
-    await built.service
-        .createBackup(zip, categories: allExcept(BackupCategory.books));
-    await built.db.close();
+    'collections / shelf / tags are stripped when their book is NOT exported '
+    '(unticking books empties the collection + drains the tag pool)',
+    () async {
+      final built = await buildDataSource();
+      await seedOrphanRows(built.db);
+      final zip = p.join(src.path, 'orphans_stripped.zip');
+      // Book excluded → 'Bk' is stripped → its membership/shelf/tag mapping go,
+      // the now-empty collection is dropped, and the orphaned tag pool row too.
+      await built.service.createBackup(
+        zip,
+        categories: allExcept(BackupCategory.books),
+      );
+      await built.db.close();
 
-    final FushiDatabase db = await openBackupDb(zip, dst);
-    try {
-      expect(await countRows(db, 'epub_books'), 0, reason: 'book stripped');
-      expect(await countRows(db, 'media_collection_items'), 0);
-      expect(await countRows(db, 'media_collections'), 0,
-          reason: 'empty collection dropped');
-      expect(await countRows(db, 'shelf_entries'), 0);
-      expect(await countRows(db, 'tag_assignments'), 0,
-          reason: 'v77 逻辑外键：导出裁剪按宿主存在性显式收敛映射');
-      expect(await countRows(db, 'book_tags'), 0,
-          reason: 'tag pool drained of the now-unreferenced tag');
-    } finally {
-      await db.close();
-    }
-  });
+      final FushiDatabase db = await openBackupDb(zip, dst);
+      try {
+        expect(await countRows(db, 'epub_books'), 0, reason: 'book stripped');
+        expect(await countRows(db, 'media_collection_items'), 0);
+        expect(
+          await countRows(db, 'media_collections'),
+          0,
+          reason: 'empty collection dropped',
+        );
+        expect(await countRows(db, 'shelf_entries'), 0);
+        expect(
+          await countRows(db, 'tag_assignments'),
+          0,
+          reason: 'v77 逻辑外键：导出裁剪按宿主存在性显式收敛映射',
+        );
+        expect(
+          await countRows(db, 'book_tags'),
+          0,
+          reason: 'tag pool drained of the now-unreferenced tag',
+        );
+      } finally {
+        await db.close();
+      }
+    },
+  );
 }

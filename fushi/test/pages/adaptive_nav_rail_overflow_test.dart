@@ -14,59 +14,58 @@ void main() {
   ];
 
   Widget harness(double height) => MaterialApp(
-        home: Scaffold(
-          body: Row(
-            children: <Widget>[
-              SizedBox(
-                height: height,
-                child: Builder(
-                  builder: (BuildContext context) => adaptiveNavRail(
-                    context: context,
-                    currentIndex: 1,
-                    onTap: (_) {},
-                    items: items,
-                  ),
-                ),
+    home: Scaffold(
+      body: Row(
+        children: <Widget>[
+          SizedBox(
+            height: height,
+            child: Builder(
+              builder: (BuildContext context) => adaptiveNavRail(
+                context: context,
+                currentIndex: 1,
+                onTap: (_) {},
+                items: items,
               ),
-              const Expanded(child: SizedBox.shrink()),
-            ],
+            ),
           ),
-        ),
-      );
+          const Expanded(child: SizedBox.shrink()),
+        ],
+      ),
+    ),
+  );
 
   testWidgets('矮窗口下导航 rail 不溢出', (WidgetTester tester) async {
     await tester.pumpWidget(harness(260));
     await tester.pump();
-    expect(tester.takeException(), isNull,
-        reason: 'rail 在矮窗口下应可滚动而非 RenderFlex overflow');
+    expect(
+      tester.takeException(),
+      isNull,
+      reason: 'rail 在矮窗口下应可滚动而非 RenderFlex overflow',
+    );
   });
 
   // 反馈 #ChIDEam2hf：桌面上只溢出一点点也会立起一整条常驻滚动条，rail 不画滚动条。
   // 必须跑在桌面平台上：Material 的 ScrollBehavior 只在 Windows / macOS / Linux
   // 给纵向滚动视图自动包 Scrollbar，默认的 android 测试平台上本来就不画，断言恒真。
-  testWidgets(
-    '溢出的导航 rail 不画滚动条',
-    (WidgetTester tester) async {
-      // 对照：同一平台下一个普通的可滚动视图确实会被自动包上 Scrollbar——证明下面的
-      // findsNothing 是修复的结果，不是平台本来就不画。
-      await tester.pumpWidget(
-        const MaterialApp(
-          home: SizedBox(
-            height: 100,
-            child: SingleChildScrollView(child: SizedBox(height: 1000)),
-          ),
+  testWidgets('溢出的导航 rail 不画滚动条', (WidgetTester tester) async {
+    // 对照：同一平台下一个普通的可滚动视图确实会被自动包上 Scrollbar——证明下面的
+    // findsNothing 是修复的结果，不是平台本来就不画。
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: SizedBox(
+          height: 100,
+          child: SingleChildScrollView(child: SizedBox(height: 1000)),
         ),
-      );
-      expect(find.byType(Scrollbar), findsOneWidget);
+      ),
+    );
+    expect(find.byType(Scrollbar), findsOneWidget);
 
-      await tester.pumpWidget(harness(260));
-      await tester.pump();
-      expect(find.byType(SingleChildScrollView), findsWidgets);
-      expect(
-        find.descendant(of: find.byType(Row), matching: find.byType(Scrollbar)),
-        findsNothing,
-      );
-    },
-    variant: TargetPlatformVariant.only(TargetPlatform.windows),
-  );
+    await tester.pumpWidget(harness(260));
+    await tester.pump();
+    expect(find.byType(SingleChildScrollView), findsWidgets);
+    expect(
+      find.descendant(of: find.byType(Row), matching: find.byType(Scrollbar)),
+      findsNothing,
+    );
+  }, variant: TargetPlatformVariant.only(TargetPlatform.windows));
 }

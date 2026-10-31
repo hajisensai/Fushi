@@ -84,11 +84,8 @@ class _ErrorLogPageState extends State<ErrorLogPage> {
           FushiIconButton(
             icon: FushiIcons.cloudUpload,
             tooltip: t.log_upload_action,
-            onTap: () => uploadLogToServer(
-              context: context,
-              log: _log,
-              kind: 'error',
-            ),
+            onTap: () =>
+                uploadLogToServer(context: context, log: _log, kind: 'error'),
           ),
         if (showSaveLogAction)
           FushiIconButton(
@@ -123,7 +120,10 @@ class _ErrorLogPageState extends State<ErrorLogPage> {
           ) => count == 0
           // 空状态：settings kit 统一空态（M3E 形状图标 + 标题），不是一块只写着
           // 「暂无日志」的空日志面板。
-          ? SettingsEmptyState(icon: FushiIcons.success, title: t.error_log_empty)
+          ? SettingsEmptyState(
+              icon: FushiIcons.success,
+              title: t.error_log_empty,
+            )
           : FushiLogPanel(
               log: _log,
               shareAction: (text) => FushiShare.shareText(text),

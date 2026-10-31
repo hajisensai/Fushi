@@ -61,8 +61,10 @@ void main() {
 
   testWidgets('同步已在飞时返回 busy 且不再触发第二次同步', (WidgetTester tester) async {
     syncInProgress.value = true;
-    final ManualSyncOutcome outcome =
-        await callWith(tester, announceBusy: false);
+    final ManualSyncOutcome outcome = await callWith(
+      tester,
+      announceBusy: false,
+    );
 
     expect(outcome, ManualSyncOutcome.busy);
     // 第二次触发必须是彻底的 no-op：连 SnackBar 都不该有（下拉刷新的口径）。
@@ -73,8 +75,10 @@ void main() {
 
   testWidgets('announceBusy 打开时给出可见提示（设置页口径）', (WidgetTester tester) async {
     syncInProgress.value = true;
-    final ManualSyncOutcome outcome =
-        await callWith(tester, announceBusy: true);
+    final ManualSyncOutcome outcome = await callWith(
+      tester,
+      announceBusy: true,
+    );
 
     expect(outcome, ManualSyncOutcome.busy);
     await tester.pump();

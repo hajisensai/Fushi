@@ -38,17 +38,23 @@ void main() {
     await tester.pump(const Duration(seconds: 2));
 
     final AppModel appModel = await readyAppModel(tester);
-    expect(await _seedScanDictionary(tester, appModel), isTrue,
-        reason: '本用例需要一本含「と言い/言い/言う/つつ」的真词典');
+    expect(
+      await _seedScanDictionary(tester, appModel),
+      isTrue,
+      reason: '本用例需要一本含「と言い/言い/言う/つつ」的真词典',
+    );
 
-    expect(HomePage.debugSelectTab, isNotNull,
-        reason:
-            'HomePage.debugSelectTab hook must be registered (debug build)');
+    expect(
+      HomePage.debugSelectTab,
+      isNotNull,
+      reason: 'HomePage.debugSelectTab hook must be registered (debug build)',
+    );
     HomePage.debugSelectTab!(HomeTab.dictionaries);
     await tester.pump(const Duration(seconds: 2));
 
-    final HomeDictionarySearchDebug page = tester
-        .state(find.byType(HomeDictionaryPage)) as HomeDictionarySearchDebug;
+    final HomeDictionarySearchDebug page =
+        tester.state(find.byType(HomeDictionaryPage))
+            as HomeDictionarySearchDebug;
 
     // ① 主查词：整句进条、命中段锚在条首。
     await page.debugSearch('と言いつつ');
@@ -76,20 +82,29 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
 
     panel = _panel(tester);
-    debugPrint('[scan-probe] 点「言」后 highlight=${panel.highlight} '
-        'panel="${panel.text}" box="${_searchBoxText(tester)}" '
-        'stack=${page.debugPopupStackShape}');
+    debugPrint(
+      '[scan-probe] 点「言」后 highlight=${panel.highlight} '
+      'panel="${panel.text}" box="${_searchBoxText(tester)}" '
+      'stack=${page.debugPopupStackShape}',
+    );
     shot = await captureFlutterFrame(tester, '02-scan-from-index-1');
     expect(shot.saved, isTrue);
 
     expect(panel.text, 'と言いつつ', reason: '条上必须留着整句，换成后缀就把被点字左边的上下文丢了');
     expect(_searchBoxText(tester), 'と言いつつ', reason: '搜索框是用户输入的整句，扫描查词不接管它');
     expect(panel.highlight?.start, 1, reason: '高亮锚在被点的那个字素簇上');
-    expect(page.debugPopupStackShape.depth, 0,
-        reason: '扫描换的是下方那份结果，不再压一张浮在字上的查词卡');
-    expect(panel.highlight?.length, 2,
-        reason: '真引擎用后缀「言いつつ」查到「言い」，高亮据此撑成两个字'
-            '（主查词那次是 $mainLength）');
+    expect(
+      page.debugPopupStackShape.depth,
+      0,
+      reason: '扫描换的是下方那份结果，不再压一张浮在字上的查词卡',
+    );
+    expect(
+      panel.highlight?.length,
+      2,
+      reason:
+          '真引擎用后缀「言いつつ」查到「言い」，高亮据此撑成两个字'
+          '（主查词那次是 $mainLength）',
+    );
   });
 }
 
@@ -103,10 +118,7 @@ String _searchBoxText(WidgetTester tester) {
 
 /// 造一本只为本用例服务的 yomitan 词典（四条词头，覆盖扫描要用到的每个起点），
 /// 经真实 [AppModel.importDictionary] FFI 导入隔离根。
-Future<bool> _seedScanDictionary(
-  WidgetTester tester,
-  AppModel appModel,
-) async {
+Future<bool> _seedScanDictionary(WidgetTester tester, AppModel appModel) async {
   final Directory cacheDir = await getTemporaryDirectory();
   final File dictFile = File('${cacheDir.path}/scan_dict.zip');
   final Map<String, dynamic> index = <String, dynamic>{
@@ -116,15 +128,15 @@ Future<bool> _seedScanDictionary(
     'sequenced': false,
   };
   List<dynamic> term(String word, String reading, String gloss) => <dynamic>[
-        word,
-        reading,
-        '',
-        '',
-        0,
-        <String>[gloss],
-        0,
-        '',
-      ];
+    word,
+    reading,
+    '',
+    '',
+    0,
+    <String>[gloss],
+    0,
+    '',
+  ];
   final List<List<dynamic>> termBank = <List<dynamic>>[
     term('と言い', 'といい', 'scan probe: と言い'),
     term('言い', 'いい', 'scan probe: 言い'),
@@ -153,9 +165,11 @@ Future<bool> _seedScanDictionary(
     progress.dispose();
   }
   await tester.pump(const Duration(seconds: 1));
-  final bool installed = ok ||
-      appModel.dictionaries
-          .any((Dictionary d) => d.name == 'FushiScanProbeDict');
+  final bool installed =
+      ok ||
+      appModel.dictionaries.any(
+        (Dictionary d) => d.name == 'FushiScanProbeDict',
+      );
   debugPrint('[scan-probe] dictionary seed success=$installed');
   return installed;
 }

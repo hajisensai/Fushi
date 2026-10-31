@@ -26,12 +26,14 @@ const String _root = 'sftp://nas.local:2222';
 /// 不连真服务器的 SFTP 文件系统：只替换区间读与关闭，别的契约照真实现。
 class _FakeSftpFs extends NetworkSourceFileSystem {
   _FakeSftpFs(this.files)
-      : super(const NetworkSourceConfig(
+    : super(
+        const NetworkSourceConfig(
           transport: 'sftp',
           host: 'nas.local',
           port: 2222,
           username: 'u',
-        ));
+        ),
+      );
 
   final Map<String, Uint8List> files;
   final List<String> rangeRequests = <String>[];
@@ -39,14 +41,15 @@ class _FakeSftpFs extends NetworkSourceFileSystem {
 
   @override
   Future<({int totalBytes, int start, int end, Stream<List<int>> bytes})>
-      openSftpRange(String filePath, {required int start, int? end}) async {
+  openSftpRange(String filePath, {required int start, int? end}) async {
     rangeRequests.add(filePath);
     final Uint8List data = files[filePath]!;
     if (start >= data.length) {
       throw RangeError.range(start, 0, data.length - 1, 'start');
     }
-    final int last =
-        (end == null || end >= data.length) ? data.length - 1 : end;
+    final int last = (end == null || end >= data.length)
+        ? data.length - 1
+        : end;
     return (
       totalBytes: data.length,
       start: start,
@@ -162,68 +165,87 @@ void main() {
       expect(isSourceLibrarySftpVideoPath('  SFTP://h:22/a.mkv'), isTrue);
       expect(isSourceLibrarySftpVideoPath('/srv/video/a.mkv'), isFalse);
       expect(isSourceLibrarySftpVideoPath(null), isFalse);
-      expect(isNetworkOnlyVideoPath(path), isTrue,
-          reason: '本机没有这个文件：不能 stat / 抽帧 / 打包进备份');
+      expect(
+        isNetworkOnlyVideoPath(path),
+        isTrue,
+        reason: '本机没有这个文件：不能 stat / 抽帧 / 打包进备份',
+      );
       expect(lacksLocalMediaFile(path), isTrue);
-      expect(isNetworkStreamUrl(path), isFalse,
-          reason: '内核开不了 sftp://，必须经来源的播放期解析器');
+      expect(
+        isNetworkStreamUrl(path),
+        isFalse,
+        reason: '内核开不了 sftp://，必须经来源的播放期解析器',
+      );
     });
   });
 
   group('SftpUrlNamespaceFileSystem', () {
-    test('lists in sftp:// namespace and maps calls back to remote paths',
-        () async {
-      final _RecordingFs inner = _RecordingFs();
-      final SftpUrlNamespaceFileSystem fs =
-          SftpUrlNamespaceFileSystem(inner, urlRoot: _root);
+    test(
+      'lists in sftp:// namespace and maps calls back to remote paths',
+      () async {
+        final _RecordingFs inner = _RecordingFs();
+        final SftpUrlNamespaceFileSystem fs = SftpUrlNamespaceFileSystem(
+          inner,
+          urlRoot: _root,
+        );
 
-      expect(fs.isLocal, isFalse);
-      final List<SourceFileEntry> entries =
-          await fs.listFiles('/srv/video', recursive: true);
-      expect(entries.single.path,
-          'sftp://nas.local:2222/srv/video/第1話/50% off.mkv');
-      expect(entries.single.name, '50% off.mkv');
-      expect(entries.single.sizeBytes, 10);
+        expect(fs.isLocal, isFalse);
+        final List<SourceFileEntry> entries = await fs.listFiles(
+          '/srv/video',
+          recursive: true,
+        );
+        expect(
+          entries.single.path,
+          'sftp://nas.local:2222/srv/video/第1話/50% off.mkv',
+        );
+        expect(entries.single.name, '50% off.mkv');
+        expect(entries.single.sizeBytes, 10);
 
-      await fs.readText('$_root/srv/video/a.m3u8');
-      await fs.copyToLocal('$_root/srv/video/a.srt', '/tmp');
-      await fs.listSiblingNames('$_root/srv/video/a.mkv');
-      await fs.listFiles('$_root/srv/video');
-      expect(inner.seen, <String>[
-        'list:/srv/video',
-        'read:/srv/video/a.m3u8',
-        'copy:/srv/video/a.srt',
-        'siblings:/srv/video/a.mkv',
-        'list:/srv/video',
-      ]);
-    });
+        await fs.readText('$_root/srv/video/a.m3u8');
+        await fs.copyToLocal('$_root/srv/video/a.srt', '/tmp');
+        await fs.listSiblingNames('$_root/srv/video/a.mkv');
+        await fs.listFiles('$_root/srv/video');
+        expect(inner.seen, <String>[
+          'list:/srv/video',
+          'read:/srv/video/a.m3u8',
+          'copy:/srv/video/a.srt',
+          'siblings:/srv/video/a.mkv',
+          'list:/srv/video',
+        ]);
+      },
+    );
 
-    test('relative root lists into the ~ namespace and maps back relative',
-        () async {
-      final _RecordingFs inner = _RecordingFs(
-        listed: const <SourceFileEntry>[
-          SourceFileEntry(
-            name: 'a.mkv',
-            path: 'Videos/a.mkv',
-            isDirectory: false,
-          ),
-        ],
-      );
-      final SftpUrlNamespaceFileSystem fs =
-          SftpUrlNamespaceFileSystem(inner, urlRoot: _root);
+    test(
+      'relative root lists into the ~ namespace and maps back relative',
+      () async {
+        final _RecordingFs inner = _RecordingFs(
+          listed: const <SourceFileEntry>[
+            SourceFileEntry(
+              name: 'a.mkv',
+              path: 'Videos/a.mkv',
+              isDirectory: false,
+            ),
+          ],
+        );
+        final SftpUrlNamespaceFileSystem fs = SftpUrlNamespaceFileSystem(
+          inner,
+          urlRoot: _root,
+        );
 
-      final List<SourceFileEntry> entries = await fs.listFiles('Videos');
-      expect(entries.single.path, '$_root/~/Videos/a.mkv');
-      await fs.readText(entries.single.path);
-      expect(inner.seen, <String>['list:Videos', 'read:Videos/a.mkv']);
-    });
+        final List<SourceFileEntry> entries = await fs.listFiles('Videos');
+        expect(entries.single.path, '$_root/~/Videos/a.mkv');
+        await fs.readText(entries.single.path);
+        expect(inner.seen, <String>['list:Videos', 'read:Videos/a.mkv']);
+      },
+    );
   });
 
   group('SftpStreamUrlResolver over the loopback relay', () {
     late CloudVideoStreamRelay relay;
     late HttpClient client;
-    final Uint8List video =
-        Uint8List.fromList(List<int>.generate(4096, (int i) => i & 0xff));
+    final Uint8List video = Uint8List.fromList(
+      List<int>.generate(4096, (int i) => i & 0xff),
+    );
 
     setUp(() async {
       relay = await CloudVideoStreamRelay.start();
@@ -239,8 +261,10 @@ void main() {
       String? range,
       String method = 'GET',
     }) async {
-      final HttpClientRequest req =
-          await client.openUrl(method, Uri.parse(url));
+      final HttpClientRequest req = await client.openUrl(
+        method,
+        Uri.parse(url),
+      );
       if (range != null) req.headers.set(HttpHeaders.rangeHeader, range);
       final HttpClientResponse resp = await req.close();
       final List<int> body = <int>[
@@ -253,53 +277,64 @@ void main() {
       );
     }
 
-    test('sftp:// video and sidecar resolve to loopback URLs serving ranges',
-        () async {
-      final _FakeSftpFs fs = _FakeSftpFs(<String, Uint8List>{
-        '/srv/video/第1話 50%.mkv': video,
-        '/srv/video/第1話 50%.srt': Uint8List.fromList('1\n'.codeUnits),
-      });
-      final SftpStreamUrlResolver resolver = SftpStreamUrlResolver(
-        sourceId: 7,
-        urlRoot: _root,
-        fs: fs,
-        relay: () async => relay,
-      );
-
-      final String videoUrl =
-          await resolver.resolve('$_root/srv/video/第1話 50%.mkv');
-      final Uri local = Uri.parse(videoUrl);
-      expect(local.scheme, 'http');
-      expect(local.host, InternetAddress.loopbackIPv4.address);
-      expect(videoUrl, isNot(contains('nas.local')),
-          reason: '交给内核的地址不带远端主机 / 凭据');
-
-      final (int status, List<int> body, String? contentRange) =
-          await fetch(videoUrl, range: 'bytes=100-199');
-      expect(status, HttpStatus.partialContent);
-      expect(body, video.sublist(100, 200));
-      expect(contentRange, 'bytes 100-199/4096');
-
-      final (int fullStatus, List<int> full, _) = await fetch(videoUrl);
-      expect(fullStatus, HttpStatus.ok);
-      expect(full, video);
-
-      final (int beyond, _, _) = await fetch(videoUrl, range: 'bytes=9999-');
-      expect(beyond, HttpStatus.requestedRangeNotSatisfiable);
-
-      final String subUrl =
-          await resolver.resolve('$_root/srv/video/第1話 50%.srt');
-      final (int subStatus, List<int> sub, _) = await fetch(subUrl);
-      expect(subStatus, HttpStatus.ok);
-      expect(sub, '1\n'.codeUnits);
-      expect(fs.rangeRequests, contains('/srv/video/第1話 50%.srt'));
-
-      // 同一条目重复解析复用同一本地地址（播放页刷新不会把登记表撑大）。
-      expect(await resolver.resolve('$_root/srv/video/第1話 50%.mkv'), videoUrl);
-    });
-
     test(
-        'addresses outside this source pass through unchanged; close '
+      'sftp:// video and sidecar resolve to loopback URLs serving ranges',
+      () async {
+        final _FakeSftpFs fs = _FakeSftpFs(<String, Uint8List>{
+          '/srv/video/第1話 50%.mkv': video,
+          '/srv/video/第1話 50%.srt': Uint8List.fromList('1\n'.codeUnits),
+        });
+        final SftpStreamUrlResolver resolver = SftpStreamUrlResolver(
+          sourceId: 7,
+          urlRoot: _root,
+          fs: fs,
+          relay: () async => relay,
+        );
+
+        final String videoUrl = await resolver.resolve(
+          '$_root/srv/video/第1話 50%.mkv',
+        );
+        final Uri local = Uri.parse(videoUrl);
+        expect(local.scheme, 'http');
+        expect(local.host, InternetAddress.loopbackIPv4.address);
+        expect(
+          videoUrl,
+          isNot(contains('nas.local')),
+          reason: '交给内核的地址不带远端主机 / 凭据',
+        );
+
+        final (int status, List<int> body, String? contentRange) = await fetch(
+          videoUrl,
+          range: 'bytes=100-199',
+        );
+        expect(status, HttpStatus.partialContent);
+        expect(body, video.sublist(100, 200));
+        expect(contentRange, 'bytes 100-199/4096');
+
+        final (int fullStatus, List<int> full, _) = await fetch(videoUrl);
+        expect(fullStatus, HttpStatus.ok);
+        expect(full, video);
+
+        final (int beyond, _, _) = await fetch(videoUrl, range: 'bytes=9999-');
+        expect(beyond, HttpStatus.requestedRangeNotSatisfiable);
+
+        final String subUrl = await resolver.resolve(
+          '$_root/srv/video/第1話 50%.srt',
+        );
+        final (int subStatus, List<int> sub, _) = await fetch(subUrl);
+        expect(subStatus, HttpStatus.ok);
+        expect(sub, '1\n'.codeUnits);
+        expect(fs.rangeRequests, contains('/srv/video/第1話 50%.srt'));
+
+        // 同一条目重复解析复用同一本地地址（播放页刷新不会把登记表撑大）。
+        expect(
+          await resolver.resolve('$_root/srv/video/第1話 50%.mkv'),
+          videoUrl,
+        );
+      },
+    );
+
+    test('addresses outside this source pass through unchanged; close '
         'releases the SSH connection', () async {
       final _FakeSftpFs fs = _FakeSftpFs(<String, Uint8List>{});
       final SftpStreamUrlResolver resolver = SftpStreamUrlResolver(
@@ -388,17 +423,17 @@ void main() {
     });
 
     VideoBookRow row(String videoPath, String subtitleUrl) => VideoBookRow(
-          bookUid: 'video/sftp/1',
-          title: 'ep1',
-          videoPath: videoPath,
-          lastPositionMs: 0,
-          currentEpisode: 0,
-          delayMs: 0,
-          streamSpecJson: StreamVideoSpec(
-            subtitleUrl: subtitleUrl,
-            subtitleFileName: 'ep1.srt',
-          ).toStorageJson(),
-        );
+      bookUid: 'video/sftp/1',
+      title: 'ep1',
+      videoPath: videoPath,
+      lastPositionMs: 0,
+      currentEpisode: 0,
+      delayMs: 0,
+      streamSpecJson: StreamVideoSpec(
+        subtitleUrl: subtitleUrl,
+        subtitleFileName: 'ep1.srt',
+      ).toStorageJson(),
+    );
 
     test(
       'sftp subtitle reaches the client and downloads through the relay',

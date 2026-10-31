@@ -83,10 +83,7 @@ void main() {
         rect(55, 0, 20, 30),
         rect(0, 0, 20, 80), // 独立左列
       ];
-      expect(
-        orderWithinPanel(boxes, <int>[0, 1, 2]),
-        <int>[1, 0, 2],
-      );
+      expect(orderWithinPanel(boxes, <int>[0, 1, 2]), <int>[1, 0, 2]);
     });
   });
 }

@@ -13,9 +13,9 @@ void main() {
 
   setUp(() async {
     db = FushiDatabase.forTesting(NativeDatabase.memory());
-    final int collectionId = await db.into(db.mediaCollections).insert(
-          MediaCollectionsCompanion.insert(name: '某番', createdAt: 1),
-        );
+    final int collectionId = await db
+        .into(db.mediaCollections)
+        .insert(MediaCollectionsCompanion.insert(name: '某番', createdAt: 1));
     workId = await db.upsertVideoMetadataWork(
       VideoMetadataWorksCompanion.insert(
         collectionId: Value<int?>(collectionId),
@@ -30,22 +30,24 @@ void main() {
 
   Future<bool?> pumpAndOpen(WidgetTester tester) async {
     bool? saved;
-    await tester.pumpWidget(MaterialApp(
-      home: Scaffold(
-        body: Builder(
-          builder: (BuildContext context) => TextButton(
-            onPressed: () async {
-              saved = await editVideoMetadataLockedFields(
-                context: context,
-                database: db,
-                workId: workId,
-              );
-            },
-            child: const Text('open'),
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (BuildContext context) => TextButton(
+              onPressed: () async {
+                saved = await editVideoMetadataLockedFields(
+                  context: context,
+                  database: db,
+                  workId: workId,
+                );
+              },
+              child: const Text('open'),
+            ),
           ),
         ),
       ),
-    ));
+    );
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
     return saved;
@@ -68,8 +70,10 @@ void main() {
     await tester.tap(find.text('SAVE'));
     await tester.pumpAndSettle();
 
-    expect((await db.getVideoMetadataWorkById(workId))!.lockedFields,
-        'title,cover');
+    expect(
+      (await db.getVideoMetadataWorkById(workId))!.lockedFields,
+      'title,cover',
+    );
   });
 
   testWidgets('取消不写库', (WidgetTester tester) async {
@@ -96,10 +100,14 @@ void main() {
       tester.widget<AdaptiveSettingsSwitchRow>(lockTile('overview')).value,
       isTrue,
     );
-    expect(tester.widget<AdaptiveSettingsSwitchRow>(lockTile('rating')).value,
-        isTrue);
-    expect(tester.widget<AdaptiveSettingsSwitchRow>(lockTile('title')).value,
-        isFalse);
+    expect(
+      tester.widget<AdaptiveSettingsSwitchRow>(lockTile('rating')).value,
+      isTrue,
+    );
+    expect(
+      tester.widget<AdaptiveSettingsSwitchRow>(lockTile('title')).value,
+      isFalse,
+    );
 
     await tester.ensureVisible(lockTile('overview'));
     await tester.tap(lockTile('overview'));

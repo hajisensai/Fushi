@@ -24,13 +24,14 @@ void main() {
 
   tearDown(() => db.close());
 
-  Future<int> addSource(String root) =>
-      db.insertMediaSource(MediaSourcesCompanion.insert(
-        label: root,
-        mediaKind: 'video',
-        rootPath: root,
-        createdAt: 1000,
-      ));
+  Future<int> addSource(String root) => db.insertMediaSource(
+    MediaSourcesCompanion.insert(
+      label: root,
+      mediaKind: 'video',
+      rootPath: root,
+      createdAt: 1000,
+    ),
+  );
 
   Future<void> addVideo({
     required String uid,
@@ -39,18 +40,17 @@ void main() {
     int position = 0,
     String? coverPath,
     String? subtitlePath,
-  }) =>
-      repository.saveVideoBook(
-        VideoBooksCompanion(
-          bookUid: Value<String>(uid),
-          title: Value<String>(path.split('/').last.split('.').first),
-          videoPath: Value<String>(path),
-          lastPositionMs: Value<int>(position),
-          coverPath: Value<String?>(coverPath),
-          subtitleSource: Value<String?>(subtitlePath),
-        ),
-        sourceId: sourceId,
-      );
+  }) => repository.saveVideoBook(
+    VideoBooksCompanion(
+      bookUid: Value<String>(uid),
+      title: Value<String>(path.split('/').last.split('.').first),
+      videoPath: Value<String>(path),
+      lastPositionMs: Value<int>(position),
+      coverPath: Value<String?>(coverPath),
+      subtitleSource: Value<String?>(subtitlePath),
+    ),
+    sourceId: sourceId,
+  );
 
   test('一级难度目录的 1500 个不相关文件保持三个合集，重扫幂等且不生成刮削计划', () async {
     final int sourceId = await db.insertMediaSource(
@@ -152,7 +152,7 @@ void main() {
     final int sourceId = await addSource('D:/Lessons');
     final List<String> paths = <String>[
       'D:/Lessons/Easy/one.mp4',
-      'D:/Lessons/Easy/two.mp4'
+      'D:/Lessons/Easy/two.mp4',
     ];
     await addVideo(uid: 'one', path: paths[0], sourceId: sourceId);
     await addVideo(uid: 'two', path: paths[1], sourceId: sourceId);
@@ -164,8 +164,10 @@ void main() {
     );
     final int collectionId = first.createdCollectionIds.single;
     expect((await db.getMediaCollectionById(collectionId))!.name, 'Easy');
-    expect((await db.getMediaCollectionById(collectionId))!.sourceFolderPath,
-        'd:/lessons/easy');
+    expect(
+      (await db.getMediaCollectionById(collectionId))!.sourceFolderPath,
+      'd:/lessons/easy',
+    );
     await db.removeFromCollection(collectionId, MediaKind.video, 'one');
     final VideoFolderGroupSummary second = await coordinator.groupPaths(
       videoPaths: paths,
@@ -175,13 +177,17 @@ void main() {
     );
     expect(second.createdCollectionIds, isEmpty);
     expect(
-        (await db.getCollectionItems(collectionId))
-            .map((MediaCollectionItemRow row) => row.entryKey),
-        <String>['two']);
+      (await db.getCollectionItems(
+        collectionId,
+      )).map((MediaCollectionItemRow row) => row.entryKey),
+      <String>['two'],
+    );
     expect(
-        (await db.getAllCollectionMemberTombstones())
-            .any((CollectionMemberTombstoneRow row) => row.entryKey == 'one'),
-        isTrue);
+      (await db.getAllCollectionMemberTombstones()).any(
+        (CollectionMemberTombstoneRow row) => row.entryKey == 'one',
+      ),
+      isTrue,
+    );
     await db.removeFromCollection(collectionId, MediaKind.video, 'two');
     final VideoFolderGroupSummary third = await coordinator.groupPaths(
       videoPaths: paths,
@@ -192,13 +198,20 @@ void main() {
     expect(third.createdCollectionIds, isEmpty, reason: '移空合集后不重新建立空容器或复活成员');
     expect(await db.getAllMediaCollections(), isEmpty);
     expect(
-        videoSourceFolderPath(
-            r'\\Server\Share\Root\Easy\one.mp4', r'\\server\share\root'),
-        '//server/share/root/easy');
-    expect(videoSourceFolderPath('/Library/Easy/a.mp4', '/Library'),
-        '/Library/Easy');
-    expect(() => videoSourceFolderPath('/library/Easy/a.mp4', '/Library'),
-        throwsArgumentError);
+      videoSourceFolderPath(
+        r'\\Server\Share\Root\Easy\one.mp4',
+        r'\\server\share\root',
+      ),
+      '//server/share/root/easy',
+    );
+    expect(
+      videoSourceFolderPath('/Library/Easy/a.mp4', '/Library'),
+      '/Library/Easy',
+    );
+    expect(
+      () => videoSourceFolderPath('/library/Easy/a.mp4', '/Library'),
+      throwsArgumentError,
+    );
   });
 
   test('截图 Fate 的 VCB 文件名当前解析合为同作品并保留集号', () {
@@ -243,8 +256,9 @@ void main() {
     expect(summary.createdCollectionIds, hasLength(1));
     final int collectionId = summary.createdCollectionIds.single;
     expect(
-      (await db.getCollectionItems(collectionId))
-          .map((MediaCollectionItemRow item) => item.entryKey),
+      (await db.getCollectionItems(
+        collectionId,
+      )).map((MediaCollectionItemRow item) => item.entryKey),
       <String>['show-01', 'show-02'],
     );
     final VideoBookRow first = (await repository.getByBookUid('show-01'))!;
@@ -255,8 +269,11 @@ void main() {
     expect(first.subtitleSource, '/library/Show S01E01.srt');
     expect(second.sourceId, otherSourceId, reason: '不得抢占其它来源的既有归属');
     expect(second.lastPositionMs, 222);
-    expect((await db.getMediaCollectionById(collectionId))!.orderUpdatedAt, 0,
-        reason: '机器自然排序不得伪装成用户手动排序');
+    expect(
+      (await db.getMediaCollectionById(collectionId))!.orderUpdatedAt,
+      0,
+      reason: '机器自然排序不得伪装成用户手动排序',
+    );
   });
 
   test('BUG-1739 用户删除的合集不被重扫复活；显式重建后恢复归组', () async {
@@ -293,17 +310,22 @@ void main() {
     expect(rescan.createdCollectionIds, isEmpty);
     expect(rescan.updatedCollectionIds, isEmpty);
     expect(await db.getMediaCollectionByNaturalKey(name, 'playlist'), isNull);
-    expect(rescan.reusedVideoUids, <String>['show-01', 'show-02'],
-        reason: '只是不再归组，成员视频本身不受影响');
+    expect(rescan.reusedVideoUids, <String>[
+      'show-01',
+      'show-02',
+    ], reason: '只是不再归组，成员视频本身不受影响');
 
     // 用户显式重建同名合集 = 撤销删除（createMediaCollection 清墓碑），之后
     // 重扫恢复自动归组，把成员补回来。
-    final int recreated =
-        await db.createMediaCollection(name, collectionType: 'playlist');
+    final int recreated = await db.createMediaCollection(
+      name,
+      collectionType: 'playlist',
+    );
     await coordinator.groupPaths(videoPaths: paths, sourceId: sourceId);
     expect(
-      (await db.getCollectionItems(recreated))
-          .map((MediaCollectionItemRow item) => item.entryKey),
+      (await db.getCollectionItems(
+        recreated,
+      )).map((MediaCollectionItemRow item) => item.entryKey),
       <String>['show-01', 'show-02'],
     );
   });
@@ -317,11 +339,7 @@ void main() {
       '/library/Beta S01E02.mkv',
     ];
     for (final String path in paths) {
-      await addVideo(
-        uid: path.split('/').last,
-        path: path,
-        sourceId: sourceId,
-      );
+      await addVideo(uid: path.split('/').last, path: path, sourceId: sourceId);
     }
     final VideoFolderGroupSummary first = await coordinator.groupPaths(
       videoPaths: paths,
@@ -341,8 +359,11 @@ void main() {
       videoPaths: paths,
       sourceId: sourceId,
     );
-    expect(rescan.createdCollectionIds, isEmpty,
-        reason: '普通重扫仍尊重用户的解散（BUG-1739）');
+    expect(
+      rescan.createdCollectionIds,
+      isEmpty,
+      reason: '普通重扫仍尊重用户的解散（BUG-1739）',
+    );
 
     final VideoFolderGroupSummary restored = await coordinator.groupPaths(
       videoPaths: paths,
@@ -351,12 +372,15 @@ void main() {
     );
     expect(restored.createdCollectionIds, hasLength(2));
     for (final String name in names) {
-      final MediaCollectionRow? collection =
-          await db.getMediaCollectionByNaturalKey(name, 'playlist');
+      final MediaCollectionRow? collection = await db
+          .getMediaCollectionByNaturalKey(name, 'playlist');
       expect(collection, isNotNull, reason: '$name 应被重新归组');
       expect(await db.getCollectionItems(collection!.id), hasLength(2));
-      expect(await db.hasCollectionDeletionTombstone(name, 'playlist'), isFalse,
-          reason: '恢复后墓碑清掉，后续普通重扫不会再把它当解散');
+      expect(
+        await db.hasCollectionDeletionTombstone(name, 'playlist'),
+        isFalse,
+        reason: '恢复后墓碑清掉，后续普通重扫不会再把它当解散',
+      );
     }
 
     final VideoFolderGroupSummary after = await coordinator.groupPaths(
@@ -374,11 +398,7 @@ void main() {
       '/library/Show/Episode B.mkv',
     ];
     for (final String path in paths) {
-      await addVideo(
-        uid: path.split('/').last,
-        path: path,
-        sourceId: sourceId,
-      );
+      await addVideo(uid: path.split('/').last, path: path, sourceId: sourceId);
     }
     final VideoFolderGroupSummary first = await coordinator.groupPaths(
       videoPaths: paths,
@@ -389,7 +409,10 @@ void main() {
     final int collectionId = first.createdCollectionIds.single;
     final String name = (await db.getMediaCollectionById(collectionId))!.name;
     await db.removeFromCollection(
-        collectionId, MediaKind.video, 'Episode A.mkv');
+      collectionId,
+      MediaKind.video,
+      'Episode A.mkv',
+    );
     await db.deleteMediaCollection(collectionId);
     // deleteMediaCollection 会清掉该名下的成员墓碑、只留合集级哨兵；成员墓碑
     // 仍可经同步落进来（对端清单带着它）。这里把两种墓碑都摆上，钉住「恢复」
@@ -420,26 +443,24 @@ void main() {
       sourceRoot: '/library',
       restoreDissolvedGroups: true,
     );
-    final MediaCollectionRow? restored =
-        await db.getMediaCollectionByNaturalKey(name, 'collection');
+    final MediaCollectionRow? restored = await db
+        .getMediaCollectionByNaturalKey(name, 'collection');
     expect(restored, isNotNull);
     expect(
-      (await db.getCollectionItems(restored!.id))
-          .map((MediaCollectionItemRow item) => item.entryKey)
-          .toSet(),
+      (await db.getCollectionItems(
+        restored!.id,
+      )).map((MediaCollectionItemRow item) => item.entryKey).toSet(),
       <String>{'Episode A.mkv', 'Episode B.mkv'},
     );
   });
 
   test('重扫幂等；新增与暂缺分集都复用原合集并对全集排序', () async {
     final int sourceId = await addSource('/library');
-    for (final ({String uid, String path}) item in <({
-      String uid,
-      String path,
-    })>[
-      (uid: 'show-01', path: '/library/Show S01E01.mkv'),
-      (uid: 'show-02', path: '/library/Show S01E02.mkv'),
-    ]) {
+    for (final ({String uid, String path}) item
+        in <({String uid, String path})>[
+          (uid: 'show-01', path: '/library/Show S01E01.mkv'),
+          (uid: 'show-02', path: '/library/Show S01E02.mkv'),
+        ]) {
       await addVideo(uid: item.uid, path: item.path, sourceId: sourceId);
     }
     final VideoFolderGroupSummary first = await coordinator.groupPaths(
@@ -483,8 +504,11 @@ void main() {
     );
     expect(expanded.createdVideoUids, <String>['show-00']);
     expect(expanded.updatedCollectionIds, <int>[collectionId]);
-    expect((await db.getMediaCollectionById(collectionId))!.orderUpdatedAt, 0,
-        reason: '新增分集触发的自动重排不得 bump 手动序时钟');
+    expect(
+      (await db.getMediaCollectionById(collectionId))!.orderUpdatedAt,
+      0,
+      reason: '新增分集触发的自动重排不得 bump 手动序时钟',
+    );
 
     // E00/E01/E02 全部暂缺，本轮只发现 E03：仍按作品身份加入旧合集，旧成员不删。
     await addVideo(
@@ -499,8 +523,9 @@ void main() {
     );
 
     expect(
-      (await db.getCollectionItems(collectionId))
-          .map((MediaCollectionItemRow item) => item.entryKey),
+      (await db.getCollectionItems(
+        collectionId,
+      )).map((MediaCollectionItemRow item) => item.entryKey),
       <String>['show-00', 'show-01', 'show-02', 'show-03'],
     );
     expect(await repository.listAll(), hasLength(4));
@@ -511,23 +536,25 @@ void main() {
   // 重扫不得按 overlap 把它们并回去；已在别的播放列表里的文件不再重新归组。
   test('已归属别的播放列表的文件重扫时不被并回同名系列合集', () async {
     final int sourceId = await addSource('/library');
-    for (final ({String uid, String path}) item in <({
-      String uid,
-      String path,
-    })>[
-      (uid: 'show-01', path: '/library/Show S01E01.mkv'),
-      (uid: 'show-02', path: '/library/Show S01E02.mkv'),
-      (uid: 'show-14', path: '/library/Show S01E14.mkv'),
-    ]) {
+    for (final ({String uid, String path}) item
+        in <({String uid, String path})>[
+          (uid: 'show-01', path: '/library/Show S01E01.mkv'),
+          (uid: 'show-02', path: '/library/Show S01E02.mkv'),
+          (uid: 'show-14', path: '/library/Show S01E14.mkv'),
+        ]) {
       await addVideo(uid: item.uid, path: item.path, sourceId: sourceId);
     }
     // 模拟拆分结果：两个按 AniDB 作品命名的播放列表，原「Show」合集已删。
-    final int first =
-        await db.createMediaCollection('Show Part 1', collectionType: 'playlist');
+    final int first = await db.createMediaCollection(
+      'Show Part 1',
+      collectionType: 'playlist',
+    );
     await db.addToCollection(first, MediaKind.video, 'show-01');
     await db.addToCollection(first, MediaKind.video, 'show-02');
-    final int second =
-        await db.createMediaCollection('Show Part 2', collectionType: 'playlist');
+    final int second = await db.createMediaCollection(
+      'Show Part 2',
+      collectionType: 'playlist',
+    );
     await db.addToCollection(second, MediaKind.video, 'show-14');
 
     final VideoFolderGroupSummary rescan = await coordinator.groupPaths(
@@ -541,13 +568,17 @@ void main() {
     expect(rescan.createdCollectionIds, isEmpty, reason: '不重建「Show」');
     expect(rescan.updatedCollectionIds, isEmpty, reason: '不把 E14 并进 Part 1');
     expect(
-        (await db.getCollectionItems(first))
-            .map((MediaCollectionItemRow i) => i.entryKey),
-        <String>['show-01', 'show-02']);
+      (await db.getCollectionItems(
+        first,
+      )).map((MediaCollectionItemRow i) => i.entryKey),
+      <String>['show-01', 'show-02'],
+    );
     expect(
-        (await db.getCollectionItems(second))
-            .map((MediaCollectionItemRow i) => i.entryKey),
-        <String>['show-14']);
+      (await db.getCollectionItems(
+        second,
+      )).map((MediaCollectionItemRow i) => i.entryKey),
+      <String>['show-14'],
+    );
     expect(await db.getAllMediaCollections(), hasLength(2));
   });
 
@@ -597,11 +628,10 @@ void main() {
       );
       expect(first.createdCollectionIds, hasLength(3));
       final Map<String, List<String>> byName = await membersByName();
-      expect(
-        byName['TVアニメ「無職転生Ⅱ」オリジナル・サウンドトラック'],
-        <String>['v0', 'v1'],
-        reason: '剥掉发售日前缀与结尾规格标签；同专辑曲目进同一个合集',
-      );
+      expect(byName['TVアニメ「無職転生Ⅱ」オリジナル・サウンドトラック'], <String>[
+        'v0',
+        'v1',
+      ], reason: '剥掉发售日前缀与结尾规格标签；同专辑曲目进同一个合集');
       expect(byName['聖域'], <String>['v2', 'v3']);
       expect(
         byName.values.where(
@@ -645,25 +675,37 @@ void main() {
       );
       final Map<String, List<String>> byName = await membersByName();
       expect(byName['聖域'], <String>['v2', 'v3']);
-      expect(byName.containsKey('CDs'), isFalse,
-          reason: '一级目录口径会把所有专辑糊成一个「CDs」合集');
-      expect(byName.values.expand((List<String> m) => m),
-          containsAll(<String>['v4', 'v5']),
-          reason: '正片照旧进根目录合集');
+      expect(
+        byName.containsKey('CDs'),
+        isFalse,
+        reason: '一级目录口径会把所有专辑糊成一个「CDs」合集',
+      );
+      expect(
+        byName.values.expand((List<String> m) => m),
+        containsAll(<String>['v4', 'v5']),
+        reason: '正片照旧进根目录合集',
+      );
     });
 
     test('存量库：曲目早已在一级目录大合集里，主归属仍是专辑合集', () async {
       final int sourceId = await seed();
-      await (db.update(db.mediaSources)
-            ..where((tbl) => tbl.id.equals(sourceId)))
-          .write(const MediaSourcesCompanion(videoGroupingMode: Value('folder')));
+      await (db.update(
+        db.mediaSources,
+      )..where((tbl) => tbl.id.equals(sourceId))).write(
+        const MediaSourcesCompanion(videoGroupingMode: Value('folder')),
+      );
       // 修复前的目录模式产物：整个 `CDs` 一个合集（id 更小、先被遍历到）。
-      final int legacy =
-          await db.createMediaCollection('CDs', collectionType: 'collection');
-      await (db.update(db.mediaCollections)
-            ..where((tbl) => tbl.id.equals(legacy)))
-          .write(const MediaCollectionsCompanion(
-              sourceFolderPath: Value<String?>('$root/CDs')));
+      final int legacy = await db.createMediaCollection(
+        'CDs',
+        collectionType: 'collection',
+      );
+      await (db.update(
+        db.mediaCollections,
+      )..where((tbl) => tbl.id.equals(legacy))).write(
+        const MediaCollectionsCompanion(
+          sourceFolderPath: Value<String?>('$root/CDs'),
+        ),
+      );
       for (final String uid in <String>['v0', 'v1', 'v2', 'v3']) {
         await db.addToCollection(legacy, MediaKind.video, uid);
       }
@@ -683,11 +725,17 @@ void main() {
       );
       final MediaCollectionRow album = (await db.getAllMediaCollections())
           .singleWhere((MediaCollectionRow c) => c.name == '聖域');
-      expect(primary['video|v2'], album.id,
-          reason: '重扫只补不删，旧大合集仍含曲目——主归属不能取决于遍历先后');
+      expect(
+        primary['video|v2'],
+        album.id,
+        reason: '重扫只补不删，旧大合集仍含曲目——主归属不能取决于遍历先后',
+      );
       expect(primary['video|v3'], album.id);
-      expect(await db.getCollectionItems(legacy), hasLength(4),
-          reason: '不动用户既有合集的成员');
+      expect(
+        await db.getCollectionItems(legacy),
+        hasLength(4),
+        reason: '不动用户既有合集的成员',
+      );
     });
 
     test('专辑名清洗：只剥首尾修饰，剥空退回原名', () async {
@@ -696,13 +744,21 @@ void main() {
         audioAlbumDisplayName('(20231025) Album [24bit_96kHz] [FLAC]'),
         'Album',
       );
-      expect(audioAlbumDisplayName('Disc (Bonus) Mix'), 'Disc (Bonus) Mix',
-          reason: '中间的括号是名字的一部分');
+      expect(
+        audioAlbumDisplayName('Disc (Bonus) Mix'),
+        'Disc (Bonus) Mix',
+        reason: '中间的括号是名字的一部分',
+      );
       expect(audioAlbumDisplayName('[FLAC]'), '[FLAC]');
-      expect(audioAlbumDisplayName('Album (Disc 1) [FLAC]'), 'Album (Disc 1)',
-          reason: '分碟信息是名字的一部分，剥掉会让两张碟撞名');
-      expect(audioAlbumDisplayName('Symphony (Live) (24bit_96kHz)'),
-          'Symphony (Live)');
+      expect(
+        audioAlbumDisplayName('Album (Disc 1) [FLAC]'),
+        'Album (Disc 1)',
+        reason: '分碟信息是名字的一部分，剥掉会让两张碟撞名',
+      );
+      expect(
+        audioAlbumDisplayName('Symphony (Live) (24bit_96kHz)'),
+        'Symphony (Live)',
+      );
       expect(
         videoAudioAlbumFolderPath(r'D:\Anime\CDs\Album\01.flac'),
         'd:/anime/cds/album',

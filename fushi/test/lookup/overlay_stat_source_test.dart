@@ -56,8 +56,9 @@ void main() {
 
     test('单例包装器只是「读 activityGameKey + 委托纯判据」的一行', () {
       // 行为由纯判据钉死；这里钉住「包装器没有第二份判据」这一结构事实。
-      final String src =
-          File('lib/src/lookup/overlay_stat_source.dart').readAsStringSync();
+      final String src = File(
+        'lib/src/lookup/overlay_stat_source.dart',
+      ).readAsStringSync();
       expect(
         src,
         contains('statSourceTypeForGameKey('),
@@ -90,8 +91,9 @@ void main() {
     });
 
     test('会话控制器暴露了只读 activityGameKey（判据的唯一输入）', () {
-      final String src = File('lib/src/mining/gal_hook_session_controller.dart')
-          .readAsStringSync();
+      final String src = File(
+        'lib/src/mining/gal_hook_session_controller.dart',
+      ).readAsStringSync();
       expect(src, contains('String? get activityGameKey => _activityGameKey;'));
     });
   });
@@ -105,13 +107,13 @@ void main() {
     });
 
     Future<bool> check() => overlayToggleOrCheckFavoriteWord(
-          db: db,
-          toggle: false,
-          expression: 'あ',
-          reading: 'あ',
-          addSourceType: kStatSourceBook,
-          dateKey: today,
-        );
+      db: db,
+      toggle: false,
+      expression: 'あ',
+      reading: 'あ',
+      addSourceType: kStatSourceBook,
+      dateKey: today,
+    );
 
     Future<bool> toggle(String addSourceType) =>
         overlayToggleOrCheckFavoriteWord(
@@ -154,8 +156,11 @@ void main() {
       }
       expect(await db.getAllFavoriteWords(), hasLength(2));
       expect(await toggle(kStatSourceGame), isFalse);
-      expect(await db.getAllFavoriteWords(), isEmpty,
-          reason: '只删当前源会剩一行孤儿：★ 灭了，收藏夹里还在，统计还计着');
+      expect(
+        await db.getAllFavoriteWords(),
+        isEmpty,
+        reason: '只删当前源会剩一行孤儿：★ 灭了，收藏夹里还在，统计还计着',
+      );
       expect(await check(), isFalse);
     });
 

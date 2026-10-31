@@ -14,9 +14,11 @@ bool shouldShowVideoOnlineServicesReminder(PreferencesRepository preferences) {
   // 这里只看凭据是否配齐，资料语言用不到；显式传兜底而不是让参数有默认值，
   // 见 fromPreferences 的说明。
   final VideoSourceScrapeGlobalConfig config =
-      VideoSourceScrapeGlobalConfig.fromPreferences(preferences,
-          resolvedTmdbApiKey: '',
-          uiLocaleTag: kFallbackVideoMetadataLocale);
+      VideoSourceScrapeGlobalConfig.fromPreferences(
+        preferences,
+        resolvedTmdbApiKey: '',
+        uiLocaleTag: kFallbackVideoMetadataLocale,
+      );
   // 与设置页状态、协调器同一判据（BUG-2586）：自定义客户端名不合规时登录
   // 根本发不出去，不能只看账号密码填没填。
   final bool aniDbReady = config.anidbHashReady;
@@ -31,5 +33,5 @@ bool shouldShowVideoOnlineServicesReminder(PreferencesRepository preferences) {
 }
 
 Future<void> dismissVideoOnlineServicesReminder(
-        PreferencesRepository preferences) =>
-    preferences.dismissVideoOnlineServicesSetup();
+  PreferencesRepository preferences,
+) => preferences.dismissVideoOnlineServicesSetup();

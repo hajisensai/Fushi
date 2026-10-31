@@ -26,8 +26,9 @@ import 'package:fushi/src/shortcuts/gamepad_service.dart'
 ///
 /// 只作用于 Windows。其它平台不存在这条平台缺陷，`install` 直接空转。
 abstract final class WindowsImeGuard {
-  static const MethodChannel _channel =
-      MethodChannel('app.fushi/windows_ime_guard');
+  static const MethodChannel _channel = MethodChannel(
+    'app.fushi/windows_ime_guard',
+  );
 
   static bool _installed = false;
   static bool? _lastSent;
@@ -99,5 +100,4 @@ abstract final class WindowsImeGuard {
 bool imeShouldBeEnabled({
   required bool hasEditableFocus,
   required bool focusedEditableIsReadOnly,
-}) =>
-    hasEditableFocus && !focusedEditableIsReadOnly;
+}) => hasEditableFocus && !focusedEditableIsReadOnly;

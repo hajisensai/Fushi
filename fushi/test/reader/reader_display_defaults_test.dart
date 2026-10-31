@@ -13,9 +13,7 @@ import 'package:fushi_core/fushi_core.dart';
 /// 看到「设置页显示开着、阅读器却按关的渲染」，所以这里逐项对比两条读路径，
 /// 而不是只断言其中一条。
 FushiDatabase _testDb() {
-  return FushiDatabase.forTesting(
-    DatabaseConnection(NativeDatabase.memory()),
-  );
+  return FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 }
 
 void main() {
@@ -63,18 +61,23 @@ void main() {
       expect(restored.prioritizeReaderStyles, isFalse);
     });
 
-    test('defaults are not written to the DB (so they stay changeable)',
-        () async {
-      final ReaderSettings settings = ReaderSettings(db);
-      await settings.refreshFromDb();
-      // 触发读取，走 _get 的缺键分支。
-      settings.mergeImagePages;
-      settings.prioritizeReaderStyles;
+    test(
+      'defaults are not written to the DB (so they stay changeable)',
+      () async {
+        final ReaderSettings settings = ReaderSettings(db);
+        await settings.refreshFromDb();
+        // 触发读取，走 _get 的缺键分支。
+        settings.mergeImagePages;
+        settings.prioritizeReaderStyles;
 
-      final Map<String, String> prefs = await db.getAllPrefs();
-      expect(prefs.containsKey('src:reader_fushi:merge_image_pages'), isFalse);
-      expect(prefs.containsKey('src:reader_fushi:reader_styles'), isFalse);
-    });
+        final Map<String, String> prefs = await db.getAllPrefs();
+        expect(
+          prefs.containsKey('src:reader_fushi:merge_image_pages'),
+          isFalse,
+        );
+        expect(prefs.containsKey('src:reader_fushi:reader_styles'), isFalse);
+      },
+    );
   });
 
   group('prioritize book styles: CSS effect of the new default', () {
@@ -91,20 +94,22 @@ void main() {
       await db.close();
     });
 
-    test('by default the reader no longer forces image sizing with !important',
-        () async {
-      final ReaderSettings settings = ReaderSettings(db);
-      await settings.refreshFromDb();
-      final String css = ReaderContentStyles.css(settings: settings);
+    test(
+      'by default the reader no longer forces image sizing with !important',
+      () async {
+        final ReaderSettings settings = ReaderSettings(db);
+        await settings.refreshFromDb();
+        final String css = ReaderContentStyles.css(settings: settings);
 
-      // 这几条是 readerStylePriority 后缀的实际落点；默认开启 = 书自带 CSS 赢。
-      expect(css, contains('width: auto;'));
-      expect(css, isNot(contains('width: auto !important;')));
-      expect(css, contains('object-fit: contain;'));
-      expect(css, isNot(contains('object-fit: contain !important;')));
-      // 与本开关无关的强制项不受影响（同一条规则内的分栏/断页保护）。
-      expect(css, contains('break-inside: avoid !important;'));
-    });
+        // 这几条是 readerStylePriority 后缀的实际落点；默认开启 = 书自带 CSS 赢。
+        expect(css, contains('width: auto;'));
+        expect(css, isNot(contains('width: auto !important;')));
+        expect(css, contains('object-fit: contain;'));
+        expect(css, isNot(contains('object-fit: contain !important;')));
+        // 与本开关无关的强制项不受影响（同一条规则内的分栏/断页保护）。
+        expect(css, contains('break-inside: avoid !important;'));
+      },
+    );
 
     test('turning it off restores the !important overrides', () async {
       final ReaderSettings settings = ReaderSettings(db);

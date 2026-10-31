@@ -58,10 +58,7 @@ void main() {
     });
 
     test('EPUB-linked subtitle book without audio stays subtitles', () {
-      expect(
-        isEpubBackedAudiobookSrt(_srt(bookKey: 'book-1')),
-        isFalse,
-      );
+      expect(isEpubBackedAudiobookSrt(_srt(bookKey: 'book-1')), isFalse);
       expect(
         isEpubBackedAudiobookSrt(
           _srt(bookKey: 'book-1', audioPaths: const <String>[], audioRoot: ''),
@@ -71,14 +68,15 @@ void main() {
     });
 
     test(
-        'standalone subtitle book (no bookKey) stays subtitles even with audio',
-        () {
-      expect(
-        isEpubBackedAudiobookSrt(
-          _srt(bookKey: '', audioPaths: const ['/a/1.mp3']),
-        ),
-        isFalse,
-      );
-    });
+      'standalone subtitle book (no bookKey) stays subtitles even with audio',
+      () {
+        expect(
+          isEpubBackedAudiobookSrt(
+            _srt(bookKey: '', audioPaths: const ['/a/1.mp3']),
+          ),
+          isFalse,
+        );
+      },
+    );
   });
 }

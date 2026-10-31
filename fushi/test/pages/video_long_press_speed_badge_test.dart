@@ -35,15 +35,17 @@ void main() {
       );
     }
 
-    testWidgets('徽章渲染当前速度文案，随 position 等量跟随，且文字上移避让指针',
-        (WidgetTester tester) async {
+    testWidgets('徽章渲染当前速度文案，随 position 等量跟随，且文字上移避让指针', (
+      WidgetTester tester,
+    ) async {
       await tester.pumpWidget(wrap(const Offset(200, 300), 2.0));
       await tester.pump();
 
       expect(find.text('2.0x'), findsOneWidget);
       // 锚点盒随 Positioned(left/top) 精确落在 position（跟随的直接证据）。
-      final Offset badgeA =
-          tester.getCenter(find.byType(VideoLongPressSpeedBadge));
+      final Offset badgeA = tester.getCenter(
+        find.byType(VideoLongPressSpeedBadge),
+      );
       // 竖直上移避让：绘制出的文字中心在锚点上方（FractionalTranslation(-1.8) 作用到子树）。
       final Offset textA = tester.getCenter(find.text('2.0x'));
       expect(textA.dy, lessThan(300), reason: '徽章必须整体上移，避免被手指/光标遮挡');
@@ -52,11 +54,15 @@ void main() {
       await tester.pumpWidget(wrap(const Offset(520, 260), 2.5));
       await tester.pump();
       expect(find.text('2.5x'), findsOneWidget);
-      final Offset badgeB =
-          tester.getCenter(find.byType(VideoLongPressSpeedBadge));
+      final Offset badgeB = tester.getCenter(
+        find.byType(VideoLongPressSpeedBadge),
+      );
       // 中心随锚点等量平移：Δx=520-200=320，Δy=260-300=-40。
-      expect(badgeB.dx - badgeA.dx, closeTo(320, 1.0),
-          reason: '指针右移多少徽章跟随右移多少（证明跟手，而非固定 topLeft）');
+      expect(
+        badgeB.dx - badgeA.dx,
+        closeTo(320, 1.0),
+        reason: '指针右移多少徽章跟随右移多少（证明跟手，而非固定 topLeft）',
+      );
       expect(badgeB.dy - badgeA.dy, closeTo(-40, 1.0));
     });
   });
@@ -70,8 +76,8 @@ void main() {
 
     test('speed.part：长按 start/move 把 localPosition 写入跟随 notifier，end 清空', () {
       final String src = readSource(
-              'lib/src/pages/implementations/video_fushi/speed.part.dart')
-          .readAsStringSync();
+        'lib/src/pages/implementations/video_fushi/speed.part.dart',
+      ).readAsStringSync();
       final int startIdx = src.indexOf('_handleVideoLongPressStart(');
       final int moveIdx = src.indexOf('_handleVideoLongPressMoveUpdate(');
       final int endIdx = src.indexOf('_handleVideoLongPressEnd(');
@@ -96,21 +102,33 @@ void main() {
         reason: 'long-press move 必须持续更新徽章到当前指针位置（跟手）',
       );
       // end 清空徽章。
-      expect(endBody.contains('_longPressSpeedBadge.value = null'), isTrue,
-          reason: '松手必须清空跟随徽章');
+      expect(
+        endBody.contains('_longPressSpeedBadge.value = null'),
+        isTrue,
+        reason: '松手必须清空跟随徽章',
+      );
       // 不再复用钉死左上角的 _showOsd 显示长按速度。
-      expect(startBody.contains('_showOsd('), isFalse,
-          reason: 'long-press start 不得再用固定左上角 _showOsd');
-      expect(moveBody.contains('_showOsd('), isFalse,
-          reason: 'long-press move 不得再用固定左上角 _showOsd');
+      expect(
+        startBody.contains('_showOsd('),
+        isFalse,
+        reason: 'long-press start 不得再用固定左上角 _showOsd',
+      );
+      expect(
+        moveBody.contains('_showOsd('),
+        isFalse,
+        reason: 'long-press move 不得再用固定左上角 _showOsd',
+      );
     });
 
     test('layout.part：视频 Stack 挂载跟随徽章层', () {
       final String src = readSource(
-              'lib/src/pages/implementations/video_fushi/layout.part.dart')
-          .readAsStringSync();
-      expect(src.contains('_buildLongPressSpeedBadgeOverlay()'), isTrue,
-          reason: '视频 Stack 必须挂长按倍速跟随徽章层');
+        'lib/src/pages/implementations/video_fushi/layout.part.dart',
+      ).readAsStringSync();
+      expect(
+        src.contains('_buildLongPressSpeedBadgeOverlay()'),
+        isTrue,
+        reason: '视频 Stack 必须挂长按倍速跟随徽章层',
+      );
     });
   });
 }

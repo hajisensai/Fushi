@@ -34,10 +34,8 @@ import 'package:meta/meta.dart';
 /// 为什么是回调而不是让导出层直接调渲染函数：导出层只懂 ffmpeg，**画成什么样是页面
 /// 层的事**——只有页面知道用户的字幕外观设置和屏幕上视频区有多高（决定字号换算）。
 /// 导出层负责探出画面尺寸并把它喂回来，两边各管各的。
-typedef ClipSubtitleFrameRenderer = Future<Uint8List?> Function(
-  ClipSubtitleCue cue,
-  ClipFrameSize frame,
-);
+typedef ClipSubtitleFrameRenderer =
+    Future<Uint8List?> Function(ClipSubtitleCue cue, ClipFrameSize frame);
 
 /// 烧录需要、且本机 ffmpeg 必须编入的 filter（统一 FFmpeg 已具备；用户自带的外部
 /// ffmpeg 仍需探测，见 [parseFfmpegFilterNames]）。
@@ -115,8 +113,9 @@ Set<String> parseFfmpegFilterNames(String filtersLog) {
 }
 
 /// `<flags> <name> <in>-><out> <描述>`；flags 位数不固定，只要求不含空格。
-final RegExp _kFilterLine =
-    RegExp(r'^\s*[A-Z.]{1,4}\s+([A-Za-z0-9_]+)\s+[AVN|]+->[AVN|]+');
+final RegExp _kFilterLine = RegExp(
+  r'^\s*[A-Z.]{1,4}\s+([A-Za-z0-9_]+)\s+[AVN|]+->[AVN|]+',
+);
 
 /// 本机 ffmpeg 能不能烧字幕。
 ///
@@ -170,7 +169,9 @@ ClipFrameSize? parseClipFrameSize(String ffmpegLog) {
 
 /// `, 1920x1080 ` / `, 1920x1080[SAR...` / 行尾。前置的 `, ` 与词边界一起，
 /// 避免把 `DAR 16:9` 或时长里的数字凑成尺寸。
-final RegExp _kFrameSize = RegExp(r'(?:^|,)\s*(\d{2,5})x(\d{2,5})(?=[\s,\[]|$)');
+final RegExp _kFrameSize = RegExp(
+  r'(?:^|,)\s*(\d{2,5})x(\d{2,5})(?=[\s,\[]|$)',
+);
 
 /// 纯函数：拼字幕 PNG 的输入段（`-i c0.png -i c1.png …`）。
 ///
@@ -207,8 +208,9 @@ String buildClipBurnFilterGraph(List<ClipBurnCue> cues) {
   for (int i = 0; i < cues.length; i++) {
     final ClipBurnCue cue = cues[i];
     final String inLabel = i == 0 ? '[0:v]' : '[vb${i - 1}]';
-    final String outLabel =
-        i == cues.length - 1 ? kClipBurnOutputLabel : '[vb$i]';
+    final String outLabel = i == cues.length - 1
+        ? kClipBurnOutputLabel
+        : '[vb$i]';
     if (i > 0) sb.write(';');
     sb
       ..write(inLabel)

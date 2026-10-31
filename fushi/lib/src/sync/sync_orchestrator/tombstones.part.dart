@@ -52,14 +52,18 @@ extension _SyncOrchestratorTombstones on SyncOrchestrator {
       SyncTombstoneKind.favoriteword.dbValue: <String, int?>{
         for (final FavoriteWordRow r in await _db.getAllFavoriteWords())
           FushiDatabase.favoriteWordItemKey(
-              r.expression, r.reading, r.sourceType): r.createdAt,
+            r.expression,
+            r.reading,
+            r.sourceType,
+          ): r.createdAt,
       },
       // 收藏句无稳定 id，用内容键（[FavoriteSentenceRepository.itemKeyOf]）；与写墓碑点、
       // aggregate 去重键同源。时刻取 createdAt——重新收藏会生成新的 createdAt，正是
       // BUG-2044 仲裁所依据的那个时刻。
       SyncTombstoneKind.favoritesentence.dbValue: <String, int?>{
-        for (final FavoriteSentence s
-            in await FavoriteSentenceRepository(_db).getAll())
+        for (final FavoriteSentence s in await FavoriteSentenceRepository(
+          _db,
+        ).getAll())
           FavoriteSentenceRepository.itemKeyOf(s):
               s.createdAt.millisecondsSinceEpoch,
       },
@@ -94,8 +98,10 @@ extension _SyncOrchestratorTombstones on SyncOrchestrator {
       final DeletionTombstoneEntries out = <String, Map<String, int>>{};
       if (remote == null) return out;
       for (final r in remote) {
-        final Map<String, int> byKey =
-            out.putIfAbsent(r.mediaType, () => <String, int>{});
+        final Map<String, int> byKey = out.putIfAbsent(
+          r.mediaType,
+          () => <String, int>{},
+        );
         final int? prev = byKey[r.itemKey];
         if (prev == null || r.deletedAt > prev) byKey[r.itemKey] = r.deletedAt;
       }
@@ -110,12 +116,17 @@ extension _SyncOrchestratorTombstones on SyncOrchestrator {
             r.bookKey: null,
         },
       };
-      aliasPeerBookTombstones(out, present,
-          peerToLocalBookKey: await _db.getPeerToLocalBookKeys());
+      aliasPeerBookTombstones(
+        out,
+        present,
+        peerToLocalBookKey: await _db.getPeerToLocalBookKeys(),
+      );
       return out;
     } catch (e) {
       report.noteError(
-          '$phase: host deletion tombstones unreadable, push skipped', e);
+        '$phase: host deletion tombstones unreadable, push skipped',
+        e,
+      );
       return null;
     }
   }
@@ -126,13 +137,12 @@ extension _SyncOrchestratorTombstones on SyncOrchestrator {
     required List<SyncTombstoneKind> kinds,
     required Iterable<String> itemKeys,
     required int? presentSinceAt,
-  }) =>
-      peerTombstoneVetoesPush(
-        peerTombstones: hostTombstones,
-        mediaTypes: <String>[for (final SyncTombstoneKind k in kinds) k.dbValue],
-        itemKeys: itemKeys,
-        presentSinceAt: presentSinceAt,
-      );
+  }) => peerTombstoneVetoesPush(
+    peerTombstones: hostTombstones,
+    mediaTypes: <String>[for (final SyncTombstoneKind k in kinds) k.dbValue],
+    itemKeys: itemKeys,
+    presentSinceAt: presentSinceAt,
+  );
 
   /// 删除墓碑同步（互联 host API 通道），**双向**：
   ///
@@ -166,8 +176,10 @@ extension _SyncOrchestratorTombstones on SyncOrchestrator {
       final DeletionTombstoneEntries remoteTombstones =
           <String, Map<String, int>>{};
       for (final r in remote) {
-        final Map<String, int> byKey =
-            remoteTombstones.putIfAbsent(r.mediaType, () => <String, int>{});
+        final Map<String, int> byKey = remoteTombstones.putIfAbsent(
+          r.mediaType,
+          () => <String, int>{},
+        );
         final int? prev = byKey[r.itemKey];
         if (prev == null || r.deletedAt > prev) {
           byKey[r.itemKey] = r.deletedAt;
@@ -178,8 +190,11 @@ extension _SyncOrchestratorTombstones on SyncOrchestrator {
       final DeletionPresentEntries present =
           await _collectPresentDeletionKeys();
       // 同一本书两端键不同（互联收下的在线漫画 / 落地键不同的下载书），对端墓碑先换算。
-      aliasPeerBookTombstones(remoteTombstones, present,
-          peerToLocalBookKey: await _db.getPeerToLocalBookKeys());
+      aliasPeerBookTombstones(
+        remoteTombstones,
+        present,
+        peerToLocalBookKey: await _db.getPeerToLocalBookKeys(),
+      );
       int baseline = await repo.getDeletionTombstonesBaselineMs(_scope);
       if (baseline > nextBaseline) baseline = nextBaseline;
 
@@ -229,21 +244,25 @@ extension _SyncOrchestratorTombstones on SyncOrchestrator {
       // 时钟回拨钳制：基线晚于本轮取的 now 时按 now 算，否则一次回拨会把窗口永久关死。
       if (baseline > nextBaseline) baseline = nextBaseline;
 
-      final List<SyncDeletionTombstoneRow> rows =
-          await _db.getSyncDeletionTombstones();
+      final List<SyncDeletionTombstoneRow> rows = await _db
+          .getSyncDeletionTombstones();
       bool retryable = false;
       for (final SyncDeletionTombstoneRow row in rows) {
         // 窗口两端都要卡：晚于 nextBaseline 的（本地时钟超前写出的未来戳）留到下轮，
         // 否则推进基线会把它一并盖掉、这条删除就此蒸发。
         if (row.deletedAt <= baseline || row.deletedAt > nextBaseline) continue;
-        final SyncTombstoneKind? kind =
-            SyncTombstoneKind.tryParse(row.mediaType);
+        final SyncTombstoneKind? kind = SyncTombstoneKind.tryParse(
+          row.mediaType,
+        );
         // 未知 kind = 比本端新的版本写的墓碑，本端不认识就别猜着删（前向兼容）。
         if (kind == null) continue;
         if (!_hasInterconnectDeletionChannel(kind)) continue;
         try {
-          final bool supported =
-              await _pushOneDeletionLive(backend, kind, row.itemKey);
+          final bool supported = await _pushOneDeletionLive(
+            backend,
+            kind,
+            row.itemKey,
+          );
           if (!supported) {
             report.errors.add(
               'host does not support deleting ${row.mediaType} '
@@ -252,10 +271,7 @@ extension _SyncOrchestratorTombstones on SyncOrchestrator {
           }
         } catch (e) {
           retryable = true;
-          report.noteError(
-            'deletion push ${row.mediaType}/${row.itemKey}',
-            e,
-          );
+          report.noteError('deletion push ${row.mediaType}/${row.itemKey}', e);
         }
       }
       if (!retryable) {

@@ -54,7 +54,8 @@ Future<void> _seedAll(FushiDatabase db) async {
 }
 
 Future<({int bookmarks, int sentences, int mined, int words})> _counts(
-    FushiDatabase db) async {
+  FushiDatabase db,
+) async {
   return (
     bookmarks: (await BookmarkRepository(db).getAllBookmarks()).length,
     sentences: (await FavoriteSentenceRepository(db).getAll()).length,
@@ -93,13 +94,16 @@ void main() {
   });
 
   test('collections_page 清空按钮走可选范围面板（非制卡专用），覆盖三类型（书签功能 PR#188 已移除）', () {
-    final String src =
-        File('lib/src/pages/implementations/collections_page.dart')
-            .readAsStringSync();
+    final String src = File(
+      'lib/src/pages/implementations/collections_page.dart',
+    ).readAsStringSync();
     // 门控改为列表非空即显示，旧的「仅制卡才显示」getter 已移除。
     expect(src, contains('if (!_loading && _items.isNotEmpty)'));
-    expect(src.contains('_hasMinedItems'), isFalse,
-        reason: '旧的仅制卡门控 getter 应已被可选范围清空取代');
+    expect(
+      src.contains('_hasMinedItems'),
+      isFalse,
+      reason: '旧的仅制卡门控 getter 应已被可选范围清空取代',
+    );
     // 打开可选范围面板 + 面板 widget 存在。
     expect(src, contains('_openClearSheet'));
     expect(src, contains('class _ClearSheet'));

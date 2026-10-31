@@ -6,7 +6,6 @@
 /// 外部任务逐页完成时阅读器的热替换契约（`__mangaReplaceOcr` / `.ocr-box`）。
 library;
 
-
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi/src/media/manga/manga_overlay_html.dart';

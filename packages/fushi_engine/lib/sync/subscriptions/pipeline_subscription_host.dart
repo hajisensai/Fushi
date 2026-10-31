@@ -65,25 +65,26 @@ class PipelineSubscriptionHost implements HostSubscriptionHost {
   /// Torznab 一个对象带多个 indexer，按 `torznab:<indexerId>` 逐个报，客户端据此
   /// 判断能不能把自己那台机器上搜到的资源交给 host 订阅。
   List<String> get availableProviderIds => <String>{
-        for (final VideoResourceProvider p in registry.providers)
-          if (isBtSiteProviderId(p.id))
-            p.id.split(':').first
-          else if (p is TorznabClient)
-              // 停用的索引器不参与搜索，公布出去也订阅不到（BUG-2818）。过滤
-              // 写在迭代源上：这里再嵌一层 collection-if 会吃掉下面的 else。
-              for (final TorznabIndexerConfig cfg
-                  in p.indexers.where((TorznabIndexerConfig c) => c.enabled))
-                '${p.id}:${cfg.id}'
-          else
-            p.id,
-      }.toList();
+    for (final VideoResourceProvider p in registry.providers)
+      if (isBtSiteProviderId(p.id))
+        p.id.split(':').first
+      else if (p is TorznabClient)
+        // 停用的索引器不参与搜索，公布出去也订阅不到（BUG-2818）。过滤
+        // 写在迭代源上：这里再嵌一层 collection-if 会吃掉下面的 else。
+        for (final TorznabIndexerConfig cfg in p.indexers.where(
+          (TorznabIndexerConfig c) => c.enabled,
+        ))
+          '${p.id}:${cfg.id}'
+      else
+        p.id,
+  }.toList();
 
   @override
   Future<Map<String, Object?>> capability() async => <String, Object?>{
-        'supported': _supported,
-        'backend': _supported ? backendName : 'none',
-        'providers': availableProviderIds,
-      };
+    'supported': _supported,
+    'backend': _supported ? backendName : 'none',
+    'providers': availableProviderIds,
+  };
 
   @override
   Future<List<VideoDownloadSubscriptionRow>> list() =>
@@ -95,10 +96,14 @@ class PipelineSubscriptionHost implements HostSubscriptionHost {
 
   @override
   Future<VideoDownloadSubscriptionRow> create(
-      HostSubscriptionCreateRequest request) async {
+    HostSubscriptionCreateRequest request,
+  ) async {
     if (!_supported) {
       throw const HostSubscriptionRejected(
-          409, 'unsupported', 'no torrent backend on this host');
+        409,
+        'unsupported',
+        'no torrent backend on this host',
+      );
     }
     final bool providerPresent =
         registry.resolveProvider(request.resourceProvider) != null;
@@ -114,8 +119,8 @@ class PipelineSubscriptionHost implements HostSubscriptionHost {
     final int sourceId = await targetSourceId();
     final int now = DateTime.now().millisecondsSinceEpoch;
     final String id = request.subscriptionId ?? _deriveSubscriptionId(request);
-    final VideoDownloadSubscriptionRow? previous =
-        await db.getVideoDownloadSubscription(id);
+    final VideoDownloadSubscriptionRow? previous = await db
+        .getVideoDownloadSubscription(id);
     await db.upsertVideoDownloadSubscription(
       VideoDownloadSubscriptionsCompanion.insert(
         subscriptionId: id,
@@ -179,8 +184,9 @@ class PipelineSubscriptionHost implements HostSubscriptionHost {
         nextCheckAt: enabled ? Value<int?>(now) : const Value<int?>.absent(),
         // oneShot 完成位只在停用态合法（表级 CHECK）：重新启用必须同时清掉，
         // 否则写入直接被约束拒绝。
-        fulfilledAt:
-            enabled ? const Value<int?>(null) : const Value<int?>.absent(),
+        fulfilledAt: enabled
+            ? const Value<int?>(null)
+            : const Value<int?>.absent(),
         // 清掉租约，免得挂一条永远不会续的 claim。
         claimedBy: const Value<String?>(null),
         claimExpiresAt: const Value<int?>(null),
@@ -196,15 +202,22 @@ class PipelineSubscriptionHost implements HostSubscriptionHost {
     final VideoDownloadSubscriptionService? svc = service;
     if (svc == null) {
       throw const HostSubscriptionRejected(
-          409, 'unsupported', 'no torrent backend on this host');
+        409,
+        'unsupported',
+        'no torrent backend on this host',
+      );
     }
     final int now = DateTime.now().millisecondsSinceEpoch;
     if (subscriptionId != null) {
-      final VideoDownloadSubscriptionRow row =
-          await _requireRow(subscriptionId);
+      final VideoDownloadSubscriptionRow row = await _requireRow(
+        subscriptionId,
+      );
       if (!row.enabled) {
         throw const HostSubscriptionRejected(
-            409, 'disabled', 'subscription is disabled; enable it first');
+          409,
+          'disabled',
+          'subscription is disabled; enable it first',
+        );
       }
       await db.updateVideoDownloadSubscription(
         subscriptionId,
@@ -233,7 +246,8 @@ class PipelineSubscriptionHost implements HostSubscriptionHost {
 
   /// 一条订阅的逐集历史（季 / 集 / 发现时刻序）。本机管理面用，不在互联 wire 上。
   Future<List<VideoDownloadSubscriptionItemRow>> items(
-      String subscriptionId) async {
+    String subscriptionId,
+  ) async {
     await _requireRow(subscriptionId);
     return db.getVideoDownloadSubscriptionItems(subscriptionId);
   }
@@ -273,12 +287,16 @@ class PipelineSubscriptionHost implements HostSubscriptionHost {
   }
 
   Future<VideoDownloadSubscriptionRow> _requireRow(
-      String subscriptionId) async {
-    final VideoDownloadSubscriptionRow? row =
-        await db.getVideoDownloadSubscription(subscriptionId);
+    String subscriptionId,
+  ) async {
+    final VideoDownloadSubscriptionRow? row = await db
+        .getVideoDownloadSubscription(subscriptionId);
     if (row == null) {
       throw const HostSubscriptionRejected(
-          404, 'not_found', 'unknown subscription');
+        404,
+        'not_found',
+        'unknown subscription',
+      );
     }
     return row;
   }
@@ -288,7 +306,10 @@ class PipelineSubscriptionHost implements HostSubscriptionHost {
     final int n = await db.deleteVideoDownloadSubscription(subscriptionId);
     if (n == 0) {
       throw const HostSubscriptionRejected(
-          404, 'not_found', 'unknown subscription');
+        404,
+        'not_found',
+        'unknown subscription',
+      );
     }
   }
 }
@@ -306,16 +327,19 @@ class VideoDownloadSubscriptionRuleEdit {
     if (searchQuery.present && searchQuery.value.trim().isEmpty) {
       throw const FormatException('searchQuery must not be empty');
     }
-    final int? start =
-        startAfterEpisode.present ? startAfterEpisode.value : null;
+    final int? start = startAfterEpisode.present
+        ? startAfterEpisode.value
+        : null;
     if (start != null && start < 0) {
       throw const FormatException('startAfterEpisode must be >= 0');
     }
     if (subtitlePolicy.present &&
-        !kVideoDownloadSubscriptionSubtitlePolicies
-            .contains(subtitlePolicy.value)) {
+        !kVideoDownloadSubscriptionSubtitlePolicies.contains(
+          subtitlePolicy.value,
+        )) {
       throw const FormatException(
-          'subtitlePolicy must be none / bestEffort / required');
+        'subtitlePolicy must be none / bestEffort / required',
+      );
     }
     if (filterJson.present && jsonDecode(filterJson.value) is! Map) {
       throw const FormatException('filterJson must be a JSON object');

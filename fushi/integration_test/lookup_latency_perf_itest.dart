@@ -62,14 +62,20 @@ void main() {
         final bool dictOk = await seedDictionary(tester);
         expect(dictOk, isTrue, reason: 'fallback tiny dictionary must seed');
       }
-      debugPrint('[perf-e2e] dictionaries: '
-          '${appModel.dictionaries.map((d) => d.name).join(" | ")} '
-          '(real=$realDicts)');
+      debugPrint(
+        '[perf-e2e] dictionaries: '
+        '${appModel.dictionaries.map((d) => d.name).join(" | ")} '
+        '(real=$realDicts)',
+      );
 
-      await appModel.database
-          .setPref('src:reader_fushi:view_mode', 'pagination');
-      await appModel.database
-          .setPref('src:reader_fushi:writing_mode', 'horizontal-tb');
+      await appModel.database.setPref(
+        'src:reader_fushi:view_mode',
+        'pagination',
+      );
+      await appModel.database.setPref(
+        'src:reader_fushi:writing_mode',
+        'horizontal-tb',
+      );
       await ReaderFushiSource.readerSettings?.refreshFromDb();
 
       final String bookKey = await EpubImporter.import(
@@ -90,17 +96,24 @@ void main() {
         canEdit: true,
       );
 
-      final NavigatorState navigator =
-          tester.state<NavigatorState>(find.byType(Navigator).first);
-      unawaited(navigator.push<void>(MaterialPageRoute<void>(
-        builder: (_) => source.buildLaunchPage(item: item),
-      )));
+      final NavigatorState navigator = tester.state<NavigatorState>(
+        find.byType(Navigator).first,
+      );
+      unawaited(
+        navigator.push<void>(
+          MaterialPageRoute<void>(
+            builder: (_) => source.buildLaunchPage(item: item),
+          ),
+        ),
+      );
       await tester.pump(const Duration(seconds: 3));
 
       const Key webViewKey = ValueKey<String>('fushi_webview');
-      for (int i = 0;
-          i < 80 && find.byKey(webViewKey).evaluate().isEmpty;
-          i++) {
+      for (
+        int i = 0;
+        i < 80 && find.byKey(webViewKey).evaluate().isEmpty;
+        i++
+      ) {
         await tester.pump(const Duration(milliseconds: 500));
       }
       expect(find.byKey(webViewKey), findsOneWidget);
@@ -143,8 +156,11 @@ void main() {
       // ── e2e：冷查词 1 次 + 复查 4 次 ──
       // 计时=派发点击瞬间到 isDictionaryShown 翻真；pump(8ms) 轮询，分辨率 ~10ms。
       for (int round = 0; round < 5; round++) {
-        expect(dictShown(), isFalse,
-            reason: 'popup must be closed before round $round');
+        expect(
+          dictShown(),
+          isFalse,
+          reason: 'popup must be closed before round $round',
+        );
         final Stopwatch sw = Stopwatch()..start();
         await runInWebView(_dispatchClickJs(x, y));
         while (sw.elapsedMilliseconds < 15000 && !dictShown()) {
@@ -152,8 +168,10 @@ void main() {
         }
         sw.stop();
         final String kind = round == 0 ? 'cold' : 'repeat#$round';
-        debugPrint('[perf-e2e] lookup $kind: shown=${dictShown()} '
-            'e2e=${sw.elapsedMilliseconds}ms');
+        debugPrint(
+          '[perf-e2e] lookup $kind: shown=${dictShown()} '
+          'e2e=${sw.elapsedMilliseconds}ms',
+        );
         expect(dictShown(), isTrue, reason: 'lookup $kind must show a popup');
         // 让尾批渲染/高亮等异步收尾跑完再关，避免下一轮串扰。
         await tester.pump(const Duration(milliseconds: 800));
@@ -189,8 +207,9 @@ void main() {
           sw.stop();
           final String head = probe.length > 8 ? probe.substring(0, 8) : probe;
           debugPrint(
-              '[perf-engine] pass=$pass total=${sw.elapsedMilliseconds}ms '
-              'entries=${result.entries.length} "$head"');
+            '[perf-engine] pass=$pass total=${sw.elapsedMilliseconds}ms '
+            'entries=${result.entries.length} "$head"',
+          );
         }
       }
 
@@ -198,9 +217,11 @@ void main() {
 
       navigator.pop();
       await tester.pump(const Duration(seconds: 2));
-      for (int i = 0;
-          i < 40 && ReaderFushiPage.debugEvaluateJavascript != null;
-          i++) {
+      for (
+        int i = 0;
+        i < 40 && ReaderFushiPage.debugEvaluateJavascript != null;
+        i++
+      ) {
         await tester.pump(const Duration(milliseconds: 250));
       }
     },
@@ -218,12 +239,13 @@ Future<bool> _importPerfDictionaries(
   final Directory dir = Directory('$testRoot/fixtures/perf-dicts');
   if (!dir.existsSync()) return appModel.dictionaries.length > 1;
 
-  final List<File> zips = dir
-      .listSync()
-      .whereType<File>()
-      .where((f) => f.path.toLowerCase().endsWith('.zip'))
-      .toList()
-    ..sort((a, b) => a.path.compareTo(b.path));
+  final List<File> zips =
+      dir
+          .listSync()
+          .whereType<File>()
+          .where((f) => f.path.toLowerCase().endsWith('.zip'))
+          .toList()
+        ..sort((a, b) => a.path.compareTo(b.path));
   if (zips.isEmpty) return appModel.dictionaries.length > 1;
 
   // 复跑复用：任何一部真实词典已在库即认为整组装过（导入是本测试最贵的一步）。
@@ -248,8 +270,10 @@ Future<bool> _importPerfDictionaries(
       progress.dispose();
     }
     sw.stop();
-    debugPrint('[perf-e2e] import ${zip.uri.pathSegments.last}: '
-        'ok=$ok ${sw.elapsedMilliseconds}ms');
+    debugPrint(
+      '[perf-e2e] import ${zip.uri.pathSegments.last}: '
+      'ok=$ok ${sw.elapsedMilliseconds}ms',
+    );
     await tester.pump(const Duration(milliseconds: 300));
   }
   return appModel.dictionaries.isNotEmpty;
@@ -286,7 +310,8 @@ String _wordPointJs() => r'''
 ''';
 
 /// 派发一次真实单击（pointerdown/up + click），走生产 onTap 全链。
-String _dispatchClickJs(double x, double y) => '''
+String _dispatchClickJs(double x, double y) =>
+    '''
 (function() {
   var px = $x, py = $y;
   var target = document.elementFromPoint(px, py) || document.body;

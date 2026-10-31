@@ -40,25 +40,33 @@ void main() {
     }
 
     test('渲染完成接替占位卡翻可见 → 记下占位卡已显示的时长', () {
-      final DictionaryPopupController popup =
-          DictionaryPopupController(lowMemory: false);
+      final DictionaryPopupController popup = DictionaryPopupController(
+        lowMemory: false,
+      );
       addTearDown(popup.dispose);
-      final DictionaryPopupEntry target =
-          beginWithPlaceholder(popup, placeholder: true);
+      final DictionaryPopupEntry target = beginWithPlaceholder(
+        popup,
+        placeholder: true,
+      );
       popup.markPendingReveal(target, onForcedReveal: () {});
 
       expect(popup.revealRendered(target), isTrue);
       expect(target.searchPlaceholderShownFor, isNotNull);
-      expect(target.searchPlaceholderShownFor,
-          lessThan(const Duration(seconds: 5)));
+      expect(
+        target.searchPlaceholderShownFor,
+        lessThan(const Duration(seconds: 5)),
+      );
     });
 
     test('没有占位卡（嵌套查词）翻可见 → null，照常从 0 淡入', () {
-      final DictionaryPopupController popup =
-          DictionaryPopupController(lowMemory: false);
+      final DictionaryPopupController popup = DictionaryPopupController(
+        lowMemory: false,
+      );
       addTearDown(popup.dispose);
-      final DictionaryPopupEntry target =
-          beginWithPlaceholder(popup, placeholder: false);
+      final DictionaryPopupEntry target = beginWithPlaceholder(
+        popup,
+        placeholder: false,
+      );
       popup.markPendingReveal(target, onForcedReveal: () {});
 
       expect(popup.revealRendered(target), isTrue);
@@ -66,11 +74,14 @@ void main() {
     });
 
     test('空结果路径 fillResult 先清 isSearching 再 show，仍认得占位卡', () {
-      final DictionaryPopupController popup =
-          DictionaryPopupController(lowMemory: false);
+      final DictionaryPopupController popup = DictionaryPopupController(
+        lowMemory: false,
+      );
       addTearDown(popup.dispose);
-      final DictionaryPopupEntry target =
-          beginWithPlaceholder(popup, placeholder: true);
+      final DictionaryPopupEntry target = beginWithPlaceholder(
+        popup,
+        placeholder: true,
+      );
       popup.fillResult(
         target,
         result: kPopupSearchingPlaceholderResult,
@@ -82,11 +93,14 @@ void main() {
     });
 
     test('上一次接替过占位卡，下一次无占位卡的翻可见会重新判定为 null', () {
-      final DictionaryPopupController popup =
-          DictionaryPopupController(lowMemory: false);
+      final DictionaryPopupController popup = DictionaryPopupController(
+        lowMemory: false,
+      );
       addTearDown(popup.dispose);
-      final DictionaryPopupEntry target =
-          beginWithPlaceholder(popup, placeholder: true);
+      final DictionaryPopupEntry target = beginWithPlaceholder(
+        popup,
+        placeholder: true,
+      );
       popup.markPendingReveal(target, onForcedReveal: () {});
       popup.revealRendered(target);
       popup.endSearchUi();
@@ -103,7 +117,9 @@ void main() {
       expect(popupEntranceProgressAfter(null), 0.0);
       expect(popupEntranceProgressAfter(Duration.zero), 0.0);
       expect(
-          popupEntranceProgressAfter(const Duration(milliseconds: 100)), 0.5);
+        popupEntranceProgressAfter(const Duration(milliseconds: 100)),
+        0.5,
+      );
       expect(popupEntranceProgressAfter(const Duration(seconds: 3)), 1.0);
     });
   });
@@ -132,10 +148,14 @@ void main() {
 
     // MaterialApp 的路由过渡里也有 FadeTransition：从被测子节点往上找最近的那个。
     double opacityOf(WidgetTester tester) => tester
-        .renderObject<RenderAnimatedOpacity>(find
-            .ancestor(
-                of: find.byKey(kChild), matching: find.byType(FadeTransition))
-            .first)
+        .renderObject<RenderAnimatedOpacity>(
+          find
+              .ancestor(
+                of: find.byKey(kChild),
+                matching: find.byType(FadeTransition),
+              )
+              .first,
+        )
         .opacity
         .value;
 
@@ -149,24 +169,23 @@ void main() {
       expect(opacityOf(tester), 1.0);
     });
 
-    testWidgets('接替占位卡：首个可见帧就是占位卡当前的透明度，再接着淡完', (
-      WidgetTester tester,
-    ) async {
+    testWidgets('接替占位卡：首个可见帧就是占位卡当前的透明度，再接着淡完', (WidgetTester tester) async {
       await tester.pumpWidget(host(visible: false));
       await tester.pumpWidget(host(visible: true, start: 0.5));
       final double first = opacityOf(tester);
       // M3E 动效统一：入场淡入曲线是 FushiSpringCurve.effects（与生产同一条）。
-      expect(first, closeTo(FushiSpringCurve.effects.transform(0.5), 1e-9),
-          reason: '不从 0 重来（露底），也不直接跳满');
+      expect(
+        first,
+        closeTo(FushiSpringCurve.effects.transform(0.5), 1e-9),
+        reason: '不从 0 重来（露底），也不直接跳满',
+      );
       await tester.pump(const Duration(milliseconds: 50));
       expect(opacityOf(tester), greaterThan(first));
       await tester.pump(const Duration(milliseconds: 60));
       expect(opacityOf(tester), 1.0, reason: '剩余时长按比例缩短（100ms 走完）');
     });
 
-    testWidgets('从没可见过的层（热槽 / 停驻 realm）卸载不抛', (
-      WidgetTester tester,
-    ) async {
+    testWidgets('从没可见过的层（热槽 / 停驻 realm）卸载不抛', (WidgetTester tester) async {
       await tester.pumpWidget(host(visible: false));
       await tester.pumpWidget(buildTestApp(const SizedBox()));
       expect(tester.takeException(), isNull);
@@ -230,8 +249,11 @@ void main() {
       final Size grown = tester.getSize(find.byKey(probe));
       expect(grown.width, base.width);
       expect(grown.height, base.height + 120);
-      expect(tester.getTopLeft(find.byKey(probe)), baseTop,
-          reason: '顶端对齐：内容起点不随外壳高度变化');
+      expect(
+        tester.getTopLeft(find.byKey(probe)),
+        baseTop,
+        reason: '顶端对齐：内容起点不随外壳高度变化',
+      );
       final Finder clip = find.ancestor(
         of: find.byKey(probe),
         matching: find.byType(ClipRect),
@@ -248,7 +270,9 @@ void main() {
       final List<double?> visible = await pumpBody(tester, 0);
       expect(
         find.ancestor(
-            of: find.byKey(probe), matching: find.byType(OverflowBox)),
+          of: find.byKey(probe),
+          matching: find.byType(OverflowBox),
+        ),
         findsOneWidget,
         reason: '溢出归零时 WebView 不能换树深度（平台视图重建闪烁）',
       );
@@ -270,20 +294,24 @@ void main() {
 
   group('mixin 接线（源码守卫）', () {
     final String src = maskComments(
-      File('lib/src/pages/implementations/dictionary_page_mixin.dart')
-          .readAsStringSync(),
+      File(
+        'lib/src/pages/implementations/dictionary_page_mixin.dart',
+      ).readAsStringSync(),
     );
 
     test('buildNestedPopupLayer 把溢出高度交给 DictionaryPopupLayer', () {
       expect(
-          src.contains('webViewOverflowHeight: webViewOverflowHeight'), isTrue);
+        src.contains('webViewOverflowHeight: webViewOverflowHeight'),
+        isTrue,
+      );
     });
 
     test('接替占位卡的淡入进度来自 entry.searchPlaceholderShownFor', () {
       expect(
-        RegExp(r'entranceStartProgress:\s*popupEntranceProgressAfter\(\s*'
-                r'entry\.searchPlaceholderShownFor\s*\)')
-            .hasMatch(src),
+        RegExp(
+          r'entranceStartProgress:\s*popupEntranceProgressAfter\(\s*'
+          r'entry\.searchPlaceholderShownFor\s*\)',
+        ).hasMatch(src),
         isTrue,
       );
     });
@@ -295,13 +323,16 @@ void main() {
         reason: 'JS 上报的视口是 WebView 布局高度，拿裁剪后的 pos.height 作差会收错',
       );
       expect(
-          RegExp(r'currentPopupHeight:\s*pos\.height').hasMatch(src), isFalse);
+        RegExp(r'currentPopupHeight:\s*pos\.height').hasMatch(src),
+        isFalse,
+      );
     });
 
     test('搜索占位卡走入场淡入', () {
       expect(
-        RegExp(r'popupEntranceFade\(\s*child:\s*FushiPopupSurface\(')
-            .hasMatch(src),
+        RegExp(
+          r'popupEntranceFade\(\s*child:\s*FushiPopupSurface\(',
+        ).hasMatch(src),
         isTrue,
       );
     });

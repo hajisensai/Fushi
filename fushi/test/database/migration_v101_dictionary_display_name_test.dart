@@ -30,8 +30,10 @@ void main() {
 
   /// 建一个真实的 v100 形状库：当前 schema 建满，摘掉 display_name，版本写回 100。
   Future<void> seedV100() async {
-    final FushiDatabase fresh =
-        FushiDatabase.atFile(dbPath, isMainProcess: false);
+    final FushiDatabase fresh = FushiDatabase.atFile(
+      dbPath,
+      isMainProcess: false,
+    );
     await fresh.customStatement(
       'INSERT INTO dictionary_metadata (name, format_key, "order", type, '
       'metadata_json, hidden_languages_json, collapsed_languages_json, '
@@ -58,8 +60,10 @@ void main() {
   test('v100 库确实缺 display_name（前提自检）', () async {
     await seedV100();
 
-    final sqlite3.Database probe =
-        sqlite3.sqlite3.open(dbPath, mode: sqlite3.OpenMode.readOnly);
+    final sqlite3.Database probe = sqlite3.sqlite3.open(
+      dbPath,
+      mode: sqlite3.OpenMode.readOnly,
+    );
     try {
       expect(probe.select('PRAGMA user_version').first.values.first, 100);
       expect(
@@ -75,10 +79,12 @@ void main() {
   test('v100 -> v101：补列、默认 NULL、存量词典行无损', () async {
     await seedV100();
 
-    final FushiDatabase migrated =
-        FushiDatabase.atFile(dbPath, isMainProcess: false);
-    final List<DictionaryMetaRow> rows =
-        await migrated.getAllDictionaryMetadata();
+    final FushiDatabase migrated = FushiDatabase.atFile(
+      dbPath,
+      isMainProcess: false,
+    );
+    final List<DictionaryMetaRow> rows = await migrated
+        .getAllDictionaryMetadata();
     expect(rows, hasLength(1), reason: '迁移丢一行就是丢一本词典');
 
     final DictionaryMetaRow row = rows.single;
@@ -99,8 +105,10 @@ void main() {
     expect(row.metadataJson, '{"revision":"2026-05-17"}');
     await migrated.close();
 
-    final sqlite3.Database probe =
-        sqlite3.sqlite3.open(dbPath, mode: sqlite3.OpenMode.readOnly);
+    final sqlite3.Database probe = sqlite3.sqlite3.open(
+      dbPath,
+      mode: sqlite3.OpenMode.readOnly,
+    );
     try {
       expect(probe.select('PRAGMA user_version').first.values.first, 142);
       expect(hasColumn(probe, 'dictionary_metadata', 'display_name'), isTrue);
@@ -112,8 +120,10 @@ void main() {
   test('迁移后能真的写进改名，且真名仍是那把键', () async {
     await seedV100();
 
-    final FushiDatabase migrated =
-        FushiDatabase.atFile(dbPath, isMainProcess: false);
+    final FushiDatabase migrated = FushiDatabase.atFile(
+      dbPath,
+      isMainProcess: false,
+    );
     await migrated.upsertDictionaryMeta(
       DictionaryMetadataCompanion.insert(
         name: 'JMdict [2026-05-17]',
@@ -122,13 +132,9 @@ void main() {
         displayName: const Value<String?>('日汉大辞典'),
       ),
     );
-    final List<DictionaryMetaRow> rows =
-        await migrated.getAllDictionaryMetadata();
-    expect(
-      rows,
-      hasLength(1),
-      reason: '按主键 upsert：改名走同一行，不留孤儿',
-    );
+    final List<DictionaryMetaRow> rows = await migrated
+        .getAllDictionaryMetadata();
+    expect(rows, hasLength(1), reason: '按主键 upsert：改名走同一行，不留孤儿');
     expect(rows.single.displayName, '日汉大辞典');
     expect(rows.single.name, 'JMdict [2026-05-17]');
     await migrated.close();
@@ -137,11 +143,15 @@ void main() {
   test('重复打开幂等：第二次开库不因列已存在而报错', () async {
     await seedV100();
 
-    final FushiDatabase first =
-        FushiDatabase.atFile(dbPath, isMainProcess: false);
+    final FushiDatabase first = FushiDatabase.atFile(
+      dbPath,
+      isMainProcess: false,
+    );
     await first.close();
-    final FushiDatabase second =
-        FushiDatabase.atFile(dbPath, isMainProcess: false);
+    final FushiDatabase second = FushiDatabase.atFile(
+      dbPath,
+      isMainProcess: false,
+    );
     expect(await second.getAllDictionaryMetadata(), hasLength(1));
     await second.close();
   });

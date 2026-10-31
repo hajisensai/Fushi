@@ -67,32 +67,34 @@ void main() {
       expect(clip.endMs, 4300);
     });
 
-    test('expands around the current cue when repeated text lacks positions',
-        () {
-      final List<AudioCue> cues = <AudioCue>[
-        _cue(startMs: 1000, endMs: 1600, text: '僕'),
-        _cue(startMs: 1600, endMs: 2300, text: 'は'),
-        _cue(startMs: 2300, endMs: 4300, text: '学校へ行った'),
-        _cue(startMs: 9000, endMs: 9600, text: '僕'),
-        _cue(startMs: 9600, endMs: 10300, text: 'は'),
-        _cue(startMs: 10300, endMs: 12300, text: '学校へ行った'),
-      ];
+    test(
+      'expands around the current cue when repeated text lacks positions',
+      () {
+        final List<AudioCue> cues = <AudioCue>[
+          _cue(startMs: 1000, endMs: 1600, text: '僕'),
+          _cue(startMs: 1600, endMs: 2300, text: 'は'),
+          _cue(startMs: 2300, endMs: 4300, text: '学校へ行った'),
+          _cue(startMs: 9000, endMs: 9600, text: '僕'),
+          _cue(startMs: 9600, endMs: 10300, text: 'は'),
+          _cue(startMs: 10300, endMs: 12300, text: '学校へ行った'),
+        ];
 
-      final AudioPlaybackRange? clip = miningSentenceAudioRange(
-        cues: cues,
-        cue: cues[4],
-        sentence: '僕は学校へ行った。',
-        sectionIndex: 0,
-        sentenceNormCharOffset: 0,
-        sentenceNormCharLength: 60,
-      );
+        final AudioPlaybackRange? clip = miningSentenceAudioRange(
+          cues: cues,
+          cue: cues[4],
+          sentence: '僕は学校へ行った。',
+          sectionIndex: 0,
+          sentenceNormCharOffset: 0,
+          sentenceNormCharLength: 60,
+        );
 
-      expect(clip, isNotNull);
-      // 8880 = 9000 - 120, floored at 4300 (prev same-file cue end).
-      // 12500 = 12300 + kMiningTailPadMs(200), uncapped (no following cue).
-      expect(clip!.startMs, 8880);
-      expect(clip.endMs, 12500);
-    });
+        expect(clip, isNotNull);
+        // 8880 = 9000 - 120, floored at 4300 (prev same-file cue end).
+        // 12500 = 12300 + kMiningTailPadMs(200), uncapped (no following cue).
+        expect(clip!.startMs, 8880);
+        expect(clip.endMs, 12500);
+      },
+    );
 
     test('falls back to the exact cue range without tail padding', () {
       final AudioCue cue = _cue(startMs: 5000, endMs: 6200, text: 'は');
@@ -191,48 +193,49 @@ void main() {
     // texts via text matching - this is the exact case where local-audiobook
     // mining produced no sentence audio. Reverting the text-fallback turns it red.
     test(
-        'recovers gap-word sentence audio for non-rematch-encoded cues via text',
-        () {
-      final List<AudioCue> cues = <AudioCue>[
-        _cue(
-          startMs: 1000,
-          endMs: 1600,
-          text: '僕',
-          textFragmentId: '[data-cue-id="0"]',
-        ),
-        _cue(
-          startMs: 1600,
-          endMs: 2300,
-          text: 'は',
-          textFragmentId: '[data-cue-id="1"]',
-        ),
-        _cue(
-          startMs: 2300,
-          endMs: 4300,
-          text: '学校へ行った',
-          textFragmentId: '[data-cue-id="2"]',
-        ),
-        _cue(
-          startMs: 4300,
-          endMs: 5200,
-          text: '次の文',
-          textFragmentId: '[data-cue-id="3"]',
-        ),
-      ];
+      'recovers gap-word sentence audio for non-rematch-encoded cues via text',
+      () {
+        final List<AudioCue> cues = <AudioCue>[
+          _cue(
+            startMs: 1000,
+            endMs: 1600,
+            text: '僕',
+            textFragmentId: '[data-cue-id="0"]',
+          ),
+          _cue(
+            startMs: 1600,
+            endMs: 2300,
+            text: 'は',
+            textFragmentId: '[data-cue-id="1"]',
+          ),
+          _cue(
+            startMs: 2300,
+            endMs: 4300,
+            text: '学校へ行った',
+            textFragmentId: '[data-cue-id="2"]',
+          ),
+          _cue(
+            startMs: 4300,
+            endMs: 5200,
+            text: '次の文',
+            textFragmentId: '[data-cue-id="3"]',
+          ),
+        ];
 
-      final AudioPlaybackRange? clip = miningSentenceAudioRange(
-        cues: cues,
-        cue: null,
-        sentence: '「僕は学校へ行った。」',
-        sectionIndex: 0,
-        sentenceNormCharOffset: 0,
-        sentenceNormCharLength: 60,
-      );
+        final AudioPlaybackRange? clip = miningSentenceAudioRange(
+          cues: cues,
+          cue: null,
+          sentence: '「僕は学校へ行った。」',
+          sectionIndex: 0,
+          sentenceNormCharOffset: 0,
+          sentenceNormCharLength: 60,
+        );
 
-      expect(clip, isNotNull);
-      expect(clip!.startMs, 880);
-      expect(clip.endMs, 4300);
-    });
+        expect(clip, isNotNull);
+        expect(clip!.startMs, 880);
+        expect(clip.endMs, 4300);
+      },
+    );
 
     // TODO-956 (C-audio): cue/reader divergence. The looked-up word's cue decoded
     // to section 1 (a neighbouring fragment the matcher mis-assigned), but the
@@ -242,8 +245,7 @@ void main() {
     // contiguous-substring match around the section-1 cue; with divergent text it
     // recovered no range -> the card lost its sentence audio. AFTER, the span is
     // anchored by position in section 0 and the full range is recovered.
-    test(
-        'prefers the sentence span when the lookup cue decodes to another '
+    test('prefers the sentence span when the lookup cue decodes to another '
         'section', () {
       final List<AudioCue> cues = <AudioCue>[
         // Section 0 cues — the reader's actual sentence lives here.
@@ -303,8 +305,7 @@ void main() {
     // to the single boundary cue — the wrong (or missing) audio. The plain
     // sentence-text search recovers the full range instead, so when there is
     // sentence text it must be tried even though cue != null.
-    test(
-        'recovers the full sentence via text when span is empty and the cue is '
+    test('recovers the full sentence via text when span is empty and the cue is '
         'outside the sentence', () {
       final List<AudioCue> cues = <AudioCue>[
         // Boundary cue the looked-up token landed on (plain selector, outside the
@@ -373,29 +374,31 @@ void main() {
       expect(clip, isNull);
     });
 
-    test('returns null for a gap word when the section has no matching cues',
-        () {
-      // Sentence span points at section 1, but every cue belongs to section 0.
-      final List<AudioCue> cues = <AudioCue>[
-        _cue(
-          startMs: 1000,
-          endMs: 1600,
-          text: '僕',
-          textFragmentId: _frag(0, 0, 10),
-        ),
-      ];
+    test(
+      'returns null for a gap word when the section has no matching cues',
+      () {
+        // Sentence span points at section 1, but every cue belongs to section 0.
+        final List<AudioCue> cues = <AudioCue>[
+          _cue(
+            startMs: 1000,
+            endMs: 1600,
+            text: '僕',
+            textFragmentId: _frag(0, 0, 10),
+          ),
+        ];
 
-      final AudioPlaybackRange? clip = miningSentenceAudioRange(
-        cues: cues,
-        cue: null,
-        sentence: '僕は',
-        sectionIndex: 1,
-        sentenceNormCharOffset: 0,
-        sentenceNormCharLength: 20,
-      );
+        final AudioPlaybackRange? clip = miningSentenceAudioRange(
+          cues: cues,
+          cue: null,
+          sentence: '僕は',
+          sectionIndex: 1,
+          sentenceNormCharOffset: 0,
+          sentenceNormCharLength: 20,
+        );
 
-      expect(clip, isNull);
-    });
+        expect(clip, isNull);
+      },
+    );
 
     // TODO-1009 / BUG-475: same-chapter selection on coarse-aligned audio
     // (TextToEpub + post-attached audio, alignment miss) where the matched
@@ -406,8 +409,7 @@ void main() {
     // toast for a perfectly in-chapter selection. The range must be repaired to
     // a positive duration, never returned degenerate. Reverting
     // _ensurePositiveDuration turns this red.
-    test('repairs a zero-duration single cue to a positive same-file range',
-        () {
+    test('repairs a zero-duration single cue to a positive same-file range', () {
       final AudioCue cue = _cue(
         startMs: 5000,
         endMs: 5000,
@@ -430,40 +432,42 @@ void main() {
     // TODO-1009: when the degenerate range has a following same-file cue, the
     // repair extends the end to that next cue's start (the implied playback
     // length), not just a hard +1ms floor.
-    test('repaired degenerate range extends to the next same-file cue start',
-        () {
-      final List<AudioCue> cues = <AudioCue>[
-        _cue(
-          startMs: 5000,
-          endMs: 5000,
-          text: '僕は',
-          textFragmentId: '[data-cue-id="0"]',
-        ),
-        _cue(
-          startMs: 5000,
-          endMs: 5000,
-          text: '学校へ行った',
-          textFragmentId: '[data-cue-id="1"]',
-        ),
-        // Next cue boundary on the same file at 7000ms bounds the clip length.
-        _cue(
-          startMs: 7000,
-          endMs: 8000,
-          text: '次の文',
-          textFragmentId: '[data-cue-id="2"]',
-        ),
-      ];
+    test(
+      'repaired degenerate range extends to the next same-file cue start',
+      () {
+        final List<AudioCue> cues = <AudioCue>[
+          _cue(
+            startMs: 5000,
+            endMs: 5000,
+            text: '僕は',
+            textFragmentId: '[data-cue-id="0"]',
+          ),
+          _cue(
+            startMs: 5000,
+            endMs: 5000,
+            text: '学校へ行った',
+            textFragmentId: '[data-cue-id="1"]',
+          ),
+          // Next cue boundary on the same file at 7000ms bounds the clip length.
+          _cue(
+            startMs: 7000,
+            endMs: 8000,
+            text: '次の文',
+            textFragmentId: '[data-cue-id="2"]',
+          ),
+        ];
 
-      final AudioPlaybackRange? clip = miningSentenceAudioRange(
-        cues: cues,
-        cue: cues[0],
-        sentence: '僕は学校へ行った',
-      );
+        final AudioPlaybackRange? clip = miningSentenceAudioRange(
+          cues: cues,
+          cue: cues[0],
+          sentence: '僕は学校へ行った',
+        );
 
-      expect(clip, isNotNull);
-      expect(clip!.startMs, 5000);
-      expect(clip.endMs, 7000);
-    });
+        expect(clip, isNotNull);
+        expect(clip!.startMs, 5000);
+        expect(clip.endMs, 7000);
+      },
+    );
   });
 
   group('padSentenceRange', () {
@@ -624,25 +628,29 @@ void main() {
     test('maps a 3-sentence position span to ordered same-file cues', () {
       final List<AudioCue> cues = <AudioCue>[
         _cue(
-            startMs: 1000,
-            endMs: 1600,
-            text: '第一句',
-            textFragmentId: _frag(0, 0, 10)),
+          startMs: 1000,
+          endMs: 1600,
+          text: '第一句',
+          textFragmentId: _frag(0, 0, 10),
+        ),
         _cue(
-            startMs: 1600,
-            endMs: 2300,
-            text: '第二句',
-            textFragmentId: _frag(0, 10, 20)),
+          startMs: 1600,
+          endMs: 2300,
+          text: '第二句',
+          textFragmentId: _frag(0, 10, 20),
+        ),
         _cue(
-            startMs: 2300,
-            endMs: 4300,
-            text: '第三句',
-            textFragmentId: _frag(0, 20, 30)),
+          startMs: 2300,
+          endMs: 4300,
+          text: '第三句',
+          textFragmentId: _frag(0, 20, 30),
+        ),
         _cue(
-            startMs: 4300,
-            endMs: 5200,
-            text: '句外',
-            textFragmentId: _frag(0, 30, 40)),
+          startMs: 4300,
+          endMs: 5200,
+          text: '句外',
+          textFragmentId: _frag(0, 30, 40),
+        ),
       ];
       // 选区覆盖 [0, 30) → 前三句命中，第四句（30..40）在选区之外。
       final List<AudioCue> span = miningSentenceCueSpan(
@@ -654,8 +662,11 @@ void main() {
         sentenceNormCharLength: 30,
       );
       expect(span.length, 3);
-      expect(span.map((AudioCue c) => c.text).toList(),
-          <String>['第一句', '第二句', '第三句']);
+      expect(span.map((AudioCue c) => c.text).toList(), <String>[
+        '第一句',
+        '第二句',
+        '第三句',
+      ]);
       // 升序（startMs 递增）。
       for (int i = 1; i < span.length; i++) {
         expect(span[i].startMs, greaterThanOrEqualTo(span[i - 1].startMs));
@@ -665,15 +676,17 @@ void main() {
     test('single-sentence selection degenerates to a one-element span', () {
       final List<AudioCue> cues = <AudioCue>[
         _cue(
-            startMs: 1000,
-            endMs: 1600,
-            text: '一句',
-            textFragmentId: _frag(0, 0, 10)),
+          startMs: 1000,
+          endMs: 1600,
+          text: '一句',
+          textFragmentId: _frag(0, 0, 10),
+        ),
         _cue(
-            startMs: 1600,
-            endMs: 2300,
-            text: '二句',
-            textFragmentId: _frag(0, 10, 20)),
+          startMs: 1600,
+          endMs: 2300,
+          text: '二句',
+          textFragmentId: _frag(0, 10, 20),
+        ),
       ];
       final List<AudioCue> span = miningSentenceCueSpan(
         cues: cues,
@@ -690,13 +703,17 @@ void main() {
     test('drops cross-file cues, keeps only first hit file', () {
       final List<AudioCue> cues = <AudioCue>[
         _cue(
-            startMs: 1000,
-            endMs: 2000,
-            text: 'A',
-            textFragmentId: _frag(0, 0, 10)),
+          startMs: 1000,
+          endMs: 2000,
+          text: 'A',
+          textFragmentId: _frag(0, 0, 10),
+        ),
         _cue(
-            startMs: 0, endMs: 900, text: 'B', textFragmentId: _frag(0, 10, 20))
-          ..audioFileIndex = 1,
+          startMs: 0,
+          endMs: 900,
+          text: 'B',
+          textFragmentId: _frag(0, 10, 20),
+        )..audioFileIndex = 1,
       ];
       // 两句都在 section 0 的选区 [0,20)，但属不同文件 → 只保留第一命中文件（file 0）。
       final List<AudioCue> span = miningSentenceCueSpan(
@@ -741,58 +758,66 @@ void main() {
   });
 
   group('clipExportGlobalRange (TODO-1115 整段完整音频窗口)', () {
-    test('start = first head-padded, end = last tail-padded (widened tail)',
-        () {
-      // 首句 [1000,1600)、中间句 [1600,2300)、末句 [2300,4300)，末句后无 cue → 尾无 cap。
-      final List<AudioCue> cues = <AudioCue>[
-        _cue(
+    test(
+      'start = first head-padded, end = last tail-padded (widened tail)',
+      () {
+        // 首句 [1000,1600)、中间句 [1600,2300)、末句 [2300,4300)，末句后无 cue → 尾无 cap。
+        final List<AudioCue> cues = <AudioCue>[
+          _cue(
             startMs: 1000,
             endMs: 1600,
             text: '一',
-            textFragmentId: _frag(0, 0, 10)),
-        _cue(
+            textFragmentId: _frag(0, 0, 10),
+          ),
+          _cue(
             startMs: 1600,
             endMs: 2300,
             text: '二',
-            textFragmentId: _frag(0, 10, 20)),
-        _cue(
+            textFragmentId: _frag(0, 10, 20),
+          ),
+          _cue(
             startMs: 2300,
             endMs: 4300,
             text: '三',
-            textFragmentId: _frag(0, 20, 30)),
-      ];
-      final List<AudioCue> span = <AudioCue>[cues[0], cues[1], cues[2]];
-      final AudioPlaybackRange? global = clipExportGlobalRange(
-        span: span,
-        allCues: cues,
-      );
-      expect(global, isNotNull);
-      // head: 1000 - kMiningHeadPadMs(120) = 880。
-      expect(global!.startMs, 880);
-      // tail: 末句 4300 + kClipExportTailPadMs(600) = 4900（无后续 cue 不被 cap）。
-      expect(global.endMs, 4900);
-      expect(global.audioFileIndex, 0);
-    });
+            textFragmentId: _frag(0, 20, 30),
+          ),
+        ];
+        final List<AudioCue> span = <AudioCue>[cues[0], cues[1], cues[2]];
+        final AudioPlaybackRange? global = clipExportGlobalRange(
+          span: span,
+          allCues: cues,
+        );
+        expect(global, isNotNull);
+        // head: 1000 - kMiningHeadPadMs(120) = 880。
+        expect(global!.startMs, 880);
+        // tail: 末句 4300 + kClipExportTailPadMs(600) = 4900（无后续 cue 不被 cap）。
+        expect(global.endMs, 4900);
+        expect(global.audioFileIndex, 0);
+      },
+    );
 
     test('middle cues stay continuous, not cut by tailCap', () {
       // 中间句紧接下一句，只有末句尾 padding 可越界；中间不被切。
       final List<AudioCue> cues = <AudioCue>[
         _cue(
-            startMs: 1000,
-            endMs: 2000,
-            text: '一',
-            textFragmentId: _frag(0, 0, 10)),
+          startMs: 1000,
+          endMs: 2000,
+          text: '一',
+          textFragmentId: _frag(0, 0, 10),
+        ),
         _cue(
-            startMs: 2000,
-            endMs: 3000,
-            text: '二',
-            textFragmentId: _frag(0, 10, 20)),
+          startMs: 2000,
+          endMs: 3000,
+          text: '二',
+          textFragmentId: _frag(0, 10, 20),
+        ),
         // 末句后紧跟一个不属于选区的 cue（tailCap 生效，尾 padding 被 clamp 到它）。
         _cue(
-            startMs: 3050,
-            endMs: 4000,
-            text: '外',
-            textFragmentId: _frag(0, 20, 30)),
+          startMs: 3050,
+          endMs: 4000,
+          text: '外',
+          textFragmentId: _frag(0, 20, 30),
+        ),
       ];
       final List<AudioCue> span = <AudioCue>[cues[0], cues[1]];
       final AudioPlaybackRange? global = clipExportGlobalRange(
@@ -808,7 +833,9 @@ void main() {
     test('empty span → null', () {
       expect(
         clipExportGlobalRange(
-            span: const <AudioCue>[], allCues: const <AudioCue>[]),
+          span: const <AudioCue>[],
+          allCues: const <AudioCue>[],
+        ),
         isNull,
       );
     });
@@ -816,10 +843,11 @@ void main() {
     test('applies A/V delay to both edges', () {
       final List<AudioCue> cues = <AudioCue>[
         _cue(
-            startMs: 1000,
-            endMs: 2000,
-            text: '一',
-            textFragmentId: _frag(0, 0, 10)),
+          startMs: 1000,
+          endMs: 2000,
+          text: '一',
+          textFragmentId: _frag(0, 0, 10),
+        ),
       ];
       final AudioPlaybackRange? global = clipExportGlobalRange(
         span: cues,
@@ -848,42 +876,45 @@ void main() {
       return plan.first.frameCount;
     }
 
-    test('rounds the switch UP when the cue start sits past the frame center',
-        () {
-      // 第二句起点 260ms：round(2.6)=3。帧尾采样(floor)会误在帧 2 切（早 60ms）。
-      final List<AudioCue> cues = <AudioCue>[
-        _cue(startMs: 0, endMs: 260, text: '一'),
-        _cue(startMs: 260, endMs: 1000, text: '二'),
-      ];
-      final List<ClipFrameSpec> plan = clipFramePlan(
-        cues: cues,
-        globalStartMs: 0,
-        globalEndMs: 1000,
-        fps: 10,
-      );
-      // 帧中心 = round：帧 3（视频 300ms，声音 260ms → 40ms 迟，最近边界）。
-      // 帧尾 = floor 会给 2（视频 200ms → 60ms 早）：回归即变红。
-      expect(switchFrame(plan), 3);
-    });
+    test(
+      'rounds the switch UP when the cue start sits past the frame center',
+      () {
+        // 第二句起点 260ms：round(2.6)=3。帧尾采样(floor)会误在帧 2 切（早 60ms）。
+        final List<AudioCue> cues = <AudioCue>[
+          _cue(startMs: 0, endMs: 260, text: '一'),
+          _cue(startMs: 260, endMs: 1000, text: '二'),
+        ];
+        final List<ClipFrameSpec> plan = clipFramePlan(
+          cues: cues,
+          globalStartMs: 0,
+          globalEndMs: 1000,
+          fps: 10,
+        );
+        // 帧中心 = round：帧 3（视频 300ms，声音 260ms → 40ms 迟，最近边界）。
+        // 帧尾 = floor 会给 2（视频 200ms → 60ms 早）：回归即变红。
+        expect(switchFrame(plan), 3);
+      },
+    );
 
     test(
-        'rounds the switch DOWN when the cue start sits before the frame center',
-        () {
-      // 第二句起点 240ms：round(2.4)=2。帧起点采样(ceil)会误在帧 3 切（晚 60ms，迟钝）。
-      final List<AudioCue> cues = <AudioCue>[
-        _cue(startMs: 0, endMs: 240, text: '一'),
-        _cue(startMs: 240, endMs: 1000, text: '二'),
-      ];
-      final List<ClipFrameSpec> plan = clipFramePlan(
-        cues: cues,
-        globalStartMs: 0,
-        globalEndMs: 1000,
-        fps: 10,
-      );
-      // 帧中心 = round：帧 2（视频 200ms，声音 240ms → 40ms 早）。
-      // 帧起点 = ceil 会给 3（视频 300ms → 60ms 迟）：回归即变红。
-      expect(switchFrame(plan), 2);
-    });
+      'rounds the switch DOWN when the cue start sits before the frame center',
+      () {
+        // 第二句起点 240ms：round(2.4)=2。帧起点采样(ceil)会误在帧 3 切（晚 60ms，迟钝）。
+        final List<AudioCue> cues = <AudioCue>[
+          _cue(startMs: 0, endMs: 240, text: '一'),
+          _cue(startMs: 240, endMs: 1000, text: '二'),
+        ];
+        final List<ClipFrameSpec> plan = clipFramePlan(
+          cues: cues,
+          globalStartMs: 0,
+          globalEndMs: 1000,
+          fps: 10,
+        );
+        // 帧中心 = round：帧 2（视频 200ms，声音 240ms → 40ms 早）。
+        // 帧起点 = ceil 会给 3（视频 300ms → 60ms 迟）：回归即变红。
+        expect(switchFrame(plan), 2);
+      },
+    );
 
     test('a cue starting at the window origin highlights from frame 0', () {
       final List<AudioCue> cues = <AudioCue>[
@@ -901,21 +932,20 @@ void main() {
       expect(switchFrame(plan), 5);
     });
 
-    test(
-        'is translation-invariant: a shared A/V delay offset never shifts the '
+    test('is translation-invariant: a shared A/V delay offset never shifts the '
         'per-cue frame plan', () {
       // 时基契约（TODO-1147 第二根因已修）：globalStart 与 cue 起止在导出侧被同一
       // delayMs 平移，帧计划只取决于 (cueStart - globalStart)。给二者加同一偏移，
       // 计划必须逐段完全一致——否则说明帧计划错误依赖了绝对时基（delay 会整体拉偏）。
       List<ClipFrameSpec> planWith(int off) => clipFramePlan(
-            cues: <AudioCue>[
-              _cue(startMs: off + 0, endMs: off + 260, text: '一'),
-              _cue(startMs: off + 260, endMs: off + 1000, text: '二'),
-            ],
-            globalStartMs: off + 0,
-            globalEndMs: off + 1000,
-            fps: 10,
-          );
+        cues: <AudioCue>[
+          _cue(startMs: off + 0, endMs: off + 260, text: '一'),
+          _cue(startMs: off + 260, endMs: off + 1000, text: '二'),
+        ],
+        globalStartMs: off + 0,
+        globalEndMs: off + 1000,
+        fps: 10,
+      );
       expect(planWith(500), planWith(0));
       expect(planWith(-300), planWith(0));
     });
@@ -931,28 +961,32 @@ void main() {
         globalEndMs: 1000,
         fps: 10,
       );
-      final int total =
-          plan.fold(0, (int a, ClipFrameSpec s) => a + s.frameCount);
+      final int total = plan.fold(
+        0,
+        (int a, ClipFrameSpec s) => a + s.frameCount,
+      );
       expect(total, 10); // ceil(1000 / 100)
     });
 
-    test('leading head-padding silence holds no highlight until the first cue',
-        () {
-      // globalStart 在首句前留 200ms head padding（帧 0/1 落在句前静音）。默认
-      // holdPrevious 但此前无句 → 前两帧无高亮(-1)，帧 2 起才亮第 0 句。
-      final List<AudioCue> cues = <AudioCue>[
-        _cue(startMs: 200, endMs: 1000, text: '一'),
-      ];
-      final List<ClipFrameSpec> plan = clipFramePlan(
-        cues: cues,
-        globalStartMs: 0,
-        globalEndMs: 1000,
-        fps: 10,
-      );
-      expect(plan.first.highlightCueIndex, -1); // gap，无上一句可保持
-      expect(plan.first.frameCount, 2); // 帧 0(t=50)、帧 1(t=150) 都 < 200
-      expect(plan[1].highlightCueIndex, 0); // 帧 2(t=250) 起亮首句
-    });
+    test(
+      'leading head-padding silence holds no highlight until the first cue',
+      () {
+        // globalStart 在首句前留 200ms head padding（帧 0/1 落在句前静音）。默认
+        // holdPrevious 但此前无句 → 前两帧无高亮(-1)，帧 2 起才亮第 0 句。
+        final List<AudioCue> cues = <AudioCue>[
+          _cue(startMs: 200, endMs: 1000, text: '一'),
+        ];
+        final List<ClipFrameSpec> plan = clipFramePlan(
+          cues: cues,
+          globalStartMs: 0,
+          globalEndMs: 1000,
+          fps: 10,
+        );
+        expect(plan.first.highlightCueIndex, -1); // gap，无上一句可保持
+        expect(plan.first.frameCount, 2); // 帧 0(t=50)、帧 1(t=150) 都 < 200
+        expect(plan[1].highlightCueIndex, 0); // 帧 2(t=250) 起亮首句
+      },
+    );
 
     test('empty cues yield an empty plan (caller falls back to static)', () {
       expect(

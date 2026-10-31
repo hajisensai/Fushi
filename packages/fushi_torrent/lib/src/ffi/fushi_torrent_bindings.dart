@@ -13,11 +13,11 @@ import 'dart:ffi' as ffi;
 class FushiTorrentBindings {
   /// Holds the symbol lookup function.
   final ffi.Pointer<T> Function<T extends ffi.NativeType>(String symbolName)
-      _lookup;
+  _lookup;
 
   /// The symbols are looked up in [dynamicLibrary].
   FushiTorrentBindings(ffi.DynamicLibrary dynamicLibrary)
-      : _lookup = dynamicLibrary.lookup;
+    : _lookup = dynamicLibrary.lookup;
 
   /// The symbols are looked up with [lookup].
   FushiTorrentBindings.fromLookup(
@@ -32,9 +32,10 @@ class FushiTorrentBindings {
 
   late final _ht_libtorrent_versionPtr =
       _lookup<ffi.NativeFunction<ffi.Pointer<ffi.Char> Function()>>(
-          'ht_libtorrent_version');
-  late final _ht_libtorrent_version =
-      _ht_libtorrent_versionPtr.asFunction<ffi.Pointer<ffi.Char> Function()>();
+        'ht_libtorrent_version',
+      );
+  late final _ht_libtorrent_version = _ht_libtorrent_versionPtr
+      .asFunction<ffi.Pointer<ffi.Char> Function()>();
 
   /// 创建 libtorrent session；listen_interfaces NULL/空串 = 不监听，
   /// enable_dht 非 0 开 DHT。失败返回 NULL。
@@ -45,10 +46,12 @@ class FushiTorrentBindings {
     return _ht_session_create(listen_interfaces, enable_dht);
   }
 
-  late final _ht_session_createPtr = _lookup<
-      ffi.NativeFunction<
-          ffi.Pointer<ffi.Void> Function(
-              ffi.Pointer<ffi.Char>, ffi.Int)>>('ht_session_create');
+  late final _ht_session_createPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Pointer<ffi.Void> Function(ffi.Pointer<ffi.Char>, ffi.Int)
+        >
+      >('ht_session_create');
   late final _ht_session_create = _ht_session_createPtr
       .asFunction<ffi.Pointer<ffi.Void> Function(ffi.Pointer<ffi.Char>, int)>();
 
@@ -59,9 +62,10 @@ class FushiTorrentBindings {
 
   late final _ht_session_destroyPtr =
       _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Pointer<ffi.Void>)>>(
-          'ht_session_destroy');
-  late final _ht_session_destroy =
-      _ht_session_destroyPtr.asFunction<void Function(ffi.Pointer<ffi.Void>)>();
+        'ht_session_destroy',
+      );
+  late final _ht_session_destroy = _ht_session_destroyPtr
+      .asFunction<void Function(ffi.Pointer<ffi.Void>)>();
 
   /// 实际监听端口；未监听/无效返回 0。
   int ht_session_listen_port(ffi.Pointer<ffi.Void> session) {
@@ -70,7 +74,8 @@ class FushiTorrentBindings {
 
   late final _ht_session_listen_portPtr =
       _lookup<ffi.NativeFunction<ffi.Int Function(ffi.Pointer<ffi.Void>)>>(
-          'ht_session_listen_port');
+        'ht_session_listen_port',
+      );
   late final _ht_session_listen_port = _ht_session_listen_portPtr
       .asFunction<int Function(ffi.Pointer<ffi.Void>)>();
 
@@ -83,10 +88,12 @@ class FushiTorrentBindings {
     return _ht_session_set_rate_limits(session, download_bps, upload_bps);
   }
 
-  late final _ht_session_set_rate_limitsPtr = _lookup<
-      ffi.NativeFunction<
-          ffi.Int Function(ffi.Pointer<ffi.Void>, ffi.Int,
-              ffi.Int)>>('ht_session_set_rate_limits');
+  late final _ht_session_set_rate_limitsPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int Function(ffi.Pointer<ffi.Void>, ffi.Int, ffi.Int)
+        >
+      >('ht_session_set_rate_limits');
   late final _ht_session_set_rate_limits = _ht_session_set_rate_limitsPtr
       .asFunction<int Function(ffi.Pointer<ffi.Void>, int, int)>();
 
@@ -98,13 +105,19 @@ class FushiTorrentBindings {
     int connections_limit,
   ) {
     return _ht_apply_limits(
-        session, download_bps, upload_bps, connections_limit);
+      session,
+      download_bps,
+      upload_bps,
+      connections_limit,
+    );
   }
 
-  late final _ht_apply_limitsPtr = _lookup<
-      ffi.NativeFunction<
-          ffi.Int Function(ffi.Pointer<ffi.Void>, ffi.Int, ffi.Int,
-              ffi.Int)>>('ht_apply_limits');
+  late final _ht_apply_limitsPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int Function(ffi.Pointer<ffi.Void>, ffi.Int, ffi.Int, ffi.Int)
+        >
+      >('ht_apply_limits');
   late final _ht_apply_limits = _ht_apply_limitsPtr
       .asFunction<int Function(ffi.Pointer<ffi.Void>, int, int, int)>();
 
@@ -120,14 +133,27 @@ class FushiTorrentBindings {
     int connections_limit,
     int limit_local_peers,
   ) {
-    return _ht_apply_limits_ex(session, download_bps, upload_bps,
-        connections_limit, limit_local_peers);
+    return _ht_apply_limits_ex(
+      session,
+      download_bps,
+      upload_bps,
+      connections_limit,
+      limit_local_peers,
+    );
   }
 
-  late final _ht_apply_limits_exPtr = _lookup<
-      ffi.NativeFunction<
-          ffi.Int Function(ffi.Pointer<ffi.Void>, ffi.Int, ffi.Int, ffi.Int,
-              ffi.Int)>>('ht_apply_limits_ex');
+  late final _ht_apply_limits_exPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int Function(
+            ffi.Pointer<ffi.Void>,
+            ffi.Int,
+            ffi.Int,
+            ffi.Int,
+            ffi.Int,
+          )
+        >
+      >('ht_apply_limits_ex');
   late final _ht_apply_limits_ex = _ht_apply_limits_exPtr
       .asFunction<int Function(ffi.Pointer<ffi.Void>, int, int, int, int)>();
 
@@ -142,9 +168,16 @@ class FushiTorrentBindings {
   bool _probeApplyLimitsEx() {
     try {
       _lookup<
-          ffi.NativeFunction<
-              ffi.Int Function(ffi.Pointer<ffi.Void>, ffi.Int, ffi.Int, ffi.Int,
-                  ffi.Int)>>('ht_apply_limits_ex');
+        ffi.NativeFunction<
+          ffi.Int Function(
+            ffi.Pointer<ffi.Void>,
+            ffi.Int,
+            ffi.Int,
+            ffi.Int,
+            ffi.Int,
+          )
+        >
+      >('ht_apply_limits_ex');
       return true;
     } on ArgumentError {
       return false;
@@ -162,26 +195,32 @@ class FushiTorrentBindings {
     return _ht_set_upload_mode(session, info_hash, upload_enabled);
   }
 
-  late final _ht_set_upload_modePtr = _lookup<
-      ffi.NativeFunction<
-          ffi.Int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>,
-              ffi.Int)>>('ht_set_upload_mode');
-  late final _ht_set_upload_mode = _ht_set_upload_modePtr.asFunction<
-      int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>, int)>();
+  late final _ht_set_upload_modePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int Function(
+            ffi.Pointer<ffi.Void>,
+            ffi.Pointer<ffi.Char>,
+            ffi.Int,
+          )
+        >
+      >('ht_set_upload_mode');
+  late final _ht_set_upload_mode = _ht_set_upload_modePtr
+      .asFunction<
+        int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>, int)
+      >();
 
   /// 会话级 unchoke 槽位（BUG-1293 的「关上传」正确原语）：slots >= 0 精确
   /// 设置（0 = 停止上传 payload，下载不受影响）；slots < 0 恢复默认。
   /// 1 成功 0 失败。调用前必须先看 [hasUploadControl]（旧 DLL 无此符号）。
-  int ht_set_unchoke_slots(
-    ffi.Pointer<ffi.Void> session,
-    int slots,
-  ) {
+  int ht_set_unchoke_slots(ffi.Pointer<ffi.Void> session, int slots) {
     return _ht_set_unchoke_slots(session, slots);
   }
 
-  late final _ht_set_unchoke_slotsPtr = _lookup<
-          ffi.NativeFunction<ffi.Int Function(ffi.Pointer<ffi.Void>, ffi.Int)>>(
-      'ht_set_unchoke_slots');
+  late final _ht_set_unchoke_slotsPtr =
+      _lookup<
+        ffi.NativeFunction<ffi.Int Function(ffi.Pointer<ffi.Void>, ffi.Int)>
+      >('ht_set_unchoke_slots');
   late final _ht_set_unchoke_slots = _ht_set_unchoke_slotsPtr
       .asFunction<int Function(ffi.Pointer<ffi.Void>, int)>();
 
@@ -196,12 +235,20 @@ class FushiTorrentBindings {
     return _ht_pause_torrent(session, info_hash, pause);
   }
 
-  late final _ht_pause_torrentPtr = _lookup<
-      ffi.NativeFunction<
-          ffi.Int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>,
-              ffi.Int)>>('ht_pause_torrent');
-  late final _ht_pause_torrent = _ht_pause_torrentPtr.asFunction<
-      int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>, int)>();
+  late final _ht_pause_torrentPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int Function(
+            ffi.Pointer<ffi.Void>,
+            ffi.Pointer<ffi.Char>,
+            ffi.Int,
+          )
+        >
+      >('ht_pause_torrent');
+  late final _ht_pause_torrent = _ht_pause_torrentPtr
+      .asFunction<
+        int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>, int)
+      >();
 
   /// 单种子「停止上传、继续下载」（fRmEhU4XIK：分享率下载途中达标也停上传）。
   /// blocked 非 0 = 该种子上传限到 libtorrent 可表达的下限 1 B/s（0/-1 在
@@ -215,13 +262,20 @@ class FushiTorrentBindings {
     return _ht_set_torrent_upload_blocked(session, info_hash, blocked);
   }
 
-  late final _ht_set_torrent_upload_blockedPtr = _lookup<
-      ffi.NativeFunction<
-          ffi.Int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>,
-              ffi.Int)>>('ht_set_torrent_upload_blocked');
-  late final _ht_set_torrent_upload_blocked =
-      _ht_set_torrent_upload_blockedPtr.asFunction<
-          int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>, int)>();
+  late final _ht_set_torrent_upload_blockedPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int Function(
+            ffi.Pointer<ffi.Void>,
+            ffi.Pointer<ffi.Char>,
+            ffi.Int,
+          )
+        >
+      >('ht_set_torrent_upload_blocked');
+  late final _ht_set_torrent_upload_blocked = _ht_set_torrent_upload_blockedPtr
+      .asFunction<
+        int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>, int)
+      >();
 
   /// 已加载的库里是否有 [ht_set_torrent_upload_blocked]。随包 DLL 是预编译
   /// 产物，Dart 先于 DLL 更新的组合真实存在：缺符号时下载阶段的分享率截停
@@ -231,9 +285,14 @@ class FushiTorrentBindings {
   bool _probeTorrentUploadBlock() {
     try {
       _lookup<
-          ffi.NativeFunction<
-              ffi.Int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>,
-                  ffi.Int)>>('ht_set_torrent_upload_blocked');
+        ffi.NativeFunction<
+          ffi.Int Function(
+            ffi.Pointer<ffi.Void>,
+            ffi.Pointer<ffi.Char>,
+            ffi.Int,
+          )
+        >
+      >('ht_set_torrent_upload_blocked');
       return true;
     } on ArgumentError {
       return false;
@@ -251,13 +310,17 @@ class FushiTorrentBindings {
   bool _probeUploadControl() {
     try {
       _lookup<
-          ffi.NativeFunction<
-              ffi.Int Function(
-                  ffi.Pointer<ffi.Void>, ffi.Int)>>('ht_set_unchoke_slots');
+        ffi.NativeFunction<ffi.Int Function(ffi.Pointer<ffi.Void>, ffi.Int)>
+      >('ht_set_unchoke_slots');
       _lookup<
-          ffi.NativeFunction<
-              ffi.Int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>,
-                  ffi.Int)>>('ht_pause_torrent');
+        ffi.NativeFunction<
+          ffi.Int Function(
+            ffi.Pointer<ffi.Void>,
+            ffi.Pointer<ffi.Char>,
+            ffi.Int,
+          )
+        >
+      >('ht_pause_torrent');
       return true;
     } on ArgumentError {
       return false;
@@ -272,14 +335,27 @@ class FushiTorrentBindings {
     int send_buffer_watermark,
     int max_peerlist_size,
   ) {
-    return _ht_apply_memory_settings(session, connections_limit,
-        max_queued_disk_bytes, send_buffer_watermark, max_peerlist_size);
+    return _ht_apply_memory_settings(
+      session,
+      connections_limit,
+      max_queued_disk_bytes,
+      send_buffer_watermark,
+      max_peerlist_size,
+    );
   }
 
-  late final _ht_apply_memory_settingsPtr = _lookup<
-      ffi.NativeFunction<
-          ffi.Int Function(ffi.Pointer<ffi.Void>, ffi.Int, ffi.Int, ffi.Int,
-              ffi.Int)>>('ht_apply_memory_settings');
+  late final _ht_apply_memory_settingsPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int Function(
+            ffi.Pointer<ffi.Void>,
+            ffi.Int,
+            ffi.Int,
+            ffi.Int,
+            ffi.Int,
+          )
+        >
+      >('ht_apply_memory_settings');
   late final _ht_apply_memory_settings = _ht_apply_memory_settingsPtr
       .asFunction<int Function(ffi.Pointer<ffi.Void>, int, int, int, int)>();
 
@@ -298,37 +374,54 @@ class FushiTorrentBindings {
     int max_upload_slots,
   ) {
     return _ht_apply_session_settings(
-        session,
-        listen_port,
-        enable_dht,
-        enable_lsd,
-        enable_upnp,
-        enable_natpmp,
-        enc_policy,
-        anonymous_mode,
-        active_downloads,
-        active_seeds,
-        max_upload_slots);
+      session,
+      listen_port,
+      enable_dht,
+      enable_lsd,
+      enable_upnp,
+      enable_natpmp,
+      enc_policy,
+      anonymous_mode,
+      active_downloads,
+      active_seeds,
+      max_upload_slots,
+    );
   }
 
-  late final _ht_apply_session_settingsPtr = _lookup<
-      ffi.NativeFunction<
+  late final _ht_apply_session_settingsPtr =
+      _lookup<
+        ffi.NativeFunction<
           ffi.Int Function(
-              ffi.Pointer<ffi.Void>,
-              ffi.Int,
-              ffi.Int,
-              ffi.Int,
-              ffi.Int,
-              ffi.Int,
-              ffi.Int,
-              ffi.Int,
-              ffi.Int,
-              ffi.Int,
-              ffi.Int)>>('ht_apply_session_settings');
-  late final _ht_apply_session_settings =
-      _ht_apply_session_settingsPtr.asFunction<
-          int Function(ffi.Pointer<ffi.Void>, int, int, int, int, int, int, int,
-              int, int, int)>();
+            ffi.Pointer<ffi.Void>,
+            ffi.Int,
+            ffi.Int,
+            ffi.Int,
+            ffi.Int,
+            ffi.Int,
+            ffi.Int,
+            ffi.Int,
+            ffi.Int,
+            ffi.Int,
+            ffi.Int,
+          )
+        >
+      >('ht_apply_session_settings');
+  late final _ht_apply_session_settings = _ht_apply_session_settingsPtr
+      .asFunction<
+        int Function(
+          ffi.Pointer<ffi.Void>,
+          int,
+          int,
+          int,
+          int,
+          int,
+          int,
+          int,
+          int,
+          int,
+          int,
+        )
+      >();
 
   /// P2P 代理（0=none 1=http 2=socks5；none 时 host/port 忽略）。1 成功 0 失败。
   ///
@@ -343,12 +436,21 @@ class FushiTorrentBindings {
     return _ht_apply_proxy(session, proxy_type, host, port);
   }
 
-  late final _ht_apply_proxyPtr = _lookup<
-      ffi.NativeFunction<
-          ffi.Int Function(ffi.Pointer<ffi.Void>, ffi.Int,
-              ffi.Pointer<ffi.Char>, ffi.Int)>>('ht_apply_proxy');
-  late final _ht_apply_proxy = _ht_apply_proxyPtr.asFunction<
-      int Function(ffi.Pointer<ffi.Void>, int, ffi.Pointer<ffi.Char>, int)>();
+  late final _ht_apply_proxyPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int Function(
+            ffi.Pointer<ffi.Void>,
+            ffi.Int,
+            ffi.Pointer<ffi.Char>,
+            ffi.Int,
+          )
+        >
+      >('ht_apply_proxy');
+  late final _ht_apply_proxy = _ht_apply_proxyPtr
+      .asFunction<
+        int Function(ffi.Pointer<ffi.Void>, int, ffi.Pointer<ffi.Char>, int)
+      >();
 
   /// 已加载的库里是否有 [ht_apply_proxy]（理由同 [hasApplyLimitsEx]）。
   late final bool hasApplyProxy = _probeApplyProxy();
@@ -356,9 +458,15 @@ class FushiTorrentBindings {
   bool _probeApplyProxy() {
     try {
       _lookup<
-          ffi.NativeFunction<
-              ffi.Int Function(ffi.Pointer<ffi.Void>, ffi.Int,
-                  ffi.Pointer<ffi.Char>, ffi.Int)>>('ht_apply_proxy');
+        ffi.NativeFunction<
+          ffi.Int Function(
+            ffi.Pointer<ffi.Void>,
+            ffi.Int,
+            ffi.Pointer<ffi.Char>,
+            ffi.Int,
+          )
+        >
+      >('ht_apply_proxy');
       return true;
     } on ArgumentError {
       return false;
@@ -377,13 +485,28 @@ class FushiTorrentBindings {
     return _ht_apply_proxy_mode(session, proxy_type, host, port, mode);
   }
 
-  late final _ht_apply_proxy_modePtr = _lookup<
-      ffi.NativeFunction<
-          ffi.Int Function(ffi.Pointer<ffi.Void>, ffi.Int,
-              ffi.Pointer<ffi.Char>, ffi.Int, ffi.Int)>>('ht_apply_proxy_mode');
-  late final _ht_apply_proxy_mode = _ht_apply_proxy_modePtr.asFunction<
-      int Function(
-          ffi.Pointer<ffi.Void>, int, ffi.Pointer<ffi.Char>, int, int)>();
+  late final _ht_apply_proxy_modePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int Function(
+            ffi.Pointer<ffi.Void>,
+            ffi.Int,
+            ffi.Pointer<ffi.Char>,
+            ffi.Int,
+            ffi.Int,
+          )
+        >
+      >('ht_apply_proxy_mode');
+  late final _ht_apply_proxy_mode = _ht_apply_proxy_modePtr
+      .asFunction<
+        int Function(
+          ffi.Pointer<ffi.Void>,
+          int,
+          ffi.Pointer<ffi.Char>,
+          int,
+          int,
+        )
+      >();
 
   /// 已加载的库里是否有 [ht_apply_proxy_mode]（混合档需要新 DLL；老库降级
   /// 走 [ht_apply_proxy] 全代理）。
@@ -392,13 +515,16 @@ class FushiTorrentBindings {
   bool _probeApplyProxyMode() {
     try {
       _lookup<
-          ffi.NativeFunction<
-              ffi.Int Function(
-                  ffi.Pointer<ffi.Void>,
-                  ffi.Int,
-                  ffi.Pointer<ffi.Char>,
-                  ffi.Int,
-                  ffi.Int)>>('ht_apply_proxy_mode');
+        ffi.NativeFunction<
+          ffi.Int Function(
+            ffi.Pointer<ffi.Void>,
+            ffi.Int,
+            ffi.Pointer<ffi.Char>,
+            ffi.Int,
+            ffi.Int,
+          )
+        >
+      >('ht_apply_proxy_mode');
       return true;
     } on ArgumentError {
       return false;
@@ -415,16 +541,26 @@ class FushiTorrentBindings {
     return _ht_add_magnet(session, magnet_uri, save_path, sequential);
   }
 
-  late final _ht_add_magnetPtr = _lookup<
-      ffi.NativeFunction<
+  late final _ht_add_magnetPtr =
+      _lookup<
+        ffi.NativeFunction<
           ffi.Pointer<ffi.Char> Function(
-              ffi.Pointer<ffi.Void>,
-              ffi.Pointer<ffi.Char>,
-              ffi.Pointer<ffi.Char>,
-              ffi.Int)>>('ht_add_magnet');
-  late final _ht_add_magnet = _ht_add_magnetPtr.asFunction<
-      ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Void>,
-          ffi.Pointer<ffi.Char>, ffi.Pointer<ffi.Char>, int)>();
+            ffi.Pointer<ffi.Void>,
+            ffi.Pointer<ffi.Char>,
+            ffi.Pointer<ffi.Char>,
+            ffi.Int,
+          )
+        >
+      >('ht_add_magnet');
+  late final _ht_add_magnet = _ht_add_magnetPtr
+      .asFunction<
+        ffi.Pointer<ffi.Char> Function(
+          ffi.Pointer<ffi.Void>,
+          ffi.Pointer<ffi.Char>,
+          ffi.Pointer<ffi.Char>,
+          int,
+        )
+      >();
 
   /// 添加本地 .torrent 文件；返回 malloc JSON（ht_free_string 释放）。
   ffi.Pointer<ffi.Char> ht_add_torrent_file(
@@ -436,16 +572,26 @@ class FushiTorrentBindings {
     return _ht_add_torrent_file(session, torrent_path, save_path, sequential);
   }
 
-  late final _ht_add_torrent_filePtr = _lookup<
-      ffi.NativeFunction<
+  late final _ht_add_torrent_filePtr =
+      _lookup<
+        ffi.NativeFunction<
           ffi.Pointer<ffi.Char> Function(
-              ffi.Pointer<ffi.Void>,
-              ffi.Pointer<ffi.Char>,
-              ffi.Pointer<ffi.Char>,
-              ffi.Int)>>('ht_add_torrent_file');
-  late final _ht_add_torrent_file = _ht_add_torrent_filePtr.asFunction<
-      ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Void>,
-          ffi.Pointer<ffi.Char>, ffi.Pointer<ffi.Char>, int)>();
+            ffi.Pointer<ffi.Void>,
+            ffi.Pointer<ffi.Char>,
+            ffi.Pointer<ffi.Char>,
+            ffi.Int,
+          )
+        >
+      >('ht_add_torrent_file');
+  late final _ht_add_torrent_file = _ht_add_torrent_filePtr
+      .asFunction<
+        ffi.Pointer<ffi.Char> Function(
+          ffi.Pointer<ffi.Void>,
+          ffi.Pointer<ffi.Char>,
+          ffi.Pointer<ffi.Char>,
+          int,
+        )
+      >();
 
   /// 从本地文件/目录生成 .torrent；返回 malloc JSON（ht_free_string 释放）。
   ffi.Pointer<ffi.Char> ht_make_torrent(
@@ -455,13 +601,22 @@ class FushiTorrentBindings {
     return _ht_make_torrent(content_path, out_torrent_path);
   }
 
-  late final _ht_make_torrentPtr = _lookup<
-      ffi.NativeFunction<
-          ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Char>,
-              ffi.Pointer<ffi.Char>)>>('ht_make_torrent');
-  late final _ht_make_torrent = _ht_make_torrentPtr.asFunction<
-      ffi.Pointer<ffi.Char> Function(
-          ffi.Pointer<ffi.Char>, ffi.Pointer<ffi.Char>)>();
+  late final _ht_make_torrentPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Pointer<ffi.Char> Function(
+            ffi.Pointer<ffi.Char>,
+            ffi.Pointer<ffi.Char>,
+          )
+        >
+      >('ht_make_torrent');
+  late final _ht_make_torrent = _ht_make_torrentPtr
+      .asFunction<
+        ffi.Pointer<ffi.Char> Function(
+          ffi.Pointer<ffi.Char>,
+          ffi.Pointer<ffi.Char>,
+        )
+      >();
 
   /// 手动连接 peer。1 成功 0 失败。
   int ht_connect_peer(
@@ -473,23 +628,38 @@ class FushiTorrentBindings {
     return _ht_connect_peer(session, info_hash, ip, port);
   }
 
-  late final _ht_connect_peerPtr = _lookup<
-      ffi.NativeFunction<
-          ffi.Int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>,
-              ffi.Pointer<ffi.Char>, ffi.Int)>>('ht_connect_peer');
-  late final _ht_connect_peer = _ht_connect_peerPtr.asFunction<
-      int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>,
-          ffi.Pointer<ffi.Char>, int)>();
+  late final _ht_connect_peerPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int Function(
+            ffi.Pointer<ffi.Void>,
+            ffi.Pointer<ffi.Char>,
+            ffi.Pointer<ffi.Char>,
+            ffi.Int,
+          )
+        >
+      >('ht_connect_peer');
+  late final _ht_connect_peer = _ht_connect_peerPtr
+      .asFunction<
+        int Function(
+          ffi.Pointer<ffi.Void>,
+          ffi.Pointer<ffi.Char>,
+          ffi.Pointer<ffi.Char>,
+          int,
+        )
+      >();
 
   /// 列出所有种子；返回 malloc JSON 数组（ht_free_string 释放）。
   ffi.Pointer<ffi.Char> ht_list_torrents(ffi.Pointer<ffi.Void> session) {
     return _ht_list_torrents(session);
   }
 
-  late final _ht_list_torrentsPtr = _lookup<
-      ffi.NativeFunction<
-          ffi.Pointer<ffi.Char> Function(
-              ffi.Pointer<ffi.Void>)>>('ht_list_torrents');
+  late final _ht_list_torrentsPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Void>)
+        >
+      >('ht_list_torrents');
   late final _ht_list_torrents = _ht_list_torrentsPtr
       .asFunction<ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Void>)>();
 
@@ -501,13 +671,22 @@ class FushiTorrentBindings {
     return _ht_torrent_files(session, info_hash);
   }
 
-  late final _ht_torrent_filesPtr = _lookup<
-      ffi.NativeFunction<
-          ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Void>,
-              ffi.Pointer<ffi.Char>)>>('ht_torrent_files');
-  late final _ht_torrent_files = _ht_torrent_filesPtr.asFunction<
-      ffi.Pointer<ffi.Char> Function(
-          ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>)>();
+  late final _ht_torrent_filesPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Pointer<ffi.Char> Function(
+            ffi.Pointer<ffi.Void>,
+            ffi.Pointer<ffi.Char>,
+          )
+        >
+      >('ht_torrent_files');
+  late final _ht_torrent_files = _ht_torrent_filesPtr
+      .asFunction<
+        ffi.Pointer<ffi.Char> Function(
+          ffi.Pointer<ffi.Void>,
+          ffi.Pointer<ffi.Char>,
+        )
+      >();
 
   /// 分片持有位图；返回 malloc JSON（ht_free_string 释放）。
   ffi.Pointer<ffi.Char> ht_torrent_pieces(
@@ -517,23 +696,34 @@ class FushiTorrentBindings {
     return _ht_torrent_pieces(session, info_hash);
   }
 
-  late final _ht_torrent_piecesPtr = _lookup<
-      ffi.NativeFunction<
-          ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Void>,
-              ffi.Pointer<ffi.Char>)>>('ht_torrent_pieces');
-  late final _ht_torrent_pieces = _ht_torrent_piecesPtr.asFunction<
-      ffi.Pointer<ffi.Char> Function(
-          ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>)>();
+  late final _ht_torrent_piecesPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Pointer<ffi.Char> Function(
+            ffi.Pointer<ffi.Void>,
+            ffi.Pointer<ffi.Char>,
+          )
+        >
+      >('ht_torrent_pieces');
+  late final _ht_torrent_pieces = _ht_torrent_piecesPtr
+      .asFunction<
+        ffi.Pointer<ffi.Char> Function(
+          ffi.Pointer<ffi.Void>,
+          ffi.Pointer<ffi.Char>,
+        )
+      >();
 
   /// 排空 piece 完成事件；返回 malloc JSON 数组（ht_free_string 释放）。
   ffi.Pointer<ffi.Char> ht_poll_piece_events(ffi.Pointer<ffi.Void> session) {
     return _ht_poll_piece_events(session);
   }
 
-  late final _ht_poll_piece_eventsPtr = _lookup<
-      ffi.NativeFunction<
-          ffi.Pointer<ffi.Char> Function(
-              ffi.Pointer<ffi.Void>)>>('ht_poll_piece_events');
+  late final _ht_poll_piece_eventsPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Void>)
+        >
+      >('ht_poll_piece_events');
   late final _ht_poll_piece_events = _ht_poll_piece_eventsPtr
       .asFunction<ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Void>)>();
 
@@ -547,12 +737,21 @@ class FushiTorrentBindings {
     return _ht_set_piece_deadline(session, info_hash, piece, deadline_ms);
   }
 
-  late final _ht_set_piece_deadlinePtr = _lookup<
-      ffi.NativeFunction<
-          ffi.Int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>,
-              ffi.Int, ffi.Int)>>('ht_set_piece_deadline');
-  late final _ht_set_piece_deadline = _ht_set_piece_deadlinePtr.asFunction<
-      int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>, int, int)>();
+  late final _ht_set_piece_deadlinePtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int Function(
+            ffi.Pointer<ffi.Void>,
+            ffi.Pointer<ffi.Char>,
+            ffi.Int,
+            ffi.Int,
+          )
+        >
+      >('ht_set_piece_deadline');
+  late final _ht_set_piece_deadline = _ht_set_piece_deadlinePtr
+      .asFunction<
+        int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>, int, int)
+      >();
 
   /// 首尾 piece 提优。1 已应用 0 元数据未就绪 -1 种子不存在。
   int ht_apply_first_last_priority(
@@ -562,10 +761,12 @@ class FushiTorrentBindings {
     return _ht_apply_first_last_priority(session, info_hash);
   }
 
-  late final _ht_apply_first_last_priorityPtr = _lookup<
-      ffi.NativeFunction<
-          ffi.Int Function(ffi.Pointer<ffi.Void>,
-              ffi.Pointer<ffi.Char>)>>('ht_apply_first_last_priority');
+  late final _ht_apply_first_last_priorityPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>)
+        >
+      >('ht_apply_first_last_priority');
   late final _ht_apply_first_last_priority = _ht_apply_first_last_priorityPtr
       .asFunction<int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>)>();
 
@@ -577,13 +778,22 @@ class FushiTorrentBindings {
     return _ht_torrent_peers(session, info_hash);
   }
 
-  late final _ht_torrent_peersPtr = _lookup<
-      ffi.NativeFunction<
-          ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Void>,
-              ffi.Pointer<ffi.Char>)>>('ht_torrent_peers');
-  late final _ht_torrent_peers = _ht_torrent_peersPtr.asFunction<
-      ffi.Pointer<ffi.Char> Function(
-          ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>)>();
+  late final _ht_torrent_peersPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Pointer<ffi.Char> Function(
+            ffi.Pointer<ffi.Void>,
+            ffi.Pointer<ffi.Char>,
+          )
+        >
+      >('ht_torrent_peers');
+  late final _ht_torrent_peers = _ht_torrent_peersPtr
+      .asFunction<
+        ffi.Pointer<ffi.Char> Function(
+          ffi.Pointer<ffi.Void>,
+          ffi.Pointer<ffi.Char>,
+        )
+      >();
 
   /// 用换行分隔的 CIDR 列表整体重建 ip_filter。1 成功 0 失败。
   int ht_apply_ip_filter(
@@ -593,10 +803,12 @@ class FushiTorrentBindings {
     return _ht_apply_ip_filter(session, cidrs);
   }
 
-  late final _ht_apply_ip_filterPtr = _lookup<
-      ffi.NativeFunction<
-          ffi.Int Function(ffi.Pointer<ffi.Void>,
-              ffi.Pointer<ffi.Char>)>>('ht_apply_ip_filter');
+  late final _ht_apply_ip_filterPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>)
+        >
+      >('ht_apply_ip_filter');
   late final _ht_apply_ip_filter = _ht_apply_ip_filterPtr
       .asFunction<int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>)>();
 
@@ -609,12 +821,20 @@ class FushiTorrentBindings {
     return _ht_remove_torrent(session, info_hash, delete_files);
   }
 
-  late final _ht_remove_torrentPtr = _lookup<
-      ffi.NativeFunction<
-          ffi.Int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>,
-              ffi.Int)>>('ht_remove_torrent');
-  late final _ht_remove_torrent = _ht_remove_torrentPtr.asFunction<
-      int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>, int)>();
+  late final _ht_remove_torrentPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int Function(
+            ffi.Pointer<ffi.Void>,
+            ffi.Pointer<ffi.Char>,
+            ffi.Int,
+          )
+        >
+      >('ht_remove_torrent');
+  late final _ht_remove_torrent = _ht_remove_torrentPtr
+      .asFunction<
+        int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>, int)
+      >();
 
   /// 引擎侧给种子内第 file_index 个文件改名（做种不断）；同步等回执最多
   /// timeout_ms。返回 malloc JSON（ht_free_string 释放）。
@@ -626,20 +846,36 @@ class FushiTorrentBindings {
     int timeout_ms,
   ) {
     return _ht_rename_file(
-        session, info_hash, file_index, new_path, timeout_ms);
+      session,
+      info_hash,
+      file_index,
+      new_path,
+      timeout_ms,
+    );
   }
 
-  late final _ht_rename_filePtr = _lookup<
-      ffi.NativeFunction<
+  late final _ht_rename_filePtr =
+      _lookup<
+        ffi.NativeFunction<
           ffi.Pointer<ffi.Char> Function(
-              ffi.Pointer<ffi.Void>,
-              ffi.Pointer<ffi.Char>,
-              ffi.Int,
-              ffi.Pointer<ffi.Char>,
-              ffi.Int)>>('ht_rename_file');
-  late final _ht_rename_file = _ht_rename_filePtr.asFunction<
-      ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Void>,
-          ffi.Pointer<ffi.Char>, int, ffi.Pointer<ffi.Char>, int)>();
+            ffi.Pointer<ffi.Void>,
+            ffi.Pointer<ffi.Char>,
+            ffi.Int,
+            ffi.Pointer<ffi.Char>,
+            ffi.Int,
+          )
+        >
+      >('ht_rename_file');
+  late final _ht_rename_file = _ht_rename_filePtr
+      .asFunction<
+        ffi.Pointer<ffi.Char> Function(
+          ffi.Pointer<ffi.Void>,
+          ffi.Pointer<ffi.Char>,
+          int,
+          ffi.Pointer<ffi.Char>,
+          int,
+        )
+      >();
 
   /// 引擎侧把种子内容整体移动到 new_save_path（做种不断；目标已存在则整体
   /// 失败，绝不覆盖）。返回 malloc JSON（ht_free_string 释放）。
@@ -652,16 +888,26 @@ class FushiTorrentBindings {
     return _ht_move_storage(session, info_hash, new_save_path, timeout_ms);
   }
 
-  late final _ht_move_storagePtr = _lookup<
-      ffi.NativeFunction<
+  late final _ht_move_storagePtr =
+      _lookup<
+        ffi.NativeFunction<
           ffi.Pointer<ffi.Char> Function(
-              ffi.Pointer<ffi.Void>,
-              ffi.Pointer<ffi.Char>,
-              ffi.Pointer<ffi.Char>,
-              ffi.Int)>>('ht_move_storage');
-  late final _ht_move_storage = _ht_move_storagePtr.asFunction<
-      ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Void>,
-          ffi.Pointer<ffi.Char>, ffi.Pointer<ffi.Char>, int)>();
+            ffi.Pointer<ffi.Void>,
+            ffi.Pointer<ffi.Char>,
+            ffi.Pointer<ffi.Char>,
+            ffi.Int,
+          )
+        >
+      >('ht_move_storage');
+  late final _ht_move_storage = _ht_move_storagePtr
+      .asFunction<
+        ffi.Pointer<ffi.Char> Function(
+          ffi.Pointer<ffi.Void>,
+          ffi.Pointer<ffi.Char>,
+          ffi.Pointer<ffi.Char>,
+          int,
+        )
+      >();
 
   /// 把所有已有元数据的种子的 resume data 落盘到 out_dir；同步等待最多
   /// timeout_ms（<=0 取默认 5000）。返回 malloc JSON（ht_free_string 释放）。
@@ -673,13 +919,24 @@ class FushiTorrentBindings {
     return _ht_save_resume_data(session, out_dir, timeout_ms);
   }
 
-  late final _ht_save_resume_dataPtr = _lookup<
-      ffi.NativeFunction<
-          ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Void>,
-              ffi.Pointer<ffi.Char>, ffi.Int)>>('ht_save_resume_data');
-  late final _ht_save_resume_data = _ht_save_resume_dataPtr.asFunction<
-      ffi.Pointer<ffi.Char> Function(
-          ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>, int)>();
+  late final _ht_save_resume_dataPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Pointer<ffi.Char> Function(
+            ffi.Pointer<ffi.Void>,
+            ffi.Pointer<ffi.Char>,
+            ffi.Int,
+          )
+        >
+      >('ht_save_resume_data');
+  late final _ht_save_resume_data = _ht_save_resume_dataPtr
+      .asFunction<
+        ffi.Pointer<ffi.Char> Function(
+          ffi.Pointer<ffi.Void>,
+          ffi.Pointer<ffi.Char>,
+          int,
+        )
+      >();
 
   /// 把 dir 下所有 `*.resume` 重新 add 回 session（启动续跑）。
   /// 返回 malloc JSON（ht_free_string 释放）。
@@ -690,13 +947,22 @@ class FushiTorrentBindings {
     return _ht_load_resume_dir(session, dir);
   }
 
-  late final _ht_load_resume_dirPtr = _lookup<
-      ffi.NativeFunction<
-          ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Void>,
-              ffi.Pointer<ffi.Char>)>>('ht_load_resume_dir');
-  late final _ht_load_resume_dir = _ht_load_resume_dirPtr.asFunction<
-      ffi.Pointer<ffi.Char> Function(
-          ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>)>();
+  late final _ht_load_resume_dirPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Pointer<ffi.Char> Function(
+            ffi.Pointer<ffi.Void>,
+            ffi.Pointer<ffi.Char>,
+          )
+        >
+      >('ht_load_resume_dir');
+  late final _ht_load_resume_dir = _ht_load_resume_dirPtr
+      .asFunction<
+        ffi.Pointer<ffi.Char> Function(
+          ffi.Pointer<ffi.Void>,
+          ffi.Pointer<ffi.Char>,
+        )
+      >();
 
   /// TODO-2482：某种子的 tracker 列表（url/tier/工作状态/错误/scrape 数）；
   /// 返回 malloc JSON（ht_free_string 释放）。调用前先看 [hasDetailInfo]。
@@ -707,13 +973,22 @@ class FushiTorrentBindings {
     return _ht_torrent_trackers(session, info_hash);
   }
 
-  late final _ht_torrent_trackersPtr = _lookup<
-      ffi.NativeFunction<
-          ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Void>,
-              ffi.Pointer<ffi.Char>)>>('ht_torrent_trackers');
-  late final _ht_torrent_trackers = _ht_torrent_trackersPtr.asFunction<
-      ffi.Pointer<ffi.Char> Function(
-          ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>)>();
+  late final _ht_torrent_trackersPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Pointer<ffi.Char> Function(
+            ffi.Pointer<ffi.Void>,
+            ffi.Pointer<ffi.Char>,
+          )
+        >
+      >('ht_torrent_trackers');
+  late final _ht_torrent_trackers = _ht_torrent_trackersPtr
+      .asFunction<
+        ffi.Pointer<ffi.Char> Function(
+          ffi.Pointer<ffi.Void>,
+          ffi.Pointer<ffi.Char>,
+        )
+      >();
 
   /// 给已有种子追加换行分隔的 tracker。返回新增数，-1 失败。
   /// 调用前先看 [hasTrackerMutation]。
@@ -725,13 +1000,24 @@ class FushiTorrentBindings {
     return _ht_add_trackers(session, info_hash, tracker_urls);
   }
 
-  late final _ht_add_trackersPtr = _lookup<
-      ffi.NativeFunction<
-          ffi.Int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>,
-              ffi.Pointer<ffi.Char>)>>('ht_add_trackers');
-  late final _ht_add_trackers = _ht_add_trackersPtr.asFunction<
-      int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>,
-          ffi.Pointer<ffi.Char>)>();
+  late final _ht_add_trackersPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int Function(
+            ffi.Pointer<ffi.Void>,
+            ffi.Pointer<ffi.Char>,
+            ffi.Pointer<ffi.Char>,
+          )
+        >
+      >('ht_add_trackers');
+  late final _ht_add_trackers = _ht_add_trackersPtr
+      .asFunction<
+        int Function(
+          ffi.Pointer<ffi.Void>,
+          ffi.Pointer<ffi.Char>,
+          ffi.Pointer<ffi.Char>,
+        )
+      >();
 
   /// 独立能力探测：旧随包 DLL 缺本符号时只禁用 tracker 后写，不影响详情页。
   late final bool hasTrackerMutation = _probeTrackerMutation();
@@ -739,9 +1025,14 @@ class FushiTorrentBindings {
   bool _probeTrackerMutation() {
     try {
       _lookup<
-          ffi.NativeFunction<
-              ffi.Int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>,
-                  ffi.Pointer<ffi.Char>)>>('ht_add_trackers');
+        ffi.NativeFunction<
+          ffi.Int Function(
+            ffi.Pointer<ffi.Void>,
+            ffi.Pointer<ffi.Char>,
+            ffi.Pointer<ffi.Char>,
+          )
+        >
+      >('ht_add_trackers');
       return true;
     } on ArgumentError {
       return false;
@@ -758,10 +1049,12 @@ class FushiTorrentBindings {
     return _ht_add_dht_nodes(session, nodes);
   }
 
-  late final _ht_add_dht_nodesPtr = _lookup<
-      ffi.NativeFunction<
-          ffi.Int Function(ffi.Pointer<ffi.Void>,
-              ffi.Pointer<ffi.Char>)>>('ht_add_dht_nodes');
+  late final _ht_add_dht_nodesPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>)
+        >
+      >('ht_add_dht_nodes');
   late final _ht_add_dht_nodes = _ht_add_dht_nodesPtr
       .asFunction<int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>)>();
 
@@ -771,9 +1064,10 @@ class FushiTorrentBindings {
   bool _probeAddDhtNodes() {
     try {
       _lookup<
-          ffi.NativeFunction<
-              ffi.Int Function(ffi.Pointer<ffi.Void>,
-                  ffi.Pointer<ffi.Char>)>>('ht_add_dht_nodes');
+        ffi.NativeFunction<
+          ffi.Int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>)
+        >
+      >('ht_add_dht_nodes');
       return true;
     } on ArgumentError {
       return false;
@@ -789,13 +1083,22 @@ class FushiTorrentBindings {
     return _ht_get_file_priorities(session, info_hash);
   }
 
-  late final _ht_get_file_prioritiesPtr = _lookup<
-      ffi.NativeFunction<
-          ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Void>,
-              ffi.Pointer<ffi.Char>)>>('ht_get_file_priorities');
-  late final _ht_get_file_priorities = _ht_get_file_prioritiesPtr.asFunction<
-      ffi.Pointer<ffi.Char> Function(
-          ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>)>();
+  late final _ht_get_file_prioritiesPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Pointer<ffi.Char> Function(
+            ffi.Pointer<ffi.Void>,
+            ffi.Pointer<ffi.Char>,
+          )
+        >
+      >('ht_get_file_priorities');
+  late final _ht_get_file_priorities = _ht_get_file_prioritiesPtr
+      .asFunction<
+        ffi.Pointer<ffi.Char> Function(
+          ffi.Pointer<ffi.Void>,
+          ffi.Pointer<ffi.Char>,
+        )
+      >();
 
   /// TODO-2526：每个 piece 的下载优先级（诊断/测试用，0~7，下标=piece
   /// index）；返回 malloc JSON（ht_free_string 释放）。调用前先看
@@ -807,13 +1110,22 @@ class FushiTorrentBindings {
     return _ht_get_piece_priorities(session, info_hash);
   }
 
-  late final _ht_get_piece_prioritiesPtr = _lookup<
-      ffi.NativeFunction<
-          ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Void>,
-              ffi.Pointer<ffi.Char>)>>('ht_get_piece_priorities');
-  late final _ht_get_piece_priorities = _ht_get_piece_prioritiesPtr.asFunction<
-      ffi.Pointer<ffi.Char> Function(
-          ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>)>();
+  late final _ht_get_piece_prioritiesPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Pointer<ffi.Char> Function(
+            ffi.Pointer<ffi.Void>,
+            ffi.Pointer<ffi.Char>,
+          )
+        >
+      >('ht_get_piece_priorities');
+  late final _ht_get_piece_priorities = _ht_get_piece_prioritiesPtr
+      .asFunction<
+        ffi.Pointer<ffi.Char> Function(
+          ffi.Pointer<ffi.Void>,
+          ffi.Pointer<ffi.Char>,
+        )
+      >();
 
   /// TODO-2526：已加载的库是否导出 ht_get_piece_priorities。**独立探测**、
   /// 不并进 [hasDetailInfo]：随包旧 DLL 有详情四符号但没有本符号时，详情页
@@ -823,9 +1135,13 @@ class FushiTorrentBindings {
   bool _probePiecePriorities() {
     try {
       _lookup<
-          ffi.NativeFunction<
-              ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Void>,
-                  ffi.Pointer<ffi.Char>)>>('ht_get_piece_priorities');
+        ffi.NativeFunction<
+          ffi.Pointer<ffi.Char> Function(
+            ffi.Pointer<ffi.Void>,
+            ffi.Pointer<ffi.Char>,
+          )
+        >
+      >('ht_get_piece_priorities');
       return true;
     } on ArgumentError {
       return false;
@@ -843,12 +1159,21 @@ class FushiTorrentBindings {
     return _ht_set_file_priority(session, info_hash, file_index, priority);
   }
 
-  late final _ht_set_file_priorityPtr = _lookup<
-      ffi.NativeFunction<
-          ffi.Int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>,
-              ffi.Int, ffi.Int)>>('ht_set_file_priority');
-  late final _ht_set_file_priority = _ht_set_file_priorityPtr.asFunction<
-      int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>, int, int)>();
+  late final _ht_set_file_priorityPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Int Function(
+            ffi.Pointer<ffi.Void>,
+            ffi.Pointer<ffi.Char>,
+            ffi.Int,
+            ffi.Int,
+          )
+        >
+      >('ht_set_file_priority');
+  late final _ht_set_file_priority = _ht_set_file_priorityPtr
+      .asFunction<
+        int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>, int, int)
+      >();
 
   /// TODO-2482：会话协议状态（DHT/LSD/端口映射/监听端口/会话级速率）。
   /// 非阻塞：dht_nodes 首轮 -1、下一轮即有值；速率要到**第三轮**才有值
@@ -858,10 +1183,12 @@ class FushiTorrentBindings {
     return _ht_session_status(session);
   }
 
-  late final _ht_session_statusPtr = _lookup<
-      ffi.NativeFunction<
-          ffi.Pointer<ffi.Char> Function(
-              ffi.Pointer<ffi.Void>)>>('ht_session_status');
+  late final _ht_session_statusPtr =
+      _lookup<
+        ffi.NativeFunction<
+          ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Void>)
+        >
+      >('ht_session_status');
   late final _ht_session_status = _ht_session_statusPtr
       .asFunction<ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Void>)>();
 
@@ -876,21 +1203,36 @@ class FushiTorrentBindings {
   bool _probeDetailInfo() {
     try {
       _lookup<
-          ffi.NativeFunction<
-              ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Void>,
-                  ffi.Pointer<ffi.Char>)>>('ht_torrent_trackers');
+        ffi.NativeFunction<
+          ffi.Pointer<ffi.Char> Function(
+            ffi.Pointer<ffi.Void>,
+            ffi.Pointer<ffi.Char>,
+          )
+        >
+      >('ht_torrent_trackers');
       _lookup<
-          ffi.NativeFunction<
-              ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Void>,
-                  ffi.Pointer<ffi.Char>)>>('ht_get_file_priorities');
+        ffi.NativeFunction<
+          ffi.Pointer<ffi.Char> Function(
+            ffi.Pointer<ffi.Void>,
+            ffi.Pointer<ffi.Char>,
+          )
+        >
+      >('ht_get_file_priorities');
       _lookup<
-          ffi.NativeFunction<
-              ffi.Int Function(ffi.Pointer<ffi.Void>, ffi.Pointer<ffi.Char>,
-                  ffi.Int, ffi.Int)>>('ht_set_file_priority');
+        ffi.NativeFunction<
+          ffi.Int Function(
+            ffi.Pointer<ffi.Void>,
+            ffi.Pointer<ffi.Char>,
+            ffi.Int,
+            ffi.Int,
+          )
+        >
+      >('ht_set_file_priority');
       _lookup<
-          ffi.NativeFunction<
-              ffi.Pointer<ffi.Char> Function(
-                  ffi.Pointer<ffi.Void>)>>('ht_session_status');
+        ffi.NativeFunction<
+          ffi.Pointer<ffi.Char> Function(ffi.Pointer<ffi.Void>)
+        >
+      >('ht_session_status');
       return true;
     } on ArgumentError {
       return false;
@@ -904,7 +1246,8 @@ class FushiTorrentBindings {
 
   late final _ht_free_stringPtr =
       _lookup<ffi.NativeFunction<ffi.Void Function(ffi.Pointer<ffi.Char>)>>(
-          'ht_free_string');
-  late final _ht_free_string =
-      _ht_free_stringPtr.asFunction<void Function(ffi.Pointer<ffi.Char>)>();
+        'ht_free_string',
+      );
+  late final _ht_free_string = _ht_free_stringPtr
+      .asFunction<void Function(ffi.Pointer<ffi.Char>)>();
 }

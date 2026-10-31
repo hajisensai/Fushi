@@ -68,12 +68,13 @@ void main() {
     return settingsContext;
   }
 
-  SettingsNavigationItem aniDbRow() => buildServicesDestination()
-      .sections
-      .expand((SettingsSection s) => s.items)
-      .firstWhere(
-        (SettingsItem i) => i.id == 'services.metadata.configure',
-      ) as SettingsNavigationItem;
+  SettingsNavigationItem aniDbRow() =>
+      buildServicesDestination().sections
+              .expand((SettingsSection s) => s.items)
+              .firstWhere(
+                (SettingsItem i) => i.id == 'services.metadata.configure',
+              )
+          as SettingsNavigationItem;
 
   testWidgets('账号填齐、客户端留空走内置身份 → 状态「已配置」', (WidgetTester tester) async {
     final SettingsContext settingsContext = await pumpContext(tester);
@@ -126,7 +127,8 @@ void main() {
         aniDbRow().child!().sections
                 .expand((SettingsSection s) => s.items)
                 .firstWhere(
-                  (SettingsItem i) => i.id == 'services.metadata.anidb_http_api',
+                  (SettingsItem i) =>
+                      i.id == 'services.metadata.anidb_http_api',
                 )
             as SettingsStatusItem;
 

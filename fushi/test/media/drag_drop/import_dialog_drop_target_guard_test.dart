@@ -30,10 +30,16 @@ void main() {
   dialogs.forEach((String name, String path) {
     test('$name import dialog wraps its frame in FushiFileDropTarget', () {
       final String src = File(path).readAsStringSync();
-      expect(src.contains('FushiFileDropTarget('), isTrue,
-          reason: '$name dialog must accept drops onto the modal route');
-      expect(src.contains('_handleDialogDrop'), isTrue,
-          reason: '$name dialog must route drops into its fields');
+      expect(
+        src.contains('FushiFileDropTarget('),
+        isTrue,
+        reason: '$name dialog must accept drops onto the modal route',
+      );
+      expect(
+        src.contains('_handleDialogDrop'),
+        isTrue,
+        reason: '$name dialog must route drops into its fields',
+      );
     });
   });
 
@@ -42,14 +48,16 @@ void main() {
 
   Widget buildApp(Widget child) {
     return TranslationProvider(
-      child: MaterialApp(home: Scaffold(body: Center(child: child))),
+      child: MaterialApp(
+        home: Scaffold(body: Center(child: child)),
+      ),
     );
   }
 
-  testWidgets('BookImportDialog prefills dragged audio into the audio row',
-      (WidgetTester tester) async {
-    final FushiDatabase db =
-        FushiDatabase.forTesting(NativeDatabase.memory());
+  testWidgets('BookImportDialog prefills dragged audio into the audio row', (
+    WidgetTester tester,
+  ) async {
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
 
     await tester.pumpWidget(

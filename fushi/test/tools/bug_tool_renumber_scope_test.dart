@@ -57,16 +57,20 @@ String readFile(Directory root, String rel) =>
 bool exists(Directory root, String rel) =>
     File('${root.path}/$rel').existsSync();
 
-const String indexShell = '# Bug 跟踪\n\n---\n\n'
+const String indexShell =
+    '# Bug 跟踪\n\n---\n\n'
     '<!-- BUGS-INDEX:BEGIN -->\n<!-- BUGS-INDEX:END -->\n';
 
 // —— base 侧（develop）那条合法的 BUG-9246，以及所有指向它的引用。改号后必须一字不变。
-const String baseBugDoc = '## BUG-9246 · helper 版本漂移\n'
+const String baseBugDoc =
+    '## BUG-9246 · helper 版本漂移\n'
     '- **[x] ① 已修复** — abc1234\n'
     '- **[x] ② 已加自动化测试** — fushi/test/tools/helper_version_drift_bug_9246_test.dart\n';
-const String baseLib = '// 修 BUG-9246：helper 版本漂移，根因在 helper.dart:88。\n'
+const String baseLib =
+    '// 修 BUG-9246：helper 版本漂移，根因在 helper.dart:88。\n'
     'void helper() {}\n';
-const String baseTest = 'void main() {\n'
+const String baseTest =
+    'void main() {\n'
     "  group('BUG-9246 helper 版本漂移', () {\n"
     "    test('BUG-9246 版本一致', () {});\n"
     '  });\n'
@@ -83,19 +87,23 @@ const Map<String, String> baseSideFiles = <String, String>{
 };
 
 // —— PR 侧那条 BUG-9246 及其五类位置。
-const String prBugDoc = '## BUG-9246 · 阅读器恢复位置丢失\n'
+const String prBugDoc =
+    '## BUG-9246 · 阅读器恢复位置丢失\n'
     '- **[x] ① 已修复** — def5678\n'
     '- **[x] ② 已加自动化测试** — fushi/test/reader/reader_restore_bug_9246_test.dart\n';
-const String prLib = '// 见 BUG-9246：恢复位置在 restore.dart:120 被覆盖。\n'
+const String prLib =
+    '// 见 BUG-9246：恢复位置在 restore.dart:120 被覆盖。\n'
     'void restore() {}\n';
-const String prTest = 'void main() {\n'
+const String prTest =
+    'void main() {\n'
     "  group('BUG-9246 阅读器恢复位置', () {\n"
     "    test('BUG-9246 恢复后偏移不丢', () {});\n"
     '  });\n'
     '}\n';
 
 /// 同形字串语料：他域编号 / SHA-256 十六进制 / 文档行号区间。一个都不许改。
-const String lookalikeCorpus = '// TODO-9246 是待办编号，不是 bug 号。\n'
+const String lookalikeCorpus =
+    '// TODO-9246 是待办编号，不是 bug 号。\n'
     '// sha256: 3f9c9246ab7d0e5592468899aabbccddeeff00112233445566778899aabbccdd\n'
     '// 行号区间：docs/agent/build.md:1242-9246 与 9246-9250。\n'
     '// 词尾同形：debug-9246 不是引用。\n'
@@ -124,8 +132,9 @@ Directory makeCollisionFixture(
   git(root, <String>['config', 'commit.gpgsign', 'false']);
 
   writeFile(root, 'docs/BUGS.md', indexShell);
-  baseSideFiles
-      .forEach((String rel, String content) => writeFile(root, rel, content));
+  baseSideFiles.forEach(
+    (String rel, String content) => writeFile(root, rel, content),
+  );
   git(root, <String>['add', '-A']);
   git(root, <String>['commit', '-qm', 'base: BUG-9246 helper-version-drift']);
 
@@ -133,13 +142,20 @@ Directory makeCollisionFixture(
   writeFile(root, 'docs/bugs/BUG-9246-reader-restore.md', prBugDoc);
   writeFile(root, 'fushi/lib/src/reader/restore.dart', prLib);
   writeFile(
-      root, 'fushi/test/reader/reader_restore_bug_9246_test.dart', prTest);
+    root,
+    'fushi/test/reader/reader_restore_bug_9246_test.dart',
+    prTest,
+  );
   writeFile(root, 'fushi/lib/src/reader/notes.dart', lookalikeCorpus);
-  extraPrFiles
-      .forEach((String rel, String content) => writeFile(root, rel, content));
+  extraPrFiles.forEach(
+    (String rel, String content) => writeFile(root, rel, content),
+  );
   if (touchBaseBugFile) {
-    writeFile(root, 'docs/bugs/BUG-9246-helper-version-drift.md',
-        '$baseBugDoc- **备注**：本 PR 顺手补的一行。\n');
+    writeFile(
+      root,
+      'docs/bugs/BUG-9246-helper-version-drift.md',
+      '$baseBugDoc- **备注**：本 PR 顺手补的一行。\n',
+    );
   }
   if (commitPrSide) {
     git(root, <String>['add', '-A']);
@@ -149,8 +165,9 @@ Directory makeCollisionFixture(
   return root;
 }
 
-bug.BranchScanner stubScanner(Set<int> numbers) => () async =>
-    bug.BranchScan(bug.BranchScanStatus.fresh, numbers, '', refCount: 2);
+bug.BranchScanner stubScanner(Set<int> numbers) =>
+    () async =>
+        bug.BranchScan(bug.BranchScanStatus.fresh, numbers, '', refCount: 2);
 
 void main() {
   late List<String> out;
@@ -174,8 +191,11 @@ void main() {
     test(description, () {
       final List<String> myOut = out;
       final List<String> myWarn = warn;
-      return bug.runInBugRepoScope(body,
-          logOut: myOut.add, logWarn: myWarn.add);
+      return bug.runInBugRepoScope(
+        body,
+        logOut: myOut.add,
+        logWarn: myWarn.add,
+      );
     }, timeout: const Timeout.factor(2));
   }
 
@@ -206,15 +226,21 @@ void main() {
       // 旧实现在这里就退出了（locateBugFile 命中多个直接抛）。
       expect(() => bug.locateBugFile(9246), throwsA(isA<bug.BugToolError>()));
 
-      await runBug(() => bug.cmdRenumber(<String>['9246', '9250'],
-          scanner: stubScanner(<int>{9246})));
+      await runBug(
+        () => bug.cmdRenumber(<String>[
+          '9246',
+          '9250',
+        ], scanner: stubScanner(<int>{9246})),
+      );
 
       // 改的是 PR 侧那一份。
       expect(exists(root, 'docs/bugs/BUG-9250-reader-restore.md'), isTrue);
       expect(exists(root, 'docs/bugs/BUG-9246-reader-restore.md'), isFalse);
       // base 侧那一份还在，名字没动。
       expect(
-          exists(root, 'docs/bugs/BUG-9246-helper-version-drift.md'), isTrue);
+        exists(root, 'docs/bugs/BUG-9246-helper-version-drift.md'),
+        isTrue,
+      );
     });
   });
 
@@ -226,42 +252,67 @@ void main() {
           rel: File('${root.path}/$rel').readAsBytesSync(),
       };
 
-      await runBug(() => bug.cmdRenumber(<String>['9246', '9250'],
-          scanner: stubScanner(<int>{9246})));
+      await runBug(
+        () => bug.cmdRenumber(<String>[
+          '9246',
+          '9250',
+        ], scanner: stubScanner(<int>{9246})),
+      );
 
       for (final rel in baseSideFiles.keys) {
         expect(exists(root, rel), isTrue, reason: 'base 侧 $rel 被改名或删除了');
-        expect(File('${root.path}/$rel').readAsBytesSync(), before[rel],
-            reason: 'base 侧 $rel 内容被改动——这就是「develop 侧 BUG 凭空消失」的二次破坏');
+        expect(
+          File('${root.path}/$rel').readAsBytesSync(),
+          before[rel],
+          reason: 'base 侧 $rel 内容被改动——这就是「develop 侧 BUG 凭空消失」的二次破坏',
+        );
       }
       // 正文 H2 与所有引用都还指向 9246。
-      expect(readFile(root, 'docs/bugs/BUG-9246-helper-version-drift.md'),
-          startsWith('## BUG-9246 · '));
-      expect(readFile(root, 'lib/helper.dart'), contains('BUG-9246'));
-      expect(readFile(root, 'docs/agent/build.md'),
-          contains('[BUG-9246](../bugs/BUG-9246-helper-version-drift.md)'));
       expect(
-          readFile(
-              root, 'fushi/test/tools/helper_version_drift_bug_9246_test.dart'),
-          contains("group('BUG-9246 helper 版本漂移'"));
+        readFile(root, 'docs/bugs/BUG-9246-helper-version-drift.md'),
+        startsWith('## BUG-9246 · '),
+      );
+      expect(readFile(root, 'lib/helper.dart'), contains('BUG-9246'));
+      expect(
+        readFile(root, 'docs/agent/build.md'),
+        contains('[BUG-9246](../bugs/BUG-9246-helper-version-drift.md)'),
+      );
+      expect(
+        readFile(
+          root,
+          'fushi/test/tools/helper_version_drift_bug_9246_test.dart',
+        ),
+        contains("group('BUG-9246 helper 版本漂移'"),
+      );
       // git 视角：base 侧文件一个都没进改动集。
-      final status = Process.runSync('git', <String>['status', '--porcelain'],
-          workingDirectory: root.path);
+      final status = Process.runSync('git', <String>[
+        'status',
+        '--porcelain',
+      ], workingDirectory: root.path);
       for (final rel in baseSideFiles.keys) {
-        expect(status.stdout as String, isNot(contains(rel)),
-            reason: 'base 侧 $rel 出现在工作区改动里');
+        expect(
+          status.stdout as String,
+          isNot(contains(rel)),
+          reason: 'base 侧 $rel 出现在工作区改动里',
+        );
       }
     });
 
     repoTest('base 侧条目在改号后仍在索引里，且 check 通过', () async {
       final root = makeCollisionFixture(temps);
-      await runBug(() => bug.cmdRenumber(<String>['9246', '9250'],
-          scanner: stubScanner(<int>{9246})));
+      await runBug(
+        () => bug.cmdRenumber(<String>[
+          '9246',
+          '9250',
+        ], scanner: stubScanner(<int>{9246})),
+      );
 
       final index = readFile(root, 'docs/BUGS.md');
       expect(
-          index, contains('[BUG-9246](bugs/BUG-9246-helper-version-drift.md)'),
-          reason: 'base 侧那条不能从索引里消失');
+        index,
+        contains('[BUG-9246](bugs/BUG-9246-helper-version-drift.md)'),
+        reason: 'base 侧那条不能从索引里消失',
+      );
       expect(index, contains('[BUG-9250](bugs/BUG-9250-reader-restore.md)'));
       expect(bug.cmdCheck(), 0);
     });
@@ -272,11 +323,18 @@ void main() {
       final List<int> before = File('${root.path}/$basePath').readAsBytesSync();
       // 前提成立：它确实在本次改动集里（不是靠「不在作用域」被动躲过去的）。
       final scope = await runBug(() => bug.resolveRenumberScope());
-      expect(scope.contains(basePath), isTrue,
-          reason: 'fixture 没造出「base 侧 bug 文件也在 diff 里」的前提');
+      expect(
+        scope.contains(basePath),
+        isTrue,
+        reason: 'fixture 没造出「base 侧 bug 文件也在 diff 里」的前提',
+      );
 
-      await runBug(() => bug.cmdRenumber(<String>['9246', '9250'],
-          scanner: stubScanner(<int>{9246})));
+      await runBug(
+        () => bug.cmdRenumber(<String>[
+          '9246',
+          '9250',
+        ], scanner: stubScanner(<int>{9246})),
+      );
 
       expect(exists(root, basePath), isTrue, reason: '不是自己引入的 bug 文件被改名了');
       expect(File('${root.path}/$basePath').readAsBytesSync(), before);
@@ -287,8 +345,12 @@ void main() {
 
     repoTest('reindex 幂等：改号后再跑一次索引不变', () async {
       final root = makeCollisionFixture(temps);
-      await runBug(() => bug.cmdRenumber(<String>['9246', '9250'],
-          scanner: stubScanner(<int>{9246})));
+      await runBug(
+        () => bug.cmdRenumber(<String>[
+          '9246',
+          '9250',
+        ], scanner: stubScanner(<int>{9246})),
+      );
       final afterRenumber = readFile(root, 'docs/BUGS.md');
       bug.cmdReindex();
       expect(readFile(root, 'docs/BUGS.md'), afterRenumber);
@@ -299,52 +361,77 @@ void main() {
   group('完整性：PR 侧五类位置全部改到', () {
     repoTest('文件名 / 正文 H2 / 代码引用 / 测试与 group 名 / 测试文件名内嵌号', () async {
       final root = makeCollisionFixture(temps);
-      await runBug(() => bug.cmdRenumber(<String>['9246', '9250'],
-          scanner: stubScanner(<int>{9246})));
+      await runBug(
+        () => bug.cmdRenumber(<String>[
+          '9246',
+          '9250',
+        ], scanner: stubScanner(<int>{9246})),
+      );
 
       // ① 文件名
       expect(exists(root, 'docs/bugs/BUG-9250-reader-restore.md'), isTrue);
       // ② 正文 H2（守卫 bugs_per_file_guard_test 扫这里，只改文件名会 CI 红）
-      expect(readFile(root, 'docs/bugs/BUG-9250-reader-restore.md'),
-          startsWith('## BUG-9250 · '));
+      expect(
+        readFile(root, 'docs/bugs/BUG-9250-reader-restore.md'),
+        startsWith('## BUG-9250 · '),
+      );
       // ③ 代码注释引用
-      expect(readFile(root, 'fushi/lib/src/reader/restore.dart'),
-          contains('见 BUG-9250：'));
-      expect(readFile(root, 'fushi/lib/src/reader/restore.dart'),
-          isNot(contains('BUG-9246')));
+      expect(
+        readFile(root, 'fushi/lib/src/reader/restore.dart'),
+        contains('见 BUG-9250：'),
+      );
+      expect(
+        readFile(root, 'fushi/lib/src/reader/restore.dart'),
+        isNot(contains('BUG-9246')),
+      );
       // ④ 测试名与 group 名
-      final prTestNow =
-          readFile(root, 'fushi/test/reader/reader_restore_bug_9250_test.dart');
+      final prTestNow = readFile(
+        root,
+        'fushi/test/reader/reader_restore_bug_9250_test.dart',
+      );
       expect(prTestNow, contains("group('BUG-9250 阅读器恢复位置'"));
       expect(prTestNow, contains("test('BUG-9250 恢复后偏移不丢'"));
       // ⑤ 测试文件名内嵌号（最容易漏的一类）
       expect(
-          exists(root, 'fushi/test/reader/reader_restore_bug_9250_test.dart'),
-          isTrue);
+        exists(root, 'fushi/test/reader/reader_restore_bug_9250_test.dart'),
+        isTrue,
+      );
       expect(
-          exists(root, 'fushi/test/reader/reader_restore_bug_9246_test.dart'),
-          isFalse);
+        exists(root, 'fushi/test/reader/reader_restore_bug_9246_test.dart'),
+        isFalse,
+      );
       // bug 正文里指向测试文件的路径也跟着改
-      expect(readFile(root, 'docs/bugs/BUG-9250-reader-restore.md'),
-          contains('fushi/test/reader/reader_restore_bug_9250_test.dart'));
+      expect(
+        readFile(root, 'docs/bugs/BUG-9250-reader-restore.md'),
+        contains('fushi/test/reader/reader_restore_bug_9250_test.dart'),
+      );
     });
   });
 
   group('同形字串不被误改', () {
     repoTest('TODO-<old> / SHA 十六进制 / 行号区间 / debug-<old> 全部原样', () async {
       final root = makeCollisionFixture(temps);
-      await runBug(() => bug.cmdRenumber(<String>['9246', '9250'],
-          scanner: stubScanner(<int>{9246})));
+      await runBug(
+        () => bug.cmdRenumber(<String>[
+          '9246',
+          '9250',
+        ], scanner: stubScanner(<int>{9246})),
+      );
 
       final notes = readFile(root, 'fushi/lib/src/reader/notes.dart');
       expect(notes, contains('TODO-9246'), reason: '他域编号被改了');
       expect(
-          notes,
-          contains(
-              '3f9c9246ab7d0e5592468899aabbccddeeff00112233445566778899aabbccdd'),
-          reason: 'SHA-256 十六进制里的数字被改了');
-      expect(notes, contains('docs/agent/build.md:1242-9246'),
-          reason: '行号区间被改了');
+        notes,
+        contains(
+          '3f9c9246ab7d0e5592468899aabbccddeeff00112233445566778899aabbccdd',
+        ),
+        reason: 'SHA-256 十六进制里的数字被改了',
+      );
+      expect(
+        notes,
+        contains('docs/agent/build.md:1242-9246'),
+        reason: '行号区间被改了',
+      );
       expect(notes, contains('9246-9250'), reason: '行号区间被改了');
       expect(notes, contains('debug-9246'), reason: '词尾同形被误伤');
       // 真正的引用改到了，且只改了这一处。
@@ -362,10 +449,19 @@ void main() {
       };
 
       await expectLater(
-        runBug(() => bug.cmdRenumber(<String>['9246', '9250'],
-            scanner: stubScanner(<int>{9246}))),
-        throwsA(isA<bug.BugToolError>().having(
-            (bug.BugToolError e) => e.message, 'message', contains('--base'))),
+        runBug(
+          () => bug.cmdRenumber(<String>[
+            '9246',
+            '9250',
+          ], scanner: stubScanner(<int>{9246})),
+        ),
+        throwsA(
+          isA<bug.BugToolError>().having(
+            (bug.BugToolError e) => e.message,
+            'message',
+            contains('--base'),
+          ),
+        ),
       );
 
       for (final rel in baseSideFiles.keys) {
@@ -377,10 +473,14 @@ void main() {
 
     repoTest('显式 --base 能救回来', () async {
       final root = makeCollisionFixture(temps, baseBranch: 'no-such-base');
-      await runBug(() => bug.cmdRenumber(
-            <String>['9246', '9250', '--base', 'no-such-base'],
-            scanner: stubScanner(<int>{9246}),
-          ));
+      await runBug(
+        () => bug.cmdRenumber(<String>[
+          '9246',
+          '9250',
+          '--base',
+          'no-such-base',
+        ], scanner: stubScanner(<int>{9246})),
+      );
       expect(exists(root, 'docs/bugs/BUG-9250-reader-restore.md'), isTrue);
       expect(readFile(root, 'lib/helper.dart'), contains('BUG-9246'));
     });
@@ -400,10 +500,19 @@ void main() {
       bug.bugRepoRoot = root.path;
 
       await expectLater(
-        runBug(() => bug.cmdRenumber(<String>['9246', '9250'],
-            scanner: stubScanner(<int>{9246}))),
-        throwsA(isA<bug.BugToolError>().having(
-            (bug.BugToolError e) => e.message, 'message', contains('撞号'))),
+        runBug(
+          () => bug.cmdRenumber(<String>[
+            '9246',
+            '9250',
+          ], scanner: stubScanner(<int>{9246})),
+        ),
+        throwsA(
+          isA<bug.BugToolError>().having(
+            (bug.BugToolError e) => e.message,
+            'message',
+            contains('撞号'),
+          ),
+        ),
       );
       expect(exists(root, 'docs/bugs/BUG-9250-reader-restore.md'), isFalse);
     });
@@ -412,13 +521,18 @@ void main() {
   group('未提交的 PR 侧新条目（刚 `new` 出来还没 commit）', () {
     repoTest('untracked 也算本次改动引入，照样能消歧并改到五类位置', () async {
       final root = makeCollisionFixture(temps, commitPrSide: false);
-      await runBug(() => bug.cmdRenumber(<String>['9246', '9250'],
-          scanner: stubScanner(<int>{9246})));
+      await runBug(
+        () => bug.cmdRenumber(<String>[
+          '9246',
+          '9250',
+        ], scanner: stubScanner(<int>{9246})),
+      );
 
       expect(exists(root, 'docs/bugs/BUG-9250-reader-restore.md'), isTrue);
       expect(
-          exists(root, 'fushi/test/reader/reader_restore_bug_9250_test.dart'),
-          isTrue);
+        exists(root, 'fushi/test/reader/reader_restore_bug_9250_test.dart'),
+        isTrue,
+      );
       expect(readFile(root, 'lib/helper.dart'), baseLib);
       expect(bug.cmdCheck(), 0);
     });
@@ -430,17 +544,25 @@ void main() {
       final beforeBase = readFile(root, 'lib/helper.dart');
       final beforePr = readFile(root, 'docs/bugs/BUG-9246-reader-restore.md');
 
-      await runBug(() => bug.cmdRenumber(
-            <String>['9246', '9250', '--dry-run'],
-            scanner: stubScanner(<int>{9246}),
-          ));
+      await runBug(
+        () => bug.cmdRenumber(<String>[
+          '9246',
+          '9250',
+          '--dry-run',
+        ], scanner: stubScanner(<int>{9246})),
+      );
 
       final printed = out.join('\n');
       expect(printed, contains('[dry-run]'));
-      expect(printed, contains('docs/bugs/BUG-9246-helper-version-drift.md'),
-          reason: 'dry-run 要显式说明 base 侧那份不碰');
-      expect(printed,
-          contains('fushi/test/reader/reader_restore_bug_9246_test.dart'));
+      expect(
+        printed,
+        contains('docs/bugs/BUG-9246-helper-version-drift.md'),
+        reason: 'dry-run 要显式说明 base 侧那份不碰',
+      );
+      expect(
+        printed,
+        contains('fushi/test/reader/reader_restore_bug_9246_test.dart'),
+      );
       expect(readFile(root, 'lib/helper.dart'), beforeBase);
       expect(readFile(root, 'docs/bugs/BUG-9246-reader-restore.md'), beforePr);
       expect(exists(root, 'docs/bugs/BUG-9250-reader-restore.md'), isFalse);
@@ -509,10 +631,11 @@ void main() {
       writeFile(root, 'clean.dart', '// TODO-9246 不算\n');
       bug.bugRepoRoot = root.path;
 
-      final fp = bug.bugRefFingerprint(
-        9246,
-        <String>['a.dart', 'bug_9246_test.dart', 'clean.dart'],
-      );
+      final fp = bug.bugRefFingerprint(9246, <String>[
+        'a.dart',
+        'bug_9246_test.dart',
+        'clean.dart',
+      ]);
       expect(fp['a.dart'], '2:0');
       expect(fp['bug_9246_test.dart'], '0:1');
       expect(fp.containsKey('clean.dart'), isFalse);
@@ -541,14 +664,24 @@ void main() {
         expect(bug.looksTextual(rel), isTrue, reason: '$rel 又被判成非文本了');
       }
 
-      await runBug(() => bug.cmdRenumber(<String>['9246', '9250'],
-          scanner: stubScanner(<int>{9246})));
+      await runBug(
+        () => bug.cmdRenumber(<String>[
+          '9246',
+          '9250',
+        ], scanner: stubScanner(<int>{9246})),
+      );
 
       for (final rel in oddNameFiles.keys) {
-        expect(readFile(root, rel), contains('BUG-9250'),
-            reason: '$rel 里的引用没改到');
-        expect(readFile(root, rel), isNot(contains('BUG-9246')),
-            reason: '$rel 里还留着旧号');
+        expect(
+          readFile(root, rel),
+          contains('BUG-9250'),
+          reason: '$rel 里的引用没改到',
+        );
+        expect(
+          readFile(root, rel),
+          isNot(contains('BUG-9246')),
+          reason: '$rel 里还留着旧号',
+        );
       }
     });
 
@@ -556,20 +689,38 @@ void main() {
       // 模拟「扩展名判据又退化了一次」：引用落在一个扩展名进了二进制黑名单、
       // 内容其实是纯文本的文件里。替换侧按黑名单跳过它；自校验走独立遍历 +
       // 字节嗅探，必须照样看得见。守卫与被守对象共用扫描器时这里是假绿。
-      makeCollisionFixture(temps, extraPrFiles: <String, String>{
-        'docs/notes.bin': '这一行引用 BUG-9246，替换侧看不见它。\n',
-      });
-      expect(bug.looksTextual('docs/notes.bin'), isFalse,
-          reason: '前提：替换侧确实跳过它');
+      makeCollisionFixture(
+        temps,
+        extraPrFiles: <String, String>{
+          'docs/notes.bin': '这一行引用 BUG-9246，替换侧看不见它。\n',
+        },
+      );
+      expect(
+        bug.looksTextual('docs/notes.bin'),
+        isFalse,
+        reason: '前提：替换侧确实跳过它',
+      );
 
       await expectLater(
-        runBug(() => bug.cmdRenumber(<String>['9246', '9250'],
-            scanner: stubScanner(<int>{9246}))),
-        throwsA(isA<bug.BugToolError>()
-            .having(
-                (bug.BugToolError e) => e.message, 'message', contains('残留'))
-            .having((bug.BugToolError e) => e.message, 'message',
-                contains('docs/notes.bin'))),
+        runBug(
+          () => bug.cmdRenumber(<String>[
+            '9246',
+            '9250',
+          ], scanner: stubScanner(<int>{9246})),
+        ),
+        throwsA(
+          isA<bug.BugToolError>()
+              .having(
+                (bug.BugToolError e) => e.message,
+                'message',
+                contains('残留'),
+              )
+              .having(
+                (bug.BugToolError e) => e.message,
+                'message',
+                contains('docs/notes.bin'),
+              ),
+        ),
       );
       expect(out.join('\n'), isNot(contains('自校验零残留')));
     });
@@ -592,10 +743,19 @@ void main() {
       expect(bug.locateBugFiles(9246), hasLength(1));
 
       await expectLater(
-        runBug(() => bug.cmdRenumber(<String>['9246', '9250'],
-            scanner: stubScanner(<int>{9246}))),
-        throwsA(isA<bug.BugToolError>().having(
-            (bug.BugToolError e) => e.message, 'message', contains('残留'))),
+        runBug(
+          () => bug.cmdRenumber(<String>[
+            '9246',
+            '9250',
+          ], scanner: stubScanner(<int>{9246})),
+        ),
+        throwsA(
+          isA<bug.BugToolError>().having(
+            (bug.BugToolError e) => e.message,
+            'message',
+            contains('残留'),
+          ),
+        ),
       );
     });
 
@@ -613,11 +773,17 @@ void main() {
       bug.bugRepoRoot = root.path;
 
       final scan = await runBug(() => bug.repoScanPaths());
-      expect(scan, isNot(contains('docs/notes.bin')),
-          reason: '前提：替换侧按黑名单跳过 .bin');
+      expect(
+        scan,
+        isNot(contains('docs/notes.bin')),
+        reason: '前提：替换侧按黑名单跳过 .bin',
+      );
       final residual = await runBug(() => bug.findResidualRefs(9246));
-      expect(residual, contains('docs/notes.bin:1'),
-          reason: '自校验复用了 repoScanPaths 就会在这里瞎掉');
+      expect(
+        residual,
+        contains('docs/notes.bin:1'),
+        reason: '自校验复用了 repoScanPaths 就会在这里瞎掉',
+      );
       expect(residual, contains('UPSTREAM:1'));
     });
 
@@ -629,8 +795,13 @@ void main() {
       git(root, <String>['config', 'user.name', 'fixture']);
       git(root, <String>['config', 'commit.gpgsign', 'false']);
       // 头部就有 NUL：即使字节里出现 `BUG-9246`，也不是引用载体。
-      writeBytes(root, 'assets/blob',
-          <int>[0x89, 0x50, 0x00, 0x01, ...'BUG-9246'.codeUnits]);
+      writeBytes(root, 'assets/blob', <int>[
+        0x89,
+        0x50,
+        0x00,
+        0x01,
+        ...'BUG-9246'.codeUnits,
+      ]);
       git(root, <String>['add', '-A']);
       git(root, <String>['commit', '-qm', 'binary blob']);
       bug.bugRepoRoot = root.path;
@@ -648,14 +819,23 @@ void main() {
       git(root, <String>['config', 'commit.gpgsign', 'false']);
       // GBK 的「中文」+ ASCII 引用；readAsStringSync 会抛 FormatException，
       // 旧实现在那里直接 continue，等于对这类文件也瞎。
-      writeBytes(root, 'legacy.txt',
-          <int>[0xD6, 0xD0, 0xCE, 0xC4, 0x20, ...'BUG-9246'.codeUnits, 0x0A]);
+      writeBytes(root, 'legacy.txt', <int>[
+        0xD6,
+        0xD0,
+        0xCE,
+        0xC4,
+        0x20,
+        ...'BUG-9246'.codeUnits,
+        0x0A,
+      ]);
       git(root, <String>['add', '-A']);
       git(root, <String>['commit', '-qm', 'gbk']);
       bug.bugRepoRoot = root.path;
 
-      expect(await runBug(() => bug.findResidualRefs(9246)),
-          contains('legacy.txt:1'));
+      expect(
+        await runBug(() => bug.findResidualRefs(9246)),
+        contains('legacy.txt:1'),
+      );
     });
   });
 }

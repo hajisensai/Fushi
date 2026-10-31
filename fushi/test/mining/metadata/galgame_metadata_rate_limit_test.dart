@@ -200,9 +200,13 @@ void main() {
     test('已过期的 HTTP-date → null；月份非法 → null', () {
       final DateTime now = DateTime.utc(2026, 1, 1);
       expect(
-          parseRetryAfter('Sun, 06 Nov 1994 08:49:37 GMT', now: now), isNull);
+        parseRetryAfter('Sun, 06 Nov 1994 08:49:37 GMT', now: now),
+        isNull,
+      );
       expect(
-          parseRetryAfter('Sun, 06 Xxx 2030 08:49:37 GMT', now: now), isNull);
+        parseRetryAfter('Sun, 06 Xxx 2030 08:49:37 GMT', now: now),
+        isNull,
+      );
       expect(parseRetryAfter('2030-01-01T00:00:00Z', now: now), isNull);
     });
   });

@@ -62,9 +62,9 @@ class AsrRetimingTranscription implements RetimingTranscription {
     }
     final List<AsrCueTokenTiming>? rows =
         await AsrTranscriptionService.readCueTokenTimings(
-      srtPath,
-      expectedCount: cues.length,
-    );
+          srtPath,
+          expectedCount: cues.length,
+        );
     return AsrRetimingTranscription(
       cues: cues,
       tokenTimings: (rows != null && rows.length == cues.length) ? rows : null,
@@ -103,12 +103,14 @@ RetimingInputCues retimingCuesFromAudioCues(List<AudioCue> cues) {
       dropped++;
       continue;
     }
-    out.add(SubtitleCue(
-      index: out.length + 1,
-      startMs: cue.startMs,
-      endMs: cue.endMs,
-      text: cue.text,
-    ));
+    out.add(
+      SubtitleCue(
+        index: out.length + 1,
+        startMs: cue.startMs,
+        endMs: cue.endMs,
+        text: cue.text,
+      ),
+    );
   }
   return RetimingInputCues(cues: out, droppedCount: dropped);
 }
@@ -120,8 +122,10 @@ RetimingInputCues retimingCuesFromAudioCues(List<AudioCue> cues) {
 /// 覆盖掉上一次的结果等于让用户没法回头比较）。
 ///
 /// [baseName] 可以带扩展名（`ep01.zh.ass`）也可以不带，一律先去掉扩展名。
-String retimedSubtitleFileName(String baseName,
-    {Set<String> taken = const <String>{}}) {
+String retimedSubtitleFileName(
+  String baseName, {
+  Set<String> taken = const <String>{},
+}) {
   final String stem = p.basenameWithoutExtension(baseName).trim();
   // 前导点要剥掉：`basenameWithoutExtension('.srt')` 原样返回 `.srt`（点开头被当成
   // 隐藏文件、不是扩展名），拼出来的 `.srt.retimed.srt` 在类 Unix 上是隐藏档，
@@ -179,9 +183,7 @@ class RetimedSubtitleFile {
 /// 不做 i18n 拼装——调用方拿这三个数去填 i18n 模板；这里只负责把「命中率」算成
 /// 整数百分比，免得每个调用点各算一遍还算得不一样。
 ({int matched, int total, int percent, int medianShiftMs})
-    retimedSubtitleSummary(
-  RetimedSubtitleFile file,
-) {
+retimedSubtitleSummary(RetimedSubtitleFile file) {
   final int total = file.inputCues;
   final int matched = file.matchedCues;
   final int percent = total <= 0 ? 0 : ((matched * 100) / total).round();

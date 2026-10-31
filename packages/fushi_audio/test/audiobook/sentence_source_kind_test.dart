@@ -64,12 +64,13 @@ void main() {
     });
 
     test('FavoriteSentence 旧条目缺 source 的默认与回退一致', () {
-      final FavoriteSentence legacy =
-          FavoriteSentence.fromJson(<String, dynamic>{
-        'text': 'テスト文',
-        'bookTitle': 'テスト本',
-        'createdAt': '2026-07-26T00:00:00.000',
-      });
+      final FavoriteSentence legacy = FavoriteSentence.fromJson(
+        <String, dynamic>{
+          'text': 'テスト文',
+          'bookTitle': 'テスト本',
+          'createdAt': '2026-07-26T00:00:00.000',
+        },
+      );
       expect(sentenceSourceKindOf(legacy.source), SentenceSourceKind.book);
     });
   });

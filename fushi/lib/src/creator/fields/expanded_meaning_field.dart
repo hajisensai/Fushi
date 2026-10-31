@@ -8,12 +8,14 @@ import 'package:fushi/models.dart';
 class ExpandedMeaningField extends Field {
   /// Initialise this field with the predetermined and hardset values.
   ExpandedMeaningField._privateConstructor()
-      : super(
-            uniqueKey: key,
-            label: 'Expanded Meaning',
-            description: 'Dictionary definitions only from expanded'
-                ' dictionaries.',
-            icon: Icons.open_in_full_outlined);
+    : super(
+        uniqueKey: key,
+        label: 'Expanded Meaning',
+        description:
+            'Dictionary definitions only from expanded'
+            ' dictionaries.',
+        icon: Icons.open_in_full_outlined,
+      );
 
   /// Get the singleton instance of this field.
   static ExpandedMeaningField get instance => _instance;

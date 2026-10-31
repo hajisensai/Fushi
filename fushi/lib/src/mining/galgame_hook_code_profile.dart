@@ -107,7 +107,8 @@ class LunaHookCodeProfile {
   void validate() {
     if (executableSha256.isEmpty && moduleSha256.isEmpty) {
       throw const FormatException(
-          'A profile needs an executable or module hash.');
+        'A profile needs an executable or module hash.',
+      );
     }
     if (executableSha256.isNotEmpty &&
         !_sha256Pattern.hasMatch(executableSha256)) {
@@ -123,22 +124,25 @@ class LunaHookCodeProfile {
     if (codepage <= 0 || (hookCode.trim().isEmpty && options.trim().isEmpty)) {
       throw const FormatException('Invalid codepage or empty Hook Code.');
     }
-    if (<String>[moduleName, hookCode, label, options].any((value) =>
-        value.contains('\t') || value.contains('\n') || value.contains('\r'))) {
+    if (<String>[moduleName, hookCode, label, options].any(
+      (value) =>
+          value.contains('\t') || value.contains('\n') || value.contains('\r'),
+    )) {
       throw const FormatException(
-          'Profile fields cannot contain tabs or lines.');
+        'Profile fields cannot contain tabs or lines.',
+      );
     }
   }
 
   String toTsvRow({bool includeOptions = true}) => <Object>[
-        executableSha256,
-        moduleName,
-        moduleSha256,
-        codepage,
-        hookCode,
-        label,
-        if (includeOptions) options,
-      ].join('\t');
+    executableSha256,
+    moduleName,
+    moduleSha256,
+    codepage,
+    hookCode,
+    label,
+    if (includeOptions) options,
+  ].join('\t');
 }
 
 List<LunaHookCodeProfile> parseLunaHookCodeProfiles(String input) {
@@ -155,7 +159,8 @@ List<LunaHookCodeProfile> parseLunaHookCodeProfiles(String input) {
     final List<String> fields = line.split('\t');
     if (fields.length < _profileMinColumns) {
       throw const FormatException(
-          'Hook Code profile rows need at least six columns.');
+        'Hook Code profile rows need at least six columns.',
+      );
     }
     final LunaHookCodeProfile profile = LunaHookCodeProfile(
       executableSha256: fields[0].toLowerCase(),
@@ -178,8 +183,9 @@ String encodeLunaHookCodeProfiles(Iterable<LunaHookCodeProfile> profiles) {
   // 没有任何一行用到 options 就照旧写 v1：绝大多数用户表只有首行注释变化，旧版本
   // （只认六列）读自己的表不会炸。真有 options 要存时才升 v2——native 的解析器本来
   // 就同时吃 v1/v2。
-  final bool needsOptions =
-      sorted.any((LunaHookCodeProfile profile) => profile.options.isNotEmpty);
+  final bool needsOptions = sorted.any(
+    (LunaHookCodeProfile profile) => profile.options.isNotEmpty,
+  );
   return <String>[
     '# Fushi Luna hook-code profiles ${needsOptions ? 'v2' : 'v1'}. '
         'UTF-8, tab separated.',
@@ -199,8 +205,9 @@ class LunaHookCodeProfileStore {
 
   static Future<LunaHookCodeProfileStore> openDefault() async {
     final Directory root = await AppPaths.supportRootDirectory();
-    final File file =
-        File(p.join(root.path, 'galgame', 'luna_hook_profiles.tsv'));
+    final File file = File(
+      p.join(root.path, 'galgame', 'luna_hook_profiles.tsv'),
+    );
     final LunaHookCodeProfileStore store = LunaHookCodeProfileStore(file);
     await store.ensureExists();
     return store;
@@ -209,8 +216,11 @@ class LunaHookCodeProfileStore {
   Future<void> ensureExists() async {
     await file.parent.create(recursive: true);
     if (!await file.exists()) {
-      await file.writeAsString(encodeLunaHookCodeProfiles(const []),
-          encoding: utf8, flush: true);
+      await file.writeAsString(
+        encodeLunaHookCodeProfiles(const []),
+        encoding: utf8,
+        flush: true,
+      );
     }
   }
 
@@ -220,8 +230,9 @@ class LunaHookCodeProfileStore {
   }
 
   Future<void> replaceFrom(File imported) async {
-    final List<LunaHookCodeProfile> profiles =
-        parseLunaHookCodeProfiles(await imported.readAsString(encoding: utf8));
+    final List<LunaHookCodeProfile> profiles = parseLunaHookCodeProfiles(
+      await imported.readAsString(encoding: utf8),
+    );
     await save(profiles);
   }
 

@@ -32,19 +32,29 @@ void main() {
       final String later = language.wordFromIndex(text: sentence, index: 7);
 
       expect(head, isNotEmpty);
-      expect(head, equals(sentence[0]),
-          reason: 'index 0 anchors on the first glyph');
-      expect(middle, equals(sentence[4]),
-          reason: 'a mid-sentence tap must anchor mid-sentence, not at the '
-              'head — this is the exact regression ("点哪都查句首")');
+      expect(
+        head,
+        equals(sentence[0]),
+        reason: 'index 0 anchors on the first glyph',
+      );
+      expect(
+        middle,
+        equals(sentence[4]),
+        reason:
+            'a mid-sentence tap must anchor mid-sentence, not at the '
+            'head — this is the exact regression ("点哪都查句首")',
+      );
       expect(later, equals(sentence[7]));
-      expect(middle, isNot(equals(head)),
-          reason: 'the index must change the result; if it were ignored every '
-              'tap would return the same head word');
+      expect(
+        middle,
+        isNot(equals(head)),
+        reason:
+            'the index must change the result; if it were ignored every '
+            'tap would return the same head word',
+      );
     });
 
-    test(
-        'negative / out-of-range index returns empty so the caller falls '
+    test('negative / out-of-range index returns empty so the caller falls '
         'back to the whole sentence', () {
       // _extractWord uses an empty result as the signal to search the full
       // text — this preserves the system PROCESS_TEXT (charIndex == -1) path.

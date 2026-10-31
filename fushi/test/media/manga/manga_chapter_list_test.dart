@@ -82,28 +82,35 @@ void main() {
 
   /// 按屏幕纵坐标读出当前可见的章节标题顺序。
   List<String> visibleTitles(WidgetTester tester) {
-    final List<({double dy, String text})> found = <({double dy, String text})>[];
+    final List<({double dy, String text})> found =
+        <({double dy, String text})>[];
     for (final Element element in find.byType(Text).evaluate()) {
       final Text widget = element.widget as Text;
       final String? data = widget.data;
       if (data == null || !data.startsWith('Chapter ')) continue;
       found.add((dy: tester.getTopLeft(find.byWidget(widget)).dy, text: data));
     }
-    found.sort((({double dy, String text}) a, ({double dy, String text}) b) =>
-        a.dy.compareTo(b.dy));
+    found.sort(
+      (({double dy, String text}) a, ({double dy, String text}) b) =>
+          a.dy.compareTo(b.dy),
+    );
     return found.map((({double dy, String text}) e) => e.text).toList();
   }
 
   testWidgets('默认保持源顺序（新→旧）；翻转后第 1 话在前', (WidgetTester tester) async {
     await pumpList(tester, entry: entryWith(chapters));
-    expect(visibleTitles(tester), <String>['Chapter 3', 'Chapter 2', 'Chapter 1']);
+    expect(visibleTitles(tester), <String>[
+      'Chapter 3',
+      'Chapter 2',
+      'Chapter 1',
+    ]);
 
     await pumpList(tester, entry: entryWith(chapters), newestFirst: false);
-    expect(
-      visibleTitles(tester),
-      <String>['Chapter 1', 'Chapter 2', 'Chapter 3'],
-      reason: '「最早在前」必须真的翻转，而不是只改按钮文案',
-    );
+    expect(visibleTitles(tester), <String>[
+      'Chapter 1',
+      'Chapter 2',
+      'Chapter 3',
+    ], reason: '「最早在前」必须真的翻转，而不是只改按钮文案');
   });
 
   // 2026-10 M3E：行是 MediaDetailItemRow。已读 = 行尾 tertiary 对勾（key
@@ -184,11 +191,11 @@ void main() {
         .widgetList<MediaDetailItemRow>(find.byType(MediaDetailItemRow))
         .toList();
     expect(rows, hasLength(3));
-    expect(
-      rows.map((MediaDetailItemRow row) => row.number),
-      <String>['3', '2', '1'],
-      reason: '整数话不带小数点',
-    );
+    expect(rows.map((MediaDetailItemRow row) => row.number), <String>[
+      '3',
+      '2',
+      '1',
+    ], reason: '整数话不带小数点');
     expect(
       rows.map((MediaDetailItemRow row) => (row.index, row.count)),
       <(int, int)>[(0, 3), (1, 3), (2, 3)],
@@ -250,22 +257,15 @@ void main() {
       },
     );
     // lastPage 是 0-based，显示要 +1。
+    expect(find.textContaining('Fixture scans'), findsOneWidget);
     expect(
-      find.textContaining('Fixture scans'),
-      findsOneWidget,
-    );
-    expect(
-      find.textContaining(
-        t.manga_series_read_progress(page: '8', total: '24'),
-      ),
+      find.textContaining(t.manga_series_read_progress(page: '8', total: '24')),
       findsOneWidget,
       reason: 'lastPage 是 0-based，显示必须 +1，否则用户看到的页码永远少一页',
     );
   });
 
-  testWidgets('已下载的章菜单出「打开文件位置」不出「下载」；未下载的章相反', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('已下载的章菜单出「打开文件位置」不出「下载」；未下载的章相反', (WidgetTester tester) async {
     final List<String> revealed = <String>[];
     Future<void> pumpOne({required bool downloaded}) async {
       await tester.pumpWidget(
@@ -278,8 +278,9 @@ void main() {
                 newestFirst: true,
                 unreadOnly: false,
                 onChapterTap: (OnlineMangaChapter _) {},
-                downloadedChapterKeys:
-                    downloaded ? <String>{middle.key} : const <String>{},
+                downloadedChapterKeys: downloaded
+                    ? <String>{middle.key}
+                    : const <String>{},
                 onDownload: (OnlineMangaChapter _) {},
                 onRevealDownload: (OnlineMangaChapter chapter) =>
                     revealed.add(chapter.key),
@@ -301,8 +302,11 @@ void main() {
 
     await pumpOne(downloaded: false);
     expect(find.text(t.manga_chapter_download_action), findsOneWidget);
-    expect(find.text(t.media_file_location_open), findsNothing,
-        reason: '没下载的章没有文件可定位');
+    expect(
+      find.text(t.media_file_location_open),
+      findsNothing,
+      reason: '没下载的章没有文件可定位',
+    );
   });
 
   testWidgets('点某一行回调的是那一行对应的章', (WidgetTester tester) async {
@@ -324,13 +328,12 @@ MangaChapterStateRow _state({
   int? pageCount,
   int? readAt,
   int updatedAt = 1,
-}) =>
-    MangaChapterStateRow(
-      bookUid: 'uid',
-      chapterKey: chapterKey,
-      lastPage: lastPage,
-      lastFraction: -1,
-      pageCount: pageCount,
-      readAt: readAt,
-      updatedAt: updatedAt,
-    );
+}) => MangaChapterStateRow(
+  bookUid: 'uid',
+  chapterKey: chapterKey,
+  lastPage: lastPage,
+  lastFraction: -1,
+  pageCount: pageCount,
+  readAt: readAt,
+  updatedAt: updatedAt,
+);

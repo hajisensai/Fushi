@@ -40,11 +40,12 @@ const GalgameMetadataDraft _vndb = GalgameMetadataDraft(
 
 void main() {
   group('mergeDrafts 优先级（两源都有值）', () {
-    final GalgameMetadataDraft merged =
-        mergeDrafts(<GalgameMetadataSource, GalgameMetadataDraft>{
-      GalgameMetadataSource.bgm: _bgm,
-      GalgameMetadataSource.vndb: _vndb,
-    });
+    final GalgameMetadataDraft merged = mergeDrafts(
+      <GalgameMetadataSource, GalgameMetadataDraft>{
+        GalgameMetadataSource.bgm: _bgm,
+        GalgameMetadataSource.vndb: _vndb,
+      },
+    );
 
     test('name / nameCn / summary / releaseDate / score / nsfw 取 bgm', () {
       expect(merged.name, 'bgm-name');
@@ -85,11 +86,12 @@ void main() {
         nameCn: 'bgm-中文名',
         rank: 3,
       );
-      final GalgameMetadataDraft merged =
-          mergeDrafts(<GalgameMetadataSource, GalgameMetadataDraft>{
-        GalgameMetadataSource.bgm: sparseBgm,
-        GalgameMetadataSource.vndb: _vndb,
-      });
+      final GalgameMetadataDraft merged = mergeDrafts(
+        <GalgameMetadataSource, GalgameMetadataDraft>{
+          GalgameMetadataSource.bgm: sparseBgm,
+          GalgameMetadataSource.vndb: _vndb,
+        },
+      );
       expect(merged.name, 'vndb-name');
       expect(merged.nameCn, 'bgm-中文名');
       expect(merged.summary, 'vndb-简介');
@@ -101,20 +103,22 @@ void main() {
     });
 
     test('只有 vndb：rank 为空，developer 仍取 vndb', () {
-      final GalgameMetadataDraft merged =
-          mergeDrafts(<GalgameMetadataSource, GalgameMetadataDraft>{
-        GalgameMetadataSource.vndb: _vndb,
-      });
+      final GalgameMetadataDraft merged = mergeDrafts(
+        <GalgameMetadataSource, GalgameMetadataDraft>{
+          GalgameMetadataSource.vndb: _vndb,
+        },
+      );
       expect(merged.rank, isNull);
       expect(merged.developer, 'vndb-开发商');
       expect(merged.name, 'vndb-name');
     });
 
     test('只有 bgm：averageHours 为空，developer 回退 bgm', () {
-      final GalgameMetadataDraft merged =
-          mergeDrafts(<GalgameMetadataSource, GalgameMetadataDraft>{
-        GalgameMetadataSource.bgm: _bgm,
-      });
+      final GalgameMetadataDraft merged = mergeDrafts(
+        <GalgameMetadataSource, GalgameMetadataDraft>{
+          GalgameMetadataSource.bgm: _bgm,
+        },
+      );
       expect(merged.averageHours, isNull);
       expect(merged.developer, 'bgm-开发商');
     });
@@ -154,10 +158,7 @@ void main() {
           tags: <String>['我的tag', 'bgm-tag'],
         ),
       );
-      expect(
-        merged.aliases,
-        <String>['bgm-别名A', '共同别名', 'vndb-别名A', '我的别名'],
-      );
+      expect(merged.aliases, <String>['bgm-别名A', '共同别名', 'vndb-别名A', '我的别名']);
       expect(merged.tags, <String>['bgm-tag', '共同tag', 'vndb-tag', '我的tag']);
     });
 
@@ -178,8 +179,9 @@ void main() {
       final GalgameMetadataDraft merged = mergeDrafts(
         <GalgameMetadataSource, GalgameMetadataDraft>{
           GalgameMetadataSource.bgm: _bgm,
-          GalgameMetadataSource.vndb:
-              const GalgameMetadataDraft(name: 'vndb-name'),
+          GalgameMetadataSource.vndb: const GalgameMetadataDraft(
+            name: 'vndb-name',
+          ),
         },
         custom: const GalgameCustomData(
           coverSource: GalgameMetadataSource.vndb,
@@ -201,8 +203,9 @@ void main() {
 
   group('空输入', () {
     test('空 map + 无 custom → 空 draft，不抛', () {
-      final GalgameMetadataDraft merged =
-          mergeDrafts(const <GalgameMetadataSource, GalgameMetadataDraft>{});
+      final GalgameMetadataDraft merged = mergeDrafts(
+        const <GalgameMetadataSource, GalgameMetadataDraft>{},
+      );
       expect(merged.isEmpty, isTrue);
       expect(merged.externalId, isNull);
     });
@@ -210,10 +213,7 @@ void main() {
     test('空 map + custom → 只剩用户值', () {
       final GalgameMetadataDraft merged = mergeDrafts(
         const <GalgameMetadataSource, GalgameMetadataDraft>{},
-        custom: const GalgameCustomData(
-          name: '纯手填',
-          tags: <String>['手填tag'],
-        ),
+        custom: const GalgameCustomData(name: '纯手填', tags: <String>['手填tag']),
       );
       expect(merged.name, '纯手填');
       expect(merged.tags, <String>['手填tag']);
@@ -223,9 +223,9 @@ void main() {
     test('两个空 draft 合并仍是空 draft', () {
       final GalgameMetadataDraft merged =
           mergeDrafts(<GalgameMetadataSource, GalgameMetadataDraft>{
-        GalgameMetadataSource.bgm: const GalgameMetadataDraft(),
-        GalgameMetadataSource.vndb: const GalgameMetadataDraft(),
-      });
+            GalgameMetadataSource.bgm: const GalgameMetadataDraft(),
+            GalgameMetadataSource.vndb: const GalgameMetadataDraft(),
+          });
       expect(merged.isEmpty, isTrue);
     });
   });

@@ -39,19 +39,23 @@ void main() {
   group('JimakuVideoSubtitleProvider.tmdbIdFor', () {
     test('剧集编成 tv:<id>，电影编成 movie:<id>', () {
       expect(
-        JimakuVideoSubtitleProvider.tmdbIdFor(_media(
-          category: VideoDiscoveryCategory.tv,
-          kind: VideoMetadataMediaKind.tv,
-          tmdbId: 126991,
-        )),
+        JimakuVideoSubtitleProvider.tmdbIdFor(
+          _media(
+            category: VideoDiscoveryCategory.tv,
+            kind: VideoMetadataMediaKind.tv,
+            tmdbId: 126991,
+          ),
+        ),
         'tv:126991',
       );
       expect(
-        JimakuVideoSubtitleProvider.tmdbIdFor(_media(
-          category: VideoDiscoveryCategory.movie,
-          kind: VideoMetadataMediaKind.movie,
-          tmdbId: 669204,
-        )),
+        JimakuVideoSubtitleProvider.tmdbIdFor(
+          _media(
+            category: VideoDiscoveryCategory.movie,
+            kind: VideoMetadataMediaKind.movie,
+            tmdbId: 669204,
+          ),
+        ),
         'movie:669204',
       );
     });
@@ -60,11 +64,13 @@ void main() {
       // TMDB 的电影与剧集是两个独立号段：只看 discoveryCategory 会把动画剧场版
       // 编成 tv:<id>，张冠李戴。
       expect(
-        JimakuVideoSubtitleProvider.tmdbIdFor(_media(
-          category: VideoDiscoveryCategory.anime,
-          kind: VideoMetadataMediaKind.movie,
-          tmdbId: 42,
-        )),
+        JimakuVideoSubtitleProvider.tmdbIdFor(
+          _media(
+            category: VideoDiscoveryCategory.anime,
+            kind: VideoMetadataMediaKind.movie,
+            tmdbId: 42,
+          ),
+        ),
         'movie:42',
       );
     });
@@ -72,10 +78,12 @@ void main() {
     test('无 media / 无 tmdbId → null（不拼一个假键去查）', () {
       expect(JimakuVideoSubtitleProvider.tmdbIdFor(null), isNull);
       expect(
-        JimakuVideoSubtitleProvider.tmdbIdFor(_media(
-          category: VideoDiscoveryCategory.tv,
-          kind: VideoMetadataMediaKind.tv,
-        )),
+        JimakuVideoSubtitleProvider.tmdbIdFor(
+          _media(
+            category: VideoDiscoveryCategory.tv,
+            kind: VideoMetadataMediaKind.tv,
+          ),
+        ),
         isNull,
       );
     });
@@ -95,7 +103,9 @@ void main() {
         if (p.containsKey('tmdb_id')) {
           calls.add('tmdb:${p['tmdb_id']}:${p['anime']}');
           return http.Response.bytes(
-              utf8.encode('[{"id":4,"name":"最愛"}]'), 200);
+            utf8.encode('[{"id":4,"name":"最愛"}]'),
+            200,
+          );
         }
         calls.add('query:${p['query']}:${p['anime']}');
         return http.Response('[]', 200);
@@ -104,15 +114,17 @@ void main() {
         client: JimakuClient(apiKey: 'k', client: client),
       );
 
-      final ProviderBatchResult<VideoSubtitleCandidate> result =
-          await provider.search(VideoSubtitleSearchRequest(
-        media: _media(
-          category: VideoDiscoveryCategory.tv,
-          kind: VideoMetadataMediaKind.tv,
-          tmdbId: 126991,
-        ),
-        languages: <String>['ja'],
-      ));
+      final ProviderBatchResult<VideoSubtitleCandidate> result = await provider
+          .search(
+            VideoSubtitleSearchRequest(
+              media: _media(
+                category: VideoDiscoveryCategory.tv,
+                kind: VideoMetadataMediaKind.tv,
+                tmdbId: 126991,
+              ),
+              languages: <String>['ja'],
+            ),
+          );
 
       expect(result.items.single.releaseName, '最愛');
       // 分类过滤仍由 discoveryCategory 单点决定（liveAction ⇒ 只发 anime=false），
@@ -125,23 +137,30 @@ void main() {
       final MockClient client = MockClient((http.Request req) async {
         final Map<String, String> p = req.url.queryParameters;
         if (req.url.path.endsWith('/files')) return http.Response('[]', 200);
-        expect(p.containsKey('tmdb_id'), isFalse,
-            reason: '没有 TMDB id 就不该凭空多发一次请求');
-        calls.add('${p.keys.where((String k) => k != 'anime').join(',')}'
-            ':${p['anime']}');
+        expect(
+          p.containsKey('tmdb_id'),
+          isFalse,
+          reason: '没有 TMDB id 就不该凭空多发一次请求',
+        );
+        calls.add(
+          '${p.keys.where((String k) => k != 'anime').join(',')}'
+          ':${p['anime']}',
+        );
         return http.Response('[{"id":9,"name":"anime hit"}]', 200);
       });
       final JimakuVideoSubtitleProvider provider = JimakuVideoSubtitleProvider(
         client: JimakuClient(apiKey: 'k', client: client),
       );
 
-      await provider.search(VideoSubtitleSearchRequest(
-        media: _media(
-          category: VideoDiscoveryCategory.anime,
-          kind: VideoMetadataMediaKind.tv,
-          anilistId: 21,
+      await provider.search(
+        VideoSubtitleSearchRequest(
+          media: _media(
+            category: VideoDiscoveryCategory.anime,
+            kind: VideoMetadataMediaKind.tv,
+            anilistId: 21,
+          ),
         ),
-      ));
+      );
 
       expect(calls, <String>['anilist_id:true']);
     });

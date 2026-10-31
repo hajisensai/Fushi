@@ -22,9 +22,9 @@ mixin _FushiDbPrefsMedia
         .replaceAll(r'\', r'\\')
         .replaceAll('%', r'\%')
         .replaceAll('_', r'\_');
-    final SimpleSelectStatement<$PreferencesTable, PreferenceRow> q =
-        select(preferences)
-          ..where((t) => t.key.like('$escaped%', escapeChar: r'\'));
+    final SimpleSelectStatement<$PreferencesTable, PreferenceRow> q = select(
+      preferences,
+    )..where((t) => t.key.like('$escaped%', escapeChar: r'\'));
     final List<PreferenceRow> rows = await q.get();
     return <String, String>{
       for (final PreferenceRow row in rows) row.key: row.value,
@@ -94,8 +94,9 @@ mixin _FushiDbPrefsMedia
           ),
         );
       }
-      if (entries.keys
-          .any((String key) => key != FushiDatabase.prefsVersionKey)) {
+      if (entries.keys.any(
+        (String key) => key != FushiDatabase.prefsVersionKey,
+      )) {
         await _bumpPrefsVersion();
       }
     });
@@ -115,18 +116,17 @@ mixin _FushiDbPrefsMedia
     required String newValue,
   }) async {
     return transaction(() async {
-      final int updated = await (update(preferences)
-            ..where(
-              (t) => t.key.equals(key) & t.value.equals(expectedValue),
-            ))
-          .write(
-        PreferencesCompanion(
-          value: Value<String>(newValue),
-          // BUG-1502: same rule as [setPref] — a successful local write is a
-          // write, and must advance the LWW stamp.
-          updatedAt: Value<int>(DateTime.now().millisecondsSinceEpoch),
-        ),
-      );
+      final int updated =
+          await (update(
+            preferences,
+          )..where((t) => t.key.equals(key) & t.value.equals(expectedValue))).write(
+            PreferencesCompanion(
+              value: Value<String>(newValue),
+              // BUG-1502: same rule as [setPref] — a successful local write is a
+              // write, and must advance the LWW stamp.
+              updatedAt: Value<int>(DateTime.now().millisecondsSinceEpoch),
+            ),
+          );
       if (updated != 1) return false;
       if (key != FushiDatabase.prefsVersionKey) {
         await _bumpPrefsVersion();
@@ -221,9 +221,9 @@ mixin _FushiDbPrefsMedia
     required int updatedAt,
   }) async {
     return transaction(() async {
-      final PreferenceRow? existing = await (select(preferences)
-            ..where((t) => t.key.equals(key)))
-          .getSingleOrNull();
+      final PreferenceRow? existing = await (select(
+        preferences,
+      )..where((t) => t.key.equals(key))).getSingleOrNull();
       if (existing != null && existing.updatedAt >= updatedAt) return false;
       await into(preferences).insertOnConflictUpdate(
         PreferencesCompanion.insert(
@@ -243,9 +243,9 @@ mixin _FushiDbPrefsMedia
   /// absent. 0 means "written before v84 / by a device that had no clock" —
   /// see [Preferences.updatedAt].
   Future<int?> getPrefUpdatedAt(String key) async {
-    final PreferenceRow? row = await (select(preferences)
-          ..where((t) => t.key.equals(key)))
-        .getSingleOrNull();
+    final PreferenceRow? row = await (select(
+      preferences,
+    )..where((t) => t.key.equals(key))).getSingleOrNull();
     return row?.updatedAt;
   }
 
@@ -270,13 +270,12 @@ mixin _FushiDbPrefsMedia
     required String stampKey,
     required int expectedStamp,
     required Future<void> Function() write,
-  }) =>
-      transaction(() async {
-        final int current = await getPrefTyped<int>(stampKey, 0);
-        if (current != expectedStamp) return false;
-        await write();
-        return true;
-      });
+  }) => transaction(() async {
+    final int current = await getPrefTyped<int>(stampKey, 0);
+    if (current != expectedStamp) return false;
+    await write();
+    return true;
+  });
 
   Future<void> deletePref(String key) async {
     await (delete(preferences)..where((t) => t.key.equals(key))).go();
@@ -311,8 +310,9 @@ mixin _FushiDbPrefsMedia
     await transaction(() async {
       for (final MapEntry<String, String> entry in allPrefs.entries) {
         if (!entry.key.startsWith('bookmarks_')) continue;
-        final int? ttuBookId =
-            int.tryParse(entry.key.substring('bookmarks_'.length));
+        final int? ttuBookId = int.tryParse(
+          entry.key.substring('bookmarks_'.length),
+        );
         if (ttuBookId == null || entry.value.isEmpty) continue;
         final QueryRow countRow = await customSelect(
           'SELECT COUNT(*) AS c FROM bookmarks WHERE ttu_book_id = ?',
@@ -324,10 +324,9 @@ mixin _FushiDbPrefsMedia
           try {
             list = jsonDecode(entry.value) as List<dynamic>;
           } catch (_) {
-            await customStatement(
-              'DELETE FROM preferences WHERE key = ?',
-              [entry.key],
-            );
+            await customStatement('DELETE FROM preferences WHERE key = ?', [
+              entry.key,
+            ]);
             continue;
           }
           for (final dynamic raw in list) {
@@ -335,9 +334,8 @@ mixin _FushiDbPrefsMedia
             final int sectionIndex = raw['sectionIndex'] as int? ?? 0;
             final int normCharOffset = raw['normCharOffset'] as int? ?? 0;
             final String label = raw['label'] as String? ?? '';
-            final DateTime createdAt = DateTime.tryParse(
-                  raw['createdAt'] as String? ?? '',
-                ) ??
+            final DateTime createdAt =
+                DateTime.tryParse(raw['createdAt'] as String? ?? '') ??
                 DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
             final int rowBookId = raw['ttuBookId'] as int? ?? ttuBookId;
             // bookmarks.ttu_book_id is a FK to epub_books(id). Legacy TTU ids
@@ -367,28 +365,27 @@ mixin _FushiDbPrefsMedia
             );
           }
         }
-        await customStatement(
-          'DELETE FROM preferences WHERE key = ?',
-          [entry.key],
-        );
+        await customStatement('DELETE FROM preferences WHERE key = ?', [
+          entry.key,
+        ]);
       }
     });
   }
 
   // ── media open history（v78：取代 media_items）─────────────────────
-  Future<List<MediaOpenHistoryRow>> getAllMediaOpenHistory() =>
-      (select(mediaOpenHistory)
-            ..orderBy([(t) => OrderingTerm.desc(t.openedAt)]))
-          .get();
+  Future<List<MediaOpenHistoryRow>> getAllMediaOpenHistory() => (select(
+    mediaOpenHistory,
+  )..orderBy([(t) => OrderingTerm.desc(t.openedAt)])).get();
 
   /// upsert 一条最近打开（PK = (mediaSource, mediaId)，重开同条目刷新行）。
   Future<void> upsertMediaOpenHistory(MediaOpenHistoryCompanion entry) =>
       into(mediaOpenHistory).insertOnConflictUpdate(entry);
 
   Future<int> deleteMediaOpenHistory(String mediaSource, String mediaId) =>
-      (delete(mediaOpenHistory)
-            ..where((t) =>
-                t.mediaSource.equals(mediaSource) & t.mediaId.equals(mediaId)))
+      (delete(mediaOpenHistory)..where(
+            (t) =>
+                t.mediaSource.equals(mediaSource) & t.mediaId.equals(mediaId),
+          ))
           .go();
 
   Future<int> deleteMediaOpenHistoryByMediaId(String mediaId) =>
@@ -399,35 +396,33 @@ mixin _FushiDbPrefsMedia
   /// 每次打开媒体的热路径上，select 全列会把 snapshot（可能含迁移遗留的
   /// base64 封面）整批拉进 Dart 只为数个数（review5-6）。
   Future<void> trimMediaHistory(String typeId, int maxItems) => customStatement(
-        'DELETE FROM media_open_history WHERE media_type = ? AND rowid IN ('
-        'SELECT rowid FROM media_open_history WHERE media_type = ? '
-        'ORDER BY opened_at DESC LIMIT -1 OFFSET ?)',
-        <Object?>[typeId, typeId, maxItems],
-      );
+    'DELETE FROM media_open_history WHERE media_type = ? AND rowid IN ('
+    'SELECT rowid FROM media_open_history WHERE media_type = ? '
+    'ORDER BY opened_at DESC LIMIT -1 OFFSET ?)',
+    <Object?>[typeId, typeId, maxItems],
+  );
 
   // ── search history ──────────────────────────────────────────────
   Future<List<SearchHistoryItemRow>> getAllSearchHistoryItems() =>
       select(searchHistoryItems).get();
 
   Future<void> upsertSearchHistoryItem(SearchHistoryItemsCompanion item) async {
-    await into(searchHistoryItems).insert(
-      item,
-      mode: InsertMode.insertOrReplace,
-    );
+    await into(
+      searchHistoryItems,
+    ).insert(item, mode: InsertMode.insertOrReplace);
   }
 
   Future<int> deleteSearchHistoryByUniqueKey(String uk) =>
       (delete(searchHistoryItems)..where((t) => t.uniqueKey.equals(uk))).go();
 
-  Future<int> clearSearchHistory(String historyKey) =>
-      (delete(searchHistoryItems)
-            ..where((t) => t.historyKey.equals(historyKey)))
-          .go();
+  Future<int> clearSearchHistory(String historyKey) => (delete(
+    searchHistoryItems,
+  )..where((t) => t.historyKey.equals(historyKey))).go();
 
   Future<List<SearchHistoryItemRow>> getSearchHistory(String historyKey) =>
-      (select(searchHistoryItems)
-            ..where((t) => t.historyKey.equals(historyKey)))
-          .get();
+      (select(
+        searchHistoryItems,
+      )..where((t) => t.historyKey.equals(historyKey))).get();
 
   Future<int> countSearchHistory(String historyKey) async {
     final cnt = countAll();
@@ -443,50 +438,55 @@ mixin _FushiDbPrefsMedia
       final count = await countSearchHistory(historyKey);
       if (count <= maxItems) return;
       final surplus = count - maxItems;
-      final oldestIds = await (select(searchHistoryItems)
-            ..where((t) => t.historyKey.equals(historyKey))
-            ..orderBy([(t) => OrderingTerm.asc(t.id)])
-            ..limit(surplus))
-          .map((r) => r.id)
-          .get();
-      await (delete(searchHistoryItems)..where((t) => t.id.isIn(oldestIds)))
-          .go();
+      final oldestIds =
+          await (select(searchHistoryItems)
+                ..where((t) => t.historyKey.equals(historyKey))
+                ..orderBy([(t) => OrderingTerm.asc(t.id)])
+                ..limit(surplus))
+              .map((r) => r.id)
+              .get();
+      await (delete(
+        searchHistoryItems,
+      )..where((t) => t.id.isIn(oldestIds))).go();
     });
   }
 
   // ── audiobooks ──────────────────────────────────────────────────
-  Future<AudiobookRow?> getAudiobookByBookKey(String bookKey) =>
-      (select(audiobooks)..where((t) => t.bookKey.equals(bookKey)))
-          .getSingleOrNull();
+  Future<AudiobookRow?> getAudiobookByBookKey(String bookKey) => (select(
+    audiobooks,
+  )..where((t) => t.bookKey.equals(bookKey))).getSingleOrNull();
 
   Future<List<AudiobookRow>> getAllAudiobooks() => select(audiobooks).get();
 
   /// 整行写入（**会覆盖每一列**）。只给「从同步包物化一整行」这种确实持有全部
   /// 列的场景用。日常「只改其中几列」必须走 [patchAudiobook]——凭空造 companion
   /// 再走这里，本次没设的列会被静默清空（BUG-1678）。
-  Future<void> upsertAudiobook(AudiobooksCompanion ab) =>
-      into(audiobooks).insert(ab,
-          onConflict: DoUpdate((_) => ab, target: [audiobooks.bookKey]));
+  Future<void> upsertAudiobook(AudiobooksCompanion ab) => into(
+    audiobooks,
+  ).insert(ab, onConflict: DoUpdate((_) => ab, target: [audiobooks.bookKey]));
 
   /// 局部更新 audiobooks：**只写 [patch] 里 present 的列**，其余原样不动。
   /// 返回受影响行数（0 = 该 bookKey 尚无行）。
   Future<int> patchAudiobook(String bookKey, AudiobooksCompanion patch) =>
-      (update(audiobooks)..where((t) => t.bookKey.equals(bookKey)))
-          .write(patch);
+      (update(
+        audiobooks,
+      )..where((t) => t.bookKey.equals(bookKey))).write(patch);
 
   /// 保证 [bookKey] 有一行 audiobooks；已存在则**原样不动**（不覆盖任何列）。
   /// NOT NULL 的 alignment 两列新建时填空串，等 [patchAudiobook] 写真值。
   Future<void> ensureAudiobookRow(String bookKey) => transaction(() async {
-        final AudiobookRow? existing = await (select(audiobooks)
-              ..where((t) => t.bookKey.equals(bookKey)))
-            .getSingleOrNull();
-        if (existing != null) return;
-        await into(audiobooks).insert(AudiobooksCompanion.insert(
-          bookKey: bookKey,
-          alignmentFormat: '',
-          alignmentPath: '',
-        ));
-      });
+    final AudiobookRow? existing = await (select(
+      audiobooks,
+    )..where((t) => t.bookKey.equals(bookKey))).getSingleOrNull();
+    if (existing != null) return;
+    await into(audiobooks).insert(
+      AudiobooksCompanion.insert(
+        bookKey: bookKey,
+        alignmentFormat: '',
+        alignmentPath: '',
+      ),
+    );
+  });
 
   /// 局部更新 srt_books（按 uid）：**只写 [patch] 里 present 的列**。
   /// 返回受影响行数（0 = 该 uid 尚无行）。
@@ -494,14 +494,13 @@ mixin _FushiDbPrefsMedia
       (update(srtBooks)..where((t) => t.uid.equals(uid))).write(patch);
 
   Future<int> deleteAudiobookByBookKey(String bookKey) => transaction(() async {
-        await (delete(audioCues)..where((t) => t.bookKey.equals(bookKey))).go();
-        // TODO-616：纯有声书 shelf_entry 以 mediaType='srt'、entryKey=bookKey 登记
-        // （deleteAudiobookByBookKey 拿不到 srtUid——srtUid 级联在上层 host
-        // deleteAudiobook；故登记键 = 删除键 = bookKey）。幂等（删 0 行不报错）。
-        await deleteShelfEntry(MediaKind.srt, bookKey);
-        return (delete(audiobooks)..where((t) => t.bookKey.equals(bookKey)))
-            .go();
-      });
+    await (delete(audioCues)..where((t) => t.bookKey.equals(bookKey))).go();
+    // TODO-616：纯有声书 shelf_entry 以 mediaType='srt'、entryKey=bookKey 登记
+    // （deleteAudiobookByBookKey 拿不到 srtUid——srtUid 级联在上层 host
+    // deleteAudiobook；故登记键 = 删除键 = bookKey）。幂等（删 0 行不报错）。
+    await deleteShelfEntry(MediaKind.srt, bookKey);
+    return (delete(audiobooks)..where((t) => t.bookKey.equals(bookKey))).go();
+  });
 
   // ── video_books ─────────────────────────────────────────────────
   /// v118：`localAddedAt`（本机开始拥有的时刻）插入时未携带 → now；冲突转更新
@@ -510,23 +509,25 @@ mixin _FushiDbPrefsMedia
   /// 落地时刻（语义见 [FushiDatabase.insertEpubBook]）。
   Future<void> upsertVideoBook(VideoBooksCompanion vb) async {
     await into(videoBooks).insert(
-        vb.localAddedAt.present
-            ? vb
-            : vb.copyWith(
-                localAddedAt:
-                    Value<int?>(DateTime.now().millisecondsSinceEpoch)),
-        onConflict: DoUpdate(
-            (_) => vb.copyWith(localAddedAt: const Value<int?>.absent()),
-            target: [videoBooks.bookUid]));
+      vb.localAddedAt.present
+          ? vb
+          : vb.copyWith(
+              localAddedAt: Value<int?>(DateTime.now().millisecondsSinceEpoch),
+            ),
+      onConflict: DoUpdate(
+        (_) => vb.copyWith(localAddedAt: const Value<int?>.absent()),
+        target: [videoBooks.bookUid],
+      ),
+    );
     // 删除传播：重新加入同 bookUid 的视频清除其 sync 删除墓碑（防误判待删）。
     if (vb.bookUid.present) {
       await clearSyncDeletionTombstone('video', vb.bookUid.value);
     }
   }
 
-  Future<VideoBookRow?> getVideoBookByBookUid(String bookUid) =>
-      (select(videoBooks)..where((t) => t.bookUid.equals(bookUid)))
-          .getSingleOrNull();
+  Future<VideoBookRow?> getVideoBookByBookUid(String bookUid) => (select(
+    videoBooks,
+  )..where((t) => t.bookUid.equals(bookUid))).getSingleOrNull();
 
   Future<List<VideoBookRow>> allVideoBooks() => select(videoBooks).get();
 
@@ -535,9 +536,10 @@ mixin _FushiDbPrefsMedia
   /// 来源重扫复用手动导入的同路径视频时使用。只写 `source_id`，避免以整行 upsert
   /// 意外覆盖观看进度、字幕、封面或用户资料；已属于其它来源的行保持原归属。
   Future<int> assignVideoBookSourceIfNull(String bookUid, int sourceId) =>
-      (update(videoBooks)
-            ..where(($VideoBooksTable t) =>
-                t.bookUid.equals(bookUid) & t.sourceId.isNull()))
+      (update(videoBooks)..where(
+            ($VideoBooksTable t) =>
+                t.bookUid.equals(bookUid) & t.sourceId.isNull(),
+          ))
           .write(VideoBooksCompanion(sourceId: Value<int?>(sourceId)));
 
   /// 无条件把视频改归属到 [sourceId]（只写 `source_id`，不动其它列）。

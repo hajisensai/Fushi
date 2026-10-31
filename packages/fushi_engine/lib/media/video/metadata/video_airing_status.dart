@@ -13,28 +13,28 @@ enum VideoAiringStatus { airing, finished, upcoming, cancelled, hiatus }
 /// 各家 provider 状态原串 → 归一值。键已经是 [_foldStatus] 之后的形态。
 const Map<String, VideoAiringStatus> _airingStatusByRaw =
     <String, VideoAiringStatus>{
-  // TMDB TV
-  'returning series': VideoAiringStatus.airing,
-  'ended': VideoAiringStatus.finished,
-  'canceled': VideoAiringStatus.cancelled,
-  'in production': VideoAiringStatus.upcoming,
-  'planned': VideoAiringStatus.upcoming,
-  'pilot': VideoAiringStatus.upcoming,
-  // TMDB movie
-  'released': VideoAiringStatus.finished,
-  'post production': VideoAiringStatus.upcoming,
-  'rumored': VideoAiringStatus.upcoming,
-  // Jikan (MAL)
-  'currently airing': VideoAiringStatus.airing,
-  'finished airing': VideoAiringStatus.finished,
-  'not yet aired': VideoAiringStatus.upcoming,
-  // AniList
-  'releasing': VideoAiringStatus.airing,
-  'finished': VideoAiringStatus.finished,
-  'not yet released': VideoAiringStatus.upcoming,
-  'cancelled': VideoAiringStatus.cancelled,
-  'hiatus': VideoAiringStatus.hiatus,
-};
+      // TMDB TV
+      'returning series': VideoAiringStatus.airing,
+      'ended': VideoAiringStatus.finished,
+      'canceled': VideoAiringStatus.cancelled,
+      'in production': VideoAiringStatus.upcoming,
+      'planned': VideoAiringStatus.upcoming,
+      'pilot': VideoAiringStatus.upcoming,
+      // TMDB movie
+      'released': VideoAiringStatus.finished,
+      'post production': VideoAiringStatus.upcoming,
+      'rumored': VideoAiringStatus.upcoming,
+      // Jikan (MAL)
+      'currently airing': VideoAiringStatus.airing,
+      'finished airing': VideoAiringStatus.finished,
+      'not yet aired': VideoAiringStatus.upcoming,
+      // AniList
+      'releasing': VideoAiringStatus.airing,
+      'finished': VideoAiringStatus.finished,
+      'not yet released': VideoAiringStatus.upcoming,
+      'cancelled': VideoAiringStatus.cancelled,
+      'hiatus': VideoAiringStatus.hiatus,
+    };
 
 final RegExp _statusSeparators = RegExp(r'[\s_\-]+');
 

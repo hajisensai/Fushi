@@ -71,7 +71,9 @@ List<DarwinLibmpvSlice> _verifyDarwinLibmpv(String platform) {
     // own; Mpv links @rpath/libavcodec.framework, shipped once by the FFmpeg
     // side of the app. The codec bytes come from that same build.
     expect(
-      archive.files.any((ArchiveFile f) => f.name.contains('Avcodec.xcframework')),
+      archive.files.any(
+        (ArchiveFile f) => f.name.contains('Avcodec.xcframework'),
+      ),
       isFalse,
       reason: '$platform libmpv archive must not package its own FFmpeg',
     );
@@ -119,13 +121,15 @@ List<int> _unifiedLibavcodec(String platform, String identifier) {
   }
   final Archive layout = TarDecoder().decodeBytes(
     GZipDecoder().decodeBytes(
-      File('../third_party/media_kit_libs_macos_video/native/'
-              'ffmpeg-unified-macos.tar.gz')
-          .readAsBytesSync(),
+      File(
+        '../third_party/media_kit_libs_macos_video/native/'
+        'ffmpeg-unified-macos.tar.gz',
+      ).readAsBytesSync(),
     ),
   );
-  final ArchiveFile? f =
-      layout.findFile('Frameworks/libavcodec.framework/Versions/A/libavcodec');
+  final ArchiveFile? f = layout.findFile(
+    'Frameworks/libavcodec.framework/Versions/A/libavcodec',
+  );
   expect(f, isNotNull, reason: 'unified FFmpeg macOS libavcodec');
   return f!.content as List<int>;
 }

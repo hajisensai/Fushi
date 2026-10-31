@@ -17,20 +17,21 @@ import 'package:fushi_core/fushi_core.dart';
 class _FakeLibraryService implements FushiLibraryHostService {
   // BUG-1004：host 端裁 mining 句子音频（本测试不涉及，返 null 即可）。
   @override
-  Future<File?> clipVideoAudio(String id,
-          {required int startMs,
-          required int endMs,
-          int episodeIndex = 0,
-          int? audioStreamIndex,
-          int? audioStreamCount,
-          int audioChannels = 1,
-          String audioBitrate = '64k'}) async =>
-      null;
+  Future<File?> clipVideoAudio(
+    String id, {
+    required int startMs,
+    required int endMs,
+    int episodeIndex = 0,
+    int? audioStreamIndex,
+    int? audioStreamCount,
+    int audioChannels = 1,
+    String audioBitrate = '64k',
+  }) async => null;
 
   @override
-  Future<List<RemoteActivityEvent>> listActivityEvents(
-          {int limit = 100}) async =>
-      const <RemoteActivityEvent>[];
+  Future<List<RemoteActivityEvent>> listActivityEvents({
+    int limit = 100,
+  }) async => const <RemoteActivityEvent>[];
 
   @override
   Future<String?> videoCoverPath(String id) async {
@@ -61,8 +62,8 @@ class _FakeLibraryService implements FushiLibraryHostService {
 
   @override
   Future<CollectionManifest> mergeCollectionManifest(
-          CollectionManifest incoming) async =>
-      incoming;
+    CollectionManifest incoming,
+  ) async => incoming;
 
   final List<RemoteDictionaryInfo> dicts = <RemoteDictionaryInfo>[
     const RemoteDictionaryInfo(name: 'JMdict', type: 'term'),
@@ -97,8 +98,11 @@ class _FakeLibraryService implements FushiLibraryHostService {
       throw UnimplementedError('export not needed in this test');
 
   @override
-  Future<void> importBook(File epubFile,
-      {String? displayTitle, int displayTitleAt = 0}) async {}
+  Future<void> importBook(
+    File epubFile, {
+    String? displayTitle,
+    int displayTitleAt = 0,
+  }) async {}
 
   @override
   Future<void> deleteBook(String title) async {}
@@ -117,8 +121,10 @@ class _FakeLibraryService implements FushiLibraryHostService {
   ) async {
     final RemoteBookProgress current =
         bookProgress[bookKey] ?? RemoteBookProgress.empty;
-    bookProgress[bookKey] =
-        resolveBookProgressSync(local: current, remote: progress);
+    bookProgress[bookKey] = resolveBookProgressSync(
+      local: current,
+      remote: progress,
+    );
   }
 
   // ── local audio stubs ──────────────────────────────────────────────────────
@@ -149,8 +155,10 @@ class _FakeLibraryService implements FushiLibraryHostService {
   Future<bool> audiobookExists(String bookKey) async => false;
 
   @override
-  Future<void> importAudiobook(File packageFile,
-      {String? bookKeyOverride}) async {}
+  Future<void> importAudiobook(
+    File packageFile, {
+    String? bookKeyOverride,
+  }) async {}
 
   @override
   Future<void> deleteAudiobook(String bookKey) async {}
@@ -163,29 +171,35 @@ class _FakeLibraryService implements FushiLibraryHostService {
   Future<bool> videoExists(String id, {int episodeIndex = 0}) async => false;
 
   @override
-  Future<void> importVideoSubtitle(File subtitleFile,
-      {required String id, required String suffix}) async {}
+  Future<void> importVideoSubtitle(
+    File subtitleFile, {
+    required String id,
+    required String suffix,
+  }) async {}
 
   @override
-  Future<void> importVideo(File videoFile,
-      {required String id,
-      required String title,
-      String? originalFileName}) async {}
+  Future<void> importVideo(
+    File videoFile, {
+    required String id,
+    required String title,
+    String? originalFileName,
+  }) async {}
 
   @override
   Future<File?> resolveVideoFile(String id, {int episodeIndex = 0}) async =>
       null;
 
   @override
-  Future<File?> resolveVideoSubtitle(String id,
-          {String langCode = 'ja', int episodeIndex = 0}) async =>
-      null;
+  Future<File?> resolveVideoSubtitle(
+    String id, {
+    String langCode = 'ja',
+    int episodeIndex = 0,
+  }) async => null;
 
   @override
   Future<({int positionMs, int updatedAtMs})> getAudiobookPosition(
     String bookKey,
-  ) async =>
-      (positionMs: 0, updatedAtMs: 0);
+  ) async => (positionMs: 0, updatedAtMs: 0);
 
   @override
   Future<void> putAudiobookPosition(
@@ -198,8 +212,7 @@ class _FakeLibraryService implements FushiLibraryHostService {
   Future<({int positionMs, int updatedAtMs})> getVideoPosition(
     String id, {
     int episodeIndex = 0,
-  }) async =>
-      (positionMs: 0, updatedAtMs: 0);
+  }) async => (positionMs: 0, updatedAtMs: 0);
 
   @override
   Future<void> putVideoPosition(
@@ -229,8 +242,9 @@ Future<InterconnectSyncBackend> _buildBackend({
   await repo.setFushiClientToken(token);
 
   // fake probe：直接返回 true，不做真实探测（server 已在运行）。
-  final InterconnectSyncBackend backend =
-      InterconnectSyncBackend.withProbe((String url, String tok) async => true);
+  final InterconnectSyncBackend backend = InterconnectSyncBackend.withProbe(
+    (String url, String tok) async => true,
+  );
   await backend.restoreAuth(repo);
   await backend.authenticate(repo: repo);
   return backend;
@@ -260,11 +274,13 @@ void main() {
   // ── listRemoteDictionaries ────────────────────────────────────────────────
 
   test('listRemoteDictionaries returns JMdict from host', () async {
-    final InterconnectSyncBackend backend =
-        await _buildBackend(base: base, token: token);
+    final InterconnectSyncBackend backend = await _buildBackend(
+      base: base,
+      token: token,
+    );
 
-    final List<RemoteDictionaryInfo> result =
-        await backend.listRemoteDictionaries();
+    final List<RemoteDictionaryInfo> result = await backend
+        .listRemoteDictionaries();
 
     expect(result.map((RemoteDictionaryInfo d) => d.name), contains('JMdict'));
     expect(result.first.type, 'term');
@@ -272,25 +288,31 @@ void main() {
 
   // ── getRemoteDictionary ───────────────────────────────────────────────────
 
-  test('getRemoteDictionary downloads package bytes to destination file',
-      () async {
-    final InterconnectSyncBackend backend =
-        await _buildBackend(base: base, token: token);
-    final Directory tmp = Directory.systemTemp.createTempSync('hbk_live_dl');
-    final File dest = File('${tmp.path}/JMdict.fushidict');
-    addTearDown(() => tmp.deleteSync(recursive: true));
+  test(
+    'getRemoteDictionary downloads package bytes to destination file',
+    () async {
+      final InterconnectSyncBackend backend = await _buildBackend(
+        base: base,
+        token: token,
+      );
+      final Directory tmp = Directory.systemTemp.createTempSync('hbk_live_dl');
+      final File dest = File('${tmp.path}/JMdict.fushidict');
+      addTearDown(() => tmp.deleteSync(recursive: true));
 
-    await backend.getRemoteDictionary('JMdict', dest);
+      await backend.getRemoteDictionary('JMdict', dest);
 
-    expect(dest.existsSync(), isTrue);
-    expect(dest.readAsStringSync(), 'PKG:JMdict');
-  });
+      expect(dest.existsSync(), isTrue);
+      expect(dest.readAsStringSync(), 'PKG:JMdict');
+    },
+  );
 
   // ── putRemoteDictionary ───────────────────────────────────────────────────
 
   test('putRemoteDictionary uploads file content to host', () async {
-    final InterconnectSyncBackend backend =
-        await _buildBackend(base: base, token: token);
+    final InterconnectSyncBackend backend = await _buildBackend(
+      base: base,
+      token: token,
+    );
     final Directory tmp = Directory.systemTemp.createTempSync('hbk_live_ul');
     final File src = File('${tmp.path}/NHK.fushidict');
     src.writeAsStringSync('PKG:NHK');
@@ -304,8 +326,10 @@ void main() {
   // ── deleteRemoteDictionary ────────────────────────────────────────────────
 
   test('deleteRemoteDictionary sends DELETE to host', () async {
-    final InterconnectSyncBackend backend =
-        await _buildBackend(base: base, token: token);
+    final InterconnectSyncBackend backend = await _buildBackend(
+      base: base,
+      token: token,
+    );
 
     await backend.deleteRemoteDictionary('JMdict');
 
@@ -314,33 +338,38 @@ void main() {
 
   // ── auth guard ────────────────────────────────────────────────────────────
 
-  test('listRemoteDictionaries with wrong token throws SyncAuthError',
-      () async {
-    final FushiDatabase db = _testDb();
-    final SyncRepository repo = SyncRepository(db);
-    await repo.setFushiClientUrls(<FushiClientUrl>[
-      FushiClientUrl(url: base, enabled: true),
-    ]);
-    // 故意用错误 token。
-    await repo.setFushiClientToken('wrong-token');
+  test(
+    'listRemoteDictionaries with wrong token throws SyncAuthError',
+    () async {
+      final FushiDatabase db = _testDb();
+      final SyncRepository repo = SyncRepository(db);
+      await repo.setFushiClientUrls(<FushiClientUrl>[
+        FushiClientUrl(url: base, enabled: true),
+      ]);
+      // 故意用错误 token。
+      await repo.setFushiClientToken('wrong-token');
 
-    final InterconnectSyncBackend backend =
-        InterconnectSyncBackend.withProbe((String u, String t) async => true);
-    await backend.restoreAuth(repo);
-    // authenticate 用 probe=true，不会察觉 token 错误（probe 是 fake），
-    // 故意只 restoreAuth 跳过 authenticate，让 ensureResolved 不强探。
-    // 真实 token 错误由第一次 HTTP 操作暴露。
-    await expectLater(
-      backend.listRemoteDictionaries(),
-      throwsA(isA<SyncAuthError>()),
-    );
-  });
+      final InterconnectSyncBackend backend = InterconnectSyncBackend.withProbe(
+        (String u, String t) async => true,
+      );
+      await backend.restoreAuth(repo);
+      // authenticate 用 probe=true，不会察觉 token 错误（probe 是 fake），
+      // 故意只 restoreAuth 跳过 authenticate，让 ensureResolved 不强探。
+      // 真实 token 错误由第一次 HTTP 操作暴露。
+      await expectLater(
+        backend.listRemoteDictionaries(),
+        throwsA(isA<SyncAuthError>()),
+      );
+    },
+  );
 
   // ── progress callback ─────────────────────────────────────────────────────
 
   test('getRemoteDictionary reports progress callback', () async {
-    final InterconnectSyncBackend backend =
-        await _buildBackend(base: base, token: token);
+    final InterconnectSyncBackend backend = await _buildBackend(
+      base: base,
+      token: token,
+    );
     final Directory tmp = Directory.systemTemp.createTempSync('hbk_live_prog');
     final File dest = File('${tmp.path}/JMdict.fushidict');
     addTearDown(() => tmp.deleteSync(recursive: true));
@@ -358,8 +387,10 @@ void main() {
   });
 
   test('getRemoteDictionary reports bytes done for the sync rate', () async {
-    final InterconnectSyncBackend backend =
-        await _buildBackend(base: base, token: token);
+    final InterconnectSyncBackend backend = await _buildBackend(
+      base: base,
+      token: token,
+    );
     final Directory tmp = Directory.systemTemp.createTempSync('hbk_live_bytes');
     final File dest = File('${tmp.path}/JMdict.fushidict');
     addTearDown(() => tmp.deleteSync(recursive: true));

@@ -51,9 +51,13 @@ void main() {
 
     probe.requestFocus();
     await tester.pumpAndSettle();
-    expect(probe.hasFocus, isFalse,
-        reason: '主窗不在前台时请求焦点 = 引擎 SetFocus(FlutterView) = 把主界面'
-            '抢到用户的游戏 / 浏览器前面（BUG-1619）');
+    expect(
+      probe.hasFocus,
+      isFalse,
+      reason:
+          '主窗不在前台时请求焦点 = 引擎 SetFocus(FlutterView) = 把主界面'
+          '抢到用户的游戏 / 浏览器前面（BUG-1619）',
+    );
   });
 
   testWidgets('门开着：焦点照常工作（不改变正常使用）', (WidgetTester tester) async {
@@ -80,23 +84,30 @@ void main() {
     mainWindowForegroundNotifier.value = false;
     await tester.pumpAndSettle();
     expect(probe.hasFocus, isFalse, reason: '关门必须让出焦点');
-    expect(controllerOf(tester).primaryFocusIsManagedTarget, isFalse,
-        reason: '关门期间焦点不该落在任何受管目标上');
+    expect(
+      controllerOf(tester).primaryFocusIsManagedTarget,
+      isFalse,
+      reason: '关门期间焦点不该落在任何受管目标上',
+    );
 
     mainWindowForegroundNotifier.value = true;
     await tester.pumpAndSettle();
 
-    final FushiFocusController controller =
-        FushiFocusRoot.controllerOf(tester.element(find.text('Row 0')));
+    final FushiFocusController controller = FushiFocusRoot.controllerOf(
+      tester.element(find.text('Row 0')),
+    );
     // 断言**真实焦点归属**：activeId 只是缓存 id，关门不会清它，拿它断言恒真
     // （实测：把两条补票路径全删掉这条用例照样绿）。
-    expect(controller.primaryFocusIsManagedTarget, isTrue,
-        reason: '开门后必须补一次焦点修复，否则用户切回主窗整页没有焦点、'
-            '键盘 / 手柄快捷键全不响应（TODO-900 的老症状）');
+    expect(
+      controller.primaryFocusIsManagedTarget,
+      isTrue,
+      reason:
+          '开门后必须补一次焦点修复，否则用户切回主窗整页没有焦点、'
+          '键盘 / 手柄快捷键全不响应（TODO-900 的老症状）',
+    );
   });
 
-  testWidgets('判据不适用的平台上闸门完全透传（不改变既有语义）',
-      (WidgetTester tester) async {
+  testWidgets('判据不适用的平台上闸门完全透传（不改变既有语义）', (WidgetTester tester) async {
     // 反向用例：锁住「非 Windows 恒 true」这条设计承诺。没有它，上面三条全靠覆盖
     // 开关跑，谁把判据改成恒真都不会有人发现——而恒真意味着 Android / iOS 上凭空
     // 多出一个会吃掉 requestFocus 的闸门。
@@ -111,7 +122,6 @@ void main() {
 
     probe.requestFocus();
     await tester.pumpAndSettle();
-    expect(probe.hasFocus, isTrue,
-        reason: '判据不适用时前台真值不该影响焦点，闸门必须是纯透传');
+    expect(probe.hasFocus, isTrue, reason: '判据不适用时前台真值不该影响焦点，闸门必须是纯透传');
   });
 }

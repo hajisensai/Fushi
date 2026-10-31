@@ -41,11 +41,7 @@ void main() {
     );
   }
 
-  Widget bar() => Container(
-        key: barKey,
-        height: barHeight,
-        color: Colors.blue,
-      );
+  Widget bar() => Container(key: barKey, height: barHeight, color: Colors.blue);
 
   testWidgets(
     'BUGGY pattern: FocusScope wrapping Positioned detaches it from the Stack',
@@ -57,12 +53,7 @@ void main() {
         tester,
         FocusScope(
           node: node,
-          child: Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            child: bar(),
-          ),
+          child: Positioned(left: 0, right: 0, bottom: 0, child: bar()),
         ),
       );
 
@@ -79,9 +70,13 @@ void main() {
       final Rect stack = tester.getRect(find.byKey(bgKey));
       final Rect rect = tester.getRect(find.byKey(barKey));
       final bool atBottom = (rect.bottom - stack.bottom).abs() < 0.5;
-      expect(atBottom, isFalse,
-          reason: 'Expected the buggy pattern to mis-place the bar away from '
-              'the bottom; if this fails the detachment no longer reproduces.');
+      expect(
+        atBottom,
+        isFalse,
+        reason:
+            'Expected the buggy pattern to mis-place the bar away from '
+            'the bottom; if this fails the detachment no longer reproduces.',
+      );
     },
   );
 
@@ -97,10 +92,7 @@ void main() {
           left: 0,
           right: 0,
           bottom: 0,
-          child: FocusScope(
-            node: node,
-            child: bar(),
-          ),
+          child: FocusScope(node: node, child: bar()),
         ),
       );
 
@@ -108,10 +100,15 @@ void main() {
 
       final Rect stack = tester.getRect(find.byKey(bgKey));
       final Rect rect = tester.getRect(find.byKey(barKey));
-      expect(rect.bottom, moreOrLessEquals(stack.bottom, epsilon: 0.5),
-          reason: 'Bottom chrome must be anchored to the bottom of the stack.');
       expect(
-          rect.top, moreOrLessEquals(stack.bottom - barHeight, epsilon: 0.5));
+        rect.bottom,
+        moreOrLessEquals(stack.bottom, epsilon: 0.5),
+        reason: 'Bottom chrome must be anchored to the bottom of the stack.',
+      );
+      expect(
+        rect.top,
+        moreOrLessEquals(stack.bottom - barHeight, epsilon: 0.5),
+      );
     },
   );
 }

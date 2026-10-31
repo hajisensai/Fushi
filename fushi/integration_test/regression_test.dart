@@ -21,8 +21,9 @@ void main() {
   final IntegrationTestWidgetsFlutterBinding binding =
       IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('HBK-REG-001: play bar must not overlap reader content',
-      (WidgetTester tester) async {
+  testWidgets('HBK-REG-001: play bar must not overlap reader content', (
+    WidgetTester tester,
+  ) async {
     final List<FlutterErrorDetails> errors = [];
     final FlutterExceptionHandler? oldHandler = FlutterError.onError;
     FlutterError.onError = (FlutterErrorDetails details) {
@@ -53,13 +54,19 @@ void main() {
         await seedReaderBook(tester);
         bookEntries = findBookEntries();
       }
-      expect(bookEntries, findsWidgets,
-          reason: 'A book must be on the shelf after seeding the fixture');
+      expect(
+        bookEntries,
+        findsWidgets,
+        reason: 'A book must be on the shelf after seeding the fixture',
+      );
 
       // Open the first book.
       final bool focusedBook = await driver.focusWidget(bookEntries.first);
-      expect(focusedBook, isTrue,
-          reason: 'Book card must be reachable by focus');
+      expect(
+        focusedBook,
+        isTrue,
+        reason: 'Book card must be reachable by focus',
+      );
       await driver.activate();
       await tester.pump(const Duration(seconds: 3));
 
@@ -73,8 +80,11 @@ void main() {
           break;
         }
       }
-      expect(webViewFound, isTrue,
-          reason: 'Hoshi WebView must appear after opening a book');
+      expect(
+        webViewFound,
+        isTrue,
+        reason: 'Hoshi WebView must appear after opening a book',
+      );
 
       // Wait for content ready.
       const Key contentReadyKey = ValueKey<String>('fushi_content_ready');
@@ -86,8 +96,11 @@ void main() {
           break;
         }
       }
-      expect(contentReady, isTrue,
-          reason: 'Reader content must become ready within 60s');
+      expect(
+        contentReady,
+        isTrue,
+        reason: 'Reader content must become ready within 60s',
+      );
 
       screenshotCount += await takeScreenshot(binding, 'reg001_reader_ready');
 
@@ -100,13 +113,16 @@ void main() {
       // hard-failing — the reader-opens-cleanly path above is still verified.
       // Run with a Kagami book (audio attached) to actually exercise the
       // HBK-REG-001 no-overlap geometry.
-      final Finder playBar =
-          find.byKey(const ValueKey<String>('fushi_play_bar'));
+      final Finder playBar = find.byKey(
+        const ValueKey<String>('fushi_play_bar'),
+      );
 
       if (playBar.evaluate().isEmpty) {
-        debugPrint('[reg] SKIP HBK-REG-001 geometry: no audiobook attached '
-            '(synthetic book has no audio; the play bar only renders with an '
-            'm4b+srt).');
+        debugPrint(
+          '[reg] SKIP HBK-REG-001 geometry: no audiobook attached '
+          '(synthetic book has no audio; the play bar only renders with an '
+          'm4b+srt).',
+        );
         assertStrictErrors(errors);
         return;
       }
@@ -125,17 +141,24 @@ void main() {
         'PlayBar height: ${playBarBox.size.height}',
       );
 
-      expect(webViewBottom, lessThanOrEqualTo(playBarTopLeft.dy + 1),
-          reason: 'HBK-REG-001: Reader WebView must not extend '
-              'under the audiobook play bar. '
-              'WebView bottom=$webViewBottom, '
-              'PlayBar top=${playBarTopLeft.dy}');
+      expect(
+        webViewBottom,
+        lessThanOrEqualTo(playBarTopLeft.dy + 1),
+        reason:
+            'HBK-REG-001: Reader WebView must not extend '
+            'under the audiobook play bar. '
+            'WebView bottom=$webViewBottom, '
+            'PlayBar top=${playBarTopLeft.dy}',
+      );
 
       screenshotCount += await takeScreenshot(binding, 'reg001_bounds_check');
 
       if (screenshotsAreRequired) {
-        expect(screenshotCount, greaterThan(0),
-            reason: 'At least one screenshot must succeed');
+        expect(
+          screenshotCount,
+          greaterThan(0),
+          reason: 'At least one screenshot must succeed',
+        );
       }
 
       assertStrictErrors(errors);

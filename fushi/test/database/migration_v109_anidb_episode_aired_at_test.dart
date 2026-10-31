@@ -76,7 +76,9 @@ void main() {
           anidbAnimeId: const Value(19079),
           anidbEpisodeId: const Value(313835),
           episodeNumber: const Value('04'),
-          episodeAiredAt: Value(DateTime.utc(2026, 4, 25).millisecondsSinceEpoch),
+          episodeAiredAt: Value(
+            DateTime.utc(2026, 4, 25).millisecondsSinceEpoch,
+          ),
           otherEpisodes: const Value('[[313836,50]]'),
           isDeprecated: const Value(true),
           fileState: const Value(5),
@@ -169,49 +171,54 @@ void main() {
     },
   );
 
-  test('v109 also adds AniDB xref columns to video_metadata_episodes',
-      () async {
-    final Directory directory = Directory.systemTemp.createTempSync(
-      'anidbxref109',
-    );
-    addTearDown(() => directory.deleteSync(recursive: true));
-    final String path = '${directory.path}/test.db';
-    final FushiDatabase original = FushiDatabase.atFile(
-      path,
-      isMainProcess: false,
-    );
-    expect(await original.getCollectionBookAliases(), isEmpty);
-    await original.close();
-    final sqlite.Database raw = sqlite.sqlite3.open(path);
-    for (final String column in <String>[
-      'anidb_episode_id',
-      'anidb_episode_number',
-      'anidb_match_rating',
-    ]) {
-      raw.execute('ALTER TABLE video_metadata_episodes DROP COLUMN $column');
-    }
-    raw.execute('PRAGMA user_version = 108');
-    raw.dispose();
+  test(
+    'v109 also adds AniDB xref columns to video_metadata_episodes',
+    () async {
+      final Directory directory = Directory.systemTemp.createTempSync(
+        'anidbxref109',
+      );
+      addTearDown(() => directory.deleteSync(recursive: true));
+      final String path = '${directory.path}/test.db';
+      final FushiDatabase original = FushiDatabase.atFile(
+        path,
+        isMainProcess: false,
+      );
+      expect(await original.getCollectionBookAliases(), isEmpty);
+      await original.close();
+      final sqlite.Database raw = sqlite.sqlite3.open(path);
+      for (final String column in <String>[
+        'anidb_episode_id',
+        'anidb_episode_number',
+        'anidb_match_rating',
+      ]) {
+        raw.execute('ALTER TABLE video_metadata_episodes DROP COLUMN $column');
+      }
+      raw.execute('PRAGMA user_version = 108');
+      raw.dispose();
 
-    final FushiDatabase migrated = FushiDatabase.atFile(
-      path,
-      isMainProcess: false,
-    );
-    addTearDown(migrated.close);
-    expect(await migrated.getCollectionBookAliases(), isEmpty);
-    final sqlite.Database probe = sqlite.sqlite3.open(path);
-    addTearDown(probe.dispose);
-    expect(probe.select('PRAGMA user_version').first.values.first, 142);
-    final List<Object?> columns = probe
-        .select('PRAGMA table_info(video_metadata_episodes)')
-        .map((row) => row['name'])
-        .toList();
-    expect(columns, containsAll(<String>[
-      'anidb_episode_id',
-      'anidb_episode_number',
-      'anidb_match_rating',
-    ]));
-  });
+      final FushiDatabase migrated = FushiDatabase.atFile(
+        path,
+        isMainProcess: false,
+      );
+      addTearDown(migrated.close);
+      expect(await migrated.getCollectionBookAliases(), isEmpty);
+      final sqlite.Database probe = sqlite.sqlite3.open(path);
+      addTearDown(probe.dispose);
+      expect(probe.select('PRAGMA user_version').first.values.first, 142);
+      final List<Object?> columns = probe
+          .select('PRAGMA table_info(video_metadata_episodes)')
+          .map((row) => row['name'])
+          .toList();
+      expect(
+        columns,
+        containsAll(<String>[
+          'anidb_episode_id',
+          'anidb_episode_number',
+          'anidb_match_rating',
+        ]),
+      );
+    },
+  );
 
   test('a fresh database creates the column as nullable', () async {
     final FushiDatabase fresh = FushiDatabase.forTesting(

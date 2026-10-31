@@ -24,13 +24,15 @@ void main() {
     return source.substring(startIndex, endIndex);
   }
 
-  test('popup WebView disables the native WebView2 context menu on Windows',
-      () {
+  test('popup WebView disables the native WebView2 context menu on Windows', () {
     final File file = File(
       'lib/src/pages/implementations/dictionary_popup_webview.dart',
     );
-    expect(file.existsSync(), isTrue,
-        reason: 'popup webview source not found at ${file.path}');
+    expect(
+      file.existsSync(),
+      isTrue,
+      reason: 'popup webview source not found at ${file.path}',
+    );
     final String source = file.readAsStringSync();
 
     // Scope to the popup WebView's InAppWebViewSettings block (between the
@@ -42,8 +44,9 @@ void main() {
     );
 
     expect(
-      RegExp(r'disableContextMenu:\s*isWindowsPlatform')
-          .hasMatch(settingsBlock),
+      RegExp(
+        r'disableContextMenu:\s*isWindowsPlatform',
+      ).hasMatch(settingsBlock),
       isTrue,
       reason:
           'disableContextMenu must be isWindowsPlatform — the cross-platform '

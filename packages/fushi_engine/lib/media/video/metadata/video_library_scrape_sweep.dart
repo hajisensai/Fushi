@@ -39,8 +39,8 @@ import 'package:meta/meta.dart';
 
 /// 「[since] 之后 TMDB 上有变动的剧 id」探针（生产装配
 /// `TmdbVideoMetadataProvider.changedTvShowIds`）。
-typedef TmdbChangedTvIdsProbe = Future<Set<int>> Function(
-    {required DateTime since});
+typedef TmdbChangedTvIdsProbe =
+    Future<Set<int>> Function({required DateTime since});
 
 /// 一条待确认（未识别）作品：来源 + 当前计划里的作品。
 ///
@@ -90,8 +90,9 @@ Future<List<VideoPendingScrapeWork>> planScrapeWorksForCollection(
 ) async {
   final String stableKey = 'collection:$collectionId';
   final Set<String> memberUids = <String>{
-    for (final MediaCollectionItemRow item
-        in await database.getCollectionItems(collectionId))
+    for (final MediaCollectionItemRow item in await database.getCollectionItems(
+      collectionId,
+    ))
       if (item.mediaType == MediaKind.video.dbValue) item.entryKey,
   };
   final List<SourceLibraryRow> sources =
@@ -100,8 +101,9 @@ Future<List<VideoPendingScrapeWork>> planScrapeWorksForCollection(
           .toList(growable: false);
   final List<VideoPendingScrapeWork> memberWorks = <VideoPendingScrapeWork>[];
   for (final SourceLibraryRow source in sources) {
-    final List<VideoSourceScrapeWork> works =
-        await VideoSourceWorkPlanner(database).plan(source);
+    final List<VideoSourceScrapeWork> works = await VideoSourceWorkPlanner(
+      database,
+    ).plan(source);
     for (final VideoSourceScrapeWork work in works) {
       if (work.stableKey == stableKey) {
         return <VideoPendingScrapeWork>[
@@ -137,8 +139,9 @@ Future<VideoPendingScrapeWork?> planScrapeWorkForVideoBook(
   if (book == null || sourceId == null) return null;
   final SourceLibraryRow? source = await database.getMediaSourceById(sourceId);
   if (source == null || !videoBookHasScrapePlan(book, source)) return null;
-  for (final VideoSourceScrapeWork work
-      in await VideoSourceWorkPlanner(database).plan(source)) {
+  for (final VideoSourceScrapeWork work in await VideoSourceWorkPlanner(
+    database,
+  ).plan(source)) {
     if (work.members.any((VideoBookRow m) => m.bookUid == bookUid)) {
       return VideoPendingScrapeWork(source: source, work: work);
     }
@@ -177,15 +180,15 @@ class VideoLibraryScrapeSweep {
     this.refreshProbeInterval = const Duration(hours: 12),
     this.staleAfter = const Duration(days: 14),
     this.maxRefreshPerSweep = 20,
-  })  : _database = database,
-        _controller = controller,
-        _isEnabled = isEnabled,
-        _isHashReady = isHashReady,
-        _tmdbChangedTvIds = tmdbChangedTvIds,
-        _ledger = ledger ?? VideoScrapeSweepLedger(),
-        _configFingerprint = configFingerprint,
-        _aiCapabilityKey = aiCapabilityKey,
-        _now = now ?? DateTime.now {
+  }) : _database = database,
+       _controller = controller,
+       _isEnabled = isEnabled,
+       _isHashReady = isHashReady,
+       _tmdbChangedTvIds = tmdbChangedTvIds,
+       _ledger = ledger ?? VideoScrapeSweepLedger(),
+       _configFingerprint = configFingerprint,
+       _aiCapabilityKey = aiCapabilityKey,
+       _now = now ?? DateTime.now {
     _controller.addListener(_onControllerChanged);
   }
 
@@ -333,7 +336,8 @@ class VideoLibraryScrapeSweep {
   static const int _pendingNoteRunLookback = 20;
 
   Future<List<VideoPendingScrapeWork>> _withPendingNotes(
-      List<VideoPendingScrapeWork> pending) async {
+    List<VideoPendingScrapeWork> pending,
+  ) async {
     final Map<int, Map<String, VideoScrapePendingNote>> bySource =
         <int, Map<String, VideoScrapePendingNote>>{};
     for (final VideoPendingScrapeWork entry in pending) {
@@ -350,16 +354,20 @@ class VideoLibraryScrapeSweep {
   }
 
   Future<Map<String, VideoScrapePendingNote>> _pendingNotesOf(
-      int sourceId) async {
-    final List<VideoSourceScrapeRunRow> runs =
-        await _database.getUnresolvedVideoSourceScrapeRuns(
-            sourceId: sourceId, limit: _pendingNoteRunLookback);
+    int sourceId,
+  ) async {
+    final List<VideoSourceScrapeRunRow> runs = await _database
+        .getUnresolvedVideoSourceScrapeRuns(
+          sourceId: sourceId,
+          limit: _pendingNoteRunLookback,
+        );
     return latestVideoScrapePendingNotes(<Iterable<String>>[
       for (final VideoSourceScrapeRunRow run in runs)
         if (decodeSourceScrapeReport(run.summaryJson)
             case final SourceScrapeReport report)
           <String>[
-            for (final SourceScrapeIssue issue in report.warnings) issue.message,
+            for (final SourceScrapeIssue issue in report.warnings)
+              issue.message,
             for (final SourceScrapeIssue issue in report.errors) issue.message,
           ],
     ]);
@@ -370,14 +378,16 @@ class VideoLibraryScrapeSweep {
     final List<VideoPendingScrapeWork> pending = <VideoPendingScrapeWork>[];
     final List<VideoPendingScrapeWork> identified = <VideoPendingScrapeWork>[];
     for (final SourceLibraryRow source in await _localVideoSources()) {
-      final VideoSourceScrapeSettingRow? settings =
-          await _database.getVideoSourceScrapeSettings(source.id);
+      final VideoSourceScrapeSettingRow? settings = await _database
+          .getVideoSourceScrapeSettings(source.id);
       if (settings?.enabled == false) continue;
-      final List<VideoSourceScrapeWork> works =
-          await VideoSourceWorkPlanner(_database).plan(source);
+      final List<VideoSourceScrapeWork> works = await VideoSourceWorkPlanner(
+        _database,
+      ).plan(source);
       for (final VideoSourceScrapeWork work in works) {
-        (await _hasCanonicalIdentity(work) ? identified : pending)
-            .add(VideoPendingScrapeWork(source: source, work: work));
+        (await _hasCanonicalIdentity(work) ? identified : pending).add(
+          VideoPendingScrapeWork(source: source, work: work),
+        );
       }
     }
     return _PlannedWorks(pending: pending, identified: identified);
@@ -385,7 +395,8 @@ class VideoLibraryScrapeSweep {
 
   /// 需要刷新资料的已识别作品（见 [_tmdbChangedTvIds] 的说明）。
   Future<List<VideoPendingScrapeWork>> _refreshBacklog(
-      List<VideoPendingScrapeWork> identified) async {
+    List<VideoPendingScrapeWork> identified,
+  ) async {
     if (identified.isEmpty) return const <VideoPendingScrapeWork>[];
     final DateTime now = _now();
     final List<VideoPendingScrapeWork> stale = <VideoPendingScrapeWork>[];
@@ -399,15 +410,17 @@ class VideoLibraryScrapeSweep {
       }
       final VideoMetadataWorkRow? row = await _canonicalWork(entry.work);
       if (row == null) continue;
-      final DateTime scrapedAt =
-          DateTime.fromMillisecondsSinceEpoch(row.updatedAt);
+      final DateTime scrapedAt = DateTime.fromMillisecondsSinceEpoch(
+        row.updatedAt,
+      );
       if (now.difference(scrapedAt) >= staleAfter) {
         if (stale.length < maxRefreshPerSweep) stale.add(entry);
         continue;
       }
       final int? tmdbId = _tmdbShowId(
-          await _database.getVideoMetadataProviderIdentities(workId: row.id),
-          row);
+        await _database.getVideoMetadataProviderIdentities(workId: row.id),
+        row,
+      );
       if (tmdbId != null) fresh.add((entry, tmdbId, scrapedAt));
     }
     final List<VideoPendingScrapeWork> result = <VideoPendingScrapeWork>[
@@ -442,8 +455,9 @@ class VideoLibraryScrapeSweep {
 
   /// 作品级 TMDB 剧 id（只对电视剧；电影不走 `/tv/changes`）。
   static int? _tmdbShowId(
-      List<VideoMetadataProviderIdentityRow> identities,
-      VideoMetadataWorkRow row) {
+    List<VideoMetadataProviderIdentityRow> identities,
+    VideoMetadataWorkRow row,
+  ) {
     if (row.mediaType != VideoMetadataMediaKind.tv.name) return null;
     for (final VideoMetadataProviderIdentityRow identity in identities) {
       if (identity.provider == VideoMetadataProviderKind.tmdb.name) {
@@ -455,15 +469,20 @@ class VideoLibraryScrapeSweep {
 
   /// 已识别作品里还有成员没记过文件级 AniDB 身份的那些（哈希待补）。
   Future<List<VideoPendingScrapeWork>> _hashBacklog(
-      List<VideoPendingScrapeWork> identified) async {
+    List<VideoPendingScrapeWork> identified,
+  ) async {
     if (identified.isEmpty) return const <VideoPendingScrapeWork>[];
     final Set<String> known = await _database.anidbFileIdentityPaths(
-        identified.expand((VideoPendingScrapeWork entry) =>
-            entry.work.members.map((VideoBookRow m) => m.videoPath)));
+      identified.expand(
+        (VideoPendingScrapeWork entry) =>
+            entry.work.members.map((VideoBookRow m) => m.videoPath),
+      ),
+    );
     return <VideoPendingScrapeWork>[
       for (final VideoPendingScrapeWork entry in identified)
-        if (entry.work.members
-            .any((VideoBookRow m) => !known.contains(m.videoPath)))
+        if (entry.work.members.any(
+          (VideoBookRow m) => !known.contains(m.videoPath),
+        ))
           entry,
     ];
   }
@@ -482,7 +501,8 @@ class VideoLibraryScrapeSweep {
     _sweepDeferred = false;
     try {
       final _PlannedWorks planned = await _plannedWorksOrEmpty();
-      final List<VideoPendingScrapeWork> pending = _lastPending = planned.pending;
+      final List<VideoPendingScrapeWork> pending = _lastPending =
+          planned.pending;
       if (_isEnabled != null && !_isEnabled()) return pending;
       // 不排队：已有批次在跑就不发批次，避免和手动刮削抢互斥门；请求记下，
       // 批次结束时兑现。
@@ -517,16 +537,18 @@ class VideoLibraryScrapeSweep {
         claim(entry);
       }
       if (hashReady) {
-        for (final VideoPendingScrapeWork entry
-            in await _hashBacklog(planned.identified)) {
+        for (final VideoPendingScrapeWork entry in await _hashBacklog(
+          planned.identified,
+        )) {
           claim(entry);
         }
       }
       // 资料刷新（变过的 / 过期的已识别作品）：不走「自动试过」记账（那是
       // 「查无就不再自动试」的记账，刷新要能周期性重来），按刷新时刻自己记。
       final List<String> refreshing = <String>[];
-      for (final VideoPendingScrapeWork entry
-          in await _refreshBacklog(planned.identified)) {
+      for (final VideoPendingScrapeWork entry in await _refreshBacklog(
+        planned.identified,
+      )) {
         if (claimed.contains(entry.work.stableKey)) continue;
         refreshing.add(entry.work.stableKey);
         subsets
@@ -545,8 +567,9 @@ class VideoLibraryScrapeSweep {
       _ledger.markRefreshed(refreshing, submittedAt);
       await _saveLedger();
       try {
-        final SourceScrapeReport report =
-            await _controller.scrapeWorkSubsets(subsets);
+        final SourceScrapeReport report = await _controller.scrapeWorkSubsets(
+          subsets,
+        );
         // 只因资料源 / AI 临时不可用（504 / 握手失败 / 超时 / 限流 / AI 请求失败）
         // 而没认出的作品不是「查无」：改按短间隔
         // （[VideoScrapeSweepLedger.transientRetryAfter]）退避，而不是挡 7 天
@@ -582,7 +605,8 @@ class VideoLibraryScrapeSweep {
   }
 
   List<VideoPendingScrapeWork> _deferUntilIdle(
-      List<VideoPendingScrapeWork> pending) {
+    List<VideoPendingScrapeWork> pending,
+  ) {
     _sweepDeferred = true;
     return pending;
   }
@@ -612,11 +636,12 @@ class VideoLibraryScrapeSweep {
     List<VideoPendingScrapeWork> pending,
   ) async {
     try {
-      return (await downloadConfirmedLookupsForWorks(_database, <VideoSourceScrapeWork>[
-        for (final VideoPendingScrapeWork entry in pending) entry.work,
-      ]))
-          .keys
-          .toSet();
+      return (await downloadConfirmedLookupsForWorks(
+        _database,
+        <VideoSourceScrapeWork>[
+          for (final VideoPendingScrapeWork entry in pending) entry.work,
+        ],
+      )).keys.toSet();
     } catch (error, stack) {
       // 查不到下载记录只是少一条「绕过标题判据」的通道，照常按标题补刮；原因
       // 必须留痕。
@@ -636,10 +661,9 @@ class VideoLibraryScrapeSweep {
 Future<VideoMetadataWorkRow?> canonicalVideoMetadataWork(
   FushiDatabase database,
   VideoSourceScrapeWork work,
-) =>
-    work.collection == null
-        ? database.getVideoMetadataWorkByBook(work.members.single.bookUid)
-        : database.getVideoMetadataWorkByCollection(work.collection!.id);
+) => work.collection == null
+    ? database.getVideoMetadataWorkByBook(work.members.single.bookUid)
+    : database.getVideoMetadataWorkByCollection(work.collection!.id);
 
 /// 规范身份存在判据：works 行存在且至少有一条作品级 provider 身份。合集单元
 /// 没有合集级作品行时，成员**各自**拥有带身份的作品行也算（按 AniDB 作品拆成
@@ -652,15 +676,18 @@ Future<bool> hasCanonicalVideoMetadataIdentity(
   VideoSourceScrapeWork work,
 ) async {
   Future<bool> hasIdentity(VideoMetadataWorkRow row) async =>
-      (await database.getVideoMetadataProviderIdentities(workId: row.id))
-          .isNotEmpty;
-  final VideoMetadataWorkRow? row =
-      await canonicalVideoMetadataWork(database, work);
+      (await database.getVideoMetadataProviderIdentities(
+        workId: row.id,
+      )).isNotEmpty;
+  final VideoMetadataWorkRow? row = await canonicalVideoMetadataWork(
+    database,
+    work,
+  );
   if (row != null) return hasIdentity(row);
   if (work.collection == null) return false;
   for (final VideoBookRow member in work.members) {
-    final VideoMetadataWorkRow? owned =
-        await database.getVideoMetadataWorkByBook(member.bookUid);
+    final VideoMetadataWorkRow? owned = await database
+        .getVideoMetadataWorkByBook(member.bookUid);
     if (owned == null || !await hasIdentity(owned)) return false;
   }
   return work.members.isNotEmpty;

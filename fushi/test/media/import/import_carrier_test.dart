@@ -20,15 +20,14 @@ ImportCarrier classify(
   Set<String> pageImageDirs = const <String>{},
   Map<String, int> carrierFileDirs = const <String, int>{},
   Map<String, int> mokuroFileDirs = const <String, int>{},
-}) =>
-    classifyImportCarrier(
-      path,
-      isDirectory: directories.contains,
-      isImageArchive: imageArchives.contains,
-      directoryHasPageImages: pageImageDirs.contains,
-      directoryCarrierFileCount: (String p) => carrierFileDirs[p] ?? 0,
-      directoryMokuroFileCount: (String p) => mokuroFileDirs[p] ?? 0,
-    );
+}) => classifyImportCarrier(
+  path,
+  isDirectory: directories.contains,
+  isImageArchive: imageArchives.contains,
+  directoryHasPageImages: pageImageDirs.contains,
+  directoryCarrierFileCount: (String p) => carrierFileDirs[p] ?? 0,
+  directoryMokuroFileCount: (String p) => mokuroFileDirs[p] ?? 0,
+);
 
 void main() {
   group('漫画载体', () {
@@ -330,9 +329,11 @@ void main() {
       expect(r.resolver.resolve('/b/novel.epub'), ImportCarrier.epub);
       expect(r.resolver.resolve('/m/scan.zip'), ImportCarrier.mangaArchive);
       expect(r.resolver.resolve('/b/novel.epub'), ImportCarrier.epub);
-      expect(
-          r.probes, <String>['/b/novel.epub', '/m/scan.zip', '/b/novel.epub'],
-          reason: '换路径就得重算，记忆只对「同一个路径连续问」生效');
+      expect(r.probes, <String>[
+        '/b/novel.epub',
+        '/m/scan.zip',
+        '/b/novel.epub',
+      ], reason: '换路径就得重算，记忆只对「同一个路径连续问」生效');
     });
 
     test('invalidate() 后重新开包（文件可能在对话框开着时被换掉）', () {
@@ -349,8 +350,9 @@ void main() {
       // .cbz，判成非漫画后只弹一条 toast 并 return（对话框不关、resolver 不销毁）；
       // 下载完成后在同一个对话框里重选同一路径，单槽命中就返回过期判定，
       // isImageArchive 根本不再被调用，用户永远导不进去，只能关掉重开。
-      final Directory dir =
-          await Directory.systemTemp.createTemp('carrier_memo_');
+      final Directory dir = await Directory.systemTemp.createTemp(
+        'carrier_memo_',
+      );
       addTearDown(() => dir.delete(recursive: true));
       final File f = File('${dir.path}/vol.zip');
       await f.writeAsBytes(<int>[0]);
@@ -368,15 +370,21 @@ void main() {
         directoryMokuroFileCount: (String _) => 0,
       );
 
-      expect(resolver.resolve(f.path), ImportCarrier.epub,
-          reason: '半截包：判据说它不是图片包');
+      expect(
+        resolver.resolve(f.path),
+        ImportCarrier.epub,
+        reason: '半截包：判据说它不是图片包',
+      );
       expect(resolver.resolve(f.path), ImportCarrier.epub);
       expect(probes.length, 1, reason: '内容没变时仍然只开一次包');
 
       // 文件被换成完整的包（mtime + 大小都变了）。
       await f.writeAsBytes(<int>[0, 1, 2, 3]);
-      expect(resolver.resolve(f.path), ImportCarrier.mangaArchive,
-          reason: '内容变了就必须重新开包定性，不得返回过期判定');
+      expect(
+        resolver.resolve(f.path),
+        ImportCarrier.mangaArchive,
+        reason: '内容变了就必须重新开包定性，不得返回过期判定',
+      );
       expect(probes.length, 2);
     });
 
@@ -385,8 +393,11 @@ void main() {
       // 词典包一票否决给出的答案）。记忆层不得把它变成漫画。
       final r = makeResolver(imageArchives: <String>{'/m/scan.zip'});
       for (int i = 0; i < 3; i++) {
-        expect(r.resolver.resolve('/d/dict.zip'), ImportCarrier.epub,
-            reason: '缓存只省重复提问，绝不改答案');
+        expect(
+          r.resolver.resolve('/d/dict.zip'),
+          ImportCarrier.epub,
+          reason: '缓存只省重复提问，绝不改答案',
+        );
       }
       expect(r.probes.length, 1);
     });
@@ -395,8 +406,7 @@ void main() {
   group('PDF 能进漫画库，但不因此变成「漫画载体」', () {
     test('.pdf 的载体身份仍是 pdf（书籍框据此走 PdfImporter）', () {
       expect(classify('/b/scan.pdf'), ImportCarrier.pdf);
-      expect(classify('/b/SCAN.PDF'), ImportCarrier.pdf,
-          reason: '扩展名判定大小写不敏感');
+      expect(classify('/b/SCAN.PDF'), ImportCarrier.pdf, reason: '扩展名判定大小写不敏感');
     });
 
     test('pdf.isManga 恒 false：书籍框绝不把 PDF 转交漫画流程', () {
@@ -414,8 +424,7 @@ void main() {
       expect(ImportCarrier.text.isMangaCapable, isFalse);
       for (final ImportCarrier c in ImportCarrier.values) {
         if (c.isManga) {
-          expect(c.isMangaCapable, isTrue,
-              reason: '四种漫画载体必须全部仍被漫画框收下：$c');
+          expect(c.isMangaCapable, isTrue, reason: '四种漫画载体必须全部仍被漫画框收下：$c');
         }
       }
     });
@@ -448,17 +457,18 @@ void main() {
     });
 
     test('书籍侧没有 importer 的漫画载体不给出口', () {
-      for (final (String path, ImportCarrier carrier) in <(
-        String,
-        ImportCarrier,
-      )>[
-        ('/a/v1.zip', ImportCarrier.mangaArchive),
-        ('/a/v1.cbz', ImportCarrier.mangaArchive),
-        ('/a/v1.mokuro', ImportCarrier.mangaMokuro),
-        ('/a/v1.epub', ImportCarrier.mangaFolder),
-      ]) {
-        expect(canImportMangaCarrierAsBook(path, carrier), isFalse,
-            reason: path);
+      for (final (String path, ImportCarrier carrier)
+          in <(String, ImportCarrier)>[
+            ('/a/v1.zip', ImportCarrier.mangaArchive),
+            ('/a/v1.cbz', ImportCarrier.mangaArchive),
+            ('/a/v1.mokuro', ImportCarrier.mangaMokuro),
+            ('/a/v1.epub', ImportCarrier.mangaFolder),
+          ]) {
+        expect(
+          canImportMangaCarrierAsBook(path, carrier),
+          isFalse,
+          reason: path,
+        );
       }
     });
   });

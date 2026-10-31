@@ -15,8 +15,7 @@
 String? effectiveSeriesAudioTrackId(
   String? collectionValue,
   String? perBookValue,
-) =>
-    collectionValue ?? perBookValue;
+) => collectionValue ?? perBookValue;
 
 /// 解析生效的字幕调轴（音画延迟毫秒）。
 /// [collectionValue] 系列（合集）级调轴；null = 系列内没人调过（区别于「显式调成 0」）。

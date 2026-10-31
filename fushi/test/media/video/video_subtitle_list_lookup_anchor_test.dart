@@ -28,8 +28,8 @@ AudioCue _cue(int i, int s, int e, String text) => AudioCue()
   ..audioFileIndex = 0;
 
 Widget _wrap(Widget child) => MaterialApp(
-      home: Scaffold(body: Stack(children: <Widget>[child])),
-    );
+  home: Scaffold(body: Stack(children: <Widget>[child])),
+);
 
 Rect _unionRects(Iterable<Rect> rects) {
   final Iterator<Rect> it = rects.iterator;
@@ -41,11 +41,7 @@ Rect _unionRects(Iterable<Rect> rects) {
   return union;
 }
 
-typedef _RowMeasure = ({
-  Offset globalPoint,
-  Rect tailRect,
-  Rect charRect,
-});
+typedef _RowMeasure = ({Offset globalPoint, Rect tailRect, Rect charRect});
 
 /// 复算某行文本从 [fromGrapheme] 起到句末的**全局**矩形，并给出该 grapheme 的中心点。
 _RowMeasure _measureRow(
@@ -69,13 +65,13 @@ _RowMeasure _measureRow(
     ellipsis: null,
   )..layout(maxWidth: textBox.size.width);
   Rect boxFor(int start, int end) => _unionRects(
-        painter
-            .getBoxesForSelection(
-              TextSelection(baseOffset: start, extentOffset: end),
-              boxHeightStyle: BoxHeightStyle.max,
-            )
-            .map((TextBox box) => box.toRect()),
-      );
+    painter
+        .getBoxesForSelection(
+          TextSelection(baseOffset: start, extentOffset: end),
+          boxHeightStyle: BoxHeightStyle.max,
+        )
+        .map((TextBox box) => box.toRect()),
+  );
   final Rect charRect = boxFor(starts[fromGrapheme], ends[fromGrapheme]);
   final Rect tailRect = boxFor(starts[fromGrapheme], ends.last);
   painter.dispose();
@@ -123,24 +119,28 @@ void main() {
       controller.setCues(<AudioCue>[_cue(0, 0, 1000, sentence)]);
 
       Rect? anchor;
-      await tester.pumpWidget(_wrap(SizedBox(
-        width: 360,
-        height: 600,
-        child: VideoSubtitleJumpPanel(
-        layout: VideoSubtitleListLayout.classic,
-          controller: controller,
-          onTapCue: (_) {},
-          onLookupCue: (AudioCue _, int __, Rect rect) => anchor = rect,
-          onClose: () {},
-          onCopyCue: (_) => true,
-          onFavoriteCue: (_) async {},
-          isCueFavorited: (_) => false,
-          colorScheme: const ColorScheme.dark(),
-          title: 'Subtitle list',
-          emptyHint: 'empty',
-          width: 360,
+      await tester.pumpWidget(
+        _wrap(
+          SizedBox(
+            width: 360,
+            height: 600,
+            child: VideoSubtitleJumpPanel(
+              layout: VideoSubtitleListLayout.classic,
+              controller: controller,
+              onTapCue: (_) {},
+              onLookupCue: (AudioCue _, int __, Rect rect) => anchor = rect,
+              onClose: () {},
+              onCopyCue: (_) => true,
+              onFavoriteCue: (_) async {},
+              isCueFavorited: (_) => false,
+              colorScheme: const ColorScheme.dark(),
+              title: 'Subtitle list',
+              emptyHint: 'empty',
+              width: 360,
+            ),
+          ),
         ),
-      )));
+      );
       await tester.pump();
 
       final _RowMeasure row = _measureRow(tester, sentence, 0);

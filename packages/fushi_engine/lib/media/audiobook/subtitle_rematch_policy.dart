@@ -15,7 +15,7 @@ class SubtitleRematchPolicy {
     'srt',
     'lrc',
     'vtt',
-    'ass'
+    'ass',
   };
 
   /// 硬时间码格式，matcher 无能为力，直接排除。

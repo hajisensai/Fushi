@@ -77,11 +77,12 @@ Uint8List _buildFace({
     final int rec = 12 + i * 16;
     od
       ..setUint32(
-          rec,
-          (tag.codeUnitAt(0) << 24) |
-              (tag.codeUnitAt(1) << 16) |
-              (tag.codeUnitAt(2) << 8) |
-              tag.codeUnitAt(3))
+        rec,
+        (tag.codeUnitAt(0) << 24) |
+            (tag.codeUnitAt(1) << 16) |
+            (tag.codeUnitAt(2) << 8) |
+            tag.codeUnitAt(3),
+      )
       ..setUint32(rec + 8, offset)
       ..setUint32(rec + 12, body.length);
     out.setRange(offset, offset + body.length, body);
@@ -107,8 +108,11 @@ Uint8List _wrapTtc(List<Uint8List> faces) {
     od.setUint32(12 + i * 4, offset);
     out.setRange(offset, offset + faces[i].length, faces[i]);
     // 真 TTC 的表偏移是**文件绝对偏移**：把单 face 的局部表偏移平移到绝对位置。
-    final ByteData fd =
-        ByteData.sublistView(out, offset, offset + faces[i].length);
+    final ByteData fd = ByteData.sublistView(
+      out,
+      offset,
+      offset + faces[i].length,
+    );
     final int numTables = fd.getUint16(4);
     for (int t = 0; t < numTables; t++) {
       final int rec = 12 + t * 16;
@@ -122,19 +126,23 @@ Uint8List _wrapTtc(List<Uint8List> faces) {
 void main() {
   test('单 face：cellPerEm = (usWinAscent+usWinDescent)/upem（libass 语义）', () {
     final List<SfntFaceCellMetrics> faces = parseSfntCellMetrics(
-        _buildFace(upem: 1000, winAsc: 1100, winDesc: 300));
+      _buildFace(upem: 1000, winAsc: 1100, winDesc: 300),
+    );
     expect(faces, hasLength(1));
     expect(faces.single.families, contains('TestFam'));
     expect(faces.single.cellPerEm, closeTo(1.4, 1e-9));
   });
 
   test('无 OS/2：回退 hhea Ascender-Descender（libass mscale=1 分支）', () {
-    final List<SfntFaceCellMetrics> faces = parseSfntCellMetrics(_buildFace(
+    final List<SfntFaceCellMetrics> faces = parseSfntCellMetrics(
+      _buildFace(
         upem: 2048,
         hheaAsc: 1802,
         hheaDesc: -246,
         winAsc: null,
-        winDesc: null));
+        winDesc: null,
+      ),
+    );
     expect(faces, hasLength(1));
     expect(faces.single.cellPerEm, closeTo(2048 / 2048, 1e-9));
   });
@@ -142,8 +150,15 @@ void main() {
   test('真实字体数值：Yu Gothic winCell 1.287em（BUG-897 病根量级）', () {
     // Yu Gothic：upem=2048 winAsc=... 合计 2636 → cellPerEm≈1.287（lineGap=1024 不参与，
     // 旧 TextPainter 行高近似会把它算进去得 ≈1.79——字号偏小 20%~40% 的根因）。
-    final List<SfntFaceCellMetrics> faces = parseSfntCellMetrics(_buildFace(
-        upem: 2048, hheaAsc: 1802, hheaDesc: -455, winAsc: 2000, winDesc: 636));
+    final List<SfntFaceCellMetrics> faces = parseSfntCellMetrics(
+      _buildFace(
+        upem: 2048,
+        hheaAsc: 1802,
+        hheaDesc: -455,
+        winAsc: 2000,
+        winDesc: 636,
+      ),
+    );
     expect(faces.single.cellPerEm, closeTo(2636 / 2048, 1e-9));
   });
 
@@ -162,8 +177,10 @@ void main() {
 
   test('垃圾字节 / 越界不抛，返回空', () {
     expect(parseSfntCellMetrics(Uint8List(0)), isEmpty);
-    expect(parseSfntCellMetrics(Uint8List.fromList(List<int>.filled(64, 0xAB))),
-        isEmpty);
+    expect(
+      parseSfntCellMetrics(Uint8List.fromList(List<int>.filled(64, 0xAB))),
+      isEmpty,
+    );
   });
 
   test('cellPerEmFromTables：异常区间（k<=0.5 或 >=4.0）返回 null', () {
@@ -174,9 +191,12 @@ void main() {
       ..setInt16(4, 100)
       ..setInt16(6, 0); // cell=100 → k=0.1 越界
     expect(
-        cellPerEmFromTables(
-            head: ByteData.sublistView(head), hhea: ByteData.sublistView(hhea)),
-        isNull);
+      cellPerEmFromTables(
+        head: ByteData.sublistView(head),
+        hhea: ByteData.sublistView(hhea),
+      ),
+      isNull,
+    );
   });
 
   test('索引：大小写不敏感、内嵌先到先得、revision 递增', () {
@@ -184,13 +204,15 @@ void main() {
     index.debugReset();
     expect(index.revision.value, 0);
     index.registerFontBytes(
-        _buildFace(family: 'TestFam', winAsc: 1100, winDesc: 300));
+      _buildFace(family: 'TestFam', winAsc: 1100, winDesc: 300),
+    );
     expect(index.revision.value, 1);
     expect(index.cellPerEmOf('testfam'), closeTo(1.4, 1e-9));
     expect(index.cellPerEmOf('TESTFAM'), closeTo(1.4, 1e-9));
     // 同名再注册（不同数值）不覆盖（先到先得），revision 不再涨。
     index.registerFontBytes(
-        _buildFace(family: 'TestFam', winAsc: 2000, winDesc: 0));
+      _buildFace(family: 'TestFam', winAsc: 2000, winDesc: 0),
+    );
     expect(index.revision.value, 1);
     expect(index.cellPerEmOf('testfam'), closeTo(1.4, 1e-9));
     expect(index.cellPerEmOf('nosuch'), isNull);

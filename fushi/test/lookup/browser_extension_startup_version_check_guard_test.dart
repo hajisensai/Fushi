@@ -15,36 +15,57 @@ void main() {
     });
 
     test('background.js 定义启动版本检查函数', () {
-      expect(bg, contains('async function checkVersionOnStartup'),
-          reason: '必须有启动版本检查函数');
+      expect(
+        bg,
+        contains('async function checkVersionOnStartup'),
+        reason: '必须有启动版本检查函数',
+      );
       // 主动打状态端点（不再依赖用户查词）。
-      expect(bg, contains("fetch(base + '/api/extension/status'"),
-          reason: '启动检查必须打 /api/extension/status 取当前内置指纹');
+      expect(
+        bg,
+        contains("fetch(base + '/api/extension/status'"),
+        reason: '启动检查必须打 /api/extension/status 取当前内置指纹',
+      );
       // 拿到状态响应后走同一个自更新入口。
       final int fn = bg.indexOf('async function checkVersionOnStartup');
       final String body = bg.substring(fn, fn + 700);
-      expect(body, contains('maybeSelfReload(status)'),
-          reason: '启动检查必须调用 maybeSelfReload 完成自更新');
+      expect(
+        body,
+        contains('maybeSelfReload(status)'),
+        reason: '启动检查必须调用 maybeSelfReload 完成自更新',
+      );
     });
 
     test('SW 启动 + onStartup + onInstalled 三处都触发启动检查', () {
-      expect(RegExp(r'checkVersionOnStartup\(\);').hasMatch(bg), isTrue,
-          reason: 'SW 顶层每次唤醒都主动检查一次');
-      expect(bg, contains('chrome.runtime.onStartup.addListener'),
-          reason: '浏览器启动时检查');
-      expect(bg, contains('chrome.runtime.onInstalled.addListener'),
-          reason: '安装/更新时检查');
+      expect(
+        RegExp(r'checkVersionOnStartup\(\);').hasMatch(bg),
+        isTrue,
+        reason: 'SW 顶层每次唤醒都主动检查一次',
+      );
+      expect(
+        bg,
+        contains('chrome.runtime.onStartup.addListener'),
+        reason: '浏览器启动时检查',
+      );
+      expect(
+        bg,
+        contains('chrome.runtime.onInstalled.addListener'),
+        reason: '安装/更新时检查',
+      );
     });
 
     test('server /api/extension/status 回带 extensionBuild', () {
-      final String src =
-          File('lib/src/sync/fushi_api_server.dart').readAsStringSync();
+      final String src = File(
+        'lib/src/sync/fushi_api_server.dart',
+      ).readAsStringSync();
       // 状态端点回带当前内置扩展指纹（供启动检查比对）；null 时省略字段（向后兼容）。
       expect(
-          src,
-          contains(
-              "if (extensionBuild != null) 'extensionBuild': extensionBuild"),
-          reason: '状态端点必须条件回带 extensionBuild 指纹');
+        src,
+        contains(
+          "if (extensionBuild != null) 'extensionBuild': extensionBuild",
+        ),
+        reason: '状态端点必须条件回带 extensionBuild 指纹',
+      );
     });
   });
 }

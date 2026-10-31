@@ -25,8 +25,10 @@ void main() {
       );
     });
 
-    final FushiPingResult? r =
-        (await probeFushiPing('https://host:38765', httpClient: mock)).result;
+    final FushiPingResult? r = (await probeFushiPing(
+      'https://host:38765',
+      httpClient: mock,
+    )).result;
     expect(r, isNotNull);
     expect(r!.isFushi, isTrue);
     expect(r.supportsPairV2, isTrue);
@@ -39,16 +41,21 @@ void main() {
     final MockClient mock = MockClient((http.Request req) async {
       return http.Response(jsonEncode(<String, dynamic>{'app': 'other'}), 200);
     });
-    final FushiPingResult? r =
-        (await probeFushiPing('http://host:8080', httpClient: mock)).result;
+    final FushiPingResult? r = (await probeFushiPing(
+      'http://host:8080',
+      httpClient: mock,
+    )).result;
     expect(r, isNull);
   });
 
   test('非 200 → null', () async {
-    final MockClient mock =
-        MockClient((http.Request req) async => http.Response('nope', 404));
-    final FushiPingResult? r =
-        (await probeFushiPing('http://host:8080', httpClient: mock)).result;
+    final MockClient mock = MockClient(
+      (http.Request req) async => http.Response('nope', 404),
+    );
+    final FushiPingResult? r = (await probeFushiPing(
+      'http://host:8080',
+      httpClient: mock,
+    )).result;
     expect(r, isNull);
   });
 
@@ -63,8 +70,10 @@ void main() {
         200,
       );
     });
-    final FushiPingResult? r =
-        (await probeFushiPing('http://host:38765', httpClient: mock)).result;
+    final FushiPingResult? r = (await probeFushiPing(
+      'http://host:38765',
+      httpClient: mock,
+    )).result;
     expect(r, isNotNull);
     expect(r!.tlsEnabled, isFalse);
     expect(r.fingerprint, isNull);
@@ -78,8 +87,10 @@ void main() {
       final MockClient mock = MockClient((http.Request req) async {
         throw const TlsException('pinned fingerprint mismatch');
       });
-      final FushiPingOutcome o =
-          await probeFushiPing('https://host:38765', httpClient: mock);
+      final FushiPingOutcome o = await probeFushiPing(
+        'https://host:38765',
+        httpClient: mock,
+      );
       expect(o.isOk, isFalse);
       expect(o.failure, FushiPingFailure.tls);
     });
@@ -88,8 +99,10 @@ void main() {
       final MockClient mock = MockClient((http.Request req) async {
         throw const HandshakeException('handshake failed');
       });
-      final FushiPingOutcome o =
-          await probeFushiPing('https://host:38765', httpClient: mock);
+      final FushiPingOutcome o = await probeFushiPing(
+        'https://host:38765',
+        httpClient: mock,
+      );
       expect(o.failure, FushiPingFailure.tls);
     });
 
@@ -110,8 +123,10 @@ void main() {
       final MockClient mock = MockClient((http.Request req) async {
         throw const SocketException('connection refused');
       });
-      final FushiPingOutcome o =
-          await probeFushiPing('http://host:38765', httpClient: mock);
+      final FushiPingOutcome o = await probeFushiPing(
+        'http://host:38765',
+        httpClient: mock,
+      );
       expect(o.failure, FushiPingFailure.unreachable);
     });
 
@@ -120,16 +135,21 @@ void main() {
         (http.Request req) async =>
             http.Response(jsonEncode(<String, dynamic>{'app': 'other'}), 200),
       );
-      final FushiPingOutcome o =
-          await probeFushiPing('http://host:8080', httpClient: mock);
+      final FushiPingOutcome o = await probeFushiPing(
+        'http://host:8080',
+        httpClient: mock,
+      );
       expect(o.failure, FushiPingFailure.notFushi);
     });
 
     test('非 200 → notFushi 并保留状态码供日志定位', () async {
-      final MockClient mock =
-          MockClient((http.Request req) async => http.Response('nope', 403));
-      final FushiPingOutcome o =
-          await probeFushiPing('http://host:8080', httpClient: mock);
+      final MockClient mock = MockClient(
+        (http.Request req) async => http.Response('nope', 403),
+      );
+      final FushiPingOutcome o = await probeFushiPing(
+        'http://host:8080',
+        httpClient: mock,
+      );
       expect(o.failure, FushiPingFailure.notFushi);
       expect(o.statusCode, 403);
     });
@@ -144,8 +164,10 @@ void main() {
           200,
         ),
       );
-      final FushiPingOutcome o =
-          await probeFushiPing('http://host:38765', httpClient: mock);
+      final FushiPingOutcome o = await probeFushiPing(
+        'http://host:38765',
+        httpClient: mock,
+      );
       expect(o.isOk, isTrue);
       expect(o.failure, isNull);
       expect(o.result!.supportsPairV2, isTrue);

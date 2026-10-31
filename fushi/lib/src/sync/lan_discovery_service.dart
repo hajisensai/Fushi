@@ -32,20 +32,20 @@ class FushiDevice {
   String get webDavUrl => '${tlsEnabled ? 'https' : 'http'}://$host:$port';
 
   Map<String, dynamic> toJson() => <String, dynamic>{
-        'name': name,
-        'host': host,
-        'port': port,
-        'deviceId': deviceId,
-        'tlsEnabled': tlsEnabled,
-      };
+    'name': name,
+    'host': host,
+    'port': port,
+    'deviceId': deviceId,
+    'tlsEnabled': tlsEnabled,
+  };
 
   factory FushiDevice.fromJson(Map<String, dynamic> json) => FushiDevice(
-        name: json['name'] as String,
-        host: json['host'] as String,
-        port: json['port'] as int,
-        deviceId: json['deviceId'] as String,
-        tlsEnabled: json['tlsEnabled'] as bool? ?? false,
-      );
+    name: json['name'] as String,
+    host: json['host'] as String,
+    port: json['port'] as int,
+    deviceId: json['deviceId'] as String,
+    tlsEnabled: json['tlsEnabled'] as bool? ?? false,
+  );
 
   /// Builds a device from a *resolved* Bonsoir service. Returns null when the
   /// platform resolved no usable address. Prefers IPv4 (FushiSyncServer binds
@@ -167,8 +167,9 @@ class LanDiscoveryService {
       // A service finished resolving: map it and add it (unless it is us — by
       // advertised id, or by host address when the id attribute didn't survive).
       case BonsoirDiscoveryServiceResolvedEvent():
-        final FushiDevice? device =
-            FushiDevice.fromResolvedService(event.service);
+        final FushiDevice? device = FushiDevice.fromResolvedService(
+          event.service,
+        );
         if (device == null ||
             device.deviceId == deviceId ||
             _localAddresses.contains(device.host)) {
@@ -183,7 +184,8 @@ class LanDiscoveryService {
       // attribute / service name for services we never resolved.
       case BonsoirDiscoveryServiceLostEvent():
         final BonsoirService service = event.service;
-        final String key = _serviceNameToDeviceId.remove(service.name) ??
+        final String key =
+            _serviceNameToDeviceId.remove(service.name) ??
             service.attributes[attributeId] ??
             service.name;
         if (_discoveredDevices.remove(key) != null) {

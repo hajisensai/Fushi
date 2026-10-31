@@ -228,7 +228,8 @@ void main() {
       // kanji 附加等拷贝路径不丢样式。
       expect(
         identical(
-          second.withKanjiResults(const <FushiKanjiResult>[])
+          second
+              .withKanjiResults(const <FushiKanjiResult>[])
               .remoteDictionaryStyles,
           first.remoteDictionaryStyles,
         ),

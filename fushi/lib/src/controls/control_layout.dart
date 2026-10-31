@@ -40,13 +40,15 @@ abstract interface class ControlItemSpec<S> {
 
 /// 归一化后置钩子：宿主的域特判（例如视频的 volume 只能在底栏、title 只能在顶栏）。
 /// 在去重 + 回填之后、最终 removed 清理之前调用，直接原地改 [slots] / [removed]。
-typedef ControlLayoutPostNormalize<S, I> = void Function(
-    Map<S, List<I>> slots, Set<I> removed);
+typedef ControlLayoutPostNormalize<S, I> =
+    void Function(Map<S, List<I>> slots, Set<I> removed);
 
 /// 一个宿主的槽位全集 / 按钮全集 / hidden 槽位 / 后置钩子。[slots] 与 [items] 的
 /// 顺序就是所有遍历、编码与 [ControlLayout.removedItems] 的顺序。
-class ControlLayoutScheme<S extends ControlSlotSpec,
-    I extends ControlItemSpec<S>> {
+class ControlLayoutScheme<
+  S extends ControlSlotSpec,
+  I extends ControlItemSpec<S>
+> {
   const ControlLayoutScheme({
     required this.slots,
     required this.hiddenSlot,
@@ -79,8 +81,8 @@ class ControlLayoutScheme<S extends ControlSlotSpec,
   }
 
   Map<S, List<I>> emptySlotMap() => <S, List<I>>{
-        for (final S slot in slots) slot: <I>[],
-      };
+    for (final S slot in slots) slot: <I>[],
+  };
 }
 
 /// 拖拽载荷：被拖的按钮 + 来源槽位（null = 来自「全部按钮」调色板，即新增）+
@@ -110,7 +112,7 @@ class _NormalizedControlLayoutData<S, I> {
 /// 逐槽有序的按钮布局（不可变；每个写操作返回新实例）。
 class ControlLayout<S extends ControlSlotSpec, I extends ControlItemSpec<S>> {
   ControlLayout._(this.scheme, this._slots, Set<I> removed)
-      : _removed = Set<I>.unmodifiable(removed);
+    : _removed = Set<I>.unmodifiable(removed);
 
   /// 从「按钮 → 槽位」平铺表构建；[explicitOrder] 决定槽内顺序（保留用户拖拽顺序）。
   factory ControlLayout.fromAssignments(
@@ -187,7 +189,7 @@ class ControlLayout<S extends ControlSlotSpec, I extends ControlItemSpec<S>> {
   /// 已移除（这是 v2 → v3 迁移语义，也是唯一合理的通用解释：hidden 不是渲染面）。
   /// 一个可见按钮都没有且 removed 为空 ⇒ 返回 null，由宿主决定兜底布局。
   static ControlLayout<S, I>?
-      decodeSlots<S extends ControlSlotSpec, I extends ControlItemSpec<S>>(
+  decodeSlots<S extends ControlSlotSpec, I extends ControlItemSpec<S>>(
     ControlLayoutScheme<S, I> scheme,
     Map<String, dynamic> slotsRaw, {
     Object? removedRaw,
@@ -238,7 +240,7 @@ class ControlLayout<S extends ControlSlotSpec, I extends ControlItemSpec<S>> {
   }
 
   static bool
-      _placeRawItem<S extends ControlSlotSpec, I extends ControlItemSpec<S>>(
+  _placeRawItem<S extends ControlSlotSpec, I extends ControlItemSpec<S>>(
     ControlLayoutScheme<S, I> scheme,
     Map<S, List<I>> slots,
     Set<I> removed,
@@ -258,7 +260,7 @@ class ControlLayout<S extends ControlSlotSpec, I extends ControlItemSpec<S>> {
   }
 
   static ControlLayout<S, I>
-      _fromRaw<S extends ControlSlotSpec, I extends ControlItemSpec<S>>(
+  _fromRaw<S extends ControlSlotSpec, I extends ControlItemSpec<S>>(
     ControlLayoutScheme<S, I> scheme,
     Map<S, List<I>> slots, {
     Set<I> removedItems = const <Never>{},
@@ -293,9 +295,9 @@ class ControlLayout<S extends ControlSlotSpec, I extends ControlItemSpec<S>> {
 
   /// 显式移除的按钮，按 [ControlLayoutScheme.items] 顺序。
   List<I> get removedItems => <I>[
-        for (final I item in scheme.items)
-          if (_removed.contains(item)) item,
-      ];
+    for (final I item in scheme.items)
+      if (_removed.contains(item)) item,
+  ];
 
   /// hidden 槽渲染面（归一化后恒空；保留给直接查槽的旧调用方）。
   List<I> get hiddenItems => itemsIn(scheme.hiddenSlot);
@@ -312,12 +314,12 @@ class ControlLayout<S extends ControlSlotSpec, I extends ControlItemSpec<S>> {
   }
 
   Map<S, List<I>> _copySlots() => <S, List<I>>{
-        for (final S slot in scheme.slots) slot: List<I>.from(_slots[slot]!),
-      };
+    for (final S slot in scheme.slots) slot: List<I>.from(_slots[slot]!),
+  };
 
   bool _stillVisible(Map<S, List<I>> slots, I item) => scheme.slots.any(
-        (S s) => scheme.isOnPlayer(s) && slots[s]!.contains(item),
-      );
+    (S s) => scheme.isOnPlayer(s) && slots[s]!.contains(item),
+  );
 
   /// 把 [item] 的所有副本收拢成一份放进 [target] 的 [index]（核心拖拽写操作）。
   /// 必需项移入 hidden 被拒（返回 this）。
@@ -334,8 +336,9 @@ class ControlLayout<S extends ControlSlotSpec, I extends ControlItemSpec<S>> {
     }
     removed.remove(item);
     final List<I> targetList = next[target]!;
-    final int insertAt =
-        (index == null) ? targetList.length : index.clamp(0, targetList.length);
+    final int insertAt = (index == null)
+        ? targetList.length
+        : index.clamp(0, targetList.length);
     targetList.insert(insertAt, item);
     return _fromRaw(scheme, next, removedItems: removed);
   }
@@ -350,8 +353,9 @@ class ControlLayout<S extends ControlSlotSpec, I extends ControlItemSpec<S>> {
     final Map<S, List<I>> next = _copySlots();
     final Set<I> removed = <I>{..._removed}..remove(item);
     final List<I> targetList = next[target]!;
-    final int insertAt =
-        (index == null) ? targetList.length : index.clamp(0, targetList.length);
+    final int insertAt = (index == null)
+        ? targetList.length
+        : index.clamp(0, targetList.length);
     targetList.insert(insertAt, item);
     return _fromRaw(scheme, next, removedItems: removed);
   }
@@ -377,7 +381,8 @@ class ControlLayout<S extends ControlSlotSpec, I extends ControlItemSpec<S>> {
     final S source = payload.sourceSlot!;
     final Map<S, List<I>> next = _copySlots();
     final List<I> sourceList = next[source]!;
-    final int sourceIndex = payload.sourceIndex ??
+    final int sourceIndex =
+        payload.sourceIndex ??
         sourceList.indexWhere((I candidate) => candidate == item);
     if (sourceIndex < 0 ||
         sourceIndex >= sourceList.length ||
@@ -431,8 +436,8 @@ class ControlLayout<S extends ControlSlotSpec, I extends ControlItemSpec<S>> {
 
   /// 已移除按钮名，按 [ControlLayoutScheme.items] 顺序。
   List<String> encodeRemoved() => <String>[
-        for (final I item in removedItems) item.storageValue,
-      ];
+    for (final I item in removedItems) item.storageValue,
+  ];
 
   /// 归一化不变式维护者：
   ///   1. 同一可见槽内按钮至多一次；
@@ -441,7 +446,7 @@ class ControlLayout<S extends ControlSlotSpec, I extends ControlItemSpec<S>> {
   ///   4. 必需项不可移除；
   ///   5. 宿主后置钩子跑在最终 removed 清理之前。
   static _NormalizedControlLayoutData<S, I>
-      _normalize<S extends ControlSlotSpec, I extends ControlItemSpec<S>>(
+  _normalize<S extends ControlSlotSpec, I extends ControlItemSpec<S>>(
     ControlLayoutScheme<S, I> scheme,
     Map<S, List<I>> rawSlots, {
     Set<I> removedItems = const <Never>{},

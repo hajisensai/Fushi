@@ -66,21 +66,17 @@ void main() {
   });
 
   Widget harness() => ProviderScope(
-        overrides: <Override>[
-          appProvider.overrideWith((Ref ref) => appModel),
-        ],
-        child: MaterialApp(
-          theme: ThemeData(useMaterial3: true),
-          home: Scaffold(
-            body: SizedBox(
-              width: 640,
-              child: SingleChildScrollView(
-                child: const AListSiteSettingsSection(),
-              ),
-            ),
-          ),
+    overrides: <Override>[appProvider.overrideWith((Ref ref) => appModel)],
+    child: MaterialApp(
+      theme: ThemeData(useMaterial3: true),
+      home: Scaffold(
+        body: SizedBox(
+          width: 640,
+          child: SingleChildScrollView(child: const AListSiteSettingsSection()),
         ),
-      );
+      ),
+    ),
+  );
 
   Future<void> pumpSection(WidgetTester tester) async {
     tester.view.physicalSize = const Size(900, 3200);
@@ -98,10 +94,11 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  Iterable<AListDiscoverySource> userSites() =>
-      appModel.mediaDiscoveryService.sources
-          .whereType<AListDiscoverySource>()
-          .where((AListDiscoverySource s) => s.isUserConfigured);
+  Iterable<AListDiscoverySource> userSites() => appModel
+      .mediaDiscoveryService
+      .sources
+      .whereType<AListDiscoverySource>()
+      .where((AListDiscoverySource s) => s.isUserConfigured);
 
   // 3-enoE7FpS：「显示在」没有视频（发现页下载源不收视频），设置区要指明视频的
   // 入口在视频库的 AList 来源。
@@ -129,8 +126,11 @@ void main() {
     expect(saved, hasLength(1));
     expect(saved.single.name, 'Cat OD');
     expect(saved.single.username, isEmpty, reason: '游客访问：账号空即合法');
-    expect(saved.single.origin, 'https://od.example.com',
-        reason: '贴了带路径的地址只取站点根');
+    expect(
+      saved.single.origin,
+      'https://od.example.com',
+      reason: '贴了带路径的地址只取站点根',
+    );
     expect(saved.single.kinds, kDefaultAListSiteKinds);
 
     final List<AListDiscoverySource> added = userSites().toList();
@@ -159,8 +159,9 @@ void main() {
     await pumpSection(tester);
 
     Future<void> tapKind(String kind) async {
-      final Finder chip =
-          find.byKey(ValueKey<String>('alist-site-0-kind-$kind'));
+      final Finder chip = find.byKey(
+        ValueKey<String>('alist-site-0-kind-$kind'),
+      );
       await tester.ensureVisible(chip);
       await tester.pumpAndSettle();
       await tester.tap(chip);
@@ -171,20 +172,22 @@ void main() {
     await tapKind('manga');
     expect(prefs.discoveryAListSites.single.kinds, <DiscoveryMediaKind>{
       DiscoveryMediaKind.novel,
-      DiscoveryMediaKind.manga
+      DiscoveryMediaKind.manga,
     });
     expect(userSites().single.capabilities.kinds, <DiscoveryMediaKind>{
       DiscoveryMediaKind.novel,
-      DiscoveryMediaKind.manga
+      DiscoveryMediaKind.manga,
     });
 
     await tapKind('manga');
     await tapKind('novel');
     // 全取消会让整条配置无效而消失，所以最后一个 chip 的取消是 no-op。
-    expect(prefs.discoveryAListSites.single.kinds,
-        <DiscoveryMediaKind>{DiscoveryMediaKind.novel});
-    expect(userSites().single.capabilities.kinds,
-        <DiscoveryMediaKind>{DiscoveryMediaKind.novel});
+    expect(prefs.discoveryAListSites.single.kinds, <DiscoveryMediaKind>{
+      DiscoveryMediaKind.novel,
+    });
+    expect(userSites().single.capabilities.kinds, <DiscoveryMediaKind>{
+      DiscoveryMediaKind.novel,
+    });
   });
 
   testWidgets('停用的站点不进注册表', (WidgetTester tester) async {
@@ -199,8 +202,9 @@ void main() {
     await pumpSection(tester);
     expect(userSites(), isEmpty);
 
-    final Finder toggle =
-        find.byKey(const ValueKey<String>('alist-site-0-enabled'));
+    final Finder toggle = find.byKey(
+      const ValueKey<String>('alist-site-0-enabled'),
+    );
     await tester.ensureVisible(toggle);
     await tester.pumpAndSettle();
     await tester.tap(toggle);
@@ -224,7 +228,11 @@ void main() {
     );
     expect(
       tester
-          .widget<OutlinedButton>(glassUnwrap<OutlinedButton>(find.byKey(const ValueKey<String>('alist-site-0-test'))))
+          .widget<OutlinedButton>(
+            glassUnwrap<OutlinedButton>(
+              find.byKey(const ValueKey<String>('alist-site-0-test')),
+            ),
+          )
           .onPressed,
       isNull,
       reason: '配置无效时测试连接不可用',

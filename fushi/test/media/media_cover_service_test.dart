@@ -53,15 +53,17 @@ Future<void> resolveIntoCache(ImageProvider provider) async {
 
 /// [path] 的裸 FileImage 键是否还在 ImageCache。
 Future<bool> fileImageCached(String path) async {
-  final Object key =
-      await FileImage(File(path)).obtainKey(ImageConfiguration.empty);
+  final Object key = await FileImage(
+    File(path),
+  ).obtainKey(ImageConfiguration.empty);
   return PaintingBinding.instance.imageCache.containsKey(key);
 }
 
 /// [path] 的降采样（ResizeImage）键是否还在 ImageCache。
 Future<bool> resizedImageCached(String path) async {
-  final Object key =
-      await resizedFileImage(File(path)).obtainKey(ImageConfiguration.empty);
+  final Object key = await resizedFileImage(
+    File(path),
+  ).obtainKey(ImageConfiguration.empty);
   return PaintingBinding.instance.imageCache.containsKey(key);
 }
 
@@ -70,16 +72,25 @@ Future<void> populateBothCoverKeys(String path) async {
   await resolveIntoCache(FileImage(File(path)));
   await resolveIntoCache(resizedFileImage(File(path)));
   expect(await fileImageCached(path), isTrue, reason: '前置：裸 FileImage 键已入缓存');
-  expect(await resizedImageCached(path), isTrue,
-      reason: '前置：ResizeImage 键已入缓存');
+  expect(
+    await resizedImageCached(path),
+    isTrue,
+    reason: '前置：ResizeImage 键已入缓存',
+  );
 }
 
 /// 断言 [path] 的两个键都已被驱逐。
 Future<void> expectBothCoverKeysEvicted(String path) async {
-  expect(await fileImageCached(path), isFalse,
-      reason: '覆盖写后裸 FileImage 键必须被驱逐');
-  expect(await resizedImageCached(path), isFalse,
-      reason: '覆盖写后 ResizeImage（降采样）键必须被驱逐——旧缺陷只清 FileImage 键');
+  expect(
+    await fileImageCached(path),
+    isFalse,
+    reason: '覆盖写后裸 FileImage 键必须被驱逐',
+  );
+  expect(
+    await resizedImageCached(path),
+    isFalse,
+    reason: '覆盖写后 ResizeImage（降采样）键必须被驱逐——旧缺陷只清 FileImage 键',
+  );
 }
 
 /// 写一个真实可解码的 1x1 PNG（内容取自 transparent_image）。
@@ -184,8 +195,11 @@ void main() {
         ),
         throwsA(anything),
       );
-      expect(File(dest).readAsBytesSync(), kTransparentImage,
-          reason: '写盘失败必须不动旧封面');
+      expect(
+        File(dest).readAsBytesSync(),
+        kTransparentImage,
+        reason: '写盘失败必须不动旧封面',
+      );
       expect(File('$dest.tmp').existsSync(), isFalse, reason: '失败也不得残留 .tmp');
     });
   });
@@ -195,8 +209,9 @@ void main() {
       debugDefaultTargetPlatformOverride = TargetPlatform.windows;
       addTearDown(() => debugDefaultTargetPlatformOverride = null);
 
-      const MethodChannel imagePickerChannel =
-          MethodChannel('plugins.flutter.io/image_picker');
+      const MethodChannel imagePickerChannel = MethodChannel(
+        'plugins.flutter.io/image_picker',
+      );
       bool imagePickerChannelCalled = false;
       binding.defaultBinaryMessenger.setMockMethodCallHandler(
         imagePickerChannel,
@@ -205,8 +220,12 @@ void main() {
           return null;
         },
       );
-      addTearDown(() => binding.defaultBinaryMessenger
-          .setMockMethodCallHandler(imagePickerChannel, null));
+      addTearDown(
+        () => binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          imagePickerChannel,
+          null,
+        ),
+      );
 
       final _FakeFilePicker fake = _FakeFilePicker('C:/tmp/cover.png');
       FilePicker.platform = fake;
@@ -216,8 +235,11 @@ void main() {
       expect(picked, isNotNull);
       expect(picked!.path, 'C:/tmp/cover.png');
       expect(fake.lastType, FileType.image);
-      expect(imagePickerChannelCalled, isFalse,
-          reason: '桌面分支不得触碰 image_picker MethodChannel（BUG-1074 根因）');
+      expect(
+        imagePickerChannelCalled,
+        isFalse,
+        reason: '桌面分支不得触碰 image_picker MethodChannel（BUG-1074 根因）',
+      );
     });
   });
 
@@ -275,20 +297,23 @@ void main() {
     setUp(() async {
       db = FushiDatabase.forTesting(NativeDatabase.memory());
       repo = VideoBookRepository(db);
-      await repo.saveVideoBook(VideoBooksCompanion(
-        bookUid: const Value('video/test_ep'),
-        title: const Value('测试视频'),
-        videoPath: const Value('/tmp/test_ep.mkv'),
-        importedAt: Value(DateTime.now().millisecondsSinceEpoch),
-      ));
+      await repo.saveVideoBook(
+        VideoBooksCompanion(
+          bookUid: const Value('video/test_ep'),
+          title: const Value('测试视频'),
+          videoPath: const Value('/tmp/test_ep.mkv'),
+          importedAt: Value(DateTime.now().millisecondsSinceEpoch),
+        ),
+      );
     });
 
     tearDown(() async {
       await db.close();
     });
 
-    Future<VideoBookRow> row() async => (await repo.listAll())
-        .firstWhere((VideoBookRow r) => r.bookUid == 'video/test_ep');
+    Future<VideoBookRow> row() async => (await repo.listAll()).firstWhere(
+      (VideoBookRow r) => r.bookUid == 'video/test_ep',
+    );
 
     test('拷盘 + 落库 coverPath + 记 CoverOrigin.manual', () async {
       final Directory covers = Directory(p.join(tempDir.path, 'video_covers'));
@@ -305,8 +330,11 @@ void main() {
       expect(File(dest).existsSync(), isTrue);
       expect((await row()).coverPath, dest);
       final CoverMeta? meta = await CoverMetaStore(covers).get('video/test_ep');
-      expect(meta?.origin, CoverOrigin.manual,
-          reason: '手动封面必须记 manual，批量刮削永不覆盖');
+      expect(
+        meta?.origin,
+        CoverOrigin.manual,
+        reason: '手动封面必须记 manual，批量刮削永不覆盖',
+      );
     });
 
     test('全局清理 maintenance 已入场时手动封面在落盘前失败', () async {
@@ -329,8 +357,9 @@ void main() {
       expect((await row()).coverPath, isNull);
       expect(await CoverMetaStore(covers).get('video/test_ep'), isNull);
       expect(
-        File(p.join(covers.path, videoCoverFileName('video/test_ep')))
-            .existsSync(),
+        File(
+          p.join(covers.path, videoCoverFileName('video/test_ep')),
+        ).existsSync(),
         isFalse,
       );
     });
@@ -463,12 +492,15 @@ void main() {
         clearOverrideImage: false,
       );
 
-      expect(File(filename).readAsBytesSync(), before,
-          reason: '坏文件不得覆盖旧 override（渲染层只判 existsSync）');
       expect(
-        Directory(p.dirname(filename))
-            .listSync()
-            .where((FileSystemEntity e) => e.path.contains('.tmp.')),
+        File(filename).readAsBytesSync(),
+        before,
+        reason: '坏文件不得覆盖旧 override（渲染层只判 existsSync）',
+      );
+      expect(
+        Directory(
+          p.dirname(filename),
+        ).listSync().where((FileSystemEntity e) => e.path.contains('.tmp.')),
         isEmpty,
         reason: '拒收时不得留 .tmp 残片',
       );
@@ -518,8 +550,11 @@ void main() {
 
       expect(saved, p.join(covers.path, videoCoverFileName('$id')));
       expect(File(saved).existsSync(), isTrue);
-      expect((await db.getMediaCollectionById(id))!.coverPath, saved,
-          reason: '只落盘不写库 = 用户换了封面但界面永远看不到');
+      expect(
+        (await db.getMediaCollectionById(id))!.coverPath,
+        saved,
+        reason: '只落盘不写库 = 用户换了封面但界面永远看不到',
+      );
     });
 
     test('只写 media_collections 一行，一个成员的封面都不动（BUG-1211）', () async {
@@ -585,12 +620,15 @@ void main() {
         throwsA(isA<Object>()),
       );
 
-      expect((await db.getMediaCollectionById(id))!.coverPath, isNull,
-          reason: '写盘失败还写库 = DB 指着一个不存在的文件');
       expect(
-        covers
-            .listSync()
-            .where((FileSystemEntity e) => e.path.contains('.tmp')),
+        (await db.getMediaCollectionById(id))!.coverPath,
+        isNull,
+        reason: '写盘失败还写库 = DB 指着一个不存在的文件',
+      );
+      expect(
+        covers.listSync().where(
+          (FileSystemEntity e) => e.path.contains('.tmp'),
+        ),
         isEmpty,
       );
     });

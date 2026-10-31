@@ -90,11 +90,13 @@ void main() {
 
       expect(
         () => EpubParser.parseSync(bytes, extractDir.path),
-        throwsA(isA<FormatException>().having(
-          (e) => e.message,
-          'message',
-          contains('no readable chapters'),
-        )),
+        throwsA(
+          isA<FormatException>().having(
+            (e) => e.message,
+            'message',
+            contains('no readable chapters'),
+          ),
+        ),
       );
     });
 
@@ -156,10 +158,7 @@ void main() {
               '<spine><itemref idref="ch1"/></spine>'
               '</package>',
         ),
-        _textFile(
-          'ch1.xhtml',
-          '<html><body><p>Hello World</p></body></html>',
-        ),
+        _textFile('ch1.xhtml', '<html><body><p>Hello World</p></body></html>'),
       ]);
 
       final book = EpubParser.parseSync(bytes, extractDir.path);

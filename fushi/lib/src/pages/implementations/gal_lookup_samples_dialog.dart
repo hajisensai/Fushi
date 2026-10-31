@@ -944,7 +944,8 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
           ),
           body: Column(
             children: [
-              if (_busy || _previewRunning) const FushiLinearProgressIndicator(),
+              if (_busy || _previewRunning)
+                const FushiLinearProgressIndicator(),
               _statusBanner(),
               Expanded(
                 child: Row(
@@ -1512,66 +1513,72 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
-        _stepHeader(2, t.game_lookup_samples_auto_align),
-        const SizedBox(height: 6),
-        _secondaryText(
-          _fitAllSamples
-              ? t.game_lookup_samples_auto_all_hint
-              : t.game_lookup_samples_auto_current_hint,
-        ),
-        const SizedBox(height: 8),
-        if (galCalibrationOcrModelStatus != null) ...[
-          if (_ocrModel?.ready == true)
-            Row(
-              children: <Widget>[
-                FushiIcon(
-                  Icons.check_circle_outline,
-                  size: 16,
-                  color: Theme.of(context).colorScheme.primary,
-                ),
-                const SizedBox(width: 6),
-                Expanded(child: _secondaryText(t.manga_ocr_model_status_ready)),
+              _stepHeader(2, t.game_lookup_samples_auto_align),
+              const SizedBox(height: 6),
+              _secondaryText(
+                _fitAllSamples
+                    ? t.game_lookup_samples_auto_all_hint
+                    : t.game_lookup_samples_auto_current_hint,
+              ),
+              const SizedBox(height: 8),
+              if (galCalibrationOcrModelStatus != null) ...[
+                if (_ocrModel?.ready == true)
+                  Row(
+                    children: <Widget>[
+                      FushiIcon(
+                        Icons.check_circle_outline,
+                        size: 16,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: _secondaryText(t.manga_ocr_model_status_ready),
+                      ),
+                    ],
+                  )
+                else ...[
+                  _secondaryText(
+                    '${t.manga_ocr_model_status_missing} · '
+                    '${t.manga_ocr_model_download_size(size: '31 MB')}。'
+                    '${t.manga_ocr_engine_local_onnx_desc}',
+                  ),
+                  const SizedBox(height: 6),
+                  FushiOutlinedButton.icon(
+                    key: const ValueKey<String>('calibration-ocr-download'),
+                    onPressed: _busy || _ocrDownloadBusy
+                        ? null
+                        : _downloadOcrModel,
+                    icon: const FushiIcon(Icons.download),
+                    label: Text(
+                      _ocrDownloadBusy
+                          ? t.manga_ocr_downloading_file(
+                              file: _ocrDownloadFileName,
+                            )
+                          : t.manga_ocr_download,
+                    ),
+                  ),
+                  if (_ocrDownloadBusy && _ocrDownloadTotal > 0)
+                    FushiLinearProgressIndicator(
+                      value: (_ocrDownloadReceived / _ocrDownloadTotal).clamp(
+                        0.0,
+                        1.0,
+                      ),
+                    ),
+                ],
+                const SizedBox(height: 8),
               ],
-            )
-          else ...[
-            _secondaryText(
-              '${t.manga_ocr_model_status_missing} · '
-              '${t.manga_ocr_model_download_size(size: '31 MB')}。'
-              '${t.manga_ocr_engine_local_onnx_desc}',
-            ),
-            const SizedBox(height: 6),
-            FushiOutlinedButton.icon(
-              key: const ValueKey<String>('calibration-ocr-download'),
-              onPressed: _busy || _ocrDownloadBusy ? null : _downloadOcrModel,
-              icon: const FushiIcon(Icons.download),
-              label: Text(
-                _ocrDownloadBusy
-                    ? t.manga_ocr_downloading_file(file: _ocrDownloadFileName)
-                    : t.manga_ocr_download,
-              ),
-            ),
-            if (_ocrDownloadBusy && _ocrDownloadTotal > 0)
-              FushiLinearProgressIndicator(
-                value: (_ocrDownloadReceived / _ocrDownloadTotal).clamp(
-                  0.0,
-                  1.0,
+              FushiFilledButton.icon(
+                key: const ValueKey<String>('calibration-auto-align'),
+                onPressed: _busy || _ocrDownloadBusy || _samples.isEmpty
+                    ? null
+                    : _fitImage,
+                icon: const FushiIcon(Icons.auto_fix_high),
+                label: Text(
+                  _fitAllSamples
+                      ? t.game_lookup_samples_auto_align_all
+                      : t.game_lookup_samples_auto_align_current,
                 ),
               ),
-          ],
-          const SizedBox(height: 8),
-        ],
-        FushiFilledButton.icon(
-          key: const ValueKey<String>('calibration-auto-align'),
-          onPressed: _busy || _ocrDownloadBusy || _samples.isEmpty
-              ? null
-              : _fitImage,
-          icon: const FushiIcon(Icons.auto_fix_high),
-          label: Text(
-            _fitAllSamples
-                ? t.game_lookup_samples_auto_align_all
-                : t.game_lookup_samples_auto_align_current,
-          ),
-        ),
             ],
           ),
         ),

@@ -38,14 +38,14 @@ Text _stroke(WidgetTester tester, String character) => tester
 
 void main() {
   test('Windows fallback mirrors mpv without changing other platforms', () {
-    expect(
-      subtitleCjkFontFallbacks(TargetPlatform.windows).take(2),
-      <String>['Microsoft YaHei UI', 'Microsoft YaHei'],
-    );
-    expect(
-      subtitleCjkFontFallbacks(TargetPlatform.linux).take(2),
-      <String>['Yu Gothic', 'Yu Gothic UI'],
-    );
+    expect(subtitleCjkFontFallbacks(TargetPlatform.windows).take(2), <String>[
+      'Microsoft YaHei UI',
+      'Microsoft YaHei',
+    ]);
+    expect(subtitleCjkFontFallbacks(TargetPlatform.linux).take(2), <String>[
+      'Yu Gothic',
+      'Yu Gothic UI',
+    ]);
     expect(
       assMissingFontRasterCompensation(
         TargetPlatform.windows,
@@ -68,49 +68,53 @@ void main() {
   });
 
   testWidgets(
-      'reported ASS keeps mpv size, colors, spacing, outline and Windows fallback',
-      (WidgetTester tester) async {
-    final TargetPlatform? previousPlatform = debugDefaultTargetPlatformOverride;
-    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
-    addTearDown(() => debugDefaultTargetPlatformOverride = previousPlatform);
-    await tester.binding.setSurfaceSize(const Size(1920, 1080));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
+    'reported ASS keeps mpv size, colors, spacing, outline and Windows fallback',
+    (WidgetTester tester) async {
+      final TargetPlatform? previousPlatform =
+          debugDefaultTargetPlatformOverride;
+      debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+      addTearDown(() => debugDefaultTargetPlatformOverride = previousPlatform);
+      await tester.binding.setSurfaceSize(const Size(1920, 1080));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
 
-    final List<AudioCue> cues =
-        AssParser.parseString(content: _reportedAss, bookKey: 'bug-929');
-    final VideoPlayerController controller = VideoPlayerController()
-      ..debugVideoWidthOverride = 1920
-      ..debugVideoHeightOverride = 1080
-      ..setCues(cues)
-      ..debugSetPositionForTesting(24000)
-      ..debugUpdateCueForPosition(24000);
-    addTearDown(controller.dispose);
+      final List<AudioCue> cues = AssParser.parseString(
+        content: _reportedAss,
+        bookKey: 'bug-929',
+      );
+      final VideoPlayerController controller = VideoPlayerController()
+        ..debugVideoWidthOverride = 1920
+        ..debugVideoHeightOverride = 1080
+        ..setCues(cues)
+        ..debugSetPositionForTesting(24000)
+        ..debugUpdateCueForPosition(24000);
+      addTearDown(controller.dispose);
 
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: VideoSubtitleOverlay(
-            controller: controller,
-            respectAssStyle: true,
-            bottomPadding: 30,
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: VideoSubtitleOverlay(
+              controller: controller,
+              respectAssStyle: true,
+              bottomPadding: 30,
+            ),
           ),
         ),
-      ),
-    );
-    await tester.pump();
+      );
+      await tester.pump();
 
-    final Text fill = _fill(tester, 'き');
-    final Text stroke = _stroke(tester, 'き');
-    expect(fill.style?.fontFamily, 'A-OTF Shin Maru Go Pr6N DB');
-    expect(
-      fill.style?.fontFamilyFallback?.take(2),
-      <String>['Microsoft YaHei UI', 'Microsoft YaHei'],
-    );
-    expect(fill.style?.fontSize, closeTo(65, 0.01));
-    expect(fill.style?.letterSpacing, closeTo(2.5, 0.01));
-    expect(fill.style?.color?.toARGB32(), 0xFFFFFFFF);
-    expect(stroke.style?.foreground?.color.toARGB32(), 0xFFD93F61);
-    debugDefaultTargetPlatformOverride = previousPlatform;
-    expect(stroke.style?.foreground?.strokeWidth, closeTo(6, 0.01));
-  });
+      final Text fill = _fill(tester, 'き');
+      final Text stroke = _stroke(tester, 'き');
+      expect(fill.style?.fontFamily, 'A-OTF Shin Maru Go Pr6N DB');
+      expect(fill.style?.fontFamilyFallback?.take(2), <String>[
+        'Microsoft YaHei UI',
+        'Microsoft YaHei',
+      ]);
+      expect(fill.style?.fontSize, closeTo(65, 0.01));
+      expect(fill.style?.letterSpacing, closeTo(2.5, 0.01));
+      expect(fill.style?.color?.toARGB32(), 0xFFFFFFFF);
+      expect(stroke.style?.foreground?.color.toARGB32(), 0xFFD93F61);
+      debugDefaultTargetPlatformOverride = previousPlatform;
+      expect(stroke.style?.foreground?.strokeWidth, closeTo(6, 0.01));
+    },
+  );
 }

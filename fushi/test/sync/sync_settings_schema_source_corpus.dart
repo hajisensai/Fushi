@@ -17,10 +17,8 @@ const String _syncSchemaShell = 'lib/src/sync/sync_settings_schema.dart';
 const String kSyncSchemaPartDir = 'lib/src/sync/sync_settings_schema';
 
 /// 主库 + 磁盘上全部 `*.part.dart`（按路径排序，保证跨机器/跨次运行顺序确定）。
-List<String> syncSettingsSchemaFiles() => partCorpusFiles(
-      shell: _syncSchemaShell,
-      partDir: kSyncSchemaPartDir,
-    );
+List<String> syncSettingsSchemaFiles() =>
+    partCorpusFiles(shell: _syncSchemaShell, partDir: kSyncSchemaPartDir);
 
 /// 读「同步设置 schema 合并语料」：主库 + 全部 part 文件拼成单个字符串，供静态守卫
 /// 切片/断言。换行统一成 '\n'，与各守卫历史行为一致。

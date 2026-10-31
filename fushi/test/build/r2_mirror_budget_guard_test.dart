@@ -83,25 +83,29 @@ void main() {
     expect(
       workflow,
       isNot(contains('branches: [update-manifest]')),
-      reason: '这条 push 触发器是死的（孤儿分支上没有 workflow 文件 + '
+      reason:
+          '这条 push 触发器是死的（孤儿分支上没有 workflow 文件 + '
           'GITHUB_TOKEN 的 push 不级联），留着只会让人以为镜像会自己醒过来',
     );
     expect(
       workflow,
       contains('assert_complete:'),
-      reason: '自动唤醒必须能声明「按清单校验完整性」，否则它和人工补救一样绕过就位门，'
+      reason:
+          '自动唤醒必须能声明「按清单校验完整性」，否则它和人工补救一样绕过就位门，'
           '下游那条完整性断言就永远拿不到输入',
     );
     expect(
       File('../tool/publish_update_manifest.sh').readAsStringSync(),
       contains('gh workflow run mirror-releases.yml'),
-      reason: '清单落地才是「这批资产已上传完」的信号，唤醒必须挂在那一刻；'
+      reason:
+          '清单落地才是「这批资产已上传完」的信号，唤醒必须挂在那一刻；'
           'workflow_dispatch 是 GITHUB_TOKEN 无级联规则的明文例外',
     );
     expect(
       _step(workflow, 'Checkout'),
       isNot(contains(r'ref: ${{ github.event.repository.default_branch }}')),
-      reason: '钉默认分支会让 release 路径签出 main 的 tip 而不是被打 tag 的那个 '
+      reason:
+          '钉默认分支会让 release 路径签出 main 的 tip 而不是被打 tag 的那个 '
           'commit；develop 领先 main 273 个提交时，手动 dispatch 还会因为 main 上'
           '没有判据脚本直接 ENOENT 打红',
     );

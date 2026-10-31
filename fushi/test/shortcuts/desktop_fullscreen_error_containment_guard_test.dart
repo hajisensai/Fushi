@@ -43,9 +43,9 @@ void main() {
         reason: '锚点函数不见了——守卫失去判据，请跟着改名更新',
       );
       expect(
-        RegExp(r'return\s+await\s+(windowManager|WindowManipulator)\.')
-            .allMatches(source)
-            .length,
+        RegExp(
+          r'return\s+await\s+(windowManager|WindowManipulator)\.',
+        ).allMatches(source).length,
         greaterThanOrEqualTo(3),
         reason: '这些分支本来就该直接返回原生读数，一条都没有说明结构已经变了',
       );
@@ -57,7 +57,8 @@ void main() {
       expect(
         bare,
         isEmpty,
-        reason: 'async 函数里裸 `return <future>` 不受外层 try/catch 保护；'
+        reason:
+            'async 函数里裸 `return <future>` 不受外层 try/catch 保护；'
             '这些分支存在的唯一目的就是吞掉 channel 失败，逃出去就等于没吞。'
             '写成 `return await ...`。',
       );

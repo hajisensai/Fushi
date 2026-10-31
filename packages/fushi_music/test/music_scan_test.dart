@@ -45,7 +45,9 @@ void main() {
     }
     final List<MusicScannedTrack> tracks = tracksOf(batches);
     expect(
-      batches.expand((MusicScanBatch b) => b.records).whereType<MusicScanError>(),
+      batches
+          .expand((MusicScanBatch b) => b.records)
+          .whereType<MusicScanError>(),
       isEmpty,
     );
     expect(tracks.map((MusicScannedTrack t) => _rel(root, t.path)), <String>[
@@ -73,11 +75,7 @@ void main() {
     expect(first.folderCoverPath, isNotNull);
     expect(
       first.credits.map((MusicScanCredit c) => '${c.role}:${c.name}'),
-      <String>[
-        'artist:Singer X',
-        'album_artist:Singer X',
-        'composer:Writer Y',
-      ],
+      <String>['artist:Singer X', 'album_artist:Singer X', 'composer:Writer Y'],
     );
     expect(tracks[1].albumUid, first.albumUid, reason: '同专辑艺人 + 专辑名 = 同一张专辑');
 
@@ -87,9 +85,10 @@ void main() {
       '二曲目',
       '三曲目',
     ], reason: 'Shift_JIS CUE 解码');
-    expect(cue.map((MusicScannedTrack t) => (t.cueStartMs, t.cueEndMs)), <
-      (int?, int?)
-    >[(0, 1000), (1000, 2000), (2000, null)]);
+    expect(
+      cue.map((MusicScannedTrack t) => (t.cueStartMs, t.cueEndMs)),
+      <(int?, int?)>[(0, 1000), (1000, 2000), (2000, null)],
+    );
     expect(cue[2].artistCredit, 'Guest');
     expect(cue[0].cueSheetPath, endsWith('full.cue'));
 
@@ -135,7 +134,9 @@ void main() {
       again.close();
     }
     expect(
-      records.whereType<MusicScanUnchanged>().map((MusicScanUnchanged u) => u.path),
+      records.whereType<MusicScanUnchanged>().map(
+        (MusicScanUnchanged u) => u.path,
+      ),
       <String>[cue.path],
     );
     expect(records.whereType<MusicScannedTrack>(), hasLength(first.length - 3));

@@ -35,22 +35,26 @@ Future<String> _insertAudiobook({
 
   const String srtUid = 'srt-test-uid';
 
-  await db.upsertAudiobook(AudiobooksCompanion.insert(
-    bookKey: bookKey,
-    audioRoot: Value(audioDir.path),
-    audioPathsJson: Value(jsonEncode(<String>[track.path])),
-    alignmentFormat: 'srt',
-    alignmentPath: align.path,
-  ));
-  await db.upsertSrtBook(SrtBooksCompanion.insert(
-    uid: srtUid,
-    title: 'Test Audiobook',
-    audioRoot: Value(audioDir.path),
-    audioPathsJson: Value(jsonEncode(<String>[track.path])),
-    srtPath: align.path,
-    importedAt: 0,
-    bookKey: Value(bookKey),
-  ));
+  await db.upsertAudiobook(
+    AudiobooksCompanion.insert(
+      bookKey: bookKey,
+      audioRoot: Value(audioDir.path),
+      audioPathsJson: Value(jsonEncode(<String>[track.path])),
+      alignmentFormat: 'srt',
+      alignmentPath: align.path,
+    ),
+  );
+  await db.upsertSrtBook(
+    SrtBooksCompanion.insert(
+      uid: srtUid,
+      title: 'Test Audiobook',
+      audioRoot: Value(audioDir.path),
+      audioPathsJson: Value(jsonEncode(<String>[track.path])),
+      srtPath: align.path,
+      importedAt: 0,
+      bookKey: Value(bookKey),
+    ),
+  );
   await db.replaceCuesForBook(bookKey, <AudioCuesCompanion>[
     AudioCuesCompanion.insert(
       bookKey: bookKey,
@@ -99,15 +103,17 @@ void main() {
   // ══════════════════════════════════════════════════════════════════════════
 
   group('computeKeyUnionDiff（本地音频 displayName）', () {
-    test('union by displayName: pull remote-only, push local-only, skip shared',
-        () {
-      final SyncKeyDiff diff = computeKeyUnionDiff(
-        localKeys: <String>{'NHK', 'Forvo'},
-        remoteKeys: <String>{'Forvo', 'JapanesePod101'},
-      );
-      expect(diff.toPull, <String>{'JapanesePod101'});
-      expect(diff.toPush, <String>{'NHK'});
-    });
+    test(
+      'union by displayName: pull remote-only, push local-only, skip shared',
+      () {
+        final SyncKeyDiff diff = computeKeyUnionDiff(
+          localKeys: <String>{'NHK', 'Forvo'},
+          remoteKeys: <String>{'Forvo', 'JapanesePod101'},
+        );
+        expect(diff.toPull, <String>{'JapanesePod101'});
+        expect(diff.toPush, <String>{'NHK'});
+      },
+    );
 
     test('两端均空 → 空 diff', () {
       final SyncKeyDiff diff = computeKeyUnionDiff(
@@ -142,15 +148,17 @@ void main() {
   // ══════════════════════════════════════════════════════════════════════════
 
   group('computeKeyUnionDiff（有声书 bookKey）', () {
-    test('union by bookKey: pull remote-only, push local-only, skip shared',
-        () {
-      final SyncKeyDiff diff = computeKeyUnionDiff(
-        localKeys: <String>{'book-a', 'book-b'},
-        remoteKeys: <String>{'book-b', 'book-c'},
-      );
-      expect(diff.toPull, <String>{'book-c'});
-      expect(diff.toPush, <String>{'book-a'});
-    });
+    test(
+      'union by bookKey: pull remote-only, push local-only, skip shared',
+      () {
+        final SyncKeyDiff diff = computeKeyUnionDiff(
+          localKeys: <String>{'book-a', 'book-b'},
+          remoteKeys: <String>{'book-b', 'book-c'},
+        );
+        expect(diff.toPull, <String>{'book-c'});
+        expect(diff.toPush, <String>{'book-a'});
+      },
+    );
 
     test('两端均空 → 空 diff', () {
       final SyncKeyDiff diff = computeKeyUnionDiff(
@@ -177,16 +185,19 @@ void main() {
 
   group('RemoteLocalAudioInfo', () {
     test('toJson / fromJson round-trip', () {
-      const RemoteLocalAudioInfo info =
-          RemoteLocalAudioInfo(displayName: 'NHK日本語');
-      final RemoteLocalAudioInfo decoded =
-          RemoteLocalAudioInfo.fromJson(info.toJson());
+      const RemoteLocalAudioInfo info = RemoteLocalAudioInfo(
+        displayName: 'NHK日本語',
+      );
+      final RemoteLocalAudioInfo decoded = RemoteLocalAudioInfo.fromJson(
+        info.toJson(),
+      );
       expect(decoded.displayName, info.displayName);
     });
 
     test('fromJson 缺字段降级为安全默认值', () {
-      final RemoteLocalAudioInfo info =
-          RemoteLocalAudioInfo.fromJson(<String, Object?>{});
+      final RemoteLocalAudioInfo info = RemoteLocalAudioInfo.fromJson(
+        <String, Object?>{},
+      );
       expect(info.displayName, '');
     });
   });
@@ -197,47 +208,60 @@ void main() {
 
   group('RemoteAudiobookInfo', () {
     test('toJson / fromJson round-trip（含 title）', () {
-      const RemoteAudiobookInfo info =
-          RemoteAudiobookInfo(bookKey: 'ttu-42', title: '夏目漱石');
-      final RemoteAudiobookInfo decoded =
-          RemoteAudiobookInfo.fromJson(info.toJson());
+      const RemoteAudiobookInfo info = RemoteAudiobookInfo(
+        bookKey: 'ttu-42',
+        title: '夏目漱石',
+      );
+      final RemoteAudiobookInfo decoded = RemoteAudiobookInfo.fromJson(
+        info.toJson(),
+      );
       expect(decoded.bookKey, info.bookKey);
       expect(decoded.title, info.title);
     });
 
     test('toJson / fromJson round-trip（title 为 null）', () {
       const RemoteAudiobookInfo info = RemoteAudiobookInfo(bookKey: 'ttu-99');
-      final RemoteAudiobookInfo decoded =
-          RemoteAudiobookInfo.fromJson(info.toJson());
+      final RemoteAudiobookInfo decoded = RemoteAudiobookInfo.fromJson(
+        info.toJson(),
+      );
       expect(decoded.bookKey, 'ttu-99');
       expect(decoded.title, isNull);
     });
 
     test('fromJson 缺字段降级为安全默认值', () {
-      final RemoteAudiobookInfo info =
-          RemoteAudiobookInfo.fromJson(<String, Object?>{});
+      final RemoteAudiobookInfo info = RemoteAudiobookInfo.fromJson(
+        <String, Object?>{},
+      );
       expect(info.bookKey, '');
       expect(info.title, isNull);
     });
 
     test('srt-backed：identity=bookKey、非 standalone', () {
-      const RemoteAudiobookInfo info =
-          RemoteAudiobookInfo(bookKey: 'ttu-1', uid: 'u1', title: 'T');
+      const RemoteAudiobookInfo info = RemoteAudiobookInfo(
+        bookKey: 'ttu-1',
+        uid: 'u1',
+        title: 'T',
+      );
       expect(info.identity, 'ttu-1');
       expect(info.isStandaloneSrt, isFalse);
-      final RemoteAudiobookInfo decoded =
-          RemoteAudiobookInfo.fromJson(info.toJson());
+      final RemoteAudiobookInfo decoded = RemoteAudiobookInfo.fromJson(
+        info.toJson(),
+      );
       expect(decoded.uid, 'u1');
       expect(decoded.identity, 'ttu-1');
     });
 
     test('纯 SRT standalone：bookKey 空 → identity=uid、isStandaloneSrt', () {
-      const RemoteAudiobookInfo info =
-          RemoteAudiobookInfo(bookKey: '', uid: 'srt-uid-9', title: 'S');
+      const RemoteAudiobookInfo info = RemoteAudiobookInfo(
+        bookKey: '',
+        uid: 'srt-uid-9',
+        title: 'S',
+      );
       expect(info.identity, 'srt-uid-9');
       expect(info.isStandaloneSrt, isTrue);
-      final RemoteAudiobookInfo decoded =
-          RemoteAudiobookInfo.fromJson(info.toJson());
+      final RemoteAudiobookInfo decoded = RemoteAudiobookInfo.fromJson(
+        info.toJson(),
+      );
       expect(decoded.bookKey, '');
       expect(decoded.uid, 'srt-uid-9');
       expect(decoded.identity, 'srt-uid-9');
@@ -270,15 +294,17 @@ void main() {
         ..writeAsStringSync('a');
       final File subs = File(p.join(audioDir.path, 'subs.srt'))
         ..writeAsStringSync('1\n00:00:00,000 --> 00:00:01,000\nx\n');
-      await db.upsertSrtBook(SrtBooksCompanion.insert(
-        uid: uid,
-        title: title,
-        audioRoot: Value(audioDir.path),
-        audioPathsJson: Value(jsonEncode(<String>[track.path])),
-        srtPath: subs.path,
-        importedAt: 1,
-        bookKey: const Value(''),
-      ));
+      await db.upsertSrtBook(
+        SrtBooksCompanion.insert(
+          uid: uid,
+          title: title,
+          audioRoot: Value(audioDir.path),
+          audioPathsJson: Value(jsonEncode(<String>[track.path])),
+          srtPath: subs.path,
+          importedAt: 1,
+          bookKey: const Value(''),
+        ),
+      );
     }
 
     test('listAudiobooks 同时枚举 srt-backed 与 standalone', () async {
@@ -293,11 +319,13 @@ void main() {
       final List<RemoteAudiobookInfo> list = await svc.listAudiobooks();
       final Map<String, RemoteAudiobookInfo> byIdentity =
           <String, RemoteAudiobookInfo>{
-        for (final RemoteAudiobookInfo a in list) a.identity: a
-      };
+            for (final RemoteAudiobookInfo a in list) a.identity: a,
+          };
 
       expect(
-          byIdentity.keys, containsAll(<String>['ttu-42', 'srt-standalone-1']));
+        byIdentity.keys,
+        containsAll(<String>['ttu-42', 'srt-standalone-1']),
+      );
       expect(byIdentity['ttu-42']!.isStandaloneSrt, isFalse);
       final RemoteAudiobookInfo standalone = byIdentity['srt-standalone-1']!;
       expect(standalone.isStandaloneSrt, isTrue);
@@ -334,8 +362,9 @@ void main() {
       );
 
       expect(await targetDb.getAllAudiobooks(), isEmpty);
-      final SrtBookRow srt =
-          (await targetDb.getSrtBookByUid('srt-standalone-2'))!;
+      final SrtBookRow srt = (await targetDb.getSrtBookByUid(
+        'srt-standalone-2',
+      ))!;
       expect(srt.bookKey, '');
       expect(srt.title, 'Standalone2');
     });
@@ -443,8 +472,10 @@ void main() {
       );
 
       final List<RemoteLocalAudioInfo> list = await svc.listLocalAudio();
-      expect(list.map((RemoteLocalAudioInfo i) => i.displayName),
-          unorderedEquals(<String>['NHK', 'Forvo']));
+      expect(
+        list.map((RemoteLocalAudioInfo i) => i.displayName),
+        unorderedEquals(<String>['NHK', 'Forvo']),
+      );
     });
 
     test('listLocalAudio 无条目时返回空列表', () async {
@@ -587,16 +618,16 @@ void main() {
       // <tmp>/docs 下，使「内部复制」与「引用导入」路径可被正确判定。
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(
-        const MethodChannel('plugins.flutter.io/path_provider'),
-        (MethodCall call) async {
-          if (call.method == 'getApplicationDocumentsDirectory') {
-            final Directory docs = Directory(p.join(tmp.path, 'docs'))
-              ..createSync(recursive: true);
-            return docs.path;
-          }
-          return null;
-        },
-      );
+            const MethodChannel('plugins.flutter.io/path_provider'),
+            (MethodCall call) async {
+              if (call.method == 'getApplicationDocumentsDirectory') {
+                final Directory docs = Directory(p.join(tmp.path, 'docs'))
+                  ..createSync(recursive: true);
+                return docs.path;
+              }
+              return null;
+            },
+          );
       // 平台兜底（getApplicationDocumentsDirectory → 上面的 mock）现在由重文件装配。
       installAudiobookStoragePlatform();
     });
@@ -606,19 +637,15 @@ void main() {
       AudiobookStorage.documentsRootResolver = null;
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(
-        const MethodChannel('plugins.flutter.io/path_provider'),
-        null,
-      );
+            const MethodChannel('plugins.flutter.io/path_provider'),
+            null,
+          );
       if (tmp.existsSync()) tmp.deleteSync(recursive: true);
     });
 
     test('listAudiobooks 反映 Audiobooks 表', () async {
       final Directory audioDir = Directory(p.join(tmp.path, 'ab1'));
-      await _insertAudiobook(
-        db: db,
-        bookKey: 'ttu-test',
-        audioDir: audioDir,
-      );
+      await _insertAudiobook(db: db, bookKey: 'ttu-test', audioDir: audioDir);
 
       final LocalLibraryHostService svc = _buildSvc(db: db);
       final List<RemoteAudiobookInfo> list = await svc.listAudiobooks();
@@ -628,12 +655,14 @@ void main() {
     });
 
     test('listAudiobooks 不暴露缺少 SrtBooks 行的孤儿有声书', () async {
-      await db.upsertAudiobook(AudiobooksCompanion.insert(
-        bookKey: 'orphan-audiobook',
-        audioRoot: Value(p.join(tmp.path, 'orphan')),
-        alignmentFormat: 'srt',
-        alignmentPath: p.join(tmp.path, 'orphan.srt'),
-      ));
+      await db.upsertAudiobook(
+        AudiobooksCompanion.insert(
+          bookKey: 'orphan-audiobook',
+          audioRoot: Value(p.join(tmp.path, 'orphan')),
+          alignmentFormat: 'srt',
+          alignmentPath: p.join(tmp.path, 'orphan.srt'),
+        ),
+      );
 
       final LocalLibraryHostService svc = _buildSvc(db: db);
 
@@ -647,11 +676,7 @@ void main() {
 
     test('exportAudiobook 产出非空 .fushiaudio 文件', () async {
       final Directory audioDir = Directory(p.join(tmp.path, 'ab2'));
-      await _insertAudiobook(
-        db: db,
-        bookKey: 'ttu-export',
-        audioDir: audioDir,
-      );
+      await _insertAudiobook(db: db, bookKey: 'ttu-export', audioDir: audioDir);
 
       final LocalLibraryHostService svc = _buildSvc(db: db);
       final File pkg = await svc.exportAudiobook('ttu-export');
@@ -679,8 +704,9 @@ void main() {
       final File fakeAudio = File(p.join(tmp.path, 'fake.fushiaudio'))
         ..writeAsBytesSync(<int>[0]);
 
-      final LocalLibraryHostService svc =
-          _buildSvc(db: db); // audioDatabaseRoot 为 null
+      final LocalLibraryHostService svc = _buildSvc(
+        db: db,
+      ); // audioDatabaseRoot 为 null
       await expectLater(
         svc.importAudiobook(fakeAudio),
         throwsA(isA<UnsupportedError>()),
@@ -691,11 +717,7 @@ void main() {
       // export → import round-trip：
       // 导出后重新 import 到不同 audioDatabaseRoot，验证 DB 条目被正确写入。
       final Directory audioDir = Directory(p.join(tmp.path, 'source'));
-      await _insertAudiobook(
-        db: db,
-        bookKey: 'ttu-rt',
-        audioDir: audioDir,
-      );
+      await _insertAudiobook(db: db, bookKey: 'ttu-rt', audioDir: audioDir);
 
       final LocalLibraryHostService svc = _buildSvc(db: db);
       final File pkg = await svc.exportAudiobook('ttu-rt');
@@ -721,44 +743,41 @@ void main() {
       await importSvc.importAudiobook(pkg, bookKeyOverride: 'ttu-rt');
 
       // 验证 DB 中已有 audiobook 行
-      final AudiobookRow? imported =
-          await targetDb.getAudiobookByBookKey('ttu-rt');
+      final AudiobookRow? imported = await targetDb.getAudiobookByBookKey(
+        'ttu-rt',
+      );
       expect(imported, isNotNull);
       expect(imported!.bookKey, 'ttu-rt');
     });
 
     // ── deleteAudiobook ──────────────────────────────────────────────────────
 
-    test('deleteAudiobook 后 listAudiobooks 不含该书，内部复制的 audioRoot 目录被删',
-        () async {
-      // 内部复制音频落在 <docs>/audiobooks 持久根内 → isReferencedPath=false → 删。
-      final Directory audioDir =
-          Directory(p.join(tmp.path, 'docs', 'audiobooks', 'del-audio'));
-      await _insertAudiobook(
-        db: db,
-        bookKey: 'ttu-del',
-        audioDir: audioDir,
-      );
+    test(
+      'deleteAudiobook 后 listAudiobooks 不含该书，内部复制的 audioRoot 目录被删',
+      () async {
+        // 内部复制音频落在 <docs>/audiobooks 持久根内 → isReferencedPath=false → 删。
+        final Directory audioDir = Directory(
+          p.join(tmp.path, 'docs', 'audiobooks', 'del-audio'),
+        );
+        await _insertAudiobook(db: db, bookKey: 'ttu-del', audioDir: audioDir);
 
-      expect(audioDir.existsSync(), isTrue);
+        expect(audioDir.existsSync(), isTrue);
 
-      final LocalLibraryHostService svc = _buildSvc(db: db);
-      await svc.deleteAudiobook('ttu-del');
+        final LocalLibraryHostService svc = _buildSvc(db: db);
+        await svc.deleteAudiobook('ttu-del');
 
-      final List<RemoteAudiobookInfo> list = await svc.listAudiobooks();
-      expect(list, isEmpty);
-      expect(audioDir.existsSync(), isFalse);
-    });
+        final List<RemoteAudiobookInfo> list = await svc.listAudiobooks();
+        expect(list, isEmpty);
+        expect(audioDir.existsSync(), isFalse);
+      },
+    );
 
     test('deleteAudiobook 保留「引用导入」的外部 audioRoot（TODO-935 ①A 守卫）', () async {
       // 引用导入：音频在持久根外的用户原始目录 → isReferencedPath=true → 绝不删源。
-      final Directory externalDir =
-          Directory(p.join(tmp.path, 'user-external', 'ref-audio'));
-      await _insertAudiobook(
-        db: db,
-        bookKey: 'ttu-ref',
-        audioDir: externalDir,
+      final Directory externalDir = Directory(
+        p.join(tmp.path, 'user-external', 'ref-audio'),
       );
+      await _insertAudiobook(db: db, bookKey: 'ttu-ref', audioDir: externalDir);
 
       expect(externalDir.existsSync(), isTrue);
 

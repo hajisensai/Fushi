@@ -49,10 +49,7 @@ void main() {
     });
 
     test('empty range returns empty strings for all parts', () {
-      final sel = FushiTextSelection(
-        text: 'some text',
-        range: TextRange.empty,
-      );
+      final sel = FushiTextSelection(text: 'some text', range: TextRange.empty);
 
       expect(sel.textBefore, isEmpty);
       expect(sel.textInside, isEmpty);

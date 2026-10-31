@@ -24,61 +24,69 @@ import 'package:fushi/src/reader/reader_study_unit_script.dart';
 /// 修复，Node 断言失败、本 Dart 守卫转红。没有 node 的环境自动 skip。
 void main() {
   test(
-      'paged first-visible scan counts along the page-turn axis and off-page starts never become units',
-      () async {
-    final String? nodeExe = _resolveNode();
-    if (nodeExe == null) {
-      markTestSkipped('node not found on PATH; skipping JS behavior execution');
-      return;
-    }
+    'paged first-visible scan counts along the page-turn axis and off-page starts never become units',
+    () async {
+      final String? nodeExe = _resolveNode();
+      if (nodeExe == null) {
+        markTestSkipped(
+          'node not found on PATH; skipping JS behavior execution',
+        );
+        return;
+      }
 
-    final File jsTest = File(
-      'test/reader/paged_first_visible_scan_axis_behavior_test.js',
-    );
-    expect(jsTest.existsSync(), isTrue,
-        reason: 'behavior harness ${jsTest.path} must exist');
-
-    final String payload = jsonEncode(<String, String>{
-      'paged': ReaderPaginationScripts.paginatedShellSource(),
-      'studyUnits': kStudyUnitJs,
-      'engine': readerFushiEngineSourceUncompacted(),
-    });
-    final Directory temp = Directory.systemTemp.createTempSync(
-      'fushi-paged-first-visible-axis-',
-    );
-    final File payloadFile = File('${temp.path}/payload.json')
-      ..writeAsStringSync(payload);
-    late final ProcessResult result;
-    try {
-      result = await Process.run(
-        nodeExe,
-        <String>[jsTest.path, payloadFile.path],
-        workingDirectory: Directory.current.path,
-        stdoutEncoding: utf8,
-        stderrEncoding: utf8,
+      final File jsTest = File(
+        'test/reader/paged_first_visible_scan_axis_behavior_test.js',
       );
-    } finally {
-      temp.deleteSync(recursive: true);
-    }
+      expect(
+        jsTest.existsSync(),
+        isTrue,
+        reason: 'behavior harness ${jsTest.path} must exist',
+      );
 
-    expect(
-      result.exitCode,
-      0,
-      reason: 'paged first-visible axis JS behavior test failed.\n'
-          'stdout:\n${result.stdout}\nstderr:\n${result.stderr}',
-    );
-    expect(
-      result.stdout.toString(),
-      contains('all assertions passed'),
-      reason: 'behavior harness must reach its success marker',
-    );
-  });
+      final String payload = jsonEncode(<String, String>{
+        'paged': ReaderPaginationScripts.paginatedShellSource(),
+        'studyUnits': kStudyUnitJs,
+        'engine': readerFushiEngineSourceUncompacted(),
+      });
+      final Directory temp = Directory.systemTemp.createTempSync(
+        'fushi-paged-first-visible-axis-',
+      );
+      final File payloadFile = File('${temp.path}/payload.json')
+        ..writeAsStringSync(payload);
+      late final ProcessResult result;
+      try {
+        result = await Process.run(
+          nodeExe,
+          <String>[jsTest.path, payloadFile.path],
+          workingDirectory: Directory.current.path,
+          stdoutEncoding: utf8,
+          stderrEncoding: utf8,
+        );
+      } finally {
+        temp.deleteSync(recursive: true);
+      }
+
+      expect(
+        result.exitCode,
+        0,
+        reason:
+            'paged first-visible axis JS behavior test failed.\n'
+            'stdout:\n${result.stdout}\nstderr:\n${result.stderr}',
+      );
+      expect(
+        result.stdout.toString(),
+        contains('all assertions passed'),
+        reason: 'behavior harness must reach its success marker',
+      );
+    },
+  );
 }
 
 /// Resolve a usable `node` executable, returning null when none is on PATH.
 String? _resolveNode() {
-  final List<String> candidates =
-      Platform.isWindows ? <String>['node.exe', 'node'] : <String>['node'];
+  final List<String> candidates = Platform.isWindows
+      ? <String>['node.exe', 'node']
+      : <String>['node'];
   for (final String name in candidates) {
     try {
       final ProcessResult probe = Process.runSync(name, <String>['--version']);

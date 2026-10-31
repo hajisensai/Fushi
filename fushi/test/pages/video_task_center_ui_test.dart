@@ -36,8 +36,7 @@ class _IdleRunner implements VideoSourceScrapeRunner {
     VideoSourceScrapeBatchContext? batchContext,
     List<VideoSourceScrapeWork>? plannedWorks,
     String runScope = 'source',
-  }) async =>
-      SourceScrapeReport(sourceIds: <int>[source.id]);
+  }) async => SourceScrapeReport(sourceIds: <int>[source.id]);
 }
 
 VideoPendingScrapeWork _pending(int index, {VideoScrapePendingNote? note}) =>
@@ -65,68 +64,77 @@ Future<void> _open(
   VideoSourceScrapeTaskController controller,
   Future<List<VideoPendingScrapeWork>> Function() load,
 ) async {
-  await tester.pumpWidget(MaterialApp(
-    theme: ThemeData(
-      useMaterial3: true,
-      fontFamily: const bool.fromEnvironment('CAPTURE_WORKFLOW_UI')
-          ? 'WorkflowTest'
-          : null,
-      colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xff426957)),
-    ),
-    home: Builder(
+  await tester.pumpWidget(
+    MaterialApp(
+      theme: ThemeData(
+        useMaterial3: true,
+        fontFamily: const bool.fromEnvironment('CAPTURE_WORKFLOW_UI')
+            ? 'WorkflowTest'
+            : null,
+        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xff426957)),
+      ),
+      home: Builder(
         builder: (BuildContext context) => Scaffold(
-              body: TextButton(
-                onPressed: () => unawaited(showVideoSourceScrapeTaskPanel(
-                  context: context,
-                  controller: controller,
-                  loadRuns: () async => const <VideoSourceScrapeRunRow>[],
-                  loadPendingWorks: load,
-                )),
-                child: const Text('Open tasks'),
+          body: TextButton(
+            onPressed: () => unawaited(
+              showVideoSourceScrapeTaskPanel(
+                context: context,
+                controller: controller,
+                loadRuns: () async => const <VideoSourceScrapeRunRow>[],
+                loadPendingWorks: load,
               ),
-            )),
-  ));
+            ),
+            child: const Text('Open tasks'),
+          ),
+        ),
+      ),
+    ),
+  );
   await tester.tap(find.text('Open tasks'));
   await tester.pumpAndSettle();
-  await tester
-      .tap(find.byKey(const ValueKey<String>('video-source-tab-pending')));
+  await tester.tap(
+    find.byKey(const ValueKey<String>('video-source-tab-pending')),
+  );
   await tester.pumpAndSettle();
 }
 
 void main() {
-  testWidgets('1500 pending works are lazy and accessible at a narrow viewport',
-      (WidgetTester tester) async {
+  testWidgets('1500 pending works are lazy and accessible at a narrow viewport', (
+    WidgetTester tester,
+  ) async {
     await tester.binding.setSurfaceSize(const Size(420, 800));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     if (const bool.fromEnvironment('CAPTURE_WORKFLOW_UI')) {
-      final Uint8List bytes =
-          File('C:/Windows/Fonts/segoeui.ttf').readAsBytesSync();
-      await (FontLoader('WorkflowTest')
-            ..addFont(Future<ByteData>.value(
-              ByteData.sublistView(bytes),
-            )))
-          .load();
+      final Uint8List bytes = File(
+        'C:/Windows/Fonts/segoeui.ttf',
+      ).readAsBytesSync();
+      await (FontLoader(
+        'WorkflowTest',
+      )..addFont(Future<ByteData>.value(ByteData.sublistView(bytes)))).load();
       final Uint8List icons = File(
         'build/unit_test_assets/fonts/MaterialIcons-Regular.otf',
       ).readAsBytesSync();
-      await (FontLoader('MaterialIcons')
-            ..addFont(Future<ByteData>.value(
-              ByteData.sublistView(icons),
-            )))
-          .load();
+      await (FontLoader(
+        'MaterialIcons',
+      )..addFont(Future<ByteData>.value(ByteData.sublistView(icons)))).load();
     }
     final VideoSourceScrapeTaskController controller =
         VideoSourceScrapeTaskController(_IdleRunner());
     addTearDown(controller.dispose);
-    await _open(tester, controller,
-        () async => List<VideoPendingScrapeWork>.generate(1500, _pending));
+    await _open(
+      tester,
+      controller,
+      () async => List<VideoPendingScrapeWork>.generate(1500, _pending),
+    );
     expect(tester.takeException(), isNull);
     expect(find.text('Unmatched video 0'), findsOneWidget);
     expect(find.text('Unmatched video 1499'), findsNothing);
-    final Finder list =
-        find.byKey(const PageStorageKey<String>('video-source-pending-list'));
+    final Finder list = find.byKey(
+      const PageStorageKey<String>('video-source-pending-list'),
+    );
     final ScrollableState scrollable = tester.state<ScrollableState>(
-        find.descendant(of: list, matching: find.byType(Scrollable)).first);
+      find.descendant(of: list, matching: find.byType(Scrollable)).first,
+    );
     scrollable.position.jumpTo(scrollable.position.maxScrollExtent);
     await tester.pumpAndSettle();
     // The extent estimate settles after the last lazily built rows are measured.
@@ -137,19 +145,24 @@ void main() {
     if (const bool.fromEnvironment('CAPTURE_WORKFLOW_UI')) {
       scrollable.position.jumpTo(0);
       await tester.pumpAndSettle();
-      await expectLater(find.byType(AlertDialog),
-          matchesGoldenFile('../../.codex-test/video-task-center-narrow.png'));
+      await expectLater(
+        find.byType(AlertDialog),
+        matchesGoldenFile('../../.codex-test/video-task-center-narrow.png'),
+      );
       await tester.binding.setSurfaceSize(const Size(1100, 800));
       await tester.pumpAndSettle();
-      await expectLater(find.byType(AlertDialog),
-          matchesGoldenFile('../../.codex-test/video-task-center-wide.png'));
+      await expectLater(
+        find.byType(AlertDialog),
+        matchesGoldenFile('../../.codex-test/video-task-center-wide.png'),
+      );
     }
   });
 
   // BUG-2828：每部待确认作品说明为什么还没认出来（原因 · AI 结果），没刮过的
   // 如实说「尚无刮削记录」，而不是只有一个来源名。
-  testWidgets('pending rows explain why the work is still unmatched',
-      (WidgetTester tester) async {
+  testWidgets('pending rows explain why the work is still unmatched', (
+    WidgetTester tester,
+  ) async {
     final VideoSourceScrapeTaskController controller =
         VideoSourceScrapeTaskController(_IdleRunner());
     addTearDown(controller.dispose);
@@ -171,15 +184,18 @@ void main() {
       ],
     );
     expect(
-      find.text('Anime\n3 candidates, waiting for your pick · '
-          'No AI provider assigned to video identification'),
+      find.text(
+        'Anime\n3 candidates, waiting for your pick · '
+        'No AI provider assigned to video identification',
+      ),
       findsOneWidget,
     );
     expect(find.text('Anime\nNo reason in recent scrape runs'), findsOneWidget);
   });
 
-  testWidgets('a pending-list failure offers an actual reload',
-      (WidgetTester tester) async {
+  testWidgets('a pending-list failure offers an actual reload', (
+    WidgetTester tester,
+  ) async {
     final VideoSourceScrapeTaskController controller =
         VideoSourceScrapeTaskController(_IdleRunner());
     addTearDown(controller.dispose);
@@ -201,8 +217,9 @@ void main() {
     expect(find.text('Could not load this list. Try again.'), findsNothing);
   });
 
-  testWidgets('a slower prior refresh cannot restore stale pending works',
-      (WidgetTester tester) async {
+  testWidgets('a slower prior refresh cannot restore stale pending works', (
+    WidgetTester tester,
+  ) async {
     final VideoSourceScrapeTaskController controller =
         VideoSourceScrapeTaskController(_IdleRunner());
     addTearDown(controller.dispose);

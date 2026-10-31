@@ -113,8 +113,9 @@ class AudiobookSessionLauncher {
     final AudiobookRepository repo = AudiobookRepository(_db);
     final SessionPrefs prefs = await _readPrefs(repo, bookKey);
     final SessionPersistCallbacks persist = _persistFor(repo, bookKey);
-    final (String title, String? author, String? coverPath) =
-        await _bookMeta(bookKey);
+    final (String title, String? author, String? coverPath) = await _bookMeta(
+      bookKey,
+    );
     // 后台听书无 reader 喂 cue（reader 才调 setChapterCues）；这里一次性把全书 cue
     // 取出随 request 返回，让 session.start 直接灌进控制器，否则 _chapterCues 为空、
     // _updateCurrentCue 提前 return、currentCue 恒 null → 悬浮窗推空串（TODO-354
@@ -128,7 +129,8 @@ class AudiobookSessionLauncher {
         audiobook: audiobook,
         // BUG-1018 (A1)：通知/悬浮窗元数据走与书架同一 override 书名通道，
         // 编辑对话框改名后媒体通知同步显示新名；无 override 回退 DB 原名。
-        title: ReaderFushiSource.instance.overrideTitleForBookKey(bookKey) ??
+        title:
+            ReaderFushiSource.instance.overrideTitleForBookKey(bookKey) ??
             title,
         mediaIdentifier: 'fushi://book/$bookKey',
         isSrtBookSource: false,
@@ -171,7 +173,8 @@ class AudiobookSessionLauncher {
         bookKey: key,
         audiobook: synthetic,
         title: overrideTitle ?? srtBook.title,
-        mediaIdentifier: 'fushi://book/'
+        mediaIdentifier:
+            'fushi://book/'
             '${srtBook.bookKey.isNotEmpty ? srtBook.bookKey : key}',
         isSrtBookSource: true,
         author: srtBook.author,
@@ -263,11 +266,10 @@ class AudiobookSessionLauncher {
   Future<List<File>> _resolveAudioFiles({
     required List<String>? audioPaths,
     required String? audioRoot,
-  }) =>
-      resolveAudiobookPlaybackFiles(
-        audioPaths: audioPaths,
-        audioRoot: audioRoot,
-      );
+  }) => resolveAudiobookPlaybackFiles(
+    audioPaths: audioPaths,
+    audioRoot: audioRoot,
+  );
 
   Audiobook _audiobookFromRow(AudiobookRow row) {
     final Audiobook ab = Audiobook()
@@ -277,8 +279,8 @@ class AudiobookSessionLauncher {
       ..alignmentFormat = row.alignmentFormat
       ..alignmentPath = row.alignmentPath;
     if (row.audioPathsJson != null) {
-      ab.audioPaths =
-          (jsonDecode(row.audioPathsJson!) as List<dynamic>).cast<String>();
+      ab.audioPaths = (jsonDecode(row.audioPathsJson!) as List<dynamic>)
+          .cast<String>();
     }
     return ab;
   }
@@ -294,8 +296,8 @@ class AudiobookSessionLauncher {
       ..coverPath = row.coverPath
       ..bookKey = row.bookKey;
     if (row.audioPathsJson != null) {
-      book.audioPaths =
-          (jsonDecode(row.audioPathsJson!) as List<dynamic>).cast<String>();
+      book.audioPaths = (jsonDecode(row.audioPathsJson!) as List<dynamic>)
+          .cast<String>();
     }
     return book;
   }

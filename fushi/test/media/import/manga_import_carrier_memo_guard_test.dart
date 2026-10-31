@@ -19,18 +19,27 @@ void main() {
   });
 
   test('对话框不得裸调 classifyImportCarrier（必须经 ImportCarrierResolver）', () {
-    expect(src.contains('classifyImportCarrier('), isFalse,
-        reason: '裸调会绕过记忆 → 同一路径重复开包；改用 _classify → resolver');
+    expect(
+      src.contains('classifyImportCarrier('),
+      isFalse,
+      reason: '裸调会绕过记忆 → 同一路径重复开包；改用 _classify → resolver',
+    );
   });
 
   test('对话框持有且只持有一个 ImportCarrierResolver', () {
-    expect('ImportCarrierResolver('.allMatches(src).length, 1,
-        reason: '多个 resolver = 各自一份记忆 = 还是会重复开包');
+    expect(
+      'ImportCarrierResolver('.allMatches(src).length,
+      1,
+      reason: '多个 resolver = 各自一份记忆 = 还是会重复开包',
+    );
   });
 
   test('_classify 委托给 resolver，且判据仍是真开包判据', () {
     expect(src.contains('_carrierResolver.resolve('), isTrue);
-    expect(src.contains('isImageArchive: MangaModule.isImageArchive'), isTrue,
-        reason: '换成按扩展名的桩会让 Yomitan 词典 zip 被当漫画导入');
+    expect(
+      src.contains('isImageArchive: MangaModule.isImageArchive'),
+      isTrue,
+      reason: '换成按扩展名的桩会让 Yomitan 词典 zip 被当漫画导入',
+    );
   });
 }

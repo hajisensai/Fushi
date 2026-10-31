@@ -18,8 +18,10 @@ void main() {
   group('collection tag mappings', () {
     test('add/get/remove round-trips and dedups', () async {
       final db = await _openDb();
-      final int cid =
-          await db.createMediaCollection('C1', collectionType: 'collection');
+      final int cid = await db.createMediaCollection(
+        'C1',
+        collectionType: 'collection',
+      );
       final int t1 = await db.createTag('日语', 0xFF0000FF);
       final int t2 = await db.createTag('N1', 0xFF00FF00);
 
@@ -37,10 +39,14 @@ void main() {
 
     test('getCollectionIdsForAllTags is AND-semantics', () async {
       final db = await _openDb();
-      final int c1 =
-          await db.createMediaCollection('C1', collectionType: 'collection');
-      final int c2 =
-          await db.createMediaCollection('C2', collectionType: 'playlist');
+      final int c1 = await db.createMediaCollection(
+        'C1',
+        collectionType: 'collection',
+      );
+      final int c2 = await db.createMediaCollection(
+        'C2',
+        collectionType: 'playlist',
+      );
       final int t1 = await db.createTag('a', 0xFF000001);
       final int t2 = await db.createTag('b', 0xFF000002);
       await db.addTagToCollection(c1, t1);
@@ -54,8 +60,10 @@ void main() {
 
     test('deleting collection cascades its tag mappings', () async {
       final db = await _openDb();
-      final int cid =
-          await db.createMediaCollection('C1', collectionType: 'collection');
+      final int cid = await db.createMediaCollection(
+        'C1',
+        collectionType: 'collection',
+      );
       final int t1 = await db.createTag('x', 0xFF000003);
       await db.addTagToCollection(cid, t1);
       await db.deleteMediaCollectionRaw(cid);
@@ -64,8 +72,10 @@ void main() {
 
     test('deleting tag cascades its collection mappings', () async {
       final db = await _openDb();
-      final int cid =
-          await db.createMediaCollection('C1', collectionType: 'collection');
+      final int cid = await db.createMediaCollection(
+        'C1',
+        collectionType: 'collection',
+      );
       final int t1 = await db.createTag('x', 0xFF000004);
       await db.addTagToCollection(cid, t1);
       // 删标签靠 BookTags→collection_tag_mappings 的 tagId FK cascade 自动清映射

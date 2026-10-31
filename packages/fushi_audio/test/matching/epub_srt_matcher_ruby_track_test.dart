@@ -12,14 +12,15 @@ AudioCue _cue(int idx, String text) => AudioCue()
   ..audioFileIndex = 0;
 
 List<AudioCue> _cues(List<String> texts) => <AudioCue>[
-      for (int i = 0; i < texts.length; i++) _cue(i, texts[i]),
-    ];
+  for (int i = 0; i < texts.length; i++) _cue(i, texts[i]),
+];
 
 /// 正文（带 ruby 基底区间）：
 /// `その子はなんでもできる、素敵な子。みんなその子と友達になりたがる。
 ///  周りの子がみんな息を吞む中、私に目配せをする。`
 /// ruby：素敵→すてき、友達→ともだち、吞む→のむ、目配せ→めくばせ。
-const String _text = 'その子はなんでもできる、素敵な子。みんなその子と友達になりたがる。'
+const String _text =
+    'その子はなんでもできる、素敵な子。みんなその子と友達になりたがる。'
     '周りの子がみんな息を吞む中、私に目配せをする。それから家に帰った。';
 
 EpubRubySpan _ruby(String base, String reading) {
@@ -54,11 +55,7 @@ void main() {
     test('听写かな在读音轨精确命中，区间换算回基底轨（整个 ruby 为原子）', () {
       final MatchResult r = EpubSrtMatcher.match(
         sections: _withRuby,
-        cues: _cues(<String>[
-          'その子はなんでも',
-          'できるすてきな子',
-          'みんなその子とともだちになりたがる',
-        ]),
+        cues: _cues(<String>['その子はなんでも', 'できるすてきな子', 'みんなその子とともだちになりたがる']),
       );
       expect(r.matchedCues, 3);
       // 「できるすてきな子」→ 基底 できる素敵な子 = [8, 15)。
@@ -77,10 +74,14 @@ void main() {
         '周りの子がみんな息を吞む中',
         '私に目配せをする',
       ];
-      final MatchResult a =
-          EpubSrtMatcher.match(sections: _baseOnly, cues: _cues(texts));
-      final MatchResult b =
-          EpubSrtMatcher.match(sections: _withRuby, cues: _cues(texts));
+      final MatchResult a = EpubSrtMatcher.match(
+        sections: _baseOnly,
+        cues: _cues(texts),
+      );
+      final MatchResult b = EpubSrtMatcher.match(
+        sections: _withRuby,
+        cues: _cues(texts),
+      );
       expect(a.matchedCues, 5);
       for (int i = 0; i < texts.length; i++) {
         expect(b.matches[i].sectionIndex, a.matches[i].sectionIndex);
@@ -133,10 +134,15 @@ void main() {
         'できるすてきな子',
         'みんなその子とともだちになりたがる',
       ]);
-      final MatchResult r =
-          EpubCueMatcher.match(sections: _withRuby, cues: cues);
+      final MatchResult r = EpubCueMatcher.match(
+        sections: _withRuby,
+        cues: cues,
+      );
       replaceMatchedCueTextWithBookText(
-          sections: _withRuby, cues: cues, result: r);
+        sections: _withRuby,
+        cues: cues,
+        result: r,
+      );
       expect(cues[1].text, 'できる、素敵な子。');
       expect(cues[2].text, 'みんなその子と友達になりたがる。');
     });

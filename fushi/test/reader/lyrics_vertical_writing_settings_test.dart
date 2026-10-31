@@ -6,9 +6,7 @@ import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 FushiDatabase _testDb() {
-  return FushiDatabase.forTesting(
-    DatabaseConnection(NativeDatabase.memory()),
-  );
+  return FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 }
 
 void main() {
@@ -47,14 +45,18 @@ void main() {
 
   // 铁律：歌词竖排必须用独立 key lyrics_vertical_writing，不得复用正文真值
   // ttu_writing_mode（它默认 vertical-rl，复用会连坐正文默认竖排）。
-  test('lyrics vertical uses its own key, never touches ttu_writing_mode',
-      () async {
-    await ReaderFushiSource.instance.setLyricsVerticalWriting(true);
+  test(
+    'lyrics vertical uses its own key, never touches ttu_writing_mode',
+    () async {
+      await ReaderFushiSource.instance.setLyricsVerticalWriting(true);
 
-    final Map<String, String> prefs = await db.getAllPrefs();
-    expect(
-        prefs.containsKey('src:reader_fushi:lyrics_vertical_writing'), isTrue);
-    // ttu_writing_mode must NOT be written by the lyrics toggle.
-    expect(prefs.containsKey('src:reader_fushi:writing_mode'), isFalse);
-  });
+      final Map<String, String> prefs = await db.getAllPrefs();
+      expect(
+        prefs.containsKey('src:reader_fushi:lyrics_vertical_writing'),
+        isTrue,
+      );
+      // ttu_writing_mode must NOT be written by the lyrics toggle.
+      expect(prefs.containsKey('src:reader_fushi:writing_mode'), isFalse);
+    },
+  );
 }

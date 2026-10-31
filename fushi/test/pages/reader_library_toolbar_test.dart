@@ -13,10 +13,10 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
 Widget host(Widget child) => ProviderScope(
-      child: TranslationProvider(
-        child: MaterialApp(home: Scaffold(body: child)),
-      ),
-    );
+  child: TranslationProvider(
+    child: MaterialApp(home: Scaffold(body: child)),
+  ),
+);
 
 void main() {
   testWidgets('mobile library actions stay visible while many tags scroll', (
@@ -51,10 +51,7 @@ void main() {
         ),
       ),
     );
-    final Finder select = find.widgetWithIcon(
-      IconButton,
-      FushiIcons.checklist,
-    );
+    final Finder select = find.widgetWithIcon(IconButton, FushiIcons.checklist);
     final Finder sort = find.widgetWithIcon(IconButton, FushiIcons.sort);
     final Offset before = tester.getCenter(sort);
     expect(tester.getCenter(select).dy, before.dy);
@@ -89,14 +86,16 @@ void main() {
       title: 'Dictionary',
     );
     await tester.pumpWidget(host(const SyncProgressBanner(compact: true)));
-    final double compactHeight =
-        tester.getSize(find.byType(SyncProgressBanner)).height;
+    final double compactHeight = tester
+        .getSize(find.byType(SyncProgressBanner))
+        .height;
     expect(find.textContaining('Dictionary'), findsOneWidget);
     expect(
       tester
           // 进度条走共享 FushiLinearProgressIndicator（表达式进度）；钉它的 value。
           .widget<FushiLinearProgressIndicator>(
-              find.byType(FushiLinearProgressIndicator))
+            find.byType(FushiLinearProgressIndicator),
+          )
           .value,
       0.5,
     );

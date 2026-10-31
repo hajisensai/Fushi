@@ -48,13 +48,13 @@ class OrganizeEntry {
 
   /// 这一卷的全部成员行（主行在前）。
   List<OrganizeMemberRow> get rows => <OrganizeMemberRow>[
-        OrganizeMemberRow(
-          mediaType: mediaType,
-          entryKey: entryKey,
-          tombstoneKey: tombstoneKey,
-        ),
-        ...companions,
-      ];
+    OrganizeMemberRow(
+      mediaType: mediaType,
+      entryKey: entryKey,
+      tombstoneKey: tombstoneKey,
+    ),
+    ...companions,
+  ];
 
   String get memberKey => '$mediaType\u0000$entryKey';
 }
@@ -97,9 +97,9 @@ class OrganizeCollectionFact {
   final List<String> sampleTitles;
 
   Set<String> get identityKeys => <String>{
-        if (organizeKey != null) organizeKey!,
-        ...organizeAliases,
-      };
+    if (organizeKey != null) organizeKey!,
+    ...organizeAliases,
+  };
 }
 
 /// 一个域的整理输入。
@@ -137,8 +137,8 @@ class LibraryOrganizeFacts {
 
   /// 已知分组键（活合集的键与别名）。
   Set<String> get knownKeys => <String>{
-        for (final OrganizeCollectionFact c in collections) ...c.identityKeys,
-      };
+    for (final OrganizeCollectionFact c in collections) ...c.identityKeys,
+  };
 }
 
 enum OrganizeActionKind { create, add, merge, evict, tag }
@@ -254,13 +254,15 @@ List<OrganizeAction> planFromAiReply({
           chunk.entries[i],
     ];
     if (members.isEmpty) continue;
-    out.add(OrganizeAction(
-      kind: OrganizeActionKind.evict,
-      source: 'ai',
-      confidence: e.confidence,
-      targetCollectionId: c.id,
-      entries: members,
-    ));
+    out.add(
+      OrganizeAction(
+        kind: OrganizeActionKind.evict,
+        source: 'ai',
+        confidence: e.confidence,
+        targetCollectionId: c.id,
+        entries: members,
+      ),
+    );
   }
 
   // ── 合并已有合集 ────────────────────────────────────────────────────────
@@ -276,7 +278,9 @@ List<OrganizeAction> planFromAiReply({
         if (chunk.collectionById(id) case final OrganizeCollectionFact c) c,
     ];
     // 目录合集不参与；用户合集至多一个且当胜方；其余必须是整理器合集。
-    if (cs.any((OrganizeCollectionFact c) => c.origin == CollectionOrigin.folder)) {
+    if (cs.any(
+      (OrganizeCollectionFact c) => c.origin == CollectionOrigin.folder,
+    )) {
       continue;
     }
     final List<OrganizeCollectionFact> users = <OrganizeCollectionFact>[
@@ -295,13 +299,15 @@ List<OrganizeAction> planFromAiReply({
     for (final int id in sources) {
       mergedInto[id] = target.id;
     }
-    out.add(OrganizeAction(
-      kind: OrganizeActionKind.merge,
-      source: 'ai',
-      confidence: m.confidence,
-      targetCollectionId: target.id,
-      sourceCollectionIds: sources,
-    ));
+    out.add(
+      OrganizeAction(
+        kind: OrganizeActionKind.merge,
+        source: 'ai',
+        confidence: m.confidence,
+        targetCollectionId: target.id,
+        sourceCollectionIds: sources,
+      ),
+    );
   }
 
   // ── 分组：并入 / 新建 / 系列标签 ────────────────────────────────────────
@@ -325,14 +331,16 @@ List<OrganizeAction> planFromAiReply({
       ];
       if (adds.isEmpty) continue;
       out.addAll(_moveOut(adds, target.id, byId, g.confidence));
-      out.add(OrganizeAction(
-        kind: OrganizeActionKind.add,
-        source: 'ai',
-        confidence: g.confidence,
-        targetCollectionId: target.id,
-        organizeKey: target.organizeKey,
-        entries: adds,
-      ));
+      out.add(
+        OrganizeAction(
+          kind: OrganizeActionKind.add,
+          source: 'ai',
+          confidence: g.confidence,
+          targetCollectionId: target.id,
+          organizeKey: target.organizeKey,
+          entries: adds,
+        ),
+      );
       continue;
     }
 
@@ -360,14 +368,16 @@ List<OrganizeAction> planFromAiReply({
         level == AiOrganizeLevel.franchise) {
       final String label = _clampName(g.name);
       if (label.isEmpty) continue;
-      out.add(OrganizeAction(
-        kind: OrganizeActionKind.tag,
-        source: 'ai',
-        confidence: g.confidence,
-        name: '$tagPrefix$label',
-        organizeKey: key,
-        entries: members,
-      ));
+      out.add(
+        OrganizeAction(
+          kind: OrganizeActionKind.tag,
+          source: 'ai',
+          confidence: g.confidence,
+          name: '$tagPrefix$label',
+          organizeKey: key,
+          entries: members,
+        ),
+      );
       continue;
     }
 
@@ -380,14 +390,16 @@ List<OrganizeAction> planFromAiReply({
       ];
       if (adds.isEmpty) continue;
       out.addAll(_moveOut(adds, holder.id, byId, g.confidence));
-      out.add(OrganizeAction(
-        kind: OrganizeActionKind.add,
-        source: 'ai',
-        confidence: g.confidence,
-        targetCollectionId: holder.id,
-        organizeKey: holder.organizeKey,
-        entries: adds,
-      ));
+      out.add(
+        OrganizeAction(
+          kind: OrganizeActionKind.add,
+          source: 'ai',
+          confidence: g.confidence,
+          targetCollectionId: holder.id,
+          organizeKey: holder.organizeKey,
+          entries: adds,
+        ),
+      );
       continue;
     }
 
@@ -398,15 +410,17 @@ List<OrganizeAction> planFromAiReply({
     final String? name = names.allocate(rawName, type, key);
     if (name == null) continue;
     out.addAll(_moveOut(members, null, byId, g.confidence));
-    out.add(OrganizeAction(
-      kind: OrganizeActionKind.create,
-      source: 'ai',
-      confidence: g.confidence,
-      name: name,
-      collectionType: type,
-      organizeKey: key,
-      entries: members,
-    ));
+    out.add(
+      OrganizeAction(
+        kind: OrganizeActionKind.create,
+        source: 'ai',
+        confidence: g.confidence,
+        name: name,
+        collectionType: type,
+        organizeKey: key,
+        entries: members,
+      ),
+    );
   }
   return out;
 }
@@ -417,7 +431,8 @@ List<OrganizeAction> planFromRules({
   required LibraryOrganizeFacts facts,
   required String Function(List<OrganizeEntry> members) nameOf,
 }) {
-  final Map<String, List<OrganizeEntry>> byWork = <String, List<OrganizeEntry>>{};
+  final Map<String, List<OrganizeEntry>> byWork =
+      <String, List<OrganizeEntry>>{};
   for (final OrganizeEntry e in facts.entries) {
     if (e.managedCollectionId != null || e.externalWorkKey == null) continue;
     (byWork[e.externalWorkKey!] ??= <OrganizeEntry>[]).add(e);
@@ -430,14 +445,16 @@ List<OrganizeAction> planFromRules({
     final List<OrganizeEntry> members = byWork[key]!;
     final OrganizeCollectionFact? holder = _holderOf(facts, key);
     if (holder != null) {
-      out.add(OrganizeAction(
-        kind: OrganizeActionKind.add,
-        source: 'rule',
-        confidence: AiOrganizeConfidence.high,
-        targetCollectionId: holder.id,
-        organizeKey: holder.organizeKey,
-        entries: members,
-      ));
+      out.add(
+        OrganizeAction(
+          kind: OrganizeActionKind.add,
+          source: 'rule',
+          confidence: AiOrganizeConfidence.high,
+          targetCollectionId: holder.id,
+          organizeKey: holder.organizeKey,
+          entries: members,
+        ),
+      );
       continue;
     }
     if (members.length < 2) continue;
@@ -445,14 +462,16 @@ List<OrganizeAction> planFromRules({
     if (rawName.isEmpty) continue;
     final String? name = names.allocate(rawName, 'playlist', key);
     if (name == null) continue;
-    out.add(OrganizeAction(
-      kind: OrganizeActionKind.create,
-      source: 'rule',
-      confidence: AiOrganizeConfidence.high,
-      name: name,
-      organizeKey: key,
-      entries: members,
-    ));
+    out.add(
+      OrganizeAction(
+        kind: OrganizeActionKind.create,
+        source: 'rule',
+        confidence: AiOrganizeConfidence.high,
+        name: name,
+        organizeKey: key,
+        entries: members,
+      ),
+    );
   }
   return out;
 }
@@ -525,10 +544,14 @@ String _keyFor({
   if (externals.length == 1) return externals.single;
   final String? claimed = proposal.key;
   if (claimed != null &&
-      (facts.knownKeys.contains(claimed) || facts.rejectedKeys.contains(claimed))) {
+      (facts.knownKeys.contains(claimed) ||
+          facts.rejectedKeys.contains(claimed))) {
     return claimed;
   }
-  return titleOrganizeKey(domainName, proposal.originalTitle ?? proposal.name) ??
+  return titleOrganizeKey(
+        domainName,
+        proposal.originalTitle ?? proposal.name,
+      ) ??
       titleOrganizeKey(domainName, proposal.name) ??
       't:$domainName:${proposal.name}';
 }

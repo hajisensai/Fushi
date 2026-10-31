@@ -34,8 +34,7 @@ class _FailingService extends AnkiConnectService {
     required String firstFieldName,
     required String firstFieldValue,
     AnkiDuplicateScope scope = AnkiDuplicateScope.deck,
-  }) async =>
-      throw toThrow;
+  }) async => throw toThrow;
 
   @override
   Future<int?> addNote({
@@ -46,13 +45,12 @@ class _FailingService extends AnkiConnectService {
     Map<String, String>? mediaFiles,
     bool allowDuplicate = false,
     AnkiDuplicateScope duplicateScope = AnkiDuplicateScope.deck,
-  }) async =>
-      throw toThrow;
+  }) async => throw toThrow;
 }
 
 class _ConfiguredRepo extends AnkiConnectRepository {
   _ConfiguredRepo({required AnkiConnectService service})
-      : super(service: service);
+    : super(service: service);
 
   @override
   Future<AnkiSettings> loadSettings() async => _settings();
@@ -61,19 +59,19 @@ class _ConfiguredRepo extends AnkiConnectRepository {
 // allowDupes:true => mineEntry skips the dupe query and calls addNote directly,
 // so the injected exception surfaces on addNote (the real mining IPC).
 AnkiSettings _settings() => const AnkiSettings(
-      selectedDeckId: 1,
-      selectedNoteTypeId: 2,
-      availableDecks: <AnkiDeck>[AnkiDeck(id: 1, name: 'Mining')],
-      availableNoteTypes: <AnkiNoteType>[
-        AnkiNoteType(
-            id: 2, name: 'Fushi', fields: <String>['Expression', 'Reading']),
-      ],
-      fieldMappings: <String, String>{
-        'Expression': 'EXPR',
-        'Reading': 'READ',
-      },
-      allowDupes: true,
-    );
+  selectedDeckId: 1,
+  selectedNoteTypeId: 2,
+  availableDecks: <AnkiDeck>[AnkiDeck(id: 1, name: 'Mining')],
+  availableNoteTypes: <AnkiNoteType>[
+    AnkiNoteType(
+      id: 2,
+      name: 'Fushi',
+      fields: <String>['Expression', 'Reading'],
+    ),
+  ],
+  fieldMappings: <String, String>{'Expression': 'EXPR', 'Reading': 'READ'},
+  allowDupes: true,
+);
 
 const String kPayload = '{"expression":"x","reading":"y"}';
 const AnkiMiningContext kCtx = AnkiMiningContext(sentence: '');
@@ -82,66 +80,75 @@ const AnkiMiningContext kCtx = AnkiMiningContext(sentence: '');
 bool isAscii(String s) => s.codeUnits.every((int c) => c < 0x80);
 
 void main() {
-  group('classifyAnkiConnectError maps each network failure to a stable code',
-      () {
-    test('refused (POSIX ECONNREFUSED 111) -> connectionRefused', () {
-      const e = SocketException(
-        'Connection refused',
-        osError: OSError('Connection refused', 111),
+  group(
+    'classifyAnkiConnectError maps each network failure to a stable code',
+    () {
+      test('refused (POSIX ECONNREFUSED 111) -> connectionRefused', () {
+        const e = SocketException(
+          'Connection refused',
+          osError: OSError('Connection refused', 111),
+        );
+        expect(classifyAnkiConnectError(e), AnkiErrorCode.connectionRefused);
+      });
+
+      test('refused (Win WSAECONNREFUSED 10061) -> connectionRefused', () {
+        const e = SocketException(
+          'Connection refused',
+          osError: OSError('No connection could be made', 10061),
+        );
+        expect(classifyAnkiConnectError(e), AnkiErrorCode.connectionRefused);
+      });
+
+      test(
+        'SocketException with no OSError still classifies (not unknown)',
+        () {
+          const e = SocketException('Failed host lookup');
+          expect(classifyAnkiConnectError(e), AnkiErrorCode.connectionRefused);
+        },
       );
-      expect(classifyAnkiConnectError(e), AnkiErrorCode.connectionRefused);
-    });
 
-    test('refused (Win WSAECONNREFUSED 10061) -> connectionRefused', () {
-      const e = SocketException(
-        'Connection refused',
-        osError: OSError('No connection could be made', 10061),
-      );
-      expect(classifyAnkiConnectError(e), AnkiErrorCode.connectionRefused);
-    });
+      test('TimeoutException -> connectionTimeout', () {
+        final e = TimeoutException('timed out', const Duration(seconds: 10));
+        expect(classifyAnkiConnectError(e), AnkiErrorCode.connectionTimeout);
+      });
 
-    test('SocketException with no OSError still classifies (not unknown)', () {
-      const e = SocketException('Failed host lookup');
-      expect(classifyAnkiConnectError(e), AnkiErrorCode.connectionRefused);
-    });
+      // connectionTimeout 的全部价值在于它**只**代表「连上了但不应答」——那几乎只有
+      // 「端口上蹲着的不是 AnkiConnect」一种解释，文案才敢让用户去换端口。建连阶段的
+      // 超时必须归 refused，否则这个码退化成「反正是超时」，提示又只能含糊说查防火墙。
+      test('pre-delivery wrapping a timeout -> connectionRefused', () {
+        final e = AnkiConnectPreDeliveryException(
+          'connect failed',
+          Uri.parse('http://127.0.0.1:8765'),
+          TimeoutException('connect timed out', const Duration(seconds: 5)),
+        );
+        expect(classifyAnkiConnectError(e), AnkiErrorCode.connectionRefused);
+      });
 
-    test('TimeoutException -> connectionTimeout', () {
-      final e = TimeoutException('timed out', const Duration(seconds: 10));
-      expect(classifyAnkiConnectError(e), AnkiErrorCode.connectionTimeout);
-    });
+      test('pre-delivery wrapping a socket failure -> connectionRefused', () {
+        final e = AnkiConnectPreDeliveryException(
+          'connect failed',
+          Uri.parse('http://127.0.0.1:8765'),
+          const SocketException(
+            'Connection refused',
+            osError: OSError('Connection refused', 111),
+          ),
+        );
+        expect(classifyAnkiConnectError(e), AnkiErrorCode.connectionRefused);
+      });
 
-    // connectionTimeout 的全部价值在于它**只**代表「连上了但不应答」——那几乎只有
-    // 「端口上蹲着的不是 AnkiConnect」一种解释，文案才敢让用户去换端口。建连阶段的
-    // 超时必须归 refused，否则这个码退化成「反正是超时」，提示又只能含糊说查防火墙。
-    test('pre-delivery wrapping a timeout -> connectionRefused', () {
-      final e = AnkiConnectPreDeliveryException(
-        'connect failed',
-        Uri.parse('http://127.0.0.1:8765'),
-        TimeoutException('connect timed out', const Duration(seconds: 5)),
-      );
-      expect(classifyAnkiConnectError(e), AnkiErrorCode.connectionRefused);
-    });
+      test('http.ClientException -> httpError', () {
+        final e = http.ClientException('Connection closed before full header');
+        expect(classifyAnkiConnectError(e), AnkiErrorCode.httpError);
+      });
 
-    test('pre-delivery wrapping a socket failure -> connectionRefused', () {
-      final e = AnkiConnectPreDeliveryException(
-        'connect failed',
-        Uri.parse('http://127.0.0.1:8765'),
-        const SocketException('Connection refused',
-            osError: OSError('Connection refused', 111)),
-      );
-      expect(classifyAnkiConnectError(e), AnkiErrorCode.connectionRefused);
-    });
-
-    test('http.ClientException -> httpError', () {
-      final e = http.ClientException('Connection closed before full header');
-      expect(classifyAnkiConnectError(e), AnkiErrorCode.httpError);
-    });
-
-    test('any other exception -> connectionUnknown', () {
-      expect(classifyAnkiConnectError(StateError('boom')),
-          AnkiErrorCode.connectionUnknown);
-    });
-  });
+      test('any other exception -> connectionUnknown', () {
+        expect(
+          classifyAnkiConnectError(StateError('boom')),
+          AnkiErrorCode.connectionUnknown,
+        );
+      });
+    },
+  );
 
   group('ankiConnectErrorHint returns fixed, ASCII-only fallback text', () {
     for (final code in <String>[
@@ -160,26 +167,32 @@ void main() {
     // 用户实测：默认端口被别的程序占着，占用者接受 TCP 连接却不应答，用户拿到的
     // 只有一句「超时，检查防火墙」——照着查防火墙永远查不出来。文案必须指向真正的
     // 下一步：那个端口上的程序不是 AnkiConnect，换个端口。
-    test('connectionTimeout hint points at port squatting, not the firewall',
-        () {
-      final String hint = ankiConnectErrorHint(
-        AnkiErrorCode.connectionTimeout,
-        host: '127.0.0.1',
-        port: 8765,
-      );
-      expect(hint, contains('127.0.0.1:8765'));
-      expect(hint.toLowerCase(), contains('port'));
-      expect(hint.toLowerCase(), contains('another program'));
-      expect(hint.toLowerCase(), isNot(contains('firewall')));
-    });
+    test(
+      'connectionTimeout hint points at port squatting, not the firewall',
+      () {
+        final String hint = ankiConnectErrorHint(
+          AnkiErrorCode.connectionTimeout,
+          host: '127.0.0.1',
+          port: 8765,
+        );
+        expect(hint, contains('127.0.0.1:8765'));
+        expect(hint.toLowerCase(), contains('port'));
+        expect(hint.toLowerCase(), contains('another program'));
+        expect(hint.toLowerCase(), isNot(contains('firewall')));
+      },
+    );
   });
 
   group('isAnkiConnectTransportError only accepts transport failures', () {
     test('socket / timeout / http all count', () {
-      expect(isAnkiConnectTransportError(const SocketException('boom')), isTrue);
+      expect(
+        isAnkiConnectTransportError(const SocketException('boom')),
+        isTrue,
+      );
       expect(
         isAnkiConnectTransportError(
-            TimeoutException('boom', const Duration(seconds: 1))),
+          TimeoutException('boom', const Duration(seconds: 1)),
+        ),
         isTrue,
       );
       expect(isAnkiConnectTransportError(http.ClientException('boom')), isTrue);
@@ -188,23 +201,25 @@ void main() {
     test('local programming errors do not count', () {
       expect(isAnkiConnectTransportError(StateError('boom')), isFalse);
       expect(
-          isAnkiConnectTransportError(const FormatException('boom')), isFalse);
+        isAnkiConnectTransportError(const FormatException('boom')),
+        isFalse,
+      );
     });
   });
 
-  group('mineEntry classifies network errors and keeps raw text out of toast',
-      () {
+  group('mineEntry classifies network errors and keeps raw text out of toast', () {
     Future<MineOutcome> mineWith(Object toThrow) {
       final repo = _ConfiguredRepo(service: _FailingService(toThrow));
       return repo.mineEntry(rawPayloadJson: kPayload, context: kCtx);
     }
 
-    test('SocketException refused -> connectionRefused, clean detail',
-        () async {
-      final outcome = await mineWith(const SocketException(
-        'Connection refused',
-        osError: OSError('Connection refused', 111),
-      ));
+    test('SocketException refused -> connectionRefused, clean detail', () async {
+      final outcome = await mineWith(
+        const SocketException(
+          'Connection refused',
+          osError: OSError('Connection refused', 111),
+        ),
+      );
 
       expect(outcome.result, MineResult.error);
       expect(outcome.errorCode, AnkiErrorCode.connectionRefused);
@@ -220,8 +235,9 @@ void main() {
     });
 
     test('TimeoutException -> connectionTimeout', () async {
-      final outcome =
-          await mineWith(TimeoutException('x', const Duration(seconds: 10)));
+      final outcome = await mineWith(
+        TimeoutException('x', const Duration(seconds: 10)),
+      );
       expect(outcome.errorCode, AnkiErrorCode.connectionTimeout);
       expect(outcome.error, isA<TimeoutException>());
     });
@@ -233,26 +249,30 @@ void main() {
       expect(outcome.errorDetail, isNot(contains('socket hang up')));
     });
 
-    test('latin1-garbled ClientException text never leaks into errorDetail',
-        () async {
-      final outcome = await mineWith(
-        http.ClientException('proxy error: ' + kLatin1Garble),
-      );
-      expect(outcome.errorCode, AnkiErrorCode.httpError);
-      expect(outcome.error.toString(), contains(kLatin1Garble));
-      expect(outcome.errorDetail, isNot(contains(kLatin1Garble)));
-      expect(isAscii(outcome.errorDetail!), isTrue);
-    });
+    test(
+      'latin1-garbled ClientException text never leaks into errorDetail',
+      () async {
+        final outcome = await mineWith(
+          http.ClientException('proxy error: ' + kLatin1Garble),
+        );
+        expect(outcome.errorCode, AnkiErrorCode.httpError);
+        expect(outcome.error.toString(), contains(kLatin1Garble));
+        expect(outcome.errorDetail, isNot(contains(kLatin1Garble)));
+        expect(isAscii(outcome.errorDetail!), isTrue);
+      },
+    );
 
-    test('non-network error keeps errorCode null and a clean ASCII detail',
-        () async {
-      final outcome = await mineWith(StateError('handlebar boom'));
-      expect(outcome.result, MineResult.error);
-      expect(outcome.errorCode, isNull);
-      expect(outcome.error, isA<StateError>());
-      expect(outcome.errorDetail, isNot(contains('handlebar boom')));
-      expect(isAscii(outcome.errorDetail!), isTrue);
-    });
+    test(
+      'non-network error keeps errorCode null and a clean ASCII detail',
+      () async {
+        final outcome = await mineWith(StateError('handlebar boom'));
+        expect(outcome.result, MineResult.error);
+        expect(outcome.errorCode, isNull);
+        expect(outcome.error, isA<StateError>());
+        expect(outcome.errorDetail, isNot(contains('handlebar boom')));
+        expect(isAscii(outcome.errorDetail!), isTrue);
+      },
+    );
   });
 
   test('repository never interpolates raw exception into failure detail', () {

@@ -68,11 +68,15 @@ void main() {
 
   setUpAll(() async {
     // host 端的快照用真实 DB 物化，形状与线上 /api/library/aggregate 一致。
-    final Directory hostDir = await Directory.systemTemp.createTemp('fushi_sync_host_');
+    final Directory hostDir = await Directory.systemTemp.createTemp(
+      'fushi_sync_host_',
+    );
     final FushiDatabase hostDb = FushiDatabase(hostDir.path);
     await hostDb.upsertStudySegment(_segment('h1', 30));
     await hostDb.upsertStudySegment(_segment('h2', 15));
-    hostSnapshot = (await AggregateSyncService(hostDb).materializeLocalSnapshot()).toJson();
+    hostSnapshot = (await AggregateSyncService(
+      hostDb,
+    ).materializeLocalSnapshot()).toJson();
     await hostDb.close();
     await hostDir.delete(recursive: true);
   });
@@ -96,8 +100,16 @@ void main() {
     await tmp.delete(recursive: true);
   });
 
-  Future<int> sync(List<String> args, {Map<String, String> env = const <String, String>{}}) {
-    final SyncModule module = SyncModule(out: out, err: err, env: env, remoteFactory: (SyncTarget _) => remote);
+  Future<int> sync(
+    List<String> args, {
+    Map<String, String> env = const <String, String>{},
+  }) {
+    final SyncModule module = SyncModule(
+      out: out,
+      err: err,
+      env: env,
+      remoteFactory: (SyncTarget _) => remote,
+    );
     final ArgParser parser = ArgParser();
     module.register(parser);
     return module.run(
@@ -110,7 +122,9 @@ void main() {
   Future<Set<String>> localSegmentUids() async {
     final FushiDatabase db = FushiDatabase(paths.support.path);
     try {
-      return (await db.select(db.studySegments).get()).map((StudySegmentRow r) => r.uid).toSet();
+      return (await db.select(db.studySegments).get())
+          .map((StudySegmentRow r) => r.uid)
+          .toSet();
     } finally {
       await db.close();
     }
@@ -126,7 +140,8 @@ void main() {
       expect(await localSegmentUids(), <String>{'local1', 'h1', 'h2'});
       expect(remote.pushed, isEmpty);
       expect(remote.closed, isTrue);
-      final Map<String, Object?> r = jsonDecode(out.toString()) as Map<String, Object?>;
+      final Map<String, Object?> r =
+          jsonDecode(out.toString()) as Map<String, Object?>;
       expect(r['host'], 'http://127.0.0.1:38765');
       expect(r['mode'], 'pull');
       expect(r['pushed'], false);
@@ -144,14 +159,24 @@ void main() {
       );
       expect(await localSegmentUids(), <String>{'local1', 'h1', 'h2'});
       expect(remote.pushed, hasLength(1));
-      final AggregateSnapshot pushed = AggregateSnapshot.fromJson(remote.pushed.single);
-      expect(pushed.studySegments.map((StudySegmentRecord s) => s.uid).toSet(), <String>{'local1', 'h1', 'h2'});
+      final AggregateSnapshot pushed = AggregateSnapshot.fromJson(
+        remote.pushed.single,
+      );
+      expect(
+        pushed.studySegments.map((StudySegmentRecord s) => s.uid).toSet(),
+        <String>{'local1', 'h1', 'h2'},
+      );
     });
 
     test('--no-stats：统计不折进来', () async {
       expect(
         await sync(
-          <String>['pull', 'http://127.0.0.1:38765', '--allow-http', '--no-stats'],
+          <String>[
+            'pull',
+            'http://127.0.0.1:38765',
+            '--allow-http',
+            '--no-stats',
+          ],
           env: <String, String>{kSyncTokenEnv: 'tok'},
         ),
         0,
@@ -172,16 +197,33 @@ void main() {
     });
 
     test('已配对记录提供 token 与指纹', () async {
-      await SyncPeerCredentialStore.under(
-        paths.support,
-      ).upsert(const SyncPeerCredential(url: 'https://10.0.0.2:38765', token: 'saved', fingerprint: _fp));
-      expect(await sync(<String>['pull', 'https://10.0.0.2:38765/']), 0, reason: err.toString());
+      await SyncPeerCredentialStore.under(paths.support).upsert(
+        const SyncPeerCredential(
+          url: 'https://10.0.0.2:38765',
+          token: 'saved',
+          fingerprint: _fp,
+        ),
+      );
+      expect(
+        await sync(<String>['pull', 'https://10.0.0.2:38765/']),
+        0,
+        reason: err.toString(),
+      );
     });
 
     test('用法错误 = 64', () async {
       expect(await sync(<String>['pull']), 64);
       expect(await sync(<String>['pull', 'ftp://x']), 64);
-      expect(await sync(<String>['pull', 'http://x', '--allow-http', '--no-stats', '--no-favorites']), 64);
+      expect(
+        await sync(<String>[
+          'pull',
+          'http://x',
+          '--allow-http',
+          '--no-stats',
+          '--no-favorites',
+        ]),
+        64,
+      );
       expect(await sync(<String>[]), 64);
     });
   });
@@ -190,8 +232,18 @@ void main() {
     late SyncPeerCredentialStore store;
     setUp(() => store = SyncPeerCredentialStore.under(paths.support));
 
-    Future<(SyncTarget?, int, String)> resolve(String url, {String? fp, bool allowHttp = false, String? token}) =>
-        resolveSyncTarget(rawUrl: url, fingerprintArg: fp, allowHttp: allowHttp, envToken: token, store: store);
+    Future<(SyncTarget?, int, String)> resolve(
+      String url, {
+      String? fp,
+      bool allowHttp = false,
+      String? token,
+    }) => resolveSyncTarget(
+      rawUrl: url,
+      fingerprintArg: fp,
+      allowHttp: allowHttp,
+      envToken: token,
+      store: store,
+    );
 
     test('https 没有指纹 = 64（不做盲 TOFU）', () async {
       expect((await resolve('https://h:1', token: 't')).$2, 64);
@@ -199,7 +251,10 @@ void main() {
 
     test('http 不显式允许 = 64；http 带指纹 = 64', () async {
       expect((await resolve('http://h:1', token: 't')).$2, 64);
-      expect((await resolve('http://h:1', allowHttp: true, fp: _fp, token: 't')).$2, 64);
+      expect(
+        (await resolve('http://h:1', allowHttp: true, fp: _fp, token: 't')).$2,
+        64,
+      );
     });
 
     test('没有凭据 = 69', () async {
@@ -207,24 +262,47 @@ void main() {
     });
 
     test('命令行指纹与已配对指纹不符 = 1', () async {
-      await store.upsert(const SyncPeerCredential(url: 'https://h:1', token: 's', fingerprint: _fp));
+      await store.upsert(
+        const SyncPeerCredential(
+          url: 'https://h:1',
+          token: 's',
+          fingerprint: _fp,
+        ),
+      );
       expect((await resolve('https://h:1', fp: '11:22')).$2, 1);
       // 写法不同（大小写 / 去冒号）但同一张证书：放行。
-      final (SyncTarget? t, int code, _) = await resolve('https://h:1', fp: 'AABBCCDD');
+      final (SyncTarget? t, int code, _) = await resolve(
+        'https://h:1',
+        fp: 'AABBCCDD',
+      );
       expect(code, 0);
       expect(t!.token, 's');
     });
 
     test('环境变量 token 优先于已配对记录', () async {
-      await store.upsert(const SyncPeerCredential(url: 'https://h:1', token: 's', fingerprint: _fp));
+      await store.upsert(
+        const SyncPeerCredential(
+          url: 'https://h:1',
+          token: 's',
+          fingerprint: _fp,
+        ),
+      );
       expect((await resolve('https://h:1', token: 'env')).$1!.token, 'env');
     });
   });
 
   group('凭据存储', () {
     test('落盘 0600，forget 删除，peers 不输出 token', () async {
-      final SyncPeerCredentialStore store = SyncPeerCredentialStore.under(paths.support);
-      await store.upsert(const SyncPeerCredential(url: 'https://h:1', token: 'secret', fingerprint: _fp));
+      final SyncPeerCredentialStore store = SyncPeerCredentialStore.under(
+        paths.support,
+      );
+      await store.upsert(
+        const SyncPeerCredential(
+          url: 'https://h:1',
+          token: 'secret',
+          fingerprint: _fp,
+        ),
+      );
       if (!Platform.isWindows) {
         expect((await store.file.stat()).modeString(), 'rw-------');
       }
@@ -253,22 +331,30 @@ void main() {
         methods.add('${req.method} ${req.uri.path}');
         await req.drain<void>();
         req.response.statusCode = status;
-        if (status == 200) req.response.write(jsonEncode(<String, Object?>{'version': 1}));
+        if (status == 200)
+          req.response.write(jsonEncode(<String, Object?>{'version': 1}));
         await req.response.close();
       });
     });
     tearDown(() => server.close(force: true));
 
-    HttpAggregateRemote client() =>
-        HttpAggregateRemote(baseUrl: Uri.parse('http://127.0.0.1:${server.port}'), token: 'tk');
+    HttpAggregateRemote client() => HttpAggregateRemote(
+      baseUrl: Uri.parse('http://127.0.0.1:${server.port}'),
+      token: 'tk',
+    );
 
     test('Basic hibiki:<token>，GET / PUT 同一端点', () async {
       final HttpAggregateRemote c = client();
       expect(await c.fetch(), <String, Object?>{'version': 1});
       await c.push(<String, Object?>{'version': 1});
       c.close();
-      expect(auths.toSet(), <String>{'Basic ${base64Encode(utf8.encode('hibiki:tk'))}'});
-      expect(methods, <String>['GET /api/library/aggregate', 'PUT /api/library/aggregate']);
+      expect(auths.toSet(), <String>{
+        'Basic ${base64Encode(utf8.encode('hibiki:tk'))}',
+      });
+      expect(methods, <String>[
+        'GET /api/library/aggregate',
+        'PUT /api/library/aggregate',
+      ]);
     });
 
     test('404 = 老 host（null）；401 = 69；500 = 1', () async {
@@ -278,12 +364,24 @@ void main() {
       status = 401;
       await expectLater(
         c.fetch(),
-        throwsA(isA<SyncRemoteException>().having((SyncRemoteException e) => e.exitCode, 'exitCode', 69)),
+        throwsA(
+          isA<SyncRemoteException>().having(
+            (SyncRemoteException e) => e.exitCode,
+            'exitCode',
+            69,
+          ),
+        ),
       );
       status = 500;
       await expectLater(
         c.fetch(),
-        throwsA(isA<SyncRemoteException>().having((SyncRemoteException e) => e.exitCode, 'exitCode', 1)),
+        throwsA(
+          isA<SyncRemoteException>().having(
+            (SyncRemoteException e) => e.exitCode,
+            'exitCode',
+            1,
+          ),
+        ),
       );
       c.close();
     });
@@ -291,10 +389,19 @@ void main() {
     test('连不上 = 69', () async {
       final int port = server.port;
       await server.close(force: true);
-      final HttpAggregateRemote c = HttpAggregateRemote(baseUrl: Uri.parse('http://127.0.0.1:$port'), token: 'tk');
+      final HttpAggregateRemote c = HttpAggregateRemote(
+        baseUrl: Uri.parse('http://127.0.0.1:$port'),
+        token: 'tk',
+      );
       await expectLater(
         c.fetch(),
-        throwsA(isA<SyncRemoteException>().having((SyncRemoteException e) => e.exitCode, 'exitCode', 69)),
+        throwsA(
+          isA<SyncRemoteException>().having(
+            (SyncRemoteException e) => e.exitCode,
+            'exitCode',
+            69,
+          ),
+        ),
       );
       c.close();
     });

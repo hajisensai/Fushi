@@ -39,8 +39,9 @@ class LrcParser {
   static final RegExp _metaTag = RegExp(r'^\[([a-zA-Z]+):[^\]]*\]$');
 
   /// 时间码（每个时间标签都要跑，编译一次）。
-  static final RegExp _fullTimecodeRe =
-      RegExp(r'^(\d+):(\d{2}):(\d{2})\.(\d{1,3})$');
+  static final RegExp _fullTimecodeRe = RegExp(
+    r'^(\d+):(\d{2}):(\d{2})\.(\d{1,3})$',
+  );
   static final RegExp _shortTimecodeRe = RegExp(r'^(\d+):(\d{2})\.(\d{1,3})$');
 
   /// 读取 [lrcFile] 并返回 [AudioCue] 列表。
@@ -76,11 +77,14 @@ class LrcParser {
     int audioFileIndex = 0,
   }) {
     // 移除 UTF-8 BOM
-    final String stripped =
-        content.startsWith('\uFEFF') ? content.substring(1) : content;
+    final String stripped = content.startsWith('\uFEFF')
+        ? content.substring(1)
+        : content;
 
-    final List<String> lines =
-        stripped.replaceAll('\r\n', '\n').replaceAll('\r', '\n').split('\n');
+    final List<String> lines = stripped
+        .replaceAll('\r\n', '\n')
+        .replaceAll('\r', '\n')
+        .split('\n');
 
     // 第一步：收集所有 (startMs, text) 原始对
     final List<(int, String)> rawCues = [];
@@ -125,7 +129,8 @@ class LrcParser {
 
     // 第二步：按 startMs 排序
     rawCues.sort(
-        (final (int, String) a, final (int, String) b) => a.$1.compareTo(b.$1));
+      (final (int, String) a, final (int, String) b) => a.$1.compareTo(b.$1),
+    );
 
     // 第三步：计算 endMs，构造 AudioCue 列表
     final List<AudioCue> cues = [];

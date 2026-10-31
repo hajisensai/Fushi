@@ -69,10 +69,14 @@ void main() {
       final String src = File(
         'lib/src/reader/reader_pagination_scripts.dart',
       ).readAsStringSync();
-      expect(src.contains('hwKataToFwBase: 0xFF66'), isTrue,
-          reason: 'JS 查表基址必须是 0xFF66（与 Dart 表索引约定一致）');
-      final RegExpMatch? m =
-          RegExp(r'hwKataToFw:\s*\[([0-9xA-Fa-f,\s]+)\]').firstMatch(src);
+      expect(
+        src.contains('hwKataToFwBase: 0xFF66'),
+        isTrue,
+        reason: 'JS 查表基址必须是 0xFF66（与 Dart 表索引约定一致）',
+      );
+      final RegExpMatch? m = RegExp(
+        r'hwKataToFw:\s*\[([0-9xA-Fa-f,\s]+)\]',
+      ).firstMatch(src);
       expect(m, isNotNull, reason: '运行期 JS 必须持有 hwKataToFw 查表副本');
       final List<int> jsTable = m!
           .group(1)!
@@ -81,8 +85,11 @@ void main() {
           .where((String e) => e.isNotEmpty)
           .map((String e) => int.parse(e))
           .toList();
-      expect(jsTable, kHalfwidthKatakanaToFullwidth,
-          reason: 'JS 半角片假名查表必须与 kHalfwidthKatakanaToFullwidth 逐项一致');
+      expect(
+        jsTable,
+        kHalfwidthKatakanaToFullwidth,
+        reason: 'JS 半角片假名查表必须与 kHalfwidthKatakanaToFullwidth 逐项一致',
+      );
     });
   });
 }

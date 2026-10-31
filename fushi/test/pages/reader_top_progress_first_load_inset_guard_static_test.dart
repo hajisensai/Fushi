@@ -23,62 +23,71 @@ import 'reader_fushi_page_source_corpus.dart';
 void main() {
   final String src = readReaderPageSource();
 
-  test('_refreshProgress re-pushes chrome insets on top-progress rising edge',
-      () {
-    final String refresh = _functionSource(
-      src,
-      '  Future<void> _refreshProgress() async {',
-      '  /// TODO-796：当前章是纯图片',
-    );
+  test(
+    '_refreshProgress re-pushes chrome insets on top-progress rising edge',
+    () {
+      final String refresh = _functionSource(
+        src,
+        '  Future<void> _refreshProgress() async {',
+        '  /// TODO-796：当前章是纯图片',
+      );
 
-    expect(
-      refresh,
-      contains('final bool topProgressWasShown = _showTopProgress;'),
-      reason: '_refreshProgress 必须在 rebuild 写进度字段**前**快照 _showTopProgress '
-          '（顶部预留的门控真相源），才能检出首屏 null→正 的上升沿。',
-    );
+      expect(
+        refresh,
+        contains('final bool topProgressWasShown = _showTopProgress;'),
+        reason:
+            '_refreshProgress 必须在 rebuild 写进度字段**前**快照 _showTopProgress '
+            '（顶部预留的门控真相源），才能检出首屏 null→正 的上升沿。',
+      );
 
-    final int snapshotIndex =
-        refresh.indexOf('final bool topProgressWasShown = _showTopProgress;');
-    final int rebuildIndex =
-        refresh.indexOf('_progressCurrentChars = absoluteChars;');
-    expect(snapshotIndex, isNonNegative);
-    expect(rebuildIndex, isNonNegative);
-    expect(
-      snapshotIndex < rebuildIndex,
-      isTrue,
-      reason:
-          '_showTopProgress 快照必须在写 _progressCurrentChars/_progressTotalChars '
-          '之前——否则 rebuild 后两次都为 true，检不出上升沿。',
-    );
+      final int snapshotIndex = refresh.indexOf(
+        'final bool topProgressWasShown = _showTopProgress;',
+      );
+      final int rebuildIndex = refresh.indexOf(
+        '_progressCurrentChars = absoluteChars;',
+      );
+      expect(snapshotIndex, isNonNegative);
+      expect(rebuildIndex, isNonNegative);
+      expect(
+        snapshotIndex < rebuildIndex,
+        isTrue,
+        reason:
+            '_showTopProgress 快照必须在写 _progressCurrentChars/_progressTotalChars '
+            '之前——否则 rebuild 后两次都为 true，检不出上升沿。',
+      );
 
-    expect(
-      refresh,
-      contains('if (!topProgressWasShown && _showTopProgress)'),
-      reason: '必须仅在顶部进度 false→true 的上升沿补推 inset（不是每次进度刷新都推，'
-          '避免轮询/滚动造成 inset 抖动）。',
-    );
-    expect(
-      refresh,
-      contains('_applyChromeInsetsAndReanchor()'),
-      reason: '上升沿补推必须走 _applyChromeInsetsAndReanchor（先下发含 18px 顶部'
-          '预留的新 inset，再 begin→commit 重锚把阅读位置滚回，不破坏 restore 位置）。',
-    );
-  });
+      expect(
+        refresh,
+        contains('if (!topProgressWasShown && _showTopProgress)'),
+        reason:
+            '必须仅在顶部进度 false→true 的上升沿补推 inset（不是每次进度刷新都推，'
+            '避免轮询/滚动造成 inset 抖动）。',
+      );
+      expect(
+        refresh,
+        contains('_applyChromeInsetsAndReanchor()'),
+        reason:
+            '上升沿补推必须走 _applyChromeInsetsAndReanchor（先下发含 18px 顶部'
+            '预留的新 inset，再 begin→commit 重锚把阅读位置滚回，不破坏 restore 位置）。',
+      );
+    },
+  );
 
-  test('_topProgressReserve stays gated on _showTopProgress (single source)',
-      () {
-    final String reserve = _functionSource(
-      src,
-      '  double get _topProgressReserve => topProgressReserve(',
-      '  /// TODO-975：底栏内容行的预留高',
-    );
-    expect(
-      reserve,
-      contains('showTopProgress: _showTopProgress'),
-      reason: '顶部预留必须经 _showTopProgress 门控（真相源），补推 inset 才能与可见性对齐。',
-    );
-  });
+  test(
+    '_topProgressReserve stays gated on _showTopProgress (single source)',
+    () {
+      final String reserve = _functionSource(
+        src,
+        '  double get _topProgressReserve => topProgressReserve(',
+        '  /// TODO-975：底栏内容行的预留高',
+      );
+      expect(
+        reserve,
+        contains('showTopProgress: _showTopProgress'),
+        reason: '顶部预留必须经 _showTopProgress 门控（真相源），补推 inset 才能与可见性对齐。',
+      );
+    },
+  );
 }
 
 /// 截取 [source] 中从 [start] 标记到下一个 [end] 标记之间的片段（含函数体）。

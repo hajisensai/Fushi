@@ -23,8 +23,9 @@ String? _resolveLibPath() {
 
 void main() {
   final String? libPath = _resolveLibPath();
-  final String? skip =
-      libPath == null ? 'fushi_torrent_ffi native lib not built' : null;
+  final String? skip = libPath == null
+      ? 'fushi_torrent_ffi native lib not built'
+      : null;
 
   late Directory tempDir;
 
@@ -44,10 +45,14 @@ void main() {
     'host opens, hands out shared-session backend views, sweeps peers',
     () async {
       // 用非监听引擎给 rig 做种，另用 host 拿真实下载 session。
-      final EmbeddedTorrentEngine rigEngine =
-          EmbeddedTorrentEngine.open(libraryPath: libPath!);
+      final EmbeddedTorrentEngine rigEngine = EmbeddedTorrentEngine.open(
+        libraryPath: libPath!,
+      );
       final LocalSeedRig rig = await LocalSeedRig.start(
-          engine: rigEngine, workDir: tempDir, contentBytes: 1024 * 1024);
+        engine: rigEngine,
+        workDir: tempDir,
+        contentBytes: 1024 * 1024,
+      );
       addTearDown(rig.dispose);
 
       // host：监听回环（出站连接需要 listen socket），无 DHT（确定性）。
@@ -70,16 +75,20 @@ void main() {
       expect(await view1.probeConnection(), startsWith('libtorrent 2.'));
       expect(await view1.prepareCategory('hibiki-anime'), isTrue);
       expect(
-        await view1.addTorrent(rig.magnetUri,
-            category: 'hibiki-anime', sequential: true),
+        await view1.addTorrent(
+          rig.magnetUri,
+          category: 'hibiki-anime',
+          sequential: true,
+        ),
         isTrue,
       );
       view1.close(); // 关视图……
 
       // ……第二个视图仍能操作同一 session（证明会话没被 view1.close 销毁）。
       final TorrentBackend view2 = host.backendView();
-      final List<TorrentSnapshot> listed =
-          await view2.listTorrents(category: 'hibiki-anime');
+      final List<TorrentSnapshot> listed = await view2.listTorrents(
+        category: 'hibiki-anime',
+      );
       expect(listed, hasLength(1));
       expect(listed.single.hash, rig.infoHash);
 
@@ -92,9 +101,13 @@ void main() {
 
       // 用户可调资源限制：全设 / 全 0（不限）/ 只设连接数，均应用成功不抛。
       expect(
-          host.applyLimits(
-              downloadKbps: 2048, uploadKbps: 512, maxConnections: 100),
-          isTrue);
+        host.applyLimits(
+          downloadKbps: 2048,
+          uploadKbps: 512,
+          maxConnections: 100,
+        ),
+        isTrue,
+      );
       expect(host.applyLimits(), isTrue);
       expect(host.applyLimits(maxConnections: 50), isTrue);
     },
@@ -111,10 +124,14 @@ void main() {
   test(
     'resume snapshot persists live torrents and prunes plans the user deleted',
     () async {
-      final EmbeddedTorrentEngine rigEngine =
-          EmbeddedTorrentEngine.open(libraryPath: libPath!);
+      final EmbeddedTorrentEngine rigEngine = EmbeddedTorrentEngine.open(
+        libraryPath: libPath!,
+      );
       final LocalSeedRig rig = await LocalSeedRig.start(
-          engine: rigEngine, workDir: tempDir, contentBytes: 512 * 1024);
+        engine: rigEngine,
+        workDir: tempDir,
+        contentBytes: 512 * 1024,
+      );
       addTearDown(rig.dispose);
 
       final String resumeDir = p.join(tempDir.path, 'resume');
@@ -139,8 +156,8 @@ void main() {
       );
       await _pollUntil(
         () => host.backendView().listTorrents().then(
-            (List<TorrentSnapshot> t) =>
-                t.isNotEmpty && t.single.progress >= 0),
+          (List<TorrentSnapshot> t) => t.isNotEmpty && t.single.progress >= 0,
+        ),
         timeout: const Duration(seconds: 30),
         what: 'torrent to appear',
       );
@@ -163,9 +180,13 @@ void main() {
       // ③ 计划被用户删掉（keepIds 里没有它）→ resume 文件必须被剪掉，
       //    否则下次启动这个种子会复活。
       host.saveResumeSnapshot(const <String>{}, force: true);
-      expect(resumeFile.existsSync(), isFalse,
-          reason: 'a deleted plan must not keep a resume file behind — '
-              'otherwise it silently resurrects as an invisible seeding torrent');
+      expect(
+        resumeFile.existsSync(),
+        isFalse,
+        reason:
+            'a deleted plan must not keep a resume file behind — '
+            'otherwise it silently resurrects as an invisible seeding torrent',
+      );
 
       // ④ 剪光之后再恢复：没有任何东西可加回来。
       expect(host.restoreFromResume(const <String>{}), 0);
@@ -183,18 +204,23 @@ void main() {
   test(
     'an awaiting paused record must not override an explicit user resume',
     () async {
-      final EmbeddedTorrentEngine rigEngine =
-          EmbeddedTorrentEngine.open(libraryPath: libPath!);
+      final EmbeddedTorrentEngine rigEngine = EmbeddedTorrentEngine.open(
+        libraryPath: libPath!,
+      );
       final LocalSeedRig rig = await LocalSeedRig.start(
-          engine: rigEngine, workDir: tempDir, contentBytes: 256 * 1024);
+        engine: rigEngine,
+        workDir: tempDir,
+        contentBytes: 256 * 1024,
+      );
       addTearDown(rig.dispose);
 
       final String resumeDir = p.join(tempDir.path, 'resume');
       Directory(resumeDir).createSync(recursive: true);
       writeUserPausedFile(resumeDir, <String>{rig.infoHash});
       // 非 bencode 内容：ht_load_resume_dir 加载必失败，但文件存在。
-      File(p.join(resumeDir, '${rig.infoHash}.resume'))
-          .writeAsBytesSync(<int>[0x58, 0x58, 0x58]);
+      File(
+        p.join(resumeDir, '${rig.infoHash}.resume'),
+      ).writeAsBytesSync(<int>[0x58, 0x58, 0x58]);
 
       final EmbeddedTorrentHost? host = EmbeddedTorrentHost.open(
         libraryPath: libPath,
@@ -213,16 +239,16 @@ void main() {
 
       // 用户本会话把同一种子重新 add 回来。
       expect(
-        await host
-            .backendView()
-            .addTorrent(rig.torrentPath, category: 'hibiki-anime'),
+        await host.backendView().addTorrent(
+          rig.torrentPath,
+          category: 'hibiki-anime',
+        ),
         isTrue,
       );
       await _pollUntil(
-        () => host
-            .backendView()
-            .listTorrents()
-            .then((List<TorrentSnapshot> t) => t.isNotEmpty),
+        () => host.backendView().listTorrents().then(
+          (List<TorrentSnapshot> t) => t.isNotEmpty,
+        ),
         timeout: const Duration(seconds: 30),
         what: 'torrent to appear after re-add',
       );
@@ -233,7 +259,8 @@ void main() {
       expect(
         readUserPausedFile(resumeDir),
         isNot(contains(rig.infoHash)),
-        reason: 'explicit user resume must clear the awaiting record too — '
+        reason:
+            'explicit user resume must clear the awaiting record too — '
             'the union persist would otherwise re-pause it on next boot',
       );
     },
@@ -244,17 +271,22 @@ void main() {
   test(
     'sweep clears an awaiting paused record once the user re-adds the torrent',
     () async {
-      final EmbeddedTorrentEngine rigEngine =
-          EmbeddedTorrentEngine.open(libraryPath: libPath!);
+      final EmbeddedTorrentEngine rigEngine = EmbeddedTorrentEngine.open(
+        libraryPath: libPath!,
+      );
       final LocalSeedRig rig = await LocalSeedRig.start(
-          engine: rigEngine, workDir: tempDir, contentBytes: 256 * 1024);
+        engine: rigEngine,
+        workDir: tempDir,
+        contentBytes: 256 * 1024,
+      );
       addTearDown(rig.dispose);
 
       final String resumeDir = p.join(tempDir.path, 'resume');
       Directory(resumeDir).createSync(recursive: true);
       writeUserPausedFile(resumeDir, <String>{rig.infoHash});
-      File(p.join(resumeDir, '${rig.infoHash}.resume'))
-          .writeAsBytesSync(<int>[0x58, 0x58, 0x58]);
+      File(
+        p.join(resumeDir, '${rig.infoHash}.resume'),
+      ).writeAsBytesSync(<int>[0x58, 0x58, 0x58]);
 
       final EmbeddedTorrentHost? host = EmbeddedTorrentHost.open(
         libraryPath: libPath,
@@ -271,16 +303,16 @@ void main() {
       expect(readUserPausedFile(resumeDir), contains(rig.infoHash));
 
       expect(
-        await host
-            .backendView()
-            .addTorrent(rig.torrentPath, category: 'hibiki-anime'),
+        await host.backendView().addTorrent(
+          rig.torrentPath,
+          category: 'hibiki-anime',
+        ),
         isTrue,
       );
       await _pollUntil(
-        () => host
-            .backendView()
-            .listTorrents()
-            .then((List<TorrentSnapshot> t) => t.isNotEmpty),
+        () => host.backendView().listTorrents().then(
+          (List<TorrentSnapshot> t) => t.isNotEmpty,
+        ),
         timeout: const Duration(seconds: 30),
         what: 'torrent to appear after re-add',
       );
@@ -292,7 +324,8 @@ void main() {
       expect(
         readUserPausedFile(resumeDir),
         isNot(contains(rig.infoHash)),
-        reason: 'a re-added torrent means the user wants it running — the '
+        reason:
+            'a re-added torrent means the user wants it running — the '
             'stale paused record must not survive the sweep',
       );
     },
@@ -300,24 +333,20 @@ void main() {
     timeout: const Timeout(Duration(minutes: 2)),
   );
 
-  test(
-    'restoreFromResume on an empty/missing resume dir is a no-op',
-    () {
-      final EmbeddedTorrentHost? host = EmbeddedTorrentHost.open(
-        libraryPath: libPath,
-        baseSavePath: p.join(tempDir.path, 'content'),
-        resumeDir: p.join(tempDir.path, 'no-such-resume'),
-        listenInterfaces: '',
-        enableDht: false,
-        clockMs: () => _fakeClock,
-      );
-      expect(host, isNotNull);
-      addTearDown(host!.dispose);
+  test('restoreFromResume on an empty/missing resume dir is a no-op', () {
+    final EmbeddedTorrentHost? host = EmbeddedTorrentHost.open(
+      libraryPath: libPath,
+      baseSavePath: p.join(tempDir.path, 'content'),
+      resumeDir: p.join(tempDir.path, 'no-such-resume'),
+      listenInterfaces: '',
+      enableDht: false,
+      clockMs: () => _fakeClock,
+    );
+    expect(host, isNotNull);
+    addTearDown(host!.dispose);
 
-      expect(host.restoreFromResume(<String>{'deadbeef'}), 0);
-    },
-    skip: skip,
-  );
+    expect(host.restoreFromResume(<String>{'deadbeef'}), 0);
+  }, skip: skip);
 }
 
 Future<void> _pollUntil(

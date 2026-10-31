@@ -38,15 +38,15 @@ void main() {
     test('标题相同 → 保持输入序（List.sort 非稳定，需下标兜底）', () {
       final List<({String id, String title})> items =
           <({String id, String title})>[
-        (id: 'c', title: '同名'),
-        (id: 'a', title: '同名'),
-        (id: 'b', title: '同名'),
-      ];
+            (id: 'c', title: '同名'),
+            (id: 'a', title: '同名'),
+            (id: 'b', title: '同名'),
+          ];
       final List<({String id, String title})> sorted =
           sortNewCollectionMembersNaturally<({String id, String title})>(
-        items,
-        titleOf: (({String id, String title}) e) => e.title,
-      );
+            items,
+            titleOf: (({String id, String title}) e) => e.title,
+          );
       expect(
         sorted.map((({String id, String title}) e) => e.id).toList(),
         <String>['c', 'a', 'b'],
@@ -62,18 +62,19 @@ void main() {
         isEmpty,
       );
       expect(
-        sortNewCollectionMembersNaturally<String>(
-          const <String>['only'],
-          titleOf: (String s) => s,
-        ),
+        sortNewCollectionMembersNaturally<String>(const <String>[
+          'only',
+        ], titleOf: (String s) => s),
         <String>['only'],
       );
     });
 
     test('不改入参列表（调用方仍持原点选序）', () {
       final List<String> input = <String>['b', 'a'];
-      sortNewCollectionMembersNaturally<String>(input,
-          titleOf: (String s) => s);
+      sortNewCollectionMembersNaturally<String>(
+        input,
+        titleOf: (String s) => s,
+      );
       expect(input, <String>['b', 'a']);
     });
   });

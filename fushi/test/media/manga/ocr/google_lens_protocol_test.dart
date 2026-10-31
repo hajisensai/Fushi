@@ -49,7 +49,9 @@ void main() {
     expect(result.single.regions.last.utf16Start, 1);
     expect(result.single.regions.last.utf16End, 2);
     expect(
-        result.single.regions.first.normalizedBounds.left, closeTo(0.3, 1e-5));
+      result.single.regions.first.normalizedBounds.left,
+      closeTo(0.3, 1e-5),
+    );
   });
 
   test('rotation produces vertical regions', () {
@@ -82,9 +84,7 @@ void main() {
     // 行框带尾部留白，省略号三个点挤在一个短 Word 里。整行均分时「は」的格子
     // 被切开、三个点各占一个大格，高亮压到前一个字。
     const Rect line = Rect.fromLTRB(0.48, 0.10, 0.52, 0.90);
-    List<GoogleLensParagraph> decode(
-      List<({String text, Rect? box})> words,
-    ) =>
+    List<GoogleLensParagraph> decode(List<({String text, Rect? box})> words) =>
         GoogleLensProtocol.decodeResponse(
           makeGoogleLensFixture(
             centerX: line.center.dx,
@@ -99,12 +99,11 @@ void main() {
         );
 
     test('竖排字格落在各自 Word 框内，不按整行均分', () {
-      final GoogleLensParagraph paragraph = decode(
-        const <({String text, Rect? box})>[
-          (text: 'アトリは', box: Rect.fromLTRB(0.48, 0.12, 0.52, 0.56)),
-          (text: '･･･', box: Rect.fromLTRB(0.48, 0.60, 0.52, 0.78)),
-        ],
-      ).single;
+      final GoogleLensParagraph paragraph =
+          decode(const <({String text, Rect? box})>[
+            (text: 'アトリは', box: Rect.fromLTRB(0.48, 0.12, 0.52, 0.56)),
+            (text: '･･･', box: Rect.fromLTRB(0.48, 0.60, 0.52, 0.78)),
+          ]).single;
       expect(paragraph.isVertical, isTrue);
       final List<Rect> cells = paragraph.regions
           .map((GoogleLensTextRegion region) => region.normalizedBounds)
@@ -198,10 +197,10 @@ void main() {
 
     final double expectedLinePixelWidth =
         lineWidth * pageWidth * math.cos(rotation).abs() +
-            lineHeight * pageHeight * math.sin(rotation).abs();
+        lineHeight * pageHeight * math.sin(rotation).abs();
     final double expectedLinePixelHeight =
         lineWidth * pageWidth * math.sin(rotation).abs() +
-            lineHeight * pageHeight * math.cos(rotation).abs();
+        lineHeight * pageHeight * math.cos(rotation).abs();
     final Rect line = result.single.normalizedBounds;
     expect(line.width * pageWidth, closeTo(expectedLinePixelWidth, 0.5));
     expect(line.height * pageHeight, closeTo(expectedLinePixelHeight, 0.5));
@@ -291,19 +290,21 @@ void main() {
     );
   });
 
-  test('normalizeLensLanguage keeps primary subtags and falls back otherwise',
-      () {
-    expect(normalizeLensLanguage('en'), 'en');
-    expect(normalizeLensLanguage('pt-BR'), 'pt');
-    expect(normalizeLensLanguage('zh_Hans'), 'zh');
-    expect(normalizeLensLanguage('EN'), 'en');
-    expect(normalizeLensLanguage(''), 'ja');
-    expect(normalizeLensLanguage(null), 'ja');
-    expect(normalizeLensLanguage('all'), 'ja');
-    expect(normalizeLensLanguage('multi'), 'ja');
-    expect(normalizeLensLanguage('42'), 'ja');
-    expect(normalizeLensLanguage(null, fallback: 'en'), 'en');
-  });
+  test(
+    'normalizeLensLanguage keeps primary subtags and falls back otherwise',
+    () {
+      expect(normalizeLensLanguage('en'), 'en');
+      expect(normalizeLensLanguage('pt-BR'), 'pt');
+      expect(normalizeLensLanguage('zh_Hans'), 'zh');
+      expect(normalizeLensLanguage('EN'), 'en');
+      expect(normalizeLensLanguage(''), 'ja');
+      expect(normalizeLensLanguage(null), 'ja');
+      expect(normalizeLensLanguage('all'), 'ja');
+      expect(normalizeLensLanguage('multi'), 'ja');
+      expect(normalizeLensLanguage('42'), 'ja');
+      expect(normalizeLensLanguage(null, fallback: 'en'), 'en');
+    },
+  );
 }
 
 bool _containsBytes(Uint8List source, List<int> needle) {

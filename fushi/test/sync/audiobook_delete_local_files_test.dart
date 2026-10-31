@@ -39,18 +39,17 @@ void main() {
     required String bookKey,
     List<String>? audioPaths,
     String? audioRoot,
-  }) =>
-      db.upsertAudiobook(
-        AudiobooksCompanion.insert(
-          bookKey: bookKey,
-          alignmentFormat: 'srt',
-          alignmentPath: p.join(tmp.path, 'align.srt'),
-          audioPathsJson: Value<String?>(
-            audioPaths == null ? null : jsonEncode(audioPaths),
-          ),
-          audioRoot: Value<String?>(audioRoot),
-        ),
-      );
+  }) => db.upsertAudiobook(
+    AudiobooksCompanion.insert(
+      bookKey: bookKey,
+      alignmentFormat: 'srt',
+      alignmentPath: p.join(tmp.path, 'align.srt'),
+      audioPathsJson: Value<String?>(
+        audioPaths == null ? null : jsonEncode(audioPaths),
+      ),
+      audioRoot: Value<String?>(audioRoot),
+    ),
+  );
 
   Future<List<SyncDeletionTombstoneRow>> tombstones() =>
       db.getSyncDeletionTombstonesOfType(SyncTombstoneKind.audiobook.dbValue);
@@ -143,7 +142,9 @@ void main() {
     final File copy = File(p.join(persist.path, '01.mp3'))
       ..writeAsStringSync('1');
     await insertAudiobook(
-        bookKey: 'book/copy', audioPaths: <String>[copy.path]);
+      bookKey: 'book/copy',
+      audioPaths: <String>[copy.path],
+    );
 
     final LocalFileDeleteReport report = await repo.deleteAudiobook(
       'book/copy',
@@ -160,8 +161,8 @@ void main() {
 
   test('磁盘清理抛异常时 audiobook 墓碑仍然写下去', () async {
     await insertAudiobook(bookKey: 'book/throws');
-    AudiobookStorage.documentsRootResolver =
-        () async => throw const FileSystemException('boom');
+    AudiobookStorage.documentsRootResolver = () async =>
+        throw const FileSystemException('boom');
 
     await expectLater(
       repo.deleteAudiobook('book/throws', propagateDeletion: true),

@@ -7,12 +7,12 @@ import 'package:fushi/models.dart';
 class ClozeInsideField extends Field {
   /// Initialise this field with the predetermined and hardset values.
   ClozeInsideField._privateConstructor()
-      : super(
-          uniqueKey: key,
-          label: 'Cloze Inside',
-          description: 'Highlighted text in a sentence.',
-          icon: Icons.dehaze_outlined,
-        );
+    : super(
+        uniqueKey: key,
+        label: 'Cloze Inside',
+        description: 'Highlighted text in a sentence.',
+        icon: Icons.dehaze_outlined,
+      );
 
   /// Get the singleton instance of this field.
   static ClozeInsideField get instance => _instance;

@@ -35,35 +35,54 @@ void main() {
 
     setUpAll(() {
       final File f = File(_kControllerPath);
-      expect(f.existsSync(), isTrue,
-          reason: '守卫目标不存在：$_kControllerPath（测试 cwd 应为 fushi/ 包根）');
+      expect(
+        f.existsSync(),
+        isTrue,
+        reason: '守卫目标不存在：$_kControllerPath（测试 cwd 应为 fushi/ 包根）',
+      );
       source = f.readAsStringSync();
     });
 
     test('start 下发排在 player.open( 之前', () {
       final int armIdx = source.indexOf('applyMpvStartPosition(');
       final int openIdx = source.indexOf('player.open(');
-      expect(armIdx, greaterThanOrEqualTo(0),
-          reason: 'load() 必须经 applyMpvStartPosition 把恢复位置作为加载参数下发；'
-              '缺失即回退到「open 后 seek」，Android 上必被 loadfile 覆盖。');
+      expect(
+        armIdx,
+        greaterThanOrEqualTo(0),
+        reason:
+            'load() 必须经 applyMpvStartPosition 把恢复位置作为加载参数下发；'
+            '缺失即回退到「open 后 seek」，Android 上必被 loadfile 覆盖。',
+      );
       expect(openIdx, greaterThanOrEqualTo(0), reason: '找不到 player.open( 调用');
-      expect(armIdx, lessThan(openIdx),
-          reason: 'applyMpvStartPosition 必须在 player.open( **之前**调用。'
-              'mpv 的 `start` 只对随后的 loadfile 生效，写在 open 之后等于没写。');
+      expect(
+        armIdx,
+        lessThan(openIdx),
+        reason:
+            'applyMpvStartPosition 必须在 player.open( **之前**调用。'
+            'mpv 的 `start` 只对随后的 loadfile 生效，写在 open 之后等于没写。',
+      );
     });
 
     test('start 用完必须复位（否则下一集继承上一集的起播秒数）', () {
-      expect(source.contains('clearMpvStartPosition('), isTrue,
-          reason: '`start` 是全局选项，换集/画质切档复用同一 Player；'
-              '不复位会让下一次 loadfile 从上一集断点起播。');
+      expect(
+        source.contains('clearMpvStartPosition('),
+        isTrue,
+        reason:
+            '`start` 是全局选项，换集/画质切档复用同一 Player；'
+            '不复位会让下一次 loadfile 从上一集断点起播。',
+      );
     });
 
     test('near-end 复核翻转时把 mpv 拉回 0', () {
       // startArmed 分支里必须有 seek(Duration.zero)：open 前按断点设了 start，若真实
       // duration 显示已快看完，mpv 已停在断点，不显式拉回就会「从结尾几秒开始」。
-      expect(source.contains('player.seek(Duration.zero)'), isTrue,
-          reason: 'near-end 复核翻转时必须 seek(Duration.zero) 把已按 start 定位的 mpv '
-              '拉回开头，否则 near-end 语义在 start 路径下失效。');
+      expect(
+        source.contains('player.seek(Duration.zero)'),
+        isTrue,
+        reason:
+            'near-end 复核翻转时必须 seek(Duration.zero) 把已按 start 定位的 mpv '
+            '拉回开头，否则 near-end 语义在 start 路径下失效。',
+      );
     });
   });
 }

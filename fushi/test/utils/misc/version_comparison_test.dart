@@ -61,113 +61,121 @@ void main() {
     // 版，回灌在语义上也错）。此前这里断言「同基正式版可被本通道预发布推送=isTrue」，正是
     // 用户报告的混推根因，已随根因修复改为严格隔离。
     test(
-        'BUG-480 prerelease channels do NOT push onto same-base stable install',
-        () {
-      // 正式版 1.0.1 装机 + 选 debug/beta 通道 → 同基预发布**不推送**（混推根因）。
-      expect(
-        isUpdateVersionNewer('0.5.1-debug.412', '0.5.1', UpdateChannel.debug),
-        isFalse,
-        reason: '正式版装机不得被同基 debug 预发布推送（不混渠道）',
-      );
-      expect(
-        isUpdateVersionNewer('0.5.1-beta.412', '0.5.1', UpdateChannel.beta),
-        isFalse,
-        reason: '正式版装机不得被同基 beta 预发布推送（不混渠道）',
-      );
-      // stable 通道恒不接受预发布（既有契约保持）。
-      expect(
-        isUpdateVersionNewer('0.5.1-beta.412', '0.5.1', UpdateChannel.stable),
-        isFalse,
-      );
-    });
-
-    test('BUG-846 谁后用谁: debug channel takes newer-seq debug over beta build',
-        () {
-      // 用户新判据「谁后构建谁赢」：同基跨轨按 release sequence 比先后（seq 三通道同尺）。
-      // debug 通道用户装着 beta.300，远端 debug.412 序号更大=构建更晚 → 应更新（合集门天然
-      // 限制：只有 debug 通道能看到 debug 轨，不会误推给 beta/stable 用户）。
-      expect(
-        isUpdateVersionNewer(
-          '0.5.1-debug.412',
-          '0.5.1-beta.300',
-          UpdateChannel.debug,
-        ),
-        isTrue,
-        reason: 'debug.412 比 beta.300 构建更晚（谁后用谁）',
-      );
-      // 反向：装着 debug.412，远端 beta.300 序号更小=更早 → 不更新。
-      expect(
-        isUpdateVersionNewer(
-          '0.5.1-beta.300',
-          '0.5.1-debug.412',
-          UpdateChannel.debug,
-        ),
-        isFalse,
-        reason: 'beta.300 比 debug.412 更早，不回退',
-      );
-    });
-
-    test('BUG-846 谁后用谁: beta channel takes newer-seq beta over debug build',
-        () {
-      // beta 通道用户装着 debug.300（历史遗留），远端 beta.412 更晚 → 更新到 beta 头。
-      expect(
-        isUpdateVersionNewer(
-          '0.5.1-beta.412',
-          '0.5.1-debug.300',
-          UpdateChannel.beta,
-        ),
-        isTrue,
-        reason: 'beta.412 比 debug.300 构建更晚（谁后用谁）',
-      );
-    });
+      'BUG-480 prerelease channels do NOT push onto same-base stable install',
+      () {
+        // 正式版 1.0.1 装机 + 选 debug/beta 通道 → 同基预发布**不推送**（混推根因）。
+        expect(
+          isUpdateVersionNewer('0.5.1-debug.412', '0.5.1', UpdateChannel.debug),
+          isFalse,
+          reason: '正式版装机不得被同基 debug 预发布推送（不混渠道）',
+        );
+        expect(
+          isUpdateVersionNewer('0.5.1-beta.412', '0.5.1', UpdateChannel.beta),
+          isFalse,
+          reason: '正式版装机不得被同基 beta 预发布推送（不混渠道）',
+        );
+        // stable 通道恒不接受预发布（既有契约保持）。
+        expect(
+          isUpdateVersionNewer('0.5.1-beta.412', '0.5.1', UpdateChannel.stable),
+          isFalse,
+        );
+      },
+    );
 
     test(
-        'BUG-480 same-channel sequence still advances (legit update preserved)',
-        () {
-      // 同通道序号递进=真更新，根因修复后必须仍然成立（别误伤正常 debug→debug 升级）。
-      expect(
-        isUpdateVersionNewer(
-          '0.5.1-debug.413',
-          '0.5.1-debug.412',
-          UpdateChannel.debug,
-        ),
-        isTrue,
-      );
-      expect(
-        isUpdateVersionNewer(
-          '0.5.1-beta.413',
-          '0.5.1-beta.412',
-          UpdateChannel.beta,
-        ),
-        isTrue,
-      );
-    });
+      'BUG-846 谁后用谁: debug channel takes newer-seq debug over beta build',
+      () {
+        // 用户新判据「谁后构建谁赢」：同基跨轨按 release sequence 比先后（seq 三通道同尺）。
+        // debug 通道用户装着 beta.300，远端 debug.412 序号更大=构建更晚 → 应更新（合集门天然
+        // 限制：只有 debug 通道能看到 debug 轨，不会误推给 beta/stable 用户）。
+        expect(
+          isUpdateVersionNewer(
+            '0.5.1-debug.412',
+            '0.5.1-beta.300',
+            UpdateChannel.debug,
+          ),
+          isTrue,
+          reason: 'debug.412 比 beta.300 构建更晚（谁后用谁）',
+        );
+        // 反向：装着 debug.412，远端 beta.300 序号更小=更早 → 不更新。
+        expect(
+          isUpdateVersionNewer(
+            '0.5.1-beta.300',
+            '0.5.1-debug.412',
+            UpdateChannel.debug,
+          ),
+          isFalse,
+          reason: 'beta.300 比 debug.412 更早，不回退',
+        );
+      },
+    );
 
-    test('BUG-480 same prerelease version is NOT newer (reject same version)',
-        () {
-      // 「不检测版本号相同」根因：同基同序号必须判 false（含带 +build 元数据的同号）。
-      expect(
-        isUpdateVersionNewer(
-          '0.5.1-debug.412',
-          '0.5.1-debug.412',
-          UpdateChannel.debug,
-        ),
-        isFalse,
-      );
-      expect(
-        isUpdateVersionNewer(
-          '0.5.1-beta.412',
-          '0.5.1-beta.412',
-          UpdateChannel.beta,
-        ),
-        isFalse,
-      );
-      expect(
-        isUpdateVersionNewer('1.0.1', '1.0.1', UpdateChannel.stable),
-        isFalse,
-        reason: '稳定通道同版本号不得提示更新',
-      );
-    });
+    test(
+      'BUG-846 谁后用谁: beta channel takes newer-seq beta over debug build',
+      () {
+        // beta 通道用户装着 debug.300（历史遗留），远端 beta.412 更晚 → 更新到 beta 头。
+        expect(
+          isUpdateVersionNewer(
+            '0.5.1-beta.412',
+            '0.5.1-debug.300',
+            UpdateChannel.beta,
+          ),
+          isTrue,
+          reason: 'beta.412 比 debug.300 构建更晚（谁后用谁）',
+        );
+      },
+    );
+
+    test(
+      'BUG-480 same-channel sequence still advances (legit update preserved)',
+      () {
+        // 同通道序号递进=真更新，根因修复后必须仍然成立（别误伤正常 debug→debug 升级）。
+        expect(
+          isUpdateVersionNewer(
+            '0.5.1-debug.413',
+            '0.5.1-debug.412',
+            UpdateChannel.debug,
+          ),
+          isTrue,
+        );
+        expect(
+          isUpdateVersionNewer(
+            '0.5.1-beta.413',
+            '0.5.1-beta.412',
+            UpdateChannel.beta,
+          ),
+          isTrue,
+        );
+      },
+    );
+
+    test(
+      'BUG-480 same prerelease version is NOT newer (reject same version)',
+      () {
+        // 「不检测版本号相同」根因：同基同序号必须判 false（含带 +build 元数据的同号）。
+        expect(
+          isUpdateVersionNewer(
+            '0.5.1-debug.412',
+            '0.5.1-debug.412',
+            UpdateChannel.debug,
+          ),
+          isFalse,
+        );
+        expect(
+          isUpdateVersionNewer(
+            '0.5.1-beta.412',
+            '0.5.1-beta.412',
+            UpdateChannel.beta,
+          ),
+          isFalse,
+        );
+        expect(
+          isUpdateVersionNewer('1.0.1', '1.0.1', UpdateChannel.stable),
+          isFalse,
+          reason: '稳定通道同版本号不得提示更新',
+        );
+      },
+    );
 
     test('BUG-480 newer BASE version still updates across channel opt-in', () {
       // 跨通道升级走「基版本递增」这条正路（不靠同基回灌），必须仍然成立。
@@ -339,7 +347,9 @@ void main() {
       // 版本串已带 -debug.7863 → 直接取尾号（不看 buildNumber），且**不改轨道标签**。
       expect(
         currentReleaseSequence(
-            version: '1.2.0-debug.7863', buildNumber: '1000792000'),
+          version: '1.2.0-debug.7863',
+          buildNumber: '1000792000',
+        ),
         7863,
       );
       expect(
@@ -353,63 +363,91 @@ void main() {
       );
     });
 
-    test('missing/unparseable build number → null (conservative, no churn)',
-        () {
-      expect(
-          currentReleaseSequence(version: '1.2.0', buildNumber: null), isNull);
-      expect(
-        currentReleaseSequence(version: '1.2.0', buildNumber: 'not-a-number'),
-        isNull,
-      );
-    });
+    test(
+      'missing/unparseable build number → null (conservative, no churn)',
+      () {
+        expect(
+          currentReleaseSequence(version: '1.2.0', buildNumber: null),
+          isNull,
+        );
+        expect(
+          currentReleaseSequence(version: '1.2.0', buildNumber: 'not-a-number'),
+          isNull,
+        );
+      },
+    );
 
     test(
-        'debug user on plain stable 1.2.0: pushed to debug only if debug is later',
-        () {
-      // 装了正式版 1.2.0（seq 由 versionCode 反解为 7863），debug 通道。
-      final int? localSeq =
-          currentReleaseSequence(version: '1.2.0', buildNumber: '1000786300');
-      expect(localSeq, 7863);
-      // 远端 debug.7920 更晚 → 更新（谁后用谁）。
-      expect(
-        isUpdateVersionNewer('1.2.0-debug.7920', '1.2.0', UpdateChannel.debug,
-            localSeq: localSeq),
-        isTrue,
-        reason: 'debug.7920 比本机正式版 seq 7863 更晚',
-      );
-      // 若本机正式版 seq 更大（正式版是最后构建，如 8000 > 7920）→ 不回退到 debug。
-      expect(
-        isUpdateVersionNewer('1.2.0-debug.7920', '1.2.0', UpdateChannel.debug,
-            localSeq: 8000),
-        isFalse,
-        reason: '正式版 seq 8000 比 debug.7920 更晚，绝不回退（消除来回更新）',
-      );
-    });
+      'debug user on plain stable 1.2.0: pushed to debug only if debug is later',
+      () {
+        // 装了正式版 1.2.0（seq 由 versionCode 反解为 7863），debug 通道。
+        final int? localSeq = currentReleaseSequence(
+          version: '1.2.0',
+          buildNumber: '1000786300',
+        );
+        expect(localSeq, 7863);
+        // 远端 debug.7920 更晚 → 更新（谁后用谁）。
+        expect(
+          isUpdateVersionNewer(
+            '1.2.0-debug.7920',
+            '1.2.0',
+            UpdateChannel.debug,
+            localSeq: localSeq,
+          ),
+          isTrue,
+          reason: 'debug.7920 比本机正式版 seq 7863 更晚',
+        );
+        // 若本机正式版 seq 更大（正式版是最后构建，如 8000 > 7920）→ 不回退到 debug。
+        expect(
+          isUpdateVersionNewer(
+            '1.2.0-debug.7920',
+            '1.2.0',
+            UpdateChannel.debug,
+            localSeq: 8000,
+          ),
+          isFalse,
+          reason: '正式版 seq 8000 比 debug.7920 更晚，绝不回退（消除来回更新）',
+        );
+      },
+    );
 
     test(
-        'debug user on debug.7920: not dragged back to earlier-seq same-base stable',
-        () {
-      // 装了 debug.7920，远端同基正式版 seq 更早（7800）→ 不推（谁后用谁，禁回退）。
-      expect(
-        isUpdateVersionNewer('1.2.0', '1.2.0-debug.7920', UpdateChannel.debug,
-            remoteSeq: 7800),
-        isFalse,
-        reason: '同基正式版 seq 7800 比本机 debug.7920 更早，不回退',
-      );
-      // 正式版更晚（7950 > 7920）→ 推正式版（谁后用谁：正式版是最后构建的）。
-      expect(
-        isUpdateVersionNewer('1.2.0', '1.2.0-debug.7920', UpdateChannel.debug,
-            remoteSeq: 7950),
-        isTrue,
-        reason: '同基正式版 seq 7950 比 debug.7920 更晚，应升到正式版',
-      );
-      // 正式版 seq 未知（302 回退拿不到）→ 保守不推，同基绝不 churn。
-      expect(
-        isUpdateVersionNewer('1.2.0', '1.2.0-debug.7920', UpdateChannel.debug),
-        isFalse,
-        reason: '正式版 seq 未知时同基保守不推',
-      );
-    });
+      'debug user on debug.7920: not dragged back to earlier-seq same-base stable',
+      () {
+        // 装了 debug.7920，远端同基正式版 seq 更早（7800）→ 不推（谁后用谁，禁回退）。
+        expect(
+          isUpdateVersionNewer(
+            '1.2.0',
+            '1.2.0-debug.7920',
+            UpdateChannel.debug,
+            remoteSeq: 7800,
+          ),
+          isFalse,
+          reason: '同基正式版 seq 7800 比本机 debug.7920 更早，不回退',
+        );
+        // 正式版更晚（7950 > 7920）→ 推正式版（谁后用谁：正式版是最后构建的）。
+        expect(
+          isUpdateVersionNewer(
+            '1.2.0',
+            '1.2.0-debug.7920',
+            UpdateChannel.debug,
+            remoteSeq: 7950,
+          ),
+          isTrue,
+          reason: '同基正式版 seq 7950 比 debug.7920 更晚，应升到正式版',
+        );
+        // 正式版 seq 未知（302 回退拿不到）→ 保守不推，同基绝不 churn。
+        expect(
+          isUpdateVersionNewer(
+            '1.2.0',
+            '1.2.0-debug.7920',
+            UpdateChannel.debug,
+          ),
+          isFalse,
+          reason: '正式版 seq 未知时同基保守不推',
+        );
+      },
+    );
   });
 
   // BUG-846：嵌套合集——越激进的通道合集越大（stable⊆beta⊆debug）。测试版/调试版应能
@@ -423,23 +461,29 @@ void main() {
       );
     });
 
-    test('beta channel receives the finished same-base stable when it is later',
-        () {
-      // beta 用户在 1.2.0-beta.5，同基正式版 1.2.0 出了。谁后用谁：仅当正式版 seq 更大
-      // （构建更晚，如 seq 20 > 5）才领到——正式版一般在 beta 之后收尾。
-      expect(
-        isUpdateVersionNewer('1.2.0', '1.2.0-beta.5', UpdateChannel.beta,
-            remoteSeq: 20),
-        isTrue,
-        reason: 'beta 用户应领到同基但构建更晚的成品正式版',
-      );
-      // 正式版 seq 未知（302 无 manifest）→ 同基保守不推（等更高基或 manifest 提供 seq）。
-      expect(
-        isUpdateVersionNewer('1.2.0', '1.2.0-beta.5', UpdateChannel.beta),
-        isFalse,
-        reason: '正式版 seq 未知时同基不 churn',
-      );
-    });
+    test(
+      'beta channel receives the finished same-base stable when it is later',
+      () {
+        // beta 用户在 1.2.0-beta.5，同基正式版 1.2.0 出了。谁后用谁：仅当正式版 seq 更大
+        // （构建更晚，如 seq 20 > 5）才领到——正式版一般在 beta 之后收尾。
+        expect(
+          isUpdateVersionNewer(
+            '1.2.0',
+            '1.2.0-beta.5',
+            UpdateChannel.beta,
+            remoteSeq: 20,
+          ),
+          isTrue,
+          reason: 'beta 用户应领到同基但构建更晚的成品正式版',
+        );
+        // 正式版 seq 未知（302 无 manifest）→ 同基保守不推（等更高基或 manifest 提供 seq）。
+        expect(
+          isUpdateVersionNewer('1.2.0', '1.2.0-beta.5', UpdateChannel.beta),
+          isFalse,
+          reason: '正式版 seq 未知时同基不 churn',
+        );
+      },
+    );
 
     test('stranded beta gets newer stable patch when beta paused', () {
       // beta 停在 1.2.0-beta.5，正式版继续发补丁 1.2.1 → 不再被卡死。
@@ -456,8 +500,12 @@ void main() {
         reason: 'debug 用户应收到更高基正式版',
       );
       expect(
-        isUpdateVersionNewer('1.2.0', '1.2.0-debug.100', UpdateChannel.debug,
-            remoteSeq: 150),
+        isUpdateVersionNewer(
+          '1.2.0',
+          '1.2.0-debug.100',
+          UpdateChannel.debug,
+          remoteSeq: 150,
+        ),
         isTrue,
         reason: 'debug 用户应领到同基但构建更晚(seq 150>100)的正式版',
       );
@@ -476,21 +524,34 @@ void main() {
       // 2026-10-22 实测：从 main 发的正式版 3.0.1（seq 19816）被推给 3.0.0-debug.20320，
       // Android 报「无法降级安装」——versionCode 由 seq 导出，序号更低的包系统拒装。
       expect(
-        isUpdateVersionNewer('3.0.1', '3.0.0-debug.20320', UpdateChannel.debug,
-            remoteSeq: 19816),
+        isUpdateVersionNewer(
+          '3.0.1',
+          '3.0.0-debug.20320',
+          UpdateChannel.debug,
+          remoteSeq: 19816,
+        ),
         isFalse,
         reason: '序号都已知时按序号判，高基不再无条件更新',
       );
       // 正式版用户（本机 3.0.0 seq 19763）照常收到它。
       expect(
-        isUpdateVersionNewer('3.0.1', '3.0.0', UpdateChannel.stable,
-            remoteSeq: 19816, localSeq: 19763),
+        isUpdateVersionNewer(
+          '3.0.1',
+          '3.0.0',
+          UpdateChannel.stable,
+          remoteSeq: 19816,
+          localSeq: 19763,
+        ),
         isTrue,
       );
       // 反过来：更晚构建的低基调试版仍是更新。
       expect(
-        isUpdateVersionNewer('3.0.0-debug.20400', '3.0.1', UpdateChannel.debug,
-            localSeq: 19816),
+        isUpdateVersionNewer(
+          '3.0.0-debug.20400',
+          '3.0.1',
+          UpdateChannel.debug,
+          localSeq: 19816,
+        ),
         isTrue,
       );
     });
@@ -621,16 +682,22 @@ void main() {
       // beta 轨领先（1.3.0-beta.9）时选 beta，而非因 stable 1.2.0 排前而误选旧版。
       final UpdateReleaseSelection? sel =
           await selectUpdateReleaseForCurrentPlatform(
-        <Map<String, dynamic>>[
-          _relWithApks('v1.2.0',
-              prerelease: false, apks: <String>['fushi-1.2.0-arm64-v8a.apk']),
-          _relWithApks('v1.3.0-beta.9',
-              prerelease: true, apks: <String>['fushi-1.3.0-arm64-v8a.apk']),
-        ],
-        currentVersion: '1.2.0-beta.5',
-        channel: UpdateChannel.beta,
-        updater: arm64Updater(),
-      );
+            <Map<String, dynamic>>[
+              _relWithApks(
+                'v1.2.0',
+                prerelease: false,
+                apks: <String>['fushi-1.2.0-arm64-v8a.apk'],
+              ),
+              _relWithApks(
+                'v1.3.0-beta.9',
+                prerelease: true,
+                apks: <String>['fushi-1.3.0-arm64-v8a.apk'],
+              ),
+            ],
+            currentVersion: '1.2.0-beta.5',
+            channel: UpdateChannel.beta,
+            updater: arm64Updater(),
+          );
       expect(sel?.version, '1.3.0-beta.9');
     });
 
@@ -638,137 +705,169 @@ void main() {
       // beta 停在 1.2.0-beta.5（latest beta == 本机），正式版补丁 1.2.1 出 → 选 stable。
       final UpdateReleaseSelection? sel =
           await selectUpdateReleaseForCurrentPlatform(
-        <Map<String, dynamic>>[
-          _relWithApks('v1.2.1',
-              prerelease: false, apks: <String>['fushi-1.2.1-arm64-v8a.apk']),
-          _relWithApks('v1.2.0-beta.5',
-              prerelease: true, apks: <String>['fushi-1.2.0-arm64-v8a.apk']),
-        ],
-        currentVersion: '1.2.0-beta.5',
-        channel: UpdateChannel.beta,
-        updater: arm64Updater(),
-      );
+            <Map<String, dynamic>>[
+              _relWithApks(
+                'v1.2.1',
+                prerelease: false,
+                apks: <String>['fushi-1.2.1-arm64-v8a.apk'],
+              ),
+              _relWithApks(
+                'v1.2.0-beta.5',
+                prerelease: true,
+                apks: <String>['fushi-1.2.0-arm64-v8a.apk'],
+              ),
+            ],
+            currentVersion: '1.2.0-beta.5',
+            channel: UpdateChannel.beta,
+            updater: arm64Updater(),
+          );
       expect(sel?.version, '1.2.1');
     });
 
-    test('debug user can install a stable release asset (non-debug apk name)',
-        () async {
-      // selectAsset 按 release 自身轨道过滤 asset：stable 包无 -debug 后缀，debug 用户
-      // 仍能选到它（否则会因不含 -debug 被误拒、拿不到 stable 更新）。
-      final UpdateReleaseSelection? sel =
-          await selectUpdateReleaseForCurrentPlatform(
-        <Map<String, dynamic>>[
-          _relWithApks('v1.3.0',
-              prerelease: false, apks: <String>['fushi-1.3.0-arm64-v8a.apk']),
-        ],
-        currentVersion: '1.2.0-debug.100',
-        channel: UpdateChannel.debug,
-        updater: arm64Updater(),
-      );
-      expect(sel?.version, '1.3.0');
-      expect(sel?.asset?.name, 'fushi-1.3.0-arm64-v8a.apk');
-    });
+    test(
+      'debug user can install a stable release asset (non-debug apk name)',
+      () async {
+        // selectAsset 按 release 自身轨道过滤 asset：stable 包无 -debug 后缀，debug 用户
+        // 仍能选到它（否则会因不含 -debug 被误拒、拿不到 stable 更新）。
+        final UpdateReleaseSelection? sel =
+            await selectUpdateReleaseForCurrentPlatform(
+              <Map<String, dynamic>>[
+                _relWithApks(
+                  'v1.3.0',
+                  prerelease: false,
+                  apks: <String>['fushi-1.3.0-arm64-v8a.apk'],
+                ),
+              ],
+              currentVersion: '1.2.0-debug.100',
+              channel: UpdateChannel.debug,
+              updater: arm64Updater(),
+            );
+        expect(sel?.version, '1.3.0');
+        expect(sel?.asset?.name, 'fushi-1.3.0-arm64-v8a.apk');
+      },
+    );
 
     test('debug user stays on debug track over same-base stable', () async {
       // 同基场景：debug 轨更前沿构建优先于同基成品 stable，避免塌回 stable 后再也收不到
       // 后续 debug 构建。
       final UpdateReleaseSelection? sel =
           await selectUpdateReleaseForCurrentPlatform(
-        <Map<String, dynamic>>[
-          _relWithApks('v1.2.0',
-              prerelease: false, apks: <String>['fushi-1.2.0-arm64-v8a.apk']),
-          _relWithApks('v1.2.0-debug.200+abc1234',
-              prerelease: true,
-              apks: <String>['fushi-1.2.0-abc1234-debug.apk']),
-        ],
-        currentVersion: '1.2.0-debug.100',
-        channel: UpdateChannel.debug,
-        updater: arm64Updater(),
-      );
+            <Map<String, dynamic>>[
+              _relWithApks(
+                'v1.2.0',
+                prerelease: false,
+                apks: <String>['fushi-1.2.0-arm64-v8a.apk'],
+              ),
+              _relWithApks(
+                'v1.2.0-debug.200+abc1234',
+                prerelease: true,
+                apks: <String>['fushi-1.2.0-abc1234-debug.apk'],
+              ),
+            ],
+            currentVersion: '1.2.0-debug.100',
+            channel: UpdateChannel.debug,
+            updater: arm64Updater(),
+          );
       expect(sel?.version, '1.2.0-debug.200');
     });
 
-    test('same build shipped on stable and debug: debug user gets the debug one',
-        () async {
-      // 2026-10-18 实测：正式版 3.0.0 与 3.0.0-debug.19763 出自同一提交（同序号），
-      // 稳定排序保原序让排在前面的 stable 胜出，debug 用户被换进屏蔽复习的正式版。
-      final List<Map<String, dynamic>> releases = <Map<String, dynamic>>[
-        _relWithApks('v3.0.0',
+    test(
+      'same build shipped on stable and debug: debug user gets the debug one',
+      () async {
+        // 2026-10-18 实测：正式版 3.0.0 与 3.0.0-debug.19763 出自同一提交（同序号），
+        // 稳定排序保原序让排在前面的 stable 胜出，debug 用户被换进屏蔽复习的正式版。
+        final List<Map<String, dynamic>> releases = <Map<String, dynamic>>[
+          _relWithApks(
+            'v3.0.0',
             prerelease: false,
             apks: <String>['fushi-3.0.0-arm64-v8a.apk'],
-            releaseSequence: 19763),
-        _relWithApks('v3.0.0-debug.19763+725fcde',
+            releaseSequence: 19763,
+          ),
+          _relWithApks(
+            'v3.0.0-debug.19763+725fcde',
             prerelease: true,
             apks: <String>['fushi-3.0.0-debug.19763-725fcde-debug.apk'],
-            releaseSequence: 19763),
-      ];
-      for (final List<Map<String, dynamic>> order
-          in <List<Map<String, dynamic>>>[
-        releases,
-        releases.reversed.toList(),
-      ]) {
+            releaseSequence: 19763,
+          ),
+        ];
+        for (final List<Map<String, dynamic>> order
+            in <List<Map<String, dynamic>>>[
+              releases,
+              releases.reversed.toList(),
+            ]) {
+          final UpdateReleaseSelection? sel =
+              await selectUpdateReleaseForCurrentPlatform(
+                order,
+                currentVersion: '2.10.0-debug.19650',
+                channel: UpdateChannel.debug,
+                updater: arm64Updater(),
+              );
+          expect(sel?.version, '3.0.0-debug.19763');
+        }
+        // 正式版通道照旧只拿正式版。
+        final UpdateReleaseSelection? stable =
+            await selectUpdateReleaseForCurrentPlatform(
+              releases.reversed.toList(),
+              currentVersion: '2.10.0',
+              channel: UpdateChannel.stable,
+              updater: arm64Updater(),
+            );
+        expect(stable?.version, '3.0.0');
+      },
+    );
+
+    test(
+      'debug user is not offered a higher-base stable built earlier',
+      () async {
+        // 2026-10-22 实测：3.0.0-debug.20320 被选中正式版 3.0.1（seq 19816），装不上。
         final UpdateReleaseSelection? sel =
             await selectUpdateReleaseForCurrentPlatform(
-          order,
-          currentVersion: '2.10.0-debug.19650',
-          channel: UpdateChannel.debug,
-          updater: arm64Updater(),
-        );
-        expect(sel?.version, '3.0.0-debug.19763');
-      }
-      // 正式版通道照旧只拿正式版。
-      final UpdateReleaseSelection? stable =
-          await selectUpdateReleaseForCurrentPlatform(
-        releases.reversed.toList(),
-        currentVersion: '2.10.0',
-        channel: UpdateChannel.stable,
-        updater: arm64Updater(),
-      );
-      expect(stable?.version, '3.0.0');
-    });
-
-    test('debug user is not offered a higher-base stable built earlier',
-        () async {
-      // 2026-10-22 实测：3.0.0-debug.20320 被选中正式版 3.0.1（seq 19816），装不上。
-      final UpdateReleaseSelection? sel =
-          await selectUpdateReleaseForCurrentPlatform(
-        <Map<String, dynamic>>[
-          _relWithApks('v3.0.1',
-              prerelease: false,
-              apks: <String>['fushi-3.0.1-arm64-v8a.apk'],
-              releaseSequence: 19816),
-          _relWithApks('v3.0.0-debug.20320+abc1234',
-              prerelease: true,
-              apks: <String>['fushi-3.0.0-debug.20320-abc1234-debug.apk'],
-              releaseSequence: 20320),
-        ],
-        currentVersion: '3.0.0-debug.20320',
-        channel: UpdateChannel.debug,
-        updater: arm64Updater(),
-      );
-      expect(sel?.version, isNot('3.0.1'));
-    });
+              <Map<String, dynamic>>[
+                _relWithApks(
+                  'v3.0.1',
+                  prerelease: false,
+                  apks: <String>['fushi-3.0.1-arm64-v8a.apk'],
+                  releaseSequence: 19816,
+                ),
+                _relWithApks(
+                  'v3.0.0-debug.20320+abc1234',
+                  prerelease: true,
+                  apks: <String>['fushi-3.0.0-debug.20320-abc1234-debug.apk'],
+                  releaseSequence: 20320,
+                ),
+              ],
+              currentVersion: '3.0.0-debug.20320',
+              channel: UpdateChannel.debug,
+              updater: arm64Updater(),
+            );
+        expect(sel?.version, isNot('3.0.1'));
+      },
+    );
 
     test('BUG-846 乒乓收敛: debug user on stable 1.2.0 升到更晚的 debug.200', () async {
       // 装了正式版 1.2.0（本机 seq 150 由 currentReleaseSeq 提供），合集含同基 debug.200。
       // 谁后用谁：debug.200 更晚 → 升上去。
       final UpdateReleaseSelection? sel =
           await selectUpdateReleaseForCurrentPlatform(
-        <Map<String, dynamic>>[
-          _relWithApks('v1.2.0',
-              prerelease: false,
-              apks: <String>['fushi-1.2.0-arm64-v8a.apk'],
-              releaseSequence: 150),
-          _relWithApks('v1.2.0-debug.200+abc1234',
-              prerelease: true,
-              apks: <String>['fushi-1.2.0-abc1234-debug.apk'],
-              releaseSequence: 200),
-        ],
-        currentVersion: '1.2.0',
-        currentReleaseSeq: 150,
-        channel: UpdateChannel.debug,
-        updater: arm64Updater(),
-      );
+            <Map<String, dynamic>>[
+              _relWithApks(
+                'v1.2.0',
+                prerelease: false,
+                apks: <String>['fushi-1.2.0-arm64-v8a.apk'],
+                releaseSequence: 150,
+              ),
+              _relWithApks(
+                'v1.2.0-debug.200+abc1234',
+                prerelease: true,
+                apks: <String>['fushi-1.2.0-abc1234-debug.apk'],
+                releaseSequence: 200,
+              ),
+            ],
+            currentVersion: '1.2.0',
+            currentReleaseSeq: 150,
+            channel: UpdateChannel.debug,
+            updater: arm64Updater(),
+          );
       expect(sel?.version, '1.2.0-debug.200');
     });
 
@@ -777,21 +876,25 @@ void main() {
       // 任何东西（正式版更早、debug 即本机）→ 收敛，绝不来回更新。
       final UpdateReleaseSelection? sel =
           await selectUpdateReleaseForCurrentPlatform(
-        <Map<String, dynamic>>[
-          _relWithApks('v1.2.0',
-              prerelease: false,
-              apks: <String>['fushi-1.2.0-arm64-v8a.apk'],
-              releaseSequence: 150),
-          _relWithApks('v1.2.0-debug.200+abc1234',
-              prerelease: true,
-              apks: <String>['fushi-1.2.0-abc1234-debug.apk'],
-              releaseSequence: 200),
-        ],
-        currentVersion: '1.2.0-debug.200',
-        currentReleaseSeq: 200,
-        channel: UpdateChannel.debug,
-        updater: arm64Updater(),
-      );
+            <Map<String, dynamic>>[
+              _relWithApks(
+                'v1.2.0',
+                prerelease: false,
+                apks: <String>['fushi-1.2.0-arm64-v8a.apk'],
+                releaseSequence: 150,
+              ),
+              _relWithApks(
+                'v1.2.0-debug.200+abc1234',
+                prerelease: true,
+                apks: <String>['fushi-1.2.0-abc1234-debug.apk'],
+                releaseSequence: 200,
+              ),
+            ],
+            currentVersion: '1.2.0-debug.200',
+            currentReleaseSeq: 200,
+            channel: UpdateChannel.debug,
+            updater: arm64Updater(),
+          );
       expect(sel, isNull, reason: '已在合集最新（seq 200），不再提示更新');
     });
   });
@@ -801,32 +904,30 @@ Map<String, dynamic> _release({
   required String tag,
   required bool prerelease,
   bool draft = false,
-}) =>
-    <String, dynamic>{
-      'tag_name': tag,
-      'prerelease': prerelease,
-      'draft': draft,
-    };
+}) => <String, dynamic>{
+  'tag_name': tag,
+  'prerelease': prerelease,
+  'draft': draft,
+};
 
 Map<String, dynamic> _relWithApks(
   String tag, {
   required bool prerelease,
   required List<String> apks,
   int? releaseSequence,
-}) =>
-    <String, dynamic>{
-      'tag_name': tag,
-      'prerelease': prerelease,
-      'draft': false,
-      'body': '',
-      'html_url': 'https://github.com/hajisensai/hibiki/releases/tag/$tag',
-      if (releaseSequence != null) 'releaseSequence': releaseSequence,
-      'assets': <Map<String, dynamic>>[
-        for (final String name in apks)
-          <String, dynamic>{
-            'name': name,
-            'browser_download_url':
-                'https://github.com/hajisensai/hibiki/releases/download/$tag/$name',
-          },
-      ],
-    };
+}) => <String, dynamic>{
+  'tag_name': tag,
+  'prerelease': prerelease,
+  'draft': false,
+  'body': '',
+  'html_url': 'https://github.com/hajisensai/hibiki/releases/tag/$tag',
+  if (releaseSequence != null) 'releaseSequence': releaseSequence,
+  'assets': <Map<String, dynamic>>[
+    for (final String name in apks)
+      <String, dynamic>{
+        'name': name,
+        'browser_download_url':
+            'https://github.com/hajisensai/hibiki/releases/download/$tag/$name',
+      },
+  ],
+};

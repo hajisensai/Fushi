@@ -34,19 +34,15 @@ bool _isIntentionallyTracked(String path) {
 void main() {
   test('ios/macos 不跟踪 .gitignore 声明忽略的 Flutter 生成文件', () {
     final root = _repoRoot();
-    final ProcessResult result = Process.runSync(
-      'git',
-      [
-        'ls-files',
-        '-i',
-        '-c',
-        '--exclude-standard',
-        '--',
-        'fushi/ios',
-        'fushi/macos',
-      ],
-      workingDirectory: root.path,
-    );
+    final ProcessResult result = Process.runSync('git', [
+      'ls-files',
+      '-i',
+      '-c',
+      '--exclude-standard',
+      '--',
+      'fushi/ios',
+      'fushi/macos',
+    ], workingDirectory: root.path);
     if (result.exitCode != 0) {
       // 环境无 git（如某些打包环境）时不阻塞其它测试。
       markTestSkipped('git 不可用：${result.stderr}');
@@ -60,7 +56,8 @@ void main() {
     expect(
       offenders,
       isEmpty,
-      reason: '这些文件被 .gitignore 声明忽略却仍被 git 跟踪（会把单机生成内容'
+      reason:
+          '这些文件被 .gitignore 声明忽略却仍被 git 跟踪（会把单机生成内容'
           '如 FLUTTER_ROOT 烧进仓库，弄坏其它机器的 iOS/macOS 构建）。'
           '用 `git rm --cached <file>` 移出跟踪：\n${offenders.join('\n')}',
     );

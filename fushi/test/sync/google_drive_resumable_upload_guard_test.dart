@@ -21,15 +21,24 @@ void main() {
     // "  })".
     final String body = src.substring(at, (at + 2200).clamp(0, src.length));
 
-    expect(body, contains('ResumableUploadOptions'),
-        reason: 'large uploads must be resumable, not single multipart');
+    expect(
+      body,
+      contains('ResumableUploadOptions'),
+      reason: 'large uploads must be resumable, not single multipart',
+    );
     // Both the update (existing file) and create (new file) paths must pass it.
     final int optCount = 'uploadOptions:'.allMatches(body).length;
-    expect(optCount, greaterThanOrEqualTo(2),
-        reason: 'both files.update and files.create must pass uploadOptions');
+    expect(
+      optCount,
+      greaterThanOrEqualTo(2),
+      reason: 'both files.update and files.create must pass uploadOptions',
+    );
     // Chunked: a real chunk size (multiple of 256 KB) so a hiccup loses only a
     // chunk, and the token can refresh between chunks.
-    expect(body, contains('chunkSize:'),
-        reason: 'must set an explicit chunk size for chunked upload');
+    expect(
+      body,
+      contains('chunkSize:'),
+      reason: 'must set an explicit chunk size for chunked upload',
+    );
   });
 }

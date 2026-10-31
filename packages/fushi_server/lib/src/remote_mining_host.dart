@@ -24,20 +24,32 @@ import 'package:fushi_server/src/anki_landing.dart';
 import 'package:fushi_server/src/dictionary_host.dart';
 
 /// 落一张卡：未渲染的载荷 JSON + 制卡上下文 → 结果。
-typedef ServerMineCard = Future<MineOutcome> Function(String rawPayloadJson, AnkiMiningContext context);
+typedef ServerMineCard =
+    Future<MineOutcome> Function(
+      String rawPayloadJson,
+      AnkiMiningContext context,
+    );
 
 /// 沉浸制卡在服务端不可用时回给对端的原因。
-const String kServerImmersionMiningUnsupported = '服务端不支持沉浸制卡（截图 / 动图 / 句子音频需在客户端裁好后用「制卡到服务端」转发）';
+const String kServerImmersionMiningUnsupported =
+    '服务端不支持沉浸制卡（截图 / 动图 / 句子音频需在客户端裁好后用「制卡到服务端」转发）';
 
 /// 把一次 [MineOutcome] 映射成 wire 结果，失败写进服务端日志（与 app 的
 /// `remoteMineResultFromOutcome` 同一语义：error 带原因、success 带部分成功的音频警告与
 /// 实际落卡牌组）。
-RemoteMineResult serverRemoteMineResult(MineOutcome outcome, {String source = 'ServerMining'}) {
+RemoteMineResult serverRemoteMineResult(
+  MineOutcome outcome, {
+  String source = 'ServerMining',
+}) {
   switch (outcome.result) {
     case MineResult.error:
       final String reason = outcome.errorDetail ?? 'Mining failed';
       engineLog.log(source, outcome.error ?? reason, outcome.stackTrace);
-      return RemoteMineResult(result: outcome.result.name, message: reason, detail: outcome.errorDetail);
+      return RemoteMineResult(
+        result: outcome.result.name,
+        message: reason,
+        detail: outcome.errorDetail,
+      );
     case MineResult.success:
       final String? warn = outcome.audioWarning;
       return RemoteMineResult(
@@ -63,26 +75,36 @@ class ServerRemoteMiningService implements FushiRemoteMiningService {
 
   /// 生产装配：落卡走 [landing] 的同步客户端会话；词典外字从 [dictionaries]
   /// （服务端装了词典引擎时）落进 Anki 媒体缓存。
-  factory ServerRemoteMiningService.forLanding(ServerAnkiLanding landing, {ServerDictionaryHost? dictionaries}) =>
-      ServerRemoteMiningService(
-        mineCard: landing.mineCard,
-        isDuplicateExpression: (String expression) => landingIsDuplicate(landing, expression),
-        writeDictionaryMedia: dictionaries != null && dictionaries.available
-            ? dictionaries.writeDictionaryMediaCache
-            : null,
-      );
+  factory ServerRemoteMiningService.forLanding(
+    ServerAnkiLanding landing, {
+    ServerDictionaryHost? dictionaries,
+  }) => ServerRemoteMiningService(
+    mineCard: landing.mineCard,
+    isDuplicateExpression: (String expression) =>
+        landingIsDuplicate(landing, expression),
+    writeDictionaryMedia: dictionaries != null && dictionaries.available
+        ? dictionaries.writeDictionaryMediaCache
+        : null,
+  );
 
   final ServerMineCard _mineCard;
   final Future<bool> Function(String expression) _isDuplicateExpression;
-  final Future<void> Function(String dictionaryMediaJson)? _writeDictionaryMedia;
+  final Future<void> Function(String dictionaryMediaJson)?
+  _writeDictionaryMedia;
 
   @override
-  Future<RemoteMineResult> mineEntry({required Map<String, String> fields, required String sentence}) async {
+  Future<RemoteMineResult> mineEntry({
+    required Map<String, String> fields,
+    required String sentence,
+  }) async {
     // 弹窗把外字登记进 fields.dictionaryMedia 并渲染成占位 <img>；先把字节落缓存，
     // 渲染时才替换得上（与 app 的 BUG-2190 同一步骤）。
     await _writeDictionaryMedia?.call(fields['dictionaryMedia'] ?? '');
     return serverRemoteMineResult(
-      await _mineCard(jsonEncode(fields), AnkiMiningContext(sentence: sentence)),
+      await _mineCard(
+        jsonEncode(fields),
+        AnkiMiningContext(sentence: sentence),
+      ),
       source: 'ServerMining.mineEntry',
     );
   }
@@ -92,18 +114,27 @@ class ServerRemoteMiningService implements FushiRemoteMiningService {
     try {
       return await withMaterializedMiningContext<RemoteMineResult>(
         payload,
-        (String raw, AnkiMiningContext context) async =>
-            serverRemoteMineResult(await _mineCard(raw, context), source: 'ServerMining.mineForwarded'),
+        (String raw, AnkiMiningContext context) async => serverRemoteMineResult(
+          await _mineCard(raw, context),
+          source: 'ServerMining.mineForwarded',
+        ),
       );
     } catch (e, st) {
       engineLog.log('ServerMining.mineForwarded', e, st);
-      return RemoteMineResult(result: MineResult.error.name, message: '服务端制卡失败', detail: '$e');
+      return RemoteMineResult(
+        result: MineResult.error.name,
+        message: '服务端制卡失败',
+        detail: '$e',
+      );
     }
   }
 
   @override
   Future<RemoteMineResult> mineImmersion(ImmersionMinePayload payload) async {
-    engineLog.logDiagnostic('ServerMining.mineImmersion', kServerImmersionMiningUnsupported);
+    engineLog.logDiagnostic(
+      'ServerMining.mineImmersion',
+      kServerImmersionMiningUnsupported,
+    );
     return RemoteMineResult(
       result: MineResult.error.name,
       message: kServerImmersionMiningUnsupported,
@@ -112,7 +143,10 @@ class ServerRemoteMiningService implements FushiRemoteMiningService {
   }
 
   @override
-  Future<bool> isDuplicate({required String expression, required String reading}) async {
+  Future<bool> isDuplicate({
+    required String expression,
+    required String reading,
+  }) async {
     if (expression.isEmpty) return false;
     try {
       return await _isDuplicateExpression(expression);
@@ -125,31 +159,46 @@ class ServerRemoteMiningService implements FushiRemoteMiningService {
   }
 
   @override
-  Future<AnkiOpenWordOutcome> openWordInAnki({required String expression, required String reading}) async =>
-      AnkiOpenWordOutcome.failed;
+  Future<AnkiOpenWordOutcome> openWordInAnki({
+    required String expression,
+    required String reading,
+  }) async => AnkiOpenWordOutcome.failed;
 
   @override
-  Future<AnkiNoteTypeDefinition?> readNoteTypeDefinition(String modelName) async => null;
+  Future<AnkiNoteTypeDefinition?> readNoteTypeDefinition(
+    String modelName,
+  ) async => null;
 
   @override
-  Future<bool> updateNoteTypeStyling(String modelName, String css) async => false;
+  Future<bool> updateNoteTypeStyling(String modelName, String css) async =>
+      false;
 
   @override
-  Future<bool> updateNoteTypeTemplates(String modelName, List<AnkiCardTemplate> templates) async => false;
+  Future<bool> updateNoteTypeTemplates(
+    String modelName,
+    List<AnkiCardTemplate> templates,
+  ) async => false;
 
   @override
   Future<bool> probeMediaMaintenance() async => false;
 
   @override
-  Future<AnkiMediaDedupReport?> runMediaDedup({bool dryRun = true}) async => null;
+  Future<AnkiMediaDedupReport?> runMediaDedup({bool dryRun = true}) async =>
+      null;
 }
 
 /// 用落地会话查重：按服务端设置选中的笔记类型、以表记为首字段（与 app 的
 /// `AnkiSyncClientRepository.isDuplicate` 同口径）。没有 helper / 没选笔记类型 → false。
-Future<bool> landingIsDuplicate(ServerAnkiLanding landing, String expression) async {
+Future<bool> landingIsDuplicate(
+  ServerAnkiLanding landing,
+  String expression,
+) async {
   final AnkiSyncMiner? miner = landing.miner;
   if (miner == null || expression.isEmpty) return false;
   final AnkiNoteType? noteType = miner.selectedNoteType(landing.settings);
   if (noteType == null) return false;
-  return miner.session.isDuplicate(notetype: noteType.name, firstField: expression);
+  return miner.session.isDuplicate(
+    notetype: noteType.name,
+    firstField: expression,
+  );
 }

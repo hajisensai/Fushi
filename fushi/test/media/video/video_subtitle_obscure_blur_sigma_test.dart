@@ -11,8 +11,11 @@ void main() {
   group('VideoSubtitleOverlay.obscureBlurSigma', () {
     test('默认字号 36 时明显强于旧的固定 8px', () {
       final double sigma = VideoSubtitleOverlay.obscureBlurSigma(36);
-      expect(sigma, greaterThan(8),
-          reason: '默认字号下的模糊必须比旧值 8 更强，否则仍读得出（BUG-742）');
+      expect(
+        sigma,
+        greaterThan(8),
+        reason: '默认字号下的模糊必须比旧值 8 更强，否则仍读得出（BUG-742）',
+      );
       // 36×0.45 = 16.2
       expect(sigma, closeTo(16.2, 1e-9));
     });
@@ -38,9 +41,11 @@ void main() {
 
     test('比例恒为 0.45（大字号未被上限截断）', () {
       for (final double fontSize in <double>[36, 48, 60, 100]) {
-        expect(VideoSubtitleOverlay.obscureBlurSigma(fontSize),
-            closeTo(fontSize * 0.45, 1e-9),
-            reason: '$fontSize 的 sigma 应等于 fontSize×0.45');
+        expect(
+          VideoSubtitleOverlay.obscureBlurSigma(fontSize),
+          closeTo(fontSize * 0.45, 1e-9),
+          reason: '$fontSize 的 sigma 应等于 fontSize×0.45',
+        );
       }
     });
   });

@@ -60,35 +60,64 @@ void main() {
     // 函数体用花括号配对取（methodBody 对 C++ 同样适用），不再是「到下一个左对齐 `}`」。
     final String body = methodBody(cpp, 'void GlobalLookupWindow::RenderJson(');
     expect(
-        body.contains(
-            'ExecuteScript(Utf8ToWide(full_script).c_str(), nullptr)'),
-        isFalse,
-        reason: 'BUG-693：不得把渲染脚本盲打进可能已死的 WebView2（nullptr '
-            'completion handler 意味着死面失败被吞、覆盖窗空白到重启）');
-    expect(body, contains('ICoreWebView2ExecuteScriptCompletedHandler'),
-        reason: '必须带 completion handler 检查异步 HRESULT');
-    expect(body, contains('FAILED(error_code)'),
-        reason: '异步 HRESULT FAILED 必须被检查');
-    expect(body, contains('FAILED(sync_hr)'),
-        reason: '同步 HRESULT FAILED 必须被检查');
+      body.contains('ExecuteScript(Utf8ToWide(full_script).c_str(), nullptr)'),
+      isFalse,
+      reason:
+          'BUG-693：不得把渲染脚本盲打进可能已死的 WebView2（nullptr '
+          'completion handler 意味着死面失败被吞、覆盖窗空白到重启）',
+    );
     expect(
-        'RecoverDeadWebView'.allMatches(body).length, greaterThanOrEqualTo(2),
-        reason: '同步与异步失败两条路径都必须走 RecoverDeadWebView 自愈');
-    expect(body, contains('recovering_'),
-        reason: '重建进行中必须缓存脚本而不是执行（recovering_ 门控）');
+      body,
+      contains('ICoreWebView2ExecuteScriptCompletedHandler'),
+      reason: '必须带 completion handler 检查异步 HRESULT',
+    );
+    expect(
+      body,
+      contains('FAILED(error_code)'),
+      reason: '异步 HRESULT FAILED 必须被检查',
+    );
+    expect(
+      body,
+      contains('FAILED(sync_hr)'),
+      reason: '同步 HRESULT FAILED 必须被检查',
+    );
+    expect(
+      'RecoverDeadWebView'.allMatches(body).length,
+      greaterThanOrEqualTo(2),
+      reason: '同步与异步失败两条路径都必须走 RecoverDeadWebView 自愈',
+    );
+    expect(
+      body,
+      contains('recovering_'),
+      reason: '重建进行中必须缓存脚本而不是执行（recovering_ 门控）',
+    );
   });
 
   test('RecoverDeadWebView：缓存 replay、清 ready、防重入、原地重建', () {
-    final String body =
-        methodBody(cpp, 'void GlobalLookupWindow::RecoverDeadWebView(');
-    expect(body, contains('pending_json_ = replay_script'),
-        reason: '发现死面的那次渲染脚本必须缓存等重建后 replay');
-    expect(body, contains('webview_ready_ = false'),
-        reason: '必须立刻打断「dead-but-ready」状态');
-    expect(body, contains('if (recovering_)'),
-        reason: '失败风暴/事件竞态只允许一次重建（防重入守卫）');
-    expect(body, contains('EnsureWebView()'),
-        reason: '必须原地重建 WebView2（同一 hwnd_）');
+    final String body = methodBody(
+      cpp,
+      'void GlobalLookupWindow::RecoverDeadWebView(',
+    );
+    expect(
+      body,
+      contains('pending_json_ = replay_script'),
+      reason: '发现死面的那次渲染脚本必须缓存等重建后 replay',
+    );
+    expect(
+      body,
+      contains('webview_ready_ = false'),
+      reason: '必须立刻打断「dead-but-ready」状态',
+    );
+    expect(
+      body,
+      contains('if (recovering_)'),
+      reason: '失败风暴/事件竞态只允许一次重建（防重入守卫）',
+    );
+    expect(
+      body,
+      contains('EnsureWebView()'),
+      reason: '必须原地重建 WebView2（同一 hwnd_）',
+    );
     for (final String member in <String>[
       'controller_ = nullptr',
       'webview_ = nullptr',
@@ -101,15 +130,22 @@ void main() {
   test('NavigationCompleted 重臂 ready、清 recovering_ 并 flush pending', () {
     final String seg = registrationCall(cpp, 'add_NavigationCompleted(');
     expect(seg, contains('webview_ready_ = true'));
-    expect(seg, contains('recovering_ = false'),
-        reason: '重建完成必须解除 recovering_ 门控，否则后续渲染永远只缓存');
+    expect(
+      seg,
+      contains('recovering_ = false'),
+      reason: '重建完成必须解除 recovering_ 门控，否则后续渲染永远只缓存',
+    );
     expect(seg, contains('pending_json_'), reason: '重建完成必须 replay 缓存的渲染脚本');
   });
 
   test('ProcessFailed 仍注册为纵深防御并走同一自愈路径', () {
-    expect(cpp, contains('add_ProcessFailed'),
-        reason: '事件级检测保留（纵深防御；force-kill 下可能不触发，'
-            '但真实崩溃/无响应场景仍有价值）');
+    expect(
+      cpp,
+      contains('add_ProcessFailed'),
+      reason:
+          '事件级检测保留（纵深防御；force-kill 下可能不触发，'
+          '但真实崩溃/无响应场景仍有价值）',
+    );
     final String seg = registrationCall(cpp, 'add_ProcessFailed(');
     for (final String kind in <String>[
       'COREWEBVIEW2_PROCESS_FAILED_KIND_BROWSER_PROCESS_EXITED',
@@ -118,8 +154,11 @@ void main() {
     ]) {
       expect(seg, contains(kind), reason: '三个基础失败 kind 都要处理：$kind');
     }
-    expect(seg, contains('RecoverDeadWebView'),
-        reason: '事件路径与 ExecuteScript 活性检测共用同一重建入口');
+    expect(
+      seg,
+      contains('RecoverDeadWebView'),
+      reason: '事件路径与 ExecuteScript 活性检测共用同一重建入口',
+    );
   });
 
   test('头文件声明 RecoverDeadWebView 与 recovering_', () {

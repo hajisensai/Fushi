@@ -233,7 +233,12 @@ void main() {
         of: find.text(t.onboarding_pack_download_resume),
         matching: find.byType(FilledButton),
       );
-      expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(resume)).onPressed, isNotNull);
+      expect(
+        tester
+            .widget<FilledButton>(glassUnwrap<FilledButton>(resume))
+            .onPressed,
+        isNotNull,
+      );
     });
   }
 }

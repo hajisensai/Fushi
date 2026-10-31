@@ -57,10 +57,14 @@ Future<int> _firstVisibleCharOffset(
   Future<dynamic> Function(String source) runJs,
 ) async {
   final Object? raw = await runJs(
-      'window.fushiReader ? window.fushiReader.getFirstVisibleCharOffset() : -999;');
+    'window.fushiReader ? window.fushiReader.getFirstVisibleCharOffset() : -999;',
+  );
   final num? n = raw is num ? raw : num.tryParse(raw.toString());
-  expect(n, isNotNull,
-      reason: 'getFirstVisibleCharOffset must return a number');
+  expect(
+    n,
+    isNotNull,
+    reason: 'getFirstVisibleCharOffset must return a number',
+  );
   return n!.toInt();
 }
 
@@ -84,81 +88,109 @@ Future<void> _verifyJumpInMode(
   String mode,
 ) async {
   // Confirm the loaded chapter is the rb/rtc DOM shape.
-  final Object? rbCountRaw =
-      await runJs('document.querySelectorAll("ruby rb").length;');
+  final Object? rbCountRaw = await runJs(
+    'document.querySelectorAll("ruby rb").length;',
+  );
   final int rbCount =
       (rbCountRaw is num ? rbCountRaw : num.tryParse('$rbCountRaw') ?? 0)
           .toInt();
   debugPrint('[favjump-rtc] [$mode] rb element count=$rbCount');
-  expect(rbCount, greaterThan(50),
-      reason: '[$mode] must be on the rb/rtc mono-ruby chapter '
-          '(found $rbCount rb elements)');
+  expect(
+    rbCount,
+    greaterThan(50),
+    reason:
+        '[$mode] must be on the rb/rtc mono-ruby chapter '
+        '(found $rbCount rb elements)',
+  );
 
   // Pick a deep char offset (target char is a text node inside rb). A /10000 or
   // out-of-range misread collapses to ~0 = chapter start.
   final int targetOffset = await _pickDeepCharOffset(runJs);
-  expect(targetOffset, greaterThan(200),
-      reason: '[$mode] need a deep sentence so a misread != target '
-          '(got $targetOffset)');
+  expect(
+    targetOffset,
+    greaterThan(200),
+    reason:
+        '[$mode] need a deep sentence so a misread != target '
+        '(got $targetOffset)',
+  );
 
   // Same-chapter jump to the deep rb/rtc offset.
-  await jump(FavoriteSentence(
-    text: 'x',
-    bookTitle: 'todo1308',
-    createdAt: DateTime.now(),
-    bookKey: bookKey,
-    sectionIndex: _kMonoRubyChapter,
-    normCharOffset: targetOffset,
-    normCharLength: 6,
-  ));
+  await jump(
+    FavoriteSentence(
+      text: 'x',
+      bookTitle: 'todo1308',
+      createdAt: DateTime.now(),
+      bookKey: bookKey,
+      sectionIndex: _kMonoRubyChapter,
+      normCharOffset: targetOffset,
+      normCharLength: 6,
+    ),
+  );
   await _settle(tester);
   final int landedSame = await _firstVisibleCharOffset(runJs);
-  debugPrint('[favjump-rtc] [$mode] same-chapter target=$targetOffset '
-      'landed=$landedSame');
-  expect(landedSame, greaterThan(targetOffset ~/ 2),
-      reason: '[$mode] same-chapter favorite jump on rb/rtc must land near the '
-          'sentence ($targetOffset), not the chapter start (got $landedSame)');
+  debugPrint(
+    '[favjump-rtc] [$mode] same-chapter target=$targetOffset '
+    'landed=$landedSame',
+  );
+  expect(
+    landedSame,
+    greaterThan(targetOffset ~/ 2),
+    reason:
+        '[$mode] same-chapter favorite jump on rb/rtc must land near the '
+        'sentence ($targetOffset), not the chapter start (got $landedSame)',
+  );
 
   // Reset the rb/rtc chapter to the top.
   await runJs('window.fushiReader.restoreProgress(0);');
   await tester.pump(const Duration(milliseconds: 600));
   final int atTop = await _firstVisibleCharOffset(runJs);
-  expect(atTop, lessThan(targetOffset ~/ 2),
-      reason:
-          '[$mode] reset rb/rtc chapter to top before the cross-chapter jump');
+  expect(
+    atTop,
+    lessThan(targetOffset ~/ 2),
+    reason: '[$mode] reset rb/rtc chapter to top before the cross-chapter jump',
+  );
 
   // True cross-chapter transport: go to chapter 0 top, then jump back into the
   // rb/rtc chapter at the deep offset (exercises _navigateToChapterAndWait
   // charOffset transport into rb/rtc DOM).
-  await jump(FavoriteSentence(
-    text: 'x',
-    bookTitle: 'todo1308',
-    createdAt: DateTime.now(),
-    bookKey: bookKey,
-    sectionIndex: 0,
-    normCharOffset: 0,
-    normCharLength: 0,
-  ));
+  await jump(
+    FavoriteSentence(
+      text: 'x',
+      bookTitle: 'todo1308',
+      createdAt: DateTime.now(),
+      bookKey: bookKey,
+      sectionIndex: 0,
+      normCharOffset: 0,
+      normCharLength: 0,
+    ),
+  );
   await _settle(tester);
 
-  await jump(FavoriteSentence(
-    text: 'x',
-    bookTitle: 'todo1308',
-    createdAt: DateTime.now(),
-    bookKey: bookKey,
-    sectionIndex: _kMonoRubyChapter,
-    normCharOffset: targetOffset,
-    normCharLength: 6,
-  ));
+  await jump(
+    FavoriteSentence(
+      text: 'x',
+      bookTitle: 'todo1308',
+      createdAt: DateTime.now(),
+      bookKey: bookKey,
+      sectionIndex: _kMonoRubyChapter,
+      normCharOffset: targetOffset,
+      normCharLength: 6,
+    ),
+  );
   await _settle(tester);
   final int landedCross = await _firstVisibleCharOffset(runJs);
-  debugPrint('[favjump-rtc] [$mode] cross-chapter target=$targetOffset '
-      'landed=$landedCross');
-  expect(landedCross, greaterThan(targetOffset ~/ 2),
-      reason:
-          '[$mode] cross-chapter favorite jump into the rb/rtc chapter must '
-          'land near the sentence (got $landedCross), not bounce back to the '
-          'chapter start');
+  debugPrint(
+    '[favjump-rtc] [$mode] cross-chapter target=$targetOffset '
+    'landed=$landedCross',
+  );
+  expect(
+    landedCross,
+    greaterThan(targetOffset ~/ 2),
+    reason:
+        '[$mode] cross-chapter favorite jump into the rb/rtc chapter must '
+        'land near the sentence (got $landedCross), not bounce back to the '
+        'chapter start',
+  );
 }
 
 void main() {
@@ -172,8 +204,11 @@ void main() {
         label: 'favjump-rtc',
         body: () async {
           await launchFushiTestApp();
-          expect(await waitForHome(tester), isTrue,
-              reason: 'home (nav bar) must render');
+          expect(
+            await waitForHome(tester),
+            isTrue,
+            reason: 'home (nav bar) must render',
+          );
           await tester.pump(const Duration(seconds: 2));
 
           final AppModel appModel = await readyAppModel(tester);
@@ -182,8 +217,10 @@ void main() {
             await tester.pump(const Duration(milliseconds: 250));
           }
 
-          final String bookKey = await seedReaderBook(tester,
-              fileName: 'todo1308_favjump_rtc.epub');
+          final String bookKey = await seedReaderBook(
+            tester,
+            fileName: 'todo1308_favjump_rtc.epub',
+          );
           final FocusDriver driver = FocusDriver(tester);
 
           final List<Finder> navTargets = findPrimaryNavigationTargets();
@@ -198,10 +235,16 @@ void main() {
             await tester.pump(const Duration(milliseconds: 500));
             if (bookEntries.evaluate().isNotEmpty) break;
           }
-          expect(bookEntries, findsWidgets,
-              reason: 'seeded book must appear on the shelf');
-          expect(await driver.focusWidget(bookEntries.first), isTrue,
-              reason: 'book card must be reachable by focus');
+          expect(
+            bookEntries,
+            findsWidgets,
+            reason: 'seeded book must appear on the shelf',
+          );
+          expect(
+            await driver.focusWidget(bookEntries.first),
+            isTrue,
+            reason: 'book card must be reachable by focus',
+          );
           await driver.activate();
           await tester.pump(const Duration(seconds: 3));
 
@@ -212,10 +255,16 @@ void main() {
               ReaderFushiPage.debugEvaluateJavascript;
           final Future<void> Function(FavoriteSentence)? jump =
               ReaderFushiPage.debugJumpToFavorite;
-          expect(runJs, isNotNull,
-              reason: 'reader must expose debugEvaluateJavascript');
-          expect(jump, isNotNull,
-              reason: 'reader must expose debugJumpToFavorite');
+          expect(
+            runJs,
+            isNotNull,
+            reason: 'reader must expose debugEvaluateJavascript',
+          );
+          expect(
+            jump,
+            isNotNull,
+            reason: 'reader must expose debugJumpToFavorite',
+          );
 
           // Phase A: DEFAULT paginated mode (vertical-rl). The user's app default
           // is paginated, so this is the most likely real path.
@@ -228,15 +277,17 @@ void main() {
           await _waitFor(tester, _contentReady, 'paginated content');
 
           // Navigate into the rb/rtc chapter (offset 0 = top).
-          await jump!(FavoriteSentence(
-            text: 'x',
-            bookTitle: 'todo1308',
-            createdAt: DateTime.now(),
-            bookKey: bookKey,
-            sectionIndex: _kMonoRubyChapter,
-            normCharOffset: 0,
-            normCharLength: 0,
-          ));
+          await jump!(
+            FavoriteSentence(
+              text: 'x',
+              bookTitle: 'todo1308',
+              createdAt: DateTime.now(),
+              bookKey: bookKey,
+              sectionIndex: _kMonoRubyChapter,
+              normCharOffset: 0,
+              normCharLength: 0,
+            ),
+          );
           await _settle(tester);
           await _waitFor(tester, _contentReady, 'paginated mono-ruby chapter');
           await _verifyJumpInMode(tester, runJs!, jump, bookKey, 'paginated');
@@ -249,15 +300,17 @@ void main() {
           }
           await _waitFor(tester, _contentReady, 'continuous content');
 
-          await jump(FavoriteSentence(
-            text: 'x',
-            bookTitle: 'todo1308',
-            createdAt: DateTime.now(),
-            bookKey: bookKey,
-            sectionIndex: _kMonoRubyChapter,
-            normCharOffset: 0,
-            normCharLength: 0,
-          ));
+          await jump(
+            FavoriteSentence(
+              text: 'x',
+              bookTitle: 'todo1308',
+              createdAt: DateTime.now(),
+              bookKey: bookKey,
+              sectionIndex: _kMonoRubyChapter,
+              normCharOffset: 0,
+              normCharLength: 0,
+            ),
+          );
           await _settle(tester);
           await _waitFor(tester, _contentReady, 'continuous mono-ruby chapter');
           await _verifyJumpInMode(tester, runJs, jump, bookKey, 'continuous');

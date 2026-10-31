@@ -27,14 +27,16 @@ void main() {
     '  https://leading.space/x  ',
   ];
 
-  test('isImportableDropUrl agrees with isPlayableStreamUrl on all samples',
-      () {
-    for (final String s in samples) {
-      expect(
-        isImportableDropUrl(s),
-        isPlayableStreamUrl(s),
-        reason: 'drop-url 判据与 stream-url 判据漂移，样本："$s"',
-      );
-    }
-  });
+  test(
+    'isImportableDropUrl agrees with isPlayableStreamUrl on all samples',
+    () {
+      for (final String s in samples) {
+        expect(
+          isImportableDropUrl(s),
+          isPlayableStreamUrl(s),
+          reason: 'drop-url 判据与 stream-url 判据漂移，样本："$s"',
+        );
+      }
+    },
+  );
 }

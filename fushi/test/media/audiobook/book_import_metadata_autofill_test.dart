@@ -25,8 +25,9 @@ import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
   required AudioMetadata? meta,
 }) {
   if (meta == null) return (title: currentTitle, author: currentAuthor);
-  final String title =
-      currentTitle.isEmpty && meta.title != null ? meta.title! : currentTitle;
+  final String title = currentTitle.isEmpty && meta.title != null
+      ? meta.title!
+      : currentTitle;
   final String author = currentAuthor.isEmpty && meta.author != null
       ? meta.author!
       : currentAuthor;
@@ -80,13 +81,17 @@ void main() {
     late String source;
 
     setUpAll(() {
-      source = File('lib/src/media/audiobook/book_import_dialog.dart')
-          .readAsStringSync();
+      source = File(
+        'lib/src/media/audiobook/book_import_dialog.dart',
+      ).readAsStringSync();
     });
 
     test('exposes _tryExtractAudioMetadata', () {
-      expect(source, contains('Future<void> _tryExtractAudioMetadata()'),
-          reason: 'the metadata autofill helper must exist.');
+      expect(
+        source,
+        contains('Future<void> _tryExtractAudioMetadata()'),
+        reason: 'the metadata autofill helper must exist.',
+      );
     });
 
     test('title fills via _autoFillTitle; author gated on .isEmpty', () {
@@ -98,32 +103,48 @@ void main() {
       // _autoFillTitle, which never clobbers a user-typed title and also
       // preserves a non-empty cross-source title -- a superset of the old
       // fill-only-if-empty guarantee.
-      expect(body,
-          contains('_autoFillTitle(meta.title!, ImportTitleSource.metadata)'),
-          reason: 'title must fill via _autoFillTitle so user/cross-source '
-              'titles are never clobbered.');
-      expect(body, contains('_authorCtrl.text.isEmpty'),
-          reason: 'author must only be filled when empty.');
+      expect(
+        body,
+        contains('_autoFillTitle(meta.title!, ImportTitleSource.metadata)'),
+        reason:
+            'title must fill via _autoFillTitle so user/cross-source '
+            'titles are never clobbered.',
+      );
+      expect(
+        body,
+        contains('_authorCtrl.text.isEmpty'),
+        reason: 'author must only be filled when empty.',
+      );
       expect(body, contains('_authorCtrl.text = meta.author!'));
     });
 
     test('metadata probe fires from every audio trigger point', () {
       // Count invocations: initState prefill, drop, sidecar, pickAudio = 4
       // call sites plus the method definition = at least 5 occurrences.
-      final int calls =
-          RegExp(r'_tryExtractAudioMetadata\(\)').allMatches(source).length;
-      expect(calls, greaterThanOrEqualTo(5),
-          reason: 'metadata autofill must be wired at pick/drop/sidecar/'
-              'initState triggers (mirroring the cover extraction).');
+      final int calls = RegExp(
+        r'_tryExtractAudioMetadata\(\)',
+      ).allMatches(source).length;
+      expect(
+        calls,
+        greaterThanOrEqualTo(5),
+        reason:
+            'metadata autofill must be wired at pick/drop/sidecar/'
+            'initState triggers (mirroring the cover extraction).',
+      );
     });
 
-    test('uses TtsChannel.extractAudioMetadata bridge (all-platform ffprobe)',
-        () {
-      // 允许 dart format 在 `.extractAudioMetadata` 前折行。
-      expect(source,
+    test(
+      'uses TtsChannel.extractAudioMetadata bridge (all-platform ffprobe)',
+      () {
+        // 允许 dart format 在 `.extractAudioMetadata` 前折行。
+        expect(
+          source,
           matches(RegExp(r'TtsChannel\.instance\s*\.extractAudioMetadata\(')),
-          reason: 'must go through the platform bridge so mobile ffmpeg-kit '
-              'ffprobe path is used too, not a desktop-only call.');
-    });
+          reason:
+              'must go through the platform bridge so mobile ffmpeg-kit '
+              'ffprobe path is used too, not a desktop-only call.',
+        );
+      },
+    );
   });
 }

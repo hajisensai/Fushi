@@ -74,15 +74,26 @@ void main() {
 
       for (final PlatformPlan plan in matrix) {
         for (final TestScenario scenario in plan.scenarios) {
-          expect(scenario.commands, isNotEmpty,
-              reason: '${plan.platform.name}/${scenario.id.name} commands');
-          expect(scenario.assertions, isNotEmpty,
-              reason: '${plan.platform.name}/${scenario.id.name} assertions');
-          expect(scenario.evidence, isNotEmpty,
-              reason: '${plan.platform.name}/${scenario.id.name} evidence');
-          expect(scenario.outputExpectations, isNotEmpty,
-              reason:
-                  '${plan.platform.name}/${scenario.id.name} output matches');
+          expect(
+            scenario.commands,
+            isNotEmpty,
+            reason: '${plan.platform.name}/${scenario.id.name} commands',
+          );
+          expect(
+            scenario.assertions,
+            isNotEmpty,
+            reason: '${plan.platform.name}/${scenario.id.name} assertions',
+          );
+          expect(
+            scenario.evidence,
+            isNotEmpty,
+            reason: '${plan.platform.name}/${scenario.id.name} evidence',
+          );
+          expect(
+            scenario.outputExpectations,
+            isNotEmpty,
+            reason: '${plan.platform.name}/${scenario.id.name} output matches',
+          );
         }
       }
     });
@@ -112,38 +123,41 @@ void main() {
       }
     });
 
-    test('dry-run report writes json and markdown with blocked macos status',
-        () async {
-      final Directory dir =
-          await Directory.systemTemp.createTemp('fushi_comprehensive_');
-      addTearDown(() {
-        if (dir.existsSync()) {
-          dir.deleteSync(recursive: true);
-        }
-      });
+    test(
+      'dry-run report writes json and markdown with blocked macos status',
+      () async {
+        final Directory dir = await Directory.systemTemp.createTemp(
+          'fushi_comprehensive_',
+        );
+        addTearDown(() {
+          if (dir.existsSync()) {
+            dir.deleteSync(recursive: true);
+          }
+        });
 
-      final ComprehensiveReport report = buildDryRunReport(
-        matrix: buildComprehensiveMatrix(),
-        selectedPlatforms: const <TestPlatformId>{
-          TestPlatformId.android,
-          TestPlatformId.windows,
-          TestPlatformId.macos,
-        },
-        selectedScenarios: ScenarioId.values.toSet(),
-        hostPlatform: HostPlatformId.windows,
-      );
+        final ComprehensiveReport report = buildDryRunReport(
+          matrix: buildComprehensiveMatrix(),
+          selectedPlatforms: const <TestPlatformId>{
+            TestPlatformId.android,
+            TestPlatformId.windows,
+            TestPlatformId.macos,
+          },
+          selectedScenarios: ScenarioId.values.toSet(),
+          hostPlatform: HostPlatformId.windows,
+        );
 
-      writeComprehensiveReport(report, dir.path);
+        writeComprehensiveReport(report, dir.path);
 
-      final File json = File('${dir.path}/report.json');
-      final File markdown = File('${dir.path}/report.md');
-      expect(json.existsSync(), isTrue);
-      expect(markdown.existsSync(), isTrue);
-      expect(json.readAsStringSync(), contains('"platform":"macos"'));
-      expect(json.readAsStringSync(), contains('"status":"blocked"'));
-      expect(markdown.readAsStringSync(), contains('macOS'));
-      expect(markdown.readAsStringSync(), contains('blocked'));
-    });
+        final File json = File('${dir.path}/report.json');
+        final File markdown = File('${dir.path}/report.md');
+        expect(json.existsSync(), isTrue);
+        expect(markdown.existsSync(), isTrue);
+        expect(json.readAsStringSync(), contains('"platform":"macos"'));
+        expect(json.readAsStringSync(), contains('"status":"blocked"'));
+        expect(markdown.readAsStringSync(), contains('macOS'));
+        expect(markdown.readAsStringSync(), contains('blocked'));
+      },
+    );
 
     test('desktop drive command adds a concrete target device', () {
       final CommandInvocation invocation = buildCommandInvocation(
@@ -176,64 +190,71 @@ void main() {
       );
     });
 
-    test('execution report records pass fail statuses and log evidence',
-        () async {
-      final Directory dir =
-          await Directory.systemTemp.createTemp('fushi_comprehensive_exec_');
-      addTearDown(() {
-        if (dir.existsSync()) {
-          dir.deleteSync(recursive: true);
-        }
-      });
+    test(
+      'execution report records pass fail statuses and log evidence',
+      () async {
+        final Directory dir = await Directory.systemTemp.createTemp(
+          'fushi_comprehensive_exec_',
+        );
+        addTearDown(() {
+          if (dir.existsSync()) {
+            dir.deleteSync(recursive: true);
+          }
+        });
 
-      final ComprehensiveReport report = await buildExecutionReport(
-        matrix: buildComprehensiveMatrix(),
-        selectedPlatforms: const <TestPlatformId>{TestPlatformId.windows},
-        selectedScenarios: const <ScenarioId>{
-          ScenarioId.syncP2pRoundtrip,
-          ScenarioId.readerPagination,
-        },
-        hostPlatform: HostPlatformId.windows,
-        outputDir: dir.path,
-        commandRunner: (CommandRequest request) async {
-          final bool shouldPass =
-              request.scenario == ScenarioId.syncP2pRoundtrip;
-          return CommandResult(
-            exitCode: shouldPass ? 0 : 1,
-            stdout: shouldPass
-                ? '+1: All tests passed! stdout for ${request.scenario.name}'
-                : 'stdout for ${request.scenario.name}',
-            stderr: shouldPass ? '' : 'failure for ${request.scenario.name}',
-            duration: const Duration(milliseconds: 7),
-          );
-        },
-      );
+        final ComprehensiveReport report = await buildExecutionReport(
+          matrix: buildComprehensiveMatrix(),
+          selectedPlatforms: const <TestPlatformId>{TestPlatformId.windows},
+          selectedScenarios: const <ScenarioId>{
+            ScenarioId.syncP2pRoundtrip,
+            ScenarioId.readerPagination,
+          },
+          hostPlatform: HostPlatformId.windows,
+          outputDir: dir.path,
+          commandRunner: (CommandRequest request) async {
+            final bool shouldPass =
+                request.scenario == ScenarioId.syncP2pRoundtrip;
+            return CommandResult(
+              exitCode: shouldPass ? 0 : 1,
+              stdout: shouldPass
+                  ? '+1: All tests passed! stdout for ${request.scenario.name}'
+                  : 'stdout for ${request.scenario.name}',
+              stderr: shouldPass ? '' : 'failure for ${request.scenario.name}',
+              duration: const Duration(milliseconds: 7),
+            );
+          },
+        );
 
-      final ScenarioReport passed = report.entries.singleWhere(
-        (ScenarioReport entry) => entry.scenario == ScenarioId.syncP2pRoundtrip,
-      );
-      final ScenarioReport failed = report.entries.singleWhere(
-        (ScenarioReport entry) => entry.scenario == ScenarioId.readerPagination,
-      );
+        final ScenarioReport passed = report.entries.singleWhere(
+          (ScenarioReport entry) =>
+              entry.scenario == ScenarioId.syncP2pRoundtrip,
+        );
+        final ScenarioReport failed = report.entries.singleWhere(
+          (ScenarioReport entry) =>
+              entry.scenario == ScenarioId.readerPagination,
+        );
 
-      expect(passed.status, ScenarioStatus.passed);
-      expect(failed.status, ScenarioStatus.failed);
-      expect(failed.exitCode, 1);
-      expect(
-        failed.evidence,
-        contains(endsWith('windows_readerPagination_stderr.log')),
-      );
-      expect(
-        File('${dir.path}/windows_readerPagination_stderr.log')
-            .readAsStringSync(),
-        contains('failure for readerPagination'),
-      );
-      expect(report.hasFailures, isTrue);
-    });
+        expect(passed.status, ScenarioStatus.passed);
+        expect(failed.status, ScenarioStatus.failed);
+        expect(failed.exitCode, 1);
+        expect(
+          failed.evidence,
+          contains(endsWith('windows_readerPagination_stderr.log')),
+        );
+        expect(
+          File(
+            '${dir.path}/windows_readerPagination_stderr.log',
+          ).readAsStringSync(),
+          contains('failure for readerPagination'),
+        );
+        expect(report.hasFailures, isTrue);
+      },
+    );
 
     test('execution report keeps child output quiet by default', () async {
-      final Directory dir = await Directory.systemTemp
-          .createTemp('fushi_comprehensive_quiet_exec_');
+      final Directory dir = await Directory.systemTemp.createTemp(
+        'fushi_comprehensive_quiet_exec_',
+      );
       addTearDown(() {
         if (dir.existsSync()) {
           dir.deleteSync(recursive: true);
@@ -262,8 +283,9 @@ void main() {
     });
 
     test('execution report can opt into verbose child output', () async {
-      final Directory dir = await Directory.systemTemp
-          .createTemp('fushi_comprehensive_verbose_exec_');
+      final Directory dir = await Directory.systemTemp.createTemp(
+        'fushi_comprehensive_verbose_exec_',
+      );
       addTearDown(() {
         if (dir.existsSync()) {
           dir.deleteSync(recursive: true);
@@ -292,93 +314,99 @@ void main() {
       expect(streamOutput, isTrue);
     });
 
-    test('execution fails when a zero-exit command lacks required output',
-        () async {
-      final Directory dir = await Directory.systemTemp
-          .createTemp('fushi_comprehensive_missing_output_');
-      addTearDown(() {
-        if (dir.existsSync()) {
-          dir.deleteSync(recursive: true);
-        }
-      });
+    test(
+      'execution fails when a zero-exit command lacks required output',
+      () async {
+        final Directory dir = await Directory.systemTemp.createTemp(
+          'fushi_comprehensive_missing_output_',
+        );
+        addTearDown(() {
+          if (dir.existsSync()) {
+            dir.deleteSync(recursive: true);
+          }
+        });
 
-      final ComprehensiveReport report = await buildExecutionReport(
-        matrix: buildComprehensiveMatrix(),
-        selectedPlatforms: const <TestPlatformId>{TestPlatformId.windows},
-        selectedScenarios: const <ScenarioId>{ScenarioId.appSmoke},
-        hostPlatform: HostPlatformId.windows,
-        outputDir: dir.path,
-        commandRunner: (_) async {
-          return const CommandResult(
-            exitCode: 0,
-            stdout: 'process exited without a test verdict',
-            stderr: '',
-            duration: Duration(milliseconds: 3),
-          );
-        },
-      );
+        final ComprehensiveReport report = await buildExecutionReport(
+          matrix: buildComprehensiveMatrix(),
+          selectedPlatforms: const <TestPlatformId>{TestPlatformId.windows},
+          selectedScenarios: const <ScenarioId>{ScenarioId.appSmoke},
+          hostPlatform: HostPlatformId.windows,
+          outputDir: dir.path,
+          commandRunner: (_) async {
+            return const CommandResult(
+              exitCode: 0,
+              stdout: 'process exited without a test verdict',
+              stderr: '',
+              duration: Duration(milliseconds: 3),
+            );
+          },
+        );
 
-      final ScenarioReport entry = report.entries.single;
-      expect(entry.status, ScenarioStatus.failed);
-      expect(entry.failureReason, contains('Missing required output'));
-      expect(entry.failureReason, contains('All tests passed'));
-    });
+        final ScenarioReport entry = report.entries.single;
+        expect(entry.status, ScenarioStatus.failed);
+        expect(entry.failureReason, contains('Missing required output'));
+        expect(entry.failureReason, contains('All tests passed'));
+      },
+    );
 
     test('an empty report is a failure, not a pass (BUG-1157)', () {
-      const ComprehensiveReport report =
-          ComprehensiveReport(entries: <ScenarioReport>[]);
+      const ComprehensiveReport report = ComprehensiveReport(
+        entries: <ScenarioReport>[],
+      );
 
       expect(report.entries, isEmpty);
       expect(report.hasFailures, isTrue);
     });
 
-    test('console failure summary only includes failed and blocked scenarios',
-        () {
-      const ComprehensiveReport report = ComprehensiveReport(
-        entries: <ScenarioReport>[
-          ScenarioReport(
-            platform: TestPlatformId.windows,
-            scenario: ScenarioId.syncP2pRoundtrip,
-            status: ScenarioStatus.passed,
-            commands: <String>['dart test passing.dart'],
-            assertions: <String>['passing assertion'],
-            evidence: <String>['passed.log'],
-          ),
-          ScenarioReport(
-            platform: TestPlatformId.windows,
-            scenario: ScenarioId.readerPagination,
-            status: ScenarioStatus.failed,
-            commands: <String>['flutter test failing.dart'],
-            assertions: <String>['failing assertion'],
-            evidence: <String>[
-              'windows_readerPagination_stdout.log',
-              'windows_readerPagination_stderr.log',
-            ],
-            failureReason: 'Command exited with 1',
-            exitCode: 1,
-          ),
-          ScenarioReport(
-            platform: TestPlatformId.macos,
-            scenario: ScenarioId.appSmoke,
-            status: ScenarioStatus.blocked,
-            commands: <String>['flutter drive app_smoke.dart'],
-            assertions: <String>['smoke assertion'],
-            evidence: <String>['app_smoke.md'],
-            blockedReason: 'macOS runner required',
-          ),
-        ],
-      );
+    test(
+      'console failure summary only includes failed and blocked scenarios',
+      () {
+        const ComprehensiveReport report = ComprehensiveReport(
+          entries: <ScenarioReport>[
+            ScenarioReport(
+              platform: TestPlatformId.windows,
+              scenario: ScenarioId.syncP2pRoundtrip,
+              status: ScenarioStatus.passed,
+              commands: <String>['dart test passing.dart'],
+              assertions: <String>['passing assertion'],
+              evidence: <String>['passed.log'],
+            ),
+            ScenarioReport(
+              platform: TestPlatformId.windows,
+              scenario: ScenarioId.readerPagination,
+              status: ScenarioStatus.failed,
+              commands: <String>['flutter test failing.dart'],
+              assertions: <String>['failing assertion'],
+              evidence: <String>[
+                'windows_readerPagination_stdout.log',
+                'windows_readerPagination_stderr.log',
+              ],
+              failureReason: 'Command exited with 1',
+              exitCode: 1,
+            ),
+            ScenarioReport(
+              platform: TestPlatformId.macos,
+              scenario: ScenarioId.appSmoke,
+              status: ScenarioStatus.blocked,
+              commands: <String>['flutter drive app_smoke.dart'],
+              assertions: <String>['smoke assertion'],
+              evidence: <String>['app_smoke.md'],
+              blockedReason: 'macOS runner required',
+            ),
+          ],
+        );
 
-      final String summary = renderComprehensiveFailureSummary(report);
+        final String summary = renderComprehensiveFailureSummary(report);
 
-      expect(summary, contains('windows/readerPagination'));
-      expect(summary, contains('Command exited with 1'));
-      expect(summary, contains('windows_readerPagination_stderr.log'));
-      expect(summary, contains('macos/appSmoke'));
-      expect(summary, contains('macOS runner required'));
-      expect(summary, isNot(contains('syncP2pRoundtrip')));
-      expect(summary, isNot(contains('passed.log')));
-    });
+        expect(summary, contains('windows/readerPagination'));
+        expect(summary, contains('Command exited with 1'));
+        expect(summary, contains('windows_readerPagination_stderr.log'));
+        expect(summary, contains('macos/appSmoke'));
+        expect(summary, contains('macOS runner required'));
+        expect(summary, isNot(contains('syncP2pRoundtrip')));
+        expect(summary, isNot(contains('passed.log')));
+      },
+    );
 
     test('app smoke is the shared android windows macos runtime scenario', () {
       for (final PlatformPlan plan in buildComprehensiveMatrix()) {
@@ -400,44 +428,52 @@ void main() {
     });
 
     test(
-        'github workflow runs comprehensive automation on android windows macos',
-        () {
-      final String workflow = File(
-        '../.github/workflows/build-multiplatform.yml',
-      ).readAsStringSync();
+      'github workflow runs comprehensive automation on android windows macos',
+      () {
+        final String workflow = File(
+          '../.github/workflows/build-multiplatform.yml',
+        ).readAsStringSync();
 
-      expect(
-        workflow,
-        contains('ci/comprehensive-test.sh --platform=android --only=appSmoke'),
-      );
-      expect(workflow,
-          contains('.\\ci\\comprehensive-test.ps1 -Platform windows'));
-      expect(workflow, contains('-Only appSmoke'));
-      expect(
-        workflow,
-        contains('ci/comprehensive-test.sh --platform=macos --only=appSmoke'),
-      );
-    });
+        expect(
+          workflow,
+          contains(
+            'ci/comprehensive-test.sh --platform=android --only=appSmoke',
+          ),
+        );
+        expect(
+          workflow,
+          contains('.\\ci\\comprehensive-test.ps1 -Platform windows'),
+        );
+        expect(workflow, contains('-Only appSmoke'));
+        expect(
+          workflow,
+          contains('ci/comprehensive-test.sh --platform=macos --only=appSmoke'),
+        );
+      },
+    );
 
-    test('fixture generator writes required comprehensive test files',
-        () async {
-      final Directory dir =
-          await Directory.systemTemp.createTemp('fushi_comprehensive_fx_');
-      addTearDown(() {
-        if (dir.existsSync()) {
-          dir.deleteSync(recursive: true);
-        }
-      });
+    test(
+      'fixture generator writes required comprehensive test files',
+      () async {
+        final Directory dir = await Directory.systemTemp.createTemp(
+          'fushi_comprehensive_fx_',
+        );
+        addTearDown(() {
+          if (dir.existsSync()) {
+            dir.deleteSync(recursive: true);
+          }
+        });
 
-      final FixtureGenerationResult result =
-          await generateComprehensiveFixtures(outputDir: dir.path);
+        final FixtureGenerationResult result =
+            await generateComprehensiveFixtures(outputDir: dir.path);
 
-      expect(result.markerEpub.existsSync(), isTrue);
-      expect(result.dictionaryZip.existsSync(), isTrue);
-      expect(result.fontFile.existsSync(), isTrue);
-      expect(result.markerEpub.lengthSync(), greaterThan(1024));
-      expect(result.dictionaryZip.readAsBytesSync(), isNotEmpty);
-      expect(result.fontFile.lengthSync(), greaterThan(64));
-    });
+        expect(result.markerEpub.existsSync(), isTrue);
+        expect(result.dictionaryZip.existsSync(), isTrue);
+        expect(result.fontFile.existsSync(), isTrue);
+        expect(result.markerEpub.lengthSync(), greaterThan(1024));
+        expect(result.dictionaryZip.readAsBytesSync(), isNotEmpty);
+        expect(result.fontFile.lengthSync(), greaterThan(64));
+      },
+    );
   });
 }

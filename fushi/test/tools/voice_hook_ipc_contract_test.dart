@@ -48,8 +48,9 @@ void main() {
     // 红在这一行；二是字面量只在「有人主动改这个数字」时才响，而那恰恰是改的人
     // 已经知道的时刻，真正危险的「动了 SharedHeader 布局却不升版」它一次也拦不住
     // （那条由 native 侧 adapter_report_guard_test.py 的结构体比对守）。
-    final RegExp versionRe =
-        RegExp(r'constexpr uint32_t kSharedVersion = (\d+);');
+    final RegExp versionRe = RegExp(
+      r'constexpr uint32_t kSharedVersion = (\d+);',
+    );
     final Match? versionMatch = versionRe.firstMatch(source);
     expect(versionMatch, isNotNull, reason: '契约头里扫不到 kSharedVersion —— 判红');
     final String version = versionMatch!.group(1)!;
@@ -59,7 +60,8 @@ void main() {
     expect(
       RegExp('^//\\s*v$version\\b', multiLine: true).hasMatch(source),
       isTrue,
-      reason: 'kSharedVersion 已经是 v$version，契约头顶部却没有 v$version 的沿革说明：'
+      reason:
+          'kSharedVersion 已经是 v$version，契约头顶部却没有 v$version 的沿革说明：'
           '混装排障时没人答得出这版改了什么',
     );
 
@@ -76,7 +78,8 @@ void main() {
       expect(
         pin!.group(1),
         version,
-        reason: '$relative 钉的是 v${pin.group(1)}，契约头已经是 v$version：'
+        reason:
+            '$relative 钉的是 v${pin.group(1)}，契约头已经是 v$version：'
             '升版漏改了它，native 套件会拿旧号给新布局放行',
       );
     }

@@ -10,7 +10,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:args/args.dart';
-import 'package:fushi_engine/asr/asr_host_job_runner.dart' show asrAudioProfileForJob;
+import 'package:fushi_engine/asr/asr_host_job_runner.dart'
+    show asrAudioProfileForJob;
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_host_job_runner.dart'
     show VideoSubtitleJobParams, kVideoSubtitleJobKind;
 import 'package:path/path.dart' as p;
@@ -21,7 +22,13 @@ const String kHostProxy = '/api/admin/host';
 
 /// 一个经代理的单请求动作。
 class CtlHostRequest {
-  const CtlHostRequest(this.method, this.path, {this.body, this.query, this.listKey});
+  const CtlHostRequest(
+    this.method,
+    this.path, {
+    this.body,
+    this.query,
+    this.listKey,
+  });
 
   final String method;
 
@@ -54,34 +61,90 @@ const Set<String> kCtlHostActions = <String>{
 /// 往 `ctl` 参数表里补本文件用到的选项。
 void addCtlHostOptions(ArgParser parser) {
   parser
-    ..addOption('set', help: 'progress / position / delay / playback：写入的 JSON（不给则读取）')
+    ..addOption(
+      'set',
+      help: 'progress / position / delay / playback：写入的 JSON（不给则读取）',
+    )
     ..addOption('query', abbr: 'q', help: 'scrape search：搜索词')
     ..addOption('collection', help: 'scrape：按合集定位作品（合集名）')
     ..addOption('collection-type', help: 'scrape：合集类型（配合 --collection）')
-    ..addOption('provider', help: 'scrape identify / downloads add：anidb | mal | tmdb')
-    ..addOption('external-id', help: 'scrape identify / downloads add：该来源的作品 id')
-    ..addOption('which', help: 'videos subtitle clear：primary | secondary | all', defaultsTo: 'primary')
-    ..addFlag('all-sidecars', negatable: false, help: 'videos subtitle clear：视频旁全部 sidecar 字幕都备份挪走')
-    ..addOption('lang', help: 'videos subtitle backfill：要的字幕语言（如 ja），缺省按 host 设置')
-    ..addOption('episode-group', help: 'scrape identify / episode-group：TMDB 分集排序 id')
+    ..addOption(
+      'provider',
+      help: 'scrape identify / downloads add：anidb | mal | tmdb',
+    )
+    ..addOption(
+      'external-id',
+      help: 'scrape identify / downloads add：该来源的作品 id',
+    )
+    ..addOption(
+      'which',
+      help: 'videos subtitle clear：primary | secondary | all',
+      defaultsTo: 'primary',
+    )
+    ..addFlag(
+      'all-sidecars',
+      negatable: false,
+      help: 'videos subtitle clear：视频旁全部 sidecar 字幕都备份挪走',
+    )
+    ..addOption(
+      'lang',
+      help: 'videos subtitle backfill：要的字幕语言（如 ja），缺省按 host 设置',
+    )
+    ..addOption(
+      'episode-group',
+      help: 'scrape identify / episode-group：TMDB 分集排序 id',
+    )
     ..addOption('feature', help: 'assistant start：功能名')
     ..addOption('locale', help: 'assistant start：界面语言', defaultsTo: 'zh-CN')
     ..addOption('after', help: 'assistant show：只要比这个 revision 新的视图')
-    ..addFlag('wait', negatable: false, help: 'assistant show：长轮询等新视图；jobs submit：等任务结束')
-    ..addOption('language', abbr: 'l', help: 'jobs submit asr：语言 tag', defaultsTo: 'ja')
+    ..addFlag(
+      'wait',
+      negatable: false,
+      help: 'assistant show：长轮询等新视图；jobs submit：等任务结束',
+    )
+    ..addOption(
+      'language',
+      abbr: 'l',
+      help: 'jobs submit asr：语言 tag',
+      defaultsTo: 'ja',
+    )
     ..addOption(
       'profile',
-      help: 'jobs submit asr：cleanSpeech | mixedAudio（缺省按文件扩展名，视频 → mixedAudio）',
+      help:
+          'jobs submit asr：cleanSpeech | mixedAudio（缺省按文件扩展名，视频 → mixedAudio）',
       allowed: <String>['cleanSpeech', 'mixedAudio'],
     )
     ..addOption('out', abbr: 'o', help: 'jobs submit / result：产物写到这里')
-    ..addOption('video-id', help: 'jobs submit video_subtitle：host 库里的视频 id（不上传文件）')
+    ..addOption(
+      'video-id',
+      help: 'jobs submit video_subtitle：host 库里的视频 id（不上传文件）',
+    )
     ..addOption('collection-id', help: 'jobs submit video_subtitle：整季（合集 id）')
-    ..addFlag('ai', defaultsTo: true, help: 'jobs submit video_subtitle：AI 校对（--no-ai 关）')
-    ..addOption('segmenter', help: 'jobs submit video_subtitle：auto | moss | window', defaultsTo: 'auto')
-    ..addOption('moss-backend', help: 'jobs submit video_subtitle：auto | cuda | vulkan | cpu', defaultsTo: 'auto')
-    ..addOption('suffix', help: 'jobs submit video_subtitle：输出 <视频名>.<后缀>.srt', defaultsTo: 'ja')
-    ..addFlag('regen-glossary', negatable: false, help: 'jobs submit video_subtitle：重新生成专名表');
+    ..addFlag(
+      'ai',
+      defaultsTo: true,
+      help: 'jobs submit video_subtitle：AI 校对（--no-ai 关）',
+    )
+    ..addOption(
+      'segmenter',
+      help: 'jobs submit video_subtitle：auto | moss | window',
+      defaultsTo: 'auto',
+    )
+    ..addOption(
+      'moss-backend',
+      help: 'jobs submit video_subtitle：auto | cuda | vulkan | cpu',
+      defaultsTo: 'auto',
+    )
+    ..addOption(
+      'suffix',
+      help: 'jobs submit video_subtitle：输出 <视频名>.<后缀>.srt',
+      defaultsTo: 'ja',
+    )
+    ..addFlag(
+      'regen-glossary',
+      negatable: false,
+      help: 'jobs submit video_subtitle：重新生成专名表',
+    );
 }
 
 /// 用法说明片段。
@@ -107,10 +170,16 @@ const String kCtlHostUsage = '''
   host <GET|POST|PUT|DELETE> <互联路径，如 library/books> ['<json>']   直调任意互联接口''';
 
 /// 把一个代理动作翻成请求；用法不对写 [err] 返回 null。
-CtlHostRequest? parseCtlHostAction(List<String> rest, ArgResults command, StringSink err) {
+CtlHostRequest? parseCtlHostAction(
+  List<String> rest,
+  ArgResults command,
+  StringSink err,
+) {
   final String action = rest.first;
   final String sub = rest.length > 1 ? rest[1] : '';
-  final List<String> args = rest.length > 2 ? rest.sublist(2) : const <String>[];
+  final List<String> args = rest.length > 2
+      ? rest.sublist(2)
+      : const <String>[];
   String? arg(int i) => i < args.length ? args[i] : null;
   String seg(String v) => Uri.encodeComponent(v);
 
@@ -124,14 +193,20 @@ CtlHostRequest? parseCtlHostAction(List<String> rest, ArgResults command, String
     final String? set = command['set'] as String?;
     if (set == null) return CtlHostRequest('GET', '$kHostProxy/$path');
     final Object? body = _jsonObject(set, err);
-    return body == null ? null : CtlHostRequest('PUT', '$kHostProxy/$path', body: body);
+    return body == null
+        ? null
+        : CtlHostRequest('PUT', '$kHostProxy/$path', body: body);
   }
 
   switch (action) {
     case 'books':
       switch (sub) {
         case '' || 'ls':
-          return const CtlHostRequest('GET', '$kHostProxy/library/books', listKey: '');
+          return const CtlHostRequest(
+            'GET',
+            '$kHostProxy/library/books',
+            listKey: '',
+          );
         case 'progress' when arg(0) != null:
           return readOrWrite('library/books/${seg(arg(0)!)}/progress');
       }
@@ -140,15 +215,24 @@ CtlHostRequest? parseCtlHostAction(List<String> rest, ArgResults command, String
     case 'videos':
       switch (sub) {
         case '' || 'ls':
-          return const CtlHostRequest('GET', '$kHostProxy/library/videos', listKey: '');
+          return const CtlHostRequest(
+            'GET',
+            '$kHostProxy/library/videos',
+            listKey: '',
+          );
         case 'rm' when arg(0) != null:
-          return CtlHostRequest('DELETE', '$kHostProxy/library/videos/${seg(arg(0)!)}');
+          return CtlHostRequest(
+            'DELETE',
+            '$kHostProxy/library/videos/${seg(arg(0)!)}',
+          );
         case 'position' || 'playback' when arg(0) != null:
           return readOrWrite('library/videos/${seg(arg(0)!)}/$sub');
         case 'subtitle' when arg(0) == 'clear' && arg(1) != null:
           final String which = command['which'] as String;
           if (!const <String>{'primary', 'secondary', 'all'}.contains(which)) {
-            return usage('videos subtitle clear <id> [--which primary|secondary|all] [--all-sidecars]');
+            return usage(
+              'videos subtitle clear <id> [--which primary|secondary|all] [--all-sidecars]',
+            );
           }
           return CtlHostRequest(
             'DELETE',
@@ -163,7 +247,10 @@ CtlHostRequest? parseCtlHostAction(List<String> rest, ArgResults command, String
           return CtlHostRequest(
             'POST',
             '$kHostProxy/library/videos/${seg(arg(1)!)}/subtitle/backfill',
-            body: <String, Object?>{if (lang != null && lang.trim().isNotEmpty) 'language': lang.trim()},
+            body: <String, Object?>{
+              if (lang != null && lang.trim().isNotEmpty)
+                'language': lang.trim(),
+            },
           );
       }
       return usage(
@@ -175,43 +262,74 @@ CtlHostRequest? parseCtlHostAction(List<String> rest, ArgResults command, String
     case 'audiobooks':
       switch (sub) {
         case '' || 'ls':
-          return const CtlHostRequest('GET', '$kHostProxy/library/audiobooks', listKey: '');
+          return const CtlHostRequest(
+            'GET',
+            '$kHostProxy/library/audiobooks',
+            listKey: '',
+          );
         case 'position' || 'delay' when arg(0) != null:
           return readOrWrite('library/audiobooks/${seg(arg(0)!)}/$sub');
       }
-      return usage("audiobooks [ls] | audiobooks position|delay <key> [--set '<json>']");
+      return usage(
+        "audiobooks [ls] | audiobooks position|delay <key> [--set '<json>']",
+      );
 
     case 'manga':
       if (sub == 'manifest' && arg(0) != null) {
-        return CtlHostRequest('GET', '$kHostProxy/library/manga/${seg(arg(0)!)}/manifest');
+        return CtlHostRequest(
+          'GET',
+          '$kHostProxy/library/manga/${seg(arg(0)!)}/manifest',
+        );
       }
       return usage('manga manifest <bookKey>');
 
     case 'dict':
       if (sub == '' || sub == 'ls') {
-        return const CtlHostRequest('GET', '$kHostProxy/library/dictionaries', listKey: '');
+        return const CtlHostRequest(
+          'GET',
+          '$kHostProxy/library/dictionaries',
+          listKey: '',
+        );
       }
       return usage('dict [ls]');
 
     case 'metadata':
-      if (sub == '' || sub == 'ls') return const CtlHostRequest('GET', '$kHostProxy/library/metadata');
+      if (sub == '' || sub == 'ls')
+        return const CtlHostRequest('GET', '$kHostProxy/library/metadata');
       return usage('metadata [ls]');
 
     case 'activity' || 'collections' || 'tags' || 'tombstones':
-      return CtlHostRequest('GET', action == 'tombstones' ? '$kHostProxy/tombstones' : '$kHostProxy/library/$action');
+      return CtlHostRequest(
+        'GET',
+        action == 'tombstones'
+            ? '$kHostProxy/tombstones'
+            : '$kHostProxy/library/$action',
+      );
 
     case 'scrape':
-      if (sub == 'pending') return const CtlHostRequest('GET', '/api/admin/scrape/pending', listKey: 'works');
-      if (sub == 'sweep') return const CtlHostRequest('POST', '/api/admin/scrape/sweep');
+      if (sub == 'pending')
+        return const CtlHostRequest(
+          'GET',
+          '/api/admin/scrape/pending',
+          listKey: 'works',
+        );
+      if (sub == 'sweep')
+        return const CtlHostRequest('POST', '/api/admin/scrape/sweep');
       if (sub == 'ai-identify') {
-        if (arg(0) == null) return usage('scrape ai-identify <待确认作品 id（scrape pending 的第一列）>');
-        return CtlHostRequest('POST', '/api/admin/scrape/ai-identify', body: <String, Object?>{'id': arg(0)});
+        if (arg(0) == null)
+          return usage('scrape ai-identify <待确认作品 id（scrape pending 的第一列）>');
+        return CtlHostRequest(
+          'POST',
+          '/api/admin/scrape/ai-identify',
+          body: <String, Object?>{'id': arg(0)},
+        );
       }
       final Map<String, Object?>? key = _workKey(arg(0), command);
       switch (sub) {
         case 'search' when key != null:
           final String? query = command['query'] as String?;
-          if (query == null || query.trim().isEmpty) return usage('scrape search <bookUid> -q <搜索词>');
+          if (query == null || query.trim().isEmpty)
+            return usage('scrape search <bookUid> -q <搜索词>');
           return CtlHostRequest(
             'POST',
             '$kHostProxy/library/metadata/candidates',
@@ -222,8 +340,12 @@ CtlHostRequest? parseCtlHostAction(List<String> rest, ArgResults command, String
           final String? provider = command['provider'] as String?;
           final String? externalId = command['external-id'] as String?;
           // `--media-kind` 与 downloads add 共用（那边缺省 movie）；刮削动画缺省按 tv。
-          final String mediaKind = command.wasParsed('media-kind') ? command['media-kind'] as String : 'tv';
-          if (provider == null || externalId == null || !const <String>{'tv', 'movie'}.contains(mediaKind)) {
+          final String mediaKind = command.wasParsed('media-kind')
+              ? command['media-kind'] as String
+              : 'tv';
+          if (provider == null ||
+              externalId == null ||
+              !const <String>{'tv', 'movie'}.contains(mediaKind)) {
             return usage(
               'scrape identify <bookUid> --provider anidb|mal|tmdb --external-id <id> [--media-kind tv|movie]',
             );
@@ -237,7 +359,8 @@ CtlHostRequest? parseCtlHostAction(List<String> rest, ArgResults command, String
                 'provider': provider,
                 'externalId': externalId,
                 'mediaKind': mediaKind,
-                if (command['episode-group'] != null) 'episodeGroupId': command['episode-group'] as String,
+                if (command['episode-group'] != null)
+                  'episodeGroupId': command['episode-group'] as String,
               },
             },
           );
@@ -247,11 +370,15 @@ CtlHostRequest? parseCtlHostAction(List<String> rest, ArgResults command, String
             '$kHostProxy/library/metadata/episode-groups',
             body: <String, Object?>{'key': key},
           );
-        case 'episode-group' when key != null && command['episode-group'] != null:
+        case 'episode-group'
+            when key != null && command['episode-group'] != null:
           return CtlHostRequest(
             'POST',
             '$kHostProxy/library/metadata/episode-group',
-            body: <String, Object?>{'key': key, 'episodeGroupId': command['episode-group'] as String},
+            body: <String, Object?>{
+              'key': key,
+              'episodeGroupId': command['episode-group'] as String,
+            },
           );
       }
       return usage(
@@ -263,11 +390,15 @@ CtlHostRequest? parseCtlHostAction(List<String> rest, ArgResults command, String
       switch (sub) {
         case 'start':
           final String? feature = command['feature'] as String?;
-          if (feature == null || feature.trim().isEmpty) return usage('assistant start --feature <功能名>');
+          if (feature == null || feature.trim().isEmpty)
+            return usage('assistant start --feature <功能名>');
           return CtlHostRequest(
             'POST',
             '$kHostProxy/assistant/sessions',
-            body: <String, Object?>{'feature': feature.trim(), 'locale': command['locale'] as String},
+            body: <String, Object?>{
+              'feature': feature.trim(),
+              'locale': command['locale'] as String,
+            },
           );
         case 'show' when arg(0) != null:
           return CtlHostRequest(
@@ -282,16 +413,26 @@ CtlHostRequest? parseCtlHostAction(List<String> rest, ArgResults command, String
           final Object? body = _jsonObject(arg(1)!, err);
           return body == null
               ? null
-              : CtlHostRequest('POST', '$kHostProxy/assistant/sessions/${seg(arg(0)!)}/actions', body: body);
+              : CtlHostRequest(
+                  'POST',
+                  '$kHostProxy/assistant/sessions/${seg(arg(0)!)}/actions',
+                  body: body,
+                );
         case 'stop' when arg(0) != null:
-          return CtlHostRequest('DELETE', '$kHostProxy/assistant/sessions/${seg(arg(0)!)}');
+          return CtlHostRequest(
+            'DELETE',
+            '$kHostProxy/assistant/sessions/${seg(arg(0)!)}',
+          );
       }
-      return usage("assistant start --feature f | show <id> [--after n] [--wait] | act <id> '<json>' | stop <id>");
+      return usage(
+        "assistant start --feature f | show <id> [--after n] [--wait] | act <id> '<json>' | stop <id>",
+      );
 
     case 'host':
       final String method = sub.toUpperCase();
       final String? raw = arg(0);
-      if (!const <String>{'GET', 'POST', 'PUT', 'DELETE'}.contains(method) || raw == null) {
+      if (!const <String>{'GET', 'POST', 'PUT', 'DELETE'}.contains(method) ||
+          raw == null) {
         return usage("host <GET|POST|PUT|DELETE> <互联路径> ['<json>']");
       }
       final Uri parsed = Uri.parse(raw.replaceFirst(RegExp(r'^/?(api/)?'), ''));
@@ -323,20 +464,36 @@ Future<int>? runCtlJobsAction(
 }) {
   final List<String> rest = command.rest;
   final String sub = rest.length > 1 ? rest[1] : '';
-  final List<String> args = rest.length > 2 ? rest.sublist(2) : const <String>[];
+  final List<String> args = rest.length > 2
+      ? rest.sublist(2)
+      : const <String>[];
   switch (sub) {
     case 'submit':
-      return _submitJob(client, command, args, out: out, err: err, exitCodeFor: exitCodeFor, poll: pollInterval);
+      return _submitJob(
+        client,
+        command,
+        args,
+        out: out,
+        err: err,
+        exitCodeFor: exitCodeFor,
+        poll: pollInterval,
+      );
     case 'get' when args.isNotEmpty:
       return _guard(err, exitCodeFor, () async {
-        final Object? r = await client.get('$kHostProxy/jobs/${Uri.encodeComponent(args.first)}');
+        final Object? r = await client.get(
+          '$kHostProxy/jobs/${Uri.encodeComponent(args.first)}',
+        );
         out.writeln(const JsonEncoder.withIndent('  ').convert(r));
         return 0;
       });
     case 'result' when args.isNotEmpty:
       return _guard(err, exitCodeFor, () async {
-        final String name = args.length > 1 ? '/${Uri.encodeComponent(args[1])}' : '';
-        final Object? r = await client.get('$kHostProxy/jobs/${Uri.encodeComponent(args.first)}/result$name');
+        final String name = args.length > 1
+            ? '/${Uri.encodeComponent(args[1])}'
+            : '';
+        final Object? r = await client.get(
+          '$kHostProxy/jobs/${Uri.encodeComponent(args.first)}/result$name',
+        );
         return _writeResult(r, command['out'] as String?, out);
       });
   }
@@ -353,11 +510,23 @@ Future<int> _submitJob(
   required Duration poll,
 }) async {
   if (args.isNotEmpty && args.first == kVideoSubtitleJobKind) {
-    return _submitVideoSubtitleJob(client, command, args.sublist(1), out: out, err: err, exitCodeFor: exitCodeFor, poll: poll);
+    return _submitVideoSubtitleJob(
+      client,
+      command,
+      args.sublist(1),
+      out: out,
+      err: err,
+      exitCodeFor: exitCodeFor,
+      poll: poll,
+    );
   }
   if (args.length < 2 || args.first != 'asr') {
-    err.writeln('用法: fushi_server ctl jobs submit asr <音频> [-l ja] [-o x.srt] [--wait]');
-    err.writeln('      fushi_server ctl jobs submit video_subtitle [<视频>] [--video-id id | --collection-id n] [--no-ai] …');
+    err.writeln(
+      '用法: fushi_server ctl jobs submit asr <音频> [-l ja] [-o x.srt] [--wait]',
+    );
+    err.writeln(
+      '      fushi_server ctl jobs submit video_subtitle [<视频>] [--video-id id | --collection-id n] [--no-ai] …',
+    );
     return 64;
   }
   final File audio = File(args[1]);
@@ -397,14 +566,18 @@ Future<int> _submitJob(
       final Object? job = await client.get(base);
       final String state = job is Map ? '${job['state']}' : '?';
       final Object? progress = job is Map ? job['progress'] : null;
-      err.write('\r$id  $state  ${progress is num ? '${(progress * 100).toStringAsFixed(1)}%' : ''}   ');
+      err.write(
+        '\r$id  $state  ${progress is num ? '${(progress * 100).toStringAsFixed(1)}%' : ''}   ',
+      );
       if (state == 'done') {
         err.writeln();
         final Object? result = await client.get('$base/result');
         return _writeResult(result, command['out'] as String?, out);
       }
       if (state == 'error' || state == 'cancelled') {
-        err.writeln('\n任务 $state: ${job is Map ? job['error'] ?? job['message'] ?? '' : ''}');
+        err.writeln(
+          '\n任务 $state: ${job is Map ? job['error'] ?? job['message'] ?? '' : ''}',
+        );
         return 1;
       }
       await Future<void>.delayed(poll);
@@ -432,7 +605,8 @@ Future<int> _submitVideoSubtitleJob(
   }
   final Map<String, Object?> params = <String, Object?>{
     if (command['video-id'] != null) 'videoId': command['video-id'],
-    if (command['collection-id'] != null) 'collectionId': command['collection-id'],
+    if (command['collection-id'] != null)
+      'collectionId': command['collection-id'],
     if (command['title'] != null) 'title': command['title'],
     'proofread': command['ai'] as bool,
     'segmenter': command['segmenter'],
@@ -441,8 +615,12 @@ Future<int> _submitVideoSubtitleJob(
     'regenerateGlossary': command['regen-glossary'] as bool,
     if (video != null) 'input': p.basename(video.path),
   };
-  if (video == null && command['video-id'] == null && command['collection-id'] == null) {
-    err.writeln('用法: fushi_server ctl jobs submit video_subtitle <视频> | --video-id <id> | --collection-id <n> …');
+  if (video == null &&
+      command['video-id'] == null &&
+      command['collection-id'] == null) {
+    err.writeln(
+      '用法: fushi_server ctl jobs submit video_subtitle <视频> | --video-id <id> | --collection-id <n> …',
+    );
     return 64;
   }
   try {
@@ -478,14 +656,18 @@ Future<int> _submitVideoSubtitleJob(
       final String state = job is Map ? '${job['state']}' : '?';
       final Object? progress = job is Map ? job['progress'] : null;
       final Object? message = job is Map ? job['message'] : null;
-      err.write('\r$id  $state  ${progress is num ? '${(progress * 100).toStringAsFixed(1)}%' : ''}  ${message ?? ''}   ');
+      err.write(
+        '\r$id  $state  ${progress is num ? '${(progress * 100).toStringAsFixed(1)}%' : ''}  ${message ?? ''}   ',
+      );
       if (state == 'done') {
         err.writeln();
         final Object? result = await client.get('$base/result');
         return _writeResult(result, command['out'] as String?, out);
       }
       if (state == 'error' || state == 'cancelled') {
-        err.writeln('\n任务 $state: ${job is Map ? job['error'] ?? job['message'] ?? '' : ''}');
+        err.writeln(
+          '\n任务 $state: ${job is Map ? job['error'] ?? job['message'] ?? '' : ''}',
+        );
         return 1;
       }
       await Future<void>.delayed(poll);
@@ -494,7 +676,9 @@ Future<int> _submitVideoSubtitleJob(
 }
 
 int _writeResult(Object? result, String? outPath, StringSink out) {
-  final String text = result is String ? result : const JsonEncoder.withIndent('  ').convert(result);
+  final String text = result is String
+      ? result
+      : const JsonEncoder.withIndent('  ').convert(result);
   if (outPath == null) {
     out.writeln(text);
   } else {
@@ -504,7 +688,11 @@ int _writeResult(Object? result, String? outPath, StringSink out) {
   return 0;
 }
 
-Future<int> _guard(StringSink err, int Function(AdminApiException ex) exitCodeFor, Future<int> Function() body) async {
+Future<int> _guard(
+  StringSink err,
+  int Function(AdminApiException ex) exitCodeFor,
+  Future<int> Function() body,
+) async {
   try {
     return await body();
   } on AdminApiException catch (ex) {
@@ -521,7 +709,10 @@ Map<String, Object?>? _workKey(String? bookUid, ArgResults command) {
     final String? type = command['collection-type'] as String?;
     if (type == null) return null;
     return <String, Object?>{
-      'collection': <String, Object?>{'name': collection, 'collectionType': type},
+      'collection': <String, Object?>{
+        'name': collection,
+        'collectionType': type,
+      },
     };
   }
   if (bookUid == null || bookUid.isEmpty) return null;

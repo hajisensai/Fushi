@@ -179,8 +179,8 @@ class _UpdatesDashboardBannerState extends State<UpdatesDashboardBanner> {
 
   /// 「番剧新集 3 · 漫画新章 12」——按域列未读数，用户一眼看出是哪类更新。
   String _summary() => <String>[
-        for (final UpdateFeedKind kind in UpdateFeedKind.values)
-          if ((_counts[kind] ?? 0) > 0)
-            '${updateFeedKindLabel(kind)} ${_counts[kind]}',
-      ].join(' · ');
+    for (final UpdateFeedKind kind in UpdateFeedKind.values)
+      if ((_counts[kind] ?? 0) > 0)
+        '${updateFeedKindLabel(kind)} ${_counts[kind]}',
+  ].join(' · ');
 }

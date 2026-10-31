@@ -31,9 +31,9 @@ void main() {
       at: at,
     );
 
-    final MiningStatisticRow global =
-        (await db.getMiningStatisticsBySource(FushiDatabase.statSourceBook))
-            .single;
+    final MiningStatisticRow global = (await db.getMiningStatisticsBySource(
+      FushiDatabase.statSourceBook,
+    )).single;
     expect(global.dateKey, '2026-08-10');
     expect(global.count, 1);
 
@@ -42,8 +42,11 @@ void main() {
     expect(perBook.bookKey, 'book_1');
     expect(perBook.title, '吾輩は猫である');
     expect(perBook.sourceType, FushiDatabase.statSourceBook);
-    expect(perBook.dateKey, global.dateKey,
-        reason: '两份投影的 dateKey 由同一 at 在 DB 层派生一次，结构上不可能漂移');
+    expect(
+      perBook.dateKey,
+      global.dateKey,
+      reason: '两份投影的 dateKey 由同一 at 在 DB 层派生一次，结构上不可能漂移',
+    );
     expect(perBook.mineCount, 1);
     expect(perBook.lookupCount, 0);
   });
@@ -61,41 +64,48 @@ void main() {
     expect(row.title, '');
     expect(row.mineCount, 1);
     expect(
-        (await db.getMiningStatisticsBySource(FushiDatabase.statSourceBook))
-            .single
-            .count,
-        1);
+      (await db.getMiningStatisticsBySource(
+        FushiDatabase.statSourceBook,
+      )).single.count,
+      1,
+    );
   });
 
   test('新写入下恒等式成立：Σ MiningStatistics.count == Σ mineCount', () async {
     final FushiDatabase db = await _openDb();
     // 混合场景：EPUB 带身份、PDF 带身份、app 外无身份、视频源、跨日。
     await db.recordMiningEvent(
-        bookKey: 'b1',
-        title: 'A',
-        sourceType: FushiDatabase.statSourceBook,
-        at: DateTime(2026, 8, 9, 10));
+      bookKey: 'b1',
+      title: 'A',
+      sourceType: FushiDatabase.statSourceBook,
+      at: DateTime(2026, 8, 9, 10),
+    );
     await db.recordMiningEvent(
-        bookKey: 'b1',
-        title: 'A',
-        sourceType: FushiDatabase.statSourceBook,
-        at: DateTime(2026, 8, 9, 11));
+      bookKey: 'b1',
+      title: 'A',
+      sourceType: FushiDatabase.statSourceBook,
+      at: DateTime(2026, 8, 9, 11),
+    );
     await db.recordMiningEvent(
-        bookKey: 'b2',
-        title: 'B',
-        sourceType: FushiDatabase.statSourceBook,
-        at: DateTime(2026, 8, 10, 9));
+      bookKey: 'b2',
+      title: 'B',
+      sourceType: FushiDatabase.statSourceBook,
+      at: DateTime(2026, 8, 10, 9),
+    );
     await db.recordMiningEvent(
-        sourceType: FushiDatabase.statSourceBook, at: DateTime(2026, 8, 10));
+      sourceType: FushiDatabase.statSourceBook,
+      at: DateTime(2026, 8, 10),
+    );
     await db.recordMiningEvent(
-        bookKey: 'v1',
-        title: 'Ep1',
-        sourceType: FushiDatabase.statSourceVideo,
-        at: DateTime(2026, 8, 10, 22));
+      bookKey: 'v1',
+      title: 'Ep1',
+      sourceType: FushiDatabase.statSourceVideo,
+      at: DateTime(2026, 8, 10, 22),
+    );
 
     final List<MiningStatisticRow> globals = await db.getAllMiningStatistics();
-    final List<LookupMiningCounterRow> counters =
-        await db.getAllLookupMiningCounters();
+    final List<LookupMiningCounterRow> counters = await db
+        .getAllLookupMiningCounters();
     for (final String source in <String>[
       FushiDatabase.statSourceBook,
       FushiDatabase.statSourceVideo,
@@ -113,15 +123,17 @@ void main() {
   test('同 (身份, 日) 重复制卡累加同一行，不裂新行', () async {
     final FushiDatabase db = await _openDb();
     await db.recordMiningEvent(
-        bookKey: 'b1',
-        title: 'A',
-        sourceType: FushiDatabase.statSourceBook,
-        at: DateTime(2026, 8, 10, 9));
+      bookKey: 'b1',
+      title: 'A',
+      sourceType: FushiDatabase.statSourceBook,
+      at: DateTime(2026, 8, 10, 9),
+    );
     await db.recordMiningEvent(
-        bookKey: 'b1',
-        title: 'A',
-        sourceType: FushiDatabase.statSourceBook,
-        at: DateTime(2026, 8, 10, 21));
+      bookKey: 'b1',
+      title: 'A',
+      sourceType: FushiDatabase.statSourceBook,
+      at: DateTime(2026, 8, 10, 21),
+    );
 
     expect((await db.getAllLookupMiningCounters()).single.mineCount, 2);
     expect((await db.getAllMiningStatistics()).single.count, 2);
@@ -139,8 +151,10 @@ void main() {
     );
 
     expect(
-        await db.getStatisticsTombstoneKeys(), isNot(contains(('A', 'book'))),
-        reason: '经 addMineCountPerBook 落 per-book 行，清碑语义原样保留');
+      await db.getStatisticsTombstoneKeys(),
+      isNot(contains(('A', 'book'))),
+      reason: '经 addMineCountPerBook 落 per-book 行，清碑语义原样保留',
+    );
   });
 
   test('recordMiningEvent 不产 activity 行（制卡不是 session 事件）', () async {

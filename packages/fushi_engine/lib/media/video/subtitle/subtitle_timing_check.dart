@@ -31,11 +31,10 @@ class KnownVideoDuration {
   const KnownVideoDuration({required this.durationMs, required this.source});
 
   const KnownVideoDuration.probed(int durationMs)
-      : this(durationMs: durationMs, source: VideoDurationSource.probed);
+    : this(durationMs: durationMs, source: VideoDurationSource.probed);
 
   const KnownVideoDuration.scrapedRuntime(int durationMs)
-      : this(
-            durationMs: durationMs, source: VideoDurationSource.scrapedRuntime);
+    : this(durationMs: durationMs, source: VideoDurationSource.scrapedRuntime);
 
   final int durationMs;
   final VideoDurationSource source;
@@ -45,11 +44,11 @@ class KnownVideoDuration {
   /// 比例 + 绝对量双保险：比例项负责长片（2 小时电影的 15% 是 18 分钟，够宽），
   /// 绝对量负责短片（5 分钟的 PV，15% 只有 45 秒，太紧）。
   int get maxAcceptableLastCueEndMs => switch (source) {
-        VideoDurationSource.probed => (durationMs * 1.15).round() +
-            const Duration(seconds: 60).inMilliseconds,
-        VideoDurationSource.scrapedRuntime => (durationMs * 1.5).round() +
-            const Duration(minutes: 2).inMilliseconds,
-      };
+    VideoDurationSource.probed =>
+      (durationMs * 1.15).round() + const Duration(seconds: 60).inMilliseconds,
+    VideoDurationSource.scrapedRuntime =>
+      (durationMs * 1.5).round() + const Duration(minutes: 2).inMilliseconds,
+  };
 }
 
 /// 从字幕原文抽出的时间跨度概览。
@@ -109,14 +108,12 @@ class SubtitleTimingCheck {
   ///
   /// 只有当调用方还能试别的候选（下载流水线的 registry 搜索结果）时才用这条。
   bool get rejected => switch (verdict) {
-        SubtitleTimingVerdict.ok ||
-        SubtitleTimingVerdict.suspiciouslyShort =>
-          false,
-        SubtitleTimingVerdict.unparsable ||
-        SubtitleTimingVerdict.empty ||
-        SubtitleTimingVerdict.overrunsVideo =>
-          true,
-      };
+    SubtitleTimingVerdict.ok ||
+    SubtitleTimingVerdict.suspiciouslyShort => false,
+    SubtitleTimingVerdict.unparsable ||
+    SubtitleTimingVerdict.empty ||
+    SubtitleTimingVerdict.overrunsVideo => true,
+  };
 
   /// **没有备选候选**时的拒收判据：只认「正面矛盾」。
   ///
@@ -154,14 +151,16 @@ SubtitleTimingCheck checkSubtitleTiming(
   if (timing.lastEndMs > video.maxAcceptableLastCueEndMs) {
     return SubtitleTimingCheck(
       SubtitleTimingVerdict.overrunsVideo,
-      detail: 'subtitle runs to ${_mmss(timing.lastEndMs)} but the video is '
+      detail:
+          'subtitle runs to ${_mmss(timing.lastEndMs)} but the video is '
           'only ${_mmss(video.durationMs)} long',
     );
   }
   if (timing.lastEndMs < video.durationMs * kSubtitleMinCoverageRatio) {
     return SubtitleTimingCheck(
       SubtitleTimingVerdict.suspiciouslyShort,
-      detail: 'subtitle only covers up to ${_mmss(timing.lastEndMs)} of '
+      detail:
+          'subtitle only covers up to ${_mmss(timing.lastEndMs)} of '
           '${_mmss(video.durationMs)}',
     );
   }

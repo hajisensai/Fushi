@@ -11,32 +11,35 @@ FavoriteSentence _fs(
   required int createdAtMs,
   String? id,
   String source = kFavoriteSentenceSourceBook,
-}) =>
-    FavoriteSentence(
-      id: id,
-      text: text,
-      bookTitle: 'title',
-      bookKey: bookKey,
-      sectionIndex: sectionIndex,
-      normCharOffset: normCharOffset,
-      createdAt: DateTime.fromMillisecondsSinceEpoch(createdAtMs),
-      source: source,
-    );
+}) => FavoriteSentence(
+  id: id,
+  text: text,
+  bookTitle: 'title',
+  bookKey: bookKey,
+  sectionIndex: sectionIndex,
+  normCharOffset: normCharOffset,
+  createdAt: DateTime.fromMillisecondsSinceEpoch(createdAtMs),
+  source: source,
+);
 
 void main() {
   group('mergeMaxCounters', () {
     test('per-key MAX, never SUM; disjoint keys unioned', () {
       final Map<String, int> local = <String, int>{'a': 5, 'b': 2};
       final Map<String, int> remote = <String, int>{'a': 3, 'c': 9};
-      final Map<String, int> out =
-          AggregateMergeService.mergeMaxCounters(local, remote);
+      final Map<String, int> out = AggregateMergeService.mergeMaxCounters(
+        local,
+        remote,
+      );
       expect(out, <String, int>{'a': 5, 'b': 2, 'c': 9}); // a=max(5,3)
     });
 
     test('idempotent: merge(a, a) == a and re-merge is stable', () {
       final Map<String, int> a = <String, int>{'x': 7, 'y': 1};
-      final Map<String, int> once =
-          AggregateMergeService.mergeMaxCounters(a, a);
+      final Map<String, int> once = AggregateMergeService.mergeMaxCounters(
+        a,
+        a,
+      );
       expect(once, a);
       final Map<String, int> b = <String, int>{'x': 4, 'z': 3};
       final Map<String, int> m1 = AggregateMergeService.mergeMaxCounters(a, b);
@@ -64,30 +67,40 @@ void main() {
     test('a value never shrinks (under-counting peer cannot pull down)', () {
       final Map<String, int> local = <String, int>{'a': 100};
       final Map<String, int> remote = <String, int>{'a': 1};
-      expect(AggregateMergeService.mergeMaxCounters(local, remote),
-          <String, int>{'a': 100});
+      expect(
+        AggregateMergeService.mergeMaxCounters(local, remote),
+        <String, int>{'a': 100},
+      );
     });
   });
 
   group('mergeStatBuckets', () {
     test('field-wise MAX on shared bucket; disjoint buckets unioned', () {
       final Map<String, StatBucket> local = <String, StatBucket>{
-        'A|2026-01-01':
-            const StatBucket(<String, int>{'chars': 100, 'ms': 6000}),
+        'A|2026-01-01': const StatBucket(<String, int>{
+          'chars': 100,
+          'ms': 6000,
+        }),
       };
       final Map<String, StatBucket> remote = <String, StatBucket>{
-        'A|2026-01-01':
-            const StatBucket(<String, int>{'chars': 80, 'ms': 9000}),
+        'A|2026-01-01': const StatBucket(<String, int>{
+          'chars': 80,
+          'ms': 9000,
+        }),
         'B|2026-01-01': const StatBucket(<String, int>{'chars': 999, 'ms': 1}),
       };
       final Map<String, StatBucket> out =
           AggregateMergeService.mergeStatBuckets(local, remote);
       expect(out.length, 2);
       // Distinct titles under one dateKey NOT folded.
-      expect(out['A|2026-01-01'],
-          const StatBucket(<String, int>{'chars': 100, 'ms': 9000}));
-      expect(out['B|2026-01-01'],
-          const StatBucket(<String, int>{'chars': 999, 'ms': 1}));
+      expect(
+        out['A|2026-01-01'],
+        const StatBucket(<String, int>{'chars': 100, 'ms': 9000}),
+      );
+      expect(
+        out['B|2026-01-01'],
+        const StatBucket(<String, int>{'chars': 999, 'ms': 1}),
+      );
     });
 
     test('idempotent and commutative on values', () {
@@ -122,8 +135,11 @@ void main() {
         <String>['new', '', 'book', 'X'],
       ];
       String uk(List<String> row) => keyOf(row.sublist(0, 3));
-      final List<List<String>> out =
-          AggregateMergeService.mergeUniqueByKey(local, remote, uk);
+      final List<List<String>> out = AggregateMergeService.mergeUniqueByKey(
+        local,
+        remote,
+        uk,
+      );
       expect(out.length, 2);
       expect(out.first[3], 'LOCAL'); // local row kept on collision
       expect(out.last.first, 'new');
@@ -133,10 +149,16 @@ void main() {
       String uk(String r) => r;
       final List<String> local = <String>['a', 'b'];
       final List<String> remote = <String>['b', 'c'];
-      final List<String> m1 =
-          AggregateMergeService.mergeUniqueByKey(local, remote, uk);
-      final List<String> m2 =
-          AggregateMergeService.mergeUniqueByKey(m1, remote, uk);
+      final List<String> m1 = AggregateMergeService.mergeUniqueByKey(
+        local,
+        remote,
+        uk,
+      );
+      final List<String> m2 = AggregateMergeService.mergeUniqueByKey(
+        m1,
+        remote,
+        uk,
+      );
       expect(m1, <String>['a', 'b', 'c']);
       expect(m2, m1);
     });
@@ -145,34 +167,41 @@ void main() {
   group('mergeFavoriteSentences', () {
     test('content dedupe-union; identical content across ids dropped once', () {
       final List<FavoriteSentence> local = <FavoriteSentence>[
-        _fs('text',
-            bookKey: 'bk',
-            sectionIndex: 1,
-            normCharOffset: 10,
-            createdAtMs: 500,
-            id: 'hl_local'),
+        _fs(
+          'text',
+          bookKey: 'bk',
+          sectionIndex: 1,
+          normCharOffset: 10,
+          createdAtMs: 500,
+          id: 'hl_local',
+        ),
       ];
       final List<FavoriteSentence> remote = <FavoriteSentence>[
         // Same content tuple, DIFFERENT id + LATER createdAt -> deduped.
-        _fs('text',
-            bookKey: 'bk',
-            sectionIndex: 1,
-            normCharOffset: 10,
-            createdAtMs: 900,
-            id: 'hl_remote'),
+        _fs(
+          'text',
+          bookKey: 'bk',
+          sectionIndex: 1,
+          normCharOffset: 10,
+          createdAtMs: 900,
+          id: 'hl_remote',
+        ),
         // A genuinely new sentence -> added.
-        _fs('other',
-            bookKey: 'bk',
-            sectionIndex: 2,
-            normCharOffset: 20,
-            createdAtMs: 700,
-            id: 'hl_new'),
+        _fs(
+          'other',
+          bookKey: 'bk',
+          sectionIndex: 2,
+          normCharOffset: 20,
+          createdAtMs: 700,
+          id: 'hl_new',
+        ),
       ];
       final List<FavoriteSentence> out =
           AggregateMergeService.mergeFavoriteSentences(local, remote);
       expect(out.length, 2);
-      final FavoriteSentence dup =
-          out.firstWhere((FavoriteSentence s) => s.text == 'text');
+      final FavoriteSentence dup = out.firstWhere(
+        (FavoriteSentence s) => s.text == 'text',
+      );
       // Earlier createdAt kept (the local id/timestamp), later dropped.
       expect(dup.id, 'hl_local');
       expect(dup.createdAt.millisecondsSinceEpoch, 500);
@@ -181,11 +210,13 @@ void main() {
     test('output sorted newest-first by createdAt', () {
       final List<FavoriteSentence> out =
           AggregateMergeService.mergeFavoriteSentences(
-        <FavoriteSentence>[_fs('old', createdAtMs: 100, normCharOffset: 1)],
-        <FavoriteSentence>[_fs('new', createdAtMs: 900, normCharOffset: 2)],
-      );
-      expect(out.map((FavoriteSentence s) => s.text).toList(),
-          <String>['new', 'old']);
+            <FavoriteSentence>[_fs('old', createdAtMs: 100, normCharOffset: 1)],
+            <FavoriteSentence>[_fs('new', createdAtMs: 900, normCharOffset: 2)],
+          );
+      expect(out.map((FavoriteSentence s) => s.text).toList(), <String>[
+        'new',
+        'old',
+      ]);
     });
 
     test('idempotent: merge(a, a) == a (by content) and re-merge stable', () {
@@ -209,39 +240,60 @@ void main() {
     });
 
     test('collision result independent of side order (earliest wins)', () {
-      final FavoriteSentence early =
-          _fs('t', normCharOffset: 5, createdAtMs: 100, id: 'early');
-      final FavoriteSentence late =
-          _fs('t', normCharOffset: 5, createdAtMs: 900, id: 'late');
+      final FavoriteSentence early = _fs(
+        't',
+        normCharOffset: 5,
+        createdAtMs: 100,
+        id: 'early',
+      );
+      final FavoriteSentence late = _fs(
+        't',
+        normCharOffset: 5,
+        createdAtMs: 900,
+        id: 'late',
+      );
       final List<FavoriteSentence> ab =
           AggregateMergeService.mergeFavoriteSentences(
-              <FavoriteSentence>[early], <FavoriteSentence>[late]);
+            <FavoriteSentence>[early],
+            <FavoriteSentence>[late],
+          );
       final List<FavoriteSentence> ba =
           AggregateMergeService.mergeFavoriteSentences(
-              <FavoriteSentence>[late], <FavoriteSentence>[early]);
+            <FavoriteSentence>[late],
+            <FavoriteSentence>[early],
+          );
       expect(ab.single.id, 'early');
       expect(ba.single.id, 'early'); // same winner regardless of order
     });
 
-    test('null fields do not collide with empty-string / zero counterparts',
-        () {
-      // Same text but distinct nullable tuples must all survive.
-      final List<FavoriteSentence> out =
-          AggregateMergeService.mergeFavoriteSentences(
-        <FavoriteSentence>[
-          _fs('t',
-              bookKey: null,
-              sectionIndex: null,
-              normCharOffset: null,
-              createdAtMs: 1),
-        ],
-        <FavoriteSentence>[
-          _fs('t',
-              bookKey: '', sectionIndex: 0, normCharOffset: 0, createdAtMs: 2),
-        ],
-      );
-      expect(out.length, 2); // null tuple != (empty,0,0) tuple
-    });
+    test(
+      'null fields do not collide with empty-string / zero counterparts',
+      () {
+        // Same text but distinct nullable tuples must all survive.
+        final List<FavoriteSentence> out =
+            AggregateMergeService.mergeFavoriteSentences(
+              <FavoriteSentence>[
+                _fs(
+                  't',
+                  bookKey: null,
+                  sectionIndex: null,
+                  normCharOffset: null,
+                  createdAtMs: 1,
+                ),
+              ],
+              <FavoriteSentence>[
+                _fs(
+                  't',
+                  bookKey: '',
+                  sectionIndex: 0,
+                  normCharOffset: 0,
+                  createdAtMs: 2,
+                ),
+              ],
+            );
+        expect(out.length, 2); // null tuple != (empty,0,0) tuple
+      },
+    );
 
     test('empty remote is a no-op (deletion does not propagate)', () {
       final List<FavoriteSentence> local = <FavoriteSentence>[
@@ -249,7 +301,9 @@ void main() {
       ];
       final List<FavoriteSentence> out =
           AggregateMergeService.mergeFavoriteSentences(
-              local, const <FavoriteSentence>[]);
+            local,
+            const <FavoriteSentence>[],
+          );
       expect(out.length, 1);
       expect(out.single.text, 'keep');
     });

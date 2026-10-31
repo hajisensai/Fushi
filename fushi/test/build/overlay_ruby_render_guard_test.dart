@@ -17,14 +17,18 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  final String window =
-      File('windows/runner/floating_lyric_window.cpp').readAsStringSync();
-  final String header =
-      File('windows/runner/floating_lyric_window.h').readAsStringSync();
-  final String channelHost =
-      File('windows/runner/flutter_window.cpp').readAsStringSync();
-  final String prefs =
-      File('lib/src/models/preferences_repository.dart').readAsStringSync();
+  final String window = File(
+    'windows/runner/floating_lyric_window.cpp',
+  ).readAsStringSync();
+  final String header = File(
+    'windows/runner/floating_lyric_window.h',
+  ).readAsStringSync();
+  final String channelHost = File(
+    'windows/runner/flutter_window.cpp',
+  ).readAsStringSync();
+  final String prefs = File(
+    'lib/src/models/preferences_repository.dart',
+  ).readAsStringSync();
 
   test('① 注音几何复用 HitTestTextRange，不自建排版', () {
     expect(
@@ -34,11 +38,13 @@ void main() {
     );
     // 注音绘制段必须出现在同一个 text_layout_ 上的 HitTestTextRange 调用。
     expect(
-      RegExp(r'for \(const RubySpan& span : ruby_spans_\)[\s\S]{0,400}?'
-              r'text_layout_->HitTestTextRange')
-          .hasMatch(window),
+      RegExp(
+        r'for \(const RubySpan& span : ruby_spans_\)[\s\S]{0,400}?'
+        r'text_layout_->HitTestTextRange',
+      ).hasMatch(window),
       isTrue,
-      reason: '注音必须问 text_layout_ 要基准字矩形（与高亮框同一套几何）；'
+      reason:
+          '注音必须问 text_layout_ 要基准字矩形（与高亮框同一套几何）；'
           '自己排版会让折行/滚动/高亮/dim 四处几何分叉',
     );
     for (final String forbidden in <String>[
@@ -48,7 +54,8 @@ void main() {
       expect(
         window.contains(forbidden),
         isFalse,
-        reason: '$forbidden 会改变布局位置与原文位置的对应关系，'
+        reason:
+            '$forbidden 会改变布局位置与原文位置的对应关系，'
             '必须同时补一张 index 映射表，CharIndexAt 契约就守不住了',
       );
     }
@@ -58,14 +65,16 @@ void main() {
     expect(
       window.contains('return static_cast<int>(metrics.textPosition);'),
       isTrue,
-      reason: '点字 index 必须仍是 DirectWrite 的 UTF-16 textPosition；'
+      reason:
+          '点字 index 必须仍是 DirectWrite 的 UTF-16 textPosition；'
           '一旦这里变成经过映射的值，Dart 侧的 wordFromIndex 就会错位',
     );
     // 注音文本只从 span.ruby 取，绝不拼进 text_。
     expect(
       RegExp(r'text_\s*(\+=|\.append|\.insert)').hasMatch(window),
       isFalse,
-      reason: 'text_ 一旦被追加注音字符，显示串就不再等于 Dart 侧的 entry.text，'
+      reason:
+          'text_ 一旦被追加注音字符，显示串就不再等于 Dart 侧的 entry.text，'
           'gal 浮窗 _onLookupText 的等值守卫会恒真，点字直接失效',
     );
   });
@@ -89,7 +98,8 @@ void main() {
     expect(
       spacingGate,
       isNotNull,
-      reason: '加高行距必须同时挂在 has_ruby 与 hook_text_mode_ 两个门后；'
+      reason:
+          '加高行距必须同时挂在 has_ruby 与 hook_text_mode_ 两个门后；'
           '任一入口无条件化都会改到歌词条 / 剪贴板窗',
     );
     // 可配置化不得顺手改观感：默认行高必须是 1.0（恒等），没动过这个设置的用户
@@ -100,8 +110,9 @@ void main() {
       reason: '行高默认必须是恒等值 1.0',
     );
     expect(
-      RegExp(r'std::clamp\(\s*style_\.line_height,\s*0\.8,\s*2\.0\s*\)')
-          .hasMatch(window),
+      RegExp(
+        r'std::clamp\(\s*style_\.line_height,\s*0\.8,\s*2\.0\s*\)',
+      ).hasMatch(window),
       isTrue,
       reason: '行高必须夹在 [0.8,2.0]，否则能把整块文字推出可视区',
     );
@@ -119,9 +130,10 @@ void main() {
       reason: 'gal 台词窗 updateText 要解包 rubySpans',
     );
     expect(
-      RegExp(r'gal_hook_text_window_->UpdateText\([\s\S]{0,200}?'
-              r'RubySpansFromValue\(args, "rubySpans"\)')
-          .hasMatch(channelHost),
+      RegExp(
+        r'gal_hook_text_window_->UpdateText\([\s\S]{0,200}?'
+        r'RubySpansFromValue\(args, "rubySpans"\)',
+      ).hasMatch(channelHost),
       isTrue,
       reason: 'gal 台词浮窗必须下发注音区间',
     );
@@ -133,9 +145,10 @@ void main() {
     );
     // 缺省参数 = 老 payload 行为不变。
     expect(
-      RegExp(r'const std::vector<RubySpan>& ruby_spans =\s*'
-              r'std::vector<RubySpan>\(\)')
-          .hasMatch(header),
+      RegExp(
+        r'const std::vector<RubySpan>& ruby_spans =\s*'
+        r'std::vector<RubySpan>\(\)',
+      ).hasMatch(header),
       isTrue,
       reason: 'UpdateText 的注音参数必须有空缺省值，旧调用点（歌词条）零改动',
     );

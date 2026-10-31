@@ -127,11 +127,11 @@ class LibraryFilterChip extends StatelessWidget
     final Color foreground = glass
         ? (active ? apple.accent : apple.label)
         : (active ? colors.onSecondaryContainer : colors.onSurfaceVariant);
-    final TextStyle? textStyle =
-        Theme.of(context).textTheme.labelLarge?.copyWith(
-              color: foreground,
-              fontWeight: active ? FontWeight.w600 : FontWeight.w500,
-            );
+    final TextStyle? textStyle = Theme.of(context).textTheme.labelLarge
+        ?.copyWith(
+          color: foreground,
+          fontWeight: active ? FontWeight.w600 : FontWeight.w500,
+        );
     final Widget row = Row(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
@@ -341,10 +341,7 @@ class LibraryToolbar extends StatelessWidget {
         key: filtersKey,
         scrollDirection: Axis.horizontal,
         // 上下各留 4：玻璃胶囊的投影不被横滚区裁掉。
-        padding: EdgeInsets.symmetric(
-          horizontal: wide ? 0 : hPad,
-          vertical: 4,
-        ),
+        padding: EdgeInsets.symmetric(horizontal: wide ? 0 : hPad, vertical: 4),
         child: Row(
           children: <Widget>[
             for (int i = 0; i < filters.length; i++) ...<Widget>[
@@ -374,8 +371,9 @@ class LibraryToolbar extends StatelessWidget {
                 order: const NumericFocusOrder(2),
                 child: _filterStrip(wide: wide, hPad: hPad),
               );
-        final Widget? trailingWidget =
-            !wide && compactTrailing != null ? compactTrailing : trailing;
+        final Widget? trailingWidget = !wide && compactTrailing != null
+            ? compactTrailing
+            : trailing;
         final Widget? trailingSlot = trailingWidget == null
             ? null
             : FocusTraversalOrder(
@@ -427,9 +425,7 @@ class LibraryToolbar extends StatelessWidget {
                   padding: EdgeInsetsDirectional.only(end: hPad),
                   child: Row(
                     children: <Widget>[
-                      Expanded(
-                        child: filterSlot ?? const SizedBox.shrink(),
-                      ),
+                      Expanded(child: filterSlot ?? const SizedBox.shrink()),
                       trailingSlot!,
                     ],
                   ),

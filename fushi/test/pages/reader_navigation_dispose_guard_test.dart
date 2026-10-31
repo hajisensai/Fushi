@@ -104,8 +104,10 @@ void main() {
     final int pauseAwait =
         // 同理不钉实参排版：调用点带返回值后 dart format 必然折行。
         body.indexOf('await _pauseThroughImageOnlyChapters(');
-    final int mountedGuard =
-        body.indexOf('if (!mounted || _controller == null)', pauseAwait);
+    final int mountedGuard = body.indexOf(
+      'if (!mounted || _controller == null)',
+      pauseAwait,
+    );
     final int cancelTransition = body.indexOf(
       '_audiobookController?.cancelChapterTransition();',
       mountedGuard,

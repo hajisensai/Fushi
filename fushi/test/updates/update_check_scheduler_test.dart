@@ -38,8 +38,11 @@ void main() {
       now: () => clock,
     );
 
-    expect(scheduler.isDue(UpdateFeedKind.mangaChapter), isTrue,
-        reason: '没查过就是到期——第一次运行必须查一次');
+    expect(
+      scheduler.isDue(UpdateFeedKind.mangaChapter),
+      isTrue,
+      reason: '没查过就是到期——第一次运行必须查一次',
+    );
     await scheduler.runDue();
     expect(calls, 1);
 
@@ -150,19 +153,19 @@ void main() {
     final List<UpdateFeedKind> ran = <UpdateFeedKind>[];
     bool notify = true;
     UpdateCheckScheduler build() => UpdateCheckScheduler(
-          prefs: prefs,
-          isKindEnabled: updateCheckKindGate(
-            videoLibraryAutoUpdate: () => prefs.videoLibraryAutoUpdate,
-            notifyEnabled: (_) => notify,
-          ),
-          probes: <UpdateFeedKind, UpdateProbe>{
-            UpdateFeedKind.videoEpisode: () async =>
-                ran.add(UpdateFeedKind.videoEpisode),
-            UpdateFeedKind.mangaChapter: () async =>
-                ran.add(UpdateFeedKind.mangaChapter),
-          },
-          now: () => clock,
-        );
+      prefs: prefs,
+      isKindEnabled: updateCheckKindGate(
+        videoLibraryAutoUpdate: () => prefs.videoLibraryAutoUpdate,
+        notifyEnabled: (_) => notify,
+      ),
+      probes: <UpdateFeedKind, UpdateProbe>{
+        UpdateFeedKind.videoEpisode: () async =>
+            ran.add(UpdateFeedKind.videoEpisode),
+        UpdateFeedKind.mangaChapter: () async =>
+            ran.add(UpdateFeedKind.mangaChapter),
+      },
+      now: () => clock,
+    );
 
     expect(prefs.videoLibraryAutoUpdate, isTrue, reason: '默认开');
     await prefs.setVideoLibraryAutoUpdate(false);
@@ -173,8 +176,9 @@ void main() {
     notify = false;
     await build().checkNow(UpdateFeedKind.videoEpisode);
     await build().checkNow(UpdateFeedKind.mangaChapter);
-    expect(ran, <UpdateFeedKind>[UpdateFeedKind.videoEpisode],
-        reason: '关提醒不停补集；其它域仍看自己的提醒开关');
+    expect(ran, <UpdateFeedKind>[
+      UpdateFeedKind.videoEpisode,
+    ], reason: '关提醒不停补集；其它域仍看自己的提醒开关');
   });
 
   test('不在 intervals 里的域恒不到期', () async {

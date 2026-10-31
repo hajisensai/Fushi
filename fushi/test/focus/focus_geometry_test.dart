@@ -14,22 +14,23 @@ void main() {
     const Key target = ValueKey<String>('geometry-target');
 
     Future<RenderBox> pumpScaled(WidgetTester tester, double scale) async {
-      await tester.pumpWidget(MaterialApp(
-        home: FushiAppUiScale(
-          scale: scale,
-          child: const Scaffold(
-            body: Center(
-              child: SizedBox(key: target, width: 40, height: 20),
+      await tester.pumpWidget(
+        MaterialApp(
+          home: FushiAppUiScale(
+            scale: scale,
+            child: const Scaffold(
+              body: Center(child: SizedBox(key: target, width: 40, height: 20)),
             ),
           ),
         ),
-      ));
+      );
       await tester.pump();
       return tester.renderObject<RenderBox>(find.byKey(target));
     }
 
-    testWidgets('carries the on-screen (scaled) size at scale 1.0',
-        (WidgetTester tester) async {
+    testWidgets('carries the on-screen (scaled) size at scale 1.0', (
+      WidgetTester tester,
+    ) async {
       final RenderBox box = await pumpScaled(tester, 1.0);
       final Rect rect = globalRectOfBox(box);
       expect(rect.width, closeTo(40, 0.01));
@@ -38,21 +39,29 @@ void main() {
       expect(rect, box.localToGlobal(Offset.zero) & box.size);
     });
 
-    testWidgets('doubles the rect under a 2.0x UI scale',
-        (WidgetTester tester) async {
+    testWidgets('doubles the rect under a 2.0x UI scale', (
+      WidgetTester tester,
+    ) async {
       final RenderBox box = await pumpScaled(tester, 2.0);
       final Rect rect = globalRectOfBox(box);
       // Local size stays 40x20 (the Transform does not relayout the child) but
       // the on-screen rect must be 80x40.
       expect(box.size, const Size(40, 20));
-      expect(rect.width, closeTo(80, 0.5),
-          reason: 'on-screen width must scale with the UI scale');
-      expect(rect.height, closeTo(40, 0.5),
-          reason: 'on-screen height must scale with the UI scale');
+      expect(
+        rect.width,
+        closeTo(80, 0.5),
+        reason: 'on-screen width must scale with the UI scale',
+      );
+      expect(
+        rect.height,
+        closeTo(40, 0.5),
+        reason: 'on-screen height must scale with the UI scale',
+      );
     });
 
-    testWidgets('halves the rect under a 0.5x UI scale',
-        (WidgetTester tester) async {
+    testWidgets('halves the rect under a 0.5x UI scale', (
+      WidgetTester tester,
+    ) async {
       final RenderBox box = await pumpScaled(tester, 0.5);
       final Rect rect = globalRectOfBox(box);
       expect(rect.width, closeTo(20, 0.5));
@@ -61,15 +70,20 @@ void main() {
   });
 
   group('globalRectOfContext', () {
-    testWidgets('returns null for an unmounted context',
-        (WidgetTester tester) async {
+    testWidgets('returns null for an unmounted context', (
+      WidgetTester tester,
+    ) async {
       late BuildContext captured;
-      await tester.pumpWidget(MaterialApp(
-        home: Builder(builder: (BuildContext c) {
-          captured = c;
-          return const SizedBox.shrink();
-        }),
-      ));
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (BuildContext c) {
+              captured = c;
+              return const SizedBox.shrink();
+            },
+          ),
+        ),
+      );
       await tester.pumpWidget(const MaterialApp(home: SizedBox.shrink()));
       expect(globalRectOfContext(captured), isNull);
     });
@@ -77,49 +91,53 @@ void main() {
 
   // Directional navigation reads every candidate rect through the same helper,
   // so a non-1.0 scale must not break which control "down"/"up" lands on.
-  testWidgets('directional nav still lands correctly under a 2.0x UI scale',
-      (WidgetTester tester) async {
-    await tester.pumpWidget(MaterialApp(
-      home: FushiAppUiScale(
-        scale: 2.0,
-        child: FushiFocusRoot(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              for (final ({String id, Alignment align}) row
-                  in <({String id, Alignment align})>[
-                (id: 'top-right', align: Alignment.centerRight),
-                (id: 'mid-left', align: Alignment.centerLeft),
-                (id: 'bottom-right', align: Alignment.centerRight),
-              ])
-                Align(
-                  alignment: row.align,
-                  child: FushiFocusTarget(
-                    id: FushiFocusId(row.id),
-                    child: TextButton(
-                      onPressed: () {},
-                      child: Text(row.id),
+  testWidgets('directional nav still lands correctly under a 2.0x UI scale', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: FushiAppUiScale(
+          scale: 2.0,
+          child: FushiFocusRoot(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                for (final ({String id, Alignment align}) row
+                    in <({String id, Alignment align})>[
+                      (id: 'top-right', align: Alignment.centerRight),
+                      (id: 'mid-left', align: Alignment.centerLeft),
+                      (id: 'bottom-right', align: Alignment.centerRight),
+                    ])
+                  Align(
+                    alignment: row.align,
+                    child: FushiFocusTarget(
+                      id: FushiFocusId(row.id),
+                      child: TextButton(onPressed: () {}, child: Text(row.id)),
                     ),
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
-    ));
+    );
     await tester.pump();
 
     final BuildContext context = tester.element(find.byType(Column));
-    final FushiFocusController controller =
-        FushiFocusRoot.controllerOf(context);
+    final FushiFocusController controller = FushiFocusRoot.controllerOf(
+      context,
+    );
 
     expect(controller.requestById(const FushiFocusId('top-right')), isTrue);
     await tester.pump();
 
     expect(controller.move(FushiFocusDirection.down), isTrue);
     await tester.pump();
-    expect(controller.activeId, const FushiFocusId('mid-left'),
-        reason: 'down must reach the immediately-next row even under 2.0x');
+    expect(
+      controller.activeId,
+      const FushiFocusId('mid-left'),
+      reason: 'down must reach the immediately-next row even under 2.0x',
+    );
 
     expect(controller.move(FushiFocusDirection.down), isTrue);
     await tester.pump();
@@ -127,7 +145,10 @@ void main() {
 
     expect(controller.move(FushiFocusDirection.up), isTrue);
     await tester.pump();
-    expect(controller.activeId, const FushiFocusId('mid-left'),
-        reason: 'up is symmetric under scale too');
+    expect(
+      controller.activeId,
+      const FushiFocusId('mid-left'),
+      reason: 'up is symmetric under scale too',
+    );
   });
 }

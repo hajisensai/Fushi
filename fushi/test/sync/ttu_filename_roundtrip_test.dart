@@ -18,16 +18,22 @@ void main() {
 
   test('sanitize → unsanitize 往返恒等', () {
     for (final String title in titles) {
-      expect(unsanitizeTtuFilename(sanitizeTtuFilename(title)), title,
-          reason: title);
+      expect(
+        unsanitizeTtuFilename(sanitizeTtuFilename(title)),
+        title,
+        reason: title,
+      );
     }
   });
 
   test('反解后的 raw title 再 sanitize 一次就是本地 bookKey（去重键一致）', () {
     for (final String title in titles) {
       final String folderName = sanitizeTtuFilename(title);
-      expect(sanitizeTtuFilename(unsanitizeTtuFilename(folderName)), folderName,
-          reason: title);
+      expect(
+        sanitizeTtuFilename(unsanitizeTtuFilename(folderName)),
+        folderName,
+        reason: title,
+      );
     }
   });
 

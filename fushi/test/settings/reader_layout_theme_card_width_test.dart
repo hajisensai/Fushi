@@ -17,13 +17,16 @@ import 'package:flutter_test/flutter_test.dart';
 /// bespoke 导航 / 有声书 sub-pages.
 void main() {
   test('theme selector section is bare (no self horizontal inset)', () {
-    final String sheet =
-        File('lib/src/media/audiobook/reader_quick_settings_sheet.dart')
-            .readAsStringSync();
+    final String sheet = File(
+      'lib/src/media/audiobook/reader_quick_settings_sheet.dart',
+    ).readAsStringSync();
 
     final int start = sheet.indexOf('Widget _buildThemeSelectorSection(');
-    expect(start, greaterThanOrEqualTo(0),
-        reason: 'theme selector section builder must exist');
+    expect(
+      start,
+      greaterThanOrEqualTo(0),
+      reason: 'theme selector section builder must exist',
+    );
     final int end = sheet.indexOf('\n  }', start);
     expect(end, greaterThan(start));
     final String body = sheet.substring(start, end);
@@ -31,23 +34,35 @@ void main() {
     // The card must render as a plain AdaptiveSettingsSection with NO Padding /
     // detailHorizontalInsets wrapper — otherwise it would inset differently from
     // the flush schema body and misalign again (BUG-546).
-    expect(body.contains('AdaptiveSettingsSection('), isTrue,
-        reason: 'theme card is a plain settings section');
-    expect(body.contains('Padding('), isFalse,
-        reason: 'theme card must not re-wrap in a horizontal Padding');
-    expect(body.contains('detailHorizontalInsets'), isFalse,
-        reason: 'theme card must not carry its own detailHorizontalInsets');
+    expect(
+      body.contains('AdaptiveSettingsSection('),
+      isTrue,
+      reason: 'theme card is a plain settings section',
+    );
+    expect(
+      body.contains('Padding('),
+      isFalse,
+      reason: 'theme card must not re-wrap in a horizontal Padding',
+    );
+    expect(
+      body.contains('detailHorizontalInsets'),
+      isFalse,
+      reason: 'theme card must not carry its own detailHorizontalInsets',
+    );
   });
 
   test('layout schema projection drops the renderer inset (equal width)', () {
-    final String sheet =
-        File('lib/src/media/audiobook/reader_quick_settings_sheet.dart')
-            .readAsStringSync();
+    final String sheet = File(
+      'lib/src/media/audiobook/reader_quick_settings_sheet.dart',
+    ).readAsStringSync();
     // Config rows come from buildDetailContent; projecting them with
     // insetHorizontally:false makes them span the same pane width as the theme
     // card above (equal width, BUG-546) — and the bespoke sub-pages (TODO-1321).
-    expect(sheet.contains('insetHorizontally: false'), isTrue,
-        reason:
-            'schema projection must let the renderer drop its horizontal inset');
+    expect(
+      sheet.contains('insetHorizontally: false'),
+      isTrue,
+      reason:
+          'schema projection must let the renderer drop its horizontal inset',
+    );
   });
 }

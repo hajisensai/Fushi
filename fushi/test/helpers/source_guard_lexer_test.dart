@@ -19,10 +19,7 @@ final b = \'\'\'{ js }\'\'\';
 ''';
     test('maskComments 与原文等长、换行位置一致', () {
       expect(maskComments(src).length, src.length);
-      expect(
-        maskComments(src).split('\n').length,
-        src.split('\n').length,
-      );
+      expect(maskComments(src).split('\n').length, src.split('\n').length);
     });
     test('maskCommentsAndStrings 与原文等长', () {
       expect(maskCommentsAndStrings(src).length, src.length);
@@ -59,8 +56,10 @@ final b = \'\'\'{ js }\'\'\';
     });
     test('字符串字面量里的 // 不会被当注释砍掉（不制造假红）', () {
       expect(
-        containsCodeLine("const String s = 'https://example.com/a';\n",
-            'https://example.com/a'),
+        containsCodeLine(
+          "const String s = 'https://example.com/a';\n",
+          'https://example.com/a',
+        ),
         isTrue,
       );
     });
@@ -85,8 +84,11 @@ FushiToast.show(
         'final ok = true; // FushiToast.show(msg: t.failed,',
         '/*\nFushiToast.show(msg: t.failed, severity: x);\n*/',
       ]) {
-        expect(compactCode(src), isNot(contains(compactCode(needle))),
-            reason: src);
+        expect(
+          compactCode(src),
+          isNot(contains(compactCode(needle))),
+          reason: src,
+        );
       }
     });
 
@@ -114,7 +116,9 @@ FushiToast.show(
       expect(containsIdentifierCall('/* Image.file( */', 'Image'), isFalse);
       expect(containsIdentifierCall('// Image.file(', 'Image'), isFalse);
       expect(
-          containsIdentifierCall('final w = Image.file(f);', 'Image'), isTrue);
+        containsIdentifierCall('final w = Image.file(f);', 'Image'),
+        isTrue,
+      );
       expect(
         containsIdentifierCall('final w = PortraitCoverImage(x);', 'Image'),
         isFalse,
@@ -133,8 +137,11 @@ FushiToast.show(
       const String css = '/* off: .x { /* why */ } */ .keep { color: red; }';
       final String masked = maskCssComments(css);
       expect(masked.length, css.length);
-      expect(masked.contains('.keep { color: red; }'), isTrue,
-          reason: '首个 */ 之后的规则必须留下来');
+      expect(
+        masked.contains('.keep { color: red; }'),
+        isTrue,
+        reason: '首个 */ 之后的规则必须留下来',
+      );
     });
 
     test('maskHtmlComments 等长，且位置下标与原文一致', () {
@@ -143,9 +150,13 @@ FushiToast.show(
       final String masked = maskHtmlComments(html);
       expect(masked.length, html.length);
       expect(masked.contains('needleToken'), isFalse);
-      expect(masked.indexOf('<meta'), html.indexOf('<meta'),
-          reason: '删除式剥离会让下标漂移，位置型断言（meta 是否在 script 之前）'
-              '就无法回原文取证');
+      expect(
+        masked.indexOf('<meta'),
+        html.indexOf('<meta'),
+        reason:
+            '删除式剥离会让下标漂移，位置型断言（meta 是否在 script 之前）'
+            '就无法回原文取证',
+      );
       expect(masked.indexOf('<meta'), lessThan(masked.indexOf('<script')));
     });
 
@@ -156,24 +167,35 @@ FushiToast.show(
     });
 
     test('maskHashComments 等长，行首与行尾 # 注释都掩得掉', () {
-      const String mk = '# needleToken\n'
+      const String mk =
+          '# needleToken\n'
           'VER=ffmpeg6.1.6\n'
           '\tsed -i \'\' \'s/x/y/\' f.sh # needleToken trailing\n';
       final String masked = maskHashComments(mk);
       expect(masked.length, mk.length);
-      expect(masked.contains('needleToken'), isFalse,
-          reason: '整行注释与**行尾**注释都必须掩掉——旧的「整行以 # 开头」过滤器'
-              '正是漏掉行尾注释的那一档');
+      expect(
+        masked.contains('needleToken'),
+        isFalse,
+        reason:
+            '整行注释与**行尾**注释都必须掩掉——旧的「整行以 # 开头」过滤器'
+            '正是漏掉行尾注释的那一档',
+      );
       expect(masked.contains('VER=ffmpeg6.1.6'), isTrue);
-      expect(masked.indexOf('VER='), mk.indexOf('VER='),
-          reason: '等长掩码，下标可回原串切片');
+      expect(
+        masked.indexOf('VER='),
+        mk.indexOf('VER='),
+        reason: '等长掩码，下标可回原串切片',
+      );
     });
 
     test('引号内的 # 不是注释（误剪命令比漏剪注释危险）', () {
       const String mk = "\tsed 's/#tag/keepToken/' f.sh\n";
       final String masked = maskHashComments(mk);
-      expect(masked.contains('keepToken'), isTrue,
-          reason: '把引号内的 # 当注释会把半条命令抹成空白，要求型断言凭空变红');
+      expect(
+        masked.contains('keepToken'),
+        isTrue,
+        reason: '把引号内的 # 当注释会把半条命令抹成空白，要求型断言凭空变红',
+      );
       expect(masked.length, mk.length);
     });
 
@@ -201,8 +223,11 @@ FushiToast.show(
   }
 ''';
       final String body = methodBody(src, 'String jsFor()');
-      expect(body.contains('function f()'), isTrue,
-          reason: '方法体必须整段取到，不能在第一段 JS 的花括号处截断');
+      expect(
+        body.contains('function f()'),
+        isTrue,
+        reason: '方法体必须整段取到，不能在第一段 JS 的花括号处截断',
+      );
       expect(body.contains('sentinel'), isFalse, reason: '不能越界吞掉后一个方法');
     });
 
@@ -243,8 +268,10 @@ FushiToast.show(
     return Padding(padding: EdgeInsets.zero, child: child);
   }
 ''';
-      final String body =
-          methodBody(src, 'Widget wrap({required Widget child})');
+      final String body = methodBody(
+        src,
+        'Widget wrap({required Widget child})',
+      );
       expect(body.contains('Padding('), isTrue);
     });
 
@@ -292,10 +319,16 @@ String beta(int x) {
     test('箭头体只取到自己的分号，不吞掉紧随其后的花括号邻居', () {
       final String body = methodBody(arrowThenBrace, 'String alpha(int x)');
       expect(body.contains("'A"), isTrue, reason: '箭头体自身必须在窗口里');
-      expect(body.trimRight().endsWith(';'), isTrue,
-          reason: '箭头体的右边界是深度 0 的分号');
-      expect(body.contains('neighbourBody'), isFalse,
-          reason: '这正是 TODO-2726：旧实现把邻居 beta 的实现当成 alpha 的体返回');
+      expect(
+        body.trimRight().endsWith(';'),
+        isTrue,
+        reason: '箭头体的右边界是深度 0 的分号',
+      );
+      expect(
+        body.contains('neighbourBody'),
+        isFalse,
+        reason: '这正是 TODO-2726：旧实现把邻居 beta 的实现当成 alpha 的体返回',
+      );
     });
 
     test('=> switch (…) { … }; 里的花括号不提前也不延后收口', () {
@@ -356,8 +389,11 @@ Widget wrap({Widget Function() build = _fallback, required Widget child}) {
         src,
         'Widget wrap({Widget Function() build = _fallback',
       );
-      expect(body.contains('Padding('), isTrue,
-          reason: '参数表里的 => 在圆括号深度 >0，不该收口');
+      expect(
+        body.contains('Padding('),
+        isTrue,
+        reason: '参数表里的 => 在圆括号深度 >0，不该收口',
+      );
     });
 
     test('没有体的声明（抽象方法）fail loudly，绝不静默锚到下一个声明', () {
@@ -415,10 +451,16 @@ void caller() {
     test('箭头体返回 => 与 ; 之间的表达式，不含邻居', () {
       final String? body = topLevelFunctionBody(src, 'headline');
       expect(body, isNotNull);
-      expect(containsIdentifierCall(body!, 'label'), isTrue,
-          reason: '一跳可达判据靠的就是这个窗口');
-      expect(body.contains("case 'x'"), isFalse,
-          reason: '不得读到邻居 label 的 switch 块（PR#762 实测到的那次假绿）');
+      expect(
+        containsIdentifierCall(body!, 'label'),
+        isTrue,
+        reason: '一跳可达判据靠的就是这个窗口',
+      );
+      expect(
+        body.contains("case 'x'"),
+        isFalse,
+        reason: '不得读到邻居 label 的 switch 块（PR#762 实测到的那次假绿）',
+      );
     });
 
     test('花括号体返回含 {} 的整块', () {
@@ -470,15 +512,22 @@ class _State {
       expect(brace.contains('yield'), isFalse, reason: '不得越界读到邻居');
 
       expect(
-          topLevelFunctionBody(asyncSrc, 'ticks')?.contains('yield 1'), isTrue);
+        topLevelFunctionBody(asyncSrc, 'ticks')?.contains('yield 1'),
+        isTrue,
+      );
       expect(
-          topLevelFunctionBody(asyncSrc, 'ones')?.contains('yield 1'), isTrue);
+        topLevelFunctionBody(asyncSrc, 'ones')?.contains('yield 1'),
+        isTrue,
+      );
 
       final String? arrow = topLevelFunctionBody(asyncSrc, 'read');
       expect(arrow, isNotNull, reason: 'async 箭头体必须取得到');
       expect(containsIdentifierCall(arrow!, 'fetch'), isTrue);
-      expect(arrow.contains('{'), isFalse,
-          reason: 'async 箭头体收口在深度 0 的分号，不得吞掉下一个花括号体');
+      expect(
+        arrow.contains('{'),
+        isFalse,
+        reason: 'async 箭头体收口在深度 0 的分号，不得吞掉下一个花括号体',
+      );
     });
 
     test('只跳 async / sync，不跳任意标识符（调用点不得被误判成声明）', () {
@@ -491,15 +540,21 @@ void caller() {
   }
 }
 ''';
-      expect(topLevelFunctionBody(traps, 'target'), isNull,
-          reason: '`if (target(1)) {` 里的 target 是调用点，不是声明');
+      expect(
+        topLevelFunctionBody(traps, 'target'),
+        isNull,
+        reason: '`if (target(1)) {` 里的 target 是调用点，不是声明',
+      );
       const String asyncPrefixed = '''
 void caller() {
   asyncHelper(1);
 }
 ''';
-      expect(topLevelFunctionBody(asyncPrefixed, 'asyncHelper'), isNull,
-          reason: '`asyncHelper` 只是以 async 开头的标识符，不是修饰符');
+      expect(
+        topLevelFunctionBody(asyncPrefixed, 'asyncHelper'),
+        isNull,
+        reason: '`asyncHelper` 只是以 async 开头的标识符，不是修饰符',
+      );
     });
 
     test('调用点排在声明之前时仍锚到声明', () {
@@ -522,7 +577,9 @@ String headline({required String reason}) => label(reason);
     test('代码里以独立标识符出现 ⇒ 命中', () {
       expect(
         containsIdentifier(
-            '  static const int _galAudioBackMs = 8000;', '_galAudioBackMs'),
+          '  static const int _galAudioBackMs = 8000;',
+          '_galAudioBackMs',
+        ),
         isTrue,
       );
       expect(
@@ -534,8 +591,9 @@ String headline({required String reason}) => label(reason);
     test('只出现在注释里 ⇒ 不命中（否则守卫会被一句解释永久判红）', () {
       expect(
         containsIdentifier(
-            '// 历史：这里曾有 _galAudioBackMs 同时当两个量用。\nfinal int a = 1;',
-            '_galAudioBackMs'),
+          '// 历史：这里曾有 _galAudioBackMs 同时当两个量用。\nfinal int a = 1;',
+          '_galAudioBackMs',
+        ),
         isFalse,
       );
       expect(
@@ -547,19 +605,25 @@ String headline({required String reason}) => label(reason);
     test('更长的标识符含同名子串 ⇒ 不命中（否则正确写法反被判红）', () {
       expect(
         containsIdentifier(
-            'const int _galAudioBackMsLegacy = 1;', '_galAudioBackMs'),
+          'const int _galAudioBackMsLegacy = 1;',
+          '_galAudioBackMs',
+        ),
         isFalse,
       );
       expect(
         containsIdentifier(
-            'const int x_galAudioBackMs = 1;', '_galAudioBackMs'),
+          'const int x_galAudioBackMs = 1;',
+          '_galAudioBackMs',
+        ),
         isFalse,
       );
     });
 
     test('不要求是次调用（与 containsIdentifierCall 的分工）', () {
-      expect(containsIdentifier('a = selectable && !excluded;', 'selectable'),
-          isTrue);
+      expect(
+        containsIdentifier('a = selectable && !excluded;', 'selectable'),
+        isTrue,
+      );
       expect(
         containsIdentifierCall('a = selectable && !excluded;', 'selectable'),
         isFalse,
@@ -651,7 +715,9 @@ static const int cap = 60000;
 
     test('取到最内层调用的名字（跨注释、跨嵌套集合字面量）', () {
       expect(
-          enclosingCallOf(src, "id: 'sync.mode'").name, 'SettingsCustomItem');
+        enclosingCallOf(src, "id: 'sync.mode'").name,
+        'SettingsCustomItem',
+      );
       expect(
         enclosingCallOf(src, "id: 'sync.statistics'").name,
         'SettingsSwitchItem',
@@ -682,7 +748,9 @@ static const int cap = 60000;
       expect(enclosingCallOf(generic, 'value:').name, 'AdaptiveRow');
       const String named = 'EdgeInsets.symmetric(horizontal: 4)';
       expect(
-          enclosingCallOf(named, 'horizontal:').name, 'EdgeInsets.symmetric');
+        enclosingCallOf(named, 'horizontal:').name,
+        'EdgeInsets.symmetric',
+      );
     });
 
     test('找不到锚点时 fail，绝不静默锚到文件头', () {
@@ -780,9 +848,13 @@ final String js = \'\'\'
 \'\'\';
 ''';
       final String masked = maskCommentsAndScriptLines(withRegex);
-      expect(masked.contains('needleAfterRegex'), isTrue,
-          reason: '正则里的 // 被当行注释 ⇒ 从这里到行尾整段消失 ⇒ 要求型断言假红、'
-              '禁止型断言假绿');
+      expect(
+        masked.contains('needleAfterRegex'),
+        isTrue,
+        reason:
+            '正则里的 // 被当行注释 ⇒ 从这里到行尾整段消失 ⇒ 要求型断言假红、'
+            '禁止型断言假绿',
+      );
     });
   });
 
@@ -795,18 +867,25 @@ final String js = \'\'\'
     });
 
     test('行注释与块注释被掩掉', () {
-      expect(maskJsComments('a(); // needleToken\n').contains('needleToken'),
-          isFalse);
-      expect(maskJsComments('a(); /* needleToken */\n').contains('needleToken'),
-          isFalse);
+      expect(
+        maskJsComments('a(); // needleToken\n').contains('needleToken'),
+        isFalse,
+      );
+      expect(
+        maskJsComments('a(); /* needleToken */\n').contains('needleToken'),
+        isFalse,
+      );
       expect(maskJsComments('a(); // x\n').contains('a();'), isTrue);
     });
 
     test('正则字面量里的 // 不被当注释（maskComments 会砍，这是它的洞）', () {
       const String js = r"const s = u.replace(/^https?:\/\//i, ''); keepMe;";
       expect(maskJsComments(js).contains('keepMe'), isTrue);
-      expect(maskComments(js).contains('keepMe'), isFalse,
-          reason: 'Dart 掩码在 JS 正则上必然出错——这正是需要独立 JS 原语的原因');
+      expect(
+        maskComments(js).contains('keepMe'),
+        isFalse,
+        reason: 'Dart 掩码在 JS 正则上必然出错——这正是需要独立 JS 原语的原因',
+      );
     });
 
     test('字符类里的 / 不收口正则', () {
@@ -842,8 +921,11 @@ final String js = \'\'\'
       // 现状；真要修得引入表达式上下文/ASI 跟踪，代价远大于收益。这条用例把
       // 边界钉住：谁哪天真去修了，它会红，提醒同步更新这段说明。
       const String js = 'if (a) /x://y/.test(b); keepMe;';
-      expect(maskJsComments(js).contains('keepMe'), isFalse,
-          reason: '这是已知且有意的取舍，不是回归；改动前先读上面的说明');
+      expect(
+        maskJsComments(js).contains('keepMe'),
+        isFalse,
+        reason: '这是已知且有意的取舍，不是回归；改动前先读上面的说明',
+      );
       // 反过来：`(`、`=`、`[`、`return` 之后的正则都判得对，含 `\/` 转义斜杠。
       for (final String ok in <String>[
         r't(/x:\/\/y/); keepMe;',
@@ -858,8 +940,11 @@ final String js = \'\'\'
       const String js = "function f() { const s = '}{'; return 1; }";
       final String structural = maskJsCommentsAndStrings(js);
       expect(structural.length, js.length);
-      expect(structural.contains('}{'), isFalse,
-          reason: '串里的花括号必须退出配对，否则 methodBody 当场跑偏');
+      expect(
+        structural.contains('}{'),
+        isFalse,
+        reason: '串里的花括号必须退出配对，否则 methodBody 当场跑偏',
+      );
       expect(structural.contains('function f()'), isTrue);
     });
 
@@ -874,8 +959,11 @@ function next() {
   return 'sentinel';
 }
 ''';
-      final String body =
-          methodBody(js, 'function target()', lexicon: SourceLexicon.js);
+      final String body = methodBody(
+        js,
+        'function target()',
+        lexicon: SourceLexicon.js,
+      );
       expect(body.contains("'realBody'"), isTrue);
       expect(body.contains('sentinel'), isFalse, reason: '不能越界吞掉下一个函数');
     });

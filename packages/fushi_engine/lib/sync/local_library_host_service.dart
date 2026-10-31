@@ -1,8 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
-import 'package:drift/drift.dart'
-    show Value;
+import 'package:drift/drift.dart' show Value;
 import 'package:fushi_engine/media/video/disc/disc_format.dart'
     show discRootForMemberPath;
 import 'package:fushi_engine/models/dictionary_directory.dart';
@@ -22,8 +21,7 @@ import 'package:fushi_audio/fushi_audio_core.dart'
 import 'package:fushi_engine/media/media_pref_keys.dart';
 import 'package:fushi_engine/media/video/anime_source_video_path.dart';
 import 'package:fushi_engine/media/video/media_server_video_path.dart';
-import 'package:fushi_engine/media/video/m3u8_playlist.dart'
-    show PlaylistEntry;
+import 'package:fushi_engine/media/video/m3u8_playlist.dart' show PlaylistEntry;
 import 'package:fushi_engine/media/video/strm_file.dart'
     show isNetworkOnlyVideoPath, isStrmPath, lacksLocalMediaFile;
 import 'package:fushi_engine/media/video/dandanplay_file_key.dart'
@@ -54,7 +52,10 @@ import 'package:fushi_engine/media/video/scraper/cover_meta_store.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/video_storage.dart';
 import 'package:fushi_engine/media/video/series_playback_prefs.dart'
-    show effectiveSeriesAudioTrackId, effectiveSeriesDelayMs, effectiveSeriesSecondaryDelayMs;
+    show
+        effectiveSeriesAudioTrackId,
+        effectiveSeriesDelayMs,
+        effectiveSeriesSecondaryDelayMs;
 import 'package:fushi_engine/sync/online_novel_book.dart';
 import 'package:fushi_engine/sync/ttu_filename.dart' show sanitizeTtuFilename;
 import 'package:fushi_engine/sync/online_manga_host_reader.dart';
@@ -92,8 +93,7 @@ import 'package:fushi_engine/media/manga/manga_chapter_storage.dart'
         mangaChapterDirectoryByDigest,
         mangaChapterImagesDirectory,
         readDownloadedChapterPayload;
-import 'package:fushi_engine/media/manga/manga_storage.dart'
-    show MangaStorage;
+import 'package:fushi_engine/media/manga/manga_storage.dart' show MangaStorage;
 import 'package:fushi_engine/media/manga/mokuro_payload.dart'
     show MokuroPayload, parseMangaJson;
 
@@ -162,7 +162,7 @@ abstract class _LocalLibraryHostBase
   Future<void> Function() get _refreshDictionaryCache;
   Future<void> Function(Future<void> Function() body) get _runExclusive;
   Future<void> Function(Future<void> Function() body)
-      get _runSyncStateExclusive;
+  get _runSyncStateExclusive;
   Future<bool> Function()? get _isProfileTransferEnabled;
   Future<String> Function()? get _exportActiveProfileJson;
   Future<String> Function(String json)? get _importProfileJson;
@@ -170,7 +170,8 @@ abstract class _LocalLibraryHostBase
     required String bookKey,
     required String title,
     required int updatedAt,
-  })? get _adoptOverrideTitle;
+  })?
+  get _adoptOverrideTitle;
   Future<String?> Function(File epubFile)? get _importBookFromFile;
   Future<void> Function(EpubBookRow row)? get _cleanupBookOnDisk;
   List<LocalAudioDbEntry> get _localAudioEntries;
@@ -181,9 +182,11 @@ abstract class _LocalLibraryHostBase
   String get _videoSubtitleLangCode;
   Directory? get _uploadedVideoRoot;
   Directory? get _videoCoversDirectory;
-  Future<String?> Function(
-      {required String videoPath,
-      required String bookUid})? get _extractVideoCover;
+  Future<String?> Function({
+    required String videoPath,
+    required String bookUid,
+  })?
+  get _extractVideoCover;
   Future<VideoSourceScrapeTaskController?> Function()? get _scrapeController;
   OnlineMangaHostReader? get _onlineMangaReader;
 }
@@ -240,40 +243,42 @@ class LocalLibraryHostService extends _LocalLibraryHostBase
       required String bookKey,
       required String title,
       required int updatedAt,
-    })? adoptOverrideTitle,
+    })?
+    adoptOverrideTitle,
     String videoSubtitleLangCode = 'ja',
     Directory? uploadedVideoRoot,
     Directory? videoCoversDirectory,
     Future<String?> Function({
       required String videoPath,
       required String bookUid,
-    })? extractVideoCover,
+    })?
+    extractVideoCover,
     Future<VideoSourceScrapeTaskController?> Function()? scrapeController,
     OnlineMangaHostReader? onlineMangaReader,
-  })  : _db = db,
-        _dictionaryResourceRoot = dictionaryResourceRoot,
-        _packages = packages,
-        _refreshDictionaryCache = refreshDictionaryCache,
-        _runExclusive = runExclusive,
-        _runSyncStateExclusive = runSyncStateExclusive ?? runExclusive,
-        _importBookFromFile = importBookFromFile,
-        _cleanupBookOnDisk = cleanupBookOnDisk,
-        _localAudioEntriesSnapshot = localAudioEntries,
-        _localAudioEntriesProvider = localAudioEntriesProvider,
-        _localAudioStagingDir = localAudioStagingDir,
-        _onLocalAudioImported = onLocalAudioImported,
-        _audioDatabaseRoot = audioDatabaseRoot,
-        _removeLocalAudioEntry = removeLocalAudioEntry,
-        _isProfileTransferEnabled = isProfileTransferEnabled,
-        _exportActiveProfileJson = exportActiveProfileJson,
-        _importProfileJson = importProfileJson,
-        _adoptOverrideTitle = adoptOverrideTitle,
-        _videoSubtitleLangCode = videoSubtitleLangCode,
-        _uploadedVideoRoot = uploadedVideoRoot,
-        _videoCoversDirectory = videoCoversDirectory,
-        _extractVideoCover = extractVideoCover,
-        _scrapeController = scrapeController,
-        _onlineMangaReader = onlineMangaReader;
+  }) : _db = db,
+       _dictionaryResourceRoot = dictionaryResourceRoot,
+       _packages = packages,
+       _refreshDictionaryCache = refreshDictionaryCache,
+       _runExclusive = runExclusive,
+       _runSyncStateExclusive = runSyncStateExclusive ?? runExclusive,
+       _importBookFromFile = importBookFromFile,
+       _cleanupBookOnDisk = cleanupBookOnDisk,
+       _localAudioEntriesSnapshot = localAudioEntries,
+       _localAudioEntriesProvider = localAudioEntriesProvider,
+       _localAudioStagingDir = localAudioStagingDir,
+       _onLocalAudioImported = onLocalAudioImported,
+       _audioDatabaseRoot = audioDatabaseRoot,
+       _removeLocalAudioEntry = removeLocalAudioEntry,
+       _isProfileTransferEnabled = isProfileTransferEnabled,
+       _exportActiveProfileJson = exportActiveProfileJson,
+       _importProfileJson = importProfileJson,
+       _adoptOverrideTitle = adoptOverrideTitle,
+       _videoSubtitleLangCode = videoSubtitleLangCode,
+       _uploadedVideoRoot = uploadedVideoRoot,
+       _videoCoversDirectory = videoCoversDirectory,
+       _extractVideoCover = extractVideoCover,
+       _scrapeController = scrapeController,
+       _onlineMangaReader = onlineMangaReader;
 
   @override
   final FushiDatabase _db;
@@ -299,7 +304,7 @@ class LocalLibraryHostService extends _LocalLibraryHostBase
   /// （无头服务端那把本来就是库专用锁，形状相同）。
   @override
   final Future<void> Function(Future<void> Function() body)
-      _runSyncStateExclusive;
+  _runSyncStateExclusive;
 
   /// 互联「配置文件」（Profile）搬运的三个可选依赖（与本类其余可选能力同范式：
   /// 注入回调而不是把 ProfileRepository 的构造依赖整条拖进来）。生产由 AppModel
@@ -319,7 +324,8 @@ class LocalLibraryHostService extends _LocalLibraryHostBase
     required String bookKey,
     required String title,
     required int updatedAt,
-  })? _adoptOverrideTitle;
+  })?
+  _adoptOverrideTitle;
 
   /// 书籍导入回调（可选；null 时 importBook 抛 [UnsupportedError]）。
   /// 生产传 `(f) => EpubImporter.importFromPath(db: db, filePath: f.path, fileName: p.basename(f.path))`。
@@ -384,8 +390,11 @@ class LocalLibraryHostService extends _LocalLibraryHostBase
   /// 上传视频后的封面抽取回调（可选、best-effort；null 时上传的视频无封面占位）。
   /// 生产传 `extractVideoCover`（桌面 ffmpeg 抽帧；移动端无 ffmpeg 返 null 留空占位）。
   @override
-  final Future<String?> Function(
-      {required String videoPath, required String bookUid})? _extractVideoCover;
+  final Future<String?> Function({
+    required String videoPath,
+    required String bookUid,
+  })?
+  _extractVideoCover;
 
   /// 7a 远程刮削用的 host 刮削控制器解析器（可选）。控制器归 UI 层（HomePage）
   /// 持有并按偏好重建，host 不自造第二个协调器（两个协调器会各自抢
@@ -433,8 +442,8 @@ mixin _LocalLibraryHostShared on _LocalLibraryHostBase {
   /// 只含本机库里存在的条目（视频 bookUid / EPUB uid 与 bookKey / SRT uid）——消费方
   /// [listBooks] / [listVideos] 也只按这几种键查。
   Future<Map<String, RemoteCollectionMembership>>
-      _primaryCollectionMembership() async =>
-          (await _primaryCollectionData()).membership;
+  _primaryCollectionMembership() async =>
+      (await _primaryCollectionData()).membership;
 
   /// [_primaryCollectionMembership] 的富版本：同一趟查询顺带产出
   /// `'<mediaType>|<entryKey>'` → 主归属合集**行**（[MediaCollectionRow]）的映射，
@@ -442,10 +451,12 @@ mixin _LocalLibraryHostShared on _LocalLibraryHostBase {
   /// v52「同系列共享」——此前清单只读 row 级值，host 在合集里调的轴/选的音轨
   /// 远端永远看不到）。
   Future<
-      ({
-        Map<String, RemoteCollectionMembership> membership,
-        Map<String, MediaCollectionRow> collectionByEntry,
-      })> _primaryCollectionData() async {
+    ({
+      Map<String, RemoteCollectionMembership> membership,
+      Map<String, MediaCollectionRow> collectionByEntry,
+    })
+  >
+  _primaryCollectionData() async {
     // 一趟 SQL 收窄到本机条目（[FushiDatabase.getLocalPrimaryCollectionMembership]，
     // 与 getPrimaryCollectionIdByEntry 同一 MIN(collection_id) 折叠口径并带回组内
     // sortIndex）。旧实现全表 GROUP BY 后按主归属合集逐个 getCollectionItems：
@@ -462,9 +473,9 @@ mixin _LocalLibraryHostShared on _LocalLibraryHostBase {
     }
     final Map<int, MediaCollectionRow> collectionsById =
         <int, MediaCollectionRow>{
-      for (final MediaCollectionRow c in await _db.getAllMediaCollections())
-        c.id: c,
-    };
+          for (final MediaCollectionRow c in await _db.getAllMediaCollections())
+            c.id: c,
+        };
     final Map<String, RemoteCollectionMembership> out =
         <String, RemoteCollectionMembership>{};
     final Map<String, MediaCollectionRow> rowByEntry =

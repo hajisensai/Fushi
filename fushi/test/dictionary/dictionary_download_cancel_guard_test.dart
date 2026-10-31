@@ -66,14 +66,17 @@ void main() {
   test('每个词典下载调用点都真的传了 cancelToken', () {
     for (final String path in <String>[dialogPagePath, appModelPath]) {
       final String code = read(path);
-      final List<String> calls =
-          callArgumentLists(code, 'DictionaryDownloader.download(');
+      final List<String> calls = callArgumentLists(
+        code,
+        'DictionaryDownloader.download(',
+      );
       expect(calls, isNotEmpty, reason: '$path 里找不到下载调用点，守卫锚点过期');
       for (final String call in calls) {
         expect(
           call.contains('cancelToken:'),
           isTrue,
-          reason: '$path 的某个 DictionaryDownloader.download 没传 cancelToken：'
+          reason:
+              '$path 的某个 DictionaryDownloader.download 没传 cancelToken：'
               '这正是 BUG-1499 的根因形态（形参在、没人传，取消按钮按了没用）\n$call',
         );
       }
@@ -90,7 +93,8 @@ void main() {
     expect(
       runner.contains('Navigator.pop('),
       isFalse,
-      reason: '任务收尾处再出现 Navigator.pop 就意味着：用户把进度框收起来之后，'
+      reason:
+          '任务收尾处再出现 Navigator.pop 就意味着：用户把进度框收起来之后，'
           '收尾那一 pop 会弹掉词典页本身。关闭必须由对话框自己（AutoCloser）负责。',
     );
     expect(
@@ -110,13 +114,15 @@ void main() {
     expect(
       auto.contains('dictionaryDownloadController.run('),
       isTrue,
-      reason: '自动更新不走同一把锁 → 它与手动下载能并发写同一本词典，'
+      reason:
+          '自动更新不走同一把锁 → 它与手动下载能并发写同一本词典，'
           '而两边导入共用同一个 import_temp 暂存目录（BUG-1500）',
     );
     expect(
       auto.contains('isBusy: dictionaryDownloadController.isBusy'),
       isTrue,
-      reason: '「是否已有下载在跑」的判据必须是 app 级 controller，'
+      reason:
+          '「是否已有下载在跑」的判据必须是 app 级 controller，'
           '不能退回本类私有的 bool（那挡不住词典页的手动下载）',
     );
   });
@@ -132,7 +138,8 @@ void main() {
       expect(
         params.first.toLowerCase().contains('cancel'),
         isFalse,
-        reason: '$signature 出现取消参数：native 导入是一次不可分割的 FFI 调用，'
+        reason:
+            '$signature 出现取消参数：native 导入是一次不可分割的 FFI 调用，'
             '而 Dart 侧「删旧 → publish」之间的任何中断都会让用户旧词典已删、'
             '新词典没落地。要支持真取消必须先让 C++ 侧有安全检查点（BUG-1499）。',
       );
@@ -152,7 +159,10 @@ void f() {
       'DictionaryDownloader.download(',
     );
     expect(calls, hasLength(1), reason: '注释里的调用不该被算成命中');
-    expect(calls.single.contains('cancelToken:'), isFalse,
-        reason: '注释里的 cancelToken 不该把守卫骗绿');
+    expect(
+      calls.single.contains('cancelToken:'),
+      isFalse,
+      reason: '注释里的 cancelToken 不该把守卫骗绿',
+    );
   });
 }

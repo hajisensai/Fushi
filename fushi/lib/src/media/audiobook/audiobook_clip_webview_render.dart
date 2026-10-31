@@ -158,7 +158,8 @@ Future<void> renderAudiobookClipFramesViaWebView({
   required AudiobookClipFrameSink onFrame,
   List<int>? highlightIndices,
 }) async {
-  final List<int> indices = highlightIndices ??
+  final List<int> indices =
+      highlightIndices ??
       List<int>.generate(segments.length, (int i) => i, growable: false);
   if (indices.isEmpty) return;
 
@@ -207,10 +208,12 @@ Future<void> renderAudiobookClipFramesViaWebView({
           unawaited(deathGuard.handleWebContentTerminated()),
       onRenderProcessGone:
           (InAppWebViewController _, RenderProcessGoneDetail detail) =>
-              unawaited(deathGuard.handleDeath(
-        didCrash: detail.didCrash,
-        rendererPriorityAtExit: detail.rendererPriorityAtExit,
-      )),
+              unawaited(
+                deathGuard.handleDeath(
+                  didCrash: detail.didCrash,
+                  rendererPriorityAtExit: detail.rendererPriorityAtExit,
+                ),
+              ),
     );
     await headless.run();
 
@@ -286,8 +289,9 @@ Future<void> renderAudiobookClipFramesViaWebView({
         // TODO-1167：takeScreenshot 加超时。load 已有 8s 超时但截图原来没有，单帧
         // takeScreenshot 卡死会永久挂住整条导出管线（native 位图迟迟不回）→ 卡死/ANR。
         // 超时该帧记 null，调用方走单句静态回退，绝不无限等。
-        shot =
-            await controller.takeScreenshot().timeout(_kClipScreenshotTimeout);
+        shot = await controller.takeScreenshot().timeout(
+          _kClipScreenshotTimeout,
+        );
         if (shot == null) {
           ErrorLogService.instance.log(
             'AudiobookClipWebViewRender.screenshotNull',
@@ -344,9 +348,7 @@ Future<Uint8List?> renderAudiobookClipTextViaWebView({
 }) async {
   Uint8List? result;
   await renderAudiobookClipFramesViaWebView(
-    segments: <AudiobookClipTextSegment>[
-      AudiobookClipTextSegment(text: text),
-    ],
+    segments: <AudiobookClipTextSegment>[AudiobookClipTextSegment(text: text)],
     layout: layout,
     highlightIndices: <int>[0],
     onFrame: (int highlightIndex, Uint8List? pngBytes) async {

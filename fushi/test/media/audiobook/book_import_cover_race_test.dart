@@ -39,8 +39,7 @@ void main() {
     return readAudioCoverPath();
   }
 
-  test(
-      'awaiting the in-flight extraction before reading the audio cover yields '
+  test('awaiting the in-flight extraction before reading the audio cover yields '
       'a non-null cover (BUG-486)', () async {
     String? audioCover;
     // Extraction settles the cover only after a delay, simulating the ffmpeg
@@ -61,43 +60,51 @@ void main() {
     expect(applied, '/tmp/audio_cover_123.jpg');
   });
 
-  test('a settled extraction adds zero wait and still surfaces the cover',
-      () async {
-    String? audioCover = '/tmp/audio_cover_warm.jpg';
-    final Future<void> extraction = Future<void>.value();
-
-    final Stopwatch sw = Stopwatch()..start();
-    final String? applied = await applyBestCover(
-      coverPath: null,
-      coverExtraction: extraction,
-      readAudioCoverPath: () => audioCover,
-    );
-    sw.stop();
-
-    expect(applied, '/tmp/audio_cover_warm.jpg');
-    // Already-completed extraction must not introduce artificial latency.
-    expect(sw.elapsedMilliseconds, lessThan(1000));
-  });
-
   test(
-      '_applyBestCoverToEpub awaits _coverExtraction before reading '
+    'a settled extraction adds zero wait and still surfaces the cover',
+    () async {
+      String? audioCover = '/tmp/audio_cover_warm.jpg';
+      final Future<void> extraction = Future<void>.value();
+
+      final Stopwatch sw = Stopwatch()..start();
+      final String? applied = await applyBestCover(
+        coverPath: null,
+        coverExtraction: extraction,
+        readAudioCoverPath: () => audioCover,
+      );
+      sw.stop();
+
+      expect(applied, '/tmp/audio_cover_warm.jpg');
+      // Already-completed extraction must not introduce artificial latency.
+      expect(sw.elapsedMilliseconds, lessThan(1000));
+    },
+  );
+
+  test('_applyBestCoverToEpub awaits _coverExtraction before reading '
       '_audioCoverPath (source guard, BUG-486)', () {
-    final String source =
-        File('lib/src/media/audiobook/book_import_dialog.dart')
-            .readAsStringSync();
+    final String source = File(
+      'lib/src/media/audiobook/book_import_dialog.dart',
+    ).readAsStringSync();
 
     // The in-flight-extraction field must exist.
-    expect(source, contains('Future<void>? _coverExtraction'),
-        reason: 'the in-flight cover-extraction Future field must exist so '
-            'fire-and-forget extraction can be awaited at import time.');
+    expect(
+      source,
+      contains('Future<void>? _coverExtraction'),
+      reason:
+          'the in-flight cover-extraction Future field must exist so '
+          'fire-and-forget extraction can be awaited at import time.',
+    );
 
     final int start = source.indexOf('Future<void> _applyBestCoverToEpub(');
     expect(start, isNonNegative, reason: '_applyBestCoverToEpub must exist.');
 
     // Inspect only the body of _applyBestCoverToEpub.
     final int audioBranch = source.indexOf('_audioCoverPath != null', start);
-    expect(audioBranch, greaterThan(start),
-        reason: 'the _audioCoverPath fallback branch must exist.');
+    expect(
+      audioBranch,
+      greaterThan(start),
+      reason: 'the _audioCoverPath fallback branch must exist.',
+    );
 
     final String head = source.substring(start, audioBranch);
     // Before the _audioCoverPath branch the method must await the in-flight
@@ -106,13 +113,16 @@ void main() {
     // accept either the helper call or an inline await. Reverting the await
     // makes this red.
     expect(
-        RegExp(r'await\s+_awaitCoverExtraction\(\)|'
-                r'await\s+extraction|await\s+_coverExtraction')
-            .hasMatch(head),
-        isTrue,
-        reason: '_applyBestCoverToEpub must `await` the in-flight extraction '
-            'BEFORE the _audioCoverPath branch, otherwise a cover whose ffmpeg '
-            'probe is still in flight at Import time is dropped (BUG-486).');
+      RegExp(
+        r'await\s+_awaitCoverExtraction\(\)|'
+        r'await\s+extraction|await\s+_coverExtraction',
+      ).hasMatch(head),
+      isTrue,
+      reason:
+          '_applyBestCoverToEpub must `await` the in-flight extraction '
+          'BEFORE the _audioCoverPath branch, otherwise a cover whose ffmpeg '
+          'probe is still in flight at Import time is dropped (BUG-486).',
+    );
   });
 
   // TODO-1034: the twin path -- a subtitle book whose cover comes from an m4b's
@@ -122,34 +132,41 @@ void main() {
   // race applies: if the ffmpeg probe is still in flight when the user taps
   // Import, `_audioCoverPath` is null and the cover is dropped. Fix mirrors the
   // main path: await the in-flight extraction before reading the cover.
-  test(
-      '_importSubtitleBook awaits the in-flight extraction before reading '
+  test('_importSubtitleBook awaits the in-flight extraction before reading '
       '_audioCoverPath (source guard, TODO-1034)', () {
-    final String source =
-        File('lib/src/media/audiobook/book_import_dialog.dart')
-            .readAsStringSync();
+    final String source = File(
+      'lib/src/media/audiobook/book_import_dialog.dart',
+    ).readAsStringSync();
 
     final int start = source.indexOf('Future<void> _importSubtitleBook(');
     expect(start, isNonNegative, reason: '_importSubtitleBook must exist.');
 
     // The point where the cover source is read inside _importSubtitleBook.
-    final int coverRead =
-        source.indexOf('_coverPath ?? _audioCoverPath', start);
-    expect(coverRead, greaterThan(start),
-        reason: 'the subtitle-book cover read must exist.');
+    final int coverRead = source.indexOf(
+      '_coverPath ?? _audioCoverPath',
+      start,
+    );
+    expect(
+      coverRead,
+      greaterThan(start),
+      reason: 'the subtitle-book cover read must exist.',
+    );
 
     final String head = source.substring(start, coverRead);
     // Before reading the cover, the method must await the in-flight extraction
     // (via the shared helper or an inline await). Removing this await makes the
     // twin path drop covers whose ffmpeg probe is still in flight at Import.
     expect(
-        RegExp(r'await\s+_awaitCoverExtraction\(\)|'
-                r'await\s+extraction|await\s+_coverExtraction')
-            .hasMatch(head),
-        isTrue,
-        reason: '_importSubtitleBook must `await` the in-flight cover '
-            'extraction BEFORE reading `_coverPath ?? _audioCoverPath`, '
-            'otherwise the subtitle-book+m4b path drops the embedded cover '
-            'when the ffmpeg probe is still in flight (TODO-1034).');
+      RegExp(
+        r'await\s+_awaitCoverExtraction\(\)|'
+        r'await\s+extraction|await\s+_coverExtraction',
+      ).hasMatch(head),
+      isTrue,
+      reason:
+          '_importSubtitleBook must `await` the in-flight cover '
+          'extraction BEFORE reading `_coverPath ?? _audioCoverPath`, '
+          'otherwise the subtitle-book+m4b path drops the embedded cover '
+          'when the ffmpeg probe is still in flight (TODO-1034).',
+    );
   });
 }

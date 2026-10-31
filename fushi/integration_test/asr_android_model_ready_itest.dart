@@ -41,8 +41,10 @@ import 'package:fushi/utils.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:path/path.dart' as p;
 
-const String _kMode =
-    String.fromEnvironment('ASR_MODE', defaultValue: 'network');
+const String _kMode = String.fromEnvironment(
+  'ASR_MODE',
+  defaultValue: 'network',
+);
 
 /// 种子模型目录 / 音频：缺省落在 app 数据根（`<support>/asr_seed/<pack.id>` /
 /// `<support>/asr_e2e/ja_tts_16k.wav`，Android 上 = `/data/user/0/<pkg>/files/…`，
@@ -67,7 +69,8 @@ String _normalize(String s) =>
 String _describeStore(AsrModelStore store, AsrEncoderVariant variant) {
   final StringBuffer sb = StringBuffer();
   sb.write(
-      'dir=${store.dir.path} ready(${variant.name})=${store.isReady(variant)}');
+    'dir=${store.dir.path} ready(${variant.name})=${store.isReady(variant)}',
+  );
   if (store.dir.existsSync()) {
     for (final FileSystemEntity e in store.dir.listSync()) {
       if (e is File) {
@@ -89,22 +92,24 @@ Future<ModelDownloadEvent?> _downloadThenCancel(
   sub = service
       .downloadModel(language: plan.language, variant: plan.variant)
       .listen(
-    (ModelDownloadEvent e) {
-      if (done.isCompleted) return;
-      if (e.receivedBytes >= _kCancelAfterBytes && !e.done) {
-        _log('cancelling at ${e.fileName} ${e.receivedBytes}/${e.totalBytes}');
-        unawaited(sub.cancel());
-        done.complete(e);
-      }
-    },
-    onError: (Object error, StackTrace stack) {
-      _log('download error before cancel point: $error');
-      if (!done.isCompleted) done.completeError(error, stack);
-    },
-    onDone: () {
-      if (!done.isCompleted) done.complete(null);
-    },
-  );
+        (ModelDownloadEvent e) {
+          if (done.isCompleted) return;
+          if (e.receivedBytes >= _kCancelAfterBytes && !e.done) {
+            _log(
+              'cancelling at ${e.fileName} ${e.receivedBytes}/${e.totalBytes}',
+            );
+            unawaited(sub.cancel());
+            done.complete(e);
+          }
+        },
+        onError: (Object error, StackTrace stack) {
+          _log('download error before cancel point: $error');
+          if (!done.isCompleted) done.completeError(error, stack);
+        },
+        onDone: () {
+          if (!done.isCompleted) done.complete(null);
+        },
+      );
   return done.future;
 }
 
@@ -122,8 +127,10 @@ Future<void> _downloadToEnd(
     if (e.fileName != lastFile ||
         e.done ||
         e.receivedBytes - lastLogged >= 8 * 1024 * 1024) {
-      _log('progress ${e.fileName} ${e.receivedBytes}/${e.totalBytes}'
-          '${e.done ? ' done' : ''}');
+      _log(
+        'progress ${e.fileName} ${e.receivedBytes}/${e.totalBytes}'
+        '${e.done ? ' done' : ''}',
+      );
       lastFile = e.fileName;
       lastLogged = e.receivedBytes;
     }
@@ -161,178 +168,187 @@ void main() {
     audio = _kAudioOverride.isNotEmpty
         ? _kAudioOverride
         : p.join(support.path, 'asr_e2e', 'ja_tts_16k.wav');
-    _log('mode=$_kMode seed=$seedDir audio=$audio '
-        '${_describeStore(store, AsrEncoderVariant.int8)}');
+    _log(
+      'mode=$_kMode seed=$seedDir audio=$audio '
+      '${_describeStore(store, AsrEncoderVariant.int8)}',
+    );
   });
 
-  testWidgets(
-    '真网络下载：中断留 .part、plan 报部分；续传后每个文件长度等于清单、plan 报就绪',
-    (WidgetTester tester) async {
-      if (_kMode != 'network') {
-        _log('ASR_MODE=$_kMode，跳过网络下载用例');
-        return;
-      }
-      if (store.dir.existsSync()) {
-        await store.dir.delete(recursive: true);
-      }
-      final AsrTranscribePlan fresh = await service.plan(
-        language: _kLang,
-        preference: AsrAccelerationPreference.auto,
+  testWidgets('真网络下载：中断留 .part、plan 报部分；续传后每个文件长度等于清单、plan 报就绪', (
+    WidgetTester tester,
+  ) async {
+    if (_kMode != 'network') {
+      _log('ASR_MODE=$_kMode，跳过网络下载用例');
+      return;
+    }
+    if (store.dir.existsSync()) {
+      await store.dir.delete(recursive: true);
+    }
+    final AsrTranscribePlan fresh = await service.plan(
+      language: _kLang,
+      preference: AsrAccelerationPreference.auto,
+    );
+    _log(
+      'plan(fresh) variant=${fresh.variant.name} '
+      'ep=${fresh.expectedProvider.name} ready=${fresh.modelReady} '
+      'obtained=${fresh.modelStatus.obtainedBytes}/'
+      '${fresh.modelStatus.totalBytes} probeError=${fresh.probeError}',
+    );
+    expect(fresh.modelReady, isFalse);
+    expect(fresh.modelStatus.obtainedBytes, 0);
+
+    // 1. 下到一半掐断。
+    final ModelDownloadEvent? cancelledAt = await _downloadThenCancel(
+      service,
+      fresh,
+    );
+    expect(cancelledAt, isNotNull, reason: '还没到取消点下载就结束了');
+    // 取消是异步的：等下载器把 sink 关掉、.part 长度稳定。
+    await Future<void>.delayed(const Duration(seconds: 2));
+    final File part = File(
+      '${store.fileFor(asrEncoderRole(fresh.variant)).path}.part',
+    );
+    _log('after cancel: ${_describeStore(store, fresh.variant)}');
+    expect(part.existsSync(), isTrue, reason: '取消后 .part 应留在盘上');
+    expect(part.lengthSync(), greaterThan(0));
+    expect(store.isReady(fresh.variant), isFalse);
+
+    final AsrTranscribePlan partial = await service.plan(
+      language: _kLang,
+      preference: AsrAccelerationPreference.auto,
+    );
+    _log(
+      'plan(partial) ready=${partial.modelReady} '
+      'obtained=${partial.modelStatus.obtainedBytes}/'
+      '${partial.modelStatus.totalBytes} '
+      'toDownload=${partial.bytesToDownload}',
+    );
+    expect(partial.modelReady, isFalse);
+    expect(partial.modelStatus.obtainedBytes, part.lengthSync());
+    expect(partial.variant, fresh.variant, reason: '两次 plan 推荐的变体必须一致');
+
+    // 2. 续传到完成。
+    await _downloadToEnd(service, partial);
+    _log('after resume: ${_describeStore(store, fresh.variant)}');
+    for (final AsrModelFile file in store.pack.filesFor(fresh.variant)) {
+      final File f = store.fileFor(file.role);
+      expect(f.existsSync(), isTrue, reason: '缺 ${file.fileName}');
+      expect(
+        f.lengthSync(),
+        file.expectedBytes,
+        reason: '${file.fileName} 长度与清单不符',
       );
-      _log('plan(fresh) variant=${fresh.variant.name} '
-          'ep=${fresh.expectedProvider.name} ready=${fresh.modelReady} '
-          'obtained=${fresh.modelStatus.obtainedBytes}/'
-          '${fresh.modelStatus.totalBytes} probeError=${fresh.probeError}');
-      expect(fresh.modelReady, isFalse);
-      expect(fresh.modelStatus.obtainedBytes, 0);
+      expect(File('${f.path}.part').existsSync(), isFalse);
+    }
+    final AsrTranscribePlan ready = await service.plan(
+      language: _kLang,
+      preference: AsrAccelerationPreference.auto,
+    );
+    _log(
+      'plan(ready) ready=${ready.modelReady} '
+      'obtained=${ready.modelStatus.obtainedBytes}/'
+      '${ready.modelStatus.totalBytes} disk=${ready.modelStatus.diskBytes}',
+    );
+    expect(ready.modelReady, isTrue);
+    expect(ready.variant, fresh.variant);
+  }, timeout: const Timeout(Duration(minutes: 40)));
 
-      // 1. 下到一半掐断。
-      final ModelDownloadEvent? cancelledAt =
-          await _downloadThenCancel(service, fresh);
-      expect(cancelledAt, isNotNull, reason: '还没到取消点下载就结束了');
-      // 取消是异步的：等下载器把 sink 关掉、.part 长度稳定。
-      await Future<void>.delayed(const Duration(seconds: 2));
-      final File part =
-          File('${store.fileFor(asrEncoderRole(fresh.variant)).path}.part');
-      _log('after cancel: ${_describeStore(store, fresh.variant)}');
-      expect(part.existsSync(), isTrue, reason: '取消后 .part 应留在盘上');
-      expect(part.lengthSync(), greaterThan(0));
-      expect(store.isReady(fresh.variant), isFalse);
+  testWidgets('就绪模型真转录：后台 isolate + PCM 桥 + ORT Android 读出日语', (
+    WidgetTester tester,
+  ) async {
+    if (!store.isReady(AsrEncoderVariant.int8)) {
+      _log('模型未就绪，从种子目录拷入：$seedDir');
+      await _seedFrom(Directory(seedDir), store);
+    }
+    _log(_describeStore(store, AsrEncoderVariant.int8));
+    expect(File(audio).existsSync(), isTrue, reason: '音频不存在：$audio');
 
-      final AsrTranscribePlan partial = await service.plan(
-        language: _kLang,
-        preference: AsrAccelerationPreference.auto,
-      );
-      _log('plan(partial) ready=${partial.modelReady} '
-          'obtained=${partial.modelStatus.obtainedBytes}/'
-          '${partial.modelStatus.totalBytes} '
-          'toDownload=${partial.bytesToDownload}');
-      expect(partial.modelReady, isFalse);
-      expect(partial.modelStatus.obtainedBytes, part.lengthSync());
-      expect(partial.variant, fresh.variant, reason: '两次 plan 推荐的变体必须一致');
+    final AsrTranscribePlan plan = await service.plan(
+      language: _kLang,
+      preference: AsrAccelerationPreference.auto,
+    );
+    expect(plan.modelReady, isTrue, reason: 'plan 未判就绪');
+    await service.discard(<String>[audio], _kLang);
 
-      // 2. 续传到完成。
-      await _downloadToEnd(service, partial);
-      _log('after resume: ${_describeStore(store, fresh.variant)}');
-      for (final AsrModelFile file in store.pack.filesFor(fresh.variant)) {
-        final File f = store.fileFor(file.role);
-        expect(f.existsSync(), isTrue, reason: '缺 ${file.fileName}');
-        expect(
-          f.lengthSync(),
-          file.expectedBytes,
-          reason: '${file.fileName} 长度与清单不符',
-        );
-        expect(File('${f.path}.part').existsSync(), isFalse);
-      }
-      final AsrTranscribePlan ready = await service.plan(
-        language: _kLang,
-        preference: AsrAccelerationPreference.auto,
-      );
-      _log('plan(ready) ready=${ready.modelReady} '
-          'obtained=${ready.modelStatus.obtainedBytes}/'
-          '${ready.modelStatus.totalBytes} disk=${ready.modelStatus.diskBytes}');
-      expect(ready.modelReady, isTrue);
-      expect(ready.variant, fresh.variant);
-    },
-    timeout: const Timeout(Duration(minutes: 40)),
-  );
-
-  testWidgets(
-    '就绪模型真转录：后台 isolate + PCM 桥 + ORT Android 读出日语',
-    (WidgetTester tester) async {
-      if (!store.isReady(AsrEncoderVariant.int8)) {
-        _log('模型未就绪，从种子目录拷入：$seedDir');
-        await _seedFrom(Directory(seedDir), store);
-      }
-      _log(_describeStore(store, AsrEncoderVariant.int8));
-      expect(File(audio).existsSync(), isTrue, reason: '音频不存在：$audio');
-
-      final AsrTranscribePlan plan = await service.plan(
-        language: _kLang,
-        preference: AsrAccelerationPreference.auto,
-      );
-      expect(plan.modelReady, isTrue, reason: 'plan 未判就绪');
-      await service.discard(<String>[audio], _kLang);
-
-      final Stopwatch load = Stopwatch()..start();
-      final AsrRunningTranscription running = await service.start(
-        audioPaths: <String>[audio],
-        language: _kLang,
-        variant: plan.variant,
-        preference: AsrAccelerationPreference.auto,
-      );
-      load.stop();
-      _log('engine loaded in ${load.elapsedMilliseconds}ms '
-          'resolution=${running.encoderResolution} '
-          'greedy=${running.greedyGraphAvailable} '
-          '(${running.greedyUnavailableReason})');
-      AsrTranscribeResult? result;
-      try {
-        await for (final AsrTranscribeEvent e in running.run()) {
-          if (e is AsrTranscribeProgressEvent) {
-            _log('progress processedMs=${e.progress.processedMs} '
-                'segments=${e.progress.segmentsDone}');
-          }
-          if (e is AsrTranscribeFinishedEvent) result = e.result;
+    final Stopwatch load = Stopwatch()..start();
+    final AsrRunningTranscription running = await service.start(
+      audioPaths: <String>[audio],
+      language: _kLang,
+      variant: plan.variant,
+      preference: AsrAccelerationPreference.auto,
+    );
+    load.stop();
+    _log(
+      'engine loaded in ${load.elapsedMilliseconds}ms '
+      'resolution=${running.encoderResolution} '
+      'greedy=${running.greedyGraphAvailable} '
+      '(${running.greedyUnavailableReason})',
+    );
+    AsrTranscribeResult? result;
+    try {
+      await for (final AsrTranscribeEvent e in running.run()) {
+        if (e is AsrTranscribeProgressEvent) {
+          _log(
+            'progress processedMs=${e.progress.processedMs} '
+            'segments=${e.progress.segmentsDone}',
+          );
         }
-      } finally {
-        await running.dispose();
+        if (e is AsrTranscribeFinishedEvent) result = e.result;
       }
-      expect(result, isNotNull, reason: '任务没有以 finished 结束');
-      final List<AsrTranscribedSegment> segments =
-          await AsrTranscribeJob.loadSegments(
-        await service.jobDirFor(<String>[audio], _kLang),
-      );
-      final String text =
-          segments.map((AsrTranscribedSegment s) => s.text).join();
-      _log(
-          'transcript: "$text" cues=${result!.cueCount} srt=${result.srtPath}');
-      expect(File(result.srtPath).lengthSync(), greaterThan(0));
-      expect(_normalize(text), contains(_normalize(_kExpect)));
-    },
-    timeout: const Timeout(Duration(minutes: 20)),
-  );
+    } finally {
+      await running.dispose();
+    }
+    expect(result, isNotNull, reason: '任务没有以 finished 结束');
+    final List<AsrTranscribedSegment> segments =
+        await AsrTranscribeJob.loadSegments(
+          await service.jobDirFor(<String>[audio], _kLang),
+        );
+    final String text = segments
+        .map((AsrTranscribedSegment s) => s.text)
+        .join();
+    _log('transcript: "$text" cues=${result!.cueCount} srt=${result.srtPath}');
+    expect(File(result.srtPath).lengthSync(), greaterThan(0));
+    expect(_normalize(text), contains(_normalize(_kExpect)));
+  }, timeout: const Timeout(Duration(minutes: 20)));
 
-  testWidgets(
-    '转录弹层拿真服务：判出「模型就绪」并给出「开始转录」按钮',
-    (WidgetTester tester) async {
-      expect(store.isReady(AsrEncoderVariant.int8), isTrue);
-      await tester.pumpWidget(
-        ProviderScope(
-          child: TranslationProvider(
-            child: MaterialApp(
-              home: Scaffold(
-                body: AsrTranscribeSheet(
-                  audioPaths: <String>[audio],
-                  service: service,
-                  languageGetter: () => _kLang.tag,
-                  languageSetter: (String _) async {},
-                ),
+  testWidgets('转录弹层拿真服务：判出「模型就绪」并给出「开始转录」按钮', (WidgetTester tester) async {
+    expect(store.isReady(AsrEncoderVariant.int8), isTrue);
+    await tester.pumpWidget(
+      ProviderScope(
+        child: TranslationProvider(
+          child: MaterialApp(
+            home: Scaffold(
+              body: AsrTranscribeSheet(
+                audioPaths: <String>[audio],
+                service: service,
+                languageGetter: () => _kLang.tag,
+                languageSetter: (String _) async {},
               ),
             ),
           ),
         ),
-      );
-      // plan() 真走 EP 探测 + 目录量算；轮询到弹层离开「准备中」。
-      final Finder start =
-          find.widgetWithText(FilledButton, t.audiobook_transcribe_start);
-      final Stopwatch sw = Stopwatch()..start();
-      while (start.evaluate().isEmpty &&
-          sw.elapsed < const Duration(seconds: 60)) {
-        await tester.pump(const Duration(milliseconds: 250));
-      }
-      final String status = tester
-          .widget<Text>(
-              find.byKey(const ValueKey<String>('asr-transcribe-status')))
-          .data!;
-      _log('sheet status after ${sw.elapsedMilliseconds}ms: "$status"');
-      expect(start, findsOneWidget, reason: '弹层没给出「开始转录」：$status');
-      expect(
-        find.widgetWithText(
-            FilledButton, t.audiobook_transcribe_model_download),
-        findsNothing,
-      );
-    },
-    timeout: const Timeout(Duration(minutes: 5)),
-  );
+      ),
+    );
+    // plan() 真走 EP 探测 + 目录量算；轮询到弹层离开「准备中」。
+    final Finder start = find.widgetWithText(
+      FilledButton,
+      t.audiobook_transcribe_start,
+    );
+    final Stopwatch sw = Stopwatch()..start();
+    while (start.evaluate().isEmpty &&
+        sw.elapsed < const Duration(seconds: 60)) {
+      await tester.pump(const Duration(milliseconds: 250));
+    }
+    final String status = tester
+        .widget<Text>(
+          find.byKey(const ValueKey<String>('asr-transcribe-status')),
+        )
+        .data!;
+    _log('sheet status after ${sw.elapsedMilliseconds}ms: "$status"');
+    expect(start, findsOneWidget, reason: '弹层没给出「开始转录」：$status');
+    expect(
+      find.widgetWithText(FilledButton, t.audiobook_transcribe_model_download),
+      findsNothing,
+    );
+  }, timeout: const Timeout(Duration(minutes: 5)));
 }

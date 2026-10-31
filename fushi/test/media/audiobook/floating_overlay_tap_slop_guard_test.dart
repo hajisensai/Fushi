@@ -27,41 +27,63 @@ void main() {
     final int at = src.indexOf(sig);
     expect(at, greaterThanOrEqualTo(0), reason: 'setupDragListener 必须存在');
     final int end = src.indexOf(' int dragSlopPx()', at);
-    expect(end, greaterThan(at),
-        reason: 'TODO-1268：拖动阈值必须解析自集中的 dragSlopPx helper');
+    expect(
+      end,
+      greaterThan(at),
+      reason: 'TODO-1268：拖动阈值必须解析自集中的 dragSlopPx helper',
+    );
     return src.substring(at, end);
   }
 
   group('TODO-1268 悬浮窗 tap/drag 判别用平台 touch slop', () {
     test('拖动阈值来源是 ViewConfiguration.getScaledTouchSlop()', () {
       final String src = read();
-      expect(src.contains('import android.view.ViewConfiguration;'), isTrue,
-          reason: '需引入 ViewConfiguration 才能取平台 tap/drag 边界');
-      expect(src.contains('getScaledTouchSlop()'), isTrue,
-          reason: '拖动阈值必须取平台 tap/drag 边界，否则普通点击被判成拖动、'
-              '吞掉悬浮字幕点词');
+      expect(
+        src.contains('import android.view.ViewConfiguration;'),
+        isTrue,
+        reason: '需引入 ViewConfiguration 才能取平台 tap/drag 边界',
+      );
+      expect(
+        src.contains('getScaledTouchSlop()'),
+        isTrue,
+        reason:
+            '拖动阈值必须取平台 tap/drag 边界，否则普通点击被判成拖动、'
+            '吞掉悬浮字幕点词',
+      );
     });
 
     test('drag-move 判别比较平台 slop，不再是 sub-slop 魔法数 10', () {
       final String body = dragListenerBody(read());
-      expect(body.contains('dragSlopPx()'), isTrue,
-          reason: 'ACTION_MOVE 的拖动判别必须比较解析出的平台 slop');
+      expect(
+        body.contains('dragSlopPx()'),
+        isTrue,
+        reason: 'ACTION_MOVE 的拖动判别必须比较解析出的平台 slop',
+      );
       // 绝不再出现 `> 10` 的裸阈值——10px 远低于 8dp touch slop，会把普通点击
       // 误判成拖动，onOverlayTapped 从不触发。
-      expect(RegExp(r'>\s*10\b').hasMatch(body), isFalse,
-          reason: '10px 远低于平台 touch slop，会把普通点击误判成拖动、吞掉查词');
+      expect(
+        RegExp(r'>\s*10\b').hasMatch(body),
+        isFalse,
+        reason: '10px 远低于平台 touch slop，会把普通点击误判成拖动、吞掉查词',
+      );
     });
 
     test('touchSlop 在 onCreate 解析后，drag 判别绝不看到 -1 哨兵', () {
       final String src = read();
       // onCreate 里解析一次，且 helper 里有 <0 的懒解析兜底，任何触摸都拿到正值。
       expect(
-          src.contains('touchSlopPx = ViewConfiguration.get(this)'
-              '.getScaledTouchSlop();'),
-          isTrue,
-          reason: 'onCreate 必须解析一次平台 slop');
-      expect(src.contains('if (touchSlopPx < 0)'), isTrue,
-          reason: 'dragSlopPx 必须对哨兵 -1 懒解析兜底，避免「阈值 -1 → 一切皆拖动」');
+        src.contains(
+          'touchSlopPx = ViewConfiguration.get(this)'
+          '.getScaledTouchSlop();',
+        ),
+        isTrue,
+        reason: 'onCreate 必须解析一次平台 slop',
+      );
+      expect(
+        src.contains('if (touchSlopPx < 0)'),
+        isTrue,
+        reason: 'dragSlopPx 必须对哨兵 -1 懒解析兜底，避免「阈值 -1 → 一切皆拖动」',
+      );
     });
   });
 }

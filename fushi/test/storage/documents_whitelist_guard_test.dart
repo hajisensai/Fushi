@@ -24,8 +24,9 @@ import '../helpers/scan_scale.dart';
 void main() {
   final RegExp subdirectoryCall = RegExp(r"documentsSubdirectory\('([^']+)'\)");
   final RegExp joinLiteral = RegExp(r"appDirectory\.path,\s*'([^']+)'");
-  final RegExp interpolation =
-      RegExp(r'appDirectory\.path\}/([A-Za-z0-9_.\-]+)');
+  final RegExp interpolation = RegExp(
+    r'appDirectory\.path\}/([A-Za-z0-9_.\-]+)',
+  );
 
   List<File> dartSources(Directory root) => root
       .listSync(recursive: true, followLinks: false)
@@ -43,8 +44,11 @@ void main() {
 
   test('lib/ 里所有 documents 根顶层派生点都收进了迁移白名单', () {
     final Directory lib = Directory('lib');
-    expect(lib.existsSync(), isTrue,
-        reason: '本测试假定 cwd 为 fushi/（flutter test 默认）');
+    expect(
+      lib.existsSync(),
+      isTrue,
+      reason: '本测试假定 cwd 为 fushi/（flutter test 默认）',
+    );
 
     // documents 根的派生点如今大半住在引擎里（engine_paths.dart 的
     // documentsSubdirectory('video_covers' / 'video_subtitles' / 'fushi_books'
@@ -54,8 +58,12 @@ void main() {
       for (final String rel in scanRoots)
         if (Directory(rel).existsSync()) ...dartSources(Directory(rel)),
     ];
-    expectScanScale(sources.length,
-        what: 'lib/ 下的 .dart', atLeast: 1120, measured: 1401);
+    expectScanScale(
+      sources.length,
+      what: 'lib/ 下的 .dart',
+      atLeast: 1120,
+      measured: 1401,
+    );
 
     final Map<String, Set<String>> missing = <String, Set<String>>{};
     for (final File f in sources) {
@@ -71,8 +79,10 @@ void main() {
         }
       }
       final Set<String> notWhitelisted = found
-          .where((String name) =>
-              !AppPaths.fushiOwnedDocumentsEntries.contains(name))
+          .where(
+            (String name) =>
+                !AppPaths.fushiOwnedDocumentsEntries.contains(name),
+          )
           .toSet();
       if (notWhitelisted.isNotEmpty) {
         missing[f.path] = notWhitelisted;
@@ -82,7 +92,8 @@ void main() {
     expect(
       missing,
       isEmpty,
-      reason: '发现未收进 AppPaths.fushiOwnedDocumentsEntries 的 documents 根顶层'
+      reason:
+          '发现未收进 AppPaths.fushiOwnedDocumentsEntries 的 documents 根顶层'
           '派生点（数据根迁移会把它们留在旧位置）。请把这些子目录名加进白名单，或改用'
           '已白名单的目录：$missing',
     );
@@ -101,14 +112,16 @@ void main() {
   });
 
   test('生产迁移入口把白名单接给了引擎（data_root.part.dart 引用白名单常量）', () {
-    final File wiring =
-        File('lib/src/sync/sync_settings_schema/data_root.part.dart');
+    final File wiring = File(
+      'lib/src/sync/sync_settings_schema/data_root.part.dart',
+    );
     expect(wiring.existsSync(), isTrue);
     final String src = wiring.readAsStringSync();
     expect(
       src.contains('fushiOwnedDocumentsEntries'),
       isTrue,
-      reason: '数据根迁移 UI 必须在默认根（共享 Documents）时把 '
+      reason:
+          '数据根迁移 UI 必须在默认根（共享 Documents）时把 '
           'AppPaths.fushiOwnedDocumentsEntries 传给 DataRootMigrationRequest.'
           'documentsTopLevelIncludeNames，否则会整树搬移用户 Documents（TODO-1226）。',
     );

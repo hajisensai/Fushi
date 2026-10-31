@@ -29,8 +29,9 @@ void main() {
     String read(String p) =>
         File(p).readAsStringSync().replaceAll('\r\n', '\n');
     pageSrc = read('lib/src/pages/implementations/video_fushi_page.dart');
-    subtitleSrc =
-        read('lib/src/pages/implementations/video_fushi/subtitle.part.dart');
+    subtitleSrc = read(
+      'lib/src/pages/implementations/video_fushi/subtitle.part.dart',
+    );
   });
 
   group('源码守卫：track-list-first + lazy-cue-on-select', () {
@@ -51,7 +52,8 @@ void main() {
     test('字幕轨选择器按轨表逐行渲染 + trackKey 高亮 + on-select 懒下载', () {
       expect(
         subtitleSrc.contains(
-            'for (final YoutubeCaptionTrack track in _youtubeCaptionTracks)'),
+          'for (final YoutubeCaptionTrack track in _youtubeCaptionTracks)',
+        ),
         isTrue,
         reason: '菜单必须按 client 的字幕轨列表逐轨渲染一行',
       );
@@ -69,8 +71,9 @@ void main() {
 
     test('引用的 getter + helper 定义在同一私有作用域（防不编译回归）', () {
       expect(
-        subtitleSrc
-            .contains('List<YoutubeCaptionTrack> get _youtubeCaptionTracks {'),
+        subtitleSrc.contains(
+          'List<YoutubeCaptionTrack> get _youtubeCaptionTracks {',
+        ),
         isTrue,
         reason: '字幕轨列表 getter 必须在此定义',
       );
@@ -102,10 +105,12 @@ void main() {
 
     test('「关闭」高亮判据保持 isOff 或 remote-null（trackKey 非空 → 关闭不被误选）', () {
       expect(
-        subtitleSrc
-                .contains('SubtitleSource.isOff(_currentSubtitleSource) ||') &&
-            subtitleSrc
-                .contains('(_isRemote && _currentSubtitleSource == null)'),
+        subtitleSrc.contains(
+              'SubtitleSource.isOff(_currentSubtitleSource) ||',
+            ) &&
+            subtitleSrc.contains(
+              '(_isRemote && _currentSubtitleSource == null)',
+            ),
         isTrue,
         reason:
             'off 行判据不变；YouTube 轨激活时 _currentSubtitleSource=trackKey 非空 → 关闭不被选',
@@ -149,14 +154,16 @@ void main() {
 
     test('pickBest：只有 ASR 时退 ASR；空表返回 null', () {
       expect(
-        pickBestYoutubeCaptionTrack(<YoutubeCaptionTrack>[t('ja', asr: true)],
-                preferLang: 'ja')
-            ?.trackKey,
+        pickBestYoutubeCaptionTrack(<YoutubeCaptionTrack>[
+          t('ja', asr: true),
+        ], preferLang: 'ja')?.trackKey,
         'youtube:captions:ja:asr',
       );
       expect(
-        pickBestYoutubeCaptionTrack(const <YoutubeCaptionTrack>[],
-            preferLang: 'ja'),
+        pickBestYoutubeCaptionTrack(
+          const <YoutubeCaptionTrack>[],
+          preferLang: 'ja',
+        ),
         isNull,
       );
     });
@@ -169,10 +176,9 @@ void main() {
     });
 
     test('autoTranslate：为最佳源轨追加一条母语对照变体', () {
-      final ordered = orderYoutubeCaptionTracks(
-        <YoutubeCaptionTrack>[t('ja')],
-        preferLang: 'ja',
-      );
+      final ordered = orderYoutubeCaptionTracks(<YoutubeCaptionTrack>[
+        t('ja'),
+      ], preferLang: 'ja');
       final withTl = withAutoTranslateVariant(ordered, translateTo: 'zh');
       expect(withTl.length, 2);
       expect(withTl.last.isTranslated, isTrue);
@@ -180,13 +186,15 @@ void main() {
     });
 
     test('autoTranslate：源语言即母语 / 已有母语原始轨 → 不追加', () {
-      final zhOnly = orderYoutubeCaptionTracks(<YoutubeCaptionTrack>[t('zh')],
-          preferLang: 'zh');
+      final zhOnly = orderYoutubeCaptionTracks(<YoutubeCaptionTrack>[
+        t('zh'),
+      ], preferLang: 'zh');
       expect(withAutoTranslateVariant(zhOnly, translateTo: 'zh').length, 1);
 
-      final jaAndZh = orderYoutubeCaptionTracks(
-          <YoutubeCaptionTrack>[t('ja'), t('zh')],
-          preferLang: 'ja');
+      final jaAndZh = orderYoutubeCaptionTracks(<YoutubeCaptionTrack>[
+        t('ja'),
+        t('zh'),
+      ], preferLang: 'ja');
       expect(withAutoTranslateVariant(jaAndZh, translateTo: 'zh').length, 2);
     });
   });
@@ -201,7 +209,9 @@ void main() {
       );
       expect(human.trackKey, 'youtube:captions:ja:human');
       expect(
-          human.translatedTo('zh').trackKey, 'youtube:captions:ja:human:tl=zh');
+        human.translatedTo('zh').trackKey,
+        'youtube:captions:ja:human:tl=zh',
+      );
     });
 
     test('cueDownloadUrl 补 fmt=srv1；翻译变体再补 tlang', () {

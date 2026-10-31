@@ -102,17 +102,16 @@ class ProviderBatchResult<T> {
     Iterable<ExternalProviderFailure> failures =
         const <ExternalProviderFailure>[],
     this.successfulProviderCount = 0,
-  })  : items = List<T>.unmodifiable(items),
-        failures = List<ExternalProviderFailure>.unmodifiable(failures);
+  }) : items = List<T>.unmodifiable(items),
+       failures = List<ExternalProviderFailure>.unmodifiable(failures);
 
   factory ProviderBatchResult.success(
     Iterable<T> items, {
     int successfulProviderCount = 1,
-  }) =>
-      ProviderBatchResult<T>(
-        items: items,
-        successfulProviderCount: successfulProviderCount,
-      );
+  }) => ProviderBatchResult<T>(
+    items: items,
+    successfulProviderCount: successfulProviderCount,
+  );
 
   factory ProviderBatchResult.failure(ExternalProviderFailure failure) =>
       ProviderBatchResult<T>(failures: <ExternalProviderFailure>[failure]);

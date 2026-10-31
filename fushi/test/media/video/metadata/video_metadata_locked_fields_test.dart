@@ -43,11 +43,11 @@ void main() {
     test('编解码往返稳定', () {
       const Set<VideoMetadataLockableField> fields =
           <VideoMetadataLockableField>{
-        VideoMetadataLockableField.originalTitle,
-        VideoMetadataLockableField.tagline,
-        VideoMetadataLockableField.rating,
-        VideoMetadataLockableField.backdrop,
-      };
+            VideoMetadataLockableField.originalTitle,
+            VideoMetadataLockableField.tagline,
+            VideoMetadataLockableField.rating,
+            VideoMetadataLockableField.backdrop,
+          };
       expect(parseLockedFields(encodeLockedFields(fields)), fields);
     });
   });
@@ -76,10 +76,12 @@ void main() {
           sourceId: Value<int?>(sourceId),
         ),
       );
-      final SourceLibraryRow source =
-          (await database.getMediaSourceById(sourceId))!;
-      final VideoBookRow book =
-          (await database.getVideoBookByBookUid('movie-1'))!;
+      final SourceLibraryRow source = (await database.getMediaSourceById(
+        sourceId,
+      ))!;
+      final VideoBookRow book = (await database.getVideoBookByBookUid(
+        'movie-1',
+      ))!;
       localWork = VideoSourceScrapeWork(
         source: source,
         title: book.title,
@@ -98,22 +100,19 @@ void main() {
       List<String> genres = const <String>[],
       List<String> studios = const <String>[],
       List<VideoMetadataImage> images = const <VideoMetadataImage>[],
-    }) =>
-        VideoMetadataWork(
-          provider: VideoMetadataProviderKind.tmdb,
-          kind: VideoMetadataMediaKind.movie,
-          title: title,
-          originalTitle: originalTitle,
-          plot: plot,
-          tagline: tagline,
-          rating: rating,
-          genres: genres,
-          studios: studios,
-          images: images,
-          ids: const <VideoMetadataId>[
-            VideoMetadataId(type: 'tmdb', value: '42'),
-          ],
-        );
+    }) => VideoMetadataWork(
+      provider: VideoMetadataProviderKind.tmdb,
+      kind: VideoMetadataMediaKind.movie,
+      title: title,
+      originalTitle: originalTitle,
+      plot: plot,
+      tagline: tagline,
+      rating: rating,
+      genres: genres,
+      studios: studios,
+      images: images,
+      ids: const <VideoMetadataId>[VideoMetadataId(type: 'tmdb', value: '42')],
+    );
 
     test('锁住的标量保留旧值，没锁的照常被新刮结果更新', () async {
       final PersistedVideoMetadata first = await store.apply(
@@ -145,15 +144,19 @@ void main() {
         ),
       );
 
-      final VideoMetadataWorkRow row =
-          (await database.getVideoMetadataWorkById(first.workId))!;
+      final VideoMetadataWorkRow row = (await database.getVideoMetadataWorkById(
+        first.workId,
+      ))!;
       expect(row.overview, '旧简介', reason: 'overview 被锁 = 刮到了也不写');
       expect(row.rating, 7.5, reason: 'rating 被锁');
       expect(row.title, '新标题', reason: '没锁的字段照常更新');
       expect(row.tagline, '新标语');
       expect(row.originalTitle, '新原名');
-      expect(row.lockedFields, 'overview,rating',
-          reason: 'locked_fields 列本身不因刮削被清空');
+      expect(
+        row.lockedFields,
+        'overview,rating',
+        reason: 'locked_fields 列本身不因刮削被清空',
+      );
     });
 
     test('锁 genres 保留整组词，studios 没锁照常整体替换', () async {
@@ -167,8 +170,9 @@ void main() {
       );
       await database.setVideoMetadataWorkLockedFields(
         first.workId,
-        encodeLockedFields(
-            <VideoMetadataLockableField>{VideoMetadataLockableField.genres}),
+        encodeLockedFields(<VideoMetadataLockableField>{
+          VideoMetadataLockableField.genres,
+        }),
       );
 
       await store.apply(
@@ -180,8 +184,8 @@ void main() {
         ),
       );
 
-      final List<VideoMetadataTermRow> terms =
-          await database.getVideoMetadataTermsForWork(first.workId);
+      final List<VideoMetadataTermRow> terms = await database
+          .getVideoMetadataTermsForWork(first.workId);
       expect(
         terms
             .where((VideoMetadataTermRow row) => row.kind == 'genre')
@@ -228,8 +232,9 @@ void main() {
       );
       await database.setVideoMetadataWorkLockedFields(
         first.workId,
-        encodeLockedFields(
-            <VideoMetadataLockableField>{VideoMetadataLockableField.cover}),
+        encodeLockedFields(<VideoMetadataLockableField>{
+          VideoMetadataLockableField.cover,
+        }),
       );
 
       final VideoMetadataWork rescraped = build(
@@ -247,8 +252,10 @@ void main() {
           ),
         ],
       );
-      final PersistedVideoMetadata second =
-          await store.apply(localWork, rescraped);
+      final PersistedVideoMetadata second = await store.apply(
+        localWork,
+        rescraped,
+      );
       // 第二步（下载落盘后重写图行）同样必须守住锁，否则第一步保住的封面白保。
       await store.updateCanonicalImagePaths(
         persisted: second,
@@ -256,13 +263,17 @@ void main() {
         localPathByRemoteUrl: const <String, String>{},
       );
 
-      final List<VideoMetadataImageRow> images =
-          await database.getVideoMetadataImages(workId: second.workId);
-      final VideoMetadataImageRow cover = images
-          .singleWhere((VideoMetadataImageRow row) => row.kind == 'cover');
+      final List<VideoMetadataImageRow> images = await database
+          .getVideoMetadataImages(workId: second.workId);
+      final VideoMetadataImageRow cover = images.singleWhere(
+        (VideoMetadataImageRow row) => row.kind == 'cover',
+      );
       expect(cover.remoteUrl, 'https://image.example/old-poster.jpg');
-      expect(cover.localPath, 'D:/Movies/old-poster.jpg',
-          reason: '已下载的本地封面不能被重刮清掉');
+      expect(
+        cover.localPath,
+        'D:/Movies/old-poster.jpg',
+        reason: '已下载的本地封面不能被重刮清掉',
+      );
       expect(
         images
             .singleWhere((VideoMetadataImageRow row) => row.kind == 'backdrop')
@@ -273,14 +284,19 @@ void main() {
     });
 
     test('无锁时行为与引入字段锁前完全一致', () async {
-      final PersistedVideoMetadata first =
-          await store.apply(localWork, build(title: '旧标题', plot: '旧简介'));
-      expect((await database.getVideoMetadataWorkById(first.workId))!.title,
-          '旧标题');
+      final PersistedVideoMetadata first = await store.apply(
+        localWork,
+        build(title: '旧标题', plot: '旧简介'),
+      );
+      expect(
+        (await database.getVideoMetadataWorkById(first.workId))!.title,
+        '旧标题',
+      );
 
       await store.apply(localWork, build(title: '新标题', plot: '新简介'));
-      final VideoMetadataWorkRow row =
-          (await database.getVideoMetadataWorkById(first.workId))!;
+      final VideoMetadataWorkRow row = (await database.getVideoMetadataWorkById(
+        first.workId,
+      ))!;
       expect(row.title, '新标题');
       expect(row.overview, '新简介');
       expect(row.lockedFields, isNull);
@@ -289,46 +305,54 @@ void main() {
     // Shoko `PreferredAlternateOrderingID`：用户选定的 TMDB 排序是意图，不是
     // 刮削产物——上锁后刮到别的分组（含自动挑的）也不覆盖；选回默认（null）同样
     // 被锁住。
-    test('setVideoMetadataWorkEpisodeGroup 写排序并上 episodeGroup 锁，apply 不覆盖',
-        () async {
-      final PersistedVideoMetadata first = await store.apply(
-        localWork,
-        build(title: '旧标题').copyWith(episodeGroupId: 'auto-picked'),
-      );
-      await database.setVideoMetadataWorkEpisodeGroup(first.workId, 'seasons');
-      VideoMetadataWorkRow row =
-          (await database.getVideoMetadataWorkById(first.workId))!;
-      expect(row.episodeGroupId, 'seasons');
-      expect(parseLockedFields(row.lockedFields),
-          <VideoMetadataLockableField>{VideoMetadataLockableField.episodeGroup});
+    test(
+      'setVideoMetadataWorkEpisodeGroup 写排序并上 episodeGroup 锁，apply 不覆盖',
+      () async {
+        final PersistedVideoMetadata first = await store.apply(
+          localWork,
+          build(title: '旧标题').copyWith(episodeGroupId: 'auto-picked'),
+        );
+        await database.setVideoMetadataWorkEpisodeGroup(
+          first.workId,
+          'seasons',
+        );
+        VideoMetadataWorkRow row = (await database.getVideoMetadataWorkById(
+          first.workId,
+        ))!;
+        expect(row.episodeGroupId, 'seasons');
+        expect(
+          parseLockedFields(row.lockedFields),
+          <VideoMetadataLockableField>{VideoMetadataLockableField.episodeGroup},
+        );
 
-      await store.apply(
-        localWork,
-        build(title: '新标题').copyWith(episodeGroupId: 'auto-picked'),
-      );
-      row = (await database.getVideoMetadataWorkById(first.workId))!;
-      expect(row.episodeGroupId, 'seasons', reason: '锁住 = 刮到了也不写');
-      expect(row.title, '新标题', reason: '其余字段照常');
+        await store.apply(
+          localWork,
+          build(title: '新标题').copyWith(episodeGroupId: 'auto-picked'),
+        );
+        row = (await database.getVideoMetadataWorkById(first.workId))!;
+        expect(row.episodeGroupId, 'seasons', reason: '锁住 = 刮到了也不写');
+        expect(row.title, '新标题', reason: '其余字段照常');
 
-      // 选回默认：null 同样被锁住，既有锁保留不重复。
-      await database.setVideoMetadataWorkLockedFields(
-        first.workId,
-        encodeLockedFields(<VideoMetadataLockableField>{
-          VideoMetadataLockableField.title,
-          VideoMetadataLockableField.episodeGroup,
-        }),
-      );
-      await database.setVideoMetadataWorkEpisodeGroup(first.workId, null);
-      row = (await database.getVideoMetadataWorkById(first.workId))!;
-      expect(row.episodeGroupId, isNull);
-      expect(row.lockedFields, 'title,episodeGroup');
-      await store.apply(
-        localWork,
-        build(title: '更新标题').copyWith(episodeGroupId: 'auto-picked'),
-      );
-      row = (await database.getVideoMetadataWorkById(first.workId))!;
-      expect(row.episodeGroupId, isNull);
-      expect(row.title, '新标题', reason: 'title 也锁着');
-    });
+        // 选回默认：null 同样被锁住，既有锁保留不重复。
+        await database.setVideoMetadataWorkLockedFields(
+          first.workId,
+          encodeLockedFields(<VideoMetadataLockableField>{
+            VideoMetadataLockableField.title,
+            VideoMetadataLockableField.episodeGroup,
+          }),
+        );
+        await database.setVideoMetadataWorkEpisodeGroup(first.workId, null);
+        row = (await database.getVideoMetadataWorkById(first.workId))!;
+        expect(row.episodeGroupId, isNull);
+        expect(row.lockedFields, 'title,episodeGroup');
+        await store.apply(
+          localWork,
+          build(title: '更新标题').copyWith(episodeGroupId: 'auto-picked'),
+        );
+        row = (await database.getVideoMetadataWorkById(first.workId))!;
+        expect(row.episodeGroupId, isNull);
+        expect(row.title, '新标题', reason: 'title 也锁着');
+      },
+    );
   });
 }

@@ -18,46 +18,68 @@ void main() {
   String read(String name) => File('${base.path}/$name').readAsStringSync();
 
   group('TODO-1128 merged-image-chapter nav dedup guard', () {
-    test('_resolveNavChapter helper exists and redirects via the spread map',
-        () {
-      final String nav = read('navigation.part.dart');
-      expect(nav.contains('int _resolveNavChapter('), isTrue,
-          reason: '被吸收章重定向 helper 必须存在');
-      // The helper must resolve through the spread map's absorbed check +
-      // host-page lookup (the exact redirect the reader relies on).
-      expect(nav.contains('isAbsorbedImageChapter('), isTrue);
-      expect(nav.contains('virtualPageForChapter('), isTrue);
-    });
+    test(
+      '_resolveNavChapter helper exists and redirects via the spread map',
+      () {
+        final String nav = read('navigation.part.dart');
+        expect(
+          nav.contains('int _resolveNavChapter('),
+          isTrue,
+          reason: '被吸收章重定向 helper 必须存在',
+        );
+        // The helper must resolve through the spread map's absorbed check +
+        // host-page lookup (the exact redirect the reader relies on).
+        expect(nav.contains('isAbsorbedImageChapter('), isTrue);
+        expect(nav.contains('virtualPageForChapter('), isTrue);
+      },
+    );
 
-    test('_navigateToChapter / withFragment / andWait route through the guard',
-        () {
-      final String nav = read('navigation.part.dart');
-      // Count the guard usages: helper def + navigateToChapter guard +
-      // withFragment guard + andWait resolved-target check = at least 4.
-      final int uses = '_resolveNavChapter'.allMatches(nav).length;
-      expect(uses, greaterThanOrEqualTo(4),
-          reason: '裸导航入口（翻章/内链/有声书 wait）都必须过 _resolveNavChapter，实测 $uses 处');
-    });
+    test(
+      '_navigateToChapter / withFragment / andWait route through the guard',
+      () {
+        final String nav = read('navigation.part.dart');
+        // Count the guard usages: helper def + navigateToChapter guard +
+        // withFragment guard + andWait resolved-target check = at least 4.
+        final int uses = '_resolveNavChapter'.allMatches(nav).length;
+        expect(
+          uses,
+          greaterThanOrEqualTo(4),
+          reason: '裸导航入口（翻章/内链/有声书 wait）都必须过 _resolveNavChapter，实测 $uses 处',
+        );
+      },
+    );
 
     test('open-book restore and live reload redirect absorbed chapters', () {
-      expect(read('webview.part.dart').contains('_resolveNavChapter('), isTrue,
-          reason: '开书恢复 (_loadChapterDirectly 前) 必须重定向被吸收章');
-      expect(read('chrome.part.dart').contains('_resolveNavChapter('), isTrue,
-          reason: '结构性重载 (_reloadWithCurrentSettings) 必须重定向被吸收章');
       expect(
-          read('audiobook.part.dart').contains('_resolveNavChapter('), isTrue,
-          reason: '有声书跨章 pause-through 必须按宿主去重');
+        read('webview.part.dart').contains('_resolveNavChapter('),
+        isTrue,
+        reason: '开书恢复 (_loadChapterDirectly 前) 必须重定向被吸收章',
+      );
+      expect(
+        read('chrome.part.dart').contains('_resolveNavChapter('),
+        isTrue,
+        reason: '结构性重载 (_reloadWithCurrentSettings) 必须重定向被吸收章',
+      );
+      expect(
+        read('audiobook.part.dart').contains('_resolveNavChapter('),
+        isTrue,
+        reason: '有声书跨章 pause-through 必须按宿主去重',
+      );
     });
 
     test(
-        '_handlePageTurnLimit no longer gates the virtual-page map on off mode',
-        () {
-      final String nav = read('navigation.part.dart');
-      // The old gate `_spreadMap != null && _settings?.spreadMode != 'off'`
-      // must be gone — page turns unify through the virtual map in all modes so
-      // off mode also skips absorbed chapters.
-      expect(nav.contains("_settings?.spreadMode != 'off'"), isFalse,
-          reason: '翻页不得再用 spreadMode != off 门控虚拟页 map（会让 off 模式落被吸收章重复）');
-    });
+      '_handlePageTurnLimit no longer gates the virtual-page map on off mode',
+      () {
+        final String nav = read('navigation.part.dart');
+        // The old gate `_spreadMap != null && _settings?.spreadMode != 'off'`
+        // must be gone — page turns unify through the virtual map in all modes so
+        // off mode also skips absorbed chapters.
+        expect(
+          nav.contains("_settings?.spreadMode != 'off'"),
+          isFalse,
+          reason: '翻页不得再用 spreadMode != off 门控虚拟页 map（会让 off 模式落被吸收章重复）',
+        );
+      },
+    );
   });
 }

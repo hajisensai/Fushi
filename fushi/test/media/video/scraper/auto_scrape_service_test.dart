@@ -45,12 +45,14 @@ void main() {
     required String videoPath,
     int? sourceId,
   }) async {
-    await db.upsertVideoBook(VideoBooksCompanion(
-      bookUid: Value<String>(bookUid),
-      title: Value<String>(bookUid),
-      videoPath: Value<String>(videoPath),
-      sourceId: Value<int?>(sourceId),
-    ));
+    await db.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: Value<String>(bookUid),
+        title: Value<String>(bookUid),
+        videoPath: Value<String>(videoPath),
+        sourceId: Value<int?>(sourceId),
+      ),
+    );
     return (await repo.getByBookUid(bookUid))!;
   }
 
@@ -125,8 +127,10 @@ void main() {
     // 的真实文件，照常检查。
     final File strm = File(p.join(library.path, 'pointer.strm'));
     await strm.writeAsString('https://example.com/live.m3u8\n');
-    final VideoBookRow pointer =
-        await seed(bookUid: 'pointer', videoPath: strm.path);
+    final VideoBookRow pointer = await seed(
+      bookUid: 'pointer',
+      videoPath: strm.path,
+    );
     await writePoster();
     final VideoScrapeAutoService auto = build();
 

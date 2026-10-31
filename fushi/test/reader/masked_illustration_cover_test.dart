@@ -49,9 +49,7 @@ Future<void> _pumpBox(WidgetTester tester, Size box, {double? sigma}) async {
 }
 
 void main() {
-  testWidgets('模糊半径按卡片短边取比例，两种卡片尺寸下遮蔽力度一致', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('模糊半径按卡片短边取比例，两种卡片尺寸下遮蔽力度一致', (WidgetTester tester) async {
     // 书架端插图库：200×200 方卡 → 历史上的 sigma 16，这次统一不改它的观感。
     await _pumpBox(tester, const Size(200, 200));
     expect(_sigmaOf(tester), closeTo(16, 0.001));
@@ -72,9 +70,7 @@ void main() {
     expect(wide, closeTo(narrow, 0.0001));
   });
 
-  testWidgets('显式 sigma 仍然钉死绝对值（全屏查看器另配更重的蒙层）', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('显式 sigma 仍然钉死绝对值（全屏查看器另配更重的蒙层）', (WidgetTester tester) async {
     await _pumpBox(tester, const Size(160, 222), sigma: 24);
     expect(_sigmaOf(tester), closeTo(24, 0.001));
   });
@@ -93,15 +89,11 @@ void main() {
     );
   });
 
-  testWidgets('墨水屏走实心遮板，一张糊图在灰阶上读不出「被盖住了」', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('墨水屏走实心遮板，一张糊图在灰阶上读不出「被盖住了」', (WidgetTester tester) async {
     await tester.pumpWidget(
       MaterialApp(
         theme: ThemeData(
-          extensions: const <ThemeExtension<dynamic>>[
-            FushiEinkTheme(true),
-          ],
+          extensions: const <ThemeExtension<dynamic>>[FushiEinkTheme(true)],
         ),
         home: Center(
           child: SizedBox(

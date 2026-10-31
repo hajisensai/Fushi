@@ -24,8 +24,16 @@ ArgResults _parse(List<String> args) {
 /// 本机 ffmpeg 是否带 libass 的 `subtitles` 滤镜（端到端测试的前提）。
 bool _hasLibassFfmpeg() {
   try {
-    final ProcessResult r = Process.runSync('ffmpeg', <String>['-hide_banner', '-filters']);
-    if (r.exitCode != 0 || !RegExp(r'^\s*\S+\s+subtitles\s', multiLine: true).hasMatch('${r.stdout}')) return false;
+    final ProcessResult r = Process.runSync('ffmpeg', <String>[
+      '-hide_banner',
+      '-filters',
+    ]);
+    if (r.exitCode != 0 ||
+        !RegExp(
+          r'^\s*\S+\s+subtitles\s',
+          multiLine: true,
+        ).hasMatch('${r.stdout}'))
+      return false;
     // 端到端量时长要 ffprobe：只有 ffmpeg 没有 ffprobe 的机器（常见于只装了单个 ffmpeg.exe）
     // 照样 skip，而不是跑到一半抛 ProcessException。
     return Process.runSync('ffprobe', <String>['-version']).exitCode == 0;
@@ -62,26 +70,46 @@ void main() {
     });
 
     test('滤镜图二级转义：反斜杠 / 单引号 / 方括号 / 逗号 / 分号', () {
-      expect(escapeFfmpegFiltergraphText(r"a\b'c[d]e,f;g:h"), r"a\\b\'c\[d\]e\,f\;g:h");
+      expect(
+        escapeFfmpegFiltergraphText(r"a\b'c[d]e,f;g:h"),
+        r"a\\b\'c\[d\]e\,f\;g:h",
+      );
     });
 
     test('POSIX 路径：两级叠加', () {
-      expect(ffmpegSubtitlesFilenameArg("/tmp/it's [v1], a:b.srt", windows: false), r"/tmp/it\\\'s \[v1\]\, a\\:b.srt");
+      expect(
+        ffmpegSubtitlesFilenameArg("/tmp/it's [v1], a:b.srt", windows: false),
+        r"/tmp/it\\\'s \[v1\]\, a\\:b.srt",
+      );
     });
 
     test('Windows 路径：反斜杠换正斜杠，盘符冒号照转', () {
-      expect(ffmpegSubtitlesFilenameArg(r'C:\Users\neko\字幕 1.ass', windows: true), r'C\\:/Users/neko/字幕 1.ass');
+      expect(
+        ffmpegSubtitlesFilenameArg(r'C:\Users\neko\字幕 1.ass', windows: true),
+        r'C\\:/Users/neko/字幕 1.ass',
+      );
       // 不当 Windows 处理时反斜杠原样保留并逐级加倍。
-      expect(ffmpegSubtitlesFilenameArg(r'C:\a.srt', windows: false), r'C\\:\\\\a.srt');
+      expect(
+        ffmpegSubtitlesFilenameArg(r'C:\a.srt', windows: false),
+        r'C\\:\\\\a.srt',
+      );
     });
 
     test('滤镜链：起点非 0 时先挪回源时间轴、烧完归零；起点 0 不加 setpts', () {
       expect(
-        buildLibassSubtitlesFilter(subtitlePath: '/s/a.srt', startMs: 83500, windows: false),
+        buildLibassSubtitlesFilter(
+          subtitlePath: '/s/a.srt',
+          startMs: 83500,
+          windows: false,
+        ),
         'setpts=PTS+83.500/TB,subtitles=filename=/s/a.srt,setpts=PTS-STARTPTS',
       );
       expect(
-        buildLibassSubtitlesFilter(subtitlePath: '/s/a.srt', startMs: 0, windows: false),
+        buildLibassSubtitlesFilter(
+          subtitlePath: '/s/a.srt',
+          startMs: 0,
+          windows: false,
+        ),
         'subtitles=filename=/s/a.srt',
       );
     });
@@ -96,13 +124,34 @@ void main() {
         windows: false,
         audioStreamIndex: 1,
       );
-      expect(args.sublist(0, 8), <String>['-hide_banner', '-y', '-ss', '1.000', '-t', '2.500', '-i', '/v/in.mkv']);
-      expect(args[args.indexOf('-vf') + 1], 'setpts=PTS+1.000/TB,subtitles=filename=/v/s.ass,setpts=PTS-STARTPTS');
+      expect(args.sublist(0, 8), <String>[
+        '-hide_banner',
+        '-y',
+        '-ss',
+        '1.000',
+        '-t',
+        '2.500',
+        '-i',
+        '/v/in.mkv',
+      ]);
+      expect(
+        args[args.indexOf('-vf') + 1],
+        'setpts=PTS+1.000/TB,subtitles=filename=/v/s.ass,setpts=PTS-STARTPTS',
+      );
       expect(args[args.indexOf('-c:v') + 1], 'libx264');
       expect(args, isNot(contains('copy')));
-      expect(args, containsAllInOrder(<String>['-map', '0:v:0', '-map', '0:a:1?']));
-      expect(args, containsAllInOrder(<String>['-movflags', '+faststart', '/v/out.mp4']));
-      expect(ffmpegHasLibassSubtitlesFilter(<String>{'overlay', 'subtitles'}), isTrue);
+      expect(
+        args,
+        containsAllInOrder(<String>['-map', '0:v:0', '-map', '0:a:1?']),
+      );
+      expect(
+        args,
+        containsAllInOrder(<String>['-movflags', '+faststart', '/v/out.mp4']),
+      );
+      expect(
+        ffmpegHasLibassSubtitlesFilter(<String>{'overlay', 'subtitles'}),
+        isTrue,
+      );
       expect(ffmpegHasLibassSubtitlesFilter(<String>{}), isFalse);
     });
   });
@@ -114,12 +163,28 @@ void main() {
     setUp(() async {
       temp = await Directory.systemTemp.createTemp('fushi_burn_');
       video = File(p.join(temp.path, 'src.mkv'))..writeAsStringSync('x');
-      srt = File(p.join(temp.path, 's.srt'))..writeAsStringSync('1\n00:00:00,000 --> 00:00:01,000\nhi\n\n');
+      srt = File(p.join(temp.path, 's.srt'))
+        ..writeAsStringSync('1\n00:00:00,000 --> 00:00:01,000\nhi\n\n');
     });
     tearDown(() => temp.delete(recursive: true));
 
-    Future<int> burn(List<String> extra, _ScriptedFfmpeg backend, StringBuffer err, Set<String> filters) => videoClip(
-      _parse(<String>['clip', video.path, '--from', '0', '--to', '1', '-o', p.join(temp.path, 'o.mp4'), ...extra]),
+    Future<int> burn(
+      List<String> extra,
+      _ScriptedFfmpeg backend,
+      StringBuffer err,
+      Set<String> filters,
+    ) => videoClip(
+      _parse(<String>[
+        'clip',
+        video.path,
+        '--from',
+        '0',
+        '--to',
+        '1',
+        '-o',
+        p.join(temp.path, 'o.mp4'),
+        ...extra,
+      ]),
       io: CliIo(out: StringBuffer(), err: err),
       deps: VideoDeps(
         ffmpegProblem: ({required bool probe}) async => null,
@@ -131,9 +196,20 @@ void main() {
     test('ffmpeg 没有 subtitles 滤镜 → 69，且不跑烧录；滤镜探测失败同样 69', () async {
       final _ScriptedFfmpeg backend = _ScriptedFfmpeg();
       final StringBuffer err = StringBuffer();
-      expect(await burn(<String>['--burn-subs', srt.path], backend, err, <String>{'overlay'}), kExitUnavailable);
+      expect(
+        await burn(
+          <String>['--burn-subs', srt.path],
+          backend,
+          err,
+          <String>{'overlay'},
+        ),
+        kExitUnavailable,
+      );
       expect(err.toString(), contains('libass'));
-      expect(await burn(<String>['--burn-subs', srt.path], backend, err, <String>{}), kExitUnavailable);
+      expect(
+        await burn(<String>['--burn-subs', srt.path], backend, err, <String>{}),
+        kExitUnavailable,
+      );
       expect(backend.calls, isEmpty);
     });
 
@@ -141,10 +217,24 @@ void main() {
       final _ScriptedFfmpeg backend = _ScriptedFfmpeg();
       final StringBuffer err = StringBuffer();
       final Set<String> ok = <String>{'subtitles'};
-      expect(await burn(<String>['--burn-subs', srt.path, '--subs', srt.path], backend, err, ok), kExitUsage);
+      expect(
+        await burn(
+          <String>['--burn-subs', srt.path, '--subs', srt.path],
+          backend,
+          err,
+          ok,
+        ),
+        kExitUsage,
+      );
       final File txt = File(p.join(temp.path, 's.txt'))..writeAsStringSync('x');
-      expect(await burn(<String>['--burn-subs', txt.path], backend, err, ok), kExitUsage);
-      expect(await burn(<String>['--burn-subs', srt.path], backend, err, ok), kExitFailure);
+      expect(
+        await burn(<String>['--burn-subs', txt.path], backend, err, ok),
+        kExitUsage,
+      );
+      expect(
+        await burn(<String>['--burn-subs', srt.path], backend, err, ok),
+        kExitFailure,
+      );
       expect(backend.calls.last, contains('-vf'));
       expect(File(p.join(temp.path, 'o.mp4')).existsSync(), isFalse);
     });
@@ -197,13 +287,30 @@ void main() {
       return double.parse('${r.stdout}'.trim());
     }
 
-    Future<Map<String, Object?>> clipBurn(String subsName, String content, String outName) async {
-      final File subs = File(p.join(temp.path, subsName))..writeAsStringSync(content);
+    Future<Map<String, Object?>> clipBurn(
+      String subsName,
+      String content,
+      String outName,
+    ) async {
+      final File subs = File(p.join(temp.path, subsName))
+        ..writeAsStringSync(content);
       final String out = p.join(temp.path, outName);
       final StringBuffer json = StringBuffer();
       final StringBuffer err = StringBuffer();
       final int code = await videoClip(
-        _parse(<String>['clip', src.path, '--from', '1', '--to', '3', '-o', out, '--burn-subs', subs.path, '--json']),
+        _parse(<String>[
+          'clip',
+          src.path,
+          '--from',
+          '1',
+          '--to',
+          '3',
+          '-o',
+          out,
+          '--burn-subs',
+          subs.path,
+          '--json',
+        ]),
         io: CliIo(out: json, err: err, json: true),
         deps: const VideoDeps(),
       );
@@ -212,9 +319,18 @@ void main() {
       return jsonDecode(json.toString()) as Map<String, Object?>;
     }
 
-    test('滤镜探测读得到 stdout 上的滤镜表（含 subtitles）', () async {
-      expect(await probeFfmpegFilterNames(), containsAll(<String>['subtitles', 'setpts']));
-    }, skip: _hasLibassFfmpeg() ? false : '本机 PATH 上没有带 libass（subtitles 滤镜）的 ffmpeg');
+    test(
+      '滤镜探测读得到 stdout 上的滤镜表（含 subtitles）',
+      () async {
+        expect(
+          await probeFfmpegFilterNames(),
+          containsAll(<String>['subtitles', 'setpts']),
+        );
+      },
+      skip: _hasLibassFfmpeg()
+          ? false
+          : '本机 PATH 上没有带 libass（subtitles 滤镜）的 ffmpeg',
+    );
 
     test(
       '裁 1–3 秒并硬烧：源时间 1.5–2.5 的台词落在片段 0.5–1.5 秒，区间外的台词不出现，时长 2 秒',
@@ -237,7 +353,9 @@ void main() {
         // 片段 1.8 秒 = 源 2.8 秒：台词已结束。
         expect(await maxLuma(out, 1.8), lessThan(40));
       },
-      skip: _hasLibassFfmpeg() ? false : '本机 PATH 上没有带 libass（subtitles 滤镜）的 ffmpeg，跳过端到端烧录',
+      skip: _hasLibassFfmpeg()
+          ? false
+          : '本机 PATH 上没有带 libass（subtitles 滤镜）的 ffmpeg，跳过端到端烧录',
       timeout: const Timeout(Duration(minutes: 2)),
     );
   });

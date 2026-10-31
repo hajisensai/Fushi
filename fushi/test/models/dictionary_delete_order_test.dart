@@ -42,19 +42,20 @@ void main() {
     }
 
     Dictionary dict(String name) => Dictionary(
-          name: name,
-          formatKey: 'yomichan',
-          order: 0,
-          type: DictionaryType.term,
-          metadata: const <String, String>{},
-          hiddenLanguages: const <String>[],
-          collapsedLanguages: const <String>[],
-        );
+      name: name,
+      formatKey: 'yomichan',
+      order: 0,
+      type: DictionaryType.term,
+      metadata: const <String, String>{},
+      hiddenLanguages: const <String>[],
+      collapsedLanguages: const <String>[],
+    );
 
     setUp(() async {
       resourceDir = Directory.systemTemp.createTempSync('fushi_dictdel_');
-      db =
-          FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
+      db = FushiDatabase.forTesting(
+        DatabaseConnection(NativeDatabase.memory()),
+      );
       dirAliveAtRebuild = <bool>[];
       watched = Directory(path.join(resourceDir.path, 'JMdict'));
       repo = DictionaryRepository(
@@ -88,12 +89,16 @@ void main() {
       );
 
       expect(preserved, isNotNull);
-      expect(dirAliveAtRebuild, isNotEmpty,
-          reason: '撤 meta 必须触发引擎重载（onCacheRebuild），否则旧索引会一直活着');
+      expect(
+        dirAliveAtRebuild,
+        isNotEmpty,
+        reason: '撤 meta 必须触发引擎重载（onCacheRebuild），否则旧索引会一直活着',
+      );
       expect(
         dirAliveAtRebuild.first,
         isTrue,
-        reason: '引擎重载（释放 mmap view）必须发生在目录被删之前；先删后卸载在 '
+        reason:
+            '引擎重载（释放 mmap view）必须发生在目录被删之前；先删后卸载在 '
             'Windows 上会撞 ERROR_USER_MAPPED_FILE，覆盖导入整条失败（BUG-1756）',
       );
       // 收尾状态不变：meta 与目录都不在了。
@@ -104,7 +109,10 @@ void main() {
 
   group('deleteDictionaryDirectoryCore 分流', () {
     FileSystemException winErr(int code) => FileSystemException(
-        'delete failed', 'D:/dict', OSError('occupied', code));
+      'delete failed',
+      'D:/dict',
+      OSError('occupied', code),
+    );
 
     /// 每条用例都记引擎装回次数：进函数前调用方已 releaseAllMappings 把引擎清空，
     /// 所以**每一条**返回路径和**每一条**抛出路径都必须恰好装回一次。
@@ -132,16 +140,16 @@ void main() {
         bool quarantined = false;
         final DictDirDeleteOutcome outcome =
             await deleteDictionaryDirectoryCore(
-          delete: () async {
-            calls++;
-            throw winErr(code);
-          },
-          quarantine: () async => quarantined = true,
-          sleep: (int _) async {},
-          isWindows: true,
-          maxAttempts: 3,
-          reloadEngine: countReload,
-        );
+              delete: () async {
+                calls++;
+                throw winErr(code);
+              },
+              quarantine: () async => quarantined = true,
+              sleep: (int _) async {},
+              isWindows: true,
+              maxAttempts: 3,
+              reloadEngine: countReload,
+            );
         expect(outcome, DictDirDeleteOutcome.quarantined, reason: 'code=$code');
         expect(calls, 3, reason: 'code=$code 应重试到上限');
         expect(quarantined, isTrue, reason: 'code=$code');
@@ -212,8 +220,10 @@ void main() {
 
     test('目录不存在 → absent（幂等，不抛）', () async {
       expect(
-        await deleteDictionaryDirectory(Directory(path.join(root.path, 'nope')),
-            reloadEngine: () => reloads++),
+        await deleteDictionaryDirectory(
+          Directory(path.join(root.path, 'nope')),
+          reloadEngine: () => reloads++,
+        ),
         DictDirDeleteOutcome.absent,
       );
     });
@@ -231,9 +241,9 @@ void main() {
     });
 
     test('启动清理扫掉隔离区，其余词典目录不动', () async {
-      final Directory pending =
-          Directory(path.join(root.path, kDictionaryPendingDeleteDirName))
-            ..createSync(recursive: true);
+      final Directory pending = Directory(
+        path.join(root.path, kDictionaryPendingDeleteDirName),
+      )..createSync(recursive: true);
       File(path.join(pending.path, 'stale')).writeAsStringSync('x');
       final Directory keep = Directory(path.join(root.path, 'JMdict'))
         ..createSync(recursive: true);

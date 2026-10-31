@@ -26,28 +26,47 @@ void main() {
 
   test('本地音频库导入走带出处的真实路径选择器', () {
     final String source = read(wiring);
-    expect(source.contains('pickRealFilePathDetailed('), isTrue,
-        reason: '本地音频库导入必须走 pickRealFilePathDetailed（安卓 SAF 真实路径、零复制）');
+    expect(
+      source.contains('pickRealFilePathDetailed('),
+      isTrue,
+      reason: '本地音频库导入必须走 pickRealFilePathDetailed（安卓 SAF 真实路径、零复制）',
+    );
   });
 
   test('本地音频库导入不再直接调 file_picker', () {
     final String source = read(wiring);
-    expect(source.contains('FilePicker.platform.pickFiles'), isFalse,
-        reason: '裸 pickFiles 在安卓会先把整份 android.db 复制进 app cache，'
-            '叠加 importFile 的第二次复制 = 2 倍体积');
-    expect(source.contains('package:file_picker/file_picker.dart'), isFalse,
-        reason: '本文件不该再依赖 file_picker');
+    expect(
+      source.contains('FilePicker.platform.pickFiles'),
+      isFalse,
+      reason:
+          '裸 pickFiles 在安卓会先把整份 android.db 复制进 app cache，'
+          '叠加 importFile 的第二次复制 = 2 倍体积',
+    );
+    expect(
+      source.contains('package:file_picker/file_picker.dart'),
+      isFalse,
+      reason: '本文件不该再依赖 file_picker',
+    );
   });
 
   test('引用与否由路径出处决定，不是按平台猜', () {
     final String source = read(wiring);
-    expect(source.contains('picked.isRealPath'), isTrue,
-        reason: '能不能引用必须看选择器实际交回的是真实路径还是 cache 临时副本');
+    expect(
+      source.contains('picked.isRealPath'),
+      isTrue,
+      reason: '能不能引用必须看选择器实际交回的是真实路径还是 cache 临时副本',
+    );
     // 拿到的是 cache 临时副本时必须降级为复制（引用一个会被系统清掉的文件 = 悬空）。
-    expect(source.contains('reference && canReference'), isTrue,
-        reason: '出处不是真实路径时必须降级为复制');
-    expect(source.contains('t.local_audio_reference_unavailable'), isTrue,
-        reason: '降级必须对用户可见，不能静默改变用户选择');
+    expect(
+      source.contains('reference && canReference'),
+      isTrue,
+      reason: '出处不是真实路径时必须降级为复制',
+    );
+    expect(
+      source.contains('t.local_audio_reference_unavailable'),
+      isTrue,
+      reason: '降级必须对用户可见，不能静默改变用户选择',
+    );
   });
 
   test('选择器如实交出路径出处', () {
@@ -55,14 +74,21 @@ void main() {
     expect(source.contains('class PickedFilePath'), isTrue);
     expect(source.contains('isRealPath'), isTrue);
     // 安卓无全文件访问时回退 file_picker，那条路径是 cache 副本，必须标 false。
-    expect(source.contains('isRealPath: false'), isTrue,
-        reason: 'file_picker 回退分支必须如实标记为「非真实路径」');
+    expect(
+      source.contains('isRealPath: false'),
+      isTrue,
+      reason: 'file_picker 回退分支必须如实标记为「非真实路径」',
+    );
   });
 
   test('引用开关不再被 isDesktopPlatform 硬门控', () {
     final String source = read(dialog);
-    expect(source.contains('_referenceOriginal && isDesktopPlatform'), isFalse,
-        reason: '安卓授予全文件访问后走 SAF 解析真实路径、不产生副本，'
-            '「移动端只能拿缓存副本」的旧前提已不成立');
+    expect(
+      source.contains('_referenceOriginal && isDesktopPlatform'),
+      isFalse,
+      reason:
+          '安卓授予全文件访问后走 SAF 解析真实路径、不产生副本，'
+          '「移动端只能拿缓存副本」的旧前提已不成立',
+    );
   });
 }

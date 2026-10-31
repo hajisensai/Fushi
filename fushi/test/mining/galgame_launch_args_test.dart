@@ -13,15 +13,12 @@ void main() {
     });
 
     test('空白分隔的普通参数', () {
-      expect(
-        parseGameLaunchArguments('-windowed -nosound'),
-        <String>['-windowed', '-nosound'],
-      );
+      expect(parseGameLaunchArguments('-windowed -nosound'), <String>[
+        '-windowed',
+        '-nosound',
+      ]);
       // 连续空白不产生空 token。
-      expect(
-        parseGameLaunchArguments('  -a    -b  '),
-        <String>['-a', '-b'],
-      );
+      expect(parseGameLaunchArguments('  -a    -b  '), <String>['-a', '-b']);
     });
 
     test('引号保住含空格的路径（本功能最常见的真实输入）', () {
@@ -29,10 +26,9 @@ void main() {
         parseGameLaunchArguments(r'--save="D:\My Saves\slot 1" -b'),
         <String>[r'--save=D:\My Saves\slot 1', '-b'],
       );
-      expect(
-        parseGameLaunchArguments(r'"C:\Program Files\x"'),
-        <String>[r'C:\Program Files\x'],
-      );
+      expect(parseGameLaunchArguments(r'"C:\Program Files\x"'), <String>[
+        r'C:\Program Files\x',
+      ]);
     });
 
     test('反斜杠只有在引号前才是转义符，Windows 路径不会被吃掉', () {
@@ -40,46 +36,41 @@ void main() {
       expect(parseGameLaunchArguments(r'a\b'), <String>[r'a\b']);
       expect(parseGameLaunchArguments(r'D:\Saves\'), <String>[r'D:\Saves\']);
       // 2n 个反斜杠 + " → n 个反斜杠，并切换引号态。
-      expect(
-        parseGameLaunchArguments(r'"a\\" b'),
-        <String>[r'a\', 'b'],
-      );
+      expect(parseGameLaunchArguments(r'"a\\" b'), <String>[r'a\', 'b']);
       // 2n+1 个反斜杠 + " → n 个反斜杠 + 一个字面引号。
       expect(parseGameLaunchArguments(r'a\"b'), <String>['a"b']);
       expect(parseGameLaunchArguments(r'a\\\"b'), <String>[r'a\"b']);
     });
 
     test('引号内的 "" 是一个字面引号且仍在引号内', () {
-      expect(
-        parseGameLaunchArguments(r'"say ""hi"" now"'),
-        <String>['say "hi" now'],
-      );
+      expect(parseGameLaunchArguments(r'"say ""hi"" now"'), <String>[
+        'say "hi" now',
+      ]);
     });
 
     test('未闭合的引号不吞掉参数，按到行尾处理（原样交给游戏报错）', () {
-      expect(
-        parseGameLaunchArguments(r'-a "unclosed value'),
-        <String>['-a', 'unclosed value'],
-      );
+      expect(parseGameLaunchArguments(r'-a "unclosed value'), <String>[
+        '-a',
+        'unclosed value',
+      ]);
     });
 
     test('日文/中文参数原样保留', () {
-      expect(
-        parseGameLaunchArguments(r'--path="D:\ゲーム\セーブ 1"'),
-        <String>[r'--path=D:\ゲーム\セーブ 1'],
-      );
+      expect(parseGameLaunchArguments(r'--path="D:\ゲーム\セーブ 1"'), <String>[
+        r'--path=D:\ゲーム\セーブ 1',
+      ]);
     });
   });
 
   group('GalgameEntry.launchArgumentTokens', () {
     GalgameEntry entryWith(String raw) => GalgameEntry(
-          id: 'g1',
-          name: 'game',
-          exePath: r'D:\Games\vn.exe',
-          workdir: r'D:\Games',
-          launchArgs: raw,
-          addedAt: DateTime(2026),
-        );
+      id: 'g1',
+      name: 'game',
+      exePath: r'D:\Games\vn.exe',
+      workdir: r'D:\Games',
+      launchArgs: raw,
+      addedAt: DateTime(2026),
+    );
 
     test('默认空串 → 空 token（新列不改变既有游戏的启动命令行）', () {
       expect(entryWith('').launchArgumentTokens, <String>[]);
@@ -100,12 +91,7 @@ void main() {
   });
 
   group('findGalgameByExePath', () {
-    GalgameEntry entry(
-      String id,
-      String exe,
-      String args, {
-      String? name,
-    }) =>
+    GalgameEntry entry(String id, String exe, String args, {String? name}) =>
         GalgameEntry(
           id: id,
           name: name ?? id,
@@ -125,7 +111,9 @@ void main() {
     test('大小写与分隔符归一后命中（Windows 路径语义）', () {
       expect(findGalgameByExePath(games, r'd:/games/a/A.EXE')?.id, 'a');
       expect(
-          findGalgameByExePath(games, r'D:\Games\B\b.exe')?.launchArgs, '-b');
+        findGalgameByExePath(games, r'D:\Games\B\b.exe')?.launchArgs,
+        '-b',
+      );
     });
 
     test('库里没有该 exe / 空路径 → null（回落成不带参数的旧行为）', () {
@@ -147,10 +135,7 @@ void main() {
         )?.id,
         'b',
       );
-      expect(
-        findGalgameForActivity(games, title: 'a')?.id,
-        'a',
-      );
+      expect(findGalgameForActivity(games, title: 'a')?.id, 'a');
       expect(
         findGalgameForActivity(games, mediaKey: 'missing', title: 'missing'),
         isNull,
@@ -159,18 +144,8 @@ void main() {
 
     test('exact stable id 在重复标题中仍精确命中，不能退化成标题首项', () {
       final List<GalgameEntry> sameTitle = <GalgameEntry>[
-        entry(
-          'stable-a',
-          r'D:\Games\A\a.exe',
-          '-a',
-          name: '共同标题',
-        ),
-        entry(
-          'stable-b',
-          r'D:\Games\B\b.exe',
-          '-b',
-          name: '共同标题',
-        ),
+        entry('stable-a', r'D:\Games\A\a.exe', '-a', name: '共同标题'),
+        entry('stable-b', r'D:\Games\B\b.exe', '-b', name: '共同标题'),
       ];
 
       expect(
@@ -185,18 +160,8 @@ void main() {
 
     test('旧 exePath 精确命中优先于重复标题，路径迁移只接受唯一标题', () {
       final List<GalgameEntry> sameTitle = <GalgameEntry>[
-        entry(
-          'path-a',
-          r'D:\Games\A\a.exe',
-          '-a',
-          name: '共同标题',
-        ),
-        entry(
-          'path-b',
-          r'D:\Games\B\b.exe',
-          '-b',
-          name: '共同标题',
-        ),
+        entry('path-a', r'D:\Games\A\a.exe', '-a', name: '共同标题'),
+        entry('path-b', r'D:\Games\B\b.exe', '-b', name: '共同标题'),
       ];
       expect(
         findGalgameForActivity(
@@ -216,18 +181,8 @@ void main() {
       );
 
       final List<GalgameEntry> uniqueTitle = <GalgameEntry>[
-        entry(
-          'moved',
-          r'D:\Games\New\game.exe',
-          '',
-          name: '唯一旧标题',
-        ),
-        entry(
-          'other',
-          r'D:\Games\Other\other.exe',
-          '',
-          name: '其他游戏',
-        ),
+        entry('moved', r'D:\Games\New\game.exe', '', name: '唯一旧标题'),
+        entry('other', r'D:\Games\Other\other.exe', '', name: '其他游戏'),
       ];
       expect(
         findGalgameForActivity(
@@ -241,42 +196,16 @@ void main() {
 
     test('无 key 的 legacy 标题只有唯一候选时命中，重复标题安全返回 null', () {
       final List<GalgameEntry> uniqueTitle = <GalgameEntry>[
-        entry(
-          'unique',
-          r'D:\Games\Unique\game.exe',
-          '',
-          name: '唯一标题',
-        ),
-        entry(
-          'other',
-          r'D:\Games\Other\other.exe',
-          '',
-          name: '其他标题',
-        ),
+        entry('unique', r'D:\Games\Unique\game.exe', '', name: '唯一标题'),
+        entry('other', r'D:\Games\Other\other.exe', '', name: '其他标题'),
       ];
-      expect(
-        findGalgameForActivity(uniqueTitle, title: '唯一标题')?.id,
-        'unique',
-      );
+      expect(findGalgameForActivity(uniqueTitle, title: '唯一标题')?.id, 'unique');
 
       final List<GalgameEntry> sameTitle = <GalgameEntry>[
-        entry(
-          'duplicate-a',
-          r'D:\Games\A\a.exe',
-          '',
-          name: '重复标题',
-        ),
-        entry(
-          'duplicate-b',
-          r'D:\Games\B\b.exe',
-          '',
-          name: '重复标题',
-        ),
+        entry('duplicate-a', r'D:\Games\A\a.exe', '', name: '重复标题'),
+        entry('duplicate-b', r'D:\Games\B\b.exe', '', name: '重复标题'),
       ];
-      expect(
-        findGalgameForActivity(sameTitle, title: '重复标题'),
-        isNull,
-      );
+      expect(findGalgameForActivity(sameTitle, title: '重复标题'), isNull);
     });
 
     test('deleted stable id 与脏非路径 key 不得回落到另一个同标题游戏', () {

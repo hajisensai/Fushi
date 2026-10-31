@@ -100,51 +100,52 @@ void main() {
         // 发生过导航完全无关。
         final List<_SettingsDestinationCase> destinations =
             <_SettingsDestinationCase>[
-          (
-            id: SettingsDestinationId.appearance,
-            label: t.settings_destination_appearance,
-          ),
-          (
-            id: SettingsDestinationId.reading,
-            label: t.settings_destination_reading,
-          ),
-          (id: SettingsDestinationId.manga, label: t.manga_library),
-          (
-            id: SettingsDestinationId.video,
-            label: t.settings_destination_video,
-          ),
-          (id: SettingsDestinationId.downloads, label: t.nav_downloads),
-          (
-            id: SettingsDestinationId.lookup,
-            label: t.settings_destination_lookup,
-          ),
-          (
-            id: SettingsDestinationId.cardCreation,
-            label: t.settings_destination_card_creation,
-          ),
-          (
-            id: SettingsDestinationId.profiles,
-            label: t.settings_destination_profiles,
-          ),
-          (
-            id: SettingsDestinationId.syncBackup,
-            label: t.settings_destination_sync_backup,
-          ),
-          (
-            id: SettingsDestinationId.interconnect,
-            label: t.settings_destination_interconnect,
-          ),
-          (
-            id: SettingsDestinationId.storage,
-            label: t.settings_destination_storage,
-          ),
-          (
-            id: SettingsDestinationId.system,
-            label: t.settings_destination_system,
-          ),
-        ];
-        final Set<String> uniqueDestinations =
-            destinations.map((_SettingsDestinationCase c) => c.label).toSet();
+              (
+                id: SettingsDestinationId.appearance,
+                label: t.settings_destination_appearance,
+              ),
+              (
+                id: SettingsDestinationId.reading,
+                label: t.settings_destination_reading,
+              ),
+              (id: SettingsDestinationId.manga, label: t.manga_library),
+              (
+                id: SettingsDestinationId.video,
+                label: t.settings_destination_video,
+              ),
+              (id: SettingsDestinationId.downloads, label: t.nav_downloads),
+              (
+                id: SettingsDestinationId.lookup,
+                label: t.settings_destination_lookup,
+              ),
+              (
+                id: SettingsDestinationId.cardCreation,
+                label: t.settings_destination_card_creation,
+              ),
+              (
+                id: SettingsDestinationId.profiles,
+                label: t.settings_destination_profiles,
+              ),
+              (
+                id: SettingsDestinationId.syncBackup,
+                label: t.settings_destination_sync_backup,
+              ),
+              (
+                id: SettingsDestinationId.interconnect,
+                label: t.settings_destination_interconnect,
+              ),
+              (
+                id: SettingsDestinationId.storage,
+                label: t.settings_destination_storage,
+              ),
+              (
+                id: SettingsDestinationId.system,
+                label: t.settings_destination_system,
+              ),
+            ];
+        final Set<String> uniqueDestinations = destinations
+            .map((_SettingsDestinationCase c) => c.label)
+            .toSet();
         expect(
           uniqueDestinations.length,
           destinations.length,
@@ -170,8 +171,11 @@ void main() {
 
         debugPrint('[M4] === All settings destinations ===');
         for (final _SettingsDestinationCase destination in destinations) {
-          final bool pushedDetail =
-              await _openSettingsDestination(tester, driver, destination);
+          final bool pushedDetail = await _openSettingsDestination(
+            tester,
+            driver,
+            destination,
+          );
           expect(
             tester.takeException(),
             isNull,
@@ -318,7 +322,8 @@ Future<bool> _openSettingsDestination(
     expect(
       _settingsDestinationShown(destination.id),
       isFalse,
-      reason: '$label must not already be the shown destination before it is '
+      reason:
+          '$label must not already be the shown destination before it is '
           'activated, otherwise this case asserts nothing',
     );
   }
@@ -332,7 +337,8 @@ Future<bool> _openSettingsDestination(
   await _pumpUntil(
     tester,
     () => _settingsDestinationShown(destination.id),
-    reason: '$label must open its own detail page (narrow) or its own wide '
+    reason:
+        '$label must open its own detail page (narrow) or its own wide '
         'detail pane — a highlighted row is not proof of navigation',
   );
   expect(
@@ -415,7 +421,8 @@ Future<void> _openDeepRoute<T extends Widget>(
     expect(
       _settingsDestinationShown(destination.id),
       isTrue,
-      reason: 'wide settings must retain the $destinationLabel detail pane '
+      reason:
+          'wide settings must retain the $destinationLabel detail pane '
           'after closing $item',
     );
   }

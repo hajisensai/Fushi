@@ -17,119 +17,143 @@ void main() {
   const Color highlight = Color(0x66FFCC00);
 
   group('TODO-1282 clip font size (book-sized, not SRT subtitle-sized)', () {
-    test('typical single Japanese sentence renders book-sized font, not tiny',
-        () {
-      // 典型单句（30 runes），默认阅读正文字号 22。
-      final AudiobookClipTextLayout horizontal = computeClipTextLayout(
-        textLength: 30,
-        baseFontSize: 22,
-        vertical: false,
-        lineHeight: 1.65,
-        background: bg,
-        foreground: fg,
-        highlight: highlight,
-      );
-      final AudiobookClipTextLayout vertical = computeClipTextLayout(
-        textLength: 30,
-        baseFontSize: 22,
-        vertical: true,
-        lineHeight: 1.65,
-        background: bg,
-        foreground: fg,
-        highlight: highlight,
-      );
-      // 旧路径这句会塌到 18px（字幕大小）。修复后必须远大于旧上限（base×2=44）。
-      expect(horizontal.fontSize, greaterThan(60),
-          reason: 'book clip must be big, not subtitle-tiny');
-      expect(vertical.fontSize, greaterThan(60),
-          reason: 'vertical book clip must be big too');
-    });
+    test(
+      'typical single Japanese sentence renders book-sized font, not tiny',
+      () {
+        // 典型单句（30 runes），默认阅读正文字号 22。
+        final AudiobookClipTextLayout horizontal = computeClipTextLayout(
+          textLength: 30,
+          baseFontSize: 22,
+          vertical: false,
+          lineHeight: 1.65,
+          background: bg,
+          foreground: fg,
+          highlight: highlight,
+        );
+        final AudiobookClipTextLayout vertical = computeClipTextLayout(
+          textLength: 30,
+          baseFontSize: 22,
+          vertical: true,
+          lineHeight: 1.65,
+          background: bg,
+          foreground: fg,
+          highlight: highlight,
+        );
+        // 旧路径这句会塌到 18px（字幕大小）。修复后必须远大于旧上限（base×2=44）。
+        expect(
+          horizontal.fontSize,
+          greaterThan(60),
+          reason: 'book clip must be big, not subtitle-tiny',
+        );
+        expect(
+          vertical.fontSize,
+          greaterThan(60),
+          reason: 'vertical book clip must be big too',
+        );
+      },
+    );
 
     test(
-        'font floor scales with EPUB reader font (bigger reader -> bigger clip)',
-        () {
-      // 长选区（200 runes）落到面积解出的字号 < 下限区，此时下限（跟随 EPUB base）决定
-      // 结果：reader 字号越大，导出字号越大 -> 证明「真按 EPUB 生成」。
-      final AudiobookClipTextLayout small = computeClipTextLayout(
-        textLength: 200,
-        baseFontSize: 22,
-        vertical: false,
-        lineHeight: 1.6,
-        background: bg,
-        foreground: fg,
-        highlight: highlight,
-      );
-      final AudiobookClipTextLayout big = computeClipTextLayout(
-        textLength: 200,
-        baseFontSize: 48,
-        vertical: false,
-        lineHeight: 1.6,
-        background: bg,
-        foreground: fg,
-        highlight: highlight,
-      );
-      expect(big.fontSize, greaterThan(small.fontSize),
-          reason: 'clip font must follow EPUB reader font size');
-    });
-
-    test('longer selections shrink but never collapse below the book floor',
-        () {
-      final AudiobookClipTextLayout shortSel = computeClipTextLayout(
-        textLength: 6,
-        baseFontSize: 22,
-        vertical: false,
-        lineHeight: 1.65,
-        background: bg,
-        foreground: fg,
-        highlight: highlight,
-      );
-      final AudiobookClipTextLayout longSel = computeClipTextLayout(
-        textLength: 220,
-        baseFontSize: 22,
-        vertical: false,
-        lineHeight: 1.65,
-        background: bg,
-        foreground: fg,
-        highlight: highlight,
-      );
-      expect(longSel.fontSize, lessThan(shortSel.fontSize));
-      // 书页地板：远高于旧 18px 字幕地板。
-      expect(longSel.fontSize, greaterThanOrEqualTo(32),
-          reason: 'never collapse to subtitle size');
-    });
-  });
-
-  group('TODO-1282 vertical clip renders via EPUB typography path (not SRT)',
+      'font floor scales with EPUB reader font (bigger reader -> bigger clip)',
       () {
-    test('vertical HTML reuses reader vertical-rl EPUB styling + theme + size',
-        () {
-      final AudiobookClipTextLayout layout = computeClipTextLayout(
-        textLength: 20,
-        baseFontSize: 22,
-        vertical: true,
-        lineHeight: 1.65,
-        background: bg,
-        foreground: fg,
-        highlight: highlight,
-      );
-      final String html = buildAudiobookClipVerticalHtml(
-        segments: const <AudiobookClipTextSegment>[
-          AudiobookClipTextSegment(text: 'しょうがくせいのころ、'),
-        ],
-        layout: layout,
-      );
-      // EPUB 阅读排版：竖排 vertical-rl + text-orientation: mixed + 明朝/黑体日文字体。
-      expect(html, contains('writing-mode: vertical-rl'));
-      expect(html, contains('text-orientation: mixed'));
-      expect(html, contains('Noto Serif JP'));
-      // 字号必须是 layout 算出的书页大字，原样注入 CSS（不是硬编码小字）。
-      final int fs = layout.fontSize.round();
-      expect(html, contains('font-size: ${fs}px'),
-          reason: 'vertical clip must render at the computed book font size');
-      // 逐句高亮跟随衬底（sasayaki）——EPUB 有声书跟读观感，非字幕条。
-      expect(html, contains('.clip-cue.current'));
-      // 绝不走任何 SRT 字幕路径。
-      expect(html.toLowerCase(), isNot(contains('srt')));
-    });
+        // 长选区（200 runes）落到面积解出的字号 < 下限区，此时下限（跟随 EPUB base）决定
+        // 结果：reader 字号越大，导出字号越大 -> 证明「真按 EPUB 生成」。
+        final AudiobookClipTextLayout small = computeClipTextLayout(
+          textLength: 200,
+          baseFontSize: 22,
+          vertical: false,
+          lineHeight: 1.6,
+          background: bg,
+          foreground: fg,
+          highlight: highlight,
+        );
+        final AudiobookClipTextLayout big = computeClipTextLayout(
+          textLength: 200,
+          baseFontSize: 48,
+          vertical: false,
+          lineHeight: 1.6,
+          background: bg,
+          foreground: fg,
+          highlight: highlight,
+        );
+        expect(
+          big.fontSize,
+          greaterThan(small.fontSize),
+          reason: 'clip font must follow EPUB reader font size',
+        );
+      },
+    );
+
+    test(
+      'longer selections shrink but never collapse below the book floor',
+      () {
+        final AudiobookClipTextLayout shortSel = computeClipTextLayout(
+          textLength: 6,
+          baseFontSize: 22,
+          vertical: false,
+          lineHeight: 1.65,
+          background: bg,
+          foreground: fg,
+          highlight: highlight,
+        );
+        final AudiobookClipTextLayout longSel = computeClipTextLayout(
+          textLength: 220,
+          baseFontSize: 22,
+          vertical: false,
+          lineHeight: 1.65,
+          background: bg,
+          foreground: fg,
+          highlight: highlight,
+        );
+        expect(longSel.fontSize, lessThan(shortSel.fontSize));
+        // 书页地板：远高于旧 18px 字幕地板。
+        expect(
+          longSel.fontSize,
+          greaterThanOrEqualTo(32),
+          reason: 'never collapse to subtitle size',
+        );
+      },
+    );
   });
+
+  group(
+    'TODO-1282 vertical clip renders via EPUB typography path (not SRT)',
+    () {
+      test(
+        'vertical HTML reuses reader vertical-rl EPUB styling + theme + size',
+        () {
+          final AudiobookClipTextLayout layout = computeClipTextLayout(
+            textLength: 20,
+            baseFontSize: 22,
+            vertical: true,
+            lineHeight: 1.65,
+            background: bg,
+            foreground: fg,
+            highlight: highlight,
+          );
+          final String html = buildAudiobookClipVerticalHtml(
+            segments: const <AudiobookClipTextSegment>[
+              AudiobookClipTextSegment(text: 'しょうがくせいのころ、'),
+            ],
+            layout: layout,
+          );
+          // EPUB 阅读排版：竖排 vertical-rl + text-orientation: mixed + 明朝/黑体日文字体。
+          expect(html, contains('writing-mode: vertical-rl'));
+          expect(html, contains('text-orientation: mixed'));
+          expect(html, contains('Noto Serif JP'));
+          // 字号必须是 layout 算出的书页大字，原样注入 CSS（不是硬编码小字）。
+          final int fs = layout.fontSize.round();
+          expect(
+            html,
+            contains('font-size: ${fs}px'),
+            reason: 'vertical clip must render at the computed book font size',
+          );
+          // 逐句高亮跟随衬底（sasayaki）——EPUB 有声书跟读观感，非字幕条。
+          expect(html, contains('.clip-cue.current'));
+          // 绝不走任何 SRT 字幕路径。
+          expect(html.toLowerCase(), isNot(contains('srt')));
+        },
+      );
+    },
+  );
 }

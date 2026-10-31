@@ -82,10 +82,7 @@ void main() {
         '-1:20',
       );
       // 拖回原点（增量 0）= fork 的 onHorizontalDragEnd 自动取消 seek 的判据。
-      expect(
-        VideoSeekIndicatorLabel.deltaSigned(Duration.zero),
-        '+0:00',
-      );
+      expect(VideoSeekIndicatorLabel.deltaSigned(Duration.zero), '+0:00');
     });
   });
 
@@ -95,9 +92,9 @@ void main() {
 
     setUpAll(() {
       corpus = readVideoFushiSource();
-      shellSrc = File('lib/src/pages/implementations/video_fushi_page.dart')
-          .readAsStringSync()
-          .replaceAll('\r\n', '\n');
+      shellSrc = File(
+        'lib/src/pages/implementations/video_fushi_page.dart',
+      ).readAsStringSync().replaceAll('\r\n', '\n');
     });
 
     String methodBody(String source, String namePrefix) {
@@ -123,7 +120,8 @@ void main() {
       expect(
         containsIdentifier(shellSrc, '_videoHorizontalGestureSensitivity'),
         isFalse,
-        reason: 'BUG-1485：换算已交给 VideoHorizontalSeekGesture，'
+        reason:
+            'BUG-1485：换算已交给 VideoHorizontalSeekGesture，'
             '重新引入按总时长比例换算的灵敏度常量即回归',
       );
     });
@@ -133,12 +131,21 @@ void main() {
         corpus,
         'MaterialVideoControlsThemeData _mobileControlsTheme(',
       );
-      expect(body.contains('seekGesture: true'), isTrue,
-          reason: '移动控制条必须启用横滑 seek（TODO-916），改回 false 即红');
-      expect(body.contains('seekIndicatorBuilder:'), isTrue,
-          reason: '必须注入自定义 HUD builder（显目标绝对时间）');
-      expect(body.contains('_buildSeekIndicator('), isTrue,
-          reason: 'seekIndicatorBuilder 必须接到 _buildSeekIndicator');
+      expect(
+        body.contains('seekGesture: true'),
+        isTrue,
+        reason: '移动控制条必须启用横滑 seek（TODO-916），改回 false 即红',
+      );
+      expect(
+        body.contains('seekIndicatorBuilder:'),
+        isTrue,
+        reason: '必须注入自定义 HUD builder（显目标绝对时间）',
+      );
+      expect(
+        body.contains('_buildSeekIndicator('),
+        isTrue,
+        reason: 'seekIndicatorBuilder 必须接到 _buildSeekIndicator',
+      );
     });
 
     test('BUG-1485：_mobileControlsTheme 把换算接到纯函数 + 用户档位，且不再传 fork 灵敏度', () {
@@ -149,41 +156,57 @@ void main() {
       // 2026-10-05：resolver 抽成 [_resolveTouchSeekDelta]，移动控制条与桌面触屏
       // （Surface）共用同一换算，下面对它的方法体做同样的断言。
       expect(
-          containsCodeLine(
-              body, 'horizontalSeekResolver: _resolveTouchSeekDelta,'),
-          isTrue,
-          reason: 'BUG-1485：必须注入 resolver 接管 fork 的比例制换算');
+        containsCodeLine(
+          body,
+          'horizontalSeekResolver: _resolveTouchSeekDelta,',
+        ),
+        isTrue,
+        reason: 'BUG-1485：必须注入 resolver 接管 fork 的比例制换算',
+      );
       // 命名参数的 `{` 会骗过 methodBody 的大括号配对；helper 是箭头函数、紧排在
       // _mobileControlsTheme 之前，按这两个锚点截取。
-      final int resolverStart =
-          corpus.indexOf('Duration _resolveTouchSeekDelta(');
+      final int resolverStart = corpus.indexOf(
+        'Duration _resolveTouchSeekDelta(',
+      );
       expect(resolverStart, greaterThanOrEqualTo(0));
       final String resolver = corpus.substring(
+        resolverStart,
+        corpus.indexOf(
+          'MaterialVideoControlsThemeData _mobileControlsTheme(',
           resolverStart,
-          corpus.indexOf('MaterialVideoControlsThemeData _mobileControlsTheme(',
-              resolverStart));
+        ),
+      );
       expect(
         containsCodeLine(resolver, 'VideoHorizontalSeekGesture.resolveDelta('),
         isTrue,
         reason: 'BUG-1485：resolver 必须走可单测的纯函数模型',
       );
       expect(
-          containsCodeLine(resolver, '_asbConfig.dragSeekSensitivity'), isTrue,
-          reason: 'BUG-1485：灵敏度必须读用户设置档位，不得写死');
+        containsCodeLine(resolver, '_asbConfig.dragSeekSensitivity'),
+        isTrue,
+        reason: 'BUG-1485：灵敏度必须读用户设置档位，不得写死',
+      );
       expect(
         containsIdentifier(body, 'horizontalGestureSensitivity'),
         isFalse,
-        reason: 'BUG-1485：resolver 在场时 fork 的比例制灵敏度被忽略，'
+        reason:
+            'BUG-1485：resolver 在场时 fork 的比例制灵敏度被忽略，'
             '再传它只会误导后来者以为它还生效',
       );
     });
 
     test('_buildSeekIndicator 经 VideoSeekIndicatorLabel 算目标/增量', () {
       final String body = methodBody(corpus, 'Widget _buildSeekIndicator(');
-      expect(body.contains('VideoSeekIndicatorLabel.target('), isTrue,
-          reason: 'HUD 必须显目标绝对时间（非纯增量）');
-      expect(body.contains('VideoSeekIndicatorLabel.deltaSigned('), isTrue,
-          reason: 'HUD 必须显带符号增量');
+      expect(
+        body.contains('VideoSeekIndicatorLabel.target('),
+        isTrue,
+        reason: 'HUD 必须显目标绝对时间（非纯增量）',
+      );
+      expect(
+        body.contains('VideoSeekIndicatorLabel.deltaSigned('),
+        isTrue,
+        reason: 'HUD 必须显带符号增量',
+      );
     });
 
     test('BUG-1485：fork 的 resolver 注入点存活（re-vendor 后被抹掉即红）', () {
@@ -193,8 +216,10 @@ void main() {
         'src/controls/material.dart',
       ).readAsStringSync().replaceAll('\r\n', '\n');
       expect(
-          containsCodeLine(forkSrc, 'typedef HorizontalSeekResolver'), isTrue,
-          reason: 'fork 补丁被 re-vendor 抹掉：缺 HorizontalSeekResolver typedef');
+        containsCodeLine(forkSrc, 'typedef HorizontalSeekResolver'),
+        isTrue,
+        reason: 'fork 补丁被 re-vendor 抹掉：缺 HorizontalSeekResolver typedef',
+      );
       expect(
         containsCodeLine(
           forkSrc,
@@ -206,13 +231,15 @@ void main() {
       expect(
         containsCodeLine(forkSrc, '_theme(context).horizontalSeekResolver'),
         isTrue,
-        reason: 'fork 补丁被 re-vendor 抹掉：onHorizontalDragUpdate 不再调 resolver，'
+        reason:
+            'fork 补丁被 re-vendor 抹掉：onHorizontalDragUpdate 不再调 resolver，'
             '会静默退回按总时长比例换算的旧公式（BUG-1485 症状复发）',
       );
       expect(
         containsCodeLine(forkSrc, 'Duration swipeDuration = Duration.zero;'),
         isTrue,
-        reason: 'fork 补丁被 re-vendor 抹掉：swipeDuration 退回 int 整秒，'
+        reason:
+            'fork 补丁被 re-vendor 抹掉：swipeDuration 退回 int 整秒，'
             '亚秒级微调被量化掉',
       );
     });
@@ -222,10 +249,16 @@ void main() {
         corpus,
         'MaterialDesktopVideoControlsThemeData _desktopControlsTheme(',
       );
-      expect(body.contains('seekGesture'), isFalse,
-          reason: '桌面用鼠标拖进度条 + 键盘 seek 键，不应接横滑 seek');
-      expect(body.contains('horizontalGestureSensitivity'), isFalse,
-          reason: '桌面无横滑手势，不应设 horizontalGestureSensitivity');
+      expect(
+        body.contains('seekGesture'),
+        isFalse,
+        reason: '桌面用鼠标拖进度条 + 键盘 seek 键，不应接横滑 seek',
+      );
+      expect(
+        body.contains('horizontalGestureSensitivity'),
+        isFalse,
+        reason: '桌面无横滑手势，不应设 horizontalGestureSensitivity',
+      );
     });
   });
 }

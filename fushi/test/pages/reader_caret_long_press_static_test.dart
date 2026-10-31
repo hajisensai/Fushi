@@ -28,21 +28,25 @@ void main() {
   });
 
   test('popup WebView exposes caretLongPress through ReaderCaretScripts', () {
-    final String source =
-        File('lib/src/pages/implementations/dictionary_popup_webview.dart')
-            .readAsStringSync();
+    final String source = File(
+      'lib/src/pages/implementations/dictionary_popup_webview.dart',
+    ).readAsStringSync();
 
     expect(source, contains('Future<void> caretLongPress()'));
     expect(source, contains('ReaderCaretScripts.longPressInvocation()'));
   });
 
-  test('popup dictionary summary long-press is callable without touch events',
-      () {
-    final String source = File('assets/popup/popup.js').readAsStringSync();
+  test(
+    'popup dictionary summary long-press is callable without touch events',
+    () {
+      final String source = File('assets/popup/popup.js').readAsStringSync();
 
-    expect(
-        source, contains('summary.__fushiToggleSelection = toggleSelection'));
-    expect(source, contains('window.__fushiDictLongPress'));
-    expect(source, contains("typeof toggle !== 'function'"));
-  });
+      expect(
+        source,
+        contains('summary.__fushiToggleSelection = toggleSelection'),
+      );
+      expect(source, contains('window.__fushiDictLongPress'));
+      expect(source, contains("typeof toggle !== 'function'"));
+    },
+  );
 }

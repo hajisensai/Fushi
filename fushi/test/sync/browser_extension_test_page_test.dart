@@ -17,30 +17,28 @@ class _FakeLookup implements FushiRemoteLookupService {
     required String term,
     required bool wildcards,
     required int maximumTerms,
-  }) async =>
-      null;
+  }) async => null;
 
   @override
   Future<RemoteAudioLookup?> lookupAudio({
     required String expression,
     required String reading,
-  }) async =>
-      null;
+  }) async => null;
 }
 
 const BrowserExtensionTestPageStrings _strings =
     BrowserExtensionTestPageStrings(
-  title: '试一试浏览器扩展',
-  intro: 'intro',
-  probeChecking: 'checking',
-  probeOk: 'injected',
-  probeMissing: 'missing',
-  stepPopupTitle: 'popup',
-  stepPopupBody: 'click the icon',
-  stepLookupTitle: 'shift',
-  stepLookupBody: 'hold shift',
-  sampleLabel: 'sample',
-);
+      title: '试一试浏览器扩展',
+      intro: 'intro',
+      probeChecking: 'checking',
+      probeOk: 'injected',
+      probeMissing: 'missing',
+      stepPopupTitle: 'popup',
+      stepPopupBody: 'click the icon',
+      stepLookupTitle: 'shift',
+      stepLookupBody: 'hold shift',
+      sampleLabel: 'sample',
+    );
 
 String _page({String sentence = '今日はいい天気ですね。', String lang = 'ja'}) =>
     buildBrowserExtensionTestPage(
@@ -56,8 +54,12 @@ Future<HttpClientResponse> _request(
   String? apiKey,
 }) async {
   final HttpClient client = HttpClient();
-  final HttpClientRequest req =
-      await client.open(method, '127.0.0.1', port, path);
+  final HttpClientRequest req = await client.open(
+    method,
+    '127.0.0.1',
+    port,
+    path,
+  );
   if (apiKey != null) req.headers.set('X-API-Key', apiKey);
   return req.close();
 }
@@ -95,10 +97,7 @@ void main() {
     late FushiApiServer server;
     tearDown(() async => server.stop());
 
-    Future<void> start({
-      String? apiKey,
-      String Function()? provider,
-    }) async {
+    Future<void> start({String? apiKey, String Function()? provider}) async {
       server = FushiApiServer(
         port: 0,
         lookupService: _FakeLookup(),
@@ -113,8 +112,11 @@ void main() {
 
     test('裸 GET 免鉴权拿到 HTML（浏览器地址栏没有 Authorization 可带）', () async {
       await start(apiKey: 'k123', provider: _page);
-      final HttpClientResponse resp =
-          await _request(server.port, 'GET', kBrowserExtensionTestPagePath);
+      final HttpClientResponse resp = await _request(
+        server.port,
+        'GET',
+        kBrowserExtensionTestPagePath,
+      );
       expect(resp.statusCode, 200);
       expect(resp.headers.contentType?.mimeType, 'text/html');
       final String body = await resp.transform(utf8.decoder).join();
@@ -123,22 +125,31 @@ void main() {
 
     test('POST 到该路径是 405，不落进 POST-only 的 API 分发', () async {
       await start(provider: _page);
-      final HttpClientResponse resp =
-          await _request(server.port, 'POST', kBrowserExtensionTestPagePath);
+      final HttpClientResponse resp = await _request(
+        server.port,
+        'POST',
+        kBrowserExtensionTestPagePath,
+      );
       expect(resp.statusCode, 405);
     });
 
     test('未注入 provider（旧装配 / 配对 host）时 404，不崩', () async {
       await start();
-      final HttpClientResponse resp =
-          await _request(server.port, 'GET', kBrowserExtensionTestPagePath);
+      final HttpClientResponse resp = await _request(
+        server.port,
+        'GET',
+        kBrowserExtensionTestPagePath,
+      );
       expect(resp.statusCode, 404);
     });
 
     test('免鉴权只对这一条路径开口，其它端点仍要 key', () async {
       await start(apiKey: 'k123', provider: _page);
-      final HttpClientResponse resp =
-          await _request(server.port, 'POST', '/termEntries');
+      final HttpClientResponse resp = await _request(
+        server.port,
+        'POST',
+        '/termEntries',
+      );
       expect(resp.statusCode, 401);
     });
   });

@@ -104,8 +104,14 @@ void main() {
       'set(CMAKE_INSTALL_PREFIX "\${BUILD_BUNDLE_DIR}" CACHE PATH "..." FORCE)',
     );
     expect(prefix, greaterThanOrEqualTo(0));
-    expect(prefix, lessThan(cmake.indexOf('add_subdirectory(\${FLUTTER_MANAGED_DIR})')));
-    expect(prefix, lessThan(cmake.indexOf('include(flutter/generated_plugins.cmake)')));
+    expect(
+      prefix,
+      lessThan(cmake.indexOf('add_subdirectory(\${FLUTTER_MANAGED_DIR})')),
+    );
+    expect(
+      prefix,
+      lessThan(cmake.indexOf('include(flutter/generated_plugins.cmake)')),
+    );
   });
 
   test('Android builds the module in the app native build', () {

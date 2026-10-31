@@ -51,109 +51,122 @@ class _PausingDeleteVideoBookRepository extends VideoBookRepository {
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
-  test('saveVideoBook + saveCues + getByBookUid + loadCues round-trips',
-      () async {
-    final db = FushiDatabase.forTesting(NativeDatabase.memory());
-    addTearDown(db.close);
-    final repo = VideoBookRepository(db);
+  test(
+    'saveVideoBook + saveCues + getByBookUid + loadCues round-trips',
+    () async {
+      final db = FushiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      final repo = VideoBookRepository(db);
 
-    await repo.saveVideoBook(const VideoBooksCompanion(
-      bookUid: Value('video/1'),
-      title: Value('T'),
-      videoPath: Value('/v.mp4'),
-    ));
-    final cue = AudioCue()
-      ..bookKey = 'video/1'
-      ..chapterHref = 'video://default'
-      ..sentenceIndex = 0
-      ..textFragmentId = ''
-      ..text = 'hello'
-      ..startMs = 0
-      ..endMs = 1000
-      ..audioFileIndex = 0;
-    await repo.saveCues(bookUid: 'video/1', cues: [cue]);
+      await repo.saveVideoBook(
+        const VideoBooksCompanion(
+          bookUid: Value('video/1'),
+          title: Value('T'),
+          videoPath: Value('/v.mp4'),
+        ),
+      );
+      final cue = AudioCue()
+        ..bookKey = 'video/1'
+        ..chapterHref = 'video://default'
+        ..sentenceIndex = 0
+        ..textFragmentId = ''
+        ..text = 'hello'
+        ..startMs = 0
+        ..endMs = 1000
+        ..audioFileIndex = 0;
+      await repo.saveCues(bookUid: 'video/1', cues: [cue]);
 
-    final row = await repo.getByBookUid('video/1');
-    expect(row!.title, 'T');
-    final cues = await repo.loadCues('video/1');
-    expect(cues, hasLength(1));
-    expect(cues.first.text, 'hello');
+      final row = await repo.getByBookUid('video/1');
+      expect(row!.title, 'T');
+      final cues = await repo.loadCues('video/1');
+      expect(cues, hasLength(1));
+      expect(cues.first.text, 'hello');
 
-    await repo.updatePosition('video/1', 5000);
-    final row2 = await repo.getByBookUid('video/1');
-    expect(row2!.lastPositionMs, 5000);
-  });
-
-  test('saveCues with an empty list clears persisted cues (BUG-081 off path)',
-      () async {
-    final db = FushiDatabase.forTesting(NativeDatabase.memory());
-    addTearDown(db.close);
-    final repo = VideoBookRepository(db);
-    await repo.saveVideoBook(const VideoBooksCompanion(
-      bookUid: Value('video/off'),
-      title: Value('Off'),
-      videoPath: Value('/off.mp4'),
-    ));
-    final cue = AudioCue()
-      ..bookKey = 'video/off'
-      ..chapterHref = 'video://default'
-      ..sentenceIndex = 0
-      ..textFragmentId = ''
-      ..text = 'hi'
-      ..startMs = 0
-      ..endMs = 1000
-      ..audioFileIndex = 0;
-    await repo.saveCues(bookUid: 'video/off', cues: [cue]);
-    expect(await repo.loadCues('video/off'), hasLength(1));
-
-    // Turning subtitles off persists an empty cue list; re-open must read none.
-    await repo.saveCues(bookUid: 'video/off', cues: const []);
-    expect(await repo.loadCues('video/off'), isEmpty);
-  });
-
-  test('updateLocalMediaPaths rewrites stale video/subtitle paths only',
-      () async {
-    final db = FushiDatabase.forTesting(NativeDatabase.memory());
-    addTearDown(db.close);
-    final repo = VideoBookRepository(db);
-    await repo.saveVideoBook(const VideoBooksCompanion(
-      bookUid: Value('video/relocated'),
-      title: Value('Relocated'),
-      videoPath: Value('/old/movie.mp4'),
-      subtitleSource: Value('/old/movie.srt'),
-      lastPositionMs: Value(1234),
-      delayMs: Value(250),
-    ));
-
-    await repo.updateLocalMediaPaths(
-      'video/relocated',
-      videoPath: '/new/movie.mp4',
-      subtitleSource: '/new/movie.srt',
-    );
-
-    final VideoBookRow row = (await repo.getByBookUid('video/relocated'))!;
-    expect(row.videoPath, '/new/movie.mp4');
-    expect(row.subtitleSource, '/new/movie.srt');
-    expect(row.title, 'Relocated');
-    expect(row.lastPositionMs, 1234);
-    expect(row.delayMs, 250);
-  });
+      await repo.updatePosition('video/1', 5000);
+      final row2 = await repo.getByBookUid('video/1');
+      expect(row2!.lastPositionMs, 5000);
+    },
+  );
 
   test(
-      'updateLocalMediaPaths relinks videoPath only, leaving subtitle/'
+    'saveCues with an empty list clears persisted cues (BUG-081 off path)',
+    () async {
+      final db = FushiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      final repo = VideoBookRepository(db);
+      await repo.saveVideoBook(
+        const VideoBooksCompanion(
+          bookUid: Value('video/off'),
+          title: Value('Off'),
+          videoPath: Value('/off.mp4'),
+        ),
+      );
+      final cue = AudioCue()
+        ..bookKey = 'video/off'
+        ..chapterHref = 'video://default'
+        ..sentenceIndex = 0
+        ..textFragmentId = ''
+        ..text = 'hi'
+        ..startMs = 0
+        ..endMs = 1000
+        ..audioFileIndex = 0;
+      await repo.saveCues(bookUid: 'video/off', cues: [cue]);
+      expect(await repo.loadCues('video/off'), hasLength(1));
+
+      // Turning subtitles off persists an empty cue list; re-open must read none.
+      await repo.saveCues(bookUid: 'video/off', cues: const []);
+      expect(await repo.loadCues('video/off'), isEmpty);
+    },
+  );
+
+  test(
+    'updateLocalMediaPaths rewrites stale video/subtitle paths only',
+    () async {
+      final db = FushiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      final repo = VideoBookRepository(db);
+      await repo.saveVideoBook(
+        const VideoBooksCompanion(
+          bookUid: Value('video/relocated'),
+          title: Value('Relocated'),
+          videoPath: Value('/old/movie.mp4'),
+          subtitleSource: Value('/old/movie.srt'),
+          lastPositionMs: Value(1234),
+          delayMs: Value(250),
+        ),
+      );
+
+      await repo.updateLocalMediaPaths(
+        'video/relocated',
+        videoPath: '/new/movie.mp4',
+        subtitleSource: '/new/movie.srt',
+      );
+
+      final VideoBookRow row = (await repo.getByBookUid('video/relocated'))!;
+      expect(row.videoPath, '/new/movie.mp4');
+      expect(row.subtitleSource, '/new/movie.srt');
+      expect(row.title, 'Relocated');
+      expect(row.lastPositionMs, 1234);
+      expect(row.delayMs, 250);
+    },
+  );
+
+  test('updateLocalMediaPaths relinks videoPath only, leaving subtitle/'
       'progress/audio untouched (TODO-1133)', () async {
     final db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final repo = VideoBookRepository(db);
-    await repo.saveVideoBook(const VideoBooksCompanion(
-      bookUid: Value('video/relink'),
-      title: Value('Relink'),
-      videoPath: Value('/cleared/cache/movie.mp4'),
-      subtitleSource: Value('/keep/movie.srt'),
-      audioTrackId: Value('aid1'),
-      lastPositionMs: Value(4321),
-      delayMs: Value(180),
-    ));
+    await repo.saveVideoBook(
+      const VideoBooksCompanion(
+        bookUid: Value('video/relink'),
+        title: Value('Relink'),
+        videoPath: Value('/cleared/cache/movie.mp4'),
+        subtitleSource: Value('/keep/movie.srt'),
+        audioTrackId: Value('aid1'),
+        lastPositionMs: Value(4321),
+        delayMs: Value(180),
+      ),
+    );
 
     // Missing-video relink: only videoPath is passed (subtitleSource absent).
     // Everything else must survive so playback resumes with prior state.
@@ -171,60 +184,69 @@ void main() {
     expect(row.title, 'Relink');
   });
 
-  test('saveSubtitleSelection writes cues + source atomically (BUG-081/W1)',
-      () async {
-    final db = FushiDatabase.forTesting(NativeDatabase.memory());
-    addTearDown(db.close);
-    final repo = VideoBookRepository(db);
-    await repo.saveVideoBook(const VideoBooksCompanion(
-      bookUid: Value('video/sel'),
-      title: Value('Sel'),
-      videoPath: Value('/sel.mp4'),
-    ));
-    final cue = AudioCue()
-      ..bookKey = 'video/sel'
-      ..chapterHref = 'video://default'
-      ..sentenceIndex = 0
-      ..textFragmentId = ''
-      ..text = 'yo'
-      ..startMs = 0
-      ..endMs = 1000
-      ..audioFileIndex = 0;
-
-    await repo.saveSubtitleSelection(
-      bookUid: 'video/sel',
-      subtitleSource: '/subs/sel.ass',
-      cues: [cue],
-    );
-    expect(await repo.loadCues('video/sel'), hasLength(1));
-    expect((await repo.getByBookUid('video/sel'))!.subtitleSource,
-        '/subs/sel.ass');
-
-    // Turning off clears both in one transaction.
-    await repo.saveSubtitleSelection(
-      bookUid: 'video/sel',
-      subtitleSource: null,
-      cues: const [],
-    );
-    expect(await repo.loadCues('video/sel'), isEmpty);
-    expect((await repo.getByBookUid('video/sel'))!.subtitleSource, isNull);
-  });
-
   test(
-      'updateSecondarySubtitleSource round-trips independently of '
+    'saveSubtitleSelection writes cues + source atomically (BUG-081/W1)',
+    () async {
+      final db = FushiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      final repo = VideoBookRepository(db);
+      await repo.saveVideoBook(
+        const VideoBooksCompanion(
+          bookUid: Value('video/sel'),
+          title: Value('Sel'),
+          videoPath: Value('/sel.mp4'),
+        ),
+      );
+      final cue = AudioCue()
+        ..bookKey = 'video/sel'
+        ..chapterHref = 'video://default'
+        ..sentenceIndex = 0
+        ..textFragmentId = ''
+        ..text = 'yo'
+        ..startMs = 0
+        ..endMs = 1000
+        ..audioFileIndex = 0;
+
+      await repo.saveSubtitleSelection(
+        bookUid: 'video/sel',
+        subtitleSource: '/subs/sel.ass',
+        cues: [cue],
+      );
+      expect(await repo.loadCues('video/sel'), hasLength(1));
+      expect(
+        (await repo.getByBookUid('video/sel'))!.subtitleSource,
+        '/subs/sel.ass',
+      );
+
+      // Turning off clears both in one transaction.
+      await repo.saveSubtitleSelection(
+        bookUid: 'video/sel',
+        subtitleSource: null,
+        cues: const [],
+      );
+      expect(await repo.loadCues('video/sel'), isEmpty);
+      expect((await repo.getByBookUid('video/sel'))!.subtitleSource, isNull);
+    },
+  );
+
+  test('updateSecondarySubtitleSource round-trips independently of '
       'primary subtitle (TODO-857)', () async {
     final db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final repo = VideoBookRepository(db);
-    await repo.saveVideoBook(const VideoBooksCompanion(
-      bookUid: Value('video/dual'),
-      title: Value('Dual'),
-      videoPath: Value('/dual.mp4'),
-    ));
+    await repo.saveVideoBook(
+      const VideoBooksCompanion(
+        bookUid: Value('video/dual'),
+        title: Value('Dual'),
+        videoPath: Value('/dual.mp4'),
+      ),
+    );
 
     // Fresh row: secondary subtitle defaults to NULL (no secondary subtitle).
-    expect((await repo.getByBookUid('video/dual'))!.secondarySubtitleSource,
-        isNull);
+    expect(
+      (await repo.getByBookUid('video/dual'))!.secondarySubtitleSource,
+      isNull,
+    );
 
     // Set primary + secondary to different sources; both persist independently.
     await repo.updateSubtitleSource('video/dual', 'embedded:0');
@@ -244,14 +266,20 @@ void main() {
     final db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final repo = VideoBookRepository(db);
-    await repo.saveVideoBook(const VideoBooksCompanion(
+    await repo.saveVideoBook(
+      const VideoBooksCompanion(
         bookUid: Value('video/a'),
         title: Value('A'),
-        videoPath: Value('/a.mp4')));
-    await repo.saveVideoBook(const VideoBooksCompanion(
+        videoPath: Value('/a.mp4'),
+      ),
+    );
+    await repo.saveVideoBook(
+      const VideoBooksCompanion(
         bookUid: Value('video/b'),
         title: Value('B'),
-        videoPath: Value('/b.mp4')));
+        videoPath: Value('/b.mp4'),
+      ),
+    );
     final all = await repo.listAll();
     expect(all, hasLength(2));
     expect(all.map((e) => e.bookUid), containsAll(['video/a', 'video/b']));
@@ -261,14 +289,17 @@ void main() {
     final db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final repo = VideoBookRepository(db);
-    await repo.saveVideoBook(const VideoBooksCompanion(
-      bookUid: Value('video/playlist/x'),
-      title: Value('PL'),
-      videoPath: Value('/e0.mkv'),
-      playlistJson: Value('[]'),
-    ));
+    await repo.saveVideoBook(
+      const VideoBooksCompanion(
+        bookUid: Value('video/playlist/x'),
+        title: Value('PL'),
+        videoPath: Value('/e0.mkv'),
+        playlistJson: Value('[]'),
+      ),
+    );
 
-    const String updated = '[{"title":"e0","path":"/e0.mkv","positionMs":8000},'
+    const String updated =
+        '[{"title":"e0","path":"/e0.mkv","positionMs":8000},'
         '{"title":"e1","path":"/e1.mkv","positionMs":3000}]';
     await repo.updatePlaylistJson('video/playlist/x', updated);
 
@@ -276,41 +307,52 @@ void main() {
     expect(row!.playlistJson, updated);
   });
 
-  test('per-episode position survives a playlistJson round-trip via repo',
-      () async {
-    // Mirrors the exit-flush path: VideoFushiPage._persistPosition encodes the
-    // updated _episodes back to playlistJson; on re-open _init reads
-    // entry.positionMs and seeks there. This locks the persistence half.
-    final db = FushiDatabase.forTesting(NativeDatabase.memory());
-    addTearDown(db.close);
-    final repo = VideoBookRepository(db);
-    await repo.saveVideoBook(const VideoBooksCompanion(
-      bookUid: Value('video/playlist/p'),
-      title: Value('PL'),
-      videoPath: Value('/e0.mkv'),
-      playlistJson: Value('[{"title":"e0","path":"/e0.mkv","positionMs":0},'
-          '{"title":"e1","path":"/e1.mkv","positionMs":0}]'),
-    ));
+  test(
+    'per-episode position survives a playlistJson round-trip via repo',
+    () async {
+      // Mirrors the exit-flush path: VideoFushiPage._persistPosition encodes the
+      // updated _episodes back to playlistJson; on re-open _init reads
+      // entry.positionMs and seeks there. This locks the persistence half.
+      final db = FushiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      final repo = VideoBookRepository(db);
+      await repo.saveVideoBook(
+        const VideoBooksCompanion(
+          bookUid: Value('video/playlist/p'),
+          title: Value('PL'),
+          videoPath: Value('/e0.mkv'),
+          playlistJson: Value(
+            '[{"title":"e0","path":"/e0.mkv","positionMs":0},'
+            '{"title":"e1","path":"/e1.mkv","positionMs":0}]',
+          ),
+        ),
+      );
 
-    // Simulate the exit flush of episode 1 at 42_500ms.
-    const String flushed = '[{"title":"e0","path":"/e0.mkv","positionMs":0},'
-        '{"title":"e1","path":"/e1.mkv","positionMs":42500}]';
-    await repo.updatePlaylistJson('video/playlist/p', flushed);
+      // Simulate the exit flush of episode 1 at 42_500ms.
+      const String flushed =
+          '[{"title":"e0","path":"/e0.mkv","positionMs":0},'
+          '{"title":"e1","path":"/e1.mkv","positionMs":42500}]';
+      await repo.updatePlaylistJson('video/playlist/p', flushed);
 
-    expect(
-        (await repo.getByBookUid('video/playlist/p'))!.playlistJson, flushed);
-  });
+      expect(
+        (await repo.getByBookUid('video/playlist/p'))!.playlistJson,
+        flushed,
+      );
+    },
+  );
 
   test('clearWatchProgress 清行级四列并把互联 LWW 镜像键盖成「0 @ 现在」', () async {
     final db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final repo = VideoBookRepository(db);
-    await repo.saveVideoBook(const VideoBooksCompanion(
-      bookUid: Value('video/ep2'),
-      title: Value('EP2'),
-      videoPath: Value('/v/ep2.mkv'),
-      currentEpisode: Value(3),
-    ));
+    await repo.saveVideoBook(
+      const VideoBooksCompanion(
+        bookUid: Value('video/ep2'),
+        title: Value('EP2'),
+        videoPath: Value('/v/ep2.mkv'),
+        currentEpisode: Value(3),
+      ),
+    );
     // 本机播放路径留下的进度 + 镜像键（video_fushi_page._persistPosition 同形）。
     await repo.updatePosition('video/ep2', 2000, playedAt: 5000);
     await db.markVideoCompleted('video/ep2', DateTime(2026, 1, 1));
@@ -333,7 +375,8 @@ void main() {
     expect(
       await db.getPrefTyped<int>(videoRemotePositionAtPrefKey('video/ep2'), 0),
       greaterThanOrEqualTo(before),
-      reason: '时间戳必须盖成现在：LWW 里「清除」要严格新于 host 的旧进度才推得出去，'
+      reason:
+          '时间戳必须盖成现在：LWW 里「清除」要严格新于 host 的旧进度才推得出去，'
           '留着 5000 下次同步就把刚清的进度原样灌回来',
     );
   });
@@ -342,11 +385,13 @@ void main() {
     final db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final repo = VideoBookRepository(db);
-    await repo.saveVideoBook(const VideoBooksCompanion(
-      bookUid: Value('video/d'),
-      title: Value('D'),
-      videoPath: Value('/d.mp4'),
-    ));
+    await repo.saveVideoBook(
+      const VideoBooksCompanion(
+        bookUid: Value('video/d'),
+        title: Value('D'),
+        videoPath: Value('/d.mp4'),
+      ),
+    );
 
     // Default is 0; negative and positive both persist.
     final row0 = await repo.getByBookUid('video/d');
@@ -359,75 +404,99 @@ void main() {
     expect((await repo.getByBookUid('video/d'))!.delayMs, 1200);
   });
 
-  test('updateCollectionSubtitleDelayMs 给全体视频成员盖互联 LWW 戳（BUG-1620 系列级半边）',
-      () async {
-    final db = FushiDatabase.forTesting(NativeDatabase.memory());
-    addTearDown(db.close);
-    final repo = VideoBookRepository(db);
-    for (final String uid in <String>['video/m1', 'video/m2']) {
-      await repo.saveVideoBook(VideoBooksCompanion(
-        bookUid: Value(uid),
-        title: Value(uid),
-        videoPath: Value('/$uid.mp4'),
-      ));
-    }
-    final int cid = await db.createMediaCollection('Stamp Series');
-    await db.upsertCollectionItemAt(cid, 'video', 'video/m1', 0);
-    await db.upsertCollectionItemAt(cid, 'video', 'video/m2', 1);
-
-    await repo.updateCollectionSubtitleDelayMs(cid, -777);
-
-    expect((await db.getMediaCollectionById(cid))!.subtitleDelayMs, -777);
-    for (final String uid in <String>['video/m1', 'video/m2']) {
-      expect(await db.getPrefTyped<int>(videoRemoteDelayPrefKey(uid), 0), -777,
-          reason: '系列级调轴对全体成员生效，须镜像进每个成员的互联 LWW 键空间');
-      expect(await db.getPrefTyped<int>(videoRemoteDelayAtPrefKey(uid), 0),
-          greaterThan(0),
-          reason: '无戳（0）会让本机系列级调轴永远输给对端旧戳、传不出去');
-    }
-
-    // null（清除系列级）只清列、不动 prefs（成员 prefs 是「最后一次实际调轴」事实）。
-    await repo.updateCollectionSubtitleDelayMs(cid, null);
-    expect((await db.getMediaCollectionById(cid))!.subtitleDelayMs, isNull);
-    expect(await db.getPrefTyped<int>(videoRemoteDelayPrefKey('video/m1'), 0),
-        -777);
-
-    // 播放偏好泛化批：系列级音轨 / 副字幕调轴写入同样给全体成员盖戳。
-    await repo.updateCollectionAudioTrackId(cid, '3');
-    await repo.updateCollectionSecondarySubtitleDelayMs(cid, 250);
-    for (final String uid in <String>['video/m1', 'video/m2']) {
-      expect(
-          await db.getPrefTyped<String>(videoRemoteAudioTrackPrefKey(uid), ''),
-          '3');
-      expect(await db.getPrefTyped<int>(videoRemoteAudioTrackAtPrefKey(uid), 0),
-          greaterThan(0));
-      expect(
-          await db.getPrefTyped<String>(
-              videoRemoteSecondaryDelayPrefKey(uid), ''),
-          '250');
-    }
-    // 副字幕调轴清除（回跟随）也是带戳写：值空 + at 存活 → 清除跨设备收敛。
-    await repo.updateCollectionSecondarySubtitleDelayMs(cid, null);
-    expect(
-        await db.getPrefTyped<String>(
-            videoRemoteSecondaryDelayPrefKey('video/m1'), ''),
-        '');
-    expect(
-        await db.getPrefTyped<int>(
-            videoRemoteSecondaryDelayAtPrefKey('video/m1'), 0),
-        greaterThan(0),
-        reason: '清除必须带戳，否则对端旧值在 LWW 里复活');
-  });
-
   test(
-      'collection-level audio track + subtitle delay round-trip '
+    'updateCollectionSubtitleDelayMs 给全体视频成员盖互联 LWW 戳（BUG-1620 系列级半边）',
+    () async {
+      final db = FushiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      final repo = VideoBookRepository(db);
+      for (final String uid in <String>['video/m1', 'video/m2']) {
+        await repo.saveVideoBook(
+          VideoBooksCompanion(
+            bookUid: Value(uid),
+            title: Value(uid),
+            videoPath: Value('/$uid.mp4'),
+          ),
+        );
+      }
+      final int cid = await db.createMediaCollection('Stamp Series');
+      await db.upsertCollectionItemAt(cid, 'video', 'video/m1', 0);
+      await db.upsertCollectionItemAt(cid, 'video', 'video/m2', 1);
+
+      await repo.updateCollectionSubtitleDelayMs(cid, -777);
+
+      expect((await db.getMediaCollectionById(cid))!.subtitleDelayMs, -777);
+      for (final String uid in <String>['video/m1', 'video/m2']) {
+        expect(
+          await db.getPrefTyped<int>(videoRemoteDelayPrefKey(uid), 0),
+          -777,
+          reason: '系列级调轴对全体成员生效，须镜像进每个成员的互联 LWW 键空间',
+        );
+        expect(
+          await db.getPrefTyped<int>(videoRemoteDelayAtPrefKey(uid), 0),
+          greaterThan(0),
+          reason: '无戳（0）会让本机系列级调轴永远输给对端旧戳、传不出去',
+        );
+      }
+
+      // null（清除系列级）只清列、不动 prefs（成员 prefs 是「最后一次实际调轴」事实）。
+      await repo.updateCollectionSubtitleDelayMs(cid, null);
+      expect((await db.getMediaCollectionById(cid))!.subtitleDelayMs, isNull);
+      expect(
+        await db.getPrefTyped<int>(videoRemoteDelayPrefKey('video/m1'), 0),
+        -777,
+      );
+
+      // 播放偏好泛化批：系列级音轨 / 副字幕调轴写入同样给全体成员盖戳。
+      await repo.updateCollectionAudioTrackId(cid, '3');
+      await repo.updateCollectionSecondarySubtitleDelayMs(cid, 250);
+      for (final String uid in <String>['video/m1', 'video/m2']) {
+        expect(
+          await db.getPrefTyped<String>(videoRemoteAudioTrackPrefKey(uid), ''),
+          '3',
+        );
+        expect(
+          await db.getPrefTyped<int>(videoRemoteAudioTrackAtPrefKey(uid), 0),
+          greaterThan(0),
+        );
+        expect(
+          await db.getPrefTyped<String>(
+            videoRemoteSecondaryDelayPrefKey(uid),
+            '',
+          ),
+          '250',
+        );
+      }
+      // 副字幕调轴清除（回跟随）也是带戳写：值空 + at 存活 → 清除跨设备收敛。
+      await repo.updateCollectionSecondarySubtitleDelayMs(cid, null);
+      expect(
+        await db.getPrefTyped<String>(
+          videoRemoteSecondaryDelayPrefKey('video/m1'),
+          '',
+        ),
+        '',
+      );
+      expect(
+        await db.getPrefTyped<int>(
+          videoRemoteSecondaryDelayAtPrefKey('video/m1'),
+          0,
+        ),
+        greaterThan(0),
+        reason: '清除必须带戳，否则对端旧值在 LWW 里复活',
+      );
+    },
+  );
+
+  test('collection-level audio track + subtitle delay round-trip '
       '(schema v52, 同系列记忆)', () async {
     final db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final repo = VideoBookRepository(db);
 
-    final int cid =
-        await db.createMediaCollection('シリーズ', collectionType: 'playlist');
+    final int cid = await db.createMediaCollection(
+      'シリーズ',
+      collectionType: 'playlist',
+    );
 
     // 无损迁移语义：新合集两列默认 NULL（系列内没人设过 → 加载回退各集 per-book）。
     final col0 = await repo.getMediaCollectionById(cid);
@@ -452,129 +521,152 @@ void main() {
     expect(colN.subtitleDelayMs, isNull);
   });
 
-  test('deleteVideoBook removes the row AND its subtitle cue rows (BUG-276)',
-      () async {
-    final db = FushiDatabase.forTesting(NativeDatabase.memory());
-    addTearDown(db.close);
-    final repo = VideoBookRepository(db);
-    await repo.saveVideoBook(const VideoBooksCompanion(
-      bookUid: Value('video/del'),
-      title: Value('Del'),
-      videoPath: Value('/del.mp4'),
-    ));
-    final cue = AudioCue()
-      ..bookKey = 'video/del'
-      ..chapterHref = 'video://default'
-      ..sentenceIndex = 0
-      ..textFragmentId = ''
-      ..text = 'bye'
-      ..startMs = 0
-      ..endMs = 1000
-      ..audioFileIndex = 0;
-    await repo.saveCues(bookUid: 'video/del', cues: [cue]);
-    // A second, unrelated video's cues must NOT be collaterally deleted.
-    await repo.saveVideoBook(const VideoBooksCompanion(
-      bookUid: Value('video/other'),
-      title: Value('Other'),
-      videoPath: Value('/other.mp4'),
-    ));
-    final otherCue = AudioCue()
-      ..bookKey = 'video/other'
-      ..chapterHref = 'video://default'
-      ..sentenceIndex = 0
-      ..textFragmentId = ''
-      ..text = 'stay'
-      ..startMs = 0
-      ..endMs = 1000
-      ..audioFileIndex = 0;
-    await repo.saveCues(bookUid: 'video/other', cues: [otherCue]);
+  test(
+    'deleteVideoBook removes the row AND its subtitle cue rows (BUG-276)',
+    () async {
+      final db = FushiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      final repo = VideoBookRepository(db);
+      await repo.saveVideoBook(
+        const VideoBooksCompanion(
+          bookUid: Value('video/del'),
+          title: Value('Del'),
+          videoPath: Value('/del.mp4'),
+        ),
+      );
+      final cue = AudioCue()
+        ..bookKey = 'video/del'
+        ..chapterHref = 'video://default'
+        ..sentenceIndex = 0
+        ..textFragmentId = ''
+        ..text = 'bye'
+        ..startMs = 0
+        ..endMs = 1000
+        ..audioFileIndex = 0;
+      await repo.saveCues(bookUid: 'video/del', cues: [cue]);
+      // A second, unrelated video's cues must NOT be collaterally deleted.
+      await repo.saveVideoBook(
+        const VideoBooksCompanion(
+          bookUid: Value('video/other'),
+          title: Value('Other'),
+          videoPath: Value('/other.mp4'),
+        ),
+      );
+      final otherCue = AudioCue()
+        ..bookKey = 'video/other'
+        ..chapterHref = 'video://default'
+        ..sentenceIndex = 0
+        ..textFragmentId = ''
+        ..text = 'stay'
+        ..startMs = 0
+        ..endMs = 1000
+        ..audioFileIndex = 0;
+      await repo.saveCues(bookUid: 'video/other', cues: [otherCue]);
 
-    expect(await repo.loadCues('video/del'), hasLength(1));
+      expect(await repo.loadCues('video/del'), hasLength(1));
 
-    await repo.deleteVideoBook('video/del');
+      await repo.deleteVideoBook('video/del');
 
-    expect(await repo.getByBookUid('video/del'), isNull);
-    expect(await repo.loadCues('video/del'), isEmpty,
-        reason: 'cue rows must be cleared, not orphaned');
-    // Sibling video untouched.
-    expect((await repo.getByBookUid('video/other'))!.title, 'Other');
-    expect(await repo.loadCues('video/other'), hasLength(1));
-  });
+      expect(await repo.getByBookUid('video/del'), isNull);
+      expect(
+        await repo.loadCues('video/del'),
+        isEmpty,
+        reason: 'cue rows must be cleared, not orphaned',
+      );
+      // Sibling video untouched.
+      expect((await repo.getByBookUid('video/other'))!.title, 'Other');
+      expect(await repo.loadCues('video/other'), hasLength(1));
+    },
+  );
 
   test(
-      'collectReferencedAssetPaths gathers covers + subtitles (BUG-276 GC set)',
-      () async {
-    final db = FushiDatabase.forTesting(NativeDatabase.memory());
-    addTearDown(db.close);
-    final repo = VideoBookRepository(db);
-    await repo.saveVideoBook(const VideoBooksCompanion(
-      bookUid: Value('video/a'),
-      title: Value('A'),
-      videoPath: Value('/a.mp4'),
-      coverPath: Value('/docs/video_covers/a.jpg'),
-      subtitleSource: Value('/docs/video_subtitles/a.ass'),
-    ));
-    await repo.saveVideoBook(const VideoBooksCompanion(
-      bookUid: Value('video/b'),
-      title: Value('B'),
-      videoPath: Value('/b.mp4'),
-      coverPath: Value('/docs/video_covers/b.jpg'),
-      // No subtitle source (embedded track only).
-    ));
+    'collectReferencedAssetPaths gathers covers + subtitles (BUG-276 GC set)',
+    () async {
+      final db = FushiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      final repo = VideoBookRepository(db);
+      await repo.saveVideoBook(
+        const VideoBooksCompanion(
+          bookUid: Value('video/a'),
+          title: Value('A'),
+          videoPath: Value('/a.mp4'),
+          coverPath: Value('/docs/video_covers/a.jpg'),
+          subtitleSource: Value('/docs/video_subtitles/a.ass'),
+        ),
+      );
+      await repo.saveVideoBook(
+        const VideoBooksCompanion(
+          bookUid: Value('video/b'),
+          title: Value('B'),
+          videoPath: Value('/b.mp4'),
+          coverPath: Value('/docs/video_covers/b.jpg'),
+          // No subtitle source (embedded track only).
+        ),
+      );
 
-    final refs = await repo.collectReferencedAssetPaths();
-    expect(
-      refs.covers,
-      containsAll(<String>[
-        '/docs/video_covers/a.jpg',
-        '/docs/video_covers/b.jpg',
-      ]),
-    );
-    expect(refs.subtitles, contains('/docs/video_subtitles/a.ass'));
-    // null/empty values are not included.
-    expect(refs.subtitles, hasLength(1));
-  });
+      final refs = await repo.collectReferencedAssetPaths();
+      expect(
+        refs.covers,
+        containsAll(<String>[
+          '/docs/video_covers/a.jpg',
+          '/docs/video_covers/b.jpg',
+        ]),
+      );
+      expect(refs.subtitles, contains('/docs/video_subtitles/a.ass'));
+      // null/empty values are not included.
+      expect(refs.subtitles, hasLength(1));
+    },
+  );
 
   test(
-      'collectReferencedAssetPaths(excludeBookUid) drops the deleted book\'s own '
-      'refs (BUG-276 delete guard set)', () async {
-    final db = FushiDatabase.forTesting(NativeDatabase.memory());
-    addTearDown(db.close);
-    final repo = VideoBookRepository(db);
-    await repo.saveVideoBook(const VideoBooksCompanion(
-      bookUid: Value('video/keep'),
-      title: Value('Keep'),
-      videoPath: Value('/keep.mp4'),
-      coverPath: Value('/docs/video_covers/keep.jpg'),
-      subtitleSource: Value('/docs/video_subtitles/keep.ass'),
-    ));
-    await repo.saveVideoBook(const VideoBooksCompanion(
-      bookUid: Value('video/del'),
-      title: Value('Del'),
-      videoPath: Value('/del.mp4'),
-      coverPath: Value('/docs/video_covers/del.jpg'),
-      subtitleSource: Value('/docs/video_subtitles/del.ass'),
-    ));
+    'collectReferencedAssetPaths(excludeBookUid) drops the deleted book\'s own '
+    'refs (BUG-276 delete guard set)',
+    () async {
+      final db = FushiDatabase.forTesting(NativeDatabase.memory());
+      addTearDown(db.close);
+      final repo = VideoBookRepository(db);
+      await repo.saveVideoBook(
+        const VideoBooksCompanion(
+          bookUid: Value('video/keep'),
+          title: Value('Keep'),
+          videoPath: Value('/keep.mp4'),
+          coverPath: Value('/docs/video_covers/keep.jpg'),
+          subtitleSource: Value('/docs/video_subtitles/keep.ass'),
+        ),
+      );
+      await repo.saveVideoBook(
+        const VideoBooksCompanion(
+          bookUid: Value('video/del'),
+          title: Value('Del'),
+          videoPath: Value('/del.mp4'),
+          coverPath: Value('/docs/video_covers/del.jpg'),
+          subtitleSource: Value('/docs/video_subtitles/del.ass'),
+        ),
+      );
 
-    // The delete path collects the "all OTHER books" reference set so the
-    // deleted book's own paths don't accidentally protect themselves.
-    final refs =
-        await repo.collectReferencedAssetPaths(excludeBookUid: 'video/del');
-    expect(refs.covers, contains('/docs/video_covers/keep.jpg'));
-    expect(refs.covers, isNot(contains('/docs/video_covers/del.jpg')));
-    expect(refs.subtitles, contains('/docs/video_subtitles/keep.ass'));
-    expect(refs.subtitles, isNot(contains('/docs/video_subtitles/del.ass')));
-  });
+      // The delete path collects the "all OTHER books" reference set so the
+      // deleted book's own paths don't accidentally protect themselves.
+      final refs = await repo.collectReferencedAssetPaths(
+        excludeBookUid: 'video/del',
+      );
+      expect(refs.covers, contains('/docs/video_covers/keep.jpg'));
+      expect(refs.covers, isNot(contains('/docs/video_covers/del.jpg')));
+      expect(refs.subtitles, contains('/docs/video_subtitles/keep.ass'));
+      expect(refs.subtitles, isNot(contains('/docs/video_subtitles/del.ass')));
+    },
+  );
 
   test('database VACUUM after delete runs without error (BUG-276)', () async {
     final db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final repo = VideoBookRepository(db);
-    await repo.saveVideoBook(const VideoBooksCompanion(
-      bookUid: Value('video/vac'),
-      title: Value('Vac'),
-      videoPath: Value('/vac.mp4'),
-    ));
+    await repo.saveVideoBook(
+      const VideoBooksCompanion(
+        bookUid: Value('video/vac'),
+        title: Value('Vac'),
+        videoPath: Value('/vac.mp4'),
+      ),
+    );
     await repo.deleteVideoBook('video/vac');
     // The reclaim path calls VACUUM outside any transaction; assert it is a
     // valid statement against the real schema (catches "VACUUM inside
@@ -587,11 +679,13 @@ void main() {
     final db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final repo = VideoBookRepository(db);
-    await repo.saveVideoBook(const VideoBooksCompanion(
-      bookUid: Value('video/rename'),
-      title: Value('Old Episode Filename'),
-      videoPath: Value('/e0.mkv'),
-    ));
+    await repo.saveVideoBook(
+      const VideoBooksCompanion(
+        bookUid: Value('video/rename'),
+        title: Value('Old Episode Filename'),
+        videoPath: Value('/e0.mkv'),
+      ),
+    );
 
     await repo.updateTitle('video/rename', '我的番剧系列');
     expect((await repo.getByBookUid('video/rename'))!.title, '我的番剧系列');
@@ -599,19 +693,20 @@ void main() {
     // 其它列不被改名波及（只动 title）。
     expect((await repo.getByBookUid('video/rename'))!.videoPath, '/e0.mkv');
   });
-  test(
-      'findByVideoPath returns the row referencing a physical file; '
+  test('findByVideoPath returns the row referencing a physical file; '
       'isDuplicateVideoPath delegates to it (TODO-903 dedup source)', () async {
     final db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final repo = VideoBookRepository(db);
 
     // 库内导入的身份是 video/<basename>。
-    await repo.saveVideoBook(const VideoBooksCompanion(
-      bookUid: Value('video/movie.mkv'),
-      title: Value('Movie'),
-      videoPath: Value('/library/movie.mkv'),
-    ));
+    await repo.saveVideoBook(
+      const VideoBooksCompanion(
+        bookUid: Value('video/movie.mkv'),
+        title: Value('Movie'),
+        videoPath: Value('/library/movie.mkv'),
+      ),
+    );
 
     // 按 videoPath 命中已导入行（外部「打开方式」据此复用旧 bookUid，不插第二行）。
     final hit = await repo.findByVideoPath('/library/movie.mkv');
@@ -629,24 +724,27 @@ void main() {
 
     // excludeBookUid 跳过自身：删除/自比对时该行不护住自己。
     expect(
-      await repo.findByVideoPath('/library/movie.mkv',
-          excludeBookUid: 'video/movie.mkv'),
+      await repo.findByVideoPath(
+        '/library/movie.mkv',
+        excludeBookUid: 'video/movie.mkv',
+      ),
       isNull,
     );
   });
-  test(
-      'findByVideoPath normalizes both sides so Windows path variants of the '
+  test('findByVideoPath normalizes both sides so Windows path variants of the '
       'same physical file dedup to one row (TODO-903 Windows dedup)', () async {
     final db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final repo = VideoBookRepository(db);
 
     // 库内导入存的是 file_picker 原始路径：Windows 反斜杠分隔符。
-    await repo.saveVideoBook(const VideoBooksCompanion(
-      bookUid: Value('video/bar.mp4'),
-      title: Value('Bar'),
-      videoPath: Value(r'D:\Foo\bar.mp4'),
-    ));
+    await repo.saveVideoBook(
+      const VideoBooksCompanion(
+        bookUid: Value('video/bar.mp4'),
+        title: Value('Bar'),
+        videoPath: Value(r'D:\Foo\bar.mp4'),
+      ),
+    );
 
     // 外部「打开方式」argv 路径用正斜杠——归一后应命中同一行（不插第二行）。
     final forward = await repo.findByVideoPath('D:/Foo/bar.mp4');
@@ -660,11 +758,13 @@ void main() {
     expect(redundant!.bookUid, 'video/bar.mp4');
 
     // 反向：库内存正斜杠、查询用反斜杠，同样命中（归一对称）。
-    await repo.saveVideoBook(const VideoBooksCompanion(
-      bookUid: Value('video/baz.mkv'),
-      title: Value('Baz'),
-      videoPath: Value('E:/Movies/baz.mkv'),
-    ));
+    await repo.saveVideoBook(
+      const VideoBooksCompanion(
+        bookUid: Value('video/baz.mkv'),
+        title: Value('Baz'),
+        videoPath: Value('E:/Movies/baz.mkv'),
+      ),
+    );
     final back = await repo.findByVideoPath(r'E:\Movies\baz.mkv');
     expect(back, isNotNull);
     expect(back!.bookUid, 'video/baz.mkv');
@@ -801,7 +901,10 @@ void main() {
       final db = FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       final repo = VideoBookRepository(db);
-      final Directory dir = await seedEpisodes(<String>['ep01.mkv', 'ep01.srt']);
+      final Directory dir = await seedEpisodes(<String>[
+        'ep01.mkv',
+        'ep01.srt',
+      ]);
       await repo.saveVideoBook(
         VideoBooksCompanion(
           bookUid: const Value('video/ep01'),
@@ -810,10 +913,9 @@ void main() {
         ),
       );
 
-      await repo.deleteVideoBooksAndReclaimAssets(
-        <String>['video/ep01'],
-        compactDatabase: false,
-      );
+      await repo.deleteVideoBooksAndReclaimAssets(<String>[
+        'video/ep01',
+      ], compactDatabase: false);
 
       expect(File(p.join(dir.path, 'ep01.mkv')).existsSync(), isTrue);
       expect(File(p.join(dir.path, 'ep01.srt')).existsSync(), isTrue);
@@ -823,7 +925,10 @@ void main() {
       final db = FushiDatabase.forTesting(NativeDatabase.memory());
       addTearDown(db.close);
       final repo = VideoBookRepository(db);
-      final Directory dir = await seedEpisodes(<String>['ep01.mkv', 'ep01.srt']);
+      final Directory dir = await seedEpisodes(<String>[
+        'ep01.mkv',
+        'ep01.srt',
+      ]);
       // 同一个物理文件被两行引用（重复导入派生出第二身份）。
       for (final String uid in <String>['video/a', 'video/b']) {
         await repo.saveVideoBook(
@@ -978,10 +1083,10 @@ void main() {
         ),
       );
 
-      final int deleted = await repo.deleteVideoBooksAndReclaimAssets(
-        <String>['video/copy', 'video/original'],
-        compactDatabase: false,
-      );
+      final int deleted = await repo.deleteVideoBooksAndReclaimAssets(<String>[
+        'video/copy',
+        'video/original',
+      ], compactDatabase: false);
 
       expect(deleted, 2);
       expect(File(copy).existsSync(), isFalse);
@@ -1005,10 +1110,9 @@ void main() {
         );
       }
 
-      await repo.deleteVideoBooksAndReclaimAssets(
-        <String>['video/a'],
-        compactDatabase: false,
-      );
+      await repo.deleteVideoBooksAndReclaimAssets(<String>[
+        'video/a',
+      ], compactDatabase: false);
 
       expect(File(copy).existsSync(), isTrue);
     });
@@ -1052,6 +1156,7 @@ class _PickerCopyEnginePaths extends EnginePaths {
   Future<Directory> tempRootDirectory() => inner.tempRootDirectory();
 
   @override
-  Future<List<Directory>> pickerImportCopyDirectories() async =>
-      <Directory>[copyDir];
+  Future<List<Directory>> pickerImportCopyDirectories() async => <Directory>[
+    copyDir,
+  ];
 }

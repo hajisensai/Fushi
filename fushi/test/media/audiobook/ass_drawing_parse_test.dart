@@ -58,8 +58,11 @@ void main() {
       final SubtitleDrawing d = m.drawing!;
       expect(d.maxX * 1280, closeTo(200, 1e-6), reason: '400 ÷ 2 = 200');
       expect(d.maxY * 720, closeTo(100, 1e-6));
-      expect(d.baselineOffsetFraction * 720, closeTo(5, 1e-6),
-          reason: '\\pbo 与坐标同用绘图单位（÷2）');
+      expect(
+        d.baselineOffsetFraction * 720,
+        closeTo(5, 1e-6),
+        reason: '\\pbo 与坐标同用绘图单位（÷2）',
+      );
     });
 
     test('贝塞尔 b 命令进包围盒；包围盒偏离原点时 min 不为 0', () {
@@ -87,48 +90,68 @@ void main() {
     test('无 PlayRes（srt/vtt）或空命令串 → drawing 为 null', () {
       expect(parseSubtitleMarkup(r'{\p1}m 0 0 l 1 1').drawing, isNull);
       expect(
-          parseSubtitleMarkup(r'{\p1}{\p0}あ', playResX: 100, playResY: 100)
-              .drawing,
-          isNull);
+        parseSubtitleMarkup(
+          r'{\p1}{\p0}あ',
+          playResX: 100,
+          playResY: 100,
+        ).drawing,
+        isNull,
+      );
       expect(
-          parseSubtitleMarkup(r'{\p1}l 0 0 1 1', playResX: 100, playResY: 100)
-              .drawing,
-          isNull,
-          reason: '首命令不是 m 视为非法');
+        parseSubtitleMarkup(
+          r'{\p1}l 0 0 1 1',
+          playResX: 100,
+          playResY: 100,
+        ).drawing,
+        isNull,
+        reason: '首命令不是 m 视为非法',
+      );
     });
   });
 
   group('AssParser.parseString(includeDrawings)', () {
     test('默认不产出无正文的绘图事件（字幕列表 / 制卡 / 落库不见空行）', () {
-      final List<AudioCue> cues =
-          AssParser.parseString(content: '$_kHead$_kMask\n$_kLine\n', bookKey: 'b');
+      final List<AudioCue> cues = AssParser.parseString(
+        content: '$_kHead$_kMask\n$_kLine\n',
+        bookKey: 'b',
+      );
       expect(cues.map((c) => c.text), <String>['That is why.']);
     });
 
-    test('includeDrawings:true 产出绘图 cue：text 空、isRenderOnly、markup.drawing 非空', () {
-      final List<AudioCue> cues = AssParser.parseString(
+    test(
+      'includeDrawings:true 产出绘图 cue：text 空、isRenderOnly、markup.drawing 非空',
+      () {
+        final List<AudioCue> cues = AssParser.parseString(
           content: '$_kHead$_kMask\n$_kLine\n',
           bookKey: 'b',
-          includeDrawings: true);
-      expect(cues, hasLength(2));
-      final AudioCue mask = cues.firstWhere((c) => c.text.isEmpty);
-      expect(mask.isRenderOnly, isTrue);
-      expect(mask.markup!.drawing, isNotNull);
-      expect(mask.markup!.layer, 0);
-      expect(cues.firstWhere((c) => c.text.isNotEmpty).isRenderOnly, isFalse);
-    });
+          includeDrawings: true,
+        );
+        expect(cues, hasLength(2));
+        final AudioCue mask = cues.firstWhere((c) => c.text.isEmpty);
+        expect(mask.isRenderOnly, isTrue);
+        expect(mask.markup!.drawing, isNotNull);
+        expect(mask.markup!.layer, 0);
+        expect(cues.firstWhere((c) => c.text.isNotEmpty).isRenderOnly, isFalse);
+      },
+    );
 
     test('同一起始时间按文件序稳定排序（z 序依赖它，BUG-2539）', () {
       final StringBuffer sb = StringBuffer(_kHead);
       for (int i = 0; i < 40; i++) {
         sb.writeln('Dialogue: 0,0:00:01.00,0:00:04.00,Default,,0,0,0,,L$i');
       }
-      final List<AudioCue> cues =
-          AssParser.parseString(content: sb.toString(), bookKey: 'b');
-      expect(cues.map((c) => c.text).toList(),
-          List<String>.generate(40, (int i) => 'L$i'));
-      expect(cues.map((c) => c.sentenceIndex).toList(),
-          List<int>.generate(40, (int i) => i));
+      final List<AudioCue> cues = AssParser.parseString(
+        content: sb.toString(),
+        bookKey: 'b',
+      );
+      expect(
+        cues.map((c) => c.text).toList(),
+        List<String>.generate(40, (int i) => 'L$i'),
+      );
+      expect(
+        cues.map((c) => c.sentenceIndex).toList(),
+        List<int>.generate(40, (int i) => i),
+      );
     });
   });
 }

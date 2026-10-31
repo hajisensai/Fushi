@@ -41,62 +41,68 @@ void main() {
     expect(calls, 1);
   });
 
-  test('BUG-2507: relay wraps mediaSource only; audioSource stays the raw url',
-      () async {
-    // The engine decides range materialization by host
-    // (audioSourceNeedsRangeMaterialization → *.googlevideo.com). A relayed
-    // 127.0.0.1 audio url would make that predicate false and silently bypass
-    // the TODO-1314 materialization path.
-    final List<String> relayed = <String>[];
-    final YoutubeClipMiner miner = YoutubeClipMiner(
-      resolve: (String url) async => YoutubeResolvedSource(
-        streamUrl: 'https://rr1---sn-a.googlevideo.com/videoplayback?itag=18',
-        audioStreamUrl:
-            'https://rr1---sn-a.googlevideo.com/videoplayback?itag=140',
-        miningVideoUrl:
-            'https://rr1---sn-a.googlevideo.com/videoplayback?itag=133',
-        miningVideoHasAudio: false,
-        title: 'T',
-        httpHeaders: const <String, String>{},
-        cues: const <AudioCue>[],
-      ),
-      now: () => DateTime(2026, 1, 1),
-      relay: (String url, Map<String, String> headers) async {
-        relayed.add(url);
-        return 'http://127.0.0.1:1/yt/${relayed.length}';
-      },
-    );
-    final YoutubeClipRequest r = await miner.buildRequest(
-      videoId: 'abc',
-      startMs: 0,
-      endMs: 2000,
-      fields: <String, String>{},
-      sentence: 's',
-    );
-    expect(r.mediaSource, 'http://127.0.0.1:1/yt/1');
-    expect(r.audioSource,
-        'https://rr1---sn-a.googlevideo.com/videoplayback?itag=140');
-    expect(relayed, <String>[
-      'https://rr1---sn-a.googlevideo.com/videoplayback?itag=133',
-    ]);
-  });
+  test(
+    'BUG-2507: relay wraps mediaSource only; audioSource stays the raw url',
+    () async {
+      // The engine decides range materialization by host
+      // (audioSourceNeedsRangeMaterialization → *.googlevideo.com). A relayed
+      // 127.0.0.1 audio url would make that predicate false and silently bypass
+      // the TODO-1314 materialization path.
+      final List<String> relayed = <String>[];
+      final YoutubeClipMiner miner = YoutubeClipMiner(
+        resolve: (String url) async => YoutubeResolvedSource(
+          streamUrl: 'https://rr1---sn-a.googlevideo.com/videoplayback?itag=18',
+          audioStreamUrl:
+              'https://rr1---sn-a.googlevideo.com/videoplayback?itag=140',
+          miningVideoUrl:
+              'https://rr1---sn-a.googlevideo.com/videoplayback?itag=133',
+          miningVideoHasAudio: false,
+          title: 'T',
+          httpHeaders: const <String, String>{},
+          cues: const <AudioCue>[],
+        ),
+        now: () => DateTime(2026, 1, 1),
+        relay: (String url, Map<String, String> headers) async {
+          relayed.add(url);
+          return 'http://127.0.0.1:1/yt/${relayed.length}';
+        },
+      );
+      final YoutubeClipRequest r = await miner.buildRequest(
+        videoId: 'abc',
+        startMs: 0,
+        endMs: 2000,
+        fields: <String, String>{},
+        sentence: 's',
+      );
+      expect(r.mediaSource, 'http://127.0.0.1:1/yt/1');
+      expect(
+        r.audioSource,
+        'https://rr1---sn-a.googlevideo.com/videoplayback?itag=140',
+      );
+      expect(relayed, <String>[
+        'https://rr1---sn-a.googlevideo.com/videoplayback?itag=133',
+      ]);
+    },
+  );
 
-  test('muxed fallback -> audioSource null (engine takes audio from muxed)',
-      () async {
-    final YoutubeClipMiner miner = YoutubeClipMiner(
-      resolve: (String url) async => _fakeSource(muxed: true),
-      now: () => DateTime(2026, 1, 1),
-    );
-    final YoutubeClipRequest r = await miner.buildRequest(
-      videoId: 'abc',
-      startMs: 0,
-      endMs: 2000,
-      fields: <String, String>{},
-      sentence: 's',
-    );
-    expect(r.mediaSource, 'https://v/mine');
-    expect(r.audioSource, isNull);
-  });
+  test(
+    'muxed fallback -> audioSource null (engine takes audio from muxed)',
+    () async {
+      final YoutubeClipMiner miner = YoutubeClipMiner(
+        resolve: (String url) async => _fakeSource(muxed: true),
+        now: () => DateTime(2026, 1, 1),
+      );
+      final YoutubeClipRequest r = await miner.buildRequest(
+        videoId: 'abc',
+        startMs: 0,
+        endMs: 2000,
+        fields: <String, String>{},
+        sentence: 's',
+      );
+      expect(r.mediaSource, 'https://v/mine');
+      expect(r.audioSource, isNull);
+    },
+  );
 
   test('same videoId within TTL resolves once (cache hit)', () async {
     int calls = 0;
@@ -109,18 +115,20 @@ void main() {
       now: () => clock,
     );
     await miner.buildRequest(
-        videoId: 'abc',
-        startMs: 0,
-        endMs: 1000,
-        fields: const <String, String>{},
-        sentence: 'a');
+      videoId: 'abc',
+      startMs: 0,
+      endMs: 1000,
+      fields: const <String, String>{},
+      sentence: 'a',
+    );
     clock = clock.add(const Duration(seconds: 30));
     await miner.buildRequest(
-        videoId: 'abc',
-        startMs: 2000,
-        endMs: 3000,
-        fields: const <String, String>{},
-        sentence: 'b');
+      videoId: 'abc',
+      startMs: 2000,
+      endMs: 3000,
+      fields: const <String, String>{},
+      sentence: 'b',
+    );
     expect(calls, 1);
   });
 
@@ -135,81 +143,91 @@ void main() {
       now: () => clock,
     );
     await miner.buildRequest(
-        videoId: 'abc',
-        startMs: 0,
-        endMs: 1000,
-        fields: const <String, String>{},
-        sentence: 'a');
+      videoId: 'abc',
+      startMs: 0,
+      endMs: 1000,
+      fields: const <String, String>{},
+      sentence: 'a',
+    );
     clock = clock.add(const Duration(minutes: 5));
     await miner.buildRequest(
-        videoId: 'abc',
-        startMs: 0,
-        endMs: 1000,
-        fields: const <String, String>{},
-        sentence: 'a');
+      videoId: 'abc',
+      startMs: 0,
+      endMs: 1000,
+      fields: const <String, String>{},
+      sentence: 'a',
+    );
     expect(calls, 2);
   });
 
-  test('failed resolve is not cached (next call retries, not stuck rejected)',
-      () async {
-    int calls = 0;
-    final YoutubeClipMiner miner = YoutubeClipMiner(
-      resolve: (String url) async {
-        calls++;
-        if (calls == 1) throw Exception('transient');
-        return _fakeSource(muxed: false);
-      },
-      now: () => DateTime(2026, 1, 1),
-    );
-    await expectLater(
-      miner.buildRequest(
+  test(
+    'failed resolve is not cached (next call retries, not stuck rejected)',
+    () async {
+      int calls = 0;
+      final YoutubeClipMiner miner = YoutubeClipMiner(
+        resolve: (String url) async {
+          calls++;
+          if (calls == 1) throw Exception('transient');
+          return _fakeSource(muxed: false);
+        },
+        now: () => DateTime(2026, 1, 1),
+      );
+      await expectLater(
+        miner.buildRequest(
           videoId: 'abc',
           startMs: 0,
           endMs: 1000,
           fields: const <String, String>{},
-          sentence: 'a'),
-      throwsA(isA<Exception>()),
-    );
-    // 第二次应重新解析并成功（缓存没被 rejected future 卡住）。
-    final YoutubeClipRequest r = await miner.buildRequest(
+          sentence: 'a',
+        ),
+        throwsA(isA<Exception>()),
+      );
+      // 第二次应重新解析并成功（缓存没被 rejected future 卡住）。
+      final YoutubeClipRequest r = await miner.buildRequest(
         videoId: 'abc',
         startMs: 0,
         endMs: 1000,
         fields: const <String, String>{},
-        sentence: 'a');
-    expect(r.mediaSource, 'https://v/mine');
-    expect(calls, 2);
-  });
+        sentence: 'a',
+      );
+      expect(r.mediaSource, 'https://v/mine');
+      expect(calls, 2);
+    },
+  );
 
-  test('concurrent requests for same videoId share one in-flight resolve',
-      () async {
-    int calls = 0;
-    final Completer<YoutubeResolvedSource> gate =
-        Completer<YoutubeResolvedSource>();
-    final YoutubeClipMiner miner = YoutubeClipMiner(
-      resolve: (String url) {
-        calls++;
-        return gate.future;
-      },
-      now: () => DateTime(2026, 1, 1),
-    );
-    final Future<YoutubeClipRequest> a = miner.buildRequest(
+  test(
+    'concurrent requests for same videoId share one in-flight resolve',
+    () async {
+      int calls = 0;
+      final Completer<YoutubeResolvedSource> gate =
+          Completer<YoutubeResolvedSource>();
+      final YoutubeClipMiner miner = YoutubeClipMiner(
+        resolve: (String url) {
+          calls++;
+          return gate.future;
+        },
+        now: () => DateTime(2026, 1, 1),
+      );
+      final Future<YoutubeClipRequest> a = miner.buildRequest(
         videoId: 'abc',
         startMs: 0,
         endMs: 1000,
         fields: const <String, String>{},
-        sentence: 'a');
-    final Future<YoutubeClipRequest> b = miner.buildRequest(
+        sentence: 'a',
+      );
+      final Future<YoutubeClipRequest> b = miner.buildRequest(
         videoId: 'abc',
         startMs: 2000,
         endMs: 3000,
         fields: const <String, String>{},
-        sentence: 'b');
-    gate.complete(_fakeSource(muxed: false));
-    await a;
-    await b;
-    expect(calls, 1);
-  });
+        sentence: 'b',
+      );
+      gate.complete(_fakeSource(muxed: false));
+      await a;
+      await b;
+      expect(calls, 1);
+    },
+  );
 
   test('cueSentence passes through to the request', () async {
     final YoutubeClipMiner miner = YoutubeClipMiner(
@@ -217,12 +235,13 @@ void main() {
       now: () => DateTime(2026, 1, 1),
     );
     final YoutubeClipRequest r = await miner.buildRequest(
-        videoId: 'abc',
-        startMs: 0,
-        endMs: 1000,
-        fields: const <String, String>{},
-        sentence: 's',
-        cueSentence: 'cue');
+      videoId: 'abc',
+      startMs: 0,
+      endMs: 1000,
+      fields: const <String, String>{},
+      sentence: 's',
+      cueSentence: 'cue',
+    );
     expect(r.cueSentence, 'cue');
   });
 }

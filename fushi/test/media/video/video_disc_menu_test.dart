@@ -512,74 +512,89 @@ void main() {
   });
 
   group('disc input commands', () {
-    test('checked command preserves args and reports native rejection', () async {
-      final _Mpv success = _Mpv(0);
-      await runCheckedVideoDiscCommand(_Native(success), <String>[
-        'discnav',
-        'popup',
-      ]);
-      expect(success.received, <String>['discnav', 'popup']);
-      await expectLater(
-        runCheckedVideoDiscCommand(_Native(_Mpv(-12)), <String>[
+    test(
+      'checked command preserves args and reports native rejection',
+      () async {
+        final _Mpv success = _Mpv(0);
+        await runCheckedVideoDiscCommand(_Native(success), <String>[
           'discnav',
-          'select',
-        ]),
-        throwsA(
-          isA<VideoDiscMenuException>().having(
-            (VideoDiscMenuException error) => error.code,
-            'code',
-            'command-failed:-12',
+          'popup',
+        ]);
+        expect(success.received, <String>['discnav', 'popup']);
+        await expectLater(
+          runCheckedVideoDiscCommand(_Native(_Mpv(-12)), <String>[
+            'discnav',
+            'select',
+          ]),
+          throwsA(
+            isA<VideoDiscMenuException>().having(
+              (VideoDiscMenuException error) => error.code,
+              'code',
+              'command-failed:-12',
+            ),
           ),
-        ),
-      );
-    });
+        );
+      },
+    );
     // BUG-3290: libbluray answers an unconsumed key/click with -1 (popup closed,
     // click outside enabled buttons, BD-J listener returned false); the shipped
     // patch surfaces that as MPV_ERROR_COMMAND. It is a no-op, not an error.
-    test('unconsumed remote input is a false result, never an exception', () async {
-      for (final String action in <String>[
-        'up',
-        'down',
-        'left',
-        'right',
-        'select',
-        'popup',
-        'prev',
-      ]) {
-        final List<String> command = videoDiscNavigationCommand(action);
-        expect(isVideoDiscInputCommand(command), isTrue, reason: action);
-        expect(await runVideoDiscInputCommand(_Native(_Mpv(-12)), command), isFalse);
-        expect(await runVideoDiscInputCommand(_Native(_Mpv(0)), command), isTrue);
-      }
-      final List<String> click = videoDiscNavigationCommand(
-        'mouse-click',
-        x: .5,
-        y: .9,
-      );
-      expect(isVideoDiscInputCommand(click), isTrue);
-      final _Mpv mpv = _Mpv(-12);
-      expect(await runVideoDiscInputCommand(_Native(mpv), click), isFalse);
-      expect(mpv.received, click);
-    });
+    test(
+      'unconsumed remote input is a false result, never an exception',
+      () async {
+        for (final String action in <String>[
+          'up',
+          'down',
+          'left',
+          'right',
+          'select',
+          'popup',
+          'prev',
+        ]) {
+          final List<String> command = videoDiscNavigationCommand(action);
+          expect(isVideoDiscInputCommand(command), isTrue, reason: action);
+          expect(
+            await runVideoDiscInputCommand(_Native(_Mpv(-12)), command),
+            isFalse,
+          );
+          expect(
+            await runVideoDiscInputCommand(_Native(_Mpv(0)), command),
+            isTrue,
+          );
+        }
+        final List<String> click = videoDiscNavigationCommand(
+          'mouse-click',
+          x: .5,
+          y: .9,
+        );
+        expect(isVideoDiscInputCommand(click), isTrue);
+        final _Mpv mpv = _Mpv(-12);
+        expect(await runVideoDiscInputCommand(_Native(mpv), click), isFalse);
+        expect(mpv.received, click);
+      },
+    );
 
-    test('menu calls stay checked: a refused top menu is still an error', () async {
-      for (final String action in <String>['menu', 'title-menu']) {
-        final List<String> command = videoDiscNavigationCommand(action);
-        expect(isVideoDiscInputCommand(command), isFalse);
+    test(
+      'menu calls stay checked: a refused top menu is still an error',
+      () async {
+        for (final String action in <String>['menu', 'title-menu']) {
+          final List<String> command = videoDiscNavigationCommand(action);
+          expect(isVideoDiscInputCommand(command), isFalse);
+          expect(
+            () => runVideoDiscInputCommand(_Native(_Mpv(0)), command),
+            throwsArgumentError,
+          );
+          await expectLater(
+            runCheckedVideoDiscCommand(_Native(_Mpv(-12)), command),
+            throwsA(isA<VideoDiscMenuException>()),
+          );
+        }
         expect(
-          () => runVideoDiscInputCommand(_Native(_Mpv(0)), command),
-          throwsArgumentError,
+          isVideoDiscInputCommand(<String>['set', 'disc-menu', 'yes']),
+          isFalse,
         );
-        await expectLater(
-          runCheckedVideoDiscCommand(_Native(_Mpv(-12)), command),
-          throwsA(isA<VideoDiscMenuException>()),
-        );
-      }
-      expect(
-        isVideoDiscInputCommand(<String>['set', 'disc-menu', 'yes']),
-        isFalse,
-      );
-    });
+      },
+    );
 
     test('keyboard and top/popup actions retain upstream semantics', () {
       for (final String action in <String>[

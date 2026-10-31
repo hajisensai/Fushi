@@ -480,9 +480,8 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
   bool get _multiSelecting => _selectedCandidates.isNotEmpty;
 
   Set<String> get _selectedIdentityKeys => <String>{
-        for (final VideoSubtitleCandidate c in _selectedCandidates)
-          c.identityKey,
-      };
+    for (final VideoSubtitleCandidate c in _selectedCandidates) c.identityKey,
+  };
 
   void _toggleCandidate(VideoSubtitleCandidate candidate) {
     setState(() {
@@ -496,6 +495,7 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
       }
     });
   }
+
   List<JimakuCandidate> _candidates = const <JimakuCandidate>[];
 
   /// true = 平铺文件列表（旧视图）；false（默认）= 版本卡视图。候选缺 source
@@ -1623,19 +1623,21 @@ class _SubtitleSearchPanelState extends State<SubtitleSearchPanel>
             onSelectAll: () => setState(() {
               _selectedCandidates
                 ..clear()
-                ..addAll(_candidates
-                    .map((JimakuCandidate c) => c.source)
-                    .whereType<VideoSubtitleCandidate>());
+                ..addAll(
+                  _candidates
+                      .map((JimakuCandidate c) => c.source)
+                      .whereType<VideoSubtitleCandidate>(),
+                );
             }),
             onInvertSelection: () => setState(() {
               final Set<String> current = _selectedIdentityKeys;
               final List<VideoSubtitleCandidate> next =
                   <VideoSubtitleCandidate>[
-                for (final JimakuCandidate c in _candidates)
-                  if (c.source != null &&
-                      !current.contains(c.source!.identityKey))
-                    c.source!,
-              ];
+                    for (final JimakuCandidate c in _candidates)
+                      if (c.source != null &&
+                          !current.contains(c.source!.identityKey))
+                        c.source!,
+                  ];
               _selectedCandidates
                 ..clear()
                 ..addAll(next);
@@ -1772,6 +1774,5 @@ class JimakuCandidateList extends StatelessWidget {
         }),
       ),
     );
-
   }
 }

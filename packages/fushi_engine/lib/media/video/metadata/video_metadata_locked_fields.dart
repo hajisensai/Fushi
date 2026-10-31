@@ -28,17 +28,17 @@ enum VideoMetadataLockableField {
 
 const Map<String, VideoMetadataLockableField> _byName =
     <String, VideoMetadataLockableField>{
-  'title': VideoMetadataLockableField.title,
-  'originalTitle': VideoMetadataLockableField.originalTitle,
-  'overview': VideoMetadataLockableField.overview,
-  'tagline': VideoMetadataLockableField.tagline,
-  'genres': VideoMetadataLockableField.genres,
-  'studios': VideoMetadataLockableField.studios,
-  'rating': VideoMetadataLockableField.rating,
-  'cover': VideoMetadataLockableField.cover,
-  'backdrop': VideoMetadataLockableField.backdrop,
-  'episodeGroup': VideoMetadataLockableField.episodeGroup,
-};
+      'title': VideoMetadataLockableField.title,
+      'originalTitle': VideoMetadataLockableField.originalTitle,
+      'overview': VideoMetadataLockableField.overview,
+      'tagline': VideoMetadataLockableField.tagline,
+      'genres': VideoMetadataLockableField.genres,
+      'studios': VideoMetadataLockableField.studios,
+      'rating': VideoMetadataLockableField.rating,
+      'cover': VideoMetadataLockableField.cover,
+      'backdrop': VideoMetadataLockableField.backdrop,
+      'episodeGroup': VideoMetadataLockableField.episodeGroup,
+    };
 
 /// 解析 `locked_fields` 列。NULL / 空 / 全是未知值都返回空集合（= 无锁）。
 Set<VideoMetadataLockableField> parseLockedFields(String? raw) {

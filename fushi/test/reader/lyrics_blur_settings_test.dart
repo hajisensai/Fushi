@@ -21,9 +21,7 @@ AudioCue _cue(int i) {
 }
 
 FushiDatabase _testDb() {
-  return FushiDatabase.forTesting(
-    DatabaseConnection(NativeDatabase.memory()),
-  );
+  return FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
 }
 
 String _generate({required bool blur, bool vertical = false}) {
@@ -42,24 +40,27 @@ String _generate({required bool blur, bool vertical = false}) {
 void main() {
   group('LyricsModeHtml blur (TODO-908)', () {
     test(
-        'blur=true emits filter:blur on current cue + setBlur hook + body class',
-        () {
-      final String html = _generate(blur: true);
+      'blur=true emits filter:blur on current cue + setBlur hook + body class',
+      () {
+        final String html = _generate(blur: true);
 
-      expect(html, contains('filter: blur(8px)'));
-      expect(html, contains('class="lyrics-blur"'));
-      expect(html, contains('body.lyrics-blur .cue'));
-      expect(html, contains('body.lyrics-blur .cue:hover'));
-      expect(html, contains('.cue.revealed'));
-      expect(html, contains('window.__lyricsSetBlur'));
-    });
+        expect(html, contains('filter: blur(8px)'));
+        expect(html, contains('class="lyrics-blur"'));
+        expect(html, contains('body.lyrics-blur .cue'));
+        expect(html, contains('body.lyrics-blur .cue:hover'));
+        expect(html, contains('.cue.revealed'));
+        expect(html, contains('window.__lyricsSetBlur'));
+      },
+    );
 
-    test('blur hook is always present (live toggle), body class gated by flag',
-        () {
-      final String off = _generate(blur: false);
-      expect(off, contains('window.__lyricsSetBlur'));
-      expect(off, isNot(contains('class="lyrics-blur"')));
-    });
+    test(
+      'blur hook is always present (live toggle), body class gated by flag',
+      () {
+        final String off = _generate(blur: false);
+        expect(off, contains('window.__lyricsSetBlur'));
+        expect(off, isNot(contains('class="lyrics-blur"')));
+      },
+    );
 
     test('blur is orthogonal to vertical writing-mode', () {
       final String html = _generate(blur: true, vertical: true);

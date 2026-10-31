@@ -12,14 +12,14 @@ import 'package:image/image.dart' as img;
 
 /// n 张图，每章两张：img0/img1 → 第 1 章，img2/img3 → 第 2 章……
 List<EpubImageRef> _images(int n) => <EpubImageRef>[
-      for (int i = 0; i < n; i++)
-        EpubImageRef(
-          chapterIndex: i ~/ 2,
-          orderInBook: i,
-          src: 'img$i.png',
-          revealKey: 'img$i.png',
-        ),
-    ];
+  for (int i = 0; i < n; i++)
+    EpubImageRef(
+      chapterIndex: i ~/ 2,
+      orderInBook: i,
+      src: 'img$i.png',
+      revealKey: 'img$i.png',
+    ),
+];
 
 Widget _host(Widget child) => MaterialApp(home: child);
 
@@ -36,8 +36,9 @@ void _useTallWindow(WidgetTester tester) {
 /// 否则前面章的节头 / 卡片被惰性 sliver 卸掉，findsNothing 是正确行为而非 bug。
 Future<void> _pumpAtTop(WidgetTester tester) async {
   await tester.pump();
-  final ScrollController? controller =
-      tester.widget<CustomScrollView>(find.byType(CustomScrollView)).controller;
+  final ScrollController? controller = tester
+      .widget<CustomScrollView>(find.byType(CustomScrollView))
+      .controller;
   controller?.jumpTo(0);
   await tester.pump();
 }
@@ -46,6 +47,7 @@ Finder _card(String src) =>
     find.byKey(ValueKey<String>('fushi_gallery_card_$src'));
 Finder _section(int chapter) =>
     find.byKey(ValueKey<String>('fushi_gallery_section_$chapter'));
+
 /// 锁着的卡 = 盖在真缩略图上的高斯模糊层（maskedIllustrationCover，墨水屏才换
 /// 实心遮板；测试主题非墨水屏）。整页只有遮罩会用到 ImageFiltered。
 Finder get _maskedCards => find.byType(ImageFiltered);
@@ -159,8 +161,9 @@ void main() {
     await _pumpAtTop(tester);
     expect(find.text('Current reading position'), findsOneWidget);
     // 标记条在第 1 章节头之下、第 5 章节头之上。
-    final double marker =
-        tester.getTopLeft(find.text('Current reading position')).dy;
+    final double marker = tester
+        .getTopLeft(find.text('Current reading position'))
+        .dy;
     expect(marker, greaterThan(tester.getTopLeft(find.text('CHAPTER 1')).dy));
     expect(marker, lessThan(tester.getTopLeft(find.text('CHAPTER 5')).dy));
   });
@@ -582,15 +585,14 @@ void main() {
     );
     expect(width - close.right, lessThanOrEqualTo(16));
     expect(
-      tester.getRect(find.byKey(const ValueKey<String>('fushi_gallery_jump')))
+      tester
+          .getRect(find.byKey(const ValueKey<String>('fushi_gallery_jump')))
           .right,
       lessThanOrEqualTo(close.left + 1),
     );
   });
 
-  testWidgets('触屏查看器：放大后单指拖动只平移不翻页，双击复原后才横滑切图', (
-    tester,
-  ) async {
+  testWidgets('触屏查看器：放大后单指拖动只平移不翻页，双击复原后才横滑切图', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
         theme: ThemeData(platform: TargetPlatform.iOS),
@@ -682,10 +684,12 @@ void main() {
     expect(opacityOf(Icons.chevron_right), 1);
     // 按钮落在图片区（Expanded 中栏）之外。
     final Rect stage = tester.getRect(
-      find.descendant(
-        of: find.byKey(const ValueKey<String>('fushi_gallery_viewer')),
-        matching: find.byType(Expanded),
-      ).last,
+      find
+          .descendant(
+            of: find.byKey(const ValueKey<String>('fushi_gallery_viewer')),
+            matching: find.byType(Expanded),
+          )
+          .last,
     );
     expect(
       tester.getRect(find.byIcon(Icons.chevron_right)).left,
@@ -755,9 +759,7 @@ void main() {
     expect(find.text('open'), findsOneWidget);
   });
 
-  testWidgets('长按卡片 → 菜单「跳转到此插图」走 onJumpTo（锁着的卡也有跳转入口）', (
-    tester,
-  ) async {
+  testWidgets('长按卡片 → 菜单「跳转到此插图」走 onJumpTo（锁着的卡也有跳转入口）', (tester) async {
     final List<String> jumped = <String>[];
     await tester.pumpWidget(
       _host(
@@ -796,9 +798,7 @@ void main() {
     expect(jumped, <String>['img4.png']);
   });
 
-  testWidgets('长按已揭开的卡 →「恢复遮罩」：回写 onUnrevealImage、计数 -1、模糊层回来', (
-    tester,
-  ) async {
+  testWidgets('长按已揭开的卡 →「恢复遮罩」：回写 onUnrevealImage、计数 -1、模糊层回来', (tester) async {
     final List<String> unrevealed = <String>[];
     final Set<String> hostRevealed = <String>{'img4.png'};
     await tester.pumpWidget(
@@ -982,20 +982,26 @@ void main() {
   // 舞台与缩略图都退回 broken 占位，只在诊断段留一条带路径的痕迹。
   // Image.file 的解码是真 IO + isolate，fake async 送不到完成事件，pump 放进 runAsync。
   testWidgets('坏图文件：解码失败走 errorBuilder 占位，不抛未捕获 FlutterError', (tester) async {
-    final Directory dir = Directory.systemTemp.createTempSync('fushi_gallery_bad_');
+    final Directory dir = Directory.systemTemp.createTempSync(
+      'fushi_gallery_bad_',
+    );
     addTearDown(() => dir.deleteSync(recursive: true));
     final File bad = File('${dir.path}/bad.jpg')
       ..writeAsStringSync('<html><body>not an image</body></html>');
     final int diagBefore = ErrorLogService.instance.diagnosticEntries.length;
 
     await tester.runAsync(() async {
-      await tester.pumpWidget(_host(ReaderGalleryPage(
-        images: _images(2),
-        currentChapter: 0,
-        fileForRef: (_) => bad,
-        onOpenImage: (_) {},
-        onJumpTo: (_) {},
-      )));
+      await tester.pumpWidget(
+        _host(
+          ReaderGalleryPage(
+            images: _images(2),
+            currentChapter: 0,
+            fileForRef: (_) => bad,
+            onOpenImage: (_) {},
+            onJumpTo: (_) {},
+          ),
+        ),
+      );
       // 等解码真的失败并回调到 errorBuilder（同一 completer 上的两张缩略图）。
       for (int i = 0; i < 50; i++) {
         await Future<void>.delayed(const Duration(milliseconds: 20));
@@ -1016,25 +1022,31 @@ void main() {
       }
     });
 
-    expect(tester.takeException(), isNull,
-        reason: '坏图解码失败必须被 errorBuilder 接住，不得逃成未捕获 FlutterError');
+    expect(
+      tester.takeException(),
+      isNull,
+      reason: '坏图解码失败必须被 errorBuilder 接住，不得逃成未捕获 FlutterError',
+    );
     // 2 张缩略图（网格仍在查看器之下）+ 舞台 = 3 个 broken 占位。
     expect(find.byIcon(Icons.broken_image_outlined), findsNWidgets(3));
-    final List<ErrorLogEntry> diag =
-        ErrorLogService.instance.diagnosticEntries.sublist(diagBefore);
-    final Set<String> sources =
-        diag.map((ErrorLogEntry e) => e.source).toSet();
+    final List<ErrorLogEntry> diag = ErrorLogService.instance.diagnosticEntries
+        .sublist(diagBefore);
+    final Set<String> sources = diag.map((ErrorLogEntry e) => e.source).toSet();
     // 舞台 / 缩略图 errorBuilder + 相邻图 precacheImage 的 onError 各留一条痕迹。
     expect(sources, contains('ReaderGalleryPage.stage.coverDecode'));
     expect(sources, contains('ReaderGalleryPage.thumb.coverDecode'));
-    expect(sources, contains('ReaderGalleryPage.precache.coverDecode'),
-        reason: 'precacheImage 不接 onError 会自己 FlutterError.reportError');
     expect(
-        diag
-            .where((ErrorLogEntry e) => e.source.endsWith('.coverDecode'))
-            .every((ErrorLogEntry e) => e.error.contains(bad.path)),
-        isTrue,
-        reason: '诊断痕迹必须带路径，不然坏文件无从定位');
+      sources,
+      contains('ReaderGalleryPage.precache.coverDecode'),
+      reason: 'precacheImage 不接 onError 会自己 FlutterError.reportError',
+    );
+    expect(
+      diag
+          .where((ErrorLogEntry e) => e.source.endsWith('.coverDecode'))
+          .every((ErrorLogEntry e) => e.error.contains(bad.path)),
+      isTrue,
+      reason: '诊断痕迹必须带路径，不然坏文件无从定位',
+    );
   });
 
   test('fileForRef 允许返回 File（类型契约）', () {
@@ -1054,13 +1066,17 @@ void main() {
   File writePng(Directory dir, String name, int width, int height) {
     final File file = File('${dir.path}/$name');
     file.writeAsBytesSync(
-        img.encodePng(img.Image(width: width, height: height)));
+      img.encodePng(img.Image(width: width, height: height)),
+    );
     return file;
   }
 
   /// 开页并等 isolate 里的宽高比探测落定（真 IO，pump 放进 runAsync）。
-  Future<void> pumpUntilProbed(WidgetTester tester, Widget page,
-      {required String wideSrc}) async {
+  Future<void> pumpUntilProbed(
+    WidgetTester tester,
+    Widget page, {
+    required String wideSrc,
+  }) async {
     await tester.runAsync(() async {
       await tester.pumpWidget(_host(page));
       // isolate 起得慢时（本机并发跑测试）要多等一会；上限 10s。
@@ -1068,21 +1084,24 @@ void main() {
         await Future<void>.delayed(const Duration(milliseconds: 20));
         await tester.pump();
         final Iterable<Element> found = _card(wideSrc).evaluate();
-        if (found.isNotEmpty &&
-            tester.getSize(_card(wideSrc)).width > 300) {
+        if (found.isNotEmpty && tester.getSize(_card(wideSrc)).width > 300) {
           break;
         }
       }
     });
     await tester.pump();
-    expect(tester.getSize(_card(wideSrc)).width, greaterThan(300),
-        reason: '宽高比探测应在 10s 内落定并把横版图放大到两列');
+    expect(
+      tester.getSize(_card(wideSrc)).width,
+      greaterThan(300),
+      reason: '宽高比探测应在 10s 内落定并把横版图放大到两列',
+    );
   }
 
   testWidgets('横版插图占两列、竖版占一列，行内按阅读顺序排；放不下就另起一行', (tester) async {
     _useTallWindow(tester);
-    final Directory dir =
-        Directory.systemTemp.createTempSync('fushi_gallery_wide_');
+    final Directory dir = Directory.systemTemp.createTempSync(
+      'fushi_gallery_wide_',
+    );
     addTearDown(() => dir.deleteSync(recursive: true));
     // img0 横版（2:1），其余竖版（1:2）；全在第 1 章。尺寸要过行内小图门槛
     // （宽或高 > 256），否则会被当外字剔掉。
@@ -1116,19 +1135,31 @@ void main() {
     final Size wide = tester.getSize(_card('img0.png'));
     final Size narrow = tester.getSize(_card('img1.png'));
     expect(narrow.width, moreOrLessEquals(224, epsilon: 0.5));
-    expect(wide.width, moreOrLessEquals(224 * 2 + 12, epsilon: 0.5),
-        reason: '横版图 = 两格宽 + 一个间距');
-    expect(wide.height, moreOrLessEquals(narrow.height, epsilon: 0.5),
-        reason: '行高不变，横版图只横跨、不加高');
+    expect(
+      wide.width,
+      moreOrLessEquals(224 * 2 + 12, epsilon: 0.5),
+      reason: '横版图 = 两格宽 + 一个间距',
+    );
+    expect(
+      wide.height,
+      moreOrLessEquals(narrow.height, epsilon: 0.5),
+      reason: '行高不变，横版图只横跨、不加高',
+    );
     // 同行按阅读顺序：img1 紧贴在 img0 右侧；img4 放不下（第 1 行只剩 0 列）
     // 落到第 2 行行首。
     final Offset wideTop = tester.getTopLeft(_card('img0.png'));
     final Offset narrowTop = tester.getTopLeft(_card('img1.png'));
     expect(narrowTop.dy, moreOrLessEquals(wideTop.dy, epsilon: 0.5));
-    expect(narrowTop.dx, moreOrLessEquals(wideTop.dx + wide.width + 12, epsilon: 0.5));
+    expect(
+      narrowTop.dx,
+      moreOrLessEquals(wideTop.dx + wide.width + 12, epsilon: 0.5),
+    );
     final Offset row2 = tester.getTopLeft(_card('img4.png'));
     expect(row2.dx, moreOrLessEquals(wideTop.dx, epsilon: 0.5));
-    expect(row2.dy, moreOrLessEquals(wideTop.dy + wide.height + 12, epsilon: 0.5));
+    expect(
+      row2.dy,
+      moreOrLessEquals(wideTop.dy + wide.height + 12, epsilon: 0.5),
+    );
 
     // 键盘 ↑/↓ 按槽位几何找最近列：img5（第 2 行第 2 列）↑ → 第 1 行离第 2 列
     // 最近的是 img0（起始列 0，距 1）与 img1（列 2，距 1）并列，取先出现的 img0；
@@ -1152,8 +1183,9 @@ void main() {
   // 流（分页脚本只把宽或高 > 256 的图当块级插图），插图册不能把它们当插图摆满。
   testWidgets('外字 / 章节号小图（宽高都 ≤ 256）不进插图册，封面再小也保留', (tester) async {
     _useTallWindow(tester);
-    final Directory dir =
-        Directory.systemTemp.createTempSync('fushi_gallery_glyph_');
+    final Directory dir = Directory.systemTemp.createTempSync(
+      'fushi_gallery_glyph_',
+    );
     addTearDown(() => dir.deleteSync(recursive: true));
     final Map<String, File> files = <String, File>{
       'cover.png': writePng(dir, 'cover.png', 180, 256),
@@ -1163,11 +1195,11 @@ void main() {
       'plate.png': writePng(dir, 'plate.png', 300, 600),
     };
     EpubImageRef ref(int chapter, int order, String src) => EpubImageRef(
-          chapterIndex: chapter,
-          orderInBook: order,
-          src: src,
-          revealKey: src,
-        );
+      chapterIndex: chapter,
+      orderInBook: order,
+      src: src,
+      revealKey: src,
+    );
     await pumpUntilProbed(
       tester,
       ReaderGalleryPage(
@@ -1193,9 +1225,9 @@ void main() {
     expect(_card('wide.png'), findsOneWidget);
     expect(_card('plate.png'), findsOneWidget);
     final Text count = tester.widget<Text>(
-        find.byKey(const ValueKey<String>('fushi_gallery_count')));
-    expect(count.data, endsWith('/ 3'),
-        reason: '总数只算真插图（5 张引用里剔掉 2 张小图）');
+      find.byKey(const ValueKey<String>('fushi_gallery_count')),
+    );
+    expect(count.data, endsWith('/ 3'), reason: '总数只算真插图（5 张引用里剔掉 2 张小图）');
   });
 
   testWidgets('currentChapter 为 null（书架端没读过的书）：不按进度遮、无标记与定位键', (tester) async {
@@ -1216,11 +1248,15 @@ void main() {
     expect(_maskedCards, findsNothing);
     expect(find.text('Unlocked 6 / 6'), findsOneWidget);
     expect(find.text('Current reading position'), findsNothing);
-    expect(find.byKey(const ValueKey<String>('fushi_gallery_position')),
-        findsNothing);
+    expect(
+      find.byKey(const ValueKey<String>('fushi_gallery_position')),
+      findsNothing,
+    );
     // 过滤控件照常在（总开关开着时仍有锁着的图可过滤）。
-    expect(find.byKey(const ValueKey<String>('fushi_gallery_filter')),
-        findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('fushi_gallery_filter')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('currentChapter 为 null 但总开关开：未揭开的图照旧锁着', (tester) async {

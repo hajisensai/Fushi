@@ -26,15 +26,17 @@ String _memberSource(String src, String name) {
 }
 
 void main() {
-  final String src =
-      File('windows/runner/global_lookup_window.cpp').readAsStringSync();
+  final String src = File(
+    'windows/runner/global_lookup_window.cpp',
+  ).readAsStringSync();
   final String configure = _memberSource(src, 'ConfigureWebView');
 
   test('① status bar 在 ConfigureWebView() 里被关掉（BUG-1097）', () {
     expect(
       configure.contains('put_IsStatusBarEnabled(FALSE)'),
       isTrue,
-      reason: '必须在 ConfigureWebView() 内关闭——它是 composition / windowed 两条创建路径 '
+      reason:
+          '必须在 ConfigureWebView() 内关闭——它是 composition / windowed 两条创建路径 '
           '与 BUG-693 自愈重建的唯一漏斗；散在单条路径里会漏掉重建出来的新 surface',
     );
     expect(
@@ -59,7 +61,8 @@ void main() {
     expect(
       popupJs.contains("setAttribute('href', node.href)"),
       isTrue,
-      reason: 'href 是点击处理的输入，不得为了消掉预览而删链接；'
+      reason:
+          'href 是点击处理的输入，不得为了消掉预览而删链接；'
           '「原生提示窗定位」是 BUG-842 家族的另一件事，本轮不动',
     );
   });

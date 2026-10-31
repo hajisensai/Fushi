@@ -29,31 +29,39 @@ void main() {
     WidgetTester tester, {
     required VideoPlayerController controller,
     required void Function(
-            String sentence, int graphemeIndex, Rect rect, AudioCue cue)
-        onCharTap,
+      String sentence,
+      int graphemeIndex,
+      Rect rect,
+      AudioCue cue,
+    )
+    onCharTap,
     required VoidCallback onUnderlyingTap,
   }) async {
-    await tester.pumpWidget(buildTestApp(Stack(
-      children: <Widget>[
-        // 下层：铺满的 opaque tap 计数器（模拟 media_kit 控制条的全覆盖 onTap 层）。
-        Positioned.fill(
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: onUnderlyingTap,
-          ),
+    await tester.pumpWidget(
+      buildTestApp(
+        Stack(
+          children: <Widget>[
+            // 下层：铺满的 opaque tap 计数器（模拟 media_kit 控制条的全覆盖 onTap 层）。
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: onUnderlyingTap,
+              ),
+            ),
+            // 上层：字幕 overlay（Positioned.fill，几何与视频页一致）。
+            Positioned.fill(
+              child: VideoSubtitleOverlay(
+                controller: controller,
+                // 小字号：命中容差落在下限 10px（测试字体每字形约 1em 方块，fontSize/2
+                // < 10 时容差取下限），空白点距字符矩形 dist^2=146 > 10^2=100，稳落空白区。
+                fontSize: 20,
+                onCharTap: onCharTap,
+              ),
+            ),
+          ],
         ),
-        // 上层：字幕 overlay（Positioned.fill，几何与视频页一致）。
-        Positioned.fill(
-          child: VideoSubtitleOverlay(
-            controller: controller,
-            // 小字号：命中容差落在下限 10px（测试字体每字形约 1em 方块，fontSize/2
-            // < 10 时容差取下限），空白点距字符矩形 dist^2=146 > 10^2=100，稳落空白区。
-            fontSize: 20,
-            onCharTap: onCharTap,
-          ),
-        ),
-      ],
-    )));
+      ),
+    );
   }
 
   testWidgets('点字符 → 查词触发且不穿透到下层控制条 tap', (tester) async {
@@ -79,8 +87,11 @@ void main() {
     await tester.pump();
 
     expect(tappedSentence, 'l', reason: '命中字符必须触发查词');
-    expect(underlyingTaps, 0,
-        reason: '命中字符时字幕盒赢竞技场，tap 不穿透到下层（不顺手 toggle 控制条）');
+    expect(
+      underlyingTaps,
+      0,
+      reason: '命中字符时字幕盒赢竞技场，tap 不穿透到下层（不顺手 toggle 控制条）',
+    );
   });
 
   testWidgets('点字幕盒内空白 → 不查词且穿透到下层控制条 tap（BUG-553）', (tester) async {

@@ -25,7 +25,8 @@ void main() {
       expect(
         forkWebView,
         contains('--autoplay-policy=no-user-gesture-required'),
-        reason: 'WebView2 has no per-view mediaPlaybackRequiresUserGesture; '
+        reason:
+            'WebView2 has no per-view mediaPlaybackRequiresUserGesture; '
             'the default environment must allow autoplay or the first '
             'auto-read per popup document is silently rejected (BUG-1093)',
       );
@@ -36,47 +37,55 @@ void main() {
       expect(
         overlay,
         contains('--autoplay-policy=no-user-gesture-required'),
-        reason: 'the overlay WebView2 environment must mirror the in-app '
+        reason:
+            'the overlay WebView2 environment must mirror the in-app '
             'fork autoplay policy (BUG-1093)',
       );
     });
 
     test('playWordAudioUrl reports the real JS audio.play() outcome', () {
-      final String popupWebView =
-          _read('lib/src/pages/implementations/dictionary_popup_webview.dart');
+      final String popupWebView = _read(
+        'lib/src/pages/implementations/dictionary_popup_webview.dart',
+      );
       expect(
         popupWebView,
         contains("handlerName: 'wordAudioPlayed'"),
-        reason: 'popup.js must report the real audio.play() result back over '
+        reason:
+            'popup.js must report the real audio.play() result back over '
             'the wordAudioPlayed bridge (BUG-1093)',
       );
       expect(
         popupWebView,
         contains('_pendingWordAudioPlays'),
-        reason: 'playWordAudioUrl must await the bridged result instead of '
+        reason:
+            'playWordAudioUrl must await the bridged result instead of '
             'unconditionally returning true (BUG-1093)',
       );
       expect(
         popupWebView,
         contains('completer.future.timeout'),
-        reason: 'a lost bridge reply must time out to false so the Dart '
+        reason:
+            'a lost bridge reply must time out to false so the Dart '
             'fallback still fires (BUG-1093)',
       );
     });
 
     test('auto-read falls back to the Dart player on WebView failure', () {
-      final String playback =
-          _read('lib/src/utils/misc/lookup_audio_playback.dart');
+      final String playback = _read(
+        'lib/src/utils/misc/lookup_audio_playback.dart',
+      );
       expect(
         playback,
         contains('logDiagnostic'),
-        reason: 'a WebView play failure must be visible in the error log — '
+        reason:
+            'a WebView play failure must be visible in the error log — '
             'this exact silence cost a mis-rooted fix in BUG-1015',
       );
       expect(
         playback,
         contains('await TtsChannel.instance.playAudioRef('),
-        reason: 'the fallback must reuse the single resolved ref (resolve '
+        reason:
+            'the fallback must reuse the single resolved ref (resolve '
             'exactly once: no second DB open / remote request / cooldown hit)',
       );
     });

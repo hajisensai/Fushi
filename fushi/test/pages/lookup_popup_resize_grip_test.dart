@@ -105,8 +105,9 @@ void main() {
     // AppModel 构造时 DefaultCacheManager 经 path_provider 平台通道，单测 mock 掉。
     late Directory pathProviderDir;
     setUpAll(() {
-      pathProviderDir =
-          Directory.systemTemp.createTempSync('fushi_path_provider');
+      pathProviderDir = Directory.systemTemp.createTempSync(
+        'fushi_path_provider',
+      );
       binding.defaultBinaryMessenger.setMockMethodCallHandler(
         const MethodChannel('plugins.flutter.io/path_provider'),
         (MethodCall call) async => pathProviderDir.path,
@@ -171,8 +172,14 @@ void main() {
       );
       await tester.pump();
 
-      expect(appModel.popupMaxWidth, greaterThan(appModel.defaultPopupMaxWidth));
-      expect(appModel.popupMaxHeight, greaterThan(appModel.defaultPopupMaxHeight));
+      expect(
+        appModel.popupMaxWidth,
+        greaterThan(appModel.defaultPopupMaxWidth),
+      );
+      expect(
+        appModel.popupMaxHeight,
+        greaterThan(appModel.defaultPopupMaxHeight),
+      );
       // 不超上界。
       expect(appModel.popupMaxWidth, lessThanOrEqualTo(kLookupPopupMaxWidth));
       expect(appModel.popupMaxHeight, lessThanOrEqualTo(kLookupPopupMaxHeight));

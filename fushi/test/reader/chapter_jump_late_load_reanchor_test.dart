@@ -50,25 +50,33 @@ void main() {
   group('重锚资格：三种语义锚都登记（BUG-1140 第二轮）', () {
     test('分页 restoreProgress 登记 progress（含中段，不再只 0/0.99）', () {
       final String body = bodyBetween(
-          paginated, 'restoreProgress: async function', 'restoreToCharOffset:');
+        paginated,
+        'restoreProgress: async function',
+        'restoreToCharOffset:',
+      );
       expect(
-        norm(body)
-            .contains('this.registerImageLateAnchor({progress: progress})'),
+        norm(
+          body,
+        ).contains('this.registerImageLateAnchor({progress: progress})'),
         isTrue,
         reason: '恢复跑在图片 decode 之前后，中段 progress 同样会被后 load 的图顶走',
       );
       // 负向：旧的「只登记 0/0.99」条件表达式必须已消失。
       expect(
         norm(paginated).contains(
-            'this.__imgReanchorProgress = (progress <= 0 || progress >= 0.99)'),
+          'this.__imgReanchorProgress = (progress <= 0 || progress >= 0.99)',
+        ),
         isFalse,
         reason: '旧的窄资格判定必须被 registerImageLateAnchor 取代',
       );
     });
 
     test('分页 restoreToCharOffset 精确锚登记 charOffset', () {
-      final String body = bodyBetween(paginated,
-          'restoreToCharOffset: async function', 'alignToFragmentTarget:');
+      final String body = bodyBetween(
+        paginated,
+        'restoreToCharOffset: async function',
+        'alignToFragmentTarget:',
+      );
       final String n = norm(body);
       expect(n.contains('this.scrollToCharOffset(charOffset);'), isTrue);
       expect(
@@ -76,26 +84,38 @@ void main() {
         isTrue,
         reason: '字符锚是布局无关真相，图 load 后必须按同一个 charOffset 重算',
       );
-      expect(n.contains('this.registerImageLateAnchor({progress: 0})'), isTrue,
-          reason: '越界/<=0 回退章首的分支同样要登记（章首前导插图会下推正文）');
+      expect(
+        n.contains('this.registerImageLateAnchor({progress: 0})'),
+        isTrue,
+        reason: '越界/<=0 回退章首的分支同样要登记（章首前导插图会下推正文）',
+      );
     });
 
     test('分页 jumpToFragment 登记 fragment 并复用同一份对齐换算', () {
       final String n = norm(paginated);
-      expect(n.contains('alignToFragmentTarget: function(fragment)'), isTrue,
-          reason: 'fragment 对齐必须抽成共享方法，重锚不得复制一份会漂开的算法');
+      expect(
+        n.contains('alignToFragmentTarget: function(fragment)'),
+        isTrue,
+        reason: 'fragment 对齐必须抽成共享方法，重锚不得复制一份会漂开的算法',
+      );
       expect(
         n.contains('this.registerImageLateAnchor({fragment: fragment})'),
         isTrue,
       );
-      expect(n.contains('if (!this.alignToFragmentTarget(fragment))'), isTrue,
-          reason: 'jumpToFragment 必须走共享对齐方法');
+      expect(
+        n.contains('if (!this.alignToFragmentTarget(fragment))'),
+        isTrue,
+        reason: 'jumpToFragment 必须走共享对齐方法',
+      );
     });
 
     test('连续 shell 三条恢复路径同样登记', () {
       final String n = norm(continuous);
-      expect(n.contains('this.registerImageLateAnchor({progress: 0})'), isTrue,
-          reason: '连续章首/越界回退登记');
+      expect(
+        n.contains('this.registerImageLateAnchor({progress: 0})'),
+        isTrue,
+        reason: '连续章首/越界回退登记',
+      );
       expect(
         n.contains('this.registerImageLateAnchor({progress: progress})'),
         isTrue,
@@ -103,7 +123,8 @@ void main() {
       );
       expect(
         n.contains(
-            'this.registerImageLateAnchor( {charOffset: charOffset, endCharOffset: endCharOffset})'),
+          'this.registerImageLateAnchor( {charOffset: charOffset, endCharOffset: endCharOffset})',
+        ),
         isTrue,
         reason: '连续精确锚必须连句尾锚一起登记（BUG-461 整句区间对齐）',
       );
@@ -122,15 +143,24 @@ void main() {
       test('${e.key} paginate 入口清资格', () {
         final String src = e.value == 'paginated' ? paginated : continuous;
         final String body = bodyBetween(
-            src, 'paginate: function(direction)', 'getFirstVisibleCharOffset');
-        expect(body.contains('this.clearImageLateAnchor();'), isTrue,
-            reason: '用户翻页必须放弃图片 late-load 重锚资格');
+          src,
+          'paginate: function(direction)',
+          'getFirstVisibleCharOffset',
+        );
+        expect(
+          body.contains('this.clearImageLateAnchor();'),
+          isTrue,
+          reason: '用户翻页必须放弃图片 late-load 重锚资格',
+        );
       });
     }
 
     test('clearImageLateAnchor 清掉全部锚（不留半个活锚）', () {
       final String body = bodyBetween(
-          paginated, 'clearImageLateAnchor: function', '_isContinuousShell:');
+        paginated,
+        'clearImageLateAnchor: function',
+        '_isContinuousShell:',
+      );
       for (final String field in <String>[
         '__imgReanchorProgress',
         '__imgReanchorCharOffset',
@@ -148,15 +178,19 @@ void main() {
     test('load 回调先失效 metrics 再调 reapplyImageLateAnchor', () {
       final String n = norm(paginated);
       expect(n.contains('r.paginationMetrics = null'), isTrue);
-      expect(n.contains('r.reapplyImageLateAnchor()'), isTrue,
-          reason: '迟到图片 load 必须触发语义重锚，而不是只失效 metrics');
+      expect(
+        n.contains('r.reapplyImageLateAnchor()'),
+        isTrue,
+        reason: '迟到图片 load 必须触发语义重锚，而不是只失效 metrics',
+      );
     });
 
     test('reapply 分派：char 锚优先 → fragment → progress', () {
       final String body = bodyBetween(
-          paginated,
-          'reapplyImageLateAnchor: function',
-          'notifyRestoreComplete: function');
+        paginated,
+        'reapplyImageLateAnchor: function',
+        'notifyRestoreComplete: function',
+      );
       final String n = norm(body);
       final int charIdx = n.indexOf('this.scrollToCharOffset(co)');
       final int fragIdx = n.indexOf('this.alignToFragmentTarget(');
@@ -164,17 +198,24 @@ void main() {
       expect(charIdx, isNonNegative);
       expect(fragIdx, greaterThan(charIdx), reason: '精确字符锚必须优先于 fragment');
       expect(progIdx, greaterThan(fragIdx), reason: '粗粒度 progress 是最后的兜底');
-      expect(n.contains('rctx.pageSize <= 0'), isTrue,
-          reason: '重放前守卫 pageSize>0（避免未就绪 context 误锚）');
+      expect(
+        n.contains('rctx.pageSize <= 0'),
+        isTrue,
+        reason: '重放前守卫 pageSize>0（避免未就绪 context 误锚）',
+      );
     });
 
     test('连续 / 分页分派用 scrollToChapterEnd 判别 shell（不能用共享方法）', () {
       final String body = bodyBetween(
-          paginated, '_isContinuousShell: function', 'reapplyImageLateAnchor:');
-      expect(body.contains("typeof this.scrollToChapterEnd === 'function'"),
-          isTrue,
-          reason:
-              'scrollToProgressPaged 是 _sharedJs 两 shell 都有的，用它判别会让连续误走分页分支');
+        paginated,
+        '_isContinuousShell: function',
+        'reapplyImageLateAnchor:',
+      );
+      expect(
+        body.contains("typeof this.scrollToChapterEnd === 'function'"),
+        isTrue,
+        reason: 'scrollToProgressPaged 是 _sharedJs 两 shell 都有的，用它判别会让连续误走分页分支',
+      );
     });
   });
 }

@@ -33,13 +33,15 @@ String? parseBangumiSubjectUrl(String input) {
   final String trimmed = input.trim();
   if (trimmed.isEmpty) return null;
   // 无 scheme 的裸域名形态（如 `bgm.tv/subject/123`）补上 scheme 再解析。
-  final String candidate =
-      trimmed.contains('://') ? trimmed : 'https://$trimmed';
+  final String candidate = trimmed.contains('://')
+      ? trimmed
+      : 'https://$trimmed';
   final Uri? uri = Uri.tryParse(candidate);
   if (uri == null) return null;
   final String host = uri.host.toLowerCase();
-  final String bareHost =
-      host.startsWith('www.') ? host.substring('www.'.length) : host;
+  final String bareHost = host.startsWith('www.')
+      ? host.substring('www.'.length)
+      : host;
   const Set<String> knownHosts = <String>{'bgm.tv', 'bangumi.tv', 'chii.in'};
   if (!knownHosts.contains(bareHost)) return null;
   final List<String> segments = uri.pathSegments;
@@ -97,9 +99,8 @@ class BangumiRawResponse {
 ///
 /// galgame 侧传入 `(send) => rateLimiter.run(() async { final r = await send();
 /// rateLimiter.noteResponse(r.statusCode, r.headers); return r; })`，把限流留在自己层。
-typedef BangumiSendGate = Future<http.Response> Function(
-  Future<http.Response> Function() send,
-);
+typedef BangumiSendGate =
+    Future<http.Response> Function(Future<http.Response> Function() send);
 
 /// 单次尝试的超时（BUG-1272）。
 ///
@@ -121,10 +122,10 @@ class BangumiApiClient {
     this.accessToken,
     BangumiSendGate? gate,
     Future<void> Function(Duration delay)? retrySleep,
-  })  : _client = client ?? createAppHttpIoClient(),
-        _ownsClient = client == null,
-        _retrySleep = retrySleep,
-        _gate = gate ?? _directSend;
+  }) : _client = client ?? createAppHttpIoClient(),
+       _ownsClient = client == null,
+       _retrySleep = retrySleep,
+       _gate = gate ?? _directSend;
 
   final http.Client _client;
   final bool _ownsClient;
@@ -153,8 +154,7 @@ class BangumiApiClient {
 
   static Future<http.Response> _directSend(
     Future<http.Response> Function() send,
-  ) =>
-      send();
+  ) => send();
 
   /// `POST /search/subjects`，`filter.type = [subjectType]`，最多 [limit] 条。
   Future<BangumiRawResponse> searchSubjects(
@@ -181,18 +181,14 @@ class BangumiApiClient {
   /// `GET /subjects/{id}`：拉条目详情（简介/评分/放送/话数/标签/infobox）。
   Future<BangumiRawResponse> fetchSubject(String subjectId) {
     final Uri uri = Uri.parse('$baseUrl/subjects/$subjectId');
-    return _run(
-      () => _client.get(uri, headers: _headers()).timeout(timeout),
-    );
+    return _run(() => _client.get(uri, headers: _headers()).timeout(timeout));
   }
 
   /// `GET /subjects/{id}/subjects`：拉条目的关联条目列表（前传/续集/番外/剧场版
   /// 等，`relation` 字段为源侧中文关系词）。TODO-2484 合集「相关作品」用。
   Future<BangumiRawResponse> fetchSubjectRelations(String subjectId) {
     final Uri uri = Uri.parse('$baseUrl/subjects/$subjectId/subjects');
-    return _run(
-      () => _client.get(uri, headers: _headers()).timeout(timeout),
-    );
+    return _run(() => _client.get(uri, headers: _headers()).timeout(timeout));
   }
 
   /// `GET /episodes?subject_id={id}&type=0`：拉条目的**正篇**分集列表（分页）。
@@ -211,14 +207,10 @@ class BangumiApiClient {
         'offset': '$offset',
       },
     );
-    return _run(
-      () => _client.get(uri, headers: _headers()).timeout(timeout),
-    );
+    return _run(() => _client.get(uri, headers: _headers()).timeout(timeout));
   }
 
-  Future<BangumiRawResponse> _run(
-    Future<http.Response> Function() send,
-  ) async {
+  Future<BangumiRawResponse> _run(Future<http.Response> Function() send) async {
     final http.Response response;
     try {
       // 重试包在 [_gate] **外层**：每次重试都重新过一遍限流器（galgame 侧注入），

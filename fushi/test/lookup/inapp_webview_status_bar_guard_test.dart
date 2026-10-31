@@ -43,13 +43,15 @@ void main() {
     expect(
       prepare.contains('put_IsStatusBarEnabled(FALSE)'),
       isTrue,
-      reason: 'prepare() 是 WebView 创建后唯一的初始 settings 下发点；'
+      reason:
+          'prepare() 是 WebView 创建后唯一的初始 settings 下发点；'
           '不在这里关，app 内弹窗一开就带着链接地址预览',
     );
     expect(
       prepare.contains('webView->get_Settings(&webView2Settings)'),
       isTrue,
-      reason: 'put_IsStatusBarEnabled 在基类 ICoreWebView2Settings 上，'
+      reason:
+          'put_IsStatusBarEnabled 在基类 ICoreWebView2Settings 上，'
           'get_Settings 拿到的指针就够，不需要 QI 新版本接口',
     );
   });
@@ -59,7 +61,8 @@ void main() {
     expect(
       setSettings.contains('put_IsStatusBarEnabled(FALSE)'),
       isTrue,
-      reason: 'Dart 侧任何时候都可能重推 InAppWebViewSettings；'
+      reason:
+          'Dart 侧任何时候都可能重推 InAppWebViewSettings；'
           '只在创建时设一次，将来有人在这里重建 settings 就会把预览放回来',
     );
   });
@@ -71,7 +74,8 @@ void main() {
     expect(
       src.contains('fl_map_contains_not_null(newSettingsMap, "statusBar'),
       isFalse,
-      reason: '本仓没有 fork flutter_inappwebview_platform_interface，'
+      reason:
+          '本仓没有 fork flutter_inappwebview_platform_interface，'
           '没有对应 Dart 字段；一旦出现条件判断说明有人加了半个开关',
     );
   });

@@ -124,8 +124,10 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final double maxHeight =
-        (MediaQuery.of(context).size.height * 0.55).clamp(128.0, 420.0);
+    final double maxHeight = (MediaQuery.of(context).size.height * 0.55).clamp(
+      128.0,
+      420.0,
+    );
 
     return FushiDialogFrame(
       maxWidth: 560,
@@ -175,7 +177,9 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
                           ? const SizedBox(
                               width: 18,
                               height: 18,
-                              child: FushiCircularProgressIndicator(strokeWidth: 2),
+                              child: FushiCircularProgressIndicator(
+                                strokeWidth: 2,
+                              ),
                             )
                           : const FushiIcon(FushiIcons.libraryAdd, size: 18),
                       label: Text(t.local_audio_add_db),
@@ -268,7 +272,9 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
     }
     return FutureBuilder<bool>(
       future: _localAvailability.putIfAbsent(
-          dbPath, () => widget.isLocalDbAvailable!(dbPath)),
+        dbPath,
+        () => widget.isLocalDbAvailable!(dbPath),
+      ),
       builder: (BuildContext context, AsyncSnapshot<bool> snapshot) {
         final bool unavailable = snapshot.hasError || snapshot.data == false;
         return Column(
@@ -295,8 +301,9 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
     final bool isRemoteUrl = source.kind == AudioSourceKind.remoteAudio;
     final bool isEditingThis =
         _editingSource != null && _editingSource == source;
-    final String title =
-        isFushiRemote ? t.audio_source_fushi_interconnect : source.displayLabel;
+    final String title = isFushiRemote
+        ? t.audio_source_fushi_interconnect
+        : source.displayLabel;
     final bool loopbackWarn = source.pointsAtLoopbackHost;
     final String baseSubtitle = isFushiRemote
         ? t.remote_audio_source
@@ -337,8 +344,9 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
                   : FushiIcons.edit,
               size: 18,
               tooltip: t.dialog_edit,
-              enabledColor:
-                  isEditingThis ? Theme.of(context).colorScheme.primary : null,
+              enabledColor: isEditingThis
+                  ? Theme.of(context).colorScheme.primary
+                  : null,
               padding: EdgeInsets.all(tokens.spacing.gap / 2),
               onTap: () => _beginEditRemoteUrl(source),
             ),
@@ -419,10 +427,9 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
                   icon: FushiIcons.hub,
                   tooltip: t.audio_source_fushi_interconnect,
                   padding: EdgeInsets.all(tokens.spacing.gap / 2),
-                  onTap: () => setState(() => _sources.insert(
-                        0,
-                        AudioSourceConfig.fushiRemote(),
-                      )),
+                  onTap: () => setState(
+                    () => _sources.insert(0, AudioSourceConfig.fushiRemote()),
+                  ),
                 ),
               if (editing)
                 FushiIconButton(
@@ -521,8 +528,9 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
   Future<void> _addLocalDb() async {
     setState(() => _importing = true);
     try {
-      final AudioSourceConfig? added = await widget
-          .onPickLocalDb!(_referenceOriginal && _canReferenceOriginal);
+      final AudioSourceConfig? added = await widget.onPickLocalDb!(
+        _referenceOriginal && _canReferenceOriginal,
+      );
       if (!mounted) return;
       if (added != null) {
         setState(() => _sources.insert(0, added));
@@ -542,9 +550,11 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
       if (mounted) {
         // BUG-779：无效文件（zip / 备份 zip / 空库）给专属可读文案，不把裸异常字符串
         // 甩给用户；其它真·失败（权限 / 磁盘 / 平台）仍带异常摘要便于复述。
-        _showSnack(e is InvalidLocalAudioDbException
-            ? t.local_audio_invalid_db
-            : t.local_audio_import_failed_detail(reason: '$e'));
+        _showSnack(
+          e is InvalidLocalAudioDbException
+              ? t.local_audio_invalid_db
+              : t.local_audio_import_failed_detail(reason: '$e'),
+        );
       }
     } finally {
       if (mounted) setState(() => _importing = false);
@@ -554,12 +564,15 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
   Future<void> _replaceLocalDb(String oldPath) async {
     setState(() => _importing = true);
     try {
-      final AudioSourceConfig? replacement =
-          await widget.onReplaceLocalDb!(oldPath);
+      final AudioSourceConfig? replacement = await widget.onReplaceLocalDb!(
+        oldPath,
+      );
       if (!mounted || replacement == null) return;
       // 选择器打开期间允许排序/切换；按路径重新定位，保留用户最新的开关状态。
-      final int index = _sources.indexWhere((AudioSourceConfig source) =>
-          source.kind == AudioSourceKind.localAudio && source.path == oldPath);
+      final int index = _sources.indexWhere(
+        (AudioSourceConfig source) =>
+            source.kind == AudioSourceKind.localAudio && source.path == oldPath,
+      );
       if (index < 0) return;
       setState(() {
         _sources[index] = _sources[index].copyWith(path: replacement.path);
@@ -569,12 +582,17 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
       if (!mounted) return;
       _showSnack(t.local_audio_imported);
     } catch (e, stack) {
-      ErrorLogService.instance
-          .log('AudioSourcesDialog.replaceLocalDb', e, stack);
+      ErrorLogService.instance.log(
+        'AudioSourcesDialog.replaceLocalDb',
+        e,
+        stack,
+      );
       if (mounted) {
-        _showSnack(e is InvalidLocalAudioDbException
-            ? t.local_audio_invalid_db
-            : t.local_audio_import_failed_detail(reason: '$e'));
+        _showSnack(
+          e is InvalidLocalAudioDbException
+              ? t.local_audio_invalid_db
+              : t.local_audio_import_failed_detail(reason: '$e'),
+        );
       }
     } finally {
       if (mounted) setState(() => _importing = false);
@@ -594,8 +612,9 @@ class _AudioSourcesDialogState extends State<AudioSourcesDialog> {
   }
 
   void _showSnack(String message) {
-    ScaffoldMessenger.maybeOf(context)
-        ?.showSnackBar(FushiSnackBar(content: Text(message)));
+    ScaffoldMessenger.maybeOf(
+      context,
+    )?.showSnackBar(FushiSnackBar(content: Text(message)));
   }
 }
 
@@ -618,8 +637,9 @@ class _UnavailableSourceNotice extends StatelessWidget {
     final Color background = glass
         ? appleColorsOf(context).destructive.withValues(alpha: 0.12)
         : colors.errorContainer;
-    final Color foreground =
-        glass ? appleColorsOf(context).destructive : colors.onErrorContainer;
+    final Color foreground = glass
+        ? appleColorsOf(context).destructive
+        : colors.onErrorContainer;
     return Padding(
       padding: EdgeInsets.fromLTRB(
         tokens.spacing.gap,
@@ -650,8 +670,9 @@ class _UnavailableSourceNotice extends StatelessWidget {
                   Expanded(
                     child: Text(
                       t.local_audio_file_unavailable,
-                      style:
-                          tokens.type.listSubtitle.copyWith(color: foreground),
+                      style: tokens.type.listSubtitle.copyWith(
+                        color: foreground,
+                      ),
                     ),
                   ),
                 ],
@@ -729,12 +750,13 @@ _DictCssDraftSession? _dictCssDraftSession;
 ///
 /// 与 `LapisStyleEditorPage.previewBuilder` 同一模式——widget 测试跑不了平台
 /// WebView，而本对话框的草稿/保存语义又必须能测。
-typedef DictStylePreviewBuilder = Widget Function(
-  BuildContext context,
-  String css,
-  DictStylePart highlightPart,
-  ValueChanged<DictStylePart> onPickPart,
-);
+typedef DictStylePreviewBuilder =
+    Widget Function(
+      BuildContext context,
+      String css,
+      DictStylePart highlightPart,
+      ValueChanged<DictStylePart> onPickPart,
+    );
 
 /// 解析「词典弹窗样式」功能当前可用的 AI 提供商。返回 null = 没配 / 配的那家已被
 /// 删或没配全，对话框据此提示去设置里配，而**不发请求**。
@@ -802,23 +824,27 @@ class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
   @override
   void initState() {
     super.initState();
-    _appModel =
-        ProviderScope.containerOf(context, listen: false).read(appProvider);
+    _appModel = ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(appProvider);
     _profileDraftCoordinator = ProviderScope.containerOf(
       context,
       listen: false,
     ).read(profileDraftCoordinatorProvider);
     final Object profileDraftScope = _profileDraftCoordinator.draftScope;
     _dictNames = _appModel.dictionaries.map((d) => d.name).toList();
-    _dictDisplayNames =
-        _appModel.dictionaries.map((d) => d.effectiveDisplayName).toList();
+    _dictDisplayNames = _appModel.dictionaries
+        .map((d) => d.effectiveDisplayName)
+        .toList();
     final _DictCssDraftSession? existingDraft = _dictCssDraftSession;
     if (existingDraft != null &&
         identical(existingDraft.appModel, _appModel) &&
         identical(existingDraft.profileDraftScope, profileDraftScope)) {
       _draft = existingDraft;
-      _selectedIndex =
-          _selectedIndexForDictionary(_draft.selectedDictionaryName);
+      _selectedIndex = _selectedIndexForDictionary(
+        _draft.selectedDictionaryName,
+      );
     } else {
       _selectedIndex = _initialSelectedIndex();
       _draft = _DictCssDraftSession(
@@ -938,8 +964,9 @@ class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
   }
 
   void _showSnack(String message) {
-    ScaffoldMessenger.maybeOf(context)
-        ?.showSnackBar(FushiSnackBar(content: Text(message)));
+    ScaffoldMessenger.maybeOf(
+      context,
+    )?.showSnackBar(FushiSnackBar(content: Text(message)));
   }
 
   /// 「让 AI 帮忙」区：一行输入 + 生成按钮，结果状态在下面一行。放在两个 tab 共用
@@ -965,7 +992,9 @@ class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
             SizedBox(width: tokens.spacing.gap),
             FushiFilledButton.icon(
               key: const ValueKey<String>('dict-style-ai-generate'),
-              onPressed: _aiBusy || _isSaving ? null : () => unawaited(_runAi()),
+              onPressed: _aiBusy || _isSaving
+                  ? null
+                  : () => unawaited(_runAi()),
               icon: _aiBusy
                   ? const SizedBox(
                       width: 16,
@@ -1032,8 +1061,9 @@ class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
                     Text(
                       _aiMessage!,
                       key: const ValueKey<String>('dict-style-ai-message'),
-                      style: context.fushiType.labelLargeEmphasized
-                          .copyWith(color: foreground),
+                      style: context.fushiType.labelLargeEmphasized.copyWith(
+                        color: foreground,
+                      ),
                     ),
                   if (_aiExplanation.isNotEmpty)
                     Padding(
@@ -1086,10 +1116,7 @@ class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
             if (dictionaryName == null) {
               await _appModel.setGlobalDictCSS(entry.value);
             } else {
-              await _appModel.setCustomCSSForDict(
-                dictionaryName,
-                entry.value,
-              );
+              await _appModel.setCustomCSSForDict(dictionaryName, entry.value);
             }
           }
           // null = 本次没碰过可视化页。不能拿 `?? []` 兜底——那会把用户已存的
@@ -1307,13 +1334,13 @@ class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
               : FushiM3eShape.cardRadius;
           final Color previewSurface =
               _appModel.overrideDictionaryColor == null &&
-                      glass &&
-                      !isEinkTheme(context)
-                  ? appleColorsOf(context).secondaryGroupedBackground
-                  : popupCardSurface(
-                      scheme: popupTheme.colorScheme,
-                      override: _appModel.overrideDictionaryColor,
-                    );
+                  glass &&
+                  !isEinkTheme(context)
+              ? appleColorsOf(context).secondaryGroupedBackground
+              : popupCardSurface(
+                  scheme: popupTheme.colorScheme,
+                  override: _appModel.overrideDictionaryColor,
+                );
           return DecoratedBox(
             decoration: BoxDecoration(
               color: previewSurface,
@@ -1327,7 +1354,8 @@ class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
             ),
             child: ClipRRect(
               borderRadius: previewRadius,
-              child: widget.previewBuilder?.call(
+              child:
+                  widget.previewBuilder?.call(
                     context,
                     previewCss,
                     _draft.selectedPart,
@@ -1352,11 +1380,7 @@ class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
     );
     final Widget hint = Row(
       children: <Widget>[
-        FushiIcon(
-          FushiIcons.touch,
-          size: 16,
-          color: tokens.surfaces.onVariant,
-        ),
+        FushiIcon(FushiIcons.touch, size: 16, color: tokens.surfaces.onVariant),
         SizedBox(width: tokens.spacing.gap / 2),
         Expanded(
           child: Text(t.dict_style_pick_hint, style: tokens.type.listSubtitle),

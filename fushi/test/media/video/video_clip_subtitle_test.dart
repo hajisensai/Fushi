@@ -72,10 +72,7 @@ void main() {
     test('clamps cues that straddle the clip boundaries', () {
       // 头尾各有一句跨界：起点被 clamp 到 0，终点被 clamp 到片段时长。
       final String? srt = buildClipSrtContent(
-        cues: <AudioCue>[
-          _cue(9000, 10500, '跨入'),
-          _cue(19500, 21000, '跨出'),
-        ],
+        cues: <AudioCue>[_cue(9000, 10500, '跨入'), _cue(19500, 21000, '跨出')],
         startMs: 10000,
         endMs: 20000,
       );
@@ -306,7 +303,11 @@ void main() {
 
     test('an empty cue list or an inverted range yields nothing', () {
       expect(
-        buildClipSubtitleCues(cues: const <AudioCue>[], startMs: 0, endMs: 1000),
+        buildClipSubtitleCues(
+          cues: const <AudioCue>[],
+          startMs: 0,
+          endMs: 1000,
+        ),
         isEmpty,
       );
       expect(
@@ -342,10 +343,10 @@ void main() {
       final List<ClipSubtitleCue> ordered = orderClipCuesForBurn(
         <ClipSubtitleCue>[layered('top', 1), layered('base', 0)],
       );
-      expect(
-        ordered.map((ClipSubtitleCue c) => c.text).toList(),
-        <String>['base', 'top'],
-      );
+      expect(ordered.map((ClipSubtitleCue c) => c.text).toList(), <String>[
+        'base',
+        'top',
+      ]);
     });
 
     test('same layer keeps source order; missing markup counts as layer 0', () {
@@ -358,9 +359,7 @@ void main() {
         layered('e0', 0),
       ];
       expect(
-        orderClipCuesForBurn(
-          input,
-        ).map((ClipSubtitleCue c) => c.text).toList(),
+        orderClipCuesForBurn(input).map((ClipSubtitleCue c) => c.text).toList(),
         <String>['p0', 'b0', 'e0', 'd1', 'a2', 'c2'],
       );
       // 不改入参（buildClipSubtitleCues 的结果是不可变列表，SRT 序号依赖原序）。

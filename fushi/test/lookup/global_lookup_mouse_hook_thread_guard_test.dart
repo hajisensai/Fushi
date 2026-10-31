@@ -25,15 +25,20 @@ void main() {
     // BUG-1048：WH_MOUSE_LL 必须交给 low_level_mouse_hook 的专用线程安装。
     // BUG-2788：窗口线程上唯一允许的钩子是线程级 WH_CBT（只否决本线程查词卡被
     // 触摸激活，不进全系统输入路径）；它必须是线程级的，不能装成全局钩子。
-    final List<String> installs = RegExp(r'SetWindowsHookExW?\(([^;]*);')
-        .allMatches(window)
-        .map((Match m) => m.group(1)!)
-        .toList();
-    expect(installs, hasLength(1),
-        reason: 'BUG-1048：鼠标钩子必须交给 low_level_mouse_hook 的专用线程安装');
+    final List<String> installs = RegExp(
+      r'SetWindowsHookExW?\(([^;]*);',
+    ).allMatches(window).map((Match m) => m.group(1)!).toList();
+    expect(
+      installs,
+      hasLength(1),
+      reason: 'BUG-1048：鼠标钩子必须交给 low_level_mouse_hook 的专用线程安装',
+    );
     expect(installs.single, contains('WH_CBT'));
-    expect(installs.single, contains('GetCurrentThreadId()'),
-        reason: 'WH_CBT 必须是本线程钩子');
+    expect(
+      installs.single,
+      contains('GetCurrentThreadId()'),
+      reason: 'WH_CBT 必须是本线程钩子',
+    );
     expect(
       window.contains('fushi::ArmLowLevelMouseHook'),
       isTrue,
@@ -50,8 +55,11 @@ void main() {
     final String hook = read('low_level_mouse_hook.cpp');
     expect(hook.contains('SetWindowsHookEx(WH_MOUSE_LL'), isTrue);
     expect(hook.contains('std::thread'), isTrue, reason: '钩子必须有自己的承载线程');
-    expect(hook.contains('GetMessage('), isTrue,
-        reason: '低级钩子事件靠线程消息队列分发，线程必须有消息循环');
+    expect(
+      hook.contains('GetMessage('),
+      isTrue,
+      reason: '低级钩子事件靠线程消息队列分发，线程必须有消息循环',
+    );
   });
 
   test('钩子回调只异步投递，不同步等窗口线程', () {

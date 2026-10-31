@@ -56,14 +56,14 @@ class InterconnectVideoResumeRecord {
   }
 
   Map<String, Object?> toJson() => <String, Object?>{
-        'v': 1,
-        'videoId': videoId,
-        'title': title,
-        'sourceId': sourceId,
-        'destPath': destPath,
-        'paused': paused,
-        if (totalBytes != null) 'totalBytes': totalBytes,
-      };
+    'v': 1,
+    'videoId': videoId,
+    'title': title,
+    'sourceId': sourceId,
+    'destPath': destPath,
+    'paused': paused,
+    if (totalBytes != null) 'totalBytes': totalBytes,
+  };
 
   static InterconnectVideoResumeRecord? fromJson(Object? json) {
     if (json is! Map) return null;
@@ -148,8 +148,10 @@ class InterconnectVideoResumeStore {
     if (!await dir.exists()) return records;
     await for (final FileSystemEntity entity in dir.list(followLinks: false)) {
       if (entity is! File || !entity.path.endsWith(manifestSuffix)) continue;
-      final String destPath =
-          entity.path.substring(0, entity.path.length - manifestSuffix.length);
+      final String destPath = entity.path.substring(
+        0,
+        entity.path.length - manifestSuffix.length,
+      );
       final InterconnectVideoResumeRecord? record = await read(destPath);
       // 路径分隔符写法不同（Windows 上 `/` 与 `\` 混用）不算搬家，按规范化后比。
       if (record == null || !p.equals(record.destPath, destPath)) {

@@ -6,13 +6,13 @@ import 'package:fushi_engine/mining/immersion_mining_request.dart';
 import 'package:fushi_engine/sync/immersion_mine_payload.dart';
 
 ImmersionMinePayload _payload({Uint8List? shot}) => ImmersionMinePayload(
-      fields: const {'expression': '走る'},
-      sentence: 's',
-      netflixVideoId: '81',
-      clipStartMs: 1000,
-      clipEndMs: 3000,
-      screenshotBytes: shot,
-    );
+  fields: const {'expression': '走る'},
+  sentence: 's',
+  netflixVideoId: '81',
+  clipStartMs: 1000,
+  clipEndMs: 3000,
+  screenshotBytes: shot,
+);
 
 void main() {
   group('buildImmersionRequest', () {
@@ -25,8 +25,9 @@ void main() {
       final req = buildImmersionRequest(
         _payload(),
         ImmersionCaptureResult(
-            gifBytes: Uint8List.fromList([1]),
-            audioBytes: Uint8List.fromList([2])),
+          gifBytes: Uint8List.fromList([1]),
+          audioBytes: Uint8List.fromList([2]),
+        ),
         audioExpected: true,
       );
       // _payload() 带的是 1000/3000。修复前这两条恒 0。
@@ -40,8 +41,9 @@ void main() {
       final req = buildImmersionRequest(
         _payload(),
         ImmersionCaptureResult(
-            gifBytes: Uint8List.fromList([1]),
-            audioBytes: Uint8List.fromList([2])),
+          gifBytes: Uint8List.fromList([1]),
+          audioBytes: Uint8List.fromList([2]),
+        ),
         audioExpected: true,
       );
       expect(req.mediaSource, isNull);
@@ -68,38 +70,43 @@ void main() {
     });
 
     test(
-        'capture ok with gif+audio -> uses gif cover + audio, requireAudio true',
-        () {
-      final req = buildImmersionRequest(
-        _payload(),
-        ImmersionCaptureResult(
+      'capture ok with gif+audio -> uses gif cover + audio, requireAudio true',
+      () {
+        final req = buildImmersionRequest(
+          _payload(),
+          ImmersionCaptureResult(
             gifBytes: Uint8List.fromList([1]),
-            audioBytes: Uint8List.fromList([2])),
-        audioExpected: true,
-      );
-      expect(req.providedCoverName, 'netflix_clip.gif');
-      expect(req.providedCoverBytes, [1]);
-      expect(req.providedAudioBytes, [2]);
-      expect(req.providedAudioName,
-          'netflix_audio.${immersionMiningAudioExtension()}');
-      expect(req.requireAudio, true);
-      expect(req.mediaSource, isNull);
-      expect(req.documentTitle, 'Netflix');
-    });
+            audioBytes: Uint8List.fromList([2]),
+          ),
+          audioExpected: true,
+        );
+        expect(req.providedCoverName, 'netflix_clip.gif');
+        expect(req.providedCoverBytes, [1]);
+        expect(req.providedAudioBytes, [2]);
+        expect(
+          req.providedAudioName,
+          'netflix_audio.${immersionMiningAudioExtension()}',
+        );
+        expect(req.requireAudio, true);
+        expect(req.mediaSource, isNull);
+        expect(req.documentTitle, 'Netflix');
+      },
+    );
 
     test(
-        'capture error -> degrades to screenshot cover, no audio, requireAudio false',
-        () {
-      final req = buildImmersionRequest(
-        _payload(shot: Uint8List.fromList([9])),
-        const ImmersionCaptureResult(error: 'black frame'),
-        audioExpected: false,
-      );
-      expect(req.providedCoverName, 'netflix_shot.jpg');
-      expect(req.providedCoverBytes, [9]);
-      expect(req.providedAudioBytes, isNull);
-      expect(req.requireAudio, false);
-    });
+      'capture error -> degrades to screenshot cover, no audio, requireAudio false',
+      () {
+        final req = buildImmersionRequest(
+          _payload(shot: Uint8List.fromList([9])),
+          const ImmersionCaptureResult(error: 'black frame'),
+          audioExpected: false,
+        );
+        expect(req.providedCoverName, 'netflix_shot.jpg');
+        expect(req.providedCoverBytes, [9]);
+        expect(req.providedAudioBytes, isNull);
+        expect(req.requireAudio, false);
+      },
+    );
 
     test('capture ok but gif missing -> falls back to screenshot cover', () {
       final req = buildImmersionRequest(
@@ -110,8 +117,10 @@ void main() {
       expect(req.providedCoverName, 'netflix_shot.jpg');
       expect(req.providedCoverBytes, [7]);
       expect(req.providedAudioBytes, [2]);
-      expect(req.providedAudioName,
-          'netflix_audio.${immersionMiningAudioExtension()}');
+      expect(
+        req.providedAudioName,
+        'netflix_audio.${immersionMiningAudioExtension()}',
+      );
       expect(req.requireAudio, true);
     });
 
@@ -129,21 +138,28 @@ void main() {
           ),
           audioExpected: true,
         );
-        expect(req.providedCoverName, 'netflix_clip.${format.fileExtension}',
-            reason: '$format 的封面扩展名必须是 .${format.fileExtension}。BUG-1330。');
+        expect(
+          req.providedCoverName,
+          'netflix_clip.${format.fileExtension}',
+          reason: '$format 的封面扩展名必须是 .${format.fileExtension}。BUG-1330。',
+        );
       }
     });
 
-    test('animatedFormat defaults to gif (native channel wire has no format)',
-        () {
-      const ImmersionCaptureResult r = ImmersionCaptureResult();
-      expect(r.animatedFormat, MiningAnimatedFormat.gif);
-      expect(
-          ImmersionCaptureResult.fromMap(const <Object?, Object?>{})
-              .animatedFormat,
+    test(
+      'animatedFormat defaults to gif (native channel wire has no format)',
+      () {
+        const ImmersionCaptureResult r = ImmersionCaptureResult();
+        expect(r.animatedFormat, MiningAnimatedFormat.gif);
+        expect(
+          ImmersionCaptureResult.fromMap(
+            const <Object?, Object?>{},
+          ).animatedFormat,
           MiningAnimatedFormat.gif,
-          reason: 'native 后台软解实例的 wire 契约里只有 GIF 字节，不去猜格式。');
-    });
+          reason: 'native 后台软解实例的 wire 契约里只有 GIF 字节，不去猜格式。',
+        );
+      },
+    );
 
     test('2A only (skip capture) -> screenshot cover, no audio', () {
       final req = buildImmersionRequest(
@@ -171,8 +187,11 @@ void main() {
         audioExpected: false,
       );
       expect(req.providedCoverName, 'web_shot.jpg');
-      expect(req.documentTitle, 'Web',
-          reason: '非 Netflix 的卡上写着 Netflix 是错的事实，不是缺省值');
+      expect(
+        req.documentTitle,
+        'Web',
+        reason: '非 Netflix 的卡上写着 Netflix 是错的事实，不是缺省值',
+      );
       expect(req.providedCoverBytes, [1, 2, 3]);
       expect(req.requireAudio, false, reason: '截图卡本就无音频，不算失败');
     });
@@ -212,35 +231,54 @@ void main() {
   group('immersionPayloadFromNetflix', () {
     test('录制片段字节 = Netflix 捕获路', () {
       expect(
-          immersionPayloadFromNetflix(ImmersionMinePayload(
-              fields: const {'expression': 'x'},
-              sentence: 's',
-              clipBytes: Uint8List.fromList(<int>[1]))),
-          isTrue);
+        immersionPayloadFromNetflix(
+          ImmersionMinePayload(
+            fields: const {'expression': 'x'},
+            sentence: 's',
+            clipBytes: Uint8List.fromList(<int>[1]),
+          ),
+        ),
+        isTrue,
+      );
     });
     test('netflixVideoId = Netflix 后台软解路', () {
       expect(
-          immersionPayloadFromNetflix(const ImmersionMinePayload(
-              fields: {'expression': 'x'},
-              sentence: 's',
-              netflixVideoId: '81',
-              clipStartMs: 0,
-              clipEndMs: 1)),
-          isTrue);
+        immersionPayloadFromNetflix(
+          const ImmersionMinePayload(
+            fields: {'expression': 'x'},
+            sentence: 's',
+            netflixVideoId: '81',
+            clipStartMs: 0,
+            clipEndMs: 1,
+          ),
+        ),
+        isTrue,
+      );
     });
-    test('两者皆无 = 非 Netflix（primevideo / hulu.jp / tver.jp / bilibili.tv 等）',
-        () {
-      expect(
-          immersionPayloadFromNetflix(ImmersionMinePayload(
+    test(
+      '两者皆无 = 非 Netflix（primevideo / hulu.jp / tver.jp / bilibili.tv 等）',
+      () {
+        expect(
+          immersionPayloadFromNetflix(
+            ImmersionMinePayload(
               fields: const {'expression': 'x'},
               sentence: 's',
               documentTitle: 'Prime Video',
-              screenshotBytes: Uint8List.fromList(<int>[1]))),
-          isFalse);
-      expect(
-          immersionPayloadFromNetflix(const ImmersionMinePayload(
-              fields: {'expression': 'x'}, sentence: 's')),
-          isFalse);
-    });
+              screenshotBytes: Uint8List.fromList(<int>[1]),
+            ),
+          ),
+          isFalse,
+        );
+        expect(
+          immersionPayloadFromNetflix(
+            const ImmersionMinePayload(
+              fields: {'expression': 'x'},
+              sentence: 's',
+            ),
+          ),
+          isFalse,
+        );
+      },
+    );
   });
 }

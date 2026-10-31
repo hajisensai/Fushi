@@ -44,8 +44,9 @@ double textLineHeight(BuildContext context, TextStyle style) {
 /// 内容排版（卡面这类字号可由用户调的内容）的字号：取当前设计系统字阶角色 [role]
 /// 的字号，再乘内容自己的用户缩放 [scale]。只带字号——字重 / 字族 / 颜色由内容自己定。
 /// 字号只能来自字阶角色；界面 chrome 直接用角色本身，不经这里。
-TextStyle fushiContentTypeSize(TextStyle role, {double scale = 1}) =>
-    TextStyle(fontSize: (role.fontSize ?? FushiTypeScale.bodyLarge.size) * scale);
+TextStyle fushiContentTypeSize(TextStyle role, {double scale = 1}) => TextStyle(
+  fontSize: (role.fontSize ?? FushiTypeScale.bodyLarge.size) * scale,
+);
 
 class FushiDesignTokens {
   const FushiDesignTokens({
@@ -164,22 +165,30 @@ class FushiRadii {
 /// of these preserves const-ness at the call site (routing through
 /// `FushiDesignTokens.of(context)` would not). Values come from [FushiRadii].
 abstract final class FushiBorderRadius {
-  static const BorderRadius group =
-      BorderRadius.all(Radius.circular(FushiRadii.groupValue));
-  static const BorderRadius card =
-      BorderRadius.all(Radius.circular(FushiRadii.cardValue));
-  static const BorderRadius poster =
-      BorderRadius.all(Radius.circular(FushiRadii.posterValue));
-  static const BorderRadius control =
-      BorderRadius.all(Radius.circular(FushiRadii.controlValue));
-  static const BorderRadius chip =
-      BorderRadius.all(Radius.circular(FushiRadii.chipValue));
-  static const BorderRadius menu =
-      BorderRadius.all(Radius.circular(FushiRadii.menuValue));
-  static const BorderRadius dialog =
-      BorderRadius.all(Radius.circular(FushiRadii.dialogValue));
-  static const BorderRadius sheet =
-      BorderRadius.vertical(top: Radius.circular(FushiRadii.sheetValue));
+  static const BorderRadius group = BorderRadius.all(
+    Radius.circular(FushiRadii.groupValue),
+  );
+  static const BorderRadius card = BorderRadius.all(
+    Radius.circular(FushiRadii.cardValue),
+  );
+  static const BorderRadius poster = BorderRadius.all(
+    Radius.circular(FushiRadii.posterValue),
+  );
+  static const BorderRadius control = BorderRadius.all(
+    Radius.circular(FushiRadii.controlValue),
+  );
+  static const BorderRadius chip = BorderRadius.all(
+    Radius.circular(FushiRadii.chipValue),
+  );
+  static const BorderRadius menu = BorderRadius.all(
+    Radius.circular(FushiRadii.menuValue),
+  );
+  static const BorderRadius dialog = BorderRadius.all(
+    Radius.circular(FushiRadii.dialogValue),
+  );
+  static const BorderRadius sheet = BorderRadius.vertical(
+    top: Radius.circular(FushiRadii.sheetValue),
+  );
   static const Radius chipCorner = Radius.circular(FushiRadii.chipValue);
 }
 
@@ -245,9 +254,7 @@ class FushiSurfaceColors {
       );
     }
     Color panel(Color color) => glass
-        ? color.withValues(
-            alpha: fushiGlassContainerOpacity(scheme.brightness),
-          )
+        ? color.withValues(alpha: fushiGlassContainerOpacity(scheme.brightness))
         : color;
     return FushiSurfaceColors(
       primary: scheme.primary,
@@ -315,7 +322,8 @@ class FushiTypeRoles {
         fontWeight: apple != null
             ? null
             : fushiPlatformFontWeight(
-                FushiTypeScale.headlineSmall.emphasizedWeight),
+                FushiTypeScale.headlineSmall.emphasizedWeight,
+              ),
       ),
       // 分组标题（2026-10-04）：MD3 规范的分组标题可以用主色——titleSmall
       // primary Emphasized；Apple 的分组标题是 13 号 semibold 的 secondaryLabel 灰字
@@ -331,7 +339,8 @@ class FushiTypeRoles {
               color: scheme.primary,
               // M3E titleSmall Emphasized（Bold）。
               fontWeight: fushiPlatformFontWeight(
-                  FushiTypeScale.titleSmall.emphasizedWeight),
+                FushiTypeScale.titleSmall.emphasizedWeight,
+              ),
             ),
       controlLabel: textTheme.labelLarge ?? const TextStyle(),
     );
@@ -467,36 +476,101 @@ FontWeight fushiPlatformFontWeight(FontWeight weight) {
 /// ([fushiPlatformFontWeight]). The Apple design system maps the same 15 roles
 /// to Apple HIG text styles ([FushiAppleTypeScale]).
 abstract final class FushiTypeScale {
-  static const FushiTypeSpec displayLarge =
-      FushiTypeSpec(57, FontWeight.w400, 64 / 57, -0.25);
-  static const FushiTypeSpec displayMedium =
-      FushiTypeSpec(45, FontWeight.w400, 52 / 45, 0);
-  static const FushiTypeSpec displaySmall =
-      FushiTypeSpec(36, FontWeight.w400, 44 / 36, 0);
-  static const FushiTypeSpec headlineLarge =
-      FushiTypeSpec(32, FontWeight.w400, 40 / 32, 0);
-  static const FushiTypeSpec headlineMedium =
-      FushiTypeSpec(28, FontWeight.w400, 36 / 28, 0);
-  static const FushiTypeSpec headlineSmall =
-      FushiTypeSpec(24, FontWeight.w400, 32 / 24, 0);
-  static const FushiTypeSpec titleLarge =
-      FushiTypeSpec(22, FontWeight.w400, 28 / 22, 0);
-  static const FushiTypeSpec titleMedium =
-      FushiTypeSpec(16, FontWeight.w500, 24 / 16, 0.15, FontWeight.w700);
-  static const FushiTypeSpec titleSmall =
-      FushiTypeSpec(14, FontWeight.w500, 20 / 14, 0.1, FontWeight.w700);
-  static const FushiTypeSpec bodyLarge =
-      FushiTypeSpec(16, FontWeight.w400, 24 / 16, 0.5);
-  static const FushiTypeSpec bodyMedium =
-      FushiTypeSpec(14, FontWeight.w400, 20 / 14, 0.25);
-  static const FushiTypeSpec bodySmall =
-      FushiTypeSpec(12, FontWeight.w400, 16 / 12, 0.4);
-  static const FushiTypeSpec labelLarge =
-      FushiTypeSpec(14, FontWeight.w500, 20 / 14, 0.1, FontWeight.w700);
-  static const FushiTypeSpec labelMedium =
-      FushiTypeSpec(12, FontWeight.w500, 16 / 12, 0.5, FontWeight.w700);
-  static const FushiTypeSpec labelSmall =
-      FushiTypeSpec(11, FontWeight.w500, 16 / 11, 0.5, FontWeight.w700);
+  static const FushiTypeSpec displayLarge = FushiTypeSpec(
+    57,
+    FontWeight.w400,
+    64 / 57,
+    -0.25,
+  );
+  static const FushiTypeSpec displayMedium = FushiTypeSpec(
+    45,
+    FontWeight.w400,
+    52 / 45,
+    0,
+  );
+  static const FushiTypeSpec displaySmall = FushiTypeSpec(
+    36,
+    FontWeight.w400,
+    44 / 36,
+    0,
+  );
+  static const FushiTypeSpec headlineLarge = FushiTypeSpec(
+    32,
+    FontWeight.w400,
+    40 / 32,
+    0,
+  );
+  static const FushiTypeSpec headlineMedium = FushiTypeSpec(
+    28,
+    FontWeight.w400,
+    36 / 28,
+    0,
+  );
+  static const FushiTypeSpec headlineSmall = FushiTypeSpec(
+    24,
+    FontWeight.w400,
+    32 / 24,
+    0,
+  );
+  static const FushiTypeSpec titleLarge = FushiTypeSpec(
+    22,
+    FontWeight.w400,
+    28 / 22,
+    0,
+  );
+  static const FushiTypeSpec titleMedium = FushiTypeSpec(
+    16,
+    FontWeight.w500,
+    24 / 16,
+    0.15,
+    FontWeight.w700,
+  );
+  static const FushiTypeSpec titleSmall = FushiTypeSpec(
+    14,
+    FontWeight.w500,
+    20 / 14,
+    0.1,
+    FontWeight.w700,
+  );
+  static const FushiTypeSpec bodyLarge = FushiTypeSpec(
+    16,
+    FontWeight.w400,
+    24 / 16,
+    0.5,
+  );
+  static const FushiTypeSpec bodyMedium = FushiTypeSpec(
+    14,
+    FontWeight.w400,
+    20 / 14,
+    0.25,
+  );
+  static const FushiTypeSpec bodySmall = FushiTypeSpec(
+    12,
+    FontWeight.w400,
+    16 / 12,
+    0.4,
+  );
+  static const FushiTypeSpec labelLarge = FushiTypeSpec(
+    14,
+    FontWeight.w500,
+    20 / 14,
+    0.1,
+    FontWeight.w700,
+  );
+  static const FushiTypeSpec labelMedium = FushiTypeSpec(
+    12,
+    FontWeight.w500,
+    16 / 12,
+    0.5,
+    FontWeight.w700,
+  );
+  static const FushiTypeSpec labelSmall = FushiTypeSpec(
+    11,
+    FontWeight.w500,
+    16 / 11,
+    0.5,
+    FontWeight.w700,
+  );
 
   /// The 15 roles in [TextTheme] order (display → label, L → S).
   static const List<FushiTypeSpec> roles = <FushiTypeSpec>[
@@ -541,36 +615,111 @@ abstract final class FushiTypeScale {
 /// Emphasized = HIG 的 emphasized 变体（升一档）。SF 的 tracking 只在 Apple
 /// 平台的拉丁 UI 上加（[buildTextTheme]），CJK 一律 0（[FushiTypeSpec.applyTo]）。
 abstract final class FushiAppleTypeScale {
-  static const FushiTypeSpec displayLarge =
-      FushiTypeSpec(48, FontWeight.w400, 1.1, 0.35, FontWeight.w700);
-  static const FushiTypeSpec displayMedium =
-      FushiTypeSpec(40, FontWeight.w400, 1.12, 0.37, FontWeight.w700);
-  static const FushiTypeSpec displaySmall =
-      FushiTypeSpec(34, FontWeight.w700, 41 / 34, 0.4, FontWeight.w800);
-  static const FushiTypeSpec headlineLarge =
-      FushiTypeSpec(28, FontWeight.w700, 34 / 28, 0.38, FontWeight.w800);
-  static const FushiTypeSpec headlineMedium =
-      FushiTypeSpec(22, FontWeight.w700, 28 / 22, -0.26, FontWeight.w800);
-  static const FushiTypeSpec headlineSmall =
-      FushiTypeSpec(20, FontWeight.w700, 25 / 20, -0.45, FontWeight.w800);
-  static const FushiTypeSpec titleLarge =
-      FushiTypeSpec(17, FontWeight.w600, 22 / 17, -0.43, FontWeight.w700);
-  static const FushiTypeSpec titleMedium =
-      FushiTypeSpec(16, FontWeight.w600, 21 / 16, -0.31, FontWeight.w700);
-  static const FushiTypeSpec titleSmall =
-      FushiTypeSpec(15, FontWeight.w600, 20 / 15, -0.23, FontWeight.w700);
-  static const FushiTypeSpec bodyLarge =
-      FushiTypeSpec(17, FontWeight.w400, 22 / 17, -0.43, FontWeight.w600);
-  static const FushiTypeSpec bodyMedium =
-      FushiTypeSpec(15, FontWeight.w400, 20 / 15, -0.23, FontWeight.w600);
-  static const FushiTypeSpec bodySmall =
-      FushiTypeSpec(13, FontWeight.w400, 18 / 13, -0.08, FontWeight.w600);
-  static const FushiTypeSpec labelLarge =
-      FushiTypeSpec(15, FontWeight.w500, 20 / 15, -0.23, FontWeight.w600);
-  static const FushiTypeSpec labelMedium =
-      FushiTypeSpec(12, FontWeight.w500, 16 / 12, 0, FontWeight.w600);
-  static const FushiTypeSpec labelSmall =
-      FushiTypeSpec(11, FontWeight.w500, 13 / 11, 0.06, FontWeight.w600);
+  static const FushiTypeSpec displayLarge = FushiTypeSpec(
+    48,
+    FontWeight.w400,
+    1.1,
+    0.35,
+    FontWeight.w700,
+  );
+  static const FushiTypeSpec displayMedium = FushiTypeSpec(
+    40,
+    FontWeight.w400,
+    1.12,
+    0.37,
+    FontWeight.w700,
+  );
+  static const FushiTypeSpec displaySmall = FushiTypeSpec(
+    34,
+    FontWeight.w700,
+    41 / 34,
+    0.4,
+    FontWeight.w800,
+  );
+  static const FushiTypeSpec headlineLarge = FushiTypeSpec(
+    28,
+    FontWeight.w700,
+    34 / 28,
+    0.38,
+    FontWeight.w800,
+  );
+  static const FushiTypeSpec headlineMedium = FushiTypeSpec(
+    22,
+    FontWeight.w700,
+    28 / 22,
+    -0.26,
+    FontWeight.w800,
+  );
+  static const FushiTypeSpec headlineSmall = FushiTypeSpec(
+    20,
+    FontWeight.w700,
+    25 / 20,
+    -0.45,
+    FontWeight.w800,
+  );
+  static const FushiTypeSpec titleLarge = FushiTypeSpec(
+    17,
+    FontWeight.w600,
+    22 / 17,
+    -0.43,
+    FontWeight.w700,
+  );
+  static const FushiTypeSpec titleMedium = FushiTypeSpec(
+    16,
+    FontWeight.w600,
+    21 / 16,
+    -0.31,
+    FontWeight.w700,
+  );
+  static const FushiTypeSpec titleSmall = FushiTypeSpec(
+    15,
+    FontWeight.w600,
+    20 / 15,
+    -0.23,
+    FontWeight.w700,
+  );
+  static const FushiTypeSpec bodyLarge = FushiTypeSpec(
+    17,
+    FontWeight.w400,
+    22 / 17,
+    -0.43,
+    FontWeight.w600,
+  );
+  static const FushiTypeSpec bodyMedium = FushiTypeSpec(
+    15,
+    FontWeight.w400,
+    20 / 15,
+    -0.23,
+    FontWeight.w600,
+  );
+  static const FushiTypeSpec bodySmall = FushiTypeSpec(
+    13,
+    FontWeight.w400,
+    18 / 13,
+    -0.08,
+    FontWeight.w600,
+  );
+  static const FushiTypeSpec labelLarge = FushiTypeSpec(
+    15,
+    FontWeight.w500,
+    20 / 15,
+    -0.23,
+    FontWeight.w600,
+  );
+  static const FushiTypeSpec labelMedium = FushiTypeSpec(
+    12,
+    FontWeight.w500,
+    16 / 12,
+    0,
+    FontWeight.w600,
+  );
+  static const FushiTypeSpec labelSmall = FushiTypeSpec(
+    11,
+    FontWeight.w500,
+    13 / 11,
+    0.06,
+    FontWeight.w600,
+  );
 
   static const List<FushiTypeSpec> roles = <FushiTypeSpec>[
     displayLarge,
@@ -594,7 +743,8 @@ abstract final class FushiAppleTypeScale {
   /// 平台（Apple 设计系统也能在 Windows / Android 上选）的系统字体没有按这套
   /// tracking 调过，去掉。
   static List<FushiTypeSpec> get platformRoles {
-    final bool applePlatform = defaultTargetPlatform == TargetPlatform.iOS ||
+    final bool applePlatform =
+        defaultTargetPlatform == TargetPlatform.iOS ||
         defaultTargetPlatform == TargetPlatform.macOS;
     if (applePlatform) return roles;
     return <FushiTypeSpec>[

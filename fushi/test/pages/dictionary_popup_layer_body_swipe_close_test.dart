@@ -124,209 +124,277 @@ void main() {
   });
 
   testWidgets(
-      'switch ON: horizontal drag past threshold on the popup body fires '
-      'onDismiss (mobile regression + desktop switch)',
-      (WidgetTester tester) async {
-    int dismissed = 0;
-    await tester.pumpWidget(_host(_layer(
-      onDismiss: () => dismissed++,
-      enableSwipeToClose: true,
-      onClose: () {},
-    )));
-    await tester.pump();
+    'switch ON: horizontal drag past threshold on the popup body fires '
+    'onDismiss (mobile regression + desktop switch)',
+    (WidgetTester tester) async {
+      int dismissed = 0;
+      await tester.pumpWidget(
+        _host(
+          _layer(
+            onDismiss: () => dismissed++,
+            enableSwipeToClose: true,
+            onClose: () {},
+          ),
+        ),
+      );
+      await tester.pump();
 
-    // 0.6 sensitivity -> ~94px threshold; 200px clears it.
-    await _dragOn(tester, _popupBodyPoint, dx: 200);
+      // 0.6 sensitivity -> ~94px threshold; 200px clears it.
+      await _dragOn(tester, _popupBodyPoint, dx: 200);
 
-    expect(dismissed, 1,
-        reason: 'an over-threshold horizontal drag on the body closes a layer');
-  });
+      expect(
+        dismissed,
+        1,
+        reason: 'an over-threshold horizontal drag on the body closes a layer',
+      );
+    },
+  );
 
-  testWidgets(
-      'switch ON: leftward drag past threshold on the body also fires '
+  testWidgets('switch ON: leftward drag past threshold on the body also fires '
       'onDismiss (bidirectional)', (WidgetTester tester) async {
     int dismissed = 0;
-    await tester.pumpWidget(_host(_layer(
-      onDismiss: () => dismissed++,
-      enableSwipeToClose: true,
-      onClose: () {},
-    )));
+    await tester.pumpWidget(
+      _host(
+        _layer(
+          onDismiss: () => dismissed++,
+          enableSwipeToClose: true,
+          onClose: () {},
+        ),
+      ),
+    );
     await tester.pump();
 
     await _dragOn(tester, _popupBodyPoint, dx: -200);
 
-    expect(dismissed, 1,
-        reason: 'a leftward over-threshold drag also closes a layer');
+    expect(
+      dismissed,
+      1,
+      reason: 'a leftward over-threshold drag also closes a layer',
+    );
   });
 
-  testWidgets('switch ON: below-threshold drag does NOT fire onDismiss',
-      (WidgetTester tester) async {
+  testWidgets('switch ON: below-threshold drag does NOT fire onDismiss', (
+    WidgetTester tester,
+  ) async {
     int dismissed = 0;
-    await tester.pumpWidget(_host(_layer(
-      onDismiss: () => dismissed++,
-      enableSwipeToClose: true,
-      onClose: () {},
-    )));
+    await tester.pumpWidget(
+      _host(
+        _layer(
+          onDismiss: () => dismissed++,
+          enableSwipeToClose: true,
+          onClose: () {},
+        ),
+      ),
+    );
     await tester.pump();
 
     await _dragOn(tester, _popupBodyPoint, dx: 40);
 
-    expect(dismissed, 0,
-        reason: 'a below-threshold drag springs back, closing nothing');
+    expect(
+      dismissed,
+      0,
+      reason: 'a below-threshold drag springs back, closing nothing',
+    );
   });
 
-  testWidgets(
-      'switch ON: a single tap on the body does NOT fire onDismiss '
-      '(tap/drag arena does not swallow each other)',
-      (WidgetTester tester) async {
+  testWidgets('switch ON: a single tap on the body does NOT fire onDismiss '
+      '(tap/drag arena does not swallow each other)', (
+    WidgetTester tester,
+  ) async {
     int dismissed = 0;
-    await tester.pumpWidget(_host(_layer(
-      onDismiss: () => dismissed++,
-      enableSwipeToClose: true,
-      onClose: () {},
-    )));
+    await tester.pumpWidget(
+      _host(
+        _layer(
+          onDismiss: () => dismissed++,
+          enableSwipeToClose: true,
+          onClose: () {},
+        ),
+      ),
+    );
     await tester.pump();
 
     await tester.tapAt(_popupBodyPoint);
     await tester.pump();
 
-    expect(dismissed, 0,
-        reason: 'a tap stays an absorbing no-op onTap, never a dismiss');
-  });
-
-  testWidgets(
-      'BUG-1242: vertical-dominant touch stays on the WebView scroll path',
-      (WidgetTester tester) async {
-    int dismissed = 0;
-    await tester.pumpWidget(_host(_layer(
-      onDismiss: () => dismissed++,
-      enableSwipeToClose: true,
-      onClose: () {},
-    )));
-    await tester.pump();
-
-    final TestGesture gesture = await tester.startGesture(_popupBodyPoint);
-    for (int i = 0; i < 12; i++) {
-      await gesture.moveBy(const Offset(2, 12));
-      await tester.pump();
-    }
-    await gesture.up();
-    await tester.pumpAndSettle();
-
-    expect(dismissed, 0);
-    final Iterable<Transform> transforms =
-        tester.widgetList<Transform>(find.byType(Transform));
     expect(
-      transforms.every(
-        (Transform t) => t.transform.getTranslation().x.abs() < 0.5,
-      ),
-      isTrue,
-      reason: '纵向轨迹不能触发父层横移，否则真实 WebView 会收到 pointer cancel',
+      dismissed,
+      0,
+      reason: 'a tap stays an absorbing no-op onTap, never a dismiss',
     );
   });
 
   testWidgets(
-      'BUG-1242: second pointer cancels the first swipe and springs back',
-      (WidgetTester tester) async {
-    int dismissed = 0;
-    await tester.pumpWidget(_host(_layer(
-      onDismiss: () => dismissed++,
-      enableSwipeToClose: true,
-      onClose: () {},
-    )));
-    await tester.pump();
-
-    final TestGesture first =
-        await tester.startGesture(_popupBodyPoint, pointer: 1);
-    for (int i = 0; i < 12; i++) {
-      await first.moveBy(const Offset(10, 0));
-      await tester.pump();
-    }
-    expect(
-      tester.widgetList<Transform>(find.byType(Transform)).any(
-            (Transform transform) =>
-                transform.transform.getTranslation().x > 80,
+    'BUG-1242: vertical-dominant touch stays on the WebView scroll path',
+    (WidgetTester tester) async {
+      int dismissed = 0;
+      await tester.pumpWidget(
+        _host(
+          _layer(
+            onDismiss: () => dismissed++,
+            enableSwipeToClose: true,
+            onClose: () {},
           ),
-      isTrue,
-      reason: 'precondition: the first pointer is tracking a dismiss swipe',
-    );
+        ),
+      );
+      await tester.pump();
 
-    final TestGesture second = await tester.startGesture(
-      _popupBodyPoint + const Offset(0, 30),
-      pointer: 2,
-    );
-    await tester.pump();
-    await first.moveBy(const Offset(120, 0));
-    await tester.pump();
-    await first.up();
-    await second.up();
-    await tester.pumpAndSettle();
+      final TestGesture gesture = await tester.startGesture(_popupBodyPoint);
+      for (int i = 0; i < 12; i++) {
+        await gesture.moveBy(const Offset(2, 12));
+        await tester.pump();
+      }
+      await gesture.up();
+      await tester.pumpAndSettle();
 
-    expect(dismissed, 0,
-        reason: 'a later move/up from the first pointer must not dismiss');
-    expect(
-      tester.widgetList<Transform>(find.byType(Transform)).every(
-            (Transform transform) =>
-                transform.transform.getTranslation().x.abs() < 0.5,
+      expect(dismissed, 0);
+      final Iterable<Transform> transforms = tester.widgetList<Transform>(
+        find.byType(Transform),
+      );
+      expect(
+        transforms.every(
+          (Transform t) => t.transform.getTranslation().x.abs() < 0.5,
+        ),
+        isTrue,
+        reason: '纵向轨迹不能触发父层横移，否则真实 WebView 会收到 pointer cancel',
+      );
+    },
+  );
+
+  testWidgets(
+    'BUG-1242: second pointer cancels the first swipe and springs back',
+    (WidgetTester tester) async {
+      int dismissed = 0;
+      await tester.pumpWidget(
+        _host(
+          _layer(
+            onDismiss: () => dismissed++,
+            enableSwipeToClose: true,
+            onClose: () {},
           ),
-      isTrue,
-      reason: 'the second pointer immediately cancels and springs back',
+        ),
+      );
+      await tester.pump();
+
+      final TestGesture first = await tester.startGesture(
+        _popupBodyPoint,
+        pointer: 1,
+      );
+      for (int i = 0; i < 12; i++) {
+        await first.moveBy(const Offset(10, 0));
+        await tester.pump();
+      }
+      expect(
+        tester
+            .widgetList<Transform>(find.byType(Transform))
+            .any(
+              (Transform transform) =>
+                  transform.transform.getTranslation().x > 80,
+            ),
+        isTrue,
+        reason: 'precondition: the first pointer is tracking a dismiss swipe',
+      );
+
+      final TestGesture second = await tester.startGesture(
+        _popupBodyPoint + const Offset(0, 30),
+        pointer: 2,
+      );
+      await tester.pump();
+      await first.moveBy(const Offset(120, 0));
+      await tester.pump();
+      await first.up();
+      await second.up();
+      await tester.pumpAndSettle();
+
+      expect(
+        dismissed,
+        0,
+        reason: 'a later move/up from the first pointer must not dismiss',
+      );
+      expect(
+        tester
+            .widgetList<Transform>(find.byType(Transform))
+            .every(
+              (Transform transform) =>
+                  transform.transform.getTranslation().x.abs() < 0.5,
+            ),
+        isTrue,
+        reason: 'the second pointer immediately cancels and springs back',
+      );
+
+      // Once every pointer from the cancelled gesture is up, a fresh one-finger
+      // gesture is eligible again.
+      await _dragOn(tester, _popupBodyPoint, dx: 200);
+      expect(dismissed, 1);
+    },
+  );
+
+  testWidgets(
+    'switch OFF: horizontal drag on the body is inert, X still closes',
+    (WidgetTester tester) async {
+      int dismissed = 0;
+      int closed = 0;
+      await tester.pumpWidget(
+        _host(
+          _layer(
+            onDismiss: () => dismissed++,
+            enableSwipeToClose: false,
+            onClose: () => closed++,
+          ),
+        ),
+      );
+      await tester.pump();
+
+      await _dragOn(
+        tester,
+        _popupBodyPoint,
+        dx: 200,
+        kind: PointerDeviceKind.mouse,
+      );
+      expect(
+        dismissed,
+        0,
+        reason: 'with the switch off the body drag must be inert',
+      );
+
+      await tester.tap(find.byIcon(Icons.close));
+      await tester.pump();
+      expect(closed, 1, reason: 'the X button still closes with swipe off');
+    },
+  );
+
+  testWidgets(
+    'no top bar (bare body): switch ON drag still fires onDismiss via the '
+    'top-level SwipeDismissWrapper path',
+    (WidgetTester tester) async {
+      int dismissed = 0;
+      await tester.pumpWidget(
+        _host(
+          _layer(
+            onDismiss: () => dismissed++,
+            enableSwipeToClose: true,
+            // no header / onClose / onBack -> _buildTopBar returns null
+          ),
+        ),
+      );
+      await tester.pump();
+
+      await _dragOn(tester, _popupBodyPoint, dx: 200);
+
+      expect(
+        dismissed,
+        1,
+        reason: 'the headerless layer keeps the whole-window swipe semantics',
+      );
+    },
+  );
+
+  testWidgets('TODO-890 switch ON: the popup follows the finger mid-drag '
+      '(Transform.translate tracks accumulated dx)', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      _host(_layer(onDismiss: () {}, enableSwipeToClose: true, onClose: () {})),
     );
-
-    // Once every pointer from the cancelled gesture is up, a fresh one-finger
-    // gesture is eligible again.
-    await _dragOn(tester, _popupBodyPoint, dx: 200);
-    expect(dismissed, 1);
-  });
-
-  testWidgets(
-      'switch OFF: horizontal drag on the body is inert, X still closes',
-      (WidgetTester tester) async {
-    int dismissed = 0;
-    int closed = 0;
-    await tester.pumpWidget(_host(_layer(
-      onDismiss: () => dismissed++,
-      enableSwipeToClose: false,
-      onClose: () => closed++,
-    )));
-    await tester.pump();
-
-    await _dragOn(tester, _popupBodyPoint,
-        dx: 200, kind: PointerDeviceKind.mouse);
-    expect(dismissed, 0,
-        reason: 'with the switch off the body drag must be inert');
-
-    await tester.tap(find.byIcon(Icons.close));
-    await tester.pump();
-    expect(closed, 1, reason: 'the X button still closes with swipe off');
-  });
-
-  testWidgets(
-      'no top bar (bare body): switch ON drag still fires onDismiss via the '
-      'top-level SwipeDismissWrapper path', (WidgetTester tester) async {
-    int dismissed = 0;
-    await tester.pumpWidget(_host(_layer(
-      onDismiss: () => dismissed++,
-      enableSwipeToClose: true,
-      // no header / onClose / onBack -> _buildTopBar returns null
-    )));
-    await tester.pump();
-
-    await _dragOn(tester, _popupBodyPoint, dx: 200);
-
-    expect(dismissed, 1,
-        reason: 'the headerless layer keeps the whole-window swipe semantics');
-  });
-
-  testWidgets(
-      'TODO-890 switch ON: the popup follows the finger mid-drag '
-      '(Transform.translate tracks accumulated dx)',
-      (WidgetTester tester) async {
-    await tester.pumpWidget(_host(_layer(
-      onDismiss: () {},
-      enableSwipeToClose: true,
-      onClose: () {},
-    )));
     await tester.pump();
 
     final TestGesture gesture = await tester.startGesture(_popupBodyPoint);
@@ -338,75 +406,100 @@ void main() {
     }
 
     // The popup body is wrapped in a Transform.translate that follows the finger.
-    final Iterable<Transform> transforms =
-        tester.widgetList<Transform>(find.byType(Transform));
+    final Iterable<Transform> transforms = tester.widgetList<Transform>(
+      find.byType(Transform),
+    );
     final bool followed = transforms.any((Transform t) {
       final double dx = t.transform.getTranslation().x;
       return dx > 40; // tracks the ~96px drag (gesture slop trims a little)
     });
-    expect(followed, isTrue,
-        reason:
-            'mid-drag the popup must translate with the finger (follow-hand)');
+    expect(
+      followed,
+      isTrue,
+      reason: 'mid-drag the popup must translate with the finger (follow-hand)',
+    );
 
     await gesture.up();
     await tester.pumpAndSettle();
   });
 
   testWidgets(
-      'TODO-890 switch ON: over-threshold does NOT dismiss until the slide-out '
-      'animation completes, then fires exactly once',
-      (WidgetTester tester) async {
-    int dismissed = 0;
-    await tester.pumpWidget(_host(_layer(
-      onDismiss: () => dismissed++,
-      enableSwipeToClose: true,
-      onClose: () {},
-    )));
-    await tester.pump();
-
-    final TestGesture gesture = await tester.startGesture(_popupBodyPoint);
-    for (int i = 0; i < 12; i++) {
-      await gesture.moveBy(const Offset(20, 0)); // 240px total clears ~94px
+    'TODO-890 switch ON: over-threshold does NOT dismiss until the slide-out '
+    'animation completes, then fires exactly once',
+    (WidgetTester tester) async {
+      int dismissed = 0;
+      await tester.pumpWidget(
+        _host(
+          _layer(
+            onDismiss: () => dismissed++,
+            enableSwipeToClose: true,
+            onClose: () {},
+          ),
+        ),
+      );
       await tester.pump();
-    }
-    await gesture.up();
-    // First frame after release: animation is running, NOT yet completed.
-    await tester.pump();
-    expect(dismissed, 0,
-        reason: 'dismiss must wait for the slide-out animation to finish');
-    // Settle the 200ms tween -> completion callback fires onDismiss once.
-    await tester.pumpAndSettle();
-    expect(dismissed, 1,
-        reason: 'onDismiss fires once when the slide-out completes');
-  });
+
+      final TestGesture gesture = await tester.startGesture(_popupBodyPoint);
+      for (int i = 0; i < 12; i++) {
+        await gesture.moveBy(const Offset(20, 0)); // 240px total clears ~94px
+        await tester.pump();
+      }
+      await gesture.up();
+      // First frame after release: animation is running, NOT yet completed.
+      await tester.pump();
+      expect(
+        dismissed,
+        0,
+        reason: 'dismiss must wait for the slide-out animation to finish',
+      );
+      // Settle the 200ms tween -> completion callback fires onDismiss once.
+      await tester.pumpAndSettle();
+      expect(
+        dismissed,
+        1,
+        reason: 'onDismiss fires once when the slide-out completes',
+      );
+    },
+  );
 
   testWidgets(
-      'TODO-890 switch ON: below-threshold springs the popup back to origin '
-      '(translation returns to 0, no dismiss)', (WidgetTester tester) async {
-    int dismissed = 0;
-    await tester.pumpWidget(_host(_layer(
-      onDismiss: () => dismissed++,
-      enableSwipeToClose: true,
-      onClose: () {},
-    )));
-    await tester.pump();
-
-    final TestGesture gesture = await tester.startGesture(_popupBodyPoint);
-    for (int i = 0; i < 5; i++) {
-      await gesture.moveBy(const Offset(8, 0)); // 40px total, below ~94px
+    'TODO-890 switch ON: below-threshold springs the popup back to origin '
+    '(translation returns to 0, no dismiss)',
+    (WidgetTester tester) async {
+      int dismissed = 0;
+      await tester.pumpWidget(
+        _host(
+          _layer(
+            onDismiss: () => dismissed++,
+            enableSwipeToClose: true,
+            onClose: () {},
+          ),
+        ),
+      );
       await tester.pump();
-    }
-    await gesture.up();
-    await tester.pumpAndSettle();
 
-    expect(dismissed, 0, reason: 'a below-threshold drag closes nothing');
-    final Iterable<Transform> transforms =
-        tester.widgetList<Transform>(find.byType(Transform));
-    final bool allBack = transforms
-        .every((Transform t) => t.transform.getTranslation().x.abs() < 0.5);
-    expect(allBack, isTrue,
-        reason: 'spring-back returns the popup translation to 0');
-  });
+      final TestGesture gesture = await tester.startGesture(_popupBodyPoint);
+      for (int i = 0; i < 5; i++) {
+        await gesture.moveBy(const Offset(8, 0)); // 40px total, below ~94px
+        await tester.pump();
+      }
+      await gesture.up();
+      await tester.pumpAndSettle();
+
+      expect(dismissed, 0, reason: 'a below-threshold drag closes nothing');
+      final Iterable<Transform> transforms = tester.widgetList<Transform>(
+        find.byType(Transform),
+      );
+      final bool allBack = transforms.every(
+        (Transform t) => t.transform.getTranslation().x.abs() < 0.5,
+      );
+      expect(
+        allBack,
+        isTrue,
+        reason: 'spring-back returns the popup translation to 0',
+      );
+    },
+  );
 
   test('threshold sanity: default sensitivity 0.6 ~94px', () {
     expect(swipeDismissThreshold(0.6), closeTo(94, 0.5));
@@ -416,8 +509,9 @@ void main() {
     final String layerSource = File(
       'lib/src/pages/implementations/dictionary_popup_layer.dart',
     ).readAsStringSync();
-    final int start =
-        layerSource.indexOf('class _BodySwipeDismissDetectorState');
+    final int start = layerSource.indexOf(
+      'class _BodySwipeDismissDetectorState',
+    );
     final int end = layerSource.indexOf('class _PopupResizeGrip', start);
     final String body = layerSource.substring(start, end);
     expect(body, contains('return Listener('));
@@ -435,21 +529,23 @@ void main() {
   // contracts: this file owns half (a) (detector closes on its own region), the
   // WebView source owns half (b) (WebView eats the body drag).
   test(
-      'TODO-896 half-(b): the popup WebView declares a horizontal-drag '
-      'recognizer so a real-WebView frame-select never reaches this detector',
-      () {
-    final String webViewSource = File(
-      'lib/src/pages/implementations/dictionary_popup_webview.dart',
-    ).readAsStringSync();
-    expect(
-      webViewSource,
-      contains('Factory<HorizontalDragGestureRecognizer>('),
-      reason: 'Without the WebView winning the body-region horizontal drag, a '
-          'frame-select would bubble into _BodySwipeDismissDetector and close '
-          'the popup (TODO-896 symptom①). The detector half-(a) asserts above '
-          'stay valid because they run with NO real WebView mounted.',
-    );
-  });
+    'TODO-896 half-(b): the popup WebView declares a horizontal-drag '
+    'recognizer so a real-WebView frame-select never reaches this detector',
+    () {
+      final String webViewSource = File(
+        'lib/src/pages/implementations/dictionary_popup_webview.dart',
+      ).readAsStringSync();
+      expect(
+        webViewSource,
+        contains('Factory<HorizontalDragGestureRecognizer>('),
+        reason:
+            'Without the WebView winning the body-region horizontal drag, a '
+            'frame-select would bubble into _BodySwipeDismissDetector and close '
+            'the popup (TODO-896 symptom①). The detector half-(a) asserts above '
+            'stay valid because they run with NO real WebView mounted.',
+      );
+    },
+  );
 
   _bug2439BodyFollowGuards();
 }
@@ -472,11 +568,15 @@ void _bug2439BodyFollowGuards() {
     }) async {
       await ReaderFushiSource.instance.setPopupDismissAnimation(animation);
       int dismissed = 0;
-      await tester.pumpWidget(_host(_layer(
-        onDismiss: () => dismissed++,
-        enableSwipeToClose: true,
-        onClose: () {},
-      )));
+      await tester.pumpWidget(
+        _host(
+          _layer(
+            onDismiss: () => dismissed++,
+            enableSwipeToClose: true,
+            onClose: () {},
+          ),
+        ),
+      );
       await tester.pump();
 
       final Finder surface = find.byType(FushiPopupSurface);
@@ -499,16 +599,19 @@ void _bug2439BodyFollowGuards() {
 
     testWidgets('开关开着：跟手期弹窗跟着手指走（既有手感不变）', (WidgetTester tester) async {
       // 12 步累加有浮点尾数（199.9999…），跟手判据只关心「挪没挪、挪多少」。
-      expect(await dragWithoutReleasing(tester, animation: true),
-          moreOrLessEquals(200, epsilon: 0.01));
+      expect(
+        await dragWithoutReleasing(tester, animation: true),
+        moreOrLessEquals(200, epsilon: 0.01),
+      );
     });
 
     testWidgets('开关关掉：跟手期弹窗一动不动', (WidgetTester tester) async {
       expect(await dragWithoutReleasing(tester, animation: false), 0);
     });
 
-    testWidgets('同一条拖动：开着跟手位移 200、关掉恒 0（开关真的改变跟手期行为）',
-        (WidgetTester tester) async {
+    testWidgets('同一条拖动：开着跟手位移 200、关掉恒 0（开关真的改变跟手期行为）', (
+      WidgetTester tester,
+    ) async {
       final double on = await dragWithoutReleasing(tester, animation: true);
       final double off = await dragWithoutReleasing(tester, animation: false);
       expect(on, moreOrLessEquals(200, epsilon: 0.01));
@@ -519,11 +622,15 @@ void _bug2439BodyFollowGuards() {
     testWidgets('开关关掉、未过阈值：不误关，弹窗也没挪过', (WidgetTester tester) async {
       await ReaderFushiSource.instance.setPopupDismissAnimation(false);
       int dismissed = 0;
-      await tester.pumpWidget(_host(_layer(
-        onDismiss: () => dismissed++,
-        enableSwipeToClose: true,
-        onClose: () {},
-      )));
+      await tester.pumpWidget(
+        _host(
+          _layer(
+            onDismiss: () => dismissed++,
+            enableSwipeToClose: true,
+            onClose: () {},
+          ),
+        ),
+      );
       await tester.pump();
 
       final Finder surface = find.byType(FushiPopupSurface);

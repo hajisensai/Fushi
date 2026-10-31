@@ -85,16 +85,19 @@ void main() {
           .withAction(0, ShortcutAction.videoPlay)
           .withAction(0, null);
       expect(roundTrip.encode(), '');
-      expect(VideoCustomActionBindings.decode(roundTrip.encode()),
-          VideoCustomActionBindings.empty);
+      expect(
+        VideoCustomActionBindings.decode(roundTrip.encode()),
+        VideoCustomActionBindings.empty,
+      );
     });
 
     test('round-trip 保持每个槽位的动作与位置', () {
       final VideoCustomActionBindings b = VideoCustomActionBindings.empty
           .withAction(0, ShortcutAction.videoNextSubtitle)
           .withAction(2, ShortcutAction.videoToggleSubtitleBlur);
-      final VideoCustomActionBindings back =
-          VideoCustomActionBindings.decode(b.encode());
+      final VideoCustomActionBindings back = VideoCustomActionBindings.decode(
+        b.encode(),
+      );
       expect(back, b);
       expect(back.actionAt(0), ShortcutAction.videoNextSubtitle);
       expect(back.actionAt(1), isNull);
@@ -113,8 +116,9 @@ void main() {
     });
 
     test('长度不匹配的老 payload 按位截断 / 补空', () {
-      final VideoCustomActionBindings short =
-          VideoCustomActionBindings.decode('video_play');
+      final VideoCustomActionBindings short = VideoCustomActionBindings.decode(
+        'video_play',
+      );
       expect(short.actionAt(0), ShortcutAction.videoPlay);
       expect(short.actionAt(1), isNull);
 
@@ -124,7 +128,9 @@ void main() {
       expect(long.actionAt(3), ShortcutAction.videoPause);
       // 超出 slotCount 的部分被丢弃，不影响表内合法槽位。
       expect(
-          long.encode().split(',').length, VideoCustomActionBindings.slotCount);
+        long.encode().split(',').length,
+        VideoCustomActionBindings.slotCount,
+      );
     });
 
     test('越界读写安全：不抛异常、不改表', () {
@@ -175,8 +181,9 @@ void main() {
       // 这是本功能最关键的不变式：选择列表里出现、但页面没接线的动作 = 用户配得上、
       // 按了没反应；反过来接了线却不在列表里 = 用户根本选不到。设置页拿不到 live
       // controller，只能维护一份常量表，故必须在这里和真实接线逐个对齐。
-      final Set<ShortcutAction> wired =
-          videoActionCallbacks(_dummyActions()).keys.toSet();
+      final Set<ShortcutAction> wired = videoActionCallbacks(
+        _dummyActions(),
+      ).keys.toSet();
       final Set<ShortcutAction> assignable = kVideoAssignableActions.toSet();
       expect(
         assignable.difference(wired),
@@ -358,10 +365,7 @@ void main() {
       const VideoControlItem slot1 = VideoControlItem.customAction1;
       // 未绑定：加号图标 + 「快捷键 1」这类槽位名（非空）。
       expect(
-        videoControlItemIcon(
-          slot1,
-          bindings: VideoCustomActionBindings.empty,
-        ),
+        videoControlItemIcon(slot1, bindings: VideoCustomActionBindings.empty),
         FushiIcons.add,
       );
       // 完全不传 bindings 也必须退回加号图标（编辑器调色板路径）。
@@ -387,10 +391,7 @@ void main() {
       );
       // 只绑了槽位 1，槽位 2 仍是未绑定外观（不串位）。
       expect(
-        videoControlItemIcon(
-          VideoControlItem.customAction2,
-          bindings: bound,
-        ),
+        videoControlItemIcon(VideoControlItem.customAction2, bindings: bound),
         FushiIcons.add,
       );
     });

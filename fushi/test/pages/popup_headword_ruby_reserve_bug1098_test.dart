@@ -33,14 +33,15 @@ import 'package:flutter_test/flutter_test.dart';
 import '../helpers/source_guard.dart';
 
 void main() {
-  final String css =
-      maskCssComments(File('assets/popup/popup.css').readAsStringSync());
+  final String css = maskCssComments(
+    File('assets/popup/popup.css').readAsStringSync(),
+  );
 
   /// 取顶格写的 `<选择器> { ... }` 规则体。锚到行首是必要的：`.expression` 与
   /// `.expression-scroll .expression` 都以同一串结尾，不锚行首会取错规则。
   String? ruleBody(String source, String selector) => RegExp(
-        '(?:^|\n)${RegExp.escape(selector)}\\s*\\{([^}]*)\\}',
-      ).firstMatch(source)?.group(1);
+    '(?:^|\n)${RegExp.escape(selector)}\\s*\\{([^}]*)\\}',
+  ).firstMatch(source)?.group(1);
 
   group('词头 furigana 的纵向预留（根因 ①）', () {
     test('.expression 自带 em padding-top 预留带（zoom 免疫）', () {
@@ -49,23 +50,25 @@ void main() {
       expect(
         RegExp(r'padding-top\s*:\s*[\d.]+em').hasMatch(body!),
         isTrue,
-        reason: '预留必须内生于词头且以 em 表达，才能随 popupContentZoom 等比缩放；'
+        reason:
+            '预留必须内生于词头且以 em 表达，才能随 popupContentZoom 等比缩放；'
             '行盒 leading 顶不住——实测 line-height 1.7 / 2.0 下原生 ruby 注音仍向上'
             '溢出 4.0px，而 .expression-scroll 的顶部溢出不可达（BUG-1098 根因 ②）',
       );
     });
 
     test('预留带容得下注音（带高 >= 注音字号）', () {
-      final String band = RegExp(r'padding-top\s*:\s*([\d.]+)em')
-          .firstMatch(ruleBody(css, '.expression')!)!
-          .group(1)!;
-      final String rt = RegExp(r'font-size\s*:\s*([\d.]+)em')
-          .firstMatch(ruleBody(css, '.expression ruby > rt')!)!
-          .group(1)!;
+      final String band = RegExp(
+        r'padding-top\s*:\s*([\d.]+)em',
+      ).firstMatch(ruleBody(css, '.expression')!)!.group(1)!;
+      final String rt = RegExp(
+        r'font-size\s*:\s*([\d.]+)em',
+      ).firstMatch(ruleBody(css, '.expression ruby > rt')!)!.group(1)!;
       expect(
         double.parse(band),
         greaterThanOrEqualTo(double.parse(rt)),
-        reason: '放大振假名（BUG-1655 把 0.5em 调到 0.6em）时预留带必须同步抬高，'
+        reason:
+            '放大振假名（BUG-1655 把 0.5em 调到 0.6em）时预留带必须同步抬高，'
             '否则注音重新顶出 .expression-scroll 被裁',
       );
     });
@@ -74,19 +77,31 @@ void main() {
       // 硬编码 px 会把注音钉成绝对像素、脱离 documentElement.style.zoom 链
       // （popupContentZoom），溢出量随 zoom 线性放大——BUG-1098/363 的老坑。
       final String? body = ruleBody(css, '.expression ruby > rt');
-      expect(body, isNotNull,
-          reason: '词头需要一条承载注音字号的规则（BUG-2568 后是 `.expression ruby > rt`）');
-      expect(RegExp(r'font-size\s*:\s*[\d.]+em').hasMatch(body!), isTrue,
-          reason: '词头注音字号必须以 em 表达');
+      expect(
+        body,
+        isNotNull,
+        reason: '词头需要一条承载注音字号的规则（BUG-2568 后是 `.expression ruby > rt`）',
+      );
+      expect(
+        RegExp(r'font-size\s*:\s*[\d.]+em').hasMatch(body!),
+        isTrue,
+        reason: '词头注音字号必须以 em 表达',
+      );
     });
 
     test('.expression rt 不得声明 px 字号，且保住 user-select:none', () {
       final String? body = ruleBody(css, '.expression rt');
       expect(body, isNotNull, reason: '词头 rt 仍需要一条规则承载 user-select:none');
-      expect(RegExp(r'font-size\s*:\s*\d+px').hasMatch(body!), isFalse,
-          reason: '词头 rt 的字号必须是 em（BUG-1098）');
-      expect(body.contains('-webkit-user-select: none'), isTrue,
-          reason: '词头是点击目标（onLinkClick），其读音不得被拖选');
+      expect(
+        RegExp(r'font-size\s*:\s*\d+px').hasMatch(body!),
+        isFalse,
+        reason: '词头 rt 的字号必须是 em（BUG-1098）',
+      );
+      expect(
+        body.contains('-webkit-user-select: none'),
+        isTrue,
+        reason: '词头是点击目标（onLinkClick），其读音不得被拖选',
+      );
     });
   });
 
@@ -98,12 +113,16 @@ void main() {
 
     test('两份扩展 vendor 的 popup.css / popup.js 与 app 侧字节一致', () {
       for (final String dir in mirrors) {
-        expect(File('$dir/popup.css').readAsBytesSync(),
-            File('assets/popup/popup.css').readAsBytesSync(),
-            reason: '$dir/popup.css 未同步');
-        expect(File('$dir/popup.js').readAsBytesSync(),
-            File('assets/popup/popup.js').readAsBytesSync(),
-            reason: '$dir/popup.js 未同步');
+        expect(
+          File('$dir/popup.css').readAsBytesSync(),
+          File('assets/popup/popup.css').readAsBytesSync(),
+          reason: '$dir/popup.css 未同步',
+        );
+        expect(
+          File('$dir/popup.js').readAsBytesSync(),
+          File('assets/popup/popup.js').readAsBytesSync(),
+          reason: '$dir/popup.js 未同步',
+        );
       }
     });
 
@@ -111,17 +130,23 @@ void main() {
       // 既有的 parity 守卫只收集以 `.` 开头的选择器里的一部分，这里显式核对生成物
       // 真的跟着 popup.css 走了一遍生成器。
       for (final String dir in mirrors) {
-        final String content =
-            maskCssComments(File('$dir/content.css').readAsStringSync());
+        final String content = maskCssComments(
+          File('$dir/content.css').readAsStringSync(),
+        );
         expect(
-          RegExp(r'padding-top\s*:\s*[\d.]+em')
-              .hasMatch(ruleBody(content, '.expression') ?? ''),
+          RegExp(
+            r'padding-top\s*:\s*[\d.]+em',
+          ).hasMatch(ruleBody(content, '.expression') ?? ''),
           isTrue,
-          reason: '$dir/content.css 缺词头预留 — 改完 popup.css 必须重跑 '
+          reason:
+              '$dir/content.css 缺词头预留 — 改完 popup.css 必须重跑 '
               'tools/browser-extension/scripts/generate-content-css.mjs',
         );
-        expect(ruleBody(content, '.expression ruby'), isNotNull,
-            reason: '$dir/content.css 缺 `.expression ruby` 的原生 ruby 规则');
+        expect(
+          ruleBody(content, '.expression ruby'),
+          isNotNull,
+          reason: '$dir/content.css 缺 `.expression ruby` 的原生 ruby 规则',
+        );
       }
     });
   });

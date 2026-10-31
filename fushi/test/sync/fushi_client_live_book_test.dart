@@ -17,20 +17,21 @@ import 'package:fushi_core/fushi_core.dart';
 class _FakeLibraryService implements FushiLibraryHostService {
   // BUG-1004：host 端裁 mining 句子音频（本测试不涉及，返 null 即可）。
   @override
-  Future<File?> clipVideoAudio(String id,
-          {required int startMs,
-          required int endMs,
-          int episodeIndex = 0,
-          int? audioStreamIndex,
-          int? audioStreamCount,
-          int audioChannels = 1,
-          String audioBitrate = '64k'}) async =>
-      null;
+  Future<File?> clipVideoAudio(
+    String id, {
+    required int startMs,
+    required int endMs,
+    int episodeIndex = 0,
+    int? audioStreamIndex,
+    int? audioStreamCount,
+    int audioChannels = 1,
+    String audioBitrate = '64k',
+  }) async => null;
 
   @override
-  Future<List<RemoteActivityEvent>> listActivityEvents(
-          {int limit = 100}) async =>
-      const <RemoteActivityEvent>[];
+  Future<List<RemoteActivityEvent>> listActivityEvents({
+    int limit = 100,
+  }) async => const <RemoteActivityEvent>[];
 
   @override
   Future<String?> videoCoverPath(String id) async {
@@ -61,8 +62,8 @@ class _FakeLibraryService implements FushiLibraryHostService {
 
   @override
   Future<CollectionManifest> mergeCollectionManifest(
-          CollectionManifest incoming) async =>
-      incoming;
+    CollectionManifest incoming,
+  ) async => incoming;
 
   final List<RemoteBookInfo> books = <RemoteBookInfo>[
     const RemoteBookInfo(title: '吾輩は猫である', hasContent: true),
@@ -78,10 +79,10 @@ class _FakeLibraryService implements FushiLibraryHostService {
   @override
   Future<File> exportBook(String title) async {
     final RemoteBookInfo? book = books.cast<RemoteBookInfo?>().firstWhere(
-          (RemoteBookInfo? b) =>
-              b!.title == title || b.toJson()['bookKey'] == title,
-          orElse: () => null,
-        );
+      (RemoteBookInfo? b) =>
+          b!.title == title || b.toJson()['bookKey'] == title,
+      orElse: () => null,
+    );
     if (book == null) {
       throw StateError('book not found: $title');
     }
@@ -93,9 +94,11 @@ class _FakeLibraryService implements FushiLibraryHostService {
   }
 
   @override
-  Future<void> importBook(File epubFile,
-          {String? displayTitle, int displayTitleAt = 0}) async =>
-      imported.add(await epubFile.readAsString());
+  Future<void> importBook(
+    File epubFile, {
+    String? displayTitle,
+    int displayTitleAt = 0,
+  }) async => imported.add(await epubFile.readAsString());
 
   @override
   Future<void> deleteBook(String title) async => deleted.add(title);
@@ -114,8 +117,10 @@ class _FakeLibraryService implements FushiLibraryHostService {
   ) async {
     final RemoteBookProgress current =
         bookProgress[bookKey] ?? RemoteBookProgress.empty;
-    bookProgress[bookKey] =
-        resolveBookProgressSync(local: current, remote: progress);
+    bookProgress[bookKey] = resolveBookProgressSync(
+      local: current,
+      remote: progress,
+    );
   }
 
   // ── dictionaries stubs ─────────────────────────────────────────────────────
@@ -162,8 +167,10 @@ class _FakeLibraryService implements FushiLibraryHostService {
   Future<bool> audiobookExists(String bookKey) async => false;
 
   @override
-  Future<void> importAudiobook(File packageFile,
-      {String? bookKeyOverride}) async {}
+  Future<void> importAudiobook(
+    File packageFile, {
+    String? bookKeyOverride,
+  }) async {}
 
   @override
   Future<void> deleteAudiobook(String bookKey) async {}
@@ -176,29 +183,35 @@ class _FakeLibraryService implements FushiLibraryHostService {
   Future<bool> videoExists(String id, {int episodeIndex = 0}) async => false;
 
   @override
-  Future<void> importVideoSubtitle(File subtitleFile,
-      {required String id, required String suffix}) async {}
+  Future<void> importVideoSubtitle(
+    File subtitleFile, {
+    required String id,
+    required String suffix,
+  }) async {}
 
   @override
-  Future<void> importVideo(File videoFile,
-      {required String id,
-      required String title,
-      String? originalFileName}) async {}
+  Future<void> importVideo(
+    File videoFile, {
+    required String id,
+    required String title,
+    String? originalFileName,
+  }) async {}
 
   @override
   Future<File?> resolveVideoFile(String id, {int episodeIndex = 0}) async =>
       null;
 
   @override
-  Future<File?> resolveVideoSubtitle(String id,
-          {String langCode = 'ja', int episodeIndex = 0}) async =>
-      null;
+  Future<File?> resolveVideoSubtitle(
+    String id, {
+    String langCode = 'ja',
+    int episodeIndex = 0,
+  }) async => null;
 
   @override
   Future<({int positionMs, int updatedAtMs})> getAudiobookPosition(
     String bookKey,
-  ) async =>
-      (positionMs: 0, updatedAtMs: 0);
+  ) async => (positionMs: 0, updatedAtMs: 0);
 
   @override
   Future<void> putAudiobookPosition(
@@ -211,8 +224,7 @@ class _FakeLibraryService implements FushiLibraryHostService {
   Future<({int positionMs, int updatedAtMs})> getVideoPosition(
     String id, {
     int episodeIndex = 0,
-  }) async =>
-      (positionMs: 0, updatedAtMs: 0);
+  }) async => (positionMs: 0, updatedAtMs: 0);
 
   @override
   Future<void> putVideoPosition(
@@ -242,8 +254,9 @@ Future<InterconnectSyncBackend> _buildBackend({
   await repo.setFushiClientToken(token);
 
   // fake probe：直接返回 true，不做真实探测（server 已在运行）。
-  final InterconnectSyncBackend backend =
-      InterconnectSyncBackend.withProbe((String url, String tok) async => true);
+  final InterconnectSyncBackend backend = InterconnectSyncBackend.withProbe(
+    (String url, String tok) async => true,
+  );
   await backend.restoreAuth(repo);
   await backend.authenticate(repo: repo);
   return backend;
@@ -258,8 +271,9 @@ void main() {
   setUp(() async {
     lib = _FakeLibraryService();
     server = FushiSyncServer(
-      syncDataDir:
-          Directory.systemTemp.createTempSync('hbk_live_book_srv').path,
+      syncDataDir: Directory.systemTemp
+          .createTempSync('hbk_live_book_srv')
+          .path,
       port: 0,
       token: token,
       allowLan: false,
@@ -274,23 +288,24 @@ void main() {
   // ── listRemoteBooks ───────────────────────────────────────────────────────
 
   test('listRemoteBooks returns book from host', () async {
-    final InterconnectSyncBackend backend =
-        await _buildBackend(base: base, token: token);
+    final InterconnectSyncBackend backend = await _buildBackend(
+      base: base,
+      token: token,
+    );
 
     final List<RemoteBookInfo> result = await backend.listRemoteBooks();
 
-    expect(
-      result.map((RemoteBookInfo b) => b.title),
-      contains('吾輩は猫である'),
-    );
+    expect(result.map((RemoteBookInfo b) => b.title), contains('吾輩は猫である'));
     expect(result.first.hasContent, isTrue);
   });
 
   // ── getRemoteBook ─────────────────────────────────────────────────────────
 
   test('getRemoteBook downloads EPUB bytes to destination file', () async {
-    final InterconnectSyncBackend backend =
-        await _buildBackend(base: base, token: token);
+    final InterconnectSyncBackend backend = await _buildBackend(
+      base: base,
+      token: token,
+    );
     final Directory tmp = Directory.systemTemp.createTempSync('hbk_book_dl');
     final File dest = File('${tmp.path}/neko.epub');
     addTearDown(() => tmp.deleteSync(recursive: true));
@@ -304,15 +319,20 @@ void main() {
   test('getRemoteBook downloads special-character title by bookKey', () async {
     const String displayTitle = r'Vol 1/2\3?..: Finale';
     const String bookKey = 'Vol_1_2_3_Finale';
-    lib.books.add(RemoteBookInfo.fromJson(<String, Object?>{
-      'title': displayTitle,
-      'bookKey': bookKey,
-      'hasContent': true,
-    }));
-    final InterconnectSyncBackend backend =
-        await _buildBackend(base: base, token: token);
-    final Directory tmp =
-        Directory.systemTemp.createTempSync('hbk_book_dl_special');
+    lib.books.add(
+      RemoteBookInfo.fromJson(<String, Object?>{
+        'title': displayTitle,
+        'bookKey': bookKey,
+        'hasContent': true,
+      }),
+    );
+    final InterconnectSyncBackend backend = await _buildBackend(
+      base: base,
+      token: token,
+    );
+    final Directory tmp = Directory.systemTemp.createTempSync(
+      'hbk_book_dl_special',
+    );
     final File dest = File('${tmp.path}/special.epub');
     addTearDown(() => tmp.deleteSync(recursive: true));
 
@@ -333,8 +353,10 @@ void main() {
   // ── putRemoteBook ─────────────────────────────────────────────────────────
 
   test('putRemoteBook uploads CJK-named file content to host', () async {
-    final InterconnectSyncBackend backend =
-        await _buildBackend(base: base, token: token);
+    final InterconnectSyncBackend backend = await _buildBackend(
+      base: base,
+      token: token,
+    );
     final Directory tmp = Directory.systemTemp.createTempSync('hbk_book_ul');
     final File src = File('${tmp.path}/新書.epub');
     src.writeAsStringSync('EPUB:新書');
@@ -348,8 +370,10 @@ void main() {
   // ── deleteRemoteBook ──────────────────────────────────────────────────────
 
   test('deleteRemoteBook sends DELETE to host', () async {
-    final InterconnectSyncBackend backend =
-        await _buildBackend(base: base, token: token);
+    final InterconnectSyncBackend backend = await _buildBackend(
+      base: base,
+      token: token,
+    );
 
     await backend.deleteRemoteBook('吾輩は猫である');
 
@@ -367,21 +391,21 @@ void main() {
     // 故意用错误 token。
     await repo.setFushiClientToken('wrong-token');
 
-    final InterconnectSyncBackend backend =
-        InterconnectSyncBackend.withProbe((String u, String t) async => true);
+    final InterconnectSyncBackend backend = InterconnectSyncBackend.withProbe(
+      (String u, String t) async => true,
+    );
     await backend.restoreAuth(repo);
     // 只 restoreAuth 跳过 authenticate，让真实 token 错误由第一次 HTTP 操作暴露。
-    await expectLater(
-      backend.listRemoteBooks(),
-      throwsA(isA<SyncAuthError>()),
-    );
+    await expectLater(backend.listRemoteBooks(), throwsA(isA<SyncAuthError>()));
   });
 
   // ── progress callback ─────────────────────────────────────────────────────
 
   test('getRemoteBook reports progress callback', () async {
-    final InterconnectSyncBackend backend =
-        await _buildBackend(base: base, token: token);
+    final InterconnectSyncBackend backend = await _buildBackend(
+      base: base,
+      token: token,
+    );
     final Directory tmp = Directory.systemTemp.createTempSync('hbk_book_prog');
     final File dest = File('${tmp.path}/neko_prog.epub');
     addTearDown(() => tmp.deleteSync(recursive: true));
@@ -399,23 +423,27 @@ void main() {
   // ── 进度 live 端点（TODO-767 / BUG-417）──────────────────────────────────
 
   test('putRemoteBookProgress 上报后 remoteBookProgress 拉回一致', () async {
-    final InterconnectSyncBackend backend =
-        await _buildBackend(base: base, token: token);
+    final InterconnectSyncBackend backend = await _buildBackend(
+      base: base,
+      token: token,
+    );
 
     await backend.putRemoteBookProgress(
       'BookKey1',
       const RemoteBookProgress(
-          sectionIndex: 5,
-          normCharOffset: 5500,
-          charOffset: 321,
-          updatedAtMs: 1700000000000),
+        sectionIndex: 5,
+        normCharOffset: 5500,
+        charOffset: 321,
+        updatedAtMs: 1700000000000,
+      ),
     );
 
     // host fake 真存了进度（host-apply）。
     expect(lib.bookProgress['BookKey1']?.sectionIndex, 5);
 
-    final RemoteBookProgress read =
-        await backend.remoteBookProgress('BookKey1');
+    final RemoteBookProgress read = await backend.remoteBookProgress(
+      'BookKey1',
+    );
     expect(read.sectionIndex, 5);
     expect(read.normCharOffset, 5500);
     expect(read.charOffset, 321);
@@ -423,24 +451,30 @@ void main() {
   });
 
   test('remoteBookProgress 未知书 → empty（host 无记录返回 0/0，不抛）', () async {
-    final InterconnectSyncBackend backend =
-        await _buildBackend(base: base, token: token);
-    final RemoteBookProgress read =
-        await backend.remoteBookProgress('UnknownBook');
+    final InterconnectSyncBackend backend = await _buildBackend(
+      base: base,
+      token: token,
+    );
+    final RemoteBookProgress read = await backend.remoteBookProgress(
+      'UnknownBook',
+    );
     expect(read.updatedAtMs, 0);
     expect(read.sectionIndex, 0);
   });
 
   test('CJK bookKey 经 URL 编码往返一致', () async {
-    final InterconnectSyncBackend backend =
-        await _buildBackend(base: base, token: token);
+    final InterconnectSyncBackend backend = await _buildBackend(
+      base: base,
+      token: token,
+    );
     await backend.putRemoteBookProgress(
       '吾輩は猫である',
       const RemoteBookProgress(
-          sectionIndex: 2,
-          normCharOffset: 200,
-          charOffset: -1,
-          updatedAtMs: 1700000009999),
+        sectionIndex: 2,
+        normCharOffset: 200,
+        charOffset: -1,
+        updatedAtMs: 1700000009999,
+      ),
     );
     final RemoteBookProgress read = await backend.remoteBookProgress('吾輩は猫である');
     expect(read.sectionIndex, 2);
@@ -448,26 +482,31 @@ void main() {
   });
 
   test('上报旧时间戳不回退 host 新进度（host 端取较新）', () async {
-    final InterconnectSyncBackend backend =
-        await _buildBackend(base: base, token: token);
-    await backend.putRemoteBookProgress(
-      'BookKey2',
-      const RemoteBookProgress(
-          sectionIndex: 9,
-          normCharOffset: 9000,
-          charOffset: 1,
-          updatedAtMs: 5000),
+    final InterconnectSyncBackend backend = await _buildBackend(
+      base: base,
+      token: token,
     );
     await backend.putRemoteBookProgress(
       'BookKey2',
       const RemoteBookProgress(
-          sectionIndex: 1,
-          normCharOffset: 10,
-          charOffset: 1,
-          updatedAtMs: 1000), // 更旧
+        sectionIndex: 9,
+        normCharOffset: 9000,
+        charOffset: 1,
+        updatedAtMs: 5000,
+      ),
     );
-    final RemoteBookProgress read =
-        await backend.remoteBookProgress('BookKey2');
+    await backend.putRemoteBookProgress(
+      'BookKey2',
+      const RemoteBookProgress(
+        sectionIndex: 1,
+        normCharOffset: 10,
+        charOffset: 1,
+        updatedAtMs: 1000,
+      ), // 更旧
+    );
+    final RemoteBookProgress read = await backend.remoteBookProgress(
+      'BookKey2',
+    );
     expect(read.sectionIndex, 9); // host 新进度保留
     expect(read.updatedAtMs, 5000);
   });
@@ -479,8 +518,9 @@ void main() {
   // 让旧 host / 离线场景退回本地 reader_positions。
   test('旧 host 无 progress 路由 → 真 404 优雅退化为 empty（不抛）', () async {
     final FushiSyncServer legacyServer = FushiSyncServer(
-      syncDataDir:
-          Directory.systemTemp.createTempSync('hbk_legacy_no_lib_srv').path,
+      syncDataDir: Directory.systemTemp
+          .createTempSync('hbk_legacy_no_lib_srv')
+          .path,
       port: 0,
       token: token,
       allowLan: false,
@@ -490,8 +530,10 @@ void main() {
     addTearDown(() async => legacyServer.stop());
     final String legacyBase = 'http://127.0.0.1:${legacyServer.port}';
 
-    final InterconnectSyncBackend backend =
-        await _buildBackend(base: legacyBase, token: token);
+    final InterconnectSyncBackend backend = await _buildBackend(
+      base: legacyBase,
+      token: token,
+    );
 
     final RemoteBookProgress read = await backend.remoteBookProgress('AnyBook');
     expect(read.updatedAtMs, 0);

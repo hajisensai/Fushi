@@ -25,16 +25,14 @@ void main() {
     final String src = read('lib/src/shortcuts/gamepad_service.dart');
     // 旧硬绑：case GamepadButton.b: navigatorKey.currentState?.maybePop();
     expect(
-      RegExp(r'case GamepadButton\.b:\s*\n\s*navigatorKey\.currentState\?\.maybePop\(\);')
-          .hasMatch(src),
+      RegExp(
+        r'case GamepadButton\.b:\s*\n\s*navigatorKey\.currentState\?\.maybePop\(\);',
+      ).hasMatch(src),
       isFalse,
       reason:
           '裸 case b maybePop 仍在 —— B 应经 registry.resolveGamepad(globalBack)',
     );
-    expect(
-      src.contains('dispatchNativeGamepadButtonIntent'),
-      isTrue,
-    );
+    expect(src.contains('dispatchNativeGamepadButtonIntent'), isTrue);
     // B 不再被 dispatchNativeGamepadButtonIntent 特殊 ignore。
     expect(
       src.contains('button == GamepadButton.b'),

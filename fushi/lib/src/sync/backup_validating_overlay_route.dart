@@ -35,18 +35,19 @@ Route<void> buildBackupValidatingOverlayRoute({
     barrierDismissible: false,
     transitionDuration: Duration.zero,
     reverseTransitionDuration: Duration.zero,
-    pageBuilder: (BuildContext _, Animation<double> __, Animation<double> ___) =>
-        PopScope(
-      canPop: false,
-      child: BackupImportOverlayView(
-        phase: BackupImportPhase.validating,
-        background: background,
-        // validating 相位本视图不渲染「立即重启」出口（只有 done/failed 才渲染），
-        // 故这里给一个不可达的 no-op，而不是把重启能力泄漏到校验期。
-        onRestart: _unreachableRestart,
-        onCancel: onCancel,
-      ),
-    ),
+    pageBuilder:
+        (BuildContext _, Animation<double> __, Animation<double> ___) =>
+            PopScope(
+              canPop: false,
+              child: BackupImportOverlayView(
+                phase: BackupImportPhase.validating,
+                background: background,
+                // validating 相位本视图不渲染「立即重启」出口（只有 done/failed 才渲染），
+                // 故这里给一个不可达的 no-op，而不是把重启能力泄漏到校验期。
+                onRestart: _unreachableRestart,
+                onCancel: onCancel,
+              ),
+            ),
   );
 }
 

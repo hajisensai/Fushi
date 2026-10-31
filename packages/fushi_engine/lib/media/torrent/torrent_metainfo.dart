@@ -17,7 +17,7 @@ enum TorrentMetainfoErrorCode {
 
 class TorrentMetainfoException extends FormatException {
   TorrentMetainfoException(this.code, String detail)
-      : super('torrent metainfo ${code.name}: $detail');
+    : super('torrent metainfo ${code.name}: $detail');
 
   final TorrentMetainfoErrorCode code;
 }
@@ -30,8 +30,8 @@ class InspectedTorrentMetainfo {
     required this.v2InfoHash,
     Iterable<InspectedTorrentFile> files = const <InspectedTorrentFile>[],
     this.suggestedName,
-  })  : bytes = Uint8List.fromList(bytes),
-        files = List<InspectedTorrentFile>.unmodifiable(files);
+  }) : bytes = Uint8List.fromList(bytes),
+       files = List<InspectedTorrentFile>.unmodifiable(files);
 
   final Uint8List bytes;
 

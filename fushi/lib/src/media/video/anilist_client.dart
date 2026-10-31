@@ -41,10 +41,10 @@ class AniListMedia {
   String get displayTitle => (romaji?.isNotEmpty ?? false)
       ? romaji!
       : (english?.isNotEmpty ?? false)
-          ? english!
-          : (native?.isNotEmpty ?? false)
-              ? native!
-              : 'AniList #$id';
+      ? english!
+      : (native?.isNotEmpty ?? false)
+      ? native!
+      : 'AniList #$id';
 
   /// 界面展示用标题：日文原名 → 罗马字 → 英文 → id，与发现页 AniList 适配器
   /// （`native ?? romaji ?? english`）同口径。[displayTitle] 的罗马字优先是给
@@ -52,10 +52,10 @@ class AniListMedia {
   String get nativeFirstTitle => (native?.isNotEmpty ?? false)
       ? native!
       : (romaji?.isNotEmpty ?? false)
-          ? romaji!
-          : (english?.isNotEmpty ?? false)
-              ? english!
-              : 'AniList #$id';
+      ? romaji!
+      : (english?.isNotEmpty ?? false)
+      ? english!
+      : 'AniList #$id';
 }
 
 /// 罗马字长音符（macron）→ **双元音** 展开（修正 Hepburn）。番剧官方 romaji
@@ -142,15 +142,17 @@ List<AniListMedia> parseAniListSearchResponse(String body) {
       if (id is! int) continue;
       final dynamic title = m['title'];
       final dynamic cover = m['coverImage'];
-      out.add(AniListMedia(
-        id: id,
-        romaji: title is Map ? title['romaji'] as String? : null,
-        english: title is Map ? title['english'] as String? : null,
-        native: title is Map ? title['native'] as String? : null,
-        coverUrl: cover is Map ? cover['large'] as String? : null,
-        episodes: m['episodes'] is int ? m['episodes'] as int : null,
-        seasonYear: m['seasonYear'] is int ? m['seasonYear'] as int : null,
-      ));
+      out.add(
+        AniListMedia(
+          id: id,
+          romaji: title is Map ? title['romaji'] as String? : null,
+          english: title is Map ? title['english'] as String? : null,
+          native: title is Map ? title['native'] as String? : null,
+          coverUrl: cover is Map ? cover['large'] as String? : null,
+          episodes: m['episodes'] is int ? m['episodes'] as int : null,
+          seasonYear: m['seasonYear'] is int ? m['seasonYear'] as int : null,
+        ),
+      );
     }
     return out;
   } catch (_) {
@@ -292,12 +294,10 @@ class AniListRequestException implements Exception {
 /// 怎么坏了」「起了怪了，现在又行了，不知如何触发」。把失败**带出来**是这条链能被诊断的
 /// 前提，也是 UI 能如实告诉用户「结果不可靠」而不是假装一切正常的前提。
 class AniListSearchOutcome {
-  const AniListSearchOutcome.ok(this.media)
-      : failure = null,
-        kind = null;
+  const AniListSearchOutcome.ok(this.media) : failure = null, kind = null;
 
   const AniListSearchOutcome.failed(String this.failure, this.kind)
-      : media = const <AniListMedia>[];
+    : media = const <AniListMedia>[];
 
   final List<AniListMedia> media;
 
@@ -342,25 +342,29 @@ AniListAiringPage parseAniListAiringResponse(String body) {
       final dynamic m = s['media'];
       final dynamic title = m is Map ? m['title'] : null;
       final dynamic cover = m is Map ? m['coverImage'] : null;
-      out.add(AniListAiringEpisode(
-        mediaId: mediaId,
-        episode: episode,
-        airingAtSeconds: airingAt,
-        media: AniListMedia(
-          id: mediaId,
-          romaji: title is Map ? title['romaji'] as String? : null,
-          english: title is Map ? title['english'] as String? : null,
-          native: title is Map ? title['native'] as String? : null,
-          coverUrl: cover is Map ? cover['large'] as String? : null,
-          episodes:
-              m is Map && m['episodes'] is int ? m['episodes'] as int : null,
-          seasonYear: m is Map && m['seasonYear'] is int
-              ? m['seasonYear'] as int
-              : null,
-          format:
-              m is Map && m['format'] is String ? m['format'] as String : null,
+      out.add(
+        AniListAiringEpisode(
+          mediaId: mediaId,
+          episode: episode,
+          airingAtSeconds: airingAt,
+          media: AniListMedia(
+            id: mediaId,
+            romaji: title is Map ? title['romaji'] as String? : null,
+            english: title is Map ? title['english'] as String? : null,
+            native: title is Map ? title['native'] as String? : null,
+            coverUrl: cover is Map ? cover['large'] as String? : null,
+            episodes: m is Map && m['episodes'] is int
+                ? m['episodes'] as int
+                : null,
+            seasonYear: m is Map && m['seasonYear'] is int
+                ? m['seasonYear'] as int
+                : null,
+            format: m is Map && m['format'] is String
+                ? m['format'] as String
+                : null,
+          ),
         ),
-      ));
+      );
     }
     return AniListAiringPage(episodes: out, hasNextPage: hasNextPage);
   } catch (_) {
@@ -371,7 +375,7 @@ AniListAiringPage parseAniListAiringResponse(String body) {
 /// AniList GraphQL 客户端：按标题搜番拿 anilist id（Jimaku 按 anilist_id 查字幕的前置）。
 class AniListClient {
   AniListClient({http.Client? client})
-      : _client = client ?? createAppHttpIoClient();
+    : _client = client ?? createAppHttpIoClient();
 
   final http.Client _client;
 
@@ -421,8 +425,9 @@ query ($search: String) {
           // 保留响应体片段：AniList 官方停服与被 WAF 拦都是 403，只有正文能分开
           // 这两件事，折成裸 'HTTP 403' 就等于把用户能看懂的那半截扔了。
           final String body = utf8.decode(res.bodyBytes, allowMalformed: true);
-          final String snippet =
-              body.length > 200 ? '${body.substring(0, 200)}…' : body;
+          final String snippet = body.length > 200
+              ? '${body.substring(0, 200)}…'
+              : body;
           lastFailure = 'HTTP ${res.statusCode}: $snippet';
           lastKind = classifyAniListHttpFailure(res.statusCode, body);
           continue;
@@ -442,7 +447,9 @@ query ($search: String) {
     }
     if (!anySuccess && lastFailure != null) {
       return AniListSearchOutcome.failed(
-          lastFailure, lastKind ?? AniListFailureKind.other);
+        lastFailure,
+        lastKind ?? AniListFailureKind.other,
+      );
     }
     return const AniListSearchOutcome.ok(<AniListMedia>[]);
   }
@@ -498,8 +505,9 @@ query ($from: Int, $to: Int, $ids: [Int], $page: Int) {
     );
     if (res.statusCode != 200) {
       final String body = utf8.decode(res.bodyBytes, allowMalformed: true);
-      final String snippet =
-          body.length > 200 ? '${body.substring(0, 200)}…' : body;
+      final String snippet = body.length > 200
+          ? '${body.substring(0, 200)}…'
+          : body;
       throw AniListRequestException(res.statusCode, snippet);
     }
     return parseAniListAiringResponse(

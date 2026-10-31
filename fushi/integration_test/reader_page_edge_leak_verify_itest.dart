@@ -59,63 +59,74 @@ void main() {
   };
 
   testWidgets(
-      'paginated reader does NOT leak adjacent-page content into the page-edge '
-      'padding band on real WebView2 (H/V x 1col/2col x fix variants)',
-      (WidgetTester tester) async {
-    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
-    addTearDown(db.close);
-    final ReaderSettings settings = ReaderSettings(db);
-    await settings.refreshFromDb();
+    'paginated reader does NOT leak adjacent-page content into the page-edge '
+    'padding band on real WebView2 (H/V x 1col/2col x fix variants)',
+    (WidgetTester tester) async {
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
+      addTearDown(db.close);
+      final ReaderSettings settings = ReaderSettings(db);
+      await settings.refreshFromDb();
 
-    // 固定成分页模式；给宽页边距带（8vh/8vw）方便采样；已知字号。
-    await settings.setViewMode('paginated');
-    await settings.setFontSize(22);
-    await settings.setMarginTop(8);
-    await settings.setMarginBottom(8);
-    await settings.setMarginLeft(8);
-    await settings.setMarginRight(8);
+      // 固定成分页模式；给宽页边距带（8vh/8vw）方便采样；已知字号。
+      await settings.setViewMode('paginated');
+      await settings.setFontSize(22);
+      await settings.setMarginTop(8);
+      await settings.setMarginBottom(8);
+      await settings.setMarginLeft(8);
+      await settings.setMarginRight(8);
 
-    final Completer<InAppWebViewController> ready =
-        Completer<InAppWebViewController>();
+      final Completer<InAppWebViewController> ready =
+          Completer<InAppWebViewController>();
 
-    await tester.pumpWidget(MaterialApp(
-      debugShowCheckedModeBanner: false,
-      home: Scaffold(
-        body: InAppWebView(
-          initialData: InAppWebViewInitialData(
-            data: '<!DOCTYPE html><html><head><meta charset="utf-8">'
-                '</head><body></body></html>',
+      await tester.pumpWidget(
+        MaterialApp(
+          debugShowCheckedModeBanner: false,
+          home: Scaffold(
+            body: InAppWebView(
+              initialData: InAppWebViewInitialData(
+                data:
+                    '<!DOCTYPE html><html><head><meta charset="utf-8">'
+                    '</head><body></body></html>',
+              ),
+              onLoadStop:
+                  (InAppWebViewController controller, WebUri? url) async {
+                    if (!ready.isCompleted) ready.complete(controller);
+                  },
+            ),
           ),
-          onLoadStop: (InAppWebViewController controller, WebUri? url) async {
-            if (!ready.isCompleted) ready.complete(controller);
-          },
         ),
-      ),
-    ));
+      );
 
-    for (int i = 0; i < 200 && !ready.isCompleted; i++) {
-      await tester.pump(const Duration(milliseconds: 100));
-    }
-    expect(ready.isCompleted, isTrue,
-        reason: 'WebView did not load within 20s');
-    final InAppWebViewController controller = await ready.future;
-    await tester.pump(const Duration(seconds: 1));
-
-    // ---- helpers -------------------------------------------------------
-
-    Future<Map<String, dynamic>> jsMap(String source) async {
-      final Object? v = await controller.evaluateJavascript(source: source);
-      if (v is Map) return v.cast<String, dynamic>();
-      if (v is String && v.isNotEmpty) {
-        return (jsonDecode(v) as Map).cast<String, dynamic>();
+      for (int i = 0; i < 200 && !ready.isCompleted; i++) {
+        await tester.pump(const Duration(milliseconds: 100));
       }
-      return <String, dynamic>{};
-    }
+      expect(
+        ready.isCompleted,
+        isTrue,
+        reason: 'WebView did not load within 20s',
+      );
+      final InAppWebViewController controller = await ready.future;
+      await tester.pump(const Duration(seconds: 1));
 
-    // 注入内容色的多列内容（用 createElement/textContent 构建 DOM，不用 innerHTML）。
-    // 一次即可，切变体只换样式与滚动。
-    Future<void> installContent() async {
-      await controller.evaluateJavascript(source: '''
+      // ---- helpers -------------------------------------------------------
+
+      Future<Map<String, dynamic>> jsMap(String source) async {
+        final Object? v = await controller.evaluateJavascript(source: source);
+        if (v is Map) return v.cast<String, dynamic>();
+        if (v is String && v.isNotEmpty) {
+          return (jsonDecode(v) as Map).cast<String, dynamic>();
+        }
+        return <String, dynamic>{};
+      }
+
+      // 注入内容色的多列内容（用 createElement/textContent 构建 DOM，不用 innerHTML）。
+      // 一次即可，切变体只换样式与滚动。
+      Future<void> installContent() async {
+        await controller.evaluateJavascript(
+          source:
+              '''
         (function(){
           var cs = document.getElementById('leak-content-style');
           if(!cs){cs=document.createElement('style');cs.id='leak-content-style';
@@ -134,13 +145,18 @@ void main() {
             body.appendChild(p);
           }
         })();
-      ''');
-    }
+      ''',
+        );
+      }
 
-    // 应用一份 CSS（放到 reader 样式槽），设 reader 的 CSS 变量，滚到跨页位置。
-    Future<Map<String, dynamic>> applyCssAndScroll(
-        String css, bool vertical) async {
-      await controller.evaluateJavascript(source: '''
+      // 应用一份 CSS（放到 reader 样式槽），设 reader 的 CSS 变量，滚到跨页位置。
+      Future<Map<String, dynamic>> applyCssAndScroll(
+        String css,
+        bool vertical,
+      ) async {
+        await controller.evaluateJavascript(
+          source:
+              '''
         (function(){
           var s=document.getElementById('fushi-reader-style');
           if(!s){s=document.createElement('style');s.id='fushi-reader-style';
@@ -153,11 +169,12 @@ void main() {
           de.setProperty('--chrome-top-inset','36px');
           de.setProperty('--chrome-bottom-inset','48px');
         })();
-      ''');
-      // 让布局落定。
-      await tester.pump(const Duration(milliseconds: 250));
-      // 滚到非对齐(跨页)位置：maxScroll*0.37，保证两侧页边距带都压到相邻列。
-      return jsMap('''
+      ''',
+        );
+        // 让布局落定。
+        await tester.pump(const Duration(milliseconds: 250));
+        // 滚到非对齐(跨页)位置：maxScroll*0.37，保证两侧页边距带都压到相邻列。
+        return jsMap('''
         (function(){
           var b=document.body;
           var vertical=$vertical;
@@ -182,226 +199,254 @@ void main() {
           };
         })();
       ''');
-    }
-
-    List<int> parseRgb(String s) {
-      final RegExp re = RegExp(r'(\d+)\s*,\s*(\d+)\s*,\s*(\d+)');
-      final Match? m = re.firstMatch(s);
-      if (m == null) return <int>[255, 255, 255];
-      return <int>[
-        int.parse(m.group(1)!),
-        int.parse(m.group(2)!),
-        int.parse(m.group(3)!),
-      ];
-    }
-
-    double dist2(List<int> a, List<int> b) {
-      final double dr = (a[0] - b[0]).toDouble();
-      final double dg = (a[1] - b[1]).toDouble();
-      final double dbl = (a[2] - b[2]).toDouble();
-      return dr * dr + dg * dg + dbl * dbl;
-    }
-
-    // 取一条采样线上「像内容色」的像素比例（相对背景色的最近邻判定）。
-    // samplesCss: list of [xCss, yCss].
-    Future<double> classifyBand({
-      required Uint8List png,
-      required double scale,
-      required List<int> bgRgb,
-      required List<List<double>> samplesCss,
-    }) async {
-      final ui.Codec codec = await ui.instantiateImageCodec(png);
-      final ui.FrameInfo fi = await codec.getNextFrame();
-      final ui.Image img = fi.image;
-      final ByteData? bd =
-          await img.toByteData(format: ui.ImageByteFormat.rawRgba);
-      if (bd == null) {
-        img.dispose();
-        return -1;
-      }
-      final int w = img.width;
-      final int h = img.height;
-      int contentCount = 0;
-      int valid = 0;
-      for (final List<double> s in samplesCss) {
-        final int px = (s[0] * scale).round().clamp(0, w - 1);
-        final int py = (s[1] * scale).round().clamp(0, h - 1);
-        final int off = (py * w + px) * 4;
-        final int r = bd.getUint8(off);
-        final int g = bd.getUint8(off + 1);
-        final int b = bd.getUint8(off + 2);
-        final List<int> p = <int>[r, g, b];
-        valid++;
-        if (dist2(p, contentRgb) < dist2(p, bgRgb)) contentCount++;
-      }
-      img.dispose();
-      return valid == 0 ? -1 : contentCount / valid;
-    }
-
-    await installContent();
-
-    final StringBuffer report = StringBuffer();
-    final List<String> failures = <String>[];
-
-    // 4 布局 x 3 变体。
-    final List<Map<String, dynamic>> layouts = <Map<String, dynamic>>[
-      <String, dynamic>{'name': 'H1', 'wm': 'horizontal-tb', 'cols': 1},
-      <String, dynamic>{'name': 'H2', 'wm': 'horizontal-tb', 'cols': 2},
-      <String, dynamic>{'name': 'V1', 'wm': 'vertical-rl', 'cols': 1},
-      <String, dynamic>{'name': 'V2', 'wm': 'vertical-rl', 'cols': 2},
-    ];
-
-    for (final Map<String, dynamic> layout in layouts) {
-      final String wm = layout['wm'] as String;
-      final int cols = layout['cols'] as int;
-      final bool vertical = wm.startsWith('vertical');
-      await settings.setWritingMode(wm);
-      await settings.setPageColumns(cols);
-
-      final String fullCss = ReaderContentStyles.css(settings: settings);
-
-      // no-fix 对照：去掉 body 的 clip-path（→none）并整块删掉 html::before 覆盖条。
-      String stripOverlay(String css) {
-        final int idx = css.indexOf('html::before {');
-        if (idx < 0) return css;
-        final int close = css.indexOf('}', idx);
-        if (close < 0) return css;
-        return css.substring(0, idx) + css.substring(close + 1);
       }
 
-      final String noFixCss = stripOverlay(fullCss).replaceAll(
-          RegExp(r'clip-path:[^;]*!important;'), 'clip-path: none !important;');
-      final String overlayOnlyCss = fullCss.replaceAll(
-          RegExp(r'clip-path:[^;]*!important;'), 'clip-path: none !important;');
+      List<int> parseRgb(String s) {
+        final RegExp re = RegExp(r'(\d+)\s*,\s*(\d+)\s*,\s*(\d+)');
+        final Match? m = re.firstMatch(s);
+        if (m == null) return <int>[255, 255, 255];
+        return <int>[
+          int.parse(m.group(1)!),
+          int.parse(m.group(2)!),
+          int.parse(m.group(3)!),
+        ];
+      }
 
-      final Map<String, String> variants = <String, String>{
-        'full-fix': fullCss,
-        'no-fix-control': noFixCss,
-        'overlay-only': overlayOnlyCss,
-      };
+      double dist2(List<int> a, List<int> b) {
+        final double dr = (a[0] - b[0]).toDouble();
+        final double dg = (a[1] - b[1]).toDouble();
+        final double dbl = (a[2] - b[2]).toDouble();
+        return dr * dr + dg * dg + dbl * dbl;
+      }
 
-      for (final MapEntry<String, String> ve in variants.entries) {
-        final String variant = ve.key;
-        final Map<String, dynamic> geo =
-            await applyCssAndScroll(ve.value, vertical);
-        await tester.pump(const Duration(milliseconds: 250));
-
-        final double innerW = (geo['innerW'] as num?)?.toDouble() ?? 0;
-        final double innerH = (geo['innerH'] as num?)?.toDouble() ?? 0;
-        final List<int> bgRgb = parseRgb((geo['bg'] as String?) ?? '');
-        final double padTop = (geo['padTop'] as num?)?.toDouble() ?? 0;
-        final double padBottom = (geo['padBottom'] as num?)?.toDouble() ?? 0;
-        final double padLeft = (geo['padLeft'] as num?)?.toDouble() ?? 0;
-        final double padRight = (geo['padRight'] as num?)?.toDouble() ?? 0;
-
-        expect(innerW, greaterThan(300),
-            reason: 'viewport too small to sample ($geo)');
-        expect(innerH, greaterThan(300),
-            reason: 'viewport too small to sample ($geo)');
-
-        final Uint8List? png = await controller.takeScreenshot();
-        expect(png, isNotNull,
-            reason:
-                'takeScreenshot returned null for $variant ${layout['name']}');
-        // 落盘证据。
-        final String shotPath = '$evidenceDir/${layout['name']}-$variant.png';
-        File(shotPath).writeAsBytesSync(png!);
-
-        // 由截图实际尺寸推 CSS->像素缩放。
+      // 取一条采样线上「像内容色」的像素比例（相对背景色的最近邻判定）。
+      // samplesCss: list of [xCss, yCss].
+      Future<double> classifyBand({
+        required Uint8List png,
+        required double scale,
+        required List<int> bgRgb,
+        required List<List<double>> samplesCss,
+      }) async {
         final ui.Codec codec = await ui.instantiateImageCodec(png);
         final ui.FrameInfo fi = await codec.getNextFrame();
-        final double scale = fi.image.width / innerW;
-        fi.image.dispose();
-
-        // 内容采样（视口中心）——应为内容色，证明内容渲染出来了。
-        final double centerFrac = await classifyBand(
-          png: png,
-          scale: scale,
-          bgRgb: bgRgb,
-          samplesCss: <List<double>>[
-            <double>[innerW / 2, innerH / 2],
-            <double>[innerW / 2 - 20, innerH / 2],
-            <double>[innerW / 2 + 20, innerH / 2],
-          ],
+        final ui.Image img = fi.image;
+        final ByteData? bd = await img.toByteData(
+          format: ui.ImageByteFormat.rawRgba,
         );
+        if (bd == null) {
+          img.dispose();
+          return -1;
+        }
+        final int w = img.width;
+        final int h = img.height;
+        int contentCount = 0;
+        int valid = 0;
+        for (final List<double> s in samplesCss) {
+          final int px = (s[0] * scale).round().clamp(0, w - 1);
+          final int py = (s[1] * scale).round().clamp(0, h - 1);
+          final int off = (py * w + px) * 4;
+          final int r = bd.getUint8(off);
+          final int g = bd.getUint8(off + 1);
+          final int b = bd.getUint8(off + 2);
+          final List<int> p = <int>[r, g, b];
+          valid++;
+          if (dist2(p, contentRgb) < dist2(p, bgRgb)) contentCount++;
+        }
+        img.dispose();
+        return valid == 0 ? -1 : contentCount / valid;
+      }
 
-        // 页边距带采样。横排看左右带、竖排看上下带（= 滚动轴两侧）。
-        // 采样点取带的**外侧**中段（离视口边缘约 45% padding，避开正文内容盒边缘的
-        // 抗锯齿、也避开列间 gap）。
-        List<List<double>> bandSamples(bool leadingEdge) {
-          final List<List<double>> out = <List<double>>[];
-          if (!vertical) {
-            final double pad = leadingEdge ? padLeft : padRight;
-            for (int k = 0; k < 9; k++) {
-              final double y = innerH * (0.15 + 0.7 * k / 8);
-              final double x = leadingEdge ? pad * 0.45 : innerW - pad * 0.45;
-              out.add(<double>[x, y]);
-            }
-          } else {
-            final double pad = leadingEdge ? padTop : padBottom;
-            for (int k = 0; k < 9; k++) {
-              final double x = innerW * (0.15 + 0.7 * k / 8);
-              final double y = leadingEdge ? pad * 0.45 : innerH - pad * 0.45;
-              out.add(<double>[x, y]);
-            }
-          }
-          return out;
+      await installContent();
+
+      final StringBuffer report = StringBuffer();
+      final List<String> failures = <String>[];
+
+      // 4 布局 x 3 变体。
+      final List<Map<String, dynamic>> layouts = <Map<String, dynamic>>[
+        <String, dynamic>{'name': 'H1', 'wm': 'horizontal-tb', 'cols': 1},
+        <String, dynamic>{'name': 'H2', 'wm': 'horizontal-tb', 'cols': 2},
+        <String, dynamic>{'name': 'V1', 'wm': 'vertical-rl', 'cols': 1},
+        <String, dynamic>{'name': 'V2', 'wm': 'vertical-rl', 'cols': 2},
+      ];
+
+      for (final Map<String, dynamic> layout in layouts) {
+        final String wm = layout['wm'] as String;
+        final int cols = layout['cols'] as int;
+        final bool vertical = wm.startsWith('vertical');
+        await settings.setWritingMode(wm);
+        await settings.setPageColumns(cols);
+
+        final String fullCss = ReaderContentStyles.css(settings: settings);
+
+        // no-fix 对照：去掉 body 的 clip-path（→none）并整块删掉 html::before 覆盖条。
+        String stripOverlay(String css) {
+          final int idx = css.indexOf('html::before {');
+          if (idx < 0) return css;
+          final int close = css.indexOf('}', idx);
+          if (close < 0) return css;
+          return css.substring(0, idx) + css.substring(close + 1);
         }
 
-        final double aFrac = await classifyBand(
+        final String noFixCss = stripOverlay(fullCss).replaceAll(
+          RegExp(r'clip-path:[^;]*!important;'),
+          'clip-path: none !important;',
+        );
+        final String overlayOnlyCss = fullCss.replaceAll(
+          RegExp(r'clip-path:[^;]*!important;'),
+          'clip-path: none !important;',
+        );
+
+        final Map<String, String> variants = <String, String>{
+          'full-fix': fullCss,
+          'no-fix-control': noFixCss,
+          'overlay-only': overlayOnlyCss,
+        };
+
+        for (final MapEntry<String, String> ve in variants.entries) {
+          final String variant = ve.key;
+          final Map<String, dynamic> geo = await applyCssAndScroll(
+            ve.value,
+            vertical,
+          );
+          await tester.pump(const Duration(milliseconds: 250));
+
+          final double innerW = (geo['innerW'] as num?)?.toDouble() ?? 0;
+          final double innerH = (geo['innerH'] as num?)?.toDouble() ?? 0;
+          final List<int> bgRgb = parseRgb((geo['bg'] as String?) ?? '');
+          final double padTop = (geo['padTop'] as num?)?.toDouble() ?? 0;
+          final double padBottom = (geo['padBottom'] as num?)?.toDouble() ?? 0;
+          final double padLeft = (geo['padLeft'] as num?)?.toDouble() ?? 0;
+          final double padRight = (geo['padRight'] as num?)?.toDouble() ?? 0;
+
+          expect(
+            innerW,
+            greaterThan(300),
+            reason: 'viewport too small to sample ($geo)',
+          );
+          expect(
+            innerH,
+            greaterThan(300),
+            reason: 'viewport too small to sample ($geo)',
+          );
+
+          final Uint8List? png = await controller.takeScreenshot();
+          expect(
+            png,
+            isNotNull,
+            reason:
+                'takeScreenshot returned null for $variant ${layout['name']}',
+          );
+          // 落盘证据。
+          final String shotPath = '$evidenceDir/${layout['name']}-$variant.png';
+          File(shotPath).writeAsBytesSync(png!);
+
+          // 由截图实际尺寸推 CSS->像素缩放。
+          final ui.Codec codec = await ui.instantiateImageCodec(png);
+          final ui.FrameInfo fi = await codec.getNextFrame();
+          final double scale = fi.image.width / innerW;
+          fi.image.dispose();
+
+          // 内容采样（视口中心）——应为内容色，证明内容渲染出来了。
+          final double centerFrac = await classifyBand(
             png: png,
             scale: scale,
             bgRgb: bgRgb,
-            samplesCss: bandSamples(true));
-        final double bFrac = await classifyBand(
+            samplesCss: <List<double>>[
+              <double>[innerW / 2, innerH / 2],
+              <double>[innerW / 2 - 20, innerH / 2],
+              <double>[innerW / 2 + 20, innerH / 2],
+            ],
+          );
+
+          // 页边距带采样。横排看左右带、竖排看上下带（= 滚动轴两侧）。
+          // 采样点取带的**外侧**中段（离视口边缘约 45% padding，避开正文内容盒边缘的
+          // 抗锯齿、也避开列间 gap）。
+          List<List<double>> bandSamples(bool leadingEdge) {
+            final List<List<double>> out = <List<double>>[];
+            if (!vertical) {
+              final double pad = leadingEdge ? padLeft : padRight;
+              for (int k = 0; k < 9; k++) {
+                final double y = innerH * (0.15 + 0.7 * k / 8);
+                final double x = leadingEdge ? pad * 0.45 : innerW - pad * 0.45;
+                out.add(<double>[x, y]);
+              }
+            } else {
+              final double pad = leadingEdge ? padTop : padBottom;
+              for (int k = 0; k < 9; k++) {
+                final double x = innerW * (0.15 + 0.7 * k / 8);
+                final double y = leadingEdge ? pad * 0.45 : innerH - pad * 0.45;
+                out.add(<double>[x, y]);
+              }
+            }
+            return out;
+          }
+
+          final double aFrac = await classifyBand(
             png: png,
             scale: scale,
             bgRgb: bgRgb,
-            samplesCss: bandSamples(false));
+            samplesCss: bandSamples(true),
+          );
+          final double bFrac = await classifyBand(
+            png: png,
+            scale: scale,
+            bgRgb: bgRgb,
+            samplesCss: bandSamples(false),
+          );
 
-        final double bandMax = aFrac > bFrac ? aFrac : bFrac;
-        final bool expectLeak = variantExpectLeak[variant]!;
+          final double bandMax = aFrac > bFrac ? aFrac : bFrac;
+          final bool expectLeak = variantExpectLeak[variant]!;
 
-        report.writeln('[${layout['name']} $variant] '
+          report.writeln(
+            '[${layout['name']} $variant] '
             'bg=$bgRgb centerContentFrac=${centerFrac.toStringAsFixed(2)} '
             'band${vertical ? '(top/bottom)' : '(left/right)'}='
             '${aFrac.toStringAsFixed(2)}/${bFrac.toStringAsFixed(2)} '
             'expectLeak=$expectLeak scrolled=${geo['scrolled']} '
-            'cols=${geo['colCount']} shot=$shotPath');
+            'cols=${geo['colCount']} shot=$shotPath',
+          );
 
-        // 内容必须渲染出来（否则采样无意义）。
-        if (centerFrac < 0.5) {
-          failures.add('${layout['name']} $variant: content not rendered '
-              '(centerContentFrac=$centerFrac) — sampling invalid');
-          continue;
-        }
-
-        if (expectLeak) {
-          // 对照/兜底 sanity：无修复时页边距带必须能看到内容色（>=40%），
-          // 否则说明探针根本量不到泄露（假绿）。
-          if (bandMax < 0.40) {
+          // 内容必须渲染出来（否则采样无意义）。
+          if (centerFrac < 0.5) {
             failures.add(
+              '${layout['name']} $variant: content not rendered '
+              '(centerContentFrac=$centerFrac) — sampling invalid',
+            );
+            continue;
+          }
+
+          if (expectLeak) {
+            // 对照/兜底 sanity：无修复时页边距带必须能看到内容色（>=40%），
+            // 否则说明探针根本量不到泄露（假绿）。
+            if (bandMax < 0.40) {
+              failures.add(
                 '${layout['name']} $variant: expected to DETECT a leak '
                 'but bands look clean (max=$bandMax). Probe cannot see leaks — '
-                'test would be a false-negative.');
-          }
-        } else {
-          // 关键断言：真实修复下页边距带不得出现相邻页内容色（<=10%）。
-          if (bandMax > 0.10) {
-            failures.add('${layout['name']} $variant: ADJACENT-PAGE CONTENT '
+                'test would be a false-negative.',
+              );
+            }
+          } else {
+            // 关键断言：真实修复下页边距带不得出现相邻页内容色（<=10%）。
+            if (bandMax > 0.10) {
+              failures.add(
+                '${layout['name']} $variant: ADJACENT-PAGE CONTENT '
                 'LEAKS into padding band (contentFrac max=$bandMax > 0.10). '
-                'shot=$shotPath');
+                'shot=$shotPath',
+              );
+            }
           }
         }
       }
-    }
 
-    debugPrint('\n===== TODO-1285 page-edge leak report =====\n$report');
-    debugPrint('Evidence screenshots in: $evidenceDir');
+      debugPrint('\n===== TODO-1285 page-edge leak report =====\n$report');
+      debugPrint('Evidence screenshots in: $evidenceDir');
 
-    if (failures.isNotEmpty) {
-      fail('TODO-1285 leak verification FAILED:\n - ${failures.join('\n - ')}\n'
-          '\nFull report:\n$report');
-    }
-  });
+      if (failures.isNotEmpty) {
+        fail(
+          'TODO-1285 leak verification FAILED:\n - ${failures.join('\n - ')}\n'
+          '\nFull report:\n$report',
+        );
+      }
+    },
+  );
 }

@@ -22,13 +22,14 @@ void main() {
     int count = 3,
     Widget Function(int index, VoidCallback onTap)? swatchBuilder,
   }) {
-    final Widget Function(int, VoidCallback) builder = swatchBuilder ??
+    final Widget Function(int, VoidCallback) builder =
+        swatchBuilder ??
         (int i, VoidCallback onTap) => FushiColorSwatch(
-              key: ValueKey<int>(i),
-              color: Colors.primaries[i],
-              shape: FushiColorSwatchShape.dot,
-              onTap: onTap,
-            );
+          key: ValueKey<int>(i),
+          color: Colors.primaries[i],
+          shape: FushiColorSwatchShape.dot,
+          onTap: onTap,
+        );
     return FushiFocusRoot(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -53,22 +54,23 @@ void main() {
   }
 
   Widget schemeSwatch(int i, VoidCallback onTap) => FushiSchemeSwatch(
-        key: ValueKey<int>(i),
-        colors: <Color>[
-          Colors.primaries[i],
-          Colors.primaries[i].shade200,
-          Colors.primaries[i].shade100,
-          Colors.primaries[i].shade50,
-        ],
-        onTap: onTap,
-      );
+    key: ValueKey<int>(i),
+    colors: <Color>[
+      Colors.primaries[i],
+      Colors.primaries[i].shade200,
+      Colors.primaries[i].shade100,
+      Colors.primaries[i].shade50,
+    ],
+    onTap: onTap,
+  );
 
-  testWidgets('D-pad Down from the row above reaches a theme swatch',
-      (WidgetTester tester) async {
+  testWidgets('D-pad Down from the row above reaches a theme swatch', (
+    WidgetTester tester,
+  ) async {
     int? picked;
-    await tester.pumpWidget(buildTestApp(
-      stepperThenSwatches(onPick: (int i) => picked = i),
-    ));
+    await tester.pumpWidget(
+      buildTestApp(stepperThenSwatches(onPick: (int i) => picked = i)),
+    );
     await tester.pump();
 
     final FushiFocusController controller = FushiFocusRoot.controllerOf(
@@ -80,8 +82,11 @@ void main() {
 
     // Before the fix this returned false: with no registered swatch below, the
     // controller had nothing to move onto and the cursor stayed on the stepper.
-    expect(controller.move(FushiFocusDirection.down), isTrue,
-        reason: 'the swatch row is now a registered focus stop');
+    expect(
+      controller.move(FushiFocusDirection.down),
+      isTrue,
+      reason: 'the swatch row is now a registered focus stop',
+    );
     await tester.pump();
 
     // Prove the landing IS a swatch: A/Enter (ActivateIntent) fires its onTap.
@@ -93,12 +98,13 @@ void main() {
     expect(picked, isNotNull, reason: 'A on the focused swatch selects it');
   });
 
-  testWidgets('D-pad Left/Right moves between adjacent swatches',
-      (WidgetTester tester) async {
+  testWidgets('D-pad Left/Right moves between adjacent swatches', (
+    WidgetTester tester,
+  ) async {
     int? picked;
-    await tester.pumpWidget(buildTestApp(
-      stepperThenSwatches(onPick: (int i) => picked = i),
-    ));
+    await tester.pumpWidget(
+      buildTestApp(stepperThenSwatches(onPick: (int i) => picked = i)),
+    );
     await tester.pump();
 
     final FushiFocusController controller = FushiFocusRoot.controllerOf(
@@ -117,8 +123,11 @@ void main() {
     await tester.pump();
     final FushiFocusId? leftmostId = controller.activeId;
 
-    expect(controller.move(FushiFocusDirection.right), isTrue,
-        reason: 'right reaches the next swatch in the row');
+    expect(
+      controller.move(FushiFocusDirection.right),
+      isTrue,
+      reason: 'right reaches the next swatch in the row',
+    );
     await tester.pump();
     expect(controller.activeId, isNot(leftmostId));
 
@@ -127,19 +136,25 @@ void main() {
       const ActivateIntent(),
     );
     await tester.pump();
-    expect(picked, 1,
-        reason: 'one right from the first swatch lands on index 1');
+    expect(
+      picked,
+      1,
+      reason: 'one right from the first swatch lands on index 1',
+    );
   });
 
-  testWidgets('D-pad Down reaches a four-quadrant FushiSchemeSwatch',
-      (WidgetTester tester) async {
+  testWidgets('D-pad Down reaches a four-quadrant FushiSchemeSwatch', (
+    WidgetTester tester,
+  ) async {
     int? picked;
-    await tester.pumpWidget(buildTestApp(
-      stepperThenSwatches(
-        onPick: (int i) => picked = i,
-        swatchBuilder: schemeSwatch,
+    await tester.pumpWidget(
+      buildTestApp(
+        stepperThenSwatches(
+          onPick: (int i) => picked = i,
+          swatchBuilder: schemeSwatch,
+        ),
       ),
-    ));
+    );
     await tester.pump();
 
     final FushiFocusController controller = FushiFocusRoot.controllerOf(
@@ -148,8 +163,11 @@ void main() {
     controller.ensureFocus();
     await tester.pump();
 
-    expect(controller.move(FushiFocusDirection.down), isTrue,
-        reason: 'the scheme swatch row is a registered focus stop too');
+    expect(
+      controller.move(FushiFocusDirection.down),
+      isTrue,
+      reason: 'the scheme swatch row is a registered focus stop too',
+    );
     await tester.pump();
 
     Actions.maybeInvoke<ActivateIntent>(
@@ -157,7 +175,10 @@ void main() {
       const ActivateIntent(),
     );
     await tester.pump();
-    expect(picked, isNotNull,
-        reason: 'A on the focused scheme swatch selects it');
+    expect(
+      picked,
+      isNotNull,
+      reason: 'A on the focused scheme swatch selects it',
+    );
   });
 }

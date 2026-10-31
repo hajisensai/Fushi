@@ -22,14 +22,15 @@ void main() {
   setUp(() async {
     final ({String certificatePem, String privateKeyPem}) generated =
         FushiSelfSignedCertGenerator.generate(
-      commonName: 'hibiki-testconn',
-      sanIpAddresses: <String>['127.0.0.1'],
-    );
+          commonName: 'hibiki-testconn',
+          sanIpAddresses: <String>['127.0.0.1'],
+        );
     identity = FushiTlsIdentity(
       certificatePem: generated.certificatePem,
       privateKeyPem: generated.privateKeyPem,
-      fingerprintSha256:
-          FushiTlsIdentityStore.fingerprintOf(generated.certificatePem),
+      fingerprintSha256: FushiTlsIdentityStore.fingerprintOf(
+        generated.certificatePem,
+      ),
     );
     final SecurityContext serverCtx = SecurityContext()
       ..useCertificateChainBytes(identity.certificatePem.codeUnits)

@@ -221,8 +221,9 @@ List<String>? resolveMokuroPageRoot({
   required bool Function(String relPath) pageExists,
 }) {
   if (payload.images.isEmpty) return null;
-  final List<List<String>> candidates =
-      mokuroPageRootCandidates(volumeName: volumeName);
+  final List<List<String>> candidates = mokuroPageRootCandidates(
+    volumeName: volumeName,
+  );
   final String firstUrl = payload.images.first.url;
   List<String>? firstPageHit;
   for (final List<String> candidate in candidates) {
@@ -275,8 +276,9 @@ MokuroPayload parseMokuro(String jsonStr) {
 
     final double width = _asDouble(rawPage['img_width']);
     final double height = _asDouble(rawPage['img_height']);
-    final String url =
-        normalizeMangaUrl((rawPage['img_path'] as String?) ?? '');
+    final String url = normalizeMangaUrl(
+      (rawPage['img_path'] as String?) ?? '',
+    );
 
     final List<MokuroBlock> blocks = <MokuroBlock>[];
     final Object? rawBlocks = rawPage['blocks'];
@@ -291,11 +293,7 @@ MokuroPayload parseMokuro(String jsonStr) {
     }
 
     images.add(
-      MokuroImage(
-        url: url,
-        size: MokuroSize(width, height),
-        blocks: blocks,
-      ),
+      MokuroImage(url: url, size: MokuroSize(width, height), blocks: blocks),
     );
   }
 
@@ -341,11 +339,7 @@ MokuroPayload parseMangaJson(String jsonStr) {
     }
 
     images.add(
-      MokuroImage(
-        url: url,
-        size: MokuroSize(width, height),
-        blocks: blocks,
-      ),
+      MokuroImage(url: url, size: MokuroSize(width, height), blocks: blocks),
     );
   }
 
@@ -472,8 +466,9 @@ MokuroBlock _parseBlock(
     lines: lines,
     linesCoords: _parseLinesCoords(raw['lines_coords']),
     regions: _parseRegions(raw['regions']),
-    confidence:
-        raw['confidence'] is num ? (raw['confidence'] as num).toDouble() : null,
+    confidence: raw['confidence'] is num
+        ? (raw['confidence'] as num).toDouble()
+        : null,
     aiRecognized: raw['ai_recognized'] == true,
     pdfTextLayer: raw['pdf_text_layer'] == true,
   );

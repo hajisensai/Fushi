@@ -98,9 +98,15 @@ class RemoteListingBuilder {
     int? sizeBytes,
   }) {
     if (parentName.isEmpty || name.isEmpty) return;
-    _folders.putIfAbsent(parentName, () => <AssetEntry>[]).add(
+    _folders
+        .putIfAbsent(parentName, () => <AssetEntry>[])
+        .add(
           AssetEntry(
-              id: id, name: name, isFolder: isFolder, sizeBytes: sizeBytes),
+            id: id,
+            name: name,
+            isFolder: isFolder,
+            sizeBytes: sizeBytes,
+          ),
         );
   }
 

@@ -20,8 +20,10 @@ void main() {
   /// 提取 popup.css 里顶层 `a { ... }` 规则块（截图问题的裸链接与结构化 href
   /// 都是普通 `<a>`，样式都由这条根规则兜底）。
   String extractBaseAnchorRule(String css) {
-    final Match? m =
-        RegExp(r'(?:^|\n)a\s*\{([^}]*)\}', multiLine: true).firstMatch(css);
+    final Match? m = RegExp(
+      r'(?:^|\n)a\s*\{([^}]*)\}',
+      multiLine: true,
+    ).firstMatch(css);
     expect(m, isNotNull, reason: 'popup.css 应有顶层 a { } 规则');
     return m!.group(1)!;
   }
@@ -39,7 +41,8 @@ void main() {
         RegExp(r'overflow-wrap:\s*anywhere').hasMatch(rule) ||
             RegExp(r'word-break:\s*break-(all|word)').hasMatch(rule),
         isTrue,
-        reason: '$path 的 a{} 规则应含 overflow-wrap:anywhere（或等效断词），'
+        reason:
+            '$path 的 a{} 规则应含 overflow-wrap:anywhere（或等效断词），'
             '否则无空格长 URL 会撑破 .glossary-group 卡片（BUG-860 回归）',
       );
     }
@@ -53,8 +56,11 @@ void main() {
       '../tools/browser-extension/vendor/content.css',
     ]) {
       final String css = read(path);
-      expect(css, contains('overflow-wrap: anywhere'),
-          reason: '$path 应含 a 的 overflow-wrap 断词规则（重跑 generate-content-css.mjs）');
+      expect(
+        css,
+        contains('overflow-wrap: anywhere'),
+        reason: '$path 应含 a 的 overflow-wrap 断词规则（重跑 generate-content-css.mjs）',
+      );
     }
   });
 }

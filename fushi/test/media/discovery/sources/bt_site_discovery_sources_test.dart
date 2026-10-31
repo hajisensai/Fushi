@@ -12,16 +12,16 @@ import 'package:fushi_engine/media/torrent/nyaa_client.dart';
 void main() {
   final List<Uri> requests = <Uri>[];
   NyaaClient client(BtSiteConfig site) => NyaaClient(
-        baseUrl: site.baseUrl.toString(),
-        minRequestInterval: Duration.zero,
-        client: MockClient((http.Request request) async {
-          requests.add(request.url);
-          return http.Response(
-            '<html><body><h3>No results found</h3></body></html>',
-            200,
-          );
-        }),
+    baseUrl: site.baseUrl.toString(),
+    minRequestInterval: Duration.zero,
+    client: MockClient((http.Request request) async {
+      requests.add(request.url);
+      return http.Response(
+        '<html><body><h3>No results found</h3></body></html>',
+        200,
       );
+    }),
+  );
 
   BtSiteConfig site(
     String id, {
@@ -32,22 +32,21 @@ void main() {
       BtSiteDomain.anime,
     },
     bool enabled = true,
-  }) =>
-      BtSiteConfig(
-        id: id,
-        name: id == 'named' ? 'My books' : '',
-        baseUrl: Uri.parse('https://$id.example'),
-        format: format,
-        domains: domains,
-        nyaaCategories: format == BtSiteFormat.nyaa
-            ? const <BtSiteDomain, String>{
-                BtSiteDomain.anime: '1_0',
-                BtSiteDomain.novel: '3_0',
-                BtSiteDomain.audiobook: '2_0',
-              }
-            : const <BtSiteDomain, String>{},
-        enabled: enabled,
-      );
+  }) => BtSiteConfig(
+    id: id,
+    name: id == 'named' ? 'My books' : '',
+    baseUrl: Uri.parse('https://$id.example'),
+    format: format,
+    domains: domains,
+    nyaaCategories: format == BtSiteFormat.nyaa
+        ? const <BtSiteDomain, String>{
+            BtSiteDomain.anime: '1_0',
+            BtSiteDomain.novel: '3_0',
+            BtSiteDomain.audiobook: '2_0',
+          }
+        : const <BtSiteDomain, String>{},
+    enabled: enabled,
+  );
 
   test('没有用户站点 → 没有 torrent 发现源', () {
     expect(nyaaDiscoverySourcesForBtSites(const <BtSiteConfig>[]), isEmpty);
@@ -70,8 +69,9 @@ void main() {
     expect(source.displayName, 'My books');
     expect(source.isUserConfigured, isTrue);
     // game 勾了但站点没有游戏分类 → 不生效；anime 是视频域 → 不进发现页。
-    expect(source.capabilities.kinds.toSet(),
-        <DiscoveryMediaKind>{DiscoveryMediaKind.novel});
+    expect(source.capabilities.kinds.toSet(), <DiscoveryMediaKind>{
+      DiscoveryMediaKind.novel,
+    });
 
     await source.search(
       const DiscoveryRequest(kind: DiscoveryMediaKind.novel, query: 'abc'),
@@ -82,10 +82,9 @@ void main() {
 
   test('没有名字时显示主机名', () {
     expect(
-      nyaaDiscoverySourcesForBtSites(
-        <BtSiteConfig>[site('host')],
-        clientFactory: client,
-      ).single.displayName,
+      nyaaDiscoverySourcesForBtSites(<BtSiteConfig>[
+        site('host'),
+      ], clientFactory: client).single.displayName,
       'host.example',
     );
   });

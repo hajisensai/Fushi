@@ -18,8 +18,7 @@ import '../../pages/video_fushi_page_source_corpus.dart';
 /// video_single_top_bar / video_mobile_controls_static). Here we lock the
 /// data-layer mapping the renderer consumes.
 void main() {
-  group('page wires the slot renderer (data-driven, not legacy buttonsFor)',
-      () {
+  group('page wires the slot renderer (data-driven, not legacy buttonsFor)', () {
     final File page = File(
       'lib/src/pages/implementations/video_fushi_page.dart',
     );
@@ -35,45 +34,53 @@ void main() {
       // Phase 2: _controlLayout is now a persisted field (the v2 source of
       // truth), loaded from AppModel.videoControlLayout, not derived read-only
       // from the legacy customization.
-      expect(src,
-          contains('ValueNotifier<VideoControlLayout> _controlLayoutNotifier'));
       expect(
-          src,
-          contains(
-              'VideoControlLayout get _controlLayout => _controlLayoutNotifier.value'));
+        src,
+        contains('ValueNotifier<VideoControlLayout> _controlLayoutNotifier'),
+      );
       expect(
-          src,
-          contains(
-              '_controlLayoutNotifier.value = appModel.videoControlLayout'));
+        src,
+        contains(
+          'VideoControlLayout get _controlLayout => _controlLayoutNotifier.value',
+        ),
+      );
+      expect(
+        src,
+        contains('_controlLayoutNotifier.value = appModel.videoControlLayout'),
+      );
       // BUG-391 r4/r5 (TODO-771)：control bar 从
       // ValueListenableBuilder<VideoControlLayout> 改为 ListenableBuilder +
       // Listenable.merge（侧栏可见性也要重建 theme）；仍以持久化的
       // _controlLayoutNotifier 为权威，builder 内 .value 取值重建。
       expect(src, contains('Listenable.merge('));
       expect(
-          src,
-          contains(
-              'final VideoControlLayout layout = _controlLayoutNotifier.value'));
+        src,
+        contains(
+          'final VideoControlLayout layout = _controlLayoutNotifier.value',
+        ),
+      );
       expect(src, contains('_currentVideoControlsTheme(controller, layout)'));
       expect(src, contains('appModel.setVideoControlLayout(layout)'));
       // The phase-1 read-only derivation is gone.
       expect(
-          src,
-          isNot(contains(
-              'VideoControlLayout.fromLegacy(_controlCustomization)')));
+        src,
+        isNot(contains('VideoControlLayout.fromLegacy(_controlCustomization)')),
+      );
     });
 
     test('customizable render points go through slot-driven item helpers', () {
       expect(src, contains('List<VideoControlItem> _slotChipItems('));
       // Top bar, bottom bar, and screen rails all resolve from slots.
       expect(
-          RegExp(r'_topBarSlotGroup\(\s*VideoControlSlot\.topLeft')
-              .hasMatch(src),
-          isTrue);
+        RegExp(r'_topBarSlotGroup\(\s*VideoControlSlot\.topLeft').hasMatch(src),
+        isTrue,
+      );
       expect(
-          RegExp(r'_topBarSlotGroup\(\s*VideoControlSlot\.topRight')
-              .hasMatch(src),
-          isTrue);
+        RegExp(
+          r'_topBarSlotGroup\(\s*VideoControlSlot\.topRight',
+        ).hasMatch(src),
+        isTrue,
+      );
       expect(src, isNot(contains('_topBarSlotButtons(')));
       expect(src, contains('_bottomSlotButtons('));
       expect(src, contains('VideoControlSlot.bottomLeft'));
@@ -85,7 +92,9 @@ void main() {
       // Legacy direct placement lookups removed from the render path.
       expect(src, isNot(contains('buttonsFor(VideoControlPlacement.bottom)')));
       expect(
-          src, isNot(contains('buttonsFor(VideoControlPlacement.rightRail)')));
+        src,
+        isNot(contains('buttonsFor(VideoControlPlacement.rightRail)')),
+      );
     });
   });
 }

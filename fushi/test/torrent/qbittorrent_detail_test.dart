@@ -31,11 +31,11 @@ MockClient _mockWithLogin(
 
 /// 构造走 [mock] 的 qb 客户端（账密固定，测试不关心）。
 QBittorrentClient _client(MockClient mock) => QBittorrentClient(
-      baseUrl: 'http://qb.local:8080',
-      username: 'admin',
-      password: 'secret',
-      client: mock,
-    );
+  baseUrl: 'http://qb.local:8080',
+  username: 'admin',
+  password: 'secret',
+  client: mock,
+);
 
 void main() {
   group('parseQbTorrentInfos 拆分统计字段（TODO-2482）', () {
@@ -290,8 +290,8 @@ void main() {
           );
         }),
       );
-      final TorrentSessionStatusInfo info =
-          (await client.fetchSessionStatus())!;
+      final TorrentSessionStatusInfo info = (await client
+          .fetchSessionStatus())!;
       expect(info.downRateBps, 111);
       expect(info.upRateBps, 222);
       expect(info.dhtNodes, 333);
@@ -313,8 +313,8 @@ void main() {
           return http.Response('', 500);
         }),
       );
-      final TorrentSessionStatusInfo info =
-          (await client.fetchSessionStatus())!;
+      final TorrentSessionStatusInfo info = (await client
+          .fetchSessionStatus())!;
       expect(info.downRateBps, 10);
       expect(info.dhtNodes, 7);
       expect(info.dhtEnabled, isNull);
@@ -345,44 +345,51 @@ void main() {
       );
       expect(await client.fetchTorrentPeers('abc'), isEmpty);
       expect(seen.url.path, '/api/v2/sync/torrentPeers');
-      expect(seen.url.queryParameters,
-          <String, String>{'hash': 'abc', 'rid': '0'});
+      expect(seen.url.queryParameters, <String, String>{
+        'hash': 'abc',
+        'rid': '0',
+      });
       status = 404;
       expect(await client.fetchTorrentPeers('abc'), isNull);
       expect(await client.fetchTorrentPeers(''), isNull);
       client.close();
     });
 
-    test('fetchTrackers / fetchFilePriorities / fetchPieceStates 路径正确',
-        () async {
-      final List<String> paths = <String>[];
-      final QBittorrentClient client = _client(
-        _mockWithLogin((http.Request request) async {
-          paths.add(request.url.path);
-          expect(request.url.queryParameters['hash'], 'abc');
-          return http.Response('[]', 200);
-        }),
-      );
-      expect(await client.fetchTrackers('abc'), isEmpty);
-      expect(await client.fetchFilePriorities('abc'), isEmpty);
-      expect(await client.fetchPieceStates('abc'), isNotNull);
-      expect(paths, <String>[
-        '/api/v2/torrents/trackers',
-        '/api/v2/torrents/files',
-        '/api/v2/torrents/pieceStates',
-      ]);
-      expect(await client.fetchTrackers(''), isNull);
-      expect(await client.fetchFilePriorities(''), isNull);
-      expect(await client.fetchPieceStates(''), isNull);
-      client.close();
-    });
+    test(
+      'fetchTrackers / fetchFilePriorities / fetchPieceStates 路径正确',
+      () async {
+        final List<String> paths = <String>[];
+        final QBittorrentClient client = _client(
+          _mockWithLogin((http.Request request) async {
+            paths.add(request.url.path);
+            expect(request.url.queryParameters['hash'], 'abc');
+            return http.Response('[]', 200);
+          }),
+        );
+        expect(await client.fetchTrackers('abc'), isEmpty);
+        expect(await client.fetchFilePriorities('abc'), isEmpty);
+        expect(await client.fetchPieceStates('abc'), isNotNull);
+        expect(paths, <String>[
+          '/api/v2/torrents/trackers',
+          '/api/v2/torrents/files',
+          '/api/v2/torrents/pieceStates',
+        ]);
+        expect(await client.fetchTrackers(''), isNull);
+        expect(await client.fetchFilePriorities(''), isNull);
+        expect(await client.fetchPieceStates(''), isNull);
+        client.close();
+      },
+    );
   });
 
   group('QbTorrentBackend（TorrentDetailBackend 转发）', () {
     test('实现 TorrentDetailBackend 且能力恒可用', () {
       final QbTorrentBackend backend = QbTorrentBackend(
-        _client(_mockWithLogin(
-            (http.Request request) async => http.Response('', 500))),
+        _client(
+          _mockWithLogin(
+            (http.Request request) async => http.Response('', 500),
+          ),
+        ),
       );
       expect(backend, isA<TorrentDetailBackend>());
       expect(backend.detailAvailable, isTrue);
@@ -392,11 +399,13 @@ void main() {
     test('setFilePriority：form 参数 hash/id/priority 且枚举映射 0/1/6', () async {
       final List<Map<String, String>> forms = <Map<String, String>>[];
       final QbTorrentBackend backend = QbTorrentBackend(
-        _client(_mockWithLogin((http.Request request) async {
-          expect(request.url.path, '/api/v2/torrents/filePrio');
-          forms.add(request.bodyFields);
-          return http.Response('', 200);
-        })),
+        _client(
+          _mockWithLogin((http.Request request) async {
+            expect(request.url.path, '/api/v2/torrents/filePrio');
+            forms.add(request.bodyFields);
+            return http.Response('', 200);
+          }),
+        ),
       );
       expect(
         await backend.setFilePriority('abc', 2, TorrentFilePriority.skip),
@@ -418,38 +427,42 @@ void main() {
       backend.close();
     });
 
-    test('listPeers / listTrackers / sessionStatus / pieceStates 纯转发',
-        () async {
-      final List<String> paths = <String>[];
-      final QbTorrentBackend backend = QbTorrentBackend(
-        _client(_mockWithLogin((http.Request request) async {
-          paths.add(request.url.path);
-          if (request.url.path == '/api/v2/sync/torrentPeers') {
-            return http.Response('{"peers":{}}', 200);
-          }
-          if (request.url.path == '/api/v2/transfer/info') {
-            return http.Response('{"dl_info_speed":1}', 200);
-          }
-          if (request.url.path == '/api/v2/app/preferences') {
-            return http.Response('{"dht":true}', 200);
-          }
-          return http.Response('[]', 200);
-        })),
-      );
-      expect(await backend.listPeers('abc'), isEmpty);
-      expect(await backend.listTrackers('abc'), isEmpty);
-      expect(await backend.filePriorities('abc'), isEmpty);
-      expect((await backend.sessionStatus())!.downRateBps, 1);
-      expect((await backend.pieceStates('abc'))!.numPieces, 0);
-      expect(paths, <String>[
-        '/api/v2/sync/torrentPeers',
-        '/api/v2/torrents/trackers',
-        '/api/v2/torrents/files',
-        '/api/v2/transfer/info',
-        '/api/v2/app/preferences',
-        '/api/v2/torrents/pieceStates',
-      ]);
-      backend.close();
-    });
+    test(
+      'listPeers / listTrackers / sessionStatus / pieceStates 纯转发',
+      () async {
+        final List<String> paths = <String>[];
+        final QbTorrentBackend backend = QbTorrentBackend(
+          _client(
+            _mockWithLogin((http.Request request) async {
+              paths.add(request.url.path);
+              if (request.url.path == '/api/v2/sync/torrentPeers') {
+                return http.Response('{"peers":{}}', 200);
+              }
+              if (request.url.path == '/api/v2/transfer/info') {
+                return http.Response('{"dl_info_speed":1}', 200);
+              }
+              if (request.url.path == '/api/v2/app/preferences') {
+                return http.Response('{"dht":true}', 200);
+              }
+              return http.Response('[]', 200);
+            }),
+          ),
+        );
+        expect(await backend.listPeers('abc'), isEmpty);
+        expect(await backend.listTrackers('abc'), isEmpty);
+        expect(await backend.filePriorities('abc'), isEmpty);
+        expect((await backend.sessionStatus())!.downRateBps, 1);
+        expect((await backend.pieceStates('abc'))!.numPieces, 0);
+        expect(paths, <String>[
+          '/api/v2/sync/torrentPeers',
+          '/api/v2/torrents/trackers',
+          '/api/v2/torrents/files',
+          '/api/v2/transfer/info',
+          '/api/v2/app/preferences',
+          '/api/v2/torrents/pieceStates',
+        ]);
+        backend.close();
+      },
+    );
   });
 }

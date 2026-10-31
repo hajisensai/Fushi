@@ -44,12 +44,19 @@ void main() {
   group('默认表', () {
     test('globalBack 在每个平台都绑 Esc + Alt+← + 手柄 B', () {
       for (final TargetPlatform platform in platforms) {
-        final ShortcutBindingSet back =
-            ShortcutDefaults.forPlatform(platform)[ShortcutAction.globalBack]!;
-        expect(back.keyboardBindings, contains(esc),
-            reason: 'Esc 必须是「返回上一级」的默认键（$platform）');
-        expect(back.keyboardBindings, contains(altLeft),
-            reason: 'Alt+← 旧默认保留，不破坏老用户肌肉记忆（$platform）');
+        final ShortcutBindingSet back = ShortcutDefaults.forPlatform(
+          platform,
+        )[ShortcutAction.globalBack]!;
+        expect(
+          back.keyboardBindings,
+          contains(esc),
+          reason: 'Esc 必须是「返回上一级」的默认键（$platform）',
+        );
+        expect(
+          back.keyboardBindings,
+          contains(altLeft),
+          reason: 'Alt+← 旧默认保留，不破坏老用户肌肉记忆（$platform）',
+        );
         expect(
           back.gamepadBindings.map((GamepadBinding b) => b.button),
           contains(GamepadButton.b),
@@ -69,7 +76,8 @@ void main() {
           expect(
             defaults[action]!.keyboardBindings,
             isEmpty,
-            reason: '${action.key} 默认绑了键盘键就会在页面 scope 先命中，'
+            reason:
+                '${action.key} 默认绑了键盘键就会在页面 scope 先命中，'
                 '把 globalBack 的退出阶梯永久遮蔽（$platform）',
           );
         }
@@ -97,15 +105,17 @@ void main() {
       for (final TargetPlatform platform in platforms) {
         final Map<ShortcutAction, ShortcutBindingSet> defaults =
             ShortcutDefaults.forPlatform(platform);
-        final Set<InputBinding> backKeys =
-            defaults[ShortcutAction.globalBack]!.keyboardBindings.toSet();
+        final Set<InputBinding> backKeys = defaults[ShortcutAction.globalBack]!
+            .keyboardBindings
+            .toSet();
         for (final ShortcutAction action in ShortcutAction.values) {
           if (action.scope == ShortcutScope.universal) continue;
           for (final InputBinding kb in defaults[action]!.keyboardBindings) {
             expect(
               backKeys.contains(kb),
               isFalse,
-              reason: '${action.key}（${action.scope.name}）绑了 ${kb.serialize()}，'
+              reason:
+                  '${action.key}（${action.scope.name}）绑了 ${kb.serialize()}，'
                   '会在该页面遮蔽「返回上一级」（$platform）',
             );
           }
@@ -117,8 +127,7 @@ void main() {
       final Map<ShortcutAction, ShortcutBindingSet> defaults =
           ShortcutDefaults.forPlatform(TargetPlatform.windows);
       final Set<GamepadButton> backButtons =
-          defaults[ShortcutAction.globalBack]!
-              .gamepadBindings
+          defaults[ShortcutAction.globalBack]!.gamepadBindings
               .map((GamepadBinding b) => b.button)
               .toSet();
       for (final ShortcutAction action in ShortcutAction.values) {
@@ -128,7 +137,8 @@ void main() {
           expect(
             knownShadowedGamepad.contains(gp.button),
             isTrue,
-            reason: '${action.key} 占用了返回键 ${gp.button.name}，'
+            reason:
+                '${action.key} 占用了返回键 ${gp.button.name}，'
                 '既不在例外表里 ⇒ 该页面的「返回上一级」被静默遮蔽',
           );
           expect(
@@ -152,35 +162,39 @@ void main() {
     }) {
       return <String, dynamic>{
         kShortcutSchemaVersionKey: 7,
-        ShortcutAction.globalBack.key: (globalBack ??
-                const ShortcutBindingSet(
-                  keyboardBindings: <InputBinding>[altLeft],
-                  gamepadBindings: <GamepadBinding>[
-                    GamepadBinding(GamepadButton.b),
-                  ],
-                ))
-            .toJson(),
-        ShortcutAction.readerDismissDict.key: (readerDismissDict ??
-                const ShortcutBindingSet(
-                  keyboardBindings: <InputBinding>[esc],
-                ))
-            .toJson(),
+        ShortcutAction.globalBack.key:
+            (globalBack ??
+                    const ShortcutBindingSet(
+                      keyboardBindings: <InputBinding>[altLeft],
+                      gamepadBindings: <GamepadBinding>[
+                        GamepadBinding(GamepadButton.b),
+                      ],
+                    ))
+                .toJson(),
+        ShortcutAction.readerDismissDict.key:
+            (readerDismissDict ??
+                    const ShortcutBindingSet(
+                      keyboardBindings: <InputBinding>[esc],
+                    ))
+                .toJson(),
         ShortcutAction.mangaDismissDict.key: const ShortcutBindingSet(
           keyboardBindings: <InputBinding>[esc],
         ).toJson(),
-        'reader_exit_book': (readerExitBook ??
-                const ShortcutBindingSet(
-                  keyboardBindings: <InputBinding>[ctrlW],
-                ))
-            .toJson(),
-        'video_escape': (videoEscape ??
-                const ShortcutBindingSet(
-                  keyboardBindings: <InputBinding>[esc],
-                  gamepadBindings: <GamepadBinding>[
-                    GamepadBinding(GamepadButton.b),
-                  ],
-                ))
-            .toJson(),
+        'reader_exit_book':
+            (readerExitBook ??
+                    const ShortcutBindingSet(
+                      keyboardBindings: <InputBinding>[ctrlW],
+                    ))
+                .toJson(),
+        'video_escape':
+            (videoEscape ??
+                    const ShortcutBindingSet(
+                      keyboardBindings: <InputBinding>[esc],
+                      gamepadBindings: <GamepadBinding>[
+                        GamepadBinding(GamepadButton.b),
+                      ],
+                    ))
+                .toJson(),
       };
     }
 
@@ -250,19 +264,27 @@ void main() {
           ),
         ),
       );
-      final ShortcutBindingSet after =
-          registry.bindingsFor(ShortcutAction.readerDismissDict);
+      final ShortcutBindingSet after = registry.bindingsFor(
+        ShortcutAction.readerDismissDict,
+      );
       expect(after.keyboardBindings, isEmpty, reason: '键盘 Esc 按默认收回');
-      expect(after.mouseBindings, contains(const MouseBinding(3)),
-          reason: '鼠标绑定与本次统一无关，绝不能被顺手抹掉');
+      expect(
+        after.mouseBindings,
+        contains(const MouseBinding(3)),
+        reason: '鼠标绑定与本次统一无关，绝不能被顺手抹掉',
+      );
     });
 
     test('已删除动作：默认值直接丢弃（不给 globalBack 塞多余键位）', () {
       final FushiShortcutRegistry registry = load(v7Snapshot());
-      final List<InputBinding> keys =
-          registry.bindingsFor(ShortcutAction.globalBack).keyboardBindings;
-      expect(keys, isNot(contains(ctrlW)),
-          reason: '没改过的 Ctrl+W 是旧默认，其语义已被 Esc 覆盖，不该搬过来');
+      final List<InputBinding> keys = registry
+          .bindingsFor(ShortcutAction.globalBack)
+          .keyboardBindings;
+      expect(
+        keys,
+        isNot(contains(ctrlW)),
+        reason: '没改过的 Ctrl+W 是旧默认，其语义已被 Esc 覆盖，不该搬过来',
+      );
     });
 
     test('已删除动作：用户改过的键搬进 globalBack（改键不丢）', () {
@@ -315,8 +337,9 @@ void main() {
           ),
         ),
       );
-      final List<InputBinding> keys =
-          registry.bindingsFor(ShortcutAction.globalBack).keyboardBindings;
+      final List<InputBinding> keys = registry
+          .bindingsFor(ShortcutAction.globalBack)
+          .keyboardBindings;
       expect(
         keys,
         contains(const InputBinding(key: LogicalKeyboardKey.backspace)),
@@ -337,8 +360,10 @@ void main() {
       final String start = 'case ShortcutAction.$name:';
       final int startIdx = code.indexOf(start);
       expect(startIdx, greaterThanOrEqualTo(0), reason: '$name 的 case 分支应存在');
-      final int endIdx =
-          code.indexOf('case ShortcutAction.', startIdx + start.length);
+      final int endIdx = code.indexOf(
+        'case ShortcutAction.',
+        startIdx + start.length,
+      );
       expect(endIdx, greaterThan(startIdx));
       return code.substring(startIdx, endIdx);
     }
@@ -347,23 +372,33 @@ void main() {
         'lib/src/pages/implementations/reader_fushi/caret.part.dart';
 
     test('阅读器 readerDismissDict 分支只关词典、绝不退书', () {
-      final String slice =
-          caseSlice(File(readerPath).readAsStringSync(), 'readerDismissDict');
+      final String slice = caseSlice(
+        File(readerPath).readAsStringSync(),
+        'readerDismissDict',
+      );
       expect(
         slice.contains('maybePop') || slice.contains('.pop('),
         isFalse,
         reason: '「只关词典」动作绝不退书——退出是 globalBack 的职责',
       );
       expect(slice.contains('clearDictionaryResult'), isTrue);
-      expect(slice.contains('KeyEventResult.ignored'), isTrue,
-          reason: '无弹窗时不消费（ignored），不得吞键');
+      expect(
+        slice.contains('KeyEventResult.ignored'),
+        isTrue,
+        reason: '无弹窗时不消费（ignored），不得吞键',
+      );
     });
 
     test('阅读器 globalBack 分支 = 先关词典、再退全屏、最后 maybePop 退书（BUG-782 闸门）', () {
-      final String slice =
-          caseSlice(File(readerPath).readAsStringSync(), 'globalBack');
-      expect(slice.contains('isDictionaryShown'), isTrue,
-          reason: '第一级：词典弹窗可见时只关弹窗，留在书里');
+      final String slice = caseSlice(
+        File(readerPath).readAsStringSync(),
+        'globalBack',
+      );
+      expect(
+        slice.contains('isDictionaryShown'),
+        isTrue,
+        reason: '第一级：词典弹窗可见时只关弹窗，留在书里',
+      );
       expect(slice.contains('clearDictionaryResult'), isTrue);
       // 第二级（用户裁定「Esc 也可以退出全屏」）：窗口全屏中先退全屏、留在书里。退书
       // 这一级随之搬进同一个 helper，所以 BUG-782 那条不变式（退书必须经 maybePop、
@@ -381,8 +416,9 @@ void main() {
       );
 
       final String helper = methodBody(
-        File('lib/src/pages/implementations/reader_fushi/chrome.part.dart')
-            .readAsStringSync(),
+        File(
+          'lib/src/pages/implementations/reader_fushi/chrome.part.dart',
+        ).readAsStringSync(),
         'Future<void> _exitWindowFullscreenOrPopReader() async {',
       );
       expect(
@@ -390,8 +426,11 @@ void main() {
         isTrue,
         reason: '退全屏必须排在退书之前，否则 Esc 会连人带全屏一起退出书籍',
       );
-      expect(helper.contains('maybePop('), isTrue,
-          reason: '最后一级：退书必须经 maybePop 触发 PopScope→onWillPop');
+      expect(
+        helper.contains('maybePop('),
+        isTrue,
+        reason: '最后一级：退书必须经 maybePop 触发 PopScope→onWillPop',
+      );
       expect(
         RegExp(r'(?<!maybe)\.pop\(').hasMatch(helper),
         isFalse,
@@ -413,43 +452,60 @@ void main() {
     test('漫画：globalBack 有弹窗关弹窗、无弹窗退出（此前 Esc 是死键）', () {
       const String path = 'lib/src/media/manga/reader/manga_fushi_page.dart';
       final String code = maskComments(File(path).readAsStringSync());
-      expect(code.contains('MangaReaderInputAction.backOrExit'), isTrue,
-          reason: '漫画必须有「退出」这个落点动作');
+      expect(
+        code.contains('MangaReaderInputAction.backOrExit'),
+        isTrue,
+        reason: '漫画必须有「退出」这个落点动作',
+      );
       expect(
         'scope: ShortcutScope.universal'.allMatches(code).length,
         2,
-        reason: '键盘 (_resolveMangaKeyAction) 与手柄 (_resolveMangaGamepadAction) '
+        reason:
+            '键盘 (_resolveMangaKeyAction) 与手柄 (_resolveMangaGamepadAction) '
             '各一处兜底解析 universal；少一处就有一条通道退不出漫画'
             '（手柄那条缺席时 B 会走全局 maybePop 兜底，弹窗开着直接退页）',
       );
       final int idx = code.indexOf('if (action == ShortcutAction.globalBack)');
       expect(idx, greaterThanOrEqualTo(0));
       final String slice = code.substring(idx, idx + 260);
-      expect(slice.contains('dismissDictionary'), isTrue,
-          reason: '第一级：弹窗可见先关弹窗');
+      expect(
+        slice.contains('dismissDictionary'),
+        isTrue,
+        reason: '第一级：弹窗可见先关弹窗',
+      );
       expect(slice.contains('backOrExit'), isTrue, reason: '第二级：否则退出漫画');
     });
 
     test('视频：逐级退出阶梯挂在 globalBack 上（原 videoEscape 已删除）', () {
       const String path = 'lib/src/media/video/video_player_shortcuts.dart';
       final String code = maskComments(File(path).readAsStringSync());
-      expect(code.contains('ShortcutAction.globalBack: actions.escape'), isTrue,
-          reason: '视频页的退出阶梯必须由统一的「返回上一级」驱动');
-      expect(code.contains('videoEscape'), isFalse,
-          reason: '旧的 video 专属退出动作已删除，不得残留引用');
+      expect(
+        code.contains('ShortcutAction.globalBack: actions.escape'),
+        isTrue,
+        reason: '视频页的退出阶梯必须由统一的「返回上一级」驱动',
+      );
+      expect(
+        code.contains('videoEscape'),
+        isFalse,
+        reason: '旧的 video 专属退出动作已删除，不得残留引用',
+      );
     });
 
     test('全局兜底按注册表绑定解析，不再硬编码 Escape', () {
       const String path = 'lib/src/shortcuts/global_navigation.dart';
       final String code = maskComments(File(path).readAsStringSync());
-      expect(code.contains('scope: ShortcutScope.universal'), isTrue,
-          reason: '最外层兜底必须按 universal 解析 globalBack');
+      expect(
+        code.contains('scope: ShortcutScope.universal'),
+        isTrue,
+        reason: '最外层兜底必须按 universal 解析 globalBack',
+      );
       // 唯一允许残留的硬编码 Escape 判定：注册表缺席（测试宿主）时的降级，以及
       // 「Esc 落在弹层上让给框架」那一条既有语义。
       expect(
         'LogicalKeyboardKey.escape'.allMatches(code).length,
         2,
-        reason: '硬编码 Escape 只允许出现在无注册表降级 + 弹层让路两处；'
+        reason:
+            '硬编码 Escape 只允许出现在无注册表降级 + 弹层让路两处；'
             '多出来的就是又一条改不动的隐形返回路径',
       );
     });

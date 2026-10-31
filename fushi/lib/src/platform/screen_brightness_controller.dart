@@ -32,8 +32,9 @@ class ScreenBrightnessController {
   Future<double?> currentBrightness() async {
     if (!canControl) return null;
     try {
-      final double? value =
-          await _channel.invokeMethod<double>('getBrightness');
+      final double? value = await _channel.invokeMethod<double>(
+        'getBrightness',
+      );
       if (value == null) return null;
       return value.clamp(0.0, 1.0);
     } on PlatformException {

@@ -235,11 +235,8 @@ void main() {
       await tester.pump();
       expect(entries![0].status, DownloadTaskStatus.completed);
       expect(entries![0].actions.clear, isNotNull);
-      final ({MangaDownloadJobRow row, bool added}) again =
-          await service.enqueueMokuroVolume(
-        seriesName: 'Series',
-        volumeName: '01',
-      );
+      final ({MangaDownloadJobRow row, bool added}) again = await service
+          .enqueueMokuroVolume(seriesName: 'Series', volumeName: '01');
       expect(again.added, isTrue);
       expect(again.row.jobId, jobId);
       await tester.pump();

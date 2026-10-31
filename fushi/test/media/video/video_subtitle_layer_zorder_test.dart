@@ -24,8 +24,12 @@ Dialogue: 0,0:00:01.00,0:00:04.00,Sign,,0,0,0,,{\an7\pos(100,600)}Hoh
 ''';
 
 AudioCue _cue(String text, {required int layer, required int index}) {
-  final SubtitleMarkup m = parseSubtitleMarkup(text,
-      playResX: 1280, playResY: 720, layer: layer);
+  final SubtitleMarkup m = parseSubtitleMarkup(
+    text,
+    playResX: 1280,
+    playResY: 720,
+    layer: layer,
+  );
   return AudioCue()
     ..bookKey = 'b'
     ..chapterHref = 'c'
@@ -52,8 +56,12 @@ void main() {
         ('b', <AudioCue>[fxB]),
       ],
     );
-    expect(sorted.map((g) => g.$1).toList(), <String>['s', 'd', 'b', 'a'],
-        reason: 'Layer 0 最底；Layer 1 内按 sentenceIndex 2 < 3 < 7');
+    expect(sorted.map((g) => g.$1).toList(), <String>[
+      's',
+      'd',
+      'b',
+      'a',
+    ], reason: 'Layer 0 最底；Layer 1 内按 sentenceIndex 2 < 3 < 7');
     // 单组原样返回（不新建列表）。
     final List<(String, List<AudioCue>)> one = <(String, List<AudioCue>)>[
       ('x', <AudioCue>[dlg]),
@@ -61,8 +69,9 @@ void main() {
     expect(identical(sortCueGroupsForPaint(one), one), isTrue);
   });
 
-  testWidgets('Layer 0 招牌在文件里排在 Layer 1 对白之后，仍画在对白之下',
-      (WidgetTester tester) async {
+  testWidgets('Layer 0 招牌在文件里排在 Layer 1 对白之后，仍画在对白之下', (
+    WidgetTester tester,
+  ) async {
     tester.view.physicalSize = const Size(1280, 720);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.reset);
@@ -72,24 +81,29 @@ void main() {
     addTearDown(c.dispose);
     c.setCues(AssParser.parseString(content: _kHead, bookKey: 'z'));
     c.debugUpdateCueForPosition(2000);
-    await tester.pumpWidget(MaterialApp(
-      home: Scaffold(
-        body: SizedBox(
-          width: 1280,
-          height: 720,
-          child: VideoSubtitleOverlay(controller: c, respectAssStyle: true),
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SizedBox(
+            width: 1280,
+            height: 720,
+            child: VideoSubtitleOverlay(controller: c, respectAssStyle: true),
+          ),
         ),
       ),
-    ));
+    );
     await tester.pump();
 
     // 组 Stack 的 Positioned.fill 按分组键挂 ValueKey<String>；列表序 = 绘制序。
     final List<String> keys = tester
-        .widgetList<Positioned>(find.descendant(
-          of: find.byType(VideoSubtitleOverlay),
-          matching: find.byWidgetPredicate(
-              (Widget w) => w is Positioned && w.key is ValueKey<String>),
-        ))
+        .widgetList<Positioned>(
+          find.descendant(
+            of: find.byType(VideoSubtitleOverlay),
+            matching: find.byWidgetPredicate(
+              (Widget w) => w is Positioned && w.key is ValueKey<String>,
+            ),
+          ),
+        )
         .map((Positioned p) => (p.key! as ValueKey<String>).value)
         .toList();
     expect(keys, hasLength(2));
@@ -97,7 +111,10 @@ void main() {
     final int dlgIdx = keys.indexWhere((String k) => k.contains(':L1'));
     expect(signIdx, greaterThanOrEqualTo(0));
     expect(dlgIdx, greaterThanOrEqualTo(0));
-    expect(signIdx, lessThan(dlgIdx),
-        reason: 'Layer 0 招牌先画（在下），Layer 1 对白后画（在上）');
+    expect(
+      signIdx,
+      lessThan(dlgIdx),
+      reason: 'Layer 0 招牌先画（在下），Layer 1 对白后画（在上）',
+    );
   });
 }

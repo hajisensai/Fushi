@@ -27,15 +27,15 @@ void main() {
   });
 
   FavoriteSentence make() => FavoriteSentence(
-        text: 'そうか',
-        bookTitle: '本',
-        createdAt: DateTime.utc(2026, 6, 30),
-        bookKey: 'Book',
-        sectionIndex: 3,
-        // 无前置查词/选区 → offset/length 均 null（身份键坍缩风险区）。
-        normCharOffset: null,
-        normCharLength: null,
-      );
+    text: 'そうか',
+    bookTitle: '本',
+    createdAt: DateTime.utc(2026, 6, 30),
+    bookKey: 'Book',
+    sectionIndex: 3,
+    // 无前置查词/选区 → offset/length 均 null（身份键坍缩风险区）。
+    normCharOffset: null,
+    normCharLength: null,
+  );
 
   test('两条同 text/同 section、normCharOffset 均 null 的收藏被当作两条独立记录', () async {
     final FavoriteSentence a = make();
@@ -46,8 +46,11 @@ void main() {
     await repo.add(b);
 
     final List<FavoriteSentence> all = await repo.getAll();
-    expect(all, hasLength(2),
-        reason: 'add 只按 id 去重，两条内容相同 offset 均 null 的记录不被内容键 collapse');
+    expect(
+      all,
+      hasLength(2),
+      reason: 'add 只按 id 去重，两条内容相同 offset 均 null 的记录不被内容键 collapse',
+    );
   });
 
   test('removeById 只删指定 id 那一条，不连坐删掉另一条同内容记录', () async {
@@ -80,30 +83,35 @@ void main() {
 
     await repo.removeById(matched!);
     final List<FavoriteSentence> all = await repo.getAll();
-    expect(all, hasLength(1),
-        reason: '按命中 id 删后只剩另一条（reader toggle 走 removeById 的行为）');
+    expect(
+      all,
+      hasLength(1),
+      reason: '按命中 id 删后只剩另一条（reader toggle 走 removeById 的行为）',
+    );
   });
 
   test('isFavorited 对真正已收藏内容返 true、对未收藏内容返 false（未破坏既有查询）', () async {
     await repo.add(make());
 
     expect(
-        await repo.isFavorited(
-          text: 'そうか',
-          bookKey: 'Book',
-          sectionIndex: 3,
-          normCharOffset: null,
-        ),
-        isTrue,
-        reason: '已收藏该 (text,section,null) → true');
+      await repo.isFavorited(
+        text: 'そうか',
+        bookKey: 'Book',
+        sectionIndex: 3,
+        normCharOffset: null,
+      ),
+      isTrue,
+      reason: '已收藏该 (text,section,null) → true',
+    );
     expect(
-        await repo.isFavorited(
-          text: 'ちがう',
-          bookKey: 'Book',
-          sectionIndex: 3,
-          normCharOffset: null,
-        ),
-        isFalse,
-        reason: '不同 text 未收藏 → false，无幻影');
+      await repo.isFavorited(
+        text: 'ちがう',
+        bookKey: 'Book',
+        sectionIndex: 3,
+        normCharOffset: null,
+      ),
+      isFalse,
+      reason: '不同 text 未收藏 → false，无幻影',
+    );
   });
 }

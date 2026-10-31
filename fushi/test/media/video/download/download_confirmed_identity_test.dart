@@ -89,8 +89,11 @@ void main() {
     }
   }
 
-  VideoSourceScrapeWork bookWork(VideoBookRow member) =>
-      VideoSourceScrapeWork(source: null, title: member.title, members: <VideoBookRow>[member]);
+  VideoSourceScrapeWork bookWork(VideoBookRow member) => VideoSourceScrapeWork(
+    source: null,
+    title: member.title,
+    members: <VideoBookRow>[member],
+  );
 
   test('只下了第一集（单集作品）→ 作品拿到任务确认的 MAL 身份', () async {
     final VideoBookRow ep1 = await book('ep1');
@@ -98,7 +101,9 @@ void main() {
     final VideoSourceScrapeWork work = bookWork(ep1);
 
     final Map<String, VideoMetadataLookup> lookups =
-        await downloadConfirmedLookupsForWorks(db, <VideoSourceScrapeWork>[work]);
+        await downloadConfirmedLookupsForWorks(db, <VideoSourceScrapeWork>[
+          work,
+        ]);
 
     expect(lookups.keys, <String>[work.stableKey]);
     expect(lookups[work.stableKey]!.provider, VideoMetadataProviderKind.mal);
@@ -107,8 +112,9 @@ void main() {
 
   test('逐集下载进同一个合集：多条任务身份一致 → 合集作品拿到身份', () async {
     final int collectionId = await db.createMediaCollection('Kurumi');
-    final MediaCollectionRow collection =
-        (await db.getMediaCollectionById(collectionId))!;
+    final MediaCollectionRow collection = (await db.getMediaCollectionById(
+      collectionId,
+    ))!;
     final VideoBookRow ep1 = await book('ep1');
     final VideoBookRow ep2 = await book('ep2');
     await job('j1', files: <String>['ep1'], collectionId: collectionId);
@@ -121,15 +127,18 @@ void main() {
     );
 
     final Map<String, VideoMetadataLookup> lookups =
-        await downloadConfirmedLookupsForWorks(db, <VideoSourceScrapeWork>[work]);
+        await downloadConfirmedLookupsForWorks(db, <VideoSourceScrapeWork>[
+          work,
+        ]);
 
     expect(lookups[work.stableKey]?.externalId, '63337');
   });
 
   test('两条任务给同一部作品确认了不同身份 → 不替它选', () async {
     final int collectionId = await db.createMediaCollection('Mixed');
-    final MediaCollectionRow collection =
-        (await db.getMediaCollectionById(collectionId))!;
+    final MediaCollectionRow collection = (await db.getMediaCollectionById(
+      collectionId,
+    ))!;
     final VideoBookRow ep1 = await book('ep1');
     final VideoBookRow ep2 = await book('ep2');
     await job('j1', files: <String>['ep1'], collectionId: collectionId);
@@ -165,10 +174,10 @@ void main() {
     final VideoSourceScrapeWork sideWork = bookWork(side);
 
     final Map<String, VideoMetadataLookup> lookups =
-        await downloadConfirmedLookupsForWorks(
-      db,
-      <VideoSourceScrapeWork>[mainWork, sideWork],
-    );
+        await downloadConfirmedLookupsForWorks(db, <VideoSourceScrapeWork>[
+          mainWork,
+          sideWork,
+        ]);
 
     expect(lookups.keys, <String>[mainWork.stableKey]);
   });
@@ -179,10 +188,10 @@ void main() {
     await job('j1', files: <String>['a', 'b']);
 
     expect(
-      await downloadConfirmedLookupsForWorks(
-        db,
-        <VideoSourceScrapeWork>[bookWork(a), bookWork(b)],
-      ),
+      await downloadConfirmedLookupsForWorks(db, <VideoSourceScrapeWork>[
+        bookWork(a),
+        bookWork(b),
+      ]),
       isEmpty,
     );
   });
@@ -190,10 +199,9 @@ void main() {
   test('没有下载记录的作品 → 空', () async {
     final VideoBookRow ep1 = await book('ep1');
     expect(
-      await downloadConfirmedLookupsForWorks(
-        db,
-        <VideoSourceScrapeWork>[bookWork(ep1)],
-      ),
+      await downloadConfirmedLookupsForWorks(db, <VideoSourceScrapeWork>[
+        bookWork(ep1),
+      ]),
       isEmpty,
     );
   });
@@ -242,29 +250,36 @@ void main() {
 
     test('补刮的身份列表带上手动 AniDB 身份，且与单条判据同一个首选', () async {
       final VideoBookRow movie = await book('liz');
-      await manualJob('m1', file: 'liz', provider: 'anidb', externalId: '13140');
+      await manualJob(
+        'm1',
+        file: 'liz',
+        provider: 'anidb',
+        externalId: '13140',
+      );
       final VideoSourceScrapeWork work = bookWork(movie);
 
       final Map<String, List<VideoMetadataLookup>> lists =
           await downloadConfirmedLookupListsForWorks(
-        db,
-        <VideoSourceScrapeWork>[work],
-      );
+            db,
+            <VideoSourceScrapeWork>[work],
+          );
 
       final List<VideoMetadataLookup> lookups = lists[work.stableKey]!;
-      expect(lookups.map((VideoMetadataLookup l) => l.provider),
-          <VideoMetadataProviderKind>[VideoMetadataProviderKind.anidb]);
+      expect(
+        lookups.map((VideoMetadataLookup l) => l.provider),
+        <VideoMetadataProviderKind>[VideoMetadataProviderKind.anidb],
+      );
       expect(lookups.single.externalId, '13140');
       expect(lookups.single.mediaKind, VideoMetadataMediaKind.movie);
       final VideoDownloadJobRow row = (await db.getVideoDownloadJob('m1'))!;
-      expect(videoDownloadJobConfirmedLookup(row)?.provider,
-          VideoMetadataProviderKind.anidb);
       expect(
-        (await downloadConfirmedLookupsForWorks(
-          db,
-          <VideoSourceScrapeWork>[work],
-        ))[work.stableKey]
-            ?.externalId,
+        videoDownloadJobConfirmedLookup(row)?.provider,
+        VideoMetadataProviderKind.anidb,
+      );
+      expect(
+        (await downloadConfirmedLookupsForWorks(db, <VideoSourceScrapeWork>[
+          work,
+        ]))[work.stableKey]?.externalId,
         '13140',
       );
     });
@@ -274,21 +289,17 @@ void main() {
       await manualJob('m1', file: 'liz', provider: 'mal', externalId: '35677');
       final VideoDownloadJobRow row = (await db.getVideoDownloadJob('m1'))!;
       expect(
-        videoDownloadJobConfirmedLookups(row)
-            .map((VideoMetadataLookup l) => (l.provider, l.externalId)),
+        videoDownloadJobConfirmedLookups(
+          row,
+        ).map((VideoMetadataLookup l) => (l.provider, l.externalId)),
         <(VideoMetadataProviderKind, String)>[
           (VideoMetadataProviderKind.mal, '35677'),
         ],
       );
       expect(
-        (await downloadConfirmedLookupListsForWorks(
-          db,
-          <VideoSourceScrapeWork>[bookWork(movie)],
-        ))
-            .values
-            .single
-            .single
-            .provider,
+        (await downloadConfirmedLookupListsForWorks(db, <VideoSourceScrapeWork>[
+          bookWork(movie),
+        ])).values.single.single.provider,
         VideoMetadataProviderKind.mal,
       );
     });
@@ -298,18 +309,15 @@ void main() {
       await job('j1', files: <String>['ep1'], anidbId: 18060);
       final VideoDownloadJobRow row = (await db.getVideoDownloadJob('j1'))!;
       expect(
-        videoDownloadJobConfirmedLookups(row)
-            .map((VideoMetadataLookup l) => l.provider),
+        videoDownloadJobConfirmedLookups(
+          row,
+        ).map((VideoMetadataLookup l) => l.provider),
         <VideoMetadataProviderKind>[VideoMetadataProviderKind.mal],
       );
       expect(
-        (await downloadConfirmedLookupListsForWorks(
-          db,
-          <VideoSourceScrapeWork>[bookWork(ep1)],
-        ))
-            .values
-            .single
-            .map((VideoMetadataLookup l) => l.provider),
+        (await downloadConfirmedLookupListsForWorks(db, <VideoSourceScrapeWork>[
+          bookWork(ep1),
+        ])).values.single.map((VideoMetadataLookup l) => l.provider),
         <VideoMetadataProviderKind>[VideoMetadataProviderKind.mal],
       );
     });

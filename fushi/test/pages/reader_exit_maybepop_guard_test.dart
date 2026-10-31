@@ -46,8 +46,11 @@ void main() {
     final int startIdx = source.indexOf(start);
     final int endIdx = source.indexOf(end, startIdx);
     expect(startIdx, greaterThanOrEqualTo(0), reason: 'onExitReader 回调应存在');
-    expect(endIdx, greaterThan(startIdx),
-        reason: 'onExitReader 之后应有 webViewController 具名参数作为切片终点');
+    expect(
+      endIdx,
+      greaterThan(startIdx),
+      reason: 'onExitReader 之后应有 webViewController 具名参数作为切片终点',
+    );
     return source.substring(startIdx, endIdx);
   }
 
@@ -73,7 +76,8 @@ void main() {
     expect(
       routesThroughMaybePop(slice),
       isTrue,
-      reason: '退出必须经 maybePop() 触发 PopScope 的 onWillPop 闸门，'
+      reason:
+          '退出必须经 maybePop() 触发 PopScope 的 onWillPop 闸门，'
           '否则 flush / closeMedia(invalidate) / 自动同步全跳过（BUG-782）',
     );
   });
@@ -85,7 +89,8 @@ void main() {
     expect(
       slice.contains('Navigator.of(context).pop('),
       isFalse,
-      reason: '直接 Navigator.of(context).pop() 会绕过 PopScope(canPop:false)，'
+      reason:
+          '直接 Navigator.of(context).pop() 会绕过 PopScope(canPop:false)，'
           'onWillPop 链全跳过（BUG-782 根因）',
     );
     // 防另一书写变体 `Navigator.pop(context)` 同样绕过 PopScope。
@@ -107,8 +112,9 @@ void main() {
     while (cursor >= 0) {
       occurrences++;
       // 取 onExitReader 后 200 字符窗口（足够覆盖单行 lambda 体）。
-      final int windowEnd =
-          (cursor + 200) > source.length ? source.length : cursor + 200;
+      final int windowEnd = (cursor + 200) > source.length
+          ? source.length
+          : cursor + 200;
       final String window = source.substring(cursor, windowEnd);
       expect(
         routesThroughMaybePop(window),
@@ -123,7 +129,10 @@ void main() {
       );
       cursor = source.indexOf(marker, cursor + marker.length);
     }
-    expect(occurrences, greaterThanOrEqualTo(1),
-        reason: 'onExitReader 回调应存在且被逐处校验');
+    expect(
+      occurrences,
+      greaterThanOrEqualTo(1),
+      reason: 'onExitReader 回调应存在且被逐处校验',
+    );
   });
 }

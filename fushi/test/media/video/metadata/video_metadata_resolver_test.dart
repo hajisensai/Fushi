@@ -14,22 +14,23 @@ void main() {
           '42': _work(id: '42', title: 'Confirmed'),
         },
       );
-      final VideoMetadataResolution result = await VideoMetadataResolver(
-        registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
-          provider,
-        ]),
-      ).resolve(
-        VideoMetadataResolveRequest(
-          selectedProvider: VideoMetadataProviderKind.tmdb,
-          mediaKind: VideoMetadataMediaKind.tv,
-          titleCandidates: const <String>['Wrong title'],
-          confirmedLookup: const VideoMetadataLookup(
-            provider: VideoMetadataProviderKind.tmdb,
-            externalId: '42',
-            mediaKind: VideoMetadataMediaKind.tv,
-          ),
-        ),
-      );
+      final VideoMetadataResolution result =
+          await VideoMetadataResolver(
+            registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
+              provider,
+            ]),
+          ).resolve(
+            VideoMetadataResolveRequest(
+              selectedProvider: VideoMetadataProviderKind.tmdb,
+              mediaKind: VideoMetadataMediaKind.tv,
+              titleCandidates: const <String>['Wrong title'],
+              confirmedLookup: const VideoMetadataLookup(
+                provider: VideoMetadataProviderKind.tmdb,
+                externalId: '42',
+                mediaKind: VideoMetadataMediaKind.tv,
+              ),
+            ),
+          );
 
       expect(result.status, VideoMetadataResolutionStatus.matched);
       expect(result.method, VideoMetadataResolutionMethod.confirmed);
@@ -44,17 +45,18 @@ void main() {
           '99': _work(id: '99', title: 'Explicit'),
         },
       );
-      final VideoMetadataResolution result = await VideoMetadataResolver(
-        registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
-          provider,
-        ]),
-      ).resolve(
-        VideoMetadataResolveRequest(
-          selectedProvider: VideoMetadataProviderKind.tmdb,
-          mediaKind: VideoMetadataMediaKind.tv,
-          titleCandidates: const <String>['Show [tmdbid=99] S01E01'],
-        ),
-      );
+      final VideoMetadataResolution result =
+          await VideoMetadataResolver(
+            registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
+              provider,
+            ]),
+          ).resolve(
+            VideoMetadataResolveRequest(
+              selectedProvider: VideoMetadataProviderKind.tmdb,
+              mediaKind: VideoMetadataMediaKind.tv,
+              titleCandidates: const <String>['Show [tmdbid=99] S01E01'],
+            ),
+          );
 
       expect(result.status, VideoMetadataResolutionStatus.matched);
       expect(result.method, VideoMetadataResolutionMethod.explicitId);
@@ -87,18 +89,19 @@ void main() {
           '10889': catalogRow(VideoMetadataMediaKind.movie),
         },
       );
-      final VideoMetadataResolution result = await VideoMetadataResolver(
-        registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
-          provider,
-        ]),
-      ).resolve(
-        VideoMetadataResolveRequest(
-          selectedProvider: VideoMetadataProviderKind.anidb,
-          mediaKind: VideoMetadataMediaKind.movie,
-          titleCandidates: const <String>['Show'],
-          year: 2016,
-        ),
-      );
+      final VideoMetadataResolution result =
+          await VideoMetadataResolver(
+            registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
+              provider,
+            ]),
+          ).resolve(
+            VideoMetadataResolveRequest(
+              selectedProvider: VideoMetadataProviderKind.anidb,
+              mediaKind: VideoMetadataMediaKind.movie,
+              titleCandidates: const <String>['Show'],
+              year: 2016,
+            ),
+          );
 
       expect(result.status, isNot(VideoMetadataResolutionStatus.matched));
       expect(
@@ -108,76 +111,82 @@ void main() {
       );
     });
 
-    test('confirmed AniDB identity ignores local year and season heuristics',
-        () async {
-      final VideoMetadataWork work = _work(
-        id: '77',
-        title: 'Confirmed Continuation',
-        year: 2020,
-        provider: VideoMetadataProviderKind.anidb,
-      );
-      final _FakeProvider provider = _FakeProvider(
-        kind: VideoMetadataProviderKind.anidb,
-        works: <String, VideoMetadataWork>{'77': work},
-      );
+    test(
+      'confirmed AniDB identity ignores local year and season heuristics',
+      () async {
+        final VideoMetadataWork work = _work(
+          id: '77',
+          title: 'Confirmed Continuation',
+          year: 2020,
+          provider: VideoMetadataProviderKind.anidb,
+        );
+        final _FakeProvider provider = _FakeProvider(
+          kind: VideoMetadataProviderKind.anidb,
+          works: <String, VideoMetadataWork>{'77': work},
+        );
 
-      final VideoMetadataResolution result = await VideoMetadataResolver(
-        registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
-          provider,
-        ]),
-      ).resolve(
-        VideoMetadataResolveRequest(
-          selectedProvider: VideoMetadataProviderKind.anidb,
-          mediaKind: VideoMetadataMediaKind.tv,
-          titleCandidates: const <String>['Different Local Title S03'],
-          year: 2024,
-          seasonNumber: 3,
-          confirmedLookup: const VideoMetadataLookup(
-            provider: VideoMetadataProviderKind.anidb,
-            externalId: '77',
-            mediaKind: VideoMetadataMediaKind.tv,
-          ),
-        ),
-      );
+        final VideoMetadataResolution result =
+            await VideoMetadataResolver(
+              registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
+                provider,
+              ]),
+            ).resolve(
+              VideoMetadataResolveRequest(
+                selectedProvider: VideoMetadataProviderKind.anidb,
+                mediaKind: VideoMetadataMediaKind.tv,
+                titleCandidates: const <String>['Different Local Title S03'],
+                year: 2024,
+                seasonNumber: 3,
+                confirmedLookup: const VideoMetadataLookup(
+                  provider: VideoMetadataProviderKind.anidb,
+                  externalId: '77',
+                  mediaKind: VideoMetadataMediaKind.tv,
+                ),
+              ),
+            );
 
-      expect(result.status, VideoMetadataResolutionStatus.matched);
-      expect(result.method, VideoMetadataResolutionMethod.confirmed);
-      expect(result.lookup?.externalId, '77');
-      expect(provider.searchCalls, 0);
-    });
+        expect(result.status, VideoMetadataResolutionStatus.matched);
+        expect(result.method, VideoMetadataResolutionMethod.confirmed);
+        expect(result.lookup?.externalId, '77');
+        expect(provider.searchCalls, 0);
+      },
+    );
 
-    test('explicit AniDB identity ignores local year and season heuristics',
-        () async {
-      final VideoMetadataWork work = _work(
-        id: '78',
-        title: 'Explicit Continuation',
-        year: 2020,
-        provider: VideoMetadataProviderKind.anidb,
-      );
-      final _FakeProvider provider = _FakeProvider(
-        kind: VideoMetadataProviderKind.anidb,
-        works: <String, VideoMetadataWork>{'78': work},
-      );
+    test(
+      'explicit AniDB identity ignores local year and season heuristics',
+      () async {
+        final VideoMetadataWork work = _work(
+          id: '78',
+          title: 'Explicit Continuation',
+          year: 2020,
+          provider: VideoMetadataProviderKind.anidb,
+        );
+        final _FakeProvider provider = _FakeProvider(
+          kind: VideoMetadataProviderKind.anidb,
+          works: <String, VideoMetadataWork>{'78': work},
+        );
 
-      final VideoMetadataResolution result = await VideoMetadataResolver(
-        registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
-          provider,
-        ]),
-      ).resolve(
-        VideoMetadataResolveRequest(
-          selectedProvider: VideoMetadataProviderKind.anidb,
-          mediaKind: VideoMetadataMediaKind.tv,
-          titleCandidates: const <String>['Different [anidbid=78] S03'],
-          year: 2024,
-          seasonNumber: 3,
-        ),
-      );
+        final VideoMetadataResolution result =
+            await VideoMetadataResolver(
+              registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
+                provider,
+              ]),
+            ).resolve(
+              VideoMetadataResolveRequest(
+                selectedProvider: VideoMetadataProviderKind.anidb,
+                mediaKind: VideoMetadataMediaKind.tv,
+                titleCandidates: const <String>['Different [anidbid=78] S03'],
+                year: 2024,
+                seasonNumber: 3,
+              ),
+            );
 
-      expect(result.status, VideoMetadataResolutionStatus.matched);
-      expect(result.method, VideoMetadataResolutionMethod.explicitId);
-      expect(result.lookup?.externalId, '78');
-      expect(provider.searchCalls, 0);
-    });
+        expect(result.status, VideoMetadataResolutionStatus.matched);
+        expect(result.method, VideoMetadataResolutionMethod.explicitId);
+        expect(result.lookup?.externalId, '78');
+        expect(provider.searchCalls, 0);
+      },
+    );
 
     // 2026-09-20 起 AniDB 是可选生产主源（且 AniDB → TMDB 成链）：来自任一可选
     // 主源的已确认 / 显式身份一律按那家直取，不再被主源的标题搜索盖掉——
@@ -203,23 +212,24 @@ void main() {
           },
         );
 
-        final VideoMetadataResolution result = await VideoMetadataResolver(
-          registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
-            anidb,
-            tmdb,
-          ]),
-        ).resolve(
-          VideoMetadataResolveRequest(
-            selectedProvider: VideoMetadataProviderKind.anidb,
-            mediaKind: VideoMetadataMediaKind.tv,
-            titleCandidates: const <String>['Canonical Anime'],
-            confirmedLookup: const VideoMetadataLookup(
-              provider: VideoMetadataProviderKind.tmdb,
-              externalId: '42',
-              mediaKind: VideoMetadataMediaKind.tv,
-            ),
-          ),
-        );
+        final VideoMetadataResolution result =
+            await VideoMetadataResolver(
+              registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
+                anidb,
+                tmdb,
+              ]),
+            ).resolve(
+              VideoMetadataResolveRequest(
+                selectedProvider: VideoMetadataProviderKind.anidb,
+                mediaKind: VideoMetadataMediaKind.tv,
+                titleCandidates: const <String>['Canonical Anime'],
+                confirmedLookup: const VideoMetadataLookup(
+                  provider: VideoMetadataProviderKind.tmdb,
+                  externalId: '42',
+                  mediaKind: VideoMetadataMediaKind.tv,
+                ),
+              ),
+            );
 
         expect(result.status, VideoMetadataResolutionStatus.matched);
         expect(result.method, VideoMetadataResolutionMethod.confirmed);
@@ -251,19 +261,20 @@ void main() {
           },
         );
 
-        final VideoMetadataResolution result = await VideoMetadataResolver(
-          registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
-            anidb,
-            tmdb,
-          ]),
-        ).resolve(
-          VideoMetadataResolveRequest(
-            selectedProvider: VideoMetadataProviderKind.anidb,
-            mediaKind: VideoMetadataMediaKind.tv,
-            titleCandidates: const <String>['Explicit Hint Anime'],
-            identityHints: const <String>['[tmdbid=99]'],
-          ),
-        );
+        final VideoMetadataResolution result =
+            await VideoMetadataResolver(
+              registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
+                anidb,
+                tmdb,
+              ]),
+            ).resolve(
+              VideoMetadataResolveRequest(
+                selectedProvider: VideoMetadataProviderKind.anidb,
+                mediaKind: VideoMetadataMediaKind.tv,
+                titleCandidates: const <String>['Explicit Hint Anime'],
+                identityHints: const <String>['[tmdbid=99]'],
+              ),
+            );
 
         expect(result.status, VideoMetadataResolutionStatus.matched);
         expect(result.method, VideoMetadataResolutionMethod.explicitId);
@@ -301,19 +312,20 @@ void main() {
           ],
           works: <String, VideoMetadataWork>{'1': accepted},
         );
-        final VideoMetadataResolution result = await VideoMetadataResolver(
-          registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
-            provider,
-          ]),
-        ).resolve(
-          VideoMetadataResolveRequest(
-            selectedProvider: VideoMetadataProviderKind.tmdb,
-            mediaKind: VideoMetadataMediaKind.tv,
-            titleCandidates: const <String>['无职转生'],
-            year: 2021,
-            seasonNumber: 2,
-          ),
-        );
+        final VideoMetadataResolution result =
+            await VideoMetadataResolver(
+              registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
+                provider,
+              ]),
+            ).resolve(
+              VideoMetadataResolveRequest(
+                selectedProvider: VideoMetadataProviderKind.tmdb,
+                mediaKind: VideoMetadataMediaKind.tv,
+                titleCandidates: const <String>['无职转生'],
+                year: 2021,
+                seasonNumber: 2,
+              ),
+            );
 
         expect(result.status, VideoMetadataResolutionStatus.matched);
         expect(result.lookup?.externalId, '1');
@@ -336,18 +348,19 @@ void main() {
           works: <String, VideoMetadataWork>{'1': first, '2': second},
         );
 
-        final VideoMetadataResolution result = await VideoMetadataResolver(
-          registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
-            provider,
-          ]),
-        ).resolve(
-          VideoMetadataResolveRequest(
-            selectedProvider: VideoMetadataProviderKind.tmdb,
-            mediaKind: VideoMetadataMediaKind.tv,
-            titleCandidates: const <String>['86'],
-            year: 2021,
-          ),
-        );
+        final VideoMetadataResolution result =
+            await VideoMetadataResolver(
+              registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
+                provider,
+              ]),
+            ).resolve(
+              VideoMetadataResolveRequest(
+                selectedProvider: VideoMetadataProviderKind.tmdb,
+                mediaKind: VideoMetadataMediaKind.tv,
+                titleCandidates: const <String>['86'],
+                year: 2021,
+              ),
+            );
 
         expect(result.status, VideoMetadataResolutionStatus.ambiguous);
         expect(result.candidates, hasLength(2));
@@ -374,78 +387,74 @@ void main() {
           works: <String, VideoMetadataWork>{'77': details},
         );
 
-        final VideoMetadataResolution result = await VideoMetadataResolver(
-          registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
-            provider,
-          ]),
-        ).resolve(
-          VideoMetadataResolveRequest(
-            selectedProvider: VideoMetadataProviderKind.tmdb,
-            mediaKind: VideoMetadataMediaKind.tv,
-            titleCandidates: const <String>[
-              'Mushoku Tensei Isekai Ittara Honki Dasu',
-            ],
-            year: 2021,
-          ),
-        );
+        final VideoMetadataResolution result =
+            await VideoMetadataResolver(
+              registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
+                provider,
+              ]),
+            ).resolve(
+              VideoMetadataResolveRequest(
+                selectedProvider: VideoMetadataProviderKind.tmdb,
+                mediaKind: VideoMetadataMediaKind.tv,
+                titleCandidates: const <String>[
+                  'Mushoku Tensei Isekai Ittara Honki Dasu',
+                ],
+                year: 2021,
+              ),
+            );
 
         expect(result.status, VideoMetadataResolutionStatus.matched);
         expect(result.work?.title, contains('无职转生'));
       },
     );
 
-    test(
-      'detail year gates summaries that omit year',
-      () async {
-        final VideoMetadataWork matchingSummary = _work(
-          id: 'year-match',
-          title: 'Year Gate Anime',
-        );
-        final VideoMetadataWork mismatchingSummary = _work(
-          id: 'year-mismatch',
-          title: 'Year Gate Anime',
-        );
-        final VideoMetadataWork matchingDetails = _work(
-          id: 'year-match',
-          title: 'Year Gate Anime',
-          year: 2024,
-        );
-        // 年份 gate 容差 ±1（见下方 tolerance 用例），差 2 年才算不符。
-        final VideoMetadataWork mismatchingDetails = _work(
-          id: 'year-mismatch',
-          title: 'Year Gate Anime',
-          year: 2022,
-        );
-        final _FakeProvider provider = _FakeProvider(
-          kind: VideoMetadataProviderKind.tmdb,
-          searchResults: <VideoMetadataWork>[
-            matchingSummary,
-            mismatchingSummary,
-          ],
-          works: <String, VideoMetadataWork>{
-            'year-match': matchingDetails,
-            'year-mismatch': mismatchingDetails,
-          },
-        );
+    test('detail year gates summaries that omit year', () async {
+      final VideoMetadataWork matchingSummary = _work(
+        id: 'year-match',
+        title: 'Year Gate Anime',
+      );
+      final VideoMetadataWork mismatchingSummary = _work(
+        id: 'year-mismatch',
+        title: 'Year Gate Anime',
+      );
+      final VideoMetadataWork matchingDetails = _work(
+        id: 'year-match',
+        title: 'Year Gate Anime',
+        year: 2024,
+      );
+      // 年份 gate 容差 ±1（见下方 tolerance 用例），差 2 年才算不符。
+      final VideoMetadataWork mismatchingDetails = _work(
+        id: 'year-mismatch',
+        title: 'Year Gate Anime',
+        year: 2022,
+      );
+      final _FakeProvider provider = _FakeProvider(
+        kind: VideoMetadataProviderKind.tmdb,
+        searchResults: <VideoMetadataWork>[matchingSummary, mismatchingSummary],
+        works: <String, VideoMetadataWork>{
+          'year-match': matchingDetails,
+          'year-mismatch': mismatchingDetails,
+        },
+      );
 
-        final VideoMetadataResolution result = await VideoMetadataResolver(
-          registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
-            provider,
-          ]),
-        ).resolve(
-          VideoMetadataResolveRequest(
-            selectedProvider: VideoMetadataProviderKind.tmdb,
-            mediaKind: VideoMetadataMediaKind.tv,
-            titleCandidates: const <String>['Year Gate Anime'],
-            year: 2024,
-          ),
-        );
+      final VideoMetadataResolution result =
+          await VideoMetadataResolver(
+            registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
+              provider,
+            ]),
+          ).resolve(
+            VideoMetadataResolveRequest(
+              selectedProvider: VideoMetadataProviderKind.tmdb,
+              mediaKind: VideoMetadataMediaKind.tv,
+              titleCandidates: const <String>['Year Gate Anime'],
+              year: 2024,
+            ),
+          );
 
-        expect(result.status, VideoMetadataResolutionStatus.matched);
-        expect(result.lookup?.externalId, 'year-match');
-        expect(result.work?.year, 2024);
-      },
-    );
+      expect(result.status, VideoMetadataResolutionStatus.matched);
+      expect(result.lookup?.externalId, 'year-match');
+      expect(result.work?.year, 2024);
+    });
 
     test('year gate tolerates a one-year offset but rejects two', () async {
       final VideoMetadataWork offByOne = _work(
@@ -467,93 +476,100 @@ void main() {
         },
       );
 
-      final VideoMetadataResolution result = await VideoMetadataResolver(
-        registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
-          provider,
-        ]),
-      ).resolve(
-        VideoMetadataResolveRequest(
-          selectedProvider: VideoMetadataProviderKind.tmdb,
-          mediaKind: VideoMetadataMediaKind.tv,
-          titleCandidates: const <String>['Tolerant Anime'],
-          year: 2024,
-        ),
-      );
+      final VideoMetadataResolution result =
+          await VideoMetadataResolver(
+            registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
+              provider,
+            ]),
+          ).resolve(
+            VideoMetadataResolveRequest(
+              selectedProvider: VideoMetadataProviderKind.tmdb,
+              mediaKind: VideoMetadataMediaKind.tv,
+              titleCandidates: const <String>['Tolerant Anime'],
+              year: 2024,
+            ),
+          );
 
       expect(result.status, VideoMetadataResolutionStatus.matched);
       expect(result.lookup?.externalId, 'off-by-one');
       expect(provider.fetchCalls, 1, reason: '差 2 年的候选不该进详情请求');
     });
 
-    test('year-bound search that gates to nothing retries without year',
-        () async {
-      // provider 侧年份过滤是精确匹配：本地目录写 2024、TMDB 首播 2023 时带年
-      // 搜索为空；去年份重搜后 gate 仍按 ±1 放行 2023、拒绝 2021。
-      final VideoMetadataWork hit = _work(
-        id: 'hit',
-        title: 'Plan Anime',
-        year: 2023,
-      );
-      final VideoMetadataWork stale = _work(
-        id: 'stale',
-        title: 'Plan Anime',
-        year: 2021,
-      );
-      final _YearPlanProvider provider = _YearPlanProvider(
-        yearlessResults: <VideoMetadataWork>[stale, hit],
-        works: <String, VideoMetadataWork>{'hit': hit, 'stale': stale},
-      );
+    test(
+      'year-bound search that gates to nothing retries without year',
+      () async {
+        // provider 侧年份过滤是精确匹配：本地目录写 2024、TMDB 首播 2023 时带年
+        // 搜索为空；去年份重搜后 gate 仍按 ±1 放行 2023、拒绝 2021。
+        final VideoMetadataWork hit = _work(
+          id: 'hit',
+          title: 'Plan Anime',
+          year: 2023,
+        );
+        final VideoMetadataWork stale = _work(
+          id: 'stale',
+          title: 'Plan Anime',
+          year: 2021,
+        );
+        final _YearPlanProvider provider = _YearPlanProvider(
+          yearlessResults: <VideoMetadataWork>[stale, hit],
+          works: <String, VideoMetadataWork>{'hit': hit, 'stale': stale},
+        );
 
-      final VideoMetadataResolution result = await VideoMetadataResolver(
-        registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
-          provider,
-        ]),
-      ).resolve(
-        VideoMetadataResolveRequest(
-          selectedProvider: VideoMetadataProviderKind.tmdb,
-          mediaKind: VideoMetadataMediaKind.tv,
-          titleCandidates: const <String>['Plan Anime'],
+        final VideoMetadataResolution result =
+            await VideoMetadataResolver(
+              registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
+                provider,
+              ]),
+            ).resolve(
+              VideoMetadataResolveRequest(
+                selectedProvider: VideoMetadataProviderKind.tmdb,
+                mediaKind: VideoMetadataMediaKind.tv,
+                titleCandidates: const <String>['Plan Anime'],
+                year: 2024,
+              ),
+            );
+
+        expect(provider.searchYears, <int?>[2024, null]);
+        expect(result.status, VideoMetadataResolutionStatus.matched);
+        expect(result.lookup?.externalId, 'hit');
+      },
+    );
+
+    test(
+      'year-bound search retries once per title, not per candidate',
+      () async {
+        // 带年搜索有结果但全被 type gate 刷掉 → 也算「gate 后为空」，重搜一次；
+        // 第二个标题同样走「带年 → 去年」两步，总共 4 次搜索。
+        final VideoMetadataWork movie = _work(
+          id: 'movie',
+          title: 'Two Titles',
           year: 2024,
-        ),
-      );
+          mediaKind: VideoMetadataMediaKind.movie,
+        );
+        final _YearPlanProvider provider = _YearPlanProvider(
+          searchResults: <VideoMetadataWork>[movie],
+          yearlessResults: const <VideoMetadataWork>[],
+          works: <String, VideoMetadataWork>{'movie': movie},
+        );
 
-      expect(provider.searchYears, <int?>[2024, null]);
-      expect(result.status, VideoMetadataResolutionStatus.matched);
-      expect(result.lookup?.externalId, 'hit');
-    });
+        final VideoMetadataResolution result =
+            await VideoMetadataResolver(
+              registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
+                provider,
+              ]),
+            ).resolve(
+              VideoMetadataResolveRequest(
+                selectedProvider: VideoMetadataProviderKind.tmdb,
+                mediaKind: VideoMetadataMediaKind.tv,
+                titleCandidates: const <String>['Two Titles', 'Second Title'],
+                year: 2024,
+              ),
+            );
 
-    test('year-bound search retries once per title, not per candidate',
-        () async {
-      // 带年搜索有结果但全被 type gate 刷掉 → 也算「gate 后为空」，重搜一次；
-      // 第二个标题同样走「带年 → 去年」两步，总共 4 次搜索。
-      final VideoMetadataWork movie = _work(
-        id: 'movie',
-        title: 'Two Titles',
-        year: 2024,
-        mediaKind: VideoMetadataMediaKind.movie,
-      );
-      final _YearPlanProvider provider = _YearPlanProvider(
-        searchResults: <VideoMetadataWork>[movie],
-        yearlessResults: const <VideoMetadataWork>[],
-        works: <String, VideoMetadataWork>{'movie': movie},
-      );
-
-      final VideoMetadataResolution result = await VideoMetadataResolver(
-        registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
-          provider,
-        ]),
-      ).resolve(
-        VideoMetadataResolveRequest(
-          selectedProvider: VideoMetadataProviderKind.tmdb,
-          mediaKind: VideoMetadataMediaKind.tv,
-          titleCandidates: const <String>['Two Titles', 'Second Title'],
-          year: 2024,
-        ),
-      );
-
-      expect(provider.searchYears, <int?>[2024, null, 2024, null]);
-      expect(result.status, VideoMetadataResolutionStatus.notFound);
-    });
+        expect(provider.searchYears, <int?>[2024, null, 2024, null]);
+        expect(result.status, VideoMetadataResolutionStatus.notFound);
+      },
+    );
 
     test('search without a local year is issued exactly once', () async {
       final _YearPlanProvider provider = _YearPlanProvider(
@@ -561,17 +577,18 @@ void main() {
         yearlessResults: const <VideoMetadataWork>[],
       );
 
-      final VideoMetadataResolution result = await VideoMetadataResolver(
-        registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
-          provider,
-        ]),
-      ).resolve(
-        VideoMetadataResolveRequest(
-          selectedProvider: VideoMetadataProviderKind.tmdb,
-          mediaKind: VideoMetadataMediaKind.tv,
-          titleCandidates: const <String>['No Year Anime'],
-        ),
-      );
+      final VideoMetadataResolution result =
+          await VideoMetadataResolver(
+            registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
+              provider,
+            ]),
+          ).resolve(
+            VideoMetadataResolveRequest(
+              selectedProvider: VideoMetadataProviderKind.tmdb,
+              mediaKind: VideoMetadataMediaKind.tv,
+              titleCandidates: const <String>['No Year Anime'],
+            ),
+          );
 
       expect(provider.searchYears, <int?>[null]);
       expect(result.status, VideoMetadataResolutionStatus.notFound);
@@ -591,18 +608,19 @@ void main() {
           works: <String, VideoMetadataWork>{'88': candidate},
         );
 
-        final VideoMetadataResolution result = await VideoMetadataResolver(
-          registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
-            provider,
-          ]),
-        ).resolve(
-          VideoMetadataResolveRequest(
-            selectedProvider: VideoMetadataProviderKind.tmdb,
-            mediaKind: VideoMetadataMediaKind.tv,
-            titleCandidates: const <String>['Unmatched romanized title'],
-            year: 2021,
-          ),
-        );
+        final VideoMetadataResolution result =
+            await VideoMetadataResolver(
+              registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
+                provider,
+              ]),
+            ).resolve(
+              VideoMetadataResolveRequest(
+                selectedProvider: VideoMetadataProviderKind.tmdb,
+                mediaKind: VideoMetadataMediaKind.tv,
+                titleCandidates: const <String>['Unmatched romanized title'],
+                year: 2021,
+              ),
+            );
 
         expect(result.status, VideoMetadataResolutionStatus.ambiguous);
         expect(result.candidates.single.title, '本地化标题');
@@ -628,19 +646,20 @@ void main() {
           works: <String, VideoMetadataWork>{'22': sequel},
         );
 
-        final VideoMetadataResolution result = await VideoMetadataResolver(
-          registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
-            provider,
-          ]),
-        ).resolve(
-          VideoMetadataResolveRequest(
-            selectedProvider: VideoMetadataProviderKind.anidb,
-            mediaKind: VideoMetadataMediaKind.tv,
-            titleCandidates: const <String>['Work S02'],
-            year: 2024,
-            seasonNumber: 2,
-          ),
-        );
+        final VideoMetadataResolution result =
+            await VideoMetadataResolver(
+              registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
+                provider,
+              ]),
+            ).resolve(
+              VideoMetadataResolveRequest(
+                selectedProvider: VideoMetadataProviderKind.anidb,
+                mediaKind: VideoMetadataMediaKind.tv,
+                titleCandidates: const <String>['Work S02'],
+                year: 2024,
+                seasonNumber: 2,
+              ),
+            );
 
         expect(result.status, VideoMetadataResolutionStatus.matched);
         expect(result.lookup?.externalId, '22');
@@ -661,18 +680,19 @@ void main() {
           works: <String, VideoMetadataWork>{'23': sequel},
         );
 
-        final VideoMetadataResolution result = await VideoMetadataResolver(
-          registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
-            provider,
-          ]),
-        ).resolve(
-          VideoMetadataResolveRequest(
-            selectedProvider: VideoMetadataProviderKind.anidb,
-            mediaKind: VideoMetadataMediaKind.tv,
-            titleCandidates: const <String>['K-ON!! S02E01'],
-            seasonNumber: 2,
-          ),
-        );
+        final VideoMetadataResolution result =
+            await VideoMetadataResolver(
+              registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
+                provider,
+              ]),
+            ).resolve(
+              VideoMetadataResolveRequest(
+                selectedProvider: VideoMetadataProviderKind.anidb,
+                mediaKind: VideoMetadataMediaKind.tv,
+                titleCandidates: const <String>['K-ON!! S02E01'],
+                seasonNumber: 2,
+              ),
+            );
 
         expect(result.status, VideoMetadataResolutionStatus.matched);
         expect(result.lookup?.externalId, '23');
@@ -701,17 +721,18 @@ void main() {
           works: <String, VideoMetadataWork>{'15': summaries.last},
         );
 
-        final VideoMetadataResolution result = await VideoMetadataResolver(
-          registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
-            provider,
-          ]),
-        ).resolve(
-          VideoMetadataResolveRequest(
-            selectedProvider: VideoMetadataProviderKind.anidb,
-            mediaKind: VideoMetadataMediaKind.tv,
-            titleCandidates: const <String>['Exact Anime'],
-          ),
-        );
+        final VideoMetadataResolution result =
+            await VideoMetadataResolver(
+              registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
+                provider,
+              ]),
+            ).resolve(
+              VideoMetadataResolveRequest(
+                selectedProvider: VideoMetadataProviderKind.anidb,
+                mediaKind: VideoMetadataMediaKind.tv,
+                titleCandidates: const <String>['Exact Anime'],
+              ),
+            );
 
         expect(result.status, VideoMetadataResolutionStatus.matched);
         expect(result.lookup?.externalId, '15');
@@ -738,21 +759,22 @@ void main() {
           works: <String, VideoMetadataWork>{'65942': reZero},
         );
 
-        final VideoMetadataResolution result = await VideoMetadataResolver(
-          registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
-            provider,
-          ]),
-        ).resolve(
-          VideoMetadataResolveRequest(
-            selectedProvider: VideoMetadataProviderKind.tmdb,
-            mediaKind: VideoMetadataMediaKind.tv,
-            titleCandidates: const <String>[
-              'Re Zero kara Hajimeru Isekai Seikatsu',
-            ],
-            seasonNumber: 3,
-            episodeCount: 16,
-          ),
-        );
+        final VideoMetadataResolution result =
+            await VideoMetadataResolver(
+              registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
+                provider,
+              ]),
+            ).resolve(
+              VideoMetadataResolveRequest(
+                selectedProvider: VideoMetadataProviderKind.tmdb,
+                mediaKind: VideoMetadataMediaKind.tv,
+                titleCandidates: const <String>[
+                  'Re Zero kara Hajimeru Isekai Seikatsu',
+                ],
+                seasonNumber: 3,
+                episodeCount: 16,
+              ),
+            );
 
         expect(result.status, VideoMetadataResolutionStatus.matched);
         expect(result.lookup?.externalId, '65942');
@@ -784,32 +806,36 @@ void main() {
       test('已确认身份的源回 504 → 临时故障', () async {
         final VideoMetadataResolution result =
             await resolveConfirmed(<VideoMetadataProvider>[
-          _FakeProvider(
-            kind: VideoMetadataProviderKind.mal,
-            fetchError: const VideoMetadataNetworkException(
-              'MAL anime/63337/full HTTP 504',
-              statusCode: 504,
-            ),
-          ),
-        ]);
+              _FakeProvider(
+                kind: VideoMetadataProviderKind.mal,
+                fetchError: const VideoMetadataNetworkException(
+                  'MAL anime/63337/full HTTP 504',
+                  statusCode: 504,
+                ),
+              ),
+            ]);
         expect(
-            result.status, VideoMetadataResolutionStatus.providerUnavailable);
+          result.status,
+          VideoMetadataResolutionStatus.providerUnavailable,
+        );
         expect(result.transient, isTrue);
       });
 
       test('4xx 不是临时故障', () async {
         final VideoMetadataResolution result =
             await resolveConfirmed(<VideoMetadataProvider>[
-          _FakeProvider(
-            kind: VideoMetadataProviderKind.mal,
-            fetchError: const VideoMetadataNetworkException(
-              'MAL anime/63337/full HTTP 404',
-              statusCode: 404,
-            ),
-          ),
-        ]);
+              _FakeProvider(
+                kind: VideoMetadataProviderKind.mal,
+                fetchError: const VideoMetadataNetworkException(
+                  'MAL anime/63337/full HTTP 404',
+                  statusCode: 404,
+                ),
+              ),
+            ]);
         expect(
-            result.status, VideoMetadataResolutionStatus.providerUnavailable);
+          result.status,
+          VideoMetadataResolutionStatus.providerUnavailable,
+        );
         expect(result.transient, isFalse);
       });
 
@@ -818,7 +844,9 @@ void main() {
           const <VideoMetadataProvider>[],
         );
         expect(
-            result.status, VideoMetadataResolutionStatus.providerUnavailable);
+          result.status,
+          VideoMetadataResolutionStatus.providerUnavailable,
+        );
         expect(result.transient, isFalse);
       });
     });
@@ -841,21 +869,24 @@ void main() {
           );
 
       test('主源查无 + 兜底源没配置：状态是 providerUnavailable，但算搜了没有', () async {
-        final VideoMetadataResolution result =
-            await resolveChain(<VideoMetadataProvider>[
-          _FakeProvider(kind: VideoMetadataProviderKind.anidb),
-        ]);
+        final VideoMetadataResolution result = await resolveChain(
+          <VideoMetadataProvider>[
+            _FakeProvider(kind: VideoMetadataProviderKind.anidb),
+          ],
+        );
         expect(
-            result.status, VideoMetadataResolutionStatus.providerUnavailable);
+          result.status,
+          VideoMetadataResolutionStatus.providerUnavailable,
+        );
         expect(result.searchedWithoutResult, isTrue);
       });
 
       test('两家都查无', () async {
         final VideoMetadataResolution result =
             await resolveChain(<VideoMetadataProvider>[
-          _FakeProvider(kind: VideoMetadataProviderKind.anidb),
-          _FakeProvider(kind: VideoMetadataProviderKind.tmdb),
-        ]);
+              _FakeProvider(kind: VideoMetadataProviderKind.anidb),
+              _FakeProvider(kind: VideoMetadataProviderKind.tmdb),
+            ]);
         expect(result.status, VideoMetadataResolutionStatus.notFound);
         expect(result.searchedWithoutResult, isTrue);
       });
@@ -863,40 +894,44 @@ void main() {
       test('任一家鉴权失败（非临时）：没搜成，不算查无', () async {
         final VideoMetadataResolution result =
             await resolveChain(<VideoMetadataProvider>[
-          _FakeProvider(kind: VideoMetadataProviderKind.anidb),
-          _FakeProvider(
-            kind: VideoMetadataProviderKind.tmdb,
-            searchError: const VideoMetadataNetworkException(
-              'TMDB search HTTP 401',
-              statusCode: 401,
-            ),
-          ),
-        ]);
+              _FakeProvider(kind: VideoMetadataProviderKind.anidb),
+              _FakeProvider(
+                kind: VideoMetadataProviderKind.tmdb,
+                searchError: const VideoMetadataNetworkException(
+                  'TMDB search HTTP 401',
+                  statusCode: 401,
+                ),
+              ),
+            ]);
         expect(
-            result.status, VideoMetadataResolutionStatus.providerUnavailable);
+          result.status,
+          VideoMetadataResolutionStatus.providerUnavailable,
+        );
         expect(result.transient, isFalse);
         expect(result.searchedWithoutResult, isFalse);
       });
 
       test('一家都没配置：没有可搜的源', () async {
-        final VideoMetadataResolution result =
-            await resolveChain(const <VideoMetadataProvider>[]);
+        final VideoMetadataResolution result = await resolveChain(
+          const <VideoMetadataProvider>[],
+        );
         expect(result.searchedWithoutResult, isFalse);
       });
     });
 
     test('unconfigured selected provider fails before network', () async {
-      final VideoMetadataResolution result = await VideoMetadataResolver(
-        registry: VideoMetadataProviderRegistry(
-          const <VideoMetadataProvider>[],
-        ),
-      ).resolve(
-        VideoMetadataResolveRequest(
-          selectedProvider: VideoMetadataProviderKind.anidb,
-          mediaKind: VideoMetadataMediaKind.movie,
-          titleCandidates: const <String>['Movie'],
-        ),
-      );
+      final VideoMetadataResolution result =
+          await VideoMetadataResolver(
+            registry: VideoMetadataProviderRegistry(
+              const <VideoMetadataProvider>[],
+            ),
+          ).resolve(
+            VideoMetadataResolveRequest(
+              selectedProvider: VideoMetadataProviderKind.anidb,
+              mediaKind: VideoMetadataMediaKind.movie,
+              titleCandidates: const <String>['Movie'],
+            ),
+          );
 
       expect(result.status, VideoMetadataResolutionStatus.providerUnavailable);
     });
@@ -916,18 +951,19 @@ void main() {
         works: <String, VideoMetadataWork>{'7': tmdbWork},
       );
 
-      final VideoMetadataResolution result = await VideoMetadataResolver(
-        registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
-          anidb,
-          tmdb,
-        ]),
-      ).resolve(
-        VideoMetadataResolveRequest(
-          selectedProvider: VideoMetadataProviderKind.anidb,
-          mediaKind: VideoMetadataMediaKind.tv,
-          titleCandidates: const <String>['Canonical Show'],
-        ),
-      );
+      final VideoMetadataResolution result =
+          await VideoMetadataResolver(
+            registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
+              anidb,
+              tmdb,
+            ]),
+          ).resolve(
+            VideoMetadataResolveRequest(
+              selectedProvider: VideoMetadataProviderKind.anidb,
+              mediaKind: VideoMetadataMediaKind.tv,
+              titleCandidates: const <String>['Canonical Show'],
+            ),
+          );
 
       expect(result.status, VideoMetadataResolutionStatus.providerUnavailable);
       expect(anidb.searchCalls, 0, reason: '不可用的主源一次网络请求都不该发');
@@ -956,18 +992,19 @@ void main() {
         works: <String, VideoMetadataWork>{'2': otherWork},
       );
 
-      final VideoMetadataResolution result = await VideoMetadataResolver(
-        registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
-          anidb,
-          tmdb,
-        ]),
-      ).resolve(
-        VideoMetadataResolveRequest(
-          selectedProvider: VideoMetadataProviderKind.anidb,
-          mediaKind: VideoMetadataMediaKind.tv,
-          titleCandidates: const <String>['Primary Show'],
-        ),
-      );
+      final VideoMetadataResolution result =
+          await VideoMetadataResolver(
+            registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
+              anidb,
+              tmdb,
+            ]),
+          ).resolve(
+            VideoMetadataResolveRequest(
+              selectedProvider: VideoMetadataProviderKind.anidb,
+              mediaKind: VideoMetadataMediaKind.tv,
+              titleCandidates: const <String>['Primary Show'],
+            ),
+          );
 
       expect(result.providerKind, VideoMetadataProviderKind.anidb);
       expect(tmdb.searchCalls, 0);
@@ -981,53 +1018,52 @@ void main() {
           '42': _work(id: '42', title: 'Bound'),
         },
       );
-      final VideoMetadataWork otherWork = _work(
-        id: '9',
-        title: 'Bound',
-      );
+      final VideoMetadataWork otherWork = _work(id: '9', title: 'Bound');
       final _FakeProvider tmdb = _FakeProvider(
         kind: VideoMetadataProviderKind.tmdb,
         searchResults: <VideoMetadataWork>[otherWork],
         works: <String, VideoMetadataWork>{'9': otherWork},
       );
 
-      final VideoMetadataResolution result = await VideoMetadataResolver(
-        registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
-          anidb,
-          tmdb,
-        ]),
-      ).resolve(
-        VideoMetadataResolveRequest(
-          selectedProvider: VideoMetadataProviderKind.anidb,
-          mediaKind: VideoMetadataMediaKind.tv,
-          titleCandidates: const <String>['Bound'],
-          confirmedLookup: const VideoMetadataLookup(
-            provider: VideoMetadataProviderKind.anidb,
-            externalId: '42',
-            mediaKind: VideoMetadataMediaKind.tv,
-          ),
-        ),
-      );
+      final VideoMetadataResolution result =
+          await VideoMetadataResolver(
+            registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
+              anidb,
+              tmdb,
+            ]),
+          ).resolve(
+            VideoMetadataResolveRequest(
+              selectedProvider: VideoMetadataProviderKind.anidb,
+              mediaKind: VideoMetadataMediaKind.tv,
+              titleCandidates: const <String>['Bound'],
+              confirmedLookup: const VideoMetadataLookup(
+                provider: VideoMetadataProviderKind.anidb,
+                externalId: '42',
+                mediaKind: VideoMetadataMediaKind.tv,
+              ),
+            ),
+          );
 
       expect(result.status, VideoMetadataResolutionStatus.providerUnavailable);
       expect(tmdb.searchCalls, 0);
     });
 
     test('单源不可用时报告具体来源', () async {
-      final VideoMetadataResolution result = await VideoMetadataResolver(
-        registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
-          _FakeProvider(
-            kind: VideoMetadataProviderKind.tmdb,
-            available: false,
-          ),
-        ]),
-      ).resolve(
-        VideoMetadataResolveRequest(
-          selectedProvider: VideoMetadataProviderKind.tmdb,
-          mediaKind: VideoMetadataMediaKind.tv,
-          titleCandidates: const <String>['Anything'],
-        ),
-      );
+      final VideoMetadataResolution result =
+          await VideoMetadataResolver(
+            registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
+              _FakeProvider(
+                kind: VideoMetadataProviderKind.tmdb,
+                available: false,
+              ),
+            ]),
+          ).resolve(
+            VideoMetadataResolveRequest(
+              selectedProvider: VideoMetadataProviderKind.tmdb,
+              mediaKind: VideoMetadataMediaKind.tv,
+              titleCandidates: const <String>['Anything'],
+            ),
+          );
 
       expect(result.status, VideoMetadataResolutionStatus.providerUnavailable);
       expect(result.reason, contains('tmdb is not configured'));
@@ -1035,18 +1071,17 @@ void main() {
     });
   });
 
-  test('parseExplicitVideoMetadataIds recognizes supported URLs and tokens',
-      () {
+  test('parseExplicitVideoMetadataIds recognizes supported URLs and tokens', () {
     final List<VideoMetadataLookup> values =
         parseExplicitVideoMetadataIds(const <String>[
-      'https://anidb.net/anime/17617',
-      'https://www.themoviedb.org/tv/1399-game-of-thrones',
-      'bgm.tv/subject/253',
-      'https://anilist.co/anime/11061/HUNTERHUNTER-2011/',
-      '[doubanid=1292052]',
-      '{[tmdbid=777;type=tv;g=5f8f42adf5c6b90036f0f123]}',
-      '86',
-    ], fallbackMediaKind: VideoMetadataMediaKind.tv);
+          'https://anidb.net/anime/17617',
+          'https://www.themoviedb.org/tv/1399-game-of-thrones',
+          'bgm.tv/subject/253',
+          'https://anilist.co/anime/11061/HUNTERHUNTER-2011/',
+          '[doubanid=1292052]',
+          '{[tmdbid=777;type=tv;g=5f8f42adf5c6b90036f0f123]}',
+          '86',
+        ], fallbackMediaKind: VideoMetadataMediaKind.tv);
 
     expect(
       values
@@ -1076,18 +1111,17 @@ VideoMetadataWork _work({
   VideoMetadataMediaKind mediaKind = VideoMetadataMediaKind.tv,
   List<VideoMetadataSeason> seasons = const <VideoMetadataSeason>[],
   VideoMetadataProviderKind provider = VideoMetadataProviderKind.tmdb,
-}) =>
-    VideoMetadataWork(
-      provider: provider,
-      kind: mediaKind,
-      title: title,
-      aliases: aliases,
-      year: year,
-      ids: <VideoMetadataId>[
-        VideoMetadataId(type: provider.name, value: id, isDefault: true),
-      ],
-      seasons: seasons,
-    );
+}) => VideoMetadataWork(
+  provider: provider,
+  kind: mediaKind,
+  title: title,
+  aliases: aliases,
+  year: year,
+  ids: <VideoMetadataId>[
+    VideoMetadataId(type: provider.name, value: id, isDefault: true),
+  ],
+  seasons: seasons,
+);
 
 class _FakeProvider implements VideoMetadataProvider {
   _FakeProvider({
@@ -1139,15 +1173,13 @@ class _FakeProvider implements VideoMetadataProvider {
   @override
   Future<List<VideoMetadataSeason>> fetchSeasons(
     VideoMetadataLookup lookup,
-  ) async =>
-      works[lookup.externalId]?.seasons ?? const <VideoMetadataSeason>[];
+  ) async => works[lookup.externalId]?.seasons ?? const <VideoMetadataSeason>[];
 
   @override
   Future<List<VideoMetadataEpisode>> fetchEpisodes(
     VideoMetadataLookup lookup, {
     required int seasonNumber,
-  }) async =>
-      const <VideoMetadataEpisode>[];
+  }) async => const <VideoMetadataEpisode>[];
 
   @override
   void close() {}
@@ -1187,8 +1219,8 @@ class _FakeEpisodeGroupProvider extends _FakeProvider
 
   @override
   Future<List<VideoMetadataEpisodeGroupSummary>> listEpisodeGroups(
-          VideoMetadataLookup lookup) async =>
-      const <VideoMetadataEpisodeGroupSummary>[];
+    VideoMetadataLookup lookup,
+  ) async => const <VideoMetadataEpisodeGroupSummary>[];
 
   @override
   Future<VideoMetadataLookup?> resolveEpisodeGroup(

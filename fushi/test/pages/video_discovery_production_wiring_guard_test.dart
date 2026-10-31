@@ -45,25 +45,33 @@ void main() {
     expect(source, contains('VideoDiscoverySubscriptionPage('));
     expect(source, contains('VideoDiscoverySubtitleSearchPage('));
 
-    final int resourceSearchStart =
-        source.indexOf('Future<void> _openVideoDiscoveryResourceSearch(');
-    final int subscriptionStart =
-        source.indexOf('Future<void> _openVideoDiscoverySubscription(');
-    final int subtitleSearchStart =
-        source.indexOf('Future<void> _openVideoDiscoverySubtitleSearch(');
+    final int resourceSearchStart = source.indexOf(
+      'Future<void> _openVideoDiscoveryResourceSearch(',
+    );
+    final int subscriptionStart = source.indexOf(
+      'Future<void> _openVideoDiscoverySubscription(',
+    );
+    final int subtitleSearchStart = source.indexOf(
+      'Future<void> _openVideoDiscoverySubtitleSearch(',
+    );
     expect(resourceSearchStart, isNonNegative);
     expect(subscriptionStart, greaterThan(resourceSearchStart));
     expect(subtitleSearchStart, greaterThan(subscriptionStart));
 
-    final String resourceSearch =
-        source.substring(resourceSearchStart, subscriptionStart);
-    final String subscription =
-        source.substring(subscriptionStart, subtitleSearchStart);
+    final String resourceSearch = source.substring(
+      resourceSearchStart,
+      subscriptionStart,
+    );
+    final String subscription = source.substring(
+      subscriptionStart,
+      subtitleSearchStart,
+    );
     for (final String entryPoint in <String>[resourceSearch, subscription]) {
       final int pageConstruction = entryPoint.indexOf('Page(');
       final int submitCallback = entryPoint.indexOf('onSubmit:');
-      final int backendResolution =
-          entryPoint.indexOf('currentVideoDownloadBackendTarget()');
+      final int backendResolution = entryPoint.indexOf(
+        'currentVideoDownloadBackendTarget()',
+      );
       expect(pageConstruction, isNonNegative);
       expect(submitCallback, greaterThan(pageConstruction));
       expect(
@@ -77,8 +85,9 @@ void main() {
       'lib/src/pages/implementations/video_discovery_acquisition_dialogs.dart',
     ).readAsStringSync();
     expect(
-      RegExp(r'on VideoDownloadBackendUnavailable catch \(error\)')
-          .allMatches(dialogSource),
+      RegExp(
+        r'on VideoDownloadBackendUnavailable catch \(error\)',
+      ).allMatches(dialogSource),
       hasLength(1),
       reason: '提交下载时应在当前资源页展示内置引擎缺失的可操作原因',
     );
@@ -127,7 +136,8 @@ void main() {
     expect(
       domainSelectors.length,
       1,
-      reason: '资源首页必须先用**唯一**一个类型选择器选择内容域'
+      reason:
+          '资源首页必须先用**唯一**一个类型选择器选择内容域'
           '（形态可换，个数不能变）',
     );
     expect(source, contains('MediaDiscoveryPage('));

@@ -21,13 +21,13 @@ void main() {
   late int newSource;
 
   Future<int> insertSource(String label) => db.insertMediaSource(
-        MediaSourcesCompanion.insert(
-          label: label,
-          mediaKind: 'video',
-          rootPath: p.join('C:', label),
-          createdAt: 1,
-        ),
-      );
+    MediaSourcesCompanion.insert(
+      label: label,
+      mediaKind: 'video',
+      rootPath: p.join('C:', label),
+      createdAt: 1,
+    ),
+  );
 
   Future<void> insertSubscription(String id, int sourceId) =>
       db.upsertVideoDownloadSubscription(
@@ -50,23 +50,22 @@ void main() {
     required int sourceId,
     required String stage,
     String lifecycle = VideoDownloadJobLifecycle.active,
-  }) =>
-      db.upsertVideoDownloadJob(
-        VideoDownloadJobsCompanion.insert(
-          jobId: jobId,
-          resourceProvider: 'nyaa:test',
-          selectedResourceId: 'release-$jobId',
-          mediaKind: 'tv',
-          title: 'Show',
-          backendKind: 'embedded',
-          fingerprint: 'fp',
-          targetSourceId: Value<int?>(sourceId),
-          lifecycle: Value<String>(lifecycle),
-          stage: Value<String>(stage),
-          createdAt: 1,
-          updatedAt: 1,
-        ),
-      );
+  }) => db.upsertVideoDownloadJob(
+    VideoDownloadJobsCompanion.insert(
+      jobId: jobId,
+      resourceProvider: 'nyaa:test',
+      selectedResourceId: 'release-$jobId',
+      mediaKind: 'tv',
+      title: 'Show',
+      backendKind: 'embedded',
+      fingerprint: 'fp',
+      targetSourceId: Value<int?>(sourceId),
+      lifecycle: Value<String>(lifecycle),
+      stage: Value<String>(stage),
+      createdAt: 1,
+      updatedAt: 1,
+    ),
+  );
 
   Future<void> linkItem(String subscriptionId, String jobId) =>
       db.upsertVideoDownloadSubscriptionItem(
@@ -111,42 +110,46 @@ void main() {
 
   tearDown(() => db.close());
 
-  test('counts subscriptions and jobs whose files are not in the source yet',
-      () async {
-    final ({int subscriptions, int pendingJobs}) refs =
-        await db.countVideoDownloadReferencesToSource(oldSource);
-    expect(refs.subscriptions, 1);
-    expect(refs.pendingJobs, 3, reason: 'enqueue / download / organize');
-    final ({int subscriptions, int pendingJobs}) none =
-        await db.countVideoDownloadReferencesToSource(newSource);
-    expect(none.subscriptions, 0);
-    expect(none.pendingJobs, 0);
-  });
+  test(
+    'counts subscriptions and jobs whose files are not in the source yet',
+    () async {
+      final ({int subscriptions, int pendingJobs}) refs = await db
+          .countVideoDownloadReferencesToSource(oldSource);
+      expect(refs.subscriptions, 1);
+      expect(refs.pendingJobs, 3, reason: 'enqueue / download / organize');
+      final ({int subscriptions, int pendingJobs}) none = await db
+          .countVideoDownloadReferencesToSource(newSource);
+      expect(none.subscriptions, 0);
+      expect(none.pendingJobs, 0);
+    },
+  );
 
-  test('removal migrates subscriptions, pending jobs and the default source',
-      () async {
-    await prefs.setVideoDownloadTargetSourceId(oldSource);
+  test(
+    'removal migrates subscriptions, pending jobs and the default source',
+    () async {
+      await prefs.setVideoDownloadTargetSourceId(oldSource);
 
-    await removeSourceLibrary(
-      database: db,
-      prefs: prefs,
-      sourceId: oldSource,
-      migrateVideoDownloadsTo: newSource,
-    );
+      await removeSourceLibrary(
+        database: db,
+        prefs: prefs,
+        sourceId: oldSource,
+        migrateVideoDownloadsTo: newSource,
+      );
 
-    expect(await db.getMediaSourceById(oldSource), isNull);
-    final VideoDownloadSubscriptionRow subscription =
-        (await db.getVideoDownloadSubscription('sub-a'))!;
-    expect(subscription.targetSourceId, newSource);
-    expect(subscription.enabled, isTrue);
-    expect(await targetOfJob('queued'), newSource);
-    expect(await targetOfJob('downloading'), newSource);
-    expect(await targetOfJob('organizing'), newSource);
-    // 文件已落进旧来源的任务不改绑（FK 照旧清空，审计保留）。
-    expect(await targetOfJob('importing'), isNull);
-    expect(await targetOfJob('done'), isNull);
-    expect(prefs.videoDownloadTargetSourceId, newSource);
-  });
+      expect(await db.getMediaSourceById(oldSource), isNull);
+      final VideoDownloadSubscriptionRow subscription = (await db
+          .getVideoDownloadSubscription('sub-a'))!;
+      expect(subscription.targetSourceId, newSource);
+      expect(subscription.enabled, isTrue);
+      expect(await targetOfJob('queued'), newSource);
+      expect(await targetOfJob('downloading'), newSource);
+      expect(await targetOfJob('organizing'), newSource);
+      // 文件已落进旧来源的任务不改绑（FK 照旧清空，审计保留）。
+      expect(await targetOfJob('importing'), isNull);
+      expect(await targetOfJob('done'), isNull);
+      expect(prefs.videoDownloadTargetSourceId, newSource);
+    },
+  );
 
   test('removal without a target pauses the orphaned subscriptions', () async {
     await prefs.setVideoDownloadTargetSourceId(oldSource);
@@ -158,21 +161,27 @@ void main() {
       disableVideoDownloadSubscriptions: true,
     );
 
-    final VideoDownloadSubscriptionRow subscription =
-        (await db.getVideoDownloadSubscription('sub-a'))!;
+    final VideoDownloadSubscriptionRow subscription = (await db
+        .getVideoDownloadSubscription('sub-a'))!;
     expect(subscription.enabled, isFalse);
     expect(subscription.targetSourceId, isNull);
     expect(prefs.videoDownloadTargetSourceId, isNull);
   });
 
-  test('removing another source leaves the default download source alone',
-      () async {
-    await prefs.setVideoDownloadTargetSourceId(newSource);
+  test(
+    'removing another source leaves the default download source alone',
+    () async {
+      await prefs.setVideoDownloadTargetSourceId(newSource);
 
-    await removeSourceLibrary(database: db, prefs: prefs, sourceId: oldSource);
+      await removeSourceLibrary(
+        database: db,
+        prefs: prefs,
+        sourceId: oldSource,
+      );
 
-    expect(prefs.videoDownloadTargetSourceId, newSource);
-  });
+      expect(prefs.videoDownloadTargetSourceId, newSource);
+    },
+  );
 
   test('an invalid migration target rolls the whole removal back', () async {
     final int bookSource = await db.insertMediaSource(
@@ -200,76 +209,80 @@ void main() {
     );
   });
 
-  test('changing a subscription source carries its not-yet-organized jobs',
-      () async {
-    await insertSubscription('sub-b', oldSource);
-    await insertJob('other-sub-job', sourceId: oldSource, stage: 'download');
-    for (final String jobId in <String>[
-      'queued',
-      'downloading',
-      'organizing',
-      'done',
-    ]) {
-      await linkItem('sub-a', jobId);
-    }
-    await linkItem('sub-b', 'other-sub-job');
+  test(
+    'changing a subscription source carries its not-yet-organized jobs',
+    () async {
+      await insertSubscription('sub-b', oldSource);
+      await insertJob('other-sub-job', sourceId: oldSource, stage: 'download');
+      for (final String jobId in <String>[
+        'queued',
+        'downloading',
+        'organizing',
+        'done',
+      ]) {
+        await linkItem('sub-a', jobId);
+      }
+      await linkItem('sub-b', 'other-sub-job');
 
-    final int moved = await db.updateVideoDownloadSubscriptionRetargetingJobs(
-      'sub-a',
-      VideoDownloadSubscriptionsCompanion(
-        targetSourceId: Value<int?>(newSource),
-        updatedAt: const Value<int>(2),
-      ),
-      nowAt: 2,
-    );
+      final int moved = await db.updateVideoDownloadSubscriptionRetargetingJobs(
+        'sub-a',
+        VideoDownloadSubscriptionsCompanion(
+          targetSourceId: Value<int?>(newSource),
+          updatedAt: const Value<int>(2),
+        ),
+        nowAt: 2,
+      );
 
-    expect(moved, 2);
-    expect(
-      (await db.getVideoDownloadSubscription('sub-a'))!.targetSourceId,
-      newSource,
-    );
-    expect(await targetOfJob('queued'), newSource);
-    expect(await targetOfJob('downloading'), newSource);
-    expect(
-      await targetOfJob('organizing'),
-      oldSource,
-      reason: '整理中的任务可能已把文件改名进旧来源，中途不换根',
-    );
-    expect(await targetOfJob('done'), oldSource);
-    expect(await targetOfJob('other-sub-job'), oldSource);
-  });
+      expect(moved, 2);
+      expect(
+        (await db.getVideoDownloadSubscription('sub-a'))!.targetSourceId,
+        newSource,
+      );
+      expect(await targetOfJob('queued'), newSource);
+      expect(await targetOfJob('downloading'), newSource);
+      expect(
+        await targetOfJob('organizing'),
+        oldSource,
+        reason: '整理中的任务可能已把文件改名进旧来源，中途不换根',
+      );
+      expect(await targetOfJob('done'), oldSource);
+      expect(await targetOfJob('other-sub-job'), oldSource);
+    },
+  );
 
-  test('editing a subscription without touching its source moves no job',
-      () async {
-    await linkItem('sub-a', 'queued');
+  test(
+    'editing a subscription without touching its source moves no job',
+    () async {
+      await linkItem('sub-a', 'queued');
 
-    final int moved = await db.updateVideoDownloadSubscriptionRetargetingJobs(
-      'sub-a',
-      const VideoDownloadSubscriptionsCompanion(
-        searchQuery: Value<String>('Show 2'),
-      ),
-      nowAt: 2,
-    );
+      final int moved = await db.updateVideoDownloadSubscriptionRetargetingJobs(
+        'sub-a',
+        const VideoDownloadSubscriptionsCompanion(
+          searchQuery: Value<String>('Show 2'),
+        ),
+        nowAt: 2,
+      );
 
-    expect(moved, 0);
-    expect(await targetOfJob('queued'), oldSource);
-  });
+      expect(moved, 0);
+      expect(await targetOfJob('queued'), oldSource);
+    },
+  );
 
   test('the scanner skips the download staging directory of local sources', () {
     final String root = p.join('C:', 'Anime');
-    SourceFileEntry entry(String path) => SourceFileEntry(
-          name: p.basename(path),
-          path: path,
-          isDirectory: false,
-        );
+    SourceFileEntry entry(String path) =>
+        SourceFileEntry(name: p.basename(path), path: path, isDirectory: false);
     final List<SourceFileEntry> entries = <SourceFileEntry>[
       entry(p.join(root, 'Show', 'Show - 01.mkv')),
       entry(p.join(root, '.fushi-incoming', 'fushi', 'Show - 02.mkv')),
     ];
 
     expect(
-      excludeSourceIncomingEntries(entries, sourceRoot: root, isLocal: true)
-          .map((SourceFileEntry e) => e.path),
+      excludeSourceIncomingEntries(
+        entries,
+        sourceRoot: root,
+        isLocal: true,
+      ).map((SourceFileEntry e) => e.path),
       <String>[p.join(root, 'Show', 'Show - 01.mkv')],
     );
     expect(

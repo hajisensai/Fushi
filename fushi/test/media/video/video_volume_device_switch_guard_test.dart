@@ -29,45 +29,72 @@ void main() {
     final String src = read('lib/src/media/video/video_player_controller.dart');
 
     test('VideoPlayerController 订阅 stream.audioDevice（设备切换后回补音量）', () {
-      expect(src.contains('stream.audioDevice.listen'), isTrue,
-          reason: '必须订阅 media_kit stream.audioDevice：OS 切换输出设备后 libmpv '
-              '重建 ao 会衰减软件 volume，app 需在设备变化时回补音量目标');
+      expect(
+        src.contains('stream.audioDevice.listen'),
+        isTrue,
+        reason:
+            '必须订阅 media_kit stream.audioDevice：OS 切换输出设备后 libmpv '
+            '重建 ao 会衰减软件 volume，app 需在设备变化时回补音量目标',
+      );
     });
 
     test('设备切换回调回补的是「音量目标」_lastVolume（静音时为 0），不是别的值', () {
       // 锚到订阅回调体：`stream.audioDevice.listen(...) { ... setVolume(... _lastVolume ...) }`。
       final int at = src.indexOf('stream.audioDevice.listen');
-      expect(at, greaterThanOrEqualTo(0),
-          reason: '找不到 stream.audioDevice.listen 订阅');
+      expect(
+        at,
+        greaterThanOrEqualTo(0),
+        reason: '找不到 stream.audioDevice.listen 订阅',
+      );
       // 取订阅点之后一小段，确认回调里下发的是 _muted ? 0.0 : _lastVolume。
       final String after = src.substring(at, at + 400);
-      expect(after.contains('setVolume'), isTrue,
-          reason: '设备切换回调必须调用 setVolume 把音量重新下发给 libmpv');
-      expect(after.contains('_lastVolume'), isTrue,
-          reason: '回补的必须是音量目标 _lastVolume（单一语义真值），而不是读回已衰减的 '
-              'state.volume/volume getter');
-      expect(after.contains('_muted'), isTrue,
-          reason: '回补须尊重静音态：静音时下发 0，否则设备切换会解除用户的静音');
+      expect(
+        after.contains('setVolume'),
+        isTrue,
+        reason: '设备切换回调必须调用 setVolume 把音量重新下发给 libmpv',
+      );
+      expect(
+        after.contains('_lastVolume'),
+        isTrue,
+        reason:
+            '回补的必须是音量目标 _lastVolume（单一语义真值），而不是读回已衰减的 '
+            'state.volume/volume getter',
+      );
+      expect(
+        after.contains('_muted'),
+        isTrue,
+        reason: '回补须尊重静音态：静音时下发 0，否则设备切换会解除用户的静音',
+      );
     });
 
     test('_audioDeviceSub 在 dispose 里被取消（防订阅泄漏）', () {
       expect(src.contains('_audioDeviceSub'), isTrue, reason: '设备变化订阅须存字段以便取消');
-      expect(src.contains('_audioDeviceSub?.cancel()'), isTrue,
-          reason: 'dispose 必须取消 _audioDeviceSub，随 Player 生命周期释放');
+      expect(
+        src.contains('_audioDeviceSub?.cancel()'),
+        isTrue,
+        reason: 'dispose 必须取消 _audioDeviceSub，随 Player 生命周期释放',
+      );
     });
 
     test('保留根因说明注释（防注释丢失后被误删订阅）', () {
-      expect(src.contains('BUG-739'), isTrue,
-          reason: '订阅点/字段须保留 BUG-739 根因注释，让 reviewer 看到不变量来由');
+      expect(
+        src.contains('BUG-739'),
+        isTrue,
+        reason: '订阅点/字段须保留 BUG-739 根因注释，让 reviewer 看到不变量来由',
+      );
     });
   });
 
   group('查词音频每次播放重设绝对音量（对照：为何查词免疫 BUG-739）', () {
     test('desktop_audio_playback 每次播放前 setVolume 绝对值', () {
       final String src = read('lib/src/utils/misc/desktop_audio_playback.dart');
-      expect(src.contains('setVolume'), isTrue,
-          reason: '查词音频免疫本 bug 的根因：每个 clip 播放前都重设绝对音量，'
-              '天然抹平 libmpv 漂移。删掉它会让查词也回归设备切换音量衰减');
+      expect(
+        src.contains('setVolume'),
+        isTrue,
+        reason:
+            '查词音频免疫本 bug 的根因：每个 clip 播放前都重设绝对音量，'
+            '天然抹平 libmpv 漂移。删掉它会让查词也回归设备切换音量衰减',
+      );
     });
   });
 }

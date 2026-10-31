@@ -28,8 +28,9 @@ void main() {
 
       // Touch the DB so the lazy open (onCreate) completes before racing.
       final String? beforeRaw = await db.getPref(FushiDatabase.prefsVersionKey);
-      final int baseline =
-          beforeRaw == null ? 0 : PrefCodec.decode<int>(beforeRaw, 0);
+      final int baseline = beforeRaw == null
+          ? 0
+          : PrefCodec.decode<int>(beforeRaw, 0);
 
       const int writes = 50;
       await Future.wait(<Future<void>>[
@@ -37,8 +38,9 @@ void main() {
       ]);
 
       final String? afterRaw = await db.getPref(FushiDatabase.prefsVersionKey);
-      final int finalVersion =
-          afterRaw == null ? 0 : PrefCodec.decode<int>(afterRaw, 0);
+      final int finalVersion = afterRaw == null
+          ? 0
+          : PrefCodec.decode<int>(afterRaw, 0);
 
       expect(
         finalVersion - baseline,
@@ -61,57 +63,66 @@ void main() {
 
       await db.setPref('bug906_seed', 'x'); // version -> 1
       final String? afterSeed = await db.getPref(FushiDatabase.prefsVersionKey);
-      final int seeded =
-          afterSeed == null ? 0 : PrefCodec.decode<int>(afterSeed, 0);
+      final int seeded = afterSeed == null
+          ? 0
+          : PrefCodec.decode<int>(afterSeed, 0);
 
       // A direct replay of the version key (sync/backup restore path) must NOT
       // recursively bump on top of its own value.
-      await db.setPref(
+      await db.setPref(FushiDatabase.prefsVersionKey, PrefCodec.encode(seeded));
+      final String? afterReplay = await db.getPref(
         FushiDatabase.prefsVersionKey,
-        PrefCodec.encode(seeded),
       );
-      final String? afterReplay =
-          await db.getPref(FushiDatabase.prefsVersionKey);
-      final int replayed =
-          afterReplay == null ? 0 : PrefCodec.decode<int>(afterReplay, 0);
+      final int replayed = afterReplay == null
+          ? 0
+          : PrefCodec.decode<int>(afterReplay, 0);
 
-      expect(replayed, seeded,
-          reason: 'writing prefs_version directly must be exact, not bumped');
+      expect(
+        replayed,
+        seeded,
+        reason: 'writing prefs_version directly must be exact, not bumped',
+      );
     });
   });
 
   group('BUG-906 B: hot-path indexes exist after onCreate', () {
-    test('_ensureIndexes creates the audio_cues / tag_id / source_type indexes',
-        () async {
-      final FushiDatabase db = FushiDatabase.forTesting(
-        NativeDatabase.memory(),
-      );
-      addTearDown(db.close);
+    test(
+      '_ensureIndexes creates the audio_cues / tag_id / source_type indexes',
+      () async {
+        final FushiDatabase db = FushiDatabase.forTesting(
+          NativeDatabase.memory(),
+        );
+        addTearDown(db.close);
 
-      // Force the lazy open so onCreate (createAll + _ensureIndexes) runs.
-      await db.getPref('bug906_touch');
+        // Force the lazy open so onCreate (createAll + _ensureIndexes) runs.
+        await db.getPref('bug906_touch');
 
-      Future<bool> indexExists(String name) async {
-        // `name` is a hard-coded test literal, safe to inline.
-        final rows = await db
-            .customSelect(
-              "SELECT name FROM sqlite_master "
-              "WHERE type='index' AND name='$name'",
-            )
-            .get();
-        return rows.isNotEmpty;
-      }
+        Future<bool> indexExists(String name) async {
+          // `name` is a hard-coded test literal, safe to inline.
+          final rows = await db
+              .customSelect(
+                "SELECT name FROM sqlite_master "
+                "WHERE type='index' AND name='$name'",
+              )
+              .get();
+          return rows.isNotEmpty;
+        }
 
-      const List<String> required = <String>[
-        'idx_audio_cues_book_chapter_sentence',
-        // v79 五张标签映射表合一：per-table tag_id 索引随旧表消亡，
-        // 统一表一条索引覆盖全部 kind。
-        'idx_tag_assignments_tag_id',
-        'idx_favorite_words_source_type',
-      ];
-      for (final String name in required) {
-        expect(await indexExists(name), isTrue, reason: 'missing index $name');
-      }
-    });
+        const List<String> required = <String>[
+          'idx_audio_cues_book_chapter_sentence',
+          // v79 五张标签映射表合一：per-table tag_id 索引随旧表消亡，
+          // 统一表一条索引覆盖全部 kind。
+          'idx_tag_assignments_tag_id',
+          'idx_favorite_words_source_type',
+        ];
+        for (final String name in required) {
+          expect(
+            await indexExists(name),
+            isTrue,
+            reason: 'missing index $name',
+          );
+        }
+      },
+    );
   });
 }

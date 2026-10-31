@@ -41,10 +41,12 @@ class DictionaryOrderBadge extends StatelessWidget {
     final TextTheme textTheme = Theme.of(context).textTheme;
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     // 停用：退成浮起面那一阶的中性底（tokens 色阶，不在页面里自选容器色）。
-    final Color fill =
-        enabled ? tokens.surfaces.primaryContainer : tokens.surfaces.search;
-    final Color ink =
-        enabled ? scheme.onPrimaryContainer : scheme.onSurfaceVariant;
+    final Color fill = enabled
+        ? tokens.surfaces.primaryContainer
+        : tokens.surfaces.search;
+    final Color ink = enabled
+        ? scheme.onPrimaryContainer
+        : scheme.onSurfaceVariant;
     return SizedBox.square(
       dimension: 32,
       child: DecoratedBox(
@@ -102,6 +104,7 @@ class DictionaryManagerDetail extends StatelessWidget {
   final int count;
 
   final ValueChanged<bool> onEnabledChanged;
+
   /// null = 不给折叠控件。折叠管的是查词弹窗里这本的**释义**；「汉字」分区里的行
   /// （纯 kanji 词典 / 混合词典的汉字部分）对应的是汉字卡，汉字卡不折叠——在那里给
   /// 这个控件，改的其实是混合词典术语部分的折叠状态（BUG-3573）。
@@ -496,14 +499,18 @@ class DictionaryManagerOverview extends StatelessWidget {
         SizedBox(height: gap * 3),
         Row(
           children: <Widget>[
-            FushiIcon(Icons.touch_app_outlined,
-                size: 18, color: scheme.onSurfaceVariant),
+            FushiIcon(
+              Icons.touch_app_outlined,
+              size: 18,
+              color: scheme.onSurfaceVariant,
+            ),
             SizedBox(width: gap),
             Expanded(
               child: Text(
                 t.dict_detail_placeholder,
-                style: textTheme.bodyMedium
-                    ?.copyWith(color: scheme.onSurfaceVariant),
+                style: textTheme.bodyMedium?.copyWith(
+                  color: scheme.onSurfaceVariant,
+                ),
               ),
             ),
           ],
@@ -647,11 +654,8 @@ Future<int?> showDictionaryPositionDialog({
 }) {
   return showAppDialog<int>(
     context: context,
-    builder: (_) => DictionaryPositionDialog(
-      name: name,
-      position: position,
-      count: count,
-    ),
+    builder: (_) =>
+        DictionaryPositionDialog(name: name, position: position, count: count),
   );
 }
 
@@ -676,8 +680,9 @@ class DictionaryPositionDialog extends StatefulWidget {
 }
 
 class _DictionaryPositionDialogState extends State<DictionaryPositionDialog> {
-  late final TextEditingController _controller =
-      TextEditingController(text: '${widget.position + 1}');
+  late final TextEditingController _controller = TextEditingController(
+    text: '${widget.position + 1}',
+  );
 
   @override
   void initState() {

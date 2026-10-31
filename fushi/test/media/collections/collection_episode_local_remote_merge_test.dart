@@ -18,11 +18,7 @@ void main() {
   late VideoBookRepository repo;
   late int collectionId;
 
-  RemoteVideoInfo jellyfinEpisode(
-    String id,
-    int episode, {
-    int? completedAt,
-  }) =>
+  RemoteVideoInfo jellyfinEpisode(String id, int episode, {int? completedAt}) =>
       RemoteVideoInfo(
         id: id,
         title: 'Frieren S01E${episode.toString().padLeft(2, '0')} Ep $episode',
@@ -35,30 +31,34 @@ void main() {
       );
 
   VideoBookRow localRow(String uid, String path) => VideoBookRow(
-        bookUid: uid,
-        title: path,
-        videoPath: path,
-        lastPositionMs: 0,
-        currentEpisode: 0,
-        delayMs: 0,
-      );
+    bookUid: uid,
+    title: path,
+    videoPath: path,
+    lastPositionMs: 0,
+    currentEpisode: 0,
+    delayMs: 0,
+  );
 
   setUp(() async {
     db = FushiDatabase.forTesting(NativeDatabase.memory());
     repo = VideoBookRepository(db);
-    collectionId =
-        await db.createMediaCollection('Frieren', collectionType: 'playlist');
+    collectionId = await db.createMediaCollection(
+      'Frieren',
+      collectionType: 'playlist',
+    );
   });
 
   tearDown(() => db.close());
 
   test('本地 1-2 集 + 媒体服务器 1-3 集 → 三槽，1/2 集本地优先且保留远端副本', () async {
     for (final int ep in <int>[1, 2]) {
-      await db.upsertVideoBook(VideoBooksCompanion(
-        bookUid: Value('video/local$ep'),
-        title: Value('[Sub] Frieren - 0$ep [1080p]'),
-        videoPath: Value('/anime/Frieren/[Sub] Frieren - 0$ep [1080p].mkv'),
-      ));
+      await db.upsertVideoBook(
+        VideoBooksCompanion(
+          bookUid: Value('video/local$ep'),
+          title: Value('[Sub] Frieren - 0$ep [1080p]'),
+          videoPath: Value('/anime/Frieren/[Sub] Frieren - 0$ep [1080p].mkv'),
+        ),
+      );
     }
     for (final String key in <String>[
       'video/local1',

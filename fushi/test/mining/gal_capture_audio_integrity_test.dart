@@ -28,15 +28,14 @@ void main() {
     required int orderIndex,
     double avgEnergy = 100,
     int clipCount = 3,
-  }) =>
-      GalAudioTrack(
-        sourcePtr: sourcePtr,
-        format: kPcm,
-        avgBytes: 4096,
-        avgEnergy: avgEnergy,
-        orderIndex: orderIndex,
-        clipCount: clipCount,
-      );
+  }) => GalAudioTrack(
+    sourcePtr: sourcePtr,
+    format: kPcm,
+    avgBytes: 4096,
+    avgEnergy: avgEnergy,
+    orderIndex: orderIndex,
+    clipCount: clipCount,
+  );
 
   Future<void> waitUntil(bool Function() done, {int ticks = 400}) async {
     for (int i = 0; i < ticks && !done(); i++) {
@@ -78,8 +77,9 @@ void main() {
       final Map<Object?, Object?> args =
           calls.single.arguments as Map<Object?, Object?>;
       expect(args['sourcePtr'], 0x11, reason: '兜底必须与 grabUtterance 用同一条选轨');
-      expect(args['exclude'], <int>[0x22],
-          reason: '兜底必须携带排除集，否则排除的 BGM 从这里绕回制卡');
+      expect(args['exclude'], <int>[
+        0x22,
+      ], reason: '兜底必须携带排除集，否则排除的 BGM 从这里绕回制卡');
     });
 
     test('显式 sourcePtr/exclude 覆盖缺省（逐行选轨语义）', () async {
@@ -161,13 +161,13 @@ void main() {
       required TexthookerService service,
       required Listenable endpoints,
       required _FakeEngine engine,
-    }) =>
-        GalHookSessionController(
-          textService: service,
-          isWindows: true,
-          targetWow64Probe: (_) async => false,
-          injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
-          engineSourceFactory: ({
+    }) => GalHookSessionController(
+      textService: service,
+      isWindows: true,
+      targetWow64Probe: (_) async => false,
+      injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
+      engineSourceFactory:
+          ({
             required int targetPid,
             required String? launchExe,
             required String injectorPath,
@@ -178,14 +178,13 @@ void main() {
             GalJapaneseLocaleMode japaneseLocaleMode =
                 kGalDefaultJapaneseLocaleMode,
             String? contentLanguage,
-          }) =>
-              engine,
-          loopbackSourceFactory: () => _NullLoopback(),
-          textPollInterval: const Duration(milliseconds: 5),
-          trackRefreshInterval: const Duration(milliseconds: 20),
-          endpointListenable: endpoints,
-          endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
-        );
+          }) => engine,
+      loopbackSourceFactory: () => _NullLoopback(),
+      textPollInterval: const Duration(milliseconds: 5),
+      trackRefreshInterval: const Duration(milliseconds: 20),
+      endpointListenable: endpoints,
+      endpointStatusLoader: () => const <TexthookerEndpointStatus>[],
+    );
 
     test('跨会话排除记忆：按指纹恢复排除；用户恢复后记忆同步删除', () async {
       final TexthookerService service = TexthookerService.test();
@@ -219,30 +218,22 @@ void main() {
       await waitUntil(
         () => controller.state.excludedAudioSourcePtrs.isNotEmpty,
       );
-      expect(
-        controller.state.excludedAudioSourcePtrs,
-        <int>{0x200},
-        reason: '上次会话排除的轨按指纹（orderIndex+格式）套回新 source_ptr',
-      );
+      expect(controller.state.excludedAudioSourcePtrs, <int>{
+        0x200,
+      }, reason: '上次会话排除的轨按指纹（orderIndex+格式）套回新 source_ptr');
 
       // 用户说这条轨不是 BGM：恢复后记忆必须删掉，下次会话不得再自动排除。
       controller.setTrackExcluded(0x200, false);
       expect(controller.state.excludedAudioSourcePtrs, isEmpty);
-      expect(
-        store[r'd:\games\fake.exe']!.excludedTrackFingerprints,
-        isEmpty,
-      );
+      expect(store[r'd:\games\fake.exe']!.excludedTrackFingerprints, isEmpty);
 
       // 重新排除另一条轨：指纹写回。
       controller.setTrackExcluded(0x100, true);
-      expect(
-        store[r'd:\games\fake.exe']!.excludedTrackFingerprints,
-        <String>[
-          GalHookSessionController.trackFingerprint(
-            track(sourcePtr: 0x100, orderIndex: 0),
-          ),
-        ],
-      );
+      expect(store[r'd:\games\fake.exe']!.excludedTrackFingerprints, <String>[
+        GalHookSessionController.trackFingerprint(
+          track(sourcePtr: 0x100, orderIndex: 0),
+        ),
+      ]);
 
       // 会话语音轨也按同一份记忆持久化（用户明确要求「每个游戏默认持久化音轨」）。
       controller.selectVoiceTrack(0x100);
@@ -411,19 +402,19 @@ void main() {
         isWindows: true,
         targetWow64Probe: (_) async => false,
         injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
-        engineSourceFactory: ({
-          required int targetPid,
-          required String? launchExe,
-          required String injectorPath,
-          required bool lunaPcHooks,
-          int? lunaCodepage,
-          List<String> launchArguments = const <String>[],
-          String launchWorkdir = '',
-          GalJapaneseLocaleMode japaneseLocaleMode =
-              kGalDefaultJapaneseLocaleMode,
-          String? contentLanguage,
-        }) =>
-            engine,
+        engineSourceFactory:
+            ({
+              required int targetPid,
+              required String? launchExe,
+              required String injectorPath,
+              required bool lunaPcHooks,
+              int? lunaCodepage,
+              List<String> launchArguments = const <String>[],
+              String launchWorkdir = '',
+              GalJapaneseLocaleMode japaneseLocaleMode =
+                  kGalDefaultJapaneseLocaleMode,
+              String? contentLanguage,
+            }) => engine,
         loopbackSourceFactory: () => _NullLoopback(),
         textPollInterval: const Duration(milliseconds: 5),
         trackRefreshInterval: const Duration(milliseconds: 20),
@@ -441,17 +432,17 @@ void main() {
             store[gameKey] = memory,
       );
       GalHookedLine line(int seq, int threadId, String text) => GalHookedLine(
-            seq: seq,
-            timestampMs: 1000 * seq,
-            text: text,
-            threadId: threadId,
-            sourceKind: 2,
-            eventKind: text.isEmpty
-                ? GalTextEventKind.threadDiscovered
-                : GalTextEventKind.line,
-            hookName: 'EmbedKrkrZ',
-            hookCode: 'ENHVXN-8@2198',
-          );
+        seq: seq,
+        timestampMs: 1000 * seq,
+        text: text,
+        threadId: threadId,
+        sourceKind: 2,
+        eventKind: text.isEmpty
+            ? GalTextEventKind.threadDiscovered
+            : GalTextEventKind.line,
+        hookName: 'EmbedKrkrZ',
+        hookCode: 'ENHVXN-8@2198',
+      );
 
       // 第一次启动：线程 7 出了很多行，被按记忆恢复。
       await controller.launchGame(r'D:\Games\fake.exe');
@@ -470,13 +461,16 @@ void main() {
       for (int i = 11; i <= 13; i++) {
         engine.enqueue(line(i, 8, '二回目$i'));
       }
-      await waitUntil(() =>
-          controller.selectedNativeTextThreadId != null &&
-          controller.selectedNativeTextThreadId != 7);
+      await waitUntil(
+        () =>
+            controller.selectedNativeTextThreadId != null &&
+            controller.selectedNativeTextThreadId != 7,
+      );
       expect(controller.selectedNativeTextThreadId, 8);
       expect(
-        controller.textThreads
-            .map((TexthookerTextThread t) => t.nativeThreadId),
+        controller.textThreads.map(
+          (TexthookerTextThread t) => t.nativeThreadId,
+        ),
         isNot(contains(7)),
         reason: '会话级目录不得混入上一次启动的死线程',
       );
@@ -503,36 +497,44 @@ void main() {
       engine.tracks = <GalAudioTrack>[
         track(sourcePtr: 0x100, orderIndex: 0, avgEnergy: 88),
       ];
-      engine.enqueue(const GalHookedLine(
-        seq: 1,
-        timestampMs: 1000,
-        text: '一句目',
-        threadId: 5,
-        hookName: 'fake',
-      ));
+      engine.enqueue(
+        const GalHookedLine(
+          seq: 1,
+          timestampMs: 1000,
+          text: '一句目',
+          threadId: 5,
+          hookName: 'fake',
+        ),
+      );
       await waitUntil(() => service.entries.isNotEmpty);
       await waitUntil(
         () => service.entries.first.fallbackReason == 'utterance_not_found',
       );
       expect(
-          service.entries.first.audioStatus, TexthookerLineAudioStatus.missing);
+        service.entries.first.audioStatus,
+        TexthookerLineAudioStatus.missing,
+      );
       expect(service.entries.first.fallbackReason, 'utterance_not_found');
 
       // (b) 声音只在被排除的 BGM 轨上 -> 判无配音（灰标不吓人）。
       controller.setTrackExcluded(0x100, true);
-      engine.enqueue(const GalHookedLine(
-        seq: 2,
-        timestampMs: 2000,
-        text: '二句目',
-        threadId: 5,
-        hookName: 'fake',
-      ));
+      engine.enqueue(
+        const GalHookedLine(
+          seq: 2,
+          timestampMs: 2000,
+          text: '二句目',
+          threadId: 5,
+          hookName: 'fake',
+        ),
+      );
       await waitUntil(() => service.entries.length >= 2);
       await waitUntil(
         () => service.entries.last.fallbackReason == kGalLineNoVoiceReason,
       );
       expect(
-          service.entries.last.audioStatus, TexthookerLineAudioStatus.missing);
+        service.entries.last.audioStatus,
+        TexthookerLineAudioStatus.missing,
+      );
       expect(service.entries.last.fallbackReason, kGalLineNoVoiceReason);
 
       await controller.close();
@@ -544,10 +546,8 @@ void main() {
 /// 引擎 helper 替身：文本可排队、PCM 立即就绪、音轨快照可配置、整句抓取恒失败
 /// （逼出 miss 分类与兜底链）。
 class _FakeEngine extends EngineHookGalAudioSource {
-  _FakeEngine({
-    this.readyFormat,
-    this.enforceTextSelection = false,
-  }) : super(targetPid: 0, launchExe: 'fake.exe', injectorPath: 'fake.exe');
+  _FakeEngine({this.readyFormat, this.enforceTextSelection = false})
+    : super(targetPid: 0, launchExe: 'fake.exe', injectorPath: 'fake.exe');
 
   final PcmFormat? readyFormat;
   final bool enforceTextSelection;
@@ -624,8 +624,7 @@ class _FakeEngine extends EngineHookGalAudioSource {
     int? sourcePtr,
     List<int>? exclude,
     int? endTsMs,
-  }) async =>
-      null;
+  }) async => null;
 
   @override
   Future<GalAudioSlice?> grabClipNear(
@@ -634,8 +633,7 @@ class _FakeEngine extends EngineHookGalAudioSource {
     int? sourcePtr,
     List<int>? exclude,
     int? endTsMs,
-  }) async =>
-      null;
+  }) async => null;
 
   @override
   Future<List<GalAudioTrack>> listAudioTracks(int tsMs) async => tracks;
@@ -645,8 +643,7 @@ class _FakeEngine extends EngineHookGalAudioSource {
     int textTsMs, {
     int? textEventId,
     bool allowLatestSessionFallback = true,
-  }) =>
-      null;
+  }) => null;
 
   @override
   Future<Uint8List?> grabPairedVoiceBytes(
@@ -655,8 +652,7 @@ class _FakeEngine extends EngineHookGalAudioSource {
     int? textEventId,
     String? resourceId,
     bool allowLatestSessionFallback = true,
-  }) async =>
-      null;
+  }) async => null;
 
   @override
   Future<void> stop() async {}

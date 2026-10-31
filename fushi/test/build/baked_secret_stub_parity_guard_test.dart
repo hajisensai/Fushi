@@ -24,8 +24,9 @@ import 'package:flutter_test/flutter_test.dart';
 ///   3. **没人把 inline 拷贝抄回去**（抄回去就等于把漂移的可能性放回来）。
 void main() {
   final Directory workflowsDir = Directory('../.github/workflows');
-  final File actionFile =
-      File('../.github/actions/provide-baked-secrets/action.yml');
+  final File actionFile = File(
+    '../.github/actions/provide-baked-secrets/action.yml',
+  );
 
   /// 每一种「烘进包里的密钥」：步骤名 -> 它必须写穿的目标文件。
   const Map<String, String> bakedSecrets = <String, String>{
@@ -46,15 +47,23 @@ void main() {
   const String actionRef = './.github/actions/provide-baked-secrets';
 
   test('前置：composite action 与 workflows 目录都在', () {
-    expect(actionFile.existsSync(), isTrue,
-        reason: '缺 ${actionFile.absolute.path}——密钥注入的唯一真相源没了，'
-            '本守卫的全部断言失去对象。');
-    expect(workflowsDir.existsSync(), isTrue,
-        reason: 'expected ${workflowsDir.absolute.path}');
+    expect(
+      actionFile.existsSync(),
+      isTrue,
+      reason:
+          '缺 ${actionFile.absolute.path}——密钥注入的唯一真相源没了，'
+          '本守卫的全部断言失去对象。',
+    );
+    expect(
+      workflowsDir.existsSync(),
+      isTrue,
+      reason: 'expected ${workflowsDir.absolute.path}',
+    );
   });
 
-  final String actionText =
-      actionFile.existsSync() ? actionFile.readAsStringSync() : '';
+  final String actionText = actionFile.existsSync()
+      ? actionFile.readAsStringSync()
+      : '';
 
   test('composite action 覆盖全部四种烘进包的密钥，并各自写穿目标文件', () {
     final List<String> missing = <String>[];
@@ -65,10 +74,14 @@ void main() {
         missing.add('  步骤在但没写穿目标文件：$step -> $dst');
       }
     });
-    expect(missing, isEmpty,
-        reason: 'composite action 少了这些注入。少哪一种，**发出去的包**里对应'
-            '功能就静默降级，而 CI 依旧全绿（BUG-1588 就是 TMDB 这一种）：\n'
-            '${missing.join("\n")}');
+    expect(
+      missing,
+      isEmpty,
+      reason:
+          'composite action 少了这些注入。少哪一种，**发出去的包**里对应'
+          '功能就静默降级，而 CI 依旧全绿（BUG-1588 就是 TMDB 这一种）：\n'
+          '${missing.join("\n")}',
+    );
   });
 
   test('composite action 的每个输入都接到真实 GitHub secret 而不是写死值', () {
@@ -106,12 +119,13 @@ void main() {
 
   final List<File> workflows = workflowsDir.existsSync()
       ? (workflowsDir
-          .listSync()
-          .whereType<File>()
-          .where(
-              (File f) => f.path.endsWith('.yml') || f.path.endsWith('.yaml'))
-          .toList()
-        ..sort((File a, File b) => a.path.compareTo(b.path)))
+            .listSync()
+            .whereType<File>()
+            .where(
+              (File f) => f.path.endsWith('.yml') || f.path.endsWith('.yaml'),
+            )
+            .toList()
+          ..sort((File a, File b) => a.path.compareTo(b.path)))
       : <File>[];
 
   /// 用了 composite action 的 workflow 名 -> 用了几次。
@@ -143,18 +157,26 @@ void main() {
 
   test('守卫没跑空：扫到了 composite action 的调用点', () {
     expect(workflows, isNotEmpty, reason: '一个 workflow 都没扫到');
-    expect(callers, isNotEmpty,
-        reason: '没有任何 workflow `uses: $actionRef`。要么 action 路径改了、'
-            '要么调用写法变了——无论哪种，下面「不许抄回 inline」的断言此刻都是'
-            '空转，先修守卫再谈绿。');
+    expect(
+      callers,
+      isNotEmpty,
+      reason:
+          '没有任何 workflow `uses: $actionRef`。要么 action 路径改了、'
+          '要么调用写法变了——无论哪种，下面「不许抄回 inline」的断言此刻都是'
+          '空转，先修守卫再谈绿。',
+    );
   });
 
   test('没有任何 workflow 把密钥注入抄回成 inline 步骤', () {
-    expect(inlineCopies, isEmpty,
-        reason: '这些地方又把密钥注入写成了 inline 步骤。inline 拷贝一旦出现，'
-            '「新增一种密钥时漏抄某个 job」的漂移就回来了——BUG-1588 正是这么'
-            '发生的（44 份拷贝里 TMDB 漂成 3 个变体、发布 workflow 一处都没有）。'
-            '改用 `uses: $actionRef`：\n'
-            '${inlineCopies.join("\n")}');
+    expect(
+      inlineCopies,
+      isEmpty,
+      reason:
+          '这些地方又把密钥注入写成了 inline 步骤。inline 拷贝一旦出现，'
+          '「新增一种密钥时漏抄某个 job」的漂移就回来了——BUG-1588 正是这么'
+          '发生的（44 份拷贝里 TMDB 漂成 3 个变体、发布 workflow 一处都没有）。'
+          '改用 `uses: $actionRef`：\n'
+          '${inlineCopies.join("\n")}',
+    );
   });
 }

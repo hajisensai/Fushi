@@ -7,12 +7,12 @@ import 'package:fushi/models.dart';
 class FuriganaField extends Field {
   /// Initialise this field with the predetermined and hardset values.
   FuriganaField._privateConstructor()
-      : super(
-          uniqueKey: key,
-          label: 'Furigana',
-          description: 'Pre-fills text to export for Furigana.',
-          icon: Icons.data_array_outlined,
-        );
+    : super(
+        uniqueKey: key,
+        label: 'Furigana',
+        description: 'Pre-fills text to export for Furigana.',
+        icon: Icons.data_array_outlined,
+      );
 
   /// Get the singleton instance of this field.
   static FuriganaField get instance => _instance;

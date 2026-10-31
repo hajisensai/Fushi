@@ -14,33 +14,37 @@ void main() {
   late String source;
 
   setUpAll(() {
-    source = File('lib/src/media/audiobook/now_listening_mini_bar.dart')
-        .readAsStringSync();
+    source = File(
+      'lib/src/media/audiobook/now_listening_mini_bar.dart',
+    ).readAsStringSync();
   });
 
   test(
-      'mini bar wires the floating-lyric toggle to toggleFloatingLyricFromControls',
-      () {
-    expect(
-      source.contains('toggleFloatingLyricFromControls'),
-      isTrue,
-      reason: '开关必须走真正拉起/隐藏悬浮窗的收口，而非只翻偏好 bool',
-    );
-    expect(
-      source.contains('floating_lyric_toggle_action'),
-      isTrue,
-      reason: '开关用「悬浮字幕」标签',
-    );
-  });
+    'mini bar wires the floating-lyric toggle to toggleFloatingLyricFromControls',
+    () {
+      expect(
+        source.contains('toggleFloatingLyricFromControls'),
+        isTrue,
+        reason: '开关必须走真正拉起/隐藏悬浮窗的收口，而非只翻偏好 bool',
+      );
+      expect(
+        source.contains('floating_lyric_toggle_action'),
+        isTrue,
+        reason: '开关用「悬浮字幕」标签',
+      );
+    },
+  );
 
-  test('floating-lyric toggle is gated to platforms with a native back-end',
-      () {
-    // native 悬浮窗后端只在 Android / Windows / macOS（FloatingLyricChannel
-    // .supported），Linux 必须隐藏开关而不是给一个点了无效的按钮。
-    expect(
-      source.contains('if (FloatingLyricChannel.supported)'),
-      isTrue,
-      reason: '开关须按 native 后端可用性平台门控（FloatingLyricChannel.supported）',
-    );
-  });
+  test(
+    'floating-lyric toggle is gated to platforms with a native back-end',
+    () {
+      // native 悬浮窗后端只在 Android / Windows / macOS（FloatingLyricChannel
+      // .supported），Linux 必须隐藏开关而不是给一个点了无效的按钮。
+      expect(
+        source.contains('if (FloatingLyricChannel.supported)'),
+        isTrue,
+        reason: '开关须按 native 后端可用性平台门控（FloatingLyricChannel.supported）',
+      );
+    },
+  );
 }

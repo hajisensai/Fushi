@@ -57,11 +57,7 @@ void main() {
       );
       expect(report.failures.single.error, isNotNull);
       expect(held.existsSync(), isTrue);
-      expect(
-        report.removed,
-        <String>[other.path],
-        reason: '一个文件失败不能翻转其它文件的结果',
-      );
+      expect(report.removed, <String>[other.path], reason: '一个文件失败不能翻转其它文件的结果');
       expect(other.existsSync(), isFalse);
     } finally {
       await handle.close();

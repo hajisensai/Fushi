@@ -150,13 +150,12 @@ class _VideoCoverMutationContext {
       if (!owner.active) {
         return await VideoCoverMutationGate.runExclusive<T>(action);
       }
-      final _VideoCoverMutationContext child =
-          _VideoCoverMutationContext(owner);
+      final _VideoCoverMutationContext child = _VideoCoverMutationContext(
+        owner,
+      );
       return await runZoned<Future<T>>(
         action,
-        zoneValues: <Object, Object>{
-          VideoCoverMutationGate._zoneKey: child,
-        },
+        zoneValues: <Object, Object>{VideoCoverMutationGate._zoneKey: child},
       );
     } finally {
       if (_childWaiters.isNotEmpty) {

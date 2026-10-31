@@ -14,8 +14,11 @@ void main() {
     final session = await FFmpegKit.execute('-version');
     final ReturnCode? rc = await session.getReturnCode();
     final String out = (await session.getOutput()) ?? '';
-    expect(ReturnCode.isSuccess(rc), isTrue,
-        reason: 'rc=${rc?.getValue()} out=$out');
+    expect(
+      ReturnCode.isSuccess(rc),
+      isTrue,
+      reason: 'rc=${rc?.getValue()} out=$out',
+    );
     expect(out.toLowerCase().contains('ffmpeg version'), isTrue, reason: out);
   });
 

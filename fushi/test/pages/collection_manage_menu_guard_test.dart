@@ -34,16 +34,16 @@ void main() {
     ]) {
       expect(page.contains(key), isFalse, reason: '页面仍引用 $key');
       expect(
-        File('lib/i18n/strings.i18n.json')
-            .readAsStringSync()
-            .contains('"$key"'),
+        File(
+          'lib/i18n/strings.i18n.json',
+        ).readAsStringSync().contains('"$key"'),
         isFalse,
         reason: 'strings.i18n.json 仍留着 $key',
       );
       expect(
-        File('lib/i18n/strings_zh-CN.i18n.json')
-            .readAsStringSync()
-            .contains('"$key"'),
+        File(
+          'lib/i18n/strings_zh-CN.i18n.json',
+        ).readAsStringSync().contains('"$key"'),
         isFalse,
         reason: 'strings_zh-CN.i18n.json 仍留着 $key',
       );

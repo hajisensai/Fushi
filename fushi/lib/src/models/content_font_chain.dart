@@ -35,7 +35,8 @@ library;
 
 import 'package:flutter/foundation.dart' show TargetPlatform;
 import 'package:fushi/src/models/cjk_font_families.dart';
-export 'package:fushi_engine/models/content_language.dart' show resolveContentLanguage;
+export 'package:fushi_engine/models/content_language.dart'
+    show resolveContentLanguage;
 
 /// 兜底段的书写系统顺序。与 `app_ui_font_chain.dart` 的兜底段同序，理由相同：
 /// 本 app 的内容以日文居多，日文假名/专用汉字在中文字体里缺字率最高，让它排在
@@ -111,8 +112,9 @@ String contentFontFamilyCss({
   if (families.isEmpty) return '';
 
   final String generic = style == CjkFontStyle.serif ? 'serif' : 'sans-serif';
-  final String quoted =
-      families.map((String f) => '"${_escapeCssFamily(f)}"').join(', ');
+  final String quoted = families
+      .map((String f) => '"${_escapeCssFamily(f)}"')
+      .join(', ');
   return '$quoted, $generic';
 }
 

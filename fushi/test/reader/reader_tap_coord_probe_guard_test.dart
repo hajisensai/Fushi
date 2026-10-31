@@ -19,34 +19,49 @@ void main() {
 
   group('TODO-806 selection coord probe + barrier-hover frame', () {
     test('A. [806-TAP] onTap probe exists and is debug-log gated', () {
-      expect(src, contains('[806-TAP]'),
-          reason: 'onTap 框选坐标探针被移除——日志里又没有标明口径的真实点击坐标。');
+      expect(
+        src,
+        contains('[806-TAP]'),
+        reason: 'onTap 框选坐标探针被移除——日志里又没有标明口径的真实点击坐标。',
+      );
 
       // 探针必须落在注入期门控块内：截取探针前后一小段，断言门控开关在 console.log
       // 之前出现（gate 用 `C.debugLogging` 在拼 JS 字符串时
       // 决定是否注入这段）。
       final int probeIdx = src.indexOf("console.log('[806-TAP]");
-      expect(probeIdx, greaterThan(0),
-          reason: '[806-TAP] 必须经 console.log 走 onConsoleMessage 管道。');
-      final String window =
-          src.substring((probeIdx - 400).clamp(0, src.length), probeIdx);
+      expect(
+        probeIdx,
+        greaterThan(0),
+        reason: '[806-TAP] 必须经 console.log 走 onConsoleMessage 管道。',
+      );
+      final String window = src.substring(
+        (probeIdx - 400).clamp(0, src.length),
+        probeIdx,
+      );
       expect(
         window.contains(r'if (C.debugLogging)'),
         isTrue,
-        reason: '[806-TAP] 探针必须门控在 C.debugLogging 后，'
+        reason:
+            '[806-TAP] 探针必须门控在 C.debugLogging 后，'
             '默认 off，开调试日志才注入打印（沿用 DebugLogService 同开关，别新造）。',
       );
 
       // 口径注释：明确是 WebView CSS 视口像素，非 OS 屏幕坐标。
-      expect(src, contains('CSS 视口像素'),
-          reason: '[806-TAP] 必须注释口径=WebView CSS 视口像素以正本清源。');
+      expect(
+        src,
+        contains('CSS 视口像素'),
+        reason: '[806-TAP] 必须注释口径=WebView CSS 视口像素以正本清源。',
+      );
     });
 
     test('B. barrier-hover maps global→WebView-local via globalToLocal', () {
       // 取 onDismissBarrierHover 方法体切片做断言。
       final int start = src.indexOf('void onDismissBarrierHover(');
-      expect(start, greaterThan(0),
-          reason: '找不到 onDismissBarrierHover——方法被改名或移除。');
+      expect(
+        start,
+        greaterThan(0),
+        reason: '找不到 onDismissBarrierHover——方法被改名或移除。',
+      );
       final int end = src.indexOf('\n  }', start);
       expect(end, greaterThan(start));
       final String body = src.substring(start, end);
@@ -54,19 +69,30 @@ void main() {
       // 必须经 WebView 的 RenderBox 把全局指针位置映成局部坐标。
       // 歌词覆盖层在场时可交互文档是歌词 WebView：经 [_surfaceWebViewKey]
       // （正文 _webViewKey / 歌词 _lyricsWebViewKey 二选一）拿 RenderBox。
-      expect(body, contains('_surfaceWebViewKey'),
-          reason: 'barrier-hover 必须用当前可交互 WebView 的 GlobalKey 拿 RenderBox 换算坐标。');
-      expect(src, contains('_lyricsMode ? _lyricsWebViewKey : _webViewKey'),
-          reason: '_surfaceWebViewKey 必须仍落到真实 WebView 的 GlobalKey。');
-      expect(body, contains('globalToLocal(event.position)'),
-          reason: 'barrier-hover 必须用 globalToLocal(event.position) 映成 '
-              'WebView 局部坐标，而非相对 barrier 的 event.localPosition 直传。');
+      expect(
+        body,
+        contains('_surfaceWebViewKey'),
+        reason: 'barrier-hover 必须用当前可交互 WebView 的 GlobalKey 拿 RenderBox 换算坐标。',
+      );
+      expect(
+        src,
+        contains('_lyricsMode ? _lyricsWebViewKey : _webViewKey'),
+        reason: '_surfaceWebViewKey 必须仍落到真实 WebView 的 GlobalKey。',
+      );
+      expect(
+        body,
+        contains('globalToLocal(event.position)'),
+        reason:
+            'barrier-hover 必须用 globalToLocal(event.position) 映成 '
+            'WebView 局部坐标，而非相对 barrier 的 event.localPosition 直传。',
+      );
 
       // 撤回守卫：不得把 event.localPosition 直接喂给 _selectTextAt。
       expect(
         body.contains('_selectTextAt(event.localPosition'),
         isFalse,
-        reason: 'barrier-hover 退回裸 _selectTextAt(event.localPosition...) 会按 '
+        reason:
+            'barrier-hover 退回裸 _selectTextAt(event.localPosition...) 会按 '
             'chrome inset 整体偏移命中错字符（TODO-806 根因），守卫禁止回退。',
       );
     });

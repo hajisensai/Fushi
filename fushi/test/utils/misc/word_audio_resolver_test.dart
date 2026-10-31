@@ -15,22 +15,24 @@ void main() {
       WordAudioResolver.debugResetRemoteFailureCooldown();
       WordAudioResolver.debugSetNowProvider(null);
     });
-    test('returns null for a missing local-only source instead of TTS fallback',
-        () async {
-      final resolver = WordAudioResolver(
-        queryLocalAudio: (_, __) async => null,
-        extractLocalAudio: (_, __, {dbIndex = 0}) async => null,
-        fetchAudioSourceList: (_) async => const <String>[],
-      );
+    test(
+      'returns null for a missing local-only source instead of TTS fallback',
+      () async {
+        final resolver = WordAudioResolver(
+          queryLocalAudio: (_, __) async => null,
+          extractLocalAudio: (_, __, {dbIndex = 0}) async => null,
+          fetchAudioSourceList: (_) async => const <String>[],
+        );
 
-      final result = await resolver.resolve(
-        expression: '食べる',
-        reading: 'たべる',
-        sources: const <String>[WordAudioResolver.localAudioUrl],
-      );
+        final result = await resolver.resolve(
+          expression: '食べる',
+          reading: 'たべる',
+          sources: const <String>[WordAudioResolver.localAudioUrl],
+        );
 
-      expect(result, isNull);
-    });
+        expect(result, isNull);
+      },
+    );
 
     test('uses local audio source before later remote sources', () async {
       final List<String> requestedSources = <String>[];
@@ -66,35 +68,36 @@ void main() {
       expect(requestedSources, isEmpty);
     });
 
-    test('uses remote Fushi audio after local miss and before network sources',
-        () async {
-      final List<String> requestedSources = <String>[];
-      final resolver = WordAudioResolver(
-        queryLocalAudio: (_, __) async => null,
-        extractLocalAudio: (_, __, {dbIndex = 0}) async => null,
-        queryRemoteAudio: (_, __) async =>
-            'https://hibiki.test/audio/file?id=1',
-        fetchAudioSourceList: (url) async {
-          requestedSources.add(url);
-          return const <String>['https://example.test/fallback.mp3'];
-        },
-      );
+    test(
+      'uses remote Fushi audio after local miss and before network sources',
+      () async {
+        final List<String> requestedSources = <String>[];
+        final resolver = WordAudioResolver(
+          queryLocalAudio: (_, __) async => null,
+          extractLocalAudio: (_, __, {dbIndex = 0}) async => null,
+          queryRemoteAudio: (_, __) async =>
+              'https://hibiki.test/audio/file?id=1',
+          fetchAudioSourceList: (url) async {
+            requestedSources.add(url);
+            return const <String>['https://example.test/fallback.mp3'];
+          },
+        );
 
-      final result = await resolver.resolve(
-        expression: '食べる',
-        reading: 'たべる',
-        sources: const <String>[
-          WordAudioResolver.localAudioUrl,
-          'https://example.test/audio/list?term={term}&reading={reading}',
-        ],
-      );
+        final result = await resolver.resolve(
+          expression: '食べる',
+          reading: 'たべる',
+          sources: const <String>[
+            WordAudioResolver.localAudioUrl,
+            'https://example.test/audio/list?term={term}&reading={reading}',
+          ],
+        );
 
-      expect(result, 'https://hibiki.test/audio/file?id=1');
-      expect(requestedSources, isEmpty);
-    });
+        expect(result, 'https://hibiki.test/audio/file?id=1');
+        expect(requestedSources, isEmpty);
+      },
+    );
 
-    test('expands and reads the first remote audio source list result',
-        () async {
+    test('expands and reads the first remote audio source list result', () async {
       String? requestedUrl;
       final resolver = WordAudioResolver(
         queryLocalAudio: (_, __) async => null,
@@ -171,16 +174,10 @@ void main() {
       );
 
       expect(result, '/tmp/local_1.mp3');
-      expect(calls, <String>[
-        'fushi',
-        'local:0',
-        'local:1',
-        'extract:1',
-      ]);
+      expect(calls, <String>['fushi', 'local:0', 'local:1', 'extract:1']);
     });
 
-    test(
-        'a failing remote source is skipped and does not block later sources '
+    test('a failing remote source is skipped and does not block later sources '
         '(TODO-1057)', () async {
       final List<String> requested = <String>[];
       final resolver = WordAudioResolver(
@@ -220,43 +217,44 @@ void main() {
       expect(requested[1], contains('good.test'));
     });
 
-    test('a socket failure also skips to the next source (TODO-1057)',
-        () async {
-      bool nextTried = false;
-      final resolver = WordAudioResolver(
-        queryLocalAudio: (_, __) async => null,
-        extractLocalAudio: (_, __, {dbIndex = 0}) async => null,
-        fetchAudioSourceList: (url) async {
-          if (url.contains('dead.test')) {
-            throw DioError(
-              requestOptions: RequestOptions(path: url),
-              error: const SocketException('Connection refused'),
-            );
-          }
-          nextTried = true;
-          return const <String>['https://cdn.test/ok.mp3'];
-        },
-      );
-
-      final String? result = await resolver.resolveConfigured(
-        expression: 'テスト',
-        reading: 'てすと',
-        sources: <AudioSourceConfig>[
-          AudioSourceConfig.remoteAudio(
-            url: 'https://dead.test/a?term={term}',
-          ),
-          AudioSourceConfig.remoteAudio(
-            url: 'https://alive.test/b?term={term}',
-          ),
-        ],
-      );
-
-      expect(nextTried, isTrue);
-      expect(result, 'https://cdn.test/ok.mp3');
-    });
-
     test(
-        'a failed host is short-circuited within the cooldown window on the '
+      'a socket failure also skips to the next source (TODO-1057)',
+      () async {
+        bool nextTried = false;
+        final resolver = WordAudioResolver(
+          queryLocalAudio: (_, __) async => null,
+          extractLocalAudio: (_, __, {dbIndex = 0}) async => null,
+          fetchAudioSourceList: (url) async {
+            if (url.contains('dead.test')) {
+              throw DioError(
+                requestOptions: RequestOptions(path: url),
+                error: const SocketException('Connection refused'),
+              );
+            }
+            nextTried = true;
+            return const <String>['https://cdn.test/ok.mp3'];
+          },
+        );
+
+        final String? result = await resolver.resolveConfigured(
+          expression: 'テスト',
+          reading: 'てすと',
+          sources: <AudioSourceConfig>[
+            AudioSourceConfig.remoteAudio(
+              url: 'https://dead.test/a?term={term}',
+            ),
+            AudioSourceConfig.remoteAudio(
+              url: 'https://alive.test/b?term={term}',
+            ),
+          ],
+        );
+
+        expect(nextTried, isTrue);
+        expect(result, 'https://cdn.test/ok.mp3');
+      },
+    );
+
+    test('a failed host is short-circuited within the cooldown window on the '
         'next resolve, then retried after it expires (TODO-1057)', () async {
       // 用可控时钟隔离，无需真实 sleep。
       DateTime now = DateTime(2026, 1, 1, 12, 0, 0);
@@ -279,9 +277,7 @@ void main() {
       );
 
       final List<AudioSourceConfig> sources = <AudioSourceConfig>[
-        AudioSourceConfig.remoteAudio(
-          url: 'https://dead.test/a?term={term}',
-        ),
+        AudioSourceConfig.remoteAudio(url: 'https://dead.test/a?term={term}'),
       ];
 
       // 第 1 次：真正打到死源，失败并记录冷却。
@@ -311,74 +307,78 @@ void main() {
       expect(deadCalls, 2, reason: '冷却过期后应再次尝试');
     });
 
-    test('a subsequent success clears the cooldown for that host (TODO-1057)',
-        () async {
-      DateTime now = DateTime(2026, 1, 1, 12, 0, 0);
-      WordAudioResolver.debugSetNowProvider(() => now);
+    test(
+      'a subsequent success clears the cooldown for that host (TODO-1057)',
+      () async {
+        DateTime now = DateTime(2026, 1, 1, 12, 0, 0);
+        WordAudioResolver.debugSetNowProvider(() => now);
 
-      bool shouldFail = true;
-      int calls = 0;
-      final resolver = WordAudioResolver(
-        queryLocalAudio: (_, __) async => null,
-        extractLocalAudio: (_, __, {dbIndex = 0}) async => null,
-        fetchAudioSourceList: (url) async {
-          calls++;
-          if (shouldFail) {
-            throw DioError.connectionTimeout(
-              timeout: const Duration(seconds: 8),
-              requestOptions: RequestOptions(path: url),
-            );
-          }
-          return const <String>['https://cdn.test/win.mp3'];
-        },
-      );
+        bool shouldFail = true;
+        int calls = 0;
+        final resolver = WordAudioResolver(
+          queryLocalAudio: (_, __) async => null,
+          extractLocalAudio: (_, __, {dbIndex = 0}) async => null,
+          fetchAudioSourceList: (url) async {
+            calls++;
+            if (shouldFail) {
+              throw DioError.connectionTimeout(
+                timeout: const Duration(seconds: 8),
+                requestOptions: RequestOptions(path: url),
+              );
+            }
+            return const <String>['https://cdn.test/win.mp3'];
+          },
+        );
 
-      final List<AudioSourceConfig> sources = <AudioSourceConfig>[
-        AudioSourceConfig.remoteAudio(
-          url: 'https://flaky.test/a?term={term}',
-        ),
-      ];
+        final List<AudioSourceConfig> sources = <AudioSourceConfig>[
+          AudioSourceConfig.remoteAudio(
+            url: 'https://flaky.test/a?term={term}',
+          ),
+        ];
 
-      // 失败 -> 记冷却。
-      await resolver.resolveConfigured(
-        expression: 'a',
-        reading: 'a',
-        sources: sources,
-      );
-      expect(calls, 1);
+        // 失败 -> 记冷却。
+        await resolver.resolveConfigured(
+          expression: 'a',
+          reading: 'a',
+          sources: sources,
+        );
+        expect(calls, 1);
 
-      // 冷却过期后恢复，且这次成功。
-      now = now.add(const Duration(seconds: 50));
-      shouldFail = false;
-      final String? ok = await resolver.resolveConfigured(
-        expression: 'a',
-        reading: 'a',
-        sources: sources,
-      );
-      expect(calls, 2);
-      expect(ok, 'https://cdn.test/win.mp3');
+        // 冷却过期后恢复，且这次成功。
+        now = now.add(const Duration(seconds: 50));
+        shouldFail = false;
+        final String? ok = await resolver.resolveConfigured(
+          expression: 'a',
+          reading: 'a',
+          sources: sources,
+        );
+        expect(calls, 2);
+        expect(ok, 'https://cdn.test/win.mp3');
 
-      // 成功已清冷却：立刻再查（时钟不推进）仍应打到 fetcher，不被短路。
-      final String? again = await resolver.resolveConfigured(
-        expression: 'a',
-        reading: 'a',
-        sources: sources,
-      );
-      expect(calls, 3, reason: '成功后冷却应被清除，不再短路');
-      expect(again, 'https://cdn.test/win.mp3');
-    });
+        // 成功已清冷却：立刻再查（时钟不推进）仍应打到 fetcher，不被短路。
+        final String? again = await resolver.resolveConfigured(
+          expression: 'a',
+          reading: 'a',
+          sources: sources,
+        );
+        expect(calls, 3, reason: '成功后冷却应被清除，不再短路');
+        expect(again, 'https://cdn.test/win.mp3');
+      },
+    );
 
-    test('cooldown key normalizes by host across differing paths (TODO-1057)',
-        () {
-      expect(
-        WordAudioResolver.remoteFailureCooldownKey(
-          'https://host.test/a?term=x',
-        ),
-        WordAudioResolver.remoteFailureCooldownKey(
-          'https://host.test/b?reading=y',
-        ),
-      );
-    });
+    test(
+      'cooldown key normalizes by host across differing paths (TODO-1057)',
+      () {
+        expect(
+          WordAudioResolver.remoteFailureCooldownKey(
+            'https://host.test/a?term=x',
+          ),
+          WordAudioResolver.remoteFailureCooldownKey(
+            'https://host.test/b?reading=y',
+          ),
+        );
+      },
+    );
 
     // TODO-1265 — 回归守卫：可达远端源对某词返回 404（HTTP 表达「没有这个词的发音」）
     // 绝不能被当成死源而 host 级冷却，否则该源有音频的其它词也一起没声音（用户报
@@ -392,20 +392,18 @@ void main() {
         WordAudioResolver.debugHttpClientAdapter = originalAdapter;
       });
 
-      test(
-          'defaultFetchAudioSourceList returns empty (not throw) on a 404 '
+      test('defaultFetchAudioSourceList returns empty (not throw) on a 404 '
           '(TODO-1265)', () async {
         WordAudioResolver.debugHttpClientAdapter = _FixedStatusAdapter(404);
         // 可达服务器回 404 = 这个源没有这个词的发音，与 200 空列表等价：返回空、不抛。
         final List<String> urls =
             await WordAudioResolver.defaultFetchAudioSourceList(
-          'https://reachable.test/audio?term=x',
-        );
+              'https://reachable.test/audio?term=x',
+            );
         expect(urls, isEmpty);
       });
 
-      test(
-          'a 404 from a reachable remote source does NOT cool its host '
+      test('a 404 from a reachable remote source does NOT cool its host '
           '(the source stays usable for words it has) (TODO-1265)', () async {
         WordAudioResolver.debugHttpClientAdapter = _FixedStatusAdapter(404);
         final resolver = WordAudioResolver(
@@ -439,11 +437,10 @@ void main() {
     // 无音频」（null）绝不冷却。
     group('fushiRemote transport-failure cooldown', () {
       List<AudioSourceConfig> fushiOnly() => <AudioSourceConfig>[
-            AudioSourceConfig.fushiRemote(enabled: true),
-          ];
+        AudioSourceConfig.fushiRemote(enabled: true),
+      ];
 
-      test(
-          'an unreachable paired peer enters the cooldown window, is '
+      test('an unreachable paired peer enters the cooldown window, is '
           'short-circuited within it, then retried after expiry', () async {
         DateTime now = DateTime(2026, 1, 1, 12, 0, 0);
         WordAudioResolver.debugSetNowProvider(() => now);
@@ -491,37 +488,38 @@ void main() {
         expect(remoteCalls, 2, reason: '冷却过期后应再次尝试');
       });
 
-      test('an unreachable peer does not block later sources in the same pass',
-          () async {
-        bool nextTried = false;
-        final resolver = WordAudioResolver(
-          queryLocalAudio: (_, __) async => null,
-          extractLocalAudio: (_, __, {dbIndex = 0}) async => null,
-          queryRemoteAudio: (_, __) async =>
-              throw RemoteLookupUnreachableError('all candidates down'),
-          fetchAudioSourceList: (url) async {
-            nextTried = true;
-            return const <String>['https://cdn.test/fallback.mp3'];
-          },
-        );
-
-        final String? result = await resolver.resolveConfigured(
-          expression: 'a',
-          reading: 'a',
-          sources: <AudioSourceConfig>[
-            AudioSourceConfig.fushiRemote(enabled: true),
-            AudioSourceConfig.remoteAudio(
-              url: 'https://alive.test/audio?term={term}',
-            ),
-          ],
-        );
-
-        expect(nextTried, isTrue);
-        expect(result, 'https://cdn.test/fallback.mp3');
-      });
-
       test(
-          'a reachable peer with no audio for this word (null) does NOT '
+        'an unreachable peer does not block later sources in the same pass',
+        () async {
+          bool nextTried = false;
+          final resolver = WordAudioResolver(
+            queryLocalAudio: (_, __) async => null,
+            extractLocalAudio: (_, __, {dbIndex = 0}) async => null,
+            queryRemoteAudio: (_, __) async =>
+                throw RemoteLookupUnreachableError('all candidates down'),
+            fetchAudioSourceList: (url) async {
+              nextTried = true;
+              return const <String>['https://cdn.test/fallback.mp3'];
+            },
+          );
+
+          final String? result = await resolver.resolveConfigured(
+            expression: 'a',
+            reading: 'a',
+            sources: <AudioSourceConfig>[
+              AudioSourceConfig.fushiRemote(enabled: true),
+              AudioSourceConfig.remoteAudio(
+                url: 'https://alive.test/audio?term={term}',
+              ),
+            ],
+          );
+
+          expect(nextTried, isTrue);
+          expect(result, 'https://cdn.test/fallback.mp3');
+        },
+      );
+
+      test('a reachable peer with no audio for this word (null) does NOT '
           'enter cooldown', () async {
         int remoteCalls = 0;
         final resolver = WordAudioResolver(
@@ -602,8 +600,7 @@ void main() {
         expect(again, 'https://peer.test/audio?id=1');
       });
 
-      test(
-          'legacy resolve() swallows unreachability (skip semantics, no '
+      test('legacy resolve() swallows unreachability (skip semantics, no '
           'cooldown bookkeeping)', () async {
         final resolver = WordAudioResolver(
           queryLocalAudio: (_, __) async => null,

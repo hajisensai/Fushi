@@ -41,8 +41,12 @@ void main() {
         ],
       );
       // 自然排序：01 < 2 < 3 < 10（数字段按值比较，非字典序）
-      expect(r.audio,
-          <String>['book 01.mp3', 'book 2.mp3', 'book 3.mp3', 'book 10.mp3']);
+      expect(r.audio, <String>[
+        'book 01.mp3',
+        'book 2.mp3',
+        'book 3.mp3',
+        'book 10.mp3',
+      ]);
     });
 
     test('完全同名单段音频命中', () {
@@ -189,8 +193,9 @@ void main() {
     });
 
     test('目录不存在返回空且不抛', () async {
-      final SidecarMatch m =
-          await findSidecars(p.join(tmp.path, 'nope', 'book.epub'));
+      final SidecarMatch m = await findSidecars(
+        p.join(tmp.path, 'nope', 'book.epub'),
+      );
       expect(m.isEmpty, isTrue);
     });
 

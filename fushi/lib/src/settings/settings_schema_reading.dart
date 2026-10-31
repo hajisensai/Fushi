@@ -38,12 +38,12 @@ SettingsDestination buildReadingDestination() {
     final bool bookPosture = FushiFoldState.of(c.context).isBook;
     final int effectiveColumns =
         ReaderContentStyles.foldPageColumnsOverrideFor(
-              bookPosture: bookPosture,
-              viewMode: source.readerViewMode,
-              writingMode: source.readerWritingMode,
-              pageColumns: source.readerPageColumns,
-            ) ??
-            source.readerPageColumns;
+          bookPosture: bookPosture,
+          viewMode: source.readerViewMode,
+          writingMode: source.readerWritingMode,
+          pageColumns: source.readerPageColumns,
+        ) ??
+        source.readerPageColumns;
     return ReaderContentStyles.pageCreaseApplies(
       viewMode: source.readerViewMode,
       effectivePageColumns: effectiveColumns,
@@ -283,10 +283,7 @@ SettingsDestination buildReadingDestination() {
             titleReadout: true,
             commitOnRelease: true,
             visible: isVisualNovel,
-            reader: const ReaderPlacement(
-              group: ReaderGroup.layout,
-              order: 23,
-            ),
+            reader: const ReaderPlacement(group: ReaderGroup.layout, order: 23),
             value: (SettingsContext c) =>
                 c.readerSource.readerVisualNovelRevealSpeed.toDouble(),
             label: (double v) =>
@@ -302,10 +299,7 @@ SettingsDestination buildReadingDestination() {
             icon: FushiIcons.viewAgenda,
             controlBelow: true,
             visible: isVisualNovel,
-            reader: const ReaderPlacement(
-              group: ReaderGroup.layout,
-              order: 24,
-            ),
+            reader: const ReaderPlacement(group: ReaderGroup.layout, order: 24),
             options: <SettingsSegmentOption<String>>[
               SettingsSegmentOption<String>(
                 value: 'block',
@@ -333,16 +327,14 @@ SettingsDestination buildReadingDestination() {
             min: 1,
             max: 12,
             step: 1,
-            reader: const ReaderPlacement(
-              group: ReaderGroup.layout,
-              order: 25,
-            ),
+            reader: const ReaderPlacement(group: ReaderGroup.layout, order: 25),
             value: (SettingsContext c) =>
                 c.readerSource.readerVisualNovelSentencesPerScreen.toDouble(),
             format: (double v) => '${v.round()}',
             onChanged: (SettingsContext c, double v) async {
-              await c.readerSource
-                  .setReaderVisualNovelSentencesPerScreen(v.round());
+              await c.readerSource.setReaderVisualNovelSentencesPerScreen(
+                v.round(),
+              );
               notifyReaderLayoutChanged(c);
             },
           ),
@@ -351,10 +343,7 @@ SettingsDestination buildReadingDestination() {
             title: t.reader_vn_preserve_dialogue,
             icon: FushiIcons.quote,
             visible: isVisualNovelSentenceMode,
-            reader: const ReaderPlacement(
-              group: ReaderGroup.layout,
-              order: 26,
-            ),
+            reader: const ReaderPlacement(group: ReaderGroup.layout, order: 26),
             value: (SettingsContext c) =>
                 c.readerSource.readerVisualNovelPreserveDialogue,
             onChanged: (SettingsContext c, bool v) async {
@@ -993,9 +982,9 @@ SettingsDestination buildReadingDestination() {
             icon: FushiIcons.webAssetOff,
             subtitleBuilder: (SettingsContext c) =>
                 c.readerSource.hideToolbars &&
-                        !c.appModel.prefsRepo.floatingBallInApp
-                    ? t.reader_toolbars_hide_ball_off
-                    : t.reader_toolbars_hide_subtitle,
+                    !c.appModel.prefsRepo.floatingBallInApp
+                ? t.reader_toolbars_hide_ball_off
+                : t.reader_toolbars_hide_subtitle,
             reader: const ReaderPlacement(
               group: ReaderGroup.behavior,
               order: 21,
@@ -1167,9 +1156,9 @@ SettingsDestination buildReadingDestination() {
                 c.appModel.readerStudyClockStartMode,
             onChanged:
                 (SettingsContext c, ReaderStudyClockStartMode mode) async {
-              await c.appModel.setReaderStudyClockStartMode(mode);
-              c.refresh();
-            },
+                  await c.appModel.setReaderStudyClockStartMode(mode);
+                  c.refresh();
+                },
           ),
           // 「今日」重置时刻（整点）是三域共用的统计日界，入口在统计中心页头
           // （stat_day_reset_hour_dialog.dart），不再放在阅读设置里。
@@ -1292,7 +1281,9 @@ final SettingsCliValue readerControlLayoutCli = SettingsCliValue(
       '{"wide": <布局 JSON，含 slots>, "compact": <布局 JSON>}'
       '（config get 的输出可改后原样写回）',
   read: (SettingsContext c) => jsonEncode(<String, Object?>{
-    'wide': jsonDecode(c.appModel.readerControlLayoutFor(compact: false).encode()),
+    'wide': jsonDecode(
+      c.appModel.readerControlLayoutFor(compact: false).encode(),
+    ),
     'compact': jsonDecode(
       c.appModel.readerControlLayoutFor(compact: true).encode(),
     ),
@@ -1319,7 +1310,8 @@ final SettingsCliValue readerControlLayoutCli = SettingsCliValue(
     final ReaderControlLayout? wide = parse(decoded['wide'], 'wide');
     final ReaderControlLayout? compact = parse(decoded['compact'], 'compact');
     if (wide != null) await c.appModel.setReaderControlLayout(wide);
-    if (compact != null) await c.appModel.setReaderCompactControlLayout(compact);
+    if (compact != null)
+      await c.appModel.setReaderCompactControlLayout(compact);
     notifyReaderChromeReanchored(c);
   },
 );

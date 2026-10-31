@@ -10,14 +10,13 @@ BonsoirService _resolved({
   int port = 8765,
   List<String> hostAddresses = const <String>['192.168.1.100'],
   Map<String, String> attributes = const <String, String>{'id': 'abc123'},
-}) =>
-    BonsoirService.ignoreNorms(
-      name: name,
-      type: LanDiscoveryService.serviceType,
-      port: port,
-      hostAddresses: hostAddresses,
-      attributes: attributes,
-    );
+}) => BonsoirService.ignoreNorms(
+  name: name,
+  type: LanDiscoveryService.serviceType,
+  port: port,
+  hostAddresses: hostAddresses,
+  attributes: attributes,
+);
 
 void main() {
   // BUG-1554 守卫：dispose 之后 startDiscovery 必须是 no-op。
@@ -34,8 +33,11 @@ void main() {
       await service.dispose();
       expect(service.isDisposed, isTrue);
       await service.startDiscovery();
-      expect(service.hasActiveBrowser, isFalse,
-          reason: 'dispose 之后再起 browser 就是没人停得掉的孤儿');
+      expect(
+        service.hasActiveBrowser,
+        isFalse,
+        reason: 'dispose 之后再起 browser 就是没人停得掉的孤儿',
+      );
       expect(service.currentDevices, isEmpty);
     });
 
@@ -87,9 +89,7 @@ void main() {
 
     test('prefers IPv4 over IPv6 when both are present', () {
       final device = FushiDevice.fromResolvedService(
-        _resolved(
-          hostAddresses: const <String>['fe80::1', '192.168.1.42'],
-        ),
+        _resolved(hostAddresses: const <String>['fe80::1', '192.168.1.42']),
       );
       expect(device, isNotNull);
       expect(device!.host, '192.168.1.42');
@@ -105,10 +105,7 @@ void main() {
 
     test('falls back to service name as deviceId when no id attribute', () {
       final device = FushiDevice.fromResolvedService(
-        _resolved(
-          name: 'Laptop',
-          attributes: const <String, String>{},
-        ),
+        _resolved(name: 'Laptop', attributes: const <String, String>{}),
       );
       expect(device, isNotNull);
       expect(device!.deviceId, 'Laptop');
@@ -185,12 +182,14 @@ void main() {
 
     test('lost event without TXT attributes still removes the device', () {
       final LanDiscoveryService service = LanDiscoveryService(deviceId: 'self');
-      service.debugHandleEvent(BonsoirDiscoveryServiceResolvedEvent(
-        service: _resolved(
-          name: 'Peer PC',
-          attributes: const <String, String>{'id': 'peer-1'},
+      service.debugHandleEvent(
+        BonsoirDiscoveryServiceResolvedEvent(
+          service: _resolved(
+            name: 'Peer PC',
+            attributes: const <String, String>{'id': 'peer-1'},
+          ),
         ),
-      ));
+      );
       expect(
         service.currentDevices.map((FushiDevice d) => d.deviceId),
         <String>['peer-1'],
@@ -199,40 +198,49 @@ void main() {
       service.debugHandleEvent(
         BonsoirDiscoveryServiceLostEvent(service: lostService()),
       );
-      expect(service.currentDevices, isEmpty,
-          reason: 'lost 不带 TXT 时必须靠 name → deviceId 辅助映射找回存储键');
+      expect(
+        service.currentDevices,
+        isEmpty,
+        reason: 'lost 不带 TXT 时必须靠 name → deviceId 辅助映射找回存储键',
+      );
     });
 
     test('lost event with TXT id attribute keeps working', () {
       final LanDiscoveryService service = LanDiscoveryService(deviceId: 'self');
-      service.debugHandleEvent(BonsoirDiscoveryServiceResolvedEvent(
-        service: _resolved(
-          name: 'Peer PC',
-          attributes: const <String, String>{'id': 'peer-1'},
+      service.debugHandleEvent(
+        BonsoirDiscoveryServiceResolvedEvent(
+          service: _resolved(
+            name: 'Peer PC',
+            attributes: const <String, String>{'id': 'peer-1'},
+          ),
         ),
-      ));
+      );
       expect(service.currentDevices, hasLength(1));
 
       // 平台带上了 TXT（且 name 从未 resolve 登记过 → 走 id 回落）：同样删得掉。
-      service.debugHandleEvent(BonsoirDiscoveryServiceLostEvent(
-        service: BonsoirService.ignoreNorms(
-          name: 'Renamed Peer',
-          type: LanDiscoveryService.serviceType,
-          port: 8765,
-          attributes: const <String, String>{'id': 'peer-1'},
+      service.debugHandleEvent(
+        BonsoirDiscoveryServiceLostEvent(
+          service: BonsoirService.ignoreNorms(
+            name: 'Renamed Peer',
+            type: LanDiscoveryService.serviceType,
+            port: 8765,
+            attributes: const <String, String>{'id': 'peer-1'},
+          ),
         ),
-      ));
+      );
       expect(service.currentDevices, isEmpty);
     });
 
     test('losing an unknown service is a no-op', () {
       final LanDiscoveryService service = LanDiscoveryService(deviceId: 'self');
-      service.debugHandleEvent(BonsoirDiscoveryServiceResolvedEvent(
-        service: _resolved(
-          name: 'Peer PC',
-          attributes: const <String, String>{'id': 'peer-1'},
+      service.debugHandleEvent(
+        BonsoirDiscoveryServiceResolvedEvent(
+          service: _resolved(
+            name: 'Peer PC',
+            attributes: const <String, String>{'id': 'peer-1'},
+          ),
         ),
-      ));
+      );
       service.debugHandleEvent(
         BonsoirDiscoveryServiceLostEvent(service: lostService(name: 'Other')),
       );

@@ -27,11 +27,16 @@ void main() {
 
     expect(p.basename(result.path), 'fushiExport');
     expect(result.existsSync(), isTrue);
-    expect(Directory(p.join(root.path, 'hibikiExport')).existsSync(), isFalse,
-        reason: '旧目录整体改名，不留旧名');
     expect(
-        File(p.join(result.path, 'card.jpg')).readAsStringSync(), 'jpg-bytes',
-        reason: '内容原样保留');
+      Directory(p.join(root.path, 'hibikiExport')).existsSync(),
+      isFalse,
+      reason: '旧目录整体改名，不留旧名',
+    );
+    expect(
+      File(p.join(result.path, 'card.jpg')).readAsStringSync(),
+      'jpg-bytes',
+      reason: '内容原样保留',
+    );
   });
 
   test('existing fushiExport wins; legacy left alone for a later attempt', () {
@@ -44,8 +49,10 @@ void main() {
 
     expect(p.basename(result.path), 'fushiExport');
     expect(
-        File(p.join(root.path, 'hibikiExport', 'old.txt')).existsSync(), isTrue,
-        reason: '新目录已存在时绝不合并/覆盖，旧目录原样保留');
+      File(p.join(root.path, 'hibikiExport', 'old.txt')).existsSync(),
+      isTrue,
+      reason: '新目录已存在时绝不合并/覆盖，旧目录原样保留',
+    );
   });
 
   test('fresh install creates fushiExport; idempotent on second call', () {

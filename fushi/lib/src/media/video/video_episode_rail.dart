@@ -113,8 +113,9 @@ class VideoEpisodeRailState extends State<VideoEpisodeRail> {
   final ScrollController _controller = ScrollController();
 
   /// 当前集卡的焦点节点：随选中态在卡片间移交，面板打开时由它认领焦点。
-  final FocusNode _currentFocus =
-      FocusNode(debugLabel: 'video-episode-current');
+  final FocusNode _currentFocus = FocusNode(
+    debugLabel: 'video-episode-current',
+  );
 
   @override
   void initState() {
@@ -183,8 +184,10 @@ class VideoEpisodeRailState extends State<VideoEpisodeRail> {
   void pageBy(int direction) {
     if (!_controller.hasClients) return;
     final ScrollPosition position = _controller.position;
-    final double step = (position.viewportDimension - widget.cardWidth)
-        .clamp(widget.cardWidth + _gap, double.infinity);
+    final double step = (position.viewportDimension - widget.cardWidth).clamp(
+      widget.cardWidth + _gap,
+      double.infinity,
+    );
     final double target = (position.pixels + step * direction.sign).clamp(
       0.0,
       position.maxScrollExtent,
@@ -217,11 +220,12 @@ class VideoEpisodeRailState extends State<VideoEpisodeRail> {
     final double leading =
         widget.padding.resolve(Directionality.of(context)).horizontal / 2;
     final double itemExtent = widget.cardWidth + _gap;
-    final double target = (leading +
-            current * itemExtent +
-            widget.cardWidth / 2 -
-            position.viewportDimension / 2)
-        .clamp(0.0, position.maxScrollExtent);
+    final double target =
+        (leading +
+                current * itemExtent +
+                widget.cardWidth / 2 -
+                position.viewportDimension / 2)
+            .clamp(0.0, position.maxScrollExtent);
     if ((position.pixels - target).abs() < 1) return;
     final FushiSpringSpec spring = context.fushiMotion.spatialDefault;
     if (!animate || !spring.enabled) {
@@ -237,11 +241,12 @@ class VideoEpisodeRailState extends State<VideoEpisodeRail> {
 
   @override
   Widget build(BuildContext context) {
-    final EdgeInsets padding =
-        widget.padding.resolve(Directionality.of(context)).copyWith(
-              top: VideoEpisodeRail.liftPadding,
-              bottom: VideoEpisodeRail.liftPadding,
-            );
+    final EdgeInsets padding = widget.padding
+        .resolve(Directionality.of(context))
+        .copyWith(
+          top: VideoEpisodeRail.liftPadding,
+          bottom: VideoEpisodeRail.liftPadding,
+        );
     return SizedBox(
       height: VideoEpisodeRail.heightFor(widget.cardWidth),
       // 桌面默认 MaterialScrollBehavior 的 dragDevices 不含鼠标——横排轨道用鼠标
@@ -347,8 +352,8 @@ class _EpisodeRailCardState extends State<_EpisodeRailCard> {
     final List<BoxShadow>? shadow = eink || glass
         ? null
         : (lifted || selected)
-            ? fushiM3eCardShadow(context, lifted ? 1 : 0)
-            : null;
+        ? fushiM3eCardShadow(context, lifted ? 1 : 0)
+        : null;
     final String label = '$_displayNumber. ${widget.entry.title}';
     return Semantics(
       button: true,
@@ -433,9 +438,11 @@ class _EpisodeRailCardState extends State<_EpisodeRailCard> {
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         final double titleLine = scaler.scale(fontSize) * 1.2;
-        final double pillHeight =
-            selected ? scaler.scale(fontSize + 2) * 1.2 + fontSize * 0.36 : 0;
-        final double available = constraints.maxHeight -
+        final double pillHeight = selected
+            ? scaler.scale(fontSize + 2) * 1.2 + fontSize * 0.36
+            : 0;
+        final double available =
+            constraints.maxHeight -
             8 -
             bottomInset -
             (selected ? pillHeight + 6 : 0);
@@ -686,13 +693,13 @@ class _EpisodeCover extends StatelessWidget {
   }
 
   Widget _placeholder() => ColoredBox(
-        color: colorScheme.surfaceContainerHighest,
-        child: Center(
-          child: FushiIcon(
-            FushiIcons.video,
-            size: 30,
-            color: colorScheme.onSurfaceVariant,
-          ),
-        ),
-      );
+    color: colorScheme.surfaceContainerHighest,
+    child: Center(
+      child: FushiIcon(
+        FushiIcons.video,
+        size: 30,
+        color: colorScheme.onSurfaceVariant,
+      ),
+    ),
+  );
 }

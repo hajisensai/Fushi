@@ -1006,11 +1006,12 @@ void main() {
           calls.where((MethodCall c) => c.method == 'galLookupPresent'),
           isNotEmpty,
         );
-        expect(
-          GlobalLookupController.instance.debugCascadeLayoutDomain,
-          (w: 1000.0, h: 750.0, x: 160.0, y: 175.0),
-          reason: '子卡必须在真实客户区里、以 runner 放下的根卡为原点排版（BUG-2921）',
-        );
+        expect(GlobalLookupController.instance.debugCascadeLayoutDomain, (
+          w: 1000.0,
+          h: 750.0,
+          x: 160.0,
+          y: 175.0,
+        ), reason: '子卡必须在真实客户区里、以 runner 放下的根卡为原点排版（BUG-2921）');
 
         globalCalls.clear();
         final GalHookCaptureLease lease = await controller

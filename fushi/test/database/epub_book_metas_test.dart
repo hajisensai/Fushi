@@ -36,37 +36,47 @@ EpubBooksCompanion _book({
 
 void main() {
   group('getEpubBookMetas', () {
-    test('projects the same identity columns as the full row, same order',
-        () async {
-      final FushiDatabase db = await _openDb();
-      await db.insertEpubBook(_book(title: 'Old', importedAt: 100));
-      await db.insertEpubBook(
-          _book(title: 'Comic', importedAt: 300, format: 'manga'));
-      await db.insertEpubBook(_book(title: 'New', importedAt: 200));
-      await db.setEpubBookCompleted(
-          'Old', DateTime.fromMillisecondsSinceEpoch(5000));
+    test(
+      'projects the same identity columns as the full row, same order',
+      () async {
+        final FushiDatabase db = await _openDb();
+        await db.insertEpubBook(_book(title: 'Old', importedAt: 100));
+        await db.insertEpubBook(
+          _book(title: 'Comic', importedAt: 300, format: 'manga'),
+        );
+        await db.insertEpubBook(_book(title: 'New', importedAt: 200));
+        await db.setEpubBookCompleted(
+          'Old',
+          DateTime.fromMillisecondsSinceEpoch(5000),
+        );
 
-      final List<EpubBookRow> full = await db.getAllEpubBooks();
-      final List<EpubBookMeta> metas = await db.getEpubBookMetas();
+        final List<EpubBookRow> full = await db.getAllEpubBooks();
+        final List<EpubBookMeta> metas = await db.getEpubBookMetas();
 
-      expect(metas.map((EpubBookMeta m) => m.bookKey).toList(),
+        expect(
+          metas.map((EpubBookMeta m) => m.bookKey).toList(),
           full.map((EpubBookRow r) => r.bookKey).toList(),
-          reason: '与 getAllEpubBooks 同序（importedAt 降序）');
-      expect(metas.map((EpubBookMeta m) => m.bookKey).toList(),
-          <String>['Comic', 'New', 'Old']);
-      for (int i = 0; i < full.length; i++) {
-        final EpubBookRow r = full[i];
-        final EpubBookMeta m = metas[i];
-        expect(m.uid, r.uid);
-        expect(m.title, r.title);
-        expect(m.format, r.format);
-        expect(m.importedAt, r.importedAt);
-        expect(m.extractDir, r.extractDir);
-        expect(m.completedAt, r.completedAt);
-      }
-      expect(metas.last.completedAt, isNotNull);
-      expect(metas.first.format, 'manga');
-    });
+          reason: '与 getAllEpubBooks 同序（importedAt 降序）',
+        );
+        expect(metas.map((EpubBookMeta m) => m.bookKey).toList(), <String>[
+          'Comic',
+          'New',
+          'Old',
+        ]);
+        for (int i = 0; i < full.length; i++) {
+          final EpubBookRow r = full[i];
+          final EpubBookMeta m = metas[i];
+          expect(m.uid, r.uid);
+          expect(m.title, r.title);
+          expect(m.format, r.format);
+          expect(m.importedAt, r.importedAt);
+          expect(m.extractDir, r.extractDir);
+          expect(m.completedAt, r.completedAt);
+        }
+        expect(metas.last.completedAt, isNotNull);
+        expect(metas.first.format, 'manga');
+      },
+    );
 
     test('empty library yields empty list', () async {
       final FushiDatabase db = await _openDb();
@@ -83,8 +93,9 @@ void main() {
       await db.setPref('audiobookXhealthXoverlayXC', 'c');
       await db.setPref('other', 'o');
 
-      final Map<String, String> got =
-          await db.getPrefsByPrefix('audiobook_health_overlay_');
+      final Map<String, String> got = await db.getPrefsByPrefix(
+        'audiobook_health_overlay_',
+      );
 
       expect(got, <String, String>{
         'audiobook_health_overlay_A': 'a',

@@ -67,16 +67,15 @@ class _FakeLocalFs implements SourceFileSystem {
   Future<List<SourceFileEntry>> listFiles(
     String dirPath, {
     bool recursive = false,
-  }) async =>
-      <SourceFileEntry>[
-        for (final String path in paths)
-          SourceFileEntry(
-            name: p.basename(path),
-            path: path,
-            isDirectory: false,
-            sizeBytes: 1,
-          ),
-      ];
+  }) async => <SourceFileEntry>[
+    for (final String path in paths)
+      SourceFileEntry(
+        name: p.basename(path),
+        path: path,
+        isDirectory: false,
+        sizeBytes: 1,
+      ),
+  ];
 
   @override
   Future<List<String>> listSiblingNames(String filePath) async =>
@@ -90,12 +89,14 @@ class _FakeLocalFs implements SourceFileSystem {
 }
 
 Future<SourceLibraryRow> _videoSource(FushiDatabase db, String root) async {
-  final int id = await db.insertMediaSource(MediaSourcesCompanion.insert(
-    label: 'Vids',
-    mediaKind: 'video',
-    rootPath: root,
-    createdAt: 1000,
-  ));
+  final int id = await db.insertMediaSource(
+    MediaSourcesCompanion.insert(
+      label: 'Vids',
+      mediaKind: 'video',
+      rootPath: root,
+      createdAt: 1000,
+    ),
+  );
   return (await db.getMediaSourceById(id))!;
 }
 
@@ -117,22 +118,22 @@ void main() {
     AppPaths.debugResetDocumentsLayoutCache();
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
-      const MethodChannel('plugins.flutter.io/path_provider'),
-      (MethodCall call) async => switch (call.method) {
-        'getApplicationDocumentsDirectory' => p.join(tmp.path, 'documents'),
-        'getTemporaryDirectory' => p.join(tmp.path, 'systemp'),
-        'getApplicationSupportDirectory' => p.join(tmp.path, 'support'),
-        _ => null,
-      },
-    );
+          const MethodChannel('plugins.flutter.io/path_provider'),
+          (MethodCall call) async => switch (call.method) {
+            'getApplicationDocumentsDirectory' => p.join(tmp.path, 'documents'),
+            'getTemporaryDirectory' => p.join(tmp.path, 'systemp'),
+            'getApplicationSupportDirectory' => p.join(tmp.path, 'support'),
+            _ => null,
+          },
+        );
   });
   tearDown(() {
     setFfmpegBackendForTesting(null);
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
-      const MethodChannel('plugins.flutter.io/path_provider'),
-      null,
-    );
+          const MethodChannel('plugins.flutter.io/path_provider'),
+          null,
+        );
     AppPaths.debugResetDocumentsLayoutCache();
     try {
       if (tmp.existsSync()) tmp.deleteSync(recursive: true);
@@ -147,19 +148,16 @@ void main() {
         File(p.join(tmp.path, name)).writeAsStringSync('fake-video-$name');
       }
 
-      final SourceScanSummary summary =
-          await SourceLibraryScanner(db).scan(await _videoSource(db, tmp.path));
+      final SourceScanSummary summary = await SourceLibraryScanner(
+        db,
+      ).scan(await _videoSource(db, tmp.path));
 
       expect(summary.succeeded, isTrue, reason: summary.error ?? '');
       expect(summary.importedMediaCount, 3);
 
       // 这一条是本 bug 的核心契约：导入路径上不允许再有 ffmpeg 调用。修复前每个
       // 文件都会进 extractVideoCover（内嵌封面 + 抽帧两段），这里会是 6。
-      expect(
-        backend.totalCalls,
-        0,
-        reason: '导入只负责把条目放进库；抽帧是书架补齐产线的职责',
-      );
+      expect(backend.totalCalls, 0, reason: '导入只负责把条目放进库；抽帧是书架补齐产线的职责');
 
       final List<VideoBookRow> rows = await VideoBookRepository(db).listAll();
       expect(rows, hasLength(3));
@@ -222,8 +220,9 @@ void main() {
       File(p.join(tmp.path, 'ok.mkv')).writeAsStringSync('v');
       File(p.join(tmp.path, 'ok.srt')).writeAsStringSync(_srt);
 
-      final SourceScanSummary summary =
-          await SourceLibraryScanner(db).scan(await _videoSource(db, tmp.path));
+      final SourceScanSummary summary = await SourceLibraryScanner(
+        db,
+      ).scan(await _videoSource(db, tmp.path));
 
       expect(summary.error, isNull);
       expect(summary.importedMediaCount, 1);

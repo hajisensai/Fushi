@@ -53,9 +53,9 @@ List<T> sortNewCollectionMembersNaturally<T>(
 }) {
   final List<({T item, String title, int index})> decorated =
       <({T item, String title, int index})>[
-    for (int i = 0; i < items.length; i++)
-      (item: items[i], title: titleOf(items[i]), index: i),
-  ];
+        for (int i = 0; i < items.length; i++)
+          (item: items[i], title: titleOf(items[i]), index: i),
+      ];
   decorated.sort((
     ({T item, String title, int index}) a,
     ({T item, String title, int index}) b,
@@ -64,7 +64,7 @@ List<T> sortNewCollectionMembersNaturally<T>(
     return byName != 0 ? byName : a.index.compareTo(b.index);
   });
   return <T>[
-    for (final ({T item, String title, int index}) d in decorated) d.item
+    for (final ({T item, String title, int index}) d in decorated) d.item,
   ];
 }
 
@@ -96,15 +96,14 @@ Future<List<MediaCollectionItemRow>> sortedCollectionRows({
     );
   }
 
-  return List<MediaCollectionItemRow>.of(rows)
-    ..sort(
-      (MediaCollectionItemRow a, MediaCollectionItemRow b) =>
-          compareCollectionMembers(
-        sortMetaOf(a),
-        sortMetaOf(b),
-        byTitle: byTitle,
-      ),
-    );
+  return List<MediaCollectionItemRow>.of(rows)..sort(
+    (MediaCollectionItemRow a, MediaCollectionItemRow b) =>
+        compareCollectionMembers(
+          sortMetaOf(a),
+          sortMetaOf(b),
+          byTitle: byTitle,
+        ),
+  );
 }
 
 /// 合集详情页「成员排序方式」的每合集偏好键前缀（值 = `CollectionMemberSort.name`）。
@@ -130,18 +129,19 @@ Future<void> applyCollectionOneKeySort({
   required int collectionId,
   required bool byTitle,
 }) async {
-  final List<MediaCollectionItemRow> rows =
-      await db.getCollectionItems(collectionId);
-  if (rows.length < 2) return;
-  final List<MediaCollectionItemRow> next =
-      await sortedCollectionRows(db: db, rows: rows, byTitle: byTitle);
-  await db.reorderCollectionItems(
+  final List<MediaCollectionItemRow> rows = await db.getCollectionItems(
     collectionId,
-    <CollectionMemberKey>[
-      for (final MediaCollectionItemRow r in next)
-        (mediaType: r.mediaType, entryKey: r.entryKey),
-    ],
   );
+  if (rows.length < 2) return;
+  final List<MediaCollectionItemRow> next = await sortedCollectionRows(
+    db: db,
+    rows: rows,
+    byTitle: byTitle,
+  );
+  await db.reorderCollectionItems(collectionId, <CollectionMemberKey>[
+    for (final MediaCollectionItemRow r in next)
+      (mediaType: r.mediaType, entryKey: r.entryKey),
+  ]);
   // 一键整理落盘的就是用户要的手动序：详情页此后默认按手动序展示。
   await db.setPref(
     collectionDetailSortPrefKey(collectionId),

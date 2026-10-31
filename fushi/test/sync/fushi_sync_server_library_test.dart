@@ -9,20 +9,21 @@ import 'package:fushi_engine/sync/fushi_sync_server.dart';
 class _FakeLibraryService implements FushiLibraryHostService {
   // BUG-1004：host 端裁 mining 句子音频（本测试不涉及，返 null 即可）。
   @override
-  Future<File?> clipVideoAudio(String id,
-          {required int startMs,
-          required int endMs,
-          int episodeIndex = 0,
-          int? audioStreamIndex,
-          int? audioStreamCount,
-          int audioChannels = 1,
-          String audioBitrate = '64k'}) async =>
-      null;
+  Future<File?> clipVideoAudio(
+    String id, {
+    required int startMs,
+    required int endMs,
+    int episodeIndex = 0,
+    int? audioStreamIndex,
+    int? audioStreamCount,
+    int audioChannels = 1,
+    String audioBitrate = '64k',
+  }) async => null;
 
   @override
-  Future<List<RemoteActivityEvent>> listActivityEvents(
-          {int limit = 100}) async =>
-      const <RemoteActivityEvent>[];
+  Future<List<RemoteActivityEvent>> listActivityEvents({
+    int limit = 100,
+  }) async => const <RemoteActivityEvent>[];
 
   @override
   Future<String?> videoCoverPath(String id) async {
@@ -53,8 +54,8 @@ class _FakeLibraryService implements FushiLibraryHostService {
 
   @override
   Future<CollectionManifest> mergeCollectionManifest(
-          CollectionManifest incoming) async =>
-      incoming;
+    CollectionManifest incoming,
+  ) async => incoming;
 
   final List<RemoteDictionaryInfo> dicts = <RemoteDictionaryInfo>[
     const RemoteDictionaryInfo(name: 'JMdict', type: 'term'),
@@ -67,8 +68,9 @@ class _FakeLibraryService implements FushiLibraryHostService {
 
   @override
   Future<File> exportDictionary(String name) async {
-    final File f =
-        File('${Directory.systemTemp.createTempSync().path}/$name.fushidict');
+    final File f = File(
+      '${Directory.systemTemp.createTempSync().path}/$name.fushidict',
+    );
     f.writeAsStringSync('PKG:$name');
     return f;
   }
@@ -89,8 +91,11 @@ class _FakeLibraryService implements FushiLibraryHostService {
       throw StateError('not used in library dict test');
 
   @override
-  Future<void> importBook(File epubFile,
-      {String? displayTitle, int displayTitleAt = 0}) async {}
+  Future<void> importBook(
+    File epubFile, {
+    String? displayTitle,
+    int displayTitleAt = 0,
+  }) async {}
 
   @override
   Future<void> deleteBook(String title) async {}
@@ -109,8 +114,10 @@ class _FakeLibraryService implements FushiLibraryHostService {
   ) async {
     final RemoteBookProgress current =
         bookProgress[bookKey] ?? RemoteBookProgress.empty;
-    bookProgress[bookKey] =
-        resolveBookProgressSync(local: current, remote: progress);
+    bookProgress[bookKey] = resolveBookProgressSync(
+      local: current,
+      remote: progress,
+    );
   }
 
   // ── local audio stubs ──────────────────────────────────────────────────────
@@ -141,8 +148,10 @@ class _FakeLibraryService implements FushiLibraryHostService {
   Future<bool> audiobookExists(String bookKey) async => false;
 
   @override
-  Future<void> importAudiobook(File packageFile,
-      {String? bookKeyOverride}) async {}
+  Future<void> importAudiobook(
+    File packageFile, {
+    String? bookKeyOverride,
+  }) async {}
 
   @override
   Future<void> deleteAudiobook(String bookKey) async {}
@@ -155,29 +164,35 @@ class _FakeLibraryService implements FushiLibraryHostService {
   Future<bool> videoExists(String id, {int episodeIndex = 0}) async => false;
 
   @override
-  Future<void> importVideoSubtitle(File subtitleFile,
-      {required String id, required String suffix}) async {}
+  Future<void> importVideoSubtitle(
+    File subtitleFile, {
+    required String id,
+    required String suffix,
+  }) async {}
 
   @override
-  Future<void> importVideo(File videoFile,
-      {required String id,
-      required String title,
-      String? originalFileName}) async {}
+  Future<void> importVideo(
+    File videoFile, {
+    required String id,
+    required String title,
+    String? originalFileName,
+  }) async {}
 
   @override
   Future<File?> resolveVideoFile(String id, {int episodeIndex = 0}) async =>
       null;
 
   @override
-  Future<File?> resolveVideoSubtitle(String id,
-          {String langCode = 'ja', int episodeIndex = 0}) async =>
-      null;
+  Future<File?> resolveVideoSubtitle(
+    String id, {
+    String langCode = 'ja',
+    int episodeIndex = 0,
+  }) async => null;
 
   @override
   Future<({int positionMs, int updatedAtMs})> getAudiobookPosition(
     String bookKey,
-  ) async =>
-      (positionMs: 0, updatedAtMs: 0);
+  ) async => (positionMs: 0, updatedAtMs: 0);
 
   @override
   Future<void> putAudiobookPosition(
@@ -190,8 +205,7 @@ class _FakeLibraryService implements FushiLibraryHostService {
   Future<({int positionMs, int updatedAtMs})> getVideoPosition(
     String id, {
     int episodeIndex = 0,
-  }) async =>
-      (positionMs: 0, updatedAtMs: 0);
+  }) async => (positionMs: 0, updatedAtMs: 0);
 
   @override
   Future<void> putVideoPosition(
@@ -226,8 +240,9 @@ void main() {
 
   test('GET /api/capabilities reports liveDictionaries true', () async {
     final HttpClient c = HttpClient();
-    final HttpClientRequest req =
-        await c.getUrl(Uri.parse('$base/api/capabilities'));
+    final HttpClientRequest req = await c.getUrl(
+      Uri.parse('$base/api/capabilities'),
+    );
     req.headers.set('authorization', authHeader());
     final HttpClientResponse res = await req.close();
     expect(res.statusCode, 200);
@@ -240,8 +255,9 @@ void main() {
 
   test('GET /api/library/dictionaries lists host dictionaries', () async {
     final HttpClient c = HttpClient();
-    final HttpClientRequest req =
-        await c.getUrl(Uri.parse('$base/api/library/dictionaries'));
+    final HttpClientRequest req = await c.getUrl(
+      Uri.parse('$base/api/library/dictionaries'),
+    );
     req.headers.set('authorization', authHeader());
     final HttpClientResponse res = await req.close();
     expect(res.statusCode, 200);
@@ -253,8 +269,9 @@ void main() {
 
   test('GET /api/library/dictionaries/<name> streams package bytes', () async {
     final HttpClient c = HttpClient();
-    final HttpClientRequest req =
-        await c.getUrl(Uri.parse('$base/api/library/dictionaries/JMdict'));
+    final HttpClientRequest req = await c.getUrl(
+      Uri.parse('$base/api/library/dictionaries/JMdict'),
+    );
     req.headers.set('authorization', authHeader());
     final HttpClientResponse res = await req.close();
     expect(res.statusCode, 200);
@@ -264,8 +281,9 @@ void main() {
 
   test('PUT /api/library/dictionaries/<name> imports body', () async {
     final HttpClient c = HttpClient();
-    final HttpClientRequest req =
-        await c.putUrl(Uri.parse('$base/api/library/dictionaries/NHK'));
+    final HttpClientRequest req = await c.putUrl(
+      Uri.parse('$base/api/library/dictionaries/NHK'),
+    );
     req.headers.set('authorization', authHeader());
     req.add(utf8.encode('PKG:NHK'));
     final HttpClientResponse res = await req.close();
@@ -276,8 +294,9 @@ void main() {
 
   test('DELETE /api/library/dictionaries/<name> deletes', () async {
     final HttpClient c = HttpClient();
-    final HttpClientRequest req =
-        await c.deleteUrl(Uri.parse('$base/api/library/dictionaries/JMdict'));
+    final HttpClientRequest req = await c.deleteUrl(
+      Uri.parse('$base/api/library/dictionaries/JMdict'),
+    );
     req.headers.set('authorization', authHeader());
     final HttpClientResponse res = await req.close();
     expect(res.statusCode, anyOf(200, 204));
@@ -287,8 +306,9 @@ void main() {
 
   test('unauthenticated request to /api/library is 401', () async {
     final HttpClient c = HttpClient();
-    final HttpClientRequest req =
-        await c.getUrl(Uri.parse('$base/api/library/dictionaries'));
+    final HttpClientRequest req = await c.getUrl(
+      Uri.parse('$base/api/library/dictionaries'),
+    );
     final HttpClientResponse res = await req.close();
     expect(res.statusCode, 401);
     c.close();
@@ -301,23 +321,34 @@ void main() {
     final HttpClient c = HttpClient();
 
     // DELETE with path-traversal → must NOT reach lib.deleted.
-    final HttpClientRequest delReq = await c
-        .deleteUrl(Uri.parse('$base/api/library/dictionaries/%2e%2e%2fevil'));
+    final HttpClientRequest delReq = await c.deleteUrl(
+      Uri.parse('$base/api/library/dictionaries/%2e%2e%2fevil'),
+    );
     delReq.headers.set('authorization', authHeader());
     final HttpClientResponse delRes = await delReq.close();
-    expect(delRes.statusCode, 403,
-        reason: 'DELETE with "../evil" must be 403 Forbidden');
+    expect(
+      delRes.statusCode,
+      403,
+      reason: 'DELETE with "../evil" must be 403 Forbidden',
+    );
     await delRes.drain<void>();
-    expect(lib.deleted, isEmpty,
-        reason: 'no deletion must occur for a traversal name');
+    expect(
+      lib.deleted,
+      isEmpty,
+      reason: 'no deletion must occur for a traversal name',
+    );
 
     // GET with path-traversal → must also be 403.
-    final HttpClientRequest getReq = await c
-        .getUrl(Uri.parse('$base/api/library/dictionaries/%2e%2e%2fevil'));
+    final HttpClientRequest getReq = await c.getUrl(
+      Uri.parse('$base/api/library/dictionaries/%2e%2e%2fevil'),
+    );
     getReq.headers.set('authorization', authHeader());
     final HttpClientResponse getRes = await getReq.close();
-    expect(getRes.statusCode, 403,
-        reason: 'GET with "../evil" must be 403 Forbidden');
+    expect(
+      getRes.statusCode,
+      403,
+      reason: 'GET with "../evil" must be 403 Forbidden',
+    );
     await getRes.drain<void>();
 
     c.close();
@@ -331,12 +362,16 @@ void main() {
     final HttpClient c = HttpClient();
     // client 用 Uri.encodeComponent 编码 CJK 名，与 InterconnectSyncBackend 一致
     final String encodedName = Uri.encodeComponent('明镜');
-    final HttpClientRequest req = await c
-        .getUrl(Uri.parse('$base/api/library/dictionaries/$encodedName'));
+    final HttpClientRequest req = await c.getUrl(
+      Uri.parse('$base/api/library/dictionaries/$encodedName'),
+    );
     req.headers.set('authorization', authHeader());
     final HttpClientResponse res = await req.close();
-    expect(res.statusCode, 200,
-        reason: 'GET 明镜 应返回 200 而非 5xx（双重解码会致 500/502）');
+    expect(
+      res.statusCode,
+      200,
+      reason: 'GET 明镜 应返回 200 而非 5xx（双重解码会致 500/502）',
+    );
     final String body = await res.transform(utf8.decoder).join();
     expect(body, 'PKG:明镜', reason: 'server 应以正确 CJK 名（明镜）调用 exportDictionary');
     c.close();
@@ -345,15 +380,19 @@ void main() {
   test('PUT /api/library/dictionaries/<CJK-name> 以中文名导入', () async {
     final HttpClient c = HttpClient();
     final String encodedName = Uri.encodeComponent('新明解');
-    final HttpClientRequest req = await c
-        .putUrl(Uri.parse('$base/api/library/dictionaries/$encodedName'));
+    final HttpClientRequest req = await c.putUrl(
+      Uri.parse('$base/api/library/dictionaries/$encodedName'),
+    );
     req.headers.set('authorization', authHeader());
     req.add(utf8.encode('PKG:新明解'));
     final HttpClientResponse res = await req.close();
     expect(res.statusCode, anyOf(200, 201, 204), reason: 'PUT 新明解 应成功（2xx）');
     // importDictionary 收到的文件内容为 'PKG:新明解'
-    expect(lib.imported, contains('PKG:新明解'),
-        reason: 'importDictionary 应被以正确内容调用');
+    expect(
+      lib.imported,
+      contains('PKG:新明解'),
+      reason: 'importDictionary 应被以正确内容调用',
+    );
     c.close();
   });
 
@@ -361,13 +400,17 @@ void main() {
     lib.dicts.add(const RemoteDictionaryInfo(name: '明镜', type: 'term'));
     final HttpClient c = HttpClient();
     final String encodedName = Uri.encodeComponent('明镜');
-    final HttpClientRequest req = await c
-        .deleteUrl(Uri.parse('$base/api/library/dictionaries/$encodedName'));
+    final HttpClientRequest req = await c.deleteUrl(
+      Uri.parse('$base/api/library/dictionaries/$encodedName'),
+    );
     req.headers.set('authorization', authHeader());
     final HttpClientResponse res = await req.close();
     expect(res.statusCode, anyOf(200, 204), reason: 'DELETE 明镜 应成功');
-    expect(lib.deleted, contains('明镜'),
-        reason: 'deleteDictionary 应以解码后中文名「明镜」被调用，而非编码串或乱码');
+    expect(
+      lib.deleted,
+      contains('明镜'),
+      reason: 'deleteDictionary 应以解码后中文名「明镜」被调用，而非编码串或乱码',
+    );
     c.close();
   });
 
@@ -381,9 +424,12 @@ void main() {
     await bare.start();
     final HttpClient c = HttpClient();
     final HttpClientRequest req = await c.getUrl(
-        Uri.parse('http://127.0.0.1:${bare.port}/api/library/dictionaries'));
+      Uri.parse('http://127.0.0.1:${bare.port}/api/library/dictionaries'),
+    );
     req.headers.set(
-        'authorization', 'Basic ${base64Encode(utf8.encode('hibiki:$token'))}');
+      'authorization',
+      'Basic ${base64Encode(utf8.encode('hibiki:$token'))}',
+    );
     final HttpClientResponse res = await req.close();
     expect(res.statusCode, 404);
     c.close();

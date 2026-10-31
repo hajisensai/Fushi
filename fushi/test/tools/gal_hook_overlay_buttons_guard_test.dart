@@ -34,28 +34,34 @@ void main() {
 
     /// 读出一张槽表声明的槽数与它实际列出的 action。
     List<String> tableActions(String countName, String tableName) {
-      final Match? declared =
-          RegExp('$countName' r'\s*=\s*(\d+)\s*;').firstMatch(header);
+      final Match? declared = RegExp(
+        '$countName'
+        r'\s*=\s*(\d+)\s*;',
+      ).firstMatch(header);
       expect(declared, isNotNull, reason: '找不到 hook_toolbar::$countName 声明');
       final int slots = int.parse(declared!.group(1)!);
 
       final int tableStart = header.indexOf('$tableName[');
       expect(tableStart, greaterThan(0), reason: '找不到槽表 $tableName');
-      final String table =
-          header.substring(tableStart, header.indexOf('};', tableStart));
-      final List<String> actions = RegExp('"([a-zA-Z]+)"')
-          .allMatches(table)
-          .map((Match m) => m.group(1)!)
-          .toList();
-      expect(actions.length, slots,
-          reason: '$tableName 必须为每个槽位给出 action');
+      final String table = header.substring(
+        tableStart,
+        header.indexOf('};', tableStart),
+      );
+      final List<String> actions = RegExp(
+        '"([a-zA-Z]+)"',
+      ).allMatches(table).map((Match m) => m.group(1)!).toList();
+      expect(actions.length, slots, reason: '$tableName 必须为每个槽位给出 action');
       return actions;
     }
 
-    final List<String> galActions =
-        tableActions('kGalHookSlotCount', 'kGalHookSlotActions');
-    final List<String> audiobookActions =
-        tableActions('kAudiobookSlotCount', 'kAudiobookSlotActions');
+    final List<String> galActions = tableActions(
+      'kGalHookSlotCount',
+      'kGalHookSlotActions',
+    );
+    final List<String> audiobookActions = tableActions(
+      'kAudiobookSlotCount',
+      'kAudiobookSlotActions',
+    );
     final Set<String> allActions = <String>{...galActions, ...audiobookActions};
 
     /// 取一个函数体（从签名到第 0 列收尾大括号）。终点必须是本函数自己的收尾，
@@ -84,7 +90,8 @@ void main() {
       expect(
         iconBody.contains('"$action"'),
         isTrue,
-        reason: 'DrawSlotIcon 必须为 action「$action」给出矢量画法（字体是极小子集，'
+        reason:
+            'DrawSlotIcon 必须为 action「$action」给出矢量画法（字体是极小子集，'
             '缺字形时只剩这条路）',
       );
     }
@@ -172,7 +179,8 @@ void main() {
     );
     expect(
       source.contains(
-          'on_context_lookup_(context_id_, utf8, index, screen_rect)'),
+        'on_context_lookup_(context_id_, utf8, index, screen_rect)',
+      ),
       isTrue,
       reason: '查词事件必须带上屏幕逻辑 px 的词矩形',
     );

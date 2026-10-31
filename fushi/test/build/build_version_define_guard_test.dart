@@ -93,26 +93,25 @@ void main() {
     final List<File> files = workflowsDir()
         .listSync()
         .whereType<File>()
-        .where(
-          (File f) => f.path.endsWith('.yml') || f.path.endsWith('.yaml'),
-        )
+        .where((File f) => f.path.endsWith('.yml') || f.path.endsWith('.yaml'))
         .toList();
     expect(files, isNotEmpty, reason: '没扫到任何 workflow 文件，路径错了');
 
     for (final File file in files) {
       for (final String step in splitSteps(file.readAsStringSync())) {
-        for (final RegExpMatch match
-            in RegExp(argumentPattern('build-name')).allMatches(step)) {
+        for (final RegExpMatch match in RegExp(
+          argumentPattern('build-name'),
+        ).allMatches(step)) {
           final String value = unquote(match.group(1)!);
           checked++;
-          final Iterable<String> defines =
-              RegExp(argumentPattern('dart-define'))
-                  .allMatches(step)
-                  .map((RegExpMatch m) => unquote(m.group(1)!));
+          final Iterable<String> defines = RegExp(
+            argumentPattern('dart-define'),
+          ).allMatches(step).map((RegExpMatch m) => unquote(m.group(1)!));
           expect(
             defines,
             contains('$defineName=$canonicalDefineValue'),
-            reason: '${file.path} 里有一处 --build-name $value 没注入完整版本名；'
+            reason:
+                '${file.path} 里有一处 --build-name $value 没注入完整版本名；'
                 '该平台的包将无法自报运行中代码的版本',
           );
         }
@@ -121,7 +120,8 @@ void main() {
     expect(
       checked,
       greaterThanOrEqualTo(7),
-      reason: '发布构建点少于预期（Windows / macOS / iOS / IPA / 三条 APK）——'
+      reason:
+          '发布构建点少于预期（Windows / macOS / iOS / IPA / 三条 APK）——'
           '要么有构建被删了，要么 --build-name 换了写法让这条守卫扫空',
     );
   });
@@ -132,8 +132,9 @@ void main() {
     // 退化成常量，第三源证据自废。
     final File workflow = File('../.github/workflows/release-desktop.yml');
     expect(workflow.existsSync(), isTrue);
-    final List<String> lines =
-        const LineSplitter().convert(workflow.readAsStringSync());
+    final List<String> lines = const LineSplitter().convert(
+      workflow.readAsStringSync(),
+    );
 
     int derivations = 0;
     for (int i = 0; i < lines.length; i++) {
@@ -151,12 +152,16 @@ void main() {
       expect(
         guard.contains('-debug'),
         isFalse,
-        reason: '第 ${i + 1} 行的 tag 派生仍被 debug-only 正则挡住，'
+        reason:
+            '第 ${i + 1} 行的 tag 派生仍被 debug-only 正则挡住，'
             'beta 包会退回 pubspec 的裸版本名',
       );
     }
-    expect(derivations, greaterThanOrEqualTo(4),
-        reason: 'desktop 的四个 job（windows/macos/ios/ipa）各有一处');
+    expect(
+      derivations,
+      greaterThanOrEqualTo(4),
+      reason: 'desktop 的四个 job（windows/macos/ios/ipa）各有一处',
+    );
   });
 
   test('iOS 的 --build-name 必须剥掉预发布段（Apple 只收数字版本）', () {

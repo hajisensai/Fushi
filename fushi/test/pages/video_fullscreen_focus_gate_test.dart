@@ -33,8 +33,9 @@ void main() {
     expect(find.byKey(const Key('controls')), findsOneWidget);
   });
 
-  testWidgets('gate: 全屏期窗口侧（无 FullscreenInheritedWidget）controls 卸载',
-      (WidgetTester tester) async {
+  testWidgets('gate: 全屏期窗口侧（无 FullscreenInheritedWidget）controls 卸载', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(
       const MaterialApp(
         home: VideoControlsFocusGate(
@@ -46,8 +47,9 @@ void main() {
     expect(find.byKey(const Key('controls')), findsNothing);
   });
 
-  testWidgets('gate: 全屏路由内（有 FullscreenInheritedWidget）controls 保留',
-      (WidgetTester tester) async {
+  testWidgets('gate: 全屏路由内（有 FullscreenInheritedWidget）controls 保留', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(
       MaterialApp(
         home: FullscreenInheritedWidget(
@@ -62,8 +64,9 @@ void main() {
     expect(find.byKey(const Key('controls')), findsOneWidget);
   });
 
-  testWidgets('修复：全屏往返后（gate 卸载窗口侧）空格快捷键仍然存活——路径 D',
-      (WidgetTester tester) async {
+  testWidgets('修复：全屏往返后（gate 卸载窗口侧）空格快捷键仍然存活——路径 D', (
+    WidgetTester tester,
+  ) async {
     final FocusNode sharedNode = FocusNode(debugLabel: 'sharedVideoNode');
     addTearDown(sharedNode.dispose);
     final _Harness harness = _Harness(sharedNode: sharedNode, useGate: true);
@@ -72,8 +75,11 @@ void main() {
     final _HarnessState state = tester.state(find.byType(_Harness));
 
     // 基线：windowed controls 持焦点，空格触发播放/暂停回调。
-    expect(sharedNode.hasPrimaryFocus, isTrue,
-        reason: 'autofocus 应让共享节点持焦（基线前置条件）');
+    expect(
+      sharedNode.hasPrimaryFocus,
+      isTrue,
+      reason: 'autofocus 应让共享节点持焦（基线前置条件）',
+    );
     await tester.sendKeyEvent(LogicalKeyboardKey.space);
     await tester.pump();
     expect(state.windowedPresses, 1);
@@ -81,8 +87,11 @@ void main() {
     // 进全屏：gate 卸载窗口侧，全屏侧用同一节点接管。
     state.enterFullscreen();
     await tester.pumpAndSettle();
-    expect(find.byKey(const Key('windowed-controls')), findsNothing,
-        reason: '全屏期窗口侧 controls 必须卸载，否则退全屏时共享节点被摘成孤儿');
+    expect(
+      find.byKey(const Key('windowed-controls')),
+      findsNothing,
+      reason: '全屏期窗口侧 controls 必须卸载，否则退全屏时共享节点被摘成孤儿',
+    );
     await tester.sendKeyEvent(LogicalKeyboardKey.space);
     await tester.pump();
     expect(state.fullscreenPresses, 1);
@@ -92,16 +101,23 @@ void main() {
     state.exitFullscreen();
     await tester.pumpAndSettle();
     expect(find.byKey(const Key('windowed-controls')), findsOneWidget);
-    expect(sharedNode.hasPrimaryFocus, isTrue,
-        reason: '退全屏后共享节点必须重新 attach 并拿回焦点');
+    expect(
+      sharedNode.hasPrimaryFocus,
+      isTrue,
+      reason: '退全屏后共享节点必须重新 attach 并拿回焦点',
+    );
     await tester.sendKeyEvent(LogicalKeyboardKey.space);
     await tester.pump();
-    expect(state.windowedPresses, 2,
-        reason: '退全屏后空格必须仍由视频快捷键消费（TODO-040 路径 D）');
+    expect(
+      state.windowedPresses,
+      2,
+      reason: '退全屏后空格必须仍由视频快捷键消费（TODO-040 路径 D）',
+    );
   });
 
-  testWidgets('根因对照（无 gate，media_kit 上游原始结构）：全屏往返后节点孤儿、空格死亡',
-      (WidgetTester tester) async {
+  testWidgets('根因对照（无 gate，media_kit 上游原始结构）：全屏往返后节点孤儿、空格死亡', (
+    WidgetTester tester,
+  ) async {
     final FocusNode sharedNode = FocusNode(debugLabel: 'sharedVideoNode');
     addTearDown(sharedNode.dispose);
     final _Harness harness = _Harness(sharedNode: sharedNode, useGate: false);
@@ -121,17 +137,22 @@ void main() {
     // 模拟页面里所有焦点回收：requestFocus 只会静默挂起。
     sharedNode.requestFocus();
     await tester.pumpAndSettle();
-    expect(sharedNode.hasPrimaryFocus, isFalse,
-        reason: '孤儿节点 requestFocus 永远拿不到焦点——这是补丁失效的根因。'
-            '若本断言开始失败，说明 Flutter/media_kit 共享节点语义已变，'
-            '可重新评估是否还需要 VideoControlsFocusGate');
+    expect(
+      sharedNode.hasPrimaryFocus,
+      isFalse,
+      reason:
+          '孤儿节点 requestFocus 永远拿不到焦点——这是补丁失效的根因。'
+          '若本断言开始失败，说明 Flutter/media_kit 共享节点语义已变，'
+          '可重新评估是否还需要 VideoControlsFocusGate',
+    );
     await tester.sendKeyEvent(LogicalKeyboardKey.space);
     await tester.pump();
     expect(state.windowedPresses, 1, reason: '空格不再被视频快捷键消费');
   });
 
-  testWidgets('路径 A/B/C 依赖的框架假设：modal 关闭 whenComplete requestFocus 即归还，空格复活',
-      (WidgetTester tester) async {
+  testWidgets('路径 A/B/C 依赖的框架假设：modal 关闭 whenComplete requestFocus 即归还，空格复活', (
+    WidgetTester tester,
+  ) async {
     final FocusNode sharedNode = FocusNode(debugLabel: 'sharedVideoNode');
     addTearDown(sharedNode.dispose);
     final _Harness harness = _Harness(sharedNode: sharedNode, useGate: true);
@@ -153,8 +174,11 @@ void main() {
     expect(sharedNode.hasPrimaryFocus, isTrue, reason: '覆盖层关闭后焦点必须回到视频节点');
     await tester.sendKeyEvent(LogicalKeyboardKey.space);
     await tester.pump();
-    expect(state.windowedPresses, 1,
-        reason: '设置/导入遮罩等 modal 关闭后空格必须复活（TODO-040 路径 A/B）');
+    expect(
+      state.windowedPresses,
+      1,
+      reason: '设置/导入遮罩等 modal 关闭后空格必须复活（TODO-040 路径 A/B）',
+    );
   });
 }
 
@@ -203,22 +227,22 @@ class _HarnessState extends State<_Harness> {
     setState(() => fullscreenActive = true);
     Navigator.of(context, rootNavigator: true)
         .push<void>(
-      PageRouteBuilder<void>(
-        pageBuilder: (_, __, ___) => _controls(
-          const Key('fullscreen-controls'),
-          () => fullscreenPresses++,
-        ),
-        transitionDuration: Duration.zero,
-        reverseTransitionDuration: Duration.zero,
-      ),
-    )
+          PageRouteBuilder<void>(
+            pageBuilder: (_, __, ___) => _controls(
+              const Key('fullscreen-controls'),
+              () => fullscreenPresses++,
+            ),
+            transitionDuration: Duration.zero,
+            reverseTransitionDuration: Duration.zero,
+          ),
+        )
         .whenComplete(() {
-      if (!mounted) return;
-      setState(() => fullscreenActive = false);
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        widget.sharedNode.requestFocus();
-      });
-    });
+          if (!mounted) return;
+          setState(() => fullscreenActive = false);
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            widget.sharedNode.requestFocus();
+          });
+        });
     // 镜像页面 _pushNeutralizedVideoFullscreen 的 finally：post-frame 归还焦点
     // （路由 build 后节点已在全屏侧，requestFocus 才能落地——同步调用会被随后的
     // reparent 冲掉，primary 落到全屏路由 ModalScope）。
@@ -235,8 +259,11 @@ class _HarnessState extends State<_Harness> {
     showDialog<void>(
       context: context,
       builder: (_) => const AlertDialog(
-        content:
-            TextButton(autofocus: true, onPressed: _noop, child: Text('x')),
+        content: TextButton(
+          autofocus: true,
+          onPressed: _noop,
+          child: Text('x'),
+        ),
       ),
     ).whenComplete(() {
       widget.sharedNode.requestFocus();

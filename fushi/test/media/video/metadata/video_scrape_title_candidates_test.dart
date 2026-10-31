@@ -104,7 +104,8 @@ void main() {
       expect(
         RegExp(r'\bp\.(dirname|basename)\s*\(').hasMatch(body),
         isFalse,
-        reason: 'p.dirname / p.basename 按**跑代码那台机器**的分隔符解析；'
+        reason:
+            'p.dirname / p.basename 按**跑代码那台机器**的分隔符解析；'
             '这里的 videoPath 是 DB 里存的纯文本，可能带另一种风格的分隔符。'
             '自己切（见 _pathSegmentFromEnd），别把平台差异带进刮削候选。',
       );
@@ -170,43 +171,58 @@ void main() {
         );
         final int? year = FilenameParser.parse(directory).year;
         expect(year, 2023, reason: directory);
-        final _TitleKeyedProvider provider =
-            _TitleKeyedProvider(<VideoMetadataWork>[frieren]);
-        final VideoMetadataResolution result = await VideoMetadataResolver(
-          registry:
-              VideoMetadataProviderRegistry(<VideoMetadataProvider>[provider]),
-        ).resolve(VideoMetadataResolveRequest(
-          selectedProvider: VideoMetadataProviderKind.anidb,
-          mediaKind: VideoMetadataMediaKind.tv,
-          titleCandidates: candidates,
-          year: year,
-          episodeCount: 1,
-        ));
-        expect(result.status, VideoMetadataResolutionStatus.matched,
-            reason: '$directory → $candidates');
+        final _TitleKeyedProvider provider = _TitleKeyedProvider(
+          <VideoMetadataWork>[frieren],
+        );
+        final VideoMetadataResolution result =
+            await VideoMetadataResolver(
+              registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
+                provider,
+              ]),
+            ).resolve(
+              VideoMetadataResolveRequest(
+                selectedProvider: VideoMetadataProviderKind.anidb,
+                mediaKind: VideoMetadataMediaKind.tv,
+                titleCandidates: candidates,
+                year: year,
+                episodeCount: 1,
+              ),
+            );
+        expect(
+          result.status,
+          VideoMetadataResolutionStatus.matched,
+          reason: '$directory → $candidates',
+        );
         expect(result.lookup?.externalId, '17617');
       });
     }
 
-    test('the year gate still rejects a same-titled work from another year',
-        () async {
-      final _TitleKeyedProvider provider =
-          _TitleKeyedProvider(<VideoMetadataWork>[frieren]);
-      final VideoMetadataResolution result = await VideoMetadataResolver(
-        registry:
-            VideoMetadataProviderRegistry(<VideoMetadataProvider>[provider]),
-      ).resolve(VideoMetadataResolveRequest(
-        selectedProvider: VideoMetadataProviderKind.anidb,
-        mediaKind: VideoMetadataMediaKind.tv,
-        titleCandidates: videoScrapeTitleCandidates(
-          workTitle: 'Sousou no Frieren (2010)',
-          parsedSeries: '',
-          videoPath: r'D:\Anime\Sousou no Frieren (2010)\01.mkv',
-        ),
-        year: 2010,
-      ));
-      expect(result.status, isNot(VideoMetadataResolutionStatus.matched));
-    });
+    test(
+      'the year gate still rejects a same-titled work from another year',
+      () async {
+        final _TitleKeyedProvider provider = _TitleKeyedProvider(
+          <VideoMetadataWork>[frieren],
+        );
+        final VideoMetadataResolution result =
+            await VideoMetadataResolver(
+              registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
+                provider,
+              ]),
+            ).resolve(
+              VideoMetadataResolveRequest(
+                selectedProvider: VideoMetadataProviderKind.anidb,
+                mediaKind: VideoMetadataMediaKind.tv,
+                titleCandidates: videoScrapeTitleCandidates(
+                  workTitle: 'Sousou no Frieren (2010)',
+                  parsedSeries: '',
+                  videoPath: r'D:\Anime\Sousou no Frieren (2010)\01.mkv',
+                ),
+                year: 2010,
+              ),
+            );
+        expect(result.status, isNot(VideoMetadataResolutionStatus.matched));
+      },
+    );
   });
 
   // BUG-3266：片名本身以合法年份结尾（`Death Race 2000` 是 1975 年的片子）。
@@ -309,7 +325,8 @@ class _TitleKeyedProvider implements VideoMetadataProvider {
     return <VideoMetadataWork>[
       for (final VideoMetadataWork work in works)
         if (<String?>[work.title, work.originalTitle].any(
-            (String? t) => t != null && TitleNormalizer.normalize(t) == query))
+          (String? t) => t != null && TitleNormalizer.normalize(t) == query,
+        ))
           work,
     ];
   }
@@ -317,22 +334,23 @@ class _TitleKeyedProvider implements VideoMetadataProvider {
   @override
   Future<VideoMetadataWork?> fetchWork(VideoMetadataLookup lookup) async =>
       works
-          .where((VideoMetadataWork w) =>
-              w.ids.any((VideoMetadataId id) => id.value == lookup.externalId))
+          .where(
+            (VideoMetadataWork w) => w.ids.any(
+              (VideoMetadataId id) => id.value == lookup.externalId,
+            ),
+          )
           .firstOrNull;
 
   @override
   Future<List<VideoMetadataSeason>> fetchSeasons(
     VideoMetadataLookup lookup,
-  ) async =>
-      const <VideoMetadataSeason>[];
+  ) async => const <VideoMetadataSeason>[];
 
   @override
   Future<List<VideoMetadataEpisode>> fetchEpisodes(
     VideoMetadataLookup lookup, {
     required int seasonNumber,
-  }) async =>
-      const <VideoMetadataEpisode>[];
+  }) async => const <VideoMetadataEpisode>[];
 
   @override
   void close() {}

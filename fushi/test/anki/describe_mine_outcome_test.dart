@@ -20,8 +20,11 @@ void main() {
         const MineOutcome.success(deckName: 'Deck1'),
       );
       expect(r.message, t.card_exported(deck: 'Deck1'));
-      expect(r.message, contains('Deck1'),
-          reason: 'BUG-1549：成功 toast 必须包含真实牌组名');
+      expect(
+        r.message,
+        contains('Deck1'),
+        reason: 'BUG-1549：成功 toast 必须包含真实牌组名',
+      );
       expect(r.success, isTrue);
       expect(r.record, isTrue);
     });
@@ -66,8 +69,9 @@ void main() {
     });
 
     test('notConfigured: 未配置文案 + 不成功不记账', () {
-      final r =
-          describeMineOutcome(const MineOutcome(MineResult.notConfigured));
+      final r = describeMineOutcome(
+        const MineOutcome(MineResult.notConfigured),
+      );
       expect(r.message, t.card_export_not_configured);
       expect(r.success, isFalse);
       expect(r.record, isFalse);
@@ -109,10 +113,16 @@ void main() {
     for (final site in sites) {
       test('$site 转调 describeMineOutcome', () {
         final src = read(site);
-        expect(src, contains('describeMineOutcome('),
-            reason: '$site 应转调 describeMineOutcome');
-        expect(src.contains('case MineResult.duplicate:'), isFalse,
-            reason: '$site 不应再保留本地 MineResult switch');
+        expect(
+          src,
+          contains('describeMineOutcome('),
+          reason: '$site 应转调 describeMineOutcome',
+        );
+        expect(
+          src.contains('case MineResult.duplicate:'),
+          isFalse,
+          reason: '$site 不应再保留本地 MineResult switch',
+        );
       });
     }
   });

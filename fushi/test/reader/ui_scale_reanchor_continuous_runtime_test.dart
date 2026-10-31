@@ -34,8 +34,9 @@ void main() {
   /// 跑完所有挂起的 postFrame 回调（模拟一帧 settle）。回调内是异步求值，
   /// 跑完后等微任务队列排空，确保 evalCommit 的 await 已落地。
   Future<void> pumpOnePostFrame() async {
-    final List<void Function()> due =
-        List<void Function()>.from(pendingPostFrame);
+    final List<void Function()> due = List<void Function()>.from(
+      pendingPostFrame,
+    );
     pendingPostFrame.clear();
     for (final void Function() cb in due) {
       cb();
@@ -77,32 +78,50 @@ void main() {
   }
 
   group('runUiScaleReanchorOrchestration 运行时序列（TODO-697 item①）', () {
-    test('连续模式 + 就绪：begin 同步求值 → pump 一帧 → commit 求值，begin 在 commit 之前',
-        () async {
-      // 阶段1（begin）应在编排 await 完成时已发生；commit 此时尚未发生（在 postFrame）。
-      await runOrchestration();
-      expect(evals, <String>['begin'],
-          reason: '阶段1 begin 必须在编排主体返回前发生（同步采锚+置旗）；'
-              'commit 必须延迟到 postFrame，不能在同一帧立即求值');
-      expect(pendingPostFrame, hasLength(1),
-          reason: 'begin 成功（>=0）后必须调度一个 postFrame 提交 commit');
+    test(
+      '连续模式 + 就绪：begin 同步求值 → pump 一帧 → commit 求值，begin 在 commit 之前',
+      () async {
+        // 阶段1（begin）应在编排 await 完成时已发生；commit 此时尚未发生（在 postFrame）。
+        await runOrchestration();
+        expect(
+          evals,
+          <String>['begin'],
+          reason:
+              '阶段1 begin 必须在编排主体返回前发生（同步采锚+置旗）；'
+              'commit 必须延迟到 postFrame，不能在同一帧立即求值',
+        );
+        expect(
+          pendingPostFrame,
+          hasLength(1),
+          reason: 'begin 成功（>=0）后必须调度一个 postFrame 提交 commit',
+        );
 
-      // 阶段2（commit）只在 pump 过渡帧 settle 后才发生。
-      await pumpOnePostFrame();
-      expect(evals, <String>['begin', 'commit'],
-          reason: 'commit 必须在 postFrame settle 后求值，且严格发生在 begin 之后');
-      final int idxBegin = evals.indexOf('begin');
-      final int idxCommit = evals.indexOf('commit');
-      expect(idxBegin, lessThan(idxCommit),
-          reason: 'begin 必须严格在 commit 之前（先采锚置旗，settle 后才滚回清旗）');
-    });
+        // 阶段2（commit）只在 pump 过渡帧 settle 后才发生。
+        await pumpOnePostFrame();
+        expect(evals, <String>[
+          'begin',
+          'commit',
+        ], reason: 'commit 必须在 postFrame settle 后求值，且严格发生在 begin 之后');
+        final int idxBegin = evals.indexOf('begin');
+        final int idxCommit = evals.indexOf('commit');
+        expect(
+          idxBegin,
+          lessThan(idxCommit),
+          reason: 'begin 必须严格在 commit 之前（先采锚置旗，settle 后才滚回清旗）',
+        );
+      },
+    );
 
     test('begin 返回 -1（无锚/已有重锚在飞）：不调度 postFrame，永不 commit', () async {
       await runOrchestration(beginResult: -1);
-      expect(evals, <String>['begin'],
-          reason: 'begin 仍求值（要拿返回值判定），但 -1 时必须就此打住');
-      expect(pendingPostFrame, isEmpty,
-          reason: 'begin 返回 -1 必须不调度 postFrame（不提交、不误清别处重锚旗）');
+      expect(evals, <String>[
+        'begin',
+      ], reason: 'begin 仍求值（要拿返回值判定），但 -1 时必须就此打住');
+      expect(
+        pendingPostFrame,
+        isEmpty,
+        reason: 'begin 返回 -1 必须不调度 postFrame（不提交、不误清别处重锚旗）',
+      );
 
       // 即便强行 pump 一帧也不该冒出 commit（根本没调度）。
       await pumpOnePostFrame();
@@ -112,8 +131,11 @@ void main() {
     test('begin 返回字符串 "-1"（JS 字符串结果经 intResult 解析）同样抑制 commit', () async {
       // 运行时真走 ReaderPaginationScripts.intResult：字符串 "-1" → -1 → 抑制。
       await runOrchestration(beginResult: '-1');
-      expect(pendingPostFrame, isEmpty,
-          reason: '字符串 "-1" 经 intResult 解析为 -1，必须与 int -1 同样抑制 commit');
+      expect(
+        pendingPostFrame,
+        isEmpty,
+        reason: '字符串 "-1" 经 intResult 解析为 -1，必须与 int -1 同样抑制 commit',
+      );
       await pumpOnePostFrame();
       expect(evals, <String>['begin']);
     });
@@ -121,8 +143,11 @@ void main() {
     test('begin 返回字符串数字 "0"（章首有效锚）：仍提交 commit', () async {
       // intResult("0") == 0，>=0 视为有效锚 → 必须提交。
       await runOrchestration(beginResult: '0');
-      expect(pendingPostFrame, hasLength(1),
-          reason: 'charOffset==0 是有效锚（章首），必须调度 commit');
+      expect(
+        pendingPostFrame,
+        hasLength(1),
+        reason: 'charOffset==0 是有效锚（章首），必须调度 commit',
+      );
       await pumpOnePostFrame();
       expect(evals, <String>['begin', 'commit']);
     });
@@ -149,8 +174,9 @@ void main() {
   group('存活复检与异常吞咽（运行时）', () {
     test('begin 后已不存活（dispose 竞态）：不调度 postFrame，不 commit', () async {
       await runOrchestration(stillAlive: false);
-      expect(evals, <String>['begin'],
-          reason: 'begin 已发起；但 begin 返回后 stillAlive==false 必须中止，不调度提交');
+      expect(evals, <String>[
+        'begin',
+      ], reason: 'begin 已发起；但 begin 返回后 stillAlive==false 必须中止，不调度提交');
       expect(pendingPostFrame, isEmpty, reason: 'begin 后不存活：不得调度 postFrame');
       await pumpOnePostFrame();
       expect(evals, <String>['begin']);
@@ -159,8 +185,11 @@ void main() {
     test('begin 求值抛异常：上报 onBeginError 并整体中止（不外抛、不 commit）', () async {
       final List<Object> beginErrors = <Object>[];
       await runOrchestration(throwOnBegin: true, beginErrors: beginErrors);
-      expect(beginErrors, hasLength(1),
-          reason: 'begin 异常必须经 onBeginError 上报（吞掉不外抛，否则 setState/build 路径炸）');
+      expect(
+        beginErrors,
+        hasLength(1),
+        reason: 'begin 异常必须经 onBeginError 上报（吞掉不外抛，否则 setState/build 路径炸）',
+      );
       expect(pendingPostFrame, isEmpty, reason: 'begin 抛异常后必须中止，不调度 commit');
       await pumpOnePostFrame();
       expect(evals, <String>['begin'], reason: 'begin 异常路径下 commit 不得发生');
@@ -172,8 +201,11 @@ void main() {
       expect(pendingPostFrame, hasLength(1));
       // pump 一帧触发 commit；commit 抛异常应被 onCommitError 吞掉，不冒泡出 pumpOnePostFrame。
       await pumpOnePostFrame();
-      expect(commitErrors, hasLength(1),
-          reason: 'commit 异常必须经 onCommitError 上报且不外抛（postFrame 回调里抛会被引擎吞或崩）');
+      expect(
+        commitErrors,
+        hasLength(1),
+        reason: 'commit 异常必须经 onCommitError 上报且不外抛（postFrame 回调里抛会被引擎吞或崩）',
+      );
       expect(evals, <String>['begin', 'commit']);
     });
   });

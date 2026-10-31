@@ -18,7 +18,8 @@ void main() {
 
     test('malformed timestamp line is skipped', () {
       final cues = SrtParser.parseString(
-        content: '1\nnot-a-timestamp\nHello\n\n'
+        content:
+            '1\nnot-a-timestamp\nHello\n\n'
             '2\n00:00:01,000 --> 00:00:02,000\nWorld\n',
         bookKey: 'b',
       );
@@ -32,12 +33,16 @@ void main() {
 
     test('negative timestamps are skipped gracefully', () {
       final cues = SrtParser.parseString(
-        content: '1\n-1:00:00,000 --> 00:00:01,000\nBad\n\n'
+        content:
+            '1\n-1:00:00,000 --> 00:00:01,000\nBad\n\n'
             '2\n00:00:01,000 --> 00:00:02,000\nGood\n',
         bookKey: 'b',
       );
-      expect(cues.where((c) => c.text == 'Good'), isNotEmpty,
-          reason: 'Valid cues after malformed entry must still parse');
+      expect(
+        cues.where((c) => c.text == 'Good'),
+        isNotEmpty,
+        reason: 'Valid cues after malformed entry must still parse',
+      );
     });
   });
 
@@ -52,8 +57,11 @@ void main() {
         content: '00:00:01.000 --> 00:00:02.000\nHello\n',
         bookKey: 'b',
       );
-      expect(cues.where((c) => c.text == 'Hello'), isNotEmpty,
-          reason: 'VTT without header should still parse valid cues');
+      expect(
+        cues.where((c) => c.text == 'Hello'),
+        isNotEmpty,
+        reason: 'VTT without header should still parse valid cues',
+      );
     });
 
     test('only WEBVTT header with no cues returns empty', () {
@@ -63,12 +71,16 @@ void main() {
 
     test('cue with missing end time is skipped', () {
       final cues = VttParser.parseString(
-        content: 'WEBVTT\n\n00:00:01.000 -->\nHello\n\n'
+        content:
+            'WEBVTT\n\n00:00:01.000 -->\nHello\n\n'
             '00:00:02.000 --> 00:00:03.000\nValid\n',
         bookKey: 'b',
       );
-      expect(cues.where((c) => c.text == 'Valid'), isNotEmpty,
-          reason: 'Valid cues after malformed entry must still parse');
+      expect(
+        cues.where((c) => c.text == 'Valid'),
+        isNotEmpty,
+        reason: 'Valid cues after malformed entry must still parse',
+      );
     });
   });
 
@@ -88,7 +100,8 @@ void main() {
 
     test('Events section with no Dialogue lines returns empty', () {
       final cues = AssParser.parseString(
-        content: '[Events]\nFormat: Layer, Start, End, Style, Name, '
+        content:
+            '[Events]\nFormat: Layer, Start, End, Style, Name, '
             'MarginL, MarginR, MarginV, Effect, Text\n'
             'Comment: 0,0:00:00.00,0:00:01.00,Default,,0,0,0,,test\n',
         bookKey: 'b',
@@ -98,14 +111,18 @@ void main() {
 
     test('Dialogue with insufficient fields is skipped', () {
       final cues = AssParser.parseString(
-        content: '[Events]\nFormat: Layer, Start, End, Style, Name, '
+        content:
+            '[Events]\nFormat: Layer, Start, End, Style, Name, '
             'MarginL, MarginR, MarginV, Effect, Text\n'
             'Dialogue: 0,bad\n'
             'Dialogue: 0,0:00:01.00,0:00:02.00,Default,,0,0,0,,Valid\n',
         bookKey: 'b',
       );
-      expect(cues.where((c) => c.text == 'Valid'), isNotEmpty,
-          reason: 'Valid Dialogue after malformed entry must still parse');
+      expect(
+        cues.where((c) => c.text == 'Valid'),
+        isNotEmpty,
+        reason: 'Valid Dialogue after malformed entry must still parse',
+      );
     });
   });
 

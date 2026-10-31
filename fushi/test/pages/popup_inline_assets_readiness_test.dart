@@ -24,10 +24,11 @@ void main() {
 
     // widget/unit 测试进程里 flutter assets 目录不存在，_ensureInlinePopupAssetsLoaded
     // 的同步读盘必然失败 —— 正是「资产不可用」这一支。
-    final String? html = DictionaryPopupWebViewState.buildInlinePopupHtmlIfReady(
-      themeAttr: 'dark',
-      bgHex: '#101010',
-    );
+    final String? html =
+        DictionaryPopupWebViewState.buildInlinePopupHtmlIfReady(
+          themeAttr: 'dark',
+          bgHex: '#101010',
+        );
 
     if (html != null) {
       // 极少数环境（就地跑在已构建产物旁）真能读到资产：那就必须是**实心**的，
@@ -42,8 +43,11 @@ void main() {
         '<script>null</script>',
         '<style>null</style>',
       ]) {
-        expect(html.contains(shell), isFalse,
-            reason: '返回非 null 就必须带着真资产，不能是空壳 $shell');
+        expect(
+          html.contains(shell),
+          isFalse,
+          reason: '返回非 null 就必须带着真资产，不能是空壳 $shell',
+        );
       }
       return;
     }
@@ -59,38 +63,50 @@ void main() {
       popupJs: 'window.renderPopup = function () {};',
     );
 
-    final String? html = DictionaryPopupWebViewState.buildInlinePopupHtmlIfReady(
-      themeAttr: 'light',
-      bgHex: '#ffffff',
-    );
+    final String? html =
+        DictionaryPopupWebViewState.buildInlinePopupHtmlIfReady(
+          themeAttr: 'light',
+          bgHex: '#ffffff',
+        );
 
     expect(html, isNotNull);
     expect(html!.contains('.fake-css-marker{}'), isTrue);
     expect(html.contains('window.__fakeDictMedia = 1;'), isTrue);
     expect(html.contains('window.__fakeSelection = 1;'), isTrue);
     expect(html.contains('window.renderPopup = function () {};'), isTrue);
-    expect(html.contains('id="entries-container"'), isTrue,
-        reason: 'popup.js 的 __fushiContainer() 靠它取容器，缺了就直接静默返回');
+    expect(
+      html.contains('id="entries-container"'),
+      isTrue,
+      reason: 'popup.js 的 __fushiContainer() 靠它取容器，缺了就直接静默返回',
+    );
   });
 
   test('预览与真弹窗都只能经这个原语拿内联 HTML', () {
     // 两个入口一旦有一个自己拼「确保装载 + 判空 + 构造」，就会重新漂移出白屏那一支。
     final String preview = maskComments(
-      File('lib/src/pages/implementations/dict_style_preview.dart')
-          .readAsStringSync(),
+      File(
+        'lib/src/pages/implementations/dict_style_preview.dart',
+      ).readAsStringSync(),
     );
     final String webview = maskComments(
-      File('lib/src/pages/implementations/dictionary_popup_webview.dart')
-          .readAsStringSync(),
+      File(
+        'lib/src/pages/implementations/dictionary_popup_webview.dart',
+      ).readAsStringSync(),
     );
 
-    expect(preview.contains('buildInlinePopupHtmlIfReady'), isTrue,
-        reason: '预览必须走 buildInlinePopupHtmlIfReady');
+    expect(
+      preview.contains('buildInlinePopupHtmlIfReady'),
+      isTrue,
+      reason: '预览必须走 buildInlinePopupHtmlIfReady',
+    );
 
     // 裸构造 _buildInlinePopupHtml 已是私有，外部拿不到；唯一还能绕过就绪检查的
     // 公开面是测试专用别名 debugBuildInlinePopupHtml，生产入口不得碰。
-    expect(preview.contains('debugBuildInlinePopupHtml'), isFalse,
-        reason: 'debugBuildInlinePopupHtml 不判就绪，是测试别名，生产入口不得调用');
+    expect(
+      preview.contains('debugBuildInlinePopupHtml'),
+      isFalse,
+      reason: 'debugBuildInlinePopupHtml 不判就绪，是测试别名，生产入口不得调用',
+    );
 
     // 真弹窗侧断言**调用点**，不是「本文件出现过这个名字」——定义就在本文件，
     // 那样写恒真（这正是本条判据原先的写法）。

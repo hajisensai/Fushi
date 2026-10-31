@@ -22,47 +22,66 @@ import 'package:flutter_test/flutter_test.dart';
 /// 「每个构建 job 都用上这个 action」由
 /// `baked_secret_stub_parity_guard_test.dart` 负责，不在这里重复。
 void main() {
-  final File actionFile =
-      File('../.github/actions/provide-baked-secrets/action.yml');
+  final File actionFile = File(
+    '../.github/actions/provide-baked-secrets/action.yml',
+  );
 
   test('前置：密钥注入的真相源存在', () {
-    expect(actionFile.existsSync(), isTrue,
-        reason: '缺 ${actionFile.absolute.path}。注入被搬走了？把本守卫指向新'
-            '位置，别让它静默跑空——BUG-290 的按钮消失没有任何构建期症状。');
+    expect(
+      actionFile.existsSync(),
+      isTrue,
+      reason:
+          '缺 ${actionFile.absolute.path}。注入被搬走了？把本守卫指向新'
+          '位置，别让它静默跑空——BUG-290 的按钮消失没有任何构建期症状。',
+    );
   });
 
-  final String action =
-      actionFile.existsSync() ? actionFile.readAsStringSync() : '';
+  final String action = actionFile.existsSync()
+      ? actionFile.readAsStringSync()
+      : '';
 
   test('log_upload 注入与 google_oauth 注入并存于同一个真相源', () {
     expect(
-        action, contains('- name: Provide gitignored Google OAuth secret stub'),
-        reason: '基准范式（google_oauth 注入）都不在了，说明这个文件已经不是'
-            '密钥注入的真相源，本守卫失去锚点。');
+      action,
+      contains('- name: Provide gitignored Google OAuth secret stub'),
+      reason:
+          '基准范式（google_oauth 注入）都不在了，说明这个文件已经不是'
+          '密钥注入的真相源，本守卫失去锚点。',
+    );
     expect(
       action,
       contains('- name: Provide gitignored log upload secret stub'),
-      reason: '真相源里有 google_oauth 注入却没有 log_upload 注入：所有平台'
+      reason:
+          '真相源里有 google_oauth 注入却没有 log_upload 注入：所有平台'
           '构建的「上传日志」按钮都会因端点为空而永久隐藏（BUG-290）。',
     );
   });
 
   test('log_upload 注入接到真实 secret 并写两个常量', () {
     // 引用 GitHub repo secret（未配置时回退空占位，按钮隐藏，向后兼容）。
-    expect(action,
-        contains(r'LOG_UPLOAD_ENDPOINT: ${{ inputs.log-upload-endpoint }}'));
     expect(
-        action, contains(r'LOG_UPLOAD_TOKEN: ${{ inputs.log-upload-token }}'));
+      action,
+      contains(r'LOG_UPLOAD_ENDPOINT: ${{ inputs.log-upload-endpoint }}'),
+    );
+    expect(
+      action,
+      contains(r'LOG_UPLOAD_TOKEN: ${{ inputs.log-upload-token }}'),
+    );
     // 写穿真实密钥文件（不是 example），且两个常量都写。
-    expect(action,
-        contains('dst=fushi/lib/src/utils/misc/log_upload_secret.dart'));
+    expect(
+      action,
+      contains('dst=fushi/lib/src/utils/misc/log_upload_secret.dart'),
+    );
     expect(action, contains('const String kLogUploadEndpoint = %s;'));
     expect(action, contains('const String kLogUploadToken = %s;'));
     // 未配置 secret 时回退到入库空占位，保证 fresh CI 仍可编译、不暴露端点。
     expect(
-        action,
-        contains('cp fushi/lib/src/utils/misc/'
-            'log_upload_secret.example.dart "\$dst"'));
+      action,
+      contains(
+        'cp fushi/lib/src/utils/misc/'
+        'log_upload_secret.example.dart "\$dst"',
+      ),
+    );
   });
 
   test('调用方把真实 repo secret 接进 action 输入', () {
@@ -77,12 +96,17 @@ void main() {
       }
       final String name = f.uri.pathSegments.last;
       if (!text.contains(
-          r'log-upload-endpoint: ${{ secrets.LOG_UPLOAD_ENDPOINT }}')) {
+        r'log-upload-endpoint: ${{ secrets.LOG_UPLOAD_ENDPOINT }}',
+      )) {
         callers.add('  $name 用了 action 但没把 LOG_UPLOAD_ENDPOINT 接进去');
       }
     }
-    expect(callers, isEmpty,
-        reason: '输入没接上 secret 时 action 会拿到空串，等于没注入——'
-            '症状与「从未注入」完全一致：\n${callers.join("\n")}');
+    expect(
+      callers,
+      isEmpty,
+      reason:
+          '输入没接上 secret 时 action 会拿到空串，等于没注入——'
+          '症状与「从未注入」完全一致：\n${callers.join("\n")}',
+    );
   });
 }

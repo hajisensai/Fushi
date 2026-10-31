@@ -10,11 +10,7 @@ import 'package:fushi_engine/mining/metadata/galgame_metadata_source.dart';
 /// 元数据抓取失败的统一异常。**绝不吞异常**：网络失败、非 2xx、JSON 畸形全部抛这个，
 /// 由 service 决定降级（mixed 下单源失败降级为空）还是上抛给 UI（§2.5）。
 class GalgameMetadataException implements Exception {
-  const GalgameMetadataException(
-    this.message, {
-    this.source,
-    this.statusCode,
-  });
+  const GalgameMetadataException(this.message, {this.source, this.statusCode});
 
   /// 可读描述（英文技术信息 + 源名 + 状态码；UI 文案由展示层套 i18n 外壳）。
   final String message;

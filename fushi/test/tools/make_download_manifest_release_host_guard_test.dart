@@ -43,16 +43,20 @@ void main() {
       // 参数刻意在 parse 阶段就触发：不会去读 --input 指的文件。
       expect(
         () => parseArgsForTest(<String>[
-          '--input', 'not-read.zip',
-          '--whole-url', 'https://dl.wrds.xyz/pack.zip',
+          '--input',
+          'not-read.zip',
+          '--whole-url',
+          'https://dl.wrds.xyz/pack.zip',
           '--part-base-url',
           'https://github.com/hajisensai/Fushi/releases/download/pack-1',
         ]),
-        throwsA(isA<FormatException>().having(
-          (FormatException e) => e.message,
-          'message',
-          contains('mirror-releases.yml'),
-        )),
+        throwsA(
+          isA<FormatException>().having(
+            (FormatException e) => e.message,
+            'message',
+            contains('mirror-releases.yml'),
+          ),
+        ),
       );
     });
 
@@ -63,42 +67,54 @@ void main() {
       // 所以单靠它就能完整绕过守卫。
       expect(
         () => parseArgsForTest(<String>[
-          '--input', 'not-read.zip',
+          '--input',
+          'not-read.zip',
           '--whole-url',
           'https://github.com/hajisensai/Fushi/releases/download/v1/pack.zip',
-          '--out-dir', 'out',
+          '--out-dir',
+          'out',
         ]),
-        throwsA(isA<FormatException>().having(
-          (FormatException e) => e.message,
-          'message',
-          contains('mirror-releases.yml'),
-        )),
+        throwsA(
+          isA<FormatException>().having(
+            (FormatException e) => e.message,
+            'message',
+            contains('mirror-releases.yml'),
+          ),
+        ),
       );
     });
 
     test('所有地址走同一道 https 门 —— --whole-url 不再有自己的分支', () {
       expect(
         () => parseArgsForTest(<String>[
-          '--input', 'not-read.zip',
-          '--whole-url', 'http://dl.wrds.xyz/pack.zip',
-          '--out-dir', 'out',
+          '--input',
+          'not-read.zip',
+          '--whole-url',
+          'http://dl.wrds.xyz/pack.zip',
+          '--out-dir',
+          'out',
         ]),
-        throwsA(isA<FormatException>().having(
-          (FormatException e) => e.message,
-          'message',
-          contains('下载地址必须是 https'),
-        )),
+        throwsA(
+          isA<FormatException>().having(
+            (FormatException e) => e.message,
+            'message',
+            contains('下载地址必须是 https'),
+          ),
+        ),
       );
     });
 
     test('换成 fushi-pack 后同一组参数不再被拒', () {
       expect(
         () => parseArgsForTest(<String>[
-          '--input', 'not-read.zip',
-          '--whole-url', 'https://dl.wrds.xyz/pack.zip',
+          '--input',
+          'not-read.zip',
+          '--whole-url',
+          'https://dl.wrds.xyz/pack.zip',
           '--part-base-url',
           'https://github.com/hajisensai/fushi-pack/releases/download/pack-1',
-          '--out-dir', 'out',
+          '--out-dir',
+          'out',
         ]),
         returnsNormally,
       );
@@ -121,11 +137,15 @@ void main() {
     }
 
     List<String> argsWith(String deflatePath) => <String>[
-          '--input', 'not-read.zip',
-          '--whole-url', 'https://dl.wrds.xyz/pack.zip',
-          '--mode', 'range',
-          '--deflate-manifest', deflatePath,
-        ];
+      '--input',
+      'not-read.zip',
+      '--whole-url',
+      'https://dl.wrds.xyz/pack.zip',
+      '--mode',
+      'range',
+      '--deflate-manifest',
+      deflatePath,
+    ];
 
     test('嵌套清单的下载地址也过主仓库 release 守卫', () {
       // 新版 app 会真的从 deflate_pack 里的地址下包，绕开这道门就等于守卫失效。
@@ -137,11 +157,13 @@ void main() {
       });
       expect(
         () => parseArgsForTest(argsWith(path)),
-        throwsA(isA<FormatException>().having(
-          (FormatException e) => e.message,
-          'message',
-          contains('mirror-releases.yml'),
-        )),
+        throwsA(
+          isA<FormatException>().having(
+            (FormatException e) => e.message,
+            'message',
+            contains('mirror-releases.yml'),
+          ),
+        ),
       );
     });
 

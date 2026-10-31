@@ -14,9 +14,8 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/desktop_audio_playback.dart';
 import 'package:fushi/utils.dart';
 
-typedef GalTextThreadSelector = Future<bool> Function(
-  TexthookerTextThread thread,
-);
+typedef GalTextThreadSelector =
+    Future<bool> Function(TexthookerTextThread thread);
 
 /// 本弹窗**被系统自动关闭**时的原因，作为路由返回值交给调用方。
 ///
@@ -98,8 +97,9 @@ class _GalCaptureSetupDialogState extends State<GalCaptureSetupDialog> {
       await DesktopAudioPlayback.stop();
       return;
     }
-    final GalTrackPreview? preview =
-        await widget.session.exportTrackPreview(track.sourcePtr);
+    final GalTrackPreview? preview = await widget.session.exportTrackPreview(
+      track.sourcePtr,
+    );
     if (!mounted || generation != _previewGeneration) return;
     if (preview == null) {
       FushiToast.show(msg: t.game_track_preview_failed);
@@ -272,62 +272,63 @@ class _GalCaptureSetupDialogState extends State<GalCaptureSetupDialog> {
                   )
                 : FushiEntranceScope(
                     child: ListView.builder(
-                    padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-                    itemCount: threads.length,
-                    itemBuilder: fushiStaggeredItemBuilder((
-                      BuildContext context,
-                      int index,
-                    ) {
-                      final TexthookerTextThread thread = threads[index];
-                      final bool selecting = _selectingThreadKey == thread.key;
-                      return FushiGroupedListItem(
-                        index: index,
-                        count: threads.length,
-                        selected: selecting,
-                        child: FushiListItem(
-                        leading: const FushiListLeadingIcon(
-                          Icons.forum_outlined,
-                        ),
-                        // BUG-1474：线程 label 形如 `TextRender · 0x459f50 · #1a2b`，
-                        // 默认单行必被切。这里父容器（ListView 行）高度自由，
-                        // 按 BUG-1184 的规矩逐调用点放宽是安全的。
-                        titleMaxLines: 2,
-                        title: Text(
-                          '${labels[thread.key] ?? thread.label} · '
-                          '${thread.observedLineCount}',
-                        ),
-                        subtitle: Text(
-                          texthookerThreadSubtitle(
-                                audioLineCount: thread.audioLineCount,
-                                latestText: thread.displayPreviewText,
-                                // BUG-1474：一句话（常是「……」或人名）分辨不出
-                                // 这条是不是正文流；给最近 3 句。
-                                recentTexts: thread.recentPreviewTexts,
-                                audioLabel: t.game_text_thread_audio_count(
-                                  count: thread.audioLineCount,
-                                ),
-                                // BUG-2112：伪影线程折叠后像干净整句，必须明示。
-                                artifactLabel: thread.isArtifactDominated
-                                    ? t.game_text_thread_artifact_hint
-                                    : null,
-                              ) ??
-                              t.game_waiting_for_text,
-                          maxLines: 3,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        trailing: selecting
-                            ? const SizedBox.square(
-                                dimension: 24,
-                                child: FushiCircularProgressIndicator(),
-                              )
-                            : const FushiIcon(Icons.chevron_right),
-                        onTap: selecting
-                            ? null
-                            : () => unawaited(_selectThread(thread)),
-                        ),
-                      );
-                    }),
-                  ),
+                      padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+                      itemCount: threads.length,
+                      itemBuilder: fushiStaggeredItemBuilder((
+                        BuildContext context,
+                        int index,
+                      ) {
+                        final TexthookerTextThread thread = threads[index];
+                        final bool selecting =
+                            _selectingThreadKey == thread.key;
+                        return FushiGroupedListItem(
+                          index: index,
+                          count: threads.length,
+                          selected: selecting,
+                          child: FushiListItem(
+                            leading: const FushiListLeadingIcon(
+                              Icons.forum_outlined,
+                            ),
+                            // BUG-1474：线程 label 形如 `TextRender · 0x459f50 · #1a2b`，
+                            // 默认单行必被切。这里父容器（ListView 行）高度自由，
+                            // 按 BUG-1184 的规矩逐调用点放宽是安全的。
+                            titleMaxLines: 2,
+                            title: Text(
+                              '${labels[thread.key] ?? thread.label} · '
+                              '${thread.observedLineCount}',
+                            ),
+                            subtitle: Text(
+                              texthookerThreadSubtitle(
+                                    audioLineCount: thread.audioLineCount,
+                                    latestText: thread.displayPreviewText,
+                                    // BUG-1474：一句话（常是「……」或人名）分辨不出
+                                    // 这条是不是正文流；给最近 3 句。
+                                    recentTexts: thread.recentPreviewTexts,
+                                    audioLabel: t.game_text_thread_audio_count(
+                                      count: thread.audioLineCount,
+                                    ),
+                                    // BUG-2112：伪影线程折叠后像干净整句，必须明示。
+                                    artifactLabel: thread.isArtifactDominated
+                                        ? t.game_text_thread_artifact_hint
+                                        : null,
+                                  ) ??
+                                  t.game_waiting_for_text,
+                              maxLines: 3,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            trailing: selecting
+                                ? const SizedBox.square(
+                                    dimension: 24,
+                                    child: FushiCircularProgressIndicator(),
+                                  )
+                                : const FushiIcon(Icons.chevron_right),
+                            onTap: selecting
+                                ? null
+                                : () => unawaited(_selectThread(thread)),
+                          ),
+                        );
+                      }),
+                    ),
                   ),
           ),
         ],
@@ -341,8 +342,8 @@ class _GalCaptureSetupDialogState extends State<GalCaptureSetupDialog> {
     final String? format = state.audioFormat == null
         ? null
         : '${state.audioFormat!.sampleRate} Hz · '
-            '${state.audioFormat!.channels} ch · '
-            '${state.audioFormat!.bitsPerSample} bit';
+              '${state.audioFormat!.channels} ch · '
+              '${state.audioFormat!.bitsPerSample} bit';
     return FushiCard(
       padding: EdgeInsets.zero,
       child: Column(
@@ -360,8 +361,8 @@ class _GalCaptureSetupDialogState extends State<GalCaptureSetupDialog> {
                   Text(
                     t.game_audio_requires_thread,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
                   ),
                   const SizedBox(height: 8),
                   GalAudioTracksPanel(

@@ -79,7 +79,8 @@ void main() {
     expect(
       touchSource,
       contains(
-          'if (!isDragLocked()) {\n                                savePosition();'),
+        'if (!isDragLocked()) {\n                                savePosition();',
+      ),
       reason: '位置锁下不保存拖动位置，但普通 tap 仍会进入 onOverlayTapped。',
     );
     expect(
@@ -126,15 +127,14 @@ void main() {
   });
 }
 
-String _functionSource(
-  String source,
-  String startToken,
-  String endToken,
-) {
+String _functionSource(String source, String startToken, String endToken) {
   final int start = source.indexOf(startToken);
   final int end = source.indexOf(endToken, start + startToken.length);
   expect(start, isNonNegative, reason: 'missing $startToken');
-  expect(end, greaterThan(start),
-      reason: 'missing $endToken after $startToken');
+  expect(
+    end,
+    greaterThan(start),
+    reason: 'missing $endToken after $startToken',
+  );
   return source.substring(start, end);
 }

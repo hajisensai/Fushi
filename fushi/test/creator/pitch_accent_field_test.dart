@@ -12,10 +12,15 @@ void main() {
     });
 
     test('complex word with multiple combiners', () {
-      expect(
-        PitchSvg.hiraToMora('しゅんかしゅうとう'),
-        ['しゅ', 'ん', 'か', 'しゅ', 'う', 'と', 'う'],
-      );
+      expect(PitchSvg.hiraToMora('しゅんかしゅうとう'), [
+        'しゅ',
+        'ん',
+        'か',
+        'しゅ',
+        'う',
+        'と',
+        'う',
+      ]);
     });
 
     test('katakana small kana also combine', () {

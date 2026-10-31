@@ -90,11 +90,16 @@ Future<VideoLibraryDeleteResult> deleteVideoBooksWithDecision({
   List<BlurayExtraDeletionTombstone> extraTombstones =
       const <BlurayExtraDeletionTombstone>[];
   try {
-    extraTombstones =
-        await planBlurayExtraDeletionTombstones(database, targetUids);
+    extraTombstones = await planBlurayExtraDeletionTombstones(
+      database,
+      targetUids,
+    );
   } catch (e, stack) {
-    ErrorLogService.instance
-        .log('VideoLibraryDelete.planBlurayExtraTombstones', e, stack);
+    ErrorLogService.instance.log(
+      'VideoLibraryDelete.planBlurayExtraTombstones',
+      e,
+      stack,
+    );
   }
   int deleted;
   List<VideoBookDeleteFailure> failed = const <VideoBookDeleteFailure>[];
@@ -157,8 +162,11 @@ Future<VideoLibraryDeleteResult> deleteVideoBooksWithDecision({
         },
       );
     } catch (e, stack) {
-      ErrorLogService.instance
-          .log('VideoLibraryDelete.writeBlurayExtraTombstones', e, stack);
+      ErrorLogService.instance.log(
+        'VideoLibraryDelete.writeBlurayExtraTombstones',
+        e,
+        stack,
+      );
     }
   }
   return (deleted: deleted, failed: failed, localFiles: report);
@@ -208,7 +216,11 @@ Future<void> _deleteStatisticsForVideos({
         bookUid: bookUid,
       );
     } catch (e, stack) {
-      ErrorLogService.instance.log('VideoLibraryDelete.deleteStatistics', e, stack);
+      ErrorLogService.instance.log(
+        'VideoLibraryDelete.deleteStatistics',
+        e,
+        stack,
+      );
     }
   }
 }

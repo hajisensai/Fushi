@@ -20,20 +20,28 @@ void main() {
         'fushi_dict_74259f28356918b3397453d0a5b467182d1ba404.svg',
       );
       expect(
-          ankiDictionaryMediaCacheFilename('明鏡', path), isNot(contains('-')));
+        ankiDictionaryMediaCacheFilename('明鏡', path),
+        isNot(contains('-')),
+      );
     });
 
     test('falls back to bin when no usable extension', () {
-      expect(ankiDictionaryMediaCacheFilename('明鏡', 'gaiji/noext'),
-          'fushi_dict_7467bc1485d9e93b46b4c5885134bd3819e80c1e.bin');
-      expect(ankiDictionaryMediaCacheFilename('明鏡', 'trailingdot.'),
-          'fushi_dict_17f7764207115aa3b04a6466c0c0b8d8e6f2d3bf.bin');
+      expect(
+        ankiDictionaryMediaCacheFilename('明鏡', 'gaiji/noext'),
+        'fushi_dict_7467bc1485d9e93b46b4c5885134bd3819e80c1e.bin',
+      );
+      expect(
+        ankiDictionaryMediaCacheFilename('明鏡', 'trailingdot.'),
+        'fushi_dict_17f7764207115aa3b04a6466c0c0b8d8e6f2d3bf.bin',
+      );
     });
 
     test('same dict+path is stable within a run', () {
       const p = 'gaiji/参照.svg';
-      expect(ankiDictionaryMediaCacheFilename('明鏡', p),
-          ankiDictionaryMediaCacheFilename('明鏡', p));
+      expect(
+        ankiDictionaryMediaCacheFilename('明鏡', p),
+        ankiDictionaryMediaCacheFilename('明鏡', p),
+      );
     });
 
     test('BUG-904: different dictionaries never share a cache name', () {

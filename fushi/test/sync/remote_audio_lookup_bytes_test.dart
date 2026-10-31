@@ -22,13 +22,19 @@ void main() {
 
     test('null / 空 → null（不下载不读文件）', () async {
       expect(
-        await remoteAudioLookupFromResolvedUrl(null,
-            downloadRemote: neverDownload, loadLocalFile: neverLocal),
+        await remoteAudioLookupFromResolvedUrl(
+          null,
+          downloadRemote: neverDownload,
+          loadLocalFile: neverLocal,
+        ),
         isNull,
       );
       expect(
-        await remoteAudioLookupFromResolvedUrl('',
-            downloadRemote: neverDownload, loadLocalFile: neverLocal),
+        await remoteAudioLookupFromResolvedUrl(
+          '',
+          downloadRemote: neverDownload,
+          loadLocalFile: neverLocal,
+        ),
         isNull,
       );
     });
@@ -78,22 +84,29 @@ void main() {
           return Uint8List.fromList(<int>[7]);
         },
       );
-      expect(read.single.endsWith('a.mp3'), isTrue,
-          reason: 'file:// 应转成本地路径: ${read.single}');
+      expect(
+        read.single.endsWith('a.mp3'),
+        isTrue,
+        reason: 'file:// 应转成本地路径: ${read.single}',
+      );
       expect(r?.contentType, 'audio/mpeg');
     });
 
     test('本地读取返回 null / 空字节 → null', () async {
       expect(
-        await remoteAudioLookupFromResolvedUrl('/tmp/x.mp3',
-            downloadRemote: neverDownload,
-            loadLocalFile: (String _) async => null),
+        await remoteAudioLookupFromResolvedUrl(
+          '/tmp/x.mp3',
+          downloadRemote: neverDownload,
+          loadLocalFile: (String _) async => null,
+        ),
         isNull,
       );
       expect(
-        await remoteAudioLookupFromResolvedUrl('/tmp/x.mp3',
-            downloadRemote: neverDownload,
-            loadLocalFile: (String _) async => Uint8List(0)),
+        await remoteAudioLookupFromResolvedUrl(
+          '/tmp/x.mp3',
+          downloadRemote: neverDownload,
+          loadLocalFile: (String _) async => Uint8List(0),
+        ),
         isNull,
       );
     });
@@ -111,9 +124,13 @@ void main() {
       expect(remoteAudioContentTypeForPath('a.wav'), 'audio/wav');
       expect(remoteAudioContentTypeForPath('a.flac'), 'audio/flac');
       expect(
-          remoteAudioContentTypeForPath('a.bin'), 'application/octet-stream');
+        remoteAudioContentTypeForPath('a.bin'),
+        'application/octet-stream',
+      );
       expect(
-          remoteAudioContentTypeForPath('noext'), 'application/octet-stream');
+        remoteAudioContentTypeForPath('noext'),
+        'application/octet-stream',
+      );
     });
 
     test('响应头优先 audio/*（去参数），缺失/非音频回退路径扩展名', () {
@@ -134,16 +151,23 @@ void main() {
 
   group('回归守卫：server 音频路径走全源解析（非只查本地库）', () {
     test('app_model.lookupAudio 复用 resolveLookupAudioUrl', () {
-      final String src =
-          File('lib/src/models/app_model.dart').readAsStringSync();
+      final String src = File(
+        'lib/src/models/app_model.dart',
+      ).readAsStringSync();
       // 定位 lookupAudio 覆盖实现，断言它经 resolveLookupAudioUrl（全源）解析。
       final int idx = src.indexOf('Future<RemoteAudioLookup?> lookupAudio({');
       expect(idx, greaterThanOrEqualTo(0), reason: '未找到 lookupAudio 实现');
       final String body = src.substring(idx, idx + 800);
-      expect(body.contains('resolveLookupAudioUrl('), isTrue,
-          reason: 'lookupAudio 未走全源 resolveLookupAudioUrl（回退成只查本地库？）');
-      expect(body.contains('remoteAudioLookupFromResolvedUrl('), isTrue,
-          reason: 'lookupAudio 未经 remoteAudioLookupFromResolvedUrl 归一字节');
+      expect(
+        body.contains('resolveLookupAudioUrl('),
+        isTrue,
+        reason: 'lookupAudio 未走全源 resolveLookupAudioUrl（回退成只查本地库？）',
+      );
+      expect(
+        body.contains('remoteAudioLookupFromResolvedUrl('),
+        isTrue,
+        reason: 'lookupAudio 未经 remoteAudioLookupFromResolvedUrl 归一字节',
+      );
     });
   });
 }

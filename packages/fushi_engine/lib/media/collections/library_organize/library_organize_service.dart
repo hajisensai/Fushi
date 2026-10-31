@@ -66,9 +66,9 @@ class LibraryOrganizeService {
     AiChatClient Function()? clientFactory,
     DateTime Function()? clock,
     Set<String> Function()? allowedRejectedKeys,
-  })  : _clientFactory = clientFactory ?? AiChatClient.new,
-        _clock = clock ?? DateTime.now,
-        _allowed = allowedRejectedKeys ?? (() => const <String>{});
+  }) : _clientFactory = clientFactory ?? AiChatClient.new,
+       _clock = clock ?? DateTime.now,
+       _allowed = allowedRejectedKeys ?? (() => const <String>{});
 
   final FushiDatabase db;
   final AiSettingsSource settings;
@@ -87,13 +87,12 @@ class LibraryOrganizeService {
   Future<LibraryOrganizeFacts> _facts(
     CollectionShelfDomain domain,
     Set<String>? onlyEntryKeys,
-  ) =>
-      loadLibraryOrganizeFacts(
-        db,
-        domain,
-        onlyEntryKeys: onlyEntryKeys,
-        allowedKeys: _allowed(),
-      );
+  ) => loadLibraryOrganizeFacts(
+    db,
+    domain,
+    onlyEntryKeys: onlyEntryKeys,
+    allowedKeys: _allowed(),
+  );
 
   AiProviderConfig? get provider => resolveLibraryOrganizeAiProvider(settings);
 
@@ -105,7 +104,9 @@ class LibraryOrganizeService {
     bool Function()? isCancelled,
   }) async {
     final AiProviderConfig? useProvider = provider;
-    final int runId = await db.into(db.libraryOrganizeRuns).insert(
+    final int runId = await db
+        .into(db.libraryOrganizeRuns)
+        .insert(
           LibraryOrganizeRunsCompanion.insert(
             domain: domain.name,
             trigger: trigger.name,
@@ -123,27 +124,28 @@ class LibraryOrganizeService {
     LibraryOrganizeStatus status = LibraryOrganizeStatus.done;
     String? error;
 
-    Future<int> countChanges() async =>
-        (await (db.select(db.libraryOrganizeChanges)
-                  ..where((t) => t.runId.equals(runId)))
-                .get())
-            .length;
+    Future<int> countChanges() async => (await (db.select(
+      db.libraryOrganizeChanges,
+    )..where((t) => t.runId.equals(runId))).get()).length;
 
     try {
       // ① 规则：刮到同一个作品的散条目成组（不花钱，没提供商也做）。
       LibraryOrganizeFacts facts = await _facts(domain, onlyEntryKeys);
-      touched.addAll(await applyOrganizeActions(
-        db,
-        runId: runId,
-        actions: planFromRules(facts: facts, nameOf: _ruleGroupName),
-      ));
+      touched.addAll(
+        await applyOrganizeActions(
+          db,
+          runId: runId,
+          actions: planFromRules(facts: facts, nameOf: _ruleGroupName),
+        ),
+      );
 
       // ② AI。
       if (useProvider == null) {
         status = LibraryOrganizeStatus.noProvider;
         error = 'provider_not_configured';
       } else if (trigger == OrganizeTrigger.auto &&
-          await autoRequestsToday(domain) >= kLibraryOrganizeDailyAutoRequests) {
+          await autoRequestsToday(domain) >=
+              kLibraryOrganizeDailyAutoRequests) {
         status = LibraryOrganizeStatus.overBudget;
         error = 'daily_budget';
       } else {
@@ -157,7 +159,8 @@ class LibraryOrganizeService {
               break;
             }
             if (trigger == OrganizeTrigger.auto &&
-                requests + await autoRequestsToday(domain, excludeRunId: runId) >=
+                requests +
+                        await autoRequestsToday(domain, excludeRunId: runId) >=
                     kLibraryOrganizeDailyAutoRequests) {
               status = LibraryOrganizeStatus.overBudget;
               error = 'daily_budget';
@@ -192,17 +195,19 @@ class LibraryOrganizeService {
               );
               continue;
             }
-            touched.addAll(await applyOrganizeActions(
-              db,
-              runId: runId,
-              actions: planFromAiReply(
-                facts: facts,
-                chunk: chunk,
-                reply: reply,
-                trigger: trigger,
-                tagPrefix: videoTagPrefix,
+            touched.addAll(
+              await applyOrganizeActions(
+                db,
+                runId: runId,
+                actions: planFromAiReply(
+                  facts: facts,
+                  chunk: chunk,
+                  reply: reply,
+                  trigger: trigger,
+                  tagPrefix: videoTagPrefix,
+                ),
               ),
-            ));
+            );
           }
           if (status == LibraryOrganizeStatus.done) {
             onProgress?.call(plan.length, plan.length);
@@ -213,22 +218,24 @@ class LibraryOrganizeService {
       }
       // ③ 本机同系列整理器合集合成一个（与同步后同一套收敛规划），并记进这次的整理
       // 记录——撤销整次整理时这些合并也能还原。
-      touched.addAll(await applyOrganizeActions(
-        db,
-        runId: runId,
-        actions: <OrganizeAction>[
-          for (final ConvergenceMerge m in planOrganizeConvergence(
-            await loadConvergenceCollections(db),
-          ))
-            OrganizeAction(
-              kind: OrganizeActionKind.merge,
-              source: 'rule',
-              confidence: AiOrganizeConfidence.high,
-              targetCollectionId: m.targetId,
-              sourceCollectionIds: m.sourceIds,
-            ),
-        ],
-      ));
+      touched.addAll(
+        await applyOrganizeActions(
+          db,
+          runId: runId,
+          actions: <OrganizeAction>[
+            for (final ConvergenceMerge m in planOrganizeConvergence(
+              await loadConvergenceCollections(db),
+            ))
+              OrganizeAction(
+                kind: OrganizeActionKind.merge,
+                source: 'rule',
+                confidence: AiOrganizeConfidence.high,
+                targetCollectionId: m.targetId,
+                sourceCollectionIds: m.sourceIds,
+              ),
+          ],
+        ),
+      );
       changes = await countChanges();
     } on Object catch (e, stack) {
       engineLog.log('libraryOrganize.run', e, stack);
@@ -237,24 +244,27 @@ class LibraryOrganizeService {
       changes = await countChanges();
     }
 
-    await (db.update(db.libraryOrganizeRuns)..where((t) => t.id.equals(runId)))
-        .write(LibraryOrganizeRunsCompanion(
-      finishedAt: Value<int?>(_clock().millisecondsSinceEpoch),
-      // 只有每一块都处理完才是 done——自动整理的水位只认 done（见
-      // [lastCompletedAutoRunStartedAt]），中途被额度 / 失败 / 取消截断的那批新条目
-      // 下一轮还会再看。
-      status: Value<String>(switch (status) {
-        LibraryOrganizeStatus.done => 'done',
-        LibraryOrganizeStatus.cancelled => 'cancelled',
-        LibraryOrganizeStatus.failed => 'failed',
-        LibraryOrganizeStatus.overBudget => 'partial',
-        LibraryOrganizeStatus.noProvider => 'skipped',
-      }),
-      requestCount: Value<int>(requests),
-      inputTokens: Value<int>(inputTokens),
-      outputTokens: Value<int>(outputTokens),
-      error: Value<String?>(error),
-    ));
+    await (db.update(
+      db.libraryOrganizeRuns,
+    )..where((t) => t.id.equals(runId))).write(
+      LibraryOrganizeRunsCompanion(
+        finishedAt: Value<int?>(_clock().millisecondsSinceEpoch),
+        // 只有每一块都处理完才是 done——自动整理的水位只认 done（见
+        // [lastCompletedAutoRunStartedAt]），中途被额度 / 失败 / 取消截断的那批新条目
+        // 下一轮还会再看。
+        status: Value<String>(switch (status) {
+          LibraryOrganizeStatus.done => 'done',
+          LibraryOrganizeStatus.cancelled => 'cancelled',
+          LibraryOrganizeStatus.failed => 'failed',
+          LibraryOrganizeStatus.overBudget => 'partial',
+          LibraryOrganizeStatus.noProvider => 'skipped',
+        }),
+        requestCount: Value<int>(requests),
+        inputTokens: Value<int>(inputTokens),
+        outputTokens: Value<int>(outputTokens),
+        error: Value<String?>(error),
+      ),
+    );
     return LibraryOrganizeResult(
       status: status,
       runId: runId,
@@ -271,16 +281,19 @@ class LibraryOrganizeService {
   Future<int?> lastCompletedAutoRunStartedAt(
     CollectionShelfDomain domain,
   ) async {
-    final LibraryOrganizeRunRow? row = await (db.select(db.libraryOrganizeRuns)
-          ..where((t) =>
-              t.domain.equals(domain.name) &
-              t.trigger.equals(OrganizeTrigger.auto.name) &
-              t.status.equals('done'))
-          ..orderBy(<OrderClauseGenerator<$LibraryOrganizeRunsTable>>[
-            (t) => OrderingTerm.desc(t.startedAt),
-          ])
-          ..limit(1))
-        .getSingleOrNull();
+    final LibraryOrganizeRunRow? row =
+        await (db.select(db.libraryOrganizeRuns)
+              ..where(
+                (t) =>
+                    t.domain.equals(domain.name) &
+                    t.trigger.equals(OrganizeTrigger.auto.name) &
+                    t.status.equals('done'),
+              )
+              ..orderBy(<OrderClauseGenerator<$LibraryOrganizeRunsTable>>[
+                (t) => OrderingTerm.desc(t.startedAt),
+              ])
+              ..limit(1))
+            .getSingleOrNull();
     return row?.startedAt;
   }
 
@@ -290,15 +303,20 @@ class LibraryOrganizeService {
     int? excludeRunId,
   }) async {
     final DateTime now = _clock();
-    final int dayStart =
-        DateTime(now.year, now.month, now.day).millisecondsSinceEpoch;
+    final int dayStart = DateTime(
+      now.year,
+      now.month,
+      now.day,
+    ).millisecondsSinceEpoch;
     int total = 0;
-    for (final LibraryOrganizeRunRow r in await (db.select(db.libraryOrganizeRuns)
-          ..where((t) =>
-              t.domain.equals(domain.name) &
-              t.trigger.equals(OrganizeTrigger.auto.name) &
-              t.startedAt.isBiggerOrEqualValue(dayStart)))
-        .get()) {
+    for (final LibraryOrganizeRunRow r
+        in await (db.select(db.libraryOrganizeRuns)..where(
+              (t) =>
+                  t.domain.equals(domain.name) &
+                  t.trigger.equals(OrganizeTrigger.auto.name) &
+                  t.startedAt.isBiggerOrEqualValue(dayStart),
+            ))
+            .get()) {
       if (r.id == excludeRunId) continue;
       total += r.requestCount;
     }
@@ -321,9 +339,9 @@ List<List<String>> chunkOrganizeEntries(List<OrganizeEntry> entries) {
   final List<OrganizeEntry> sorted = List<OrganizeEntry>.of(entries)
     ..sort((OrganizeEntry a, OrganizeEntry b) {
       // 同一合集的成员挨着放（按合集里最小标题作排序锚）。
-      final int c = foldMediaTitle(a.item.title).compareTo(
-        foldMediaTitle(b.item.title),
-      );
+      final int c = foldMediaTitle(
+        a.item.title,
+      ).compareTo(foldMediaTitle(b.item.title));
       return c != 0 ? c : a.memberKey.compareTo(b.memberKey);
     });
   final List<List<String>> out = <List<String>>[];
@@ -363,15 +381,18 @@ OrganizeChunk? buildOrganizeChunk(
   final Set<String> grams = <String>{
     for (final OrganizeEntry e in entries) ..._bigrams(e.item.title),
   };
-  final List<(OrganizeCollectionFact, int)> scored = <(OrganizeCollectionFact, int)>[
-    for (final OrganizeCollectionFact c in facts.collections)
-      if (!required.contains(c.id))
-        (c, _bigrams(c.name).where(grams.contains).length),
-  ]
-    ..sort(((OrganizeCollectionFact, int) a, (OrganizeCollectionFact, int) b) {
-      final int c = b.$2.compareTo(a.$2);
-      return c != 0 ? c : a.$1.id.compareTo(b.$1.id);
-    });
+  final List<(OrganizeCollectionFact, int)> scored =
+      <(OrganizeCollectionFact, int)>[
+        for (final OrganizeCollectionFact c in facts.collections)
+          if (!required.contains(c.id))
+            (c, _bigrams(c.name).where(grams.contains).length),
+      ]..sort((
+        (OrganizeCollectionFact, int) a,
+        (OrganizeCollectionFact, int) b,
+      ) {
+        final int c = b.$2.compareTo(a.$2);
+        return c != 0 ? c : a.$1.id.compareTo(b.$1.id);
+      });
   final List<OrganizeCollectionFact> collections = <OrganizeCollectionFact>[
     for (final OrganizeCollectionFact c in facts.collections)
       if (required.contains(c.id)) c,
@@ -384,7 +405,8 @@ Set<String> _bigrams(String title) {
   final List<int> r = foldMediaTitle(title).runes.toList();
   if (r.length < 2) return <String>{if (r.isNotEmpty) String.fromCharCodes(r)};
   return <String>{
-    for (int i = 0; i + 1 < r.length; i++) String.fromCharCodes(r.sublist(i, i + 2)),
+    for (int i = 0; i + 1 < r.length; i++)
+      String.fromCharCodes(r.sublist(i, i + 2)),
   };
 }
 
@@ -429,8 +451,9 @@ AiLibraryOrganizeRequest organizeRequestOf(
           folder: e.item.folder,
           season: e.item.season,
           episode: e.item.episode,
-          inCollection:
-              e.managedCollectionId == null ? null : cid[e.managedCollectionId],
+          inCollection: e.managedCollectionId == null
+              ? null
+              : cid[e.managedCollectionId],
         ),
     ],
   );

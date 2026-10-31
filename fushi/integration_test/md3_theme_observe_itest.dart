@@ -41,15 +41,19 @@ void main() {
         for (final (HomeTab tab, String name) in pages) {
           HomePage.debugSelectTab?.call(tab);
           await tester.pump(const Duration(seconds: 3));
-          final ObserveShot shot =
-              await captureFlutterFrame(tester, '$name-$mode');
+          final ObserveShot shot = await captureFlutterFrame(
+            tester,
+            '$name-$mode',
+          );
           expect(shot.saved, isTrue, reason: '$name-$mode 应抓到帧');
         }
         final ColorScheme cs = Theme.of(
           tester.element(find.byType(Scaffold).first),
         ).colorScheme;
-        debugPrint('[md3-probe] $mode brightness=${cs.brightness} '
-            'surface=${cs.surface} primary=${cs.primary}');
+        debugPrint(
+          '[md3-probe] $mode brightness=${cs.brightness} '
+          'surface=${cs.surface} primary=${cs.primary}',
+        );
       }
     } finally {
       await appModel.setBrightnessMode(original);

@@ -90,9 +90,9 @@ void main() {
       // 用正则而不是带精确缩进的字面量：制卡模块关掉时这段被包进
       // `if (miningEnabled) { ... }`（连查重请求一起停），缩进从 8 格变 12 格，
       // 调用本身没变。写死缩进会让这类合法改动无辜变红。
-      final Iterable<RegExpMatch> initHits =
-          RegExp(r'scheduleEntryStateCheck\(\s*mineButton,')
-              .allMatches(mineButtonBlock);
+      final Iterable<RegExpMatch> initHits = RegExp(
+        r'scheduleEntryStateCheck\(\s*mineButton,',
+      ).allMatches(mineButtonBlock);
       final int initIdx = initHits.isEmpty ? -1 : initHits.last.start;
       expect(
         initIdx,

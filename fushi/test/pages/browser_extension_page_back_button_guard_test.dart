@@ -22,37 +22,59 @@ import '../helpers/source_guard.dart';
 /// 误判，故先经 [maskCommentsAndScriptLines] 掩掉注释与三引号语料。
 void main() {
   test('BUG-1748/1954：扩展页页头按当前 PageRoute 分流返回键（顶层 tab 身份下仍不出箭头）', () {
-    final File f =
-        File('lib/src/pages/implementations/browser_extension_page.dart');
-    expect(f.existsSync(), isTrue,
-        reason: '找不到 browser_extension_page.dart（路径变了要同步本守卫）');
+    final File f = File(
+      'lib/src/pages/implementations/browser_extension_page.dart',
+    );
+    expect(
+      f.existsSync(),
+      isTrue,
+      reason: '找不到 browser_extension_page.dart（路径变了要同步本守卫）',
+    );
     final String code = maskCommentsAndScriptLines(f.readAsStringSync());
 
     final int headerAt = code.indexOf('FushiPageHeader(');
-    expect(headerAt, greaterThanOrEqualTo(0),
-        reason: '页头必须仍是 FushiPageHeader（BUG-1658 的统一大标题几何）');
+    expect(
+      headerAt,
+      greaterThanOrEqualTo(0),
+      reason: '页头必须仍是 FushiPageHeader（BUG-1658 的统一大标题几何）',
+    );
 
     // 断言字面量：'leading: ModalRoute.of(context)?.isFirst == false'
     // 必须是条件分流而不是无条件给 leading——作顶层 tab 时侧栏就在旁边，
     // 无条件出箭头会让 tab 页头凭空多一个不能用的返回键。
     final int leadingAt = code.indexOf(
-        'leading: ModalRoute.of(context)?.isFirst == false', headerAt);
-    expect(leadingAt, greaterThan(headerAt),
-        reason: '被设置 push 成全屏路由时侧栏被盖住，页头必须承接返回键；'
-            '且必须按当前 PageRoute 分流，顶层 tab 身份下不出箭头');
+      'leading: ModalRoute.of(context)?.isFirst == false',
+      headerAt,
+    );
+    expect(
+      leadingAt,
+      greaterThan(headerAt),
+      reason:
+          '被设置 push 成全屏路由时侧栏被盖住，页头必须承接返回键；'
+          '且必须按当前 PageRoute 分流，顶层 tab 身份下不出箭头',
+    );
 
     // BUG-1954：反向钉死旧判据不得复活——canPop() 在下拉框 push PopupRoute 期间为真。
-    expect(code, isNot(contains('leading: Navigator.of(context).canPop()')),
-        reason: '不得用 canPop() 当分流判据：下拉框的 PopupRoute 会让它变真');
+    expect(
+      code,
+      isNot(contains('leading: Navigator.of(context).canPop()')),
+      reason: '不得用 canPop() 当分流判据：下拉框的 PopupRoute 会让它变真',
+    );
 
     // 断言字面量：'maybePop()'——真正能退出去，而不是只画一个箭头。
-    expect(code.substring(leadingAt, leadingAt + 400), contains('maybePop()'),
-        reason: '返回键必须真的 pop 路由');
+    expect(
+      code.substring(leadingAt, leadingAt + 400),
+      contains('maybePop()'),
+      reason: '返回键必须真的 pop 路由',
+    );
 
     // 未选用的替代方案（改用 AdaptiveSettingsScaffold/FushiToolScaffold 拿自动
     // leading）会把顶层 tab 的页头几何换成小标题工具栏，正是 BUG-1658 修掉的
     // 东西，属回归。这里钉死不得回退到 AppBar 门头。
-    expect(code, isNot(contains('appBar: AppBar(')),
-        reason: '不得回退到旧 AppBar 门头（BUG-1658）');
+    expect(
+      code,
+      isNot(contains('appBar: AppBar(')),
+      reason: '不得回退到旧 AppBar 门头（BUG-1658）',
+    );
   });
 }

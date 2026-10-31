@@ -76,8 +76,11 @@ Uint8List _encodeWoff(int flavor, List<_Tbl> tables) {
 }
 
 ({int flavor, Map<int, Uint8List> tables}) _parseSfnt(Uint8List sfnt) {
-  final ByteData bd =
-      ByteData.view(sfnt.buffer, sfnt.offsetInBytes, sfnt.lengthInBytes);
+  final ByteData bd = ByteData.view(
+    sfnt.buffer,
+    sfnt.offsetInBytes,
+    sfnt.lengthInBytes,
+  );
   final int flavor = bd.getUint32(0);
   final int n = bd.getUint16(4);
   final Map<int, Uint8List> tables = <int, Uint8List>{};
@@ -97,7 +100,9 @@ void main() {
       final List<_Tbl> entries = <_Tbl>[
         _Tbl(_tag('aaaa'), _filled(200, 7)), // compressible -> zlib path
         _Tbl(
-            _tag('bbbb'), Uint8List.fromList(<int>[1, 2, 3])), // -> stored path
+          _tag('bbbb'),
+          Uint8List.fromList(<int>[1, 2, 3]),
+        ), // -> stored path
         _Tbl(_tag('cccc'), _filled(64, 3)),
       ];
       final Uint8List woff = _encodeWoff(0x00010000, entries);
@@ -109,8 +114,11 @@ void main() {
       expect(parsed.flavor, 0x00010000);
       expect(parsed.tables.length, entries.length);
       for (final _Tbl e in entries) {
-        expect(parsed.tables[e.tag], equals(e.data),
-            reason: 'table 0x${e.tag.toRadixString(16)} data mismatch');
+        expect(
+          parsed.tables[e.tag],
+          equals(e.data),
+          reason: 'table 0x${e.tag.toRadixString(16)} data mismatch',
+        );
       }
     });
 
@@ -131,25 +139,28 @@ void main() {
       }
     });
 
-    test('recomputes head.checkSumAdjustment so font checksum is the magic',
-        () {
-      final Uint8List woff = _encodeWoff(0x00010000, <_Tbl>[
-        _Tbl(_tag('head'), Uint8List(54)),
-        _Tbl(_tag('aaaa'), _filled(40, 9)),
-      ]);
-      final Uint8List sfnt = FontDecoder.woffToSfnt(woff)!;
-      final ByteData bd = ByteData.view(sfnt.buffer);
-      int sum = 0;
-      for (int i = 0; i + 4 <= sfnt.length; i += 4) {
-        sum = (sum + bd.getUint32(i)) & 0xFFFFFFFF;
-      }
-      expect(sum, 0xB1B0AFBA);
-    });
+    test(
+      'recomputes head.checkSumAdjustment so font checksum is the magic',
+      () {
+        final Uint8List woff = _encodeWoff(0x00010000, <_Tbl>[
+          _Tbl(_tag('head'), Uint8List(54)),
+          _Tbl(_tag('aaaa'), _filled(40, 9)),
+        ]);
+        final Uint8List sfnt = FontDecoder.woffToSfnt(woff)!;
+        final ByteData bd = ByteData.view(sfnt.buffer);
+        int sum = 0;
+        for (int i = 0; i + 4 <= sfnt.length; i += 4) {
+          sum = (sum + bd.getUint32(i)) & 0xFFFFFFFF;
+        }
+        expect(sum, 0xB1B0AFBA);
+      },
+    );
 
     test('rejects non-WOFF bytes', () {
       expect(
-          FontDecoder.woffToSfnt(Uint8List.fromList(<int>[0, 1, 2, 3, 4, 5])),
-          isNull);
+        FontDecoder.woffToSfnt(Uint8List.fromList(<int>[0, 1, 2, 3, 4, 5])),
+        isNull,
+      );
     });
   });
 }

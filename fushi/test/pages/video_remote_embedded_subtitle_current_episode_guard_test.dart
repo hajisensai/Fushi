@@ -22,13 +22,19 @@ void main() {
         final String body = maskComments(
           methodBody(readVideoFushiSource(), method),
         );
-        expect(body.contains('widget.remoteInfo'), isFalse,
-            reason: '打开播放页时那一集不是当前集：\n$body');
+        expect(
+          body.contains('widget.remoteInfo'),
+          isFalse,
+          reason: '打开播放页时那一集不是当前集：\n$body',
+        );
         expect(body.contains('widget.remoteClient'), isFalse);
         expect(body.contains('_effectiveRemoteInfo'), isTrue);
         expect(body.contains('_effectiveRemoteClient'), isTrue);
-        expect(body.contains('episodeIndex: ep'), isTrue,
-            reason: 'host-playlist 模式按集取轨');
+        expect(
+          body.contains('episodeIndex: ep'),
+          isTrue,
+          reason: 'host-playlist 模式按集取轨',
+        );
       });
 
       test('$method 的下载失败有 OSD 与日志归宿', () {
@@ -36,10 +42,16 @@ void main() {
           methodBody(readVideoFushiSource(), method),
         );
         expect(body.contains('getRemoteVideoSubtitle'), isTrue);
-        expect(body.contains('ErrorLogService'), isTrue,
-            reason: '下载 4xx / 5xx / 断网要落日志');
-        expect(body.contains('video_subtitle_load_failed'), isTrue,
-            reason: '用户要看到失败而不是「点了没反应」');
+        expect(
+          body.contains('ErrorLogService'),
+          isTrue,
+          reason: '下载 4xx / 5xx / 断网要落日志',
+        );
+        expect(
+          body.contains('video_subtitle_load_failed'),
+          isTrue,
+          reason: '用户要看到失败而不是「点了没反应」',
+        );
       });
     }
   });

@@ -15,11 +15,13 @@ import '../helpers/scan_scale.dart';
 /// so it is excluded from this scan by basename. This guard fails if a
 /// `GOCSPX-` secret reappears in any OTHER committed Dart source under lib/.
 void main() {
-  test('no hardcoded GOCSPX- Google OAuth secret in committed lib/ sources',
-      () {
+  test('no hardcoded GOCSPX- Google OAuth secret in committed lib/ sources', () {
     final Directory dir = Directory('lib');
-    expect(dir.existsSync(), isTrue,
-        reason: 'run from the fushi/ package root');
+    expect(
+      dir.existsSync(),
+      isTrue,
+      reason: 'run from the fushi/ package root',
+    );
 
     // The gitignored file legitimately holds the real secret and is never
     // committed, so it is excluded from the committed-surface scan.
@@ -40,13 +42,18 @@ void main() {
       }
     }
 
-    expectScanScale(scanned,
-        what: 'lib/ 下入库的 .dart', atLeast: 750, measured: 938);
+    expectScanScale(
+      scanned,
+      what: 'lib/ 下入库的 .dart',
+      atLeast: 750,
+      measured: 938,
+    );
 
     expect(
       offenders,
       isEmpty,
-      reason: 'A Google OAuth client secret (GOCSPX-...) is hardcoded in '
+      reason:
+          'A Google OAuth client secret (GOCSPX-...) is hardcoded in '
           'committed source. Move the value to the gitignored '
           'lib/src/sync/google_oauth_secret.dart (copy from its .example.dart) '
           'and reference kGoogleOAuthClientSecret instead. Offenders:\n'

@@ -25,51 +25,82 @@ void main() {
     });
 
     test('emptySelection branch records an ErrorLogService entry', () {
-      expect(audiobookPart, contains('ReaderFushi.exportClip.emptySelection'),
-          reason: '空选区/纯外字分支此前只 debugPrint，必须补 ErrorLogService '
-              '(TODO-1005/BUG-472)。');
+      expect(
+        audiobookPart,
+        contains('ReaderFushi.exportClip.emptySelection'),
+        reason:
+            '空选区/纯外字分支此前只 debugPrint，必须补 ErrorLogService '
+            '(TODO-1005/BUG-472)。',
+      );
     });
 
     test('noAudio branch records an ErrorLogService entry', () {
-      expect(audiobookPart, contains('ReaderFushi.exportClip.noAudio'),
-          reason: '无音频分支此前只 debugPrint，必须补 ErrorLogService。');
+      expect(
+        audiobookPart,
+        contains('ReaderFushi.exportClip.noAudio'),
+        reason: '无音频分支此前只 debugPrint，必须补 ErrorLogService。',
+      );
     });
 
     test('unsupportedRange branch keeps its ErrorLogService entry', () {
       expect(
-          audiobookPart, contains('ReaderFushi.exportClip.unsupportedRange'),
-          reason: '跨章/跨文件/零长区间分支必须保留 ErrorLogService（明确用户文案）。');
+        audiobookPart,
+        contains('ReaderFushi.exportClip.unsupportedRange'),
+        reason: '跨章/跨文件/零长区间分支必须保留 ErrorLogService（明确用户文案）。',
+      );
     });
 
     test('M2 audio-clip-null branch records an ErrorLogService entry', () {
-      expect(audiobookPart, contains('ReaderFushi.exportClip.audioClipFailed'),
-          reason: 'M2 裁音频返回 null 此前只弹 toast、零日志——这正是用户看到的'
-              '「点了没反应、日志空白」。必须补 ErrorLogService (TODO-1005/BUG-472)。');
+      expect(
+        audiobookPart,
+        contains('ReaderFushi.exportClip.audioClipFailed'),
+        reason:
+            'M2 裁音频返回 null 此前只弹 toast、零日志——这正是用户看到的'
+            '「点了没反应、日志空白」。必须补 ErrorLogService (TODO-1005/BUG-472)。',
+      );
     });
 
-    test('M3 overlay/text-render null branches record ErrorLogService entries',
-        () {
-      expect(audiobookPart, contains('ReaderFushi.exportClip.noOverlay'),
-          reason: 'M3 无 Overlay 早返回必须记 ErrorLogService。');
-      expect(
-          audiobookPart, contains('ReaderFushi.exportClip.textRenderFailed'),
-          reason: 'M3 文本图渲染失败早返回必须记 ErrorLogService。');
-    });
+    test(
+      'M3 overlay/text-render null branches record ErrorLogService entries',
+      () {
+        expect(
+          audiobookPart,
+          contains('ReaderFushi.exportClip.noOverlay'),
+          reason: 'M3 无 Overlay 早返回必须记 ErrorLogService。',
+        );
+        expect(
+          audiobookPart,
+          contains('ReaderFushi.exportClip.textRenderFailed'),
+          reason: 'M3 文本图渲染失败早返回必须记 ErrorLogService。',
+        );
+      },
+    );
 
     test('M4 synth-failure branch records an ErrorLogService entry', () {
-      expect(audiobookPart, contains('ReaderFushi.exportClip.synthFailed'),
-          reason: 'M4 合成失败必须在管线层记一条 ErrorLogService 摘要。');
+      expect(
+        audiobookPart,
+        contains('ReaderFushi.exportClip.synthFailed'),
+        reason: 'M4 合成失败必须在管线层记一条 ErrorLogService 摘要。',
+      );
     });
 
-    test('inputFile-null & range-too-long exits record ErrorLogService entries',
-        () {
-      // BUG-472(a) follow-up：dispatcher 的 exportable 分支还有两处只 toast 的早
-      // 返回（inputFile == null 兜底 / 区间超长 refuse），此前漏补日志。
-      expect(audiobookPart, contains('ReaderFushi.exportClip.inputFileNull'),
-          reason: 'inputFile == null 兜底必须记 ErrorLogService。');
-      expect(audiobookPart, contains('ReaderFushi.exportClip.rangeTooLong'),
-          reason: '区间超长 refuse 必须记 ErrorLogService。');
-    });
+    test(
+      'inputFile-null & range-too-long exits record ErrorLogService entries',
+      () {
+        // BUG-472(a) follow-up：dispatcher 的 exportable 分支还有两处只 toast 的早
+        // 返回（inputFile == null 兜底 / 区间超长 refuse），此前漏补日志。
+        expect(
+          audiobookPart,
+          contains('ReaderFushi.exportClip.inputFileNull'),
+          reason: 'inputFile == null 兜底必须记 ErrorLogService。',
+        );
+        expect(
+          audiobookPart,
+          contains('ReaderFushi.exportClip.rangeTooLong'),
+          reason: '区间超长 refuse 必须记 ErrorLogService。',
+        );
+      },
+    );
 
     // ── 结构性守卫（BUG-472b）：未来再加「只 toast 不打日志」的静默 return 必须变红 ──
     //
@@ -84,8 +115,11 @@ void main() {
     // 列表后的第一个 '{' 起按大括号配平截出函数体。
     String fnBody(String src, String signature) {
       final int start = src.indexOf(signature);
-      expect(start, greaterThanOrEqualTo(0),
-          reason: '函数 $signature 必须存在（结构守卫锚点）。');
+      expect(
+        start,
+        greaterThanOrEqualTo(0),
+        reason: '函数 $signature 必须存在（结构守卫锚点）。',
+      );
       // 跳过参数列表：从签名末尾的 '(' 起配平圆括号。
       int i = start + signature.length - 1; // 指向起始 '('
       expect(src[i], '(', reason: 'signature 必须以 "(" 结尾。');
@@ -100,8 +134,11 @@ void main() {
       }
       // 参数列表已闭合，定位函数体起始 '{'。
       final int bodyStart = src.indexOf('{', i);
-      expect(bodyStart, greaterThanOrEqualTo(0),
-          reason: '函数 $signature 参数列表后必须有函数体 "{"。');
+      expect(
+        bodyStart,
+        greaterThanOrEqualTo(0),
+        reason: '函数 $signature 参数列表后必须有函数体 "{"。',
+      );
       int depth = 0;
       for (i = bodyStart; i < src.length; i++) {
         final String ch = src[i];
@@ -135,9 +172,13 @@ void main() {
       final int failures = countFailureToasts(body);
       final int logs = countErrorLogs(body);
       expect(failures, greaterThan(0), reason: '管线内应至少有一个失败出口（守卫自检，防截错函数体）。');
-      expect(logs, greaterThanOrEqualTo(failures),
-          reason: '管线内每个失败 toast/return 都必须伴随一条 ErrorLogService.log；'
-              '新增不打日志的静默 return 会让本守卫变红 (BUG-472b)。');
+      expect(
+        logs,
+        greaterThanOrEqualTo(failures),
+        reason:
+            '管线内每个失败 toast/return 都必须伴随一条 ErrorLogService.log；'
+            '新增不打日志的静默 return 会让本守卫变红 (BUG-472b)。',
+      );
     });
 
     test('每个失败出口都伴随一条 ErrorLogService.log（_exportAudiobookClip）', () {
@@ -145,46 +186,72 @@ void main() {
       final int failures = countFailureToasts(body);
       final int logs = countErrorLogs(body);
       expect(failures, greaterThan(0), reason: 'dispatcher 内应至少有一个失败出口（守卫自检）。');
-      expect(logs, greaterThanOrEqualTo(failures),
-          reason: 'dispatcher 内每个失败 toast/return 都必须伴随一条 '
-              'ErrorLogService.log；新增不打日志的静默 return 会让本守卫变红 '
-              '(BUG-472b)。');
+      expect(
+        logs,
+        greaterThanOrEqualTo(failures),
+        reason:
+            'dispatcher 内每个失败 toast/return 都必须伴随一条 '
+            'ErrorLogService.log；新增不打日志的静默 return 会让本守卫变红 '
+            '(BUG-472b)。',
+      );
     });
   });
 
-  group('ffmpeg early returns are no longer silent (desktop_audio_clipper)',
+  group('ffmpeg early returns are no longer silent (desktop_audio_clipper)', () {
+    test(
+      'extractAudioSegmentViaFfmpeg early returns report via shared helper',
       () {
-    test('extractAudioSegmentViaFfmpeg early returns report via shared helper',
-        () {
-      final String clipper =
-          libFile('../packages/fushi_engine/lib/utils/misc/desktop_audio_clipper.dart');
-      // The two pre-ffmpeg early returns (non-positive range / missing input)
-      // must go through _reportFfmpegEarlyReturn, which both logs to
-      // ErrorLogService and forwards onFailure.
-      expect(clipper, contains('void _reportFfmpegEarlyReturn('),
-          reason: '必须有统一的早返回上报 helper (TODO-1005/BUG-472)。');
-      expect('_reportFfmpegEarlyReturn'.allMatches(clipper).length,
+        final String clipper = libFile(
+          '../packages/fushi_engine/lib/utils/misc/desktop_audio_clipper.dart',
+        );
+        // The two pre-ffmpeg early returns (non-positive range / missing input)
+        // must go through _reportFfmpegEarlyReturn, which both logs to
+        // ErrorLogService and forwards onFailure.
+        expect(
+          clipper,
+          contains('void _reportFfmpegEarlyReturn('),
+          reason: '必须有统一的早返回上报 helper (TODO-1005/BUG-472)。',
+        );
+        expect(
+          '_reportFfmpegEarlyReturn'.allMatches(clipper).length,
           greaterThanOrEqualTo(3),
-          reason: 'helper 定义 + 至少两个早返回调用点（非正区间 / 输入缺失）。');
+          reason: 'helper 定义 + 至少两个早返回调用点（非正区间 / 输入缺失）。',
+        );
 
-      // Scope the no-silent-return assertions to the audio function body only
-      // (the GIF/cover functions keep their own silent returns — out of scope).
-      final int start =
-          clipper.indexOf('Future<String?> extractAudioSegmentViaFfmpeg({');
-      expect(start, greaterThanOrEqualTo(0),
-          reason: 'extractAudioSegmentViaFfmpeg must still exist.');
-      final int nextFn = clipper.indexOf('Future<String?> extract', start + 1);
-      final String body = nextFn > start
-          ? clipper.substring(start, nextFn)
-          : clipper.substring(start);
-      expect(body.contains('if (endMs <= startMs) return null;'), isFalse,
-          reason: '零长/错位区间不得再静默 return null（裁音频函数体内）。');
-      expect(body.contains('if (!File(inputPath).existsSync()) return null;'),
+        // Scope the no-silent-return assertions to the audio function body only
+        // (the GIF/cover functions keep their own silent returns — out of scope).
+        final int start = clipper.indexOf(
+          'Future<String?> extractAudioSegmentViaFfmpeg({',
+        );
+        expect(
+          start,
+          greaterThanOrEqualTo(0),
+          reason: 'extractAudioSegmentViaFfmpeg must still exist.',
+        );
+        final int nextFn = clipper.indexOf(
+          'Future<String?> extract',
+          start + 1,
+        );
+        final String body = nextFn > start
+            ? clipper.substring(start, nextFn)
+            : clipper.substring(start);
+        expect(
+          body.contains('if (endMs <= startMs) return null;'),
           isFalse,
-          reason: '输入缺失不得再静默 return null（裁音频函数体内）。');
-      expect('_reportFfmpegEarlyReturn'.allMatches(body).length, 2,
-          reason: '裁音频函数两条早返回都必须经 _reportFfmpegEarlyReturn 上报。');
-    });
+          reason: '零长/错位区间不得再静默 return null（裁音频函数体内）。',
+        );
+        expect(
+          body.contains('if (!File(inputPath).existsSync()) return null;'),
+          isFalse,
+          reason: '输入缺失不得再静默 return null（裁音频函数体内）。',
+        );
+        expect(
+          '_reportFfmpegEarlyReturn'.allMatches(body).length,
+          2,
+          reason: '裁音频函数两条早返回都必须经 _reportFfmpegEarlyReturn 上报。',
+        );
+      },
+    );
   });
 
   group('degenerate range is classified (not leaked to ffmpeg) — part B', () {
@@ -194,26 +261,26 @@ void main() {
       // M2 extractAudioSegmentViaFfmpeg 的静默 return null。
       final AudiobookClipBoundaryResult zeroLen =
           classifyAudiobookClipSelection(
-        selectedText: '僕は学校へ',
-        audioFileCount: 1,
-        sentenceRange: const AudioPlaybackRange(
-          audioFileIndex: 0,
-          startMs: 4000,
-          endMs: 4000,
-        ),
-      );
+            selectedText: '僕は学校へ',
+            audioFileCount: 1,
+            sentenceRange: const AudioPlaybackRange(
+              audioFileIndex: 0,
+              startMs: 4000,
+              endMs: 4000,
+            ),
+          );
       expect(zeroLen.kind, AudiobookClipBoundaryKind.unsupportedRange);
 
       final AudiobookClipBoundaryResult inverted =
           classifyAudiobookClipSelection(
-        selectedText: '僕は学校へ',
-        audioFileCount: 1,
-        sentenceRange: const AudioPlaybackRange(
-          audioFileIndex: 0,
-          startMs: 5000,
-          endMs: 4000,
-        ),
-      );
+            selectedText: '僕は学校へ',
+            audioFileCount: 1,
+            sentenceRange: const AudioPlaybackRange(
+              audioFileIndex: 0,
+              startMs: 5000,
+              endMs: 4000,
+            ),
+          );
       expect(inverted.kind, AudiobookClipBoundaryKind.unsupportedRange);
       expect(inverted.isExportable, isFalse);
     });

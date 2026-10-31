@@ -122,21 +122,22 @@ class _CancellingPlatform implements AppleSpeechPlatform {
 void main() {
   group('parseAppleSpeechPayload', () {
     test('正常载荷：字段名与时间原样落地', () {
-      final AppleSpeechResult result =
-          parseAppleSpeechPayload(<Object?, Object?>{
-        'durationMs': 5000,
-        'segments': <Object?>[
-          <Object?, Object?>{
-            'text': 'hello',
-            'startMs': 100,
-            'endMs': 900,
-            'tokens': <Object?>[
-              <Object?, Object?>{'text': 'hel', 'startMs': 100},
-              <Object?, Object?>{'text': 'lo', 'startMs': 400},
-            ],
-          },
-        ],
-      });
+      final AppleSpeechResult result = parseAppleSpeechPayload(
+        <Object?, Object?>{
+          'durationMs': 5000,
+          'segments': <Object?>[
+            <Object?, Object?>{
+              'text': 'hello',
+              'startMs': 100,
+              'endMs': 900,
+              'tokens': <Object?>[
+                <Object?, Object?>{'text': 'hel', 'startMs': 100},
+                <Object?, Object?>{'text': 'lo', 'startMs': 400},
+              ],
+            },
+          ],
+        },
+      );
       expect(result.durationMs, 5000);
       expect(result.segments.single.text, 'hello');
       expect(result.segments.single.startMs, 100);
@@ -146,15 +147,16 @@ void main() {
     });
 
     test('空文本与退化区间逐条丢弃，不毁掉整份', () {
-      final AppleSpeechResult result =
-          parseAppleSpeechPayload(<Object?, Object?>{
-        'durationMs': 1000,
-        'segments': <Object?>[
-          <Object?, Object?>{'text': '   ', 'startMs': 0, 'endMs': 100},
-          <Object?, Object?>{'text': 'bad', 'startMs': 500, 'endMs': 500},
-          <Object?, Object?>{'text': 'ok', 'startMs': 0, 'endMs': 100},
-        ],
-      });
+      final AppleSpeechResult result = parseAppleSpeechPayload(
+        <Object?, Object?>{
+          'durationMs': 1000,
+          'segments': <Object?>[
+            <Object?, Object?>{'text': '   ', 'startMs': 0, 'endMs': 100},
+            <Object?, Object?>{'text': 'bad', 'startMs': 500, 'endMs': 500},
+            <Object?, Object?>{'text': 'ok', 'startMs': 0, 'endMs': 100},
+          ],
+        },
+      );
       expect(result.segments.map((AppleSpeechSegment s) => s.text), <String>[
         'ok',
       ]);
@@ -162,8 +164,9 @@ void main() {
 
     test('缺时长要抛：没有分母，进度和结尾都算不出来', () {
       expect(
-        () => parseAppleSpeechPayload(
-            <Object?, Object?>{'segments': <Object?>[]}),
+        () => parseAppleSpeechPayload(<Object?, Object?>{
+          'segments': <Object?>[],
+        }),
         throwsA(isA<AppleSpeechUnavailable>()),
       );
     });
@@ -223,8 +226,9 @@ void main() {
   });
 
   group('asrEngineOptions', () {
-    final AsrModelRegistry registry =
-        buildAsrModelRegistry(AsrModelCatalog.empty);
+    final AsrModelRegistry registry = buildAsrModelRegistry(
+      AsrModelCatalog.empty,
+    );
 
     test('系统语音不可用时那一项整个不出现', () {
       final List<AsrEngineOption> options = asrEngineOptions(
@@ -270,8 +274,10 @@ void main() {
       expect(
         selectedAsrEngineId(
           language: AsrLanguage.japanese,
-          catalog: AsrModelCatalog.empty
-              .withChoice(AsrLanguage.japanese, kAppleSpeechEngineId),
+          catalog: AsrModelCatalog.empty.withChoice(
+            AsrLanguage.japanese,
+            kAppleSpeechEngineId,
+          ),
           options: options,
         ),
         kAppleSpeechEngineId,
@@ -288,8 +294,10 @@ void main() {
       expect(
         selectedAsrEngineId(
           language: AsrLanguage.japanese,
-          catalog: AsrModelCatalog.empty
-              .withChoice(AsrLanguage.japanese, kAppleSpeechEngineId),
+          catalog: AsrModelCatalog.empty.withChoice(
+            AsrLanguage.japanese,
+            kAppleSpeechEngineId,
+          ),
           options: options,
         ),
         kAsrJapanesePack.id,
@@ -299,8 +307,10 @@ void main() {
     test('保留 id 落进目录也不会污染 ONNX 注册表', () {
       // buildAsrModelRegistry 找不到这个 id 就忽略这条选择——日语的默认包不变。
       final AsrModelRegistry polluted = buildAsrModelRegistry(
-        AsrModelCatalog.empty
-            .withChoice(AsrLanguage.japanese, kAppleSpeechEngineId),
+        AsrModelCatalog.empty.withChoice(
+          AsrLanguage.japanese,
+          kAppleSpeechEngineId,
+        ),
       );
       expect(
         polluted.packForLanguage(AsrLanguage.japanese)?.id,
@@ -362,8 +372,9 @@ void main() {
     });
 
     test('installed 用主子标签比：ja 命中 ja-JP', () async {
-      final AppleSpeechTranscriptionService service =
-          build(_FakePlatform(installed: <String>['ja-JP']));
+      final AppleSpeechTranscriptionService service = build(
+        _FakePlatform(installed: <String>['ja-JP']),
+      );
       final AsrTranscribePlan plan = await service.plan(
         language: AsrLanguage.japanese,
         preference: AsrAccelerationPreference.auto,
@@ -381,11 +392,14 @@ void main() {
         preference: AsrAccelerationPreference.auto,
       );
       final List<AsrTranscribeEvent> events = await running.run().toList();
-      final AsrTranscribeFinishedEvent finished =
-          events.whereType<AsrTranscribeFinishedEvent>().single;
+      final AsrTranscribeFinishedEvent finished = events
+          .whereType<AsrTranscribeFinishedEvent>()
+          .single;
 
-      final Directory dir =
-          await service.jobDirFor(audioPaths, AsrLanguage.japanese);
+      final Directory dir = await service.jobDirFor(
+        audioPaths,
+        AsrLanguage.japanese,
+      );
       // 三份产物齐、文件名与包里的常量一致——下游认「这是转录产物」靠的就是
       // transcript.srt 旁边有没有 state.json。
       expect(File('${dir.path}/${AsrJobFiles.srt}').existsSync(), isTrue);
@@ -393,22 +407,26 @@ void main() {
       expect(File('${dir.path}/${AsrJobFiles.cueTokens}').existsSync(), isTrue);
       expect(
         AsrTranscriptionService.isAsrGeneratedSubtitlePath(
-            finished.result.srtPath),
+          finished.result.srtPath,
+        ),
         isTrue,
       );
 
       // 两个文件都转了，时间轴是拼接的单轨。
       expect(platform.transcribedPaths, audioPaths);
-      final String srt =
-          File('${dir.path}/${AsrJobFiles.srt}').readAsStringSync();
+      final String srt = File(
+        '${dir.path}/${AsrJobFiles.srt}',
+      ).readAsStringSync();
       expect(srt, contains('今日はいい天気。'));
       // 第二个文件的 cue 起点被平移到第一个文件之后（1000ms + 100ms）。
       expect(srt, contains('00:00:01,100'));
 
       // state.json 记的是本引擎的 id，且已完成。
-      final Map<String, Object?> state = jsonDecode(
-        File('${dir.path}/${AsrJobFiles.state}').readAsStringSync(),
-      ) as Map<String, Object?>;
+      final Map<String, Object?> state =
+          jsonDecode(
+                File('${dir.path}/${AsrJobFiles.state}').readAsStringSync(),
+              )
+              as Map<String, Object?>;
       expect(state['modelId'], kAppleSpeechEngineId);
       expect(state['finished'], isTrue);
 
@@ -454,8 +472,10 @@ void main() {
         preference: AsrAccelerationPreference.auto,
       );
       await running.run().drain<void>();
-      final Directory dir =
-          await service.jobDirFor(audioPaths, AsrLanguage.japanese);
+      final Directory dir = await service.jobDirFor(
+        audioPaths,
+        AsrLanguage.japanese,
+      );
       expect(dir.existsSync(), isTrue);
       await service.discard(audioPaths, AsrLanguage.japanese);
       expect(dir.existsSync(), isFalse);
@@ -478,8 +498,10 @@ void main() {
       final List<AsrTranscribeEvent> events = await running.run().toList();
       expect(platform.cancelCalls, greaterThan(0));
       expect(events.whereType<AsrTranscribeFinishedEvent>(), isEmpty);
-      final Directory dir =
-          await service.jobDirFor(audioPaths, AsrLanguage.japanese);
+      final Directory dir = await service.jobDirFor(
+        audioPaths,
+        AsrLanguage.japanese,
+      );
       // 半份 SRT 比没有更糟：下游会把它当成一份完整字幕去匹配。
       expect(File('${dir.path}/${AsrJobFiles.srt}').existsSync(), isFalse);
     });
@@ -498,10 +520,10 @@ void main() {
       final Completer<void> closed = Completer<void>();
       Object? failure;
       final StreamSubscription<AsrTranscribeEvent> sub = running.run().listen(
-            events.add,
-            onError: (Object error, StackTrace _) => failure = error,
-            onDone: closed.complete,
-          );
+        events.add,
+        onError: (Object error, StackTrace _) => failure = error,
+        onDone: closed.complete,
+      );
 
       await platform.started.future;
       running.requestPause();

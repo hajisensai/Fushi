@@ -41,8 +41,10 @@ String normalizeSourceRootPath(String raw, {required String transport}) {
 /// - 末段为空（如根路径）时回退整段。
 /// - 纯函数，不触磁盘。
 String defaultLabelFromRoot(String rootPath, {required String transport}) {
-  final String normalized =
-      normalizeSourceRootPath(rootPath, transport: transport);
+  final String normalized = normalizeSourceRootPath(
+    rootPath,
+    transport: transport,
+  );
   if (normalized.isEmpty) {
     return normalized;
   }
@@ -78,8 +80,9 @@ const String kSourceConfigIosBookmarkKey = 'iosBookmark';
 
 /// 取 configJson 里的 iOS 安全作用域书签；没有 / 空串 / 非字符串 → null。
 String? sourceBookmarkFromConfig(String? configJson) {
-  final Object? value =
-      decodeSourceConfig(configJson)[kSourceConfigIosBookmarkKey];
+  final Object? value = decodeSourceConfig(
+    configJson,
+  )[kSourceConfigIosBookmarkKey];
   return value is String && value.isNotEmpty ? value : null;
 }
 
@@ -124,10 +127,8 @@ Map<String, Object?> decodeSourceConfig(String? configJson) {
     final Object? decoded = jsonDecode(configJson);
     if (decoded is Map) {
       return decoded.map<String, Object?>(
-        (Object? key, Object? value) => MapEntry<String, Object?>(
-          key.toString(),
-          value,
-        ),
+        (Object? key, Object? value) =>
+            MapEntry<String, Object?>(key.toString(), value),
       );
     }
   } catch (_) {

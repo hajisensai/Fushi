@@ -11,7 +11,8 @@ void main() {
     expect(
       source,
       contains('AVAudioSessionCategory.playback'),
-      reason: 'iOS audiobook playback must use the playback category so it '
+      reason:
+          'iOS audiobook playback must use the playback category so it '
           'does not go silent under the system silent switch.',
     );
     expect(

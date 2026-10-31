@@ -10,14 +10,12 @@ import 'golden_test_helpers.dart';
 void main() {
   group('FushiIconButton golden', () {
     testWidgets('enabled state', (tester) async {
-      await tester.pumpWidget(buildGoldenApp(
-        FushiIconButton(
-          icon: Icons.search,
-          tooltip: 'Search',
-          onTap: () {},
+      await tester.pumpWidget(
+        buildGoldenApp(
+          FushiIconButton(icon: Icons.search, tooltip: 'Search', onTap: () {}),
+          size: const Size(80, 80),
         ),
-        size: const Size(80, 80),
-      ));
+      );
       await tester.pumpAndSettle();
 
       await expectLater(
@@ -27,14 +25,16 @@ void main() {
     });
 
     testWidgets('disabled state', (tester) async {
-      await tester.pumpWidget(buildGoldenApp(
-        const FushiIconButton(
-          icon: Icons.search,
-          tooltip: 'Search',
-          enabled: false,
+      await tester.pumpWidget(
+        buildGoldenApp(
+          const FushiIconButton(
+            icon: Icons.search,
+            tooltip: 'Search',
+            enabled: false,
+          ),
+          size: const Size(80, 80),
         ),
-        size: const Size(80, 80),
-      ));
+      );
       await tester.pumpAndSettle();
 
       await expectLater(
@@ -44,15 +44,17 @@ void main() {
     });
 
     testWidgets('wide tap area', (tester) async {
-      await tester.pumpWidget(buildGoldenApp(
-        FushiIconButton(
-          icon: Icons.play_arrow,
-          tooltip: 'Play',
-          isWideTapArea: true,
-          onTap: () {},
+      await tester.pumpWidget(
+        buildGoldenApp(
+          FushiIconButton(
+            icon: Icons.play_arrow,
+            tooltip: 'Play',
+            isWideTapArea: true,
+            onTap: () {},
+          ),
+          size: const Size(80, 80),
         ),
-        size: const Size(80, 80),
-      ));
+      );
       await tester.pumpAndSettle();
 
       await expectLater(
@@ -62,16 +64,18 @@ void main() {
     });
 
     testWidgets('custom colors', (tester) async {
-      await tester.pumpWidget(buildGoldenApp(
-        FushiIconButton(
-          icon: Icons.bookmark,
-          tooltip: 'Bookmark',
-          enabledColor: Colors.red,
-          backgroundColor: Colors.yellow,
-          onTap: () {},
+      await tester.pumpWidget(
+        buildGoldenApp(
+          FushiIconButton(
+            icon: Icons.bookmark,
+            tooltip: 'Bookmark',
+            enabledColor: Colors.red,
+            backgroundColor: Colors.yellow,
+            onTap: () {},
+          ),
+          size: const Size(80, 80),
         ),
-        size: const Size(80, 80),
-      ));
+      );
       await tester.pumpAndSettle();
 
       await expectLater(
@@ -81,15 +85,17 @@ void main() {
     });
 
     testWidgets('dark theme', (tester) async {
-      await tester.pumpWidget(buildGoldenApp(
-        FushiIconButton(
-          icon: Icons.settings,
-          tooltip: 'Settings',
-          onTap: () {},
+      await tester.pumpWidget(
+        buildGoldenApp(
+          FushiIconButton(
+            icon: Icons.settings,
+            tooltip: 'Settings',
+            onTap: () {},
+          ),
+          theme: ThemeData.dark(useMaterial3: true),
+          size: const Size(80, 80),
         ),
-        theme: ThemeData.dark(useMaterial3: true),
-        size: const Size(80, 80),
-      ));
+      );
       await tester.pumpAndSettle();
 
       await expectLater(

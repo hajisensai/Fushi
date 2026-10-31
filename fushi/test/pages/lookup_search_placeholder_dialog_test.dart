@@ -32,7 +32,7 @@ import '../helpers/popup_mining_target_overrides.dart';
 /// 后复原；并覆盖嵌套对话框（计数）不被内层 `finally` 提前复位。
 class _PlaceholderTestAppModel extends AppModel {
   _PlaceholderTestAppModel({this.results = const <DictionaryEntry>[]})
-      : super(testPlatformServices());
+    : super(testPlatformServices());
 
   final List<DictionaryEntry> results;
 
@@ -89,8 +89,9 @@ class _PlaceholderHostPage extends ConsumerStatefulWidget {
 
 class _PlaceholderHostPageState extends ConsumerState<_PlaceholderHostPage>
     with DictionaryPageMixin {
-  final DictionaryPopupController controller =
-      DictionaryPopupController(lowMemory: false);
+  final DictionaryPopupController controller = DictionaryPopupController(
+    lowMemory: false,
+  );
 
   @override
   AppModel get mixinAppModel => ref.read(appProvider);
@@ -110,12 +111,12 @@ class _PlaceholderHostPageState extends ConsumerState<_PlaceholderHostPage>
   }
 
   Future<int> lookup(String term) => pushNestedPopup(
-        query: term,
-        selectionRect: const Rect.fromLTWH(20, 20, 4, 4),
-        controller: controller,
-        replaceStack: true,
-        autoRead: false,
-      );
+    query: term,
+    selectionRect: const Rect.fromLTWH(20, 20, 4, 4),
+    controller: controller,
+    replaceStack: true,
+    autoRead: false,
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -135,7 +136,8 @@ class _PlaceholderHostPageState extends ConsumerState<_PlaceholderHostPage>
                 index: i,
                 screen: screen,
                 controller: controller,
-                onPush: (String text, Rect rect, List<FushiRubySpan> _) async => 0,
+                onPush: (String text, Rect rect, List<FushiRubySpan> _) async =>
+                    0,
                 onPop: (int index) {},
               ),
           ],
@@ -164,9 +166,9 @@ Widget _wrap(AppModel appModel, GlobalKey<_PlaceholderHostPageState> key) {
 /// 占位卡「正在画」的判据：外层 [Positioned] 槽位内还有那块延迟加载层
 /// （[FushiDeferredLoading]，指示器 150ms 后才露出，判「在画」看加载层本身）。
 Finder get _placeholderProgress => find.descendant(
-      of: find.byKey(kLookupSearchPlaceholderKey),
-      matching: find.byType(FushiDeferredLoading),
-    );
+  of: find.byKey(kLookupSearchPlaceholderKey),
+  matching: find.byType(FushiDeferredLoading),
+);
 
 void main() {
   setUpAll(installFakeInAppWebViewPlatform);
@@ -198,17 +200,28 @@ void main() {
 
     // 此刻打开一个「必须盖住查词弹窗」的对话框。
     final Completer<void> dialog = Completer<void>();
-    final Future<void> hidden =
-        state.runWithLookupPopupHidden<void>(() => dialog.future);
+    final Future<void> hidden = state.runWithLookupPopupHidden<void>(
+      () => dialog.future,
+    );
     await tester.pump();
 
-    expect(state.controller.isSearchingUi, isTrue,
-        reason: '对话框不改变搜索状态，占位卡的显示条件仍成立');
-    expect(_placeholderProgress, findsNothing,
-        reason: 'BUG-1364：浮层子树排在对话框路由之上，占位卡必须与 barrier / 弹窗层'
-            '一起让位，否则这张不透明小卡画在对话框上面');
-    expect(find.byKey(kLookupSearchPlaceholderKey), findsOneWidget,
-        reason: '让位只藏内容：Positioned 槽位保留，宿主 Stack 子项数与布局不变');
+    expect(
+      state.controller.isSearchingUi,
+      isTrue,
+      reason: '对话框不改变搜索状态，占位卡的显示条件仍成立',
+    );
+    expect(
+      _placeholderProgress,
+      findsNothing,
+      reason:
+          'BUG-1364：浮层子树排在对话框路由之上，占位卡必须与 barrier / 弹窗层'
+          '一起让位，否则这张不透明小卡画在对话框上面',
+    );
+    expect(
+      find.byKey(kLookupSearchPlaceholderKey),
+      findsOneWidget,
+      reason: '让位只藏内容：Positioned 槽位保留，宿主 Stack 子项数与布局不变',
+    );
 
     dialog.complete();
     await hidden;
@@ -241,18 +254,23 @@ void main() {
 
     final Completer<void> outer = Completer<void>();
     final Completer<void> inner = Completer<void>();
-    final Future<void> outerRun =
-        state.runWithLookupPopupHidden<void>(() => outer.future);
-    final Future<void> innerRun =
-        state.runWithLookupPopupHidden<void>(() => inner.future);
+    final Future<void> outerRun = state.runWithLookupPopupHidden<void>(
+      () => outer.future,
+    );
+    final Future<void> innerRun = state.runWithLookupPopupHidden<void>(
+      () => inner.future,
+    );
     await tester.pump();
     expect(_placeholderProgress, findsNothing);
 
     inner.complete();
     await innerRun;
     await tester.pump();
-    expect(_placeholderProgress, findsNothing,
-        reason: '外层对话框还开着，计数未归零，占位卡不得回来');
+    expect(
+      _placeholderProgress,
+      findsNothing,
+      reason: '外层对话框还开着，计数未归零，占位卡不得回来',
+    );
 
     outer.complete();
     await outerRun;

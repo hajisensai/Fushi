@@ -13,9 +13,7 @@ import 'package:flutter_test/flutter_test.dart';
 ///
 /// media_kit controls + 全屏路由跑不了 headless，故锁源码结构不变量。
 void main() {
-  final File page = File(
-    'lib/src/pages/implementations/video_fushi_page.dart',
-  );
+  final File page = File('lib/src/pages/implementations/video_fushi_page.dart');
 
   late String src;
   setUpAll(() {
@@ -25,28 +23,43 @@ void main() {
 
   String handlerBody() {
     final int start = src.indexOf('void _handleVideoPointerUp(PointerUpEvent');
-    expect(start, greaterThanOrEqualTo(0),
-        reason: '需有 _handleVideoPointerUp 方法');
+    expect(
+      start,
+      greaterThanOrEqualTo(0),
+      reason: '需有 _handleVideoPointerUp 方法',
+    );
     // 到下一个方法（双击 seek helper）为止。
     final int end = src.indexOf('bool _handleDoubleTapSeek(', start);
-    expect(end, greaterThan(start),
-        reason: '需有 _handleDoubleTapSeek 作为 handler 段终点');
+    expect(
+      end,
+      greaterThan(start),
+      reason: '需有 _handleDoubleTapSeek 作为 handler 段终点',
+    );
     return src.substring(start, end);
   }
 
   test('侧栏打开时早返回门控存在且清双击追踪', () {
     final String body = handlerBody();
     final int gateIdx = body.indexOf('if (_videoSidePanel.value != null) {');
-    expect(gateIdx, greaterThanOrEqualTo(0),
-        reason: '侧栏开着时必须早返回，不参与双击/暂停/全屏判定');
+    expect(
+      gateIdx,
+      greaterThanOrEqualTo(0),
+      reason: '侧栏开着时必须早返回，不参与双击/暂停/全屏判定',
+    );
     // 门控块内必须清掉双击追踪（避免关闭面板后残留时间戳误配成双击）+ return。
     final int blockEnd = body.indexOf('}', gateIdx);
     expect(blockEnd, greaterThan(gateIdx), reason: '门控块应正常闭合');
     final String block = body.substring(gateIdx, blockEnd);
-    expect(block.contains('_lastVideoPointerUpAt = null'), isTrue,
-        reason: '门控应清掉 _lastVideoPointerUpAt');
-    expect(block.contains('_lastVideoPointerUpPosition = null'), isTrue,
-        reason: '门控应清掉 _lastVideoPointerUpPosition');
+    expect(
+      block.contains('_lastVideoPointerUpAt = null'),
+      isTrue,
+      reason: '门控应清掉 _lastVideoPointerUpAt',
+    );
+    expect(
+      block.contains('_lastVideoPointerUpPosition = null'),
+      isTrue,
+      reason: '门控应清掉 _lastVideoPointerUpPosition',
+    );
     expect(block.contains('return'), isTrue, reason: '门控应早返回');
   });
 
@@ -57,14 +70,24 @@ void main() {
     // 用真实「比较/调用」形态锚定，避开注释里对符号的提及：
     // 双击判据比较 `> _videoDoubleClickInterval`、全屏调用 `_toggleVideoFullscreen(controlsContext)`。
     final int doubleClickIdx = body.indexOf('> _videoDoubleClickInterval');
-    final int fullscreenIdx =
-        body.indexOf('_toggleVideoFullscreen(controlsContext)');
+    final int fullscreenIdx = body.indexOf(
+      '_toggleVideoFullscreen(controlsContext)',
+    );
     expect(pokeIdx, greaterThanOrEqualTo(0), reason: '需有 _pokeLockButton 调用');
-    expect(gateIdx, greaterThan(pokeIdx),
-        reason: '门控应在 _pokeLockButton 之后（焦点/锁按钮恢复无害）');
-    expect(doubleClickIdx, greaterThan(gateIdx),
-        reason: '门控应在双击判定（> _videoDoubleClickInterval）之前');
-    expect(fullscreenIdx, greaterThan(gateIdx),
-        reason: '门控应在全屏调用 _toggleVideoFullscreen(controlsContext) 之前');
+    expect(
+      gateIdx,
+      greaterThan(pokeIdx),
+      reason: '门控应在 _pokeLockButton 之后（焦点/锁按钮恢复无害）',
+    );
+    expect(
+      doubleClickIdx,
+      greaterThan(gateIdx),
+      reason: '门控应在双击判定（> _videoDoubleClickInterval）之前',
+    );
+    expect(
+      fullscreenIdx,
+      greaterThan(gateIdx),
+      reason: '门控应在全屏调用 _toggleVideoFullscreen(controlsContext) 之前',
+    );
   });
 }

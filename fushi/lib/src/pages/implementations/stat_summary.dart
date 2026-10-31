@@ -212,8 +212,10 @@ SpeedSummary computeSpeedSummary(
   if (daily.length >= compareWindow * 2) {
     final int len = daily.length;
     final List<StatDayData> recent = daily.sublist(len - compareWindow);
-    final List<StatDayData> prev =
-        daily.sublist(len - compareWindow * 2, len - compareWindow);
+    final List<StatDayData> prev = daily.sublist(
+      len - compareWindow * 2,
+      len - compareWindow,
+    );
     final double recentCph = _windowWeightedCph(recent);
     final double prevCph = _windowWeightedCph(prev);
     if (prevCph > 0) {

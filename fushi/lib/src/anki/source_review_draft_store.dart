@@ -59,94 +59,91 @@ class SourceReviewDraftStore {
     required AnkiMiningContext context,
     String? peerUrl,
     String? peerIdentity,
-  }) =>
-      _locked(link.sourceId, (Directory directory) async {
-        final Object? decoded = jsonDecode(rawPayloadJson);
-        if (decoded is! Map<String, dynamic>) {
-          throw const FormatException('Invalid mining payload');
-        }
-        await directory.create(recursive: true);
-        final Directory media = Directory(
-          p.join(directory.path, 'media-${CardSourceLink.newSourceId()}'),
-        );
-        await media.create();
-        final String? cover =
-            await _copyMedia(context.coverPath, media, 'cover');
-        final String? sentenceAudio = await _copyMedia(
-          context.sentenceAudioPath,
-          media,
-          'sentence_audio',
-        );
-        // These are the payload's local media reference slots. Inline data, HTTP
-        // URLs and already-rendered Anki references are self-contained references.
-        for (final String key in <String>[
-          'audio',
-          'image',
-          'sentenceAudio',
-          'cover',
-        ]) {
-          final Object? ref = decoded[key];
-          if (ref is String && _isLocalMedia(ref)) {
-            decoded[key] = await _copyMedia(ref, media, 'payload_$key');
-          }
-        }
-        final SourceReviewDraft draft = SourceReviewDraft(
-          sourceId: link.sourceId,
-          peerUrl: _publicPeerUrl(peerUrl),
-          peerIdentity: _validatedPeerIdentity(peerIdentity),
-          mining: SourceReviewMiningDraft(
-            link: link,
-            rawPayloadJson: jsonEncode(decoded),
-            context: context
-                .withMediaRefs(coverRef: cover, sentenceAudioRef: sentenceAudio)
-                .withSourceLink(link),
-          ),
-        );
-        await _commit(directory, draft);
-        return draft;
-      });
+  }) => _locked(link.sourceId, (Directory directory) async {
+    final Object? decoded = jsonDecode(rawPayloadJson);
+    if (decoded is! Map<String, dynamic>) {
+      throw const FormatException('Invalid mining payload');
+    }
+    await directory.create(recursive: true);
+    final Directory media = Directory(
+      p.join(directory.path, 'media-${CardSourceLink.newSourceId()}'),
+    );
+    await media.create();
+    final String? cover = await _copyMedia(context.coverPath, media, 'cover');
+    final String? sentenceAudio = await _copyMedia(
+      context.sentenceAudioPath,
+      media,
+      'sentence_audio',
+    );
+    // These are the payload's local media reference slots. Inline data, HTTP
+    // URLs and already-rendered Anki references are self-contained references.
+    for (final String key in <String>[
+      'audio',
+      'image',
+      'sentenceAudio',
+      'cover',
+    ]) {
+      final Object? ref = decoded[key];
+      if (ref is String && _isLocalMedia(ref)) {
+        decoded[key] = await _copyMedia(ref, media, 'payload_$key');
+      }
+    }
+    final SourceReviewDraft draft = SourceReviewDraft(
+      sourceId: link.sourceId,
+      peerUrl: _publicPeerUrl(peerUrl),
+      peerIdentity: _validatedPeerIdentity(peerIdentity),
+      mining: SourceReviewMiningDraft(
+        link: link,
+        rawPayloadJson: jsonEncode(decoded),
+        context: context
+            .withMediaRefs(coverRef: cover, sentenceAudioRef: sentenceAudio)
+            .withSourceLink(link),
+      ),
+    );
+    await _commit(directory, draft);
+    return draft;
+  });
 
   Future<SourceReviewDraft> savePatch({
     required AnkiSourceNote original,
     required Map<String, String> fields,
     String? peerUrl,
     String? peerIdentity,
-  }) =>
-      _locked(original.sourceId, (Directory directory) async {
-        for (final String field in fields.keys) {
-          if (!original.fields.containsKey(field)) {
-            throw const FormatException('Patch contains an unknown field');
-          }
-        }
-        final SourceReviewDraft? previous = await _read(
-          directory,
-          original.sourceId,
-        );
-        final SourceReviewDraft draft = SourceReviewDraft(
-          sourceId: original.sourceId,
-          peerUrl: _publicPeerUrl(peerUrl) ?? previous?.peerUrl,
-          peerIdentity:
-              _validatedPeerIdentity(peerIdentity) ?? previous?.peerIdentity,
-          mining: previous?.mining,
-          patch: SourceReviewPatchDraft(original: original, fields: fields),
-        );
-        await directory.create(recursive: true);
-        await _commit(directory, draft);
-        return draft;
-      });
+  }) => _locked(original.sourceId, (Directory directory) async {
+    for (final String field in fields.keys) {
+      if (!original.fields.containsKey(field)) {
+        throw const FormatException('Patch contains an unknown field');
+      }
+    }
+    final SourceReviewDraft? previous = await _read(
+      directory,
+      original.sourceId,
+    );
+    final SourceReviewDraft draft = SourceReviewDraft(
+      sourceId: original.sourceId,
+      peerUrl: _publicPeerUrl(peerUrl) ?? previous?.peerUrl,
+      peerIdentity:
+          _validatedPeerIdentity(peerIdentity) ?? previous?.peerIdentity,
+      mining: previous?.mining,
+      patch: SourceReviewPatchDraft(original: original, fields: fields),
+    );
+    await directory.create(recursive: true);
+    await _commit(directory, draft);
+    return draft;
+  });
 
   Future<SourceReviewDraft?> read(String sourceId) =>
       _locked(sourceId, (Directory directory) => _read(directory, sourceId));
 
   Future<void> delete(String sourceId) => _locked(sourceId, (
-        Directory directory,
-      ) async {
-        if (await directory.exists()) {
-          // _directory rejects traversal and symlink/junction escapes before this
-          // recursive operation. Only this source UUID's private directory is used.
-          await directory.delete(recursive: true);
-        }
-      });
+    Directory directory,
+  ) async {
+    if (await directory.exists()) {
+      // _directory rejects traversal and symlink/junction escapes before this
+      // recursive operation. Only this source UUID's private directory is used.
+      await directory.delete(recursive: true);
+    }
+  });
 
   Future<T> _locked<T>(
     String sourceId,

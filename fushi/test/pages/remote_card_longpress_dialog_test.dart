@@ -33,8 +33,9 @@ void main() {
 
   late Directory pathProviderDir;
   setUpAll(() {
-    pathProviderDir =
-        Directory.systemTemp.createTempSync('fushi_remote_longpress_pp');
+    pathProviderDir = Directory.systemTemp.createTempSync(
+      'fushi_remote_longpress_pp',
+    );
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
       (MethodCall call) async => pathProviderDir.path,
@@ -62,8 +63,9 @@ void main() {
     db = FushiDatabase.forTesting(NativeDatabase.memory());
     final PreferencesRepository prefs = PreferencesRepository(db);
     await prefs.loadFromDb();
-    final Directory storeDir =
-        Directory.systemTemp.createTempSync('fushi_remote_longpress_store');
+    final Directory storeDir = Directory.systemTemp.createTempSync(
+      'fushi_remote_longpress_store',
+    );
     remoteCover = File('${storeDir.path}/remote-cover.png')
       ..writeAsBytesSync(_tinyPngBytes);
     appModel = AppModel(testPlatformServices())
@@ -77,61 +79,65 @@ void main() {
   });
 
   Widget buildBookShelf(_FakeRemoteBookClient client) => ProviderScope(
-        overrides: <Override>[
-          appProvider.overrideWith((ref) => appModel),
-          fushiBooksProvider.overrideWith(
-            (ref, language) =>
-                Future<List<MediaItem>>.value(const <MediaItem>[]),
-          ),
-          srtBooksProvider.overrideWith(
-            (ref) => Future<List<SrtBook>>.value(const <SrtBook>[]),
-          ),
-        ],
-        child: TranslationProvider(
-          child: MaterialApp(
-            builder: (BuildContext context, Widget? child) =>
-                child ?? const SizedBox.shrink(),
-            home: Scaffold(
-              body: ReaderFushiHistoryPage(
-                remoteBookClientLoader: () async => client,
-                remoteBookDownloadDestination: (RemoteBookInfo book) async =>
-                    File('${pathProviderDir.path}/${book.title.hashCode}.epub'),
-                remoteBookImporter: (File file) async => 'local-book-key',
-              ),
-            ),
+    overrides: <Override>[
+      appProvider.overrideWith((ref) => appModel),
+      fushiBooksProvider.overrideWith(
+        (ref, language) => Future<List<MediaItem>>.value(const <MediaItem>[]),
+      ),
+      srtBooksProvider.overrideWith(
+        (ref) => Future<List<SrtBook>>.value(const <SrtBook>[]),
+      ),
+    ],
+    child: TranslationProvider(
+      child: MaterialApp(
+        builder: (BuildContext context, Widget? child) =>
+            child ?? const SizedBox.shrink(),
+        home: Scaffold(
+          body: ReaderFushiHistoryPage(
+            remoteBookClientLoader: () async => client,
+            remoteBookDownloadDestination: (RemoteBookInfo book) async =>
+                File('${pathProviderDir.path}/${book.title.hashCode}.epub'),
+            remoteBookImporter: (File file) async => 'local-book-key',
           ),
         ),
-      );
+      ),
+    ),
+  );
 
-  testWidgets(
-      'long-press remote book card opens the action dialog instead of '
+  testWidgets('long-press remote book card opens the action dialog instead of '
       'downloading (BUG-416)', (WidgetTester tester) async {
-    final _FakeRemoteBookClient client =
-        _FakeRemoteBookClient(coverPath: remoteCover.path);
+    final _FakeRemoteBookClient client = _FakeRemoteBookClient(
+      coverPath: remoteCover.path,
+    );
     await tester.pumpWidget(buildBookShelf(client));
     await tester.pumpAndSettle();
 
-    await tester.longPress(find.byKey(
-      const ValueKey<String>('remote_book_card_Remote_Book'),
-    ));
+    await tester.longPress(
+      find.byKey(const ValueKey<String>('remote_book_card_Remote_Book')),
+    );
     await tester.pumpAndSettle();
 
     expect(find.text(t.remote_book_info), findsOneWidget);
-    expect(client.downloadedTitles, isEmpty,
-        reason: 'long-press must open the dialog, not download immediately');
+    expect(
+      client.downloadedTitles,
+      isEmpty,
+      reason: 'long-press must open the dialog, not download immediately',
+    );
   });
 
-  testWidgets('tapping the remote book card still downloads (BUG-416)',
-      (WidgetTester tester) async {
-    final _FakeRemoteBookClient client =
-        _FakeRemoteBookClient(coverPath: remoteCover.path);
+  testWidgets('tapping the remote book card still downloads (BUG-416)', (
+    WidgetTester tester,
+  ) async {
+    final _FakeRemoteBookClient client = _FakeRemoteBookClient(
+      coverPath: remoteCover.path,
+    );
     await tester.pumpWidget(buildBookShelf(client));
     await tester.pumpAndSettle();
 
     await tester.runAsync(() async {
-      await tester.tap(find.byKey(
-        const ValueKey<String>('remote_book_card_Remote_Book'),
-      ));
+      await tester.tap(
+        find.byKey(const ValueKey<String>('remote_book_card_Remote_Book')),
+      );
       for (int i = 0; i < 30; i++) {
         await Future<void>.delayed(const Duration(milliseconds: 50));
         if (client.downloadedTitles.isNotEmpty) break;
@@ -139,74 +145,85 @@ void main() {
     });
     await tester.pump();
 
-    expect(client.downloadedTitles, <String>['Remote Book'],
-        reason: 'short tap on a remote book card downloads it');
+    expect(client.downloadedTitles, <String>[
+      'Remote Book',
+    ], reason: 'short tap on a remote book card downloads it');
   });
 
   Widget buildVideoTab(_FakeRemoteVideoClient client) => ProviderScope(
-        overrides: <Override>[
-          appProvider.overrideWith((ref) => appModel),
-        ],
-        child: TranslationProvider(
-          child: MaterialApp(
-            home: Scaffold(
-              body: HomeVideoPage(
-                repo: VideoBookRepository(db),
-                // #792 起远端卡所在的混排墙在 series 分区。
-                section: VideoLibrarySection.allVideos,
-                remoteVideoClientLoader: () async => client,
-                remoteVideoDownloadDestination: (RemoteVideoInfo v) async =>
-                    File('${pathProviderDir.path}/${v.id.hashCode}.mp4'),
-              ),
-            ),
+    overrides: <Override>[appProvider.overrideWith((ref) => appModel)],
+    child: TranslationProvider(
+      child: MaterialApp(
+        home: Scaffold(
+          body: HomeVideoPage(
+            repo: VideoBookRepository(db),
+            // #792 起远端卡所在的混排墙在 series 分区。
+            section: VideoLibrarySection.allVideos,
+            remoteVideoClientLoader: () async => client,
+            remoteVideoDownloadDestination: (RemoteVideoInfo v) async =>
+                File('${pathProviderDir.path}/${v.id.hashCode}.mp4'),
           ),
         ),
-      );
+      ),
+    ),
+  );
 
   testWidgets(
-      'long-press remote video card opens the action dialog without starting '
-      'playback (BUG-416)', (WidgetTester tester) async {
-    final _FakeRemoteVideoClient client =
-        _FakeRemoteVideoClient(coverPath: remoteCover.path);
-    await tester.pumpWidget(buildVideoTab(client));
-    await tester.pumpAndSettle();
+    'long-press remote video card opens the action dialog without starting '
+    'playback (BUG-416)',
+    (WidgetTester tester) async {
+      final _FakeRemoteVideoClient client = _FakeRemoteVideoClient(
+        coverPath: remoteCover.path,
+      );
+      await tester.pumpWidget(buildVideoTab(client));
+      await tester.pumpAndSettle();
 
-    // BUG-2835：「全部视频」多了一行筛选，800x600 视口里卡片可能落在折线下。
-    await tester.ensureVisible(
-      find.byKey(const ValueKey<String>('remote_video_card_remote_video-1')),
+      // BUG-2835：「全部视频」多了一行筛选，800x600 视口里卡片可能落在折线下。
+      await tester.ensureVisible(
+        find.byKey(const ValueKey<String>('remote_video_card_remote_video-1')),
+      );
+      await tester.pumpAndSettle();
+      await tester.longPress(
+        find.byKey(const ValueKey<String>('remote_video_card_remote_video-1')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text(t.remote_video_info), findsOneWidget);
+      expect(
+        find.byType(VideoFushiPage),
+        findsNothing,
+        reason: 'long-press must open the dialog, not the remote player',
+      );
+    },
+  );
+
+  test('remote book card onLongPress is bound to _showRemoteBookDialog '
+      '(BUG-416 guard)', () {
+    final String src = File(
+      'lib/src/pages/implementations/reader_history/remote.part.dart',
+    ).readAsStringSync();
+    expect(
+      src,
+      contains('onLongPress: () => _showRemoteBookDialog(book)'),
+      reason: 'long-press must open the options dialog',
     );
-    await tester.pumpAndSettle();
-    await tester.longPress(find.byKey(
-      const ValueKey<String>('remote_video_card_remote_video-1'),
-    ));
-    await tester.pumpAndSettle();
-
-    expect(find.text(t.remote_video_info), findsOneWidget);
-    expect(find.byType(VideoFushiPage), findsNothing,
-        reason: 'long-press must open the dialog, not the remote player');
+    expect(
+      src,
+      isNot(contains('onLongPress: () => _downloadRemoteBook(book)')),
+      reason: 'long-press must NOT download directly (regression guard)',
+    );
   });
 
-  test(
-      'remote book card onLongPress is bound to _showRemoteBookDialog '
+  test('remote video card gates onLongPress and opens _showRemoteVideoDialog '
       '(BUG-416 guard)', () {
-    final String src =
-        File('lib/src/pages/implementations/reader_history/remote.part.dart')
-            .readAsStringSync();
-    expect(src, contains('onLongPress: () => _showRemoteBookDialog(book)'),
-        reason: 'long-press must open the options dialog');
-    expect(src, isNot(contains('onLongPress: () => _downloadRemoteBook(book)')),
-        reason: 'long-press must NOT download directly (regression guard)');
-  });
-
-  test(
-      'remote video card gates onLongPress and opens _showRemoteVideoDialog '
-      '(BUG-416 guard)', () {
-    final String src =
-        File('lib/src/pages/implementations/home_video_page.dart')
-            .readAsStringSync();
+    final String src = File(
+      'lib/src/pages/implementations/home_video_page.dart',
+    ).readAsStringSync();
     final int cardStart = src.indexOf('Widget _buildRemoteVideoCard(');
-    final int cardEnd =
-        src.indexOf('Widget _buildRemoteVideoCover(', cardStart);
+    final int cardEnd = src.indexOf(
+      'Widget _buildRemoteVideoCover(',
+      cardStart,
+    );
     expect(cardStart, greaterThanOrEqualTo(0));
     expect(cardEnd, greaterThan(cardStart));
     final String card = src.substring(cardStart, cardEnd);
@@ -216,7 +233,8 @@ void main() {
         r'\(\)\s*=>\s*_showRemoteVideoDialog\(video\)',
       ).hasMatch(card),
       isTrue,
-      reason: 'normal mode must open the dialog; selection mode must yield '
+      reason:
+          'normal mode must open the dialog; selection mode must yield '
           'the gesture to SelectionDragArea',
     );
     expect(
@@ -244,15 +262,15 @@ class _FakeRemoteBookClient implements RemoteBookClient {
 
   @override
   Future<List<RemoteBookInfo>> listRemoteBooks() async => <RemoteBookInfo>[
-        RemoteBookInfo.fromJson(<String, Object?>{
-          'title': 'Remote Book',
-          'hasContent': true,
-          'coverPath': coverPath,
-          // 巡检 PR-3：「信息」入口只在有附加元数据（hasAudiobook）时显示——
-          // 本 fake 带有声书，动作面板断言（含 remote_book_info）保持原语义。
-          'hasAudiobook': true,
-        }),
-      ];
+    RemoteBookInfo.fromJson(<String, Object?>{
+      'title': 'Remote Book',
+      'hasContent': true,
+      'coverPath': coverPath,
+      // 巡检 PR-3：「信息」入口只在有附加元数据（hasAudiobook）时显示——
+      // 本 fake 带有声书，动作面板断言（含 remote_book_info）保持原语义。
+      'hasAudiobook': true,
+    }),
+  ];
 
   @override
   Future<void> getRemoteBook(
@@ -287,17 +305,19 @@ class _FakeRemoteVideoClient implements RemoteVideoClient {
 
   @override
   Future<List<RemoteVideoInfo>> listRemoteVideos() async => <RemoteVideoInfo>[
-        RemoteVideoInfo.fromJson(<String, Object?>{
-          'id': 'remote_video-1',
-          'title': 'Remote Episode',
-          'hasSubtitle': true,
-          'coverPath': coverPath,
-        }),
-      ];
+    RemoteVideoInfo.fromJson(<String, Object?>{
+      'id': 'remote_video-1',
+      'title': 'Remote Episode',
+      'hasSubtitle': true,
+      'coverPath': coverPath,
+    }),
+  ];
 
   @override
-  Future<RemoteVideoStreamUrls> remoteVideoStreamUrls(String id,
-      {int episodeIndex = 0}) async {
+  Future<RemoteVideoStreamUrls> remoteVideoStreamUrls(
+    String id, {
+    int episodeIndex = 0,
+  }) async {
     streamUrlRequests.add(id);
     return const RemoteVideoStreamUrls(
       streamUrl: 'http://127.0.0.1:1/api/library/videos/remote/video-1/stream',
@@ -326,8 +346,7 @@ class _FakeRemoteVideoClient implements RemoteVideoClient {
   Future<({int positionMs, int updatedAtMs})> remoteVideoPosition(
     String id, {
     int episodeIndex = 0,
-  }) async =>
-      (positionMs: 0, updatedAtMs: 0);
+  }) async => (positionMs: 0, updatedAtMs: 0);
 
   @override
   Future<void> putRemoteVideoPosition(
@@ -338,6 +357,7 @@ class _FakeRemoteVideoClient implements RemoteVideoClient {
   }) async {}
 }
 
-final List<int> _tinyPngBytes =
-    base64Decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ'
-        'AAAADUlEQVR42mP8z8BQDwAFgwJ/l5YV3wAAAABJRU5ErkJggg==');
+final List<int> _tinyPngBytes = base64Decode(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJ'
+  'AAAADUlEQVR42mP8z8BQDwAFgwJ/l5YV3wAAAABJRU5ErkJggg==',
+);

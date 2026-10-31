@@ -23,10 +23,7 @@ class VolumeKeyChannel {
   VoidCallback? _onVolumeDown;
 
   /// Register handlers for volume key-down events. Pass null to clear.
-  void setHandlers({
-    VoidCallback? onVolumeUp,
-    VoidCallback? onVolumeDown,
-  }) {
+  void setHandlers({VoidCallback? onVolumeUp, VoidCallback? onVolumeDown}) {
     _onVolumeUp = onVolumeUp;
     _onVolumeDown = onVolumeDown;
   }

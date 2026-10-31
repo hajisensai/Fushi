@@ -39,8 +39,10 @@ void main() {
   }) async {
     final HttpClient c = HttpClient();
     try {
-      final HttpClientRequest req =
-          await c.openUrl(method, Uri.parse('$base$path'));
+      final HttpClientRequest req = await c.openUrl(
+        method,
+        Uri.parse('$base$path'),
+      );
       req.headers.set('authorization', authHeader());
       if (body != null) {
         req.headers.set('content-type', 'application/json; charset=utf-8');
@@ -66,17 +68,16 @@ void main() {
     String plot = 'plot',
     String externalId = '100',
     VideoMetadataProviderKind provider = VideoMetadataProviderKind.mal,
-  }) =>
-      VideoMetadataWork(
-        provider: provider,
-        kind: VideoMetadataMediaKind.tv,
-        title: title,
-        plot: plot,
-        year: 2020,
-        ids: <VideoMetadataId>[
-          VideoMetadataId(type: provider.name, value: externalId),
-        ],
-      );
+  }) => VideoMetadataWork(
+    provider: provider,
+    kind: VideoMetadataMediaKind.tv,
+    title: title,
+    plot: plot,
+    year: 2020,
+    ids: <VideoMetadataId>[
+      VideoMetadataId(type: provider.name, value: externalId),
+    ],
+  );
 
   setUp(() async {
     tmp = Directory.systemTemp.createTempSync('hbk_meta_host');
@@ -91,16 +92,20 @@ void main() {
     );
     final List<VideoBookRow> members = <VideoBookRow>[];
     for (final String stem in <String>['Show S01E01', 'Show S01E02']) {
-      await db.upsertVideoBook(VideoBooksCompanion(
-        bookUid: Value<String>(stem),
-        title: Value<String>(stem),
-        videoPath: Value<String>('D:/Shows/Show/$stem.mkv'),
-        sourceId: Value<int?>(sourceId),
-      ));
+      await db.upsertVideoBook(
+        VideoBooksCompanion(
+          bookUid: Value<String>(stem),
+          title: Value<String>(stem),
+          videoPath: Value<String>('D:/Shows/Show/$stem.mkv'),
+          sourceId: Value<int?>(sourceId),
+        ),
+      );
       members.add((await db.getVideoBookByBookUid(stem))!);
     }
-    final int collectionId =
-        await db.createMediaCollection('Show', collectionType: 'playlist');
+    final int collectionId = await db.createMediaCollection(
+      'Show',
+      collectionType: 'playlist',
+    );
     for (final VideoBookRow m in members) {
       await db.addToCollection(collectionId, MediaKind.video, m.bookUid);
     }
@@ -141,8 +146,10 @@ void main() {
   });
 
   test('capabilities.liveLibrary.videoMetadata == true', () async {
-    final ({int status, Object? json}) res =
-        await call('GET', '/api/capabilities');
+    final ({int status, Object? json}) res = await call(
+      'GET',
+      '/api/capabilities',
+    );
     expect(res.status, 200);
     final Map<dynamic, dynamic> live =
         (res.json as Map<dynamic, dynamic>)['liveLibrary'] as Map;
@@ -153,14 +160,17 @@ void main() {
     final VideoMetadataDatabaseStore store = VideoMetadataDatabaseStore(db);
     await store.apply(localWork, work(plot: 'from host'));
 
-    final ({int status, Object? json}) res =
-        await call('GET', '/api/library/metadata');
+    final ({int status, Object? json}) res = await call(
+      'GET',
+      '/api/library/metadata',
+    );
     expect(res.status, 200);
     final List<Object?> works =
         (res.json as Map<dynamic, dynamic>)['works'] as List<Object?>;
     expect(works, hasLength(1));
-    final VideoMetadataWorkEntry entry =
-        VideoMetadataWorkEntry.fromJson(works.single);
+    final VideoMetadataWorkEntry entry = VideoMetadataWorkEntry.fromJson(
+      works.single,
+    );
     expect(entry.key.isCollection, isTrue);
     expect(entry.key.collectionName, 'Show');
     expect(entry.key.collectionType, 'playlist');
@@ -223,20 +233,19 @@ void main() {
       body: <String, Object?>{'key': key, 'query': 'Show'},
     );
     expect(cands.status, 200);
-    expect(
-      (cands.json as Map<dynamic, dynamic>)['candidates'],
-      isEmpty,
-    );
+    expect((cands.json as Map<dynamic, dynamic>)['candidates'], isEmpty);
     final ({int status, Object? json}) scrape = await call(
       'POST',
       '/api/library/metadata/scrape',
       body: <String, Object?>{
         'key': key,
-        'lookup': encodeVideoMetadataLookup(const VideoMetadataLookup(
-          provider: VideoMetadataProviderKind.mal,
-          externalId: '100',
-          mediaKind: VideoMetadataMediaKind.tv,
-        )),
+        'lookup': encodeVideoMetadataLookup(
+          const VideoMetadataLookup(
+            provider: VideoMetadataProviderKind.mal,
+            externalId: '100',
+            mediaKind: VideoMetadataMediaKind.tv,
+          ),
+        ),
       },
     );
     expect(scrape.status, 409);
@@ -254,35 +263,48 @@ void main() {
     Map<String, Object?> body(String externalId, {bool replace = false}) =>
         <String, Object?>{
           'key': key,
-          'lookup': encodeVideoMetadataLookup(VideoMetadataLookup(
-            provider: VideoMetadataProviderKind.mal,
-            externalId: externalId,
-            mediaKind: VideoMetadataMediaKind.tv,
-          )),
+          'lookup': encodeVideoMetadataLookup(
+            VideoMetadataLookup(
+              provider: VideoMetadataProviderKind.mal,
+              externalId: externalId,
+              mediaKind: VideoMetadataMediaKind.tv,
+            ),
+          ),
           'work': encodeVideoMetadataWork(
             work(plot: 'from client $externalId', externalId: externalId),
           ),
           'replaceIdentity': replace,
         };
 
-    final ({int status, Object? json}) first =
-        await call('PUT', '/api/library/metadata', body: body('100'));
+    final ({int status, Object? json}) first = await call(
+      'PUT',
+      '/api/library/metadata',
+      body: body('100'),
+    );
     expect(first.status, 200);
-    final VideoMetadataWorkRow row =
-        (await db.getVideoMetadataWorkByCollection(collection.id))!;
+    final VideoMetadataWorkRow row = (await db.getVideoMetadataWorkByCollection(
+      collection.id,
+    ))!;
     expect(row.overview, 'from client 100');
 
     // 同身份重写：不冲突。
-    final ({int status, Object? json}) same =
-        await call('PUT', '/api/library/metadata', body: body('100'));
+    final ({int status, Object? json}) same = await call(
+      'PUT',
+      '/api/library/metadata',
+      body: body('100'),
+    );
     expect(same.status, 200);
 
     // 换身份且未显式确认：409 + 现身份。
-    final ({int status, Object? json}) conflict =
-        await call('PUT', '/api/library/metadata', body: body('200'));
+    final ({int status, Object? json}) conflict = await call(
+      'PUT',
+      '/api/library/metadata',
+      body: body('200'),
+    );
     expect(conflict.status, 409);
-    final VideoMetadataWriteResult result =
-        VideoMetadataWriteResult.fromJson(conflict.json);
+    final VideoMetadataWriteResult result = VideoMetadataWriteResult.fromJson(
+      conflict.json,
+    );
     expect(result.conflict, VideoMetadataConflict.identity);
     expect(result.currentLookup?.externalId, '100');
     expect(
@@ -310,8 +332,10 @@ void main() {
 
   test('7b PUT 尊重 host 字段锁（锁住的 overview 保留旧值）', () async {
     final VideoMetadataDatabaseStore store = VideoMetadataDatabaseStore(db);
-    final PersistedVideoMetadata persisted =
-        await store.apply(localWork, work(plot: 'host locked'));
+    final PersistedVideoMetadata persisted = await store.apply(
+      localWork,
+      work(plot: 'host locked'),
+    );
     await db.setVideoMetadataWorkLockedFields(
       persisted.workId,
       encodeLockedFields(<VideoMetadataLockableField>{
@@ -326,19 +350,22 @@ void main() {
           name: 'Show',
           collectionType: 'playlist',
         ).toJson(),
-        'lookup': encodeVideoMetadataLookup(const VideoMetadataLookup(
-          provider: VideoMetadataProviderKind.mal,
-          externalId: '100',
-          mediaKind: VideoMetadataMediaKind.tv,
-        )),
+        'lookup': encodeVideoMetadataLookup(
+          const VideoMetadataLookup(
+            provider: VideoMetadataProviderKind.mal,
+            externalId: '100',
+            mediaKind: VideoMetadataMediaKind.tv,
+          ),
+        ),
         'work': encodeVideoMetadataWork(
           work(title: 'Show (client)', plot: 'client overwrite'),
         ),
       },
     );
     expect(res.status, 200);
-    final VideoMetadataWorkRow row =
-        (await db.getVideoMetadataWorkByCollection(collection.id))!;
+    final VideoMetadataWorkRow row = (await db.getVideoMetadataWorkByCollection(
+      collection.id,
+    ))!;
     expect(row.overview, 'host locked', reason: '锁住的字段不被客户端覆盖');
     expect(row.title, 'Show (client)', reason: '未锁字段照常更新');
     expect(
@@ -354,16 +381,20 @@ void main() {
     final SourceLibraryRow source = (await db.getMediaSourceById(sourceId))!;
     final List<VideoBookRow> films = <VideoBookRow>[];
     for (final String stem in <String>['Movie A', 'Movie B']) {
-      await db.upsertVideoBook(VideoBooksCompanion(
-        bookUid: Value<String>(stem),
-        title: Value<String>(stem),
-        videoPath: Value<String>('D:/Shows/Films/$stem.mkv'),
-        sourceId: Value<int?>(sourceId),
-      ));
+      await db.upsertVideoBook(
+        VideoBooksCompanion(
+          bookUid: Value<String>(stem),
+          title: Value<String>(stem),
+          videoPath: Value<String>('D:/Shows/Films/$stem.mkv'),
+          sourceId: Value<int?>(sourceId),
+        ),
+      );
       films.add((await db.getVideoBookByBookUid(stem))!);
     }
-    final int filmsId =
-        await db.createMediaCollection('Films', collectionType: 'collection');
+    final int filmsId = await db.createMediaCollection(
+      'Films',
+      collectionType: 'collection',
+    );
     for (final VideoBookRow m in films) {
       await db.addToCollection(filmsId, MediaKind.video, m.bookUid);
     }
@@ -375,8 +406,10 @@ void main() {
           title: m.title,
           members: <VideoBookRow>[m],
         ),
-        work(title: m.title, externalId: m.bookUid.hashCode.toString())
-            .copyWith(kind: VideoMetadataMediaKind.movie),
+        work(
+          title: m.title,
+          externalId: m.bookUid.hashCode.toString(),
+        ).copyWith(kind: VideoMetadataMediaKind.movie),
       );
     }
     expect(await db.getVideoMetadataWorkByBook('Movie A'), isNotNull);
@@ -389,24 +422,30 @@ void main() {
           name: 'Films',
           collectionType: 'collection',
         ).toJson(),
-        'lookup': encodeVideoMetadataLookup(const VideoMetadataLookup(
-          provider: VideoMetadataProviderKind.mal,
-          externalId: '9',
-          mediaKind: VideoMetadataMediaKind.movie,
-        )),
+        'lookup': encodeVideoMetadataLookup(
+          const VideoMetadataLookup(
+            provider: VideoMetadataProviderKind.mal,
+            externalId: '9',
+            mediaKind: VideoMetadataMediaKind.movie,
+          ),
+        ),
         'work': encodeVideoMetadataWork(work(title: 'Films', externalId: '9')),
       },
     );
     expect(res.status, 409);
-    final VideoMetadataWriteResult result =
-        VideoMetadataWriteResult.fromJson(res.json);
+    final VideoMetadataWriteResult result = VideoMetadataWriteResult.fromJson(
+      res.json,
+    );
     expect(result.conflict, VideoMetadataConflict.ambiguousWork);
     expect(
       result.ambiguousWorks.map((VideoMetadataWorkKey k) => k.bookUid),
       unorderedEquals(<String>['Movie A', 'Movie B']),
     );
-    expect(await db.getVideoMetadataWorkByBook('Movie A'), isNotNull,
-        reason: '成员作品行不得被合集级 apply 删掉');
+    expect(
+      await db.getVideoMetadataWorkByBook('Movie A'),
+      isNotNull,
+      reason: '成员作品行不得被合集级 apply 删掉',
+    );
     expect(await db.getVideoMetadataWorkByBook('Movie B'), isNotNull);
     expect(await db.getVideoMetadataWorkByCollection(filmsId), isNull);
 
@@ -416,28 +455,38 @@ void main() {
       '/api/library/metadata',
       body: <String, Object?>{
         'key': const VideoMetadataWorkKey.book('Movie A').toJson(),
-        'lookup': encodeVideoMetadataLookup(const VideoMetadataLookup(
-          provider: VideoMetadataProviderKind.mal,
-          externalId: '9',
-          mediaKind: VideoMetadataMediaKind.movie,
-        )),
+        'lookup': encodeVideoMetadataLookup(
+          const VideoMetadataLookup(
+            provider: VideoMetadataProviderKind.mal,
+            externalId: '9',
+            mediaKind: VideoMetadataMediaKind.movie,
+          ),
+        ),
         'work': encodeVideoMetadataWork(
-          work(title: 'Movie A', plot: 'client', externalId: '9')
-              .copyWith(kind: VideoMetadataMediaKind.movie),
+          work(
+            title: 'Movie A',
+            plot: 'client',
+            externalId: '9',
+          ).copyWith(kind: VideoMetadataMediaKind.movie),
         ),
         'replaceIdentity': true,
       },
     );
     expect(one.status, 200);
     expect(
-        (await db.getVideoMetadataWorkByBook('Movie A'))!.overview, 'client');
+      (await db.getVideoMetadataWorkByBook('Movie A'))!.overview,
+      'client',
+    );
     expect((await db.getVideoMetadataWorkByBook('Movie B'))!.overview, 'plot');
   });
 
   test('坏请求：缺 key / 缺 lookup → 400；未知作品 → 409 notPlanned', () async {
     expect(
-      (await call('PUT', '/api/library/metadata', body: <String, Object?>{}))
-          .status,
+      (await call(
+        'PUT',
+        '/api/library/metadata',
+        body: <String, Object?>{},
+      )).status,
       400,
     );
     final ({int status, Object? json}) unknown = await call(
@@ -445,11 +494,13 @@ void main() {
       '/api/library/metadata',
       body: <String, Object?>{
         'key': const VideoMetadataWorkKey.book('nope').toJson(),
-        'lookup': encodeVideoMetadataLookup(const VideoMetadataLookup(
-          provider: VideoMetadataProviderKind.mal,
-          externalId: '1',
-          mediaKind: VideoMetadataMediaKind.tv,
-        )),
+        'lookup': encodeVideoMetadataLookup(
+          const VideoMetadataLookup(
+            provider: VideoMetadataProviderKind.mal,
+            externalId: '1',
+            mediaKind: VideoMetadataMediaKind.tv,
+          ),
+        ),
         'work': encodeVideoMetadataWork(work()),
       },
     );

@@ -17,7 +17,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
   group('AssParser.parseString', () {
     test('正常解析三条字幕', () {
       final List<AudioCue> cues = AssParser.parseString(
-        content: '''
+        content:
+            '''
 ${header}Dialogue: 0,0:00:01.00,0:00:04.23,Default,,0,0,0,,吾輩は猫である。
 Dialogue: 0,0:00:04.50,0:00:08.10,Default,,0,0,0,,名前はまだない。
 Dialogue: 0,0:00:08.20,0:00:12.00,Default,,0,0,0,,どこで生れたかとんと見当がつかぬ。
@@ -37,7 +38,8 @@ Dialogue: 0,0:00:08.20,0:00:12.00,Default,,0,0,0,,どこで生れたかとんと
 
     test('ASS 覆盖标签被剥离', () {
       final List<AudioCue> cues = AssParser.parseString(
-        content: '''
+        content:
+            '''
 ${header}Dialogue: 0,0:00:01.00,0:00:03.00,Default,,0,0,0,,{\\an8}{\\b1}強調テキスト{\\b0}
 ''',
         bookKey: 'test/book.ass',
@@ -49,7 +51,8 @@ ${header}Dialogue: 0,0:00:01.00,0:00:03.00,Default,,0,0,0,,{\\an8}{\\b1}強調�
 
     test('软换行符 \\N 转为空格', () {
       final List<AudioCue> cues = AssParser.parseString(
-        content: '''
+        content:
+            '''
 ${header}Dialogue: 0,0:00:01.00,0:00:03.00,Default,,0,0,0,,一行目\\N二行目
 ''',
         bookKey: 'test/book.ass',
@@ -61,7 +64,8 @@ ${header}Dialogue: 0,0:00:01.00,0:00:03.00,Default,,0,0,0,,一行目\\N二行目
 
     test('Text 列中含逗号的内容正确拼合', () {
       final List<AudioCue> cues = AssParser.parseString(
-        content: '''
+        content:
+            '''
 ${header}Dialogue: 0,0:00:01.00,0:00:03.00,Default,,0,0,0,,はい、そうです。
 ''',
         bookKey: 'test/book.ass',
@@ -73,7 +77,8 @@ ${header}Dialogue: 0,0:00:01.00,0:00:03.00,Default,,0,0,0,,はい、そうです
 
     test('按 startMs 排序（Dialogue 顺序不影响结果）', () {
       final List<AudioCue> cues = AssParser.parseString(
-        content: '''
+        content:
+            '''
 ${header}Dialogue: 0,0:00:05.00,0:00:07.00,Default,,0,0,0,,後の行
 Dialogue: 0,0:00:01.00,0:00:03.00,Default,,0,0,0,,前の行
 ''',
@@ -87,7 +92,8 @@ Dialogue: 0,0:00:01.00,0:00:03.00,Default,,0,0,0,,前の行
 
     test('时间码厘秒精度正确（.67 → 670ms）', () {
       final List<AudioCue> cues = AssParser.parseString(
-        content: '''
+        content:
+            '''
 ${header}Dialogue: 0,0:00:01.67,0:00:03.00,Default,,0,0,0,,厘秒テスト
 ''',
         bookKey: 'test/book.ass',
@@ -101,7 +107,8 @@ ${header}Dialogue: 0,0:00:01.67,0:00:03.00,Default,,0,0,0,,厘秒テスト
       // SRT→ASS 转换工具常产出 3 位毫秒时间码（0:00:01.000）；旧正则只认
       // 2 位厘秒 → startMs=null → cue 被跳过 → 0 cue → 上层误报「不支持」。
       final List<AudioCue> cues = AssParser.parseString(
-        content: '''
+        content:
+            '''
 ${header}Dialogue: 0,0:00:01.000,0:00:04.500,Default,,0,0,0,,毫秒テスト
 ''',
         bookKey: 'test/book.ass',
@@ -114,7 +121,8 @@ ${header}Dialogue: 0,0:00:01.000,0:00:04.500,Default,,0,0,0,,毫秒テスト
 
     test('时间码 1 位十分之一秒精度正确（.1 → 100ms，TODO-870）', () {
       final List<AudioCue> cues = AssParser.parseString(
-        content: '''
+        content:
+            '''
 ${header}Dialogue: 0,0:00:01.1,0:00:03.0,Default,,0,0,0,,十分の一秒テスト
 ''',
         bookKey: 'test/book.ass',
@@ -149,7 +157,8 @@ ${header}Dialogue: 0,0:00:01.1,0:00:03.0,Default,,0,0,0,,十分の一秒テス�
     });
 
     test('reads PlayRes and normalizes \\pos; fills markup (BUG-105)', () {
-      const String ass = '[Script Info]\n'
+      const String ass =
+          '[Script Info]\n'
           'PlayResX: 1920\n'
           'PlayResY: 1080\n'
           '\n'
@@ -157,8 +166,10 @@ ${header}Dialogue: 0,0:00:01.1,0:00:03.0,Default,,0,0,0,,十分の一秒テス�
           'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n'
           r'Dialogue: 0,0:00:01.00,0:00:04.00,Default,,0,0,0,,{\pos(960,540)}やあ'
           '\n';
-      final List<AudioCue> cues =
-          AssParser.parseString(content: ass, bookKey: 'b');
+      final List<AudioCue> cues = AssParser.parseString(
+        content: ass,
+        bookKey: 'b',
+      );
       expect(cues.single.text, 'やあ');
       expect(cues.single.markup?.posFraction?.xFraction, closeTo(0.5, 1e-9));
       expect(cues.single.markup?.posFraction?.yFraction, closeTo(0.5, 1e-9));
@@ -173,31 +184,39 @@ PlayResY: 1080
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 Dialogue: 0,0:00:01.00,0:00:03.00,Default,,0,0,0,,x
 ''';
-      final List<AudioCue> cues =
-          AssParser.parseString(content: ass, bookKey: 'b');
+      final List<AudioCue> cues = AssParser.parseString(
+        content: ass,
+        bookKey: 'b',
+      );
       expect(cues.single.markup?.playResY, 1080);
     });
 
     test(
-        'markup PlayResY falls back to ASS 288 default when absent (TODO-1246)',
-        () {
-      const String ass = '''
+      'markup PlayResY falls back to ASS 288 default when absent (TODO-1246)',
+      () {
+        const String ass = '''
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 Dialogue: 0,0:00:01.00,0:00:03.00,Default,,0,0,0,,x
 ''';
-      final List<AudioCue> cues =
-          AssParser.parseString(content: ass, bookKey: 'b');
-      expect(cues.single.markup?.playResY, 288);
-    });
+        final List<AudioCue> cues = AssParser.parseString(
+          content: ass,
+          bookKey: 'b',
+        );
+        expect(cues.single.markup?.playResY, 288);
+      },
+    );
 
     test('strips {\\an8} override into plain text + anchor (BUG-105)', () {
-      const String ass = '[Events]\n'
+      const String ass =
+          '[Events]\n'
           'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n'
           r'Dialogue: 0,0:00:01.00,0:00:04.00,Default,,0,0,0,,{\an8}（カンナ）ふわぁ~'
           '\n';
-      final List<AudioCue> cues =
-          AssParser.parseString(content: ass, bookKey: 'b');
+      final List<AudioCue> cues = AssParser.parseString(
+        content: ass,
+        bookKey: 'b',
+      );
       expect(cues.single.text, '（カンナ）ふわぁ~');
       expect(cues.single.markup?.anchor?.vertical, SubtitleVAlign.top);
       expect(cues.single.markup?.anchor?.horizontal, SubtitleHAlign.center);

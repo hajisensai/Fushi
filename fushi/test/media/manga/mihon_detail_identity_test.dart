@@ -72,15 +72,15 @@ void main() {
     Map<Object?, Object?>? sentDetailArguments;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (MethodCall call) async {
-      sentDetailArguments = call.arguments as Map<Object?, Object?>;
-      return <String, Object?>{
-        // 桌面 sidecar 对未初始化 lateinit 的真实产物就是空串。
-        'url': '',
-        'title': 'ONE PIECE学園',
-        'author': '尾田栄一郎',
-        'initialized': true,
-      };
-    });
+          sentDetailArguments = call.arguments as Map<Object?, Object?>;
+          return <String, Object?>{
+            // 桌面 sidecar 对未初始化 lateinit 的真实产物就是空串。
+            'url': '',
+            'title': 'ONE PIECE学園',
+            'author': '尾田栄一郎',
+            'initialized': true,
+          };
+        });
     addTearDown(() {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, null);
@@ -98,10 +98,7 @@ void main() {
         language: 'ja',
         baseUrl: 'https://mangamura.test',
       ),
-      const MihonManga(
-        url: '/manga/one-piece-gakuen',
-        title: 'ONE PIECE学園',
-      ),
+      const MihonManga(url: '/manga/one-piece-gakuen', title: 'ONE PIECE学園'),
     );
 
     expect(details.url, '/manga/one-piece-gakuen');
@@ -124,7 +121,8 @@ void main() {
       expect(
         maskComments(modelBridge).contains('fun SManga.mergedWithDetails('),
         isTrue,
-        reason: 'MihonModelBridge.kt 少了 mergedWithDetails；'
+        reason:
+            'MihonModelBridge.kt 少了 mergedWithDetails；'
             '详情增量就会重新被当成完整条目读 lateinit url。',
       );
     });
@@ -141,7 +139,8 @@ void main() {
       expect(
         RegExp(r'(result|update|detailedManga)\s*\.\s*url').hasMatch(branch),
         isFalse,
-        reason: 'getDetailsManga 分支又开始读详情结果的 url 了，'
+        reason:
+            'getDetailsManga 分支又开始读详情结果的 url 了，'
             '那是未初始化的 lateinit，必报 RUNTIME_FAILURE：\n$branch',
       );
     });
@@ -154,7 +153,8 @@ void main() {
     expect(
       maskComments(handler).contains('catch (_: Throwable)'),
       isFalse,
-      reason: 'MethodChannel 兜底又开始丢弃 Throwable 了；'
+      reason:
+          'MethodChannel 兜底又开始丢弃 Throwable 了；'
           '扩展失败原因只存在于 cause 链，丢了就无从诊断。',
     );
     expect(
@@ -177,7 +177,9 @@ String _getDetailsMangaBranch(String source) {
   if (start < 0) {
     fail('MihonChannelHandler.kt 里找不到 "getDetailsManga" 分支');
   }
-  final int next =
-      source.indexOf(RegExp('"[A-Za-z]+" ->'), start + marker.length);
+  final int next = source.indexOf(
+    RegExp('"[A-Za-z]+" ->'),
+    start + marker.length,
+  );
   return source.substring(start, next < 0 ? source.length : next);
 }

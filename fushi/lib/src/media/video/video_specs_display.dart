@@ -137,8 +137,9 @@ List<(VideoSpecField field, String value)> videoSpecsFields(
   }
 
   // 码率优先用视频流自己的；mkv 不给流级码率，退回容器级（见 VideoProbeFacts 注释）。
-  final String? bitrate =
-      formatBitrate(video?.bitrate ?? facts.containerBitrate);
+  final String? bitrate = formatBitrate(
+    video?.bitrate ?? facts.containerBitrate,
+  );
   if (bitrate != null) rows.add((VideoSpecField.bitrate, bitrate));
 
   return List<(VideoSpecField, String)>.unmodifiable(rows);
@@ -173,25 +174,25 @@ class TrackDisplay {
 /// 轨道名的回落链与播放器侧音轨菜单一致（title → language → 序号），免得同一条轨道
 /// 在详情页叫「Japanese 5.1」、在播放器里叫「音轨 2」。
 TrackDisplay audioTrackDisplay(AudioTrackFacts track) => TrackDisplay(
-      name: trackDisplayName(track.title, track.language, track.index),
-      detail: <String>[
-        if (track.codecLabel != null) track.codecLabel!,
-        if (track.isAtmos) 'Atmos',
-        if (track.channelLabel != null) track.channelLabel!,
-      ].join(' · '),
-      isDefault: track.isDefault,
-      isForced: track.isForced,
-      isCommentary: track.isCommentary,
-    );
+  name: trackDisplayName(track.title, track.language, track.index),
+  detail: <String>[
+    if (track.codecLabel != null) track.codecLabel!,
+    if (track.isAtmos) 'Atmos',
+    if (track.channelLabel != null) track.channelLabel!,
+  ].join(' · '),
+  isDefault: track.isDefault,
+  isForced: track.isForced,
+  isCommentary: track.isCommentary,
+);
 
 /// 字幕轨 → 展示形态。
 TrackDisplay subtitleTrackDisplay(SubtitleTrackFacts track) => TrackDisplay(
-      name: trackDisplayName(track.title, track.language, track.index),
-      detail: track.codecLabel ?? '',
-      isDefault: track.isDefault,
-      isForced: track.isForced,
-      isCommentary: false,
-    );
+  name: trackDisplayName(track.title, track.language, track.index),
+  detail: track.codecLabel ?? '',
+  isDefault: track.isDefault,
+  isForced: track.isForced,
+  isCommentary: false,
+);
 
 /// 轨道名回落：自报标题 → 语言 tag（大写）→ `#序号`。
 String trackDisplayName(String? title, String? language, int index) {

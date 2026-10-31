@@ -29,8 +29,7 @@ void main() {
   ];
 
   for (final String rel in popupJsPaths) {
-    test(
-        'popup.js "$rel" does not shadow the window.__fushiRoot marker with a '
+    test('popup.js "$rel" does not shadow the window.__fushiRoot marker with a '
         'same-named function declaration', () {
       final File f = File(rel);
       expect(f.existsSync(), isTrue, reason: 'missing popup.js asset: $rel');
@@ -38,25 +37,38 @@ void main() {
 
       // The shadow-DOM marker contract (BUG-688) must remain: popup.js still
       // reads window.__fushiRoot (set only by the extension's content.js).
-      expect(js.contains('window.__fushiRoot'), isTrue,
-          reason: 'popup.js must keep reading the window.__fushiRoot marker');
+      expect(
+        js.contains('window.__fushiRoot'),
+        isTrue,
+        reason: 'popup.js must keep reading the window.__fushiRoot marker',
+      );
 
       // REGRESSION LOCK: no top-level `function __fushiRoot(` — declaring a
       // function with the marker's exact name republishes window.__fushiRoot as
       // that function, making it truthy in-app and blanking the popup.
       final RegExp collidingDecl = RegExp(r'function\s+__fushiRoot\s*\(');
-      expect(collidingDecl.hasMatch(js), isFalse,
-          reason: 'a `function __fushiRoot(` declaration collides with the '
-              'window.__fushiRoot shadow-root marker and blanks the popup '
-              '(BUG-706). Name the helper something else (e.g. '
-              '__fushiRootNode).');
+      expect(
+        collidingDecl.hasMatch(js),
+        isFalse,
+        reason:
+            'a `function __fushiRoot(` declaration collides with the '
+            'window.__fushiRoot shadow-root marker and blanks the popup '
+            '(BUG-706). Name the helper something else (e.g. '
+            '__fushiRootNode).',
+      );
 
       // The renamed helper must exist and be used (the DOM-access indirection is
       // still present, just collision-free).
-      expect(js.contains('function __fushiRootNode('), isTrue,
-          reason: 'the collision-free root helper __fushiRootNode must exist');
-      expect(js.contains('__fushiRootNode()'), isTrue,
-          reason: 'popup.js must route DOM access through __fushiRootNode()');
+      expect(
+        js.contains('function __fushiRootNode('),
+        isTrue,
+        reason: 'the collision-free root helper __fushiRootNode must exist',
+      );
+      expect(
+        js.contains('__fushiRootNode()'),
+        isTrue,
+        reason: 'popup.js must route DOM access through __fushiRootNode()',
+      );
     });
   }
 }

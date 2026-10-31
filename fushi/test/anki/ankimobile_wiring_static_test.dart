@@ -4,13 +4,14 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   test('iOS platform services use the AnkiMobile repository', () {
-    final src =
-        File('lib/src/platform/platform_services.dart').readAsStringSync();
+    final src = File(
+      'lib/src/platform/platform_services.dart',
+    ).readAsStringSync();
 
     expect(
-        src,
-        contains(
-            "import 'package:fushi/src/anki/ankimobile_repository.dart';"));
+      src,
+      contains("import 'package:fushi/src/anki/ankimobile_repository.dart';"),
+    );
     expect(src, contains('if (Platform.isIOS)'));
     expect(src, contains('createAnkiRepository: AnkiMobileRepository.new'));
   });
@@ -19,12 +20,14 @@ void main() {
     final src = File('lib/src/anki/anki_view_model.dart').readAsStringSync();
 
     expect(
-        src,
-        contains(
-            "import 'package:fushi/src/platform/platform_providers.dart';"));
+      src,
+      contains("import 'package:fushi/src/platform/platform_providers.dart';"),
+    );
     expect(src, contains('ref.watch(platformServicesProvider)'));
-    expect(src,
-        isNot(contains('if (isAndroidPlatform) return AnkiRepository();')));
+    expect(
+      src,
+      isNot(contains('if (isAndroidPlatform) return AnkiRepository();')),
+    );
   });
 
   // AnkiMobile/iOS 是 BaseAnkiRepository 之外**另一份**「渲染前重建 context」的落卡路径。
@@ -32,8 +35,9 @@ void main() {
   // 结构上照不到 fushi/ 下这一份——手抄逐字段重建在这里漏一个新字段（本次是
   // clipStartMs/clipEndMs），iOS 用户的卡就少一块，而全套测试仍绿。
   test('AnkiMobile 渲染路径用 withMediaRefs 而非手抄重建 AnkiMiningContext', () {
-    final String src =
-        File('lib/src/anki/ankimobile_repository.dart').readAsStringSync();
+    final String src = File(
+      'lib/src/anki/ankimobile_repository.dart',
+    ).readAsStringSync();
     final int renderStart = src.indexOf('_renderMinedFieldsForAnkiMobile({');
     expect(renderStart, greaterThan(-1), reason: '锚点漂移，守卫失效');
     // 结束锚必须先跳过命名参数表的收尾（本方法是 `\n  }) async {`）：直接从

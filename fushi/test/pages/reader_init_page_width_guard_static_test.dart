@@ -21,64 +21,71 @@ void main() {
   final String src = readReaderPageSource();
 
   test(
-      'setup script records the paginated viewport into _paginatedWidth/Height',
-      () {
-    final String setup = _functionSource(
-      src,
-      '  ReaderEngineConfig _buildReaderEngineConfig(',
-      '  // ── ',
-    );
-    expect(
-      setup,
-      contains('_paginatedWidth = screenSize.width'),
-      reason:
-          'per-nav config 必须把 dartPageWidth 用的 screenSize.width 记进 _paginatedWidth，'
-          '作为 content-ready 后的「已分页基线」。',
-    );
-    expect(
-      setup,
-      contains('_paginatedHeight = screenSize.height'),
-      reason: 'per-nav config 必须同步记录 _paginatedHeight。',
-    );
-  });
+    'setup script records the paginated viewport into _paginatedWidth/Height',
+    () {
+      final String setup = _functionSource(
+        src,
+        '  ReaderEngineConfig _buildReaderEngineConfig(',
+        '  // ── ',
+      );
+      expect(
+        setup,
+        contains('_paginatedWidth = screenSize.width'),
+        reason:
+            'per-nav config 必须把 dartPageWidth 用的 screenSize.width 记进 _paginatedWidth，'
+            '作为 content-ready 后的「已分页基线」。',
+      );
+      expect(
+        setup,
+        contains('_paginatedHeight = screenSize.height'),
+        reason: 'per-nav config 必须同步记录 _paginatedHeight。',
+      );
+    },
+  );
 
-  test('content-ready baseline uses _paginatedWidth, not current MediaQuery',
-      () {
-    // _onRestoreComplete：初始首屏 content-ready 的权威路径，postFrame 会调 _syncPageSize。
-    final String restore = _functionSource(
-      src,
-      '  void _onRestoreComplete()',
-      '  bool ',
-    );
-    expect(
-      restore,
-      contains('_lastSyncedWidth = _paginatedWidth'),
-      reason: '_onRestoreComplete 的同步基线必须取 _paginatedWidth（JS 已分页宽度），'
-          '否则 postFrame 的 _syncPageSize 比对同值、初始重排恒 no-op（BUG-111）。',
-    );
-    expect(
-      restore,
-      contains('_lastSyncedHeight = _paginatedHeight'),
-      reason: '_onRestoreComplete 高度基线同理取 _paginatedHeight。',
-    );
-  });
+  test(
+    'content-ready baseline uses _paginatedWidth, not current MediaQuery',
+    () {
+      // _onRestoreComplete：初始首屏 content-ready 的权威路径，postFrame 会调 _syncPageSize。
+      final String restore = _functionSource(
+        src,
+        '  void _onRestoreComplete()',
+        '  bool ',
+      );
+      expect(
+        restore,
+        contains('_lastSyncedWidth = _paginatedWidth'),
+        reason:
+            '_onRestoreComplete 的同步基线必须取 _paginatedWidth（JS 已分页宽度），'
+            '否则 postFrame 的 _syncPageSize 比对同值、初始重排恒 no-op（BUG-111）。',
+      );
+      expect(
+        restore,
+        contains('_lastSyncedHeight = _paginatedHeight'),
+        reason: '_onRestoreComplete 高度基线同理取 _paginatedHeight。',
+      );
+    },
+  );
 
-  test('no current-MediaQuery self-flattening of _lastSyncedWidth survives',
-      () {
-    expect(
-      src.contains('_lastSyncedWidth = screen.width'),
-      isFalse,
-      reason:
-          '不得用 content-ready 当前 MediaQuery（screen.width）抹平 _lastSyncedWidth '
-          '——这正是 BUG-111 让初始重排校验失效的写法。',
-    );
-    expect(
-      src.contains('_lastSyncedWidth = screenSync.width'),
-      isFalse,
-      reason: '不得用 _onChapterLoadComplete 的当前 MediaQuery（screenSync.width）抹平 '
-          '_lastSyncedWidth。',
-    );
-  });
+  test(
+    'no current-MediaQuery self-flattening of _lastSyncedWidth survives',
+    () {
+      expect(
+        src.contains('_lastSyncedWidth = screen.width'),
+        isFalse,
+        reason:
+            '不得用 content-ready 当前 MediaQuery（screen.width）抹平 _lastSyncedWidth '
+            '——这正是 BUG-111 让初始重排校验失效的写法。',
+      );
+      expect(
+        src.contains('_lastSyncedWidth = screenSync.width'),
+        isFalse,
+        reason:
+            '不得用 _onChapterLoadComplete 的当前 MediaQuery（screenSync.width）抹平 '
+            '_lastSyncedWidth。',
+      );
+    },
+  );
 }
 
 /// 截取 [source] 中从 [start] 标记到其后第一个 [end] 标记之间的片段（含函数体）。

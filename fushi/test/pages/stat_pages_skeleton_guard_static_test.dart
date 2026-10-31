@@ -44,8 +44,11 @@ void main() {
       final String content = methodBody(src, 'Widget _buildContent()');
 
       test('骨架顺序：学习日历 → 范围区块 → 最近沉浸 → 按媒体列表', () {
-        expect(content.contains('StatDashboardBody('), isTrue,
-            reason: '${e.key} 不走共享骨架');
+        expect(
+          content.contains('StatDashboardBody('),
+          isTrue,
+          reason: '${e.key} 不走共享骨架',
+        );
         final int calendar = src.contains('Widget _buildCalendarSection()')
             ? content.indexOf('_buildCalendarSection()')
             : content.indexOf('buildStatRangeCalendarSection(');
@@ -62,14 +65,19 @@ void main() {
           '_buildSummaryCards()',
           'buildStatKpiTiles(',
         ]) {
-          expect(content.contains(gone), isFalse,
-              reason: '${e.key} 还留着 $gone（2026-10-09 已删）');
+          expect(
+            content.contains(gone),
+            isFalse,
+            reason: '${e.key} 还留着 $gone（2026-10-09 已删）',
+          );
         }
       });
 
       test('范围区块齐全：范围条 / 范围时长图 / 所选范围卡；不再写死近 30 天', () {
-        final String range =
-            methodBody(src, 'List<Widget> _buildRangeSection()');
+        final String range = methodBody(
+          src,
+          'List<Widget> _buildRangeSection()',
+        );
         for (final String block in <String>[
           'StatRangeBar(',
           'buildStatRangeChartSection(',

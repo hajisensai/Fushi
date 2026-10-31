@@ -27,7 +27,8 @@ ValueChanged<String>? discoveryAiAcquireAction({
   OnlineSourcesDomain? onlineDomain,
 }) {
   final AppModel appModel = readAppModel();
-  final bool gates = appModel.isPreferencesReady &&
+  final bool gates =
+      appModel.isPreferencesReady &&
       StoreRestrictedCapability.downloads.isAvailable &&
       StoreRestrictedCapability.externalDiscovery.isAvailable &&
       isAiModuleEnabled(appModel.moduleVisibility);
@@ -40,9 +41,11 @@ ValueChanged<String>? discoveryAiAcquireAction({
         appModel: current,
         domain: domain,
         domainLabel: domainLabel,
-        includeOnlineSources: onlineDomain != null &&
-            visibleOnlineSourcesDomains(current.moduleVisibility)
-                .contains(onlineDomain),
+        includeOnlineSources:
+            onlineDomain != null &&
+            visibleOnlineSourcesDomains(
+              current.moduleVisibility,
+            ).contains(onlineDomain),
         initialQuery: query,
       ),
     );

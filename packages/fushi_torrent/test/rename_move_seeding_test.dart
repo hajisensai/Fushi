@@ -52,8 +52,9 @@ void main() {
   }
 
   final EmbeddedTorrentEngine? engine = tryOpen();
-  final String? skip =
-      engine == null ? 'fushi_torrent_ffi native lib not built' : null;
+  final String? skip = engine == null
+      ? 'fushi_torrent_ffi native lib not built'
+      : null;
 
   late Directory tempDir;
 
@@ -71,22 +72,31 @@ void main() {
 
   /// 起一个已经下完（因而在做种）的 session，返回它与下载目录。
   Future<(EmbeddedTorrentSession, LocalSeedRig, Directory)>
-      seedingSession() async {
+  seedingSession() async {
     final LocalSeedRig rig = await LocalSeedRig.start(
-        engine: engine!, workDir: tempDir, contentBytes: 512 * 1024);
+      engine: engine!,
+      workDir: tempDir,
+      contentBytes: 512 * 1024,
+    );
     addTearDown(rig.dispose);
 
-    final EmbeddedTorrentSession? leecher =
-        EmbeddedTorrentSession.open(engine, listenInterfaces: '127.0.0.1:0');
+    final EmbeddedTorrentSession? leecher = EmbeddedTorrentSession.open(
+      engine,
+      listenInterfaces: '127.0.0.1:0',
+    );
     expect(leecher, isNotNull);
     addTearDown(leecher!.close);
 
     final Directory dlDir = Directory('${tempDir.path}/dl')..createSync();
-    final FtAddResult added =
-        leecher.addMagnet(rig.magnetUri, savePath: dlDir.path);
+    final FtAddResult added = leecher.addMagnet(
+      rig.magnetUri,
+      savePath: dlDir.path,
+    );
     expect(added.ok, isTrue, reason: 'addMagnet: ${added.error}');
     expect(
-        leecher.connectPeer(rig.infoHash, '127.0.0.1', rig.seederPort), isTrue);
+      leecher.connectPeer(rig.infoHash, '127.0.0.1', rig.seederPort),
+      isTrue,
+    );
 
     await _pollUntil(
       () {
@@ -106,7 +116,9 @@ void main() {
 
   /// 断言种子仍然完整且在做种 —— 即上传没断。
   Future<void> expectStillSeeding(
-      EmbeddedTorrentSession session, String infoHash) async {
+    EmbeddedTorrentSession session,
+    String infoHash,
+  ) async {
     await _pollUntil(
       () {
         final FtTorrentStatus? t = session
@@ -120,9 +132,13 @@ void main() {
     );
     final FtPieceMap? pieces = session.torrentPieces(infoHash);
     expect(pieces, isNotNull);
-    expect(pieces!.haveCount, pieces.numPieces,
-        reason: 'every piece must still be present — a broken rename/move '
-            'would make libtorrent drop out of seeding with missing pieces');
+    expect(
+      pieces!.haveCount,
+      pieces.numPieces,
+      reason:
+          'every piece must still be present — a broken rename/move '
+          'would make libtorrent drop out of seeding with missing pieces',
+    );
   }
 
   test(
@@ -131,7 +147,7 @@ void main() {
       final (
         EmbeddedTorrentSession session,
         LocalSeedRig rig,
-        Directory dlDir
+        Directory dlDir,
       ) = await seedingSession();
 
       final List<FtFileEntry>? before = session.torrentFiles(rig.infoHash);
@@ -141,8 +157,11 @@ void main() {
       expect(oldFile.existsSync(), isTrue);
 
       const String newName = '整理过的名字.bin';
-      final FtStorageOpResult result =
-          session.renameFile(rig.infoHash, before.single.index, newName);
+      final FtStorageOpResult result = session.renameFile(
+        rig.infoHash,
+        before.single.index,
+        newName,
+      );
       expect(result.ok, isTrue, reason: 'rename failed: ${result.error}');
       expect(result.path, newName);
 
@@ -166,17 +185,23 @@ void main() {
       final (
         EmbeddedTorrentSession session,
         LocalSeedRig rig,
-        Directory dlDir
+        Directory dlDir,
       ) = await seedingSession();
 
       final List<FtFileEntry>? before = session.torrentFiles(rig.infoHash);
       const String nested = 'Season 1/ep01.bin';
-      final FtStorageOpResult result =
-          session.renameFile(rig.infoHash, before!.single.index, nested);
+      final FtStorageOpResult result = session.renameFile(
+        rig.infoHash,
+        before!.single.index,
+        nested,
+      );
       expect(result.ok, isTrue, reason: 'rename failed: ${result.error}');
 
-      expect(File('${dlDir.path}/Season 1/ep01.bin').existsSync(), isTrue,
-          reason: 'engine must create the subdirectory and move data into it');
+      expect(
+        File('${dlDir.path}/Season 1/ep01.bin').existsSync(),
+        isTrue,
+        reason: 'engine must create the subdirectory and move data into it',
+      );
       await expectStillSeeding(session, rig.infoHash);
     },
     skip: skip,
@@ -189,7 +214,7 @@ void main() {
       final (
         EmbeddedTorrentSession session,
         LocalSeedRig rig,
-        Directory dlDir
+        Directory dlDir,
       ) = await seedingSession();
 
       final List<FtFileEntry>? files = session.torrentFiles(rig.infoHash);
@@ -197,21 +222,28 @@ void main() {
       expect(File('${dlDir.path}/$name').existsSync(), isTrue);
 
       final Directory target = Directory('${tempDir.path}/moved');
-      final FtStorageOpResult result =
-          session.moveStorage(rig.infoHash, target.path);
+      final FtStorageOpResult result = session.moveStorage(
+        rig.infoHash,
+        target.path,
+      );
       expect(result.ok, isTrue, reason: 'move failed: ${result.error}');
       expect(result.path, isNotNull);
 
-      expect(File('${target.path}/$name').existsSync(), isTrue,
-          reason: 'content must exist under the new save path');
-      expect(File('${dlDir.path}/$name').existsSync(), isFalse,
-          reason:
-              'move must not leave a copy behind (it is a move, not a copy)');
+      expect(
+        File('${target.path}/$name').existsSync(),
+        isTrue,
+        reason: 'content must exist under the new save path',
+      );
+      expect(
+        File('${dlDir.path}/$name').existsSync(),
+        isFalse,
+        reason: 'move must not leave a copy behind (it is a move, not a copy)',
+      );
 
       // savePath 跟着变，做种没断。
-      final FtTorrentStatus moved = session
-          .listTorrents()
-          .firstWhere((FtTorrentStatus t) => t.id == rig.infoHash);
+      final FtTorrentStatus moved = session.listTorrents().firstWhere(
+        (FtTorrentStatus t) => t.id == rig.infoHash,
+      );
       expect(File(moved.contentPath).existsSync(), isTrue);
       await expectStillSeeding(session, rig.infoHash);
     },
@@ -225,7 +257,7 @@ void main() {
       final (
         EmbeddedTorrentSession session,
         LocalSeedRig rig,
-        Directory dlDir
+        Directory dlDir,
       ) = await seedingSession();
 
       final List<FtFileEntry>? files = session.torrentFiles(rig.infoHash);
@@ -237,10 +269,15 @@ void main() {
       final File squatter = File('${target.path}/$name')
         ..writeAsStringSync('do not clobber me');
 
-      final FtStorageOpResult result =
-          session.moveStorage(rig.infoHash, target.path);
-      expect(result.ok, isFalse,
-          reason: 'must refuse rather than overwrite user data');
+      final FtStorageOpResult result = session.moveStorage(
+        rig.infoHash,
+        target.path,
+      );
+      expect(
+        result.ok,
+        isFalse,
+        reason: 'must refuse rather than overwrite user data',
+      );
       expect(result.error, isNotNull);
 
       // 用户的文件一个字节都没被动，源内容也还在（不是搬了一半）。
@@ -255,18 +292,25 @@ void main() {
   test(
     'rename/move on an unknown torrent reports an error instead of crashing',
     () {
-      final EmbeddedTorrentSession? session =
-          EmbeddedTorrentSession.open(engine!, listenInterfaces: '');
+      final EmbeddedTorrentSession? session = EmbeddedTorrentSession.open(
+        engine!,
+        listenInterfaces: '',
+      );
       expect(session, isNotNull);
       addTearDown(session!.close);
 
-      final FtStorageOpResult renamed =
-          session.renameFile('0' * 40, 0, 'whatever.bin');
+      final FtStorageOpResult renamed = session.renameFile(
+        '0' * 40,
+        0,
+        'whatever.bin',
+      );
       expect(renamed.ok, isFalse);
       expect(renamed.error, isNotNull);
 
-      final FtStorageOpResult moved =
-          session.moveStorage('0' * 40, tempDir.path);
+      final FtStorageOpResult moved = session.moveStorage(
+        '0' * 40,
+        tempDir.path,
+      );
       expect(moved.ok, isFalse);
       expect(moved.error, isNotNull);
     },

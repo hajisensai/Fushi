@@ -34,10 +34,8 @@ Future<void> showDesktopOAuthWaitDialog({
   return showAppDialog<void>(
     context: context,
     barrierDismissible: false,
-    builder: (BuildContext _) => DesktopOAuthWaitDialog(
-      launch: launch,
-      done: done,
-    ),
+    builder: (BuildContext _) =>
+        DesktopOAuthWaitDialog(launch: launch, done: done),
   );
 }
 
@@ -64,16 +62,22 @@ class _DesktopOAuthWaitDialogState extends State<DesktopOAuthWaitDialog> {
   @override
   void initState() {
     super.initState();
-    unawaited(widget.launch.finished.then((_) {
-      _close();
-    }));
-    unawaited(widget.done.then((_) {
-      _close();
-    }));
-    unawaited(widget.launch.browserOpened.then((bool opened) {
-      if (opened || !mounted) return;
-      setState(() => _browserOpened = false);
-    }));
+    unawaited(
+      widget.launch.finished.then((_) {
+        _close();
+      }),
+    );
+    unawaited(
+      widget.done.then((_) {
+        _close();
+      }),
+    );
+    unawaited(
+      widget.launch.browserOpened.then((bool opened) {
+        if (opened || !mounted) return;
+        setState(() => _browserOpened = false);
+      }),
+    );
   }
 
   void _close() {
@@ -151,8 +155,9 @@ class _DesktopOAuthWaitDialogState extends State<DesktopOAuthWaitDialog> {
                     const SizedBox(height: 8),
                     Text(
                       t.sync_desktop_oauth_browser_open_failed,
-                      style: theme.textTheme.bodyMedium
-                          ?.copyWith(color: theme.colorScheme.error),
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: theme.colorScheme.error,
+                      ),
                     ),
                   ],
                   const SizedBox(height: 12),

@@ -29,8 +29,9 @@ class ReaderPositionRepository {
     required int normCharOffset,
     int? charOffset,
   }) async {
-    final ReaderPositionRow? existing =
-        charOffset == null ? await _db.getReaderPosition(bookUid) : null;
+    final ReaderPositionRow? existing = charOffset == null
+        ? await _db.getReaderPosition(bookUid)
+        : null;
     // TODO-1292 / BUG（退出图1重进图2）：char_offset（精确锚）与 norm_char_offset（分数）
     // 是同一位置的两套坐标，恢复时精确锚优先（reader shell 在 initialCharOffset>=0 时走
     // restoreToCharOffset）。此前同 section 传 null（WebView 当帧算不出精确偏移：竖排/ruby
@@ -54,13 +55,15 @@ class ReaderPositionRepository {
     } else {
       charOffsetValue = const Value.absent();
     }
-    await _db.upsertReaderPosition(ReaderPositionsCompanion(
-      bookUid: Value(bookUid),
-      sectionIndex: Value(sectionIndex),
-      normCharOffset: Value(normCharOffset),
-      charOffset: charOffsetValue,
-      updatedAt: Value(DateTime.now().millisecondsSinceEpoch),
-    ));
+    await _db.upsertReaderPosition(
+      ReaderPositionsCompanion(
+        bookUid: Value(bookUid),
+        sectionIndex: Value(sectionIndex),
+        normCharOffset: Value(normCharOffset),
+        charOffset: charOffsetValue,
+        updatedAt: Value(DateTime.now().millisecondsSinceEpoch),
+      ),
+    );
   }
 
   Future<void> delete(String bookUid) => _db.deleteReaderPosition(bookUid);

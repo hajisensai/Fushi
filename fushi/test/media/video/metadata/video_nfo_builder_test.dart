@@ -11,16 +11,13 @@ void main() {
     String name, {
     String? profileUrl,
     String? tmdbId,
-  }) =>
-      VideoMetadataPerson(
-        name: name,
-        profileUrl: profileUrl,
-        ids: tmdbId == null
-            ? const <VideoMetadataId>[]
-            : <VideoMetadataId>[
-                VideoMetadataId(type: 'tmdb', value: tmdbId),
-              ],
-      );
+  }) => VideoMetadataPerson(
+    name: name,
+    profileUrl: profileUrl,
+    ids: tmdbId == null
+        ? const <VideoMetadataId>[]
+        : <VideoMetadataId>[VideoMetadataId(type: 'tmdb', value: tmdbId)],
+  );
 
   XmlDocument parse(Uint8List bytes) => XmlDocument.parse(utf8.decode(bytes));
 
@@ -106,8 +103,10 @@ void main() {
           .getAttribute('default'),
       'false',
     );
-    expect(document.findAllElements('genre').map((XmlElement e) => e.innerText),
-        <String>['动画', '奇幻']);
+    expect(
+      document.findAllElements('genre').map((XmlElement e) => e.innerText),
+      <String>['动画', '奇幻'],
+    );
 
     final XmlElement director = document.findAllElements('director').single;
     expect(director.innerText, '导演 A');
@@ -120,8 +119,10 @@ void main() {
     expect(actor.getElement('language')?.innerText, 'ja');
     expect(actor.getElement('tmdbid')?.innerText, '12');
     expect(actor.getElement('thumb')?.innerText, 'https://image.example/c.jpg');
-    expect(actor.getElement('profile')?.innerText,
-        'https://www.themoviedb.org/person/12');
+    expect(
+      actor.getElement('profile')?.innerText,
+      'https://www.themoviedb.org/person/12',
+    );
   });
 
   test('tvshow 使用 AniDB 主源 ID，并写 season/episode=-1', () {
@@ -159,10 +160,12 @@ void main() {
       ],
     );
 
-    final XmlDocument document = parse(VideoNfoBuilder.buildSeason(
-      season,
-      primaryProvider: VideoMetadataProviderKind.anidb,
-    ));
+    final XmlDocument document = parse(
+      VideoNfoBuilder.buildSeason(
+        season,
+        primaryProvider: VideoMetadataProviderKind.anidb,
+      ),
+    );
     expect(document.rootElement.name.local, 'season');
     expect(firstText(document, 'title'), '第二季');
     expect(firstText(document, 'premiered'), '2025-04-01');
@@ -171,12 +174,12 @@ void main() {
     expect(firstText(document, 'anidbid'), '202');
     expect(firstText(document, 'tmdbid'), '222');
     expect(
-        document
-            .findAllElements('uniqueid')
-            .singleWhere(
-                (XmlElement id) => id.getAttribute('default') == 'true')
-            .getAttribute('type'),
-        'anidb');
+      document
+          .findAllElements('uniqueid')
+          .singleWhere((XmlElement id) => id.getAttribute('default') == 'true')
+          .getAttribute('type'),
+      'anidb',
+    );
   });
 
   test('episode 只输出确定字段，使用真实分集 ID 和客串资料', () {
@@ -208,30 +211,29 @@ void main() {
     expect(firstText(document, 'anidbid'), '17007');
     expect(firstText(document, 'tmdbid'), '7007');
     expect(
-        document
-            .findAllElements('uniqueid')
-            .singleWhere(
-                (XmlElement id) => id.getAttribute('default') == 'true')
-            .getAttribute('type'),
-        'anidb');
+      document
+          .findAllElements('uniqueid')
+          .singleWhere((XmlElement id) => id.getAttribute('default') == 'true')
+          .getAttribute('type'),
+      'anidb',
+    );
     expect(firstText(document, 'season'), '1');
     expect(firstText(document, 'episode'), '7');
     expect(firstText(document, 'year'), '2026');
     expect(firstText(document, 'runtime'), isNull);
     expect(firstText(document, 'plot'), contains(']]>'));
     expect(
-        document.findAllElements('actor').single.getElement('type')?.innerText,
-        'GuestStar');
+      document.findAllElements('actor').single.getElement('type')?.innerText,
+      'GuestStar',
+    );
   });
 
   test('episode 缺少真实标题时不把文件名或占位名写进 NFO', () {
-    final XmlDocument document = parse(VideoNfoBuilder.buildEpisode(
-      VideoMetadataEpisode(
-        seasonNumber: 2,
-        episodeNumber: 3,
-        title: '',
+    final XmlDocument document = parse(
+      VideoNfoBuilder.buildEpisode(
+        VideoMetadataEpisode(seasonNumber: 2, episodeNumber: 3, title: ''),
       ),
-    ));
+    );
 
     expect(firstText(document, 'title'), isNull);
     expect(firstText(document, 'season'), '2');

@@ -40,8 +40,9 @@ void main() {
 
   late Directory pathProviderDir;
   setUpAll(() {
-    pathProviderDir =
-        Directory.systemTemp.createTempSync('fushi_wall_hover_pp');
+    pathProviderDir = Directory.systemTemp.createTempSync(
+      'fushi_wall_hover_pp',
+    );
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
       (MethodCall call) async => pathProviderDir.path,
@@ -89,10 +90,7 @@ void main() {
 
   Widget buildApp(VideoLibrarySection section, {double uiScale = 1.0}) {
     final Widget page = Scaffold(
-      body: HomeVideoPage(
-        repo: VideoBookRepository(db),
-        section: section,
-      ),
+      body: HomeVideoPage(repo: VideoBookRepository(db), section: section),
     );
     return ProviderScope(
       overrides: <Override>[
@@ -138,8 +136,10 @@ void main() {
         matching: find.byType(Transform),
       );
       if (inner.evaluate().isEmpty) continue;
-      final double sx =
-          tester.widget<Transform>(inner.first).transform.getMaxScaleOnAxis();
+      final double sx = tester
+          .widget<Transform>(inner.first)
+          .transform
+          .getMaxScaleOnAxis();
       // 1.001 的门限只滤浮点噪声：真实抬升是 1.05，缓动尾巴也远在其上。
       if (sx > 1.001) out.add(tester.getRect(one));
     }
@@ -176,11 +176,7 @@ void main() {
     await tester.sendEventToBinding(pointer.hover(pointerPos));
     await tester.pumpAndSettle();
 
-    expect(
-      visuallyLifted(tester).length,
-      1,
-      reason: '悬停后应恰好一张卡放大',
-    );
+    expect(visuallyLifted(tester).length, 1, reason: '悬停后应恰好一张卡放大');
     expect(visuallyLifted(tester).single.contains(pointerPos), isTrue);
 
     final ScrollableState scrollable = tester.state<ScrollableState>(
@@ -205,7 +201,8 @@ void main() {
         expect(
           stray,
           isEmpty,
-          reason: '第${step + 1}档第${frame + 1}帧：屏幕上放大的卡 $stray 不在指针 '
+          reason:
+              '第${step + 1}档第${frame + 1}帧：屏幕上放大的卡 $stray 不在指针 '
               '$pointerPos 底下——抬升残留到了已经滚走的卡上（BUG-2124）',
         );
       }
@@ -256,7 +253,8 @@ void main() {
     expect(
       after.length,
       1,
-      reason: '滚动停止后指针底下的卡必须重新抬升——滚动压制只压视觉，不许清掉 '
+      reason:
+          '滚动停止后指针底下的卡必须重新抬升——滚动压制只压视觉，不许清掉 '
           'hover 真值：MouseRegion 不会因为滚动结束补发 onEnter，清了就再也涨不回来',
     );
     expect(after.single.contains(pointerPos), isTrue);

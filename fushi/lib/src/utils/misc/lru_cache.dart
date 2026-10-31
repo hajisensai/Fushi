@@ -10,14 +10,14 @@ typedef LruSizeOf<V> = int Function(V value);
 /// 从最久未用端逐条淘汰（条数上限保留作兜底）。不传则行为与旧版逐字节一致。
 class LruCache<K, V extends Object> {
   LruCache(this._maxSize, {int? maxBytes, LruSizeOf<V>? sizeOf})
-      : assert(
-          (maxBytes == null) == (sizeOf == null),
-          'maxBytes and sizeOf must be provided together',
-        ),
-        _maxBytes = maxBytes,
-        _sizeOf = sizeOf,
-        _map = LinkedHashMap<K, V>(),
-        _entryBytes = sizeOf == null ? null : HashMap<K, int>();
+    : assert(
+        (maxBytes == null) == (sizeOf == null),
+        'maxBytes and sizeOf must be provided together',
+      ),
+      _maxBytes = maxBytes,
+      _sizeOf = sizeOf,
+      _map = LinkedHashMap<K, V>(),
+      _entryBytes = sizeOf == null ? null : HashMap<K, int>();
 
   final int _maxSize;
   final LruSizeOf<V>? _sizeOf;

@@ -48,14 +48,13 @@ void main() {
     });
 
     test('同条目跨多个多成员合集：取最小 collectionId（与折叠归属同口径）', () {
-      final Map<String, int> uids = multiMemberCollectionIdByVideoUid(
-        <MediaCollectionItemRow>[
-          _item(9, 'video', 'video/both'),
-          _item(9, 'video', 'video/nine'),
-          _item(5, 'video', 'video/both'),
-          _item(5, 'video', 'video/five'),
-        ],
-      );
+      final Map<String, int> uids =
+          multiMemberCollectionIdByVideoUid(<MediaCollectionItemRow>[
+            _item(9, 'video', 'video/both'),
+            _item(9, 'video', 'video/nine'),
+            _item(5, 'video', 'video/both'),
+            _item(5, 'video', 'video/five'),
+          ]);
       expect(uids['video/both'], 5, reason: '海报该落到库网格里折叠进的那张卡');
     });
 

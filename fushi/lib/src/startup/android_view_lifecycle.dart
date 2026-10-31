@@ -11,7 +11,7 @@ import 'package:fushi/src/startup/exit_flush_registry.dart';
 /// A subsequent Activity can attach even while this flush is still running.
 class AndroidViewLifecycle {
   AndroidViewLifecycle({ExitFlushRegistry? registry})
-      : _registry = registry ?? ExitFlushRegistry.instance;
+    : _registry = registry ?? ExitFlushRegistry.instance;
 
   final ExitFlushRegistry _registry;
   Future<void>? _flushInFlight;

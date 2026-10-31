@@ -27,10 +27,10 @@ import '../helpers/source_guard.dart';
 import '../helpers/test_platform_services.dart';
 
 FushiDatabase _memDb() => FushiDatabase.forTesting(
-      NativeDatabase.memory(
-        setup: (rawDb) => rawDb.execute('PRAGMA foreign_keys = ON'),
-      ),
-    );
+  NativeDatabase.memory(
+    setup: (rawDb) => rawDb.execute('PRAGMA foreign_keys = ON'),
+  ),
+);
 
 Future<void> _pumpDialog(
   WidgetTester tester,
@@ -54,9 +54,7 @@ Future<void> _pumpDialog(
         // 固定窄窗，避免 master-detail 宽窗分支（既往测试教训）。
         home: MediaQuery(
           data: const MediaQueryData(size: Size(420, 800)),
-          child: Scaffold(
-            body: MediaSourcesDialog(mediaKind: mediaKind),
-          ),
+          child: Scaffold(body: MediaSourcesDialog(mediaKind: mediaKind)),
         ),
       ),
     ),
@@ -74,17 +72,19 @@ Future<int> _seedSource(
   DateTime? lastScannedAt,
   String? lastScanError,
 }) {
-  return db.insertMediaSource(MediaSourcesCompanion(
-    label: Value(label),
-    mediaKind: Value(mediaKind),
-    transport: const Value('local'),
-    rootPath: Value(rootPath),
-    sortOrder: Value(sortOrder),
-    mediaCount: Value(mediaCount),
-    lastScannedAt: Value(lastScannedAt),
-    lastScanError: Value(lastScanError),
-    createdAt: Value(DateTime.now().millisecondsSinceEpoch),
-  ));
+  return db.insertMediaSource(
+    MediaSourcesCompanion(
+      label: Value(label),
+      mediaKind: Value(mediaKind),
+      transport: const Value('local'),
+      rootPath: Value(rootPath),
+      sortOrder: Value(sortOrder),
+      mediaCount: Value(mediaCount),
+      lastScannedAt: Value(lastScannedAt),
+      lastScanError: Value(lastScanError),
+      createdAt: Value(DateTime.now().millisecondsSinceEpoch),
+    ),
+  );
 }
 
 /// 插入一条归属 [sourceId] 的视频条目（TODO-1036 累计计数用）。
@@ -92,37 +92,40 @@ Future<void> _seedVideo(
   FushiDatabase db,
   String bookUid, {
   required int sourceId,
-}) =>
-    db.upsertVideoBook(VideoBooksCompanion(
-      bookUid: Value(bookUid),
-      title: Value(bookUid),
-      videoPath: Value('/srv/$bookUid.mp4'),
-      sourceId: Value(sourceId),
-      importedAt: Value(DateTime.now().millisecondsSinceEpoch),
-    ));
+}) => db.upsertVideoBook(
+  VideoBooksCompanion(
+    bookUid: Value(bookUid),
+    title: Value(bookUid),
+    videoPath: Value('/srv/$bookUid.mp4'),
+    sourceId: Value(sourceId),
+    importedAt: Value(DateTime.now().millisecondsSinceEpoch),
+  ),
+);
 
 /// 插入一条归属 [sourceId] 的 EPUB 条目（TODO-1036 累计计数用）。
 Future<void> _seedBook(
   FushiDatabase db,
   String bookKey, {
   required int sourceId,
-}) =>
-    db.insertEpubBook(EpubBooksCompanion.insert(
-      bookKey: bookKey,
-      title: bookKey,
-      epubPath: '/srv/$bookKey.epub',
-      extractDir: '/srv/$bookKey',
-      chapterCount: 1,
-      chaptersJson: '[]',
-      importedAt: DateTime.now().millisecondsSinceEpoch,
-      sourceId: Value(sourceId),
-    ));
+}) => db.insertEpubBook(
+  EpubBooksCompanion.insert(
+    bookKey: bookKey,
+    title: bookKey,
+    epubPath: '/srv/$bookKey.epub',
+    extractDir: '/srv/$bookKey',
+    chapterCount: 1,
+    chaptersJson: '[]',
+    importedAt: DateTime.now().millisecondsSinceEpoch,
+    sourceId: Value(sourceId),
+  ),
+);
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('empty scan-root list still shows Fushi Interconnect',
-      (tester) async {
+  testWidgets('empty scan-root list still shows Fushi Interconnect', (
+    tester,
+  ) async {
     final FushiDatabase db = _memDb();
     addTearDown(db.close);
     await _pumpDialog(tester, db, 'video');
@@ -130,8 +133,9 @@ void main() {
     expect(find.text('No sources yet'), findsNothing);
   });
 
-  testWidgets('manga sources compose interconnect and every folder — 但不含在线站点',
-      (tester) async {
+  testWidgets('manga sources compose interconnect and every folder — 但不含在线站点', (
+    tester,
+  ) async {
     final FushiDatabase db = _memDb();
     addTearDown(db.close);
     await _seedSource(
@@ -161,28 +165,33 @@ void main() {
     expect(find.text(r'D:\manga\b'), findsOneWidget);
   });
 
-  testWidgets('video sources render label / rootPath / count + last scan',
-      (tester) async {
+  testWidgets('video sources render label / rootPath / count + last scan', (
+    tester,
+  ) async {
     final FushiDatabase db = _memDb();
     addTearDown(db.close);
     // TODO-1036：统计显示的是来源**累计拥有**的条目数（直接 COUNT video_books），
     // 不是 mediaCount（上次扫描新增数）。这里给 Anime 实插 2 条视频，mediaCount
     // 故意设成不一致的 68 来证明 UI 不再读 mediaCount。
-    final int anime = await _seedSource(db,
-        label: 'Anime',
-        mediaKind: 'video',
-        rootPath: '/srv/anime',
-        sortOrder: 0,
-        mediaCount: 68,
-        lastScannedAt: DateTime(2026, 6, 25, 11, 27));
+    final int anime = await _seedSource(
+      db,
+      label: 'Anime',
+      mediaKind: 'video',
+      rootPath: '/srv/anime',
+      sortOrder: 0,
+      mediaCount: 68,
+      lastScannedAt: DateTime(2026, 6, 25, 11, 27),
+    );
     await _seedVideo(db, 'video/a1', sourceId: anime);
     await _seedVideo(db, 'video/a2', sourceId: anime);
-    await _seedSource(db,
-        label: 'Movies',
-        mediaKind: 'video',
-        rootPath: '/srv/movies',
-        sortOrder: 1,
-        mediaCount: 3);
+    await _seedSource(
+      db,
+      label: 'Movies',
+      mediaKind: 'video',
+      rootPath: '/srv/movies',
+      sortOrder: 1,
+      mediaCount: 3,
+    );
     await _pumpDialog(tester, db, 'video');
 
     expect(find.text('Anime'), findsOneWidget);
@@ -190,9 +199,7 @@ void main() {
     await tester.tap(find.byKey(ValueKey<String>('media_source_menu_$anime')));
     await tester.pumpAndSettle();
     expect(
-      find.byKey(
-        ValueKey<String>('video_scrape_diagnostic_export_$anime'),
-      ),
+      find.byKey(ValueKey<String>('video_scrape_diagnostic_export_$anime')),
       findsOneWidget,
     );
     await tester.tapAt(Offset.zero);
@@ -208,29 +215,38 @@ void main() {
   testWidgets('scan error row shows scan-failed text', (tester) async {
     final FushiDatabase db = _memDb();
     addTearDown(db.close);
-    await _seedSource(db,
-        label: 'Broken',
-        mediaKind: 'video',
-        rootPath: '/srv/broken',
-        lastScanError: 'boom');
+    await _seedSource(
+      db,
+      label: 'Broken',
+      mediaKind: 'video',
+      rootPath: '/srv/broken',
+      lastScanError: 'boom',
+    );
     await _pumpDialog(tester, db, 'video');
     expect(find.text('Scan failed'), findsOneWidget);
   });
 
-  testWidgets('remove confirms, keeps imported media (FK setNull)',
-      (tester) async {
+  testWidgets('remove confirms, keeps imported media (FK setNull)', (
+    tester,
+  ) async {
     final FushiDatabase db = _memDb();
     addTearDown(db.close);
-    final int sid = await _seedSource(db,
-        label: 'Anime', mediaKind: 'video', rootPath: '/srv/anime');
+    final int sid = await _seedSource(
+      db,
+      label: 'Anime',
+      mediaKind: 'video',
+      rootPath: '/srv/anime',
+    );
     // 归属本来源的视频条目。
-    await db.upsertVideoBook(VideoBooksCompanion(
-      bookUid: const Value('video/owned'),
-      title: const Value('Owned'),
-      videoPath: const Value('/srv/anime/owned.mp4'),
-      sourceId: Value(sid),
-      importedAt: Value(DateTime.now().millisecondsSinceEpoch),
-    ));
+    await db.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: const Value('video/owned'),
+        title: const Value('Owned'),
+        videoPath: const Value('/srv/anime/owned.mp4'),
+        sourceId: Value(sid),
+        importedAt: Value(DateTime.now().millisecondsSinceEpoch),
+      ),
+    );
     await _pumpDialog(tester, db, 'video');
 
     // 行尾「⋯」菜单 -> 移除 -> 确认对话框。
@@ -238,8 +254,10 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(ValueKey<String>('media_source_remove_$sid')));
     await tester.pumpAndSettle();
-    expect(find.text('Removing a source does not delete imported media.'),
-        findsOneWidget);
+    expect(
+      find.text('Removing a source does not delete imported media.'),
+      findsOneWidget,
+    );
 
     // 确认（弹窗有两个「Remove source」文本：标题 + 确认按钮，点最后一个）。
     await tester.tap(find.text('Remove source').last);
@@ -253,18 +271,19 @@ void main() {
     expect(video!.sourceId, isNull, reason: 'FK setNull detaches the source');
   });
 
-  testWidgets(
-      'book mediaKind uses book count phrase (cumulative, not '
+  testWidgets('book mediaKind uses book count phrase (cumulative, not '
       'mediaCount)', (tester) async {
     final FushiDatabase db = _memDb();
     addTearDown(db.close);
     // TODO-1036：mediaCount=12（上次扫描新增）但实际只有 3 本归属本来源，UI 必须
     // 显示累计 3，不是 12（重扫已全导入的来源 mediaCount 会回落 0）。
-    final int novels = await _seedSource(db,
-        label: 'Novels',
-        mediaKind: 'book',
-        rootPath: '/srv/novels',
-        mediaCount: 12);
+    final int novels = await _seedSource(
+      db,
+      label: 'Novels',
+      mediaKind: 'book',
+      rootPath: '/srv/novels',
+      mediaCount: 12,
+    );
     await _seedBook(db, 'N1', sourceId: novels);
     await _seedBook(db, 'N2', sourceId: novels);
     await _seedBook(db, 'N3', sourceId: novels);
@@ -281,14 +300,17 @@ void main() {
   //
   // 行为烟囱测试：扫描 in-flight 时把对话框整棵换出树（dispose），排空扫描 future
   // 后不得抛异常。真正把不变量钉死的是下方源码守卫（`ref.` 只允许出现在 initState）。
-  testWidgets('rescan then dispose dialog mid-scan drains without throwing',
-      (tester) async {
+  testWidgets('rescan then dispose dialog mid-scan drains without throwing', (
+    tester,
+  ) async {
     final FushiDatabase db = _memDb();
     addTearDown(db.close);
-    await _seedSource(db,
-        label: 'Ghost',
-        mediaKind: 'video',
-        rootPath: '/nonexistent/m1c_bug513');
+    await _seedSource(
+      db,
+      label: 'Ghost',
+      mediaKind: 'video',
+      rootPath: '/nonexistent/m1c_bug513',
+    );
     final AppModel appModel = AppModel(testPlatformServices())
       ..wireDatabaseForTesting(db);
 
@@ -316,8 +338,11 @@ void main() {
     await tester.pumpWidget(const MaterialApp(home: Scaffold()));
     await tester.pumpAndSettle();
 
-    expect(tester.takeException(), isNull,
-        reason: 'mid-scan dispose must not surface an exception (BUG-513)');
+    expect(
+      tester.takeException(),
+      isNull,
+      reason: 'mid-scan dispose must not surface an exception (BUG-513)',
+    );
   });
 
   // BUG-513 源码守卫：数据库/provider 引用只允许在 initState 里 `ref.read` 一次并
@@ -336,18 +361,25 @@ void main() {
 
     test('_db is a captured field, not a per-call ref.read getter', () {
       // 修复前是 `FushiDatabase get _db => ref.read(appProvider).database;`。
-      expect(src.contains('get _db =>'), isFalse,
-          reason: 'a getter re-reads ref on every async-gap access (BUG-513)');
-      expect(src.contains('late final FushiDatabase _db'), isTrue,
-          reason: 'database must be captured once in initState');
+      expect(
+        src.contains('get _db =>'),
+        isFalse,
+        reason: 'a getter re-reads ref on every async-gap access (BUG-513)',
+      );
+      expect(
+        src.contains('late final FushiDatabase _db'),
+        isTrue,
+        reason: 'database must be captured once in initState',
+      );
     });
 
     test('every ref.read/watch/listen sits inside initState', () {
       // 注释与字符串字面量都掩成等长空白（共享 helper）：注释里提到 ref.read 不
       // 误报，串里的花括号也不会把 initState 的深度计数带偏。原实现按行
       // replaceAll(RegExp('//.*'))，块注释和串里的 // 两个方向都漏。
-      final List<String> lines =
-          const LineSplitter().convert(maskCommentsAndStrings(src));
+      final List<String> lines = const LineSplitter().convert(
+        maskCommentsAndStrings(src),
+      );
       final RegExp refAccess = RegExp(r'\bref\.(read|watch|listen)\b');
       final RegExp initStart = RegExp(r'void\s+initState\s*\(\s*\)');
       bool inInit = false;
@@ -362,9 +394,13 @@ void main() {
           depth -= '}'.allMatches(line).length;
         }
         if (refAccess.hasMatch(line)) {
-          expect(inInit, isTrue,
-              reason: 'ref.* outside initState re-reads a possibly-disposed '
-                  'ProviderScope across async gaps (BUG-513): "$line"');
+          expect(
+            inInit,
+            isTrue,
+            reason:
+                'ref.* outside initState re-reads a possibly-disposed '
+                'ProviderScope across async gaps (BUG-513): "$line"',
+          );
         }
         if (inInit && depth <= 0 && line.contains('}')) {
           inInit = false;
@@ -379,7 +415,8 @@ void main() {
       // 实现体已从对话框文件搬到 [MediaSourcesView]（对话框与库页「来源」视图共用
       // 同一份行为），守卫因此跟着扫内容体文件；断言逐条不变。移除来源的落库步骤
       // （含凭据清除）收进 removeSourceLibrary（BUG-2755），两份一起扫。
-      src = File(
+      src =
+          File(
             'lib/src/pages/implementations/media_sources_view.dart',
           ).readAsStringSync() +
           File(
@@ -389,37 +426,58 @@ void main() {
 
     test('source removal goes through removeSourceLibrary', () {
       expect(
-          File('lib/src/pages/implementations/media_sources_view.dart')
-              .readAsStringSync()
-              .contains('removeSourceLibrary('),
-          isTrue,
-          reason: '视图移除来源必须走 removeSourceLibrary（凭据与下载引用一起处理）');
+        File(
+          'lib/src/pages/implementations/media_sources_view.dart',
+        ).readAsStringSync().contains('removeSourceLibrary('),
+        isTrue,
+        reason: '视图移除来源必须走 removeSourceLibrary（凭据与下载引用一起处理）',
+      );
     });
 
-    test('secrets go through SourceLibraryCredentialStore, not the source row',
-        () {
-      // TODO-1274: 网络凭据经 SourceLibraryCredentialStore 单独落 Preferences（base64），
-      // 绝不作为列塞进 insertMediaSource 的 MediaSourcesCompanion。
-      expect(src.contains('SourceLibraryCredentialStore'), isTrue,
-          reason: '网络凭据必须走独立凭据存储');
-      expect(src.contains('.saveSecret('), isTrue,
-          reason: '新增网络来源必须调 saveSecret 存凭据');
-      expect(src.contains('.deleteSecret('), isTrue, reason: '移除来源必须清除对应凭据');
-      // 密码/私钥绝不作为 drift 列写进来源行（表里也根本没有这些列）。
-      expect(RegExp(r'password:\s*Value\(').hasMatch(src), isFalse,
-          reason: '密码绝不作为列写进来源行');
-      expect(RegExp(r'privateKey:\s*Value\(').hasMatch(src), isFalse,
-          reason: '私钥绝不作为列写进来源行');
-    });
+    test(
+      'secrets go through SourceLibraryCredentialStore, not the source row',
+      () {
+        // TODO-1274: 网络凭据经 SourceLibraryCredentialStore 单独落 Preferences（base64），
+        // 绝不作为列塞进 insertMediaSource 的 MediaSourcesCompanion。
+        expect(
+          src.contains('SourceLibraryCredentialStore'),
+          isTrue,
+          reason: '网络凭据必须走独立凭据存储',
+        );
+        expect(
+          src.contains('.saveSecret('),
+          isTrue,
+          reason: '新增网络来源必须调 saveSecret 存凭据',
+        );
+        expect(src.contains('.deleteSecret('), isTrue, reason: '移除来源必须清除对应凭据');
+        // 密码/私钥绝不作为 drift 列写进来源行（表里也根本没有这些列）。
+        expect(
+          RegExp(r'password:\s*Value\(').hasMatch(src),
+          isFalse,
+          reason: '密码绝不作为列写进来源行',
+        );
+        expect(
+          RegExp(r'privateKey:\s*Value\(').hasMatch(src),
+          isFalse,
+          reason: '私钥绝不作为列写进来源行',
+        );
+      },
+    );
 
     test('configJson value only ever comes from encodeSourceConfig', () {
       // 网络分支确会传 configJson，但其值必须是 encodeSourceConfig(...) 的输出——
       // 该白名单只保留 host/port/username/useTls，剥离 password/privateKey（见
       // media_source_util_test 的红线用例），绝不手工把明文凭据拼进 JSON。
-      expect(src.contains('encodeSourceConfig('), isTrue,
-          reason: 'configJson 必须由白名单编码器生成');
-      expect(src.contains('configJson: Value(configJson)'), isTrue,
-          reason: '只把 encodeSourceConfig 的结果作为 configJson 落库');
+      expect(
+        src.contains('encodeSourceConfig('),
+        isTrue,
+        reason: 'configJson 必须由白名单编码器生成',
+      );
+      expect(
+        src.contains('configJson: Value(configJson)'),
+        isTrue,
+        reason: '只把 encodeSourceConfig 的结果作为 configJson 落库',
+      );
     });
 
     test('uses FushiReorderableColumn, not SDK ReorderableListView', () {
@@ -427,26 +485,38 @@ void main() {
       expect(src.contains('ReorderableListView('), isFalse);
     });
 
-    test('webdav transport wired: segment + WebDavSyncBackend test connection',
-        () {
-      // TODO-1274: WebDAV 作为第三种网络传输接入——transport 集含 webdav（书/漫画
-      // 四选、视频去掉 FTP，见 _networkTransports），测试连接复用 sync 子系统的
-      // WebDavSyncBackend（PROPFIND 探活），凭据仍走 saveSecret（上面的红线守卫
-      // 覆盖），绝不作为列写进来源行。
-      expect(src.contains("const <String>['sftp', 'ftp', 'webdav', 'alist']"),
+    test(
+      'webdav transport wired: segment + WebDavSyncBackend test connection',
+      () {
+        // TODO-1274: WebDAV 作为第三种网络传输接入——transport 集含 webdav（书/漫画
+        // 四选、视频去掉 FTP，见 _networkTransports），测试连接复用 sync 子系统的
+        // WebDavSyncBackend（PROPFIND 探活），凭据仍走 saveSecret（上面的红线守卫
+        // 覆盖），绝不作为列写进来源行。
+        expect(
+          src.contains("const <String>['sftp', 'ftp', 'webdav', 'alist']"),
           isTrue,
-          reason: '书/漫画的网络来源 transport 集必须提供 SFTP/FTP/WebDAV/AList 四选');
-      expect(src.contains("const <String>['sftp', 'webdav', 'alist']"), isTrue,
-          reason: '视频网络来源必须收窄到 SFTP/WebDAV/AList（FTP 读不了区间不可 seek）');
-      expect(src.contains('WebDavSyncBackend.instance.testConnection'), isTrue,
-          reason: 'WebDAV 测试连接必须复用 sync 的 WebDavSyncBackend');
-    });
+          reason: '书/漫画的网络来源 transport 集必须提供 SFTP/FTP/WebDAV/AList 四选',
+        );
+        expect(
+          src.contains("const <String>['sftp', 'webdav', 'alist']"),
+          isTrue,
+          reason: '视频网络来源必须收窄到 SFTP/WebDAV/AList（FTP 读不了区间不可 seek）',
+        );
+        expect(
+          src.contains('WebDavSyncBackend.instance.testConnection'),
+          isTrue,
+          reason: 'WebDAV 测试连接必须复用 sync 的 WebDavSyncBackend',
+        );
+      },
+    );
 
-    test('deletion goes through deleteMediaSource (FK setNull keeps media)',
-        () {
-      expect(src.contains('deleteMediaSource'), isTrue);
-      expect(src.contains('deleteVideoBook'), isFalse);
-      expect(src.contains('deleteEpubBook'), isFalse);
-    });
+    test(
+      'deletion goes through deleteMediaSource (FK setNull keeps media)',
+      () {
+        expect(src.contains('deleteMediaSource'), isTrue);
+        expect(src.contains('deleteVideoBook'), isFalse);
+        expect(src.contains('deleteEpubBook'), isFalse);
+      },
+    );
   });
 }

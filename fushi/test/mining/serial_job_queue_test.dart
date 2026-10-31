@@ -6,21 +6,15 @@ void main() {
   test('正常任务按入队顺序串行执行，各自返回结果', () async {
     final SerialJobQueue queue = SerialJobQueue();
     final List<int> order = <int>[];
-    final Future<String> a = queue.enqueue<String>(
-      () async {
-        await Future<void>.delayed(const Duration(milliseconds: 10));
-        order.add(1);
-        return 'a';
-      },
-      buildFailure: (_, __) => 'fail',
-    );
-    final Future<String> b = queue.enqueue<String>(
-      () async {
-        order.add(2);
-        return 'b';
-      },
-      buildFailure: (_, __) => 'fail',
-    );
+    final Future<String> a = queue.enqueue<String>(() async {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      order.add(1);
+      return 'a';
+    }, buildFailure: (_, __) => 'fail');
+    final Future<String> b = queue.enqueue<String>(() async {
+      order.add(2);
+      return 'b';
+    }, buildFailure: (_, __) => 'fail');
     expect(await a, 'a');
     expect(await b, 'b');
     expect(order, <int>[1, 2], reason: '必须严格串行，b 等 a 完成后才跑');
@@ -52,21 +46,12 @@ void main() {
           onError: (Object e, StackTrace s) =>
               throw StateError('handler boom too'),
         )
-        .timeout(
-          const Duration(seconds: 2),
-          onTimeout: () => 'TIMEOUT-挂起了',
-        );
+        .timeout(const Duration(seconds: 2), onTimeout: () => 'TIMEOUT-挂起了');
     expect(r1, 'failed', reason: 'onError 自身抛也应被吞，completer 仍以降级结果完成');
 
     final String r2 = await queue
-        .enqueue<String>(
-          () async => 'recovered',
-          buildFailure: (_, __) => 'x',
-        )
-        .timeout(
-          const Duration(seconds: 2),
-          onTimeout: () => 'TIMEOUT-队列被毒化',
-        );
+        .enqueue<String>(() async => 'recovered', buildFailure: (_, __) => 'x')
+        .timeout(const Duration(seconds: 2), onTimeout: () => 'TIMEOUT-队列被毒化');
     expect(r2, 'recovered', reason: '错误处理器抛异常后，后续任务仍必须执行（队列未毒化）');
   });
 
@@ -75,28 +60,24 @@ void main() {
     Object? caught;
     await queue
         .enqueue<String>(
-      () async => throw StateError('job boom'),
-      buildFailure: (Object e, StackTrace s) => throw StateError('build boom'),
-    )
+          () async => throw StateError('job boom'),
+          buildFailure: (Object e, StackTrace s) =>
+              throw StateError('build boom'),
+        )
         .catchError((Object e) {
-      caught = e;
-      return 'caught';
-    }).timeout(
-      const Duration(seconds: 2),
-      onTimeout: () => 'TIMEOUT',
+          caught = e;
+          return 'caught';
+        })
+        .timeout(const Duration(seconds: 2), onTimeout: () => 'TIMEOUT');
+    expect(
+      caught,
+      isA<StateError>(),
+      reason: 'buildFailure 抛时把原始错误抛给调用方，而非永久挂起',
     );
-    expect(caught, isA<StateError>(),
-        reason: 'buildFailure 抛时把原始错误抛给调用方，而非永久挂起');
 
     final String r2 = await queue
-        .enqueue<String>(
-          () async => 'still-ok',
-          buildFailure: (_, __) => 'x',
-        )
-        .timeout(
-          const Duration(seconds: 2),
-          onTimeout: () => 'TIMEOUT-毒化',
-        );
+        .enqueue<String>(() async => 'still-ok', buildFailure: (_, __) => 'x')
+        .timeout(const Duration(seconds: 2), onTimeout: () => 'TIMEOUT-毒化');
     expect(r2, 'still-ok');
   });
 
@@ -116,9 +97,6 @@ void main() {
       ),
     );
 
-    expect(
-      await queue.enqueueRethrowing<String>(() async => 'next'),
-      'next',
-    );
+    expect(await queue.enqueueRethrowing<String>(() async => 'next'), 'next');
   });
 }

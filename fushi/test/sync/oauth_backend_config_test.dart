@@ -37,15 +37,23 @@ void main() {
 
   group('shipped OAuth backends carry real (non-placeholder) client IDs', () {
     test('OneDrive client ID is not a placeholder', () {
-      expect(OneDriveSyncBackend.isConfigured, isTrue,
-          reason: 'OneDrive client ID was reverted to a YOUR_ placeholder; '
-              'the settings picker will hide the backend.');
+      expect(
+        OneDriveSyncBackend.isConfigured,
+        isTrue,
+        reason:
+            'OneDrive client ID was reverted to a YOUR_ placeholder; '
+            'the settings picker will hide the backend.',
+      );
     });
 
     test('Dropbox app key is not a placeholder', () {
-      expect(DropboxSyncBackend.isConfigured, isTrue,
-          reason: 'Dropbox app key was reverted to a YOUR_ placeholder; '
-              'the settings picker will hide the backend.');
+      expect(
+        DropboxSyncBackend.isConfigured,
+        isTrue,
+        reason:
+            'Dropbox app key was reverted to a YOUR_ placeholder; '
+            'the settings picker will hide the backend.',
+      );
     });
   });
 }

@@ -19,19 +19,19 @@ void main() {
       addTearDown(metadata.close);
       final VideoMetadataSearchDiscoveryProvider provider =
           VideoMetadataSearchDiscoveryProvider(
-        provider: metadata,
-        categories: const <VideoDiscoveryCategory>{
-          VideoDiscoveryCategory.anime,
-        },
-      );
+            provider: metadata,
+            categories: const <VideoDiscoveryCategory>{
+              VideoDiscoveryCategory.anime,
+            },
+          );
 
-      final ProviderBatchResult<VideoDiscoveryPage> result =
-          await provider.search(
-        const VideoDiscoveryRequest(
-          category: VideoDiscoveryCategory.anime,
-          query: 'Seihantai na Kimi to Boku',
-        ),
-      );
+      final ProviderBatchResult<VideoDiscoveryPage> result = await provider
+          .search(
+            const VideoDiscoveryRequest(
+              category: VideoDiscoveryCategory.anime,
+              query: 'Seihantai na Kimi to Boku',
+            ),
+          );
 
       expect(result.failures, isEmpty);
       final List<VideoDiscoveryItem> items = result.items.single.items;
@@ -111,13 +111,13 @@ void main() {
         );
         addTearDown(service.close);
 
-        final ProviderBatchResult<VideoDiscoveryPage> result =
-            await service.load(
-          VideoDiscoveryRequest(
-            category: category,
-            query: 'Seihantai na Kimi to Boku',
-          ),
-        );
+        final ProviderBatchResult<VideoDiscoveryPage> result = await service
+            .load(
+              VideoDiscoveryRequest(
+                category: category,
+                query: 'Seihantai na Kimi to Boku',
+              ),
+            );
 
         expect(result.isPartial, isTrue);
         expect(result.failures.single.providerId, 'anilist');
@@ -145,115 +145,125 @@ void main() {
     );
   }
 
-  test('adapts anime metadata search without changing canonical media kind',
-      () async {
-    final _FakeMetadataProvider metadata = _FakeMetadataProvider();
-    final VideoMetadataSearchDiscoveryProvider provider =
-        VideoMetadataSearchDiscoveryProvider(
-      provider: metadata,
-      categories: const <VideoDiscoveryCategory>{
-        VideoDiscoveryCategory.anime,
-      },
-    );
+  test(
+    'adapts anime metadata search without changing canonical media kind',
+    () async {
+      final _FakeMetadataProvider metadata = _FakeMetadataProvider();
+      final VideoMetadataSearchDiscoveryProvider provider =
+          VideoMetadataSearchDiscoveryProvider(
+            provider: metadata,
+            categories: const <VideoDiscoveryCategory>{
+              VideoDiscoveryCategory.anime,
+            },
+          );
 
-    final ProviderBatchResult<VideoDiscoveryPage> result =
-        await provider.search(
-      const VideoDiscoveryRequest(
-        category: VideoDiscoveryCategory.anime,
-        query: 'Anime',
-      ),
-    );
+      final ProviderBatchResult<VideoDiscoveryPage> result = await provider
+          .search(
+            const VideoDiscoveryRequest(
+              category: VideoDiscoveryCategory.anime,
+              query: 'Anime',
+            ),
+          );
 
-    expect(result.failures, isEmpty);
-    expect(metadata.requestedKinds, <VideoMetadataMediaKind>[
-      VideoMetadataMediaKind.tv,
-      VideoMetadataMediaKind.movie,
-    ]);
-    final List<VideoDiscoveryItem> items = result.items.single.items;
-    expect(items, hasLength(2));
-    expect(
-      items.map((VideoDiscoveryItem item) => item.reference.discoveryCategory),
-      everyElement(VideoDiscoveryCategory.anime),
-    );
-    expect(
-      items.map((VideoDiscoveryItem item) => item.reference.mediaKind),
-      containsAll(VideoMetadataMediaKind.values),
-    );
-    expect(items.first.metadataWork, isNotNull);
-    expect(items.first.confirmedLookup, isNotNull);
-  });
+      expect(result.failures, isEmpty);
+      expect(metadata.requestedKinds, <VideoMetadataMediaKind>[
+        VideoMetadataMediaKind.tv,
+        VideoMetadataMediaKind.movie,
+      ]);
+      final List<VideoDiscoveryItem> items = result.items.single.items;
+      expect(items, hasLength(2));
+      expect(
+        items.map(
+          (VideoDiscoveryItem item) => item.reference.discoveryCategory,
+        ),
+        everyElement(VideoDiscoveryCategory.anime),
+      );
+      expect(
+        items.map((VideoDiscoveryItem item) => item.reference.mediaKind),
+        containsAll(VideoMetadataMediaKind.values),
+      );
+      expect(items.first.metadataWork, isNotNull);
+      expect(items.first.confirmedLookup, isNotNull);
+    },
+  );
 
-  test('BUG-2750 anime search interleaves TV and movie results by rank',
-      () async {
-    final _FakeMetadataProvider metadata =
-        _FakeMetadataProvider(resultsPerKind: 3);
-    final VideoMetadataSearchDiscoveryProvider provider =
-        VideoMetadataSearchDiscoveryProvider(
-      provider: metadata,
-      categories: const <VideoDiscoveryCategory>{
-        VideoDiscoveryCategory.anime,
-      },
-    );
+  test(
+    'BUG-2750 anime search interleaves TV and movie results by rank',
+    () async {
+      final _FakeMetadataProvider metadata = _FakeMetadataProvider(
+        resultsPerKind: 3,
+      );
+      final VideoMetadataSearchDiscoveryProvider provider =
+          VideoMetadataSearchDiscoveryProvider(
+            provider: metadata,
+            categories: const <VideoDiscoveryCategory>{
+              VideoDiscoveryCategory.anime,
+            },
+          );
 
-    final ProviderBatchResult<VideoDiscoveryPage> result =
-        await provider.search(const VideoDiscoveryRequest(query: 'Anime'));
+      final ProviderBatchResult<VideoDiscoveryPage> result = await provider
+          .search(const VideoDiscoveryRequest(query: 'Anime'));
 
-    // 旧实现先拼整页剧场版再拼 TV：剧场版的模糊命中全排在正片前面。
-    expect(
-      result.items.single.items
-          .map((VideoDiscoveryItem item) => item.reference.title),
-      <String>[
-        'Anime tv',
-        'Anime movie',
-        'Anime tv 1',
-        'Anime movie 1',
-        'Anime tv 2',
-        'Anime movie 2',
-      ],
-    );
-  });
+      // 旧实现先拼整页剧场版再拼 TV：剧场版的模糊命中全排在正片前面。
+      expect(
+        result.items.single.items.map(
+          (VideoDiscoveryItem item) => item.reference.title,
+        ),
+        <String>[
+          'Anime tv',
+          'Anime movie',
+          'Anime tv 1',
+          'Anime movie 1',
+          'Anime tv 2',
+          'Anime movie 2',
+        ],
+      );
+    },
+  );
 
   test('reports discovery feeds as an unsupported capability', () async {
     final VideoMetadataSearchDiscoveryProvider provider =
         VideoMetadataSearchDiscoveryProvider(
-      provider: _FakeMetadataProvider(),
-      categories: const <VideoDiscoveryCategory>{
-        VideoDiscoveryCategory.movie,
-      },
-    );
+          provider: _FakeMetadataProvider(),
+          categories: const <VideoDiscoveryCategory>{
+            VideoDiscoveryCategory.movie,
+          },
+        );
 
-    final ProviderBatchResult<VideoDiscoveryPage> result =
-        await provider.discover(const VideoDiscoveryRequest());
+    final ProviderBatchResult<VideoDiscoveryPage> result = await provider
+        .discover(const VideoDiscoveryRequest());
 
     expect(
-        result.failures.single.kind, ExternalProviderFailureKind.unsupported);
+      result.failures.single.kind,
+      ExternalProviderFailureKind.unsupported,
+    );
     expect(provider.capabilities.feeds, isEmpty);
   });
 }
 
 MalVideoMetadataProvider _malSeasonsProvider() => MalVideoMetadataProvider(
-      requestGate: MalVideoMetadataRequestGate(interval: Duration.zero),
-      client: MockClient((http.Request request) async {
-        expect(request.url.path, '/v4/anime');
-        expect(request.url.queryParameters['q'], 'Seihantai na Kimi to Boku');
-        return http.Response(
-          jsonEncode(<String, Object?>{
-            'data': <Object?>[
-              if (request.url.queryParameters['type'] != 'movie')
-                for (final int season in <int>[1, 2])
-                  <String, Object?>{
-                    'mal_id': season == 1 ? 100 : 101,
-                    'title':
-                        'Seihantai na Kimi to Boku${season == 1 ? '' : ' 2nd Season'}',
-                    'type': 'TV',
-                    'year': 2026,
-                  },
-            ],
-          }),
-          200,
-        );
+  requestGate: MalVideoMetadataRequestGate(interval: Duration.zero),
+  client: MockClient((http.Request request) async {
+    expect(request.url.path, '/v4/anime');
+    expect(request.url.queryParameters['q'], 'Seihantai na Kimi to Boku');
+    return http.Response(
+      jsonEncode(<String, Object?>{
+        'data': <Object?>[
+          if (request.url.queryParameters['type'] != 'movie')
+            for (final int season in <int>[1, 2])
+              <String, Object?>{
+                'mal_id': season == 1 ? 100 : 101,
+                'title':
+                    'Seihantai na Kimi to Boku${season == 1 ? '' : ' 2nd Season'}',
+                'type': 'TV',
+                'year': 2026,
+              },
+        ],
       }),
+      200,
     );
+  }),
+);
 
 class _FakeMetadataProvider implements VideoMetadataProvider {
   _FakeMetadataProvider({this.resultsPerKind = 1});
@@ -287,8 +297,8 @@ class _FakeMetadataProvider implements VideoMetadataProvider {
               type: 'anilist',
               value: rank == 0
                   ? (request.mediaKind == VideoMetadataMediaKind.movie
-                      ? '1'
-                      : '2')
+                        ? '1'
+                        : '2')
                   : '${request.mediaKind.name}-$rank',
               isDefault: true,
             ),

@@ -103,16 +103,23 @@ void main() {
         60 * 1000,
         120 * 1000,
       ]) {
-        expect(clipExportFps(durationMs: durationMs), 24,
-            reason: 'BUG-713：${durationMs}ms 片段的导出 fps 必须是 24；'
-                '降到 12 会让约一半 cue 高亮晚最多 ~42ms 重现「进度慢」');
+        expect(
+          clipExportFps(durationMs: durationMs),
+          24,
+          reason:
+              'BUG-713：${durationMs}ms 片段的导出 fps 必须是 24；'
+              '降到 12 会让约一半 cue 高亮晚最多 ~42ms 重现「进度慢」',
+        );
       }
       // BUG-1320 把上限放宽到 300s 后长片段按总帧数预算降 fps —— 允许降，但必须有下界，
       // 且总帧数不超过提限前的既有最坏情况（120s×24fps=2880 帧）。
       final int fps300 = clipExportFps(durationMs: 300 * 1000);
       expect(fps300, greaterThanOrEqualTo(6), reason: '长片段 fps 仍需有下界，不能降到不可看');
-      expect(fps300 * 300, lessThanOrEqualTo(2880),
-          reason: '总帧数必须落在 2880 预算内（序列帧落盘量 = 提限前的最坏情况）');
+      expect(
+        fps300 * 300,
+        lessThanOrEqualTo(2880),
+        reason: '总帧数必须落在 2880 预算内（序列帧落盘量 = 提限前的最坏情况）',
+      );
     });
 
     // 源码守卫锚在**契约**上，不锚实现写法。
@@ -124,23 +131,29 @@ void main() {
     // 那条行为断言钉住），并禁止任何把 fps 直接钉成 <24 字面量的写法。
     test('源码守卫：动态导出 fps 来自 clipExportFps，且无 <24 的裸字面量', () {
       final String src = File(
-              'lib/src/pages/implementations/reader_fushi/audiobook.part.dart')
-          .readAsStringSync()
-          .replaceAll('\r\n', '\n');
-      final String body =
-          methodBody(src, 'Future<bool> _synthDynamicClipVideo(');
+        'lib/src/pages/implementations/reader_fushi/audiobook.part.dart',
+      ).readAsStringSync().replaceAll('\r\n', '\n');
+      final String body = methodBody(
+        src,
+        'Future<bool> _synthDynamicClipVideo(',
+      );
       expect(
         containsIdentifierCall(body, 'clipExportFps'),
         isTrue,
-        reason: 'BUG-713/BUG-1320：动态导出路径的 fps 必须来自受控来源 clipExportFps(...)，'
+        reason:
+            'BUG-713/BUG-1320：动态导出路径的 fps 必须来自受控来源 clipExportFps(...)，'
             '不得回到裸字面量。改名 clipExportFps 请同步本守卫与上面的行为断言',
       );
       // 禁止型判据：允许零命中（当前实现就是零），一旦命中就必须 ≥24。
       final RegExp literalFps = RegExp(r'\bint\s+fps\s*=\s*(\d+)\s*;');
       for (final RegExpMatch m in literalFps.allMatches(body)) {
-        expect(int.parse(m.group(1)!), greaterThanOrEqualTo(24),
-            reason: 'BUG-713：导出 fps 必须 ≥24 以把逐句高亮滞后压到 ≤Δ/2≈21ms；'
-                '回到 12fps 会让约一半 cue 高亮晚最多 ~42ms 重现「进度慢」');
+        expect(
+          int.parse(m.group(1)!),
+          greaterThanOrEqualTo(24),
+          reason:
+              'BUG-713：导出 fps 必须 ≥24 以把逐句高亮滞后压到 ≤Δ/2≈21ms；'
+              '回到 12fps 会让约一半 cue 高亮晚最多 ~42ms 重现「进度慢」',
+        );
       }
     });
   });

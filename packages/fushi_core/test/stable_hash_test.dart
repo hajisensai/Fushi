@@ -45,11 +45,17 @@ void main() {
       const String k1 = 'jpod\n肌陒衎柚.mp3';
       const String k2 = 'jpod\n汅肘鹾圃.mp3';
       expect(fnv1a32Hex(k1.codeUnits), 'a0c11ea4');
-      expect(fnv1a32Hex(k2.codeUnits), 'a0c11ea4',
-          reason: '弱口径（16 位码元整体 XOR）下两键碰撞——BUG-1124 根因实证');
+      expect(
+        fnv1a32Hex(k2.codeUnits),
+        'a0c11ea4',
+        reason: '弱口径（16 位码元整体 XOR）下两键碰撞——BUG-1124 根因实证',
+      );
       expect(fnv1a32Hex(utf8.encode(k1)), '8845c26a');
-      expect(fnv1a32Hex(utf8.encode(k2)), '99718822',
-          reason: 'UTF-8 逐字节强口径必须区分这对键');
+      expect(
+        fnv1a32Hex(utf8.encode(k2)),
+        '99718822',
+        reason: 'UTF-8 逐字节强口径必须区分这对键',
+      );
     });
   });
 

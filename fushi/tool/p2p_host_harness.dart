@@ -20,12 +20,14 @@ Future<void> main(List<String> args) async {
 
   final Directory dir = Directory.systemTemp.createTempSync('fushi_p2p_host_');
   // Seed the served root + one book so an authenticated PROPFIND lists content.
-  final Directory book =
-      Directory('${dir.path}/sync-data/$kSyncRootFolderName/InteropBook');
+  final Directory book = Directory(
+    '${dir.path}/sync-data/$kSyncRootFolderName/InteropBook',
+  );
   book.createSync(recursive: true);
-  File('${book.path}/progress_1234_0.5.json')
-      .writeAsStringSync('{"dataId":0,"exploredCharCount":500,"progress":0.5,'
-          '"lastBookmarkModified":1234}');
+  File('${book.path}/progress_1234_0.5.json').writeAsStringSync(
+    '{"dataId":0,"exploredCharCount":500,"progress":0.5,'
+    '"lastBookmarkModified":1234}',
+  );
 
   final FushiSyncServer server = FushiSyncServer(
     syncDataDir: dir.path,
@@ -40,5 +42,7 @@ Future<void> main(List<String> args) async {
   await server.stop();
   try {
     dir.deleteSync(recursive: true);
-  } catch (_) {/* best-effort temp cleanup */}
+  } catch (_) {
+    /* best-effort temp cleanup */
+  }
 }

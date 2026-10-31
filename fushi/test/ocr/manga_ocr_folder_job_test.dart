@@ -83,8 +83,11 @@ void main() {
     test('数字段按数值比较', () {
       expect(naturalCompare('p2.jpg', 'p10.jpg'), lessThan(0));
       expect(naturalCompare('p10.jpg', 'p2.jpg'), greaterThan(0));
-      expect(naturalCompare('p002.jpg', 'p2.jpg'), greaterThan(0),
-          reason: '数值相等时位数少的在前（全序稳定）');
+      expect(
+        naturalCompare('p002.jpg', 'p2.jpg'),
+        greaterThan(0),
+        reason: '数值相等时位数少的在前（全序稳定）',
+      );
       expect(naturalCompare('a.jpg', 'a.jpg'), 0);
       expect(naturalCompare('ch1/p1.jpg', 'ch2/p1.jpg'), lessThan(0));
       expect(naturalCompare('A1.jpg', 'a2.jpg'), lessThan(0), reason: '大小写不敏感');
@@ -165,7 +168,10 @@ void main() {
       _writePng(p.join(root.path, kMangaOcrOutDirName, 'y.png'), 10, 10);
       // 嵌套在子目录里的产物目录：同样不收。
       _writePng(
-          p.join(root.path, 'extra', kMangaOcrOutDirName, 'z.png'), 10, 10);
+        p.join(root.path, 'extra', kMangaOcrOutDirName, 'z.png'),
+        10,
+        10,
+      );
       // 非图片：不收。
       File(p.join(root.path, 'note.txt')).writeAsStringSync('x');
 
@@ -184,8 +190,9 @@ void main() {
     });
 
     test('下钻深度封顶 kMangaPageScanMaxDepth，更深的不收', () {
-      final Directory root =
-          Directory.systemTemp.createTempSync('manga_enum_deep_');
+      final Directory root = Directory.systemTemp.createTempSync(
+        'manga_enum_deep_',
+      );
       addTearDown(() => root.deleteSync(recursive: true));
       // 恰好在上限层：收。
       final List<String> atLimit = <String>[
@@ -202,9 +209,9 @@ void main() {
       ];
       _writePng(p.joinAll(tooDeep), 10, 10);
 
-      final List<String> urls = enumerateMangaPages(root)
-          .map((MangaOcrPageFile page) => page.relativeUrl)
-          .toList();
+      final List<String> urls = enumerateMangaPages(
+        root,
+      ).map((MangaOcrPageFile page) => page.relativeUrl).toList();
       expect(urls, hasLength(1));
       expect(urls.single, endsWith('ok.png'));
     });
@@ -307,11 +314,14 @@ void main() {
         <int>[2, 3],
         <int>[3, 3],
       ]);
-      expect(outPath,
-          p.join(root.path, kMangaOcrOutDirName, kMangaOcrOutputFileName));
+      expect(
+        outPath,
+        p.join(root.path, kMangaOcrOutDirName, kMangaOcrOutputFileName),
+      );
 
-      final MokuroPayload payload =
-          parseMangaJson(File(outPath).readAsStringSync());
+      final MokuroPayload payload = parseMangaJson(
+        File(outPath).readAsStringSync(),
+      );
       expect(payload.images, hasLength(3));
       expect(
         payload.images.map((MokuroImage image) => image.url).toList(),
@@ -339,8 +349,9 @@ void main() {
     });
 
     test('startPage：当前页先识别、进度带真实页号，manga.json 与从头跑一致', () async {
-      final Directory fromStart =
-          Directory.systemTemp.createTempSync('manga_job_start0_');
+      final Directory fromStart = Directory.systemTemp.createTempSync(
+        'manga_job_start0_',
+      );
       addTearDown(() => fromStart.deleteSync(recursive: true));
       _writePng(p.join(fromStart.path, 'p1.png'), 40, 80);
       _writePng(p.join(fromStart.path, 'p2.png'), 50, 80);
@@ -364,16 +375,21 @@ void main() {
             progress.add(<int>[done, total, pageIndex]),
       );
 
-      expect(detector.detectedSizes, <String>['50x80', '60x80', '40x80'],
-          reason: '读者在第 2 页（index 1）：它先识别，再向后，最后绕回开头');
+      expect(detector.detectedSizes, <String>[
+        '50x80',
+        '60x80',
+        '40x80',
+      ], reason: '读者在第 2 页（index 1）：它先识别，再向后，最后绕回开头');
       expect(progress, <List<int>>[
         <int>[1, 3, 1],
         <int>[2, 3, 2],
         <int>[3, 3, 0],
       ]);
-      expect(File(outPath).readAsStringSync(),
-          File(baselinePath).readAsStringSync(),
-          reason: '起点只影响处理顺序，不影响产物内容与页序');
+      expect(
+        File(outPath).readAsStringSync(),
+        File(baselinePath).readAsStringSync(),
+        reason: '起点只影响处理顺序，不影响产物内容与页序',
+      );
     });
 
     test('取消：页边界停 + 已完成页缓存保留；重跑只补缺页', () async {
@@ -405,11 +421,15 @@ void main() {
         recognizer: recognizer,
       );
       expect(detector2.detectedSizes, <String>['50x80', '60x80']);
-      final MokuroPayload payload =
-          parseMangaJson(File(outPath).readAsStringSync());
+      final MokuroPayload payload = parseMangaJson(
+        File(outPath).readAsStringSync(),
+      );
       expect(payload.images, hasLength(3));
-      expect(payload.images[0].blocks.single.lines.single, 'text-w40',
-          reason: '缓存页的识别结果必须原样进入 manga.json');
+      expect(
+        payload.images[0].blocks.single.lines.single,
+        'text-w40',
+        reason: '缓存页的识别结果必须原样进入 manga.json',
+      );
     });
 
     // BUG-1173：缓存目录名带模型内容指纹，换模型后必须整卷重跑而不是复用旧结果。
@@ -443,16 +463,24 @@ void main() {
         detector: newDetector,
         recognizer: recognizer,
       );
-      expect(newDetector.detectedSizes, <String>['40x80', '50x80', '60x80'],
-          reason: '换模型后每页都要重新检测，不能沿用另一份模型的缓存');
+      expect(newDetector.detectedSizes, <String>[
+        '40x80',
+        '50x80',
+        '60x80',
+      ], reason: '换模型后每页都要重新检测，不能沿用另一份模型的缓存');
       expect(recognizer.calls, greaterThan(callsAfterFirstRun));
 
       final Directory cacheRoot = Directory(
-          p.join(root.path, kMangaOcrOutDirName, kMangaOcrPagesCacheDirName));
+        p.join(root.path, kMangaOcrOutDirName, kMangaOcrPagesCacheDirName),
+      );
       expect(
-          Directory(p.join(cacheRoot.path, oldSignature)).existsSync(), isTrue);
+        Directory(p.join(cacheRoot.path, oldSignature)).existsSync(),
+        isTrue,
+      );
       expect(
-          Directory(p.join(cacheRoot.path, newSignature)).existsSync(), isTrue);
+        Directory(p.join(cacheRoot.path, newSignature)).existsSync(),
+        isTrue,
+      );
       expect(
         parseMangaJson(File(outPath).readAsStringSync()).ocr?.engineSignature,
         newSignature,
@@ -474,10 +502,13 @@ void main() {
         recognizer: _FakeRecognizer(),
       );
 
-      expect(detector.detectedSizes, <String>['40x80', '50x80'],
-          reason: 'bmp 页必须真实解码并进入检测，而非被扩展名白名单静默跳过');
-      final MokuroPayload payload =
-          parseMangaJson(File(outPath).readAsStringSync());
+      expect(detector.detectedSizes, <String>[
+        '40x80',
+        '50x80',
+      ], reason: 'bmp 页必须真实解码并进入检测，而非被扩展名白名单静默跳过');
+      final MokuroPayload payload = parseMangaJson(
+        File(outPath).readAsStringSync(),
+      );
       expect(
         payload.images.map((MokuroImage image) => image.url).toList(),
         <String>['p1.png', 'p2.bmp'],
@@ -486,8 +517,9 @@ void main() {
     });
 
     test('空目录报错（不产出空 manga.json）', () async {
-      final Directory empty =
-          Directory.systemTemp.createTempSync('manga_empty_');
+      final Directory empty = Directory.systemTemp.createTempSync(
+        'manga_empty_',
+      );
       addTearDown(() => empty.deleteSync(recursive: true));
       await expectLater(
         runMangaOcrFolderJob(
@@ -509,9 +541,15 @@ void main() {
         recognizer: recognizer,
       );
       // 毁掉第二页缓存。
-      File(p.join(root.path, kMangaOcrOutDirName, kMangaOcrPagesCacheDirName,
-              kLocalMangaOcrEngineSignature, 'p2.png.json'))
-          .writeAsStringSync('not json');
+      File(
+        p.join(
+          root.path,
+          kMangaOcrOutDirName,
+          kMangaOcrPagesCacheDirName,
+          kLocalMangaOcrEngineSignature,
+          'p2.png.json',
+        ),
+      ).writeAsStringSync('not json');
       final _FakeDetector detector = _FakeDetector();
       await runMangaOcrFolderJob(
         imageDirPath: root.path,
@@ -569,10 +607,10 @@ void main() {
     });
 
     MangaOcrMetadata meta(String engine, String signature) => MangaOcrMetadata(
-          engine: engine,
-          engineSignature: signature,
-          schemaVersion: 1,
-        );
+      engine: engine,
+      engineSignature: signature,
+      schemaVersion: 1,
+    );
 
     test('isMangaOcrRelayoutCandidate：只认本地引擎的 v4 结果', () {
       expect(
@@ -626,11 +664,15 @@ void main() {
         isFalse,
       );
       expect(
-          isMangaOcrRelayoutPending(v4, localEngineSignature: null), isFalse);
+        isMangaOcrRelayoutPending(v4, localEngineSignature: null),
+        isFalse,
+      );
       expect(
         isMangaOcrRelayoutPending(
           meta(
-              'google_lens', 'local-onnx-v4-antialias-text-dedup-36f475259340'),
+            'google_lens',
+            'local-onnx-v4-antialias-text-dedup-36f475259340',
+          ),
           localEngineSignature: '$kLocalMangaOcrEngineSignature-36f475259340',
         ),
         isFalse,
@@ -682,8 +724,9 @@ void main() {
     });
 
     test('只有 v4 缓存的卷：整卷任务逐页只补几何，不检测不识别，产物带 lines_coords', () async {
-      final Directory root =
-          Directory.systemTemp.createTempSync('manga_relayout_');
+      final Directory root = Directory.systemTemp.createTempSync(
+        'manga_relayout_',
+      );
       addTearDown(() => root.deleteSync(recursive: true));
       _writePng(p.join(root.path, 'p1.png'), 40, 80);
       _writePng(p.join(root.path, 'p2.png'), 50, 80);
@@ -699,7 +742,7 @@ void main() {
           ),
         ),
         pageNames: <String>[
-          for (final MangaOcrPageFile page in pages) page.relativeUrl
+          for (final MangaOcrPageFile page in pages) page.relativeUrl,
         ],
         pageFiles: <File>[for (final MangaOcrPageFile page in pages) page.file],
       );
@@ -734,8 +777,10 @@ void main() {
       final MokuroPayload payload = parseMangaJson(
         File(outPath).readAsStringSync(),
       );
-      expect(payload.ocr!.engineSignature,
-          '$kLocalMangaOcrEngineSignature$suffix');
+      expect(
+        payload.ocr!.engineSignature,
+        '$kLocalMangaOcrEngineSignature$suffix',
+      );
       for (final MokuroImage image in payload.images) {
         final MokuroBlock block = image.blocks.single;
         expect(block.lines, <String>['あい', 'うえ']);

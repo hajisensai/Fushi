@@ -10,7 +10,9 @@ void main() {
     test('FUSHI_FFPROBE 覆盖最高优先', () {
       expect(
         resolveFfprobeExecutableFrom(
-            override: '/opt/ff/ffprobe', bundledPath: '/app/ffprobe'),
+          override: '/opt/ff/ffprobe',
+          bundledPath: '/app/ffprobe',
+        ),
         '/opt/ff/ffprobe',
       );
     });
@@ -18,12 +20,16 @@ void main() {
     test('无覆盖时用程序旁捆绑 ffprobe（空白覆盖视同无覆盖）', () {
       expect(
         resolveFfprobeExecutableFrom(
-            override: null, bundledPath: '/app/ffprobe'),
+          override: null,
+          bundledPath: '/app/ffprobe',
+        ),
         '/app/ffprobe',
       );
       expect(
         resolveFfprobeExecutableFrom(
-            override: '   ', bundledPath: r'C:\Fushi\ffprobe.exe'),
+          override: '   ',
+          bundledPath: r'C:\Fushi\ffprobe.exe',
+        ),
         r'C:\Fushi\ffprobe.exe',
       );
     });
@@ -87,38 +93,42 @@ void main() {
       expect(calls, <String>['/app/ffprobe'], reason: 'bundled 成功不该再调 PATH');
     });
 
-    test('explicit FUSHI_FFPROBE launch failure propagates (no silent PATH)',
-        () async {
-      await expectLater(
-        runCliFfprobeForTesting(
-          override: r'D:\Custom\ffprobe.exe',
-          bundledPath: r'C:\App\Fushi\ffprobe.exe',
-          args: <String>['-show_format', 'x.m4b'],
-          timeout: const Duration(seconds: 1),
-          runner:
-              (String executable, List<String> args, Duration timeout) async {
-            throw ProcessException(executable, args, 'launch failed', 2);
-          },
-        ),
-        throwsA(isA<ProcessException>()),
-      );
-    });
+    test(
+      'explicit FUSHI_FFPROBE launch failure propagates (no silent PATH)',
+      () async {
+        await expectLater(
+          runCliFfprobeForTesting(
+            override: r'D:\Custom\ffprobe.exe',
+            bundledPath: r'C:\App\Fushi\ffprobe.exe',
+            args: <String>['-show_format', 'x.m4b'],
+            timeout: const Duration(seconds: 1),
+            runner:
+                (String executable, List<String> args, Duration timeout) async {
+                  throw ProcessException(executable, args, 'launch failed', 2);
+                },
+          ),
+          throwsA(isA<ProcessException>()),
+        );
+      },
+    );
 
-    test('no bundled, no override: PATH ffprobe ProcessException propagates',
-        () async {
-      await expectLater(
-        runCliFfprobeForTesting(
-          override: null,
-          bundledPath: null,
-          args: <String>['-show_format', 'x.m4b'],
-          timeout: const Duration(seconds: 1),
-          runner:
-              (String executable, List<String> args, Duration timeout) async {
-            throw ProcessException(executable, args, 'not found', 2);
-          },
-        ),
-        throwsA(isA<ProcessException>()),
-      );
-    });
+    test(
+      'no bundled, no override: PATH ffprobe ProcessException propagates',
+      () async {
+        await expectLater(
+          runCliFfprobeForTesting(
+            override: null,
+            bundledPath: null,
+            args: <String>['-show_format', 'x.m4b'],
+            timeout: const Duration(seconds: 1),
+            runner:
+                (String executable, List<String> args, Duration timeout) async {
+                  throw ProcessException(executable, args, 'not found', 2);
+                },
+          ),
+          throwsA(isA<ProcessException>()),
+        );
+      },
+    );
   });
 }

@@ -13,16 +13,18 @@ void main() {
   group('updateEpubBookContentPaths (full-data backup restore)', () {
     test('rewrites only the supplied path columns', () async {
       final db = await _openDb();
-      await db.insertEpubBook(EpubBooksCompanion.insert(
-        bookKey: 'Bk',
-        title: 'Bk',
-        epubPath: '/old/fushi_books/Bk/original.epub',
-        extractDir: '/old/fushi_books/Bk',
-        chapterCount: 1,
-        chaptersJson: '["c"]',
-        importedAt: 0,
-        coverPath: const Value('/old/fushi_books/Bk/cover.jpg'),
-      ));
+      await db.insertEpubBook(
+        EpubBooksCompanion.insert(
+          bookKey: 'Bk',
+          title: 'Bk',
+          epubPath: '/old/fushi_books/Bk/original.epub',
+          extractDir: '/old/fushi_books/Bk',
+          chapterCount: 1,
+          chaptersJson: '["c"]',
+          importedAt: 0,
+          coverPath: const Value('/old/fushi_books/Bk/cover.jpg'),
+        ),
+      );
 
       await db.updateEpubBookContentPaths(
         'Bk',
@@ -40,16 +42,18 @@ void main() {
 
     test('null arguments leave columns unchanged', () async {
       final db = await _openDb();
-      await db.insertEpubBook(EpubBooksCompanion.insert(
-        bookKey: 'Bk',
-        title: 'Bk',
-        epubPath: '/old/Bk.epub',
-        extractDir: '/old/Bk',
-        chapterCount: 1,
-        chaptersJson: '["c"]',
-        importedAt: 0,
-        coverPath: const Value('/old/cover.jpg'),
-      ));
+      await db.insertEpubBook(
+        EpubBooksCompanion.insert(
+          bookKey: 'Bk',
+          title: 'Bk',
+          epubPath: '/old/Bk.epub',
+          extractDir: '/old/Bk',
+          chapterCount: 1,
+          chaptersJson: '["c"]',
+          importedAt: 0,
+          coverPath: const Value('/old/cover.jpg'),
+        ),
+      );
 
       await db.updateEpubBookContentPaths('Bk', epubPath: '/new/Bk.epub');
 
@@ -63,13 +67,15 @@ void main() {
   group('updateAudiobookPaths (full-data backup restore)', () {
     test('rewrites audioRoot/audioPathsJson/alignmentPath', () async {
       final db = await _openDb();
-      await db.upsertAudiobook(AudiobooksCompanion.insert(
-        bookKey: 'Bk',
-        alignmentFormat: 'srt',
-        alignmentPath: '/old/audiobooks/h/align.srt',
-        audioRoot: const Value('/old/audiobooks/h'),
-        audioPathsJson: const Value('["/old/audiobooks/h/a.mp3"]'),
-      ));
+      await db.upsertAudiobook(
+        AudiobooksCompanion.insert(
+          bookKey: 'Bk',
+          alignmentFormat: 'srt',
+          alignmentPath: '/old/audiobooks/h/align.srt',
+          audioRoot: const Value('/old/audiobooks/h'),
+          audioPathsJson: const Value('["/old/audiobooks/h/a.mp3"]'),
+        ),
+      );
 
       await db.updateAudiobookPaths(
         'Bk',

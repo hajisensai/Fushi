@@ -41,28 +41,29 @@ void main() {
       final String? nodeExe = _resolveNode();
       if (nodeExe == null) {
         markTestSkipped(
-            'node not found on PATH; skipping JS behavior execution');
+          'node not found on PATH; skipping JS behavior execution',
+        );
         return;
       }
 
-      final File jsTest =
-          File('test/pages/popup_pitch_dedup_patterns_ipa_test.js');
+      final File jsTest = File(
+        'test/pages/popup_pitch_dedup_patterns_ipa_test.js',
+      );
       expect(
         jsTest.existsSync(),
         isTrue,
         reason: 'behavior harness ${jsTest.path} must exist',
       );
 
-      final ProcessResult result = await Process.run(
-        nodeExe,
-        <String>[jsTest.path],
-        workingDirectory: Directory.current.path,
-      );
+      final ProcessResult result = await Process.run(nodeExe, <String>[
+        jsTest.path,
+      ], workingDirectory: Directory.current.path);
 
       expect(
         result.exitCode,
         0,
-        reason: 'pitch dedup (patterns / IPA) JS behavior test failed.\n'
+        reason:
+            'pitch dedup (patterns / IPA) JS behavior test failed.\n'
             'stdout:\n${result.stdout}\nstderr:\n${result.stderr}',
       );
       expect(
@@ -74,95 +75,107 @@ void main() {
   );
 
   jsMirrors.forEach((String name, String relPath) {
-    test('[$name] pitch dedup covers positions, patterns AND transcriptions',
-        () {
-      final File file = File(relPath);
-      expect(file.existsSync(), isTrue, reason: '$relPath must exist');
-      final String js = file.readAsStringSync();
-
-      final int dedup = js.indexOf('if (window.deduplicatePitchAccents)');
-      expect(dedup, greaterThanOrEqualTo(0),
-          reason: 'the dedup branch must exist');
-
-      // 三类可见条目各有自己的 seen。少一个 = 那一类永远不去重（本 bug 的原状）。
-      for (final String seen in <String>[
-        'const seenPositions = new Set();',
-        'const seenPatterns = new Set();',
-        'const seenTranscriptions = new Set();',
-      ]) {
-        expect(
-          js.indexOf(seen, dedup),
-          greaterThan(dedup),
-          reason: 'the dedup branch must keep a dedicated set: $seen',
-        );
-      }
-
-      // 非恒真：三个 Set 建了却没人过滤等于没改。三类都必须真的按 seen 过滤。
-      for (final String filter in <String>[
-        '.filter(pos => !seenPositions.has(pos))',
-        '.filter(p => !seenPatterns.has(p))',
-        '.filter(ipa => !seenTranscriptions.has(ipa))',
-      ]) {
-        expect(
-          js.indexOf(filter, dedup),
-          greaterThan(dedup),
-          reason: 'each class of visible entry must be filtered: $filter',
-        );
-      }
-
-      // 保活判据必须是「去重后还剩东西」。写成原始字段非空（`group.patterns?.length`）
-      // 的那一刻，一整行已经显示过的 pattern / IPA 又会被画第二遍。
-      final int guard = js.indexOf(
-        'if (unique.length > 0 || uniquePatterns.length > 0 || '
-        'uniqueTranscriptions.length > 0)',
-        dedup,
-      );
-      expect(
-        guard,
-        greaterThan(dedup),
-        reason: 'the keep-alive guard must test the DEDUPED entries, not the '
-            'raw fields — testing the raw fields is exactly BUG-2397',
-      );
-    });
-  });
-
-  test('the pitch dedup preference is wired through to the browser extension',
+    test(
+      '[$name] pitch dedup covers positions, patterns AND transcriptions',
       () {
-    // 根因②的守卫。app 侧把偏好放进查词响应的 theme 字典（非 CSS 变量、仅 JS 消费，
-    // 与 --fushi-instant-scroll 同法），扩展 content.js 据此设 popup.js 读的全局。
-    final String appModel =
-        File('lib/src/models/app_model.dart').readAsStringSync();
-    expect(
-      appModel,
-      contains("'--fushi-dedup-pitch': inputs.dedupPitch ? '1' : '0',"),
-      reason:
-          'app_model must send the pitch-dedup preference to the extension; '
-          'without it window.deduplicatePitchAccents is undefined in the '
-          'browser and the dedup branch never runs',
-    );
-    // 反馈 biLEesNqWb：theme 表的输入由 App 当前设置与扩展所选配置的只读视图两路
-    // 填，两路都必须接到「音调去重」偏好上。
-    expect(appModel, contains('dedupPitch: deduplicatePitchAccents,'));
-    expect(appModel, contains('dedupPitch: p.deduplicatePitchAccents,'));
+        final File file = File(relPath);
+        expect(file.existsSync(), isTrue, reason: '$relPath must exist');
+        final String js = file.readAsStringSync();
 
-    contentMirrors.forEach((String name, String relPath) {
-      final File file = File(relPath);
-      expect(file.existsSync(), isTrue, reason: '$relPath must exist');
-      expect(
-        file.readAsStringSync(),
-        contains(
-            "window.deduplicatePitchAccents = theme['--fushi-dedup-pitch'] === '1';"),
-        reason: '[$name] content.js must publish the preference on the shared '
-            'window that popup.js reads',
-      );
-    });
+        final int dedup = js.indexOf('if (window.deduplicatePitchAccents)');
+        expect(
+          dedup,
+          greaterThanOrEqualTo(0),
+          reason: 'the dedup branch must exist',
+        );
+
+        // 三类可见条目各有自己的 seen。少一个 = 那一类永远不去重（本 bug 的原状）。
+        for (final String seen in <String>[
+          'const seenPositions = new Set();',
+          'const seenPatterns = new Set();',
+          'const seenTranscriptions = new Set();',
+        ]) {
+          expect(
+            js.indexOf(seen, dedup),
+            greaterThan(dedup),
+            reason: 'the dedup branch must keep a dedicated set: $seen',
+          );
+        }
+
+        // 非恒真：三个 Set 建了却没人过滤等于没改。三类都必须真的按 seen 过滤。
+        for (final String filter in <String>[
+          '.filter(pos => !seenPositions.has(pos))',
+          '.filter(p => !seenPatterns.has(p))',
+          '.filter(ipa => !seenTranscriptions.has(ipa))',
+        ]) {
+          expect(
+            js.indexOf(filter, dedup),
+            greaterThan(dedup),
+            reason: 'each class of visible entry must be filtered: $filter',
+          );
+        }
+
+        // 保活判据必须是「去重后还剩东西」。写成原始字段非空（`group.patterns?.length`）
+        // 的那一刻，一整行已经显示过的 pattern / IPA 又会被画第二遍。
+        final int guard = js.indexOf(
+          'if (unique.length > 0 || uniquePatterns.length > 0 || '
+          'uniqueTranscriptions.length > 0)',
+          dedup,
+        );
+        expect(
+          guard,
+          greaterThan(dedup),
+          reason:
+              'the keep-alive guard must test the DEDUPED entries, not the '
+              'raw fields — testing the raw fields is exactly BUG-2397',
+        );
+      },
+    );
   });
+
+  test(
+    'the pitch dedup preference is wired through to the browser extension',
+    () {
+      // 根因②的守卫。app 侧把偏好放进查词响应的 theme 字典（非 CSS 变量、仅 JS 消费，
+      // 与 --fushi-instant-scroll 同法），扩展 content.js 据此设 popup.js 读的全局。
+      final String appModel = File(
+        'lib/src/models/app_model.dart',
+      ).readAsStringSync();
+      expect(
+        appModel,
+        contains("'--fushi-dedup-pitch': inputs.dedupPitch ? '1' : '0',"),
+        reason:
+            'app_model must send the pitch-dedup preference to the extension; '
+            'without it window.deduplicatePitchAccents is undefined in the '
+            'browser and the dedup branch never runs',
+      );
+      // 反馈 biLEesNqWb：theme 表的输入由 App 当前设置与扩展所选配置的只读视图两路
+      // 填，两路都必须接到「音调去重」偏好上。
+      expect(appModel, contains('dedupPitch: deduplicatePitchAccents,'));
+      expect(appModel, contains('dedupPitch: p.deduplicatePitchAccents,'));
+
+      contentMirrors.forEach((String name, String relPath) {
+        final File file = File(relPath);
+        expect(file.existsSync(), isTrue, reason: '$relPath must exist');
+        expect(
+          file.readAsStringSync(),
+          contains(
+            "window.deduplicatePitchAccents = theme['--fushi-dedup-pitch'] === '1';",
+          ),
+          reason:
+              '[$name] content.js must publish the preference on the shared '
+              'window that popup.js reads',
+        );
+      });
+    },
+  );
 }
 
 /// Resolve a usable `node` executable, returning null when none is on PATH.
 String? _resolveNode() {
-  final List<String> candidates =
-      Platform.isWindows ? <String>['node.exe', 'node'] : <String>['node'];
+  final List<String> candidates = Platform.isWindows
+      ? <String>['node.exe', 'node']
+      : <String>['node'];
   for (final String name in candidates) {
     try {
       final ProcessResult probe = Process.runSync(name, <String>['--version']);

@@ -49,10 +49,10 @@ class TexthookerWsClient extends ChangeNotifier {
     required TexthookerService service,
     required WsChannelFactory channelFactory,
     Duration retryDelay = const Duration(seconds: 3),
-  })  : _urls = urls,
-        _service = service,
-        _channelFactory = channelFactory,
-        _retryDelay = retryDelay;
+  }) : _urls = urls,
+       _service = service,
+       _channelFactory = channelFactory,
+       _retryDelay = retryDelay;
 
   /// 事实标准默认端口（Textractor/mpv 6677、agent 9001、LunaTranslator 2333）。
   static const List<String> defaultUrls = <String>[
@@ -178,7 +178,8 @@ class TexthookerWsClient extends ChangeNotifier {
     DateTime? lastMessageAt,
     bool clearError = false,
   }) {
-    final TexthookerEndpointStatus previous = _statuses[url] ??
+    final TexthookerEndpointStatus previous =
+        _statuses[url] ??
         TexthookerEndpointStatus(
           url: url,
           phase: TexthookerEndpointPhase.stopped,

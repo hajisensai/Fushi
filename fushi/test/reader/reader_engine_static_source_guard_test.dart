@@ -37,17 +37,27 @@ void main() {
       // _initialProgress / MediaQuery 这类每次导航才知道的值。
       // static 保证读不到实例状态；参数表只许有 view-mode 两个开关——多一个
       // per-nav 参数，引擎就会随导航变化，memoize 立刻失效。
-      final int declIdx =
-          webview.indexOf('static String _buildReaderEngineSource({');
-      expect(declIdx, isNonNegative,
-          reason: '_buildReaderEngineSource 必须是 static');
-      final String params =
-          webview.substring(declIdx, webview.indexOf('}) {', declIdx));
+      final int declIdx = webview.indexOf(
+        'static String _buildReaderEngineSource({',
+      );
+      expect(
+        declIdx,
+        isNonNegative,
+        reason: '_buildReaderEngineSource 必须是 static',
+      );
+      final String params = webview.substring(
+        declIdx,
+        webview.indexOf('}) {', declIdx),
+      );
       expect(params.contains('required bool vnMode,'), isTrue);
       expect(params.contains('required bool continuousMode,'), isTrue);
-      expect('required '.allMatches(params).length, 2,
-          reason: '参数表只许有 vnMode / continuousMode 两个 view-mode 开关；'
-              '多一个 per-nav 参数，引擎就会随导航变化，memoize 立刻失效');
+      expect(
+        'required '.allMatches(params).length,
+        2,
+        reason:
+            '参数表只许有 vnMode / continuousMode 两个 view-mode 开关；'
+            '多一个 per-nav 参数，引擎就会随导航变化，memoize 立刻失效',
+      );
       expect(
         webview.contains('String _buildReaderSetupScript({'),
         isFalse,
@@ -62,10 +72,14 @@ void main() {
       final String vn = File(
         'lib/src/reader/reader_visual_novel_scripts.dart',
       ).readAsStringSync().replaceAll('\r\n', '\n');
-      expect(pagination.contains('static String paginatedShellSource() {'),
-          isTrue);
-      expect(pagination.contains('static String continuousShellSource() {'),
-          isTrue);
+      expect(
+        pagination.contains('static String paginatedShellSource() {'),
+        isTrue,
+      );
+      expect(
+        pagination.contains('static String continuousShellSource() {'),
+        isTrue,
+      );
       expect(vn.contains('static String vnShellScript() => _shell();'), isTrue);
       expect(
         pagination.contains('static String shellScript('),
@@ -76,15 +90,20 @@ void main() {
 
     test('同一进程里同一模式的引擎源码恒定（memoize 的前提）', () {
       expect(readerFushiEngineSource(), same(readerFushiEngineSource()));
-      expect(readerFushiEngineSource(continuousMode: true),
-          same(readerFushiEngineSource(continuousMode: true)));
-      expect(readerFushiEngineSource(vnMode: true),
-          same(readerFushiEngineSource(vnMode: true)));
+      expect(
+        readerFushiEngineSource(continuousMode: true),
+        same(readerFushiEngineSource(continuousMode: true)),
+      );
+      expect(
+        readerFushiEngineSource(vnMode: true),
+        same(readerFushiEngineSource(vnMode: true)),
+      );
       // 三种模式各自不同（没有被 memoize key 串味）。
       expect(
-          readerFushiEngineSource() ==
-              readerFushiEngineSource(continuousMode: true),
-          isFalse);
+        readerFushiEngineSource() ==
+            readerFushiEngineSource(continuousMode: true),
+        isFalse,
+      );
     });
 
     test('引擎只定义不执行，install 之外没有顶层副作用', () {
@@ -92,7 +111,8 @@ void main() {
       expect(
         src.startsWith('window.__fushiEngine = {'),
         isTrue,
-        reason: '引擎顶层只能是一个 window.__fushiEngine 对象字面量赋值；'
+        reason:
+            '引擎顶层只能是一个 window.__fushiEngine 对象字面量赋值；'
             '顶层副作用会脱离 install 的时序控制',
       );
       expect(src.endsWith('};'), isTrue);
@@ -120,22 +140,28 @@ void main() {
           expect(
             engine.contains(payload),
             isTrue,
-            reason: '$mode 引擎里 $name 载荷不是整段在场 —— 拼装时漏装了一整块，'
+            reason:
+                '$mode 引擎里 $name 载荷不是整段在场 —— 拼装时漏装了一整块，'
                 '而各 builder 自己的守卫看不到这一层',
           );
         });
       });
       // 每种模式还必须整段带上**自己那一份** shell。
       final Map<String, String> shells = <String, String>{
-        'paged':
-            _stripScriptTags(ReaderPaginationScripts.paginatedShellSource()),
-        'continuous':
-            _stripScriptTags(ReaderPaginationScripts.continuousShellSource()),
+        'paged': _stripScriptTags(
+          ReaderPaginationScripts.paginatedShellSource(),
+        ),
+        'continuous': _stripScriptTags(
+          ReaderPaginationScripts.continuousShellSource(),
+        ),
         'vn': _stripScriptTags(ReaderVisualNovelScripts.vnShellScript()),
       };
       shells.forEach((String mode, String shell) {
-        expect(engines[mode]!.contains(shell), isTrue,
-            reason: '$mode 引擎没有整段带上自己那一份 shell');
+        expect(
+          engines[mode]!.contains(shell),
+          isTrue,
+          reason: '$mode 引擎没有整段带上自己那一份 shell',
+        );
       });
     });
 
@@ -152,8 +178,9 @@ void main() {
       };
       engines.forEach((String mode, String engine) {
         expect(
-          engine
-              .contains('window.__fushiShells.${expected[mode]} = function(C)'),
+          engine.contains(
+            'window.__fushiShells.${expected[mode]} = function(C)',
+          ),
           isTrue,
           reason: '\$mode 引擎必须装 \${expected[mode]} shell',
         );
@@ -182,12 +209,14 @@ void main() {
       expect(
         boot.length,
         lessThan(4096),
-        reason: 'per-nav 那一半必须只是 config；一旦有人把引擎本体拼回这里，'
+        reason:
+            'per-nav 那一半必须只是 config；一旦有人把引擎本体拼回这里，'
             '引擎就不能再 memoize，每章又要重新拼装 + 压缩近万行',
       );
       expect(
         boot.contains(
-            'window.__fushiEngine.install(window.__fushiReaderConfig);'),
+          'window.__fushiEngine.install(window.__fushiReaderConfig);',
+        ),
         isTrue,
       );
       // 引擎独有符号一个都不许出现在每章载荷里。
@@ -220,12 +249,13 @@ void main() {
       expect(decoded['marginTop'], 1.3);
       expect(decoded['marginRight'], 4.2);
       expect((decoded['sentenceAudioCues'] as List<dynamic>).length, 1);
-      expect(_sampleConfig().toJsLiteral().contains('"sentenceAudioCues":null'),
-          isTrue);
+      expect(
+        _sampleConfig().toJsLiteral().contains('"sentenceAudioCues":null'),
+        isTrue,
+      );
     });
 
-    test('BUG-1812 engine turns margin percentages into Dart-sized pixels',
-        () {
+    test('BUG-1812 engine turns margin percentages into Dart-sized pixels', () {
       final String engine = readerFushiEngineSource();
       expect(engine, contains('window.__fushiApplyReaderMargins = function'));
       expect(engine, contains('h * pct(C.marginTop) / 100'));
@@ -234,7 +264,8 @@ void main() {
       expect(
         ReaderPaginationScripts.paginatedShellSource(),
         contains(
-            'window.__fushiApplyReaderMargins(newWidth, newViewportHeight)'),
+          'window.__fushiApplyReaderMargins(newWidth, newViewportHeight)',
+        ),
         reason: 'resizing a paginated reader must recompute pixel margins',
       );
       expect(
@@ -275,10 +306,7 @@ void main() {
       expect(guarded, contains('reportedGeneration: reportedGeneration,'));
       expect(webview, contains('navigationGeneration: gen,'));
       // BUG-3798：代际解析收敛到 readerReportedNavigationGeneration（spreadReady 共用）。
-      expect(
-        webview,
-        contains('readerReportedNavigationGeneration(args, 1)'),
-      );
+      expect(webview, contains('readerReportedNavigationGeneration(args, 1)'));
       expect(webview, contains('reportedGeneration: generation,'));
     });
   });
@@ -289,16 +317,19 @@ void main() {
       // evaluateJavascript(整份 setup 脚本) 的那一处：docLoad 打点之后、
       // evalSetupScript 打点之前、同一个 _navigateGeneration 守卫下。
       final int buildIdx = webview.indexOf('final String setupScript =');
-      final int evalIdx = webview
-          .indexOf('await controller.evaluateJavascript(source: setupScript);');
-      final int markIdx =
-          webview.indexOf("ReaderChapterPerfTrace.mark('evalSetupScript')");
+      final int evalIdx = webview.indexOf(
+        'await controller.evaluateJavascript(source: setupScript);',
+      );
+      final int markIdx = webview.indexOf(
+        "ReaderChapterPerfTrace.mark('evalSetupScript')",
+      );
       expect(buildIdx, isNonNegative);
       expect(evalIdx, greaterThan(buildIdx));
       expect(markIdx, greaterThan(evalIdx));
       expect(
-        readerFushiEngineSource()
-            .contains("if (document.readyState === 'complete')"),
+        readerFushiEngineSource().contains(
+          "if (document.readyState === 'complete')",
+        ),
         isTrue,
         reason: 'shell 的 load / readyState 双分支 boot 语义保持不变',
       );
@@ -306,10 +337,13 @@ void main() {
 
     test('注入仍是一次往返（不得拆成多次 evaluateJavascript）', () {
       // 实测那条通道的固定往返约 7.5ms、与载荷大小几乎无关，拆成两次就是白送 7.5ms。
-      final int start =
-          webview.indexOf('final ReaderEngineConfig engineConfig =');
+      final int start = webview.indexOf(
+        'final ReaderEngineConfig engineConfig =',
+      );
       final int end = webview.indexOf(
-          "ReaderChapterPerfTrace.mark('caretReanchor')", start);
+        "ReaderChapterPerfTrace.mark('caretReanchor')",
+        start,
+      );
       expect(start, isNonNegative);
       expect(end, greaterThan(start));
       expect(

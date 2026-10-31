@@ -14,17 +14,19 @@ void main() {
       expect(response.data, isEmpty);
     });
 
-    test('returns 404 for malformed dictmedia scheme before dictionary init',
-        () {
-      final response = dictionaryMediaWebResourceResponse(
-        Uri.parse('dictmedia://styles.css'),
-      );
+    test(
+      'returns 404 for malformed dictmedia scheme before dictionary init',
+      () {
+        final response = dictionaryMediaWebResourceResponse(
+          Uri.parse('dictmedia://styles.css'),
+        );
 
-      expect(response, isNotNull);
-      expect(response!.statusCode, 404);
-      expect(response.contentType, 'text/plain');
-      expect(response.data, isEmpty);
-    });
+        expect(response, isNotNull);
+        expect(response!.statusCode, 404);
+        expect(response.contentType, 'text/plain');
+        expect(response.data, isEmpty);
+      },
+    );
   });
 
   group('dictionaryMediaCustomSchemeResponse', () {

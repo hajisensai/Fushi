@@ -43,20 +43,25 @@ extension _FushiSyncServerVideo on FushiSyncServer {
       if (svc is! VideoDiscShareHost) {
         return shelf.Response.notFound('Disc share off');
       }
-      final String? root =
-          await (svc as VideoDiscShareHost).resolveVideoDiscRoot(discId);
+      final String? root = await (svc as VideoDiscShareHost)
+          .resolveVideoDiscRoot(discId);
       if (root == null) return shelf.Response.notFound('Not a disc title');
       final DiscShareManifest? manifest = await buildDiscShareManifest(root);
       if (manifest == null) {
         return shelf.Response.notFound('Disc structure unreadable');
       }
-      final String token = _discShares.issue(discRoot: root, manifest: manifest);
-      return jsonResponse(discShareIssueBody(
-        token: token,
-        requestedUri: request.requestedUri,
+      final String token = _discShares.issue(
+        discRoot: root,
         manifest: manifest,
-        titles: await (svc as VideoDiscShareHost).videoTitlesOnDisc(root),
-      ));
+      );
+      return jsonResponse(
+        discShareIssueBody(
+          token: token,
+          requestedUri: request.requestedUri,
+          manifest: manifest,
+          titles: await (svc as VideoDiscShareHost).videoTitlesOnDisc(root),
+        ),
+      );
     }
 
     // GET /api/library/videos/<id>/streamurl — 签发短时 token（需 Basic 鉴权）

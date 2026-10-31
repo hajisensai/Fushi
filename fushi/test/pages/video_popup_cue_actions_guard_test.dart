@@ -63,11 +63,7 @@ void main() {
         'video_popup_copy_sentence_button',
         'video_favorite_sentence_button',
       ]) {
-        expect(
-          header.contains("Key('$key')"),
-          isTrue,
-          reason: '顶栏缺少动作按钮 $key',
-        );
+        expect(header.contains("Key('$key')"), isTrue, reason: '顶栏缺少动作按钮 $key');
       }
     });
 
@@ -194,13 +190,15 @@ void main() {
         reason: '复制按钮必须有就地 ✓ 反馈——OSD 在视频区，弹窗里看不见',
       );
       expect(
-        _flat(button)
-            .contains(_flat('if (_copyLookupSentence()) markCopied();')),
+        _flat(
+          button,
+        ).contains(_flat('if (_copyLookupSentence()) markCopied();')),
         isTrue,
       );
       expect(
-        _flat(button).contains(
-            _flat('copied ? Icons.check : Icons.content_copy_outlined')),
+        _flat(
+          button,
+        ).contains(_flat('copied ? Icons.check : Icons.content_copy_outlined')),
         isTrue,
       );
       expect(button.contains('copied ? t.copied : t.copy'), isTrue);

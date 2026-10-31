@@ -21,15 +21,13 @@ class _FakeLookup implements FushiRemoteLookupService {
     required String term,
     required bool wildcards,
     required int maximumTerms,
-  }) async =>
-      null;
+  }) async => null;
 
   @override
   Future<RemoteAudioLookup?> lookupAudio({
     required String expression,
     required String reading,
-  }) async =>
-      null;
+  }) async => null;
 }
 
 class _FakeFontApi implements ExtensionFontApi {
@@ -83,8 +81,9 @@ Future<HttpClientResponse> _post(
   String? auth,
 }) async {
   final HttpClient c = HttpClient();
-  final HttpClientRequest req =
-      await c.postUrl(Uri.parse('http://127.0.0.1:$port$path'));
+  final HttpClientRequest req = await c.postUrl(
+    Uri.parse('http://127.0.0.1:$port$path'),
+  );
   req.headers.contentType = ContentType.json;
   if (auth != null) req.headers.set('authorization', auth);
   req.write(jsonEncode(body));
@@ -124,8 +123,10 @@ void main() {
   late _FakeFontApi api;
   late FushiApiServer server;
 
-  Future<void> startServer(
-      {String? apiKey = 'k123', bool withApi = true}) async {
+  Future<void> startServer({
+    String? apiKey = 'k123',
+    bool withApi = true,
+  }) async {
     server = FushiApiServer(
       port: 0,
       lookupService: _FakeLookup(),
@@ -141,27 +142,33 @@ void main() {
     final File ttf = File(p.join(tmp.path, 'KleeOne_1.ttf'));
     await ttf.writeAsBytes(ttfBytes);
     api = _FakeFontApi()
-      ..fonts.add(ExtensionFontEntry(
-        id: 'font_1',
-        name: 'Klee One',
-        family: 'Klee One',
-        ext: 'ttf',
-        path: ttf.path,
-      ))
-      ..fonts.add(ExtensionFontEntry(
-        id: 'font_2',
-        name: 'Gone',
-        family: 'Gone',
-        ext: 'woff2',
-        path: p.join(tmp.path, 'missing.woff2'),
-      ))
-      ..recommended.add(const ExtensionRecommendedFont(
-        name: 'Klee One',
-        nameJa: 'クレー One',
-        description: 'desc',
-        license: 'OFL 1.1',
-        installed: true,
-      ));
+      ..fonts.add(
+        ExtensionFontEntry(
+          id: 'font_1',
+          name: 'Klee One',
+          family: 'Klee One',
+          ext: 'ttf',
+          path: ttf.path,
+        ),
+      )
+      ..fonts.add(
+        ExtensionFontEntry(
+          id: 'font_2',
+          name: 'Gone',
+          family: 'Gone',
+          ext: 'woff2',
+          path: p.join(tmp.path, 'missing.woff2'),
+        ),
+      )
+      ..recommended.add(
+        const ExtensionRecommendedFont(
+          name: 'Klee One',
+          nameJa: 'クレー One',
+          description: 'desc',
+          license: 'OFL 1.1',
+          installed: true,
+        ),
+      );
   });
 
   tearDown(() async {
@@ -202,15 +209,19 @@ void main() {
   test('未注入 fontApi 时三路都是 404', () async {
     await startServer(withApi: false);
     expect(
-      (await _post(server.port, '/api/extension/fonts', <String, dynamic>{},
-              auth: _basic('k123')))
-          .statusCode,
+      (await _post(
+        server.port,
+        '/api/extension/fonts',
+        <String, dynamic>{},
+        auth: _basic('k123'),
+      )).statusCode,
       404,
     );
     expect(
-      (await _request('GET',
-              'http://127.0.0.1:${server.port}/api/extension/fonts/file?id=font_1&token=k123'))
-          .statusCode,
+      (await _request(
+        'GET',
+        'http://127.0.0.1:${server.port}/api/extension/fonts/file?id=font_1&token=k123',
+      )).statusCode,
       404,
     );
     expect(
@@ -219,8 +230,7 @@ void main() {
         '/api/extension/fonts/download',
         <String, dynamic>{'name': 'Klee One'},
         auth: _basic('k123'),
-      ))
-          .statusCode,
+      )).statusCode,
       404,
     );
   });
@@ -258,19 +268,23 @@ void main() {
       final String base = 'http://127.0.0.1:${server.port}';
       expect(
         (await _request(
-                'GET', '$base/api/extension/fonts/file?id=nope&token=k123'))
-            .statusCode,
+          'GET',
+          '$base/api/extension/fonts/file?id=nope&token=k123',
+        )).statusCode,
         404,
       );
       expect(
         (await _request(
-                'GET', '$base/api/extension/fonts/file?id=font_2&token=k123'))
-            .statusCode,
+          'GET',
+          '$base/api/extension/fonts/file?id=font_2&token=k123',
+        )).statusCode,
         404,
       );
       expect(
-        (await _request('GET', '$base/api/extension/fonts/file?token=k123'))
-            .statusCode,
+        (await _request(
+          'GET',
+          '$base/api/extension/fonts/file?token=k123',
+        )).statusCode,
         404,
       );
     });
@@ -279,14 +293,17 @@ void main() {
       await startServer();
       final String base = 'http://127.0.0.1:${server.port}';
       expect(
-        (await _request('GET', '$base/api/extension/fonts/file?id=font_1'))
-            .statusCode,
+        (await _request(
+          'GET',
+          '$base/api/extension/fonts/file?id=font_1',
+        )).statusCode,
         401,
       );
       expect(
         (await _request(
-                'GET', '$base/api/extension/fonts/file?id=font_1&token=wrong'))
-            .statusCode,
+          'GET',
+          '$base/api/extension/fonts/file?id=font_1&token=wrong',
+        )).statusCode,
         401,
       );
     });
@@ -294,9 +311,10 @@ void main() {
     test('未设 apiKey 时裸 GET 放行（与其它端点同语义）', () async {
       await startServer(apiKey: null);
       expect(
-        (await _request('GET',
-                'http://127.0.0.1:${server.port}/api/extension/fonts/file?id=font_1'))
-            .statusCode,
+        (await _request(
+          'GET',
+          'http://127.0.0.1:${server.port}/api/extension/fonts/file?id=font_1',
+        )).statusCode,
         200,
       );
     });
@@ -317,31 +335,40 @@ void main() {
       api.dictionaryFonts[api.fonts.first.path] = api.fonts.first;
       final String base = 'http://127.0.0.1:${server.port}';
       final String path = Uri.encodeQueryComponent(api.fonts.first.path);
-      final HttpClientResponse ok = await _request('GET',
-          '$base/api/extension/fonts/dictionary?path=$path&v=1-2&token=k123');
+      final HttpClientResponse ok = await _request(
+        'GET',
+        '$base/api/extension/fonts/dictionary?path=$path&v=1-2&token=k123',
+      );
       expect(ok.statusCode, 200);
       expect(ok.headers.value('content-type'), 'font/ttf');
       expect(ok.headers.value('access-control-allow-origin'), '*');
       expect(await _collectBytes(ok), ttfBytes);
       // 不在白名单（没启用在词典字体里）的路径 / 缺 path → 404；目录 id 不串用。
-      final String other =
-          Uri.encodeQueryComponent(p.join(tmp.path, 'other.ttf'));
+      final String other = Uri.encodeQueryComponent(
+        p.join(tmp.path, 'other.ttf'),
+      );
       expect(
-          (await _request('GET',
-                  '$base/api/extension/fonts/dictionary?path=$other&token=k123'))
-              .statusCode,
-          404);
+        (await _request(
+          'GET',
+          '$base/api/extension/fonts/dictionary?path=$other&token=k123',
+        )).statusCode,
+        404,
+      );
       expect(
-          (await _request('GET',
-                  '$base/api/extension/fonts/dictionary?id=font_1&token=k123'))
-              .statusCode,
-          404);
+        (await _request(
+          'GET',
+          '$base/api/extension/fonts/dictionary?id=font_1&token=k123',
+        )).statusCode,
+        404,
+      );
       // 鉴权照旧。
       expect(
-          (await _request(
-                  'GET', '$base/api/extension/fonts/dictionary?path=$path'))
-              .statusCode,
-          401);
+        (await _request(
+          'GET',
+          '$base/api/extension/fonts/dictionary?path=$path',
+        )).statusCode,
+        401,
+      );
     });
 
     test('MIME 按扩展名映射，未知扩展名回 octet-stream', () {
@@ -375,10 +402,9 @@ void main() {
     });
 
     test('成功 → 200 ok + 条目', () async {
-      api.onDownload =
-          (String name) => ExtensionFontDownloadOutcome.ok(<ExtensionFontEntry>[
-                api.fonts.first,
-              ]);
+      api.onDownload = (String name) => ExtensionFontDownloadOutcome.ok(
+        <ExtensionFontEntry>[api.fonts.first],
+      );
       await startServer();
       final HttpClientResponse resp = await _post(
         server.port,
@@ -425,8 +451,7 @@ void main() {
           '/api/extension/fonts/download',
           <String, dynamic>{},
           auth: _basic('k123'),
-        ))
-            .statusCode,
+        )).statusCode,
         400,
       );
       expect(
@@ -434,8 +459,7 @@ void main() {
           server.port,
           '/api/extension/fonts/download',
           <String, dynamic>{'name': 'Klee One'},
-        ))
-            .statusCode,
+        )).statusCode,
         401,
       );
       expect(api.downloadRequests, isEmpty);

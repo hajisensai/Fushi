@@ -36,44 +36,43 @@ void main() {
     int? currentChapterIndex,
     bool subscribed = false,
     bool autoDownload = false,
-  }) =>
-      OnlineMangaLibraryEntry(
-        runtime: OnlineMangaRuntimeKind.mihon,
-        extensionPackage: 'org.example.fixture',
-        sourceId: '9223372036854775807',
-        series: const OnlineMangaSeries(
-          key: '/series/fixture',
-          title: 'Fixture series',
-          author: 'Fixture author',
-          coverUrl: 'https://example.test/cover',
-          raw: <String, Object?>{'url': '/series/fixture'},
-        ),
-        chapters: chapters,
-        currentChapterIndex: currentChapterIndex,
-        subscribed: subscribed,
-        autoDownload: autoDownload,
-      );
+  }) => OnlineMangaLibraryEntry(
+    runtime: OnlineMangaRuntimeKind.mihon,
+    extensionPackage: 'org.example.fixture',
+    sourceId: '9223372036854775807',
+    series: const OnlineMangaSeries(
+      key: '/series/fixture',
+      title: 'Fixture series',
+      author: 'Fixture author',
+      coverUrl: 'https://example.test/cover',
+      raw: <String, Object?>{'url': '/series/fixture'},
+    ),
+    chapters: chapters,
+    currentChapterIndex: currentChapterIndex,
+    subscribed: subscribed,
+    autoDownload: autoDownload,
+  );
 
   Map<String, Object?> v2Json() => <String, Object?>{
-        'type': 'hibiki-online-manga',
-        'version': 2,
-        'runtime': 'mihon',
-        'extensionPackage': 'org.example.fixture',
-        'sourceId': '1',
-        'series': <String, Object?>{
-          'key': '/s',
-          'title': 'S',
-          'raw': <String, Object?>{},
-        },
-        'chapters': <Map<String, Object?>>[
-          <String, Object?>{
-            'key': '/c/1',
-            'name': 'ok',
-            'raw': <String, Object?>{}
-          },
-        ],
-        'currentChapterIndex': 0,
-      };
+    'type': 'hibiki-online-manga',
+    'version': 2,
+    'runtime': 'mihon',
+    'extensionPackage': 'org.example.fixture',
+    'sourceId': '1',
+    'series': <String, Object?>{
+      'key': '/s',
+      'title': 'S',
+      'raw': <String, Object?>{},
+    },
+    'chapters': <Map<String, Object?>>[
+      <String, Object?>{
+        'key': '/c/1',
+        'name': 'ok',
+        'raw': <String, Object?>{},
+      },
+    ],
+    'currentChapterIndex': 0,
+  };
 
   group('OnlineMangaLibraryEntry v3', () {
     test('v3 往返：subscribed / autoDownload 两位与 version 一起写出、读回', () {
@@ -92,20 +91,22 @@ void main() {
       expect(json['subscribed'], isTrue);
       expect(json['autoDownload'], isFalse);
 
-      final OnlineMangaLibraryEntry parsed =
-          OnlineMangaLibraryEntry.tryParse(encoded)!;
+      final OnlineMangaLibraryEntry parsed = OnlineMangaLibraryEntry.tryParse(
+        encoded,
+      )!;
       expect(parsed.subscribed, isTrue);
       expect(parsed.autoDownload, isFalse);
       expect(parsed.currentChapterIndex, 1);
-      expect(
-        parsed.chapters.map((OnlineMangaChapter c) => c.key),
-        <String>['/chapter/2', '/chapter/1'],
-      );
+      expect(parsed.chapters.map((OnlineMangaChapter c) => c.key), <String>[
+        '/chapter/2',
+        '/chapter/1',
+      ]);
     });
 
     test('v2 JSON（没有订阅两键）仍解析，两位缺省 false', () {
-      final OnlineMangaLibraryEntry parsed =
-          OnlineMangaLibraryEntry.tryParse(jsonEncode(v2Json()))!;
+      final OnlineMangaLibraryEntry parsed = OnlineMangaLibraryEntry.tryParse(
+        jsonEncode(v2Json()),
+      )!;
       expect(parsed.subscribed, isFalse);
       expect(parsed.autoDownload, isFalse);
       expect(parsed.chapters.single.key, '/c/1');
@@ -127,8 +128,9 @@ void main() {
         ],
         'currentChapterIndex': 0,
       });
-      final OnlineMangaLibraryEntry parsed =
-          OnlineMangaLibraryEntry.tryParse(legacy)!;
+      final OnlineMangaLibraryEntry parsed = OnlineMangaLibraryEntry.tryParse(
+        legacy,
+      )!;
       expect(parsed.runtime, OnlineMangaRuntimeKind.mihon);
       expect(parsed.subscribed, isFalse);
       expect(parsed.autoDownload, isFalse);
@@ -144,8 +146,9 @@ void main() {
         ..['version'] = 3
         ..['subscribed'] = 'yes'
         ..['autoDownload'] = 1;
-      final OnlineMangaLibraryEntry parsed =
-          OnlineMangaLibraryEntry.tryParse(jsonEncode(json))!;
+      final OnlineMangaLibraryEntry parsed = OnlineMangaLibraryEntry.tryParse(
+        jsonEncode(json),
+      )!;
       expect(parsed.subscribed, isFalse);
       expect(parsed.autoDownload, isFalse);
     });
@@ -303,8 +306,7 @@ class _FixtureAdapter implements OnlineMangaRuntimeAdapter {
   Future<List<OnlineMangaPageRef>> resolveChapterPages({
     required OnlineMangaLibraryEntry entry,
     required OnlineMangaChapter chapter,
-  }) =>
-      throw UnimplementedError();
+  }) => throw UnimplementedError();
 
   @override
   Future<Uint8List> fetchChapterPage(OnlineMangaPageRef page) =>
@@ -314,6 +316,5 @@ class _FixtureAdapter implements OnlineMangaRuntimeAdapter {
   Future<List<int>> fetchCover(
     OnlineMangaLibraryEntry entry,
     String url,
-  ) async =>
-      <int>[0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+  ) async => <int>[0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 }

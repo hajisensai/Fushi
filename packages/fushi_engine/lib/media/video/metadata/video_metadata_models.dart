@@ -27,13 +27,7 @@ enum VideoMetadataProviderKind {
 enum VideoMetadataMediaKind { movie, tv }
 
 /// 人物在作品、季或分集中的职责。
-enum VideoMetadataCreditKind {
-  director,
-  writer,
-  actor,
-  guest,
-  voiceActor,
-}
+enum VideoMetadataCreditKind { director, writer, actor, guest, voiceActor }
 
 /// 可落为来源目录 sidecar 的图片种类。
 enum VideoMetadataImageKind {
@@ -74,11 +68,7 @@ class VideoMetadataId {
   final String value;
   final bool isDefault;
 
-  VideoMetadataId copyWith({
-    String? type,
-    String? value,
-    bool? isDefault,
-  }) =>
+  VideoMetadataId copyWith({String? type, String? value, bool? isDefault}) =>
       VideoMetadataId(
         type: type ?? this.type,
         value: value ?? this.value,
@@ -134,19 +124,18 @@ class VideoMetadataPerson {
     String? placeOfBirth,
     String? profileUrl,
     List<VideoMetadataId>? ids,
-  }) =>
-      VideoMetadataPerson(
-        id: id ?? this.id,
-        name: name ?? this.name,
-        originalName: originalName ?? this.originalName,
-        biography: biography ?? this.biography,
-        birthday: birthday ?? this.birthday,
-        deathday: deathday ?? this.deathday,
-        gender: gender ?? this.gender,
-        placeOfBirth: placeOfBirth ?? this.placeOfBirth,
-        profileUrl: profileUrl ?? this.profileUrl,
-        ids: ids ?? this.ids,
-      );
+  }) => VideoMetadataPerson(
+    id: id ?? this.id,
+    name: name ?? this.name,
+    originalName: originalName ?? this.originalName,
+    biography: biography ?? this.biography,
+    birthday: birthday ?? this.birthday,
+    deathday: deathday ?? this.deathday,
+    gender: gender ?? this.gender,
+    placeOfBirth: placeOfBirth ?? this.placeOfBirth,
+    profileUrl: profileUrl ?? this.profileUrl,
+    ids: ids ?? this.ids,
+  );
 
   @override
   bool operator ==(Object other) =>
@@ -165,17 +154,17 @@ class VideoMetadataPerson {
 
   @override
   int get hashCode => Object.hash(
-        id,
-        name,
-        originalName,
-        biography,
-        birthday,
-        deathday,
-        gender,
-        placeOfBirth,
-        profileUrl,
-        const ListEquality<VideoMetadataId>().hash(ids),
-      );
+    id,
+    name,
+    originalName,
+    biography,
+    birthday,
+    deathday,
+    gender,
+    placeOfBirth,
+    profileUrl,
+    const ListEquality<VideoMetadataId>().hash(ids),
+  );
 }
 
 /// 演员/声优所扮演的角色。
@@ -203,15 +192,14 @@ class VideoMetadataCharacter {
     String? description,
     String? imageUrl,
     List<VideoMetadataId>? ids,
-  }) =>
-      VideoMetadataCharacter(
-        id: id ?? this.id,
-        name: name ?? this.name,
-        originalName: originalName ?? this.originalName,
-        description: description ?? this.description,
-        imageUrl: imageUrl ?? this.imageUrl,
-        ids: ids ?? this.ids,
-      );
+  }) => VideoMetadataCharacter(
+    id: id ?? this.id,
+    name: name ?? this.name,
+    originalName: originalName ?? this.originalName,
+    description: description ?? this.description,
+    imageUrl: imageUrl ?? this.imageUrl,
+    ids: ids ?? this.ids,
+  );
 
   @override
   bool operator ==(Object other) =>
@@ -226,13 +214,13 @@ class VideoMetadataCharacter {
 
   @override
   int get hashCode => Object.hash(
-        id,
-        name,
-        originalName,
-        description,
-        imageUrl,
-        const ListEquality<VideoMetadataId>().hash(ids),
-      );
+    id,
+    name,
+    originalName,
+    description,
+    imageUrl,
+    const ListEquality<VideoMetadataId>().hash(ids),
+  );
 }
 
 /// 一条作品/季/分集职员关系。
@@ -269,18 +257,17 @@ class VideoMetadataCredit {
     String? job,
     String? providerCreditId,
     int? order,
-  }) =>
-      VideoMetadataCredit(
-        kind: kind ?? this.kind,
-        person: person ?? this.person,
-        character: character ?? this.character,
-        language: language ?? this.language,
-        roleName: roleName ?? this.roleName,
-        department: department ?? this.department,
-        job: job ?? this.job,
-        providerCreditId: providerCreditId ?? this.providerCreditId,
-        order: order ?? this.order,
-      );
+  }) => VideoMetadataCredit(
+    kind: kind ?? this.kind,
+    person: person ?? this.person,
+    character: character ?? this.character,
+    language: language ?? this.language,
+    roleName: roleName ?? this.roleName,
+    department: department ?? this.department,
+    job: job ?? this.job,
+    providerCreditId: providerCreditId ?? this.providerCreditId,
+    order: order ?? this.order,
+  );
 
   @override
   bool operator ==(Object other) =>
@@ -298,16 +285,16 @@ class VideoMetadataCredit {
 
   @override
   int get hashCode => Object.hash(
-        kind,
-        person,
-        character,
-        language,
-        roleName,
-        department,
-        job,
-        providerCreditId,
-        order,
-      );
+    kind,
+    person,
+    character,
+    language,
+    roleName,
+    department,
+    job,
+    providerCreditId,
+    order,
+  );
 }
 
 /// 一张候选图片。图片选择器可依据语言、热度及 TMDB 票数稳定排序。
@@ -344,18 +331,17 @@ class VideoMetadataImage {
     int? voteCount,
     int? seasonNumber,
     int? episodeNumber,
-  }) =>
-      VideoMetadataImage(
-        kind: kind ?? this.kind,
-        url: url ?? this.url,
-        provider: provider ?? this.provider,
-        language: language ?? this.language,
-        likes: likes ?? this.likes,
-        voteAverage: voteAverage ?? this.voteAverage,
-        voteCount: voteCount ?? this.voteCount,
-        seasonNumber: seasonNumber ?? this.seasonNumber,
-        episodeNumber: episodeNumber ?? this.episodeNumber,
-      );
+  }) => VideoMetadataImage(
+    kind: kind ?? this.kind,
+    url: url ?? this.url,
+    provider: provider ?? this.provider,
+    language: language ?? this.language,
+    likes: likes ?? this.likes,
+    voteAverage: voteAverage ?? this.voteAverage,
+    voteCount: voteCount ?? this.voteCount,
+    seasonNumber: seasonNumber ?? this.seasonNumber,
+    episodeNumber: episodeNumber ?? this.episodeNumber,
+  );
 
   @override
   bool operator ==(Object other) =>
@@ -373,16 +359,16 @@ class VideoMetadataImage {
 
   @override
   int get hashCode => Object.hash(
-        kind,
-        url,
-        provider,
-        language,
-        likes,
-        voteAverage,
-        voteCount,
-        seasonNumber,
-        episodeNumber,
-      );
+    kind,
+    url,
+    provider,
+    language,
+    likes,
+    voteAverage,
+    voteCount,
+    seasonNumber,
+    episodeNumber,
+  );
 }
 
 class VideoMetadataExtra {
@@ -433,19 +419,19 @@ class VideoMetadataExtra {
 
   @override
   int get hashCode => Object.hash(
-        kind,
-        title,
-        provider,
-        providerVideoId,
-        site,
-        remoteUrl,
-        thumbnailUrl,
-        durationMs,
-        official,
-        language,
-        publishedAt,
-        order,
-      );
+    kind,
+    title,
+    provider,
+    providerVideoId,
+    site,
+    remoteUrl,
+    thumbnailUrl,
+    durationMs,
+    official,
+    language,
+    publishedAt,
+    order,
+  );
 }
 
 /// 一集的结构化资料。
@@ -464,9 +450,9 @@ class VideoMetadataEpisode {
     List<VideoMetadataId> ids = const <VideoMetadataId>[],
     List<VideoMetadataCredit> credits = const <VideoMetadataCredit>[],
     List<VideoMetadataImage> images = const <VideoMetadataImage>[],
-  })  : ids = List<VideoMetadataId>.unmodifiable(ids),
-        credits = List<VideoMetadataCredit>.unmodifiable(credits),
-        images = List<VideoMetadataImage>.unmodifiable(images);
+  }) : ids = List<VideoMetadataId>.unmodifiable(ids),
+       credits = List<VideoMetadataCredit>.unmodifiable(credits),
+       images = List<VideoMetadataImage>.unmodifiable(images);
 
   final int seasonNumber;
   final int episodeNumber;
@@ -496,22 +482,21 @@ class VideoMetadataEpisode {
     List<VideoMetadataId>? ids,
     List<VideoMetadataCredit>? credits,
     List<VideoMetadataImage>? images,
-  }) =>
-      VideoMetadataEpisode(
-        seasonNumber: seasonNumber ?? this.seasonNumber,
-        episodeNumber: episodeNumber ?? this.episodeNumber,
-        title: title ?? this.title,
-        plot: plot ?? this.plot,
-        airDate: airDate ?? this.airDate,
-        year: year ?? this.year,
-        absoluteNumber: absoluteNumber ?? this.absoluteNumber,
-        rating: rating ?? this.rating,
-        ratingVotes: ratingVotes ?? this.ratingVotes,
-        runtimeMinutes: runtimeMinutes ?? this.runtimeMinutes,
-        ids: ids ?? this.ids,
-        credits: credits ?? this.credits,
-        images: images ?? this.images,
-      );
+  }) => VideoMetadataEpisode(
+    seasonNumber: seasonNumber ?? this.seasonNumber,
+    episodeNumber: episodeNumber ?? this.episodeNumber,
+    title: title ?? this.title,
+    plot: plot ?? this.plot,
+    airDate: airDate ?? this.airDate,
+    year: year ?? this.year,
+    absoluteNumber: absoluteNumber ?? this.absoluteNumber,
+    rating: rating ?? this.rating,
+    ratingVotes: ratingVotes ?? this.ratingVotes,
+    runtimeMinutes: runtimeMinutes ?? this.runtimeMinutes,
+    ids: ids ?? this.ids,
+    credits: credits ?? this.credits,
+    images: images ?? this.images,
+  );
 
   @override
   bool operator ==(Object other) =>
@@ -528,26 +513,28 @@ class VideoMetadataEpisode {
           ratingVotes == other.ratingVotes &&
           runtimeMinutes == other.runtimeMinutes &&
           const ListEquality<VideoMetadataId>().equals(ids, other.ids) &&
-          const ListEquality<VideoMetadataCredit>()
-              .equals(credits, other.credits) &&
+          const ListEquality<VideoMetadataCredit>().equals(
+            credits,
+            other.credits,
+          ) &&
           const ListEquality<VideoMetadataImage>().equals(images, other.images);
 
   @override
   int get hashCode => Object.hash(
-        seasonNumber,
-        episodeNumber,
-        title,
-        plot,
-        airDate,
-        year,
-        absoluteNumber,
-        rating,
-        ratingVotes,
-        runtimeMinutes,
-        const ListEquality<VideoMetadataId>().hash(ids),
-        const ListEquality<VideoMetadataCredit>().hash(credits),
-        const ListEquality<VideoMetadataImage>().hash(images),
-      );
+    seasonNumber,
+    episodeNumber,
+    title,
+    plot,
+    airDate,
+    year,
+    absoluteNumber,
+    rating,
+    ratingVotes,
+    runtimeMinutes,
+    const ListEquality<VideoMetadataId>().hash(ids),
+    const ListEquality<VideoMetadataCredit>().hash(credits),
+    const ListEquality<VideoMetadataImage>().hash(images),
+  );
 }
 
 /// 一季的结构化资料。
@@ -563,9 +550,9 @@ class VideoMetadataSeason {
     List<VideoMetadataId> ids = const <VideoMetadataId>[],
     List<VideoMetadataImage> images = const <VideoMetadataImage>[],
     List<VideoMetadataEpisode> episodes = const <VideoMetadataEpisode>[],
-  })  : ids = List<VideoMetadataId>.unmodifiable(ids),
-        images = List<VideoMetadataImage>.unmodifiable(images),
-        episodes = List<VideoMetadataEpisode>.unmodifiable(episodes);
+  }) : ids = List<VideoMetadataId>.unmodifiable(ids),
+       images = List<VideoMetadataImage>.unmodifiable(images),
+       episodes = List<VideoMetadataEpisode>.unmodifiable(episodes);
 
   final int seasonNumber;
   final String title;
@@ -589,19 +576,18 @@ class VideoMetadataSeason {
     List<VideoMetadataId>? ids,
     List<VideoMetadataImage>? images,
     List<VideoMetadataEpisode>? episodes,
-  }) =>
-      VideoMetadataSeason(
-        seasonNumber: seasonNumber ?? this.seasonNumber,
-        title: title ?? this.title,
-        plot: plot ?? this.plot,
-        airDate: airDate ?? this.airDate,
-        year: year ?? this.year,
-        episodeCount: episodeCount ?? this.episodeCount,
-        rating: rating ?? this.rating,
-        ids: ids ?? this.ids,
-        images: images ?? this.images,
-        episodes: episodes ?? this.episodes,
-      );
+  }) => VideoMetadataSeason(
+    seasonNumber: seasonNumber ?? this.seasonNumber,
+    title: title ?? this.title,
+    plot: plot ?? this.plot,
+    airDate: airDate ?? this.airDate,
+    year: year ?? this.year,
+    episodeCount: episodeCount ?? this.episodeCount,
+    rating: rating ?? this.rating,
+    ids: ids ?? this.ids,
+    images: images ?? this.images,
+    episodes: episodes ?? this.episodes,
+  );
 
   @override
   bool operator ==(Object other) =>
@@ -615,24 +601,28 @@ class VideoMetadataSeason {
           episodeCount == other.episodeCount &&
           rating == other.rating &&
           const ListEquality<VideoMetadataId>().equals(ids, other.ids) &&
-          const ListEquality<VideoMetadataImage>()
-              .equals(images, other.images) &&
-          const ListEquality<VideoMetadataEpisode>()
-              .equals(episodes, other.episodes);
+          const ListEquality<VideoMetadataImage>().equals(
+            images,
+            other.images,
+          ) &&
+          const ListEquality<VideoMetadataEpisode>().equals(
+            episodes,
+            other.episodes,
+          );
 
   @override
   int get hashCode => Object.hash(
-        seasonNumber,
-        title,
-        plot,
-        airDate,
-        year,
-        episodeCount,
-        rating,
-        const ListEquality<VideoMetadataId>().hash(ids),
-        const ListEquality<VideoMetadataImage>().hash(images),
-        const ListEquality<VideoMetadataEpisode>().hash(episodes),
-      );
+    seasonNumber,
+    title,
+    plot,
+    airDate,
+    year,
+    episodeCount,
+    rating,
+    const ListEquality<VideoMetadataId>().hash(ids),
+    const ListEquality<VideoMetadataImage>().hash(images),
+    const ListEquality<VideoMetadataEpisode>().hash(episodes),
+  );
 }
 
 /// 一部电影或电视剧作品的完整中立资料。
@@ -670,17 +660,17 @@ class VideoMetadataWork {
     List<VideoMetadataSeason> seasons = const <VideoMetadataSeason>[],
     List<VideoMetadataExtra> extras = const <VideoMetadataExtra>[],
     Map<String, Object?>? rawPayload,
-  })  : aliases = List<String>.unmodifiable(aliases),
-        genres = List<String>.unmodifiable(genres),
-        studios = List<String>.unmodifiable(studios),
-        countries = List<String>.unmodifiable(countries),
-        keywords = List<String>.unmodifiable(keywords),
-        ids = List<VideoMetadataId>.unmodifiable(ids),
-        credits = List<VideoMetadataCredit>.unmodifiable(credits),
-        images = List<VideoMetadataImage>.unmodifiable(images),
-        seasons = List<VideoMetadataSeason>.unmodifiable(seasons),
-        extras = List<VideoMetadataExtra>.unmodifiable(extras),
-        rawPayload = _freezeMap(rawPayload);
+  }) : aliases = List<String>.unmodifiable(aliases),
+       genres = List<String>.unmodifiable(genres),
+       studios = List<String>.unmodifiable(studios),
+       countries = List<String>.unmodifiable(countries),
+       keywords = List<String>.unmodifiable(keywords),
+       ids = List<VideoMetadataId>.unmodifiable(ids),
+       credits = List<VideoMetadataCredit>.unmodifiable(credits),
+       images = List<VideoMetadataImage>.unmodifiable(images),
+       seasons = List<VideoMetadataSeason>.unmodifiable(seasons),
+       extras = List<VideoMetadataExtra>.unmodifiable(extras),
+       rawPayload = _freezeMap(rawPayload);
 
   final VideoMetadataProviderKind provider;
   final VideoMetadataMediaKind kind;
@@ -755,41 +745,40 @@ class VideoMetadataWork {
     List<VideoMetadataSeason>? seasons,
     List<VideoMetadataExtra>? extras,
     Map<String, Object?>? rawPayload,
-  }) =>
-      VideoMetadataWork(
-        provider: provider ?? this.provider,
-        kind: kind ?? this.kind,
-        title: title ?? this.title,
-        originalTitle: originalTitle ?? this.originalTitle,
-        tagline: tagline ?? this.tagline,
-        aliases: aliases ?? this.aliases,
-        romajiTitle: romajiTitle ?? this.romajiTitle,
-        englishTitle: englishTitle ?? this.englishTitle,
-        year: year ?? this.year,
-        premiered: premiered ?? this.premiered,
-        endDate: endDate ?? this.endDate,
-        plot: plot ?? this.plot,
-        rating: rating ?? this.rating,
-        ratingVotes: ratingVotes ?? this.ratingVotes,
-        runtimeMinutes: runtimeMinutes ?? this.runtimeMinutes,
-        contentRating: contentRating ?? this.contentRating,
-        status: status ?? this.status,
-        originalLanguage: originalLanguage ?? this.originalLanguage,
-        homepage: homepage ?? this.homepage,
-        episodeGroupId: episodeGroupId ?? this.episodeGroupId,
-        seasonCount: seasonCount ?? this.seasonCount,
-        episodeCount: episodeCount ?? this.episodeCount,
-        genres: genres ?? this.genres,
-        studios: studios ?? this.studios,
-        countries: countries ?? this.countries,
-        keywords: keywords ?? this.keywords,
-        ids: ids ?? this.ids,
-        credits: credits ?? this.credits,
-        images: images ?? this.images,
-        seasons: seasons ?? this.seasons,
-        extras: extras ?? this.extras,
-        rawPayload: rawPayload ?? this.rawPayload,
-      );
+  }) => VideoMetadataWork(
+    provider: provider ?? this.provider,
+    kind: kind ?? this.kind,
+    title: title ?? this.title,
+    originalTitle: originalTitle ?? this.originalTitle,
+    tagline: tagline ?? this.tagline,
+    aliases: aliases ?? this.aliases,
+    romajiTitle: romajiTitle ?? this.romajiTitle,
+    englishTitle: englishTitle ?? this.englishTitle,
+    year: year ?? this.year,
+    premiered: premiered ?? this.premiered,
+    endDate: endDate ?? this.endDate,
+    plot: plot ?? this.plot,
+    rating: rating ?? this.rating,
+    ratingVotes: ratingVotes ?? this.ratingVotes,
+    runtimeMinutes: runtimeMinutes ?? this.runtimeMinutes,
+    contentRating: contentRating ?? this.contentRating,
+    status: status ?? this.status,
+    originalLanguage: originalLanguage ?? this.originalLanguage,
+    homepage: homepage ?? this.homepage,
+    episodeGroupId: episodeGroupId ?? this.episodeGroupId,
+    seasonCount: seasonCount ?? this.seasonCount,
+    episodeCount: episodeCount ?? this.episodeCount,
+    genres: genres ?? this.genres,
+    studios: studios ?? this.studios,
+    countries: countries ?? this.countries,
+    keywords: keywords ?? this.keywords,
+    ids: ids ?? this.ids,
+    credits: credits ?? this.credits,
+    images: images ?? this.images,
+    seasons: seasons ?? this.seasons,
+    extras: extras ?? this.extras,
+    rawPayload: rawPayload ?? this.rawPayload,
+  );
 
   @override
   bool operator ==(Object other) =>
@@ -822,51 +811,59 @@ class VideoMetadataWork {
           const ListEquality<String>().equals(countries, other.countries) &&
           const ListEquality<String>().equals(keywords, other.keywords) &&
           const ListEquality<VideoMetadataId>().equals(ids, other.ids) &&
-          const ListEquality<VideoMetadataCredit>()
-              .equals(credits, other.credits) &&
-          const ListEquality<VideoMetadataImage>()
-              .equals(images, other.images) &&
-          const ListEquality<VideoMetadataSeason>()
-              .equals(seasons, other.seasons) &&
-          const ListEquality<VideoMetadataExtra>()
-              .equals(extras, other.extras) &&
+          const ListEquality<VideoMetadataCredit>().equals(
+            credits,
+            other.credits,
+          ) &&
+          const ListEquality<VideoMetadataImage>().equals(
+            images,
+            other.images,
+          ) &&
+          const ListEquality<VideoMetadataSeason>().equals(
+            seasons,
+            other.seasons,
+          ) &&
+          const ListEquality<VideoMetadataExtra>().equals(
+            extras,
+            other.extras,
+          ) &&
           const DeepCollectionEquality().equals(rawPayload, other.rawPayload);
 
   @override
   int get hashCode => Object.hashAll(<Object?>[
-        provider,
-        kind,
-        title,
-        originalTitle,
-        tagline,
-        const ListEquality<String>().hash(aliases),
-        romajiTitle,
-        englishTitle,
-        year,
-        premiered,
-        endDate,
-        plot,
-        rating,
-        ratingVotes,
-        runtimeMinutes,
-        contentRating,
-        status,
-        originalLanguage,
-        homepage,
-        episodeGroupId,
-        seasonCount,
-        episodeCount,
-        const ListEquality<String>().hash(genres),
-        const ListEquality<String>().hash(studios),
-        const ListEquality<String>().hash(countries),
-        const ListEquality<String>().hash(keywords),
-        const ListEquality<VideoMetadataId>().hash(ids),
-        const ListEquality<VideoMetadataCredit>().hash(credits),
-        const ListEquality<VideoMetadataImage>().hash(images),
-        const ListEquality<VideoMetadataSeason>().hash(seasons),
-        const ListEquality<VideoMetadataExtra>().hash(extras),
-        const DeepCollectionEquality().hash(rawPayload),
-      ]);
+    provider,
+    kind,
+    title,
+    originalTitle,
+    tagline,
+    const ListEquality<String>().hash(aliases),
+    romajiTitle,
+    englishTitle,
+    year,
+    premiered,
+    endDate,
+    plot,
+    rating,
+    ratingVotes,
+    runtimeMinutes,
+    contentRating,
+    status,
+    originalLanguage,
+    homepage,
+    episodeGroupId,
+    seasonCount,
+    episodeCount,
+    const ListEquality<String>().hash(genres),
+    const ListEquality<String>().hash(studios),
+    const ListEquality<String>().hash(countries),
+    const ListEquality<String>().hash(keywords),
+    const ListEquality<VideoMetadataId>().hash(ids),
+    const ListEquality<VideoMetadataCredit>().hash(credits),
+    const ListEquality<VideoMetadataImage>().hash(images),
+    const ListEquality<VideoMetadataSeason>().hash(seasons),
+    const ListEquality<VideoMetadataExtra>().hash(extras),
+    const DeepCollectionEquality().hash(rawPayload),
+  ]);
 }
 
 Map<String, Object?>? _freezeMap(Map<String, Object?>? value) {
@@ -880,7 +877,7 @@ Map<String, Object?>? _freezeMap(Map<String, Object?>? value) {
 }
 
 Object? _freezeJson(Object? value) => switch (value) {
-      Map<String, Object?> map => _freezeMap(map),
-      List<Object?> list => List<Object?>.unmodifiable(list.map(_freezeJson)),
-      _ => value,
-    };
+  Map<String, Object?> map => _freezeMap(map),
+  List<Object?> list => List<Object?>.unmodifiable(list.map(_freezeJson)),
+  _ => value,
+};

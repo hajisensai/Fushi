@@ -20,9 +20,9 @@ DateTime _uniqueSubtitleCacheMtime(String seed) {
 class _FakeLibraryService
     implements FushiLibraryHostService, VideoPlaybackSyncHost {
   @override
-  Future<List<RemoteActivityEvent>> listActivityEvents(
-          {int limit = 100}) async =>
-      const <RemoteActivityEvent>[];
+  Future<List<RemoteActivityEvent>> listActivityEvents({
+    int limit = 100,
+  }) async => const <RemoteActivityEvent>[];
 
   @override
   Future<String?> videoCoverPath(String id) async {
@@ -53,8 +53,8 @@ class _FakeLibraryService
 
   @override
   Future<CollectionManifest> mergeCollectionManifest(
-          CollectionManifest incoming) async =>
-      incoming;
+    CollectionManifest incoming,
+  ) async => incoming;
 
   _FakeLibraryService() {
     // 创建临时视频文件（内容为已知字节）
@@ -98,8 +98,9 @@ class _FakeLibraryService
   Future<List<RemoteVideoInfo>> listVideos() async {
     // 镜像生产 _videoInfoFromRow：清单条目带上 host 记录的播放进度（TODO-653）
     // 与字幕调轴（BUG-1620）。
-    final ({int positionMs, int updatedAtMs}) p =
-        await getVideoPosition(videoId);
+    final ({int positionMs, int updatedAtMs}) p = await getVideoPosition(
+      videoId,
+    );
     final VideoPlaybackSyncState d = await getVideoPlayback(videoId);
     return <RemoteVideoInfo>[
       RemoteVideoInfo.fromJson(<String, Object?>{
@@ -135,14 +136,19 @@ class _FakeLibraryService
   }
 
   @override
-  Future<void> importVideoSubtitle(File subtitleFile,
-      {required String id, required String suffix}) async {}
+  Future<void> importVideoSubtitle(
+    File subtitleFile, {
+    required String id,
+    required String suffix,
+  }) async {}
 
   @override
-  Future<void> importVideo(File videoFile,
-      {required String id,
-      required String title,
-      String? originalFileName}) async {
+  Future<void> importVideo(
+    File videoFile, {
+    required String id,
+    required String title,
+    String? originalFileName,
+  }) async {
     uploaded.add((id: id, title: title, fileName: originalFileName));
   }
 
@@ -158,8 +164,11 @@ class _FakeLibraryService
   }
 
   @override
-  Future<File?> resolveVideoSubtitle(String id,
-      {String langCode = 'ja', int episodeIndex = 0}) async {
+  Future<File?> resolveVideoSubtitle(
+    String id, {
+    String langCode = 'ja',
+    int episodeIndex = 0,
+  }) async {
     if (id == videoId) return subtitleFile;
     if (id == playlistId && episodeIndex == 1) return ep1SubFile;
     return null;
@@ -219,8 +228,11 @@ class _FakeLibraryService
       throw UnimplementedError('not used in video test');
 
   @override
-  Future<void> importBook(File epubFile,
-      {String? displayTitle, int displayTitleAt = 0}) async {}
+  Future<void> importBook(
+    File epubFile, {
+    String? displayTitle,
+    int displayTitleAt = 0,
+  }) async {}
 
   @override
   Future<void> deleteBook(String title) async {}
@@ -239,8 +251,10 @@ class _FakeLibraryService
   ) async {
     final RemoteBookProgress current =
         bookProgress[bookKey] ?? RemoteBookProgress.empty;
-    bookProgress[bookKey] =
-        resolveBookProgressSync(local: current, remote: progress);
+    bookProgress[bookKey] = resolveBookProgressSync(
+      local: current,
+      remote: progress,
+    );
   }
 
   // ── local audio stubs ───────────────────────────────────────────────────────
@@ -271,8 +285,10 @@ class _FakeLibraryService
   Future<bool> audiobookExists(String bookKey) async => false;
 
   @override
-  Future<void> importAudiobook(File packageFile,
-      {String? bookKeyOverride}) async {}
+  Future<void> importAudiobook(
+    File packageFile, {
+    String? bookKeyOverride,
+  }) async {}
 
   @override
   Future<void> deleteAudiobook(String bookKey) async {}
@@ -287,8 +303,7 @@ class _FakeLibraryService
   @override
   Future<({int positionMs, int updatedAtMs})> getAudiobookPosition(
     String bookKey,
-  ) async =>
-      (positionMs: 0, updatedAtMs: 0);
+  ) async => (positionMs: 0, updatedAtMs: 0);
 
   @override
   Future<void> putAudiobookPosition(
@@ -334,9 +349,13 @@ class _FakeLibraryService
 
   @override
   Future<void> putVideoPlayback(
-      String id, VideoPlaybackSyncState incoming) async {
+    String id,
+    VideoPlaybackSyncState incoming,
+  ) async {
     videoPlayback[id] = VideoPlaybackSyncState.merge(
-        videoPlayback[id] ?? const VideoPlaybackSyncState(), incoming);
+      videoPlayback[id] ?? const VideoPlaybackSyncState(),
+      incoming,
+    );
   }
 }
 
@@ -380,8 +399,9 @@ void main() {
 
   test('GET /api/capabilities 包含 videos == true', () async {
     final HttpClient c = HttpClient();
-    final HttpClientRequest req =
-        await c.getUrl(Uri.parse('$base/api/capabilities'));
+    final HttpClientRequest req = await c.getUrl(
+      Uri.parse('$base/api/capabilities'),
+    );
     req.headers.set('authorization', authHeader());
     final HttpClientResponse res = await req.close();
     expect(res.statusCode, 200);
@@ -390,8 +410,11 @@ void main() {
             as Map<String, dynamic>;
     final Map<dynamic, dynamic> live =
         json['liveLibrary'] as Map<dynamic, dynamic>;
-    expect(live['videos'], true,
-        reason: '注入了 libraryService 时 videos 能力应为 true');
+    expect(
+      live['videos'],
+      true,
+      reason: '注入了 libraryService 时 videos 能力应为 true',
+    );
     c.close();
   });
 
@@ -399,8 +422,9 @@ void main() {
 
   test('GET /api/library/videos 列出视频（需 Basic 鉴权）', () async {
     final HttpClient c = HttpClient();
-    final HttpClientRequest req =
-        await c.getUrl(Uri.parse('$base/api/library/videos'));
+    final HttpClientRequest req = await c.getUrl(
+      Uri.parse('$base/api/library/videos'),
+    );
     req.headers.set('authorization', authHeader());
     final HttpClientResponse res = await req.close();
     expect(res.statusCode, 200);
@@ -414,8 +438,11 @@ void main() {
     // BUG-1699：合集归属经端点层字段裁剪后仍在（客户端据此把远端占位卡折进合集）。
     final Map<dynamic, dynamic>? collection =
         first['collection'] as Map<dynamic, dynamic>?;
-    expect(collection, isNotNull,
-        reason: '端点层裁剪（_remoteVideoJsonForRequest）不得丢 collection 字段');
+    expect(
+      collection,
+      isNotNull,
+      reason: '端点层裁剪（_remoteVideoJsonForRequest）不得丢 collection 字段',
+    );
     expect(collection!['name'], 'Sample Collection');
     expect(collection['collectionType'], 'collection');
     expect(collection['sortIndex'], 3);
@@ -427,15 +454,20 @@ void main() {
   test('GET clipaudio 返回裁好的音频字节（audio/aac，Basic 鉴权，透传入参）', () async {
     final String encodedId = Uri.encodeFull(_FakeLibraryService.videoId);
     final HttpClient c = HttpClient();
-    final HttpClientRequest req =
-        await c.getUrl(Uri.parse('$base/api/library/videos/$encodedId/clipaudio'
-            '?startMs=1000&endMs=3000&audioStreamIndex=2&ac=1&bitrate=64k'));
+    final HttpClientRequest req = await c.getUrl(
+      Uri.parse(
+        '$base/api/library/videos/$encodedId/clipaudio'
+        '?startMs=1000&endMs=3000&audioStreamIndex=2&ac=1&bitrate=64k',
+      ),
+    );
     req.headers.set('authorization', authHeader());
     final HttpClientResponse res = await req.close();
     expect(res.statusCode, 200);
     expect(res.headers.contentType?.mimeType, 'audio/aac');
-    final List<int> bytes =
-        await res.fold<List<int>>(<int>[], (List<int> a, List<int> b) {
+    final List<int> bytes = await res.fold<List<int>>(<int>[], (
+      List<int> a,
+      List<int> b,
+    ) {
       a.addAll(b);
       return a;
     });
@@ -449,8 +481,11 @@ void main() {
   test('GET clipaudio 非法区间（endMs<=startMs / 缺参）→ 400', () async {
     final String encodedId = Uri.encodeFull(_FakeLibraryService.videoId);
     final HttpClient c = HttpClient();
-    final HttpClientRequest req = await c.getUrl(Uri.parse(
-        '$base/api/library/videos/$encodedId/clipaudio?startMs=3000&endMs=1000'));
+    final HttpClientRequest req = await c.getUrl(
+      Uri.parse(
+        '$base/api/library/videos/$encodedId/clipaudio?startMs=3000&endMs=1000',
+      ),
+    );
     req.headers.set('authorization', authHeader());
     final HttpClientResponse res = await req.close();
     expect(res.statusCode, 400);
@@ -459,8 +494,11 @@ void main() {
 
   test('GET clipaudio 未知视频 → 404', () async {
     final HttpClient c = HttpClient();
-    final HttpClientRequest req = await c.getUrl(Uri.parse(
-        '$base/api/library/videos/video/nope/clipaudio?startMs=0&endMs=1000'));
+    final HttpClientRequest req = await c.getUrl(
+      Uri.parse(
+        '$base/api/library/videos/video/nope/clipaudio?startMs=0&endMs=1000',
+      ),
+    );
     req.headers.set('authorization', authHeader());
     final HttpClientResponse res = await req.close();
     expect(res.statusCode, 404);
@@ -470,8 +508,11 @@ void main() {
   test('GET clipaudio 未鉴权 → 401（不在 /stream 豁免名单）', () async {
     final String encodedId = Uri.encodeFull(_FakeLibraryService.videoId);
     final HttpClient c = HttpClient();
-    final HttpClientRequest req = await c.getUrl(Uri.parse(
-        '$base/api/library/videos/$encodedId/clipaudio?startMs=0&endMs=1000'));
+    final HttpClientRequest req = await c.getUrl(
+      Uri.parse(
+        '$base/api/library/videos/$encodedId/clipaudio?startMs=0&endMs=1000',
+      ),
+    );
     // 不设 Authorization 头
     final HttpClientResponse res = await req.close();
     expect(res.statusCode, 401);
@@ -480,8 +521,9 @@ void main() {
 
   test('GET /api/library/videos exposes and serves video covers', () async {
     final HttpClient c = HttpClient();
-    final HttpClientRequest listReq =
-        await c.getUrl(Uri.parse('$base/api/library/videos'));
+    final HttpClientRequest listReq = await c.getUrl(
+      Uri.parse('$base/api/library/videos'),
+    );
     listReq.headers.set('authorization', authHeader());
     final HttpClientResponse listRes = await listReq.close();
     expect(listRes.statusCode, 200);
@@ -497,21 +539,22 @@ void main() {
     final HttpClientResponse coverRes = await coverReq.close();
     expect(coverRes.statusCode, 200);
     expect(coverRes.headers.contentType?.mimeType, 'image/png');
-    final List<int> body = await coverRes.fold<List<int>>(
-      <int>[],
-      (List<int> acc, List<int> chunk) {
-        acc.addAll(chunk);
-        return acc;
-      },
-    );
+    final List<int> body = await coverRes.fold<List<int>>(<int>[], (
+      List<int> acc,
+      List<int> chunk,
+    ) {
+      acc.addAll(chunk);
+      return acc;
+    });
     expect(body, _coverBytes);
     c.close();
   });
 
   test('GET /api/library/videos 未鉴权返回 401', () async {
     final HttpClient c = HttpClient();
-    final HttpClientRequest req =
-        await c.getUrl(Uri.parse('$base/api/library/videos'));
+    final HttpClientRequest req = await c.getUrl(
+      Uri.parse('$base/api/library/videos'),
+    );
     // 不设 Authorization 头
     final HttpClientResponse res = await req.close();
     expect(res.statusCode, 401);
@@ -521,33 +564,40 @@ void main() {
 
   // ── streamurl ──────────────────────────────────────────────────────────────
 
-  test('GET /api/library/videos/<id>/streamurl 返回含 token 的 stream url',
-      () async {
-    final HttpClient c = HttpClient();
-    final String encodedId = Uri.encodeFull(_FakeLibraryService.videoId);
-    final HttpClientRequest req = await c
-        .getUrl(Uri.parse('$base/api/library/videos/$encodedId/streamurl'));
-    req.headers.set('authorization', authHeader());
-    final HttpClientResponse res = await req.close();
-    expect(res.statusCode, 200);
-    final Map<String, dynamic> json =
-        jsonDecode(await res.transform(utf8.decoder).join())
-            as Map<String, dynamic>;
-    expect(json['url'], isNotNull, reason: '应有 stream url');
-    final String url = json['url'] as String;
-    expect(url, contains('/stream'), reason: 'url 应指向 stream 端点');
-    expect(url, contains('token='), reason: 'url 应携带 token 参数');
-    expect(json['subtitleUrl'], isNotNull, reason: '有字幕时应返回 subtitleUrl');
-    expect(json['subtitleFileName'], 'sample.ja.ass',
-        reason: '远端字幕协议必须保留 sidecar 扩展名，客户端才不会按 .srt 误解析');
-    c.close();
-  });
+  test(
+    'GET /api/library/videos/<id>/streamurl 返回含 token 的 stream url',
+    () async {
+      final HttpClient c = HttpClient();
+      final String encodedId = Uri.encodeFull(_FakeLibraryService.videoId);
+      final HttpClientRequest req = await c.getUrl(
+        Uri.parse('$base/api/library/videos/$encodedId/streamurl'),
+      );
+      req.headers.set('authorization', authHeader());
+      final HttpClientResponse res = await req.close();
+      expect(res.statusCode, 200);
+      final Map<String, dynamic> json =
+          jsonDecode(await res.transform(utf8.decoder).join())
+              as Map<String, dynamic>;
+      expect(json['url'], isNotNull, reason: '应有 stream url');
+      final String url = json['url'] as String;
+      expect(url, contains('/stream'), reason: 'url 应指向 stream 端点');
+      expect(url, contains('token='), reason: 'url 应携带 token 参数');
+      expect(json['subtitleUrl'], isNotNull, reason: '有字幕时应返回 subtitleUrl');
+      expect(
+        json['subtitleFileName'],
+        'sample.ja.ass',
+        reason: '远端字幕协议必须保留 sidecar 扩展名，客户端才不会按 .srt 误解析',
+      );
+      c.close();
+    },
+  );
 
   test('GET /api/library/videos/<id>/streamurl 未鉴权返回 401', () async {
     final HttpClient c = HttpClient();
     final String encodedId = Uri.encodeFull(_FakeLibraryService.videoId);
-    final HttpClientRequest req = await c
-        .getUrl(Uri.parse('$base/api/library/videos/$encodedId/streamurl'));
+    final HttpClientRequest req = await c.getUrl(
+      Uri.parse('$base/api/library/videos/$encodedId/streamurl'),
+    );
     // 不设 Authorization 头
     final HttpClientResponse res = await req.close();
     expect(res.statusCode, 401);
@@ -558,83 +608,94 @@ void main() {
   // ── stream（token 鉴权，豁免 Basic）──────────────────────────────────────────
 
   test(
-      'GET /api/library/videos/<id>/streamurl exposes embedded subtitle tracks',
-      () async {
-    final HttpClient c = HttpClient();
-    final String encodedId = Uri.encodeFull(_FakeLibraryService.videoId);
-    final HttpClientRequest req = await c
-        .getUrl(Uri.parse('$base/api/library/videos/$encodedId/streamurl'));
-    req.headers.set('authorization', authHeader());
-    final HttpClientResponse res = await req.close();
-    expect(res.statusCode, 200);
-    final Map<String, dynamic> json =
-        jsonDecode(await res.transform(utf8.decoder).join())
-            as Map<String, dynamic>;
+    'GET /api/library/videos/<id>/streamurl exposes embedded subtitle tracks',
+    () async {
+      final HttpClient c = HttpClient();
+      final String encodedId = Uri.encodeFull(_FakeLibraryService.videoId);
+      final HttpClientRequest req = await c.getUrl(
+        Uri.parse('$base/api/library/videos/$encodedId/streamurl'),
+      );
+      req.headers.set('authorization', authHeader());
+      final HttpClientResponse res = await req.close();
+      expect(res.statusCode, 200);
+      final Map<String, dynamic> json =
+          jsonDecode(await res.transform(utf8.decoder).join())
+              as Map<String, dynamic>;
 
-    final List<dynamic> tracks =
-        json['embeddedSubtitleTracks'] as List<dynamic>;
-    expect(tracks, hasLength(3));
-    final Map<String, dynamic> subrip =
-        (tracks[0] as Map).cast<String, dynamic>();
-    final Map<String, dynamic> movText =
-        (tracks[1] as Map).cast<String, dynamic>();
-    final Map<String, dynamic> pgs = (tracks[2] as Map).cast<String, dynamic>();
+      final List<dynamic> tracks =
+          json['embeddedSubtitleTracks'] as List<dynamic>;
+      expect(tracks, hasLength(3));
+      final Map<String, dynamic> subrip = (tracks[0] as Map)
+          .cast<String, dynamic>();
+      final Map<String, dynamic> movText = (tracks[1] as Map)
+          .cast<String, dynamic>();
+      final Map<String, dynamic> pgs = (tracks[2] as Map)
+          .cast<String, dynamic>();
 
-    expect(subrip['streamIndex'], 0);
-    expect(subrip['codec'], 'subrip');
-    expect(subrip['isText'], isTrue);
-    expect(subrip['url'], contains('embeddedStreamIndex=0'));
-    expect(subrip['fileName'], endsWith('.srt'));
-    expect(movText['codec'], 'mov_text');
-    expect(movText['fileName'], endsWith('.srt'));
-    expect(pgs['codec'], 'hdmv_pgs_subtitle');
-    expect(pgs['isText'], isFalse);
-    expect(pgs.containsKey('url'), isFalse);
-    c.close();
-  });
+      expect(subrip['streamIndex'], 0);
+      expect(subrip['codec'], 'subrip');
+      expect(subrip['isText'], isTrue);
+      expect(subrip['url'], contains('embeddedStreamIndex=0'));
+      expect(subrip['fileName'], endsWith('.srt'));
+      expect(movText['codec'], 'mov_text');
+      expect(movText['fileName'], endsWith('.srt'));
+      expect(pgs['codec'], 'hdmv_pgs_subtitle');
+      expect(pgs['isText'], isFalse);
+      expect(pgs.containsKey('url'), isFalse);
+      c.close();
+    },
+  );
 
-  test('GET /api/library/videos/<id>/subtitle extracts embedded text subtitle',
-      () async {
-    final HttpClient c = HttpClient();
-    final String encodedId = Uri.encodeFull(_FakeLibraryService.videoId);
-    final Uri subtitleUri = Uri.parse(
-      '$base/api/library/videos/$encodedId/subtitle?embeddedStreamIndex=0',
-    );
-    final HttpClientRequest req = await c.getUrl(subtitleUri);
-    req.headers.set('authorization', authHeader());
-    final HttpClientResponse res = await req.close();
+  test(
+    'GET /api/library/videos/<id>/subtitle extracts embedded text subtitle',
+    () async {
+      final HttpClient c = HttpClient();
+      final String encodedId = Uri.encodeFull(_FakeLibraryService.videoId);
+      final Uri subtitleUri = Uri.parse(
+        '$base/api/library/videos/$encodedId/subtitle?embeddedStreamIndex=0',
+      );
+      final HttpClientRequest req = await c.getUrl(subtitleUri);
+      req.headers.set('authorization', authHeader());
+      final HttpClientResponse res = await req.close();
 
-    expect(res.statusCode, 200);
-    final String body = await res.transform(utf8.decoder).join();
-    expect(body, contains('Remote embedded subtitle'));
-    expect(ffmpeg.extractedSubtitleIndices, contains(0));
-    expect(ffmpeg.extractedSubtitleIndices, contains(1),
-        reason: 'remote extraction should reuse the all-text-track demux path');
-    c.close();
-  });
+      expect(res.statusCode, 200);
+      final String body = await res.transform(utf8.decoder).join();
+      expect(body, contains('Remote embedded subtitle'));
+      expect(ffmpeg.extractedSubtitleIndices, contains(0));
+      expect(
+        ffmpeg.extractedSubtitleIndices,
+        contains(1),
+        reason: 'remote extraction should reuse the all-text-track demux path',
+      );
+      c.close();
+    },
+  );
 
-  test('GET embedded graphical subtitle returns 404 instead of fake text',
-      () async {
-    final HttpClient c = HttpClient();
-    final String encodedId = Uri.encodeFull(_FakeLibraryService.videoId);
-    final Uri subtitleUri = Uri.parse(
-      '$base/api/library/videos/$encodedId/subtitle?embeddedStreamIndex=2',
-    );
-    final HttpClientRequest req = await c.getUrl(subtitleUri);
-    req.headers.set('authorization', authHeader());
-    final HttpClientResponse res = await req.close();
+  test(
+    'GET embedded graphical subtitle returns 404 instead of fake text',
+    () async {
+      final HttpClient c = HttpClient();
+      final String encodedId = Uri.encodeFull(_FakeLibraryService.videoId);
+      final Uri subtitleUri = Uri.parse(
+        '$base/api/library/videos/$encodedId/subtitle?embeddedStreamIndex=2',
+      );
+      final HttpClientRequest req = await c.getUrl(subtitleUri);
+      req.headers.set('authorization', authHeader());
+      final HttpClientResponse res = await req.close();
 
-    expect(res.statusCode, 404);
-    await res.drain<void>();
-    c.close();
-  });
+      expect(res.statusCode, 404);
+      await res.drain<void>();
+      c.close();
+    },
+  );
 
   group('video stream', () {
     /// 取得有效 stream url（含 token）。
     Future<String> getStreamUrl(HttpClient c) async {
       final String encodedId = Uri.encodeFull(_FakeLibraryService.videoId);
-      final HttpClientRequest req = await c
-          .getUrl(Uri.parse('$base/api/library/videos/$encodedId/streamurl'));
+      final HttpClientRequest req = await c.getUrl(
+        Uri.parse('$base/api/library/videos/$encodedId/streamurl'),
+      );
       req.headers.set('authorization', authHeader());
       final HttpClientResponse res = await req.close();
       expect(res.statusCode, 200, reason: '取流地址应成功');
@@ -651,42 +712,60 @@ void main() {
       // 故意不设 Authorization 头（测试豁免 Basic）
       final HttpClientResponse res = await req.close();
       expect(res.statusCode, 200);
-      expect(res.headers.value('accept-ranges'), 'bytes',
-          reason: '应携带 Accept-Ranges: bytes');
-      final List<int> body =
-          await res.fold(<int>[], (List<int> a, List<int> b) {
+      expect(
+        res.headers.value('accept-ranges'),
+        'bytes',
+        reason: '应携带 Accept-Ranges: bytes',
+      );
+      final List<int> body = await res.fold(<int>[], (
+        List<int> a,
+        List<int> b,
+      ) {
         return a..addAll(b);
       });
       expect(body.length, 16, reason: '应返回全部 16 字节');
-      expect(body, List<int>.generate(16, (int i) => i),
-          reason: '内容应与 fake 视频文件一致');
+      expect(
+        body,
+        List<int>.generate(16, (int i) => i),
+        reason: '内容应与 fake 视频文件一致',
+      );
       c.close();
     });
 
-    test('GET stream 带 Range: bytes=0-3 → 206 + Content-Range + 4 字节',
-        () async {
-      final HttpClient c = HttpClient();
-      final String streamUrl = await getStreamUrl(c);
-      final HttpClientRequest req = await c.getUrl(Uri.parse(streamUrl));
-      req.headers.set('range', 'bytes=0-3');
-      final HttpClientResponse res = await req.close();
-      expect(res.statusCode, 206, reason: 'Range 请求应返回 206 Partial Content');
-      expect(res.headers.value('content-range'), 'bytes 0-3/16',
-          reason: 'Content-Range 应为 bytes 0-3/16');
-      final List<int> body =
-          await res.fold(<int>[], (List<int> a, List<int> b) {
-        return a..addAll(b);
-      });
-      expect(body.length, 4, reason: 'body 应为 4 字节');
-      expect(body, <int>[0, 1, 2, 3], reason: '字节内容应为 0..3');
-      c.close();
-    });
+    test(
+      'GET stream 带 Range: bytes=0-3 → 206 + Content-Range + 4 字节',
+      () async {
+        final HttpClient c = HttpClient();
+        final String streamUrl = await getStreamUrl(c);
+        final HttpClientRequest req = await c.getUrl(Uri.parse(streamUrl));
+        req.headers.set('range', 'bytes=0-3');
+        final HttpClientResponse res = await req.close();
+        expect(res.statusCode, 206, reason: 'Range 请求应返回 206 Partial Content');
+        expect(
+          res.headers.value('content-range'),
+          'bytes 0-3/16',
+          reason: 'Content-Range 应为 bytes 0-3/16',
+        );
+        final List<int> body = await res.fold(<int>[], (
+          List<int> a,
+          List<int> b,
+        ) {
+          return a..addAll(b);
+        });
+        expect(body.length, 4, reason: 'body 应为 4 字节');
+        expect(body, <int>[0, 1, 2, 3], reason: '字节内容应为 0..3');
+        c.close();
+      },
+    );
 
     test('GET stream 带无效 token → 403', () async {
       final HttpClient c = HttpClient();
       final String encodedId = Uri.encodeFull(_FakeLibraryService.videoId);
-      final HttpClientRequest req = await c.getUrl(Uri.parse(
-          '$base/api/library/videos/$encodedId/stream?token=invalid_token_xyz'));
+      final HttpClientRequest req = await c.getUrl(
+        Uri.parse(
+          '$base/api/library/videos/$encodedId/stream?token=invalid_token_xyz',
+        ),
+      );
       final HttpClientResponse res = await req.close();
       expect(res.statusCode, 403, reason: '无效 token 应返回 403，不能泄漏文件内容');
       await res.drain<void>();
@@ -700,8 +779,11 @@ void main() {
       final Uri streamUri = Uri.parse(streamUrl);
       final String tokenValue = streamUri.queryParameters['token']!;
       // 用合法 token 但配一个不存在的 id
-      final HttpClientRequest req = await c.getUrl(Uri.parse(
-          '$base/api/library/videos/video/other/stream?token=$tokenValue'));
+      final HttpClientRequest req = await c.getUrl(
+        Uri.parse(
+          '$base/api/library/videos/video/other/stream?token=$tokenValue',
+        ),
+      );
       final HttpClientResponse res = await req.close();
       expect(res.statusCode, anyOf(403, 404), reason: '合法 token 配错误 id 应被拒绝');
       await res.drain<void>();
@@ -711,12 +793,16 @@ void main() {
     test('GET stream 不带 token 且不带 Basic → 401', () async {
       final HttpClient c = HttpClient();
       final String encodedId = Uri.encodeFull(_FakeLibraryService.videoId);
-      final HttpClientRequest req = await c
-          .getUrl(Uri.parse('$base/api/library/videos/$encodedId/stream'));
+      final HttpClientRequest req = await c.getUrl(
+        Uri.parse('$base/api/library/videos/$encodedId/stream'),
+      );
       // 不带任何鉴权
       final HttpClientResponse res = await req.close();
-      expect(res.statusCode, anyOf(401, 403),
-          reason: '豁免 Basic 后但无 token，handler 应拒绝');
+      expect(
+        res.statusCode,
+        anyOf(401, 403),
+        reason: '豁免 Basic 后但无 token，handler 应拒绝',
+      );
       await res.drain<void>();
       c.close();
     });
@@ -727,8 +813,9 @@ void main() {
   test('GET /api/library/videos/<id>/subtitle（带 Basic）→ 200 字幕内容', () async {
     final HttpClient c = HttpClient();
     final String encodedId = Uri.encodeFull(_FakeLibraryService.videoId);
-    final HttpClientRequest req = await c
-        .getUrl(Uri.parse('$base/api/library/videos/$encodedId/subtitle'));
+    final HttpClientRequest req = await c.getUrl(
+      Uri.parse('$base/api/library/videos/$encodedId/subtitle'),
+    );
     req.headers.set('authorization', authHeader());
     final HttpClientResponse res = await req.close();
     expect(res.statusCode, 200);
@@ -741,8 +828,9 @@ void main() {
   test('GET /api/library/videos/<id>/subtitle 未鉴权返回 401', () async {
     final HttpClient c = HttpClient();
     final String encodedId = Uri.encodeFull(_FakeLibraryService.videoId);
-    final HttpClientRequest req = await c
-        .getUrl(Uri.parse('$base/api/library/videos/$encodedId/subtitle'));
+    final HttpClientRequest req = await c.getUrl(
+      Uri.parse('$base/api/library/videos/$encodedId/subtitle'),
+    );
     // 不设 Authorization 头
     final HttpClientResponse res = await req.close();
     expect(res.statusCode, 401);
@@ -752,8 +840,9 @@ void main() {
 
   test('GET /api/library/videos/<missing-id>/subtitle 返回 404', () async {
     final HttpClient c = HttpClient();
-    final HttpClientRequest req = await c
-        .getUrl(Uri.parse('$base/api/library/videos/video/no_such/subtitle'));
+    final HttpClientRequest req = await c.getUrl(
+      Uri.parse('$base/api/library/videos/video/no_such/subtitle'),
+    );
     req.headers.set('authorization', authHeader());
     final HttpClientResponse res = await req.close();
     expect(res.statusCode, 404);
@@ -767,20 +856,29 @@ void main() {
     final HttpClient c = HttpClient();
 
     // streamurl 端点：`/api/library/videos/../evil/streamurl`
-    final HttpClientRequest req1 = await c.getUrl(Uri.parse(
-        '$base/api/library/videos/${Uri.encodeFull('../evil')}/streamurl'));
+    final HttpClientRequest req1 = await c.getUrl(
+      Uri.parse(
+        '$base/api/library/videos/${Uri.encodeFull('../evil')}/streamurl',
+      ),
+    );
     req1.headers.set('authorization', authHeader());
     final HttpClientResponse res1 = await req1.close();
     expect(res1.statusCode, anyOf(400, 403, 404), reason: '含 .. 的 id 应被拒绝');
     await res1.drain<void>();
 
     // subtitle 端点
-    final HttpClientRequest req2 = await c.getUrl(Uri.parse(
-        '$base/api/library/videos/${Uri.encodeFull('../evil')}/subtitle'));
+    final HttpClientRequest req2 = await c.getUrl(
+      Uri.parse(
+        '$base/api/library/videos/${Uri.encodeFull('../evil')}/subtitle',
+      ),
+    );
     req2.headers.set('authorization', authHeader());
     final HttpClientResponse res2 = await req2.close();
-    expect(res2.statusCode, anyOf(400, 403, 404),
-        reason: '含 .. 的 id 在 subtitle 端点应被拒绝');
+    expect(
+      res2.statusCode,
+      anyOf(400, 403, 404),
+      reason: '含 .. 的 id 在 subtitle 端点应被拒绝',
+    );
     await res2.drain<void>();
 
     c.close();
@@ -800,10 +898,13 @@ void main() {
     final String bareBase = 'http://127.0.0.1:${bare.port}';
     final HttpClient c = HttpClient();
 
-    final HttpClientRequest req =
-        await c.getUrl(Uri.parse('$bareBase/api/library/videos'));
+    final HttpClientRequest req = await c.getUrl(
+      Uri.parse('$bareBase/api/library/videos'),
+    );
     req.headers.set(
-        'authorization', 'Basic ${base64Encode(utf8.encode('hibiki:$token'))}');
+      'authorization',
+      'Basic ${base64Encode(utf8.encode('hibiki:$token'))}',
+    );
     final HttpClientResponse res = await req.close();
     expect(res.statusCode, 404, reason: '无 libraryService 时视频列表应返回 404');
     await res.drain<void>();
@@ -821,10 +922,12 @@ void main() {
     );
     req.headers.set('authorization', authHeader());
     req.headers.set('content-type', 'application/json');
-    req.write(jsonEncode(<String, Object?>{
-      'positionMs': positionMs,
-      'positionUpdatedAtMs': updatedAtMs,
-    }));
+    req.write(
+      jsonEncode(<String, Object?>{
+        'positionMs': positionMs,
+        'positionUpdatedAtMs': updatedAtMs,
+      }),
+    );
     final HttpClientResponse res = await req.close();
     await res.drain<void>();
     c.close();
@@ -880,10 +983,12 @@ void main() {
     );
     req.headers.set('authorization', authHeader());
     req.headers.set('content-type', 'application/json');
-    req.write(jsonEncode(<String, Object?>{
-      'positionMs': 1000,
-      'positionUpdatedAtMs': 1700000000000,
-    }));
+    req.write(
+      jsonEncode(<String, Object?>{
+        'positionMs': 1000,
+        'positionUpdatedAtMs': 1700000000000,
+      }),
+    );
     final HttpClientResponse res = await req.close();
     expect(res.statusCode, 404, reason: '未知视频 id 应被拒绝');
     await res.drain<void>();
@@ -893,8 +998,9 @@ void main() {
   test('listVideos 带回 host 进度，供 client 跨设备恢复', () async {
     expect(await putPosition(420000, 1700000000000), 200);
     final HttpClient c = HttpClient();
-    final HttpClientRequest req =
-        await c.getUrl(Uri.parse('$base/api/library/videos'));
+    final HttpClientRequest req = await c.getUrl(
+      Uri.parse('$base/api/library/videos'),
+    );
     req.headers.set('authorization', authHeader());
     final HttpClientResponse res = await req.close();
     expect(res.statusCode, 200);
@@ -908,8 +1014,10 @@ void main() {
 
   // ── 播放偏好跨设备同步端点（BUG-1620 起步，泛化为 /playback；与 /position 对称）──
   group('video playback sync endpoint', () {
-    Future<int> putPlayback(Map<String, Object?> body,
-        {String encodedId = 'video%2Fsample'}) async {
+    Future<int> putPlayback(
+      Map<String, Object?> body, {
+      String encodedId = 'video%2Fsample',
+    }) async {
       final HttpClient c = HttpClient();
       final HttpClientRequest req = await c.putUrl(
         Uri.parse('$base/api/library/videos/$encodedId/playback'),
@@ -943,17 +1051,18 @@ void main() {
       expect(json.containsKey('delayAt'), isFalse);
 
       expect(
-          await putPlayback(<String, Object?>{
-            'delayMs': -1500,
-            'delayAt': 1700000000000,
-            'audioTrackId': '3',
-            'audioTrackAt': 1700000000000,
-            'secondarySubtitleSource': 'embedded:4',
-            'secondarySubtitleAt': 1700000000000,
-            'secondaryDelayMs': 250,
-            'secondaryDelayAt': 1700000000000,
-          }),
-          200);
+        await putPlayback(<String, Object?>{
+          'delayMs': -1500,
+          'delayAt': 1700000000000,
+          'audioTrackId': '3',
+          'audioTrackAt': 1700000000000,
+          'secondarySubtitleSource': 'embedded:4',
+          'secondarySubtitleAt': 1700000000000,
+          'secondaryDelayMs': 250,
+          'secondaryDelayAt': 1700000000000,
+        }),
+        200,
+      );
       json = await getPlayback();
       expect(json['delayMs'], -1500, reason: '负调轴保真');
       expect(json['audioTrackId'], '3');
@@ -961,28 +1070,35 @@ void main() {
       expect(json['secondaryDelayMs'], 250);
       // 带戳清除（副字幕调轴回跟随）：值缺席 + at 更新。
       expect(
-          await putPlayback(
-              <String, Object?>{'secondaryDelayAt': 1700000005000}),
-          200);
+        await putPlayback(<String, Object?>{'secondaryDelayAt': 1700000005000}),
+        200,
+      );
       json = await getPlayback();
-      expect(json.containsKey('secondaryDelayMs'), isFalse,
-          reason: '带戳清除必须覆盖旧值');
+      expect(
+        json.containsKey('secondaryDelayMs'),
+        isFalse,
+        reason: '带戳清除必须覆盖旧值',
+      );
       expect(json['secondaryDelayAt'], 1700000005000);
     });
 
     test('逐字段严格较新者胜：旧戳单字段 PUT 不回退也不影响其它字段', () async {
       expect(
-          await putPlayback(<String, Object?>{
-            'delayMs': 2000,
-            'delayAt': 1700000005000,
-            'audioTrackId': '1',
-            'audioTrackAt': 1700000005000,
-          }),
-          200);
+        await putPlayback(<String, Object?>{
+          'delayMs': 2000,
+          'delayAt': 1700000005000,
+          'audioTrackId': '1',
+          'audioTrackAt': 1700000005000,
+        }),
+        200,
+      );
       expect(
-          await putPlayback(
-              <String, Object?>{'delayMs': -999, 'delayAt': 1699999990000}),
-          200);
+        await putPlayback(<String, Object?>{
+          'delayMs': -999,
+          'delayAt': 1699999990000,
+        }),
+        200,
+      );
       final Map<String, dynamic> json = await getPlayback();
       expect(json['delayMs'], 2000, reason: '旧时间戳不应回退新调轴');
       expect(json['audioTrackId'], '1', reason: '未携带的字段不受影响');
@@ -990,10 +1106,12 @@ void main() {
 
     test('PUT/GET 未知视频 id 返回 404（存在性闸门，不写脏）', () async {
       expect(
-          await putPlayback(
-              <String, Object?>{'delayMs': 1, 'delayAt': 1700000000000},
-              encodedId: 'video%2Fmissing'),
-          404);
+        await putPlayback(<String, Object?>{
+          'delayMs': 1,
+          'delayAt': 1700000000000,
+        }, encodedId: 'video%2Fmissing'),
+        404,
+      );
       final HttpClient c = HttpClient();
       final HttpClientRequest req = await c.getUrl(
         Uri.parse('$base/api/library/videos/video%2Fmissing/playback'),
@@ -1018,12 +1136,16 @@ void main() {
 
     test('listVideos 带回 host 调轴 + 时间戳，供 client LWW 决议', () async {
       expect(
-          await putPlayback(
-              <String, Object?>{'delayMs': -1500, 'delayAt': 1700000000000}),
-          200);
+        await putPlayback(<String, Object?>{
+          'delayMs': -1500,
+          'delayAt': 1700000000000,
+        }),
+        200,
+      );
       final HttpClient c = HttpClient();
-      final HttpClientRequest req =
-          await c.getUrl(Uri.parse('$base/api/library/videos'));
+      final HttpClientRequest req = await c.getUrl(
+        Uri.parse('$base/api/library/videos'),
+      );
       req.headers.set('authorization', authHeader());
       final HttpClientResponse res = await req.close();
       expect(res.statusCode, 200);
@@ -1035,32 +1157,37 @@ void main() {
       c.close();
     });
 
-    test('老 host（无 VideoPlaybackSyncHost 能力）→ 404（client best-effort 降级）',
-        () async {
-      final FushiSyncServer legacy = FushiSyncServer(
-        syncDataDir:
-            Directory.systemTemp.createTempSync('hbk_vid_nodelay').path,
-        port: 0,
-        token: token,
-        allowLan: false,
-        libraryService: _NoDelayCapabilityService(),
-      );
-      await legacy.start();
-      try {
-        final HttpClient c = HttpClient();
-        final HttpClientRequest req = await c.getUrl(Uri.parse(
-          'http://127.0.0.1:${legacy.port}'
-          '/api/library/videos/video%2Fsample/playback',
-        ));
-        req.headers.set('authorization', authHeader());
-        final HttpClientResponse res = await req.close();
-        expect(res.statusCode, 404, reason: '能力探测负向应落 404，与老 host 行为一致');
-        await res.drain<void>();
-        c.close();
-      } finally {
-        await legacy.stop();
-      }
-    });
+    test(
+      '老 host（无 VideoPlaybackSyncHost 能力）→ 404（client best-effort 降级）',
+      () async {
+        final FushiSyncServer legacy = FushiSyncServer(
+          syncDataDir: Directory.systemTemp
+              .createTempSync('hbk_vid_nodelay')
+              .path,
+          port: 0,
+          token: token,
+          allowLan: false,
+          libraryService: _NoDelayCapabilityService(),
+        );
+        await legacy.start();
+        try {
+          final HttpClient c = HttpClient();
+          final HttpClientRequest req = await c.getUrl(
+            Uri.parse(
+              'http://127.0.0.1:${legacy.port}'
+              '/api/library/videos/video%2Fsample/playback',
+            ),
+          );
+          req.headers.set('authorization', authHeader());
+          final HttpClientResponse res = await req.close();
+          expect(res.statusCode, 404, reason: '能力探测负向应落 404，与老 host 行为一致');
+          await res.drain<void>();
+          c.close();
+        } finally {
+          await legacy.stop();
+        }
+      },
+    );
   });
 
   // ── TODO-885 per-episode streamurl / subtitle / position ──────────────────
@@ -1071,10 +1198,12 @@ void main() {
       HttpClient c,
       int episode,
     ) async {
-      final HttpClientRequest req = await c.getUrl(Uri.parse(
-        '$base/api/library/videos/${enc(_FakeLibraryService.playlistId)}'
-        '/streamurl?episode=$episode',
-      ));
+      final HttpClientRequest req = await c.getUrl(
+        Uri.parse(
+          '$base/api/library/videos/${enc(_FakeLibraryService.playlistId)}'
+          '/streamurl?episode=$episode',
+        ),
+      );
       req.headers.set('authorization', authHeader());
       final HttpClientResponse res = await req.close();
       expect(res.statusCode, 200, reason: 'episode $episode streamurl ok');
@@ -1082,36 +1211,54 @@ void main() {
           as Map<String, dynamic>;
     }
 
-    test('streamurl?episode=N streams that episode file (DB-only lookup)',
-        () async {
-      final HttpClient c = HttpClient();
-      final Map<String, dynamic> j1 = await streamUrlForEpisode(c, 1);
-      final String url1 = j1['url'] as String;
-      expect(url1, contains('/stream'));
-      expect(url1, contains('episode=1'),
-          reason: 'stream url must carry the episode index');
+    test(
+      'streamurl?episode=N streams that episode file (DB-only lookup)',
+      () async {
+        final HttpClient c = HttpClient();
+        final Map<String, dynamic> j1 = await streamUrlForEpisode(c, 1);
+        final String url1 = j1['url'] as String;
+        expect(url1, contains('/stream'));
+        expect(
+          url1,
+          contains('episode=1'),
+          reason: 'stream url must carry the episode index',
+        );
 
-      // 拉 ep1 流，断言拿到的是 ep1 的字节（5 字节），不是 ep0。
-      final HttpClientRequest streamReq = await c.getUrl(Uri.parse(url1));
-      final HttpClientResponse streamRes = await streamReq.close();
-      expect(streamRes.statusCode, 200);
-      final List<int> body =
-          await streamRes.fold(<int>[], (List<int> a, List<int> b) {
-        return a..addAll(b);
-      });
-      expect(body, <int>[20, 21, 22, 23, 24],
-          reason: 'episode 1 stream must serve ep1 bytes, not ep0');
-      c.close();
-    });
+        // 拉 ep1 流，断言拿到的是 ep1 的字节（5 字节），不是 ep0。
+        final HttpClientRequest streamReq = await c.getUrl(Uri.parse(url1));
+        final HttpClientResponse streamRes = await streamReq.close();
+        expect(streamRes.statusCode, 200);
+        final List<int> body = await streamRes.fold(<int>[], (
+          List<int> a,
+          List<int> b,
+        ) {
+          return a..addAll(b);
+        });
+        expect(body, <int>[
+          20,
+          21,
+          22,
+          23,
+          24,
+        ], reason: 'episode 1 stream must serve ep1 bytes, not ep0');
+        c.close();
+      },
+    );
 
     test('streamurl?episode=N exposes that episode sidecar subtitle', () async {
       final HttpClient c = HttpClient();
       final Map<String, dynamic> j1 = await streamUrlForEpisode(c, 1);
-      expect(j1['subtitleUrl'], isNotNull,
-          reason: 'episode 1 has a sidecar subtitle');
+      expect(
+        j1['subtitleUrl'],
+        isNotNull,
+        reason: 'episode 1 has a sidecar subtitle',
+      );
       final Uri subUri = Uri.parse(j1['subtitleUrl'] as String);
-      expect(subUri.queryParameters['episode'], '1',
-          reason: 'subtitle url must carry the episode index');
+      expect(
+        subUri.queryParameters['episode'],
+        '1',
+        reason: 'subtitle url must carry the episode index',
+      );
       final HttpClientRequest subReq = await c.getUrl(subUri);
       subReq.headers.set('authorization', authHeader());
       final HttpClientResponse subRes = await subReq.close();
@@ -1123,48 +1270,64 @@ void main() {
       // episode 0 has no sidecar -> no subtitleUrl.
       final HttpClient c2 = HttpClient();
       final Map<String, dynamic> j0 = await streamUrlForEpisode(c2, 0);
-      expect(j0['subtitleUrl'], isNull,
-          reason: 'episode 0 has no sidecar subtitle');
+      expect(
+        j0['subtitleUrl'],
+        isNull,
+        reason: 'episode 0 has no sidecar subtitle',
+      );
       c2.close();
     });
 
-    test('out-of-range episode index is rejected (404, no path traversal)',
-        () async {
-      final HttpClient c = HttpClient();
-      final HttpClientRequest req = await c.getUrl(Uri.parse(
-        '$base/api/library/videos/${enc(_FakeLibraryService.playlistId)}'
-        '/streamurl?episode=99',
-      ));
-      req.headers.set('authorization', authHeader());
-      final HttpClientResponse res = await req.close();
-      expect(res.statusCode, 404,
-          reason: 'unknown episode index must not resolve any file');
-      await res.drain<void>();
-      c.close();
-    });
+    test(
+      'out-of-range episode index is rejected (404, no path traversal)',
+      () async {
+        final HttpClient c = HttpClient();
+        final HttpClientRequest req = await c.getUrl(
+          Uri.parse(
+            '$base/api/library/videos/${enc(_FakeLibraryService.playlistId)}'
+            '/streamurl?episode=99',
+          ),
+        );
+        req.headers.set('authorization', authHeader());
+        final HttpClientResponse res = await req.close();
+        expect(
+          res.statusCode,
+          404,
+          reason: 'unknown episode index must not resolve any file',
+        );
+        await res.drain<void>();
+        c.close();
+      },
+    );
 
     test('position?episode=N is isolated per episode', () async {
       final HttpClient c = HttpClient();
       // PUT ep1 position.
-      final HttpClientRequest put = await c.putUrl(Uri.parse(
-        '$base/api/library/videos/${enc(_FakeLibraryService.playlistId)}'
-        '/position?episode=1',
-      ));
+      final HttpClientRequest put = await c.putUrl(
+        Uri.parse(
+          '$base/api/library/videos/${enc(_FakeLibraryService.playlistId)}'
+          '/position?episode=1',
+        ),
+      );
       put.headers.set('authorization', authHeader());
       put.headers.set('content-type', 'application/json');
-      put.write(jsonEncode(<String, Object?>{
-        'positionMs': 88000,
-        'positionUpdatedAtMs': 1700000000000,
-      }));
+      put.write(
+        jsonEncode(<String, Object?>{
+          'positionMs': 88000,
+          'positionUpdatedAtMs': 1700000000000,
+        }),
+      );
       final HttpClientResponse putRes = await put.close();
       expect(putRes.statusCode, 200);
       await putRes.drain<void>();
 
       // GET ep1 -> 88000.
-      final HttpClientRequest get1 = await c.getUrl(Uri.parse(
-        '$base/api/library/videos/${enc(_FakeLibraryService.playlistId)}'
-        '/position?episode=1',
-      ));
+      final HttpClientRequest get1 = await c.getUrl(
+        Uri.parse(
+          '$base/api/library/videos/${enc(_FakeLibraryService.playlistId)}'
+          '/position?episode=1',
+        ),
+      );
       get1.headers.set('authorization', authHeader());
       final HttpClientResponse get1Res = await get1.close();
       final Map<String, dynamic> j1 =
@@ -1173,17 +1336,22 @@ void main() {
       expect(j1['positionMs'], 88000);
 
       // GET ep0 -> still 0 (per-episode isolation).
-      final HttpClientRequest get0 = await c.getUrl(Uri.parse(
-        '$base/api/library/videos/${enc(_FakeLibraryService.playlistId)}'
-        '/position?episode=0',
-      ));
+      final HttpClientRequest get0 = await c.getUrl(
+        Uri.parse(
+          '$base/api/library/videos/${enc(_FakeLibraryService.playlistId)}'
+          '/position?episode=0',
+        ),
+      );
       get0.headers.set('authorization', authHeader());
       final HttpClientResponse get0Res = await get0.close();
       final Map<String, dynamic> j0 =
           jsonDecode(await get0Res.transform(utf8.decoder).join())
               as Map<String, dynamic>;
-      expect(j0['positionMs'], 0,
-          reason: 'episode 0 must not inherit episode 1 progress');
+      expect(
+        j0['positionMs'],
+        0,
+        reason: 'episode 0 must not inherit episode 1 progress',
+      );
       c.close();
     });
   });
@@ -1204,12 +1372,15 @@ class _EmbeddedSubtitleFfmpegBackend implements FfmpegBackend {
   @override
   Future<FfmpegRunResult> run(List<String> args, Duration timeout) async {
     if (args.contains('-hide_banner')) {
-      return const FfmpegRunResult(returnCode: 1, output: '''
+      return const FfmpegRunResult(
+        returnCode: 1,
+        output: '''
   Stream #0:0: Video: h264
   Stream #0:1(jpn): Subtitle: subrip (srt) (default)
   Stream #0:2(eng): Subtitle: mov_text (tx3g)
   Stream #0:3(jpn): Subtitle: hdmv_pgs_subtitle
-''');
+''',
+      );
     }
 
     for (int i = 0; i < args.length - 2; i++) {

@@ -4,10 +4,7 @@ import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
 void main() {
   group('FushiTimeFormat.getFfmpegTimestamp', () {
     test('formats zero duration', () {
-      expect(
-        FushiTimeFormat.getFfmpegTimestamp(Duration.zero),
-        '00:00:00.000',
-      );
+      expect(FushiTimeFormat.getFfmpegTimestamp(Duration.zero), '00:00:00.000');
     });
 
     test('formats hours, minutes, seconds, milliseconds', () {
@@ -39,10 +36,7 @@ void main() {
 
     test('hourMinute 恒补零（24 小时制）', () {
       expect(FushiTimeFormat.hourMinute(DateTime(2026, 7, 5, 9, 3)), '09:03');
-      expect(
-        FushiTimeFormat.hourMinute(DateTime(2026, 7, 5, 21, 41)),
-        '21:41',
-      );
+      expect(FushiTimeFormat.hourMinute(DateTime(2026, 7, 5, 21, 41)), '21:41');
     });
 
     test('dateHourMinute = dayKey + 空格 + hourMinute', () {
@@ -55,10 +49,7 @@ void main() {
 
   group('FushiTimeFormat.getVideoDurationText', () {
     test('zero duration shows 0:00 with padding', () {
-      expect(
-        FushiTimeFormat.getVideoDurationText(Duration.zero),
-        '  0:00  ',
-      );
+      expect(FushiTimeFormat.getVideoDurationText(Duration.zero), '  0:00  ');
     });
 
     test('shows minutes:seconds when no hours', () {

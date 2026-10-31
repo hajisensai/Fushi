@@ -31,9 +31,10 @@ void main() {
     test('is derived from the exact collection name the import stage uses', () {
       expect(
         videoDownloadSeriesKey(title: 'Show', year: 2026),
-        videoDownloadCollectionName(title: 'Show', year: 2026)
-            .trim()
-            .toLowerCase(),
+        videoDownloadCollectionName(
+          title: 'Show',
+          year: 2026,
+        ).trim().toLowerCase(),
       );
     });
   });
@@ -41,10 +42,10 @@ void main() {
   test('query exposes the same series key', () {
     const VideoDownloadSubtitleLanguageQuery query =
         VideoDownloadSubtitleLanguageQuery(
-      jobId: 'job',
-      title: 'Show',
-      year: 2026,
-    );
+          jobId: 'job',
+          title: 'Show',
+          year: 2026,
+        );
     expect(query.seriesKey, 'show (2026)');
   });
 }

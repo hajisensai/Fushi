@@ -5,10 +5,7 @@ import '../engine/dictionary.dart';
 import '../formats/dictionary_format.dart';
 
 class IsolateParams {
-  IsolateParams({
-    required this.sendPort,
-    required this.directoryPath,
-  });
+  IsolateParams({required this.sendPort, required this.directoryPath});
 
   final SendPort sendPort;
   final String directoryPath;

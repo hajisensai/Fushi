@@ -22,8 +22,10 @@ void main() {
       _textFile('META-INF/container.xml', _containerXml),
       _textFile('OEBPS/content.opf', _contentOpf),
       _textFile('OEBPS/chapter1.xhtml', _chapter('First chapter body text.')),
-      _textFile('OEBPS/chapter2.xhtml',
-          _chapter('Second chapter has a different length of body text here.')),
+      _textFile(
+        'OEBPS/chapter2.xhtml',
+        _chapter('Second chapter has a different length of body text here.'),
+      ),
     ]);
     EpubParser.parseSync(bytes, extractDir.path);
   });
@@ -38,8 +40,10 @@ void main() {
     final EpubBook a = parseBookOnly(extractDir.path);
     final EpubBook b = EpubParser.parseFromExtracted(extractDir.path);
     expect(a.chapters.length, b.chapters.length);
-    expect(a.chapters.map((c) => c.href).toList(),
-        b.chapters.map((c) => c.href).toList());
+    expect(
+      a.chapters.map((c) => c.href).toList(),
+      b.chapters.map((c) => c.href).toList(),
+    );
   });
 
   test('charCountsFromChaptersJson 与逐章 countChapterChars 等价（DB 计数复用契约）', () {
@@ -49,8 +53,10 @@ void main() {
     // 模拟 EpubImporter 写入的 chaptersJson（含 characters 字段）。
     final String chaptersJson = _importerChaptersJson(book, expected);
 
-    final List<int>? fromDb =
-        charCountsFromChaptersJson(chaptersJson, book.chapters.length);
+    final List<int>? fromDb = charCountsFromChaptersJson(
+      chaptersJson,
+      book.chapters.length,
+    );
     expect(fromDb, isNotNull);
     expect(fromDb, expected);
     // 防全零假等价。
@@ -106,12 +112,14 @@ String _importerChaptersJson(EpubBook book, List<int> counts) {
     book.chapters
         .asMap()
         .entries
-        .map((entry) => <String, Object>{
-              'id': entry.value.id,
-              'href': entry.value.href,
-              'mediaType': entry.value.mediaType,
-              'characters': counts[entry.key],
-            })
+        .map(
+          (entry) => <String, Object>{
+            'id': entry.value.id,
+            'href': entry.value.href,
+            'mediaType': entry.value.mediaType,
+            'characters': counts[entry.key],
+          },
+        )
         .toList(),
   );
 }
@@ -129,20 +137,23 @@ ArchiveFile _textFile(String name, String content) {
   return ArchiveFile(name, bytes.length, bytes);
 }
 
-String _chapter(String body) => '<?xml version="1.0" encoding="UTF-8"?>\n'
+String _chapter(String body) =>
+    '<?xml version="1.0" encoding="UTF-8"?>\n'
     '<html xmlns="http://www.w3.org/1999/xhtml">\n'
     '  <head><title>Chapter</title></head>\n'
     '  <body><p>$body</p></body>\n'
     '</html>\n';
 
-const String _containerXml = '<?xml version="1.0" encoding="UTF-8"?>\n'
+const String _containerXml =
+    '<?xml version="1.0" encoding="UTF-8"?>\n'
     '<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">\n'
     '  <rootfiles>\n'
     '    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>\n'
     '  </rootfiles>\n'
     '</container>\n';
 
-const String _contentOpf = '<?xml version="1.0" encoding="UTF-8"?>\n'
+const String _contentOpf =
+    '<?xml version="1.0" encoding="UTF-8"?>\n'
     '<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="book-id">\n'
     '  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">\n'
     '    <dc:title>Two Chapter Book</dc:title>\n'

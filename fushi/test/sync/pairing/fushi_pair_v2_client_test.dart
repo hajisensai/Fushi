@@ -13,10 +13,7 @@ void main() {
   const String hostPin = '482913';
   const String hostNonce = 'host-nonce-fixed';
 
-  MockClient buildHost({
-    required bool pinRequired,
-    required bool approve,
-  }) {
+  MockClient buildHost({required bool pinRequired, required bool approve}) {
     String? capturedClientNonce;
     return MockClient((http.Request req) async {
       if (req.url.path == '/api/pair/v2') {
@@ -72,10 +69,10 @@ void main() {
   }
 
   FushiPairV2Client client(http.Client mock) => FushiPairV2Client(
-        baseUrl: 'https://host:38765',
-        expectedFingerprint: 'aa:bb:cc',
-        httpClient: mock,
-      );
+    baseUrl: 'https://host:38765',
+    expectedFingerprint: 'aa:bb:cc',
+    httpClient: mock,
+  );
 
   test('PIN required correct PIN yields success with token', () async {
     final FushiPairV2Outcome outcome = await client(
@@ -123,15 +120,14 @@ void main() {
   // 盲目弹 PIN 输入框。修复后：pinRequired:false 的会话**绝不**调用 pinProvider。
   test('LAN pinRequired:false never invokes pinProvider (TODO-1273)', () async {
     bool pinAsked = false;
-    final FushiPairV2Outcome outcome = await client(
-      buildHost(pinRequired: false, approve: true),
-    ).pair(
-      deviceName: 'My Phone',
-      pinProvider: () async {
-        pinAsked = true;
-        return '000000';
-      },
-    );
+    final FushiPairV2Outcome outcome =
+        await client(buildHost(pinRequired: false, approve: true)).pair(
+          deviceName: 'My Phone',
+          pinProvider: () async {
+            pinAsked = true;
+            return '000000';
+          },
+        );
     expect(outcome, isA<FushiPairV2Success>());
     expect(pinAsked, isFalse, reason: 'LAN 免 PIN 会话绝不能弹 PIN 输入框');
   });
@@ -139,15 +135,14 @@ void main() {
   // pinRequired:true 时才调用 pinProvider（一次），确认回调确实按需触发。
   test('PIN required invokes pinProvider exactly once (TODO-1273)', () async {
     int calls = 0;
-    final FushiPairV2Outcome outcome = await client(
-      buildHost(pinRequired: true, approve: true),
-    ).pair(
-      deviceName: 'My Phone',
-      pinProvider: () async {
-        calls++;
-        return hostPin;
-      },
-    );
+    final FushiPairV2Outcome outcome =
+        await client(buildHost(pinRequired: true, approve: true)).pair(
+          deviceName: 'My Phone',
+          pinProvider: () async {
+            calls++;
+            return hostPin;
+          },
+        );
     expect(outcome, isA<FushiPairV2Success>());
     expect(calls, 1);
   });

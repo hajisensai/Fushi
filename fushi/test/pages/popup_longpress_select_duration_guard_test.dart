@@ -16,10 +16,12 @@ void main() {
     'lib/src/pages/implementations/dictionary_popup_webview.dart',
   );
 
-  test('popup native-select long-press uses an explicit sub-default duration',
-      () {
-    expect(source.existsSync(), isTrue,
-        reason: 'popup webview source not found at ${source.path}');
+  test('popup native-select long-press uses an explicit sub-default duration', () {
+    expect(
+      source.existsSync(),
+      isTrue,
+      reason: 'popup webview source not found at ${source.path}',
+    );
     final String text = source.readAsStringSync();
 
     // The recognizer must pass an explicit duration — never fall back to the
@@ -33,32 +35,45 @@ void main() {
           '(BUG-536). Pass duration: kPopupNativeSelectLongPressDuration.',
     );
     expect(
-      RegExp(r'LongPressGestureRecognizer\(\s*duration:\s*'
-              r'kPopupNativeSelectLongPressDuration')
-          .hasMatch(text),
+      RegExp(
+        r'LongPressGestureRecognizer\(\s*duration:\s*'
+        r'kPopupNativeSelectLongPressDuration',
+      ).hasMatch(text),
       isTrue,
-      reason: 'popup LongPressGestureRecognizer must be constructed with '
+      reason:
+          'popup LongPressGestureRecognizer must be constructed with '
           'duration: kPopupNativeSelectLongPressDuration (BUG-536).',
     );
   });
 
   test(
-      'popup native-select long-press duration is snappier than the 500ms default',
-      () {
-    final String text = source.readAsStringSync();
-    final RegExpMatch? match = RegExp(
-      r'kPopupNativeSelectLongPressDuration\s*=\s*Duration\(milliseconds:\s*(\d+)\)',
-    ).firstMatch(text);
-    expect(match, isNotNull,
-        reason: 'kPopupNativeSelectLongPressDuration must be a '
-            'Duration(milliseconds: N) constant (BUG-536).');
-    final int ms = int.parse(match!.group(1)!);
-    // Below Flutter's 500ms kLongPressTimeout default (the "too slow" value),
-    // yet clearly above a tap so single-tap lookups are never misread as a
-    // long-press.
-    expect(ms, lessThan(500),
-        reason: 'must be faster than the 500ms default that felt too slow');
-    expect(ms, greaterThanOrEqualTo(150),
-        reason: 'must stay above a tap to avoid hijacking single-tap lookup');
-  });
+    'popup native-select long-press duration is snappier than the 500ms default',
+    () {
+      final String text = source.readAsStringSync();
+      final RegExpMatch? match = RegExp(
+        r'kPopupNativeSelectLongPressDuration\s*=\s*Duration\(milliseconds:\s*(\d+)\)',
+      ).firstMatch(text);
+      expect(
+        match,
+        isNotNull,
+        reason:
+            'kPopupNativeSelectLongPressDuration must be a '
+            'Duration(milliseconds: N) constant (BUG-536).',
+      );
+      final int ms = int.parse(match!.group(1)!);
+      // Below Flutter's 500ms kLongPressTimeout default (the "too slow" value),
+      // yet clearly above a tap so single-tap lookups are never misread as a
+      // long-press.
+      expect(
+        ms,
+        lessThan(500),
+        reason: 'must be faster than the 500ms default that felt too slow',
+      );
+      expect(
+        ms,
+        greaterThanOrEqualTo(150),
+        reason: 'must stay above a tap to avoid hijacking single-tap lookup',
+      );
+    },
+  );
 }

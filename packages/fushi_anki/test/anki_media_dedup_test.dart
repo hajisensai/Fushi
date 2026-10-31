@@ -57,8 +57,10 @@ void main() {
     });
 
     test('无下划线时取最短名，平手取字典序', () {
-      expect(chooseCanonicalMediaName(<String>['longer-name.jpg', 'ab.jpg']),
-          'ab.jpg');
+      expect(
+        chooseCanonicalMediaName(<String>['longer-name.jpg', 'ab.jpg']),
+        'ab.jpg',
+      );
       expect(chooseCanonicalMediaName(<String>['bb.jpg', 'aa.jpg']), 'aa.jpg');
     });
   });
@@ -97,17 +99,23 @@ void main() {
 
     test('同名/无命中时原样返回', () {
       expect(rewriteMediaReferences('x', 'a.jpg', 'a.jpg'), 'x');
-      expect(rewriteMediaReferences('nothing here', 'a.jpg', 'b.jpg'),
-          'nothing here');
+      expect(
+        rewriteMediaReferences('nothing here', 'a.jpg', 'b.jpg'),
+        'nothing here',
+      );
     });
   });
 
   group('textReferencesMediaName', () {
     test('CSS url() / @import / 相对引用都算引用', () {
       expect(
-          textReferencesMediaName('src: url(_f.woff2);', '_f.woff2'), isTrue);
+        textReferencesMediaName('src: url(_f.woff2);', '_f.woff2'),
+        isTrue,
+      );
       expect(
-          textReferencesMediaName("@import '_base.css';", '_base.css'), isTrue);
+        textReferencesMediaName("@import '_base.css';", '_base.css'),
+        isTrue,
+      );
       expect(textReferencesMediaName('url("./_f.woff2")', '_f.woff2'), isTrue);
     });
 
@@ -162,14 +170,16 @@ void main() {
 
     test('JSON 往返保住开关状态；旧 JSON 缺键回落到关', () {
       const AnkiSettings fresh = AnkiSettings();
-      final AnkiSettings round = AnkiSettings.fromJson(fresh
-          .copyWith(
-            lastMediaDedupAtMs: 123,
-            lastMediaDedupScanAtMs: 456,
-            mediaDedupAutoEnabled: true,
-            mediaDedupAutoDelete: true,
-          )
-          .toJson());
+      final AnkiSettings round = AnkiSettings.fromJson(
+        fresh
+            .copyWith(
+              lastMediaDedupAtMs: 123,
+              lastMediaDedupScanAtMs: 456,
+              mediaDedupAutoEnabled: true,
+              mediaDedupAutoDelete: true,
+            )
+            .toJson(),
+      );
       expect(round.lastMediaDedupAtMs, 123);
       expect(round.lastMediaDedupScanAtMs, 456);
       expect(round.mediaDedupAutoEnabled, isTrue);

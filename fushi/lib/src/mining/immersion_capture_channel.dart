@@ -32,12 +32,12 @@ abstract final class ImmersionCaptureChannel {
     try {
       final Map<Object?, Object?>? r = await _channel
           .invokeMethod<Map<Object?, Object?>>('capture', <String, Object?>{
-        'videoId': netflixVideoId,
-        'startMs': clipStartMs,
-        'endMs': clipEndMs,
-        'fps': fps,
-        'width': width,
-      });
+            'videoId': netflixVideoId,
+            'startMs': clipStartMs,
+            'endMs': clipEndMs,
+            'fps': fps,
+            'width': width,
+          });
       return ImmersionCaptureResult.fromMap(r ?? const <Object?, Object?>{});
     } on PlatformException catch (e) {
       return ImmersionCaptureResult(error: e.message ?? 'capture failed');
@@ -60,17 +60,18 @@ typedef ClipStillTarget = ({int offsetMs, bool exact});
 ///
 /// 与 `immersion_mining_engine.dart` 的 `FrameExtractor` 分开声明，因为这条路必须显式下发
 /// [decodeFromStart]：录制片段是无 Cues 索引的 MediaRecorder webm，输入定位取不准帧。
-typedef ClipFrameExtractor = Future<String?> Function({
-  required String inputPath,
-  required String outputPath,
-  double atSeconds,
-  bool decodeFromStart,
-  FfmpegFailureReporter? onFailure,
-  String? tlsPinSha256,
-  // BUG-2366：同 `FrameExtractor.diagnosticOnly`——非末次编码尝试的失败是能力探测，
-  // 不是错误。两条静图链共用 [extractStillWithFallback] 下发本参数。
-  bool diagnosticOnly,
-});
+typedef ClipFrameExtractor =
+    Future<String?> Function({
+      required String inputPath,
+      required String outputPath,
+      double atSeconds,
+      bool decodeFromStart,
+      FfmpegFailureReporter? onFailure,
+      String? tlsPinSha256,
+      // BUG-2366：同 `FrameExtractor.diagnosticOnly`——非末次编码尝试的失败是能力探测，
+      // 不是错误。两条静图链共用 [extractStillWithFallback] 下发本参数。
+      bool diagnosticOnly,
+    });
 
 /// 纯函数：把用户的图片模式偏好 + 请求里的三个**视频时间**换算成片段内偏移。可单测。
 ///
@@ -200,7 +201,8 @@ ImmersionMiningRequest buildImmersionRequest(
   final bool useCapture = cap.ok;
   // 同步片段只在捕获**真的**给出了音画片段时成立。片段模式是默认值：没录到片段的来源
   // （后台软解动图、2A 截图）照常用手上的封面出卡，不声称同步，也不丢封面。
-  final bool synchronizedVideo = imageMode == VideoMiningImageMode.videoClip &&
+  final bool synchronizedVideo =
+      imageMode == VideoMiningImageMode.videoClip &&
       useCapture &&
       cap.coverIsVideo &&
       cap.gifBytes != null;
@@ -223,10 +225,10 @@ ImmersionMiningRequest buildImmersionRequest(
   final String coverName = synchronizedVideo
       ? '${origin}_clip.${cap.clipFormat.fileExtension}'
       : coverIsAnimated
-          ? '${origin}_clip.${cap.animatedFormat.fileExtension}'
-          : coverFromCapture
-              ? '${origin}_frame.${cap.stillFormat.fileExtension}'
-              : '${origin}_shot.jpg';
+      ? '${origin}_clip.${cap.animatedFormat.fileExtension}'
+      : coverFromCapture
+      ? '${origin}_frame.${cap.stillFormat.fileExtension}'
+      : '${origin}_shot.jpg';
   final Uint8List? audio = useCapture ? cap.audioBytes : null;
   return ImmersionMiningRequest(
     fields: p.fields,
@@ -283,15 +285,16 @@ ImmersionMiningRequest buildImmersionRequest(
 /// 输入定位会落到最近关键帧）。
 ///
 /// [gifExtractor] / [audioExtractor] / [frameExtractor] 供测试注入，默认指向 ffmpeg 真身。
-typedef CaptureVideoExporter = Future<VideoClipExportResult> Function({
-  required String videoPath,
-  required int startMs,
-  required int endMs,
-  required String outputPath,
-  bool decodeFromStart,
-  String? cropFilter,
-  MiningClipFormat format,
-});
+typedef CaptureVideoExporter =
+    Future<VideoClipExportResult> Function({
+      required String videoPath,
+      required int startMs,
+      required int endMs,
+      required String outputPath,
+      bool decodeFromStart,
+      String? cropFilter,
+      MiningClipFormat format,
+    });
 
 Future<ImmersionCaptureResult> transcodeClipToCapture(
   Uint8List clipBytes, {
@@ -315,56 +318,54 @@ Future<ImmersionCaptureResult> transcodeClipToCapture(
   final String? cropFilter = crop?.ffmpegFilter;
   final GifExtractor gifs =
       cropFilter == null || gifExtractor != extractClipGifViaFfmpeg
-          ? gifExtractor
-          : ({
-              required String inputPath,
-              required int startMs,
-              required int endMs,
-              required String outputPath,
-              int fps = 8,
-              int width = 320,
-              MiningAnimatedFormat format = MiningAnimatedFormat.gif,
-              bool diagnosticOnly = false,
-              FfmpegFailureReporter? onFailure,
-              String? tlsPinSha256,
-              Map<String, String> httpHeaders = const {},
-            }) =>
-              extractClipGifViaFfmpeg(
-                inputPath: inputPath,
-                startMs: startMs,
-                endMs: endMs,
-                outputPath: outputPath,
-                fps: fps,
-                width: width,
-                format: format,
-                diagnosticOnly: diagnosticOnly,
-                onFailure: onFailure,
-                tlsPinSha256: tlsPinSha256,
-                httpHeaders: httpHeaders,
-                cropFilter: cropFilter,
-              );
+      ? gifExtractor
+      : ({
+          required String inputPath,
+          required int startMs,
+          required int endMs,
+          required String outputPath,
+          int fps = 8,
+          int width = 320,
+          MiningAnimatedFormat format = MiningAnimatedFormat.gif,
+          bool diagnosticOnly = false,
+          FfmpegFailureReporter? onFailure,
+          String? tlsPinSha256,
+          Map<String, String> httpHeaders = const {},
+        }) => extractClipGifViaFfmpeg(
+          inputPath: inputPath,
+          startMs: startMs,
+          endMs: endMs,
+          outputPath: outputPath,
+          fps: fps,
+          width: width,
+          format: format,
+          diagnosticOnly: diagnosticOnly,
+          onFailure: onFailure,
+          tlsPinSha256: tlsPinSha256,
+          httpHeaders: httpHeaders,
+          cropFilter: cropFilter,
+        );
   final ClipFrameExtractor frames =
       cropFilter == null || frameExtractor != extractVideoFrameViaFfmpeg
-          ? frameExtractor
-          : ({
-              required String inputPath,
-              required String outputPath,
-              double atSeconds = 10.0,
-              bool decodeFromStart = false,
-              FfmpegFailureReporter? onFailure,
-              String? tlsPinSha256,
-              bool diagnosticOnly = false,
-            }) =>
-              extractVideoFrameViaFfmpeg(
-                inputPath: inputPath,
-                outputPath: outputPath,
-                atSeconds: atSeconds,
-                decodeFromStart: decodeFromStart,
-                onFailure: onFailure,
-                tlsPinSha256: tlsPinSha256,
-                cropFilter: cropFilter,
-                diagnosticOnly: diagnosticOnly,
-              );
+      ? frameExtractor
+      : ({
+          required String inputPath,
+          required String outputPath,
+          double atSeconds = 10.0,
+          bool decodeFromStart = false,
+          FfmpegFailureReporter? onFailure,
+          String? tlsPinSha256,
+          bool diagnosticOnly = false,
+        }) => extractVideoFrameViaFfmpeg(
+          inputPath: inputPath,
+          outputPath: outputPath,
+          atSeconds: atSeconds,
+          decodeFromStart: decodeFromStart,
+          onFailure: onFailure,
+          tlsPinSha256: tlsPinSha256,
+          cropFilter: cropFilter,
+          diagnosticOnly: diagnosticOnly,
+        );
   final Directory dir = Directory('$tempDir/nf_clip_${clipBytes.length}');
   await dir.create(recursive: true);
   try {
@@ -389,7 +390,8 @@ Future<ImmersionCaptureResult> transcodeClipToCapture(
       final VideoClipExportResult video = exported.result;
       if (!video.isSuccess) {
         return ImmersionCaptureResult(
-          error: 'synchronized video transcode failed: '
+          error:
+              'synchronized video transcode failed: '
               '${video.detail ?? video.failure?.name}',
         );
       }
@@ -410,19 +412,19 @@ Future<ImmersionCaptureResult> transcodeClipToCapture(
     if (stillTarget != null) {
       final StillFrameExtraction? still = await extractStillWithFallback(
         format: stillFormat,
-        attempt: (
-          MiningStillFormat attempt, {
-          required bool diagnosticOnly,
-          required FfmpegFailureReporter? onFailure,
-        }) =>
-            frames(
-          inputPath: clip.path,
-          outputPath: '${dir.path}/clip_frame.${attempt.fileExtension}',
-          atSeconds: stillTarget.offsetMs / 1000.0,
-          decodeFromStart: true,
-          diagnosticOnly: diagnosticOnly,
-          onFailure: onFailure,
-        ),
+        attempt:
+            (
+              MiningStillFormat attempt, {
+              required bool diagnosticOnly,
+              required FfmpegFailureReporter? onFailure,
+            }) => frames(
+              inputPath: clip.path,
+              outputPath: '${dir.path}/clip_frame.${attempt.fileExtension}',
+              atSeconds: stillTarget.offsetMs / 1000.0,
+              decodeFromStart: true,
+              diagnosticOnly: diagnosticOnly,
+              onFailure: onFailure,
+            ),
       );
       framePath = still?.path;
       if (still != null) producedStillFormat = still.format;
@@ -450,10 +452,12 @@ Future<ImmersionCaptureResult> transcodeClipToCapture(
     // 封面字节走同一个通道（[ImmersionCaptureResult.gifBytes]），是不是静态帧由
     // coverIsStill 说明——不为静态帧另开一条并行字段/分支。
     final String? coverPath = framePath ?? animated?.path;
-    final Uint8List? cover =
-        coverPath != null ? await File(coverPath).readAsBytes() : null;
-    final Uint8List? audio =
-        audioPath != null ? await File(audioPath).readAsBytes() : null;
+    final Uint8List? cover = coverPath != null
+        ? await File(coverPath).readAsBytes()
+        : null;
+    final Uint8List? audio = audioPath != null
+        ? await File(audioPath).readAsBytes()
+        : null;
     if (cover == null && audio == null) {
       return const ImmersionCaptureResult(
         error: 'clip transcode produced nothing',

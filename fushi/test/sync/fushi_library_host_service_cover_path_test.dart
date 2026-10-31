@@ -46,26 +46,31 @@ void main() {
     test('已有封面 → 返回磁盘路径，与 listVideos 一致', () async {
       final File cover = File(p.join(tmp.path, 'c.jpg'))
         ..writeAsBytesSync(<int>[1]);
-      await db.upsertVideoBook(VideoBooksCompanion.insert(
-        bookUid: 'video/a',
-        title: 'A',
-        videoPath: p.join(tmp.path, 'a.mp4'),
-        coverPath: Value(cover.path),
-      ));
+      await db.upsertVideoBook(
+        VideoBooksCompanion.insert(
+          bookUid: 'video/a',
+          title: 'A',
+          videoPath: p.join(tmp.path, 'a.mp4'),
+          coverPath: Value(cover.path),
+        ),
+      );
       final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
       expect(await svc.videoCoverPath('video/a'), cover.path);
-      final RemoteVideoInfo listed = (await svc.listVideos())
-          .singleWhere((RemoteVideoInfo v) => v.id == 'video/a');
+      final RemoteVideoInfo listed = (await svc.listVideos()).singleWhere(
+        (RemoteVideoInfo v) => v.id == 'video/a',
+      );
       expect(listed.coverPath, cover.path, reason: '单查与清单必须同源同值');
     });
 
     test('封面文件不存在 / 未知 id → null', () async {
-      await db.upsertVideoBook(VideoBooksCompanion.insert(
-        bookUid: 'video/gone',
-        title: 'Gone',
-        videoPath: p.join(tmp.path, 'g.mp4'),
-        coverPath: Value(p.join(tmp.path, 'missing.jpg')),
-      ));
+      await db.upsertVideoBook(
+        VideoBooksCompanion.insert(
+          bookUid: 'video/gone',
+          title: 'Gone',
+          videoPath: p.join(tmp.path, 'g.mp4'),
+          coverPath: Value(p.join(tmp.path, 'missing.jpg')),
+        ),
+      );
       final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
       expect(await svc.videoCoverPath('video/gone'), isNull);
       expect(await svc.videoCoverPath('video/unknown'), isNull);
@@ -77,20 +82,25 @@ void main() {
       final Directory extract = Directory(p.join(tmp.path, 'book'))
         ..createSync(recursive: true);
       File(p.join(extract.path, 'cover.jpg')).writeAsBytesSync(<int>[2]);
-      await db.insertEpubBook(EpubBooksCompanion.insert(
-        bookKey: 'book-key-1',
-        title: 'Book Title',
-        epubPath: p.join(extract.path, 'original.epub'),
-        extractDir: extract.path,
-        chapterCount: 1,
-        chaptersJson: '["ch1"]',
-        importedAt: DateTime.now().millisecondsSinceEpoch,
-      ));
+      await db.insertEpubBook(
+        EpubBooksCompanion.insert(
+          bookKey: 'book-key-1',
+          title: 'Book Title',
+          epubPath: p.join(extract.path, 'original.epub'),
+          extractDir: extract.path,
+          chapterCount: 1,
+          chaptersJson: '["ch1"]',
+          importedAt: DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
       final LocalLibraryHostService svc = _makeService(db: db, tmp: tmp);
       final String expected = p.join(extract.path, 'cover.jpg');
       expect(await svc.bookCoverPath('book-key-1'), expected);
-      expect(await svc.bookCoverPath('Book Title'), expected,
-          reason: '旧 client 用 title 当 downloadId 的兼容路径');
+      expect(
+        await svc.bookCoverPath('Book Title'),
+        expected,
+        reason: '旧 client 用 title 当 downloadId 的兼容路径',
+      );
       expect(await svc.bookCoverPath('nope'), isNull);
     });
   });

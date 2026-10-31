@@ -71,7 +71,8 @@ class ServerLeaderboardAccount {
     syncState: syncState ?? this.syncState,
     lastSyncAt: lastSyncAt ?? this.lastSyncAt,
     isbnBackfilledAt: isbnBackfilledAt ?? this.isbnBackfilledAt,
-    uploadBlockedByOtherDevice: uploadBlockedByOtherDevice ?? this.uploadBlockedByOtherDevice,
+    uploadBlockedByOtherDevice:
+        uploadBlockedByOtherDevice ?? this.uploadBlockedByOtherDevice,
   );
 
   Map<String, Object?> toJson() => <String, Object?>{
@@ -142,7 +143,8 @@ class ServerLeaderboardStore {
   final Directory supportRoot;
   final int profileId;
 
-  File get file => File(p.join(supportRoot.path, 'leaderboard', 'profile_$profileId.json'));
+  File get file =>
+      File(p.join(supportRoot.path, 'leaderboard', 'profile_$profileId.json'));
 
   static final RegExp _fileName = RegExp(r'^profile_(\d+)\.json$');
 
@@ -161,7 +163,8 @@ class ServerLeaderboardStore {
           supportRoot: supportRoot,
           profileId: id,
         ).read();
-        if (a != null && a.uploadEnabled && !a.uploadBlockedByOtherDevice) out.add(id);
+        if (a != null && a.uploadEnabled && !a.uploadBlockedByOtherDevice)
+          out.add(id);
       } on ServerLeaderboardStoreException {
         continue;
       }
@@ -176,11 +179,14 @@ class ServerLeaderboardStore {
     if (!await f.exists()) return null;
     try {
       final Object? decoded = jsonDecode(await f.readAsString());
-      if (decoded is! Map<Object?, Object?>) throw const FormatException('not a JSON object');
+      if (decoded is! Map<Object?, Object?>)
+        throw const FormatException('not a JSON object');
       return ServerLeaderboardAccount.fromJson(decoded.cast<String, Object?>());
     } on Object catch (e) {
       // 只报类型：jsonDecode 的 FormatException 会带上源文本（= 私钥）。
-      throw ServerLeaderboardStoreException('排行榜账户文件损坏（${e.runtimeType}）: ${f.path}');
+      throw ServerLeaderboardStoreException(
+        '排行榜账户文件损坏（${e.runtimeType}）: ${f.path}',
+      );
     }
   }
 
@@ -192,7 +198,10 @@ class ServerLeaderboardStore {
     final File tmp = File('${target.path}.tmp');
     await tmp.writeAsString(jsonEncode(account.toJson()), flush: true);
     if (!Platform.isWindows) {
-      final ProcessResult r = await Process.run('chmod', <String>['600', tmp.path]);
+      final ProcessResult r = await Process.run('chmod', <String>[
+        '600',
+        tmp.path,
+      ]);
       if (r.exitCode != 0) {
         await tmp.delete();
         throw FileSystemException('chmod 600 失败: ${r.stderr}', tmp.path);

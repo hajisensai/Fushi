@@ -36,66 +36,103 @@ void main() {
   }
 
   test(
-      'audio-follow unblur persists via onImageRevealed (TODO-1367 root cause 2)',
-      () {
-    final int rbIdx = slice(bridge, '__fushiRevealBlurredBetween = function');
-    final int rbEnd = bridge.indexOf('};', rbIdx);
-    expect(rbEnd, greaterThan(rbIdx));
-    final String fn = bridge.substring(rbIdx, rbEnd);
-    expect(fn, contains("callHandler('onImageRevealed'"),
-        reason: '音频揭遮罩须回传 onImageRevealed，与点击 / 手柄揭开同等持久，'
-            '否则章节重载 / 布局切换重跑 _sharedInitImages 会重新遮罩（TODO-1289）');
-    expect(fn, contains("classList.remove('blurred')"),
-        reason: '已 load 的 blurred 图须当场去 blurred 类');
-  });
+    'audio-follow unblur persists via onImageRevealed (TODO-1367 root cause 2)',
+    () {
+      final int rbIdx = slice(bridge, '__fushiRevealBlurredBetween = function');
+      final int rbEnd = bridge.indexOf('};', rbIdx);
+      expect(rbEnd, greaterThan(rbIdx));
+      final String fn = bridge.substring(rbIdx, rbEnd);
+      expect(
+        fn,
+        contains("callHandler('onImageRevealed'"),
+        reason:
+            '音频揭遮罩须回传 onImageRevealed，与点击 / 手柄揭开同等持久，'
+            '否则章节重载 / 布局切换重跑 _sharedInitImages 会重新遮罩（TODO-1289）',
+      );
+      expect(
+        fn,
+        contains("classList.remove('blurred')"),
+        reason: '已 load 的 blurred 图须当场去 blurred 类',
+      );
+    },
+  );
 
-  test(
-      'audio-follow unblur marks lazy images revealed before they load '
+  test('audio-follow unblur marks lazy images revealed before they load '
       '(TODO-1367 root cause 1)', () {
     final int rbIdx = slice(bridge, '__fushiRevealBlurredBetween = function');
     final int rbEnd = bridge.indexOf('};', rbIdx);
     final String fn = bridge.substring(rbIdx, rbEnd);
     // 扫描区间全部 img/svg（含尚未 load 的懒图，此刻没 blurred 类），而非仅 img.blurred。
-    expect(fn, contains("querySelectorAll('img, svg')"),
-        reason: '须扫描区间全部 img/svg（含未 load 懒图），仅 img.blurred 抓不到懒图');
-    expect(fn, contains('window.__fushiMarkImageRevealed'),
-        reason: '须把读过图的 key 登记进活集，令日后懒图 load 时 _fushiBlurImage 跳过遮罩');
+    expect(
+      fn,
+      contains("querySelectorAll('img, svg')"),
+      reason: '须扫描区间全部 img/svg（含未 load 懒图），仅 img.blurred 抓不到懒图',
+    );
+    expect(
+      fn,
+      contains('window.__fushiMarkImageRevealed'),
+      reason: '须把读过图的 key 登记进活集，令日后懒图 load 时 _fushiBlurImage 跳过遮罩',
+    );
     // 关闭图片模糊时前置守卫早退，绝不动懒加载 / DOM。
-    expect(fn, contains("typeof window.__fushiImageRevealKey !== 'function'"),
-        reason: '图片模糊关闭时须早退 no-op（__fushiImageRevealKey 仅 blurImages 注入）');
+    expect(
+      fn,
+      contains("typeof window.__fushiImageRevealKey !== 'function'"),
+      reason: '图片模糊关闭时须早退 no-op（__fushiImageRevealKey 仅 blurImages 注入）',
+    );
     // 跳过 gaiji 内联小图（它们从不 block-img 遮罩）。
-    expect(fn, contains("contains('gaiji')"),
-        reason: 'gaiji 内联小图不参与防剧透遮罩，遍历时须跳过');
+    expect(
+      fn,
+      contains("contains('gaiji')"),
+      reason: 'gaiji 内联小图不参与防剧透遮罩，遍历时须跳过',
+    );
   });
 
   test(
-      'pagination scripts expose __fushiMarkImageRevealed into live reveal set',
-      () {
-    expect(pagination, contains('window.__fushiMarkImageRevealed = function'),
-        reason: '_sharedInitImages 须暴露 __fushiMarkImageRevealed 把 key 写进'
-            '本会话已揭开活集 _fushiRevealedKeys');
-    // 该函数写入的活集必须与 _fushiBlurImage 命中跳过读同一个 _fushiRevealedKeys。
-    final int markIdx =
-        slice(pagination, '__fushiMarkImageRevealed = function');
-    final int markEnd = pagination.indexOf('};', markIdx);
-    final String markFn = pagination.substring(markIdx, markEnd);
-    expect(markFn, contains('_fushiRevealedKeys[key] = true'),
-        reason: '须写进 _fushiRevealedKeys（_fushiBlurImage 命中此集即跳过遮罩）');
-  });
+    'pagination scripts expose __fushiMarkImageRevealed into live reveal set',
+    () {
+      expect(
+        pagination,
+        contains('window.__fushiMarkImageRevealed = function'),
+        reason:
+            '_sharedInitImages 须暴露 __fushiMarkImageRevealed 把 key 写进'
+            '本会话已揭开活集 _fushiRevealedKeys',
+      );
+      // 该函数写入的活集必须与 _fushiBlurImage 命中跳过读同一个 _fushiRevealedKeys。
+      final int markIdx = slice(
+        pagination,
+        '__fushiMarkImageRevealed = function',
+      );
+      final int markEnd = pagination.indexOf('};', markIdx);
+      final String markFn = pagination.substring(markIdx, markEnd);
+      expect(
+        markFn,
+        contains('_fushiRevealedKeys[key] = true'),
+        reason: '须写进 _fushiRevealedKeys（_fushiBlurImage 命中此集即跳过遮罩）',
+      );
+    },
+  );
 
-  test(
-      'image-pause detection untouched: no IntersectionObserver, judge intact '
+  test('image-pause detection untouched: no IntersectionObserver, judge intact '
       '(BUG-007 iron rule)', () {
     // 揭遮罩修复绝不重引视口 IntersectionObserver（离散翻页下永不触发）。
-    expect(bridge, isNot(contains('new IntersectionObserver(')),
-        reason: 'BUG-007 铁律：不得退回 IntersectionObserver 视口检测');
+    expect(
+      bridge,
+      isNot(contains('new IntersectionObserver(')),
+      reason: 'BUG-007 铁律：不得退回 IntersectionObserver 视口检测',
+    );
     // 暂停判据 __fushiImageBetween + onImageDetected 契约保持（跨图就发）。
-    expect(bridge, contains("callHandler('onImageDetected')"),
-        reason: '暂停判据须保留：跨图即通知 Dart 暂停');
+    expect(
+      bridge,
+      contains("callHandler('onImageDetected')"),
+      reason: '暂停判据须保留：跨图即通知 Dart 暂停',
+    );
     final int betweenIdx = slice(bridge, '__fushiImageBetween = function');
     final int betweenEnd = bridge.indexOf('};', betweenIdx);
     final String between = bridge.substring(betweenIdx, betweenEnd);
-    expect(between, contains('compareDocumentPosition'),
-        reason: '暂停判据仍用 compareDocumentPosition 锚点间判定');
+    expect(
+      between,
+      contains('compareDocumentPosition'),
+      reason: '暂停判据仍用 compareDocumentPosition 锚点间判定',
+    );
   });
 }

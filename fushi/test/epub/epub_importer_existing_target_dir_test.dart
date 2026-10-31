@@ -41,13 +41,15 @@ ArchiveFile _textFile(String name, String content) {
   return ArchiveFile(name, bytes.length, bytes);
 }
 
-const String _containerXml = '<?xml version="1.0" encoding="UTF-8"?>'
+const String _containerXml =
+    '<?xml version="1.0" encoding="UTF-8"?>'
     '<container version="1.0" '
     'xmlns="urn:oasis:names:tc:opendocument:xmlns:container">'
     '<rootfiles><rootfile full-path="OEBPS/content.opf" '
     'media-type="application/oebps-package+xml"/></rootfiles></container>';
 
-String _contentOpf(String title) => '<?xml version="1.0" encoding="UTF-8"?>'
+String _contentOpf(String title) =>
+    '<?xml version="1.0" encoding="UTF-8"?>'
     '<package xmlns="http://www.idpf.org/2007/opf" version="3.0" '
     'unique-identifier="book-id">'
     '<metadata xmlns:dc="http://purl.org/dc/elements/1.1/">'
@@ -56,7 +58,8 @@ String _contentOpf(String title) => '<?xml version="1.0" encoding="UTF-8"?>'
     'media-type="application/xhtml+xml"/></manifest>'
     '<spine><itemref idref="chapter"/></spine></package>';
 
-const String _chapterXhtml = '<?xml version="1.0" encoding="UTF-8"?>'
+const String _chapterXhtml =
+    '<?xml version="1.0" encoding="UTF-8"?>'
     '<html xmlns="http://www.w3.org/1999/xhtml"><head><title>C</title></head>'
     '<body><p>Hello world.</p></body></html>';
 
@@ -131,12 +134,21 @@ void main() {
       );
 
       expect(result, target);
-      expect(File(p.join(target, 'fresh.txt')).existsSync(), isTrue,
-          reason: 'fresh download content must win');
-      expect(File(p.join(target, 'stale.txt')).existsSync(), isFalse,
-          reason: 'orphan leftover content must be gone');
-      expect(_bakSiblings(target), isEmpty,
-          reason: 'the .bak staging dir must be cleaned up');
+      expect(
+        File(p.join(target, 'fresh.txt')).existsSync(),
+        isTrue,
+        reason: 'fresh download content must win',
+      );
+      expect(
+        File(p.join(target, 'stale.txt')).existsSync(),
+        isFalse,
+        reason: 'orphan leftover content must be gone',
+      );
+      expect(
+        _bakSiblings(target),
+        isEmpty,
+        reason: 'the .bak staging dir must be cleaned up',
+      );
     });
 
     test('interrupted replace rolls the previous dir back', () {
@@ -156,10 +168,16 @@ void main() {
         throwsA(isA<FileSystemException>()),
       );
 
-      expect(File(p.join(target, 'stale.txt')).existsSync(), isTrue,
-          reason: 'rollback must restore the previous directory');
-      expect(_bakSiblings(target), isEmpty,
-          reason: 'rollback must not leave the .bak behind');
+      expect(
+        File(p.join(target, 'stale.txt')).existsSync(),
+        isTrue,
+        reason: 'rollback must restore the previous directory',
+      );
+      expect(
+        _bakSiblings(target),
+        isEmpty,
+        reason: 'rollback must not leave the .bak behind',
+      );
     });
 
     test('target owned by a live row: untouched, new book gets ~n sibling', () {
@@ -177,8 +195,11 @@ void main() {
       );
 
       expect(result, '$target~2');
-      expect(File(p.join(target, 'owned.txt')).existsSync(), isTrue,
-          reason: 'a live book directory must never be touched');
+      expect(
+        File(p.join(target, 'owned.txt')).existsSync(),
+        isTrue,
+        reason: 'a live book directory must never be touched',
+      );
       expect(File(p.join('$target~2', 'fresh.txt')).existsSync(), isTrue);
     });
 
@@ -206,85 +227,106 @@ void main() {
   // copy+delete fallback; `forceCopyFallback: true` exercises that branch
   // deterministically (real rename failures are not portably reproducible).
   group(
-      'EpubImporter.moveExtractedDirIntoPlace copy+delete fallback (TODO-1286)',
-      () {
-    late Directory tmp;
+    'EpubImporter.moveExtractedDirIntoPlace copy+delete fallback (TODO-1286)',
+    () {
+      late Directory tmp;
 
-    setUp(() {
-      tmp = Directory.systemTemp.createTempSync('todo1286_move_');
-    });
-    tearDown(() {
-      try {
-        if (tmp.existsSync()) tmp.deleteSync(recursive: true);
-      } catch (_) {}
-    });
+      setUp(() {
+        tmp = Directory.systemTemp.createTempSync('todo1286_move_');
+      });
+      tearDown(() {
+        try {
+          if (tmp.existsSync()) tmp.deleteSync(recursive: true);
+        } catch (_) {}
+      });
 
-    test('target missing: recursive copy moves content and deletes source', () {
-      final String src = p.join(tmp.path, '.tmp-1');
-      _seedDir(src, 'top.txt');
-      // A nested subdirectory + file to prove the copy recurses.
-      _seedDir(p.join(src, 'OEBPS'), 'chapter.xhtml');
-      final String target = p.join(tmp.path, 'Book');
+      test(
+        'target missing: recursive copy moves content and deletes source',
+        () {
+          final String src = p.join(tmp.path, '.tmp-1');
+          _seedDir(src, 'top.txt');
+          // A nested subdirectory + file to prove the copy recurses.
+          _seedDir(p.join(src, 'OEBPS'), 'chapter.xhtml');
+          final String target = p.join(tmp.path, 'Book');
 
-      final String result = EpubImporter.moveExtractedDirIntoPlace(
-        srcDir: Directory(src),
-        targetDir: target,
-        liveExtractDirs: const <String>[],
-        forceCopyFallback: true,
+          final String result = EpubImporter.moveExtractedDirIntoPlace(
+            srcDir: Directory(src),
+            targetDir: target,
+            liveExtractDirs: const <String>[],
+            forceCopyFallback: true,
+          );
+
+          expect(result, target);
+          expect(File(p.join(target, 'top.txt')).existsSync(), isTrue);
+          expect(
+            File(p.join(target, 'OEBPS', 'chapter.xhtml')).existsSync(),
+            isTrue,
+            reason: 'nested content must be copied recursively',
+          );
+          expect(
+            Directory(src).existsSync(),
+            isFalse,
+            reason: 'source .tmp dir must be deleted after copy',
+          );
+        },
       );
 
-      expect(result, target);
-      expect(File(p.join(target, 'top.txt')).existsSync(), isTrue);
-      expect(
-          File(p.join(target, 'OEBPS', 'chapter.xhtml')).existsSync(), isTrue,
-          reason: 'nested content must be copied recursively');
-      expect(Directory(src).existsSync(), isFalse,
-          reason: 'source .tmp dir must be deleted after copy');
-    });
+      test('unowned non-empty target: replaced via copy, no .bak leftover', () {
+        final String src = p.join(tmp.path, '.tmp-1');
+        _seedDir(src, 'fresh.txt');
+        final String target = p.join(tmp.path, 'Book');
+        _seedDir(target, 'stale.txt');
 
-    test('unowned non-empty target: replaced via copy, no .bak leftover', () {
-      final String src = p.join(tmp.path, '.tmp-1');
-      _seedDir(src, 'fresh.txt');
-      final String target = p.join(tmp.path, 'Book');
-      _seedDir(target, 'stale.txt');
+        final String result = EpubImporter.moveExtractedDirIntoPlace(
+          srcDir: Directory(src),
+          targetDir: target,
+          liveExtractDirs: <String>[p.join(tmp.path, 'OtherBook'), ''],
+          forceCopyFallback: true,
+        );
 
-      final String result = EpubImporter.moveExtractedDirIntoPlace(
-        srcDir: Directory(src),
-        targetDir: target,
-        liveExtractDirs: <String>[p.join(tmp.path, 'OtherBook'), ''],
-        forceCopyFallback: true,
-      );
+        expect(result, target);
+        expect(
+          File(p.join(target, 'fresh.txt')).existsSync(),
+          isTrue,
+          reason: 'fresh download content must win',
+        );
+        expect(
+          File(p.join(target, 'stale.txt')).existsSync(),
+          isFalse,
+          reason: 'orphan leftover content must be gone',
+        );
+        expect(Directory(src).existsSync(), isFalse);
+        expect(
+          _bakSiblings(target),
+          isEmpty,
+          reason: 'the .bak staging dir must be cleaned up',
+        );
+      });
 
-      expect(result, target);
-      expect(File(p.join(target, 'fresh.txt')).existsSync(), isTrue,
-          reason: 'fresh download content must win');
-      expect(File(p.join(target, 'stale.txt')).existsSync(), isFalse,
-          reason: 'orphan leftover content must be gone');
-      expect(Directory(src).existsSync(), isFalse);
-      expect(_bakSiblings(target), isEmpty,
-          reason: 'the .bak staging dir must be cleaned up');
-    });
+      test('target owned by a live row: new book gets ~2 sibling via copy', () {
+        final String src = p.join(tmp.path, '.tmp-1');
+        _seedDir(src, 'fresh.txt');
+        final String target = p.join(tmp.path, 'Book');
+        _seedDir(target, 'owned.txt');
 
-    test('target owned by a live row: new book gets ~2 sibling via copy', () {
-      final String src = p.join(tmp.path, '.tmp-1');
-      _seedDir(src, 'fresh.txt');
-      final String target = p.join(tmp.path, 'Book');
-      _seedDir(target, 'owned.txt');
+        final String result = EpubImporter.moveExtractedDirIntoPlace(
+          srcDir: Directory(src),
+          targetDir: target,
+          liveExtractDirs: <String>[target],
+          forceCopyFallback: true,
+        );
 
-      final String result = EpubImporter.moveExtractedDirIntoPlace(
-        srcDir: Directory(src),
-        targetDir: target,
-        liveExtractDirs: <String>[target],
-        forceCopyFallback: true,
-      );
-
-      expect(result, '$target~2');
-      expect(File(p.join(target, 'owned.txt')).existsSync(), isTrue,
-          reason: 'a live book directory must never be touched');
-      expect(File(p.join('$target~2', 'fresh.txt')).existsSync(), isTrue);
-      expect(Directory(src).existsSync(), isFalse);
-    });
-  });
+        expect(result, '$target~2');
+        expect(
+          File(p.join(target, 'owned.txt')).existsSync(),
+          isTrue,
+          reason: 'a live book directory must never be touched',
+        );
+        expect(File(p.join('$target~2', 'fresh.txt')).existsSync(), isTrue);
+        expect(Directory(src).existsSync(), isFalse);
+      });
+    },
+  );
 
   group('EpubImporter.importFromPath onto existing target dir (BUG-564)', () {
     late Directory tmp;
@@ -305,8 +347,9 @@ void main() {
       }
     });
 
-    testWidgets('orphan leftover dir at the key no longer fails the import',
-        (WidgetTester tester) async {
+    testWidgets('orphan leftover dir at the key no longer fails the import', (
+      WidgetTester tester,
+    ) async {
       final FushiDatabase db = _memDb();
       addTearDown(db.close);
 
@@ -319,27 +362,35 @@ void main() {
       _seedDir(realDir, 'stale.txt');
 
       // Real isolate (compute) -> drive inside runAsync.
-      final String bookKey = await tester.runAsync(() async {
-        return EpubImporter.importFromPath(
-          db: db,
-          filePath: p.join(tmp.path, '$title.epub'),
-          fileName: '$title.epub',
-        );
-      }) as String;
+      final String bookKey =
+          await tester.runAsync(() async {
+                return EpubImporter.importFromPath(
+                  db: db,
+                  filePath: p.join(tmp.path, '$title.epub'),
+                  fileName: '$title.epub',
+                );
+              })
+              as String;
 
       expect(bookKey, title);
       final List<EpubBookRow> books = await db.getAllEpubBooks();
       expect(books, hasLength(1));
       expect(p.canonicalize(books.single.extractDir), p.canonicalize(realDir));
-      expect(File(p.join(realDir, 'stale.txt')).existsSync(), isFalse,
-          reason: 'orphan content replaced by the fresh extraction');
       expect(
-          File(p.join(realDir, 'OEBPS', 'chapter.xhtml')).existsSync(), isTrue);
+        File(p.join(realDir, 'stale.txt')).existsSync(),
+        isFalse,
+        reason: 'orphan content replaced by the fresh extraction',
+      );
+      expect(
+        File(p.join(realDir, 'OEBPS', 'chapter.xhtml')).existsSync(),
+        isTrue,
+      );
       expect(_bakSiblings(realDir), isEmpty);
     });
 
-    testWidgets('key dir owned by another live row is preserved',
-        (WidgetTester tester) async {
+    testWidgets('key dir owned by another live row is preserved', (
+      WidgetTester tester,
+    ) async {
       final FushiDatabase db = _memDb();
       addTearDown(db.close);
 
@@ -350,36 +401,46 @@ void main() {
       // book's key-named dir while having a different title/key.
       final String realDir = p.join(pp.path, 'fushi_books', title);
       _seedDir(realDir, 'owned.txt');
-      await db.insertEpubBook(EpubBooksCompanion.insert(
-        bookKey: 'SomeOtherKey',
-        title: 'SomeOtherTitle',
-        epubPath: 'other.epub',
-        extractDir: realDir,
-        chapterCount: 1,
-        chaptersJson: '[]',
-        tocJson: const Value.absent(),
-        importedAt: 1,
-      ));
+      await db.insertEpubBook(
+        EpubBooksCompanion.insert(
+          bookKey: 'SomeOtherKey',
+          title: 'SomeOtherTitle',
+          epubPath: 'other.epub',
+          extractDir: realDir,
+          chapterCount: 1,
+          chaptersJson: '[]',
+          tocJson: const Value.absent(),
+          importedAt: 1,
+        ),
+      );
 
-      final String bookKey = await tester.runAsync(() async {
-        return EpubImporter.importFromPath(
-          db: db,
-          filePath: p.join(tmp.path, '$title.epub'),
-          fileName: '$title.epub',
-        );
-      }) as String;
+      final String bookKey =
+          await tester.runAsync(() async {
+                return EpubImporter.importFromPath(
+                  db: db,
+                  filePath: p.join(tmp.path, '$title.epub'),
+                  fileName: '$title.epub',
+                );
+              })
+              as String;
 
       expect(bookKey, title);
-      expect(File(p.join(realDir, 'owned.txt')).existsSync(), isTrue,
-          reason: "the live row's directory must never be replaced");
+      expect(
+        File(p.join(realDir, 'owned.txt')).existsSync(),
+        isTrue,
+        reason: "the live row's directory must never be replaced",
+      );
       final List<EpubBookRow> books = await db.getAllEpubBooks();
-      final EpubBookRow imported =
-          books.singleWhere((EpubBookRow b) => b.bookKey == title);
+      final EpubBookRow imported = books.singleWhere(
+        (EpubBookRow b) => b.bookKey == title,
+      );
       expect(p.canonicalize(imported.extractDir), p.canonicalize('$realDir~2'));
       expect(
-          File(p.join(imported.extractDir, 'OEBPS', 'chapter.xhtml'))
-              .existsSync(),
-          isTrue);
+        File(
+          p.join(imported.extractDir, 'OEBPS', 'chapter.xhtml'),
+        ).existsSync(),
+        isTrue,
+      );
     });
   });
 }

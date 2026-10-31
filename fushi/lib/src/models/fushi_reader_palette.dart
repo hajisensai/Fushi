@@ -127,14 +127,18 @@ FushiReaderPalette _buildReaderPalette(
   final bool dark = brightness == Brightness.dark;
 
   final Hct neutralAnchor = Hct.fromInt(scheme.surfaceContainer.toARGB32());
-  final double neutralChroma =
-      math.min(neutralAnchor.chroma, _kNeutralChromaCap);
+  final double neutralChroma = math.min(
+    neutralAnchor.chroma,
+    _kNeutralChromaCap,
+  );
   Color neutral(double tone) =>
       hctToneKeepingHue(neutralAnchor.hue, neutralChroma, tone);
 
   final Hct variantAnchor = Hct.fromInt(scheme.outline.toARGB32());
-  final double variantChroma =
-      math.min(variantAnchor.chroma, _kNeutralVariantChromaCap);
+  final double variantChroma = math.min(
+    variantAnchor.chroma,
+    _kNeutralVariantChromaCap,
+  );
   Color neutralVariant(double tone) =>
       hctToneKeepingHue(variantAnchor.hue, variantChroma, tone);
 

@@ -27,9 +27,9 @@ void main() {
   /// BUG-1115：默认 documents 根 = `<平台 Documents>/Fushi/data`。本文件 mock 的 support
   /// 根下没有 `fushi.db`（也没有旧名 `hibiki.db`），故 resolve() 一律判为**全新安装** → 新布局。
   String nestedDefaultDocs() => p.joinAll(<String>[
-        p.join(tmp.path, 'default_documents'),
-        ...AppPaths.defaultDocumentsChildSegments,
-      ]);
+    p.join(tmp.path, 'default_documents'),
+    ...AppPaths.defaultDocumentsChildSegments,
+  ]);
 
   setUp(() {
     AppPaths.debugResetDocumentsLayoutCache();
@@ -37,18 +37,18 @@ void main() {
     fakeTemp = Directory(p.join(tmp.path, 'systemp'))..createSync();
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
-      const MethodChannel('plugins.flutter.io/path_provider'),
-      (MethodCall call) async {
-        if (call.method == 'getTemporaryDirectory') return fakeTemp.path;
-        if (call.method == 'getApplicationSupportDirectory') {
-          return p.join(tmp.path, 'default_support');
-        }
-        if (call.method == 'getApplicationDocumentsDirectory') {
-          return p.join(tmp.path, 'default_documents');
-        }
-        return null;
-      },
-    );
+          const MethodChannel('plugins.flutter.io/path_provider'),
+          (MethodCall call) async {
+            if (call.method == 'getTemporaryDirectory') return fakeTemp.path;
+            if (call.method == 'getApplicationSupportDirectory') {
+              return p.join(tmp.path, 'default_support');
+            }
+            if (call.method == 'getApplicationDocumentsDirectory') {
+              return p.join(tmp.path, 'default_documents');
+            }
+            return null;
+          },
+        );
   });
 
   tearDown(() {
@@ -58,53 +58,69 @@ void main() {
     AppPaths.forceDefaultRootForSession = false;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
-      const MethodChannel('plugins.flutter.io/path_provider'),
-      null,
-    );
+          const MethodChannel('plugins.flutter.io/path_provider'),
+          null,
+        );
     if (tmp.existsSync()) tmp.deleteSync(recursive: true);
   });
 
   test(
-      '配置了自定义根但不可达 → resolve() 抛 DataRootUnavailableException，不静默回退空默认根，且快速返回不 hang (BUG-815)',
-      () async {
-    final String missing = p.join(tmp.path, 'offline_drive_root');
-    AppPaths.debugDataRootReader = () async => missing;
+    '配置了自定义根但不可达 → resolve() 抛 DataRootUnavailableException，不静默回退空默认根，且快速返回不 hang (BUG-815)',
+    () async {
+      final String missing = p.join(tmp.path, 'offline_drive_root');
+      AppPaths.debugDataRootReader = () async => missing;
 
-    final Stopwatch sw = Stopwatch()..start();
-    await expectLater(
-      AppPaths.resolve(),
-      throwsA(
-        isA<DataRootUnavailableException>().having(
+      final Stopwatch sw = Stopwatch()..start();
+      await expectLater(
+        AppPaths.resolve(),
+        throwsA(
+          isA<DataRootUnavailableException>().having(
             (DataRootUnavailableException e) => e.configuredPath,
             'configuredPath',
-            missing),
-      ),
-      reason: '配置了自定义根但不可达时必须抛异常让 UI 决策，绝不静默派生空默认根（数据全空观感）',
-    );
-    sw.stop();
-    // 关键：探测必须在 2s 超时 + 合理裕量内返回（抛出），绝不因坏根卡死主 isolate。
-    expect(sw.elapsed, lessThan(const Duration(seconds: 5)),
-        reason: '坏 / 掉线数据根必须被超时降级，不得让 resolve() 无限阻塞');
-  });
+            missing,
+          ),
+        ),
+        reason: '配置了自定义根但不可达时必须抛异常让 UI 决策，绝不静默派生空默认根（数据全空观感）',
+      );
+      sw.stop();
+      // 关键：探测必须在 2s 超时 + 合理裕量内返回（抛出），绝不因坏根卡死主 isolate。
+      expect(
+        sw.elapsed,
+        lessThan(const Duration(seconds: 5)),
+        reason: '坏 / 掉线数据根必须被超时降级，不得让 resolve() 无限阻塞',
+      );
+    },
+  );
 
-  test('配置不可达 + 用户显式选择用默认位置 (forceDefaultRootForSession) → 退回默认根，不抛 (BUG-815)',
-      () async {
-    final String missing = p.join(tmp.path, 'offline_drive_root');
-    AppPaths.debugDataRootReader = () async => missing;
-    // 用户在逃生屏点「仍用默认位置启动」。
-    AppPaths.forceDefaultRootForSession = true;
+  test(
+    '配置不可达 + 用户显式选择用默认位置 (forceDefaultRootForSession) → 退回默认根，不抛 (BUG-815)',
+    () async {
+      final String missing = p.join(tmp.path, 'offline_drive_root');
+      AppPaths.debugDataRootReader = () async => missing;
+      // 用户在逃生屏点「仍用默认位置启动」。
+      AppPaths.forceDefaultRootForSession = true;
 
-    final AppPaths paths = await AppPaths.resolve();
-    expect(paths.documentsRoot.path, equals(nestedDefaultDocs()),
-        reason: '用户显式选择后应退回默认根打开（空态），而不是抛异常');
-    expect(paths.supportRoot.path, equals(p.join(tmp.path, 'default_support')));
-  });
+      final AppPaths paths = await AppPaths.resolve();
+      expect(
+        paths.documentsRoot.path,
+        equals(nestedDefaultDocs()),
+        reason: '用户显式选择后应退回默认根打开（空态），而不是抛异常',
+      );
+      expect(
+        paths.supportRoot.path,
+        equals(p.join(tmp.path, 'default_support')),
+      );
+    },
+  );
 
   test('未配置自定义根（普通默认用户）→ 不抛，正常用默认根', () async {
     AppPaths.debugDataRootReader = () async => null;
     final AppPaths paths = await AppPaths.resolve();
-    expect(paths.documentsRoot.path, equals(nestedDefaultDocs()),
-        reason: '无自定义根配置的用户不受 BUG-815 预检影响');
+    expect(
+      paths.documentsRoot.path,
+      equals(nestedDefaultDocs()),
+      reason: '无自定义根配置的用户不受 BUG-815 预检影响',
+    );
   });
 
   test('data_root 存在 → 正常派生（超时降级不误伤正常根）', () async {
@@ -114,17 +130,24 @@ void main() {
 
     final AppPaths paths = await AppPaths.resolve();
     expect(
-        paths.documentsRoot.path, equals(p.join(dataRoot.path, 'documents')));
+      paths.documentsRoot.path,
+      equals(p.join(dataRoot.path, 'documents')),
+    );
     expect(paths.supportRoot.path, equals(p.join(dataRoot.path, 'support')));
   });
 
   test('源码守卫：数据根存在性探测不得再用阻塞式 existsSync()，必须走带超时的异步 exists()', () {
-    final File? f = <String>[
-      'lib/src/storage/app_paths.dart',
-      'fushi/lib/src/storage/app_paths.dart',
-    ].map(File.new).cast<File?>().firstWhere(
-        (File? f) => f != null && f.existsSync(),
-        orElse: () => null);
+    final File? f =
+        <String>[
+              'lib/src/storage/app_paths.dart',
+              'fushi/lib/src/storage/app_paths.dart',
+            ]
+            .map(File.new)
+            .cast<File?>()
+            .firstWhere(
+              (File? f) => f != null && f.existsSync(),
+              orElse: () => null,
+            );
     expect(f, isNotNull, reason: 'app_paths.dart not found');
     final String src = f!.readAsStringSync();
 
@@ -137,16 +160,27 @@ void main() {
     // 抽出 _probeDataRootExists **函数定义体**做定向断言（锚定 signature，避免抓到
     // resolve() 里的调用点；也避免误伤其它无关 existsSync 用法）。
     final int start = code.indexOf('static Future<bool> _probeDataRootExists(');
-    expect(start, greaterThanOrEqualTo(0),
-        reason: '找不到 _probeDataRootExists 定义 —— 探测函数被改名/移除？');
+    expect(
+      start,
+      greaterThanOrEqualTo(0),
+      reason: '找不到 _probeDataRootExists 定义 —— 探测函数被改名/移除？',
+    );
     // 到下一个静态解析函数（_resolveDataRoot 定义）为止的片段。
-    final int end =
-        code.indexOf('static Future<Directory?> _resolveDataRoot(', start);
+    final int end = code.indexOf(
+      'static Future<Directory?> _resolveDataRoot(',
+      start,
+    );
     final String body = code.substring(start, end < 0 ? code.length : end);
 
-    expect(body.contains('existsSync()'), isFalse,
-        reason: '掉线盘上同步 existsSync() 会阻塞主 isolate → 无限加载，禁止回归');
-    expect(RegExp(r'\.exists\(\)\s*\.timeout\(').hasMatch(body), isTrue,
-        reason: '必须用带超时的异步 exists().timeout(...) 探测数据根');
+    expect(
+      body.contains('existsSync()'),
+      isFalse,
+      reason: '掉线盘上同步 existsSync() 会阻塞主 isolate → 无限加载，禁止回归',
+    );
+    expect(
+      RegExp(r'\.exists\(\)\s*\.timeout\(').hasMatch(body),
+      isTrue,
+      reason: '必须用带超时的异步 exists().timeout(...) 探测数据根',
+    );
   });
 }

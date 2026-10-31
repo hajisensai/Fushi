@@ -62,8 +62,9 @@ void main() {
     );
     // 脏值（类型不对）同样回落，不进手势分流逻辑。
     expect(
-      VideoAsbplayerConfig.decode('{"tapTogglesPlayback":"no"}')
-          .tapTogglesPlayback,
+      VideoAsbplayerConfig.decode(
+        '{"tapTogglesPlayback":"no"}',
+      ).tapTogglesPlayback,
       isTrue,
     );
     // 关态必须真的写进 JSON（否则重开播放页又变回开）。
@@ -86,14 +87,16 @@ void main() {
   test('BUG-3310: 旧档关了鼠标单击暂停（常经同步自电脑），双击暂停仍为开', () {
     // 反馈 #lGxHvuULXI：电脑上关掉「点击画面播放/暂停」后整份配置同步到 iPhone，
     // 手机双击中带就静默不再暂停。新字段不得从 tapTogglesPlayback 继承。
-    final VideoAsbplayerConfig synced =
-        VideoAsbplayerConfig.decode('{"tapTogglesPlayback":false}');
+    final VideoAsbplayerConfig synced = VideoAsbplayerConfig.decode(
+      '{"tapTogglesPlayback":false}',
+    );
     expect(synced.tapTogglesPlayback, isFalse);
     expect(synced.doubleTapTogglesPlayback, isTrue);
     expect(VideoAsbplayerConfig.defaults.doubleTapTogglesPlayback, isTrue);
     expect(
-      VideoAsbplayerConfig.decode('{"doubleTapTogglesPlayback":"no"}')
-          .doubleTapTogglesPlayback,
+      VideoAsbplayerConfig.decode(
+        '{"doubleTapTogglesPlayback":"no"}',
+      ).doubleTapTogglesPlayback,
       isTrue,
     );
   });
@@ -111,8 +114,9 @@ void main() {
       volumeSwipeGesture: false,
     );
 
-    final VideoAsbplayerConfig decoded =
-        VideoAsbplayerConfig.decode(VideoAsbplayerConfig.encode(config));
+    final VideoAsbplayerConfig decoded = VideoAsbplayerConfig.decode(
+      VideoAsbplayerConfig.encode(config),
+    );
 
     expect(decoded.seekSeconds, 5);
     expect(decoded.speedStep, 0.2);
@@ -146,20 +150,23 @@ void main() {
     );
     // 脏值：类型不对（数字，例如误存了枚举 index）/ 不认识的档名。
     expect(
-      VideoAsbplayerConfig.decode('{"dragSeekSensitivity":2}')
-          .dragSeekSensitivity,
+      VideoAsbplayerConfig.decode(
+        '{"dragSeekSensitivity":2}',
+      ).dragSeekSensitivity,
       VideoSeekSensitivity.medium,
     );
     expect(
-      VideoAsbplayerConfig.decode('{"dragSeekSensitivity":"turbo"}')
-          .dragSeekSensitivity,
+      VideoAsbplayerConfig.decode(
+        '{"dragSeekSensitivity":"turbo"}',
+      ).dragSeekSensitivity,
       VideoSeekSensitivity.medium,
     );
     // 存的是枚举 name 而非 index，改枚举顺序不串档。
     expect(
       VideoAsbplayerConfig.encode(
-        VideoAsbplayerConfig.defaults
-            .copyWith(dragSeekSensitivity: VideoSeekSensitivity.high),
+        VideoAsbplayerConfig.defaults.copyWith(
+          dragSeekSensitivity: VideoSeekSensitivity.high,
+        ),
       ),
       contains('"dragSeekSensitivity":"high"'),
     );
@@ -181,8 +188,9 @@ void main() {
 
   group('doubleTapSeekSeconds (TODO-173/BUG-231)', () {
     test('copyWith carries the double-tap behavior', () {
-      final VideoAsbplayerConfig next =
-          VideoAsbplayerConfig.defaults.copyWith(doubleTapSeekSeconds: 5);
+      final VideoAsbplayerConfig next = VideoAsbplayerConfig.defaults.copyWith(
+        doubleTapSeekSeconds: 5,
+      );
       expect(next.doubleTapSeekSeconds, 5);
       // 其它字段不受影响。
       expect(next.seekSeconds, VideoAsbplayerConfig.defaults.seekSeconds);
@@ -190,14 +198,17 @@ void main() {
     });
 
     test('subtitle-jump sentinel round trips', () {
-      final VideoAsbplayerConfig config =
-          VideoAsbplayerConfig.defaults.copyWith(
-        doubleTapSeekSeconds: VideoAsbplayerConfig.kDoubleTapSubtitle,
+      final VideoAsbplayerConfig config = VideoAsbplayerConfig.defaults
+          .copyWith(
+            doubleTapSeekSeconds: VideoAsbplayerConfig.kDoubleTapSubtitle,
+          );
+      final VideoAsbplayerConfig decoded = VideoAsbplayerConfig.decode(
+        VideoAsbplayerConfig.encode(config),
       );
-      final VideoAsbplayerConfig decoded =
-          VideoAsbplayerConfig.decode(VideoAsbplayerConfig.encode(config));
-      expect(decoded.doubleTapSeekSeconds,
-          VideoAsbplayerConfig.kDoubleTapSubtitle);
+      expect(
+        decoded.doubleTapSeekSeconds,
+        VideoAsbplayerConfig.kDoubleTapSubtitle,
+      );
       expect(VideoAsbplayerConfig.kDoubleTapSubtitle, -1);
     });
 
@@ -220,16 +231,24 @@ void main() {
         '{"doubleTapSeekSeconds":99}',
         '{"doubleTapSeekSeconds":"5"}',
       ]) {
-        expect(VideoAsbplayerConfig.decode(raw).doubleTapSeekSeconds, 0,
-            reason: '非法值 $raw 应兜底回 0=关');
+        expect(
+          VideoAsbplayerConfig.decode(raw).doubleTapSeekSeconds,
+          0,
+          reason: '非法值 $raw 应兜底回 0=关',
+        );
       }
     });
 
     test('option whitelist is the expected discrete set', () {
       expect(
         VideoAsbplayerConfig.doubleTapSeekOptions,
-        containsAll(
-            <int>[VideoAsbplayerConfig.kDoubleTapSubtitle, 0, 3, 5, 10]),
+        containsAll(<int>[
+          VideoAsbplayerConfig.kDoubleTapSubtitle,
+          0,
+          3,
+          5,
+          10,
+        ]),
       );
       expect(VideoAsbplayerConfig.doubleTapSeekOptions.length, 5);
     });

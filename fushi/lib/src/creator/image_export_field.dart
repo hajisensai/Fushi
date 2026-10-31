@@ -42,9 +42,7 @@ abstract class ImageExportField extends Field
 
   /// Clears this field's data. The state refresh afterwards is not performed
   /// here and should be performed by the invocation of the clear field button.
-  void clearFieldState({
-    required CreatorModel creatorModel,
-  }) {
+  void clearFieldState({required CreatorModel creatorModel}) {
     _exportFile = null;
     _imageSuggestions = null;
     _indexNotifier.value = 0;
@@ -71,18 +69,20 @@ abstract class ImageExportField extends Field
 
     if (creatorModel.scrollController.hasClients &&
         cause == EnhancementTriggerCause.manual) {
-      creatorModel.scrollController
-          .jumpTo(creatorModel.scrollController.position.minScrollExtent);
+      creatorModel.scrollController.jumpTo(
+        creatorModel.scrollController.position.minScrollExtent,
+      );
     }
 
     carouselKey = UniqueKey();
 
     /// Show loading state.
     setSearching(
-        appModel: appModel,
-        creatorModel: creatorModel,
-        isSearching: true,
-        searchTerm: searchTerm);
+      appModel: appModel,
+      creatorModel: creatorModel,
+      isSearching: true,
+      searchTerm: searchTerm,
+    );
     try {
       List<NetworkToFileImage> images = await generateImages();
 
@@ -124,9 +124,7 @@ abstract class ImageExportField extends Field
     if (images.isEmpty ||
         newSelectedSuggestionIndex < 0 ||
         newSelectedSuggestionIndex >= images.length) {
-      clearFieldState(
-        creatorModel: creatorModel,
-      );
+      clearFieldState(creatorModel: creatorModel);
       return;
     }
 
@@ -141,9 +139,7 @@ abstract class ImageExportField extends Field
 
   /// Change the index of the selected search suggestion and update the state
   /// of the image picker.
-  void setSelectedSearchSuggestion({
-    required int index,
-  }) {
+  void setSelectedSearchSuggestion({required int index}) {
     if (index == -1) {
       _exportFile = null;
     } else {

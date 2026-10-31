@@ -28,65 +28,70 @@ void main() {
     File dest() => File('${dir.path}/out.bin');
     File part() => File('${dir.path}/out.bin.part');
 
-    test('downloads a fresh file with no Range and validates size+sha',
-        () async {
-      final List<int> body = payload();
-      final List<Map<String, String>> requests = <Map<String, String>>[];
-      final File file = await ResumableDownloader(
-        url: 'http://host/stream',
-        destination: dest(),
-        partFile: part(),
-        expectedSize: body.length,
-        expectedSha256: sha(body),
-        open: (Uri uri, Map<String, String> headers) async {
-          requests.add(headers);
-          return ResumableDownloadResponse.bytes(
-            statusCode: HttpStatus.ok,
-            body: body,
-            headers: <String, String>{
-              HttpHeaders.contentLengthHeader: '${body.length}',
-            },
-          );
-        },
-      ).download();
+    test(
+      'downloads a fresh file with no Range and validates size+sha',
+      () async {
+        final List<int> body = payload();
+        final List<Map<String, String>> requests = <Map<String, String>>[];
+        final File file = await ResumableDownloader(
+          url: 'http://host/stream',
+          destination: dest(),
+          partFile: part(),
+          expectedSize: body.length,
+          expectedSha256: sha(body),
+          open: (Uri uri, Map<String, String> headers) async {
+            requests.add(headers);
+            return ResumableDownloadResponse.bytes(
+              statusCode: HttpStatus.ok,
+              body: body,
+              headers: <String, String>{
+                HttpHeaders.contentLengthHeader: '${body.length}',
+              },
+            );
+          },
+        ).download();
 
-      expect(requests, hasLength(1));
-      expect(requests.single.containsKey(HttpHeaders.rangeHeader), isFalse);
-      expect(await file.readAsBytes(), body);
-      expect(part().existsSync(), isFalse);
-    });
+        expect(requests, hasLength(1));
+        expect(requests.single.containsKey(HttpHeaders.rangeHeader), isFalse);
+        expect(await file.readAsBytes(), body);
+        expect(part().existsSync(), isFalse);
+      },
+    );
 
-    test('reuses an existing .part with Range offset and concatenates',
-        () async {
-      final List<int> body = payload();
-      await part().writeAsBytes(body.sublist(0, 10), flush: true);
+    test(
+      'reuses an existing .part with Range offset and concatenates',
+      () async {
+        final List<int> body = payload();
+        await part().writeAsBytes(body.sublist(0, 10), flush: true);
 
-      final List<Map<String, String>> requests = <Map<String, String>>[];
-      final File file = await ResumableDownloader(
-        url: 'http://host/stream',
-        destination: dest(),
-        partFile: part(),
-        expectedSize: body.length,
-        resumeState: const ResumableDownloadState(etag: '"v1"'),
-        open: (Uri uri, Map<String, String> headers) async {
-          requests.add(headers);
-          return ResumableDownloadResponse.bytes(
-            statusCode: HttpStatus.partialContent,
-            body: body.sublist(10),
-            headers: <String, String>{
-              HttpHeaders.contentRangeHeader: 'bytes 10-${body.length - 1}/'
-                  '${body.length}',
-            },
-          );
-        },
-      ).download();
+        final List<Map<String, String>> requests = <Map<String, String>>[];
+        final File file = await ResumableDownloader(
+          url: 'http://host/stream',
+          destination: dest(),
+          partFile: part(),
+          expectedSize: body.length,
+          resumeState: const ResumableDownloadState(etag: '"v1"'),
+          open: (Uri uri, Map<String, String> headers) async {
+            requests.add(headers);
+            return ResumableDownloadResponse.bytes(
+              statusCode: HttpStatus.partialContent,
+              body: body.sublist(10),
+              headers: <String, String>{
+                HttpHeaders.contentRangeHeader:
+                    'bytes 10-${body.length - 1}/'
+                    '${body.length}',
+              },
+            );
+          },
+        ).download();
 
-      expect(requests, hasLength(1));
-      expect(requests.single[HttpHeaders.rangeHeader], 'bytes=10-');
-      expect(requests.single[HttpHeaders.ifRangeHeader], '"v1"');
-      expect(await file.readAsBytes(), body);
-      expect(part().existsSync(), isFalse);
-    });
+        expect(requests, hasLength(1));
+        expect(requests.single[HttpHeaders.rangeHeader], 'bytes=10-');
+        expect(requests.single[HttpHeaders.ifRangeHeader], '"v1"');
+        expect(await file.readAsBytes(), body);
+        expect(part().existsSync(), isFalse);
+      },
+    );
 
     test('416 on resume restarts from zero with a full GET', () async {
       final List<int> body = payload();
@@ -124,36 +129,39 @@ void main() {
       expect(await file.readAsBytes(), body);
     });
 
-    test('200 on a Range request discards old part and writes full body',
-        () async {
-      final List<int> body = payload();
-      await part().writeAsBytes(<int>[7, 7, 7], flush: true);
+    test(
+      '200 on a Range request discards old part and writes full body',
+      () async {
+        final List<int> body = payload();
+        await part().writeAsBytes(<int>[7, 7, 7], flush: true);
 
-      final List<DownloadResumeOutcome> restarted = <DownloadResumeOutcome>[];
-      final File file = await ResumableDownloader(
-        url: 'http://host/stream',
-        destination: dest(),
-        partFile: part(),
-        expectedSize: body.length,
-        resumeState: const ResumableDownloadState(lastModified: 'yesterday'),
-        onMeta: (ResumableDownloadMetaInfo info) =>
-            restarted.add(info.resumeOutcome),
-        open: (Uri uri, Map<String, String> headers) async {
-          expect(headers[HttpHeaders.rangeHeader], 'bytes=3-');
-          return ResumableDownloadResponse.bytes(
-            statusCode: HttpStatus.ok,
-            body: body,
-            headers: <String, String>{
-              HttpHeaders.contentLengthHeader: '${body.length}',
-            },
-          );
-        },
-      ).download();
+        final List<DownloadResumeOutcome> restarted = <DownloadResumeOutcome>[];
+        final File file = await ResumableDownloader(
+          url: 'http://host/stream',
+          destination: dest(),
+          partFile: part(),
+          expectedSize: body.length,
+          resumeState: const ResumableDownloadState(lastModified: 'yesterday'),
+          onMeta: (ResumableDownloadMetaInfo info) =>
+              restarted.add(info.resumeOutcome),
+          open: (Uri uri, Map<String, String> headers) async {
+            expect(headers[HttpHeaders.rangeHeader], 'bytes=3-');
+            return ResumableDownloadResponse.bytes(
+              statusCode: HttpStatus.ok,
+              body: body,
+              headers: <String, String>{
+                HttpHeaders.contentLengthHeader: '${body.length}',
+              },
+            );
+          },
+        ).download();
 
-      expect(restarted,
-          <DownloadResumeOutcome>[DownloadResumeOutcome.restartedFromZero]);
-      expect(await file.readAsBytes(), body);
-    });
+        expect(restarted, <DownloadResumeOutcome>[
+          DownloadResumeOutcome.restartedFromZero,
+        ]);
+        expect(await file.readAsBytes(), body);
+      },
+    );
 
     test('sha256 mismatch deletes part and throws integrity error', () async {
       final List<int> body = payload();
@@ -167,12 +175,12 @@ void main() {
           expectedSha256: sha(<int>[1, 2, 3]), // wrong digest
           open: (Uri uri, Map<String, String> headers) async =>
               ResumableDownloadResponse.bytes(
-            statusCode: HttpStatus.ok,
-            body: body,
-            headers: <String, String>{
-              HttpHeaders.contentLengthHeader: '${body.length}',
-            },
-          ),
+                statusCode: HttpStatus.ok,
+                body: body,
+                headers: <String, String>{
+                  HttpHeaders.contentLengthHeader: '${body.length}',
+                },
+              ),
         ).download(),
         throwsA(isA<ResumableDownloadIntegrityException>()),
       );
@@ -191,12 +199,12 @@ void main() {
           expectedSize: body.length + 5, // never satisfied
           open: (Uri uri, Map<String, String> headers) async =>
               ResumableDownloadResponse.bytes(
-            statusCode: HttpStatus.ok,
-            body: body,
-            headers: <String, String>{
-              HttpHeaders.contentLengthHeader: '${body.length}',
-            },
-          ),
+                statusCode: HttpStatus.ok,
+                body: body,
+                headers: <String, String>{
+                  HttpHeaders.contentLengthHeader: '${body.length}',
+                },
+              ),
         ).download(),
         throwsA(isA<ResumableDownloadIntegrityException>()),
       );
@@ -214,52 +222,54 @@ void main() {
         sizeHint: body.length - 3,
         open: (Uri uri, Map<String, String> headers) async =>
             ResumableDownloadResponse.bytes(
-          statusCode: HttpStatus.ok,
-          body: body,
-          headers: <String, String>{
-            HttpHeaders.contentLengthHeader: '${body.length}',
-          },
-        ),
+              statusCode: HttpStatus.ok,
+              body: body,
+              headers: <String, String>{
+                HttpHeaders.contentLengthHeader: '${body.length}',
+              },
+            ),
       ).download();
       expect(await file.readAsBytes(), body);
     });
 
-    test('sizeHint is progress denominator only without response length',
-        () async {
-      final List<int> body = payload();
-      final List<int?> totals = <int?>[];
-      await ResumableDownloader(
-        url: 'http://host/stream',
-        destination: dest(),
-        partFile: part(),
-        sizeHint: 999,
-        onProgress: (int received, int? total) => totals.add(total),
-        open: (Uri uri, Map<String, String> headers) async =>
-            ResumableDownloadResponse.bytes(
-          statusCode: HttpStatus.ok,
-          body: body,
-        ),
-      ).download();
-      expect(totals.toSet(), <int?>{999});
+    test(
+      'sizeHint is progress denominator only without response length',
+      () async {
+        final List<int> body = payload();
+        final List<int?> totals = <int?>[];
+        await ResumableDownloader(
+          url: 'http://host/stream',
+          destination: dest(),
+          partFile: part(),
+          sizeHint: 999,
+          onProgress: (int received, int? total) => totals.add(total),
+          open: (Uri uri, Map<String, String> headers) async =>
+              ResumableDownloadResponse.bytes(
+                statusCode: HttpStatus.ok,
+                body: body,
+              ),
+        ).download();
+        expect(totals.toSet(), <int?>{999});
 
-      totals.clear();
-      await ResumableDownloader(
-        url: 'http://host/stream',
-        destination: dest(),
-        partFile: part(),
-        sizeHint: 999,
-        onProgress: (int received, int? total) => totals.add(total),
-        open: (Uri uri, Map<String, String> headers) async =>
-            ResumableDownloadResponse.bytes(
-          statusCode: HttpStatus.ok,
-          body: body,
-          headers: <String, String>{
-            HttpHeaders.contentLengthHeader: '${body.length}',
-          },
-        ),
-      ).download();
-      expect(totals.toSet(), <int?>{body.length});
-    });
+        totals.clear();
+        await ResumableDownloader(
+          url: 'http://host/stream',
+          destination: dest(),
+          partFile: part(),
+          sizeHint: 999,
+          onProgress: (int received, int? total) => totals.add(total),
+          open: (Uri uri, Map<String, String> headers) async =>
+              ResumableDownloadResponse.bytes(
+                statusCode: HttpStatus.ok,
+                body: body,
+                headers: <String, String>{
+                  HttpHeaders.contentLengthHeader: '${body.length}',
+                },
+              ),
+        ).download();
+        expect(totals.toSet(), <int?>{body.length});
+      },
+    );
 
     test('sizeHint smaller than existing part does not discard it', () async {
       final List<int> body = payload();
@@ -300,16 +310,17 @@ void main() {
             resumedFlags.add(info.resumeOutcome),
         open: (Uri uri, Map<String, String> headers) async =>
             ResumableDownloadResponse.bytes(
-          statusCode: HttpStatus.partialContent,
-          body: body.sublist(6),
-          headers: <String, String>{
-            HttpHeaders.contentRangeHeader:
-                'bytes 6-${body.length - 1}/${body.length}',
-          },
-        ),
+              statusCode: HttpStatus.partialContent,
+              body: body.sublist(6),
+              headers: <String, String>{
+                HttpHeaders.contentRangeHeader:
+                    'bytes 6-${body.length - 1}/${body.length}',
+              },
+            ),
       ).download();
-      expect(
-          resumedFlags, <DownloadResumeOutcome>[DownloadResumeOutcome.resumed]);
+      expect(resumedFlags, <DownloadResumeOutcome>[
+        DownloadResumeOutcome.resumed,
+      ]);
     });
   });
 }

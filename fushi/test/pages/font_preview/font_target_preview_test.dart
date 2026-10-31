@@ -173,9 +173,7 @@ void main() {
     expect(find.text(t.font_target_body_short), findsOneWidget);
   });
 
-  testWidgets('详情页标出顺位，系统里找不到的系统字体条目给出提示', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('详情页标出顺位，系统里找不到的系统字体条目给出提示', (WidgetTester tester) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(420, 1600);
     addTearDown(tester.view.reset);

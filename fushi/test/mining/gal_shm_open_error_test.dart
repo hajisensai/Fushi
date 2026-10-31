@@ -110,16 +110,12 @@ void main() {
 
     test('带上本次实际用的 helper 架构：两套只更新一套时才分得清', () {
       expect(
-        galHookOpenFailureDetail(
-          <Object?, Object?>{'error': 'protocol_mismatch'},
-          injectorPath: r'C:\App\galgame_helper\x86\hibiki_gal_injector.exe',
-        ),
+        galHookOpenFailureDetail(<Object?, Object?>{
+          'error': 'protocol_mismatch',
+        }, injectorPath: r'C:\App\galgame_helper\x86\hibiki_gal_injector.exe'),
         'voice_hook open protocol_mismatch helper=x86',
       );
-      expect(
-        galHookHelperArchTag('/opt/galgame_helper/x64/injector'),
-        'x64',
-      );
+      expect(galHookHelperArchTag('/opt/galgame_helper/x64/injector'), 'x64');
       // 认不出来就不猜一个架构出来。
       expect(galHookHelperArchTag(null), '');
       expect(galHookHelperArchTag(''), '');
@@ -147,8 +143,9 @@ void main() {
       final Directory temp = await Directory.systemTemp.createTemp(
         'fushi_gal_shm_open_test_',
       );
-      final File injector =
-          File('${temp.path}${Platform.pathSeparator}fake.exe');
+      final File injector = File(
+        '${temp.path}${Platform.pathSeparator}fake.exe',
+      );
       await injector.writeAsBytes(const <int>[0]);
       final _FakeProcess process = _FakeProcess();
 
@@ -189,10 +186,10 @@ void main() {
     test('拒绝访问：原因是 accessDenied，win32 码进诊断', () async {
       final GalHookInjectorDiagnostics diagnostics =
           await runOpenFailure(<Object?, Object?>{
-        'error': 'access_denied',
-        'detail': r'name=Local\FushiVoiceHook_4321 win32=5',
-        'win32': 5,
-      });
+            'error': 'access_denied',
+            'detail': r'name=Local\FushiVoiceHook_4321 win32=5',
+            'win32': 5,
+          });
       expect(diagnostics.failure, GalHookInjectorFailure.accessDenied);
       expect(diagnostics.stderrTail, contains('win32=5'));
       expect(
@@ -205,10 +202,10 @@ void main() {
     test('契约不符：原因是 protocolMismatch，双方版本进诊断', () async {
       final GalHookInjectorDiagnostics diagnostics =
           await runOpenFailure(<Object?, Object?>{
-        'error': 'protocol_mismatch',
-        'detail': 'shm=11/want 12 ipc=1/want 2',
-        'win32': 0,
-      });
+            'error': 'protocol_mismatch',
+            'detail': 'shm=11/want 12 ipc=1/want 2',
+            'win32': 0,
+          });
       expect(diagnostics.failure, GalHookInjectorFailure.protocolMismatch);
       expect(diagnostics.stderrTail, contains('shm=11/want 12'));
     });
@@ -216,10 +213,10 @@ void main() {
     test('injector 一路全绿时不得用它的 stdout 把确定原因猜回 unknown', () async {
       final GalHookInjectorDiagnostics diagnostics =
           await runOpenFailure(<Object?, Object?>{
-        'error': 'mapping_not_found',
-        'detail': r'name=Local\FushiVoiceHook_4321 win32=2',
-        'win32': 2,
-      });
+            'error': 'mapping_not_found',
+            'detail': r'name=Local\FushiVoiceHook_4321 win32=2',
+            'win32': 2,
+          });
       expect(
         diagnostics.failure,
         GalHookInjectorFailure.sharedMemoryUnavailable,
@@ -230,14 +227,12 @@ void main() {
     test('native 没定出处置时，injector 说出的原因必须一路活到 failure 上', () async {
       // 端到端回归守卫（走真实 _captureFailure 路径）：`mapping_not_found` 不得把
       // injector 的「hook DLL 缺失」短路成通用的 sharedMemoryUnavailable。
-      final GalHookInjectorDiagnostics diagnostics = await runOpenFailure(
-        <Object?, Object?>{
-          'error': 'mapping_not_found',
-          'detail': r'name=Local\FushiVoiceHook_4321 win32=2',
-          'win32': 2,
-        },
-        injectorStdout: 'hook DLL not found\n',
-      );
+      final GalHookInjectorDiagnostics diagnostics =
+          await runOpenFailure(<Object?, Object?>{
+            'error': 'mapping_not_found',
+            'detail': r'name=Local\FushiVoiceHook_4321 win32=2',
+            'win32': 2,
+          }, injectorStdout: 'hook DLL not found\n');
       expect(
         diagnostics.failure,
         GalHookInjectorFailure.hookDllMissing,
@@ -265,10 +260,9 @@ void main() {
         reason: 'BUG-1142 只在归类不出来时才附证据，归类得越准信息越少',
       );
       expect(
-          message,
-          contains(galHookFailureLabel(
-            GalHookInjectorFailure.accessDenied,
-          )!));
+        message,
+        contains(galHookFailureLabel(GalHookInjectorFailure.accessDenied)!),
+      );
     });
 
     test('降级路径的证据从会话状态取（result 是 launched，诊断不在它身上）', () {
@@ -328,8 +322,9 @@ void main() {
       final String native = maskComments(
         resolve('windows/runner/voice_hook_reader.cpp').readAsStringSync(),
       );
-      final int openAt =
-          native.indexOf('VoiceHookOpenResult VoiceHookReader::Open');
+      final int openAt = native.indexOf(
+        'VoiceHookOpenResult VoiceHookReader::Open',
+      );
       expect(openAt, greaterThan(0), reason: 'Open 必须返回结构化结果，不是裸 status');
       final int openEnd = native.indexOf('\n}', openAt);
       expect(openEnd, greaterThan(openAt), reason: '扫不到函数体就判红，别让空集假绿');

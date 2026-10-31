@@ -51,7 +51,8 @@ Future<TagAddOutcome> addTagToTarget({
   required String alreadyTaggedMessage,
   TagAddNotifier? notify,
 }) async {
-  final TagAddNotifier tell = notify ??
+  final TagAddNotifier tell =
+      notify ??
       (String message, ToastSeverity severity) =>
           FushiToast.show(msg: message, severity: severity);
   try {
@@ -84,11 +85,10 @@ Future<bool> reorderTagsSafely({
   } catch (error, stackTrace) {
     debugPrint('reorderTagsSafely failed: $error\n$stackTrace');
     (notify ??
-        (String message, ToastSeverity severity) =>
-            FushiToast.show(msg: message, severity: severity))(
-      t.tag_reorder_failed,
-      ToastSeverity.error,
-    );
+        (String message, ToastSeverity severity) => FushiToast.show(
+          msg: message,
+          severity: severity,
+        ))(t.tag_reorder_failed, ToastSeverity.error);
     return false;
   }
 }

@@ -21,9 +21,9 @@ Widget _shell({required GlobalKey rootKey}) {
     AdaptiveNavItem(icon: Icons.tune_outlined, label: '设置'),
   ];
   Widget card(String id) => FushiFocusTarget(
-        id: FushiFocusId(id),
-        child: const SizedBox(width: 200, height: 120),
-      );
+    id: FushiFocusId(id),
+    child: const SizedBox(width: 200, height: 120),
+  );
   return MaterialApp(
     theme: ThemeData(useMaterial3: true, platform: TargetPlatform.windows),
     home: Scaffold(
@@ -60,52 +60,65 @@ Widget _shell({required GlobalKey rootKey}) {
 
 void main() {
   testWidgets(
-      'Right from a rail destination crosses into the content pane, never up '
-      'within the rail (TODO-814)', (WidgetTester tester) async {
+    'Right from a rail destination crosses into the content pane, never up '
+    'within the rail (TODO-814)',
+    (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(1000, 700));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final GlobalKey rootKey = GlobalKey();
+      await tester.pumpWidget(_shell(rootKey: rootKey));
+      await tester.pump();
+      final FushiFocusController controller = FushiFocusRoot.controllerOf(
+        rootKey.currentContext!,
+      );
+
+      // 焦点停在 rail 中间项（nav-rail-1）。
+      expect(controller.requestById(const FushiFocusId('nav-rail-1')), isTrue);
+      await tester.pump();
+
+      gamepadMoveFocusInDirection(
+        rootKey.currentContext!,
+        TraversalDirection.right,
+      );
+      await tester.pump();
+      expect(
+        controller.activeId?.value.startsWith('content-'),
+        isTrue,
+        reason:
+            'Right from a rail item must enter the content pane, '
+            'never move within the rail',
+      );
+      expect(
+        controller.activeId?.value.startsWith('nav-rail-'),
+        isFalse,
+        reason: 'Right must not stay/bounce inside the rail',
+      );
+    },
+  );
+
+  testWidgets('Up/Down still steps within the rail (no regression)', (
+    WidgetTester tester,
+  ) async {
     await tester.binding.setSurfaceSize(const Size(1000, 700));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     final GlobalKey rootKey = GlobalKey();
     await tester.pumpWidget(_shell(rootKey: rootKey));
     await tester.pump();
-    final FushiFocusController controller =
-        FushiFocusRoot.controllerOf(rootKey.currentContext!);
-
-    // 焦点停在 rail 中间项（nav-rail-1）。
-    expect(controller.requestById(const FushiFocusId('nav-rail-1')), isTrue);
-    await tester.pump();
-
-    gamepadMoveFocusInDirection(
-        rootKey.currentContext!, TraversalDirection.right);
-    await tester.pump();
-    expect(
-      controller.activeId?.value.startsWith('content-'),
-      isTrue,
-      reason: 'Right from a rail item must enter the content pane, '
-          'never move within the rail',
+    final FushiFocusController controller = FushiFocusRoot.controllerOf(
+      rootKey.currentContext!,
     );
-    expect(
-      controller.activeId?.value.startsWith('nav-rail-'),
-      isFalse,
-      reason: 'Right must not stay/bounce inside the rail',
-    );
-  });
-
-  testWidgets('Up/Down still steps within the rail (no regression)',
-      (WidgetTester tester) async {
-    await tester.binding.setSurfaceSize(const Size(1000, 700));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
-    final GlobalKey rootKey = GlobalKey();
-    await tester.pumpWidget(_shell(rootKey: rootKey));
-    await tester.pump();
-    final FushiFocusController controller =
-        FushiFocusRoot.controllerOf(rootKey.currentContext!);
 
     expect(controller.requestById(const FushiFocusId('nav-rail-0')), isTrue);
     await tester.pump();
     gamepadMoveFocusInDirection(
-        rootKey.currentContext!, TraversalDirection.down);
+      rootKey.currentContext!,
+      TraversalDirection.down,
+    );
     await tester.pump();
-    expect(controller.activeId, const FushiFocusId('nav-rail-1'),
-        reason: 'Down within the rail still steps to the next destination');
+    expect(
+      controller.activeId,
+      const FushiFocusId('nav-rail-1'),
+      reason: 'Down within the rail still steps to the next destination',
+    );
   });
 }

@@ -45,14 +45,18 @@ void main() {
 
   group('搜索归一化', () {
     test('全角 → 半角、大写 → 小写、丢空白与标点', () {
-      expect(normalizeGalgameSearchText('Ｆａｔｅ／ｓｔａｙ night'),
-          normalizeGalgameSearchText('fate stay night'));
+      expect(
+        normalizeGalgameSearchText('Ｆａｔｅ／ｓｔａｙ night'),
+        normalizeGalgameSearchText('fate stay night'),
+      );
       expect(normalizeGalgameSearchText('  A-B_C!  '), 'abc');
     });
 
     test('片假名折叠成平假名', () {
       expect(
-          normalizeGalgameSearchText('カノン'), normalizeGalgameSearchText('かのん'));
+        normalizeGalgameSearchText('カノン'),
+        normalizeGalgameSearchText('かのん'),
+      );
       // 长音符按排版噪音丢弃，不影响命中。
       expect(normalizeGalgameSearchText('セーラー'), 'せら');
     });
@@ -89,14 +93,19 @@ void main() {
 
   group('筛选', () {
     test('游玩状态', () {
-      final GalgameEntry playing =
-          entry(id: 'a', status: GalgamePlayStatus.playing);
-      const GalgameLibraryView view =
-          GalgameLibraryView(status: GalgamePlayStatus.playing);
+      final GalgameEntry playing = entry(
+        id: 'a',
+        status: GalgamePlayStatus.playing,
+      );
+      const GalgameLibraryView view = GalgameLibraryView(
+        status: GalgamePlayStatus.playing,
+      );
       expect(matchesGalgameFilters(playing, view), isTrue);
       expect(
         matchesGalgameFilters(
-            entry(id: 'b', status: GalgamePlayStatus.dropped), view),
+          entry(id: 'b', status: GalgamePlayStatus.dropped),
+          view,
+        ),
         isFalse,
       );
     });
@@ -104,10 +113,12 @@ void main() {
     test('本地 exe / 仅元数据', () {
       final GalgameEntry local = entry(id: 'a');
       final GalgameEntry online = entry(id: 'b', exePath: '');
-      const GalgameLibraryView onlyLocal =
-          GalgameLibraryView(localFilter: GalgameLocalFilter.localOnly);
-      const GalgameLibraryView onlyMeta =
-          GalgameLibraryView(localFilter: GalgameLocalFilter.metadataOnly);
+      const GalgameLibraryView onlyLocal = GalgameLibraryView(
+        localFilter: GalgameLocalFilter.localOnly,
+      );
+      const GalgameLibraryView onlyMeta = GalgameLibraryView(
+        localFilter: GalgameLocalFilter.metadataOnly,
+      );
       expect(matchesGalgameFilters(local, onlyLocal), isTrue);
       expect(matchesGalgameFilters(online, onlyLocal), isFalse);
       expect(matchesGalgameFilters(online, onlyMeta), isTrue);
@@ -118,12 +129,16 @@ void main() {
       final GalgameEntry game = entry(id: 'a', tags: <String>['泣きゲー', '学园']);
       expect(
         matchesGalgameFilters(
-            game, const GalgameLibraryView(tags: <String>{'学园'})),
+          game,
+          const GalgameLibraryView(tags: <String>{'学园'}),
+        ),
         isTrue,
       );
       expect(
         matchesGalgameFilters(
-            game, const GalgameLibraryView(tags: <String>{'学园', '悬疑'})),
+          game,
+          const GalgameLibraryView(tags: <String>{'学园', '悬疑'}),
+        ),
         isFalse,
       );
     });
@@ -142,13 +157,21 @@ void main() {
       final GalgameEntry older = entry(id: 'a', addedAt: DateTime(2025));
       final GalgameEntry newer = entry(id: 'b', addedAt: DateTime(2026));
       expect(
-        compareGalgameEntries(older, newer,
-            field: GalgameSortField.added, ascending: true),
+        compareGalgameEntries(
+          older,
+          newer,
+          field: GalgameSortField.added,
+          ascending: true,
+        ),
         lessThan(0),
       );
       expect(
-        compareGalgameEntries(older, newer,
-            field: GalgameSortField.added, ascending: false),
+        compareGalgameEntries(
+          older,
+          newer,
+          field: GalgameSortField.added,
+          ascending: false,
+        ),
         greaterThan(0),
       );
     });
@@ -158,8 +181,12 @@ void main() {
       final GalgameEntry unrated = entry(id: 'b');
       for (final bool asc in <bool>[true, false]) {
         expect(
-          compareGalgameEntries(rated, unrated,
-              field: GalgameSortField.siteScore, ascending: asc),
+          compareGalgameEntries(
+            rated,
+            unrated,
+            field: GalgameSortField.siteScore,
+            ascending: asc,
+          ),
           lessThan(0),
           reason: '未刮削评分的条目在任何方向都排在有评分的后面',
         );
@@ -170,8 +197,12 @@ void main() {
       final GalgameEntry played = entry(id: 'a', lastPlayedMs: 1000);
       final GalgameEntry never = entry(id: 'b');
       expect(
-        compareGalgameEntries(played, never,
-            field: GalgameSortField.lastPlayed, ascending: true),
+        compareGalgameEntries(
+          played,
+          never,
+          field: GalgameSortField.lastPlayed,
+          ascending: true,
+        ),
         lessThan(0),
       );
     });
@@ -201,8 +232,10 @@ void main() {
         ),
       );
       // 有发行日的按倒序在前，未知发行日沉底。
-      expect(byRelease.map((GalgameEntry g) => g.id).take(2).toList(),
-          <String>['b', 'a']);
+      expect(byRelease.map((GalgameEntry g) => g.id).take(2).toList(), <String>[
+        'b',
+        'a',
+      ]);
     });
 
     test('排序结果确定：同值按名称 → id 兜底', () {
@@ -211,7 +244,9 @@ void main() {
         entry(id: 'a', name: 'same'),
       ];
       final List<GalgameEntry> out = applyGalgameLibraryView(
-          games, const GalgameLibraryView(sortField: GalgameSortField.name));
+        games,
+        const GalgameLibraryView(sortField: GalgameSortField.name),
+      );
       expect(out.map((GalgameEntry g) => g.id).toList(), <String>['a', 'z']);
     });
 

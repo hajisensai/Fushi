@@ -61,31 +61,35 @@ Widget _twoPane({required GlobalKey rootKey}) {
 
 void main() {
   testWidgets(
-      'Left from a full-width detail row escapes to the nav pane, not a '
-      'diagonal same-pane swatch (BUG-015)', (WidgetTester tester) async {
-    final GlobalKey rootKey = GlobalKey();
-    await tester.pumpWidget(_twoPane(rootKey: rootKey));
-    await tester.pump();
+    'Left from a full-width detail row escapes to the nav pane, not a '
+    'diagonal same-pane swatch (BUG-015)',
+    (WidgetTester tester) async {
+      final GlobalKey rootKey = GlobalKey();
+      await tester.pumpWidget(_twoPane(rootKey: rootKey));
+      await tester.pump();
 
-    final FushiFocusController controller =
-        FushiFocusRoot.controllerOf(rootKey.currentContext!);
+      final FushiFocusController controller = FushiFocusRoot.controllerOf(
+        rootKey.currentContext!,
+      );
 
-    expect(
-      controller.requestById(const FushiFocusId('detail-switch')),
-      isTrue,
-    );
-    await tester.pump();
+      expect(
+        controller.requestById(const FushiFocusId('detail-switch')),
+        isTrue,
+      );
+      await tester.pump();
 
-    expect(controller.move(FushiFocusDirection.left), isTrue);
-    await tester.pump();
+      expect(controller.move(FushiFocusDirection.left), isTrue);
+      await tester.pump();
 
-    // 修复前会落到 'detail-swatch'（同面板斜上方）。修复后落到导航面板的某一项。
-    expect(
-      controller.activeId?.value.startsWith('nav-'),
-      isTrue,
-      reason: 'Left from the full-width switch must leave the detail pane for '
-          'the nav rail (a real directional neighbour that clears), not jump '
-          'up to the diagonal same-pane swatch',
-    );
-  });
+      // 修复前会落到 'detail-swatch'（同面板斜上方）。修复后落到导航面板的某一项。
+      expect(
+        controller.activeId?.value.startsWith('nav-'),
+        isTrue,
+        reason:
+            'Left from the full-width switch must leave the detail pane for '
+            'the nav rail (a real directional neighbour that clears), not jump '
+            'up to the diagonal same-pane swatch',
+      );
+    },
+  );
 }

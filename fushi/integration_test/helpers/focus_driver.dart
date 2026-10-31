@@ -127,9 +127,11 @@ class FocusDriver {
     }
     // 步数耗尽：把当前焦点落点打出来，避免「不可达」失败只剩一个 false。
     final FocusNode? f = focused;
-    debugPrint('[FocusDriver] focusUntil exhausted $maxSteps steps; '
-        'primaryFocus=${f?.debugLabel ?? f?.context?.widget.runtimeType} '
-        'scope=${f?.nearestScope?.debugLabel}');
+    debugPrint(
+      '[FocusDriver] focusUntil exhausted $maxSteps steps; '
+      'primaryFocus=${f?.debugLabel ?? f?.context?.widget.runtimeType} '
+      'scope=${f?.nearestScope?.debugLabel}',
+    );
     return false;
   }
 
@@ -276,8 +278,10 @@ class FocusDriver {
     final BuildContext? ctx = focused?.context;
     if (ctx == null) return false;
     const ActivateIntent intent = ActivateIntent();
-    final Action<ActivateIntent>? action =
-        Actions.maybeFind<ActivateIntent>(ctx, intent: intent);
+    final Action<ActivateIntent>? action = Actions.maybeFind<ActivateIntent>(
+      ctx,
+      intent: intent,
+    );
     if (action == null || !action.isEnabled(intent)) return false;
     Actions.invoke<ActivateIntent>(ctx, intent);
     await tester.pump(_settle);
@@ -306,15 +310,22 @@ class FocusDriver {
   /// 返回 controller 是否最终落在目标段。
   Future<bool> selectTab(Finder tab, {int maxSettleFrames = 8}) async {
     final Tab tabWidget = tester.widget<Tab>(tab);
-    final Finder bar =
-        find.ancestor(of: tab, matching: find.byType(TabBar)).first;
+    final Finder bar = find
+        .ancestor(of: tab, matching: find.byType(TabBar))
+        .first;
     final TabBar tabBar = tester.widget<TabBar>(glassUnwrap<TabBar>(bar));
     final int target = tabBar.tabs.indexOf(tabWidget);
     if (target < 0 || tabBar.controller == null) return false;
     if (!await focusWidget(tab)) return false;
-    await adjust(steps: target - tester.widget<TabBar>(glassUnwrap<TabBar>(bar)).controller!.index);
+    await adjust(
+      steps:
+          target -
+          tester.widget<TabBar>(glassUnwrap<TabBar>(bar)).controller!.index,
+    );
     for (int i = 0; i < maxSettleFrames; i++) {
-      final TabController? controller = tester.widget<TabBar>(glassUnwrap<TabBar>(bar)).controller;
+      final TabController? controller = tester
+          .widget<TabBar>(glassUnwrap<TabBar>(bar))
+          .controller;
       if (controller != null &&
           controller.index == target &&
           !controller.indexIsChanging) {
@@ -322,7 +333,8 @@ class FocusDriver {
       }
       await tester.pump(_settle);
     }
-    return tester.widget<TabBar>(glassUnwrap<TabBar>(bar)).controller?.index == target;
+    return tester.widget<TabBar>(glassUnwrap<TabBar>(bar)).controller?.index ==
+        target;
   }
 
   /// 全局返回一层。

@@ -57,14 +57,12 @@ class TitleNormalizer {
   static Float64List similarityNormalizedBatch(
     String query,
     List<String> candidates,
-  ) =>
-      TitleScoreNative.similarityNormalizedBatch(query, candidates);
+  ) => TitleScoreNative.similarityNormalizedBatch(query, candidates);
 
   /// 已归一化的 [queries] × [candidates] 相似度矩阵（一次 FFI 调用）：第
   /// `q * candidates.length + c` 项 = `similarityNormalized(queries[q], candidates[c])`。
   static Float64List similarityNormalizedMatrix(
     List<String> queries,
     List<String> candidates,
-  ) =>
-      TitleScoreNative.similarityNormalizedMatrix(queries, candidates);
+  ) => TitleScoreNative.similarityNormalizedMatrix(queries, candidates);
 }

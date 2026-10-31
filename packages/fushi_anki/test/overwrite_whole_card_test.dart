@@ -21,30 +21,30 @@ void main() {
   const String kPayload = '{"expression":"仕業","reading":"しわざ"}';
 
   AnkiSettings settings() => const AnkiSettings(
-        selectedDeckId: 1,
-        selectedNoteTypeId: 2,
-        availableDecks: <AnkiDeck>[AnkiDeck(id: 1, name: 'Mining')],
-        availableNoteTypes: <AnkiNoteType>[
-          AnkiNoteType(
-            id: 2,
-            name: 'Lapis',
-            fields: <String>[
-              'Expression',
-              'ExpressionReading',
-              'Sentence',
-              'SentenceFurigana',
-              'Hint',
-            ],
-          ),
+    selectedDeckId: 1,
+    selectedNoteTypeId: 2,
+    availableDecks: <AnkiDeck>[AnkiDeck(id: 1, name: 'Mining')],
+    availableNoteTypes: <AnkiNoteType>[
+      AnkiNoteType(
+        id: 2,
+        name: 'Lapis',
+        fields: <String>[
+          'Expression',
+          'ExpressionReading',
+          'Sentence',
+          'SentenceFurigana',
+          'Hint',
         ],
-        fieldMappings: <String, String>{
-          'Expression': '{expression}',
-          'ExpressionReading': '{reading}',
-          'Sentence': '{sentence}',
-        },
-        tags: 'mine',
-        allowDupes: true,
-      );
+      ),
+    ],
+    fieldMappings: <String, String>{
+      'Expression': '{expression}',
+      'ExpressionReading': '{reading}',
+      'Sentence': '{sentence}',
+    },
+    tags: 'mine',
+    allowDupes: true,
+  );
 
   const AnkiMiningContext context = AnkiMiningContext(
     sentence: 'ひょっとして これも クロウカードの仕業でしょうか？',
@@ -62,14 +62,15 @@ void main() {
           'SentenceFurigana': '妖怪[ようかい]のしわざのようです。',
           'Hint': 'old hint',
         };
-      final MineOutcome outcome = await _ConfiguredConnectRepo(
-        service: service,
-        settings: settings(),
-      ).updateMinedNote(
-        noteId: 888,
-        rawPayloadJson: kPayload,
-        context: context,
-      );
+      final MineOutcome outcome =
+          await _ConfiguredConnectRepo(
+            service: service,
+            settings: settings(),
+          ).updateMinedNote(
+            noteId: 888,
+            rawPayloadJson: kPayload,
+            context: context,
+          );
 
       expect(outcome.result, MineResult.success);
       expect(outcome.noteId, 888);
@@ -77,8 +78,11 @@ void main() {
       expect(sent['Expression'], '仕業');
       expect(sent['ExpressionReading'], 'しわざ');
       expect(sent['Sentence'], context.sentence);
-      expect(sent.containsKey('SentenceFurigana'), isTrue,
-          reason: '没映射的字段必须显式送空串，否则 native 保留旧值');
+      expect(
+        sent.containsKey('SentenceFurigana'),
+        isTrue,
+        reason: '没映射的字段必须显式送空串，否则 native 保留旧值',
+      );
       expect(sent['SentenceFurigana'], '');
       expect(sent['Hint'], '');
       expect(service.addNoteCalls, isEmpty);
@@ -87,30 +91,7 @@ void main() {
     test('随后 addTags 并入新制那组标签（用户 tag + fushi + 分类 + 书名）', () async {
       final _RecordingService service = _RecordingService()
         ..existingFields = <String, String>{'Expression': '仕業'};
-      await _ConfiguredConnectRepo(service: service, settings: settings())
-          .updateMinedNote(
-        noteId: 888,
-        rawPayloadJson: kPayload,
-        context: context,
-      );
-
-      expect(service.addTagsCalls, hasLength(1));
-      expect(service.addTagsCalls.single.noteId, 888);
-      expect(
-        service.addTagsCalls.single.tags,
-        <String>[
-          'mine',
-          BaseAnkiRepository.fushiTag,
-          BaseAnkiRepository.bookTag,
-          'Cardcaptor'
-        ],
-      );
-    });
-
-    test('note 读不到（已删 / 不可达）→ 明确失败，不发半覆盖', () async {
-      final _RecordingService service = _RecordingService()
-        ..existingFields = null;
-      final MineOutcome outcome = await _ConfiguredConnectRepo(
+      await _ConfiguredConnectRepo(
         service: service,
         settings: settings(),
       ).updateMinedNote(
@@ -118,6 +99,29 @@ void main() {
         rawPayloadJson: kPayload,
         context: context,
       );
+
+      expect(service.addTagsCalls, hasLength(1));
+      expect(service.addTagsCalls.single.noteId, 888);
+      expect(service.addTagsCalls.single.tags, <String>[
+        'mine',
+        BaseAnkiRepository.fushiTag,
+        BaseAnkiRepository.bookTag,
+        'Cardcaptor',
+      ]);
+    });
+
+    test('note 读不到（已删 / 不可达）→ 明确失败，不发半覆盖', () async {
+      final _RecordingService service = _RecordingService()
+        ..existingFields = null;
+      final MineOutcome outcome =
+          await _ConfiguredConnectRepo(
+            service: service,
+            settings: settings(),
+          ).updateMinedNote(
+            noteId: 888,
+            rawPayloadJson: kPayload,
+            context: context,
+          );
 
       expect(outcome.result, MineResult.error);
       expect(service.updateCalls, isEmpty);
@@ -134,14 +138,15 @@ void main() {
           'Meaning': 'deed',
           'Audio': '[sound:x.mp3]',
         };
-      final MineOutcome outcome = await _ConfiguredConnectRepo(
-        service: service,
-        settings: settings(),
-      ).updateMinedNote(
-        noteId: 777,
-        rawPayloadJson: kPayload,
-        context: context,
-      );
+      final MineOutcome outcome =
+          await _ConfiguredConnectRepo(
+            service: service,
+            settings: settings(),
+          ).updateMinedNote(
+            noteId: 777,
+            rawPayloadJson: kPayload,
+            context: context,
+          );
 
       expect(outcome.result, MineResult.error);
       expect(outcome.errorDetail, contains('Core 2k/6k'));
@@ -153,14 +158,15 @@ void main() {
       final _RecordingService service = _RecordingService()
         ..noteModelName = 'Lapis'
         ..existingFields = <String, String>{'Expression': '', 'Hint': 'h'};
-      final MineOutcome outcome = await _ConfiguredConnectRepo(
-        service: service,
-        settings: settings(),
-      ).updateMinedNote(
-        noteId: 778,
-        rawPayloadJson: kPayload,
-        context: context,
-      );
+      final MineOutcome outcome =
+          await _ConfiguredConnectRepo(
+            service: service,
+            settings: settings(),
+          ).updateMinedNote(
+            noteId: 778,
+            rawPayloadJson: kPayload,
+            context: context,
+          );
       expect(outcome.result, MineResult.success);
       expect(service.updateCalls, hasLength(1));
     });
@@ -171,16 +177,17 @@ void main() {
           'Expression': '仕業',
           'SentenceFurigana': 'x',
         };
-      final MineOutcome outcome = await _ConfiguredConnectRepo(
-        service: service,
-        settings: settings().copyWith(
-          fieldMappings: const <String, String>{'Sentence': '{sentence}'},
-        ),
-      ).updateMinedNote(
-        noteId: 888,
-        rawPayloadJson: kPayload,
-        context: const AnkiMiningContext(sentence: ''),
-      );
+      final MineOutcome outcome =
+          await _ConfiguredConnectRepo(
+            service: service,
+            settings: settings().copyWith(
+              fieldMappings: const <String, String>{'Sentence': '{sentence}'},
+            ),
+          ).updateMinedNote(
+            noteId: 888,
+            rawPayloadJson: kPayload,
+            context: const AnkiMiningContext(sentence: ''),
+          );
 
       expect(outcome.result, MineResult.error);
       expect(service.updateCalls, isEmpty);
@@ -194,42 +201,38 @@ void main() {
       final List<MethodCall> calls = <MethodCall>[];
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, (MethodCall call) async {
-        if (call.method == 'requestAnkidroidPermissions') return true;
-        calls.add(call);
-        if (call.method == 'updateNoteFields') return null;
-        fail('unexpected channel call: ${call.method}');
-      });
+            if (call.method == 'requestAnkidroidPermissions') return true;
+            calls.add(call);
+            if (call.method == 'updateNoteFields') return null;
+            fail('unexpected channel call: ${call.method}');
+          });
       addTearDown(() {
         TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
             .setMockMethodCallHandler(channel, null);
       });
 
-      final MineOutcome outcome =
-          await _ConfiguredDroidRepo(settings()).updateMinedNote(
-        noteId: 42,
-        rawPayloadJson: kPayload,
-        context: context,
-      );
+      final MineOutcome outcome = await _ConfiguredDroidRepo(
+        settings(),
+      ).updateMinedNote(noteId: 42, rawPayloadJson: kPayload, context: context);
 
       expect(outcome.result, MineResult.success);
       expect(calls.map((MethodCall c) => c.method), <String>[
         'updateNoteFields',
       ]);
-      final Map<String, dynamic> args =
-          Map<String, dynamic>.from(calls.single.arguments as Map);
+      final Map<String, dynamic> args = Map<String, dynamic>.from(
+        calls.single.arguments as Map,
+      );
       expect(args['noteId'], 42);
       expect(args['clearUnspecified'], isTrue);
-      expect(
-        List<String>.from(args['tags'] as List),
-        <String>[
-          'mine',
-          BaseAnkiRepository.fushiTag,
-          BaseAnkiRepository.bookTag,
-          'Cardcaptor'
-        ],
+      expect(List<String>.from(args['tags'] as List), <String>[
+        'mine',
+        BaseAnkiRepository.fushiTag,
+        BaseAnkiRepository.bookTag,
+        'Cardcaptor',
+      ]);
+      final Map<String, String> fieldValues = Map<String, String>.from(
+        args['fieldValues'] as Map,
       );
-      final Map<String, String> fieldValues =
-          Map<String, String>.from(args['fieldValues'] as Map);
       expect(fieldValues['Sentence'], context.sentence);
       // 没映射的字段由 native 按 clearUnspecified 写空，Dart 侧不必点名。
       expect(fieldValues.containsKey('SentenceFurigana'), isFalse);

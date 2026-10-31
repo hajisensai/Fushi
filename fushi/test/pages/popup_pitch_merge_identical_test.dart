@@ -42,44 +42,38 @@ void main() {
         '../tools/browser-extension/vendor/content.css',
   };
 
-  test(
-    'identical pitch accents from several dictionaries merge into one row '
-    '(executes createPitchSection via node)',
-    () async {
-      final String? nodeExe = _resolveNode();
-      if (nodeExe == null) {
-        markTestSkipped(
-            'node not found on PATH; skipping JS behavior execution');
-        return;
-      }
+  test('identical pitch accents from several dictionaries merge into one row '
+      '(executes createPitchSection via node)', () async {
+    final String? nodeExe = _resolveNode();
+    if (nodeExe == null) {
+      markTestSkipped('node not found on PATH; skipping JS behavior execution');
+      return;
+    }
 
-      final File jsTest =
-          File('test/pages/popup_pitch_merge_identical_test.js');
-      expect(
-        jsTest.existsSync(),
-        isTrue,
-        reason: 'behavior harness ${jsTest.path} must exist',
-      );
+    final File jsTest = File('test/pages/popup_pitch_merge_identical_test.js');
+    expect(
+      jsTest.existsSync(),
+      isTrue,
+      reason: 'behavior harness ${jsTest.path} must exist',
+    );
 
-      final ProcessResult result = await Process.run(
-        nodeExe,
-        <String>[jsTest.path],
-        workingDirectory: Directory.current.path,
-      );
+    final ProcessResult result = await Process.run(nodeExe, <String>[
+      jsTest.path,
+    ], workingDirectory: Directory.current.path);
 
-      expect(
-        result.exitCode,
-        0,
-        reason: 'popup pitch merge JS behavior test failed.\n'
-            'stdout:\n${result.stdout}\nstderr:\n${result.stderr}',
-      );
-      expect(
-        result.stdout.toString(),
-        contains('all assertions passed'),
-        reason: 'behavior harness must reach its success marker',
-      );
-    },
-  );
+    expect(
+      result.exitCode,
+      0,
+      reason:
+          'popup pitch merge JS behavior test failed.\n'
+          'stdout:\n${result.stdout}\nstderr:\n${result.stderr}',
+    );
+    expect(
+      result.stdout.toString(),
+      contains('all assertions passed'),
+      reason: 'behavior harness must reach its success marker',
+    );
+  });
 
   jsMirrors.forEach((String name, String relPath) {
     test('[$name] popup.js merges identical pitch groups before rendering', () {
@@ -88,8 +82,9 @@ void main() {
       final String js = file.readAsStringSync();
 
       // 合并 helper 必须存在，且判据是整份 payload（三者全等），不是只看位置。
-      final int helper =
-          js.indexOf('function mergeIdenticalPitchGroups(groups)');
+      final int helper = js.indexOf(
+        'function mergeIdenticalPitchGroups(groups)',
+      );
       expect(
         helper,
         greaterThanOrEqualTo(0),
@@ -103,7 +98,8 @@ void main() {
         expect(
           js.indexOf(field, helper),
           greaterThan(helper),
-          reason: 'the merge key must cover $field — merging on a partial '
+          reason:
+              'the merge key must cover $field — merging on a partial '
               'payload would fuse dictionaries that disagree',
         );
       }
@@ -111,23 +107,29 @@ void main() {
       // 非恒真：helper 存在但没人调用等于没改。调用点必须在 createPitchSection 内，
       // 且在去重分支**之前**——顺序反了，默认档（去重开）就会把同型词典的来源名整组
       // 丢掉，那正是 BUG-2122 的另一半。
-      final int section =
-          js.indexOf('function createPitchSection(pitches, reading)');
+      final int section = js.indexOf(
+        'function createPitchSection(pitches, reading)',
+      );
       expect(section, greaterThanOrEqualTo(0));
-      final int call =
-          js.indexOf('mergeIdenticalPitchGroups(pitches)', section);
+      final int call = js.indexOf(
+        'mergeIdenticalPitchGroups(pitches)',
+        section,
+      );
       expect(
         call,
         greaterThan(section),
         reason: 'createPitchSection must call the merge on the raw pitches',
       );
-      final int dedup =
-          js.indexOf('if (window.deduplicatePitchAccents)', section);
+      final int dedup = js.indexOf(
+        'if (window.deduplicatePitchAccents)',
+        section,
+      );
       expect(dedup, greaterThan(section));
       expect(
         call,
         lessThan(dedup),
-        reason: 'the merge must run BEFORE the dedup branch; running it after '
+        reason:
+            'the merge must run BEFORE the dedup branch; running it after '
             'drops every source label but the first whenever dedup is ON '
             '(the app default) — that is the other half of BUG-2122',
       );
@@ -142,13 +144,15 @@ void main() {
       expect(
         js.substring(dedup, render),
         isNot(contains('pitchContainer.appendChild(createPitchGroup(')),
-        reason: 'the dedup branch must collect groups instead of appending '
+        reason:
+            'the dedup branch must collect groups instead of appending '
             'rows directly',
       );
 
       // 合并键必须排序后再比：同一音调型的两本词典给的位置顺序可能不同。
-      final int helperKey =
-          js.indexOf('function mergeIdenticalPitchGroups(groups)');
+      final int helperKey = js.indexOf(
+        'function mergeIdenticalPitchGroups(groups)',
+      );
       expect(
         js.substring(helperKey, helperKey + 700),
         contains('.sort((a, b) => a - b)'),
@@ -158,15 +162,18 @@ void main() {
       // createPitchGroup 吃来源列表：每本来源一枚药丸（BUG-2122，来源名单不能丢），
       // 合并行（≥2 本）再加一枚「N 本辞典」计数药丸，来源药丸默认收起、悬停看
       // title、点击展开——一排五枚药丸读起来仍像重复（用户 2026-09-30 要求）。
-      final int group =
-          js.indexOf('function createPitchGroup(pitchData, reading)');
+      final int group = js.indexOf(
+        'function createPitchGroup(pitchData, reading)',
+      );
       expect(group, greaterThanOrEqualTo(0));
       expect(
         js.indexOf(
-            'const dictionaries = pitchData.dictionaries || [pitchData.dictionary];',
-            group),
+          'const dictionaries = pitchData.dictionaries || [pitchData.dictionary];',
+          group,
+        ),
         greaterThan(group),
-        reason: 'createPitchGroup must accept a dictionary LIST (single-source '
+        reason:
+            'createPitchGroup must accept a dictionary LIST (single-source '
             'groups degrade to a one-element list)',
       );
       final int groupEnd = js.indexOf('\nfunction ', group + 1);
@@ -175,14 +182,25 @@ void main() {
       // 但**必须逐来源**——写死成 pitchData.dictionary / dictionaries[0] 就退回
       // 「只剩第一本」。
       final int pill = groupBody.indexOf("className: 'pitch-dict-label'");
-      expect(pill, greaterThanOrEqualTo(0),
-          reason: 'each source must render a .pitch-dict-label pill');
-      final String pillLine =
-          groupBody.substring(pill, groupBody.indexOf('\n', pill));
-      expect(pillLine, contains('__fushiDictDisplayName(dictionary)'),
-          reason: 'the pill label must come from the per-source loop variable');
-      expect(groupBody, contains('dictionaries.map((dictionary) =>'),
-          reason: 'one pill per source');
+      expect(
+        pill,
+        greaterThanOrEqualTo(0),
+        reason: 'each source must render a .pitch-dict-label pill',
+      );
+      final String pillLine = groupBody.substring(
+        pill,
+        groupBody.indexOf('\n', pill),
+      );
+      expect(
+        pillLine,
+        contains('__fushiDictDisplayName(dictionary)'),
+        reason: 'the pill label must come from the per-source loop variable',
+      );
+      expect(
+        groupBody,
+        contains('dictionaries.map((dictionary) =>'),
+        reason: 'one pill per source',
+      );
       for (final String needle in <String>[
         "className: 'pitch-dict-label pitch-dict-count'",
         'window.i18nPitchSourceCount',
@@ -191,9 +209,13 @@ void main() {
         "countPill.addEventListener('click'",
         "'aria-expanded'",
       ]) {
-        expect(groupBody, contains(needle),
-            reason: 'merged rows collapse sources behind a count pill that '
-                'reveals them on hover (title) and on click: missing $needle');
+        expect(
+          groupBody,
+          contains(needle),
+          reason:
+              'merged rows collapse sources behind a count pill that '
+              'reveals them on hover (title) and on click: missing $needle',
+        );
       }
     });
   });
@@ -205,15 +227,19 @@ void main() {
       final String css = file.readAsStringSync();
 
       final int rule = css.indexOf('.pitch-group {');
-      expect(rule, greaterThanOrEqualTo(0),
-          reason: '.pitch-group rule must exist');
+      expect(
+        rule,
+        greaterThanOrEqualTo(0),
+        reason: '.pitch-group rule must exist',
+      );
       final int end = css.indexOf('}', rule);
       expect(end, greaterThan(rule));
       final String body = css.substring(rule, end);
       expect(
         body,
         contains('flex-wrap: wrap'),
-        reason: 'a merged row can carry several source pills; without wrapping '
+        reason:
+            'a merged row can carry several source pills; without wrapping '
             'they push the reading past the popup edge',
       );
       // 换行只在 flex 容器上有意义——顺带钉住这条规则仍是 flex。
@@ -224,8 +250,9 @@ void main() {
 
 /// Resolve a usable `node` executable, returning null when none is on PATH.
 String? _resolveNode() {
-  final List<String> candidates =
-      Platform.isWindows ? <String>['node.exe', 'node'] : <String>['node'];
+  final List<String> candidates = Platform.isWindows
+      ? <String>['node.exe', 'node']
+      : <String>['node'];
   for (final String name in candidates) {
     try {
       final ProcessResult probe = Process.runSync(name, <String>['--version']);

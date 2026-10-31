@@ -18,13 +18,13 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
 AiProviderConfig _provider() => AiProviderConfig(
-      id: 'p1',
-      presetId: 'openai',
-      name: 'Fake',
-      baseUrl: Uri.parse('https://example.invalid/v1'),
-      apiKey: 'k',
-      model: 'm',
-    );
+  id: 'p1',
+  presetId: 'openai',
+  name: 'Fake',
+  baseUrl: Uri.parse('https://example.invalid/v1'),
+  apiKey: 'k',
+  model: 'm',
+);
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -34,42 +34,44 @@ void main() {
   late List<String> prompts;
 
   AiChatClient fakeAi() => AiChatClient(
-        client: MockClient((http.Request request) async {
-          final Map<String, Object?> body =
-              jsonDecode(request.body) as Map<String, Object?>;
-          final String user = ((body['messages']! as List<Object?>).last!
-              as Map<String, Object?>)['content']! as String;
-          prompts.add(user);
-          final List<int> all = <int>[
-            for (final String line in const LineSplitter().convert(user))
-              if (line.startsWith('{"i":'))
-                (jsonDecode(line) as Map<String, Object?>)['i']! as int,
-          ];
-          return http.Response(
-            jsonEncode(<String, Object?>{
-              'choices': <Object?>[
-                <String, Object?>{
-                  'message': <String, Object?>{
-                    'content': jsonEncode(<String, Object?>{
-                      'groups': <Object?>[
-                        if (all.length >= 2)
-                          <String, Object?>{
-                            'members': all,
-                            'name': 'S',
-                            'originalTitle': 'S',
-                            'confidence': 'high',
-                          },
-                      ],
-                    }),
-                  },
-                },
-              ],
-            }),
-            200,
-            headers: <String, String>{'content-type': 'application/json'},
-          );
+    client: MockClient((http.Request request) async {
+      final Map<String, Object?> body =
+          jsonDecode(request.body) as Map<String, Object?>;
+      final String user =
+          ((body['messages']! as List<Object?>).last!
+                  as Map<String, Object?>)['content']!
+              as String;
+      prompts.add(user);
+      final List<int> all = <int>[
+        for (final String line in const LineSplitter().convert(user))
+          if (line.startsWith('{"i":'))
+            (jsonDecode(line) as Map<String, Object?>)['i']! as int,
+      ];
+      return http.Response(
+        jsonEncode(<String, Object?>{
+          'choices': <Object?>[
+            <String, Object?>{
+              'message': <String, Object?>{
+                'content': jsonEncode(<String, Object?>{
+                  'groups': <Object?>[
+                    if (all.length >= 2)
+                      <String, Object?>{
+                        'members': all,
+                        'name': 'S',
+                        'originalTitle': 'S',
+                        'confidence': 'high',
+                      },
+                  ],
+                }),
+              },
+            },
+          ],
         }),
+        200,
+        headers: <String, String>{'content-type': 'application/json'},
       );
+    }),
+  );
 
   Future<void> book(String title) async {
     await db.insertEpubBook(
@@ -94,16 +96,20 @@ void main() {
     await prefs.loadFromDb();
     await prefs.setAiProviders(<AiProviderConfig>[_provider()]);
     await prefs.setAiFeatureAssignments(
-      const AiFeatureAssignments()
-          .withAssignment(AiFeature.libraryOrganize, 'p1'),
+      const AiFeatureAssignments().withAssignment(
+        AiFeature.libraryOrganize,
+        'p1',
+      ),
     );
     prompts = <String>[];
-    installLibraryOrganizeAutomatic(LibraryOrganizeAutoHost(
-      db: db,
-      prefs: prefs,
-      nameLanguage: () => 'ja',
-      clientFactory: fakeAi,
-    ));
+    installLibraryOrganizeAutomatic(
+      LibraryOrganizeAutoHost(
+        db: db,
+        prefs: prefs,
+        nameLanguage: () => 'ja',
+        clientFactory: fakeAi,
+      ),
+    );
   });
 
   tearDown(() async {
@@ -116,7 +122,10 @@ void main() {
     await book('a');
     scheduleAutomaticLibraryOrganize(CollectionShelfDomain.books);
     expect(debugLibraryOrganizeAutoScheduled, isFalse);
-    expect(await runAutomaticLibraryOrganize(CollectionShelfDomain.books), isNull);
+    expect(
+      await runAutomaticLibraryOrganize(CollectionShelfDomain.books),
+      isNull,
+    );
     expect(prompts, isEmpty);
   });
 
@@ -127,7 +136,10 @@ void main() {
     await later();
     await book('a');
     await book('b');
-    expect(await runAutomaticLibraryOrganize(CollectionShelfDomain.books), isNull);
+    expect(
+      await runAutomaticLibraryOrganize(CollectionShelfDomain.books),
+      isNull,
+    );
     expect(prompts, isEmpty);
   });
 
@@ -147,8 +159,9 @@ void main() {
     await later();
     await book('new-1');
     await book('new-2');
-    final LibraryOrganizeResult? first =
-        await runAutomaticLibraryOrganize(CollectionShelfDomain.books);
+    final LibraryOrganizeResult? first = await runAutomaticLibraryOrganize(
+      CollectionShelfDomain.books,
+    );
     expect(first, isNotNull);
     expect(first!.status, LibraryOrganizeStatus.done);
     expect(prompts.single, contains('new-1'));

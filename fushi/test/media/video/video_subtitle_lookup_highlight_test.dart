@@ -109,22 +109,26 @@ Future<VideoPlayerController> _pump(
   WidgetTester tester, {
   required SubtitleLookupHighlight? highlight,
 }) async {
-  final List<AudioCue> cues =
-      AssParser.parseString(content: _kAss, bookKey: 'komi');
+  final List<AudioCue> cues = AssParser.parseString(
+    content: _kAss,
+    bookKey: 'komi',
+  );
   final VideoPlayerController c = VideoPlayerController();
   addTearDown(c.dispose);
   c.setCues(cues);
   c.debugSetPositionForTesting(_kPosMs);
   c.debugUpdateCueForPosition(_kPosMs);
-  await tester.pumpWidget(MaterialApp(
-    home: Scaffold(
-      body: VideoSubtitleOverlay(
-        controller: c,
-        respectAssStyle: true,
-        lookupHighlight: highlight,
+  await tester.pumpWidget(
+    MaterialApp(
+      home: Scaffold(
+        body: VideoSubtitleOverlay(
+          controller: c,
+          respectAssStyle: true,
+          lookupHighlight: highlight,
+        ),
       ),
     ),
-  ));
+  );
   await tester.pump();
   return c;
 }
@@ -133,10 +137,15 @@ Future<VideoPlayerController> _pump(
 List<Text> _highlightedTexts(WidgetTester tester) {
   return tester
       .widgetList<SubtitleLookupHighlightBox>(
-          find.byType(SubtitleLookupHighlightBox))
-      .map((SubtitleLookupHighlightBox box) => tester.widget<Text>(find
-          .descendant(of: find.byWidget(box), matching: find.byType(Text))
-          .first))
+        find.byType(SubtitleLookupHighlightBox),
+      )
+      .map(
+        (SubtitleLookupHighlightBox box) => tester.widget<Text>(
+          find
+              .descendant(of: find.byWidget(box), matching: find.byType(Text))
+              .first,
+        ),
+      )
       .toList();
 }
 
@@ -159,12 +168,20 @@ void main() {
     expect(_highlightedChars(tester), <String>['S', 'h', 'e', "'", 's']);
     final List<SubtitleLookupHighlightBox> boxes = tester
         .widgetList<SubtitleLookupHighlightBox>(
-            find.byType(SubtitleLookupHighlightBox))
+          find.byType(SubtitleLookupHighlightBox),
+        )
         .toList();
-    expect(boxes.map((SubtitleLookupHighlightBox b) => b.first).toList(),
-        <bool>[true, false, false, false, false]);
-    expect(boxes.map((SubtitleLookupHighlightBox b) => b.last).toList(),
-        <bool>[false, false, false, false, true]);
+    expect(
+      boxes.map((SubtitleLookupHighlightBox b) => b.first).toList(),
+      <bool>[true, false, false, false, false],
+    );
+    expect(boxes.map((SubtitleLookupHighlightBox b) => b.last).toList(), <bool>[
+      false,
+      false,
+      false,
+      false,
+      true,
+    ]);
   });
 
   testWidgets('高亮不改字符布局几何（逐字命中矩形零位移）', (WidgetTester tester) async {
@@ -242,7 +259,8 @@ void main() {
     }
     final List<SubtitleLookupHighlightBox> boxes = tester
         .widgetList<SubtitleLookupHighlightBox>(
-            find.byType(SubtitleLookupHighlightBox))
+          find.byType(SubtitleLookupHighlightBox),
+        )
         .toList();
     final double strokeWidth = texts.first.style!.foreground!.strokeWidth;
     expect(strokeWidth, greaterThan(0));
@@ -252,35 +270,41 @@ void main() {
     // 上下每个字都外扩；左右只在首 / 尾外扩（中间相接不叠色）。
     expect(boxes.first.paintOutsets.left, boxes.first.bleedX);
     expect(boxes.first.paintOutsets.right, 0);
-    expect(boxes[2].paintOutsets,
-        EdgeInsets.fromLTRB(0, boxes[2].bleedY, 0, boxes[2].bleedY));
+    expect(
+      boxes[2].paintOutsets,
+      EdgeInsets.fromLTRB(0, boxes[2].bleedY, 0, boxes[2].bleedY),
+    );
     expect(boxes.last.paintOutsets.right, boxes.last.bleedX);
   });
 
   // 审查 PR #2083：`\fscx` / `\fscy` 把字形连同描边一起缩放（_applySpanScale），
   // 高亮外扩必须按同一缩放分轴：左右 × sx、上下 × sy。
   testWidgets('带 span 缩放的 cue：外扩随缩放分轴', (WidgetTester tester) async {
-    final List<AudioCue> cues =
-        AssParser.parseString(content: _kAssScaled, bookKey: 'scaled');
+    final List<AudioCue> cues = AssParser.parseString(
+      content: _kAssScaled,
+      bookKey: 'scaled',
+    );
     final VideoPlayerController c = VideoPlayerController();
     addTearDown(c.dispose);
     c.setCues(cues);
     c.debugSetPositionForTesting(_kPosMs);
     c.debugUpdateCueForPosition(_kPosMs);
-    await tester.pumpWidget(MaterialApp(
-      home: Scaffold(
-        body: VideoSubtitleOverlay(
-          controller: c,
-          respectAssStyle: true,
-          lookupHighlight: SubtitleLookupHighlight(
-            sentence: 'Scaled',
-            cueStartMs: c0StartMs(),
-            graphemeStart: 0,
-            graphemeCount: 3,
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: VideoSubtitleOverlay(
+            controller: c,
+            respectAssStyle: true,
+            lookupHighlight: SubtitleLookupHighlight(
+              sentence: 'Scaled',
+              cueStartMs: c0StartMs(),
+              graphemeStart: 0,
+              graphemeCount: 3,
+            ),
           ),
         ),
       ),
-    ));
+    );
     await tester.pump();
     expect(c.currentCue?.text, 'Scaled');
     final List<Text> texts = _highlightedTexts(tester);
@@ -289,7 +313,8 @@ void main() {
     expect(strokeWidth, greaterThan(0));
     final List<SubtitleLookupHighlightBox> boxes = tester
         .widgetList<SubtitleLookupHighlightBox>(
-            find.byType(SubtitleLookupHighlightBox))
+          find.byType(SubtitleLookupHighlightBox),
+        )
         .toList();
     for (final SubtitleLookupHighlightBox b in boxes) {
       expect(b.bleedX, closeTo(strokeWidth / 2 * 0.5, 1e-4));
@@ -300,36 +325,43 @@ void main() {
   });
 
   testWidgets('不尊重 .ass（软投影外观）不外扩', (WidgetTester tester) async {
-    final List<AudioCue> cues =
-        AssParser.parseString(content: _kAss, bookKey: 'komi');
+    final List<AudioCue> cues = AssParser.parseString(
+      content: _kAss,
+      bookKey: 'komi',
+    );
     final VideoPlayerController c = VideoPlayerController();
     addTearDown(c.dispose);
     c.setCues(cues);
     c.debugSetPositionForTesting(_kPosMs);
     c.debugUpdateCueForPosition(_kPosMs);
-    await tester.pumpWidget(MaterialApp(
-      home: Scaffold(
-        body: VideoSubtitleOverlay(
-          controller: c,
-          lookupHighlight: SubtitleLookupHighlight(
-            sentence: "She's not going for it…",
-            cueStartMs: c0StartMs(),
-            graphemeStart: 0,
-            graphemeCount: 5,
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: VideoSubtitleOverlay(
+            controller: c,
+            lookupHighlight: SubtitleLookupHighlight(
+              sentence: "She's not going for it…",
+              cueStartMs: c0StartMs(),
+              graphemeStart: 0,
+              graphemeCount: 5,
+            ),
           ),
         ),
       ),
-    ));
+    );
     await tester.pump();
     final List<SubtitleLookupHighlightBox> boxes = tester
         .widgetList<SubtitleLookupHighlightBox>(
-            find.byType(SubtitleLookupHighlightBox))
+          find.byType(SubtitleLookupHighlightBox),
+        )
         .toList();
     expect(boxes, hasLength(5));
     expect(
-        boxes.every(
-            (SubtitleLookupHighlightBox b) => b.bleedX == 0 && b.bleedY == 0),
-        isTrue);
+      boxes.every(
+        (SubtitleLookupHighlightBox b) => b.bleedX == 0 && b.bleedY == 0,
+      ),
+      isTrue,
+    );
   });
   // BUG-3691：两层同文本事件各自认领高亮时，底色在每层描边遍各画一次——半透明叠成
   // 近乎不透明，且上层那份画在下层填充遍之上，把下层字形整块盖住（用户截图）。

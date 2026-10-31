@@ -11,19 +11,24 @@ String _ruleBody(String css, RegExp selector) {
 }
 
 void main() {
-  test('shared popup document pins its inherited text alignment to the left',
-      () {
-    final String css = _read('assets/popup/popup.css');
-    final String body = _ruleBody(
-      css,
-      RegExp(r'html\s*,\s*body\s*\{([^}]*)\}', multiLine: true),
-    );
+  test(
+    'shared popup document pins its inherited text alignment to the left',
+    () {
+      final String css = _read('assets/popup/popup.css');
+      final String body = _ruleBody(
+        css,
+        RegExp(r'html\s*,\s*body\s*\{([^}]*)\}', multiLine: true),
+      );
 
-    expect(body, contains('direction: ltr;'));
-    expect(body, contains('text-align: left;'),
+      expect(body, contains('direction: ltr;'));
+      expect(
+        body,
+        contains('text-align: left;'),
         reason:
-            'Shadow DOM does not block inherited text-align from host pages');
-  });
+            'Shadow DOM does not block inherited text-align from host pages',
+      );
+    },
+  );
 
   for (final String path in <String>[
     'assets/browser_extension/vendor/content.css',
@@ -37,17 +42,24 @@ void main() {
       // 判据改成「必须存在某一条重挂根规则同时带着两个声明」，与
       // popup.css 那侧 `html, body` 同时断言 direction/text-align 对齐：
       // 两者本就是同一条规则被生成器重写过来的，拆开就是真回归。
-      final Iterable<RegExpMatch> rules =
-          RegExp(r':where\(#entries-container\)\s*\{([^}]*)\}', multiLine: true)
-              .allMatches(css);
+      final Iterable<RegExpMatch> rules = RegExp(
+        r':where\(#entries-container\)\s*\{([^}]*)\}',
+        multiLine: true,
+      ).allMatches(css);
       expect(rules, isNotEmpty, reason: 'missing re-rooted popup rule');
-      final bool pinned = rules.any((RegExpMatch m) =>
-          m.group(1)!.contains('direction: ltr;') &&
-          m.group(1)!.contains('text-align: left;'));
-      expect(pinned, isTrue,
-          reason: 'generated content.css must isolate the inherited alignment: '
-              'no :where(#entries-container) rule carries both '
-              'direction: ltr; and text-align: left;');
+      final bool pinned = rules.any(
+        (RegExpMatch m) =>
+            m.group(1)!.contains('direction: ltr;') &&
+            m.group(1)!.contains('text-align: left;'),
+      );
+      expect(
+        pinned,
+        isTrue,
+        reason:
+            'generated content.css must isolate the inherited alignment: '
+            'no :where(#entries-container) rule carries both '
+            'direction: ltr; and text-align: left;',
+      );
     });
   }
 

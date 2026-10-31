@@ -81,8 +81,8 @@ class LapisTemplateService {
   /// 手动备份按钮入口：读回当前 Lapis 定义并落盘。模型不存在 / 后端不支持
   /// 返回 null（UI 提示），读写失败照抛。
   Future<LapisBackupOutcome?> backupNow() async {
-    final AnkiNoteTypeDefinition? def =
-        await _repository.readNoteTypeDefinition(LapisNoteType.modelName);
+    final AnkiNoteTypeDefinition? def = await _repository
+        .readNoteTypeDefinition(LapisNoteType.modelName);
     if (def == null) return null;
     return _writeBackupFile(def);
   }
@@ -120,12 +120,13 @@ class LapisTemplateService {
   /// 现有备份，新的在前（文件名含 ISO 时间戳，字典序即时间序）。
   Future<List<File>> listBackups() async {
     final Directory dir = await backupDirectory();
-    final List<File> files = (await dir.list().toList())
-        .whereType<File>()
-        .where((File f) => p.basename(f.path).startsWith('lapis-'))
-        .where((File f) => f.path.endsWith('.json'))
-        .toList()
-      ..sort((File a, File b) => b.path.compareTo(a.path));
+    final List<File> files =
+        (await dir.list().toList())
+            .whereType<File>()
+            .where((File f) => p.basename(f.path).startsWith('lapis-'))
+            .where((File f) => f.path.endsWith('.json'))
+            .toList()
+          ..sort((File a, File b) => b.path.compareTo(a.path));
     return files;
   }
 
@@ -135,7 +136,8 @@ class LapisTemplateService {
       final Map<String, dynamic> json =
           jsonDecode(await file.readAsString()) as Map<String, dynamic>;
       return AnkiNoteTypeDefinition.fromJson(
-          json['noteType'] as Map<String, dynamic>);
+        json['noteType'] as Map<String, dynamic>,
+      );
     } catch (e, stack) {
       debugPrint('LapisTemplateService.readBackup: $e\n$stack');
       return null;
@@ -150,8 +152,8 @@ class LapisTemplateService {
       return LapisApplyResult.unsupported;
     }
     final AnkiSettings settings = await _repository.loadSettings();
-    final AnkiNoteTypeDefinition? def =
-        await _repository.readNoteTypeDefinition(LapisNoteType.modelName);
+    final AnkiNoteTypeDefinition? def = await _repository
+        .readNoteTypeDefinition(LapisNoteType.modelName);
     if (def == null) return LapisApplyResult.notFound;
 
     // 基线取**用户 Anki 里现有的内容**（剥掉我们上一轮的托管区段），不是
@@ -186,11 +188,13 @@ class LapisTemplateService {
       // Anki 上就是「当前基线 + 当前用户区段」，这个基线已经算迁移过了。
       if (settings.lapisAppliedCssSha == null ||
           settings.lapisMigratedBaselineSha != currentLapisBaselineSha) {
-        await _repository.updateSettings((AnkiSettings s) => s.copyWith(
-              lapisAppliedCssSha:
-                  s.lapisAppliedCssSha ?? lapisCssSha256(expected),
-              lapisMigratedBaselineSha: currentLapisBaselineSha,
-            ));
+        await _repository.updateSettings(
+          (AnkiSettings s) => s.copyWith(
+            lapisAppliedCssSha:
+                s.lapisAppliedCssSha ?? lapisCssSha256(expected),
+            lapisMigratedBaselineSha: currentLapisBaselineSha,
+          ),
+        );
       }
       return LapisApplyResult.upToDate;
     }
@@ -219,37 +223,40 @@ class LapisTemplateService {
     if (!_repository.supportsNoteTypeEditing) {
       return LapisRestoreFactoryResult.unsupported;
     }
-    final AnkiNoteTypeDefinition? def =
-        await _repository.readNoteTypeDefinition(LapisNoteType.modelName);
+    final AnkiNoteTypeDefinition? def = await _repository
+        .readNoteTypeDefinition(LapisNoteType.modelName);
     if (def == null) return LapisRestoreFactoryResult.notFound;
     await _writeBackupFile(def);
 
     final String css = LapisNoteType.template.css;
-    final bool stylingOk =
-        await _repository.updateNoteTypeStyling(def.name, css);
+    final bool stylingOk = await _repository.updateNoteTypeStyling(
+      def.name,
+      css,
+    );
     if (!stylingOk) throw StateError('Backend rejected styling update');
 
-    final bool templatesOk = await _repository.updateNoteTypeTemplates(
-      def.name,
-      <AnkiCardTemplate>[
-        const AnkiCardTemplate(
-          name: LapisNoteType.cardName,
-          front: LapisNoteType.front,
-          back: LapisNoteType.back,
-        ),
-      ],
-    );
+    final bool templatesOk = await _repository
+        .updateNoteTypeTemplates(def.name, <AnkiCardTemplate>[
+          const AnkiCardTemplate(
+            name: LapisNoteType.cardName,
+            front: LapisNoteType.front,
+            back: LapisNoteType.back,
+          ),
+        ]);
     if (!templatesOk) throw StateError('Backend rejected card template update');
 
-    await _repository.updateSettings((AnkiSettings s) => s.copyWith(
-          lapisFontScalePercent: 100,
-          lapisCustomCss: '',
-          lapisCustomBlocks: const <LapisCustomBlock>[],
-          lapisAppliedCssSha: lapisCssSha256(css),
-          lapisAppliedTemplateSha:
-              lapisCssSha256(normalizeCssForCompare(LapisNoteType.back)),
-          lapisMigratedBaselineSha: currentLapisBaselineSha,
-        ));
+    await _repository.updateSettings(
+      (AnkiSettings s) => s.copyWith(
+        lapisFontScalePercent: 100,
+        lapisCustomCss: '',
+        lapisCustomBlocks: const <LapisCustomBlock>[],
+        lapisAppliedCssSha: lapisCssSha256(css),
+        lapisAppliedTemplateSha: lapisCssSha256(
+          normalizeCssForCompare(LapisNoteType.back),
+        ),
+        lapisMigratedBaselineSha: currentLapisBaselineSha,
+      ),
+    );
     return LapisRestoreFactoryResult.restored;
   }
 
@@ -288,7 +295,8 @@ class LapisTemplateService {
       def = await _repository.readNoteTypeDefinition(LapisNoteType.modelName);
     } catch (e) {
       debugPrint(
-          'LapisTemplateService.autoMigrate: Anki unreachable, skipped: $e');
+        'LapisTemplateService.autoMigrate: Anki unreachable, skipped: $e',
+      );
       return;
     }
     if (def == null) return;
@@ -308,11 +316,14 @@ class LapisTemplateService {
       // 基线没变：用户没点 Apply 就不动 Anki。顺手把基线指纹补记上（老装置
       // 首次升级上来是 null），之后连判都不用判。
       if (settings.lapisMigratedBaselineSha != baselineSha) {
-        await _repository.updateSettings((AnkiSettings s) =>
-            s.copyWith(lapisMigratedBaselineSha: baselineSha));
+        await _repository.updateSettings(
+          (AnkiSettings s) => s.copyWith(lapisMigratedBaselineSha: baselineSha),
+        );
       }
-      debugPrint('LapisTemplateService.autoMigrate: baseline unchanged, '
-          'skipped (Apply is the only write gate)');
+      debugPrint(
+        'LapisTemplateService.autoMigrate: baseline unchanged, '
+        'skipped (Apply is the only write gate)',
+      );
       return;
     }
     final LapisStylingDecision decision = decideLapisStylingAction(
@@ -322,22 +333,26 @@ class LapisTemplateService {
     );
     switch (decision) {
       case LapisStylingDecision.upToDate:
-        await _repository.updateSettings((AnkiSettings s) => s.copyWith(
-              lapisAppliedCssSha:
-                  s.lapisAppliedCssSha ?? lapisCssSha256(expected),
-              lapisMigratedBaselineSha: baselineSha,
-            ));
+        await _repository.updateSettings(
+          (AnkiSettings s) => s.copyWith(
+            lapisAppliedCssSha:
+                s.lapisAppliedCssSha ?? lapisCssSha256(expected),
+            lapisMigratedBaselineSha: baselineSha,
+          ),
+        );
       case LapisStylingDecision.safeUpdate:
         // **不再自动写 Anki。** 这条路径原本的意义是「Fushi 出厂基线升级了，
         // 把新基线同步过去」——而基线现在取自用户自己的 Lapis，我们根本不再
         // 拥有基线，这个动作失去了前提。它同时是唯一一条「用户没点任何按钮就
         // 改他 Anki」的路径（用户反馈字体被改，这里是最大嫌疑）。保留判定只为
         // 记指纹，写入统一收敛到用户显式点「应用样式到 Anki」那一个闸门。
-        await _repository.updateSettings((AnkiSettings s) => s.copyWith(
-              lapisMigratedBaselineSha: baselineSha,
-            ));
-        debugPrint('LapisTemplateService.autoMigrate: write skipped by design '
-            '(Apply is the only write gate)');
+        await _repository.updateSettings(
+          (AnkiSettings s) => s.copyWith(lapisMigratedBaselineSha: baselineSha),
+        );
+        debugPrint(
+          'LapisTemplateService.autoMigrate: write skipped by design '
+          '(Apply is the only write gate)',
+        );
       case LapisStylingDecision.foreignEdit:
         // 用户手改过：不动，也不记基线（下次启动还要再判）。显式「应用」
         // 流程里有确认弹窗兜这条路。
@@ -365,36 +380,43 @@ class LapisTemplateService {
     if (def == null) {
       throw const FormatException('Malformed Lapis backup file');
     }
-    final AnkiNoteTypeDefinition? current =
-        await _repository.readNoteTypeDefinition(def.name);
+    final AnkiNoteTypeDefinition? current = await _repository
+        .readNoteTypeDefinition(def.name);
     if (current == null) {
       throw StateError('Lapis note type not found in Anki');
     }
     await _writeBackupFile(current);
-    final bool stylingOk =
-        await _repository.updateNoteTypeStyling(def.name, def.css);
+    final bool stylingOk = await _repository.updateNoteTypeStyling(
+      def.name,
+      def.css,
+    );
     if (!stylingOk) throw StateError('Backend rejected styling update');
     // styling 一旦落地，Fushi 侧客制化状态必须**立刻**对齐：settings 里
     // lapisCustomCss / lapisAppliedCssSha 描述的就是 styling，晚一步对齐就有一段
     // 「Anki 是恢复态、Fushi 期望态还是旧的」窗口，下次启动的漂移判定读到过期
     // 期望态。所以对齐排在卡模板写入之前——卡模板失败不该连累 styling 状态。
     final String? body = extractLapisUserSectionBody(def.css);
-    final LapisUserSectionSplit? split =
-        body == null ? null : splitLapisUserSectionBody(body);
-    await _repository.updateSettings((AnkiSettings s) => s.copyWith(
-          lapisFontScalePercent: split?.fontScalePercent ?? 100,
-          lapisCustomCss: split?.customCss ?? '',
-          lapisAppliedCssSha: body != null ? lapisCssSha256(def.css) : null,
-          clearLapisAppliedCssSha: body == null,
-          // 恢复是用户对「Anki 里该是什么」的显式决定，启动自动迁移不得把它
-          // 撤销：记下当前基线 = 这个基线已处理过，只有**将来**基线再变才推。
-          lapisMigratedBaselineSha: currentLapisBaselineSha,
-        ));
+    final LapisUserSectionSplit? split = body == null
+        ? null
+        : splitLapisUserSectionBody(body);
+    await _repository.updateSettings(
+      (AnkiSettings s) => s.copyWith(
+        lapisFontScalePercent: split?.fontScalePercent ?? 100,
+        lapisCustomCss: split?.customCss ?? '',
+        lapisAppliedCssSha: body != null ? lapisCssSha256(def.css) : null,
+        clearLapisAppliedCssSha: body == null,
+        // 恢复是用户对「Anki 里该是什么」的显式决定，启动自动迁移不得把它
+        // 撤销：记下当前基线 = 这个基线已处理过，只有**将来**基线再变才推。
+        lapisMigratedBaselineSha: currentLapisBaselineSha,
+      ),
+    );
     // 卡模板（settings 不持有其状态）单独写。返回 false = 后端拒写，必须上抛
     // 让 UI 报「恢复失败」——吞掉它会把「只恢复了 styling」谎报成完整恢复。
     if (def.templates.isNotEmpty) {
-      final bool templatesOk =
-          await _repository.updateNoteTypeTemplates(def.name, def.templates);
+      final bool templatesOk = await _repository.updateNoteTypeTemplates(
+        def.name,
+        def.templates,
+      );
       if (!templatesOk) {
         throw StateError('Backend rejected card template update');
       }
@@ -429,13 +451,17 @@ class LapisTemplateService {
     String back,
   ) async {
     await _writeBackupFile(def);
-    final bool stylingOk =
-        await _repository.updateNoteTypeStyling(def.name, css);
+    final bool stylingOk = await _repository.updateNoteTypeStyling(
+      def.name,
+      css,
+    );
     if (!stylingOk) throw StateError('Backend rejected styling update');
-    await _repository.updateSettings((AnkiSettings s) => s.copyWith(
-          lapisAppliedCssSha: lapisCssSha256(css),
-          lapisMigratedBaselineSha: currentLapisBaselineSha,
-        ));
+    await _repository.updateSettings(
+      (AnkiSettings s) => s.copyWith(
+        lapisAppliedCssSha: lapisCssSha256(css),
+        lapisMigratedBaselineSha: currentLapisBaselineSha,
+      ),
+    );
 
     // 只换 Lapis 那张卡的**背面**；正面与其它卡模板逐字节原样带回。正面我们
     // 从不写——区域只插在背面，把 vendored 正面推过去等于又一次「用内置副本
@@ -445,9 +471,11 @@ class LapisTemplateService {
       lapisTemplatesWithBack(def, back),
     );
     if (!templatesOk) throw StateError('Backend rejected card template update');
-    await _repository.updateSettings((AnkiSettings s) => s.copyWith(
-          lapisAppliedTemplateSha: lapisCssSha256(normalizeCssForCompare(back)),
-        ));
+    await _repository.updateSettings(
+      (AnkiSettings s) => s.copyWith(
+        lapisAppliedTemplateSha: lapisCssSha256(normalizeCssForCompare(back)),
+      ),
+    );
   }
 
   /// Anki 端当前的背面模板；取不到就退回 vendored（只在卡模板缺失时发生，那种
@@ -456,18 +484,22 @@ class LapisTemplateService {
       lapisCardTemplateOf(def)?.back ?? LapisNoteType.back;
 
   Future<LapisBackupOutcome> _writeBackupFile(
-      AnkiNoteTypeDefinition def) async {
+    AnkiNoteTypeDefinition def,
+  ) async {
     final Directory dir = await backupDirectory();
     // Windows 文件名不允许冒号；替换后仍保持字典序 == 时间序。
-    final String stamp =
-        DateTime.now().toUtc().toIso8601String().replaceAll(':', '-');
+    final String stamp = DateTime.now().toUtc().toIso8601String().replaceAll(
+      ':',
+      '-',
+    );
     final File file = File(p.join(dir.path, 'lapis-$stamp.json'));
     await file.writeAsString(
-        const JsonEncoder.withIndent('  ').convert(<String, dynamic>{
-      'version': 1,
-      'exportedAt': DateTime.now().toUtc().toIso8601String(),
-      'noteType': def.toJson(),
-    }));
+      const JsonEncoder.withIndent('  ').convert(<String, dynamic>{
+        'version': 1,
+        'exportedAt': DateTime.now().toUtc().toIso8601String(),
+        'noteType': def.toJson(),
+      }),
+    );
     // 保留策略只在这里生效：新备份已经落地（备份门已过），再按 90 天 / 最少
     // 10 份清理。顺序不能反——先删后写会在写盘失败时既没新备份也少了旧备份。
     return LapisBackupOutcome(file: file, pruned: await pruneBackups());

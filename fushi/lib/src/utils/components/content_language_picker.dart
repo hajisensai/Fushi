@@ -24,12 +24,12 @@ import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 /// 让手动指定的结果可验证。
 const List<({String? tag, String label})> kContentLanguageOptions =
     <({String? tag, String label})>[
-  (tag: 'ja', label: '日本語 (ja)'),
-  (tag: 'zh-Hans', label: '简体中文 (zh-Hans)'),
-  (tag: 'zh-Hant', label: '繁體中文 (zh-Hant)'),
-  (tag: 'ko', label: '한국어 (ko)'),
-  (tag: 'en', label: 'English (en)'),
-];
+      (tag: 'ja', label: '日本語 (ja)'),
+      (tag: 'zh-Hans', label: '简体中文 (zh-Hans)'),
+      (tag: 'zh-Hant', label: '繁體中文 (zh-Hant)'),
+      (tag: 'ko', label: '한국어 (ko)'),
+      (tag: 'en', label: 'English (en)'),
+    ];
 
 /// BCP-47 标签 -> 显示名。不认识的标签原样返回（用户可能手动写了别的语言）。
 String contentLanguageLabelOf(String tag) {
@@ -60,9 +60,9 @@ Future<void> showContentLanguagePicker({
   final FushiDesignTokens tokens = FushiDesignTokens.of(context);
   final List<({String? tag, String label})> options =
       <({String? tag, String label})>[
-    (tag: null, label: autoLabel ?? t.dict_language_auto),
-    ...kContentLanguageOptions,
-  ];
+        (tag: null, label: autoLabel ?? t.dict_language_auto),
+        ...kContentLanguageOptions,
+      ];
 
   return showAppDialog<void>(
     context: context,
@@ -100,8 +100,9 @@ Future<void> showContentLanguagePicker({
                     ? Text(autoDetected)
                     : null,
                 selected: current == option.tag,
-                trailing:
-                    current == option.tag ? const FushiIcon(Icons.check) : null,
+                trailing: current == option.tag
+                    ? const FushiIcon(Icons.check)
+                    : null,
                 onTap: () {
                   onSelected(option.tag);
                   Navigator.pop(dialogContext);

@@ -32,31 +32,41 @@ void main() {
     int position = 0,
     required String path,
     String? sourceUrl,
-  }) =>
-      MediaImagesCompanion.insert(
-        collectionId: Value<int?>(collectionId),
-        kind: kind.dbValue,
-        position: Value<int>(position),
-        path: path,
-        sourceUrl: Value<String?>(sourceUrl),
-      );
+  }) => MediaImagesCompanion.insert(
+    collectionId: Value<int?>(collectionId),
+    kind: kind.dbValue,
+    position: Value<int>(position),
+    path: path,
+    sourceUrl: Value<String?>(sourceUrl),
+  );
 
   test('合集归属：整组替换幂等 + 读回按 kind/position 排序', () async {
     final FushiDatabase db = await openDb();
     final int id = await db.createMediaCollection('c1');
 
     await db.replaceMediaImagesForCollection(id, <MediaImagesCompanion>[
-      collectionImage(id,
-          kind: MediaImageKind.backdrop, position: 1, path: '/b1.jpg'),
-      collectionImage(id,
-          kind: MediaImageKind.backdrop, position: 0, path: '/b0.jpg'),
+      collectionImage(
+        id,
+        kind: MediaImageKind.backdrop,
+        position: 1,
+        path: '/b1.jpg',
+      ),
+      collectionImage(
+        id,
+        kind: MediaImageKind.backdrop,
+        position: 0,
+        path: '/b0.jpg',
+      ),
       collectionImage(id, kind: MediaImageKind.logo, path: '/logo.png'),
     ]);
     // 再替换一次（重刮）：不残留上一轮的行。
     await db.replaceMediaImagesForCollection(id, <MediaImagesCompanion>[
       collectionImage(id, kind: MediaImageKind.backdrop, path: '/b0v2.jpg'),
-      collectionImage(id,
-          kind: MediaImageKind.titleCard, path: '/titlecard.jpg'),
+      collectionImage(
+        id,
+        kind: MediaImageKind.titleCard,
+        path: '/titlecard.jpg',
+      ),
     ]);
 
     final List<MediaImageRow> rows = await db.getMediaImagesForCollection(id);
@@ -69,11 +79,13 @@ void main() {
   test('视频归属：整组替换 + 与合集归属互不串桶', () async {
     final FushiDatabase db = await openDb();
     final int cid = await db.createMediaCollection('c1');
-    await db.upsertVideoBook(const VideoBooksCompanion(
-      bookUid: Value<String>('video/movie1'),
-      title: Value<String>('Movie 1'),
-      videoPath: Value<String>('/abs/m1.mkv'),
-    ));
+    await db.upsertVideoBook(
+      const VideoBooksCompanion(
+        bookUid: Value<String>('video/movie1'),
+        title: Value<String>('Movie 1'),
+        videoPath: Value<String>('/abs/m1.mkv'),
+      ),
+    );
 
     await db.replaceMediaImagesForCollection(cid, <MediaImagesCompanion>[
       collectionImage(cid, kind: MediaImageKind.backdrop, path: '/c_b0.jpg'),
@@ -87,38 +99,52 @@ void main() {
     ]);
 
     expect(
-        (await db.getMediaImagesForCollection(cid)).single.path, '/c_b0.jpg');
-    expect((await db.getMediaImagesForBook('video/movie1')).single.path,
-        '/v_b0.jpg');
+      (await db.getMediaImagesForCollection(cid)).single.path,
+      '/c_b0.jpg',
+    );
+    expect(
+      (await db.getMediaImagesForBook('video/movie1')).single.path,
+      '/v_b0.jpg',
+    );
     expect(await db.getAllMediaImages(), hasLength(2));
   });
 
   test('CHECK 单一归属：双归属与零归属都被 DB 拒绝', () async {
     final FushiDatabase db = await openDb();
     final int cid = await db.createMediaCollection('c1');
-    await db.upsertVideoBook(const VideoBooksCompanion(
-      bookUid: Value<String>('video/movie1'),
-      title: Value<String>('Movie 1'),
-      videoPath: Value<String>('/abs/m1.mkv'),
-    ));
+    await db.upsertVideoBook(
+      const VideoBooksCompanion(
+        bookUid: Value<String>('video/movie1'),
+        title: Value<String>('Movie 1'),
+        videoPath: Value<String>('/abs/m1.mkv'),
+      ),
+    );
 
     // 零归属。
     await expectLater(
-      db.into(db.mediaImages).insert(MediaImagesCompanion.insert(
-            kind: MediaImageKind.logo.dbValue,
-            path: '/orphan.png',
-          )),
+      db
+          .into(db.mediaImages)
+          .insert(
+            MediaImagesCompanion.insert(
+              kind: MediaImageKind.logo.dbValue,
+              path: '/orphan.png',
+            ),
+          ),
       throwsA(anything),
       reason: '归属双空的图行谁都回收不了 = 确定性泄漏，必须在 DB 层拒收',
     );
     // 双归属。
     await expectLater(
-      db.into(db.mediaImages).insert(MediaImagesCompanion.insert(
-            collectionId: Value<int?>(cid),
-            bookUid: const Value<String?>('video/movie1'),
-            kind: MediaImageKind.logo.dbValue,
-            path: '/both.png',
-          )),
+      db
+          .into(db.mediaImages)
+          .insert(
+            MediaImagesCompanion.insert(
+              collectionId: Value<int?>(cid),
+              bookUid: const Value<String?>('video/movie1'),
+              kind: MediaImageKind.logo.dbValue,
+              path: '/both.png',
+            ),
+          ),
       throwsA(anything),
       reason: '双归属行删除语义不可判定（跟谁 cascade？），必须在 DB 层拒收',
     );
@@ -126,11 +152,13 @@ void main() {
 
   test('删视频 → 视频归属行 FK cascade 清空', () async {
     final FushiDatabase db = await openDb();
-    await db.upsertVideoBook(const VideoBooksCompanion(
-      bookUid: Value<String>('video/movie1'),
-      title: Value<String>('Movie 1'),
-      videoPath: Value<String>('/abs/m1.mkv'),
-    ));
+    await db.upsertVideoBook(
+      const VideoBooksCompanion(
+        bookUid: Value<String>('video/movie1'),
+        title: Value<String>('Movie 1'),
+        videoPath: Value<String>('/abs/m1.mkv'),
+      ),
+    );
     await db.replaceMediaImagesForBook('video/movie1', <MediaImagesCompanion>[
       MediaImagesCompanion.insert(
         bookUid: const Value<String?>('video/movie1'),
@@ -141,7 +169,10 @@ void main() {
     expect(await db.getAllMediaImages(), hasLength(1));
 
     await db.deleteVideoBook('video/movie1');
-    expect(await db.getAllMediaImages(), isEmpty,
-        reason: '删视频必须连带清它的附加图行（FK cascade）');
+    expect(
+      await db.getAllMediaImages(),
+      isEmpty,
+      reason: '删视频必须连带清它的附加图行（FK cascade）',
+    );
   });
 }

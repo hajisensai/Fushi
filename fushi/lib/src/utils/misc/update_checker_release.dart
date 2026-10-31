@@ -25,8 +25,9 @@ const List<String> kGitHubRepoFallbacks = <String>[
 ];
 
 final RegExp _kBetaReleaseTagPattern = RegExp(r'^v\d+(?:\.\d+)*-beta\.\d+$');
-final RegExp _kDebugReleaseTagPattern =
-    RegExp(r'^v\d+(?:\.\d+)*-debug\.\d+\+[0-9A-Fa-f]{7,40}$');
+final RegExp _kDebugReleaseTagPattern = RegExp(
+  r'^v\d+(?:\.\d+)*-debug\.\d+\+[0-9A-Fa-f]{7,40}$',
+);
 final RegExp _kBetaVersionPattern = RegExp(r'^\d+(?:\.\d+)*-beta\.\d+$');
 final RegExp _kDebugVersionPattern = RegExp(r'^\d+(?:\.\d+)*-debug\.\d+$');
 
@@ -67,9 +68,9 @@ class UpdateChecker {
   static bool _notifyIfUpdateFlowActive(BuildContext context, String version) {
     if (!_activeUpdateFlows.containsKey(_updateFlowKey(version))) return false;
     if (!_openUpdateDialogVersions.contains(version) && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        FushiSnackBar(content: Text(t.update_downloading)),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(FushiSnackBar(content: Text(t.update_downloading)));
     }
     return true;
   }
@@ -124,8 +125,10 @@ class UpdateChecker {
     // TODO-898 必修2：仅测试注入 fake「拉 release」函数指针，生产恒 null。
     @visibleForTesting
     Future<List<Map<String, dynamic>>> Function(
-            HttpClient client, UpdateChannel channel)?
-        fetchReleasesForTesting,
+      HttpClient client,
+      UpdateChannel channel,
+    )?
+    fetchReleasesForTesting,
   }) {
     // 集成测试短路：见 [disableAutoCheckForTesting]。
     if (disableAutoCheckForTesting) return Future<void>.value();
@@ -140,8 +143,8 @@ class UpdateChecker {
     final UpdateChannel channel = debugChannel
         ? UpdateChannel.debug
         : betaChannel
-            ? UpdateChannel.beta
-            : UpdateChannel.stable;
+        ? UpdateChannel.beta
+        : UpdateChannel.stable;
     // BUG-846「谁后用谁」：算出本机 release sequence（beta/debug 版本串已带 `-<channel>.<seq>`
     // 直接取；无后缀 `X.Y.Z`（正式版包 / 本地 build）用平台构建号反解），透到比较层做跨轨
     // 序号全序比较。**不再**把本机版本伪造成 `<base>-<channel>.<seq>` 串——那会把真正的正式版
@@ -152,18 +155,20 @@ class UpdateChecker {
     );
     final Completer<void> completer = Completer<void>();
     SchedulerBinding.instance.addPostFrameCallback((_) {
-      _check(context, currentVersion,
-              currentReleaseSeq: currentReleaseSeq,
-              neverRemind: neverRemind,
-              autoInstall: autoInstall,
-              channel: channel,
-              customProxy: customProxy,
-              onUpToDate: onUpToDate,
-              onError: onError,
-              onUpdateAvailable: onUpdateAvailable,
-              cacheWriter: cacheWriter,
-              fetchReleases: fetchReleasesForTesting)
-          .whenComplete(() {
+      _check(
+        context,
+        currentVersion,
+        currentReleaseSeq: currentReleaseSeq,
+        neverRemind: neverRemind,
+        autoInstall: autoInstall,
+        channel: channel,
+        customProxy: customProxy,
+        onUpToDate: onUpToDate,
+        onError: onError,
+        onUpdateAvailable: onUpdateAvailable,
+        cacheWriter: cacheWriter,
+        fetchReleases: fetchReleasesForTesting,
+      ).whenComplete(() {
         if (!completer.isCompleted) completer.complete();
       });
     });
@@ -194,8 +199,10 @@ class UpdateChecker {
       try {
         handoffRecord = await WindowsUpdateHandoff.read(markerFile);
         if (handoffRecord != null && handoffRecord.installerPath.isNotEmpty) {
-          handoffInstallerName =
-              handoffRecord.installerPath.replaceAll(r'\', '/').split('/').last;
+          handoffInstallerName = handoffRecord.installerPath
+              .replaceAll(r'\', '/')
+              .split('/')
+              .last;
         }
       } catch (e) {
         debugPrint('[UpdateChecker] cleanup read handoff failed: $e');
@@ -219,21 +226,26 @@ class UpdateChecker {
           // 为今日→保留；promote 后残留的空根 / 无活动 >7 天→回收）。旧逻辑传 epoch-0 假
           // mtime 并在此内联删子目录，空根只靠被吞的 best-effort `deleteSync` 兜底，从不被
           // 确定性回收，导致空 `.staging` 根无限堆积。
-          dirEntries.add(UpdateDirEntry(
-            name: name,
-            isDirectory: true,
-            modified: entity.statSync().modified,
-          ));
+          dirEntries.add(
+            UpdateDirEntry(
+              name: name,
+              isDirectory: true,
+              modified: entity.statSync().modified,
+            ),
+          );
           continue;
         }
         if (entity is! File) continue;
-        dirEntries.add(UpdateDirEntry(
-          name: name,
-          isDirectory: false,
-          modified: entity.statSync().modified,
-        ));
+        dirEntries.add(
+          UpdateDirEntry(
+            name: name,
+            isDirectory: false,
+            modified: entity.statSync().modified,
+          ),
+        );
         // 既有职责：清理过期的临时/元数据文件（.part/.meta.json/.owner.json）。
-        final bool isTemporary = name.endsWith('.part') ||
+        final bool isTemporary =
+            name.endsWith('.part') ||
             name.endsWith('.meta.json') ||
             name.endsWith('.owner.json');
         if (!isTemporary) continue;
@@ -256,8 +268,10 @@ class UpdateChecker {
       // `.staging` 暂存根回收现随完整包 GC 一并按 mtime 处理（TODO-1149），marker 损坏时
       // 一并保守跳过本轮，下一轮正常清理（暂存根是下载 scratch，多留一轮无害）。
       if (skipFullPackageCleanup) {
-        debugPrint('[UpdateChecker] handoff marker present but unreadable; '
-            'skipping full-package cleanup this pass (fail-safe)');
+        debugPrint(
+          '[UpdateChecker] handoff marker present but unreadable; '
+          'skipping full-package cleanup this pass (fail-safe)',
+        );
         return;
       }
       final List<String> stale = selectStaleUpdateArtifacts(
@@ -303,8 +317,10 @@ class UpdateChecker {
     // 走现有 _fetchReleasesForChannel（生产路径零改动，不拆 _check 网络层）；
     // 测试传 fake fetcher 即可覆盖三回调路径，不触网络。
     Future<List<Map<String, dynamic>>> Function(
-            HttpClient client, UpdateChannel channel)?
-        fetchReleases,
+      HttpClient client,
+      UpdateChannel channel,
+    )?
+    fetchReleases,
   }) async {
     final PlatformUpdater updater = updaterForCurrentPlatform();
     if (!updater.supportsUpdateCheck) return;
@@ -333,12 +349,12 @@ class UpdateChecker {
           await (fetchReleases ?? _fetchReleasesForChannel)(client, channel);
       final UpdateReleaseSelection? selection =
           await selectUpdateReleaseForCurrentPlatform(
-        releases,
-        currentVersion: currentVersion,
-        currentReleaseSeq: currentReleaseSeq,
-        channel: channel,
-        updater: updater,
-      );
+            releases,
+            currentVersion: currentVersion,
+            currentReleaseSeq: currentReleaseSeq,
+            channel: channel,
+            updater: updater,
+          );
       if (selection == null) {
         // 无匹配 release = 等价「无可更新版本」（TODO-898）。
         onUpToDate?.call();
@@ -376,9 +392,13 @@ class UpdateChecker {
       // selection 非空即已按 asset 版本判定为「比本机新」；这里保留防御性再判一次。
       // BUG-846：远端 seq 用所选 release 顶层 releaseSequence（正式版无预发布串靠它），
       // 本机 seq 用透传下来的 currentReleaseSeq，与选择阶段同源。
-      if (!isUpdateVersionNewer(version, currentVersion, channel,
-          remoteSeq: json['releaseSequence'] as int?,
-          localSeq: currentReleaseSeq)) {
+      if (!isUpdateVersionNewer(
+        version,
+        currentVersion,
+        channel,
+        remoteSeq: json['releaseSequence'] as int?,
+        localSeq: currentReleaseSeq,
+      )) {
         // 已是最新（TODO-898）。
         onUpToDate?.call();
         return;
@@ -402,8 +422,9 @@ class UpdateChecker {
         if (htmlUrl != null) {
           if (!context.mounted) return;
           if (_notifyIfUpdateFlowActive(context, version)) return;
-          final UpdateLanding landing =
-              await updater.resolveDownloadLanding(htmlUrl);
+          final UpdateLanding landing = await updater.resolveDownloadLanding(
+            htmlUrl,
+          );
           if (!context.mounted) return;
           _showFallbackDialog(context, version, releaseBody, landing, htmlUrl);
         }
@@ -419,7 +440,8 @@ class UpdateChecker {
       // TODO-1197/1198 泛化到 macOS（Phase 3）：Windows 靠 Inno DeleteFile code5
       // 死循环，macOS 靠 zip 替换失败死循环，两者同策——同一目标版本上一轮握手没
       // 落地就退回手动确认，不再静默重下重启。各平台读各自的握手标记。
-      final bool autoInstallBackoff = canInstall &&
+      final bool autoInstallBackoff =
+          canInstall &&
           autoInstall &&
           ((Platform.isWindows &&
                   await _shouldBackOffWindowsAutoInstall(version)) ||
@@ -428,17 +450,29 @@ class UpdateChecker {
       if (!context.mounted) return;
       if (_notifyIfUpdateFlowActive(context, version)) return;
       if (canInstall && autoInstall && !autoInstallBackoff) {
-        _downloadAndInstall(context, asset!, version, updater,
-            customProxy: customProxy);
+        _downloadAndInstall(
+          context,
+          asset!,
+          version,
+          updater,
+          customProxy: customProxy,
+        );
       } else if (canInstall) {
-        _showUpdateDialog(context, version, releaseBody, asset!, updater,
-            customProxy: customProxy);
+        _showUpdateDialog(
+          context,
+          version,
+          releaseBody,
+          asset!,
+          updater,
+          customProxy: customProxy,
+        );
       } else {
         // 能检查但不能自装（本期 iOS/Linux）：弹「前往下载」→ 本平台分发入口。
         final String? htmlUrl = json['html_url'] as String?;
         if (htmlUrl != null) {
-          final UpdateLanding landing =
-              await updater.resolveDownloadLanding(htmlUrl);
+          final UpdateLanding landing = await updater.resolveDownloadLanding(
+            htmlUrl,
+          );
           if (!context.mounted) return;
           _showFallbackDialog(context, version, releaseBody, landing, htmlUrl);
         }
@@ -480,8 +514,11 @@ class UpdateChecker {
         candidateVersion: candidateVersion,
       );
     } catch (e, stack) {
-      ErrorLogService.instance
-          .log('UpdateChecker.autoInstallBackoff', e, stack);
+      ErrorLogService.instance.log(
+        'UpdateChecker.autoInstallBackoff',
+        e,
+        stack,
+      );
       debugPrint('[Fushi] auto-install backoff check failed: $e');
       return false;
     }
@@ -508,11 +545,12 @@ class UpdateChecker {
           // 失败），当应用错误刷进报错日志纯属噪声。降级为诊断/取证——仍随上传带走供排障，
           // 但不进用户可见错误计数/正文（真解析/逻辑错走下面的 log()）。
           ErrorLogService.instance.logDiagnostic(
-              'UpdateChecker.httpGet',
-              t.update_network_failure(
-                host: host,
-                reason: describeUpdateNetworkFailureReason(error),
-              ));
+            'UpdateChecker.httpGet',
+            t.update_network_failure(
+              host: host,
+              reason: describeUpdateNetworkFailureReason(error),
+            ),
+          );
         } else {
           ErrorLogService.instance.log('UpdateChecker.httpGet', error);
         }
@@ -622,8 +660,9 @@ class UpdateChecker {
     return list
         .whereType<Map<String, dynamic>>()
         .where((Map<String, dynamic> release) {
-      return releaseMatchesUpdateChannel(release, channel);
-    }).toList(growable: false);
+          return releaseMatchesUpdateChannel(release, channel);
+        })
+        .toList(growable: false);
   }
 
   /// beta/debug 镜像清单读取（TODO-705 方案 A）：取该通道的 `latest-<channel>.json`
@@ -635,12 +674,15 @@ class UpdateChecker {
     HttpClient client,
     UpdateChannel channel,
   ) async {
-    for (final MapEntry<String, String> candidate
-        in manifestUrlsForChannel(channel).entries) {
+    for (final MapEntry<String, String> candidate in manifestUrlsForChannel(
+      channel,
+    ).entries) {
       final String? body = await _httpGetString(client, candidate.value);
       if (body == null) continue;
-      final Map<String, dynamic>? release =
-          buildReleaseFromManifest(body, repo: candidate.key);
+      final Map<String, dynamic>? release = buildReleaseFromManifest(
+        body,
+        repo: candidate.key,
+      );
       if (release == null) continue;
       if (!releaseMatchesUpdateChannel(release, channel)) continue;
       return release;
@@ -656,9 +698,11 @@ class UpdateChecker {
   /// 两条路返回值结构一致，对上层 [_fetchReleasesForChannel] /
   /// [selectUpdateReleaseForCurrentPlatform] 完全透明——纯叠加，不破坏既有行为。
   static Future<Map<String, dynamic>?> _fetchStableRelease(
-      HttpClient client) async {
-    final _StableRedirectTag? redirect =
-        await _fetchStableTagViaRedirect(client);
+    HttpClient client,
+  ) async {
+    final _StableRedirectTag? redirect = await _fetchStableTagViaRedirect(
+      client,
+    );
     if (redirect != null) {
       final Map<String, dynamic> release = buildStableReleaseFromTag(
         redirect.tag,
@@ -673,7 +717,8 @@ class UpdateChecker {
 
   /// 原 `api.github.com/.../releases/latest` 直连路径（保留作 302 失败后的回退）。
   static Future<Map<String, dynamic>?> _fetchStableReleaseViaApi(
-      HttpClient client) async {
+    HttpClient client,
+  ) async {
     final body = await _httpGetStringFromGitHubRepos(
       client,
       (String repo) => 'https://api.github.com/repos/$repo/releases/latest',
@@ -695,7 +740,8 @@ class UpdateChecker {
   /// 复用 [fetchFirstSuccessfulBody] 保持「直连恒首位 / 逐镜像回退 / 任一成功即成功 /
   /// 全失败才失败 / 失败记日志」不变式（与 [_httpGetString] 同一范式）。
   static Future<_StableRedirectTag?> _fetchStableTagViaRedirect(
-      HttpClient client) async {
+    HttpClient client,
+  ) async {
     for (final String repo in kGitHubRepoFallbacks) {
       final String? tag = await fetchFirstSuccessfulBody(
         updateCheckUrls(stableReleasesLatestUrlForRepo(repo)),
@@ -704,11 +750,12 @@ class UpdateChecker {
           if (error == null || isExpectedUpdateNetworkFailure(error)) {
             // TODO-1083：见上——预期的镜像不可达降级为诊断，不进用户可见报错日志。
             ErrorLogService.instance.logDiagnostic(
-                'UpdateChecker.redirectTag',
-                t.update_network_failure(
-                  host: host,
-                  reason: describeUpdateNetworkFailureReason(error),
-                ));
+              'UpdateChecker.redirectTag',
+              t.update_network_failure(
+                host: host,
+                reason: describeUpdateNetworkFailureReason(error),
+              ),
+            );
           } else {
             ErrorLogService.instance.log('UpdateChecker.redirectTag', error);
           }
@@ -733,8 +780,9 @@ class UpdateChecker {
       request.followRedirects = false;
       final HttpClientResponse response = await request.close();
       final int code = response.statusCode;
-      final String? location =
-          response.headers.value(HttpHeaders.locationHeader);
+      final String? location = response.headers.value(
+        HttpHeaders.locationHeader,
+      );
       await response.drain<void>();
       if (code >= 300 && code < 400) {
         return parseLatestTagFromRedirectLocation(location);
@@ -771,8 +819,13 @@ class UpdateChecker {
         ),
       );
       if (!download || !context.mounted) return;
-      await _runDownloadAndInstall(context, asset, version, updater,
-          customProxy: customProxy);
+      await _runDownloadAndInstall(
+        context,
+        asset,
+        version,
+        updater,
+        customProxy: customProxy,
+      );
     });
   }
 
@@ -821,8 +874,9 @@ class UpdateChecker {
               mode: LaunchMode.externalApplication,
             );
           },
-          secondaryLabel:
-              showReleasePageAction ? t.update_release_page_open : null,
+          secondaryLabel: showReleasePageAction
+              ? t.update_release_page_open
+              : null,
           onSecondary: showReleasePageAction
               ? () {
                   Navigator.of(ctx).pop();
@@ -846,13 +900,18 @@ class UpdateChecker {
   }) async {
     return _runExclusiveUpdateFlow(
       _updateFlowKey(version),
-      () => _runDownloadAndInstall(context, asset, version, updater,
-          customProxy: customProxy),
+      () => _runDownloadAndInstall(
+        context,
+        asset,
+        version,
+        updater,
+        customProxy: customProxy,
+      ),
       onAlreadyActive: () {
         if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            FushiSnackBar(content: Text(t.update_downloading)),
-          );
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(FushiSnackBar(content: Text(t.update_downloading)));
         }
       },
     );
@@ -1044,13 +1103,16 @@ class UpdateChecker {
       // 用户主动取消（TODO-738）：不是失败，不记错误日志、不弹「下载失败」。
       debugPrint('[Fushi] update download cancelled by user');
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          FushiSnackBar(content: Text(t.update_cancelled)),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(FushiSnackBar(content: Text(t.update_cancelled)));
       }
     } catch (e, stack) {
-      ErrorLogService.instance
-          .log('UpdateChecker.downloadAndInstall', e, stack);
+      ErrorLogService.instance.log(
+        'UpdateChecker.downloadAndInstall',
+        e,
+        stack,
+      );
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           FushiSnackBar(content: Text('${t.update_download_failed}: $e')),
@@ -1090,7 +1152,10 @@ class UpdateChecker {
       final String? notice = _downloadSourceUnavailableNotice(plan);
       onSourceNotice?.call(notice);
       if (notice != null) {
-        ErrorLogService.instance.logDiagnostic('UpdateChecker.download', notice);
+        ErrorLogService.instance.logDiagnostic(
+          'UpdateChecker.download',
+          notice,
+        );
       }
       return downloadUpdateAsset(
         asset: target,
@@ -1107,13 +1172,18 @@ class UpdateChecker {
           if (isExpectedUpdateNetworkFailure(error)) {
             // TODO-1083：预期的镜像不可达降级为诊断，不进用户可见报错日志。
             ErrorLogService.instance.logDiagnostic(
-                'UpdateChecker.download',
-                t.update_network_failure(
-                  host: hostLabelForUpdateUrl(url),
-                  reason: describeUpdateNetworkFailureReason(error),
-                ));
+              'UpdateChecker.download',
+              t.update_network_failure(
+                host: hostLabelForUpdateUrl(url),
+                reason: describeUpdateNetworkFailureReason(error),
+              ),
+            );
           } else {
-            ErrorLogService.instance.log('UpdateChecker.download', error, stack);
+            ErrorLogService.instance.log(
+              'UpdateChecker.download',
+              error,
+              stack,
+            );
           }
           debugPrint('[Fushi] download source failed ($url): $error');
         },
@@ -1140,7 +1210,10 @@ class UpdateChecker {
     // TODO-1149：下载完成即回收同通道旧包 / 残留 staging 根（不等下次 GC / 启动 reconcile）。
     // protect 刚下好的这个包（activeAssetFileName）——它正等安装 / handoff，绝不能被回收。
     // best-effort：GC 全程 try/catch 吞异常，失败绝不影响安装流程。
-    await _cleanupOldApks(version, activeAssetFileName: _leafName(outFile.path));
+    await _cleanupOldApks(
+      version,
+      activeAssetFileName: _leafName(outFile.path),
+    );
     return outFile;
   }
 
@@ -1171,7 +1244,8 @@ class UpdateChecker {
         Error.throwWithStackTrace(error, stack);
       }
       debugPrint(
-          '[Fushi] download asset 404 (stale manifest?); re-resolving manifest');
+        '[Fushi] download asset 404 (stale manifest?); re-resolving manifest',
+      );
       final UpdateAsset? fresh = await reResolveAsset();
       if (fresh == null || fresh.url == asset.url) {
         // 重取拿不到新 asset，或 URL 未变（asset 真被删且 manifest 尚未更新）——
@@ -1204,13 +1278,15 @@ class UpdateChecker {
       // （预发布串自带 seq；正式版无 buildNumber 上下文 → null → 同基保守，不影响换 URL）。
       final UpdateReleaseSelection? selection =
           await selectUpdateReleaseForCurrentPlatform(
-        releases,
-        currentVersion: version,
-        currentReleaseSeq:
-            currentReleaseSequence(version: version, buildNumber: null),
-        channel: channel,
-        updater: updater,
-      );
+            releases,
+            currentVersion: version,
+            currentReleaseSeq: currentReleaseSequence(
+              version: version,
+              buildNumber: null,
+            ),
+            channel: channel,
+            updater: updater,
+          );
       return selection?.asset;
     } catch (e, stack) {
       ErrorLogService.instance.log('UpdateChecker.reResolveAsset', e, stack);
@@ -1245,9 +1321,9 @@ class UpdateChecker {
       final Directory updatesDir = await _updatesDirectoryForCurrentPlatform();
       final WindowsUpdateHandoffResult? result =
           await WindowsUpdateHandoff.reconcile(
-        markerFile: WindowsUpdateHandoff.markerFile(updatesDir),
-        currentVersion: currentVersion,
-      );
+            markerFile: WindowsUpdateHandoff.markerFile(updatesDir),
+            currentVersion: currentVersion,
+          );
       if (result == null) return;
 
       // TODO-1089 根因修复：握手确认已成功安装到目标版本时，被这次更新安装的 setup.exe
@@ -1266,8 +1342,11 @@ class UpdateChecker {
           if (await installer.exists()) await installer.delete();
         } catch (e, stack) {
           // best-effort：删失败（AV/索引器占用等）不影响成功提示；下次 7 天 GC 兜底。
-          ErrorLogService.instance
-              .log('UpdateChecker.windowsHandoff.deleteInstaller', e, stack);
+          ErrorLogService.instance.log(
+            'UpdateChecker.windowsHandoff.deleteInstaller',
+            e,
+            stack,
+          );
           debugPrint('[Fushi] delete installed update installer failed: $e');
         }
       }
@@ -1279,10 +1358,10 @@ class UpdateChecker {
       // 越界删任意路径。
       final String? stagingDirToDelete =
           stagingDirToDeleteAfterSuccessfulHandoff(
-        installed: result.status == WindowsUpdateHandoffStatus.installed,
-        installerPath: result.record.installerPath,
-        updatesDirPath: updatesDir.path,
-      );
+            installed: result.status == WindowsUpdateHandoffStatus.installed,
+            installerPath: result.record.installerPath,
+            updatesDirPath: updatesDir.path,
+          );
       if (stagingDirToDelete != null) {
         try {
           final Directory stagingDir = Directory(stagingDirToDelete);
@@ -1291,8 +1370,11 @@ class UpdateChecker {
           }
         } catch (e, stack) {
           // best-effort：删失败（AV/句柄占用等）不影响成功提示；下次 GC 按 mtime 兜底。
-          ErrorLogService.instance
-              .log('UpdateChecker.windowsHandoff.deleteStaging', e, stack);
+          ErrorLogService.instance.log(
+            'UpdateChecker.windowsHandoff.deleteStaging',
+            e,
+            stack,
+          );
           debugPrint('[Fushi] delete installed update staging dir failed: $e');
         }
       }
@@ -1315,11 +1397,7 @@ class UpdateChecker {
         builder: (_) => WindowsUpdateHandoffResultDialog(result: result),
       );
     } catch (e, stack) {
-      ErrorLogService.instance.log(
-        'UpdateChecker.windowsHandoff',
-        e,
-        stack,
-      );
+      ErrorLogService.instance.log('UpdateChecker.windowsHandoff', e, stack);
       debugPrint('[Fushi] windows update handoff reconcile failed: $e');
     }
   }
@@ -1338,8 +1416,11 @@ class UpdateChecker {
         candidateVersion: candidateVersion,
       );
     } catch (e, stack) {
-      ErrorLogService.instance
-          .log('UpdateChecker.macAutoInstallBackoff', e, stack);
+      ErrorLogService.instance.log(
+        'UpdateChecker.macAutoInstallBackoff',
+        e,
+        stack,
+      );
       debugPrint('[Fushi] mac auto-install backoff check failed: $e');
       return false;
     }
@@ -1420,7 +1501,8 @@ class UpdateChecker {
                   Navigator.of(ctx).pop();
                   launchUrl(
                     Uri.parse(
-                        'https://github.com/$kGitHubRepo/releases/latest'),
+                      'https://github.com/$kGitHubRepo/releases/latest',
+                    ),
                     mode: LaunchMode.externalApplication,
                   );
                 },
@@ -1469,8 +1551,10 @@ class UpdateChecker {
 
   static bool canShowDialogFromContext(BuildContext context) {
     if (!context.mounted) return false;
-    final NavigatorState? navigator =
-        Navigator.maybeOf(context, rootNavigator: true);
+    final NavigatorState? navigator = Navigator.maybeOf(
+      context,
+      rootNavigator: true,
+    );
     return navigator != null && navigator.mounted;
   }
 }
@@ -1510,8 +1594,9 @@ String _releaseDownloadBaseForRepo(String repo) {
 @visibleForTesting
 String? parseLatestTagFromRedirectLocation(String? location) {
   if (location == null) return null;
-  final RegExpMatch? match =
-      RegExp(r'releases/tag/(v?[^/?#]+)').firstMatch(location);
+  final RegExpMatch? match = RegExp(
+    r'releases/tag/(v?[^/?#]+)',
+  ).firstMatch(location);
   if (match == null) return null;
   final String rawTag = Uri.decodeComponent(match.group(1)!);
   final String? normalized = normalizeReleaseVersionTag(rawTag);
@@ -1625,17 +1710,17 @@ String? manifestUrlForChannel(UpdateChannel channel) {
 Map<String, String> manifestUrlsForChannel(UpdateChannel channel) {
   return switch (channel) {
     UpdateChannel.beta => const <String, String>{
-        kGitHubRepo: kBetaManifestUrl,
-        kLegacyGitHubRepo: kLegacyBetaManifestUrl,
-      },
+      kGitHubRepo: kBetaManifestUrl,
+      kLegacyGitHubRepo: kLegacyBetaManifestUrl,
+    },
     UpdateChannel.debug => const <String, String>{
-        kGitHubRepo: kDebugManifestUrl,
-        kLegacyGitHubRepo: kLegacyDebugManifestUrl,
-      },
+      kGitHubRepo: kDebugManifestUrl,
+      kLegacyGitHubRepo: kLegacyDebugManifestUrl,
+    },
     UpdateChannel.stable => const <String, String>{
-        kGitHubRepo: kStableManifestUrl,
-        kLegacyGitHubRepo: kLegacyStableManifestUrl,
-      },
+      kGitHubRepo: kStableManifestUrl,
+      kLegacyGitHubRepo: kLegacyStableManifestUrl,
+    },
   };
 }
 
@@ -1677,8 +1762,9 @@ Map<String, dynamic>? buildReleaseFromManifest(
   final String tag = tagRaw.trim();
   if (tag.isEmpty) return null;
 
-  final String body0 =
-      decoded['notes'] is String ? decoded['notes'] as String : '';
+  final String body0 = decoded['notes'] is String
+      ? decoded['notes'] as String
+      : '';
   final bool prerelease = decoded['prerelease'] == true;
   // TODO-1205 / BUG-846：透传顶层 `releaseSequence`（CI `merge_update_manifest.py` 写的
   // 全平台最大 seq）。正式版无预发布串带不了 seq，跨轨「谁后用谁」比较全靠它。
@@ -1729,10 +1815,7 @@ Map<String, dynamic>? buildReleaseFromManifest(
 }
 
 class _StableRedirectTag {
-  const _StableRedirectTag({
-    required this.repo,
-    required this.tag,
-  });
+  const _StableRedirectTag({required this.repo, required this.tag});
 
   final String repo;
   final String tag;
@@ -1753,37 +1836,48 @@ Future<UpdateReleaseSelection?> selectUpdateReleaseForCurrentPlatform(
   // 排序键=「谁后构建谁赢」：基版本降序 → 同基按 release sequence 降序（三通道同尺，正式版
   // seq 从 manifest 顶层 releaseSequence 取，预发布 seq 即版本串尾号）。与 isUpdateVersionNewer
   // 同尺，消除「排序偏预发布轨 vs 判据偏正式版」不一致这个乒乓根源。
-  final List<Map<String, dynamic>> ordered = releases
-      .where((Map<String, dynamic> r) => releaseEligibleForChannel(r, channel))
-      .toList()
-    ..sort((Map<String, dynamic> a, Map<String, dynamic> b) {
-      final String va =
-          normalizeReleaseVersionTag(a['tag_name'] as String? ?? '') ?? '';
-      final String vb =
-          normalizeReleaseVersionTag(b['tag_name'] as String? ?? '') ?? '';
-      // 降序：新的在前。seq 从各自 release map 顶层取（正式版 302 回退无 → null）。
-      final int recency = _compareReleaseRecency(vb, va,
-          seqA: b['releaseSequence'] as int?,
-          seqB: a['releaseSequence'] as int?);
-      if (recency != 0) return recency;
-      // 同一次构建（同基同序号）出了多个轨道的包：优先用户自己的轨道。轨道之间不再
-      // 只是发布节奏不同——正式版会屏蔽预发布能力（`PrereleaseOnlyCapability`，如复习），
-      // 稳定排序保原序时合集里排在前面的 stable 会胜出，把 debug 通道用户换进正式版、
-      // 复习整块消失（2026-10-18 用户实测 3.0.0 vs 3.0.0-debug.19763）。
-      return _trackRank(vb, channel).compareTo(_trackRank(va, channel));
-    });
+  final List<Map<String, dynamic>> ordered =
+      releases
+          .where(
+            (Map<String, dynamic> r) => releaseEligibleForChannel(r, channel),
+          )
+          .toList()
+        ..sort((Map<String, dynamic> a, Map<String, dynamic> b) {
+          final String va =
+              normalizeReleaseVersionTag(a['tag_name'] as String? ?? '') ?? '';
+          final String vb =
+              normalizeReleaseVersionTag(b['tag_name'] as String? ?? '') ?? '';
+          // 降序：新的在前。seq 从各自 release map 顶层取（正式版 302 回退无 → null）。
+          final int recency = _compareReleaseRecency(
+            vb,
+            va,
+            seqA: b['releaseSequence'] as int?,
+            seqB: a['releaseSequence'] as int?,
+          );
+          if (recency != 0) return recency;
+          // 同一次构建（同基同序号）出了多个轨道的包：优先用户自己的轨道。轨道之间不再
+          // 只是发布节奏不同——正式版会屏蔽预发布能力（`PrereleaseOnlyCapability`，如复习），
+          // 稳定排序保原序时合集里排在前面的 stable 会胜出，把 debug 通道用户换进正式版、
+          // 复习整块消失（2026-10-18 用户实测 3.0.0 vs 3.0.0-debug.19763）。
+          return _trackRank(vb, channel).compareTo(_trackRank(va, channel));
+        });
 
   UpdateReleaseSelection? fallback;
   for (final Map<String, dynamic> release in ordered) {
-    final String? topVersion =
-        normalizeReleaseVersionTag(release['tag_name'] as String? ?? '');
+    final String? topVersion = normalizeReleaseVersionTag(
+      release['tag_name'] as String? ?? '',
+    );
     if (topVersion == null || topVersion.isEmpty) continue;
     // 粗过滤：顶层 tag 是全平台最大 seq（TODO-1173），连它都不比本机新，
     // 本 release 对任何平台都无更新。保留这层既避开 up-to-date 时多余的 selectAsset。
     // BUG-846：远端 seq 用本 release 顶层 releaseSequence（正式版无预发布串靠它）。
-    if (!isUpdateVersionNewer(topVersion, currentVersion, channel,
-        remoteSeq: release['releaseSequence'] as int?,
-        localSeq: currentReleaseSeq)) {
+    if (!isUpdateVersionNewer(
+      topVersion,
+      currentVersion,
+      channel,
+      remoteSeq: release['releaseSequence'] as int?,
+      localSeq: currentReleaseSeq,
+    )) {
       continue;
     }
 
@@ -1796,19 +1890,26 @@ Future<UpdateReleaseSelection?> selectUpdateReleaseForCurrentPlatform(
     // 处理并入合集的 stable release 时，会因 stable 包不含 `-debug.` 后缀被误拒、选不到包。
     // 「这个 release 属于哪个合集」的准入已由 releaseEligibleForChannel 在上面把关。
     final UpdateChannel releaseTrack = channelForUpdateVersion(topVersion);
-    final UpdateAsset? asset =
-        await updater.selectAsset(assetMaps, channel: releaseTrack);
+    final UpdateAsset? asset = await updater.selectAsset(
+      assetMaps,
+      channel: releaseTrack,
+    );
 
     // TODO-1205：用**所选 asset 自身版本**判更新 + 显示，而非顶层 tag（全平台最大 seq）。
     // 顶层 6636 但安卓 asset=6621==本机时，用顶层会「有更新」→装回 6621→再提示的死循环。
     // 无版本印记（API/合成 stable/旧 manifest）→ fail-open 回退顶层。平台通用，非安卓特例。
-    final String? assetVersion =
-        asset == null ? null : normalizeReleaseVersionTag(asset.version ?? '');
+    final String? assetVersion = asset == null
+        ? null
+        : normalizeReleaseVersionTag(asset.version ?? '');
     final String effectiveVersion = assetVersion ?? topVersion;
     if (asset != null &&
-        !isUpdateVersionNewer(effectiveVersion, currentVersion, channel,
-            remoteSeq: release['releaseSequence'] as int?,
-            localSeq: currentReleaseSeq)) {
+        !isUpdateVersionNewer(
+          effectiveVersion,
+          currentVersion,
+          channel,
+          remoteSeq: release['releaseSequence'] as int?,
+          localSeq: currentReleaseSeq,
+        )) {
       // 顶层更新但本平台 asset 已是本机版本（或更旧）→ 对本机不是更新，跳过。
       continue;
     }
@@ -1888,9 +1989,13 @@ bool updateTagIsNewerThanCurrent(
   UpdateChannel channel, {
   int? remoteSeq,
   int? localSeq,
-}) =>
-    isUpdateVersionNewer(tag, current, channel,
-        remoteSeq: remoteSeq, localSeq: localSeq);
+}) => isUpdateVersionNewer(
+  tag,
+  current,
+  channel,
+  remoteSeq: remoteSeq,
+  localSeq: localSeq,
+);
 
 /// **纯函数**：取版本的 release sequence（= `git rev-list --count HEAD`，三通道同一把尺）。
 /// 预发布串 `-beta.<seq>` / `-debug.<seq>` 的尾段数字**就是** seq（CI `TAG=v${VERSION}-<ch>.${SEQ}`）；
@@ -1949,14 +2054,14 @@ List<UpdateChannel> _channelsAdmittedBy(UpdateChannel channel) {
   return switch (channel) {
     UpdateChannel.stable => const <UpdateChannel>[UpdateChannel.stable],
     UpdateChannel.beta => const <UpdateChannel>[
-        UpdateChannel.stable,
-        UpdateChannel.beta,
-      ],
+      UpdateChannel.stable,
+      UpdateChannel.beta,
+    ],
     UpdateChannel.debug => const <UpdateChannel>[
-        UpdateChannel.stable,
-        UpdateChannel.beta,
-        UpdateChannel.debug,
-      ],
+      UpdateChannel.stable,
+      UpdateChannel.beta,
+      UpdateChannel.debug,
+    ],
   };
 }
 
@@ -1969,8 +2074,9 @@ int _trackRank(String version, UpdateChannel channel) =>
 /// [channelForUpdateVersion] 推断（正式版 → stable，`-beta.N`/`-debug.N` → 对应轨），
 /// 与既有判据同一套 pattern，不新造。
 bool _channelAdmitsVersion(String version, UpdateChannel channel) {
-  return _channelsAdmittedBy(channel)
-      .contains(channelForUpdateVersion(version));
+  return _channelsAdmittedBy(
+    channel,
+  ).contains(channelForUpdateVersion(version));
 }
 
 /// **纯函数（BUG-846「谁后用谁」）**：本机安装版本的 release sequence，供跨轨全序比较。
@@ -2047,8 +2153,8 @@ int _compareReleaseRecency(String a, String b, {int? seqA, int? seqB}) {
 String _stripBuildMetadata(String version) => version.split('+').first;
 
 bool _looksLikeVersion(String version) => RegExp(
-      r'^\d+(?:\.\d+)*(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?(?:\+[0-9A-Za-z][0-9A-Za-z.-]*)?$',
-    ).hasMatch(version);
+  r'^\d+(?:\.\d+)*(?:-[0-9A-Za-z][0-9A-Za-z.-]*)?(?:\+[0-9A-Za-z][0-9A-Za-z.-]*)?$',
+).hasMatch(version);
 
 String _basePart(String version) =>
     _stripBuildMetadata(version).split('-').first;

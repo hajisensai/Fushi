@@ -155,7 +155,9 @@ void main() {
       for (final DictStylePart part in DictStylePart.values) {
         final String css = buildGlobalDictStyleCss(<DictStyleRule>[
           DictStyleRule(
-              part: part, props: const DictStyleProps(cornerRadius: 4)),
+            part: part,
+            props: const DictStyleProps(cornerRadius: 4),
+          ),
         ]);
         expect(css, contains('border-radius: 4px !important'), reason: '$part');
         expect(css, isNot(contains('display')), reason: '$part');
@@ -288,8 +290,10 @@ void main() {
 
     test('copyWith 省略保持原值，显式 null 清除', () {
       // 「把颜色改回默认」就是传 null，普通 copyWith 分不出「没传」和「清空」。
-      const DictStyleProps base =
-          DictStyleProps(textColor: 0xFF112233, bold: true);
+      const DictStyleProps base = DictStyleProps(
+        textColor: 0xFF112233,
+        bold: true,
+      );
       expect(base.copyWith(bold: false).textColor, 0xFF112233);
       expect(base.copyWith(textColor: null).textColor, isNull);
       expect(base.copyWith(textColor: null).bold, isTrue);

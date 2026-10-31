@@ -48,7 +48,10 @@ void main() {
 
     HomePage.debugSelectTab?.call(HomeTab.video);
     await tester.pump(const Duration(seconds: 3));
-    final ObserveShot video = await captureFlutterFrame(tester, 'video-library');
+    final ObserveShot video = await captureFlutterFrame(
+      tester,
+      'video-library',
+    );
     expect(video.saved, isTrue);
     debugPrint('[browse-probe] video texts: ${visibleTexts(tester)}');
   });

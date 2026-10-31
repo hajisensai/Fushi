@@ -29,8 +29,8 @@ class _PendingOnMountAppModel extends AppModel {
 
   @override
   List<Dictionary> get dictionaries => <Dictionary>[
-        Dictionary(name: 'Test', formatKey: 'test', order: 0),
-      ];
+    Dictionary(name: 'Test', formatKey: 'test', order: 0),
+  ];
 
   @override
   int get maximumTerms => 10;
@@ -85,8 +85,7 @@ void main() {
     DesktopLookupService.instance.debugReset();
   });
 
-  testWidgets(
-      'pending set BEFORE mount is consumed on '
+  testWidgets('pending set BEFORE mount is consumed on '
       'mount and searched', (WidgetTester tester) async {
     final _PendingOnMountAppModel appModel = _PendingOnMountAppModel();
 
@@ -114,15 +113,14 @@ void main() {
       isNull,
       reason: '挂载时必须消费挂载前已排入的 pending（清空表示已消费）。',
     );
-    expect(
-      appModel.searchedTerms,
-      <String>['floatingword'],
-      reason: '默认用户（剪贴板关）点悬浮字幕也必须在查词 tab 真正发起查询。',
-    );
+    expect(appModel.searchedTerms, <String>[
+      'floatingword',
+    ], reason: '默认用户（剪贴板关）点悬浮字幕也必须在查词 tab 真正发起查询。');
   });
 
-  testWidgets('no pending on mount → no spurious search (边界：不乱消费)',
-      (WidgetTester tester) async {
+  testWidgets('no pending on mount → no spurious search (边界：不乱消费)', (
+    WidgetTester tester,
+  ) async {
     final _PendingOnMountAppModel appModel = _PendingOnMountAppModel();
 
     tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(

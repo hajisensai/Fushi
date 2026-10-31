@@ -130,8 +130,9 @@ void main() {
 {"streams":[{"index":1,"codec_name":"truehd","codec_type":"audio",
 "profile":"Dolby TrueHD + Dolby Atmos","channels":8,"channel_layout":"7.1"}]}
 ''';
-      final AudioTrackFacts track =
-          parseFfprobeFacts(atmosJson).audioTracks.single;
+      final AudioTrackFacts track = parseFfprobeFacts(
+        atmosJson,
+      ).audioTracks.single;
       expect(track.profile, 'Dolby TrueHD + Dolby Atmos');
       expect(track.isAtmos, isTrue);
       final AudioTrackFacts back = AudioTrackFacts.fromJson(track.toJson());
@@ -142,13 +143,18 @@ void main() {
     test('老 ffmpeg 不报 profile 时退到轨道名；只认 TrueHD / E-AC-3', () {
       expect(
         const AudioTrackFacts(
-                index: 1, codec: 'eac3', title: 'English DDP 5.1 Atmos')
-            .isAtmos,
+          index: 1,
+          codec: 'eac3',
+          title: 'English DDP 5.1 Atmos',
+        ).isAtmos,
         isTrue,
       );
       expect(
-        const AudioTrackFacts(index: 1, codec: 'aac', title: 'Atmos remix')
-            .isAtmos,
+        const AudioTrackFacts(
+          index: 1,
+          codec: 'aac',
+          title: 'Atmos remix',
+        ).isAtmos,
         isFalse,
         reason: 'AAC 承载不了 Atmos，标题写了也不信',
       );
@@ -165,8 +171,9 @@ void main() {
     });
 
     test('两条字幕轨', () {
-      final List<SubtitleTrackFacts> subs =
-          parseFfprobeFacts(json).subtitleTracks;
+      final List<SubtitleTrackFacts> subs = parseFfprobeFacts(
+        json,
+      ).subtitleTracks;
       expect(subs.length, 2);
       expect(subs[0].codecLabel, 'SRT');
       expect(subs[0].language, 'chi');
@@ -204,8 +211,11 @@ void main() {
       expect(video.resolutionLabel, '4K');
       expect(video.dynamicRange, VideoDynamicRange.hdr10);
       expect(video.codecLabel, 'HEVC');
-      expect(video.bitDepth, 10,
-          reason: 'bits_per_raw_sample 缺失，必须从 pix_fmt 的 p10le 推');
+      expect(
+        video.bitDepth,
+        10,
+        reason: 'bits_per_raw_sample 缺失，必须从 pix_fmt 的 p10le 推',
+      );
       expect(video.colorTransfer, 'smpte2084');
     });
 
@@ -318,8 +328,11 @@ void main() {
       expect(video.codec, 'h264', reason: '拿第一条 video 流会得到 mjpeg');
       expect(video.width, 1920);
       expect(video.height, 1080);
-      expect(video.resolutionLabel, '1080p',
-          reason: '封面是 600x900，误判会显示 900p 一类');
+      expect(
+        video.resolutionLabel,
+        '1080p',
+        reason: '封面是 600x900，误判会显示 900p 一类',
+      );
     });
 
     test('只有封面没有真视频轨 → 没有视频流（纯音频带封面）', () {
@@ -421,18 +434,18 @@ void main() {
 
     final List<({int w, int h, String? label})> cases =
         <({int w, int h, String? label})>[
-      c(3840, 2160, '4K'),
-      c(4096, 1716, '4K'),
-      c(2560, 1440, '1440p'),
-      c(1920, 1080, '1080p'),
-      // 2.35:1 的电影裁边片源：高度只有 804，按高度分档会误判成 720p。
-      c(1920, 804, '1080p'),
-      c(1280, 720, '720p'),
-      c(1024, 576, '576p'),
-      c(720, 480, '480p'),
-      // 竖屏：长边是高度。
-      c(1080, 1920, '1080p'),
-    ];
+          c(3840, 2160, '4K'),
+          c(4096, 1716, '4K'),
+          c(2560, 1440, '1440p'),
+          c(1920, 1080, '1080p'),
+          // 2.35:1 的电影裁边片源：高度只有 804，按高度分档会误判成 720p。
+          c(1920, 804, '1080p'),
+          c(1280, 720, '720p'),
+          c(1024, 576, '576p'),
+          c(720, 480, '480p'),
+          // 竖屏：长边是高度。
+          c(1080, 1920, '1080p'),
+        ];
 
     for (final ({int w, int h, String? label}) item in cases) {
       test('${item.w}x${item.h} → ${item.label}', () {
@@ -446,7 +459,9 @@ void main() {
     test('缺尺寸 → null', () {
       expect(const VideoStreamFacts().resolutionLabel, isNull);
       expect(
-          const VideoStreamFacts(width: 0, height: 0).resolutionLabel, isNull);
+        const VideoStreamFacts(width: 0, height: 0).resolutionLabel,
+        isNull,
+      );
     });
   });
 
@@ -507,10 +522,10 @@ void main() {
 
   group('声道标签', () {
     String? label(String? layout, int? channels) => AudioTrackFacts(
-          index: 0,
-          channelLayout: layout,
-          channels: channels,
-        ).channelLabel;
+      index: 0,
+      channelLayout: layout,
+      channels: channels,
+    ).channelLabel;
 
     test('layout 优先', () {
       expect(label('5.1', 6), '5.1');
@@ -538,11 +553,7 @@ void main() {
         '/any/path.mkv',
         backend: _StubBackend(returnCode: null),
       );
-      expect(
-        facts.isUnavailable,
-        isTrue,
-        reason: '超时可自愈，缓存层据此保留重试权',
-      );
+      expect(facts.isUnavailable, isTrue, reason: '超时可自愈，缓存层据此保留重试权');
       expect(facts.isEmpty, isTrue, reason: '事实确实一条都没探到');
     });
 
@@ -560,11 +571,7 @@ void main() {
         backend: _StubBackend(returnCode: 0, output: '{"streams":[]}'),
       );
       expect(facts.isEmpty, isTrue);
-      expect(
-        facts.isUnavailable,
-        isFalse,
-        reason: '这是结论：再探一百次也是这个结果，允许永久记账',
-      );
+      expect(facts.isUnavailable, isFalse, reason: '这是结论：再探一百次也是这个结果，允许永久记账');
     });
 
     test('两个哨兵常量的身份不能混', () {

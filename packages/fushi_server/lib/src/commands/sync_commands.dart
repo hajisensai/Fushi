@@ -48,23 +48,36 @@ const Duration _requestTimeout = Duration(seconds: 60);
 /// 不合法返回 null。
 Uri? normalizeSyncPeerUrl(String raw) {
   final Uri? uri = Uri.tryParse(raw.trim());
-  if (uri == null || !(uri.scheme == 'http' || uri.scheme == 'https') || uri.host.isEmpty) return null;
+  if (uri == null ||
+      !(uri.scheme == 'http' || uri.scheme == 'https') ||
+      uri.host.isEmpty)
+    return null;
   if (uri.query.isNotEmpty || uri.fragment.isNotEmpty) return null;
   final String path = uri.path.replaceAll(RegExp(r'/+$'), '');
   if (path.isNotEmpty) return null;
-  return Uri(scheme: uri.scheme, host: uri.host, port: uri.hasPort ? uri.port : null);
+  return Uri(
+    scheme: uri.scheme,
+    host: uri.host,
+    port: uri.hasPort ? uri.port : null,
+  );
 }
 
 /// 一台已配对 host 的凭据。
 class SyncPeerCredential {
-  const SyncPeerCredential({required this.url, required this.token, this.fingerprint, this.pairedAt = 0});
+  const SyncPeerCredential({
+    required this.url,
+    required this.token,
+    this.fingerprint,
+    this.pairedAt = 0,
+  });
 
-  factory SyncPeerCredential.fromJson(Map<String, Object?> j) => SyncPeerCredential(
-    url: j['url']! as String,
-    token: j['token']! as String,
-    fingerprint: j['fingerprint'] as String?,
-    pairedAt: (j['pairedAt'] as num?)?.toInt() ?? 0,
-  );
+  factory SyncPeerCredential.fromJson(Map<String, Object?> j) =>
+      SyncPeerCredential(
+        url: j['url']! as String,
+        token: j['token']! as String,
+        fingerprint: j['fingerprint'] as String?,
+        pairedAt: (j['pairedAt'] as num?)?.toInt() ?? 0,
+      );
 
   final String url;
   final String token;
@@ -84,7 +97,9 @@ class SyncPeerCredentialStore {
   SyncPeerCredentialStore(this.file);
 
   factory SyncPeerCredentialStore.under(Directory support) =>
-      SyncPeerCredentialStore(File(p.join(support.path, 'interconnect_client', 'peers.json')));
+      SyncPeerCredentialStore(
+        File(p.join(support.path, 'interconnect_client', 'peers.json')),
+      );
 
   final File file;
 
@@ -97,7 +112,8 @@ class SyncPeerCredentialStore {
     }
     return <SyncPeerCredential>[
       for (final Object? row in decoded['peers'] as List<Object?>)
-        if (row is Map) SyncPeerCredential.fromJson(row.cast<String, Object?>()),
+        if (row is Map)
+          SyncPeerCredential.fromJson(row.cast<String, Object?>()),
     ];
   }
 
@@ -113,13 +129,18 @@ class SyncPeerCredentialStore {
     final File tmp = File('${file.path}.tmp');
     await tmp.writeAsString(
       const JsonEncoder.withIndent('  ').convert(<String, Object?>{
-        'peers': <Object?>[for (final SyncPeerCredential c in peers) c.toJson()],
+        'peers': <Object?>[
+          for (final SyncPeerCredential c in peers) c.toJson(),
+        ],
       }),
       flush: true,
     );
     if (!Platform.isWindows) {
       // token 等同密码：只给属主读写。chmod 失败就不落盘（宁可报错也不留可读的凭据）。
-      final ProcessResult r = await Process.run('chmod', <String>['600', tmp.path]);
+      final ProcessResult r = await Process.run('chmod', <String>[
+        '600',
+        tmp.path,
+      ]);
       if (r.exitCode != 0) {
         await tmp.delete();
         throw FileSystemException('chmod 600 失败: ${r.stderr}', tmp.path);
@@ -130,13 +151,18 @@ class SyncPeerCredentialStore {
 
   Future<void> upsert(SyncPeerCredential credential) async {
     final List<SyncPeerCredential> peers =
-        (await load()).where((SyncPeerCredential c) => c.url != credential.url).toList()..add(credential);
+        (await load())
+            .where((SyncPeerCredential c) => c.url != credential.url)
+            .toList()
+          ..add(credential);
     await save(peers);
   }
 
   Future<bool> remove(String url) async {
     final List<SyncPeerCredential> peers = await load();
-    final List<SyncPeerCredential> kept = peers.where((SyncPeerCredential c) => c.url != url).toList();
+    final List<SyncPeerCredential> kept = peers
+        .where((SyncPeerCredential c) => c.url != url)
+        .toList();
     if (kept.length == peers.length) return false;
     await save(kept);
     return true;
@@ -166,15 +192,22 @@ abstract class AggregateRemote {
 
 /// 经 dart:io 直连 host：https 用钉扎客户端，http（已显式允许）用裸客户端。
 class HttpAggregateRemote implements AggregateRemote {
-  HttpAggregateRemote({required this.baseUrl, required String token, String? fingerprint})
-    : _auth = 'Basic ${base64Encode(utf8.encode('$_interconnectUser:$token'))}',
-      // 每个请求都带 host token：明文 / 回环目标恒直连，https 才跟随环境代理（CONNECT
-      // 隧道 + 指纹钉扎，代理读不到 token），见 credential_http_proxy.dart。
-      _client = withCredentialProxyPolicy(
-        fingerprint == null
-            ? (HttpClient()..connectionTimeout = const Duration(seconds: 15))
-            : createPinnedHttpClient(expectedFingerprint: fingerprint, connectionTimeout: const Duration(seconds: 15)),
-      );
+  HttpAggregateRemote({
+    required this.baseUrl,
+    required String token,
+    String? fingerprint,
+  }) : _auth =
+           'Basic ${base64Encode(utf8.encode('$_interconnectUser:$token'))}',
+       // 每个请求都带 host token：明文 / 回环目标恒直连，https 才跟随环境代理（CONNECT
+       // 隧道 + 指纹钉扎，代理读不到 token），见 credential_http_proxy.dart。
+       _client = withCredentialProxyPolicy(
+         fingerprint == null
+             ? (HttpClient()..connectionTimeout = const Duration(seconds: 15))
+             : createPinnedHttpClient(
+                 expectedFingerprint: fingerprint,
+                 connectionTimeout: const Duration(seconds: 15),
+               ),
+       );
 
   final Uri baseUrl;
   final String _auth;
@@ -184,7 +217,9 @@ class HttpAggregateRemote implements AggregateRemote {
 
   Future<HttpClientResponse> _send(String method, {Object? body}) async {
     try {
-      final HttpClientRequest req = await _client.openUrl(method, _endpoint).timeout(_requestTimeout);
+      final HttpClientRequest req = await _client
+          .openUrl(method, _endpoint)
+          .timeout(_requestTimeout);
       req.headers.set(HttpHeaders.authorizationHeader, _auth);
       if (body != null) {
         req.headers.contentType = ContentType.json;
@@ -192,7 +227,10 @@ class HttpAggregateRemote implements AggregateRemote {
       }
       return await req.close().timeout(_requestTimeout);
     } on TlsException catch (e) {
-      throw SyncRemoteException(_exitUnavailable, 'TLS 握手失败（证书指纹不符或链路被拦）: ${e.message}');
+      throw SyncRemoteException(
+        _exitUnavailable,
+        'TLS 握手失败（证书指纹不符或链路被拦）: ${e.message}',
+      );
     } on SocketException catch (e) {
       throw SyncRemoteException(_exitUnavailable, '连不上 $baseUrl: ${e.message}');
     } on TimeoutException {
@@ -201,11 +239,18 @@ class HttpAggregateRemote implements AggregateRemote {
   }
 
   void _checkStatus(HttpClientResponse res, String what) {
-    if (res.statusCode == HttpStatus.unauthorized || res.statusCode == HttpStatus.forbidden) {
-      throw SyncRemoteException(_exitUnavailable, '$what 被拒（${res.statusCode}）：token 无效或已被吊销，重新 sync pair');
+    if (res.statusCode == HttpStatus.unauthorized ||
+        res.statusCode == HttpStatus.forbidden) {
+      throw SyncRemoteException(
+        _exitUnavailable,
+        '$what 被拒（${res.statusCode}）：token 无效或已被吊销，重新 sync pair',
+      );
     }
     if (res.statusCode < 200 || res.statusCode >= 300) {
-      throw SyncRemoteException(_exitFailure, '$what 失败: HTTP ${res.statusCode}');
+      throw SyncRemoteException(
+        _exitFailure,
+        '$what 失败: HTTP ${res.statusCode}',
+      );
     }
   }
 
@@ -275,15 +320,26 @@ Future<Map<String, Object?>> runAggregatePull(
       'hostHasEndpoint': fetched != null,
       'pulled': fetched == null
           ? null
-          : aggregateSnapshotCounts(AggregateSnapshot.fromJson(fetched).select(stats: stats, favorites: favorites, webHistory: webHistory)),
+          : aggregateSnapshotCounts(
+              AggregateSnapshot.fromJson(fetched).select(
+                stats: stats,
+                favorites: favorites,
+                webHistory: webHistory,
+              ),
+            ),
       'pushed': pushed,
     };
   }
   final Object? json = await remote.fetch();
   if (json == null) {
-    throw const SyncRemoteException(_exitUnavailable, 'host 没有 /api/library/aggregate 端点（版本过旧），无法拉取');
+    throw const SyncRemoteException(
+      _exitUnavailable,
+      'host 没有 /api/library/aggregate 端点（版本过旧），无法拉取',
+    );
   }
-  final AggregateSnapshot incoming = AggregateSnapshot.fromJson(json).select(stats: stats, favorites: favorites, webHistory: webHistory);
+  final AggregateSnapshot incoming = AggregateSnapshot.fromJson(
+    json,
+  ).select(stats: stats, favorites: favorites, webHistory: webHistory);
   await service.foldIntoLocal(incoming);
   return <String, Object?>{
     'mode': 'pull',
@@ -305,28 +361,62 @@ Future<(SyncTarget?, int, String)> resolveSyncTarget({
   required SyncPeerCredentialStore store,
 }) async {
   final Uri? url = normalizeSyncPeerUrl(rawUrl);
-  if (url == null) return (null, _exitUsage, '不是合法的 host 根地址: $rawUrl（形如 https://192.168.1.5:38765）');
+  if (url == null)
+    return (
+      null,
+      _exitUsage,
+      '不是合法的 host 根地址: $rawUrl（形如 https://192.168.1.5:38765）',
+    );
   final SyncPeerCredential? saved = await store.find(url.toString());
-  final String? fingerprint = (fingerprintArg != null && fingerprintArg.trim().isNotEmpty)
+  final String? fingerprint =
+      (fingerprintArg != null && fingerprintArg.trim().isNotEmpty)
       ? fingerprintArg.trim()
       : saved?.fingerprint;
   if (url.scheme == 'https') {
     if (fingerprint == null || fingerprint.isEmpty) {
-      return (null, _exitUsage, 'https 互联端点是自签证书，必须用 --fingerprint <sha256> 钉扎（host 的配对页 / status 里有）');
+      return (
+        null,
+        _exitUsage,
+        'https 互联端点是自签证书，必须用 --fingerprint <sha256> 钉扎（host 的配对页 / status 里有）',
+      );
     }
     final String? savedFp = saved?.fingerprint;
     if (savedFp != null && !fingerprintEquals(savedFp, fingerprint)) {
-      return (null, _exitFailure, '--fingerprint 与已配对记录的指纹不符；确认 host 换过证书后先 sync forget 再重新配对');
+      return (
+        null,
+        _exitFailure,
+        '--fingerprint 与已配对记录的指纹不符；确认 host 换过证书后先 sync forget 再重新配对',
+      );
     }
   } else {
-    if (!allowHttp) return (null, _exitUsage, '明文 http 会让 token 明文过线；确认在可信网络里再加 --allow-http');
-    if (fingerprintArg != null) return (null, _exitUsage, 'http 端点没有证书，--fingerprint 无意义');
+    if (!allowHttp)
+      return (
+        null,
+        _exitUsage,
+        '明文 http 会让 token 明文过线；确认在可信网络里再加 --allow-http',
+      );
+    if (fingerprintArg != null)
+      return (null, _exitUsage, 'http 端点没有证书，--fingerprint 无意义');
   }
-  final String? token = (envToken != null && envToken.isNotEmpty) ? envToken : saved?.token;
+  final String? token = (envToken != null && envToken.isNotEmpty)
+      ? envToken
+      : saved?.token;
   if (token == null || token.isEmpty) {
-    return (null, _exitUnavailable, '没有 $url 的凭据：先 sync pair $url --fingerprint …，或设置环境变量 $kSyncTokenEnv');
+    return (
+      null,
+      _exitUnavailable,
+      '没有 $url 的凭据：先 sync pair $url --fingerprint …，或设置环境变量 $kSyncTokenEnv',
+    );
   }
-  return ((url: url, token: token, fingerprint: url.scheme == 'https' ? fingerprint : null), _exitOk, '');
+  return (
+    (
+      url: url,
+      token: token,
+      fingerprint: url.scheme == 'https' ? fingerprint : null,
+    ),
+    _exitOk,
+    '',
+  );
 }
 
 /// 配对失败原因 → (退出码, 说明)。
@@ -342,7 +432,13 @@ Future<(SyncTarget?, int, String)> resolveSyncTarget({
 };
 
 class SyncModule extends CliModule {
-  const SyncModule({this.out, this.err, this.env, this.remoteFactory, this.readPin});
+  const SyncModule({
+    this.out,
+    this.err,
+    this.env,
+    this.remoteFactory,
+    this.readPin,
+  });
 
   final StringSink? out;
   final StringSink? err;
@@ -364,7 +460,11 @@ class SyncModule extends CliModule {
       ..addFlag('push', negatable: false, help: '双向：合并结果再推回 host（缺省只拉）')
       ..addFlag('stats', defaultsTo: true, help: '同步学习统计')
       ..addFlag('favorites', defaultsTo: true, help: '同步收藏词 / 收藏句 / 浏览器书签')
-      ..addFlag('web-history', defaultsTo: false, help: '同步浏览器历史（默认关：浏览轨迹须显式开启）')
+      ..addFlag(
+        'web-history',
+        defaultsTo: false,
+        help: '同步浏览器历史（默认关：浏览轨迹须显式开启）',
+      )
       ..addFlag('json', negatable: false, help: '输出 JSON');
     sync.addCommand('pair')
       ..addOption('fingerprint', help: 'host 证书 SHA-256 指纹（必填，从 host 的配对页抄）')
@@ -397,12 +497,17 @@ sync peers [--json] | sync forget <url>''';
         return _pair(sub!, ctx, o, e);
       case 'peers':
         return ctx.withRuntime((ServerRuntime rt) async {
-          final List<SyncPeerCredential> peers = await SyncPeerCredentialStore.under(rt.paths.support).load();
+          final List<SyncPeerCredential> peers =
+              await SyncPeerCredentialStore.under(rt.paths.support).load();
           if (sub!['json'] as bool) {
             o.writeln(
               const JsonEncoder.withIndent('  ').convert(<Object?>[
                 for (final SyncPeerCredential c in peers)
-                  <String, Object?>{'url': c.url, 'fingerprint': c.fingerprint, 'pairedAt': c.pairedAt},
+                  <String, Object?>{
+                    'url': c.url,
+                    'fingerprint': c.fingerprint,
+                    'pairedAt': c.pairedAt,
+                  },
               ]),
             );
           } else if (peers.isEmpty) {
@@ -428,7 +533,9 @@ sync peers [--json] | sync forget <url>''';
           return _exitUsage;
         }
         return ctx.withRuntime((ServerRuntime rt) async {
-          final bool removed = await SyncPeerCredentialStore.under(rt.paths.support).remove(url.toString());
+          final bool removed = await SyncPeerCredentialStore.under(
+            rt.paths.support,
+          ).remove(url.toString());
           (removed ? o : e).writeln(removed ? '已删除 $url 的凭据' : '没有 $url 的凭据');
           return removed ? _exitOk : _exitFailure;
         });
@@ -437,9 +544,16 @@ sync peers [--json] | sync forget <url>''';
     return _exitUsage;
   }
 
-  Future<int> _pull(ArgResults sub, CliContext ctx, StringSink o, StringSink e) async {
+  Future<int> _pull(
+    ArgResults sub,
+    CliContext ctx,
+    StringSink o,
+    StringSink e,
+  ) async {
     if (sub.rest.length != 1) {
-      e.writeln('用法: sync pull <url> [--fingerprint <sha256>] [--push] [--json]');
+      e.writeln(
+        '用法: sync pull <url> [--fingerprint <sha256>] [--push] [--json]',
+      );
       return _exitUsage;
     }
     final bool stats = sub['stats'] as bool;
@@ -450,7 +564,11 @@ sync peers [--json] | sync forget <url>''';
       return _exitUsage;
     }
     return ctx.withRuntime((ServerRuntime rt) async {
-      final (SyncTarget? target, int code, String why) = await resolveSyncTarget(
+      final (
+        SyncTarget? target,
+        int code,
+        String why,
+      ) = await resolveSyncTarget(
         rawUrl: sub.rest.single,
         fingerprintArg: sub['fingerprint'] as String?,
         allowHttp: sub['allow-http'] as bool,
@@ -463,7 +581,11 @@ sync peers [--json] | sync forget <url>''';
       }
       final AggregateRemote remote =
           (remoteFactory ??
-          (SyncTarget t) => HttpAggregateRemote(baseUrl: t.url, token: t.token, fingerprint: t.fingerprint))(target);
+          (SyncTarget t) => HttpAggregateRemote(
+            baseUrl: t.url,
+            token: t.token,
+            fingerprint: t.fingerprint,
+          ))(target);
       try {
         e.writeln('同步 ${target.url} …');
         final Map<String, Object?> result = await runAggregatePull(
@@ -474,12 +596,17 @@ sync peers [--json] | sync forget <url>''';
           favorites: favorites,
           webHistory: webHistory,
         );
-        final Map<String, Object?> report = <String, Object?>{'host': target.url.toString(), ...result};
+        final Map<String, Object?> report = <String, Object?>{
+          'host': target.url.toString(),
+          ...result,
+        };
         if (sub['json'] as bool) {
           o.writeln(const JsonEncoder.withIndent('  ').convert(report));
         } else {
           final Object? pulled = result['pulled'];
-          o.writeln(pulled == null ? 'host 无聚合端点，只推了本机快照' : '已拉取并折进本机: $pulled');
+          o.writeln(
+            pulled == null ? 'host 无聚合端点，只推了本机快照' : '已拉取并折进本机: $pulled',
+          );
           if (result['pushed'] == true) o.writeln('合并结果已推回 host');
         }
         return _exitOk;
@@ -492,7 +619,12 @@ sync peers [--json] | sync forget <url>''';
     });
   }
 
-  Future<int> _pair(ArgResults sub, CliContext ctx, StringSink o, StringSink e) async {
+  Future<int> _pair(
+    ArgResults sub,
+    CliContext ctx,
+    StringSink o,
+    StringSink e,
+  ) async {
     if (sub.rest.length != 1) {
       e.writeln('用法: sync pair <https://host:port> --fingerprint <sha256>');
       return _exitUsage;
@@ -510,7 +642,10 @@ sync peers [--json] | sync forget <url>''';
     return ctx.withRuntime((ServerRuntime rt) async {
       e.writeln('向 $url 发起配对，请在 host 上点同意 …');
       final FushiPairV2Outcome outcome =
-          await FushiPairV2Client(baseUrl: url.toString(), expectedFingerprint: fingerprint).pair(
+          await FushiPairV2Client(
+            baseUrl: url.toString(),
+            expectedFingerprint: fingerprint,
+          ).pair(
             deviceName: rt.config.deviceName,
             clientDeviceId: rt.identity.deviceId,
             pinProvider:
@@ -525,8 +660,12 @@ sync peers [--json] | sync forget <url>''';
           final (int code, String why) = describePairFailure(reason);
           e.writeln(why);
           return code;
-        case FushiPairV2Success(:final String token, :final String? hostFingerprint):
-          if (hostFingerprint != null && !fingerprintEquals(hostFingerprint, fingerprint)) {
+        case FushiPairV2Success(
+          :final String token,
+          :final String? hostFingerprint,
+        ):
+          if (hostFingerprint != null &&
+              !fingerprintEquals(hostFingerprint, fingerprint)) {
             e.writeln('host 回执的证书指纹与钉扎值不符，拒绝保存凭据');
             return _exitFailure;
           }
@@ -539,7 +678,12 @@ sync peers [--json] | sync forget <url>''';
             ),
           );
           if (sub['json'] as bool) {
-            o.writeln(jsonEncode(<String, Object?>{'url': url.toString(), 'paired': true}));
+            o.writeln(
+              jsonEncode(<String, Object?>{
+                'url': url.toString(),
+                'paired': true,
+              }),
+            );
           } else {
             o.writeln('已配对 $url（凭据存在本机，可直接 sync pull $url）');
           }

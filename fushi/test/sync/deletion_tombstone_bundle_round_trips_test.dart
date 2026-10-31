@@ -137,11 +137,9 @@ void main() {
     await orchestrator(db, 'devA').syncDeletionTombstones(r3);
     expect(backend.gets, 1, reason: '稳态 = 只读自己的合并清单');
     expect(backend.puts, 0, reason: '清单内容没变，不重写');
-    expect(
-      r3.deletionCandidates.map((c) => c.itemKey),
-      <String>['srt/7'],
-      reason: '跳过 GET 不能丢信息：候选仍来自清单里记的内容',
-    );
+    expect(r3.deletionCandidates.map((c) => c.itemKey), <String>[
+      'srt/7',
+    ], reason: '跳过 GET 不能丢信息：候选仍来自清单里记的内容');
     expect(r3.errors, isEmpty);
   });
 

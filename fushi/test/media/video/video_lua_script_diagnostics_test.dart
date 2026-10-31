@@ -18,7 +18,8 @@ void main() {
   group('parseMpvLuaCapability', () {
     test('Windows 随包（zhongfly）构建串 → available', () {
       // 真机探针原文节选（fushi/build/windows/x64/runner/Release/libmpv-2.dll）。
-      const String cfg = '-Dprefix=/x -Dlibmpv=true -Dlua=enabled '
+      const String cfg =
+          '-Dprefix=/x -Dlibmpv=true -Dlua=enabled '
           '-Djavascript=enabled -Dvulkan=enabled';
       expect(parseMpvLuaCapability(cfg), MpvLuaCapability.available);
     });

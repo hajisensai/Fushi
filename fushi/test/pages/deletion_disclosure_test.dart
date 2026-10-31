@@ -21,8 +21,9 @@ import 'package:path/path.dart' as p;
 void main() {
   setUp(() => LocaleSettings.setLocale(AppLocale.en));
 
-  Widget wrap(Widget child) =>
-      TranslationProvider(child: MaterialApp(home: Scaffold(body: child)));
+  Widget wrap(Widget child) => TranslationProvider(
+    child: MaterialApp(home: Scaffold(body: child)),
+  );
 
   String readSource(String relative) {
     final File file = File(relative);
@@ -31,8 +32,9 @@ void main() {
   }
 
   group('BUG-1305 layer1 disclosure rendering', () {
-    testWidgets('shelf book disclosure lists both delete and keep sets',
-        (WidgetTester tester) async {
+    testWidgets('shelf book disclosure lists both delete and keep sets', (
+      WidgetTester tester,
+    ) async {
       final DeletionDisclosure disclosure = buildDeletionDisclosure(
         target: DeletionDisclosureTarget.shelfBook,
       );
@@ -41,37 +43,54 @@ void main() {
         wrap(DeletionDisclosureView(disclosure: disclosure)),
       );
 
-      expect(find.textContaining(t.delete_disclosure_book_records),
-          findsOneWidget);
-      expect(find.textContaining(t.delete_disclosure_book_extracted),
-          findsOneWidget);
-      expect(find.textContaining(t.delete_disclosure_book_audiobook),
-          findsOneWidget);
       expect(
-          find.textContaining(t.delete_disclosure_source_kept), findsOneWidget);
+        find.textContaining(t.delete_disclosure_book_records),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining(t.delete_disclosure_book_extracted),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining(t.delete_disclosure_book_audiobook),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining(t.delete_disclosure_source_kept),
+        findsOneWidget,
+      );
       expect(find.text(t.delete_disclosure_will_delete_label), findsOneWidget);
       expect(find.text(t.delete_disclosure_will_keep_label), findsOneWidget);
     });
 
-    testWidgets('audiobook disclosure never claims the extracted dir goes away',
-        (WidgetTester tester) async {
-      final DeletionDisclosure disclosure = buildDeletionDisclosure(
-        target: DeletionDisclosureTarget.attachedAudiobook,
-      );
-      await tester.pumpWidget(
-        wrap(DeletionDisclosureView(disclosure: disclosure)),
-      );
+    testWidgets(
+      'audiobook disclosure never claims the extracted dir goes away',
+      (WidgetTester tester) async {
+        final DeletionDisclosure disclosure = buildDeletionDisclosure(
+          target: DeletionDisclosureTarget.attachedAudiobook,
+        );
+        await tester.pumpWidget(
+          wrap(DeletionDisclosureView(disclosure: disclosure)),
+        );
 
-      expect(find.textContaining(t.delete_disclosure_audiobook_files),
-          findsOneWidget);
-      expect(find.textContaining(t.delete_disclosure_audiobook_book_kept),
-          findsOneWidget);
-      expect(find.textContaining(t.delete_disclosure_book_extracted),
-          findsNothing);
-    });
+        expect(
+          find.textContaining(t.delete_disclosure_audiobook_files),
+          findsOneWidget,
+        );
+        expect(
+          find.textContaining(t.delete_disclosure_audiobook_book_kept),
+          findsOneWidget,
+        );
+        expect(
+          find.textContaining(t.delete_disclosure_book_extracted),
+          findsNothing,
+        );
+      },
+    );
 
-    testWidgets('collection body follows the also-delete-members checkbox',
-        (WidgetTester tester) async {
+    testWidgets('collection body follows the also-delete-members checkbox', (
+      WidgetTester tester,
+    ) async {
       await tester.pumpWidget(
         wrap(
           FushiDestructiveConfirmDialog(
@@ -86,51 +105,63 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.textContaining(t.delete_disclosure_book_extracted),
-          findsNothing);
+      expect(
+        find.textContaining(t.delete_disclosure_book_extracted),
+        findsNothing,
+      );
 
       await tester.tap(find.text(t.delete_collection_also_books));
       await tester.pumpAndSettle();
 
-      expect(find.textContaining(t.delete_disclosure_book_extracted),
-          findsOneWidget);
-      expect(find.textContaining(t.delete_disclosure_book_audiobook),
-          findsOneWidget);
+      expect(
+        find.textContaining(t.delete_disclosure_book_extracted),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining(t.delete_disclosure_book_audiobook),
+        findsOneWidget,
+      );
     });
   });
 
   group('BUG-1305 layer2 every destructive entry must carry a disclosure', () {
-    test('shelf single/batch delete and collection member delete are wired',
-        () {
+    test('shelf single/batch delete and collection member delete are wired', () {
       final String books = readSource(
-          'lib/src/pages/implementations/reader_history/books.part.dart');
+        'lib/src/pages/implementations/reader_history/books.part.dart',
+      );
       expect(
         'buildDeletionDisclosure'.allMatches(books).length,
         3,
-        reason: 'shelf has 3 delete confirm entries (single SRT, single EPUB, '
+        reason:
+            'shelf has 3 delete confirm entries (single SRT, single EPUB, '
             'batch); each must build a structured disclosure',
       );
 
       final String historyPage = readSource(
-          'lib/src/pages/implementations/reader_fushi_history_page.dart');
+        'lib/src/pages/implementations/reader_fushi_history_page.dart',
+      );
       expect(
-        historyPage
-            .contains('deleteMembersDisclosure: buildDeletionDisclosure'),
+        historyPage.contains(
+          'deleteMembersDisclosure: buildDeletionDisclosure',
+        ),
         isTrue,
-        reason: 'book collection member delete recursively removes the extract '
+        reason:
+            'book collection member delete recursively removes the extract '
             'dir and the audiobook dir, so it must disclose',
       );
 
       final String gridDetail = readSource(
-          'lib/src/pages/implementations/media_collection_grid_detail_page.dart');
+        'lib/src/pages/implementations/media_collection_grid_detail_page.dart',
+      );
       expect(
         gridDetail.contains('checkedDisclosure: canDeleteMembers'),
         isTrue,
         reason: 'collection detail page deletes the same dirs, must disclose',
       );
 
-      final String audiobook =
-          readSource('lib/src/media/audiobook/audiobook_import_dialog.dart');
+      final String audiobook = readSource(
+        'lib/src/media/audiobook/audiobook_import_dialog.dart',
+      );
       expect(
         audiobook.contains('DeletionDisclosureTarget.attachedAudiobook'),
         isTrue,
@@ -140,11 +171,13 @@ void main() {
 
     test('checked-state disclosure is gated on the checkbox state', () {
       final String dialog = readSource(
-          'lib/src/utils/components/fushi_destructive_confirm_dialog.dart');
+        'lib/src/utils/components/fushi_destructive_confirm_dialog.dart',
+      );
       expect(
         dialog.contains('if (_checked && widget.checkedDisclosure != null)'),
         isTrue,
-        reason: 'the body must repaint with the checkbox, otherwise the body '
+        reason:
+            'the body must repaint with the checkbox, otherwise the body '
             'and the checkbox contradict each other again',
       );
     });
@@ -164,13 +197,17 @@ void main() {
         final Map<String, dynamic> json =
             jsonDecode(f.readAsStringSync()) as Map<String, dynamic>;
         final String? message = json['delete_collection_confirm'] as String?;
-        expect(message, isNotNull,
-            reason: 'missing delete_collection_confirm in ${f.path}');
+        expect(
+          message,
+          isNotNull,
+          reason: 'missing delete_collection_confirm in ${f.path}',
+        );
         expect(
           message!.toLowerCase().contains('video') ||
               message.contains('\u89c6\u9891'),
           isFalse,
-          reason: 'the collection delete body is shared by the book, video and '
+          reason:
+              'the collection delete body is shared by the book, video and '
               'game libraries, so it must not be video-specific: ${f.path}',
         );
       }
@@ -192,30 +229,36 @@ void main() {
   });
 
   group('BUG-1305 behaviour anchor', () {
-    test('deleteBookDir wipes the extract tree and spares files outside it',
-        () async {
-      final Directory root =
-          Directory.systemTemp.createTempSync('fushi_disclosure_');
-      addTearDown(() {
-        if (root.existsSync()) root.deleteSync(recursive: true);
-      });
+    test(
+      'deleteBookDir wipes the extract tree and spares files outside it',
+      () async {
+        final Directory root = Directory.systemTemp.createTempSync(
+          'fushi_disclosure_',
+        );
+        addTearDown(() {
+          if (root.existsSync()) root.deleteSync(recursive: true);
+        });
 
-      final Directory extractDir =
-          Directory(p.join(root.path, 'fushi_books', 'bookA'))
-            ..createSync(recursive: true);
-      final File nested = File(p.join(extractDir.path, 'OEBPS', 'ch1.xhtml'))
-        ..createSync(recursive: true)
-        ..writeAsStringSync('chapter');
+        final Directory extractDir = Directory(
+          p.join(root.path, 'fushi_books', 'bookA'),
+        )..createSync(recursive: true);
+        final File nested = File(p.join(extractDir.path, 'OEBPS', 'ch1.xhtml'))
+          ..createSync(recursive: true)
+          ..writeAsStringSync('chapter');
 
-      final File userOriginal = File(p.join(root.path, 'MyBook.epub'))
-        ..writeAsStringSync('original');
+        final File userOriginal = File(p.join(root.path, 'MyBook.epub'))
+          ..writeAsStringSync('original');
 
-      await EpubStorage.deleteBookDir(extractDir.path);
+        await EpubStorage.deleteBookDir(extractDir.path);
 
-      expect(extractDir.existsSync(), isFalse);
-      expect(nested.existsSync(), isFalse);
-      expect(userOriginal.existsSync(), isTrue,
-          reason: 'the disclosure promises the original import is kept');
-    });
+        expect(extractDir.existsSync(), isFalse);
+        expect(nested.existsSync(), isFalse);
+        expect(
+          userOriginal.existsSync(),
+          isTrue,
+          reason: 'the disclosure promises the original import is kept',
+        );
+      },
+    );
   });
 }

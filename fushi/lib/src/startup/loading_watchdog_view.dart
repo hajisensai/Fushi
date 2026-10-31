@@ -50,7 +50,8 @@ class LoadingWatchdogView extends StatelessWidget {
     // data root (AppPaths._resolveDataRoot returns null off desktop), so that
     // wording is both irrelevant and alarming — Retry never changes any location
     // there. Pick a mobile-appropriate copy that reassures the data is safe.
-    final bool mobile = isMobile ??
+    final bool mobile =
+        isMobile ??
         (defaultTargetPlatform == TargetPlatform.android ||
             defaultTargetPlatform == TargetPlatform.iOS);
     return Center(
@@ -59,23 +60,25 @@ class LoadingWatchdogView extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            FushiIcon(Icons.hourglass_empty, size: 48, color: colorScheme.primary),
+            FushiIcon(
+              Icons.hourglass_empty,
+              size: 48,
+              color: colorScheme.primary,
+            ),
             const SizedBox(height: 16),
             Text(
               t.loading_slow_title,
-              style: Theme.of(context)
-                  .textTheme
-                  .titleLarge
-                  ?.copyWith(color: colorScheme.onSurface),
+              style: Theme.of(
+                context,
+              ).textTheme.titleLarge?.copyWith(color: colorScheme.onSurface),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 12),
             Text(
               mobile ? t.loading_slow_message_mobile : t.loading_slow_message,
-              style: Theme.of(context)
-                  .textTheme
-                  .bodySmall
-                  ?.copyWith(color: colorScheme.onSurfaceVariant),
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: colorScheme.onSurfaceVariant,
+              ),
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 20),

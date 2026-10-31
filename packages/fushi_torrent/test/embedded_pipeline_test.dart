@@ -38,11 +38,12 @@ Future<void> _pollUntil(
 /// libtorrent 出站连接要绑在 listen socket 上：listen 失败的 session 连
 /// connect_peer 都是 `[sock_bind] not supported`，后面只会表现成拿不到元数据。
 Future<void> _expectListening(EmbeddedTorrentSession session) => _pollUntil(
-      () => session.listenPort > 0,
-      timeout: const Duration(seconds: 10),
-      what: 'leecher listen port (a session that is not listening cannot '
-          'connect out, BUG-2023)',
-    );
+  () => session.listenPort > 0,
+  timeout: const Duration(seconds: 10),
+  what:
+      'leecher listen port (a session that is not listening cannot '
+      'connect out, BUG-2023)',
+);
 
 void main() {
   final String? explicit = _resolveLibPath();
@@ -56,8 +57,9 @@ void main() {
   }
 
   final EmbeddedTorrentEngine? engine = tryOpen();
-  final String? skip =
-      engine == null ? 'fushi_torrent_ffi native lib not built' : null;
+  final String? skip = engine == null
+      ? 'fushi_torrent_ffi native lib not built'
+      : null;
 
   late Directory tempDir;
 
@@ -77,33 +79,43 @@ void main() {
     'magnet → metadata → sequential download → completion (local rig)',
     () async {
       final LocalSeedRig rig = await LocalSeedRig.start(
-          engine: engine!, workDir: tempDir, contentBytes: 8 * 1024 * 1024);
+        engine: engine!,
+        workDir: tempDir,
+        contentBytes: 8 * 1024 * 1024,
+      );
       addTearDown(rig.dispose);
 
       // Leecher：也要有 listen socket（libtorrent 出站连接绑定 listen
       // socket，全不监听时连不出去）；只绑回环、无 DHT —— 全确定性。
-      final EmbeddedTorrentSession? leecher =
-          EmbeddedTorrentSession.open(engine, listenInterfaces: '127.0.0.1:0');
+      final EmbeddedTorrentSession? leecher = EmbeddedTorrentSession.open(
+        engine,
+        listenInterfaces: '127.0.0.1:0',
+      );
       expect(leecher, isNotNull);
       addTearDown(leecher!.close);
       await _expectListening(leecher);
 
       final Directory dlDir = Directory('${tempDir.path}/dl')..createSync();
-      final FtAddResult added = leecher.addMagnet(rig.magnetUri,
-          savePath: dlDir.path, sequential: true);
+      final FtAddResult added = leecher.addMagnet(
+        rig.magnetUri,
+        savePath: dlDir.path,
+        sequential: true,
+      );
       expect(added.ok, isTrue, reason: 'addMagnet: ${added.error}');
       expect(added.id, rig.infoHash);
 
-      expect(leecher.connectPeer(rig.infoHash, '127.0.0.1', rig.seederPort),
-          isTrue);
+      expect(
+        leecher.connectPeer(rig.infoHash, '127.0.0.1', rig.seederPort),
+        isTrue,
+      );
 
       // ── 元数据 ────────────────────────────────────────────────────
       // connect_peer 在种子起始瞬间可能被丢弃且无从重发现（本地 rig 无
       // DHT/tracker），轮询期重试（已连上时重复 connect 是 no-op）。
       await _pollUntil(
-        () => leecher
-            .listTorrents()
-            .any((FtTorrentStatus t) => t.id == rig.infoHash && t.hasMetadata),
+        () => leecher.listTorrents().any(
+          (FtTorrentStatus t) => t.id == rig.infoHash && t.hasMetadata,
+        ),
         timeout: const Duration(seconds: 30),
         what: 'metadata',
         onTick: () =>
@@ -122,17 +134,22 @@ void main() {
       expect(piecesBefore, isNotNull);
       expect(piecesBefore!.numPieces, greaterThan(0));
       expect(
-          leecher.setPieceDeadline(
-              rig.infoHash, piecesBefore.numPieces - 1, 1000),
-          isTrue);
+        leecher.setPieceDeadline(
+          rig.infoHash,
+          piecesBefore.numPieces - 1,
+          1000,
+        ),
+        isTrue,
+      );
 
       // ── 下载至完成，沿途收集 piece 完成事件 ───────────────────────
       final List<int> pieceOrder = <int>[];
       await _pollUntil(
         () {
           final List<FtTorrentStatus> ts = leecher.listTorrents();
-          final FtTorrentStatus? t =
-              ts.where((FtTorrentStatus e) => e.id == rig.infoHash).firstOrNull;
+          final FtTorrentStatus? t = ts
+              .where((FtTorrentStatus e) => e.id == rig.infoHash)
+              .firstOrNull;
           return t != null && t.isFinished && t.progress >= 1.0 && t.left == 0;
         },
         timeout: const Duration(seconds: 120),
@@ -154,17 +171,20 @@ void main() {
       final List<FtFileEntry>? filesDone = leecher.torrentFiles(rig.infoHash);
       expect(filesDone!.single.done, filesDone.single.size);
 
-      final FtTorrentStatus snap = leecher
-          .listTorrents()
-          .firstWhere((FtTorrentStatus t) => t.id == rig.infoHash);
+      final FtTorrentStatus snap = leecher.listTorrents().firstWhere(
+        (FtTorrentStatus t) => t.id == rig.infoHash,
+      );
       expect(snap.contentPath, isNotEmpty);
       final String contentPath = snap.contentPath;
 
       // ── 顺序性：完成事件序应基本递增 ──────────────────────────────
       // 首尾提优/截止期会把个别 piece 拉到前面；剔除每文件首尾 piece 后，
       // 相邻事件递增占比应显著偏向顺序（阈值放宽到 0.8 抗调度抖动）。
-      expect(pieceOrder.toSet(), hasLength(piecesAfter.numPieces),
-          reason: 'every piece must be seen exactly once');
+      expect(
+        pieceOrder.toSet(),
+        hasLength(piecesAfter.numPieces),
+        reason: 'every piece must be seen exactly once',
+      );
       final Set<int> boosted = <int>{0, piecesAfter.numPieces - 1};
       final List<int> ordinary = pieceOrder
           .where((int p) => !boosted.contains(p))
@@ -173,12 +193,17 @@ void main() {
       for (int i = 1; i < ordinary.length; i++) {
         if (ordinary[i] > ordinary[i - 1]) ascending++;
       }
-      final double ratio =
-          ordinary.length > 1 ? ascending / (ordinary.length - 1) : 1.0;
-      expect(ratio, greaterThan(0.8),
-          reason: 'sequential download should complete pieces mostly in '
-              'order (got ratio $ratio, order sample: '
-              '${pieceOrder.take(16).toList()})');
+      final double ratio = ordinary.length > 1
+          ? ascending / (ordinary.length - 1)
+          : 1.0;
+      expect(
+        ratio,
+        greaterThan(0.8),
+        reason:
+            'sequential download should complete pieces mostly in '
+            'order (got ratio $ratio, order sample: '
+            '${pieceOrder.take(16).toList()})',
+      );
 
       // ── 落盘校验：比对前必须先关掉 session ────────────────────────
       // isFinished / progress==1.0 / left==0 / haveCount==numPieces 说的都是
@@ -196,8 +221,11 @@ void main() {
       leecher.close();
 
       final File downloaded = File(contentPath);
-      expect(downloaded.existsSync(), isTrue,
-          reason: 'content_path should point at the downloaded file');
+      expect(
+        downloaded.existsSync(),
+        isTrue,
+        reason: 'content_path should point at the downloaded file',
+      );
       final Uint8List got = downloaded.readAsBytesSync();
       final Uint8List want = LocalSeedRig.deterministicBytes(8 * 1024 * 1024);
       expect(got.length, want.length);
@@ -208,13 +236,17 @@ void main() {
       // rig 的 .torrent 把同一个种子加回一个不联网的新 session（listenInterfaces
       // 为空 = 零 peer，也不需要再换元数据），再验「连数据删除」。删除路径的
       // 覆盖面一点没少，又不会反过来把待比对的文件删掉。
-      final EmbeddedTorrentSession? remover =
-          EmbeddedTorrentSession.open(engine, listenInterfaces: '');
+      final EmbeddedTorrentSession? remover = EmbeddedTorrentSession.open(
+        engine,
+        listenInterfaces: '',
+      );
       expect(remover, isNotNull);
       addTearDown(remover!.close);
 
-      final FtAddResult readded =
-          remover.addTorrentFile(rig.torrentPath, savePath: dlDir.path);
+      final FtAddResult readded = remover.addTorrentFile(
+        rig.torrentPath,
+        savePath: dlDir.path,
+      );
       expect(readded.ok, isTrue, reason: 'addTorrentFile: ${readded.error}');
       expect(readded.id, rig.infoHash);
 
@@ -230,34 +262,41 @@ void main() {
   );
 
   test('bad magnet is rejected with error, not crash', () {
-    final EmbeddedTorrentSession? session =
-        EmbeddedTorrentSession.open(engine!);
+    final EmbeddedTorrentSession? session = EmbeddedTorrentSession.open(
+      engine!,
+    );
     addTearDown(session!.close);
-    final FtAddResult r =
-        session.addMagnet('not-a-magnet', savePath: tempDir.path);
+    final FtAddResult r = session.addMagnet(
+      'not-a-magnet',
+      savePath: tempDir.path,
+    );
     expect(r.ok, isFalse);
     expect(r.error, isNotNull);
   }, skip: skip);
 
   test('rate limit setter round-trips', () {
-    final EmbeddedTorrentSession? session =
-        EmbeddedTorrentSession.open(engine!);
+    final EmbeddedTorrentSession? session = EmbeddedTorrentSession.open(
+      engine!,
+    );
     addTearDown(session!.close);
     expect(session.setRateLimits(downloadBps: 1024 * 1024), isTrue);
     expect(session.setRateLimits(), isTrue);
   }, skip: skip);
 
   test('applyLimits (rate + connections) round-trips', () {
-    final EmbeddedTorrentSession? session =
-        EmbeddedTorrentSession.open(engine!);
+    final EmbeddedTorrentSession? session = EmbeddedTorrentSession.open(
+      engine!,
+    );
     addTearDown(session!.close);
     // 全设。
     expect(
-        session.applyLimits(
-            downloadBps: 2 * 1024 * 1024,
-            uploadBps: 512 * 1024,
-            connectionsLimit: 100),
-        isTrue);
+      session.applyLimits(
+        downloadBps: 2 * 1024 * 1024,
+        uploadBps: 512 * 1024,
+        connectionsLimit: 100,
+      ),
+      isTrue,
+    );
     // 全 0 = 不限，也应成功（connections<=0 保持默认，不误设成禁连）。
     expect(session.applyLimits(), isTrue);
     // 只设连接数。
@@ -265,21 +304,27 @@ void main() {
   }, skip: skip);
 
   test('applyLimits(limitLocalPeers:) drives the local peer class', () {
-    final EmbeddedTorrentSession? session =
-        EmbeddedTorrentSession.open(engine!);
+    final EmbeddedTorrentSession? session = EmbeddedTorrentSession.open(
+      engine!,
+    );
     addTearDown(session!.close);
     // 刚编出来的 DLL 必须带 ht_apply_limits_ex；不带说明 native 没重编，
     // 后面几条断言就毫无意义了，先在这里失败。
-    expect(session.supportsLocalPeerRateLimit, isTrue,
-        reason: 'this DLL predates ht_apply_limits_ex — rebuild it');
+    expect(
+      session.supportsLocalPeerRateLimit,
+      isTrue,
+      reason: 'this DLL predates ht_apply_limits_ex — rebuild it',
+    );
     // 真 libtorrent 上的 get_peer_class → 改 rate → set_peer_class 往返：
     // local_peer_class_id 必须存在且可写，否则 native 会吞异常返回 0。
     expect(
-        session.applyLimits(
-            downloadBps: 2 * 1024 * 1024,
-            uploadBps: 512 * 1024,
-            limitLocalPeers: true),
-        isTrue);
+      session.applyLimits(
+        downloadBps: 2 * 1024 * 1024,
+        uploadBps: 512 * 1024,
+        limitLocalPeers: true,
+      ),
+      isTrue,
+    );
     // 关回去（把 local peer class 的上限写回「不限」）也必须成功。
     expect(session.applyLimits(downloadBps: 2 * 1024 * 1024), isTrue);
   }, skip: skip);
@@ -288,11 +333,16 @@ void main() {
     'ip_filter blocks the seeder, then clearing it lets the download start',
     () async {
       final LocalSeedRig rig = await LocalSeedRig.start(
-          engine: engine!, workDir: tempDir, contentBytes: 1024 * 1024);
+        engine: engine!,
+        workDir: tempDir,
+        contentBytes: 1024 * 1024,
+      );
       addTearDown(rig.dispose);
 
-      final EmbeddedTorrentSession? leecher =
-          EmbeddedTorrentSession.open(engine, listenInterfaces: '127.0.0.1:0');
+      final EmbeddedTorrentSession? leecher = EmbeddedTorrentSession.open(
+        engine,
+        listenInterfaces: '127.0.0.1:0',
+      );
       addTearDown(leecher!.close);
       // 没在监听的 session 连不出去：下面「封锁期拿不到元数据」会平白成立，清空
       // 过滤器后又干等 30s——CI 上那次「metadata after clearing ip_filter」就是
@@ -303,16 +353,22 @@ void main() {
       // class，全局 download_rate_limit 管不到回环 peer——只设全局时 1MiB 在
       // 回环上几十 ms 传完、多余连接随即被关，下面 100ms 一次的采样在 Linux CI
       // 上一次都碰不到做种者（Windows 慢，碰巧落进窗口）。
-      expect(leecher.applyLimits(downloadBps: 64 * 1024, limitLocalPeers: true),
-          isTrue,
-          reason: 'local peer class must be rate-limited for the '
-              'observation window below to exist');
+      expect(
+        leecher.applyLimits(downloadBps: 64 * 1024, limitLocalPeers: true),
+        isTrue,
+        reason:
+            'local peer class must be rate-limited for the '
+            'observation window below to exist',
+      );
 
       // 先封整个回环段：随后 connect_peer 到做种者应被 ip_filter 拒绝，
       // 30×0.1s 窗口内拿不到元数据（若不生效，1MiB 本地传输早该几百 ms 完成）。
       expect(leecher.applyIpFilter(<String>['127.0.0.0/8']), isTrue);
-      final FtAddResult added = leecher.addMagnet(rig.magnetUri,
-          savePath: '${tempDir.path}/dl', sequential: true);
+      final FtAddResult added = leecher.addMagnet(
+        rig.magnetUri,
+        savePath: '${tempDir.path}/dl',
+        sequential: true,
+      );
       expect(added.ok, isTrue);
       for (int i = 0; i < 30; i++) {
         leecher.connectPeer(rig.infoHash, '127.0.0.1', rig.seederPort);
@@ -354,8 +410,11 @@ void main() {
             leecher.connectPeer(rig.infoHash, '127.0.0.1', rig.seederPort),
       );
       // 做种者在传输窗口内出现过并给我们喂了字节。
-      expect(maxSeenDownload, greaterThan(0),
-          reason: 'seeder peer must surface in peer_info with bytes fed to us');
+      expect(
+        maxSeenDownload,
+        greaterThan(0),
+        reason: 'seeder peer must surface in peer_info with bytes fed to us',
+      );
     },
     skip: skip,
     timeout: const Timeout(Duration(minutes: 2)),

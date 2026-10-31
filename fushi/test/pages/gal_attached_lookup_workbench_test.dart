@@ -318,9 +318,13 @@ void main() {
       );
       expect(
         tester
-            .widget<FilledButton>(glassUnwrap<FilledButton>(find.byKey(
-                const ValueKey<String>('game-attached-calibration-commit'),
-              )),)
+            .widget<FilledButton>(
+              glassUnwrap<FilledButton>(
+                find.byKey(
+                  const ValueKey<String>('game-attached-calibration-commit'),
+                ),
+              ),
+            )
             .onPressed,
         isNull,
       );
@@ -359,9 +363,13 @@ void main() {
       );
       expect(
         tester
-            .widget<FilledButton>(glassUnwrap<FilledButton>(find.byKey(
-                const ValueKey<String>('game-attached-calibration-commit'),
-              )),)
+            .widget<FilledButton>(
+              glassUnwrap<FilledButton>(
+                find.byKey(
+                  const ValueKey<String>('game-attached-calibration-commit'),
+                ),
+              ),
+            )
             .onPressed,
         isNull,
       );
@@ -380,9 +388,13 @@ void main() {
       emit('targetBackground');
       await tester.pump();
       tester
-          .widget<TextButton>(glassUnwrap<TextButton>(find.byKey(
-              const ValueKey<String>('game-attached-calibration-cancel'),
-            )),)
+          .widget<TextButton>(
+            glassUnwrap<TextButton>(
+              find.byKey(
+                const ValueKey<String>('game-attached-calibration-cancel'),
+              ),
+            ),
+          )
           .onPressed!();
       await tester.pumpAndSettle();
       expect(port.cancelCalls, 1);

@@ -76,37 +76,54 @@ void main() {
 
       // 2026-10-06（用户：「这条线很丑」）：顶栏与正文之间不再有常驻 0.5px 分隔线，
       // 改为正文滚离顶部时顶栏铺 scrolled-under 底，且只在有可渲染词条时启用。
-      expect(src.contains('showHeaderDivider'), isFalse,
-          reason: '常驻 header 分隔线已移除，不得复活');
-      expect(src.contains('_PopupScrolledUnderBar('), isTrue,
-          reason: '顶栏须包 scrolled-under 底');
-      expect(src.contains('enabled: _hasRenderableResults'), isTrue,
-          reason: '无结果 / 搜索中顶栏恒透明');
-      expect(src.contains('onScrolledUnderChanged:'), isTrue,
-          reason: 'scrolled-under 真值来自 WebView 回报');
+      expect(
+        src.contains('showHeaderDivider'),
+        isFalse,
+        reason: '常驻 header 分隔线已移除，不得复活',
+      );
+      expect(
+        src.contains('_PopupScrolledUnderBar('),
+        isTrue,
+        reason: '顶栏须包 scrolled-under 底',
+      );
+      expect(
+        src.contains('enabled: _hasRenderableResults'),
+        isTrue,
+        reason: '无结果 / 搜索中顶栏恒透明',
+      );
+      expect(
+        src.contains('onScrolledUnderChanged:'),
+        isTrue,
+        reason: 'scrolled-under 真值来自 WebView 回报',
+      );
     },
   );
 
-  test('reader/video popup headers no longer carry an unconditional border',
-      () {
-    for (final String path in <String>[
-      'lib/src/pages/implementations/reader_fushi_page.dart',
-      'lib/src/pages/implementations/video_fushi_page.dart',
-    ]) {
-      final String src = File(path).readAsStringSync();
-      final int headerIdx = path.contains('reader_fushi_page')
-          ? src.indexOf('Widget? buildPopupAudioControls()')
-          : src.indexOf('Widget? buildPopupHeaderFor(');
-      expect(headerIdx, greaterThanOrEqualTo(0),
-          reason: '$path: popup header 方法未找到');
-      // 截取到方法体的一段（足够覆盖 Container 装饰），断言不再有底边框。用精确的
-      // `border: Border(` 标记，避免误配按钮的 StadiumBorder/CircleBorder。
-      final String header = src.substring(headerIdx, headerIdx + 1600);
-      expect(
-        header.contains('border: Border('),
-        isFalse,
-        reason: '$path: header 不得再画无条件底边框（分隔线已移交 popup 层按结果条件画）',
-      );
-    }
-  });
+  test(
+    'reader/video popup headers no longer carry an unconditional border',
+    () {
+      for (final String path in <String>[
+        'lib/src/pages/implementations/reader_fushi_page.dart',
+        'lib/src/pages/implementations/video_fushi_page.dart',
+      ]) {
+        final String src = File(path).readAsStringSync();
+        final int headerIdx = path.contains('reader_fushi_page')
+            ? src.indexOf('Widget? buildPopupAudioControls()')
+            : src.indexOf('Widget? buildPopupHeaderFor(');
+        expect(
+          headerIdx,
+          greaterThanOrEqualTo(0),
+          reason: '$path: popup header 方法未找到',
+        );
+        // 截取到方法体的一段（足够覆盖 Container 装饰），断言不再有底边框。用精确的
+        // `border: Border(` 标记，避免误配按钮的 StadiumBorder/CircleBorder。
+        final String header = src.substring(headerIdx, headerIdx + 1600);
+        expect(
+          header.contains('border: Border('),
+          isFalse,
+          reason: '$path: header 不得再画无条件底边框（分隔线已移交 popup 层按结果条件画）',
+        );
+      }
+    },
+  );
 }

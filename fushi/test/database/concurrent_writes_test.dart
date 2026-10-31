@@ -23,41 +23,42 @@ StudySegmentsCompanion _segment({
   required String uid,
   required String mediaKey,
   required int durationMs,
-}) =>
-    StudySegmentsCompanion.insert(
-      uid: uid,
-      deviceId: 'dev-test',
-      mediaKind: kActivityMediaBook,
-      mediaKey: mediaKey,
-      title: mediaKey,
-      startAt: 1000,
-      endAt: 1000 + durationMs,
-      dateKey: '2026-05-17',
-      hour: 14,
-      durationMs: Value(durationMs),
-      updatedAt: 1000 + durationMs,
-    );
+}) => StudySegmentsCompanion.insert(
+  uid: uid,
+  deviceId: 'dev-test',
+  mediaKind: kActivityMediaBook,
+  mediaKey: mediaKey,
+  title: mediaKey,
+  startAt: 1000,
+  endAt: 1000 + durationMs,
+  dateKey: '2026-05-17',
+  hour: 14,
+  durationMs: Value(durationMs),
+  updatedAt: 1000 + durationMs,
+);
 
 void main() {
   group('Interleaved StudySegments writes', () {
-    test('50 interleaved upsertStudySegment with distinct uids all persist',
-        () async {
-      final db = await _openDb();
-      const int n = 50;
+    test(
+      '50 interleaved upsertStudySegment with distinct uids all persist',
+      () async {
+        final db = await _openDb();
+        const int n = 50;
 
-      await Future.wait(
-        List.generate(
-          n,
-          (int i) => db.upsertStudySegment(
-            _segment(uid: 'seg-$i', mediaKey: 'book/A', durationMs: 1000),
+        await Future.wait(
+          List.generate(
+            n,
+            (int i) => db.upsertStudySegment(
+              _segment(uid: 'seg-$i', mediaKey: 'book/A', durationMs: 1000),
+            ),
           ),
-        ),
-      );
+        );
 
-      final all = await db.getStudySegments();
-      expect(all, hasLength(n));
-      expect(all.map((StudySegmentRow r) => r.uid).toSet(), hasLength(n));
-    });
+        final all = await db.getStudySegments();
+        expect(all, hasLength(n));
+        expect(all.map((StudySegmentRow r) => r.uid).toSet(), hasLength(n));
+      },
+    );
 
     test('interleaved writes to different media stay independent', () async {
       final db = await _openDb();
@@ -75,13 +76,19 @@ void main() {
       ]);
 
       expect(
-          await db.getStudySegmentsForMedia(
-              mediaKind: kActivityMediaBook, mediaKey: 'book/A'),
-          hasLength(n));
+        await db.getStudySegmentsForMedia(
+          mediaKind: kActivityMediaBook,
+          mediaKey: 'book/A',
+        ),
+        hasLength(n),
+      );
       expect(
-          await db.getStudySegmentsForMedia(
-              mediaKind: kActivityMediaBook, mediaKey: 'book/B'),
-          hasLength(n));
+        await db.getStudySegmentsForMedia(
+          mediaKind: kActivityMediaBook,
+          mediaKey: 'book/B',
+        ),
+        hasLength(n),
+      );
     });
 
     test('rapid upserts to the same uid converge to the last writer', () async {
@@ -93,7 +100,11 @@ void main() {
         List.generate(
           n,
           (int i) => db.upsertStudySegment(
-            _segment(uid: 'same', mediaKey: 'book/A', durationMs: (i + 1) * 100),
+            _segment(
+              uid: 'same',
+              mediaKey: 'book/A',
+              durationMs: (i + 1) * 100,
+            ),
           ),
         ),
       );
@@ -105,103 +116,107 @@ void main() {
   });
 
   group('Interleaved Preferences writes', () {
-    test('50 interleaved setPref on same key produces valid final value',
-        () async {
-      final db = await _openDb();
-      const int n = 50;
+    test(
+      '50 interleaved setPref on same key produces valid final value',
+      () async {
+        final db = await _openDb();
+        const int n = 50;
 
-      await Future.wait(
-        List.generate(
-          n,
-          (i) => db.setPref('counter', '$i'),
-        ),
-      );
+        await Future.wait(List.generate(n, (i) => db.setPref('counter', '$i')));
 
-      final value = await db.getPref('counter');
-      expect(value, isNotNull);
-      // Verify the value is a parseable integer and not corrupted
-      expect(int.tryParse(value!), isNotNull,
-          reason: 'value must be a valid integer string, not corrupted');
-      // Only one row should exist — upsert should not duplicate
-      final all = await db.getAllPrefs();
-      expect(all.keys.where((k) => k == 'counter').length, 1);
-    });
+        final value = await db.getPref('counter');
+        expect(value, isNotNull);
+        // Verify the value is a parseable integer and not corrupted
+        expect(
+          int.tryParse(value!),
+          isNotNull,
+          reason: 'value must be a valid integer string, not corrupted',
+        );
+        // Only one row should exist — upsert should not duplicate
+        final all = await db.getAllPrefs();
+        expect(all.keys.where((k) => k == 'counter').length, 1);
+      },
+    );
 
-    test('compareAndSetPref changes the expected raw value and bumps once',
-        () async {
-      final db = await _openDb();
-      final String hiddenRaw = PrefCodec.encode('macos');
-      final String autoRaw = PrefCodec.encode('auto');
-      await db.setPref('design_system', hiddenRaw);
+    test(
+      'compareAndSetPref changes the expected raw value and bumps once',
+      () async {
+        final db = await _openDb();
+        final String hiddenRaw = PrefCodec.encode('macos');
+        final String autoRaw = PrefCodec.encode('auto');
+        await db.setPref('design_system', hiddenRaw);
 
-      final bool changed = await db.compareAndSetPref(
-        'design_system',
-        expectedValue: hiddenRaw,
-        newValue: autoRaw,
-      );
-
-      expect(changed, isTrue);
-      expect(await db.getPref('design_system'), autoRaw);
-      expect(
-        PrefCodec.decode<int>(
-          (await db.getPref(FushiDatabase.prefsVersionKey))!,
-          0,
-        ),
-        2,
-      );
-    });
-
-    test('compareAndSetPref mismatch changes neither value nor version',
-        () async {
-      final db = await _openDb();
-      final String materialRaw = PrefCodec.encode('material');
-      await db.setPref('design_system', materialRaw);
-      final String versionBefore =
-          (await db.getPref(FushiDatabase.prefsVersionKey))!;
-
-      final bool changed = await db.compareAndSetPref(
-        'design_system',
-        expectedValue: PrefCodec.encode('macos'),
-        newValue: PrefCodec.encode('auto'),
-      );
-
-      expect(changed, isFalse);
-      expect(await db.getPref('design_system'), materialRaw);
-      expect(
-        await db.getPref(FushiDatabase.prefsVersionKey),
-        versionBefore,
-      );
-    });
-
-    test('concurrent compareAndSetPref calls allow exactly one winner',
-        () async {
-      final db = await _openDb();
-      final String hiddenRaw = PrefCodec.encode('cupertino');
-      await db.setPref('design_system', hiddenRaw);
-
-      final List<bool> results = await Future.wait(<Future<bool>>[
-        db.compareAndSetPref(
+        final bool changed = await db.compareAndSetPref(
           'design_system',
           expectedValue: hiddenRaw,
-          newValue: PrefCodec.encode('auto'),
-        ),
-        db.compareAndSetPref(
-          'design_system',
-          expectedValue: hiddenRaw,
-          newValue: PrefCodec.encode('auto'),
-        ),
-      ]);
+          newValue: autoRaw,
+        );
 
-      expect(results.where((bool changed) => changed), hasLength(1));
-      expect(
-        PrefCodec.decode<int>(
-          (await db.getPref(FushiDatabase.prefsVersionKey))!,
-          0,
-        ),
-        2,
-        reason: '只有成功的 CAS 能 bump prefs_version',
-      );
-    });
+        expect(changed, isTrue);
+        expect(await db.getPref('design_system'), autoRaw);
+        expect(
+          PrefCodec.decode<int>(
+            (await db.getPref(FushiDatabase.prefsVersionKey))!,
+            0,
+          ),
+          2,
+        );
+      },
+    );
+
+    test(
+      'compareAndSetPref mismatch changes neither value nor version',
+      () async {
+        final db = await _openDb();
+        final String materialRaw = PrefCodec.encode('material');
+        await db.setPref('design_system', materialRaw);
+        final String versionBefore = (await db.getPref(
+          FushiDatabase.prefsVersionKey,
+        ))!;
+
+        final bool changed = await db.compareAndSetPref(
+          'design_system',
+          expectedValue: PrefCodec.encode('macos'),
+          newValue: PrefCodec.encode('auto'),
+        );
+
+        expect(changed, isFalse);
+        expect(await db.getPref('design_system'), materialRaw);
+        expect(await db.getPref(FushiDatabase.prefsVersionKey), versionBefore);
+      },
+    );
+
+    test(
+      'concurrent compareAndSetPref calls allow exactly one winner',
+      () async {
+        final db = await _openDb();
+        final String hiddenRaw = PrefCodec.encode('cupertino');
+        await db.setPref('design_system', hiddenRaw);
+
+        final List<bool> results = await Future.wait(<Future<bool>>[
+          db.compareAndSetPref(
+            'design_system',
+            expectedValue: hiddenRaw,
+            newValue: PrefCodec.encode('auto'),
+          ),
+          db.compareAndSetPref(
+            'design_system',
+            expectedValue: hiddenRaw,
+            newValue: PrefCodec.encode('auto'),
+          ),
+        ]);
+
+        expect(results.where((bool changed) => changed), hasLength(1));
+        expect(
+          PrefCodec.decode<int>(
+            (await db.getPref(FushiDatabase.prefsVersionKey))!,
+            0,
+          ),
+          2,
+          reason: '只有成功的 CAS 能 bump prefs_version',
+        );
+      },
+    );
 
     test('interleaved setPref on different keys all persist', () async {
       final db = await _openDb();
@@ -242,8 +257,11 @@ void main() {
       // x and y depend on execution order; verify no corruption
       for (final key in ['x', 'y']) {
         final v = all[key];
-        expect(v == null || int.tryParse(v) != null, isTrue,
-            reason: '$key must be absent or a valid integer, got: $v');
+        expect(
+          v == null || int.tryParse(v) != null,
+          isTrue,
+          reason: '$key must be absent or a valid integer, got: $v',
+        );
       }
     });
   });

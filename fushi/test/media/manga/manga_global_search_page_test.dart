@@ -17,11 +17,12 @@ void main() {
   // 是两层）。下面两条分别钉住「压一层」和「压两层」两个真实入口。
   Widget shellHarness({required int pushDepth}) {
     Widget searchPage(BuildContext shellContext) => MangaGlobalSearchPage(
-          mihonManager: null,
-          mihonSources: const <Never>[],
-          onOpenSources: MediaLibraryShellScope.maybeOf(shellContext)
-              ?.actionFor(MediaLibraryViewKind.sources),
-        );
+      mihonManager: null,
+      mihonSources: const <Never>[],
+      onOpenSources: MediaLibraryShellScope.maybeOf(
+        shellContext,
+      )?.actionFor(MediaLibraryViewKind.sources),
+    );
 
     return TranslationProvider(
       child: MaterialApp(
@@ -70,44 +71,50 @@ void main() {
   }
 
   testWidgets(
-      'no sources: empty state names the Import tab and its button lands on it',
-      (WidgetTester tester) async {
-    await tester.pumpWidget(shellHarness(pushDepth: 1));
-    // 壳的浮动工具栏叠在内容上，视图让位的高度要等工具栏首帧量出来
-    // （FushiHeightReporter 的 post-frame 回调）再落一帧才生效。
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('搜索'));
-    await tester.pumpAndSettle();
+    'no sources: empty state names the Import tab and its button lands on it',
+    (WidgetTester tester) async {
+      await tester.pumpWidget(shellHarness(pushDepth: 1));
+      // 壳的浮动工具栏叠在内容上，视图让位的高度要等工具栏首帧量出来
+      // （FushiHeightReporter 的 post-frame 回调）再落一帧才生效。
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('搜索'));
+      await tester.pumpAndSettle();
 
-    expect(find.text(t.manga_global_search_no_sources), findsOneWidget);
-    expect(
-      t.manga_global_search_no_sources,
-      contains(t.nav_browse),
-      // 2026-09-27 起漫画来源在「浏览 › 来源」里装 / 启用（PR #1707 审查改文案）。
-      reason: '空态文案必须点名用户真能找到的那个 tab（「浏览」），不是「扩展」',
-    );
-    final Finder button =
-        find.byKey(const ValueKey<String>('manga_global_search_open_sources'));
-    expect(button, findsOneWidget);
-    // 图标必须是「导入」的图标：拼图块（extension_outlined）正是本 bug 的病根。
-    expect(
-      tester.widget<Icon>(
-        find.descendant(of: button, matching: find.byType(Icon)),
-      ).icon,
-      Icons.library_add_outlined,
-    );
+      expect(find.text(t.manga_global_search_no_sources), findsOneWidget);
+      expect(
+        t.manga_global_search_no_sources,
+        contains(t.nav_browse),
+        // 2026-09-27 起漫画来源在「浏览 › 来源」里装 / 启用（PR #1707 审查改文案）。
+        reason: '空态文案必须点名用户真能找到的那个 tab（「浏览」），不是「扩展」',
+      );
+      final Finder button = find.byKey(
+        const ValueKey<String>('manga_global_search_open_sources'),
+      );
+      expect(button, findsOneWidget);
+      // 图标必须是「导入」的图标：拼图块（extension_outlined）正是本 bug 的病根。
+      expect(
+        tester
+            .widget<Icon>(
+              find.descendant(of: button, matching: find.byType(Icon)),
+            )
+            .icon,
+        Icons.library_add_outlined,
+      );
 
-    await tester.tap(button);
-    await tester.pumpAndSettle();
-    expect(find.byType(MangaGlobalSearchPage), findsNothing,
-        reason: '搜索页必须被弹掉，用户回到壳里才看得见切过去的「导入」视图');
-    expect(find.text('导入视图'), findsOneWidget);
-  });
+      await tester.tap(button);
+      await tester.pumpAndSettle();
+      expect(
+        find.byType(MangaGlobalSearchPage),
+        findsNothing,
+        reason: '搜索页必须被弹掉，用户回到壳里才看得见切过去的「导入」视图',
+      );
+      expect(find.text('导入视图'), findsOneWidget);
+    },
+  );
 
   // BUG-1871 复审：第二个入口（发现详情页 → 全源搜索页）在搜索页下面还压着详情页。
   // 「本页 pop 自己」那套写法在这里只弹掉一层，详情页仍盖在壳上面。
-  testWidgets('no sources: 从详情页进来（压两层）也落到「导入」视图',
-      (WidgetTester tester) async {
+  testWidgets('no sources: 从详情页进来（压两层）也落到「导入」视图', (WidgetTester tester) async {
     await tester.pumpWidget(shellHarness(pushDepth: 2));
     // 壳的浮动工具栏叠在内容上，视图让位的高度要等工具栏首帧量出来
     // （FushiHeightReporter 的 post-frame 回调）再落一帧才生效。
@@ -128,8 +135,9 @@ void main() {
     expect(find.text('导入视图'), findsOneWidget);
   });
 
-  testWidgets('no sources without a shell to switch: text only, no button',
-      (WidgetTester tester) async {
+  testWidgets('no sources without a shell to switch: text only, no button', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(
       TranslationProvider(
         child: MaterialApp(

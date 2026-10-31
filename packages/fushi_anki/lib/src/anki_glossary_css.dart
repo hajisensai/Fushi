@@ -239,7 +239,9 @@ int _skipAttribute(String s, int start) {
 /// 属性选择器 `[name op value i]`（[start] 是 `[`、[end] 是 `]` 之后）里的属性名，小写。
 String _attributeName(String s, int start, int end) {
   final String inner = s.substring(start + 1, end - 1).trimLeft();
-  final Match? m = RegExp(r'^(?:[-\w]*\|)?([-\w\u0080-\uffff]+)').firstMatch(inner);
+  final Match? m = RegExp(
+    r'^(?:[-\w]*\|)?([-\w\u0080-\uffff]+)',
+  ).firstMatch(inner);
   return m?.group(1)?.toLowerCase() ?? '';
 }
 

@@ -31,8 +31,9 @@ Future<RemoteAudioLookup?> remoteAudioLookupFromResolvedUrl(
   if (uri != null && (uri.scheme == 'http' || uri.scheme == 'https')) {
     return downloadRemote(uri);
   }
-  final String filePath =
-      uri != null && uri.scheme == 'file' ? uri.toFilePath() : resolved;
+  final String filePath = uri != null && uri.scheme == 'file'
+      ? uri.toFilePath()
+      : resolved;
   final Uint8List? bytes = await loadLocalFile(filePath);
   if (bytes == null || bytes.isEmpty) return null;
   return RemoteAudioLookup(
@@ -57,8 +58,9 @@ String remoteAudioContentTypeForPath(String filePath) =>
 String remoteAudioContentTypeFromResponse(Uri uri, String? header) {
   if (header != null) {
     final int semi = header.indexOf(';');
-    final String type =
-        (semi >= 0 ? header.substring(0, semi) : header).trim().toLowerCase();
+    final String type = (semi >= 0 ? header.substring(0, semi) : header)
+        .trim()
+        .toLowerCase();
     if (type.startsWith('audio/')) return type;
   }
   return remoteAudioContentTypeForPath(uri.path);

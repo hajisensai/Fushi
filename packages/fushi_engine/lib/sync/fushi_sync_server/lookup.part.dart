@@ -41,16 +41,19 @@ extension _FushiSyncServerLookup on FushiSyncServer {
     final Map<String, dynamic>? body = await readJsonObjectBody(request);
     if (body == null) return shelf.Response(400, body: 'Invalid JSON');
     // 契约与 FushiApiServer 共享（BUG-530，单一真相源）。
-    return jsonResponse(await buildRemoteDictionaryLookupResponse(
-      body,
-      lookup: service,
-      history: _historyService,
-      // BUG-3425：对端（游戏串流）在它那边渲染、导出本机的查词结果，必须用本机的
-      // 词典样式。与浏览器扩展同一套 `stylesRevision` 门控：请求不带该字段（老
-      // 客户端）一个字节都不多发；带了且指纹不同才整表下发一次。
-      popupDictionaryCssProvider:
-          _dictionaryStylesProvider == null ? null : _peerDictionaryCss,
-    ));
+    return jsonResponse(
+      await buildRemoteDictionaryLookupResponse(
+        body,
+        lookup: service,
+        history: _historyService,
+        // BUG-3425：对端（游戏串流）在它那边渲染、导出本机的查词结果，必须用本机的
+        // 词典样式。与浏览器扩展同一套 `stylesRevision` 门控：请求不带该字段（老
+        // 客户端）一个字节都不多发；带了且指纹不同才整表下发一次。
+        popupDictionaryCssProvider: _dictionaryStylesProvider == null
+            ? null
+            : _peerDictionaryCss,
+      ),
+    );
   }
 
   /// 只含词典自带 CSS 的弹窗样式快照：用户自定义 CSS 属于**对端**自己的弹窗设置，
@@ -225,10 +228,12 @@ extension _FushiSyncServerLookup on FushiSyncServer {
       switch (path) {
         case '/api/anki/media/dedup/probe':
           return jsonResponse(
-              await buildAnkiMediaDedupProbeResponse(mining: svc));
+            await buildAnkiMediaDedupProbeResponse(mining: svc),
+          );
         case '/api/anki/media/dedup/run':
           return jsonResponse(
-              await buildAnkiMediaDedupRunResponse(body, mining: svc));
+            await buildAnkiMediaDedupRunResponse(body, mining: svc),
+          );
         default:
           return shelf.Response.notFound('Unknown endpoint');
       }

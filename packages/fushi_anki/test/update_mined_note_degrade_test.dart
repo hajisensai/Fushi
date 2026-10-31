@@ -21,8 +21,7 @@ class _DegradingRepo extends BaseAnkiRepository {
   Future<MineOutcome> mineEntry({
     required String rawPayloadJson,
     required AnkiMiningContext context,
-  }) async =>
-      const MineOutcome.success();
+  }) async => const MineOutcome.success();
 
   @override
   Future<bool> isDuplicate(String expression, String reading) async => false;
@@ -35,20 +34,26 @@ class _DegradingRepo extends BaseAnkiRepository {
 }
 
 void main() {
-  test('base updateMinedNote degrades to an error (does not throw or succeed)',
-      () async {
-    final repo = _DegradingRepo();
+  test(
+    'base updateMinedNote degrades to an error (does not throw or succeed)',
+    () async {
+      final repo = _DegradingRepo();
 
-    final MineOutcome outcome = await repo.updateMinedNote(
-      noteId: 123,
-      rawPayloadJson: '{"expression":"勉強"}',
-      context: const AnkiMiningContext(sentence: ''),
-    );
+      final MineOutcome outcome = await repo.updateMinedNote(
+        noteId: 123,
+        rawPayloadJson: '{"expression":"勉強"}',
+        context: const AnkiMiningContext(sentence: ''),
+      );
 
-    expect(outcome.result, MineResult.error,
-        reason: 'a backend without overwrite support must report an error, '
-            'never silently succeed');
-    expect(outcome.errorDetail, isNotNull);
-    expect(outcome.noteId, isNull);
-  });
+      expect(
+        outcome.result,
+        MineResult.error,
+        reason:
+            'a backend without overwrite support must report an error, '
+            'never silently succeed',
+      );
+      expect(outcome.errorDetail, isNotNull);
+      expect(outcome.noteId, isNull);
+    },
+  );
 }

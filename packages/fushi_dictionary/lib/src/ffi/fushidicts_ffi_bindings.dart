@@ -16,7 +16,8 @@ DynamicLibrary _openNativeLib() {
   if (Platform.isLinux) return _openLinuxBundled('libfushidicts_ffi.so');
   if (Platform.isIOS) return DynamicLibrary.process();
   throw UnsupportedError(
-      'fushidicts: unsupported platform ${Platform.operatingSystem}');
+    'fushidicts: unsupported platform ${Platform.operatingSystem}',
+  );
 }
 
 /// Linux bundle 把随包 .so 装在 `<exe 目录>/lib/`。runner 的 RUNPATH
@@ -178,8 +179,12 @@ final class FfiKanjiResults extends Struct {
 
 // ── native function typedefs ────────────────────────────────────────
 
-typedef _ImportDart = FfiImportResult Function(Pointer<Utf8> zipPath,
-    Pointer<Utf8> outputDir, Pointer<Utf8> breadcrumbDir);
+typedef _ImportDart =
+    FfiImportResult Function(
+      Pointer<Utf8> zipPath,
+      Pointer<Utf8> outputDir,
+      Pointer<Utf8> breadcrumbDir,
+    );
 
 typedef _ProbeDictContentNative = Int32 Function(Pointer<Utf8> dir);
 typedef _ProbeDictContentDart = int Function(Pointer<Utf8> dir);
@@ -190,55 +195,66 @@ typedef _CreateDart = Pointer<Void> Function();
 
 typedef _DestroyDart = void Function(Pointer<Void> handle);
 
-typedef _AddDictNative = Void Function(
-    Pointer<Void> handle, Pointer<Utf8> path);
+typedef _AddDictNative =
+    Void Function(Pointer<Void> handle, Pointer<Utf8> path);
 typedef _AddDictDart = void Function(Pointer<Void> handle, Pointer<Utf8> path);
 
-typedef _LoadTransformsDart = void Function(
-    Pointer<Void> handle, Pointer<Utf8> json);
+typedef _LoadTransformsDart =
+    void Function(Pointer<Void> handle, Pointer<Utf8> json);
 
-typedef _QueryDart = FfiQueryResult Function(
-    Pointer<Void> handle, Pointer<Utf8> expression);
+typedef _QueryDart =
+    FfiQueryResult Function(Pointer<Void> handle, Pointer<Utf8> expression);
 
 typedef _FreeQueryResultDart = void Function(Pointer<FfiQueryResult> r);
 
-typedef _LookupDart = FfiLookupResults Function(
-    Pointer<Void> handle, Pointer<Utf8> text, int maxResults, int scanLength);
+typedef _LookupDart =
+    FfiLookupResults Function(
+      Pointer<Void> handle,
+      Pointer<Utf8> text,
+      int maxResults,
+      int scanLength,
+    );
 
-typedef _LookupWithOptionsDart = FfiLookupResults Function(
-    Pointer<Void> handle,
-    Pointer<Utf8> text,
-    int maxResults,
-    int scanLength,
-    Pointer<Utf8> freqDict,
-    int freqOrder,
-    Pointer<Utf8> primaryReading);
+typedef _LookupWithOptionsDart =
+    FfiLookupResults Function(
+      Pointer<Void> handle,
+      Pointer<Utf8> text,
+      int maxResults,
+      int scanLength,
+      Pointer<Utf8> freqDict,
+      int freqOrder,
+      Pointer<Utf8> primaryReading,
+    );
 
 // 带 flags 的 lookup（bit0 = 中文简→繁回落）；老导出签名不动。
-typedef _LookupWithFlagsDart = FfiLookupResults Function(
-    Pointer<Void> handle,
-    Pointer<Utf8> text,
-    int maxResults,
-    int scanLength,
-    Pointer<Utf8> freqDict,
-    int freqOrder,
-    Pointer<Utf8> primaryReading,
-    int flags);
+typedef _LookupWithFlagsDart =
+    FfiLookupResults Function(
+      Pointer<Void> handle,
+      Pointer<Utf8> text,
+      int maxResults,
+      int scanLength,
+      Pointer<Utf8> freqDict,
+      int freqOrder,
+      Pointer<Utf8> primaryReading,
+      int flags,
+    );
 
 // 带原文振假名的 lookup：rubyBounds = 2*rubyCount 个查询串码点偏移（start, end 交替），
 // rubyReadings = rubyCount 个 <rt> 读音以 U+001F 连接。
-typedef _LookupWithRubyDart = FfiLookupResults Function(
-    Pointer<Void> handle,
-    Pointer<Utf8> text,
-    int maxResults,
-    int scanLength,
-    Pointer<Utf8> freqDict,
-    int freqOrder,
-    Pointer<Utf8> primaryReading,
-    int flags,
-    Pointer<Int32> rubyBounds,
-    Pointer<Utf8> rubyReadings,
-    int rubyCount);
+typedef _LookupWithRubyDart =
+    FfiLookupResults Function(
+      Pointer<Void> handle,
+      Pointer<Utf8> text,
+      int maxResults,
+      int scanLength,
+      Pointer<Utf8> freqDict,
+      int freqOrder,
+      Pointer<Utf8> primaryReading,
+      int flags,
+      Pointer<Int32> rubyBounds,
+      Pointer<Utf8> rubyReadings,
+      int rubyCount,
+    );
 
 typedef _FreeLookupResultsDart = void Function(Pointer<FfiLookupResults> r);
 
@@ -246,34 +262,56 @@ typedef _GetStylesDart = FfiDictStyles Function(Pointer<Void> handle);
 
 typedef _FreeStylesDart = void Function(Pointer<FfiDictStyles> r);
 
-typedef _GetMediaDart = FfiMediaFile Function(
-    Pointer<Void> handle, Pointer<Utf8> dictName, Pointer<Utf8> mediaPath);
+typedef _GetMediaDart =
+    FfiMediaFile Function(
+      Pointer<Void> handle,
+      Pointer<Utf8> dictName,
+      Pointer<Utf8> mediaPath,
+    );
 
 typedef _FreeMediaDart = void Function(Pointer<FfiMediaFile> r);
 
-typedef _QueryKanjiDart = FfiKanjiResults Function(
-    Pointer<Void> handle, Pointer<Utf8> character);
+typedef _QueryKanjiDart =
+    FfiKanjiResults Function(Pointer<Void> handle, Pointer<Utf8> character);
 
 typedef _FreeKanjiResultsDart = void Function(Pointer<FfiKanjiResults> r);
 
-typedef _LookupPopupJsonDart = Pointer<Utf8> Function(Pointer<Void> handle,
-    Pointer<Utf8> text, int maxResults, int scanLength, int maxTerms);
+typedef _LookupPopupJsonDart =
+    Pointer<Utf8> Function(
+      Pointer<Void> handle,
+      Pointer<Utf8> text,
+      int maxResults,
+      int scanLength,
+      int maxTerms,
+    );
 
 typedef _FreeStringDart = void Function(Pointer<Utf8> s);
 
 // [text] 是带长 UTF-8 缓冲（[textBytes] 字节，不靠结尾 NUL 定界）：Dart 字符串里
 // 合法的 U+0000 是正文的一部分（HBK-AUDIT-007）。
-typedef _TokenizeNative = FfiTokenizeResult Function(Pointer<Void> handle,
-    Pointer<Uint8> text, Int32 textBytes, Int32 scanLength, Int32 withReadings);
-typedef _TokenizeDart = FfiTokenizeResult Function(Pointer<Void> handle,
-    Pointer<Uint8> text, int textBytes, int scanLength, int withReadings);
+typedef _TokenizeNative =
+    FfiTokenizeResult Function(
+      Pointer<Void> handle,
+      Pointer<Uint8> text,
+      Int32 textBytes,
+      Int32 scanLength,
+      Int32 withReadings,
+    );
+typedef _TokenizeDart =
+    FfiTokenizeResult Function(
+      Pointer<Void> handle,
+      Pointer<Uint8> text,
+      int textBytes,
+      int scanLength,
+      int withReadings,
+    );
 
 typedef _FreeTokenizeResultDart = void Function(Pointer<FfiTokenizeResult> r);
 
-typedef _MatchLengthNative = Int32 Function(
-    Pointer<Void> handle, Pointer<Utf8> text, Int32 scanLength);
-typedef _MatchLengthDart = int Function(
-    Pointer<Void> handle, Pointer<Utf8> text, int scanLength);
+typedef _MatchLengthNative =
+    Int32 Function(Pointer<Void> handle, Pointer<Utf8> text, Int32 scanLength);
+typedef _MatchLengthDart =
+    int Function(Pointer<Void> handle, Pointer<Utf8> text, int scanLength);
 
 typedef _RetainDart = int Function(Pointer<Void> handle);
 
@@ -290,53 +328,94 @@ class FushidictsFfiBindings {
   FushidictsFfiBindings() {
     _lib = _openNativeLib();
 
-    import_ = _lib.lookupFunction<
-        FfiImportResult Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>),
-        _ImportDart>('fushidicts_import');
-    probeDictContent =
-        _lib.lookupFunction<_ProbeDictContentNative, _ProbeDictContentDart>(
-            'fushidicts_probe_dict_content');
-    freeImportResult = _lib.lookupFunction<
-        Void Function(Pointer<FfiImportResult>),
-        _FreeImportResultDart>('fushidicts_free_import_result');
+    import_ = _lib
+        .lookupFunction<
+          FfiImportResult Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>),
+          _ImportDart
+        >('fushidicts_import');
+    probeDictContent = _lib
+        .lookupFunction<_ProbeDictContentNative, _ProbeDictContentDart>(
+          'fushidicts_probe_dict_content',
+        );
+    freeImportResult = _lib
+        .lookupFunction<
+          Void Function(Pointer<FfiImportResult>),
+          _FreeImportResultDart
+        >('fushidicts_free_import_result');
     create = _lib.lookupFunction<Pointer<Void> Function(), _CreateDart>(
-        'fushidicts_create');
+      'fushidicts_create',
+    );
     destroy = _lib.lookupFunction<Void Function(Pointer<Void>), _DestroyDart>(
-        'fushidicts_destroy');
+      'fushidicts_destroy',
+    );
     retain = _lib.lookupFunction<Int32 Function(Pointer<Void>), _RetainDart>(
-        'fushidicts_retain');
+      'fushidicts_retain',
+    );
     release = _lib.lookupFunction<Void Function(Pointer<Void>), _DestroyDart>(
-        'fushidicts_release');
+      'fushidicts_release',
+    );
     addTermDict = _lib.lookupFunction<_AddDictNative, _AddDictDart>(
-        'fushidicts_add_term_dict');
+      'fushidicts_add_term_dict',
+    );
     addFreqDict = _lib.lookupFunction<_AddDictNative, _AddDictDart>(
-        'fushidicts_add_freq_dict');
+      'fushidicts_add_freq_dict',
+    );
     addPitchDict = _lib.lookupFunction<_AddDictNative, _AddDictDart>(
-        'fushidicts_add_pitch_dict');
+      'fushidicts_add_pitch_dict',
+    );
     addKanjiDict = _lib.lookupFunction<_AddDictNative, _AddDictDart>(
-        'fushidicts_add_kanji_dict');
-    loadTransforms = _lib.lookupFunction<
-        Void Function(Pointer<Void>, Pointer<Utf8>),
-        _LoadTransformsDart>('fushidicts_load_transforms');
-    query = _lib.lookupFunction<
-        FfiQueryResult Function(Pointer<Void>, Pointer<Utf8>),
-        _QueryDart>('fushidicts_query');
-    freeQueryResult = _lib.lookupFunction<
-        Void Function(Pointer<FfiQueryResult>),
-        _FreeQueryResultDart>('fushidicts_free_query_result');
-    lookup = _lib.lookupFunction<
-        FfiLookupResults Function(Pointer<Void>, Pointer<Utf8>, Int32, Int32),
-        _LookupDart>('fushidicts_lookup');
-    lookupWithOptions = _lib.lookupFunction<
-        FfiLookupResults Function(Pointer<Void>, Pointer<Utf8>, Int32, Int32,
-            Pointer<Utf8>, Int32, Pointer<Utf8>),
-        _LookupWithOptionsDart>('fushidicts_lookup_with_options');
-    lookupWithFlags = _lib.lookupFunction<
-        FfiLookupResults Function(Pointer<Void>, Pointer<Utf8>, Int32, Int32,
-            Pointer<Utf8>, Int32, Pointer<Utf8>, Int32),
-        _LookupWithFlagsDart>('fushidicts_lookup_with_flags');
-    lookupWithRuby = _lib.lookupFunction<
-        FfiLookupResults Function(
+      'fushidicts_add_kanji_dict',
+    );
+    loadTransforms = _lib
+        .lookupFunction<
+          Void Function(Pointer<Void>, Pointer<Utf8>),
+          _LoadTransformsDart
+        >('fushidicts_load_transforms');
+    query = _lib
+        .lookupFunction<
+          FfiQueryResult Function(Pointer<Void>, Pointer<Utf8>),
+          _QueryDart
+        >('fushidicts_query');
+    freeQueryResult = _lib
+        .lookupFunction<
+          Void Function(Pointer<FfiQueryResult>),
+          _FreeQueryResultDart
+        >('fushidicts_free_query_result');
+    lookup = _lib
+        .lookupFunction<
+          FfiLookupResults Function(Pointer<Void>, Pointer<Utf8>, Int32, Int32),
+          _LookupDart
+        >('fushidicts_lookup');
+    lookupWithOptions = _lib
+        .lookupFunction<
+          FfiLookupResults Function(
+            Pointer<Void>,
+            Pointer<Utf8>,
+            Int32,
+            Int32,
+            Pointer<Utf8>,
+            Int32,
+            Pointer<Utf8>,
+          ),
+          _LookupWithOptionsDart
+        >('fushidicts_lookup_with_options');
+    lookupWithFlags = _lib
+        .lookupFunction<
+          FfiLookupResults Function(
+            Pointer<Void>,
+            Pointer<Utf8>,
+            Int32,
+            Int32,
+            Pointer<Utf8>,
+            Int32,
+            Pointer<Utf8>,
+            Int32,
+          ),
+          _LookupWithFlagsDart
+        >('fushidicts_lookup_with_flags');
+    lookupWithRuby = _lib
+        .lookupFunction<
+          FfiLookupResults Function(
             Pointer<Void>,
             Pointer<Utf8>,
             Int32,
@@ -347,40 +426,68 @@ class FushidictsFfiBindings {
             Int32,
             Pointer<Int32>,
             Pointer<Utf8>,
-            Int32),
-        _LookupWithRubyDart>('fushidicts_lookup_with_ruby');
-    freeLookupResults = _lib.lookupFunction<
-        Void Function(Pointer<FfiLookupResults>),
-        _FreeLookupResultsDart>('fushidicts_free_lookup_results');
-    getStyles = _lib.lookupFunction<FfiDictStyles Function(Pointer<Void>),
-        _GetStylesDart>('fushidicts_get_styles');
-    freeStyles = _lib.lookupFunction<Void Function(Pointer<FfiDictStyles>),
-        _FreeStylesDart>('fushidicts_free_styles');
-    getMedia = _lib.lookupFunction<
-        FfiMediaFile Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>),
-        _GetMediaDart>('fushidicts_get_media');
-    freeMedia = _lib.lookupFunction<Void Function(Pointer<FfiMediaFile>),
-        _FreeMediaDart>('fushidicts_free_media');
-    queryKanji = _lib.lookupFunction<
-        FfiKanjiResults Function(Pointer<Void>, Pointer<Utf8>),
-        _QueryKanjiDart>('fushidicts_query_kanji');
-    freeKanjiResults = _lib.lookupFunction<
-        Void Function(Pointer<FfiKanjiResults>),
-        _FreeKanjiResultsDart>('fushidicts_free_kanji_results');
-    lookupPopupJson = _lib.lookupFunction<
-        Pointer<Utf8> Function(
-            Pointer<Void>, Pointer<Utf8>, Int32, Int32, Int32),
-        _LookupPopupJsonDart>('fushidicts_lookup_popup_json');
-    freeString =
-        _lib.lookupFunction<Void Function(Pointer<Utf8>), _FreeStringDart>(
-            'fushidicts_free_string');
+            Int32,
+          ),
+          _LookupWithRubyDart
+        >('fushidicts_lookup_with_ruby');
+    freeLookupResults = _lib
+        .lookupFunction<
+          Void Function(Pointer<FfiLookupResults>),
+          _FreeLookupResultsDart
+        >('fushidicts_free_lookup_results');
+    getStyles = _lib
+        .lookupFunction<FfiDictStyles Function(Pointer<Void>), _GetStylesDart>(
+          'fushidicts_get_styles',
+        );
+    freeStyles = _lib
+        .lookupFunction<Void Function(Pointer<FfiDictStyles>), _FreeStylesDart>(
+          'fushidicts_free_styles',
+        );
+    getMedia = _lib
+        .lookupFunction<
+          FfiMediaFile Function(Pointer<Void>, Pointer<Utf8>, Pointer<Utf8>),
+          _GetMediaDart
+        >('fushidicts_get_media');
+    freeMedia = _lib
+        .lookupFunction<Void Function(Pointer<FfiMediaFile>), _FreeMediaDart>(
+          'fushidicts_free_media',
+        );
+    queryKanji = _lib
+        .lookupFunction<
+          FfiKanjiResults Function(Pointer<Void>, Pointer<Utf8>),
+          _QueryKanjiDart
+        >('fushidicts_query_kanji');
+    freeKanjiResults = _lib
+        .lookupFunction<
+          Void Function(Pointer<FfiKanjiResults>),
+          _FreeKanjiResultsDart
+        >('fushidicts_free_kanji_results');
+    lookupPopupJson = _lib
+        .lookupFunction<
+          Pointer<Utf8> Function(
+            Pointer<Void>,
+            Pointer<Utf8>,
+            Int32,
+            Int32,
+            Int32,
+          ),
+          _LookupPopupJsonDart
+        >('fushidicts_lookup_popup_json');
+    freeString = _lib
+        .lookupFunction<Void Function(Pointer<Utf8>), _FreeStringDart>(
+          'fushidicts_free_string',
+        );
     tokenize = _lib.lookupFunction<_TokenizeNative, _TokenizeDart>(
-        'fushidicts_tokenize');
-    freeTokenizeResult = _lib.lookupFunction<
-        Void Function(Pointer<FfiTokenizeResult>),
-        _FreeTokenizeResultDart>('fushidicts_free_tokenize_result');
+      'fushidicts_tokenize',
+    );
+    freeTokenizeResult = _lib
+        .lookupFunction<
+          Void Function(Pointer<FfiTokenizeResult>),
+          _FreeTokenizeResultDart
+        >('fushidicts_free_tokenize_result');
     matchLength = _lib.lookupFunction<_MatchLengthNative, _MatchLengthDart>(
-        'fushidicts_match_length');
+      'fushidicts_match_length',
+    );
   }
   late final DynamicLibrary _lib;
 
@@ -388,6 +495,7 @@ class FushidictsFfiBindings {
   late final _ProbeDictContentDart probeDictContent;
   late final _FreeImportResultDart freeImportResult;
   late final _CreateDart create;
+
   /// `fushidicts_destroy` 是**退役**：还掉宿主的引用，在飞借用（[retain]）都还完才销毁。
   late final _DestroyDart destroy;
 
@@ -437,7 +545,8 @@ EnsureRedirectFlagDart? lookupEnsureRedirectFlag() {
   try {
     return _openNativeLib()
         .lookupFunction<_EnsureRedirectFlagNative, EnsureRedirectFlagDart>(
-            'fushidicts_ensure_redirect_flag');
+          'fushidicts_ensure_redirect_flag',
+        );
   } on ArgumentError {
     return null;
   }
@@ -445,10 +554,10 @@ EnsureRedirectFlagDart? lookupEnsureRedirectFlag() {
 
 // ── zstd 文件解压（按需解析） ───────────────────────────────────────
 
-typedef _ZstdDecompressFileNative = Int32 Function(
-    Pointer<Utf8> inPath, Pointer<Utf8> outPath);
-typedef ZstdDecompressFileDart = int Function(
-    Pointer<Utf8> inPath, Pointer<Utf8> outPath);
+typedef _ZstdDecompressFileNative =
+    Int32 Function(Pointer<Utf8> inPath, Pointer<Utf8> outPath);
+typedef ZstdDecompressFileDart =
+    int Function(Pointer<Utf8> inPath, Pointer<Utf8> outPath);
 
 /// `fushidicts_zstd_decompress_file` 的绑定，**用到时才解析**。
 ///
@@ -459,7 +568,8 @@ ZstdDecompressFileDart? lookupZstdDecompressFile() {
   try {
     return _openNativeLib()
         .lookupFunction<_ZstdDecompressFileNative, ZstdDecompressFileDart>(
-            'fushidicts_zstd_decompress_file');
+          'fushidicts_zstd_decompress_file',
+        );
   } on ArgumentError {
     return null;
   }
@@ -467,20 +577,24 @@ ZstdDecompressFileDart? lookupZstdDecompressFile() {
 
 // ── 语料词元（「我库里的例句」，按需解析） ───────────────────────────────
 
-typedef _CorpusTermsNative = Int32 Function(
-    Pointer<Void> handle,
-    Pointer<Uint8> input,
-    Int32 inputLen,
-    Int32 scanLength,
-    Pointer<Pointer<Uint8>> out,
-    Pointer<Int32> outLen);
-typedef CorpusTermsDart = int Function(
-    Pointer<Void> handle,
-    Pointer<Uint8> input,
-    int inputLen,
-    int scanLength,
-    Pointer<Pointer<Uint8>> out,
-    Pointer<Int32> outLen);
+typedef _CorpusTermsNative =
+    Int32 Function(
+      Pointer<Void> handle,
+      Pointer<Uint8> input,
+      Int32 inputLen,
+      Int32 scanLength,
+      Pointer<Pointer<Uint8>> out,
+      Pointer<Int32> outLen,
+    );
+typedef CorpusTermsDart =
+    int Function(
+      Pointer<Void> handle,
+      Pointer<Uint8> input,
+      int inputLen,
+      int scanLength,
+      Pointer<Pointer<Uint8>> out,
+      Pointer<Int32> outLen,
+    );
 typedef _FreeBytesNative = Void Function(Pointer<Uint8> p);
 typedef FreeBytesDart = void Function(Pointer<Uint8> p);
 
@@ -492,9 +606,11 @@ typedef FreeBytesDart = void Function(Pointer<Uint8> p);
     final DynamicLibrary lib = _openNativeLib();
     return (
       corpusTerms: lib.lookupFunction<_CorpusTermsNative, CorpusTermsDart>(
-          'fushidicts_corpus_terms'),
+        'fushidicts_corpus_terms',
+      ),
       freeBytes: lib.lookupFunction<_FreeBytesNative, FreeBytesDart>(
-          'fushidicts_free_bytes'),
+        'fushidicts_free_bytes',
+      ),
     );
   } on ArgumentError {
     return null;

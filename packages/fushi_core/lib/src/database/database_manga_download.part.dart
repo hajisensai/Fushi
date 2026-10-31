@@ -8,9 +8,9 @@ mixin _FushiDbMangaDownload on _$FushiDatabase {
   Future<void> upsertMangaDownloadJob(MangaDownloadJobsCompanion job) =>
       into(mangaDownloadJobs).insertOnConflictUpdate(job);
 
-  Future<MangaDownloadJobRow?> getMangaDownloadJob(String jobId) =>
-      (select(mangaDownloadJobs)..where((t) => t.jobId.equals(jobId)))
-          .getSingleOrNull();
+  Future<MangaDownloadJobRow?> getMangaDownloadJob(String jobId) => (select(
+    mangaDownloadJobs,
+  )..where((t) => t.jobId.equals(jobId))).getSingleOrNull();
 
   /// 按身份三元组找任务（唯一索引 `(kind, book_key, chapter_key)` 保证至多一行）。
   Future<MangaDownloadJobRow?> findMangaDownloadJob({
@@ -18,11 +18,12 @@ mixin _FushiDbMangaDownload on _$FushiDatabase {
     required String bookKey,
     required String chapterKey,
   }) =>
-      (select(mangaDownloadJobs)
-            ..where((t) =>
+      (select(mangaDownloadJobs)..where(
+            (t) =>
                 t.kind.equals(kind) &
                 t.bookKey.equals(bookKey) &
-                t.chapterKey.equals(chapterKey)))
+                t.chapterKey.equals(chapterKey),
+          ))
           .getSingleOrNull();
 
   /// 列表，按创建时刻升序（再按 job_id 兜稳定序）。[statuses] 为空 = 不过滤。
@@ -30,7 +31,7 @@ mixin _FushiDbMangaDownload on _$FushiDatabase {
     Set<String> statuses = const <String>{},
   }) {
     final SimpleSelectStatement<$MangaDownloadJobsTable, MangaDownloadJobRow>
-        query = select(mangaDownloadJobs);
+    query = select(mangaDownloadJobs);
     if (statuses.isNotEmpty) {
       query.where((t) => t.status.isIn(statuses));
     }
@@ -49,14 +50,14 @@ mixin _FushiDbMangaDownload on _$FushiDatabase {
     StreamSubscription<void>? updatesSub;
     controller = StreamController<void>(
       onListen: () {
-        updatesSub = tableUpdates(
-          TableUpdateQuery
-              .onAllTables(<ResultSetImplementation<dynamic, dynamic>>[
-            mangaDownloadJobs,
-          ]),
-        ).listen((_) {
-          if (!controller.isClosed) controller.add(null);
-        });
+        updatesSub =
+            tableUpdates(
+              TableUpdateQuery.onAllTables(
+                <ResultSetImplementation<dynamic, dynamic>>[mangaDownloadJobs],
+              ),
+            ).listen((_) {
+              if (!controller.isClosed) controller.add(null);
+            });
       },
       onCancel: () async {
         await updatesSub?.cancel();
@@ -71,14 +72,13 @@ mixin _FushiDbMangaDownload on _$FushiDatabase {
     required int pagesDone,
     required int pagesTotal,
     required int updatedAt,
-  }) =>
-      (update(mangaDownloadJobs)..where((t) => t.jobId.equals(jobId))).write(
-        MangaDownloadJobsCompanion(
-          pagesDone: Value<int>(pagesDone),
-          pagesTotal: Value<int>(pagesTotal),
-          updatedAt: Value<int>(updatedAt),
-        ),
-      );
+  }) => (update(mangaDownloadJobs)..where((t) => t.jobId.equals(jobId))).write(
+    MangaDownloadJobsCompanion(
+      pagesDone: Value<int>(pagesDone),
+      pagesTotal: Value<int>(pagesTotal),
+      updatedAt: Value<int>(updatedAt),
+    ),
+  );
 
   /// 改状态。[lastError] 传 `null` 表示不动该列；要清空传 [clearLastError]。
   /// [completedAt] / [attemptCount] 同理只在给出时写。
@@ -90,24 +90,23 @@ mixin _FushiDbMangaDownload on _$FushiDatabase {
     bool clearLastError = false,
     int? completedAt,
     int? attemptCount,
-  }) =>
-      (update(mangaDownloadJobs)..where((t) => t.jobId.equals(jobId))).write(
-        MangaDownloadJobsCompanion(
-          status: Value<String>(status),
-          updatedAt: Value<int>(updatedAt),
-          lastError: clearLastError
-              ? const Value<String?>(null)
-              : (lastError == null
-                  ? const Value<String?>.absent()
-                  : Value<String?>(lastError)),
-          completedAt: completedAt == null
-              ? const Value<int?>.absent()
-              : Value<int?>(completedAt),
-          attemptCount: attemptCount == null
-              ? const Value<int>.absent()
-              : Value<int>(attemptCount),
-        ),
-      );
+  }) => (update(mangaDownloadJobs)..where((t) => t.jobId.equals(jobId))).write(
+    MangaDownloadJobsCompanion(
+      status: Value<String>(status),
+      updatedAt: Value<int>(updatedAt),
+      lastError: clearLastError
+          ? const Value<String?>(null)
+          : (lastError == null
+                ? const Value<String?>.absent()
+                : Value<String?>(lastError)),
+      completedAt: completedAt == null
+          ? const Value<int?>.absent()
+          : Value<int?>(completedAt),
+      attemptCount: attemptCount == null
+          ? const Value<int>.absent()
+          : Value<int>(attemptCount),
+    ),
+  );
 
   Future<int> deleteMangaDownloadJob(String jobId) =>
       (delete(mangaDownloadJobs)..where((t) => t.jobId.equals(jobId))).go();
@@ -120,20 +119,22 @@ mixin _FushiDbMangaDownload on _$FushiDatabase {
   /// 启动时把上次进程死亡留下的 `running` 复位成 `queued`，让 worker 续跑。
   /// 进度列不动：worker 重跑时按磁盘上已落地的页决定从哪续。
   Future<int> resetRunningMangaDownloadJobs({required int updatedAt}) =>
-      (update(mangaDownloadJobs)
-            ..where((t) => t.status.equals(MangaDownloadJobStatus.running)))
-          .write(MangaDownloadJobsCompanion(
-        status: const Value<String>(MangaDownloadJobStatus.queued),
-        updatedAt: Value<int>(updatedAt),
-      ));
+      (update(
+        mangaDownloadJobs,
+      )..where((t) => t.status.equals(MangaDownloadJobStatus.running))).write(
+        MangaDownloadJobsCompanion(
+          status: const Value<String>(MangaDownloadJobStatus.queued),
+          updatedAt: Value<int>(updatedAt),
+        ),
+      );
 
   /// 事务内取最早的 `queued` 任务置为 `running` 并返回置后的行；队列空返回 null。
   /// 单 worker 场景下事务只是防「取到与置状态之间被另一条 upsert 改掉」。
   Future<MangaDownloadJobRow?> claimNextQueuedMangaDownloadJob({
     required int updatedAt,
-  }) =>
-      transaction(() async {
-        final MangaDownloadJobRow? next = await (select(mangaDownloadJobs)
+  }) => transaction(() async {
+    final MangaDownloadJobRow? next =
+        await (select(mangaDownloadJobs)
               ..where((t) => t.status.equals(MangaDownloadJobStatus.queued))
               ..orderBy(<OrderingTerm Function($MangaDownloadJobsTable)>[
                 (t) => OrderingTerm(expression: t.createdAt),
@@ -141,19 +142,23 @@ mixin _FushiDbMangaDownload on _$FushiDatabase {
               ])
               ..limit(1))
             .getSingleOrNull();
-        if (next == null) return null;
-        final int changed = await (update(mangaDownloadJobs)
-              ..where((t) =>
+    if (next == null) return null;
+    final int changed =
+        await (update(mangaDownloadJobs)..where(
+              (t) =>
                   t.jobId.equals(next.jobId) &
-                  t.status.equals(MangaDownloadJobStatus.queued)))
-            .write(MangaDownloadJobsCompanion(
-          status: const Value<String>(MangaDownloadJobStatus.running),
-          updatedAt: Value<int>(updatedAt),
-        ));
-        if (changed == 0) return null;
-        return next.copyWith(
-          status: MangaDownloadJobStatus.running,
-          updatedAt: updatedAt,
-        );
-      });
+                  t.status.equals(MangaDownloadJobStatus.queued),
+            ))
+            .write(
+              MangaDownloadJobsCompanion(
+                status: const Value<String>(MangaDownloadJobStatus.running),
+                updatedAt: Value<int>(updatedAt),
+              ),
+            );
+    if (changed == 0) return null;
+    return next.copyWith(
+      status: MangaDownloadJobStatus.running,
+      updatedAt: updatedAt,
+    );
+  });
 }

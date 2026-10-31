@@ -27,21 +27,19 @@ import '../helpers/test_platform_services.dart';
 import '../helpers/glass_unwrap.dart';
 
 final Provider<ProfileDraftCoordinator> _testProfileDraftCoordinatorProvider =
-    Provider<ProfileDraftCoordinator>(
-  (ref) => ProfileDraftCoordinator(),
-);
+    Provider<ProfileDraftCoordinator>((ref) => ProfileDraftCoordinator());
 
 class _FakeCssAppModel extends AppModel {
   _FakeCssAppModel()
-      : _dictionaries = [
-          Dictionary(name: 'JMdict', formatKey: 'yomichan', order: 0),
-          Dictionary(
-            name: 'Very long dictionary name that must not overflow dialogs',
-            formatKey: 'yomichan',
-            order: 1,
-          ),
-        ],
-        super(testPlatformServices());
+    : _dictionaries = [
+        Dictionary(name: 'JMdict', formatKey: 'yomichan', order: 0),
+        Dictionary(
+          name: 'Very long dictionary name that must not overflow dialogs',
+          formatKey: 'yomichan',
+          order: 1,
+        ),
+      ],
+      super(testPlatformServices());
 
   final List<Dictionary> _dictionaries;
   final Map<String, String> savedCustomCss = <String, String>{};
@@ -148,17 +146,11 @@ Future<({int profileA, int profileB})> _seedTwoProfiles(
 ) async {
   await repo.ensureDefaultProfile();
   final int profileA = await repo.getActiveProfileId();
-  await db.setPref(
-    'global_dict_css',
-    '.profile-a-stored { color: orange; }',
-  );
+  await db.setPref('global_dict_css', '.profile-a-stored { color: orange; }');
   await repo.snapshotCurrentSettings(profileA);
 
   final int profileB = await repo.createProfile('Profile B');
-  await db.setPref(
-    'global_dict_css',
-    '.profile-b-stored { color: blue; }',
-  );
+  await db.setPref('global_dict_css', '.profile-b-stored { color: blue; }');
   await repo.snapshotCurrentSettings(profileB);
 
   await repo.setActiveProfileId(profileA);
@@ -184,9 +176,7 @@ Widget _buildApp({
       child: MaterialApp(
         theme: ThemeData(
           useMaterial3: true,
-          colorScheme: ColorScheme.fromSeed(
-            seedColor: const Color(0xFF386A58),
-          ),
+          colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF386A58)),
         ),
         home: home,
       ),
@@ -252,34 +242,36 @@ void main() {
     SharedPreferences.setMockInitialValues(<String, Object>{});
   });
 
-  test('Profile change finishes before an intermediate draft can Save',
-      () async {
-    final ProfileDraftCoordinator coordinator = ProfileDraftCoordinator();
-    final Completer<void> changeStarted = Completer<void>();
-    final Completer<void> finishChange = Completer<void>();
-    bool wroteDraft = false;
+  test(
+    'Profile change finishes before an intermediate draft can Save',
+    () async {
+      final ProfileDraftCoordinator coordinator = ProfileDraftCoordinator();
+      final Completer<void> changeStarted = Completer<void>();
+      final Completer<void> finishChange = Completer<void>();
+      bool wroteDraft = false;
 
-    final Future<void> change = coordinator.runProfileChange(() async {
-      changeStarted.complete();
-      await finishChange.future;
-    });
-    await changeStarted.future;
-    final Object intermediateScope = coordinator.draftScope;
+      final Future<void> change = coordinator.runProfileChange(() async {
+        changeStarted.complete();
+        await finishChange.future;
+      });
+      await changeStarted.future;
+      final Object intermediateScope = coordinator.draftScope;
 
-    final Future<bool> save = coordinator.saveDraftIfCurrent(
-      intermediateScope,
-      () async {
-        wroteDraft = true;
-      },
-    );
-    await Future<void>.delayed(Duration.zero);
-    expect(wroteDraft, isFalse);
+      final Future<bool> save = coordinator.saveDraftIfCurrent(
+        intermediateScope,
+        () async {
+          wroteDraft = true;
+        },
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(wroteDraft, isFalse);
 
-    finishChange.complete();
-    await change;
-    expect(await save, isFalse);
-    expect(wroteDraft, isFalse);
-  });
+      finishChange.complete();
+      await change;
+      expect(await save, isFalse);
+      expect(wroteDraft, isFalse);
+    },
+  );
 
   test('Profile change waits for an in-flight draft Save', () async {
     final ProfileDraftCoordinator coordinator = ProfileDraftCoordinator();
@@ -312,10 +304,7 @@ void main() {
 
   test('every active Profile mutation path rotates the draft scope', () async {
     final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
-    final ProfileRepository repo = ProfileRepository(
-      db,
-      FakeAnkiRepository(),
-    );
+    final ProfileRepository repo = ProfileRepository(db, FakeAnkiRepository());
     final ProfileDraftCoordinator coordinator = ProfileDraftCoordinator();
     final ProfileViewModel viewModel = ProfileViewModel(
       repo,
@@ -346,15 +335,13 @@ void main() {
 
     await expectRotation(() => viewModel.switchProfile(profileA));
     final String exported = await viewModel.exportProfile(profileA);
-    await expectRotation(
-      () async {
-        await viewModel.importProfile(
-          exported,
-          mode: ProfileImportMode.overwrite,
-          targetProfileId: profileA,
-        );
-      },
-    );
+    await expectRotation(() async {
+      await viewModel.importProfile(
+        exported,
+        mode: ProfileImportMode.overwrite,
+        targetProfileId: profileA,
+      );
+    });
 
     await expectRotation(() => viewModel.switchProfile(profileB));
     await expectRotation(() => viewModel.deleteProfile(profileB));
@@ -362,197 +349,216 @@ void main() {
   });
 
   test(
-      'switch then delete target serializes before rejecting an intermediate stale Save',
-      () async {
-    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
-    final _GatedProfileRepository repo = _GatedProfileRepository(db);
-    final ({int profileA, int profileB}) profiles =
-        await _seedTwoProfiles(db, repo);
-    final ProfileDraftCoordinator coordinator = ProfileDraftCoordinator();
-    final ProfileViewModel viewModel = ProfileViewModel(
-      repo,
-      () async {},
-      coordinator,
-    );
-    addTearDown(() async {
-      viewModel.dispose();
-      await Future<void>.delayed(const Duration(milliseconds: 10));
-      await db.close();
-    });
-    ProfileUiState latestState = await viewModel.stream.firstWhere(
-      (ProfileUiState state) =>
-          state.activeProfileId == profiles.profileA && !state.isLoading,
-    );
-    final StreamSubscription<ProfileUiState> stateSubscription =
-        viewModel.stream.listen((ProfileUiState state) {
-      latestState = state;
-    });
-    addTearDown(stateSubscription.cancel);
+    'switch then delete target serializes before rejecting an intermediate stale Save',
+    () async {
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
+      final _GatedProfileRepository repo = _GatedProfileRepository(db);
+      final ({int profileA, int profileB}) profiles = await _seedTwoProfiles(
+        db,
+        repo,
+      );
+      final ProfileDraftCoordinator coordinator = ProfileDraftCoordinator();
+      final ProfileViewModel viewModel = ProfileViewModel(
+        repo,
+        () async {},
+        coordinator,
+      );
+      addTearDown(() async {
+        viewModel.dispose();
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+        await db.close();
+      });
+      ProfileUiState latestState = await viewModel.stream.firstWhere(
+        (ProfileUiState state) =>
+            state.activeProfileId == profiles.profileA && !state.isLoading,
+      );
+      final StreamSubscription<ProfileUiState> stateSubscription = viewModel
+          .stream
+          .listen((ProfileUiState state) {
+            latestState = state;
+          });
+      addTearDown(stateSubscription.cancel);
 
-    repo.pausedApplyProfileId = profiles.profileB;
-    final Future<void> switchProfile =
-        viewModel.switchProfile(profiles.profileB);
-    await repo.pausedApplyStarted.future;
-    expect(await repo.getActiveProfileId(), profiles.profileB);
-    expect(latestState.activeProfileId, profiles.profileA);
+      repo.pausedApplyProfileId = profiles.profileB;
+      final Future<void> switchProfile = viewModel.switchProfile(
+        profiles.profileB,
+      );
+      await repo.pausedApplyStarted.future;
+      expect(await repo.getActiveProfileId(), profiles.profileB);
+      expect(latestState.activeProfileId, profiles.profileA);
 
-    final Object intermediateScope = coordinator.draftScope;
-    final Future<void> deleteTarget =
-        viewModel.deleteProfile(profiles.profileB);
-    bool staleSaveRan = false;
-    final Future<bool> staleSave = coordinator.saveDraftIfCurrent(
-      intermediateScope,
-      () async {
-        staleSaveRan = true;
-        await db.setPref(
-          'global_dict_css',
-          '.stale-profile-b-draft { color: red; }',
-        );
-      },
-    );
-    await Future<void>.delayed(Duration.zero);
-    final bool deleteEnteredWhileSwitchHeldLock =
-        repo.deleteStarted.isCompleted;
+      final Object intermediateScope = coordinator.draftScope;
+      final Future<void> deleteTarget = viewModel.deleteProfile(
+        profiles.profileB,
+      );
+      bool staleSaveRan = false;
+      final Future<bool> staleSave = coordinator.saveDraftIfCurrent(
+        intermediateScope,
+        () async {
+          staleSaveRan = true;
+          await db.setPref(
+            'global_dict_css',
+            '.stale-profile-b-draft { color: red; }',
+          );
+        },
+      );
+      await Future<void>.delayed(Duration.zero);
+      final bool deleteEnteredWhileSwitchHeldLock =
+          repo.deleteStarted.isCompleted;
 
-    repo.continuePausedApply.complete();
-    await switchProfile;
-    await deleteTarget;
-    final bool staleSaveAccepted = await staleSave;
+      repo.continuePausedApply.complete();
+      await switchProfile;
+      await deleteTarget;
+      final bool staleSaveAccepted = await staleSave;
 
-    expect(
-      deleteEnteredWhileSwitchHeldLock,
-      isFalse,
-      reason:
-          'delete must enter the coordinator before reading whether its target is active',
-    );
-    expect(staleSaveAccepted, isFalse);
-    expect(staleSaveRan, isFalse);
-    expect(await repo.getActiveProfileId(), profiles.profileA);
-    expect(latestState.activeProfileId, profiles.profileA);
-    expect(await repo.getProfileById(profiles.profileB), isNull);
-    expect(
-      await db.getPref('global_dict_css'),
-      '.profile-a-stored { color: orange; }',
-    );
-  });
+      expect(
+        deleteEnteredWhileSwitchHeldLock,
+        isFalse,
+        reason:
+            'delete must enter the coordinator before reading whether its target is active',
+      );
+      expect(staleSaveAccepted, isFalse);
+      expect(staleSaveRan, isFalse);
+      expect(await repo.getActiveProfileId(), profiles.profileA);
+      expect(latestState.activeProfileId, profiles.profileA);
+      expect(await repo.getProfileById(profiles.profileB), isNull);
+      expect(
+        await db.getPref('global_dict_css'),
+        '.profile-a-stored { color: orange; }',
+      );
+    },
+  );
 
   test(
-      'Save lock serializes switch then target overwrite import without crossing scope',
-      () async {
-    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
-    final _GatedProfileRepository repo = _GatedProfileRepository(db);
-    final ({int profileA, int profileB}) profiles =
-        await _seedTwoProfiles(db, repo);
+    'Save lock serializes switch then target overwrite import without crossing scope',
+    () async {
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
+      final _GatedProfileRepository repo = _GatedProfileRepository(db);
+      final ({int profileA, int profileB}) profiles = await _seedTwoProfiles(
+        db,
+        repo,
+      );
 
-    final int importSource = await repo.createProfile('Import source');
-    await db.setPref(
-      'global_dict_css',
-      '.imported-profile-b { color: purple; }',
-    );
-    await repo.snapshotCurrentSettings(importSource);
-    final String importJson = await repo.exportProfileToJson(importSource);
-    await repo.setActiveProfileId(profiles.profileA);
-    await repo.applyProfile(profiles.profileA);
+      final int importSource = await repo.createProfile('Import source');
+      await db.setPref(
+        'global_dict_css',
+        '.imported-profile-b { color: purple; }',
+      );
+      await repo.snapshotCurrentSettings(importSource);
+      final String importJson = await repo.exportProfileToJson(importSource);
+      await repo.setActiveProfileId(profiles.profileA);
+      await repo.applyProfile(profiles.profileA);
 
-    final ProfileDraftCoordinator coordinator = ProfileDraftCoordinator();
-    final ProfileViewModel viewModel = ProfileViewModel(
-      repo,
-      () async {},
-      coordinator,
-    );
-    addTearDown(() async {
-      viewModel.dispose();
-      await Future<void>.delayed(const Duration(milliseconds: 10));
-      await db.close();
-    });
-    ProfileUiState latestState = await viewModel.stream.firstWhere(
-      (ProfileUiState state) =>
-          state.activeProfileId == profiles.profileA && !state.isLoading,
-    );
-    final StreamSubscription<ProfileUiState> stateSubscription =
-        viewModel.stream.listen((ProfileUiState state) {
-      latestState = state;
-    });
-    addTearDown(stateSubscription.cancel);
+      final ProfileDraftCoordinator coordinator = ProfileDraftCoordinator();
+      final ProfileViewModel viewModel = ProfileViewModel(
+        repo,
+        () async {},
+        coordinator,
+      );
+      addTearDown(() async {
+        viewModel.dispose();
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+        await db.close();
+      });
+      ProfileUiState latestState = await viewModel.stream.firstWhere(
+        (ProfileUiState state) =>
+            state.activeProfileId == profiles.profileA && !state.isLoading,
+      );
+      final StreamSubscription<ProfileUiState> stateSubscription = viewModel
+          .stream
+          .listen((ProfileUiState state) {
+            latestState = state;
+          });
+      addTearDown(stateSubscription.cancel);
 
-    final Object profileAScope = coordinator.draftScope;
-    final Completer<void> saveStarted = Completer<void>();
-    final Completer<void> finishSave = Completer<void>();
-    final Future<bool> save = coordinator.saveDraftIfCurrent(
-      profileAScope,
-      () async {
-        saveStarted.complete();
-        await finishSave.future;
-        await db.setPref(
-          'global_dict_css',
-          '.profile-a-saved { color: green; }',
-        );
-      },
-    );
-    await saveStarted.future;
+      final Object profileAScope = coordinator.draftScope;
+      final Completer<void> saveStarted = Completer<void>();
+      final Completer<void> finishSave = Completer<void>();
+      final Future<bool> save = coordinator.saveDraftIfCurrent(
+        profileAScope,
+        () async {
+          saveStarted.complete();
+          await finishSave.future;
+          await db.setPref(
+            'global_dict_css',
+            '.profile-a-saved { color: green; }',
+          );
+        },
+      );
+      await saveStarted.future;
 
-    final Future<void> switchProfile =
-        viewModel.switchProfile(profiles.profileB);
-    final Future<int> overwriteTarget = viewModel.importProfile(
-      importJson,
-      mode: ProfileImportMode.overwrite,
-      targetProfileId: profiles.profileB,
-    );
-    await Future<void>.delayed(Duration.zero);
-    final bool importEnteredWhileSaveHeldLock = repo.importStarted.isCompleted;
+      final Future<void> switchProfile = viewModel.switchProfile(
+        profiles.profileB,
+      );
+      final Future<int> overwriteTarget = viewModel.importProfile(
+        importJson,
+        mode: ProfileImportMode.overwrite,
+        targetProfileId: profiles.profileB,
+      );
+      await Future<void>.delayed(Duration.zero);
+      final bool importEnteredWhileSaveHeldLock =
+          repo.importStarted.isCompleted;
 
-    finishSave.complete();
-    expect(await save, isTrue);
-    await switchProfile;
-    expect(await overwriteTarget, profiles.profileB);
+      finishSave.complete();
+      expect(await save, isTrue);
+      await switchProfile;
+      expect(await overwriteTarget, profiles.profileB);
 
-    expect(
-      importEnteredWhileSaveHeldLock,
-      isFalse,
-      reason:
-          'import must enter the coordinator before reading whether its overwrite target is active',
-    );
-    expect(await repo.getActiveProfileId(), profiles.profileB);
-    expect(latestState.activeProfileId, profiles.profileB);
-    expect(
-      await db.getPref('global_dict_css'),
-      '.imported-profile-b { color: purple; }',
-    );
-    final List<ProfileSettingRow> profileASettings =
-        await db.getProfileSettings(profiles.profileA);
-    expect(
-      profileASettings
-          .singleWhere(
-            (ProfileSettingRow row) =>
-                row.category == 'pref' && row.key == 'global_dict_css',
-          )
-          .value,
-      '.profile-a-saved { color: green; }',
-    );
-    expect(identical(coordinator.draftScope, profileAScope), isFalse);
-  });
+      expect(
+        importEnteredWhileSaveHeldLock,
+        isFalse,
+        reason:
+            'import must enter the coordinator before reading whether its overwrite target is active',
+      );
+      expect(await repo.getActiveProfileId(), profiles.profileB);
+      expect(latestState.activeProfileId, profiles.profileB);
+      expect(
+        await db.getPref('global_dict_css'),
+        '.imported-profile-b { color: purple; }',
+      );
+      final List<ProfileSettingRow> profileASettings = await db
+          .getProfileSettings(profiles.profileA);
+      expect(
+        profileASettings
+            .singleWhere(
+              (ProfileSettingRow row) =>
+                  row.category == 'pref' && row.key == 'global_dict_css',
+            )
+            .value,
+        '.profile-a-saved { color: green; }',
+      );
+      expect(identical(coordinator.draftScope, profileAScope), isFalse);
+    },
+  );
 
   // TODO-422：词典管理页本身不实现任何自定义 CSS 编辑——行尾旧三点菜单（含
   // 「自定义 CSS」项）已被独立删除按钮取代。自定义 CSS 编辑由设置 → 词典设置的
   // 全局入口 DictCssEditorDialog（可下拉选本词典）承担，故词典管理页里不再调起
   // DictCssEditorDialog，也不内联自己的 CSS 对话框。
-  test('dictionary manager delegates custom CSS editing to settings dialog',
-      () {
-    final source = File(
-      'lib/src/pages/implementations/dictionary_dialog_page.dart',
-    ).readAsStringSync();
+  test(
+    'dictionary manager delegates custom CSS editing to settings dialog',
+    () {
+      final source = File(
+        'lib/src/pages/implementations/dictionary_dialog_page.dart',
+      ).readAsStringSync();
 
-    // 词典管理页不内联自己的 CSS 对话框。
-    expect(source, isNot(contains('_showCustomCSSDialog')));
-    expect(source, isNot(contains('custom_css_title')));
-    // 行尾三点菜单移除后，词典管理页不再从行内调起 CSS 编辑器。
-    expect(source, isNot(contains('DictCssEditorDialog(')));
+      // 词典管理页不内联自己的 CSS 对话框。
+      expect(source, isNot(contains('_showCustomCSSDialog')));
+      expect(source, isNot(contains('custom_css_title')));
+      // 行尾三点菜单移除后，词典管理页不再从行内调起 CSS 编辑器。
+      expect(source, isNot(contains('DictCssEditorDialog(')));
 
-    // 自定义 CSS 编辑仍可达：由设置 schema 的全局入口委托给 DictCssEditorDialog。
-    final settingsSource =
-        File('lib/src/settings/settings_schema_lookup.dart').readAsStringSync();
-    expect(settingsSource, contains('DictCssEditorDialog('));
-  });
+      // 自定义 CSS 编辑仍可达：由设置 schema 的全局入口委托给 DictCssEditorDialog。
+      final settingsSource = File(
+        'lib/src/settings/settings_schema_lookup.dart',
+      ).readAsStringSync();
+      expect(settingsSource, contains('DictCssEditorDialog('));
+    },
+  );
 
   // 尺寸对齐 `LapisStyleEditorPage`（用户诉求：「和 lapis 的一样大」）。Lapis 是整页 +
   // 内容区 maxWidth 1180、宽于 820 时左预览右控件（控件定宽 340）。这里断言的是
@@ -578,10 +584,17 @@ void main() {
     // 高度撑满到 FushiDialogFrame 允许的 0.88 屏高（旧实现写死 0.55 屏高且 clamp 480）。
     expect(dialogRect.height, closeTo(1000 * 0.88, 1));
 
-    final Rect previewRect = tester.getRect(find.textContaining('PREVIEW_CSS:'));
-    final Rect controlsRect = tester.getRect(find.byType(DictStyleVisualEditor));
-    expect(controlsRect.left, greaterThan(previewRect.right),
-        reason: '宽屏应是左预览右控件，不是上下堆叠');
+    final Rect previewRect = tester.getRect(
+      find.textContaining('PREVIEW_CSS:'),
+    );
+    final Rect controlsRect = tester.getRect(
+      find.byType(DictStyleVisualEditor),
+    );
+    expect(
+      controlsRect.left,
+      greaterThan(previewRect.right),
+      reason: '宽屏应是左预览右控件，不是上下堆叠',
+    );
     expect(controlsRect.width, closeTo(340, 1));
     expect(tester.takeException(), isNull);
   });
@@ -599,10 +612,17 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    final Rect previewRect = tester.getRect(find.textContaining('PREVIEW_CSS:'));
-    final Rect controlsRect = tester.getRect(find.byType(DictStyleVisualEditor));
-    expect(controlsRect.top, greaterThanOrEqualTo(previewRect.bottom),
-        reason: '窄屏应回到上下堆叠');
+    final Rect previewRect = tester.getRect(
+      find.textContaining('PREVIEW_CSS:'),
+    );
+    final Rect controlsRect = tester.getRect(
+      find.byType(DictStyleVisualEditor),
+    );
+    expect(
+      controlsRect.top,
+      greaterThanOrEqualTo(previewRect.bottom),
+      reason: '窄屏应回到上下堆叠',
+    );
     expect(tester.takeException(), isNull);
   });
 
@@ -669,10 +689,7 @@ void main() {
     final String savedCss = appModel.savedGlobalCss;
 
     await tester.pumpWidget(
-      _buildApp(
-        appModel: appModel,
-        home: const _CssDialogLauncher(),
-      ),
+      _buildApp(appModel: appModel, home: const _CssDialogLauncher()),
     );
 
     await tester.tap(find.text('打开 CSS'));
@@ -708,10 +725,7 @@ void main() {
     final String savedGlobalCss = appModel.savedGlobalCss;
 
     await tester.pumpWidget(
-      _buildApp(
-        appModel: appModel,
-        home: const _CssDialogLauncher(),
-      ),
+      _buildApp(appModel: appModel, home: const _CssDialogLauncher()),
     );
 
     await tester.tap(find.text('打开 CSS'));
@@ -732,10 +746,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(appModel.savedGlobalCss, '.global-draft { color: blue; }');
-    expect(
-      appModel.savedCustomCss['JMdict'],
-      '.entry { color: red; }',
-    );
+    expect(appModel.savedCustomCss['JMdict'], '.entry { color: red; }');
   });
 
   testWidgets('first-open Save survives lazy Profile initialization', (
@@ -765,15 +776,18 @@ void main() {
     final ProviderContainer container = ProviderScope.containerOf(
       tester.element(find.byType(DictCssEditorDialog)),
     );
-    final ProfileDraftCoordinator draftCoordinator =
-        container.read(profileDraftCoordinatorProvider);
+    final ProfileDraftCoordinator draftCoordinator = container.read(
+      profileDraftCoordinatorProvider,
+    );
     final Object initialDraftScope = draftCoordinator.draftScope;
     container.read(profileViewModelProvider);
     await tester.runAsync(() async {
-      for (int attempt = 0;
-          attempt < 100 &&
-              container.read(profileViewModelProvider).activeProfileId < 0;
-          attempt++) {
+      for (
+        int attempt = 0;
+        attempt < 100 &&
+            container.read(profileViewModelProvider).activeProfileId < 0;
+        attempt++
+      ) {
         await Future<void>.delayed(const Duration(milliseconds: 10));
       }
     });
@@ -784,10 +798,7 @@ void main() {
       reason: 'The regression must exercise the completed lazy Profile load.',
     );
     expect(
-      identical(
-        draftCoordinator.draftScope,
-        initialDraftScope,
-      ),
+      identical(draftCoordinator.draftScope, initialDraftScope),
       isTrue,
       reason: 'Initial Profile loading must not invalidate the open draft.',
     );
@@ -795,10 +806,7 @@ void main() {
     await tester.tap(find.text(t.dialog_save));
     await tester.pumpAndSettle();
 
-    expect(
-      appModel.savedGlobalCss,
-      '.first-open-draft { color: purple; }',
-    );
+    expect(appModel.savedGlobalCss, '.first-open-draft { color: purple; }');
     expect(find.byType(DictCssEditorDialog), findsNothing);
 
     await tester.runAsync(
@@ -807,67 +815,62 @@ void main() {
           .createProfile('Scope rotation regression'),
     );
     expect(
-      identical(
-        draftCoordinator.draftScope,
-        initialDraftScope,
-      ),
+      identical(draftCoordinator.draftScope, initialDraftScope),
       isFalse,
       reason: 'A real Profile identity change must rotate the draft scope.',
     );
   });
 
   testWidgets(
-      'same AppModel does not reuse a CSS draft after the active Profile changes',
-      (WidgetTester tester) async {
-    final _FakeCssAppModel appModel = _FakeCssAppModel();
-    final String profileAStoredCss = appModel.savedGlobalCss;
+    'same AppModel does not reuse a CSS draft after the active Profile changes',
+    (WidgetTester tester) async {
+      final _FakeCssAppModel appModel = _FakeCssAppModel();
+      final String profileAStoredCss = appModel.savedGlobalCss;
 
-    await tester.pumpWidget(
-      _buildApp(
-        appModel: appModel,
-        home: const _CssDialogLauncher(),
-      ),
-    );
+      await tester.pumpWidget(
+        _buildApp(appModel: appModel, home: const _CssDialogLauncher()),
+      );
 
-    await tester.tap(find.text('打开 CSS'));
-    await tester.pumpAndSettle();
-    await _switchToCodeTab(tester);
-    await tester.enterText(
-      _cssEditorField(),
-      '.profile-a-draft { color: orange; }',
-    );
-    await tester.tapAt(const Offset(4, 4));
-    await tester.pumpAndSettle();
+      await tester.tap(find.text('打开 CSS'));
+      await tester.pumpAndSettle();
+      await _switchToCodeTab(tester);
+      await tester.enterText(
+        _cssEditorField(),
+        '.profile-a-draft { color: orange; }',
+      );
+      await tester.tapAt(const Offset(4, 4));
+      await tester.pumpAndSettle();
 
-    appModel.switchToProfile(
-      2,
-      globalCss: '.profile-b-stored { color: blue; }',
-    );
-    ProviderScope.containerOf(
-      tester.element(find.byType(_CssDialogLauncher)),
-    ).read(_testProfileDraftCoordinatorProvider).invalidateDrafts();
-    await tester.pump();
+      appModel.switchToProfile(
+        2,
+        globalCss: '.profile-b-stored { color: blue; }',
+      );
+      ProviderScope.containerOf(
+        tester.element(find.byType(_CssDialogLauncher)),
+      ).read(_testProfileDraftCoordinatorProvider).invalidateDrafts();
+      await tester.pump();
 
-    await tester.tap(find.text('打开 CSS'));
-    await tester.pumpAndSettle();
-    await _switchToCodeTab(tester);
+      await tester.tap(find.text('打开 CSS'));
+      await tester.pumpAndSettle();
+      await _switchToCodeTab(tester);
 
-    expect(find.textContaining('.profile-b-stored'), findsOneWidget);
-    expect(find.textContaining('.profile-a-draft'), findsNothing);
+      expect(find.textContaining('.profile-b-stored'), findsOneWidget);
+      expect(find.textContaining('.profile-a-draft'), findsNothing);
 
-    await tester.enterText(
-      _cssEditorField(),
-      '.profile-b-saved { color: green; }',
-    );
-    await tester.tap(find.text(t.dialog_save));
-    await tester.pumpAndSettle();
+      await tester.enterText(
+        _cssEditorField(),
+        '.profile-b-saved { color: green; }',
+      );
+      await tester.tap(find.text(t.dialog_save));
+      await tester.pumpAndSettle();
 
-    expect(appModel.globalCssForProfile(1), profileAStoredCss);
-    expect(
-      appModel.globalCssForProfile(2),
-      '.profile-b-saved { color: green; }',
-    );
-  });
+      expect(appModel.globalCssForProfile(1), profileAStoredCss);
+      expect(
+        appModel.globalCssForProfile(2),
+        '.profile-b-saved { color: green; }',
+      );
+    },
+  );
 
   testWidgets('Save cannot write an open draft after the Profile changes', (
     WidgetTester tester,
@@ -877,10 +880,7 @@ void main() {
     const String profileBStoredCss = '.profile-b-stored { color: blue; }';
 
     await tester.pumpWidget(
-      _buildApp(
-        appModel: appModel,
-        home: const _CssDialogLauncher(),
-      ),
+      _buildApp(appModel: appModel, home: const _CssDialogLauncher()),
     );
 
     await tester.tap(find.text('打开 CSS'));
@@ -905,9 +905,7 @@ void main() {
     expect(find.byType(DictCssEditorDialog), findsNothing);
   });
 
-  testWidgets('可视化页默认打开，改属性即时反映到预览并在保存时落盘', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('可视化页默认打开，改属性即时反映到预览并在保存时落盘', (WidgetTester tester) async {
     final _FakeCssAppModel appModel = _FakeCssAppModel();
 
     await tester.pumpWidget(
@@ -934,11 +932,7 @@ void main() {
       reason: '预览必须立刻吃到新编译的 CSS',
     );
     expect(find.textContaining('font-weight: bold !important'), findsOneWidget);
-    expect(
-      appModel.savedStyleRules,
-      isEmpty,
-      reason: '未按保存前不许落盘',
-    );
+    expect(appModel.savedStyleRules, isEmpty, reason: '未按保存前不许落盘');
 
     await tester.tap(find.text(t.dialog_save));
     await tester.pumpAndSettle();
@@ -997,9 +991,9 @@ void main() {
 
     final Map<DictStylePart, DictStyleProps> saved =
         <DictStylePart, DictStyleProps>{
-      for (final DictStyleRule rule in appModel.savedStyleRules)
-        rule.part: rule.props,
-    };
+          for (final DictStyleRule rule in appModel.savedStyleRules)
+            rule.part: rule.props,
+        };
     expect(
       saved.keys,
       unorderedEquals(<DictStylePart>[
@@ -1032,8 +1026,10 @@ void main() {
       dictionaryName: 'D',
       props: DictStyleProps(underline: true),
     );
-    final Map<String, String> baseline =
-        dictStyleRulesSnapshot(<DictStyleRule>[a, b]);
+    final Map<String, String> baseline = dictStyleRulesSnapshot(<DictStyleRule>[
+      a,
+      b,
+    ]);
     // 本地：删 b、加 c；磁盘：a 被别处改成 italic，b 被别处改成 bold。
     const DictStyleRule aRemote = DictStyleRule(
       part: DictStylePart.expression,
@@ -1048,17 +1044,14 @@ void main() {
       baseline: baseline,
       persisted: <DictStyleRule>[aRemote, bRemote],
     );
-    expect(
-      out.map(dictStyleRuleKey),
-      <String>['expression@', 'glossaryContent@D'],
-      reason: '本地删掉的 b 按本地删；没碰过的 a 取磁盘版',
-    );
+    expect(out.map(dictStyleRuleKey), <String>[
+      'expression@',
+      'glossaryContent@D',
+    ], reason: '本地删掉的 b 按本地删；没碰过的 a 取磁盘版');
     expect(out.first.props.italic, isTrue);
   });
 
-  testWidgets('只改手写 CSS 保存时不会清空已存的可视化规则', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('只改手写 CSS 保存时不会清空已存的可视化规则', (WidgetTester tester) async {
     // 回归：saveDraft 里若用 `_draft.styleRules ?? []` 兜底，这一路就会把用户
     // 攒下的规则整份抹掉。
     final _FakeCssAppModel appModel = _FakeCssAppModel();
@@ -1130,29 +1123,27 @@ void main() {
   // 拿到结果只进草稿——规则并进可视化表、CSS 追加进手写框——不落盘。
 
   AiProviderConfig usableProvider() => AiProviderConfig(
-        id: 'p1',
-        presetId: 'openai',
-        name: 'Fake',
-        baseUrl: Uri.parse('https://example.invalid/v1'),
-        apiKey: 'k',
-        model: 'm',
-      );
+    id: 'p1',
+    presetId: 'openai',
+    name: 'Fake',
+    baseUrl: Uri.parse('https://example.invalid/v1'),
+    apiKey: 'k',
+    model: 'm',
+  );
 
   http.Response openAiReply(String content) => http.Response(
-        jsonEncode(<String, Object?>{
-          'choices': <Object?>[
-            <String, Object?>{
-              'message': <String, Object?>{'content': content},
-            },
-          ],
-        }),
-        200,
-        headers: <String, String>{'content-type': 'application/json'},
-      );
+    jsonEncode(<String, Object?>{
+      'choices': <Object?>[
+        <String, Object?>{
+          'message': <String, Object?>{'content': content},
+        },
+      ],
+    }),
+    200,
+    headers: <String, String>{'content-type': 'application/json'},
+  );
 
-  testWidgets('没配 AI 提供商时点生成提示去设置，且一个请求都不发', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('没配 AI 提供商时点生成提示去设置，且一个请求都不发', (WidgetTester tester) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(1600, 1000);
     addTearDown(tester.view.reset);
@@ -1180,7 +1171,9 @@ void main() {
       find.byKey(const ValueKey<String>('dict-style-ai-request')),
       '词头加粗',
     );
-    await tester.tap(find.byKey(const ValueKey<String>('dict-style-ai-generate')));
+    await tester.tap(
+      find.byKey(const ValueKey<String>('dict-style-ai-generate')),
+    );
     await tester.pumpAndSettle();
 
     expect(requests, 0);
@@ -1238,7 +1231,9 @@ void main() {
       find.byKey(const ValueKey<String>('dict-style-ai-request')),
       '词头加粗改蓝',
     );
-    await tester.tap(find.byKey(const ValueKey<String>('dict-style-ai-generate')));
+    await tester.tap(
+      find.byKey(const ValueKey<String>('dict-style-ai-generate')),
+    );
     await tester.pumpAndSettle();
 
     expect(
@@ -1261,7 +1256,9 @@ void main() {
 
     // 手写框：原有 CSS 之后空一行追加，body{} 被白名单丢掉。
     await _switchToCodeTab(tester);
-    final TextField field = tester.widget<TextField>(glassUnwrap<TextField>(_cssEditorField()));
+    final TextField field = tester.widget<TextField>(
+      glassUnwrap<TextField>(_cssEditorField()),
+    );
     expect(field.controller!.text, startsWith(savedGlobalCss));
     expect(field.controller!.text, contains('\n\n.glossary-content {'));
     expect(field.controller!.text, contains('line-height: 1.6;'));

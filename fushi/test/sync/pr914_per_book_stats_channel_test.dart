@@ -30,48 +30,77 @@ void main() {
         "    'Auto-sync failed for \$mediaIdentifier',",
       );
 
-      expect(body, contains('resolveChannelSyncFlags('),
-          reason: '门控必须复用同一份分通道解析，不得在这里重抄');
-      expect(body, contains('syncStats: flags.syncStats'),
-          reason: 'per-book 统计必须取自分通道解析结果');
-      expect(body, isNot(contains('repo.isSyncStatsEnabled()')),
-          reason: '云备份共享开关不得对互联通道的 per-book 统计一刀切（PR#914 ②）');
-      expect(body, isNot(contains('isInterconnectSyncStatsEnabled')),
-          reason: '别在消费方重抄三元式——那正是当年 content 分了、stats 忘了的形状');
+      expect(
+        body,
+        contains('resolveChannelSyncFlags('),
+        reason: '门控必须复用同一份分通道解析，不得在这里重抄',
+      );
+      expect(
+        body,
+        contains('syncStats: flags.syncStats'),
+        reason: 'per-book 统计必须取自分通道解析结果',
+      );
+      expect(
+        body,
+        isNot(contains('repo.isSyncStatsEnabled()')),
+        reason: '云备份共享开关不得对互联通道的 per-book 统计一刀切（PR#914 ②）',
+      );
+      expect(
+        body,
+        isNot(contains('isInterconnectSyncStatsEnabled')),
+        reason: '别在消费方重抄三元式——那正是当年 content 分了、stats 忘了的形状',
+      );
     });
 
     test('手动「解决冲突并应用」（applySyncCompareChoices）按通道解析统计开关', () {
       // 应用逻辑已从对话框 State 的 _applyChoices 抽成顶层
       // applySyncCompareChoices，供设置页对话框与控制通道（`fushi_cli sync
       // compare`）共用。守卫跟着走两段：对话框必须委托给它，门控断言落在它身上。
-      final String source =
-          _readSource('lib/src/sync/sync_compare_dialog.dart');
+      final String source = _readSource(
+        'lib/src/sync/sync_compare_dialog.dart',
+      );
       final String dialogApply = _functionSource(
         source,
         '  Future<void> _applyChoices() async {',
         '  Future<void> _downloadRemoteOnlyFromRow(',
       );
-      expect(dialogApply, contains('await applySyncCompareChoices('),
-          reason: '对话框的应用必须走共享实现，不得在 State 里另抄一份门控');
+      expect(
+        dialogApply,
+        contains('await applySyncCompareChoices('),
+        reason: '对话框的应用必须走共享实现，不得在 State 里另抄一份门控',
+      );
       final String body = _functionSource(
         source,
         'Future<SyncCompareApplyResult> applySyncCompareChoices({',
         'Future<bool> _applyLiveProgressChoice({',
       );
 
-      expect(body, contains('resolveChannelSyncFlags('),
-          reason: '手动应用与自动同步必须同一份门控');
-      expect(body, contains('flags.syncStats'),
-          reason: 'per-book 统计必须取自分通道解析结果');
-      expect(body, isNot(contains('repo.isSyncStatsEnabled()')),
-          reason: '关掉互联「共享统计」后，手动应用一本书也不得再推该书统计（PR#914 ②）');
-      expect(body, isNot(contains('isInterconnectSyncContentEnabled')),
-          reason: '内容也一并归 resolveChannelSyncFlags，不留手抄三元式');
+      expect(
+        body,
+        contains('resolveChannelSyncFlags('),
+        reason: '手动应用与自动同步必须同一份门控',
+      );
+      expect(
+        body,
+        contains('flags.syncStats'),
+        reason: 'per-book 统计必须取自分通道解析结果',
+      );
+      expect(
+        body,
+        isNot(contains('repo.isSyncStatsEnabled()')),
+        reason: '关掉互联「共享统计」后，手动应用一本书也不得再推该书统计（PR#914 ②）',
+      );
+      expect(
+        body,
+        isNot(contains('isInterconnectSyncContentEnabled')),
+        reason: '内容也一并归 resolveChannelSyncFlags，不留手抄三元式',
+      );
     });
 
     test('互联后端确有 per-book 统计通道（否则本守卫在守一个不存在的路径）', () {
-      final String backend =
-          _readSource('lib/src/sync/interconnect_sync_backend.dart');
+      final String backend = _readSource(
+        'lib/src/sync/interconnect_sync_backend.dart',
+      );
       expect(backend, contains('updateStatsFile'));
 
       // `statistics_` 前缀的解析在 A2 之后搬进了 WebDavPathBackendMixin（WebDAV 与
@@ -82,15 +111,22 @@ void main() {
       expect(classAt, isNonNegative, reason: '类改名了，守卫需更新');
       final int braceAt = backend.indexOf('{', classAt);
       expect(braceAt, greaterThan(classAt), reason: '扫不到类头结尾，守卫需更新');
-      expect(backend.substring(classAt, braceAt),
-          contains('WebDavPathBackendMixin'),
-          reason: 'per-book 统计的文件解析由该 mixin 提供，'
-              '后端的 with 列表里没有它 = 这条通道根本不存在');
+      expect(
+        backend.substring(classAt, braceAt),
+        contains('WebDavPathBackendMixin'),
+        reason:
+            'per-book 统计的文件解析由该 mixin 提供，'
+            '后端的 with 列表里没有它 = 这条通道根本不存在',
+      );
 
-      final String mixin =
-          _readSource('lib/src/sync/webdav_path_backend_mixin.dart');
-      expect(mixin, contains("findSyncFileByPrefix(files, 'statistics_')"),
-          reason: 'mixin 必须把 statistics_ 前缀解成三件套的 statistics 槽');
+      final String mixin = _readSource(
+        'lib/src/sync/webdav_path_backend_mixin.dart',
+      );
+      expect(
+        mixin,
+        contains("findSyncFileByPrefix(files, 'statistics_')"),
+        reason: 'mixin 必须把 statistics_ 前缀解成三件套的 statistics 槽',
+      );
     });
   });
 }

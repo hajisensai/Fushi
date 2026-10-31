@@ -18,13 +18,13 @@ class SubtitleVersionLanguageProbe {
   SubtitleVersionLanguageProbe({
     required Future<VideoSubtitleDownload> Function(
       VideoSubtitleCandidate candidate,
-    ) download,
+    )
+    download,
     this.maxProbeBytes = 2 * 1024 * 1024,
   }) : _download = download;
 
-  final Future<VideoSubtitleDownload> Function(
-    VideoSubtitleCandidate candidate,
-  ) _download;
+  final Future<VideoSubtitleDownload> Function(VideoSubtitleCandidate candidate)
+  _download;
   final int maxProbeBytes;
 
   final Map<String, SubtitleContentLanguage?> _cache =
@@ -46,10 +46,12 @@ class SubtitleVersionLanguageProbe {
         return _cache[key] = null;
       }
       final String text = await decodeTextBytes(download.bytes);
-      final SubtitleContentLanguage detected =
-          detectSubtitleContentLanguage(text);
-      return _cache[key] =
-          detected == SubtitleContentLanguage.unknown ? null : detected;
+      final SubtitleContentLanguage detected = detectSubtitleContentLanguage(
+        text,
+      );
+      return _cache[key] = detected == SubtitleContentLanguage.unknown
+          ? null
+          : detected;
     } on Object {
       return _cache[key] = null;
     }

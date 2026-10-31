@@ -88,8 +88,9 @@ class GamepadMenuDropdown<T> extends StatefulWidget {
 
 class _GamepadMenuDropdownState<T> extends State<GamepadMenuDropdown<T>> {
   final MenuController _menu = MenuController();
-  final FocusNode _triggerFocus =
-      FocusNode(debugLabel: 'gamepadDropdownTrigger');
+  final FocusNode _triggerFocus = FocusNode(
+    debugLabel: 'gamepadDropdownTrigger',
+  );
   late final FushiFocusId _fallbackFocusId = FushiFocusId(
     'gamepad-dropdown-${identityHashCode(this)}',
   );
@@ -212,9 +213,10 @@ class _GamepadMenuDropdownState<T> extends State<GamepadMenuDropdown<T>> {
       builder: (BuildContext context, BoxConstraints constraints) {
         final double? fixedWidth =
             (widget.width != null && widget.width!.isFinite)
-                ? widget.width
-                : null;
-        final double? menuWidth = fixedWidth ??
+            ? widget.width
+            : null;
+        final double? menuWidth =
+            fixedWidth ??
             (constraints.maxWidth.isFinite ? constraints.maxWidth : null);
         final Widget anchor = _focusableAnchor(
           context,
@@ -348,8 +350,9 @@ class _GamepadMenuDropdownState<T> extends State<GamepadMenuDropdown<T>> {
       childFocusNode: _triggerFocus,
       style: MenuStyle(
         backgroundColor: WidgetStatePropertyAll<Color>(tokens.surfaces.overlay),
-        surfaceTintColor:
-            const WidgetStatePropertyAll<Color>(Colors.transparent),
+        surfaceTintColor: const WidgetStatePropertyAll<Color>(
+          Colors.transparent,
+        ),
         shape: WidgetStatePropertyAll<OutlinedBorder>(
           RoundedRectangleBorder(borderRadius: tokens.radii.menuRadius),
         ),
@@ -372,14 +375,16 @@ class _GamepadMenuDropdownState<T> extends State<GamepadMenuDropdown<T>> {
       ],
       builder:
           (BuildContext context, MenuController controller, Widget? child) {
-        return _trigger(
-          context,
-          tokens,
-          widget.enabled
-              ? () => controller.isOpen ? controller.close() : controller.open()
-              : null,
-        );
-      },
+            return _trigger(
+              context,
+              tokens,
+              widget.enabled
+                  ? () => controller.isOpen
+                        ? controller.close()
+                        : controller.open()
+                  : null,
+            );
+          },
     );
   }
 
@@ -395,8 +400,9 @@ class _GamepadMenuDropdownState<T> extends State<GamepadMenuDropdown<T>> {
   ) {
     // 行内用法（与搜索框同排）同样画成全胶囊，并钉成行内控件高度。
     final bool capsule = widget.width != null || widget.inline;
-    final double? inlineHeight =
-        widget.inline ? fushiInlineControlHeight(context) : null;
+    final double? inlineHeight = widget.inline
+        ? fushiInlineControlHeight(context)
+        : null;
     final String text = _selectedLabel ?? widget.hintText ?? widget.label ?? '';
     if (isEinkTheme(context)) {
       return FushiOutlinedButton(
@@ -420,10 +426,7 @@ class _GamepadMenuDropdownState<T> extends State<GamepadMenuDropdown<T>> {
                 style: tokens.type.listTitle,
               ),
             ),
-            FushiIcon(
-              Icons.arrow_drop_down,
-              color: tokens.surfaces.onVariant,
-            ),
+            FushiIcon(Icons.arrow_drop_down, color: tokens.surfaces.onVariant),
           ],
         ),
       );
@@ -461,42 +464,44 @@ class _GamepadMenuDropdownState<T> extends State<GamepadMenuDropdown<T>> {
                   : null,
             ),
             child: ConstrainedBox(
-            constraints: inlineHeight != null
-                ? BoxConstraints.tightFor(height: inlineHeight)
-                : BoxConstraints(minHeight: minHeight),
-            child: Opacity(
-              opacity: enabled ? 1 : 0.4,
-              child: Padding(
-                padding: EdgeInsetsDirectional.only(
-                  start: capsule ? 14 : 12,
-                  end: 10,
-                  top: inlineHeight != null ? 0 : 6,
-                  bottom: inlineHeight != null ? 0 : 6,
-                ),
-                child: Row(
-                  children: <Widget>[
-                    Expanded(
-                      child: Text(
-                        text,
-                        maxLines: inlineHeight != null ? 1 : 2,
-                        softWrap: true,
-                        overflow: inlineHeight != null
-                            ? TextOverflow.ellipsis
-                            : null,
-                        style: tokens.type.listTitle.copyWith(color: apple.label),
+              constraints: inlineHeight != null
+                  ? BoxConstraints.tightFor(height: inlineHeight)
+                  : BoxConstraints(minHeight: minHeight),
+              child: Opacity(
+                opacity: enabled ? 1 : 0.4,
+                child: Padding(
+                  padding: EdgeInsetsDirectional.only(
+                    start: capsule ? 14 : 12,
+                    end: 10,
+                    top: inlineHeight != null ? 0 : 6,
+                    bottom: inlineHeight != null ? 0 : 6,
+                  ),
+                  child: Row(
+                    children: <Widget>[
+                      Expanded(
+                        child: Text(
+                          text,
+                          maxLines: inlineHeight != null ? 1 : 2,
+                          softWrap: true,
+                          overflow: inlineHeight != null
+                              ? TextOverflow.ellipsis
+                              : null,
+                          style: tokens.type.listTitle.copyWith(
+                            color: apple.label,
+                          ),
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 6),
-                    Icon(
-                      CupertinoIcons.chevron_up_chevron_down,
-                      size: 13,
-                      color: apple.secondaryLabel,
-                    ),
-                  ],
+                      const SizedBox(width: 6),
+                      Icon(
+                        CupertinoIcons.chevron_up_chevron_down,
+                        size: 13,
+                        color: apple.secondaryLabel,
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
-          ),
           ),
         ),
       );
@@ -542,11 +547,7 @@ class _GamepadMenuDropdownState<T> extends State<GamepadMenuDropdown<T>> {
             ),
           ),
           const SizedBox(width: 4),
-          Icon(
-            Icons.expand_more_rounded,
-            size: 20,
-            color: cs.onSurfaceVariant,
-          ),
+          Icon(Icons.expand_more_rounded, size: 20, color: cs.onSurfaceVariant),
         ],
       ),
     );
@@ -567,8 +568,9 @@ class _GamepadMenuDropdownState<T> extends State<GamepadMenuDropdown<T>> {
   ) {
     final bool selected = i == sel;
     final GamepadDropdownEntry<T> entry = widget.entries[i];
-    final Color foreground =
-        selected ? tokens.surfaces.primary : tokens.surfaces.onSurface;
+    final Color foreground = selected
+        ? tokens.surfaces.primary
+        : tokens.surfaces.onSurface;
     final Widget title = Text(
       entry.label,
       maxLines: 2,
@@ -641,8 +643,9 @@ class _GamepadMenuDropdownState<T> extends State<GamepadMenuDropdown<T>> {
           // 面板按子项固有宽度排版、再被 maximumSize 裁到触发器宽：长副标题
           // 的项会被横向裁掉（不出省略号、面板右侧圆角也被切）。项本身也钉在
           // 同一宽度，[Expanded] 里的文字才拿到有界宽度、按 ellipsis 收尾。
-          maximumSize:
-              menuWidth == null ? null : Size(menuWidth, double.infinity),
+          maximumSize: menuWidth == null
+              ? null
+              : Size(menuWidth, double.infinity),
           padding: EdgeInsets.symmetric(
             horizontal: tokens.spacing.rowHorizontal,
           ),

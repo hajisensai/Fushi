@@ -21,8 +21,11 @@ void main() {
     final EmbeddedTorrentEngine engine = EmbeddedTorrentEngine.open();
     final String version = engine.libtorrentVersion();
     expect(version, isNotEmpty, reason: 'ht_libtorrent_version 必须返回版本串');
-    expect(version, startsWith('2.'),
-        reason: '选型钉 libtorrent 2.x，实际: $version');
+    expect(
+      version,
+      startsWith('2.'),
+      reason: '选型钉 libtorrent 2.x，实际: $version',
+    );
   });
 
   testWidgets('session 建得起来且 make_torrent 真跑通', (tester) async {

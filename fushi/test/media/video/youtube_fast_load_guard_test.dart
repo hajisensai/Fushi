@@ -27,27 +27,32 @@ void main() {
     launchSrc = read('lib/src/media/video/stream_video_launch.dart');
     pageSrc = read('lib/src/pages/implementations/video_fushi_page.dart');
     resolverSrc = read(
-        '../packages/fushi_engine/lib/media/video/youtube_source_resolver.dart');
+      '../packages/fushi_engine/lib/media/video/youtube_source_resolver.dart',
+    );
   });
 
-  test('① 快解析 gate：buildStreamVideoLaunch 的 YouTube 分支用 withCaptions:false',
-      () {
-    expect(
-      // TODO-1314：快解析 gate 现经可注入的默认 resolver 闭包（参数名 u）保留，行为不变。
-      // 画质目标（playbackTargetHeight）加参后调用折行，折叠空白后断言完整参数形态。
-      launchSrc
-          .replaceAll(RegExp(r'\s+'), ' ')
-          .contains('resolveYoutubeSource(u, withCaptions: false, '
-              'playbackTargetHeight: youtubeTargetHeight)'),
-      isTrue,
-      reason: 'YouTube 分支必须走快解析 gate（withCaptions:false），不前置阻塞字幕/title',
-    );
-    expect(
-      launchSrc.contains('resolveYoutubeSource(url);'),
-      isFalse,
-      reason: '不得用默认 withCaptions:true 在首帧前串行解析字幕 + 重复 videos.get',
-    );
-  });
+  test(
+    '① 快解析 gate：buildStreamVideoLaunch 的 YouTube 分支用 withCaptions:false',
+    () {
+      expect(
+        // TODO-1314：快解析 gate 现经可注入的默认 resolver 闭包（参数名 u）保留，行为不变。
+        // 画质目标（playbackTargetHeight）加参后调用折行，折叠空白后断言完整参数形态。
+        launchSrc
+            .replaceAll(RegExp(r'\s+'), ' ')
+            .contains(
+              'resolveYoutubeSource(u, withCaptions: false, '
+              'playbackTargetHeight: youtubeTargetHeight)',
+            ),
+        isTrue,
+        reason: 'YouTube 分支必须走快解析 gate（withCaptions:false），不前置阻塞字幕/title',
+      );
+      expect(
+        launchSrc.contains('resolveYoutubeSource(url);'),
+        isFalse,
+        reason: '不得用默认 withCaptions:true 在首帧前串行解析字幕 + 重复 videos.get',
+      );
+    },
+  );
 
   test('① 字幕后置：起播不再前置注入 preresolvedCues，改传 watch URL', () {
     expect(
@@ -66,8 +71,9 @@ void main() {
     // TODO-1302 回归修复：字幕轨**列表**（非单条 cue）后置解析，列表回填不依赖 cue 就绪 →
     // 修「快加载 withCaptions:false 后字幕整个消失」。
     expect(
-      _flat(pageSrc).contains(_flat(
-          'unawaited(_resolveDeferredYoutubeCaptionTracks(client, seq))')),
+      _flat(pageSrc).contains(
+        _flat('unawaited(_resolveDeferredYoutubeCaptionTracks(client, seq))'),
+      ),
       isTrue,
       reason: 'load 后必须异步 kick 字幕轨列表解析（不阻塞首帧）',
     );
@@ -88,8 +94,9 @@ void main() {
       reason: '默认自动应用必须按 A3（人工>ASR·精确语言）选最佳轨',
     );
     expect(
-      _flat(pageSrc)
-          .contains(_flat('_applyYoutubeCaptionTrack(controller, best')),
+      _flat(
+        pageSrc,
+      ).contains(_flat('_applyYoutubeCaptionTrack(controller, best')),
       isTrue,
       reason: '选中轨必须经 _applyYoutubeCaptionTrack 懒下载其 cue 挂 overlay',
     );
@@ -100,8 +107,11 @@ void main() {
     // （preresolvedCues.isEmpty 门控），一次解析空/失败 → 选择器与 overlay 双空。新模型只以
     // youtubeCaptionsUrl 非空触发轨列表解析，列表回填与 cue 下载解耦。
     expect(
-      _flat(pageSrc).contains(_flat(
-          'client is UrlStreamVideoClient && client.youtubeCaptionsUrl != null')),
+      _flat(pageSrc).contains(
+        _flat(
+          'client is UrlStreamVideoClient && client.youtubeCaptionsUrl != null',
+        ),
+      ),
       isTrue,
       reason: '字幕轨后置只以 youtubeCaptionsUrl 非空触发，不再用 preresolvedCues.isEmpty 门控',
     );
@@ -119,15 +129,17 @@ void main() {
       reason: 'A1：必须有多 client 兜底顺序常量',
     );
     expect(
-      resolverSrc
-          .contains('_getManifestWithClientFallback(client, http, videoId'),
+      resolverSrc.contains(
+        '_getManifestWithClientFallback(client, http, videoId',
+      ),
       isTrue,
       reason: 'A1：resolveYoutubeSource 必须经逐个兜底 helper 取 manifest',
     );
     expect(
       // BUG-2946：单个 client 先经 withIdentity 派生（visionOS 带 visitor 身份）再取。
       resolverSrc.contains(
-          'ytClients: <yt.YoutubeApiClient>[await withIdentity(api)]'),
+        'ytClients: <yt.YoutubeApiClient>[await withIdentity(api)]',
+      ),
       isTrue,
       reason: 'A1：必须对单一 client 逐个取，避免多 client 流合并致选中 403 直链',
     );
@@ -135,17 +147,25 @@ void main() {
 
   test('④ 阶段反馈提前：connecting 在 buildStreamVideoLaunch 调用之前', () {
     // 注释本身也会被 dart format 折行，锚点同样走归一化。
-    final int iConnect =
-        _flat(pageSrc).indexOf(_flat('// TODO-1307：把「正在连接视频流…」阶段反馈提前'));
+    final int iConnect = _flat(
+      pageSrc,
+    ).indexOf(_flat('// TODO-1307：把「正在连接视频流…」阶段反馈提前'));
     // 画质目标加参后调用折行；`.strm` 书先换成目标地址行（launchRow）再建客户端，
     // 故只锚调用本身（不含实参）。
-    final int iBuild =
-        _flat(pageSrc).indexOf(_flat('await buildStreamVideoLaunch('));
-    expect(iConnect, greaterThan(0),
-        reason: 'stream book 分支必须提前置 connecting 阶段反馈');
+    final int iBuild = _flat(
+      pageSrc,
+    ).indexOf(_flat('await buildStreamVideoLaunch('));
+    expect(
+      iConnect,
+      greaterThan(0),
+      reason: 'stream book 分支必须提前置 connecting 阶段反馈',
+    );
     expect(iBuild, greaterThan(0));
-    expect(iConnect, lessThan(iBuild),
-        reason: 'connecting 阶段必须在 buildStreamVideoLaunch（慢网可数秒）之前置起');
+    expect(
+      iConnect,
+      lessThan(iBuild),
+      reason: 'connecting 阶段必须在 buildStreamVideoLaunch（慢网可数秒）之前置起',
+    );
   });
 
   test('A2：字幕解析只做 getPlayerResponse（不再取多余 WatchPage）', () {

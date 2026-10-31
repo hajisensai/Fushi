@@ -55,13 +55,7 @@ void main() {
     test('打字机递增行只计增量，总和等于整句一次到达', () {
       final GalgameLineCharCounter counter = GalgameLineCharCounter();
       int total = 0;
-      for (final String line in <String>[
-        'あ',
-        'あり',
-        'ありが',
-        'ありがと',
-        'ありがとう',
-      ]) {
+      for (final String line in <String>['あ', 'あり', 'ありが', 'ありがと', 'ありがとう']) {
         total += counter.countLine(line);
       }
       expect(total, countGalgameChars('ありがとう'));
@@ -80,8 +74,9 @@ void main() {
     });
 
     test('清洗后超长垃圾行计 0，且仍参与后续相邻去重', () {
-      final GalgameLineCharCounter counter =
-          GalgameLineCharCounter(maxCountedChars: 10);
+      final GalgameLineCharCounter counter = GalgameLineCharCounter(
+        maxCountedChars: 10,
+      );
       final String dump = 'あ' * 11;
       expect(counter.countLine(dump), 0);
       expect(counter.countLine(dump), 0);

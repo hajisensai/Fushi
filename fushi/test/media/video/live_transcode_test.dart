@@ -8,17 +8,13 @@ void main() {
   group('transcodeAvailable', () {
     tearDown(() => setFfmpegBackendForTesting(null));
 
-    test(
-      '桌面默认后端套了蓝光输入适配器后仍判可转码（PR #1853 回归）',
-      () {
-        setTranscodeAvailableForTesting(null);
-        setTranscodeSegmentRunnerForTesting(null);
-        setFfmpegBackendForTesting(null);
-        expect(resolveFfmpegBackend(), isA<BlurayFfmpegBackend>());
-        expect(transcodeAvailable(), isTrue);
-      },
-      skip: Platform.isAndroid || Platform.isIOS,
-    );
+    test('桌面默认后端套了蓝光输入适配器后仍判可转码（PR #1853 回归）', () {
+      setTranscodeAvailableForTesting(null);
+      setTranscodeSegmentRunnerForTesting(null);
+      setFfmpegBackendForTesting(null);
+      expect(resolveFfmpegBackend(), isA<BlurayFfmpegBackend>());
+      expect(transcodeAvailable(), isTrue);
+    }, skip: Platform.isAndroid || Platform.isIOS);
   });
 
   group('VideoTranscodeProfile', () {

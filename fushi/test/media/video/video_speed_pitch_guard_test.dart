@@ -37,33 +37,50 @@ void main() {
 
     test('VideoPlayerController 用裸 Player()（pitch 默认 false，不重写 af 滤镜图）', () {
       // load() 里实例化的就是裸 `Player()`；复用同一实例（换集不重建，BUG-120）。
-      expect(src.contains('Player()'), isTrue,
-          reason: '视频必须用裸 Player()（media_kit 默认 pitch=false 的安全调速路径）');
+      expect(
+        src.contains('Player()'),
+        isTrue,
+        reason: '视频必须用裸 Player()（media_kit 默认 pitch=false 的安全调速路径）',
+      );
     });
 
-    test('绝不用 PlayerConfiguration(pitch: true) 构造视频 Player（会回归 TODO-070 调速闪退）',
-        () {
-      // 容忍空白：匹配 `Player(` 后任意空白 + `PlayerConfiguration`。视频侧出现
-      // 带 PlayerConfiguration 的 Player 构造即视为高危（默认安全路径是裸构造）。
-      final bool hasConfiguredPlayer =
-          RegExp(r'Player\(\s*PlayerConfiguration').hasMatch(src);
-      expect(hasConfiguredPlayer, isFalse,
-          reason: '视频 Player 不得带 PlayerConfiguration（尤其 pitch:true）——'
-              'pitch:true 会让每次 setRate 重写 libmpv af 滤镜链，Win 回归调速闪退');
-      // 退一步：即便将来引入 PlayerConfiguration，也绝不能开 pitch。
-      expect(src.contains('pitch: true'), isFalse,
-          reason: '视频侧不得出现 pitch: true（媒体管线音高补偿走 audio-pitch-correction）');
-    });
+    test(
+      '绝不用 PlayerConfiguration(pitch: true) 构造视频 Player（会回归 TODO-070 调速闪退）',
+      () {
+        // 容忍空白：匹配 `Player(` 后任意空白 + `PlayerConfiguration`。视频侧出现
+        // 带 PlayerConfiguration 的 Player 构造即视为高危（默认安全路径是裸构造）。
+        final bool hasConfiguredPlayer = RegExp(
+          r'Player\(\s*PlayerConfiguration',
+        ).hasMatch(src);
+        expect(
+          hasConfiguredPlayer,
+          isFalse,
+          reason:
+              '视频 Player 不得带 PlayerConfiguration（尤其 pitch:true）——'
+              'pitch:true 会让每次 setRate 重写 libmpv af 滤镜链，Win 回归调速闪退',
+        );
+        // 退一步：即便将来引入 PlayerConfiguration，也绝不能开 pitch。
+        expect(
+          src.contains('pitch: true'),
+          isFalse,
+          reason: '视频侧不得出现 pitch: true（媒体管线音高补偿走 audio-pitch-correction）',
+        );
+      },
+    );
 
     test('保留 setRate 安全性的根因说明注释（防止注释丢失后被误改）', () {
-      expect(src.contains('audio-pitch-correction'), isTrue,
-          reason: '视频保音高靠 audio-pitch-correction（不靠 media_kit pitch 配置）');
+      expect(
+        src.contains('audio-pitch-correction'),
+        isTrue,
+        reason: '视频保音高靠 audio-pitch-correction（不靠 media_kit pitch 配置）',
+      );
       // 注释里点名 TODO-116 与「pitch」契约，确保 reviewer 看到不变量来由。
       expect(
-          src.contains('PlayerConfiguration.pitch') ||
-              src.contains('configuration.pitch'),
-          isTrue,
-          reason: 'Player() 构造点必须保留 pitch 不变量的根因注释');
+        src.contains('PlayerConfiguration.pitch') ||
+            src.contains('configuration.pitch'),
+        isTrue,
+        reason: 'Player() 构造点必须保留 pitch 不变量的根因注释',
+      );
     });
   });
 
@@ -75,14 +92,22 @@ void main() {
       // 精确锚到 `name: media_kit`（媒体内核包本体，非 media_kit_libs_* 等同前缀包），
       // 取该块后第一条 version。media_kit_libs_* 的 name 不等于 `media_kit`，不误命中。
       final int nameAt = lock.indexOf('name: media_kit\n');
-      expect(nameAt, greaterThanOrEqualTo(0),
-          reason: 'pubspec.lock 找不到 media_kit 包块');
-      final RegExpMatch? m = RegExp(r'version:\s*"([0-9][^"]*)"')
-          .firstMatch(lock.substring(nameAt));
+      expect(
+        nameAt,
+        greaterThanOrEqualTo(0),
+        reason: 'pubspec.lock 找不到 media_kit 包块',
+      );
+      final RegExpMatch? m = RegExp(
+        r'version:\s*"([0-9][^"]*)"',
+      ).firstMatch(lock.substring(nameAt));
       expect(m, isNotNull, reason: 'media_kit 包块内找不到 version');
-      expect(m!.group(1), '1.2.6',
-          reason: 'media_kit 版本变化时须重核 setRate 的 configuration.pitch 分支语义'
-              '（本守卫与视频调速不变量基于 1.2.6 的行为）');
+      expect(
+        m!.group(1),
+        '1.2.6',
+        reason:
+            'media_kit 版本变化时须重核 setRate 的 configuration.pitch 分支语义'
+            '（本守卫与视频调速不变量基于 1.2.6 的行为）',
+      );
     });
   });
 }

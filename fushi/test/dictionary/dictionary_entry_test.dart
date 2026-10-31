@@ -126,10 +126,7 @@ void main() {
     });
 
     test('fromJson with numeric extra coerces to string', () {
-      final json = jsonEncode({
-        'word': '猫',
-        'extra': 123,
-      });
+      final json = jsonEncode({'word': '猫', 'extra': 123});
       final entry = DictionaryEntry.fromJson(json);
       expect(entry.extra, '123');
     });
@@ -156,11 +153,7 @@ void main() {
     });
 
     test('toString contains word, reading, meaning', () {
-      final entry = DictionaryEntry(
-        word: '猫',
-        reading: 'ねこ',
-        meaning: 'cat',
-      );
+      final entry = DictionaryEntry(word: '猫', reading: 'ねこ', meaning: 'cat');
       final str = entry.toString();
       expect(str, contains('猫'));
       expect(str, contains('ねこ'));
@@ -205,7 +198,7 @@ void main() {
           jsonEncode([
             'line1',
             {'tag': 'br'},
-            'line2'
+            'line2',
           ]),
         ),
         'line1\nline2',
@@ -232,9 +225,7 @@ void main() {
 
     test('img tag without description returns empty', () {
       expect(
-        DictionaryEntry.meaningToPlainText(
-          jsonEncode({'tag': 'img'}),
-        ),
+        DictionaryEntry.meaningToPlainText(jsonEncode({'tag': 'img'})),
         '',
       );
     });
@@ -273,7 +264,7 @@ void main() {
         meaning: jsonEncode([
           'hello',
           {'tag': 'br'},
-          'world'
+          'world',
         ]),
       );
       expect(entry.plainMeaning, 'hello\nworld');

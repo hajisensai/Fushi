@@ -76,6 +76,7 @@ class _Harness {
     }
     deferred?.clear();
   }
+
   int _uidSeq = 0;
 
   void advance(Duration d) => now = now.add(d);
@@ -122,7 +123,8 @@ void main() {
       await h.runDeferred();
 
       expect(
-        h.sink.writes, hasLength(writesBefore),
+        h.sink.writes,
+        hasLength(writesBefore),
         reason: 'detach 攒下的写也必须被退役门挡掉',
       );
     });
@@ -257,7 +259,8 @@ void main() {
       expect(
         h.sink.writes,
         hasLength(1),
-        reason: '第二条 stop 看到的是已清空的状态，不重复写（旧 VideoWatchTracker '
+        reason:
+            '第二条 stop 看到的是已清空的状态，不重复写（旧 VideoWatchTracker '
             '在 await 之后才清零累计器，两条 stop 各写一条活动行）',
       );
       expect(h.sink.last.durationMs.value, 45000);
@@ -386,10 +389,7 @@ void main() {
   group('sessionTotals：阅读器底部状态行的只读会话累计', () {
     test('未 start / 已 stop：零值 + 未计时；stop 后读数冻结不再增长', () async {
       final _Harness h = _Harness();
-      expect(
-        h.clock.sessionTotals(),
-        (durationMs: 0, chars: 0, active: false),
-      );
+      expect(h.clock.sessionTotals(), (durationMs: 0, chars: 0, active: false));
       h.clock.start();
       h.advance(const Duration(seconds: 30));
       await h.clock.stop();

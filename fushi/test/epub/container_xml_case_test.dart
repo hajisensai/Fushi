@@ -35,8 +35,9 @@ void main() {
   void writeContainer(String metaInfDirName) {
     final Directory metaInf = Directory(p.join(extractDir.path, metaInfDirName))
       ..createSync();
-    File(p.join(metaInf.path, 'container.xml'))
-        .writeAsStringSync(_containerXml);
+    File(
+      p.join(metaInf.path, 'container.xml'),
+    ).writeAsStringSync(_containerXml);
     final Directory oebps = Directory(p.join(extractDir.path, 'OEBPS'))
       ..createSync();
     File(p.join(oebps.path, 'content.opf')).writeAsStringSync(_contentOpf);
@@ -53,20 +54,25 @@ void main() {
     test('legacy lower-case meta-inf (Windows regression) still parses', () {
       writeContainer('meta-inf');
       final book = EpubParser.parseFromExtracted(extractDir.path);
-      expect(book.chapters, hasLength(1),
-          reason: 'legacy lower-cased meta-inf/container.xml must still parse');
+      expect(
+        book.chapters,
+        hasLength(1),
+        reason: 'legacy lower-cased meta-inf/container.xml must still parse',
+      );
     });
 
     test('mixed-case Meta-Inf with lower-case Container.xml parses', () {
       final Directory metaInf = Directory(p.join(extractDir.path, 'Meta-Inf'))
         ..createSync();
-      File(p.join(metaInf.path, 'Container.xml'))
-          .writeAsStringSync(_containerXml);
+      File(
+        p.join(metaInf.path, 'Container.xml'),
+      ).writeAsStringSync(_containerXml);
       final Directory oebps = Directory(p.join(extractDir.path, 'OEBPS'))
         ..createSync();
       File(p.join(oebps.path, 'content.opf')).writeAsStringSync(_contentOpf);
-      File(p.join(oebps.path, 'chapter.xhtml'))
-          .writeAsStringSync(_chapterXhtml);
+      File(
+        p.join(oebps.path, 'chapter.xhtml'),
+      ).writeAsStringSync(_chapterXhtml);
 
       final book = EpubParser.parseFromExtracted(extractDir.path);
       expect(book.chapters, hasLength(1));
@@ -91,20 +97,23 @@ void main() {
 
       EpubParser.parseSync(bytes, extractDir.path);
 
-      final List<String> topLevel = Directory(extractDir.path)
-          .listSync()
-          .map((FileSystemEntity e) => p.basename(e.path))
-          .toList();
-      expect(topLevel, contains('META-INF'),
-          reason: 'extraction must NOT lower-case META-INF on disk');
+      final List<String> topLevel = Directory(
+        extractDir.path,
+      ).listSync().map((FileSystemEntity e) => p.basename(e.path)).toList();
+      expect(
+        topLevel,
+        contains('META-INF'),
+        reason: 'extraction must NOT lower-case META-INF on disk',
+      );
       expect(topLevel, isNot(contains('meta-inf')));
     });
   });
 
   group('zip-slip protection survives the case-preserving rewrite', () {
     test('absolute-path archive entry does not escape extractDir', () {
-      final String evilName =
-          Platform.isWindows ? 'C:/Windows/evil_739.txt' : '/tmp/evil_739.txt';
+      final String evilName = Platform.isWindows
+          ? 'C:/Windows/evil_739.txt'
+          : '/tmp/evil_739.txt';
       final Uint8List bytes = _encodeArchive(<ArchiveFile>[
         _textFile('META-INF/container.xml', _containerXml),
         _textFile('OEBPS/content.opf', _contentOpf),
@@ -114,8 +123,9 @@ void main() {
 
       EpubParser.parseSync(bytes, extractDir.path);
 
-      final String evilTarget =
-          Platform.isWindows ? 'C:/Windows/evil_739.txt' : '/tmp/evil_739.txt';
+      final String evilTarget = Platform.isWindows
+          ? 'C:/Windows/evil_739.txt'
+          : '/tmp/evil_739.txt';
       expect(File(evilTarget).existsSync(), isFalse);
     });
 
@@ -132,10 +142,13 @@ void main() {
       final String parent = p.dirname(extractDir.path);
       expect(File(p.join(parent, 'escape_739.txt')).existsSync(), isFalse);
       expect(
-          File(p.normalize(
-                  p.join(extractDir.path, '..', '..', '..', 'escape_739.txt')))
-              .existsSync(),
-          isFalse);
+        File(
+          p.normalize(
+            p.join(extractDir.path, '..', '..', '..', 'escape_739.txt'),
+          ),
+        ).existsSync(),
+        isFalse,
+      );
     });
   });
 }

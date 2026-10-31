@@ -17,17 +17,17 @@ class MigakuFormat extends DictionaryFormat {
   /// Define a format with the given metadata that has its behaviour for
   /// import, search and display defined with af set of top-level helper methods.
   MigakuFormat._privateConstructor()
-      : super(
-          uniqueKey: 'migaku',
-          name: 'Migaku Dictionary',
-          icon: Icons.auto_stories_rounded,
-          allowedExtensions: const ['zip'],
-          isTextFormat: false,
-          fileType: FileType.any,
-          prepareDirectory: prepareDirectoryMigakuFormat,
-          prepareName: prepareNameMigakuFormat,
-          prepareEntries: _prepareEntriesMigakuStub,
-        );
+    : super(
+        uniqueKey: 'migaku',
+        name: 'Migaku Dictionary',
+        icon: Icons.auto_stories_rounded,
+        allowedExtensions: const ['zip'],
+        isTextFormat: false,
+        fileType: FileType.any,
+        prepareDirectory: prepareDirectoryMigakuFormat,
+        prepareName: prepareNameMigakuFormat,
+        prepareEntries: _prepareEntriesMigakuStub,
+      );
 
   /// Get the singleton instance of this dictionary format.
   static MigakuFormat get instance => _instance;

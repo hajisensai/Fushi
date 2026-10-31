@@ -37,8 +37,7 @@ class _FakeAnkiRepository extends BaseAnkiRepository {
   Future<MineOutcome> mineEntry({
     required String rawPayloadJson,
     required AnkiMiningContext context,
-  }) =>
-      throw UnimplementedError();
+  }) => throw UnimplementedError();
 
   @override
   Future<bool> isDuplicate(String expression, String reading) async => false;
@@ -87,46 +86,58 @@ void main() {
     }
     final FushiDatabase db = FushiDatabase(dbDir);
     try {
-      await db.upsertGalgame(GalgamesCompanion.insert(
-        id: 'g1',
-        name: 'Game One',
-        exePath: p.join('E:', 'Games', 'g1', 'g1.exe'),
-        workdir: p.join('E:', 'Games', 'g1'),
-        addedAt: 1,
-        coverPath: Value(docs(<String>['game_covers', 'g1.jpg'])),
-      ));
-      await db.upsertVideoBook(VideoBooksCompanion.insert(
-        bookUid: 'video/V1',
-        title: 'V1',
-        videoPath: p.join('E:', 'anime', 'V1.mkv'),
-        coverPath: Value(docs(<String>['video_covers', 'v1.jpg'])),
-        subtitleSource: Value(docs(<String>['video_subtitles', 'ep01.ass'])),
-        secondarySubtitleSource: const Value('embedded:2'),
-      ));
-      await db.upsertVideoBook(VideoBooksCompanion.insert(
-        bookUid: 'video/V2',
-        title: 'V2',
-        videoPath: p.join('E:', 'anime', 'V2.mkv'),
-        subtitleSource: const Value('off:'),
-      ));
+      await db.upsertGalgame(
+        GalgamesCompanion.insert(
+          id: 'g1',
+          name: 'Game One',
+          exePath: p.join('E:', 'Games', 'g1', 'g1.exe'),
+          workdir: p.join('E:', 'Games', 'g1'),
+          addedAt: 1,
+          coverPath: Value(docs(<String>['game_covers', 'g1.jpg'])),
+        ),
+      );
+      await db.upsertVideoBook(
+        VideoBooksCompanion.insert(
+          bookUid: 'video/V1',
+          title: 'V1',
+          videoPath: p.join('E:', 'anime', 'V1.mkv'),
+          coverPath: Value(docs(<String>['video_covers', 'v1.jpg'])),
+          subtitleSource: Value(docs(<String>['video_subtitles', 'ep01.ass'])),
+          secondarySubtitleSource: const Value('embedded:2'),
+        ),
+      );
+      await db.upsertVideoBook(
+        VideoBooksCompanion.insert(
+          bookUid: 'video/V2',
+          title: 'V2',
+          videoPath: p.join('E:', 'anime', 'V2.mkv'),
+          subtitleSource: const Value('off:'),
+        ),
+      );
       // v106 AniDB 文件身份：一条数据根内（下载副本）、一条用户原位外部文件。
-      await db.upsertAnidbFileIdentity(AnidbFileIdentitiesCompanion(
-        ed2k: const Value('0123456789abcdef0123456789abcdef'),
-        fileSize: const Value(1),
-        anidbFileId: const Value(1),
-        anidbAnimeId: const Value(2),
-        anidbEpisodeId: const Value(3),
-        filePath: Value(docs(<String>['anime_downloads', 'content', 'ep.mkv'])),
-        resolvedAt: const Value(1),
-        updatedAt: const Value(1),
-      ));
-      await db.upsertAnidbFileIdentity(AnidbFileIdentitiesCompanion(
-        ed2k: const Value('ffffffffffffffffffffffffffffffff'),
-        fileSize: const Value(2),
-        filePath: Value(p.join('E:', 'anime', 'V2.mkv')),
-        resolvedAt: const Value(1),
-        updatedAt: const Value(1),
-      ));
+      await db.upsertAnidbFileIdentity(
+        AnidbFileIdentitiesCompanion(
+          ed2k: const Value('0123456789abcdef0123456789abcdef'),
+          fileSize: const Value(1),
+          anidbFileId: const Value(1),
+          anidbAnimeId: const Value(2),
+          anidbEpisodeId: const Value(3),
+          filePath: Value(
+            docs(<String>['anime_downloads', 'content', 'ep.mkv']),
+          ),
+          resolvedAt: const Value(1),
+          updatedAt: const Value(1),
+        ),
+      );
+      await db.upsertAnidbFileIdentity(
+        AnidbFileIdentitiesCompanion(
+          ed2k: const Value('ffffffffffffffffffffffffffffffff'),
+          fileSize: const Value(2),
+          filePath: Value(p.join('E:', 'anime', 'V2.mkv')),
+          resolvedAt: const Value(1),
+          updatedAt: const Value(1),
+        ),
+      );
       final int metadataWorkId = await db.upsertVideoMetadataWork(
         VideoMetadataWorksCompanion.insert(
           bookUid: const Value<String?>('video/V1'),
@@ -149,25 +160,34 @@ void main() {
           updatedAt: 1,
         ),
       );
-      await db.upsertMediaOpenHistory(MediaOpenHistoryCompanion(
-        mediaType: const Value('reader_media_type'),
-        mediaSource: const Value('reader_fushi'),
-        mediaId: const Value('Bk'),
-        snapshotJson: Value(jsonEncode(<String, Object?>{
-          'title': 'Bk',
-          'imageUrl': Uri.file(docs(<String>['fushi_books', 'Bk', 'cover.jpg']))
-              .toString(),
-        })),
-      ));
-      await db.upsertMediaOpenHistory(MediaOpenHistoryCompanion(
-        mediaType: const Value('reader_media_type'),
-        mediaSource: const Value('remote'),
-        mediaId: const Value('Remote'),
-        snapshotJson: Value(jsonEncode(<String, Object?>{
-          'title': 'Remote',
-          'imageUrl': 'https://example.com/cover.jpg',
-        })),
-      ));
+      await db.upsertMediaOpenHistory(
+        MediaOpenHistoryCompanion(
+          mediaType: const Value('reader_media_type'),
+          mediaSource: const Value('reader_fushi'),
+          mediaId: const Value('Bk'),
+          snapshotJson: Value(
+            jsonEncode(<String, Object?>{
+              'title': 'Bk',
+              'imageUrl': Uri.file(
+                docs(<String>['fushi_books', 'Bk', 'cover.jpg']),
+              ).toString(),
+            }),
+          ),
+        ),
+      );
+      await db.upsertMediaOpenHistory(
+        MediaOpenHistoryCompanion(
+          mediaType: const Value('reader_media_type'),
+          mediaSource: const Value('remote'),
+          mediaId: const Value('Remote'),
+          snapshotJson: Value(
+            jsonEncode(<String, Object?>{
+              'title': 'Remote',
+              'imageUrl': 'https://example.com/cover.jpg',
+            }),
+          ),
+        ),
+      );
       await db.setPref(
         'galgame_library',
         jsonEncode(<Map<String, dynamic>>[
@@ -175,7 +195,7 @@ void main() {
             'id': 'g1',
             'exePath': p.join('E:', 'Games', 'g1', 'g1.exe'),
             'coverPath': docs(<String>['game_covers', 'g1.jpg']),
-          }
+          },
         ]),
       );
       await db.setPref(
@@ -187,7 +207,9 @@ void main() {
         }),
       );
       await db.setPref(
-          'download_save_root', docs(<String>['anime_downloads', 'content']));
+        'download_save_root',
+        docs(<String>['anime_downloads', 'content']),
+      );
       await db.setPref(
         'download_save_root_history',
         jsonEncode(<String>[
@@ -196,7 +218,9 @@ void main() {
         ]),
       );
       await db.setPref(
-          'local_audio_db_path', p.join(dbDir, 'local_audio_1.db'));
+        'local_audio_db_path',
+        p.join(dbDir, 'local_audio_1.db'),
+      );
       await db.setPref('video_mpv_shader_dir', p.join('G:', 'mpv', 'shaders'));
       await db.setPref(
         'src:reader_fushi:font_catalog',
@@ -207,7 +231,7 @@ void main() {
               'id': 'f1',
               'name': 'A',
               'path': docs(<String>['custom_fonts', 'a.ttf']),
-            }
+            },
           ],
         }),
       );
@@ -242,15 +266,16 @@ void main() {
           )
           .get();
       for (final QueryRow row in extras) {
-        out['extra.${row.read<String>('extra_key')}.thumbnail'] =
-            row.read<String?>('thumbnail_path');
+        out['extra.${row.read<String>('extra_key')}.thumbnail'] = row
+            .read<String?>('thumbnail_path');
       }
       final List<QueryRow> anidbFiles = await db
           .customSelect('SELECT ed2k, file_path FROM anidb_file_identities')
           .get();
       for (final QueryRow row in anidbFiles) {
-        out['anidb.${row.read<String>('ed2k')}.path'] =
-            row.read<String?>('file_path');
+        out['anidb.${row.read<String>('ed2k')}.path'] = row.read<String?>(
+          'file_path',
+        );
       }
       final Map<String, String> prefs = await db.getAllPrefs();
       for (final String key in <String>[
@@ -266,7 +291,8 @@ void main() {
       }
       final List<QueryRow> rows = await db
           .customSelect(
-              "SELECT key, value FROM profile_settings WHERE category = 'pref'")
+            "SELECT key, value FROM profile_settings WHERE category = 'pref'",
+          )
           .get();
       for (final QueryRow r in rows) {
         out['profile.${r.read<String>('key')}'] = r.read<String>('value');
@@ -282,20 +308,34 @@ void main() {
     String at(List<String> segments) =>
         p.joinAll(<String>[newDocs, ...segments]);
 
-    expect(snap['galgames.coverPath'],
-        equals(at(<String>['game_covers', 'g1.jpg'])));
     expect(
-        snap['galgames.exePath'], equals(p.join('E:', 'Games', 'g1', 'g1.exe')),
-        reason: '外部游戏安装位置绝不能被改写');
-    expect(snap['video.video/V1.cover'],
-        equals(at(<String>['video_covers', 'v1.jpg'])));
-    expect(snap['video.video/V1.sub'],
-        equals(at(<String>['video_subtitles', 'ep01.ass'])));
-    expect(snap['video.video/V1.sub2'], equals('embedded:2'),
-        reason: 'embedded: 哨兵必须原样保留');
+      snap['galgames.coverPath'],
+      equals(at(<String>['game_covers', 'g1.jpg'])),
+    );
+    expect(
+      snap['galgames.exePath'],
+      equals(p.join('E:', 'Games', 'g1', 'g1.exe')),
+      reason: '外部游戏安装位置绝不能被改写',
+    );
+    expect(
+      snap['video.video/V1.cover'],
+      equals(at(<String>['video_covers', 'v1.jpg'])),
+    );
+    expect(
+      snap['video.video/V1.sub'],
+      equals(at(<String>['video_subtitles', 'ep01.ass'])),
+    );
+    expect(
+      snap['video.video/V1.sub2'],
+      equals('embedded:2'),
+      reason: 'embedded: 哨兵必须原样保留',
+    );
     expect(snap['video.video/V2.sub'], equals('off:'), reason: 'off: 哨兵必须原样保留');
-    expect(snap['video.video/V1.path'], equals(p.join('E:', 'anime', 'V1.mkv')),
-        reason: '用户原位外部视频不该被改写');
+    expect(
+      snap['video.video/V1.path'],
+      equals(p.join('E:', 'anime', 'V1.mkv')),
+      reason: '用户原位外部视频不该被改写',
+    );
     expect(
       snap['extra.local:video/V1.thumbnail'],
       equals(at(<String>['video_covers', 'v1.jpg'])),
@@ -312,60 +352,83 @@ void main() {
       reason: '用户原位外部视频的路径提示不该被改写',
     );
     expect(
-        snap['media.reader_fushi/Bk.image'],
-        equals(Uri.file(at(<String>['fushi_books', 'Bk', 'cover.jpg']))
-            .toString()));
-    expect(snap['media.remote/Remote.image'],
-        equals('https://example.com/cover.jpg'),
-        reason: '远端 http 封面不是 file: URI，必须原样返回');
+      snap['media.reader_fushi/Bk.image'],
+      equals(
+        Uri.file(at(<String>['fushi_books', 'Bk', 'cover.jpg'])).toString(),
+      ),
+    );
+    expect(
+      snap['media.remote/Remote.image'],
+      equals('https://example.com/cover.jpg'),
+      reason: '远端 http 封面不是 file: URI，必须原样返回',
+    );
 
     final List<dynamic> games =
         jsonDecode(snap['pref.galgame_library']!) as List<dynamic>;
-    expect((games.single as Map<String, dynamic>)['coverPath'],
-        equals(at(<String>['game_covers', 'g1.jpg'])));
-    expect((games.single as Map<String, dynamic>)['exePath'],
-        equals(p.join('E:', 'Games', 'g1', 'g1.exe')));
+    expect(
+      (games.single as Map<String, dynamic>)['coverPath'],
+      equals(at(<String>['game_covers', 'g1.jpg'])),
+    );
+    expect(
+      (games.single as Map<String, dynamic>)['exePath'],
+      equals(p.join('E:', 'Games', 'g1', 'g1.exe')),
+    );
 
     final Map<String, dynamic> remote =
         jsonDecode(snap['pref.video_remote_subtitle']!) as Map<String, dynamic>;
-    expect(remote['remote/1#ep0'],
-        equals(at(<String>['video_subtitles', 'ep01.ass'])));
+    expect(
+      remote['remote/1#ep0'],
+      equals(at(<String>['video_subtitles', 'ep01.ass'])),
+    );
     expect(remote['remote/2#ep0'], equals('embedded:1'));
     expect(remote['remote/3#ep0'], equals('off:'));
 
-    expect(snap['pref.download_save_root'],
-        equals(at(<String>['anime_downloads', 'content'])));
+    expect(
+      snap['pref.download_save_root'],
+      equals(at(<String>['anime_downloads', 'content'])),
+    );
     final List<dynamic> history =
         jsonDecode(snap['pref.download_save_root_history']!) as List<dynamic>;
     expect(history.first, equals(at(<String>['anime_downloads', 'content'])));
-    expect(history.last, equals(p.join('F:', 'downloads')),
-        reason: '外部盘的历史根不该被改写');
+    expect(
+      history.last,
+      equals(p.join('F:', 'downloads')),
+      reason: '外部盘的历史根不该被改写',
+    );
 
-    expect(snap['pref.video_mpv_shader_dir'],
-        equals(p.join('G:', 'mpv', 'shaders')),
-        reason: '用户外部 mpv 目录绝不能被改写');
+    expect(
+      snap['pref.video_mpv_shader_dir'],
+      equals(p.join('G:', 'mpv', 'shaders')),
+      reason: '用户外部 mpv 目录绝不能被改写',
+    );
 
     final Map<String, dynamic> catalog =
         jsonDecode(snap['pref.src:reader_fushi:font_catalog']!)
             as Map<String, dynamic>;
-    expect((catalog['fonts'] as List<dynamic>).single['path'],
-        equals(at(<String>['custom_fonts', 'a.ttf'])));
+    expect(
+      (catalog['fonts'] as List<dynamic>).single['path'],
+      equals(at(<String>['custom_fonts', 'a.ttf'])),
+    );
   }
 
   test('① 迁移改写了全部漏项，外部路径纹丝不动', () async {
     await seed(oldSupport.path);
     final String newDataRoot = p.join(tmp.path, 'newroot');
     final List<String> prefWrites = <String>[];
-    final (Directory newDocs, Directory newSupport) =
-        await const DataRootMigrator().migrate(DataRootMigrationRequest(
-      oldDocumentsRoot: oldDocs,
-      oldSupportRoot: oldSupport,
-      target: DataRootMigrationTarget.customRoot(newDataRoot),
-      closeResources: () async {},
-      commitLocation: (DataRootMigrationTarget t) async =>
-          prefWrites.add(t.dataRootPrefValue!),
-      documentsTopLevelIncludeNames: AppPaths.fushiOwnedDocumentsEntries,
-    ));
+    final (
+      Directory newDocs,
+      Directory newSupport,
+    ) = await const DataRootMigrator().migrate(
+      DataRootMigrationRequest(
+        oldDocumentsRoot: oldDocs,
+        oldSupportRoot: oldSupport,
+        target: DataRootMigrationTarget.customRoot(newDataRoot),
+        closeResources: () async {},
+        commitLocation: (DataRootMigrationTarget t) async =>
+            prefWrites.add(t.dataRootPrefValue!),
+        documentsTopLevelIncludeNames: AppPaths.fushiOwnedDocumentsEntries,
+      ),
+    );
     expect(prefWrites, equals(<String>[newDataRoot]));
     expectRebasedOnto(await snapshot(newSupport.path), newDocs.path);
   });
@@ -376,8 +439,10 @@ void main() {
     final FushiDatabase pre = FushiDatabase(oldSupport.path);
     late int profileId;
     try {
-      final ProfileRepository repo =
-          ProfileRepository(pre, _FakeAnkiRepository());
+      final ProfileRepository repo = ProfileRepository(
+        pre,
+        _FakeAnkiRepository(),
+      );
       profileId = await repo.createProfile('P1');
       await repo.snapshotCurrentSettings(profileId);
       // 前提：快照里确实存着旧根绝对路径。用 video_remote_subtitle（会进快照）；
@@ -385,44 +450,54 @@ void main() {
       // 所以它们只需改 preferences，不会被切 Profile 写回——这一点一并钉死。
       final List<QueryRow> rows = await pre
           .customSelect(
-              "SELECT key, value FROM profile_settings WHERE category = 'pref' "
-              "AND key IN ('video_remote_subtitle', 'src:reader_fushi:font_catalog', "
-              "'download_save_root')")
+            "SELECT key, value FROM profile_settings WHERE category = 'pref' "
+            "AND key IN ('video_remote_subtitle', 'src:reader_fushi:font_catalog', "
+            "'download_save_root')",
+          )
           .get();
       final Map<String, String> snapshotted = <String, String>{
         for (final QueryRow r in rows)
           r.read<String>('key'): r.read<String>('value'),
       };
       expect(
-          snapshotted.keys.toSet(),
-          equals(<String>{
-            'video_remote_subtitle',
-            'src:reader_fushi:font_catalog'
-          }),
-          reason: 'download_save_root 是设备本地键，按设计不进 Profile 快照');
-      expect(jsonDecode(snapshotted['video_remote_subtitle']!)['remote/1#ep0'],
-          equals(docs(<String>['video_subtitles', 'ep01.ass'])),
-          reason: '前提：快照里确实存着旧根绝对路径');
+        snapshotted.keys.toSet(),
+        equals(<String>{
+          'video_remote_subtitle',
+          'src:reader_fushi:font_catalog',
+        }),
+        reason: 'download_save_root 是设备本地键，按设计不进 Profile 快照',
+      );
+      expect(
+        jsonDecode(snapshotted['video_remote_subtitle']!)['remote/1#ep0'],
+        equals(docs(<String>['video_subtitles', 'ep01.ass'])),
+        reason: '前提：快照里确实存着旧根绝对路径',
+      );
     } finally {
       await pre.close();
     }
 
     final String newDataRoot = p.join(tmp.path, 'newroot');
-    final (Directory newDocs, Directory newSupport) =
-        await const DataRootMigrator().migrate(DataRootMigrationRequest(
-      oldDocumentsRoot: oldDocs,
-      oldSupportRoot: oldSupport,
-      target: DataRootMigrationTarget.customRoot(newDataRoot),
-      closeResources: () async {},
-      commitLocation: (DataRootMigrationTarget t) async {},
-      documentsTopLevelIncludeNames: AppPaths.fushiOwnedDocumentsEntries,
-    ));
+    final (
+      Directory newDocs,
+      Directory newSupport,
+    ) = await const DataRootMigrator().migrate(
+      DataRootMigrationRequest(
+        oldDocumentsRoot: oldDocs,
+        oldSupportRoot: oldSupport,
+        target: DataRootMigrationTarget.customRoot(newDataRoot),
+        closeResources: () async {},
+        commitLocation: (DataRootMigrationTarget t) async {},
+        documentsTopLevelIncludeNames: AppPaths.fushiOwnedDocumentsEntries,
+      ),
+    );
 
     // 真正走一次 applyProfile（= 用户切 Profile），再看 live prefs 有没有被写回旧根。
     final FushiDatabase post = FushiDatabase(newSupport.path);
     try {
-      final ProfileRepository repo =
-          ProfileRepository(post, _FakeAnkiRepository());
+      final ProfileRepository repo = ProfileRepository(
+        post,
+        _FakeAnkiRepository(),
+      );
       await repo.applyProfile(profileId);
       final Map<String, String> prefs = await post.getAllPrefs();
       expect(
@@ -438,7 +513,8 @@ void main() {
       expect(
         jsonDecode(prefs['video_remote_subtitle']!)['remote/1#ep0'],
         equals(p.join(newDocs.path, 'video_subtitles', 'ep01.ass')),
-        reason: 'BUG-1174 ②：切 Profile 把 profile_settings 快照原样写回 preferences，'
+        reason:
+            'BUG-1174 ②：切 Profile 把 profile_settings 快照原样写回 preferences，'
             '快照没被 rebase 的话刚迁好的路径会整体回滚到旧根——迁移当天一切正常，'
             '几天后用户切一次 Profile 才突然坏，极难归因',
       );
@@ -455,8 +531,10 @@ void main() {
     await seed(oldSupport.path);
     // 正是 BUG-1115 的形态：newDocs 就在 oldDocs 里面。旧的 startsWith(oldRoot) 判据
     // 会把已改写过的路径再改一遍，产出 .../Hibiki/data/Hibiki/data/...，静默毁全库。
-    final String newDocs = p.joinAll(
-        <String>[oldDocs.path, ...AppPaths.defaultDocumentsChildSegments]);
+    final String newDocs = p.joinAll(<String>[
+      oldDocs.path,
+      ...AppPaths.defaultDocumentsChildSegments,
+    ]);
     Future<void> runOnce() =>
         const DataRootMigrator().rebaseDatabasePathsForTesting(
           dbDirectory: oldSupport.path,
@@ -491,23 +569,35 @@ void main() {
       newRoot: '/home/u/Documents/Hibiki/data',
       scopeTopLevelNames: AppPaths.fushiOwnedDocumentsEntries,
     );
-    expect(rebaser.rebase('/home/u/Documents/audiobooks/a.mp3'),
-        equals('/home/u/Documents/Hibiki/data/audiobooks/a.mp3'));
+    expect(
+      rebaser.rebase('/home/u/Documents/audiobooks/a.mp3'),
+      equals('/home/u/Documents/Hibiki/data/audiobooks/a.mp3'),
+    );
     // 已改写过的路径：首段是 Hibiki（不在白名单）→ 原样返回 = 幂等。
-    expect(rebaser.rebase('/home/u/Documents/Hibiki/data/audiobooks/a.mp3'),
-        equals('/home/u/Documents/Hibiki/data/audiobooks/a.mp3'));
+    expect(
+      rebaser.rebase('/home/u/Documents/Hibiki/data/audiobooks/a.mp3'),
+      equals('/home/u/Documents/Hibiki/data/audiobooks/a.mp3'),
+    );
     // 用户自己的文件：不搬也不改。
-    expect(rebaser.rebase('/home/u/Documents/thesis.docx'),
-        equals('/home/u/Documents/thesis.docx'));
+    expect(
+      rebaser.rebase('/home/u/Documents/thesis.docx'),
+      equals('/home/u/Documents/thesis.docx'),
+    );
     // 白名单项的前缀撞名不算命中（边界必须是分隔符）。
-    expect(rebaser.rebase('/home/u/Documents/videos_backup/x.mkv'),
-        equals('/home/u/Documents/videos_backup/x.mkv'));
+    expect(
+      rebaser.rebase('/home/u/Documents/videos_backup/x.mkv'),
+      equals('/home/u/Documents/videos_backup/x.mkv'),
+    );
     // 大小写不敏感：hibikiExport 在 Windows 上会被搬走，路径必须一起改。
-    expect(rebaser.rebase('/home/u/Documents/HibikiExport/card.jpg'),
-        equals('/home/u/Documents/Hibiki/data/HibikiExport/card.jpg'));
+    expect(
+      rebaser.rebase('/home/u/Documents/HibikiExport/card.jpg'),
+      equals('/home/u/Documents/Hibiki/data/HibikiExport/card.jpg'),
+    );
     // 根本体本身。
-    expect(rebaser.rebase('/home/u/Documents'),
-        equals('/home/u/Documents/Hibiki/data'));
+    expect(
+      rebaser.rebase('/home/u/Documents'),
+      equals('/home/u/Documents/Hibiki/data'),
+    );
   });
 
   test('③c 整树搬移（无白名单）仍改写全部子路径', () {
@@ -516,8 +606,10 @@ void main() {
       newRoot: '/new/documents',
       scopeTopLevelNames: null,
     );
-    expect(rebaser.rebase('/old/documents/anything/deep/x'),
-        equals('/new/documents/anything/deep/x'));
+    expect(
+      rebaser.rebase('/old/documents/anything/deep/x'),
+      equals('/new/documents/anything/deep/x'),
+    );
     expect(rebaser.rebase('/elsewhere/x'), equals('/elsewhere/x'));
   });
 
@@ -539,9 +631,13 @@ void main() {
     } finally {
       DataRootMigrator.debugFailMidRebase = false;
     }
-    expect(await snapshot(oldSupport.path), equals(before),
-        reason: 'BUG-1174 ④：改写必须在单事务里，中途失败整体回滚。逐行 UPDATE 的旧写法'
-            '会留下「一半指新根、一半指旧根」的库，而外层回滚只搬文件、救不了半改的 DB');
+    expect(
+      await snapshot(oldSupport.path),
+      equals(before),
+      reason:
+          'BUG-1174 ④：改写必须在单事务里，中途失败整体回滚。逐行 UPDATE 的旧写法'
+          '会留下「一半指新根、一半指旧根」的库，而外层回滚只搬文件、救不了半改的 DB',
+    );
   });
 
   test('rebaseMigratedPrefValue 不动未登记的 key（profile_settings 里躺着全部 pref）', () {
@@ -557,8 +653,11 @@ void main() {
     ]) {
       expect(
         rebaseMigratedPrefValue(
-            key, '/home/u/Documents/audiobooks/looks_like_a_path',
-            documents: rebaser, newSupportRoot: '/support'),
+          key,
+          '/home/u/Documents/audiobooks/looks_like_a_path',
+          documents: rebaser,
+          newSupportRoot: '/support',
+        ),
         equals('/home/u/Documents/audiobooks/looks_like_a_path'),
         reason: key,
       );

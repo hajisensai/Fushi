@@ -69,16 +69,19 @@ void main() {
     });
 
     test('Quote / Backslash 有可读名，与 DOM code 同名', () {
-      const InputBinding quote =
-          InputBinding(key: LogicalKeyboardKey.quoteSingle);
-      const InputBinding backslash =
-          InputBinding(key: LogicalKeyboardKey.backslash);
+      const InputBinding quote = InputBinding(
+        key: LogicalKeyboardKey.quoteSingle,
+      );
+      const InputBinding backslash = InputBinding(
+        key: LogicalKeyboardKey.backslash,
+      );
       expect(quote.serialize(), 'Quote');
       expect(backslash.serialize(), 'Backslash');
       // 老快照里存成 #<keyId> 的同一个键照样读回同一个绑定。
       expect(
-          InputBinding.deserialize('#${LogicalKeyboardKey.quoteSingle.keyId}'),
-          quote);
+        InputBinding.deserialize('#${LogicalKeyboardKey.quoteSingle.keyId}'),
+        quote,
+      );
       expect(InputBinding.deserialize('Quote'), quote);
     });
   });
@@ -155,15 +158,23 @@ void main() {
     );
 
     await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
-    expect(activator.accepts(macShiftSlash, HardwareKeyboard.instance), isTrue,
-        reason: 'macOS 上 Shift+/ 的逻辑键是 question，必须仍触发');
-    expect(activator.accepts(winShiftSlash, HardwareKeyboard.instance), isTrue,
-        reason: 'Windows 形态（逻辑键就是 slash）照旧');
+    expect(
+      activator.accepts(macShiftSlash, HardwareKeyboard.instance),
+      isTrue,
+      reason: 'macOS 上 Shift+/ 的逻辑键是 question，必须仍触发',
+    );
+    expect(
+      activator.accepts(winShiftSlash, HardwareKeyboard.instance),
+      isTrue,
+      reason: 'Windows 形态（逻辑键就是 slash）照旧',
+    );
     await tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft);
 
     // 修饰键不符不触发：没按 Shift 的同一事件不是 Shift+/。
     expect(
-        activator.accepts(macShiftSlash, HardwareKeyboard.instance), isFalse);
+      activator.accepts(macShiftSlash, HardwareKeyboard.instance),
+      isFalse,
+    );
     // 抬起沿不触发。
     await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
     expect(
@@ -188,24 +199,28 @@ void main() {
 
     test('有声书播放/暂停 = Option+Space，全屏 = Ctrl+Cmd+F', () {
       expect(
-          mac[ShortcutAction.audiobookPlayPause]!.keyboardBindings,
-          const <InputBinding>[
-            InputBinding(
-              key: LogicalKeyboardKey.space,
-              modifiers: <ModifierKey>{ModifierKey.alt},
-            ),
-          ]);
+        mac[ShortcutAction.audiobookPlayPause]!.keyboardBindings,
+        const <InputBinding>[
+          InputBinding(
+            key: LogicalKeyboardKey.space,
+            modifiers: <ModifierKey>{ModifierKey.alt},
+          ),
+        ],
+      );
       expect(
-          mac[ShortcutAction.globalToggleFullscreen]!.keyboardBindings,
-          const <InputBinding>[
-            InputBinding(
-              key: LogicalKeyboardKey.keyF,
-              modifiers: <ModifierKey>{ModifierKey.ctrl, ModifierKey.meta},
-            ),
-          ]);
+        mac[ShortcutAction.globalToggleFullscreen]!.keyboardBindings,
+        const <InputBinding>[
+          InputBinding(
+            key: LogicalKeyboardKey.keyF,
+            modifiers: <ModifierKey>{ModifierKey.ctrl, ModifierKey.meta},
+          ),
+        ],
+      );
       // 手柄通道照桌面默认。
-      expect(mac[ShortcutAction.audiobookPlayPause]!.gamepadBindings,
-          win[ShortcutAction.audiobookPlayPause]!.gamepadBindings);
+      expect(
+        mac[ShortcutAction.audiobookPlayPause]!.gamepadBindings,
+        win[ShortcutAction.audiobookPlayPause]!.gamepadBindings,
+      );
     });
 
     test('macOS 默认里没有 Cmd+Space / Ctrl+Space / F11', () {
@@ -230,15 +245,18 @@ void main() {
 
     test('其它平台默认不变', () {
       expect(
-          win[ShortcutAction.audiobookPlayPause]!.keyboardBindings,
-          const <InputBinding>[
-            InputBinding(
-              key: LogicalKeyboardKey.space,
-              modifiers: <ModifierKey>{ModifierKey.ctrl},
-            ),
-          ]);
-      expect(win[ShortcutAction.globalToggleFullscreen]!.keyboardBindings,
-          const <InputBinding>[InputBinding(key: LogicalKeyboardKey.f11)]);
+        win[ShortcutAction.audiobookPlayPause]!.keyboardBindings,
+        const <InputBinding>[
+          InputBinding(
+            key: LogicalKeyboardKey.space,
+            modifiers: <ModifierKey>{ModifierKey.ctrl},
+          ),
+        ],
+      );
+      expect(
+        win[ShortcutAction.globalToggleFullscreen]!.keyboardBindings,
+        const <InputBinding>[InputBinding(key: LogicalKeyboardKey.f11)],
+      );
     });
   });
 
@@ -277,16 +295,18 @@ void main() {
           ),
           TargetPlatform.macOS,
         );
-      final ShortcutBindingSet playPause =
-          registry.bindingsFor(ShortcutAction.audiobookPlayPause);
+      final ShortcutBindingSet playPause = registry.bindingsFor(
+        ShortcutAction.audiobookPlayPause,
+      );
       expect(playPause.keyboardBindings, const <InputBinding>[
         InputBinding(
           key: LogicalKeyboardKey.space,
           modifiers: <ModifierKey>{ModifierKey.alt},
         ),
       ]);
-      expect(playPause.gamepadBindings,
-          const <GamepadBinding>[GamepadBinding(GamepadButton.start)]);
+      expect(playPause.gamepadBindings, const <GamepadBinding>[
+        GamepadBinding(GamepadButton.start),
+      ]);
       expect(
         registry
             .bindingsFor(ShortcutAction.globalToggleFullscreen)

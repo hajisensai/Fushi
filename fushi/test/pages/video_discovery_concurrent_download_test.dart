@@ -36,10 +36,7 @@ VideoDiscoveryItem _item() {
 
 Widget _harness(VideoDiscoveryDetailPage page) {
   return TranslationProvider(
-    child: MaterialApp(
-      theme: ThemeData.dark(useMaterial3: true),
-      home: page,
-    ),
+    child: MaterialApp(theme: ThemeData.dark(useMaterial3: true), home: page),
   );
 }
 
@@ -77,10 +74,7 @@ Future<void> settle(WidgetTester tester) async {
 void main() {
   setUp(() => LocaleSettings.setLocale(AppLocale.zhCn));
 
-  Future<void> pump(
-    WidgetTester tester,
-    VideoDiscoveryActions actions,
-  ) async {
+  Future<void> pump(WidgetTester tester, VideoDiscoveryActions actions) async {
     tester.view.physicalSize = const Size(1280, 900);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -107,18 +101,26 @@ void main() {
       ),
     );
 
-    final Finder button =
-        find.byKey(const ValueKey<String>('video-discovery-search-resource'));
+    final Finder button = find.byKey(
+      const ValueKey<String>('video-discovery-search-resource'),
+    );
     expect(button, findsOneWidget);
     // M3E 详情骨架：「找资源」是 hero 主按钮（filled），key 落在按钮本体上。
-    expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(button)).onPressed, isNotNull,
-        reason: '下载进行中这颗按钮必须是 enabled 的。');
+    expect(
+      tester.widget<FilledButton>(glassUnwrap<FilledButton>(button)).onPressed,
+      isNotNull,
+      reason: '下载进行中这颗按钮必须是 enabled 的。',
+    );
 
     await tester.tap(button);
     await settle(tester);
-    expect(searched, isTrue,
-        reason: '这是本次修复的核心：按钮此前在 isBusy 时被 disable，'
-            '而队列层根本没有 per-series 限制。');
+    expect(
+      searched,
+      isTrue,
+      reason:
+          '这是本次修复的核心：按钮此前在 isBusy 时被 disable，'
+          '而队列层根本没有 per-series 限制。',
+    );
   });
 
   testWidgets('下载进行中出现取消入口，点击带走全部在飞任务 id', (WidgetTester tester) async {
@@ -135,14 +137,17 @@ void main() {
       ),
     );
 
-    final Finder cancel =
-        find.byKey(const ValueKey<String>('video-discovery-cancel-download'));
+    final Finder cancel = find.byKey(
+      const ValueKey<String>('video-discovery-cancel-download'),
+    );
     expect(cancel, findsOneWidget, reason: '作品页此前没有任何取消入口，用户得自己翻到下载页去停。');
 
     await tester.tap(cancel);
     await settle(tester);
-    expect(cancelled, <String>['job-1', 'job-2'],
-        reason: '同一部作品可以并存多条下载，取消要一次带走全部在飞的。');
+    expect(cancelled, <String>[
+      'job-1',
+      'job-2',
+    ], reason: '同一部作品可以并存多条下载，取消要一次带走全部在飞的。');
   });
 
   testWidgets('没在下载时不渲染取消 / 查看任务', (WidgetTester tester) async {
@@ -156,11 +161,13 @@ void main() {
     );
 
     expect(
-        find.byKey(const ValueKey<String>('video-discovery-cancel-download')),
-        findsNothing);
+      find.byKey(const ValueKey<String>('video-discovery-cancel-download')),
+      findsNothing,
+    );
     expect(
-        find.byKey(const ValueKey<String>('video-discovery-detail-downloads')),
-        findsNothing);
+      find.byKey(const ValueKey<String>('video-discovery-detail-downloads')),
+      findsNothing,
+    );
   });
 
   testWidgets('isBusy 但拿不到任务 id 时不渲染取消（按下去无事可取消）', (WidgetTester tester) async {
@@ -176,8 +183,9 @@ void main() {
     );
 
     expect(
-        find.byKey(const ValueKey<String>('video-discovery-cancel-download')),
-        findsNothing);
+      find.byKey(const ValueKey<String>('video-discovery-cancel-download')),
+      findsNothing,
+    );
   });
 
   testWidgets('未接取消端口时不渲染取消按钮', (WidgetTester tester) async {
@@ -192,8 +200,9 @@ void main() {
     );
 
     expect(
-        find.byKey(const ValueKey<String>('video-discovery-cancel-download')),
-        findsNothing);
+      find.byKey(const ValueKey<String>('video-discovery-cancel-download')),
+      findsNothing,
+    );
   });
 
   testWidgets('窄窗（360dp 下限）下操作行不溢出', (WidgetTester tester) async {
@@ -224,36 +233,47 @@ void main() {
 
     expect(tester.takeException(), isNull);
     expect(
-        find.byKey(const ValueKey<String>('video-discovery-cancel-download')),
-        findsOneWidget);
+      find.byKey(const ValueKey<String>('video-discovery-cancel-download')),
+      findsOneWidget,
+    );
   });
 
   group('home_page 侧的「在飞」判定', () {
     test('busy 取「任意一条 active」，不是排序后第一条', () {
-      final String source = File('lib/src/pages/implementations/home_page.dart')
-          .readAsStringSync();
+      final String source = File(
+        'lib/src/pages/implementations/home_page.dart',
+      ).readAsStringSync();
       // 锚点必须是**定义**：文件里先出现的是 emit() 里的调用点，从那里取窗口
       // 只会读到一段无关代码，断言恒假。
       final int at = source.indexOf(
-          'Future<VideoDiscoveryAcquisitionState> _readVideoDiscoveryStatus(');
+        'Future<VideoDiscoveryAcquisitionState> _readVideoDiscoveryStatus(',
+      );
       expect(at, isNonNegative);
       final String body = source.substring(at, at + 2200);
 
-      expect(body, contains('activeJobs.isNotEmpty'),
-          reason: '排序是 priority DESC, createdAt DESC —— 新提交的那条一旦完成，'
-              '仍在跑的旧任务就会被判成「不忙」，取消入口跟着消失。');
       expect(
-          body.contains('job?.lifecycle == VideoDownloadJobLifecycle.active'),
-          isFalse,
-          reason: '旧的单条判定必须真的被替换掉，而不是留着并存。');
-      expect(body, contains('activeJobIds:'),
-          reason: '取消需要知道取消哪几条，聚合成一个 bool 不够。');
+        body,
+        contains('activeJobs.isNotEmpty'),
+        reason:
+            '排序是 priority DESC, createdAt DESC —— 新提交的那条一旦完成，'
+            '仍在跑的旧任务就会被判成「不忙」，取消入口跟着消失。',
+      );
+      expect(
+        body.contains('job?.lifecycle == VideoDownloadJobLifecycle.active'),
+        isFalse,
+        reason: '旧的单条判定必须真的被替换掉，而不是留着并存。',
+      );
+      expect(
+        body,
+        contains('activeJobIds:'),
+        reason: '取消需要知道取消哪几条，聚合成一个 bool 不够。',
+      );
     });
 
     test('取消必须先弹确认，且一条都没取消掉要说话', () {
       final String source = maskComments(
-          File('lib/src/pages/implementations/home_page.dart')
-              .readAsStringSync());
+        File('lib/src/pages/implementations/home_page.dart').readAsStringSync(),
+      );
       final String body = methodBody(
         source,
         'Future<void> _cancelVideoDiscoveryDownloads(List<String> jobIds) async',
@@ -264,18 +284,26 @@ void main() {
       final int confirmAt = body.indexOf('FushiDestructiveConfirmDialog(');
       final int loopAt = body.indexOf('for (final String jobId in jobIds)');
       expect(confirmAt, isNonNegative, reason: '取消必须先确认');
-      expect(loopAt, greaterThan(confirmAt),
-          reason: '确认必须排在真正调 cancelJob 之前');
-      expect(body, contains('if (confirmed == null) return;'),
-          reason: '用户取消对话框就得真的不动手');
+      expect(loopAt, greaterThan(confirmAt), reason: '确认必须排在真正调 cancelJob 之前');
+      expect(
+        body,
+        contains('if (confirmed == null) return;'),
+        reason: '用户取消对话框就得真的不动手',
+      );
 
       // cancelJob 在 backendTaskId 还没落库、或后端解析不出来时会失败，而 UI 这边
       // 什么都不变 —— 用户只看到「点了没反应，还在下」。
-      expect(body, contains('cancelled == 0'),
-          reason: '一条都没取消掉必须给提示，不能只 debugPrint');
+      expect(
+        body,
+        contains('cancelled == 0'),
+        reason: '一条都没取消掉必须给提示，不能只 debugPrint',
+      );
       expect(body, contains('video_discovery_cancel_downloads_failed'));
-      expect(body, isNot(contains('debugPrint(')),
-          reason: '失败要进 ErrorLogService，不是 debugPrint 吞掉');
+      expect(
+        body,
+        isNot(contains('debugPrint(')),
+        reason: '失败要进 ErrorLogService，不是 debugPrint 吞掉',
+      );
     });
   });
 }

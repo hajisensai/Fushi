@@ -84,8 +84,7 @@ void main() {
     // the unhydrated cache.
   }
 
-  test(
-      'loaded BEFORE the source cache is hydrated -> saved custom key is lost '
+  test('loaded BEFORE the source cache is hydrated -> saved custom key is lost '
       '(falls back to defaults) [the BUG-207 failure mode]', () async {
     // The saved JSON exists in the DB but the source cache is still empty
     // (no refresh/initialise since the row was written) — the pre-fix order.
@@ -103,7 +102,8 @@ void main() {
         scope: ShortcutScope.video,
       ),
       isNull,
-      reason: 'cache was empty -> getPreference returned null -> '
+      reason:
+          'cache was empty -> getPreference returned null -> '
           'resetToDefaults dropped the saved custom key',
     );
     // The default Space binding for the action is present instead.
@@ -118,47 +118,55 @@ void main() {
   });
 
   test(
-      'loaded AFTER the source cache is hydrated -> saved custom key is restored '
-      '[the BUG-207 fixed order]', () async {
-    await seedSavedCustomJsonInDbOnly();
-    // The fix: hydrate the source preference cache from the DB BEFORE loading
-    // the registry (initialise()/refreshPreferencesFromDb does this at startup).
-    await source.refreshPreferencesFromDb();
+    'loaded AFTER the source cache is hydrated -> saved custom key is restored '
+    '[the BUG-207 fixed order]',
+    () async {
+      await seedSavedCustomJsonInDbOnly();
+      // The fix: hydrate the source preference cache from the DB BEFORE loading
+      // the registry (initialise()/refreshPreferencesFromDb does this at startup).
+      await source.refreshPreferencesFromDb();
 
-    final FushiShortcutRegistry registry = FushiShortcutRegistry();
-    await loadShortcutRegistry(registry, source, TargetPlatform.windows);
+      final FushiShortcutRegistry registry = FushiShortcutRegistry();
+      await loadShortcutRegistry(registry, source, TargetPlatform.windows);
 
-    // The custom KeyG binding for toggle-play-pause is now active.
-    expect(
-      registry.resolveKeyboard(
-        LogicalKeyboardKey.keyG,
-        modifiers: const <ModifierKey>{},
-        scope: ShortcutScope.video,
-      ),
-      ShortcutAction.videoTogglePlayPause,
-      reason:
-          'cache hydrated first -> getPreference returned the saved JSON -> '
-          'loadFromJsonString restored the custom key',
-    );
-  });
+      // The custom KeyG binding for toggle-play-pause is now active.
+      expect(
+        registry.resolveKeyboard(
+          LogicalKeyboardKey.keyG,
+          modifiers: const <ModifierKey>{},
+          scope: ShortcutScope.video,
+        ),
+        ShortcutAction.videoTogglePlayPause,
+        reason:
+            'cache hydrated first -> getPreference returned the saved JSON -> '
+            'loadFromJsonString restored the custom key',
+      );
+    },
+  );
 
   test(
-      'getPreference<String?> cache miss does NOT write a default back through, '
-      'so the saved JSON on disk survives an unhydrated read [BUG-207 root]',
-      () async {
-    // Root-cause guard: the pre-fix order not only fell back to defaults in
-    // memory, the concern was whether the cache-miss path corrupts the stored
-    // JSON. getPreference<String?> with defaultValue null must be a pure read
-    // for a nullable type and must NOT clobber the DB row.
-    await db.setPref('src:${source.uniqueKey}:$_prefKey', customJson);
-    // Unhydrated read (cache empty): returns null, must not write anything.
-    final String? read =
-        source.getPreference<String?>(key: _prefKey, defaultValue: null);
-    expect(read, isNull, reason: 'cache empty -> null');
+    'getPreference<String?> cache miss does NOT write a default back through, '
+    'so the saved JSON on disk survives an unhydrated read [BUG-207 root]',
+    () async {
+      // Root-cause guard: the pre-fix order not only fell back to defaults in
+      // memory, the concern was whether the cache-miss path corrupts the stored
+      // JSON. getPreference<String?> with defaultValue null must be a pure read
+      // for a nullable type and must NOT clobber the DB row.
+      await db.setPref('src:${source.uniqueKey}:$_prefKey', customJson);
+      // Unhydrated read (cache empty): returns null, must not write anything.
+      final String? read = source.getPreference<String?>(
+        key: _prefKey,
+        defaultValue: null,
+      );
+      expect(read, isNull, reason: 'cache empty -> null');
 
-    // The DB row must be untouched by that read.
-    final Map<String, String> all = await db.getAllPrefs();
-    expect(all['src:${source.uniqueKey}:$_prefKey'], customJson,
-        reason: 'a nullable cache-miss read must not overwrite the saved JSON');
-  });
+      // The DB row must be untouched by that read.
+      final Map<String, String> all = await db.getAllPrefs();
+      expect(
+        all['src:${source.uniqueKey}:$_prefKey'],
+        customJson,
+        reason: 'a nullable cache-miss read must not overwrite the saved JSON',
+      );
+    },
+  );
 }

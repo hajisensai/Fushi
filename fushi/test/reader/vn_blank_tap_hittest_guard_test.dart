@@ -10,27 +10,32 @@ import 'package:flutter_test/flutter_test.dart';
 // clamp 过去的边距）=空白（翻页）。headless 跑不到真实几何，这里钉死源码里必须有精确
 // 命中测试（getClientRects）而不是只看 text node。
 void main() {
-  test(
-      'BUG-748: _fushiVnTapIsBlank uses client-rect hit-test, not just a '
+  test('BUG-748: _fushiVnTapIsBlank uses client-rect hit-test, not just a '
       'clamped text-node check', () {
     final String src = File(
       'lib/src/pages/implementations/reader_fushi/webview.part.dart',
     ).readAsStringSync();
 
     final int fnStart = src.indexOf('function _fushiVnTapIsBlank(');
-    expect(fnStart, greaterThanOrEqualTo(0),
-        reason: '_fushiVnTapIsBlank must exist');
+    expect(
+      fnStart,
+      greaterThanOrEqualTo(0),
+      reason: '_fushiVnTapIsBlank must exist',
+    );
     // isolate the function body up to the next top-level function decl so the
     // assertions are about THIS function, not the whole file.
-    final int fnEnd =
-        src.indexOf('function _fushiReaderCaretRangeAtPoint(', fnStart);
+    final int fnEnd = src.indexOf(
+      'function _fushiReaderCaretRangeAtPoint(',
+      fnStart,
+    );
     expect(fnEnd, greaterThan(fnStart));
     final String body = src.substring(fnStart, fnEnd);
 
     expect(
       body.contains('getClientRects()'),
       isTrue,
-      reason: 'blank-detection must hit-test the resolved glyph box '
+      reason:
+          'blank-detection must hit-test the resolved glyph box '
           '(getClientRects) so margin taps clamped to a char are still blank',
     );
     expect(

@@ -20,21 +20,20 @@ VideoDownloadSubscriptionsCompanion _subscription(
   String? provider = 'mal',
   String? externalId,
   int? collectionId,
-}) =>
-    VideoDownloadSubscriptionsCompanion.insert(
-      subscriptionId: id,
-      resourceProvider: 'nyaa',
-      metadataProvider: Value<String?>(provider),
-      externalId: Value<String?>(provider == null ? null : externalId ?? id),
-      mediaKind: 'tv',
-      title: 'Show $id',
-      searchQuery: 'Show $id',
-      backendKind: 'embedded',
-      fingerprint: 'embedded/default',
-      collectionId: Value<int?>(collectionId),
-      createdAt: 10,
-      updatedAt: 10,
-    );
+}) => VideoDownloadSubscriptionsCompanion.insert(
+  subscriptionId: id,
+  resourceProvider: 'nyaa',
+  metadataProvider: Value<String?>(provider),
+  externalId: Value<String?>(provider == null ? null : externalId ?? id),
+  mediaKind: 'tv',
+  title: 'Show $id',
+  searchQuery: 'Show $id',
+  backendKind: 'embedded',
+  fingerprint: 'embedded/default',
+  collectionId: Value<int?>(collectionId),
+  createdAt: 10,
+  updatedAt: 10,
+);
 
 VideoDownloadJobsCompanion _job(String id, {int? collectionId}) =>
     VideoDownloadJobsCompanion.insert(
@@ -79,7 +78,9 @@ Future<void> _scrapeWork(
       updatedAt: 12,
     ),
   );
-  await db.into(db.videoMetadataProviderIdentities).insert(
+  await db
+      .into(db.videoMetadataProviderIdentities)
+      .insert(
         VideoMetadataProviderIdentitiesCompanion.insert(
           identityKey: 'collection:$collectionId:$provider',
           workId: Value<int?>(workId),
@@ -91,10 +92,10 @@ Future<void> _scrapeWork(
 }
 
 Future<Set<String>> _owned(FushiDatabase db, List<int> ids) async => <String>{
-      for (final VideoDownloadSubscriptionRow row
-          in await db.getVideoDownloadSubscriptionsOwnedByCollections(ids))
-        row.subscriptionId,
-    };
+  for (final VideoDownloadSubscriptionRow row
+      in await db.getVideoDownloadSubscriptionsOwnedByCollections(ids))
+    row.subscriptionId,
+};
 
 void main() {
   test('三条归属线都能命中，其他合集与无身份订阅不被误中', () async {
@@ -129,11 +130,15 @@ void main() {
       _subscription('no-identity', provider: null),
     );
 
-    expect(
-      await _owned(db, <int>[target]),
-      <String>{'direct', 'via-job', 'via-identity'},
-    );
-    expect(await _owned(db, <int>[other]), <String>{'other-job', 'other-identity'});
+    expect(await _owned(db, <int>[target]), <String>{
+      'direct',
+      'via-job',
+      'via-identity',
+    });
+    expect(await _owned(db, <int>[other]), <String>{
+      'other-job',
+      'other-identity',
+    });
     expect(await _owned(db, <int>[]), isEmpty);
   });
 

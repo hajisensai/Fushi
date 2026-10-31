@@ -43,8 +43,11 @@ void main() {
     );
     final int guardIndex = paginate.indexOf('if (_paginationInFlight)');
     final int paginateCallIndex = paginate.indexOf('paginateInvocation');
-    expect(guardIndex, isNonNegative,
-        reason: '_paginate 必须含 _paginationInFlight 守卫');
+    expect(
+      guardIndex,
+      isNonNegative,
+      reason: '_paginate 必须含 _paginationInFlight 守卫',
+    );
     expect(paginateCallIndex, isNonNegative);
     expect(
       guardIndex,
@@ -72,13 +75,15 @@ void main() {
       '  // ── Image Viewer',
     );
     final int guardIndex = paginate.indexOf('if (_paginationInFlight)');
-    final int throttleStampIndex =
-        paginate.indexOf('_lastPaginateTime = DateTime.now()');
+    final int throttleStampIndex = paginate.indexOf(
+      '_lastPaginateTime = DateTime.now()',
+    );
     expect(throttleStampIndex, isNonNegative);
     expect(
       throttleStampIndex,
       lessThan(guardIndex),
-      reason: '节流戳必须先于在飞守卫：输入已经过了限速、被接受，'
+      reason:
+          '节流戳必须先于在飞守卫：输入已经过了限速、被接受，'
           '接下来是就地执行还是入队等重放都不改变它已占掉一个翻页配额',
     );
   });
@@ -92,8 +97,11 @@ void main() {
     final int guardIndex = handler.indexOf('if (_paginationInFlight)');
     // 匹配真实调用 _handlePageTurnLimit('forward') 而非注释里的字样提及。
     final int limitCallIndex = handler.indexOf("_handlePageTurnLimit('");
-    expect(guardIndex, isNonNegative,
-        reason: 'onBoundarySwipe 绕过 _paginate 入口，必须单独收口 _paginationInFlight');
+    expect(
+      guardIndex,
+      isNonNegative,
+      reason: 'onBoundarySwipe 绕过 _paginate 入口，必须单独收口 _paginationInFlight',
+    );
     expect(limitCallIndex, isNonNegative);
     expect(
       guardIndex,

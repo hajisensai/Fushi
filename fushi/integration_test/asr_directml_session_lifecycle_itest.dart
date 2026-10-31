@@ -16,6 +16,7 @@ import 'package:integration_test/integration_test.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi_asr_core/asr_core.dart';
+
 String _env(String name, {String defaultValue = ''}) {
   final String? v = Platform.environment[name];
   return v == null || v.isEmpty ? defaultValue : v;
@@ -51,12 +52,13 @@ Future<void> _round({
   int? greedyThreads = kAsrGreedyGraphIntraOpThreads,
 }) async {
   final Stopwatch sw = Stopwatch()..start();
-  final AsrEngineSessions sessions = await AsrEngineLoader(factory: buildFushiOnnxFactory()).load(
-    store: store,
-    variant: variant,
-    preference: preference,
-    greedyIntraOpThreads: greedyThreads,
-  );
+  final AsrEngineSessions sessions =
+      await AsrEngineLoader(factory: buildFushiOnnxFactory()).load(
+        store: store,
+        variant: variant,
+        preference: preference,
+        greedyIntraOpThreads: greedyThreads,
+      );
   _log(
     '$label load ok ${sw.elapsedMilliseconds}ms ${sessions.encoderResolution} '
     'greedyGraph=${sessions.greedy != null}'
@@ -97,136 +99,132 @@ Future<void> _round({
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets(
-    'DirectML 会话：大批次 → 关闭 → 再建 → 再推理',
-    (WidgetTester tester) async {
-      final String seed = _env('ASR_MODEL_SEED');
-      expect(seed, isNotEmpty);
-      final AsrModelStore store = AsrModelStore(
-        Directory(seed),
-        asrModelPackFor(
-          AsrLanguage.fromTag(_env('ASR_LANG', defaultValue: 'ja')) ??
-              AsrLanguage.japanese,
-        ),
-      );
-      final String audioParam = _env(
-        'ASR_AUDIO',
-        defaultValue: 'test/asr/fixtures/ja_tts_16k.wav',
-      );
-      final String audio = p.isAbsolute(audioParam)
-          ? audioParam
-          : p.join(Directory.current.path, audioParam);
-      final List<AsrSpeechSegment> segments = await _segments(audio);
-      _log('segments=${segments.length}');
+  testWidgets('DirectML 会话：大批次 → 关闭 → 再建 → 再推理', (WidgetTester tester) async {
+    final String seed = _env('ASR_MODEL_SEED');
+    expect(seed, isNotEmpty);
+    final AsrModelStore store = AsrModelStore(
+      Directory(seed),
+      asrModelPackFor(
+        AsrLanguage.fromTag(_env('ASR_LANG', defaultValue: 'ja')) ??
+            AsrLanguage.japanese,
+      ),
+    );
+    final String audioParam = _env(
+      'ASR_AUDIO',
+      defaultValue: 'test/asr/fixtures/ja_tts_16k.wav',
+    );
+    final String audio = p.isAbsolute(audioParam)
+        ? audioParam
+        : p.join(Directory.current.path, audioParam);
+    final List<AsrSpeechSegment> segments = await _segments(audio);
+    _log('segments=${segments.length}');
 
-      // 第 1 轮：GPU fp32 batch 32（与 E2E 默认一致）。
+    // 第 1 轮：GPU fp32 batch 32（与 E2E 默认一致）。
+    await _round(
+      store: store,
+      segments: segments,
+      variant: AsrEncoderVariant.fp32,
+      preference: AsrAccelerationPreference.auto,
+      batchSize: 32,
+      label: 'gpu#1(b32)',
+    );
+    // 第 2 轮：CPU int8（模拟 E2E 之后的 CPU 用例）。
+    await _round(
+      store: store,
+      segments: segments,
+      variant: AsrEncoderVariant.int8,
+      preference: AsrAccelerationPreference.cpuOnly,
+      batchSize: 16,
+      label: 'cpu#1(b16)',
+    );
+    // 第 3 轮：再建 GPU 会话，小批次。
+    await _round(
+      store: store,
+      segments: segments,
+      variant: AsrEncoderVariant.fp32,
+      preference: AsrAccelerationPreference.auto,
+      batchSize: 8,
+      label: 'gpu#2(b8)',
+    );
+    // 第 4 轮：再建 GPU 会话，大批次。
+    await _round(
+      store: store,
+      segments: segments,
+      variant: AsrEncoderVariant.fp32,
+      preference: AsrAccelerationPreference.auto,
+      batchSize: 32,
+      label: 'gpu#3(b32)',
+    );
+    _log('all rounds survived');
+
+    // Loop 图 vs Dart 逐帧：同一批段、同一 EP。
+    for (final bool graph in <bool>[true, false]) {
       await _round(
         store: store,
         segments: segments,
         variant: AsrEncoderVariant.fp32,
         preference: AsrAccelerationPreference.auto,
         batchSize: 32,
-        label: 'gpu#1(b32)',
+        useGreedyGraph: graph,
+        label: 'gpu-${graph ? 'loopgraph' : 'perframe'}',
       );
-      // 第 2 轮：CPU int8（模拟 E2E 之后的 CPU 用例）。
       await _round(
         store: store,
         segments: segments,
         variant: AsrEncoderVariant.int8,
         preference: AsrAccelerationPreference.cpuOnly,
         batchSize: 16,
-        label: 'cpu#1(b16)',
+        useGreedyGraph: graph,
+        label: 'cpu-${graph ? 'loopgraph' : 'perframe'}',
       );
-      // 第 3 轮：再建 GPU 会话，小批次。
-      await _round(
-        store: store,
-        segments: segments,
-        variant: AsrEncoderVariant.fp32,
-        preference: AsrAccelerationPreference.auto,
-        batchSize: 8,
-        label: 'gpu#2(b8)',
-      );
-      // 第 4 轮：再建 GPU 会话，大批次。
+    }
+    // 贪心图 intra-op 线程数扫描（null = ORT 默认全核）。
+    for (final int? threads in <int?>[null, 1, 2, 4, 8]) {
       await _round(
         store: store,
         segments: segments,
         variant: AsrEncoderVariant.fp32,
         preference: AsrAccelerationPreference.auto,
         batchSize: 32,
-        label: 'gpu#3(b32)',
+        greedyThreads: threads,
+        label: 'gpu-loopgraph(threads=${threads ?? 'default'})',
       );
-      _log('all rounds survived');
-
-      // Loop 图 vs Dart 逐帧：同一批段、同一 EP。
-      for (final bool graph in <bool>[true, false]) {
-        await _round(
-          store: store,
-          segments: segments,
-          variant: AsrEncoderVariant.fp32,
-          preference: AsrAccelerationPreference.auto,
-          batchSize: 32,
-          useGreedyGraph: graph,
-          label: 'gpu-${graph ? 'loopgraph' : 'perframe'}',
-        );
-        await _round(
-          store: store,
-          segments: segments,
-          variant: AsrEncoderVariant.int8,
-          preference: AsrAccelerationPreference.cpuOnly,
-          batchSize: 16,
-          useGreedyGraph: graph,
-          label: 'cpu-${graph ? 'loopgraph' : 'perframe'}',
-        );
-      }
-      // 贪心图 intra-op 线程数扫描（null = ORT 默认全核）。
-      for (final int? threads in <int?>[null, 1, 2, 4, 8]) {
-        await _round(
-          store: store,
-          segments: segments,
-          variant: AsrEncoderVariant.fp32,
-          preference: AsrAccelerationPreference.auto,
-          batchSize: 32,
-          greedyThreads: threads,
-          label: 'gpu-loopgraph(threads=${threads ?? 'default'})',
-        );
-      }
-      for (final int? threads in <int?>[null, 2, 4]) {
-        await _round(
-          store: store,
-          segments: segments,
-          variant: AsrEncoderVariant.int8,
-          preference: AsrAccelerationPreference.cpuOnly,
-          batchSize: 16,
-          greedyThreads: threads,
-          label: 'cpu-loopgraph(threads=${threads ?? 'default'})',
-        );
-      }
-      // 前瞻帧数扫描：同一批段、同一 EP，只变 K，看 ASR 阶段耗时（逐帧路径）。
-      for (final int k in <int>[1, 4, 8, 16, 32]) {
-        await _round(
-          store: store,
-          segments: segments,
-          variant: AsrEncoderVariant.fp32,
-          preference: AsrAccelerationPreference.auto,
-          batchSize: 32,
-          lookaheadFrames: k,
-          useGreedyGraph: false,
-          label: 'gpu-sweep(k=$k)',
-        );
-      }
-      for (final int k in <int>[1, 8, 16]) {
-        await _round(
-          store: store,
-          segments: segments,
-          variant: AsrEncoderVariant.int8,
-          preference: AsrAccelerationPreference.cpuOnly,
-          batchSize: 16,
-          lookaheadFrames: k,
-          useGreedyGraph: false,
-          label: 'cpu-sweep(k=$k)',
-        );
-      }
-    },
-    timeout: const Timeout(Duration(minutes: 20)),
-  );
+    }
+    for (final int? threads in <int?>[null, 2, 4]) {
+      await _round(
+        store: store,
+        segments: segments,
+        variant: AsrEncoderVariant.int8,
+        preference: AsrAccelerationPreference.cpuOnly,
+        batchSize: 16,
+        greedyThreads: threads,
+        label: 'cpu-loopgraph(threads=${threads ?? 'default'})',
+      );
+    }
+    // 前瞻帧数扫描：同一批段、同一 EP，只变 K，看 ASR 阶段耗时（逐帧路径）。
+    for (final int k in <int>[1, 4, 8, 16, 32]) {
+      await _round(
+        store: store,
+        segments: segments,
+        variant: AsrEncoderVariant.fp32,
+        preference: AsrAccelerationPreference.auto,
+        batchSize: 32,
+        lookaheadFrames: k,
+        useGreedyGraph: false,
+        label: 'gpu-sweep(k=$k)',
+      );
+    }
+    for (final int k in <int>[1, 8, 16]) {
+      await _round(
+        store: store,
+        segments: segments,
+        variant: AsrEncoderVariant.int8,
+        preference: AsrAccelerationPreference.cpuOnly,
+        batchSize: 16,
+        lookaheadFrames: k,
+        useGreedyGraph: false,
+        label: 'cpu-sweep(k=$k)',
+      );
+    }
+  }, timeout: const Timeout(Duration(minutes: 20)));
 }

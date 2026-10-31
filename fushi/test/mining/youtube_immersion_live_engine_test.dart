@@ -44,9 +44,11 @@ void main() {
     () async {
       final YoutubeResolvedSource src = await resolveYoutubeSource(_kUrl);
       // ignore: avoid_print
-      print('[yt-mine] title="${src.title}" cues=${src.cues.length} '
-          'muxedFallback=${src.isMuxedFallback} '
-          'miningVideoNull=${src.miningVideoUrl == null}');
+      print(
+        '[yt-mine] title="${src.title}" cues=${src.cues.length} '
+        'muxedFallback=${src.isMuxedFallback} '
+        'miningVideoNull=${src.miningVideoUrl == null}',
+      );
       expect(src.cues, isNotEmpty, reason: '字幕 cue = 制卡句子来源');
 
       // controller.miningSource / miningAudioSource 的同款取法（见 video_fushi_page）：
@@ -54,8 +56,9 @@ void main() {
       final String miningVideo = src.miningVideoUrl ?? src.streamUrl;
       final String? miningAudio = src.audioStreamUrl;
 
-      final Directory tmp =
-          await Directory.systemTemp.createTemp('yt_mine_engine');
+      final Directory tmp = await Directory.systemTemp.createTemp(
+        'yt_mine_engine',
+      );
       final _CaptureRepo repo = _CaptureRepo();
       final ImmersionMiningResult res = await ImmersionMiningEngine().mine(
         ImmersionMiningRequest(
@@ -73,14 +76,18 @@ void main() {
         tempDir: tmp.path,
         repo: repo,
         // ignore: avoid_print
-        onFailure: (String s) => print('[yt-mine] FFMPEG_FAIL '
-            '${s.substring(0, s.length < 240 ? s.length : 240)}'),
+        onFailure: (String s) => print(
+          '[yt-mine] FFMPEG_FAIL '
+          '${s.substring(0, s.length < 240 ? s.length : 240)}',
+        ),
       );
 
       // ignore: avoid_print
-      print('[yt-mine] aborted=${res.aborted} '
-          'cover=${repo.captured?.coverPath} '
-          'audio=${repo.captured?.sentenceAudioPath}');
+      print(
+        '[yt-mine] aborted=${res.aborted} '
+        'cover=${repo.captured?.coverPath} '
+        'audio=${repo.captured?.sentenceAudioPath}',
+      );
       expect(res.aborted, isFalse, reason: 'GIF+音频都应抽到，制卡不中止');
       final AnkiMiningContext ctx = repo.captured!;
       expect(ctx.coverPath, isNotNull);

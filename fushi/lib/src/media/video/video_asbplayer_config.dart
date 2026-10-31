@@ -107,16 +107,16 @@ class VideoAsbplayerConfig {
   }
 
   Map<String, Object> toJson() => <String, Object>{
-        'seekSeconds': seekSeconds,
-        'speedStep': speedStep,
-        'doubleTapSeekSeconds': doubleTapSeekSeconds,
-        'longPressSpeed': longPressSpeed,
-        'dragSeekSensitivity': dragSeekSensitivity.name,
-        'tapTogglesPlayback': tapTogglesPlayback,
-        'doubleTapTogglesPlayback': doubleTapTogglesPlayback,
-        'brightnessSwipeGesture': brightnessSwipeGesture,
-        'volumeSwipeGesture': volumeSwipeGesture,
-      };
+    'seekSeconds': seekSeconds,
+    'speedStep': speedStep,
+    'doubleTapSeekSeconds': doubleTapSeekSeconds,
+    'longPressSpeed': longPressSpeed,
+    'dragSeekSensitivity': dragSeekSensitivity.name,
+    'tapTogglesPlayback': tapTogglesPlayback,
+    'doubleTapTogglesPlayback': doubleTapTogglesPlayback,
+    'brightnessSwipeGesture': brightnessSwipeGesture,
+    'volumeSwipeGesture': volumeSwipeGesture,
+  };
 
   static String encode(VideoAsbplayerConfig config) =>
       jsonEncode(config.toJson());
@@ -127,16 +127,19 @@ class VideoAsbplayerConfig {
       final Object? raw = jsonDecode(json);
       if (raw is! Map<String, dynamic>) return defaults;
       return VideoAsbplayerConfig(
-        seekSeconds:
-            _readInt(raw['seekSeconds'], defaults.seekSeconds).clamp(1, 30),
-        speedStep: _readDouble(raw['speedStep'], defaults.speedStep)
-            .clamp(0.05, 0.5)
-            .toDouble(),
+        seekSeconds: _readInt(
+          raw['seekSeconds'],
+          defaults.seekSeconds,
+        ).clamp(1, 30),
+        speedStep: _readDouble(
+          raw['speedStep'],
+          defaults.speedStep,
+        ).clamp(0.05, 0.5).toDouble(),
         doubleTapSeekSeconds: _readDoubleTap(raw['doubleTapSeekSeconds']),
-        longPressSpeed:
-            _readDouble(raw['longPressSpeed'], defaults.longPressSpeed)
-                .clamp(1.0, 4.0)
-                .toDouble(),
+        longPressSpeed: _readDouble(
+          raw['longPressSpeed'],
+          defaults.longPressSpeed,
+        ).clamp(1.0, 4.0).toDouble(),
         dragSeekSensitivity: _readDragSeekSensitivity(
           raw['dragSeekSensitivity'],
         ),
@@ -145,10 +148,12 @@ class VideoAsbplayerConfig {
             raw['tapTogglesPlayback'] as bool? ?? defaults.tapTogglesPlayback,
         // BUG-3310：旧档没有本键 → 回落 true，**不**从 tapTogglesPlayback 继承。旧档里
         // 那个 false 多半是在电脑上为鼠标单击关的、经同步带到了手机，继承它正是本 bug。
-        doubleTapTogglesPlayback: raw['doubleTapTogglesPlayback'] as bool? ??
+        doubleTapTogglesPlayback:
+            raw['doubleTapTogglesPlayback'] as bool? ??
             defaults.doubleTapTogglesPlayback,
         // 旧档没有这两个键 → 回落 true，既有竖滑调亮度/音量行为原样保留。
-        brightnessSwipeGesture: raw['brightnessSwipeGesture'] as bool? ??
+        brightnessSwipeGesture:
+            raw['brightnessSwipeGesture'] as bool? ??
             defaults.brightnessSwipeGesture,
         volumeSwipeGesture:
             raw['volumeSwipeGesture'] as bool? ?? defaults.volumeSwipeGesture,

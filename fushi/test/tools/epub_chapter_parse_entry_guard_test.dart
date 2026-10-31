@@ -23,24 +23,21 @@ import '../helpers/source_guard.dart';
 const Map<String, String> kAllowedRawHtmlParseFiles = <String, String>{
   '../packages/fushi_engine/lib/epub/epub_book.dart':
       '入口实现本体：parseChapterHtml 就是「归一化 + html_parser.parse」这一句，'
-          '它自己必须调裸解析，否则无处落地。',
+      '它自己必须调裸解析，否则无处落地。',
   '../packages/fushi_engine/lib/media/torrent/nyaa_client.dart':
       'nyaa 种子站返回的是真正的 HTML5 页面（text/html），不是 EPUB 章节 XHTML；'
-          '自闭合 raw-text 标签在那里既不合法也不会出现，走归一化只会平添开销。',
+      '自闭合 raw-text 标签在那里既不合法也不会出现，走归一化只会平添开销。',
   '../packages/fushi_anki/lib/src/anki_glossary_css.dart':
       '制卡释义 HTML（popup.js 导出的 `.yomitan-glossary` 片段，BUG-3224）不是 EPUB '
-          '章节 XHTML：只用解析结果做 CSS 选择器命中判断，最终输出仍是原字符串，'
-          '且 fushi_anki 不依赖 fushi_engine（无法调 parseChapterHtml）。',
+      '章节 XHTML：只用解析结果做 CSS 选择器命中判断，最终输出仍是原字符串，'
+      '且 fushi_anki 不依赖 fushi_engine（无法调 parseChapterHtml）。',
 };
 
 const String _kSelfPath = 'test/tools/epub_chapter_parse_entry_guard_test.dart';
 
 /// 扫描面：app 与全部内部包的 `lib/`。测试目录不扫——测试里直接调裸解析构造
 /// 「未归一化」的对照输入是正当用法（BUG-2017 的行为测试就要这么做）。
-const List<String> _kRoots = <String>[
-  'lib',
-  '../packages',
-];
+const List<String> _kRoots = <String>['lib', '../packages'];
 
 List<File> _scannedDartFiles() {
   final List<File> files = <File>[];
@@ -55,8 +52,10 @@ List<File> _scannedDartFiles() {
     // PathNotFoundException——枚举当场崩，下面那些「只留 ../packages/<pkg>/lib/」
     // 的过滤根本轮不到执行。不跟随不会漏任何真实源文件（各包 lib/ 下没有靠符号
     // 链接才能到达的 .dart）。
-    for (final FileSystemEntity e
-        in dir.listSync(recursive: true, followLinks: false)) {
+    for (final FileSystemEntity e in dir.listSync(
+      recursive: true,
+      followLinks: false,
+    )) {
       if (e is! File || !e.path.endsWith('.dart')) continue;
       final String rel = e.path.replaceAll(r'\', '/');
       if (rel.endsWith('.g.dart') || rel.endsWith('.freezed.dart')) continue;
@@ -80,8 +79,9 @@ String? _htmlParserPrefix(String maskedSource) {
   );
   final Match? m = aliased.firstMatch(maskedSource);
   if (m != null) return m.group(1);
-  final RegExp bare =
-      RegExp(r'''import\s+['"]package:html/parser\.dart['"]\s*;''');
+  final RegExp bare = RegExp(
+    r'''import\s+['"]package:html/parser\.dart['"]\s*;''',
+  );
   return bare.hasMatch(maskedSource) ? '' : null;
 }
 
@@ -95,9 +95,11 @@ List<String> _rawParseHits() {
     if (prefix == null) continue;
     final RegExp call = prefix.isEmpty
         ? RegExp(r'(?<![A-Za-z0-9_$.])parse\s*\(')
-        : RegExp(r'(?<![A-Za-z0-9_$.])' +
-            RegExp.escape(prefix) +
-            r'\s*\.\s*parse\s*\(');
+        : RegExp(
+            r'(?<![A-Za-z0-9_$.])' +
+                RegExp.escape(prefix) +
+                r'\s*\.\s*parse\s*\(',
+          );
     final List<String> lines = masked.split('\n');
     for (int i = 0; i < lines.length; i++) {
       if (!call.hasMatch(lines[i])) continue;
@@ -126,14 +128,24 @@ void main() {
     for (final MapEntry<String, String> entry
         in kAllowedRawHtmlParseFiles.entries) {
       final File file = File(entry.key);
-      expect(file.existsSync(), isTrue,
-          reason: '白名单里的 ${entry.key} 已不存在——删掉这条豁免，别留着放行整个目录');
+      expect(
+        file.existsSync(),
+        isTrue,
+        reason: '白名单里的 ${entry.key} 已不存在——删掉这条豁免，别留着放行整个目录',
+      );
       final String masked = maskComments(file.readAsStringSync());
-      expect(_htmlParserPrefix(masked), isNotNull,
-          reason: '${entry.key} 已经不再导入 package:html/parser.dart，'
-              '这条豁免是死条目，删掉');
-      expect(entry.value.length, greaterThanOrEqualTo(20),
-          reason: '豁免必须写明理由，不接受占位符');
+      expect(
+        _htmlParserPrefix(masked),
+        isNotNull,
+        reason:
+            '${entry.key} 已经不再导入 package:html/parser.dart，'
+            '这条豁免是死条目，删掉',
+      );
+      expect(
+        entry.value.length,
+        greaterThanOrEqualTo(20),
+        reason: '豁免必须写明理由，不接受占位符',
+      );
     }
   });
 
@@ -141,7 +153,8 @@ void main() {
     expect(
       _rawParseHits(),
       isEmpty,
-      reason: '这些位置直接调了 package:html 的 parse()。EPUB 章节是 XHTML，'
+      reason:
+          '这些位置直接调了 package:html 的 parse()。EPUB 章节是 XHTML，'
           'HTML5 解析器会被自闭合的 <script/> 吞掉整个 <body>（BUG-2017）。'
           '改走 EpubBook.parseChapterHtml；如果它解析的确实是真 HTML5 页面，'
           '把文件加进 kAllowedRawHtmlParseFiles 并写清理由。',

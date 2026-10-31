@@ -117,8 +117,6 @@ class _WebsocketDialogPageState extends BasePageState<WebsocketDialogPage> {
   }
 
   void executeSearch() async {
-    widget.onConnect(
-      _addressController.text,
-    );
+    widget.onConnect(_addressController.text);
   }
 }

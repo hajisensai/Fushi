@@ -30,10 +30,7 @@ void main() {
     });
 
     test('round-trip with empty entries', () {
-      final result = DictionarySearchResult(
-        searchTerm: 'test',
-        bestLength: 4,
-      );
+      final result = DictionarySearchResult(searchTerm: 'test', bestLength: 4);
 
       final json = result.toJson();
       final restored = DictionarySearchResult.fromJson(json);

@@ -49,18 +49,17 @@ ActivityEventRow _row({
   String eventType = 'read',
   String dateKey = '2026-07-20',
   int id = 1,
-}) =>
-    ActivityEventRow(
-      id: id,
-      eventType: eventType,
-      mediaType: 'book',
-      title: title,
-      mediaKey: null,
-      dateKey: dateKey,
-      timestampMs: timestampMs,
-      durationMs: 60000,
-      charsDelta: 100,
-    );
+}) => ActivityEventRow(
+  id: id,
+  eventType: eventType,
+  mediaType: 'book',
+  title: title,
+  mediaKey: null,
+  dateKey: dateKey,
+  timestampMs: timestampMs,
+  durationMs: 60000,
+  charsDelta: 100,
+);
 
 void main() {
   group('host listBooks 内联阅读进度', () {
@@ -81,43 +80,54 @@ void main() {
       final Directory extract = Directory(p.join(tmp.path, 'b1'))
         ..createSync(recursive: true);
       Future<void> seed(String key) => db.insertEpubBook(
-            EpubBooksCompanion.insert(
-              bookKey: key,
-              title: key,
-              epubPath: p.join(extract.path, '$key.epub'),
-              extractDir: extract.path,
-              chapterCount: 1,
-              chaptersJson: '["ch1"]',
-              importedAt: DateTime.now().millisecondsSinceEpoch,
-            ),
-          );
+        EpubBooksCompanion.insert(
+          bookKey: key,
+          title: key,
+          epubPath: p.join(extract.path, '$key.epub'),
+          extractDir: extract.path,
+          chapterCount: 1,
+          chaptersJson: '["ch1"]',
+          importedAt: DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
       await seed('reading');
       await seed('untouched');
-      await db.upsertMediaOpenHistory(const MediaOpenHistoryCompanion(
-        mediaType: Value('reader'),
-        mediaSource: Value('hibiki'),
-        mediaId: Value('fushi://book/reading'),
-        position: Value(760),
-        duration: Value(1000),
-      ));
+      await db.upsertMediaOpenHistory(
+        const MediaOpenHistoryCompanion(
+          mediaType: Value('reader'),
+          mediaSource: Value('hibiki'),
+          mediaId: Value('fushi://book/reading'),
+          position: Value(760),
+          duration: Value(1000),
+        ),
+      );
       // v82：reader_positions 键 = epub_books.uid（insertEpubBook 已自动生成）。
       final String readingUid = (await db.resolveEpubBookUid('reading'))!;
-      await db.upsertReaderPosition(ReaderPositionsCompanion.insert(
-        bookUid: readingUid,
-        sectionIndex: 3,
-        normCharOffset: 7600,
-        updatedAt: 123456789,
-      ));
+      await db.upsertReaderPosition(
+        ReaderPositionsCompanion.insert(
+          bookUid: readingUid,
+          sectionIndex: 3,
+          normCharOffset: 7600,
+          updatedAt: 123456789,
+        ),
+      );
 
-      final List<RemoteBookInfo> books =
-          await _makeService(db: db, tmp: tmp).listBooks();
-      final RemoteBookInfo reading =
-          books.singleWhere((RemoteBookInfo b) => b.title == 'reading');
-      expect(reading.progressPercent, 76,
-          reason: 'percent 必须与本地首页同算（position/duration）');
+      final List<RemoteBookInfo> books = await _makeService(
+        db: db,
+        tmp: tmp,
+      ).listBooks();
+      final RemoteBookInfo reading = books.singleWhere(
+        (RemoteBookInfo b) => b.title == 'reading',
+      );
+      expect(
+        reading.progressPercent,
+        76,
+        reason: 'percent 必须与本地首页同算（position/duration）',
+      );
       expect(reading.progressUpdatedAtMs, 123456789);
-      final RemoteBookInfo untouched =
-          books.singleWhere((RemoteBookInfo b) => b.title == 'untouched');
+      final RemoteBookInfo untouched = books.singleWhere(
+        (RemoteBookInfo b) => b.title == 'untouched',
+      );
       expect(untouched.progressPercent, 0);
       expect(untouched.progressUpdatedAtMs, 0);
 
@@ -133,8 +143,9 @@ void main() {
     const String token = 'dash-feed-token';
 
     test('GET /api/library/activity 下发 host 最近事件（JSON roundtrip）', () async {
-      final FushiDatabase hostDb =
-          FushiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase hostDb = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
       addTearDown(hostDb.close);
       final Directory tmp = Directory.systemTemp.createTempSync('hbk_act_srv');
       addTearDown(() => tmp.delete(recursive: true));
@@ -159,9 +170,12 @@ void main() {
 
       final HttpClient c = HttpClient();
       final HttpClientRequest req = await c.getUrl(
-          Uri.parse('http://127.0.0.1:${server.port}/api/library/activity'));
-      req.headers.set('authorization',
-          'Basic ${base64Encode(utf8.encode('hibiki:$token'))}');
+        Uri.parse('http://127.0.0.1:${server.port}/api/library/activity'),
+      );
+      req.headers.set(
+        'authorization',
+        'Basic ${base64Encode(utf8.encode('hibiki:$token'))}',
+      );
       final HttpClientResponse res = await req.close();
       expect(res.statusCode, 200);
       final List<dynamic> arr =
@@ -169,7 +183,8 @@ void main() {
       c.close(force: true);
       expect(arr, hasLength(1));
       final RemoteActivityEvent e = RemoteActivityEvent.fromJson(
-          (arr.single as Map).cast<String, Object?>());
+        (arr.single as Map).cast<String, Object?>(),
+      );
       expect(e.eventType, 'watch');
       expect(e.title, 'S01E01');
       expect(e.timestampMs, 1700000000000);
@@ -186,8 +201,9 @@ void main() {
       await server.start();
       addTearDown(server.stop);
 
-      final FushiDatabase clientDb =
-          FushiDatabase.forTesting(NativeDatabase.memory());
+      final FushiDatabase clientDb = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
       addTearDown(clientDb.close);
       final SyncRepository repo = SyncRepository(clientDb);
       await repo.setFushiClientUrls(<FushiClientUrl>[
@@ -195,11 +211,15 @@ void main() {
       ]);
       await repo.setFushiClientToken(token);
       final InterconnectSyncBackend backend = InterconnectSyncBackend.withProbe(
-          (String url, String tok) async => true);
+        (String url, String tok) async => true,
+      );
       await backend.restoreAuth(repo);
 
-      expect(await backend.listRemoteActivity(), isEmpty,
-          reason: '老 host 404 必须优雅降级，不能让首页互联加载抛异常');
+      expect(
+        await backend.listRemoteActivity(),
+        isEmpty,
+        reason: '老 host 404 必须优雅降级，不能让首页互联加载抛异常',
+      );
     });
   });
 
@@ -210,39 +230,50 @@ void main() {
         localVideoUids: <String>{'video/local'},
         remoteBooks: <RemoteBookInfo>[
           const RemoteBookInfo(
-              title: 'remote-only',
-              hasContent: true,
-              bookKey: 'remote-only',
-              progressPercent: 42,
-              progressUpdatedAtMs: 5),
+            title: 'remote-only',
+            hasContent: true,
+            bookKey: 'remote-only',
+            progressPercent: 42,
+            progressUpdatedAtMs: 5,
+          ),
           const RemoteBookInfo(
-              title: 'local-book',
-              hasContent: true,
-              bookKey: 'local-book',
-              progressPercent: 50,
-              progressUpdatedAtMs: 9),
+            title: 'local-book',
+            hasContent: true,
+            bookKey: 'local-book',
+            progressPercent: 50,
+            progressUpdatedAtMs: 9,
+          ),
           const RemoteBookInfo(
-              title: 'finished',
-              hasContent: true,
-              bookKey: 'finished',
-              progressPercent: 100),
+            title: 'finished',
+            hasContent: true,
+            bookKey: 'finished',
+            progressPercent: 100,
+          ),
           const RemoteBookInfo(
-              title: 'untouched', hasContent: true, bookKey: 'untouched'),
+            title: 'untouched',
+            hasContent: true,
+            bookKey: 'untouched',
+          ),
         ],
         remoteVideos: <RemoteVideoInfo>[
           const RemoteVideoInfo(
-              id: 'video/remote',
-              title: 'R',
-              positionMs: 90000,
-              positionUpdatedAtMs: 7),
+            id: 'video/remote',
+            title: 'R',
+            positionMs: 90000,
+            positionUpdatedAtMs: 7,
+          ),
           const RemoteVideoInfo(
-              id: 'video/local', title: 'L', positionMs: 90000),
+            id: 'video/local',
+            title: 'L',
+            positionMs: 90000,
+          ),
           const RemoteVideoInfo(id: 'video/unwatched', title: 'U'),
         ],
       );
-      expect(out.map((RemoteContinueCandidate c) => c.id),
-          <String>['remote-only', 'video/remote'],
-          reason: '本地已有同 key/uid 以本地为准；读完/未动过的不进「继续」');
+      expect(out.map((RemoteContinueCandidate c) => c.id), <String>[
+        'remote-only',
+        'video/remote',
+      ], reason: '本地已有同 key/uid 以本地为准；读完/未动过的不进「继续」');
       expect(out.first.percent, 42);
       expect(out.first.recentMs, 5);
     });
@@ -253,22 +284,25 @@ void main() {
         localVideoUids: const <String>{},
         remoteBooks: <RemoteBookInfo>[
           const RemoteBookInfo(
-              title: 'manga-in-progress',
-              hasContent: false,
-              bookKey: 'manga-in-progress',
-              progressPercent: 42,
-              progressUpdatedAtMs: 5),
+            title: 'manga-in-progress',
+            hasContent: false,
+            bookKey: 'manga-in-progress',
+            progressPercent: 42,
+            progressUpdatedAtMs: 5,
+          ),
           const RemoteBookInfo(
-              title: 'epub-ok',
-              hasContent: true,
-              bookKey: 'epub-ok',
-              progressPercent: 10,
-              progressUpdatedAtMs: 3),
+            title: 'epub-ok',
+            hasContent: true,
+            bookKey: 'epub-ok',
+            progressPercent: 10,
+            progressUpdatedAtMs: 3,
+          ),
         ],
         remoteVideos: const <RemoteVideoInfo>[],
       );
-      expect(out.map((RemoteContinueCandidate c) => c.id), <String>['epub-ok'],
-          reason: '书架远端列表按 hasContent 过滤，「继续」不过滤会产生点了就消失的死路卡');
+      expect(out.map((RemoteContinueCandidate c) => c.id), <String>[
+        'epub-ok',
+      ], reason: '书架远端列表按 hasContent 过滤，「继续」不过滤会产生点了就消失的死路卡');
     });
 
     test('remoteContinueCandidates：候选携带 MediaKind，SRT 书不被抹成 epub', () {
@@ -277,36 +311,48 @@ void main() {
         localVideoUids: const <String>{},
         remoteBooks: <RemoteBookInfo>[
           const RemoteBookInfo(
-              title: 'srt-book',
-              hasContent: true,
-              bookKey: 'srt-book',
-              kind: MediaKind.srt,
-              progressPercent: 42,
-              progressUpdatedAtMs: 5),
+            title: 'srt-book',
+            hasContent: true,
+            bookKey: 'srt-book',
+            kind: MediaKind.srt,
+            progressPercent: 42,
+            progressUpdatedAtMs: 5,
+          ),
           const RemoteBookInfo(
-              title: 'plain-epub',
-              hasContent: true,
-              bookKey: 'plain-epub',
-              progressPercent: 10,
-              progressUpdatedAtMs: 3),
+            title: 'plain-epub',
+            hasContent: true,
+            bookKey: 'plain-epub',
+            progressPercent: 10,
+            progressUpdatedAtMs: 3,
+          ),
         ],
         remoteVideos: <RemoteVideoInfo>[
           const RemoteVideoInfo(
-              id: 'video/r', title: 'R', positionMs: 1, positionUpdatedAtMs: 2),
+            id: 'video/r',
+            title: 'R',
+            positionMs: 1,
+            positionUpdatedAtMs: 2,
+          ),
         ],
       );
-      final RemoteContinueCandidate srt =
-          out.singleWhere((RemoteContinueCandidate c) => c.id == 'srt-book');
-      expect(srt.kind, MediaKind.srt,
-          reason: 'BUG-1119：远端 SRT 书必须保住种类，不得降维成 epub');
+      final RemoteContinueCandidate srt = out.singleWhere(
+        (RemoteContinueCandidate c) => c.id == 'srt-book',
+      );
+      expect(
+        srt.kind,
+        MediaKind.srt,
+        reason: 'BUG-1119：远端 SRT 书必须保住种类，不得降维成 epub',
+      );
       expect(srt.isVideo, isFalse);
       expect(
-          out
-              .singleWhere((RemoteContinueCandidate c) => c.id == 'plain-epub')
-              .kind,
-          MediaKind.epub);
-      final RemoteContinueCandidate video =
-          out.singleWhere((RemoteContinueCandidate c) => c.id == 'video/r');
+        out
+            .singleWhere((RemoteContinueCandidate c) => c.id == 'plain-epub')
+            .kind,
+        MediaKind.epub,
+      );
+      final RemoteContinueCandidate video = out.singleWhere(
+        (RemoteContinueCandidate c) => c.id == 'video/r',
+      );
       expect(video.kind, MediaKind.video);
       expect(video.isVideo, isTrue);
     });
@@ -392,8 +438,9 @@ void main() {
             ),
           ],
         );
-        expect(out.map((RemoteContinueCandidate c) => c.id),
-            <String>['video/kon-1']);
+        expect(out.map((RemoteContinueCandidate c) => c.id), <String>[
+          'video/kon-1',
+        ]);
         expect(out.single.recentMs, 50, reason: '单元活跃时刻含刚看完的那集');
       });
 
@@ -468,10 +515,11 @@ void main() {
             ),
           ],
         );
-        expect(
-          out.map((RemoteContinueCandidate c) => c.id).toSet(),
-          <String>{'video/kon-0', 'video/other-0', 'video/loose'},
-        );
+        expect(out.map((RemoteContinueCandidate c) => c.id).toSet(), <String>{
+          'video/kon-0',
+          'video/other-0',
+          'video/loose',
+        });
       });
 
       test('书合集同样一合集一卡：最近读的卷读完 → 续读下一卷', () {
@@ -511,8 +559,9 @@ void main() {
           ],
           remoteVideos: const <RemoteVideoInfo>[],
         );
-        expect(out.map((RemoteContinueCandidate c) => c.id), <String>['v2'],
-            reason: '锚点 = 最近读的卷 1（已读完）→ 推进到 v2；v3 不另出卡');
+        expect(out.map((RemoteContinueCandidate c) => c.id), <String>[
+          'v2',
+        ], reason: '锚点 = 最近读的卷 1（已读完）→ 推进到 v2；v3 不另出卡');
         expect(out.single.percent, 30);
         expect(out.single.recentMs, 20);
       });
@@ -542,12 +591,14 @@ void main() {
         ];
         final List<RemoteContinueCandidate> kept =
             withoutLocallyCoveredCollections(
-          remote,
-          localVideoCollectionNames: <String>{'K-ON! 播放列表'},
-          localBookCollectionNames: const <String>{},
-        );
-        expect(kept.map((RemoteContinueCandidate c) => c.id),
-            <String>['kon-book', 'video/loose']);
+              remote,
+              localVideoCollectionNames: <String>{'K-ON! 播放列表'},
+              localBookCollectionNames: const <String>{},
+            );
+        expect(kept.map((RemoteContinueCandidate c) => c.id), <String>[
+          'kon-book',
+          'video/loose',
+        ]);
       });
     });
 
@@ -565,8 +616,11 @@ void main() {
 
     test('聚合按设备来源分组：远端与本机同标题不合并、各带标签', () {
       final ActivityEventRow local = _row(title: '同一本书', timestampMs: 100);
-      final ActivityEventRow remote =
-          _row(title: '同一本书', timestampMs: 200, id: 0);
+      final ActivityEventRow remote = _row(
+        title: '同一本书',
+        timestampMs: 200,
+        id: 0,
+      );
       final Set<ActivityEventRow> remoteSet = Set<ActivityEventRow>.identity()
         ..add(remote);
       final List<ActivityDateGroup> groups = aggregateActivityEvents(
@@ -577,14 +631,18 @@ void main() {
       expect(groups, hasLength(1));
       final List<ActivityEntry> entries = groups.single.entries;
       expect(entries, hasLength(2), reason: '标明设备来源后双端 session 不得混并成一条');
-      expect(entries.map((ActivityEntry e) => e.sourceDevice).toSet(),
-          <String?>{null, '客厅电脑'});
+      expect(
+        entries.map((ActivityEntry e) => e.sourceDevice).toSet(),
+        <String?>{null, '客厅电脑'},
+      );
       // 不带 sourceDeviceOf 时保持旧行为：同键合并为一条。
       expect(
-          aggregateActivityEvents(<ActivityEventRow>[local, remote])
-              .single
-              .entries,
-          hasLength(1));
+        aggregateActivityEvents(<ActivityEventRow>[
+          local,
+          remote,
+        ]).single.entries,
+        hasLength(1),
+      );
     });
   });
 
@@ -600,37 +658,56 @@ void main() {
 
     test("kind:'srt' 解回 srt；未知种类容忍回落 epub", () {
       expect(
-          RemoteBookInfo.fromJson(<String, Object?>{
-            'title': 's',
-            'hasContent': true,
-            'kind': 'srt',
-          }).kind,
-          MediaKind.srt);
+        RemoteBookInfo.fromJson(<String, Object?>{
+          'title': 's',
+          'hasContent': true,
+          'kind': 'srt',
+        }).kind,
+        MediaKind.srt,
+      );
       // 对端未来新增的未知种类不得抛异常（MediaKind.tryParse 契约）。
       expect(
-          RemoteBookInfo.fromJson(<String, Object?>{
-            'title': 'w',
-            'hasContent': true,
-            'kind': 'weird-future-kind',
-          }).kind,
-          MediaKind.epub);
+        RemoteBookInfo.fromJson(<String, Object?>{
+          'title': 'w',
+          'hasContent': true,
+          'kind': 'weird-future-kind',
+        }).kind,
+        MediaKind.epub,
+      );
     });
 
     test('toJson：epub 缺省不写键（旧书清单 wire 字节不变守卫）；srt 写 kind', () {
-      const RemoteBookInfo epub =
-          RemoteBookInfo(title: 'e', hasContent: true, bookKey: 'e');
-      expect(epub.toJson().containsKey('kind'), isFalse,
-          reason: 'additive 字段 epub 缺省必须不写键，保证旧书清单 wire 字节完全不变');
+      const RemoteBookInfo epub = RemoteBookInfo(
+        title: 'e',
+        hasContent: true,
+        bookKey: 'e',
+      );
+      expect(
+        epub.toJson().containsKey('kind'),
+        isFalse,
+        reason: 'additive 字段 epub 缺省必须不写键，保证旧书清单 wire 字节完全不变',
+      );
       const RemoteBookInfo srt = RemoteBookInfo(
-          title: 's', hasContent: true, bookKey: 's', kind: MediaKind.srt);
+        title: 's',
+        hasContent: true,
+        bookKey: 's',
+        kind: MediaKind.srt,
+      );
       expect(srt.toJson()['kind'], 'srt');
-      expect(RemoteBookInfo.fromJson(srt.toJson()).kind, MediaKind.srt,
-          reason: 'toJson→fromJson 回环保 kind');
+      expect(
+        RemoteBookInfo.fromJson(srt.toJson()).kind,
+        MediaKind.srt,
+        reason: 'toJson→fromJson 回环保 kind',
+      );
     });
 
     test('copyWith 保留/覆盖 kind', () {
       const RemoteBookInfo srt = RemoteBookInfo(
-          title: 's', hasContent: true, bookKey: 's', kind: MediaKind.srt);
+        title: 's',
+        hasContent: true,
+        bookKey: 's',
+        kind: MediaKind.srt,
+      );
       expect(srt.copyWith(hasEmbeddedCover: true).kind, MediaKind.srt);
       expect(srt.copyWith(kind: MediaKind.epub).kind, MediaKind.epub);
     });

@@ -25,15 +25,23 @@ void main() {
       File('../fushi_engine/lib/sync/ttu_filename.dart').readAsStringSync(),
     );
 
-    expect(coreBody, isNotEmpty,
-        reason:
-            'failed to locate sanitizeTtuFilename body in ttu_sanitize.dart');
-    expect(appBody, isNotEmpty,
-        reason:
-            'failed to locate sanitizeTtuFilename body in ttu_filename.dart');
-    expect(coreBody, appBody,
-        reason: 'sanitize bodies diverged — re-sync core ttu_sanitize.dart '
-            'sanitizeTtuFilename with app ttu_filename.dart sanitizeTtuFilename');
+    expect(
+      coreBody,
+      isNotEmpty,
+      reason: 'failed to locate sanitizeTtuFilename body in ttu_sanitize.dart',
+    );
+    expect(
+      appBody,
+      isNotEmpty,
+      reason: 'failed to locate sanitizeTtuFilename body in ttu_filename.dart',
+    );
+    expect(
+      coreBody,
+      appBody,
+      reason:
+          'sanitize bodies diverged — re-sync core ttu_sanitize.dart '
+          'sanitizeTtuFilename with app ttu_filename.dart sanitizeTtuFilename',
+    );
   });
 }
 
@@ -43,11 +51,14 @@ void main() {
 /// indentation (top-level fn vs class method) and signatures don't matter.
 String _extractSanitizeBody(String source) {
   final List<String> lines = source.split('\n');
-  final int start =
-      lines.indexWhere((String l) => l.trim() == 'String result = title;');
+  final int start = lines.indexWhere(
+    (String l) => l.trim() == 'String result = title;',
+  );
   if (start < 0) return '';
-  final int end =
-      lines.indexWhere((String l) => l.trim() == 'return result;', start);
+  final int end = lines.indexWhere(
+    (String l) => l.trim() == 'return result;',
+    start,
+  );
   if (end < 0) return '';
   return lines.sublist(start, end + 1).map((String l) => l.trim()).join('\n');
 }

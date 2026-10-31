@@ -23,8 +23,9 @@ void main() {
     });
 
     test('brand tokens are distinct and stable', () {
-      final Set<String> tokens =
-          GamepadBrand.values.map((GamepadBrand b) => b.token).toSet();
+      final Set<String> tokens = GamepadBrand.values
+          .map((GamepadBrand b) => b.token)
+          .toSet();
       expect(tokens.length, GamepadBrand.values.length);
       // Locked persistence tokens — changing these silently migrates users.
       expect(GamepadBrand.xbox.token, 'xbox');

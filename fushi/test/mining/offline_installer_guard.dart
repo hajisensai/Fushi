@@ -124,7 +124,8 @@ void expectOfflineInstaller({
   expect(
     findings,
     isEmpty,
-    reason: '安装器装的是会跑在用户机器上的原生代码，一条「从网上取包」的通道就是 '
+    reason:
+        '安装器装的是会跑在用户机器上的原生代码，一条「从网上取包」的通道就是 '
         'BUG-1103 记的那个攻击面。命中：\n- ${findings.join('\n- ')}',
   );
 }

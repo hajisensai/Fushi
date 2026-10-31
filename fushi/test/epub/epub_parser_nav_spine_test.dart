@@ -34,19 +34,29 @@ void main() {
         _textFile('OEBPS/content.opf', _opfNavFirstInSpine),
         _textFile('OEBPS/nav.xhtml', _navXhtml),
         _textFile(
-            'OEBPS/chapter-1.xhtml', _chapterXhtml('First chapter body.')),
+          'OEBPS/chapter-1.xhtml',
+          _chapterXhtml('First chapter body.'),
+        ),
         _textFile(
-            'OEBPS/chapter-2.xhtml', _chapterXhtml('Second chapter body.')),
+          'OEBPS/chapter-2.xhtml',
+          _chapterXhtml('Second chapter body.'),
+        ),
       ]);
 
       final EpubBook book = EpubParser.parseSync(bytes, extractDir.path);
 
       // 物理不删：目录页 + 两正文章 = 3 项，index 不移位。
-      expect(book.chapters, hasLength(3),
-          reason: 'nav 页保留在 chapters（index 已序列化进 DB，删会移位既有书）');
+      expect(
+        book.chapters,
+        hasLength(3),
+        reason: 'nav 页保留在 chapters（index 已序列化进 DB，删会移位既有书）',
+      );
       expect(book.chapters[0].href, contains('nav.xhtml'));
-      expect(book.chapters[0].isNav, isTrue,
-          reason: 'spine 首项目录页必须被标记，跨章不能落到它');
+      expect(
+        book.chapters[0].isNav,
+        isTrue,
+        reason: 'spine 首项目录页必须被标记，跨章不能落到它',
+      );
       expect(book.isChapterNav(0), isTrue);
       expect(book.chapters[1].isNav, isFalse);
       expect(book.chapters[2].isNav, isFalse);
@@ -139,7 +149,8 @@ const String _navXhtml = '''
 </html>
 ''';
 
-String _chapterXhtml(String body) => '''
+String _chapterXhtml(String body) =>
+    '''
 <?xml version="1.0" encoding="UTF-8"?>
 <html xmlns="http://www.w3.org/1999/xhtml">
   <head><title>Chapter</title></head>

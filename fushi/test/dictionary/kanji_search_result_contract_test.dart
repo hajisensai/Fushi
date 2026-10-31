@@ -33,8 +33,9 @@ void main() {
         stats: <String, String>{'jlpt': '4', 'grade': '8'},
         dictName: 'KANJIDIC',
       );
-      final FushiKanjiResult restored =
-          FushiKanjiResult.fromMap(original.toMap());
+      final FushiKanjiResult restored = FushiKanjiResult.fromMap(
+        original.toMap(),
+      );
       expect(restored.character, original.character);
       expect(restored.onyomi, original.onyomi);
       expect(restored.kunyomi, original.kunyomi);
@@ -46,8 +47,9 @@ void main() {
     });
 
     test('fromMap degrades missing / null fields without throwing', () {
-      final FushiKanjiResult r =
-          FushiKanjiResult.fromMap(<String, dynamic>{'character': '水'});
+      final FushiKanjiResult r = FushiKanjiResult.fromMap(<String, dynamic>{
+        'character': '水',
+      });
       expect(r.character, '水');
       expect(r.onyomi, '');
       expect(r.kunyomi, '');
@@ -83,8 +85,9 @@ void main() {
           ),
         ],
       );
-      final DictionarySearchResult restored =
-          DictionarySearchResult.fromJson(result.toJson());
+      final DictionarySearchResult restored = DictionarySearchResult.fromJson(
+        result.toJson(),
+      );
       expect(restored.searchTerm, '日');
       expect(restored.entries.length, 1);
       expect(restored.entries.single.word, '日');
@@ -101,8 +104,9 @@ void main() {
       // A payload produced before S4 has no "kanjiResults" key.
       const String legacyJson =
           '{"searchTerm":"語","bestLength":1,"scrollPosition":0,"entries":[]}';
-      final DictionarySearchResult restored =
-          DictionarySearchResult.fromJson(legacyJson);
+      final DictionarySearchResult restored = DictionarySearchResult.fromJson(
+        legacyJson,
+      );
       expect(restored.kanjiResults, isEmpty);
       expect(restored.searchTerm, '語');
     });
@@ -123,18 +127,19 @@ void main() {
       );
       termOnly.popupJson = '[{"term":"日"}]';
 
-      final DictionarySearchResult withKanji =
-          termOnly.withKanjiResults(const <FushiKanjiResult>[
-        FushiKanjiResult(
-          character: '日',
-          onyomi: 'ニチ',
-          kunyomi: 'ひ',
-          radical: '日',
-          strokes: 4,
-          meanings: <String>['day'],
-          dictName: 'KANJIDIC',
-        ),
-      ]);
+      final DictionarySearchResult withKanji = termOnly.withKanjiResults(
+        const <FushiKanjiResult>[
+          FushiKanjiResult(
+            character: '日',
+            onyomi: 'ニチ',
+            kunyomi: 'ひ',
+            radical: '日',
+            strokes: 4,
+            meanings: <String>['day'],
+            dictName: 'KANJIDIC',
+          ),
+        ],
+      );
 
       expect(withKanji.kanjiResults.length, 1);
       // Term fields preserved.

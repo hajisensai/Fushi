@@ -23,8 +23,9 @@ void main() {
   // AppModel 构造时 DefaultCacheManager 经 path_provider 平台通道，单测 mock 掉。
   late Directory pathProviderDir;
   setUpAll(() {
-    pathProviderDir =
-        Directory.systemTemp.createTempSync('fushi_path_provider');
+    pathProviderDir = Directory.systemTemp.createTempSync(
+      'fushi_path_provider',
+    );
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
       (MethodCall call) async => pathProviderDir.path,
@@ -61,8 +62,9 @@ void main() {
       ..wireDatabaseForTesting(db)
       ..wireLocalAudioForTesting(
         prefsRepo: prefs,
-        databaseDirectory:
-            Directory.systemTemp.createTempSync('fushi_ext_theme'),
+        databaseDirectory: Directory.systemTemp.createTempSync(
+          'fushi_ext_theme',
+        ),
       );
   });
 
@@ -79,15 +81,19 @@ void main() {
   });
 
   test("请求 'dark' 时按深色生成：回显 dark 且 --md-* 与浅色不同", () {
-    final Map<String, String> light =
-        appModel.browserExtensionThemeColors('light');
-    final Map<String, String> dark =
-        appModel.browserExtensionThemeColors('dark');
+    final Map<String, String> light = appModel.browserExtensionThemeColors(
+      'light',
+    );
+    final Map<String, String> dark = appModel.browserExtensionThemeColors(
+      'dark',
+    );
     expect(light['--fushi-color-scheme'], 'light');
     expect(dark['--fushi-color-scheme'], 'dark');
     // 同一 seed 的明暗 scheme 至少在 surface / on-surface 上不同。
     expect(
-        dark['--md-surface-container'], isNot(light['--md-surface-container']));
+      dark['--md-surface-container'],
+      isNot(light['--md-surface-container']),
+    );
     expect(dark['--md-on-surface'], isNot(light['--md-on-surface']));
     expect(dark['--text-color'], isNot(light['--text-color']));
     expect(dark['--background-color'], isNot(light['--background-color']));

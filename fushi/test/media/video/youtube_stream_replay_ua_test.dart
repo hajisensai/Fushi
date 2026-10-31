@@ -16,18 +16,30 @@ void main() {
     test('kYoutubeStreamReplayUserAgent 等于 youtube_explode 默认 UA', () {
       final String? mintingUa =
           yt.YoutubeHttpClient.defaultHeaders['user-agent'];
-      expect(mintingUa, isNotNull,
-          reason: 'youtube_explode 默认头应带 user-agent（铸流/HEAD 探测用）');
-      expect(kYoutubeStreamReplayUserAgent, mintingUa,
-          reason: '回放 UA 必须与铸流 UA 一致，别硬编码成不同串');
+      expect(
+        mintingUa,
+        isNotNull,
+        reason: 'youtube_explode 默认头应带 user-agent（铸流/HEAD 探测用）',
+      );
+      expect(
+        kYoutubeStreamReplayUserAgent,
+        mintingUa,
+        reason: '回放 UA 必须与铸流 UA 一致，别硬编码成不同串',
+      );
     });
 
     test('回放 UA 是完整浏览器 UA，绝非残缺裸 Mozilla/5.0', () {
-      expect(kYoutubeStreamReplayUserAgent, isNot('Mozilla/5.0'),
-          reason: '裸 Mozilla/5.0 是 BUG-678 的 tarpit 根因，禁止回退');
+      expect(
+        kYoutubeStreamReplayUserAgent,
+        isNot('Mozilla/5.0'),
+        reason: '裸 Mozilla/5.0 是 BUG-678 的 tarpit 根因，禁止回退',
+      );
       // 完整浏览器 UA 特征：带平台段 `(...)` + 浏览器/引擎 token。
-      expect(kYoutubeStreamReplayUserAgent, contains('('),
-          reason: '真实浏览器 UA 应含平台段（如 (Windows NT 10.0; ...)）');
+      expect(
+        kYoutubeStreamReplayUserAgent,
+        contains('('),
+        reason: '真实浏览器 UA 应含平台段（如 (Windows NT 10.0; ...)）',
+      );
       expect(
         kYoutubeStreamReplayUserAgent.contains('Chrome') ||
             kYoutubeStreamReplayUserAgent.contains('AppleWebKit') ||
@@ -43,13 +55,20 @@ void main() {
     });
 
     test('制卡 ffmpeg -user_agent 与回放 UA 同源（三处一致）', () {
-      final List<String> args =
-          buildFfmpegRemoteInputArgs('https://x.googlevideo.com/videoplayback');
+      final List<String> args = buildFfmpegRemoteInputArgs(
+        'https://x.googlevideo.com/videoplayback',
+      );
       final int i = args.indexOf('-user_agent');
-      expect(i, greaterThanOrEqualTo(0),
-          reason: 'googlevideo 远端输入必须显式设 -user_agent');
-      expect(args[i + 1], kYoutubeStreamReplayUserAgent,
-          reason: 'ffmpeg 回放 UA 必须与 libmpv 侧铸流 UA 同一常量');
+      expect(
+        i,
+        greaterThanOrEqualTo(0),
+        reason: 'googlevideo 远端输入必须显式设 -user_agent',
+      );
+      expect(
+        args[i + 1],
+        kYoutubeStreamReplayUserAgent,
+        reason: 'ffmpeg 回放 UA 必须与 libmpv 侧铸流 UA 同一常量',
+      );
     });
   });
 }

@@ -44,13 +44,12 @@ class AnkiRepositionRankOptions {
     Set<String>? dictionaries,
     FrequencyAggregate? aggregate,
     bool? rareFirst,
-  }) =>
-      AnkiRepositionRankOptions(
-        source: source ?? this.source,
-        dictionaries: dictionaries ?? this.dictionaries,
-        aggregate: aggregate ?? this.aggregate,
-        rareFirst: rareFirst ?? this.rareFirst,
-      );
+  }) => AnkiRepositionRankOptions(
+    source: source ?? this.source,
+    dictionaries: dictionaries ?? this.dictionaries,
+    aggregate: aggregate ?? this.aggregate,
+    rareFirst: rareFirst ?? this.rareFirst,
+  );
 
   bool acceptsDictionary(String dictName) =>
       dictionaries.isEmpty || dictionaries.contains(dictName);
@@ -114,7 +113,8 @@ AnkiNoteFieldRoles resolveNoteFieldRoles({
     return null;
   }
 
-  expression ??= firstNamed(const <String>[
+  expression ??=
+      firstNamed(const <String>[
         'expression',
         'word',
         'term',
@@ -124,11 +124,17 @@ AnkiNoteFieldRoles resolveNoteFieldRoles({
         'target word',
       ]) ??
       names.first;
-  reading ??=
-      firstNamed(const <String>['reading', 'expressionreading', 'kana']);
+  reading ??= firstNamed(const <String>[
+    'reading',
+    'expressionreading',
+    'kana',
+  ]);
   rank ??= firstNamed(const <String>['freqsort', 'frequencysort', 'freq']);
   return AnkiNoteFieldRoles(
-      expression: expression, reading: reading, rank: rank);
+    expression: expression,
+    reading: reading,
+    rank: rank,
+  );
 }
 
 /// 把 Anki 字段 HTML 折成纯文本：去 ruby 注音（`<rt>` 内容整段丢）、去标签、
@@ -148,9 +154,8 @@ String ankiFieldPlainText(String html) {
 }
 
 /// 片假名折成平假名，供读音比对。
-String _foldKana(String s) => String.fromCharCodes(
-      s.runes.map<int>((int cp) => katakanaToHiragana(cp)),
-    );
+String _foldKana(String s) =>
+    String.fromCharCodes(s.runes.map<int>((int cp) => katakanaToHiragana(cp)));
 
 /// 从 `{frequency-harmonic-rank}` 字段值里取正整数 rank（前导数字）。
 int? parseFieldRank(String raw) {
@@ -276,8 +281,9 @@ AnkiRepositionPlan planCardPositions(
   ordered.sort((AnkiRepositionCard a, AnkiRepositionCard b) {
     final int primary = _compareRank(a.rank, b.rank, rareFirst);
     if (primary != 0) return primary;
-    final int byNote =
-        noteOrder[a.card.noteId]!.compareTo(noteOrder[b.card.noteId]!);
+    final int byNote = noteOrder[a.card.noteId]!.compareTo(
+      noteOrder[b.card.noteId]!,
+    );
     if (byNote != 0) return byNote;
     return a.card.ord.compareTo(b.card.ord);
   });
@@ -294,10 +300,12 @@ AnkiRepositionPlan planCardPositions(
   final List<AnkiCardDueUpdate> previous = <AnkiCardDueUpdate>[];
   for (int i = 0; i < ordered.length; i++) {
     final AnkiCardInfo card = ordered[i].card;
-    updates.add(AnkiCardDueUpdate(
-      cardId: card.cardId,
-      due: assigned?[i] ?? startPosition + i,
-    ));
+    updates.add(
+      AnkiCardDueUpdate(
+        cardId: card.cardId,
+        due: assigned?[i] ?? startPosition + i,
+      ),
+    );
     previous.add(AnkiCardDueUpdate(cardId: card.cardId, due: card.due));
   }
   return AnkiRepositionPlan(

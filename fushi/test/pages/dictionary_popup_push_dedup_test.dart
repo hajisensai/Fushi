@@ -46,8 +46,7 @@ void main() {
   tearDownAll(installFakeInAppWebViewPlatform);
 
   group('BUG-712 P1 refreshCurrentResult push dedup', () {
-    testWidgets(
-        'in-flight same result: refreshCurrentResult returns true '
+    testWidgets('in-flight same result: refreshCurrentResult returns true '
         'without a second renderPopup injection', (WidgetTester tester) async {
       final appModel = PushDedupAppModel();
       await tester.pumpWidget(
@@ -59,18 +58,25 @@ void main() {
       await tester.pump(); // post-frame：onWebViewCreated → onLoadStop
       await tester.pump(); // loadStop 的 caret-script then → 初始 _pushResults 落地
 
-      expect(harness.handlers, contains('popupRendered'),
-          reason: '记录桩必须已把生产 JS 处理器接进来（生命周期真发出）');
+      expect(
+        harness.handlers,
+        contains('popupRendered'),
+        reason: '记录桩必须已把生产 JS 处理器接进来（生命周期真发出）',
+      );
       expect(harness.pushCount, 1, reason: '冷加载完成只有一次初始结果推送');
 
-      final DictionaryPopupWebViewState state =
-          tester.state<DictionaryPopupWebViewState>(
-              find.byType(DictionaryPopupWebView));
+      final DictionaryPopupWebViewState state = tester
+          .state<DictionaryPopupWebViewState>(
+            find.byType(DictionaryPopupWebView),
+          );
 
       // 渲染在途（popupRendered 未回）：宿主可见后一帧的兜底探询不得重推——
       // 此前的第二推会用新 token 作废第一遍渲染（BUG-712 P1 的根因）。
-      expect(state.refreshCurrentResult(), isTrue,
-          reason: '在途结果的渲染信号稍后必到，返回 true 让宿主继续等');
+      expect(
+        state.refreshCurrentResult(),
+        isTrue,
+        reason: '在途结果的渲染信号稍后必到，返回 true 让宿主继续等',
+      );
       expect(state.refreshCurrentResult(), isTrue, reason: '重复探询幂等，依旧不重推');
       await tester.pump();
 
@@ -79,49 +85,58 @@ void main() {
     });
 
     testWidgets(
-        'popupRendered with the matching token flips refreshCurrentResult '
-        'to false; a stale token does not', (WidgetTester tester) async {
-      final appModel = PushDedupAppModel();
-      int renderedCount = 0;
-      await tester.pumpWidget(
-        wrapPopup(
-          appModel: appModel,
-          popup: DictionaryPopupWebView(
-            result: makeResult('語'),
-            onRendered: () => renderedCount++,
+      'popupRendered with the matching token flips refreshCurrentResult '
+      'to false; a stale token does not',
+      (WidgetTester tester) async {
+        final appModel = PushDedupAppModel();
+        int renderedCount = 0;
+        await tester.pumpWidget(
+          wrapPopup(
+            appModel: appModel,
+            popup: DictionaryPopupWebView(
+              result: makeResult('語'),
+              onRendered: () => renderedCount++,
+            ),
           ),
-        ),
-      );
-      await tester.pump();
-      await tester.pump();
-      expect(harness.pushCount, 1);
+        );
+        await tester.pump();
+        await tester.pump();
+        expect(harness.pushCount, 1);
 
-      final DictionaryPopupWebViewState state =
-          tester.state<DictionaryPopupWebViewState>(
-              find.byType(DictionaryPopupWebView));
+        final DictionaryPopupWebViewState state = tester
+            .state<DictionaryPopupWebViewState>(
+              find.byType(DictionaryPopupWebView),
+            );
 
-      // 陈旧 token（被更新推送作废的前一遍渲染）回报：不得记「已渲染」，也不回调
-      // onRendered——BUG-523 的 token 次序语义必须保留。
-      await harness.firePopupRendered(token: 9999);
-      await tester.pump();
-      expect(renderedCount, 0, reason: '陈旧 token 不触发 onRendered');
-      expect(state.refreshCurrentResult(), isTrue,
-          reason: '陈旧 token 不算完成，当前推送仍在途');
+        // 陈旧 token（被更新推送作废的前一遍渲染）回报：不得记「已渲染」，也不回调
+        // onRendered——BUG-523 的 token 次序语义必须保留。
+        await harness.firePopupRendered(token: 9999);
+        await tester.pump();
+        expect(renderedCount, 0, reason: '陈旧 token 不触发 onRendered');
+        expect(
+          state.refreshCurrentResult(),
+          isTrue,
+          reason: '陈旧 token 不算完成，当前推送仍在途',
+        );
 
-      // 命中当前 token → 渲染完成。此后渲染信号不会再来，refreshCurrentResult
-      // 必须返回 false，宿主据此立即撤盖板而不是空等 1.8s failsafe。
-      await harness.firePopupRendered();
-      await tester.pump();
-      expect(renderedCount, 1);
-      expect(state.refreshCurrentResult(), isFalse,
-          reason: '已渲染完成的结果不再有 popupRendered，必须回 false');
-      expect(harness.pushCount, 1, reason: 'false 分支自然也零重推');
-    });
+        // 命中当前 token → 渲染完成。此后渲染信号不会再来，refreshCurrentResult
+        // 必须返回 false，宿主据此立即撤盖板而不是空等 1.8s failsafe。
+        await harness.firePopupRendered();
+        await tester.pump();
+        expect(renderedCount, 1);
+        expect(
+          state.refreshCurrentResult(),
+          isFalse,
+          reason: '已渲染完成的结果不再有 popupRendered，必须回 false',
+        );
+        expect(harness.pushCount, 1, reason: 'false 分支自然也零重推');
+      },
+    );
 
-    testWidgets(
-        'a swapped result object IS re-pushed by refreshCurrentResult '
-        '(didUpdateWidget-missed safety net stays)',
-        (WidgetTester tester) async {
+    testWidgets('a swapped result object IS re-pushed by refreshCurrentResult '
+        '(didUpdateWidget-missed safety net stays)', (
+      WidgetTester tester,
+    ) async {
       final appModel = PushDedupAppModel();
       // widget.result 可变替身：换结果对象但不重建 widget → didUpdateWidget 不跑，
       // 精确复现 BUG-523「隐藏/屏外槽的结果推送被漏掉」，refreshCurrentResult 是
@@ -138,15 +153,19 @@ void main() {
       expect(harness.pushCount, 1);
       await harness.firePopupRendered();
 
-      final DictionaryPopupWebViewState state =
-          tester.state<DictionaryPopupWebViewState>(
-              find.byType(MutableResultPopupWebView));
+      final DictionaryPopupWebViewState state = tester
+          .state<DictionaryPopupWebViewState>(
+            find.byType(MutableResultPopupWebView),
+          );
       expect(state.refreshCurrentResult(), isFalse, reason: '前置：旧结果已渲染完成');
 
       // 宿主换上了全新结果对象（既没渲染完、也不在途）。
       holder.value = makeResult('別');
-      expect(state.refreshCurrentResult(), isTrue,
-          reason: '漏推的新结果必须补推，返回 true 等它的 popupRendered');
+      expect(
+        state.refreshCurrentResult(),
+        isTrue,
+        reason: '漏推的新结果必须补推，返回 true 等它的 popupRendered',
+      );
       await tester.pump();
 
       expect(harness.pushCount, 2, reason: '安全网必须真正发出第二次注入');
@@ -161,8 +180,9 @@ void main() {
   });
 
   group('popup WebView lifecycle', () {
-    testWidgets('live viewport injection failure still pushes first results',
-        (WidgetTester tester) async {
+    testWidgets('live viewport injection failure still pushes first results', (
+      WidgetTester tester,
+    ) async {
       harness.failViewportInjection = true;
       await tester.pumpWidget(
         wrapPopup(
@@ -173,38 +193,54 @@ void main() {
       await tester.pump();
       await tester.pump();
 
-      expect(harness.pushCount, 1,
-          reason: 'viewport sizing is best-effort; lookup content must render');
-      expect(tester.takeException(), isNull,
-          reason: 'a live platform JS failure must be logged, not unhandled');
+      expect(
+        harness.pushCount,
+        1,
+        reason: 'viewport sizing is best-effort; lookup content must render',
+      );
+      expect(
+        tester.takeException(),
+        isNull,
+        reason: 'a live platform JS failure must be logged, not unhandled',
+      );
     });
 
     testWidgets(
-        'controller teardown during viewport injection does not escape as an '
-        'unhandled Flutter error', (WidgetTester tester) async {
-      harness.blockViewportInjection = true;
-      await tester.pumpWidget(
-        wrapPopup(
-          appModel: PushDedupAppModel(),
-          popup: DictionaryPopupWebView(result: makeResult('語')),
-        ),
-      );
-      await tester.pump(); // onWebViewCreated → onLoadStop
-      await tester.pump(); // caret bootstrap → viewport injection starts
+      'controller teardown during viewport injection does not escape as an '
+      'unhandled Flutter error',
+      (WidgetTester tester) async {
+        harness.blockViewportInjection = true;
+        await tester.pumpWidget(
+          wrapPopup(
+            appModel: PushDedupAppModel(),
+            popup: DictionaryPopupWebView(result: makeResult('語')),
+          ),
+        );
+        await tester.pump(); // onWebViewCreated → onLoadStop
+        await tester.pump(); // caret bootstrap → viewport injection starts
 
-      final Completer<dynamic>? viewport = harness.pendingViewportInjection;
-      expect(viewport, isNotNull,
-          reason: 'the real popup must have started the Flutter-sized viewport '
-              'injection before teardown');
+        final Completer<dynamic>? viewport = harness.pendingViewportInjection;
+        expect(
+          viewport,
+          isNotNull,
+          reason:
+              'the real popup must have started the Flutter-sized viewport '
+              'injection before teardown',
+        );
 
-      await tester.pumpWidget(const SizedBox.shrink());
-      viewport!.completeError(StateError('controller disposed mid-flight'));
-      await tester.pump();
+        await tester.pumpWidget(const SizedBox.shrink());
+        viewport!.completeError(StateError('controller disposed mid-flight'));
+        await tester.pump();
 
-      expect(tester.takeException(), isNull,
-          reason: 'a platform controller can be disposed after the JS call '
-              'starts; that lifecycle race must stay inside the popup');
-    });
+        expect(
+          tester.takeException(),
+          isNull,
+          reason:
+              'a platform controller can be disposed after the JS call '
+              'starts; that lifecycle race must stay inside the popup',
+        );
+      },
+    );
   });
 
   group('popup document reload', () {
@@ -369,8 +405,11 @@ void main() {
           expect(pending, isNotNull);
           // P2-G：引导脚本（caret / 视口）与首推连发不等——视口注入还挂着时首推
           // 已经发出（同一 WebView 的 eval 按发出顺序执行，宽度仍先于渲染生效）。
-          expect(harness.pushCount, 1,
-              reason: 'the first push must not wait on the bootstrap round trips');
+          expect(
+            harness.pushCount,
+            1,
+            reason: 'the first push must not wait on the bootstrap round trips',
+          );
 
           if (replaceController) harness.replaceController();
           harness.fireLoadStart();
@@ -386,8 +425,11 @@ void main() {
           harness.fireLoadStop();
           await tester.pump();
           await tester.pump();
-          expect(harness.pushCount, 2,
-              reason: 'only the new loadStop re-pushes into the new document');
+          expect(
+            harness.pushCount,
+            2,
+            reason: 'only the new loadStop re-pushes into the new document',
+          );
           expect(
             harness.scripts.lastWhere(
               (String s) => s.contains('window.lookupEntries'),
@@ -402,172 +444,210 @@ void main() {
 
   group('BUG-712 ③ static settings payload dedup', () {
     testWidgets(
-        'a repeat push with unchanged settings omits the static payload '
-        'but still carries the entries + renderPopup',
-        (WidgetTester tester) async {
-      final appModel = PushDedupAppModel();
-      final ResultHolder holder = ResultHolder(makeResult('語'));
-      await tester.pumpWidget(
-        wrapPopup(
-          appModel: appModel,
-          popup: MutableResultPopupWebView(holder: holder),
-        ),
-      );
-      await tester.pump();
-      await tester.pump();
-      expect(harness.pushCount, 1);
-      // 结果推送脚本以 lookupEntries 为标记定位（push 之后还有 __hasChildPopup
-      // 种子等小脚本，scripts.last 不一定是推送本体）。
-      String lastPushScript() => harness.scripts
-          .lastWhere((String s) => s.contains('window.lookupEntries'));
-      // 首推（页面加载后第一次）：静态设置负载必须整体下发（新页面无 window.* 状态）。
-      expect(lastPushScript(), contains('window.dictionaryStyles'),
-          reason: '首推必须带静态设置负载');
-      await harness.firePopupRendered();
+      'a repeat push with unchanged settings omits the static payload '
+      'but still carries the entries + renderPopup',
+      (WidgetTester tester) async {
+        final appModel = PushDedupAppModel();
+        final ResultHolder holder = ResultHolder(makeResult('語'));
+        await tester.pumpWidget(
+          wrapPopup(
+            appModel: appModel,
+            popup: MutableResultPopupWebView(holder: holder),
+          ),
+        );
+        await tester.pump();
+        await tester.pump();
+        expect(harness.pushCount, 1);
+        // 结果推送脚本以 lookupEntries 为标记定位（push 之后还有 __hasChildPopup
+        // 种子等小脚本，scripts.last 不一定是推送本体）。
+        String lastPushScript() => harness.scripts.lastWhere(
+          (String s) => s.contains('window.lookupEntries'),
+        );
+        // 首推（页面加载后第一次）：静态设置负载必须整体下发（新页面无 window.* 状态）。
+        expect(
+          lastPushScript(),
+          contains('window.dictionaryStyles'),
+          reason: '首推必须带静态设置负载',
+        );
+        await harness.firePopupRendered();
 
-      final DictionaryPopupWebViewState state =
-          tester.state<DictionaryPopupWebViewState>(
-              find.byType(MutableResultPopupWebView));
-      // 换新结果触发第二次真实推送（安全网路径，与 P1 组用法一致）。
-      holder.value = makeResult('別');
-      expect(state.refreshCurrentResult(), isTrue);
-      await tester.pump();
-      expect(harness.pushCount, 2);
+        final DictionaryPopupWebViewState state = tester
+            .state<DictionaryPopupWebViewState>(
+              find.byType(MutableResultPopupWebView),
+            );
+        // 换新结果触发第二次真实推送（安全网路径，与 P1 组用法一致）。
+        holder.value = makeResult('別');
+        expect(state.refreshCurrentResult(), isTrue);
+        await tester.pump();
+        expect(harness.pushCount, 2);
 
-      // 第二推：主题/设置/词典集未变 → 静态段串级比对命中，整段跳过；每次查词
-      // 只发词条 + renderPopup（BUG-712 ③——热槽 WebView 的 window.* 跨渲染持久，
-      // 真实词典下重复注入是数十 KB 的纯带宽/解析浪费）。
-      final String secondPush = lastPushScript();
-      expect(secondPush, isNot(contains('window.dictionaryStyles')),
-          reason: '静态设置负载未变化时不得重复注入');
-      expect(secondPush, isNot(contains('window.customDictCSS')));
-      expect(secondPush, contains('別'));
-      expect(secondPush, contains('window.renderPopup()'));
-    });
+        // 第二推：主题/设置/词典集未变 → 静态段串级比对命中，整段跳过；每次查词
+        // 只发词条 + renderPopup（BUG-712 ③——热槽 WebView 的 window.* 跨渲染持久，
+        // 真实词典下重复注入是数十 KB 的纯带宽/解析浪费）。
+        final String secondPush = lastPushScript();
+        expect(
+          secondPush,
+          isNot(contains('window.dictionaryStyles')),
+          reason: '静态设置负载未变化时不得重复注入',
+        );
+        expect(secondPush, isNot(contains('window.customDictCSS')));
+        expect(secondPush, contains('別'));
+        expect(secondPush, contains('window.renderPopup()'));
+      },
+    );
 
     testWidgets(
-        'BUG-717 ③: the fixed in-app i18n/reset block is sent once, then '
-        'omitted; a static-relevant pref flip resends BOTH static + extras',
-        (WidgetTester tester) async {
-      final appModel = PushDedupAppModel();
-      final ResultHolder holder = ResultHolder(makeResult('語'));
-      await tester.pumpWidget(
-        wrapPopup(
-          appModel: appModel,
-          popup: MutableResultPopupWebView(holder: holder),
-        ),
-      );
-      await tester.pump();
-      await tester.pump();
-      expect(harness.pushCount, 1);
-      String lastPushScript() => harness.scripts
-          .lastWhere((String s) => s.contains('window.lookupEntries'));
-      // 首推：静态段 + in-app 固定块（__fushiResetPopupScroll / i18nCtx）都下发。
-      expect(lastPushScript(), contains('window.i18nCtx'),
-          reason: '首推必须带 in-app 固定块（新页面无 window.* 状态）');
-      expect(lastPushScript(), contains('window.__fushiResetPopupScroll ='));
-      await harness.firePopupRendered();
+      'BUG-717 ③: the fixed in-app i18n/reset block is sent once, then '
+      'omitted; a static-relevant pref flip resends BOTH static + extras',
+      (WidgetTester tester) async {
+        final appModel = PushDedupAppModel();
+        final ResultHolder holder = ResultHolder(makeResult('語'));
+        await tester.pumpWidget(
+          wrapPopup(
+            appModel: appModel,
+            popup: MutableResultPopupWebView(holder: holder),
+          ),
+        );
+        await tester.pump();
+        await tester.pump();
+        expect(harness.pushCount, 1);
+        String lastPushScript() => harness.scripts.lastWhere(
+          (String s) => s.contains('window.lookupEntries'),
+        );
+        // 首推：静态段 + in-app 固定块（__fushiResetPopupScroll / i18nCtx）都下发。
+        expect(
+          lastPushScript(),
+          contains('window.i18nCtx'),
+          reason: '首推必须带 in-app 固定块（新页面无 window.* 状态）',
+        );
+        expect(lastPushScript(), contains('window.__fushiResetPopupScroll ='));
+        await harness.firePopupRendered();
 
-      final DictionaryPopupWebViewState state =
-          tester.state<DictionaryPopupWebViewState>(
-              find.byType(MutableResultPopupWebView));
+        final DictionaryPopupWebViewState state = tester
+            .state<DictionaryPopupWebViewState>(
+              find.byType(MutableResultPopupWebView),
+            );
 
-      // 第二推（设置未变）：固定块与静态段一起省略——它此前每次查词重发 1-2KB。
-      holder.value = makeResult('別');
-      expect(state.refreshCurrentResult(), isTrue);
-      await tester.pump();
-      expect(harness.pushCount, 2);
-      final String secondPush = lastPushScript();
-      expect(secondPush, isNot(contains('window.i18nCtx')),
-          reason: '设置未变时固定 i18n 块不得重复注入（并入静态段失效节奏）');
-      expect(secondPush, isNot(contains('window.__fushiResetPopupScroll =')));
-      expect(secondPush, contains('window.renderPopup()'));
-      await harness.firePopupRendered();
+        // 第二推（设置未变）：固定块与静态段一起省略——它此前每次查词重发 1-2KB。
+        holder.value = makeResult('別');
+        expect(state.refreshCurrentResult(), isTrue);
+        await tester.pump();
+        expect(harness.pushCount, 2);
+        final String secondPush = lastPushScript();
+        expect(
+          secondPush,
+          isNot(contains('window.i18nCtx')),
+          reason: '设置未变时固定 i18n 块不得重复注入（并入静态段失效节奏）',
+        );
+        expect(secondPush, isNot(contains('window.__fushiResetPopupScroll =')));
+        expect(secondPush, contains('window.renderPopup()'));
+        await harness.firePopupRendered();
 
-      // 偏好翻转 → builder memo 失效换 revision → 第三推重发静态段 + 固定块。
-      appModel.collapseDictionariesValue = true;
-      holder.value = makeResult('猫');
-      expect(state.refreshCurrentResult(), isTrue);
-      await tester.pump();
-      expect(harness.pushCount, 3);
-      final String thirdPush = lastPushScript();
-      expect(thirdPush, contains('window.collapseDictionaries = true'),
-          reason: '偏好变化必须随下一次推送重发静态段（新值生效）');
-      expect(thirdPush, contains('window.dictionaryStyles'));
-      expect(thirdPush, contains('window.i18nCtx'), reason: '固定块随静态段版本一起重发');
-      await harness.firePopupRendered();
+        // 偏好翻转 → builder memo 失效换 revision → 第三推重发静态段 + 固定块。
+        appModel.collapseDictionariesValue = true;
+        holder.value = makeResult('猫');
+        expect(state.refreshCurrentResult(), isTrue);
+        await tester.pump();
+        expect(harness.pushCount, 3);
+        final String thirdPush = lastPushScript();
+        expect(
+          thirdPush,
+          contains('window.collapseDictionaries = true'),
+          reason: '偏好变化必须随下一次推送重发静态段（新值生效）',
+        );
+        expect(thirdPush, contains('window.dictionaryStyles'));
+        expect(thirdPush, contains('window.i18nCtx'), reason: '固定块随静态段版本一起重发');
+        await harness.firePopupRendered();
 
-      // 语言切换 → memo 键含 locale → 第四推重发（i18n 文案不得陈旧）。
-      LocaleSettings.setLocale(AppLocale.ja);
-      addTearDown(() => LocaleSettings.setLocale(AppLocale.en));
-      holder.value = makeResult('犬');
-      expect(state.refreshCurrentResult(), isTrue);
-      await tester.pump();
-      expect(harness.pushCount, 4);
-      final String fourthPush = lastPushScript();
-      expect(fourthPush, contains('window.dictionaryStyles'),
-          reason: '语言切换必须失效静态段（内嵌 i18n 文案）');
-      expect(fourthPush, contains('window.i18nCtx'),
-          reason: '语言切换必须重发固定 i18n 块，弹窗文案随语言更新');
-    });
+        // 语言切换 → memo 键含 locale → 第四推重发（i18n 文案不得陈旧）。
+        LocaleSettings.setLocale(AppLocale.ja);
+        addTearDown(() => LocaleSettings.setLocale(AppLocale.en));
+        holder.value = makeResult('犬');
+        expect(state.refreshCurrentResult(), isTrue);
+        await tester.pump();
+        expect(harness.pushCount, 4);
+        final String fourthPush = lastPushScript();
+        expect(
+          fourthPush,
+          contains('window.dictionaryStyles'),
+          reason: '语言切换必须失效静态段（内嵌 i18n 文案）',
+        );
+        expect(
+          fourthPush,
+          contains('window.i18nCtx'),
+          reason: '语言切换必须重发固定 i18n 块，弹窗文案随语言更新',
+        );
+      },
+    );
   });
 
   group('BUG-712 P1 host cover release on already-rendered result', () {
     testWidgets(
-        'base_source_page post-frame drops the loading cover immediately '
-        'when refreshCurrentResult reports already-rendered',
-        (WidgetTester tester) async {
-      final appModel = PushDedupAppModel(
-        results: <DictionaryEntry>[
-          DictionaryEntry(
-            dictionaryName: 'd',
-            word: '語',
-            reading: 'ご',
-            meaning: '"def"',
-          ),
-        ],
-      );
-      final hostKey = GlobalKey<DedupHostPageState>();
-      await tester.pumpWidget(
-        buildDedupHostApp(appModel: appModel, hostKey: hostKey),
-      );
-      await tester.pump(); // post-frame：热槽 seed
-      await tester.pump(); // 热槽层挂载 WebView；记录桩发出生命周期回调
-      await tester.pump(); // loadStop 链路的占位初始推送落地
-      expect(harness.handlers, contains('popupRendered'));
-      final int seedPushes = harness.pushCount; // 热槽种子（占位空结果）的推送
+      'base_source_page post-frame drops the loading cover immediately '
+      'when refreshCurrentResult reports already-rendered',
+      (WidgetTester tester) async {
+        final appModel = PushDedupAppModel(
+          results: <DictionaryEntry>[
+            DictionaryEntry(
+              dictionaryName: 'd',
+              word: '語',
+              reading: 'ご',
+              meaning: '"def"',
+            ),
+          ],
+        );
+        final hostKey = GlobalKey<DedupHostPageState>();
+        await tester.pumpWidget(
+          buildDedupHostApp(appModel: appModel, hostKey: hostKey),
+        );
+        await tester.pump(); // post-frame：热槽 seed
+        await tester.pump(); // 热槽层挂载 WebView；记录桩发出生命周期回调
+        await tester.pump(); // loadStop 链路的占位初始推送落地
+        expect(harness.handlers, contains('popupRendered'));
+        final int seedPushes = harness.pushCount; // 热槽种子（占位空结果）的推送
 
-      // 阅读器 deferDisplay 真实时序：先查词填充（隐藏热槽层 didUpdateWidget 推送
-      // 本次结果）……
-      await hostKey.currentState!.deferredSearch('語');
-      await tester.pump();
-      expect(harness.pushCount, seedPushes + 1,
-          reason: 'didUpdateWidget 对新结果推送一次（在途）');
+        // 阅读器 deferDisplay 真实时序：先查词填充（隐藏热槽层 didUpdateWidget 推送
+        // 本次结果）……
+        await hostKey.currentState!.deferredSearch('語');
+        await tester.pump();
+        expect(
+          harness.pushCount,
+          seedPushes + 1,
+          reason: 'didUpdateWidget 对新结果推送一次（在途）',
+        );
 
-      // ……popupRendered 先于盖板架起到达（正是 P1 修的竞态方向：渲染信号早到，
-      // 等信号的宿主此前会空等 1.8s failsafe）。
-      await harness.firePopupRendered();
-      await tester.pump();
+        // ……popupRendered 先于盖板架起到达（正是 P1 修的竞态方向：渲染信号早到，
+        // 等信号的宿主此前会空等 1.8s failsafe）。
+        await harness.firePopupRendered();
+        await tester.pump();
 
-      // 再 reveal：P1-C 起 _revealPopupAfterRender 先挂起（不露最大高度的空壳、
-      // 也不架盖板），post-frame 探询。
-      hostKey.currentState!.showDeferredPopup();
-      await tester.pump();
-      expect(_activeLoadingCover(), findsNothing,
-          reason: '挂起等渲染期间不再带盖板翻出最大高度外壳（P1-C）');
-      await tester.pump();
+        // 再 reveal：P1-C 起 _revealPopupAfterRender 先挂起（不露最大高度的空壳、
+        // 也不架盖板），post-frame 探询。
+        hostKey.currentState!.showDeferredPopup();
+        await tester.pump();
+        expect(
+          _activeLoadingCover(),
+          findsNothing,
+          reason: '挂起等渲染期间不再带盖板翻出最大高度外壳（P1-C）',
+        );
+        await tester.pump();
 
-      // ……post-frame 拿到 false（已渲染完成）就地翻可见——不等 1.8s failsafe。
-      final stack = hostKey.currentState!.debugPopupStack;
-      expect(stack.single.visible, isTrue);
-      expect(stack.single.revealOnRender, isFalse);
-      expect(_activeLoadingCover(), findsNothing,
-          reason: 'refreshCurrentResult 返回 false（已渲染完成、信号不会再来）时，'
-              '宿主必须立即走 rendered 路径翻出，而不是空等 failsafe 超时');
-      expect(harness.pushCount, seedPushes + 1, reason: '兜底探询对已渲染结果零重推');
-      // 全程零时长 pump：若撤盖板路径没取消 1.8s failsafe Timer，testWidgets 会以
-      // pending timer 失败——测试干净结束本身就是「不等 failsafe」的证据。
-    });
+        // ……post-frame 拿到 false（已渲染完成）就地翻可见——不等 1.8s failsafe。
+        final stack = hostKey.currentState!.debugPopupStack;
+        expect(stack.single.visible, isTrue);
+        expect(stack.single.revealOnRender, isFalse);
+        expect(
+          _activeLoadingCover(),
+          findsNothing,
+          reason:
+              'refreshCurrentResult 返回 false（已渲染完成、信号不会再来）时，'
+              '宿主必须立即走 rendered 路径翻出，而不是空等 failsafe 超时',
+        );
+        expect(harness.pushCount, seedPushes + 1, reason: '兜底探询对已渲染结果零重推');
+        // 全程零时长 pump：若撤盖板路径没取消 1.8s failsafe Timer，testWidgets 会以
+        // pending timer 失败——测试干净结束本身就是「不等 failsafe」的证据。
+      },
+    );
   });
 }
 
@@ -641,8 +721,9 @@ class RecordingWebViewHarness {
     return () => _params.onLoadStop?.call(controller, null);
   }
 
-  static final RegExp _tokenPattern =
-      RegExp(r'window\.__fushiRenderToken = (\d+);');
+  static final RegExp _tokenPattern = RegExp(
+    r'window\.__fushiRenderToken = (\d+);',
+  );
 
   /// 结果推送次数：只有 _pushResults 的注入会 stamp render token，其它注入
   /// （主题变量 / instant-scroll / hasChildPopup）都不带，天然可数。
@@ -681,15 +762,17 @@ class RecordingInAppWebViewPlatform extends InAppWebViewPlatform {
 
   @override
   PlatformInAppWebViewWidget createPlatformInAppWebViewWidget(
-      PlatformInAppWebViewWidgetCreationParams params) {
+    PlatformInAppWebViewWidgetCreationParams params,
+  ) {
     return _RecordingWebViewWidget(params, harness);
   }
 }
 
 class _RecordingWebViewWidget extends PlatformInAppWebViewWidget {
   _RecordingWebViewWidget(
-      PlatformInAppWebViewWidgetCreationParams params, this.harness)
-      : super.implementation(params);
+    PlatformInAppWebViewWidgetCreationParams params,
+    this.harness,
+  ) : super.implementation(params);
   final RecordingWebViewHarness harness;
 
   @override
@@ -699,7 +782,8 @@ class _RecordingWebViewWidget extends PlatformInAppWebViewWidget {
   @override
   T controllerFromPlatform<T>(PlatformInAppWebViewController controller) {
     throw UnimplementedError(
-        'controllerFromPlatform is not used by the recording fake');
+      'controllerFromPlatform is not used by the recording fake',
+    );
   }
 
   @override
@@ -707,8 +791,10 @@ class _RecordingWebViewWidget extends PlatformInAppWebViewWidget {
 }
 
 class _RecordingWebViewLifecycle extends StatefulWidget {
-  const _RecordingWebViewLifecycle(
-      {required this.params, required this.harness});
+  const _RecordingWebViewLifecycle({
+    required this.params,
+    required this.harness,
+  });
   final PlatformInAppWebViewWidgetCreationParams params;
   final RecordingWebViewHarness harness;
 
@@ -742,13 +828,16 @@ class _RecordingWebViewLifecycleState
 
 class _RecordingPlatformController extends PlatformInAppWebViewController {
   _RecordingPlatformController(this.harness)
-      : super.implementation(
-            const PlatformInAppWebViewControllerCreationParams(id: 0));
+    : super.implementation(
+        const PlatformInAppWebViewControllerCreationParams(id: 0),
+      );
   final RecordingWebViewHarness harness;
 
   @override
-  Future<dynamic> evaluateJavascript(
-      {required String source, ContentWorld? contentWorld}) async {
+  Future<dynamic> evaluateJavascript({
+    required String source,
+    ContentWorld? contentWorld,
+  }) async {
     harness.scripts.add(source);
     if (harness.blockViewportInjection &&
         source.contains('--fushi-popup-viewport-width')) {
@@ -764,9 +853,10 @@ class _RecordingPlatformController extends PlatformInAppWebViewController {
   }
 
   @override
-  void addJavaScriptHandler(
-      {required String handlerName,
-      required JavaScriptHandlerCallback callback}) {
+  void addJavaScriptHandler({
+    required String handlerName,
+    required JavaScriptHandlerCallback callback,
+  }) {
     harness.handlers[handlerName] = callback;
   }
 
@@ -780,7 +870,7 @@ class _RecordingPlatformController extends PlatformInAppWebViewController {
 /// 必须全部盖掉（对照既有 base_source_page 测试 fake，只是多盖注入路径的键）。
 class PushDedupAppModel extends AppModel {
   PushDedupAppModel({this.results = const <DictionaryEntry>[]})
-      : super(testPlatformServices());
+    : super(testPlatformServices());
 
   final List<DictionaryEntry> results;
 
@@ -867,7 +957,7 @@ class ResultHolder {
 /// 不触发它的常规推送），把 refreshCurrentResult 的「补推安全网」分支单独暴露出来。
 class MutableResultPopupWebView extends DictionaryPopupWebView {
   MutableResultPopupWebView({required this.holder, super.key})
-      : super(result: holder.value);
+    : super(result: holder.value);
   final ResultHolder holder;
 
   @override
@@ -875,16 +965,16 @@ class MutableResultPopupWebView extends DictionaryPopupWebView {
 }
 
 DictionarySearchResult makeResult(String term) => DictionarySearchResult(
-      searchTerm: term,
-      entries: <DictionaryEntry>[
-        DictionaryEntry(
-          dictionaryName: 'd',
-          word: term,
-          reading: 'よみ',
-          meaning: '"def"',
-        ),
-      ],
-    );
+  searchTerm: term,
+  entries: <DictionaryEntry>[
+    DictionaryEntry(
+      dictionaryName: 'd',
+      word: term,
+      reading: 'よみ',
+      meaning: '"def"',
+    ),
+  ],
+);
 
 Widget wrapPopup({required AppModel appModel, required Widget popup}) {
   return ProviderScope(
@@ -895,9 +985,7 @@ Widget wrapPopup({required AppModel appModel, required Widget popup}) {
     child: TranslationProvider(
       child: MaterialApp(
         home: Scaffold(
-          body: Center(
-            child: SizedBox(width: 320, height: 400, child: popup),
-          ),
+          body: Center(child: SizedBox(width: 320, height: 400, child: popup)),
         ),
       ),
     ),
@@ -916,10 +1004,10 @@ class DedupHostPage extends BaseSourcePage {
 class DedupHostPageState extends BaseSourcePageState<DedupHostPage> {
   /// 阅读器查词路径：先查词填充（隐藏），高亮完成后再 showDeferredPopup reveal。
   Future<void> deferredSearch(String term) => searchDictionaryResult(
-        searchTerm: term,
-        selectionRect: const Rect.fromLTWH(40, 40, 8, 8),
-        deferDisplay: true,
-      );
+    searchTerm: term,
+    selectionRect: const Rect.fromLTWH(40, 40, 8, 8),
+    deferDisplay: true,
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -951,6 +1039,5 @@ Widget buildDedupHostApp({
 }
 
 /// 查词浮层的加载盖板（[FushiDeferredLoading]）当前是否在盖。
-Finder _activeLoadingCover() => find.byWidgetPredicate(
-  (Widget w) => w is FushiDeferredLoading && w.active,
-);
+Finder _activeLoadingCover() =>
+    find.byWidgetPredicate((Widget w) => w is FushiDeferredLoading && w.active);

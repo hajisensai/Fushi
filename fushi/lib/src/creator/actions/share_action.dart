@@ -10,12 +10,12 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 class ShareAction extends QuickAction {
   /// Initialise this enhancement with the hardset parameters.
   ShareAction()
-      : super(
-          uniqueKey: key,
-          label: 'Share',
-          description: 'Share the details of a dictionary term.',
-          icon: Icons.share_outlined,
-        );
+    : super(
+        uniqueKey: key,
+        label: 'Share',
+        description: 'Share the details of a dictionary term.',
+        icon: Icons.share_outlined,
+      );
 
   /// Used to identify this enhancement and to allow a constant value for the
   /// default mappings value of [AnkiMapping].

@@ -44,7 +44,8 @@ class LocalFileDeleteReport {
       );
 
   @override
-  String toString() => 'LocalFileDeleteReport(removed: ${removed.length}, '
+  String toString() =>
+      'LocalFileDeleteReport(removed: ${removed.length}, '
       'failed: ${failures.length})';
 }
 

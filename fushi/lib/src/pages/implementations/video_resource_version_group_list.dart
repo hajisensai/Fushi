@@ -37,7 +37,7 @@ class VideoResourceVersionGroupList extends StatefulWidget {
   /// 多选模式下「整组（合辑）一次选中 / 取消」：成员全部设成 `selected`。
   /// null 或非多选时不摆「全选本组」行。
   final void Function(List<VideoResourceCandidate> members, bool selected)?
-      onSetGroupSelected;
+  onSetGroupSelected;
 
   /// 对话框态用紧凑密度（与旧平铺列表同参数语义）。
   final bool compact;
@@ -228,8 +228,9 @@ class _VideoResourceVersionGroupListState
     final bool all = selected == group.members.length;
     return FushiListItem(
       key: ValueKey<String>('resource-select-all-${group.key}'),
-      density:
-          widget.compact ? FushiListDensity.compact : FushiListDensity.standard,
+      density: widget.compact
+          ? FushiListDensity.compact
+          : FushiListDensity.standard,
       padding: const EdgeInsets.symmetric(horizontal: 4),
       selected: all,
       leading: FushiCheckbox(
@@ -252,8 +253,9 @@ class _VideoResourceVersionGroupListState
     ];
     return FushiListItem(
       key: ValueKey<String>('resource-release-${member.identityKey}'),
-      density:
-          widget.compact ? FushiListDensity.compact : FushiListDensity.standard,
+      density: widget.compact
+          ? FushiListDensity.compact
+          : FushiListDensity.standard,
       padding: const EdgeInsets.symmetric(horizontal: 4),
       selected: widget.selectedIdentityKeys.contains(member.identityKey),
       leading: widget.multiSelect && widget.onSelect != null

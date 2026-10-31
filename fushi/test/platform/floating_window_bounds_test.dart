@@ -13,11 +13,11 @@ void main() {
   const double minVisible = 48;
 
   Offset clamp(Offset origin) => clampFloatingWindowOrigin(
-        origin: origin,
-        windowSize: window,
-        bounds: bounds,
-        minVisible: minVisible,
-      );
+    origin: origin,
+    windowSize: window,
+    bounds: bounds,
+    minVisible: minVisible,
+  );
 
   group('clampFloatingWindowOrigin', () {
     test('fully inside → unchanged', () {
@@ -59,38 +59,43 @@ void main() {
 
     test('exact left/top boundary value does not jitter', () {
       // The most-off-left legal origin: bounds.left - (width - minVisible).
-      final Offset edge =
-          Offset(bounds.left - (window.width - minVisible), bounds.top);
+      final Offset edge = Offset(
+        bounds.left - (window.width - minVisible),
+        bounds.top,
+      );
       expect(clamp(edge), edge);
     });
 
     test('exact right/bottom boundary value does not jitter', () {
-      final Offset edge =
-          Offset(bounds.right - minVisible, bounds.bottom - minVisible);
+      final Offset edge = Offset(
+        bounds.right - minVisible,
+        bounds.bottom - minVisible,
+      );
       expect(clamp(edge), edge);
     });
 
-    test('window wider than screen (margin still < window) keeps minVisible',
-        () {
-      // Window bigger than the work area but minVisible (48) is smaller than
-      // both window and bounds, so the legal range stays valid (min < max) and
-      // a normal clamp applies — it is NOT ejected to a corner.
-      const Size huge = Size(2000, 1600);
-      Offset clampHuge(Offset origin) => clampFloatingWindowOrigin(
-            origin: origin,
-            windowSize: huge,
-            bounds: bounds,
-            minVisible: minVisible,
-          );
-      // Pushed far off-right/bottom: clamps to the upper bound so exactly
-      // minVisible stays inside on the right / bottom edge.
-      final Offset out = clampHuge(const Offset(9999, 9999));
-      expect(bounds.right - out.dx, minVisible);
-      expect(bounds.bottom - out.dy, minVisible);
-    });
-
     test(
-        'degenerate inverted range (window wider than bounds, full window '
+      'window wider than screen (margin still < window) keeps minVisible',
+      () {
+        // Window bigger than the work area but minVisible (48) is smaller than
+        // both window and bounds, so the legal range stays valid (min < max) and
+        // a normal clamp applies — it is NOT ejected to a corner.
+        const Size huge = Size(2000, 1600);
+        Offset clampHuge(Offset origin) => clampFloatingWindowOrigin(
+          origin: origin,
+          windowSize: huge,
+          bounds: bounds,
+          minVisible: minVisible,
+        );
+        // Pushed far off-right/bottom: clamps to the upper bound so exactly
+        // minVisible stays inside on the right / bottom edge.
+        final Offset out = clampHuge(const Offset(9999, 9999));
+        expect(bounds.right - out.dx, minVisible);
+        expect(bounds.bottom - out.dy, minVisible);
+      },
+    );
+
+    test('degenerate inverted range (window wider than bounds, full window '
         'must show) anchors to lower bound without throwing', () {
       // minVisible >= windowSize caps the margin to windowSize, requiring the
       // whole window to be visible; when the window is also wider than the
@@ -107,20 +112,22 @@ void main() {
       expect(out, const Offset(0, 0)); // anchored to bounds top-left
     });
 
-    test('non-zero work-area origin (secondary monitor) clamps relative to it',
-        () {
-      // Monitor offset to the right: 1920,0 → 3520,900.
-      const Rect monitor = Rect.fromLTWH(1920, 0, 1600, 900);
-      Offset clampMon(Offset origin) => clampFloatingWindowOrigin(
-            origin: origin,
-            windowSize: window,
-            bounds: monitor,
-            minVisible: minVisible,
-          );
-      final Offset out = clampMon(const Offset(99999, 300));
-      expect(monitor.right - out.dx, minVisible);
-      final Offset left = clampMon(const Offset(-99999, 300));
-      expect((left.dx + window.width) - monitor.left, minVisible);
-    });
+    test(
+      'non-zero work-area origin (secondary monitor) clamps relative to it',
+      () {
+        // Monitor offset to the right: 1920,0 → 3520,900.
+        const Rect monitor = Rect.fromLTWH(1920, 0, 1600, 900);
+        Offset clampMon(Offset origin) => clampFloatingWindowOrigin(
+          origin: origin,
+          windowSize: window,
+          bounds: monitor,
+          minVisible: minVisible,
+        );
+        final Offset out = clampMon(const Offset(99999, 300));
+        expect(monitor.right - out.dx, minVisible);
+        final Offset left = clampMon(const Offset(-99999, 300));
+        expect((left.dx + window.width) - monitor.left, minVisible);
+      },
+    );
   });
 }

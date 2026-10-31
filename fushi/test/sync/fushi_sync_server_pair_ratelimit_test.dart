@@ -19,16 +19,17 @@ void main() {
 
   Future<void> startServer({bool approve = true}) async {
     tempDir = Directory.systemTemp.createTempSync('fushi_pair_rl_test');
-    server = FushiSyncServer(
-      syncDataDir: tempDir.path,
-      port: 0,
-      token: 'super-secret-token',
-      allowLan: true,
-      now: () => fakeNow,
-    )
-      ..onPairRequest = ((FushiPairRequest _) async => approve)
-      ..onPairPinGenerated = ((FushiPairSession _) => shownPin)
-      ..lanRequiresPinProvider = (() async => true);
+    server =
+        FushiSyncServer(
+            syncDataDir: tempDir.path,
+            port: 0,
+            token: 'super-secret-token',
+            allowLan: true,
+            now: () => fakeNow,
+          )
+          ..onPairRequest = ((FushiPairRequest _) async => approve)
+          ..onPairPinGenerated = ((FushiPairSession _) => shownPin)
+          ..lanRequiresPinProvider = (() async => true);
     await server.start();
   }
 
@@ -101,8 +102,10 @@ void main() {
     }
     final http.Response fifth = await confirmWrongPin(5);
     expect(fifth.statusCode, 429, reason: '5th attempt hits threshold');
-    expect((jsonDecode(fifth.body) as Map<String, dynamic>)['reason'],
-        'rate_limited');
+    expect(
+      (jsonDecode(fifth.body) as Map<String, dynamic>)['reason'],
+      'rate_limited',
+    );
   });
 
   test('within lockout window confirm is 429 even with correct PIN', () async {
@@ -113,7 +116,9 @@ void main() {
     final http.Response r = await confirmCorrectPin('during-lockout');
     expect(r.statusCode, 429);
     expect(
-        (jsonDecode(r.body) as Map<String, dynamic>)['reason'], 'rate_limited');
+      (jsonDecode(r.body) as Map<String, dynamic>)['reason'],
+      'rate_limited',
+    );
   });
 
   test('after backoff window correct PIN pairs again', () async {
@@ -124,8 +129,10 @@ void main() {
     fakeNow = fakeNow.add(const Duration(minutes: 16));
     final http.Response r = await confirmCorrectPin('after-lockout');
     expect(r.statusCode, 200, reason: 'recovers after backoff');
-    expect((jsonDecode(r.body) as Map<String, dynamic>)['token'],
-        'super-secret-token');
+    expect(
+      (jsonDecode(r.body) as Map<String, dynamic>)['token'],
+      'super-secret-token',
+    );
   });
 
   test('success clears count: later failures start fresh', () async {
@@ -138,8 +145,11 @@ void main() {
     expect(ok.statusCode, 200);
     for (int i = 5; i <= 8; i++) {
       final http.Response r = await confirmWrongPin(i);
-      expect(r.statusCode, 401,
-          reason: 'attempt ${i - 4} after reset stays 401');
+      expect(
+        r.statusCode,
+        401,
+        reason: 'attempt ${i - 4} after reset stays 401',
+      );
     }
   });
 
@@ -147,30 +157,34 @@ void main() {
     await startServer();
     final http.Response r = await confirmCorrectPin('single');
     expect(r.statusCode, 200);
-    expect((jsonDecode(r.body) as Map<String, dynamic>)['token'],
-        'super-secret-token');
+    expect(
+      (jsonDecode(r.body) as Map<String, dynamic>)['token'],
+      'super-secret-token',
+    );
   });
 
   test('PIN-free sessions are never rate limited', () async {
     tempDir = Directory.systemTemp.createTempSync('fushi_pair_rl_free_test');
-    server = FushiSyncServer(
-      syncDataDir: tempDir.path,
-      port: 0,
-      token: 'super-secret-token',
-      allowLan: true,
-      now: () => fakeNow,
-    )
-      ..onPairRequest = ((FushiPairRequest _) async => true)
-      ..onPairPinGenerated = ((FushiPairSession _) => shownPin)
-      ..lanRequiresPinProvider = (() async => false);
+    server =
+        FushiSyncServer(
+            syncDataDir: tempDir.path,
+            port: 0,
+            token: 'super-secret-token',
+            allowLan: true,
+            now: () => fakeNow,
+          )
+          ..onPairRequest = ((FushiPairRequest _) async => true)
+          ..onPairPinGenerated = ((FushiPairSession _) => shownPin)
+          ..lanRequiresPinProvider = (() async => false);
     await server.start();
     for (int i = 0; i < 10; i++) {
       final Map<String, dynamic> start = await startSession('cn-free-$i');
       final http.Response r = await http.post(
         confirmUri(),
         headers: <String, String>{'Content-Type': 'application/json'},
-        body: jsonEncode(
-            <String, String>{'sessionId': start['sessionId'] as String}),
+        body: jsonEncode(<String, String>{
+          'sessionId': start['sessionId'] as String,
+        }),
       );
       expect(r.statusCode, 200, reason: 'free confirm $i should succeed');
     }
@@ -182,7 +196,10 @@ void main() {
     expect(server.pinRateLimitTrackedSourceCount, 1);
     fakeNow = fakeNow.add(const Duration(minutes: 6));
     await startSession('cn-prune-trigger');
-    expect(server.pinRateLimitTrackedSourceCount, 0,
-        reason: 'cooled record should be reclaimed');
+    expect(
+      server.pinRateLimitTrackedSourceCount,
+      0,
+      reason: 'cooled record should be reclaimed',
+    );
   });
 }

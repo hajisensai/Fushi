@@ -19,14 +19,11 @@ void main() {
       expect(gate.complete(first, MangaWindowLoadOutcome.ready), isFalse);
 
       bool secondSettled = false;
-      final Future<void> watcher =
-          second.outcome.then((_) => secondSettled = true);
-      await Future<void>.delayed(Duration.zero);
-      expect(
-        secondSettled,
-        isFalse,
-        reason: '新窗口的 ready 锁必须仍然锁着，导航锁不得被旧回调解除',
+      final Future<void> watcher = second.outcome.then(
+        (_) => secondSettled = true,
       );
+      await Future<void>.delayed(Duration.zero);
+      expect(secondSettled, isFalse, reason: '新窗口的 ready 锁必须仍然锁着，导航锁不得被旧回调解除');
 
       // 新窗口自己的回调才算数。
       expect(gate.complete(second, MangaWindowLoadOutcome.ready), isTrue);

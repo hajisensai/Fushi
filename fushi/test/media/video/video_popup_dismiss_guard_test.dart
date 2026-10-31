@@ -42,12 +42,18 @@ void main() {
     );
   }
 
-  final KeyDownEvent seekForward =
-      down(LogicalKeyboardKey.keyD, PhysicalKeyboardKey.keyD);
-  final KeyDownEvent escape =
-      down(LogicalKeyboardKey.escape, PhysicalKeyboardKey.escape);
-  final KeyDownEvent space =
-      down(LogicalKeyboardKey.space, PhysicalKeyboardKey.space);
+  final KeyDownEvent seekForward = down(
+    LogicalKeyboardKey.keyD,
+    PhysicalKeyboardKey.keyD,
+  );
+  final KeyDownEvent escape = down(
+    LogicalKeyboardKey.escape,
+    PhysicalKeyboardKey.escape,
+  );
+  final KeyDownEvent space = down(
+    LogicalKeyboardKey.space,
+    PhysicalKeyboardKey.space,
+  );
 
   test('前置条件：这三个键在默认绑定里确实各自映射到一个视频动作', () {
     final FushiShortcutRegistry registry = defaults();
@@ -59,13 +65,19 @@ void main() {
       ],
       <VideoKeyboardResolution>[
         const VideoKeyboardResolution(
-            VideoKeyboardDispatch.run, ShortcutAction.videoSeekForward),
+          VideoKeyboardDispatch.run,
+          ShortcutAction.videoSeekForward,
+        ),
         // Esc 属 universal scope，主通道靠 video → universal 两段式兜底拿到它，
         // 与手柄通道 resolveGamepad 的兜底逐字对应。
         const VideoKeyboardResolution(
-            VideoKeyboardDispatch.run, ShortcutAction.globalBack),
+          VideoKeyboardDispatch.run,
+          ShortcutAction.globalBack,
+        ),
         const VideoKeyboardResolution(
-            VideoKeyboardDispatch.run, ShortcutAction.videoTogglePlayPause),
+          VideoKeyboardDispatch.run,
+          ShortcutAction.videoTogglePlayPause,
+        ),
       ],
       reason: '默认键位变了本组就测不到东西了，先把前提钉死',
     );
@@ -73,12 +85,16 @@ void main() {
 
   test('浮层可见：任一键判成关浮层、消费掉、不跑原动作', () {
     final FushiShortcutRegistry registry = defaults();
-    for (final KeyDownEvent event
-        in <KeyDownEvent>[seekForward, escape, space]) {
+    for (final KeyDownEvent event in <KeyDownEvent>[
+      seekForward,
+      escape,
+      space,
+    ]) {
       expect(
         resolve(registry, event, hasVisiblePopup: true),
         VideoKeyboardResolution.dismissPopup,
-        reason: '浮层可见时 ${event.logicalKey.keyLabel} 必须先关一层浮层，'
+        reason:
+            '浮层可见时 ${event.logicalKey.keyLabel} 必须先关一层浮层，'
             '不得穿透去控制后面的视频',
       );
     }
@@ -100,8 +116,10 @@ void main() {
 
   test('制卡键必须绕开「先关浮层」——否则按下去只会把浮层关掉，永远制不了卡', () {
     final FushiShortcutRegistry registry = defaults();
-    final KeyDownEvent ctrlEnter =
-        down(LogicalKeyboardKey.enter, PhysicalKeyboardKey.enter);
+    final KeyDownEvent ctrlEnter = down(
+      LogicalKeyboardKey.enter,
+      PhysicalKeyboardKey.enter,
+    );
     expect(
       resolve(
         registry,
@@ -110,7 +128,9 @@ void main() {
         modifiers: const <ModifierKey>{ModifierKey.ctrl},
       ),
       const VideoKeyboardResolution(
-          VideoKeyboardDispatch.run, ShortcutAction.popupMineEntry),
+        VideoKeyboardDispatch.run,
+        ShortcutAction.popupMineEntry,
+      ),
       reason: '制卡恰恰只在浮层可见时才有意义（旧实现靠「合并在守卫之后」达到同样效果）',
     );
   });
@@ -124,7 +144,9 @@ void main() {
     expect(
       resolve(registry, seekForward, hasVisiblePopup: false),
       const VideoKeyboardResolution(
-          VideoKeyboardDispatch.run, ShortcutAction.videoSeekForward),
+        VideoKeyboardDispatch.run,
+        ShortcutAction.videoSeekForward,
+      ),
       reason: '浮层关掉后同一个键恢复原动作（press-time 解析天然不缓存页面态）',
     );
   });

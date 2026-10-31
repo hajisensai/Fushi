@@ -131,38 +131,58 @@ void main() {
       final int ceiling = path == download
           ? kDownloadCeiling
           : path == release
-              ? kReleaseCeiling
-              : kDefaultCeiling;
-      expect(lineCount(path), lessThan(ceiling),
-          reason: '$path exceeds the $ceiling-line ceiling; split it further');
+          ? kReleaseCeiling
+          : kDefaultCeiling;
+      expect(
+        lineCount(path),
+        lessThan(ceiling),
+        reason: '$path exceeds the $ceiling-line ceiling; split it further',
+      );
     }
   });
 
-  test('update_checker.dart is a pure barrel (library + imports + part only)',
-      () {
-    final String source = read(barrel);
-    // 纯 barrel：只声明 library + import + 4 个 part，不含任何类/顶层函数定义。
-    expect(source, contains('library;'));
-    for (final String part in parts) {
-      final String name = part.split('/').last;
-      expect(source, contains("part '$name';"),
-          reason: 'barrel must declare part $name');
-    }
-    // barrel 不得自带实现：不出现类声明 / @visibleForTesting / UpdateChecker 类体。
-    expect(source, isNot(contains('class ')),
-        reason: 'barrel must not define classes; move them into a part');
-    expect(source, isNot(contains('@visibleForTesting')),
-        reason: 'visibleForTesting symbols belong in part files');
-    expect(source, isNot(contains('class UpdateChecker')));
-  });
+  test(
+    'update_checker.dart is a pure barrel (library + imports + part only)',
+    () {
+      final String source = read(barrel);
+      // 纯 barrel：只声明 library + import + 4 个 part，不含任何类/顶层函数定义。
+      expect(source, contains('library;'));
+      for (final String part in parts) {
+        final String name = part.split('/').last;
+        expect(
+          source,
+          contains("part '$name';"),
+          reason: 'barrel must declare part $name',
+        );
+      }
+      // barrel 不得自带实现：不出现类声明 / @visibleForTesting / UpdateChecker 类体。
+      expect(
+        source,
+        isNot(contains('class ')),
+        reason: 'barrel must not define classes; move them into a part',
+      );
+      expect(
+        source,
+        isNot(contains('@visibleForTesting')),
+        reason: 'visibleForTesting symbols belong in part files',
+      );
+      expect(source, isNot(contains('class UpdateChecker')));
+    },
+  );
 
   test('every part file starts with the same part-of directive', () {
     for (final String path in parts) {
-      expect(read(path), contains("part of 'update_checker.dart';"),
-          reason: '$path must be a part of the update_checker library');
+      expect(
+        read(path),
+        contains("part of 'update_checker.dart';"),
+        reason: '$path must be a part of the update_checker library',
+      );
       // part 文件不得自带 import（import 集中在 barrel；part 共享 library 作用域）。
-      expect(read(path), isNot(contains('\nimport ')),
-          reason: '$path must not declare imports; they live in the barrel');
+      expect(
+        read(path),
+        isNot(contains('\nimport ')),
+        reason: '$path must not declare imports; they live in the barrel',
+      );
     }
   });
 
@@ -183,8 +203,11 @@ void main() {
   test('the proxy layer lives in its own library, not in the net part', () {
     const String appProxy =
         '../packages/fushi_engine/lib/utils/net/app_proxy.dart';
-    expect(File(appProxy).existsSync(), isTrue,
-        reason: '$appProxy must exist — the sync layer imports it directly');
+    expect(
+      File(appProxy).existsSync(),
+      isTrue,
+      reason: '$appProxy must exist — the sync layer imports it directly',
+    );
 
     final String proxySource = read(appProxy);
     expect(proxySource, contains('Future<void> applyAppProxy('));
@@ -194,13 +217,18 @@ void main() {
     expect(proxySource, contains('String Function() appUserProxyReader'));
 
     final String netSource = read(net);
-    expect(netSource, isNot(contains('Future<void> applyAppProxy(')),
-        reason: 'the proxy implementation must not move back into the part; '
-            'part files cannot be imported by the sync layer (BUG-1348)');
-    expect(netSource,
-        isNot(contains('Map<String, String> parseWindowsRegistryProxy(')),
-        reason:
-            'ditto — the Windows registry parser belongs to app_proxy.dart');
+    expect(
+      netSource,
+      isNot(contains('Future<void> applyAppProxy(')),
+      reason:
+          'the proxy implementation must not move back into the part; '
+          'part files cannot be imported by the sync layer (BUG-1348)',
+    );
+    expect(
+      netSource,
+      isNot(contains('Map<String, String> parseWindowsRegistryProxy(')),
+      reason: 'ditto — the Windows registry parser belongs to app_proxy.dart',
+    );
   });
 
   test('download part owns the multi-segment download engine', () {
@@ -263,8 +291,11 @@ void main() {
     final String releaseSource = read(release);
     // 本机 UI 流用同一个会话，浮层不在 release part 里再长一份。
     expect(releaseSource, contains('_UpdateDownloadSession()'));
-    expect(releaseSource, isNot(contains('_DownloadOverlay(')),
-        reason: 'the download overlay is built once, in _UpdateDownloadSession');
+    expect(
+      releaseSource,
+      isNot(contains('_DownloadOverlay(')),
+      reason: 'the download overlay is built once, in _UpdateDownloadSession',
+    );
     expect(releaseSource, isNot(contains('downloadAndApplyHeadless(')));
   });
 
@@ -275,8 +306,11 @@ void main() {
     expect(source, contains('class _DownloadOverlay'));
     expect(source, contains('buildUpdateDownloadOverlayForTest('));
     // UI part 只渲染，不持有网络/下载引擎实现。
-    expect(source, isNot(contains('HttpClient(')),
-        reason: 'UI part must not own HttpClient; that is the engine\'s job');
+    expect(
+      source,
+      isNot(contains('HttpClient(')),
+      reason: 'UI part must not own HttpClient; that is the engine\'s job',
+    );
     expect(source, isNot(contains('Future<File> downloadUpdateAsset(')));
   });
 
@@ -289,79 +323,127 @@ void main() {
   group('TODO-808/821 timeout + cancellation pins', () {
     test('per-attempt body timeout is 8s, not the old 15s (TODO-808)', () {
       final String source = read(download);
-      expect(source, contains('_kPerAttemptTimeout = Duration(seconds: 8)'),
-          reason: 'per-attempt timeout must be compressed to 8s');
-      expect(source,
-          isNot(contains('_kPerAttemptTimeout = Duration(seconds: 15)')),
-          reason: 'the slow 15s per-attempt timeout must not return');
+      expect(
+        source,
+        contains('_kPerAttemptTimeout = Duration(seconds: 8)'),
+        reason: 'per-attempt timeout must be compressed to 8s',
+      );
+      expect(
+        source,
+        isNot(contains('_kPerAttemptTimeout = Duration(seconds: 15)')),
+        reason: 'the slow 15s per-attempt timeout must not return',
+      );
     });
 
     test('HttpClient.connectionTimeout is 10s, not the old 30s (TODO-808)', () {
       final String source = read(release);
       expect(
-          source, contains('connectionTimeout = const Duration(seconds: 10)'),
-          reason: 'connect timeout must be compressed to 10s');
-      expect(source,
-          isNot(contains('connectionTimeout = const Duration(seconds: 30)')),
-          reason: 'the slow 30s connect timeout must not return');
+        source,
+        contains('connectionTimeout = const Duration(seconds: 10)'),
+        reason: 'connect timeout must be compressed to 10s',
+      );
+      expect(
+        source,
+        isNot(contains('connectionTimeout = const Duration(seconds: 30)')),
+        reason: 'the slow 30s connect timeout must not return',
+      );
     });
 
     test('probe first-byte timeout stays 5s (fast dead-mirror detection)', () {
       final String source = read(race);
-      expect(source, contains('_kFirstByteTimeout = Duration(seconds: 5)'),
-          reason: 'first-byte probe timeout must stay 5s');
+      expect(
+        source,
+        contains('_kFirstByteTimeout = Duration(seconds: 5)'),
+        reason: 'first-byte probe timeout must stay 5s',
+      );
     });
 
     test('cancellation token exposes the in-flight abort hook (TODO-808)', () {
       final String source = read(race);
       // The abort plumbing is what makes cancel() instant; guard it stays
       // wired.
-      expect(source, contains('void registerAbort(void Function() abort)'),
-          reason: 'cancellation must accept an in-flight abort callback');
+      expect(
+        source,
+        contains('void registerAbort(void Function() abort)'),
+        reason: 'cancellation must accept an in-flight abort callback',
+      );
       expect(source, contains('void clearAbort()'));
-      expect(source, contains('_fireAbort()'),
-          reason: 'cancel() must fire the abort callback');
+      expect(
+        source,
+        contains('_fireAbort()'),
+        reason: 'cancel() must fire the abort callback',
+      );
     });
 
     test('download callsite force-closes the client on cancel (TODO-808)', () {
       final String source = read(release);
-      expect(source, contains('cancellation.registerAbort('),
-          reason: 'download must register an abort callback into the token');
-      expect(source, contains('close(force: true)'),
-          reason: 'abort must force-close the in-flight HttpClient');
-      expect(source, contains('cancellation.clearAbort()'),
-          reason:
-              'finally must clear the abort to avoid closing a reused client');
-    });
-
-    test('check phase races candidates concurrently, not serially (TODO-821)',
-        () {
-      final String source = read(net);
-      // The concurrent primitive must exist and fetchFirstSuccessfulBody must
-      // delegate to it (a serial for-await regression drops these).
-      expect(source, contains('Future<String?> raceFirstSuccessfulBody('),
-          reason: 'check phase needs a concurrent race primitive');
-      expect(source, contains('return raceFirstSuccessfulBody('),
-          reason:
-              'fetchFirstSuccessfulBody must delegate to the race primitive');
-      expect(source, contains('Future.any(<Future<void>>['),
-          reason: 'race uses Future.any over a decided completer + allDone');
+      expect(
+        source,
+        contains('cancellation.registerAbort('),
+        reason: 'download must register an abort callback into the token',
+      );
+      expect(
+        source,
+        contains('close(force: true)'),
+        reason: 'abort must force-close the in-flight HttpClient',
+      );
+      expect(
+        source,
+        contains('cancellation.clearAbort()'),
+        reason: 'finally must clear the abort to avoid closing a reused client',
+      );
     });
 
     test(
-        'check phase client is interruptible via UpdateCheckCancellation '
+      'check phase races candidates concurrently, not serially (TODO-821)',
+      () {
+        final String source = read(net);
+        // The concurrent primitive must exist and fetchFirstSuccessfulBody must
+        // delegate to it (a serial for-await regression drops these).
+        expect(
+          source,
+          contains('Future<String?> raceFirstSuccessfulBody('),
+          reason: 'check phase needs a concurrent race primitive',
+        );
+        expect(
+          source,
+          contains('return raceFirstSuccessfulBody('),
+          reason:
+              'fetchFirstSuccessfulBody must delegate to the race primitive',
+        );
+        expect(
+          source,
+          contains('Future.any(<Future<void>>['),
+          reason: 'race uses Future.any over a decided completer + allDone',
+        );
+      },
+    );
+
+    test('check phase client is interruptible via UpdateCheckCancellation '
         '(TODO-821/808 check-side hole)', () {
       final String releaseSource = read(release);
       final String raceSource = read(race);
       // The check token type + its abort wiring must exist.
-      expect(raceSource, contains('class UpdateCheckCancellation'),
-          reason: 'check phase needs its own interruptible cancellation token');
-      expect(releaseSource, contains('UpdateCheckCancellation()'),
-          reason: '_check must build a check cancellation token');
-      expect(releaseSource, contains('cancellation.registerAbort('),
-          reason: '_check must register a force-close abort into the token');
-      expect(releaseSource, contains('static void cancelActiveCheck()'),
-          reason: 'an interrupt entry must exist to abort a hung check');
+      expect(
+        raceSource,
+        contains('class UpdateCheckCancellation'),
+        reason: 'check phase needs its own interruptible cancellation token',
+      );
+      expect(
+        releaseSource,
+        contains('UpdateCheckCancellation()'),
+        reason: '_check must build a check cancellation token',
+      );
+      expect(
+        releaseSource,
+        contains('cancellation.registerAbort('),
+        reason: '_check must register a force-close abort into the token',
+      );
+      expect(
+        releaseSource,
+        contains('static void cancelActiveCheck()'),
+        reason: 'an interrupt entry must exist to abort a hung check',
+      );
     });
   });
 }

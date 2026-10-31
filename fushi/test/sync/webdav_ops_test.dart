@@ -15,7 +15,9 @@ void main() {
       final WebDavOps ops = _ops('http://nas.local:8080/dav');
       expect(
         () => ops.resolveHref(
-            'http://nas.local/dav/file', 'http://nas.local:8080/dav'),
+          'http://nas.local/dav/file',
+          'http://nas.local:8080/dav',
+        ),
         throwsA(isA<SyncBackendError>()),
       );
     });
@@ -24,7 +26,9 @@ void main() {
       final WebDavOps ops = _ops('http://nas.local:8080/dav');
       expect(
         ops.resolveHref(
-            'http://nas.local:8080/dav/file', 'http://nas.local:8080/dav'),
+          'http://nas.local:8080/dav/file',
+          'http://nas.local:8080/dav',
+        ),
         'http://nas.local:8080/dav/file',
       );
     });
@@ -33,7 +37,9 @@ void main() {
       final WebDavOps ops = _ops('http://nas.local:8080/dav');
       expect(
         () => ops.resolveHref(
-            'http://evil.example/dav/file', 'http://nas.local:8080/dav'),
+          'http://evil.example/dav/file',
+          'http://nas.local:8080/dav',
+        ),
         throwsA(isA<SyncBackendError>()),
       );
     });
@@ -50,8 +56,10 @@ void main() {
   group('BUG-1693 连接类失败通知（互联故障切换的失效信号）', () {
     test('拒连（SocketException）触发 onConnectivityError 并原样 rethrow', () async {
       // 绑定后立即关掉的端口：connect 必被拒，稳定复现 SocketException。
-      final ServerSocket socket =
-          await ServerSocket.bind(InternetAddress.loopbackIPv4, 0);
+      final ServerSocket socket = await ServerSocket.bind(
+        InternetAddress.loopbackIPv4,
+        0,
+      );
       final int deadPort = socket.port;
       await socket.close();
 
@@ -68,9 +76,13 @@ void main() {
           () => ops.collectionExists('http://127.0.0.1:$deadPort/dav/'),
           throwsA(isA<SocketException>()),
         );
-        expect(notified, isTrue,
-            reason: '连接类失败必须通知回调（互联据此复位已解析会话，'
-                '下一次操作重探候选地址）');
+        expect(
+          notified,
+          isTrue,
+          reason:
+              '连接类失败必须通知回调（互联据此复位已解析会话，'
+              '下一次操作重探候选地址）',
+        );
       } finally {
         ops.close(force: true);
       }

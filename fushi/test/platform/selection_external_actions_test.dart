@@ -12,9 +12,9 @@ void main() {
     calls.clear();
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (MethodCall call) async {
-      calls.add(call);
-      return true;
-    });
+          calls.add(call);
+          return true;
+        });
   });
 
   tearDown(() {
@@ -49,18 +49,20 @@ void main() {
     expect(calls.single.arguments, <String, String>{'query': payload});
   });
 
-  test('missing search handler and failed share return visible-failure signal',
-      () async {
-    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(channel, (MethodCall _) async => false);
-    final SelectionExternalActions actions = SelectionExternalActions(
-      channel: channel,
-      shareSelectedText: (String _) async {
-        throw StateError('no share activity');
-      },
-    );
+  test(
+    'missing search handler and failed share return visible-failure signal',
+    () async {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, (MethodCall _) async => false);
+      final SelectionExternalActions actions = SelectionExternalActions(
+        channel: channel,
+        shareSelectedText: (String _) async {
+          throw StateError('no share activity');
+        },
+      );
 
-    expect(await actions.searchWeb('query'), isFalse);
-    expect(await actions.shareText('query'), isFalse);
-  });
+      expect(await actions.searchWeb('query'), isFalse);
+      expect(await actions.shareText('query'), isFalse);
+    },
+  );
 }

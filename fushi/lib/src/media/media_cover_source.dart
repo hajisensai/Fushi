@@ -95,7 +95,7 @@ ImageProvider? resolveMediaCoverImage({
 
 /// 无封面时的占位图标——**按媒体种类**，不是所有东西都画一本书。
 IconData mediaCoverFallbackIcon(MediaKind kind) => switch (kind) {
-      MediaKind.video => Icons.movie_outlined,
-      MediaKind.game => Icons.videogame_asset_outlined,
-      MediaKind.epub || MediaKind.srt => Icons.menu_book_outlined,
-    };
+  MediaKind.video => Icons.movie_outlined,
+  MediaKind.game => Icons.videogame_asset_outlined,
+  MediaKind.epub || MediaKind.srt => Icons.menu_book_outlined,
+};

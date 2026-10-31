@@ -166,8 +166,9 @@ void main() {
     });
 
     test('单字母 X 不被误认为罗马数字', () {
-      final ParsedMediaName p =
-          FilenameParser.parse('Hunter X Hunter - 01.mkv');
+      final ParsedMediaName p = FilenameParser.parse(
+        'Hunter X Hunter - 01.mkv',
+      );
       expect(p.title, 'Hunter X Hunter');
       expect(p.season, isNull);
       expect(p.episode, 1);
@@ -194,8 +195,9 @@ void main() {
     });
 
     test('第 3 季同理', () {
-      final ParsedMediaName p =
-          FilenameParser.parse('Hibike! Euphonium 3 - 05.mkv');
+      final ParsedMediaName p = FilenameParser.parse(
+        'Hibike! Euphonium 3 - 05.mkv',
+      );
       expect(p.title, 'Hibike! Euphonium');
       expect(p.season, 3);
       expect(p.episode, 5);
@@ -216,8 +218,9 @@ void main() {
     });
 
     test('标题自带 00（Gundam 00）不被当季号', () {
-      final ParsedMediaName p =
-          FilenameParser.parse('Mobile Suit Gundam 00 - 12.mkv');
+      final ParsedMediaName p = FilenameParser.parse(
+        'Mobile Suit Gundam 00 - 12.mkv',
+      );
       expect(p.title, 'Mobile Suit Gundam 00');
       expect(p.season, isNull);
       expect(p.episode, 12);
@@ -387,8 +390,9 @@ void main() {
 
   group('杂项边界', () {
     test('括号集数带 END 尾巴', () {
-      final ParsedMediaName p =
-          FilenameParser.parse('[组名] 石纪元 [24 END][1080p].mkv');
+      final ParsedMediaName p = FilenameParser.parse(
+        '[组名] 石纪元 [24 END][1080p].mkv',
+      );
       expect(p.title, '石纪元');
       expect(p.episode, 24);
     });
@@ -404,8 +408,9 @@ void main() {
     });
 
     test('Part 2 季度', () {
-      final ParsedMediaName p =
-          FilenameParser.parse('Spice and Wolf Part.2 - 01.mkv');
+      final ParsedMediaName p = FilenameParser.parse(
+        'Spice and Wolf Part.2 - 01.mkv',
+      );
       expect(p.title, 'Spice and Wolf');
       expect(p.season, 2);
       expect(p.episode, 1);
@@ -454,21 +459,24 @@ void main() {
     });
 
     test('括号外已有标题时，块里的季+集照样解得出（旧实现根本不看这些块）', () {
-      final ParsedMediaName p =
-          FilenameParser.parse('[Group] Show Name [S4 - 14][1080P].mp4');
+      final ParsedMediaName p = FilenameParser.parse(
+        '[Group] Show Name [S4 - 14][1080P].mp4',
+      );
       expect(p.title, 'Show Name');
       expect(p.season, 4);
       expect(p.episode, 14);
     });
 
     test('[4th Season - 14] / [第4季 - 14] 同族一起解', () {
-      final ParsedMediaName a =
-          FilenameParser.parse('[Group] Show [4th Season - 14][1080P].mp4');
+      final ParsedMediaName a = FilenameParser.parse(
+        '[Group] Show [4th Season - 14][1080P].mp4',
+      );
       expect(a.season, 4);
       expect(a.episode, 14);
 
-      final ParsedMediaName b =
-          FilenameParser.parse('[Group] Show [第4季 - 14][1080P].mp4');
+      final ParsedMediaName b = FilenameParser.parse(
+        '[Group] Show [第4季 - 14][1080P].mp4',
+      );
       expect(b.season, 4);
       expect(b.episode, 14);
     });
@@ -560,10 +568,12 @@ void main() {
     });
 
     test('块顺序不得改变解析结果', () {
-      final ParsedMediaName a =
-          FilenameParser.parse('[Group] Show [Fix 2] [S1] - 05 [1080p].mkv');
-      final ParsedMediaName b =
-          FilenameParser.parse('[Group] Show [S1] [Fix 2] - 05 [1080p].mkv');
+      final ParsedMediaName a = FilenameParser.parse(
+        '[Group] Show [Fix 2] [S1] - 05 [1080p].mkv',
+      );
+      final ParsedMediaName b = FilenameParser.parse(
+        '[Group] Show [S1] [Fix 2] - 05 [1080p].mkv',
+      );
       expect(a.season, b.season, reason: '同一批块换顺序解出不同季号 = 行为不确定');
       expect(a.episode, b.episode);
     });
@@ -610,8 +620,9 @@ void main() {
     }
 
     test('裸年份 + 集号：两者都解出', () {
-      final ParsedMediaName p =
-          FilenameParser.parse('Sousou no Frieren 2023 - 03 [1080p].mkv');
+      final ParsedMediaName p = FilenameParser.parse(
+        'Sousou no Frieren 2023 - 03 [1080p].mkv',
+      );
       expect(p.title, 'Sousou no Frieren');
       expect(p.year, 2023);
       expect(p.episode, 3);
@@ -626,7 +637,9 @@ void main() {
     test('片名本身的数字不当年份', () {
       // 晚于明年：片名的一部分。
       expect(
-          FilenameParser.parse('Blade Runner 2049').title, 'Blade Runner 2049');
+        FilenameParser.parse('Blade Runner 2049').title,
+        'Blade Runner 2049',
+      );
       expect(FilenameParser.parse('Blade Runner 2049').year, isNull);
       // 纯年份片名：左边没有标题文字。
       expect(FilenameParser.parse('2012').year, isNull);

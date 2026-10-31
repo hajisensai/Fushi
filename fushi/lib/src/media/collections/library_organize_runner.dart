@@ -39,15 +39,14 @@ LibraryOrganizeService _serviceFor({
   required String nameLanguage,
   AiChatClient Function()? clientFactory,
   Set<String> Function()? allowedRejectedKeys,
-}) =>
-    LibraryOrganizeService(
-      db: db,
-      settings: settings,
-      nameLanguage: nameLanguage,
-      videoTagPrefix: t.library_organize_series_tag_prefix,
-      clientFactory: clientFactory,
-      allowedRejectedKeys: allowedRejectedKeys,
-    );
+}) => LibraryOrganizeService(
+  db: db,
+  settings: settings,
+  nameLanguage: nameLanguage,
+  videoTagPrefix: t.library_organize_series_tag_prefix,
+  clientFactory: clientFactory,
+  allowedRejectedKeys: allowedRejectedKeys,
+);
 
 /// 「会发送什么」的一次性同意（照 `ocr_llm_default_consent.dart`）：点「开始」才记住；
 /// Esc / 返回 / 点空白只是关掉，不算同意，下次再问。返回是否已同意。
@@ -111,24 +110,25 @@ Future<void> runLibraryOrganizeInteractive({
   );
   LibraryOrganizeResult? result;
   try {
-    result = await _serviceFor(
-      db: appModel.database,
-      settings: prefs,
-      nameLanguage: appModel.appLocale.toLanguageTag(),
-      allowedRejectedKeys: () => prefs.libraryOrganizeAllowedKeys,
-    ).run(
-      domain,
-      trigger: OrganizeTrigger.manual,
-      onlyEntryKeys: onlyEntryKeys,
-      isCancelled: () => cancelled,
-      onProgress: (int done, int total) {
-        handle.progress.value = total == 0 ? null : done / total;
-        handle.message.value = t.library_organize_progress(
-          done: done + 1 > total ? total : done + 1,
-          total: total,
+    result =
+        await _serviceFor(
+          db: appModel.database,
+          settings: prefs,
+          nameLanguage: appModel.appLocale.toLanguageTag(),
+          allowedRejectedKeys: () => prefs.libraryOrganizeAllowedKeys,
+        ).run(
+          domain,
+          trigger: OrganizeTrigger.manual,
+          onlyEntryKeys: onlyEntryKeys,
+          isCancelled: () => cancelled,
+          onProgress: (int done, int total) {
+            handle.progress.value = total == 0 ? null : done / total;
+            handle.message.value = t.library_organize_progress(
+              done: done + 1 > total ? total : done + 1,
+              total: total,
+            );
+          },
         );
-      },
-    );
   } on Object catch (error, stack) {
     ErrorLogService.instance.log('libraryOrganize.manual', error, stack);
   } finally {
@@ -154,8 +154,8 @@ Future<void> _showResult(
 ) async {
   final String message = switch (result.status) {
     LibraryOrganizeStatus.failed => t.library_organize_failed(
-        reason: result.error ?? '',
-      ),
+      reason: result.error ?? '',
+    ),
     _ when result.changes == 0 => t.library_organize_nothing,
     _ => t.library_organize_done(n: result.changes),
   };
@@ -283,8 +283,11 @@ Future<LibraryOrganizeResult?> runAutomaticLibraryOrganize(
     final int since = lastRun > host.prefs.libraryOrganizeAutoSince
         ? lastRun
         : host.prefs.libraryOrganizeAutoSince;
-    final Set<String> fresh =
-        await organizeEntryKeysAddedSince(host.db, domain, since);
+    final Set<String> fresh = await organizeEntryKeysAddedSince(
+      host.db,
+      domain,
+      since,
+    );
     if (fresh.isEmpty) return null;
     final LibraryOrganizeResult result = await service.run(
       domain,

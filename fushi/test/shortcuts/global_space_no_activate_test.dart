@@ -151,8 +151,9 @@ void main() {
     }
   });
 
-  testWidgets('BUG-962：焦点在文本框上时，空格放行冒泡（可落到 text-input）',
-      (WidgetTester tester) async {
+  testWidgets('BUG-962：焦点在文本框上时，空格放行冒泡（可落到 text-input）', (
+    WidgetTester tester,
+  ) async {
     for (final bool nav in <bool>[false, true]) {
       expect(
         await pumpAndSpaceReachesSentinel(

@@ -35,10 +35,10 @@ AudioCue _cue(int i, int s, int e, String text) => AudioCue()
   ..audioFileIndex = 0;
 
 Widget _wrap(Widget child) => TranslationProvider(
-      child: MaterialApp(
-        home: Scaffold(body: Stack(children: <Widget>[child])),
-      ),
-    );
+  child: MaterialApp(
+    home: Scaffold(body: Stack(children: <Widget>[child])),
+  ),
+);
 
 void main() {
   setUp(() => LocaleSettings.setLocale(AppLocale.zhCn));
@@ -60,23 +60,22 @@ void main() {
     Future<void> Function(List<AudioCue>)? onExport,
     List<ShortcutActivator> searchActivators = const <ShortcutActivator>[],
     ValueListenable<int>? searchRequests,
-  }) =>
-      VideoSubtitleJumpPanel(
-        layout: VideoSubtitleListLayout.classic,
-        controller: controller,
-        onTapCue: (_) {},
-        onClose: () {},
-        onCopyCue: (_) => true,
-        onFavoriteCue: (_) async {},
-        isCueFavorited: isFavorited ?? (_) => false,
-        colorScheme: const ColorScheme.dark(),
-        title: '字幕列表',
-        emptyHint: 'empty',
-        width: 420,
-        onExportFavorites: onExport,
-        searchActivators: searchActivators,
-        searchRequests: searchRequests,
-      );
+  }) => VideoSubtitleJumpPanel(
+    layout: VideoSubtitleListLayout.classic,
+    controller: controller,
+    onTapCue: (_) {},
+    onClose: () {},
+    onCopyCue: (_) => true,
+    onFavoriteCue: (_) async {},
+    isCueFavorited: isFavorited ?? (_) => false,
+    colorScheme: const ColorScheme.dark(),
+    title: '字幕列表',
+    emptyHint: 'empty',
+    width: 420,
+    onExportFavorites: onExport,
+    searchActivators: searchActivators,
+    searchRequests: searchRequests,
+  );
 
   testWidgets('点搜索按钮展开输入框，输入即过滤列表', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(900, 1400);
@@ -88,8 +87,11 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('ナレーションのフキダシ'), findsOneWidget);
-    expect(find.byType(TextField), findsNothing,
-        reason: '搜索框收起时不得占高度 —— 面板最窄 240px');
+    expect(
+      find.byType(TextField),
+      findsNothing,
+      reason: '搜索框收起时不得占高度 —— 面板最窄 240px',
+    );
 
     await tester.tap(find.byTooltip(t.video_subtitle_list_search));
     await tester.pumpAndSettle();
@@ -103,8 +105,9 @@ void main() {
     expect(find.text('Hello world'), findsNothing);
   });
 
-  testWidgets('搜索走归一化匹配：片假名查得到、大小写无关（不是裸 contains）',
-      (WidgetTester tester) async {
+  testWidgets('搜索走归一化匹配：片假名查得到、大小写无关（不是裸 contains）', (
+    WidgetTester tester,
+  ) async {
     tester.view.physicalSize = const Size(900, 1400);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -118,8 +121,11 @@ void main() {
     // 平假名查片假名台词：裸 contains 做不到，matchesMediaSearch 会把两者归一。
     await tester.enterText(find.byType(TextField), 'なれーしょん');
     await tester.pumpAndSettle();
-    expect(find.text('ナレーションのフキダシ'), findsOneWidget,
-        reason: '平假名必须能命中片假名台词 —— 这正是不能用裸 contains 的原因');
+    expect(
+      find.text('ナレーションのフキダシ'),
+      findsOneWidget,
+      reason: '平假名必须能命中片假名台词 —— 这正是不能用裸 contains 的原因',
+    );
 
     // 大小写无关。
     await tester.enterText(find.byType(TextField), 'HELLO');
@@ -164,19 +170,24 @@ void main() {
     expect(find.text('Hello world'), findsOneWidget, reason: '收起搜索必须恢复全量列表');
   });
 
-  testWidgets('面板自带 Ctrl+F：焦点在面板内也能打开搜索（整表快捷键够不到这里）',
-      (WidgetTester tester) async {
+  testWidgets('面板自带 Ctrl+F：焦点在面板内也能打开搜索（整表快捷键够不到这里）', (
+    WidgetTester tester,
+  ) async {
     tester.view.physicalSize = const Size(900, 1400);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
 
-    await tester.pumpWidget(_wrap(panel(
-      seeded(tester),
-      searchActivators: const <ShortcutActivator>[
-        SingleActivator(LogicalKeyboardKey.keyF, control: true),
-      ],
-    )));
+    await tester.pumpWidget(
+      _wrap(
+        panel(
+          seeded(tester),
+          searchActivators: const <ShortcutActivator>[
+            SingleActivator(LogicalKeyboardKey.keyF, control: true),
+          ],
+        ),
+      ),
+    );
     await tester.pumpAndSettle();
     expect(find.byType(TextField), findsNothing);
 
@@ -188,8 +199,11 @@ void main() {
     await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
     await tester.pumpAndSettle();
 
-    expect(find.byType(TextField), findsOneWidget,
-        reason: '面板必须自带一份 activator —— 视频页整表只包 media_kit controls 子树');
+    expect(
+      find.byType(TextField),
+      findsOneWidget,
+      reason: '面板必须自带一份 activator —— 视频页整表只包 media_kit controls 子树',
+    );
   });
 
   testWidgets('页面层请求（整表快捷键）也能让面板展开搜索', (WidgetTester tester) async {
@@ -201,8 +215,9 @@ void main() {
     final ValueNotifier<int> requests = ValueNotifier<int>(0);
     addTearDown(requests.dispose);
 
-    await tester
-        .pumpWidget(_wrap(panel(seeded(tester), searchRequests: requests)));
+    await tester.pumpWidget(
+      _wrap(panel(seeded(tester), searchRequests: requests)),
+    );
     await tester.pumpAndSettle();
     expect(find.byType(TextField), findsNothing);
 
@@ -212,7 +227,9 @@ void main() {
     expect(find.byType(TextField), findsOneWidget);
   });
 
-  testWidgets('PR#1032 审查 B1：列表关着时发出的请求不能丢（面板下一帧才挂载）', (WidgetTester tester) async {
+  testWidgets('PR#1032 审查 B1：列表关着时发出的请求不能丢（面板下一帧才挂载）', (
+    WidgetTester tester,
+  ) async {
     tester.view.physicalSize = const Size(900, 1400);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -236,30 +253,45 @@ void main() {
       requests.value = requests.value + 1;
     }
 
-    await tester.pumpWidget(_wrap(ValueListenableBuilder<bool>(
-      valueListenable: visible,
-      builder: (BuildContext _, bool open, __) => open
-          ? panel(controller, searchRequests: requests)
-          : const SizedBox.shrink(),
-    )));
+    await tester.pumpWidget(
+      _wrap(
+        ValueListenableBuilder<bool>(
+          valueListenable: visible,
+          builder: (BuildContext _, bool open, __) => open
+              ? panel(controller, searchRequests: requests)
+              : const SizedBox.shrink(),
+        ),
+      ),
+    );
     await tester.pumpAndSettle();
     expect(find.byType(VideoSubtitleJumpPanel), findsNothing);
 
     requestSearch();
     await tester.pumpAndSettle();
 
-    expect(find.byType(VideoSubtitleJumpPanel), findsOneWidget,
-        reason: '请求必须同时把列表开出来');
-    expect(find.byType(TextField), findsOneWidget,
-        reason: '第一次 Ctrl+F 就该出搜索框；要按第二次说明请求被当边沿事件丢了');
     expect(
-      tester.widget<TextField>(glassUnwrap<TextField>(find.byType(TextField))).focusNode?.hasFocus,
+      find.byType(VideoSubtitleJumpPanel),
+      findsOneWidget,
+      reason: '请求必须同时把列表开出来',
+    );
+    expect(
+      find.byType(TextField),
+      findsOneWidget,
+      reason: '第一次 Ctrl+F 就该出搜索框；要按第二次说明请求被当边沿事件丢了',
+    );
+    expect(
+      tester
+          .widget<TextField>(glassUnwrap<TextField>(find.byType(TextField)))
+          .focusNode
+          ?.hasFocus,
       isTrue,
       reason: '展开搜索必须同时抢到焦点，否则用户还得再点一下输入框',
     );
   });
 
-  testWidgets('PR#1032 审查 B1：重开列表不会因为上次的水位残留而自动进搜索态', (WidgetTester tester) async {
+  testWidgets('PR#1032 审查 B1：重开列表不会因为上次的水位残留而自动进搜索态', (
+    WidgetTester tester,
+  ) async {
     tester.view.physicalSize = const Size(900, 1400);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -271,12 +303,16 @@ void main() {
     addTearDown(requests.dispose);
     final VideoPlayerController controller = seeded(tester);
 
-    await tester.pumpWidget(_wrap(ValueListenableBuilder<bool>(
-      valueListenable: visible,
-      builder: (BuildContext _, bool open, __) => open
-          ? panel(controller, searchRequests: requests)
-          : const SizedBox.shrink(),
-    )));
+    await tester.pumpWidget(
+      _wrap(
+        ValueListenableBuilder<bool>(
+          valueListenable: visible,
+          builder: (BuildContext _, bool open, __) => open
+              ? panel(controller, searchRequests: requests)
+              : const SizedBox.shrink(),
+        ),
+      ),
+    );
 
     // 一次带搜索的打开。
     requests.value = 0;
@@ -294,14 +330,17 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(VideoSubtitleJumpPanel), findsOneWidget);
-    expect(find.byType(TextField), findsNothing,
-        reason: '普通打开不该带搜索态——否则水位线基线没被归零');
+    expect(
+      find.byType(TextField),
+      findsNothing,
+      reason: '普通打开不该带搜索态——否则水位线基线没被归零',
+    );
   });
 
   group('PR#1032 审查 B1 页面侧水位线归零（守卫上面两条用例里的等价路径确实等价）', () {
     String subtitlePartSource() => File(
-          'lib/src/pages/implementations/video_fushi/subtitle.part.dart',
-        ).readAsStringSync().replaceAll('\r\n', '\n');
+      'lib/src/pages/implementations/video_fushi/subtitle.part.dart',
+    ).readAsStringSync().replaceAll('\r\n', '\n');
 
     test('_toggleSubtitleJumpList 的打开分支把 _subtitleSearchRequests 归零', () {
       final String src = subtitlePartSource();
@@ -313,7 +352,8 @@ void main() {
       expect(
         containsCodeLine(openBranch, '_subtitleSearchRequests.value = 0;'),
         isTrue,
-        reason: '面板会话开始必须把搜索请求水位线归零（基线 0），否则重开列表会带着'
+        reason:
+            '面板会话开始必须把搜索请求水位线归零（基线 0），否则重开列表会带着'
             '上一次的水位直接进搜索态；注释里写着这句不算实现',
       );
     });
@@ -342,23 +382,31 @@ void main() {
 
     List<AudioCue>? exported;
     final VideoPlayerController controller = seeded(tester);
-    await tester.pumpWidget(_wrap(panel(
-      controller,
-      // 前两句已收藏。
-      isFavorited: (AudioCue cue) => cue.text != 'Hello world',
-      onExport: (List<AudioCue> cues) async => exported = cues,
-    )));
+    await tester.pumpWidget(
+      _wrap(
+        panel(
+          controller,
+          // 前两句已收藏。
+          isFavorited: (AudioCue cue) => cue.text != 'Hello world',
+          onExport: (List<AudioCue> cues) async => exported = cues,
+        ),
+      ),
+    );
     await tester.pumpAndSettle();
 
     // 全部档不显示导出按钮（它导的是收藏档的内容）。
     expect(
-        find.byTooltip(t.video_subtitle_list_export_favorites), findsNothing);
+      find.byTooltip(t.video_subtitle_list_export_favorites),
+      findsNothing,
+    );
 
     // 切到收藏档。
     await tester.tap(find.text(t.video_subtitle_filter_favorites));
     await tester.pumpAndSettle();
     expect(
-        find.byTooltip(t.video_subtitle_list_export_favorites), findsOneWidget);
+      find.byTooltip(t.video_subtitle_list_export_favorites),
+      findsOneWidget,
+    );
 
     // 搜索缩小到一条，导出仍应给出全部收藏句 —— 搜索着导出只导搜索结果是个陷阱。
     await tester.tap(find.byTooltip(t.video_subtitle_list_search));
@@ -370,11 +418,10 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(exported, isNotNull);
-    expect(
-      exported!.map((AudioCue c) => c.text).toList(),
-      <String>['ナレーションのフキダシ', '登場人物の心理'],
-      reason: '导出口径是「收藏档实际渲染的那批」，与当前搜索词无关',
-    );
+    expect(exported!.map((AudioCue c) => c.text).toList(), <String>[
+      'ナレーションのフキダシ',
+      '登場人物の心理',
+    ], reason: '导出口径是「收藏档实际渲染的那批」，与当前搜索词无关');
   });
 
   testWidgets('没有收藏句时导出按钮禁用', (WidgetTester tester) async {
@@ -384,18 +431,26 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
 
     bool called = false;
-    await tester.pumpWidget(_wrap(panel(
-      seeded(tester),
-      isFavorited: (_) => false,
-      onExport: (_) async => called = true,
-    )));
+    await tester.pumpWidget(
+      _wrap(
+        panel(
+          seeded(tester),
+          isFavorited: (_) => false,
+          onExport: (_) async => called = true,
+        ),
+      ),
+    );
     await tester.pumpAndSettle();
     await tester.tap(find.text(t.video_subtitle_filter_favorites));
     await tester.pumpAndSettle();
 
     // IconButton 把 Tooltip 建在**自己内部**，所以 byTooltip 命中的是后代而非祖先；
     // 直接按图标定位按钮本体。
-    final IconButton button = tester.widget<IconButton>(glassUnwrap<IconButton>(find.widgetWithIcon(IconButton, FushiIcons.share)),);
+    final IconButton button = tester.widget<IconButton>(
+      glassUnwrap<IconButton>(
+        find.widgetWithIcon(IconButton, FushiIcons.share),
+      ),
+    );
     expect(button.onPressed, isNull);
     expect(called, isFalse);
   });

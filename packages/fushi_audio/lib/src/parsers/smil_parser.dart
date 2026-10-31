@@ -72,8 +72,9 @@ class SmilParser {
       }
 
       // textSrc 形如 'ch01.xhtml#s1'，取 # 后作为 fragment id
-      final String fragmentId =
-          textSrc.contains('#') ? '#${textSrc.split('#').last}' : textSrc;
+      final String fragmentId = textSrc.contains('#')
+          ? '#${textSrc.split('#').last}'
+          : textSrc;
 
       final int? startMs = _parseTimeToMs(clipBegin ?? '0');
       final int? endMs = _parseTimeToMs(clipEnd ?? '0');

@@ -65,10 +65,12 @@ VideoControlPopoverPlacement resolveVideoControlPopoverPlacement({
 }) {
   final double availableWidth = math.max(0, playerBounds.width);
   final double resolvedMinWidth = math.min(minWidth, availableWidth);
-  final double resolvedPreferredWidth =
-      preferredWidth.isFinite ? preferredWidth : availableWidth;
-  final double width =
-      resolvedPreferredWidth.clamp(resolvedMinWidth, availableWidth).toDouble();
+  final double resolvedPreferredWidth = preferredWidth.isFinite
+      ? preferredWidth
+      : availableWidth;
+  final double width = resolvedPreferredWidth
+      .clamp(resolvedMinWidth, availableWidth)
+      .toDouble();
 
   final VideoControlPopoverDirection direction =
       videoControlPopoverDirectionForSlot(sourceSlot);
@@ -77,8 +79,7 @@ VideoControlPopoverPlacement resolveVideoControlPopoverPlacement({
   double left = switch (sourceSlot) {
     VideoControlSlot.bottomLeft || VideoControlSlot.topLeft => targetRect.left,
     VideoControlSlot.bottomRight ||
-    VideoControlSlot.topRight =>
-      targetRect.right - width,
+    VideoControlSlot.topRight => targetRect.right - width,
     VideoControlSlot.screenLeft => targetRect.right + gap,
     VideoControlSlot.screenRight => targetRect.left - gap - width,
     _ => targetRect.center.dx - width / 2,
@@ -95,17 +96,12 @@ VideoControlPopoverPlacement resolveVideoControlPopoverPlacement({
   double top = switch (direction) {
     VideoControlPopoverDirection.up => targetRect.top - gap - resolvedHeight,
     VideoControlPopoverDirection.down => targetRect.bottom + gap,
-    VideoControlPopoverDirection.left ||
-    VideoControlPopoverDirection.right =>
+    VideoControlPopoverDirection.left || VideoControlPopoverDirection.right =>
       targetRect.center.dy - resolvedHeight / 2,
   };
   final double minTop = playerBounds.top;
   final double maxTop = playerBounds.bottom - resolvedHeight;
   top = maxTop < minTop ? minTop : top.clamp(minTop, maxTop).toDouble();
 
-  return VideoControlPopoverPlacement(
-    left: left,
-    top: top,
-    width: width,
-  );
+  return VideoControlPopoverPlacement(left: left, top: top, width: width);
 }

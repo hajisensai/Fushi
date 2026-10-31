@@ -59,8 +59,9 @@ void main() {
 
       // 用户真正失败的那个 URL：token 交换。它必须经代理出去。
       expect(
-        client.findProxy
-            ?.call(Uri.parse('https://oauth2.googleapis.com/token')),
+        client.findProxy?.call(
+          Uri.parse('https://oauth2.googleapis.com/token'),
+        ),
         equals('PROXY 127.0.0.1:7890'),
       );
     });
@@ -84,8 +85,9 @@ void main() {
 
       await applyAppProxy(client);
 
-      final String? resolved = client.findProxy
-          ?.call(Uri.parse('https://oauth2.googleapis.com/token'));
+      final String? resolved = client.findProxy?.call(
+        Uri.parse('https://oauth2.googleapis.com/token'),
+      );
       expect(resolved, isNot(equals('PROXY not a proxy')));
     });
   });
@@ -121,8 +123,9 @@ void main() {
     });
 
     test('真正的凭据失效仍然说「登录已过期」—— 没有误伤原有分类', () {
-      final SyncAuthError error =
-          SyncAuthError('Invalid Credentials (401 Unauthorized)');
+      final SyncAuthError error = SyncAuthError(
+        'Invalid Credentials (401 Unauthorized)',
+      );
       expect(friendlySyncError(error), equals(t.sync_err_auth_expired));
     });
   });
@@ -138,11 +141,17 @@ void main() {
       final String source = read('lib/src/sync/google_drive_auth.dart');
 
       // 裸 http.Client() 就是 BUG-1348 的字面根因：它不带代理也不带连接超时。
-      expect(source.contains('http.Client()'), isFalse,
-          reason: '裸 http.Client() 不走代理 —— 必须用 createSyncHttpClient()');
+      expect(
+        source.contains('http.Client()'),
+        isFalse,
+        reason: '裸 http.Client() 不走代理 —— 必须用 createSyncHttpClient()',
+      );
       // 登录 / 启动恢复 / 刷新，三条路径都要走代理出口，漏一条就是「登录成功但重启掉线」。
-      expect('createSyncHttpClient()'.allMatches(source).length, equals(3),
-          reason: 'authenticate / restoreDesktopAuth / refreshAuth 各一处');
+      expect(
+        'createSyncHttpClient()'.allMatches(source).length,
+        equals(3),
+        reason: 'authenticate / restoreDesktopAuth / refreshAuth 各一处',
+      );
     });
 
     test('sync_http 的两个工厂都装代理 + 连接超时', () {
@@ -155,8 +164,11 @@ void main() {
 
     test('loopback 超时抛类型，不靠调用方猜字符串', () {
       final String source = read('lib/src/sync/desktop_oauth.dart');
-      expect(source, contains('kind: SyncAuthFailureKind.browserTimeout'),
-          reason: '错误分类必须有类型可依 —— 消息里的 "authorization" 会被误判');
+      expect(
+        source,
+        contains('kind: SyncAuthFailureKind.browserTimeout'),
+        reason: '错误分类必须有类型可依 —— 消息里的 "authorization" 会被误判',
+      );
     });
 
     test('错误文案层按 kind 分派，不再让字符串猜测抢先', () {
@@ -164,23 +176,35 @@ void main() {
       // 直接 indexOf 会命中注释而不是代码，守卫就变成了在给自己的文档排序。用共享的
       // maskComments（等长掩码）而不是删除式剥离——删行会让后面 indexOf 出来的下标
       // 与原文错位，比出来的先后顺序就不再是源码里的先后顺序。
-      final String source =
-          maskComments(read('lib/src/sync/sync_error_messages.dart'));
-      final int typedIdx =
-          source.indexOf('error.kind != SyncAuthFailureKind.credentials');
+      final String source = maskComments(
+        read('lib/src/sync/sync_error_messages.dart'),
+      );
+      final int typedIdx = source.indexOf(
+        'error.kind != SyncAuthFailureKind.credentials',
+      );
       final int guessIdx = source.indexOf("l.contains('auth')");
       expect(typedIdx, greaterThanOrEqualTo(0), reason: '有类型的鉴权失败必须先一次分派掉');
-      expect(guessIdx, greaterThanOrEqualTo(0),
-          reason: '字符串兜底分支还在（它服务于无类型的历史抛出点）');
-      expect(typedIdx, lessThan(guessIdx),
-          reason: '类型分派必须排在字符串猜测之前，否则 browserTimeout 又被说成登录过期');
+      expect(
+        guessIdx,
+        greaterThanOrEqualTo(0),
+        reason: '字符串兜底分支还在（它服务于无类型的历史抛出点）',
+      );
+      expect(
+        typedIdx,
+        lessThan(guessIdx),
+        reason: '类型分派必须排在字符串猜测之前，否则 browserTimeout 又被说成登录过期',
+      );
     });
 
     test('Google 的 loopback redirect 用回环 IP，不用 localhost', () {
       final String source = read('lib/src/sync/google_drive_auth.dart');
-      expect(source, contains("host: '127.0.0.1'"),
-          reason: 'localhost 要先过 DNS（Windows 上先解析 ::1）和代理 bypass 列表，'
-              '两处任一不配合，授权码就永远回不来');
+      expect(
+        source,
+        contains("host: '127.0.0.1'"),
+        reason:
+            'localhost 要先过 DNS（Windows 上先解析 ::1）和代理 bypass 列表，'
+            '两处任一不配合，授权码就永远回不来',
+      );
     });
   });
 
@@ -191,27 +215,28 @@ void main() {
     test('每个 SyncAuthFailureKind 都要显式登记登出决定', () {
       const Map<SyncAuthFailureKind, bool> signOutByKind =
           <SyncAuthFailureKind, bool>{
-        // 凭据真的不可用了：不登出，账号行就退不回「未登录」（TODO-836）。
-        SyncAuthFailureKind.credentials: true,
-        // 403：凭据已被接受，只是这一次请求被策略拒了（BUG-1323）。
-        SyncAuthFailureKind.forbidden: false,
-        // 浏览器回调没回到 app：跟凭据无关，登出只会连坐一个可能仍有效的会话。
-        SyncAuthFailureKind.browserTimeout: false,
-        // 用户自己在等待对话框里取消（BUG-2120）：连错误都不算，更不该动会话。
-        SyncAuthFailureKind.cancelled: false,
-        // 互联对端拒了本机的配对 token（BUG-2377）：互联的 signOut 会清空整份配对
-        // 配置（全部对端地址 + TOFU 指纹 + per-peer token），一台对端的 401 不得
-        // 株连其余对端 —— 这正是 BUG-1550 / BUG-1578 要消灭的行为。
-        SyncAuthFailureKind.pairingRejected: false,
-        // 压根没配对过（BUG-2377）：没有凭据可丢，登出无事可做。
-        SyncAuthFailureKind.pairingNotConfigured: false,
-        // 服务端回的是网页（BUG-2631）：凭据没被评估过，要改的是地址不是会话。
-        SyncAuthFailureKind.htmlPage: false,
-      };
+            // 凭据真的不可用了：不登出，账号行就退不回「未登录」（TODO-836）。
+            SyncAuthFailureKind.credentials: true,
+            // 403：凭据已被接受，只是这一次请求被策略拒了（BUG-1323）。
+            SyncAuthFailureKind.forbidden: false,
+            // 浏览器回调没回到 app：跟凭据无关，登出只会连坐一个可能仍有效的会话。
+            SyncAuthFailureKind.browserTimeout: false,
+            // 用户自己在等待对话框里取消（BUG-2120）：连错误都不算，更不该动会话。
+            SyncAuthFailureKind.cancelled: false,
+            // 互联对端拒了本机的配对 token（BUG-2377）：互联的 signOut 会清空整份配对
+            // 配置（全部对端地址 + TOFU 指纹 + per-peer token），一台对端的 401 不得
+            // 株连其余对端 —— 这正是 BUG-1550 / BUG-1578 要消灭的行为。
+            SyncAuthFailureKind.pairingRejected: false,
+            // 压根没配对过（BUG-2377）：没有凭据可丢，登出无事可做。
+            SyncAuthFailureKind.pairingNotConfigured: false,
+            // 服务端回的是网页（BUG-2631）：凭据没被评估过，要改的是地址不是会话。
+            SyncAuthFailureKind.htmlPage: false,
+          };
       expect(
         signOutByKind.keys.toSet(),
         equals(SyncAuthFailureKind.values.toSet()),
-        reason: '新增 SyncAuthFailureKind 必须在这里显式写出它该不该登出 —— '
+        reason:
+            '新增 SyncAuthFailureKind 必须在这里显式写出它该不该登出 —— '
             '默认归到某一边正是本条守卫要拦的事',
       );
       signOutByKind.forEach((SyncAuthFailureKind kind, bool expected) {
@@ -228,28 +253,38 @@ void main() {
       // 裸扫会命中注释，守卫就退化成在检查自己的文档。
       final RegExp negatedProjection = RegExp(r'!\s*[\w.]*\.isForbidden');
       final List<String> offenders = <String>[];
-      for (final FileSystemEntity entity
-          in Directory('lib/src/sync').listSync(recursive: true)) {
+      for (final FileSystemEntity entity in Directory(
+        'lib/src/sync',
+      ).listSync(recursive: true)) {
         if (entity is! File || !entity.path.endsWith('.dart')) continue;
-        if (negatedProjection
-            .hasMatch(maskComments(entity.readAsStringSync()))) {
+        if (negatedProjection.hasMatch(
+          maskComments(entity.readAsStringSync()),
+        )) {
           offenders.add(entity.path);
         }
       }
-      expect(offenders, isEmpty,
-          reason: '取反的 bool 投影把枚举压成两态，第三个值只会被默默归边；'
-              '按值 switch，让编译器替你抓漏');
+      expect(
+        offenders,
+        isEmpty,
+        reason:
+            '取反的 bool 投影把枚举压成两态，第三个值只会被默默归边；'
+            '按值 switch，让编译器替你抓漏',
+      );
     });
 
     test('登出判据按值分派，三个 kind 一个不落地出现在源码里', () {
-      final String source =
-          maskComments(_read('lib/src/sync/manual_sync_ui.dart'));
+      final String source = maskComments(
+        _read('lib/src/sync/manual_sync_ui.dart'),
+      );
       final int decisionIdx = source.indexOf('bool shouldSignOutOnAuthError(');
       expect(decisionIdx, greaterThanOrEqualTo(0));
       final String decision = source.substring(decisionIdx);
       for (final SyncAuthFailureKind kind in SyncAuthFailureKind.values) {
-        expect(decision, contains('SyncAuthFailureKind.${kind.name}'),
-            reason: '${kind.name} 没有出现在登出判据里 —— 它被某个默认分支吞了');
+        expect(
+          decision,
+          contains('SyncAuthFailureKind.${kind.name}'),
+          reason: '${kind.name} 没有出现在登出判据里 —— 它被某个默认分支吞了',
+        );
       }
     });
   });
@@ -279,22 +314,31 @@ void main() {
       // 的窗口里第二个调用仍看到 null，于是各建一个，先落地的那个从此无人能 close。
       final Future<http.Client> first = obtainSyncHttpClient();
       final Future<http.Client> second = obtainSyncHttpClient();
-      expect(identical(await first, await second), isTrue,
-          reason: '并发首调必须共享同一次构造，否则被覆盖的那个 client 永久泄漏');
+      expect(
+        identical(await first, await second),
+        isTrue,
+        reason: '并发首调必须共享同一次构造，否则被覆盖的那个 client 永久泄漏',
+      );
     });
 
     test('reset 之后重建，且新旧不是同一个', () async {
       final http.Client before = await obtainSyncHttpClient();
       resetSyncHttpClient();
       final http.Client after = await obtainSyncHttpClient();
-      expect(identical(before, after), isFalse,
-          reason: '改完代理还复用旧出口，等于这个修复对用户不生效');
+      expect(
+        identical(before, after),
+        isFalse,
+        reason: '改完代理还复用旧出口，等于这个修复对用户不生效',
+      );
     });
 
     test('缓存的是 in-flight future，不是成品 client', () {
       final String source = maskComments(_read('lib/src/sync/sync_http.dart'));
-      expect(source, contains('Future<http.Client>? _sharedClient'),
-          reason: '缓存成品就一定有「await 期间的第二次首调」这个窗口');
+      expect(
+        source,
+        contains('Future<http.Client>? _sharedClient'),
+        reason: '缓存成品就一定有「await 期间的第二次首调」这个窗口',
+      );
     });
   });
 }
@@ -313,7 +357,7 @@ class _CapturingHttpClient implements HttpClient {
 
   @override
   Future<bool> Function(String host, int port, String scheme, String? realm)?
-      authenticateProxy;
+  authenticateProxy;
 
   @override
   void addProxyCredentials(

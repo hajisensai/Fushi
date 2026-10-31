@@ -6,8 +6,9 @@ import 'package:flutter_test/flutter_test.dart';
 /// 授权因此每次更新都失效——全局查词要重新授权。发布工作流必须在所有 bundle 改动
 /// 之后、只在非 Developer ID 路径上给外层 app 钉按 bundle id 判定的指定要求。
 void main() {
-  final String workflow =
-      File('../.github/workflows/release-desktop.yml').readAsStringSync();
+  final String workflow = File(
+    '../.github/workflows/release-desktop.yml',
+  ).readAsStringSync();
   const String stepName =
       '- name: Pin stable designated requirement for ad-hoc macOS app';
 
@@ -26,7 +27,8 @@ void main() {
     expect(
       step,
       isNot(contains('--deep --sign')),
-      reason: '带 --deep 会把同一条 identifier 要求盖到内层 Mach-O 上，'
+      reason:
+          '带 --deep 会把同一条 identifier 要求盖到内层 Mach-O 上，'
           '内层不满足、--verify --strict 失败。',
     );
   });

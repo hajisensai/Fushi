@@ -11,20 +11,21 @@ class _FakeLibraryService
     implements FushiLibraryHostService, AudiobookDelayHost {
   // BUG-1004：host 端裁 mining 句子音频（本测试不涉及，返 null 即可）。
   @override
-  Future<File?> clipVideoAudio(String id,
-          {required int startMs,
-          required int endMs,
-          int episodeIndex = 0,
-          int? audioStreamIndex,
-          int? audioStreamCount,
-          int audioChannels = 1,
-          String audioBitrate = '64k'}) async =>
-      null;
+  Future<File?> clipVideoAudio(
+    String id, {
+    required int startMs,
+    required int endMs,
+    int episodeIndex = 0,
+    int? audioStreamIndex,
+    int? audioStreamCount,
+    int audioChannels = 1,
+    String audioBitrate = '64k',
+  }) async => null;
 
   @override
-  Future<List<RemoteActivityEvent>> listActivityEvents(
-          {int limit = 100}) async =>
-      const <RemoteActivityEvent>[];
+  Future<List<RemoteActivityEvent>> listActivityEvents({
+    int limit = 100,
+  }) async => const <RemoteActivityEvent>[];
 
   @override
   Future<String?> videoCoverPath(String id) async {
@@ -55,8 +56,8 @@ class _FakeLibraryService
 
   @override
   Future<CollectionManifest> mergeCollectionManifest(
-          CollectionManifest incoming) async =>
-      incoming;
+    CollectionManifest incoming,
+  ) async => incoming;
 
   // ── dict stubs ──────────────────────────────────────────────────────────────
   @override
@@ -82,8 +83,11 @@ class _FakeLibraryService
       throw UnimplementedError('not used in audio test');
 
   @override
-  Future<void> importBook(File epubFile,
-      {String? displayTitle, int displayTitleAt = 0}) async {}
+  Future<void> importBook(
+    File epubFile, {
+    String? displayTitle,
+    int displayTitleAt = 0,
+  }) async {}
 
   @override
   Future<void> deleteBook(String title) async {}
@@ -102,8 +106,10 @@ class _FakeLibraryService
   ) async {
     final RemoteBookProgress current =
         bookProgress[bookKey] ?? RemoteBookProgress.empty;
-    bookProgress[bookKey] =
-        resolveBookProgressSync(local: current, remote: progress);
+    bookProgress[bookKey] = resolveBookProgressSync(
+      local: current,
+      remote: progress,
+    );
   }
 
   // ── 本地音频（真实记录）────────────────────────────────────────────────────────
@@ -121,8 +127,9 @@ class _FakeLibraryService
 
   @override
   Future<File> exportLocalAudio(String displayName) async {
-    if (!localAudioEntries
-        .any((RemoteLocalAudioInfo a) => a.displayName == displayName)) {
+    if (!localAudioEntries.any(
+      (RemoteLocalAudioInfo a) => a.displayName == displayName,
+    )) {
       throw StateError('local audio not found: $displayName');
     }
     final Directory tmp = Directory.systemTemp.createTempSync('hbk_la_exp');
@@ -160,8 +167,9 @@ class _FakeLibraryService
   @override
   Future<File> exportAudiobook(String bookKey) async {
     exportAudiobookCalls++;
-    if (!audiobookEntries
-        .any((RemoteAudiobookInfo ab) => ab.bookKey == bookKey)) {
+    if (!audiobookEntries.any(
+      (RemoteAudiobookInfo ab) => ab.bookKey == bookKey,
+    )) {
       throw StateError('audiobook not found: $bookKey');
     }
     final Directory tmp = Directory.systemTemp.createTempSync('hbk_ab_exp');
@@ -173,13 +181,16 @@ class _FakeLibraryService
   @override
   Future<bool> audiobookExists(String bookKey) async {
     audiobookExistsCalls++;
-    return audiobookEntries
-        .any((RemoteAudiobookInfo ab) => ab.bookKey == bookKey);
+    return audiobookEntries.any(
+      (RemoteAudiobookInfo ab) => ab.bookKey == bookKey,
+    );
   }
 
   @override
-  Future<void> importAudiobook(File packageFile,
-      {String? bookKeyOverride}) async {
+  Future<void> importAudiobook(
+    File packageFile, {
+    String? bookKeyOverride,
+  }) async {
     importedAudiobooks.add((await packageFile.readAsString(), bookKeyOverride));
   }
 
@@ -194,8 +205,7 @@ class _FakeLibraryService
   @override
   Future<({int positionMs, int updatedAtMs})> getAudiobookPosition(
     String bookKey,
-  ) async =>
-      audiobookPositions[bookKey] ?? (positionMs: 0, updatedAtMs: 0);
+  ) async => audiobookPositions[bookKey] ?? (positionMs: 0, updatedAtMs: 0);
 
   @override
   Future<void> putAudiobookPosition(
@@ -215,12 +225,15 @@ class _FakeLibraryService
 
   @override
   Future<({int delayMs, int updatedAtMs})> getAudiobookDelay(
-          String identity) async =>
-      audiobookDelays[identity] ?? (delayMs: 0, updatedAtMs: 0);
+    String identity,
+  ) async => audiobookDelays[identity] ?? (delayMs: 0, updatedAtMs: 0);
 
   @override
   Future<void> putAudiobookDelay(
-      String identity, int delayMs, int updatedAtMs) async {
+    String identity,
+    int delayMs,
+    int updatedAtMs,
+  ) async {
     final ({int delayMs, int updatedAtMs}) current =
         audiobookDelays[identity] ?? (delayMs: 0, updatedAtMs: 0);
     audiobookDelays[identity] = resolveDelayLww(
@@ -239,30 +252,36 @@ class _FakeLibraryService
   Future<bool> videoExists(String id, {int episodeIndex = 0}) async => false;
 
   @override
-  Future<void> importVideoSubtitle(File subtitleFile,
-      {required String id, required String suffix}) async {}
+  Future<void> importVideoSubtitle(
+    File subtitleFile, {
+    required String id,
+    required String suffix,
+  }) async {}
 
   @override
-  Future<void> importVideo(File videoFile,
-      {required String id,
-      required String title,
-      String? originalFileName}) async {}
+  Future<void> importVideo(
+    File videoFile, {
+    required String id,
+    required String title,
+    String? originalFileName,
+  }) async {}
 
   @override
   Future<File?> resolveVideoFile(String id, {int episodeIndex = 0}) async =>
       null;
 
   @override
-  Future<File?> resolveVideoSubtitle(String id,
-          {String langCode = 'ja', int episodeIndex = 0}) async =>
-      null;
+  Future<File?> resolveVideoSubtitle(
+    String id, {
+    String langCode = 'ja',
+    int episodeIndex = 0,
+  }) async => null;
 
   @override
   Future<({int positionMs, int updatedAtMs})> getVideoPosition(
     String id, {
     int episodeIndex = 0,
-  }) async =>
-      (positionMs: 0, updatedAtMs: 0);
+  }) async => (positionMs: 0, updatedAtMs: 0);
 
   @override
   Future<void> putVideoPosition(
@@ -299,23 +318,29 @@ void main() {
   // capabilities
   // ════════════════════════════════════════════════════════════════════════════
 
-  test('GET /api/capabilities reports audio == true when service injected',
-      () async {
-    final HttpClient c = HttpClient();
-    final HttpClientRequest req =
-        await c.getUrl(Uri.parse('$base/api/capabilities'));
-    req.headers.set('authorization', authHeader());
-    final HttpClientResponse res = await req.close();
-    expect(res.statusCode, 200);
-    final Map<String, dynamic> json =
-        jsonDecode(await res.transform(utf8.decoder).join())
-            as Map<String, dynamic>;
-    final Map<dynamic, dynamic> live =
-        json['liveLibrary'] as Map<dynamic, dynamic>;
-    expect(live['audio'], true,
-        reason: 'audio capability must be true when library service is set');
-    c.close();
-  });
+  test(
+    'GET /api/capabilities reports audio == true when service injected',
+    () async {
+      final HttpClient c = HttpClient();
+      final HttpClientRequest req = await c.getUrl(
+        Uri.parse('$base/api/capabilities'),
+      );
+      req.headers.set('authorization', authHeader());
+      final HttpClientResponse res = await req.close();
+      expect(res.statusCode, 200);
+      final Map<String, dynamic> json =
+          jsonDecode(await res.transform(utf8.decoder).join())
+              as Map<String, dynamic>;
+      final Map<dynamic, dynamic> live =
+          json['liveLibrary'] as Map<dynamic, dynamic>;
+      expect(
+        live['audio'],
+        true,
+        reason: 'audio capability must be true when library service is set',
+      );
+      c.close();
+    },
+  );
 
   // ════════════════════════════════════════════════════════════════════════════
   // /api/library/localaudio
@@ -326,8 +351,9 @@ void main() {
 
     test('GET /api/library/localaudio lists entries', () async {
       final HttpClient c = HttpClient();
-      final HttpClientRequest req =
-          await c.getUrl(Uri.parse('$base/api/library/localaudio'));
+      final HttpClientRequest req = await c.getUrl(
+        Uri.parse('$base/api/library/localaudio'),
+      );
       req.headers.set('authorization', authHeader());
       final HttpClientResponse res = await req.close();
       expect(res.statusCode, 200);
@@ -343,8 +369,9 @@ void main() {
 
     test('GET /api/library/localaudio/<name> streams bytes', () async {
       final HttpClient c = HttpClient();
-      final HttpClientRequest req =
-          await c.getUrl(Uri.parse('$base/api/library/localaudio/NHK'));
+      final HttpClientRequest req = await c.getUrl(
+        Uri.parse('$base/api/library/localaudio/NHK'),
+      );
       req.headers.set('authorization', authHeader());
       final HttpClientResponse res = await req.close();
       expect(res.statusCode, 200);
@@ -356,8 +383,9 @@ void main() {
 
     test('GET /api/library/localaudio/<missing> returns 404', () async {
       final HttpClient c = HttpClient();
-      final HttpClientRequest req =
-          await c.getUrl(Uri.parse('$base/api/library/localaudio/NoSuchEntry'));
+      final HttpClientRequest req = await c.getUrl(
+        Uri.parse('$base/api/library/localaudio/NoSuchEntry'),
+      );
       req.headers.set('authorization', authHeader());
       final HttpClientResponse res = await req.close();
       expect(res.statusCode, 404);
@@ -369,8 +397,9 @@ void main() {
 
     test('PUT /api/library/localaudio/<name> imports body', () async {
       final HttpClient c = HttpClient();
-      final HttpClientRequest req =
-          await c.putUrl(Uri.parse('$base/api/library/localaudio/NewAudio'));
+      final HttpClientRequest req = await c.putUrl(
+        Uri.parse('$base/api/library/localaudio/NewAudio'),
+      );
       req.headers.set('authorization', authHeader());
       req.add(utf8.encode('LOCALAUDIO:NewAudio'));
       final HttpClientResponse res = await req.close();
@@ -381,24 +410,28 @@ void main() {
 
     // ── DELETE ────────────────────────────────────────────────────────────────
 
-    test('DELETE /api/library/localaudio/<name> returns 204 and records call',
-        () async {
-      final HttpClient c = HttpClient();
-      final HttpClientRequest req =
-          await c.deleteUrl(Uri.parse('$base/api/library/localaudio/NHK'));
-      req.headers.set('authorization', authHeader());
-      final HttpClientResponse res = await req.close();
-      expect(res.statusCode, anyOf(200, 204));
-      expect(lib.deletedLocalAudio, contains('NHK'));
-      c.close();
-    });
+    test(
+      'DELETE /api/library/localaudio/<name> returns 204 and records call',
+      () async {
+        final HttpClient c = HttpClient();
+        final HttpClientRequest req = await c.deleteUrl(
+          Uri.parse('$base/api/library/localaudio/NHK'),
+        );
+        req.headers.set('authorization', authHeader());
+        final HttpClientResponse res = await req.close();
+        expect(res.statusCode, anyOf(200, 204));
+        expect(lib.deletedLocalAudio, contains('NHK'));
+        c.close();
+      },
+    );
 
     // ── 401 unauthenticated ───────────────────────────────────────────────────
 
     test('unauthenticated request returns 401', () async {
       final HttpClient c = HttpClient();
-      final HttpClientRequest req =
-          await c.getUrl(Uri.parse('$base/api/library/localaudio'));
+      final HttpClientRequest req = await c.getUrl(
+        Uri.parse('$base/api/library/localaudio'),
+      );
       // 不设 Authorization 头
       final HttpClientResponse res = await req.close();
       expect(res.statusCode, 401);
@@ -413,21 +446,29 @@ void main() {
 
       // 不含 `..`、不含 `/`，只触发闸门的反斜杠一支。
       final HttpClientRequest getReq = await c.getUrl(
-          Uri.parse('$base/api/library/localaudio/C%3A%5CWindows%5Cwin.ini'));
+        Uri.parse('$base/api/library/localaudio/C%3A%5CWindows%5Cwin.ini'),
+      );
       getReq.headers.set('authorization', authHeader());
       final HttpClientResponse getRes = await getReq.close();
-      expect(getRes.statusCode, 403,
-          reason: r'GET with "C:\Windows\win.ini" must be 403 Forbidden');
+      expect(
+        getRes.statusCode,
+        403,
+        reason: r'GET with "C:\Windows\win.ini" must be 403 Forbidden',
+      );
       await getRes.drain<void>();
 
       final HttpClientRequest delReq = await c.deleteUrl(
-          Uri.parse('$base/api/library/localaudio/C%3A%5CWindows%5Cwin.ini'));
+        Uri.parse('$base/api/library/localaudio/C%3A%5CWindows%5Cwin.ini'),
+      );
       delReq.headers.set('authorization', authHeader());
       final HttpClientResponse delRes = await delReq.close();
       expect(delRes.statusCode, 403);
       await delRes.drain<void>();
-      expect(lib.deletedLocalAudio, isEmpty,
-          reason: 'no deletion must occur for a backslash name');
+      expect(
+        lib.deletedLocalAudio,
+        isEmpty,
+        reason: 'no deletion must occur for a backslash name',
+      );
 
       c.close();
     });
@@ -435,22 +476,33 @@ void main() {
     test('path-traversal displayName is rejected with 403', () async {
       final HttpClient c = HttpClient();
 
-      final HttpClientRequest delReq = await c
-          .deleteUrl(Uri.parse('$base/api/library/localaudio/%2e%2e%2fevil'));
+      final HttpClientRequest delReq = await c.deleteUrl(
+        Uri.parse('$base/api/library/localaudio/%2e%2e%2fevil'),
+      );
       delReq.headers.set('authorization', authHeader());
       final HttpClientResponse delRes = await delReq.close();
-      expect(delRes.statusCode, 403,
-          reason: 'DELETE with "../evil" must be 403 Forbidden');
+      expect(
+        delRes.statusCode,
+        403,
+        reason: 'DELETE with "../evil" must be 403 Forbidden',
+      );
       await delRes.drain<void>();
-      expect(lib.deletedLocalAudio, isEmpty,
-          reason: 'no deletion must occur for a traversal name');
+      expect(
+        lib.deletedLocalAudio,
+        isEmpty,
+        reason: 'no deletion must occur for a traversal name',
+      );
 
-      final HttpClientRequest getReq = await c
-          .getUrl(Uri.parse('$base/api/library/localaudio/%2e%2e%2fevil'));
+      final HttpClientRequest getReq = await c.getUrl(
+        Uri.parse('$base/api/library/localaudio/%2e%2e%2fevil'),
+      );
       getReq.headers.set('authorization', authHeader());
       final HttpClientResponse getRes = await getReq.close();
-      expect(getRes.statusCode, 403,
-          reason: 'GET with "../evil" must be 403 Forbidden');
+      expect(
+        getRes.statusCode,
+        403,
+        reason: 'GET with "../evil" must be 403 Forbidden',
+      );
       await getRes.drain<void>();
 
       c.close();
@@ -469,10 +521,13 @@ void main() {
       await bare.start();
       final String bareBase = 'http://127.0.0.1:${bare.port}';
       final HttpClient c = HttpClient();
-      final HttpClientRequest req =
-          await c.getUrl(Uri.parse('$bareBase/api/library/localaudio'));
-      req.headers.set('authorization',
-          'Basic ${base64Encode(utf8.encode('hibiki:$token'))}');
+      final HttpClientRequest req = await c.getUrl(
+        Uri.parse('$bareBase/api/library/localaudio'),
+      );
+      req.headers.set(
+        'authorization',
+        'Basic ${base64Encode(utf8.encode('hibiki:$token'))}',
+      );
       final HttpClientResponse res = await req.close();
       expect(res.statusCode, 404);
       await res.drain<void>();
@@ -483,33 +538,43 @@ void main() {
     // ── CJK displayName ───────────────────────────────────────────────────────
 
     test('GET /api/library/localaudio/<CJK> 正确解码中文名', () async {
-      lib.localAudioEntries
-          .add(const RemoteLocalAudioInfo(displayName: '日本語音声'));
+      lib.localAudioEntries.add(
+        const RemoteLocalAudioInfo(displayName: '日本語音声'),
+      );
       final HttpClient c = HttpClient();
       final String encoded = Uri.encodeComponent('日本語音声');
-      final HttpClientRequest req =
-          await c.getUrl(Uri.parse('$base/api/library/localaudio/$encoded'));
+      final HttpClientRequest req = await c.getUrl(
+        Uri.parse('$base/api/library/localaudio/$encoded'),
+      );
       req.headers.set('authorization', authHeader());
       final HttpClientResponse res = await req.close();
       expect(res.statusCode, 200, reason: 'GET 日本語音声 应返回 200，双重解码会致 500');
       final String body = await res.transform(utf8.decoder).join();
-      expect(body, 'LOCALAUDIO:日本語音声',
-          reason: 'server 应以正确 CJK 名调用 exportLocalAudio');
+      expect(
+        body,
+        'LOCALAUDIO:日本語音声',
+        reason: 'server 应以正确 CJK 名调用 exportLocalAudio',
+      );
       c.close();
     });
 
     test('DELETE /api/library/localaudio/<CJK> 以中文名删除', () async {
-      lib.localAudioEntries
-          .add(const RemoteLocalAudioInfo(displayName: '日本語音声'));
+      lib.localAudioEntries.add(
+        const RemoteLocalAudioInfo(displayName: '日本語音声'),
+      );
       final HttpClient c = HttpClient();
       final String encoded = Uri.encodeComponent('日本語音声');
-      final HttpClientRequest req =
-          await c.deleteUrl(Uri.parse('$base/api/library/localaudio/$encoded'));
+      final HttpClientRequest req = await c.deleteUrl(
+        Uri.parse('$base/api/library/localaudio/$encoded'),
+      );
       req.headers.set('authorization', authHeader());
       final HttpClientResponse res = await req.close();
       expect(res.statusCode, anyOf(200, 204));
-      expect(lib.deletedLocalAudio, contains('日本語音声'),
-          reason: 'deleteLocalAudio 应以解码后中文名被调用');
+      expect(
+        lib.deletedLocalAudio,
+        contains('日本語音声'),
+        reason: 'deleteLocalAudio 应以解码后中文名被调用',
+      );
       c.close();
     });
   });
@@ -523,8 +588,9 @@ void main() {
 
     test('GET /api/library/audiobooks lists entries', () async {
       final HttpClient c = HttpClient();
-      final HttpClientRequest req =
-          await c.getUrl(Uri.parse('$base/api/library/audiobooks'));
+      final HttpClientRequest req = await c.getUrl(
+        Uri.parse('$base/api/library/audiobooks'),
+      );
       req.headers.set('authorization', authHeader());
       final HttpClientResponse res = await req.close();
       expect(res.statusCode, 200);
@@ -541,8 +607,9 @@ void main() {
 
     test('GET /api/library/audiobooks/<key> streams bytes', () async {
       final HttpClient c = HttpClient();
-      final HttpClientRequest req =
-          await c.getUrl(Uri.parse('$base/api/library/audiobooks/sample_book'));
+      final HttpClientRequest req = await c.getUrl(
+        Uri.parse('$base/api/library/audiobooks/sample_book'),
+      );
       req.headers.set('authorization', authHeader());
       final HttpClientResponse res = await req.close();
       expect(res.statusCode, 200);
@@ -554,8 +621,9 @@ void main() {
 
     test('GET /api/library/audiobooks/<missing> returns 404', () async {
       final HttpClient c = HttpClient();
-      final HttpClientRequest req = await c
-          .getUrl(Uri.parse('$base/api/library/audiobooks/no_such_book'));
+      final HttpClientRequest req = await c.getUrl(
+        Uri.parse('$base/api/library/audiobooks/no_such_book'),
+      );
       req.headers.set('authorization', authHeader());
       final HttpClientResponse res = await req.close();
       expect(res.statusCode, 404);
@@ -566,44 +634,50 @@ void main() {
     // ── PUT（含 bookKeyOverride 断言）────────────────────────────────────────
 
     test(
-        'PUT /api/library/audiobooks/<key> imports body and passes bookKeyOverride',
-        () async {
-      final HttpClient c = HttpClient();
-      final HttpClientRequest req =
-          await c.putUrl(Uri.parse('$base/api/library/audiobooks/new_book'));
-      req.headers.set('authorization', authHeader());
-      req.add(utf8.encode('AUDIOBOOK:new_book'));
-      final HttpClientResponse res = await req.close();
-      expect(res.statusCode, anyOf(200, 201, 204));
-      // 断言 fake 收到了正确内容 AND bookKeyOverride == 'new_book'
-      expect(
-        lib.importedAudiobooks,
-        contains(('AUDIOBOOK:new_book', 'new_book')),
-        reason: 'importAudiobook 应收到 bookKeyOverride == "new_book"',
-      );
-      c.close();
-    });
+      'PUT /api/library/audiobooks/<key> imports body and passes bookKeyOverride',
+      () async {
+        final HttpClient c = HttpClient();
+        final HttpClientRequest req = await c.putUrl(
+          Uri.parse('$base/api/library/audiobooks/new_book'),
+        );
+        req.headers.set('authorization', authHeader());
+        req.add(utf8.encode('AUDIOBOOK:new_book'));
+        final HttpClientResponse res = await req.close();
+        expect(res.statusCode, anyOf(200, 201, 204));
+        // 断言 fake 收到了正确内容 AND bookKeyOverride == 'new_book'
+        expect(
+          lib.importedAudiobooks,
+          contains(('AUDIOBOOK:new_book', 'new_book')),
+          reason: 'importAudiobook 应收到 bookKeyOverride == "new_book"',
+        );
+        c.close();
+      },
+    );
 
     // ── DELETE ────────────────────────────────────────────────────────────────
 
-    test('DELETE /api/library/audiobooks/<key> returns 204 and records call',
-        () async {
-      final HttpClient c = HttpClient();
-      final HttpClientRequest req = await c
-          .deleteUrl(Uri.parse('$base/api/library/audiobooks/sample_book'));
-      req.headers.set('authorization', authHeader());
-      final HttpClientResponse res = await req.close();
-      expect(res.statusCode, anyOf(200, 204));
-      expect(lib.deletedAudiobooks, contains('sample_book'));
-      c.close();
-    });
+    test(
+      'DELETE /api/library/audiobooks/<key> returns 204 and records call',
+      () async {
+        final HttpClient c = HttpClient();
+        final HttpClientRequest req = await c.deleteUrl(
+          Uri.parse('$base/api/library/audiobooks/sample_book'),
+        );
+        req.headers.set('authorization', authHeader());
+        final HttpClientResponse res = await req.close();
+        expect(res.statusCode, anyOf(200, 204));
+        expect(lib.deletedAudiobooks, contains('sample_book'));
+        c.close();
+      },
+    );
 
     // ── 401 unauthenticated ───────────────────────────────────────────────────
 
     test('unauthenticated request returns 401', () async {
       final HttpClient c = HttpClient();
-      final HttpClientRequest req =
-          await c.getUrl(Uri.parse('$base/api/library/audiobooks'));
+      final HttpClientRequest req = await c.getUrl(
+        Uri.parse('$base/api/library/audiobooks'),
+      );
       // 不设 Authorization 头
       final HttpClientResponse res = await req.close();
       expect(res.statusCode, 401);
@@ -624,24 +698,37 @@ void main() {
         '..%5Cevil', // ..\evil
         'C%3A%5CWindows%5Cwin.ini', // C:\Windows\win.ini（无 .. 无 /）
       ]) {
-        final HttpClientRequest getReq = await c
-            .getUrl(Uri.parse('$base/api/library/audiobooks/$evil/position'));
+        final HttpClientRequest getReq = await c.getUrl(
+          Uri.parse('$base/api/library/audiobooks/$evil/position'),
+        );
         getReq.headers.set('authorization', authHeader());
         final HttpClientResponse getRes = await getReq.close();
-        expect(getRes.statusCode, 403,
-            reason: 'GET /audiobooks/$evil/position 必须 403'
-                '（闸门先于 audiobookExists 查询）');
+        expect(
+          getRes.statusCode,
+          403,
+          reason:
+              'GET /audiobooks/$evil/position 必须 403'
+              '（闸门先于 audiobookExists 查询）',
+        );
         await getRes.drain<void>();
 
-        final HttpClientRequest putReq = await c
-            .putUrl(Uri.parse('$base/api/library/audiobooks/$evil/position'));
+        final HttpClientRequest putReq = await c.putUrl(
+          Uri.parse('$base/api/library/audiobooks/$evil/position'),
+        );
         putReq.headers.set('authorization', authHeader());
         putReq.headers.set('content-type', 'application/json');
-        putReq.write(jsonEncode(
-            <String, Object?>{'positionMs': 1, 'positionUpdatedAtMs': 2}));
+        putReq.write(
+          jsonEncode(<String, Object?>{
+            'positionMs': 1,
+            'positionUpdatedAtMs': 2,
+          }),
+        );
         final HttpClientResponse putRes = await putReq.close();
-        expect(putRes.statusCode, 403,
-            reason: 'PUT /audiobooks/$evil/position 必须 403，不得写脏 prefs');
+        expect(
+          putRes.statusCode,
+          403,
+          reason: 'PUT /audiobooks/$evil/position 必须 403，不得写脏 prefs',
+        );
         await putRes.drain<void>();
       }
 
@@ -654,14 +741,21 @@ void main() {
       final HttpClient c = HttpClient();
 
       final HttpClientRequest delReq = await c.deleteUrl(
-          Uri.parse('$base/api/library/audiobooks/C%3A%5CWindows%5Cwin.ini'));
+        Uri.parse('$base/api/library/audiobooks/C%3A%5CWindows%5Cwin.ini'),
+      );
       delReq.headers.set('authorization', authHeader());
       final HttpClientResponse delRes = await delReq.close();
-      expect(delRes.statusCode, 403,
-          reason: r'DELETE with "C:\Windows\win.ini" must be 403 Forbidden');
+      expect(
+        delRes.statusCode,
+        403,
+        reason: r'DELETE with "C:\Windows\win.ini" must be 403 Forbidden',
+      );
       await delRes.drain<void>();
-      expect(lib.deletedAudiobooks, isEmpty,
-          reason: 'no deletion must occur for a backslash key');
+      expect(
+        lib.deletedAudiobooks,
+        isEmpty,
+        reason: 'no deletion must occur for a backslash key',
+      );
 
       c.close();
     });
@@ -669,22 +763,33 @@ void main() {
     test('path-traversal bookKey is rejected with 403', () async {
       final HttpClient c = HttpClient();
 
-      final HttpClientRequest delReq = await c
-          .deleteUrl(Uri.parse('$base/api/library/audiobooks/%2e%2e%2fevil'));
+      final HttpClientRequest delReq = await c.deleteUrl(
+        Uri.parse('$base/api/library/audiobooks/%2e%2e%2fevil'),
+      );
       delReq.headers.set('authorization', authHeader());
       final HttpClientResponse delRes = await delReq.close();
-      expect(delRes.statusCode, 403,
-          reason: 'DELETE with "../evil" must be 403 Forbidden');
+      expect(
+        delRes.statusCode,
+        403,
+        reason: 'DELETE with "../evil" must be 403 Forbidden',
+      );
       await delRes.drain<void>();
-      expect(lib.deletedAudiobooks, isEmpty,
-          reason: 'no deletion must occur for a traversal key');
+      expect(
+        lib.deletedAudiobooks,
+        isEmpty,
+        reason: 'no deletion must occur for a traversal key',
+      );
 
-      final HttpClientRequest getReq = await c
-          .getUrl(Uri.parse('$base/api/library/audiobooks/%2e%2e%2fevil'));
+      final HttpClientRequest getReq = await c.getUrl(
+        Uri.parse('$base/api/library/audiobooks/%2e%2e%2fevil'),
+      );
       getReq.headers.set('authorization', authHeader());
       final HttpClientResponse getRes = await getReq.close();
-      expect(getRes.statusCode, 403,
-          reason: 'GET with "../evil" must be 403 Forbidden');
+      expect(
+        getRes.statusCode,
+        403,
+        reason: 'GET with "../evil" must be 403 Forbidden',
+      );
       await getRes.drain<void>();
 
       c.close();
@@ -703,10 +808,13 @@ void main() {
       await bare.start();
       final String bareBase = 'http://127.0.0.1:${bare.port}';
       final HttpClient c = HttpClient();
-      final HttpClientRequest req =
-          await c.getUrl(Uri.parse('$bareBase/api/library/audiobooks'));
-      req.headers.set('authorization',
-          'Basic ${base64Encode(utf8.encode('hibiki:$token'))}');
+      final HttpClientRequest req = await c.getUrl(
+        Uri.parse('$bareBase/api/library/audiobooks'),
+      );
+      req.headers.set(
+        'authorization',
+        'Basic ${base64Encode(utf8.encode('hibiki:$token'))}',
+      );
       final HttpClientResponse res = await req.close();
       expect(res.statusCode, 404);
       await res.drain<void>();
@@ -717,31 +825,40 @@ void main() {
     // ── CJK bookKey ───────────────────────────────────────────────────────────
 
     test('GET /api/library/audiobooks/<CJK> 正确解码中文 bookKey', () async {
-      lib.audiobookEntries
-          .add(const RemoteAudiobookInfo(bookKey: '三体有声书', title: '三体'));
+      lib.audiobookEntries.add(
+        const RemoteAudiobookInfo(bookKey: '三体有声书', title: '三体'),
+      );
       final HttpClient c = HttpClient();
       final String encoded = Uri.encodeComponent('三体有声书');
-      final HttpClientRequest req =
-          await c.getUrl(Uri.parse('$base/api/library/audiobooks/$encoded'));
+      final HttpClientRequest req = await c.getUrl(
+        Uri.parse('$base/api/library/audiobooks/$encoded'),
+      );
       req.headers.set('authorization', authHeader());
       final HttpClientResponse res = await req.close();
       expect(res.statusCode, 200, reason: 'GET 三体有声书 应返回 200，双重解码会致 500');
       final String body = await res.transform(utf8.decoder).join();
-      expect(body, 'AUDIOBOOK:三体有声书',
-          reason: 'server 应以正确 CJK key 调用 exportAudiobook');
+      expect(
+        body,
+        'AUDIOBOOK:三体有声书',
+        reason: 'server 应以正确 CJK key 调用 exportAudiobook',
+      );
       c.close();
     });
 
     test('PUT /api/library/audiobooks/<CJK> 传递正确的 bookKeyOverride', () async {
       final HttpClient c = HttpClient();
       final String encoded = Uri.encodeComponent('三体有声书');
-      final HttpClientRequest req =
-          await c.putUrl(Uri.parse('$base/api/library/audiobooks/$encoded'));
+      final HttpClientRequest req = await c.putUrl(
+        Uri.parse('$base/api/library/audiobooks/$encoded'),
+      );
       req.headers.set('authorization', authHeader());
       req.add(utf8.encode('AUDIOBOOK:三体有声书'));
       final HttpClientResponse res = await req.close();
-      expect(res.statusCode, anyOf(200, 201, 204),
-          reason: 'PUT 三体有声书 应成功（2xx）');
+      expect(
+        res.statusCode,
+        anyOf(200, 201, 204),
+        reason: 'PUT 三体有声书 应成功（2xx）',
+      );
       expect(
         lib.importedAudiobooks,
         contains(('AUDIOBOOK:三体有声书', '三体有声书')),
@@ -751,17 +868,22 @@ void main() {
     });
 
     test('DELETE /api/library/audiobooks/<CJK> 以中文 key 删除', () async {
-      lib.audiobookEntries
-          .add(const RemoteAudiobookInfo(bookKey: '三体有声书', title: '三体'));
+      lib.audiobookEntries.add(
+        const RemoteAudiobookInfo(bookKey: '三体有声书', title: '三体'),
+      );
       final HttpClient c = HttpClient();
       final String encoded = Uri.encodeComponent('三体有声书');
-      final HttpClientRequest req =
-          await c.deleteUrl(Uri.parse('$base/api/library/audiobooks/$encoded'));
+      final HttpClientRequest req = await c.deleteUrl(
+        Uri.parse('$base/api/library/audiobooks/$encoded'),
+      );
       req.headers.set('authorization', authHeader());
       final HttpClientResponse res = await req.close();
       expect(res.statusCode, anyOf(200, 204));
-      expect(lib.deletedAudiobooks, contains('三体有声书'),
-          reason: 'deleteAudiobook 应以解码后中文 key 被调用');
+      expect(
+        lib.deletedAudiobooks,
+        contains('三体有声书'),
+        reason: 'deleteAudiobook 应以解码后中文 key 被调用',
+      );
       c.close();
     });
 
@@ -770,20 +892,26 @@ void main() {
       test('PUT then GET /position round-trips position + timestamp', () async {
         final HttpClient c = HttpClient();
         final HttpClientRequest put = await c.putUrl(
-            Uri.parse('$base/api/library/audiobooks/sample_book/position'));
+          Uri.parse('$base/api/library/audiobooks/sample_book/position'),
+        );
         put.headers.set('authorization', authHeader());
         put.headers.set('content-type', 'application/json');
-        put.add(utf8.encode(jsonEncode(<String, Object?>{
-          'positionMs': 123456,
-          'positionUpdatedAtMs': 7000,
-        })));
+        put.add(
+          utf8.encode(
+            jsonEncode(<String, Object?>{
+              'positionMs': 123456,
+              'positionUpdatedAtMs': 7000,
+            }),
+          ),
+        );
         final HttpClientResponse putRes = await put.close();
         expect(putRes.statusCode, 200);
         await putRes.drain<void>();
         expect(lib.audiobookPositions['sample_book']?.positionMs, 123456);
 
         final HttpClientRequest get = await c.getUrl(
-            Uri.parse('$base/api/library/audiobooks/sample_book/position'));
+          Uri.parse('$base/api/library/audiobooks/sample_book/position'),
+        );
         get.headers.set('authorization', authHeader());
         final HttpClientResponse getRes = await get.close();
         expect(getRes.statusCode, 200);
@@ -795,78 +923,105 @@ void main() {
         c.close();
       });
 
-      test(
-          'GET/PUT /position uses cheap existence gate, never exportAudiobook '
+      test('GET/PUT /position uses cheap existence gate, never exportAudiobook '
           '(BUG-471a perf regression)', () async {
         final HttpClient c = HttpClient();
         // PUT
         final HttpClientRequest put = await c.putUrl(
-            Uri.parse('$base/api/library/audiobooks/sample_book/position'));
+          Uri.parse('$base/api/library/audiobooks/sample_book/position'),
+        );
         put.headers.set('authorization', authHeader());
         put.headers.set('content-type', 'application/json');
-        put.add(utf8.encode(jsonEncode(<String, Object?>{
-          'positionMs': 42,
-          'positionUpdatedAtMs': 100,
-        })));
+        put.add(
+          utf8.encode(
+            jsonEncode(<String, Object?>{
+              'positionMs': 42,
+              'positionUpdatedAtMs': 100,
+            }),
+          ),
+        );
         await (await put.close()).drain<void>();
         // GET
         final HttpClientRequest get = await c.getUrl(
-            Uri.parse('$base/api/library/audiobooks/sample_book/position'));
+          Uri.parse('$base/api/library/audiobooks/sample_book/position'),
+        );
         get.headers.set('authorization', authHeader());
         await (await get.close()).drain<void>();
         c.close();
 
         // 路由必须走廉价的 audiobookExists 而非整包打 zip 的 exportAudiobook。
-        expect(lib.exportAudiobookCalls, 0,
-            reason: 'position 路由不得触发重量级 exportAudiobook 整包导出（性能回归）');
-        expect(lib.audiobookExistsCalls, greaterThanOrEqualTo(2),
-            reason: 'GET 与 PUT 各应走一次廉价存在性闸门');
+        expect(
+          lib.exportAudiobookCalls,
+          0,
+          reason: 'position 路由不得触发重量级 exportAudiobook 整包导出（性能回归）',
+        );
+        expect(
+          lib.audiobookExistsCalls,
+          greaterThanOrEqualTo(2),
+          reason: 'GET 与 PUT 各应走一次廉价存在性闸门',
+        );
       });
 
       test('GET /position for missing audiobook returns 404', () async {
         final HttpClient c = HttpClient();
         final HttpClientRequest req = await c.getUrl(
-            Uri.parse('$base/api/library/audiobooks/no_such_book/position'));
+          Uri.parse('$base/api/library/audiobooks/no_such_book/position'),
+        );
         req.headers.set('authorization', authHeader());
         final HttpClientResponse res = await req.close();
-        expect(res.statusCode, 404,
-            reason: 'host 无该有声书时 /position 必须 404，防任意 key 写脏 prefs');
+        expect(
+          res.statusCode,
+          404,
+          reason: 'host 无该有声书时 /position 必须 404，防任意 key 写脏 prefs',
+        );
         await res.drain<void>();
         expect(lib.audiobookPositions.containsKey('no_such_book'), isFalse);
         c.close();
       });
 
-      test('PUT /position for missing audiobook returns 404 (no write)',
-          () async {
-        final HttpClient c = HttpClient();
-        final HttpClientRequest put = await c.putUrl(
-            Uri.parse('$base/api/library/audiobooks/no_such_book/position'));
-        put.headers.set('authorization', authHeader());
-        put.headers.set('content-type', 'application/json');
-        put.add(utf8.encode(jsonEncode(<String, Object?>{
-          'positionMs': 9999,
-          'positionUpdatedAtMs': 5000,
-        })));
-        final HttpClientResponse res = await put.close();
-        expect(res.statusCode, 404);
-        await res.drain<void>();
-        expect(lib.audiobookPositions.containsKey('no_such_book'), isFalse);
-        c.close();
-      });
+      test(
+        'PUT /position for missing audiobook returns 404 (no write)',
+        () async {
+          final HttpClient c = HttpClient();
+          final HttpClientRequest put = await c.putUrl(
+            Uri.parse('$base/api/library/audiobooks/no_such_book/position'),
+          );
+          put.headers.set('authorization', authHeader());
+          put.headers.set('content-type', 'application/json');
+          put.add(
+            utf8.encode(
+              jsonEncode(<String, Object?>{
+                'positionMs': 9999,
+                'positionUpdatedAtMs': 5000,
+              }),
+            ),
+          );
+          final HttpClientResponse res = await put.close();
+          expect(res.statusCode, 404);
+          await res.drain<void>();
+          expect(lib.audiobookPositions.containsKey('no_such_book'), isFalse);
+          c.close();
+        },
+      );
     });
 
     // ── /delay 端点（互联完整支持批次：有声书调轴跨设备同步）───────────────────
     group('delay', () {
       Future<int> putDelay(String key, int delayMs, int updatedAtMs) async {
         final HttpClient c = HttpClient();
-        final HttpClientRequest put = await c
-            .putUrl(Uri.parse('$base/api/library/audiobooks/$key/delay'));
+        final HttpClientRequest put = await c.putUrl(
+          Uri.parse('$base/api/library/audiobooks/$key/delay'),
+        );
         put.headers.set('authorization', authHeader());
         put.headers.set('content-type', 'application/json');
-        put.add(utf8.encode(jsonEncode(<String, Object?>{
-          'delayMs': delayMs,
-          'delayUpdatedAtMs': updatedAtMs,
-        })));
+        put.add(
+          utf8.encode(
+            jsonEncode(<String, Object?>{
+              'delayMs': delayMs,
+              'delayUpdatedAtMs': updatedAtMs,
+            }),
+          ),
+        );
         final HttpClientResponse res = await put.close();
         await res.drain<void>();
         c.close();
@@ -882,7 +1037,8 @@ void main() {
 
         final HttpClient c = HttpClient();
         final HttpClientRequest get = await c.getUrl(
-            Uri.parse('$base/api/library/audiobooks/sample_book/delay'));
+          Uri.parse('$base/api/library/audiobooks/sample_book/delay'),
+        );
         get.headers.set('authorization', authHeader());
         final HttpClientResponse res = await get.close();
         expect(res.statusCode, 200);
@@ -894,17 +1050,20 @@ void main() {
         c.close();
       });
 
-      test('PUT /delay for missing audiobook returns 404 (no write)',
-          () async {
+      test('PUT /delay for missing audiobook returns 404 (no write)', () async {
         expect(await putDelay('no_such_book', 1000, 7000), 404);
-        expect(lib.audiobookDelays.containsKey('no_such_book'), isFalse,
-            reason: '存在性闸门：任意 key 上报不得写脏');
+        expect(
+          lib.audiobookDelays.containsKey('no_such_book'),
+          isFalse,
+          reason: '存在性闸门：任意 key 上报不得写脏',
+        );
       });
 
       test('未鉴权 GET /delay 401（Basic 闸门内）', () async {
         final HttpClient c = HttpClient();
         final HttpClientRequest get = await c.getUrl(
-            Uri.parse('$base/api/library/audiobooks/sample_book/delay'));
+          Uri.parse('$base/api/library/audiobooks/sample_book/delay'),
+        );
         final HttpClientResponse res = await get.close();
         expect(res.statusCode, 401);
         await res.drain<void>();

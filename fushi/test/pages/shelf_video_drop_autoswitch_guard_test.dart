@@ -14,12 +14,18 @@ void main() {
   test('shelf drop wires importNewVideo to prefilled video import', () {
     final String src = pageSrc;
 
-    expect(src.contains('case DropIntent.importNewVideo:'), isTrue,
-        reason: 'importNewVideo case must be handled on the shelf');
-    expect(src.contains('_openVideoImportPrefilled('), isTrue,
-        reason:
-            'importNewVideo must auto-open VideoImportDialog with the dragged '
-            'file (not just a SnackBar)');
+    expect(
+      src.contains('case DropIntent.importNewVideo:'),
+      isTrue,
+      reason: 'importNewVideo case must be handled on the shelf',
+    );
+    expect(
+      src.contains('_openVideoImportPrefilled('),
+      isTrue,
+      reason:
+          'importNewVideo must auto-open VideoImportDialog with the dragged '
+          'file (not just a SnackBar)',
+    );
 
     // importNewVideo 分支内确实调用预填打开（带上 files.videos.first）。
     final int start = src.indexOf('case DropIntent.importNewVideo:');
@@ -27,37 +33,54 @@ void main() {
     final int next = src.indexOf('case DropIntent.', start + 1);
     expect(next, greaterThan(start));
     final String block = src.substring(start, next);
-    expect(block.contains('_openVideoImportPrefilled('), isTrue,
-        reason: 'importNewVideo branch must call _openVideoImportPrefilled');
-    expect(block.contains('files.videos.first'), isTrue,
-        reason: 'must pass the dragged video path into the prefilled import');
+    expect(
+      block.contains('_openVideoImportPrefilled('),
+      isTrue,
+      reason: 'importNewVideo branch must call _openVideoImportPrefilled',
+    );
+    expect(
+      block.contains('files.videos.first'),
+      isTrue,
+      reason: 'must pass the dragged video path into the prefilled import',
+    );
   });
 
   test('shelf drop wires importNewPlaylist to prefilled playlist import', () {
     final String src = pageSrc;
 
-    expect(src.contains('case DropIntent.importNewPlaylist:'), isTrue,
-        reason: 'importNewPlaylist case must be handled on the shelf');
+    expect(
+      src.contains('case DropIntent.importNewPlaylist:'),
+      isTrue,
+      reason: 'importNewPlaylist case must be handled on the shelf',
+    );
 
     final int start = src.indexOf('case DropIntent.importNewPlaylist:');
     expect(start, greaterThan(-1));
     final int next = src.indexOf('case DropIntent.', start + 1);
     expect(next, greaterThan(start));
     final String block = src.substring(start, next);
-    expect(block.contains('_openPlaylistImportPrefilled('), isTrue,
-        reason:
-            'importNewPlaylist branch must auto-open VideoImportDialog with the '
-            'dragged playlist (not just a SnackBar)');
+    expect(
+      block.contains('_openPlaylistImportPrefilled('),
+      isTrue,
+      reason:
+          'importNewPlaylist branch must auto-open VideoImportDialog with the '
+          'dragged playlist (not just a SnackBar)',
+    );
   });
 
   test('prefilled openers pass paths into VideoImportDialog', () {
     final String src = pageSrc;
 
     // 预填打开方法把拖入路径透传进 VideoImportDialog（initialVideoPath / initialPlaylistPath）。
-    expect(src.contains('initialVideoPath: videoPath'), isTrue,
-        reason: '_openVideoImportPrefilled must forward initialVideoPath');
-    expect(src.contains('initialPlaylistPath: playlistPath'), isTrue,
-        reason:
-            '_openPlaylistImportPrefilled must forward initialPlaylistPath');
+    expect(
+      src.contains('initialVideoPath: videoPath'),
+      isTrue,
+      reason: '_openVideoImportPrefilled must forward initialVideoPath',
+    );
+    expect(
+      src.contains('initialPlaylistPath: playlistPath'),
+      isTrue,
+      reason: '_openPlaylistImportPrefilled must forward initialPlaylistPath',
+    );
   });
 }

@@ -48,8 +48,9 @@ void main() {
   }
 
   final EmbeddedTorrentEngine? engine = tryOpen();
-  final String? skip =
-      engine == null ? 'fushi_torrent_ffi native lib not built' : null;
+  final String? skip = engine == null
+      ? 'fushi_torrent_ffi native lib not built'
+      : null;
 
   late Directory tempDir;
 
@@ -69,12 +70,17 @@ void main() {
     'EmbeddedTorrentBackend fulfils the TorrentBackend contract end-to-end',
     () async {
       final LocalSeedRig rig = await LocalSeedRig.start(
-          engine: engine!, workDir: tempDir, contentBytes: 2 * 1024 * 1024);
+        engine: engine!,
+        workDir: tempDir,
+        contentBytes: 2 * 1024 * 1024,
+      );
       addTearDown(rig.dispose);
 
       // 出站连接需要 listen socket（只绑回环，确定性）。
-      final EmbeddedTorrentSession? session =
-          EmbeddedTorrentSession.open(engine, listenInterfaces: '127.0.0.1:0');
+      final EmbeddedTorrentSession? session = EmbeddedTorrentSession.open(
+        engine,
+        listenInterfaces: '127.0.0.1:0',
+      );
       expect(session, isNotNull);
       final EmbeddedTorrentBackend backend = EmbeddedTorrentBackend(
         session: session!,
@@ -88,30 +94,40 @@ void main() {
       // 分类目录语义。
       expect(await backend.prepareCategory('hibiki-anime'), isTrue);
       expect(
-          Directory(p.join(tempDir.path, 'downloads', 'hibiki-anime'))
-              .existsSync(),
-          isTrue);
+        Directory(
+          p.join(tempDir.path, 'downloads', 'hibiki-anime'),
+        ).existsSync(),
+        isTrue,
+      );
 
       // 非 magnet/.torrent 输入直接拒绝。
       expect(
-          await backend.addTorrent('https://example.com/x.torrent',
-              category: 'hibiki-anime'),
-          isFalse);
+        await backend.addTorrent(
+          'https://example.com/x.torrent',
+          category: 'hibiki-anime',
+        ),
+        isFalse,
+      );
 
       // magnet 添加（顺序 + 首尾块优先，走真实边下边播参数组合）。
       expect(
-        await backend.addTorrent(rig.magnetUri,
-            category: 'hibiki-anime',
-            sequential: true,
-            firstLastPiecePrio: true),
+        await backend.addTorrent(
+          rig.magnetUri,
+          category: 'hibiki-anime',
+          sequential: true,
+          firstLastPiecePrio: true,
+        ),
         isTrue,
       );
-      expect(session.connectPeer(rig.infoHash, '127.0.0.1', rig.seederPort),
-          isTrue);
+      expect(
+        session.connectPeer(rig.infoHash, '127.0.0.1', rig.seederPort),
+        isTrue,
+      );
 
       // 分类过滤：目标分类看得见，其他分类为空。
-      final List<TorrentSnapshot> mine =
-          await backend.listTorrents(category: 'hibiki-anime');
+      final List<TorrentSnapshot> mine = await backend.listTorrents(
+        category: 'hibiki-anime',
+      );
       expect(mine, hasLength(1));
       expect(mine.single.hash, rig.infoHash);
       expect(await backend.listTorrents(category: 'other'), isEmpty);
@@ -119,23 +135,29 @@ void main() {
       // 下载到完成：快照 isComplete 且文件进度打满。
       await _pollUntil(
         () async {
-          final List<TorrentSnapshot> ts =
-              await backend.listTorrents(category: 'hibiki-anime');
+          final List<TorrentSnapshot> ts = await backend.listTorrents(
+            category: 'hibiki-anime',
+          );
           return ts.isNotEmpty && ts.single.isComplete;
         },
         timeout: const Duration(seconds: 120),
         what: 'backend snapshot to report completion',
       );
 
-      final TorrentSnapshot done =
-          (await backend.listTorrents(category: 'hibiki-anime')).single;
+      final TorrentSnapshot done = (await backend.listTorrents(
+        category: 'hibiki-anime',
+      )).single;
       expect(done.progress, 1.0);
       expect(done.amountLeft, 0);
-      expect(File(done.contentPath).existsSync(), isTrue,
-          reason: 'contentPath must point at the downloaded file');
+      expect(
+        File(done.contentPath).existsSync(),
+        isTrue,
+        reason: 'contentPath must point at the downloaded file',
+      );
 
-      final List<TorrentFileEntry> files =
-          await backend.listFiles(rig.infoHash);
+      final List<TorrentFileEntry> files = await backend.listFiles(
+        rig.infoHash,
+      );
       expect(files, hasLength(1));
       expect(files.single.progress, 1.0);
       expect(files.single.size, 2 * 1024 * 1024);

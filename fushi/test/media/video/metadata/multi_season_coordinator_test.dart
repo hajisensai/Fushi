@@ -25,13 +25,15 @@ import 'package:path/path.dart' as p;
 /// 数据形状照 Frieren 真实条目：S1 = MAL 52991 / anidb 17617（28 集），
 /// S2 = MAL 59978 / anidb 18886（tmdb 同剧 209867，offset 28）；
 /// anime-relations：`52991:29-38 -> 59978:1-10!`。
-const String _fribb = '['
+const String _fribb =
+    '['
     '{"anidb_id":17617,"mal_id":52991,"themoviedb_id":{"tv":209867},'
     '"season":{"tvdb":1,"tmdb":1},"type":"TV"},'
     '{"anidb_id":18886,"mal_id":59978,"themoviedb_id":{"tv":209867},'
     '"season":{"tvdb":2,"tmdb":1},"episode_offset":{"tmdb":28},"type":"TV"}'
     ']';
-const String _relations = '::meta\n- version: 1\n\n::rules\n'
+const String _relations =
+    '::meta\n- version: 1\n\n::rules\n'
     '- 52991|46474|154587:29-38 -> 59978|49240|182255:1-10!\n';
 
 void main() {
@@ -55,24 +57,26 @@ void main() {
     final SourceLibraryRow source = await _source(db, directory, fileNames);
     final VideoSourceScrapeCoordinator coordinator =
         VideoSourceScrapeCoordinator(
-      // 本用例测的是 MAL 主源形态（2026-09-20 起默认主源是 AniDB，MAL 仍可选）。
-      primaryProvider: VideoMetadataProviderKind.mal,
-      database: db,
-      config: const VideoSourceScrapeGlobalConfig(),
-      registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[mal]),
-      identityMapping: AnimeIdentityMapping(
-        httpClient: VideoMetadataHttpClient(
-          client: MockClient((_) async => http.Response(_fribb, 200)),
-        ),
-      ),
-      episodeRelations: withRelations
-          ? AnimeEpisodeRelationsCatalog(
-              httpClient: VideoMetadataHttpClient(
-                client: MockClient((_) async => http.Response(_relations, 200)),
-              ),
-            )
-          : null,
-    );
+          // 本用例测的是 MAL 主源形态（2026-09-20 起默认主源是 AniDB，MAL 仍可选）。
+          primaryProvider: VideoMetadataProviderKind.mal,
+          database: db,
+          config: const VideoSourceScrapeGlobalConfig(),
+          registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[mal]),
+          identityMapping: AnimeIdentityMapping(
+            httpClient: VideoMetadataHttpClient(
+              client: MockClient((_) async => http.Response(_fribb, 200)),
+            ),
+          ),
+          episodeRelations: withRelations
+              ? AnimeEpisodeRelationsCatalog(
+                  httpClient: VideoMetadataHttpClient(
+                    client: MockClient(
+                      (_) async => http.Response(_relations, 200),
+                    ),
+                  ),
+                )
+              : null,
+        );
     addTearDown(coordinator.close);
     return coordinator.scrapeSource(
       source,
@@ -82,10 +86,10 @@ void main() {
   }
 
   Future<Map<(int, int), String?>> boundEpisodes() async {
-    final MediaCollectionRow collection =
-        (await db.getMediaCollectionByNaturalKey('Frieren', 'playlist'))!;
-    final VideoMetadataWorkRow work =
-        (await db.getVideoMetadataWorkByCollection(collection.id))!;
+    final MediaCollectionRow collection = (await db
+        .getMediaCollectionByNaturalKey('Frieren', 'playlist'))!;
+    final VideoMetadataWorkRow work = (await db
+        .getVideoMetadataWorkByCollection(collection.id))!;
     final Map<(int, int), String?> result = <(int, int), String?>{};
     for (final VideoMetadataSeasonRow season
         in await db.getVideoMetadataSeasons(work.id)) {
@@ -99,11 +103,14 @@ void main() {
 
   test('season folders fetch each season from its own MAL entry', () async {
     final _MalProvider mal = _MalProvider();
-    final SourceScrapeReport report = await scrape(mal, fileNames: <String>[
-      'Frieren S01E01.mkv',
-      'Frieren S02E01.mkv',
-      'Frieren S02E02.mkv',
-    ]);
+    final SourceScrapeReport report = await scrape(
+      mal,
+      fileNames: <String>[
+        'Frieren S01E01.mkv',
+        'Frieren S02E01.mkv',
+        'Frieren S02E02.mkv',
+      ],
+    );
     expect(report.succeededWorks, 1, reason: '${report.errors}');
     expect(mal.fetchedIds, containsAll(<String>['52991', '59978']));
     final Map<(int, int), String?> bound = await boundEpisodes();
@@ -113,35 +120,40 @@ void main() {
     expect(bound.keys.where(((int, int) key) => key.$1 == 2), hasLength(10));
   });
 
-  test('later cours contribute their own voice cast to the work (BUG-2612)',
-      () async {
-    final _MalProvider mal = _MalProvider();
-    final SourceScrapeReport report = await scrape(mal, fileNames: <String>[
-      'Frieren S01E01.mkv',
-      'Frieren S02E01.mkv',
-    ]);
-    expect(report.succeededWorks, 1, reason: '${report.errors}');
-    final MediaCollectionRow collection =
-        (await db.getMediaCollectionByNaturalKey('Frieren', 'playlist'))!;
-    final VideoMetadataWorkRow work =
-        (await db.getVideoMetadataWorkByCollection(collection.id))!;
-    final List<VideoMetadataCreditRow> credits =
-        await db.getVideoMetadataCredits(workId: work.id);
-    expect(
-      credits.map((VideoMetadataCreditRow c) => c.roleName).toList(),
-      <String>['Frieren', 'Ubel'],
-      reason: '主角不重复，第二季新登场的 Ubel 进作品级人物表',
-    );
-  });
+  test(
+    'later cours contribute their own voice cast to the work (BUG-2612)',
+    () async {
+      final _MalProvider mal = _MalProvider();
+      final SourceScrapeReport report = await scrape(
+        mal,
+        fileNames: <String>['Frieren S01E01.mkv', 'Frieren S02E01.mkv'],
+      );
+      expect(report.succeededWorks, 1, reason: '${report.errors}');
+      final MediaCollectionRow collection = (await db
+          .getMediaCollectionByNaturalKey('Frieren', 'playlist'))!;
+      final VideoMetadataWorkRow work = (await db
+          .getVideoMetadataWorkByCollection(collection.id))!;
+      final List<VideoMetadataCreditRow> credits = await db
+          .getVideoMetadataCredits(workId: work.id);
+      expect(
+        credits.map((VideoMetadataCreditRow c) => c.roleName).toList(),
+        <String>['Frieren', 'Ubel'],
+        reason: '主角不重复，第二季新登场的 Ubel 进作品级人物表',
+      );
+    },
+  );
 
   test('absolute numbering is redirected through anime-relations', () async {
     final _MalProvider mal = _MalProvider();
-    final SourceScrapeReport report = await scrape(mal, fileNames: <String>[
-      '[Sub] Frieren - 01.mkv',
-      '[Sub] Frieren - 28.mkv',
-      '[Sub] Frieren - 29.mkv',
-      '[Sub] Frieren - 30.mkv',
-    ]);
+    final SourceScrapeReport report = await scrape(
+      mal,
+      fileNames: <String>[
+        '[Sub] Frieren - 01.mkv',
+        '[Sub] Frieren - 28.mkv',
+        '[Sub] Frieren - 29.mkv',
+        '[Sub] Frieren - 30.mkv',
+      ],
+    );
     expect(report.succeededWorks, 1, reason: '${report.errors}');
     final Map<(int, int), String?> bound = await boundEpisodes();
     expect(bound[(1, 1)], 'book-0');
@@ -173,8 +185,9 @@ void main() {
     final Map<(int, int), String?> bound = await boundEpisodes();
     expect(bound.values, isNot(contains('book-1')));
     expect(
-      report.warnings
-          .any((SourceScrapeIssue issue) => issue.message.contains('绝对集号 99')),
+      report.warnings.any(
+        (SourceScrapeIssue issue) => issue.message.contains('绝对集号 99'),
+      ),
       isTrue,
     );
   });
@@ -185,23 +198,29 @@ Future<SourceLibraryRow> _source(
   Directory root,
   List<String> fileNames,
 ) async {
-  final int sourceId = await db.insertMediaSource(MediaSourcesCompanion.insert(
-    label: 'Source',
-    mediaKind: 'video',
-    rootPath: root.path,
-    createdAt: 1,
-  ));
-  final int collectionId =
-      await db.createMediaCollection('Frieren', collectionType: 'playlist');
+  final int sourceId = await db.insertMediaSource(
+    MediaSourcesCompanion.insert(
+      label: 'Source',
+      mediaKind: 'video',
+      rootPath: root.path,
+      createdAt: 1,
+    ),
+  );
+  final int collectionId = await db.createMediaCollection(
+    'Frieren',
+    collectionType: 'playlist',
+  );
   for (int index = 0; index < fileNames.length; index++) {
     final File file = File(p.join(root.path, fileNames[index]));
     await file.writeAsBytes(<int>[0]);
-    await db.upsertVideoBook(VideoBooksCompanion(
-      bookUid: Value<String>('book-$index'),
-      title: const Value<String>('Frieren'),
-      videoPath: Value<String>(file.path),
-      sourceId: Value<int?>(sourceId),
-    ));
+    await db.upsertVideoBook(
+      VideoBooksCompanion(
+        bookUid: Value<String>('book-$index'),
+        title: const Value<String>('Frieren'),
+        videoPath: Value<String>(file.path),
+        sourceId: Value<int?>(sourceId),
+      ),
+    );
     await db.addToCollection(collectionId, MediaKind.video, 'book-$index');
   }
   await db.upsertVideoSourceScrapeSettings(
@@ -256,22 +275,22 @@ class _MalProvider implements VideoMetadataProvider {
     String role,
     String personId, {
     bool photo = true,
-  }) =>
-      VideoMetadataCredit(
-        kind: VideoMetadataCreditKind.voiceActor,
-        person: VideoMetadataPerson(
-          name: person,
-          profileUrl: photo ? 'https://img/$personId.jpg' : null,
-          ids: <VideoMetadataId>[VideoMetadataId(type: 'mal', value: personId)],
-        ),
-        character: VideoMetadataCharacter(name: role),
-        roleName: role,
-        language: 'ja',
-      );
+  }) => VideoMetadataCredit(
+    kind: VideoMetadataCreditKind.voiceActor,
+    person: VideoMetadataPerson(
+      name: person,
+      profileUrl: photo ? 'https://img/$personId.jpg' : null,
+      ids: <VideoMetadataId>[VideoMetadataId(type: 'mal', value: personId)],
+    ),
+    character: VideoMetadataCharacter(name: role),
+    roleName: role,
+    language: 'ja',
+  );
 
   @override
   Future<List<VideoMetadataWork>> search(
-      VideoMetadataSearchRequest request) async {
+    VideoMetadataSearchRequest request,
+  ) async {
     searchCalls++;
     return <VideoMetadataWork>[_work('52991')!];
   }
@@ -284,7 +303,8 @@ class _MalProvider implements VideoMetadataProvider {
 
   @override
   Future<List<VideoMetadataSeason>> fetchSeasons(
-      VideoMetadataLookup lookup) async {
+    VideoMetadataLookup lookup,
+  ) async {
     final VideoMetadataWork? work = _work(lookup.externalId);
     if (work == null) return const <VideoMetadataSeason>[];
     return <VideoMetadataSeason>[
@@ -298,8 +318,10 @@ class _MalProvider implements VideoMetadataProvider {
   }
 
   @override
-  Future<List<VideoMetadataEpisode>> fetchEpisodes(VideoMetadataLookup lookup,
-      {required int seasonNumber}) async {
+  Future<List<VideoMetadataEpisode>> fetchEpisodes(
+    VideoMetadataLookup lookup, {
+    required int seasonNumber,
+  }) async {
     final (String, int)? entry = _entries[lookup.externalId];
     if (entry == null || seasonNumber != 1) {
       return const <VideoMetadataEpisode>[];

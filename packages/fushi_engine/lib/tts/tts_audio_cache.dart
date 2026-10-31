@@ -190,12 +190,12 @@ class TtsAudioCache {
 
   /// 丢弃一句的缓存（「重新生成」）。正在被使用的不删，返回 false。
   Future<bool> remove(String key) => _serialized(() async {
-        if (isPinned(key)) return false;
-        for (final File f in <File>[_meta(key), File(audioPathFor(key))]) {
-          if (await f.exists()) await f.delete();
-        }
-        return true;
-      });
+    if (isPinned(key)) return false;
+    for (final File f in <File>[_meta(key), File(audioPathFor(key))]) {
+      if (await f.exists()) await f.delete();
+    }
+    return true;
+  });
 
   /// 总占用（字节）。
   Future<int> sizeBytes() async {

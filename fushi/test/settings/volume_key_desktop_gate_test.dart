@@ -64,8 +64,10 @@ void main() {
       expect(idIdx, greaterThan(0), reason: '$id 必须存在');
       // 在该 item 定义块内（下一个 SettingsXItem 之前）出现 Android 门控。
       final int nextItem = src.indexOf('Item(', idIdx + 10);
-      final String block =
-          src.substring(idIdx, nextItem > 0 ? nextItem : src.length);
+      final String block = src.substring(
+        idIdx,
+        nextItem > 0 ? nextItem : src.length,
+      );
       expect(
         block.contains('visible: (_) => Platform.isAndroid'),
         isTrue,
@@ -74,25 +76,28 @@ void main() {
     }
 
     test('reading schema：翻页开关门控为 Platform.isAndroid + 有 dart:io import', () {
-      final String src =
-          readSource('lib/src/settings/settings_schema_reading.dart')
-              .readAsStringSync();
-      expect(src.contains("import 'dart:io'"), isTrue,
-          reason: 'reading schema 需 import dart:io 用 Platform');
+      final String src = readSource(
+        'lib/src/settings/settings_schema_reading.dart',
+      ).readAsStringSync();
+      expect(
+        src.contains("import 'dart:io'"),
+        isTrue,
+        reason: 'reading schema 需 import dart:io 用 Platform',
+      );
       expectAndroidGate(src, 'reading_controls.volume_page_turning');
     });
 
     test('listening schema：句子导航门控为 Platform.isAndroid', () {
-      final String src =
-          readSource('lib/src/settings/settings_schema_listening.dart')
-              .readAsStringSync();
+      final String src = readSource(
+        'lib/src/settings/settings_schema_listening.dart',
+      ).readAsStringSync();
       expectAndroidGate(src, 'listening.volume_key_sentence_nav');
     });
 
     test('manga schema：翻页开关门控为 Platform.isAndroid', () {
-      final String src =
-          readSource('lib/src/settings/settings_schema_manga.dart')
-              .readAsStringSync();
+      final String src = readSource(
+        'lib/src/settings/settings_schema_manga.dart',
+      ).readAsStringSync();
       expect(src.contains("import 'dart:io'"), isTrue);
       expectAndroidGate(src, 'manga.volume_key_paging');
     });

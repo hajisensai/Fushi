@@ -58,10 +58,7 @@ void main() {
         isTrue,
         reason: 'restore/buildNodeOffsets 只能等已完成图（瞬时），未完成图不得 gate',
       );
-      expect(
-        norm(continuous).contains('var imagePromises = [];'),
-        isTrue,
-      );
+      expect(norm(continuous).contains('var imagePromises = [];'), isTrue);
     });
 
     test('不再把 img.onload 塞进 imagePromises 的 Promise（不得逐图阻塞 resolve）', () {
@@ -72,23 +69,14 @@ void main() {
         isFalse,
         reason: '旧的逐图 onload gate（阻塞 Promise.all）必须删除',
       );
-      expect(
-        continuous.contains('img.onload = mark'),
-        isFalse,
-      );
+      expect(continuous.contains('img.onload = mark'), isFalse);
     });
 
     test('Promise.all(imagePromises).then 仍在（保留 restore/metrics 失效编排壳）', () {
       // 保留消费点，只是 imagePromises 现在为空立即 resolve —— 不动 restore/sasayaki/
       // paginationMetrics=null 的编排结构（最小改面）。
-      expect(
-        paginated.contains('Promise.all(imagePromises).then('),
-        isTrue,
-      );
-      expect(
-        continuous.contains('Promise.all(imagePromises).then('),
-        isTrue,
-      );
+      expect(paginated.contains('Promise.all(imagePromises).then('), isTrue);
+      expect(continuous.contains('Promise.all(imagePromises).then('), isTrue);
     });
   });
 
@@ -117,10 +105,7 @@ void main() {
     test('SVG 封面仍走同步 querySelectorAll(\'svg\') 分支（无 onload 依赖）', () {
       // <svg><image> 封面尺寸取属性/viewBox，同步归类；本次只动 <img> 的 promise，
       // 不触及 svg 分支 → BUG-025 行为不变。
-      expect(
-        paginated.contains("document.querySelectorAll('svg')"),
-        isTrue,
-      );
+      expect(paginated.contains("document.querySelectorAll('svg')"), isTrue);
       expect(
         paginated.contains("svg.classList.add('block-img')"),
         isTrue,

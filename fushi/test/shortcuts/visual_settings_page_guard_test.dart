@@ -23,44 +23,66 @@ void main() {
     'lib/src/shortcuts/shortcut_labels.dart',
   ].map((String path) => File(path).readAsStringSync()).join('\n');
 
-  test('page still iterates ShortcutScope.values for the visual surface too',
-      () {
-    expect(
-      RegExp(r'for\s*\(\s*final\s+ShortcutScope\s+scope\s+in\s+'
-              r'ShortcutScope\.values')
-          .hasMatch(src),
-      isTrue,
-      reason:
-          'visual + list must both walk every scope, not a hard-coded subset',
-    );
-  });
+  test(
+    'page still iterates ShortcutScope.values for the visual surface too',
+    () {
+      expect(
+        RegExp(
+          r'for\s*\(\s*final\s+ShortcutScope\s+scope\s+in\s+'
+          r'ShortcutScope\.values',
+        ).hasMatch(src),
+        isTrue,
+        reason:
+            'visual + list must both walk every scope, not a hard-coded subset',
+      );
+    },
+  );
 
-  test('figure renders KeyboardLayoutView wired to the registry and onKeyTap',
-      () {
-    expect(src.contains('KeyboardLayoutView('), isTrue,
-        reason: 'visual mode must render the KeyboardLayoutView');
-    expect(src.contains('onKeyTap: _onKeyboardKeyTap'), isTrue,
-        reason: 'figure taps must route through the page handler');
-  });
+  test(
+    'figure renders KeyboardLayoutView wired to the registry and onKeyTap',
+    () {
+      expect(
+        src.contains('KeyboardLayoutView('),
+        isTrue,
+        reason: 'visual mode must render the KeyboardLayoutView',
+      );
+      expect(
+        src.contains('onKeyTap: _onKeyboardKeyTap'),
+        isTrue,
+        reason: 'figure taps must route through the page handler',
+      );
+    },
+  );
 
-  test('figure key tap routes to the existing _editBinding write-through path',
-      () {
-    // _onKeyboardKeyTap must delegate to _editBinding (no new write API): that
-    // is the reused updateBindingWithReassignments + saveShortcutRegistry path.
-    final RegExp handler = RegExp(
-      r'_onKeyboardKeyTap[\s\S]*?await\s+_editBinding\(',
-    );
-    expect(handler.hasMatch(src), isTrue,
-        reason: 'figure tap must reuse _editBinding, not a bespoke write');
-  });
+  test(
+    'figure key tap routes to the existing _editBinding write-through path',
+    () {
+      // _onKeyboardKeyTap must delegate to _editBinding (no new write API): that
+      // is the reused updateBindingWithReassignments + saveShortcutRegistry path.
+      final RegExp handler = RegExp(
+        r'_onKeyboardKeyTap[\s\S]*?await\s+_editBinding\(',
+      );
+      expect(
+        handler.hasMatch(src),
+        isTrue,
+        reason: 'figure tap must reuse _editBinding, not a bespoke write',
+      );
+    },
+  );
 
   test('the list view stays available as the off-figure fallback', () {
     // must-fix 3/4: keys not on the figure must remain editable via the list
     // (_ActionTile + _editBinding). The else branch keeps the action tiles.
-    expect(src.contains('_ActionTile('), isTrue,
-        reason: 'list-view action tiles must remain as the fallback surface');
-    expect(src.contains('if (_visualMode)'), isTrue,
-        reason: 'view toggle must gate visual vs list, keeping list fallback');
+    expect(
+      src.contains('_ActionTile('),
+      isTrue,
+      reason: 'list-view action tiles must remain as the fallback surface',
+    );
+    expect(
+      src.contains('if (_visualMode)'),
+      isTrue,
+      reason: 'view toggle must gate visual vs list, keeping list fallback',
+    );
   });
 
   test('edit dialog construction preserves the mouse channel (must-fix 1)', () {
@@ -69,15 +91,18 @@ void main() {
     // an untouched dialog still carries existing bindings forward (never clears
     // MouseBinding(1)) while user captures/deletes take effect.
     expect(
-        src.contains('mouseBindings: List<MouseBinding>.unmodifiable(_mouse)'),
-        isTrue,
-        reason: 'edit result must write the mouse draft, not drop the channel');
-    expect(
-      RegExp(r'_mouse\s*=\s*List<MouseBinding>\.of\('
-              r'widget\.initial\.mouseBindings\)')
-          .hasMatch(src),
+      src.contains('mouseBindings: List<MouseBinding>.unmodifiable(_mouse)'),
       isTrue,
-      reason: 'mouse draft must be seeded from the initial bindings so an '
+      reason: 'edit result must write the mouse draft, not drop the channel',
+    );
+    expect(
+      RegExp(
+        r'_mouse\s*=\s*List<MouseBinding>\.of\('
+        r'widget\.initial\.mouseBindings\)',
+      ).hasMatch(src),
+      isTrue,
+      reason:
+          'mouse draft must be seeded from the initial bindings so an '
           'untouched dialog preserves them',
     );
   });
@@ -85,45 +110,64 @@ void main() {
   test('TODO-1050b: the list view renders mouse bindings (not data-only)', () {
     // 2026-10 重设计：行只列当前输入设备的绑定（shortcutBindingsForDevice），
     // 鼠标设备必须同时覆盖鼠标按键与滚轮两条通道，否则鼠标绑定又会在列表里隐身。
-    expect(src.contains('shortcutBindingsForDevice(w.bindings, w.device)'),
-        isTrue,
-        reason: 'action tile must render the bindings of the selected device');
     expect(
-      RegExp(r'ShortcutInputDevice\.mouse\s*=>\s*const\s*<ShortcutChannel>\{'
-              r'\s*ShortcutChannel\.mouse,\s*ShortcutChannel\.wheel,')
-          .hasMatch(src),
+      src.contains('shortcutBindingsForDevice(w.bindings, w.device)'),
+      isTrue,
+      reason: 'action tile must render the bindings of the selected device',
+    );
+    expect(
+      RegExp(
+        r'ShortcutInputDevice\.mouse\s*=>\s*const\s*<ShortcutChannel>\{'
+        r'\s*ShortcutChannel\.mouse,\s*ShortcutChannel\.wheel,',
+      ).hasMatch(src),
       isTrue,
       reason: 'the mouse device must cover the mouse and wheel channels',
     );
-    expect(src.contains('final MouseBinding b => _InputIconChip('), isTrue,
-        reason: 'mouse bindings must render as icon keycaps');
+    expect(
+      src.contains('final MouseBinding b => _InputIconChip('),
+      isTrue,
+      reason: 'mouse bindings must render as icon keycaps',
+    );
   });
 
-  test('TODO-1060: empty keycaps route to the empty-key assignment handler',
-      () {
+  test('TODO-1060: empty keycaps route to the empty-key assignment handler', () {
     // Un-defer: the figure wires onEmptyKeyTap to _onEmptyKeyboardKeyTap, which
     // picks an action then reuses _editBinding with a prefillKey (no bespoke
     // write path). This pins the un-defer so it cannot silently regress back to
     // "empty keys are not tappable".
-    expect(src.contains('onEmptyKeyTap:'), isTrue,
-        reason: 'figure must pass an onEmptyKeyTap to KeyboardLayoutView');
-    expect(src.contains('_onEmptyKeyboardKeyTap('), isTrue,
-        reason: 'empty tap must route through the empty-key handler');
+    expect(
+      src.contains('onEmptyKeyTap:'),
+      isTrue,
+      reason: 'figure must pass an onEmptyKeyTap to KeyboardLayoutView',
+    );
+    expect(
+      src.contains('_onEmptyKeyboardKeyTap('),
+      isTrue,
+      reason: 'empty tap must route through the empty-key handler',
+    );
     final RegExp emptyHandler = RegExp(
       r'_onEmptyKeyboardKeyTap[\s\S]*?await\s+_editBinding\(',
     );
-    expect(emptyHandler.hasMatch(src), isTrue,
-        reason:
-            'empty-key assignment must reuse _editBinding, not a new write');
+    expect(
+      emptyHandler.hasMatch(src),
+      isTrue,
+      reason: 'empty-key assignment must reuse _editBinding, not a new write',
+    );
   });
 
   test('TODO-1050a: the figure renders gamepad brand glyphs via the panel', () {
     // The visual surface must wire gamepad taps so the GamepadGlyphs data layer
     // is actually rendered (previously zero UI references).
-    expect(src.contains('onGamepadTap:'), isTrue,
-        reason: 'figure must wire gamepad taps to render the gamepad panel');
-    expect(src.contains('onEmptyGamepadTap:'), isTrue,
-        reason: 'figure must allow assigning unbound gamepad buttons');
+    expect(
+      src.contains('onGamepadTap:'),
+      isTrue,
+      reason: 'figure must wire gamepad taps to render the gamepad panel',
+    );
+    expect(
+      src.contains('onEmptyGamepadTap:'),
+      isTrue,
+      reason: 'figure must allow assigning unbound gamepad buttons',
+    );
   });
 
   test('TODO-1113: brand selector is wired to the persisted preference', () {
@@ -153,8 +197,11 @@ void main() {
       'GamepadBrand.playstation',
       'GamepadBrand.nintendoSwitch',
     ]) {
-      expect(src.contains(brand), isTrue,
-          reason: 'brand selector must offer segment for \$brand');
+      expect(
+        src.contains(brand),
+        isTrue,
+        reason: 'brand selector must offer segment for \$brand',
+      );
     }
   });
 
@@ -165,44 +212,63 @@ void main() {
     // the controller glyph so the entry is self-describing and cannot silently
     // regress back to the keyboard glyph.
     final int toggleStart = src.indexOf("Key('shortcut_view_toggle')");
-    expect(toggleStart, greaterThanOrEqualTo(0),
-        reason: 'the view-toggle SegmentedButton must stay addressable');
+    expect(
+      toggleStart,
+      greaterThanOrEqualTo(0),
+      reason: 'the view-toggle SegmentedButton must stay addressable',
+    );
     final int toggleEnd = src.indexOf('onSelectionChanged', toggleStart);
-    expect(toggleEnd, greaterThan(toggleStart),
-        reason: 'view-toggle block must close with onSelectionChanged');
+    expect(
+      toggleEnd,
+      greaterThan(toggleStart),
+      reason: 'view-toggle block must close with onSelectionChanged',
+    );
     final String toggleBlock = src.substring(toggleStart, toggleEnd);
     expect(
       toggleBlock.contains('Icons.keyboard_outlined'),
       isFalse,
-      reason: 'visual segment must NOT hide the controller behind a keyboard '
+      reason:
+          'visual segment must NOT hide the controller behind a keyboard '
           'glyph (TODO-942 discoverability regression)',
     );
     expect(
       toggleBlock.contains('Icons.sports_esports_outlined'),
       isTrue,
-      reason: 'visual segment must advertise the gamepad layout with a '
+      reason:
+          'visual segment must advertise the gamepad layout with a '
           'controller glyph',
     );
     // The two segments must also carry describing tooltips (hover / long-press
     // discoverability on desktop) rather than being bare icons.
-    expect(toggleBlock.contains('tooltip: t.shortcut_view_list'), isTrue,
-        reason: 'list segment must expose a describing tooltip');
-    expect(toggleBlock.contains('tooltip: t.shortcut_view_visual'), isTrue,
-        reason: 'visual segment must expose a describing tooltip');
-  });
-
-  test('TODO-1113: the chosen brand is threaded into the figure + list chips',
-      () {
-    // The figure re-skins with the selected brand...
-    expect(src.contains('gamepadBrand: _gamepadBrand'), isTrue,
-        reason: 'KeyboardLayoutView must render with the selected brand');
-    // ...and the list-view gamepad chip uses the brand glyph, not the raw label.
     expect(
-      src.contains('GamepadGlyphs.glyphFor(b.button, brand).symbol'),
+      toggleBlock.contains('tooltip: t.shortcut_view_list'),
       isTrue,
-      reason: 'list-view gamepad chips must render brand glyphs',
+      reason: 'list segment must expose a describing tooltip',
+    );
+    expect(
+      toggleBlock.contains('tooltip: t.shortcut_view_visual'),
+      isTrue,
+      reason: 'visual segment must expose a describing tooltip',
     );
   });
+
+  test(
+    'TODO-1113: the chosen brand is threaded into the figure + list chips',
+    () {
+      // The figure re-skins with the selected brand...
+      expect(
+        src.contains('gamepadBrand: _gamepadBrand'),
+        isTrue,
+        reason: 'KeyboardLayoutView must render with the selected brand',
+      );
+      // ...and the list-view gamepad chip uses the brand glyph, not the raw label.
+      expect(
+        src.contains('GamepadGlyphs.glyphFor(b.button, brand).symbol'),
+        isTrue,
+        reason: 'list-view gamepad chips must render brand glyphs',
+      );
+    },
+  );
 
   // ── TODO-134 source guard（并自 shortcut_settings_video_scope_guard_test.dart）──
   // The shortcut settings page must list the video scope alongside reader /
@@ -214,16 +280,19 @@ void main() {
   // （ShortcutScope.values 枚举正则与本文件第一个 test 完全重复，按裁决只保留
   // 一份；其余断言逐字搬运。）
 
-  test('settings page expands each scope via actionsForScope(scope) (TODO-134)',
-      () {
-    // The build loop must expand the per-scope actions via
-    // actionsForScope(scope).
-    expect(
-      src.contains('ShortcutAction.actionsForScope(scope)'),
-      isTrue,
-      reason: 'settings page must expand each scope via actionsForScope(scope)',
-    );
-  });
+  test(
+    'settings page expands each scope via actionsForScope(scope) (TODO-134)',
+    () {
+      // The build loop must expand the per-scope actions via
+      // actionsForScope(scope).
+      expect(
+        src.contains('ShortcutAction.actionsForScope(scope)'),
+        isTrue,
+        reason:
+            'settings page must expand each scope via actionsForScope(scope)',
+      );
+    },
+  );
 
   test('settings page has a label branch for the video scope', () {
     // _scopeLabel must handle ShortcutScope.video (the section header), so the
@@ -254,8 +323,11 @@ void main() {
       // 唯一的 t.shortcut_action_global_back（universal 组），故这里改核那一个。
       't.shortcut_action_global_back',
     ]) {
-      expect(src.contains(label), isTrue,
-          reason: 'settings page is missing video action label: $label');
+      expect(
+        src.contains(label),
+        isTrue,
+        reason: 'settings page is missing video action label: $label',
+      );
     }
   });
 
@@ -265,8 +337,11 @@ void main() {
       't.shortcut_action_reader_shift_lookup',
       't.shortcut_action_reader_create_card_from_popup',
     ]) {
-      expect(src.contains(label), isTrue,
-          reason: 'settings page is missing reader shortcut label: $label');
+      expect(
+        src.contains(label),
+        isTrue,
+        reason: 'settings page is missing reader shortcut label: $label',
+      );
     }
   });
 }

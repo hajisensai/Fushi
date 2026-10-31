@@ -28,17 +28,16 @@ import 'package:fushi/utils.dart';
 Future<void> openUpdatesCenter(
   BuildContext context,
   UpdateFeedService service,
-) =>
-    Navigator.of(context).push(
-      adaptivePageRoute<void>(
-        context: context,
-        builder: (BuildContext pageContext) => UpdatesCenterPage(
-          service: service,
-          onOpenEntry: (UpdateFeedEntryRow entry) =>
-              openUpdateFeedEntry(pageContext, entry),
-        ),
-      ),
-    );
+) => Navigator.of(context).push(
+  adaptivePageRoute<void>(
+    context: context,
+    builder: (BuildContext pageContext) => UpdatesCenterPage(
+      service: service,
+      onOpenEntry: (UpdateFeedEntryRow entry) =>
+          openUpdateFeedEntry(pageContext, entry),
+    ),
+  ),
+);
 
 /// 打开一条更新。
 ///

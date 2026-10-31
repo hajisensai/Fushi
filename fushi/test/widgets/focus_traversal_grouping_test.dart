@@ -35,17 +35,14 @@ void main() {
     });
 
     Widget group(List<FocusNode> nodes) => FocusTraversalGroup(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (final FocusNode n in nodes)
-                Focus(
-                  focusNode: n,
-                  child: const SizedBox(width: 120, height: 40),
-                ),
-            ],
-          ),
-        );
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final FocusNode n in nodes)
+            Focus(focusNode: n, child: const SizedBox(width: 120, height: 40)),
+        ],
+      ),
+    );
 
     await tester.pumpWidget(
       MaterialApp(
@@ -70,8 +67,13 @@ void main() {
       seen.add(focusedLabel(all));
     }
 
-    expect(seen, <String>['rail0', 'rail1', 'rail2', 'content0', 'content1'],
-        reason: 'Tab should finish the whole rail group before the content');
+    expect(seen, <String>[
+      'rail0',
+      'rail1',
+      'rail2',
+      'content0',
+      'content1',
+    ], reason: 'Tab should finish the whole rail group before the content');
   });
 
   testWidgets('Shift+Tab walks the same visual order in reverse', (
@@ -93,17 +95,14 @@ void main() {
     });
 
     Widget group(List<FocusNode> nodes) => FocusTraversalGroup(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              for (final FocusNode n in nodes)
-                Focus(
-                  focusNode: n,
-                  child: const SizedBox(width: 120, height: 40),
-                ),
-            ],
-          ),
-        );
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          for (final FocusNode n in nodes)
+            Focus(focusNode: n, child: const SizedBox(width: 120, height: 40)),
+        ],
+      ),
+    );
 
     await tester.pumpWidget(
       MaterialApp(
@@ -128,7 +127,11 @@ void main() {
       seen.add(focusedLabel(all));
     }
 
-    expect(seen, <String>['content1', 'content0', 'rail1', 'rail0'],
-        reason: 'Shift+Tab reverses the same block order');
+    expect(seen, <String>[
+      'content1',
+      'content0',
+      'rail1',
+      'rail0',
+    ], reason: 'Shift+Tab reverses the same block order');
   });
 }

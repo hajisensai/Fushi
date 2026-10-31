@@ -21,32 +21,48 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   // 测试的工作目录是 `fushi/`，packages 在它的上一级。
-  final File pipelineTest =
-      File('../packages/fushi_torrent/test/embedded_pipeline_test.dart');
+  final File pipelineTest = File(
+    '../packages/fushi_torrent/test/embedded_pipeline_test.dart',
+  );
 
   test('下载内容的逐字节比对必须排在 leecher.close() 之后', () {
-    expect(pipelineTest.existsSync(), isTrue,
-        reason: '找不到 ${pipelineTest.path} —— 守卫失去意义，先修路径');
+    expect(
+      pipelineTest.existsSync(),
+      isTrue,
+      reason: '找不到 ${pipelineTest.path} —— 守卫失去意义，先修路径',
+    );
     final String source = pipelineTest.readAsStringSync();
 
     const String compareMarker =
         "reason: 'downloaded bytes must equal seeded bytes'";
     final int compareAt = source.indexOf(compareMarker);
-    expect(compareAt, greaterThanOrEqualTo(0),
-        reason: '逐字节比对断言不见了。它是「引擎报完成 = 磁盘上真有这些字节」'
-            '的唯一证明，不能删；要改先想清楚拿什么替代。');
+    expect(
+      compareAt,
+      greaterThanOrEqualTo(0),
+      reason:
+          '逐字节比对断言不见了。它是「引擎报完成 = 磁盘上真有这些字节」'
+          '的唯一证明，不能删；要改先想清楚拿什么替代。',
+    );
 
     final int closeAt = source.indexOf('leecher.close();');
-    expect(closeAt, greaterThanOrEqualTo(0),
-        reason: '找不到 leecher.close() —— 比对前必须先销毁 session 让 '
-            'libtorrent 把写盘 job 落完，否则 Windows 上会读到未落盘的 0。');
+    expect(
+      closeAt,
+      greaterThanOrEqualTo(0),
+      reason:
+          '找不到 leecher.close() —— 比对前必须先销毁 session 让 '
+          'libtorrent 把写盘 job 落完，否则 Windows 上会读到未落盘的 0。',
+    );
 
     final int readAt = source.indexOf('readAsBytesSync()');
-    expect(readAt, greaterThan(closeAt),
-        reason: '读盘比对排在了 leecher.close() 之前。isFinished / progress==1.0 '
-            '/ left==0 / haveCount==numPieces 都只反映内存里的 piece 状态，'
-            '写盘 job 可能还在 disk io 线程上排队 —— 这正是 CI Windows job '
-            '约 24% 概率挂在字节比对上的原因。');
+    expect(
+      readAt,
+      greaterThan(closeAt),
+      reason:
+          '读盘比对排在了 leecher.close() 之前。isFinished / progress==1.0 '
+          '/ left==0 / haveCount==numPieces 都只反映内存里的 piece 状态，'
+          '写盘 job 可能还在 disk io 线程上排队 —— 这正是 CI Windows job '
+          '约 24% 概率挂在字节比对上的原因。',
+    );
 
     // 关掉 session 到比对之间不许塞任何「等它落盘」的延时/重试。
     final String between = source.substring(closeAt, compareAt);
@@ -56,9 +72,13 @@ void main() {
       'sleep(',
       '_pollUntil',
     ]) {
-      expect(between.contains(banned), isFalse,
-          reason: '关闭 session 与字节比对之间出现了 `$banned`。落盘竞态只能用'
-              '确定性的完成信号（销毁 session）消除，延时/重试只是把概率压小。');
+      expect(
+        between.contains(banned),
+        isFalse,
+        reason:
+            '关闭 session 与字节比对之间出现了 `$banned`。落盘竞态只能用'
+            '确定性的完成信号（销毁 session）消除，延时/重试只是把概率压小。',
+      );
     }
   });
 }

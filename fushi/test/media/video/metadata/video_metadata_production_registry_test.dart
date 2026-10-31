@@ -48,40 +48,43 @@ void main() {
     );
   });
 
-  test('production AniDB HTTP chain uses the HTTP identity, not the UDP one', () {
-    // UDP 身份齐全（随包 fushiplayer/1）而 HTTP 身份为空：HTTP 链必须不可用。
-    final VideoMetadataProviderRegistry bundled =
-        VideoMetadataProviderRegistry.production(
-          VideoSourceScrapeGlobalConfig(
-            anidbClientName: kBundledAniDbClient.name,
-            anidbClientVersion: kBundledAniDbClient.version,
-          ),
-        );
-    addTearDown(bundled.close);
-    expect(
-      (bundled.provider(VideoMetadataProviderKind.anidb)!
-              as AniDbVideoMetadataProvider)
-          .isHttpApiAvailable,
-      isFalse,
-    );
-    // 配了 HTTP 身份（用户自定义客户端）才可用。
-    final VideoMetadataProviderRegistry custom =
-        VideoMetadataProviderRegistry.production(
-          const VideoSourceScrapeGlobalConfig(
-            anidbClientName: 'customapp',
-            anidbClientVersion: 2,
-            anidbHttpClientName: 'customapp',
-            anidbHttpClientVersion: 2,
-          ),
-        );
-    addTearDown(custom.close);
-    expect(
-      (custom.provider(VideoMetadataProviderKind.anidb)!
-              as AniDbVideoMetadataProvider)
-          .isHttpApiAvailable,
-      isTrue,
-    );
-  });
+  test(
+    'production AniDB HTTP chain uses the HTTP identity, not the UDP one',
+    () {
+      // UDP 身份齐全（随包 fushiplayer/1）而 HTTP 身份为空：HTTP 链必须不可用。
+      final VideoMetadataProviderRegistry bundled =
+          VideoMetadataProviderRegistry.production(
+            VideoSourceScrapeGlobalConfig(
+              anidbClientName: kBundledAniDbClient.name,
+              anidbClientVersion: kBundledAniDbClient.version,
+            ),
+          );
+      addTearDown(bundled.close);
+      expect(
+        (bundled.provider(VideoMetadataProviderKind.anidb)!
+                as AniDbVideoMetadataProvider)
+            .isHttpApiAvailable,
+        isFalse,
+      );
+      // 配了 HTTP 身份（用户自定义客户端）才可用。
+      final VideoMetadataProviderRegistry custom =
+          VideoMetadataProviderRegistry.production(
+            const VideoSourceScrapeGlobalConfig(
+              anidbClientName: 'customapp',
+              anidbClientVersion: 2,
+              anidbHttpClientName: 'customapp',
+              anidbHttpClientVersion: 2,
+            ),
+          );
+      addTearDown(custom.close);
+      expect(
+        (custom.provider(VideoMetadataProviderKind.anidb)!
+                as AniDbVideoMetadataProvider)
+            .isHttpApiAvailable,
+        isTrue,
+      );
+    },
+  );
 
   test(
     'production TMDB receives API configuration and selected metadata locale',

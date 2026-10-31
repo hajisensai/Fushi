@@ -13,10 +13,16 @@ void main() {
     final File so = File(p.join(tmp.path, 'bundle', 'lib', 'libx.so'));
     await so.create(recursive: true);
 
-    final List<String> candidates = bundledLibraryCandidates('libx.so', executablePath: exe);
+    final List<String> candidates = bundledLibraryCandidates(
+      'libx.so',
+      executablePath: exe,
+    );
     expect(candidates.first, p.join(tmp.path, 'bundle', 'bin', 'libx.so'));
     expect(candidates[1], p.normalize(so.path));
-    expect(locateBundledLibrary('libx.so', executablePath: exe), p.normalize(so.path));
+    expect(
+      locateBundledLibrary('libx.so', executablePath: exe),
+      p.normalize(so.path),
+    );
     expect(locateBundledLibrary('libnope.so', executablePath: exe), isNull);
   });
 
@@ -39,7 +45,10 @@ void main() {
     expect(back.torrentListen, c.torrentListen);
 
     expect(
-      () => ServerConfig.parse('torrent:\n  engine: transmission\n', configDir: '/x'),
+      () => ServerConfig.parse(
+        'torrent:\n  engine: transmission\n',
+        configDir: '/x',
+      ),
       throwsA(isA<FormatException>()),
     );
   });

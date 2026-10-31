@@ -16,20 +16,25 @@ void main() {
       Directory('../packages/fushi_engine/lib/sync'),
     ];
     for (final Directory dir in dirs) {
-      expect(dir.existsSync(), isTrue,
-          reason: 'run from the fushi/ package root');
+      expect(
+        dir.existsSync(),
+        isTrue,
+        reason: 'run from the fushi/ package root',
+      );
     }
 
     // Matches an empty (whitespace-only) catch body in either form:
     //   `catch (...) {}` / `catch (...) { }` / `catch (...) {\n}`
     //   `on SomeType {}` (parenthesis-less typed catch, also swallows silently)
     // A `{/* reason */}` body does NOT match.
-    final RegExp bareCatch =
-        RegExp(r'(?:catch\s*\([^)]*\)|on\s+[\w.<>]+)\s*\{\s*\}');
+    final RegExp bareCatch = RegExp(
+      r'(?:catch\s*\([^)]*\)|on\s+[\w.<>]+)\s*\{\s*\}',
+    );
     final List<String> offenders = <String>[];
 
-    for (final FileSystemEntity entity
-        in dirs.expand((Directory d) => d.listSync(recursive: true))) {
+    for (final FileSystemEntity entity in dirs.expand(
+      (Directory d) => d.listSync(recursive: true),
+    )) {
       if (entity is! File || !entity.path.endsWith('.dart')) continue;
       final String content = entity.readAsStringSync();
       for (final RegExpMatch m in bareCatch.allMatches(content)) {
@@ -42,7 +47,8 @@ void main() {
     expect(
       offenders,
       isEmpty,
-      reason: 'Bare empty catch blocks swallow errors silently. Log them '
+      reason:
+          'Bare empty catch blocks swallow errors silently. Log them '
           '(ErrorLogService/debugPrint), rethrow, or document the best-effort '
           'intent with a comment inside the braces. Offenders:\n'
           '${offenders.join('\n')}',

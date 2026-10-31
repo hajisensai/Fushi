@@ -20,22 +20,29 @@ void main() {
       // 旧路径：`} catch (_) {` 弹通用文案、丢异常对象。修复后带 (e, st)、
       // 记 ErrorLogService、用带 reason 的文案。
       expect(
-          dialog.contains(
-              'if (mounted) _showSnack(t.local_audio_import_failed);'),
-          isFalse,
-          reason: '裸 catch(_) 吞掉添加音频库异常的旧路径必须移除');
+        dialog.contains(
+          'if (mounted) _showSnack(t.local_audio_import_failed);',
+        ),
+        isFalse,
+        reason: '裸 catch(_) 吞掉添加音频库异常的旧路径必须移除',
+      );
       expect(dialog, contains('catch (e, st)'));
       expect(
-          dialog,
-          contains(
-              "ErrorLogService.instance.log('AudioSourcesDialog.addLocalDb'"));
+        dialog,
+        contains(
+          "ErrorLogService.instance.log('AudioSourcesDialog.addLocalDb'",
+        ),
+      );
       expect(dialog, contains('t.local_audio_import_failed_detail(reason:'));
     });
 
     test('file picker logs unexpected selection and fails on null path', () {
       // 不再用会抛 StateError 的 `files.single`；改记文件数 + 区分 path 为空。
-      expect(schema.contains('result?.files.single.path'), isFalse,
-          reason: 'files.single 会在 0/多文件时抛 StateError 被吞，必须移除');
+      expect(
+        schema.contains('result?.files.single.path'),
+        isFalse,
+        reason: 'files.single 会在 0/多文件时抛 StateError 被吞，必须移除',
+      );
       expect(schema, contains("'AudioSourcesDialog.pickLocalDb'"));
       // BUG-1667：选文件下沉到共享的 pickRealFilePathDetailed 后，条目数不再从
       // `result.files.length` 现取，而由 PickedFileWithoutPathException 带出来。
@@ -46,8 +53,7 @@ void main() {
       expect(schema, contains('throw Exception('));
     });
 
-    test(
-        'importFile no longer silently skips a missing source (no false '
+    test('importFile no longer silently skips a missing source (no false '
         'success)', () {
       // 旧：源文件不存在则跳过 copy、返回空 path entry。修复后改为显式抛错。
       expect(manager, contains('if (!await sourceFile.exists())'));

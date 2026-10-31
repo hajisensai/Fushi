@@ -58,8 +58,7 @@ void main() {
     walDir.createSync();
   }
 
-  test(
-      'a poisoned -wal sidecar is recovered; open succeeds and seeded data '
+  test('a poisoned -wal sidecar is recovered; open succeeds and seeded data '
       'survives (Layer 1/2, no data loss)', () async {
     await seedHealthyDb();
     poisonWalSidecar();
@@ -74,8 +73,11 @@ void main() {
     } catch (e) {
       rawError = e;
     }
-    expect(rawError, isNotNull,
-        reason: 'the poisoned sidecar must break the naive WAL open');
+    expect(
+      rawError,
+      isNotNull,
+      reason: 'the poisoned sidecar must break the naive WAL open',
+    );
 
     // The robust open must recover and return all seeded data intact.
     final FushiDatabase db = FushiDatabase(tempDir.path);
@@ -85,66 +87,84 @@ void main() {
       } catch (_) {}
     });
     final String? marker = await db.getPref('todo905_marker');
-    expect(marker, 'survived',
-        reason: 'recovery must preserve committed data (checkpoint then '
-            'rebuild — never a fresh empty db)');
-  });
-
-  test('recovery NEVER deletes the main fushi.db and snapshots before delete',
-      () async {
-    await seedHealthyDb();
-    final int mainSizeBefore = File(dbPath).lengthSync();
-    poisonWalSidecar();
-
-    final FushiDatabase db = FushiDatabase(tempDir.path);
-    addTearDown(() async {
-      try {
-        await db.close();
-      } catch (_) {}
-    });
-    // Force the open + recovery.
-    await db.getPref('todo905_marker');
-
-    // Red line: the main db file must still exist (never deleted).
-    expect(File(dbPath).existsSync(), isTrue,
-        reason: 'recovery must NEVER delete the main fushi.db');
-    // Its content survived (size did not collapse to an empty rebuild).
-    expect(File(dbPath).lengthSync(), greaterThanOrEqualTo(mainSizeBefore),
-        reason: 'main db kept its pages (checkpoint folded WAL in, no wipe)');
-
-    // A .corrupt-bak snapshot was taken before any sidecar deletion (D1).
-    final bool snapshotted = tempDir
-        .listSync()
-        .whereType<File>()
-        .any((File f) => f.path.contains('.corrupt-bak-'));
-    expect(snapshotted, isTrue,
-        reason: 'a .corrupt-bak snapshot must be written before deleting a '
-            'sidecar (data-safety fallback)');
-  });
-
-  test('a corrupt MAIN db throws FushiDatabaseUnrecoverableException',
-      () async {
-    // Write garbage as the main db file (not a valid SQLite header).
-    File(dbPath).writeAsBytesSync(
-        List<int>.generate(4096, (int i) => (i * 31 + 7) & 0xFF));
-
-    final FushiDatabase db = FushiDatabase(tempDir.path);
-    addTearDown(() async {
-      try {
-        await db.close();
-      } catch (_) {}
-    });
-
-    await expectLater(
-      db.getPref('anything'),
-      throwsA(isA<FushiDatabaseUnrecoverableException>()),
-      reason: 'a corrupt main db must surface a dedicated terminal type so the '
-          'app stops the Retry loop instead of looping forever',
+    expect(
+      marker,
+      'survived',
+      reason:
+          'recovery must preserve committed data (checkpoint then '
+          'rebuild — never a fresh empty db)',
     );
   });
 
   test(
-      'the :popup process (isMainProcess: false) backs off instead of '
+    'recovery NEVER deletes the main fushi.db and snapshots before delete',
+    () async {
+      await seedHealthyDb();
+      final int mainSizeBefore = File(dbPath).lengthSync();
+      poisonWalSidecar();
+
+      final FushiDatabase db = FushiDatabase(tempDir.path);
+      addTearDown(() async {
+        try {
+          await db.close();
+        } catch (_) {}
+      });
+      // Force the open + recovery.
+      await db.getPref('todo905_marker');
+
+      // Red line: the main db file must still exist (never deleted).
+      expect(
+        File(dbPath).existsSync(),
+        isTrue,
+        reason: 'recovery must NEVER delete the main fushi.db',
+      );
+      // Its content survived (size did not collapse to an empty rebuild).
+      expect(
+        File(dbPath).lengthSync(),
+        greaterThanOrEqualTo(mainSizeBefore),
+        reason: 'main db kept its pages (checkpoint folded WAL in, no wipe)',
+      );
+
+      // A .corrupt-bak snapshot was taken before any sidecar deletion (D1).
+      final bool snapshotted = tempDir.listSync().whereType<File>().any(
+        (File f) => f.path.contains('.corrupt-bak-'),
+      );
+      expect(
+        snapshotted,
+        isTrue,
+        reason:
+            'a .corrupt-bak snapshot must be written before deleting a '
+            'sidecar (data-safety fallback)',
+      );
+    },
+  );
+
+  test(
+    'a corrupt MAIN db throws FushiDatabaseUnrecoverableException',
+    () async {
+      // Write garbage as the main db file (not a valid SQLite header).
+      File(dbPath).writeAsBytesSync(
+        List<int>.generate(4096, (int i) => (i * 31 + 7) & 0xFF),
+      );
+
+      final FushiDatabase db = FushiDatabase(tempDir.path);
+      addTearDown(() async {
+        try {
+          await db.close();
+        } catch (_) {}
+      });
+
+      await expectLater(
+        db.getPref('anything'),
+        throwsA(isA<FushiDatabaseUnrecoverableException>()),
+        reason:
+            'a corrupt main db must surface a dedicated terminal type so the '
+            'app stops the Retry loop instead of looping forever',
+      );
+    },
+  );
+
+  test('the :popup process (isMainProcess: false) backs off instead of '
       'deleting a sidecar it does not own (D3)', () async {
     await seedHealthyDb();
     poisonWalSidecar();
@@ -153,8 +173,10 @@ void main() {
     // terminal exception so the main process owns recovery. (A directory -wal
     // cannot be checkpointed away by Layer 1, so Layer 2 is reached, where the
     // non-main process refuses.)
-    final FushiDatabase popupDb =
-        FushiDatabase(tempDir.path, isMainProcess: false);
+    final FushiDatabase popupDb = FushiDatabase(
+      tempDir.path,
+      isMainProcess: false,
+    );
     addTearDown(() async {
       try {
         await popupDb.close();
@@ -167,7 +189,10 @@ void main() {
       reason: 'non-main process must back off on a sidecar error, not delete',
     );
     // It must NOT have deleted the poisoned -wal (the main process owns that).
-    expect(Directory('$dbPath-wal').existsSync(), isTrue,
-        reason: ':popup must not delete a sidecar it does not own');
+    expect(
+      Directory('$dbPath-wal').existsSync(),
+      isTrue,
+      reason: ':popup must not delete a sidecar it does not own',
+    );
   });
 }

@@ -45,11 +45,7 @@ class ReaderChromeScaler extends StatelessWidget {
           child: FittedBox(
             fit: BoxFit.fill,
             alignment: Alignment.topLeft,
-            child: SizedBox(
-              width: w / s,
-              height: baseHeight,
-              child: child,
-            ),
+            child: SizedBox(width: w / s, height: baseHeight, child: child),
           ),
         );
       },

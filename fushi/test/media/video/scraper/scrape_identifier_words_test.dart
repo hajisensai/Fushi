@@ -10,9 +10,7 @@ void main() {
   group('parse', () {
     test('comments and blank lines are skipped', () {
       final ScrapeIdentifierWordParseResult parsed =
-          ScrapeIdentifierWords.parse(
-        '# 这是注释\n\n   \nNekomoe\n',
-      );
+          ScrapeIdentifierWords.parse('# 这是注释\n\n   \nNekomoe\n');
       expect(parsed.words, hasLength(1));
       expect(parsed.errors, isEmpty);
       expect(parsed.words.single.kind, ScrapeIdentifierWordKind.block);
@@ -22,13 +20,13 @@ void main() {
     test('each syntax maps to its own kind', () {
       final ScrapeIdentifierWordParseResult parsed =
           ScrapeIdentifierWords.parse(
-        <String>[
-          'Nekomoe',
-          'Kusuriya => Frieren',
-          '- <> . >> EP+12',
-          'Kusuriya => Frieren && - <> . >> EP-1',
-        ].join('\n'),
-      );
+            <String>[
+              'Nekomoe',
+              'Kusuriya => Frieren',
+              '- <> . >> EP+12',
+              'Kusuriya => Frieren && - <> . >> EP-1',
+            ].join('\n'),
+          );
       expect(parsed.errors, isEmpty);
       expect(
         parsed.words.map((ScrapeIdentifierWord word) => word.kind).toList(),
@@ -45,9 +43,7 @@ void main() {
 
     test('an invalid regex lands in errors and the other rules still work', () {
       final ScrapeIdentifierWordParseResult parsed =
-          ScrapeIdentifierWords.parse(
-        '[unclosed\nNekomoe',
-      );
+          ScrapeIdentifierWords.parse('[unclosed\nNekomoe');
       expect(parsed.errors, hasLength(1));
       expect(parsed.errors.single, contains('第 1 行'));
       expect(parsed.words, hasLength(1));
@@ -85,22 +81,25 @@ void main() {
 
   group('apply', () {
     test('a block word is deleted from the title', () {
-      final ({String title, int episodeOffset}) result =
-          compile(r'\[.*?\]').apply('[Nekomoe kissaten] Frieren - 01');
+      final ({String title, int episodeOffset}) result = compile(
+        r'\[.*?\]',
+      ).apply('[Nekomoe kissaten] Frieren - 01');
       expect(result.title.trim(), 'Frieren - 01');
       expect(result.episodeOffset, 0);
     });
 
     test('a replace word rewrites the title', () {
-      final ({String title, int episodeOffset}) result =
-          compile('Kusuriya => Frieren').apply('Kusuriya - 01');
+      final ({String title, int episodeOffset}) result = compile(
+        'Kusuriya => Frieren',
+      ).apply('Kusuriya - 01');
       expect(result.title, 'Frieren - 01');
       expect(result.episodeOffset, 0);
     });
 
     test('an episode offset shifts the first number between the bounds', () {
-      final ({String title, int episodeOffset}) result =
-          compile('Frieren - <>  >> EP+12').apply('Frieren - 01');
+      final ({String title, int episodeOffset}) result = compile(
+        'Frieren - <>  >> EP+12',
+      ).apply('Frieren - 01');
       expect(result.title, 'Frieren - 13');
       expect(result.episodeOffset, 12);
     });
@@ -112,36 +111,52 @@ void main() {
     });
 
     test('the back bound stops the number search', () {
-      final ({String title, int episodeOffset}) result =
-          compile(r'- <> \[ >> EP-12').apply('Show - 13 [1080p]');
+      final ({String title, int episodeOffset}) result = compile(
+        r'- <> \[ >> EP-12',
+      ).apply('Show - 13 [1080p]');
       expect(result.title, 'Show - 01 [1080p]');
       expect(result.episodeOffset, -12);
     });
 
     test('an out-of-range shift leaves the title untouched', () {
-      expect(compile('- <>  >> EP-12').apply('Show - 01'),
-          (title: 'Show - 01', episodeOffset: 0));
-      expect(compile('- <>  >> EP+9999').apply('Show - 12'),
-          (title: 'Show - 12', episodeOffset: 0));
+      expect(compile('- <>  >> EP-12').apply('Show - 01'), (
+        title: 'Show - 01',
+        episodeOffset: 0,
+      ));
+      expect(compile('- <>  >> EP+9999').apply('Show - 12'), (
+        title: 'Show - 12',
+        episodeOffset: 0,
+      ));
     });
 
     test('a missing bound makes the offset rule inapplicable', () {
-      expect(compile('Other - <>  >> EP+1').apply('Show - 01'),
-          (title: 'Show - 01', episodeOffset: 0));
-      expect(compile(r'- <> \[ >> EP+1').apply('Show - 01'),
-          (title: 'Show - 01', episodeOffset: 0));
-      expect(compile('- <>  >> EP+1').apply('Show without a number'),
-          (title: 'Show without a number', episodeOffset: 0));
+      expect(compile('Other - <>  >> EP+1').apply('Show - 01'), (
+        title: 'Show - 01',
+        episodeOffset: 0,
+      ));
+      expect(compile(r'- <> \[ >> EP+1').apply('Show - 01'), (
+        title: 'Show - 01',
+        episodeOffset: 0,
+      ));
+      expect(compile('- <>  >> EP+1').apply('Show without a number'), (
+        title: 'Show without a number',
+        episodeOffset: 0,
+      ));
     });
 
     test('replace-and-offset only shifts when the replacement matched', () {
-      final ScrapeIdentifierWords words =
-          compile('Kusuriya => Frieren && - <>  >> EP-12');
-      expect(words.apply('Kusuriya - 13'),
-          (title: 'Frieren - 01', episodeOffset: -12));
+      final ScrapeIdentifierWords words = compile(
+        'Kusuriya => Frieren && - <>  >> EP-12',
+      );
+      expect(words.apply('Kusuriya - 13'), (
+        title: 'Frieren - 01',
+        episodeOffset: -12,
+      ));
       // 替换没命中：整条规则跳过，集号一并不动。
-      expect(
-          words.apply('Other - 13'), (title: 'Other - 13', episodeOffset: 0));
+      expect(words.apply('Other - 13'), (
+        title: 'Other - 13',
+        episodeOffset: 0,
+      ));
     });
 
     test('rules are applied in the listed order', () {
@@ -164,8 +179,10 @@ void main() {
     });
 
     test('an empty word list is a no-op', () {
-      expect(ScrapeIdentifierWords.empty.apply('Show - 01'),
-          (title: 'Show - 01', episodeOffset: 0));
+      expect(ScrapeIdentifierWords.empty.apply('Show - 01'), (
+        title: 'Show - 01',
+        episodeOffset: 0,
+      ));
       expect(ScrapeIdentifierWords.empty.isEmpty, isTrue);
     });
 

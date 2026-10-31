@@ -64,8 +64,9 @@ class WindowCaptionChannel {
   /// 系统窗口材质（Windows 11 Mica / macOS NSVisualEffectView vibrancy）是否
   /// 已在窗口上生效。只有它为 true 时，首页外壳才把 scaffold 底色调成半透明让
   /// 系统材质透出来；Win10 / 旧 runner / 其它平台恒 false，外壳保持实心。
-  static final ValueNotifier<bool> systemBackdropActive =
-      ValueNotifier<bool>(false);
+  static final ValueNotifier<bool> systemBackdropActive = ValueNotifier<bool>(
+    false,
+  );
 
   static bool? _lastMica;
   static bool? _lastDark;
@@ -96,10 +97,11 @@ class WindowCaptionChannel {
     }
     bool active = false;
     try {
-      active = await _channel.invokeMethod<bool>(
-            'setSystemBackdrop',
-            <String, bool>{'mica': mica, 'dark': dark},
-          ) ??
+      active =
+          await _channel.invokeMethod<bool>('setSystemBackdrop', <String, bool>{
+            'mica': mica,
+            'dark': dark,
+          }) ??
           false;
     } on PlatformException {
       active = false;
@@ -328,15 +330,13 @@ class WindowCaptionChannel {
     }
     _ensureNativeHandler();
     try {
-      await _channel.invokeMethod<void>(
-        'setCaptionMaxButtonRect',
-        <String, int>{
-          'left': rounded?.left.toInt() ?? 0,
-          'top': rounded?.top.toInt() ?? 0,
-          'right': rounded?.right.toInt() ?? 0,
-          'bottom': rounded?.bottom.toInt() ?? 0,
-        },
-      );
+      await _channel
+          .invokeMethod<void>('setCaptionMaxButtonRect', <String, int>{
+            'left': rounded?.left.toInt() ?? 0,
+            'top': rounded?.top.toInt() ?? 0,
+            'right': rounded?.right.toInt() ?? 0,
+            'bottom': rounded?.bottom.toInt() ?? 0,
+          });
     } on PlatformException {
       // 旧 runner 没有这条方法：没有贴靠布局，按钮照常由 Flutter 处理。
     } on MissingPluginException {

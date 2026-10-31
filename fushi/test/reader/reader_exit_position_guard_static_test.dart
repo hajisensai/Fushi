@@ -5,25 +5,27 @@ import '../pages/reader_fushi_page_source_corpus.dart';
 void main() {
   final String source = readReaderPageSource();
 
-  test('page turns wait for the displayed progress snapshot before returning',
-      () {
-    final String paginate = _functionSource(
-      source,
-      // TODO-737: _paginate 签名加了 {int throttleMs = 0} 改多行，起点标记收窄到
-      // 方法定义首行（含 Future<void> 前缀，唯一）。
-      '  Future<void> _paginate(',
-      '  Future<void> _openImageViewer(String imgUrl',
-    );
+  test(
+    'page turns wait for the displayed progress snapshot before returning',
+    () {
+      final String paginate = _functionSource(
+        source,
+        // TODO-737: _paginate 签名加了 {int throttleMs = 0} 改多行，起点标记收窄到
+        // 方法定义首行（含 Future<void> 前缀，唯一）。
+        '  Future<void> _paginate(',
+        '  Future<void> _openImageViewer(String imgUrl',
+      );
 
-    expect(
-      paginate,
-      contains('await _refreshProgress()'),
-      reason:
-          'exiting immediately after a page turn must not race the progress '
-          'snapshot; otherwise the saved reader position can stay on the '
-          'previous page.',
-    );
-  });
+      expect(
+        paginate,
+        contains('await _refreshProgress()'),
+        reason:
+            'exiting immediately after a page turn must not race the progress '
+            'snapshot; otherwise the saved reader position can stay on the '
+            'previous page.',
+      );
+    },
+  );
 
   test('lifecycle flush syncs the WebView current page before persisting', () {
     final String syncAndFlush = _functionSource(
@@ -35,19 +37,22 @@ void main() {
     expect(
       source,
       contains('Future<void> _syncPositionFromWebViewProgress() async'),
-      reason: 'the exit/background path needs a direct WebView progress probe, '
+      reason:
+          'the exit/background path needs a direct WebView progress probe, '
           'not only the last 10-second poll value.',
     );
     expect(
       source,
       contains('ReaderPaginationScripts.stableProgressInvocation()'),
-      reason: 'resizing/re-anchoring can transiently reset scroll position; '
+      reason:
+          'resizing/re-anchoring can transiently reset scroll position; '
           'exit sync must not persist that unstable snapshot.',
     );
     expect(
       syncAndFlush,
       contains('await _syncPositionFromWebViewProgress()'),
-      reason: '_syncAndFlushPosition is the shared dispose/background path and '
+      reason:
+          '_syncAndFlushPosition is the shared dispose/background path and '
           'must capture the page currently displayed by the WebView.',
     );
     expect(
@@ -59,8 +64,7 @@ void main() {
     );
   });
 
-  test('BUG-203 returning to the shelf flushes the live WebView page (await)',
-      () {
+  test('BUG-203 returning to the shelf flushes the live WebView page (await)', () {
     // The back-button path is the only awaitable exit hook: dispose()'s
     // _syncAndFlushPosition() is fire-and-forget and loses the race against
     // super.dispose() tearing down the WebView, so the saved position falls

@@ -37,14 +37,16 @@ void main() {
 
   test('Windows 插件真的调了 AddFreeDimensionOverrideByName', () {
     final String src = maskComments(
-      File('$vendored/windows/flutter_onnxruntime_plugin.cpp')
-          .readAsStringSync(),
+      File(
+        '$vendored/windows/flutter_onnxruntime_plugin.cpp',
+      ).readAsStringSync(),
     );
 
     expect(
       src,
       contains('AddFreeDimensionOverrideByName'),
-      reason: 'delta #8 的 C++ 半没了：Dart 仍会传 freeDimensionOverrides，插件不再'
+      reason:
+          'delta #8 的 C++ 半没了：Dart 仍会传 freeDimensionOverrides，插件不再'
           '读它，会话静默退回动态 shape —— 结果正确但编码器慢 5~7 倍，'
           '没有任何别的测试会红',
     );
@@ -88,19 +90,21 @@ void main() {
     // 改成从文档里解析出真实的最大 delta 号，再要求清单覆盖到它：编号涨了而清单
     // 没跟，这里当场红。
     // delta 表是 `## Delta vs upstream` 下的有序列表，条目就是行首的 `N. `。
-    final List<int> declared = RegExp(r'^(\d+)\. ', multiLine: true)
-        .allMatches(md)
-        .map((RegExpMatch m) => int.parse(m.group(1)!))
-        .toList();
+    final List<int> declared = RegExp(
+      r'^(\d+)\. ',
+      multiLine: true,
+    ).allMatches(md).map((RegExpMatch m) => int.parse(m.group(1)!)).toList();
     expect(declared, isNotEmpty, reason: 'PATCHES.md 的 delta 列表解析不出条目？守卫需更新');
     final int maxDelta = declared.reduce((int a, int b) => a > b ? a : b);
-    final RegExpMatch? revendor =
-        RegExp(r're-apply deltas #1[\u2013-]#(\d+)').firstMatch(md);
+    final RegExpMatch? revendor = RegExp(
+      r're-apply deltas #1[\u2013-]#(\d+)',
+    ).firstMatch(md);
     expect(revendor, isNotNull, reason: '找不到 re-vendor 清单那句话');
     expect(
       int.parse(revendor!.group(1)!),
       maxDelta,
-      reason: 're-vendor 清单只覆盖到 #${revendor.group(1)}，而 delta 表里已经有 '
+      reason:
+          're-vendor 清单只覆盖到 #${revendor.group(1)}，而 delta 表里已经有 '
           '$maxDelta 条 —— 照它做会丢掉后面的 delta',
     );
     expect(

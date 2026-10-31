@@ -48,18 +48,20 @@ void main() {
       expect(_miningAudioSourceFor(urls), isNull);
     });
 
-    test('纯分离流（无 muxed）→ remoteVideoStreamUrls 回填 false，用 audio-only URL',
-        () async {
-      final UrlStreamVideoClient c = UrlStreamVideoClient(
-        streamUrl: 'https://v/play',
-        audioStreamUrl: 'https://v/audio',
-        miningVideoUrl: 'https://v/mine',
-        miningVideoHasAudio: false,
-      );
-      final RemoteVideoStreamUrls urls = await c.remoteVideoStreamUrls('id');
-      expect(urls.miningVideoHasAudio, isFalse);
-      expect(_miningAudioSourceFor(urls), 'https://v/audio');
-    });
+    test(
+      '纯分离流（无 muxed）→ remoteVideoStreamUrls 回填 false，用 audio-only URL',
+      () async {
+        final UrlStreamVideoClient c = UrlStreamVideoClient(
+          streamUrl: 'https://v/play',
+          audioStreamUrl: 'https://v/audio',
+          miningVideoUrl: 'https://v/mine',
+          miningVideoHasAudio: false,
+        );
+        final RemoteVideoStreamUrls urls = await c.remoteVideoStreamUrls('id');
+        expect(urls.miningVideoHasAudio, isFalse);
+        expect(_miningAudioSourceFor(urls), 'https://v/audio');
+      },
+    );
 
     test('episodeIndex 变化不改变 miningVideoHasAudio（单 URL 流恒等）', () async {
       final UrlStreamVideoClient c = UrlStreamVideoClient(
@@ -69,8 +71,10 @@ void main() {
         miningVideoHasAudio: true,
       );
       final RemoteVideoStreamUrls a = await c.remoteVideoStreamUrls('id');
-      final RemoteVideoStreamUrls b =
-          await c.remoteVideoStreamUrls('id', episodeIndex: 5);
+      final RemoteVideoStreamUrls b = await c.remoteVideoStreamUrls(
+        'id',
+        episodeIndex: 5,
+      );
       expect(a.miningVideoHasAudio, b.miningVideoHasAudio);
       expect(b.miningVideoHasAudio, isTrue);
     });
@@ -80,31 +84,33 @@ void main() {
     test('fromJson 解析 miningVideoHasAudio=true', () {
       final RemoteVideoStreamUrls urls =
           RemoteVideoStreamUrls.fromJson(<String, Object?>{
-        'url': 'https://v/play',
-        'audioStreamUrl': 'https://v/audio',
-        'miningVideoUrl': 'https://v/mine',
-        'miningVideoHasAudio': true,
-      });
+            'url': 'https://v/play',
+            'audioStreamUrl': 'https://v/audio',
+            'miningVideoUrl': 'https://v/mine',
+            'miningVideoHasAudio': true,
+          });
       expect(urls.miningVideoHasAudio, isTrue);
       expect(_miningAudioSourceFor(urls), isNull);
     });
 
     test('fromJson 缺字段 → 默认 false（保持旧远端 host 行为，用 audio-only 流）', () {
-      final RemoteVideoStreamUrls urls =
-          RemoteVideoStreamUrls.fromJson(<String, Object?>{
-        'url': 'https://v/play',
-        'audioStreamUrl': 'https://v/audio',
-      });
+      final RemoteVideoStreamUrls urls = RemoteVideoStreamUrls.fromJson(
+        <String, Object?>{
+          'url': 'https://v/play',
+          'audioStreamUrl': 'https://v/audio',
+        },
+      );
       expect(urls.miningVideoHasAudio, isFalse);
       expect(_miningAudioSourceFor(urls), 'https://v/audio');
     });
 
     test('fromJson 非 bool 值 → false（脏数据不崩）', () {
-      final RemoteVideoStreamUrls urls =
-          RemoteVideoStreamUrls.fromJson(<String, Object?>{
-        'url': 'https://v/play',
-        'miningVideoHasAudio': 'yes',
-      });
+      final RemoteVideoStreamUrls urls = RemoteVideoStreamUrls.fromJson(
+        <String, Object?>{
+          'url': 'https://v/play',
+          'miningVideoHasAudio': 'yes',
+        },
+      );
       expect(urls.miningVideoHasAudio, isFalse);
     });
   });
@@ -112,10 +118,11 @@ void main() {
   group('buildStreamVideoLaunch 直链分支 miningVideoHasAudio (TODO-1301)', () {
     test('直链/HLS（单 muxed 流）→ 客户端 miningVideoHasAudio=true', () async {
       final launch = await buildStreamVideoLaunch(
-          _row(videoPath: 'https://cdn.example.com/live.m3u8'));
+        _row(videoPath: 'https://cdn.example.com/live.m3u8'),
+      );
       expect(launch.client.miningVideoHasAudio, isTrue);
-      final RemoteVideoStreamUrls urls =
-          await launch.client.remoteVideoStreamUrls(launch.info.id);
+      final RemoteVideoStreamUrls urls = await launch.client
+          .remoteVideoStreamUrls(launch.info.id);
       expect(urls.miningVideoHasAudio, isTrue);
       // 直链无分离 audio-only 流 → 制卡音频从 miningSource(直链自身) 抽。
       expect(_miningAudioSourceFor(urls), isNull);
@@ -126,8 +133,9 @@ void main() {
   group('video_fushi_page 制卡音频源接线守卫 (TODO-1301 回归)', () {
     late String src;
     setUpAll(() {
-      src = File('lib/src/pages/implementations/video_fushi_page.dart')
-          .readAsStringSync();
+      src = File(
+        'lib/src/pages/implementations/video_fushi_page.dart',
+      ).readAsStringSync();
     });
 
     test('应用内路径复用批量守卫公式（muxed 时置 null）', () {

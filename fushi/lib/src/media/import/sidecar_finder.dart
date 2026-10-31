@@ -22,7 +22,7 @@ const List<String> _subtitleExtPriority = <String>[
   'vtt',
   'ass',
   'ssa',
-  'lrc'
+  'lrc',
 ];
 
 /// 默认字幕扩展集（书籍导入用，含 lrc）。视频导入传入不含 lrc 的子集，与视频
@@ -32,7 +32,7 @@ const Set<String> defaultSubtitleExts = <String>{
   'vtt',
   'ass',
   'ssa',
-  'lrc'
+  'lrc',
 };
 
 /// 同前缀多段音频判定：stem 之后的余部以分隔符（空白/`.`/`_`/`-`）或数字开头，
@@ -136,8 +136,9 @@ Future<SidecarMatch> findSidecars(
     );
 
     return SidecarMatch(
-      subtitlePath:
-          sel.subtitle == null ? null : p.join(dir.path, sel.subtitle!),
+      subtitlePath: sel.subtitle == null
+          ? null
+          : p.join(dir.path, sel.subtitle!),
       audioPaths: sel.audio.map((String n) => p.join(dir.path, n)).toList(),
     );
   } catch (_) {

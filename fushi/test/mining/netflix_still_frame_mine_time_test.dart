@@ -121,8 +121,11 @@ void main() {
         durationMs: 6000,
       );
       expect(t, isNotNull);
-      expect(t!.offsetMs, 2500,
-          reason: '制卡时刻 12500 − 片段锚点 10000 = 2500ms。取 0（首帧）就是用户否掉的做法。');
+      expect(
+        t!.offsetMs,
+        2500,
+        reason: '制卡时刻 12500 − 片段锚点 10000 = 2500ms。取 0（首帧）就是用户否掉的做法。',
+      );
       expect(t.exact, isTrue);
     });
 
@@ -161,8 +164,11 @@ void main() {
       );
       expect(t, isNotNull);
       expect(t!.offsetMs, 0);
-      expect(t.exact, isFalse,
-          reason: '拿不到时刻就退片段起点，但必须标出来 —— 调用方据此写诊断日志，不静默糊弄。');
+      expect(
+        t.exact,
+        isFalse,
+        reason: '拿不到时刻就退片段起点，但必须标出来 —— 调用方据此写诊断日志，不静默糊弄。',
+      );
     });
 
     test('脏输入夹到 [0, durationMs]，不产生负偏移/越界偏移', () {
@@ -173,8 +179,7 @@ void main() {
           cueStartMs: 10200,
           mineAtMs: 9000,
           durationMs: 6000,
-        )!
-            .offsetMs,
+        )!.offsetMs,
         0,
       );
       expect(
@@ -184,8 +189,7 @@ void main() {
           cueStartMs: 10200,
           mineAtMs: 99000,
           durationMs: 6000,
-        )!
-            .offsetMs,
+        )!.offsetMs,
         6000,
       );
     });
@@ -212,8 +216,10 @@ void main() {
         transcodeClipToCapture(
           Uint8List.fromList(<int>[1, 2, 3, 4]),
           durationMs: 6000,
-          compression:
-              MiningMediaCompression.resolve(imageTier: 1, audioTier: 0),
+          compression: MiningMediaCompression.resolve(
+            imageTier: 1,
+            audioTier: 0,
+          ),
           tempDir: tempRoot.path,
           format: MiningAnimatedFormat.avif,
           stillTarget: target,
@@ -223,14 +229,19 @@ void main() {
         );
 
     test('① 选静态帧 → 产出单帧，完全不进动图编码链', () async {
-      final ImmersionCaptureResult cap =
-          await run((offsetMs: 2500, exact: true));
+      final ImmersionCaptureResult cap = await run((
+        offsetMs: 2500,
+        exact: true,
+      ));
 
       expect(cap.ok, isTrue);
       expect(cap.coverIsStill, isTrue);
       expect(cap.gifBytes, isNotNull);
-      expect(gif.outputs, isEmpty,
-          reason: '静态帧不该编动图 —— 既是行为正确性，也是不触发顶格档大体积编码的原因。');
+      expect(
+        gif.outputs,
+        isEmpty,
+        reason: '静态帧不该编动图 —— 既是行为正确性，也是不触发顶格档大体积编码的原因。',
+      );
       expect(frame.calls, hasLength(1));
       expect(frame.calls.single.outputPath, endsWith('.jpg'));
       expect(audio.calls, 1, reason: '静态帧模式不该把音频一起砍掉。');
@@ -239,8 +250,11 @@ void main() {
     test('② 取的帧对应制卡时刻，不是片段首帧', () async {
       await run((offsetMs: 2500, exact: true));
       expect(frame.calls.single.atSeconds, closeTo(2.5, 1e-9));
-      expect(frame.calls.single.atSeconds, isNot(0.0),
-          reason: '取首帧正是用户否掉的做法：片段 t=0 是句首，离制卡那一刻可以差好几秒。');
+      expect(
+        frame.calls.single.atSeconds,
+        isNot(0.0),
+        reason: '取首帧正是用户否掉的做法：片段 t=0 是句首，离制卡那一刻可以差好几秒。',
+      );
     });
 
     test('③ 片段起点与句首有偏移时仍取对（锚点实测，不假设等于句首）', () async {
@@ -254,8 +268,11 @@ void main() {
         durationMs: 6000,
       );
       await run(t);
-      expect(frame.calls.single.atSeconds, closeTo(2.02, 1e-9),
-          reason: '若把锚点当成 seek 目标 10000，这里会算成 2.5s —— 差 480ms、约 6 个采集帧。');
+      expect(
+        frame.calls.single.atSeconds,
+        closeTo(2.02, 1e-9),
+        reason: '若把锚点当成 seek 目标 10000，这里会算成 2.5s —— 差 480ms、约 6 个采集帧。',
+      );
     });
 
     test('④ 动图偏好（stillTarget=null）逐字节不受影响', () async {
@@ -270,14 +287,19 @@ void main() {
 
     test('⑤ 取帧走 decodeFromStart（录制片段无 Cues 索引，输入定位会落到最近关键帧）', () async {
       await run((offsetMs: 2500, exact: true));
-      expect(frame.calls.single.decodeFromStart, isTrue,
-          reason: 'MediaRecorder webm 没有 Cues；输入定位取到的是最近关键帧而不是那一刻的帧。');
+      expect(
+        frame.calls.single.decodeFromStart,
+        isTrue,
+        reason: 'MediaRecorder webm 没有 Cues；输入定位取到的是最近关键帧而不是那一刻的帧。',
+      );
     });
 
     test('抽帧失败但有音频 → 与动图失败同形降级（无封面有音频），不整卡失败', () async {
       frame = _FakeFrameExtractor(succeed: false);
-      final ImmersionCaptureResult cap =
-          await run((offsetMs: 2500, exact: true));
+      final ImmersionCaptureResult cap = await run((
+        offsetMs: 2500,
+        exact: true,
+      ));
       expect(cap.ok, isTrue);
       expect(cap.gifBytes, isNull);
       expect(cap.coverIsStill, isFalse);
@@ -287,10 +309,10 @@ void main() {
 
   group('buildImmersionRequest：静态帧封面的文件名', () {
     ImmersionMinePayload payload() => ImmersionMinePayload(
-          fields: const <String, String>{'word': 'x'},
-          sentence: 's',
-          clipBytes: Uint8List.fromList(<int>[1]),
-        );
+      fields: const <String, String>{'word': 'x'},
+      sentence: 's',
+      clipBytes: Uint8List.fromList(<int>[1]),
+    );
 
     test('静态帧 → .jpg（Anki 按扩展名判 MIME；给 .avif 会显示不出封面）', () {
       final ImmersionMiningRequest req = buildImmersionRequest(
@@ -322,16 +344,17 @@ void main() {
 
   group('wire：扩展下发的三个视频时间被解析', () {
     test('ImmersionMinePayload 解析 clipAnchorMs / cueStartMs / mineAtMs', () {
-      final ImmersionMinePayload p =
-          ImmersionMinePayload.fromJson(<String, dynamic>{
-        'fields': <String, dynamic>{'word': 'x'},
-        'sentence': 's',
-        'clipDurationMs': 6000,
-        'clipAnchorMs': 10480,
-        'clipAnchorUncertaintyMs': 12,
-        'cueStartMs': 10200,
-        'mineAtMs': 12500,
-      });
+      final ImmersionMinePayload p = ImmersionMinePayload.fromJson(
+        <String, dynamic>{
+          'fields': <String, dynamic>{'word': 'x'},
+          'sentence': 's',
+          'clipDurationMs': 6000,
+          'clipAnchorMs': 10480,
+          'clipAnchorUncertaintyMs': 12,
+          'cueStartMs': 10200,
+          'mineAtMs': 12500,
+        },
+      );
       expect(p.clipAnchorMs, 10480);
       expect(p.clipAnchorUncertaintyMs, 12);
       expect(p.cueStartMs, 10200);
@@ -339,11 +362,12 @@ void main() {
     });
 
     test('老版扩展不发这些字段 → 全 null，不报错（向后兼容）', () {
-      final ImmersionMinePayload p =
-          ImmersionMinePayload.fromJson(<String, dynamic>{
-        'fields': <String, dynamic>{'word': 'x'},
-        'sentence': 's',
-      });
+      final ImmersionMinePayload p = ImmersionMinePayload.fromJson(
+        <String, dynamic>{
+          'fields': <String, dynamic>{'word': 'x'},
+          'sentence': 's',
+        },
+      );
       expect(p.clipAnchorMs, isNull);
       expect(p.cueStartMs, isNull);
       expect(p.mineAtMs, isNull);
@@ -380,50 +404,82 @@ void main() {
 
     test('mineImmersion 的 Netflix 段必须把静态帧目标下发给 transcodeClipToCapture', () {
       final String src = maskComments(
-          File('lib/src/models/app_model.dart').readAsStringSync());
+        File('lib/src/models/app_model.dart').readAsStringSync(),
+      );
       final int start = src.indexOf('Future<RemoteMineResult> mineImmersion(');
       expect(start, greaterThan(0), reason: 'mineImmersion 改名了？守卫锚点失效，请同步更新。');
       final int end = src.indexOf('void recordHistory(', start);
       expect(end, greaterThan(start));
       final String body = src.substring(start, end);
       final int netflix = body.indexOf('ImmersionCaptureResult cap =');
-      expect(netflix, greaterThan(0),
-          reason: 'YouTube/Netflix 分界锚点失效，请同步更新守卫。');
+      expect(
+        netflix,
+        greaterThan(0),
+        reason: 'YouTube/Netflix 分界锚点失效，请同步更新守卫。',
+      );
       final String nf = body.substring(netflix);
 
-      expect(nf, contains('resolveClipStillTarget('),
-          reason: 'Netflix 段必须按 videoMiningImageMode 解析静态帧目标；'
-              '不解析就等于用户选的「制卡时截图」在这条链路上恒被吞成动图（BUG-1416）。');
+      expect(
+        nf,
+        contains('resolveClipStillTarget('),
+        reason:
+            'Netflix 段必须按 videoMiningImageMode 解析静态帧目标；'
+            '不解析就等于用户选的「制卡时截图」在这条链路上恒被吞成动图（BUG-1416）。',
+      );
       // 生效模式 = 偏好经目标模板裁决（BUG-2869：Kiku 这类模板承载不了同步片段），
       // 声明紧挨在分界锚点之前。
-      final int modeDecl =
-          body.lastIndexOf('final VideoMiningImageMode imageMode =', netflix);
-      expect(modeDecl, greaterThan(0),
-          reason: 'Netflix 段的生效模式声明不见了，守卫锚点失效。');
+      final int modeDecl = body.lastIndexOf(
+        'final VideoMiningImageMode imageMode =',
+        netflix,
+      );
+      expect(modeDecl, greaterThan(0), reason: 'Netflix 段的生效模式声明不见了，守卫锚点失效。');
       final String decision = body.substring(modeDecl, netflix);
-      expect(decision, contains('resolveTargetMiningImageMode('),
-          reason: '录片段前必须问目标模板能否承载同步片段（BUG-2869）。');
-      expect(decision, contains('_videoMiningImageMode'),
-          reason: '偏好必须真读 AppModel / 扩展所选配置的视图，不能写死。');
-      expect(nf, contains('imageMode: imageMode'),
-          reason: '解析静态帧目标与转码都必须用裁决后的生效模式。');
-      expect(nf, contains('stillTarget: stillTarget'),
-          reason: '解析出来还得真传给 transcodeClipToCapture，否则解析了也白解析。');
+      expect(
+        decision,
+        contains('resolveTargetMiningImageMode('),
+        reason: '录片段前必须问目标模板能否承载同步片段（BUG-2869）。',
+      );
+      expect(
+        decision,
+        contains('_videoMiningImageMode'),
+        reason: '偏好必须真读 AppModel / 扩展所选配置的视图，不能写死。',
+      );
+      expect(
+        nf,
+        contains('imageMode: imageMode'),
+        reason: '解析静态帧目标与转码都必须用裁决后的生效模式。',
+      );
+      expect(
+        nf,
+        contains('stillTarget: stillTarget'),
+        reason: '解析出来还得真传给 transcodeClipToCapture，否则解析了也白解析。',
+      );
     });
 
     test('浏览器扩展在制卡入口就地采样制卡时刻，并随 mineClip 发出', () {
       final String content = maskJsComments(
-          File('../tools/browser-extension/content.js').readAsStringSync());
-      expect(content, contains('mineAtV'),
-          reason: '入队时不采样「制卡那一刻」的视频时间，之后的回放录制就永远拿不回它。');
+        File('../tools/browser-extension/content.js').readAsStringSync(),
+      );
+      expect(
+        content,
+        contains('mineAtV'),
+        reason: '入队时不采样「制卡那一刻」的视频时间，之后的回放录制就永远拿不回它。',
+      );
       expect(content, contains('mineAtMs:'), reason: 'mineClip 必须把制卡时刻发给服务端。');
-      expect(content, contains('clipAnchorMs:'),
-          reason: '片段时间基锚点必须实测下发 —— 假设它等于 seek 目标就是几百毫秒的系统性偏差。');
+      expect(
+        content,
+        contains('clipAnchorMs:'),
+        reason: '片段时间基锚点必须实测下发 —— 假设它等于 seek 目标就是几百毫秒的系统性偏差。',
+      );
 
       final String background = maskJsComments(
-          File('../tools/browser-extension/background.js').readAsStringSync());
-      expect(background, contains('clipAnchorMs'),
-          reason: 'background 的 mineClip 转发漏掉字段 = content 采了也白采。');
+        File('../tools/browser-extension/background.js').readAsStringSync(),
+      );
+      expect(
+        background,
+        contains('clipAnchorMs'),
+        reason: 'background 的 mineClip 转发漏掉字段 = content 采了也白采。',
+      );
       expect(background, contains('mineAtMs'));
     });
   });

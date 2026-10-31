@@ -8,33 +8,41 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   group('extension last-seen wiring', () {
     test('yomitan server 在扩展端点命中时回调 onExtensionSeen', () {
-      final String src =
-          File('lib/src/sync/fushi_api_server.dart').readAsStringSync();
+      final String src = File(
+        'lib/src/sync/fushi_api_server.dart',
+      ).readAsStringSync();
       // 探活端点集合含状态与查词（扩展启动打状态、使用时打查词，都应刷新 last-seen）。
       expect(src, contains("'/api/extension/status',"));
       expect(src, contains("'/api/lookup/dictionary',"));
       // 命中即回调。
-      expect(src, contains('if (_kExtensionSeenPaths.contains(path)) {'),
-          reason: '扩展端点命中必须触发 onExtensionSeen 回调');
+      expect(
+        src,
+        contains('if (_kExtensionSeenPaths.contains(path)) {'),
+        reason: '扩展端点命中必须触发 onExtensionSeen 回调',
+      );
       expect(src, contains('_onExtensionSeen?.call();'));
     });
 
     test('manager 把 onExtensionSeen 透传给 server', () {
-      final String src = File('lib/src/sync/fushi_api_server_manager.dart')
-          .readAsStringSync();
+      final String src = File(
+        'lib/src/sync/fushi_api_server_manager.dart',
+      ).readAsStringSync();
       expect(src, contains('void Function()? onExtensionSeen'));
       expect(src, contains('onExtensionSeen: _onExtensionSeen'));
     });
 
     test('AppModel 接线 onExtensionSeen 刷新 last-seen 时间戳', () {
-      final String src =
-          File('lib/src/models/app_model.dart').readAsStringSync();
+      final String src = File(
+        'lib/src/models/app_model.dart',
+      ).readAsStringSync();
       expect(
-          RegExp(r'onExtensionSeen:\s*\(\)\s*=>\s*\n?\s*'
-                  r'_browserExtensionLastSeenAt\s*=\s*DateTime\.now\(\)')
-              .hasMatch(src),
-          isTrue,
-          reason: 'onExtensionSeen 必须刷新 _browserExtensionLastSeenAt');
+        RegExp(
+          r'onExtensionSeen:\s*\(\)\s*=>\s*\n?\s*'
+          r'_browserExtensionLastSeenAt\s*=\s*DateTime\.now\(\)',
+        ).hasMatch(src),
+        isTrue,
+        reason: 'onExtensionSeen 必须刷新 _browserExtensionLastSeenAt',
+      );
       // 页面读取用的公开 getter 必须存在。
       expect(src, contains('DateTime? get browserExtensionLastSeenAt'));
       expect(src, contains('String? get browserExtensionBuild'));

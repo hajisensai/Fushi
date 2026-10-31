@@ -55,10 +55,14 @@ Future<int> _firstVisibleCharOffset(
   Future<dynamic> Function(String source) runJs,
 ) async {
   final Object? raw = await runJs(
-      'window.fushiReader ? window.fushiReader.getFirstVisibleCharOffset() : -999;');
+    'window.fushiReader ? window.fushiReader.getFirstVisibleCharOffset() : -999;',
+  );
   final num? n = raw is num ? raw : num.tryParse(raw.toString());
-  expect(n, isNotNull,
-      reason: 'getFirstVisibleCharOffset must return a number');
+  expect(
+    n,
+    isNotNull,
+    reason: 'getFirstVisibleCharOffset must return a number',
+  );
   return n!.toInt();
 }
 
@@ -73,8 +77,11 @@ void main() {
         label: 'favjump',
         body: () async {
           await launchFushiTestApp();
-          expect(await waitForHome(tester), isTrue,
-              reason: 'home (nav bar) must render');
+          expect(
+            await waitForHome(tester),
+            isTrue,
+            reason: 'home (nav bar) must render',
+          );
           await tester.pump(const Duration(seconds: 2));
 
           final AppModel appModel = await readyAppModel(tester);
@@ -83,8 +90,10 @@ void main() {
             await tester.pump(const Duration(milliseconds: 250));
           }
 
-          final String bookKey =
-              await seedReaderBook(tester, fileName: 'todo1308_favjump.epub');
+          final String bookKey = await seedReaderBook(
+            tester,
+            fileName: 'todo1308_favjump.epub',
+          );
           final FocusDriver driver = FocusDriver(tester);
 
           final List<Finder> navTargets = findPrimaryNavigationTargets();
@@ -99,10 +108,16 @@ void main() {
             await tester.pump(const Duration(milliseconds: 500));
             if (bookEntries.evaluate().isNotEmpty) break;
           }
-          expect(bookEntries, findsWidgets,
-              reason: 'seeded book must appear on the shelf');
-          expect(await driver.focusWidget(bookEntries.first), isTrue,
-              reason: 'book card must be reachable by focus');
+          expect(
+            bookEntries,
+            findsWidgets,
+            reason: 'seeded book must appear on the shelf',
+          );
+          expect(
+            await driver.focusWidget(bookEntries.first),
+            isTrue,
+            reason: 'book card must be reachable by focus',
+          );
           await driver.activate();
           await tester.pump(const Duration(seconds: 3));
 
@@ -121,41 +136,58 @@ void main() {
               ReaderFushiPage.debugEvaluateJavascript;
           final Future<void> Function(FavoriteSentence)? jump =
               ReaderFushiPage.debugJumpToFavorite;
-          expect(runJs, isNotNull,
-              reason: 'reader must expose debugEvaluateJavascript');
-          expect(jump, isNotNull,
-              reason: 'reader must expose debugJumpToFavorite');
+          expect(
+            runJs,
+            isNotNull,
+            reason: 'reader must expose debugEvaluateJavascript',
+          );
+          expect(
+            jump,
+            isNotNull,
+            reason: 'reader must expose debugJumpToFavorite',
+          );
 
           // The target: a deep sentence in chapter 0 (large char offset so a
           // /10000 misread collapses to ~0 = chapter start, making the bug
           // unmistakable). We read the real char offset of a late text node so
           // the assertion is anchored to actual content, not a guess.
           final int targetOffset = await _pickDeepCharOffset(runJs!);
-          expect(targetOffset, greaterThan(200),
-              reason: 'need a deep sentence so /10000 misread != target');
+          expect(
+            targetOffset,
+            greaterThan(200),
+            reason: 'need a deep sentence so /10000 misread != target',
+          );
 
           // 1) Same-chapter jump: reader is on chapter 0; jump to the deep
           //    offset in chapter 0.
-          await jump!(FavoriteSentence(
-            text: 'x',
-            bookTitle: 'todo1308',
-            createdAt: DateTime.now(),
-            bookKey: bookKey,
-            sectionIndex: 0,
-            normCharOffset: targetOffset,
-            normCharLength: 6,
-          ));
+          await jump!(
+            FavoriteSentence(
+              text: 'x',
+              bookTitle: 'todo1308',
+              createdAt: DateTime.now(),
+              bookKey: bookKey,
+              sectionIndex: 0,
+              normCharOffset: targetOffset,
+              normCharLength: 6,
+            ),
+          );
           await tester.pump(const Duration(milliseconds: 600));
           // Re-pump past settle to catch a reanchor that could bounce us back.
           for (int i = 0; i < 8; i++) {
             await tester.pump(const Duration(milliseconds: 250));
           }
           final int landedSame = await _firstVisibleCharOffset(runJs);
-          debugPrint('[favjump] same-chapter target=$targetOffset '
-              'landed=$landedSame');
-          expect(landedSame, greaterThan(targetOffset ~/ 2),
-              reason: 'same-chapter favorite jump must land near the sentence '
-                  '($targetOffset), not the chapter start (got $landedSame)');
+          debugPrint(
+            '[favjump] same-chapter target=$targetOffset '
+            'landed=$landedSame',
+          );
+          expect(
+            landedSame,
+            greaterThan(targetOffset ~/ 2),
+            reason:
+                'same-chapter favorite jump must land near the sentence '
+                '($targetOffset), not the chapter start (got $landedSame)',
+          );
 
           // 2) Navigate away to chapter 0 start, then cross-chapter-style jump
           //    back to the deep offset (exercises the _navigateToChapterAndWait
@@ -164,29 +196,39 @@ void main() {
           await runJs('window.fushiReader.restoreProgress(0);');
           await tester.pump(const Duration(milliseconds: 600));
           final int atTop = await _firstVisibleCharOffset(runJs);
-          expect(atTop, lessThan(targetOffset ~/ 2),
-              reason: 'reset to chapter top before the second jump');
+          expect(
+            atTop,
+            lessThan(targetOffset ~/ 2),
+            reason: 'reset to chapter top before the second jump',
+          );
 
-          await jump(FavoriteSentence(
-            text: 'x',
-            bookTitle: 'todo1308',
-            createdAt: DateTime.now(),
-            bookKey: bookKey,
-            sectionIndex: 0,
-            normCharOffset: targetOffset,
-            normCharLength: 6,
-          ));
+          await jump(
+            FavoriteSentence(
+              text: 'x',
+              bookTitle: 'todo1308',
+              createdAt: DateTime.now(),
+              bookKey: bookKey,
+              sectionIndex: 0,
+              normCharOffset: targetOffset,
+              normCharLength: 6,
+            ),
+          );
           await tester.pump(const Duration(milliseconds: 600));
           for (int i = 0; i < 8; i++) {
             await tester.pump(const Duration(milliseconds: 250));
           }
           final int landedAgain = await _firstVisibleCharOffset(runJs);
-          debugPrint('[favjump] re-jump target=$targetOffset '
-              'landed=$landedAgain');
-          expect(landedAgain, greaterThan(targetOffset ~/ 2),
-              reason:
-                  'favorite jump after reset must re-land near the sentence '
-                  '(got $landedAgain), not bounce back to the chapter start');
+          debugPrint(
+            '[favjump] re-jump target=$targetOffset '
+            'landed=$landedAgain',
+          );
+          expect(
+            landedAgain,
+            greaterThan(targetOffset ~/ 2),
+            reason:
+                'favorite jump after reset must re-land near the sentence '
+                '(got $landedAgain), not bounce back to the chapter start',
+          );
         },
       );
     },

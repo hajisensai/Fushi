@@ -25,71 +25,69 @@ void main() {
   }
 
   test(
-      'reader text context menu (search/copy/export) scales with reader chrome',
-      () {
-    final String source = readReaderPageSource();
+    'reader text context menu (search/copy/export) scales with reader chrome',
+    () {
+      final String source = readReaderPageSource();
 
-    expect(
-      source,
-      contains(
-          'Future<void> _showReaderTextContextMenu(Offset globalPosition)'),
-    );
-    final String menu = functionSource(
-      source,
-      'Future<void> _showReaderTextContextMenu(Offset globalPosition)',
-      'Future<void> _exportAudiobookClipFromSelection()',
-    );
+      expect(
+        source,
+        contains(
+          'Future<void> _showReaderTextContextMenu(Offset globalPosition)',
+        ),
+      );
+      final String menu = functionSource(
+        source,
+        'Future<void> _showReaderTextContextMenu(Offset globalPosition)',
+        'Future<void> _exportAudiobookClipFromSelection()',
+      );
 
-    // Anchor mapped through the Overlay RenderBox (FittedBox transform absorbed);
-    // the Rect must use the mapped `anchor`, not raw globalPosition.
-    expect(menu, contains('overlay.globalToLocal(globalPosition)'));
-    expect(
-      RegExp(r'Rect\.fromLTWH\(\s*anchor\.dx,\s*anchor\.dy').hasMatch(menu),
-      isTrue,
-      reason: 'menu Rect must anchor on overlay-local coords, not raw global',
-    );
-    expect(menu, isNot(contains('anchor.dx *')));
-    expect(menu, isNot(contains('globalPosition.dx *')));
+      // Anchor mapped through the Overlay RenderBox (FittedBox transform absorbed);
+      // the Rect must use the mapped `anchor`, not raw globalPosition.
+      expect(menu, contains('overlay.globalToLocal(globalPosition)'));
+      expect(
+        RegExp(r'Rect\.fromLTWH\(\s*anchor\.dx,\s*anchor\.dy').hasMatch(menu),
+        isTrue,
+        reason: 'menu Rect must anchor on overlay-local coords, not raw global',
+      );
+      expect(menu, isNot(contains('anchor.dx *')));
+      expect(menu, isNot(contains('globalPosition.dx *')));
 
-    // BUG-1438：尺寸写常量，不得再乘任何界面缩放系数（否则 scale²）。
-    expect(menu, contains('minWidth: 112.0'));
-    expect(menu, contains('maxWidth: 280.0'));
-    expect(menu, contains('height: kMinInteractiveDimension,'));
-    expect(menu, contains('horizontal: 16.0'));
-    expect(menu, contains('size: 18.0'));
-    expect(menu, contains('width: 12.0'));
-    expect(menu, contains('fontSize: 14.0'));
-    expect(
-      containsCodeLine(menu, 'menuScale'),
-      isFalse,
-      reason: '菜单在缩放画布内已天然跟随界面大小，再乘一次得 scale²（BUG-1438）',
-    );
+      // BUG-1438：尺寸写常量，不得再乘任何界面缩放系数（否则 scale²）。
+      expect(menu, contains('minWidth: 112.0'));
+      expect(menu, contains('maxWidth: 280.0'));
+      expect(menu, contains('height: kMinInteractiveDimension,'));
+      expect(menu, contains('horizontal: 16.0'));
+      expect(menu, contains('size: 18.0'));
+      expect(menu, contains('width: 12.0'));
+      expect(menu, contains('fontSize: 14.0'));
+      expect(
+        containsCodeLine(menu, 'menuScale'),
+        isFalse,
+        reason: '菜单在缩放画布内已天然跟随界面大小，再乘一次得 scale²（BUG-1438）',
+      );
 
-    // Three actions present: search, copy, export.
-    expect(menu, contains("value: 'search'"));
-    expect(menu, contains('t.search'));
-    expect(menu, contains("value: 'copy'"));
-    expect(menu, contains('t.copy'));
-    expect(menu, contains("value: 'export'"));
-    expect(menu, contains('t.audiobook_export_clip'));
-    // Copy uses the BUG-402 native-selection clipboard path for TEXT.
-    expect(menu, contains('Clipboard.setData'));
-    // Export item is gated on the book having audio cues.
-    expect(menu, contains('if (hasAudio)'));
-  });
+      // Three actions present: search, copy, export.
+      expect(menu, contains("value: 'search'"));
+      expect(menu, contains('t.search'));
+      expect(menu, contains("value: 'copy'"));
+      expect(menu, contains('t.copy'));
+      expect(menu, contains("value: 'export'"));
+      expect(menu, contains('t.audiobook_export_clip'));
+      // Copy uses the BUG-402 native-selection clipboard path for TEXT.
+      expect(menu, contains('Clipboard.setData'));
+      // Export item is gated on the book having audio cues.
+      expect(menu, contains('if (hasAudio)'));
+    },
+  );
 
-  test('Windows reader WebView routes right-click to the Flutter text menu',
-      () {
+  test('Windows reader WebView routes right-click to the Flutter text menu', () {
     final String source = readReaderPageSource();
 
     // Windows: native WebView2 context menu disabled, the menu button (per the
     // binding table, right-click by default) captured by ContextMenuTrigger.
     expect(source, contains('hideDefaultSystemContextMenuItems: true'));
     expect(source, contains('ContextMenuTrigger('));
-    expect(
-      source,
-      contains('_showReaderTextContextMenu(position)'),
-    );
+    expect(source, contains('_showReaderTextContextMenu(position)'));
     expect(source, contains('HitTestBehavior.translucent'));
 
     // Mobile keeps the native ContextMenu and now also carries an export item.
@@ -103,39 +101,42 @@ void main() {
     expect(webViewBuild, contains('_exportAudiobookClipFromSelection()'));
   });
 
-  test('export-from-selection resolves cue range without opening lookup popup',
-      () {
-    final String source = readReaderPageSource();
+  test(
+    'export-from-selection resolves cue range without opening lookup popup',
+    () {
+      final String source = readReaderPageSource();
 
-    expect(
-      source,
-      contains('Future<void> _exportAudiobookClipFromSelection()'),
-    );
-    final String selectionStateHelper = functionSource(
-      source,
-      'Future<ReaderSelectionData?> _fillLookupStateFromNativeSelection()',
-      'Future<void> _exportAudiobookClipFromSelection()',
-    );
-    final String resolver = functionSource(
-      source,
-      'Future<void> _exportAudiobookClipFromSelection()',
-      'Future<void> _showReaderImageActions(String imgUrl)',
-    );
+      expect(
+        source,
+        contains('Future<void> _exportAudiobookClipFromSelection()'),
+      );
+      final String selectionStateHelper = functionSource(
+        source,
+        'Future<ReaderSelectionData?> _fillLookupStateFromNativeSelection()',
+        'Future<void> _exportAudiobookClipFromSelection()',
+      );
+      final String resolver = functionSource(
+        source,
+        'Future<void> _exportAudiobookClipFromSelection()',
+        'Future<void> _showReaderImageActions(String imgUrl)',
+      );
 
-    // Resolves the native selection -> sentence cue range via the shared JS
-    // helper, NOT through _handleTextSelected (which would pop the lookup popup
-    // and pause audio — the whole point of TODO-954 is to decouple export).
-    expect(
-      selectionStateHelper,
-      contains(
-          'ReaderSelectionScripts.nativeSelectionSentenceRangeInvocation()'),
-    );
-    expect(selectionStateHelper, isNot(contains('_handleTextSelected(')));
-    expect(selectionStateHelper, contains('ReaderSelectionData.fromJson'));
-    expect(selectionStateHelper, contains('_cachedSentenceRange'));
-    expect(resolver, contains('_fillLookupStateFromNativeSelection()'));
-    expect(resolver, contains('_exportAudiobookClip()'));
-  });
+      // Resolves the native selection -> sentence cue range via the shared JS
+      // helper, NOT through _handleTextSelected (which would pop the lookup popup
+      // and pause audio — the whole point of TODO-954 is to decouple export).
+      expect(
+        selectionStateHelper,
+        contains(
+          'ReaderSelectionScripts.nativeSelectionSentenceRangeInvocation()',
+        ),
+      );
+      expect(selectionStateHelper, isNot(contains('_handleTextSelected(')));
+      expect(selectionStateHelper, contains('ReaderSelectionData.fromJson'));
+      expect(selectionStateHelper, contains('_cachedSentenceRange'));
+      expect(resolver, contains('_fillLookupStateFromNativeSelection()'));
+      expect(resolver, contains('_exportAudiobookClip()'));
+    },
+  );
 
   test('lookup popup header no longer carries the clip export button', () {
     final String source = readReaderPageSource();

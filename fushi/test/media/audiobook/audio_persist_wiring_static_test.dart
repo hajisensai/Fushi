@@ -18,20 +18,38 @@ void main() {
     ).readAsStringSync();
 
     // launcher 装 persist 回调 + 从 repo 读出音量/速度。
-    expect(launcher.contains('onVolumePersist'), isTrue,
-        reason: 'launcher 要装 onVolumePersist 回调');
-    expect(RegExp(r'readVolume\(').hasMatch(launcher), isTrue,
-        reason: 'launcher 要从 repo 读出持久化音量');
-    expect(launcher.contains('onSpeedPersist'), isTrue,
-        reason: 'launcher 要装 onSpeedPersist 回调');
-    expect(RegExp(r'readSpeed\(').hasMatch(launcher), isTrue,
-        reason: 'launcher 要从 repo 读出持久化速度');
+    expect(
+      launcher.contains('onVolumePersist'),
+      isTrue,
+      reason: 'launcher 要装 onVolumePersist 回调',
+    );
+    expect(
+      RegExp(r'readVolume\(').hasMatch(launcher),
+      isTrue,
+      reason: 'launcher 要从 repo 读出持久化音量',
+    );
+    expect(
+      launcher.contains('onSpeedPersist'),
+      isTrue,
+      reason: 'launcher 要装 onSpeedPersist 回调',
+    );
+    expect(
+      RegExp(r'readSpeed\(').hasMatch(launcher),
+      isTrue,
+      reason: 'launcher 要从 repo 读出持久化速度',
+    );
 
     // session 把读出的初值传给控制器 load。
-    expect(session.contains('initialVolume:'), isTrue,
-        reason: 'session.start 要把音量作为 initialVolume 传给 load');
-    expect(session.contains('initialSpeed:'), isTrue,
-        reason: 'session.start 要把速度作为 initialSpeed 传给 load');
+    expect(
+      session.contains('initialVolume:'),
+      isTrue,
+      reason: 'session.start 要把音量作为 initialVolume 传给 load',
+    );
+    expect(
+      session.contains('initialSpeed:'),
+      isTrue,
+      reason: 'session.start 要把速度作为 initialSpeed 传给 load',
+    );
   });
 
   /// 源码守卫（TODO-291 阶段2）：有声书控制器的生命周期归进程级 [AudiobookSession]，
@@ -61,34 +79,39 @@ void main() {
       );
     });
 
-    test('reader dispose detaches the session instead of disposing controller',
-        () {
-      final RegExpMatch? body = RegExp(
-        r'void dispose\(\) \{(.*?)\n    super\.dispose\(\);',
-        dotAll: true,
-      ).firstMatch(reader);
-      expect(body, isNotNull, reason: '找不到 reader dispose 方法体');
-      final String disposeBody = body!.group(1)!;
-      expect(
-        disposeBody.contains('audiobookSession.detachReader(this)'),
-        isTrue,
-        reason: 'reader dispose 必须 detach session（不 dispose 控制器）',
-      );
-      expect(
-        disposeBody.contains('_audiobookController?.dispose()'),
-        isFalse,
-        reason: 'reader dispose 不得 dispose 控制器（控制器归 session 进程级持有）',
-      );
-      expect(
-        disposeBody.contains('FloatingLyricChannel.hide()'),
-        isFalse,
-        reason: 'reader dispose 不得无条件隐藏悬浮窗（悬浮窗归 session，退书后台听书继续刷字）',
-      );
-    });
+    test(
+      'reader dispose detaches the session instead of disposing controller',
+      () {
+        final RegExpMatch? body = RegExp(
+          r'void dispose\(\) \{(.*?)\n    super\.dispose\(\);',
+          dotAll: true,
+        ).firstMatch(reader);
+        expect(body, isNotNull, reason: '找不到 reader dispose 方法体');
+        final String disposeBody = body!.group(1)!;
+        expect(
+          disposeBody.contains('audiobookSession.detachReader(this)'),
+          isTrue,
+          reason: 'reader dispose 必须 detach session（不 dispose 控制器）',
+        );
+        expect(
+          disposeBody.contains('_audiobookController?.dispose()'),
+          isFalse,
+          reason: 'reader dispose 不得 dispose 控制器（控制器归 session 进程级持有）',
+        );
+        expect(
+          disposeBody.contains('FloatingLyricChannel.hide()'),
+          isFalse,
+          reason: 'reader dispose 不得无条件隐藏悬浮窗（悬浮窗归 session，退书后台听书继续刷字）',
+        );
+      },
+    );
 
     test('session is the controller owner (creates + disposes it)', () {
-      expect(session.contains('AudiobookPlayerController()'), isTrue,
-          reason: 'session.start 是控制器的创建点');
+      expect(
+        session.contains('AudiobookPlayerController()'),
+        isTrue,
+        reason: 'session.start 是控制器的创建点',
+      );
       expect(
         RegExp(r'controller\.dispose\(\)').hasMatch(session),
         isTrue,

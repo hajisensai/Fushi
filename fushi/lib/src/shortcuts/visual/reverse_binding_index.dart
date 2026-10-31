@@ -50,8 +50,9 @@ class ReverseBindingIndex {
         <LogicalKeyboardKey, List<InputBinding>>{};
 
     for (final ShortcutScope coactive in scope.coactiveScopes) {
-      for (final ShortcutAction action
-          in ShortcutAction.actionsForScope(coactive)) {
+      for (final ShortcutAction action in ShortcutAction.actionsForScope(
+        coactive,
+      )) {
         final ShortcutBindingSet set = registry.bindingsFor(action);
         for (final InputBinding kb in set.keyboardBindings) {
           (keyboard[kb.key] ??= <ShortcutAction>[]).add(action);
@@ -68,30 +69,30 @@ class ReverseBindingIndex {
         keyboard.map(
           (LogicalKeyboardKey k, List<ShortcutAction> v) =>
               MapEntry<LogicalKeyboardKey, List<ShortcutAction>>(
-            k,
-            List<ShortcutAction>.unmodifiable(v),
-          ),
+                k,
+                List<ShortcutAction>.unmodifiable(v),
+              ),
         ),
       ),
       gamepad: Map<GamepadButton, List<ShortcutAction>>.unmodifiable(
         gamepad.map(
           (GamepadButton k, List<ShortcutAction> v) =>
               MapEntry<GamepadButton, List<ShortcutAction>>(
-            k,
-            List<ShortcutAction>.unmodifiable(v),
-          ),
+                k,
+                List<ShortcutAction>.unmodifiable(v),
+              ),
         ),
       ),
       keyboardBindings:
           Map<LogicalKeyboardKey, List<InputBinding>>.unmodifiable(
-        keyboardBindings.map(
-          (LogicalKeyboardKey k, List<InputBinding> v) =>
-              MapEntry<LogicalKeyboardKey, List<InputBinding>>(
-            k,
-            List<InputBinding>.unmodifiable(v),
+            keyboardBindings.map(
+              (LogicalKeyboardKey k, List<InputBinding> v) =>
+                  MapEntry<LogicalKeyboardKey, List<InputBinding>>(
+                    k,
+                    List<InputBinding>.unmodifiable(v),
+                  ),
+            ),
           ),
-        ),
-      ),
     );
   }
 

@@ -97,7 +97,7 @@ class BrowserVideoSample {
 class RemoteVideoPlaybackSource extends ChangeNotifier
     implements VideoPlaybackSource {
   RemoteVideoPlaybackSource({DateTime Function()? now})
-      : _now = now ?? DateTime.now;
+    : _now = now ?? DateTime.now;
 
   final DateTime Function() _now;
   bool _isPlaying = false;
@@ -180,8 +180,8 @@ class BrowserVideoStudyBridge {
     required FushiDatabase Function() database,
     DateTime Function()? now,
     this.idleTimeout = const Duration(seconds: 20),
-  })  : _database = database,
-        _now = now ?? DateTime.now;
+  }) : _database = database,
+       _now = now ?? DateTime.now;
 
   /// 延迟取库：注入点在 [AppModel] 建 server manager 时，那时 `database` 已开；
   /// 仍用闭包而不是直接持有实例，避免把 late getter 的求值时机提前到构造期。
@@ -239,8 +239,9 @@ class BrowserVideoStudyBridge {
   _ActiveSession _startSession(BrowserVideoSample sample) {
     final FushiDatabase db = _database();
     final String key = sample.mediaKey;
-    final RemoteVideoPlaybackSource source =
-        RemoteVideoPlaybackSource(now: _now);
+    final RemoteVideoPlaybackSource source = RemoteVideoPlaybackSource(
+      now: _now,
+    );
     final VideoWatchTracker tracker = VideoWatchTracker(
       bookUid: key,
       clock: StudyClock(
@@ -250,8 +251,11 @@ class BrowserVideoStudyBridge {
         title: sample.displayTitle,
         accrual: StudyAccrual.explicit,
         now: _now,
-        onWriteError: (Object e, StackTrace st) => ErrorLogService.instance
-            .log('StudyClock.write(browser-video)', e, st),
+        onWriteError: (Object e, StackTrace st) => ErrorLogService.instance.log(
+          'StudyClock.write(browser-video)',
+          e,
+          st,
+        ),
       ),
       loadCoverage: () => db.getPref(videoWatchCoveragePrefKey(key)),
       saveCoverage: (String json) =>

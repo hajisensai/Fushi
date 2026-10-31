@@ -45,12 +45,11 @@ void main() {
   double startEdgeTarget({
     required double rectStart,
     required double currentScroll,
-  }) =>
-      ReaderPaginationScripts.revealAnchorTargetScrollForTesting(
-        rectStart: rectStart,
-        currentScroll: currentScroll,
-        pageSize: pageSize,
-      );
+  }) => ReaderPaginationScripts.revealAnchorTargetScrollForTesting(
+    rectStart: rectStart,
+    currentScroll: currentScroll,
+    pageSize: pageSize,
+  );
 
   group('TODO-881 起始边锚落到「句子起点所在页」（消除中点越界）', () {
     test('句首落当前列后半段、rect 中点越界相邻列：起始边不前翻', () {
@@ -80,8 +79,10 @@ void main() {
       );
       expect(midOver, 3000, reason: '中点锚在句首落列后半段时越界相邻列 → floor 前翻到下一页（症状）');
 
-      final double startEdge =
-          startEdgeTarget(rectStart: 700, currentScroll: currentScroll);
+      final double startEdge = startEdgeTarget(
+        rectStart: 700,
+        currentScroll: currentScroll,
+      );
       expect(startEdge, 2000, reason: '起始边锚恒落「句子起点所在页」，不越界、不前翻');
 
       // 双锚分歧正是抖动来源：修复后必须取起始边那一页。
@@ -100,31 +101,40 @@ void main() {
       );
       expect(mid, 2000);
 
-      final double startEdge =
-          startEdgeTarget(rectStart: 100, currentScroll: currentScroll);
-      expect(startEdge, 2000,
-          reason: '起始边对相邻两句都落第 2 页 → 不抖动（中点会在 3000/2000 间摆动）');
+      final double startEdge = startEdgeTarget(
+        rectStart: 100,
+        currentScroll: currentScroll,
+      );
+      expect(
+        startEdge,
+        2000,
+        reason: '起始边对相邻两句都落第 2 页 → 不抖动（中点会在 3000/2000 间摆动）',
+      );
     });
 
     test('句首恰落整页边界：起始边 floor 落该页起点', () {
-      final double startEdge =
-          startEdgeTarget(rectStart: 0, currentScroll: 2000);
+      final double startEdge = startEdgeTarget(
+        rectStart: 0,
+        currentScroll: 2000,
+      );
       expect(startEdge, 2000);
     });
 
     test('负 anchor clamp 到第 0 页', () {
-      final double startEdge =
-          startEdgeTarget(rectStart: -50, currentScroll: 0);
+      final double startEdge = startEdgeTarget(
+        rectStart: -50,
+        currentScroll: 0,
+      );
       expect(startEdge, 0);
     });
 
     test('pageSize<=0 回退当前滚动量（与 JS pageSize<=0 早退一致）', () {
       final double t =
           ReaderPaginationScripts.revealAnchorTargetScrollForTesting(
-        rectStart: 700,
-        currentScroll: 2000,
-        pageSize: 0,
-      );
+            rectStart: 700,
+            currentScroll: 2000,
+            pageSize: 0,
+          );
       expect(t, 2000);
     });
   });
@@ -161,18 +171,30 @@ void main() {
     test('scrollToRange 用起始边锚（竖排 rect.top、横排 rect.left、竖排对开 rect.right）', () {
       final String body = scrollToRangeBody();
       expect(
-        body.contains('var startEdge = this.turnSpan(context.axis, rect).start;'),
+        body.contains(
+          'var startEdge = this.turnSpan(context.axis, rect).start;',
+        ),
         isTrue,
-        reason: '落页锚必须与 restoreToCharOffset / jumpToFragment 起始边轴向一致'
+        reason:
+            '落页锚必须与 restoreToCharOffset / jumpToFragment 起始边轴向一致'
             '（三者统一走 turnSpan）',
       );
       // turnSpan 的起始边：竖排单条 rect.top、横排 rect.left、竖排对开（xr）到右缘的距离
       // 取 rect.right——都是「起始边」，不是中点。
-      final int start = scripts.indexOf('turnSpan: function(axisOrVertical, rect) {');
+      final int start = scripts.indexOf(
+        'turnSpan: function(axisOrVertical, rect) {',
+      );
       expect(start, isNonNegative, reason: '找不到 turnSpan 定义');
-      final String turnSpan =
-          scripts.substring(start, scripts.indexOf('\n  },', start));
-      expect(turnSpan, contains('return { start: right - rect.right, end: right - rect.left };'));
+      final String turnSpan = scripts.substring(
+        start,
+        scripts.indexOf('\n  },', start),
+      );
+      expect(
+        turnSpan,
+        contains(
+          'return { start: right - rect.right, end: right - rect.left };',
+        ),
+      );
       expect(turnSpan, contains('? { start: rect.top, end: rect.bottom }'));
       expect(turnSpan, contains(': { start: rect.left, end: rect.right };'));
     });

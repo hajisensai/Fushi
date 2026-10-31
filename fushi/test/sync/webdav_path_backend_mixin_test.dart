@@ -15,8 +15,19 @@ import 'package:fushi/src/sync/webdav_path_backend_mixin.dart';
 /// 这里用 fake [WebDavOps] 锁住它们对原语的调用形状与 BUG-845 的尾斜杠规整。
 void main() {
   // PNG 魔数：detectCoverFormat 据此判 image/png + .png。
-  final Uint8List png = Uint8List.fromList(
-      <int>[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 1, 2, 3]);
+  final Uint8List png = Uint8List.fromList(<int>[
+    0x89,
+    0x50,
+    0x4E,
+    0x47,
+    0x0D,
+    0x0A,
+    0x1A,
+    0x0A,
+    1,
+    2,
+    3,
+  ]);
 
   late _FakeOps ops;
   late _Backend backend;
@@ -32,12 +43,16 @@ void main() {
         _entry('https://dav.example/fushi-data/', 'fushi-data', true),
         _entry('https://dav.example/fushi-data/Book%20A/', 'Book A', true),
         _entry(
-            'https://dav.example/fushi-data/videos.json', 'videos.json', false),
+          'https://dav.example/fushi-data/videos.json',
+          'videos.json',
+          false,
+        ),
         _entry('https://dav.example/fushi-data/B', 'B', true),
       ];
 
-      final List<SyncFileRef> books =
-          await backend.listBooks('https://dav.example/fushi-data/');
+      final List<SyncFileRef> books = await backend.listBooks(
+        'https://dav.example/fushi-data/',
+      );
 
       expect(books.map((SyncFileRef b) => b.name), <String>['Book A', 'B']);
       expect(books.first.id, 'https://dav.example/fushi-data/Book%20A/');
@@ -77,8 +92,10 @@ void main() {
       );
 
       expect(ops.puts, hasLength(1));
-      expect(ops.puts.single.path,
-          'https://dav.example/fushi-data/Book%20A/cover_1_6.png');
+      expect(
+        ops.puts.single.path,
+        'https://dav.example/fushi-data/Book%20A/cover_1_6.png',
+      );
       expect(ops.puts.single.contentType, 'image/png');
       expect(ops.puts.single.bytes, png);
     });
@@ -130,8 +147,11 @@ void main() {
       }
 
       expect(logs, hasLength(1));
-      expect(logs.single, startsWith('[test] cover upload failed: '),
-          reason: '日志必须带调用方后端的 davLogTag，否则两条链路的失败无法区分');
+      expect(
+        logs.single,
+        startsWith('[test] cover upload failed: '),
+        reason: '日志必须带调用方后端的 davLogTag，否则两条链路的失败无法区分',
+      );
     });
   });
 
@@ -151,7 +171,10 @@ void main() {
         _entry(folder, 'Book A', true),
         _entry('${folder}progress_1_6_x.json', 'progress_1_6_x.json', false),
         _entry(
-            '${folder}statistics_1_6_y.json', 'statistics_1_6_y.json', false),
+          '${folder}statistics_1_6_y.json',
+          'statistics_1_6_y.json',
+          false,
+        ),
         _entry('${folder}audioBook_z.json', 'audioBook_z.json', false),
         _entry('${folder}book.epub', 'book.epub', false),
         _entry('${folder}sub/', 'sub', true),
@@ -166,8 +189,9 @@ void main() {
 
     test('空目录三者皆 null', () async {
       ops.children['https://dav.example/fushi-data/Empty/'] = <DavEntry>[];
-      final SyncFileTrio trio =
-          await backend.listSyncFiles('https://dav.example/fushi-data/Empty/');
+      final SyncFileTrio trio = await backend.listSyncFiles(
+        'https://dav.example/fushi-data/Empty/',
+      );
       expect(trio.progress, isNull);
       expect(trio.statistics, isNull);
       expect(trio.audioBook, isNull);
@@ -202,19 +226,25 @@ void main() {
         expect(classAt, isNonNegative, reason: '$path 的类声明变了，守卫需更新');
         final int braceAt = src.indexOf('{', classAt);
         expect(braceAt, greaterThan(classAt), reason: '$path 扫不到类头结尾');
-        expect(src.substring(classAt, braceAt),
-            contains('WebDavPathBackendMixin'),
-            reason: '$path 的 with 列表里必须有 WebDavPathBackendMixin');
+        expect(
+          src.substring(classAt, braceAt),
+          contains('WebDavPathBackendMixin'),
+          reason: '$path 的 with 列表里必须有 WebDavPathBackendMixin',
+        );
         for (final String needle in banned) {
-          expect(src, isNot(contains(needle)),
-              reason: '$path 里出现 `$needle`——三件套应只在 mixin 里有一份');
+          expect(
+            src,
+            isNot(contains(needle)),
+            reason: '$path 里出现 `$needle`——三件套应只在 mixin 里有一份',
+          );
         }
       });
     }
 
     test('mixin 不擅自给三件套加 _ensureResolved 门（互联侧时序逐点保留）', () {
-      final String src = File('lib/src/sync/webdav_path_backend_mixin.dart')
-          .readAsStringSync();
+      final String src = File(
+        'lib/src/sync/webdav_path_backend_mixin.dart',
+      ).readAsStringSync();
       expect(src, isNot(contains('ensureResolved')));
     });
   });
@@ -233,11 +263,7 @@ class _Put {
 /// 只截四个原语；其余 [WebDavOps] 成员从不被三件套触碰。
 class _FakeOps extends WebDavOps {
   _FakeOps()
-      : super(
-          baseUrl: 'https://dav.example',
-          username: 'u',
-          password: 'p',
-        );
+    : super(baseUrl: 'https://dav.example', username: 'u', password: 'p');
 
   final Map<String, List<DavEntry>> children = <String, List<DavEntry>>{};
   final List<String> ensured = <String>[];
@@ -257,7 +283,10 @@ class _FakeOps extends WebDavOps {
 
   @override
   Future<void> putBytes(
-      String path, List<int> bytes, String contentType) async {
+    String path,
+    List<int> bytes,
+    String contentType,
+  ) async {
     if (failPut) throw const SocketException('boom');
     puts.add(_Put(path, bytes, contentType));
   }
@@ -277,5 +306,6 @@ class _Backend extends SyncBackend
 
   @override
   dynamic noSuchMethod(Invocation invocation) => throw UnimplementedError(
-      '${invocation.memberName} not used in this test');
+    '${invocation.memberName} not used in this test',
+  );
 }

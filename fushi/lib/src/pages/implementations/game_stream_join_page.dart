@@ -39,8 +39,7 @@ class GameStreamJoinPage extends StatefulWidget {
 
   /// Lookup rail geometry stored on this device; null = defaults, unsaved.
   final GameStreamLookupLayout Function()? readLookupLayout;
-  final Future<void> Function(GameStreamLookupLayout layout)?
-  writeLookupLayout;
+  final Future<void> Function(GameStreamLookupLayout layout)? writeLookupLayout;
 
   @override
   State<GameStreamJoinPage> createState() => _GameStreamJoinPageState();
@@ -69,10 +68,10 @@ class _GameStreamJoinPageState extends State<GameStreamJoinPage> {
       // 每台 host 一次：同一台机器的多条地址只取组内最先可达的那条。
       final List<FushiClientUrl> peers =
           await resolveInterconnectPeerConnections(
-        (await widget.repository.getFushiClientUrls())
-            .where((FushiClientUrl peer) => peer.enabled)
-            .toList(),
-      );
+            (await widget.repository.getFushiClientUrls())
+                .where((FushiClientUrl peer) => peer.enabled)
+                .toList(),
+          );
       for (final FushiClientUrl peer in peers) {
         final FushiGameStreamClient client = FushiGameStreamClient(
           transport: InterconnectGameStreamTransport(repo: widget.repository),

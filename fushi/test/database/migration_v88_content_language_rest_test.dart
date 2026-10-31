@@ -37,8 +37,10 @@ void main() {
 
   /// 建一个真实的 v87 形状库：当前 schema 建满，再摘掉 v88 的三列并把版本写回 87。
   Future<void> seedV87() async {
-    final FushiDatabase fresh =
-        FushiDatabase.atFile(dbPath, isMainProcess: false);
+    final FushiDatabase fresh = FushiDatabase.atFile(
+      dbPath,
+      isMainProcess: false,
+    );
     // 存量行：迁移必须无损带过去。
     await fresh.customStatement(
       'INSERT INTO video_books (book_uid, title, video_path) '
@@ -65,8 +67,10 @@ void main() {
   test('v87 库确实缺这三列（前提自检——不然下面那条测了个寂寞）', () async {
     await seedV87();
 
-    final sqlite3.Database probe =
-        sqlite3.sqlite3.open(dbPath, mode: sqlite3.OpenMode.readOnly);
+    final sqlite3.Database probe = sqlite3.sqlite3.open(
+      dbPath,
+      mode: sqlite3.OpenMode.readOnly,
+    );
     try {
       expect(probe.select('PRAGMA user_version').first.values.first, 87);
       expect(hasColumn(probe, 'video_books', 'language'), isFalse);
@@ -80,19 +84,27 @@ void main() {
   test('v87 -> v88：三列补齐且存量行无损', () async {
     await seedV87();
 
-    final FushiDatabase migrated =
-        FushiDatabase.atFile(dbPath, isMainProcess: false);
+    final FushiDatabase migrated = FushiDatabase.atFile(
+      dbPath,
+      isMainProcess: false,
+    );
     // 走真实查询路径：列缺失时这一句就会 SqliteException，正是线上会炸的地方。
-    final List<VideoBookRow> rows =
-        await migrated.select(migrated.videoBooks).get();
+    final List<VideoBookRow> rows = await migrated
+        .select(migrated.videoBooks)
+        .get();
     expect(rows, hasLength(1), reason: '迁移丢一行就是丢一部视频的记录');
     expect(rows.single.bookUid, 'video/ep0');
-    expect(rows.single.language, isNull,
-        reason: '存量行语言未知 = NULL，不许替用户猜（尤其不许因为「多半是日文」就填 ja）');
+    expect(
+      rows.single.language,
+      isNull,
+      reason: '存量行语言未知 = NULL，不许替用户猜（尤其不许因为「多半是日文」就填 ja）',
+    );
     await migrated.close();
 
-    final sqlite3.Database probe =
-        sqlite3.sqlite3.open(dbPath, mode: sqlite3.OpenMode.readOnly);
+    final sqlite3.Database probe = sqlite3.sqlite3.open(
+      dbPath,
+      mode: sqlite3.OpenMode.readOnly,
+    );
     try {
       expect(probe.select('PRAGMA user_version').first.values.first, 142);
       expect(hasColumn(probe, 'video_books', 'language'), isTrue);
@@ -106,27 +118,35 @@ void main() {
   test('升级后写入口照常：设置内容语言能真写穿（缺列时这里撞 no such column）', () async {
     await seedV87();
 
-    final FushiDatabase migrated =
-        FushiDatabase.atFile(dbPath, isMainProcess: false);
+    final FushiDatabase migrated = FushiDatabase.atFile(
+      dbPath,
+      isMainProcess: false,
+    );
     addTearDown(migrated.close);
     // 读路径在缺列时**不抛**（一律读成 NULL），所以判别力靠这条写入：
     // `SET language = ?` 打在没有该列的表上必然报错。
     await migrated.updateVideoBookLanguage('video/ep0', 'ja');
-    final List<VideoBookRow> rows =
-        await migrated.select(migrated.videoBooks).get();
+    final List<VideoBookRow> rows = await migrated
+        .select(migrated.videoBooks)
+        .get();
     expect(rows.single.language, 'ja');
   });
 
   test('重复打开幂等：第二次开库不因列已存在而报错', () async {
     await seedV87();
 
-    final FushiDatabase first =
-        FushiDatabase.atFile(dbPath, isMainProcess: false);
+    final FushiDatabase first = FushiDatabase.atFile(
+      dbPath,
+      isMainProcess: false,
+    );
     await first.close();
-    final FushiDatabase second =
-        FushiDatabase.atFile(dbPath, isMainProcess: false);
-    final List<VideoBookRow> rows =
-        await second.select(second.videoBooks).get();
+    final FushiDatabase second = FushiDatabase.atFile(
+      dbPath,
+      isMainProcess: false,
+    );
+    final List<VideoBookRow> rows = await second
+        .select(second.videoBooks)
+        .get();
     expect(rows, hasLength(1));
     await second.close();
   });

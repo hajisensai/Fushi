@@ -36,7 +36,8 @@ class VideoNameInfo {
   final bool isMovieHint;
 
   @override
-  String toString() => 'VideoNameInfo(series: $series, season: $season, '
+  String toString() =>
+      'VideoNameInfo(series: $series, season: $season, '
       'episode: $episode, isMovieHint: $isMovieHint)';
 }
 
@@ -94,14 +95,17 @@ VideoNameInfo parseVideoPath(String path) {
   // 网络来源的 URL 段是百分号编码的，必须与 [groupVideosIntoPlaylists] 同口径
   // 先解码：`Show%20A%20S01E01` 里 `S` 前面是 `0`，`SxxEyy` 的分隔边界不成立，
   // 不解码就整批解不出集号（两条通路口径分叉，同一文件两处不同解）。
-  final String filename =
-      _decodedSegment(path, segments.isEmpty ? path : segments.last);
+  final String filename = _decodedSegment(
+    path,
+    segments.isEmpty ? path : segments.last,
+  );
   final VideoNameInfo info = parseVideoFilename(filename);
   if (info.season != null || info.episode == null || segments.length < 2) {
     return info;
   }
-  final ParsedMediaName dir =
-      FilenameParser.parse(segments[segments.length - 2]);
+  final ParsedMediaName dir = FilenameParser.parse(
+    segments[segments.length - 2],
+  );
   final int? dirSeason =
       dir.season ?? FilenameParser.takeTrailingNumericSeason(dir.title)?.season;
   if (dirSeason == null) return info;
@@ -195,8 +199,9 @@ SiblingEpisodeNumbering? resolveSiblingEpisodeNumbers(List<String> paths) {
   // 标题时退回清理后的原前缀（`第` / `EP` 这类残词由 [_trimSeriesEdges] 削掉）。
   final String rawPrefix = first.substring(0, prefixLen);
   final String parsed = FilenameParser.parse(rawPrefix).title.trim();
-  final String series =
-      _stripTrailingEpisodeMarker(parsed.isNotEmpty ? parsed : rawPrefix);
+  final String series = _stripTrailingEpisodeMarker(
+    parsed.isNotEmpty ? parsed : rawPrefix,
+  );
   return SiblingEpisodeNumbering(numbers: numbers, series: series);
 }
 
@@ -213,8 +218,11 @@ List<int?> fillEpisodeNumbersFromSiblings(
   if (!perFile.contains(null)) return perFile;
   final List<int?> out = List<int?>.of(perFile);
   for (final List<int> indices in _byDirectory(paths).values) {
-    final SiblingEpisodeNumbering? sib =
-        _acceptedSiblingNumbering(paths, perFile, indices);
+    final SiblingEpisodeNumbering? sib = _acceptedSiblingNumbering(
+      paths,
+      perFile,
+      indices,
+    );
     if (sib == null) continue;
     for (final int i in indices) {
       out[i] ??= sib.numbers[paths[i]];
@@ -242,8 +250,11 @@ _SiblingResolution _resolveWithSiblings(List<String> paths) {
   final List<int?> episodes = List<int?>.of(perFile);
   final List<String?> series = List<String?>.filled(paths.length, null);
   for (final List<int> indices in _byDirectory(paths).values) {
-    final SiblingEpisodeNumbering? sib =
-        _acceptedSiblingNumbering(paths, perFile, indices);
+    final SiblingEpisodeNumbering? sib = _acceptedSiblingNumbering(
+      paths,
+      perFile,
+      indices,
+    );
     if (sib == null) continue;
     for (final int i in indices) {
       episodes[i] ??= sib.numbers[paths[i]];
@@ -263,12 +274,13 @@ SiblingEpisodeNumbering? _acceptedSiblingNumbering(
 ) {
   if (indices.length < 2) return null;
   if (indices.every((int i) => perFile[i] != null)) return null;
-  final SiblingEpisodeNumbering? sib = resolveSiblingEpisodeNumbers(
-    <String>[for (final int i in indices) paths[i]],
-  );
+  final SiblingEpisodeNumbering? sib = resolveSiblingEpisodeNumbers(<String>[
+    for (final int i in indices) paths[i],
+  ]);
   if (sib == null) return null;
   final bool agrees = indices.every(
-      (int i) => perFile[i] == null || perFile[i] == sib.numbers[paths[i]]);
+    (int i) => perFile[i] == null || perFile[i] == sib.numbers[paths[i]],
+  );
   return agrees ? sib : null;
 }
 
@@ -437,12 +449,16 @@ List<VideoGroup> groupVideosIntoPlaylists(List<String> paths) {
     final String series = sib.series[i] ?? _groupingSeries(path, name, info);
     final String key = series.toLowerCase();
     displaySeries.putIfAbsent(key, () => series);
-    byKey.putIfAbsent(key, () => <VideoEpisode>[]).add(VideoEpisode(
-          path: path,
-          title: p.basenameWithoutExtension(name),
-          season: info.season,
-          episode: sib.episodes[i],
-        ));
+    byKey
+        .putIfAbsent(key, () => <VideoEpisode>[])
+        .add(
+          VideoEpisode(
+            path: path,
+            title: p.basenameWithoutExtension(name),
+            season: info.season,
+            episode: sib.episodes[i],
+          ),
+        );
   }
 
   final List<VideoGroup> groups = <VideoGroup>[];
@@ -450,8 +466,10 @@ List<VideoGroup> groupVideosIntoPlaylists(List<String> paths) {
     final List<VideoEpisode> eps = e.value..sort(_compareEpisodes);
     groups.add(VideoGroup(series: displaySeries[e.key]!, episodes: eps));
   }
-  groups.sort((VideoGroup a, VideoGroup b) =>
-      a.series.toLowerCase().compareTo(b.series.toLowerCase()));
+  groups.sort(
+    (VideoGroup a, VideoGroup b) =>
+        a.series.toLowerCase().compareTo(b.series.toLowerCase()),
+  );
   return groups;
 }
 
@@ -484,8 +502,10 @@ List<String> listVideoFilesInDirectory(String directory) {
   final Directory dir = Directory(directory);
   if (!dir.existsSync()) return const <String>[];
   final List<String> out = <String>[];
-  for (final FileSystemEntity entity
-      in dir.listSync(recursive: true, followLinks: false)) {
+  for (final FileSystemEntity entity in dir.listSync(
+    recursive: true,
+    followLinks: false,
+  )) {
     if (entity is! File) continue;
     final String ext = p.extension(entity.path).toLowerCase();
     if (kVideoExtensions.contains(ext)) out.add(entity.path);

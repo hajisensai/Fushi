@@ -73,25 +73,25 @@ class _RecordingAppModel extends AppModel {
 }
 
 AiProviderConfig _usableProvider() => AiProviderConfig(
-      id: 'p1',
-      presetId: 'openai',
-      name: 'Fake',
-      baseUrl: Uri.parse('https://example.invalid/v1'),
-      apiKey: 'k',
-      model: 'm',
-    );
+  id: 'p1',
+  presetId: 'openai',
+  name: 'Fake',
+  baseUrl: Uri.parse('https://example.invalid/v1'),
+  apiKey: 'k',
+  model: 'm',
+);
 
 http.Response _openAiReply(String content) => http.Response(
-      jsonEncode(<String, Object?>{
-        'choices': <Object?>[
-          <String, Object?>{
-            'message': <String, Object?>{'content': content},
-          },
-        ],
-      }),
-      200,
-      headers: <String, String>{'content-type': 'application/json'},
-    );
+  jsonEncode(<String, Object?>{
+    'choices': <Object?>[
+      <String, Object?>{
+        'message': <String, Object?>{'content': content},
+      },
+    ],
+  }),
+  200,
+  headers: <String, String>{'content-type': 'application/json'},
+);
 
 Widget _host(_RecordingAppModel appModel, Widget home) {
   return ProviderScope(
@@ -132,12 +132,14 @@ Future<void> _pumpAndRunAi(
   );
   await tester.pumpAndSettle();
 
-  final Finder request =
-      find.byKey(const ValueKey<String>('custom-theme-ai-request'));
+  final Finder request = find.byKey(
+    const ValueKey<String>('custom-theme-ai-request'),
+  );
   await _revealUnobscured(tester, request);
   await tester.enterText(request, '暖色纸张，主题色深绿');
-  final Finder generate =
-      find.byKey(const ValueKey<String>('custom-theme-ai-generate'));
+  final Finder generate = find.byKey(
+    const ValueKey<String>('custom-theme-ai-generate'),
+  );
   await _revealUnobscured(tester, generate);
   await tester.tap(generate);
   await tester.pumpAndSettle();
@@ -147,16 +149,9 @@ Future<void> _pumpAndRunAi(
 /// `scrollUntilVisible` 只保证进了视口，目标可能正被页头 / 预览压着，
 /// 点下去落在叠放层上。再把它对到视口中下部、露出叠放层之外再点。
 Future<void> _revealUnobscured(WidgetTester tester, Finder target) async {
-  await tester.scrollUntilVisible(
-    target,
-    120,
-    scrollable: _verticalScrollable,
-  );
+  await tester.scrollUntilVisible(target, 120, scrollable: _verticalScrollable);
   await tester.pumpAndSettle();
-  await Scrollable.ensureVisible(
-    tester.element(target.first),
-    alignment: 0.7,
-  );
+  await Scrollable.ensureVisible(tester.element(target.first), alignment: 0.7);
   await tester.pumpAndSettle();
 }
 
@@ -225,10 +220,7 @@ void main() {
     // 名字进了 hero 标题；主题列表在按「应用」前一条都没写。
     // hero 在列表最上面（2026-10 M3E 重设计），滚回顶部再看。
     // 直接回到顶：视口中心正压在吸顶预览上，拖拽会落在预览而不是列表上。
-    tester
-        .state<ScrollableState>(_verticalScrollable)
-        .position
-        .jumpTo(0);
+    tester.state<ScrollableState>(_verticalScrollable).position.jumpTo(0);
     await tester.pumpAndSettle();
     expect(
       find.descendant(
@@ -268,8 +260,9 @@ void main() {
     );
     expect(appModel.audioHighlightWrites.last, const Color(0x40FFEB3B));
 
-    final Finder undo =
-        find.byKey(const ValueKey<String>('custom-theme-ai-undo'));
+    final Finder undo = find.byKey(
+      const ValueKey<String>('custom-theme-ai-undo'),
+    );
     await _revealUnobscured(tester, undo);
     await tester.tap(undo);
     await tester.pumpAndSettle();

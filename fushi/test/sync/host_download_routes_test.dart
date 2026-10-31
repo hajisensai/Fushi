@@ -14,8 +14,10 @@ class _RecordingHost implements HostDownloadHost {
   final List<Map<String, Object?>> added = <Map<String, Object?>>[];
 
   @override
-  Future<Map<String, Object?>> capability() async =>
-      const <String, Object?>{'supported': true, 'backend': 'embedded'};
+  Future<Map<String, Object?>> capability() async => const <String, Object?>{
+    'supported': true,
+    'backend': 'embedded',
+  };
 
   @override
   Future<List<VideoDownloadJobRow>> listJobs() async =>
@@ -38,8 +40,7 @@ class _RecordingHost implements HostDownloadHost {
   @override
   Future<List<VideoDownloadJobSubtitleRow>?> listJobSubtitles(
     String jobId,
-  ) async =>
-      jobId == 'known' ? const <VideoDownloadJobSubtitleRow>[] : null;
+  ) async => jobId == 'known' ? const <VideoDownloadJobSubtitleRow>[] : null;
 
   @override
   Future<void> cancelJob(String jobId) async {}
@@ -57,26 +58,26 @@ class _RecordingHost implements HostDownloadHost {
 Future<shelf.Response> _post(
   HostDownloadHost host,
   Map<String, Object?> body,
-) =>
-    handleHostDownloadRequest(
-      host,
-      shelf.Request(
-        'POST',
-        Uri.parse('http://h/api/downloads'),
-        body: jsonEncode(body),
-        headers: const <String, String>{'Content-Type': 'application/json'},
-      ),
-      'POST',
-      '/api/downloads',
-    );
+) => handleHostDownloadRequest(
+  host,
+  shelf.Request(
+    'POST',
+    Uri.parse('http://h/api/downloads'),
+    body: jsonEncode(body),
+    headers: const <String, String>{'Content-Type': 'application/json'},
+  ),
+  'POST',
+  '/api/downloads',
+);
 
 void main() {
   test('discoveryKind 缺省 → null 透传（视频）；合法域透传', () async {
     final _RecordingHost host = _RecordingHost();
     expect(
-      (await _post(
-              host, <String, Object?>{'magnet': 'magnet:?x', 'title': 'a'}))
-          .statusCode,
+      (await _post(host, <String, Object?>{
+        'magnet': 'magnet:?x',
+        'title': 'a',
+      })).statusCode,
       200,
     );
     expect(
@@ -84,12 +85,13 @@ void main() {
         'magnet': 'magnet:?x',
         'title': 'b',
         'discoveryKind': 'manga',
-      }))
-          .statusCode,
+      })).statusCode,
       200,
     );
-    expect(host.added.map((Map<String, Object?> m) => m['discoveryKind']),
-        <Object?>[null, 'manga']);
+    expect(
+      host.added.map((Map<String, Object?> m) => m['discoveryKind']),
+      <Object?>[null, 'manga'],
+    );
   });
 
   test('discoveryKind 非法 → 400，不进 host', () async {
@@ -129,8 +131,11 @@ void main() {
       expect(r.statusCode, 200, reason: await r.readAsString());
       final HostDownloadAddRequest req = host.requests.single;
       expect(req.magnetUri, isNull);
-      expect(req.metainfo!.files.map((f) => f.path),
-          <String>['a.mkv', 'b.mkv', 'c.mkv']);
+      expect(req.metainfo!.files.map((f) => f.path), <String>[
+        'a.mkv',
+        'b.mkv',
+        'c.mkv',
+      ]);
       expect(req.selectedFileIndexes, <int>{1});
       expect(req.year, 1989);
       expect(req.metadataProvider, 'tmdb', reason: 'provider 归一成小写');
@@ -141,8 +146,10 @@ void main() {
     test('老客户端只发 magnet/title：扩展字段全是 null（旧行为）', () async {
       final _RecordingHost host = _RecordingHost();
       expect(
-        (await _post(host, <String, Object?>{'magnet': 'magnet:?x', 'title': 'a'}))
-            .statusCode,
+        (await _post(host, <String, Object?>{
+          'magnet': 'magnet:?x',
+          'title': 'a',
+        })).statusCode,
         200,
       );
       final HostDownloadAddRequest req = host.requests.single;
@@ -153,12 +160,9 @@ void main() {
       expect(req.subtitlePolicy, isNull);
     });
 
-    final Map<String, (Map<String, Object?>, String)> bad =
-        <String, (Map<String, Object?>, String)>{
-      '缺 magnet 与 torrent': (
-        <String, Object?>{'title': 't'},
-        'Missing magnet',
-      ),
+    final Map<String, (Map<String, Object?>, String)>
+    bad = <String, (Map<String, Object?>, String)>{
+      '缺 magnet 与 torrent': (<String, Object?>{'title': 't'}, 'Missing magnet'),
       'magnet 与 torrent 同时给': (
         <String, Object?>{
           'magnet': 'magnet:?x',
@@ -294,8 +298,11 @@ void main() {
       expect(r.statusCode, 200, reason: await r.readAsString());
       final HostDownloadAddRequest req = host.requests.single;
       expect(req.selectedFileIndexes, <int>{0, 2});
-      expect(req.metainfo!.files.map((f) => f.path),
-          <String>['a.mkv', 'b.mkv', 'c.mkv']);
+      expect(req.metainfo!.files.map((f) => f.path), <String>[
+        'a.mkv',
+        'b.mkv',
+        'c.mkv',
+      ]);
       expect(req.mediaKind, 'movie');
     });
 
@@ -309,8 +316,7 @@ void main() {
       expect(host.requests.single.selectedFileIndexes, isNull);
     });
 
-    test('配磁链 / 空列表 / 非整数 / 负数 / 与 files 同给 → 400，不进 host',
-        () async {
+    test('配磁链 / 空列表 / 非整数 / 负数 / 与 files 同给 → 400，不进 host', () async {
       final _RecordingHost host = _RecordingHost();
       for (final Map<String, Object?> body in <Map<String, Object?>>[
         <String, Object?>{
@@ -361,8 +367,11 @@ void main() {
       expect(r.statusCode, 200, reason: await r.readAsString());
       final HostDownloadAddRequest req = host.requests.single;
       expect(req.selectedFileIndexes, <int>{0, 2});
-      expect(req.metainfo!.files.map((f) => f.path),
-          <String>['a.mkv', 'b.mkv', 'c.mkv']);
+      expect(req.metainfo!.files.map((f) => f.path), <String>[
+        'a.mkv',
+        'b.mkv',
+        'c.mkv',
+      ]);
       expect(req.mediaKind, 'movie');
     });
 
@@ -376,8 +385,7 @@ void main() {
       expect(host.requests.single.selectedFileIndexes, isNull);
     });
 
-    test('配磁链 / 空列表 / 非整数 / 负数 / 与 files 同给 → 400，不进 host',
-        () async {
+    test('配磁链 / 空列表 / 非整数 / 负数 / 与 files 同给 → 400，不进 host', () async {
       final _RecordingHost host = _RecordingHost();
       for (final Map<String, Object?> body in <Map<String, Object?>>[
         <String, Object?>{
@@ -416,27 +424,27 @@ void main() {
   test('GET /api/downloads/<id>/subtitles：已知任务列出，未知任务 404', () async {
     final _RecordingHost host = _RecordingHost();
     Future<shelf.Response> get(String id) => handleHostDownloadRequest(
-          host,
-          shelf.Request('GET', Uri.parse('http://h/api/downloads/$id/subtitles')),
-          'GET',
-          '/api/downloads/$id/subtitles',
-        );
+      host,
+      shelf.Request('GET', Uri.parse('http://h/api/downloads/$id/subtitles')),
+      'GET',
+      '/api/downloads/$id/subtitles',
+    );
     final shelf.Response known = await get('known');
     expect(known.statusCode, 200);
-    expect(jsonDecode(await known.readAsString()),
-        <String, Object?>{'subtitles': <Object?>[]});
+    expect(jsonDecode(await known.readAsString()), <String, Object?>{
+      'subtitles': <Object?>[],
+    });
     expect((await get('ghost')).statusCode, 404);
   });
 
-  test('BUG-3437：DELETE 的 deleteFiles 查询参数原样到达 host；缺省 null；非法 400',
-      () async {
+  test('BUG-3437：DELETE 的 deleteFiles 查询参数原样到达 host；缺省 null；非法 400', () async {
     final _RecordingHost host = _RecordingHost();
     Future<shelf.Response> delete(String query) => handleHostDownloadRequest(
-          host,
-          shelf.Request('DELETE', Uri.parse('http://h/api/downloads/j1$query')),
-          'DELETE',
-          '/api/downloads/j1',
-        );
+      host,
+      shelf.Request('DELETE', Uri.parse('http://h/api/downloads/j1$query')),
+      'DELETE',
+      '/api/downloads/j1',
+    );
     expect((await delete('?deleteFiles=true')).statusCode, 200);
     expect((await delete('?deleteFiles=false')).statusCode, 200);
     expect((await delete('')).statusCode, 200);
@@ -461,7 +469,7 @@ class _RejectingHost extends _RecordingHost {
 
 /// 三个文件（下标 0..2）的 v1 多文件 .torrent。
 List<int> _packTorrent() => utf8.encode(
-      'd4:infod5:filesld6:lengthi1e4:pathl5:a.mkveed6:lengthi1e4:pathl5:'
-      'b.mkveed6:lengthi1e4:pathl5:c.mkveee4:name4:pack12:piece lengthi16384e'
-      '6:pieces20:aaaaaaaaaaaaaaaaaaaaee',
-    );
+  'd4:infod5:filesld6:lengthi1e4:pathl5:a.mkveed6:lengthi1e4:pathl5:'
+  'b.mkveed6:lengthi1e4:pathl5:c.mkveee4:name4:pack12:piece lengthi16384e'
+  '6:pieces20:aaaaaaaaaaaaaaaaaaaaee',
+);

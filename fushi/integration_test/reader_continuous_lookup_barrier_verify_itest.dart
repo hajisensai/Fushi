@@ -49,7 +49,8 @@ void main() {
       FlutterError.onError = (FlutterErrorDetails details) {
         errors.add(details);
         debugPrint(
-            '[verify-1027] FlutterError: ${details.exceptionAsString()}');
+          '[verify-1027] FlutterError: ${details.exceptionAsString()}',
+        );
       };
 
       try {
@@ -71,10 +72,14 @@ void main() {
         expect(dictOk, isTrue, reason: 'test dictionary must seed');
 
         // 分页模式 + 单击查词开，让 onTap 走查词路径。
-        await appModel.database
-            .setPref('src:reader_fushi:view_mode', 'pagination');
-        await appModel.database
-            .setPref('src:reader_fushi:writing_mode', 'horizontal-tb');
+        await appModel.database.setPref(
+          'src:reader_fushi:view_mode',
+          'pagination',
+        );
+        await appModel.database.setPref(
+          'src:reader_fushi:writing_mode',
+          'horizontal-tb',
+        );
         // highlight_on_tap 默认即 true（single-tap 查词），无需显式设置。
         await ReaderFushiSource.readerSettings?.refreshFromDb();
 
@@ -96,21 +101,31 @@ void main() {
           canEdit: true,
         );
 
-        final NavigatorState navigator =
-            tester.state<NavigatorState>(find.byType(Navigator).first);
-        unawaited(navigator.push<void>(MaterialPageRoute<void>(
-          builder: (_) => source.buildLaunchPage(item: item),
-        )));
+        final NavigatorState navigator = tester.state<NavigatorState>(
+          find.byType(Navigator).first,
+        );
+        unawaited(
+          navigator.push<void>(
+            MaterialPageRoute<void>(
+              builder: (_) => source.buildLaunchPage(item: item),
+            ),
+          ),
+        );
         await tester.pump(const Duration(seconds: 3));
 
         const Key webViewKey = ValueKey<String>('fushi_webview');
-        for (int i = 0;
-            i < 80 && find.byKey(webViewKey).evaluate().isEmpty;
-            i++) {
+        for (
+          int i = 0;
+          i < 80 && find.byKey(webViewKey).evaluate().isEmpty;
+          i++
+        ) {
           await tester.pump(const Duration(milliseconds: 500));
         }
-        expect(find.byKey(webViewKey), findsOneWidget,
-            reason: 'reader WebView must mount');
+        expect(
+          find.byKey(webViewKey),
+          findsOneWidget,
+          reason: 'reader WebView must mount',
+        );
 
         const Key contentReadyKey = ValueKey<String>('fushi_content_ready');
         bool contentReady = false;
@@ -133,8 +148,11 @@ void main() {
         final Map<String, dynamic> pts =
             jsonDecode(rawPts as String) as Map<String, dynamic>;
         debugPrint('[verify-1027] points: $pts');
-        expect(pts['ok'], isTrue,
-            reason: 'must find two distinct lookup points: ${pts['error']}');
+        expect(
+          pts['ok'],
+          isTrue,
+          reason: 'must find two distinct lookup points: ${pts['error']}',
+        );
 
         final double x1 = (pts['x1'] as num).toDouble();
         final double y1 = (pts['y1'] as num).toDouble();
@@ -154,8 +172,11 @@ void main() {
         for (int i = 0; i < 40 && !dictShown(); i++) {
           await tester.pump(const Duration(milliseconds: 200));
         }
-        expect(dictShown(), isTrue,
-            reason: 'first tap on 猫 must open a lookup popup');
+        expect(
+          dictShown(),
+          isTrue,
+          reason: 'first tap on 猫 must open a lookup popup',
+        );
 
         // 第二个词的全局坐标（barrier 传给 onDismissBarrierTap 的是 GLOBAL 坐标）。
         final RenderBox wv = tester.renderObject<RenderBox>(
@@ -175,20 +196,25 @@ void main() {
 
         // 核心断言：barrier 点新词后弹窗仍在（连续查词未被关窗堵塞）。若修复缺失，
         // barrier 的 onTap 只会 clearDictionaryResult → 弹窗被关、isDictionaryShown=false。
-        expect(dictShown(), isTrue,
-            reason:
-                'TODO-1027: tapping the dismiss barrier over a NEW word must '
-                'forward to lookup and keep a popup up (continuous lookup), NOT '
-                'just close the stack (which would need a second tap to look up)');
+        expect(
+          dictShown(),
+          isTrue,
+          reason:
+              'TODO-1027: tapping the dismiss barrier over a NEW word must '
+              'forward to lookup and keep a popup up (continuous lookup), NOT '
+              'just close the stack (which would need a second tap to look up)',
+        );
 
         await takeScreenshot(binding, 'reader_continuous_lookup_verified');
         assertStrictErrors(errors);
 
         navigator.pop();
         await tester.pump(const Duration(seconds: 2));
-        for (int i = 0;
-            i < 40 && ReaderFushiPage.debugEvaluateJavascript != null;
-            i++) {
+        for (
+          int i = 0;
+          i < 40 && ReaderFushiPage.debugEvaluateJavascript != null;
+          i++
+        ) {
           await tester.pump(const Duration(milliseconds: 250));
         }
       } finally {
@@ -241,7 +267,8 @@ String _twoWordPointsJs() => r'''
 
 /// 派发一次真实单击（pointer + click），让阅读器 onTap 的 JS 侧
 /// `callHandler('onTap', x, y, false)` 真触发。
-String _dispatchClickJs(double x, double y) => '''
+String _dispatchClickJs(double x, double y) =>
+    '''
 (function() {
   var px = $x, py = $y;
   var target = document.elementFromPoint(px, py) || document.body;

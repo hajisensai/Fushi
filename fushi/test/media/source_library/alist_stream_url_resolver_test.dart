@@ -81,55 +81,68 @@ void main() {
   tearDown(() => fake.stop());
 
   Future<int> insertAListSource(FushiDatabase db, {String username = ''}) =>
-      db.insertMediaSource(MediaSourcesCompanion.insert(
-        label: 'OD',
-        mediaKind: 'video',
-        rootPath: '${fake.origin}/d/GD-3',
-        transport: const Value('alist'),
-        configJson: Value(encodeSourceConfig(<String, Object?>{
-          'host': '127.0.0.1',
-          'port': fake.server.port,
-          'username': username,
-          'useTls': false,
-          'baseUrl': fake.origin,
-        })),
-        createdAt: 1000,
-      ));
+      db.insertMediaSource(
+        MediaSourcesCompanion.insert(
+          label: 'OD',
+          mediaKind: 'video',
+          rootPath: '${fake.origin}/d/GD-3',
+          transport: const Value('alist'),
+          configJson: Value(
+            encodeSourceConfig(<String, Object?>{
+              'host': '127.0.0.1',
+              'port': fake.server.port,
+              'username': username,
+              'useTls': false,
+              'baseUrl': fake.origin,
+            }),
+          ),
+          createdAt: 1000,
+        ),
+      );
 
-  test('alist source: no auth header, resolver swaps /d/ address for raw_url',
-      () async {
-    final FushiDatabase db = _memDb();
-    addTearDown(db.close);
-    final int sid = await insertAListSource(db);
+  test(
+    'alist source: no auth header, resolver swaps /d/ address for raw_url',
+    () async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final int sid = await insertAListSource(db);
 
-    expect(
-      await resolveSourceStreamHeaders(
+      expect(
+        await resolveSourceStreamHeaders(
+          db: db,
+          sourceId: sid,
+          targetUrl: '${fake.origin}/d/GD-3/ep01.mkv',
+        ),
+        isEmpty,
+      );
+      final StreamUrlResolver? resolver = await resolveSourceStreamUrlResolver(
         db: db,
         sourceId: sid,
-        targetUrl: '${fake.origin}/d/GD-3/ep01.mkv',
-      ),
-      isEmpty,
-    );
-    final StreamUrlResolver? resolver =
-        await resolveSourceStreamUrlResolver(db: db, sourceId: sid);
-    expect(resolver, isA<AListStreamUrlResolver>());
-    addTearDown(resolver!.close);
+      );
+      expect(resolver, isA<AListStreamUrlResolver>());
+      addTearDown(resolver!.close);
 
-    final String first =
-        await resolver.resolve('${fake.origin}/d/GD-3/ep 01.mkv');
-    expect(first, '${fake.origin}/p/GD-3/ep%2001.mkv?sign=1');
-    final String second =
-        await resolver.resolve('${fake.origin}/d/GD-3/ep 01.mkv');
-    expect(second, endsWith('sign=2'), reason: '每次起播都重新换签名，不缓存过期直链');
-    expect(fake.calls.map(((String, String?) c) => c.$2), everyElement(isNull),
-        reason: '游客：不带 Authorization');
+      final String first = await resolver.resolve(
+        '${fake.origin}/d/GD-3/ep 01.mkv',
+      );
+      expect(first, '${fake.origin}/p/GD-3/ep%2001.mkv?sign=1');
+      final String second = await resolver.resolve(
+        '${fake.origin}/d/GD-3/ep 01.mkv',
+      );
+      expect(second, endsWith('sign=2'), reason: '每次起播都重新换签名，不缓存过期直链');
+      expect(
+        fake.calls.map(((String, String?) c) => c.$2),
+        everyElement(isNull),
+        reason: '游客：不带 Authorization',
+      );
 
-    // 不在本站 /d/ 命名空间下的地址原样放行（来源根下 m3u8 可指向第三方）。
-    expect(
-      await resolver.resolve('https://third.example.com/x.m3u8'),
-      'https://third.example.com/x.m3u8',
-    );
-  });
+      // 不在本站 /d/ 命名空间下的地址原样放行（来源根下 m3u8 可指向第三方）。
+      expect(
+        await resolver.resolve('https://third.example.com/x.m3u8'),
+        'https://third.example.com/x.m3u8',
+      );
+    },
+  );
 
   test('account from configJson + password from credential store', () async {
     final FushiDatabase db = _memDb();
@@ -137,8 +150,10 @@ void main() {
     final int sid = await insertAListSource(db, username: 'alice');
     await SourceLibraryCredentialStore(db).saveSecret(sid, password: 'pw');
 
-    final StreamUrlResolver resolver =
-        (await resolveSourceStreamUrlResolver(db: db, sourceId: sid))!;
+    final StreamUrlResolver resolver = (await resolveSourceStreamUrlResolver(
+      db: db,
+      sourceId: sid,
+    ))!;
     addTearDown(resolver.close);
     await resolver.resolve('${fake.origin}/d/GD-3/ep01.mkv');
     expect(fake.calls.first.$1, '/api/auth/login');
@@ -148,36 +163,48 @@ void main() {
   test('webdav / local / missing source -> null resolver', () async {
     final FushiDatabase db = _memDb();
     addTearDown(db.close);
-    final int dav = await db.insertMediaSource(MediaSourcesCompanion.insert(
-      label: 'dav',
-      mediaKind: 'video',
-      rootPath: 'https://dav.example.com/m',
-      transport: const Value('webdav'),
-      createdAt: 1,
-    ));
+    final int dav = await db.insertMediaSource(
+      MediaSourcesCompanion.insert(
+        label: 'dav',
+        mediaKind: 'video',
+        rootPath: 'https://dav.example.com/m',
+        transport: const Value('webdav'),
+        createdAt: 1,
+      ),
+    );
     expect(await resolveSourceStreamUrlResolver(db: db, sourceId: dav), isNull);
     expect(
-        await resolveSourceStreamUrlResolver(db: db, sourceId: null), isNull);
+      await resolveSourceStreamUrlResolver(db: db, sourceId: null),
+      isNull,
+    );
     expect(
-        await resolveSourceStreamUrlResolver(db: db, sourceId: 9999), isNull);
+      await resolveSourceStreamUrlResolver(db: db, sourceId: 9999),
+      isNull,
+    );
   });
 
-  test('UrlStreamVideoClient applies the resolver on every stream-url request',
-      () async {
-    final AListStreamUrlResolver resolver =
-        AListStreamUrlResolver(baseUrl: fake.origin);
-    final UrlStreamVideoClient client = UrlStreamVideoClient(
-      streamUrl: '${fake.origin}/d/GD-3/ep01.mkv',
-      subtitleUrl: '${fake.origin}/d/GD-3/ep01.ass',
-      urlResolver: resolver,
-      youtubeStreamRelay: (String url, Map<String, String> _) async => url,
-    );
-    addTearDown(client.close);
-    final RemoteVideoStreamUrls a = await client.remoteVideoStreamUrls('id');
-    expect(a.streamUrl, '${fake.origin}/p/GD-3/ep01.mkv?sign=1');
-    expect(a.subtitleUrl, '${fake.origin}/d/GD-3/ep01.ass',
-        reason: '字幕地址保持落库形态，下载时再解析');
-    final RemoteVideoStreamUrls b = await client.remoteVideoStreamUrls('id');
-    expect(b.streamUrl, endsWith('sign=2'));
-  });
+  test(
+    'UrlStreamVideoClient applies the resolver on every stream-url request',
+    () async {
+      final AListStreamUrlResolver resolver = AListStreamUrlResolver(
+        baseUrl: fake.origin,
+      );
+      final UrlStreamVideoClient client = UrlStreamVideoClient(
+        streamUrl: '${fake.origin}/d/GD-3/ep01.mkv',
+        subtitleUrl: '${fake.origin}/d/GD-3/ep01.ass',
+        urlResolver: resolver,
+        youtubeStreamRelay: (String url, Map<String, String> _) async => url,
+      );
+      addTearDown(client.close);
+      final RemoteVideoStreamUrls a = await client.remoteVideoStreamUrls('id');
+      expect(a.streamUrl, '${fake.origin}/p/GD-3/ep01.mkv?sign=1');
+      expect(
+        a.subtitleUrl,
+        '${fake.origin}/d/GD-3/ep01.ass',
+        reason: '字幕地址保持落库形态，下载时再解析',
+      );
+      final RemoteVideoStreamUrls b = await client.remoteVideoStreamUrls('id');
+      expect(b.streamUrl, endsWith('sign=2'));
+    },
+  );
 }

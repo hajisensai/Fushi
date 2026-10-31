@@ -24,26 +24,40 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   test('onLoadStop 的宿主章重定向归零三个恢复锚（PR#914 ③）', () {
     final String source = _readSource(
-        'lib/src/pages/implementations/reader_fushi/webview.part.dart');
+      'lib/src/pages/implementations/reader_fushi/webview.part.dart',
+    );
     final String block = _slice(
       source,
       'final int hostChapter = _resolveNavChapter(_currentChapter);',
       '_loadChapterDirectly(_currentChapter);',
     );
 
-    expect(block, contains('_currentChapter = hostChapter;'),
-        reason: '前提：这就是那个重定向点');
-    expect(block, contains('_initialProgress = 0.0;'),
-        reason: '保留旧章 progress（可能是 0.99）= 冷开被甩到宿主章章末（PR#914 ③）');
-    expect(block, contains('_initialCharOffset = -1;'),
-        reason: '旧章的绝对字符锚对宿主章没有意义，必须归零');
-    expect(block, contains('_initialCharOffsetEnd = -1;'),
-        reason: '句尾锚同理，否则泄漏进宿主章的恢复脚本');
+    expect(
+      block,
+      contains('_currentChapter = hostChapter;'),
+      reason: '前提：这就是那个重定向点',
+    );
+    expect(
+      block,
+      contains('_initialProgress = 0.0;'),
+      reason: '保留旧章 progress（可能是 0.99）= 冷开被甩到宿主章章末（PR#914 ③）',
+    );
+    expect(
+      block,
+      contains('_initialCharOffset = -1;'),
+      reason: '旧章的绝对字符锚对宿主章没有意义，必须归零',
+    );
+    expect(
+      block,
+      contains('_initialCharOffsetEnd = -1;'),
+      reason: '句尾锚同理，否则泄漏进宿主章的恢复脚本',
+    );
   });
 
   test('另两个重定向点仍保持同一归零口径（防单点漂移）', () {
     final String nav = _readSource(
-        'lib/src/pages/implementations/reader_fushi/navigation.part.dart');
+      'lib/src/pages/implementations/reader_fushi/navigation.part.dart',
+    );
     final String navBlock = _slice(
       nav,
       'final int resolvedChapter = _resolveNavChapter(index);',
@@ -54,7 +68,8 @@ void main() {
     expect(navBlock, contains('charOffsetEnd = -1;'));
 
     final String chrome = _readSource(
-        'lib/src/pages/implementations/reader_fushi/chrome.part.dart');
+      'lib/src/pages/implementations/reader_fushi/chrome.part.dart',
+    );
     final String chromeBlock = _slice(
       chrome,
       'final int hostChapter = _resolveNavChapter(_currentChapter);',

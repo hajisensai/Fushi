@@ -39,10 +39,9 @@ extension _FushiSyncServerPairing on FushiSyncServer {
         !isMeaninglessDeviceName(reported)) {
       name = reported;
     }
-    final bool approved = await approve(FushiPairRequest(
-      deviceName: name,
-      remoteAddress: pairRemote,
-    ));
+    final bool approved = await approve(
+      FushiPairRequest(deviceName: name, remoteAddress: pairRemote),
+    );
     if (!approved) return _pairDenied('declined');
     return jsonResponse(<String, dynamic>{'token': _token});
   }
@@ -54,10 +53,10 @@ extension _FushiSyncServerPairing on FushiSyncServer {
   /// pairing session that timed out (BUG-1556). Older peers reply with a
   /// plain-text body instead, which the client treats as 'unavailable'.
   shelf.Response _pairDenied(String reason) => shelf.Response(
-        403,
-        body: jsonEncode(<String, String>{'reason': reason}),
-        headers: <String, String>{'Content-Type': 'application/json'},
-      );
+    403,
+    body: jsonEncode(<String, String>{'reason': reason}),
+    headers: <String, String>{'Content-Type': 'application/json'},
+  );
 
   /// TODO-961 M1: POST /api/pair/v2 {name, clientNonce} → 200 {sessionId,
   /// pinRequired, hostNonce}。仅创建会话、决定是否需要 PIN，并把 host 生成的 PIN
@@ -75,7 +74,8 @@ extension _FushiSyncServerPairing on FushiSyncServer {
     final String? reportedName = body?['name']?.toString().trim();
     // Drop a "localhost"/loopback advertisement (never a real device name) so it
     // is not persisted as the peer's name in the paired-devices list (TODO-1356).
-    final String? deviceName = (reportedName != null &&
+    final String? deviceName =
+        (reportedName != null &&
             reportedName.isNotEmpty &&
             !isMeaninglessDeviceName(reportedName))
         ? reportedName
@@ -85,12 +85,13 @@ extension _FushiSyncServerPairing on FushiSyncServer {
     final String? reportedDeviceId = body?['clientDeviceId']?.toString().trim();
     final String? clientDeviceId =
         (reportedDeviceId != null && reportedDeviceId.isNotEmpty)
-            ? reportedDeviceId
-            : null;
+        ? reportedDeviceId
+        : null;
     // 互联设备公钥（interconnect_device_key.dart）：只在带了 deviceId 时才有意义——它要
     // 和 deviceId 一起被 confirm 里的签名绑定。形状不对当没上报（旧 client 同样没有）。
     final String? reportedPubkey = body?['devicePubkey']?.toString().trim();
-    final String? devicePubkey = (clientDeviceId != null &&
+    final String? devicePubkey =
+        (clientDeviceId != null &&
             reportedPubkey != null &&
             interconnectDeviceKeyFingerprint(reportedPubkey) != null)
         ? reportedPubkey
@@ -125,8 +126,9 @@ extension _FushiSyncServerPairing on FushiSyncServer {
     final String hostNonce = FushiPairingProtocol.generateNonce();
     // 「这是我的设备」只对上报了设备钥匙的会话提供，且审批结果只存在本会话里
     // （PR #2258 审查问题 1：不按 deviceId 记全局账，PIN 错 / 过期 / 被拒都随会话丢弃）。
-    final FushiPairOwnerDeviceGrant? ownerDeviceGrant =
-        devicePubkey != null ? FushiPairOwnerDeviceGrant() : null;
+    final FushiPairOwnerDeviceGrant? ownerDeviceGrant = devicePubkey != null
+        ? FushiPairOwnerDeviceGrant()
+        : null;
     final FushiPairSession session = FushiPairSession(
       sessionId: sessionId,
       clientNonce: clientNonce,
@@ -160,15 +162,17 @@ extension _FushiSyncServerPairing on FushiSyncServer {
     // 远不显示、配对永远走不通。免 PIN 会话（LAN 自动发现且 host 允许免 PIN）审批仍留在
     // confirm（本就无 PIN 可显示，行为零变化，Never break userspace）。
     if (pinRequired) {
-      final bool approved = await onPairRequest!(FushiPairRequest(
-        deviceName: deviceName,
-        remoteAddress: remote,
-        // pinVerified 尚未校验（那在 confirm）；pinRequired=true 让审批弹窗显示 PIN。
-        pinVerified: null,
-        pinRequired: true,
-        clientDeviceId: clientDeviceId,
-        ownerDeviceGrant: ownerDeviceGrant,
-      ));
+      final bool approved = await onPairRequest!(
+        FushiPairRequest(
+          deviceName: deviceName,
+          remoteAddress: remote,
+          // pinVerified 尚未校验（那在 confirm）；pinRequired=true 让审批弹窗显示 PIN。
+          pinVerified: null,
+          pinRequired: true,
+          clientDeviceId: clientDeviceId,
+          ownerDeviceGrant: ownerDeviceGrant,
+        ),
+      );
       if (!approved) return _pairDenied('declined');
     }
 
@@ -360,14 +364,16 @@ extension _FushiSyncServerPairing on FushiSyncServer {
     // 校验，两者仍缺一不可）。免 PIN 会话（pinRequired=false）没有 CREATE 阶段审批，仍在
     // 此弹审批（无 PIN 可显示，行为不变）。
     if (!session.pinRequired) {
-      final bool approved = await approve(FushiPairRequest(
-        deviceName: session.deviceName,
-        remoteAddress: session.remoteAddress,
-        pinVerified: true,
-        pinRequired: false,
-        clientDeviceId: session.clientDeviceId,
-        ownerDeviceGrant: ownerDeviceGrant,
-      ));
+      final bool approved = await approve(
+        FushiPairRequest(
+          deviceName: session.deviceName,
+          remoteAddress: session.remoteAddress,
+          pinVerified: true,
+          pinRequired: false,
+          clientDeviceId: session.clientDeviceId,
+          ownerDeviceGrant: ownerDeviceGrant,
+        ),
+      );
       if (!approved) return _pairDenied('declined');
     }
 
@@ -409,14 +415,16 @@ extension _FushiSyncServerPairing on FushiSyncServer {
       return _token;
     }
     final String peerToken = FushiSyncServer.generateToken();
-    await persist(FushiPairedPeerRegistration(
-      peerId: peerId,
-      token: peerToken,
-      deviceName: session.deviceName,
-      remoteAddress: session.remoteAddress,
-      ownerDevice: ownerDevice && deviceKeyFingerprint != null,
-      deviceKeyFingerprint: deviceKeyFingerprint,
-    ));
+    await persist(
+      FushiPairedPeerRegistration(
+        peerId: peerId,
+        token: peerToken,
+        deviceName: session.deviceName,
+        remoteAddress: session.remoteAddress,
+        ownerDevice: ownerDevice && deviceKeyFingerprint != null,
+        deviceKeyFingerprint: deviceKeyFingerprint,
+      ),
+    );
     // 新 token 立即受理：清缓存促下次 auth 从 provider 重载（含刚写入的这行）。
     invalidatePeerTokenCache();
     return peerToken;
@@ -445,19 +453,19 @@ extension _FushiSyncServerPairing on FushiSyncServer {
   /// 401，机器可读 reason='pin'：PIN proof 校验未通过。与 403/declined 区分，让
   /// client 提示「PIN 错误，请重输」而非「对端拒绝」。绝不在 body 里回显任何 PIN。
   shelf.Response _pairUnauthorized() => shelf.Response(
-        401,
-        body: jsonEncode(<String, String>{'reason': 'pin'}),
-        headers: <String, String>{'Content-Type': 'application/json'},
-      );
+    401,
+    body: jsonEncode(<String, String>{'reason': 'pin'}),
+    headers: <String, String>{'Content-Type': 'application/json'},
+  );
 
   /// TODO-961 M3：429，机器可读 reason='rate_limited'：该来源 PIN 失败过多已被锁定
   /// 退避。与 401/pin 区分，让 client 提示「尝试过多，请稍后再试」而非「PIN 错误」。
   /// 绝不回显剩余锁定时长的精确值以外的信息，也绝不泄露 PIN 是否部分正确。
   shelf.Response _pairRateLimited() => shelf.Response(
-        429,
-        body: jsonEncode(<String, String>{'reason': 'rate_limited'}),
-        headers: <String, String>{'Content-Type': 'application/json'},
-      );
+    429,
+    body: jsonEncode(<String, String>{'reason': 'rate_limited'}),
+    headers: <String, String>{'Content-Type': 'application/json'},
+  );
 
   /// TODO-963 M2: 无鉴权轻量探测。手动输入 IP 的 client 在「填 IP → 探测 → 配对」流程
   /// 里用它确认地址可达、读 host 展示名 + 是否支持 v2 配对 + （TLS 开时）host 证书指纹
@@ -488,7 +496,8 @@ extension _FushiSyncServerPairing on FushiSyncServer {
     final Map<String, Object?>? mangaOcr = await _mangaOcrJobs?.capability();
     final Map<String, Object?>? jobs = await _hostJobs?.capability();
     final Map<String, Object?>? downloads = await _downloads?.capability();
-    final Map<String, Object?>? subscriptions = await _subscriptions?.capability();
+    final Map<String, Object?>? subscriptions = await _subscriptions
+        ?.capability();
     final Map<String, Object?>? assistant = await _assistant?.capability();
     return jsonResponse(<String, dynamic>{
       // 复习同步的长轮询通知（`GET /api/srs/changes`）。老 host 没有这一位，客户端只按定时同步。
@@ -560,15 +569,18 @@ extension _FushiSyncServerPairing on FushiSyncServer {
         'videoSubtitleBackfill': lib && videoSubtitleBackfill != null,
         // 图形字幕整轨回传（`GET .../graphicsubtitle?embeddedStreamIndex=`）。老 host
         // 无此字段 / 没注入抽取实现 → false，client 不请求、时间表只靠边播边记。
-        'videoGraphicSubtitleTrack': lib && graphicSubtitleTrackExporter != null,
+        'videoGraphicSubtitleTrack':
+            lib && graphicSubtitleTrackExporter != null,
         // TMDB 备选排序（`/api/library/metadata/episode-group*`）。
         'videoMetadataOrdering': _libraryService is VideoMetadataOrderingHost,
-        'serviceConfig': _securityContext != null &&
+        'serviceConfig':
+            _securityContext != null &&
             _libraryService is InterconnectServiceConfigHost,
         // 互联「配置文件」（Profile）双向搬运：与 serviceConfig 同门槛（必须 TLS）。
         // 能力位只说「这台 host 懂这个端点」，不代表此刻允许——端点还会再查一次
         // 用户开关，关着时返回 403，client 如实报错而不是当成不支持。
-        'profileTransfer': _securityContext != null &&
+        'profileTransfer':
+            _securityContext != null &&
             _libraryService is InterconnectProfileHost,
       },
       // TODO-961 M1 能力协商（设计稿 §1.1 / §2.5）：老 client 读不到也不崩。
@@ -676,7 +688,8 @@ String? _remoteAddress(shelf.Request request) {
   final Object? info = request.context['shelf.io.connection_info'];
   if (info is HttpConnectionInfo) {
     return FushiPairingProtocol.unmapIPv4MappedAddress(
-        info.remoteAddress.address);
+      info.remoteAddress.address,
+    );
   }
   return null;
 }

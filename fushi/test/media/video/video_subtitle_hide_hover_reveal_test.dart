@@ -41,14 +41,18 @@ AudioCue _cue(String text, int startMs, int endMs) => AudioCue()
 /// 隐藏态的判据只能是这个：断言「找不到文本」恰恰是被修掉的旧实现。
 bool _obscured(WidgetTester tester, Finder of) => tester
     .widgetList<Opacity>(
-        find.ancestor(of: of.first, matching: find.byType(Opacity)))
+      find.ancestor(of: of.first, matching: find.byType(Opacity)),
+    )
     .any((Opacity o) => o.opacity == 0);
 
 /// BUG-2198：两种遮蔽都只在**播放中**生效（暂停 / 查词时字幕让位），故本文件的
 /// 「该遮蔽」用例一律起播——不起播就等于在测暂停态，遮蔽断言会恒假。暂停语义本身由
 /// ① 组的专门用例覆盖（那条显式设 false）。
-VideoPlayerController _controller(WidgetTester tester,
-    {String main = '主', String? secondary}) {
+VideoPlayerController _controller(
+  WidgetTester tester, {
+  String main = '主',
+  String? secondary,
+}) {
   final VideoPlayerController c = VideoPlayerController();
   addTearDown(c.dispose);
   c.setCues(<AudioCue>[_cue(main, 0, 6000)]);
@@ -64,7 +68,8 @@ VideoPlayerController _controller(WidgetTester tester,
 /// ASS `\blur` 标记，故字幕树里唯一的 ImageFiltered 只可能是遮蔽层。
 bool _blurredVisual(WidgetTester tester, Finder of) => tester
     .widgetList<ImageFiltered>(
-        find.ancestor(of: of.first, matching: find.byType(ImageFiltered)))
+      find.ancestor(of: of.first, matching: find.byType(ImageFiltered)),
+    )
     .isNotEmpty;
 
 Future<void> _pump(
@@ -81,35 +86,42 @@ Future<void> _pump(
   bool lookupPopupVisible = false,
   VideoSubtitleHitTester? hitTester,
   void Function(
-          String sentence, int graphemeIndex, Rect charRect, AudioCue cue)?
-      onCharTap,
+    String sentence,
+    int graphemeIndex,
+    Rect charRect,
+    AudioCue cue,
+  )?
+  onCharTap,
 }) async {
-  await tester.pumpWidget(MaterialApp(
-    home: Scaffold(
-      body: VideoSubtitleOverlay(
-        controller: c,
-        subtitleHidden: subtitleHidden,
-        secondaryHidden: secondaryHidden,
-        blurEnabled: blurEnabled,
-        secondaryBlurEnabled: secondaryBlurEnabled,
-        dragAdjustEnabled: dragAdjustEnabled,
-        hoverAutoLookupEnabled: hoverAutoLookupEnabled,
-        obscureRevealOnInteraction: obscureRevealOnInteraction,
-        secondaryObscureRevealOnInteraction:
-            secondaryObscureRevealOnInteraction,
-        lookupPopupVisible: lookupPopupVisible,
-        hitTester: hitTester,
-        onCharTap: onCharTap,
+  await tester.pumpWidget(
+    MaterialApp(
+      home: Scaffold(
+        body: VideoSubtitleOverlay(
+          controller: c,
+          subtitleHidden: subtitleHidden,
+          secondaryHidden: secondaryHidden,
+          blurEnabled: blurEnabled,
+          secondaryBlurEnabled: secondaryBlurEnabled,
+          dragAdjustEnabled: dragAdjustEnabled,
+          hoverAutoLookupEnabled: hoverAutoLookupEnabled,
+          obscureRevealOnInteraction: obscureRevealOnInteraction,
+          secondaryObscureRevealOnInteraction:
+              secondaryObscureRevealOnInteraction,
+          lookupPopupVisible: lookupPopupVisible,
+          hitTester: hitTester,
+          onCharTap: onCharTap,
+        ),
       ),
     ),
-  ));
+  );
   await tester.pump();
 }
 
 /// 造一个鼠标指针并停到 [target] 上（桌面悬停）。返回的 gesture 可继续 moveTo 移开。
 Future<TestGesture> _hoverOver(WidgetTester tester, Finder target) async {
-  final TestGesture gesture =
-      await tester.createGesture(kind: PointerDeviceKind.mouse);
+  final TestGesture gesture = await tester.createGesture(
+    kind: PointerDeviceKind.mouse,
+  );
   await gesture.addPointer(location: Offset.zero);
   addTearDown(() => gesture.removePointer());
   await tester.pump();
@@ -127,21 +139,31 @@ void main() {
 
       // 关键回归守卫：修前这里是 findsNothing（活动集被清空）。保留几何是悬停显形的
       // 前提，一旦有人为了「省一点绘制」把它改回清空，本条立刻红。
-      expect(find.text('主'), findsWidgets,
-          reason: '隐藏态必须保留几何，否则鼠标无处可悬停（本 bug 的根因）');
-      expect(_obscured(tester, find.text('主')), isTrue,
-          reason: '隐藏态的视觉是 Opacity(0)：用户看不见');
+      expect(
+        find.text('主'),
+        findsWidgets,
+        reason: '隐藏态必须保留几何，否则鼠标无处可悬停（本 bug 的根因）',
+      );
+      expect(
+        _obscured(tester, find.text('主')),
+        isTrue,
+        reason: '隐藏态的视觉是 Opacity(0)：用户看不见',
+      );
     });
 
-    testWidgets('subtitleHidden=false：没有任何 Opacity(0) 遮蔽层（外观零变化）',
-        (tester) async {
+    testWidgets('subtitleHidden=false：没有任何 Opacity(0) 遮蔽层（外观零变化）', (
+      tester,
+    ) async {
       final VideoPlayerController c = _controller(tester);
 
       await _pump(tester, c);
 
       expect(find.text('主'), findsWidgets);
-      expect(_obscured(tester, find.text('主')), isFalse,
-          reason: '不遮蔽时不得平白多出透明层');
+      expect(
+        _obscured(tester, find.text('主')),
+        isFalse,
+        reason: '不遮蔽时不得平白多出透明层',
+      );
     });
 
     // BUG-2198（用户报「查词的时候隐藏字幕也会隐藏，而且暂停的时候隐藏字幕不会恢复」）：
@@ -154,8 +176,11 @@ void main() {
       await _pump(tester, c, subtitleHidden: true);
 
       expect(find.text('主'), findsWidgets);
-      expect(_obscured(tester, find.text('主')), isFalse,
-          reason: '暂停 = 用户停下来看，隐藏必须让位（查词自动暂停走的也是这条）');
+      expect(
+        _obscured(tester, find.text('主')),
+        isFalse,
+        reason: '暂停 = 用户停下来看，隐藏必须让位（查词自动暂停走的也是这条）',
+      );
     });
 
     testWidgets('恢复播放 → 重新隐藏（让位只针对暂停，不是把隐藏关掉）', (tester) async {
@@ -167,8 +192,11 @@ void main() {
       c.debugSetIsPlayingForTesting(true);
       await tester.pump();
 
-      expect(_obscured(tester, find.text('主')), isTrue,
-          reason: '继续播放就该遮回去，否则等于一暂停就永久解除隐藏');
+      expect(
+        _obscured(tester, find.text('主')),
+        isTrue,
+        reason: '继续播放就该遮回去，否则等于一暂停就永久解除隐藏',
+      );
     });
 
     testWidgets('暂停时模糊也让位（对称基准，防单边改坏）', (tester) async {
@@ -177,8 +205,11 @@ void main() {
 
       await _pump(tester, c, blurEnabled: true);
 
-      expect(_blurredVisual(tester, find.text('主')), isFalse,
-          reason: 'BUG-199 既有契约：暂停时模糊清晰');
+      expect(
+        _blurredVisual(tester, find.text('主')),
+        isFalse,
+        reason: 'BUG-199 既有契约：暂停时模糊清晰',
+      );
     });
   });
 
@@ -190,8 +221,11 @@ void main() {
 
       await _hoverOver(tester, find.text('主'));
 
-      expect(_obscured(tester, find.text('主')), isFalse,
-          reason: '悬停即显形——这正是用户要的行为');
+      expect(
+        _obscured(tester, find.text('主')),
+        isFalse,
+        reason: '悬停即显形——这正是用户要的行为',
+      );
     });
 
     testWidgets('鼠标移开 → 恢复隐藏', (tester) async {
@@ -204,8 +238,11 @@ void main() {
       await gesture.moveTo(Offset.zero);
       await tester.pump();
 
-      expect(_obscured(tester, find.text('主')), isTrue,
-          reason: '移开复原（显形是临时的，不是把隐藏关掉）');
+      expect(
+        _obscured(tester, find.text('主')),
+        isTrue,
+        reason: '移开复原（显形是临时的，不是把隐藏关掉）',
+      );
     });
   });
 
@@ -213,16 +250,22 @@ void main() {
     testWidgets('点隐藏的字幕 → 显形，且不误触发查词', (tester) async {
       final VideoPlayerController c = _controller(tester);
       final List<String> tapped = <String>[];
-      await _pump(tester, c,
-          subtitleHidden: true,
-          onCharTap: (String s, int i, Rect r, AudioCue cue) => tapped.add(s));
+      await _pump(
+        tester,
+        c,
+        subtitleHidden: true,
+        onCharTap: (String s, int i, Rect r, AudioCue cue) => tapped.add(s),
+      );
 
       await tester.tap(find.text('主').first, warnIfMissed: false);
       await tester.pump();
 
       expect(_obscured(tester, find.text('主')), isFalse, reason: '点击显形');
-      expect(tapped, isEmpty,
-          reason: '看不见的字不可查词：未显形时不登记命中（registerHits=false）');
+      expect(
+        tapped,
+        isEmpty,
+        reason: '看不见的字不可查词：未显形时不登记命中（registerHits=false）',
+      );
     });
   });
 
@@ -230,9 +273,12 @@ void main() {
     testWidgets('显形后字符恢复可查词（不是永久关掉查词）', (tester) async {
       final VideoPlayerController c = _controller(tester);
       final List<String> tapped = <String>[];
-      await _pump(tester, c,
-          subtitleHidden: true,
-          onCharTap: (String s, int i, Rect r, AudioCue cue) => tapped.add(s));
+      await _pump(
+        tester,
+        c,
+        subtitleHidden: true,
+        onCharTap: (String s, int i, Rect r, AudioCue cue) => tapped.add(s),
+      );
 
       // 先悬停显形（此时 registerHits 恢复 true、遮蔽热区也已撤下）。
       await _hoverOver(tester, find.text('主'));
@@ -255,8 +301,11 @@ void main() {
       await _hoverOver(tester, find.text('副'));
 
       expect(_obscured(tester, find.text('副')), isFalse, reason: '副字幕显形');
-      expect(_obscured(tester, find.text('主')), isTrue,
-          reason: '主字幕不该被副字幕的悬停带出来（两层各有独立 reveal 态）');
+      expect(
+        _obscured(tester, find.text('主')),
+        isTrue,
+        reason: '主字幕不该被副字幕的悬停带出来（两层各有独立 reveal 态）',
+      );
     });
   });
   group('⑥ 拖拽调整模式内两种遮蔽都让位（与模糊严格对称）', () {
@@ -271,8 +320,11 @@ void main() {
       await _pump(tester, c, subtitleHidden: true, dragAdjustEnabled: true);
 
       expect(find.text('主'), findsWidgets);
-      expect(_obscured(tester, find.text('主')), isFalse,
-          reason: '拖拽模式内必须能看见要拖的东西（松手真写字幕位置）');
+      expect(
+        _obscured(tester, find.text('主')),
+        isFalse,
+        reason: '拖拽模式内必须能看见要拖的东西（松手真写字幕位置）',
+      );
     });
 
     testWidgets('blur + dragAdjustEnabled：不糊（对称基准，既有契约）', (tester) async {
@@ -281,8 +333,11 @@ void main() {
 
       await _pump(tester, c, blurEnabled: true, dragAdjustEnabled: true);
 
-      expect(_blurredVisual(tester, find.text('主')), isFalse,
-          reason: '拖拽模式内模糊让位——隐藏必须与之严格对称');
+      expect(
+        _blurredVisual(tester, find.text('主')),
+        isFalse,
+        reason: '拖拽模式内模糊让位——隐藏必须与之严格对称',
+      );
     });
 
     testWidgets('hidden + 非拖拽模式：照常遮蔽（防「一刀关掉隐藏」式伪修复）', (tester) async {
@@ -290,8 +345,11 @@ void main() {
 
       await _pump(tester, c, subtitleHidden: true);
 
-      expect(_obscured(tester, find.text('主')), isTrue,
-          reason: '让位只对拖拽模式生效，平时该隐藏还得隐藏');
+      expect(
+        _obscured(tester, find.text('主')),
+        isTrue,
+        reason: '让位只对拖拽模式生效，平时该隐藏还得隐藏',
+      );
     });
 
     testWidgets('blur + 非拖拽模式：照常模糊（对称基准）', (tester) async {
@@ -315,11 +373,18 @@ void main() {
       await _hoverOver(tester, find.text('主'));
       expect(_obscured(tester, find.text('主')), isFalse, reason: '前置：已显形');
 
-      await _pump(tester, c,
-          subtitleHidden: true, hoverAutoLookupEnabled: true);
+      await _pump(
+        tester,
+        c,
+        subtitleHidden: true,
+        hoverAutoLookupEnabled: true,
+      );
 
-      expect(_obscured(tester, find.text('主')), isFalse,
-          reason: '隐藏仍开着，父级重建不得复位显形态');
+      expect(
+        _obscured(tester, find.text('主')),
+        isFalse,
+        reason: '隐藏仍开着，父级重建不得复位显形态',
+      );
     });
 
     testWidgets('副字幕：悬停显形后带不同 props 重建 → 仍显形', (tester) async {
@@ -328,19 +393,29 @@ void main() {
       await _hoverOver(tester, find.text('副'));
       expect(_obscured(tester, find.text('副')), isFalse, reason: '前置：已显形');
 
-      await _pump(tester, c,
-          secondaryHidden: true, hoverAutoLookupEnabled: true);
+      await _pump(
+        tester,
+        c,
+        secondaryHidden: true,
+        hoverAutoLookupEnabled: true,
+      );
 
-      expect(_obscured(tester, find.text('副')), isFalse,
-          reason: '副字幕与主字幕同构，判据同样必须含 secondaryHidden');
+      expect(
+        _obscured(tester, find.text('副')),
+        isFalse,
+        reason: '副字幕与主字幕同构，判据同样必须含 secondaryHidden',
+      );
     });
 
     testWidgets('真把遮蔽关掉才复位显形态（反向守卫：复位路径没被焊死）', (tester) async {
       final VideoPlayerController c = _controller(tester);
       final List<String> tapped = <String>[];
-      await _pump(tester, c,
-          subtitleHidden: true,
-          onCharTap: (String s, int i, Rect r, AudioCue cue) => tapped.add(s));
+      await _pump(
+        tester,
+        c,
+        subtitleHidden: true,
+        onCharTap: (String s, int i, Rect r, AudioCue cue) => tapped.add(s),
+      );
       // 用点击显形（不留鼠标指针，重开隐藏时不会被 onEnter 又显形一次）。
       await tester.tap(find.text('主').first, warnIfMissed: false);
       await tester.pump();
@@ -350,8 +425,11 @@ void main() {
       await _pump(tester, c);
       await _pump(tester, c, subtitleHidden: true);
 
-      expect(_obscured(tester, find.text('主')), isTrue,
-          reason: '遮蔽真关掉时必须复位显形态，否则下次开启直接是显形的');
+      expect(
+        _obscured(tester, find.text('主')),
+        isTrue,
+        reason: '遮蔽真关掉时必须复位显形态，否则下次开启直接是显形的',
+      );
       expect(tapped, isEmpty, reason: '遮蔽态的点击只显形、不查词');
     });
   });
@@ -409,8 +487,11 @@ void main() {
       await _pump(tester, c, subtitleHidden: true, hitTester: ht);
 
       expect(_obscured(tester, find.text('主')), isFalse, reason: '前置：暂停已让位');
-      expect(ht.hitTest(tester.getCenter(find.text('主').first))?.sentence, '主',
-          reason: '暂停时看得见的字必须能查词，否则查词浮层里对不上原句');
+      expect(
+        ht.hitTest(tester.getCenter(find.text('主').first))?.sentence,
+        '主',
+        reason: '暂停时看得见的字必须能查词，否则查词浮层里对不上原句',
+      );
       expect(ht.caretEntryCount(), greaterThan(0));
       expect(ht.caretAnchorEntry(), greaterThanOrEqualTo(0));
     });
@@ -438,8 +519,11 @@ void main() {
       await _pump(tester, c, subtitleHidden: true);
 
       expect(find.text('乙'), findsWidgets, reason: '前置：已换到下一条');
-      expect(_obscured(tester, find.text('乙')), isTrue,
-          reason: '点击显形只豁免当前这句，下一句自动恢复隐藏');
+      expect(
+        _obscured(tester, find.text('乙')),
+        isTrue,
+        reason: '点击显形只豁免当前这句，下一句自动恢复隐藏',
+      );
     });
 
     testWidgets('悬停显形跨句不被误清（BUG-1068 的「真悬停仍显形」不回归）', (tester) async {
@@ -456,8 +540,11 @@ void main() {
       c.debugUpdateCueForPosition(3000);
       await _pump(tester, c, subtitleHidden: true);
 
-      expect(_obscured(tester, find.text('乙')), isFalse,
-          reason: '鼠标还停在字幕上，换句不该把它变回看不见（悬停有自己的 onExit）');
+      expect(
+        _obscured(tester, find.text('乙')),
+        isFalse,
+        reason: '鼠标还停在字幕上，换句不该把它变回看不见（悬停有自己的 onExit）',
+      );
     });
   });
 
@@ -473,12 +560,19 @@ void main() {
     testWidgets('关闭 + 隐藏：悬停不再揭开', (tester) async {
       final VideoPlayerController c = _controller(tester);
 
-      await _pump(tester, c,
-          subtitleHidden: true, obscureRevealOnInteraction: false);
+      await _pump(
+        tester,
+        c,
+        subtitleHidden: true,
+        obscureRevealOnInteraction: false,
+      );
       await _hoverOver(tester, find.text('主'));
 
-      expect(_obscured(tester, find.text('主')), isTrue,
-          reason: '总闸关掉后悬停不该把隐藏的字幕唤出来');
+      expect(
+        _obscured(tester, find.text('主')),
+        isTrue,
+        reason: '总闸关掉后悬停不该把隐藏的字幕唤出来',
+      );
     });
 
     testWidgets('关闭 + 模糊：悬停不再揭开', (tester) async {
@@ -486,46 +580,74 @@ void main() {
       // 模糊只在播放中生效（BUG-199：暂停 / 查词时清晰），不置播放态的话本条恒绿。
       c.debugSetIsPlayingForTesting(true);
 
-      await _pump(tester, c,
-          blurEnabled: true, obscureRevealOnInteraction: false);
+      await _pump(
+        tester,
+        c,
+        blurEnabled: true,
+        obscureRevealOnInteraction: false,
+      );
       await _hoverOver(tester, find.text('主'));
 
-      expect(_blurredVisual(tester, find.text('主')), isTrue,
-          reason: '总闸关掉后悬停不该解糊（听力沉浸不被路过的鼠标破功）');
+      expect(
+        _blurredVisual(tester, find.text('主')),
+        isTrue,
+        reason: '总闸关掉后悬停不该解糊（听力沉浸不被路过的鼠标破功）',
+      );
     });
 
     testWidgets('开着 + 模糊：悬停照常解糊（模糊侧的防恒真基准）', (tester) async {
       final VideoPlayerController c = _controller(tester);
       c.debugSetIsPlayingForTesting(true);
 
-      await _pump(tester, c,
-          blurEnabled: true, obscureRevealOnInteraction: true);
+      await _pump(
+        tester,
+        c,
+        blurEnabled: true,
+        obscureRevealOnInteraction: true,
+      );
       await _hoverOver(tester, find.text('主'));
 
-      expect(_blurredVisual(tester, find.text('主')), isFalse,
-          reason: '总闸开着=历史行为，悬停仍解糊（上一条不是恒真）');
+      expect(
+        _blurredVisual(tester, find.text('主')),
+        isFalse,
+        reason: '总闸开着=历史行为，悬停仍解糊（上一条不是恒真）',
+      );
     });
 
     testWidgets('关闭 + 隐藏：点击热区不再揭开', (tester) async {
       final VideoPlayerController c = _controller(tester);
 
-      await _pump(tester, c,
-          subtitleHidden: true, obscureRevealOnInteraction: false);
+      await _pump(
+        tester,
+        c,
+        subtitleHidden: true,
+        obscureRevealOnInteraction: false,
+      );
       await tester.tap(find.text('主').first, warnIfMissed: false);
       await tester.pump();
 
-      expect(_obscured(tester, find.text('主')), isTrue,
-          reason: '总闸关掉后点击也不显形（移动端唯一通道同样受闸）');
+      expect(
+        _obscured(tester, find.text('主')),
+        isTrue,
+        reason: '总闸关掉后点击也不显形（移动端唯一通道同样受闸）',
+      );
     });
 
     testWidgets('默认开（显式 true）：悬停 / 点击照常显形（防恒真）', (tester) async {
       final VideoPlayerController c = _controller(tester);
 
-      await _pump(tester, c,
-          subtitleHidden: true, obscureRevealOnInteraction: true);
+      await _pump(
+        tester,
+        c,
+        subtitleHidden: true,
+        obscureRevealOnInteraction: true,
+      );
       final TestGesture gesture = await _hoverOver(tester, find.text('主'));
-      expect(_obscured(tester, find.text('主')), isFalse,
-          reason: '总闸开着=历史行为，悬停仍显形（上面三条不是恒真）');
+      expect(
+        _obscured(tester, find.text('主')),
+        isFalse,
+        reason: '总闸开着=历史行为，悬停仍显形（上面三条不是恒真）',
+      );
 
       await gesture.moveTo(Offset.zero);
       await tester.pump();
@@ -533,18 +655,24 @@ void main() {
 
       await tester.tap(find.text('主').first, warnIfMissed: false);
       await tester.pump();
-      expect(_obscured(tester, find.text('主')), isFalse,
-          reason: '总闸开着时点击热区仍显形');
+      expect(
+        _obscured(tester, find.text('主')),
+        isFalse,
+        reason: '总闸开着时点击热区仍显形',
+      );
     });
 
     testWidgets('关闭后热区仍在：盒面上的字符点击照样被拦掉（不可查词）', (tester) async {
       final VideoPlayerController c = _controller(tester);
       final List<String> tapped = <String>[];
 
-      await _pump(tester, c,
-          subtitleHidden: true,
-          obscureRevealOnInteraction: false,
-          onCharTap: (String s, int i, Rect r, AudioCue cue) => tapped.add(s));
+      await _pump(
+        tester,
+        c,
+        subtitleHidden: true,
+        obscureRevealOnInteraction: false,
+        onCharTap: (String s, int i, Rect r, AudioCue cue) => tapped.add(s),
+      );
       await tester.tap(find.text('主').first, warnIfMissed: false);
       await tester.pump();
 
@@ -558,11 +686,18 @@ void main() {
       await _hoverOver(tester, find.text('主'));
       expect(_obscured(tester, find.text('主')), isFalse, reason: '前置：悬停显形');
 
-      await _pump(tester, c,
-          subtitleHidden: true, obscureRevealOnInteraction: false);
+      await _pump(
+        tester,
+        c,
+        subtitleHidden: true,
+        obscureRevealOnInteraction: false,
+      );
 
-      expect(_obscured(tester, find.text('主')), isTrue,
-          reason: '关掉总闸要立刻收回显形态，否则这句要等换轮才遮回、开关像没生效');
+      expect(
+        _obscured(tester, find.text('主')),
+        isTrue,
+        reason: '关掉总闸要立刻收回显形态，否则这句要等换轮才遮回、开关像没生效',
+      );
     });
   });
 
@@ -580,58 +715,90 @@ void main() {
       final VideoPlayerController c = _controller(tester);
       c.debugSetIsPlayingForTesting(false);
 
-      await _pump(tester, c,
-          subtitleHidden: true, obscureRevealOnInteraction: false);
+      await _pump(
+        tester,
+        c,
+        subtitleHidden: true,
+        obscureRevealOnInteraction: false,
+      );
 
-      expect(_obscured(tester, find.text('主')), isTrue,
-          reason: '总闸关掉后暂停也不该揭开（用户报的原始症状）');
+      expect(
+        _obscured(tester, find.text('主')),
+        isTrue,
+        reason: '总闸关掉后暂停也不该揭开（用户报的原始症状）',
+      );
     });
 
     testWidgets('开着 + 隐藏 + 暂停：照常让位（BUG-2198 防恒真基准）', (tester) async {
       final VideoPlayerController c = _controller(tester);
       c.debugSetIsPlayingForTesting(false);
 
-      await _pump(tester, c,
-          subtitleHidden: true, obscureRevealOnInteraction: true);
+      await _pump(
+        tester,
+        c,
+        subtitleHidden: true,
+        obscureRevealOnInteraction: true,
+      );
 
-      expect(_obscured(tester, find.text('主')), isFalse,
-          reason: '总闸开着=历史行为，暂停仍让位（上一条不是恒真）');
+      expect(
+        _obscured(tester, find.text('主')),
+        isFalse,
+        reason: '总闸开着=历史行为，暂停仍让位（上一条不是恒真）',
+      );
     });
 
     testWidgets('关闭 + 模糊 + 暂停：仍然糊着', (tester) async {
       final VideoPlayerController c = _controller(tester);
       c.debugSetIsPlayingForTesting(false);
 
-      await _pump(tester, c,
-          blurEnabled: true, obscureRevealOnInteraction: false);
+      await _pump(
+        tester,
+        c,
+        blurEnabled: true,
+        obscureRevealOnInteraction: false,
+      );
 
-      expect(_blurredVisual(tester, find.text('主')), isTrue,
-          reason: '两种遮蔽共用同一条门，模糊侧也不该被暂停解掉');
+      expect(
+        _blurredVisual(tester, find.text('主')),
+        isTrue,
+        reason: '两种遮蔽共用同一条门，模糊侧也不该被暂停解掉',
+      );
     });
 
     testWidgets('关闭 + 隐藏 + 播放中查词浮层开着：仍不露出来', (tester) async {
       final VideoPlayerController c = _controller(tester);
 
-      await _pump(tester, c,
-          subtitleHidden: true,
-          obscureRevealOnInteraction: false,
-          lookupPopupVisible: true);
+      await _pump(
+        tester,
+        c,
+        subtitleHidden: true,
+        obscureRevealOnInteraction: false,
+        lookupPopupVisible: true,
+      );
 
-      expect(_obscured(tester, find.text('主')), isTrue,
-          reason: '查词浮层是自动显形的第二个来源，同样受闸');
+      expect(
+        _obscured(tester, find.text('主')),
+        isTrue,
+        reason: '查词浮层是自动显形的第二个来源，同样受闸',
+      );
     });
 
-    testWidgets('开着 + 隐藏 + 播放中查词浮层开着：照常让位（BUG-2235 防恒真基准）',
-        (tester) async {
+    testWidgets('开着 + 隐藏 + 播放中查词浮层开着：照常让位（BUG-2235 防恒真基准）', (tester) async {
       final VideoPlayerController c = _controller(tester);
 
-      await _pump(tester, c,
-          subtitleHidden: true,
-          obscureRevealOnInteraction: true,
-          lookupPopupVisible: true);
+      await _pump(
+        tester,
+        c,
+        subtitleHidden: true,
+        obscureRevealOnInteraction: true,
+        lookupPopupVisible: true,
+      );
 
-      expect(_obscured(tester, find.text('主')), isFalse,
-          reason: '总闸开着时浮层期间字幕恒定让位（重播本句不把它遮回去）');
+      expect(
+        _obscured(tester, find.text('主')),
+        isFalse,
+        reason: '总闸开着时浮层期间字幕恒定让位（重播本句不把它遮回去）',
+      );
     });
   });
 
@@ -642,27 +809,39 @@ void main() {
       final VideoPlayerController c = _controller(tester, secondary: '副');
       c.debugSetIsPlayingForTesting(false);
 
-      await _pump(tester, c,
-          subtitleHidden: true,
-          secondaryHidden: true,
-          obscureRevealOnInteraction: true,
-          secondaryObscureRevealOnInteraction: false);
+      await _pump(
+        tester,
+        c,
+        subtitleHidden: true,
+        secondaryHidden: true,
+        obscureRevealOnInteraction: true,
+        secondaryObscureRevealOnInteraction: false,
+      );
 
-      expect(_obscured(tester, find.text('主')), isFalse,
-          reason: '主字幕开关开着，暂停照常让位');
-      expect(_obscured(tester, find.text('副')), isTrue,
-          reason: '副字幕开关关掉，暂停也不揭开翻译');
+      expect(
+        _obscured(tester, find.text('主')),
+        isFalse,
+        reason: '主字幕开关开着，暂停照常让位',
+      );
+      expect(
+        _obscured(tester, find.text('副')),
+        isTrue,
+        reason: '副字幕开关关掉，暂停也不揭开翻译',
+      );
     });
 
     testWidgets('主关、副开 + 暂停：反过来同样各自生效', (tester) async {
       final VideoPlayerController c = _controller(tester, secondary: '副');
       c.debugSetIsPlayingForTesting(false);
 
-      await _pump(tester, c,
-          subtitleHidden: true,
-          secondaryHidden: true,
-          obscureRevealOnInteraction: false,
-          secondaryObscureRevealOnInteraction: true);
+      await _pump(
+        tester,
+        c,
+        subtitleHidden: true,
+        secondaryHidden: true,
+        obscureRevealOnInteraction: false,
+        secondaryObscureRevealOnInteraction: true,
+      );
 
       expect(_obscured(tester, find.text('主')), isTrue);
       expect(_obscured(tester, find.text('副')), isFalse);
@@ -671,10 +850,13 @@ void main() {
     testWidgets('副关：悬停 / 点击副字幕都不显形，主字幕悬停照常', (tester) async {
       final VideoPlayerController c = _controller(tester, secondary: '副');
 
-      await _pump(tester, c,
-          subtitleHidden: true,
-          secondaryHidden: true,
-          secondaryObscureRevealOnInteraction: false);
+      await _pump(
+        tester,
+        c,
+        subtitleHidden: true,
+        secondaryHidden: true,
+        secondaryObscureRevealOnInteraction: false,
+      );
       final TestGesture gesture = await _hoverOver(tester, find.text('副'));
       expect(_obscured(tester, find.text('副')), isTrue, reason: '副字幕悬停不显形');
 
@@ -684,8 +866,11 @@ void main() {
 
       await gesture.moveTo(tester.getCenter(find.text('主').first));
       await tester.pump();
-      expect(_obscured(tester, find.text('主')), isFalse,
-          reason: '主字幕开关开着，悬停仍显形（防恒真）');
+      expect(
+        _obscured(tester, find.text('主')),
+        isFalse,
+        reason: '主字幕开关开着，悬停仍显形（防恒真）',
+      );
     });
 
     testWidgets('只关副开关：已显形的主字幕不被收回', (tester) async {
@@ -695,13 +880,19 @@ void main() {
       await _hoverOver(tester, find.text('主'));
       expect(_obscured(tester, find.text('主')), isFalse, reason: '前置：悬停显形');
 
-      await _pump(tester, c,
-          subtitleHidden: true,
-          secondaryHidden: true,
-          secondaryObscureRevealOnInteraction: false);
+      await _pump(
+        tester,
+        c,
+        subtitleHidden: true,
+        secondaryHidden: true,
+        secondaryObscureRevealOnInteraction: false,
+      );
 
-      expect(_obscured(tester, find.text('主')), isFalse,
-          reason: '收回显形态只针对被关掉的那一层');
+      expect(
+        _obscured(tester, find.text('主')),
+        isFalse,
+        reason: '收回显形态只针对被关掉的那一层',
+      );
     });
   });
 }

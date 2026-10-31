@@ -35,10 +35,7 @@ void main() {
 
     await tester.pumpWidget(
       buildApp(
-        AudioRecorderDialogPage(
-          filePath: 'test-recording.mp3',
-          onSave: (_) {},
-        ),
+        AudioRecorderDialogPage(filePath: 'test-recording.mp3', onSave: (_) {}),
       ),
     );
 

@@ -53,8 +53,9 @@ AppModel _testAppModel(FushiDatabase db) {
 }
 
 void main() {
-  testWidgets('every toc row of the current chapter stays on screen',
-      (WidgetTester tester) async {
+  testWidgets('every toc row of the current chapter stays on screen', (
+    WidgetTester tester,
+  ) async {
     await tester.binding.setSurfaceSize(const Size(400, 1600));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     final FushiDatabase db = FushiDatabase.forTesting(
@@ -85,20 +86,20 @@ void main() {
             body: Consumer(
               builder: (BuildContext context, WidgetRef ref, _) =>
                   ReaderQuickSettingsSheet(
-                controller: null,
-                toc: toc,
-                readerProgress: const (0, 2),
-                onJumpSection: (_, __) async {},
-                onExitReader: () {},
-                webViewController: _FakeInAppWebViewController(),
-                appModel: model,
-                ref: ref,
-                isFushiReader: true,
-                presentation:
-                    ReaderQuickSettingsPresentation.sideSheetNavigation,
-                onStyleChanged: () async {},
-                onThemeChanged: () async {},
-              ),
+                    controller: null,
+                    toc: toc,
+                    readerProgress: const (0, 2),
+                    onJumpSection: (_, __) async {},
+                    onExitReader: () {},
+                    webViewController: _FakeInAppWebViewController(),
+                    appModel: model,
+                    ref: ref,
+                    isFushiReader: true,
+                    presentation:
+                        ReaderQuickSettingsPresentation.sideSheetNavigation,
+                    onStyleChanged: () async {},
+                    onThemeChanged: () async {},
+                  ),
             ),
           ),
         ),
@@ -124,8 +125,7 @@ void main() {
       }
     });
 
-    test(
-        'image-only toc entry is named by alt; an unnamed group keeps its '
+    test('image-only toc entry is named by alt; an unnamed group keeps its '
         'children', () {
       final Uint8List bytes = _encodeArchive(<ArchiveFile>[
         _textFile('META-INF/container.xml', _containerXml),
@@ -137,8 +137,9 @@ void main() {
       ]);
 
       final EpubBook book = EpubParser.parseSync(bytes, extractDir.path);
-      final List<String> labels =
-          book.toc.map((EpubTocItem e) => e.label).toList();
+      final List<String> labels = book.toc
+          .map((EpubTocItem e) => e.label)
+          .toList();
 
       expect(labels, contains('口絵'), reason: '图片目录项要用 img 的 alt 命名，而不是整条丢掉');
       // 无名分组节点（<li> 只有一个 <ol>，没有 <a>/<span>）：它自己无从显示，
@@ -218,7 +219,8 @@ const String _navXhtml = '''
 </html>
 ''';
 
-String _chapterXhtml(String body) => '''
+String _chapterXhtml(String body) =>
+    '''
 <?xml version="1.0" encoding="UTF-8"?>
 <html xmlns="http://www.w3.org/1999/xhtml">
   <head><title>Chapter</title></head>

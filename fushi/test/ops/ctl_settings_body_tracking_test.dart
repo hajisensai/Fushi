@@ -30,10 +30,7 @@ class _FakeBangumiApi implements BangumiTrackingApi {
   @override
   Future<BangumiUser> getMe() async {
     if (rejectToken) {
-      throw const BangumiApiException(
-        statusCode: 401,
-        message: 'unauthorized',
-      );
+      throw const BangumiApiException(statusCode: 401, message: 'unauthorized');
     }
     return const BangumiUser(username: 'alice', nickname: 'Alice');
   }
@@ -189,7 +186,8 @@ void main() {
 
   testWidgets('每个动作都有无交互入口，令牌参数标记为 secret', (WidgetTester tester) async {
     await pumpContext(tester);
-    for (final SettingsActionItem a in items().whereType<SettingsActionItem>()) {
+    for (final SettingsActionItem a
+        in items().whereType<SettingsActionItem>()) {
       expect(a.cli?.run, isNotNull, reason: a.id);
     }
     expect(
@@ -202,9 +200,7 @@ void main() {
     expect(ids.length, items().length, reason: 'id 不能重复');
   });
 
-  testWidgets('未连接：status 如实回报、需令牌的动作在发网络请求前拒绝', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('未连接：status 如实回报、需令牌的动作在发网络请求前拒绝', (WidgetTester tester) async {
     await pumpContext(tester);
     await tester.runAsync(() async {
       final Map<String, Object?> status =
@@ -250,17 +246,19 @@ void main() {
       expect(service.isConfigured, isFalse);
 
       api.rejectToken = false;
-      final Object? result = await action(
-        'connect',
-      ).run!(sc, const <String, String>{'token': 'SECRET-TOKEN'});
+      final Object? result = await action('connect').run!(
+        sc,
+        const <String, String>{'token': 'SECRET-TOKEN'},
+      );
       expect(jsonEncode(result), isNot(contains('SECRET-TOKEN')));
       expect((result! as Map<String, Object?>)['account'], 'Alice');
       expect(service.accessToken, 'SECRET-TOKEN');
       expect(service.accountName, 'Alice');
 
-      final Object? status = await action(
-        'status',
-      ).run!(sc, const <String, String>{});
+      final Object? status = await action('status').run!(
+        sc,
+        const <String, String>{},
+      );
       expect(jsonEncode(status), isNot(contains('SECRET-TOKEN')));
       expect((status! as Map<String, Object?>)['configured'], isTrue);
     });

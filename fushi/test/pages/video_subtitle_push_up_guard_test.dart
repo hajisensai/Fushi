@@ -43,51 +43,91 @@ void main() {
 
   test('反转 089：默认 bottomPadding 是自然基线 75，不再恒含控制条避让', () {
     // 撤回 129（默认改回 100=75+98 折中的恒抬升）→ 本条变红。
-    expect(styleSrc, contains('bottomPadding: 75'),
-        reason: '默认位置应回到自然基线 75，避让改由 overlay 动态叠加');
-    expect(styleSrc, isNot(contains('bottomPadding: 100')),
-        reason: '默认不应把控制条避让恒含进 bottomPadding（那是 089 的恒抬升）');
+    expect(
+      styleSrc,
+      contains('bottomPadding: 75'),
+      reason: '默认位置应回到自然基线 75，避让改由 overlay 动态叠加',
+    );
+    expect(
+      styleSrc,
+      isNot(contains('bottomPadding: 100')),
+      reason: '默认不应把控制条避让恒含进 bottomPadding（那是 089 的恒抬升）',
+    );
   });
 
   test('TODO-364 单一真相源：State 持有 media_kit 真实可见性 + 派生可见性，dispose 释放', () {
-    expect(src, contains('ValueNotifier<bool> _mediaKitControlsVisible'),
-        reason: '应有 _mediaKitControlsVisible 接收 media_kit 控制条真实可见性（单一真相源）');
-    expect(src, contains('ValueNotifier<bool> _videoControlsVisible'),
-        reason: '应有派生的 _videoControlsVisible 供字幕避让消费');
-    expect(src, contains('_mediaKitControlsVisible.dispose()'),
-        reason: '真相源 notifier 必须在 dispose 释放');
-    expect(src, contains('_videoControlsVisible.dispose()'),
-        reason: '派生 notifier 必须在 dispose 释放，避免泄漏');
+    expect(
+      src,
+      contains('ValueNotifier<bool> _mediaKitControlsVisible'),
+      reason: '应有 _mediaKitControlsVisible 接收 media_kit 控制条真实可见性（单一真相源）',
+    );
+    expect(
+      src,
+      contains('ValueNotifier<bool> _videoControlsVisible'),
+      reason: '应有派生的 _videoControlsVisible 供字幕避让消费',
+    );
+    expect(
+      src,
+      contains('_mediaKitControlsVisible.dispose()'),
+      reason: '真相源 notifier 必须在 dispose 释放',
+    );
+    expect(
+      src,
+      contains('_videoControlsVisible.dispose()'),
+      reason: '派生 notifier 必须在 dispose 释放，避免泄漏',
+    );
   });
 
   test('TODO-364 反退回：不再有 Fushi 侧独立隐藏 Timer / 移动镜像 toggle', () {
     // 旧实现的镜像独立 Timer 与 media_kit 私有 Timer 相位反（根因），修复后删除。
-    expect(src, isNot(contains('_videoControlsHideTimer')),
-        reason: '不应残留 Fushi 侧独立隐藏 Timer（media_kit 自己的 Timer 是唯一计时，TODO-364）');
-    expect(src, isNot(contains('_toggleControlsVisibleForTap')),
-        reason: '不应残留移动端镜像 toggle（移动 tap 由 media_kit onTap 决定并推送，TODO-364）');
+    expect(
+      src,
+      isNot(contains('_videoControlsHideTimer')),
+      reason: '不应残留 Fushi 侧独立隐藏 Timer（media_kit 自己的 Timer 是唯一计时，TODO-364）',
+    );
+    expect(
+      src,
+      isNot(contains('_toggleControlsVisibleForTap')),
+      reason: '不应残留移动端镜像 toggle（移动 tap 由 media_kit onTap 决定并推送，TODO-364）',
+    );
   });
 
   test('TODO-364 media_kit 真实可见性经 visibilityNotifier 注入两套控制主题', () {
     // 桌面 + 移动主题都注入同一个真相源 notifier，窗口/全屏复用同一 builder 故跨全屏。
-    final int count =
-        'visibilityNotifier: _mediaKitControlsVisible'.allMatches(src).length;
-    expect(count, greaterThanOrEqualTo(2),
-        reason: '桌面与移动两套控制主题都必须注入 _mediaKitControlsVisible 作真相源');
+    final int count = 'visibilityNotifier: _mediaKitControlsVisible'
+        .allMatches(src)
+        .length;
+    expect(
+      count,
+      greaterThanOrEqualTo(2),
+      reason: '桌面与移动两套控制主题都必须注入 _mediaKitControlsVisible 作真相源',
+    );
   });
 
   test('TODO-364 字幕避让消费的 _videoControlsVisible 只由唯一派生函数写入', () {
-    expect(src, contains('controlsVisible: _videoControlsVisible'),
-        reason: 'overlay 必须接上派生的 _videoControlsVisible 才能动态避让进度条');
-    expect(src, contains('void _applyControlsVisibilityFromMediaKit()'),
-        reason: '应有唯一派生函数把 media_kit 真实可见性 + 门控派生进 _videoControlsVisible');
+    expect(
+      src,
+      contains('controlsVisible: _videoControlsVisible'),
+      reason: 'overlay 必须接上派生的 _videoControlsVisible 才能动态避让进度条',
+    );
+    expect(
+      src,
+      contains('void _applyControlsVisibilityFromMediaKit()'),
+      reason: '应有唯一派生函数把 media_kit 真实可见性 + 门控派生进 _videoControlsVisible',
+    );
     final int fn = src.indexOf('void _applyControlsVisibilityFromMediaKit()');
     final int fnEnd = src.indexOf('\n  }', fn);
     final String body = src.substring(fn, fnEnd);
-    expect(body, contains('_mediaKitControlsVisible.value'),
-        reason: '派生必须读 media_kit 真实可见性（单一真相源）');
-    expect(body, contains('_videoControlsVisible.value ='),
-        reason: '派生是 _videoControlsVisible 的唯一写入点');
+    expect(
+      body,
+      contains('_mediaKitControlsVisible.value'),
+      reason: '派生必须读 media_kit 真实可见性（单一真相源）',
+    );
+    expect(
+      body,
+      contains('_videoControlsVisible.value ='),
+      reason: '派生是 _videoControlsVisible 的唯一写入点',
+    );
     // 订阅四输入（真相源 + 三门控）任一变化即重派生。
     for (final String sub in <String>[
       '_mediaKitControlsVisible.addListener(_applyControlsVisibilityFromMediaKit)',
@@ -104,18 +144,26 @@ void main() {
     // 75，移动端 max(75,56)=75 把字幕留在被抬高的进度条下面被遮（用户报「只动一点点」）。
     // 视频页必须显式传入按真实控制条几何加总的 reserve（移动 ≈140×缩放 > 75）才真正抬升。
     expect(
-        RegExp(r'controlsBottomReserve:\s*_subtitleControlsBottomReserve\(\)')
-            .hasMatch(src),
-        isTrue,
-        reason: 'overlay 必须接上视频页计算的真实几何 reserve，否则回退裸常量 56 被遮');
+      RegExp(
+        r'controlsBottomReserve:\s*_subtitleControlsBottomReserve\(\)',
+      ).hasMatch(src),
+      isTrue,
+      reason: 'overlay 必须接上视频页计算的真实几何 reserve，否则回退裸常量 56 被遮',
+    );
     // 计算函数由真实控制条 getter 加总（均已 ×_videoUiScale），故随界面缩放。
     final int fn = src.indexOf('double _subtitleControlsBottomReserve()');
-    expect(fn, greaterThanOrEqualTo(0),
-        reason: '应有 _subtitleControlsBottomReserve 计算真实几何 reserve');
+    expect(
+      fn,
+      greaterThanOrEqualTo(0),
+      reason: '应有 _subtitleControlsBottomReserve 计算真实几何 reserve',
+    );
     final int fnEnd = src.indexOf('\n  }', fn);
     final String body = src.substring(fn, fnEnd);
-    expect(body, contains('videoSubtitleControlsReserve('),
-        reason: 'reserve 应经纯函数 videoSubtitleControlsReserve 按几何加总（页面/测试同源）');
+    expect(
+      body,
+      contains('videoSubtitleControlsReserve('),
+      reason: 'reserve 应经纯函数 videoSubtitleControlsReserve 按几何加总（页面/测试同源）',
+    );
     for (final String getter in <String>[
       '_videoButtonBarHeight',
       '_videoSeekBarButtonGap',
@@ -133,23 +181,35 @@ void main() {
       '_videoGeometryBottomBaseline',
       '_videoBottomSystemInset()',
     ]) {
-      expect(body, contains(getter),
-          reason: 'reserve 必须由真实控制条几何项 $getter 加总（随缩放、盖过移动进度条）');
+      expect(
+        body,
+        contains(getter),
+        reason: 'reserve 必须由真实控制条几何项 $getter 加总（随缩放、盖过移动进度条）',
+      );
     }
     expect(
-        RegExp(r'double get _videoGeometryBottomBaseline =>\s*'
-                r'_videoBottomChromeBaseline \+')
-            .hasMatch(src),
-        isTrue,
-        reason: '离底基线必须仍以 _videoBottomChromeBaseline 为底再叠抬升');
-    expect(body, contains('_isDesktopVideoControls'),
-        reason: 'reserve 应按平台分桌面/移动几何（桌面只让一个按钮行，移动让进度条热区上缘）');
+      RegExp(
+        r'double get _videoGeometryBottomBaseline =>\s*'
+        r'_videoBottomChromeBaseline \+',
+      ).hasMatch(src),
+      isTrue,
+      reason: '离底基线必须仍以 _videoBottomChromeBaseline 为底再叠抬升',
+    );
+    expect(
+      body,
+      contains('_isDesktopVideoControls'),
+      reason: 'reserve 应按平台分桌面/移动几何（桌面只让一个按钮行，移动让进度条热区上缘）',
+    );
     // BUG-901 防回退：reserve 计算不应再只用**可见轨道高**（那会让字幕落进轨道上方那段
     // 透明 seek 命中区、与进度条在同一竞技场误触）。撤回成
     // `seekBarTrackHeight: _videoSeekBarTrackHeight` → 本条红。
-    expect(body, isNot(contains('_videoSeekBarTrackHeight')),
-        reason: 'reserve 不应再只用可见轨道高 _videoSeekBarTrackHeight'
-            '（字幕落进进度条透明热区、点击挨太近误触，BUG-901 改用触摸热区全高）');
+    expect(
+      body,
+      isNot(contains('_videoSeekBarTrackHeight')),
+      reason:
+          'reserve 不应再只用可见轨道高 _videoSeekBarTrackHeight'
+          '（字幕落进进度条透明热区、点击挨太近误触，BUG-901 改用触摸热区全高）',
+    );
   });
 
   test('BUG-1224：桌面 theme 与字幕避让读同一份进度条几何，fork 下压量不再是写死常量', () {
@@ -162,70 +222,108 @@ void main() {
       '../third_party/media_kit_video/lib/media_kit_video_controls/'
       'src/controls/material_desktop.dart',
     );
-    expect(forkSrc.existsSync(), isTrue,
-        reason: 'vendored media_kit_video fork 应存在');
+    expect(
+      forkSrc.existsSync(),
+      isTrue,
+      reason: 'vendored media_kit_video fork 应存在',
+    );
     final String fork = forkSrc.readAsStringSync();
     // fork 必须把下压量提成主题字段并真的用它——退回写死 `Offset(0.0, 16.0)` → 本条红。
-    expect(fork, contains('final double seekBarBottomButtonBarOverlap'),
-        reason: 'fork 桌面主题必须暴露 seekBarBottomButtonBarOverlap，'
-            '否则宿主算不出进度条真实热区上缘（BUG-1224）');
+    expect(
+      fork,
+      contains('final double seekBarBottomButtonBarOverlap'),
+      reason:
+          'fork 桌面主题必须暴露 seekBarBottomButtonBarOverlap，'
+          '否则宿主算不出进度条真实热区上缘（BUG-1224）',
+    );
     // 下压偏移本身必须由主题字段构成（不是文件里别处随便提一下这个名字就算数）。
     expect(
-        RegExp(r'Offset\(\s*0\.0,\s*_theme\(context\)\s*\.\s*'
-                r'seekBarBottomButtonBarOverlap')
-            .hasMatch(fork),
-        isTrue,
-        reason:
-            '进度条下压偏移必须读主题字段 seekBarBottomButtonBarOverlap，不得写死常量（BUG-1224）');
+      RegExp(
+        r'Offset\(\s*0\.0,\s*_theme\(context\)\s*\.\s*'
+        r'seekBarBottomButtonBarOverlap',
+      ).hasMatch(fork),
+      isTrue,
+      reason: '进度条下压偏移必须读主题字段 seekBarBottomButtonBarOverlap，不得写死常量（BUG-1224）',
+    );
     // 热区高同理：Listener 包裹的透明命中容器必须用主题值（宿主传什么就是什么）。
     expect(
-        RegExp(r'height:\s*_theme\(context\)\s*\.\s*seekBarContainerHeight')
-            .hasMatch(fork),
-        isTrue,
-        reason: '进度条透明命中容器高必须读主题 seekBarContainerHeight（BUG-1224）');
-    expect(fork.contains('const Offset(0.0, 16.0)'), isFalse,
-        reason: '不应残留写死的 16px 下压常量（宿主看不见 → 避让算错，BUG-1224）');
+      RegExp(
+        r'height:\s*_theme\(context\)\s*\.\s*seekBarContainerHeight',
+      ).hasMatch(fork),
+      isTrue,
+      reason: '进度条透明命中容器高必须读主题 seekBarContainerHeight（BUG-1224）',
+    );
+    expect(
+      fork.contains('const Offset(0.0, 16.0)'),
+      isFalse,
+      reason: '不应残留写死的 16px 下压常量（宿主看不见 → 避让算错，BUG-1224）',
+    );
     // 页面必须显式把同一份常量喂给桌面 theme（而非依赖 fork 构造器默认值漂移）。
     // theme 在 `extension on _VideoFushiPageState` 里，静态常量须限定类名，故容忍该前缀。
     expect(
-        RegExp(r'seekBarContainerHeight:\s*(?:_VideoFushiPageState\.)?\s*'
-                r'_videoDesktopSeekBarContainerHeight')
-            .hasMatch(src),
-        isTrue,
-        reason: '桌面 theme 必须显式传热区高，与字幕避让同源（BUG-1224）');
+      RegExp(
+        r'seekBarContainerHeight:\s*(?:_VideoFushiPageState\.)?\s*'
+        r'_videoDesktopSeekBarContainerHeight',
+      ).hasMatch(src),
+      isTrue,
+      reason: '桌面 theme 必须显式传热区高，与字幕避让同源（BUG-1224）',
+    );
     expect(
-        RegExp(r'seekBarBottomButtonBarOverlap:\s*'
-                r'(?:_VideoFushiPageState\.)?\s*'
-                r'_videoDesktopSeekBarButtonBarOverlap')
-            .hasMatch(src),
-        isTrue,
-        reason: '桌面 theme 必须显式传下压量，与字幕避让同源（BUG-1224）');
+      RegExp(
+        r'seekBarBottomButtonBarOverlap:\s*'
+        r'(?:_VideoFushiPageState\.)?\s*'
+        r'_videoDesktopSeekBarButtonBarOverlap',
+      ).hasMatch(src),
+      isTrue,
+      reason: '桌面 theme 必须显式传下压量，与字幕避让同源（BUG-1224）',
+    );
   });
 
   test('桌面 hover 包裹层 non-opaque 下探 media_kit 自己的 MouseRegion（TODO-364）', () {
-    expect(src, contains('Widget _videoControlsHoverWrap('),
-        reason: '应有桌面 hover 包裹层（唤回光标 / 锁按钮）');
+    expect(
+      src,
+      contains('Widget _videoControlsHoverWrap('),
+      reason: '应有桌面 hover 包裹层（唤回光标 / 锁按钮）',
+    );
     // non-opaque：不阻断 hover 下探到 media_kit 自己的 MouseRegion（BUG-198 纪律）——这正是
     // TODO-364 把可见性交还 media_kit 的前提：真实 hover 命中其 onHover 翻 visible 并推送。
     final int wrap = src.indexOf('Widget _videoControlsHoverWrap(');
     final int wrapEnd = src.indexOf('\n  }', wrap);
     final String wrapBody = src.substring(wrap, wrapEnd);
-    expect(wrapBody, contains('opaque: false'),
-        reason: 'hover 包裹层必须 non-opaque，否则吞 hover、media_kit 控制条不再被唤起/推送');
-    expect(wrapBody, contains('onEnter: _handleVideoControlsHover'),
-        reason: 'hover enter 应绑 _handleVideoControlsHover');
-    expect(wrapBody, contains('onHover: _handleVideoControlsHover'),
-        reason: 'hover move 应绑 _handleVideoControlsHover');
-    expect(wrapBody, contains('onExit: _handleVideoControlsHoverExit'),
-        reason: 'hover exit 应绑 _handleVideoControlsHoverExit');
+    expect(
+      wrapBody,
+      contains('opaque: false'),
+      reason: 'hover 包裹层必须 non-opaque，否则吞 hover、media_kit 控制条不再被唤起/推送',
+    );
+    expect(
+      wrapBody,
+      contains('onEnter: _handleVideoControlsHover'),
+      reason: 'hover enter 应绑 _handleVideoControlsHover',
+    );
+    expect(
+      wrapBody,
+      contains('onHover: _handleVideoControlsHover'),
+      reason: 'hover move 应绑 _handleVideoControlsHover',
+    );
+    expect(
+      wrapBody,
+      contains('onExit: _handleVideoControlsHoverExit'),
+      reason: 'hover exit 应绑 _handleVideoControlsHoverExit',
+    );
     // TODO-364：hover handler 不再乐观翻镜像可见（避免与 media_kit 真实态相位反）；
     // 可见性交给 media_kit 自己的 onHover 推送。撤回成 `_markControlsVisible(true)` → 红。
     final int enter = src.indexOf('void _handleVideoControlsHover(');
-    expect(enter, greaterThanOrEqualTo(0),
-        reason: '应有 _handleVideoControlsHover');
+    expect(
+      enter,
+      greaterThanOrEqualTo(0),
+      reason: '应有 _handleVideoControlsHover',
+    );
     final String enterBody = src.substring(enter, src.indexOf('\n  }', enter));
-    expect(enterBody, isNot(contains('_markControlsVisible(true)')),
-        reason: 'hover 不应再乐观翻镜像可见（可见性由 media_kit 真实态推送，TODO-364）');
+    expect(
+      enterBody,
+      isNot(contains('_markControlsVisible(true)')),
+      reason: 'hover 不应再乐观翻镜像可见（可见性由 media_kit 真实态推送，TODO-364）',
+    );
   });
 
   test('键盘/seek 唤起（_pokeControlsVisible）只发信号给 media_kit、不乱翻镜像', () {
@@ -235,8 +333,10 @@ void main() {
     // wakeSignal 处理调它自己的 onHover() 翻 visible 并推送 visibilityNotifier（BUG-2453；
     // fork 侧由 video_controls_wake_signal_guard_test.dart 钉）。
     expect(
-        containsCodeLine(pokeBody, '_restartHideTimerSignal.poke();'), isTrue,
-        reason: 'poke 应经信号驱动 media_kit 自己的可见性 / Timer（单一真相源）');
+      containsCodeLine(pokeBody, '_restartHideTimerSignal.poke();'),
+      isTrue,
+      reason: 'poke 应经信号驱动 media_kit 自己的可见性 / Timer（单一真相源）',
+    );
     // TODO-364：poke 不另翻镜像可见（旧 `_markControlsVisible(true)` 是相位反根因之一），
     // 也不直接写真相源 / 派生 notifier——那两处各有唯一写入点（fork 推送 / 派生函数）。
     for (final String write in <String>[
@@ -244,20 +344,27 @@ void main() {
       '_mediaKitControlsVisible.value =',
       '_videoControlsVisible.value =',
     ]) {
-      expect(containsCodeLine(pokeBody, write), isFalse,
-          reason: 'poke 不应写 $write（可见性由 media_kit 收到信号后推送，TODO-364）');
+      expect(
+        containsCodeLine(pokeBody, write),
+        isFalse,
+        reason: 'poke 不应写 $write（可见性由 media_kit 收到信号后推送，TODO-364）',
+      );
     }
   });
 
   test('移动端点画面 toggle 交给 media_kit onTap（不再 Fushi 镜像旁路，TODO-364）', () {
     final int handler = src.indexOf('void _handleVideoPointerUp(');
     expect(handler, greaterThanOrEqualTo(0));
-    final int handlerEnd =
-        src.indexOf('\n  void _handleVideoWheelSignal(', handler);
+    final int handlerEnd = src.indexOf(
+      '\n  void _handleVideoWheelSignal(',
+      handler,
+    );
     final String body = src.substring(handler, handlerEnd);
-    expect(body, isNot(contains('_toggleControlsVisibleForTap()')),
-        reason:
-            '移动端点画面不应再走 Fushi 镜像 toggle（由 media_kit onTap 决定并推送，TODO-364）');
+    expect(
+      body,
+      isNot(contains('_toggleControlsVisibleForTap()')),
+      reason: '移动端点画面不应再走 Fushi 镜像 toggle（由 media_kit onTap 决定并推送，TODO-364）',
+    );
   });
 
   test('锁定 / 沉浸 / 真 overlay 侧栏门控下派生强制不可见，但字幕列表不门控（BUG-371）', () {
@@ -273,8 +380,11 @@ void main() {
     }
     // BUG-371：字幕跳转列表是 push-aside 侧栏（画面挤窄、不遮控制条），开列表时控制条
     // 应继续在被挤窄的画面上可见可用，故派生门控 gated **不含** _subtitleListVisible。
-    expect(body, isNot(contains('_subtitleListVisible.value')),
-        reason: 'BUG-371：字幕列表 push-aside 不遮控制条，派生门控不应含 _subtitleListVisible');
+    expect(
+      body,
+      isNot(contains('_subtitleListVisible.value')),
+      reason: 'BUG-371：字幕列表 push-aside 不遮控制条，派生门控不应含 _subtitleListVisible',
+    );
   });
 
   test('避让对控制条高度取下限（max），不是 bottomPadding + reserve 加法（TODO-161）', () {
@@ -287,12 +397,21 @@ void main() {
     final int fnEnd = overlaySrc.indexOf('\n  }', fn);
     final String body = overlaySrc.substring(fn, fnEnd);
     // 底部分支对控制条高取下限（BUG-684 起用 math.max 显式取下限；旧为等价三元），非加法。
-    expect(body, contains('math.max(bottomBase, widget.controlsBottomReserve)'),
-        reason: '底部避让应对控制条高度取下限（max），让字幕底缘骑控制条顶、不飞');
-    expect(body, isNot(contains('bottomPadding + ')),
-        reason: '避让不能用 `bottomPadding + reserve` 加法（173px 把字幕顶飞，TODO-161）');
+    expect(
+      body,
+      contains('math.max(bottomBase, widget.controlsBottomReserve)'),
+      reason: '底部避让应对控制条高度取下限（max），让字幕底缘骑控制条顶、不飞',
+    );
+    expect(
+      body,
+      isNot(contains('bottomPadding + ')),
+      reason: '避让不能用 `bottomPadding + reserve` 加法（173px 把字幕顶飞，TODO-161）',
+    );
     // _anchoredPadded 应把可见性布尔直接喂给 _paddingFor，不再算 extraBottom 数值叠加。
-    expect(overlaySrc, isNot(contains('extraBottom')),
-        reason: '不应残留 extraBottom 加法量（已改为取下限的布尔驱动）');
+    expect(
+      overlaySrc,
+      isNot(contains('extraBottom')),
+      reason: '不应残留 extraBottom 加法量（已改为取下限的布尔驱动）',
+    );
   });
 }

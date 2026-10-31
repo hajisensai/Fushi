@@ -77,8 +77,11 @@ void main() {
       final String src = File(
         'lib/src/media/video/video_import_dialog.dart',
       ).readAsStringSync();
-      expect(src.contains('extractPlaylistCover('), isTrue,
-          reason: '播放列表封面必须走遍历各集的 extractPlaylistCover');
+      expect(
+        src.contains('extractPlaylistCover('),
+        isTrue,
+        reason: '播放列表封面必须走遍历各集的 extractPlaylistCover',
+      );
     });
 
     test('空路径跳过且不计入尝试次数', () async {

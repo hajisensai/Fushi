@@ -15,9 +15,7 @@ void main() {
     addTearDown(tester.view.resetDevicePixelRatio);
     await tester.pumpWidget(
       MaterialApp(
-        home: Scaffold(
-          body: ListView(children: <Widget>[row]),
-        ),
+        home: Scaffold(body: ListView(children: <Widget>[row])),
       ),
     );
   }
@@ -46,8 +44,9 @@ void main() {
     expect(detailTaps, 1, reason: '行头点击必须进详情页');
   });
 
-  testWidgets('initialIndex 把继续看成员滚进初始视野（前面的集在视野外）',
-      (WidgetTester tester) async {
+  testWidgets('initialIndex 把继续看成员滚进初始视野（前面的集在视野外）', (
+    WidgetTester tester,
+  ) async {
     await pump(
       tester,
       viewSize: const Size(500, 600),

@@ -7,8 +7,9 @@ void main() {
   group('CoalescedAsyncRunner (BUG-969)', () {
     test('空闲触发立即跑一趟', () async {
       int runs = 0;
-      final CoalescedAsyncRunner runner =
-          CoalescedAsyncRunner(() async => runs++);
+      final CoalescedAsyncRunner runner = CoalescedAsyncRunner(
+        () async => runs++,
+      );
       await runner.trigger();
       expect(runs, 1);
     });

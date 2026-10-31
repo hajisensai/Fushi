@@ -37,26 +37,30 @@ class _FakeAListServer {
   /// 站内树：/GD-3/罗比哈奇 RobiHachi/{#01 旅.mkv, #01 旅.chs.ass}，/GD-3/readme.txt
   static final Map<String, List<Map<String, Object?>>> tree =
       <String, List<Map<String, Object?>>>{
-    '/': <Map<String, Object?>>[
-      <String, Object?>{'name': 'GD-3', 'is_dir': true, 'size': 0},
-    ],
-    '/GD-3': <Map<String, Object?>>[
-      <String, Object?>{'name': '罗比哈奇 RobiHachi', 'is_dir': true, 'size': 0},
-      <String, Object?>{'name': 'readme.txt', 'is_dir': false, 'size': 3},
-    ],
-    '/GD-3/罗比哈奇 RobiHachi': <Map<String, Object?>>[
-      <String, Object?>{
-        'name': '#01 旅.mkv',
-        'is_dir': false,
-        'size': epBody.length,
-      },
-      <String, Object?>{
-        'name': '#01 旅.chs.ass',
-        'is_dir': false,
-        'size': assBody.length,
-      },
-    ],
-  };
+        '/': <Map<String, Object?>>[
+          <String, Object?>{'name': 'GD-3', 'is_dir': true, 'size': 0},
+        ],
+        '/GD-3': <Map<String, Object?>>[
+          <String, Object?>{
+            'name': '罗比哈奇 RobiHachi',
+            'is_dir': true,
+            'size': 0,
+          },
+          <String, Object?>{'name': 'readme.txt', 'is_dir': false, 'size': 3},
+        ],
+        '/GD-3/罗比哈奇 RobiHachi': <Map<String, Object?>>[
+          <String, Object?>{
+            'name': '#01 旅.mkv',
+            'is_dir': false,
+            'size': epBody.length,
+          },
+          <String, Object?>{
+            'name': '#01 旅.chs.ass',
+            'is_dir': false,
+            'size': assBody.length,
+          },
+        ],
+      };
 
   static final Map<String, String> files = <String, String>{
     '/GD-3/罗比哈奇 RobiHachi/#01 旅.mkv': epBody,
@@ -65,10 +69,14 @@ class _FakeAListServer {
   };
 
   static Future<_FakeAListServer> start() async {
-    final HttpServer srv =
-        await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
-    final _FakeAListServer fake =
-        _FakeAListServer(srv, 'http://127.0.0.1:${srv.port}');
+    final HttpServer srv = await HttpServer.bind(
+      InternetAddress.loopbackIPv4,
+      0,
+    );
+    final _FakeAListServer fake = _FakeAListServer(
+      srv,
+      'http://127.0.0.1:${srv.port}',
+    );
     fake._listen();
     return fake;
   }
@@ -99,8 +107,10 @@ class _FakeAListServer {
         }
         final List<int> bytes = utf8.encode(content);
         req.response.statusCode = HttpStatus.ok;
-        req.response.headers
-            .set(HttpHeaders.contentLengthHeader, '${bytes.length}');
+        req.response.headers.set(
+          HttpHeaders.contentLengthHeader,
+          '${bytes.length}',
+        );
         req.response.add(bytes);
         await req.response.close();
         return;
@@ -207,44 +217,48 @@ void main() {
   });
 
   NetworkSourceFileSystem guestFs() => NetworkSourceFileSystem(
-        NetworkSourceConfig(
-          transport: 'alist',
-          host: '127.0.0.1',
-          port: fake.server.port,
-          username: '',
-          baseUrl: fake.origin,
-        ),
-      );
+    NetworkSourceConfig(
+      transport: 'alist',
+      host: '127.0.0.1',
+      port: fake.server.port,
+      username: '',
+      baseUrl: fake.origin,
+    ),
+  );
 
-  test('listFiles(recursive) walks the tree; entries are /d/ addresses',
-      () async {
-    final NetworkSourceFileSystem fs = guestFs();
-    try {
-      final String root =
-          alistSourceUrlFor(baseUrl: fake.origin, path: '/GD-3');
-      final List<SourceFileEntry> entries =
-          await fs.listFiles(root, recursive: true);
-      expect(entries.every((SourceFileEntry e) => !e.isDirectory), isTrue);
-      expect(
-        entries.map((SourceFileEntry e) => e.path).toSet(),
-        <String>{
+  test(
+    'listFiles(recursive) walks the tree; entries are /d/ addresses',
+    () async {
+      final NetworkSourceFileSystem fs = guestFs();
+      try {
+        final String root = alistSourceUrlFor(
+          baseUrl: fake.origin,
+          path: '/GD-3',
+        );
+        final List<SourceFileEntry> entries = await fs.listFiles(
+          root,
+          recursive: true,
+        );
+        expect(entries.every((SourceFileEntry e) => !e.isDirectory), isTrue);
+        expect(entries.map((SourceFileEntry e) => e.path).toSet(), <String>{
           '${fake.origin}/d/GD-3/readme.txt',
           '${fake.origin}/d/GD-3/罗比哈奇 RobiHachi/#01 旅.mkv',
           '${fake.origin}/d/GD-3/罗比哈奇 RobiHachi/#01 旅.chs.ass',
-        },
-        reason: '条目地址是解码态 `<根>/d/<路径>`（与 WebDAV 条目同口径）',
-      );
-      final SourceFileEntry mkv = entries.singleWhere(
-        (SourceFileEntry e) => e.name == '#01 旅.mkv',
-      );
-      expect(mkv.sizeBytes, _FakeAListServer.epBody.length);
-      // 游客：一个请求都不带 Authorization。
-      expect(fake.apiCalls.map(((String, String?) c) => c.$2),
-          everyElement(isNull));
-    } finally {
-      await fs.close();
-    }
-  });
+        }, reason: '条目地址是解码态 `<根>/d/<路径>`（与 WebDAV 条目同口径）');
+        final SourceFileEntry mkv = entries.singleWhere(
+          (SourceFileEntry e) => e.name == '#01 旅.mkv',
+        );
+        expect(mkv.sizeBytes, _FakeAListServer.epBody.length);
+        // 游客：一个请求都不带 Authorization。
+        expect(
+          fake.apiCalls.map(((String, String?) c) => c.$2),
+          everyElement(isNull),
+        );
+      } finally {
+        await fs.close();
+      }
+    },
+  );
 
   test('listFiles(non-recursive) lists directories as entries', () async {
     final NetworkSourceFileSystem fs = guestFs();
@@ -263,86 +277,100 @@ void main() {
     }
   });
 
-  test('listSiblingNames feeds sidecar matching from the same folder',
-      () async {
-    final NetworkSourceFileSystem fs = guestFs();
-    try {
-      final List<String> names = await fs.listSiblingNames(
-        '${fake.origin}/d/GD-3/罗比哈奇 RobiHachi/#01 旅.mkv',
-      );
-      expect(names.toSet(), <String>{'#01 旅.mkv', '#01 旅.chs.ass'});
-    } finally {
-      await fs.close();
-    }
-  });
+  test(
+    'listSiblingNames feeds sidecar matching from the same folder',
+    () async {
+      final NetworkSourceFileSystem fs = guestFs();
+      try {
+        final List<String> names = await fs.listSiblingNames(
+          '${fake.origin}/d/GD-3/罗比哈奇 RobiHachi/#01 旅.mkv',
+        );
+        expect(names.toSet(), <String>{'#01 旅.mkv', '#01 旅.chs.ass'});
+      } finally {
+        await fs.close();
+      }
+    },
+  );
 
-  test('copyToLocal / readText go through fs/get raw_url without auth',
-      () async {
-    final NetworkSourceFileSystem fs = guestFs();
-    try {
-      final String local = await fs.copyToLocal(
-        '${fake.origin}/d/GD-3/罗比哈奇 RobiHachi/#01 旅.mkv',
-        tmp.path,
-      );
-      expect(p.basename(local), '#01 旅.mkv');
-      expect(File(local).readAsStringSync(), _FakeAListServer.epBody);
-      final String text = await fs.readText(
-        '${fake.origin}/d/GD-3/罗比哈奇 RobiHachi/#01 旅.chs.ass',
-      );
-      expect(text, _FakeAListServer.assBody);
-      expect(fake.rawAuthHeaders, hasLength(2));
-      expect(fake.rawAuthHeaders, everyElement(isNull),
-          reason: '签名直链与 API 不同源，不得带任何认证头');
-      expect(
-        fake.apiCalls.where(((String, String?) c) => c.$1 == '/api/fs/get'),
-        hasLength(2),
-      );
-    } finally {
-      await fs.close();
-    }
-  });
+  test(
+    'copyToLocal / readText go through fs/get raw_url without auth',
+    () async {
+      final NetworkSourceFileSystem fs = guestFs();
+      try {
+        final String local = await fs.copyToLocal(
+          '${fake.origin}/d/GD-3/罗比哈奇 RobiHachi/#01 旅.mkv',
+          tmp.path,
+        );
+        expect(p.basename(local), '#01 旅.mkv');
+        expect(File(local).readAsStringSync(), _FakeAListServer.epBody);
+        final String text = await fs.readText(
+          '${fake.origin}/d/GD-3/罗比哈奇 RobiHachi/#01 旅.chs.ass',
+        );
+        expect(text, _FakeAListServer.assBody);
+        expect(fake.rawAuthHeaders, hasLength(2));
+        expect(
+          fake.rawAuthHeaders,
+          everyElement(isNull),
+          reason: '签名直链与 API 不同源，不得带任何认证头',
+        );
+        expect(
+          fake.apiCalls.where(((String, String?) c) => c.$1 == '/api/fs/get'),
+          hasLength(2),
+        );
+      } finally {
+        await fs.close();
+      }
+    },
+  );
 
-  test('account access logs in once and sends the token on API calls',
-      () async {
-    final NetworkSourceFileSystem fs = NetworkSourceFileSystem(
-      NetworkSourceConfig(
-        transport: 'alist',
-        host: '127.0.0.1',
-        port: fake.server.port,
-        username: 'alice',
-        password: 'pw',
-        baseUrl: fake.origin,
-      ),
-    );
-    try {
-      await fs.listFiles(
-        alistSourceUrlFor(baseUrl: fake.origin, path: '/'),
-        recursive: true,
+  test(
+    'account access logs in once and sends the token on API calls',
+    () async {
+      final NetworkSourceFileSystem fs = NetworkSourceFileSystem(
+        NetworkSourceConfig(
+          transport: 'alist',
+          host: '127.0.0.1',
+          port: fake.server.port,
+          username: 'alice',
+          password: 'pw',
+          baseUrl: fake.origin,
+        ),
       );
-      final List<(String, String?)> logins = fake.apiCalls
-          .where(((String, String?) c) => c.$1 == '/api/auth/login')
-          .toList();
-      expect(logins, hasLength(1), reason: 'token 缓存在客户端，只登一次');
-      final Iterable<(String, String?)> apis = fake.apiCalls
-          .where(((String, String?) c) => c.$1 != '/api/auth/login');
-      expect(apis, isNotEmpty);
-      expect(apis.map(((String, String?) c) => c.$2),
-          everyElement(_FakeAListServer.token));
-    } finally {
-      await fs.close();
-    }
-  });
+      try {
+        await fs.listFiles(
+          alistSourceUrlFor(baseUrl: fake.origin, path: '/'),
+          recursive: true,
+        );
+        final List<(String, String?)> logins = fake.apiCalls
+            .where(((String, String?) c) => c.$1 == '/api/auth/login')
+            .toList();
+        expect(logins, hasLength(1), reason: 'token 缓存在客户端，只登一次');
+        final Iterable<(String, String?)> apis = fake.apiCalls.where(
+          ((String, String?) c) => c.$1 != '/api/auth/login',
+        );
+        expect(apis, isNotEmpty);
+        expect(
+          apis.map(((String, String?) c) => c.$2),
+          everyElement(_FakeAListServer.token),
+        );
+      } finally {
+        await fs.close();
+      }
+    },
+  );
 
-  test('address outside the /d/ namespace is rejected, not silently listed',
-      () async {
-    final NetworkSourceFileSystem fs = guestFs();
-    try {
-      await expectLater(
-        fs.listFiles('${fake.origin}/GD-3'),
-        throwsArgumentError,
-      );
-    } finally {
-      await fs.close();
-    }
-  });
+  test(
+    'address outside the /d/ namespace is rejected, not silently listed',
+    () async {
+      final NetworkSourceFileSystem fs = guestFs();
+      try {
+        await expectLater(
+          fs.listFiles('${fake.origin}/GD-3'),
+          throwsArgumentError,
+        );
+      } finally {
+        await fs.close();
+      }
+    },
+  );
 }

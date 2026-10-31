@@ -73,102 +73,115 @@ void main() {
   }
 
   testWidgets(
-      'tapping inside the popup header blank area does NOT hit the dismiss '
-      'barrier (close region == visible popup rect)', (tester) async {
-    const Size screen = Size(800, 600);
-    // 弹窗矩形：左上 (200,150)，宽 360 高 360（顶栏 40px 在最上）。
-    const Rect popupRect = Rect.fromLTWH(200, 150, 360, 360);
-    int barrierTaps = 0;
+    'tapping inside the popup header blank area does NOT hit the dismiss '
+    'barrier (close region == visible popup rect)',
+    (tester) async {
+      const Size screen = Size(800, 600);
+      // 弹窗矩形：左上 (200,150)，宽 360 高 360（顶栏 40px 在最上）。
+      const Rect popupRect = Rect.fromLTWH(200, 150, 360, 360);
+      int barrierTaps = 0;
 
-    await tester.pumpWidget(buildBarrierAndPopup(
-      popupRect: popupRect,
-      screen: screen,
-      onBarrierTap: () => barrierTaps++,
-      // 顶栏放一个有左右空白的 header（音频控制条的简化版）。
-      headerWidget: const SizedBox(height: 40, width: 360),
-      onClose: () {},
-    ));
-    await tester.pump();
+      await tester.pumpWidget(
+        buildBarrierAndPopup(
+          popupRect: popupRect,
+          screen: screen,
+          onBarrierTap: () => barrierTaps++,
+          // 顶栏放一个有左右空白的 header（音频控制条的简化版）。
+          headerWidget: const SizedBox(height: 40, width: 360),
+          onClose: () {},
+        ),
+      );
+      await tester.pump();
 
-    // 点在弹窗矩形内、但落在顶栏空白区（避开右端 X 按钮，取顶栏中线靠左）。
-    final Offset headerBlank = Offset(
-      popupRect.left + 60, // 顶栏左侧空白
-      popupRect.top + 20, // 顶栏垂直中线（40px 顶栏内）
-    );
-    await tester.tapAt(headerBlank);
-    await tester.pump();
+      // 点在弹窗矩形内、但落在顶栏空白区（避开右端 X 按钮，取顶栏中线靠左）。
+      final Offset headerBlank = Offset(
+        popupRect.left + 60, // 顶栏左侧空白
+        popupRect.top + 20, // 顶栏垂直中线（40px 顶栏内）
+      );
+      await tester.tapAt(headerBlank);
+      await tester.pump();
 
-    expect(barrierTaps, 0, reason: '点在弹窗顶栏空白区（弹窗可视范围内）不得触发外部关闭 barrier');
-  });
-
-  testWidgets(
-      'tapping just outside the popup edge DOES hit the dismiss barrier',
-      (tester) async {
-    const Size screen = Size(800, 600);
-    const Rect popupRect = Rect.fromLTWH(200, 150, 360, 360);
-    int barrierTaps = 0;
-
-    await tester.pumpWidget(buildBarrierAndPopup(
-      popupRect: popupRect,
-      screen: screen,
-      onBarrierTap: () => barrierTaps++,
-      headerWidget: const SizedBox(height: 40, width: 360),
-      onClose: () {},
-    ));
-    await tester.pump();
-
-    // 点在弹窗左侧外 8px（弹窗可视范围外）。
-    final Offset outside = Offset(popupRect.left - 8, popupRect.top + 40);
-    await tester.tapAt(outside);
-    await tester.pump();
-
-    expect(barrierTaps, 1, reason: '点弹窗可视范围外应触发关闭 barrier');
-  });
+      expect(barrierTaps, 0, reason: '点在弹窗顶栏空白区（弹窗可视范围内）不得触发外部关闭 barrier');
+    },
+  );
 
   testWidgets(
-      'tapping the popup body region (no header) does NOT hit the barrier',
-      (tester) async {
-    const Size screen = Size(800, 600);
-    const Rect popupRect = Rect.fromLTWH(200, 150, 360, 360);
-    int barrierTaps = 0;
+    'tapping just outside the popup edge DOES hit the dismiss barrier',
+    (tester) async {
+      const Size screen = Size(800, 600);
+      const Rect popupRect = Rect.fromLTWH(200, 150, 360, 360);
+      int barrierTaps = 0;
 
-    // 无顶栏的层（如纯查词嵌套返回层）：正文区也必须吸收点击。
-    await tester.pumpWidget(buildBarrierAndPopup(
-      popupRect: popupRect,
-      screen: screen,
-      onBarrierTap: () => barrierTaps++,
-    ));
-    await tester.pump();
+      await tester.pumpWidget(
+        buildBarrierAndPopup(
+          popupRect: popupRect,
+          screen: screen,
+          onBarrierTap: () => barrierTaps++,
+          headerWidget: const SizedBox(height: 40, width: 360),
+          onClose: () {},
+        ),
+      );
+      await tester.pump();
 
-    // 点在弹窗正中（无顶栏时 body 占满，WebView 单测起不来，故靠 surface 吸收）。
-    await tester.tapAt(popupRect.center);
-    await tester.pump();
+      // 点在弹窗左侧外 8px（弹窗可视范围外）。
+      final Offset outside = Offset(popupRect.left - 8, popupRect.top + 40);
+      await tester.tapAt(outside);
+      await tester.pump();
 
-    expect(barrierTaps, 0, reason: '点弹窗正文区（弹窗可视范围内）不得触发关闭 barrier');
-  });
+      expect(barrierTaps, 1, reason: '点弹窗可视范围外应触发关闭 barrier');
+    },
+  );
 
   testWidgets(
-      'tapping a rounded corner inside the popup rect does NOT hit the barrier '
-      '(TODO-805 regression: close region == full visible popup rect)',
-      (tester) async {
-    const Size screen = Size(800, 600);
-    const Rect popupRect = Rect.fromLTWH(200, 150, 360, 360);
-    int barrierTaps = 0;
+    'tapping the popup body region (no header) does NOT hit the barrier',
+    (tester) async {
+      const Size screen = Size(800, 600);
+      const Rect popupRect = Rect.fromLTWH(200, 150, 360, 360);
+      int barrierTaps = 0;
 
-    await tester.pumpWidget(buildBarrierAndPopup(
-      popupRect: popupRect,
-      screen: screen,
-      onBarrierTap: () => barrierTaps++,
-      headerWidget: const SizedBox(height: 40, width: 360),
-      onClose: () {},
-    ));
-    await tester.pump();
+      // 无顶栏的层（如纯查词嵌套返回层）：正文区也必须吸收点击。
+      await tester.pumpWidget(
+        buildBarrierAndPopup(
+          popupRect: popupRect,
+          screen: screen,
+          onBarrierTap: () => barrierTaps++,
+        ),
+      );
+      await tester.pump();
 
-    // 弹窗左上角内 2px：在 Positioned 矩形内、但在 12px 圆角弧之外。修复前
-    // RenderPhysicalShape 按圆角裁剪命中 → 漏到 barrier 关窗；修复后整个矩形吸收。
-    await tester.tapAt(Offset(popupRect.left + 2, popupRect.top + 2));
-    await tester.pump();
+      // 点在弹窗正中（无顶栏时 body 占满，WebView 单测起不来，故靠 surface 吸收）。
+      await tester.tapAt(popupRect.center);
+      await tester.pump();
 
-    expect(barrierTaps, 0, reason: '圆角余白仍在弹窗可视矩形内，点击不得漏到外部关闭 barrier');
-  });
+      expect(barrierTaps, 0, reason: '点弹窗正文区（弹窗可视范围内）不得触发关闭 barrier');
+    },
+  );
+
+  testWidgets(
+    'tapping a rounded corner inside the popup rect does NOT hit the barrier '
+    '(TODO-805 regression: close region == full visible popup rect)',
+    (tester) async {
+      const Size screen = Size(800, 600);
+      const Rect popupRect = Rect.fromLTWH(200, 150, 360, 360);
+      int barrierTaps = 0;
+
+      await tester.pumpWidget(
+        buildBarrierAndPopup(
+          popupRect: popupRect,
+          screen: screen,
+          onBarrierTap: () => barrierTaps++,
+          headerWidget: const SizedBox(height: 40, width: 360),
+          onClose: () {},
+        ),
+      );
+      await tester.pump();
+
+      // 弹窗左上角内 2px：在 Positioned 矩形内、但在 12px 圆角弧之外。修复前
+      // RenderPhysicalShape 按圆角裁剪命中 → 漏到 barrier 关窗；修复后整个矩形吸收。
+      await tester.tapAt(Offset(popupRect.left + 2, popupRect.top + 2));
+      await tester.pump();
+
+      expect(barrierTaps, 0, reason: '圆角余白仍在弹窗可视矩形内，点击不得漏到外部关闭 barrier');
+    },
+  );
 }

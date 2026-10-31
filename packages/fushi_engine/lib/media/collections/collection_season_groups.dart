@@ -72,10 +72,12 @@ List<CollectionSeasonSection<T>> buildCollectionSeasonSections<T>({
   final List<String> firstSeen = <String>[];
   for (final T member in members) {
     final String key = keyOf(member) ?? kCollectionExtrasGroupKey;
-    byKey.putIfAbsent(key, () {
-      firstSeen.add(key);
-      return <T>[];
-    }).add(member);
+    byKey
+        .putIfAbsent(key, () {
+          firstSeen.add(key);
+          return <T>[];
+        })
+        .add(member);
   }
   return <CollectionSeasonSection<T>>[
     for (final String key in firstSeen)

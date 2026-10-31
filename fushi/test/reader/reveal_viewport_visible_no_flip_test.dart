@@ -74,12 +74,21 @@ void main() {
     const double nextPageFirstCue = contentStart + pageSize; // 1060
 
     test('症状复现：下一页首句起始边落在旧短路带内 → 旧实现判「已可见」不翻页', () {
-      expect(nextPageFirstCue, greaterThanOrEqualTo(pageSize),
-          reason: '句首已越过列周期边界 = 真的在下一页');
-      expect(nextPageFirstCue, lessThan(viewportExtent),
-          reason: '但仍落在 client 视口内 → 旧短路把它当成本页可见');
-      expect(legacyVisibleShortCircuit(nextPageFirstCue), isTrue,
-          reason: '旧 rectStart<viewportExtent 短路命中 → 该翻不翻（BUG-1764 症状）');
+      expect(
+        nextPageFirstCue,
+        greaterThanOrEqualTo(pageSize),
+        reason: '句首已越过列周期边界 = 真的在下一页',
+      );
+      expect(
+        nextPageFirstCue,
+        lessThan(viewportExtent),
+        reason: '但仍落在 client 视口内 → 旧短路把它当成本页可见',
+      );
+      expect(
+        legacyVisibleShortCircuit(nextPageFirstCue),
+        isTrue,
+        reason: '旧 rectStart<viewportExtent 短路命中 → 该翻不翻（BUG-1764 症状）',
+      );
     });
 
     test('修复后：下一页首句落到下一页网格线上，翻页', () {
@@ -91,13 +100,17 @@ void main() {
       // 相对当前滚动的起始边 = contentStart+pageStep .. contentStart+pageStep+contentBox。
       for (final double offsetInPage in <double>[0, 1, 300, contentBox - 1]) {
         expect(
-            target(nextPageFirstCue + offsetInPage), currentScroll + pageSize,
-            reason: '列内偏移 $offsetInPage 仍属下一页，不该翻两页');
+          target(nextPageFirstCue + offsetInPage),
+          currentScroll + pageSize,
+          reason: '列内偏移 $offsetInPage 仍属下一页，不该翻两页',
+        );
       }
       // 裸网格在这里会翻过头整整一页（相位缺失的第二个症状）。
-      expect(legacyTarget(nextPageFirstCue + contentBox - 1),
-          currentScroll + 2 * pageSize,
-          reason: '旧网格把下一页后半段判进再下一页');
+      expect(
+        legacyTarget(nextPageFirstCue + contentBox - 1),
+        currentScroll + 2 * pageSize,
+        reason: '旧网格把下一页后半段判进再下一页',
+      );
     });
   });
 
@@ -107,12 +120,21 @@ void main() {
     const double lineTailChar = contentStart + contentBox - fontSize; // 1016
 
     test('症状复现：裸网格把列末尾 (contentStart − gap) 那段判进下一列 → 前翻', () {
-      expect(contentStart, greaterThan(gap),
-          reason: 'contentStart > gap 是 BUG-875 的成立条件');
-      expect(lineTailChar, greaterThanOrEqualTo(pageSize),
-          reason: '视觉仍在本页列底，却已越过裸网格的页边界');
-      expect(legacyTarget(lineTailChar), currentScroll + pageSize,
-          reason: '旧裸网格前翻一页（BUG-875 症状）');
+      expect(
+        contentStart,
+        greaterThan(gap),
+        reason: 'contentStart > gap 是 BUG-875 的成立条件',
+      );
+      expect(
+        lineTailChar,
+        greaterThanOrEqualTo(pageSize),
+        reason: '视觉仍在本页列底，却已越过裸网格的页边界',
+      );
+      expect(
+        legacyTarget(lineTailChar),
+        currentScroll + pageSize,
+        reason: '旧裸网格前翻一页（BUG-875 症状）',
+      );
     });
 
     test('修复后：行尾单字仍属本页 → 不翻页', () {
@@ -186,23 +208,28 @@ void main() {
       // —— context.contentStart 变 undefined、相位塌成 0，BUG-875 与 BUG-1764 同时
       // 复活而测试不红。
       final String contextBody = functionBody(
-          'getScrollContext: function()', 'getPagePosition: function');
+        'getScrollContext: function()',
+        'getPagePosition: function',
+      );
       expect(
         RegExp(r'contentStart\s*:\s*contentStart').hasMatch(contextBody),
         isTrue,
         reason: 'alignToPage 需要从 context 读列网格相位',
       );
       expect(
-        RegExp(r'contentStart\s*=\s*vertical\s*\?\s*\(parseFloat\(cs\.paddingTop\)')
-            .hasMatch(scripts),
+        RegExp(
+          r'contentStart\s*=\s*vertical\s*\?\s*\(parseFloat\(cs\.paddingTop\)',
+        ).hasMatch(scripts),
         isTrue,
         reason: '相位必须按 turn 轴取 paddingTop/paddingLeft，与落页锚同源',
       );
     });
 
     test('alignToPage 先减相位再 floor', () {
-      final String body = functionBody('alignToPage: function(context, offset)',
-          'alignContentStartToPage: function');
+      final String body = functionBody(
+        'alignToPage: function(context, offset)',
+        'alignContentStartToPage: function',
+      );
       expect(
         RegExp(r'offset\s*-\s*phase').hasMatch(body),
         isTrue,
@@ -223,11 +250,14 @@ void main() {
       // indexOf(next, start) 返回 -1 会让 functionBody 静默退化成「扫到文件尾」，
       // 框定意图落空（只会误红不会漏红，但断言就不再是针对这一个函数了）。
       final String body = functionBody(
-          'scrollToRange: function(range)', 'contentLastPageScroll: function');
+        'scrollToRange: function(range)',
+        'contentLastPageScroll: function',
+      );
       expect(
-        RegExp(r'^\s*if\s*\([^\n]*startEdge\s*<\s*context\.viewportExtent',
-                multiLine: true)
-            .hasMatch(body),
+        RegExp(
+          r'^\s*if\s*\([^\n]*startEdge\s*<\s*context\.viewportExtent',
+          multiLine: true,
+        ).hasMatch(body),
         isFalse,
         reason: 'client 视口比一页内容宽出两侧 padding，该短路会吞掉下一页开头（BUG-1764）',
       );

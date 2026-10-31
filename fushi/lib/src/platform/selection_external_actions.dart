@@ -16,11 +16,12 @@ class SelectionExternalActions {
   SelectionExternalActions({
     MethodChannel? channel,
     ShareSelectedText? shareSelectedText,
-  })  : _channel = channel ?? FushiChannels.selectionActions,
-        _shareSelectedText = shareSelectedText ??
-            ((String text) async {
-              await FushiShare.shareText(text);
-            });
+  }) : _channel = channel ?? FushiChannels.selectionActions,
+       _shareSelectedText =
+           shareSelectedText ??
+           ((String text) async {
+             await FushiShare.shareText(text);
+           });
 
   static final SelectionExternalActions instance = SelectionExternalActions();
 
@@ -45,10 +46,9 @@ class SelectionExternalActions {
   Future<bool> searchWeb(String text) async {
     if (text.isEmpty) return false;
     try {
-      return await _channel.invokeMethod<bool>(
-            'webSearch',
-            <String, String>{'query': text},
-          ) ??
+      return await _channel.invokeMethod<bool>('webSearch', <String, String>{
+            'query': text,
+          }) ??
           false;
     } on Object {
       return false;

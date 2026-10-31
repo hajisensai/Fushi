@@ -6,25 +6,28 @@ import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'widget_test_helpers.dart';
 
 void main() {
-  testWidgets('FushiSearchField registers its text focus node with the root',
-      (WidgetTester tester) async {
+  testWidgets('FushiSearchField registers its text focus node with the root', (
+    WidgetTester tester,
+  ) async {
     final TextEditingController controller = TextEditingController();
     final FocusNode focusNode = FocusNode(debugLabel: 'search-field');
     addTearDown(controller.dispose);
     addTearDown(focusNode.dispose);
 
-    await tester.pumpWidget(buildTestApp(
-      FushiFocusRoot(
-        child: FushiSearchField(
-          focusId: const FushiFocusId('search'),
-          controller: controller,
-          focusNode: focusNode,
-          hintText: 'Search',
-          onChanged: (_) {},
-          onSubmitted: (_) {},
+    await tester.pumpWidget(
+      buildTestApp(
+        FushiFocusRoot(
+          child: FushiSearchField(
+            focusId: const FushiFocusId('search'),
+            controller: controller,
+            focusNode: focusNode,
+            hintText: 'Search',
+            onChanged: (_) {},
+            onSubmitted: (_) {},
+          ),
         ),
       ),
-    ));
+    );
     await tester.pump();
 
     // 搜索框已从 MD3 SearchBar 换成与媒体库页一致的描边 TextField，
@@ -39,16 +42,19 @@ void main() {
     expect(focusNode.hasPrimaryFocus, isTrue);
   });
 
-  testWidgets('FushiTextField registers with an owned focus node',
-      (WidgetTester tester) async {
-    await tester.pumpWidget(buildTestApp(
-      const FushiFocusRoot(
-        child: FushiTextField(
-          focusId: FushiFocusId('text-field'),
-          hintText: 'Name',
+  testWidgets('FushiTextField registers with an owned focus node', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      buildTestApp(
+        const FushiFocusRoot(
+          child: FushiTextField(
+            focusId: FushiFocusId('text-field'),
+            hintText: 'Name',
+          ),
         ),
       ),
-    ));
+    );
     await tester.pump();
 
     final FushiFocusController root = FushiFocusRoot.controllerOf(

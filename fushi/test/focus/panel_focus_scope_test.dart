@@ -44,8 +44,9 @@ void main() {
   bool nodeHasFocus(WidgetTester tester, Key key) =>
       Focus.of(tester.element(find.byKey(key))).hasFocus;
 
-  testWidgets('visible 边沿（常驻挂载形态）：打开领第一个可遍历节点，关闭还宿主',
-      (WidgetTester tester) async {
+  testWidgets('visible 边沿（常驻挂载形态）：打开领第一个可遍历节点，关闭还宿主', (
+    WidgetTester tester,
+  ) async {
     final FocusNode hostNode = FocusNode(debugLabel: 'host');
     addTearDown(hostNode.dispose);
     await tester.pumpWidget(host(visible: false, hostNode: hostNode));
@@ -69,19 +70,22 @@ void main() {
     final FocusNode hostNode = FocusNode(debugLabel: 'host');
     addTearDown(hostNode.dispose);
     await tester.pumpWidget(
-        host(visible: false, hostNode: hostNode, autofocusSecond: true));
+      host(visible: false, hostNode: hostNode, autofocusSecond: true),
+    );
     hostNode.requestFocus();
     await tester.pump();
 
     await tester.pumpWidget(
-        host(visible: true, hostNode: hostNode, autofocusSecond: true));
+      host(visible: true, hostNode: hostNode, autofocusSecond: true),
+    );
     await tester.pump();
     // autofocus 的第二行拿到焦点，认领不把它抢到第一行。
     expect(nodeHasFocus(tester, const Key('panel-row-2')), isTrue);
   });
 
-  testWidgets('挂载即可见形态（visible 恒 true）：挂载领焦点、卸载还宿主',
-      (WidgetTester tester) async {
+  testWidgets('挂载即可见形态（visible 恒 true）：挂载领焦点、卸载还宿主', (
+    WidgetTester tester,
+  ) async {
     final FocusNode hostNode = FocusNode(debugLabel: 'host');
     addTearDown(hostNode.dispose);
 

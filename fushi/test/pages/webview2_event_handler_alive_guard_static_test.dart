@@ -48,22 +48,34 @@ void main() {
 
   setUpAll(() {
     final File file = File(forkSrc);
-    expect(file.existsSync(), isTrue,
-        reason: 'guarded fork file moved or renamed: $forkSrc — update this '
-            'test to keep covering every WebView2 event handler');
+    expect(
+      file.existsSync(),
+      isTrue,
+      reason:
+          'guarded fork file moved or renamed: $forkSrc — update this '
+          'test to keep covering every WebView2 event handler',
+    );
     code = _stripCppComments(file.readAsStringSync());
   });
 
   group('BUG-457 · WebView2 handlers deregister + alive-guard on dispose', () {
     for (final String event in guardedEvents) {
       test('$event has both add_ and remove_ (deregistered in destructor)', () {
-        expect(code.contains('add_$event('), isTrue,
-            reason: '$forkSrc no longer registers $event — remove it from '
-                'guardedEvents');
-        expect(code.contains('remove_$event('), isTrue,
-            reason: '$forkSrc registers add_$event but never remove_$event — '
-                'late callbacks can fire after ~InAppWebView() and '
-                'use-after-free this (BUG-457/TODO-964)');
+        expect(
+          code.contains('add_$event('),
+          isTrue,
+          reason:
+              '$forkSrc no longer registers $event — remove it from '
+              'guardedEvents',
+        );
+        expect(
+          code.contains('remove_$event('),
+          isTrue,
+          reason:
+              '$forkSrc registers add_$event but never remove_$event — '
+              'late callbacks can fire after ~InAppWebView() and '
+              'use-after-free this (BUG-457/TODO-964)',
+        );
       });
     }
 
@@ -71,29 +83,47 @@ void main() {
       // Static (Fetch.requestPaused / Runtime.consoleAPICalled) and dynamic
       // (addDevToolsProtocolEventListener) DevTools receivers all capture this.
       expect(code.contains('add_DevToolsProtocolEventReceived('), isTrue);
-      expect(code.contains('remove_DevToolsProtocolEventReceived('), isTrue,
-          reason: 'DevTools event receivers capture [this] but are never '
-              'remove_d — late callbacks UAF after dispose');
+      expect(
+        code.contains('remove_DevToolsProtocolEventReceived('),
+        isTrue,
+        reason:
+            'DevTools event receivers capture [this] but are never '
+            'remove_d — late callbacks UAF after dispose',
+      );
     });
 
     test('destructor flips the alive flag before deregistering', () {
       // Scope to the destructor body so the public removeDevToolsProtocolEventListener
       // method (which also contains remove_) does not skew the ordering check.
       final int dtorIdx = code.indexOf('InAppWebView::~InAppWebView()');
-      expect(dtorIdx, isNonNegative,
-          reason: 'destructor not found — fork file restructured');
+      expect(
+        dtorIdx,
+        isNonNegative,
+        reason: 'destructor not found — fork file restructured',
+      );
       final String dtor = code.substring(dtorIdx);
 
       final int aliveFalseIdx = dtor.indexOf('*alive_ = false');
-      expect(aliveFalseIdx, isNonNegative,
-          reason: 'destructor must flip *alive_=false so in-flight async '
-              'callbacks take the dead branch (TODO-931/964)');
+      expect(
+        aliveFalseIdx,
+        isNonNegative,
+        reason:
+            'destructor must flip *alive_=false so in-flight async '
+            'callbacks take the dead branch (TODO-931/964)',
+      );
       final int firstRemoveIdx = dtor.indexOf('remove_');
-      expect(firstRemoveIdx, isNonNegative,
-          reason: 'destructor must deregister handlers (remove_*)');
-      expect(aliveFalseIdx, lessThan(firstRemoveIdx),
-          reason: '*alive_=false must come before the remove_ calls so any '
-              'callback already past the gate still sees the dead flag');
+      expect(
+        firstRemoveIdx,
+        isNonNegative,
+        reason: 'destructor must deregister handlers (remove_*)',
+      );
+      expect(
+        aliveFalseIdx,
+        lessThan(firstRemoveIdx),
+        reason:
+            '*alive_=false must come before the remove_ calls so any '
+            'callback already past the gate still sees the dead flag',
+      );
     });
 
     test('every WebView2 event handler captures the alive flag by copy', () {
@@ -105,18 +135,26 @@ void main() {
       final int localCopyCount = 'auto alive = alive_'.allMatches(code).length;
       // 9 webView handlers + DOMContentLoaded + CursorChanged + dynamic DevTools
       // use init-capture; Fetch/console receivers use the local-copy form.
-      expect(initCaptureCount + localCopyCount, greaterThanOrEqualTo(12),
-          reason: 'too few handlers capture an alive_ copy — a bare [this] '
-              'handler will UAF after ~InAppWebView() (BUG-457/TODO-964). '
-              'init-captures=$initCaptureCount local-copies=$localCopyCount');
+      expect(
+        initCaptureCount + localCopyCount,
+        greaterThanOrEqualTo(12),
+        reason:
+            'too few handlers capture an alive_ copy — a bare [this] '
+            'handler will UAF after ~InAppWebView() (BUG-457/TODO-964). '
+            'init-captures=$initCaptureCount local-copies=$localCopyCount',
+      );
     });
 
     test('handlers guard their entry with if (!*alive)', () {
       final int guardCount = RegExp(r'if \(!\*alive\)').allMatches(code).length;
-      expect(guardCount, greaterThanOrEqualTo(12),
-          reason: 'each hardened handler/async callback must early-return on '
-              'the dead branch before touching this (found $guardCount '
-              'guards)');
+      expect(
+        guardCount,
+        greaterThanOrEqualTo(12),
+        reason:
+            'each hardened handler/async callback must early-return on '
+            'the dead branch before touching this (found $guardCount '
+            'guards)',
+      );
     });
   });
 }

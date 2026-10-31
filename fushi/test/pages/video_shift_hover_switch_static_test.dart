@@ -88,8 +88,11 @@ void main() {
       // BUG-1757 起手势接线收口进 LookupDismissBarrier 原语，宿主只把 hover 钩子
       // 传进去。「Listener 必须在 GestureDetector 之外」这条几何契约没变，只是
       // 现在要在原语里验（盯宿主里两个字面量的先后会被这次正当收口撞成假红）。
-      expect(overlay.contains('LookupDismissBarrier('), isTrue,
-          reason: 'barrier 必须走收口原语，不在页面各写一份手势接线');
+      expect(
+        overlay.contains('LookupDismissBarrier('),
+        isTrue,
+        reason: 'barrier 必须走收口原语，不在页面各写一份手势接线',
+      );
       final String barrier = File(
         'lib/src/utils/misc/lookup_dismiss_barrier.dart',
       ).readAsStringSync();
@@ -108,7 +111,9 @@ void main() {
       );
       // 门控与字幕盒 _handleShiftHover 一致：按住 Shift 或开「悬停即查词」。
       expect(
-          hover.contains('HardwareKeyboard.instance.isShiftPressed'), isTrue);
+        hover.contains('HardwareKeyboard.instance.isShiftPressed'),
+        isTrue,
+      );
       expect(
         hover.contains('ReaderFushiSource.instance.hoverAutoLookup'),
         isTrue,
@@ -121,7 +126,9 @@ void main() {
       );
       // 全局坐标反查复用字幕命中句柄。
       expect(
-          hover.contains('_subtitleHitTester.hitTest(event.position)'), isTrue);
+        hover.contains('_subtitleHitTester.hitTest(event.position)'),
+        isTrue,
+      );
       // 非嵌套 + 命中门控复用纯函数。
       expect(
         hover.contains('VideoFushiPage.shouldSwitchWordOnBarrierTap('),

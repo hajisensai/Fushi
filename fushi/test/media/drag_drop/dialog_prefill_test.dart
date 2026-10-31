@@ -17,10 +17,10 @@ void main() {
     );
   }
 
-  testWidgets('VideoImportDialog prefills dragged video path into UI',
-      (WidgetTester tester) async {
-    final FushiDatabase db =
-        FushiDatabase.forTesting(NativeDatabase.memory());
+  testWidgets('VideoImportDialog prefills dragged video path into UI', (
+    WidgetTester tester,
+  ) async {
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final VideoBookRepository repo = VideoBookRepository(db);
 

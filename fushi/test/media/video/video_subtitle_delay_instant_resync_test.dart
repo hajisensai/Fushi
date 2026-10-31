@@ -43,11 +43,17 @@ void main() {
       // 位置定格不变（暂停态），把字幕整体推后 2000ms（delay=+2000，正=字幕更晚）：
       // effectiveMs = 2500 - 2000 = 500 → 应**立即**落回 cue0（0..1000）。
       c.debugSetDelayMsForTesting(2000, positionMs: 2500);
-      expect(c.currentCueIndex, 0,
-          reason: 'BUG-373：调延迟后当前 cue 必须立即按新偏移重算，不等 125ms tick');
+      expect(
+        c.currentCueIndex,
+        0,
+        reason: 'BUG-373：调延迟后当前 cue 必须立即按新偏移重算，不等 125ms tick',
+      );
       expect(c.currentCue!.text, 'line0');
-      expect(notifyCount, greaterThan(0),
-          reason: '当前 cue 变化必须 notifyListeners，字幕 overlay 才会同帧重建');
+      expect(
+        notifyCount,
+        greaterThan(0),
+        reason: '当前 cue 变化必须 notifyListeners，字幕 overlay 才会同帧重建',
+      );
     });
 
     test('调延迟使 effective 落进 gap，当前字幕立即清空', () {

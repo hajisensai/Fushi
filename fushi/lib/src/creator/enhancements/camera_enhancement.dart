@@ -14,13 +14,13 @@ import 'package:fushi/utils.dart';
 class CameraEnhancement extends ImageEnhancement {
   /// Initialise this enhancement with the hardset parameters.
   CameraEnhancement()
-      : super(
-          uniqueKey: key,
-          label: 'Camera',
-          description: 'Take a new photo to use as the new image.',
-          icon: Icons.camera_alt_outlined,
-          field: ImageField.instance,
-        );
+    : super(
+        uniqueKey: key,
+        label: 'Camera',
+        description: 'Take a new photo to use as the new image.',
+        icon: Icons.camera_alt_outlined,
+        field: ImageField.instance,
+      );
 
   /// Used to identify this enhancement and to allow a constant value for the
   /// default mappings value of [AnkiMapping].
@@ -42,8 +42,9 @@ class CameraEnhancement extends ImageEnhancement {
   }) async {
     if (!isMobilePlatform) return;
     ImageExportField imageField = field as ImageExportField;
-    XFile? pickedFile =
-        await ImagePicker().pickImage(source: ImageSource.camera);
+    XFile? pickedFile = await ImagePicker().pickImage(
+      source: ImageSource.camera,
+    );
 
     if (pickedFile == null) {
       return;

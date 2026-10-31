@@ -38,8 +38,9 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   FushiDatabase makeDb() {
-    final FushiDatabase db =
-        FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
+    final FushiDatabase db = FushiDatabase.forTesting(
+      DatabaseConnection(NativeDatabase.memory()),
+    );
     addTearDown(db.close);
     return db;
   }
@@ -73,38 +74,50 @@ void main() {
     final FushiDatabase db = makeDb();
     final PreferencesRepository prefsRepo = PreferencesRepository(db);
     await prefsRepo.loadFromDb();
-    final Directory tempDir =
-        Directory.systemTemp.createTempSync('fushi_interconnect_toggle_');
+    final Directory tempDir = Directory.systemTemp.createTempSync(
+      'fushi_interconnect_toggle_',
+    );
     addTearDown(() {
       if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
     });
     final AppModel appModel = AppModel(testPlatformServices())
       ..wireLocalAudioForTesting(
-          prefsRepo: prefsRepo, databaseDirectory: tempDir)
+        prefsRepo: prefsRepo,
+        databaseDirectory: tempDir,
+      )
       ..wireDatabaseForTesting(db);
 
-    await tester.pumpWidget(ProviderScope(
-      overrides: <Override>[appProvider.overrideWith((Ref ref) => appModel)],
-      child: const MaterialApp(
-        home: Scaffold(
-          body: SingleChildScrollView(
-            child: MediaSourcesView(mediaKind: 'book'),
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: <Override>[appProvider.overrideWith((Ref ref) => appModel)],
+        child: const MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: MediaSourcesView(mediaKind: 'book'),
+            ),
           ),
         ),
       ),
-    ));
+    );
     await tester.pumpAndSettle();
 
-    Switch interconnectSwitch() =>
-        tester.widgetList<Switch>(glassUnwrapAll<Switch>(find.byType(Switch))).first;
-    expect(interconnectSwitch().value, isFalse,
-        reason: '初始未启用互联（preferences 默认 false）');
+    Switch interconnectSwitch() => tester
+        .widgetList<Switch>(glassUnwrapAll<Switch>(find.byType(Switch)))
+        .first;
+    expect(
+      interconnectSwitch().value,
+      isFalse,
+      reason: '初始未启用互联（preferences 默认 false）',
+    );
 
     // 模拟「用户在同步设置页把互联打开」——同一条真值，另一个写入口。
     await SyncRepository(db).setInterconnectEnabled(true);
     await tester.pumpAndSettle();
-    expect(interconnectSwitch().value, isTrue,
-        reason: '来源页没订阅广播 → 停在旧值，用户要重启 app 才看得到真状态');
+    expect(
+      interconnectSwitch().value,
+      isTrue,
+      reason: '来源页没订阅广播 → 停在旧值，用户要重启 app 才看得到真状态',
+    );
 
     await SyncRepository(db).setInterconnectEnabled(false);
     await tester.pumpAndSettle();
@@ -121,21 +134,27 @@ void main() {
     expect(
       containsCodeLine(state, 'SyncRepository.interconnectEnabledRevision'),
       isTrue,
-      reason: '_SyncSettingsState 构造时不订阅广播，它那份 interconnectEnabled '
+      reason:
+          '_SyncSettingsState 构造时不订阅广播，它那份 interconnectEnabled '
           '就永远停在 load() 那一刻的值（load 只跑一次）。',
     );
 
-    final String reload =
-        methodBody(corpus, '  Future<void> _reloadInterconnectEnabled()');
+    final String reload = methodBody(
+      corpus,
+      '  Future<void> _reloadInterconnectEnabled()',
+    );
     expect(
       containsCodeLine(reload, '_repo.isInterconnectEnabled()'),
       isTrue,
-      reason: '收到广播必须回 preferences 重读真值——广播只说「变了」，'
+      reason:
+          '收到广播必须回 preferences 重读真值——广播只说「变了」，'
           '若改成信载荷就又多出一份真相。',
     );
 
     final String syncSettings = methodBody(
-        corpus, '_SyncSettingsState _syncSettings(SettingsContext ctx)');
+      corpus,
+      '_SyncSettingsState _syncSettings(SettingsContext ctx)',
+    );
     expect(
       containsCodeLine(syncSettings, '_activeSyncState?.dispose()'),
       isTrue,
@@ -144,9 +163,9 @@ void main() {
   });
 
   test('互联上传区页脚文案与真实门控一致（不再自称与「启用互联」互不影响）', () {
-    final Map<String, dynamic> en = jsonDecode(
-      File('lib/i18n/strings.i18n.json').readAsStringSync(),
-    ) as Map<String, dynamic>;
+    final Map<String, dynamic> en =
+        jsonDecode(File('lib/i18n/strings.i18n.json').readAsStringSync())
+            as Map<String, dynamic>;
     final String footer = en['interconnect_upload_section_footer'] as String;
     // 该 section 的 visible 谓词是 interconnectActive(ctx) && !_isHostingInterconnect(ctx)，
     // 通道枚举（enabledSyncChannelBackends）也只在互联启用时才追加互联通道——
@@ -167,8 +186,11 @@ void main() {
       if (f is! File || !f.path.endsWith('.i18n.json')) continue;
       final Map<String, dynamic> map =
           jsonDecode(f.readAsStringSync()) as Map<String, dynamic>;
-      expect(map.containsKey('interconnect_upload_section_footer'), isTrue,
-          reason: '${f.path} 缺 interconnect_upload_section_footer');
+      expect(
+        map.containsKey('interconnect_upload_section_footer'),
+        isTrue,
+        reason: '${f.path} 缺 interconnect_upload_section_footer',
+      );
     }
   });
 }

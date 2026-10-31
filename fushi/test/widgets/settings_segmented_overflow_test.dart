@@ -23,8 +23,8 @@ void main() {
   // Verbose labels so the strip is intrinsically wide (~700-800px): wide enough
   // that a ≈50/50 inline split must scroll it, yet narrower than the panes used
   // below — the exact regime where the inline split clipped segments.
-  const List<ButtonSegment<String>> designSystemSegments =
-      <ButtonSegment<String>>[
+  const List<ButtonSegment<String>>
+  designSystemSegments = <ButtonSegment<String>>[
     ButtonSegment<String>(value: 'auto', label: Text('Automatic')),
     ButtonSegment<String>(value: 'material', label: Text('Material Design 3')),
     ButtonSegment<String>(value: 'cupertino', label: Text('iOS (Cupertino)')),
@@ -69,18 +69,29 @@ void main() {
     required String selectedLabel,
     required List<String> otherLabels,
   }) async {
-    expect(find.byType(SettingsChoiceMenuRow), findsOneWidget,
-        reason: 'a strip that cannot fit falls back to the choice menu row');
-    expect(find.byWidgetPredicate((Widget w) => w is SegmentedButton<String>),
-        findsNothing,
-        reason: 'no clipped / half-visible strip is left on the row');
-    expect(find.textContaining(selectedLabel), findsOneWidget,
-        reason: 'the selected option is shown on the row itself');
+    expect(
+      find.byType(SettingsChoiceMenuRow),
+      findsOneWidget,
+      reason: 'a strip that cannot fit falls back to the choice menu row',
+    );
+    expect(
+      find.byWidgetPredicate((Widget w) => w is SegmentedButton<String>),
+      findsNothing,
+      reason: 'no clipped / half-visible strip is left on the row',
+    );
+    expect(
+      find.textContaining(selectedLabel),
+      findsOneWidget,
+      reason: 'the selected option is shown on the row itself',
+    );
     await tester.tap(find.byType(SettingsChoiceMenuRow));
     await tester.pumpAndSettle();
     for (final String label in otherLabels) {
-      expect(find.text(label), findsOneWidget,
-          reason: 'every option stays reachable from the menu: $label');
+      expect(
+        find.text(label),
+        findsOneWidget,
+        reason: 'every option stays reachable from the menu: $label',
+      );
     }
     expect(tester.takeException(), isNull);
   }
@@ -88,12 +99,16 @@ void main() {
   testWidgets(
     'inline segmented row in a narrow pane falls back to a menu without overflow',
     (WidgetTester tester) async {
-      await tester
-          .pumpWidget(buildTestApp(row(width: 240, controlBelow: false)));
+      await tester.pumpWidget(
+        buildTestApp(row(width: 240, controlBelow: false)),
+      );
       await tester.pump();
 
-      expect(tester.takeException(), isNull,
-          reason: 'no RenderFlex overflow on a narrow pane');
+      expect(
+        tester.takeException(),
+        isNull,
+        reason: 'no RenderFlex overflow on a narrow pane',
+      );
       await expectOptionsReachable(
         tester,
         selectedLabel: 'Material Design 3',
@@ -135,9 +150,9 @@ void main() {
           Builder(
             builder: (BuildContext context) {
               return MediaQuery(
-                data: MediaQuery.of(context).copyWith(
-                  textScaler: const TextScaler.linear(2),
-                ),
+                data: MediaQuery.of(
+                  context,
+                ).copyWith(textScaler: const TextScaler.linear(2)),
                 child: Align(
                   alignment: Alignment.topCenter,
                   child: SizedBox(
@@ -221,21 +236,34 @@ void main() {
 
       // Fits → shown as a real strip: not a menu, not scroll-hosted.
       expect(find.byType(SettingsChoiceMenuRow), findsNothing);
-      expect(find.byType(SingleChildScrollView), findsNothing,
-          reason: 'a fitting strip is laid out whole, not scroll-hosted');
+      expect(
+        find.byType(SingleChildScrollView),
+        findsNothing,
+        reason: 'a fitting strip is laid out whole, not scroll-hosted',
+      );
 
       final Rect strip = tester.getRect(
-          find.byWidgetPredicate((Widget w) => w is SegmentedButton<String>));
+        find.byWidgetPredicate((Widget w) => w is SegmentedButton<String>),
+      );
       final Rect label = tester.getRect(find.text('Spread mode'));
       final Rect row = tester.getRect(find.byKey(paneKey));
       // Compact trailing control on the label row (Android 16 settings),
       // right-aligned to the row content edge, within its 55% share.
-      expect(strip.top, lessThan(label.bottom),
-          reason: 'the strip sits on the label row, not below it');
-      expect(strip.left, greaterThan(label.right),
-          reason: 'the strip trails the label');
-      expect(row.right - strip.right, lessThan(40),
-          reason: 'the strip is right-aligned to the row content edge');
+      expect(
+        strip.top,
+        lessThan(label.bottom),
+        reason: 'the strip sits on the label row, not below it',
+      );
+      expect(
+        strip.left,
+        greaterThan(label.right),
+        reason: 'the strip trails the label',
+      );
+      expect(
+        row.right - strip.right,
+        lessThan(40),
+        reason: 'the strip is right-aligned to the row content edge',
+      );
       expect(strip.width, lessThanOrEqualTo(pane * 0.55));
       // Every segment is fully inside the strip (nothing clipped).
       for (final String text in <String>['Off', 'On', 'Auto']) {
@@ -246,8 +274,11 @@ void main() {
 
       // Equal-width segments: the centre label sits near the strip centre.
       final double onCentre = tester.getCenter(find.text('On')).dx;
-      expect((onCentre - strip.center.dx).abs(), lessThan(strip.width / 6),
-          reason: 'segments share the strip width equally');
+      expect(
+        (onCentre - strip.center.dx).abs(),
+        lessThan(strip.width / 6),
+        reason: 'segments share the strip width equally',
+      );
     },
   );
 
@@ -284,8 +315,11 @@ void main() {
         ),
       );
       await tester.pump();
-      expect(tester.takeException(), isNull,
-          reason: 'a too-wide strip must not overflow');
+      expect(
+        tester.takeException(),
+        isNull,
+        reason: 'a too-wide strip must not overflow',
+      );
 
       await expectOptionsReachable(
         tester,

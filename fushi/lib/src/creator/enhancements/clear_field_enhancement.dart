@@ -9,12 +9,12 @@ import 'package:fushi/models.dart';
 class ClearFieldEnhancement extends Enhancement {
   /// Initialise this enhancement with the hardset parameters.
   ClearFieldEnhancement({required super.field})
-      : super(
-          uniqueKey: key,
-          label: 'Clear Field',
-          description: 'Quickly empty the content of a field.',
-          icon: Icons.clear,
-        );
+    : super(
+        uniqueKey: key,
+        label: 'Clear Field',
+        description: 'Quickly empty the content of a field.',
+        icon: Icons.clear,
+      );
 
   /// Used to identify this enhancement and to allow a constant value for the
   /// default mappings value of [AnkiMapping].
@@ -32,10 +32,6 @@ class ClearFieldEnhancement extends Enhancement {
     required CreatorModel creatorModel,
     required EnhancementTriggerCause cause,
   }) async {
-    creatorModel.clearField(
-      field,
-      overrideLocks: true,
-      savedTags: '',
-    );
+    creatorModel.clearField(field, overrideLocks: true, savedTags: '');
   }
 }

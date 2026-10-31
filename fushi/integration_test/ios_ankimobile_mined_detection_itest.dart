@@ -69,7 +69,9 @@ void main() {
           // 走 provider 给出的那个仓库（生产链路：恒带自动重排包装层，开了「制卡到
           // 已配对设备」还会再包一层），而不是剥开后的裸仓库——BUG-2493 的教训就是
           // 包装层会把整条链默默切断。
-          final BaseAnkiRepository repo = container.read(ankiRepositoryProvider);
+          final BaseAnkiRepository repo = container.read(
+            ankiRepositoryProvider,
+          );
           expect(
             resolveAnkiMobileRepository(repo),
             isNotNull,

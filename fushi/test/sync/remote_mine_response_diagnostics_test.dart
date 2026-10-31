@@ -17,8 +17,7 @@ class _DiagMining implements FushiRemoteMiningService {
   Future<RemoteMineResult> mineEntry({
     required Map<String, String> fields,
     required String sentence,
-  }) async =>
-      entryResult;
+  }) async => entryResult;
 
   @override
   Future<RemoteMineResult> mineImmersion(ImmersionMinePayload payload) async =>
@@ -32,20 +31,18 @@ class _DiagMining implements FushiRemoteMiningService {
   Future<bool> isDuplicate({
     required String expression,
     required String reading,
-  }) async =>
-      false;
+  }) async => false;
 
   @override
   Future<AnkiOpenWordOutcome> openWordInAnki({
     required String expression,
     required String reading,
-  }) async =>
-      AnkiOpenWordOutcome.failed;
+  }) async => AnkiOpenWordOutcome.failed;
 
   @override
   Future<AnkiNoteTypeDefinition?> readNoteTypeDefinition(
-          String modelName) async =>
-      null;
+    String modelName,
+  ) async => null;
 
   @override
   Future<bool> updateNoteTypeStyling(String modelName, String css) async =>
@@ -53,8 +50,9 @@ class _DiagMining implements FushiRemoteMiningService {
 
   @override
   Future<bool> updateNoteTypeTemplates(
-          String modelName, List<AnkiCardTemplate> templates) async =>
-      false;
+    String modelName,
+    List<AnkiCardTemplate> templates,
+  ) async => false;
 
   @override
   Future<bool> probeMediaMaintenance() async => false;
@@ -65,42 +63,53 @@ class _DiagMining implements FushiRemoteMiningService {
 }
 
 Map<String, dynamic> _entryBody() => <String, dynamic>{
-      'fields': <String, dynamic>{'expression': 'x'},
-      'sentence': 's',
-    };
+  'fields': <String, dynamic>{'expression': 'x'},
+  'sentence': 's',
+};
 
 void main() {
   group('TODO-1303 buildRemoteMineResponse 摊开诊断到响应体', () {
     test('error -> result + message + detail 全部回传', () async {
       final mining = _DiagMining()
         ..entryResult = const RemoteMineResult(
-            result: 'error',
-            message: 'card export failed: boom',
-            detail: 'boom');
-      final Map<String, dynamic> out =
-          await buildRemoteMineResponse(_entryBody(), mining: mining);
+          result: 'error',
+          message: 'card export failed: boom',
+          detail: 'boom',
+        );
+      final Map<String, dynamic> out = await buildRemoteMineResponse(
+        _entryBody(),
+        mining: mining,
+      );
       expect(out['result'], 'error');
       expect(out['message'], 'card export failed: boom');
       expect(out['detail'], 'boom');
     });
 
-    test('success + audioWarning -> result success + message（无 detail）',
-        () async {
-      final mining = _DiagMining()
-        ..entryResult =
-            const RemoteMineResult(result: 'success', message: 'audio 404');
-      final Map<String, dynamic> out =
-          await buildRemoteMineResponse(_entryBody(), mining: mining);
-      expect(out['result'], 'success');
-      expect(out['message'], 'audio 404');
-      expect(out.containsKey('detail'), isFalse);
-    });
+    test(
+      'success + audioWarning -> result success + message（无 detail）',
+      () async {
+        final mining = _DiagMining()
+          ..entryResult = const RemoteMineResult(
+            result: 'success',
+            message: 'audio 404',
+          );
+        final Map<String, dynamic> out = await buildRemoteMineResponse(
+          _entryBody(),
+          mining: mining,
+        );
+        expect(out['result'], 'success');
+        expect(out['message'], 'audio 404');
+        expect(out.containsKey('detail'), isFalse);
+      },
+    );
 
     test('plain success -> 只有 result（不带 message/detail，向后兼容）', () async {
       final mining = _DiagMining()
         ..entryResult = const RemoteMineResult(result: 'success');
-      final Map<String, dynamic> out =
-          await buildRemoteMineResponse(_entryBody(), mining: mining);
+      final Map<String, dynamic> out = await buildRemoteMineResponse(
+        _entryBody(),
+        mining: mining,
+      );
       expect(out['result'], 'success');
       expect(out.containsKey('message'), isFalse);
       expect(out.containsKey('detail'), isFalse);
@@ -109,17 +118,20 @@ void main() {
     test('沉浸 payload（截图）走 mineImmersion 且回传诊断', () async {
       final mining = _DiagMining()
         ..immersionResult = const RemoteMineResult(
-            result: 'error',
-            message: 'Netflix 制卡失败：required audio missing',
-            detail: 'required audio missing');
+          result: 'error',
+          message: 'Netflix 制卡失败：required audio missing',
+          detail: 'required audio missing',
+        );
       final Map<String, dynamic> body = <String, dynamic>{
         'fields': <String, dynamic>{'expression': 'x'},
         'sentence': 's',
         'netflixVideoId': '81',
         'clipBase64': 'AAAA',
       };
-      final Map<String, dynamic> out =
-          await buildRemoteMineResponse(body, mining: mining);
+      final Map<String, dynamic> out = await buildRemoteMineResponse(
+        body,
+        mining: mining,
+      );
       expect(out['result'], 'error');
       expect(out['message'], contains('required audio missing'));
       expect(out['detail'], 'required audio missing');

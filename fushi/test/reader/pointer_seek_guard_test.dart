@@ -20,12 +20,14 @@ void main() {
     expect(src.contains('isSeekToClickedSentenceButton'), isTrue);
   });
 
-  test('reader seek path uses cueIdAtPoint reverse lookup and plays the cue',
-      () {
-    expect(src.contains('cueIdAtPoint'), isTrue);
-    expect(src.contains('cueForPointerPayload'), isTrue);
-    expect(src.contains('playCueAndContinue'), isTrue);
-  });
+  test(
+    'reader seek path uses cueIdAtPoint reverse lookup and plays the cue',
+    () {
+      expect(src.contains('cueIdAtPoint'), isTrue);
+      expect(src.contains('cueForPointerPayload'), isTrue);
+      expect(src.contains('playCueAndContinue'), isTrue);
+    },
+  );
 
   test('lyrics seek path resolves the cue via cueForLyricsPointer', () {
     expect(src.contains('cueForLyricsPointer'), isTrue);

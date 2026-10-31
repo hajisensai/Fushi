@@ -34,9 +34,12 @@ void main() {
   test('setup script seeds the tap gate mirror with live Dart truth', () {
     expect(
       webviewPart,
-      contains('window.__fushiTapGate = { chrome: C.showChrome, '
-          'lookup: C.highlightOnTap, maxLen: 400 };'),
-      reason: 'BUG-1140 第二阶段①后镜像初值随每章 config 下发（不再插进脚本源码），'
+      contains(
+        'window.__fushiTapGate = { chrome: C.showChrome, '
+        'lookup: C.highlightOnTap, maxLen: 400 };',
+      ),
+      reason:
+          'BUG-1140 第二阶段①后镜像初值随每章 config 下发（不再插进脚本源码），'
           '但仍必须是当前门控真值',
     );
   });
@@ -52,24 +55,39 @@ void main() {
       "window.flutter_inappwebview.callHandler('onTap', x, y, shiftTap);",
     );
     expect(gateCheck, greaterThan(-1), reason: '门控判定必须存在');
-    expect(directSelect, greaterThan(gateCheck),
-        reason: '门控通过时 JS 直接 selectText（与旧链同一函数，3 跳并 1 跳）');
-    expect(fallback, greaterThan(directSelect),
-        reason: '门控不过/镜像缺失必须回落旧 onTap 链（行为安全网）');
+    expect(
+      directSelect,
+      greaterThan(gateCheck),
+      reason: '门控通过时 JS 直接 selectText（与旧链同一函数，3 跳并 1 跳）',
+    );
+    expect(
+      fallback,
+      greaterThan(directSelect),
+      reason: '门控不过/镜像缺失必须回落旧 onTap 链（行为安全网）',
+    );
   });
 
   test('_syncTapGateJs exists and every gate flip site calls it', () {
-    expect(lookupPart, contains('void _syncTapGateJs()'),
-        reason: 'Dart 单写镜像的同步助手必须存在');
-    expect(lookupPart, contains("'window.__fushiTapGate = '"),
-        reason: '同步助手必须写同一个 JS 全局');
+    expect(
+      lookupPart,
+      contains('void _syncTapGateJs()'),
+      reason: 'Dart 单写镜像的同步助手必须存在',
+    );
+    expect(
+      lookupPart,
+      contains("'window.__fushiTapGate = '"),
+      reason: '同步助手必须写同一个 JS 全局',
+    );
 
     // chrome 可见性的翻转点要同步镜像。
-    final RegExp toggleBody =
-        RegExp(r'void _toggleChrome\(\) \{[\s\S]*?\n  \}');
-    expect(toggleBody.firstMatch(chromePart)?.group(0),
-        contains('_syncTapGateJs();'),
-        reason: '_toggleChrome 翻转 chrome 后必须同步 JS 门控镜像');
+    final RegExp toggleBody = RegExp(
+      r'void _toggleChrome\(\) \{[\s\S]*?\n  \}',
+    );
+    expect(
+      toggleBody.firstMatch(chromePart)?.group(0),
+      contains('_syncTapGateJs();'),
+      reason: '_toggleChrome 翻转 chrome 后必须同步 JS 门控镜像',
+    );
 
     // BUG-969：highlightOnTap 镜像同步随实时预览合并进 _liveSettingsRunner 动作体；
     // onSettingsChangedLive 只负责 trigger 该 runner（拖 slider 风暴收敛为背靠背串行趟）。
@@ -77,20 +95,28 @@ void main() {
     // 格式无关：tall style 会把 `CoalescedAsyncRunner(() async {` 折成
     // `CoalescedAsyncRunner(` + 换行 + `() async {`，这里只定位 runner
     // 动作闭包的起点。
-    final RegExpMatch? runnerMatch =
-        RegExp(r'CoalescedAsyncRunner\(\s*\(\)\s*async\s*\{')
-            .firstMatch(mainShell);
-    expect(runnerMatch, isNotNull,
-        reason: '实时设置合并执行器 _liveSettingsRunner 必须存在');
+    final RegExpMatch? runnerMatch = RegExp(
+      r'CoalescedAsyncRunner\(\s*\(\)\s*async\s*\{',
+    ).firstMatch(mainShell);
+    expect(
+      runnerMatch,
+      isNotNull,
+      reason: '实时设置合并执行器 _liveSettingsRunner 必须存在',
+    );
     final int runnerDef = runnerMatch!.start;
     final int syncCall = mainShell.indexOf('_syncTapGateJs();', runnerDef);
-    expect(syncCall, greaterThan(runnerDef),
-        reason: 'highlightOnTap 镜像同步必须在合并执行器动作内（BUG-969）');
+    expect(
+      syncCall,
+      greaterThan(runnerDef),
+      reason: 'highlightOnTap 镜像同步必须在合并执行器动作内（BUG-969）',
+    );
     final int liveHook = mainShell.indexOf('settingsChanged: ()');
     expect(liveHook, greaterThan(-1));
-    expect(mainShell.indexOf('_liveSettingsRunner.trigger()', liveHook),
-        greaterThan(liveHook),
-        reason:
-            'onSettingsChangedLive 必须经 _liveSettingsRunner.trigger() 触发（合并后同步镜像）');
+    expect(
+      mainShell.indexOf('_liveSettingsRunner.trigger()', liveHook),
+      greaterThan(liveHook),
+      reason:
+          'onSettingsChangedLive 必须经 _liveSettingsRunner.trigger() 触发（合并后同步镜像）',
+    );
   });
 }

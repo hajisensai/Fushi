@@ -59,8 +59,9 @@ String lookupQueryFromIndex(
   int maxChars = kLookupQueryMaxChars,
 }) {
   if (charIndex < 0 || charIndex >= text.length) return '';
-  final int end =
-      charIndex + maxChars > text.length ? text.length : charIndex + maxChars;
+  final int end = charIndex + maxChars > text.length
+      ? text.length
+      : charIndex + maxChars;
   final String query = text.substring(charIndex, end);
   return query.trim().isEmpty ? '' : query;
 }

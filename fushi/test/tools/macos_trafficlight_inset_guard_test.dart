@@ -31,15 +31,17 @@ void main() {
       reason: '_buildDesktopLayout must exist in home_page.dart.',
     );
     final int next = source.indexOf('\n  Widget ', start + 1);
-    final String body =
-        next > start ? source.substring(start, next) : source.substring(start);
+    final String body = next > start
+        ? source.substring(start, next)
+        : source.substring(start);
 
     expect(
       RegExp(
         r'minimum:\s*EdgeInsets\.only\(\s*top:\s*Platform\.isMacOS',
       ).hasMatch(body),
       isFalse,
-      reason: 'macOS 交通灯落在自绘顶栏左侧的留位里，顶栏又真占布局高度；'
+      reason:
+          'macOS 交通灯落在自绘顶栏左侧的留位里，顶栏又真占布局高度；'
           '再留 kMacTitleBarHeight 会在顶栏下面多出一条空白。',
     );
     expect(
@@ -76,7 +78,8 @@ void main() {
         r'_kTrafficLightsReserve',
       ).hasMatch(titleBar),
       isTrue,
-      reason: '交通灯是浮在 full-size content view 上的：自绘顶栏必须在 macOS 上给它们'
+      reason:
+          '交通灯是浮在 full-size content view 上的：自绘顶栏必须在 macOS 上给它们'
           '留位，否则它们压住顶栏内容（BUG-869 的原始症状换个位置复发）。',
     );
   });

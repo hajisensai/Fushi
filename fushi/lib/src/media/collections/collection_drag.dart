@@ -59,8 +59,8 @@ Future<CollectionAddOutcome> addMediaRefToCollection({
   final CollectionAddNotifier tell =
       notify ?? (String message) => FushiToast.show(msg: message);
   try {
-    final List<MediaCollectionItemRow> items =
-        await database.getCollectionItems(collectionId);
+    final List<MediaCollectionItemRow> items = await database
+        .getCollectionItems(collectionId);
     final bool already = items.any(
       (MediaCollectionItemRow it) =>
           it.mediaType == mediaRef.dbMediaType &&
@@ -226,11 +226,7 @@ class _CardDragFeedback extends StatelessWidget {
         child: FushiReorderDragProxy(
           transparent: true,
           borderRadius: tokens.radii.cardRadius,
-          child: SizedBox(
-            width: size.width,
-            height: size.height,
-            child: child,
-          ),
+          child: SizedBox(width: size.width, height: size.height, child: child),
         ),
       ),
     );
@@ -345,54 +341,55 @@ class _CollectionDropTargetState extends State<CollectionDropTarget> {
       onLeave: (_) {
         if (_hovering) setState(() => _hovering = false);
       },
-      builder: (
-        BuildContext context,
-        List<MediaRef?> candidateData,
-        List<dynamic> rejectedData,
-      ) {
-        return Stack(
-          children: <Widget>[
-            widget.child,
-            if (_hovering)
-              Positioned.fill(
-                // IgnorePointer：高亮罩只是反馈，不得吞掉行头 / 卡片本身的点击。
-                child: IgnorePointer(
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      // MD3：primary 12% 状态层（原 18% 盖得太实，卡片内容
-                      // 发灰）；Apple：中性 systemFill 灰罩 + 强调色描边
-                      // （单色强调色下黑 / 白半透明罩是一块脏色）。
-                      color: eink
-                          ? null
-                          : isGlassDesign(context)
+      builder:
+          (
+            BuildContext context,
+            List<MediaRef?> candidateData,
+            List<dynamic> rejectedData,
+          ) {
+            return Stack(
+              children: <Widget>[
+                widget.child,
+                if (_hovering)
+                  Positioned.fill(
+                    // IgnorePointer：高亮罩只是反馈，不得吞掉行头 / 卡片本身的点击。
+                    child: IgnorePointer(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          // MD3：primary 12% 状态层（原 18% 盖得太实，卡片内容
+                          // 发灰）；Apple：中性 systemFill 灰罩 + 强调色描边
+                          // （单色强调色下黑 / 白半透明罩是一块脏色）。
+                          color: eink
+                              ? null
+                              : isGlassDesign(context)
                               ? appleColorsOf(context).fill
                               : hoverColor.withValues(alpha: 0.12),
-                      borderRadius:
-                          widget.borderRadius ?? tokens.radii.cardRadius,
-                      border: Border.all(
-                        color: hoverColor,
-                        width: tokens.spacing.gap / 4,
-                      ),
-                    ),
-                    child: Align(
-                      alignment: widget.alignment,
-                      child: Padding(
-                        padding: EdgeInsets.symmetric(
-                          horizontal: tokens.spacing.gap,
+                          borderRadius:
+                              widget.borderRadius ?? tokens.radii.cardRadius,
+                          border: Border.all(
+                            color: hoverColor,
+                            width: tokens.spacing.gap / 4,
+                          ),
                         ),
-                        child: FushiIcon(
-                          Icons.library_add_outlined,
-                          color: hoverColor,
-                          size: 20,
+                        child: Align(
+                          alignment: widget.alignment,
+                          child: Padding(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: tokens.spacing.gap,
+                            ),
+                            child: FushiIcon(
+                              Icons.library_add_outlined,
+                              color: hoverColor,
+                              size: 20,
+                            ),
+                          ),
                         ),
                       ),
                     ),
                   ),
-                ),
-              ),
-          ],
-        );
-      },
+              ],
+            );
+          },
     );
   }
 }

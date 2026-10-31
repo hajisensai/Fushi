@@ -43,75 +43,123 @@ void main() {
     final int method = src.indexOf('Future<RemoteMineResult> mineImmersion(');
     expect(method, greaterThan(0), reason: 'mineImmersion 改名了？守卫锚点失效，请同步更新。');
     final int methodEnd = src.indexOf('void recordHistory(', method);
-    expect(methodEnd, greaterThan(method),
-        reason: 'mineImmersion 的收尾锚点失效，请同步更新守卫。');
+    expect(
+      methodEnd,
+      greaterThan(method),
+      reason: 'mineImmersion 的收尾锚点失效，请同步更新守卫。',
+    );
     final String body = codeOnly(src.substring(method, methodEnd));
 
     final int start = body.indexOf("payload.clipSourceKind == 'bilibili'");
-    expect(start, greaterThan(0),
-        reason: 'bilibili 段的起始锚点失效（判据换写法了？），请同步更新守卫。');
+    expect(
+      start,
+      greaterThan(0),
+      reason: 'bilibili 段的起始锚点失效（判据换写法了？），请同步更新守卫。',
+    );
     final int end = body.indexOf('ImmersionCaptureResult cap =', start);
-    expect(end, greaterThan(start),
-        reason: 'bilibili 段与 Netflix 段的分界锚点失效，请同步更新守卫。');
+    expect(
+      end,
+      greaterThan(start),
+      reason: 'bilibili 段与 Netflix 段的分界锚点失效，请同步更新守卫。',
+    );
     final String segment = body.substring(start, end);
 
     // 自校验：切出来的必须真是那段实现，而不是参数表/注释残渣。少了这条，
     // 锚点漂移后所有「必须包含」的断言会一起变成恒假、「不得包含」的一起变成恒真。
-    expect(segment, contains('_bilibiliClipMiner.buildRequest'),
-        reason: '切出的 bilibili 段里没有 buildRequest 调用 —— 窗口切错了，'
-            '下面的断言全部失去意义。');
-    expect(segment, contains('ImmersionMiningEngine().mine('),
-        reason: '切出的 bilibili 段里没有引擎调用 —— 窗口切错了。');
+    expect(
+      segment,
+      contains('_bilibiliClipMiner.buildRequest'),
+      reason:
+          '切出的 bilibili 段里没有 buildRequest 调用 —— 窗口切错了，'
+          '下面的断言全部失去意义。',
+    );
+    expect(
+      segment,
+      contains('ImmersionMiningEngine().mine('),
+      reason: '切出的 bilibili 段里没有引擎调用 —— 窗口切错了。',
+    );
     // 扫描规模哨兵：整段实现在 1.5KB 量级；塌到几百字节说明只切到了签名或片段。
-    expect(segment.length, greaterThan(1200),
-        reason: 'bilibili 段只切出 ${segment.length} 字节，量级塌了 —— 锚点漂移。');
+    expect(
+      segment.length,
+      greaterThan(1200),
+      reason: 'bilibili 段只切出 ${segment.length} 字节，量级塌了 —— 锚点漂移。',
+    );
     return segment;
   }
 
   group('源码扫描守卫：mineImmersion 的 bilibili 段（PR#1172 前置 ②）', () {
     test('requireAudio: true —— 缺音频即失败，不出无声卡', () {
-      expect(bilibiliSegment(), contains('requireAudio: true'),
-          reason: 'bilibili 这条路有真实 DASH 音轨，缺音频必须中止；翻成 false 就是'
-              '允许出「只有一张图」的无声卡（实测存活变异 D5）。');
+      expect(
+        bilibiliSegment(),
+        contains('requireAudio: true'),
+        reason:
+            'bilibili 这条路有真实 DASH 音轨，缺音频必须中止；翻成 false 就是'
+            '允许出「只有一张图」的无声卡（实测存活变异 D5）。',
+      );
     });
 
     test('零/负长度窗在进引擎之前就 remoteMineError 返回', () {
       final String segment = bilibiliSegment();
-      final int guard =
-          segment.indexOf('if (payload.clipEndMs! <= payload.clipStartMs!)');
-      expect(guard, greaterThanOrEqualTo(0),
-          reason: '零/负长度窗的前置门不见了：引擎的 requireAudio 在 hasRange==false 时'
-              '不会中止，少了这道门就静默降级成无声卡。');
+      final int guard = segment.indexOf(
+        'if (payload.clipEndMs! <= payload.clipStartMs!)',
+      );
+      expect(
+        guard,
+        greaterThanOrEqualTo(0),
+        reason:
+            '零/负长度窗的前置门不见了：引擎的 requireAudio 在 hasRange==false 时'
+            '不会中止，少了这道门就静默降级成无声卡。',
+      );
       final int engine = segment.indexOf('ImmersionMiningEngine().mine(');
       expect(guard, lessThan(engine), reason: '前置门必须在进引擎**之前**，否则等于没有。');
       final int err = segment.indexOf('remoteMineError(', guard);
       expect(err, greaterThan(guard));
-      expect(err, lessThan(engine),
-          reason: '零/负长度窗必须直接 remoteMineError 返回，不能继续往下走到引擎。');
-      expect(segment, contains("'Anki.mineImmersion.bilibili'"),
-          reason: '错误域名必须是 bilibili 自己的，别复用 youtube/netflix 的日志域。');
+      expect(
+        err,
+        lessThan(engine),
+        reason: '零/负长度窗必须直接 remoteMineError 返回，不能继续往下走到引擎。',
+      );
+      expect(
+        segment,
+        contains("'Anki.mineImmersion.bilibili'"),
+        reason: '错误域名必须是 bilibili 自己的，别复用 youtube/netflix 的日志域。',
+      );
     });
 
     test('封面名前缀是 web_shot.jpg，不得冒充 netflix 来源', () {
       final String segment = bilibiliSegment();
-      expect(segment, contains("'web_shot.jpg'"),
-          reason: '媒体库里要一眼看得出这张图来自网页解码帧那条路。'
-              '换成 netflix 前缀会把 B 站卡标成 Netflix 来源（实测存活变异 D7）。');
-      expect(segment.contains('netflix'), isFalse,
-          reason: 'bilibili 段不该出现任何 netflix 字样 —— 那是另一条捕获链路。');
+      expect(
+        segment,
+        contains("'web_shot.jpg'"),
+        reason:
+            '媒体库里要一眼看得出这张图来自网页解码帧那条路。'
+            '换成 netflix 前缀会把 B 站卡标成 Netflix 来源（实测存活变异 D7）。',
+      );
+      expect(
+        segment.contains('netflix'),
+        isFalse,
+        reason: 'bilibili 段不该出现任何 netflix 字样 —— 那是另一条捕获链路。',
+      );
     });
 
     test('mediaSource: null —— 封面走扩展的原始解码帧，不解析视频轨', () {
-      expect(bilibiliSegment(), contains('mediaSource: null'),
-          reason: '解析视频轨既慢又错（未登录只拿得到 480P、且带弹幕/UI 层）；'
-              '封面由扩展的 providedCoverBytes 给。');
+      expect(
+        bilibiliSegment(),
+        contains('mediaSource: null'),
+        reason:
+            '解析视频轨既慢又错（未登录只拿得到 480P、且带弹幕/UI 层）；'
+            '封面由扩展的 providedCoverBytes 给。',
+      );
     });
 
     test('B 站防盗链头随请求下发给 ffmpeg（BUG-2730）', () {
       expect(
-          bilibiliSegment(), contains('mediaSourceHttpHeaders: bi.httpHeaders'),
-          reason: 'upos / PCDN 节点不带 Referer 一律 403；按 host 白名单猜 Referer '
-              '追不上 PCDN 域名轮换，必须由流解析层声明、随请求下发。');
+        bilibiliSegment(),
+        contains('mediaSourceHttpHeaders: bi.httpHeaders'),
+        reason:
+            'upos / PCDN 节点不带 Referer 一律 403；按 host 白名单猜 Referer '
+            '追不上 PCDN 域名轮换，必须由流解析层声明、随请求下发。',
+      );
     });
 
     test('番剧（bilibili-pgc）与稿件同走这一段，只是音轨来路不同', () {
@@ -119,21 +167,36 @@ void main() {
       // 番剧的音轨由扩展在页面主世界里解析后回传（要带 SESSDATA，服务端匿名请求拿不到）。
       // 它必须复用**同一段**实现：拆成另一段就会把 requireAudio / 零窗前置门 / web_shot.jpg
       // 这几条不变式各抄一份，然后慢慢走偏（本文件正是为这类漂移存在的）。
-      expect(segment, contains('isBilibiliPgc'),
-          reason: 'bilibili-pgc 这个 kind 不再接在这段上了：要么被拆成独立分支（不变式被'
-              '复制一份），要么整条番剧链路被删掉了。');
-      expect(segment, contains('buildPgcRequest'),
-          reason: '番剧只挑流、不打网络（音轨响应体随请求一起来），退回 buildRequest 会去'
-              '匿名打 playurl —— 大会员内容必然解析失败。');
+      expect(
+        segment,
+        contains('isBilibiliPgc'),
+        reason:
+            'bilibili-pgc 这个 kind 不再接在这段上了：要么被拆成独立分支（不变式被'
+            '复制一份），要么整条番剧链路被删掉了。',
+      );
+      expect(
+        segment,
+        contains('buildPgcRequest'),
+        reason:
+            '番剧只挑流、不打网络（音轨响应体随请求一起来），退回 buildRequest 会去'
+            '匿名打 playurl —— 大会员内容必然解析失败。',
+      );
     });
 
     test('稿件带了页面内 playurl 就用它（反馈 Atbl_kOuZK：服务端匿名请求被 412）', () {
       final String segment = bilibiliSegment();
-      expect(segment, contains('usePagePlayurl'),
-          reason: '稿件的页面响应体没接上：扩展取回了 playurl，服务端却还去匿名请求，'
-              '海外 / 代理出口下被 B 站风控 412，整张卡失败。');
-      expect(segment, contains('bi = usePagePlayurl'),
-          reason: '选「页面响应体 vs 服务端自己解析」的判据必须是 usePagePlayurl。');
+      expect(
+        segment,
+        contains('usePagePlayurl'),
+        reason:
+            '稿件的页面响应体没接上：扩展取回了 playurl，服务端却还去匿名请求，'
+            '海外 / 代理出口下被 B 站风控 412，整张卡失败。',
+      );
+      expect(
+        segment,
+        contains('bi = usePagePlayurl'),
+        reason: '选「页面响应体 vs 服务端自己解析」的判据必须是 usePagePlayurl。',
+      );
       final String bg = File(
         '../tools/browser-extension/background.js',
       ).readAsStringSync();
@@ -152,19 +215,31 @@ void main() {
 
     test('本段不得下发动图格式 / 静态帧模式两个恒不生效的参数', () {
       final String segment = bilibiliSegment();
-      expect(segment.contains('imageMode:'), isFalse,
-          reason: '这条路 mediaSource 为 null 且封面已由 providedCoverBytes 写好，'
-              '引擎的 `if (coverPath == null)` 阶梯整段不被求值 —— 传了恒不生效，'
-              '还会把 remote_mining_image_mode_test.dart 的 YouTube 段判据稀释成'
-              '「两份里删一份照样绿」（存活变异 D4）。');
-      expect(segment.contains('animatedFormat:'), isFalse,
-          reason: '同上：抽动图的前置守卫要求 mediaSource 非空，这里恒为 null。'
-              '多一份同名字面量会稀释 remote_mining_animated_format_test.dart 的判据。');
+      expect(
+        segment.contains('imageMode:'),
+        isFalse,
+        reason:
+            '这条路 mediaSource 为 null 且封面已由 providedCoverBytes 写好，'
+            '引擎的 `if (coverPath == null)` 阶梯整段不被求值 —— 传了恒不生效，'
+            '还会把 remote_mining_image_mode_test.dart 的 YouTube 段判据稀释成'
+            '「两份里删一份照样绿」（存活变异 D4）。',
+      );
+      expect(
+        segment.contains('animatedFormat:'),
+        isFalse,
+        reason:
+            '同上：抽动图的前置守卫要求 mediaSource 非空，这里恒为 null。'
+            '多一份同名字面量会稀释 remote_mining_animated_format_test.dart 的判据。',
+      );
       // 反面：真正生效的那个必须留着 —— providedCoverBytes 短路会按它归一化编码
       // （immersion_mining_engine.dart 的 cardScreenshotEncodingFor）。
-      expect(segment, contains('stillFormat: _videoMiningStillFormat'),
-          reason: '静图格式在这条路上是**真生效**的（provided 字节按它重编码），'
-              '不能连它一起删掉。');
+      expect(
+        segment,
+        contains('stillFormat: _videoMiningStillFormat'),
+        reason:
+            '静图格式在这条路上是**真生效**的（provided 字节按它重编码），'
+            '不能连它一起删掉。',
+      );
     });
   });
 }

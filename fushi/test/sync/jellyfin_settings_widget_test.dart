@@ -371,10 +371,10 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
 
     // 先探连通性再登录（BUG-2584）：两个请求、同一台服务器。
-    expect(
-      server.seen.map((http.Request r) => r.url.path).toList(),
-      <String>['/System/Info/Public', '/Users/AuthenticateByName'],
-    );
+    expect(server.seen.map((http.Request r) => r.url.path).toList(), <String>[
+      '/System/Info/Public',
+      '/Users/AuthenticateByName',
+    ]);
     expect(server.seen.last.url.host, 'emby.example.com');
     List<JellyfinServerConfig> servers = await repo.getJellyfinServers();
     expect(servers, hasLength(2), reason: '登录成功 → 列表 +1');
@@ -459,11 +459,9 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
     await tester.pump(const Duration(milliseconds: 100));
 
-    expect(
-      seen.map((http.Request r) => r.url.path).toList(),
-      <String>['/System/Info/Public'],
-      reason: '探测被拒就不再发登录 POST',
-    );
+    expect(seen.map((http.Request r) => r.url.path).toList(), <String>[
+      '/System/Info/Public',
+    ], reason: '探测被拒就不再发登录 POST');
     expect(
       find.text(
         t.jellyfin_server_rejected_client(
@@ -476,7 +474,10 @@ void main() {
     );
     expect(
       find.textContaining(
-        t.jellyfin_server_unreachable(url: 'https://emby.example.com:443', reason: ''),
+        t.jellyfin_server_unreachable(
+          url: 'https://emby.example.com:443',
+          reason: '',
+        ),
       ),
       findsNothing,
     );

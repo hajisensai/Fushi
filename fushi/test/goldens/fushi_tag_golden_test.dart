@@ -10,10 +10,12 @@ import 'golden_test_helpers.dart';
 void main() {
   group('FushiTag golden', () {
     testWidgets('basic tag', (tester) async {
-      await tester.pumpWidget(buildGoldenApp(
-        const FushiTag(text: 'noun', backgroundColor: Colors.blue),
-        size: const Size(200, 60),
-      ));
+      await tester.pumpWidget(
+        buildGoldenApp(
+          const FushiTag(text: 'noun', backgroundColor: Colors.blue),
+          size: const Size(200, 60),
+        ),
+      );
       await tester.pumpAndSettle();
 
       await expectLater(
@@ -23,14 +25,16 @@ void main() {
     });
 
     testWidgets('tag with icon', (tester) async {
-      await tester.pumpWidget(buildGoldenApp(
-        const FushiTag(
-          text: 'verb',
-          backgroundColor: Colors.green,
-          icon: Icons.label,
+      await tester.pumpWidget(
+        buildGoldenApp(
+          const FushiTag(
+            text: 'verb',
+            backgroundColor: Colors.green,
+            icon: Icons.label,
+          ),
+          size: const Size(200, 60),
         ),
-        size: const Size(200, 60),
-      ));
+      );
       await tester.pumpAndSettle();
 
       await expectLater(
@@ -40,14 +44,16 @@ void main() {
     });
 
     testWidgets('tag with trailing text', (tester) async {
-      await tester.pumpWidget(buildGoldenApp(
-        const FushiTag(
-          text: 'freq',
-          backgroundColor: Colors.purple,
-          trailingText: '★3',
+      await tester.pumpWidget(
+        buildGoldenApp(
+          const FushiTag(
+            text: 'freq',
+            backgroundColor: Colors.purple,
+            trailingText: '★3',
+          ),
+          size: const Size(250, 60),
         ),
-        size: const Size(250, 60),
-      ));
+      );
       await tester.pumpAndSettle();
 
       await expectLater(
@@ -57,15 +63,17 @@ void main() {
     });
 
     testWidgets('tag dark theme', (tester) async {
-      await tester.pumpWidget(buildGoldenApp(
-        const FushiTag(
-          text: 'dark',
-          backgroundColor: Colors.teal,
-          icon: Icons.dark_mode,
+      await tester.pumpWidget(
+        buildGoldenApp(
+          const FushiTag(
+            text: 'dark',
+            backgroundColor: Colors.teal,
+            icon: Icons.dark_mode,
+          ),
+          theme: ThemeData.dark(useMaterial3: true),
+          size: const Size(200, 60),
         ),
-        theme: ThemeData.dark(useMaterial3: true),
-        size: const Size(200, 60),
-      ));
+      );
       await tester.pumpAndSettle();
 
       await expectLater(
@@ -75,15 +83,17 @@ void main() {
     });
 
     testWidgets('tag custom foreground', (tester) async {
-      await tester.pumpWidget(buildGoldenApp(
-        const FushiTag(
-          text: 'custom',
-          backgroundColor: Color(0xFF263238),
-          foregroundColor: Colors.amber,
-          icon: Icons.star,
+      await tester.pumpWidget(
+        buildGoldenApp(
+          const FushiTag(
+            text: 'custom',
+            backgroundColor: Color(0xFF263238),
+            foregroundColor: Colors.amber,
+            icon: Icons.star,
+          ),
+          size: const Size(200, 60),
         ),
-        size: const Size(200, 60),
-      ));
+      );
       await tester.pumpAndSettle();
 
       await expectLater(

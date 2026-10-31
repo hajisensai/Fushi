@@ -68,7 +68,10 @@ class _DownloadHostAdapter implements ServerAssistantDownloads {
 
 /// 一场会话的发现端口：搜作品 / 拉详情 / 找系列 + 会话结束时释放。
 typedef ServerDiscoveryPorts = ({
-  Future<ProviderBatchResult<VideoDiscoveryPage>> Function(VideoDiscoveryRequest request) search,
+  Future<ProviderBatchResult<VideoDiscoveryPage>> Function(
+    VideoDiscoveryRequest request,
+  )
+  search,
   VideoDiscoveryService? service,
   void Function() release,
 });
@@ -100,14 +103,14 @@ VideoAcquisitionAssistantHost createServerAssistantHost({
   required ServerPrefs prefs,
   required FushiDatabase db,
   required ServerDownloadHost downloads,
-}) =>
-    createServerAssistantHostWith(
-      config: config,
-      prefs: prefs,
-      db: db,
-      downloads: _DownloadHostAdapter(downloads),
-      discovery: (String locale) => productionServerDiscovery(prefs: prefs, config: config(), locale: locale),
-    );
+}) => createServerAssistantHostWith(
+  config: config,
+  prefs: prefs,
+  db: db,
+  downloads: _DownloadHostAdapter(downloads),
+  discovery: (String locale) =>
+      productionServerDiscovery(prefs: prefs, config: config(), locale: locale),
+);
 
 /// 同 [createServerAssistantHost]，下载面与发现可注入（测试用）。
 VideoAcquisitionAssistantHost createServerAssistantHostWith({
@@ -121,8 +124,11 @@ VideoAcquisitionAssistantHost createServerAssistantHostWith({
 
   Future<String?> blocker() async {
     // 先判 AI：没指派时连下载面都不必看，更不会走到任何 AI 调用。
-    if (resolveVideoAcquireAiProvider(aiSettings) == null) return kHostAssistantReasonNoProvider;
-    if (downloads.pipeline == null || downloads.registry == null || await downloads.downloadSource() == null) {
+    if (resolveVideoAcquireAiProvider(aiSettings) == null)
+      return kHostAssistantReasonNoProvider;
+    if (downloads.pipeline == null ||
+        downloads.registry == null ||
+        await downloads.downloadSource() == null) {
       return kHostAssistantReasonNotReady;
     }
     return null;
@@ -138,7 +144,9 @@ VideoAcquisitionAssistantHost createServerAssistantHostWith({
       if (pipeline == null || registry == null || source == null) {
         throw const HostAssistantUnavailable(kHostAssistantReasonNotReady);
       }
-      final String speakerLocale = locale.isEmpty ? config().metadataLocale : locale;
+      final String speakerLocale = locale.isEmpty
+          ? config().metadataLocale
+          : locale;
       final ServerDiscoveryPorts found = discovery(speakerLocale);
       final List<MediaSourceRow> sources = <MediaSourceRow>[source];
       final VideoAcquisitionService service = createHostVideoAcquisitionService(
@@ -157,9 +165,11 @@ VideoAcquisitionAssistantHost createServerAssistantHostWith({
         pipeline: pipeline,
         sources: sources,
         backendTarget: () async => downloads.backendTarget(),
-        persistPreference: (VideoAcquisitionPreference preference, String value) =>
-            prefs.setPref(videoAcquisitionPreferenceKey(preference), value),
-        setSeriesSubtitleLanguage: (String seriesKey, String code) => _rememberSeriesSubtitleLanguage(prefs, seriesKey, code),
+        persistPreference:
+            (VideoAcquisitionPreference preference, String value) =>
+                prefs.setPref(videoAcquisitionPreferenceKey(preference), value),
+        setSeriesSubtitleLanguage: (String seriesKey, String code) =>
+            _rememberSeriesSubtitleLanguage(prefs, seriesKey, code),
         checkSubscriptionsNow: downloads.checkSubscriptionsNow,
       );
       return (service: service, release: found.release);
@@ -167,9 +177,15 @@ VideoAcquisitionAssistantHost createServerAssistantHostWith({
   );
 }
 
-Future<void> _rememberSeriesSubtitleLanguage(PrefStore prefs, String seriesKey, String code) async {
+Future<void> _rememberSeriesSubtitleLanguage(
+  PrefStore prefs,
+  String seriesKey,
+  String code,
+) async {
   final Map<String, String> map = <String, String>{};
-  final String raw = prefs.getPref(kServerSeriesSubtitleLanguagesPref, defaultValue: '') as String;
+  final String raw =
+      prefs.getPref(kServerSeriesSubtitleLanguagesPref, defaultValue: '')
+          as String;
   if (raw.isNotEmpty) {
     try {
       final Object? decoded = jsonDecode(raw);

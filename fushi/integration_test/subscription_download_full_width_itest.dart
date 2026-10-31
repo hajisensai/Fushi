@@ -26,10 +26,7 @@ import 'helpers/focus_driver.dart';
 import 'helpers/observe_capture.dart';
 import 'test_helpers.dart';
 
-Future<void> _pumpFrames(
-  WidgetTester tester, {
-  int frames = 8,
-}) async {
+Future<void> _pumpFrames(WidgetTester tester, {int frames = 8}) async {
   for (int i = 0; i < frames; i++) {
     await tester.pump(const Duration(milliseconds: 250));
   }
@@ -88,10 +85,7 @@ Future<void> _seedDownloadRows(AppModel model) async {
   );
 }
 
-Future<void> _expectShot(
-  WidgetTester tester,
-  String name,
-) async {
+Future<void> _expectShot(WidgetTester tester, String name) async {
   final ObserveShot shot = await captureFlutterFrame(tester, name);
   expect(shot.saved, isTrue, reason: '$name should be saved');
   expect(shot.nonBlank, isTrue, reason: '$name should not be blank');
@@ -120,18 +114,18 @@ Future<void> _selectSectionTab(
 }
 
 VideoDiscoveryItem _discoveryItem() => VideoDiscoveryItem(
-      reference: VideoMediaReference(
-        providerId: 'anilist',
-        mediaId: '100',
-        mediaKind: VideoMetadataMediaKind.tv,
-        discoveryCategory: VideoDiscoveryCategory.anime,
-        title: 'Full Width Subscription Verification',
-        originalTitle: '全幅購読テスト',
-        aliases: const <String>['Full Width Subscription Verification'],
-        year: 2026,
-        anilistId: 100,
-      ),
-    );
+  reference: VideoMediaReference(
+    providerId: 'anilist',
+    mediaId: '100',
+    mediaKind: VideoMetadataMediaKind.tv,
+    discoveryCategory: VideoDiscoveryCategory.anime,
+    title: 'Full Width Subscription Verification',
+    originalTitle: '全幅購読テスト',
+    aliases: const <String>['Full Width Subscription Verification'],
+    year: 2026,
+    anilistId: 100,
+  ),
+);
 
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -225,15 +219,14 @@ void main() {
       Navigator.of(tester.element(settings)).pop();
       await _pumpFrames(tester);
 
-      final NavigatorState navigator =
-          tester.state<NavigatorState>(find.byType(Navigator).first);
+      final NavigatorState navigator = tester.state<NavigatorState>(
+        find.byType(Navigator).first,
+      );
       navigator.push<void>(
         MaterialPageRoute<void>(
           builder: (_) => VideoDiscoverySubscriptionPage(
             item: _discoveryItem(),
-            registry: VideoResourceRegistry(
-              const <VideoResourceProvider>[],
-            ),
+            registry: VideoResourceRegistry(const <VideoResourceProvider>[]),
             sources: const <MediaSourceRow>[
               MediaSourceRow(
                 id: 1,
@@ -255,8 +248,9 @@ void main() {
         ),
       );
       await _pumpFrames(tester);
-      final Finder subscriptionPage =
-          find.byType(VideoDiscoverySubscriptionPage);
+      final Finder subscriptionPage = find.byType(
+        VideoDiscoverySubscriptionPage,
+      );
       expect(subscriptionPage, findsOneWidget);
       expect(
         tester.getSize(subscriptionPage).width,

@@ -99,7 +99,9 @@ class SourceReviewSession extends ChangeNotifier {
   void _message(String message) {
     final BuildContext? ui = _context;
     if (ui != null && ui.mounted) {
-      ScaffoldMessenger.of(ui).showSnackBar(FushiSnackBar(content: Text(message)));
+      ScaffoldMessenger.of(
+        ui,
+      ).showSnackBar(FushiSnackBar(content: Text(message)));
     }
   }
 
@@ -146,11 +148,11 @@ class SourceReviewSession extends ChangeNotifier {
       peerUrl: _peerUrl,
       peerIdentity: _peerIdentity,
     );
-    final Map<String, String> candidate =
-        await repository.prepareSourceNoteFields(
-      rawPayloadJson: saved.mining!.rawPayloadJson,
-      context: saved.mining!.context,
-    );
+    final Map<String, String> candidate = await repository
+        .prepareSourceNoteFields(
+          rawPayloadJson: saved.mining!.rawPayloadJson,
+          context: saved.mining!.context,
+        );
     return _reviewFields(original, candidate);
   }
 
@@ -347,11 +349,11 @@ class SourceReviewBanner extends StatelessWidget {
                   Text(
                     isVideo
                         ? (session.isReview
-                            ? t.card_source_review_video_title
-                            : t.card_source_review_video_watching)
+                              ? t.card_source_review_video_title
+                              : t.card_source_review_video_watching)
                         : (session.isReview
-                            ? t.card_source_review_title
-                            : t.card_source_review_source),
+                              ? t.card_source_review_title
+                              : t.card_source_review_source),
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                   ),
@@ -387,8 +389,9 @@ class SourceReviewBanner extends StatelessWidget {
                           ),
                           if (session.isReview)
                             FushiTextButton(
-                              onPressed:
-                                  session.busy ? null : session.continueReading,
+                              onPressed: session.busy
+                                  ? null
+                                  : session.continueReading,
                               child: Text(
                                 isVideo
                                     ? t.card_source_review_video_continue

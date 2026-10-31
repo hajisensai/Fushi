@@ -22,11 +22,13 @@ void main() {
       expect(size.width, 563); // 1080 * (1000/1920) = 562.5 → 563
     });
 
-    test('returns null when long edge already <= max (only shrink, never grow)',
-        () {
-      expect(computeDownsampledSize(width: 1000, height: 600), isNull);
-      expect(computeDownsampledSize(width: 640, height: 480), isNull);
-    });
+    test(
+      'returns null when long edge already <= max (only shrink, never grow)',
+      () {
+        expect(computeDownsampledSize(width: 1000, height: 600), isNull);
+        expect(computeDownsampledSize(width: 640, height: 480), isNull);
+      },
+    );
 
     test('returns null for non-positive dimensions', () {
       expect(computeDownsampledSize(width: 0, height: 100), isNull);
@@ -41,8 +43,11 @@ void main() {
     });
 
     test('honours a custom maxLongEdge', () {
-      final size =
-          computeDownsampledSize(width: 2000, height: 1000, maxLongEdge: 500);
+      final size = computeDownsampledSize(
+        width: 2000,
+        height: 1000,
+        maxLongEdge: 500,
+      );
       expect(size!.width, 500);
       expect(size.height, 250);
     });
@@ -111,8 +116,9 @@ void main() {
     test('大图后台降采样：长边钉 1000（与同步版语义一致）', () async {
       final Uint8List big = jpegOf(2400, 1350);
       // 卸到后台 isolate 后不再 identical，但内容语义与同步版一致：解码得长边 1000。
-      final img.Image decoded =
-          img.decodeImage(await downsampleCardScreenshotAsync(big))!;
+      final img.Image decoded = img.decodeImage(
+        await downsampleCardScreenshotAsync(big),
+      )!;
       expect(decoded.width, 1000);
       expect(decoded.height, 563);
     });
@@ -120,7 +126,9 @@ void main() {
     test('空字节原样返回（同步短路，不起 isolate）', () async {
       final Uint8List empty = Uint8List(0);
       expect(
-          identical(await downsampleCardScreenshotAsync(empty), empty), isTrue);
+        identical(await downsampleCardScreenshotAsync(empty), empty),
+        isTrue,
+      );
     });
 
     test('无法解码字节保守回退：内容与入参一致（绝不变空）', () async {

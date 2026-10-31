@@ -56,7 +56,8 @@ void main() {
       expect(
         _ruleBody(css, '.block-img-wrapper'),
         contains('pointer-events: none !important;'),
-        reason: 'wrapper 撑满整列却只是居中用；它可命中 ⇒ 图两侧留白被判成点中图片 ⇒ '
+        reason:
+            'wrapper 撑满整列却只是居中用；它可命中 ⇒ 图两侧留白被判成点中图片 ⇒ '
             'onTapEmpty 永远触发不到 ⇒ 底栏唤不出来（BUG-1828）',
       );
     });
@@ -70,7 +71,8 @@ void main() {
       expect(
         body,
         contains('width: auto'),
-        reason: 'img.block-img 一旦改成定值 width/height 就会像 svg 那样 letterbox，'
+        reason:
+            'img.block-img 一旦改成定值 width/height 就会像 svg 那样 letterbox，'
             '届时命中区必须跟着收窄到实际画面',
       );
     });
@@ -80,7 +82,8 @@ void main() {
       expect(
         svgBody,
         contains('pointer-events: none !important;'),
-        reason: 'svg.block-img 是**定值**盒（下面的断言锁住这一点），内部 <image> 按 '
+        reason:
+            'svg.block-img 是**定值**盒（下面的断言锁住这一点），内部 <image> 按 '
             'xMidYMid meet 在盒内 letterbox，盒子远宽于画面（实测 1295px vs 549px）',
       );
       // 定值盒是 letterbox 的成因，也是必须拆出内部 <image> 规则的理由。
@@ -101,7 +104,8 @@ void main() {
       expect(
         js,
         contains("closest('.block-img-wrapper')"),
-        reason: 'JS 判据仍以 .block-img-wrapper 归属判「点中图片」，'
+        reason:
+            'JS 判据仍以 .block-img-wrapper 归属判「点中图片」，'
             '所以 CSS 必须让这个盒子不可命中；若判据改走别的容器/几何，'
             '本测试与上面三条不变量都要一起重审',
       );

@@ -39,12 +39,12 @@ class AListEntry {
   final String? parent;
 
   static AListEntry fromJson(Map<String, dynamic> raw) => AListEntry(
-        name: raw['name'] as String? ?? '',
-        isDir: raw['is_dir'] == true,
-        sizeBytes: (raw['size'] as num?)?.toInt(),
-        modified: raw['modified'] as String?,
-        parent: raw['parent'] as String?,
-      );
+    name: raw['name'] as String? ?? '',
+    isDir: raw['is_dir'] == true,
+    sizeBytes: (raw['size'] as num?)?.toInt(),
+    modified: raw['modified'] as String?,
+    parent: raw['parent'] as String?,
+  );
 }
 
 /// 一页目录 / 搜索结果。
@@ -77,12 +77,12 @@ class AListApiClient {
     String? username,
     String? password,
     http.Client? client,
-  })  : _baseUrl = baseUrl.endsWith('/')
-            ? baseUrl.substring(0, baseUrl.length - 1)
-            : baseUrl,
-        _username = (username ?? '').trim().isEmpty ? null : username!.trim(),
-        _password = password ?? '',
-        _client = client ?? createAppHttpIoClient();
+  }) : _baseUrl = baseUrl.endsWith('/')
+           ? baseUrl.substring(0, baseUrl.length - 1)
+           : baseUrl,
+       _username = (username ?? '').trim().isEmpty ? null : username!.trim(),
+       _password = password ?? '',
+       _client = client ?? createAppHttpIoClient();
 
   /// 失败上浮时标的 provider（发现源 id / 来源库 `alist-source`）。
   final String providerId;
@@ -109,12 +109,12 @@ class AListApiClient {
   }) async {
     final Map<String, dynamic> data =
         await post('/api/fs/list', <String, dynamic>{
-      'path': path,
-      'password': password,
-      'page': page,
-      'per_page': perPage,
-      'refresh': false,
-    });
+          'path': path,
+          'password': password,
+          'page': page,
+          'per_page': perPage,
+          'refresh': false,
+        });
     return _page(data);
   }
 
@@ -128,7 +128,7 @@ class AListApiClient {
     String password = '',
   }) async {
     final List<AListEntry> all = <AListEntry>[];
-    for (int page = 1;; page++) {
+    for (int page = 1; ; page++) {
       final AListPage result = await list(
         path,
         page: page,
@@ -138,7 +138,8 @@ class AListApiClient {
       all.addAll(result.entries);
       // 满页才可能还有下一页；total 只在 > 0 时可信（部分驱动恒报 0，不能拿它
       // 把满页截断成一页）。页数封顶防 total 与页长都失真时的死循环。
-      final bool more = result.entries.length >= perPage &&
+      final bool more =
+          result.entries.length >= perPage &&
           (result.total <= 0 || page * perPage < result.total) &&
           page < kAListListAllMaxPages;
       if (!more) break;
@@ -154,13 +155,13 @@ class AListApiClient {
   }) async {
     final Map<String, dynamic> data =
         await post('/api/fs/search', <String, dynamic>{
-      'parent': parent,
-      'keywords': keywords,
-      'scope': 0,
-      'page': page,
-      'per_page': perPage,
-      'password': '',
-    });
+          'parent': parent,
+          'keywords': keywords,
+          'scope': 0,
+          'page': page,
+          'per_page': perPage,
+          'password': '',
+        });
     return _page(data);
   }
 

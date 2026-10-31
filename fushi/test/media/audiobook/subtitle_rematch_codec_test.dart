@@ -40,8 +40,9 @@ void main() {
     });
 
     test('参数乱序仍能解码', () {
-      final SubtitleRematchFragment? f =
-          SubtitleRematchCodec.tryDecode('fushi-cue://ne=9&s=0&ns=4');
+      final SubtitleRematchFragment? f = SubtitleRematchCodec.tryDecode(
+        'fushi-cue://ne=9&s=0&ns=4',
+      );
       expect(f, isNotNull);
       expect(f!.sectionIndex, 0);
       expect(f.normCharStart, 4);
@@ -79,8 +80,10 @@ void main() {
         mkCue(2),
       ];
 
-      final int applied =
-          SubtitleRematchCodec.applyToCues(cues: cues, result: fixture);
+      final int applied = SubtitleRematchCodec.applyToCues(
+        cues: cues,
+        result: fixture,
+      );
 
       expect(applied, 2);
       expect(cues[0].textFragmentId, 'fushi-cue://s=0&ns=0&ne=8');

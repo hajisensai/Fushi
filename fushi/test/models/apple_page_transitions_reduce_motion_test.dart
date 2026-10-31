@@ -29,10 +29,7 @@ Widget _page(String label) => Scaffold(
   body: Align(alignment: Alignment.topLeft, child: Text(label)),
 );
 
-Future<void> _pumpApp(
-  WidgetTester tester, {
-  required bool reduceMotion,
-}) async {
+Future<void> _pumpApp(WidgetTester tester, {required bool reduceMotion}) async {
   await tester.pumpWidget(
     MaterialApp(
       navigatorKey: _navigatorKey,

@@ -21,10 +21,10 @@ void main() {
   });
 
   test('dart-define root wins over process environment', () {
-    final Directory envRoot =
-        Directory.systemTemp.createTempSync('fushi-env-');
-    final Directory defineRoot =
-        Directory.systemTemp.createTempSync('fushi-define-');
+    final Directory envRoot = Directory.systemTemp.createTempSync('fushi-env-');
+    final Directory defineRoot = Directory.systemTemp.createTempSync(
+      'fushi-define-',
+    );
     addTearDown(() => envRoot.deleteSync(recursive: true));
     addTearDown(() => defineRoot.deleteSync(recursive: true));
 

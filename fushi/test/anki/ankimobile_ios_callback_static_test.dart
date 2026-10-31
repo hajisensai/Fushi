@@ -35,11 +35,15 @@ void main() {
     const String caseAnchor = 'case "consumeInfoForAddingPasteboard":';
     final int caseStart = src.indexOf(caseAnchor);
     expect(caseStart, greaterThan(-1), reason: '锚点漂移，守卫失效');
-    final int caseEnd =
-        src.indexOf('case "beginMediaImportBackgroundTask":', caseStart);
+    final int caseEnd = src.indexOf(
+      'case "beginMediaImportBackgroundTask":',
+      caseStart,
+    );
     expect(caseEnd, greaterThan(caseStart), reason: '找不到下一个 case，截取失败');
-    final String caseBody =
-        src.substring(caseStart + caseAnchor.length, caseEnd);
+    final String caseBody = src.substring(
+      caseStart + caseAnchor.length,
+      caseEnd,
+    );
     // 自检：截出来的必须真是那个 case 的 body，否则下面两条断言都变成空转。
     expect(caseBody.trim(), isNotEmpty, reason: '截出的 case body 是空的');
     expect(

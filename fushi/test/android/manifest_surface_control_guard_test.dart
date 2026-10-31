@@ -31,44 +31,52 @@ void main() {
   // Tests run with CWD = `fushi/`.
   final File manifestFile = File('android/app/src/main/AndroidManifest.xml');
 
-  test('manifest disables SurfaceControl backend (EnableSurfaceControl=false)',
-      () {
-    expect(manifestFile.existsSync(), isTrue,
-        reason: 'TODO-1110/BUG-535 fix lives in this manifest');
-    final String manifest = manifestFile.readAsStringSync();
+  test(
+    'manifest disables SurfaceControl backend (EnableSurfaceControl=false)',
+    () {
+      expect(
+        manifestFile.existsSync(),
+        isTrue,
+        reason: 'TODO-1110/BUG-535 fix lives in this manifest',
+      );
+      final String manifest = manifestFile.readAsStringSync();
 
-    // Match the <meta-data> pair regardless of attribute order / whitespace.
-    final RegExp metaData = RegExp(
-      r'<meta-data\b[^>]*?'
-      r'io\.flutter\.embedding\.android\.EnableSurfaceControl'
-      r'[^>]*?android:value="([^"]*)"',
-      dotAll: true,
-    );
-    // Also accept the reverse attribute order (value before name).
-    final RegExp metaDataReversed = RegExp(
-      r'<meta-data\b[^>]*?android:value="([^"]*)"[^>]*?'
-      r'io\.flutter\.embedding\.android\.EnableSurfaceControl',
-      dotAll: true,
-    );
+      // Match the <meta-data> pair regardless of attribute order / whitespace.
+      final RegExp metaData = RegExp(
+        r'<meta-data\b[^>]*?'
+        r'io\.flutter\.embedding\.android\.EnableSurfaceControl'
+        r'[^>]*?android:value="([^"]*)"',
+        dotAll: true,
+      );
+      // Also accept the reverse attribute order (value before name).
+      final RegExp metaDataReversed = RegExp(
+        r'<meta-data\b[^>]*?android:value="([^"]*)"[^>]*?'
+        r'io\.flutter\.embedding\.android\.EnableSurfaceControl',
+        dotAll: true,
+      );
 
-    final RegExpMatch? match =
-        metaData.firstMatch(manifest) ?? metaDataReversed.firstMatch(manifest);
+      final RegExpMatch? match =
+          metaData.firstMatch(manifest) ??
+          metaDataReversed.firstMatch(manifest);
 
-    expect(
-      match,
-      isNotNull,
-      reason: 'TODO-1110/BUG-535: manifest must declare a '
-          '<meta-data android:name="io.flutter.embedding.android.'
-          'EnableSurfaceControl" .../> entry; without it Android video can '
-          'show no picture (vo=null / texture never created) on ROMs where '
-          'SurfaceProducer.onSurfaceAvailable never fires',
-    );
-    expect(
-      match!.group(1),
-      'false',
-      reason: 'TODO-1110/BUG-535: EnableSurfaceControl must be "false" so '
-          'SurfaceProducer falls back to the classic surface path; flipping '
-          'it to "true" re-exposes the RMX3085/Android-11 black-screen bug',
-    );
-  });
+      expect(
+        match,
+        isNotNull,
+        reason:
+            'TODO-1110/BUG-535: manifest must declare a '
+            '<meta-data android:name="io.flutter.embedding.android.'
+            'EnableSurfaceControl" .../> entry; without it Android video can '
+            'show no picture (vo=null / texture never created) on ROMs where '
+            'SurfaceProducer.onSurfaceAvailable never fires',
+      );
+      expect(
+        match!.group(1),
+        'false',
+        reason:
+            'TODO-1110/BUG-535: EnableSurfaceControl must be "false" so '
+            'SurfaceProducer falls back to the classic surface path; flipping '
+            'it to "true" re-exposes the RMX3085/Android-11 black-screen bug',
+      );
+    },
+  );
 }

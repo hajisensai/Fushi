@@ -84,8 +84,11 @@ class VideoThumbnailPreviewOverlay extends StatelessWidget {
 
         final double thumbWidth = _baseThumbWidth * uiScale;
         final double bubbleWidth = thumbWidth;
-        final double left =
-            thumbnailPreviewLeft(state.fraction!, trackWidth, bubbleWidth);
+        final double left = thumbnailPreviewLeft(
+          state.fraction!,
+          trackWidth,
+          bubbleWidth,
+        );
 
         return Positioned(
           left: left,
@@ -131,8 +134,9 @@ class _PreviewBubble extends StatelessWidget {
 
     if (showThumb) {
       final ui.Image image = state.image!;
-      final double aspect =
-          image.height == 0 ? 16 / 9 : image.width / image.height;
+      final double aspect = image.height == 0
+          ? 16 / 9
+          : image.width / image.height;
       children.add(
         ClipRRect(
           borderRadius: BorderRadius.circular(radius),

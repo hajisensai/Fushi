@@ -22,10 +22,7 @@ void main() {
     });
 
     test('制卡计数（已聚合 count）累加进各窗口', () {
-      final events = <(String, int)>[
-        ('2026-06-07', 3),
-        ('2026-06-05', 2),
-      ];
+      final events = <(String, int)>[('2026-06-07', 3), ('2026-06-05', 2)];
       final b = bucketActivityByDateKey(events, now);
       expect(b.today, 3);
       expect(b.week, 5);

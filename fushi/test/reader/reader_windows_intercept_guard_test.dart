@@ -11,14 +11,20 @@ void main() {
     // reader_fushi/webview.part.dart，改读「主壳 + 全部 part」合并语料，
     // 否则负向守卫会因被守的代码搬出读取范围而无意义地恒过。
     final String code = readReaderPageSource();
-    expect(code.contains('InAppWebView('), isTrue,
-        reason: '合并语料应含 reader WebView 构建；测试需在 fushi/ 目录下运行');
+    expect(
+      code.contains('InAppWebView('),
+      isTrue,
+      reason: '合并语料应含 reader WebView 构建；测试需在 fushi/ 目录下运行',
+    );
 
     // 特例的特征：onReceivedError 分支内同时判 Platform.isWindows 与拦截域 host。
     final bool hasWindowsHostSpecialCase =
         code.contains('Platform.isWindows') &&
-            code.contains('request.url.host == ReaderFushiSource.kHost');
-    expect(hasWindowsHostSpecialCase, isFalse,
-        reason: 'Windows 拦截域假失败应由 fork 引擎层根治，阅读器页不得重新引入特例');
+        code.contains('request.url.host == ReaderFushiSource.kHost');
+    expect(
+      hasWindowsHostSpecialCase,
+      isFalse,
+      reason: 'Windows 拦截域假失败应由 fork 引擎层根治，阅读器页不得重新引入特例',
+    );
   });
 }

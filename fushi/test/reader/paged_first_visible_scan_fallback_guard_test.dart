@@ -89,7 +89,8 @@ void main() {
       expect(
         fallbacks,
         equals(3),
-        reason: '分页版三个失败出口都必须回退 firstVisibleCharOffsetByScanPaged，'
+        reason:
+            '分页版三个失败出口都必须回退 firstVisibleCharOffsetByScanPaged，'
             '否则竖排页顶 ruby/图片 caret 返 null → -1 → 跳过 commit → 切样式漂移',
       );
     });
@@ -98,124 +99,146 @@ void main() {
       expect(
         pagedGetFirstCode.contains('return -1'),
         isFalse,
-        reason: '分页版三失败出口的裸 return -1 是 TODO-773 漂移根因 A，'
+        reason:
+            '分页版三失败出口的裸 return -1 是 TODO-773 漂移根因 A，'
             '必须全部换成 firstVisibleCharOffsetByScanPaged 兜底',
       );
     });
 
-    test('分页 caret 探边仍用 body-relative 量纲 document.body.clientWidth（不漂回 window）',
-        () {
-      expect(
-        pagedGetFirst.contains('document.body.clientWidth - pr - 2'),
-        isTrue,
-        reason: '分页版 caret 竖排探边必须用 document.body.clientWidth（body-relative），'
-            '不得改用 window.innerWidth',
-      );
-    });
+    test(
+      '分页 caret 探边仍用 body-relative 量纲 document.body.clientWidth（不漂回 window）',
+      () {
+        expect(
+          pagedGetFirst.contains('document.body.clientWidth - pr - 2'),
+          isTrue,
+          reason:
+              '分页版 caret 竖排探边必须用 document.body.clientWidth（body-relative），'
+              '不得改用 window.innerWidth',
+        );
+      },
+    );
   });
 
   group('TODO-773 P0：分页兜底必须 body-relative，不得裸抄连续版 window 量纲', () {
     test(
-        '分页版 getFirstVisibleCharOffset 不调用连续版 window 量纲的 firstVisibleCharOffsetByScan',
-        () {
-      // 只允许出现带 Paged 后缀的分页专版调用，绝不能调用无后缀的连续版（window.innerWidth）。
-      expect(
-        pagedGetFirstCode.contains('this.firstVisibleCharOffsetByScan()'),
-        isFalse,
-        reason: '分页版禁止回退连续版 firstVisibleCharOffsetByScan（window.innerWidth 量纲），'
-            '必须用 body-relative 的 firstVisibleCharOffsetByScanPaged',
-      );
-    });
+      '分页版 getFirstVisibleCharOffset 不调用连续版 window 量纲的 firstVisibleCharOffsetByScan',
+      () {
+        // 只允许出现带 Paged 后缀的分页专版调用，绝不能调用无后缀的连续版（window.innerWidth）。
+        expect(
+          pagedGetFirstCode.contains('this.firstVisibleCharOffsetByScan()'),
+          isFalse,
+          reason:
+              '分页版禁止回退连续版 firstVisibleCharOffsetByScan（window.innerWidth 量纲），'
+              '必须用 body-relative 的 firstVisibleCharOffsetByScanPaged',
+        );
+      },
+    );
 
     test(
-        'firstVisibleCharOffsetByScanPaged 首边 = 翻页轴上的 content-box 起点（pagedFirstEdge）',
-        () {
-      expect(
-        pagedScanCode.contains('window.innerWidth'),
-        isFalse,
-        reason: '分页扫描兜底不得用 window 量纲 window.innerWidth',
-      );
-      expect(
-        pagedScan.contains('var firstEdge = this.pagedFirstEdge(axis);') &&
-            pagedScan.contains('var axis = this.pagedAxis();'),
-        isTrue,
-        reason: 'BUG-2492：首边必须是翻页轴上的 content-box 起点'
-            '（横排 padding-left / 竖排 padding-top / 竖排对开 padding-right），'
-            '不是连续版的 0 / body.clientWidth',
-      );
-      final String firstEdge = _functionSource(
-        source,
-        '  pagedFirstEdge: function(axisOrVertical) {',
-        '\n  pagedLastEdge: function(axisOrVertical) {',
-      );
-      expect(
-        firstEdge.contains('(parseFloat(cs.paddingTop) || 0)') &&
-            firstEdge.contains('(parseFloat(cs.paddingLeft) || 0)') &&
-            firstEdge.contains("if (axis === 'xr') return parseFloat(cs.paddingRight) || 0;"),
-        isTrue,
-        reason: 'pagedFirstEdge 竖排=padding-top、横排=padding-left、竖排对开（xr，到 body 右缘'
-            '的距离）=padding-right（与分页 caret 探点同量纲）',
-      );
-      // 兜底必须走分页专版的逐节点累加，不串到连续版。
-      expect(
-        pagedScan.contains('this.countCharsBeforeViewportPaged('),
-        isTrue,
-        reason:
-            '分页扫描兜底必须调 countCharsBeforeViewportPaged（传入 body-relative firstEdge）',
-      );
-    });
-
-    test('countCharsBeforeViewportPaged 判据用传入 firstEdge，不硬编码 window.innerWidth',
-        () {
-      expect(
-        pagedCountCharsCode.contains('window.innerWidth'),
-        isFalse,
-        reason: '分页版 countChars 不得用 window 量纲，首边一律走传入的 firstEdge 参数',
-      );
-      expect(
-        pagedCountChars.contains('this.isTextOffsetBeforeViewportPaged('),
-        isTrue,
-        reason: '二分必须调分页版 isTextOffsetBeforeViewportPaged（带 firstEdge）',
-      );
-      // 三态短路沿翻页轴：整个节点在首边之前 → 全计；整个节点在首边之后 → 0。
-      expect(
-        pagedCountChars.contains('if (maxEnd <= firstEdge) return totalChars;'),
-        isTrue,
-        reason: 'BUG-2492：「整节点在前页」= 翻页轴终边 <= firstEdge（横竖同式）',
-      );
-      expect(
-        pagedCountChars.contains(
-            'if (minStart >= firstEdge || minStart === Infinity) return 0;'),
-        isTrue,
-        reason: '「整节点在本页或之后」= 翻页轴起边 >= firstEdge（横竖同式）',
-      );
-      expect(
-        pagedCountChars.contains('var span = this.turnSpan(axis, rect);') &&
-            pagedCountChars.contains('minStart = Math.min(minStart, span.start);') &&
-            pagedCountChars.contains('maxEnd = Math.max(maxEnd, span.end);'),
-        isTrue,
-        reason: 'BUG-2492：翻页轴 = 竖排 y（top/bottom）、横排 x（left/right）、竖排对开 xr'
-            '（到右缘的距离），统一走 turnSpan；不是连续版的竖排 x / 横排 y',
-      );
-    });
+      'firstVisibleCharOffsetByScanPaged 首边 = 翻页轴上的 content-box 起点（pagedFirstEdge）',
+      () {
+        expect(
+          pagedScanCode.contains('window.innerWidth'),
+          isFalse,
+          reason: '分页扫描兜底不得用 window 量纲 window.innerWidth',
+        );
+        expect(
+          pagedScan.contains('var firstEdge = this.pagedFirstEdge(axis);') &&
+              pagedScan.contains('var axis = this.pagedAxis();'),
+          isTrue,
+          reason:
+              'BUG-2492：首边必须是翻页轴上的 content-box 起点'
+              '（横排 padding-left / 竖排 padding-top / 竖排对开 padding-right），'
+              '不是连续版的 0 / body.clientWidth',
+        );
+        final String firstEdge = _functionSource(
+          source,
+          '  pagedFirstEdge: function(axisOrVertical) {',
+          '\n  pagedLastEdge: function(axisOrVertical) {',
+        );
+        expect(
+          firstEdge.contains('(parseFloat(cs.paddingTop) || 0)') &&
+              firstEdge.contains('(parseFloat(cs.paddingLeft) || 0)') &&
+              firstEdge.contains(
+                "if (axis === 'xr') return parseFloat(cs.paddingRight) || 0;",
+              ),
+          isTrue,
+          reason:
+              'pagedFirstEdge 竖排=padding-top、横排=padding-left、竖排对开（xr，到 body 右缘'
+              '的距离）=padding-right（与分页 caret 探点同量纲）',
+        );
+        // 兜底必须走分页专版的逐节点累加，不串到连续版。
+        expect(
+          pagedScan.contains('this.countCharsBeforeViewportPaged('),
+          isTrue,
+          reason:
+              '分页扫描兜底必须调 countCharsBeforeViewportPaged（传入 body-relative firstEdge）',
+        );
+      },
+    );
 
     test(
-        'isTextOffsetBeforeViewportPaged 沿翻页轴判：turnSpan(axis).end<=firstEdge',
-        () {
-      expect(
-        pagedIsBeforeCode.contains('window.innerWidth'),
-        isFalse,
-        reason: '分页版单字符判据不得用 window 量纲',
-      );
-      expect(
-        pagedIsBefore.contains(
-            'return this.turnSpan(axis, rect).end <= firstEdge;'),
-        isTrue,
-        reason: 'BUG-2492：竖排 rect.bottom<=firstEdge（=padding-top）/ '
-            '横排 rect.right<=firstEdge（=padding-left）；连续版的 left>=clientWidth / '
-            'bottom<=0 在分页几何下前页永远不满足 → 兜底恒 0',
-      );
-    });
+      'countCharsBeforeViewportPaged 判据用传入 firstEdge，不硬编码 window.innerWidth',
+      () {
+        expect(
+          pagedCountCharsCode.contains('window.innerWidth'),
+          isFalse,
+          reason: '分页版 countChars 不得用 window 量纲，首边一律走传入的 firstEdge 参数',
+        );
+        expect(
+          pagedCountChars.contains('this.isTextOffsetBeforeViewportPaged('),
+          isTrue,
+          reason: '二分必须调分页版 isTextOffsetBeforeViewportPaged（带 firstEdge）',
+        );
+        // 三态短路沿翻页轴：整个节点在首边之前 → 全计；整个节点在首边之后 → 0。
+        expect(
+          pagedCountChars.contains(
+            'if (maxEnd <= firstEdge) return totalChars;',
+          ),
+          isTrue,
+          reason: 'BUG-2492：「整节点在前页」= 翻页轴终边 <= firstEdge（横竖同式）',
+        );
+        expect(
+          pagedCountChars.contains(
+            'if (minStart >= firstEdge || minStart === Infinity) return 0;',
+          ),
+          isTrue,
+          reason: '「整节点在本页或之后」= 翻页轴起边 >= firstEdge（横竖同式）',
+        );
+        expect(
+          pagedCountChars.contains('var span = this.turnSpan(axis, rect);') &&
+              pagedCountChars.contains(
+                'minStart = Math.min(minStart, span.start);',
+              ) &&
+              pagedCountChars.contains('maxEnd = Math.max(maxEnd, span.end);'),
+          isTrue,
+          reason:
+              'BUG-2492：翻页轴 = 竖排 y（top/bottom）、横排 x（left/right）、竖排对开 xr'
+              '（到右缘的距离），统一走 turnSpan；不是连续版的竖排 x / 横排 y',
+        );
+      },
+    );
+
+    test(
+      'isTextOffsetBeforeViewportPaged 沿翻页轴判：turnSpan(axis).end<=firstEdge',
+      () {
+        expect(
+          pagedIsBeforeCode.contains('window.innerWidth'),
+          isFalse,
+          reason: '分页版单字符判据不得用 window 量纲',
+        );
+        expect(
+          pagedIsBefore.contains(
+            'return this.turnSpan(axis, rect).end <= firstEdge;',
+          ),
+          isTrue,
+          reason:
+              'BUG-2492：竖排 rect.bottom<=firstEdge（=padding-top）/ '
+              '横排 rect.right<=firstEdge（=padding-left）；连续版的 left>=clientWidth / '
+              'bottom<=0 在分页几何下前页永远不满足 → 兜底恒 0',
+        );
+      },
+    );
 
     test('BUG-2492：getLastVisibleCharOffset(start) 先校验起点在本页，再走 isAtEnd 钳位', () {
       final String pagedGetLast = _functionSource(
@@ -223,32 +246,44 @@ void main() {
         '  getLastVisibleCharOffset: function(startOffset) {',
         '\n  pageInfo: function() {',
       );
-      final int check = pagedGetLast.indexOf('!this.charOffsetOnCurrentPage(startOffset)');
-      final int atEnd = pagedGetLast.indexOf('if (this.isAtEnd()) return metrics.totalChars;');
-      expect(check, isNonNegative,
-          reason: '传入起点必须经 charOffsetOnCurrentPage 校验，不在本页返 -1（Dart 不 arrive）');
+      final int check = pagedGetLast.indexOf(
+        '!this.charOffsetOnCurrentPage(startOffset)',
+      );
+      final int atEnd = pagedGetLast.indexOf(
+        'if (this.isAtEnd()) return metrics.totalChars;',
+      );
+      expect(
+        check,
+        isNonNegative,
+        reason: '传入起点必须经 charOffsetOnCurrentPage 校验，不在本页返 -1（Dart 不 arrive）',
+      );
       expect(atEnd, isNonNegative);
-      expect(check, lessThan(atEnd),
-          reason: '校验必须先于 isAtEnd 短路：末页起点错时钳到 total 同样是整段幻象');
+      expect(
+        check,
+        lessThan(atEnd),
+        reason: '校验必须先于 isAtEnd 短路：末页起点错时钳到 total 同样是整段幻象',
+      );
     });
   });
 
   group('TODO-773 P0：连续版 window 量纲三件套零改动（别误把分页量纲串进连续路径）', () {
     test(
-        '连续版 firstVisibleCharOffsetByScan 仍存在且仍调 countCharsBeforeViewport（无 Paged 后缀）',
-        () {
-      final String continuousScan = _functionSource(
-        source,
-        '  firstVisibleCharOffsetByScan: function() {',
-        '\n  // TODO-773 P0：分页版 getFirstVisibleCharOffset',
-      );
-      expect(
-        continuousScan
-            .contains('this.countCharsBeforeViewport(node, vertical)'),
-        isTrue,
-        reason: '连续版扫描兜底必须仍调无后缀的 countCharsBeforeViewport（window 量纲），不被改写',
-      );
-    });
+      '连续版 firstVisibleCharOffsetByScan 仍存在且仍调 countCharsBeforeViewport（无 Paged 后缀）',
+      () {
+        final String continuousScan = _functionSource(
+          source,
+          '  firstVisibleCharOffsetByScan: function() {',
+          '\n  // TODO-773 P0：分页版 getFirstVisibleCharOffset',
+        );
+        expect(
+          continuousScan.contains(
+            'this.countCharsBeforeViewport(node, vertical)',
+          ),
+          isTrue,
+          reason: '连续版扫描兜底必须仍调无后缀的 countCharsBeforeViewport（window 量纲），不被改写',
+        );
+      },
+    );
 
     test('连续版 isTextOffsetBeforeViewport 仍用 window.innerWidth（竖排首边）', () {
       final String continuousIsBefore = _functionSource(
@@ -258,14 +293,14 @@ void main() {
       );
       expect(
         continuousIsBefore.contains(
-            'return vertical ? rect.left >= window.innerWidth : rect.bottom <= 0;'),
+          'return vertical ? rect.left >= window.innerWidth : rect.bottom <= 0;',
+        ),
         isTrue,
         reason: '连续版（window 量纲）判据必须保持 window.innerWidth / 0，不得被分页改动污染',
       );
     });
 
-    test('连续版 getFirstVisibleCharOffset 仍回退连续版 firstVisibleCharOffsetByScan',
-        () {
+    test('连续版 getFirstVisibleCharOffset 仍回退连续版 firstVisibleCharOffsetByScan', () {
       final String continuousGetFirst = _functionSource(
         source,
         '  getFirstVisibleCharOffset: function() {\n    var vertical = this.isVertical();',

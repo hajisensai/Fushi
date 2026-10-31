@@ -92,8 +92,9 @@ Uint8List _wav(List<(double, double)> segments) {
   for (final (double seconds, double amp) in segments) {
     final int n = (seconds * rate).round();
     for (int i = 0; i < n; i++) {
-      samples
-          .add((math.sin(2 * math.pi * 440 * i / rate) * amp * 32767).round());
+      samples.add(
+        (math.sin(2 * math.pi * 440 * i / rate) * amp * 32767).round(),
+      );
     }
   }
   final ByteData b = ByteData(44 + samples.length * 2);
@@ -181,8 +182,9 @@ void main() {
 
   group('buildFfmpegPcmEnvelopeArgs metadataFilePath', () {
     test('appends escaped file= to ametadata only when a path is given', () {
-      final List<String> without =
-          buildFfmpegPcmEnvelopeArgs(inputPath: '/tmp/v.mkv');
+      final List<String> without = buildFfmpegPcmEnvelopeArgs(
+        inputPath: '/tmp/v.mkv',
+      );
       expect(_metadataFileArg(without), isNull);
 
       final List<String> withFile = buildFfmpegPcmEnvelopeArgs(
@@ -192,14 +194,18 @@ void main() {
       final String graph = withFile[withFile.indexOf('-af') + 1];
       expect(
         graph,
-        startsWith('aresample=8000,asetnsamples=n=800:p=0,'
-            'astats=metadata=1:reset=1:'
-            'measure_perchannel=none:measure_overall=RMS_level,'
-            'ametadata=print:key=lavfi.astats.Overall.RMS_level:file='),
+        startsWith(
+          'aresample=8000,asetnsamples=n=800:p=0,'
+          'astats=metadata=1:reset=1:'
+          'measure_perchannel=none:measure_overall=RMS_level,'
+          'ametadata=print:key=lavfi.astats.Overall.RMS_level:file=',
+        ),
       );
       expect(graph, endsWith(',asetnsamples=n=48000:p=0'));
-      expect(_decodeFilterOptionValue(_metadataFileArg(withFile)!),
-          "/tmp/a b,c/rms'.txt");
+      expect(
+        _decodeFilterOptionValue(_metadataFileArg(withFile)!),
+        "/tmp/a b,c/rms'.txt",
+      );
     });
   });
 
@@ -210,43 +216,48 @@ void main() {
       if (tmp.existsSync()) tmp.deleteSync(recursive: true);
     });
 
-    test('reads per-frame RMS from file when the backend returns no logs',
-        () async {
-      final File input = File('${tmp.path}/v.mkv')..writeAsBytesSync(<int>[0]);
-      final _FileOnlyBackend backend = _FileOnlyBackend(
-        'frame:0    pts:0       pts_time:0\n'
-        'lavfi.astats.Overall.RMS_level=-30.5\n'
-        'frame:1    pts:160     pts_time:0.02\n'
-        'lavfi.astats.Overall.RMS_level=-inf\n'
-        'frame:2    pts:320     pts_time:0.04\n'
-        'lavfi.astats.Overall.RMS_level=-12.25\n',
-      );
-      setFfmpegBackendForTesting(backend);
+    test(
+      'reads per-frame RMS from file when the backend returns no logs',
+      () async {
+        final File input = File('${tmp.path}/v.mkv')
+          ..writeAsBytesSync(<int>[0]);
+        final _FileOnlyBackend backend = _FileOnlyBackend(
+          'frame:0    pts:0       pts_time:0\n'
+          'lavfi.astats.Overall.RMS_level=-30.5\n'
+          'frame:1    pts:160     pts_time:0.02\n'
+          'lavfi.astats.Overall.RMS_level=-inf\n'
+          'frame:2    pts:320     pts_time:0.04\n'
+          'lavfi.astats.Overall.RMS_level=-12.25\n',
+        );
+        setFfmpegBackendForTesting(backend);
 
-      final List<double> env = await extractAudioEnergyEnvelope(
-        videoPath: input.path,
-        windowMs: kSubtitleWaveformWindowMs,
-      );
+        final List<double> env = await extractAudioEnergyEnvelope(
+          videoPath: input.path,
+          windowMs: kSubtitleWaveformWindowMs,
+        );
 
-      expect(env, <double>[-30.5, -120.0, -12.25]);
-      // 临时文件读完即删，不在缓存目录留垃圾。
-      expect(backend.decodedPath, isNotNull);
-      expect(File(backend.decodedPath!).existsSync(), isFalse);
-      expect(File(backend.decodedPath!).parent.existsSync(), isFalse);
-    });
+        expect(env, <double>[-30.5, -120.0, -12.25]);
+        // 临时文件读完即删，不在缓存目录留垃圾。
+        expect(backend.decodedPath, isNotNull);
+        expect(File(backend.decodedPath!).existsSync(), isFalse);
+        expect(File(backend.decodedPath!).parent.existsSync(), isFalse);
+      },
+    );
   });
 
   group('extractAudioEnergyEnvelope real ffmpeg', () {
     final String? ffmpeg = _realFfmpeg();
 
     test('writes per-frame RMS to a file under a hostile path', () async {
-      final Directory tmp =
-          Directory.systemTemp.createTempSync("energy a b,c;[x]'q 字");
+      final Directory tmp = Directory.systemTemp.createTempSync(
+        "energy a b,c;[x]'q 字",
+      );
       try {
         // 1s 静音 + 1s 响 + 1s 静音：20ms 窗口 → ~150 帧，中段明显更响。
         final File wav = File('${tmp.path}${Platform.pathSeparator}in.wav')
           ..writeAsBytesSync(
-              _wav(<(double, double)>[(1.0, 0.0), (1.0, 0.5), (1.0, 0.0)]));
+            _wav(<(double, double)>[(1.0, 0.0), (1.0, 0.5), (1.0, 0.0)]),
+          );
         final _FixedCliBackend backend = _FixedCliBackend(ffmpeg!);
         setFfmpegBackendForTesting(backend);
 
@@ -255,8 +266,11 @@ void main() {
           windowMs: kSubtitleWaveformWindowMs,
         );
 
-        expect(env.length, inInclusiveRange(140, 160),
-            reason: backend.lastOutput);
+        expect(
+          env.length,
+          inInclusiveRange(140, 160),
+          reason: backend.lastOutput,
+        );
         // 数据确实来自文件通道：stderr 里没有逐帧行。
         expect(parseAudioRmsEnvelopeFromFfmpegLog(backend.lastOutput), isEmpty);
         final double loud = env.sublist(60, 90).reduce(math.max);
@@ -285,8 +299,11 @@ void main() {
           limitMs: 10000,
         );
 
-        expect(env.length, inInclusiveRange(499, 501),
-            reason: backend.lastOutput);
+        expect(
+          env.length,
+          inInclusiveRange(499, 501),
+          reason: backend.lastOutput,
+        );
       } finally {
         tmp.deleteSync(recursive: true);
       }

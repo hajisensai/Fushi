@@ -21,7 +21,7 @@ Future<void> runBoundedTasks<T>(
   final int workers = maxConcurrent < items.length
       ? maxConcurrent
       : (items.isEmpty ? 0 : items.length);
-  await Future.wait<void>(
-    <Future<void>>[for (int i = 0; i < workers; i++) worker()],
-  );
+  await Future.wait<void>(<Future<void>>[
+    for (int i = 0; i < workers; i++) worker(),
+  ]);
 }

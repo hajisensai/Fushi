@@ -12,9 +12,13 @@ void main() {
   group('ForwardedMinePayload', () {
     test('synchronized video wire flag preserves one media payload', () {
       final payload = ForwardedMinePayload(
-        rawPayloadJson: '{}', sentence: 's', synchronizedVideo: true,
-        coverBytes: Uint8List.fromList(<int>[1]), coverExt: 'mp4',
-        sentenceAudioBytes: Uint8List.fromList(<int>[1]), sentenceAudioExt: 'mp4',
+        rawPayloadJson: '{}',
+        sentence: 's',
+        synchronizedVideo: true,
+        coverBytes: Uint8List.fromList(<int>[1]),
+        coverExt: 'mp4',
+        sentenceAudioBytes: Uint8List.fromList(<int>[1]),
+        sentenceAudioExt: 'mp4',
       );
       final json = payload.toJson();
       expect(json['synchronizedVideo'], isTrue);
@@ -48,12 +52,18 @@ void main() {
       expect(ForwardedMinePayload.fromJson(legacy.toJson()).sourceUrl, isNull);
     });
 
-    test('older peers omit synchronized video and retain independent audio', () {
-      const payload = ForwardedMinePayload(rawPayloadJson: '{}', sentence: 's');
-      final json = payload.toJson();
-      expect(json.containsKey('synchronizedVideo'), isFalse);
-      expect(ForwardedMinePayload.fromJson(json).synchronizedVideo, isFalse);
-    });
+    test(
+      'older peers omit synchronized video and retain independent audio',
+      () {
+        const payload = ForwardedMinePayload(
+          rawPayloadJson: '{}',
+          sentence: 's',
+        );
+        final json = payload.toJson();
+        expect(json.containsKey('synchronizedVideo'), isFalse);
+        expect(ForwardedMinePayload.fromJson(json).synchronizedVideo, isFalse);
+      },
+    );
 
     test('全字段（含四类媒体字节）round-trip', () {
       final ForwardedMinePayload p = ForwardedMinePayload(
@@ -74,9 +84,10 @@ void main() {
         wordAudioExt: 'mp3',
         dictionaryMedia: <ForwardedDictMedia>[
           ForwardedDictMedia(
-              dictionary: '明鏡',
-              path: 'a/b.svg',
-              bytes: Uint8List.fromList(<int>[7, 8])),
+            dictionary: '明鏡',
+            path: 'a/b.svg',
+            bytes: Uint8List.fromList(<int>[7, 8]),
+          ),
         ],
       );
 
@@ -108,11 +119,12 @@ void main() {
       // 服务端渲染 `{clip-timestamp}` 时两端 null → 空串（唯一有效性判据在
       // AnkiHandlebarRenderer.formatClipTimestamp）。旧版本对端不发这两个键，
       // 解析必须落 null 而不是 0/抛异常——否则整条远端制卡请求挂掉。
-      final ForwardedMinePayload r =
-          ForwardedMinePayload.fromJson(<String, dynamic>{
-        'rawPayloadJson': '{"expression":"猫"}',
-        'sentence': 'x',
-      });
+      final ForwardedMinePayload r = ForwardedMinePayload.fromJson(
+        <String, dynamic>{
+          'rawPayloadJson': '{"expression":"猫"}',
+          'sentence': 'x',
+        },
+      );
       expect(r.clipStartMs, isNull);
       expect(r.clipEndMs, isNull);
     });
@@ -140,43 +152,48 @@ void main() {
       expect(j['clipStartMs'], 0);
       expect(j['clipEndMs'], 4200);
       final ForwardedMinePayload r = ForwardedMinePayload.fromJson(
-          jsonDecode(jsonEncode(j)) as Map<String, dynamic>);
+        jsonDecode(jsonEncode(j)) as Map<String, dynamic>,
+      );
       expect(r.clipStartMs, 0);
       expect(r.clipEndMs, 4200);
     });
 
     test('rawPayloadJson 缺失/空 → FormatException（真正的坏请求）', () {
       expect(
-          () =>
-              ForwardedMinePayload.fromJson(<String, dynamic>{'sentence': 'x'}),
-          throwsFormatException);
+        () => ForwardedMinePayload.fromJson(<String, dynamic>{'sentence': 'x'}),
+        throwsFormatException,
+      );
       expect(
-          () => ForwardedMinePayload.fromJson(
-              <String, dynamic>{'rawPayloadJson': ''}),
-          throwsFormatException);
+        () => ForwardedMinePayload.fromJson(<String, dynamic>{
+          'rawPayloadJson': '',
+        }),
+        throwsFormatException,
+      );
     });
 
     test('坏 base64 媒体降级为 null，不抛', () {
-      final ForwardedMinePayload r =
-          ForwardedMinePayload.fromJson(<String, dynamic>{
-        'rawPayloadJson': '{}',
-        'coverBase64': '!!!not base64!!!',
-      });
+      final ForwardedMinePayload r = ForwardedMinePayload.fromJson(
+        <String, dynamic>{
+          'rawPayloadJson': '{}',
+          'coverBase64': '!!!not base64!!!',
+        },
+      );
       expect(r.coverBytes, isNull);
     });
 
     test('无字节的词典媒体条目被过滤掉', () {
-      final ForwardedMinePayload r =
-          ForwardedMinePayload.fromJson(<String, dynamic>{
-        'rawPayloadJson': '{}',
-        'dictionaryMedia': <dynamic>[
-          <String, dynamic>{'path': 'a.svg'}, // 无 base64 → 丢弃
-          <String, dynamic>{
-            'path': 'b.svg',
-            'base64': base64Encode(<int>[1])
-          },
-        ],
-      });
+      final ForwardedMinePayload r = ForwardedMinePayload.fromJson(
+        <String, dynamic>{
+          'rawPayloadJson': '{}',
+          'dictionaryMedia': <dynamic>[
+            <String, dynamic>{'path': 'a.svg'}, // 无 base64 → 丢弃
+            <String, dynamic>{
+              'path': 'b.svg',
+              'base64': base64Encode(<int>[1]),
+            },
+          ],
+        },
+      );
       expect(r.dictionaryMedia.length, 1);
       expect(r.dictionaryMedia.single.path, 'b.svg');
     });
@@ -190,8 +207,10 @@ void main() {
     });
 
     test('toJson 省略空的可选字段（体积/向后兼容）', () {
-      const ForwardedMinePayload p =
-          ForwardedMinePayload(rawPayloadJson: '{}', sentence: '');
+      const ForwardedMinePayload p = ForwardedMinePayload(
+        rawPayloadJson: '{}',
+        sentence: '',
+      );
       final Map<String, dynamic> j = p.toJson();
       expect(j.containsKey('coverBase64'), isFalse);
       expect(j.containsKey('dictionaryMedia'), isFalse);
@@ -211,24 +230,28 @@ void main() {
         charPositionTag: 'chars_12345',
       );
       final ForwardedMinePayload r = ForwardedMinePayload.fromJson(
-          jsonDecode(jsonEncode(p.toJson())) as Map<String, dynamic>);
+        jsonDecode(jsonEncode(p.toJson())) as Map<String, dynamic>,
+      );
       expect(r.charPositionTag, 'chars_12345');
     });
 
     test('制卡位置标签：旧对端不发这个键 → 解析成 null，卡照建', () {
       // 主机端 buildNoteTags 收到 null 就不追加这条 tag——绝不能因为对端版本旧
       // 就把整条远端制卡请求抛掉（对齐 clipStartMs/clipEndMs 的同一条纪律）。
-      final ForwardedMinePayload r =
-          ForwardedMinePayload.fromJson(<String, dynamic>{
-        'rawPayloadJson': '{"expression":"猫"}',
-        'sentence': 'x',
-      });
+      final ForwardedMinePayload r = ForwardedMinePayload.fromJson(
+        <String, dynamic>{
+          'rawPayloadJson': '{"expression":"猫"}',
+          'sentence': 'x',
+        },
+      );
       expect(r.charPositionTag, isNull);
     });
 
     test('制卡位置标签：null 时不写进 wire（旧服务端不会收到多余键）', () {
-      const ForwardedMinePayload p =
-          ForwardedMinePayload(rawPayloadJson: '{}', sentence: '');
+      const ForwardedMinePayload p = ForwardedMinePayload(
+        rawPayloadJson: '{}',
+        sentence: '',
+      );
       expect(p.toJson().containsKey('charPositionTag'), isFalse);
     });
   });

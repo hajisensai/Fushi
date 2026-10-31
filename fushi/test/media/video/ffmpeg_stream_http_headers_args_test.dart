@@ -28,8 +28,11 @@ void main() {
       );
       final int h = args.indexOf('-headers');
       expect(h, greaterThanOrEqualTo(0), reason: '非空头必须下发 -headers');
-      expect(args[h + 1], 'Origin: https://site.example\r\n',
-          reason: 'ffmpeg 的 -headers 块以 CRLF 分隔且末尾也要带一个');
+      expect(
+        args[h + 1],
+        'Origin: https://site.example\r\n',
+        reason: 'ffmpeg 的 -headers 块以 CRLF 分隔且末尾也要带一个',
+      );
       // 本函数只产出 `-i` 之前的输入选项，故「都在 -i 之前」= 本列表里不含 `-i`。
       expect(args.contains('-i'), isFalse);
     });
@@ -42,8 +45,11 @@ void main() {
           'Cookie': 'sid=abc',
         },
       );
-      expect(args.where((String a) => a == '-headers').length, 1,
-          reason: '多个头是一个块，不是多个 -headers');
+      expect(
+        args.where((String a) => a == '-headers').length,
+        1,
+        reason: '多个头是一个块，不是多个 -headers',
+      );
       final String block = args[args.indexOf('-headers') + 1];
       expect(block, 'Origin: https://site.example\r\nCookie: sid=abc\r\n');
     });
@@ -54,11 +60,17 @@ void main() {
         remote,
         httpHeaders: const <String, String>{'User-Agent': ua},
       );
-      expect(args.where((String a) => a == '-user_agent').length, 1,
-          reason: 'UA 只能下发一次，否则以哪个为准取决于选项解析顺序');
+      expect(
+        args.where((String a) => a == '-user_agent').length,
+        1,
+        reason: 'UA 只能下发一次，否则以哪个为准取决于选项解析顺序',
+      );
       expect(args[args.indexOf('-user_agent') + 1], ua);
-      expect(args.contains('-headers'), isFalse,
-          reason: 'UA 走专用选项，不该再进 -headers 块');
+      expect(
+        args.contains('-headers'),
+        isFalse,
+        reason: 'UA 走专用选项，不该再进 -headers 块',
+      );
     });
 
     test('调用方的 Referer 走 -referer，大小写不敏感', () {
@@ -81,12 +93,14 @@ void main() {
       final List<String> overridden = buildFfmpegRemoteInputArgs(
         bilibili,
         httpHeaders: const <String, String>{
-          'Referer': 'https://other.example/'
+          'Referer': 'https://other.example/',
         },
       );
       expect(overridden.where((String a) => a == '-referer').length, 1);
-      expect(overridden[overridden.indexOf('-referer') + 1],
-          'https://other.example/');
+      expect(
+        overridden[overridden.indexOf('-referer') + 1],
+        'https://other.example/',
+      );
     });
 
     test('ffmpeg 自己管的头被剔掉（Range/Accept-Encoding/Host 等）', () {
@@ -101,8 +115,11 @@ void main() {
           'Transfer-Encoding': 'chunked',
         },
       );
-      expect(args.contains('-headers'), isFalse,
-          reason: '这些头会打坏 ffmpeg 的分段读/解码，一条都不许下发');
+      expect(
+        args.contains('-headers'),
+        isFalse,
+        reason: '这些头会打坏 ffmpeg 的分段读/解码，一条都不许下发',
+      );
     });
 
     test('值里带 CR/LF 的头被剔掉（不许注入额外头行）', () {
@@ -142,12 +159,16 @@ void main() {
     });
 
     test('空 map 与本地输入 → 与改动前逐字节一致', () {
-      expect(buildFfmpegRemoteInputArgs(remote),
-          buildFfmpegRemoteInputArgs(remote, httpHeaders: const {}),
-          reason: '空 map 不许改变既有远端参数');
       expect(
-        buildFfmpegRemoteInputArgs(local,
-            httpHeaders: const <String, String>{'Referer': 'https://x/'}),
+        buildFfmpegRemoteInputArgs(remote),
+        buildFfmpegRemoteInputArgs(remote, httpHeaders: const {}),
+        reason: '空 map 不许改变既有远端参数',
+      );
+      expect(
+        buildFfmpegRemoteInputArgs(
+          local,
+          httpHeaders: const <String, String>{'Referer': 'https://x/'},
+        ),
         isEmpty,
         reason: '本地输入不加任何网络选项（头也一样）',
       );

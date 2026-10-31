@@ -28,10 +28,7 @@ import '../helpers/test_platform_services.dart';
 void main() {
   const String kShortcutItemId = 'system.keyboard_shortcuts';
 
-  SettingsItem? findById(
-    List<SettingsDestination> destinations,
-    String id,
-  ) {
+  SettingsItem? findById(List<SettingsDestination> destinations, String id) {
     for (final SettingsDestination dest in destinations) {
       for (final SettingsSection section in dest.sections) {
         for (final SettingsItem item in section.items) {
@@ -42,14 +39,13 @@ void main() {
     return null;
   }
 
-  testWidgets('shortcut settings entry is visible in system settings only',
-      (WidgetTester tester) async {
-    final FushiDatabase db =
-        FushiDatabase.forTesting(NativeDatabase.memory());
+  testWidgets('shortcut settings entry is visible in system settings only', (
+    WidgetTester tester,
+  ) async {
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
 
-    final ReaderSettings? prevReaderSettings =
-        ReaderFushiSource.readerSettings;
+    final ReaderSettings? prevReaderSettings = ReaderFushiSource.readerSettings;
     final ReaderSettings readerSettings = ReaderSettings(db);
     await readerSettings.refreshFromDb();
     ReaderFushiSource.readerSettings = readerSettings;
@@ -65,8 +61,9 @@ void main() {
           });
     addTearDown(themeNotifier.dispose);
 
-    final Directory tmpDir =
-        Directory.systemTemp.createTempSync('fushi_shortcut_entry_');
+    final Directory tmpDir = Directory.systemTemp.createTempSync(
+      'fushi_shortcut_entry_',
+    );
     addTearDown(() {
       try {
         tmpDir.deleteSync(recursive: true);
@@ -78,7 +75,9 @@ void main() {
       ..themeNotifier = themeNotifier
       ..wireDatabaseForTesting(db)
       ..wireLocalAudioForTesting(
-          prefsRepo: prefsRepo, databaseDirectory: tmpDir)
+        prefsRepo: prefsRepo,
+        databaseDirectory: tmpDir,
+      )
       ..populateLanguages()
       ..populateLocales();
 
@@ -86,26 +85,28 @@ void main() {
     Map<ReaderGroup, List<SettingsItem>> readerItems =
         const <ReaderGroup, List<SettingsItem>>{};
 
-    await tester.pumpWidget(ProviderScope(
-      overrides: <Override>[appProvider.overrideWith((Ref ref) => appModel)],
-      child: MaterialApp(
-        theme: ThemeData(useMaterial3: true),
-        home: Consumer(
-          builder: (BuildContext ctx, WidgetRef ref, _) {
-            final SettingsContext sctx = SettingsContext(
-              context: ctx,
-              appModel: ref.read(appProvider),
-              ref: ref,
-              readerSource: ReaderFushiSource.instance,
-              refresh: () {},
-            );
-            destinations = buildSettingsSchema(sctx);
-            readerItems = collectReaderItems(sctx);
-            return const SizedBox.shrink();
-          },
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: <Override>[appProvider.overrideWith((Ref ref) => appModel)],
+        child: MaterialApp(
+          theme: ThemeData(useMaterial3: true),
+          home: Consumer(
+            builder: (BuildContext ctx, WidgetRef ref, _) {
+              final SettingsContext sctx = SettingsContext(
+                context: ctx,
+                appModel: ref.read(appProvider),
+                ref: ref,
+                readerSource: ReaderFushiSource.instance,
+                refresh: () {},
+              );
+              destinations = buildSettingsSchema(sctx);
+              readerItems = collectReaderItems(sctx);
+              return const SizedBox.shrink();
+            },
+          ),
         ),
       ),
-    ));
+    );
     await tester.pump();
 
     // 1) 入口可见：出现在 schema 里（不再被注释隐藏）。
@@ -149,26 +150,34 @@ void main() {
     expect(inReading, isFalse, reason: '快捷键入口不应继续位于「阅读」设置分组下');
   });
 
-  test('shortcut settings entry is no longer commented out in schema source',
-      () {
-    final String source = File('lib/src/settings/settings_schema_system.dart')
-        .readAsStringSync()
-        .replaceAll('\r\n', '\n');
-    // 入口的 onTap 推 ShortcutSettingsPage，且推它的那行不能是注释行
-    // （旧隐藏态是整块 `// SettingsNavigationItem(...)` 注释）。
-    //
-    // 注释剥离改用共享的 `maskComments`（换等长空白）：旧写法只跳整行 `//`，
-    // 把整块入口改写成 `/* SettingsNavigationItem(...) */` 就能骗绿。
-    final String code = maskComments(source);
-    expect(code, contains('const ShortcutSettingsPage()'),
-        reason: '入口应推 ShortcutSettingsPage（注释里的同名文本不算）');
-    final List<String> activePageLines = code
-        .split('\n')
-        .where((String line) => line.contains('ShortcutSettingsPage'))
-        .toList();
-    expect(activePageLines, isNotEmpty,
-        reason: '推 ShortcutSettingsPage 的那行必须是未注释的真实代码');
-    // 这一条**必须**扫原文：它守的正是「旧隐藏态的那段注释」已被删除。
-    expect(source, isNot(contains('快捷键设置入口暂时隐藏')), reason: '旧的「暂时隐藏」注释应已移除');
-  });
+  test(
+    'shortcut settings entry is no longer commented out in schema source',
+    () {
+      final String source = File(
+        'lib/src/settings/settings_schema_system.dart',
+      ).readAsStringSync().replaceAll('\r\n', '\n');
+      // 入口的 onTap 推 ShortcutSettingsPage，且推它的那行不能是注释行
+      // （旧隐藏态是整块 `// SettingsNavigationItem(...)` 注释）。
+      //
+      // 注释剥离改用共享的 `maskComments`（换等长空白）：旧写法只跳整行 `//`，
+      // 把整块入口改写成 `/* SettingsNavigationItem(...) */` 就能骗绿。
+      final String code = maskComments(source);
+      expect(
+        code,
+        contains('const ShortcutSettingsPage()'),
+        reason: '入口应推 ShortcutSettingsPage（注释里的同名文本不算）',
+      );
+      final List<String> activePageLines = code
+          .split('\n')
+          .where((String line) => line.contains('ShortcutSettingsPage'))
+          .toList();
+      expect(
+        activePageLines,
+        isNotEmpty,
+        reason: '推 ShortcutSettingsPage 的那行必须是未注释的真实代码',
+      );
+      // 这一条**必须**扫原文：它守的正是「旧隐藏态的那段注释」已被删除。
+      expect(source, isNot(contains('快捷键设置入口暂时隐藏')), reason: '旧的「暂时隐藏」注释应已移除');
+    },
+  );
 }

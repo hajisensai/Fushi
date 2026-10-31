@@ -24,10 +24,10 @@ class AnkiCardTemplate {
   final String back;
 
   Map<String, dynamic> toJson() => <String, dynamic>{
-        'name': name,
-        'front': front,
-        'back': back,
-      };
+    'name': name,
+    'front': front,
+    'back': back,
+  };
 }
 
 /// 从后端读回的 note type 完整定义（字段顺序 / 卡模板 / CSS）。
@@ -48,9 +48,12 @@ class AnkiNoteTypeDefinition {
       AnkiNoteTypeDefinition(
         name: json['name'] as String? ?? '',
         fields: (json['fields'] as List?)?.cast<String>() ?? const <String>[],
-        templates: (json['templates'] as List?)
-                ?.map((dynamic e) =>
-                    AnkiCardTemplate.fromJson(e as Map<String, dynamic>))
+        templates:
+            (json['templates'] as List?)
+                ?.map(
+                  (dynamic e) =>
+                      AnkiCardTemplate.fromJson(e as Map<String, dynamic>),
+                )
                 .toList() ??
             const <AnkiCardTemplate>[],
         css: json['css'] as String? ?? '',
@@ -62,9 +65,9 @@ class AnkiNoteTypeDefinition {
   final String css;
 
   Map<String, dynamic> toJson() => <String, dynamic>{
-        'name': name,
-        'fields': fields,
-        'templates': templates.map((AnkiCardTemplate t) => t.toJson()).toList(),
-        'css': css,
-      };
+    'name': name,
+    'fields': fields,
+    'templates': templates.map((AnkiCardTemplate t) => t.toJson()).toList(),
+    'css': css,
+  };
 }

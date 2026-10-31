@@ -65,8 +65,9 @@ void main() {
         expression: 'normie',
         reading: '',
       );
-      final FavoriteSentence round =
-          FavoriteSentence.fromJson(withWord.toJson());
+      final FavoriteSentence round = FavoriteSentence.fromJson(
+        withWord.toJson(),
+      );
       expect(round.expression, 'normie');
       expect(round.reading, '');
 
@@ -77,14 +78,13 @@ void main() {
       );
       expect(plain.toJson().containsKey('expression'), isFalse);
       expect(plain.toJson().containsKey('reading'), isFalse);
-      final FavoriteSentence legacy = FavoriteSentence.fromJson(
-        <String, dynamic>{
-          'id': 'hl_1',
-          'text': '旧条目',
-          'bookTitle': 'Book',
-          'createdAt': DateTime(2026, 1, 1).toIso8601String(),
-        },
-      );
+      final FavoriteSentence legacy =
+          FavoriteSentence.fromJson(<String, dynamic>{
+            'id': 'hl_1',
+            'text': '旧条目',
+            'bookTitle': 'Book',
+            'createdAt': DateTime(2026, 1, 1).toIso8601String(),
+          });
       expect(legacy.expression, isNull);
       expect(legacy.reading, isNull);
     });
@@ -103,11 +103,11 @@ void main() {
     test('向后兼容：旧 JSON（无 source / 无 dateKey）→ 默认 book / null', () {
       final FavoriteSentence legacy =
           FavoriteSentence.fromJson(<String, dynamic>{
-        'id': 'hl_old',
-        'text': '旧条目',
-        'bookTitle': '旧本',
-        'createdAt': DateTime(2025, 1, 1).toIso8601String(),
-      });
+            'id': 'hl_old',
+            'text': '旧条目',
+            'bookTitle': '旧本',
+            'createdAt': DateTime(2025, 1, 1).toIso8601String(),
+          });
       expect(legacy.source, kFavoriteSentenceSourceBook);
       expect(legacy.dateKey, isNull);
       expect(legacy.id, 'hl_old');

@@ -7,13 +7,14 @@ import 'package:fushi/models.dart';
 class ClozeAfterField extends Field {
   /// Initialise this field with the predetermined and hardset values.
   ClozeAfterField._privateConstructor()
-      : super(
-          uniqueKey: key,
-          label: 'Cloze After',
-          description: 'Text after highlighted text in a sentence. '
-              'Empty if nothing is highlighted.',
-          icon: Icons.keyboard_double_arrow_right,
-        );
+    : super(
+        uniqueKey: key,
+        label: 'Cloze After',
+        description:
+            'Text after highlighted text in a sentence. '
+            'Empty if nothing is highlighted.',
+        icon: Icons.keyboard_double_arrow_right,
+      );
 
   /// Get the singleton instance of this field.
   static ClozeAfterField get instance => _instance;

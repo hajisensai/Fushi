@@ -44,14 +44,9 @@ void main() {
       );
       expect(
         html,
-        contains(
-          'window.fushiLapisEditor.selectField("primary-definition")',
-        ),
+        contains('window.fushiLapisEditor.selectField("primary-definition")'),
       );
-      expect(
-        html,
-        contains('window.fushiLapisEditor.showSide("back")'),
-      );
+      expect(html, contains('window.fushiLapisEditor.showSide("back")'));
       expect(html, contains('<body class="card card1">'));
     });
 
@@ -106,24 +101,27 @@ void main() {
       // 缺一条就说明预览与 selector 已经漂开（= 预览有效果、真机没反应）。
       const Map<LapisVisualField, List<String>> anchors =
           <LapisVisualField, List<String>>{
-        LapisVisualField.expression: <String>[
-          'class="front-vocab"',
-          'class="vocab"',
-        ],
-        LapisVisualField.reading: <String>['class="pitch"'],
-        LapisVisualField.sentence: <String>['id="hint"', 'class="sentence"'],
-        LapisVisualField.definitionInfo: <String>['class="def-info"'],
-        LapisVisualField.definitionBox: <String>['class="main-def"'],
-        LapisVisualField.definitionContent: <String>['class="definition"'],
-        LapisVisualField.selectedDefinition: <String>['id="selection"'],
-        LapisVisualField.primaryDefinition: <String>['id="primary"'],
-        LapisVisualField.glossaries: <String>['id="glossaries"'],
-        LapisVisualField.dictionaryEntry: <String>['<li data-dictionary='],
-        LapisVisualField.dictionaryName: <String>['<i data-fushi-lapis-'],
-        LapisVisualField.definitionExample: <String>[
-          'data-sc-content="example-sentence"',
-        ],
-      };
+            LapisVisualField.expression: <String>[
+              'class="front-vocab"',
+              'class="vocab"',
+            ],
+            LapisVisualField.reading: <String>['class="pitch"'],
+            LapisVisualField.sentence: <String>[
+              'id="hint"',
+              'class="sentence"',
+            ],
+            LapisVisualField.definitionInfo: <String>['class="def-info"'],
+            LapisVisualField.definitionBox: <String>['class="main-def"'],
+            LapisVisualField.definitionContent: <String>['class="definition"'],
+            LapisVisualField.selectedDefinition: <String>['id="selection"'],
+            LapisVisualField.primaryDefinition: <String>['id="primary"'],
+            LapisVisualField.glossaries: <String>['id="glossaries"'],
+            LapisVisualField.dictionaryEntry: <String>['<li data-dictionary='],
+            LapisVisualField.dictionaryName: <String>['<i data-fushi-lapis-'],
+            LapisVisualField.definitionExample: <String>[
+              'data-sc-content="example-sentence"',
+            ],
+          };
       expect(anchors.keys.toSet(), LapisVisualField.values.toSet());
       for (final MapEntry<LapisVisualField, List<String>> entry
           in anchors.entries) {
@@ -181,8 +179,10 @@ void main() {
       // 预览读的变量必须是真卡 userSettings() 也读的那些；漂开就等于预览
       // 和真卡两套布局语义。
       final RegExp option = RegExp(r"'(--[a-z-]+)'");
-      final Iterable<String> options =
-          option.allMatches(html).map((RegExpMatch m) => m.group(1)!).toSet();
+      final Iterable<String> options = option
+          .allMatches(html)
+          .map((RegExpMatch m) => m.group(1)!)
+          .toSet();
       expect(options, contains('--sentence-position'));
       expect(options, contains('--main-picture-position'));
       expect(options, contains('--audio-buttons'));

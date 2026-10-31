@@ -18,8 +18,9 @@ import 'package:flutter_test/flutter_test.dart';
 Directory _repoRoot() {
   var dir = Directory.current;
   for (var i = 0; i < 6; i++) {
-    if (File('${dir.path}/.github/workflows/release-desktop.yml')
-        .existsSync()) {
+    if (File(
+      '${dir.path}/.github/workflows/release-desktop.yml',
+    ).existsSync()) {
       return dir;
     }
     final parent = dir.parent;
@@ -48,18 +49,17 @@ void main() {
   final workflow = File('${root.path}/.github/workflows/release-desktop.yml');
 
   test('release-desktop.yml 不得使用 bash4+ only 的 mapfile/readarray', () {
-    expect(
-      workflow.existsSync(),
-      isTrue,
-      reason: '缺 ${workflow.path}',
-    );
+    expect(workflow.existsSync(), isTrue, reason: '缺 ${workflow.path}');
     final content = workflow.readAsStringSync();
-    final hits =
-        _bashOnlyBuiltinRe.allMatches(content).map((m) => m.group(0)).toList();
+    final hits = _bashOnlyBuiltinRe
+        .allMatches(content)
+        .map((m) => m.group(0))
+        .toList();
     expect(
       hits,
       isEmpty,
-      reason: 'release-desktop.yml 出现 bash 4+ builtin ${hits.toSet()}：GitHub '
+      reason:
+          'release-desktop.yml 出现 bash 4+ builtin ${hits.toSet()}：GitHub '
           'Actions 的 macOS runner 是 bash 3.2（无 mapfile/readarray），apple '
           '发布 job 会 `command not found` (exit 127)。请改用可移植的 '
           'while-read 循环：VAR=(); while IFS= read -r line; do VAR+=("\$line"); '
@@ -81,7 +81,8 @@ void main() {
     expect(
       hits,
       isEmpty,
-      reason: 'release-desktop.yml 出现 `[ ... ] && echo/printf` 惯用法：$hits。'
+      reason:
+          'release-desktop.yml 出现 `[ ... ] && echo/printf` 惯用法：$hits。'
           '当它处于 pipefail 管道 / brace-group 末尾且 test 为假时（空 CURRENT_SEQ '
           '或末尾无 -debug.<seq> 的 legacy 资产），整条返回 1，pipefail 传播、'
           'set -e 静默杀掉 prune 步骤（apple/windows 发布 job 无输出退 1）。请改用无 '
@@ -100,8 +101,7 @@ void main() {
   final reassignRe = RegExp(r'ASSET_NAMES=\("\$\{PLATFORM_ASSETS\[@\]\}"\)');
   final guardRe = RegExp(r'\$\{#PLATFORM_ASSETS\[@\]\}"?\s*-eq\s*0');
   for (final wf in [releaseYml, workflow]) {
-    test(
-        '${wf.uri.pathSegments.last} 的 PLATFORM_ASSETS 重赋值前必须先判空（防 macOS '
+    test('${wf.uri.pathSegments.last} 的 PLATFORM_ASSETS 重赋值前必须先判空（防 macOS '
         'bash 3.2 空数组 set -u 崩）', () {
       expect(wf.existsSync(), isTrue, reason: '缺 ${wf.path}');
       final content = wf.readAsStringSync();
@@ -116,7 +116,8 @@ void main() {
         expect(
           guardRe.hasMatch(before),
           isTrue,
-          reason: '${wf.path} 在 `ASSET_NAMES=("\${PLATFORM_ASSETS[@]}")`（偏移 '
+          reason:
+              '${wf.path} 在 `ASSET_NAMES=("\${PLATFORM_ASSETS[@]}")`（偏移 '
               '${m.start}）之前没有 `[ "\${#PLATFORM_ASSETS[@]}" -eq 0 ]` 判空早退：'
               '本平台在 rolling 上暂无资产时 PLATFORM_ASSETS 为空，`("\${empty[@]}")` '
               '在 macOS bash 3.2（apple job）+ set -u 下报 unbound variable 退 1，'

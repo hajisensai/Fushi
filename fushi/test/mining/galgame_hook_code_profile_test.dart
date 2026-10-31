@@ -21,8 +21,9 @@ ${repeated('a')}\t\t\t932\tHQ@1234\texecutable
   });
 
   test('profile store imports, persists, exports, and upserts', () async {
-    final Directory temp =
-        await Directory.systemTemp.createTemp('luna_profile');
+    final Directory temp = await Directory.systemTemp.createTemp(
+      'luna_profile',
+    );
     addTearDown(() => temp.delete(recursive: true));
     final File persistent = File('${temp.path}/profiles.tsv');
     final File imported = File('${temp.path}/import.tsv');
@@ -45,7 +46,9 @@ ${repeated('c')}\t\t\t932\tHQ@1234\tfirst
     );
     await store.exportTo(exported);
     expect(
-        parseLunaHookCodeProfiles(await exported.readAsString()), hasLength(2));
+      parseLunaHookCodeProfiles(await exported.readAsString()),
+      hasLength(2),
+    );
   });
 
   test('injector arguments pass profile and explicit diagnostic codes', () {
@@ -116,8 +119,9 @@ ${repeated('b')}\t\t\t932\tHQ@5678\told v2\tdefer-ms=8000
   });
 
   test('encode writes the Fushi header', () {
-    final String encoded =
-        encodeLunaHookCodeProfiles(const <LunaHookCodeProfile>[]);
+    final String encoded = encodeLunaHookCodeProfiles(
+      const <LunaHookCodeProfile>[],
+    );
     expect(encoded, startsWith('# Fushi Luna hook-code profiles v1.'));
   });
 
@@ -136,9 +140,12 @@ ${repeated('b')}\t\t\t932\tHQ@5678\told v2\tdefer-ms=8000
     ]);
     expect(encoded, contains('profiles v2.'));
     expect(
-        encoded,
-        contains('exe_sha256\tmodule_name\tmodule_sha256\tcodepage\t'
-            'hook_code\tlabel\toptions'));
+      encoded,
+      contains(
+        'exe_sha256\tmodule_name\tmodule_sha256\tcodepage\t'
+        'hook_code\tlabel\toptions',
+      ),
+    );
     expect(parseLunaHookCodeProfiles(encoded).single.options, options);
   });
 
@@ -164,16 +171,24 @@ ${repeated('b')}\t\t\t932\tHQ@5678\told v2\tdefer-ms=8000
   });
 
   test('the shipped native v2 profile table parses', () async {
-    final File shipped =
-        File('../native/galgame_hook/config/luna_hook_profiles.tsv');
+    final File shipped = File(
+      '../native/galgame_hook/config/luna_hook_profiles.tsv',
+    );
     // 真相源就在本仓：直接拿它当 fixture，Dart 侧与 native 侧的列定义漂开时必红。
-    expect(await shipped.exists(), isTrue,
-        reason: 'native 侧 profile 真相源应存在于 ${shipped.absolute.path}');
-    final List<LunaHookCodeProfile> parsed =
-        parseLunaHookCodeProfiles(await shipped.readAsString());
+    expect(
+      await shipped.exists(),
+      isTrue,
+      reason: 'native 侧 profile 真相源应存在于 ${shipped.absolute.path}',
+    );
+    final List<LunaHookCodeProfile> parsed = parseLunaHookCodeProfiles(
+      await shipped.readAsString(),
+    );
     expect(parsed, isNotEmpty);
-    expect(parsed.any((LunaHookCodeProfile p) => p.options.isNotEmpty), isTrue,
-        reason: 'v2 表里应至少有一行带 options');
+    expect(
+      parsed.any((LunaHookCodeProfile p) => p.options.isNotEmpty),
+      isTrue,
+      reason: 'v2 表里应至少有一行带 options',
+    );
   });
 
   // ── 向后兼容：v1 不能被 v2 改动破坏 ─────────────────────────────────────

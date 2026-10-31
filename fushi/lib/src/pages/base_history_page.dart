@@ -9,9 +9,7 @@ import 'package:fushi/utils.dart';
 /// given a selected media source.
 abstract class BaseHistoryPage extends BasePage {
   /// Create an instance of this tab page.
-  const BaseHistoryPage({
-    super.key,
-  });
+  const BaseHistoryPage({super.key});
 
   @override
   BaseHistoryPageState<BaseHistoryPage> createState();

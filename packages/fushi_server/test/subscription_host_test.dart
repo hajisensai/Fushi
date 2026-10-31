@@ -29,7 +29,9 @@ void main() {
       // 经 registry.resolveProvider 解析到这个同格式站点。
       NyaaVideoResourceProvider(
         client: NyaaClient(
-            baseUrl: 'https://bt.example.com', client: http.Client()),
+          baseUrl: 'https://bt.example.com',
+          client: http.Client(),
+        ),
         siteId: 'site1',
         categoryByDomain: const <VideoDiscoveryCategory, String>{
           VideoDiscoveryCategory.anime: '1_2',
@@ -41,7 +43,8 @@ void main() {
     target = VideoDownloadBackendTarget(
       identity: buildVideoDownloadBackendIdentity(
         config: const QbConnectionConfig(
-            backend: QbConnectionConfig.backendEmbedded),
+          backend: QbConnectionConfig.backendEmbedded,
+        ),
         resolvedBackend: QbConnectionConfig.backendEmbedded,
         embeddedInstallationId: 'host-device-1',
       ),
@@ -68,20 +71,21 @@ void main() {
     await db.close();
   });
 
-  HostSubscriptionCreateRequest req(
-          {String provider = 'nyaa:nyaa.si', String? id}) =>
-      HostSubscriptionCreateRequest(
-        title: 'Frieren',
-        searchQuery: 'Frieren 1080p',
-        mediaKind: 'tv',
-        resourceProvider: provider,
-        subscriptionId: id,
-        identityJson: '{"providerId":"mal","mediaId":"52991"}',
-        metadataProvider: 'mal',
-        externalId: '52991',
-        startAfterEpisode: 2,
-        subtitlePolicy: 'required',
-      );
+  HostSubscriptionCreateRequest req({
+    String provider = 'nyaa:nyaa.si',
+    String? id,
+  }) => HostSubscriptionCreateRequest(
+    title: 'Frieren',
+    searchQuery: 'Frieren 1080p',
+    mediaKind: 'tv',
+    resourceProvider: provider,
+    subscriptionId: id,
+    identityJson: '{"providerId":"mal","mediaId":"52991"}',
+    metadataProvider: 'mal',
+    externalId: '52991',
+    startAfterEpisode: 2,
+    subtitlePolicy: 'required',
+  );
 
   test('能力位：provider 清单 + 后端名', () async {
     final Map<String, Object?> cap = await host.capability();
@@ -91,8 +95,9 @@ void main() {
   });
 
   test('create：后端四元组与落地源用 host 自己的，客户端字段原样落库', () async {
-    final VideoDownloadSubscriptionRow row =
-        await host.create(req(id: 'video-discovery-abc'));
+    final VideoDownloadSubscriptionRow row = await host.create(
+      req(id: 'video-discovery-abc'),
+    );
     expect(row.subscriptionId, 'video-discovery-abc');
     expect(row.backendKind, target.identity.kind);
     expect(row.backendProfileId, target.identity.profileId);
@@ -122,29 +127,39 @@ void main() {
   test('create：provider 不在 host 上 → provider_unavailable（列出可用的）', () async {
     expect(
       () => host.create(req(provider: 'torznab:jackett')),
-      throwsA(isA<HostSubscriptionRejected>()
-          .having((HostSubscriptionRejected e) => e.reason, 'reason',
-              'provider_unavailable')
-          .having((HostSubscriptionRejected e) => e.message, 'message',
-              contains('nyaa'))),
+      throwsA(
+        isA<HostSubscriptionRejected>()
+            .having(
+              (HostSubscriptionRejected e) => e.reason,
+              'reason',
+              'provider_unavailable',
+            )
+            .having(
+              (HostSubscriptionRejected e) => e.message,
+              'message',
+              contains('nyaa'),
+            ),
+      ),
     );
   });
 
   test('create：Torznab indexer 按 torznab:<id> 报可用', () async {
-    final VideoResourceRegistry withTorznab = VideoResourceRegistry(<Object>[
-      ...registry.providers,
-      TorznabClient(
-        indexers: <TorznabIndexerConfig>[
-          TorznabIndexerConfig(
-            id: 'jackett',
-            name: 'Jackett',
-            endpoint: Uri.parse('https://j/api'),
-            apiKey: 'k',
-          ),
-        ],
-        client: http.Client(),
-      ),
-    ].cast());
+    final VideoResourceRegistry withTorznab = VideoResourceRegistry(
+      <Object>[
+        ...registry.providers,
+        TorznabClient(
+          indexers: <TorznabIndexerConfig>[
+            TorznabIndexerConfig(
+              id: 'jackett',
+              name: 'Jackett',
+              endpoint: Uri.parse('https://j/api'),
+              apiKey: 'k',
+            ),
+          ],
+          client: http.Client(),
+        ),
+      ].cast(),
+    );
     final PipelineSubscriptionHost h = PipelineSubscriptionHost(
       db: db,
       registry: withTorznab,
@@ -153,8 +168,10 @@ void main() {
       backendName: 'embedded',
       service: service,
     );
-    expect((await h.capability())['providers'],
-        <String>['nyaa', 'torznab:jackett']);
+    expect((await h.capability())['providers'], <String>[
+      'nyaa',
+      'torznab:jackett',
+    ]);
   });
 
   test('capability：停用的 Torznab indexer 不公布，其它 provider 照报（BUG-2818）', () async {
@@ -166,16 +183,18 @@ void main() {
           apiKey: 'k',
           enabled: enabled,
         );
-    final VideoResourceRegistry withTorznab = VideoResourceRegistry(<Object>[
-      ...registry.providers,
-      TorznabClient(
-        indexers: <TorznabIndexerConfig>[
-          indexer('on', enabled: true),
-          indexer('off', enabled: false),
-        ],
-        client: http.Client(),
-      ),
-    ].cast());
+    final VideoResourceRegistry withTorznab = VideoResourceRegistry(
+      <Object>[
+        ...registry.providers,
+        TorznabClient(
+          indexers: <TorznabIndexerConfig>[
+            indexer('on', enabled: true),
+            indexer('off', enabled: false),
+          ],
+          client: http.Client(),
+        ),
+      ].cast(),
+    );
     final PipelineSubscriptionHost h = PipelineSubscriptionHost(
       db: db,
       registry: withTorznab,
@@ -190,8 +209,9 @@ void main() {
   test('setEnabled / delete：未知 id 404；停用清租约、启用重排期', () async {
     final VideoDownloadSubscriptionRow row = await host.create(req(id: 's1'));
     await host.setEnabled('s1', false);
-    VideoDownloadSubscriptionRow? after =
-        await db.getVideoDownloadSubscription('s1');
+    VideoDownloadSubscriptionRow? after = await db.getVideoDownloadSubscription(
+      's1',
+    );
     expect(after!.enabled, isFalse);
     expect(after.claimedBy, isNull);
     await host.setEnabled('s1', true);
@@ -200,15 +220,25 @@ void main() {
     expect(after.nextCheckAt, greaterThanOrEqualTo(row.nextCheckAt!));
     expect(
       () => host.setEnabled('nope', true),
-      throwsA(isA<HostSubscriptionRejected>()
-          .having((HostSubscriptionRejected e) => e.status, 'status', 404)),
+      throwsA(
+        isA<HostSubscriptionRejected>().having(
+          (HostSubscriptionRejected e) => e.status,
+          'status',
+          404,
+        ),
+      ),
     );
     await host.delete('s1');
     expect(await host.list(), isEmpty);
     expect(
       () => host.delete('s1'),
-      throwsA(isA<HostSubscriptionRejected>()
-          .having((HostSubscriptionRejected e) => e.status, 'status', 404)),
+      throwsA(
+        isA<HostSubscriptionRejected>().having(
+          (HostSubscriptionRejected e) => e.status,
+          'status',
+          404,
+        ),
+      ),
     );
   });
 
@@ -224,13 +254,23 @@ void main() {
     expect((await off.capability())['supported'], isFalse);
     expect(
       () => off.create(req()),
-      throwsA(isA<HostSubscriptionRejected>().having(
-          (HostSubscriptionRejected e) => e.reason, 'reason', 'unsupported')),
+      throwsA(
+        isA<HostSubscriptionRejected>().having(
+          (HostSubscriptionRejected e) => e.reason,
+          'reason',
+          'unsupported',
+        ),
+      ),
     );
     expect(
       () => off.checkNow(null),
-      throwsA(isA<HostSubscriptionRejected>()
-          .having((HostSubscriptionRejected e) => e.status, 'status', 409)),
+      throwsA(
+        isA<HostSubscriptionRejected>().having(
+          (HostSubscriptionRejected e) => e.status,
+          'status',
+          409,
+        ),
+      ),
     );
   });
 }

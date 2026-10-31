@@ -66,8 +66,9 @@ void main() {
     bool childVisible = false,
     String childTerm = kTerm,
   }) {
-    final DictionaryPopupController c =
-        DictionaryPopupController(lowMemory: false);
+    final DictionaryPopupController c = DictionaryPopupController(
+      lowMemory: false,
+    );
     c.beginTop(
       term: '親',
       rect: const Rect.fromLTWH(0, 0, 1, 1),
@@ -173,8 +174,7 @@ void main() {
       expect(c.entries[1].selectionRect, firstCharScreen);
     });
 
-    testWidgets('子层已被更新的查词清出栈：迟到的重锚 no-op（不错位到别的层）',
-        (tester) async {
+    testWidgets('子层已被更新的查词清出栈：迟到的重锚 no-op（不错位到别的层）', (tester) async {
       final GlobalKey webViewKey = await pumpParentCard(tester);
       final DictionaryPopupController c = stackWithChild();
       c.truncateTo(1); // 只剩父层
@@ -194,8 +194,7 @@ void main() {
       expect(c.entries[0].selectionRect, parentRect, reason: '不得改到父层身上');
     });
 
-    testWidgets('同一下标已换成另一个词的子层：迟到的重锚 no-op（连点竞态）',
-        (tester) async {
+    testWidgets('同一下标已换成另一个词的子层：迟到的重锚 no-op（连点竞态）', (tester) async {
       // pushNestedPopup 的 beginTop 在 await searchDictionary **之前**同步压栈：
       // 高亮 eval 往返期间用户再点一个词，truncateTo+beginTop 立刻在同一下标建好
       // 另一个词的子层。只按位置取条目就会把上一个词的 bbox 锚到它身上。
@@ -247,8 +246,11 @@ void main() {
         screen: screen,
         maxHeight: 360,
       );
-      expect(popup.top, lessThan(wholeWordScreen.bottom),
-          reason: '这就是用户截图里的现象：弹窗顶边在第二行之上');
+      expect(
+        popup.top,
+        lessThan(wholeWordScreen.bottom),
+        reason: '这就是用户截图里的现象：弹窗顶边在第二行之上',
+      );
     });
 
     test('锚在整词 bbox ⇒ 弹窗完整落在选区之下', () {
@@ -278,8 +280,9 @@ void main() {
     });
 
     test('隐身热槽仍不受迟到回调影响（BUG-717 ② 既有不变式）', () {
-      final DictionaryPopupController c =
-          DictionaryPopupController(lowMemory: false)..seedWarmSlot();
+      final DictionaryPopupController c = DictionaryPopupController(
+        lowMemory: false,
+      )..seedWarmSlot();
       final DictionaryPopupEntry warm = c.entries.first;
       expect(warm.isWarmSlot, isTrue);
 
@@ -295,90 +298,92 @@ void main() {
   // 2026-09 弹窗内原地跳转（对齐 Hoshi Reader iOS）后，onLinkClick 通道不再叠子层
   // （同一 WebView 换词，无子层可重锚），四条车道收成两条：只剩两家宿主的
   // onTextSelected。计数从 ≥2 改成 ≥1，其余判据不变。
-  group('BUG-2054 源码守卫：嵌套（onTextSelected）车道都不得再丢弃 highlightSelection 的 bbox',
-      () {
-    // flutter test 的 cwd 是 fushi 包根。
-    final File webview = File(
-      'lib/src/pages/implementations/dictionary_popup_webview.dart',
-    );
-    final File mixin = File(
-      'lib/src/pages/implementations/dictionary_page_mixin.dart',
-    );
-    final File base = File('lib/src/pages/base_source_page.dart');
+  group(
+    'BUG-2054 源码守卫：嵌套（onTextSelected）车道都不得再丢弃 highlightSelection 的 bbox',
+    () {
+      // flutter test 的 cwd 是 fushi 包根。
+      final File webview = File(
+        'lib/src/pages/implementations/dictionary_popup_webview.dart',
+      );
+      final File mixin = File(
+        'lib/src/pages/implementations/dictionary_page_mixin.dart',
+      );
+      final File base = File('lib/src/pages/base_source_page.dart');
 
-    test('弹窗 WebView 的 highlightSelection 交回 Rect（不是 void 裸 eval）', () {
-      final String src = webview.readAsStringSync();
-      expect(
-        src.contains('Future<Rect?> highlightSelection(int charCount)'),
-        isTrue,
-        reason: 'highlightSelection 退回 void ⇒ 整词 bbox 又被丢掉',
-      );
-      expect(
-        src.contains('ReaderSelectionScripts.highlightRectFromResult('),
-        isTrue,
-        reason: '必须复用阅读器车道的解析器，不另造第二份',
-      );
-      expect(
-        src.contains('ReaderSelectionScripts.highlightInvocation('),
-        isTrue,
-        reason: 'eval 必须走带 JSON.stringify 的共享调用串，否则拿不到返回值',
-      );
-    });
+      test('弹窗 WebView 的 highlightSelection 交回 Rect（不是 void 裸 eval）', () {
+        final String src = webview.readAsStringSync();
+        expect(
+          src.contains('Future<Rect?> highlightSelection(int charCount)'),
+          isTrue,
+          reason: 'highlightSelection 退回 void ⇒ 整词 bbox 又被丢掉',
+        );
+        expect(
+          src.contains('ReaderSelectionScripts.highlightRectFromResult('),
+          isTrue,
+          reason: '必须复用阅读器车道的解析器，不另造第二份',
+        );
+        expect(
+          src.contains('ReaderSelectionScripts.highlightInvocation('),
+          isTrue,
+          reason: 'eval 必须走带 JSON.stringify 的共享调用串，否则拿不到返回值',
+        );
+      });
 
-    test('mixin 车道 onTextSelected 取回 bbox 并重锚子层', () {
-      // 跨 token 的调用串先去空白再比：tall 格式会把
-      // `entry.webViewKey.currentState?.highlightSelection(count)` 拆成两行，
-      // 逐字面匹配会在「代码没动、只是被格式化」时假红（CI 2026-09-21 实红一次）。
-      final String src = _withoutWhitespace(mixin.readAsStringSync());
-      expect(
-        'await entry.webViewKey.currentState?.highlightSelection(count)'
-            .replaceAll(' ', '')
-            .allMatches(src)
-            .length,
-        greaterThanOrEqualTo(1),
-        reason: 'onTextSelected 未取回整词 bbox',
-      );
-      expect(
-        'reanchorNestedPopupToWord('.allMatches(src).length,
-        greaterThanOrEqualTo(1),
-        reason: 'mixin onTextSelected 未重锚子层',
-      );
-      // 身份门：eval 往返期间同一下标可能已被另一个词的子层占住。
-      expect(
-        'expectedTerm:'.allMatches(src).length,
-        greaterThanOrEqualTo(1),
-        reason: 'mixin 重锚未带身份门 ⇒ 连点时会把上一个词的 bbox 锚到新子层',
-      );
-    });
+      test('mixin 车道 onTextSelected 取回 bbox 并重锚子层', () {
+        // 跨 token 的调用串先去空白再比：tall 格式会把
+        // `entry.webViewKey.currentState?.highlightSelection(count)` 拆成两行，
+        // 逐字面匹配会在「代码没动、只是被格式化」时假红（CI 2026-09-21 实红一次）。
+        final String src = _withoutWhitespace(mixin.readAsStringSync());
+        expect(
+          'await entry.webViewKey.currentState?.highlightSelection(count)'
+              .replaceAll(' ', '')
+              .allMatches(src)
+              .length,
+          greaterThanOrEqualTo(1),
+          reason: 'onTextSelected 未取回整词 bbox',
+        );
+        expect(
+          'reanchorNestedPopupToWord('.allMatches(src).length,
+          greaterThanOrEqualTo(1),
+          reason: 'mixin onTextSelected 未重锚子层',
+        );
+        // 身份门：eval 往返期间同一下标可能已被另一个词的子层占住。
+        expect(
+          'expectedTerm:'.allMatches(src).length,
+          greaterThanOrEqualTo(1),
+          reason: 'mixin 重锚未带身份门 ⇒ 连点时会把上一个词的 bbox 锚到新子层',
+        );
+      });
 
-    test('阅读器车道 onTextSelected 取回 bbox 并重锚子层', () {
-      final String src = _withoutWhitespace(base.readAsStringSync());
-      expect(
-        'await item.webViewKey.currentState?.highlightSelection(count)'
-            .replaceAll(' ', '')
-            .allMatches(src)
-            .length,
-        greaterThanOrEqualTo(1),
-        reason: 'onTextSelected 未取回整词 bbox',
-      );
-      expect(
-        'reanchorNestedPopupToWord('.allMatches(src).length,
-        greaterThanOrEqualTo(1),
-        reason: 'base_source_page onTextSelected 未重锚子层',
-      );
-      // 身份门：词形 + BUG-717② 的查词代次快照两道。
-      expect(
-        'expectedTerm:'.allMatches(src).length,
-        greaterThanOrEqualTo(1),
-        reason: 'base 重锚未带词形门 ⇒ 连点时会把上一个词的 bbox 锚到新子层',
-      );
-      expect(
-        'generation==activeLookupGeneration'.allMatches(src).length,
-        greaterThanOrEqualTo(1),
-        reason: 'base 重锚未带代次门（BUG-717② 已有的现成守卫）',
-      );
-    });
-  });
+      test('阅读器车道 onTextSelected 取回 bbox 并重锚子层', () {
+        final String src = _withoutWhitespace(base.readAsStringSync());
+        expect(
+          'await item.webViewKey.currentState?.highlightSelection(count)'
+              .replaceAll(' ', '')
+              .allMatches(src)
+              .length,
+          greaterThanOrEqualTo(1),
+          reason: 'onTextSelected 未取回整词 bbox',
+        );
+        expect(
+          'reanchorNestedPopupToWord('.allMatches(src).length,
+          greaterThanOrEqualTo(1),
+          reason: 'base_source_page onTextSelected 未重锚子层',
+        );
+        // 身份门：词形 + BUG-717② 的查词代次快照两道。
+        expect(
+          'expectedTerm:'.allMatches(src).length,
+          greaterThanOrEqualTo(1),
+          reason: 'base 重锚未带词形门 ⇒ 连点时会把上一个词的 bbox 锚到新子层',
+        );
+        expect(
+          'generation==activeLookupGeneration'.allMatches(src).length,
+          greaterThanOrEqualTo(1),
+          reason: 'base 重锚未带代次门（BUG-717② 已有的现成守卫）',
+        );
+      });
+    },
+  );
 }
 
 /// 源码扫描的比对基准：去掉全部空白。

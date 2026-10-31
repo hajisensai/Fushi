@@ -20,10 +20,7 @@ class SerialTaskQueue {
   /// 免疫，后续任务不被前一次异常卡死。
   Future<T> enqueue<T>(Future<T> Function() task) {
     final Future<T> result = _tail.then<T>((_) => task());
-    _tail = result.then<void>(
-      (_) {},
-      onError: (Object _, StackTrace __) {},
-    );
+    _tail = result.then<void>((_) {}, onError: (Object _, StackTrace __) {});
     return result;
   }
 }

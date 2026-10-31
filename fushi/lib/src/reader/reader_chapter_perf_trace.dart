@@ -69,8 +69,8 @@ class ReaderChapterPerfTrace {
     final String? json = raw is String
         ? raw
         : (raw is List && raw.isNotEmpty && raw.first is String
-            ? raw.first as String
-            : null);
+              ? raw.first as String
+              : null);
     if (json == null || json.isEmpty) return;
     try {
       final Object? decoded = jsonDecode(json);
@@ -105,8 +105,10 @@ class ReaderChapterPerfTrace {
         final Object? dcl = nav['dcl'];
         final Object? load = nav['load'];
         if (resp is num && dcl is num && load is num) {
-          _segments.add('nav.resp=${resp.round()}ms '
-              'nav.dcl=${dcl.round()}ms nav.load=${load.round()}ms');
+          _segments.add(
+            'nav.resp=${resp.round()}ms '
+            'nav.dcl=${dcl.round()}ms nav.load=${load.round()}ms',
+          );
           _current['nav.resp'] = resp.round();
           _current['nav.dcl'] = dcl.round();
           _current['nav.load'] = load.round();
@@ -126,8 +128,10 @@ class ReaderChapterPerfTrace {
     final int total = watch.elapsedMilliseconds;
     _current['total'] = total;
     completed.add(Map<String, int>.from(_current));
-    debugPrint('[chapter-perf] $_label total=${total}ms '
-        '${_segments.join(' ')}');
+    debugPrint(
+      '[chapter-perf] $_label total=${total}ms '
+      '${_segments.join(' ')}',
+    );
     _watch = null;
   }
 

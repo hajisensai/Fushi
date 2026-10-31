@@ -63,8 +63,9 @@ class DataRootMigrationTarget {
 
   /// 普通自定义数据根：两个根都落在 [dataRootPath] 下（TODO-935 的原语义）。
   factory DataRootMigrationTarget.customRoot(String dataRootPath) {
-    final (Directory documents, Directory support) =
-        AppPaths.rootsForDataRoot(dataRootPath);
+    final (Directory documents, Directory support) = AppPaths.rootsForDataRoot(
+      dataRootPath,
+    );
     return DataRootMigrationTarget._(
       pickedPath: dataRootPath,
       documentsRoot: documents,
@@ -80,13 +81,12 @@ class DataRootMigrationTarget {
     required String pickedPath,
     required String defaultDocumentsRoot,
     required String platformSupportRoot,
-  }) =>
-      DataRootMigrationTarget._(
-        pickedPath: pickedPath,
-        documentsRoot: Directory(defaultDocumentsRoot),
-        supportRoot: Directory(platformSupportRoot),
-        dataRootPrefValue: null,
-      );
+  }) => DataRootMigrationTarget._(
+    pickedPath: pickedPath,
+    documentsRoot: Directory(defaultDocumentsRoot),
+    supportRoot: Directory(platformSupportRoot),
+    dataRootPrefValue: null,
+  );
 
   /// 用户在目录选择器里真正挑中的路径。校验（自我迁移 / 安装目录）按它判定，与用户看到的
   /// 那个目录一致。
@@ -106,7 +106,8 @@ class DataRootMigrationTarget {
   bool get isDefaultLocation => dataRootPrefValue == null;
 
   @override
-  String toString() => 'DataRootMigrationTarget(picked: $pickedPath, '
+  String toString() =>
+      'DataRootMigrationTarget(picked: $pickedPath, '
       'documents: ${documentsRoot.path}, support: ${supportRoot.path}, '
       'dataRootPref: $dataRootPrefValue)';
 }
@@ -257,8 +258,10 @@ class DataRootMigrator {
     // 根根本不需要搬。这一条必须在建搬移计划**之前**判定：源=目标时既不能建搬移计划
     // （rename 到自己），也绝不能跑迁移末尾的 `_deleteOldSupportPreservingPrefs`
     // （那会把活着的 support 根里除 prefs 外的一切删光，包括刚"搬"过去的 fushi.db）。
-    final bool supportUnchanged =
-        p.equals(req.oldSupportRoot.path, newSupport.path);
+    final bool supportUnchanged = p.equals(
+      req.oldSupportRoot.path,
+      newSupport.path,
+    );
     // 目标 support 根已有内容（回到默认位置时 = 平台固定落点里的 `shared_preferences.json`）
     // → 逐顶层项**合并**搬入，不能整目录 rename（Windows 上 dst 非空必失败）。
     final bool mergeSupport =
@@ -282,15 +285,21 @@ class DataRootMigrator {
         : _prefsFileNamesToPreserveAt(req.oldSupportRoot);
     final List<_MovePlan> moves = <_MovePlan>[
       // documents：共享默认根（白名单非 null）只搬 Fushi 自有顶层项；自定义根整树搬。
-      _MovePlan(req.oldDocumentsRoot, newDocs,
-          includeTopLevelNames: req.documentsTopLevelIncludeNames,
-          excludeTopLevelNames: const <String>{}),
+      _MovePlan(
+        req.oldDocumentsRoot,
+        newDocs,
+        includeTopLevelNames: req.documentsTopLevelIncludeNames,
+        excludeTopLevelNames: const <String>{},
+      ),
       // BUG-1188：support 根未变（默认位置归一化）⇒ 一个搬移计划都不建。
       if (!supportUnchanged)
-        _MovePlan(req.oldSupportRoot, newSupport,
-            includeTopLevelNames: null,
-            excludeTopLevelNames: supportExclude,
-            mergeIntoDestination: mergeSupport),
+        _MovePlan(
+          req.oldSupportRoot,
+          newSupport,
+          includeTopLevelNames: null,
+          excludeTopLevelNames: supportExclude,
+          mergeIntoDestination: mergeSupport,
+        ),
     ];
     // BUG-1188：回滚时可以**整目录清掉**的「本次迁移自建子树」。support 根在两种情况下
     // 绝不能进这个列表：① 未变（它就是活着的平台固定落点，里面还躺着刚 rebase 完的
@@ -322,8 +331,9 @@ class DataRootMigrator {
       await _cleanupCreatedSubtrees(createdSubtrees);
       if (_isFileInUseError(e)) {
         throw DataRootMigrationException(
-            '有文件被占用，无法迁移数据（请关闭正在使用书库/音频的功能后重试），已回滚到旧根',
-            cause: e);
+          '有文件被占用，无法迁移数据（请关闭正在使用书库/音频的功能后重试），已回滚到旧根',
+          cause: e,
+        );
       }
       throw DataRootMigrationException('搬动数据目录失败，已回滚到旧根', cause: e);
     }
@@ -371,9 +381,10 @@ class DataRootMigrator {
       // 空操作）；同盘 rename 时 DB 随目录回到旧根；搬回失败时 DB 仍在新根，就地改写，
       // 绝不在没有主库的旧根上打开 [FushiDatabase]（那会新建一个空库）。
       await _rollbackMoves(done);
-      final String dbHome = File(
-        p.join(req.oldSupportRoot.path, fushiDatabaseFileName),
-      ).existsSync()
+      final String dbHome =
+          File(
+            p.join(req.oldSupportRoot.path, fushiDatabaseFileName),
+          ).existsSync()
           ? req.oldSupportRoot.path
           : newSupport.path;
       try {
@@ -392,9 +403,10 @@ class DataRootMigrator {
       }
       // fast-resume 同理：在文件**此刻所在**的根上反向改写（跨盘复制时旧根从未改写，
       // 反向改写是空操作；同盘 rename 时文件已随目录回到旧根）。
-      final String resumeHome = Directory(
-        embeddedTorrentFastResumeDirectory(req.oldDocumentsRoot.path),
-      ).existsSync()
+      final String resumeHome =
+          Directory(
+            embeddedTorrentFastResumeDirectory(req.oldDocumentsRoot.path),
+          ).existsSync()
           ? req.oldDocumentsRoot.path
           : newDocs.path;
       try {
@@ -436,7 +448,9 @@ class DataRootMigrator {
     // 而此时源根就是目标根（刚 rebase 好的 fushi.db 正躺在里面）。
     if (!supportUnchanged) {
       await _deleteOldSupportPreservingPrefs(
-          req.oldSupportRoot, supportExclude);
+        req.oldSupportRoot,
+        supportExclude,
+      );
     }
 
     return (newDocs, newSupport);
@@ -454,7 +468,8 @@ class DataRootMigrator {
     // `Documents` 根下的 16 个 Fushi 目录一键收进 `Documents\Fushi`。白名单为 null
     // （Fushi 专属根、整树搬移语义）时不适用：那时新根真会被连同整棵树搬走。
     final Set<String>? whitelist = req.documentsTopLevelIncludeNames;
-    final bool nestedInSharedDocuments = whitelist != null &&
+    final bool nestedInSharedDocuments =
+        whitelist != null &&
         AppPaths.isSafeNestedTargetInSharedDocuments(
           sharedDocumentsRoot: req.oldDocumentsRoot.path,
           newDataRoot: req.target.pickedPath,
@@ -474,7 +489,8 @@ class DataRootMigrator {
       final String canonExe = p.canonicalize(exe);
       if (p.isWithin(canonNew, canonExe)) {
         throw const DataRootMigrationException(
-            '新数据根不能是应用安装目录（含正在运行的程序），请另选一个空目录');
+          '新数据根不能是应用安装目录（含正在运行的程序），请另选一个空目录',
+        );
       }
     }
     // 目标的 documents/support 根若已存在且非空 → 拒绝（不覆盖已有数据）。
@@ -556,8 +572,10 @@ class DataRootMigrator {
     await dst.create(recursive: true);
     // 顶层项列举（非递归）：仅一层、成本低，保持同步无碍主 isolate。递归大树的开销在
     // _copyTreeVerified 的 _countFilesAsync（已异步化）里，不在此。
-    for (final FileSystemEntity entity
-        in src.listSync(recursive: false, followLinks: false)) {
+    for (final FileSystemEntity entity in src.listSync(
+      recursive: false,
+      followLinks: false,
+    )) {
       final String name = p.basename(entity.path);
       if (!plan.shouldMoveTopLevel(name)) continue; // 白名单外 / prefs 留原地。
       final String target = p.join(dst.path, name);
@@ -623,8 +641,7 @@ class DataRootMigrator {
   static bool shouldCopyAfterRenameFailureForTesting(
     int errorCode, {
     bool isMacOS = false,
-  }) =>
-      _shouldCopyAfterRenameErrorCode(errorCode, isMacOS: isMacOS);
+  }) => _shouldCopyAfterRenameErrorCode(errorCode, isMacOS: isMacOS);
 
   /// 仅供单测：直接驱动跨盘复制 + 进度回报，不依赖伪造 EXDEV/EXDEV-17 错误。复制 [src]
   /// 整树到 [dst] 并按真实文件数回报 (copied, total)，与生产跨盘路径走同一份逻辑。
@@ -651,8 +668,10 @@ class DataRootMigrator {
     if (progress != null) {
       progress.addToTotal(await _countFilesAsync(src));
     }
-    await for (final FileSystemEntity entity
-        in src.list(recursive: true, followLinks: false)) {
+    await for (final FileSystemEntity entity in src.list(
+      recursive: true,
+      followLinks: false,
+    )) {
       final String rel = p.relative(entity.path, from: src.path);
       final String target = p.join(dst.path, rel);
       if (entity is Directory) {
@@ -677,7 +696,8 @@ class DataRootMigrator {
     final int dstLen = await dst.length();
     if (srcLen != dstLen) {
       throw DataRootMigrationException(
-          '跨盘复制校验失败：$label 字节数不一致（$srcLen != $dstLen）');
+        '跨盘复制校验失败：$label 字节数不一致（$srcLen != $dstLen）',
+      );
     }
   }
 
@@ -687,8 +707,10 @@ class DataRootMigrator {
     int count = 0;
     // followLinks: false —— 绝不追 symlink/junction：用户 Documents 里的 shell
     // junction（My Music 等）ACL 全拒，追进去 list 直接 errno 5 硬炸（TODO-1226）。
-    await for (final FileSystemEntity e
-        in dir.list(recursive: true, followLinks: false)) {
+    await for (final FileSystemEntity e in dir.list(
+      recursive: true,
+      followLinks: false,
+    )) {
       if (e is File) count++;
     }
     return count;
@@ -781,9 +803,7 @@ class DataRootMigrator {
   ///
   /// BUG-1188：[subtrees] 由 `migrate` 计算——support 根未变 / 合并搬入时它**不在列表里**
   /// （那是活着的平台固定落点，删掉等于抹掉用户全部设置）。
-  static Future<void> _cleanupCreatedSubtrees(
-    List<Directory> subtrees,
-  ) async {
+  static Future<void> _cleanupCreatedSubtrees(List<Directory> subtrees) async {
     for (final Directory sub in subtrees) {
       try {
         await _deleteIfPresent(sub);
@@ -831,7 +851,7 @@ class DataRootMigrator {
     int maxAttempts = _lockRetryAttempts,
     Duration backoff = _lockRetryBackoff,
   }) async {
-    for (int attempt = 0;; attempt++) {
+    for (int attempt = 0; ; attempt++) {
       try {
         await op();
         return;
@@ -848,8 +868,7 @@ class DataRootMigrator {
     Future<void> Function() op, {
     int maxAttempts = 3,
     Duration backoff = Duration.zero,
-  }) =>
-      _withLockRetry(op, maxAttempts: maxAttempts, backoff: backoff);
+  }) => _withLockRetry(op, maxAttempts: maxAttempts, backoff: backoff);
 
   /// 跨盘 copy+verify **已成功**后删源。删源属清理、不属迁移关键路径：源被顽固锁住
   /// （删不掉）时**不判迁移失败**——校验过的完整数据已在新根、pref 随后照写、重启读
@@ -880,8 +899,10 @@ class DataRootMigrator {
   static Set<String> _prefsFileNamesToPreserveAt(Directory root) {
     if (!root.existsSync()) return const <String>{};
     final Set<String> names = <String>{};
-    for (final FileSystemEntity e
-        in root.listSync(recursive: false, followLinks: false)) {
+    for (final FileSystemEntity e in root.listSync(
+      recursive: false,
+      followLinks: false,
+    )) {
       if (e is! File) continue;
       final String name = p.basename(e.path);
       if (_isPrefsFileName(name)) names.add(name);
@@ -911,8 +932,10 @@ class DataRootMigrator {
       return;
     }
     if (!await oldSupportRoot.exists()) return;
-    for (final FileSystemEntity e
-        in oldSupportRoot.listSync(recursive: false, followLinks: false)) {
+    for (final FileSystemEntity e in oldSupportRoot.listSync(
+      recursive: false,
+      followLinks: false,
+    )) {
       final String name = p.basename(e.path);
       if (preservedNames.contains(name)) continue; // 保住 prefs 本体。
       try {
@@ -948,8 +971,10 @@ class DataRootMigrator {
     Set<String> ignoreTopLevelNames = const <String>{},
   }) async {
     // followLinks: false —— 同 [_countFilesAsync]：不追 junction/symlink（TODO-1226）。
-    await for (final FileSystemEntity e
-        in dir.list(recursive: false, followLinks: false)) {
+    await for (final FileSystemEntity e in dir.list(
+      recursive: false,
+      followLinks: false,
+    )) {
       if (ignoreTopLevelNames.contains(p.basename(e.path))) continue;
       if (e is File) return true;
       if (e is Directory && await _hasAnyFileAsync(e)) return true;
@@ -961,8 +986,10 @@ class DataRootMigrator {
   /// 根需不需要走「合并搬入」——目标已有内容时整目录 rename 在 Windows 上必失败。
   static Future<bool> _hasAnyEntryAsync(Directory dir) async {
     if (!await dir.exists()) return false;
-    await for (final FileSystemEntity _
-        in dir.list(recursive: false, followLinks: false)) {
+    await for (final FileSystemEntity _ in dir.list(
+      recursive: false,
+      followLinks: false,
+    )) {
       return true;
     }
     return false;
@@ -1119,8 +1146,10 @@ class DataRootMigrator {
       final String? newPlaylist = _rebasePlaylistJson(v.playlistJson, docs);
       final String? newCover = docs.rebaseNullable(v.coverPath);
       final String? newSubtitle = rebaseSubtitleSource(v.subtitleSource, docs);
-      final String? newSecondary =
-          rebaseSubtitleSource(v.secondarySubtitleSource, docs);
+      final String? newSecondary = rebaseSubtitleSource(
+        v.secondarySubtitleSource,
+        docs,
+      );
       if (newVideoPath == v.videoPath &&
           newPlaylist == v.playlistJson &&
           newCover == v.coverPath &&
@@ -1157,8 +1186,9 @@ class DataRootMigrator {
     FushiDatabase db,
     DocumentsPathRebaser docs,
   ) async {
-    final List<QueryRow> rows =
-        await db.customSelect('SELECT file_path FROM video_file_specs').get();
+    final List<QueryRow> rows = await db
+        .customSelect('SELECT file_path FROM video_file_specs')
+        .get();
     for (final QueryRow row in rows) {
       final String oldPath = row.read<String>('file_path');
       final String newPath = docs.rebase(oldPath);
@@ -1182,8 +1212,9 @@ class DataRootMigrator {
   ) async {
     final List<QueryRow> rows = await db
         .customSelect(
-            'SELECT ed2k, file_size, file_path FROM anidb_file_identities '
-            'WHERE file_path IS NOT NULL')
+          'SELECT ed2k, file_size, file_path FROM anidb_file_identities '
+          'WHERE file_path IS NOT NULL',
+        )
         .get();
     for (final QueryRow row in rows) {
       final String oldPath = row.read<String>('file_path');
@@ -1195,7 +1226,7 @@ class DataRootMigrator {
         <Object?>[
           newPath,
           row.read<String>('ed2k'),
-          row.read<int>('file_size')
+          row.read<int>('file_size'),
         ],
       );
     }
@@ -1264,8 +1295,9 @@ class DataRootMigrator {
     DocumentsPathRebaser docs,
   ) async {
     for (final MediaCollectionRow c in await db.getAllMediaCollections()) {
-      final CollectionScrapeMetaRow? meta =
-          await db.getCollectionScrapeMeta(c.id);
+      final CollectionScrapeMetaRow? meta = await db.getCollectionScrapeMeta(
+        c.id,
+      );
       if (meta == null) continue;
       final String? newBackdrop = docs.rebaseNullable(meta.backdropPath);
       if (newBackdrop == meta.backdropPath) continue;
@@ -1415,8 +1447,9 @@ class DataRootMigrator {
     DocumentsPathRebaser docs,
   ) async {
     for (final MediaCollectionRow c in await db.getAllMediaCollections()) {
-      for (final CollectionRelationRow r
-          in await db.getCollectionRelations(c.id)) {
+      for (final CollectionRelationRow r in await db.getCollectionRelations(
+        c.id,
+      )) {
         final String? newCover = docs.rebaseNullable(r.coverPath);
         if (newCover == r.coverPath) continue;
         await db.customStatement(
@@ -1489,12 +1522,14 @@ class DataRootMigrator {
     DocumentsPathRebaser docs,
     String newSupportRoot,
   ) async {
-    final List<QueryRow> rows = await db.customSelect(
-      'SELECT id, key, value FROM profile_settings WHERE category = ?',
-      variables: <Variable<Object>>[
-        Variable<String>(ProfileKeys.categoryPref),
-      ],
-    ).get();
+    final List<QueryRow> rows = await db
+        .customSelect(
+          'SELECT id, key, value FROM profile_settings WHERE category = ?',
+          variables: <Variable<Object>>[
+            Variable<String>(ProfileKeys.categoryPref),
+          ],
+        )
+        .get();
     for (final QueryRow row in rows) {
       final String key = row.read<String>('key');
       final String value = row.read<String>('value');
@@ -1516,7 +1551,11 @@ class DataRootMigrator {
   /// 派生点与 `AppModel.startAnimeDownloadService`（`documentsSubdirectory(
   /// 'anime_downloads')` + [kEmbeddedTorrentFastResumeDirName]）一致。
   static String embeddedTorrentFastResumeDirectory(String documentsRoot) =>
-      p.join(documentsRoot, 'anime_downloads', kEmbeddedTorrentFastResumeDirName);
+      p.join(
+        documentsRoot,
+        'anime_downloads',
+        kEmbeddedTorrentFastResumeDirName,
+      );
 
   /// BUG-3541：把 [documentsRoot] 下内置引擎 fast-resume 文件里的绝对 `save_path`
   /// 按 [docs] 改写。
@@ -1537,8 +1576,9 @@ class DataRootMigrator {
     required String documentsRoot,
     required DocumentsPathRebaser docs,
   }) async {
-    final Directory dir =
-        Directory(embeddedTorrentFastResumeDirectory(documentsRoot));
+    final Directory dir = Directory(
+      embeddedTorrentFastResumeDirectory(documentsRoot),
+    );
     if (!dir.existsSync()) return const FastResumeRebase._(<_FastResumeFile>[]);
     final List<_FastResumeFile> pending = <_FastResumeFile>[];
     for (final FileSystemEntity entity in dir.listSync(followLinks: false)) {
@@ -1547,7 +1587,10 @@ class DataRootMigrator {
         continue;
       }
       final Uint8List original = entity.readAsBytesSync();
-      final Uint8List? rebased = rebaseFastResumeSavePath(original, docs.rebase);
+      final Uint8List? rebased = rebaseFastResumeSavePath(
+        original,
+        docs.rebase,
+      );
       if (rebased == null) continue;
       pending.add(_FastResumeFile(entity, original, rebased));
     }
@@ -1585,14 +1628,13 @@ class DataRootMigrator {
     required String newDocumentsRoot,
     required String newSupportRoot,
     required Set<String>? documentsScopeEntries,
-  }) =>
-      _rebaseDatabasePaths(
-        dbDirectory: dbDirectory,
-        oldDocumentsRoot: oldDocumentsRoot,
-        newDocumentsRoot: newDocumentsRoot,
-        newSupportRoot: newSupportRoot,
-        documentsScopeEntries: documentsScopeEntries,
-      );
+  }) => _rebaseDatabasePaths(
+    dbDirectory: dbDirectory,
+    oldDocumentsRoot: oldDocumentsRoot,
+    newDocumentsRoot: newDocumentsRoot,
+    newSupportRoot: newSupportRoot,
+    documentsScopeEntries: documentsScopeEntries,
+  );
 
   /// rebase 一个「JSON 字符串数组」里每个绝对路径（如 audioPathsJson）。非 JSON 列表
   /// 原样返回（一个坏行不该中断整次迁移）。
@@ -1763,8 +1805,8 @@ class DocumentsPathRebaser {
 
   static String _stripTrailingSeparator(String value) =>
       (value.endsWith('/') || value.endsWith('\\'))
-          ? value.substring(0, value.length - 1)
-          : value;
+      ? value.substring(0, value.length - 1)
+      : value;
 
   /// [path] 是否落在本次改写的作用域内。分隔符归一与边界判据与
   /// `backup_service.dart` 的 `rebasePath` 逐字节一致（`/a/books_extra` 不算在
@@ -1778,8 +1820,11 @@ class DocumentsPathRebaser {
     if (!normalized.startsWith('$root/')) return false;
     final Set<String>? scope = scopeTopLevelNames;
     if (scope == null) return true;
-    final String first =
-        normalized.substring(root.length + 1).split('/').first.toLowerCase();
+    final String first = normalized
+        .substring(root.length + 1)
+        .split('/')
+        .first
+        .toLowerCase();
     return scope.any((String owned) => owned.toLowerCase() == first);
   }
 
@@ -1836,9 +1881,14 @@ String rebaseSubtitleSourceMapJson(String json, DocumentsPathRebaser docs) {
   try {
     final dynamic decoded = jsonDecode(json);
     if (decoded is! Map) return json;
-    return jsonEncode(decoded.map<String, String>((dynamic k, dynamic v) =>
-        MapEntry<String, String>(
-            k.toString(), rebaseSubtitleSource(v.toString(), docs)!)));
+    return jsonEncode(
+      decoded.map<String, String>(
+        (dynamic k, dynamic v) => MapEntry<String, String>(
+          k.toString(),
+          rebaseSubtitleSource(v.toString(), docs)!,
+        ),
+      ),
+    );
   } catch (_) {
     return json;
   }
@@ -1909,14 +1959,20 @@ String rebaseMigratedPrefValue(
     case PathValueShape.audioSourceConfigsJson:
       return normalizeAudioSourceConfigsJson(value, newSupportRoot);
     case PathValueShape.legacyGalgameLibraryJson:
-      return _withPrefTag(value,
-          (String body) => rebaseLegacyGalgameLibraryJson(body, documents));
+      return _withPrefTag(
+        value,
+        (String body) => rebaseLegacyGalgameLibraryJson(body, documents),
+      );
     case PathValueShape.subtitleSourceMapJson:
       return _withPrefTag(
-          value, (String body) => rebaseSubtitleSourceMapJson(body, documents));
+        value,
+        (String body) => rebaseSubtitleSourceMapJson(body, documents),
+      );
     case PathValueShape.jsonStringList:
       return _withPrefTag(
-          value, (String body) => rebaseJsonStringListWith(body, documents));
+        value,
+        (String body) => rebaseJsonStringListWith(body, documents),
+      );
     case PathValueShape.bare:
       // support 根下的旧单库路径按**文件名**重挂（与 local_audio_dbs 同款、天然幂等）；
       // documents 根下的裸路径走作用域改写器。

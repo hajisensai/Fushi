@@ -46,13 +46,13 @@ class SubtitlePos {
 class SubtitleFade {
   /// `\fad(fadeInMs, fadeOutMs)` 简式。
   const SubtitleFade.simple(this.fadeInMs, this.fadeOutMs)
-      : _op1 = 0.0,
-        _op2 = 1.0,
-        _op3 = 0.0,
-        _t1 = null,
-        _t2 = null,
-        _t3 = null,
-        _t4 = null;
+    : _op1 = 0.0,
+      _op2 = 1.0,
+      _op3 = 0.0,
+      _t1 = null,
+      _t2 = null,
+      _t3 = null,
+      _t4 = null;
 
   /// `\fade(...)` 全式（alpha 已换算成 op 0..1，时间为绝对毫秒）。
   const SubtitleFade.full({
@@ -63,15 +63,15 @@ class SubtitleFade {
     required int t2,
     required int t3,
     required int t4,
-  })  : fadeInMs = 0,
-        fadeOutMs = 0,
-        _op1 = op1,
-        _op2 = op2,
-        _op3 = op3,
-        _t1 = t1,
-        _t2 = t2,
-        _t3 = t3,
-        _t4 = t4;
+  }) : fadeInMs = 0,
+       fadeOutMs = 0,
+       _op1 = op1,
+       _op2 = op2,
+       _op3 = op3,
+       _t1 = t1,
+       _t2 = t2,
+       _t3 = t3,
+       _t4 = t4;
 
   /// 简式淡入 / 淡出毫秒（全式恒 0，收尾时间走 [_t3]/[_t4]）。
   final int fadeInMs;
@@ -100,8 +100,16 @@ class SubtitleFade {
     return _evaluate(elapsedMs, t1, t2, t3, t4, _op1, _op2, _op3);
   }
 
-  static double _evaluate(int t, int t1, int t2, int t3, int t4, double op1,
-      double op2, double op3) {
+  static double _evaluate(
+    int t,
+    int t1,
+    int t2,
+    int t3,
+    int t4,
+    double op1,
+    double op2,
+    double op3,
+  ) {
     // 淡入段（含之前）：仅当 t<t2 才可能是 op1 / 入坡。零宽入坡（t1==t2，如 \fad(0,..)）时
     // t==t1 直接落到平台 op2（瞬时不透明），不会误显 op1（透明），也避免除零。
     if (t < t2) {
@@ -370,20 +378,25 @@ class SubtitleClipSegment {
   final double x2, y2;
   final double x3, y3;
   const SubtitleClipSegment.move(this.x1, this.y1)
-      : op = SubtitleClipOp.move,
-        x2 = 0,
-        y2 = 0,
-        x3 = 0,
-        y3 = 0;
+    : op = SubtitleClipOp.move,
+      x2 = 0,
+      y2 = 0,
+      x3 = 0,
+      y3 = 0;
   const SubtitleClipSegment.line(this.x1, this.y1)
-      : op = SubtitleClipOp.line,
-        x2 = 0,
-        y2 = 0,
-        x3 = 0,
-        y3 = 0;
+    : op = SubtitleClipOp.line,
+      x2 = 0,
+      y2 = 0,
+      x3 = 0,
+      y3 = 0;
   const SubtitleClipSegment.cubic(
-      this.x1, this.y1, this.x2, this.y2, this.x3, this.y3)
-      : op = SubtitleClipOp.cubic;
+    this.x1,
+    this.y1,
+    this.x2,
+    this.y2,
+    this.x3,
+    this.y3,
+  ) : op = SubtitleClipOp.cubic;
 }
 
 enum SubtitleClipOp { move, line, cubic }

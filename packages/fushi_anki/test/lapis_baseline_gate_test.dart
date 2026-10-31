@@ -52,12 +52,14 @@ void main() {
   test('ankiCssCarriesCurrentLapisBaseline 对 compose 的全部产物成立', () {
     expect(
       ankiCssCarriesCurrentLapisBaseline(
-          composeLapisCss(fontScalePercent: 100, customCss: '')),
+        composeLapisCss(fontScalePercent: 100, customCss: ''),
+      ),
       isTrue,
     );
     expect(
       ankiCssCarriesCurrentLapisBaseline(
-          composeLapisCss(fontScalePercent: 150, customCss: '.x{}')),
+        composeLapisCss(fontScalePercent: 150, customCss: '.x{}'),
+      ),
       isTrue,
     );
     expect(ankiCssCarriesCurrentLapisBaseline('.card { }'), isFalse);

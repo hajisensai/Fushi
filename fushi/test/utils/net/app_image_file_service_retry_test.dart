@@ -24,9 +24,9 @@ void main() {
     temp = await Directory.systemTemp.createTemp('fushi-image-retry-test-');
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
-      const MethodChannel('plugins.flutter.io/path_provider'),
-      (MethodCall call) async => temp.path,
-    );
+          const MethodChannel('plugins.flutter.io/path_provider'),
+          (MethodCall call) async => temp.path,
+        );
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     server.listen((HttpRequest request) async {
       requests++;
@@ -48,9 +48,9 @@ void main() {
     HttpOverrides.global = originalOverrides;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
-      const MethodChannel('plugins.flutter.io/path_provider'),
-      null,
-    );
+          const MethodChannel('plugins.flutter.io/path_provider'),
+          null,
+        );
     try {
       if (await temp.exists()) await temp.delete(recursive: true);
     } on FileSystemException {
@@ -90,8 +90,11 @@ void main() {
     await expectLater(
       service.get(url('down')),
       throwsA(
-        isA<HttpExceptionWithStatus>()
-            .having((HttpExceptionWithStatus e) => e.statusCode, 'status', 503),
+        isA<HttpExceptionWithStatus>().having(
+          (HttpExceptionWithStatus e) => e.statusCode,
+          'status',
+          503,
+        ),
       ),
     );
     expect(requests, 2);

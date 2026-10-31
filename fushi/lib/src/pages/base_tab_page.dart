@@ -8,9 +8,7 @@ import 'package:fushi/utils.dart';
 /// [BaseModuleTabPage] 的 MediaSource 特化子类：在共通 tab 生命周期之上
 /// 绑定 [MediaType]（tabRefreshNotifier 刷新信号 + [MediaSource] 代理渲染）。
 abstract class BaseTabPage extends BaseModuleTabPage {
-  const BaseTabPage({
-    super.key,
-  });
+  const BaseTabPage({super.key});
 
   @override
   BaseTabPageState<BaseTabPage> createState();
@@ -71,18 +69,15 @@ abstract class BaseTabPageState<T extends BaseTabPage>
       onTap: () async {
         await showAppDialog(
           context: context,
-          builder: (context) => MediaSourcePickerDialogPage(
-            mediaType: mediaType,
-          ),
+          builder: (context) =>
+              MediaSourcePickerDialogPage(mediaType: mediaType),
         );
         mediaType.refreshTab();
       },
     );
   }
 
-  Widget buildBackButton({
-    required VoidCallback onTap,
-  }) {
+  Widget buildBackButton({required VoidCallback onTap}) {
     return FushiIconButton(
       size: textTheme.titleLarge?.fontSize,
       tooltip: t.back,

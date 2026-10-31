@@ -131,7 +131,8 @@ void main() {
     expect(
       order,
       <String>['barrier', 'root'],
-      reason: 'app 根 Listener 是 Overlay 的祖先，不被 barrier 叶子的 opaque 排除；'
+      reason:
+          'app 根 Listener 是 Overlay 的祖先，不被 barrier 叶子的 opaque 排除；'
           '页面层才是被 opaque 兄弟挡住的那个（故不出现在序列里）',
     );
   });
@@ -180,7 +181,8 @@ void main() {
     expect(
       fired,
       <String>['dismissDict'],
-      reason: '修复前这里是 [dismissDict, pop]：一次侧键关词典 + 退书，'
+      reason:
+          '修复前这里是 [dismissDict, pop]：一次侧键关词典 + 退书，'
           '而键盘 Esc 在同样状态下只关词典',
     );
   });
@@ -267,11 +269,9 @@ void main() {
     );
     await pressBack(tester);
 
-    expect(
-      fired,
-      <String>['pageStagedExit'],
-      reason: '页面的逐级退出赢，app 根的平 maybePop 让路',
-    );
+    expect(fired, <String>[
+      'pageStagedExit',
+    ], reason: '页面的逐级退出赢，app 根的平 maybePop 让路');
   });
 
   // ── 第二条腿：弹窗矩形**之内**（BUG-2031 收尾） ──────────────────────────────
@@ -292,8 +292,9 @@ void main() {
     FushiShortcutRegistry backOnMouse3() =>
         registryWith(<ShortcutAction, int>{ShortcutAction.globalBack: 3});
 
-    const DictionaryPopupInputSpec spec =
-        DictionaryPopupInputSpec(mouseButtons: <int>[3]);
+    const DictionaryPopupInputSpec spec = DictionaryPopupInputSpec(
+      mouseButtons: <int>[3],
+    );
 
     /// [popupSurface] 决定弹窗矩形之内那条腿怎么接：生产实现，还是「不认领」的对照组。
     Future<GlobalKey<NavigatorState>> pumpRealTree(
@@ -308,10 +309,10 @@ void main() {
           navigatorKey: navigatorKey,
           builder: (BuildContext context, Widget? child) =>
               wrapWithGlobalNavigation(
-            navigatorKey: navigatorKey,
-            registry: registry,
-            child: child!,
-          ),
+                navigatorKey: navigatorKey,
+                registry: registry,
+                child: child!,
+              ),
           home: const Scaffold(body: SizedBox.expand()),
         ),
       );
@@ -343,17 +344,17 @@ void main() {
     /// 与是否挂 WebView 无关（沿用 `test/pages/dictionary_popup_pointer_input_test.dart`
     /// 的既有范式）。
     Widget realPopupLayer(List<String> tokens) => DictionaryPopupLayer(
-          result: DictionarySearchResult(searchTerm: ''),
-          webViewKey: GlobalKey(),
-          onDismiss: () {},
-          onTextSelected: (_, __, ___) {},
-          onLinkClick: (_, __) {},
-          onMineEntry: (_) async => const MinePopupResult(),
-          onDuplicateCheck: (_, __) async => false,
-          inputSpec: spec,
-          onHostInputToken: tokens.add,
-          debugHostOwnsPointer: true,
-        );
+      result: DictionarySearchResult(searchTerm: ''),
+      webViewKey: GlobalKey(),
+      onDismiss: () {},
+      onTextSelected: (_, __, ___) {},
+      onLinkClick: (_, __) {},
+      onMineEntry: (_) async => const MinePopupResult(),
+      onDuplicateCheck: (_, __) async => false,
+      inputSpec: spec,
+      onHostInputToken: tokens.add,
+      debugHostOwnsPointer: true,
+    );
 
     Future<void> pressBackOn(WidgetTester tester, Finder target) async {
       final Offset at = tester.getCenter(target);
@@ -373,9 +374,7 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    testWidgets('指针压在浮窗上按侧键：弹窗表面消费并认领，app 根必须让路', (
-      WidgetTester tester,
-    ) async {
+    testWidgets('指针压在浮窗上按侧键：弹窗表面消费并认领，app 根必须让路', (WidgetTester tester) async {
       final List<String> tokens = <String>[];
       final GlobalKey<NavigatorState> navigatorKey = await pumpRealTree(
         tester,
@@ -385,22 +384,17 @@ void main() {
 
       await pressBackOn(tester, find.byType(DictionaryPopupLayer));
 
-      expect(
-        tokens,
-        <String>['Mouse3'],
-        reason: '弹窗表面必须真的接到这次按下（否则本条测错了对象）',
-      );
+      expect(tokens, <String>['Mouse3'], reason: '弹窗表面必须真的接到这次按下（否则本条测错了对象）');
       expect(
         navigatorKey.currentState!.canPop(),
         isTrue,
-        reason: '修复前这里是「关词典 + 退书」：弹窗表面折完 token 就往下走、一个 '
+        reason:
+            '修复前这里是「关词典 + 退书」：弹窗表面折完 token 就往下走、一个 '
             'claim 都没有，而 app 根兜底是它的祖先，opaque/deferToChild 都排除不掉祖先',
       );
     });
 
-    testWidgets('对照组：同一棵树里换成不认领的腿，app 根确实会再派发一次', (
-      WidgetTester tester,
-    ) async {
+    testWidgets('对照组：同一棵树里换成不认领的腿，app 根确实会再派发一次', (WidgetTester tester) async {
       final List<String> tokens = <String>[];
       final GlobalKey<NavigatorState> navigatorKey = await pumpRealTree(
         tester,
@@ -426,7 +420,8 @@ void main() {
       expect(
         navigatorKey.currentState!.canPop(),
         isFalse,
-        reason: '这条钉住「生产的 app 根兜底确实活着、且祖先照样收得到」。'
+        reason:
+            '这条钉住「生产的 app 根兜底确实活着、且祖先照样收得到」。'
             '它一旦变绿，说明根兜底被打死了 —— 上一条也就跟着变成恒真的假绿',
       );
     });

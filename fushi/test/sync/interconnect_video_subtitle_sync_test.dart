@@ -27,7 +27,8 @@ import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
-const String _srtContent = '1\n'
+const String _srtContent =
+    '1\n'
     '00:00:01,000 --> 00:00:02,000\n'
     'こんにちは\n'
     '\n'
@@ -42,16 +43,15 @@ LocalLibraryHostService _hostService({
   required FushiDatabase db,
   required Directory work,
   Directory? uploads,
-}) =>
-    LocalLibraryHostService(
-      db: db,
-      dictionaryResourceRoot: work,
-      packages: SyncAssetPackageService(db: db),
-      refreshDictionaryCache: () async {},
-      runExclusive: (Future<void> Function() body) => body(),
-      uploadedVideoRoot: uploads,
-      videoSubtitleLangCode: 'ja',
-    );
+}) => LocalLibraryHostService(
+  db: db,
+  dictionaryResourceRoot: work,
+  packages: SyncAssetPackageService(db: db),
+  refreshDictionaryCache: () async {},
+  runExclusive: (Future<void> Function() body) => body(),
+  uploadedVideoRoot: uploads,
+  videoSubtitleLangCode: 'ja',
+);
 
 Future<InterconnectSyncBackend> _clientBackend({
   required String base,
@@ -63,8 +63,9 @@ Future<InterconnectSyncBackend> _clientBackend({
     FushiClientUrl(url: base, enabled: true),
   ]);
   await repo.setFushiClientToken(token);
-  final InterconnectSyncBackend backend =
-      InterconnectSyncBackend.withProbe((String u, String t) async => true);
+  final InterconnectSyncBackend backend = InterconnectSyncBackend.withProbe(
+    (String u, String t) async => true,
+  );
   await backend.restoreAuth(repo);
   await backend.authenticate(repo: repo);
   return backend;
@@ -74,21 +75,20 @@ SyncOrchestrator _orchestrator({
   required FushiDatabase db,
   required SyncBackend backend,
   required Directory tmp,
-}) =>
-    SyncOrchestrator(
-      db: db,
-      backend: backend,
-      dictionaryResourceRoot: tmp,
-      audioDatabaseRoot: tmp,
-      tempDir: tmp,
-      syncStats: false,
-      syncAudioBookPosition: false,
-      syncContent: false,
-      syncMangaContent: false,
-      syncAudioBookFiles: false,
-      syncVideoFiles: true,
-      syncDictionary: false,
-    );
+}) => SyncOrchestrator(
+  db: db,
+  backend: backend,
+  dictionaryResourceRoot: tmp,
+  audioDatabaseRoot: tmp,
+  tempDir: tmp,
+  syncStats: false,
+  syncAudioBookPosition: false,
+  syncContent: false,
+  syncMangaContent: false,
+  syncAudioBookFiles: false,
+  syncVideoFiles: true,
+  syncDictionary: false,
+);
 
 void main() {
   group('sidecar 纯函数', () {
@@ -102,8 +102,11 @@ void main() {
         'movie.txt', // 非字幕扩展
         'movie.mkv.bak', // 非字幕扩展
       ];
-      expect(listSidecarSubtitles('Movie', files),
-          <String>['movie.srt', 'Movie.ja.ASS', 'movie.zh-Hans.vtt']);
+      expect(listSidecarSubtitles('Movie', files), <String>[
+        'movie.srt',
+        'Movie.ja.ASS',
+        'movie.zh-Hans.vtt',
+      ]);
       expect(listSidecarSubtitles('other', files), isEmpty);
     });
 
@@ -141,35 +144,51 @@ void main() {
         ..createSync(recursive: true);
       final File vid = File(p.join(vidDir.path, 'movie.mp4'))
         ..writeAsBytesSync(<int>[1, 2, 3]);
-      await db.upsertVideoBook(VideoBooksCompanion.insert(
-        bookUid: 'video/movie',
-        title: 'Movie',
-        videoPath: vid.path,
-        embeddedSubtitleTrack: const Value<int?>(0),
-      ));
+      await db.upsertVideoBook(
+        VideoBooksCompanion.insert(
+          bookUid: 'video/movie',
+          title: 'Movie',
+          videoPath: vid.path,
+          embeddedSubtitleTrack: const Value<int?>(0),
+        ),
+      );
       final File upload = File(p.join(work.path, 'upload.tmp'))
         ..writeAsStringSync(_srtContent);
 
       final LocalLibraryHostService svc = _hostService(db: db, work: work);
-      await svc.importVideoSubtitle(upload,
-          id: 'video/movie', suffix: '.ja.srt');
+      await svc.importVideoSubtitle(
+        upload,
+        id: 'video/movie',
+        suffix: '.ja.srt',
+      );
 
       final File landed = File(p.join(vidDir.path, 'movie.ja.srt'));
-      expect(landed.existsSync(), isTrue,
-          reason: 'sidecar 必须落视频同目录同 stem，resolveVideoSubtitle 才能看见');
+      expect(
+        landed.existsSync(),
+        isTrue,
+        reason: 'sidecar 必须落视频同目录同 stem，resolveVideoSubtitle 才能看见',
+      );
       expect(landed.readAsStringSync(), _srtContent);
 
       final VideoBookRow row = (await db.getVideoBookByBookUid('video/movie'))!;
       expect(row.subtitleSource, landed.path);
       expect(row.subtitleFormat, 'srt');
-      expect(row.embeddedSubtitleTrack, isNull,
-          reason: '外挂字幕就位后播放应走外挂（与 client 下载路径同语义）');
-      expect((await db.getCuesForBook('video/movie')).length, 2,
-          reason: '字幕 cue 应解析落库（查词/句导航可用）');
+      expect(
+        row.embeddedSubtitleTrack,
+        isNull,
+        reason: '外挂字幕就位后播放应走外挂（与 client 下载路径同语义）',
+      );
+      expect(
+        (await db.getCuesForBook('video/movie')).length,
+        2,
+        reason: '字幕 cue 应解析落库（查词/句导航可用）',
+      );
 
       // resolveVideoSubtitle / listVideos 可见性。
       expect(
-          (await svc.resolveVideoSubtitle('video/movie'))?.path, landed.path);
+        (await svc.resolveVideoSubtitle('video/movie'))?.path,
+        landed.path,
+      );
       final RemoteVideoInfo info = (await svc.listVideos()).single;
       expect(info.hasSubtitle, isTrue);
     });
@@ -179,13 +198,17 @@ void main() {
         ..writeAsStringSync(_srtContent);
       final LocalLibraryHostService svc = _hostService(db: db, work: work);
       expect(
-          () =>
-              svc.importVideoSubtitle(upload, id: 'video/nope', suffix: '.srt'),
-          throwsStateError);
+        () => svc.importVideoSubtitle(upload, id: 'video/nope', suffix: '.srt'),
+        throwsStateError,
+      );
       expect(
-          () => svc.importVideoSubtitle(upload,
-              id: 'video/nope', suffix: '../../evil.srt'),
-          throwsArgumentError);
+        () => svc.importVideoSubtitle(
+          upload,
+          id: 'video/nope',
+          suffix: '../../evil.srt',
+        ),
+        throwsArgumentError,
+      );
     });
   });
 
@@ -207,8 +230,11 @@ void main() {
         port: 0,
         token: token,
         allowLan: false,
-        libraryService:
-            _hostService(db: hostDb, work: work, uploads: hostUploads),
+        libraryService: _hostService(
+          db: hostDb,
+          work: work,
+          uploads: hostUploads,
+        ),
       );
       await server.start();
       base = 'http://127.0.0.1:${server.port}';
@@ -228,46 +254,62 @@ void main() {
       final File vid = File(p.join(vidDir.path, 'movie.mp4'))
         ..writeAsBytesSync(<int>[9, 8, 7, 6]);
       File(p.join(vidDir.path, 'movie.srt')).writeAsStringSync(_srtContent);
-      File(p.join(vidDir.path, 'movie.ja.ass'))
-          .writeAsStringSync('[Script Info]\n');
-      await localDb.upsertVideoBook(VideoBooksCompanion.insert(
-        bookUid: 'video/movie',
-        title: 'Movie',
-        videoPath: vid.path,
-      ));
+      File(
+        p.join(vidDir.path, 'movie.ja.ass'),
+      ).writeAsStringSync('[Script Info]\n');
+      await localDb.upsertVideoBook(
+        VideoBooksCompanion.insert(
+          bookUid: 'video/movie',
+          title: 'Movie',
+          videoPath: vid.path,
+        ),
+      );
 
-      final InterconnectSyncBackend backend =
-          await _clientBackend(base: base, token: token);
-      final SyncRunReport report =
-          await _orchestrator(db: localDb, backend: backend, tmp: work).run();
+      final InterconnectSyncBackend backend = await _clientBackend(
+        base: base,
+        token: token,
+      );
+      final SyncRunReport report = await _orchestrator(
+        db: localDb,
+        backend: backend,
+        tmp: work,
+      ).run();
       expect(report.videosExported, 1);
       expect(
-          report.errors.where((String e) => e.contains('subtitle')), isEmpty);
+        report.errors.where((String e) => e.contains('subtitle')),
+        isEmpty,
+      );
 
       final VideoBookRow hosted = (await hostDb.allVideoBooks()).single;
       final String hostedDir = p.dirname(hosted.videoPath);
       final String hostedStem = p.basenameWithoutExtension(hosted.videoPath);
       expect(File(p.join(hostedDir, '$hostedStem.srt')).existsSync(), isTrue);
       expect(
-          File(p.join(hostedDir, '$hostedStem.ja.ass')).existsSync(), isTrue);
+        File(p.join(hostedDir, '$hostedStem.ja.ass')).existsSync(),
+        isTrue,
+      );
       // host 端首选 sidecar 按学习语言（ja）解析并落行：.ja.ass 优先于 .srt。
       expect(hosted.subtitleSource, endsWith('.ja.ass'));
       expect(hosted.subtitleFormat, 'ass');
       expect(hosted.embeddedSubtitleTrack, isNull);
 
       // 幂等：再跑一次，不重传视频、不重推字幕（host 已有 sidecar）。
-      final int subMtime = File(p.join(hostedDir, '$hostedStem.srt'))
-          .lastModifiedSync()
-          .millisecondsSinceEpoch;
-      final SyncRunReport report2 =
-          await _orchestrator(db: localDb, backend: backend, tmp: work).run();
+      final int subMtime = File(
+        p.join(hostedDir, '$hostedStem.srt'),
+      ).lastModifiedSync().millisecondsSinceEpoch;
+      final SyncRunReport report2 = await _orchestrator(
+        db: localDb,
+        backend: backend,
+        tmp: work,
+      ).run();
       expect(report2.videosExported, 0);
       expect(
-          File(p.join(hostedDir, '$hostedStem.srt'))
-              .lastModifiedSync()
-              .millisecondsSinceEpoch,
-          subMtime,
-          reason: 'host 已有 sidecar 时不得重复上传覆盖');
+        File(
+          p.join(hostedDir, '$hostedStem.srt'),
+        ).lastModifiedSync().millisecondsSinceEpoch,
+        subMtime,
+        reason: 'host 已有 sidecar 时不得重复上传覆盖',
+      );
     });
 
     test('host 已有视频但缺字幕：只补推字幕，不重传视频', () async {
@@ -277,33 +319,45 @@ void main() {
         ..createSync(recursive: true);
       final File vid = File(p.join(vidDir.path, 'ep1.mp4'))
         ..writeAsBytesSync(<int>[1, 1, 2, 3, 5]);
-      await localDb.upsertVideoBook(VideoBooksCompanion.insert(
-        bookUid: 'video/ep1',
-        title: 'Ep1',
-        videoPath: vid.path,
-      ));
+      await localDb.upsertVideoBook(
+        VideoBooksCompanion.insert(
+          bookUid: 'video/ep1',
+          title: 'Ep1',
+          videoPath: vid.path,
+        ),
+      );
 
-      final InterconnectSyncBackend backend =
-          await _clientBackend(base: base, token: token);
+      final InterconnectSyncBackend backend = await _clientBackend(
+        base: base,
+        token: token,
+      );
       // 第一轮：本地还没有字幕 → host 只有视频。
       await _orchestrator(db: localDb, backend: backend, tmp: work).run();
       final VideoBookRow hosted = (await hostDb.allVideoBooks()).single;
-      final int videoMtime =
-          File(hosted.videoPath).lastModifiedSync().millisecondsSinceEpoch;
+      final int videoMtime = File(
+        hosted.videoPath,
+      ).lastModifiedSync().millisecondsSinceEpoch;
 
       // 本地补了字幕后再 sweep：字幕补推、视频不重传。
       File(p.join(vidDir.path, 'ep1.ja.srt')).writeAsStringSync(_srtContent);
-      final SyncRunReport report2 =
-          await _orchestrator(db: localDb, backend: backend, tmp: work).run();
+      final SyncRunReport report2 = await _orchestrator(
+        db: localDb,
+        backend: backend,
+        tmp: work,
+      ).run();
       expect(report2.videosExported, 0, reason: '同尺寸视频不得重传');
       final String hostedStem = p.basenameWithoutExtension(hosted.videoPath);
       expect(
-          File(p.join(p.dirname(hosted.videoPath), '$hostedStem.ja.srt'))
-              .existsSync(),
-          isTrue,
-          reason: 'host 缺字幕时后续 sweep 必须补推');
-      expect(File(hosted.videoPath).lastModifiedSync().millisecondsSinceEpoch,
-          videoMtime);
+        File(
+          p.join(p.dirname(hosted.videoPath), '$hostedStem.ja.srt'),
+        ).existsSync(),
+        isTrue,
+        reason: 'host 缺字幕时后续 sweep 必须补推',
+      );
+      expect(
+        File(hosted.videoPath).lastModifiedSync().millisecondsSinceEpoch,
+        videoMtime,
+      );
     });
 
     test('老 host 无字幕端点（405）：client 返回 false 不抛', () async {
@@ -317,12 +371,15 @@ void main() {
         });
       });
       final InterconnectSyncBackend backend = await _clientBackend(
-          base: 'http://127.0.0.1:${old.port}', token: token);
+        base: 'http://127.0.0.1:${old.port}',
+        token: token,
+      );
       final File sub = File(p.join(work.path, 'x.srt'))
         ..writeAsStringSync(_srtContent);
       expect(
-          await backend.putRemoteVideoSubtitle('video/x', sub, suffix: '.srt'),
-          isFalse);
+        await backend.putRemoteVideoSubtitle('video/x', sub, suffix: '.srt'),
+        isFalse,
+      );
     });
   });
 }

@@ -36,53 +36,78 @@ void main() {
 
     await DesktopDropReinitializer.invokeReinitialize();
 
-    expect(calls, <String>['reinitialize'],
-        reason: 'closeMedia must re-register desktop_drop via the '
-            'desktop_drop channel reinitialize method');
-  });
-
-  test('invokeReinitialize swallows MissingPluginException (unpatched plugin)',
-      () async {
-    // No mock handler -> the platform side is absent, mirroring a desktop_drop
-    // build without the TODO-1275 patch. Must complete, not throw.
-    messenger.setMockMethodCallHandler(channel, null);
-
-    await DesktopDropReinitializer.invokeReinitialize();
+    expect(
+      calls,
+      <String>['reinitialize'],
+      reason:
+          'closeMedia must re-register desktop_drop via the '
+          'desktop_drop channel reinitialize method',
+    );
   });
 
   test(
-      'desktop_drop vendored fork re-registers the OS drop target on reinitialize',
-      () {
-    // Vendored under third_party/ (TODO-1306 moved it off the pub-cache ci-patch);
-    // the reinitialize invariant now lives in the tracked fork source.
-    final List<String> candidates = <String>[
-      '../third_party/desktop_drop/windows/desktop_drop_plugin.cpp',
-      'third_party/desktop_drop/windows/desktop_drop_plugin.cpp',
-    ];
-    final File? patch = candidates.map(File.new).cast<File?>().firstWhere(
-        (File? f) => f != null && f.existsSync(),
-        orElse: () => null);
-    expect(patch, isNotNull,
-        reason: 'desktop_drop vendored fork (reinitialize handler) not found');
+    'invokeReinitialize swallows MissingPluginException (unpatched plugin)',
+    () async {
+      // No mock handler -> the platform side is absent, mirroring a desktop_drop
+      // build without the TODO-1275 patch. Must complete, not throw.
+      messenger.setMockMethodCallHandler(channel, null);
 
-    final String src = patch!.readAsStringSync();
+      await DesktopDropReinitializer.invokeReinitialize();
+    },
+  );
 
-    expect(src.contains('TODO-1275'), isTrue,
-        reason: 'patch must carry the TODO-1275/BUG-361 root-cause marker');
+  test(
+    'desktop_drop vendored fork re-registers the OS drop target on reinitialize',
+    () {
+      // Vendored under third_party/ (TODO-1306 moved it off the pub-cache ci-patch);
+      // the reinitialize invariant now lives in the tracked fork source.
+      final List<String> candidates = <String>[
+        '../third_party/desktop_drop/windows/desktop_drop_plugin.cpp',
+        'third_party/desktop_drop/windows/desktop_drop_plugin.cpp',
+      ];
+      final File? patch = candidates
+          .map(File.new)
+          .cast<File?>()
+          .firstWhere(
+            (File? f) => f != null && f.existsSync(),
+            orElse: () => null,
+          );
+      expect(
+        patch,
+        isNotNull,
+        reason: 'desktop_drop vendored fork (reinitialize handler) not found',
+      );
 
-    // The channel handler must service "reinitialize" (not stay the stock
-    // NotImplemented-only handler), otherwise Dart re-registration is a no-op.
-    expect(
-        RegExp(r'method_name\(\)\s*==\s*"reinitialize"').hasMatch(src), isTrue,
-        reason: 'patched plugin must handle the reinitialize method');
+      final String src = patch!.readAsStringSync();
 
-    // reinitialize must actually revoke the usurped target and re-register
-    // desktop_drop's own; both OLE calls are the invariant that fixes the bug.
-    expect(src.contains('RevokeDragDrop(window_handle_)'), isTrue,
-        reason: 'reinitialize must RevokeDragDrop the stale (WebView2) target');
-    expect(src.contains('RegisterDragDrop(window_handle_, this)'), isTrue,
-        reason: 'reinitialize must RegisterDragDrop desktop_drop target again');
-  });
+      expect(
+        src.contains('TODO-1275'),
+        isTrue,
+        reason: 'patch must carry the TODO-1275/BUG-361 root-cause marker',
+      );
+
+      // The channel handler must service "reinitialize" (not stay the stock
+      // NotImplemented-only handler), otherwise Dart re-registration is a no-op.
+      expect(
+        RegExp(r'method_name\(\)\s*==\s*"reinitialize"').hasMatch(src),
+        isTrue,
+        reason: 'patched plugin must handle the reinitialize method',
+      );
+
+      // reinitialize must actually revoke the usurped target and re-register
+      // desktop_drop's own; both OLE calls are the invariant that fixes the bug.
+      expect(
+        src.contains('RevokeDragDrop(window_handle_)'),
+        isTrue,
+        reason: 'reinitialize must RevokeDragDrop the stale (WebView2) target',
+      );
+      expect(
+        src.contains('RegisterDragDrop(window_handle_, this)'),
+        isTrue,
+        reason: 'reinitialize must RegisterDragDrop desktop_drop target again',
+      );
+    },
+  );
 
   group('BUOxDR9WIJ verifyAndRepair: re-register only when really lost', () {
     Map<String, Object> status({

@@ -49,22 +49,38 @@ void main() {
   }
 
   test('OwnsLiveWindow：IsWindow + GWLP_USERDATA==this 双重校验', () {
-    final String body =
-        functionBody(cpp, 'bool GlobalLookupWindow::OwnsLiveWindow()');
-    expect(body, contains('IsWindow(hwnd_)'),
-        reason: '死句柄必须被 IsWindow() 拒绝（否则悬垂句柄冒充活窗）');
-    expect(body, contains('GetWindowLongPtr(hwnd_, GWLP_USERDATA)'),
-        reason: 'HWND 会被 Windows 回收给别的窗，必须核对 USERDATA 仍指向本实例');
+    final String body = functionBody(
+      cpp,
+      'bool GlobalLookupWindow::OwnsLiveWindow()',
+    );
+    expect(
+      body,
+      contains('IsWindow(hwnd_)'),
+      reason: '死句柄必须被 IsWindow() 拒绝（否则悬垂句柄冒充活窗）',
+    );
+    expect(
+      body,
+      contains('GetWindowLongPtr(hwnd_, GWLP_USERDATA)'),
+      reason: 'HWND 会被 Windows 回收给别的窗，必须核对 USERDATA 仍指向本实例',
+    );
     expect(body, contains('== this'), reason: 'USERDATA 必须等于 this 才算「我方」活窗');
   });
 
   test('ForgetDeadWindow：非活窗则清 hwnd_ + 释放死 COM 代理 + 复位状态', () {
-    final String body =
-        functionBody(cpp, 'void GlobalLookupWindow::ForgetDeadWindow()');
-    expect(body, contains('OwnsLiveWindow()'),
-        reason: '判据必须复用 OwnsLiveWindow（单一真值源）');
-    expect(body, contains('hwnd_ = nullptr'),
-        reason: '悬垂句柄必须清空，否则 ShowAt 仍走 SetWindowPos 死句柄分支');
+    final String body = functionBody(
+      cpp,
+      'void GlobalLookupWindow::ForgetDeadWindow()',
+    );
+    expect(
+      body,
+      contains('OwnsLiveWindow()'),
+      reason: '判据必须复用 OwnsLiveWindow（单一真值源）',
+    );
+    expect(
+      body,
+      contains('hwnd_ = nullptr'),
+      reason: '悬垂句柄必须清空，否则 ShowAt 仍走 SetWindowPos 死句柄分支',
+    );
     for (final String member in <String>[
       'controller_ = nullptr',
       'webview_ = nullptr',
@@ -72,8 +88,11 @@ void main() {
     ]) {
       expect(body, contains(member), reason: '死进程树下的 COM 代理必须释放：$member');
     }
-    expect(body, contains('webview_ready_ = false'),
-        reason: '必须打断「dead-but-ready」状态，重建后由 NavigationCompleted 重臂');
+    expect(
+      body,
+      contains('webview_ready_ = false'),
+      reason: '必须打断「dead-but-ready」状态，重建后由 NavigationCompleted 重臂',
+    );
     expect(body, contains('error_cb_'), reason: '发现死窗必须记进设备日志，让销毁者可诊断，而不是静默重建');
   });
 
@@ -82,28 +101,45 @@ void main() {
     final int forget = body.indexOf('ForgetDeadWindow()');
     final int guard = body.indexOf('if (hwnd_ == nullptr)');
     expect(forget, greaterThanOrEqualTo(0), reason: 'ShowAt 必须先丢弃死句柄');
-    expect(guard, greaterThan(forget),
-        reason: 'ForgetDeadWindow 必须在 `if (hwnd_ == nullptr)` 重建守卫之前，'
-            '否则死句柄仍走 else 的 SetWindowPos 分支、永不 CreateWindowExW');
+    expect(
+      guard,
+      greaterThan(forget),
+      reason:
+          'ForgetDeadWindow 必须在 `if (hwnd_ == nullptr)` 重建守卫之前，'
+          '否则死句柄仍走 else 的 SetWindowPos 分支、永不 CreateWindowExW',
+    );
   });
 
   test('PrewarmWebView 幂等守卫前先 ForgetDeadWindow', () {
-    final String body =
-        functionBody(cpp, 'void GlobalLookupWindow::PrewarmWebView(');
+    final String body = functionBody(
+      cpp,
+      'void GlobalLookupWindow::PrewarmWebView(',
+    );
     final int forget = body.indexOf('ForgetDeadWindow()');
     final int guard = body.indexOf('if (hwnd_ != nullptr)');
     expect(forget, greaterThanOrEqualTo(0), reason: '死掉的预热窗必须被重建');
-    expect(guard, greaterThan(forget),
-        reason: 'ForgetDeadWindow 必须在「已预热就返回」守卫之前');
+    expect(
+      guard,
+      greaterThan(forget),
+      reason: 'ForgetDeadWindow 必须在「已预热就返回」守卫之前',
+    );
   });
 
   test('IsShowing 用 OwnsLiveWindow 而非裸 hwnd_ != nullptr', () {
-    final String body =
-        functionBody(cpp, 'bool GlobalLookupWindow::IsShowing()');
-    expect(body, contains('OwnsLiveWindow()'),
-        reason: '否则悬垂/回收句柄让 IsShowing 报 true，Dart 跳过重建');
-    expect(body.contains('hwnd_ != nullptr && IsWindowVisible'), isFalse,
-        reason: '不得退回裸 hwnd_ != nullptr 判据（BUG 回归signature）');
+    final String body = functionBody(
+      cpp,
+      'bool GlobalLookupWindow::IsShowing()',
+    );
+    expect(
+      body,
+      contains('OwnsLiveWindow()'),
+      reason: '否则悬垂/回收句柄让 IsShowing 报 true，Dart 跳过重建',
+    );
+    expect(
+      body.contains('hwnd_ != nullptr && IsWindowVisible'),
+      isFalse,
+      reason: '不得退回裸 hwnd_ != nullptr 判据（BUG 回归signature）',
+    );
   });
 
   test('头文件声明 OwnsLiveWindow 与 ForgetDeadWindow', () {

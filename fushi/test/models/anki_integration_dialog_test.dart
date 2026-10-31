@@ -10,7 +10,9 @@ void main() {
 
   Widget buildApp(Widget child) {
     return TranslationProvider(
-      child: MaterialApp(home: Scaffold(body: Center(child: child))),
+      child: MaterialApp(
+        home: Scaffold(body: Center(child: child)),
+      ),
     );
   }
 
@@ -21,9 +23,7 @@ void main() {
     tester.view.physicalSize = const Size(320, 240);
     addTearDown(tester.view.reset);
 
-    await tester.pumpWidget(
-      buildApp(AnkiApiMessageDialog(onLaunch: () {})),
-    );
+    await tester.pumpWidget(buildApp(AnkiApiMessageDialog(onLaunch: () {})));
 
     expect(tester.takeException(), isNull);
     expect(find.text(t.error_ankidroid_api), findsOneWidget);

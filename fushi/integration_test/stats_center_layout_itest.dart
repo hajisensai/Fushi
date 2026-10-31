@@ -166,7 +166,9 @@ Future<void> _seedThreeDomains(AppModel appModel) async {
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('统计中心五个 tab：统计 tab 布局统一、排行 tab 显示说明卡', (WidgetTester tester) async {
+  testWidgets('统计中心五个 tab：统计 tab 布局统一、排行 tab 显示说明卡', (
+    WidgetTester tester,
+  ) async {
     // 启动期 FlutterError（离线更新检查的 Socket 异常等）先收着，否则 pending error
     // 会撞上后面的 expect()。范式同 observe_offscreen_test。
     final List<FlutterErrorDetails> errors = <FlutterErrorDetails>[];
@@ -301,8 +303,10 @@ void main() {
       );
       nav.pop();
       await tester.pump(const Duration(seconds: 1));
-      debugPrint('[stats-layout] ${StatsCenterTab.values.length} 个 tab + 排行榜页各抓一帧完成，'
-          '启动期错误 ${errors.length} 条');
+      debugPrint(
+        '[stats-layout] ${StatsCenterTab.values.length} 个 tab + 排行榜页各抓一帧完成，'
+        '启动期错误 ${errors.length} 条',
+      );
     } finally {
       FlutterError.onError = oldHandler;
     }

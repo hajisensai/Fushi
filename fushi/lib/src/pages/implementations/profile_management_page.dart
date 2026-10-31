@@ -194,10 +194,7 @@ class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
   // Profile tiles
   // ---------------------------------------------------------------------------
 
-  List<Widget> _buildProfileRows(
-    ProfileUiState uiState,
-    ProfileViewModel vm,
-  ) {
+  List<Widget> _buildProfileRows(ProfileUiState uiState, ProfileViewModel vm) {
     final isOnly = uiState.profiles.length <= 1;
     final bool cupertino = isCupertinoPlatform(context);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
@@ -206,8 +203,8 @@ class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
         AdaptiveSettingsRow(
           icon: profile.id == uiState.activeProfileId
               ? (cupertino
-                  ? CupertinoIcons.check_mark_circled_solid
-                  : FushiIcons.filled(FushiIcons.success))
+                    ? CupertinoIcons.check_mark_circled_solid
+                    : FushiIcons.filled(FushiIcons.success))
               : (cupertino ? CupertinoIcons.circle : FushiIcons.profiles),
           // 行首的实心 / 空心圆就是「当前激活」的唯一信号——不 showIcon 的话
           // 共享行根本不画它，列表里看不出哪个方案在用。
@@ -280,10 +277,11 @@ class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
           in kContentLanguageOptions)
         if (option.tag != null) option.tag!,
     ];
-    final List<String> extras = uiState.languageBindings.keys
-        .where((String tag) => !standard.contains(tag))
-        .toList()
-      ..sort();
+    final List<String> extras =
+        uiState.languageBindings.keys
+            .where((String tag) => !standard.contains(tag))
+            .toList()
+          ..sort();
     return <String>[...standard, ...extras];
   }
 
@@ -303,10 +301,7 @@ class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
           label: t.profile_media_none,
         ),
         for (final p in uiState.profiles)
-          AdaptiveSettingsPickerOption<int?>(
-            value: p.id,
-            label: p.name,
-          ),
+          AdaptiveSettingsPickerOption<int?>(value: p.id, label: p.name),
       ],
       onChanged: (int? id) => vm.setLanguageBinding(languageTag, id),
     );
@@ -329,10 +324,7 @@ class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
           label: t.profile_media_none,
         ),
         for (final p in uiState.profiles)
-          AdaptiveSettingsPickerOption<int?>(
-            value: p.id,
-            label: p.name,
-          ),
+          AdaptiveSettingsPickerOption<int?>(value: p.id, label: p.name),
       ],
       onChanged: (id) => vm.setMediaTypeBinding(mediaType, id),
     );
@@ -443,8 +435,9 @@ class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
 
   void _notify(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context)
-        .showSnackBar(FushiSnackBar(content: Text(message)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(FushiSnackBar(content: Text(message)));
   }
 
   /// 文件名安全化：去掉路径分隔符与控制字符，保证可落盘。
@@ -532,15 +525,15 @@ class _ProfileActionButton extends StatelessWidget {
     final bool glass = !cupertino && isGlassDesign(context);
     final Color color = destructive
         ? (cupertino
-            ? CupertinoColors.destructiveRed.resolveFrom(context)
-            : glass
-                ? appleColorsOf(context).destructive
-                : Theme.of(context).colorScheme.error)
+              ? CupertinoColors.destructiveRed.resolveFrom(context)
+              : glass
+              ? appleColorsOf(context).destructive
+              : Theme.of(context).colorScheme.error)
         : (cupertino
-            ? CupertinoTheme.of(context).primaryColor
-            : glass
-                ? appleColorsOf(context).accent
-                : Theme.of(context).colorScheme.onSurfaceVariant);
+              ? CupertinoTheme.of(context).primaryColor
+              : glass
+              ? appleColorsOf(context).accent
+              : Theme.of(context).colorScheme.onSurfaceVariant);
 
     if (cupertino) {
       return CupertinoButton(

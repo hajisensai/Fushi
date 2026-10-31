@@ -95,11 +95,7 @@ void main() {
             scale: 1,
             child: Scaffold(
               body: SafeArea(
-                child: Column(
-                  children: <Widget>[
-                    FushiPageHeader(title: '书架'),
-                  ],
-                ),
+                child: Column(children: <Widget>[FushiPageHeader(title: '书架')]),
               ),
             ),
           ),

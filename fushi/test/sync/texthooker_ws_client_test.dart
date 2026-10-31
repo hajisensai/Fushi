@@ -58,10 +58,7 @@ void main() {
     );
     final TexthookerEndpointStatus connectedStatus =
         client.endpointStatuses.single;
-    expect(
-      connectedStatus.phase,
-      TexthookerEndpointPhase.connected,
-    );
+    expect(connectedStatus.phase, TexthookerEndpointPhase.connected);
 
     await client.stop();
     await server.close(force: true);
@@ -141,18 +138,23 @@ void main() {
         channelFactory: (String u) {
           factoryCalls++;
           // 连接失败：ready 抛错 + stream 抛错后关闭（IOWebSocketChannel 行为）。
-          final Stream<dynamic> stream =
-              Stream<dynamic>.error(WebSocketChannelException('refused'));
-          final Future<void> ready =
-              Future<void>.error(WebSocketChannelException('refused'));
+          final Stream<dynamic> stream = Stream<dynamic>.error(
+            WebSocketChannelException('refused'),
+          );
+          final Future<void> ready = Future<void>.error(
+            WebSocketChannelException('refused'),
+          );
           return _FailingChannel(ready, stream);
         },
       );
       client.start();
       // 等首连失败 + 至少一次退避重连。
       await Future<void>.delayed(const Duration(milliseconds: 60));
-      expect(factoryCalls, greaterThanOrEqualTo(2),
-          reason: '连接失败后应排程重连，再次调用 channelFactory');
+      expect(
+        factoryCalls,
+        greaterThanOrEqualTo(2),
+        reason: '连接失败后应排程重连，再次调用 channelFactory',
+      );
       await client.stop();
     }, (Object error, StackTrace stack) => escaped.add(error));
 

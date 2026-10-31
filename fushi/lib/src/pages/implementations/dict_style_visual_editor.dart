@@ -58,15 +58,17 @@ class DictStyleVisualEditor extends StatelessWidget {
 
   /// 该部位在当前作用域下有没有设过东西（给选择器打个点，否则设过什么全靠记）。
   bool _hasRules(DictStylePart part) {
-    final String? scope =
-        dictStylePartSupportsPerDictionary(part) ? scopeDictionary : null;
+    final String? scope = dictStylePartSupportsPerDictionary(part)
+        ? scopeDictionary
+        : null;
     return !dictStylePropsFor(rules, part, scope).isEmpty;
   }
 
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final bool scopeIgnored = scopeDictionary != null &&
+    final bool scopeIgnored =
+        scopeDictionary != null &&
         !dictStylePartSupportsPerDictionary(selectedPart);
     // M3E：部位选择 + 三个属性分区（颜色 / 字形 / 尺寸），每个分区一张卡，
     // 分区错峰进场；切换部位时整组按新部位重放一次进场，让「改的是谁」一目了然。
@@ -253,7 +255,9 @@ class DictStyleVisualEditor extends StatelessWidget {
             showSelectedIcon: false,
             segments: <ButtonSegment<int>>[
               ButtonSegment<int>(
-                  value: 0, label: Text(t.dict_style_prop_default)),
+                value: 0,
+                label: Text(t.dict_style_prop_default),
+              ),
               ButtonSegment<int>(value: 1, label: Text(t.dict_style_prop_on)),
               ButtonSegment<int>(value: 2, label: Text(t.dict_style_prop_off)),
             ],
@@ -261,8 +265,8 @@ class DictStyleVisualEditor extends StatelessWidget {
               value == null
                   ? 0
                   : value
-                      ? 1
-                      : 2,
+                  ? 1
+                  : 2,
             },
             onSelectionChanged: (Set<int> picked) {
               switch (picked.first) {
@@ -489,14 +493,15 @@ class _ColorChoice extends StatelessWidget {
     // 墨水屏 / 减弱动态效果下瞬时到位。
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final FushiSpringSpec spring = context.fushiMotion.spatialFast;
-    final BorderRadius radius =
-        selected ? FushiM3eShape.smallRadius : _kRoundRadius;
+    final BorderRadius radius = selected
+        ? FushiM3eShape.smallRadius
+        : _kRoundRadius;
     final Color? swatch = argb == null ? null : Color(argb!);
     final Color glyphColor = swatch == null || swatch.a < 0.5
         ? tokens.surfaces.onVariant
         : (ThemeData.estimateBrightnessForColor(swatch) == Brightness.dark
-            ? Colors.white
-            : Colors.black);
+              ? Colors.white
+              : Colors.black);
     final Widget? glyph = showPaletteIcon
         ? FushiIcon(
             FushiIcons.appearance,
@@ -504,14 +509,14 @@ class _ColorChoice extends StatelessWidget {
             color: tokens.surfaces.onVariant,
           )
         : (argb == null
-            ? FushiIcon(
-                FushiIcons.block,
-                size: 16,
-                color: tokens.surfaces.onVariant,
-              )
-            : (selected
-                ? FushiIcon(FushiIcons.check, size: 16, color: glyphColor)
-                : null));
+              ? FushiIcon(
+                  FushiIcons.block,
+                  size: 16,
+                  color: tokens.surfaces.onVariant,
+                )
+              : (selected
+                    ? FushiIcon(FushiIcons.check, size: 16, color: glyphColor)
+                    : null));
     return FushiTooltip(
       message: tooltip,
       child: FushiPressScale(
@@ -554,10 +559,12 @@ class _ScopeIgnoredNotice extends StatelessWidget {
   Widget build(BuildContext context) {
     final ColorScheme colors = Theme.of(context).colorScheme;
     final bool glass = isGlassDesign(context);
-    final Color background =
-        glass ? fushiNeutralBlockColor(context) : colors.secondaryContainer;
-    final Color foreground =
-        glass ? tokens.surfaces.onVariant : colors.onSecondaryContainer;
+    final Color background = glass
+        ? fushiNeutralBlockColor(context)
+        : colors.secondaryContainer;
+    final Color foreground = glass
+        ? tokens.surfaces.onVariant
+        : colors.onSecondaryContainer;
     return DecoratedBox(
       decoration: BoxDecoration(
         color: background,

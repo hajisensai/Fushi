@@ -323,11 +323,9 @@ void main() {
         mediaKey: 'v1',
       );
       await AggregateSyncService(dbA).sync(store: store, deviceId: 'dev-A');
-      expect(
-        (await dbA.getStudySegments()).map((r) => r.uid),
-        <String>['a2'],
-        reason: 'peer 快照里的旧段不能把本机删掉的复活',
-      );
+      expect((await dbA.getStudySegments()).map((r) => r.uid), <String>[
+        'a2',
+      ], reason: 'peer 快照里的旧段不能把本机删掉的复活');
       await AggregateSyncService(dbB).sync(store: store, deviceId: 'dev-B');
       expect((await dbB.getStudySegments()).map((r) => r.uid), <String>[
         'a2',
@@ -522,11 +520,11 @@ void main() {
       }, reason: '游戏段不落地');
       expect(await dbB.getStudySegmentTombstones(), isEmpty, reason: '游戏碑不落地');
       await AggregateSyncService(dbA).sync(store: store, deviceId: 'dev-A');
-      expect(
-        (await dbA.getStudySegments()).map((r) => r.uid).toSet(),
-        <String>{'g1', 'v1', 'oldvid'},
-        reason: '本机游戏段不受旧端游戏碑影响',
-      );
+      expect((await dbA.getStudySegments()).map((r) => r.uid).toSet(), <String>{
+        'g1',
+        'v1',
+        'oldvid',
+      }, reason: '本机游戏段不受旧端游戏碑影响');
     });
 
     test('旧端 v1 快照（无段字段）混入不影响新端的段', () async {
@@ -617,12 +615,13 @@ void main() {
         for (final StudySegmentRow r in await merged.getStudySegments())
           r.uid: r,
       };
-      expect(byUid.keys.toSet(), <String>{
-        'shared',
-        'local',
-        'backup',
-      }, reason: 'doomed 被备份里的墓碑压制；备份里的游戏段无宿主游戏行 → 不搬入'
-          '（有宿主时经游戏身份映射落地，见 backup_games_category_test）');
+      expect(
+        byUid.keys.toSet(),
+        <String>{'shared', 'local', 'backup'},
+        reason:
+            'doomed 被备份里的墓碑压制；备份里的游戏段无宿主游戏行 → 不搬入'
+            '（有宿主时经游戏身份映射落地，见 backup_games_category_test）',
+      );
       expect(byUid['shared']!.durationMs, 900, reason: 'LWW 取备份里更新的值');
       expect(
         (await merged.getStudySegmentTombstones()).single.mediaKey,

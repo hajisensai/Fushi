@@ -46,8 +46,9 @@ void main() {
       return;
     }
     print(
-        'GALV START fmt=${fmt.sampleRate}/${fmt.channels}/${fmt.bitsPerSample} '
-        'float=${fmt.isFloat} seconds=$seconds match="$match"');
+      'GALV START fmt=${fmt.sampleRate}/${fmt.channels}/${fmt.bitsPerSample} '
+      'float=${fmt.isFloat} seconds=$seconds match="$match"',
+    );
 
     Uint8List? bestPcm;
     double bestPeak = 0;
@@ -68,15 +69,19 @@ void main() {
         bestPcm = Uint8List.fromList(s.pcm);
       }
       if (polls % 5 == 0) {
-        print('GALV POLL $polls bestPeak=${bestPeak.toStringAsFixed(4)} '
-            'bestRms=${bestRms.toStringAsFixed(5)}');
+        print(
+          'GALV POLL $polls bestPeak=${bestPeak.toStringAsFixed(4)} '
+          'bestRms=${bestRms.toStringAsFixed(5)}',
+        );
       }
     }
     await loopback.stop();
 
     if (bestPcm == null || bestPeak <= 0) {
-      print('GALV RESULT name=$name captured=false peak=0 '
-          'note=无声（游戏未播语音或 loopback 静音）');
+      print(
+        'GALV RESULT name=$name captured=false peak=0 '
+        'note=无声（游戏未播语音或 loopback 静音）',
+      );
       return;
     }
 
@@ -96,22 +101,26 @@ void main() {
     }
 
     final String metaPath = '$outDir/$name.json';
-    File(metaPath).writeAsStringSync(jsonEncode(<String, Object?>{
-      'mediaBase': name,
-      'game': match.isEmpty ? name : match,
-      'source': 'loopback',
-      'fmt': '${fmt.sampleRate}/${fmt.channels}/${fmt.bitsPerSample}',
-      'pcmBytes': sub.length,
-      'peak': bestPeak,
-      'rms': bestRms,
-      'wav': '$name.wav',
-      'png': pngPath != null ? '$name.png' : null,
-    }));
+    File(metaPath).writeAsStringSync(
+      jsonEncode(<String, Object?>{
+        'mediaBase': name,
+        'game': match.isEmpty ? name : match,
+        'source': 'loopback',
+        'fmt': '${fmt.sampleRate}/${fmt.channels}/${fmt.bitsPerSample}',
+        'pcmBytes': sub.length,
+        'peak': bestPeak,
+        'rms': bestRms,
+        'wav': '$name.wav',
+        'png': pngPath != null ? '$name.png' : null,
+      }),
+    );
 
-    print('GALV RESULT name=$name captured=true '
-        'peak=${bestPeak.toStringAsFixed(4)} rms=${bestRms.toStringAsFixed(5)} '
-        'durMs=${pcmDurationMs(sub.length, fmt.byteRate)} '
-        'wav=$wavPath png=${pngPath ?? "none"}');
+    print(
+      'GALV RESULT name=$name captured=true '
+      'peak=${bestPeak.toStringAsFixed(4)} rms=${bestRms.toStringAsFixed(5)} '
+      'durMs=${pcmDurationMs(sub.length, fmt.byteRate)} '
+      'wav=$wavPath png=${pngPath ?? "none"}',
+    );
     expect(bestPeak, greaterThan(0));
   }, timeout: const Timeout(Duration(minutes: 5)));
 }
@@ -162,7 +171,8 @@ Future<Uint8List?> _captureMatchingWindow(String match) async {
     }
   }
   if (target == null) return null;
-  final WindowCaptureResult r =
-      await WindowCaptureChannel.captureWindow(target.hwnd);
+  final WindowCaptureResult r = await WindowCaptureChannel.captureWindow(
+    target.hwnd,
+  );
   return r.pngBytes;
 }

@@ -99,8 +99,9 @@ void main() {
     final ThemeNotifier themeNotifier =
         ThemeNotifier(db, () => const TextTheme())
           ..loadFromPrefsSnapshot(<String, String>{
-            'design_system':
-                PrefCodec.encode(cupertino ? 'cupertino' : 'material'),
+            'design_system': PrefCodec.encode(
+              cupertino ? 'cupertino' : 'material',
+            ),
             'app_theme_key': PrefCodec.encode('system-theme'),
             'brightness_mode': PrefCodec.encode('system'),
             'custom_theme_seed': PrefCodec.encode(0xFF1F4959),
@@ -111,9 +112,7 @@ void main() {
       await db.close();
     });
     return ProviderScope(
-      overrides: <Override>[
-        appProvider.overrideWith((Ref ref) => appModel),
-      ],
+      overrides: <Override>[appProvider.overrideWith((Ref ref) => appModel)],
       child: MaterialApp(
         theme: ThemeData(
           useMaterial3: true,
@@ -153,8 +152,9 @@ void main() {
     );
   }
 
-  testWidgets('material renders both kinds through the shared dispatch',
-      (WidgetTester tester) async {
+  testWidgets('material renders both kinds through the shared dispatch', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(harness(cupertino: false));
 
     expect(rowField('Server address'), findsOneWidget);
@@ -163,8 +163,9 @@ void main() {
     expect(rowField('Scale'), findsOneWidget);
   });
 
-  testWidgets('cupertino renders both kinds through the shared dispatch',
-      (WidgetTester tester) async {
+  testWidgets('cupertino renders both kinds through the shared dispatch', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(harness(cupertino: true));
 
     expect(rowField('Server address'), findsOneWidget);
@@ -173,8 +174,9 @@ void main() {
     expect(rowField('Scale'), findsOneWidget);
   });
 
-  testWidgets('text item debounces keystrokes then writes through',
-      (WidgetTester tester) async {
+  testWidgets('text item debounces keystrokes then writes through', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(harness(cupertino: false));
 
     await tester.enterText(rowField('Server address'), 'http://10.0.0.2');
@@ -184,8 +186,9 @@ void main() {
     expect(textValue, 'http://10.0.0.2');
   });
 
-  testWidgets('text item flushes a pending debounced write on dispose',
-      (WidgetTester tester) async {
+  testWidgets('text item flushes a pending debounced write on dispose', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(harness(cupertino: false));
 
     await tester.enterText(rowField('Server address'), 'http://10.0.0.9');
@@ -195,12 +198,14 @@ void main() {
 
     // 关页（dispose）：pending 输入必须同步冲刷落盘，而不是随 timer 一起丢失。
     await tester.pumpWidget(const SizedBox.shrink());
-    expect(textValue, 'http://10.0.0.9',
-        reason: '防抖窗口内关页不得丢失已键入的值（审查 Finding 2）');
+    expect(
+      textValue,
+      'http://10.0.0.9',
+      reason: '防抖窗口内关页不得丢失已键入的值（审查 Finding 2）',
+    );
   });
 
-  testWidgets(
-      'number item re-syncs the field text to the clamped value '
+  testWidgets('number item re-syncs the field text to the clamped value '
       'on unfocus', (WidgetTester tester) async {
     await tester.pumpWidget(harness(cupertino: false));
 
@@ -210,30 +215,36 @@ void main() {
     expect(intValue, 100, reason: '越上界写穿时夹到 max');
 
     EditableText editable() => tester.widget<EditableText>(
-          find.descendant(
-            of: find.widgetWithText(AdaptiveSettingsRow, 'Delay'),
-            matching: find.byType(EditableText),
-          ),
-        );
+      find.descendant(
+        of: find.widgetWithText(AdaptiveSettingsRow, 'Delay'),
+        matching: find.byType(EditableText),
+      ),
+    );
     // 编辑中不打扰：文本保持用户键入的原样。
     expect(editable().controller.text, '250');
 
     // 失焦（编辑结束）：输入框回显真实存储值，静默夹取不再被陈旧文本掩盖。
     FocusManager.instance.primaryFocus?.unfocus();
     await tester.pump();
-    expect(editable().controller.text, '100',
-        reason: '失焦后必须回显已提交（夹取后）的值（审查 Finding 6）');
+    expect(
+      editable().controller.text,
+      '100',
+      reason: '失焦后必须回显已提交（夹取后）的值（审查 Finding 6）',
+    );
   });
 
-  testWidgets('secret item obscures and the eye toggle reveals',
-      (WidgetTester tester) async {
+  testWidgets('secret item obscures and the eye toggle reveals', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(harness(cupertino: false));
 
-    final Finder secretRow =
-        find.widgetWithText(AdaptiveSettingsRow, 'API key');
+    final Finder secretRow = find.widgetWithText(
+      AdaptiveSettingsRow,
+      'API key',
+    );
     EditableText editable() => tester.widget<EditableText>(
-          find.descendant(of: secretRow, matching: find.byType(EditableText)),
-        );
+      find.descendant(of: secretRow, matching: find.byType(EditableText)),
+    );
     expect(editable().obscureText, isTrue);
 
     await tester.tap(
@@ -255,15 +266,20 @@ void main() {
     expect(editable().obscureText, isTrue);
   });
 
-  testWidgets('secret item reset writes resetValue and refills the field',
-      (WidgetTester tester) async {
+  testWidgets('secret item reset writes resetValue and refills the field', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(harness(cupertino: false));
 
-    final Finder secretRow =
-        find.widgetWithText(AdaptiveSettingsRow, 'API key');
+    final Finder secretRow = find.widgetWithText(
+      AdaptiveSettingsRow,
+      'API key',
+    );
     await tester.tap(
       find.descendant(
-          of: secretRow, matching: find.byIcon(Icons.undo_outlined)),
+        of: secretRow,
+        matching: find.byIcon(Icons.undo_outlined),
+      ),
     );
     await tester.pumpAndSettle();
 
@@ -274,8 +290,9 @@ void main() {
     expect(editable.controller.text, '');
   });
 
-  testWidgets('number item clamps to min/max and skips unparsable input',
-      (WidgetTester tester) async {
+  testWidgets('number item clamps to min/max and skips unparsable input', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(harness(cupertino: false));
 
     final Finder delayField = rowField('Delay');
@@ -307,8 +324,9 @@ void main() {
     expect(doubleValue, 1.75);
   });
 
-  testWidgets('number item reset writes the reset value',
-      (WidgetTester tester) async {
+  testWidgets('number item reset writes the reset value', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(harness(cupertino: false));
 
     final Finder delayField = rowField('Delay');

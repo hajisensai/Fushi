@@ -32,8 +32,10 @@ class _RecordingBackend implements SyncBackend {
   void cacheBookFolderIds(List<SyncFileRef> folders) {}
 
   @override
-  void restoreCache(
-      {String? rootFolderId, Map<String, String>? titleToFolderId}) {}
+  void restoreCache({
+    String? rootFolderId,
+    Map<String, String>? titleToFolderId,
+  }) {}
 
   @override
   String? get cachedRootFolderId => null;
@@ -63,43 +65,45 @@ void main() {
   setUp(() => LocaleSettings.setLocale(AppLocale.en));
 
   testWidgets(
-      'compare load waits for an in-flight sync to release the shared mutex '
-      '(BUG-083)', (WidgetTester tester) async {
-    final FushiDatabase db = _memDb();
-    addTearDown(db.close);
-    final _RecordingBackend backend = _RecordingBackend();
+    'compare load waits for an in-flight sync to release the shared mutex '
+    '(BUG-083)',
+    (WidgetTester tester) async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final _RecordingBackend backend = _RecordingBackend();
 
-    // 模拟一次正在跑的同步：持有全局同步互斥锁直到 gate 完成。
-    final Completer<void> gate = Completer<void>();
-    final Future<void> holder = runExclusiveWithSync(() => gate.future);
+      // 模拟一次正在跑的同步：持有全局同步互斥锁直到 gate 完成。
+      final Completer<void> gate = Completer<void>();
+      final Future<void> holder = runExclusiveWithSync(() => gate.future);
 
-    await tester.pumpWidget(
-      TranslationProvider(
-        child: MaterialApp(
-          home: Scaffold(
-            body: SyncCompareDialog(db: db, backend: backend),
+      await tester.pumpWidget(
+        TranslationProvider(
+          child: MaterialApp(
+            home: Scaffold(
+              body: SyncCompareDialog(db: db, backend: backend),
+            ),
           ),
         ),
-      ),
-    );
+      );
 
-    // 让 initState→_load 跑到「取锁」处停住。同步还持锁，compare 绝不能去列举远端。
-    await tester.pump();
-    await tester.pump(const Duration(milliseconds: 20));
-    expect(
-      backend.listBooksCalls,
-      0,
-      reason: '同步持锁期间，对比对话框不得并发列举远端（否则会抢连接打断同步）',
-    );
+      // 让 initState→_load 跑到「取锁」处停住。同步还持锁，compare 绝不能去列举远端。
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 20));
+      expect(
+        backend.listBooksCalls,
+        0,
+        reason: '同步持锁期间，对比对话框不得并发列举远端（否则会抢连接打断同步）',
+      );
 
-    // 同步结束放锁后，compare 才继续拉取。
-    gate.complete();
-    await holder;
-    await tester.pumpAndSettle();
-    expect(
-      backend.listBooksCalls,
-      greaterThan(0),
-      reason: '同步放锁后，对比对话框应当继续完成它的远端列举',
-    );
-  });
+      // 同步结束放锁后，compare 才继续拉取。
+      gate.complete();
+      await holder;
+      await tester.pumpAndSettle();
+      expect(
+        backend.listBooksCalls,
+        greaterThan(0),
+        reason: '同步放锁后，对比对话框应当继续完成它的远端列举',
+      );
+    },
+  );
 }

@@ -38,7 +38,8 @@ void main() {
       expect(
         match,
         isNotNull,
-        reason: 'popup.css must keep the `.ruby-rt rt` normaliser — without it '
+        reason:
+            'popup.css must keep the `.ruby-rt rt` normaliser — without it '
             'every dictionary rt size compounds with the .ruby-rt box',
       );
       final String body = match!.group(1)!;
@@ -52,13 +53,15 @@ void main() {
       expect(
         value.startsWith('1em'),
         isTrue,
-        reason: '内层 <rt> 必须恒为 1em —— 尺寸的唯一承担者是 .ruby-rt 盒（BUG-1655），'
+        reason:
+            '内层 <rt> 必须恒为 1em —— 尺寸的唯一承担者是 .ruby-rt 盒（BUG-1655），'
             '现为 "$value"',
       );
       expect(
         value.contains('!important'),
         isTrue,
-        reason: '必须带 !important：词典 styles.css 被加前缀后是 '
+        reason:
+            '必须带 !important：词典 styles.css 被加前缀后是 '
             '`[data-dictionary="X"] rt`（特异度 0,1,1），与本条打平且注入更晚，'
             '不加就会被词典的 `rt{font-size:0.5em}` 覆盖成 0.6em×0.5=0.3em（BUG-1897）',
       );
@@ -80,7 +83,8 @@ void main() {
       expect(
         size,
         isNotNull,
-        reason: '.ruby-rt 必须用 em 声明字号，才能随 popupContentZoom 等比缩放'
+        reason:
+            '.ruby-rt 必须用 em 声明字号，才能随 popupContentZoom 等比缩放'
             '（BUG-363）',
       );
       // 不钉死具体数值：它是可调的产品值（0.5em → 0.6em，BUG-1655）。这里只锁

@@ -13,9 +13,9 @@ void main() {
   setUp(() {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(
-      const MethodChannel('com.ryanheise.audio_session'),
-      (_) async => null,
-    );
+          const MethodChannel('com.ryanheise.audio_session'),
+          (_) async => null,
+        );
   });
 
   AudioCue cue(int file, int startMs, int endMs) => AudioCue()
@@ -51,7 +51,9 @@ void main() {
       cue(1, 4000, 4500),
     ]);
     expect(
-      c.chapterCuesSnapshot.map((AudioCue x) => '${x.audioFileIndex}:${x.startMs}'),
+      c.chapterCuesSnapshot.map(
+        (AudioCue x) => '${x.audioFileIndex}:${x.startMs}',
+      ),
       <String>['0:0', '0:9000', '1:0', '1:4000'],
     );
   });
@@ -132,19 +134,21 @@ void main() {
       );
     });
 
-    test('prev: before the first cue of file 1 goes to the last cue of file 0',
-        () {
-      expect(
-        AudiobookPlayerController.prevCueIndexForTesting(
-          cues: cues,
-          currentCueIndex: -1,
-          currentCue: null,
-          audioFileIndex: 1,
-          positionMs: 0,
-        ),
-        1,
-      );
-    });
+    test(
+      'prev: before the first cue of file 1 goes to the last cue of file 0',
+      () {
+        expect(
+          AudiobookPlayerController.prevCueIndexForTesting(
+            cues: cues,
+            currentCueIndex: -1,
+            currentCue: null,
+            audioFileIndex: 1,
+            positionMs: 0,
+          ),
+          1,
+        );
+      },
+    );
 
     test('prev: before the first cue of the first file stays at index 0', () {
       expect(

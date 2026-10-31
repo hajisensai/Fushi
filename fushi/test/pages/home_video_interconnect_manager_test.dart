@@ -26,8 +26,9 @@ void main() {
 
   late Directory pathProviderDir;
   setUpAll(() {
-    pathProviderDir =
-        Directory.systemTemp.createTempSync('fushi_interconnect_pp');
+    pathProviderDir = Directory.systemTemp.createTempSync(
+      'fushi_interconnect_pp',
+    );
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
       (MethodCall call) async => pathProviderDir.path,
@@ -54,8 +55,9 @@ void main() {
     db = FushiDatabase.forTesting(NativeDatabase.memory());
     final PreferencesRepository prefs = PreferencesRepository(db);
     await prefs.loadFromDb();
-    final Directory storeDir =
-        Directory.systemTemp.createTempSync('fushi_interconnect_store');
+    final Directory storeDir = Directory.systemTemp.createTempSync(
+      'fushi_interconnect_store',
+    );
     appModel = AppModel(testPlatformServices())
       ..wireDatabaseForTesting(db)
       ..wireLocalAudioForTesting(prefsRepo: prefs, databaseDirectory: storeDir);
@@ -68,83 +70,87 @@ void main() {
   Widget buildApp({
     required RemoteVideoClient client,
     required InterconnectDownloadManager manager,
-  }) =>
-      ProviderScope(
-        overrides: <Override>[
-          appProvider.overrideWith((ref) => appModel),
-          interconnectDownloadManagerProvider.overrideWith((ref) => manager),
-        ],
-        child: TranslationProvider(
-          child: MaterialApp(
-            home: Scaffold(
-              body: HomeVideoPage(
-                repo: VideoBookRepository(db),
-                // #792 分区化：home 分区只渲染 dashboard 概览，远端占位卡所在的
-                // 混排墙（_buildLocalVideoSlivers）搬进了 series 分区，钉住它。
-                section: VideoLibrarySection.allVideos,
-                remoteVideoClientLoader: () async => client,
-                remoteVideoDownloadDestination: (RemoteVideoInfo v) async =>
-                    File('${pathProviderDir.path}/${v.id.hashCode}.mp4'),
-              ),
-            ),
+  }) => ProviderScope(
+    overrides: <Override>[
+      appProvider.overrideWith((ref) => appModel),
+      interconnectDownloadManagerProvider.overrideWith((ref) => manager),
+    ],
+    child: TranslationProvider(
+      child: MaterialApp(
+        home: Scaffold(
+          body: HomeVideoPage(
+            repo: VideoBookRepository(db),
+            // #792 分区化：home 分区只渲染 dashboard 概览，远端占位卡所在的
+            // 混排墙（_buildLocalVideoSlivers）搬进了 series 分区，钉住它。
+            section: VideoLibrarySection.allVideos,
+            remoteVideoClientLoader: () async => client,
+            remoteVideoDownloadDestination: (RemoteVideoInfo v) async =>
+                File('${pathProviderDir.path}/${v.id.hashCode}.mp4'),
           ),
         ),
-      );
+      ),
+    ),
+  );
 
   testWidgets(
-      'page badge subscribes to app-level manager progress (survives across '
-      'rebuilds)', (WidgetTester tester) async {
-    final _GatedClient client = _GatedClient();
-    // app 级 manager 由测试持有，模拟跨页面存活的真相源。
-    // Riverpod 持有 override 的 ChangeNotifier 生命周期（ProviderScope 拆除时自动
-    // dispose）；测试不再手动 dispose 以免二次释放。
-    final InterconnectDownloadManager manager = InterconnectDownloadManager();
+    'page badge subscribes to app-level manager progress (survives across '
+    'rebuilds)',
+    (WidgetTester tester) async {
+      final _GatedClient client = _GatedClient();
+      // app 级 manager 由测试持有，模拟跨页面存活的真相源。
+      // Riverpod 持有 override 的 ChangeNotifier 生命周期（ProviderScope 拆除时自动
+      // dispose）；测试不再手动 dispose 以免二次释放。
+      final InterconnectDownloadManager manager = InterconnectDownloadManager();
 
-    await tester.pumpWidget(buildApp(client: client, manager: manager));
-    await tester.pumpAndSettle();
+      await tester.pumpWidget(buildApp(client: client, manager: manager));
+      await tester.pumpAndSettle();
 
-    // UI 巡检 PR-4：封面内嵌下载按钮已撤，下载入口 = 长按卡片弹面板 → 「下载」。
-    // BUG-2835：「全部视频」多了一行筛选，800x600 视口里卡片可能落在折线下。
-    await tester.ensureVisible(
-      find.byKey(const ValueKey<String>('remote_video_card_remote_video-1')),
-    );
-    await tester.pumpAndSettle();
-    await tester.longPress(find.byKey(
-      const ValueKey<String>('remote_video_card_remote_video-1'),
-    ));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text(t.remote_video_download));
-    await tester.pump();
-    await tester.pump();
+      // UI 巡检 PR-4：封面内嵌下载按钮已撤，下载入口 = 长按卡片弹面板 → 「下载」。
+      // BUG-2835：「全部视频」多了一行筛选，800x600 视口里卡片可能落在折线下。
+      await tester.ensureVisible(
+        find.byKey(const ValueKey<String>('remote_video_card_remote_video-1')),
+      );
+      await tester.pumpAndSettle();
+      await tester.longPress(
+        find.byKey(const ValueKey<String>('remote_video_card_remote_video-1')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text(t.remote_video_download));
+      await tester.pump();
+      await tester.pump();
 
-    // 进度徽章出现（页面从 manager 读 isRunning）。
-    expect(
-      find.byKey(
-          const ValueKey<String>('remote_video_downloading_remote_video-1')),
-      findsOneWidget,
-    );
-    // manager（app 级真相源）确实持有该 running 任务。
-    expect(manager.isRunning('remote/video-1'), isTrue);
-    expect(manager.progressFor('remote/video-1'), 0.3);
+      // 进度徽章出现（页面从 manager 读 isRunning）。
+      expect(
+        find.byKey(
+          const ValueKey<String>('remote_video_downloading_remote_video-1'),
+        ),
+        findsOneWidget,
+      );
+      // manager（app 级真相源）确实持有该 running 任务。
+      expect(manager.isRunning('remote/video-1'), isTrue);
+      expect(manager.progressFor('remote/video-1'), 0.3);
 
-    client.completer.complete();
-    // 徽章是 MD3 Expressive 波浪进度环，在场时常驻流动动画，pumpAndSettle
-    // 永远不会返回；推过收尾即可。
-    await tester.pump();
-    await tester.pump(const Duration(seconds: 1));
-  });
+      client.completer.complete();
+      // 徽章是 MD3 Expressive 波浪进度环，在场时常驻流动动画，pumpAndSettle
+      // 永远不会返回；推过收尾即可。
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+    },
+  );
 
-  test('source guard: page delegates download to InterconnectDownloadManager',
-      () {
-    final String src =
-        File('lib/src/pages/implementations/home_video_page.dart')
-            .readAsStringSync();
-    // 必须走 app 级 manager，而非页面 State Map。
-    expect(src, contains('interconnectDownloadManagerProvider'));
-    expect(src, contains('startVideoDownload'));
-    // 旧的页面 State Map 必须已移除（任务不再挂页面 State）。
-    expect(src.contains('_downloadingVideos'), isFalse);
-  });
+  test(
+    'source guard: page delegates download to InterconnectDownloadManager',
+    () {
+      final String src = File(
+        'lib/src/pages/implementations/home_video_page.dart',
+      ).readAsStringSync();
+      // 必须走 app 级 manager，而非页面 State Map。
+      expect(src, contains('interconnectDownloadManagerProvider'));
+      expect(src, contains('startVideoDownload'));
+      // 旧的页面 State Map 必须已移除（任务不再挂页面 State）。
+      expect(src.contains('_downloadingVideos'), isFalse);
+    },
+  );
 }
 
 class _GatedClient implements RemoteVideoClient {
@@ -155,13 +161,14 @@ class _GatedClient implements RemoteVideoClient {
 
   @override
   Future<List<RemoteVideoInfo>> listRemoteVideos() async => <RemoteVideoInfo>[
-        RemoteVideoInfo(id: 'remote/video-1', title: 'Gated'),
-      ];
+    RemoteVideoInfo(id: 'remote/video-1', title: 'Gated'),
+  ];
 
   @override
-  Future<RemoteVideoStreamUrls> remoteVideoStreamUrls(String id,
-          {int episodeIndex = 0}) async =>
-      const RemoteVideoStreamUrls(streamUrl: 'http://x/stream');
+  Future<RemoteVideoStreamUrls> remoteVideoStreamUrls(
+    String id, {
+    int episodeIndex = 0,
+  }) async => const RemoteVideoStreamUrls(streamUrl: 'http://x/stream');
 
   @override
   Future<void> getRemoteVideoSubtitle(
@@ -189,8 +196,7 @@ class _GatedClient implements RemoteVideoClient {
   Future<({int positionMs, int updatedAtMs})> remoteVideoPosition(
     String id, {
     int episodeIndex = 0,
-  }) async =>
-      (positionMs: 0, updatedAtMs: 0);
+  }) async => (positionMs: 0, updatedAtMs: 0);
 
   @override
   Future<void> putRemoteVideoPosition(

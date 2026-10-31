@@ -113,13 +113,19 @@ void main() {
     });
 
     test('_init 播放列表分支记合集名到 _playlistTitle', () {
-      expect(src.contains('String? _playlistTitle'), isTrue,
-          reason: '需有播放列表系列名成员（方案 B）。');
+      expect(
+        src.contains('String? _playlistTitle'),
+        isTrue,
+        reason: '需有播放列表系列名成员（方案 B）。',
+      );
       // 统一合集 Phase 3：设值落在合集成员 >1（确认是多集播放列表）分支，取 playlist
       // 合集名（col?.name）作系列名。
       final int branchIdx = src.indexOf('if (refs.length > 1) {');
-      expect(branchIdx, greaterThanOrEqualTo(0),
-          reason: '系列名须在多集（refs.length > 1）分支内赋值。');
+      expect(
+        branchIdx,
+        greaterThanOrEqualTo(0),
+        reason: '系列名须在多集（refs.length > 1）分支内赋值。',
+      );
       final int setIdx = src.indexOf('_playlistTitle = col?.name;', branchIdx);
       expect(setIdx, greaterThan(branchIdx), reason: '系列名（合集名）须在多集播放列表分支内赋值。');
     });
@@ -127,18 +133,19 @@ void main() {
     test('_mineVideoCard 的 documentTitle 经 helper 而非裸 _title（喂进沉浸引擎请求）', () {
       // TODO-1000: AnkiMiningContext 组装搬进 ImmersionMiningEngine。排队制卡
       // 必须在点击时先冻结 helper 结果，再把该快照喂进请求，不能到出队时重读页面状态。
-      final int mineIdx =
-          src.indexOf('Future<MinePopupResult> _mineVideoCard({');
-      final int mineEnd =
-          src.indexOf('Future<void> _recordMinedSentenceForVideo(', mineIdx);
+      final int mineIdx = src.indexOf(
+        'Future<MinePopupResult> _mineVideoCard({',
+      );
+      final int mineEnd = src.indexOf(
+        'Future<void> _recordMinedSentenceForVideo(',
+        mineIdx,
+      );
       expect(mineIdx, greaterThanOrEqualTo(0));
       expect(mineEnd, greaterThan(mineIdx));
       final String mine = src.substring(mineIdx, mineEnd);
       expect(
         mine,
-        contains(
-          'final String? documentTitle = _videoMiningDocumentTitle();',
-        ),
+        contains('final String? documentTitle = _videoMiningDocumentTitle();'),
         reason: '排队前须冻结播放列表感知标题，防换集后串到下一集',
       );
       final int reqIdx = mine.indexOf('ImmersionMiningRequest(');
@@ -146,16 +153,24 @@ void main() {
       final int reqEnd = mine.indexOf('source: AnkiMiningSource.video', reqIdx);
       expect(reqEnd, greaterThan(reqIdx));
       final String req = mine.substring(reqIdx, reqEnd);
-      expect(req.contains('documentTitle: documentTitle,'), isTrue,
-          reason: '制卡请求必须使用入队前冻结的播放列表感知标题。');
-      expect(req.contains('documentTitle: _title,'), isFalse,
-          reason: '不得保留旧的裸 _title 赋值（会绕过系列名拼接）。');
+      expect(
+        req.contains('documentTitle: documentTitle,'),
+        isTrue,
+        reason: '制卡请求必须使用入队前冻结的播放列表感知标题。',
+      );
+      expect(
+        req.contains('documentTitle: _title,'),
+        isFalse,
+        reason: '不得保留旧的裸 _title 赋值（会绕过系列名拼接）。',
+      );
     });
 
     test('helper 委托顶层纯函数 composeVideoMiningDocumentTitle', () {
       expect(
-        src.contains('String? _videoMiningDocumentTitle() =>'
-            ' composeVideoMiningDocumentTitle('),
+        src.contains(
+          'String? _videoMiningDocumentTitle() =>'
+          ' composeVideoMiningDocumentTitle(',
+        ),
         isTrue,
         reason: 'helper 须委托可单测的顶层纯函数。',
       );

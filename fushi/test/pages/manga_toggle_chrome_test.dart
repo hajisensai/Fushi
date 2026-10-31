@@ -203,7 +203,8 @@ void main() {
           r'_bookRow != null &&\s+!_loadFailed &&\s+!_chapterNotDownloaded',
         ).allMatches(pageSrc).length,
         1,
-        reason: '内容门控的原始表达式只该出现一次（`_chromeContentReady` 的定义）；'
+        reason:
+            '内容门控的原始表达式只该出现一次（`_chromeContentReady` 的定义）；'
             '返回键若自己再写一份，失败态就没有出口了',
       );
       expect(

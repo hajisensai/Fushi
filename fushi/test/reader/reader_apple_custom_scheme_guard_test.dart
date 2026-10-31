@@ -20,13 +20,17 @@ void main() {
     ).readAsStringSync();
     expect(
       platformUtils,
-      contains('bool get webViewUsesCustomSchemeTransport =>\n'
-          '    Platform.isMacOS || Platform.isIOS || Platform.isLinux;'),
+      contains(
+        'bool get webViewUsesCustomSchemeTransport =>\n'
+        '    Platform.isMacOS || Platform.isIOS || Platform.isLinux;',
+      ),
     );
     expect(
       reader,
-      contains('static bool get _usesReaderResourceCustomScheme =>\n'
-          '      webViewUsesCustomSchemeTransport;'),
+      contains(
+        'static bool get _usesReaderResourceCustomScheme =>\n'
+        '      webViewUsesCustomSchemeTransport;',
+      ),
     );
     expect(source, contains(r"'$kResourceScheme://$kHost/epub/$encoded'"));
     expect(source, contains('fontUrlBuilder: fontUrl'));
@@ -41,8 +45,8 @@ void main() {
     expect(reader, contains('ReaderFushi.interceptResource'));
     expect(reader, contains("path.startsWith('/fonts/')"));
     expect(
-        reader,
-        contains(
-            'useShouldInterceptRequest: !_usesReaderResourceCustomScheme'));
+      reader,
+      contains('useShouldInterceptRequest: !_usesReaderResourceCustomScheme'),
+    );
   });
 }

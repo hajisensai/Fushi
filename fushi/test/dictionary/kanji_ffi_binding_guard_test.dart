@@ -15,8 +15,11 @@ import 'package:flutter_test/flutter_test.dart';
 void main() {
   String read(String relativeToFushi) {
     final File f = File(relativeToFushi);
-    expect(f.existsSync(), isTrue,
-        reason: 'expected file at ${f.absolute.path}');
+    expect(
+      f.existsSync(),
+      isTrue,
+      reason: 'expected file at ${f.absolute.path}',
+    );
     return f.readAsStringSync();
   }
 
@@ -27,8 +30,11 @@ void main() {
       'fushidicts_query_kanji',
       'fushidicts_free_kanji_results',
     ]) {
-      expect(ffi.contains(sym), isTrue,
-          reason: 'fushidicts_ffi.cpp must export $sym (TODO-094b S3)');
+      expect(
+        ffi.contains(sym),
+        isTrue,
+        reason: 'fushidicts_ffi.cpp must export $sym (TODO-094b S3)',
+      );
     }
     // The FFI result struct must carry every KanjiResult field.
     expect(ffi.contains('struct FfiKanjiResult'), isTrue);
@@ -42,36 +48,45 @@ void main() {
       'meaning_count',
       'dict_name',
     ]) {
-      expect(ffi.contains(field), isTrue,
-          reason: 'FfiKanjiResult must include $field');
+      expect(
+        ffi.contains(field),
+        isTrue,
+        reason: 'FfiKanjiResult must include $field',
+      );
     }
   });
 
   test('Dart bindings look up the kanji C symbols by their exact names', () {
     final String bindings = read(
-        '../packages/fushi_dictionary/lib/src/ffi/fushidicts_ffi_bindings.dart');
+      '../packages/fushi_dictionary/lib/src/ffi/fushidicts_ffi_bindings.dart',
+    );
     // The lookupFunction string MUST match the C export name byte-for-byte.
     for (final String sym in <String>[
       'fushidicts_add_kanji_dict',
       'fushidicts_query_kanji',
       'fushidicts_free_kanji_results',
     ]) {
-      expect(bindings.contains("'$sym'"), isTrue,
-          reason: 'bindings must lookupFunction $sym');
+      expect(
+        bindings.contains("'$sym'"),
+        isTrue,
+        reason: 'bindings must lookupFunction $sym',
+      );
     }
     expect(bindings.contains('class FfiKanjiResult extends Struct'), isTrue);
     expect(bindings.contains('class FfiKanjiResults extends Struct'), isTrue);
   });
 
   test('engine exposes addKanjiDict / queryKanji and converts every field', () {
-    final String engine =
-        read('../packages/fushi_dictionary/lib/src/engine/fushidicts.dart');
+    final String engine = read(
+      '../packages/fushi_dictionary/lib/src/engine/fushidicts.dart',
+    );
     expect(engine.contains('void addKanjiDict(String path)'), isTrue);
     expect(engine.contains('List<FushiKanjiResult> queryKanji('), isTrue);
     // 结果模型已从引擎门面拆进 fushidicts_models.dart（门面只留 API + 转换器）。
     // 仍然要钉住它存在——拆文件是重构，"这个类还在不在"是不变式，两者不该混为一谈。
-    final String models =
-        read('../packages/fushi_dictionary/lib/src/engine/fushidicts_models.dart');
+    final String models = read(
+      '../packages/fushi_dictionary/lib/src/engine/fushidicts_models.dart',
+    );
     expect(models.contains('class FushiKanjiResult'), isTrue);
     expect(engine.contains('FushiKanjiResult _convertKanji('), isTrue);
     // initializeTyped must accept the kanji bucket so S4 can route kanji dicts.

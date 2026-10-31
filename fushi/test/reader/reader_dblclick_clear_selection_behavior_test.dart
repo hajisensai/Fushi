@@ -22,8 +22,7 @@ import 'package:flutter_test/flutter_test.dart';
 /// 当本机/CI 没有 node 时自动 skip，但本地与装有 node 的环境都会真跑，提供静态守卫
 /// 缺失的行为级覆盖。
 void main() {
-  test(
-      'double-click clears native selection but still toggles furigana '
+  test('double-click clears native selection but still toggles furigana '
       '(executes reader handlers via node)', () async {
     final String? nodeExe = _resolveNode();
     if (nodeExe == null) {
@@ -34,19 +33,21 @@ void main() {
     final File jsTest = File(
       'test/reader/reader_dblclick_clear_selection_behavior_test.js',
     );
-    expect(jsTest.existsSync(), isTrue,
-        reason: 'behavior harness ${jsTest.path} must exist');
-
-    final ProcessResult result = await Process.run(
-      nodeExe,
-      <String>[jsTest.path],
-      workingDirectory: Directory.current.path,
+    expect(
+      jsTest.existsSync(),
+      isTrue,
+      reason: 'behavior harness ${jsTest.path} must exist',
     );
+
+    final ProcessResult result = await Process.run(nodeExe, <String>[
+      jsTest.path,
+    ], workingDirectory: Directory.current.path);
 
     expect(
       result.exitCode,
       0,
-      reason: 'reader dblclick handler JS behavior test failed.\n'
+      reason:
+          'reader dblclick handler JS behavior test failed.\n'
           'stdout:\n${result.stdout}\nstderr:\n${result.stderr}',
     );
     expect(
@@ -59,8 +60,9 @@ void main() {
 
 /// Resolve a usable `node` executable, returning null when none is on PATH.
 String? _resolveNode() {
-  final List<String> candidates =
-      Platform.isWindows ? <String>['node.exe', 'node'] : <String>['node'];
+  final List<String> candidates = Platform.isWindows
+      ? <String>['node.exe', 'node']
+      : <String>['node'];
   for (final String name in candidates) {
     try {
       final ProcessResult probe = Process.runSync(name, <String>['--version']);

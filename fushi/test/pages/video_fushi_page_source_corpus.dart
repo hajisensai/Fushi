@@ -23,10 +23,8 @@ const String _videoFushiShell =
 const String kVideoFushiPartDir = 'lib/src/pages/implementations/video_fushi';
 
 /// 主壳 + 磁盘上全部 `*.part.dart`（按路径排序，保证跨机器/跨次运行顺序确定）。
-List<String> videoFushiPageFiles() => partCorpusFiles(
-      shell: _videoFushiShell,
-      partDir: kVideoFushiPartDir,
-    );
+List<String> videoFushiPageFiles() =>
+    partCorpusFiles(shell: _videoFushiShell, partDir: kVideoFushiPartDir);
 
 /// TODO-1000: the media-degradation ladder (GIF -> cue-time still frame ->
 /// current-decoded-frame fallback), the no-audio abort (BUG-296) and the
@@ -75,14 +73,28 @@ const String kFadingChromeGatePath =
 /// `MyIgnorePointer(` 顶包），字面量走 [containsCodeLine]（只认代码行）。
 void expectFadingChromeGateContract() {
   final String gate = File(kFadingChromeGatePath).readAsStringSync();
-  expect(containsCodeLine(gate, 'this.curve = Curves.easeInOut'), isTrue,
-      reason: 'FadingChromeGate 默认曲线必须是 easeInOut（调用点不传即取此值）；'
-          '注释里写着这句不算实现');
-  expect(containsIdentifierCall(gate, 'IgnorePointer'), isTrue,
-      reason: '淡出后必须 IgnorePointer 不拦点击；注释里提到它不算实现');
-  expect(containsIdentifierCall(gate, 'AnimatedOpacity'), isTrue,
-      reason: '淡入淡出必须由 AnimatedOpacity 实现；注释里提到它不算实现');
-  expect(containsCodeLine(gate, 'curve: curve'), isTrue,
-      reason: 'AnimatedOpacity 必须真把 curve 透传下去，否则默认值形同虚设；'
-          '注释里写着这句不算实现');
+  expect(
+    containsCodeLine(gate, 'this.curve = Curves.easeInOut'),
+    isTrue,
+    reason:
+        'FadingChromeGate 默认曲线必须是 easeInOut（调用点不传即取此值）；'
+        '注释里写着这句不算实现',
+  );
+  expect(
+    containsIdentifierCall(gate, 'IgnorePointer'),
+    isTrue,
+    reason: '淡出后必须 IgnorePointer 不拦点击；注释里提到它不算实现',
+  );
+  expect(
+    containsIdentifierCall(gate, 'AnimatedOpacity'),
+    isTrue,
+    reason: '淡入淡出必须由 AnimatedOpacity 实现；注释里提到它不算实现',
+  );
+  expect(
+    containsCodeLine(gate, 'curve: curve'),
+    isTrue,
+    reason:
+        'AnimatedOpacity 必须真把 curve 透传下去，否则默认值形同虚设；'
+        '注释里写着这句不算实现',
+  );
 }

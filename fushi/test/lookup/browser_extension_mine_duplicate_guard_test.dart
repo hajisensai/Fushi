@@ -25,21 +25,36 @@ void main() {
           final String src = bridge.readAsStringSync();
           // 旧桩唯一特征：duplicateCheck 直接 return Promise.resolve(false)。
           // 其它 case 回 Promise.resolve(null)，故此串是恒 false 桩的唯一标记。
-          expect(src.contains('Promise.resolve(false)'), isFalse,
-              reason: '${bridge.path} 的 duplicateCheck 仍是恒 false 桩');
+          expect(
+            src.contains('Promise.resolve(false)'),
+            isFalse,
+            reason: '${bridge.path} 的 duplicateCheck 仍是恒 false 桩',
+          );
         });
 
         test('duplicateCheck 经 chrome.runtime 转发到 duplicate 消息', () {
           final String src = bridge.readAsStringSync();
-          expect(src.contains("case 'duplicateCheck':"), isTrue,
-              reason: '${bridge.path} 缺 duplicateCheck 分支');
-          expect(src.contains('chrome.runtime.sendMessage'), isTrue,
-              reason:
-                  '${bridge.path} duplicateCheck 未走 chrome.runtime.sendMessage');
-          expect(src.contains("type: 'duplicate'"), isTrue,
-              reason: '${bridge.path} 未发 duplicate 消息类型');
-          expect(src.contains('return false;'), isTrue,
-              reason: '${bridge.path} duplicateCheck 缺 fail-soft false 回落');
+          expect(
+            src.contains("case 'duplicateCheck':"),
+            isTrue,
+            reason: '${bridge.path} 缺 duplicateCheck 分支',
+          );
+          expect(
+            src.contains('chrome.runtime.sendMessage'),
+            isTrue,
+            reason:
+                '${bridge.path} duplicateCheck 未走 chrome.runtime.sendMessage',
+          );
+          expect(
+            src.contains("type: 'duplicate'"),
+            isTrue,
+            reason: '${bridge.path} 未发 duplicate 消息类型',
+          );
+          expect(
+            src.contains('return false;'),
+            isTrue,
+            reason: '${bridge.path} duplicateCheck 缺 fail-soft false 回落',
+          );
         });
       });
     }
@@ -47,24 +62,38 @@ void main() {
     for (final File bg in <File>[assetsBackground, toolsBackground]) {
       test('background.js ${bg.path} 有 /api/duplicate fetch 分支', () {
         final String src = bg.readAsStringSync();
-        expect(src.contains("msg.type === 'duplicate'"), isTrue,
-            reason: '${bg.path} 缺 duplicate 消息处理分支');
-        expect(src.contains("fetch(base + '/api/duplicate'"), isTrue,
-            reason: '${bg.path} 未 fetch server /api/duplicate');
-        expect(src.contains('authHeader(token)'), isTrue,
-            reason: '${bg.path} /api/duplicate 未带 Basic auth');
+        expect(
+          src.contains("msg.type === 'duplicate'"),
+          isTrue,
+          reason: '${bg.path} 缺 duplicate 消息处理分支',
+        );
+        expect(
+          src.contains("fetch(base + '/api/duplicate'"),
+          isTrue,
+          reason: '${bg.path} 未 fetch server /api/duplicate',
+        );
+        expect(
+          src.contains('authHeader(token)'),
+          isTrue,
+          reason: '${bg.path} /api/duplicate 未带 Basic auth',
+        );
       });
     }
 
     test('bridge-shim.js 两份镜像逐字节一致', () {
-      expect(assetsBridge.readAsBytesSync(), toolsBridge.readAsBytesSync(),
-          reason: 'bridge-shim.js 两份镜像不一致');
+      expect(
+        assetsBridge.readAsBytesSync(),
+        toolsBridge.readAsBytesSync(),
+        reason: 'bridge-shim.js 两份镜像不一致',
+      );
     });
 
     test('background.js 两份镜像逐字节一致', () {
       expect(
-          assetsBackground.readAsBytesSync(), toolsBackground.readAsBytesSync(),
-          reason: 'background.js 两份镜像不一致');
+        assetsBackground.readAsBytesSync(),
+        toolsBackground.readAsBytesSync(),
+        reason: 'background.js 两份镜像不一致',
+      );
     });
   });
 }

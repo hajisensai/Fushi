@@ -23,17 +23,17 @@ class YomichanFormat extends DictionaryFormat {
   /// Define a format with the given metadata that has its behaviour for
   /// import, search and display defined with af set of top-level helper methods.
   YomichanFormat._privateConstructor()
-      : super(
-          uniqueKey: 'yomichan',
-          name: 'Yomitan Dictionary',
-          icon: Icons.auto_stories_rounded,
-          allowedExtensions: const ['zip'],
-          isTextFormat: false,
-          fileType: FileType.custom,
-          prepareDirectory: prepareDirectoryYomichanFormat,
-          prepareName: prepareNameYomichanFormat,
-          prepareEntries: _prepareEntriesYomichanStub,
-        );
+    : super(
+        uniqueKey: 'yomichan',
+        name: 'Yomitan Dictionary',
+        icon: Icons.auto_stories_rounded,
+        allowedExtensions: const ['zip'],
+        isTextFormat: false,
+        fileType: FileType.custom,
+        prepareDirectory: prepareDirectoryYomichanFormat,
+        prepareName: prepareNameYomichanFormat,
+        prepareEntries: _prepareEntriesYomichanStub,
+      );
 
   /// Get the singleton instance of this dictionary format.
   static YomichanFormat get instance => _instance;
@@ -46,9 +46,7 @@ class YomichanFormat extends DictionaryFormat {
       return getNodeHtml(
         tag: content['tag'],
         content: getStructuredContentHtml(content['content']),
-        style: getStyle(
-          content['style'] ?? {},
-        ),
+        style: getStyle(content['style'] ?? {}),
       );
     } else if (content is List) {
       return content.map(getStructuredContentHtml).join();
@@ -61,10 +59,7 @@ class YomichanFormat extends DictionaryFormat {
   static Map<String, String> getStyle(Map<String, dynamic> styleMap) {
     return Map<String, String>.fromEntries(
       styleMap.entries.map(
-        (e) => MapEntry(
-          ReCase(e.key).paramCase,
-          e.value.toString(),
-        ),
+        (e) => MapEntry(ReCase(e.key).paramCase, e.value.toString()),
       ),
     );
   }
@@ -113,7 +108,8 @@ const int _maxSingleFileBytes = 256 * 1024 * 1024;
 
 /// Top-level function for use in compute. See [DictionaryFormat] for details.
 Future<void> prepareDirectoryYomichanFormat(
-    PrepareDirectoryParams params) async {
+  PrepareDirectoryParams params,
+) async {
   final filePath = params.file.path;
   final dirPath = params.resourceDirectory.path;
   final sendPort = params.sendPort;
@@ -141,7 +137,8 @@ Future<void> prepareDirectoryYomichanFormat(
           cumulativeBytes += size;
           if (cumulativeBytes > _maxDecompressedBytes) {
             throw StateError(
-                'ZIP extraction aborted: decompressed size exceeds 2 GB limit');
+              'ZIP extraction aborted: decompressed size exceeds 2 GB limit',
+            );
           }
           final outFile = File(outPath);
           outFile.parent.createSync(recursive: true);

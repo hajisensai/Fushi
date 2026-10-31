@@ -132,11 +132,20 @@ Future<void> _chooseSentenceAndSave(WidgetTester tester) async {
     FilledButton,
     t.card_source_review_save,
   );
-  expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(save)).onPressed, isNull);
-  expect(tester.widget<Checkbox>(glassUnwrap<Checkbox>(sentence)).value, isFalse);
+  expect(
+    tester.widget<FilledButton>(glassUnwrap<FilledButton>(save)).onPressed,
+    isNull,
+  );
+  expect(
+    tester.widget<Checkbox>(glassUnwrap<Checkbox>(sentence)).value,
+    isFalse,
+  );
   await tester.tap(sentence);
   await tester.pump();
-  expect(tester.widget<Checkbox>(glassUnwrap<Checkbox>(sentence)).value, isTrue);
+  expect(
+    tester.widget<Checkbox>(glassUnwrap<Checkbox>(sentence)).value,
+    isTrue,
+  );
   await tester.tap(save);
   await tester.pump();
 }
@@ -258,9 +267,8 @@ void main() {
     expect(continueButton, findsOneWidget);
     expect(find.byType(TextField), findsNothing);
     FocusNode buttonFocus(Finder button) => Focus.of(
-          tester.element(
-              find.descendant(of: button, matching: find.byType(Text))),
-        );
+      tester.element(find.descendant(of: button, matching: find.byType(Text))),
+    );
     Future<void> press(LogicalKeyboardKey key) async {
       await tester.sendKeyEvent(key);
       await tester.pump();
@@ -529,7 +537,12 @@ void main() {
       TextButton,
       t.card_source_review_continue,
     );
-    expect(tester.widget<TextButton>(glassUnwrap<TextButton>(continueButton)).onPressed, isNull);
+    expect(
+      tester
+          .widget<TextButton>(glassUnwrap<TextButton>(continueButton))
+          .onPressed,
+      isNull,
+    );
     repository.pendingRead!.complete(null);
     await _until(tester, () => !session.busy);
     await pending;

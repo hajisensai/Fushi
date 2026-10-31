@@ -150,15 +150,14 @@ enum ReaderControlItem implements ControlItemSpec<ReaderControlSlot> {
 
   /// 有声书传输键（上一句 / 播放暂停 / 下一句 / ±10s / 跟随）。
   bool get isAudiobookTransport => switch (this) {
-        ReaderControlItem.audiobookPrev ||
-        ReaderControlItem.audiobookPlayPause ||
-        ReaderControlItem.audiobookNext ||
-        ReaderControlItem.audiobookSeekBack ||
-        ReaderControlItem.audiobookSeekForward ||
-        ReaderControlItem.audiobookFollow =>
-          true,
-        _ => false,
-      };
+    ReaderControlItem.audiobookPrev ||
+    ReaderControlItem.audiobookPlayPause ||
+    ReaderControlItem.audiobookNext ||
+    ReaderControlItem.audiobookSeekBack ||
+    ReaderControlItem.audiobookSeekForward ||
+    ReaderControlItem.audiobookFollow => true,
+    _ => false,
+  };
 
   @override
   bool canMoveToSlot(ReaderControlSlot target, {bool isTouchControls = false}) {
@@ -189,10 +188,10 @@ enum ReaderControlItem implements ControlItemSpec<ReaderControlSlot> {
 /// 的那颗键。歌词模式另加模式切换键（页面追加，与顶栏在歌词模式强制保留它同理）。
 const List<ReaderControlItem> kReaderToolbarsTakeoverItems =
     <ReaderControlItem>[
-  ReaderControlItem.back,
-  ReaderControlItem.settings,
-  ReaderControlItem.toolbars,
-];
+      ReaderControlItem.back,
+      ReaderControlItem.settings,
+      ReaderControlItem.toolbars,
+    ];
 
 /// 顶栏中间只有书名：其它按钮误进 topCenter 时挪回各自的 recoverySlot。
 void _readerPostNormalize(
@@ -213,13 +212,13 @@ void _readerPostNormalize(
 }
 
 const ControlLayoutScheme<ReaderControlSlot, ReaderControlItem>
-    kReaderControlScheme =
+kReaderControlScheme =
     ControlLayoutScheme<ReaderControlSlot, ReaderControlItem>(
-  slots: ReaderControlSlot.values,
-  hiddenSlot: ReaderControlSlot.hidden,
-  items: ReaderControlItem.values,
-  postNormalize: _readerPostNormalize,
-);
+      slots: ReaderControlSlot.values,
+      hiddenSlot: ReaderControlSlot.hidden,
+      items: ReaderControlItem.values,
+      postNormalize: _readerPostNormalize,
+    );
 
 /// 窄于此宽度（逻辑 px，MD3 compact window class 上界）用窄窗布局
 /// （[ReaderControlLayout.compactDefaults] / 偏好 `reader_control_layout_compact`）。
@@ -233,8 +232,7 @@ class ReaderControlLayout {
 
   factory ReaderControlLayout.fromCore(
     ControlLayout<ReaderControlSlot, ReaderControlItem> core,
-  ) =>
-      ReaderControlLayout._(core);
+  ) => ReaderControlLayout._(core);
 
   /// 宽窗（≥ [kReaderControlCompactWidth]）出厂布局（2026-10 工具栏精简，按使用频率
   /// 重排）：左「← 返回」，中「书名」（点它 = 打开导航），右主操作组「导航 /
@@ -247,9 +245,7 @@ class ReaderControlLayout {
     ControlLayout<ReaderControlSlot, ReaderControlItem>.fromSlots(
       kReaderControlScheme,
       <ReaderControlSlot, List<ReaderControlItem>>{
-        ReaderControlSlot.topLeft: <ReaderControlItem>[
-          ReaderControlItem.back,
-        ],
+        ReaderControlSlot.topLeft: <ReaderControlItem>[ReaderControlItem.back],
         ReaderControlSlot.topCenter: <ReaderControlItem>[
           ReaderControlItem.title,
         ],
@@ -276,9 +272,7 @@ class ReaderControlLayout {
     ControlLayout<ReaderControlSlot, ReaderControlItem>.fromSlots(
       kReaderControlScheme,
       <ReaderControlSlot, List<ReaderControlItem>>{
-        ReaderControlSlot.topLeft: <ReaderControlItem>[
-          ReaderControlItem.back,
-        ],
+        ReaderControlSlot.topLeft: <ReaderControlItem>[ReaderControlItem.back],
         ReaderControlSlot.topCenter: <ReaderControlItem>[
           ReaderControlItem.title,
         ],
@@ -300,11 +294,10 @@ class ReaderControlLayout {
 
   static Map<ReaderControlItem, ReaderControlSlot> _defaultAssignments(
     ReaderControlLayout base,
-  ) =>
-      <ReaderControlItem, ReaderControlSlot>{
-        for (final ReaderControlItem item in ReaderControlItem.values)
-          item: base.core.slotOf(item),
-      };
+  ) => <ReaderControlItem, ReaderControlSlot>{
+    for (final ReaderControlItem item in ReaderControlItem.values)
+      item: base.core.slotOf(item),
+  };
 
   List<ReaderControlItem> itemsIn(ReaderControlSlot slot) => core.itemsIn(slot);
 
@@ -341,11 +334,11 @@ class ReaderControlLayout {
       if (slotsRaw is! Map<String, dynamic>) return base;
       final ControlLayout<ReaderControlSlot, ReaderControlItem>? core =
           ControlLayout.decodeSlots<ReaderControlSlot, ReaderControlItem>(
-        kReaderControlScheme,
-        slotsRaw,
-        removedRaw: raw['removed'],
-        fallbackAssignments: _defaultAssignments(base),
-      );
+            kReaderControlScheme,
+            slotsRaw,
+            removedRaw: raw['removed'],
+            fallbackAssignments: _defaultAssignments(base),
+          );
       return core == null ? base : ReaderControlLayout._(core);
     } catch (_) {
       return base;

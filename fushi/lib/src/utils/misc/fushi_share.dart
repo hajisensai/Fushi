@@ -105,7 +105,8 @@ class FushiShare {
   /// `WidgetsBinding`：分享可能从没有 `BuildContext` 的平台 seam 触发。
   static Size _currentViewSize() {
     final ui.PlatformDispatcher dispatcher = ui.PlatformDispatcher.instance;
-    final ui.FlutterView? view = dispatcher.implicitView ??
+    final ui.FlutterView? view =
+        dispatcher.implicitView ??
         (dispatcher.views.isNotEmpty ? dispatcher.views.first : null);
     if (view == null) return Size.zero;
     final double ratio = view.devicePixelRatio;

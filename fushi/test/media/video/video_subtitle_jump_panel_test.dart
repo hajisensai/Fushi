@@ -24,8 +24,8 @@ AudioCue _cue(int i, int s, int e, String text) => AudioCue()
   ..audioFileIndex = 0;
 
 Widget _wrap(Widget child) => MaterialApp(
-      home: Scaffold(body: Stack(children: <Widget>[child])),
-    );
+  home: Scaffold(body: Stack(children: <Widget>[child])),
+);
 
 String _sourceBetween(String source, String start, String end) {
   final int startIndex = source.indexOf(start);
@@ -124,8 +124,10 @@ Rect _unionRects(Iterable<Rect> rects) {
   );
   painter.dispose();
   expect(targetRect, isNot(Rect.zero));
-  final Offset leftPortion =
-      Offset(targetRect.left + targetRect.width * 0.25, targetRect.center.dy);
+  final Offset leftPortion = Offset(
+    targetRect.left + targetRect.width * 0.25,
+    targetRect.center.dy,
+  );
   return (
     tapPoint: textBox.localToGlobal(leftPortion),
     graphemeIndex: targetIndex,
@@ -145,21 +147,20 @@ int _builtCueTextWidgetCount(WidgetTester tester) {
 }
 
 List<AudioCue> _manyCues(int count) => List<AudioCue>.generate(count, (int i) {
-      final int start = i * 1000;
-      return _cue(
-        i,
-        start,
-        start + 500,
-        'cue ${i.toString().padLeft(5, '0')} text',
-      );
-    }, growable: false);
+  final int start = i * 1000;
+  return _cue(
+    i,
+    start,
+    start + 500,
+    'cue ${i.toString().padLeft(5, '0')} text',
+  );
+}, growable: false);
 
 String _repoEvidencePath(String relativePath) {
   final Directory current = Directory.current;
-  final Directory root =
-      current.path.endsWith('${Platform.pathSeparator}fushi')
-          ? current.parent
-          : current;
+  final Directory root = current.path.endsWith('${Platform.pathSeparator}fushi')
+      ? current.parent
+      : current;
   return '${root.path}${Platform.pathSeparator}$relativePath';
 }
 
@@ -198,18 +199,22 @@ void main() {
         _cue(1, 65000, 67000, 'second line'),
       ]);
 
-      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
-        layout: VideoSubtitleListLayout.classic,
-        controller: controller,
-        onTapCue: (_) {},
-        onClose: () {},
-        onCopyCue: (_) => true,
-        onFavoriteCue: (_) async {},
-        isCueFavorited: (_) => false,
-        colorScheme: const ColorScheme.dark(),
-        title: 'Subtitle list',
-        emptyHint: 'empty',
-      )));
+      await tester.pumpWidget(
+        _wrap(
+          VideoSubtitleJumpPanel(
+            layout: VideoSubtitleListLayout.classic,
+            controller: controller,
+            onTapCue: (_) {},
+            onClose: () {},
+            onCopyCue: (_) => true,
+            onFavoriteCue: (_) async {},
+            isCueFavorited: (_) => false,
+            colorScheme: const ColorScheme.dark(),
+            title: 'Subtitle list',
+            emptyHint: 'empty',
+          ),
+        ),
+      );
 
       expect(find.text('first line'), findsOneWidget);
       expect(find.text('second line'), findsOneWidget);
@@ -228,18 +233,22 @@ void main() {
       ]);
       AudioCue? tapped;
 
-      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
-        layout: VideoSubtitleListLayout.classic,
-        controller: controller,
-        onTapCue: (AudioCue cue) => tapped = cue,
-        onClose: () {},
-        onCopyCue: (_) => true,
-        onFavoriteCue: (_) async {},
-        isCueFavorited: (_) => false,
-        colorScheme: const ColorScheme.dark(),
-        title: 'Subtitle list',
-        emptyHint: 'empty',
-      )));
+      await tester.pumpWidget(
+        _wrap(
+          VideoSubtitleJumpPanel(
+            layout: VideoSubtitleListLayout.classic,
+            controller: controller,
+            onTapCue: (AudioCue cue) => tapped = cue,
+            onClose: () {},
+            onCopyCue: (_) => true,
+            onFavoriteCue: (_) async {},
+            isCueFavorited: (_) => false,
+            colorScheme: const ColorScheme.dark(),
+            title: 'Subtitle list',
+            emptyHint: 'empty',
+          ),
+        ),
+      );
 
       await tester.tap(find.text('second line'));
       await tester.pump();
@@ -249,8 +258,9 @@ void main() {
       expect(tapped!.text, 'second line');
     });
 
-    testWidgets('filters favorites and row tap still seeks',
-        (WidgetTester tester) async {
+    testWidgets('filters favorites and row tap still seeks', (
+      WidgetTester tester,
+    ) async {
       final VideoPlayerController controller = VideoPlayerController();
       addTearDown(controller.dispose);
       final List<AudioCue> cues = <AudioCue>[
@@ -261,19 +271,23 @@ void main() {
       controller.setCues(cues);
       AudioCue? tapped;
 
-      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
-        layout: VideoSubtitleListLayout.classic,
-        controller: controller,
-        onTapCue: (AudioCue cue) => tapped = cue,
-        onClose: () {},
-        onCopyCue: (_) => true,
-        onFavoriteCue: (_) async {},
-        isCueFavorited: (AudioCue cue) => cue.text.contains('favorite'),
-        colorScheme: const ColorScheme.dark(),
-        title: 'Subtitle list',
-        emptyHint: 'empty',
-        width: 520,
-      )));
+      await tester.pumpWidget(
+        _wrap(
+          VideoSubtitleJumpPanel(
+            layout: VideoSubtitleListLayout.classic,
+            controller: controller,
+            onTapCue: (AudioCue cue) => tapped = cue,
+            onClose: () {},
+            onCopyCue: (_) => true,
+            onFavoriteCue: (_) async {},
+            isCueFavorited: (AudioCue cue) => cue.text.contains('favorite'),
+            colorScheme: const ColorScheme.dark(),
+            title: 'Subtitle list',
+            emptyHint: 'empty',
+            width: 520,
+          ),
+        ),
+      );
 
       expect(find.text('alpha line'), findsOneWidget);
       expect(find.text('beta favorite'), findsOneWidget);
@@ -294,78 +308,93 @@ void main() {
     });
 
     testWidgets(
-        'xlzGuK5YmD: opens on the remembered tab and reports tab switches',
-        (WidgetTester tester) async {
-      final VideoPlayerController controller = VideoPlayerController();
-      addTearDown(controller.dispose);
-      controller.setCues(<AudioCue>[
-        _cue(0, 0, 1000, 'alpha line'),
-        _cue(1, 2000, 3000, 'beta favorite'),
-      ]);
-      final List<VideoSubtitleListFilter> reported =
-          <VideoSubtitleListFilter>[];
-      Widget panel(VideoSubtitleListFilter initial) => _wrap(
-            VideoSubtitleJumpPanel(
-              key: ValueKey<VideoSubtitleListFilter>(initial),
-              layout: VideoSubtitleListLayout.classic,
-              controller: controller,
-              onTapCue: (_) {},
-              onClose: () {},
-              onCopyCue: (_) => true,
-              onFavoriteCue: (_) async {},
-              isCueFavorited: (AudioCue cue) => cue.text.contains('favorite'),
-              colorScheme: const ColorScheme.dark(),
-              title: 'Subtitle list',
-              emptyHint: 'empty',
-              width: 520,
-              initialFilter: initial,
-              onFilterChanged: reported.add,
-            ),
+      'xlzGuK5YmD: opens on the remembered tab and reports tab switches',
+      (WidgetTester tester) async {
+        final VideoPlayerController controller = VideoPlayerController();
+        addTearDown(controller.dispose);
+        controller.setCues(<AudioCue>[
+          _cue(0, 0, 1000, 'alpha line'),
+          _cue(1, 2000, 3000, 'beta favorite'),
+        ]);
+        final List<VideoSubtitleListFilter> reported =
+            <VideoSubtitleListFilter>[];
+        Widget panel(VideoSubtitleListFilter initial) => _wrap(
+          VideoSubtitleJumpPanel(
+            key: ValueKey<VideoSubtitleListFilter>(initial),
+            layout: VideoSubtitleListLayout.classic,
+            controller: controller,
+            onTapCue: (_) {},
+            onClose: () {},
+            onCopyCue: (_) => true,
+            onFavoriteCue: (_) async {},
+            isCueFavorited: (AudioCue cue) => cue.text.contains('favorite'),
+            colorScheme: const ColorScheme.dark(),
+            title: 'Subtitle list',
+            emptyHint: 'empty',
+            width: 520,
+            initialFilter: initial,
+            onFilterChanged: reported.add,
+          ),
+        );
+
+        // 上次停在「收藏」：重开直接是收藏页签，不必先进「全部」再切。
+        await tester.pumpWidget(panel(VideoSubtitleListFilter.favorites));
+        await tester.pumpAndSettle();
+        expect(find.text('beta favorite'), findsOneWidget);
+        expect(find.text('alpha line'), findsNothing);
+        expect(reported, isEmpty, reason: '恢复初值不是一次用户切换');
+
+        await tester.tap(find.text(t.video_subtitle_filter_all));
+        await tester.pumpAndSettle();
+        expect(find.text('alpha line'), findsOneWidget);
+        expect(reported, <VideoSubtitleListFilter>[
+          VideoSubtitleListFilter.all,
+        ]);
+
+        // 上次停在「全部」：即使有收藏也开「全部」（不按「有收藏就开收藏」硬判）。
+        await tester.pumpWidget(panel(VideoSubtitleListFilter.all));
+        await tester.pumpAndSettle();
+        expect(find.text('alpha line'), findsOneWidget);
+        expect(find.text('beta favorite'), findsOneWidget);
+      },
+    );
+
+    test(
+      'xlzGuK5YmD: persisted tab name round-trips, unknown falls back to all',
+      () {
+        for (final VideoSubtitleListFilter f
+            in VideoSubtitleListFilter.values) {
+          expect(videoSubtitleListFilterFromName(f.name), f);
+        }
+        expect(
+          videoSubtitleListFilterFromName(null),
+          VideoSubtitleListFilter.all,
+        );
+        expect(
+          videoSubtitleListFilterFromName('bogus'),
+          VideoSubtitleListFilter.all,
+        );
+        for (final String page in <String>[
+          'lib/src/pages/implementations/video_fushi/subtitle.part.dart',
+          'lib/src/pages/implementations/web_video_fushi_page.dart',
+        ]) {
+          final String src = File(page).readAsStringSync();
+          expect(
+            src,
+            contains('initialFilter: videoSubtitleListFilterFromName('),
+            reason: '$page 必须用记住的页签打开列表',
           );
-
-      // 上次停在「收藏」：重开直接是收藏页签，不必先进「全部」再切。
-      await tester.pumpWidget(panel(VideoSubtitleListFilter.favorites));
-      await tester.pumpAndSettle();
-      expect(find.text('beta favorite'), findsOneWidget);
-      expect(find.text('alpha line'), findsNothing);
-      expect(reported, isEmpty, reason: '恢复初值不是一次用户切换');
-
-      await tester.tap(find.text(t.video_subtitle_filter_all));
-      await tester.pumpAndSettle();
-      expect(find.text('alpha line'), findsOneWidget);
-      expect(reported, <VideoSubtitleListFilter>[VideoSubtitleListFilter.all]);
-
-      // 上次停在「全部」：即使有收藏也开「全部」（不按「有收藏就开收藏」硬判）。
-      await tester.pumpWidget(panel(VideoSubtitleListFilter.all));
-      await tester.pumpAndSettle();
-      expect(find.text('alpha line'), findsOneWidget);
-      expect(find.text('beta favorite'), findsOneWidget);
-    });
-
-    test('xlzGuK5YmD: persisted tab name round-trips, unknown falls back to all',
-        () {
-      for (final VideoSubtitleListFilter f in VideoSubtitleListFilter.values) {
-        expect(videoSubtitleListFilterFromName(f.name), f);
-      }
-      expect(videoSubtitleListFilterFromName(null), VideoSubtitleListFilter.all);
-      expect(
-        videoSubtitleListFilterFromName('bogus'),
-        VideoSubtitleListFilter.all,
-      );
-      for (final String page in <String>[
-        'lib/src/pages/implementations/video_fushi/subtitle.part.dart',
-        'lib/src/pages/implementations/web_video_fushi_page.dart',
-      ]) {
-        final String src = File(page).readAsStringSync();
-        expect(src, contains('initialFilter: videoSubtitleListFilterFromName('),
-            reason: '$page 必须用记住的页签打开列表');
-        expect(src, contains('.setVideoSubtitleListFilter('),
-            reason: '$page 必须把页签切换落盘');
-      }
-      // 持久化值冻结：改枚举名会让老用户的记忆失效。
-      expect(VideoSubtitleListFilter.favorites.name, 'favorites');
-      expect(VideoSubtitleListFilter.all.name, 'all');
-    });
+          expect(
+            src,
+            contains('.setVideoSubtitleListFilter('),
+            reason: '$page 必须把页签切换落盘',
+          );
+        }
+        // 持久化值冻结：改枚举名会让老用户的记忆失效。
+        expect(VideoSubtitleListFilter.favorites.name, 'favorites');
+        expect(VideoSubtitleListFilter.all.name, 'all');
+      },
+    );
 
     testWidgets('row has no card-selection checkbox', (
       WidgetTester tester,
@@ -377,19 +406,23 @@ void main() {
         _cue(1, 2000, 3000, 'beta line'),
       ]);
 
-      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
-        layout: VideoSubtitleListLayout.classic,
-        controller: controller,
-        onTapCue: (_) {},
-        onClose: () {},
-        onCopyCue: (_) => true,
-        onFavoriteCue: (_) async {},
-        isCueFavorited: (_) => false,
-        colorScheme: const ColorScheme.dark(),
-        title: 'Subtitle list',
-        emptyHint: 'empty',
-        width: 520,
-      )));
+      await tester.pumpWidget(
+        _wrap(
+          VideoSubtitleJumpPanel(
+            layout: VideoSubtitleListLayout.classic,
+            controller: controller,
+            onTapCue: (_) {},
+            onClose: () {},
+            onCopyCue: (_) => true,
+            onFavoriteCue: (_) async {},
+            isCueFavorited: (_) => false,
+            colorScheme: const ColorScheme.dark(),
+            title: 'Subtitle list',
+            emptyHint: 'empty',
+            width: 520,
+          ),
+        ),
+      );
 
       expect(find.byType(Checkbox), findsNothing);
     });
@@ -404,18 +437,22 @@ void main() {
         _cue(1, 2000, 3000, 'beta'),
       ]);
 
-      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
-        layout: VideoSubtitleListLayout.classic,
-        controller: controller,
-        onTapCue: (_) {},
-        onClose: () {},
-        onCopyCue: (_) => true,
-        onFavoriteCue: (_) async {},
-        isCueFavorited: (_) => false,
-        colorScheme: const ColorScheme.dark(),
-        title: 'Subtitle list',
-        emptyHint: 'empty',
-      )));
+      await tester.pumpWidget(
+        _wrap(
+          VideoSubtitleJumpPanel(
+            layout: VideoSubtitleListLayout.classic,
+            controller: controller,
+            onTapCue: (_) {},
+            onClose: () {},
+            onCopyCue: (_) => true,
+            onFavoriteCue: (_) async {},
+            isCueFavorited: (_) => false,
+            colorScheme: const ColorScheme.dark(),
+            title: 'Subtitle list',
+            emptyHint: 'empty',
+          ),
+        ),
+      );
 
       FontWeight? weightOf(String text) =>
           tester.widget<Text>(find.text(text)).style?.fontWeight;
@@ -444,18 +481,22 @@ void main() {
       addTearDown(controller.dispose);
       controller.setCues(const <AudioCue>[]);
 
-      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
-        layout: VideoSubtitleListLayout.classic,
-        controller: controller,
-        onTapCue: (_) {},
-        onClose: () {},
-        onCopyCue: (_) => true,
-        onFavoriteCue: (_) async {},
-        isCueFavorited: (_) => false,
-        colorScheme: const ColorScheme.dark(),
-        title: 'Subtitle list',
-        emptyHint: 'No subtitles loaded',
-      )));
+      await tester.pumpWidget(
+        _wrap(
+          VideoSubtitleJumpPanel(
+            layout: VideoSubtitleListLayout.classic,
+            controller: controller,
+            onTapCue: (_) {},
+            onClose: () {},
+            onCopyCue: (_) => true,
+            onFavoriteCue: (_) async {},
+            isCueFavorited: (_) => false,
+            colorScheme: const ColorScheme.dark(),
+            title: 'Subtitle list',
+            emptyHint: 'No subtitles loaded',
+          ),
+        ),
+      );
 
       expect(find.text('No subtitles loaded'), findsOneWidget);
     });
@@ -465,68 +506,90 @@ void main() {
     // 根因：build 里 `cues.isEmpty || visibleIndexes.isEmpty` 一律走 emptyHint，把
     // 「过滤结果为空」与「真未加载」混为一谈。修复后收藏 / 已选档为空给档专属文案。
     testWidgets(
-        'BUG-795: loaded cues + empty favorites filter shows favorites-empty '
-        'hint, not the not-loaded emptyHint', (WidgetTester tester) async {
-      final VideoPlayerController controller = VideoPlayerController();
-      addTearDown(controller.dispose);
-      // 字幕已加载（非空），但一条都没收藏。
-      controller.setCues(<AudioCue>[
-        _cue(0, 0, 1000, 'alpha line'),
-        _cue(1, 2000, 3000, 'beta line'),
-      ]);
+      'BUG-795: loaded cues + empty favorites filter shows favorites-empty '
+      'hint, not the not-loaded emptyHint',
+      (WidgetTester tester) async {
+        final VideoPlayerController controller = VideoPlayerController();
+        addTearDown(controller.dispose);
+        // 字幕已加载（非空），但一条都没收藏。
+        controller.setCues(<AudioCue>[
+          _cue(0, 0, 1000, 'alpha line'),
+          _cue(1, 2000, 3000, 'beta line'),
+        ]);
 
-      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
-        layout: VideoSubtitleListLayout.classic,
-        controller: controller,
-        onTapCue: (_) {},
-        onClose: () {},
-        onCopyCue: (_) => true,
-        onFavoriteCue: (_) async {},
-        isCueFavorited: (_) => false,
-        colorScheme: const ColorScheme.dark(),
-        title: 'Subtitle list',
-        emptyHint: 'No subtitles loaded',
-        width: 520,
-      )));
+        await tester.pumpWidget(
+          _wrap(
+            VideoSubtitleJumpPanel(
+              layout: VideoSubtitleListLayout.classic,
+              controller: controller,
+              onTapCue: (_) {},
+              onClose: () {},
+              onCopyCue: (_) => true,
+              onFavoriteCue: (_) async {},
+              isCueFavorited: (_) => false,
+              colorScheme: const ColorScheme.dark(),
+              title: 'Subtitle list',
+              emptyHint: 'No subtitles loaded',
+              width: 520,
+            ),
+          ),
+        );
 
-      await tester.tap(find.text(t.video_subtitle_filter_favorites));
-      await tester.pumpAndSettle();
+        await tester.tap(find.text(t.video_subtitle_filter_favorites));
+        await tester.pumpAndSettle();
 
-      // 收藏档为空 → 档专属文案，绝不是「未加载字幕」emptyHint（撤修复 → 显示
-      // emptyHint → 红）。
-      expect(find.text(t.video_subtitle_filter_favorites_empty), findsOneWidget,
-          reason: 'loaded cues with 0 favorites must show the favorites-empty '
-              'hint, not the not-loaded emptyHint');
-      expect(find.text('No subtitles loaded'), findsNothing,
-          reason: 'subtitles ARE loaded; must not claim not-loaded');
-    });
+        // 收藏档为空 → 档专属文案，绝不是「未加载字幕」emptyHint（撤修复 → 显示
+        // emptyHint → 红）。
+        expect(
+          find.text(t.video_subtitle_filter_favorites_empty),
+          findsOneWidget,
+          reason:
+              'loaded cues with 0 favorites must show the favorites-empty '
+              'hint, not the not-loaded emptyHint',
+        );
+        expect(
+          find.text('No subtitles loaded'),
+          findsNothing,
+          reason: 'subtitles ARE loaded; must not claim not-loaded',
+        );
+      },
+    );
 
     // 「全部」档筛出 0 条只可能因 cues 本身为空 → 仍是真未加载 → emptyHint。
     testWidgets(
-        'BUG-795: all filter with no cues still shows the not-loaded emptyHint',
-        (WidgetTester tester) async {
-      final VideoPlayerController controller = VideoPlayerController();
-      addTearDown(controller.dispose);
-      controller.setCues(const <AudioCue>[]);
+      'BUG-795: all filter with no cues still shows the not-loaded emptyHint',
+      (WidgetTester tester) async {
+        final VideoPlayerController controller = VideoPlayerController();
+        addTearDown(controller.dispose);
+        controller.setCues(const <AudioCue>[]);
 
-      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
-        layout: VideoSubtitleListLayout.classic,
-        controller: controller,
-        onTapCue: (_) {},
-        onClose: () {},
-        onCopyCue: (_) => true,
-        onFavoriteCue: (_) async {},
-        isCueFavorited: (_) => false,
-        colorScheme: const ColorScheme.dark(),
-        title: 'Subtitle list',
-        emptyHint: 'No subtitles loaded',
-        width: 520,
-      )));
+        await tester.pumpWidget(
+          _wrap(
+            VideoSubtitleJumpPanel(
+              layout: VideoSubtitleListLayout.classic,
+              controller: controller,
+              onTapCue: (_) {},
+              onClose: () {},
+              onCopyCue: (_) => true,
+              onFavoriteCue: (_) async {},
+              isCueFavorited: (_) => false,
+              colorScheme: const ColorScheme.dark(),
+              title: 'Subtitle list',
+              emptyHint: 'No subtitles loaded',
+              width: 520,
+            ),
+          ),
+        );
 
-      expect(find.text('No subtitles loaded'), findsOneWidget,
-          reason: 'genuinely empty cues in the all filter keep the not-loaded '
-              'emptyHint');
-    });
+        expect(
+          find.text('No subtitles loaded'),
+          findsOneWidget,
+          reason:
+              'genuinely empty cues in the all filter keep the not-loaded '
+              'emptyHint',
+        );
+      },
+    );
 
     testWidgets('shows loading state instead of empty hint while cues load', (
       WidgetTester tester,
@@ -535,19 +598,23 @@ void main() {
       addTearDown(controller.dispose);
       controller.debugSetSubtitleCuesLoadingForTesting(true);
 
-      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
-        layout: VideoSubtitleListLayout.classic,
-        controller: controller,
-        onTapCue: (_) {},
-        onClose: () {},
-        onCopyCue: (_) => true,
-        onFavoriteCue: (_) async {},
-        isCueFavorited: (_) => false,
-        colorScheme: const ColorScheme.dark(),
-        title: 'Subtitle list',
-        emptyHint: 'No subtitles loaded',
-        loadingHint: 'Loading subtitles...',
-      )));
+      await tester.pumpWidget(
+        _wrap(
+          VideoSubtitleJumpPanel(
+            layout: VideoSubtitleListLayout.classic,
+            controller: controller,
+            onTapCue: (_) {},
+            onClose: () {},
+            onCopyCue: (_) => true,
+            onFavoriteCue: (_) async {},
+            isCueFavorited: (_) => false,
+            colorScheme: const ColorScheme.dark(),
+            title: 'Subtitle list',
+            emptyHint: 'No subtitles loaded',
+            loadingHint: 'Loading subtitles...',
+          ),
+        ),
+      );
 
       expect(find.byType(FushiCircularProgressIndicator), findsOneWidget);
       expect(find.text('Loading subtitles...'), findsOneWidget);
@@ -558,25 +625,30 @@ void main() {
       expect(find.text('No subtitles loaded'), findsOneWidget);
     });
 
-    testWidgets('TODO-637: header renders an X close button that fires onClose',
-        (WidgetTester tester) async {
+    testWidgets('TODO-637: header renders an X close button that fires onClose', (
+      WidgetTester tester,
+    ) async {
       final VideoPlayerController controller = VideoPlayerController();
       addTearDown(controller.dispose);
       controller.setCues(<AudioCue>[_cue(0, 0, 1000, 'x')]);
       int closes = 0;
 
-      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
-        layout: VideoSubtitleListLayout.classic,
-        controller: controller,
-        onTapCue: (_) {},
-        onClose: () => closes++,
-        onCopyCue: (_) => true,
-        onFavoriteCue: (_) async {},
-        isCueFavorited: (_) => false,
-        colorScheme: const ColorScheme.dark(),
-        title: 'Subtitle list',
-        emptyHint: 'empty',
-      )));
+      await tester.pumpWidget(
+        _wrap(
+          VideoSubtitleJumpPanel(
+            layout: VideoSubtitleListLayout.classic,
+            controller: controller,
+            onTapCue: (_) {},
+            onClose: () => closes++,
+            onCopyCue: (_) => true,
+            onFavoriteCue: (_) async {},
+            isCueFavorited: (_) => false,
+            colorScheme: const ColorScheme.dark(),
+            title: 'Subtitle list',
+            emptyHint: 'empty',
+          ),
+        ),
+      );
 
       // TODO-637: the X is back (BUG-256 tap-outside barrier removed because it
       // ate the picture-subtitle lookup gesture, TODO-636). Tapping it closes.
@@ -589,35 +661,41 @@ void main() {
     // TODO-152 sub-A: inline action buttons (jump/copy/favorite) + header toolbar.
 
     testWidgets(
-        'TODO-309/BUG-268: every row shows inline jump/copy/favorite buttons '
-        'persistently (not only hover/selected)', (WidgetTester tester) async {
-      final VideoPlayerController controller = VideoPlayerController();
-      addTearDown(controller.dispose);
-      controller.setCues(<AudioCue>[
-        _cue(0, 0, 1000, 'alpha'),
-        _cue(1, 2000, 3000, 'beta'),
-      ]);
+      'TODO-309/BUG-268: every row shows inline jump/copy/favorite buttons '
+      'persistently (not only hover/selected)',
+      (WidgetTester tester) async {
+        final VideoPlayerController controller = VideoPlayerController();
+        addTearDown(controller.dispose);
+        controller.setCues(<AudioCue>[
+          _cue(0, 0, 1000, 'alpha'),
+          _cue(1, 2000, 3000, 'beta'),
+        ]);
 
-      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
-        layout: VideoSubtitleListLayout.classic,
-        controller: controller,
-        onTapCue: (_) {},
-        onCopyCue: (_) => true,
-        onFavoriteCue: (_) async {},
-        isCueFavorited: (_) => false,
-        onClose: () {},
-        colorScheme: const ColorScheme.dark(),
-        title: 'Subtitle list',
-        emptyHint: 'empty',
-      )));
-      // No cue is current, no hover, nothing selected: the action buttons must
-      // STILL be present on every row (regression guard: revert to the old
-      // `showActions = hovered || selected || selectedForCard` gate -> these
-      // would be findsNothing -> red).
-      expect(find.byIcon(FushiIcons.play), findsNWidgets(2));
-      expect(find.byIcon(FushiIcons.copy), findsNWidgets(2));
-      expect(find.byIcon(FushiIcons.star), findsNWidgets(2));
-    });
+        await tester.pumpWidget(
+          _wrap(
+            VideoSubtitleJumpPanel(
+              layout: VideoSubtitleListLayout.classic,
+              controller: controller,
+              onTapCue: (_) {},
+              onCopyCue: (_) => true,
+              onFavoriteCue: (_) async {},
+              isCueFavorited: (_) => false,
+              onClose: () {},
+              colorScheme: const ColorScheme.dark(),
+              title: 'Subtitle list',
+              emptyHint: 'empty',
+            ),
+          ),
+        );
+        // No cue is current, no hover, nothing selected: the action buttons must
+        // STILL be present on every row (regression guard: revert to the old
+        // `showActions = hovered || selected || selectedForCard` gate -> these
+        // would be findsNothing -> red).
+        expect(find.byIcon(FushiIcons.play), findsNWidgets(2));
+        expect(find.byIcon(FushiIcons.copy), findsNWidgets(2));
+        expect(find.byIcon(FushiIcons.star), findsNWidgets(2));
+      },
+    );
 
     testWidgets('inline copy button fires onCopyCue with the row cue', (
       WidgetTester tester,
@@ -627,21 +705,25 @@ void main() {
       controller.setCues(<AudioCue>[_cue(0, 0, 1000, 'copy me')]);
       AudioCue? copied;
 
-      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
-        layout: VideoSubtitleListLayout.classic,
-        controller: controller,
-        onTapCue: (_) {},
-        onCopyCue: (AudioCue c) {
-          copied = c;
-          return true;
-        },
-        onFavoriteCue: (_) async {},
-        isCueFavorited: (_) => false,
-        onClose: () {},
-        colorScheme: const ColorScheme.dark(),
-        title: 'Subtitle list',
-        emptyHint: 'empty',
-      )));
+      await tester.pumpWidget(
+        _wrap(
+          VideoSubtitleJumpPanel(
+            layout: VideoSubtitleListLayout.classic,
+            controller: controller,
+            onTapCue: (_) {},
+            onCopyCue: (AudioCue c) {
+              copied = c;
+              return true;
+            },
+            onFavoriteCue: (_) async {},
+            isCueFavorited: (_) => false,
+            onClose: () {},
+            colorScheme: const ColorScheme.dark(),
+            title: 'Subtitle list',
+            emptyHint: 'empty',
+          ),
+        ),
+      );
       controller.debugUpdateCueForPosition(500);
       await tester.pump();
 
@@ -652,54 +734,62 @@ void main() {
     });
 
     testWidgets(
-        'inline copy button flips to a check mark ("Copied") after copying '
-        'and reverts after the feedback window', (WidgetTester tester) async {
-      // 用户反馈：点了「复制」没有任何互动——OSD 画在视频区左上角，视线在列表这边看
-      // 不到。反馈必须落在按钮本身：图标 ✓ + tooltip「已复制」，到时自动还原。
-      final VideoPlayerController controller = VideoPlayerController();
-      addTearDown(controller.dispose);
-      controller.setCues(<AudioCue>[
-        _cue(0, 0, 1000, 'copy me'),
-        _cue(1, 2000, 3000, ''),
-      ]);
+      'inline copy button flips to a check mark ("Copied") after copying '
+      'and reverts after the feedback window',
+      (WidgetTester tester) async {
+        // 用户反馈：点了「复制」没有任何互动——OSD 画在视频区左上角，视线在列表这边看
+        // 不到。反馈必须落在按钮本身：图标 ✓ + tooltip「已复制」，到时自动还原。
+        final VideoPlayerController controller = VideoPlayerController();
+        addTearDown(controller.dispose);
+        controller.setCues(<AudioCue>[
+          _cue(0, 0, 1000, 'copy me'),
+          _cue(1, 2000, 3000, ''),
+        ]);
 
-      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
-        layout: VideoSubtitleListLayout.classic,
-        controller: controller,
-        onTapCue: (_) {},
-        // 与两个真实实现（`_copyCueText` / 网页页 `_copyCue`）同契约：空句返回 false。
-        onCopyCue: (AudioCue c) => c.text.trim().isNotEmpty,
-        onFavoriteCue: (_) async {},
-        isCueFavorited: (_) => false,
-        onClose: () {},
-        colorScheme: const ColorScheme.dark(),
-        title: 'Subtitle list',
-        emptyHint: 'empty',
-      )));
-      controller.debugUpdateCueForPosition(500);
-      await tester.pump();
-      expect(find.byIcon(FushiIcons.check), findsNothing);
+        await tester.pumpWidget(
+          _wrap(
+            VideoSubtitleJumpPanel(
+              layout: VideoSubtitleListLayout.classic,
+              controller: controller,
+              onTapCue: (_) {},
+              // 与两个真实实现（`_copyCueText` / 网页页 `_copyCue`）同契约：空句返回 false。
+              onCopyCue: (AudioCue c) => c.text.trim().isNotEmpty,
+              onFavoriteCue: (_) async {},
+              isCueFavorited: (_) => false,
+              onClose: () {},
+              colorScheme: const ColorScheme.dark(),
+              title: 'Subtitle list',
+              emptyHint: 'empty',
+            ),
+          ),
+        );
+        controller.debugUpdateCueForPosition(500);
+        await tester.pump();
+        expect(find.byIcon(FushiIcons.check), findsNothing);
 
-      await tester.tap(find.byIcon(FushiIcons.copy).first);
-      await tester.pump();
-      expect(find.byIcon(FushiIcons.check), findsOneWidget);
-      expect(find.byIcon(FushiIcons.copy), findsOneWidget,
-          reason: '只有被点的那一行切 ✓，其它行不动');
-      expect(find.byTooltip(t.copied), findsOneWidget);
+        await tester.tap(find.byIcon(FushiIcons.copy).first);
+        await tester.pump();
+        expect(find.byIcon(FushiIcons.check), findsOneWidget);
+        expect(
+          find.byIcon(FushiIcons.copy),
+          findsOneWidget,
+          reason: '只有被点的那一行切 ✓，其它行不动',
+        );
+        expect(find.byTooltip(t.copied), findsOneWidget);
 
-      await tester.pump(kCopyFeedbackDuration);
-      await tester.pump();
-      expect(find.byIcon(FushiIcons.check), findsNothing);
-      expect(find.byIcon(FushiIcons.copy), findsNWidgets(2));
+        await tester.pump(kCopyFeedbackDuration);
+        await tester.pump();
+        expect(find.byIcon(FushiIcons.check), findsNothing);
+        expect(find.byIcon(FushiIcons.copy), findsNWidgets(2));
 
-      // 空文本行：handler 返回 false（没写剪贴板），按钮不装成功。
-      await tester.tap(find.byIcon(FushiIcons.copy).last);
-      await tester.pump();
-      expect(find.byIcon(FushiIcons.check), findsNothing);
-    });
+        // 空文本行：handler 返回 false（没写剪贴板），按钮不装成功。
+        await tester.tap(find.byIcon(FushiIcons.copy).last);
+        await tester.pump();
+        expect(find.byIcon(FushiIcons.check), findsNothing);
+      },
+    );
 
-    testWidgets(
-        'inline copy check survives the playhead leaving that row '
+    testWidgets('inline copy check survives the playhead leaving that row '
         '(BUG-2093)', (WidgetTester tester) async {
       // BUG-2093：反馈状态曾归行内的 StatefulWidget 持有，但行的 Element 身份由列表
       // 控制——`trackKey`（`selected || rawIndex == _scrollTargetRawIndex`）随播放头移动
@@ -713,18 +803,22 @@ void main() {
         _cue(1, 2000, 3000, 'next line'),
       ]);
 
-      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
-        layout: VideoSubtitleListLayout.classic,
-        controller: controller,
-        onTapCue: (_) {},
-        onCopyCue: (AudioCue c) => c.text.trim().isNotEmpty,
-        onFavoriteCue: (_) async {},
-        isCueFavorited: (_) => false,
-        onClose: () {},
-        colorScheme: const ColorScheme.dark(),
-        title: 'Subtitle list',
-        emptyHint: 'empty',
-      )));
+      await tester.pumpWidget(
+        _wrap(
+          VideoSubtitleJumpPanel(
+            layout: VideoSubtitleListLayout.classic,
+            controller: controller,
+            onTapCue: (_) {},
+            onCopyCue: (AudioCue c) => c.text.trim().isNotEmpty,
+            onFavoriteCue: (_) async {},
+            isCueFavorited: (_) => false,
+            onClose: () {},
+            colorScheme: const ColorScheme.dark(),
+            title: 'Subtitle list',
+            emptyHint: 'empty',
+          ),
+        ),
+      );
       controller.debugUpdateCueForPosition(500);
       await tester.pump();
 
@@ -749,8 +843,9 @@ void main() {
       expect(find.byIcon(FushiIcons.check), findsNothing);
     });
 
-    testWidgets('only one row can be checked at a time',
-        (WidgetTester tester) async {
+    testWidgets('only one row can be checked at a time', (
+      WidgetTester tester,
+    ) async {
       // 状态归面板持有白送的语义：复制 B 时 A 立刻复位（一个 int? 字段，天然互斥）。
       final VideoPlayerController controller = VideoPlayerController();
       addTearDown(controller.dispose);
@@ -759,18 +854,22 @@ void main() {
         _cue(1, 2000, 3000, 'second'),
       ]);
 
-      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
-        layout: VideoSubtitleListLayout.classic,
-        controller: controller,
-        onTapCue: (_) {},
-        onCopyCue: (AudioCue c) => c.text.trim().isNotEmpty,
-        onFavoriteCue: (_) async {},
-        isCueFavorited: (_) => false,
-        onClose: () {},
-        colorScheme: const ColorScheme.dark(),
-        title: 'Subtitle list',
-        emptyHint: 'empty',
-      )));
+      await tester.pumpWidget(
+        _wrap(
+          VideoSubtitleJumpPanel(
+            layout: VideoSubtitleListLayout.classic,
+            controller: controller,
+            onTapCue: (_) {},
+            onCopyCue: (AudioCue c) => c.text.trim().isNotEmpty,
+            onFavoriteCue: (_) async {},
+            isCueFavorited: (_) => false,
+            onClose: () {},
+            colorScheme: const ColorScheme.dark(),
+            title: 'Subtitle list',
+            emptyHint: 'empty',
+          ),
+        ),
+      );
       await tester.pump();
 
       await tester.tap(find.byIcon(FushiIcons.copy).first);
@@ -781,26 +880,31 @@ void main() {
       expect(find.byIcon(FushiIcons.copy), findsOneWidget);
     });
 
-    testWidgets('unmounting inside the feedback window does not throw',
-        (WidgetTester tester) async {
+    testWidgets('unmounting inside the feedback window does not throw', (
+      WidgetTester tester,
+    ) async {
       // 回落定时器归面板持有，必须随 dispose 取消，否则到点 setState 打到已 dispose
       // 的 State。这条是 dispose 里那句 cancel 的唯一钉子。
       final VideoPlayerController controller = VideoPlayerController();
       addTearDown(controller.dispose);
       controller.setCues(<AudioCue>[_cue(0, 0, 1000, 'copy me')]);
 
-      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
-        layout: VideoSubtitleListLayout.classic,
-        controller: controller,
-        onTapCue: (_) {},
-        onCopyCue: (AudioCue c) => c.text.trim().isNotEmpty,
-        onFavoriteCue: (_) async {},
-        isCueFavorited: (_) => false,
-        onClose: () {},
-        colorScheme: const ColorScheme.dark(),
-        title: 'Subtitle list',
-        emptyHint: 'empty',
-      )));
+      await tester.pumpWidget(
+        _wrap(
+          VideoSubtitleJumpPanel(
+            layout: VideoSubtitleListLayout.classic,
+            controller: controller,
+            onTapCue: (_) {},
+            onCopyCue: (AudioCue c) => c.text.trim().isNotEmpty,
+            onFavoriteCue: (_) async {},
+            isCueFavorited: (_) => false,
+            onClose: () {},
+            colorScheme: const ColorScheme.dark(),
+            title: 'Subtitle list',
+            emptyHint: 'empty',
+          ),
+        ),
+      );
       await tester.pump();
       await tester.tap(find.byIcon(FushiIcons.copy).first);
       await tester.pump();
@@ -811,8 +915,7 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets(
-        'inline favorite button fires onFavoriteCue + filled star when '
+    testWidgets('inline favorite button fires onFavoriteCue + filled star when '
         'favorited', (WidgetTester tester) async {
       final VideoPlayerController controller = VideoPlayerController();
       addTearDown(controller.dispose);
@@ -822,16 +925,16 @@ void main() {
 
       VideoSubtitleJumpPanel panel() => VideoSubtitleJumpPanel(
         layout: VideoSubtitleListLayout.classic,
-            controller: controller,
-            onTapCue: (_) {},
-            onCopyCue: (_) => true,
-            onFavoriteCue: (AudioCue c) async => favorited = c,
-            isCueFavorited: (_) => isFav,
-            onClose: () {},
-            colorScheme: const ColorScheme.dark(),
-            title: 'Subtitle list',
-            emptyHint: 'empty',
-          );
+        controller: controller,
+        onTapCue: (_) {},
+        onCopyCue: (_) => true,
+        onFavoriteCue: (AudioCue c) async => favorited = c,
+        isCueFavorited: (_) => isFav,
+        onClose: () {},
+        colorScheme: const ColorScheme.dark(),
+        title: 'Subtitle list',
+        emptyHint: 'empty',
+      );
 
       await tester.pumpWidget(_wrap(panel()));
       controller.debugUpdateCueForPosition(500);
@@ -859,18 +962,22 @@ void main() {
       addTearDown(controller.dispose);
       controller.setCues(<AudioCue>[_cue(0, 0, 1000, 'x')]);
 
-      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
-        layout: VideoSubtitleListLayout.classic,
-        controller: controller,
-        onTapCue: (_) {},
-        onCopyCue: (_) => true,
-        onFavoriteCue: (_) async {},
-        isCueFavorited: (_) => false,
-        onClose: () {},
-        colorScheme: const ColorScheme.dark(),
-        title: 'Subtitle list',
-        emptyHint: 'empty',
-      )));
+      await tester.pumpWidget(
+        _wrap(
+          VideoSubtitleJumpPanel(
+            layout: VideoSubtitleListLayout.classic,
+            controller: controller,
+            onTapCue: (_) {},
+            onCopyCue: (_) => true,
+            onFavoriteCue: (_) async {},
+            isCueFavorited: (_) => false,
+            onClose: () {},
+            colorScheme: const ColorScheme.dark(),
+            title: 'Subtitle list',
+            emptyHint: 'empty',
+          ),
+        ),
+      );
 
       // Font step buttons + auto-scroll (default on -> filled icon).
       expect(find.byIcon(FushiIcons.textDecrease), findsOneWidget);
@@ -884,394 +991,512 @@ void main() {
     });
 
     testWidgets(
-        'TODO-454 opens directly at current cue and highlights plain Text row',
-        (WidgetTester tester) async {
-      final VideoPlayerController controller = VideoPlayerController();
-      addTearDown(controller.dispose);
-      controller.setCues(_manyCues(20000));
-      controller.debugUpdateCueForPosition(19999050);
+      'TODO-454 opens directly at current cue and highlights plain Text row',
+      (WidgetTester tester) async {
+        final VideoPlayerController controller = VideoPlayerController();
+        addTearDown(controller.dispose);
+        controller.setCues(_manyCues(20000));
+        controller.debugUpdateCueForPosition(19999050);
 
-      await tester.pumpWidget(_wrap(SizedBox(
-        width: 520,
-        height: 620,
-        child: VideoSubtitleJumpPanel(
-        layout: VideoSubtitleListLayout.classic,
-          controller: controller,
-          onTapCue: (_) {},
-          onClose: () {},
-          onCopyCue: (_) => true,
-          onFavoriteCue: (_) async {},
-          isCueFavorited: (_) => false,
-          colorScheme: const ColorScheme.dark(),
-          title: 'Subtitle list',
-          emptyHint: 'empty',
-          width: 520,
-        ),
-      )));
+        await tester.pumpWidget(
+          _wrap(
+            SizedBox(
+              width: 520,
+              height: 620,
+              child: VideoSubtitleJumpPanel(
+                layout: VideoSubtitleListLayout.classic,
+                controller: controller,
+                onTapCue: (_) {},
+                onClose: () {},
+                onCopyCue: (_) => true,
+                onFavoriteCue: (_) async {},
+                isCueFavorited: (_) => false,
+                colorScheme: const ColorScheme.dark(),
+                title: 'Subtitle list',
+                emptyHint: 'empty',
+                width: 520,
+              ),
+            ),
+          ),
+        );
 
-      expect(find.text('cue 19999 text'), findsOneWidget);
-      expect(find.text('cue 00000 text'), findsNothing,
-          reason: 'the first frame must not flash the top of the transcript');
-      expect(_builtCueTextWidgetCount(tester), lessThan(160),
-          reason: 'initial positioning must keep TODO-444 virtualization');
+        expect(find.text('cue 19999 text'), findsOneWidget);
+        expect(
+          find.text('cue 00000 text'),
+          findsNothing,
+          reason: 'the first frame must not flash the top of the transcript',
+        );
+        expect(
+          _builtCueTextWidgetCount(tester),
+          lessThan(160),
+          reason: 'initial positioning must keep TODO-444 virtualization',
+        );
 
-      final Text currentText = tester.widget<Text>(find.text('cue 19999 text'));
-      expect(currentText.style?.fontWeight, FontWeight.w600);
-    });
-
-    testWidgets(
-        'TODO-454 opens directly at current cue and highlights RichText row',
-        (WidgetTester tester) async {
-      final VideoPlayerController controller = VideoPlayerController();
-      addTearDown(controller.dispose);
-      controller.setCues(_manyCues(20000));
-      controller.debugUpdateCueForPosition(12345050);
-
-      await tester.pumpWidget(_wrap(SizedBox(
-        width: 520,
-        height: 620,
-        child: VideoSubtitleJumpPanel(
-        layout: VideoSubtitleListLayout.classic,
-          controller: controller,
-          onTapCue: (_) {},
-          onLookupCue: (AudioCue _, int __, Rect ___) {},
-          onClose: () {},
-          onCopyCue: (_) => true,
-          onFavoriteCue: (_) async {},
-          isCueFavorited: (_) => false,
-          colorScheme: const ColorScheme.dark(),
-          title: 'Subtitle list',
-          emptyHint: 'empty',
-          width: 520,
-        ),
-      )));
-
-      final Finder target = find.text('cue 12345 text', findRichText: true);
-      expect(target, findsOneWidget);
-      expect(find.text('cue 00000 text', findRichText: true), findsNothing,
-          reason: 'lookup mode must also skip the transcript top on open');
-      expect(_builtCueTextWidgetCount(tester), lessThan(160),
-          reason: 'RichText lookup rows must keep TODO-444 virtualization');
-
-      final RichText currentText = tester.widget<RichText>(target);
-      expect(currentText.text.style?.fontWeight, FontWeight.w600);
-    });
+        final Text currentText = tester.widget<Text>(
+          find.text('cue 19999 text'),
+        );
+        expect(currentText.style?.fontWeight, FontWeight.w600);
+      },
+    );
 
     testWidgets(
-        'TODO-454 auto-scroll off does not drag playback advances until re-enabled',
-        (WidgetTester tester) async {
-      final VideoPlayerController controller = VideoPlayerController();
-      addTearDown(controller.dispose);
-      controller.setCues(_manyCues(200));
+      'TODO-454 opens directly at current cue and highlights RichText row',
+      (WidgetTester tester) async {
+        final VideoPlayerController controller = VideoPlayerController();
+        addTearDown(controller.dispose);
+        controller.setCues(_manyCues(20000));
+        controller.debugUpdateCueForPosition(12345050);
 
-      await tester.pumpWidget(_wrap(SizedBox(
-        width: 520,
-        height: 620,
-        child: VideoSubtitleJumpPanel(
-        layout: VideoSubtitleListLayout.classic,
-          controller: controller,
-          onTapCue: (_) {},
-          onClose: () {},
-          onCopyCue: (_) => true,
-          onFavoriteCue: (_) async {},
-          isCueFavorited: (_) => false,
-          colorScheme: const ColorScheme.dark(),
-          title: 'Subtitle list',
-          emptyHint: 'empty',
-          width: 520,
-        ),
-      )));
+        await tester.pumpWidget(
+          _wrap(
+            SizedBox(
+              width: 520,
+              height: 620,
+              child: VideoSubtitleJumpPanel(
+                layout: VideoSubtitleListLayout.classic,
+                controller: controller,
+                onTapCue: (_) {},
+                onLookupCue: (AudioCue _, int __, Rect ___) {},
+                onClose: () {},
+                onCopyCue: (_) => true,
+                onFavoriteCue: (_) async {},
+                isCueFavorited: (_) => false,
+                colorScheme: const ColorScheme.dark(),
+                title: 'Subtitle list',
+                emptyHint: 'empty',
+                width: 520,
+              ),
+            ),
+          ),
+        );
 
-      await tester.tap(find.byIcon(FushiIcons.alignCenterVertical));
-      await tester.pump();
-      expect(find.byIcon(FushiIcons.pauseCircle), findsOneWidget);
+        final Finder target = find.text('cue 12345 text', findRichText: true);
+        expect(target, findsOneWidget);
+        expect(
+          find.text('cue 00000 text', findRichText: true),
+          findsNothing,
+          reason: 'lookup mode must also skip the transcript top on open',
+        );
+        expect(
+          _builtCueTextWidgetCount(tester),
+          lessThan(160),
+          reason: 'RichText lookup rows must keep TODO-444 virtualization',
+        );
 
-      controller.debugUpdateCueForPosition(150050);
-      await tester.pump();
-      for (int i = 0; i < 24; i++) {
-        await tester.pump(const Duration(milliseconds: 16));
-      }
-      expect(find.text('cue 00150 text'), findsNothing,
-          reason: 'disabled auto-scroll must not force-follow playback');
+        final RichText currentText = tester.widget<RichText>(target);
+        expect(currentText.text.style?.fontWeight, FontWeight.w600);
+      },
+    );
 
-      await tester.tap(find.byIcon(FushiIcons.pauseCircle));
-      await tester.pump();
-      for (int i = 0; i < 24; i++) {
-        await tester.pump(const Duration(milliseconds: 16));
-      }
-      expect(find.text('cue 00150 text'), findsOneWidget,
-          reason: 're-enabled auto-scroll should resume following current cue');
-    });
+    testWidgets(
+      'TODO-454 auto-scroll off does not drag playback advances until re-enabled',
+      (WidgetTester tester) async {
+        final VideoPlayerController controller = VideoPlayerController();
+        addTearDown(controller.dispose);
+        controller.setCues(_manyCues(200));
+
+        await tester.pumpWidget(
+          _wrap(
+            SizedBox(
+              width: 520,
+              height: 620,
+              child: VideoSubtitleJumpPanel(
+                layout: VideoSubtitleListLayout.classic,
+                controller: controller,
+                onTapCue: (_) {},
+                onClose: () {},
+                onCopyCue: (_) => true,
+                onFavoriteCue: (_) async {},
+                isCueFavorited: (_) => false,
+                colorScheme: const ColorScheme.dark(),
+                title: 'Subtitle list',
+                emptyHint: 'empty',
+                width: 520,
+              ),
+            ),
+          ),
+        );
+
+        await tester.tap(find.byIcon(FushiIcons.alignCenterVertical));
+        await tester.pump();
+        expect(find.byIcon(FushiIcons.pauseCircle), findsOneWidget);
+
+        controller.debugUpdateCueForPosition(150050);
+        await tester.pump();
+        for (int i = 0; i < 24; i++) {
+          await tester.pump(const Duration(milliseconds: 16));
+        }
+        expect(
+          find.text('cue 00150 text'),
+          findsNothing,
+          reason: 'disabled auto-scroll must not force-follow playback',
+        );
+
+        await tester.tap(find.byIcon(FushiIcons.pauseCircle));
+        await tester.pump();
+        for (int i = 0; i < 24; i++) {
+          await tester.pump(const Duration(milliseconds: 16));
+        }
+        expect(
+          find.text('cue 00150 text'),
+          findsOneWidget,
+          reason: 're-enabled auto-scroll should resume following current cue',
+        );
+      },
+    );
 
     test(
-        'TODO-444 phase1 source guard: lookup text is one paragraph hit layer, '
-        'not per-grapheme widgets', () {
-      final String source =
-          File('lib/src/media/video/subtitle_transcript_text.dart')
-              .readAsStringSync();
-      final String body = _sourceBetween(
-        source, 'Widget _buildParagraph(', '/// Shared sidebar row');
-      final String video =
-          File('lib/src/media/video/video_subtitle_jump_panel.dart')
-              .readAsStringSync();
-      expect(_sourceBetween(video, 'Widget _buildRowText(',
-          'Widget _buildRowActions('), contains('SubtitleTranscriptText('));
-      expect(body, isNot(contains('Wrap(')),
-          reason: 'wrapping is owned by RichText/TextPainter, not Wrap');
-      expect(RegExp(r'^\s*Builder\(', multiLine: true).hasMatch(body), isFalse,
-          reason: 'per-character BuildContext capture must stay removed');
-      expect(body, contains('RichText('));
-      expect(body, contains('TextPainter('));
-      expect(body, contains('getBoxesForSelection'));
-      // BUG-916：命中走 grapheme 真实盒的几何反查，不再用 getPositionForOffset 的 caret
-      // 边界（会把某字左右半格塌陷到同一边界、系统性偏左一格）。
-      expect(body, contains('resolveSubtitleListGraphemeHit'));
-      expect(body, isNot(contains('getPositionForOffset(')),
-          reason: 'BUG-916：tap 命中不得再回落 caret 偏移映射');
-      expect(body, contains('MediaQuery.textScalerOf(context)'));
-      expect(body, contains('Directionality.of(context)'));
-      expect(body, contains('constraints.maxWidth'));
-    });
+      'TODO-444 phase1 source guard: lookup text is one paragraph hit layer, '
+      'not per-grapheme widgets',
+      () {
+        final String source = File(
+          'lib/src/media/video/subtitle_transcript_text.dart',
+        ).readAsStringSync();
+        final String body = _sourceBetween(
+          source,
+          'Widget _buildParagraph(',
+          '/// Shared sidebar row',
+        );
+        final String video = File(
+          'lib/src/media/video/video_subtitle_jump_panel.dart',
+        ).readAsStringSync();
+        expect(
+          _sourceBetween(
+            video,
+            'Widget _buildRowText(',
+            'Widget _buildRowActions(',
+          ),
+          contains('SubtitleTranscriptText('),
+        );
+        expect(
+          body,
+          isNot(contains('Wrap(')),
+          reason: 'wrapping is owned by RichText/TextPainter, not Wrap',
+        );
+        expect(
+          RegExp(r'^\s*Builder\(', multiLine: true).hasMatch(body),
+          isFalse,
+          reason: 'per-character BuildContext capture must stay removed',
+        );
+        expect(body, contains('RichText('));
+        expect(body, contains('TextPainter('));
+        expect(body, contains('getBoxesForSelection'));
+        // BUG-916：命中走 grapheme 真实盒的几何反查，不再用 getPositionForOffset 的 caret
+        // 边界（会把某字左右半格塌陷到同一边界、系统性偏左一格）。
+        expect(body, contains('resolveSubtitleListGraphemeHit'));
+        expect(
+          body,
+          isNot(contains('getPositionForOffset(')),
+          reason: 'BUG-916：tap 命中不得再回落 caret 偏移映射',
+        );
+        expect(body, contains('MediaQuery.textScalerOf(context)'));
+        expect(body, contains('Directionality.of(context)'));
+        expect(body, contains('constraints.maxWidth'));
+      },
+    );
 
     testWidgets(
-        'TODO-444 phase1: lookable row text wraps as one RichText hit layer',
-        (WidgetTester tester) async {
-      final VideoPlayerController controller = VideoPlayerController();
-      addTearDown(controller.dispose);
-      const String sentence = 'abcdefg';
-      controller.setCues(<AudioCue>[_cue(0, 0, 1000, sentence)]);
+      'TODO-444 phase1: lookable row text wraps as one RichText hit layer',
+      (WidgetTester tester) async {
+        final VideoPlayerController controller = VideoPlayerController();
+        addTearDown(controller.dispose);
+        const String sentence = 'abcdefg';
+        controller.setCues(<AudioCue>[_cue(0, 0, 1000, sentence)]);
 
-      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
-        layout: VideoSubtitleListLayout.classic,
-        controller: controller,
-        onTapCue: (_) {},
-        onLookupCue: (AudioCue _, int __, Rect ___) {},
-        onCopyCue: (_) => true,
-        onFavoriteCue: (_) async {},
-        isCueFavorited: (_) => false,
-        onClose: () {},
-        colorScheme: const ColorScheme.dark(),
-        title: 'Subtitle list',
-        emptyHint: 'empty',
-        width: 280,
-      )));
+        await tester.pumpWidget(
+          _wrap(
+            VideoSubtitleJumpPanel(
+              layout: VideoSubtitleListLayout.classic,
+              controller: controller,
+              onTapCue: (_) {},
+              onLookupCue: (AudioCue _, int __, Rect ___) {},
+              onCopyCue: (_) => true,
+              onFavoriteCue: (_) async {},
+              isCueFavorited: (_) => false,
+              onClose: () {},
+              colorScheme: const ColorScheme.dark(),
+              title: 'Subtitle list',
+              emptyHint: 'empty',
+              width: 280,
+            ),
+          ),
+        );
 
-      expect(find.byType(Wrap), findsNothing);
-      expect(find.text(sentence, findRichText: true), findsOneWidget);
-      expect(find.text('c'), findsNothing,
-          reason: 'a long row must not render each grapheme as its own Text');
-      final RichText rowText =
-          tester.widget<RichText>(find.text(sentence, findRichText: true));
-      expect(rowText.maxLines, isNull,
-          reason: 'row text must wrap, not clamp to one elided line');
-      expect(rowText.overflow, TextOverflow.clip);
-    });
-
-    testWidgets(
-        'TODO-340: without onLookupCue, row text is a single wrapping Text '
-        '(no single-line ellipsis)', (WidgetTester tester) async {
-      final VideoPlayerController controller = VideoPlayerController();
-      addTearDown(controller.dispose);
-      controller.setCues(<AudioCue>[
-        _cue(0, 0, 1000, 'wrap me to full content even without lookup'),
-      ]);
-
-      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
-        layout: VideoSubtitleListLayout.classic,
-        controller: controller,
-        onTapCue: (_) {},
-        // onLookupCue omitted → whole sentence is a single Text, still wraps.
-        onCopyCue: (_) => true,
-        onFavoriteCue: (_) async {},
-        isCueFavorited: (_) => false,
-        onClose: () {},
-        colorScheme: const ColorScheme.dark(),
-        title: 'Subtitle list',
-        emptyHint: 'empty',
-        width: 280,
-      )));
-
-      final Text rowText = tester.widget<Text>(
-          find.text('wrap me to full content even without lookup'));
-      expect(rowText.maxLines, isNull,
-          reason:
-              'row text must wrap, not clamp to one elided line (TODO-340)');
-      expect(rowText.overflow, isNot(TextOverflow.ellipsis));
-    });
+        expect(find.byType(Wrap), findsNothing);
+        expect(find.text(sentence, findRichText: true), findsOneWidget);
+        expect(
+          find.text('c'),
+          findsNothing,
+          reason: 'a long row must not render each grapheme as its own Text',
+        );
+        final RichText rowText = tester.widget<RichText>(
+          find.text(sentence, findRichText: true),
+        );
+        expect(
+          rowText.maxLines,
+          isNull,
+          reason: 'row text must wrap, not clamp to one elided line',
+        );
+        expect(rowText.overflow, TextOverflow.clip);
+      },
+    );
 
     testWidgets(
-        'TODO-444 phase1: tapping a middle multi-code-unit grapheme looks up '
-        'from that grapheme with a nonzero rect', (WidgetTester tester) async {
-      final VideoPlayerController controller = VideoPlayerController();
-      addTearDown(controller.dispose);
-      const String sentence =
-          'long subtitle prefix keeps this in the middle 👩‍💻 suffix line';
-      controller.setCues(<AudioCue>[_cue(0, 0, 1000, sentence)]);
-      AudioCue? seeked;
-      AudioCue? lookedUp;
-      int? lookupIndex;
-      Rect? lookupRect;
-      Offset? tapPoint;
+      'TODO-340: without onLookupCue, row text is a single wrapping Text '
+      '(no single-line ellipsis)',
+      (WidgetTester tester) async {
+        final VideoPlayerController controller = VideoPlayerController();
+        addTearDown(controller.dispose);
+        controller.setCues(<AudioCue>[
+          _cue(0, 0, 1000, 'wrap me to full content even without lookup'),
+        ]);
 
-      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
-        layout: VideoSubtitleListLayout.classic,
-        controller: controller,
-        onTapCue: (AudioCue c) => seeked = c,
-        onLookupCue: (AudioCue c, int i, Rect r) {
-          lookedUp = c;
-          lookupIndex = i;
-          lookupRect = r;
-        },
-        onCopyCue: (_) => true,
-        onFavoriteCue: (_) async {},
-        isCueFavorited: (_) => false,
-        onClose: () {},
-        colorScheme: const ColorScheme.dark(),
-        title: 'Subtitle list',
-        emptyHint: 'empty',
-      )));
+        await tester.pumpWidget(
+          _wrap(
+            VideoSubtitleJumpPanel(
+              layout: VideoSubtitleListLayout.classic,
+              controller: controller,
+              onTapCue: (_) {},
+              // onLookupCue omitted → whole sentence is a single Text, still wraps.
+              onCopyCue: (_) => true,
+              onFavoriteCue: (_) async {},
+              isCueFavorited: (_) => false,
+              onClose: () {},
+              colorScheme: const ColorScheme.dark(),
+              title: 'Subtitle list',
+              emptyHint: 'empty',
+              width: 280,
+            ),
+          ),
+        );
 
-      final ({int graphemeIndex, Offset tapPoint}) target =
-          _tapPointForGrapheme(tester, sentence, '👩‍💻');
-      tapPoint = target.tapPoint;
-      await tester.tapAt(tapPoint);
-      await tester.pump();
-
-      expect(lookedUp, isNotNull);
-      expect(lookedUp!.text, sentence);
-      expect(lookupIndex, target.graphemeIndex,
-          reason: 'tap maps through UTF-16 offsets back to grapheme clusters');
-      expect(lookupRect, isNotNull);
-      expect(lookupRect, isNot(Rect.zero));
-      expect(lookupRect!.contains(tapPoint), isTrue,
-          reason: 'returned global charRect must contain the actual tap point');
-      expect(seeked, isNull, reason: 'tapping text must look up, not seek');
-    });
+        final Text rowText = tester.widget<Text>(
+          find.text('wrap me to full content even without lookup'),
+        );
+        expect(
+          rowText.maxLines,
+          isNull,
+          reason: 'row text must wrap, not clamp to one elided line (TODO-340)',
+        );
+        expect(rowText.overflow, isNot(TextOverflow.ellipsis));
+      },
+    );
 
     testWidgets(
-        'BUG-916: tapping a character\'s LEFT portion looks up THAT character, '
-        'not the one to its left', (WidgetTester tester) async {
-      final VideoPlayerController controller = VideoPlayerController();
-      addTearDown(controller.dispose);
-      // 全角方块字（视频里的真实场景：の護衛ね…），字宽足够、左半格明显。
-      const String sentence = 'あいうえお';
-      controller.setCues(<AudioCue>[_cue(0, 0, 1000, sentence)]);
-      int? lookupIndex;
+      'TODO-444 phase1: tapping a middle multi-code-unit grapheme looks up '
+      'from that grapheme with a nonzero rect',
+      (WidgetTester tester) async {
+        final VideoPlayerController controller = VideoPlayerController();
+        addTearDown(controller.dispose);
+        const String sentence =
+            'long subtitle prefix keeps this in the middle 👩‍💻 suffix line';
+        controller.setCues(<AudioCue>[_cue(0, 0, 1000, sentence)]);
+        AudioCue? seeked;
+        AudioCue? lookedUp;
+        int? lookupIndex;
+        Rect? lookupRect;
+        Offset? tapPoint;
 
-      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
-        layout: VideoSubtitleListLayout.classic,
-        controller: controller,
-        onTapCue: (_) {},
-        onLookupCue: (AudioCue _, int i, Rect __) => lookupIndex = i,
-        onCopyCue: (_) => true,
-        onFavoriteCue: (_) async {},
-        isCueFavorited: (_) => false,
-        onClose: () {},
-        colorScheme: const ColorScheme.dark(),
-        title: 'Subtitle list',
-        emptyHint: 'empty',
-      )));
+        await tester.pumpWidget(
+          _wrap(
+            VideoSubtitleJumpPanel(
+              layout: VideoSubtitleListLayout.classic,
+              controller: controller,
+              onTapCue: (AudioCue c) => seeked = c,
+              onLookupCue: (AudioCue c, int i, Rect r) {
+                lookedUp = c;
+                lookupIndex = i;
+                lookupRect = r;
+              },
+              onCopyCue: (_) => true,
+              onFavoriteCue: (_) async {},
+              isCueFavorited: (_) => false,
+              onClose: () {},
+              colorScheme: const ColorScheme.dark(),
+              title: 'Subtitle list',
+              emptyHint: 'empty',
+            ),
+          ),
+        );
 
-      // 点「う」（下标 2）的左 1/4 处：旧实现（caret 偏移映射）会查到「い」（下标 1）。
-      final ({int graphemeIndex, Offset tapPoint}) target =
-          _leftPortionPointForGrapheme(tester, sentence, 'う');
-      await tester.tapAt(target.tapPoint);
-      await tester.pump();
+        final ({int graphemeIndex, Offset tapPoint}) target =
+            _tapPointForGrapheme(tester, sentence, '👩‍💻');
+        tapPoint = target.tapPoint;
+        await tester.tapAt(tapPoint);
+        await tester.pump();
 
-      expect(lookupIndex, target.graphemeIndex,
-          reason: '指向某字左半格必须查该字（BUG-916：原本偏左一格查到左邻字）');
-    });
-
-    testWidgets(
-        'TODO-444 phase1: with lookup enabled, tapping text whitespace still seeks',
-        (WidgetTester tester) async {
-      final VideoPlayerController controller = VideoPlayerController();
-      addTearDown(controller.dispose);
-      const String sentence = 'short';
-      controller.setCues(<AudioCue>[_cue(0, 0, 1000, sentence)]);
-      AudioCue? seeked;
-      AudioCue? lookedUp;
-
-      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
-        layout: VideoSubtitleListLayout.classic,
-        controller: controller,
-        onTapCue: (AudioCue c) => seeked = c,
-        onLookupCue: (AudioCue c, int _, Rect __) => lookedUp = c,
-        onCopyCue: (_) => true,
-        onFavoriteCue: (_) async {},
-        isCueFavorited: (_) => false,
-        onClose: () {},
-        colorScheme: const ColorScheme.dark(),
-        title: 'Subtitle list',
-        emptyHint: 'empty',
-        width: 520,
-      )));
-
-      final Rect textRect =
-          tester.getRect(find.text(sentence, findRichText: true));
-      await tester.tapAt(textRect.centerRight - const Offset(4, 0));
-      await tester.pump();
-
-      expect(seeked, isNotNull);
-      expect(seeked!.text, sentence);
-      expect(lookedUp, isNull,
-          reason: 'blank space in the text column should seek, not lookup');
-    });
+        expect(lookedUp, isNotNull);
+        expect(lookedUp!.text, sentence);
+        expect(
+          lookupIndex,
+          target.graphemeIndex,
+          reason: 'tap maps through UTF-16 offsets back to grapheme clusters',
+        );
+        expect(lookupRect, isNotNull);
+        expect(lookupRect, isNot(Rect.zero));
+        expect(
+          lookupRect!.contains(tapPoint),
+          isTrue,
+          reason: 'returned global charRect must contain the actual tap point',
+        );
+        expect(seeked, isNull, reason: 'tapping text must look up, not seek');
+      },
+    );
 
     testWidgets(
-        'TODO-444 phase1: 20k cues build only viewport rows and auto-follow '
-        'to cue 19999 with evidence file', (WidgetTester tester) async {
-      final VideoPlayerController controller = VideoPlayerController();
-      addTearDown(controller.dispose);
-      final List<AudioCue> cues = _manyCues(20000);
-      controller.setCues(cues);
+      'BUG-916: tapping a character\'s LEFT portion looks up THAT character, '
+      'not the one to its left',
+      (WidgetTester tester) async {
+        final VideoPlayerController controller = VideoPlayerController();
+        addTearDown(controller.dispose);
+        // 全角方块字（视频里的真实场景：の護衛ね…），字宽足够、左半格明显。
+        const String sentence = 'あいうえお';
+        controller.setCues(<AudioCue>[_cue(0, 0, 1000, sentence)]);
+        int? lookupIndex;
 
-      final Stopwatch openWatch = Stopwatch()..start();
-      await tester.pumpWidget(_wrap(SizedBox(
-        width: 520,
-        height: 620,
-        child: VideoSubtitleJumpPanel(
-        layout: VideoSubtitleListLayout.classic,
-          controller: controller,
-          onTapCue: (_) {},
-          onLookupCue: (AudioCue _, int __, Rect ___) {},
-          onClose: () {},
-          onCopyCue: (_) => true,
-          onFavoriteCue: (_) async {},
-          isCueFavorited: (_) => false,
-          colorScheme: const ColorScheme.dark(),
-          title: 'Subtitle list',
-          emptyHint: 'empty',
-          width: 520,
-        ),
-      )));
-      await tester.pump();
-      openWatch.stop();
+        await tester.pumpWidget(
+          _wrap(
+            VideoSubtitleJumpPanel(
+              layout: VideoSubtitleListLayout.classic,
+              controller: controller,
+              onTapCue: (_) {},
+              onLookupCue: (AudioCue _, int i, Rect __) => lookupIndex = i,
+              onCopyCue: (_) => true,
+              onFavoriteCue: (_) async {},
+              isCueFavorited: (_) => false,
+              onClose: () {},
+              colorScheme: const ColorScheme.dark(),
+              title: 'Subtitle list',
+              emptyHint: 'empty',
+            ),
+          ),
+        );
 
-      final int firstViewportCueWidgets = _builtCueTextWidgetCount(tester);
-      expect(firstViewportCueWidgets, greaterThan(0));
-      expect(firstViewportCueWidgets, lessThan(120),
-          reason: 'ListView must build viewport-near rows, not all 20000');
+        // 点「う」（下标 2）的左 1/4 处：旧实现（caret 偏移映射）会查到「い」（下标 1）。
+        final ({int graphemeIndex, Offset tapPoint}) target =
+            _leftPortionPointForGrapheme(tester, sentence, 'う');
+        await tester.tapAt(target.tapPoint);
+        await tester.pump();
 
-      final Stopwatch followWatch = Stopwatch()..start();
-      controller.debugUpdateCueForPosition(19999050);
-      await tester.pump();
-      for (int i = 0; i < 24; i++) {
-        await tester.pump(const Duration(milliseconds: 16));
-      }
-      followWatch.stop();
+        expect(
+          lookupIndex,
+          target.graphemeIndex,
+          reason: '指向某字左半格必须查该字（BUG-916：原本偏左一格查到左邻字）',
+        );
+      },
+    );
 
-      final int followedViewportCueWidgets = _builtCueTextWidgetCount(tester);
-      expect(find.text('cue 19999 text', findRichText: true), findsOneWidget);
-      expect(followedViewportCueWidgets, greaterThan(0));
-      expect(followedViewportCueWidgets, lessThan(160),
-          reason: 'auto-follow must not mount the whole 20k cue list');
+    testWidgets(
+      'TODO-444 phase1: with lookup enabled, tapping text whitespace still seeks',
+      (WidgetTester tester) async {
+        final VideoPlayerController controller = VideoPlayerController();
+        addTearDown(controller.dispose);
+        const String sentence = 'short';
+        controller.setCues(<AudioCue>[_cue(0, 0, 1000, sentence)]);
+        AudioCue? seeked;
+        AudioCue? lookedUp;
 
-      final String evidencePath =
-          _repoEvidencePath('.codex-test/todo-444-phase1/subtitle-list-20k.md');
-      final File evidenceFile = File(evidencePath);
-      evidenceFile.parent.createSync(recursive: true);
-      evidenceFile.writeAsStringSync('''
+        await tester.pumpWidget(
+          _wrap(
+            VideoSubtitleJumpPanel(
+              layout: VideoSubtitleListLayout.classic,
+              controller: controller,
+              onTapCue: (AudioCue c) => seeked = c,
+              onLookupCue: (AudioCue c, int _, Rect __) => lookedUp = c,
+              onCopyCue: (_) => true,
+              onFavoriteCue: (_) async {},
+              isCueFavorited: (_) => false,
+              onClose: () {},
+              colorScheme: const ColorScheme.dark(),
+              title: 'Subtitle list',
+              emptyHint: 'empty',
+              width: 520,
+            ),
+          ),
+        );
+
+        final Rect textRect = tester.getRect(
+          find.text(sentence, findRichText: true),
+        );
+        await tester.tapAt(textRect.centerRight - const Offset(4, 0));
+        await tester.pump();
+
+        expect(seeked, isNotNull);
+        expect(seeked!.text, sentence);
+        expect(
+          lookedUp,
+          isNull,
+          reason: 'blank space in the text column should seek, not lookup',
+        );
+      },
+    );
+
+    testWidgets(
+      'TODO-444 phase1: 20k cues build only viewport rows and auto-follow '
+      'to cue 19999 with evidence file',
+      (WidgetTester tester) async {
+        final VideoPlayerController controller = VideoPlayerController();
+        addTearDown(controller.dispose);
+        final List<AudioCue> cues = _manyCues(20000);
+        controller.setCues(cues);
+
+        final Stopwatch openWatch = Stopwatch()..start();
+        await tester.pumpWidget(
+          _wrap(
+            SizedBox(
+              width: 520,
+              height: 620,
+              child: VideoSubtitleJumpPanel(
+                layout: VideoSubtitleListLayout.classic,
+                controller: controller,
+                onTapCue: (_) {},
+                onLookupCue: (AudioCue _, int __, Rect ___) {},
+                onClose: () {},
+                onCopyCue: (_) => true,
+                onFavoriteCue: (_) async {},
+                isCueFavorited: (_) => false,
+                colorScheme: const ColorScheme.dark(),
+                title: 'Subtitle list',
+                emptyHint: 'empty',
+                width: 520,
+              ),
+            ),
+          ),
+        );
+        await tester.pump();
+        openWatch.stop();
+
+        final int firstViewportCueWidgets = _builtCueTextWidgetCount(tester);
+        expect(firstViewportCueWidgets, greaterThan(0));
+        expect(
+          firstViewportCueWidgets,
+          lessThan(120),
+          reason: 'ListView must build viewport-near rows, not all 20000',
+        );
+
+        final Stopwatch followWatch = Stopwatch()..start();
+        controller.debugUpdateCueForPosition(19999050);
+        await tester.pump();
+        for (int i = 0; i < 24; i++) {
+          await tester.pump(const Duration(milliseconds: 16));
+        }
+        followWatch.stop();
+
+        final int followedViewportCueWidgets = _builtCueTextWidgetCount(tester);
+        expect(find.text('cue 19999 text', findRichText: true), findsOneWidget);
+        expect(followedViewportCueWidgets, greaterThan(0));
+        expect(
+          followedViewportCueWidgets,
+          lessThan(160),
+          reason: 'auto-follow must not mount the whole 20k cue list',
+        );
+
+        final String evidencePath = _repoEvidencePath(
+          '.codex-test/todo-444-phase1/subtitle-list-20k.md',
+        );
+        final File evidenceFile = File(evidencePath);
+        evidenceFile.parent.createSync(recursive: true);
+        evidenceFile.writeAsStringSync('''
 # TODO-444 Phase 1 Subtitle List 20k Evidence
 
 - cues: 20000
@@ -1282,83 +1507,95 @@ void main() {
 - followed viewport cue text widgets: $followedViewportCueWidgets
 - threshold: viewport cue text widgets stay under 160; target row mounted after auto-follow
 ''');
-    });
+      },
+    );
 
     testWidgets(
-        'TODO-278a/BUG-266: without onLookupCue, tapping row text still seeks '
-        '(backward compatible)', (WidgetTester tester) async {
-      final VideoPlayerController controller = VideoPlayerController();
-      addTearDown(controller.dispose);
-      controller.setCues(<AudioCue>[_cue(0, 0, 1000, 'seek me')]);
-      AudioCue? seeked;
+      'TODO-278a/BUG-266: without onLookupCue, tapping row text still seeks '
+      '(backward compatible)',
+      (WidgetTester tester) async {
+        final VideoPlayerController controller = VideoPlayerController();
+        addTearDown(controller.dispose);
+        controller.setCues(<AudioCue>[_cue(0, 0, 1000, 'seek me')]);
+        AudioCue? seeked;
 
-      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
-        layout: VideoSubtitleListLayout.classic,
-        controller: controller,
-        onTapCue: (AudioCue c) => seeked = c,
-        // onLookupCue intentionally omitted (null).
-        onCopyCue: (_) => true,
-        onFavoriteCue: (_) async {},
-        isCueFavorited: (_) => false,
-        onClose: () {},
-        colorScheme: const ColorScheme.dark(),
-        title: 'Subtitle list',
-        emptyHint: 'empty',
-      )));
+        await tester.pumpWidget(
+          _wrap(
+            VideoSubtitleJumpPanel(
+              layout: VideoSubtitleListLayout.classic,
+              controller: controller,
+              onTapCue: (AudioCue c) => seeked = c,
+              // onLookupCue intentionally omitted (null).
+              onCopyCue: (_) => true,
+              onFavoriteCue: (_) async {},
+              isCueFavorited: (_) => false,
+              onClose: () {},
+              colorScheme: const ColorScheme.dark(),
+              title: 'Subtitle list',
+              emptyHint: 'empty',
+            ),
+          ),
+        );
 
-      await tester.tap(find.text('seek me'));
-      await tester.pump();
-      expect(seeked, isNotNull);
-      expect(seeked!.text, 'seek me');
-    });
+        await tester.tap(find.text('seek me'));
+        await tester.pump();
+        expect(seeked, isNotNull);
+        expect(seeked!.text, 'seek me');
+      },
+    );
 
     testWidgets(
-        'TODO-301/BUG-267: favorited row gets a left tertiary border marker',
-        (WidgetTester tester) async {
-      final VideoPlayerController controller = VideoPlayerController();
-      addTearDown(controller.dispose);
-      controller.setCues(<AudioCue>[
-        _cue(0, 0, 1000, 'plain row'),
-        _cue(1, 2000, 3000, 'fav row'),
-      ]);
-      const ColorScheme cs = ColorScheme.dark();
+      'TODO-301/BUG-267: favorited row gets a left tertiary border marker',
+      (WidgetTester tester) async {
+        final VideoPlayerController controller = VideoPlayerController();
+        addTearDown(controller.dispose);
+        controller.setCues(<AudioCue>[
+          _cue(0, 0, 1000, 'plain row'),
+          _cue(1, 2000, 3000, 'fav row'),
+        ]);
+        const ColorScheme cs = ColorScheme.dark();
 
-      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
-        layout: VideoSubtitleListLayout.classic,
-        controller: controller,
-        onTapCue: (_) {},
-        onCopyCue: (_) => true,
-        onFavoriteCue: (_) async {},
-        isCueFavorited: (AudioCue c) => c.text == 'fav row',
-        onClose: () {},
-        colorScheme: cs,
-        title: 'Subtitle list',
-        emptyHint: 'empty',
-      )));
+        await tester.pumpWidget(
+          _wrap(
+            VideoSubtitleJumpPanel(
+              layout: VideoSubtitleListLayout.classic,
+              controller: controller,
+              onTapCue: (_) {},
+              onCopyCue: (_) => true,
+              onFavoriteCue: (_) async {},
+              isCueFavorited: (AudioCue c) => c.text == 'fav row',
+              onClose: () {},
+              colorScheme: cs,
+              title: 'Subtitle list',
+              emptyHint: 'empty',
+            ),
+          ),
+        );
 
-      Border? borderOf(String text) {
-        // Nearest Container ancestor of the row text == the row's own Container
-        // (which carries the favorite left-border decoration).
-        final Container container = tester
-            .widgetList<Container>(
-              find.ancestor(
-                of: find.text(text),
-                matching: find.byType(Container),
-              ),
-            )
-            .first;
-        return (container.decoration as BoxDecoration?)?.border as Border?;
-      }
+        Border? borderOf(String text) {
+          // Nearest Container ancestor of the row text == the row's own Container
+          // (which carries the favorite left-border decoration).
+          final Container container = tester
+              .widgetList<Container>(
+                find.ancestor(
+                  of: find.text(text),
+                  matching: find.byType(Container),
+                ),
+              )
+              .first;
+          return (container.decoration as BoxDecoration?)?.border as Border?;
+        }
 
-      // Favorited row has a left border in the tertiary color; plain row has
-      // none (revert the favorite marker -> both null -> red).
-      final Border? favBorder = borderOf('fav row');
-      expect(favBorder, isNotNull);
-      expect(favBorder!.left.color, cs.tertiary);
-      expect(favBorder.left.width, 3);
+        // Favorited row has a left border in the tertiary color; plain row has
+        // none (revert the favorite marker -> both null -> red).
+        final Border? favBorder = borderOf('fav row');
+        expect(favBorder, isNotNull);
+        expect(favBorder!.left.color, cs.tertiary);
+        expect(favBorder.left.width, 3);
 
-      expect(borderOf('plain row')?.left.width ?? 0, 0);
-    });
+        expect(borderOf('plain row')?.left.width ?? 0, 0);
+      },
+    );
 
     testWidgets('larger font button enlarges row text', (
       WidgetTester tester,
@@ -1367,18 +1604,22 @@ void main() {
       addTearDown(controller.dispose);
       controller.setCues(<AudioCue>[_cue(0, 0, 1000, 'sized')]);
 
-      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
-        layout: VideoSubtitleListLayout.classic,
-        controller: controller,
-        onTapCue: (_) {},
-        onCopyCue: (_) => true,
-        onFavoriteCue: (_) async {},
-        isCueFavorited: (_) => false,
-        onClose: () {},
-        colorScheme: const ColorScheme.dark(),
-        title: 'Subtitle list',
-        emptyHint: 'empty',
-      )));
+      await tester.pumpWidget(
+        _wrap(
+          VideoSubtitleJumpPanel(
+            layout: VideoSubtitleListLayout.classic,
+            controller: controller,
+            onTapCue: (_) {},
+            onCopyCue: (_) => true,
+            onFavoriteCue: (_) async {},
+            isCueFavorited: (_) => false,
+            onClose: () {},
+            colorScheme: const ColorScheme.dark(),
+            title: 'Subtitle list',
+            emptyHint: 'empty',
+          ),
+        ),
+      );
 
       double fontOf(String text) =>
           tester.widget<Text>(find.text(text)).style!.fontSize!;
@@ -1386,256 +1627,318 @@ void main() {
 
       await tester.tap(find.byIcon(FushiIcons.textIncrease));
       await tester.pump();
-      expect(fontOf('sized'), greaterThan(before),
-          reason: 'A+ enlarges row font (local transient step)');
+      expect(
+        fontOf('sized'),
+        greaterThan(before),
+        reason: 'A+ enlarges row font (local transient step)',
+      );
     });
 
     testWidgets(
-        'TODO-567: timestamp column is single-line and never overflows into '
-        'the subtitle text column', (WidgetTester tester) async {
-      final VideoPlayerController controller = VideoPlayerController();
-      addTearDown(controller.dispose);
-      // An hour-plus cue (1:02:09) is the widest timestamp; with a long
-      // subtitle next to it this is exactly the regression case where the time
-      // used to be covered/pushed by the following text.
-      controller.setCues(<AudioCue>[
-        _cue(0, 3729000, 3731000,
-            'a very long subtitle line that wants the whole row width'),
-      ]);
+      'TODO-567: timestamp column is single-line and never overflows into '
+      'the subtitle text column',
+      (WidgetTester tester) async {
+        final VideoPlayerController controller = VideoPlayerController();
+        addTearDown(controller.dispose);
+        // An hour-plus cue (1:02:09) is the widest timestamp; with a long
+        // subtitle next to it this is exactly the regression case where the time
+        // used to be covered/pushed by the following text.
+        controller.setCues(<AudioCue>[
+          _cue(
+            0,
+            3729000,
+            3731000,
+            'a very long subtitle line that wants the whole row width',
+          ),
+        ]);
 
-      await tester.pumpWidget(_wrap(SizedBox(
-        width: 320,
-        height: 400,
-        child: VideoSubtitleJumpPanel(
-        layout: VideoSubtitleListLayout.classic,
-          controller: controller,
-          onTapCue: (_) {},
-          onClose: () {},
-          onCopyCue: (_) => true,
-          onFavoriteCue: (_) async {},
-          isCueFavorited: (_) => false,
-          colorScheme: const ColorScheme.dark(),
-          title: 'Subtitle list',
-          emptyHint: 'empty',
-          width: 320,
-        ),
-      )));
-
-      // The hour-plus timestamp must be rendered.
-      final Finder tsFinder = find.text('1:02:09');
-      expect(tsFinder, findsOneWidget);
-
-      // The timestamp Text is single-line, non-wrapping, ellipsis on overflow:
-      // it can never wrap/overflow its column and bleed into the text column.
-      final Text tsText = tester.widget<Text>(tsFinder);
-      expect(tsText.maxLines, 1,
-          reason: 'timestamp must stay on one line (no wrap into text column)');
-      expect(tsText.softWrap, isFalse);
-      expect(tsText.overflow, TextOverflow.ellipsis);
-
-      // Geometry guard: the timestamp box must end at-or-before the start of
-      // the subtitle text box (no horizontal overlap = time not covered by the
-      // next subtitle, TODO-567).
-      final Rect tsRect = tester.getRect(tsFinder);
-      final Finder textFinder = find.textContaining('very long subtitle');
-      expect(textFinder, findsOneWidget);
-      final Rect textRect = tester.getRect(textFinder);
-      expect(tsRect.right, lessThanOrEqualTo(textRect.left + 0.5),
-          reason: 'timestamp column must not horizontally overlap the text '
-              'column (TODO-567: time covered by next subtitle)');
-    });
-
-    testWidgets(
-        'TODO-567: timestamp column widens with the larger-font step so wider '
-        'timestamps keep fitting', (WidgetTester tester) async {
-      final VideoPlayerController controller = VideoPlayerController();
-      addTearDown(controller.dispose);
-      controller.setCues(<AudioCue>[_cue(0, 3729000, 3731000, 'row')]);
-
-      await tester.pumpWidget(_wrap(SizedBox(
-        width: 360,
-        height: 400,
-        child: VideoSubtitleJumpPanel(
-        layout: VideoSubtitleListLayout.classic,
-          controller: controller,
-          onTapCue: (_) {},
-          onClose: () {},
-          onCopyCue: (_) => true,
-          onFavoriteCue: (_) async {},
-          isCueFavorited: (_) => false,
-          colorScheme: const ColorScheme.dark(),
-          title: 'Subtitle list',
-          emptyHint: 'empty',
-          width: 360,
-        ),
-      )));
-
-      double tsColumnWidth() {
-        final RenderBox box = tester.renderObject<RenderBox>(
-          find
-              .ancestor(
-                of: find.text('1:02:09'),
-                matching: find.byType(SizedBox),
-              )
-              .first,
+        await tester.pumpWidget(
+          _wrap(
+            SizedBox(
+              width: 320,
+              height: 400,
+              child: VideoSubtitleJumpPanel(
+                layout: VideoSubtitleListLayout.classic,
+                controller: controller,
+                onTapCue: (_) {},
+                onClose: () {},
+                onCopyCue: (_) => true,
+                onFavoriteCue: (_) async {},
+                isCueFavorited: (_) => false,
+                colorScheme: const ColorScheme.dark(),
+                title: 'Subtitle list',
+                emptyHint: 'empty',
+                width: 320,
+              ),
+            ),
+          ),
         );
-        return box.size.width;
-      }
 
-      final double before = tsColumnWidth();
-      // Step the font up twice (to the largest 1.3x step) and the timestamp
-      // column must grow so 'h:mm:ss' keeps fitting instead of overflowing.
-      await tester.tap(find.byIcon(FushiIcons.textIncrease));
-      await tester.pump();
-      await tester.tap(find.byIcon(FushiIcons.textIncrease));
-      await tester.pump();
-      expect(tsColumnWidth(), greaterThan(before),
-          reason: 'larger font must widen the timestamp column (TODO-567)');
-    });
+        // The hour-plus timestamp must be rendered.
+        final Finder tsFinder = find.text('1:02:09');
+        expect(tsFinder, findsOneWidget);
+
+        // The timestamp Text is single-line, non-wrapping, ellipsis on overflow:
+        // it can never wrap/overflow its column and bleed into the text column.
+        final Text tsText = tester.widget<Text>(tsFinder);
+        expect(
+          tsText.maxLines,
+          1,
+          reason: 'timestamp must stay on one line (no wrap into text column)',
+        );
+        expect(tsText.softWrap, isFalse);
+        expect(tsText.overflow, TextOverflow.ellipsis);
+
+        // Geometry guard: the timestamp box must end at-or-before the start of
+        // the subtitle text box (no horizontal overlap = time not covered by the
+        // next subtitle, TODO-567).
+        final Rect tsRect = tester.getRect(tsFinder);
+        final Finder textFinder = find.textContaining('very long subtitle');
+        expect(textFinder, findsOneWidget);
+        final Rect textRect = tester.getRect(textFinder);
+        expect(
+          tsRect.right,
+          lessThanOrEqualTo(textRect.left + 0.5),
+          reason:
+              'timestamp column must not horizontally overlap the text '
+              'column (TODO-567: time covered by next subtitle)',
+        );
+      },
+    );
 
     testWidgets(
-        'TODO-566: favorited cue shows a filled star on the very first frame '
-        '(no async wait)', (WidgetTester tester) async {
-      final VideoPlayerController controller = VideoPlayerController();
-      addTearDown(controller.dispose);
-      controller.setCues(<AudioCue>[
-        _cue(0, 0, 1000, 'plain'),
-        _cue(1, 2000, 3000, 'already favorited'),
-      ]);
+      'TODO-567: timestamp column widens with the larger-font step so wider '
+      'timestamps keep fitting',
+      (WidgetTester tester) async {
+        final VideoPlayerController controller = VideoPlayerController();
+        addTearDown(controller.dispose);
+        controller.setCues(<AudioCue>[_cue(0, 3729000, 3731000, 'row')]);
 
-      // isCueFavorited is a synchronous O(1) read of the page's pre-filled
-      // favorite cache. The list must reflect it on the FIRST pump, with no
-      // pumpAndSettle / async DB round-trip needed — that is the TODO-566 fix
-      // (panel-open no longer re-queries the DB and makes stars appear late).
-      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
-        layout: VideoSubtitleListLayout.classic,
-        controller: controller,
-        onTapCue: (_) {},
-        onClose: () {},
-        onCopyCue: (_) => true,
-        onFavoriteCue: (_) async {},
-        isCueFavorited: (AudioCue c) => c.text == 'already favorited',
-        colorScheme: const ColorScheme.dark(),
-        title: 'Subtitle list',
-        emptyHint: 'empty',
-      )));
+        await tester.pumpWidget(
+          _wrap(
+            SizedBox(
+              width: 360,
+              height: 400,
+              child: VideoSubtitleJumpPanel(
+                layout: VideoSubtitleListLayout.classic,
+                controller: controller,
+                onTapCue: (_) {},
+                onClose: () {},
+                onCopyCue: (_) => true,
+                onFavoriteCue: (_) async {},
+                isCueFavorited: (_) => false,
+                colorScheme: const ColorScheme.dark(),
+                title: 'Subtitle list',
+                emptyHint: 'empty',
+                width: 360,
+              ),
+            ),
+          ),
+        );
 
-      // No pumpAndSettle: exactly one filled star (the favorited row) and one
-      // hollow star (the plain row) must already be present.
-      expect(find.byIcon(FushiIcons.filled(FushiIcons.star)), findsOneWidget,
-          reason: 'favorited row must show a filled star on the first frame');
-      expect(find.byIcon(FushiIcons.star), findsOneWidget,
-          reason: 'non-favorited row keeps a hollow star');
-    });
+        double tsColumnWidth() {
+          final RenderBox box = tester.renderObject<RenderBox>(
+            find
+                .ancestor(
+                  of: find.text('1:02:09'),
+                  matching: find.byType(SizedBox),
+                )
+                .first,
+          );
+          return box.size.width;
+        }
+
+        final double before = tsColumnWidth();
+        // Step the font up twice (to the largest 1.3x step) and the timestamp
+        // column must grow so 'h:mm:ss' keeps fitting instead of overflowing.
+        await tester.tap(find.byIcon(FushiIcons.textIncrease));
+        await tester.pump();
+        await tester.tap(find.byIcon(FushiIcons.textIncrease));
+        await tester.pump();
+        expect(
+          tsColumnWidth(),
+          greaterThan(before),
+          reason: 'larger font must widen the timestamp column (TODO-567)',
+        );
+      },
+    );
+
+    testWidgets(
+      'TODO-566: favorited cue shows a filled star on the very first frame '
+      '(no async wait)',
+      (WidgetTester tester) async {
+        final VideoPlayerController controller = VideoPlayerController();
+        addTearDown(controller.dispose);
+        controller.setCues(<AudioCue>[
+          _cue(0, 0, 1000, 'plain'),
+          _cue(1, 2000, 3000, 'already favorited'),
+        ]);
+
+        // isCueFavorited is a synchronous O(1) read of the page's pre-filled
+        // favorite cache. The list must reflect it on the FIRST pump, with no
+        // pumpAndSettle / async DB round-trip needed — that is the TODO-566 fix
+        // (panel-open no longer re-queries the DB and makes stars appear late).
+        await tester.pumpWidget(
+          _wrap(
+            VideoSubtitleJumpPanel(
+              layout: VideoSubtitleListLayout.classic,
+              controller: controller,
+              onTapCue: (_) {},
+              onClose: () {},
+              onCopyCue: (_) => true,
+              onFavoriteCue: (_) async {},
+              isCueFavorited: (AudioCue c) => c.text == 'already favorited',
+              colorScheme: const ColorScheme.dark(),
+              title: 'Subtitle list',
+              emptyHint: 'empty',
+            ),
+          ),
+        );
+
+        // No pumpAndSettle: exactly one filled star (the favorited row) and one
+        // hollow star (the plain row) must already be present.
+        expect(
+          find.byIcon(FushiIcons.filled(FushiIcons.star)),
+          findsOneWidget,
+          reason: 'favorited row must show a filled star on the first frame',
+        );
+        expect(
+          find.byIcon(FushiIcons.star),
+          findsOneWidget,
+          reason: 'non-favorited row keeps a hollow star',
+        );
+      },
+    );
 
     // ── TODO-613：自动滚动初始值来自外部 + 切换回调 ───────────────────────
     testWidgets(
-        'TODO-613: initialAutoScroll:false renders the paused icon on first '
-        'frame (no async)', (WidgetTester tester) async {
-      final VideoPlayerController controller = VideoPlayerController();
-      addTearDown(controller.dispose);
-      controller.setCues(<AudioCue>[_cue(0, 0, 1000, 'x')]);
+      'TODO-613: initialAutoScroll:false renders the paused icon on first '
+      'frame (no async)',
+      (WidgetTester tester) async {
+        final VideoPlayerController controller = VideoPlayerController();
+        addTearDown(controller.dispose);
+        controller.setCues(<AudioCue>[_cue(0, 0, 1000, 'x')]);
 
-      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
-        layout: VideoSubtitleListLayout.classic,
-        controller: controller,
-        onTapCue: (_) {},
-        onCopyCue: (_) => true,
-        onFavoriteCue: (_) async {},
-        isCueFavorited: (_) => false,
-        onClose: () {},
-        // 外部持久值为「关」→ 面板首帧就是暂停态图标（不再每次硬重置成开）。
-        initialAutoScroll: false,
-        colorScheme: const ColorScheme.dark(),
-        title: 'Subtitle list',
-        emptyHint: 'empty',
-      )));
+        await tester.pumpWidget(
+          _wrap(
+            VideoSubtitleJumpPanel(
+              layout: VideoSubtitleListLayout.classic,
+              controller: controller,
+              onTapCue: (_) {},
+              onCopyCue: (_) => true,
+              onFavoriteCue: (_) async {},
+              isCueFavorited: (_) => false,
+              onClose: () {},
+              // 外部持久值为「关」→ 面板首帧就是暂停态图标（不再每次硬重置成开）。
+              initialAutoScroll: false,
+              colorScheme: const ColorScheme.dark(),
+              title: 'Subtitle list',
+              emptyHint: 'empty',
+            ),
+          ),
+        );
 
-      expect(find.byIcon(FushiIcons.pauseCircle), findsOneWidget,
+        expect(
+          find.byIcon(FushiIcons.pauseCircle),
+          findsOneWidget,
           reason:
-              'initialAutoScroll:false must start in the off (paused) state');
-      expect(find.byIcon(FushiIcons.alignCenterVertical), findsNothing);
-    });
+              'initialAutoScroll:false must start in the off (paused) state',
+        );
+        expect(find.byIcon(FushiIcons.alignCenterVertical), findsNothing);
+      },
+    );
 
     testWidgets(
-        'TODO-613: toggling auto-scroll fires onAutoScrollChanged with the new '
-        'value', (WidgetTester tester) async {
-      final VideoPlayerController controller = VideoPlayerController();
-      addTearDown(controller.dispose);
-      controller.setCues(<AudioCue>[_cue(0, 0, 1000, 'x')]);
-      final List<bool> changes = <bool>[];
+      'TODO-613: toggling auto-scroll fires onAutoScrollChanged with the new '
+      'value',
+      (WidgetTester tester) async {
+        final VideoPlayerController controller = VideoPlayerController();
+        addTearDown(controller.dispose);
+        controller.setCues(<AudioCue>[_cue(0, 0, 1000, 'x')]);
+        final List<bool> changes = <bool>[];
 
-      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
-        layout: VideoSubtitleListLayout.classic,
-        controller: controller,
-        onTapCue: (_) {},
-        onCopyCue: (_) => true,
-        onFavoriteCue: (_) async {},
-        isCueFavorited: (_) => false,
-        onClose: () {},
-        initialAutoScroll: true,
-        onAutoScrollChanged: changes.add,
-        colorScheme: const ColorScheme.dark(),
-        title: 'Subtitle list',
-        emptyHint: 'empty',
-      )));
+        await tester.pumpWidget(
+          _wrap(
+            VideoSubtitleJumpPanel(
+              layout: VideoSubtitleListLayout.classic,
+              controller: controller,
+              onTapCue: (_) {},
+              onCopyCue: (_) => true,
+              onFavoriteCue: (_) async {},
+              isCueFavorited: (_) => false,
+              onClose: () {},
+              initialAutoScroll: true,
+              onAutoScrollChanged: changes.add,
+              colorScheme: const ColorScheme.dark(),
+              title: 'Subtitle list',
+              emptyHint: 'empty',
+            ),
+          ),
+        );
 
-      // Starts on → tap turns it off and reports false.
-      await tester.tap(find.byIcon(FushiIcons.alignCenterVertical));
-      await tester.pump();
-      expect(changes, <bool>[false],
-          reason: 'turning auto-scroll off must report false to persist');
+        // Starts on → tap turns it off and reports false.
+        await tester.tap(find.byIcon(FushiIcons.alignCenterVertical));
+        await tester.pump();
+        expect(changes, <bool>[
+          false,
+        ], reason: 'turning auto-scroll off must report false to persist');
 
-      // Tap again → on, reports true.
-      await tester.tap(find.byIcon(FushiIcons.pauseCircle));
-      await tester.pump();
-      expect(changes, <bool>[false, true]);
-    });
+        // Tap again → on, reports true.
+        await tester.tap(find.byIcon(FushiIcons.pauseCircle));
+        await tester.pump();
+        expect(changes, <bool>[false, true]);
+      },
+    );
 
     // ── TODO-631：删独立「本集收藏」面板后，其「收藏 N」计数并入字幕列表收藏档 ──
     testWidgets(
-        'TODO-631: favorites filter shows a count, other filters do not',
-        (WidgetTester tester) async {
-      final VideoPlayerController controller = VideoPlayerController();
-      addTearDown(controller.dispose);
-      // 2 of 3 cues are favorited (text contains "fav").
-      controller.setCues(<AudioCue>[
-        _cue(0, 0, 1000, 'alpha line'),
-        _cue(1, 2000, 3000, 'beta fav'),
-        _cue(2, 4000, 5200, 'gamma fav'),
-      ]);
+      'TODO-631: favorites filter shows a count, other filters do not',
+      (WidgetTester tester) async {
+        final VideoPlayerController controller = VideoPlayerController();
+        addTearDown(controller.dispose);
+        // 2 of 3 cues are favorited (text contains "fav").
+        controller.setCues(<AudioCue>[
+          _cue(0, 0, 1000, 'alpha line'),
+          _cue(1, 2000, 3000, 'beta fav'),
+          _cue(2, 4000, 5200, 'gamma fav'),
+        ]);
 
-      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
-        layout: VideoSubtitleListLayout.classic,
-        controller: controller,
-        onTapCue: (_) {},
-        onClose: () {},
-        onCopyCue: (_) => true,
-        onFavoriteCue: (_) async {},
-        isCueFavorited: (AudioCue cue) => cue.text.contains('fav'),
-        colorScheme: const ColorScheme.dark(),
-        title: 'Subtitle list',
-        emptyHint: 'empty',
-        width: 520,
-      )));
+        await tester.pumpWidget(
+          _wrap(
+            VideoSubtitleJumpPanel(
+              layout: VideoSubtitleListLayout.classic,
+              controller: controller,
+              onTapCue: (_) {},
+              onClose: () {},
+              onCopyCue: (_) => true,
+              onFavoriteCue: (_) async {},
+              isCueFavorited: (AudioCue cue) => cue.text.contains('fav'),
+              colorScheme: const ColorScheme.dark(),
+              title: 'Subtitle list',
+              emptyHint: 'empty',
+              width: 520,
+            ),
+          ),
+        );
 
-      // 默认 all 档：不显示收藏计数。
-      expect(find.text(t.video_favorite_count(count: 2)), findsNothing);
+        // 默认 all 档：不显示收藏计数。
+        expect(find.text(t.video_favorite_count(count: 2)), findsNothing);
 
-      // 切到收藏档：显示「收藏 2」计数（= 收藏档可见条目数）。
-      await tester.tap(find.text(t.video_subtitle_filter_favorites));
-      await tester.pumpAndSettle();
-      expect(find.text(t.video_favorite_count(count: 2)), findsOneWidget);
-      // 收藏档内确实只剩两条被收藏行。
-      expect(find.text('beta fav'), findsOneWidget);
-      expect(find.text('gamma fav'), findsOneWidget);
-      expect(find.text('alpha line'), findsNothing);
+        // 切到收藏档：显示「收藏 2」计数（= 收藏档可见条目数）。
+        await tester.tap(find.text(t.video_subtitle_filter_favorites));
+        await tester.pumpAndSettle();
+        expect(find.text(t.video_favorite_count(count: 2)), findsOneWidget);
+        // 收藏档内确实只剩两条被收藏行。
+        expect(find.text('beta fav'), findsOneWidget);
+        expect(find.text('gamma fav'), findsOneWidget);
+        expect(find.text('alpha line'), findsNothing);
 
-      // 切回 all 档：计数消失。
-      await tester.tap(find.text(t.video_subtitle_filter_all));
-      await tester.pumpAndSettle();
-      expect(find.text(t.video_favorite_count(count: 2)), findsNothing);
-    });
+        // 切回 all 档：计数消失。
+        await tester.tap(find.text(t.video_subtitle_filter_all));
+        await tester.pumpAndSettle();
+        expect(find.text(t.video_favorite_count(count: 2)), findsNothing);
+      },
+    );
 
     // ── TODO-632/BUG-359：收藏档列表可见性随收藏状态即时失效 ──────────────────
     // 复现：收藏集藏在一个稳定闭包谓词背后（页面层 `isCueFavorited: _isCueFavorited`
@@ -1645,335 +1948,434 @@ void main() {
     // `_favoriteCueCount`（实时谓词）即时更新，但列表走 `_visibleCueIndexes()` 命中
     // 旧缓存（键只含 cues 身份 / 长度 / filter，不含收藏状态）→ 列表挂着陈旧成员集。
     testWidgets(
-        'TODO-632/BUG-359: favorites list reflects favorite-set changes that '
-        'happen behind a stable predicate (count immediate, list must match)',
-        (WidgetTester tester) async {
-      final VideoPlayerController controller = VideoPlayerController();
-      addTearDown(controller.dispose);
-      controller.setCues(<AudioCue>[
-        _cue(0, 0, 1000, 'alpha line'),
-        _cue(1, 2000, 3000, 'beta line'),
-        _cue(2, 4000, 5200, 'gamma line'),
-      ]);
-      // 可变收藏集 + 稳定谓词闭包（模拟页面 _isCueFavorited 读 _favoritedVideoSentences）。
-      final Set<int> favorited = <int>{};
-      bool isFav(AudioCue cue) => favorited.contains(cue.startMs);
+      'TODO-632/BUG-359: favorites list reflects favorite-set changes that '
+      'happen behind a stable predicate (count immediate, list must match)',
+      (WidgetTester tester) async {
+        final VideoPlayerController controller = VideoPlayerController();
+        addTearDown(controller.dispose);
+        controller.setCues(<AudioCue>[
+          _cue(0, 0, 1000, 'alpha line'),
+          _cue(1, 2000, 3000, 'beta line'),
+          _cue(2, 4000, 5200, 'gamma line'),
+        ]);
+        // 可变收藏集 + 稳定谓词闭包（模拟页面 _isCueFavorited 读 _favoritedVideoSentences）。
+        final Set<int> favorited = <int>{};
+        bool isFav(AudioCue cue) => favorited.contains(cue.startMs);
 
-      await tester.pumpWidget(_wrap(SizedBox(
-        width: 520,
-        height: 600,
-        child: VideoSubtitleJumpPanel(
-        layout: VideoSubtitleListLayout.classic,
-          controller: controller,
-          onTapCue: (_) {},
-          onClose: () {},
-          onCopyCue: (_) => true,
-          onFavoriteCue: (_) async {},
-          isCueFavorited: isFav,
-          colorScheme: const ColorScheme.dark(),
-          title: 'Subtitle list',
-          emptyHint: 'empty',
-          width: 520,
-        ),
-      )));
+        await tester.pumpWidget(
+          _wrap(
+            SizedBox(
+              width: 520,
+              height: 600,
+              child: VideoSubtitleJumpPanel(
+                layout: VideoSubtitleListLayout.classic,
+                controller: controller,
+                onTapCue: (_) {},
+                onClose: () {},
+                onCopyCue: (_) => true,
+                onFavoriteCue: (_) async {},
+                isCueFavorited: isFav,
+                colorScheme: const ColorScheme.dark(),
+                title: 'Subtitle list',
+                emptyHint: 'empty',
+                width: 520,
+              ),
+            ),
+          ),
+        );
 
-      // 切到收藏档（此刻空）→ 把空收藏集成员缓存进 _visibleCueIndexes。
-      await tester.tap(find.text(t.video_subtitle_filter_favorites));
-      await tester.pumpAndSettle();
-      expect(find.text('beta line'), findsNothing);
-      expect(find.text(t.video_favorite_count(count: 0)), findsOneWidget);
+        // 切到收藏档（此刻空）→ 把空收藏集成员缓存进 _visibleCueIndexes。
+        await tester.tap(find.text(t.video_subtitle_filter_favorites));
+        await tester.pumpAndSettle();
+        expect(find.text('beta line'), findsNothing);
+        expect(find.text(t.video_favorite_count(count: 0)), findsOneWidget);
 
-      // 收藏 beta（谓词背后变，widget 身份不变 → 不触发 didUpdateWidget 清缓存），
-      // 再用控制器 tick 驱动一次 panel 内部 setState 触发 build。
-      favorited.add(2000);
-      controller.debugUpdateCueForPosition(2500);
-      await tester.pump();
+        // 收藏 beta（谓词背后变，widget 身份不变 → 不触发 didUpdateWidget 清缓存），
+        // 再用控制器 tick 驱动一次 panel 内部 setState 触发 build。
+        favorited.add(2000);
+        controller.debugUpdateCueForPosition(2500);
+        await tester.pump();
 
-      // 计数 chip 即时更新为 1（实时谓词，未缓存）。
-      expect(find.text(t.video_favorite_count(count: 1)), findsOneWidget,
-          reason: 'count chip reflects the new favorite immediately');
-      // 列表也必须即时含 beta（撤修复 → 命中陈旧缓存返回空成员集 → beta 不出现 → 红）。
-      expect(find.text('beta line'), findsOneWidget,
-          reason: 'favorites list visibility must invalidate with the favorite '
-              'set, not hold a stale cache snapshot taken before the toggle');
-      expect(find.text('alpha line'), findsNothing);
+        // 计数 chip 即时更新为 1（实时谓词，未缓存）。
+        expect(
+          find.text(t.video_favorite_count(count: 1)),
+          findsOneWidget,
+          reason: 'count chip reflects the new favorite immediately',
+        );
+        // 列表也必须即时含 beta（撤修复 → 命中陈旧缓存返回空成员集 → beta 不出现 → 红）。
+        expect(
+          find.text('beta line'),
+          findsOneWidget,
+          reason:
+              'favorites list visibility must invalidate with the favorite '
+              'set, not hold a stale cache snapshot taken before the toggle',
+        );
+        expect(find.text('alpha line'), findsNothing);
 
-      // 取消收藏 beta（同样谓词背后变）+ 一次「换当前句」的 tick（位置落到 cue0，
-      // currentCueIndex 真变 → 触发 panel 内部 setState 重建）→ 列表即时移除、计数回 0。
-      favorited.remove(2000);
-      controller.debugUpdateCueForPosition(500);
-      await tester.pump();
-      expect(find.text('beta line'), findsNothing,
-          reason: 'un-favoriting must drop the row immediately, not keep a '
-              'stale cached member');
-      expect(find.text(t.video_favorite_count(count: 0)), findsOneWidget);
-    });
+        // 取消收藏 beta（同样谓词背后变）+ 一次「换当前句」的 tick（位置落到 cue0，
+        // currentCueIndex 真变 → 触发 panel 内部 setState 重建）→ 列表即时移除、计数回 0。
+        favorited.remove(2000);
+        controller.debugUpdateCueForPosition(500);
+        await tester.pump();
+        expect(
+          find.text('beta line'),
+          findsNothing,
+          reason:
+              'un-favoriting must drop the row immediately, not keep a '
+              'stale cached member',
+        );
+        expect(find.text(t.video_favorite_count(count: 0)), findsOneWidget);
+      },
+    );
 
     // ── BUG-878：行字号档位持久化 + 上限提到 2.0× ──────────────────────────
     testWidgets(
-        'BUG-878: initialFontScaleIndex seeds the row font (persists across '
-        'reopen) and the max step reaches 2.0x', (WidgetTester tester) async {
-      final VideoPlayerController controller = VideoPlayerController();
-      addTearDown(controller.dispose);
-      controller.setCues(<AudioCue>[_cue(0, 0, 1000, 'sized')]);
+      'BUG-878: initialFontScaleIndex seeds the row font (persists across '
+      'reopen) and the max step reaches 2.0x',
+      (WidgetTester tester) async {
+        final VideoPlayerController controller = VideoPlayerController();
+        addTearDown(controller.dispose);
+        controller.setCues(<AudioCue>[_cue(0, 0, 1000, 'sized')]);
 
-      double fontOf(String text) =>
-          tester.widget<Text>(find.text(text)).style!.fontSize!;
+        double fontOf(String text) =>
+            tester.widget<Text>(find.text(text)).style!.fontSize!;
 
-      // 种子档位 = 最大档（下标 6 = 2.0×），基准 fontSize 14 → 有效 28。旧上限只到 1.3×
-      // （最大 18.2），撤修复 → 数组不含 2.0 / 种子回默认 → 字号回 14 → 红。
-      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
-        layout: VideoSubtitleListLayout.classic,
-        key: const ValueKey<String>('seed-max'),
-        controller: controller,
-        onTapCue: (_) {},
-        onCopyCue: (_) => true,
-        onFavoriteCue: (_) async {},
-        isCueFavorited: (_) => false,
-        onClose: () {},
-        initialFontScaleIndex: 6,
-        fontSize: 14,
-        colorScheme: const ColorScheme.dark(),
-        title: 'Subtitle list',
-        emptyHint: 'empty',
-      )));
-      expect(fontOf('sized'), closeTo(28.0, 0.01),
-          reason: '种子字号档位 6 = 2.0× × 基准 14 = 28。BUG-2156 往数组尾部追加了更高档位，'
+        // 种子档位 = 最大档（下标 6 = 2.0×），基准 fontSize 14 → 有效 28。旧上限只到 1.3×
+        // （最大 18.2），撤修复 → 数组不含 2.0 / 种子回默认 → 字号回 14 → 红。
+        await tester.pumpWidget(
+          _wrap(
+            VideoSubtitleJumpPanel(
+              layout: VideoSubtitleListLayout.classic,
+              key: const ValueKey<String>('seed-max'),
+              controller: controller,
+              onTapCue: (_) {},
+              onCopyCue: (_) => true,
+              onFavoriteCue: (_) async {},
+              isCueFavorited: (_) => false,
+              onClose: () {},
+              initialFontScaleIndex: 6,
+              fontSize: 14,
+              colorScheme: const ColorScheme.dark(),
+              title: 'Subtitle list',
+              emptyHint: 'empty',
+            ),
+          ),
+        );
+        expect(
+          fontOf('sized'),
+          closeTo(28.0, 0.01),
+          reason:
+              '种子字号档位 6 = 2.0× × 基准 14 = 28。BUG-2156 往数组尾部追加了更高档位，'
               '这条断言必须**保持不变**——下标就是持久化值，既有元素一旦改动，'
-              '所有存量用户的字号都会静默漂移');
-      // BUG-2156 之后 2.0× 不再是最大档，A+ 应当仍然可用。
-      final IconButton increase = tester.widget<IconButton>(glassUnwrap<IconButton>(find.ancestor(
-          of: find.byIcon(FushiIcons.textIncrease),
-          matching: find.byType(IconButton),
-        )),);
-      expect(increase.onPressed, isNotNull,
-          reason: '2.0× 上面还有档位（BUG-2156），A+ 不该禁用');
-    });
+              '所有存量用户的字号都会静默漂移',
+        );
+        // BUG-2156 之后 2.0× 不再是最大档，A+ 应当仍然可用。
+        final IconButton increase = tester.widget<IconButton>(
+          glassUnwrap<IconButton>(
+            find.ancestor(
+              of: find.byIcon(FushiIcons.textIncrease),
+              matching: find.byType(IconButton),
+            ),
+          ),
+        );
+        expect(
+          increase.onPressed,
+          isNotNull,
+          reason: '2.0× 上面还有档位（BUG-2156），A+ 不该禁用',
+        );
+      },
+    );
 
     // ── BUG-2156：上限从 2.0× 再抬到 3.0×（用户第二次反馈「还是不够」）───────
     testWidgets(
-        'BUG-2156: the top step reaches 3.0x and only there does A+ disable',
-        (WidgetTester tester) async {
-      final VideoPlayerController controller = VideoPlayerController();
-      addTearDown(controller.dispose);
-      controller.setCues(<AudioCue>[_cue(0, 0, 1000, 'sized')]);
+      'BUG-2156: the top step reaches 3.0x and only there does A+ disable',
+      (WidgetTester tester) async {
+        final VideoPlayerController controller = VideoPlayerController();
+        addTearDown(controller.dispose);
+        controller.setCues(<AudioCue>[_cue(0, 0, 1000, 'sized')]);
 
-      double fontOf(String text) =>
-          tester.widget<Text>(find.text(text)).style!.fontSize!;
+        double fontOf(String text) =>
+            tester.widget<Text>(find.text(text)).style!.fontSize!;
 
-      // 下标 10 = 3.0×，基准 14 → 42。撤掉追加的四档 → 种子被 clamp 回下标 6（2.0×）
-      // → 字号 28 → 红。
-      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
-        layout: VideoSubtitleListLayout.classic,
-        key: const ValueKey<String>('seed-max-2156'),
-        controller: controller,
-        onTapCue: (_) {},
-        onCopyCue: (_) => true,
-        onFavoriteCue: (_) async {},
-        isCueFavorited: (_) => false,
-        onClose: () {},
-        initialFontScaleIndex: 10,
-        fontSize: 14,
-        colorScheme: const ColorScheme.dark(),
-        title: 'Subtitle list',
-        emptyHint: 'empty',
-      )));
-      expect(fontOf('sized'), closeTo(42.0, 0.01),
-          reason: '最高档 3.0× × 基准 14 = 42');
+        // 下标 10 = 3.0×，基准 14 → 42。撤掉追加的四档 → 种子被 clamp 回下标 6（2.0×）
+        // → 字号 28 → 红。
+        await tester.pumpWidget(
+          _wrap(
+            VideoSubtitleJumpPanel(
+              layout: VideoSubtitleListLayout.classic,
+              key: const ValueKey<String>('seed-max-2156'),
+              controller: controller,
+              onTapCue: (_) {},
+              onCopyCue: (_) => true,
+              onFavoriteCue: (_) async {},
+              isCueFavorited: (_) => false,
+              onClose: () {},
+              initialFontScaleIndex: 10,
+              fontSize: 14,
+              colorScheme: const ColorScheme.dark(),
+              title: 'Subtitle list',
+              emptyHint: 'empty',
+            ),
+          ),
+        );
+        expect(
+          fontOf('sized'),
+          closeTo(42.0, 0.01),
+          reason: '最高档 3.0× × 基准 14 = 42',
+        );
 
-      final IconButton increase = tester.widget<IconButton>(glassUnwrap<IconButton>(find.ancestor(
-          of: find.byIcon(FushiIcons.textIncrease),
-          matching: find.byType(IconButton),
-        )),);
-      expect(increase.onPressed, isNull, reason: '已在最大档，A+ 禁用');
-    });
-
-    testWidgets(
-        'BUG-878: stepping font fires onFontScaleIndexChanged with the new '
-        'index (to persist)', (WidgetTester tester) async {
-      final VideoPlayerController controller = VideoPlayerController();
-      addTearDown(controller.dispose);
-      controller.setCues(<AudioCue>[_cue(0, 0, 1000, 'x')]);
-      final List<int> changes = <int>[];
-
-      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
-        layout: VideoSubtitleListLayout.classic,
-        controller: controller,
-        onTapCue: (_) {},
-        onCopyCue: (_) => true,
-        onFavoriteCue: (_) async {},
-        isCueFavorited: (_) => false,
-        onClose: () {},
-        initialFontScaleIndex: 1,
-        onFontScaleIndexChanged: changes.add,
-        colorScheme: const ColorScheme.dark(),
-        title: 'Subtitle list',
-        emptyHint: 'empty',
-      )));
-
-      await tester.tap(find.byIcon(FushiIcons.textIncrease));
-      await tester.pump();
-      expect(changes, <int>[2], reason: 'A+ 报新档位 2 供页面层落盘');
-      await tester.tap(find.byIcon(FushiIcons.textDecrease));
-      await tester.pump();
-      expect(changes, <int>[2, 1], reason: 'A- 报回档位 1');
-    });
+        final IconButton increase = tester.widget<IconButton>(
+          glassUnwrap<IconButton>(
+            find.ancestor(
+              of: find.byIcon(FushiIcons.textIncrease),
+              matching: find.byType(IconButton),
+            ),
+          ),
+        );
+        expect(increase.onPressed, isNull, reason: '已在最大档，A+ 禁用');
+      },
+    );
 
     testWidgets(
-        'stale Ctrl (key-up lost to WebView2) does not turn the wheel into '
-        'font zoom; a real Ctrl still zooms (feedback TpKspDUst7)',
-        (WidgetTester tester) async {
-      final VideoPlayerController controller = VideoPlayerController();
-      addTearDown(controller.dispose);
-      controller.setCues(<AudioCue>[_cue(0, 0, 1000, 'x')]);
-      final List<int> changes = <int>[];
-      bool platformCtrlDown = false;
-      debugPlatformZoomModifierQuery = () => platformCtrlDown;
-      addTearDown(() => debugPlatformZoomModifierQuery = null);
+      'BUG-878: stepping font fires onFontScaleIndexChanged with the new '
+      'index (to persist)',
+      (WidgetTester tester) async {
+        final VideoPlayerController controller = VideoPlayerController();
+        addTearDown(controller.dispose);
+        controller.setCues(<AudioCue>[_cue(0, 0, 1000, 'x')]);
+        final List<int> changes = <int>[];
 
-      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
-        layout: VideoSubtitleListLayout.classic,
-        controller: controller,
-        onTapCue: (_) {},
-        onCopyCue: (_) => true,
-        onFavoriteCue: (_) async {},
-        isCueFavorited: (_) => false,
-        onClose: () {},
-        initialFontScaleIndex: 1,
-        onFontScaleIndexChanged: changes.add,
-        colorScheme: const ColorScheme.dark(),
-        title: 'Subtitle list',
-        emptyHint: 'empty',
-      )));
+        await tester.pumpWidget(
+          _wrap(
+            VideoSubtitleJumpPanel(
+              layout: VideoSubtitleListLayout.classic,
+              controller: controller,
+              onTapCue: (_) {},
+              onCopyCue: (_) => true,
+              onFavoriteCue: (_) async {},
+              isCueFavorited: (_) => false,
+              onClose: () {},
+              initialFontScaleIndex: 1,
+              onFontScaleIndexChanged: changes.add,
+              colorScheme: const ColorScheme.dark(),
+              title: 'Subtitle list',
+              emptyHint: 'empty',
+            ),
+          ),
+        );
 
-      // Flutter 看到了 Ctrl 按下，但抬起落在别处：缓存卡在「按下」。
-      await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
-      final Offset row = tester.getCenter(find.text('x'));
-      final TestPointer pointer = TestPointer(1, PointerDeviceKind.mouse);
-      await tester.sendEventToBinding(pointer.hover(row));
-      await tester.sendEventToBinding(pointer.scroll(const Offset(0, -100)));
-      await tester.pump();
-      expect(changes, isEmpty, reason: '平台说 Ctrl 没按：不能缩字号');
+        await tester.tap(find.byIcon(FushiIcons.textIncrease));
+        await tester.pump();
+        expect(changes, <int>[2], reason: 'A+ 报新档位 2 供页面层落盘');
+        await tester.tap(find.byIcon(FushiIcons.textDecrease));
+        await tester.pump();
+        expect(changes, <int>[2, 1], reason: 'A- 报回档位 1');
+      },
+    );
 
-      platformCtrlDown = true;
-      await tester.sendEventToBinding(pointer.scroll(const Offset(0, -100)));
-      await tester.pump();
-      expect(changes, <int>[2], reason: '真按着 Ctrl：照常放大');
-      await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
-    });
+    testWidgets(
+      'stale Ctrl (key-up lost to WebView2) does not turn the wheel into '
+      'font zoom; a real Ctrl still zooms (feedback TpKspDUst7)',
+      (WidgetTester tester) async {
+        final VideoPlayerController controller = VideoPlayerController();
+        addTearDown(controller.dispose);
+        controller.setCues(<AudioCue>[_cue(0, 0, 1000, 'x')]);
+        final List<int> changes = <int>[];
+        bool platformCtrlDown = false;
+        debugPlatformZoomModifierQuery = () => platformCtrlDown;
+        addTearDown(() => debugPlatformZoomModifierQuery = null);
+
+        await tester.pumpWidget(
+          _wrap(
+            VideoSubtitleJumpPanel(
+              layout: VideoSubtitleListLayout.classic,
+              controller: controller,
+              onTapCue: (_) {},
+              onCopyCue: (_) => true,
+              onFavoriteCue: (_) async {},
+              isCueFavorited: (_) => false,
+              onClose: () {},
+              initialFontScaleIndex: 1,
+              onFontScaleIndexChanged: changes.add,
+              colorScheme: const ColorScheme.dark(),
+              title: 'Subtitle list',
+              emptyHint: 'empty',
+            ),
+          ),
+        );
+
+        // Flutter 看到了 Ctrl 按下，但抬起落在别处：缓存卡在「按下」。
+        await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+        final Offset row = tester.getCenter(find.text('x'));
+        final TestPointer pointer = TestPointer(1, PointerDeviceKind.mouse);
+        await tester.sendEventToBinding(pointer.hover(row));
+        await tester.sendEventToBinding(pointer.scroll(const Offset(0, -100)));
+        await tester.pump();
+        expect(changes, isEmpty, reason: '平台说 Ctrl 没按：不能缩字号');
+
+        platformCtrlDown = true;
+        await tester.sendEventToBinding(pointer.scroll(const Offset(0, -100)));
+        await tester.pump();
+        expect(changes, <int>[2], reason: '真按着 Ctrl：照常放大');
+        await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+      },
+    );
 
     // ── BUG-879：字幕列表行 Shift-悬停查词（与画面字幕对称）─────────────────
     testWidgets(
-        'BUG-879: shift-hover over a row character fires onLookupCue; plain '
-        'hover without shift does not', (WidgetTester tester) async {
-      final VideoPlayerController controller = VideoPlayerController();
-      addTearDown(controller.dispose);
-      const String sentence = 'abcdefg';
-      controller.setCues(<AudioCue>[_cue(0, 0, 1000, sentence)]);
-      AudioCue? lookedUp;
-      int? lookupIndex;
+      'BUG-879: shift-hover over a row character fires onLookupCue; plain '
+      'hover without shift does not',
+      (WidgetTester tester) async {
+        final VideoPlayerController controller = VideoPlayerController();
+        addTearDown(controller.dispose);
+        const String sentence = 'abcdefg';
+        controller.setCues(<AudioCue>[_cue(0, 0, 1000, sentence)]);
+        AudioCue? lookedUp;
+        int? lookupIndex;
 
-      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
-        layout: VideoSubtitleListLayout.classic,
-        controller: controller,
-        onTapCue: (_) {},
-        onLookupCue: (AudioCue c, int i, Rect r) {
-          lookedUp = c;
-          lookupIndex = i;
-        },
-        onCopyCue: (_) => true,
-        onFavoriteCue: (_) async {},
-        isCueFavorited: (_) => false,
-        onClose: () {},
-        colorScheme: const ColorScheme.dark(),
-        title: 'Subtitle list',
-        emptyHint: 'empty',
-        width: 320,
-      )));
+        await tester.pumpWidget(
+          _wrap(
+            VideoSubtitleJumpPanel(
+              layout: VideoSubtitleListLayout.classic,
+              controller: controller,
+              onTapCue: (_) {},
+              onLookupCue: (AudioCue c, int i, Rect r) {
+                lookedUp = c;
+                lookupIndex = i;
+              },
+              onCopyCue: (_) => true,
+              onFavoriteCue: (_) async {},
+              isCueFavorited: (_) => false,
+              onClose: () {},
+              colorScheme: const ColorScheme.dark(),
+              title: 'Subtitle list',
+              emptyHint: 'empty',
+              width: 320,
+            ),
+          ),
+        );
 
-      final ({int graphemeIndex, Offset tapPoint}) charA =
-          _tapPointForGrapheme(tester, sentence, 'a');
-      final ({int graphemeIndex, Offset tapPoint}) charE =
-          _tapPointForGrapheme(tester, sentence, 'e');
+        final ({int graphemeIndex, Offset tapPoint}) charA =
+            _tapPointForGrapheme(tester, sentence, 'a');
+        final ({int graphemeIndex, Offset tapPoint}) charE =
+            _tapPointForGrapheme(tester, sentence, 'e');
 
-      final TestGesture gesture =
-          await tester.createGesture(kind: PointerDeviceKind.mouse);
-      await gesture.addPointer(location: Offset.zero);
-      addTearDown(gesture.removePointer);
+        final TestGesture gesture = await tester.createGesture(
+          kind: PointerDeviceKind.mouse,
+        );
+        await gesture.addPointer(location: Offset.zero);
+        addTearDown(gesture.removePointer);
 
-      // 未按 Shift 悬停某字符：不查词（仅高亮，复位节流锚）。
-      await gesture.moveTo(charA.tapPoint);
-      await tester.pump();
-      expect(lookedUp, isNull, reason: '未按 Shift 悬停不查词');
+        // 未按 Shift 悬停某字符：不查词（仅高亮，复位节流锚）。
+        await gesture.moveTo(charA.tapPoint);
+        await tester.pump();
+        expect(lookedUp, isNull, reason: '未按 Shift 悬停不查词');
 
-      // 按住 Shift 后移动到另一个字符：立即对该字符查词（与画面字幕 Shift-hover 对称）。
-      await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
-      addTearDown(() => tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft));
-      await gesture.moveTo(charE.tapPoint);
-      await tester.pump();
-      expect(lookedUp, isNotNull,
-          reason: 'Shift 悬停列表字符必须查词（BUG-879：原本列表只挂 tap、无 hover）');
-      expect(lookedUp!.text, sentence);
-      expect(lookupIndex, charE.graphemeIndex, reason: 'Shift 悬停命中的是光标下那个字符');
-    });
+        // 按住 Shift 后移动到另一个字符：立即对该字符查词（与画面字幕 Shift-hover 对称）。
+        await tester.sendKeyDownEvent(LogicalKeyboardKey.shiftLeft);
+        addTearDown(() => tester.sendKeyUpEvent(LogicalKeyboardKey.shiftLeft));
+        await gesture.moveTo(charE.tapPoint);
+        await tester.pump();
+        expect(
+          lookedUp,
+          isNotNull,
+          reason: 'Shift 悬停列表字符必须查词（BUG-879：原本列表只挂 tap、无 hover）',
+        );
+        expect(lookedUp!.text, sentence);
+        expect(lookupIndex, charE.graphemeIndex, reason: 'Shift 悬停命中的是光标下那个字符');
+      },
+    );
 
     // Source guard：Shift-悬停查词走面板级单一 Listener（复用 RenderParagraph 反查，轻量），
     // 不再逐行 MouseRegion 每次 hover 重排 TextPainter。撤 BUG-879 → 红。
-    test('BUG-879 source guard: panel-level shift-hover reuses _hitTestRows',
-        () {
-      final String source =
-          File('lib/src/media/video/video_subtitle_jump_panel.dart')
-              .readAsStringSync();
-      expect(source, contains('onPointerHover: _handleListShiftHover'),
-          reason: '列表 Shift-悬停查词必须挂在面板级 Listener 上');
-      expect(source, contains('void _handleListShiftHover('),
-          reason: '必须有面板级 Shift-悬停处理器');
-      final String hoverBody = _sourceBetween(
-        source,
-        'void _handleListShiftHover(',
-        'Widget build(',
-      );
-      expect(hoverBody, contains('_hitTestRows('),
-          reason: 'hover 查词复用 RenderParagraph 反查（不为每次 hover 重排 TextPainter）');
-      expect(hoverBody, contains('hoverLookupModifier.isPressed()'),
-          reason: 'hover 查词门控读设置的查词键（默认 Shift）');
-    });
+    test(
+      'BUG-879 source guard: panel-level shift-hover reuses _hitTestRows',
+      () {
+        final String source = File(
+          'lib/src/media/video/video_subtitle_jump_panel.dart',
+        ).readAsStringSync();
+        expect(
+          source,
+          contains('onPointerHover: _handleListShiftHover'),
+          reason: '列表 Shift-悬停查词必须挂在面板级 Listener 上',
+        );
+        expect(
+          source,
+          contains('void _handleListShiftHover('),
+          reason: '必须有面板级 Shift-悬停处理器',
+        );
+        final String hoverBody = _sourceBetween(
+          source,
+          'void _handleListShiftHover(',
+          'Widget build(',
+        );
+        expect(
+          hoverBody,
+          contains('_hitTestRows('),
+          reason: 'hover 查词复用 RenderParagraph 反查（不为每次 hover 重排 TextPainter）',
+        );
+        expect(
+          hoverBody,
+          contains('hoverLookupModifier.isPressed()'),
+          reason: 'hover 查词门控读设置的查词键（默认 Shift）',
+        );
+      },
+    );
 
     // Source guard（BUG-879 命中收窄 + BUG-916 偏左一格）：tap / hover / barrier 三路共用的
     // 两个命中 helper 都必须①用 BoxHeightStyle.max 覆盖整行视觉格（点在行距 leading 不落空
     // 退 seek），②走 grapheme 真实盒的几何反查 resolveSubtitleListGraphemeHit（不再用
     // getPositionForOffset 的 caret 边界，否则某字左半格查到左边一个字）。撤任一 → 红。
     test(
-        'BUG-879/910 source guard: list char hit uses forgiving box + geometry',
-        () {
-      final String source =
-          File('lib/src/media/video/subtitle_transcript_text.dart')
-              .readAsStringSync();
-      // barrier / hover / keydown 共用的 RenderParagraph 反查。
-      final String paraHit = _sourceBetween(
-        source,
-        'SubtitleListCharHit? subtitleListCharHitFromParagraph(',
-        '/// Shared typography',
-      );
-      expect(paraHit, contains('BoxHeightStyle.max'),
-          reason: 'RenderParagraph 反查须用 BoxHeightStyle.max 覆盖行距 leading');
-      expect(paraHit, contains('resolveSubtitleListGraphemeHit'),
-          reason: 'BUG-916：须用 grapheme 真实盒几何反查');
-      expect(paraHit, isNot(contains('getPositionForOffset(')),
-          reason: 'BUG-916：不得再用 caret 偏移映射（偏左一格病根）');
-      // tap 路径的 TextPainter 反查。
-      final String tapHit = _sourceBetween(
-        source,
-        'SubtitleListCharHit? hitAt({',
-        'return GestureDetector(',
-      );
-      expect(tapHit, contains('BoxHeightStyle.max'),
-          reason: 'tap 命中也须用 BoxHeightStyle.max');
-      expect(tapHit, contains('resolveSubtitleListGraphemeHit'),
-          reason: 'BUG-916：tap 命中同走 grapheme 真实盒几何反查');
-      expect(tapHit, isNot(contains('getPositionForOffset(')),
-          reason: 'BUG-916：tap 命中不得再用 caret 偏移映射');
-    });
+      'BUG-879/910 source guard: list char hit uses forgiving box + geometry',
+      () {
+        final String source = File(
+          'lib/src/media/video/subtitle_transcript_text.dart',
+        ).readAsStringSync();
+        // barrier / hover / keydown 共用的 RenderParagraph 反查。
+        final String paraHit = _sourceBetween(
+          source,
+          'SubtitleListCharHit? subtitleListCharHitFromParagraph(',
+          '/// Shared typography',
+        );
+        expect(
+          paraHit,
+          contains('BoxHeightStyle.max'),
+          reason: 'RenderParagraph 反查须用 BoxHeightStyle.max 覆盖行距 leading',
+        );
+        expect(
+          paraHit,
+          contains('resolveSubtitleListGraphemeHit'),
+          reason: 'BUG-916：须用 grapheme 真实盒几何反查',
+        );
+        expect(
+          paraHit,
+          isNot(contains('getPositionForOffset(')),
+          reason: 'BUG-916：不得再用 caret 偏移映射（偏左一格病根）',
+        );
+        // tap 路径的 TextPainter 反查。
+        final String tapHit = _sourceBetween(
+          source,
+          'SubtitleListCharHit? hitAt({',
+          'return GestureDetector(',
+        );
+        expect(
+          tapHit,
+          contains('BoxHeightStyle.max'),
+          reason: 'tap 命中也须用 BoxHeightStyle.max',
+        );
+        expect(
+          tapHit,
+          contains('resolveSubtitleListGraphemeHit'),
+          reason: 'BUG-916：tap 命中同走 grapheme 真实盒几何反查',
+        );
+        expect(
+          tapHit,
+          isNot(contains('getPositionForOffset(')),
+          reason: 'BUG-916：tap 命中不得再用 caret 偏移映射',
+        );
+      },
+    );
   });
 
   // Source guard: inline tooltips wire to existing i18n keys; copy toast reuses
@@ -2011,8 +2413,9 @@ void main() {
   });
 
   group('VideoSubtitleJumpPanel 行布局 (TODO-1200)', () {
-    testWidgets('窄面板上字幕文本列占据行主要空间（不再被时间戳/图标挤成 3-4 字折行）',
-        (WidgetTester tester) async {
+    testWidgets('窄面板上字幕文本列占据行主要空间（不再被时间戳/图标挤成 3-4 字折行）', (
+      WidgetTester tester,
+    ) async {
       final VideoPlayerController controller = VideoPlayerController();
       addTearDown(controller.dispose);
       // 短视频（无小时级时间戳），复现窄面板拥挤场景。
@@ -2021,30 +2424,38 @@ void main() {
         _cue(1, 12000, 14000, 'これはテスト字幕です'),
       ]);
 
-      await tester.pumpWidget(_wrap(VideoSubtitleJumpPanel(
-        layout: VideoSubtitleListLayout.classic,
-        controller: controller,
-        onTapCue: (_) {},
-        onClose: () {},
-        onCopyCue: (_) => true,
-        onFavoriteCue: (_) async {},
-        isCueFavorited: (_) => false,
-        colorScheme: const ColorScheme.dark(),
-        title: 'Subtitle list',
-        emptyHint: 'empty',
-        width: 240, // 移动端最窄档（panelWidth clamp 下限）。
-      )));
+      await tester.pumpWidget(
+        _wrap(
+          VideoSubtitleJumpPanel(
+            layout: VideoSubtitleListLayout.classic,
+            controller: controller,
+            onTapCue: (_) {},
+            onClose: () {},
+            onCopyCue: (_) => true,
+            onFavoriteCue: (_) async {},
+            isCueFavorited: (_) => false,
+            colorScheme: const ColorScheme.dark(),
+            title: 'Subtitle list',
+            emptyHint: 'empty',
+            width: 240, // 移动端最窄档（panelWidth clamp 下限）。
+          ),
+        ),
+      );
 
       // 文本列（Expanded 内的 Text）实测宽度：应显著宽于时间戳列，且拿到行的主要空间。
-      final RenderBox textBox =
-          tester.renderObject<RenderBox>(find.text('ユーアーマイフレンド'));
+      final RenderBox textBox = tester.renderObject<RenderBox>(
+        find.text('ユーアーマイフレンド'),
+      );
       // 时间戳列宽（内容自适应，短视频窄列）。
       final double tsWidth = subtitleTimestampColumnWidth(14, false);
       expect(textBox.size.width, greaterThan(tsWidth), reason: '文本列必须宽于时间戳列');
       // 旧实现下文本列被挤到 ~50px（3-4 个假名折行）。修复后应明显更宽。文本列宽与
       // 测量同源另有专门守卫（video_subtitle_row_extent_guard_test.dart）。
-      expect(textBox.size.width, greaterThan(78),
-          reason: '窄面板上文本列应拿到足够宽度，不再 3-4 字硬折行');
+      expect(
+        textBox.size.width,
+        greaterThan(78),
+        reason: '窄面板上文本列应拿到足够宽度，不再 3-4 字硬折行',
+      );
       // 文本列应是行内最大的单列（宽于时间戳与动作列）。
       expect(textBox.size.width, greaterThan(tsWidth * 1.5));
     });

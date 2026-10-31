@@ -16,8 +16,10 @@ extension _SyncOrchestratorTags on SyncOrchestrator {
     try {
       final TagManifest? remote = await backend.getRemoteTagManifest();
       if (remote == null) {
-        report.errors.add('tags live sync: host has no tags endpoint '
-            '(older app version) — update the host app to sync tags');
+        report.errors.add(
+          'tags live sync: host has no tags endpoint '
+          '(older app version) — update the host app to sync tags',
+        );
         return;
       }
       late final TagManifest local;

@@ -41,17 +41,19 @@ Future<void> _pumpPillarbox(
     ..debugVideoHeightOverride = 1080;
   c.setCues(<AudioCue>[_cue(text)]);
   c.debugUpdateCueForPosition(100);
-  await tester.pumpWidget(MaterialApp(
-    home: Scaffold(
-      body: Center(
-        child: SizedBox(
-          width: width,
-          height: height,
-          child: VideoSubtitleOverlay(controller: c, fontSize: fontSize),
+  await tester.pumpWidget(
+    MaterialApp(
+      home: Scaffold(
+        body: Center(
+          child: SizedBox(
+            width: width,
+            height: height,
+            child: VideoSubtitleOverlay(controller: c, fontSize: fontSize),
+          ),
         ),
       ),
     ),
-  ));
+  );
   await tester.pump();
 }
 
@@ -60,7 +62,9 @@ Future<void> _pumpPillarbox(
 List<String> _visualLines(WidgetTester tester) {
   final Iterable<Element> elements = find
       .descendant(
-          of: find.byType(VideoSubtitleOverlay), matching: find.byType(Text))
+        of: find.byType(VideoSubtitleOverlay),
+        matching: find.byType(Text),
+      )
       .evaluate();
   final List<({double dy, double dx, String ch})> glyphs =
       <({double dy, double dx, String ch})>[];
@@ -73,8 +77,10 @@ List<String> _visualLines(WidgetTester tester) {
     final Offset p = ro.localToGlobal(Offset.zero);
     glyphs.add((dy: p.dy, dx: p.dx, ch: s));
   }
-  glyphs.sort((({double dy, double dx, String ch}) a,
-      ({double dy, double dx, String ch}) b) {
+  glyphs.sort((
+    ({double dy, double dx, String ch}) a,
+    ({double dy, double dx, String ch}) b,
+  ) {
     final int byY = a.dy.compareTo(b.dy);
     return byY != 0 ? byY : a.dx.compareTo(b.dx);
   });
@@ -107,11 +113,18 @@ void main() {
       await _pumpPillarbox(tester, text, width: 760);
       final List<String> wide = _visualLines(tester);
 
-      expect(narrow.length, greaterThan(1),
-          reason: '前提：这句话在 355.6px 的视频内容宽里必须真的会换行，否则本测试空转');
-      expect(wide, narrow,
-          reason: '修复前换行宽度 = 容器宽，拉宽窗口会把断行位置整个挪走——'
-              '这正是用户报的「窗口一最大化字幕排版就变」');
+      expect(
+        narrow.length,
+        greaterThan(1),
+        reason: '前提：这句话在 355.6px 的视频内容宽里必须真的会换行，否则本测试空转',
+      );
+      expect(
+        wide,
+        narrow,
+        reason:
+            '修复前换行宽度 = 容器宽，拉宽窗口会把断行位置整个挪走——'
+            '这正是用户报的「窗口一最大化字幕排版就变」',
+      );
     });
 
     testWidgets('字幕不排进左右黑边：整行水平范围落在视频内容矩形内', (WidgetTester tester) async {
@@ -120,11 +133,13 @@ void main() {
 
       final Iterable<Element> elements = find
           .descendant(
-              of: find.byType(VideoSubtitleOverlay),
-              matching: find.byType(Text))
+            of: find.byType(VideoSubtitleOverlay),
+            matching: find.byType(Text),
+          )
           .evaluate();
-      final RenderBox overlay =
-          tester.renderObject<RenderBox>(find.byType(VideoSubtitleOverlay));
+      final RenderBox overlay = tester.renderObject<RenderBox>(
+        find.byType(VideoSubtitleOverlay),
+      );
       final double overlayLeft = overlay.localToGlobal(Offset.zero).dx;
       // 内容宽 = 200 × 16/9；左右黑边各 (760 - 内容宽) / 2。
       const double contentWidth = 200 * 16 / 9;
@@ -140,10 +155,16 @@ void main() {
         final double right = left + ro.size.width;
         maxDx = right > maxDx ? right : maxDx;
       }
-      expect(minDx, greaterThanOrEqualTo(sideBar - 1),
-          reason: '字幕左缘不得越过左黑边——字幕属于画面，不属于窗口');
-      expect(maxDx, lessThanOrEqualTo(width - sideBar + 1),
-          reason: '字幕右缘不得越过右黑边');
+      expect(
+        minDx,
+        greaterThanOrEqualTo(sideBar - 1),
+        reason: '字幕左缘不得越过左黑边——字幕属于画面，不属于窗口',
+      );
+      expect(
+        maxDx,
+        lessThanOrEqualTo(width - sideBar + 1),
+        reason: '字幕右缘不得越过右黑边',
+      );
     });
   });
 }

@@ -37,9 +37,9 @@ class VideoScrapeDiagnosticExporter {
     this.maxEntries = 50000,
     this.maxSingleNfoBytes = 2 * 1024 * 1024,
     this.maxTotalNfoBytes = 16 * 1024 * 1024,
-  })  : assert(maxEntries >= 0),
-        assert(maxSingleNfoBytes >= 0),
-        assert(maxTotalNfoBytes >= 0);
+  }) : assert(maxEntries >= 0),
+       assert(maxSingleNfoBytes >= 0),
+       assert(maxTotalNfoBytes >= 0);
 
   final SourceFileSystem fileSystem;
   final int maxEntries;
@@ -79,20 +79,26 @@ class VideoScrapeDiagnosticExporter {
         unsafePathCount++;
         continue;
       }
-      safeFiles.add(_SafeFileEntry(
-        relativePath: relative,
-        sourcePath: entry.path,
-        // 本地传输的列目录不逐文件 stat（扫描热路径省几万次系统调用，见
-        // LocalSourceFileSystem.listFiles）；诊断导出是低频路径，自己补一次 stat。
-        sizeBytes: entry.sizeBytes ?? await _statSizeOrNull(entry.path),
-      ));
+      safeFiles.add(
+        _SafeFileEntry(
+          relativePath: relative,
+          sourcePath: entry.path,
+          // 本地传输的列目录不逐文件 stat（扫描热路径省几万次系统调用，见
+          // LocalSourceFileSystem.listFiles）；诊断导出是低频路径，自己补一次 stat。
+          sizeBytes: entry.sizeBytes ?? await _statSizeOrNull(entry.path),
+        ),
+      );
     }
-    safeFiles.sort((_SafeFileEntry a, _SafeFileEntry b) =>
-        a.relativePath.toLowerCase().compareTo(b.relativePath.toLowerCase()));
-    final int omittedTreeEntries =
-        safeFiles.length > maxEntries ? safeFiles.length - maxEntries : 0;
-    final List<_SafeFileEntry> exportedFiles =
-        safeFiles.take(maxEntries).toList(growable: false);
+    safeFiles.sort(
+      (_SafeFileEntry a, _SafeFileEntry b) =>
+          a.relativePath.toLowerCase().compareTo(b.relativePath.toLowerCase()),
+    );
+    final int omittedTreeEntries = safeFiles.length > maxEntries
+        ? safeFiles.length - maxEntries
+        : 0;
+    final List<_SafeFileEntry> exportedFiles = safeFiles
+        .take(maxEntries)
+        .toList(growable: false);
 
     final Set<String> directories = <String>{};
     final List<Map<String, Object?>> tree = <Map<String, Object?>>[];
@@ -110,9 +116,11 @@ class VideoScrapeDiagnosticExporter {
     }
     final List<String> sortedDirectories = directories.toList()..sort();
     tree.insertAll(
-        0,
-        sortedDirectories.map((String path) =>
-            <String, Object?>{'path': path, 'type': 'directory'}));
+      0,
+      sortedDirectories.map(
+        (String path) => <String, Object?>{'path': path, 'type': 'directory'},
+      ),
+    );
 
     final List<_NfoFile> nfoFiles = <_NfoFile>[];
     int omittedNfoCount = 0;
@@ -126,23 +134,26 @@ class VideoScrapeDiagnosticExporter {
         omittedNfoCount++;
         continue;
       }
-      nfoFiles.add(_NfoFile(
-        archivePath: 'nfo/${entry.relativePath}',
-        sourcePath: entry.sourcePath,
-        sizeBytes: size,
-      ));
+      nfoFiles.add(
+        _NfoFile(
+          archivePath: 'nfo/${entry.relativePath}',
+          sourcePath: entry.sourcePath,
+          sizeBytes: size,
+        ),
+      );
       totalNfoBytes += size;
     }
 
     final Map<String, VideoScrapeMetaRow> metaByUid =
         <String, VideoScrapeMetaRow>{
-      for (final VideoScrapeMetaRow row in scrapeMetadata) row.bookUid: row,
-    };
+          for (final VideoScrapeMetaRow row in scrapeMetadata) row.bookUid: row,
+        };
     final List<Map<String, Object?>> scrapeData = <Map<String, Object?>>[];
     for (final VideoBookRow book in books) {
       final String? relative = _safeRelativePath(root, book.videoPath);
-      final ParsedMediaName parsed =
-          FilenameParser.parse(p.basename(book.videoPath));
+      final ParsedMediaName parsed = FilenameParser.parse(
+        p.basename(book.videoPath),
+      );
       final VideoScrapeMetaRow? meta = metaByUid[book.bookUid];
       scrapeData.add(<String, Object?>{
         'relativePath': relative,
@@ -174,9 +185,12 @@ class VideoScrapeDiagnosticExporter {
           },
       });
     }
-    scrapeData.sort((Map<String, Object?> a, Map<String, Object?> b) =>
-        ((a['relativePath'] as String?) ?? '')
-            .compareTo((b['relativePath'] as String?) ?? ''));
+    scrapeData.sort(
+      (Map<String, Object?> a, Map<String, Object?> b) =>
+          ((a['relativePath'] as String?) ?? '').compareTo(
+            (b['relativePath'] as String?) ?? '',
+          ),
+    );
 
     final String? lastScanError = source.lastScanError == null
         ? null
@@ -219,16 +233,20 @@ class VideoScrapeDiagnosticExporter {
       'collectionErrors': collectionErrors,
     };
     final String treeText = tree
-        .map((Map<String, Object?> entry) =>
-            entry['type'] == 'directory' ? '${entry['path']}/' : entry['path'])
+        .map(
+          (Map<String, Object?> entry) => entry['type'] == 'directory'
+              ? '${entry['path']}/'
+              : entry['path'],
+        )
         .join('\n');
     final Map<String, String> textFiles = <String, String>{
       'README.txt': _readme,
       'manifest.json': const JsonEncoder.withIndent('  ').convert(manifest),
       'tree.json': const JsonEncoder.withIndent('  ').convert(tree),
       'directory-tree.txt': '$treeText\n',
-      'scrape-data.json':
-          const JsonEncoder.withIndent('  ').convert(scrapeData),
+      'scrape-data.json': const JsonEncoder.withIndent(
+        '  ',
+      ).convert(scrapeData),
     };
 
     await _writeZip(outputFile.path, textFiles, nfoFiles);
@@ -290,9 +308,7 @@ before posting it publicly.
       try {
         for (final MapEntry<String, String> entry in textFiles.entries) {
           final List<int> bytes = utf8.encode(entry.value);
-          encoder.addArchiveFile(
-            ArchiveFile(entry.key, bytes.length, bytes),
-          );
+          encoder.addArchiveFile(ArchiveFile(entry.key, bytes.length, bytes));
         }
         for (final _NfoFile entry in nfoFiles) {
           final File file = File(entry.sourcePath);
@@ -301,11 +317,7 @@ before posting it publicly.
               'An NFO file changed while the diagnostic package was created',
             );
           }
-          await encoder.addFile(
-            file,
-            entry.archivePath,
-            ZipFileEncoder.STORE,
-          );
+          await encoder.addFile(file, entry.archivePath, ZipFileEncoder.STORE);
         }
         encoder.closeSync();
       } catch (_) {

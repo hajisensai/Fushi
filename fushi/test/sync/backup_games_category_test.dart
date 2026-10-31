@@ -172,13 +172,12 @@ void main() {
 
   BackupService serviceFor(
     ({FushiDatabase db, String dbDir, String coversRoot}) s,
-  ) =>
-      BackupService(
-        db: s.db,
-        dbDirectory: s.dbDir,
-        appVersion: '1.0.0',
-        gameCoversRootDirectory: s.coversRoot,
-      );
+  ) => BackupService(
+    db: s.db,
+    dbDirectory: s.dbDir,
+    appVersion: '1.0.0',
+    gameCoversRootDirectory: s.coversRoot,
+  );
 
   Set<BackupCategory> allExcept(BackupCategory c) =>
       BackupCategory.values.toSet()..remove(c);
@@ -255,9 +254,13 @@ void main() {
     expect(meta.gameCount, 1);
     expect(meta.gameCoversRoot, s.coversRoot);
     expect(meta.progressCount, 1);
-    expect(meta.statsCount, 5,
-        reason: 'statistics 的计数面 = 它的裁剪面 _statisticsTables 整份清单：'
-            'study_segments 2 行 + galgame_sessions 等同属该类别的行');
+    expect(
+      meta.statsCount,
+      5,
+      reason:
+          'statistics 的计数面 = 它的裁剪面 _statisticsTables 整份清单：'
+          'study_segments 2 行 + galgame_sessions 等同属该类别的行',
+    );
     final Archive archive = await readZip(zip);
     expect(archive.findFile('game_covers/G1.png'), isNotNull);
     final FushiDatabase db = await openBackupDb(zip, dst);
@@ -352,18 +355,18 @@ void main() {
       // 纯函数面：legacy meta + 窥探值 → present。
       final BackupContentSummary pure =
           BackupRestoreService.summarizeBackupEntries(
-        const <String>['fushi.db'],
-        BackupMeta(
-          appVersion: '1',
-          schemaVersion: 1,
-          createdAt: DateTime(2026),
-          bookCount: 0,
-          statsCount: 0,
-        ),
-        dbGameCount: 3,
-        dbProgressCount: 2,
-        dbStatisticsCount: 5,
-      );
+            const <String>['fushi.db'],
+            BackupMeta(
+              appVersion: '1',
+              schemaVersion: 1,
+              createdAt: DateTime(2026),
+              bookCount: 0,
+              statsCount: 0,
+            ),
+            dbGameCount: 3,
+            dbProgressCount: 2,
+            dbStatisticsCount: 5,
+          );
       expect(pure.countFor(BackupCategory.games), 3);
       expect(pure.countFor(BackupCategory.progress), 2);
       expect(
@@ -378,16 +381,16 @@ void main() {
     // 纯函数面：peekFailed 且 meta 缺计数 → present 含全部 DB-blob 类别（无计数）。
     final BackupContentSummary pure =
         BackupRestoreService.summarizeBackupEntries(
-      const <String>['fushi.db'],
-      BackupMeta(
-        appVersion: '1',
-        schemaVersion: 1,
-        createdAt: DateTime(2026),
-        bookCount: 0,
-        statsCount: 0,
-      ),
-      peekFailed: true,
-    );
+          const <String>['fushi.db'],
+          BackupMeta(
+            appVersion: '1',
+            schemaVersion: 1,
+            createdAt: DateTime(2026),
+            bookCount: 0,
+            statsCount: 0,
+          ),
+          peekFailed: true,
+        );
     expect(
       pure.present,
       containsAll(<BackupCategory>[
@@ -397,42 +400,45 @@ void main() {
         BackupCategory.videos,
         BackupCategory.audiobooks,
       ]),
-      reason: '窥探失败若按 0 处理，开关不出现 → 类别集不含 games → 覆盖导入会把'
+      reason:
+          '窥探失败若按 0 处理，开关不出现 → 类别集不含 games → 覆盖导入会把'
           '本机游戏库删光；未知必须按存在处理',
     );
     expect(pure.countFor(BackupCategory.games), 0, reason: '无计数，只标存在');
     // 新格式 meta（有计数）不受 peekFailed 影响：计数是权威。
     final BackupContentSummary known =
         BackupRestoreService.summarizeBackupEntries(
-      const <String>['fushi.db'],
-      BackupMeta(
-        appVersion: '1',
-        schemaVersion: 1,
-        createdAt: DateTime(2026),
-        bookCount: 0,
-        statsCount: 0,
-        videoBookCount: 0,
-        audiobookCount: 0,
-        gameCount: 0,
-        progressCount: 0,
-        srsNoteCount: 0,
-        musicCount: 0,
-      ),
-      peekFailed: true,
-    );
+          const <String>['fushi.db'],
+          BackupMeta(
+            appVersion: '1',
+            schemaVersion: 1,
+            createdAt: DateTime(2026),
+            bookCount: 0,
+            statsCount: 0,
+            videoBookCount: 0,
+            audiobookCount: 0,
+            gameCount: 0,
+            progressCount: 0,
+            srsNoteCount: 0,
+            musicCount: 0,
+          ),
+          peekFailed: true,
+        );
     expect(known.present, isEmpty);
 
     // 真实文件面：旧 meta + 损坏的 fushi.db 条目 → _peekContentRowCounts 返回
     // null → summarizeBackupFile 必须把 games 标成存在。
     final String zip = p.join(dst.path, 'legacy_bad_db.zip');
     final Archive out = Archive();
-    final List<int> metaBytes = utf8.encode(jsonEncode(<String, Object?>{
-      'appVersion': '1.0.0',
-      'schemaVersion': 1,
-      'createdAt': DateTime(2026).toIso8601String(),
-      'bookCount': 0,
-      'statsCount': 0,
-    }));
+    final List<int> metaBytes = utf8.encode(
+      jsonEncode(<String, Object?>{
+        'appVersion': '1.0.0',
+        'schemaVersion': 1,
+        'createdAt': DateTime(2026).toIso8601String(),
+        'bookCount': 0,
+        'statsCount': 0,
+      }),
+    );
     out.addFile(ArchiveFile('backup_meta.json', metaBytes.length, metaBytes));
     final List<int> junk = utf8.encode('this is not a sqlite database at all');
     out.addFile(ArchiveFile('fushi.db', junk.length, junk));
@@ -604,11 +610,10 @@ void main() {
     final FushiDatabase cur = FushiDatabase(curDbDir);
     try {
       final List<GalgameRow> games = await cur.getAllGalgames();
-      expect(
-        games.map((GalgameRow g) => g.id).toSet(),
-        <String>{'T1', 'G2'},
-        reason: 'G1 与 T1 同刮削身份 → 去重不插；G2 独有 → 插入',
-      );
+      expect(games.map((GalgameRow g) => g.id).toSet(), <String>{
+        'T1',
+        'G2',
+      }, reason: 'G1 与 T1 同刮削身份 → 去重不插；G2 独有 → 插入');
       final GalgameRow t1 = games.singleWhere((GalgameRow g) => g.id == 'T1');
       expect(t1.coverPath, p.join(curCovers, 'T1.jpg'), reason: '目标自己的行原样保留');
       expect(t1.exePath, r'E:\gal\one\one.exe');
@@ -775,8 +780,9 @@ Future<String> _rewriteMetaWithout(
   List<String> keys,
 ) async {
   // 同 readZip：整包读进内存，避免关流后再取惰性条目内容。
-  final Archive archive =
-      ZipDecoder().decodeBytes(await File(zipPath).readAsBytes());
+  final Archive archive = ZipDecoder().decodeBytes(
+    await File(zipPath).readAsBytes(),
+  );
   final Archive out = Archive();
   for (final ArchiveFile f in archive.files) {
     if (!f.isFile) continue;

@@ -35,38 +35,65 @@ void main() {
 
   group('BUG-842 内联动作按钮不再依赖原生 title 提示', () {
     test('存在 DOM 提示助手 setInlineButtonTip，且会移除 title 并挂 .fushi-btn-tip', () {
-      expect(js, contains('function setInlineButtonTip('),
-          reason: '需要 DOM 提示助手替代原生 title');
-      expect(js, contains('function __fushiShowButtonTip('),
-          reason: '需要按屏幕坐标定位 .fushi-btn-tip 的展示函数');
+      expect(
+        js,
+        contains('function setInlineButtonTip('),
+        reason: '需要 DOM 提示助手替代原生 title',
+      );
+      expect(
+        js,
+        contains('function __fushiShowButtonTip('),
+        reason: '需要按屏幕坐标定位 .fushi-btn-tip 的展示函数',
+      );
       // 关键：助手必须显式去掉原生 title（否则离屏 WebView2 上仍会飞）。
       expect(
-          RegExp(r"function setInlineButtonTip\([\s\S]*?removeAttribute\('title'\)")
-              .hasMatch(js),
-          isTrue,
-          reason: 'setInlineButtonTip 必须 removeAttribute(title)');
+        RegExp(
+          r"function setInlineButtonTip\([\s\S]*?removeAttribute\('title'\)",
+        ).hasMatch(js),
+        isTrue,
+        reason: 'setInlineButtonTip 必须 removeAttribute(title)',
+      );
       // 提示元素用 .fushi-btn-tip（DOM 内，随纹理合成）。
-      expect(js, contains("className: 'fushi-btn-tip'"),
-          reason: 'DOM 提示元素类名为 fushi-btn-tip');
+      expect(
+        js,
+        contains("className: 'fushi-btn-tip'"),
+        reason: 'DOM 提示元素类名为 fushi-btn-tip',
+      );
       // 监听只挂一次（refresh 反复调用不叠加）。
-      expect(js, contains('dataset.fushiTipBound'),
-          reason: '用 dataset 标志保证监听只挂一次');
+      expect(
+        js,
+        contains('dataset.fushiTipBound'),
+        reason: '用 dataset 标志保证监听只挂一次',
+      );
     });
 
     test('调整上下文（tune）与清空已加句子（clear-draft）按钮改走 setInlineButtonTip', () {
       // 「调整上下文」按钮不得在 el() 里设 title，且用 setInlineButtonTip 挂提示。
-      expect(js.contains('title: (window.i18nCtx && window.i18nCtx.adjust)'),
-          isFalse,
-          reason: 'ctx-adjust-button 不得再用原生 title（离屏 WebView2 会飞）');
-      expect(js, contains('setInlineButtonTip(adjustBtn'),
-          reason: '「调整上下文」按钮改走 DOM 提示');
+      expect(
+        js.contains('title: (window.i18nCtx && window.i18nCtx.adjust)'),
+        isFalse,
+        reason: 'ctx-adjust-button 不得再用原生 title（离屏 WebView2 会飞）',
+      );
+      expect(
+        js,
+        contains('setInlineButtonTip(adjustBtn'),
+        reason: '「调整上下文」按钮改走 DOM 提示',
+      );
       // 「清空已加句子」按钮的 refresh 不得再设 button.title，改走 setInlineButtonTip。
-      final String refreshBody =
-          funcBody(js, 'function refreshClearDraftButton(');
-      expect(RegExp(r'\btitle\s*=').hasMatch(refreshBody), isFalse,
-          reason: 'refreshClearDraftButton 不得再设原生 title');
-      expect(refreshBody, contains('setInlineButtonTip('),
-          reason: '清空已加句子按钮改走 DOM 提示');
+      final String refreshBody = funcBody(
+        js,
+        'function refreshClearDraftButton(',
+      );
+      expect(
+        RegExp(r'\btitle\s*=').hasMatch(refreshBody),
+        isFalse,
+        reason: 'refreshClearDraftButton 不得再设原生 title',
+      );
+      expect(
+        refreshBody,
+        contains('setInlineButtonTip('),
+        reason: '清空已加句子按钮改走 DOM 提示',
+      );
     });
 
     test('无音频反馈 showNoAudioHint 不再设原生 title（本就有自绘 .audio-hint）', () {
@@ -74,30 +101,43 @@ void main() {
       expect(start, greaterThanOrEqualTo(0), reason: 'showNoAudioHint 应存在');
       final int end = js.indexOf('\nfunction ', start + 1);
       final String body = js.substring(start, end < 0 ? js.length : end);
-      expect(RegExp(r'\bbutton\.title\s*=').hasMatch(body), isFalse,
-          reason: 'showNoAudioHint 不得设原生 title（已有 .audio-hint DOM 提示）');
-      expect(body, contains("setAttribute('aria-label'"),
-          reason: '保留 aria-label 以维持可访问性');
+      expect(
+        RegExp(r'\bbutton\.title\s*=').hasMatch(body),
+        isFalse,
+        reason: 'showNoAudioHint 不得设原生 title（已有 .audio-hint DOM 提示）',
+      );
+      expect(
+        body,
+        contains("setAttribute('aria-label'"),
+        reason: '保留 aria-label 以维持可访问性',
+      );
     });
 
     test('popup.css 定义 .fushi-btn-tip（与 .audio-hint 共用视觉）', () {
-      expect(css, contains('.fushi-btn-tip'),
-          reason: 'popup.css 需定义 .fushi-btn-tip 提示样式');
+      expect(
+        css,
+        contains('.fushi-btn-tip'),
+        reason: 'popup.css 需定义 .fushi-btn-tip 提示样式',
+      );
       // 与 .audio-hint 同一规则块（position:fixed + 主题化背景/边框），共用视觉。
       // BUG-1064 又给这条规则接了第三个共享者 `.inline-hint`（app 外页内提示气泡），
       // 故允许两者之间再插入其它选择器——守的是「共用同一条基础规则」这个意图，
       // 不是选择器列表的具体长度。
       expect(
-          RegExp(r'\.audio-hint,\s*\n(?:\s*\.[\w-]+,\s*\n)*\s*\.fushi-btn-tip\s*\{')
-              .hasMatch(css),
-          isTrue,
-          reason: '.fushi-btn-tip 与 .audio-hint 共用基础规则');
+        RegExp(
+          r'\.audio-hint,\s*\n(?:\s*\.[\w-]+,\s*\n)*\s*\.fushi-btn-tip\s*\{',
+        ).hasMatch(css),
+        isTrue,
+        reason: '.fushi-btn-tip 与 .audio-hint 共用基础规则',
+      );
       expect(
-          RegExp(r'\.audio-hint\.visible,\s*\n(?:\s*\.[\w-]+\.visible,\s*\n)*'
-                  r'\s*\.fushi-btn-tip\.visible')
-              .hasMatch(css),
-          isTrue,
-          reason: '.fushi-btn-tip.visible 与 .audio-hint.visible 共用淡入');
+        RegExp(
+          r'\.audio-hint\.visible,\s*\n(?:\s*\.[\w-]+\.visible,\s*\n)*'
+          r'\s*\.fushi-btn-tip\.visible',
+        ).hasMatch(css),
+        isTrue,
+        reason: '.fushi-btn-tip.visible 与 .audio-hint.visible 共用淡入',
+      );
     });
   });
 }

@@ -27,20 +27,19 @@ void main() {
   List<String> mockWindowManager({required bool minimized}) {
     final List<String> calls = <String>[];
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-        .setMockMethodCallHandler(
-      const MethodChannel('window_manager'),
-      (MethodCall call) async {
-        calls.add(call.method);
-        switch (call.method) {
-          case 'isMinimized':
-            return minimized;
-          case 'isFocused':
-            return false;
-          default:
-            return null;
-        }
-      },
-    );
+        .setMockMethodCallHandler(const MethodChannel('window_manager'), (
+          MethodCall call,
+        ) async {
+          calls.add(call.method);
+          switch (call.method) {
+            case 'isMinimized':
+              return minimized;
+            case 'isFocused':
+              return false;
+            default:
+              return null;
+          }
+        });
     return calls;
   }
 
@@ -53,12 +52,14 @@ void main() {
       DesktopForegroundGuard.debugHiddenWindowsRunner = false;
       final List<String> calls = mockWindowManager(minimized: false);
 
-      final bool sent =
-          await DesktopLookupService.instance.minimizeMainWindow();
+      final bool sent = await DesktopLookupService.instance
+          .minimizeMainWindow();
 
       expect(sent, DesktopLookupService.isDesktop);
-      expect(calls,
-          DesktopLookupService.isDesktop ? <String>['minimize'] : isEmpty);
+      expect(
+        calls,
+        DesktopLookupService.isDesktop ? <String>['minimize'] : isEmpty,
+      );
     });
 
     test('minimizeMainWindow：隐藏 runner 里不动窗口、返回 false', () async {

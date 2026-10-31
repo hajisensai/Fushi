@@ -21,10 +21,14 @@ void main() {
       find.widgetWithText(FilledButton, t.stat_clear_all_confirm);
 
   bool ackChecked(WidgetTester tester) => tester
-      .widget<Checkbox>(glassUnwrap<Checkbox>(find.descendant(
-          of: find.byKey(StatClearSessionsConfirmDialog.ackKey),
-          matching: find.byType(Checkbox),
-        )),)
+      .widget<Checkbox>(
+        glassUnwrap<Checkbox>(
+          find.descendant(
+            of: find.byKey(StatClearSessionsConfirmDialog.ackKey),
+            matching: find.byType(Checkbox),
+          ),
+        ),
+      )
       .value!;
 
   Future<void> tapAck(WidgetTester tester) async {
@@ -34,22 +38,20 @@ void main() {
 
   /// 挂一个按钮，点它调 [confirmClearAllStatSessions]，结果写进 [sink]。
   Widget hostButton(int count, void Function(bool) sink) => TranslationProvider(
-        child: MaterialApp(
-          home: Scaffold(
-            body: Builder(
-              builder: (BuildContext context) => ElevatedButton(
-                onPressed: () async =>
-                    sink(await confirmClearAllStatSessions(context, count)),
-                child: const Text('open'),
-              ),
-            ),
+    child: MaterialApp(
+      home: Scaffold(
+        body: Builder(
+          builder: (BuildContext context) => ElevatedButton(
+            onPressed: () async =>
+                sink(await confirmClearAllStatSessions(context, count)),
+            child: const Text('open'),
           ),
         ),
-      );
+      ),
+    ),
+  );
 
-  testWidgets('默认破坏性按钮禁用，勾上确认项后才可点（闸门双向）', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('默认破坏性按钮禁用，勾上确认项后才可点（闸门双向）', (WidgetTester tester) async {
     await tester.pumpWidget(
       TranslationProvider(
         child: const MaterialApp(
@@ -69,19 +71,31 @@ void main() {
     expect(find.text(t.stat_sessions_clear_all_ack(n: 37)), findsOneWidget);
     expect(ackChecked(tester), isFalse);
     expect(
-      tester.widget<FilledButton>(glassUnwrap<FilledButton>(confirmButton())).onPressed,
+      tester
+          .widget<FilledButton>(glassUnwrap<FilledButton>(confirmButton()))
+          .onPressed,
       isNull,
       reason: '防呆：没勾确认项之前一律禁用',
     );
 
     await tapAck(tester);
     expect(ackChecked(tester), isTrue, reason: '整行 onTap 驱动勾选');
-    expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(confirmButton())).onPressed, isNotNull);
+    expect(
+      tester
+          .widget<FilledButton>(glassUnwrap<FilledButton>(confirmButton()))
+          .onPressed,
+      isNotNull,
+    );
 
     // 再点一次取消勾选：闸门是双向的，不是一次性开关。
     await tapAck(tester);
     expect(ackChecked(tester), isFalse);
-    expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(confirmButton())).onPressed, isNull);
+    expect(
+      tester
+          .widget<FilledButton>(glassUnwrap<FilledButton>(confirmButton()))
+          .onPressed,
+      isNull,
+    );
   });
 
   testWidgets('勾上 ack 后点清除 → true', (WidgetTester tester) async {

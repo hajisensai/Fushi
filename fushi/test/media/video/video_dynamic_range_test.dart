@@ -113,10 +113,10 @@ void main() {
     // 否则库页卡片与播放器会对同一文件给出互相矛盾的 HDR 判断。
     const List<(String, String, String, String, VideoDynamicRange)> cases =
         <(String, String, String, String, VideoDynamicRange)>[
-      ('bt2020', 'smpte2084', 'bt.2020', 'pq', VideoDynamicRange.hdr10),
-      ('bt2020', 'arib-std-b67', 'bt.2020', 'hlg', VideoDynamicRange.hlg),
-      ('bt709', 'bt709', 'bt.709', 'bt.1886', VideoDynamicRange.sdr),
-    ];
+          ('bt2020', 'smpte2084', 'bt.2020', 'pq', VideoDynamicRange.hdr10),
+          ('bt2020', 'arib-std-b67', 'bt.2020', 'hlg', VideoDynamicRange.hlg),
+          ('bt709', 'bt709', 'bt.709', 'bt.1886', VideoDynamicRange.sdr),
+        ];
 
     for (final (
           String ffPrimaries,
@@ -124,7 +124,8 @@ void main() {
           String mpvPrimaries,
           String mpvGamma,
           VideoDynamicRange expected,
-        ) in cases) {
+        )
+        in cases) {
       test('$ffTransfer / $mpvGamma 两侧同判 ${expected.name}', () {
         final VideoDynamicRange fromFfprobe = dynamicRangeFromFfprobe(
           colorPrimaries: ffPrimaries,
@@ -192,8 +193,10 @@ void main() {
     });
 
     test('未知字符串落回 unknown', () {
-      expect(VideoDynamicRange.fromStorage('dolby_vision'),
-          VideoDynamicRange.unknown);
+      expect(
+        VideoDynamicRange.fromStorage('dolby_vision'),
+        VideoDynamicRange.unknown,
+      );
       expect(VideoDynamicRange.fromStorage(null), VideoDynamicRange.unknown);
     });
   });

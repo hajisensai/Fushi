@@ -55,8 +55,9 @@ void main() {
           final ProviderContainer container = ProviderScope.containerOf(
             tester.element(find.byType(MaterialApp).first),
           );
-          final AnkiViewModel vm =
-              container.read(ankiViewModelProvider.notifier);
+          final AnkiViewModel vm = container.read(
+            ankiViewModelProvider.notifier,
+          );
           AnkiUiState state() => container.read(ankiViewModelProvider);
           List<String> deckNames() =>
               state().availableDecks.map((d) => d.name).toList();
@@ -64,12 +65,14 @@ void main() {
               'errorMessage=${state().errorMessage} isFetching=${state().isFetching} '
               'decks=${deckNames()} awaiting=${AnkiMobileInfoReturnCoordinator.instance.awaitingReturn}';
 
-          final BaseAnkiRepository providedRepo =
-              container.read(ankiRepositoryProvider);
+          final BaseAnkiRepository providedRepo = container.read(
+            ankiRepositoryProvider,
+          );
           expect(
             resolveAnkiMobileRepository(providedRepo),
             isNotNull,
-            reason: 'iOS 默认后端必须解析到 AnkiMobileRepository，实际拿到 '
+            reason:
+                'iOS 默认后端必须解析到 AnkiMobileRepository，实际拿到 '
                 '${providedRepo.runtimeType}'
                 '${providedRepo is AutoRepositionAnkiRepository ? " → ${providedRepo.inner.runtimeType}" : ""}'
                 '${providedRepo is RemoteMiningAnkiRepository ? " → ${providedRepo.local.runtimeType}" : ""}',

@@ -12,7 +12,8 @@ String _read(String relative) {
   final File f = File(relative);
   if (!f.existsSync()) {
     throw StateError(
-        'missing source: $relative (cwd=${Directory.current.path})');
+      'missing source: $relative (cwd=${Directory.current.path})',
+    );
   }
   return f.readAsStringSync();
 }
@@ -39,20 +40,29 @@ String _methodBody(String source, String signature) {
 }
 
 void main() {
-  final String src =
-      _read('lib/src/pages/implementations/tag_management_page.dart');
+  final String src = _read(
+    'lib/src/pages/implementations/tag_management_page.dart',
+  );
 
   group('标签管理页长按 / 右键上下文菜单', () {
     test('标签行同时绑定长按与右键，都指向 _showTagMenu', () {
-      expect(src.contains('onLongPressStart:'), isTrue,
-          reason: '长按必须弹菜单');
-      expect(src.contains('ContextMenuTrigger('), isTrue,
-          reason: '右键必须弹菜单（BUG-2111 后由绑定表判定唤出键）');
+      expect(src.contains('onLongPressStart:'), isTrue, reason: '长按必须弹菜单');
+      expect(
+        src.contains('ContextMenuTrigger('),
+        isTrue,
+        reason: '右键必须弹菜单（BUG-2111 后由绑定表判定唤出键）',
+      );
       // 两个触发器都换算真实坐标喂给同一菜单构建器。
-      expect(src.contains('_showTagMenu(tag, d.globalPosition)'), isTrue,
-          reason: '长按走同一菜单入口');
-      expect(src.contains('_showTagMenu(tag, position)'), isTrue,
-          reason: '右键走同一菜单入口');
+      expect(
+        src.contains('_showTagMenu(tag, d.globalPosition)'),
+        isTrue,
+        reason: '长按走同一菜单入口',
+      );
+      expect(
+        src.contains('_showTagMenu(tag, position)'),
+        isTrue,
+        reason: '右键走同一菜单入口',
+      );
     });
 
     test('菜单同时提供编辑与删除动作', () {
@@ -62,20 +72,31 @@ void main() {
       );
       expect(menuBody.contains('_TagMenuAction.edit'), isTrue);
       expect(menuBody.contains('_TagMenuAction.delete'), isTrue);
-      expect(menuBody.contains('_editTag(tag)'), isTrue,
-          reason: '编辑动作接回既有 _editTag');
-      expect(menuBody.contains('_deleteTag(tag)'), isTrue,
-          reason: '删除动作接回既有 _deleteTag（含确认弹窗）');
+      expect(
+        menuBody.contains('_editTag(tag)'),
+        isTrue,
+        reason: '编辑动作接回既有 _editTag',
+      );
+      expect(
+        menuBody.contains('_deleteTag(tag)'),
+        isTrue,
+        reason: '删除动作接回既有 _deleteTag（含确认弹窗）',
+      );
     });
 
     test('tap 仍是快捷编辑，删除既有 swipe / gamepad 入口保留', () {
-      expect(src.contains('onTap: () => _editTag(tag)'), isTrue,
-          reason: 'tap→编辑保持不变（向后兼容）');
+      expect(
+        src.contains('onTap: () => _editTag(tag)'),
+        isTrue,
+        reason: 'tap→编辑保持不变（向后兼容）',
+      );
       // swipe 删除与 gamepad X 删除的既有入口不得被本次改动移除。
-      expect(src.contains('confirmDismiss:'), isTrue,
-          reason: 'swipe 删除入口保留');
-      expect(src.contains('GamepadButton.x'), isTrue,
-          reason: 'gamepad X 删除入口保留');
+      expect(src.contains('confirmDismiss:'), isTrue, reason: 'swipe 删除入口保留');
+      expect(
+        src.contains('GamepadButton.x'),
+        isTrue,
+        reason: 'gamepad X 删除入口保留',
+      );
     });
   });
 }

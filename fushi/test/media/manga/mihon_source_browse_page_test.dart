@@ -377,7 +377,9 @@ void main() {
         find.byKey(const ValueKey<String>('manga_series_open_website')),
       );
       await tester.pumpAndSettle();
-      expect(launched, <Uri>[Uri.parse('https://fixture.invalid/manga/fixture')]);
+      expect(launched, <Uri>[
+        Uri.parse('https://fixture.invalid/manga/fixture'),
+      ]);
       expect(tester.takeException(), isNull);
     },
   );

@@ -31,29 +31,30 @@ TmdbEpisodeMatchSource _src(int n, List<String> titles, [String? date]) =>
     TmdbEpisodeMatchSource(number: n, titles: titles, airDate: date);
 
 void main() {
-  test('exact title + air date wins and locks the season for weaker rounds',
-      () {
-    final Map<int, TmdbEpisodeMatch> matches = matchEpisodesToTmdb(
-      <TmdbEpisodeMatchSource>[
-        _src(1, <String>['Return'], '2025-07-06'),
-        // 标题没对上、日期对上 → date；季已被第 1 集锁到 S2。
-        _src(2, <String>['災厄'], '2025-07-14'),
-        // 什么都没对上但有锚：顺序兜底到前一条链接之后的下一集。
-        _src(3, <String>['???']),
-      ],
-      _show,
-    );
-    expect(matches[1]?.episode.episodeNumber, 1);
-    expect(matches[1]?.rating, TmdbEpisodeMatchRating.dateAndTitle);
-    expect(matches[2]?.episode.episodeNumber, 2);
-    expect(matches[2]?.rating, TmdbEpisodeMatchRating.date);
-    expect(matches[3]?.episode.seasonNumber, 2);
-    expect(matches[3]?.episode.episodeNumber, 3);
-    expect(matches[3]?.rating, TmdbEpisodeMatchRating.firstAvailable);
-  });
-
   test(
-      'title-only sources (AniDB file identities) match across seasons and '
+    'exact title + air date wins and locks the season for weaker rounds',
+    () {
+      final Map<int, TmdbEpisodeMatch> matches = matchEpisodesToTmdb(
+        <TmdbEpisodeMatchSource>[
+          _src(1, <String>['Return'], '2025-07-06'),
+          // 标题没对上、日期对上 → date；季已被第 1 集锁到 S2。
+          _src(2, <String>['災厄'], '2025-07-14'),
+          // 什么都没对上但有锚：顺序兜底到前一条链接之后的下一集。
+          _src(3, <String>['???']),
+        ],
+        _show,
+      );
+      expect(matches[1]?.episode.episodeNumber, 1);
+      expect(matches[1]?.rating, TmdbEpisodeMatchRating.dateAndTitle);
+      expect(matches[2]?.episode.episodeNumber, 2);
+      expect(matches[2]?.rating, TmdbEpisodeMatchRating.date);
+      expect(matches[3]?.episode.seasonNumber, 2);
+      expect(matches[3]?.episode.episodeNumber, 3);
+      expect(matches[3]?.rating, TmdbEpisodeMatchRating.firstAvailable);
+    },
+  );
+
+  test('title-only sources (AniDB file identities) match across seasons and '
       'never fall back to first-available without an anchor', () {
     final Map<int, TmdbEpisodeMatch> matches = matchEpisodesToTmdb(
       <TmdbEpisodeMatchSource>[
@@ -74,14 +75,13 @@ void main() {
     // 没有任何一集对上 → 一条都不填（Shoko 会从 S1E1 顺序填）。
     expect(
       matchEpisodesToTmdb(<TmdbEpisodeMatchSource>[
-        _src(1, <String>['Nope'])
+        _src(1, <String>['Nope']),
       ], _show),
       isEmpty,
     );
   });
 
-  test(
-      'nearest air date within 120 days stays inside the anchor season and '
+  test('nearest air date within 120 days stays inside the anchor season and '
       'weak links are re-ordered to follow source order', () {
     final Map<int, TmdbEpisodeMatch> matches = matchEpisodesToTmdb(
       <TmdbEpisodeMatchSource>[
@@ -95,13 +95,14 @@ void main() {
     expect(matches[1]?.rating, TmdbEpisodeMatchRating.dateAndTitle);
     expect(matches[2]?.episode.seasonNumber, 1);
     expect(matches[3]?.episode.seasonNumber, 1);
-    expect(matches[2]!.episode.episodeNumber,
-        lessThan(matches[3]!.episode.episodeNumber),
-        reason: '弱评级相邻冒泡后 TMDB 顺序跟随来源集号');
+    expect(
+      matches[2]!.episode.episodeNumber,
+      lessThan(matches[3]!.episode.episodeNumber),
+      reason: '弱评级相邻冒泡后 TMDB 顺序跟随来源集号',
+    );
   });
 
-  test(
-      'specials never enter the pool and generic "Episode N" titles are '
+  test('specials never enter the pool and generic "Episode N" titles are '
       'ignored', () {
     final Map<int, TmdbEpisodeMatch> matches = matchEpisodesToTmdb(
       <TmdbEpisodeMatchSource>[
@@ -128,16 +129,14 @@ void main() {
     expect(matches.containsKey(2), isFalse);
     // 反过来正片池也没有第 0 季。
     expect(
-      matchEpisodesToTmdb(
-        <TmdbEpisodeMatchSource>[_src(1, <String>['Recap Special'], '2024-06-01')],
-        _show,
-      ),
+      matchEpisodesToTmdb(<TmdbEpisodeMatchSource>[
+        _src(1, <String>['Recap Special'], '2024-06-01'),
+      ], _show),
       isEmpty,
     );
   });
 
-  test(
-      'specials never take the nearest-air-date or first-available fallbacks '
+  test('specials never take the nearest-air-date or first-available fallbacks '
       '(Shoko: !isSpecial gates both)', () {
     final List<VideoMetadataEpisode> show = <VideoMetadataEpisode>[
       ..._show,
@@ -174,23 +173,24 @@ void main() {
 
   group('merge helpers', () {
     VideoMetadataWork tmdbWork() => VideoMetadataWork(
-          provider: VideoMetadataProviderKind.tmdb,
-          kind: VideoMetadataMediaKind.tv,
-          title: 'Show',
-          seasons: <VideoMetadataSeason>[
-            VideoMetadataSeason(
-                seasonNumber: 1,
-                title: 'S1',
-                episodes: _show.where((e) => e.seasonNumber == 1).toList()),
-            VideoMetadataSeason(
-                seasonNumber: 2,
-                title: 'S2',
-                episodes: _show.where((e) => e.seasonNumber == 2).toList()),
-          ],
-        );
+      provider: VideoMetadataProviderKind.tmdb,
+      kind: VideoMetadataMediaKind.tv,
+      title: 'Show',
+      seasons: <VideoMetadataSeason>[
+        VideoMetadataSeason(
+          seasonNumber: 1,
+          title: 'S1',
+          episodes: _show.where((e) => e.seasonNumber == 1).toList(),
+        ),
+        VideoMetadataSeason(
+          seasonNumber: 2,
+          title: 'S2',
+          episodes: _show.where((e) => e.seasonNumber == 2).toList(),
+        ),
+      ],
+    );
 
-    test(
-        'enrichSeasonsByTmdbEpisodeMatch fills MAL episodes by date/title '
+    test('enrichSeasonsByTmdbEpisodeMatch fills MAL episodes by date/title '
         'and skips sliced seasons and already-linked episodes', () {
       final VideoMetadataWork mal = VideoMetadataWork(
         provider: VideoMetadataProviderKind.mal,
@@ -202,15 +202,17 @@ void main() {
             title: 'cour',
             episodes: <VideoMetadataEpisode>[
               VideoMetadataEpisode(
-                  seasonNumber: 3,
-                  episodeNumber: 1,
-                  title: 'Return',
-                  airDate: '2025-07-06'),
+                seasonNumber: 3,
+                episodeNumber: 1,
+                title: 'Return',
+                airDate: '2025-07-06',
+              ),
               VideoMetadataEpisode(
-                  seasonNumber: 3,
-                  episodeNumber: 2,
-                  title: '災厄',
-                  airDate: '2025-07-13'),
+                seasonNumber: 3,
+                episodeNumber: 2,
+                title: '災厄',
+                airDate: '2025-07-13',
+              ),
             ],
           ),
           VideoMetadataSeason(
@@ -218,10 +220,11 @@ void main() {
             title: 'sliced',
             episodes: <VideoMetadataEpisode>[
               VideoMetadataEpisode(
-                  seasonNumber: 4,
-                  episodeNumber: 1,
-                  title: 'Dawn',
-                  airDate: '2025-07-27'),
+                seasonNumber: 4,
+                episodeNumber: 1,
+                title: 'Dawn',
+                airDate: '2025-07-27',
+              ),
             ],
           ),
         ],
@@ -237,18 +240,23 @@ void main() {
       expect(cour.episodes[1].title, '災厄', reason: 'MAL 标题独占，TMDB 只补空');
       expect(outcome.ratings[(3, 1)], TmdbEpisodeMatchRating.dateAndTitle);
       expect(outcome.ratings[(3, 2)], TmdbEpisodeMatchRating.date);
-      expect(outcome.work.seasons[1].episodes.single.ids, isEmpty,
-          reason: '切片季不参与');
+      expect(
+        outcome.work.seasons[1].episodes.single.ids,
+        isEmpty,
+        reason: '切片季不参与',
+      );
       // 再跑一遍：已带 TMDB id 的集不再匹配，结果不变。
       expect(
-        enrichSeasonsByTmdbEpisodeMatch(outcome.work, tmdbWork(),
-            skipSeasons: <int>{4}).ratings,
+        enrichSeasonsByTmdbEpisodeMatch(
+          outcome.work,
+          tmdbWork(),
+          skipSeasons: <int>{4},
+        ).ratings,
         isEmpty,
       );
     });
 
-    test(
-        'fillEmptySeasonsFromEpisodeTitles lands verified episodes under the '
+    test('fillEmptySeasonsFromEpisodeTitles lands verified episodes under the '
         'AniDB episode number and leaves unverified ones out', () {
       final VideoMetadataWork mal = VideoMetadataWork(
         provider: VideoMetadataProviderKind.mal,
@@ -283,22 +291,25 @@ void main() {
       // 单 cour 卡片：Fribb 把它钉在 TMDB S2 从第 2 集起（offset 1），MAL 给了
       // 3 集但没有 TMDB id。
       VideoMetadataWork cour() => VideoMetadataWork(
-            provider: VideoMetadataProviderKind.mal,
-            kind: VideoMetadataMediaKind.tv,
-            title: 'Show 2nd cour',
-            seasons: <VideoMetadataSeason>[
-              VideoMetadataSeason(
-                seasonNumber: 1,
-                title: 'cour',
-                episodeCount: 3,
-                episodes: <VideoMetadataEpisode>[
-                  for (int n = 1; n <= 3; n++)
-                    VideoMetadataEpisode(
-                        seasonNumber: 1, episodeNumber: n, title: 'MAL $n'),
-                ],
-              ),
+        provider: VideoMetadataProviderKind.mal,
+        kind: VideoMetadataMediaKind.tv,
+        title: 'Show 2nd cour',
+        seasons: <VideoMetadataSeason>[
+          VideoMetadataSeason(
+            seasonNumber: 1,
+            title: 'cour',
+            episodeCount: 3,
+            episodes: <VideoMetadataEpisode>[
+              for (int n = 1; n <= 3; n++)
+                VideoMetadataEpisode(
+                  seasonNumber: 1,
+                  episodeNumber: n,
+                  title: 'MAL $n',
+                ),
             ],
-          );
+          ),
+        ],
+      );
       const Map<int, TmdbSeasonSlice> slices = <int, TmdbSeasonSlice>{
         1: (tmdbSeason: 2, offset: 1),
       };
@@ -343,8 +354,12 @@ void main() {
               title: 'cour',
               episodes: <VideoMetadataEpisode>[
                 // 切片阶段已把 TMDB S2E3 重编成卡片 (5, 9)。
-                _tmdb(2, 3, 'Ashes', '2025-07-20')
-                    .copyWith(seasonNumber: 5, episodeNumber: 9),
+                _tmdb(
+                  2,
+                  3,
+                  'Ashes',
+                  '2025-07-20',
+                ).copyWith(seasonNumber: 5, episodeNumber: 9),
               ],
             ),
           ],
@@ -352,18 +367,21 @@ void main() {
         final AnidbEpisodeLinkOutcome outcome = linkAnidbEpisodesToTmdb(
           primary,
           tmdbWork(),
-          <TmdbEpisodeMatchSource>[_src(3, <String>['Ashes'], '2025-07-20')],
+          <TmdbEpisodeMatchSource>[
+            _src(3, <String>['Ashes'], '2025-07-20'),
+          ],
         );
         expect(outcome.links[3]?.cardKey, (5, 9));
-        expect(identical(outcome.work, primary), isTrue,
-            reason: '没有新增分集，作品原样');
+        expect(identical(outcome.work, primary), isTrue, reason: '没有新增分集，作品原样');
       });
 
       test('TMDB-primary works use the TMDB (season, episode) directly', () {
         final AnidbEpisodeLinkOutcome outcome = linkAnidbEpisodesToTmdb(
           tmdbWork(),
           null,
-          <TmdbEpisodeMatchSource>[_src(4, <String>['Dawn'], '2025-07-27')],
+          <TmdbEpisodeMatchSource>[
+            _src(4, <String>['Dawn'], '2025-07-27'),
+          ],
         );
         expect(outcome.links[4]?.cardKey, (2, 4));
         expect(outcome.links[4]?.rating, TmdbEpisodeMatchRating.dateAndTitle);
@@ -375,11 +393,16 @@ void main() {
         final AnidbEpisodeLinkOutcome direct = linkAnidbEpisodesToTmdb(
           tmdbWork(),
           null,
-          <TmdbEpisodeMatchSource>[_src(4, <String>['Dawn'], '2025-07-27')],
+          <TmdbEpisodeMatchSource>[
+            _src(4, <String>['Dawn'], '2025-07-27'),
+          ],
           reservedCardKeys: <(int, int)>{(2, 4)},
         );
-        expect(direct.links[4]?.cardKey, isNot((2, 4)),
-            reason: 'S2E4 已被用户钉给别的文件');
+        expect(
+          direct.links[4]?.cardKey,
+          isNot((2, 4)),
+          reason: 'S2E4 已被用户钉给别的文件',
+        );
         // 切片形态（卡片键经映射表换算）同样按卡片键剔除：S2E2 → cour (1, 1)。
         final AnidbEpisodeLinkOutcome sliced = linkAnidbEpisodesToTmdb(
           cour(),
@@ -393,72 +416,88 @@ void main() {
         expect(sliced.links[1]?.cardKey, isNot((1, 1)));
       });
 
-      test('no slice for the matched TMDB season → link without a card key',
-          () {
-        final AnidbEpisodeLinkOutcome outcome = linkAnidbEpisodesToTmdb(
-          cour(),
-          tmdbWork(),
-          <TmdbEpisodeMatchSource>[
-            _src(1, <String>['The Beginning'], '2024-01-07'),
-          ],
-          slices: slices,
-        );
-        final AnidbTmdbEpisodeLink link = outcome.links[1]!;
-        expect(link.tmdbEpisode.seasonNumber, 1);
-        expect(link.cardKey, isNull, reason: '切片只覆盖 TMDB S2');
-        expect(outcome.work.seasons.single.episodes.length, 3,
-            reason: '落不下来的链接不补集');
-      });
-
-      test('an episode beyond the known cour episode count is not forced in',
-          () {
-        // AniDB 第 4 集对上 TMDB S2E4 → cour 第 3 集？cour 只有 3 集且 S2E4 −
-        // offset 1 = 3 落得进；换成 offset 0 的切片就越界。
-        final AnidbEpisodeLinkOutcome outcome = linkAnidbEpisodesToTmdb(
-          cour(),
-          tmdbWork(),
-          <TmdbEpisodeMatchSource>[_src(4, <String>['Dawn'], '2025-07-27')],
-          slices: const <int, TmdbSeasonSlice>{1: (tmdbSeason: 2, offset: 0)},
-        );
-        expect(outcome.links[4]?.cardKey, isNull,
-            reason: 'S2E4 − 0 = 4 > episodeCount 3');
-      });
-
-      test('specials land on card season 0, created when the card lacks it',
-          () {
-        final AnidbEpisodeLinkOutcome outcome = linkAnidbEpisodesToTmdb(
-          cour(),
-          VideoMetadataWork(
-            provider: VideoMetadataProviderKind.tmdb,
-            kind: VideoMetadataMediaKind.tv,
-            title: 'Show',
-            seasons: <VideoMetadataSeason>[
-              VideoMetadataSeason(
-                  seasonNumber: 0,
-                  title: 'Specials',
-                  episodes: _show.where((e) => e.seasonNumber == 0).toList()),
-              ...tmdbWork().seasons,
+      test(
+        'no slice for the matched TMDB season → link without a card key',
+        () {
+          final AnidbEpisodeLinkOutcome outcome = linkAnidbEpisodesToTmdb(
+            cour(),
+            tmdbWork(),
+            <TmdbEpisodeMatchSource>[
+              _src(1, <String>['The Beginning'], '2024-01-07'),
             ],
-          ),
-          const <TmdbEpisodeMatchSource>[],
-          specialSources: <TmdbEpisodeMatchSource>[
-            _src(1, <String>['Recap Special'], '2024-06-01'),
-          ],
-          slices: slices,
-        );
-        expect(outcome.links, isEmpty);
-        expect(outcome.specialLinks[1]?.cardKey, (0, 1));
-        expect(outcome.specialLinks[1]?.rating,
-            TmdbEpisodeMatchRating.dateAndTitle);
-        final VideoMetadataSeason zero = outcome.work.seasons.first;
-        expect(zero.seasonNumber, 0, reason: '卡片原本没有第 0 季，补一季');
-        expect(zero.title, 'Specials');
-        expect(zero.episodes.single.title, 'Recap Special');
-        expect(outcome.work.seasons.map((s) => s.seasonNumber), <int>[0, 1]);
-      });
+            slices: slices,
+          );
+          final AnidbTmdbEpisodeLink link = outcome.links[1]!;
+          expect(link.tmdbEpisode.seasonNumber, 1);
+          expect(link.cardKey, isNull, reason: '切片只覆盖 TMDB S2');
+          expect(
+            outcome.work.seasons.single.episodes.length,
+            3,
+            reason: '落不下来的链接不补集',
+          );
+        },
+      );
 
       test(
-          'first-available links the next unclaimed episode of the locked '
+        'an episode beyond the known cour episode count is not forced in',
+        () {
+          // AniDB 第 4 集对上 TMDB S2E4 → cour 第 3 集？cour 只有 3 集且 S2E4 −
+          // offset 1 = 3 落得进；换成 offset 0 的切片就越界。
+          final AnidbEpisodeLinkOutcome outcome = linkAnidbEpisodesToTmdb(
+            cour(),
+            tmdbWork(),
+            <TmdbEpisodeMatchSource>[
+              _src(4, <String>['Dawn'], '2025-07-27'),
+            ],
+            slices: const <int, TmdbSeasonSlice>{1: (tmdbSeason: 2, offset: 0)},
+          );
+          expect(
+            outcome.links[4]?.cardKey,
+            isNull,
+            reason: 'S2E4 − 0 = 4 > episodeCount 3',
+          );
+        },
+      );
+
+      test(
+        'specials land on card season 0, created when the card lacks it',
+        () {
+          final AnidbEpisodeLinkOutcome outcome = linkAnidbEpisodesToTmdb(
+            cour(),
+            VideoMetadataWork(
+              provider: VideoMetadataProviderKind.tmdb,
+              kind: VideoMetadataMediaKind.tv,
+              title: 'Show',
+              seasons: <VideoMetadataSeason>[
+                VideoMetadataSeason(
+                  seasonNumber: 0,
+                  title: 'Specials',
+                  episodes: _show.where((e) => e.seasonNumber == 0).toList(),
+                ),
+                ...tmdbWork().seasons,
+              ],
+            ),
+            const <TmdbEpisodeMatchSource>[],
+            specialSources: <TmdbEpisodeMatchSource>[
+              _src(1, <String>['Recap Special'], '2024-06-01'),
+            ],
+            slices: slices,
+          );
+          expect(outcome.links, isEmpty);
+          expect(outcome.specialLinks[1]?.cardKey, (0, 1));
+          expect(
+            outcome.specialLinks[1]?.rating,
+            TmdbEpisodeMatchRating.dateAndTitle,
+          );
+          final VideoMetadataSeason zero = outcome.work.seasons.first;
+          expect(zero.seasonNumber, 0, reason: '卡片原本没有第 0 季，补一季');
+          expect(zero.title, 'Specials');
+          expect(zero.episodes.single.title, 'Recap Special');
+          expect(outcome.work.seasons.map((s) => s.seasonNumber), <int>[0, 1]);
+        },
+      );
+
+      test('first-available links the next unclaimed episode of the locked '
           'season and keeps the rating (Shoko fourth pass)', () {
         final AnidbEpisodeLinkOutcome outcome = linkAnidbEpisodesToTmdb(
           cour(),
@@ -473,8 +512,11 @@ void main() {
         final AnidbTmdbEpisodeLink guessed = outcome.links[2]!;
         expect(guessed.rating, TmdbEpisodeMatchRating.firstAvailable);
         expect(guessed.tmdbEpisode.seasonNumber, 2);
-        expect(guessed.tmdbEpisode.episodeNumber, 3,
-            reason: 'S2E2 已被第 1 集占，顺序兜底落到锁定季里下一条空位');
+        expect(
+          guessed.tmdbEpisode.episodeNumber,
+          3,
+          reason: 'S2E2 已被第 1 集占，顺序兜底落到锁定季里下一条空位',
+        );
         expect(guessed.cardKey, (1, 2));
       });
     });

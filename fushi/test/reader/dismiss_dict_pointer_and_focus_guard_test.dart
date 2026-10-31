@@ -14,8 +14,7 @@ void main() {
 
   late String pageSrc;
   setUpAll(() {
-    final File f =
-        File('lib/src/pages/implementations/reader_fushi_page.dart');
+    final File f = File('lib/src/pages/implementations/reader_fushi_page.dart');
     expect(f.existsSync(), isTrue, reason: '主壳文件不存在');
     pageSrc = f.readAsStringSync().replaceAll('\r\n', '\n');
   });
@@ -59,40 +58,68 @@ void main() {
     // 入口，除这一个（加 seek-to-sentence）之外**绑什么都没反应**。现在改为断言它必须
     // 走通用解析 + 通用执行体，并**禁止**再出现硬编码动作名。
     test('非位置型按钮走通用解析 + 通用执行体，不得硬编码单个动作', () {
-      expect(seekBody.contains('resolveMouseBindingActionForButton('), isTrue,
-          reason: '必须按 scope 阶梯通用解析，而不是只判某一个动作');
-      expect(seekBody.contains('_executeShortcutAction('), isTrue,
-          reason: '必须汇进与键盘/手柄同一个执行体');
-      expect(seekBody.contains('ShortcutAction.readerDismissDict'), isFalse,
-          reason: '硬编码单个动作 = 回到「只有它能用、其余全是死项」的 BUG-2031 根因');
+      expect(
+        seekBody.contains('resolveMouseBindingActionForButton('),
+        isTrue,
+        reason: '必须按 scope 阶梯通用解析，而不是只判某一个动作',
+      );
+      expect(
+        seekBody.contains('_executeShortcutAction('),
+        isTrue,
+        reason: '必须汇进与键盘/手柄同一个执行体',
+      );
+      expect(
+        seekBody.contains('ShortcutAction.readerDismissDict'),
+        isFalse,
+        reason: '硬编码单个动作 = 回到「只有它能用、其余全是死项」的 BUG-2031 根因',
+      );
     });
 
     test('关词典语义仍在（弹窗可见才关整栈），只是搬进了通用执行体', () {
       // 语义没丢：readerDismissDict 的分支体必须仍然「仅弹窗可见时 clearDictionaryResult」。
-      final int c =
-          corpus.indexOf('case ShortcutAction.readerDismissDict:');
-      expect(c, greaterThanOrEqualTo(0),
-          reason: '通用执行体必须仍有 readerDismissDict 分支，否则鼠标键关不掉词典');
+      final int c = corpus.indexOf('case ShortcutAction.readerDismissDict:');
+      expect(
+        c,
+        greaterThanOrEqualTo(0),
+        reason: '通用执行体必须仍有 readerDismissDict 分支，否则鼠标键关不掉词典',
+      );
       final int nextCase = corpus.indexOf('case ShortcutAction.', c + 1);
-      final String branch =
-          corpus.substring(c, nextCase > c ? nextCase : corpus.length);
-      expect(branch.contains('isDictionaryShown'), isTrue,
-          reason: '仅在弹窗可见时关，无弹窗不消费');
-      expect(branch.contains('clearDictionaryResult()'), isTrue,
-          reason: '与键盘 Esc/readerDismissDict 同语义关整栈');
+      final String branch = corpus.substring(
+        c,
+        nextCase > c ? nextCase : corpus.length,
+      );
+      expect(
+        branch.contains('isDictionaryShown'),
+        isTrue,
+        reason: '仅在弹窗可见时关，无弹窗不消费',
+      );
+      expect(
+        branch.contains('clearDictionaryResult()'),
+        isTrue,
+        reason: '与键盘 Esc/readerDismissDict 同语义关整栈',
+      );
     });
 
     test('关词典判定独立于 _audiobookController（纯 EPUB 无有声书也能关）', () {
       // 结构性断言而不是「谁在前」：controller 门控必须**关在位置型动作分支里面**
       // （seek 才需要 controller），通用派发在分支之外，故纯 EPUB（controller 恒 null）
       // 也能走到关词典。原守卫用下标先后表达这件事，重构后已不适用。
-      expect(seekBranch.contains('_audiobookController == null'), isTrue,
-          reason: 'controller 门控属于 seek 分支自己的前提');
+      expect(
+        seekBranch.contains('_audiobookController == null'),
+        isTrue,
+        reason: 'controller 门控属于 seek 分支自己的前提',
+      );
       final String outside = seekBody.replaceFirst(seekBranch, '');
-      expect(outside.contains('_audiobookController'), isFalse,
-          reason: '通用派发路径一旦碰 controller，纯 EPUB 就再也关不掉词典');
-      expect(outside.contains('resolveMouseBindingActionForButton('), isTrue,
-          reason: '通用派发必须在 controller 门控之外');
+      expect(
+        outside.contains('_audiobookController'),
+        isFalse,
+        reason: '通用派发路径一旦碰 controller，纯 EPUB 就再也关不掉词典',
+      );
+      expect(
+        outside.contains('resolveMouseBindingActionForButton('),
+        isTrue,
+        reason: '通用派发必须在 controller 门控之外',
+      );
     });
 
     test('seek-to-sentence 旧路径保留（不回归中键点句）', () {
@@ -104,53 +131,76 @@ void main() {
     // 「弹窗可见」这半边由 barrier 的 onNonPrimaryButtonDown 承接，其落地判据是
     // dictionaryPopupForwardedActions。少了这条，Windows 上侧键关词典整条失效。
     test('弹窗可见那半边由转发动作覆盖（readerDismissDict 必须在转发集合里）', () {
-      final int start =
-          pageSrc.indexOf('get dictionaryPopupForwardedActions');
-      expect(start, greaterThanOrEqualTo(0),
-          reason: 'reader 必须声明转发动作集合');
+      final int start = pageSrc.indexOf('get dictionaryPopupForwardedActions');
+      expect(start, greaterThanOrEqualTo(0), reason: 'reader 必须声明转发动作集合');
       final int end = pageSrc.indexOf('};', start);
       final String body = pageSrc.substring(start, end);
-      expect(body.contains('ShortcutAction.readerDismissDict'), isTrue,
-          reason: '弹窗可见时按侧键关词典靠它；删掉 = BUG-1071 原症状复现');
-      expect(body.contains('ShortcutAction.globalBack'), isTrue,
-          reason: '「返回上一级」在弹窗持焦时也必须能关词典');
+      expect(
+        body.contains('ShortcutAction.readerDismissDict'),
+        isTrue,
+        reason: '弹窗可见时按侧键关词典靠它；删掉 = BUG-1071 原症状复现',
+      );
+      expect(
+        body.contains('ShortcutAction.globalBack'),
+        isTrue,
+        reason: '「返回上一级」在弹窗持焦时也必须能关词典',
+      );
     });
   });
 
   group('症② 键盘关词典可靠性：指针唤出弹窗后收回 Flutter 焦点', () {
     test('popupRendered 判据分支存在且门控正确（收回正文节点）', () {
-      final int start =
-          pageSrc.indexOf('bool _canOwnReaderFocus(FocusReclaimCause cause)');
+      final int start = pageSrc.indexOf(
+        'bool _canOwnReaderFocus(FocusReclaimCause cause)',
+      );
       expect(start, greaterThanOrEqualTo(0), reason: '应有统一焦点判据，含指针弹窗回收分支');
       final int end = pageSrc.indexOf('\n  }', start);
       final String body = pageSrc.substring(start, end);
-      expect(body.contains('FocusReclaimCause.popupRendered'), isTrue,
-          reason: '判据必须有 popupRendered 分支（指针唤出弹窗后收回焦点）');
-      expect(pageSrc.contains('node: _focusNode'), isTrue,
-          reason: '必须把焦点收回正文 _focusNode，否则 Esc 到不了 _handleKeyEvent');
+      expect(
+        body.contains('FocusReclaimCause.popupRendered'),
+        isTrue,
+        reason: '判据必须有 popupRendered 分支（指针唤出弹窗后收回焦点）',
+      );
+      expect(
+        pageSrc.contains('node: _focusNode'),
+        isTrue,
+        reason: '必须把焦点收回正文 _focusNode，否则 Esc 到不了 _handleKeyEvent',
+      );
       // 歌词态不动（自有焦点路径）；无弹窗 no-op。
       expect(body.contains('_lyricsMode'), isTrue, reason: '歌词态必须门控，不夺歌词焦点');
       expect(body.contains('isDictionaryShown'), isTrue, reason: '无弹窗时 no-op');
     });
 
     test('onDictionaryPopupRendered 仅在指针路径(CaretSurface.none)调回收 helper', () {
-      final int start =
-          pageSrc.indexOf('void onDictionaryPopupRendered(int index) {');
-      expect(start, greaterThanOrEqualTo(0),
-          reason: 'reader 必须覆写 onDictionaryPopupRendered 接入焦点回收');
+      final int start = pageSrc.indexOf(
+        'void onDictionaryPopupRendered(int index) {',
+      );
+      expect(
+        start,
+        greaterThanOrEqualTo(0),
+        reason: 'reader 必须覆写 onDictionaryPopupRendered 接入焦点回收',
+      );
       final int end = pageSrc.indexOf('\n  }', start);
       final String body = pageSrc.substring(start, end);
       // 光标/手柄唤出（surface != none）时 controller 会 transfer 光标、_focusNode 本就
       // 持焦，此处不介入以免与 transfer 竞争、不回归 BUG-136。
-      expect(body.contains('_caret.onDictionaryPopupRendered(index)'), isTrue,
-          reason: '既有光标 transfer 不得丢失');
-      expect(body.contains('_caretSurface == CaretSurface.none'), isTrue,
-          reason: '仅指针路径 reclaim（光标态交给 transfer）');
       expect(
-          body.contains(
-              '_focusOwnership.reclaim(FocusReclaimCause.popupRendered)'),
-          isTrue,
-          reason: '指针路径必须收回焦点，修复键盘关词典经常失效');
+        body.contains('_caret.onDictionaryPopupRendered(index)'),
+        isTrue,
+        reason: '既有光标 transfer 不得丢失',
+      );
+      expect(
+        body.contains('_caretSurface == CaretSurface.none'),
+        isTrue,
+        reason: '仅指针路径 reclaim（光标态交给 transfer）',
+      );
+      expect(
+        body.contains(
+          '_focusOwnership.reclaim(FocusReclaimCause.popupRendered)',
+        ),
+        isTrue,
+        reason: '指针路径必须收回焦点，修复键盘关词典经常失效',
+      );
     });
   });
 }

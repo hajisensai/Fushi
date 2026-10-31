@@ -68,8 +68,9 @@ void main() {
   /// 取仓库行副标题的完整文本：地址一行 + 可选的状态一行，按行用 `\n` 拼起来
   /// （副标题恒以仓库地址开头）。
   String storeSubtitle(WidgetTester tester) {
-    final Finder row =
-        find.byKey(const ValueKey<String>('mihon_store_$_kStoreUrl'));
+    final Finder row = find.byKey(
+      const ValueKey<String>('mihon_store_$_kStoreUrl'),
+    );
     expect(row, findsOneWidget, reason: '未找到仓库行');
     final List<String> lines = tester
         .widgetList<Text>(find.descendant(of: row, matching: find.byType(Text)))
@@ -107,8 +108,9 @@ void main() {
       expect(find.textContaining(t.mihon_store_zero_extensions), findsNothing);
     });
 
-    testWidgets('已有 lastError 时优先显示真实错误，不被零扩展提示顶掉',
-        (WidgetTester tester) async {
+    testWidgets('已有 lastError 时优先显示真实错误，不被零扩展提示顶掉', (
+      WidgetTester tester,
+    ) async {
       await database.upsertMangaExtensionStore(
         MangaExtensionStoresCompanion.insert(
           indexUrl: _kStoreUrl,
@@ -144,8 +146,9 @@ void main() {
       expect(storeSubtitle(tester), _kStoreUrl);
     });
 
-    testWidgets('刷新还在进行时不报零扩展——那是「还没拉到」不是「拉到了 0 条」',
-        (WidgetTester tester) async {
+    testWidgets('刷新还在进行时不报零扩展——那是「还没拉到」不是「拉到了 0 条」', (
+      WidgetTester tester,
+    ) async {
       // `available` 是纯内存字段、不落库，进程重启后恒为空；而 `stores` 一读 DB
       // 就 notify。判据不看 loading 的话，每个进程第一次进这页、在整个刷新窗口
       // 内都会给正常仓库挂上「地址可能指向了旧版索引」，把用户推去改一个没问题
@@ -176,8 +179,9 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text(t.mihon_store_edit), findsWidgets);
-      final EditableText field =
-          tester.widget<EditableText>(find.byType(EditableText).last);
+      final EditableText field = tester.widget<EditableText>(
+        find.byType(EditableText).last,
+      );
       expect(
         field.controller.text,
         _kStoreUrl,
@@ -192,8 +196,9 @@ void main() {
       await tester.tap(find.byIcon(FushiIcons.edit));
       await tester.pumpAndSettle();
 
-      final EditableText field =
-          tester.widget<EditableText>(find.byType(EditableText).last);
+      final EditableText field = tester.widget<EditableText>(
+        find.byType(EditableText).last,
+      );
       expect(
         field.keyboardType,
         TextInputType.url,
@@ -209,33 +214,34 @@ void main() {
       await tester.tap(find.byIcon(FushiIcons.link).first);
       await tester.pumpAndSettle();
 
-      final EditableText field =
-          tester.widget<EditableText>(find.byType(EditableText).last);
+      final EditableText field = tester.widget<EditableText>(
+        find.byType(EditableText).last,
+      );
       expect(field.keyboardType, TextInputType.url);
     });
   });
 }
 
 MihonAvailableExtension _extension() => const MihonAvailableExtension(
-      storeUrl: _kStoreUrl,
-      name: 'Sample extension',
-      packageName: 'org.example.sample',
-      apkUrl: 'https://repo.example/sample.apk',
-      iconUrl: '',
-      libVersion: '1.4',
-      extensionVersionCode: 1,
-      versionName: '1.0.0',
+  storeUrl: _kStoreUrl,
+  name: 'Sample extension',
+  packageName: 'org.example.sample',
+  apkUrl: 'https://repo.example/sample.apk',
+  iconUrl: '',
+  libVersion: '1.4',
+  extensionVersionCode: 1,
+  versionName: '1.0.0',
+  language: 'en',
+  contentWarning: 0,
+  sources: <MihonAvailableSource>[
+    MihonAvailableSource(
+      id: '1',
+      name: 'Sample source',
       language: 'en',
-      contentWarning: 0,
-      sources: <MihonAvailableSource>[
-        MihonAvailableSource(
-          id: '1',
-          name: 'Sample source',
-          language: 'en',
-          baseUrl: 'https://sample.example',
-        ),
-      ],
-    );
+      baseUrl: 'https://sample.example',
+    ),
+  ],
+);
 
 class _StubRuntime extends Fake implements MihonRuntime {
   @override

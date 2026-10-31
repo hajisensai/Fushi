@@ -8,13 +8,13 @@ import 'package:fushi/utils.dart';
 class SaveTagsEnhancement extends Enhancement {
   /// Initialise this enhancement with the hardset parameters.
   SaveTagsEnhancement()
-      : super(
-          uniqueKey: key,
-          label: 'Save Tags',
-          description: 'Persist the current text in the Tags field.',
-          icon: Icons.save_outlined,
-          field: TagsField.instance,
-        );
+    : super(
+        uniqueKey: key,
+        label: 'Save Tags',
+        description: 'Persist the current text in the Tags field.',
+        icon: Icons.save_outlined,
+        field: TagsField.instance,
+      );
 
   /// Used to identify this enhancement and to allow a constant value for the
   /// default mappings value of [AnkiMapping].
@@ -32,8 +32,10 @@ class SaveTagsEnhancement extends Enhancement {
     required CreatorModel creatorModel,
     required EnhancementTriggerCause cause,
   }) async {
-    String tags =
-        creatorModel.getFieldController(TagsField.instance).text.trim();
+    String tags = creatorModel
+        .getFieldController(TagsField.instance)
+        .text
+        .trim();
     appModel.setSavedTags(tags);
 
     FushiToast.show(

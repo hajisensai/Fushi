@@ -8,12 +8,12 @@ import 'package:fushi/utils.dart';
 class PopFromStashEnhancement extends Enhancement {
   /// Initialise this enhancement with the hardset parameters.
   PopFromStashEnhancement({required super.field})
-      : super(
-          uniqueKey: key,
-          label: 'Pop From Stash',
-          description: 'Quickly pop the latest item in the Stash.',
-          icon: Icons.bookmark_remove_outlined,
-        );
+    : super(
+        uniqueKey: key,
+        label: 'Pop From Stash',
+        description: 'Quickly pop the latest item in the Stash.',
+        icon: Icons.bookmark_remove_outlined,
+      );
 
   /// Used to identify this enhancement and to allow a constant value for the
   /// default mappings value of [AnkiMapping].

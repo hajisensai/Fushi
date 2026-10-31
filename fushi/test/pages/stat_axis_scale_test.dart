@@ -13,20 +13,26 @@ import 'package:fushi/src/pages/implementations/stat_charts.dart';
 void main() {
   /// 一条轴上出现的单位后缀集合（`0` 无单位，不计）。
   Set<String> unitsOf(StatAxisScale scale) => <String>{
-        for (final String label in scale.labels)
-          if (label != '0') label.replaceAll(RegExp(r'^[\d.]+'), ''),
-      };
+    for (final String label in scale.labels)
+      if (label != '0') label.replaceAll(RegExp(r'^[\d.]+'), ''),
+  };
 
   group('statDurationAxisScale', () {
     test('整条轴只有一个单位，且刻度全是整数（旧实现出 2.9h/43m 混排）', () {
       // 截图里三个 tab 的真实 max：2.9h / 3.4h / 1.4h。
       for (final int maxMs in <int>[10440000, 12240000, 5040000]) {
         final StatAxisScale scale = statDurationAxisScale(maxMs);
-        expect(unitsOf(scale).length, 1,
-            reason: 'maxMs=$maxMs 的轴混用了单位：${scale.labels}');
+        expect(
+          unitsOf(scale).length,
+          1,
+          reason: 'maxMs=$maxMs 的轴混用了单位：${scale.labels}',
+        );
         for (final String label in scale.labels) {
-          expect(label.contains('.'), isFalse,
-              reason: 'maxMs=$maxMs 的刻度出现小数：$label');
+          expect(
+            label.contains('.'),
+            isFalse,
+            reason: 'maxMs=$maxMs 的刻度出现小数：$label',
+          );
         }
       }
     });
@@ -48,8 +54,11 @@ void main() {
     test('标签不重复（BUG-892 的「…2h 2h」在新范式下结构上不可能出现）', () {
       for (final int maxMs in <int>[10200000, 5040000, 90000, 3600000]) {
         final StatAxisScale scale = statDurationAxisScale(maxMs);
-        expect(scale.labels.toSet().length, scale.labels.length,
-            reason: 'maxMs=$maxMs 出现重复标签：${scale.labels}');
+        expect(
+          scale.labels.toSet().length,
+          scale.labels.length,
+          reason: 'maxMs=$maxMs 出现重复标签：${scale.labels}',
+        );
       }
     });
 
@@ -76,8 +85,11 @@ void main() {
         expect(scale.max, greaterThan(0));
         final int step = scale.ticks[1];
         final String digits = step.toString().replaceAll(RegExp(r'0+$'), '');
-        expect(<String>['1', '2', '5'].contains(digits), isTrue,
-            reason: 'maxValue=$maxValue 的步长 $step 不是 1/2/5 × 10^n');
+        expect(
+          <String>['1', '2', '5'].contains(digits),
+          isTrue,
+          reason: 'maxValue=$maxValue 的步长 $step 不是 1/2/5 × 10^n',
+        );
         for (int i = 0; i < scale.ticks.length; i++) {
           expect(scale.ticks[i], step * i);
         }

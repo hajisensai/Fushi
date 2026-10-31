@@ -54,14 +54,14 @@ class MacUpdateHandoffRecord {
   final DateTime? lastPromptedAt;
 
   Map<String, dynamic> toJson() => <String, dynamic>{
-        'targetVersion': targetVersion,
-        'targetAppPath': targetAppPath,
-        'startedAt': startedAt.toUtc().toIso8601String(),
-        if (lastPromptedAppVersion != null)
-          'lastPromptedAppVersion': lastPromptedAppVersion,
-        if (lastPromptedAt != null)
-          'lastPromptedAt': lastPromptedAt!.toUtc().toIso8601String(),
-      };
+    'targetVersion': targetVersion,
+    'targetAppPath': targetAppPath,
+    'startedAt': startedAt.toUtc().toIso8601String(),
+    if (lastPromptedAppVersion != null)
+      'lastPromptedAppVersion': lastPromptedAppVersion,
+    if (lastPromptedAt != null)
+      'lastPromptedAt': lastPromptedAt!.toUtc().toIso8601String(),
+  };
 
   MacUpdateHandoffRecord copyWith({
     String? lastPromptedAppVersion,
@@ -99,7 +99,8 @@ abstract final class MacUpdateHandoff {
     // 的幂等守卫失效，用户每次启动都再弹一次「更新未完成」。换成不同目标版本 → 不
     // 保留（是一次全新更新尝试，失败理应重新提示）。
     final MacUpdateHandoffRecord? existing = await read(markerFile);
-    final bool sameTarget = existing != null &&
+    final bool sameTarget =
+        existing != null &&
         _isSameHandoffTarget(existing.targetVersion, targetVersion);
     await _write(
       markerFile,
@@ -107,8 +108,9 @@ abstract final class MacUpdateHandoff {
         targetVersion: targetVersion,
         targetAppPath: targetAppPath,
         startedAt: startedAt,
-        lastPromptedAppVersion:
-            sameTarget ? existing.lastPromptedAppVersion : null,
+        lastPromptedAppVersion: sameTarget
+            ? existing.lastPromptedAppVersion
+            : null,
         lastPromptedAt: sameTarget ? existing.lastPromptedAt : null,
       ),
     );
@@ -119,8 +121,9 @@ abstract final class MacUpdateHandoff {
     try {
       final Object? decoded = jsonDecode(await markerFile.readAsString());
       if (decoded is! Map<String, dynamic>) return null;
-      final MacUpdateHandoffRecord record =
-          MacUpdateHandoffRecord.fromJson(decoded);
+      final MacUpdateHandoffRecord record = MacUpdateHandoffRecord.fromJson(
+        decoded,
+      );
       if (record.targetVersion.isEmpty || record.targetAppPath.isEmpty) {
         return null;
       }
@@ -170,8 +173,10 @@ abstract final class MacUpdateHandoff {
     final MacUpdateHandoffRecord? record = await read(markerFile);
     if (record == null) return null;
     final _MacSwapResult? result = await _readResult(resultFile);
-    final bool installed =
-        _isVersionAtLeast(currentVersion, record.targetVersion);
+    final bool installed = _isVersionAtLeast(
+      currentVersion,
+      record.targetVersion,
+    );
 
     if (installed) {
       // 幂等守卫（镜像 Windows）：同一 app 版本已弹过成功提示就保持静默。仅靠删标记

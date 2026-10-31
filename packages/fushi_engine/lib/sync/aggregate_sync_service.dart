@@ -130,14 +130,15 @@ class AggregateSyncService {
   }) async {
     if (!shareStats && !shareWebHistory) return false;
     AggregateSnapshot scoped(AggregateSnapshot s) => s.select(
-          stats: shareStats,
-          favorites: shareStats,
-          webHistory: shareWebHistory,
-        );
+      stats: shareStats,
+      favorites: shareStats,
+      webHistory: shareWebHistory,
+    );
 
     // 1) Materialise local state.
-    final AggregateSnapshot localSnapshot =
-        scoped(await materializeLocalSnapshot());
+    final AggregateSnapshot localSnapshot = scoped(
+      await materializeLocalSnapshot(),
+    );
 
     // 2) Ensure the reserved namespace, list peer snapshots.
     final String ns = await store.ensureNamespace(kSyncAggregateNamespace);
@@ -168,14 +169,14 @@ class AggregateSyncService {
         // A single unreadable peer snapshot must not abort the sweep; skip it.
         continue;
       }
-      final AggregateSnapshot peer =
-          scoped(AggregateSnapshot.fromJson(peerJson));
+      final AggregateSnapshot peer = scoped(
+        AggregateSnapshot.fromJson(peerJson),
+      );
       merged = mergeSnapshots(merged, peer);
     }
-    await peerSnapshotCache?.retainOnly(
-      scope.id,
-      <String>{for (final AssetEntry e in peerEntries) e.name},
-    );
+    await peerSnapshotCache?.retainOnly(scope.id, <String>{
+      for (final AssetEntry e in peerEntries) e.name,
+    });
 
     // 4) Apply the merged result back locally (MAX / union writes; idempotent).
     //    合并结果与本地内容相等（[localDelta] 为 null）时整步跳过：mergeSnapshots
@@ -203,8 +204,9 @@ class AggregateSyncService {
     // 的数据。
     final Map<String, dynamic> payload = outgoing.toJson();
     final String hash = _stableHash(jsonEncode(payload));
-    final bool ownAssetPresent =
-        children.any((AssetEntry e) => !e.isFolder && e.name == ownAssetName);
+    final bool ownAssetPresent = children.any(
+      (AssetEntry e) => !e.isFolder && e.name == ownAssetName,
+    );
     if (ownAssetPresent &&
         hash == await _db.getPrefTyped<String>(_lastPushedHashKey, '')) {
       return false;
@@ -297,10 +299,10 @@ class AggregateSyncService {
     // 1) Materialise local state.
     final AggregateSnapshot localSnapshot = (await materializeLocalSnapshot())
         .select(
-      stats: shareStats,
-      favorites: shareFavorites,
-      webHistory: shareWebHistory,
-    );
+          stats: shareStats,
+          favorites: shareFavorites,
+          webHistory: shareWebHistory,
+        );
 
     // 2) Fetch the host's snapshot. null => old host without the endpoint:
     //    degrade to push-only (still share our state; skip the local fold).
@@ -309,8 +311,9 @@ class AggregateSyncService {
       // BUG-1572：即便这条退化路径推的是纯本地快照，也走同一道裁剪——本地
       // materialise 与墓碑之间没有强制不变量（例如收藏句 pref 与墓碑表分居两处），
       // 让「推出去的东西必过墓碑」在**每条**上行路径上都成立，而不是靠推理。
-      final AggregateSnapshot localOutgoing =
-          await filterTombstoned(localSnapshot);
+      final AggregateSnapshot localOutgoing = await filterTombstoned(
+        localSnapshot,
+      );
       if (localOutgoing.isEmpty) return; // Nothing to share, nothing to fold.
       await pushMerged(localOutgoing.toJson());
       return;
@@ -320,10 +323,10 @@ class AggregateSyncService {
     //    the cloud channel uses (single source of truth; commutative/idempotent).
     final AggregateSnapshot remote = AggregateSnapshot.fromJson(remoteJson)
         .select(
-      stats: shareStats,
-      favorites: shareFavorites,
-      webHistory: shareWebHistory,
-    );
+          stats: shareStats,
+          favorites: shareFavorites,
+          webHistory: shareWebHistory,
+        );
     final AggregateSnapshot merged = mergeSnapshots(localSnapshot, remote);
 
     // 4) Apply the merged result back locally (MAX / union writes; idempotent).
@@ -372,8 +375,9 @@ class AggregateSyncService {
 
   /// 快照一个家族逐条记录的 JSON 编码——[unorderedSnapshotFingerprint]（PUT 侧
   /// 跳过判据）与 [localDelta]（写回侧跳过判据）共用的**唯一**比较口径。
-  static List<String> _encodeItems(List<Object?> items) =>
-      <String>[for (final Object? item in items) jsonEncode(item)];
+  static List<String> _encodeItems(List<Object?> items) => <String>[
+    for (final Object? item in items) jsonEncode(item),
+  ];
 
   /// 写回时有跨行副作用、只能整族下发的收藏族（墓碑会删本地收藏词行、收藏句是
   /// pref 整表重写）：任一族有变化就四族一起按 [merged] 原样下发。
@@ -441,43 +445,61 @@ class AggregateSyncService {
     if (changed.isEmpty) return null;
 
     final bool favoritesChanged = changed.any(_favoriteFamilyKeys.contains);
-    final bool segmentsChanged = changed.contains('studySegments') ||
+    final bool segmentsChanged =
+        changed.contains('studySegments') ||
         changed.contains('studySegmentTombstones');
     // v128 浏览器历史 / 书签：与收藏同律，行或墓碑任一有变化就连墓碑整族下发
     // （[applyWebBrowserFamilies] 先落墓碑再按墓碑过滤并入，重放同值是 no-op）。
     // 漏掉这两族 = 合并结果里的历史 / 书签永远落不了地（delta 里恒为空）。
-    final bool webHistoryChanged = changed.contains('webHistory') ||
+    final bool webHistoryChanged =
+        changed.contains('webHistory') ||
         changed.contains('webHistoryTombstones');
-    final bool webBookmarksChanged = changed.contains('webBookmarks') ||
+    final bool webBookmarksChanged =
+        changed.contains('webBookmarks') ||
         changed.contains('webBookmarkTombstones');
-    List<T> added<T>(String key, List<T> all) =>
-        <T>[for (final int i in addedIndexes[key]!) all[i]];
+    List<T> added<T>(String key, List<T> all) => <T>[
+      for (final int i in addedIndexes[key]!) all[i],
+    ];
     List<T> whole<T>(bool include, List<T> all) => include ? all : <T>[];
     return AggregateSnapshot(
       readingStats: added('readingStats', merged.readingStats),
       videoStats: added('videoStats', merged.videoStats),
       readingHourly: added('readingHourly', merged.readingHourly),
-      readingHourlyByFormat:
-          added('readingHourlyByFormat', merged.readingHourlyByFormat),
+      readingHourlyByFormat: added(
+        'readingHourlyByFormat',
+        merged.readingHourlyByFormat,
+      ),
       videoHourly: added('videoHourly', merged.videoHourly),
       miningStats: added('miningStats', merged.miningStats),
-      lookupMiningCounters:
-          added('lookupMiningCounters', merged.lookupMiningCounters),
+      lookupMiningCounters: added(
+        'lookupMiningCounters',
+        merged.lookupMiningCounters,
+      ),
       studySegments: added('studySegments', merged.studySegments),
-      studySegmentTombstones:
-          whole(segmentsChanged, merged.studySegmentTombstones),
+      studySegmentTombstones: whole(
+        segmentsChanged,
+        merged.studySegmentTombstones,
+      ),
       favoriteWords: whole(favoritesChanged, merged.favoriteWords),
       favoriteSentences: whole(favoritesChanged, merged.favoriteSentences),
-      favoriteWordTombstones:
-          whole(favoritesChanged, merged.favoriteWordTombstones),
-      favoriteSentenceTombstones:
-          whole(favoritesChanged, merged.favoriteSentenceTombstones),
+      favoriteWordTombstones: whole(
+        favoritesChanged,
+        merged.favoriteWordTombstones,
+      ),
+      favoriteSentenceTombstones: whole(
+        favoritesChanged,
+        merged.favoriteSentenceTombstones,
+      ),
       webHistory: whole(webHistoryChanged, merged.webHistory),
-      webHistoryTombstones:
-          whole(webHistoryChanged, merged.webHistoryTombstones),
+      webHistoryTombstones: whole(
+        webHistoryChanged,
+        merged.webHistoryTombstones,
+      ),
       webBookmarks: whole(webBookmarksChanged, merged.webBookmarks),
-      webBookmarkTombstones:
-          whole(webBookmarksChanged, merged.webBookmarkTombstones),
+      webBookmarkTombstones: whole(
+        webBookmarksChanged,
+        merged.webBookmarkTombstones,
+      ),
     );
   }
 
@@ -496,16 +518,18 @@ class AggregateSyncService {
   /// 无任何墓碑时返回入参本身（零拷贝，且 `identical` 仍成立）。
   @visibleForTesting
   Future<AggregateSnapshot> filterTombstoned(AggregateSnapshot snapshot) async {
-    final Set<(String, String)> statTombstoned =
-        await _db.getStatisticsTombstoneKeys();
+    final Set<(String, String)> statTombstoned = await _db
+        .getStatisticsTombstoneKeys();
     final Map<String, int> favWordTombstoned = <String, int>{
       for (final SyncDeletionTombstoneRow row
           in await _db.getSyncDeletionTombstonesOfType('favoriteword'))
         row.itemKey: row.deletedAt,
     };
     final Map<String, int> favSentenceTombstoned = <String, int>{
-      for (final SyncDeletionTombstoneRow row in await _db
-          .getSyncDeletionTombstonesOfType(kFavoriteSentenceTombstoneType))
+      for (final SyncDeletionTombstoneRow row
+          in await _db.getSyncDeletionTombstonesOfType(
+            kFavoriteSentenceTombstoneType,
+          ))
         row.itemKey: row.deletedAt,
     };
     // v92：本地段墓碑压制的段（`startAt < deletedAt`，BUG-2214）不上行（merged 是
@@ -513,18 +537,21 @@ class AggregateSyncService {
     // 墓碑本身透传，删除才能传到对端。
     // BUG-3644：别名形态的碑同样压制（对端名字的旧段不再经本机回传）。
     final Map<int, String> profileNameById = await _profileNameById();
-    final Map<int, Set<String>> aliases =
-        await _db.getStudyProfileNameAliases();
+    final Map<int, Set<String>> aliases = await _db
+        .getStudyProfileNameAliases();
     final Map<String, int> segmentTombstoned = <String, int>{
       for (final StudySegmentTombstoneRow t
           in await _db.getStudySegmentTombstones())
-        for (final StudyTombstoneRecord r
-            in _tombstoneRecordsOf(t, profileNameById, aliases))
+        for (final StudyTombstoneRecord r in _tombstoneRecordsOf(
+          t,
+          profileNameById,
+          aliases,
+        ))
           r.key: t.deletedAt,
     };
     // v128 浏览器历史 / 书签：按本机 `webhistory` / `webbookmark` 墓碑裁剪（与 apply 同律）。
     final ({List<WebHistoryRecord> history, List<WebBookmarkRecord> bookmarks})
-        web = await filterWebBrowserTombstoned(
+    web = await filterWebBrowserTombstoned(
       _db,
       history: snapshot.webHistory,
       bookmarks: snapshot.webBookmarks,
@@ -555,8 +582,10 @@ class AggregateSyncService {
       ],
       videoStats: <VideoStatRecord>[
         for (final VideoStatRecord r in snapshot.videoStats)
-          if (!statTombstoned
-              .contains((r.title, FushiDatabase.statSourceVideo)))
+          if (!statTombstoned.contains((
+            r.title,
+            FushiDatabase.statSourceVideo,
+          )))
             r,
       ],
       readingHourly: snapshot.readingHourly,
@@ -572,7 +601,10 @@ class AggregateSyncService {
       favoriteWords: <FavoriteWordRecord>[
         for (final FavoriteWordRecord r in snapshot.favoriteWords)
           if ((favWordTombstoned[FushiDatabase.favoriteWordItemKey(
-                      r.expression, r.reading, r.sourceType)] ??
+                    r.expression,
+                    r.reading,
+                    r.sourceType,
+                  )] ??
                   0) <=
               r.createdAt)
             r,
@@ -604,29 +636,38 @@ class AggregateSyncService {
     // 收藏 + 删除墓碑的并集与仲裁（互联完整支持批次：取消收藏跨端传播）。
     final ({
       List<FavoriteWordRecord> favorites,
-      List<AggregateTombstoneRecord> tombstones
-    }) wordsArb = _arbitrateFavorites<FavoriteWordRecord>(
+      List<AggregateTombstoneRecord> tombstones,
+    })
+    wordsArb = _arbitrateFavorites<FavoriteWordRecord>(
       union: AggregateMergeService.mergeUniqueByKey<FavoriteWordRecord>(
         local.favoriteWords,
         remote.favoriteWords,
         (FavoriteWordRecord r) => r.uniqueKey,
       ),
       tombstones: _mergeTombstoneMap(
-          local.favoriteWordTombstones, remote.favoriteWordTombstones),
+        local.favoriteWordTombstones,
+        remote.favoriteWordTombstones,
+      ),
       keyOf: (FavoriteWordRecord r) => FushiDatabase.favoriteWordItemKey(
-          r.expression, r.reading, r.sourceType),
+        r.expression,
+        r.reading,
+        r.sourceType,
+      ),
       createdAtOf: (FavoriteWordRecord r) => r.createdAt,
     );
     final ({
       List<FavoriteSentence> favorites,
-      List<AggregateTombstoneRecord> tombstones
-    }) sentencesArb = _arbitrateFavorites<FavoriteSentence>(
+      List<AggregateTombstoneRecord> tombstones,
+    })
+    sentencesArb = _arbitrateFavorites<FavoriteSentence>(
       union: AggregateMergeService.mergeFavoriteSentences(
         local.favoriteSentences,
         remote.favoriteSentences,
       ),
       tombstones: _mergeTombstoneMap(
-          local.favoriteSentenceTombstones, remote.favoriteSentenceTombstones),
+        local.favoriteSentenceTombstones,
+        remote.favoriteSentenceTombstones,
+      ),
       keyOf: FavoriteSentenceRepository.itemKeyOf,
       createdAtOf: (FavoriteSentence s) => s.createdAt.millisecondsSinceEpoch,
     );
@@ -635,19 +676,24 @@ class AggregateSyncService {
     // （BUG-2221：旧端混进来的也不再随 merged 上行）。
     final ({
       List<StudySegmentRecord> segments,
-      List<StudyTombstoneRecord> tombstones
-    }) segmentsArb = AggregateMergeService.arbitrateStudySegments(
+      List<StudyTombstoneRecord> tombstones,
+    })
+    segmentsArb = AggregateMergeService.arbitrateStudySegments(
       union: AggregateMergeService.mergeStudySegments(
-              local.studySegments, remote.studySegments)
-          .values,
+        local.studySegments,
+        remote.studySegments,
+      ).values,
       tombstones: AggregateMergeService.mergeStudyTombstones(
-          local.studySegmentTombstones, remote.studySegmentTombstones),
+        local.studySegmentTombstones,
+        remote.studySegmentTombstones,
+      ),
     );
     // v128 浏览器历史（url 并集）/ 书签（uid LWW）+ 各自墓碑仲裁。
     final ({
       List<WebHistoryRecord> entries,
-      List<AggregateTombstoneRecord> tombstones
-    }) historyArb = arbitrateWebHistory(
+      List<AggregateTombstoneRecord> tombstones,
+    })
+    historyArb = arbitrateWebHistory(
       union: mergeWebHistory(local.webHistory, remote.webHistory),
       tombstones: webTombstoneMap(<AggregateTombstoneRecord>[
         ...local.webHistoryTombstones,
@@ -656,8 +702,9 @@ class AggregateSyncService {
     );
     final ({
       List<WebBookmarkRecord> bookmarks,
-      List<AggregateTombstoneRecord> tombstones
-    }) bookmarksArb = arbitrateWebBookmarks(
+      List<AggregateTombstoneRecord> tombstones,
+    })
+    bookmarksArb = arbitrateWebBookmarks(
       union: mergeWebBookmarks(local.webBookmarks, remote.webBookmarks),
       tombstones: webTombstoneMap(<AggregateTombstoneRecord>[
         ...local.webBookmarkTombstones,
@@ -699,7 +746,7 @@ class AggregateSyncService {
     final Map<String, int> out = <String, int>{};
     for (final AggregateTombstoneRecord t in <AggregateTombstoneRecord>[
       ...a,
-      ...b
+      ...b,
     ]) {
       final int prev = out[t.itemKey] ?? 0;
       if (t.deletedAt > prev) out[t.itemKey] = t.deletedAt;
@@ -711,7 +758,7 @@ class AggregateSyncService {
   /// - 墓碑 `deletedAt` **严格大于**收藏 `createdAt` → 收藏出局（删除跨端传播）；
   /// - 否则收藏保留、同键墓碑出局（重收藏复活，且防「删除僵尸」反向把新收藏删掉）。
   static ({List<T> favorites, List<AggregateTombstoneRecord> tombstones})
-      _arbitrateFavorites<T>({
+  _arbitrateFavorites<T>({
     required List<T> union,
     required Map<String, int> tombstones,
     required String Function(T item) keyOf,
@@ -825,8 +872,10 @@ class AggregateSyncService {
       for (final HourlyRecord r in local) r.key: r,
       for (final HourlyRecord r in remote) r.key: r,
     };
-    final Map<String, int> mergedMap =
-        AggregateMergeService.mergeMaxCounters(localMap, remoteMap);
+    final Map<String, int> mergedMap = AggregateMergeService.mergeMaxCounters(
+      localMap,
+      remoteMap,
+    );
     return <HourlyRecord>[
       for (final MapEntry<String, int> e in mergedMap.entries)
         HourlyRecord(
@@ -873,8 +922,10 @@ class AggregateSyncService {
       for (final HourlyFormatRecord r in local) r.key: r,
       for (final HourlyFormatRecord r in remote) r.key: r,
     };
-    final Map<String, int> mergedMap =
-        AggregateMergeService.mergeMaxCounters(localMap, remoteMap);
+    final Map<String, int> mergedMap = AggregateMergeService.mergeMaxCounters(
+      localMap,
+      remoteMap,
+    );
     return <HourlyFormatRecord>[
       for (final MapEntry<String, int> e in mergedMap.entries)
         HourlyFormatRecord(
@@ -900,8 +951,10 @@ class AggregateSyncService {
       for (final MiningRecord r in local) r.key: r,
       for (final MiningRecord r in remote) r.key: r,
     };
-    final Map<String, int> mergedMap =
-        AggregateMergeService.mergeMaxCounters(localMap, remoteMap);
+    final Map<String, int> mergedMap = AggregateMergeService.mergeMaxCounters(
+      localMap,
+      remoteMap,
+    );
     return <MiningRecord>[
       for (final MapEntry<String, int> e in mergedMap.entries)
         MiningRecord(
@@ -988,7 +1041,8 @@ class AggregateSyncService {
   /// 就是不相交），重叠时汇总偏高并经 MAX 固化。取 max 则在不相交时把真实观看
   /// 砍半。两个方向都有错法，沿用「不丢数」侧，与 counters fold 一致。
   static List<VideoStatRecord> _foldVideoStatRows(
-      List<VideoWatchStatisticRow> rows) {
+    List<VideoWatchStatisticRow> rows,
+  ) {
     final Map<String, VideoStatRecord> byWireKey = <String, VideoStatRecord>{};
     for (final VideoWatchStatisticRow r in rows) {
       final VideoStatRecord record = VideoStatRecord(
@@ -1026,7 +1080,8 @@ class AggregateSyncService {
   /// 整个 title 日总量归因到一个视频——在对端重新制造 v76 要根治的互串，且与本地
   /// 塌缩路径（setLookupCount 多行分支如实写 ''）自相矛盾（review-1）。
   static List<LookupMiningRecord> _foldLookupMiningRows(
-      List<LookupMiningCounterRow> rows) {
+    List<LookupMiningCounterRow> rows,
+  ) {
     final Map<String, LookupMiningRecord> byWireKey =
         <String, LookupMiningRecord>{};
     for (final LookupMiningCounterRow r in rows) {
@@ -1059,35 +1114,37 @@ class AggregateSyncService {
   /// lookup/mine per-book counters + favorite words + favorite-sentence pref
   /// blob) into a snapshot. Pure read, no mutation.
   Future<AggregateSnapshot> materializeLocalSnapshot() async {
-    final List<ReadingStatisticRow> reading =
-        await _db.getAllReadingStatistics();
-    final List<VideoWatchStatisticRow> video =
-        await _db.getAllVideoWatchStatistics();
-    final List<ReadingHourlyLogRow> readingHourly =
-        await _db.getAllReadingHourlyLogs();
-    final List<VideoHourlyLogRow> videoHourly =
-        await _db.getAllVideoHourlyLogs();
+    final List<ReadingStatisticRow> reading = await _db
+        .getAllReadingStatistics();
+    final List<VideoWatchStatisticRow> video = await _db
+        .getAllVideoWatchStatistics();
+    final List<ReadingHourlyLogRow> readingHourly = await _db
+        .getAllReadingHourlyLogs();
+    final List<VideoHourlyLogRow> videoHourly = await _db
+        .getAllVideoHourlyLogs();
     final List<MiningStatisticRow> mining = await _db.getAllMiningStatistics();
-    final List<LookupMiningCounterRow> lookupMining =
-        await _db.getAllLookupMiningCounters();
+    final List<LookupMiningCounterRow> lookupMining = await _db
+        .getAllLookupMiningCounters();
     final List<FavoriteWordRow> favWords = await _db.getAllFavoriteWords();
     final List<FavoriteSentence> favSentences = await _readFavoriteSentences();
     // v92 wire v2：事实段与按身份墓碑全量上行（uid 幂等，对端按 LWW 并集）。
     // BUG-2221：游戏段 / 碑不出本机（[AggregateMergeService.isStudyKindSyncable]）。
     // v105：全部 Profile 的段都上行，每条带自己 Profile 的**名字**。
-    final List<StudySegmentRow> segments =
-        await _db.getStudySegments(allProfiles: true);
-    final List<StudySegmentTombstoneRow> segmentTombstones =
-        await _db.getStudySegmentTombstones();
+    final List<StudySegmentRow> segments = await _db.getStudySegments(
+      allProfiles: true,
+    );
+    final List<StudySegmentTombstoneRow> segmentTombstones = await _db
+        .getStudySegmentTombstones();
     final Map<int, String> profileNameById = await _profileNameById();
-    final Map<int, Set<String>> aliases =
-        await _db.getStudyProfileNameAliases();
+    final Map<int, Set<String>> aliases = await _db
+        .getStudyProfileNameAliases();
     final ({
       List<WebHistoryRecord> history,
       List<WebBookmarkRecord> bookmarks,
       List<AggregateTombstoneRecord> historyTombstones,
       List<AggregateTombstoneRecord> bookmarkTombstones,
-    }) web = await materializeWebBrowserFamilies(_db);
+    })
+    web = await materializeWebBrowserFamilies(_db);
 
     return AggregateSnapshot(
       webHistory: web.history,
@@ -1167,61 +1224,66 @@ class AggregateSyncService {
       favoriteWordTombstones: <AggregateTombstoneRecord>[
         for (final SyncDeletionTombstoneRow row
             in await _db.getSyncDeletionTombstonesOfType(
-                SyncTombstoneKind.favoriteword.dbValue))
+              SyncTombstoneKind.favoriteword.dbValue,
+            ))
           AggregateTombstoneRecord(
-              itemKey: row.itemKey, deletedAt: row.deletedAt),
+            itemKey: row.itemKey,
+            deletedAt: row.deletedAt,
+          ),
       ],
       favoriteSentenceTombstones: <AggregateTombstoneRecord>[
-        for (final SyncDeletionTombstoneRow row in await _db
-            .getSyncDeletionTombstonesOfType(kFavoriteSentenceTombstoneType))
+        for (final SyncDeletionTombstoneRow row
+            in await _db.getSyncDeletionTombstonesOfType(
+              kFavoriteSentenceTombstoneType,
+            ))
           AggregateTombstoneRecord(
-              itemKey: row.itemKey, deletedAt: row.deletedAt),
+            itemKey: row.itemKey,
+            deletedAt: row.deletedAt,
+          ),
       ],
     );
   }
 
   /// v105：本机 `profiles.id` → 名字（wire 只传名字）。
   Future<Map<int, String>> _profileNameById() async => <int, String>{
-        for (final ProfileRow p in await _db.getAllProfiles()) p.id: p.name,
-      };
+    for (final ProfileRow p in await _db.getAllProfiles()) p.id: p.name,
+  };
 
   /// v105：名字 → 本机 `profiles.id`（落地时反解）。
   Future<Map<String, int>> _profileIdByName() async => <String, int>{
-        for (final ProfileRow p in await _db.getAllProfiles()) p.name: p.id,
-      };
+    for (final ProfileRow p in await _db.getAllProfiles()) p.name: p.id,
+  };
 
   static StudySegmentRecord _segmentRecordOf(
     StudySegmentRow s,
     Map<int, String> profileNameById,
-  ) =>
-      StudySegmentRecord(
-        uid: s.uid,
-        deviceId: s.deviceId,
-        mediaKind: s.mediaKind,
-        mediaKey: s.mediaKey,
-        format: s.format,
-        title: s.title,
-        startAt: s.startAt,
-        endAt: s.endAt,
-        dateKey: s.dateKey,
-        hour: s.hour,
-        durationMs: s.durationMs,
-        chars: s.chars,
-        pages: s.pages,
-        updatedAt: s.updatedAt,
-        profileName: profileNameById[s.profileId] ?? '',
-      );
+  ) => StudySegmentRecord(
+    uid: s.uid,
+    deviceId: s.deviceId,
+    mediaKind: s.mediaKind,
+    mediaKey: s.mediaKey,
+    format: s.format,
+    title: s.title,
+    startAt: s.startAt,
+    endAt: s.endAt,
+    dateKey: s.dateKey,
+    hour: s.hour,
+    durationMs: s.durationMs,
+    chars: s.chars,
+    pages: s.pages,
+    updatedAt: s.updatedAt,
+    profileName: profileNameById[s.profileId] ?? '',
+  );
 
   static StudyTombstoneRecord _tombstoneRecordOf(
     StudySegmentTombstoneRow t,
     Map<int, String> profileNameById,
-  ) =>
-      StudyTombstoneRecord(
-        mediaKind: t.mediaKind,
-        mediaKey: t.mediaKey,
-        deletedAt: t.deletedAt,
-        profileName: profileNameById[t.profileId] ?? '',
-      );
+  ) => StudyTombstoneRecord(
+    mediaKind: t.mediaKind,
+    mediaKey: t.mediaKey,
+    deletedAt: t.deletedAt,
+    profileName: profileNameById[t.profileId] ?? '',
+  );
 
   /// 本机一块碑的全部 wire 形态（BUG-3644）：本 Profile 名字一份，外加落进本
   /// Profile 的对端名字（[FushiDatabase.getStudyProfileNameAliases]）各一份——对端
@@ -1251,24 +1313,23 @@ class AggregateSyncService {
   static StudySegmentsCompanion _segmentCompanionOf(
     StudySegmentRecord r, {
     required int profileId,
-  }) =>
-      StudySegmentsCompanion.insert(
-        uid: r.uid,
-        deviceId: r.deviceId,
-        mediaKind: r.mediaKind,
-        mediaKey: r.mediaKey,
-        format: Value(r.format),
-        title: r.title,
-        startAt: r.startAt,
-        endAt: r.endAt,
-        dateKey: r.dateKey,
-        hour: r.hour,
-        durationMs: Value(r.durationMs),
-        chars: Value(r.chars),
-        pages: Value(r.pages),
-        updatedAt: r.updatedAt,
-        profileId: Value(profileId),
-      );
+  }) => StudySegmentsCompanion.insert(
+    uid: r.uid,
+    deviceId: r.deviceId,
+    mediaKind: r.mediaKind,
+    mediaKey: r.mediaKey,
+    format: Value(r.format),
+    title: r.title,
+    startAt: r.startAt,
+    endAt: r.endAt,
+    dateKey: r.dateKey,
+    hour: r.hour,
+    durationMs: Value(r.durationMs),
+    chars: Value(r.chars),
+    pages: Value(r.pages),
+    updatedAt: r.updatedAt,
+    profileId: Value(profileId),
+  );
 
   /// v92 wire v2 落地：**先落墓碑**（碑戳只增不减，并删本地 `startAt < deletedAt`
   /// 的段），**再**按 uid LWW upsert 段——顺序不可反：段先落、碑后到会让 DAO 的
@@ -1297,15 +1358,17 @@ class AggregateSyncService {
       return fallbackToActive ? activeProfileId : null;
     }
 
-    await _db.addStudyProfileNameAliases(<int, Set<String>>{
-      activeProfileId: <String>{
-        for (final StudySegmentRecord r in snapshot.studySegments)
-          if (r.profileName.isNotEmpty &&
-              !profileIdByName.containsKey(r.profileName) &&
-              AggregateMergeService.isStudyKindSyncable(r.mediaKind))
-            r.profileName,
-      },
-    }..removeWhere((int _, Set<String> names) => names.isEmpty));
+    await _db.addStudyProfileNameAliases(
+      <int, Set<String>>{
+        activeProfileId: <String>{
+          for (final StudySegmentRecord r in snapshot.studySegments)
+            if (r.profileName.isNotEmpty &&
+                !profileIdByName.containsKey(r.profileName) &&
+                AggregateMergeService.isStudyKindSyncable(r.mediaKind))
+              r.profileName,
+        },
+      }..removeWhere((int _, Set<String> names) => names.isEmpty),
+    );
 
     for (final StudyTombstoneRecord t in snapshot.studySegmentTombstones) {
       if (!AggregateMergeService.isStudyKindSyncable(t.mediaKind)) continue;
@@ -1340,7 +1403,9 @@ class AggregateSyncService {
       return;
     }
     Future<void> persist(
-        String kind, List<AggregateTombstoneRecord> tombs) async {
+      String kind,
+      List<AggregateTombstoneRecord> tombs,
+    ) async {
       if (tombs.isEmpty) return;
       final Map<String, int> existing = <String, int>{
         for (final SyncDeletionTombstoneRow row
@@ -1354,10 +1419,14 @@ class AggregateSyncService {
       }
     }
 
-    await persist(SyncTombstoneKind.favoriteword.dbValue,
-        snapshot.favoriteWordTombstones);
     await persist(
-        kFavoriteSentenceTombstoneType, snapshot.favoriteSentenceTombstones);
+      SyncTombstoneKind.favoriteword.dbValue,
+      snapshot.favoriteWordTombstones,
+    );
+    await persist(
+      kFavoriteSentenceTombstoneType,
+      snapshot.favoriteSentenceTombstones,
+    );
 
     if (snapshot.favoriteWordTombstones.isNotEmpty) {
       final Map<String, int> wordTombs = <String, int>{
@@ -1366,8 +1435,12 @@ class AggregateSyncService {
           t.itemKey: t.deletedAt,
       };
       for (final FavoriteWordRow row in await _db.getAllFavoriteWords()) {
-        final int deletedAt = wordTombs[FushiDatabase.favoriteWordItemKey(
-                row.expression, row.reading, row.sourceType)] ??
+        final int deletedAt =
+            wordTombs[FushiDatabase.favoriteWordItemKey(
+              row.expression,
+              row.reading,
+              row.sourceType,
+            )] ??
             0;
         if (deletedAt > row.createdAt) {
           // propagateDeletion=false：墓碑已按对端原始 deletedAt 落表，改盖 now
@@ -1395,31 +1468,35 @@ class AggregateSyncService {
     // 写回就复活了。这里按 (title, sourceType) 跳过被删的书统计，让本设备删掉的书不被
     // peer 快照复活（墓碑本地生效；用户重读该书 / 查词会清墓碑，见 database.dart 的
     // add* 方法）。reading→'book'、video→'video'、lookup_mining_counters 用其 sourceType。
-    final Set<(String, String)> tombstoned =
-        await _db.getStatisticsTombstoneKeys();
+    final Set<(String, String)> tombstoned = await _db
+        .getStatisticsTombstoneKeys();
     for (final ReadingStatRecord r in snapshot.readingStats) {
       if (tombstoned.contains((r.title, FushiDatabase.statSourceBook))) {
         continue;
       }
-      await _db.setReadingStatistic(ReadingStatisticsCompanion(
-        title: Value(r.title),
-        dateKey: Value(r.dateKey),
-        charactersRead: Value(r.charactersRead),
-        readingTimeMs: Value(r.readingTimeMs),
-        lastStatisticModified: Value(r.lastStatisticModified),
-      ));
+      await _db.setReadingStatistic(
+        ReadingStatisticsCompanion(
+          title: Value(r.title),
+          dateKey: Value(r.dateKey),
+          charactersRead: Value(r.charactersRead),
+          readingTimeMs: Value(r.readingTimeMs),
+          lastStatisticModified: Value(r.lastStatisticModified),
+        ),
+      );
     }
     for (final VideoStatRecord r in snapshot.videoStats) {
       if (tombstoned.contains((r.title, FushiDatabase.statSourceVideo))) {
         continue;
       }
-      await _db.setVideoWatchStatistic(VideoWatchStatisticsCompanion(
-        title: Value(r.title),
-        dateKey: Value(r.dateKey),
-        subtitleChars: Value(r.subtitleChars),
-        watchTimeMs: Value(r.watchTimeMs),
-        lastModified: Value(r.lastModified),
-      ));
+      await _db.setVideoWatchStatistic(
+        VideoWatchStatisticsCompanion(
+          title: Value(r.title),
+          dateKey: Value(r.dateKey),
+          subtitleChars: Value(r.subtitleChars),
+          watchTimeMs: Value(r.watchTimeMs),
+          lastModified: Value(r.lastModified),
+        ),
+      );
     }
     // v67 两步落库，顺序有意：
     // ① 先落按写入面拆分的桶（新端互相之间的完整拆分数据；OVERWRITE 落
@@ -1508,8 +1585,12 @@ class AggregateSyncService {
         row.itemKey: row.deletedAt,
     };
     for (final FavoriteWordRecord r in snapshot.favoriteWords) {
-      final int deletedAt = favTombstoned[FushiDatabase.favoriteWordItemKey(
-              r.expression, r.reading, r.sourceType)] ??
+      final int deletedAt =
+          favTombstoned[FushiDatabase.favoriteWordItemKey(
+            r.expression,
+            r.reading,
+            r.sourceType,
+          )] ??
           0;
       if (deletedAt > r.createdAt) {
         continue;
@@ -1602,19 +1683,25 @@ class AggregateSyncService {
     // 藏后，peer 快照的并集会把它重新加回（复活）。判据时间戳感知（与收藏词同律）：
     // 墓碑 deletedAt 严格新于句 createdAt 才剔除，重收藏（createdAt 更新）能回来。
     final Map<String, int> tombstoned = <String, int>{
-      for (final SyncDeletionTombstoneRow row in await _db
-          .getSyncDeletionTombstonesOfType(kFavoriteSentenceTombstoneType))
+      for (final SyncDeletionTombstoneRow row
+          in await _db.getSyncDeletionTombstonesOfType(
+            kFavoriteSentenceTombstoneType,
+          ))
         row.itemKey: row.deletedAt,
     };
     final List<FavoriteSentence> out = tombstoned.isEmpty
         ? union
         : union
-            .where((FavoriteSentence s) =>
-                (tombstoned[FavoriteSentenceRepository.itemKeyOf(s)] ?? 0) <=
-                s.createdAt.millisecondsSinceEpoch)
-            .toList();
-    final String json =
-        jsonEncode(out.map((FavoriteSentence s) => s.toJson()).toList());
+              .where(
+                (FavoriteSentence s) =>
+                    (tombstoned[FavoriteSentenceRepository.itemKeyOf(s)] ??
+                        0) <=
+                    s.createdAt.millisecondsSinceEpoch,
+              )
+              .toList();
+    final String json = jsonEncode(
+      out.map((FavoriteSentence s) => s.toJson()).toList(),
+    );
     await _db.setPref(_favoriteSentencesPrefKey, json);
   }
 }

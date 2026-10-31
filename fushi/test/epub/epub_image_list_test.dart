@@ -41,20 +41,30 @@ void main() {
         '<html><body><img src="c.jpg"/></body></html>',
       ]);
       final List<EpubImageRef> imgs = book.images;
-      expect(imgs.map((EpubImageRef r) => r.src).toList(),
-          <String>['a.png', 'b.png', 'c.jpg']);
-      expect(
-          imgs.map((EpubImageRef r) => r.orderInBook).toList(), <int>[0, 1, 2]);
-      expect(imgs.map((EpubImageRef r) => r.chapterIndex).toList(),
-          <int>[0, 0, 2]);
+      expect(imgs.map((EpubImageRef r) => r.src).toList(), <String>[
+        'a.png',
+        'b.png',
+        'c.jpg',
+      ]);
+      expect(imgs.map((EpubImageRef r) => r.orderInBook).toList(), <int>[
+        0,
+        1,
+        2,
+      ]);
+      expect(imgs.map((EpubImageRef r) => r.chapterIndex).toList(), <int>[
+        0,
+        0,
+        2,
+      ]);
     });
 
     test('skips empty / whitespace-only src', () {
       final EpubBook book = _bookWithChapterHtml(<String>[
         '<html><body><img src=""/><img src="   "/><img src="ok.png"/></body></html>',
       ]);
-      expect(book.images.map((EpubImageRef r) => r.src).toList(),
-          <String>['ok.png']);
+      expect(book.images.map((EpubImageRef r) => r.src).toList(), <String>[
+        'ok.png',
+      ]);
       expect(book.images.single.orderInBook, 0);
     });
 
@@ -84,8 +94,9 @@ void main() {
             '<img src="ok.png"/>'
             '</body></html>',
       ]);
-      expect(book.images.map((EpubImageRef r) => r.src).toList(),
-          <String>['ok.png']);
+      expect(book.images.map((EpubImageRef r) => r.src).toList(), <String>[
+        'ok.png',
+      ]);
     });
 
     // BUG-2559: the reader's illustration gallery and the shelf-side
@@ -109,8 +120,10 @@ void main() {
             '<svg><image href="image/svg2.jpg"/></svg>'
             '</body></html>',
       ]);
-      expect(book.images.map((EpubImageRef r) => r.src).toList(),
-          <String>['image/plate.jpg', 'image/svg2.jpg']);
+      expect(book.images.map((EpubImageRef r) => r.src).toList(), <String>[
+        'image/plate.jpg',
+        'image/svg2.jpg',
+      ]);
     });
 
     test('collects an inline background-image', () {
@@ -132,13 +145,19 @@ void main() {
         '<html><body><img src="sep.png"/><img src="b.png"/></body></html>',
       ]);
       final List<EpubImageRef> imgs = book.images;
-      expect(imgs.map((EpubImageRef r) => r.src).toList(),
-          <String>['sep.png', 'a.png', 'b.png']);
+      expect(imgs.map((EpubImageRef r) => r.src).toList(), <String>[
+        'sep.png',
+        'a.png',
+        'b.png',
+      ]);
       // Earliest occurrence wins, so "have I read past it?" is answered from the
       // first place the reader could have seen it.
       expect(imgs.first.chapterIndex, 0);
-      expect(
-          imgs.map((EpubImageRef r) => r.orderInBook).toList(), <int>[0, 1, 2]);
+      expect(imgs.map((EpubImageRef r) => r.orderInBook).toList(), <int>[
+        0,
+        1,
+        2,
+      ]);
     });
 
     test('includes an OPF cover no chapter references, before the body', () {
@@ -155,8 +174,10 @@ void main() {
         ],
       );
       final List<EpubImageRef> imgs = book.images;
-      expect(imgs.map((EpubImageRef r) => r.src).toList(),
-          <String>['images/cover.jpg', 'images/p1.png']);
+      expect(imgs.map((EpubImageRef r) => r.src).toList(), <String>[
+        'images/cover.jpg',
+        'images/p1.png',
+      ]);
       // The cover precedes the whole spine, so it is never "not read yet"...
       expect(imgs.first.chapterIndex, kEpubCoverChapterIndex);
       // ...but jumping to it still has to land on a real chapter.
@@ -172,7 +193,8 @@ void main() {
             id: 'c0',
             href: 'text/cover.xhtml',
             mediaType: 'application/xhtml+xml',
-            html: '<html><body>'
+            html:
+                '<html><body>'
                 '<svg><image xlink:href="../images/cover.jpg"/></svg>'
                 '</body></html>',
           ),
@@ -246,18 +268,24 @@ void main() {
 
   group('resolveImageHref', () {
     test('nested chapter + ../images sibling -> root-relative', () {
-      expect(resolveImageHref('OEBPS/text/ch1.xhtml', '../images/p1.png'),
-          'OEBPS/images/p1.png');
+      expect(
+        resolveImageHref('OEBPS/text/ch1.xhtml', '../images/p1.png'),
+        'OEBPS/images/p1.png',
+      );
     });
 
     test('nested chapter + ./ same dir -> chapter dir', () {
-      expect(resolveImageHref('OEBPS/text/ch1.xhtml', './img.png'),
-          'OEBPS/text/img.png');
+      expect(
+        resolveImageHref('OEBPS/text/ch1.xhtml', './img.png'),
+        'OEBPS/text/img.png',
+      );
     });
 
     test('nested chapter + bare name -> chapter dir', () {
-      expect(resolveImageHref('OEBPS/text/ch1.xhtml', 'img.png'),
-          'OEBPS/text/img.png');
+      expect(
+        resolveImageHref('OEBPS/text/ch1.xhtml', 'img.png'),
+        'OEBPS/text/img.png',
+      );
     });
 
     test('root-level chapter + subdir src -> subdir from root', () {
@@ -269,8 +297,10 @@ void main() {
     });
 
     test('strips a leading slash on the chapter href', () {
-      expect(resolveImageHref('/OEBPS/text/ch1.xhtml', '../images/p1.png'),
-          'OEBPS/images/p1.png');
+      expect(
+        resolveImageHref('/OEBPS/text/ch1.xhtml', '../images/p1.png'),
+        'OEBPS/images/p1.png',
+      );
     });
 
     test('book.images holds the resolved root-relative href', () {
@@ -289,47 +319,64 @@ void main() {
     });
   });
 
-  group('EpubImageRef.sharesLineWithText (lyrics-mode illustration filter)',
-      () {
-    Map<String, bool> inlineBySrc(String body) {
-      final EpubBook book =
-          _bookWithChapterHtml(<String>['<html><body>$body</body></html>']);
-      return <String, bool>{
-        for (final EpubImageRef r in book.images) r.src: r.sharesLineWithText,
-      };
-    }
+  group(
+    'EpubImageRef.sharesLineWithText (lyrics-mode illustration filter)',
+    () {
+      Map<String, bool> inlineBySrc(String body) {
+        final EpubBook book = _bookWithChapterHtml(<String>[
+          '<html><body>$body</body></html>',
+        ]);
+        return <String, bool>{
+          for (final EpubImageRef r in book.images) r.src: r.sharesLineWithText,
+        };
+      }
 
-    test('gaiji inside a sentence shares its line with text', () {
-      expect(inlineBySrc('<p>「<img class="gaiji" src="g.png"/>」と言った</p>'),
-          <String, bool>{'g.png': true});
-    });
+      test('gaiji inside a sentence shares its line with text', () {
+        expect(
+          inlineBySrc('<p>「<img class="gaiji" src="g.png"/>」と言った</p>'),
+          <String, bool>{'g.png': true},
+        );
+      });
 
-    test('heading ornament next to the heading text is inline', () {
-      expect(inlineBySrc('<h2><span><img src="icon.png"/></span>第一章</h2>'),
-          <String, bool>{'icon.png': true});
-    });
+      test('heading ornament next to the heading text is inline', () {
+        expect(
+          inlineBySrc('<h2><span><img src="icon.png"/></span>第一章</h2>'),
+          <String, bool>{'icon.png': true},
+        );
+      });
 
-    test('a plate in a block of its own is not inline', () {
-      expect(
-          inlineBySrc('<p>前文</p><div class="illust"><img src="p.jpg"/></div>'
-              '<p>後文</p>'),
-          <String, bool>{'p.jpg': false});
-    });
+      test('a plate in a block of its own is not inline', () {
+        expect(
+          inlineBySrc(
+            '<p>前文</p><div class="illust"><img src="p.jpg"/></div>'
+            '<p>後文</p>',
+          ),
+          <String, bool>{'p.jpg': false},
+        );
+      });
 
-    test('an image directly under body is not inline with sibling blocks', () {
-      expect(inlineBySrc('<img src="p.jpg"/><p>本文</p>'),
-          <String, bool>{'p.jpg': false});
-    });
+      test(
+        'an image directly under body is not inline with sibling blocks',
+        () {
+          expect(inlineBySrc('<img src="p.jpg"/><p>本文</p>'), <String, bool>{
+            'p.jpg': false,
+          });
+        },
+      );
 
-    test('svg-wrapped plates and ruby-only text are not inline', () {
-      expect(
-          inlineBySrc('<div><svg xmlns="http://www.w3.org/2000/svg" '
-              'xmlns:xlink="http://www.w3.org/1999/xlink">'
-              '<image xlink:href="s.jpg"/></svg></div>'
-              '<p><img src="r.png"/><ruby><rt>よみ</rt></ruby>　</p>'),
-          <String, bool>{'s.jpg': false, 'r.png': false});
-    });
-  });
+      test('svg-wrapped plates and ruby-only text are not inline', () {
+        expect(
+          inlineBySrc(
+            '<div><svg xmlns="http://www.w3.org/2000/svg" '
+            'xmlns:xlink="http://www.w3.org/1999/xlink">'
+            '<image xlink:href="s.jpg"/></svg></div>'
+            '<p><img src="r.png"/><ruby><rt>よみ</rt></ruby>　</p>',
+          ),
+          <String, bool>{'s.jpg': false, 'r.png': false},
+        );
+      });
+    },
+  );
 
   group('EpubBook.adoptImages (off-UI-isolate build)', () {
     const List<String> htmls = <String>[
@@ -337,24 +384,31 @@ void main() {
       '<html><body><p>t</p><img src="b.png"/></body></html>',
     ];
 
-    test('a list built on a copy in another isolate is adopted verbatim',
-        () async {
-      final EpubBook book = _bookWithChapterHtml(htmls);
-      expect(book.hasImages, isFalse);
-      final List<EpubImageRef> built = await Isolate.run(() => book.images);
-      expect(book.hasImages, isFalse,
-          reason: 'the isolate scanned a copy; this instance is untouched');
-      book.adoptImages(built);
-      expect(book.hasImages, isTrue);
-      expect(book.images.map((EpubImageRef r) => r.src).toList(),
-          <String>['a.png', 'b.png']);
-      expect(
+    test(
+      'a list built on a copy in another isolate is adopted verbatim',
+      () async {
+        final EpubBook book = _bookWithChapterHtml(htmls);
+        expect(book.hasImages, isFalse);
+        final List<EpubImageRef> built = await Isolate.run(() => book.images);
+        expect(
+          book.hasImages,
+          isFalse,
+          reason: 'the isolate scanned a copy; this instance is untouched',
+        );
+        book.adoptImages(built);
+        expect(book.hasImages, isTrue);
+        expect(book.images.map((EpubImageRef r) => r.src).toList(), <String>[
+          'a.png',
+          'b.png',
+        ]);
+        expect(
           book.images.map((EpubImageRef r) => r.normCharOffset).toList(),
-          _bookWithChapterHtml(htmls)
-              .images
-              .map((EpubImageRef r) => r.normCharOffset)
-              .toList());
-    });
+          _bookWithChapterHtml(
+            htmls,
+          ).images.map((EpubImageRef r) => r.normCharOffset).toList(),
+        );
+      },
+    );
 
     test('no-op once images were already built', () {
       final EpubBook book = _bookWithChapterHtml(htmls);

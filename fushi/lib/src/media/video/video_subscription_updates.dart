@@ -36,7 +36,7 @@ import 'package:fushi/src/media/video/video_home_layout.dart';
 Set<int> subscribedVideoCollectionIds({
   required List<VideoDownloadSubscriptionRow> subscriptions,
   required Map<String, List<VideoDownloadSubscriptionItemRow>>
-      itemsBySubscription,
+  itemsBySubscription,
   required List<VideoDownloadJobRow> jobs,
   required Map<String, int> collectionIdByProviderIdentity,
   required Iterable<int> legacyAnilistIds,

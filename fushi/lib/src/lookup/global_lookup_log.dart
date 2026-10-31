@@ -10,7 +10,8 @@ import 'dart:io';
 File? _logFile;
 
 File _resolveLogFile() => _logFile ??= File(
-    '${Directory.systemTemp.path}${Platform.pathSeparator}hibiki_glookup.log');
+  '${Directory.systemTemp.path}${Platform.pathSeparator}hibiki_glookup.log',
+);
 
 void glog(String message) {
   try {

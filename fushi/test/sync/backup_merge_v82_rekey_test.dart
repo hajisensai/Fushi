@@ -31,27 +31,26 @@ void main() {
   int bookCounter = 0;
 
   EpubBooksCompanion book(String key, String uid) => EpubBooksCompanion.insert(
-        bookKey: key,
-        uid: Value(uid),
-        title: key,
-        epubPath: '/fake/$key.epub',
-        extractDir: '/fake/$key-${bookCounter++}',
-        chapterCount: 1,
-        chaptersJson: '[]',
-        importedAt: 1000,
-      );
+    bookKey: key,
+    uid: Value(uid),
+    title: key,
+    epubPath: '/fake/$key.epub',
+    extractDir: '/fake/$key-${bookCounter++}',
+    chapterCount: 1,
+    chaptersJson: '[]',
+    importedAt: 1000,
+  );
 
   ReaderPositionsCompanion position(
     String bookUid, {
     required int sectionIndex,
     required int updatedAt,
-  }) =>
-      ReaderPositionsCompanion.insert(
-        bookUid: bookUid,
-        sectionIndex: sectionIndex,
-        normCharOffset: sectionIndex * 1000,
-        updatedAt: updatedAt,
-      );
+  }) => ReaderPositionsCompanion.insert(
+    bookUid: bookUid,
+    sectionIndex: sectionIndex,
+    normCharOffset: sectionIndex * 1000,
+    updatedAt: updatedAt,
+  );
 
   Future<void> addBookmark(
     FushiDatabase db,
@@ -59,18 +58,22 @@ void main() {
     required int sectionIndex,
     required String label,
     required int createdAt,
-  }) =>
-      db.into(db.bookmarks).insert(BookmarksCompanion.insert(
-            bookUid: bookUid,
-            sectionIndex: sectionIndex,
-            normCharOffset: sectionIndex * 100,
-            label: label,
-            createdAt: createdAt,
-          ));
+  }) => db
+      .into(db.bookmarks)
+      .insert(
+        BookmarksCompanion.insert(
+          bookUid: bookUid,
+          sectionIndex: sectionIndex,
+          normCharOffset: sectionIndex * 100,
+          label: label,
+          createdAt: createdAt,
+        ),
+      );
 
   /// 在磁盘目录建 src 库（ATTACH 需要真文件），种子回调后关闭，返回 db 路径。
   Future<String> buildSrcDb(
-      Future<void> Function(FushiDatabase src) seed) async {
+    Future<void> Function(FushiDatabase src) seed,
+  ) async {
     final Directory srcDir = await Directory.systemTemp.createTemp('rk_src_');
     addTearDown(() => cleanupTempDir(srcDir));
     final FushiDatabase src = FushiDatabase(srcDir.path);
@@ -98,15 +101,27 @@ void main() {
       await src.insertEpubBook(book('shared', 'src-uid-shared'));
       // LWW 赢方（updatedAt 2000 > target 1000）。
       await src.upsertReaderPosition(
-          position('src-uid-shared', sectionIndex: 7, updatedAt: 2000));
+        position('src-uid-shared', sectionIndex: 7, updatedAt: 2000),
+      );
       // SRT 域行：键不在 epub_books，COALESCE 照抄合并。
       await src.upsertReaderPosition(
-          position('srt-common', sectionIndex: 2, updatedAt: 50));
+        position('srt-common', sectionIndex: 2, updatedAt: 50),
+      );
       // 书签：一条 src 独有 + 一条与 target 完全同 dedupe 键。
-      await addBookmark(src, 'src-uid-shared',
-          sectionIndex: 1, label: 'from-src', createdAt: 500);
-      await addBookmark(src, 'src-uid-shared',
-          sectionIndex: 9, label: 'dup', createdAt: 900);
+      await addBookmark(
+        src,
+        'src-uid-shared',
+        sectionIndex: 1,
+        label: 'from-src',
+        createdAt: 500,
+      );
+      await addBookmark(
+        src,
+        'src-uid-shared',
+        sectionIndex: 9,
+        label: 'dup',
+        createdAt: 900,
+      );
       // css：ch1 src 较新（应赢）、ch2 src 较旧（应输）。
       await src.upsertBookCss('src-uid-shared', 'ch1.css', 'src-css', 2000);
       await src.upsertBookCss('src-uid-shared', 'ch2.css', 'src-old', 500);
@@ -115,14 +130,21 @@ void main() {
       await src.markImageRevealed('src-uid-shared', 'img2', 300);
     });
 
-    final FushiDatabase target =
-        FushiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase target = FushiDatabase.forTesting(
+      NativeDatabase.memory(),
+    );
     addTearDown(target.close);
     await target.insertEpubBook(book('shared', 'tgt-uid-shared'));
     await target.upsertReaderPosition(
-        position('tgt-uid-shared', sectionIndex: 1, updatedAt: 1000));
-    await addBookmark(target, 'tgt-uid-shared',
-        sectionIndex: 9, label: 'dup', createdAt: 900);
+      position('tgt-uid-shared', sectionIndex: 1, updatedAt: 1000),
+    );
+    await addBookmark(
+      target,
+      'tgt-uid-shared',
+      sectionIndex: 9,
+      label: 'dup',
+      createdAt: 900,
+    );
     await target.upsertBookCss('tgt-uid-shared', 'ch1.css', 'tgt-css', 1000);
     await target.upsertBookCss('tgt-uid-shared', 'ch2.css', 'tgt-new', 3000);
     await target.markImageRevealed('tgt-uid-shared', 'img1', 1000);
@@ -139,13 +161,17 @@ void main() {
       'book_custom_css',
       'revealed_images',
     ]) {
-      expect(await countWhere(target, table, "book_uid = 'src-uid-shared'"), 0,
-          reason: '$table 不得留下 src uid 孤儿行（换键 JOIN 必须命中）');
+      expect(
+        await countWhere(target, table, "book_uid = 'src-uid-shared'"),
+        0,
+        reason: '$table 不得留下 src uid 孤儿行（换键 JOIN 必须命中）',
+      );
     }
 
     // ── reader_positions：LWW src 赢，落在 target uid 行上 ──
-    final ReaderPositionRow? pos =
-        await target.getReaderPosition('tgt-uid-shared');
+    final ReaderPositionRow? pos = await target.getReaderPosition(
+      'tgt-uid-shared',
+    );
     expect(pos, isNotNull);
     expect(pos!.sectionIndex, 7, reason: 'src updatedAt 2000 > 1000，LWW 赢');
     expect(pos.updatedAt, 2000);
@@ -157,37 +183,47 @@ void main() {
     // ── bookmarks：dedupe-union，src 行换键落 target uid ──
     final List<QueryRow> bms = await target
         .customSelect(
-            "SELECT * FROM bookmarks WHERE book_uid = 'tgt-uid-shared' "
-            'ORDER BY created_at')
+          "SELECT * FROM bookmarks WHERE book_uid = 'tgt-uid-shared' "
+          'ORDER BY created_at',
+        )
         .get();
     expect(bms, hasLength(2), reason: 'dup 按 dedupe 键去重，from-src 合入');
-    expect(bms.map((QueryRow r) => r.read<String>('label')).toList(),
-        <String>['from-src', 'dup']);
+    expect(bms.map((QueryRow r) => r.read<String>('label')).toList(), <String>[
+      'from-src',
+      'dup',
+    ]);
 
     // ── book_custom_css：per {uid, relativePath} LWW 双向 ──
-    final List<BookCustomCssRow> cssRows =
-        await target.getBookCssRows('tgt-uid-shared');
+    final List<BookCustomCssRow> cssRows = await target.getBookCssRows(
+      'tgt-uid-shared',
+    );
     expect(cssRows, hasLength(2));
-    final BookCustomCssRow ch1 = cssRows
-        .singleWhere((BookCustomCssRow r) => r.relativePath == 'ch1.css');
+    final BookCustomCssRow ch1 = cssRows.singleWhere(
+      (BookCustomCssRow r) => r.relativePath == 'ch1.css',
+    );
     expect(ch1.content, 'src-css', reason: 'src 2000 > target 1000，src 赢');
     expect(ch1.updatedAt, 2000);
-    final BookCustomCssRow ch2 = cssRows
-        .singleWhere((BookCustomCssRow r) => r.relativePath == 'ch2.css');
+    final BookCustomCssRow ch2 = cssRows.singleWhere(
+      (BookCustomCssRow r) => r.relativePath == 'ch2.css',
+    );
     expect(ch2.content, 'tgt-new', reason: 'target 3000 > src 500，target 保留');
     expect(ch2.updatedAt, 3000);
 
     // ── revealed_images：union + revealedAt 取较新 ──
-    expect(await target.getRevealedImageKeys('tgt-uid-shared'),
-        <String>{'img1', 'img2'});
+    expect(await target.getRevealedImageKeys('tgt-uid-shared'), <String>{
+      'img1',
+      'img2',
+    });
     expect(
-        await countWhere(
-            target,
-            'revealed_images',
-            "book_uid = 'tgt-uid-shared' AND image_key = 'img1' "
-                'AND revealed_at = 2000'),
-        1,
-        reason: 'img1 双方都有，revealedAt LWW 刷到 src 的 2000');
+      await countWhere(
+        target,
+        'revealed_images',
+        "book_uid = 'tgt-uid-shared' AND image_key = 'img1' "
+            'AND revealed_at = 2000',
+      ),
+      1,
+      reason: 'img1 双方都有，revealedAt LWW 刷到 src 的 2000',
+    );
   });
 
   test('uid 撞库：src 新书撞 target 已有 uid，merge 不炸且插入行重生成 uid', () async {
@@ -196,11 +232,13 @@ void main() {
       // 撞库书自己的子表行：插入后必须跟着重生成的 uid 走，不许错挂到
       // target 里恰好同 uid 的 book-a 上。
       await src.upsertReaderPosition(
-          position('uid-collide-X', sectionIndex: 4, updatedAt: 100));
+        position('uid-collide-X', sectionIndex: 4, updatedAt: 100),
+      );
     });
 
-    final FushiDatabase target =
-        FushiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase target = FushiDatabase.forTesting(
+      NativeDatabase.memory(),
+    );
     addTearDown(target.close);
     await target.insertEpubBook(book('book-a', 'uid-collide-X'));
 
@@ -209,21 +247,29 @@ void main() {
 
     final List<EpubBookRow> books = await target.getAllEpubBooks();
     expect(books, hasLength(2), reason: 'book-b 必须插入成功');
-    final EpubBookRow bookA =
-        books.singleWhere((EpubBookRow b) => b.bookKey == 'book-a');
-    final EpubBookRow bookB =
-        books.singleWhere((EpubBookRow b) => b.bookKey == 'book-b');
+    final EpubBookRow bookA = books.singleWhere(
+      (EpubBookRow b) => b.bookKey == 'book-a',
+    );
+    final EpubBookRow bookB = books.singleWhere(
+      (EpubBookRow b) => b.bookKey == 'book-b',
+    );
     expect(bookA.uid, 'uid-collide-X', reason: '本库已有书的 uid 不动');
     expect(bookB.uid, isNotEmpty);
     expect(bookB.uid, isNot('uid-collide-X'), reason: '撞库时插入行的 uid 必须本机重生成');
-    expect(bookB.uid, matches(RegExp(r'^book_\d+_\d+_m$')),
-        reason: '重生成走同命名空间 `book_<srcRowid>_<epoch>_m` 形');
+    expect(
+      bookB.uid,
+      matches(RegExp(r'^book_\d+_\d+_m$')),
+      reason: '重生成走同命名空间 `book_<srcRowid>_<epoch>_m` 形',
+    );
 
     // 子表行跟着重生成的 uid 走（经 book_key 双侧 JOIN，不受 uid 撞值干扰）。
     final ReaderPositionRow? posB = await target.getReaderPosition(bookB.uid);
     expect(posB, isNotNull, reason: '进度必须命中 book-b 的新 uid');
     expect(posB!.sectionIndex, 4);
-    expect(await target.getReaderPosition('uid-collide-X'), isNull,
-        reason: 'book-a 无进度——src 行不得错挂到同 uid 值的 book-a 上');
+    expect(
+      await target.getReaderPosition('uid-collide-X'),
+      isNull,
+      reason: 'book-a 无进度——src 行不得错挂到同 uid 值的 book-a 上',
+    );
   });
 }

@@ -64,24 +64,30 @@ class StatHourlyBreakdown {
   }) {
     if (hour < 0 || hour >= kStatHourlyBuckets) return;
     _byBand.putIfAbsent(
-        band, () => List<int>.filled(kStatHourlyBuckets, 0))[hour] += ms;
+      band,
+      () => List<int>.filled(kStatHourlyBuckets, 0),
+    )[hour] += ms;
   }
 
   /// 某一带的 24 小时值；该带无数据时返回全零（调用方不必判空）。
   List<int> valuesOf(StatHourlyFormatBand band) => List<int>.unmodifiable(
-      _byBand[band] ?? List<int>.filled(kStatHourlyBuckets, 0));
+    _byBand[band] ?? List<int>.filled(kStatHourlyBuckets, 0),
+  );
 
   /// 当日真的有非零时长的带，按枚举声明序。堆叠与图例共用这一个顺序，两边天然一致。
   List<StatHourlyFormatBand> get activeBands => StatHourlyFormatBand.values
-      .where((StatHourlyFormatBand band) =>
-          (_byBand[band] ?? const <int>[]).any((int ms) => ms > 0))
+      .where(
+        (StatHourlyFormatBand band) =>
+            (_byBand[band] ?? const <int>[]).any((int ms) => ms > 0),
+      )
       .toList(growable: false);
 
   /// 当日总时长（毫秒）。
   int get totalMs => _byBand.values.fold<int>(
-      0,
-      (int sum, List<int> values) =>
-          sum + values.fold<int>(0, (int s, int ms) => s + ms));
+    0,
+    (int sum, List<int> values) =>
+        sum + values.fold<int>(0, (int s, int ms) => s + ms),
+  );
 
   /// 当日无任何时长。
   bool get isEmpty => activeBands.isEmpty;

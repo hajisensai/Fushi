@@ -55,7 +55,8 @@ void main() {
     );
     final String popupJs = await rootBundle.loadString('assets/popup/popup.js');
     // 与 DictionaryPopupWebViewState._buildInlinePopupHtml 同形（Windows 生产路径）。
-    inlineHtml = '<!DOCTYPE html>'
+    inlineHtml =
+        '<!DOCTYPE html>'
         '<html data-theme="dark" '
         'style="--background-color:#202020;--dict-columns:2">'
         '<head><meta charset="utf-8">'
@@ -116,16 +117,17 @@ void main() {
                     callback: (List<dynamic> args) => null,
                   );
                 },
-                onConsoleMessage: (
-                  InAppWebViewController controller,
-                  ConsoleMessage message,
-                ) {
-                  if (message.messageLevel == ConsoleMessageLevel.ERROR) {
-                    debugPrint(
-                      '[render-tail-perf] console: ${message.message}',
-                    );
-                  }
-                },
+                onConsoleMessage:
+                    (
+                      InAppWebViewController controller,
+                      ConsoleMessage message,
+                    ) {
+                      if (message.messageLevel == ConsoleMessageLevel.ERROR) {
+                        debugPrint(
+                          '[render-tail-perf] console: ${message.message}',
+                        );
+                      }
+                    },
                 onLoadStop: (InAppWebViewController controller, WebUri? url) {
                   if (!ready.isCompleted) ready.complete(controller);
                 },
@@ -146,10 +148,10 @@ void main() {
 
       const List<({int entries, int dicts})> scenarios =
           <({int entries, int dicts})>[
-        (entries: 10, dicts: 5),
-        (entries: 30, dicts: 5),
-        (entries: 3, dicts: 12),
-      ];
+            (entries: 10, dicts: 5),
+            (entries: 30, dicts: 5),
+            (entries: 3, dicts: 12),
+          ];
       for (final ({int entries, int dicts}) s in scenarios) {
         // 每个场景跑两遍，第一遍暖 JIT / CSS memo，只报第二遍。
         for (int round = 0; round < 2; round++) {
@@ -176,23 +178,35 @@ void main() {
 
           // ── 不依赖机器的形态不变式（绝对耗时仍然只作数据输出）──────────
           final int blocks = s.entries * s.dicts;
-          expect(result['cards'], blocks,
-              reason: '每个 (词条 × 词典) 必须各成一块：块数对不上说明尾批把词条'
-                  '丢了，后面几条比值也就没有意义了');
+          expect(
+            result['cards'],
+            blocks,
+            reason:
+                '每个 (词条 × 词典) 必须各成一块：块数对不上说明尾批把词条'
+                '丢了，后面几条比值也就没有意义了',
+          );
           if (blocks > s.dicts) {
             // 论点⑤：每词典一份 <style>。退回「每块一份」时 styleElements >= blocks。
             // 这里比的是「样式表数 vs 块数」而不是绝对值——applyCustomCSS 之类
             // 另外插的 <style> 只是常数项，不影响这个数量级判据。
-            expect(result['styleElements'] as int, lessThan(blocks),
-                reason: '样式表数 ${result['styleElements']} 不该逼近块数 $blocks：'
-                    '每个词典块各插一份 <style> 就是被这条钉住的退化形态');
+            expect(
+              result['styleElements'] as int,
+              lessThan(blocks),
+              reason:
+                  '样式表数 ${result['styleElements']} 不该逼近块数 $blocks：'
+                  '每个词典块各插一份 <style> 就是被这条钉住的退化形态',
+            );
           }
           if (blocks > 2) {
             // 论点①：尾批按时间预算分片，一个宏任务连续建多块。退回「一块一宏
             // 任务」时 tailTasks 恰好等于待建块数。
-            expect(result['tailTasks'] as int, lessThan(blocks),
-                reason: '尾批宏任务数 ${result['tailTasks']} 不该逼近块数 $blocks：'
-                    '一块一任务就是 TAIL_SLICE_BUDGET_MS 失效的形态');
+            expect(
+              result['tailTasks'] as int,
+              lessThan(blocks),
+              reason:
+                  '尾批宏任务数 ${result['tailTasks']} 不该逼近块数 $blocks：'
+                  '一块一任务就是 TAIL_SLICE_BUDGET_MS 失效的形态',
+            );
           }
           int distinct = 0;
           num? last;
@@ -343,7 +357,8 @@ String _buildEntriesJson(int entries, int dicts) {
         for (int i = 0; i < lines; i++)
           <String, Object>{
             'tag': 'li',
-            'content': '释义 $i：これはテスト用の語釈です。同じ内容が続きます。'
+            'content':
+                '释义 $i：これはテスト用の語釈です。同じ内容が続きます。'
                 'entry=$e dict=$d line=$i',
           },
       ];

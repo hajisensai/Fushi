@@ -19,7 +19,8 @@ class _FakeMining implements FushiRemoteMiningService {
 
   @override
   Future<AnkiNoteTypeDefinition?> readNoteTypeDefinition(
-      String modelName) async {
+    String modelName,
+  ) async {
     reads.add(modelName);
     return noteTypeDef;
   }
@@ -32,7 +33,9 @@ class _FakeMining implements FushiRemoteMiningService {
 
   @override
   Future<bool> updateNoteTypeTemplates(
-      String modelName, List<AnkiCardTemplate> templates) async {
+    String modelName,
+    List<AnkiCardTemplate> templates,
+  ) async {
     templateWrites.add((modelName, templates));
     return writeOk;
   }
@@ -45,10 +48,10 @@ class _FakeMining implements FushiRemoteMiningService {
       null;
 
   @override
-  Future<RemoteMineResult> mineEntry(
-          {required Map<String, String> fields,
-          required String sentence}) async =>
-      const RemoteMineResult(result: 'success');
+  Future<RemoteMineResult> mineEntry({
+    required Map<String, String> fields,
+    required String sentence,
+  }) async => const RemoteMineResult(result: 'success');
 
   @override
   Future<RemoteMineResult> mineImmersion(ImmersionMinePayload payload) async =>
@@ -59,16 +62,16 @@ class _FakeMining implements FushiRemoteMiningService {
       const RemoteMineResult(result: 'success');
 
   @override
-  Future<bool> isDuplicate(
-          {required String expression, required String reading}) async =>
-      false;
+  Future<bool> isDuplicate({
+    required String expression,
+    required String reading,
+  }) async => false;
 
   @override
   Future<AnkiOpenWordOutcome> openWordInAnki({
     required String expression,
     required String reading,
-  }) async =>
-      AnkiOpenWordOutcome.failed;
+  }) async => AnkiOpenWordOutcome.failed;
 }
 
 void main() {
@@ -91,8 +94,9 @@ void main() {
       final Map<String, dynamic> noteType =
           resp['noteType'] as Map<String, dynamic>;
       // 回传体必须能被客户端 AnkiNoteTypeDefinition.fromJson 原样读回。
-      final AnkiNoteTypeDefinition roundTrip =
-          AnkiNoteTypeDefinition.fromJson(noteType);
+      final AnkiNoteTypeDefinition roundTrip = AnkiNoteTypeDefinition.fromJson(
+        noteType,
+      );
       expect(roundTrip.name, 'Lapis');
       expect(roundTrip.fields, <String>['Expression', 'Sentence']);
       expect(roundTrip.templates.single.back, 'B');
@@ -110,8 +114,10 @@ void main() {
 
     test('modelName 缺失 → FormatException（调用方转 400）', () {
       expect(
-        () => buildAnkiNoteTypeReadResponse(<String, dynamic>{},
-            mining: _FakeMining()),
+        () => buildAnkiNoteTypeReadResponse(
+          <String, dynamic>{},
+          mining: _FakeMining(),
+        ),
         throwsFormatException,
       );
     });
@@ -140,9 +146,9 @@ void main() {
 
     test('css 缺失 → FormatException；后端不支持 → ok=false', () async {
       expect(
-        () => buildAnkiNoteTypeStylingResponse(
-            <String, dynamic>{'modelName': 'Lapis'},
-            mining: _FakeMining()),
+        () => buildAnkiNoteTypeStylingResponse(<String, dynamic>{
+          'modelName': 'Lapis',
+        }, mining: _FakeMining()),
         throwsFormatException,
       );
       final Map<String, dynamic> resp = await buildAnkiNoteTypeStylingResponse(
@@ -157,15 +163,12 @@ void main() {
     test('解析 templates 列表并写穿', () async {
       final _FakeMining m = _FakeMining();
       final Map<String, dynamic> resp =
-          await buildAnkiNoteTypeTemplatesResponse(
-        <String, dynamic>{
-          'modelName': 'Lapis',
-          'templates': <dynamic>[
-            <String, dynamic>{'name': 'Card', 'front': 'F', 'back': 'B2'},
-          ],
-        },
-        mining: m,
-      );
+          await buildAnkiNoteTypeTemplatesResponse(<String, dynamic>{
+            'modelName': 'Lapis',
+            'templates': <dynamic>[
+              <String, dynamic>{'name': 'Card', 'front': 'F', 'back': 'B2'},
+            ],
+          }, mining: m);
       expect(resp['ok'], isTrue);
       expect(m.templateWrites.single.$1, 'Lapis');
       expect(m.templateWrites.single.$2.single.name, 'Card');
@@ -174,19 +177,16 @@ void main() {
 
     test('templates 缺失/元素类型错 → FormatException', () {
       expect(
-        () => buildAnkiNoteTypeTemplatesResponse(
-            <String, dynamic>{'modelName': 'Lapis'},
-            mining: _FakeMining()),
+        () => buildAnkiNoteTypeTemplatesResponse(<String, dynamic>{
+          'modelName': 'Lapis',
+        }, mining: _FakeMining()),
         throwsFormatException,
       );
       expect(
-        () => buildAnkiNoteTypeTemplatesResponse(
-          <String, dynamic>{
-            'modelName': 'Lapis',
-            'templates': <dynamic>['not a map'],
-          },
-          mining: _FakeMining(),
-        ),
+        () => buildAnkiNoteTypeTemplatesResponse(<String, dynamic>{
+          'modelName': 'Lapis',
+          'templates': <dynamic>['not a map'],
+        }, mining: _FakeMining()),
         throwsFormatException,
       );
     });

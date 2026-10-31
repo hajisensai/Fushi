@@ -774,7 +774,8 @@ Widget parkedRealmPopupLayer({
       isDark: isDark,
       overrideFillColor: overrideFillColor,
       onDismiss: () {},
-      onTextSelected: (String text, Rect localRect, List<FushiRubySpan> rubySpans) {},
+      onTextSelected:
+          (String text, Rect localRect, List<FushiRubySpan> rubySpans) {},
       onLinkClick: (String query, Rect localRect) {},
       onMineEntry: (Map<String, String> fields) async =>
           const MinePopupResult(),

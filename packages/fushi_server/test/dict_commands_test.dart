@@ -24,7 +24,13 @@ void main() {
     config = File(p.join(tmp.path, 'fushi_server.yaml'));
     expect(
       await _quiet(
-        () => runFushiServerCli(<String>['-c', config.path, 'init', '--data-dir', p.join(tmp.path, 'data')]),
+        () => runFushiServerCli(<String>[
+          '-c',
+          config.path,
+          'init',
+          '--data-dir',
+          p.join(tmp.path, 'data'),
+        ]),
       ),
       0,
     );
@@ -34,27 +40,88 @@ void main() {
 
   group('用法与退出码', () {
     test('缺动词 / 未知动词 / 参数个数不对 → 64', () async {
-      expect(await _quiet(() => runFushiServerCli(<String>['-c', config.path, 'dict'])), 64);
-      expect(await _quiet(() => runFushiServerCli(<String>['-c', config.path, 'dict', 'bogus'])), 64);
-      expect(await _quiet(() => runFushiServerCli(<String>['-c', config.path, 'dict', 'add'])), 64);
-      expect(await _quiet(() => runFushiServerCli(<String>['-c', config.path, 'dict', 'ls', 'extra'])), 64);
+      expect(
+        await _quiet(
+          () => runFushiServerCli(<String>['-c', config.path, 'dict']),
+        ),
+        64,
+      );
+      expect(
+        await _quiet(
+          () => runFushiServerCli(<String>['-c', config.path, 'dict', 'bogus']),
+        ),
+        64,
+      );
+      expect(
+        await _quiet(
+          () => runFushiServerCli(<String>['-c', config.path, 'dict', 'add']),
+        ),
+        64,
+      );
+      expect(
+        await _quiet(
+          () => runFushiServerCli(<String>[
+            '-c',
+            config.path,
+            'dict',
+            'ls',
+            'extra',
+          ]),
+        ),
+        64,
+      );
     });
 
     test('词典包不存在 → 66；配置不存在 → 66', () async {
       expect(
-        await _quiet(() => runFushiServerCli(<String>['-c', config.path, 'dict', 'add', p.join(tmp.path, 'no.zip')])),
+        await _quiet(
+          () => runFushiServerCli(<String>[
+            '-c',
+            config.path,
+            'dict',
+            'add',
+            p.join(tmp.path, 'no.zip'),
+          ]),
+        ),
         66,
       );
-      expect(await _quiet(() => runFushiServerCli(<String>['-c', p.join(tmp.path, 'nope.yaml'), 'dict', 'ls'])), 66);
+      expect(
+        await _quiet(
+          () => runFushiServerCli(<String>[
+            '-c',
+            p.join(tmp.path, 'nope.yaml'),
+            'dict',
+            'ls',
+          ]),
+        ),
+        66,
+      );
     });
 
     test('dict ls --json：空库输出 []；dict rm 不存在的词典 → 1', () async {
       final _Captured out = await _capture(
-        () => runFushiServerCli(<String>['-c', config.path, 'dict', 'ls', '--json']),
+        () => runFushiServerCli(<String>[
+          '-c',
+          config.path,
+          'dict',
+          'ls',
+          '--json',
+        ]),
       );
       expect(out.code, 0);
       expect(jsonDecode(out.stdout.trim()), <Object>[]);
-      expect(await _quiet(() => runFushiServerCli(<String>['-c', config.path, 'dict', 'rm', 'Nope'])), 1);
+      expect(
+        await _quiet(
+          () => runFushiServerCli(<String>[
+            '-c',
+            config.path,
+            'dict',
+            'rm',
+            'Nope',
+          ]),
+        ),
+        1,
+      );
     });
   });
 
@@ -68,9 +135,16 @@ void main() {
     });
     tearDown(() => db.close());
 
-    Future<FushiImportResult> fakeImporter(String archive, String outDir, {String title = 'Fake Dict'}) async {
-      final Directory d = Directory(p.join(outDir, title))..createSync(recursive: true);
-      File(p.join(d.path, 'index.json')).writeAsStringSync('{"title":"$title"}');
+    Future<FushiImportResult> fakeImporter(
+      String archive,
+      String outDir, {
+      String title = 'Fake Dict',
+    }) async {
+      final Directory d = Directory(p.join(outDir, title))
+        ..createSync(recursive: true);
+      File(
+        p.join(d.path, 'index.json'),
+      ).writeAsStringSync('{"title":"$title"}');
       File(p.join(d.path, 'blobs.bin')).writeAsStringSync('x');
       return FushiImportResult(
         success: true,
@@ -87,7 +161,13 @@ void main() {
     }
 
     test('新词典排最后、落资源目录、metadata 记 hasKanji', () async {
-      await db.upsertDictionaryMeta(DictionaryMetadataCompanion.insert(name: 'Old', formatKey: 'yomichan', order: 4));
+      await db.upsertDictionaryMeta(
+        DictionaryMetadataCompanion.insert(
+          name: 'Old',
+          formatKey: 'yomichan',
+          order: 4,
+        ),
+      );
       final DictImportOutcome r = await importDictionaryArchive(
         db: db,
         resourceRoot: resources,
@@ -96,22 +176,33 @@ void main() {
       );
       expect(r.name, 'Fake Dict');
       expect(r.replaced, isFalse);
-      expect(File(p.join(resources.path, 'Fake Dict', 'blobs.bin')).existsSync(), isTrue);
-      final DictionaryMetaRow row = (await db.getAllDictionaryMetadata()).firstWhere(
-        (DictionaryMetaRow x) => x.name == 'Fake Dict',
+      expect(
+        File(p.join(resources.path, 'Fake Dict', 'blobs.bin')).existsSync(),
+        isTrue,
       );
+      final DictionaryMetaRow row = (await db.getAllDictionaryMetadata())
+          .firstWhere((DictionaryMetaRow x) => x.name == 'Fake Dict');
       expect(row.order, 5);
       expect(row.type, 'term');
       expect(jsonDecode(row.metadataJson), containsPair('hasKanji', 'true'));
     });
 
     test('同名重导 = 更新：保留排序与隐藏设置', () async {
-      await importDictionaryArchive(db: db, resourceRoot: resources, archive: File('a.zip'), importer: fakeImporter);
-      final DictionaryMetaRow first = (await db.getAllDictionaryMetadata()).single;
+      await importDictionaryArchive(
+        db: db,
+        resourceRoot: resources,
+        archive: File('a.zip'),
+        importer: fakeImporter,
+      );
+      final DictionaryMetaRow first =
+          (await db.getAllDictionaryMetadata()).single;
       await db.upsertDictionaryMeta(
         first
             .toCompanion(true)
-            .copyWith(order: const Value<int>(7), hiddenLanguagesJson: const Value<String>('["ja"]')),
+            .copyWith(
+              order: const Value<int>(7),
+              hiddenLanguagesJson: const Value<String>('["ja"]'),
+            ),
       );
       final DictImportOutcome again = await importDictionaryArchive(
         db: db,
@@ -120,29 +211,45 @@ void main() {
         importer: fakeImporter,
       );
       expect(again.replaced, isTrue);
-      final DictionaryMetaRow row = (await db.getAllDictionaryMetadata()).single;
+      final DictionaryMetaRow row =
+          (await db.getAllDictionaryMetadata()).single;
       expect(row.order, 7);
       expect(row.hiddenLanguagesJson, '["ja"]');
     });
 
     test('导入器报错 → DictImportException；标题为空 → DictImportException', () async {
-      Future<FushiImportResult> failing(String a, String o) async => const FushiImportResult(
-        success: false,
-        title: '',
-        termCount: 0,
-        metaCount: 0,
-        freqCount: 0,
-        pitchCount: 0,
-        mediaCount: 0,
-        kanjiCount: 0,
-        detectedType: '',
-        error: 'bad zip',
-      );
+      Future<FushiImportResult> failing(String a, String o) async =>
+          const FushiImportResult(
+            success: false,
+            title: '',
+            termCount: 0,
+            metaCount: 0,
+            freqCount: 0,
+            pitchCount: 0,
+            mediaCount: 0,
+            kanjiCount: 0,
+            detectedType: '',
+            error: 'bad zip',
+          );
       await expectLater(
-        importDictionaryArchive(db: db, resourceRoot: resources, archive: File('a.zip'), importer: failing),
-        throwsA(isA<DictImportException>().having((DictImportException e) => e.message, 'message', 'bad zip')),
+        importDictionaryArchive(
+          db: db,
+          resourceRoot: resources,
+          archive: File('a.zip'),
+          importer: failing,
+        ),
+        throwsA(
+          isA<DictImportException>().having(
+            (DictImportException e) => e.message,
+            'message',
+            'bad zip',
+          ),
+        ),
       );
-      expect(() => sanitizeDictionaryTitle('  '), throwsA(isA<DictImportException>()));
+      expect(
+        () => sanitizeDictionaryTitle('  '),
+        throwsA(isA<DictImportException>()),
+      );
       expect(sanitizeDictionaryTitle('a/b'), 'b');
     });
   });
@@ -157,7 +264,11 @@ void main() {
       archive.addFile(ArchiveFile(name, bytes.length, bytes));
     }
 
-    add('index.json', <String, Object>{'title': 'CliDict', 'revision': '1', 'format': 3});
+    add('index.json', <String, Object>{
+      'title': 'CliDict',
+      'revision': '1',
+      'format': 3,
+    });
     add('term_bank_1.json', <Object>[
       <Object>[
         '食べる',
@@ -173,23 +284,56 @@ void main() {
     zip.writeAsBytesSync(ZipEncoder().encode(archive)!);
 
     final _Captured added = await _capture(
-      () => runFushiServerCli(<String>['-c', config.path, 'dict', 'add', zip.path, '--json']),
+      () => runFushiServerCli(<String>[
+        '-c',
+        config.path,
+        'dict',
+        'add',
+        zip.path,
+        '--json',
+      ]),
     );
     expect(added.code, 0, reason: added.stderr);
-    final Map<String, dynamic> outcome = Map<String, dynamic>.from(jsonDecode(added.stdout.trim()) as Map);
+    final Map<String, dynamic> outcome = Map<String, dynamic>.from(
+      jsonDecode(added.stdout.trim()) as Map,
+    );
     expect(outcome['name'], 'CliDict');
     expect(outcome['termCount'], 1);
 
     final _Captured listed = await _capture(
-      () => runFushiServerCli(<String>['-c', config.path, 'dict', 'ls', '--json']),
+      () => runFushiServerCli(<String>[
+        '-c',
+        config.path,
+        'dict',
+        'ls',
+        '--json',
+      ]),
     );
-    final List<dynamic> rows = jsonDecode(listed.stdout.trim()) as List<dynamic>;
+    final List<dynamic> rows =
+        jsonDecode(listed.stdout.trim()) as List<dynamic>;
     expect(rows.single, containsPair('name', 'CliDict'));
     expect(rows.single, containsPair('present', true));
 
-    expect(await _quiet(() => runFushiServerCli(<String>['-c', config.path, 'dict', 'rm', 'CliDict'])), 0);
+    expect(
+      await _quiet(
+        () => runFushiServerCli(<String>[
+          '-c',
+          config.path,
+          'dict',
+          'rm',
+          'CliDict',
+        ]),
+      ),
+      0,
+    );
     final _Captured after = await _capture(
-      () => runFushiServerCli(<String>['-c', config.path, 'dict', 'ls', '--json']),
+      () => runFushiServerCli(<String>[
+        '-c',
+        config.path,
+        'dict',
+        'ls',
+        '--json',
+      ]),
     );
     expect(jsonDecode(after.stdout.trim()), <Object>[]);
     FushiDicts.nativeLibraryPath = null;
@@ -203,13 +347,18 @@ class _Captured {
   final String stderr;
 }
 
-Future<int> _quiet(Future<int> Function() body) async => (await _capture(body)).code;
+Future<int> _quiet(Future<int> Function() body) async =>
+    (await _capture(body)).code;
 
 /// 把 stdout / stderr 截进内存（CLI 命令直接写 `stdout`）。
 Future<_Captured> _capture(Future<int> Function() body) async {
   final _Sink out = _Sink();
   final _Sink err = _Sink();
-  final int code = await IOOverrides.runZoned(body, stdout: () => out, stderr: () => err);
+  final int code = await IOOverrides.runZoned(
+    body,
+    stdout: () => out,
+    stderr: () => err,
+  );
   return _Captured(code, out.buffer.toString(), err.buffer.toString());
 }
 
@@ -223,7 +372,8 @@ class _Sink implements Stdout {
   void writeln([Object? object = '']) => buffer.writeln(object);
 
   @override
-  void writeAll(Iterable<dynamic> objects, [String separator = '']) => buffer.writeAll(objects, separator);
+  void writeAll(Iterable<dynamic> objects, [String separator = '']) =>
+      buffer.writeAll(objects, separator);
 
   @override
   dynamic noSuchMethod(Invocation invocation) => null;

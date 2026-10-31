@@ -26,19 +26,27 @@ void main() {
   );
 
   test('provider_paths.xml exists', () {
-    expect(providerPaths.existsSync(), isTrue,
-        reason: 'BUG-474 fix lives in this FileProvider path whitelist');
+    expect(
+      providerPaths.existsSync(),
+      isTrue,
+      reason: 'BUG-474 fix lives in this FileProvider path whitelist',
+    );
   });
 
-  test('Anki dict media cache lives under code_cache (Directory.systemTemp)',
-      () {
-    // writer/reader 共用的缓存目录；最后一段是 anki-media，父目录即 systemTemp
-    // （Android = code_cache）。这条断言把「写到 code_cache」这个前提钉死，
-    // 一旦写入目录改走别处（如 getCacheDir），应同步更新 provider_paths.xml
-    // 与本守卫，否则二者脱节。
-    expect(ankiDictionaryMediaCacheDirPath().endsWith('anki-media'), isTrue,
-        reason: 'AnkiDroid/AnkiConnect repo 与 writeDictionaryMediaCache 共用此目录');
-  });
+  test(
+    'Anki dict media cache lives under code_cache (Directory.systemTemp)',
+    () {
+      // writer/reader 共用的缓存目录；最后一段是 anki-media，父目录即 systemTemp
+      // （Android = code_cache）。这条断言把「写到 code_cache」这个前提钉死，
+      // 一旦写入目录改走别处（如 getCacheDir），应同步更新 provider_paths.xml
+      // 与本守卫，否则二者脱节。
+      expect(
+        ankiDictionaryMediaCacheDirPath().endsWith('anki-media'),
+        isTrue,
+        reason: 'AnkiDroid/AnkiConnect repo 与 writeDictionaryMediaCache 共用此目录',
+      );
+    },
+  );
 
   test('provider_paths declares a root that covers code_cache', () {
     final String xml = providerPaths.readAsStringSync();
@@ -56,7 +64,8 @@ void main() {
     expect(
       filesRelCodeCache.hasMatch(compact) || rootPath.hasMatch(compact),
       isTrue,
-      reason: 'BUG-474: FileProvider 必须能解析 code_cache 下的文件，否则 getUriForFile '
+      reason:
+          'BUG-474: FileProvider 必须能解析 code_cache 下的文件，否则 getUriForFile '
           '对 …/code_cache/anki-media/*.svg 抛 "Failed to find configured root"，'
           'AnkiDroid 外字 SVG 制卡断裂。用 <files-path path="../code_cache"> 精确覆盖，'
           '或退而用 <root-path>。',

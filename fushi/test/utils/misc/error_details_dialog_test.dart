@@ -18,20 +18,19 @@ void main() {
       'NoClassDefFoundError: Failed resolution of: Lkotlin/LazyKt;';
 
   Future<void> openDialog(WidgetTester tester) async {
-    await tester.pumpWidget(MaterialApp(
-      home: Builder(
-        builder: (BuildContext context) => Scaffold(
-          body: TextButton(
-            onPressed: () => showErrorDetails(
-              context,
-              title: '扩展错误',
-              error: longError,
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (BuildContext context) => Scaffold(
+            body: TextButton(
+              onPressed: () =>
+                  showErrorDetails(context, title: '扩展错误', error: longError),
+              child: const Text('open'),
             ),
-            child: const Text('open'),
           ),
         ),
       ),
-    ));
+    );
     await tester.tap(find.text('open'));
     await tester.pumpAndSettle();
   }
@@ -42,8 +41,7 @@ void main() {
     final SelectableText body = tester.widget<SelectableText>(
       find.byType(SelectableText),
     );
-    expect(body.data, longError,
-        reason: '呈现的必须是完整错误，任何截断都会把可操作的根因切掉');
+    expect(body.data, longError, reason: '呈现的必须是完整错误，任何截断都会把可操作的根因切掉');
     // maxLines 为空 = 不设行数上限；这正是原生 toast 做不到的那一点。
     expect(body.maxLines, isNull);
   });
@@ -59,14 +57,17 @@ void main() {
         return null;
       },
     );
-    addTearDown(() => tester.binding.defaultBinaryMessenger
-        .setMockMethodCallHandler(SystemChannels.platform, null));
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
 
     await openDialog(tester);
     await tester.tap(find.text('Copy'));
     await tester.pumpAndSettle();
 
-    expect(copied, longError,
-        reason: '用户要能把根因整段贴给开发者，少一个字符都可能是缺失的那个类名');
+    expect(copied, longError, reason: '用户要能把根因整段贴给开发者，少一个字符都可能是缺失的那个类名');
   });
 }

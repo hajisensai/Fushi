@@ -46,8 +46,11 @@ void main() {
     });
 
     test('默认开', () {
-      expect(repo.miningAudioFollowPlaybackSpeed, isTrue,
-          reason: '默认值改了就是行为变更，必须有意');
+      expect(
+        repo.miningAudioFollowPlaybackSpeed,
+        isTrue,
+        reason: '默认值改了就是行为变更，必须有意',
+      );
     });
 
     test('toggle 写穿 Drift（往返 + DB key）', () async {
@@ -57,8 +60,11 @@ void main() {
       await repo.setPref('mining_audio_follow_playback_speed', false);
       final PreferencesRepository restored = PreferencesRepository(db);
       await restored.loadFromDb();
-      expect(restored.miningAudioFollowPlaybackSpeed, isFalse,
-          reason: '设过必须落盘且跨实例可见');
+      expect(
+        restored.miningAudioFollowPlaybackSpeed,
+        isFalse,
+        reason: '设过必须落盘且跨实例可见',
+      );
       final Map<String, String> prefs = await db.getAllPrefs();
       expect(
         prefs.containsKey('mining_audio_follow_playback_speed'),
@@ -88,15 +94,17 @@ void main() {
       expect(
         src,
         contains('? _audiobookController?.speed'),
-        reason: '读的必须是控制器当前实时倍速（用户刚拨的倍速就是这次制卡的倍速），'
+        reason:
+            '读的必须是控制器当前实时倍速（用户刚拨的倍速就是这次制卡的倍速），'
             '不是落库偏好',
       );
       expect(src, contains('tempo: sentenceAudioTempo,'));
     });
 
     test('TtsChannel.extractAudioSegment 透传 tempo 到 ffmpeg 裁剪', () {
-      final String src =
-          File('lib/src/utils/misc/tts_channel.dart').readAsStringSync();
+      final String src = File(
+        'lib/src/utils/misc/tts_channel.dart',
+      ).readAsStringSync();
       expect(src, contains('double? tempo,'));
       expect(src, contains('tempo: tempo,'));
     });
@@ -131,8 +139,9 @@ void main() {
     test('统一 FFmpeg 能力清单编入 atempo', () {
       final Map<String, dynamic> caps =
           jsonDecode(
-                File('../tool/ffmpeg-unified/capabilities.json')
-                    .readAsStringSync(),
+                File(
+                  '../tool/ffmpeg-unified/capabilities.json',
+                ).readAsStringSync(),
               )
               as Map<String, dynamic>;
       final List<dynamic>? filters = caps['filters'] as List<dynamic>?;

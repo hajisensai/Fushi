@@ -75,17 +75,21 @@ void main() {
     expect(
       ipc,
       contains('selected_text_thread_id'),
-      reason: 'selected_text_thread_id 必须仍是共享内存 SharedHeader 的字段；'
+      reason:
+          'selected_text_thread_id 必须仍是共享内存 SharedHeader 的字段；'
           '它要是搬出映射了，写权限的前提就变了',
     );
 
     final String reader = _stripComments(File(readerPath).readAsStringSync());
-    final String body =
-        _functionBody(reader, 'bool VoiceHookReader::SelectTextThread');
+    final String body = _functionBody(
+      reader,
+      'bool VoiceHookReader::SelectTextThread',
+    );
     expect(
       body,
       contains('InterlockedExchange64'),
-      reason: '前提消失：SelectTextThread 不再对共享内存做原子写。'
+      reason:
+          '前提消失：SelectTextThread 不再对共享内存做原子写。'
           '若确实改走了别的通道，请连同本守卫与 FILE_MAP_WRITE 一起撤，而不是只删这条断言',
     );
     expect(
@@ -97,8 +101,10 @@ void main() {
 
   test('因此：Open 打开共享内存时必须带 FILE_MAP_WRITE（去掉会 ACCESS_VIOLATION 崩溃）', () {
     final String reader = _stripComments(File(readerPath).readAsStringSync());
-    final String body =
-        _functionBody(reader, 'VoiceHookOpenResult VoiceHookReader::Open');
+    final String body = _functionBody(
+      reader,
+      'VoiceHookOpenResult VoiceHookReader::Open',
+    );
 
     // 判据落在**这两个调用各自的实参上**，不是"整个函数体里出现过 FILE_MAP_WRITE"——
     // 后者会被"一处保留、另一处改成只读"骗过，而两处任缺其一都同样让原子写落在只读页上。

@@ -16,10 +16,10 @@ import 'package:fushi_engine/sync/assistant/host_assistant.dart';
 import 'package:shelf/shelf.dart' as shelf;
 
 shelf.Response _json(Object body, {int status = 200}) => shelf.Response(
-      status,
-      body: jsonEncode(body),
-      headers: const <String, String>{'Content-Type': 'application/json'},
-    );
+  status,
+  body: jsonEncode(body),
+  headers: const <String, String>{'Content-Type': 'application/json'},
+);
 
 Future<Map<String, Object?>?> _readObject(shelf.Request request) async {
   final String text = await request.readAsString();

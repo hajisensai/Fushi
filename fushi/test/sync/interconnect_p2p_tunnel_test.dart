@@ -256,43 +256,39 @@ void main() {
       await cleanupTempDir(dir);
     });
 
-    test(
-      '直连全死 → 经 P2P 隧道到达，隧道里仍核对身份、强制 PIN、按外网定画质',
-      () async {
-        final List<InterconnectHostAddress> published = hostRuntime
-            .hostAddresses(tls: false);
-        expect(published.single.kind, InterconnectAddressKind.p2p);
-        final List<FushiClientUrl> ranked = await rankInterconnectCandidates(
-          <FushiClientUrl>[
+    test('直连全死 → 经 P2P 隧道到达，隧道里仍核对身份、强制 PIN、按外网定画质', () async {
+      final List<InterconnectHostAddress> published = hostRuntime.hostAddresses(
+        tls: false,
+      );
+      expect(published.single.kind, InterconnectAddressKind.p2p);
+      final List<FushiClientUrl> ranked =
+          await rankInterconnectCandidates(<FushiClientUrl>[
             const FushiClientUrl(url: 'http://127.0.0.1:1', hostId: 'HOST-P2P'),
             FushiClientUrl(
               url: published.single.url,
               hostId: 'HOST-P2P',
               learned: true,
             ),
-          ],
-        );
-        final Uri first = Uri.parse(ranked.first.url);
-        expect(first.host, '127.0.0.1');
-        expect(first.port, isNot(1), reason: '胜出的是隧道本地转发口');
-        expect(
-          isPrivateNetworkHost(ranked.first.url),
-          isFalse,
-          reason: '隧道口字面是回环，画质必须按外网给',
-        );
-        expect(
-          await pinRequiredVia(first.port),
-          isTrue,
-          reason: '隧道流量落在信任区，配对强制 PIN',
-        );
-        expect(
-          resolvedPeers.last,
-          currentAppInterconnectP2pRuntime!.current!.nodeId,
-          reason: 'host 从连接源端口查出的对端就是客户端端点的 NodeId',
-        );
-      },
-      skip: available ? false : 'fushi_p2p 原生库不可用',
-    );
+          ]);
+      final Uri first = Uri.parse(ranked.first.url);
+      expect(first.host, '127.0.0.1');
+      expect(first.port, isNot(1), reason: '胜出的是隧道本地转发口');
+      expect(
+        isPrivateNetworkHost(ranked.first.url),
+        isFalse,
+        reason: '隧道口字面是回环，画质必须按外网给',
+      );
+      expect(
+        await pinRequiredVia(first.port),
+        isTrue,
+        reason: '隧道流量落在信任区，配对强制 PIN',
+      );
+      expect(
+        resolvedPeers.last,
+        currentAppInterconnectP2pRuntime!.current!.nodeId,
+        reason: 'host 从连接源端口查出的对端就是客户端端点的 NodeId',
+      );
+    }, skip: available ? false : 'fushi_p2p 原生库不可用');
 
     test('host 地址集经鉴权端点公布 p2p 地址', () async {
       final http.Response resp = await http.get(

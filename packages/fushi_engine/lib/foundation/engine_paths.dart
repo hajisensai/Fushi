@@ -43,7 +43,8 @@ abstract class EnginePaths {
       documentsSubdirectory('video_subtitles');
 
   /// EPUB 解压正文根 `<documents>/fushi_books`。
-  Future<Directory> epubBooksDirectory() => documentsSubdirectory('fushi_books');
+  Future<Directory> epubBooksDirectory() =>
+      documentsSubdirectory('fushi_books');
 
   /// 有声书音频持久根 `<documents>/audiobooks`。
   Future<Directory> audiobooksDirectory() =>
@@ -88,9 +89,9 @@ class UninstalledEnginePaths extends EnginePaths {
   const UninstalledEnginePaths();
 
   Never _fail() => throw StateError(
-        'enginePaths not installed: the host process must assign '
-        'fushi_engine `enginePaths` before touching storage.',
-      );
+    'enginePaths not installed: the host process must assign '
+    'fushi_engine `enginePaths` before touching storage.',
+  );
 
   @override
   Future<Directory> documentsRootDirectory() async => _fail();

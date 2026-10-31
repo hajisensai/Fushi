@@ -125,8 +125,10 @@ class BackupMergeEngine {
   String get _reachableVideoPredicate {
     final StringBuffer buf = StringBuffer('($_networkOnlyVideoPathSql');
     if (_carriedVideoSourcePaths.isNotEmpty) {
-      final String placeholders =
-          List<String>.filled(_carriedVideoSourcePaths.length, '?').join(', ');
+      final String placeholders = List<String>.filled(
+        _carriedVideoSourcePaths.length,
+        '?',
+      ).join(', ');
       buf.write(' OR s.video_path IN ($placeholders)');
     }
     buf.write(')');
@@ -191,16 +193,23 @@ class BackupMergeEngine {
         // srt_books dedups on `uid` but must honour the deleted book's tombstone
         // via its own `book_key` — else deleting a book then merging an old
         // backup resurrects an orphan srt row (no epub) = an "empty book".
-        await _insertMissing('srt_books', 'uid',
-            skipBookTombstones: true, tombstoneKeyColumn: 'book_key');
+        await _insertMissing(
+          'srt_books',
+          'uid',
+          skipBookTombstones: true,
+          tombstoneKeyColumn: 'book_key',
+        );
       }
       if (_wants('videos')) await _insertMissingVideoBooks();
       if (_wants('dictionary')) {
         await _insertMissing('dictionary_metadata', 'name');
       }
       if (_wants('audiobooks')) {
-        await _insertMissing('audiobooks', 'book_key',
-            skipBookTombstones: true);
+        await _insertMissing(
+          'audiobooks',
+          'book_key',
+          skipBookTombstones: true,
+        );
         await _insertAudioCues();
       }
       // Game identity map (src game id → target game id) is built for EVERY
@@ -227,10 +236,16 @@ class BackupMergeEngine {
         await _mergeVideoWatchStatistics();
         // 阅读时段表 v67 起多一维 format（备份 DB 在 ATTACH 前已迁到当前
         // schema，两侧必有此列）；视频时段表仍是 {dateKey, hour} 两维。
-        await _mergeHourlyLogs('reading_hourly_logs', 'reading_time_ms',
-            keyColumns: const <String>['date_key', 'hour', 'format']);
-        await _mergeHourlyLogs('video_hourly_logs', 'watch_time_ms',
-            keyColumns: const <String>['date_key', 'hour']);
+        await _mergeHourlyLogs(
+          'reading_hourly_logs',
+          'reading_time_ms',
+          keyColumns: const <String>['date_key', 'hour', 'format'],
+        );
+        await _mergeHourlyLogs(
+          'video_hourly_logs',
+          'watch_time_ms',
+          keyColumns: const <String>['date_key', 'hour'],
+        );
         await _mergeMiningStatistics();
         await _mergeLookupMiningCounters();
         await _mergeFavoriteWords();
@@ -440,9 +455,11 @@ class BackupMergeEngine {
 
   /// WHERE fragment keeping every non-game row plus the game rows whose host
   /// resolved through the map (an unmatched game row would dangle).
-  static String _hasHost(String s, String m,
-          {String kindColumn = 'media_kind'}) =>
-      "($s.$kindColumn <> '$kActivityMediaGame' OR $m.dst_id IS NOT NULL)";
+  static String _hasHost(
+    String s,
+    String m, {
+    String kindColumn = 'media_kind',
+  }) => "($s.$kindColumn <> '$kActivityMediaGame' OR $m.dst_id IS NOT NULL)";
 
   /// Every column of [table] (quoted), for tables whose primary key is a
   /// stable business string rather than an autoincrement `id`.
@@ -464,8 +481,10 @@ class BackupMergeEngine {
   /// [mergeSkippedLocalIdPrefKeys]，一律不接管。
   Future<void> _adoptMissingPreferences() async {
     final List<String> skipped = mergeSkippedLocalIdPrefKeys();
-    final String placeholders =
-        List<String>.filled(skipped.length, '?').join(', ');
+    final String placeholders = List<String>.filled(
+      skipped.length,
+      '?',
+    ).join(', ');
     await _db.customStatement(
       'INSERT INTO preferences ("key", "value") '
       'SELECT s."key", s."value" FROM $_srcAlias.preferences AS s '
@@ -483,11 +502,17 @@ class BackupMergeEngine {
   /// would newly appear (epub + video + audiobook, excluding tombstoned keys)
   /// and reading positions that would be inserted or advanced by LWW.
   Future<BackupMergePreview> preview() async {
-    final int epub =
-        await _countMissing('epub_books', 'book_key', skipBookTombstones: true);
+    final int epub = await _countMissing(
+      'epub_books',
+      'book_key',
+      skipBookTombstones: true,
+    );
     final int video = await _countMissingVideoBooks();
-    final int audio =
-        await _countMissing('audiobooks', 'book_key', skipBookTombstones: true);
+    final int audio = await _countMissing(
+      'audiobooks',
+      'book_key',
+      skipBookTombstones: true,
+    );
     final int positions = await _countReaderPositionChanges();
     return BackupMergePreview(
       newEpubBooks: epub,
@@ -620,13 +645,15 @@ class BackupMergeEngine {
   Future<void> _insertMissingEpubBooks() async {
     final List<String> cols = await _columnsExceptId('epub_books');
     final String colList = cols.join(', ');
-    final String selList = cols.map((String c) {
-      if (c != '"uid"') return 's.$c';
-      return "CASE WHEN s.uid != '' AND EXISTS "
-          '(SELECT 1 FROM epub_books AS e WHERE e.uid = s.uid) '
-          "THEN 'book_' || s.rowid || '_' || strftime('%s','now') || '_m' "
-          'ELSE s.uid END';
-    }).join(', ');
+    final String selList = cols
+        .map((String c) {
+          if (c != '"uid"') return 's.$c';
+          return "CASE WHEN s.uid != '' AND EXISTS "
+              '(SELECT 1 FROM epub_books AS e WHERE e.uid = s.uid) '
+              "THEN 'book_' || s.rowid || '_' || strftime('%s','now') || '_m' "
+              'ELSE s.uid END';
+        })
+        .join(', ');
     await _db.customStatement(
       'INSERT INTO epub_books ($colList) '
       'SELECT $selList FROM $_srcAlias.epub_books AS s '
@@ -707,17 +734,21 @@ class BackupMergeEngine {
     // 键天然稳定，误换算即数据损坏。
     final Map<String, String> srcBookKeyByUid = <String, String>{};
     if (await _srcTableExists('epub_books')) {
-      for (final QueryRow r in await _db
-          .customSelect('SELECT uid, book_key FROM $_srcAlias.epub_books')
-          .get()) {
+      for (final QueryRow r
+          in await _db
+              .customSelect('SELECT uid, book_key FROM $_srcAlias.epub_books')
+              .get()) {
         final String uid = r.read<String>('uid');
         if (uid.isNotEmpty) srcBookKeyByUid[uid] = r.read<String>('book_key');
       }
     }
     final Map<String, String> localUidByBookKey = <String, String>{};
-    for (final QueryRow r in await _db
-        .customSelect("SELECT uid, book_key FROM epub_books WHERE uid != ''")
-        .get()) {
+    for (final QueryRow r
+        in await _db
+            .customSelect(
+              "SELECT uid, book_key FROM epub_books WHERE uid != ''",
+            )
+            .get()) {
       localUidByBookKey[r.read<String>('book_key')] = r.read<String>('uid');
     }
     // epub 键归一到 bookKey 域（墓碑匹配用——本地成员墓碑冻结在 bookKey 域）：
@@ -772,7 +803,9 @@ class BackupMergeEngine {
         _collectionKey(
           r.read<String>('name'),
           r.read<String>('collection_type'),
-        ): r.read<int>('id'),
+        ): r.read<int>(
+          'id',
+        ),
     };
     int nextSort = await _nextTargetCollectionSortOrder();
 
@@ -808,9 +841,9 @@ class BackupMergeEngine {
       final String epubCoverPrefix = '${MediaKind.epub.dbValue}|';
       final String? coverForInsert =
           (srcCover != null && srcCover.startsWith(epubCoverPrefix))
-              ? epubCoverPrefix +
-                  rekeyEpubEntryKey(srcCover.substring(epubCoverPrefix.length))
-              : srcCover;
+          ? epubCoverPrefix +
+                rekeyEpubEntryKey(srcCover.substring(epubCoverPrefix.length))
+          : srcCover;
       final int newId = await _db.customInsert(
         'INSERT INTO media_collections '
         '(name, collection_type, cover_source, sort_order, created_at, '
@@ -865,12 +898,17 @@ class BackupMergeEngine {
       final bool isEpub = mediaType == MediaKind.epub.dbValue;
       // 墓碑匹配在 bookKey 域：本地成员墓碑 entry_key 冻结在 bookKey 域（§4），
       // src epub 成员先归一再比；非 epub 键值自身即稳定键，直比。
-      final String tombstoneKey =
-          isEpub ? normalizeEpubToBookKey(entryKey) : entryKey;
+      final String tombstoneKey = isEpub
+          ? normalizeEpubToBookKey(entryKey)
+          : entryKey;
       final (String, String)? natural = srcIdToNatural[srcCollectionId];
       if (natural != null &&
-          removedMemberKeys
-              .contains((natural.$1, natural.$2, mediaType, tombstoneKey))) {
+          removedMemberKeys.contains((
+            natural.$1,
+            natural.$2,
+            mediaType,
+            tombstoneKey,
+          ))) {
         continue; // 成员移出墓碑命中：跳过（防复活已移出成员）。
       }
       // 落库键：epub 三级回落换到本库键域；同书的 uid 行与透传 bookKey 行换键后
@@ -905,10 +943,12 @@ class BackupMergeEngine {
   /// 目标库 `sqlite_master`（合集墓碑表 collection_member_tombstones 是本地防复活证据；
   /// merge 前两库都已迁到当前 schema，正常必有此表——防御性判存，与 src 侧同纪律）。
   Future<bool> _tableExists(String table) async {
-    final QueryRow? row = await _db.customSelect(
-      "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
-      variables: <Variable<Object>>[Variable<String>(table)],
-    ).getSingleOrNull();
+    final QueryRow? row = await _db
+        .customSelect(
+          "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+          variables: <Variable<Object>>[Variable<String>(table)],
+        )
+        .getSingleOrNull();
     return row != null;
   }
 
@@ -927,11 +967,13 @@ class BackupMergeEngine {
 
   /// 把备份里同名合集行 [src] 的整理身份并进本库合集 [targetId]。
   Future<void> _mergeOrganizeIdentityInto(int targetId, QueryRow src) async {
-    final QueryRow? t = await _db.customSelect(
-      'SELECT origin, organize_key, organize_aliases FROM media_collections '
-      'WHERE id = ?',
-      variables: <Variable<Object>>[Variable<int>(targetId)],
-    ).getSingleOrNull();
+    final QueryRow? t = await _db
+        .customSelect(
+          'SELECT origin, organize_key, organize_aliases FROM media_collections '
+          'WHERE id = ?',
+          variables: <Variable<Object>>[Variable<int>(targetId)],
+        )
+        .getSingleOrNull();
     if (t == null) return;
     final ({String? key, Set<String> aliases}) identity = mergeOrganizeIdentity(
       keyA: t.read<String?>('organize_key'),
@@ -966,11 +1008,13 @@ class BackupMergeEngine {
 
   /// src(备份)库是否有名为 [table] 的表（防旧备份缺合集表时 SELECT 崩溃）。
   Future<bool> _srcTableExists(String table) async {
-    final QueryRow? row = await _db.customSelect(
-      'SELECT 1 FROM $_srcAlias.sqlite_master '
-      "WHERE type = 'table' AND name = ?",
-      variables: <Variable<Object>>[Variable<String>(table)],
-    ).getSingleOrNull();
+    final QueryRow? row = await _db
+        .customSelect(
+          'SELECT 1 FROM $_srcAlias.sqlite_master '
+          "WHERE type = 'table' AND name = ?",
+          variables: <Variable<Object>>[Variable<String>(table)],
+        )
+        .getSingleOrNull();
     return row != null;
   }
 
@@ -1009,9 +1053,12 @@ class BackupMergeEngine {
     );
     final String setClause = cols
         .where((String c) => c != '"book_uid"')
-        .map((String c) => '$c = ('
-            'SELECT s.$c FROM $_srcAlias.reader_positions AS s '
-            'WHERE $_srcBookUidRekey = reader_positions.book_uid)')
+        .map(
+          (String c) =>
+              '$c = ('
+              'SELECT s.$c FROM $_srcAlias.reader_positions AS s '
+              'WHERE $_srcBookUidRekey = reader_positions.book_uid)',
+        )
         .join(', ');
     await _db.customStatement(
       'UPDATE reader_positions SET $setClause '
@@ -1107,10 +1154,12 @@ class BackupMergeEngine {
     required List<String> keyColumns,
   }) async {
     final String keyList = keyColumns.join(', ');
-    final String tEqS =
-        keyColumns.map((String c) => 't.$c = s.$c').join(' AND ');
-    final String sEqTable =
-        keyColumns.map((String c) => 's.$c = $table.$c').join(' AND ');
+    final String tEqS = keyColumns
+        .map((String c) => 't.$c = s.$c')
+        .join(' AND ');
+    final String sEqTable = keyColumns
+        .map((String c) => 's.$c = $table.$c')
+        .join(' AND ');
     await _db.customStatement(
       'INSERT INTO $table ($keyList, $valueColumn) '
       'SELECT $keyList, $valueColumn FROM $_srcAlias.$table AS s '
@@ -1227,8 +1276,10 @@ class BackupMergeEngine {
   Future<void> _mergeWebBrowserHistory() async {
     if (!await _srcTableExists('web_browser_history')) return;
     final Map<String, int> tombstones = <String, int>{
-      for (final SyncDeletionTombstoneRow row in await _db
-          .getSyncDeletionTombstonesOfType(SyncTombstoneKind.webhistory.dbValue))
+      for (final SyncDeletionTombstoneRow row
+          in await _db.getSyncDeletionTombstonesOfType(
+            SyncTombstoneKind.webhistory.dbValue,
+          ))
         row.itemKey: row.deletedAt,
     };
     final List<QueryRow> rows = await _db
@@ -1261,9 +1312,10 @@ class BackupMergeEngine {
   Future<void> _mergeWebBrowserBookmarks() async {
     if (!await _srcTableExists('web_browser_bookmarks')) return;
     final Map<String, int> tombstones = <String, int>{
-      for (final SyncDeletionTombstoneRow row in await _db
-          .getSyncDeletionTombstonesOfType(
-              SyncTombstoneKind.webbookmark.dbValue))
+      for (final SyncDeletionTombstoneRow row
+          in await _db.getSyncDeletionTombstonesOfType(
+            SyncTombstoneKind.webbookmark.dbValue,
+          ))
         row.itemKey: row.deletedAt,
     };
     final List<QueryRow> rows = await _db
@@ -1416,10 +1468,10 @@ class BackupMergeEngine {
       'profile_id',
     ];
     String srcCol(String c) => switch (c) {
-          'media_key' => '$key AS media_key',
-          'profile_id' => '$profileId AS profile_id',
-          _ => 's.$c',
-        };
+      'media_key' => '$key AS media_key',
+      'profile_id' => '$profileId AS profile_id',
+      _ => 's.$c',
+    };
     final String colList = cols.join(', ');
     final String srcColList = cols.map(srcCol).join(', ');
     await _db.customStatement(
@@ -1431,10 +1483,12 @@ class BackupMergeEngine {
     // 归属不随 LWW 改：profile_id 不在 SET 列里。
     final String setClause = cols
         .where((String c) => c != 'uid' && c != 'profile_id')
-        .map((String c) =>
-            '$c = (SELECT ${srcCol(c)} FROM $_srcAlias.study_segments AS s '
-            '${c == 'media_key' ? join : ''}'
-            'WHERE s.uid = study_segments.uid)')
+        .map(
+          (String c) =>
+              '$c = (SELECT ${srcCol(c)} FROM $_srcAlias.study_segments AS s '
+              '${c == 'media_key' ? join : ''}'
+              'WHERE s.uid = study_segments.uid)',
+        )
         .join(', ');
     await _db.customStatement(
       'UPDATE study_segments SET $setClause '
@@ -1491,14 +1545,16 @@ class BackupMergeEngine {
     // Nothing to merge in from the backup: leave the device's blob untouched.
     if (srcRaw == null || srcRaw.isEmpty) return;
 
-    final List<FavoriteSentence> localList =
-        _decodeFavoriteSentences(targetRaw);
+    final List<FavoriteSentence> localList = _decodeFavoriteSentences(
+      targetRaw,
+    );
     final List<FavoriteSentence> remoteList = _decodeFavoriteSentences(srcRaw);
     final List<FavoriteSentence> merged =
         AggregateMergeService.mergeFavoriteSentences(localList, remoteList);
 
-    final String mergedJson =
-        jsonEncode(merged.map((FavoriteSentence s) => s.toJson()).toList());
+    final String mergedJson = jsonEncode(
+      merged.map((FavoriteSentence s) => s.toJson()).toList(),
+    );
     // Upsert the target preference row (INSERT OR REPLACE on the key PK).
     await _db.customStatement(
       'INSERT OR REPLACE INTO preferences ("key", "value") VALUES (?, ?)',
@@ -1511,12 +1567,14 @@ class BackupMergeEngine {
   /// row is absent.
   Future<String?> _readPref({required bool isSrc}) async {
     final String table = isSrc ? '$_srcAlias.preferences' : 'preferences';
-    final rows = await _db.customSelect(
-      'SELECT "value" FROM $table WHERE "key" = ?',
-      variables: <Variable<Object>>[
-        Variable<String>(_favoriteSentencesPrefKey)
-      ],
-    ).get();
+    final rows = await _db
+        .customSelect(
+          'SELECT "value" FROM $table WHERE "key" = ?',
+          variables: <Variable<Object>>[
+            Variable<String>(_favoriteSentencesPrefKey),
+          ],
+        )
+        .get();
     if (rows.isEmpty) return null;
     return rows.first.data['value'] as String?;
   }
@@ -1626,15 +1684,19 @@ class BackupMergeEngine {
     if (!await _srcTableExists('media_links')) return;
     final Map<String, String> collectionIdMap = <String, String>{};
     if (await _srcTableExists('media_collections')) {
-      final List<QueryRow> pairs = await _db.customSelect(
-        'SELECT CAST(sc.id AS TEXT) AS src_id, MIN(tc.id) AS dst_id '
-        'FROM $_srcAlias.media_collections AS sc '
-        'JOIN media_collections AS tc '
-        'ON tc.name = sc.name AND tc.collection_type = sc.collection_type '
-        'GROUP BY sc.id',
-      ).get();
+      final List<QueryRow> pairs = await _db
+          .customSelect(
+            'SELECT CAST(sc.id AS TEXT) AS src_id, MIN(tc.id) AS dst_id '
+            'FROM $_srcAlias.media_collections AS sc '
+            'JOIN media_collections AS tc '
+            'ON tc.name = sc.name AND tc.collection_type = sc.collection_type '
+            'GROUP BY sc.id',
+          )
+          .get();
       for (final QueryRow r in pairs) {
-        collectionIdMap[r.read<String>('src_id')] = r.read<int>('dst_id').toString();
+        collectionIdMap[r.read<String>('src_id')] = r
+            .read<int>('dst_id')
+            .toString();
       }
     }
     final Map<String, String> gameIdMap = await _readGameIdMap();
@@ -1649,15 +1711,20 @@ class BackupMergeEngine {
         .customSelect('SELECT * FROM $_srcAlias.media_links')
         .get();
     for (final QueryRow r in rows) {
-      final MediaLinkRelation? relation =
-          MediaLinkRelation.tryParse(r.read<String>('relation'));
-      final MediaLinkKind? fromKind =
-          MediaLinkKind.tryParse(r.read<String>('from_kind'));
-      final MediaLinkKind? toKind =
-          MediaLinkKind.tryParse(r.read<String>('to_kind'));
+      final MediaLinkRelation? relation = MediaLinkRelation.tryParse(
+        r.read<String>('relation'),
+      );
+      final MediaLinkKind? fromKind = MediaLinkKind.tryParse(
+        r.read<String>('from_kind'),
+      );
+      final MediaLinkKind? toKind = MediaLinkKind.tryParse(
+        r.read<String>('to_kind'),
+      );
       if (relation == null || fromKind == null || toKind == null) continue;
-      final String? fromKey =
-          mapKey(fromKind.dbValue, r.read<String>('from_key'));
+      final String? fromKey = mapKey(
+        fromKind.dbValue,
+        r.read<String>('from_key'),
+      );
       final String? toKey = mapKey(toKind.dbValue, r.read<String>('to_key'));
       if (fromKey == null || toKey == null) continue;
       if (fromKind == toKind && fromKey == toKey) continue;
@@ -1881,10 +1948,13 @@ class BackupMergeEngine {
         'source_title',
         'source_cover',
       ];
-      final bool srcHasSnapshot =
-          await _srcColumnExists('music_play_events', 'source_cover');
-      final String extraCols =
-          srcHasSnapshot ? ', ${snapshotColumns.join(', ')}' : '';
+      final bool srcHasSnapshot = await _srcColumnExists(
+        'music_play_events',
+        'source_cover',
+      );
+      final String extraCols = srcHasSnapshot
+          ? ', ${snapshotColumns.join(', ')}'
+          : '';
       final String extraSel = srcHasSnapshot
           ? ', ${snapshotColumns.map((String c) => 's.$c').join(', ')}'
           : '';
@@ -2062,10 +2132,12 @@ class BackupMergeEngine {
   /// or the ATTACHed src ([isSrc] true); null when the row is absent.
   Future<String?> _readPrefValue(String key, {required bool isSrc}) async {
     final String table = isSrc ? '$_srcAlias.preferences' : 'preferences';
-    final rows = await _db.customSelect(
-      'SELECT "value" FROM $table WHERE "key" = ?',
-      variables: <Variable<Object>>[Variable<String>(key)],
-    ).get();
+    final rows = await _db
+        .customSelect(
+          'SELECT "value" FROM $table WHERE "key" = ?',
+          variables: <Variable<Object>>[Variable<String>(key)],
+        )
+        .get();
     if (rows.isEmpty) return null;
     return rows.first.data['value'] as String?;
   }
@@ -2184,8 +2256,9 @@ Future<void> mergeSrsIntoLocal({
         'VALUES (?, ?, ?)',
         <Object>[name, now, now],
       );
-      final QueryRow row =
-          await db.customSelect('SELECT last_insert_rowid() AS id').getSingle();
+      final QueryRow row = await db
+          .customSelect('SELECT last_insert_rowid() AS id')
+          .getSingle();
       return row.read<int>('id');
     },
   );

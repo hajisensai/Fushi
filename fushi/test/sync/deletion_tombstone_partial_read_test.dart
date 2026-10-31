@@ -42,36 +42,41 @@ void main() {
   });
 
   SyncOrchestrator orchestrator() => SyncOrchestrator(
-        db: db,
-        backend: backend,
-        dictionaryResourceRoot: tmp,
-        audioDatabaseRoot: tmp,
-        tempDir: tmp,
-        syncStats: false,
-        syncAudioBookPosition: false,
-        syncContent: false,
-        syncMangaContent: false,
-        syncAudioBookFiles: false,
-        syncDictionary: false,
-      );
+    db: db,
+    backend: backend,
+    dictionaryResourceRoot: tmp,
+    audioDatabaseRoot: tmp,
+    tempDir: tmp,
+    syncStats: false,
+    syncAudioBookPosition: false,
+    syncContent: false,
+    syncMangaContent: false,
+    syncAudioBookFiles: false,
+    syncDictionary: false,
+  );
 
   final String kind = SyncTombstoneKind.srtbook.dbValue;
 
-  Future<void> addSrt(String uid) => db.upsertSrtBook(SrtBooksCompanion.insert(
-        uid: uid,
-        title: uid,
-        srtPath: '/tmp/$uid.srt',
-        importedAt: 0,
-        // 墓碑仲裁读本机拥有时刻（v118）：0 = 一直都在，任何墓碑都管得着它。
-        localAddedAt: const Value<int?>(0),
-      ));
+  Future<void> addSrt(String uid) => db.upsertSrtBook(
+    SrtBooksCompanion.insert(
+      uid: uid,
+      title: uid,
+      srtPath: '/tmp/$uid.srt',
+      importedAt: 0,
+      // 墓碑仲裁读本机拥有时刻（v118）：0 = 一直都在，任何墓碑都管得着它。
+      localAddedAt: const Value<int?>(0),
+    ),
+  );
 
   /// 造一条「对端删了这本书」的远端标记，返回它的资产 id。
   Future<String> putRemoteTombstone(String uid, int deletedAt) async {
     final String ns = await backend.ensureNamespace(kSyncTombstonesNamespace);
     final String name = deletionTombstoneAssetName(kind, uid);
     await backend.putJsonAsset(
-        ns, name, deletionTombstoneJson(kind, uid, deletedAt));
+      ns,
+      name,
+      deletionTombstoneJson(kind, uid, deletedAt),
+    );
     return '$ns/$name';
   }
 
@@ -82,7 +87,9 @@ void main() {
         in report.deletionTombstonesHighWaterMsByScope.entries) {
       if (e.value <= 0) continue;
       await repo.setDeletionTombstonesBaselineMs(
-          SyncChannelScope.byId(e.key), e.value);
+        SyncChannelScope.byId(e.key),
+        e.value,
+      );
     }
   }
 
@@ -94,9 +101,9 @@ void main() {
     await orchestrator().syncDeletionTombstones(report);
 
     expect(report.deletionCandidates, hasLength(1));
-    expect(report.deletionTombstonesHighWaterMsByScope,
-        <String, int>{SyncChannelScope.unscoped.id: 5000},
-        reason: '完整观测的一轮必须照常推进基线，否则用户复核过的删除会反复骚扰');
+    expect(report.deletionTombstonesHighWaterMsByScope, <String, int>{
+      SyncChannelScope.unscoped.id: 5000,
+    }, reason: '完整观测的一轮必须照常推进基线，否则用户复核过的删除会反复骚扰');
   });
 
   test('一条读失败（抛）→ 候选照出，但本轮不登记 high-water', () async {
@@ -110,16 +117,24 @@ void main() {
     await orchestrator().syncDeletionTombstones(report);
 
     expect(
-        report.deletionCandidates
-            .map((DeletionPropagationCandidate c) => c.itemKey),
-        <String>['srt/late'],
-        reason: '读得出来的那条照常上报，不能因为同伴失败就一起哑掉');
-    expect(report.deletionTombstonesHighWaterMsByScope, isEmpty,
-        reason: '本轮观测不完整，不得认领「已复核到 9000」——那会把 deletedAt=1000 的 '
-            'early 永久压成旧闻');
-    expect(report.errors.any((String s) => s.contains('scan incomplete')),
-        isTrue,
-        reason: '基线被扣住这件事要在报告里留痕，否则只能靠猜');
+      report.deletionCandidates.map(
+        (DeletionPropagationCandidate c) => c.itemKey,
+      ),
+      <String>['srt/late'],
+      reason: '读得出来的那条照常上报，不能因为同伴失败就一起哑掉',
+    );
+    expect(
+      report.deletionTombstonesHighWaterMsByScope,
+      isEmpty,
+      reason:
+          '本轮观测不完整，不得认领「已复核到 9000」——那会把 deletedAt=1000 的 '
+          'early 永久压成旧闻',
+    );
+    expect(
+      report.errors.any((String s) => s.contains('scan incomplete')),
+      isTrue,
+      reason: '基线被扣住这件事要在报告里留痕，否则只能靠猜',
+    );
   });
 
   test('回归：一轮部分失败 + 用户复核 → 下一轮读全后，被跳过的那条仍能弹出', () async {
@@ -140,11 +155,14 @@ void main() {
     await orchestrator().syncDeletionTombstones(run2);
 
     expect(
-        run2.deletionCandidates
-            .map((DeletionPropagationCandidate c) => c.itemKey),
-        contains('srt/early'),
-        reason: '这是本 bug 的要害：修复前 baseline 已被推到 9000，deletedAt=1000 的 '
-            'early 从此永远进不了候选，对端的删除在本机静默丢失');
+      run2.deletionCandidates.map(
+        (DeletionPropagationCandidate c) => c.itemKey,
+      ),
+      contains('srt/early'),
+      reason:
+          '这是本 bug 的要害：修复前 baseline 已被推到 9000，deletedAt=1000 的 '
+          'early 从此永远进不了候选，对端的删除在本机静默丢失',
+    );
   });
 
   test('读回 null（后端把读失败映射成空）→ 同样扣住基线', () async {
@@ -156,9 +174,13 @@ void main() {
     final SyncRunReport report = SyncRunReport();
     await orchestrator().syncDeletionTombstones(report);
 
-    expect(report.deletionTombstonesHighWaterMsByScope, isEmpty,
-        reason: 'SftpSyncBackend.getJsonAsset 把 SyncBackendError 吞成 null，'
-            '按「已观测」处理会让同一次永久压制悄无声息地发生');
+    expect(
+      report.deletionTombstonesHighWaterMsByScope,
+      isEmpty,
+      reason:
+          'SftpSyncBackend.getJsonAsset 把 SyncBackendError 吞成 null，'
+          '按「已观测」处理会让同一次永久压制悄无声息地发生',
+    );
     expect(report.errors.any((String s) => s.contains('unreadable')), isTrue);
   });
 
@@ -171,11 +193,14 @@ void main() {
     final SyncRunReport report = SyncRunReport();
     await orchestrator().syncDeletionTombstones(report);
 
-    expect(report.deletionTombstonesHighWaterMsByScope,
-        <String, int>{SyncChannelScope.unscoped.id: 9000},
-        reason: '坏文件重试一万次还是坏的；为它永久钉住基线只会让用户每轮重看同一批确认框');
-    expect(report.errors.any((String s) => s.contains('malformed')), isTrue,
-        reason: '不再静默丢弃：坏标记要看得见');
+    expect(report.deletionTombstonesHighWaterMsByScope, <String, int>{
+      SyncChannelScope.unscoped.id: 9000,
+    }, reason: '坏文件重试一万次还是坏的；为它永久钉住基线只会让用户每轮重看同一批确认框');
+    expect(
+      report.errors.any((String s) => s.contains('malformed')),
+      isTrue,
+      reason: '不再静默丢弃：坏标记要看得见',
+    );
   });
 }
 

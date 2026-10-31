@@ -83,31 +83,29 @@ class AListSiteConfig {
     String? password,
     bool? enabled,
     bool? allowInsecureHttp,
-  }) =>
-      AListSiteConfig(
-        id: id,
-        name: name ?? this.name,
-        baseUrl: baseUrl ?? this.baseUrl,
-        kinds: kinds ?? this.kinds,
-        username: username ?? this.username,
-        password: password ?? this.password,
-        enabled: enabled ?? this.enabled,
-        allowInsecureHttp: allowInsecureHttp ?? this.allowInsecureHttp,
-      );
+  }) => AListSiteConfig(
+    id: id,
+    name: name ?? this.name,
+    baseUrl: baseUrl ?? this.baseUrl,
+    kinds: kinds ?? this.kinds,
+    username: username ?? this.username,
+    password: password ?? this.password,
+    enabled: enabled ?? this.enabled,
+    allowInsecureHttp: allowInsecureHttp ?? this.allowInsecureHttp,
+  );
 
   /// 密码 base64 存放：遮蔽不是加密，纪律靠本键登记进
   /// `kCredentialPreferenceKeys` 与 device-local 清单（同 OPDS）。
   Map<String, Object?> toJson() => <String, Object?>{
-        'id': id,
-        'name': name,
-        'url': baseUrl.toString(),
-        'kinds': <String>[for (final DiscoveryMediaKind k in kinds) k.name],
-        'username': username,
-        if (password.isNotEmpty)
-          'passwordB64': base64Encode(utf8.encode(password)),
-        'enabled': enabled,
-        'allowInsecureHttp': allowInsecureHttp,
-      };
+    'id': id,
+    'name': name,
+    'url': baseUrl.toString(),
+    'kinds': <String>[for (final DiscoveryMediaKind k in kinds) k.name],
+    'username': username,
+    if (password.isNotEmpty) 'passwordB64': base64Encode(utf8.encode(password)),
+    'enabled': enabled,
+    'allowInsecureHttp': allowInsecureHttp,
+  };
 
   /// 解析一条配置；畸形即抛，由列表层逐条丢弃（见 [decodeAListSiteConfigs]）。
   factory AListSiteConfig.fromJson(Map<String, Object?> json) {

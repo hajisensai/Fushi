@@ -44,15 +44,17 @@ List<AudioCue> buildSampleCues({
   final List<AudioCue> cues = <AudioCue>[];
   for (int i = 0; i < count; i++) {
     final int startMs = i * (cueDurationMs + gapMs);
-    cues.add(AudioCue()
-      ..bookKey = bookKey
-      ..chapterHref = chapterHref
-      ..sentenceIndex = i
-      ..textFragmentId = '[data-cue-id="$i"]'
-      ..text = _kSampleSentences[i % _kSampleSentences.length]
-      ..startMs = startMs
-      ..endMs = startMs + cueDurationMs
-      ..audioFileIndex = 0);
+    cues.add(
+      AudioCue()
+        ..bookKey = bookKey
+        ..chapterHref = chapterHref
+        ..sentenceIndex = i
+        ..textFragmentId = '[data-cue-id="$i"]'
+        ..text = _kSampleSentences[i % _kSampleSentences.length]
+        ..startMs = startMs
+        ..endMs = startMs + cueDurationMs
+        ..audioFileIndex = 0,
+    );
   }
   return cues;
 }
@@ -115,7 +117,8 @@ String cuesToAss(List<AudioCue> cues) {
   sb.writeln();
   sb.writeln('[Events]');
   sb.writeln(
-      'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text');
+    'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text',
+  );
   for (final AudioCue c in cues) {
     sb.writeln(
       'Dialogue: 0,${_assTimecode(c.startMs)},${_assTimecode(c.endMs)},'
@@ -169,8 +172,10 @@ Future<File> generateSilentAudio({
     'aac',
     outPath,
   ];
-  final FfmpegRunResult result =
-      await backend.run(args, const Duration(seconds: 60));
+  final FfmpegRunResult result = await backend.run(
+    args,
+    const Duration(seconds: 60),
+  );
   if (!result.isSuccess) {
     throw StateError('generateSilentAudio failed: ${result.failureSummary}');
   }
@@ -205,8 +210,10 @@ Future<File> generateTestVideo({
     'aac',
     outPath,
   ];
-  final FfmpegRunResult result =
-      await backend.run(args, const Duration(seconds: 120));
+  final FfmpegRunResult result = await backend.run(
+    args,
+    const Duration(seconds: 120),
+  );
   if (!result.isSuccess) {
     throw StateError('generateTestVideo failed: ${result.failureSummary}');
   }

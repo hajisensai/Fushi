@@ -21,14 +21,20 @@ void main() {
     test('null / 越界一律不确定进度', () {
       for (final int? p in <int?>[null, -5, 101, 1000]) {
         expect(
-          DownloadKeepAliveState.normalized(title: 't', text: 'x', percent: p)
-              .percent,
+          DownloadKeepAliveState.normalized(
+            title: 't',
+            text: 'x',
+            percent: p,
+          ).percent,
           kDownloadKeepAliveIndeterminate,
         );
       }
       expect(
-        DownloadKeepAliveState.normalized(title: 't', text: 'x', percent: 42)
-            .percent,
+        DownloadKeepAliveState.normalized(
+          title: 't',
+          text: 'x',
+          percent: 42,
+        ).percent,
         42,
       );
     });
@@ -37,10 +43,16 @@ void main() {
   group('DownloadKeepAliveThrottle', () {
     late DateTime now;
     late DownloadKeepAliveThrottle throttle;
-    const DownloadKeepAliveState a =
-        DownloadKeepAliveState(title: 'A', text: 'a', percent: 1);
-    const DownloadKeepAliveState b =
-        DownloadKeepAliveState(title: 'A', text: 'a', percent: 2);
+    const DownloadKeepAliveState a = DownloadKeepAliveState(
+      title: 'A',
+      text: 'a',
+      percent: 1,
+    );
+    const DownloadKeepAliveState b = DownloadKeepAliveState(
+      title: 'A',
+      text: 'a',
+      percent: 2,
+    );
 
     setUp(() {
       now = DateTime(2026, 9, 26);
@@ -85,9 +97,9 @@ void main() {
       calls = <MethodCall>[];
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, (MethodCall call) async {
-        calls.add(call);
-        return null;
-      });
+            calls.add(call);
+            return null;
+          });
     });
 
     tearDown(() {
@@ -140,10 +152,7 @@ void main() {
 
         async.elapse(const Duration(milliseconds: 300));
         expect(calls, hasLength(2));
-        expect(
-          (calls.last.arguments as Map<Object?, Object?>)['progress'],
-          4,
-        );
+        expect((calls.last.arguments as Map<Object?, Object?>)['progress'], 4);
 
         // 被挡下后又回到已发状态：待补发作废。
         keepAlive.update(title: 't', text: 'x', percent: 5);
@@ -156,14 +165,13 @@ void main() {
         keepAlive.update(title: 't', text: 'x', percent: 7);
         keepAlive.stop();
         async.elapse(const Duration(seconds: 1));
-        expect(
-          calls.map((MethodCall c) => c.method),
-          <String>['update', 'update', 'update', 'stop'],
-        );
-        expect(
-          (calls[2].arguments as Map<Object?, Object?>)['progress'],
-          6,
-        );
+        expect(calls.map((MethodCall c) => c.method), <String>[
+          'update',
+          'update',
+          'update',
+          'stop',
+        ]);
+        expect((calls[2].arguments as Map<Object?, Object?>)['progress'], 6);
 
         // stop 之后重新启动立即发（启动不受节流）。
         keepAlive.update(title: 't', text: 'x', percent: 7);
@@ -182,9 +190,9 @@ void main() {
 
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, (MethodCall call) async {
-        calls.add(call);
-        throw PlatformException(code: 'boom');
-      });
+            calls.add(call);
+            throw PlatformException(code: 'boom');
+          });
       final ChannelDownloadKeepAlive failing = ChannelDownloadKeepAlive();
       await failing.update(title: 't', text: 'x', percent: 1);
       await failing.stop();
@@ -196,9 +204,9 @@ void main() {
     final List<MethodCall> calls = <MethodCall>[];
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (MethodCall call) async {
-      calls.add(call);
-      return null;
-    });
+          calls.add(call);
+          return null;
+        });
     const DownloadKeepAlive noop = NoopDownloadKeepAlive();
     await noop.update(title: 't', text: 'x', percent: 1);
     await noop.stop();

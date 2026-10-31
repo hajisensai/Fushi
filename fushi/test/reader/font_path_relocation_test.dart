@@ -30,58 +30,66 @@ void main() {
   });
 
   group('relocateMissingFontCatalogPaths', () {
-    test('relocates a missing path onto the same-basename file in the new dir',
-        () {
-      const String oldPath = r'C:\Users\me\Documents\custom_fonts\Klee_1.ttf';
-      const String newDir = r'D:\data\documents\custom_fonts';
-      // Build the recovered path the SAME way the helper does (p.join uses
-      // the host separator) so this asserts real behavior on Windows AND on
-      // Linux/Android CI, never a hardcoded separator (BUG-710).
-      final String newPath = p.join(newDir, 'Klee_1.ttf');
-      final String json = jsonEncode(<String, dynamic>{
-        'version': 1,
-        'fonts': <Map<String, dynamic>>[
-          <String, dynamic>{
-            'id': 'font_2',
-            'name': 'Klee One',
-            'path': oldPath
-          },
-        ],
-      });
-      final ({String json, int relocated}) out =
-          relocateMissingFontCatalogPaths(
-        json,
-        newDir,
-        existsIn(<String>{newPath}),
-      );
-      expect(out.relocated, 1);
-      final Map<String, dynamic> decoded =
-          jsonDecode(out.json) as Map<String, dynamic>;
-      final Map<String, dynamic> font =
-          (decoded['fonts'] as List<dynamic>).first as Map<String, dynamic>;
-      expect(font['path'], newPath);
-      expect(font['id'], 'font_2'); // id + name preserved
-      expect(font['name'], 'Klee One');
-    });
+    test(
+      'relocates a missing path onto the same-basename file in the new dir',
+      () {
+        const String oldPath = r'C:\Users\me\Documents\custom_fonts\Klee_1.ttf';
+        const String newDir = r'D:\data\documents\custom_fonts';
+        // Build the recovered path the SAME way the helper does (p.join uses
+        // the host separator) so this asserts real behavior on Windows AND on
+        // Linux/Android CI, never a hardcoded separator (BUG-710).
+        final String newPath = p.join(newDir, 'Klee_1.ttf');
+        final String json = jsonEncode(<String, dynamic>{
+          'version': 1,
+          'fonts': <Map<String, dynamic>>[
+            <String, dynamic>{
+              'id': 'font_2',
+              'name': 'Klee One',
+              'path': oldPath,
+            },
+          ],
+        });
+        final ({String json, int relocated}) out =
+            relocateMissingFontCatalogPaths(
+              json,
+              newDir,
+              existsIn(<String>{newPath}),
+            );
+        expect(out.relocated, 1);
+        final Map<String, dynamic> decoded =
+            jsonDecode(out.json) as Map<String, dynamic>;
+        final Map<String, dynamic> font =
+            (decoded['fonts'] as List<dynamic>).first as Map<String, dynamic>;
+        expect(font['path'], newPath);
+        expect(font['id'], 'font_2'); // id + name preserved
+        expect(font['name'], 'Klee One');
+      },
+    );
 
-    test('leaves a still-valid path untouched (never relocates a working file)',
-        () {
-      const String valid = r'D:\data\documents\custom_fonts\Klee_1.ttf';
-      final String json = jsonEncode(<String, dynamic>{
-        'version': 1,
-        'fonts': <Map<String, dynamic>>[
-          <String, dynamic>{'id': 'font_2', 'name': 'Klee One', 'path': valid},
-        ],
-      });
-      final ({String json, int relocated}) out =
-          relocateMissingFontCatalogPaths(
-        json,
-        r'D:\data\documents\custom_fonts',
-        existsIn(<String>{valid}),
-      );
-      expect(out.relocated, 0);
-      expect(out.json, json); // returned verbatim
-    });
+    test(
+      'leaves a still-valid path untouched (never relocates a working file)',
+      () {
+        const String valid = r'D:\data\documents\custom_fonts\Klee_1.ttf';
+        final String json = jsonEncode(<String, dynamic>{
+          'version': 1,
+          'fonts': <Map<String, dynamic>>[
+            <String, dynamic>{
+              'id': 'font_2',
+              'name': 'Klee One',
+              'path': valid,
+            },
+          ],
+        });
+        final ({String json, int relocated}) out =
+            relocateMissingFontCatalogPaths(
+              json,
+              r'D:\data\documents\custom_fonts',
+              existsIn(<String>{valid}),
+            );
+        expect(out.relocated, 0);
+        expect(out.json, json); // returned verbatim
+      },
+    );
   });
 
   group('relocateMissingFontCatalogPaths edge cases', () {
@@ -95,16 +103,18 @@ void main() {
       });
       final ({String json, int relocated}) out =
           relocateMissingFontCatalogPaths(
-        json,
-        r'D:\data\documents\custom_fonts',
-        existsIn(<String>{}), // nothing exists
-      );
+            json,
+            r'D:\data\documents\custom_fonts',
+            existsIn(<String>{}), // nothing exists
+          );
       expect(out.relocated, 0);
       final Map<String, dynamic> font =
           (jsonDecode(out.json)['fonts'] as List<dynamic>).first
               as Map<String, dynamic>;
       expect(
-          font['path'], missing); // entry preserved, loader keeps skipping it
+        font['path'],
+        missing,
+      ); // entry preserved, loader keeps skipping it
     });
 
     test('leaves a system font (null path) untouched', () {
@@ -116,10 +126,10 @@ void main() {
       });
       final ({String json, int relocated}) out =
           relocateMissingFontCatalogPaths(
-        json,
-        r'D:\data\documents\custom_fonts',
-        existsIn(<String>{}),
-      );
+            json,
+            r'D:\data\documents\custom_fonts',
+            existsIn(<String>{}),
+          );
       expect(out.relocated, 0);
     });
 
@@ -137,10 +147,10 @@ void main() {
       });
       final ({String json, int relocated}) out =
           relocateMissingFontCatalogPaths(
-        json,
-        newDir,
-        existsIn(<String>{recovered}),
-      );
+            json,
+            newDir,
+            existsIn(<String>{recovered}),
+          );
       expect(out.relocated, 1);
       final Map<String, dynamic> font =
           (jsonDecode(out.json)['fonts'] as List<dynamic>).first
@@ -148,34 +158,36 @@ void main() {
       expect(font['path'], recovered);
     });
 
-    test('relocates onto a POSIX current dir (Android/Linux data-root move)',
-        () {
-      // Regression guard for the CI-only failure (BUG-710) where the stored
-      // path is relocated onto a POSIX <documents>/custom_fonts: the helper
-      // must build the recovered path with p.join (host separator); a
-      // hardcoded Windows separator would never match on Linux/Android.
-      // fontPathBasename splits on either separator so the basename survives.
-      const String oldPath = '/old/container/custom_fonts/Gothic_7.ttf';
-      const String newDir = '/data/user/0/app.fushi.reader/custom_fonts';
-      final String newPath = p.join(newDir, fontPathBasename(oldPath));
-      final String json = jsonEncode(<String, dynamic>{
-        'version': 1,
-        'fonts': <Map<String, dynamic>>[
-          <String, dynamic>{'id': 'f', 'name': 'Gothic', 'path': oldPath},
-        ],
-      });
-      final ({String json, int relocated}) out =
-          relocateMissingFontCatalogPaths(
-        json,
-        newDir,
-        existsIn(<String>{newPath}),
-      );
-      expect(out.relocated, 1);
-      final Map<String, dynamic> font =
-          (jsonDecode(out.json)['fonts'] as List<dynamic>).first
-              as Map<String, dynamic>;
-      expect(font['path'], newPath);
-    });
+    test(
+      'relocates onto a POSIX current dir (Android/Linux data-root move)',
+      () {
+        // Regression guard for the CI-only failure (BUG-710) where the stored
+        // path is relocated onto a POSIX <documents>/custom_fonts: the helper
+        // must build the recovered path with p.join (host separator); a
+        // hardcoded Windows separator would never match on Linux/Android.
+        // fontPathBasename splits on either separator so the basename survives.
+        const String oldPath = '/old/container/custom_fonts/Gothic_7.ttf';
+        const String newDir = '/data/user/0/app.fushi.reader/custom_fonts';
+        final String newPath = p.join(newDir, fontPathBasename(oldPath));
+        final String json = jsonEncode(<String, dynamic>{
+          'version': 1,
+          'fonts': <Map<String, dynamic>>[
+            <String, dynamic>{'id': 'f', 'name': 'Gothic', 'path': oldPath},
+          ],
+        });
+        final ({String json, int relocated}) out =
+            relocateMissingFontCatalogPaths(
+              json,
+              newDir,
+              existsIn(<String>{newPath}),
+            );
+        expect(out.relocated, 1);
+        final Map<String, dynamic> font =
+            (jsonDecode(out.json)['fonts'] as List<dynamic>).first
+                as Map<String, dynamic>;
+        expect(font['path'], newPath);
+      },
+    );
 
     test('returns malformed JSON verbatim', () {
       const String bad = 'not json {';
@@ -211,8 +223,11 @@ void main() {
 
     test('leaves a system font (null path) untouched', () {
       const String json = '[{"name":"Yu Gothic","path":null,"enabled":true}]';
-      final ({String json, int relocated}) out =
-          relocateMissingFontListPaths(json, '/dir', existsIn(<String>{}));
+      final ({String json, int relocated}) out = relocateMissingFontListPaths(
+        json,
+        '/dir',
+        existsIn(<String>{}),
+      );
       expect(out.relocated, 0);
     });
   });

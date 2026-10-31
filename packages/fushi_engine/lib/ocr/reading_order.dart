@@ -15,10 +15,7 @@ import 'dart:math' as math;
 import 'package:fushi_engine/ocr/ocr_types.dart';
 
 /// 按谓词做 union-find 聚类，返回每簇的原始下标列表。
-List<List<int>> _clusterBy(
-  int count,
-  bool Function(int a, int b) related,
-) {
+List<List<int>> _clusterBy(int count, bool Function(int a, int b) related) {
   final List<int> parent = List<int>.generate(count, (int i) => i);
   int find(int x) {
     while (parent[x] != x) {
@@ -58,10 +55,7 @@ double _gapY(OcrRect a, OcrRect b) =>
 ///
 /// 直觉：同格气泡的间距通常小于一个气泡的尺度，跨格间距（含格线/留白）
 /// 更大。返回每个面板的块下标列表（无序）。
-List<List<int>> clusterPanels(
-  List<OcrRect> boxes, {
-  double gapRatio = 0.75,
-}) {
+List<List<int>> clusterPanels(List<OcrRect> boxes, {double gapRatio = 0.75}) {
   double minDim(OcrRect r) => math.min(r.width, r.height);
   return _clusterBy(boxes.length, (int i, int j) {
     final OcrRect a = boxes[i];
@@ -109,9 +103,11 @@ List<int> orderWithinPanel(
     return sum / col.length;
   }
 
-  columns.sort((List<int> a, List<int> b) => rightToLeft
-      ? colCenter(b).compareTo(colCenter(a))
-      : colCenter(a).compareTo(colCenter(b)));
+  columns.sort(
+    (List<int> a, List<int> b) => rightToLeft
+        ? colCenter(b).compareTo(colCenter(a))
+        : colCenter(a).compareTo(colCenter(b)),
+  );
   final List<int> order = <int>[];
   for (final List<int> col in columns) {
     col.sort((int a, int b) => boxes[a].top.compareTo(boxes[b].top));
@@ -149,12 +145,15 @@ List<int> computeReadingOrder(
 
   final List<int> order = <int>[];
   for (final List<int> band in bands) {
-    band.sort((int a, int b) => rightToLeft
-        ? bounds[b].centerX.compareTo(bounds[a].centerX)
-        : bounds[a].centerX.compareTo(bounds[b].centerX));
+    band.sort(
+      (int a, int b) => rightToLeft
+          ? bounds[b].centerX.compareTo(bounds[a].centerX)
+          : bounds[a].centerX.compareTo(bounds[b].centerX),
+    );
     for (final int panelIndex in band) {
-      order.addAll(orderWithinPanel(boxes, panels[panelIndex],
-          rightToLeft: rightToLeft));
+      order.addAll(
+        orderWithinPanel(boxes, panels[panelIndex], rightToLeft: rightToLeft),
+      );
     }
   }
   return order;

@@ -123,8 +123,9 @@ class ImmersionMinePayload {
       sentence: sentence == null
           ? (fields['sentence'] ?? '')
           : _normalizeIncomingText(sentence),
-      cueSentence:
-          cueSentence == null ? null : _normalizeIncomingText(cueSentence),
+      cueSentence: cueSentence == null
+          ? null
+          : _normalizeIncomingText(cueSentence),
       documentTitle: documentTitle == null
           ? null
           : _stripImmersionAudioPaths(_normalizeIncomingText(documentTitle)),
@@ -143,8 +144,8 @@ class ImmersionMinePayload {
       clipBytes: _tryDecodeBase64(json['clipBase64']),
       clipDurationMs: (json['clipDurationMs'] as num?)?.round(),
       clipAnchorMs: (json['clipAnchorMs'] as num?)?.round(),
-      clipAnchorUncertaintyMs:
-          (json['clipAnchorUncertaintyMs'] as num?)?.round(),
+      clipAnchorUncertaintyMs: (json['clipAnchorUncertaintyMs'] as num?)
+          ?.round(),
       cueStartMs: (json['cueStartMs'] as num?)?.round(),
       mineAtMs: (json['mineAtMs'] as num?)?.round(),
       clipCrop: ClipCropFraction.fromJson(json['clipCrop']),
@@ -192,13 +193,15 @@ String _normalizeIncomingText(String value) {
   if (value.startsWith('data:')) return value;
   final hasPercentEscape = _percentEscape.hasMatch(value);
   final separatorPlusCount = _separatorPlusCount(value);
-  final shouldTreatPlusAsSpace = hasPercentEscape ||
+  final shouldTreatPlusAsSpace =
+      hasPercentEscape ||
       separatorPlusCount >= 2 ||
       (separatorPlusCount == 1 && _japaneseOrCjk.hasMatch(value));
   if (!hasPercentEscape && !shouldTreatPlusAsSpace) return value;
 
-  final candidate =
-      shouldTreatPlusAsSpace ? _replaceSeparatorPluses(value) : value;
+  final candidate = shouldTreatPlusAsSpace
+      ? _replaceSeparatorPluses(value)
+      : value;
   if (!hasPercentEscape) return candidate;
   return _decodePercentEscapes(candidate);
 }

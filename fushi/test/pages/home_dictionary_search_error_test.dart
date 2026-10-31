@@ -33,16 +33,16 @@ class _ErrorSearchAppModel extends AppModel {
 
   /// 默认成功返回满 10 条 → _allLoaded=false，loadMore 可用。
   DictionarySearchResult _buildResult(String term) => DictionarySearchResult(
-        searchTerm: term,
-        entries: List<DictionaryEntry>.generate(
-          10,
-          (int i) => DictionaryEntry(word: '$term$i'),
-        ),
-        // BUG-1478：本用例要验「查词失败后 _loadMore 不被永久阻塞」，前提是结果
-        // **确实还有下一页**。截断从「靠长度反推」改成显式事实后，假件必须自己说。
-        headwordCount: 10,
-        truncated: true,
-      );
+    searchTerm: term,
+    entries: List<DictionaryEntry>.generate(
+      10,
+      (int i) => DictionaryEntry(word: '$term$i'),
+    ),
+    // BUG-1478：本用例要验「查词失败后 _loadMore 不被永久阻塞」，前提是结果
+    // **确实还有下一页**。截断从「靠长度反推」改成显式事实后，假件必须自己说。
+    headwordCount: 10,
+    truncated: true,
+  );
 
   @override
   List<DictionarySearchResult> get dictionaryHistory =>
@@ -50,8 +50,8 @@ class _ErrorSearchAppModel extends AppModel {
 
   @override
   List<Dictionary> get dictionaries => <Dictionary>[
-        Dictionary(name: 'Test', formatKey: 'test', order: 0),
-      ];
+    Dictionary(name: 'Test', formatKey: 'test', order: 0),
+  ];
 
   @override
   int get maximumTerms => 10;
@@ -150,8 +150,7 @@ void main() {
     DesktopLookupService.instance.debugReset();
   });
 
-  testWidgets(
-      'searchDictionary throws → spinner clears, _isSearching resets, '
+  testWidgets('searchDictionary throws → spinner clears, _isSearching resets, '
       'placeholder shown (no permanent spin)', (WidgetTester tester) async {
     final _ErrorSearchAppModel appModel = _ErrorSearchAppModel();
 
@@ -161,8 +160,11 @@ void main() {
     appModel.failNextCall = true;
     final Future<void> dispatched = _debug(tester).debugSearch('foo');
     // 派发瞬间（尚未 drain microtask）_isSearching=true：查词进行中显示转圈。
-    expect(_debug(tester).debugIsSearching, isTrue,
-        reason: '派发后查询完成前应处于查词中（显示转圈）。');
+    expect(
+      _debug(tester).debugIsSearching,
+      isTrue,
+      reason: '派发后查询完成前应处于查词中（显示转圈）。',
+    );
 
     final Object? caught = await _runAndCatch(tester, dispatched);
 
@@ -183,24 +185,29 @@ void main() {
     expect(appModel.searchCount, 1);
   });
 
-  testWidgets('loadMore is not permanently blocked after a failed lookup',
-      (WidgetTester tester) async {
+  testWidgets('loadMore is not permanently blocked after a failed lookup', (
+    WidgetTester tester,
+  ) async {
     final _ErrorSearchAppModel appModel = _ErrorSearchAppModel();
 
     await tester.pumpWidget(_wrap(appModel));
     await tester.pump();
 
     // 第一次成功查词：满 10 条 → _allLoaded=false，loadMore 可用。
-    final Object? firstErr =
-        await _runAndCatch(tester, _debug(tester).debugSearch('foo'));
+    final Object? firstErr = await _runAndCatch(
+      tester,
+      _debug(tester).debugSearch('foo'),
+    );
     expect(firstErr, isNull);
     expect(appModel.searchCount, 1);
     expect(_debug(tester).debugIsSearching, isFalse);
 
     // 让下一次（loadMore 那次）查词抛异常。
     appModel.failNextCall = true;
-    final Object? loadMoreErr =
-        await _runAndCatch(tester, _debug(tester).debugLoadMore());
+    final Object? loadMoreErr = await _runAndCatch(
+      tester,
+      _debug(tester).debugLoadMore(),
+    );
     expect(loadMoreErr, isA<StateError>());
     expect(appModel.searchCount, 2, reason: 'loadMore 应已发起第二次查询。');
 
@@ -213,14 +220,12 @@ void main() {
     );
 
     // 再次 loadMore：若未被永久阻塞，会发起第三次查询。
-    final Object? thirdErr =
-        await _runAndCatch(tester, _debug(tester).debugLoadMore());
-    expect(thirdErr, isNull);
-    expect(
-      appModel.searchCount,
-      3,
-      reason: '失败后 loadMore 不得被永久阻塞，应能再次发起查询。',
+    final Object? thirdErr = await _runAndCatch(
+      tester,
+      _debug(tester).debugLoadMore(),
     );
+    expect(thirdErr, isNull);
+    expect(appModel.searchCount, 3, reason: '失败后 loadMore 不得被永久阻塞，应能再次发起查询。');
     expect(_debug(tester).debugIsSearching, isFalse);
   });
 }

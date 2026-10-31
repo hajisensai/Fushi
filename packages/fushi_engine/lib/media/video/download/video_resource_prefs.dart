@@ -36,8 +36,7 @@ List<TorznabIndexerConfig> readTorznabIndexerConfigs(
 Future<void> writeTorznabIndexerConfigs(
   PrefStore prefs,
   Iterable<TorznabIndexerConfig> configs,
-) =>
-    prefs.setPref(
-      kVideoResourceTorznabConfigPref,
-      jsonEncode(encodeTorznabIndexerConfigs(configs)),
-    );
+) => prefs.setPref(
+  kVideoResourceTorznabConfigPref,
+  jsonEncode(encodeTorznabIndexerConfigs(configs)),
+);

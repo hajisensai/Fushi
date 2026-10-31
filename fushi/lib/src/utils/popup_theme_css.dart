@@ -14,14 +14,16 @@ import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 
 /// [c] 的不透明 CSS `rgb(r, g, b)` 串。算法保持 `(分量 * 255.0).round().clamp(0, 255)`
 /// 逐字节等价（与历史各手抄版一致），不得改成 `.toARGB32()` 等别的取整路径。
-String cssRgb(Color c) => 'rgb(${(c.r * 255.0).round().clamp(0, 255)}, '
+String cssRgb(Color c) =>
+    'rgb(${(c.r * 255.0).round().clamp(0, 255)}, '
     '${(c.g * 255.0).round().clamp(0, 255)}, '
     '${(c.b * 255.0).round().clamp(0, 255)})';
 
 /// spec 2026-07-10 §6 — [c] 的裸 `r, g, b` 三元组，供 popup.css 的
 /// `rgba(var(--fushi-card-bg-rgb), var(--fushi-card-bg-alpha))` 组装半透明卡
 /// 背景（`--background-color` 是不透明 `rgb()`，纯 CSS 无法给它加 alpha）。
-String cssRgbTriplet(Color c) => '${(c.r * 255.0).round().clamp(0, 255)}, '
+String cssRgbTriplet(Color c) =>
+    '${(c.r * 255.0).round().clamp(0, 255)}, '
     '${(c.g * 255.0).round().clamp(0, 255)}, '
     '${(c.b * 255.0).round().clamp(0, 255)}';
 

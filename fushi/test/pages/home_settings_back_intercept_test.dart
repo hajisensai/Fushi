@@ -19,19 +19,22 @@ void main() {
     return tester.binding.handlePopRoute();
   }
 
-  testWidgets('FIX: 设置 tab 系统返回键被拦截并切回来源 tab（大屏不退出 app）',
-      (WidgetTester tester) async {
+  testWidgets('FIX: 设置 tab 系统返回键被拦截并切回来源 tab（大屏不退出 app）', (
+    WidgetTester tester,
+  ) async {
     // 大屏约束，覆盖 TODO-285 报告的安卓大屏场景。
     await tester.binding.setSurfaceSize(const Size(1024, 768));
     addTearDown(() => tester.binding.setSurfaceSize(null));
 
     int returnCalls = 0;
-    await tester.pumpWidget(MaterialApp(
-      home: HomeSettingsTabContent(
-        onReturnToPreviousTab: () => returnCalls++,
-        child: const Text('settings-body'),
+    await tester.pumpWidget(
+      MaterialApp(
+        home: HomeSettingsTabContent(
+          onReturnToPreviousTab: () => returnCalls++,
+          child: const Text('settings-body'),
+        ),
       ),
-    ));
+    );
     await tester.pumpAndSettle();
 
     expect(find.text('settings-body'), findsOneWidget);
@@ -45,37 +48,49 @@ void main() {
     expect(returnCalls, 1, reason: '拦截后应回调 onReturnToPreviousTab 切回来源 tab');
   });
 
-  testWidgets('PopScope canPop 为 false 阻止设置 tab 上的返回冒泡退出',
-      (WidgetTester tester) async {
-    await tester.pumpWidget(MaterialApp(
-      home: HomeSettingsTabContent(
-        onReturnToPreviousTab: () {},
-        child: const Text('settings-body'),
+  testWidgets('PopScope canPop 为 false 阻止设置 tab 上的返回冒泡退出', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: HomeSettingsTabContent(
+          onReturnToPreviousTab: () {},
+          child: const Text('settings-body'),
+        ),
       ),
-    ));
+    );
     await tester.pumpAndSettle();
 
     final Finder popScopeFinder = find.byWidgetPredicate(
       (Widget w) => w is PopScope,
     );
-    expect(popScopeFinder, findsOneWidget,
-        reason: '设置 tab 外壳必须含一个 PopScope 拦截层');
+    expect(
+      popScopeFinder,
+      findsOneWidget,
+      reason: '设置 tab 外壳必须含一个 PopScope 拦截层',
+    );
     final PopScope<Object?> popScope =
         tester.widget(popScopeFinder) as PopScope<Object?>;
-    expect(popScope.canPop, isFalse,
-        reason: '设置 tab 必须 canPop:false 才能拦截系统返回键');
+    expect(
+      popScope.canPop,
+      isFalse,
+      reason: '设置 tab 必须 canPop:false 才能拦截系统返回键',
+    );
   });
 
-  testWidgets('showBackButton 为 false 时不显示页头返回箭头（移动底栏 / 宽屏侧栏在侧）',
-      (WidgetTester tester) async {
+  testWidgets('showBackButton 为 false 时不显示页头返回箭头（移动底栏 / 宽屏侧栏在侧）', (
+    WidgetTester tester,
+  ) async {
     int returnCalls = 0;
-    await tester.pumpWidget(MaterialApp(
-      home: HomeSettingsTabContent(
-        showBackButton: false,
-        onReturnToPreviousTab: () => returnCalls++,
-        child: const Text('settings-body'),
+    await tester.pumpWidget(
+      MaterialApp(
+        home: HomeSettingsTabContent(
+          showBackButton: false,
+          onReturnToPreviousTab: () => returnCalls++,
+          child: const Text('settings-body'),
+        ),
       ),
-    ));
+    );
     await tester.pumpAndSettle();
 
     // 注入了 child，FushiSettingsContent 不渲染，无箭头；但 PopScope 仍生效。

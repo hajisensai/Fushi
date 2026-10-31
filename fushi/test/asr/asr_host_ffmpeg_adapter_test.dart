@@ -12,10 +12,7 @@ import 'package:fushi_engine/media/video/ffmpeg_backend.dart' as host;
 class _RecordingBackend implements host.FfmpegBackend {
   /// 查询类命令（BUG-2938 新增原语）：本假件不区分，交给 [run]。
   @override
-  Future<host.FfmpegRunResult> runQuery(
-    List<String> args,
-    Duration timeout,
-  ) =>
+  Future<host.FfmpegRunResult> runQuery(List<String> args, Duration timeout) =>
       run(args, timeout);
 
   _RecordingBackend({required this.runResult, required this.probeResult});
@@ -44,10 +41,7 @@ class _RecordingBackend implements host.FfmpegBackend {
 class _ThrowingBackend implements host.FfmpegBackend {
   /// 查询类命令（BUG-2938 新增原语）：本假件不区分，交给 [run]。
   @override
-  Future<host.FfmpegRunResult> runQuery(
-    List<String> args,
-    Duration timeout,
-  ) =>
+  Future<host.FfmpegRunResult> runQuery(List<String> args, Duration timeout) =>
       run(args, timeout);
 
   @override
@@ -58,8 +52,7 @@ class _ThrowingBackend implements host.FfmpegBackend {
   Future<host.FfmpegRunResult> runProbe(
     List<String> args,
     Duration timeout,
-  ) async =>
-      throw ProcessException('ffprobe', args, '找不到可执行文件', 2);
+  ) async => throw ProcessException('ffprobe', args, '找不到可执行文件', 2);
 }
 
 void main() {
@@ -69,8 +62,10 @@ void main() {
   test('有声书路径显式声明素材是干净朗读', () {
     // 能量门限是带前提的优化（语音与静默双模态可分），上游已把这个前提改成必填
     // 声明。有声书成立；混音素材（动画/影视）必须换 mixedAudio。
-    expect(createAsrTranscriptionService().audioProfile,
-        asr.AsrAudioProfile.cleanSpeech);
+    expect(
+      createAsrTranscriptionService().audioProfile,
+      asr.AsrAudioProfile.cleanSpeech,
+    );
   });
 
   tearDown(() => host.setFfmpegBackendForTesting(null));
@@ -78,14 +73,17 @@ void main() {
   test('run / runProbe 的参数与超时原样穿过去', () async {
     final _RecordingBackend backend = _RecordingBackend(
       runResult: const host.FfmpegRunResult(returnCode: 0, output: 'stderr 文本'),
-      probeResult:
-          const host.FfmpegRunResult(returnCode: 0, output: '{"format":{}}'),
+      probeResult: const host.FfmpegRunResult(
+        returnCode: 0,
+        output: '{"format":{}}',
+      ),
     );
     host.setFfmpegBackendForTesting(backend);
 
     await adapter.run(<String>['-i', 'a.mp3'], const Duration(seconds: 7));
-    await adapter
-        .runProbe(<String>['-show_entries'], const Duration(seconds: 3));
+    await adapter.runProbe(<String>[
+      '-show_entries',
+    ], const Duration(seconds: 3));
 
     expect(backend.calls, hasLength(2));
     expect(backend.calls[0].kind, 'run');
@@ -99,21 +97,27 @@ void main() {
     // 判据是两条各自的**内容**，不是「都非空」。颠倒之后：
     // `isMissingS16leMuxerFailure` 恒 false（认不出没有 s16le muxer，走不到 mov
     // 回退），ffprobe 的时长恒 null（进度条永远不准、桶预热按未知走）。两样都不报错。
-    host.setFfmpegBackendForTesting(_RecordingBackend(
-      runResult: const host.FfmpegRunResult(
-        // libavformat 的固定措辞；判据还要求 returnCode 非 0 非 null。
-        returnCode: 1,
-        output: "Requested output format 's16le' is not known",
+    host.setFfmpegBackendForTesting(
+      _RecordingBackend(
+        runResult: const host.FfmpegRunResult(
+          // libavformat 的固定措辞；判据还要求 returnCode 非 0 非 null。
+          returnCode: 1,
+          output: "Requested output format 's16le' is not known",
+        ),
+        probeResult: const host.FfmpegRunResult(
+          returnCode: 0,
+          output: '{"format":{"duration":"12.500000"}}',
+        ),
       ),
-      probeResult: const host.FfmpegRunResult(
-        returnCode: 0,
-        output: '{"format":{"duration":"12.500000"}}',
-      ),
-    ));
-    final asr.FfmpegRunResult run =
-        await adapter.run(<String>[], const Duration(seconds: 1));
-    final asr.FfmpegRunResult probe =
-        await adapter.runProbe(<String>[], const Duration(seconds: 1));
+    );
+    final asr.FfmpegRunResult run = await adapter.run(
+      <String>[],
+      const Duration(seconds: 1),
+    );
+    final asr.FfmpegRunResult probe = await adapter.runProbe(
+      <String>[],
+      const Duration(seconds: 1),
+    );
     expect(asr.isMissingS16leMuxerFailure(run), isTrue);
     expect(probe.output, contains('duration'));
   });
@@ -121,12 +125,16 @@ void main() {
   test('超时是 returnCode == null，不是抛异常', () async {
     // 包里的解码循环按 `returnCode == null` 判超时并报「ffmpeg timed out」。
     // 适配器要是把它转成异常，那条分支永远走不到，用户看到的会是另一句错。
-    host.setFfmpegBackendForTesting(_RecordingBackend(
-      runResult: const host.FfmpegRunResult(returnCode: null, output: ''),
-      probeResult: const host.FfmpegRunResult(returnCode: null, output: ''),
-    ));
-    final asr.FfmpegRunResult r =
-        await adapter.run(<String>[], const Duration(milliseconds: 1));
+    host.setFfmpegBackendForTesting(
+      _RecordingBackend(
+        runResult: const host.FfmpegRunResult(returnCode: null, output: ''),
+        probeResult: const host.FfmpegRunResult(returnCode: null, output: ''),
+      ),
+    );
+    final asr.FfmpegRunResult r = await adapter.run(
+      <String>[],
+      const Duration(milliseconds: 1),
+    );
     expect(r.returnCode, isNull);
     expect(r.isSuccess, isFalse);
   });
@@ -146,18 +154,22 @@ void main() {
   });
 
   test('executable 与诊断字段一起带过去（失败摘要要能读）', () async {
-    host.setFfmpegBackendForTesting(_RecordingBackend(
-      runResult: const host.FfmpegRunResult(
-        returnCode: 1,
-        output: 'boom',
-        executable: r'C:\tools\ffmpeg.exe',
-        attemptedExecutables: <String>[r'C:\bundled\ffmpeg.exe', 'ffmpeg'],
-        fallbackReason: '捆绑的那个跑不起来',
+    host.setFfmpegBackendForTesting(
+      _RecordingBackend(
+        runResult: const host.FfmpegRunResult(
+          returnCode: 1,
+          output: 'boom',
+          executable: r'C:\tools\ffmpeg.exe',
+          attemptedExecutables: <String>[r'C:\bundled\ffmpeg.exe', 'ffmpeg'],
+          fallbackReason: '捆绑的那个跑不起来',
+        ),
+        probeResult: const host.FfmpegRunResult(returnCode: 0, output: '{}'),
       ),
-      probeResult: const host.FfmpegRunResult(returnCode: 0, output: '{}'),
-    ));
-    final asr.FfmpegRunResult r =
-        await adapter.run(<String>[], const Duration(seconds: 1));
+    );
+    final asr.FfmpegRunResult r = await adapter.run(
+      <String>[],
+      const Duration(seconds: 1),
+    );
     expect(r.executable, r'C:\tools\ffmpeg.exe');
     expect(r.failureSummary, contains('ffmpeg.exe'));
     expect(r.failureSummary, contains('boom'));
@@ -175,10 +187,14 @@ void main() {
       probeResult: const host.FfmpegRunResult(returnCode: 0, output: '{}'),
     );
     host.setFfmpegBackendForTesting(first);
-    expect((await adapter.run(<String>[], const Duration(seconds: 1))).output,
-        'first');
+    expect(
+      (await adapter.run(<String>[], const Duration(seconds: 1))).output,
+      'first',
+    );
     host.setFfmpegBackendForTesting(second);
-    expect((await adapter.run(<String>[], const Duration(seconds: 1))).output,
-        'second');
+    expect(
+      (await adapter.run(<String>[], const Duration(seconds: 1))).output,
+      'second',
+    );
   });
 }

@@ -12,7 +12,8 @@ void main() {
     test('http(s) stream URLs are remote (skip existsSync)', () {
       expect(
         debugIsRemoteFfmpegInput(
-            'https://rr4---sn-ipoxu.googlevideo.com/videoplayback?x=1'),
+          'https://rr4---sn-ipoxu.googlevideo.com/videoplayback?x=1',
+        ),
         isTrue,
       );
       expect(debugIsRemoteFfmpegInput('http://example.com/a.mp4'), isTrue);
@@ -29,8 +30,9 @@ void main() {
 
   group('buildFfmpegRemoteInputArgs (BUG-528 network resilience)', () {
     test('http(s) inputs get UA + reconnect flags before -i', () {
-      final List<String> args =
-          buildFfmpegRemoteInputArgs('https://x.googlevideo.com/videoplayback');
+      final List<String> args = buildFfmpegRemoteInputArgs(
+        'https://x.googlevideo.com/videoplayback',
+      );
       expect(args, contains('-reconnect'));
       expect(args, contains('-reconnect_streamed'));
       expect(args, contains('-reconnect_delay_max'));
@@ -44,20 +46,30 @@ void main() {
     // TODO-1290: `-138` (mingw errno ETIMEDOUT) 是 connect 阶段的 TCP/TLS 网络错误，
     // `-reconnect`/`-reconnect_streamed` 只管流中断/EOF、不覆盖它 → 短音频段仍硬失败。
     // 守卫 `-reconnect_on_network_error 1` 存在且成对（值紧跟在开关后），且 remote-only。
-    test('http(s) inputs reconnect on connect-stage network error (TODO-1290)',
-        () {
-      final List<String> args =
-          buildFfmpegRemoteInputArgs('https://x.googlevideo.com/videoplayback');
-      final int i = args.indexOf('-reconnect_on_network_error');
-      expect(i, greaterThanOrEqualTo(0),
-          reason: 'connect 阶段网络错误(含 -138)必须触发自动重连');
-      expect(args[i + 1], '1');
-    });
+    test(
+      'http(s) inputs reconnect on connect-stage network error (TODO-1290)',
+      () {
+        final List<String> args = buildFfmpegRemoteInputArgs(
+          'https://x.googlevideo.com/videoplayback',
+        );
+        final int i = args.indexOf('-reconnect_on_network_error');
+        expect(
+          i,
+          greaterThanOrEqualTo(0),
+          reason: 'connect 阶段网络错误(含 -138)必须触发自动重连',
+        );
+        expect(args[i + 1], '1');
+      },
+    );
     test('local paths get no reconnect_on_network_error flag (TODO-1290)', () {
-      expect(buildFfmpegRemoteInputArgs(r'D:\v\a.mkv'),
-          isNot(contains('-reconnect_on_network_error')));
-      expect(buildFfmpegRemoteInputArgs('/tmp/a.mp4'),
-          isNot(contains('-reconnect_on_network_error')));
+      expect(
+        buildFfmpegRemoteInputArgs(r'D:\v\a.mkv'),
+        isNot(contains('-reconnect_on_network_error')),
+      );
+      expect(
+        buildFfmpegRemoteInputArgs('/tmp/a.mp4'),
+        isNot(contains('-reconnect_on_network_error')),
+      );
     });
   });
 
@@ -84,8 +96,10 @@ void main() {
       // TODO-1290: connect 阶段网络错误(-138)的重连开关也要传到句子音频抽取命令，
       // 且置于 -i 之前（http 输入选项）——这正是用户日志里崩 -138 的那条命令。
       expect(args, contains('-reconnect_on_network_error'));
-      expect(args.indexOf('-reconnect_on_network_error'),
-          lessThan(args.indexOf('-i')));
+      expect(
+        args.indexOf('-reconnect_on_network_error'),
+        lessThan(args.indexOf('-i')),
+      );
     });
     test('frame args reconnect on http input, before -i', () {
       final List<String> args = buildFfmpegFrameArgs(
@@ -119,8 +133,11 @@ void main() {
       ]) {
         final List<String> args = buildFfmpegRemoteInputArgs(url);
         final int i = args.indexOf('-referer');
-        expect(i, greaterThanOrEqualTo(0),
-            reason: 'B 站直链必须带防盗链 Referer，否则 CDN 403：$url');
+        expect(
+          i,
+          greaterThanOrEqualTo(0),
+          reason: 'B 站直链必须带防盗链 Referer，否则 CDN 403：$url',
+        );
         expect(args[i + 1], kBilibiliCdnReferer);
       }
     });
@@ -128,7 +145,8 @@ void main() {
     test('非 B 站流不带 -referer（YouTube 等不受影响）', () {
       expect(
         buildFfmpegRemoteInputArgs(
-            'https://rr4---sn-x.googlevideo.com/videoplayback'),
+          'https://rr4---sn-x.googlevideo.com/videoplayback',
+        ),
         isNot(contains('-referer')),
       );
       expect(
@@ -149,9 +167,9 @@ void main() {
       expect(isBilibiliCdnHost('upos-hz-mirrorakam.akamaized.net'), isTrue);
       // BUG-2730：B 站 PCDN 节点，实测不带 Referer 403。
       expect(
-          isBilibiliCdnHost(
-              'b-baaaw79txv1hrw3c8upt73k9fsi.edge.mountaintoys.cn'),
-          isTrue);
+        isBilibiliCdnHost('b-baaaw79txv1hrw3c8upt73k9fsi.edge.mountaintoys.cn'),
+        isTrue,
+      );
       // 后缀必须过点：不能把 `notbilivideo.com` 当 B 站。
       expect(isBilibiliCdnHost('notbilivideo.com'), isFalse);
       // Akamai 是共享域名，非 upos- 前缀不认。
@@ -172,28 +190,35 @@ void main() {
         outputPath: '/tmp/o.aac',
       );
       expect(args, contains('-referer'));
-      expect(args.indexOf('-referer'), lessThan(args.indexOf('-i')),
-          reason: 'Referer 是 http 协议的输入选项，放 -i 之后就不生效');
+      expect(
+        args.indexOf('-referer'),
+        lessThan(args.indexOf('-i')),
+        reason: 'Referer 是 http 协议的输入选项，放 -i 之后就不生效',
+      );
     });
   });
 
   test(
-      'extractAudioSegmentViaFfmpeg no longer short-circuits URL as missing file',
-      () async {
-    String? summary;
-    // 不可路由的 http 输入：不应报「does not exist」（那是本地路径守卫的话术），而是
-    // 走到 ffmpeg 阶段再失败（进程异常/非零码/超时），或在无 ffmpeg 环境下进程异常。
-    final String? out = await extractAudioSegmentViaFfmpeg(
-      inputPath: 'http://127.0.0.1:9/nonroutable.m4a',
-      startMs: 0,
-      endMs: 1000,
-      outputPath: '${Directory.systemTemp.path}/url_guard_probe.aac',
-      onFailure: (String s) => summary = s,
-    );
-    expect(out, isNull); // 仍然失败（源不可达），但原因不是 existsSync 早退
-    if (summary != null) {
-      expect(summary!.contains('does not exist'), isFalse,
-          reason: 'URL 输入不应被当作缺失本地文件早退');
-    }
-  });
+    'extractAudioSegmentViaFfmpeg no longer short-circuits URL as missing file',
+    () async {
+      String? summary;
+      // 不可路由的 http 输入：不应报「does not exist」（那是本地路径守卫的话术），而是
+      // 走到 ffmpeg 阶段再失败（进程异常/非零码/超时），或在无 ffmpeg 环境下进程异常。
+      final String? out = await extractAudioSegmentViaFfmpeg(
+        inputPath: 'http://127.0.0.1:9/nonroutable.m4a',
+        startMs: 0,
+        endMs: 1000,
+        outputPath: '${Directory.systemTemp.path}/url_guard_probe.aac',
+        onFailure: (String s) => summary = s,
+      );
+      expect(out, isNull); // 仍然失败（源不可达），但原因不是 existsSync 早退
+      if (summary != null) {
+        expect(
+          summary!.contains('does not exist'),
+          isFalse,
+          reason: 'URL 输入不应被当作缺失本地文件早退',
+        );
+      }
+    },
+  );
 }

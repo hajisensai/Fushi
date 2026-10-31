@@ -114,8 +114,11 @@ void main() {
       );
       expect(css.contains('[data-dictionary="未声明"]'), isFalse);
       expect(css.contains('[data-dictionary="空串"]'), isFalse);
-      expect(css.contains('[data-dictionary="英英"]'), isFalse,
-          reason: '非 CJK 词典套 CJK 链只会把拉丁排版也换掉');
+      expect(
+        css.contains('[data-dictionary="英英"]'),
+        isFalse,
+        reason: '非 CJK 词典套 CJK 链只会把拉丁排版也换掉',
+      );
     });
 
     test('词典名里的引号被转义（词典名来自用户导入的包名）', () {

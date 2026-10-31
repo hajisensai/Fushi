@@ -46,11 +46,11 @@ class HostInputRef {
   });
 
   factory HostInputRef.fromJson(Map<String, dynamic> json) => HostInputRef(
-        path: json['path'] as String,
-        sha256: json['sha256'] as String,
-        size: json['size'] as int,
-        modifiedAt: json['modifiedAt'] as int,
-      );
+    path: json['path'] as String,
+    sha256: json['sha256'] as String,
+    size: json['size'] as int,
+    modifiedAt: json['modifiedAt'] as int,
+  );
 
   /// host 本机绝对路径（不出现在 wire 上）。
   final String path;
@@ -59,11 +59,11 @@ class HostInputRef {
   final int modifiedAt;
 
   Map<String, Object?> toJson() => <String, Object?>{
-        'path': path,
-        'sha256': sha256,
-        'size': size,
-        'modifiedAt': modifiedAt,
-      };
+    'path': path,
+    'sha256': sha256,
+    'size': size,
+    'modifiedAt': modifiedAt,
+  };
 }
 
 enum HostJobState { pending, uploading, running, done, error, cancelled }
@@ -83,31 +83,31 @@ class HostJobRecord {
     List<String>? inputs,
     Map<String, HostInputRef>? hostInputs,
     this.primaryOutput,
-  })  : outputs = outputs ?? <String, String>{},
-        inputs = inputs ?? <String>[],
-        hostInputs = hostInputs ?? <String, HostInputRef>{};
+  }) : outputs = outputs ?? <String, String>{},
+       inputs = inputs ?? <String>[],
+       hostInputs = hostInputs ?? <String, HostInputRef>{};
 
   factory HostJobRecord.fromJson(Map<String, dynamic> json) => HostJobRecord(
-        id: json['id'] as String,
-        kind: json['kind'] as String,
-        params: Map<String, Object?>.from(json['params'] as Map? ?? const {}),
-        createdAt: DateTime.fromMillisecondsSinceEpoch(json['createdAt'] as int),
-        updatedAt: DateTime.fromMillisecondsSinceEpoch(json['updatedAt'] as int),
-        state: HostJobState.values.byName(json['state'] as String),
-        progress: (json['progress'] as num?)?.toDouble() ?? 0,
-        message: json['message'] as String?,
-        error: json['error'] as String?,
-        outputs: Map<String, String>.from(json['outputs'] as Map? ?? const {}),
-        inputs: List<String>.from(json['inputs'] as List? ?? const []),
-        hostInputs: <String, HostInputRef>{
-          for (final MapEntry<Object?, Object?> e
-              in (json['hostInputs'] as Map? ?? const {}).entries)
-            e.key.toString(): HostInputRef.fromJson(
-              Map<String, dynamic>.from(e.value! as Map),
-            ),
-        },
-        primaryOutput: json['primaryOutput'] as String?,
-      );
+    id: json['id'] as String,
+    kind: json['kind'] as String,
+    params: Map<String, Object?>.from(json['params'] as Map? ?? const {}),
+    createdAt: DateTime.fromMillisecondsSinceEpoch(json['createdAt'] as int),
+    updatedAt: DateTime.fromMillisecondsSinceEpoch(json['updatedAt'] as int),
+    state: HostJobState.values.byName(json['state'] as String),
+    progress: (json['progress'] as num?)?.toDouble() ?? 0,
+    message: json['message'] as String?,
+    error: json['error'] as String?,
+    outputs: Map<String, String>.from(json['outputs'] as Map? ?? const {}),
+    inputs: List<String>.from(json['inputs'] as List? ?? const []),
+    hostInputs: <String, HostInputRef>{
+      for (final MapEntry<Object?, Object?> e
+          in (json['hostInputs'] as Map? ?? const {}).entries)
+        e.key.toString(): HostInputRef.fromJson(
+          Map<String, dynamic>.from(e.value! as Map),
+        ),
+    },
+    primaryOutput: json['primaryOutput'] as String?,
+  );
 
   final String id;
   final String kind;
@@ -139,38 +139,38 @@ class HostJobRecord {
       state == HostJobState.cancelled;
 
   Map<String, Object?> toJson() => <String, Object?>{
-        'id': id,
-        'kind': kind,
-        'params': params,
-        'createdAt': createdAt.millisecondsSinceEpoch,
-        'updatedAt': updatedAt.millisecondsSinceEpoch,
-        'state': state.name,
-        'progress': progress,
-        if (message != null) 'message': message,
-        if (error != null) 'error': error,
-        'outputs': outputs,
-        'inputs': inputs,
-        if (hostInputs.isNotEmpty)
-          'hostInputs': <String, Object?>{
-            for (final MapEntry<String, HostInputRef> e in hostInputs.entries)
-              e.key: e.value.toJson(),
-          },
-        if (primaryOutput != null) 'primaryOutput': primaryOutput,
-      };
+    'id': id,
+    'kind': kind,
+    'params': params,
+    'createdAt': createdAt.millisecondsSinceEpoch,
+    'updatedAt': updatedAt.millisecondsSinceEpoch,
+    'state': state.name,
+    'progress': progress,
+    if (message != null) 'message': message,
+    if (error != null) 'error': error,
+    'outputs': outputs,
+    'inputs': inputs,
+    if (hostInputs.isNotEmpty)
+      'hostInputs': <String, Object?>{
+        for (final MapEntry<String, HostInputRef> e in hostInputs.entries)
+          e.key: e.value.toJson(),
+      },
+    if (primaryOutput != null) 'primaryOutput': primaryOutput,
+  };
 
   /// 给客户端的轮询视图（与 OCR 作业的 `{state, ...}` 同形，多带 progress/outputs）。
   Map<String, Object?> toWireJson() => <String, Object?>{
-        'id': id,
-        'kind': kind,
-        'state': state.name,
-        'progress': progress,
-        if (message != null) 'message': message,
-        if (error != null) 'error': error,
-        'outputs': outputs.keys.toList(growable: false),
-        if (primaryOutput != null) 'primaryOutput': primaryOutput,
-        'createdAt': createdAt.millisecondsSinceEpoch,
-        'updatedAt': updatedAt.millisecondsSinceEpoch,
-      };
+    'id': id,
+    'kind': kind,
+    'state': state.name,
+    'progress': progress,
+    if (message != null) 'message': message,
+    if (error != null) 'error': error,
+    'outputs': outputs.keys.toList(growable: false),
+    if (primaryOutput != null) 'primaryOutput': primaryOutput,
+    'createdAt': createdAt.millisecondsSinceEpoch,
+    'updatedAt': updatedAt.millisecondsSinceEpoch,
+  };
 
   String encode() => const JsonEncoder.withIndent('  ').convert(toJson());
 }

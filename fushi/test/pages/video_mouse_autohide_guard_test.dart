@@ -28,17 +28,30 @@ void main() {
       r'hideMouseOnControlsRemoval:\s*!\(([\s\S]*?)\),',
     );
     final RegExpMatch? m = negatedExpr.firstMatch(src);
-    expect(m, isNotNull,
-        reason: '桌面控制条隐藏时默认一并隐藏光标（BUG-106），'
-            '取值必须是 `!( 豁免条件 )` 形式，仅在豁免条件成立时才不隐藏');
+    expect(
+      m,
+      isNotNull,
+      reason:
+          '桌面控制条隐藏时默认一并隐藏光标（BUG-106），'
+          '取值必须是 `!( 豁免条件 )` 形式，仅在豁免条件成立时才不隐藏',
+    );
     final String exemptions = m!.group(1)!.replaceAll(RegExp(r'\s+'), '');
-    expect(exemptions.contains('_subtitleListVisible.value'), isTrue,
-        reason: 'BUG-391：字幕列表 push-aside 侧栏开启时必须豁免');
-    expect(exemptions.contains('_episodeListVisible.value'), isTrue,
-        reason: 'BUG-391 r5：选集列表与字幕列表机理相同，必须一并豁免');
+    expect(
+      exemptions.contains('_subtitleListVisible.value'),
+      isTrue,
+      reason: 'BUG-391：字幕列表 push-aside 侧栏开启时必须豁免',
+    );
+    expect(
+      exemptions.contains('_episodeListVisible.value'),
+      isTrue,
+      reason: 'BUG-391 r5：选集列表与字幕列表机理相同，必须一并豁免',
+    );
     // 反向钉死：不得退回字面 `: true`（那会让 push-aside 列表开时仍隐藏光标，回归 BUG-391）。
-    expect(src.contains('hideMouseOnControlsRemoval: true'), isFalse,
-        reason: 'BUG-391：列表开时必须豁免，不能用字面 true');
+    expect(
+      src.contains('hideMouseOnControlsRemoval: true'),
+      isFalse,
+      reason: 'BUG-391：列表开时必须豁免，不能用字面 true',
+    );
   });
 
   test('controls auto-hide delay is 2 seconds in both themes (TODO-056)', () {

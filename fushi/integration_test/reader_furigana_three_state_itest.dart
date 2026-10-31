@@ -74,8 +74,10 @@ Future<void> _waitFor(
       return;
     }
   }
-  fail('$label did not become ready within '
-      '${maxPolls * step.inMilliseconds}ms');
+  fail(
+    '$label did not become ready within '
+    '${maxPolls * step.inMilliseconds}ms',
+  );
 }
 
 /// 让 fire-and-forget 的偏好 setter 落地。
@@ -113,7 +115,8 @@ Uint8List _buildFuriganaEpub() {
     body.writeln('  <p id="p${i + 1}">${_rubyParagraphs[i]}</p>');
   }
   const String title = '振り仮名三態テスト';
-  final String chapter = '''<?xml version="1.0" encoding="UTF-8"?>
+  final String chapter =
+      '''<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE html>
 <html xmlns="http://www.w3.org/1999/xhtml" xml:lang="ja" lang="ja">
 <head>
@@ -141,7 +144,8 @@ $body</body>
     <itemref idref="ch1"/>
   </spine>
 </package>''';
-  const String ncx = '''<?xml version="1.0" encoding="UTF-8"?>
+  const String ncx =
+      '''<?xml version="1.0" encoding="UTF-8"?>
 <ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
   <head>
     <meta name="dtb:uid" content="urn:uuid:furigana-three-state-itest-001"/>
@@ -217,7 +221,8 @@ const String _installSpyJs = r'''
 /// 采样第 [index] 个带 `<rt>` 的 ruby（DOM 顺序）：rt/ruby 计算样式、揭示 class、
 /// 基字文本节点的视口矩形中心（点击坐标用基字而不是整个 ruby 盒的中心：ruby 盒
 /// 含注音轨，其几何中心可能落在 rt 与基字的交界上）、探针计数与 JS 选区。
-String _probeJs(int index) => '''
+String _probeJs(int index) =>
+    '''
 (function () {
   var rubies = Array.prototype.filter.call(
       document.querySelectorAll('ruby'),
@@ -301,7 +306,8 @@ class _RubyProbe {
   bool get styleHasToggleRule => raw['styleHasToggleRule'] == true;
 
   @override
-  String toString() => 'base="$baseText" rt="$rtText" revealed=$revealed '
+  String toString() =>
+      'base="$baseText" rt="$rtText" revealed=$revealed '
       'rtVisibility=$rtVisibility rtDisplay=$rtDisplay '
       'rtOpacity=$rtOpacity '
       'rubyDecoration=$rubyDecorationLine/$rubyDecorationStyle '
@@ -334,8 +340,10 @@ Future<_RubyProbe> _probeUntil(
     }
     await tester.pump(const Duration(milliseconds: 250));
   }
-  debugPrint('[furigana3] $label (NOT settled after ${maxPolls * 250}ms): '
-      '$last');
+  debugPrint(
+    '[furigana3] $label (NOT settled after ${maxPolls * 250}ms): '
+    '$last',
+  );
   return last!;
 }
 
@@ -343,14 +351,19 @@ Future<void> _openSeededBook(WidgetTester tester, String bookKey) async {
   await openBookViaProductionPath(tester, bookKey);
   await _waitFor(tester, _webViewShown, 'reader WebView');
   await _waitFor(tester, _contentReady, 'reader content');
-  await _waitFor(tester, readerWebViewReady, 'reader debug hooks',
-      maxPolls: 20);
+  await _waitFor(
+    tester,
+    readerWebViewReady,
+    'reader debug hooks',
+    maxPolls: 20,
+  );
 }
 
 Future<void> _closeReader(WidgetTester tester) async {
   if (_readerPageGone()) return;
-  final NavigatorState nav =
-      Navigator.of(tester.element(find.byType(ReaderFushiPage)));
+  final NavigatorState nav = Navigator.of(
+    tester.element(find.byType(ReaderFushiPage)),
+  );
   nav.pop();
   await _waitFor(tester, _readerPageGone, 'reader closed', maxPolls: 40);
   await tester.pump(const Duration(seconds: 1));
@@ -358,15 +371,19 @@ Future<void> _closeReader(WidgetTester tester) async {
 
 Future<void> _captureWeb(String name) async {
   final ObserveShot web = await captureReaderWebView(name);
-  debugPrint('[furigana3] webview $name saved=${web.saved} '
-      'nonBlank=${web.nonBlank} path=${web.path}');
+  debugPrint(
+    '[furigana3] webview $name saved=${web.saved} '
+    'nonBlank=${web.nonBlank} path=${web.path}',
+  );
   expect(web.saved, isTrue, reason: 'WebView capture $name must be saved');
 }
 
 Future<void> _captureFrame(WidgetTester tester, String name) async {
   final ObserveShot frame = await captureFlutterFrame(tester, name);
-  debugPrint('[furigana3] frame $name saved=${frame.saved} '
-      'nonBlank=${frame.nonBlank} path=${frame.path}');
+  debugPrint(
+    '[furigana3] frame $name saved=${frame.saved} '
+    'nonBlank=${frame.nonBlank} path=${frame.path}',
+  );
 }
 
 void main() {
@@ -381,8 +398,11 @@ void main() {
         label: 'furigana3',
         body: () async {
           await launchFushiTestApp();
-          expect(await waitForHome(tester), isTrue,
-              reason: 'home (nav bar) must render');
+          expect(
+            await waitForHome(tester),
+            isTrue,
+            reason: 'home (nav bar) must render',
+          );
           await tester.pump(const Duration(seconds: 2));
           await readyAppModel(tester);
 
@@ -390,8 +410,10 @@ void main() {
           final String originalMode = source.readerFuriganaMode;
           final String originalWritingMode = source.readerWritingMode;
           final String originalViewMode = source.readerViewMode;
-          debugPrint('[furigana3] original prefs: furigana_mode=$originalMode '
-              'writing_mode=$originalWritingMode view_mode=$originalViewMode');
+          debugPrint(
+            '[furigana3] original prefs: furigana_mode=$originalMode '
+            'writing_mode=$originalWritingMode view_mode=$originalViewMode',
+          );
 
           try {
             // 前置：横排分页 + toggle 态，都在开书前写好。
@@ -406,14 +428,24 @@ void main() {
             await tester.pump(const Duration(seconds: 2));
 
             final _RunJs? runJs = ReaderFushiPage.debugEvaluateJavascript;
-            expect(runJs, isNotNull,
-                reason: 'reader must expose debugEvaluateJavascript');
-            expect(ReaderFushiSource.readerSettings?.furiganaMode, 'toggle',
-                reason: 'live ReaderSettings must carry the toggle mode');
-            expect(ReaderFushiSource.readerSettings?.isContinuousMode, isFalse,
-                reason: 'must run paginated');
-            final Object? wm =
-                await runJs!('getComputedStyle(document.body).writingMode');
+            expect(
+              runJs,
+              isNotNull,
+              reason: 'reader must expose debugEvaluateJavascript',
+            );
+            expect(
+              ReaderFushiSource.readerSettings?.furiganaMode,
+              'toggle',
+              reason: 'live ReaderSettings must carry the toggle mode',
+            );
+            expect(
+              ReaderFushiSource.readerSettings?.isContinuousMode,
+              isFalse,
+              reason: 'must run paginated',
+            );
+            final Object? wm = await runJs!(
+              'getComputedStyle(document.body).writingMode',
+            );
             debugPrint('[furigana3] body writingMode=$wm');
             expect(wm.toString(), 'horizontal-tb');
 
@@ -423,25 +455,52 @@ void main() {
 
             // ── 1. toggle 态基线 ────────────────────────────────────────
             final _RubyProbe s1 = await _probeUntil(
-                tester, runJs, 0, (p) => p.found && p.inViewport, '1 toggle');
-            expect(s1.found, isTrue,
-                reason: 'book must contain <ruby> with <rt>');
-            expect(s1.inViewport, isTrue,
-                reason: 'first ruby must be on the first page (needed for '
-                    'elementFromPoint): ${s1.raw['baseRect']}');
-            expect(s1.styleHasToggleRule, isTrue,
-                reason: 'injected #fushi-reader-style must carry the toggle '
-                    'CSS');
-            expect(s1.rtVisibility, 'hidden',
-                reason: '1. toggle: unrevealed rt must be visibility:hidden');
-            expect(s1.rtDisplay, 'ruby-text',
-                reason:
-                    '1. toggle keeps the annotation lane (not display:none)');
-            expect(s1.rubyDecorationStyle, 'dotted',
-                reason: '1. toggle: unrevealed ruby gets a dotted underline');
+              tester,
+              runJs,
+              0,
+              (p) => p.found && p.inViewport,
+              '1 toggle',
+            );
+            expect(
+              s1.found,
+              isTrue,
+              reason: 'book must contain <ruby> with <rt>',
+            );
+            expect(
+              s1.inViewport,
+              isTrue,
+              reason:
+                  'first ruby must be on the first page (needed for '
+                  'elementFromPoint): ${s1.raw['baseRect']}',
+            );
+            expect(
+              s1.styleHasToggleRule,
+              isTrue,
+              reason:
+                  'injected #fushi-reader-style must carry the toggle '
+                  'CSS',
+            );
+            expect(
+              s1.rtVisibility,
+              'hidden',
+              reason: '1. toggle: unrevealed rt must be visibility:hidden',
+            );
+            expect(
+              s1.rtDisplay,
+              'ruby-text',
+              reason: '1. toggle keeps the annotation lane (not display:none)',
+            );
+            expect(
+              s1.rubyDecorationStyle,
+              'dotted',
+              reason: '1. toggle: unrevealed ruby gets a dotted underline',
+            );
             expect(s1.rubyDecorationLine, contains('underline'));
-            expect(s1.revealed, isFalse,
-                reason: '1. no furigana-revealed class before tapping');
+            expect(
+              s1.revealed,
+              isFalse,
+              reason: '1. no furigana-revealed class before tapping',
+            );
             await _captureWeb('observe-a1-toggle-hidden-webview');
             await _captureFrame(tester, 'observe-a1-toggle-hidden');
 
@@ -449,39 +508,78 @@ void main() {
             final double cx = s1.baseCx;
             final double cy = s1.baseCy;
             final Object? hit = await runJs(
-                "(document.elementFromPoint($cx, $cy) || {}).tagName || 'none'");
+              "(document.elementFromPoint($cx, $cy) || {}).tagName || 'none'",
+            );
             debugPrint('[furigana3] 2. elementFromPoint($cx,$cy) → $hit');
             final Object? r2 = await runJs(
-                'String(window.fushiSelection.selectText($cx, $cy, 50, false))');
+              'String(window.fushiSelection.selectText($cx, $cy, 50, false))',
+            );
             debugPrint('[furigana3] 2. selectText returned $r2');
-            final _RubyProbe s2 = await _probeUntil(tester, runJs, 0,
-                (p) => p.revealed && p.rtVisibility == 'visible', '2 revealed');
-            expect(s2.revealed, isTrue,
-                reason: '2. tapping a hidden-furigana ruby must add '
-                    'furigana-revealed');
-            expect(s2.rtVisibility, 'visible',
-                reason: '2. revealed rt must become visible');
-            expect(s2.rubyDecorationLine, isNot(contains('underline')),
-                reason: '2. revealed ruby drops the dotted underline');
-            expect(s2.spyTextSelected, 0,
-                reason: '2. reveal tap must NOT fire onTextSelected (lookup)');
-            expect(s2.spyTapEmpty, 0,
-                reason: '2. reveal tap must NOT fire onTapEmpty either');
-            expect(s2.hasSelection, isFalse,
-                reason: '2. fushiSelection.selection stays null after reveal');
+            final _RubyProbe s2 = await _probeUntil(
+              tester,
+              runJs,
+              0,
+              (p) => p.revealed && p.rtVisibility == 'visible',
+              '2 revealed',
+            );
+            expect(
+              s2.revealed,
+              isTrue,
+              reason:
+                  '2. tapping a hidden-furigana ruby must add '
+                  'furigana-revealed',
+            );
+            expect(
+              s2.rtVisibility,
+              'visible',
+              reason: '2. revealed rt must become visible',
+            );
+            expect(
+              s2.rubyDecorationLine,
+              isNot(contains('underline')),
+              reason: '2. revealed ruby drops the dotted underline',
+            );
+            expect(
+              s2.spyTextSelected,
+              0,
+              reason: '2. reveal tap must NOT fire onTextSelected (lookup)',
+            );
+            expect(
+              s2.spyTapEmpty,
+              0,
+              reason: '2. reveal tap must NOT fire onTapEmpty either',
+            );
+            expect(
+              s2.hasSelection,
+              isFalse,
+              reason: '2. fushiSelection.selection stays null after reveal',
+            );
             await _captureWeb('observe-a2-revealed-webview');
 
             // ── 3. 再点同一点：正常查词 ──────────────────────────────
             final Object? r3 = await runJs(
-                'String(window.fushiSelection.selectText($cx, $cy, 50, false))');
+              'String(window.fushiSelection.selectText($cx, $cy, 50, false))',
+            );
             debugPrint('[furigana3] 3. selectText returned $r3');
-            final _RubyProbe s3 = await _probeUntil(tester, runJs, 0,
-                (p) => p.spyTextSelected >= 1 && p.hasSelection, '3 lookup');
-            expect(s3.spyTextSelected, 1,
-                reason: '3. second tap on the revealed ruby must go through '
-                    'the normal lookup path (onTextSelected fired once)');
-            expect(s3.hasSelection, isTrue,
-                reason: '3. fushiSelection.selection must be populated');
+            final _RubyProbe s3 = await _probeUntil(
+              tester,
+              runJs,
+              0,
+              (p) => p.spyTextSelected >= 1 && p.hasSelection,
+              '3 lookup',
+            );
+            expect(
+              s3.spyTextSelected,
+              1,
+              reason:
+                  '3. second tap on the revealed ruby must go through '
+                  'the normal lookup path (onTextSelected fired once)',
+            );
+            expect(
+              s3.hasSelection,
+              isTrue,
+              reason: '3. fushiSelection.selection must be populated',
+            );
             expect(s3.selectionText, isNotEmpty);
             expect(s3.spyTapEmpty, 0);
             expect(s3.revealed, isTrue, reason: '3. reveal state persists');
@@ -496,16 +594,34 @@ void main() {
             // 第 1 个 ruby 已揭示（class 仍在）；第 2 个从未揭示——两者在 hidden
             // 态都必须 display:none（hidden 的 CSS 不看 furigana-revealed）。
             final _RubyProbe s4a0 = await _probeUntil(
-                tester, runJs, 0, (p) => p.rtDisplay == 'none', '4a hidden #0');
+              tester,
+              runJs,
+              0,
+              (p) => p.rtDisplay == 'none',
+              '4a hidden #0',
+            );
             final _RubyProbe s4a1 = await _probeUntil(
-                tester, runJs, 1, (p) => p.rtDisplay == 'none', '4a hidden #1');
-            expect(s4a0.rtDisplay, 'none',
-                reason: '4a. hidden: rt must be display:none (revealed ruby)');
-            expect(s4a1.rtDisplay, 'none',
-                reason:
-                    '4a. hidden: rt must be display:none (unrevealed ruby)');
-            expect(s4a1.styleHasToggleRule, isFalse,
-                reason: '4a. hidden CSS must not carry the toggle rules');
+              tester,
+              runJs,
+              1,
+              (p) => p.rtDisplay == 'none',
+              '4a hidden #1',
+            );
+            expect(
+              s4a0.rtDisplay,
+              'none',
+              reason: '4a. hidden: rt must be display:none (revealed ruby)',
+            );
+            expect(
+              s4a1.rtDisplay,
+              'none',
+              reason: '4a. hidden: rt must be display:none (unrevealed ruby)',
+            );
+            expect(
+              s4a1.styleHasToggleRule,
+              isFalse,
+              reason: '4a. hidden CSS must not carry the toggle rules',
+            );
             await _captureWeb('observe-a4-hidden-webview');
 
             // ── 4b. 热切 off：rt visible、无虚线 ─────────────────────
@@ -513,25 +629,34 @@ void main() {
             await _pumpForPref(tester);
             expect(ReaderFushiSource.readerSettings?.furiganaMode, 'off');
             final _RubyProbe s4b1 = await _probeUntil(
-                tester,
-                runJs,
-                1,
-                (p) =>
-                    p.rtDisplay == 'ruby-text' && p.rtVisibility == 'visible',
-                '4b off #1');
+              tester,
+              runJs,
+              1,
+              (p) => p.rtDisplay == 'ruby-text' && p.rtVisibility == 'visible',
+              '4b off #1',
+            );
             final _RubyProbe s4b0 = await _probe(runJs, 0);
             debugPrint('[furigana3] 4b off #0: $s4b0');
-            expect(s4b1.rtVisibility, 'visible',
-                reason: '4b. off: unrevealed ruby rt must be visible');
+            expect(
+              s4b1.rtVisibility,
+              'visible',
+              reason: '4b. off: unrevealed ruby rt must be visible',
+            );
             expect(s4b1.rtDisplay, 'ruby-text');
-            expect(s4b1.rubyDecorationStyle, isNot('dotted'),
-                reason: '4b. off: no dotted underline on ruby');
+            expect(
+              s4b1.rubyDecorationStyle,
+              isNot('dotted'),
+              reason: '4b. off: no dotted underline on ruby',
+            );
             expect(s4b1.rubyDecorationLine, isNot(contains('underline')));
             expect(s4b1.revealed, isFalse, reason: 'ruby #1 was never tapped');
             expect(s4b0.rtVisibility, 'visible');
             expect(s4b0.rtDisplay, 'ruby-text');
-            expect(s4b1.rtOpacity, closeTo(1.0, 0.001),
-                reason: '4b. off: rt 不淡显（opacity 1）');
+            expect(
+              s4b1.rtOpacity,
+              closeTo(1.0, 0.001),
+              reason: '4b. off: rt 不淡显（opacity 1）',
+            );
             await _captureWeb('observe-a5-off-webview');
 
             // ── 4c. 热切 dimmed：结构同 off，但 opacity 淡到 0.45 ──────
@@ -539,33 +664,57 @@ void main() {
             await _pumpForPref(tester);
             expect(ReaderFushiSource.readerSettings?.furiganaMode, 'dimmed');
             final _RubyProbe s4c1 = await _probeUntil(
-                tester,
-                runJs,
-                1,
-                (p) => p.rtDisplay == 'ruby-text' && p.rtOpacity < 0.9,
-                '4c dimmed #1');
-            expect(s4c1.rtDisplay, 'ruby-text',
-                reason: '4c. dimmed 是「显示但淡」，注音结构必须与 off 一致，'
-                    '不得退化成 display:none / visibility:hidden');
-            expect(s4c1.rtVisibility, 'visible',
-                reason: '4c. dimmed: rt 仍 visible');
-            expect(s4c1.rtOpacity, closeTo(0.45, 0.01),
-                reason: '4c. dimmed: rt 淡显到 opacity 0.45（实测 '
-                    '${s4c1.rtOpacity}）');
-            expect(s4c1.rubyDecorationLine, isNot(contains('underline')),
-                reason: '4c. dimmed 不画 toggle 的虚线下划线');
+              tester,
+              runJs,
+              1,
+              (p) => p.rtDisplay == 'ruby-text' && p.rtOpacity < 0.9,
+              '4c dimmed #1',
+            );
+            expect(
+              s4c1.rtDisplay,
+              'ruby-text',
+              reason:
+                  '4c. dimmed 是「显示但淡」，注音结构必须与 off 一致，'
+                  '不得退化成 display:none / visibility:hidden',
+            );
+            expect(
+              s4c1.rtVisibility,
+              'visible',
+              reason: '4c. dimmed: rt 仍 visible',
+            );
+            expect(
+              s4c1.rtOpacity,
+              closeTo(0.45, 0.01),
+              reason:
+                  '4c. dimmed: rt 淡显到 opacity 0.45（实测 '
+                  '${s4c1.rtOpacity}）',
+            );
+            expect(
+              s4c1.rubyDecorationLine,
+              isNot(contains('underline')),
+              reason: '4c. dimmed 不画 toggle 的虚线下划线',
+            );
             await _captureWeb('observe-a6-dimmed-webview');
             await _captureFrame(tester, 'observe-a6-dimmed');
 
             // ── 4d. dimmed 下 show-all-rt（readerToggleFurigana 快捷键的
             //        CSS 落点）= 临时恢复全亮 ─────────────────────────
             await runJs("document.body.classList.add('show-all-rt');");
-            final _RubyProbe s4d = await _probeUntil(tester, runJs, 1,
-                (p) => p.rtOpacity > 0.9, '4d dimmed + show-all-rt');
-            expect(s4d.rtOpacity, closeTo(1.0, 0.001),
-                reason: '4d. dimmed + show-all-rt 必须把 opacity 拉回 1（'
-                    'readerToggleFurigana 在此态 = 临时恢复全亮），实测 '
-                    '${s4d.rtOpacity}');
+            final _RubyProbe s4d = await _probeUntil(
+              tester,
+              runJs,
+              1,
+              (p) => p.rtOpacity > 0.9,
+              '4d dimmed + show-all-rt',
+            );
+            expect(
+              s4d.rtOpacity,
+              closeTo(1.0, 0.001),
+              reason:
+                  '4d. dimmed + show-all-rt 必须把 opacity 拉回 1（'
+                  'readerToggleFurigana 在此态 = 临时恢复全亮），实测 '
+                  '${s4d.rtOpacity}',
+            );
             expect(s4d.rtDisplay, 'ruby-text');
             await _captureWeb('observe-a7-dimmed-show-all-webview');
             await runJs("document.body.classList.remove('show-all-rt');");
@@ -575,31 +724,40 @@ void main() {
             await _pumpForPref(tester);
             expect(ReaderFushiSource.readerSettings?.furiganaMode, 'off');
             final _RubyProbe s4e = await _probeUntil(
-                tester,
-                runJs,
-                1,
-                (p) => p.rtDisplay == 'ruby-text' && p.rtOpacity > 0.9,
-                '4e back to off');
-            expect(s4e.rtOpacity, closeTo(1.0, 0.001),
-                reason: '4e. 切回 off 后淡显必须完全撤掉（opacity 1），实测 '
-                    '${s4e.rtOpacity}');
+              tester,
+              runJs,
+              1,
+              (p) => p.rtDisplay == 'ruby-text' && p.rtOpacity > 0.9,
+              '4e back to off',
+            );
+            expect(
+              s4e.rtOpacity,
+              closeTo(1.0, 0.001),
+              reason:
+                  '4e. 切回 off 后淡显必须完全撤掉（opacity 1），实测 '
+                  '${s4e.rtOpacity}',
+            );
             expect(s4e.rtDisplay, 'ruby-text');
             expect(s4e.rtVisibility, 'visible');
             await _captureWeb('observe-a8-off-again-webview');
 
-            debugPrint('[furigana3] PASS: toggle(hidden rt, dotted) → tap '
-                'reveals w/o lookup → tap looks up → hidden(display:none) → '
-                'off(visible, no underline) → dimmed(opacity 0.45) → '
-                'show-all-rt(opacity 1) → off(opacity 1)');
+            debugPrint(
+              '[furigana3] PASS: toggle(hidden rt, dotted) → tap '
+              'reveals w/o lookup → tap looks up → hidden(display:none) → '
+              'off(visible, no underline) → dimmed(opacity 0.45) → '
+              'show-all-rt(opacity 1) → off(opacity 1)',
+            );
           } finally {
             await _closeReader(tester);
             await source.setReaderFuriganaMode(originalMode);
             await source.setReaderWritingMode(originalWritingMode);
             await source.setReaderViewMode(originalViewMode);
             await _pumpForPref(tester);
-            debugPrint('[furigana3] restored prefs: furigana_mode='
-                '${source.readerFuriganaMode} writing_mode='
-                '${source.readerWritingMode} view_mode=${source.readerViewMode}');
+            debugPrint(
+              '[furigana3] restored prefs: furigana_mode='
+              '${source.readerFuriganaMode} writing_mode='
+              '${source.readerWritingMode} view_mode=${source.readerViewMode}',
+            );
           }
         },
       );

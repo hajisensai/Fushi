@@ -72,10 +72,10 @@ class WebViewDeathGuard {
     VoidCallback? afterRebuild,
     int maxRebuilds = kDefaultMaxRebuilds,
     void Function(String surface, String message)? reporter,
-  })  : _flushBeforeRebuild = flushBeforeRebuild,
-        _afterRebuild = afterRebuild,
-        _maxRebuilds = maxRebuilds,
-        _reporter = reporter ?? _debugPrintReport;
+  }) : _flushBeforeRebuild = flushBeforeRebuild,
+       _afterRebuild = afterRebuild,
+       _maxRebuilds = maxRebuilds,
+       _reporter = reporter ?? _debugPrintReport;
 
   /// 重建预算。renderer 被 OOM kill 往往不是一次性事件：内存压力还在，重建出来
   /// 的新 renderer 会立刻再死。无上限重建 = 无限重建风暴，比白屏更糟。用完预算
@@ -119,11 +119,10 @@ class WebViewDeathGuard {
   Future<void> handleDeath({
     bool didCrash = false,
     Object? rendererPriorityAtExit,
-  }) =>
-      _handle(
-        'renderer gone (didCrash=$didCrash, '
-        'priorityAtExit=$rendererPriorityAtExit)',
-      );
+  }) => _handle(
+    'renderer gone (didCrash=$didCrash, '
+    'priorityAtExit=$rendererPriorityAtExit)',
+  );
 
   /// WKWebView（iOS / macOS）的 WebContent 进程终止。接到
   /// `onWebContentProcessDidTerminate` 就调这个。

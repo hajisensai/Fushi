@@ -13,20 +13,18 @@ import 'package:fushi_core/fushi_core.dart';
 /// listBooks/listVideos 从 DB 标签映射填充 tags。
 void main() {
   FushiDatabase openDb() {
-    final FushiDatabase db =
-        FushiDatabase.forTesting(NativeDatabase.memory());
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     return db;
   }
 
-  LocalLibraryHostService buildSvc(FushiDatabase db) =>
-      LocalLibraryHostService(
-        db: db,
-        dictionaryResourceRoot: Directory.systemTemp,
-        packages: SyncAssetPackageService(db: db),
-        refreshDictionaryCache: () async {},
-        runExclusive: (Future<void> Function() body) => body(),
-      );
+  LocalLibraryHostService buildSvc(FushiDatabase db) => LocalLibraryHostService(
+    db: db,
+    dictionaryResourceRoot: Directory.systemTemp,
+    packages: SyncAssetPackageService(db: db),
+    refreshDictionaryCache: () async {},
+    runExclusive: (Future<void> Function() body) => body(),
+  );
 
   group('RemoteBookInfo tags', () {
     test('toJson / fromJson round-trip 保留 tags', () {
@@ -42,8 +40,10 @@ void main() {
     });
 
     test('无 tags 的 toJson 不写 tags 键；fromJson 缺字段降级空列表', () {
-      const RemoteBookInfo info =
-          RemoteBookInfo(title: 'Book', hasContent: true);
+      const RemoteBookInfo info = RemoteBookInfo(
+        title: 'Book',
+        hasContent: true,
+      );
       expect(info.toJson().containsKey('tags'), isFalse);
       // 模拟旧 host（无 tags 字段）响应。
       final RemoteBookInfo legacy = RemoteBookInfo.fromJson(<String, Object?>{
@@ -88,53 +88,61 @@ void main() {
   group('host listBooks/listVideos 填充 tags', () {
     test('listBooks 从 book_tag_mappings 填充书标签名', () async {
       final FushiDatabase db = openDb();
-      await db.insertEpubBook(EpubBooksCompanion.insert(
-        bookKey: 'BookA',
-        title: 'BookA',
-        epubPath: '/tmp/BookA.epub',
-        extractDir: '/tmp/BookA',
-        chapterCount: 1,
-        chaptersJson: '[]',
-        importedAt: DateTime.now().millisecondsSinceEpoch,
-      ));
+      await db.insertEpubBook(
+        EpubBooksCompanion.insert(
+          bookKey: 'BookA',
+          title: 'BookA',
+          epubPath: '/tmp/BookA.epub',
+          extractDir: '/tmp/BookA',
+          chapterCount: 1,
+          chaptersJson: '[]',
+          importedAt: DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
       final int tagId = await db.getOrCreateTagByName('文学');
       await db.addTagToBook('BookA', tagId);
 
       final List<RemoteBookInfo> list = await buildSvc(db).listBooks();
-      final RemoteBookInfo book =
-          list.firstWhere((RemoteBookInfo b) => b.title == 'BookA');
+      final RemoteBookInfo book = list.firstWhere(
+        (RemoteBookInfo b) => b.title == 'BookA',
+      );
       expect(book.tags, <String>['文学']);
     });
 
     test('listBooks 对无标签的书返回空 tags', () async {
       final FushiDatabase db = openDb();
-      await db.insertEpubBook(EpubBooksCompanion.insert(
-        bookKey: 'Bare',
-        title: 'Bare',
-        epubPath: '/tmp/Bare.epub',
-        extractDir: '/tmp/Bare',
-        chapterCount: 1,
-        chaptersJson: '[]',
-        importedAt: DateTime.now().millisecondsSinceEpoch,
-      ));
+      await db.insertEpubBook(
+        EpubBooksCompanion.insert(
+          bookKey: 'Bare',
+          title: 'Bare',
+          epubPath: '/tmp/Bare.epub',
+          extractDir: '/tmp/Bare',
+          chapterCount: 1,
+          chaptersJson: '[]',
+          importedAt: DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
       final List<RemoteBookInfo> list = await buildSvc(db).listBooks();
       expect(list.single.tags, isEmpty);
     });
 
     test('listVideos 从 video_book_tag_mappings 填充视频标签名', () async {
       final FushiDatabase db = openDb();
-      await db.upsertVideoBook(VideoBooksCompanion.insert(
-        bookUid: 'vid-uid',
-        title: 'MyVideo',
-        videoPath: '/tmp/v.mp4',
-        importedAt: Value(DateTime.now().millisecondsSinceEpoch),
-      ));
+      await db.upsertVideoBook(
+        VideoBooksCompanion.insert(
+          bookUid: 'vid-uid',
+          title: 'MyVideo',
+          videoPath: '/tmp/v.mp4',
+          importedAt: Value(DateTime.now().millisecondsSinceEpoch),
+        ),
+      );
       final int tagId = await db.getOrCreateTagByName('アニメ');
       await db.addTagToVideoBook('vid-uid', tagId);
 
       final List<RemoteVideoInfo> list = await buildSvc(db).listVideos();
-      final RemoteVideoInfo video =
-          list.firstWhere((RemoteVideoInfo v) => v.id == 'vid-uid');
+      final RemoteVideoInfo video = list.firstWhere(
+        (RemoteVideoInfo v) => v.id == 'vid-uid',
+      );
       expect(video.tags, <String>['アニメ']);
     });
   });

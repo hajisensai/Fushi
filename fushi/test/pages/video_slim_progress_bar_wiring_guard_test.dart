@@ -61,7 +61,8 @@ void main() {
     expect(
       body.contains('controlsVisible: controlsVisible'),
       isTrue,
-      reason: '控制条可见性取自 _videoControlsVisible 的 ValueListenableBuilder，'
+      reason:
+          '控制条可见性取自 _videoControlsVisible 的 ValueListenableBuilder，'
           '不是快照——控制条淡出时细线要当场接管',
     );
     expect(
@@ -81,13 +82,15 @@ void main() {
     expect(
       containsCodeLine(body, '_videoChromeAccent(cs)'),
       isTrue,
-      reason: '细线裸压固定深色 scrim：必须取亮 tone primary（videoChromeAccentColor）；'
+      reason:
+          '细线裸压固定深色 scrim：必须取亮 tone primary（videoChromeAccentColor）；'
           '注释里写着这句不算实现',
     );
     expect(
       containsCodeLine(body, 'cs.primary'),
       isFalse,
-      reason: '不许绕过 chrome 配色口径直接用 colorScheme.primary——'
+      reason:
+          '不许绕过 chrome 配色口径直接用 colorScheme.primary——'
           '浅色 / eink 主题下它是深色，压在深色 scrim 上看不见',
     );
   });
@@ -100,7 +103,8 @@ void main() {
       expect(
         containsCodeLine(body, 'onSeekFraction:'),
         isTrue,
-        reason: '小窗里它是唯一的进度控件、常规档它是控制条淡出后唯一还在的那条，'
+        reason:
+            '小窗里它是唯一的进度控件、常规档它是控制条淡出后唯一还在的那条，'
             '不可点等于没有进度控制',
       );
       for (final String gate in <String>[
@@ -112,7 +116,8 @@ void main() {
         expect(
           body.contains(gate),
           isTrue,
-          reason: '细线挂在 media_kit 控制条那层 IgnorePointer **之外**：不自己订阅 '
+          reason:
+              '细线挂在 media_kit 控制条那层 IgnorePointer **之外**：不自己订阅 '
               '$gate，它就是这四个门控唯一漏掉的可点区（沉浸锁住了还能被点着跳转）',
         );
       }
@@ -131,13 +136,15 @@ void main() {
       expect(
         containsCodeLine(body, 'player.seek('),
         isFalse,
-        reason: 'media_kit 那条路绕过本仓 controller，要在 onSeekEnd 里补 '
+        reason:
+            'media_kit 那条路绕过本仓 controller，要在 onSeekEnd 里补 '
             'notifyExternalSeek 才补得回来（BUG-796）',
       );
       expect(
         containsCodeLine(body, '_pokeControlsVisible()'),
         isFalse,
-        reason: '这条线存在的意义就是「控制条不在时也能操作」；点一下就把整条控制条'
+        reason:
+            '这条线存在的意义就是「控制条不在时也能操作」；点一下就把整条控制条'
             '唤起来，等于每次跳转都重新糊一次画面',
       );
     });

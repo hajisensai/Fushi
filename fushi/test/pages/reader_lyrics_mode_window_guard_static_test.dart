@@ -23,45 +23,51 @@ void main() {
     );
     expect(
       loadLyrics,
-      isNot(contains('ctrl.allBookCuesSnapshot.isNotEmpty\n'
+      isNot(
+        contains(
+          'ctrl.allBookCuesSnapshot.isNotEmpty\n'
           '        ? ctrl.allBookCuesSnapshot\n'
-          '        : ctrl.chapterCuesSnapshot')),
+          '        : ctrl.chapterCuesSnapshot',
+        ),
+      ),
       reason: '直接选择整本 allBookCuesSnapshot 会让大书 iOS WebView loadData 超时/白屏。',
     );
   });
 
-  test('lyrics cue updates translate global all-book index into window index',
-      () {
-    final String source = readReaderPageSource();
-    final String cueChanged = _functionSource(
-      source,
-      '  void _onCueChanged() {',
-      '    final AudioCue? cue = controller.currentCue;',
-    );
+  test(
+    'lyrics cue updates translate global all-book index into window index',
+    () {
+      final String source = readReaderPageSource();
+      final String cueChanged = _functionSource(
+        source,
+        '  void _onCueChanged() {',
+        '    final AudioCue? cue = controller.currentCue;',
+      );
 
-    // 歌词覆盖层（2026-10）：歌词同步从 _onCueChanged 收进 _syncLyricsOverlayCue，
-    // _onCueChanged 在歌词态调它；窗口换算 / 越界重载的不变式在那里成立。
-    expect(
-      cueChanged,
-      contains('_syncLyricsOverlayCue('),
-      reason: 'cue 更新必须在歌词态同步歌词层。',
-    );
-    final String lyricsSync = _functionSource(
-      source,
-      '  void _syncLyricsOverlayCue(',
-      '    final bool scroll =',
-    );
-    expect(
-      lyricsSync,
-      contains('_lyricsCueIndexOffset'),
-      reason: '歌词页只渲染窗口时，cue 更新必须扣除窗口起点。',
-    );
-    expect(
-      lyricsSync,
-      contains('_loadLyricsPage()'),
-      reason: '播放位置走出当前歌词窗口时必须重载邻近窗口，不能静默停住。',
-    );
-  });
+      // 歌词覆盖层（2026-10）：歌词同步从 _onCueChanged 收进 _syncLyricsOverlayCue，
+      // _onCueChanged 在歌词态调它；窗口换算 / 越界重载的不变式在那里成立。
+      expect(
+        cueChanged,
+        contains('_syncLyricsOverlayCue('),
+        reason: 'cue 更新必须在歌词态同步歌词层。',
+      );
+      final String lyricsSync = _functionSource(
+        source,
+        '  void _syncLyricsOverlayCue(',
+        '    final bool scroll =',
+      );
+      expect(
+        lyricsSync,
+        contains('_lyricsCueIndexOffset'),
+        reason: '歌词页只渲染窗口时，cue 更新必须扣除窗口起点。',
+      );
+      expect(
+        lyricsSync,
+        contains('_loadLyricsPage()'),
+        reason: '播放位置走出当前歌词窗口时必须重载邻近窗口，不能静默停住。',
+      );
+    },
+  );
 }
 
 String _functionSource(String source, String start, String end) {

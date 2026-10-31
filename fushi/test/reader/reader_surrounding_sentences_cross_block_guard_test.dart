@@ -28,20 +28,38 @@ void main() {
   final String js = ReaderSelectionScripts.source();
 
   test('charBefore 用 document.body 级 walker（跨段回退上一句）', () {
-    final String body =
-        _between(js, 'charBefore: function', 'charAt: function');
-    expect(body, contains('this.createWalker(document.body)'),
-        reason: 'charBefore 必须用 document.body walker 才能跨块');
-    expect(body, isNot(contains('findParagraph(node)')),
-        reason: 'charBefore 不得再用 findParagraph 把 walker 困在当前块（BUG-764 根因）');
+    final String body = _between(
+      js,
+      'charBefore: function',
+      'charAt: function',
+    );
+    expect(
+      body,
+      contains('this.createWalker(document.body)'),
+      reason: 'charBefore 必须用 document.body walker 才能跨块',
+    );
+    expect(
+      body,
+      isNot(contains('findParagraph(node)')),
+      reason: 'charBefore 不得再用 findParagraph 把 walker 困在当前块（BUG-764 根因）',
+    );
   });
 
   test('charAt 用 document.body 级 walker（跨段取下一句）', () {
-    final String body =
-        _between(js, 'charAt: function', 'selectText: function');
-    expect(body, contains('this.createWalker(document.body)'),
-        reason: 'charAt 必须用 document.body walker 才能跨块');
-    expect(body, isNot(contains('findParagraph(node)')),
-        reason: 'charAt 不得再用 findParagraph 把 walker 困在当前块（BUG-764 根因）');
+    final String body = _between(
+      js,
+      'charAt: function',
+      'selectText: function',
+    );
+    expect(
+      body,
+      contains('this.createWalker(document.body)'),
+      reason: 'charAt 必须用 document.body walker 才能跨块',
+    );
+    expect(
+      body,
+      isNot(contains('findParagraph(node)')),
+      reason: 'charAt 不得再用 findParagraph 把 walker 困在当前块（BUG-764 根因）',
+    );
   });
 }

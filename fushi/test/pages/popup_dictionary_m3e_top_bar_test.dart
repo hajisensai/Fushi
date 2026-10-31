@@ -184,7 +184,10 @@ void main() {
     const ValueKey<String> target = ValueKey<String>('popup_mining_target');
     expect(find.byKey(target), findsOneWidget);
     expect(
-      find.descendant(of: find.byKey(_toolbarKey), matching: find.byKey(target)),
+      find.descendant(
+        of: find.byKey(_toolbarKey),
+        matching: find.byKey(target),
+      ),
       findsOneWidget,
     );
   });

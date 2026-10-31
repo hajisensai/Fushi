@@ -116,8 +116,7 @@ List<String> shortcutModifierDisplayLabels(
 String shortcutModifierDisplayLabel(
   ModifierKey modifier, {
   TargetPlatform? platform,
-}) =>
-    modifier.displayLabelOn(platform ?? shortcutDisplayPlatform);
+}) => modifier.displayLabelOn(platform ?? shortcutDisplayPlatform);
 
 /// 把「修饰键显示名 + 主键显示名」拼成一行文本（BUG-3203）：Apple 平台按系统
 /// 菜单的写法直接相连（`⌃⌥D`），其它平台用 `+` 连接（`Ctrl+Alt+D`）。键帽式
@@ -126,17 +125,13 @@ String shortcutModifierDisplayLabel(
 String joinShortcutDisplayParts(
   List<String> parts, {
   TargetPlatform? platform,
-}) =>
-    parts.join(
-      shortcutUsesAppleSymbols(platform ?? shortcutDisplayPlatform) ? '' : '+',
-    );
+}) => parts.join(
+  shortcutUsesAppleSymbols(platform ?? shortcutDisplayPlatform) ? '' : '+',
+);
 
 @immutable
 class InputBinding {
-  const InputBinding({
-    required this.key,
-    this.modifiers = const {},
-  });
+  const InputBinding({required this.key, this.modifiers = const {}});
 
   final LogicalKeyboardKey key;
   final Set<ModifierKey> modifiers;
@@ -262,83 +257,83 @@ class InputBinding {
   // primitive equality（同 [_knownKeys] 的 CFE 限制）。
   static final Map<LogicalKeyboardKey, PhysicalKeyboardKey> _logicalToPhysical =
       {
-    LogicalKeyboardKey.space: PhysicalKeyboardKey.space,
-    LogicalKeyboardKey.escape: PhysicalKeyboardKey.escape,
-    LogicalKeyboardKey.pageUp: PhysicalKeyboardKey.pageUp,
-    LogicalKeyboardKey.pageDown: PhysicalKeyboardKey.pageDown,
-    LogicalKeyboardKey.arrowUp: PhysicalKeyboardKey.arrowUp,
-    LogicalKeyboardKey.arrowDown: PhysicalKeyboardKey.arrowDown,
-    LogicalKeyboardKey.arrowLeft: PhysicalKeyboardKey.arrowLeft,
-    LogicalKeyboardKey.arrowRight: PhysicalKeyboardKey.arrowRight,
-    LogicalKeyboardKey.enter: PhysicalKeyboardKey.enter,
-    LogicalKeyboardKey.tab: PhysicalKeyboardKey.tab,
-    LogicalKeyboardKey.backspace: PhysicalKeyboardKey.backspace,
-    LogicalKeyboardKey.mediaPlay: PhysicalKeyboardKey.mediaPlay,
-    LogicalKeyboardKey.mediaPause: PhysicalKeyboardKey.mediaPause,
-    LogicalKeyboardKey.mediaPlayPause: PhysicalKeyboardKey.mediaPlayPause,
-    LogicalKeyboardKey.delete: PhysicalKeyboardKey.delete,
-    LogicalKeyboardKey.home: PhysicalKeyboardKey.home,
-    LogicalKeyboardKey.end: PhysicalKeyboardKey.end,
-    LogicalKeyboardKey.f1: PhysicalKeyboardKey.f1,
-    LogicalKeyboardKey.f2: PhysicalKeyboardKey.f2,
-    LogicalKeyboardKey.f3: PhysicalKeyboardKey.f3,
-    LogicalKeyboardKey.f4: PhysicalKeyboardKey.f4,
-    LogicalKeyboardKey.f5: PhysicalKeyboardKey.f5,
-    LogicalKeyboardKey.f6: PhysicalKeyboardKey.f6,
-    LogicalKeyboardKey.f7: PhysicalKeyboardKey.f7,
-    LogicalKeyboardKey.f8: PhysicalKeyboardKey.f8,
-    LogicalKeyboardKey.f9: PhysicalKeyboardKey.f9,
-    LogicalKeyboardKey.f10: PhysicalKeyboardKey.f10,
-    LogicalKeyboardKey.f11: PhysicalKeyboardKey.f11,
-    LogicalKeyboardKey.f12: PhysicalKeyboardKey.f12,
-    LogicalKeyboardKey.digit0: PhysicalKeyboardKey.digit0,
-    LogicalKeyboardKey.digit1: PhysicalKeyboardKey.digit1,
-    LogicalKeyboardKey.digit2: PhysicalKeyboardKey.digit2,
-    LogicalKeyboardKey.digit3: PhysicalKeyboardKey.digit3,
-    LogicalKeyboardKey.digit4: PhysicalKeyboardKey.digit4,
-    LogicalKeyboardKey.digit5: PhysicalKeyboardKey.digit5,
-    LogicalKeyboardKey.digit6: PhysicalKeyboardKey.digit6,
-    LogicalKeyboardKey.digit7: PhysicalKeyboardKey.digit7,
-    LogicalKeyboardKey.digit8: PhysicalKeyboardKey.digit8,
-    LogicalKeyboardKey.digit9: PhysicalKeyboardKey.digit9,
-    LogicalKeyboardKey.keyA: PhysicalKeyboardKey.keyA,
-    LogicalKeyboardKey.keyB: PhysicalKeyboardKey.keyB,
-    LogicalKeyboardKey.keyC: PhysicalKeyboardKey.keyC,
-    LogicalKeyboardKey.keyD: PhysicalKeyboardKey.keyD,
-    LogicalKeyboardKey.keyE: PhysicalKeyboardKey.keyE,
-    LogicalKeyboardKey.keyF: PhysicalKeyboardKey.keyF,
-    LogicalKeyboardKey.keyG: PhysicalKeyboardKey.keyG,
-    LogicalKeyboardKey.keyH: PhysicalKeyboardKey.keyH,
-    LogicalKeyboardKey.keyI: PhysicalKeyboardKey.keyI,
-    LogicalKeyboardKey.keyJ: PhysicalKeyboardKey.keyJ,
-    LogicalKeyboardKey.keyK: PhysicalKeyboardKey.keyK,
-    LogicalKeyboardKey.keyL: PhysicalKeyboardKey.keyL,
-    LogicalKeyboardKey.keyM: PhysicalKeyboardKey.keyM,
-    LogicalKeyboardKey.keyN: PhysicalKeyboardKey.keyN,
-    LogicalKeyboardKey.keyO: PhysicalKeyboardKey.keyO,
-    LogicalKeyboardKey.keyP: PhysicalKeyboardKey.keyP,
-    LogicalKeyboardKey.keyQ: PhysicalKeyboardKey.keyQ,
-    LogicalKeyboardKey.keyR: PhysicalKeyboardKey.keyR,
-    LogicalKeyboardKey.keyS: PhysicalKeyboardKey.keyS,
-    LogicalKeyboardKey.keyT: PhysicalKeyboardKey.keyT,
-    LogicalKeyboardKey.keyU: PhysicalKeyboardKey.keyU,
-    LogicalKeyboardKey.keyV: PhysicalKeyboardKey.keyV,
-    LogicalKeyboardKey.keyW: PhysicalKeyboardKey.keyW,
-    LogicalKeyboardKey.keyX: PhysicalKeyboardKey.keyX,
-    LogicalKeyboardKey.keyY: PhysicalKeyboardKey.keyY,
-    LogicalKeyboardKey.keyZ: PhysicalKeyboardKey.keyZ,
-    LogicalKeyboardKey.bracketLeft: PhysicalKeyboardKey.bracketLeft,
-    LogicalKeyboardKey.bracketRight: PhysicalKeyboardKey.bracketRight,
-    LogicalKeyboardKey.minus: PhysicalKeyboardKey.minus,
-    LogicalKeyboardKey.equal: PhysicalKeyboardKey.equal,
-    LogicalKeyboardKey.comma: PhysicalKeyboardKey.comma,
-    LogicalKeyboardKey.period: PhysicalKeyboardKey.period,
-    LogicalKeyboardKey.slash: PhysicalKeyboardKey.slash,
-    LogicalKeyboardKey.semicolon: PhysicalKeyboardKey.semicolon,
-    LogicalKeyboardKey.backquote: PhysicalKeyboardKey.backquote,
-    LogicalKeyboardKey.quoteSingle: PhysicalKeyboardKey.quote,
-    LogicalKeyboardKey.backslash: PhysicalKeyboardKey.backslash,
-  };
+        LogicalKeyboardKey.space: PhysicalKeyboardKey.space,
+        LogicalKeyboardKey.escape: PhysicalKeyboardKey.escape,
+        LogicalKeyboardKey.pageUp: PhysicalKeyboardKey.pageUp,
+        LogicalKeyboardKey.pageDown: PhysicalKeyboardKey.pageDown,
+        LogicalKeyboardKey.arrowUp: PhysicalKeyboardKey.arrowUp,
+        LogicalKeyboardKey.arrowDown: PhysicalKeyboardKey.arrowDown,
+        LogicalKeyboardKey.arrowLeft: PhysicalKeyboardKey.arrowLeft,
+        LogicalKeyboardKey.arrowRight: PhysicalKeyboardKey.arrowRight,
+        LogicalKeyboardKey.enter: PhysicalKeyboardKey.enter,
+        LogicalKeyboardKey.tab: PhysicalKeyboardKey.tab,
+        LogicalKeyboardKey.backspace: PhysicalKeyboardKey.backspace,
+        LogicalKeyboardKey.mediaPlay: PhysicalKeyboardKey.mediaPlay,
+        LogicalKeyboardKey.mediaPause: PhysicalKeyboardKey.mediaPause,
+        LogicalKeyboardKey.mediaPlayPause: PhysicalKeyboardKey.mediaPlayPause,
+        LogicalKeyboardKey.delete: PhysicalKeyboardKey.delete,
+        LogicalKeyboardKey.home: PhysicalKeyboardKey.home,
+        LogicalKeyboardKey.end: PhysicalKeyboardKey.end,
+        LogicalKeyboardKey.f1: PhysicalKeyboardKey.f1,
+        LogicalKeyboardKey.f2: PhysicalKeyboardKey.f2,
+        LogicalKeyboardKey.f3: PhysicalKeyboardKey.f3,
+        LogicalKeyboardKey.f4: PhysicalKeyboardKey.f4,
+        LogicalKeyboardKey.f5: PhysicalKeyboardKey.f5,
+        LogicalKeyboardKey.f6: PhysicalKeyboardKey.f6,
+        LogicalKeyboardKey.f7: PhysicalKeyboardKey.f7,
+        LogicalKeyboardKey.f8: PhysicalKeyboardKey.f8,
+        LogicalKeyboardKey.f9: PhysicalKeyboardKey.f9,
+        LogicalKeyboardKey.f10: PhysicalKeyboardKey.f10,
+        LogicalKeyboardKey.f11: PhysicalKeyboardKey.f11,
+        LogicalKeyboardKey.f12: PhysicalKeyboardKey.f12,
+        LogicalKeyboardKey.digit0: PhysicalKeyboardKey.digit0,
+        LogicalKeyboardKey.digit1: PhysicalKeyboardKey.digit1,
+        LogicalKeyboardKey.digit2: PhysicalKeyboardKey.digit2,
+        LogicalKeyboardKey.digit3: PhysicalKeyboardKey.digit3,
+        LogicalKeyboardKey.digit4: PhysicalKeyboardKey.digit4,
+        LogicalKeyboardKey.digit5: PhysicalKeyboardKey.digit5,
+        LogicalKeyboardKey.digit6: PhysicalKeyboardKey.digit6,
+        LogicalKeyboardKey.digit7: PhysicalKeyboardKey.digit7,
+        LogicalKeyboardKey.digit8: PhysicalKeyboardKey.digit8,
+        LogicalKeyboardKey.digit9: PhysicalKeyboardKey.digit9,
+        LogicalKeyboardKey.keyA: PhysicalKeyboardKey.keyA,
+        LogicalKeyboardKey.keyB: PhysicalKeyboardKey.keyB,
+        LogicalKeyboardKey.keyC: PhysicalKeyboardKey.keyC,
+        LogicalKeyboardKey.keyD: PhysicalKeyboardKey.keyD,
+        LogicalKeyboardKey.keyE: PhysicalKeyboardKey.keyE,
+        LogicalKeyboardKey.keyF: PhysicalKeyboardKey.keyF,
+        LogicalKeyboardKey.keyG: PhysicalKeyboardKey.keyG,
+        LogicalKeyboardKey.keyH: PhysicalKeyboardKey.keyH,
+        LogicalKeyboardKey.keyI: PhysicalKeyboardKey.keyI,
+        LogicalKeyboardKey.keyJ: PhysicalKeyboardKey.keyJ,
+        LogicalKeyboardKey.keyK: PhysicalKeyboardKey.keyK,
+        LogicalKeyboardKey.keyL: PhysicalKeyboardKey.keyL,
+        LogicalKeyboardKey.keyM: PhysicalKeyboardKey.keyM,
+        LogicalKeyboardKey.keyN: PhysicalKeyboardKey.keyN,
+        LogicalKeyboardKey.keyO: PhysicalKeyboardKey.keyO,
+        LogicalKeyboardKey.keyP: PhysicalKeyboardKey.keyP,
+        LogicalKeyboardKey.keyQ: PhysicalKeyboardKey.keyQ,
+        LogicalKeyboardKey.keyR: PhysicalKeyboardKey.keyR,
+        LogicalKeyboardKey.keyS: PhysicalKeyboardKey.keyS,
+        LogicalKeyboardKey.keyT: PhysicalKeyboardKey.keyT,
+        LogicalKeyboardKey.keyU: PhysicalKeyboardKey.keyU,
+        LogicalKeyboardKey.keyV: PhysicalKeyboardKey.keyV,
+        LogicalKeyboardKey.keyW: PhysicalKeyboardKey.keyW,
+        LogicalKeyboardKey.keyX: PhysicalKeyboardKey.keyX,
+        LogicalKeyboardKey.keyY: PhysicalKeyboardKey.keyY,
+        LogicalKeyboardKey.keyZ: PhysicalKeyboardKey.keyZ,
+        LogicalKeyboardKey.bracketLeft: PhysicalKeyboardKey.bracketLeft,
+        LogicalKeyboardKey.bracketRight: PhysicalKeyboardKey.bracketRight,
+        LogicalKeyboardKey.minus: PhysicalKeyboardKey.minus,
+        LogicalKeyboardKey.equal: PhysicalKeyboardKey.equal,
+        LogicalKeyboardKey.comma: PhysicalKeyboardKey.comma,
+        LogicalKeyboardKey.period: PhysicalKeyboardKey.period,
+        LogicalKeyboardKey.slash: PhysicalKeyboardKey.slash,
+        LogicalKeyboardKey.semicolon: PhysicalKeyboardKey.semicolon,
+        LogicalKeyboardKey.backquote: PhysicalKeyboardKey.backquote,
+        LogicalKeyboardKey.quoteSingle: PhysicalKeyboardKey.quote,
+        LogicalKeyboardKey.backslash: PhysicalKeyboardKey.backslash,
+      };
 
   /// [_logicalToPhysical] 的反向索引（同一张真相源，不是第二份手写表）。
   ///
@@ -347,10 +342,10 @@ class InputBinding {
   /// 里塞出第二个指向同一物理键的逻辑键，反向表会静默丢一条，守卫直接红。
   static final Map<PhysicalKeyboardKey, LogicalKeyboardKey> _physicalToLogical =
       <PhysicalKeyboardKey, LogicalKeyboardKey>{
-    for (final MapEntry<LogicalKeyboardKey, PhysicalKeyboardKey> entry
-        in _logicalToPhysical.entries)
-      entry.value: entry.key,
-  };
+        for (final MapEntry<LogicalKeyboardKey, PhysicalKeyboardKey> entry
+            in _logicalToPhysical.entries)
+          entry.value: entry.key,
+      };
 
   /// 仅供守卫测试比对两表基数用；不参与运行时逻辑。
   @visibleForTesting
@@ -424,18 +419,16 @@ class InputBinding {
 
   static final RegExp _domCodeCharacter = RegExp(r'^(?:Key|Digit)(.)$');
 
-  String serialize() => <String>[
-        ..._sortedModifierLabels,
-        _keyToken(key),
-      ].join('+');
+  String serialize() =>
+      <String>[..._sortedModifierLabels, _keyToken(key)].join('+');
 
   /// 给用户看的分段（修饰键在前、主键在后），每段一枚键帽。显示快捷键的唯一
   /// 入口（BUG-3203）：修饰键名按平台走 [shortcutModifierDisplayLabels]，macOS
   /// 上是 ⌃ ⌥ ⇧ ⌘ 而不是持久化 token 的 Ctrl / Alt / Meta。
   List<String> displayPartsOn([TargetPlatform? platform]) => <String>[
-        ...shortcutModifierDisplayLabels(modifiers, platform: platform),
-        _keyLabel(key),
-      ];
+    ...shortcutModifierDisplayLabels(modifiers, platform: platform),
+    _keyLabel(key),
+  ];
 
   /// [displayPartsOn] 的当前平台版本。
   List<String> get displayParts => displayPartsOn();
@@ -504,14 +497,14 @@ class InputBinding {
 /// 不中再按 [InputBinding.normalizeCapturedKey] 归一后的键比一次（BUG-2948）。
 class InputBindingActivator extends ShortcutActivator {
   InputBindingActivator(this.binding, {bool includeRepeats = true})
-      : exact = SingleActivator(
-          binding.key,
-          control: binding.modifiers.contains(ModifierKey.ctrl),
-          shift: binding.modifiers.contains(ModifierKey.shift),
-          alt: binding.modifiers.contains(ModifierKey.alt),
-          meta: binding.modifiers.contains(ModifierKey.meta),
-          includeRepeats: includeRepeats,
-        );
+    : exact = SingleActivator(
+        binding.key,
+        control: binding.modifiers.contains(ModifierKey.ctrl),
+        shift: binding.modifiers.contains(ModifierKey.shift),
+        alt: binding.modifiers.contains(ModifierKey.alt),
+        meta: binding.modifiers.contains(ModifierKey.meta),
+        includeRepeats: includeRepeats,
+      );
 
   final InputBinding binding;
 
@@ -527,7 +520,8 @@ class InputBindingActivator extends ShortcutActivator {
   @override
   bool accepts(KeyEvent event, HardwareKeyboard state) {
     if (exact.accepts(event, state)) return true;
-    final bool pressEdge = event is KeyDownEvent ||
+    final bool pressEdge =
+        event is KeyDownEvent ||
         (exact.includeRepeats && event is KeyRepeatEvent);
     if (!pressEdge) return false;
     final LogicalKeyboardKey normalized = InputBinding.normalizeCapturedKey(
@@ -781,18 +775,16 @@ class WheelBinding {
           .map((m) => m.label)
           .toList(growable: false);
 
-  String serialize() => <String>[
-        ..._sortedModifierLabels,
-        direction.token,
-      ].join('+');
+  String serialize() =>
+      <String>[..._sortedModifierLabels, direction.token].join('+');
 
   /// 与 [InputBinding.displayLabel] 同形（`Alt+WheelDown`，macOS 上 `⌥WheelDown`）。
   /// 本地化显示名在 `shortcut_labels.dart` 的 [WheelBindingLabel] 里（那里把方向
   /// 换成人话）。
   String get displayLabel => joinShortcutDisplayParts(<String>[
-        ...shortcutModifierDisplayLabels(modifiers),
-        direction.token,
-      ]);
+    ...shortcutModifierDisplayLabels(modifiers),
+    direction.token,
+  ]);
 
   static WheelBinding? deserialize(String s) {
     if (s.isEmpty) return null;
@@ -844,15 +836,15 @@ class ShortcutBindingSet {
   final List<WheelBinding> wheelBindings;
 
   Map<String, dynamic> toJson() => {
-        'keyboard':
-            keyboardBindings.map((b) => b.serialize()).toList(growable: false),
-        'gamepad':
-            gamepadBindings.map((b) => b.serialize()).toList(growable: false),
-        'mouse':
-            mouseBindings.map((b) => b.serialize()).toList(growable: false),
-        'wheel':
-            wheelBindings.map((b) => b.serialize()).toList(growable: false),
-      };
+    'keyboard': keyboardBindings
+        .map((b) => b.serialize())
+        .toList(growable: false),
+    'gamepad': gamepadBindings
+        .map((b) => b.serialize())
+        .toList(growable: false),
+    'mouse': mouseBindings.map((b) => b.serialize()).toList(growable: false),
+    'wheel': wheelBindings.map((b) => b.serialize()).toList(growable: false),
+  };
 
   factory ShortcutBindingSet.fromJson(Map<String, dynamic> json) {
     final kbRaw = json['keyboard'];
@@ -862,31 +854,31 @@ class ShortcutBindingSet {
     return ShortcutBindingSet(
       keyboardBindings: kbRaw is List
           ? kbRaw
-              .cast<String>()
-              .map(InputBinding.deserialize)
-              .whereType<InputBinding>()
-              .toList(growable: false)
+                .cast<String>()
+                .map(InputBinding.deserialize)
+                .whereType<InputBinding>()
+                .toList(growable: false)
           : const [],
       gamepadBindings: gpRaw is List
           ? gpRaw
-              .cast<String>()
-              .map(GamepadBinding.deserialize)
-              .whereType<GamepadBinding>()
-              .toList(growable: false)
+                .cast<String>()
+                .map(GamepadBinding.deserialize)
+                .whereType<GamepadBinding>()
+                .toList(growable: false)
           : const [],
       mouseBindings: msRaw is List
           ? msRaw
-              .cast<String>()
-              .map(MouseBinding.deserialize)
-              .whereType<MouseBinding>()
-              .toList(growable: false)
+                .cast<String>()
+                .map(MouseBinding.deserialize)
+                .whereType<MouseBinding>()
+                .toList(growable: false)
           : const [],
       wheelBindings: whRaw is List
           ? whRaw
-              .cast<String>()
-              .map(WheelBinding.deserialize)
-              .whereType<WheelBinding>()
-              .toList(growable: false)
+                .cast<String>()
+                .map(WheelBinding.deserialize)
+                .whereType<WheelBinding>()
+                .toList(growable: false)
           : const [],
     );
   }
@@ -896,13 +888,12 @@ class ShortcutBindingSet {
     List<GamepadBinding>? gamepadBindings,
     List<MouseBinding>? mouseBindings,
     List<WheelBinding>? wheelBindings,
-  }) =>
-      ShortcutBindingSet(
-        keyboardBindings: keyboardBindings ?? this.keyboardBindings,
-        gamepadBindings: gamepadBindings ?? this.gamepadBindings,
-        mouseBindings: mouseBindings ?? this.mouseBindings,
-        wheelBindings: wheelBindings ?? this.wheelBindings,
-      );
+  }) => ShortcutBindingSet(
+    keyboardBindings: keyboardBindings ?? this.keyboardBindings,
+    gamepadBindings: gamepadBindings ?? this.gamepadBindings,
+    mouseBindings: mouseBindings ?? this.mouseBindings,
+    wheelBindings: wheelBindings ?? this.wheelBindings,
+  );
 }
 
 /// 当前按下的修饰键集合（Ctrl / Shift / Alt / Meta）。

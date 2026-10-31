@@ -383,9 +383,8 @@ class _FushiSearchBarState extends State<FushiSearchBar> {
 /// 过冲回弹——M3 Expressive 的 spatial spring 观感，而 route / 隐式动画仍可
 /// 按固定时长驱动。
 class _FushiSearchSpringCurve extends Curve {
-  _FushiSearchSpringCurve({
-    SpringDescription? spring,
-  }) : _simulation = SpringSimulation(spring ?? fushiSearchViewSpring, 0, 1, 0);
+  _FushiSearchSpringCurve({SpringDescription? spring})
+    : _simulation = SpringSimulation(spring ?? fushiSearchViewSpring, 0, 1, 0);
 
   static const Duration _defaultDuration = Duration(milliseconds: 500);
 

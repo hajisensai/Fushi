@@ -10,14 +10,13 @@ AsrTranscribedSegment _seg({
   required int endMs,
   required String text,
   required List<int> times,
-}) =>
-    AsrTranscribedSegment(
-      audioFileIndex: 0,
-      startMs: startMs,
-      endMs: endMs,
-      tokens: text.split(''),
-      tokenTimesMs: times,
-    );
+}) => AsrTranscribedSegment(
+  audioFileIndex: 0,
+  startMs: startMs,
+  endMs: endMs,
+  tokens: text.split(''),
+  tokenTimesMs: times,
+);
 
 void main() {
   group('AsrCue 带逐 token 时间', () {
@@ -81,17 +80,17 @@ void main() {
     });
 
     List<AudioCue> cuesOf(int n) => List<AudioCue>.generate(
-          n,
-          (int i) => AudioCue()
-            ..bookKey = 'b'
-            ..chapterHref = ''
-            ..sentenceIndex = i
-            ..textFragmentId = ''
-            ..text = 'x'
-            ..startMs = i * 1000
-            ..endMs = i * 1000 + 500
-            ..audioFileIndex = 0,
-        );
+      n,
+      (int i) => AudioCue()
+        ..bookKey = 'b'
+        ..chapterHref = ''
+        ..sentenceIndex = i
+        ..textFragmentId = ''
+        ..text = 'x'
+        ..startMs = i * 1000
+        ..endMs = i * 1000 + 500
+        ..audioFileIndex = 0,
+    );
 
     int jobSeq = 0;
     File job({required bool state, String? sidecar}) {
@@ -103,8 +102,9 @@ void main() {
         File(p.join(dir.path, AsrJobFiles.state)).writeAsStringSync('{}');
       }
       if (sidecar != null) {
-        File(p.join(dir.path, AsrJobFiles.cueTokens))
-            .writeAsStringSync(sidecar);
+        File(
+          p.join(dir.path, AsrJobFiles.cueTokens),
+        ).writeAsStringSync(sidecar);
       }
       return srt;
     }
@@ -115,10 +115,7 @@ void main() {
         sidecar: '{"t":["a"],"o":[10]}\n{"t":["b","c"],"o":[0,50]}\n',
       );
       final List<AudioCue> cues = cuesOf(2);
-      expect(
-        await attachAsrCueTokenTiming(cues, srt.path),
-        isTrue,
-      );
+      expect(await attachAsrCueTokenTiming(cues, srt.path), isTrue);
       expect(cues[0].tokenTiming!.tokens, <String>['a']);
       expect(cues[1].tokenTiming!.offsetsMs, <int>[0, 50]);
     });
@@ -134,10 +131,7 @@ void main() {
       );
       expect(cues.every((AudioCue c) => c.tokenTiming == null), isTrue);
       expect(
-        await attachAsrCueTokenTiming(
-          cues,
-          job(state: true).path,
-        ),
+        await attachAsrCueTokenTiming(cues, job(state: true).path),
         isFalse,
       );
       expect(

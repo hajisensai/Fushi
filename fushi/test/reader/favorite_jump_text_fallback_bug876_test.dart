@@ -19,10 +19,14 @@ void main() {
 
   /// 取 `_jumpToFavoriteSentence` 函数体（到下一个方法 `_favoritePositionLabel` 前）。
   String jumpBody() {
-    final int start =
-        chrome.indexOf('_jumpToFavoriteSentence(FavoriteSentence');
-    expect(start, greaterThanOrEqualTo(0),
-        reason: '找不到 _jumpToFavoriteSentence 定义');
+    final int start = chrome.indexOf(
+      '_jumpToFavoriteSentence(FavoriteSentence',
+    );
+    expect(
+      start,
+      greaterThanOrEqualTo(0),
+      reason: '找不到 _jumpToFavoriteSentence 定义',
+    );
     final int end = chrome.indexOf('_favoritePositionLabel(', start);
     return chrome.substring(start, end >= 0 ? end : chrome.length);
   }

@@ -162,7 +162,9 @@ void main() {
       gradle.indexOf('task.dependsOn(checkFushiCorpusNative)', preBuild),
       greaterThan(preBuild),
     );
-    final int check = gradle.indexOf('tasks.register("checkFushiCorpusNative")');
+    final int check = gradle.indexOf(
+      'tasks.register("checkFushiCorpusNative")',
+    );
     expect(
       gradle.indexOf('throw new GradleException', check),
       greaterThan(check),
@@ -266,7 +268,10 @@ void main() {
               body,
               'setup-fushi-compute',
             );
-            final List<String> rwkvAbis = _abisAfter(body, 'setup-fushi-corpus');
+            final List<String> rwkvAbis = _abisAfter(
+              body,
+              'setup-fushi-corpus',
+            );
             expect(
               rwkvAbis,
               computeAbis,

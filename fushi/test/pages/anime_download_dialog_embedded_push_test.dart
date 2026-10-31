@@ -120,15 +120,13 @@ class _FakeBackend implements TorrentBackend {
     String torrentId,
     int fileIndex,
     String newPath,
-  ) async =>
-      const TorrentStorageResult.failure('not supported by fake');
+  ) async => const TorrentStorageResult.failure('not supported by fake');
 
   @override
   Future<TorrentStorageResult> moveStorage(
     String torrentId,
     String newSavePath,
-  ) async =>
-      const TorrentStorageResult.failure('not supported by fake');
+  ) async => const TorrentStorageResult.failure('not supported by fake');
 }
 
 class _FakeAppModel extends AppModel {
@@ -163,9 +161,9 @@ class _FakeAppModel extends AppModel {
 
   @override
   QbConnectionConfig? get qbConnectionConfig => const QbConnectionConfig(
-        backend: QbConnectionConfig.backendQbittorrent,
-        baseUrl: 'http://127.0.0.1:1',
-      );
+    backend: QbConnectionConfig.backendQbittorrent,
+    baseUrl: 'http://127.0.0.1:1',
+  );
 
   @override
   bool get torrentUploadIntroShown => true;

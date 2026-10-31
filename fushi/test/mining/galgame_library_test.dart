@@ -19,8 +19,10 @@ void main() {
   group('newGalgameEntryFromExe', () {
     test('默认名取文件名去扩展名，workdir 取 exe 目录，id 非空', () {
       final DateTime now = DateTime.fromMillisecondsSinceEpoch(1700000000000);
-      final GalgameEntry e =
-          newGalgameEntryFromExe(r'D:\games\Sakura\sakura.exe', now: now);
+      final GalgameEntry e = newGalgameEntryFromExe(
+        r'D:\games\Sakura\sakura.exe',
+        now: now,
+      );
       expect(e.name, 'sakura');
       expect(e.workdir, r'D:\games\Sakura');
       expect(e.exePath, r'D:\games\Sakura\sakura.exe');
@@ -30,10 +32,7 @@ void main() {
     });
 
     test('显式 name 覆盖默认', () {
-      final GalgameEntry e = newGalgameEntryFromExe(
-        r'D:\g\a.exe',
-        name: '樱之诗',
-      );
+      final GalgameEntry e = newGalgameEntryFromExe(r'D:\g\a.exe', name: '樱之诗');
       expect(e.name, '樱之诗');
     });
   });
@@ -56,8 +55,9 @@ void main() {
           name: 'Beta',
         ),
       ];
-      final List<GalgameEntry> back =
-          decodeGalgameLibrary(encodeGalgameLibrary(games));
+      final List<GalgameEntry> back = decodeGalgameLibrary(
+        encodeGalgameLibrary(games),
+      );
       expect(back.length, 2);
       expect(back[0].exePath, r'D:\g\a.exe');
       expect(back[0].name, 'a');
@@ -112,17 +112,18 @@ void main() {
       final List<GalgameEntry> existing = <GalgameEntry>[
         entryFor(r'D:\g\a.exe'),
       ];
-      final List<String> out = filterOutDuplicateGameExes(
-        existing,
-        <String>[r'd:/G/A.EXE', r'D:\g\c.exe'],
-      );
+      final List<String> out = filterOutDuplicateGameExes(existing, <String>[
+        r'd:/G/A.EXE',
+        r'D:\g\c.exe',
+      ]);
       expect(out, <String>[r'D:\g\c.exe']);
     });
 
     test('全部重复 / 无 exe 时返回空', () {
       expect(
-        filterOutDuplicateGameExes(
-            const <GalgameEntry>[], <String>[r'x\y.txt']),
+        filterOutDuplicateGameExes(const <GalgameEntry>[], <String>[
+          r'x\y.txt',
+        ]),
         isEmpty,
       );
       expect(

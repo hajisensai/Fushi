@@ -318,8 +318,9 @@ ReaderSettingsTab readerSettingsInitialTab(
   String? requested,
 }) {
   // 定向入口只影响本次初始选择，不覆盖普通设置入口的会话记忆。
-  final ReaderSettingsTab? target =
-      requested == null ? null : ReaderSettingsTab.byId(requested);
+  final ReaderSettingsTab? target = requested == null
+      ? null
+      : ReaderSettingsTab.byId(requested);
   if (target != null && tabs.contains(target)) return target;
   final ReaderSettingsTab? byId = ReaderSettingsTab.byId(remembered);
   if (byId != null && tabs.contains(byId)) return byId;

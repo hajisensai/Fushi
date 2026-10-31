@@ -135,8 +135,8 @@ GlobalLookupFrameRect computeFrameRect({
   final double height = isVertical
       ? maxHeight
       : fitHeightToAnchorSide
-          ? _min(_max(spaceAbove, spaceBelow) - screenBorderPadding, maxHeight)
-          : _min(screenH - screenBorderPadding * 2, maxHeight);
+      ? _min(_max(spaceAbove, spaceBelow) - screenBorderPadding, maxHeight)
+      : _min(screenH - screenBorderPadding * 2, maxHeight);
 
   // --- centerX()（Hoshi :45-57）---
   final double centerX;
@@ -260,7 +260,8 @@ class RatchetedOverlayBox {
   int get hashCode => Object.hash(left, top, width, height);
 
   @override
-  String toString() => 'RatchetedOverlayBox(left: $left, top: $top, '
+  String toString() =>
+      'RatchetedOverlayBox(left: $left, top: $top, '
       'width: $width, height: $height)';
 }
 
@@ -410,7 +411,10 @@ double _cascadeHeadroom(double cursorWork, double screenWork) {
 /// `[0, screenWork - cardDim]` 后与原位置作差。`screenWork <= 0` = 无工作区信息 →
 /// 0（修前几何）。见 [computeRootShellOffset]。
 double _rootShellAxisOffset(
-    double cursorWork, double screenWork, double cardDim) {
+  double cursorWork,
+  double screenWork,
+  double cardDim,
+) {
   if (screenWork <= 0) {
     return 0;
   }

@@ -107,7 +107,7 @@ String formatStatDurationAxis(int ms) {
 /// 情况，标签函数里的单位分支随之消失（刻度恒为步长的整数倍 → 标签恒为整数）。
 class StatAxisScale {
   StatAxisScale({required this.ticks, required this.labels})
-      : assert(ticks.length == labels.length, '刻度值与标签必须一一对应');
+    : assert(ticks.length == labels.length, '刻度值与标签必须一一对应');
 
   /// 升序刻度值，首项恒为 0，末项 ≥ 数据最大值（柱高也按末项归一，柱子因此永远
   /// 不会顶破最高刻度线）。
@@ -152,9 +152,7 @@ List<StatAxisLabelSlot> statXAxisLabelSlots({
   bool collides(int a, int b) => leftOf(a) + widthOf(a) + minGap > leftOf(b);
 
   for (int every = math.max(1, minEvery); every <= count; every++) {
-    final List<int> picked = <int>[
-      for (int i = 0; i < count; i += every) i,
-    ];
+    final List<int> picked = <int>[for (int i = 0; i < count; i += every) i];
     final int last = count - 1;
     if (picked.last != last) {
       // 末柱恒标；与前一个相撞就让掉前一个（只剩首柱时首柱也让）。
@@ -294,14 +292,19 @@ class StatHourlyChartPainter extends CustomPainter {
 
   /// 某小时所有带的合计（决定柱高与纵轴上限）。
   int totalAt(int hour) => bands.fold<int>(
-      0, (int sum, StatHourlyBand band) => sum + _valueAt(band, hour));
+    0,
+    (int sum, StatHourlyBand band) => sum + _valueAt(band, hour),
+  );
 
   @override
   void paint(Canvas canvas, Size size) {
     if (bands.isEmpty) return;
 
-    final List<int> totals =
-        List<int>.generate(kStatHourlyBuckets, totalAt, growable: false);
+    final List<int> totals = List<int>.generate(
+      kStatHourlyBuckets,
+      totalAt,
+      growable: false,
+    );
     final maxMs = totals.fold<int>(0, (prev, ms) => ms > prev ? ms : prev);
     if (maxMs == 0) return;
 
@@ -309,8 +312,11 @@ class StatHourlyChartPainter extends CustomPainter {
     // 取整、柱高按轴顶归一。
     final StatAxisScale scale = statDurationAxisScale(maxMs);
     const bottomPadding = 20.0;
-    final double leftPadding =
-        statAxisLeftPadding(scale.labels, labelStyle, 32.0);
+    final double leftPadding = statAxisLeftPadding(
+      scale.labels,
+      labelStyle,
+      32.0,
+    );
     final chartHeight = size.height - bottomPadding;
     final chartWidth = size.width - leftPadding;
     final step = chartWidth / kStatHourlyBuckets;
@@ -380,10 +386,7 @@ class StatHourlyChartPainter extends CustomPainter {
 
       if (i % 3 == 0) {
         final tp = TextPainter(
-          text: TextSpan(
-            text: i.toString().padLeft(2, '0'),
-            style: labelStyle,
-          ),
+          text: TextSpan(text: i.toString().padLeft(2, '0'), style: labelStyle),
           textDirection: TextDirection.ltr,
         )..layout();
         tp.paint(
@@ -452,16 +455,21 @@ class StatBarChartPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     if (data.isEmpty) return;
 
-    final maxValue =
-        data.fold<int>(0, (prev, d) => valueOf(d) > prev ? valueOf(d) : prev);
+    final maxValue = data.fold<int>(
+      0,
+      (prev, d) => valueOf(d) > prev ? valueOf(d) : prev,
+    );
     if (maxValue == 0) return;
 
     // 网格线与柱高都按轴顶（最高刻度）归一，而不是按数据最大值——否则取整后的
     // 最高刻度线会落在画布外，最高的那根柱子也会顶破它。
     final StatAxisScale scale = axisScaleOf(maxValue);
     const bottomPadding = 20.0;
-    final double leftPadding =
-        statAxisLeftPadding(scale.labels, labelStyle, 36.0);
+    final double leftPadding = statAxisLeftPadding(
+      scale.labels,
+      labelStyle,
+      36.0,
+    );
     final chartHeight = size.height - bottomPadding;
     final chartWidth = size.width - leftPadding;
     final barWidth = (chartWidth / data.length) * 0.7;
@@ -515,7 +523,6 @@ class StatBarChartPainter extends CustomPainter {
         );
         canvas.drawRRect(rect, paint);
       }
-
     }
 
     // 横轴标签：按实测宽度排布，互不重叠、不出画布（[statXAxisLabelSlots]）。
@@ -598,7 +605,9 @@ class StatLineChartPainter extends CustomPainter {
 
   /// 所有线里的最大点数（决定横轴刻度数）。
   int get _pointCount => series.fold<int>(
-      0, (int p, StatLineSeries s) => math.max(p, s.values.length));
+    0,
+    (int p, StatLineSeries s) => math.max(p, s.values.length),
+  );
 
   @override
   void paint(Canvas canvas, Size size) {

@@ -9,13 +9,15 @@ import 'package:fushi_anki/fushi_anki.dart';
 /// 假挖词 service：捕获转发来的 payload，回预设结果。
 class _FakeMining implements FushiRemoteMiningService {
   ForwardedMinePayload? forwarded;
-  RemoteMineResult result =
-      const RemoteMineResult(result: 'success', message: 'ok');
+  RemoteMineResult result = const RemoteMineResult(
+    result: 'success',
+    message: 'ok',
+  );
 
   @override
   Future<AnkiNoteTypeDefinition?> readNoteTypeDefinition(
-          String modelName) async =>
-      null;
+    String modelName,
+  ) async => null;
 
   @override
   Future<bool> updateNoteTypeStyling(String modelName, String css) async =>
@@ -23,8 +25,9 @@ class _FakeMining implements FushiRemoteMiningService {
 
   @override
   Future<bool> updateNoteTypeTemplates(
-          String modelName, List<AnkiCardTemplate> templates) async =>
-      false;
+    String modelName,
+    List<AnkiCardTemplate> templates,
+  ) async => false;
 
   @override
   Future<bool> probeMediaMaintenance() async => false;
@@ -40,26 +43,26 @@ class _FakeMining implements FushiRemoteMiningService {
   }
 
   @override
-  Future<RemoteMineResult> mineEntry(
-          {required Map<String, String> fields,
-          required String sentence}) async =>
-      const RemoteMineResult(result: 'success');
+  Future<RemoteMineResult> mineEntry({
+    required Map<String, String> fields,
+    required String sentence,
+  }) async => const RemoteMineResult(result: 'success');
 
   @override
   Future<RemoteMineResult> mineImmersion(ImmersionMinePayload payload) async =>
       const RemoteMineResult(result: 'success');
 
   @override
-  Future<bool> isDuplicate(
-          {required String expression, required String reading}) async =>
-      false;
+  Future<bool> isDuplicate({
+    required String expression,
+    required String reading,
+  }) async => false;
 
   @override
   Future<AnkiOpenWordOutcome> openWordInAnki({
     required String expression,
     required String reading,
-  }) async =>
-      AnkiOpenWordOutcome.failed;
+  }) async => AnkiOpenWordOutcome.failed;
 }
 
 void main() {
@@ -82,8 +85,9 @@ void main() {
 
     test('rawPayloadJson 缺失 → FormatException（调用方转 400）', () {
       expect(
-        () => buildForwardedMineResponse(<String, dynamic>{'sentence': 'x'},
-            mining: _FakeMining()),
+        () => buildForwardedMineResponse(<String, dynamic>{
+          'sentence': 'x',
+        }, mining: _FakeMining()),
         throwsFormatException,
       );
     });

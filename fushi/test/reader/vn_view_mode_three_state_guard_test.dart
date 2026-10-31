@@ -54,56 +54,60 @@ void main() {
       );
     });
 
-    test(
-      'the only authoritative viewMode == continuous comparison is the '
-      'isContinuousMode getter',
-      () {
-        final String code = _stripLineComments(settings);
-        expect(
-          "viewMode == 'continuous'".allMatches(code).length,
-          1,
-          reason: 'view-mode must funnel through isContinuousMode / isVnMode, '
-              'not scattered bare == continuous comparisons',
-        );
-        expect(
-          "viewMode == 'vn'".allMatches(code).length,
-          1,
-          reason: 'VN mode must funnel through isVnMode',
-        );
-      },
-    );
+    test('the only authoritative viewMode == continuous comparison is the '
+        'isContinuousMode getter', () {
+      final String code = _stripLineComments(settings);
+      expect(
+        "viewMode == 'continuous'".allMatches(code).length,
+        1,
+        reason:
+            'view-mode must funnel through isContinuousMode / isVnMode, '
+            'not scattered bare == continuous comparisons',
+      );
+      expect(
+        "viewMode == 'vn'".allMatches(code).length,
+        1,
+        reason: 'VN mode must funnel through isVnMode',
+      );
+    });
 
-    test(
-      'the engine routes VN before the paginated/continuous branches '
-      '(BUG-1140 第二阶段①：分流从 Dart 注入期搬到 JS 运行时)',
-      () {
-        // 改动前：Dart 的 shellScript 按 vnMode/continuousMode 三选一**插值**出一份
-        // shell。现在 Dart 只决定嵌哪一份 shell，运行时分流点是引擎里的
-        // window.__fushiInstallShell（读 C）—— 判据与顺序必须逐条保留。
-        final String engine = ReaderPaginationScripts.engineShell(
-            vnMode: true, continuousMode: false);
-        final int vnIdx = engine.indexOf('if (C.vnMode)');
-        final int contIdx = engine.indexOf('if (C.continuousMode)');
-        expect(vnIdx, isNonNegative, reason: 'engine must branch on C.vnMode');
-        expect(contIdx, isNonNegative,
-            reason: 'engine must branch on C.continuousMode');
-        expect(vnIdx < contIdx, isTrue,
-            reason: 'vnMode branch must precede continuousMode branch');
-        expect(
-          engine.contains('window.__fushiShells.vn = function(C)'),
-          isTrue,
-          reason: 'the VN engine must carry the VN shell installer',
-        );
-        // Dart 侧只按 view-mode 选嵌哪一份 shell（memoize 的 key），运行时分流仍读
-        // C —— 不得回到「把 progress / charOffset 之类 per-nav 值插进 shell」的老路。
-        expect(
-          _stripLineComments(webview)
-              .contains('ReaderPaginationScripts.engineShell('),
-          isTrue,
-          reason: 'webview must build the engine through engineShell(mode)',
-        );
-      },
-    );
+    test('the engine routes VN before the paginated/continuous branches '
+        '(BUG-1140 第二阶段①：分流从 Dart 注入期搬到 JS 运行时)', () {
+      // 改动前：Dart 的 shellScript 按 vnMode/continuousMode 三选一**插值**出一份
+      // shell。现在 Dart 只决定嵌哪一份 shell，运行时分流点是引擎里的
+      // window.__fushiInstallShell（读 C）—— 判据与顺序必须逐条保留。
+      final String engine = ReaderPaginationScripts.engineShell(
+        vnMode: true,
+        continuousMode: false,
+      );
+      final int vnIdx = engine.indexOf('if (C.vnMode)');
+      final int contIdx = engine.indexOf('if (C.continuousMode)');
+      expect(vnIdx, isNonNegative, reason: 'engine must branch on C.vnMode');
+      expect(
+        contIdx,
+        isNonNegative,
+        reason: 'engine must branch on C.continuousMode',
+      );
+      expect(
+        vnIdx < contIdx,
+        isTrue,
+        reason: 'vnMode branch must precede continuousMode branch',
+      );
+      expect(
+        engine.contains('window.__fushiShells.vn = function(C)'),
+        isTrue,
+        reason: 'the VN engine must carry the VN shell installer',
+      );
+      // Dart 侧只按 view-mode 选嵌哪一份 shell（memoize 的 key），运行时分流仍读
+      // C —— 不得回到「把 progress / charOffset 之类 per-nav 值插进 shell」的老路。
+      expect(
+        _stripLineComments(
+          webview,
+        ).contains('ReaderPaginationScripts.engineShell('),
+        isTrue,
+        reason: 'webview must build the engine through engineShell(mode)',
+      );
+    });
 
     test(
       'content_styles selects a dedicated VN stage layout (not the paginated '
@@ -152,7 +156,8 @@ void main() {
         expect(
           body.contains('isVertical'),
           isTrue,
-          reason: '_vnLayoutCss must reference isVertical for axis-aware '
+          reason:
+              '_vnLayoutCss must reference isVertical for axis-aware '
               'centering, not ignore it',
         );
         // The .fushi-vn-content block must no longer force a physical full
@@ -164,12 +169,15 @@ void main() {
         // Match a *declaration line* of plain `width: 100%` (not `max-width`,
         // and not the explanatory comment text), so the guard is robust against
         // the substring overlap with `max-width: 100% !important;`.
-        final RegExp plainWidthDecl =
-            RegExp(r'(^|[;{\s])width:\s*100%\s*!important;', multiLine: true);
+        final RegExp plainWidthDecl = RegExp(
+          r'(^|[;{\s])width:\s*100%\s*!important;',
+          multiLine: true,
+        );
         expect(
           plainWidthDecl.hasMatch(contentBlock),
           isFalse,
-          reason: '_vnLayoutCss must not hardcode width: 100% on vn-content; '
+          reason:
+              '_vnLayoutCss must not hardcode width: 100% on vn-content; '
               'that breaks vertical-rl centering',
         );
         expect(
@@ -180,54 +188,52 @@ void main() {
       },
     );
 
-    test(
-      'webview passes all live VN preferences into the shell',
-      () {
-        expect(
-          webview.contains('final bool vnMode = s.isVnMode;'),
-          isTrue,
-          reason: 'webview must derive VN mode from view-mode',
-        );
-        expect(
-          webview.contains('vnMode: vnMode,'),
-          isTrue,
-          reason: 'VN mode must reach the engine through ReaderEngineConfig',
-        );
-        expect(
-          _stripLineComments(webview)
-              .contains('const int vnRevealSpeedM0ForceZero = 0;'),
-          isFalse,
-          reason: 'M1 must not force-disable the configured reveal speed',
-        );
-        expect(
-          webview.contains(
-            'vnRevealSpeed: vnMode ? s.visualNovelRevealSpeed : 0,',
-          ),
-          isTrue,
-          reason: 'the configured reveal speed must reach the VN shell',
-        );
-        expect(
-          webview.contains(
-            'vnClickAdvance: vnMode && s.visualNovelClickAdvance,',
-          ),
-          isTrue,
-          reason: 'blank-tap advance must honor its persisted preference',
-        );
-        // BUG-1195: blank-tap 不再由 JS 自己 paginate（那会吃掉唯一能唤出控制栏的
-        // 手势）。JS 只回传事实，翻页/唤栏由 Dart 判——详见
-        // vn_blank_tap_chrome_reveal_bug1195_test.dart。
-        expect(
-          webview.contains("callHandler('onVnBlankTap')"),
-          isTrue,
-          reason: 'VN blank-tap must be routed to Dart, not paginated in JS',
-        );
-        expect(
-          webview.contains('fushiVnClickAdvance'),
-          isTrue,
-          reason: 'VN click-advance flag must be injected',
-        );
-      },
-    );
+    test('webview passes all live VN preferences into the shell', () {
+      expect(
+        webview.contains('final bool vnMode = s.isVnMode;'),
+        isTrue,
+        reason: 'webview must derive VN mode from view-mode',
+      );
+      expect(
+        webview.contains('vnMode: vnMode,'),
+        isTrue,
+        reason: 'VN mode must reach the engine through ReaderEngineConfig',
+      );
+      expect(
+        _stripLineComments(
+          webview,
+        ).contains('const int vnRevealSpeedM0ForceZero = 0;'),
+        isFalse,
+        reason: 'M1 must not force-disable the configured reveal speed',
+      );
+      expect(
+        webview.contains(
+          'vnRevealSpeed: vnMode ? s.visualNovelRevealSpeed : 0,',
+        ),
+        isTrue,
+        reason: 'the configured reveal speed must reach the VN shell',
+      );
+      expect(
+        webview.contains(
+          'vnClickAdvance: vnMode && s.visualNovelClickAdvance,',
+        ),
+        isTrue,
+        reason: 'blank-tap advance must honor its persisted preference',
+      );
+      // BUG-1195: blank-tap 不再由 JS 自己 paginate（那会吃掉唯一能唤出控制栏的
+      // 手势）。JS 只回传事实，翻页/唤栏由 Dart 判——详见
+      // vn_blank_tap_chrome_reveal_bug1195_test.dart。
+      expect(
+        webview.contains("callHandler('onVnBlankTap')"),
+        isTrue,
+        reason: 'VN blank-tap must be routed to Dart, not paginated in JS',
+      );
+      expect(
+        webview.contains('fushiVnClickAdvance'),
+        isTrue,
+        reason: 'VN click-advance flag must be injected',
+      );
+    });
 
     test('settings schema exposes the VN third option', () {
       expect(
@@ -242,48 +248,47 @@ void main() {
       );
     });
 
-    test(
-      'VN scripts install the three injected dependencies and the Fushi '
-      'restore bridge',
-      () {
-        for (final String dep in <String>[
-          'global.fushiReaderTextSemantics',
-          'global.fushiReaderVnContentStream',
-          'global.fushiReaderVnRangeMap',
-          'global.fushiReaderMediaSemantics',
-        ]) {
-          expect(
-            vnScripts.contains(dep),
-            isTrue,
-            reason: 'VN shell must inline $dep',
-          );
-        }
+    test('VN scripts install the three injected dependencies and the Fushi '
+        'restore bridge', () {
+      for (final String dep in <String>[
+        'global.fushiReaderTextSemantics',
+        'global.fushiReaderVnContentStream',
+        'global.fushiReaderVnRangeMap',
+        'global.fushiReaderMediaSemantics',
+      ]) {
         expect(
-          _hasGenerationAwareRestoreCall(vnScripts),
+          vnScripts.contains(dep),
           isTrue,
-          reason: 'VN restore must forward handler + perf placeholder + the '
-              'document navigation generation',
+          reason: 'VN shell must inline $dep',
         );
-        // The live native bridge CALL must be gone (the bridge name may still
-        // appear in explanatory comments, so scan comment-stripped code).
-        expect(
-          _stripLineComments(vnScripts)
-              .contains('window.FushiReaderRestore.postMessage('),
-          isFalse,
-          reason: 'VN must not keep hoshi native restore bridge call',
-        );
-        expect(
-          vnScripts.contains('restoreToCharOffset'),
-          isTrue,
-          reason: 'VN must support char-offset restore',
-        );
-        expect(
-          vnScripts.contains('screenContainsCharOffset'),
-          isTrue,
-          reason: 'char-offset restore must use screenContainsCharOffset',
-        );
-      },
-    );
+      }
+      expect(
+        _hasGenerationAwareRestoreCall(vnScripts),
+        isTrue,
+        reason:
+            'VN restore must forward handler + perf placeholder + the '
+            'document navigation generation',
+      );
+      // The live native bridge CALL must be gone (the bridge name may still
+      // appear in explanatory comments, so scan comment-stripped code).
+      expect(
+        _stripLineComments(
+          vnScripts,
+        ).contains('window.FushiReaderRestore.postMessage('),
+        isFalse,
+        reason: 'VN must not keep hoshi native restore bridge call',
+      );
+      expect(
+        vnScripts.contains('restoreToCharOffset'),
+        isTrue,
+        reason: 'VN must support char-offset restore',
+      );
+      expect(
+        vnScripts.contains('screenContainsCharOffset'),
+        isTrue,
+        reason: 'char-offset restore must use screenContainsCharOffset',
+      );
+    });
   });
 }
 

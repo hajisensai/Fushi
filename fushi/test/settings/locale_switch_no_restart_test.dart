@@ -31,8 +31,9 @@ void main() {
     late Directory pathProviderDir;
     setUpAll(() {
       // AppModel 的 DefaultCacheManager 在构造时经 path_provider 打开缓存目录。
-      pathProviderDir =
-          Directory.systemTemp.createTempSync('fushi_path_provider_locale');
+      pathProviderDir = Directory.systemTemp.createTempSync(
+        'fushi_path_provider_locale',
+      );
       binding.defaultBinaryMessenger.setMockMethodCallHandler(
         const MethodChannel('plugins.flutter.io/path_provider'),
         (MethodCall call) async => pathProviderDir.path,
@@ -74,8 +75,7 @@ void main() {
       await db.close();
     });
 
-    test(
-        'desktop: switching language never restarts the process and notifies '
+    test('desktop: switching language never restarts the process and notifies '
         'listeners', () async {
       // 该断言只在桌面测试运行时（Windows/Linux/macOS host）验证桌面分支。
       // 移动端分支由下方源码守卫覆盖。
@@ -87,16 +87,30 @@ void main() {
 
       await appModel.setAppLocale('ja');
 
-      expect(lifecycle.restartCalled, isFalse,
-          reason: 'desktop locale switch must NOT restart (mutex race kills '
-              'the app); it must hot-reload instead');
-      expect(notifyCount, greaterThanOrEqualTo(1),
-          reason: 'a hot locale switch must notify listeners so the watching '
-              'root widget rebuilds');
-      expect(prefs.getPref('app_locale'), 'ja',
-          reason: 'the new locale must be persisted');
-      expect(LocaleSettings.currentLocale.languageCode, 'ja',
-          reason: 'LocaleSettings must reflect the new display language');
+      expect(
+        lifecycle.restartCalled,
+        isFalse,
+        reason:
+            'desktop locale switch must NOT restart (mutex race kills '
+            'the app); it must hot-reload instead',
+      );
+      expect(
+        notifyCount,
+        greaterThanOrEqualTo(1),
+        reason:
+            'a hot locale switch must notify listeners so the watching '
+            'root widget rebuilds',
+      );
+      expect(
+        prefs.getPref('app_locale'),
+        'ja',
+        reason: 'the new locale must be persisted',
+      );
+      expect(
+        LocaleSettings.currentLocale.languageCode,
+        'ja',
+        reason: 'LocaleSettings must reflect the new display language',
+      );
     });
   });
 
@@ -120,17 +134,28 @@ void main() {
       expect(body.contains('LocaleSettings.setLocaleRaw(localeTag)'), isTrue);
       // Desktop branch: hot-reload (notifyListeners) and return BEFORE the
       // restart branch is ever considered.
-      expect(body.contains('if (isDesktopPlatform)'), isTrue,
-          reason: 'desktop must take a dedicated no-restart branch');
+      expect(
+        body.contains('if (isDesktopPlatform)'),
+        isTrue,
+        reason: 'desktop must take a dedicated no-restart branch',
+      );
       final int desktopBranch = body.indexOf('if (isDesktopPlatform)');
-      final int restartCall =
-          body.indexOf('platformServices.lifecycle.restartApp()');
-      expect(restartCall, greaterThan(desktopBranch),
-          reason: 'the desktop branch must precede (and short-circuit) the '
-              'restart call so desktop never restarts');
+      final int restartCall = body.indexOf(
+        'platformServices.lifecycle.restartApp()',
+      );
+      expect(
+        restartCall,
+        greaterThan(desktopBranch),
+        reason:
+            'the desktop branch must precede (and short-circuit) the '
+            'restart call so desktop never restarts',
+      );
       // Mobile keeps the native restart path.
-      expect(body.contains('platformServices.lifecycle.restartApp()'), isTrue,
-          reason: 'mobile (Android/iOS) still restarts via the plugin');
+      expect(
+        body.contains('platformServices.lifecycle.restartApp()'),
+        isTrue,
+        reason: 'mobile (Android/iOS) still restarts via the plugin',
+      );
     });
 
     test('main.dart remounts the app subtree on a locale change', () {
@@ -141,9 +166,11 @@ void main() {
       // LocaleSettings change).
       expect(
         src.contains(
-            "ValueKey<String>('app-locale-\${locale.toLanguageTag()}')"),
+          "ValueKey<String>('app-locale-\${locale.toLanguageTag()}')",
+        ),
         isTrue,
-        reason: 'the root app must be keyed by the current locale to remount '
+        reason:
+            'the root app must be keyed by the current locale to remount '
             'on a hot language switch',
       );
     });

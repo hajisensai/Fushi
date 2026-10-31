@@ -14,25 +14,31 @@ import 'package:flutter_test/flutter_test.dart';
 /// 处），数据会真正错位——这正是用户担心的情形，守卫在此防回归。
 void main() {
   group('TODO-142: book progress metadata stays inside the book folder', () {
-    test(
-        'SyncManager uploads progress AND content with the SAME folderId',
-        () {
+    test('SyncManager uploads progress AND content with the SAME folderId', () {
       final File src = File('lib/src/sync/sync_manager.dart');
-      expect(src.existsSync(), isTrue,
-          reason: 'run from the fushi/ package root');
+      expect(
+        src.existsSync(),
+        isTrue,
+        reason: 'run from the fushi/ package root',
+      );
       final String body = src.readAsStringSync();
 
       final int idx = body.indexOf('Future<SyncBookResult> _handleExport(');
-      expect(idx, greaterThanOrEqualTo(0),
-          reason: '_handleExport 被改名/删除 — 更新本守卫');
+      expect(
+        idx,
+        greaterThanOrEqualTo(0),
+        reason: '_handleExport 被改名/删除 — 更新本守卫',
+      );
       final int end = body.indexOf('Future<void> _exportContentIfMissing(');
-      final String exportBody =
-          end > idx ? body.substring(idx, end) : body.substring(idx);
+      final String exportBody = end > idx
+          ? body.substring(idx, end)
+          : body.substring(idx);
 
       // 进度上传收 folderId（书文件夹），不是根目录或别处。
       expect(
-        RegExp(r'updateProgressFile\(\s*folderId:\s*folderId')
-            .hasMatch(exportBody),
+        RegExp(
+          r'updateProgressFile\(\s*folderId:\s*folderId',
+        ).hasMatch(exportBody),
         isTrue,
         reason: '进度必须上传到书文件夹 folderId，不得跑到外面（数据完整性）',
       );
@@ -47,45 +53,59 @@ void main() {
       expect(progressStart, greaterThan(onceStart));
       final String onceBody = body.substring(onceStart, progressStart);
       expect(
-        RegExp(r'_syncBookProgress\([\s\S]*?folderId:\s*folderId')
-            .hasMatch(onceBody),
+        RegExp(
+          r'_syncBookProgress\([\s\S]*?folderId:\s*folderId',
+        ).hasMatch(onceBody),
         isTrue,
         reason: '进度调度必须传递同一个书文件夹 folderId',
       );
       // 内容（epub/音频）上传也收同一个 folderId（与进度同目录）。
       expect(
-        RegExp(r'_exportContentIfMissing\(\s*book:\s*book,\s*folderId:\s*folderId')
-            .hasMatch(onceBody),
+        RegExp(
+          r'_exportContentIfMissing\(\s*book:\s*book,\s*folderId:\s*folderId',
+        ).hasMatch(onceBody),
         isTrue,
         reason: 'epub 内容必须与进度上传到同一个书文件夹 folderId（不是分开两处）',
       );
     });
 
-    test('WebDav updateProgressFile writes into the given folderId, not root',
-        () {
-      final File src = File('lib/src/sync/webdav_sync_backend.dart');
-      final String body = src.readAsStringSync();
+    test(
+      'WebDav updateProgressFile writes into the given folderId, not root',
+      () {
+        final File src = File('lib/src/sync/webdav_sync_backend.dart');
+        final String body = src.readAsStringSync();
 
-      final int idx = body.indexOf('Future<void> updateProgressFile(');
-      expect(idx, greaterThanOrEqualTo(0));
-      final String tail = body.substring(idx, idx + 600);
-      // uploadJson 的目标目录是传入的 folderId（书文件夹），不是 baseUrl 根。
-      expect(
-        RegExp(r'uploadJson\(\s*folderId\b').hasMatch(tail),
-        isTrue,
-        reason: 'WebDAV 进度 JSON 必须 PUT 进 folderId（书文件夹）内',
-      );
-    });
+        final int idx = body.indexOf('Future<void> updateProgressFile(');
+        expect(idx, greaterThanOrEqualTo(0));
+        final String tail = body.substring(idx, idx + 600);
+        // uploadJson 的目标目录是传入的 folderId（书文件夹），不是 baseUrl 根。
+        expect(
+          RegExp(r'uploadJson\(\s*folderId\b').hasMatch(tail),
+          isTrue,
+          reason: 'WebDAV 进度 JSON 必须 PUT 进 folderId（书文件夹）内',
+        );
+      },
+    );
 
-    test('ttu_filename documents folder = book title (TTU-compatible layout)',
-        () {
-      final File src = File('../packages/fushi_engine/lib/sync/ttu_filename.dart');
-      final String body = src.readAsStringSync();
-      // 文档化契约：文件夹名 = sanitized 书名；进度/统计是独立 JSON（非嵌入 epub）。
-      expect(body.contains('文件夹名: sanitized book title'), isTrue,
-          reason: 'TTU 兼容布局注释被删 — 这是 142 诊断的真相源，勿移除');
-      expect(body.contains('progress_1_6_'), isTrue,
-          reason: 'progress 文件名前缀（独立 JSON，与 epub 平级）');
-    });
+    test(
+      'ttu_filename documents folder = book title (TTU-compatible layout)',
+      () {
+        final File src = File(
+          '../packages/fushi_engine/lib/sync/ttu_filename.dart',
+        );
+        final String body = src.readAsStringSync();
+        // 文档化契约：文件夹名 = sanitized 书名；进度/统计是独立 JSON（非嵌入 epub）。
+        expect(
+          body.contains('文件夹名: sanitized book title'),
+          isTrue,
+          reason: 'TTU 兼容布局注释被删 — 这是 142 诊断的真相源，勿移除',
+        );
+        expect(
+          body.contains('progress_1_6_'),
+          isTrue,
+          reason: 'progress 文件名前缀（独立 JSON，与 epub 平级）',
+        );
+      },
+    );
   });
 }

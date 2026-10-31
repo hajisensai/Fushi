@@ -50,7 +50,7 @@ mixin _LocalLibraryHostSyncState
 
   @override
   Future<InterconnectServiceConfigSnapshot>
-      getInterconnectServiceConfig() async {
+  getInterconnectServiceConfig() async {
     return InterconnectServiceConfigSnapshot.fromPreferences(
       await _db.getAllPrefs(),
     );
@@ -58,12 +58,15 @@ mixin _LocalLibraryHostSyncState
 
   /// host 最近 [limit] 条活动事件（新首页 Activity 面板互联数据源）。
   @override
-  Future<List<RemoteActivityEvent>> listActivityEvents(
-      {int limit = 100}) async {
+  Future<List<RemoteActivityEvent>> listActivityEvents({
+    int limit = 100,
+  }) async {
     // v92：活动流唯一数据源是统一事实面（legacy 活动行 ∪ 段 ∪ 游玩会话合成行），
     // 与本机首页同一份；否则 client 看不到 host 在 v92 之后的任何阅读 / 观看。
-    final List<ActivityEventRow> rows =
-        (await loadStatFacts(_db, activityLimit: limit)).activityRows;
+    final List<ActivityEventRow> rows = (await loadStatFacts(
+      _db,
+      activityLimit: limit,
+    )).activityRows;
     return <RemoteActivityEvent>[
       for (final ActivityEventRow r in rows)
         RemoteActivityEvent(
@@ -90,8 +93,9 @@ mixin _LocalLibraryHostSyncState
   /// 裁（既有行为）。
   @override
   Future<AggregateSnapshot> getAggregateSnapshot() async {
-    final AggregateSnapshot snapshot =
-        await AggregateSyncService(_db).materializeLocalSnapshot();
+    final AggregateSnapshot snapshot = await AggregateSyncService(
+      _db,
+    ).materializeLocalSnapshot();
     return snapshot.select(
       stats: true,
       favorites: true,
@@ -155,8 +159,10 @@ mixin _LocalLibraryHostSyncState
       // 本机作为 client 跑的云/互联通道是三条独立的因果轴：共用一个键时，client
       // 通道刚推进的基线会把对端 POST 来的移出墓碑判成旧闻 → 引擎按「活胜」撤销
       // → 再回传给对端，用户的移出被自己另一条通道悄悄撤销。
-      final int baseline =
-          await readCollectionsSyncBaselineMs(_db, SyncChannelScope.host);
+      final int baseline = await readCollectionsSyncBaselineMs(
+        _db,
+        SyncChannelScope.host,
+      );
       final CollectionSyncOutcome outcome = CollectionSyncEngine.merge(
         local: local,
         remote: incoming,
@@ -168,7 +174,10 @@ mixin _LocalLibraryHostSyncState
       await applyCollectionLocalChanges(_db, outcome.changes);
       final int nextBaseline = DateTime.now().millisecondsSinceEpoch;
       await writeCollectionsSyncBaselineMs(
-          _db, SyncChannelScope.host, nextBaseline);
+        _db,
+        SyncChannelScope.host,
+        nextBaseline,
+      );
       // v124：基线推进之后再收敛整理器合集（见 convergeCollectionsAfterSync）。
       await convergeCollectionsAfterSync(_db, baselineMs: nextBaseline);
       merged = outcome.merged;
@@ -204,7 +213,8 @@ mixin _LocalLibraryHostSyncState
   /// 清单。与标签清单同一把窄锁（[_runSyncStateExclusive]）。
   @override
   Future<MediaLinkManifest> mergeMediaLinkManifest(
-      MediaLinkManifest incoming) async {
+    MediaLinkManifest incoming,
+  ) async {
     late MediaLinkManifest merged;
     await _runSyncStateExclusive(() async {
       await applyMediaLinkManifest(_db, incoming);
@@ -215,14 +225,15 @@ mixin _LocalLibraryHostSyncState
 
   @override
   Future<List<({String mediaType, String itemKey, int deletedAt})>>
-      listDeletionTombstones() async {
-    final List<SyncDeletionTombstoneRow> rows =
-        await _db.getSyncDeletionTombstones();
+  listDeletionTombstones() async {
+    final List<SyncDeletionTombstoneRow> rows = await _db
+        .getSyncDeletionTombstones();
     return <({String mediaType, String itemKey, int deletedAt})>[
       for (final SyncDeletionTombstoneRow r in rows)
         // v125：只随聚合快照走的种类（浏览器历史 / 书签）不进删除确认清单。
-        if (!(SyncTombstoneKind.tryParse(r.mediaType)
-                ?.propagatesViaAggregateSnapshotOnly ??
+        if (!(SyncTombstoneKind.tryParse(
+              r.mediaType,
+            )?.propagatesViaAggregateSnapshotOnly ??
             false))
           (mediaType: r.mediaType, itemKey: r.itemKey, deletedAt: r.deletedAt),
     ];
@@ -249,9 +260,7 @@ mixin _LocalLibraryHostSyncState
     }
     return peerTombstoneVetoesPush(
       peerTombstones: own,
-      mediaTypes: <String>[
-        for (final SyncTombstoneKind k in kinds) k.dbValue,
-      ],
+      mediaTypes: <String>[for (final SyncTombstoneKind k in kinds) k.dbValue],
       itemKeys: <String>[itemKey],
       presentSinceAt: presentSinceAt,
     );

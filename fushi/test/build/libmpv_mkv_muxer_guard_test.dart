@@ -55,20 +55,28 @@ void main() {
         gzip.decode(File(vendoredDarwinArchive(plat)).readAsBytesSync()),
       );
       final List<ArchiveFile> mpv = tar.files
-          .where((ArchiveFile f) =>
-              f.isFile && !f.isSymbolicLink && p.posix.basename(f.name) == 'Mpv')
+          .where(
+            (ArchiveFile f) =>
+                f.isFile &&
+                !f.isSymbolicLink &&
+                p.posix.basename(f.name) == 'Mpv',
+          )
           .toList();
       expect(mpv, isNotEmpty);
       for (final ArchiveFile slice in mpv) {
         expect(
-          containsBytes(slice.content as List<int>,
-              latin1.encode('@rpath/libavformat.framework/libavformat')),
+          containsBytes(
+            slice.content as List<int>,
+            latin1.encode('@rpath/libavformat.framework/libavformat'),
+          ),
           isTrue,
           reason: '${slice.name} 不链接统一 FFmpeg 的 libavformat',
         );
       }
       expect(
-        tar.files.any((ArchiveFile f) => f.name.contains('Avformat.framework/')),
+        tar.files.any(
+          (ArchiveFile f) => f.name.contains('Avformat.framework/'),
+        ),
         isFalse,
         reason: 'libmpv 归档又带了私有 FFmpeg（Avformat.framework）',
       );
@@ -79,23 +87,39 @@ void main() {
           'ios-arm64',
           'ios-arm64_x86_64-simulator',
         ]) {
-          formats.add(File('$thirdParty/ffmpeg_kit_next_flutter/ios/'
-                  'ffmpeg_kit_next_flutter/Frameworks/libavformat.xcframework/'
-                  '$slice/libavformat.framework/libavformat')
-              .readAsBytesSync());
+          formats.add(
+            File(
+              '$thirdParty/ffmpeg_kit_next_flutter/ios/'
+              'ffmpeg_kit_next_flutter/Frameworks/libavformat.xcframework/'
+              '$slice/libavformat.framework/libavformat',
+            ).readAsBytesSync(),
+          );
         }
       } else {
-        final Archive layout = TarDecoder().decodeBytes(gzip.decode(
-            File('$thirdParty/media_kit_libs_macos_video/native/'
-                    'ffmpeg-unified-macos.tar.gz')
-                .readAsBytesSync()));
-        formats.add(layout
-            .findFile('Frameworks/libavformat.framework/Versions/A/libavformat')!
-            .content as List<int>);
+        final Archive layout = TarDecoder().decodeBytes(
+          gzip.decode(
+            File(
+              '$thirdParty/media_kit_libs_macos_video/native/'
+              'ffmpeg-unified-macos.tar.gz',
+            ).readAsBytesSync(),
+          ),
+        );
+        formats.add(
+          layout
+                  .findFile(
+                    'Frameworks/libavformat.framework/Versions/A/libavformat',
+                  )!
+                  .content
+              as List<int>,
+        );
       }
       for (final List<int> format in formats) {
-        expect(containsBytes(format, marker), isTrue,
-            reason: '$plat 统一 FFmpeg 的 libavformat 没有 matroskaenc，dump-cache 会恒失败');
+        expect(
+          containsBytes(format, marker),
+          isTrue,
+          reason:
+              '$plat 统一 FFmpeg 的 libavformat 没有 matroskaenc，dump-cache 会恒失败',
+        );
       }
     }, timeout: const Timeout(Duration(minutes: 3)));
   }
@@ -108,9 +132,11 @@ void main() {
     ).firstMatch(gradle);
     expect(m, isNotNull, reason: 'build.gradle 没有默认的入库 jar 目录');
     final String jarDir = p.join(gradleDir, m!.group(1)!);
-    final Archive aar = ZipDecoder().decodeBytes(File(
-            '$thirdParty/ffmpeg_kit_next_flutter/android/libs/ffmpeg-kit-next.aar')
-        .readAsBytesSync());
+    final Archive aar = ZipDecoder().decodeBytes(
+      File(
+        '$thirdParty/ffmpeg_kit_next_flutter/android/libs/ffmpeg-kit-next.aar',
+      ).readAsBytesSync(),
+    );
     for (final String abi in <String>['arm64-v8a', 'armeabi-v7a', 'x86_64']) {
       final Archive jar = ZipDecoder().decodeBytes(
         File(p.join(jarDir, 'full-$abi.jar')).readAsBytesSync(),
@@ -118,7 +144,10 @@ void main() {
       final ArchiveFile? so = jar.findFile('lib/$abi/libmpv.so');
       expect(so, isNotNull, reason: '$abi：jar 里没有 libmpv.so');
       expect(
-        containsBytes(so!.content as List<int>, latin1.encode('libavformat.so')),
+        containsBytes(
+          so!.content as List<int>,
+          latin1.encode('libavformat.so'),
+        ),
         isTrue,
         reason: '$abi 的 libmpv.so 不依赖 libavformat.so（统一 FFmpeg）',
       );
@@ -129,8 +158,11 @@ void main() {
       );
       final ArchiveFile? format = aar.findFile('jni/$abi/libavformat.so');
       expect(format, isNotNull, reason: '$abi：AAR 里没有 libavformat.so');
-      expect(containsBytes(format!.content as List<int>, marker), isTrue,
-          reason: '$abi 统一 FFmpeg 的 libavformat.so 没有 matroskaenc');
+      expect(
+        containsBytes(format!.content as List<int>, marker),
+        isTrue,
+        reason: '$abi 统一 FFmpeg 的 libavformat.so 没有 matroskaenc',
+      );
     }
   }, timeout: const Timeout(Duration(minutes: 3)));
 }

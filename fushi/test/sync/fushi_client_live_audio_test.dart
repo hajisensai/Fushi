@@ -17,20 +17,21 @@ import 'package:fushi_core/fushi_core.dart';
 class _FakeLibraryService implements FushiLibraryHostService {
   // BUG-1004：host 端裁 mining 句子音频（本测试不涉及，返 null 即可）。
   @override
-  Future<File?> clipVideoAudio(String id,
-          {required int startMs,
-          required int endMs,
-          int episodeIndex = 0,
-          int? audioStreamIndex,
-          int? audioStreamCount,
-          int audioChannels = 1,
-          String audioBitrate = '64k'}) async =>
-      null;
+  Future<File?> clipVideoAudio(
+    String id, {
+    required int startMs,
+    required int endMs,
+    int episodeIndex = 0,
+    int? audioStreamIndex,
+    int? audioStreamCount,
+    int audioChannels = 1,
+    String audioBitrate = '64k',
+  }) async => null;
 
   @override
-  Future<List<RemoteActivityEvent>> listActivityEvents(
-          {int limit = 100}) async =>
-      const <RemoteActivityEvent>[];
+  Future<List<RemoteActivityEvent>> listActivityEvents({
+    int limit = 100,
+  }) async => const <RemoteActivityEvent>[];
 
   @override
   Future<String?> videoCoverPath(String id) async {
@@ -61,8 +62,8 @@ class _FakeLibraryService implements FushiLibraryHostService {
 
   @override
   Future<CollectionManifest> mergeCollectionManifest(
-          CollectionManifest incoming) async =>
-      incoming;
+    CollectionManifest incoming,
+  ) async => incoming;
 
   // ── local audio ───────────────────────────────────────────────────────────
 
@@ -116,9 +117,10 @@ class _FakeLibraryService implements FushiLibraryHostService {
       audiobookEntries.any((RemoteAudiobookInfo ab) => ab.bookKey == bookKey);
 
   @override
-  Future<void> importAudiobook(File packageFile,
-          {String? bookKeyOverride}) async =>
-      audiobookImported.add(await packageFile.readAsString());
+  Future<void> importAudiobook(
+    File packageFile, {
+    String? bookKeyOverride,
+  }) async => audiobookImported.add(await packageFile.readAsString());
 
   @override
   Future<void> deleteAudiobook(String bookKey) async =>
@@ -150,8 +152,11 @@ class _FakeLibraryService implements FushiLibraryHostService {
       throw UnimplementedError('books export not needed in this test');
 
   @override
-  Future<void> importBook(File epubFile,
-      {String? displayTitle, int displayTitleAt = 0}) async {}
+  Future<void> importBook(
+    File epubFile, {
+    String? displayTitle,
+    int displayTitleAt = 0,
+  }) async {}
 
   @override
   Future<void> deleteBook(String title) async {}
@@ -170,8 +175,10 @@ class _FakeLibraryService implements FushiLibraryHostService {
   ) async {
     final RemoteBookProgress current =
         bookProgress[bookKey] ?? RemoteBookProgress.empty;
-    bookProgress[bookKey] =
-        resolveBookProgressSync(local: current, remote: progress);
+    bookProgress[bookKey] = resolveBookProgressSync(
+      local: current,
+      remote: progress,
+    );
   }
 
   // ── 有声书断点（真实记录，BUG-471）──────────────────────────────────────────────
@@ -181,8 +188,7 @@ class _FakeLibraryService implements FushiLibraryHostService {
   @override
   Future<({int positionMs, int updatedAtMs})> getAudiobookPosition(
     String bookKey,
-  ) async =>
-      audiobookPositions[bookKey] ?? (positionMs: 0, updatedAtMs: 0);
+  ) async => audiobookPositions[bookKey] ?? (positionMs: 0, updatedAtMs: 0);
 
   @override
   Future<void> putAudiobookPosition(
@@ -204,30 +210,36 @@ class _FakeLibraryService implements FushiLibraryHostService {
   Future<bool> videoExists(String id, {int episodeIndex = 0}) async => false;
 
   @override
-  Future<void> importVideoSubtitle(File subtitleFile,
-      {required String id, required String suffix}) async {}
+  Future<void> importVideoSubtitle(
+    File subtitleFile, {
+    required String id,
+    required String suffix,
+  }) async {}
 
   @override
-  Future<void> importVideo(File videoFile,
-      {required String id,
-      required String title,
-      String? originalFileName}) async {}
+  Future<void> importVideo(
+    File videoFile, {
+    required String id,
+    required String title,
+    String? originalFileName,
+  }) async {}
 
   @override
   Future<File?> resolveVideoFile(String id, {int episodeIndex = 0}) async =>
       null;
 
   @override
-  Future<File?> resolveVideoSubtitle(String id,
-          {String langCode = 'ja', int episodeIndex = 0}) async =>
-      null;
+  Future<File?> resolveVideoSubtitle(
+    String id, {
+    String langCode = 'ja',
+    int episodeIndex = 0,
+  }) async => null;
 
   @override
   Future<({int positionMs, int updatedAtMs})> getVideoPosition(
     String id, {
     int episodeIndex = 0,
-  }) async =>
-      (positionMs: 0, updatedAtMs: 0);
+  }) async => (positionMs: 0, updatedAtMs: 0);
 
   @override
   Future<void> putVideoPosition(
@@ -257,8 +269,9 @@ Future<InterconnectSyncBackend> _buildBackend({
   await repo.setFushiClientToken(token);
 
   // fake probe：直接返回 true，不做真实探测（server 已在运行）。
-  final InterconnectSyncBackend backend =
-      InterconnectSyncBackend.withProbe((String url, String tok) async => true);
+  final InterconnectSyncBackend backend = InterconnectSyncBackend.withProbe(
+    (String url, String tok) async => true,
+  );
   await backend.restoreAuth(repo);
   await backend.authenticate(repo: repo);
   return backend;
@@ -277,8 +290,9 @@ void main() {
   setUp(() async {
     lib = _FakeLibraryService();
     server = FushiSyncServer(
-      syncDataDir:
-          Directory.systemTemp.createTempSync('hbk_live_audio_srv').path,
+      syncDataDir: Directory.systemTemp
+          .createTempSync('hbk_live_audio_srv')
+          .path,
       port: 0,
       token: token,
       allowLan: false,
@@ -293,11 +307,13 @@ void main() {
   // ── listRemoteLocalAudio ──────────────────────────────────────────────────
 
   test('listRemoteLocalAudio returns entry from host', () async {
-    final InterconnectSyncBackend backend =
-        await _buildBackend(base: base, token: token);
+    final InterconnectSyncBackend backend = await _buildBackend(
+      base: base,
+      token: token,
+    );
 
-    final List<RemoteLocalAudioInfo> result =
-        await backend.listRemoteLocalAudio();
+    final List<RemoteLocalAudioInfo> result = await backend
+        .listRemoteLocalAudio();
 
     expect(
       result.map((RemoteLocalAudioInfo a) => a.displayName),
@@ -307,25 +323,31 @@ void main() {
 
   // ── getRemoteLocalAudio ───────────────────────────────────────────────────
 
-  test('getRemoteLocalAudio downloads audio bytes to destination file',
-      () async {
-    final InterconnectSyncBackend backend =
-        await _buildBackend(base: base, token: token);
-    final Directory tmp = Directory.systemTemp.createTempSync('hbk_audio_dl');
-    final File dest = File('${tmp.path}/nhk.localaudio');
-    addTearDown(() => tmp.deleteSync(recursive: true));
+  test(
+    'getRemoteLocalAudio downloads audio bytes to destination file',
+    () async {
+      final InterconnectSyncBackend backend = await _buildBackend(
+        base: base,
+        token: token,
+      );
+      final Directory tmp = Directory.systemTemp.createTempSync('hbk_audio_dl');
+      final File dest = File('${tmp.path}/nhk.localaudio');
+      addTearDown(() => tmp.deleteSync(recursive: true));
 
-    await backend.getRemoteLocalAudio('NHK ラジオ', dest);
+      await backend.getRemoteLocalAudio('NHK ラジオ', dest);
 
-    expect(dest.existsSync(), isTrue);
-    expect(dest.readAsStringSync(), 'AUDIO:NHK ラジオ');
-  });
+      expect(dest.existsSync(), isTrue);
+      expect(dest.readAsStringSync(), 'AUDIO:NHK ラジオ');
+    },
+  );
 
   // ── putRemoteLocalAudio ───────────────────────────────────────────────────
 
   test('putRemoteLocalAudio uploads CJK-named audio to host', () async {
-    final InterconnectSyncBackend backend =
-        await _buildBackend(base: base, token: token);
+    final InterconnectSyncBackend backend = await _buildBackend(
+      base: base,
+      token: token,
+    );
     final Directory tmp = Directory.systemTemp.createTempSync('hbk_audio_ul');
     final File src = File('${tmp.path}/日本語音源.localaudio');
     src.writeAsStringSync('AUDIO:日本語音源');
@@ -339,8 +361,10 @@ void main() {
   // ── deleteRemoteLocalAudio ────────────────────────────────────────────────
 
   test('deleteRemoteLocalAudio sends DELETE to host', () async {
-    final InterconnectSyncBackend backend =
-        await _buildBackend(base: base, token: token);
+    final InterconnectSyncBackend backend = await _buildBackend(
+      base: base,
+      token: token,
+    );
 
     await backend.deleteRemoteLocalAudio('NHK ラジオ');
 
@@ -357,8 +381,9 @@ void main() {
     ]);
     await repo.setFushiClientToken('wrong-token');
 
-    final InterconnectSyncBackend backend =
-        InterconnectSyncBackend.withProbe((String u, String t) async => true);
+    final InterconnectSyncBackend backend = InterconnectSyncBackend.withProbe(
+      (String u, String t) async => true,
+    );
     await backend.restoreAuth(repo);
     await expectLater(
       backend.listRemoteLocalAudio(),
@@ -369,8 +394,10 @@ void main() {
   // ── progress callback (local audio) ──────────────────────────────────────
 
   test('getRemoteLocalAudio reports progress callback', () async {
-    final InterconnectSyncBackend backend =
-        await _buildBackend(base: base, token: token);
+    final InterconnectSyncBackend backend = await _buildBackend(
+      base: base,
+      token: token,
+    );
     final Directory tmp = Directory.systemTemp.createTempSync('hbk_audio_prog');
     final File dest = File('${tmp.path}/nhk_prog.localaudio');
     addTearDown(() => tmp.deleteSync(recursive: true));
@@ -392,11 +419,13 @@ void main() {
   // ── listRemoteAudiobooks ──────────────────────────────────────────────────
 
   test('listRemoteAudiobooks returns entry from host', () async {
-    final InterconnectSyncBackend backend =
-        await _buildBackend(base: base, token: token);
+    final InterconnectSyncBackend backend = await _buildBackend(
+      base: base,
+      token: token,
+    );
 
-    final List<RemoteAudiobookInfo> result =
-        await backend.listRemoteAudiobooks();
+    final List<RemoteAudiobookInfo> result = await backend
+        .listRemoteAudiobooks();
 
     expect(
       result.map((RemoteAudiobookInfo ab) => ab.bookKey),
@@ -407,25 +436,31 @@ void main() {
 
   // ── getRemoteAudiobook ────────────────────────────────────────────────────
 
-  test('getRemoteAudiobook downloads audiobook bytes to destination file',
-      () async {
-    final InterconnectSyncBackend backend =
-        await _buildBackend(base: base, token: token);
-    final Directory tmp = Directory.systemTemp.createTempSync('hbk_ab_dl');
-    final File dest = File('${tmp.path}/neko_audio.audiobook');
-    addTearDown(() => tmp.deleteSync(recursive: true));
+  test(
+    'getRemoteAudiobook downloads audiobook bytes to destination file',
+    () async {
+      final InterconnectSyncBackend backend = await _buildBackend(
+        base: base,
+        token: token,
+      );
+      final Directory tmp = Directory.systemTemp.createTempSync('hbk_ab_dl');
+      final File dest = File('${tmp.path}/neko_audio.audiobook');
+      addTearDown(() => tmp.deleteSync(recursive: true));
 
-    await backend.getRemoteAudiobook('吾輩は猫であるAudio', dest);
+      await backend.getRemoteAudiobook('吾輩は猫であるAudio', dest);
 
-    expect(dest.existsSync(), isTrue);
-    expect(dest.readAsStringSync(), 'AUDIOBOOK:吾輩は猫であるAudio');
-  });
+      expect(dest.existsSync(), isTrue);
+      expect(dest.readAsStringSync(), 'AUDIOBOOK:吾輩は猫であるAudio');
+    },
+  );
 
   // ── putRemoteAudiobook ────────────────────────────────────────────────────
 
   test('putRemoteAudiobook uploads CJK-named audiobook to host', () async {
-    final InterconnectSyncBackend backend =
-        await _buildBackend(base: base, token: token);
+    final InterconnectSyncBackend backend = await _buildBackend(
+      base: base,
+      token: token,
+    );
     final Directory tmp = Directory.systemTemp.createTempSync('hbk_ab_ul');
     final File src = File('${tmp.path}/新着有声書.audiobook');
     src.writeAsStringSync('AUDIOBOOK:新着有声書');
@@ -439,8 +474,10 @@ void main() {
   // ── deleteRemoteAudiobook ─────────────────────────────────────────────────
 
   test('deleteRemoteAudiobook sends DELETE to host', () async {
-    final InterconnectSyncBackend backend =
-        await _buildBackend(base: base, token: token);
+    final InterconnectSyncBackend backend = await _buildBackend(
+      base: base,
+      token: token,
+    );
 
     await backend.deleteRemoteAudiobook('吾輩は猫であるAudio');
 
@@ -457,8 +494,9 @@ void main() {
     ]);
     await repo.setFushiClientToken('wrong-token');
 
-    final InterconnectSyncBackend backend =
-        InterconnectSyncBackend.withProbe((String u, String t) async => true);
+    final InterconnectSyncBackend backend = InterconnectSyncBackend.withProbe(
+      (String u, String t) async => true,
+    );
     await backend.restoreAuth(repo);
     await expectLater(
       backend.listRemoteAudiobooks(),
@@ -469,8 +507,10 @@ void main() {
   // ── progress callback (audiobooks) ───────────────────────────────────────
 
   test('getRemoteAudiobook reports progress callback', () async {
-    final InterconnectSyncBackend backend =
-        await _buildBackend(base: base, token: token);
+    final InterconnectSyncBackend backend = await _buildBackend(
+      base: base,
+      token: token,
+    );
     final Directory tmp = Directory.systemTemp.createTempSync('hbk_ab_prog');
     final File dest = File('${tmp.path}/neko_prog.audiobook');
     addTearDown(() => tmp.deleteSync(recursive: true));
@@ -487,27 +527,35 @@ void main() {
 
   // ── audiobook position round-trip (BUG-471) ──────────────────────────────
 
-  test('putRemoteAudiobookPosition then remoteAudiobookPosition round-trips',
-      () async {
-    final InterconnectSyncBackend backend =
-        await _buildBackend(base: base, token: token);
+  test(
+    'putRemoteAudiobookPosition then remoteAudiobookPosition round-trips',
+    () async {
+      final InterconnectSyncBackend backend = await _buildBackend(
+        base: base,
+        token: token,
+      );
 
-    await backend.putRemoteAudiobookPosition('吾輩は猫であるAudio', 88000, 4242);
-    expect(lib.audiobookPositions['吾輩は猫であるAudio']?.positionMs, 88000);
+      await backend.putRemoteAudiobookPosition('吾輩は猫であるAudio', 88000, 4242);
+      expect(lib.audiobookPositions['吾輩は猫であるAudio']?.positionMs, 88000);
 
-    final ({int positionMs, int updatedAtMs}) got =
-        await backend.remoteAudiobookPosition('吾輩は猫であるAudio');
-    expect(got.positionMs, 88000);
-    expect(got.updatedAtMs, 4242);
-  });
+      final ({int positionMs, int updatedAtMs}) got = await backend
+          .remoteAudiobookPosition('吾輩は猫であるAudio');
+      expect(got.positionMs, 88000);
+      expect(got.updatedAtMs, 4242);
+    },
+  );
 
-  test('remoteAudiobookPosition returns (0,0) when host has no record',
-      () async {
-    final InterconnectSyncBackend backend =
-        await _buildBackend(base: base, token: token);
-    final ({int positionMs, int updatedAtMs}) got =
-        await backend.remoteAudiobookPosition('吾輩は猫であるAudio');
-    expect(got.positionMs, 0);
-    expect(got.updatedAtMs, 0);
-  });
+  test(
+    'remoteAudiobookPosition returns (0,0) when host has no record',
+    () async {
+      final InterconnectSyncBackend backend = await _buildBackend(
+        base: base,
+        token: token,
+      );
+      final ({int positionMs, int updatedAtMs}) got = await backend
+          .remoteAudiobookPosition('吾輩は猫であるAudio');
+      expect(got.positionMs, 0);
+      expect(got.updatedAtMs, 0);
+    },
+  );
 }

@@ -113,7 +113,9 @@ void main() {
     await pumpFillTabs(tester, width: 480, labels: <String>['小说', '漫画', long]);
 
     expect(
-      tester.widget<TabBar>(glassUnwrap<TabBar>(find.byType(TabBar))).isScrollable,
+      tester
+          .widget<TabBar>(glassUnwrap<TabBar>(find.byType(TabBar)))
+          .isScrollable,
       isTrue,
       reason: '最宽段放不进等分格时必须退回可滚动形态',
     );
@@ -133,7 +135,9 @@ void main() {
   // 2026-10-04 起 fill 形态窄窗不再横滑截断，而是「前 N 段 + 末尾『更多』下拉」：
   // 离屏段的提示由「更多」按钮承担，渐隐不再出现；窄 ↔ 宽来回切换时既不能残留
   // 渐隐盖在最后一段上，也不能丢掉「更多」入口。
-  testWidgets('先窄出「更多」溢出入口、再放宽进入 fill 后渐隐与入口都必须消失', (WidgetTester tester) async {
+  testWidgets('先窄出「更多」溢出入口、再放宽进入 fill 后渐隐与入口都必须消失', (
+    WidgetTester tester,
+  ) async {
     addTearDown(() => tester.binding.setSurfaceSize(null));
     const List<String> labels = <String>['首页', '系列', '全部视频', '发现', '来源', '设置'];
     final Finder moreButton = find.byIcon(Icons.expand_more);
@@ -141,10 +145,19 @@ void main() {
     await pumpFillTabs(tester, width: 240, labels: labels);
     expect(moreButton, findsOneWidget, reason: '窄窗溢出时末尾应有「更多」入口提示后续段');
     expect(find.byKey(_leadingCue), findsNothing);
-    expect(find.byKey(_trailingCue), findsNothing, reason: '溢出档的提示是「更多」入口，不叠渐隐');
+    expect(
+      find.byKey(_trailingCue),
+      findsNothing,
+      reason: '溢出档的提示是「更多」入口，不叠渐隐',
+    );
 
     await pumpFillTabs(tester, width: 1200, labels: labels);
-    expect(tester.widget<TabBar>(glassUnwrap<TabBar>(find.byType(TabBar))).isScrollable, isFalse);
+    expect(
+      tester
+          .widget<TabBar>(glassUnwrap<TabBar>(find.byType(TabBar)))
+          .isScrollable,
+      isFalse,
+    );
     expect(find.byKey(_leadingCue), findsNothing);
     expect(
       find.byKey(_trailingCue),

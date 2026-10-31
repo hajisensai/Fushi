@@ -37,38 +37,37 @@ class RemoteCollectionAdoptionService {
     RemoteBookInfo book, {
     EpubBookRow? localBook,
     CollectionBookIdentityIndex? identities,
-  }) =>
-      database.transaction(() async {
-        // 别名不再只限合集成员：下载落地键与对端键不同（对端同名书带 `(2)` 后缀、
-        // EPUB 无 dc:title 时回落到临时文件名…）时，删除墓碑 / 标签也要靠它把两端
-        // 认成同一本（BUG-3443 同类）。只有下载入库那一刻（[localBook] 是 importer
-        // 的实际返回）能可靠建立这条对应，事后按对端键反查恰恰查不到。
-        if (book.collection == null && localBook == null) return;
-        final String key = book.downloadId;
-        final EpubBookRow? local =
-            localBook ?? await _findLocalBook(key, identities);
-        if (local != null && local.bookKey != key) {
-          await database.setCollectionBookAlias(local.uid, key);
-          // 下载入库 = 这本书重新回到本机：撤销此前对它的「从所有设备删除」。那次
-          // 墓碑写的是对端键（[FushiDatabase.syncDeletionBookKeyOf]），而
-          // insertEpubBook 只按本机落地键清——不补清，还没推出去的那条会在下一轮
-          // 推给 host，把刚重新下载的书从 host 删掉。目录刷新（localBook 为 null）
-          // 不算重新入库，不碰墓碑。
-          if (localBook != null) {
-            await database.clearSyncDeletionTombstone(
-              SyncTombstoneKind.book.dbValue,
-              key,
-            );
-          }
-        }
-        if (book.collection == null) return;
-        await adoptMembership(
-          membership: book.collection,
-          mediaType: MediaKind.epub,
-          remoteEntryKey: key,
-          localEntryKey: local?.uid,
+  }) => database.transaction(() async {
+    // 别名不再只限合集成员：下载落地键与对端键不同（对端同名书带 `(2)` 后缀、
+    // EPUB 无 dc:title 时回落到临时文件名…）时，删除墓碑 / 标签也要靠它把两端
+    // 认成同一本（BUG-3443 同类）。只有下载入库那一刻（[localBook] 是 importer
+    // 的实际返回）能可靠建立这条对应，事后按对端键反查恰恰查不到。
+    if (book.collection == null && localBook == null) return;
+    final String key = book.downloadId;
+    final EpubBookRow? local =
+        localBook ?? await _findLocalBook(key, identities);
+    if (local != null && local.bookKey != key) {
+      await database.setCollectionBookAlias(local.uid, key);
+      // 下载入库 = 这本书重新回到本机：撤销此前对它的「从所有设备删除」。那次
+      // 墓碑写的是对端键（[FushiDatabase.syncDeletionBookKeyOf]），而
+      // insertEpubBook 只按本机落地键清——不补清，还没推出去的那条会在下一轮
+      // 推给 host，把刚重新下载的书从 host 删掉。目录刷新（localBook 为 null）
+      // 不算重新入库，不碰墓碑。
+      if (localBook != null) {
+        await database.clearSyncDeletionTombstone(
+          SyncTombstoneKind.book.dbValue,
+          key,
         );
-      });
+      }
+    }
+    if (book.collection == null) return;
+    await adoptMembership(
+      membership: book.collection,
+      mediaType: MediaKind.epub,
+      remoteEntryKey: key,
+      localEntryKey: local?.uid,
+    );
+  });
 
   Future<EpubBookRow?> _findLocalBook(
     String remoteKey,

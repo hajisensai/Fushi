@@ -36,11 +36,13 @@ void main() {
     for (int i = 0; i < count; i++) {
       final String uid = 'video/ep$i';
       uids.add(uid);
-      await db.upsertVideoBook(VideoBooksCompanion(
-        bookUid: Value<String>(uid),
-        title: Value<String>('第 ${i + 1} 集'),
-        videoPath: Value<String>('/abs/ep$i.mkv'),
-      ));
+      await db.upsertVideoBook(
+        VideoBooksCompanion(
+          bookUid: Value<String>(uid),
+          title: Value<String>('第 ${i + 1} 集'),
+          videoPath: Value<String>('/abs/ep$i.mkv'),
+        ),
+      );
       await db.upsertCollectionItemAt(
         collectionId,
         MediaKind.video.dbValue,
@@ -57,11 +59,13 @@ void main() {
     for (final String uid in uids) {
       final VideoBookRow? row = await db.getVideoBookByBookUid(uid);
       expect(row, isNotNull, reason: '成员 $uid 应在库里');
-      members.add(CollectionMemberProgress(
-        positionMs: row!.lastPositionMs,
-        completed: row.completedAt != null,
-        lastPlayedAt: row.lastPlayedAt,
-      ));
+      members.add(
+        CollectionMemberProgress(
+          positionMs: row!.lastPositionMs,
+          completed: row.completedAt != null,
+          lastPlayedAt: row.lastPlayedAt,
+        ),
+      );
     }
     return continueMemberIndex(members);
   }
@@ -104,8 +108,7 @@ void main() {
     );
   });
 
-  test('用户实报形状：误点开下一集又退出 → 清除该集进度后续播退回上一集看完后的下一集',
-      () async {
+  test('用户实报形状：误点开下一集又退出 → 清除该集进度后续播退回上一集看完后的下一集', () async {
     final FushiDatabase db = openDb();
     final List<String> uids = await seedCollection(db, count: 4);
 
@@ -143,11 +146,17 @@ void main() {
     final List<String> uids = await seedCollection(db, count: 2);
     await db.updateVideoBookPosition(uids[0], 1400000, playedAt: 1000);
     await db.markVideoCompleted(uids[0], DateTime(2026, 1, 1));
-    expect(videoBookHasWatchTrace((await db.getVideoBookByBookUid(uids[0]))!), isTrue);
+    expect(
+      videoBookHasWatchTrace((await db.getVideoBookByBookUid(uids[0]))!),
+      isTrue,
+    );
 
     await db.clearVideoBookWatchProgress(uids[0]);
 
-    expect(videoBookHasWatchTrace((await db.getVideoBookByBookUid(uids[0]))!), isFalse);
+    expect(
+      videoBookHasWatchTrace((await db.getVideoBookByBookUid(uids[0]))!),
+      isFalse,
+    );
     expect(await resumeIndex(db, uids), 0, reason: '全无痕迹 → 从第 0 集开始');
   });
 

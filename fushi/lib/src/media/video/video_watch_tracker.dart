@@ -35,8 +35,7 @@ bool shouldMarkCompleted(int? positionMs, int? durationMs, bool already) {
 bool shouldPersistStreamPosition({
   required bool isLiveChannel,
   required int? durationMs,
-}) =>
-    !isLiveChannel || (durationMs != null && durationMs > 0);
+}) => !isLiveChannel || (durationMs != null && durationMs > 0);
 
 /// 一句 cue 计入字幕字数所需的最低真实播放停留（媒体时间，毫秒）。
 /// 短 cue 取自身时长为门（日语字幕大量 cue 短于该值，固定阈值会让它们永远不计）。
@@ -71,8 +70,8 @@ bool shouldCountCueDwell({
 }) {
   final int threshold =
       (cueStartMs != null && cueEndMs != null && cueEndMs > cueStartMs)
-          ? math.min(kCueDwellMs, cueEndMs - cueStartMs)
-          : kCueDwellMs;
+      ? math.min(kCueDwellMs, cueEndMs - cueStartMs)
+      : kCueDwellMs;
   return playedMs >= threshold;
 }
 
@@ -118,14 +117,14 @@ class VideoWatchTracker {
     FutureOr<void> Function()? onEpisodeCompleted,
     Future<String?> Function()? loadCoverage,
     Future<void> Function(String json)? saveCoverage,
-  })  : assert(
-          clock.accrual == StudyAccrual.explicit,
-          '视频面时钟必须是显式记账：时长由 tracker 按首次覆盖推入',
-        ),
-        _clock = clock,
-        _onEpisodeCompleted = onEpisodeCompleted,
-        _loadCoverage = loadCoverage,
-        _saveCoverage = saveCoverage {
+  }) : assert(
+         clock.accrual == StudyAccrual.explicit,
+         '视频面时钟必须是显式记账：时长由 tracker 按首次覆盖推入',
+       ),
+       _clock = clock,
+       _onEpisodeCompleted = onEpisodeCompleted,
+       _loadCoverage = loadCoverage,
+       _saveCoverage = saveCoverage {
     // 完成判定不挂在 60 秒 tick 上（BUG-3491）：tick 落在哪一刻是随机的，
     // 判定改由位置采样（[_sample]）与离开时（[stop]）负责。
     _clock.onTick = (DateTime _) {

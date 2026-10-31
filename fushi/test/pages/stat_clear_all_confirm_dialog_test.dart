@@ -20,8 +20,10 @@ void main() {
           body: Builder(
             builder: (BuildContext context) => ElevatedButton(
               onPressed: () async {
-                final bool result =
-                    await confirmClearAllStatistics(context, marker);
+                final bool result = await confirmClearAllStatistics(
+                  context,
+                  marker,
+                );
                 sink(result);
               },
               child: const Text('open'),

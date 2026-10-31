@@ -17,8 +17,9 @@ Future<FushiDatabase> _openDb() async {
 /// 真实文件库：`FushiDatabase(dir)` 才会走 `PRAGMA foreign_keys = ON`，
 /// cascade 断言必须用这个（内存 forTesting 不开外键）。
 Future<FushiDatabase> _openRealDb() async {
-  final Directory dir =
-      await Directory.systemTemp.createTemp('fushi_galgame_tags_test_');
+  final Directory dir = await Directory.systemTemp.createTemp(
+    'fushi_galgame_tags_test_',
+  );
   addTearDown(() async => dir.delete(recursive: true));
   final FushiDatabase db = FushiDatabase(dir.path);
   addTearDown(db.close);
@@ -26,13 +27,15 @@ Future<FushiDatabase> _openRealDb() async {
 }
 
 Future<String> _insertGame(FushiDatabase db, String id) async {
-  await db.upsertGalgame(GalgamesCompanion.insert(
-    id: id,
-    name: id,
-    exePath: 'Z:\\vn\\$id.exe',
-    workdir: 'Z:\\vn',
-    addedAt: 1700000000000,
-  ));
+  await db.upsertGalgame(
+    GalgamesCompanion.insert(
+      id: id,
+      name: id,
+      exePath: 'Z:\\vn\\$id.exe',
+      workdir: 'Z:\\vn',
+      addedAt: 1700000000000,
+    ),
+  );
   return id;
 }
 
@@ -95,8 +98,11 @@ void main() {
         (await db.getTagsForGame(game)).map((BookTagRow t) => t.id).toSet(),
         <int>{keep, add},
       );
-      expect((await db.getTagsForGame(other)).single.id, drop,
-          reason: '差集更新只作用于目标游戏');
+      expect(
+        (await db.getTagsForGame(other)).single.id,
+        drop,
+        reason: '差集更新只作用于目标游戏',
+      );
     });
 
     test('setTagsForGame 传空集 = 清空该游戏全部标签', () async {
@@ -124,8 +130,9 @@ void main() {
       await db.addTagToGame(onlyA, a);
 
       expect(await db.getGameIdsForAllTags(<int>{a}), <String>{both, onlyA});
-      expect(await db.getGameIdsForAllTags(<int>{a, b}), <String>{both},
-          reason: 'AND 而非 OR：与书架 getBookKeysForAllTags 同语义');
+      expect(await db.getGameIdsForAllTags(<int>{a, b}), <String>{
+        both,
+      }, reason: 'AND 而非 OR：与书架 getBookKeysForAllTags 同语义');
     });
 
     test('空标签集返回空集（调用方据此判定「不过滤」）', () async {
@@ -147,8 +154,11 @@ void main() {
       await db.deleteGalgame(game);
 
       expect(await db.getAllTagAssignments(), isEmpty);
-      expect((await db.getAllTags()).single.id, tagId,
-          reason: '删游戏不该连坐删掉共享标签池里的标签');
+      expect(
+        (await db.getAllTags()).single.id,
+        tagId,
+        reason: '删游戏不该连坐删掉共享标签池里的标签',
+      );
     });
 
     test('删标签自动清掉全部游戏上的该标签映射', () async {
@@ -175,21 +185,26 @@ void main() {
       expect(await db.countBooksForTag(tagId), 0);
 
       await db.addTagToGame(await _insertGame(db, 'g1'), tagId);
-      expect(await db.countBooksForTag(tagId), 1,
-          reason: 'BUG-1113：只给游戏打的标签在管理页不能恒显示 0');
+      expect(
+        await db.countBooksForTag(tagId),
+        1,
+        reason: 'BUG-1113：只给游戏打的标签在管理页不能恒显示 0',
+      );
 
       await db.addTagToGame(await _insertGame(db, 'g2'), tagId);
       expect(await db.countBooksForTag(tagId), 2);
 
-      await db.insertEpubBook(EpubBooksCompanion.insert(
-        bookKey: 'book-1',
-        title: 'book-1',
-        epubPath: '/tmp/book-1.epub',
-        extractDir: '/tmp/book-1',
-        chapterCount: 1,
-        chaptersJson: '[]',
-        importedAt: 1700000000000,
-      ));
+      await db.insertEpubBook(
+        EpubBooksCompanion.insert(
+          bookKey: 'book-1',
+          title: 'book-1',
+          epubPath: '/tmp/book-1.epub',
+          extractDir: '/tmp/book-1',
+          chapterCount: 1,
+          chaptersJson: '[]',
+          importedAt: 1700000000000,
+        ),
+      );
       await db.addTagToBook('book-1', tagId);
       expect(await db.countBooksForTag(tagId), 3, reason: '四种媒体互不重叠，直接相加');
     });

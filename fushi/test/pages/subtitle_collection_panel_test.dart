@@ -304,7 +304,12 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.textContaining(t.video_jimaku_search_failed), findsOneWidget);
-    expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(downloadButton())).onPressed, isNull);
+    expect(
+      tester
+          .widget<FilledButton>(glassUnwrap<FilledButton>(downloadButton()))
+          .onPressed,
+      isNull,
+    );
   });
 
   testWidgets('搜索中禁用；返回非空候选后才开放下载', (WidgetTester tester) async {
@@ -321,7 +326,12 @@ void main() {
     );
     await tester.pump();
     expect(find.text(t.video_jimaku_source_loading), findsWidgets);
-    expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(downloadButton())).onPressed, isNull);
+    expect(
+      tester
+          .widget<FilledButton>(glassUnwrap<FilledButton>(downloadButton()))
+          .onPressed,
+      isNull,
+    );
 
     pending.complete(
       ProviderBatchResult<VideoSubtitleCandidate>.success(
@@ -331,7 +341,12 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(downloadButton())).onPressed, isNotNull);
+    expect(
+      tester
+          .widget<FilledButton>(glassUnwrap<FilledButton>(downloadButton()))
+          .onPressed,
+      isNotNull,
+    );
     expect(
       find.byKey(const ValueKey<String>('subtitle-source-fake:Source')),
       findsOneWidget,
@@ -535,7 +550,12 @@ void main() {
       find.byKey(const ValueKey<String>('subtitle-source-fake:e1')),
       findsOneWidget,
     );
-    expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(downloadButton())).onPressed, isNotNull);
+    expect(
+      tester
+          .widget<FilledButton>(glassUnwrap<FilledButton>(downloadButton()))
+          .onPressed,
+      isNotNull,
+    );
   });
 
   /// AniList 模糊搜索返回 [ids] 里每个 id 一条候选，其余请求 404。
@@ -726,13 +746,19 @@ void main() {
     );
     expect(empty, findsOneWidget);
     expect(tester.widget<Text>(empty).data, t.video_jimaku_no_results);
-    expect(tester.widget<FilledButton>(glassUnwrap<FilledButton>(downloadButton())).onPressed, isNull);
+    expect(
+      tester
+          .widget<FilledButton>(glassUnwrap<FilledButton>(downloadButton()))
+          .onPressed,
+      isNull,
+    );
   });
 
   // BUG-3000：截图里 key 输入框明明有值，顶部却报「请先填写 Jimaku API key」——
   // 判据看的是「有没有 registry」而不是 key。key 填了还拿不到来源时，要说真实原因。
-  testWidgets('BUG-3000 key 已填但没有任何来源：不再报「请先填写 key」',
-      (WidgetTester tester) async {
+  testWidgets('BUG-3000 key 已填但没有任何来源：不再报「请先填写 key」', (
+    WidgetTester tester,
+  ) async {
     final VideoBookRow member = await seedMember();
     // 绑了系列 → 进页即直接搜来源（不经 AniList），走到无来源分支。
     final MediaCollectionRow collection = await seedCollection(anilistId: 21);
@@ -751,8 +777,11 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text(t.video_jimaku_no_key), findsNothing,
-        reason: 'initialApiKey 是 test-key：说「请先填写 key」是在骗用户');
+    expect(
+      find.text(t.video_jimaku_no_key),
+      findsNothing,
+      reason: 'initialApiKey 是 test-key：说「请先填写 key」是在骗用户',
+    );
     expect(find.text(t.video_subtitle_sources_all_disabled), findsOneWidget);
   });
 

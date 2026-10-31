@@ -96,7 +96,6 @@ String legacySourcePeerPairingIdentity(FushiClientUrl peer) {
       .toString();
 }
 
-
 /// 转发制卡的结果未知：对端回过话（非 2xx / 坏 JSON）但没给出结果，或请求发出后
 /// 等应答超时。主机可能已经落了卡，所以不能当「没送到」去入队重发。
 class RemoteMineOutcomeUnknown implements Exception {
@@ -166,16 +165,16 @@ class FushiRemoteMiningClient
     Duration duplicateTimeout = const Duration(seconds: 5),
     Duration noteTypeTimeout = const Duration(seconds: 15),
     Duration mediaDedupTimeout = const Duration(minutes: 30),
-  })  : _repo = repo,
-        _transport = InterconnectPostTransport(
-          repo: repo,
-          httpClient: httpClient,
-          pinnedClientFactory: pinnedClientFactory,
-        ),
-        _mineTimeout = mineTimeout,
-        _duplicateTimeout = duplicateTimeout,
-        _noteTypeTimeout = noteTypeTimeout,
-        _mediaDedupTimeout = mediaDedupTimeout;
+  }) : _repo = repo,
+       _transport = InterconnectPostTransport(
+         repo: repo,
+         httpClient: httpClient,
+         pinnedClientFactory: pinnedClientFactory,
+       ),
+       _mineTimeout = mineTimeout,
+       _duplicateTimeout = duplicateTimeout,
+       _noteTypeTimeout = noteTypeTimeout,
+       _mediaDedupTimeout = mediaDedupTimeout;
 
   final SyncRepository _repo;
   final InterconnectPostTransport _transport;
@@ -364,7 +363,8 @@ class FushiRemoteMiningClient
     // 任一候选拿得出凭据就算有目标。
     final String? fallbackToken = await _repo.getFushiClientToken();
     return candidates.any(
-        (FushiClientUrl u) => interconnectTokenFor(u, fallbackToken) != null);
+      (FushiClientUrl u) => interconnectTokenFor(u, fallbackToken) != null,
+    );
   }
 
   /// 转发一次制卡到已配对主机。返回服务端 `{result, message?, detail?}`；
@@ -420,7 +420,8 @@ class FushiRemoteMiningClient
   /// 必须原样报给用户，压成 null 会被 UI 误报成「Lapis 卡型不存在」。
   @override
   Future<AnkiNoteTypeDefinition?> readNoteTypeDefinition(
-      String modelName) async {
+    String modelName,
+  ) async {
     final Map<String, dynamic>? json = await _postNoteType(
       path: '/api/anki/note-type/read',
       body: <String, dynamic>{'modelName': modelName},
@@ -492,7 +493,8 @@ class FushiRemoteMiningClient
     );
     if (outcome.json == null && outcome.allUnreachable) {
       throw StateError(
-          'No Fushi Interconnect server is reachable for Lapis template editing.');
+        'No Fushi Interconnect server is reachable for Lapis template editing.',
+      );
     }
     return outcome.json;
   }

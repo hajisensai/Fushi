@@ -43,10 +43,7 @@ class DebugLogService extends ChangeNotifier with FrameSafeNotifier {
   void _interceptedDebugPrint(String? message, {int? wrapWidth}) {
     _originalDebugPrint?.call(message, wrapWidth: wrapWidth);
     if (!_enabled || message == null) return;
-    _entries.add(DebugLogEntry(
-      timestamp: DateTime.now(),
-      message: message,
-    ));
+    _entries.add(DebugLogEntry(timestamp: DateTime.now(), message: message));
     if (_entries.length > _maxEntries) {
       _entries.removeRange(0, _entries.length - _maxEntries);
     }
@@ -57,11 +54,13 @@ class DebugLogService extends ChangeNotifier with FrameSafeNotifier {
     if (_entries.isEmpty) return t.no_debug_logs;
     final StringBuffer buf = StringBuffer();
     for (final DebugLogEntry e in _entries.reversed) {
-      buf.writeln('[${e.timestamp.hour.toString().padLeft(2, '0')}:'
-          '${e.timestamp.minute.toString().padLeft(2, '0')}:'
-          '${e.timestamp.second.toString().padLeft(2, '0')}.'
-          '${e.timestamp.millisecond.toString().padLeft(3, '0')}] '
-          '${e.message}');
+      buf.writeln(
+        '[${e.timestamp.hour.toString().padLeft(2, '0')}:'
+        '${e.timestamp.minute.toString().padLeft(2, '0')}:'
+        '${e.timestamp.second.toString().padLeft(2, '0')}.'
+        '${e.timestamp.millisecond.toString().padLeft(3, '0')}] '
+        '${e.message}',
+      );
     }
     return buf.toString();
   }

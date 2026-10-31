@@ -30,30 +30,32 @@ void main() {
     required FushiShortcutRegistry registry,
   }) async {
     final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
-    await tester.pumpWidget(MaterialApp(
-      navigatorKey: navKey,
-      home: page,
-      builder: (BuildContext context, Widget? child) =>
-          wrapWithGlobalNavigation(
+    await tester.pumpWidget(
+      MaterialApp(
         navigatorKey: navKey,
-        registry: registry,
-        focusNavigationEnabled: false,
-        child: child!,
+        home: page,
+        builder: (BuildContext context, Widget? child) =>
+            wrapWithGlobalNavigation(
+              navigatorKey: navKey,
+              registry: registry,
+              focusNavigationEnabled: false,
+              child: child!,
+            ),
       ),
-    ));
+    );
     await tester.pumpAndSettle();
   }
 
   /// 纯展示长列表页：零可聚焦子件、零登记、`primary: false`。
   Widget displayOnlyList(ScrollController controller) => Scaffold(
-        body: ListView.builder(
-          controller: controller,
-          primary: false,
-          itemCount: 200,
-          itemExtent: 40,
-          itemBuilder: (BuildContext context, int i) => Text('row $i'),
-        ),
-      );
+    body: ListView.builder(
+      controller: controller,
+      primary: false,
+      itemCount: 200,
+      itemExtent: 40,
+      itemBuilder: (BuildContext context, int i) => Text('row $i'),
+    ),
+  );
 
   testWidgets('Android 键链：RB 整屏下滚、LB 整屏上滚（默认绑定）', (WidgetTester tester) async {
     final ScrollController controller = ScrollController();
@@ -109,8 +111,11 @@ void main() {
         ShortcutAction.globalScrollPageUp,
         const ShortcutBindingSet(),
       );
-    await pumpApp(tester,
-        page: displayOnlyList(controller), registry: registry);
+    await pumpApp(
+      tester,
+      page: displayOnlyList(controller),
+      registry: registry,
+    );
     await tester.sendKeyEvent(LogicalKeyboardKey.gameButtonRight1);
     await tester.sendKeyEvent(LogicalKeyboardKey.gameButtonLeft1);
     await tester.pumpAndSettle();
@@ -129,8 +134,11 @@ void main() {
           gamepadBindings: <GamepadBinding>[GamepadBinding(GamepadButton.rt)],
         ),
       );
-    await pumpApp(tester,
-        page: displayOnlyList(controller), registry: registry);
+    await pumpApp(
+      tester,
+      page: displayOnlyList(controller),
+      registry: registry,
+    );
     await tester.sendKeyEvent(LogicalKeyboardKey.gameButtonRight2);
     await tester.pumpAndSettle();
     expect(controller.offset, greaterThan(0));

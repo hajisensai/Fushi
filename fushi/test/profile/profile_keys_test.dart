@@ -15,14 +15,18 @@ void main() {
       expect(ProfileKeys.isExcludedPref('app_locale'), isTrue);
       expect(ProfileKeys.isExcludedPref('airing_calendar_cache'), isTrue);
       expect(ProfileKeys.isExcludedPref('last_selected_deck'), isTrue);
-      expect(ProfileKeys.isExcludedPref('last_selected_dictionary_format'),
-          isTrue);
+      expect(
+        ProfileKeys.isExcludedPref('last_selected_dictionary_format'),
+        isTrue,
+      );
       expect(ProfileKeys.isExcludedPref('last_selected_model'), isTrue);
       expect(ProfileKeys.isExcludedPref('update_never_remind'), isTrue);
       expect(ProfileKeys.isExcludedPref('update_auto_install'), isTrue);
       expect(ProfileKeys.isExcludedPref('update_beta_channel'), isTrue);
       expect(
-          ProfileKeys.isExcludedPref('startup_default_dictionary_tab'), isTrue);
+        ProfileKeys.isExcludedPref('startup_default_dictionary_tab'),
+        isTrue,
+      );
       // 启动页与 module_nav_order 同族：设备本地，不随 Profile 走。
       expect(ProfileKeys.isExcludedPref('startup_module'), isTrue);
       expect(ProfileKeys.isExcludedPref('app_ui_scale'), isTrue);
@@ -55,8 +59,7 @@ void main() {
       expect(ProfileKeys.isExcludedPref('reader_vertical'), isFalse);
     });
 
-    test(
-        'BUG-1019: per-book audiobook playback state is progress, '
+    test('BUG-1019: per-book audiobook playback state is progress, '
         'never profile-snapshotted', () {
       expect(ProfileKeys.isExcludedPref('audiobook_pos_bookA'), isTrue);
       expect(ProfileKeys.isExcludedPref('audiobook_pos_at_bookA'), isTrue);
@@ -66,25 +69,31 @@ void main() {
       expect(ProfileKeys.isExcludedPref('audiobook_volume_bookA'), isTrue);
       expect(ProfileKeys.isExcludedPref('audiobook_image_pause_bookA'), isTrue);
       expect(
-          ProfileKeys.isExcludedPref('audiobook_health_overlay_bookA'), isTrue);
+        ProfileKeys.isExcludedPref('audiobook_health_overlay_bookA'),
+        isTrue,
+      );
     });
 
-    test('BUG-1018 (A4): override_title prefs are content, never snapshotted',
-        () {
-      // Persisted form: src:<sourceId>:override_title://<sourceId>/<uniqueKey>
-      expect(
-        ProfileKeys.isExcludedPref(
+    test(
+      'BUG-1018 (A4): override_title prefs are content, never snapshotted',
+      () {
+        // Persisted form: src:<sourceId>:override_title://<sourceId>/<uniqueKey>
+        expect(
+          ProfileKeys.isExcludedPref(
             'src:reader_fushi:override_title://reader_fushi/'
-            'reader_fushi/fushi://book/我的书'),
-        isTrue,
-      );
-      expect(
-        ProfileKeys.isExcludedPref(
+            'reader_fushi/fushi://book/我的书',
+          ),
+          isTrue,
+        );
+        expect(
+          ProfileKeys.isExcludedPref(
             'src:reader_fushi:override_title://reader_fushi/'
-            'reader_fushi/fushi://srtbook/srtbook_123'),
-        isTrue,
-      );
-    });
+            'reader_fushi/fushi://srtbook/srtbook_123',
+          ),
+          isTrue,
+        );
+      },
+    );
 
     test('reading goal is per-Profile (not excluded, TODO-1046)', () {
       // 0=off, but the goal target itself is a per-Profile pref: it must NOT be
@@ -117,8 +126,10 @@ void main() {
       expect(map['allowDupes'], 'true');
       expect(map['compactGlossaries'], 'false');
       expect(map['embedMedia'], 'true');
-      expect(jsonDecode(map['fieldMappings']!),
-          {'Front': 'term', 'Back': 'meaning'});
+      expect(jsonDecode(map['fieldMappings']!), {
+        'Front': 'term',
+        'Back': 'meaning',
+      });
     });
 
     test('null ids serialize as empty strings', () {
@@ -201,33 +212,33 @@ void main() {
       expect(result.embedMedia, isTrue);
     });
 
-    test('profile apply preserves device-local AnkiConnect routing and secret',
-        () {
-      const AnkiSettings current = AnkiSettings(
-        ankiConnectHost: '192.168.1.20',
-        ankiConnectPort: 9876,
-        ankiConnectApiKey: 'device-secret',
-        ankiConnectUseHttps: true,
-        useAnkiConnectOnMobile: true,
-      );
+    test(
+      'profile apply preserves device-local AnkiConnect routing and secret',
+      () {
+        const AnkiSettings current = AnkiSettings(
+          ankiConnectHost: '192.168.1.20',
+          ankiConnectPort: 9876,
+          ankiConnectApiKey: 'device-secret',
+          ankiConnectUseHttps: true,
+          useAnkiConnectOnMobile: true,
+        );
 
-      final AnkiSettings result = ProfileKeys.mapToAnkiSettings(
-        <String, String>{
-          'selectedDeckId': '',
-          'selectedDeckName': '',
-          'selectedNoteTypeId': '',
-          'selectedNoteTypeName': '',
-          'fieldMappings': '{}',
-        },
-        current,
-      );
+        final AnkiSettings result =
+            ProfileKeys.mapToAnkiSettings(<String, String>{
+              'selectedDeckId': '',
+              'selectedDeckName': '',
+              'selectedNoteTypeId': '',
+              'selectedNoteTypeName': '',
+              'fieldMappings': '{}',
+            }, current);
 
-      expect(result.ankiConnectHost, '192.168.1.20');
-      expect(result.ankiConnectPort, 9876);
-      expect(result.ankiConnectApiKey, 'device-secret');
-      expect(result.ankiConnectUseHttps, isTrue);
-      expect(result.useAnkiConnectOnMobile, isTrue);
-    });
+        expect(result.ankiConnectHost, '192.168.1.20');
+        expect(result.ankiConnectPort, 9876);
+        expect(result.ankiConnectApiKey, 'device-secret');
+        expect(result.ankiConnectUseHttps, isTrue);
+        expect(result.useAnkiConnectOnMobile, isTrue);
+      },
+    );
 
     // 快照之外的字段一律保留当前值：此前从头构造 AnkiSettings，切一次 Profile
     // 就把 Lapis 自定义 CSS、自动重排、批量制卡、后端选择全部打回默认。
@@ -300,8 +311,11 @@ void main() {
         'video_scraper_tmdb_api_key',
       ];
       for (final String key in credentials) {
-        expect(ProfileKeys.isExcludedPref(key), isTrue,
-            reason: '$key 会随 Profile 快照进备份 / 分享 JSON');
+        expect(
+          ProfileKeys.isExcludedPref(key),
+          isTrue,
+          reason: '$key 会随 Profile 快照进备份 / 分享 JSON',
+        );
       }
     });
 
@@ -322,8 +336,11 @@ void main() {
         'sync_auto_enabled',
         'favorite_sentences',
       ]) {
-        expect(ProfileKeys.isExcludedPref(key), isFalse,
-            reason: '$key 是真正的 per-profile 偏好，排除会让切 Profile 失效');
+        expect(
+          ProfileKeys.isExcludedPref(key),
+          isFalse,
+          reason: '$key 是真正的 per-profile 偏好，排除会让切 Profile 失效',
+        );
       }
     });
 

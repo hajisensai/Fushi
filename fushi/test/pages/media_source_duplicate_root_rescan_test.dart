@@ -23,10 +23,10 @@ import 'package:fushi_core/fushi_core.dart';
 import '../helpers/test_platform_services.dart';
 
 FushiDatabase _memDb() => FushiDatabase.forTesting(
-      NativeDatabase.memory(
-        setup: (rawDb) => rawDb.execute('PRAGMA foreign_keys = ON'),
-      ),
-    );
+  NativeDatabase.memory(
+    setup: (rawDb) => rawDb.execute('PRAGMA foreign_keys = ON'),
+  ),
+);
 
 void main() {
   late Directory tempDir;
@@ -53,9 +53,7 @@ void main() {
         GlobalKey<MediaSourcesViewState>();
     await tester.pumpWidget(
       ProviderScope(
-        overrides: <Override>[
-          appProvider.overrideWith((ref) => appModel),
-        ],
+        overrides: <Override>[appProvider.overrideWith((ref) => appModel)],
         child: MaterialApp(
           home: MediaQuery(
             data: const MediaQueryData(size: Size(420, 800)),
@@ -73,22 +71,28 @@ void main() {
   }
 
   testWidgets('选到已登记的文件夹时重扫已有来源，而不是静默弹回', (WidgetTester tester) async {
-    final String root =
-        normalizeSourceRootPath(tempDir.path, transport: 'local');
+    final String root = normalizeSourceRootPath(
+      tempDir.path,
+      transport: 'local',
+    );
     final DateTime staleScan = DateTime(2020, 1, 1);
-    final int sourceId = await db.insertMediaSource(MediaSourcesCompanion(
-      label: const Value('既有来源'),
-      mediaKind: const Value('book'),
-      transport: const Value('local'),
-      rootPath: Value(root),
-      recursive: const Value(true),
-      sortOrder: const Value(0),
-      lastScannedAt: Value(staleScan),
-      createdAt: Value(DateTime.now().millisecondsSinceEpoch),
-    ));
+    final int sourceId = await db.insertMediaSource(
+      MediaSourcesCompanion(
+        label: const Value('既有来源'),
+        mediaKind: const Value('book'),
+        transport: const Value('local'),
+        rootPath: Value(root),
+        recursive: const Value(true),
+        sortOrder: const Value(0),
+        lastScannedAt: Value(staleScan),
+        createdAt: Value(DateTime.now().millisecondsSinceEpoch),
+      ),
+    );
 
-    final MediaSourcesViewState state =
-        await pumpView(tester, mediaKind: 'book');
+    final MediaSourcesViewState state = await pumpView(
+      tester,
+      mediaKind: 'book',
+    );
 
     // 用户在系统目录选择器里选中的正是那条来源的根。
     debugRealDirectoryPathOverride = tempDir.path;
@@ -111,22 +115,28 @@ void main() {
   });
 
   testWidgets('「仅导入这一次」选到已登记的文件夹时同样重扫已有来源', (WidgetTester tester) async {
-    final String root =
-        normalizeSourceRootPath(tempDir.path, transport: 'local');
+    final String root = normalizeSourceRootPath(
+      tempDir.path,
+      transport: 'local',
+    );
     final DateTime staleScan = DateTime(2020, 1, 1);
-    await db.insertMediaSource(MediaSourcesCompanion(
-      label: const Value('既有来源'),
-      mediaKind: const Value('book'),
-      transport: const Value('local'),
-      rootPath: Value(root),
-      recursive: const Value(true),
-      sortOrder: const Value(0),
-      lastScannedAt: Value(staleScan),
-      createdAt: Value(DateTime.now().millisecondsSinceEpoch),
-    ));
+    await db.insertMediaSource(
+      MediaSourcesCompanion(
+        label: const Value('既有来源'),
+        mediaKind: const Value('book'),
+        transport: const Value('local'),
+        rootPath: Value(root),
+        recursive: const Value(true),
+        sortOrder: const Value(0),
+        lastScannedAt: Value(staleScan),
+        createdAt: Value(DateTime.now().millisecondsSinceEpoch),
+      ),
+    );
 
-    final MediaSourcesViewState state =
-        await pumpView(tester, mediaKind: 'book');
+    final MediaSourcesViewState state = await pumpView(
+      tester,
+      mediaKind: 'book',
+    );
 
     debugRealDirectoryPathOverride = tempDir.path;
     await tester.runAsync(() => state.importLocalFolderOnce());

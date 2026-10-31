@@ -18,16 +18,15 @@ bool _containsCode(String source, String needle) =>
 /// 第四个顶部段，不是临时齿轮模式），锚点跟着搬到新形态即可——别因为形态换了就把断言
 /// 删掉。
 bool _hasSettingsSegment(String source) => RegExp(
-      r'\bLibrarySectionTab<int>\s*\(\s*value:\s*3\s*,\s*'
-      r'label:\s*t\.settings\s*\)',
-    ).hasMatch(_code(source));
+  r'\bLibrarySectionTab<int>\s*\(\s*value:\s*3\s*,\s*'
+  r'label:\s*t\.settings\s*\)',
+).hasMatch(_code(source));
 
 /// BUG-1858 起 `constrainWidth` 参数已删：全宽不再是调用点的一个选项，而是
 /// [TorrentSettingsSection] 唯一的形态。守的**行为**没变（下载页的设置面是全宽的），
 /// 锚点跟着搬到无参调用。
-bool _hasFullWidthTorrentSettings(String source) => RegExp(
-      r'\bTorrentSettingsSection\s*\(\s*\)',
-    ).hasMatch(_code(source));
+bool _hasFullWidthTorrentSettings(String source) =>
+    RegExp(r'\bTorrentSettingsSection\s*\(\s*\)').hasMatch(_code(source));
 
 void main() {
   String source(String path) => File(path).readAsStringSync();
@@ -42,16 +41,10 @@ TorrentSettingsSection()
 */
 ''';
     expect(
-      _containsCode(
-        commentsOnly,
-        'kind: MediaLibraryViewKind.settings',
-      ),
+      _containsCode(commentsOnly, 'kind: MediaLibraryViewKind.settings'),
       isFalse,
     );
-    expect(
-      _containsCode(commentsOnly, 'value: GameSection.settings'),
-      isFalse,
-    );
+    expect(_containsCode(commentsOnly, 'value: GameSection.settings'), isFalse);
     expect(
       _containsCode(commentsOnly, 'value: VideoLibrarySection.settings'),
       isFalse,
@@ -74,10 +67,7 @@ TorrentSettingsSection()
       _containsCode(stringsOnly, 'kind: MediaLibraryViewKind.settings'),
       isFalse,
     );
-    expect(
-      _containsCode(stringsOnly, 'value: GameSection.settings'),
-      isFalse,
-    );
+    expect(_containsCode(stringsOnly, 'value: GameSection.settings'), isFalse);
     expect(
       _containsCode(stringsOnly, 'value: VideoLibrarySection.settings'),
       isFalse,
@@ -134,10 +124,16 @@ TorrentSettingsSection()
       isNot(contains('settings')),
       reason: '游戏模块不得再有设置子区',
     );
-    expect(kGameSectionTabOrder.contains(GameSection.diagnostics), isFalse,
-        reason: '兼容性诊断不能继续占用游戏顶部高频 tab');
-    expect(kGameSectionTabOrder.last, GameSection.importGames,
-        reason: '导入恒排末位，与书 / 漫画 / 视频库页同构');
+    expect(
+      kGameSectionTabOrder.contains(GameSection.diagnostics),
+      isFalse,
+      reason: '兼容性诊断不能继续占用游戏顶部高频 tab',
+    );
+    expect(
+      kGameSectionTabOrder.last,
+      GameSection.importGames,
+      reason: '导入恒排末位，与书 / 漫画 / 视频库页同构',
+    );
   });
 
   // 2026-09-27 起「下载」模块改名「浏览」（Mihon Browse 形态）：顶部页签变成
@@ -172,10 +168,7 @@ TorrentSettingsSection()
       isTrue,
       reason: '齿轮必须 push 设置独立页',
     );
-    expect(
-      containsIdentifier(downloads, '_openDownloadSettings'),
-      isTrue,
-    );
+    expect(containsIdentifier(downloads, '_openDownloadSettings'), isTrue);
     expect(
       RegExp(
         r'enum BrowseTab \{ discover, sources, extensions, downloads \}',
@@ -190,10 +183,7 @@ TorrentSettingsSection()
       'lib/src/pages/implementations/module_settings_view.dart',
     );
     expect(
-      _containsCode(
-        moduleSettings,
-        'FushiPageHeader.route(title: title)',
-      ),
+      _containsCode(moduleSettings, 'FushiPageHeader.route(title: title)'),
       isTrue,
       reason: '推出来的独立设置页必须有带返回键的页头',
     );
@@ -202,10 +192,7 @@ TorrentSettingsSection()
       'lib/src/pages/implementations/game_diagnostics_page.dart',
     );
     expect(
-      _containsCode(
-        diagnostics,
-        'icon: FushiIcons.back',
-      ),
+      _containsCode(diagnostics, 'icon: FushiIcons.back'),
       isTrue,
       reason: '诊断页高亮捕获工作台段时，重选当前段不会回调，必须另有显式返回入口',
     );

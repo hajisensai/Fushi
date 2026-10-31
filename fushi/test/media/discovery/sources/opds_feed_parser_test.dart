@@ -61,7 +61,9 @@ void main() {
 ''', baseUri: _base);
 
       expect(
-          feed.nextHref, 'https://books.example.com/api/v1/opds/books?page=2');
+        feed.nextHref,
+        'https://books.example.com/api/v1/opds/books?page=2',
+      );
       final OpdsPublicationEntry pub =
           feed.entries.single as OpdsPublicationEntry;
       expect(pub.title, '雪国');
@@ -76,13 +78,11 @@ void main() {
       expect(link.sizeBytes, 524288);
     });
 
-    test(
-      '命名空间守卫：带前缀的 <atom:entry>/<atom:title> 必须照样解析出条目',
-      () {
-        // 这正是 epub_parser 栽过的跟头：package:xml 不传 namespace 时按
-        // qualified name 匹配，'entry' 匹配不到 <atom:entry>，整个目录会
-        // 解析成 0 条，表现为「这台 OPDS 服务器是空的」。
-        final OpdsFeed feed = parseOpdsAtomFeed('''
+    test('命名空间守卫：带前缀的 <atom:entry>/<atom:title> 必须照样解析出条目', () {
+      // 这正是 epub_parser 栽过的跟头：package:xml 不传 namespace 时按
+      // qualified name 匹配，'entry' 匹配不到 <atom:entry>，整个目录会
+      // 解析成 0 条，表现为「这台 OPDS 服务器是空的」。
+      final OpdsFeed feed = parseOpdsAtomFeed('''
 <?xml version="1.0" encoding="utf-8"?>
 <atom:feed xmlns:atom="http://www.w3.org/2005/Atom">
   <atom:link rel="next" href="/next"/>
@@ -96,16 +96,18 @@ void main() {
 </atom:feed>
 ''', baseUri: _base);
 
-        expect(feed.entries, hasLength(1),
-            reason: '带命名空间前缀的 feed 必须与裸 feed 等价解析');
-        final OpdsPublicationEntry pub =
-            feed.entries.single as OpdsPublicationEntry;
-        expect(pub.title, 'Prefixed Book');
-        expect(pub.author, 'Someone');
-        expect(pub.links.single.fileType, OpdsFileType.epub);
-        expect(feed.nextHref, 'https://books.example.com/next');
-      },
-    );
+      expect(
+        feed.entries,
+        hasLength(1),
+        reason: '带命名空间前缀的 feed 必须与裸 feed 等价解析',
+      );
+      final OpdsPublicationEntry pub =
+          feed.entries.single as OpdsPublicationEntry;
+      expect(pub.title, 'Prefixed Book');
+      expect(pub.author, 'Someone');
+      expect(pub.links.single.fileType, OpdsFileType.epub);
+      expect(feed.nextHref, 'https://books.example.com/next');
+    });
 
     test('rel=search：描述文档地址与内联模板两种写法都识别', () {
       final OpdsFeed viaDescription = parseOpdsAtomFeed('''
@@ -114,8 +116,10 @@ void main() {
         type="application/opensearchdescription+xml"/>
 </feed>
 ''', baseUri: _base);
-      expect(viaDescription.searchDescriptionHref,
-          'https://books.example.com/opensearch.xml');
+      expect(
+        viaDescription.searchDescriptionHref,
+        'https://books.example.com/opensearch.xml',
+      );
       expect(viaDescription.searchTemplate, isNull);
 
       final OpdsFeed inline = parseOpdsAtomFeed('''
@@ -125,8 +129,10 @@ void main() {
 </feed>
 ''', baseUri: _base);
       // 花括号不能被 Uri.resolve 百分号编码，否则下游替换永远匹配不上。
-      expect(inline.searchTemplate,
-          'https://books.example.com/search?q={searchTerms}');
+      expect(
+        inline.searchTemplate,
+        'https://books.example.com/search?q={searchTerms}',
+      );
     });
 
     test('OpenSearch 描述文档 → 模板，优先 atom 类型的 Url', () {
@@ -223,8 +229,10 @@ void main() {
       expect(feed.nextHref, 'https://books.example.com/opds/v2?page=2');
       // RFC 6570 的 {?query} 必须展开成 ?query=<占位符>，否则拼出来的是
       // https://host/searchVALUE 这种废 URL。
-      expect(feed.searchTemplate,
-          'https://books.example.com/opds/v2/search?query={searchTerms}');
+      expect(
+        feed.searchTemplate,
+        'https://books.example.com/opds/v2/search?query={searchTerms}',
+      );
 
       expect(feed.entries, hasLength(3));
       expect((feed.entries[0] as OpdsNavigationEntry).title, 'Libraries');
@@ -261,8 +269,11 @@ void main() {
           feed.entries[0] as OpdsPublicationEntry;
       expect(first.title, 'English Title');
       expect(first.author, 'First Author');
-      expect(first.links.single.fileType, OpdsFileType.pdf,
-          reason: 'rel 是数组时也要认出 acquisition');
+      expect(
+        first.links.single.fileType,
+        OpdsFileType.pdf,
+        reason: 'rel 是数组时也要认出 acquisition',
+      );
       expect((feed.entries[1] as OpdsPublicationEntry).author, 'Named');
     });
 
@@ -279,24 +290,32 @@ void main() {
 
   group('OpdsFileType', () {
     test('MIME 带参数段与大小写差异都能定型', () {
-      expect(OpdsFileType.fromMediaType('application/epub+zip;charset=utf-8'),
-          OpdsFileType.epub);
+      expect(
+        OpdsFileType.fromMediaType('application/epub+zip;charset=utf-8'),
+        OpdsFileType.epub,
+      );
       expect(OpdsFileType.fromMediaType('APPLICATION/PDF'), OpdsFileType.pdf);
     });
 
     test('别名表：Komga/Calibre 插件的非规范 MIME 也认', () {
       expect(OpdsFileType.fromMediaType('application/x-cbz'), OpdsFileType.cbz);
-      expect(OpdsFileType.fromMediaType('application/vnd.comicbook+rar'),
-          OpdsFileType.cbr);
+      expect(
+        OpdsFileType.fromMediaType('application/vnd.comicbook+rar'),
+        OpdsFileType.cbr,
+      );
     });
 
     test('epub 与 cbz 不许被混为一谈（两者都是 zip 壳）', () {
       // 模糊包含匹配（contains('zip')）会让漫画进小说域、epub 进漫画域，
       // 且只在混合库里暴露。
-      expect(OpdsFileType.fromMediaType('application/epub+zip')!.kind,
-          DiscoveryMediaKind.novel);
-      expect(OpdsFileType.fromMediaType('application/vnd.comicbook+zip')!.kind,
-          DiscoveryMediaKind.manga);
+      expect(
+        OpdsFileType.fromMediaType('application/epub+zip')!.kind,
+        DiscoveryMediaKind.novel,
+      );
+      expect(
+        OpdsFileType.fromMediaType('application/vnd.comicbook+zip')!.kind,
+        DiscoveryMediaKind.manga,
+      );
     });
 
     test('MIME 认不出时按 URL 扩展名兜底', () {
@@ -313,9 +332,11 @@ void main() {
     OpdsAcquisitionLink link(
       OpdsFileType type, {
       OpdsAcquisitionRel rel = OpdsAcquisitionRel.generic,
-    }) =>
-        OpdsAcquisitionLink(
-            href: 'https://h/${type.extension}', rel: rel, fileType: type);
+    }) => OpdsAcquisitionLink(
+      href: 'https://h/${type.extension}',
+      rel: rel,
+      fileType: type,
+    );
 
     test('同域多格式时优先本仓导入器吃得下的，再按 epub > pdf > txt', () {
       final OpdsPublicationEntry entry = entryWith(<OpdsAcquisitionLink>[
@@ -323,15 +344,20 @@ void main() {
         link(OpdsFileType.pdf),
         link(OpdsFileType.epub),
       ]);
-      expect(entry.bestLinkFor(DiscoveryMediaKind.novel)!.fileType,
-          OpdsFileType.epub);
+      expect(
+        entry.bestLinkFor(DiscoveryMediaKind.novel)!.fileType,
+        OpdsFileType.epub,
+      );
     });
 
     test('只有不可导入格式时仍给出链接（宁可下下来，也别显示成空目录）', () {
-      final OpdsPublicationEntry entry =
-          entryWith(<OpdsAcquisitionLink>[link(OpdsFileType.mobi)]);
-      expect(entry.bestLinkFor(DiscoveryMediaKind.novel)!.fileType,
-          OpdsFileType.mobi);
+      final OpdsPublicationEntry entry = entryWith(<OpdsAcquisitionLink>[
+        link(OpdsFileType.mobi),
+      ]);
+      expect(
+        entry.bestLinkFor(DiscoveryMediaKind.novel)!.fileType,
+        OpdsFileType.mobi,
+      );
     });
 
     test('跨域不串：漫画域拿不到 epub，小说域拿不到 cbz', () {
@@ -339,10 +365,14 @@ void main() {
         link(OpdsFileType.epub),
         link(OpdsFileType.cbz),
       ]);
-      expect(entry.bestLinkFor(DiscoveryMediaKind.novel)!.fileType,
-          OpdsFileType.epub);
-      expect(entry.bestLinkFor(DiscoveryMediaKind.manga)!.fileType,
-          OpdsFileType.cbz);
+      expect(
+        entry.bestLinkFor(DiscoveryMediaKind.novel)!.fileType,
+        OpdsFileType.epub,
+      );
+      expect(
+        entry.bestLinkFor(DiscoveryMediaKind.manga)!.fileType,
+        OpdsFileType.cbz,
+      );
       expect(entry.bestLinkFor(DiscoveryMediaKind.game), isNull);
     });
 
@@ -353,11 +383,14 @@ void main() {
         OpdsAcquisitionRel.borrow,
         OpdsAcquisitionRel.subscribe,
       ]) {
-        final OpdsPublicationEntry entry = entryWith(
-          <OpdsAcquisitionLink>[link(OpdsFileType.epub, rel: rel)],
+        final OpdsPublicationEntry entry = entryWith(<OpdsAcquisitionLink>[
+          link(OpdsFileType.epub, rel: rel),
+        ]);
+        expect(
+          entry.bestLinkFor(DiscoveryMediaKind.novel),
+          isNull,
+          reason: '$rel 不该被当成可下载直链',
         );
-        expect(entry.bestLinkFor(DiscoveryMediaKind.novel), isNull,
-            reason: '$rel 不该被当成可下载直链');
       }
       final OpdsPublicationEntry openAccess = entryWith(<OpdsAcquisitionLink>[
         link(OpdsFileType.epub, rel: OpdsAcquisitionRel.openAccess),
@@ -378,11 +411,10 @@ void main() {
     ({OpdsFeed atom, OpdsFeed json}) both({
       required String atomBody,
       required String jsonBody,
-    }) =>
-        (
-          atom: parseOpdsAtomFeed(atomBody, baseUri: _base),
-          json: parseOpdsJsonFeed(jsonBody, baseUri: _base),
-        );
+    }) => (
+      atom: parseOpdsAtomFeed(atomBody, baseUri: _base),
+      json: parseOpdsJsonFeed(jsonBody, baseUri: _base),
+    );
 
     test('search link 不是模板时：不许冒充模板，交给 searchDescriptionHref 二次抓取', () {
       // 关键词替换在下游是 `replaceAll('{searchTerms}', …)`：把一个不含占位符的
@@ -429,10 +461,14 @@ void main() {
            "type":"application/opds+json"}]}
 ''',
       );
-      expect(f.atom.searchTemplate,
-          'https://books.example.com/api/v1/opds/search?q={searchTerms}');
-      expect(f.json.searchTemplate,
-          'https://books.example.com/api/v1/opds/search?query={searchTerms}');
+      expect(
+        f.atom.searchTemplate,
+        'https://books.example.com/api/v1/opds/search?q={searchTerms}',
+      );
+      expect(
+        f.json.searchTemplate,
+        'https://books.example.com/api/v1/opds/search?query={searchTerms}',
+      );
       for (final OpdsFeed feed in <OpdsFeed>[f.atom, f.json]) {
         expect(feed.searchTemplate, contains('{searchTerms}'));
       }
@@ -534,14 +570,21 @@ void main() {
  "publications":[{"metadata":{"title":"No Rel Book","identifier":"urn:n:9"},
    "links":[{"href":"/dl/9","type":"application/epub+zip"}]}]}
 ''', baseUri: _base);
-      final OpdsPublicationEntry entry =
-          feed.entries.whereType<OpdsPublicationEntry>().single;
+      final OpdsPublicationEntry entry = feed.entries
+          .whereType<OpdsPublicationEntry>()
+          .single;
       expect(entry.title, 'No Rel Book');
       expect(entry.links.single.href, 'https://books.example.com/dl/9');
-      expect(entry.links.single.rel, OpdsAcquisitionRel.generic,
-          reason: '省略 rel 按通用 acquisition 处理');
-      expect(entry.bestLinkFor(DiscoveryMediaKind.novel), isNotNull,
-          reason: '认不出可下载链接的话，这本书在发现页里根本不出现');
+      expect(
+        entry.links.single.rel,
+        OpdsAcquisitionRel.generic,
+        reason: '省略 rel 按通用 acquisition 处理',
+      );
+      expect(
+        entry.bestLinkFor(DiscoveryMediaKind.novel),
+        isNotNull,
+        reason: '认不出可下载链接的话，这本书在发现页里根本不出现',
+      );
     });
 
     test('rel 明确但不是 acquisition 的链接仍然跳过（self/cover 不是下载物）', () {

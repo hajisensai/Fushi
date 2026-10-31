@@ -61,15 +61,15 @@ class StatRangeBar extends StatelessWidget {
   /// 前移重置整点。
   Future<void> _pickCustomRange(BuildContext context) async {
     final DateTime lastDate = FushiDatabase.statDateKeyToDay(range.todayKey);
-    final DateTime earliest = FushiDatabase.statDateKeyToDay(
-      range.earliestKey,
-    );
+    final DateTime earliest = FushiDatabase.statDateKeyToDay(range.earliestKey);
     final DateTime tenYearsBack = DateTime(lastDate.year - 10);
     final DateTime domainStart = earliest.isBefore(tenYearsBack)
         ? earliest
         : tenYearsBack;
     // 选择跨 tab 共享，当前域可能没有这么早的数据；编辑不能截短原区间。
-    final DateTime selectedStart = FushiDatabase.statDateKeyToDay(range.fromKey);
+    final DateTime selectedStart = FushiDatabase.statDateKeyToDay(
+      range.fromKey,
+    );
     final DateTime firstDate = selectedStart.isBefore(domainStart)
         ? selectedStart
         : domainStart;
@@ -198,7 +198,8 @@ class StatRangeBar extends StatelessWidget {
     // 粒度分段与期间步进器同一行、同高 40（此前分两行、步进器是悬浮大胶囊），
     // 窄屏摆不下时步进器折到下一行。
     return Padding(
-      padding: padding ??
+      padding:
+          padding ??
           EdgeInsets.fromLTRB(
             tokens.spacing.card,
             tokens.spacing.card,
@@ -501,9 +502,7 @@ Widget buildStatRangeSummary(
                       child: Text(
                         value,
                         maxLines: 1,
-                        style: Theme.of(context)
-                            .textTheme
-                            .titleMedium
+                        style: Theme.of(context).textTheme.titleMedium
                             ?.copyWith(fontWeight: FontWeight.bold),
                       ),
                     ),

@@ -44,7 +44,9 @@ void main() {
 
     setUpAll(() {
       appModel = _read('lib/src/models/app_model.dart');
-      host = _read('../packages/fushi_engine/lib/media/torrent/embedded_torrent_host.dart');
+      host = _read(
+        '../packages/fushi_engine/lib/media/torrent/embedded_torrent_host.dart',
+      );
     });
 
     test('startAnimeDownloadService 不得创建 libtorrent session', () {
@@ -52,40 +54,64 @@ void main() {
       // 定长 2500」：`\n  }` 这半赌的是方法体里不出现同样 2 空格缩进的闭合行，退定长
       // 那半更是假绿温床——本方法体实测 3605 字符，一旦 `\n  }` 匹配失败，下面这条
       // isFalse 断言就只扫前 2500 字符、后面 1100 字符里出现 open() 也照样绿。
-      final String body =
-          methodBody(appModel, 'Future<void> startAnimeDownloadService()');
-      expect(body.contains('EmbeddedTorrentHostClient.open('), isFalse,
-          reason: 'BUG-1053 回归：启动即建 session = 空闲也在跑 DHT/占 6881');
-      expect(maskCommentsAndStrings(body).contains('_ensureEmbeddedTorrentHost('),
-          isFalse,
-          reason: 'BUG-1053 回归：启动即懒建 = 空闲也在跑 DHT/占 6881');
+      final String body = methodBody(
+        appModel,
+        'Future<void> startAnimeDownloadService()',
+      );
+      expect(
+        body.contains('EmbeddedTorrentHostClient.open('),
+        isFalse,
+        reason: 'BUG-1053 回归：启动即建 session = 空闲也在跑 DHT/占 6881',
+      );
+      expect(
+        maskCommentsAndStrings(body).contains('_ensureEmbeddedTorrentHost('),
+        isFalse,
+        reason: 'BUG-1053 回归：启动即懒建 = 空闲也在跑 DHT/占 6881',
+      );
       // 只记保存路径（TODO-1961 起是活动根 + 历史根集合），真会话交给懒建入口。
       expect(body.contains('_embeddedTorrentSaveRoots'), isTrue);
     });
 
     test('后端工厂在真要用时才懒建（且仅内置后端路径）', () {
       // BUG-3577：工厂同步交出代理，代理里再等懒建出的工作 isolate。
-      final String body =
-          methodBody(appModel, 'TorrentBackend _torrentBackendFor(');
-      expect(body.contains('_embeddedTorrentBackendProxy(config)'), isTrue,
-          reason: 'BUG-1053：内置后端路径必须走懒建入口');
-      final String proxy = methodBody(
-          appModel, 'TorrentBackend? _embeddedTorrentBackendProxy(');
-      expect(proxy.contains('_ensureEmbeddedTorrentHost()'), isTrue,
-          reason: 'BUG-1053：内置后端路径必须走懒建入口');
+      final String body = methodBody(
+        appModel,
+        'TorrentBackend _torrentBackendFor(',
+      );
       expect(
-          appModel.contains(
-              'Future<EmbeddedTorrentHostClient?> _ensureEmbeddedTorrentHost()'),
-          isTrue);
+        body.contains('_embeddedTorrentBackendProxy(config)'),
+        isTrue,
+        reason: 'BUG-1053：内置后端路径必须走懒建入口',
+      );
+      final String proxy = methodBody(
+        appModel,
+        'TorrentBackend? _embeddedTorrentBackendProxy(',
+      );
+      expect(
+        proxy.contains('_ensureEmbeddedTorrentHost()'),
+        isTrue,
+        reason: 'BUG-1053：内置后端路径必须走懒建入口',
+      );
+      expect(
+        appModel.contains(
+          'Future<EmbeddedTorrentHostClient?> _ensureEmbeddedTorrentHost()',
+        ),
+        isTrue,
+      );
     });
 
     test('就绪判定走能力探测，不再等价于「已开 session」', () {
       // 窗口=该表达式体成员的完整声明（顶层分号收口），不是 `+400` 定长窗口：
       // getter 一旦多包一层三元或换行，probeAvailable 就漂出窗口、断言凭空变假。
-      final String body =
-          _expressionBodyMember(appModel, 'bool get isEmbeddedTorrentReady');
-      expect(body.contains('EmbeddedTorrentHost.probeAvailable()'), isTrue,
-          reason: 'BUG-1053：就绪判定若仍要求 session 存在，启动就又得开 session');
+      final String body = _expressionBodyMember(
+        appModel,
+        'bool get isEmbeddedTorrentReady',
+      );
+      expect(
+        body.contains('EmbeddedTorrentHost.probeAvailable()'),
+        isTrue,
+        reason: 'BUG-1053：就绪判定若仍要求 session 存在，启动就又得开 session',
+      );
     });
 
     test('probeAvailable 只加载引擎，绝不创建 session', () {
@@ -97,31 +123,42 @@ void main() {
       final String probe = methodBody(host, 'static bool probeAvailable(');
       expect(probe.contains('probeCapabilities('), isTrue);
       final String body = methodBody(
-          host, 'static EmbeddedTorrentHostCapabilities? probeCapabilities(');
+        host,
+        'static EmbeddedTorrentHostCapabilities? probeCapabilities(',
+      );
       expect(body.contains('EmbeddedTorrentEngine.open('), isTrue);
-      expect(body.contains('EmbeddedTorrentSession.open('), isFalse,
-          reason: 'BUG-1053：探测里建 session 就等于没修');
+      expect(
+        body.contains('EmbeddedTorrentSession.open('),
+        isFalse,
+        reason: 'BUG-1053：探测里建 session 就等于没修',
+      );
       // 探测不该需要保存路径（不落盘、不下载）。
       expect(body.contains('baseSavePath'), isFalse);
     });
 
     test('只有 open() 建 session，且它只被懒建入口调用', () {
       // AppModel 里起工作 isolate（= 建 session）的调用点只剩懒建入口一处。
-      final Iterable<Match> hits = RegExp(r'EmbeddedTorrentHostClient\.open\(')
-          .allMatches(maskCommentsAndStrings(appModel));
-      expect(hits.length, 1,
-          reason: 'BUG-1053：AppModel 里 open() 只应出现在懒建入口');
+      final Iterable<Match> hits = RegExp(
+        r'EmbeddedTorrentHostClient\.open\(',
+      ).allMatches(maskCommentsAndStrings(appModel));
+      expect(hits.length, 1, reason: 'BUG-1053：AppModel 里 open() 只应出现在懒建入口');
       final String open = methodBody(
-          appModel, 'Future<EmbeddedTorrentHostClient?> _openEmbeddedTorrentHost(');
+        appModel,
+        'Future<EmbeddedTorrentHostClient?> _openEmbeddedTorrentHost(',
+      );
       expect(open.contains('EmbeddedTorrentHostClient.open('), isTrue);
-      final String ensure = methodBody(appModel,
-          'Future<EmbeddedTorrentHostClient?> _ensureEmbeddedTorrentHost()');
+      final String ensure = methodBody(
+        appModel,
+        'Future<EmbeddedTorrentHostClient?> _ensureEmbeddedTorrentHost()',
+      );
       expect(ensure.contains('_openEmbeddedTorrentHost('), isTrue);
     });
 
     test('懒建 host 时 session 初始 DHT 必须显式关闭', () {
-      final String ensure = methodBody(appModel,
-          'Future<EmbeddedTorrentHostClient?> _ensureEmbeddedTorrentHost()');
+      final String ensure = methodBody(
+        appModel,
+        'Future<EmbeddedTorrentHostClient?> _ensureEmbeddedTorrentHost()',
+      );
       final String structural = maskCommentsAndStrings(ensure);
       expect(
         RegExp(

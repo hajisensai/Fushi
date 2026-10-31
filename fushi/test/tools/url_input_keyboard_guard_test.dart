@@ -174,23 +174,31 @@ void main() {
             continue;
           }
           final int line = '\n'.allMatches(source.substring(0, hit)).length + 1;
-          final String relative =
-              entity.path.replaceAll(root.path, '').replaceAll(r'\', '/');
+          final String relative = entity.path
+              .replaceAll(root.path, '')
+              .replaceAll(r'\', '/');
           offenders.add('$relative:$line  $widget');
         }
       }
     }
 
     // 扫描面自证：目录枚举型守卫最危险的失效是「一个文件都没扫到却绿着」。
-    expect(scannedFiles, greaterThan(500),
-        reason: '扫到的 .dart 文件太少（$scannedFiles），扫描面可能坏了');
-    expect(scannedWidgets, greaterThan(100),
-        reason: '扫到的输入框太少（$scannedWidgets），构造式匹配可能坏了');
+    expect(
+      scannedFiles,
+      greaterThan(500),
+      reason: '扫到的 .dart 文件太少（$scannedFiles），扫描面可能坏了',
+    );
+    expect(
+      scannedWidgets,
+      greaterThan(100),
+      reason: '扫到的输入框太少（$scannedWidgets），构造式匹配可能坏了',
+    );
 
     expect(
       offenders,
       isEmpty,
-      reason: '以下输入框语义是 URL / 主机但没声明 keyboardType。\n'
+      reason:
+          '以下输入框语义是 URL / 主机但没声明 keyboardType。\n'
           '中文输入法会把 `:` `/` `.` 转成全角，地址将被拒或产出垃圾 authority，\n'
           '详见 docs/bugs/BUG-1804-mihon-store-url-fullwidth-rejected.md。\n'
           '补 `keyboardType: TextInputType.url`（settings schema 里是 `keyboard:`），\n'

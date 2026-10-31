@@ -90,23 +90,23 @@ void main() {
     test('一个来源都没配 → no-provider（旧 jimaku 端点仍回 no-api-key）', () async {
       final Map<String, dynamic> generic =
           await buildRemoteSubtitleSearchResponse(
-        <String, dynamic>{'query': 'x'},
-        registryProvider: registryOf(<VideoSubtitleProvider>[]),
-        rememberCandidate: (_, __) => fail('不应记录候选'),
-      );
+            <String, dynamic>{'query': 'x'},
+            registryProvider: registryOf(<VideoSubtitleProvider>[]),
+            rememberCandidate: (_, __) => fail('不应记录候选'),
+          );
       expect(generic['ok'], isFalse);
       expect(generic['error'], 'no-provider');
 
       // 旧端点的错误码是扩展文案的分支键，不能因为改了实现就换掉。
       final Map<String, dynamic> legacy =
           await buildRemoteSubtitleSearchResponse(
-        <String, dynamic>{'query': 'x'},
-        registryProvider: registryOf(<VideoSubtitleProvider>[
-          _FakeProvider(id: 'ajatt'),
-        ]),
-        rememberCandidate: (_, __) => fail('不应记录候选'),
-        restrictToProviderIds: kJimakuOnlyProviderIds,
-      );
+            <String, dynamic>{'query': 'x'},
+            registryProvider: registryOf(<VideoSubtitleProvider>[
+              _FakeProvider(id: 'ajatt'),
+            ]),
+            rememberCandidate: (_, __) => fail('不应记录候选'),
+            restrictToProviderIds: kJimakuOnlyProviderIds,
+          );
       expect(legacy['error'], 'no-api-key');
     });
 
@@ -155,8 +155,10 @@ void main() {
           <String, VideoSubtitleCandidate>{};
       final Map<String, dynamic> res = await buildRemoteSubtitleSearchResponse(
         <String, dynamic>{'query': 'K-ON!', 'episode': 1},
-        registryProvider:
-            registryOf(<VideoSubtitleProvider>[ajatt, openSubtitles]),
+        registryProvider: registryOf(<VideoSubtitleProvider>[
+          ajatt,
+          openSubtitles,
+        ]),
         rememberCandidate: (String handle, VideoSubtitleCandidate c) =>
             remembered[handle] = c,
       );
@@ -274,10 +276,7 @@ void main() {
         rememberCandidate: (_, __) {},
       );
       expect(res['ok'], isTrue);
-      expect(
-        res['candidates'],
-        hasLength(kRemoteSubtitleSearchMaxCandidates),
-      );
+      expect(res['candidates'], hasLength(kRemoteSubtitleSearchMaxCandidates));
       expect(res['truncated'], isTrue);
     });
   });
@@ -370,8 +369,9 @@ void main() {
       );
       expect(res['ok'], isTrue);
       expect(res['candidates'], isEmpty);
-      final List<Uri> searches =
-          seen.where((Uri u) => u.path.endsWith('/entries/search')).toList();
+      final List<Uri> searches = seen
+          .where((Uri u) => u.path.endsWith('/entries/search'))
+          .toList();
       expect(searches, hasLength(1), reason: '调用方已显式指定 anime，空结果不再补搜');
       expect(searches.single.queryParameters['anime'], 'false');
     });

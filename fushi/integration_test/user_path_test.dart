@@ -12,8 +12,9 @@ void main() {
   final IntegrationTestWidgetsFlutterBinding binding =
       IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('full user path: tabs, settings, rapid switching',
-      (WidgetTester tester) async {
+  testWidgets('full user path: tabs, settings, rapid switching', (
+    WidgetTester tester,
+  ) async {
     final List<FlutterErrorDetails> errors = [];
     final FlutterExceptionHandler? oldHandler = FlutterError.onError;
     FlutterError.onError = (FlutterErrorDetails details) {
@@ -35,59 +36,91 @@ void main() {
       final List<Finder> navIcons = findPrimaryNavigationTargets();
       final int tabCount = navIcons.length;
       debugPrint('[test] Found $tabCount navigation icons');
-      expect(tabCount, greaterThanOrEqualTo(2),
-          reason: 'App should have at least 2 navigation icons');
+      expect(
+        tabCount,
+        greaterThanOrEqualTo(2),
+        reason: 'App should have at least 2 navigation icons',
+      );
 
       // --- Tab 1: Dictionary ---
-      expect(await driver.focusWidget(navIcons[1]), isTrue,
-          reason: 'Dictionary tab must be reachable by focus');
+      expect(
+        await driver.focusWidget(navIcons[1]),
+        isTrue,
+        reason: 'Dictionary tab must be reachable by focus',
+      );
       await driver.activate();
       await tester.pump(const Duration(seconds: 3));
 
-      expect(find.byType(Scaffold), findsWidgets,
-          reason: 'Dictionary tab should render');
+      expect(
+        find.byType(Scaffold),
+        findsWidgets,
+        reason: 'Dictionary tab should render',
+      );
       screenshotCount += await _takeScreenshotSafe(binding, 'tab_dictionary');
 
-      final bool hasSearch = find.byType(TextField).evaluate().isNotEmpty ||
+      final bool hasSearch =
+          find.byType(TextField).evaluate().isNotEmpty ||
           find.byType(TextFormField).evaluate().isNotEmpty ||
           find.byType(SearchBar).evaluate().isNotEmpty;
-      expect(hasSearch, isTrue,
-          reason: 'Dictionary tab must contain a search field');
+      expect(
+        hasSearch,
+        isTrue,
+        reason: 'Dictionary tab must contain a search field',
+      );
 
       // --- Tab 2: Settings ---
       if (tabCount >= 3) {
-        expect(await driver.focusWidget(navIcons[2]), isTrue,
-            reason: 'Settings tab must be reachable by focus');
+        expect(
+          await driver.focusWidget(navIcons[2]),
+          isTrue,
+          reason: 'Settings tab must be reachable by focus',
+        );
         await driver.activate();
         await tester.pump(const Duration(seconds: 3));
 
-        expect(find.byType(Scaffold), findsWidgets,
-            reason: 'Settings tab should render');
+        expect(
+          find.byType(Scaffold),
+          findsWidgets,
+          reason: 'Settings tab should render',
+        );
         screenshotCount += await _takeScreenshotSafe(binding, 'tab_settings');
 
         final bool hasListTiles = find.byType(ListTile).evaluate().isNotEmpty;
-        expect(hasListTiles, isTrue,
-            reason: 'Settings tab must contain ListTile entries');
+        expect(
+          hasListTiles,
+          isTrue,
+          reason: 'Settings tab must contain ListTile entries',
+        );
 
         final Finder scrollable = find.byType(Scrollable);
         if (scrollable.evaluate().isNotEmpty) {
           await tester.drag(scrollable.first, const Offset(0, -300));
           await tester.pump(const Duration(seconds: 1));
-          screenshotCount +=
-              await _takeScreenshotSafe(binding, 'tab_settings_scrolled');
+          screenshotCount += await _takeScreenshotSafe(
+            binding,
+            'tab_settings_scrolled',
+          );
         }
       }
 
       // --- Return to first tab ---
-      expect(await driver.focusWidget(navIcons[0]), isTrue,
-          reason: 'Books tab must be reachable by focus');
+      expect(
+        await driver.focusWidget(navIcons[0]),
+        isTrue,
+        reason: 'Books tab must be reachable by focus',
+      );
       await driver.activate();
       await tester.pump(const Duration(seconds: 3));
 
-      expect(find.byType(Scaffold), findsWidgets,
-          reason: 'Books tab should render after round-trip navigation');
-      screenshotCount +=
-          await _takeScreenshotSafe(binding, 'home_books_return');
+      expect(
+        find.byType(Scaffold),
+        findsWidgets,
+        reason: 'Books tab should render after round-trip navigation',
+      );
+      screenshotCount += await _takeScreenshotSafe(
+        binding,
+        'home_books_return',
+      );
 
       // --- Rapid tab switching stability ---
       debugPrint('[test] Starting rapid tab switching (20 cycles)');
@@ -111,23 +144,38 @@ void main() {
 
       await tester.pump(const Duration(seconds: 2));
 
-      expect(skippedTaps, lessThan(5),
-          reason: 'Most tab switches should find their target');
-      expect(find.byType(Scaffold), findsWidgets,
-          reason: 'App should survive rapid tab switching');
+      expect(
+        skippedTaps,
+        lessThan(5),
+        reason: 'Most tab switches should find their target',
+      );
+      expect(
+        find.byType(Scaffold),
+        findsWidgets,
+        reason: 'App should survive rapid tab switching',
+      );
 
       // After rapid switching, verify the app is still interactive:
       // focus the first tab and verify it has content.
-      expect(await driver.focusWidget(navIcons[0]), isTrue,
-          reason: 'Books tab must be reachable by focus after rapid switching');
+      expect(
+        await driver.focusWidget(navIcons[0]),
+        isTrue,
+        reason: 'Books tab must be reachable by focus after rapid switching',
+      );
       await driver.activate();
       await tester.pump(const Duration(seconds: 2));
-      expect(find.byIcon(Icons.menu_book), findsWidgets,
-          reason: 'Books tab icon must be present after rapid switching');
+      expect(
+        find.byIcon(Icons.menu_book),
+        findsWidgets,
+        reason: 'Books tab icon must be present after rapid switching',
+      );
 
       if (screenshotsAreRequired) {
-        expect(screenshotCount, greaterThan(0),
-            reason: 'At least one screenshot must succeed for evidence');
+        expect(
+          screenshotCount,
+          greaterThan(0),
+          reason: 'At least one screenshot must succeed for evidence',
+        );
       }
       debugPrint('[test] $screenshotCount screenshots captured');
 
@@ -153,7 +201,8 @@ Future<void> _waitForHomeReady(WidgetTester tester) async {
     if (i > 0 && i % 20 == 0) {
       final bool hasScaffold = find.byType(Scaffold).evaluate().isNotEmpty;
       debugPrint(
-          '[test] Still waiting for home... iteration $i, scaffold=$hasScaffold');
+        '[test] Still waiting for home... iteration $i, scaffold=$hasScaffold',
+      );
     }
   }
   debugPrint('[test] Home not ready after 90s');
@@ -161,7 +210,9 @@ Future<void> _waitForHomeReady(WidgetTester tester) async {
 }
 
 Future<int> _takeScreenshotSafe(
-    IntegrationTestWidgetsFlutterBinding binding, String name) async {
+  IntegrationTestWidgetsFlutterBinding binding,
+  String name,
+) async {
   try {
     await binding.takeScreenshot(name).timeout(const Duration(seconds: 10));
     debugPrint('[test] Screenshot saved: $name');
@@ -172,8 +223,10 @@ Future<int> _takeScreenshotSafe(
   }
 }
 
-void _assertNoUnexpectedErrors(List<FlutterErrorDetails> errors,
-    {bool allowWebViewErrors = false}) {
+void _assertNoUnexpectedErrors(
+  List<FlutterErrorDetails> errors, {
+  bool allowWebViewErrors = false,
+}) {
   final List<FlutterErrorDetails> unexpected = errors.where((e) {
     final String msg = e.exceptionAsString().toLowerCase();
     if (msg.contains('socketexception')) return false;
@@ -185,7 +238,11 @@ void _assertNoUnexpectedErrors(List<FlutterErrorDetails> errors,
     return true;
   }).toList();
 
-  expect(unexpected, isEmpty,
-      reason: 'Unexpected FlutterErrors: '
-          '${unexpected.map((e) => e.exceptionAsString()).join('; ')}');
+  expect(
+    unexpected,
+    isEmpty,
+    reason:
+        'Unexpected FlutterErrors: '
+        '${unexpected.map((e) => e.exceptionAsString()).join('; ')}',
+  );
 }

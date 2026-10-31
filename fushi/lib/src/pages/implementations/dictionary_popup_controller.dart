@@ -137,10 +137,10 @@ class DictionaryPopupEntry {
   /// [popupLookupPending]）。宿主若还有额外的屏外停靠门（对话框期间），实际注入值由
   /// `parkedPopupLayer` 的最终可见性再收紧一次，派生函数仍是同一个。
   bool get lookupPending => popupLookupPending(
-        layerVisible: visible,
-        isSearching: isSearching,
-        result: result,
-      );
+    layerVisible: visible,
+    isSearching: isSearching,
+    result: result,
+  );
 
   /// 是否已无更多结果可加载（分页到底）。
   bool allLoaded;
@@ -317,8 +317,8 @@ class DictionaryPopupController extends ChangeNotifier {
 
   late final List<GlobalKey<DictionaryPopupWebViewState>> _parkedRealmsView =
       UnmodifiableListView<GlobalKey<DictionaryPopupWebViewState>>(
-    _parkedRealms,
-  );
+        _parkedRealms,
+      );
 
   /// 停驻中的嵌套 realm 键（最近用过的在末尾）。宿主必须把每一把键渲染成一层屏外
   /// 隐藏弹窗（[parkedRealmPopupLayer]），否则键背后的 WebView element 会被销毁，
@@ -427,8 +427,8 @@ class DictionaryPopupController extends ChangeNotifier {
   /// 派生值已落 false，可占位卡要到这次重建才撤。
   Duration? _searchPlaceholderElapsedFor(DictionaryPopupEntry e) =>
       identical(_searchTarget, e) && _pendingRectRaw != null
-          ? _searchUiClock.elapsed
-          : null;
+      ? _searchUiClock.elapsed
+      : null;
 
   /// [beginSearchUi] 起表：占位卡（及其入场淡入）从那一刻开始画。
   final Stopwatch _searchUiClock = Stopwatch();
@@ -465,13 +465,15 @@ class DictionaryPopupController extends ChangeNotifier {
       );
       return;
     }
-    _entries.add(DictionaryPopupEntry(
-      searchTerm: '',
-      selectionRect: Rect.zero,
-      result: seedResult ?? kPopupSearchingPlaceholderResult,
-      visible: false,
-      isWarmSlot: true,
-    ));
+    _entries.add(
+      DictionaryPopupEntry(
+        searchTerm: '',
+        selectionRect: Rect.zero,
+        result: seedResult ?? kPopupSearchingPlaceholderResult,
+        visible: false,
+        isWarmSlot: true,
+      ),
+    );
     notifyListeners();
     _notifyLookupStackDepth();
   }
@@ -684,7 +686,9 @@ class DictionaryPopupController extends ChangeNotifier {
   // ── 原地跳转历史（Hoshi Reader iOS 的 backStack/forwardStack）────────────
 
   DictionaryPopupHistoryPage _snapshot(
-      DictionaryPopupEntry e, double scrollTop) {
+    DictionaryPopupEntry e,
+    double scrollTop,
+  ) {
     return DictionaryPopupHistoryPage(
       searchTerm: e.searchTerm,
       result: e.result,
@@ -747,14 +751,21 @@ class DictionaryPopupController extends ChangeNotifier {
   }
 
   /// 后退一页；[scrollTop] 是当前页离开时的滚动位（进前进栈，再前进时恢复）。
-  bool goBack(DictionaryPopupEntry e, {required double scrollTop}) =>
-      _navigate(e,
-          from: e._backHistory, to: e._forwardHistory, scrollTop: scrollTop);
+  bool goBack(DictionaryPopupEntry e, {required double scrollTop}) => _navigate(
+    e,
+    from: e._backHistory,
+    to: e._forwardHistory,
+    scrollTop: scrollTop,
+  );
 
   /// 前进一页；[scrollTop] 同 [goBack]。
   bool goForward(DictionaryPopupEntry e, {required double scrollTop}) =>
-      _navigate(e,
-          from: e._forwardHistory, to: e._backHistory, scrollTop: scrollTop);
+      _navigate(
+        e,
+        from: e._forwardHistory,
+        to: e._backHistory,
+        scrollTop: scrollTop,
+      );
 
   bool _navigate(
     DictionaryPopupEntry e, {

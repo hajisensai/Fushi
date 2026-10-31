@@ -41,7 +41,9 @@ Future<void> _seedVideoWithStats(
       updatedAt: 61000,
     ),
   );
-  await db.into(db.videoWatchStatistics).insert(
+  await db
+      .into(db.videoWatchStatistics)
+      .insert(
         VideoWatchStatisticsCompanion.insert(
           title: title,
           bookUid: Value(bookUid),
@@ -62,10 +64,9 @@ Future<void> _seedVideoWithStats(
 Future<List<StudySegmentRow>> _segmentsOf(
   FushiDatabase db,
   String mediaKey,
-) async =>
-    (await db.select(db.studySegments).get())
-        .where((StudySegmentRow row) => row.mediaKey == mediaKey)
-        .toList();
+) async => (await db.select(db.studySegments).get())
+    .where((StudySegmentRow row) => row.mediaKey == mediaKey)
+    .toList();
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -115,8 +116,9 @@ void main() {
     expect(await _segmentsOf(db, 'video/a'), isEmpty);
     expect(await db.select(db.videoWatchStatistics).get(), isEmpty);
     expect(
-      (await db.select(db.lookupMiningCounters).get())
-          .where((LookupMiningCounterRow r) => r.bookKey == 'video/a'),
+      (await db.select(db.lookupMiningCounters).get()).where(
+        (LookupMiningCounterRow r) => r.bookKey == 'video/a',
+      ),
       isEmpty,
     );
     // 不立碑的话，下一轮聚合同步会把对端还留着的段整批灌回来（BUG-2215）。

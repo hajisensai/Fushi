@@ -12,9 +12,12 @@ import 'package:fushi_engine/ai/ai_key_rotation.dart';
 
 AiKeyHealth _health(int failures, {String reason = 'rate_limited'}) =>
     AiKeyHealth(
-      cooldownUntil: DateTime.utc(2026, 10, 13, 12).add(
-        Duration(minutes: failures),
-      ),
+      cooldownUntil: DateTime.utc(
+        2026,
+        10,
+        13,
+        12,
+      ).add(Duration(minutes: failures)),
       failures: failures,
       reason: reason,
     );
@@ -56,7 +59,10 @@ void main() {
     expect(stored['fp-main'], _health(1));
     expect(stored['fp-popup'], _health(2));
     // 写完的一方缓存对齐到持久值，顺带收进了对方的条目。
-    expect(popup.aiKeyHealth.keys, containsAll(<String>['fp-main', 'fp-popup']));
+    expect(
+      popup.aiKeyHealth.keys,
+      containsAll(<String>['fp-main', 'fp-popup']),
+    );
   });
 
   test('update 在最新持久值上重算：旧缓存里的成功不清掉别的进程刚记的冷却', () async {
@@ -121,9 +127,6 @@ void main() {
       (AiKeyHealth? current) =>
           aiKeyHealthAfterSuccess(seen: null, current: current),
     );
-    expect(
-      await db.getPref(PreferencesRepository.aiKeyHealthPrefKey),
-      isNull,
-    );
+    expect(await db.getPref(PreferencesRepository.aiKeyHealthPrefKey), isNull);
   });
 }

@@ -31,11 +31,11 @@ void main() {
 
   group('global lookup hotkey register failure is visible', () {
     late String controller;
-    setUpAll(() =>
-        controller = read('lib/src/lookup/global_lookup_controller.dart'));
+    setUpAll(
+      () => controller = read('lib/src/lookup/global_lookup_controller.dart'),
+    );
 
-    test('a failed register() is logged to ErrorLogService (not glog-only)',
-        () {
+    test('a failed register() is logged to ErrorLogService (not glog-only)', () {
       // Anchor on the OS-registration CALL rather than a helper NAME: the
       // registration is table-driven now (one helper per action), and pinning
       // whatever the helper happens to be called today makes this guard red on
@@ -44,20 +44,29 @@ void main() {
       // reach the user-visible / uploadable ErrorLogService channel from its
       // catch.
       final int at = controller.indexOf('hotKeyManager.register(');
-      expect(at, greaterThan(-1),
-          reason: 'the controller must register the OS hotkey itself');
+      expect(
+        at,
+        greaterThan(-1),
+        reason: 'the controller must register the OS hotkey itself',
+      );
       final String fn = controller.substring(at);
-      expect(fn.contains('ErrorLogService.instance.log('), isTrue,
-          reason: 'a failed hotkey register must surface through the visible '
-              'ErrorLogService, not be swallowed into the temp-file glog only');
+      expect(
+        fn.contains('ErrorLogService.instance.log('),
+        isTrue,
+        reason:
+            'a failed hotkey register must surface through the visible '
+            'ErrorLogService, not be swallowed into the temp-file glog only',
+      );
     });
 
     test('controller imports ErrorLogService', () {
       expect(
-          controller.contains(
-              "import 'package:fushi/src/utils/misc/error_log_service.dart';"),
-          isTrue,
-          reason: 'the visibility fix depends on the ErrorLogService import');
+        controller.contains(
+          "import 'package:fushi/src/utils/misc/error_log_service.dart';",
+        ),
+        isTrue,
+        reason: 'the visibility fix depends on the ErrorLogService import',
+      );
     });
   });
 
@@ -66,9 +75,11 @@ void main() {
     setUpAll(() => main = read('lib/main.dart'));
 
     test('main.dart calls hotKeyManager.unregisterAll() on startup', () {
-      expect(main.contains('hotKeyManager.unregisterAll('), isTrue,
-          reason:
-              'the plugin init contract needs one unregisterAll() on start');
+      expect(
+        main.contains('hotKeyManager.unregisterAll('),
+        isTrue,
+        reason: 'the plugin init contract needs one unregisterAll() on start',
+      );
     });
 
     test('startup has no restart-marker branch to hide the init call in', () {
@@ -77,15 +88,23 @@ void main() {
       // again. If one comes back, the init unregisterAll() must not move into
       // it: a normal cold start would skip plugin init and register() could
       // fail silently.
-      expect(main.contains('DesktopLifecycleService.restartMarkerArg'), isFalse,
-          reason: 'restarted processes reveal through _revealStartupWindow, '
-              'not a restart-only startup branch');
+      expect(
+        main.contains('DesktopLifecycleService.restartMarkerArg'),
+        isFalse,
+        reason:
+            'restarted processes reveal through _revealStartupWindow, '
+            'not a restart-only startup branch',
+      );
       final int initAt = main.indexOf('hotKeyManager.unregisterAll(');
       final int preventCloseAt = main.indexOf('setPreventClose(true)');
       expect(preventCloseAt, greaterThan(-1));
-      expect(initAt, greaterThan(preventCloseAt),
-          reason: 'the init unregisterAll() runs on the unconditional desktop '
-              'path after window setup');
+      expect(
+        initAt,
+        greaterThan(preventCloseAt),
+        reason:
+            'the init unregisterAll() runs on the unconditional desktop '
+            'path after window setup',
+      );
     });
   });
 
@@ -101,16 +120,23 @@ void main() {
       controllerSrc = read('lib/src/lookup/global_lookup_controller.dart');
       renderSrc = read('lib/src/lookup/global_lookup_render.dart');
       popupJs = read('assets/popup/popup.js');
-      galOverlaySrc =
-          read('lib/src/lookup/gal_hook_text_overlay_controller.dart');
+      galOverlaySrc = read(
+        'lib/src/lookup/gal_hook_text_overlay_controller.dart',
+      );
     });
 
     test('showSentenceBanner 开关不再存在（controller / 渲染链 / popup.js）', () {
-      expect(controllerSrc.contains('showSentenceBanner'), isFalse,
-          reason: '横幅已删，controller 不得再保留 showSentenceBanner 参数');
+      expect(
+        controllerSrc.contains('showSentenceBanner'),
+        isFalse,
+        reason: '横幅已删，controller 不得再保留 showSentenceBanner 参数',
+      );
       expect(controllerSrc.contains('_showSentenceBanner'), isFalse);
-      expect(renderSrc.contains('__globalLookupSentence'), isFalse,
-          reason: '渲染脚本不得再向 popup.js 注入句子横幅文本');
+      expect(
+        renderSrc.contains('__globalLookupSentence'),
+        isFalse,
+        reason: '渲染脚本不得再向 popup.js 注入句子横幅文本',
+      );
       expect(popupJs.contains('buildGlobalLookupSentenceBanner'), isFalse);
       expect(popupJs.contains('prependSentenceBanner'), isFalse);
       expect(popupJs.contains('__globalLookupSentence'), isFalse);
@@ -118,13 +144,16 @@ void main() {
 
     test('制卡 sentenceContext 仍用完整 _currentSentence（横幅删掉也不空）', () {
       expect(
-          controllerSrc.contains('sentenceContext: _currentSentence'), isTrue,
-          reason: 'BUG-730：热键窗整句仍进制卡 {sentence}，与横幅无关');
+        controllerSrc.contains('sentenceContext: _currentSentence'),
+        isTrue,
+        reason: 'BUG-730：热键窗整句仍进制卡 {sentence}，与横幅无关',
+      );
     });
 
     test('游戏台词浮窗点词保留完整句子供制卡', () {
-      final int handlerAt =
-          galOverlaySrc.indexOf('Future<void> _onLookupText(');
+      final int handlerAt = galOverlaySrc.indexOf(
+        'Future<void> _onLookupText(',
+      );
       expect(handlerAt, greaterThan(-1), reason: '游戏台词浮窗查词入口必须存在');
       final int callAt = galOverlaySrc.indexOf(
         'GlobalLookupController.instance.lookupText(',
@@ -134,24 +163,31 @@ void main() {
       final int callEnd = galOverlaySrc.indexOf(');', callAt);
       expect(callEnd, greaterThan(callAt));
       final String call = galOverlaySrc.substring(callAt, callEnd + 2);
-      expect(call.contains('showSentenceBanner'), isFalse,
-          reason: '横幅开关已删，调用点不得再传 showSentenceBanner');
+      expect(
+        call.contains('showSentenceBanner'),
+        isFalse,
+        reason: '横幅开关已删，调用点不得再传 showSentenceBanner',
+      );
       // 句子经 _cardSentenceForGame 过滤：只有旧校准档案仍开着「只用「」内
       // 台词」时才剥掉括号外文字，其余情况原样返回 entry.text。
       expect(
-          call.contains('sentence: _cardSentenceForGame(entry, entry.text)'),
-          isTrue,
-          reason: '制卡需要的完整句子上下文必须继续传入');
-      final int filterAt =
-          galOverlaySrc.indexOf('String _cardSentenceForGame(');
+        call.contains('sentence: _cardSentenceForGame(entry, entry.text)'),
+        isTrue,
+        reason: '制卡需要的完整句子上下文必须继续传入',
+      );
+      final int filterAt = galOverlaySrc.indexOf(
+        'String _cardSentenceForGame(',
+      );
       expect(filterAt, greaterThan(-1), reason: '制卡句子过滤入口必须存在');
       final int filterEnd = galOverlaySrc.indexOf(').text;', filterAt);
       expect(filterEnd, greaterThan(filterAt));
       final String filter = galOverlaySrc.substring(filterAt, filterEnd);
-      expect(filter.contains('galLookupVisibleHookLineText('), isTrue,
-          reason: '只能走共享的可见台词过滤，不得另起截句逻辑');
-      expect(filter.contains('source: source'), isTrue,
-          reason: '过滤的输入必须是完整台词');
+      expect(
+        filter.contains('galLookupVisibleHookLineText('),
+        isTrue,
+        reason: '只能走共享的可见台词过滤，不得另起截句逻辑',
+      );
+      expect(filter.contains('source: source'), isTrue, reason: '过滤的输入必须是完整台词');
     });
   });
 }

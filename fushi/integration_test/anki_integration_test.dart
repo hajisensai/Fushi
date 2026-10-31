@@ -20,13 +20,15 @@ void main() {
       repo = AnkiRepository();
     });
 
-    testWidgets('fetchConfiguration returns real decks and note types',
-        (WidgetTester tester) async {
+    testWidgets('fetchConfiguration returns real decks and note types', (
+      WidgetTester tester,
+    ) async {
       final AnkiFetchResult result = await repo.fetchConfiguration();
       expect(
         result,
         isA<AnkiFetchSuccess>(),
-        reason: 'AnkiDroid must be installed with a collection + the API '
+        reason:
+            'AnkiDroid must be installed with a collection + the API '
             'permission granted to Fushi',
       );
       final AnkiFetchSuccess success = result as AnkiFetchSuccess;
@@ -34,8 +36,9 @@ void main() {
       expect(success.noteTypes, isNotEmpty); // Basic, Cloze, ...
     });
 
-    testWidgets('isDuplicate completes without hanging (HBK-AUDIT-020)',
-        (WidgetTester tester) async {
+    testWidgets('isDuplicate completes without hanging (HBK-AUDIT-020)', (
+      WidgetTester tester,
+    ) async {
       // checkForDuplicates queries the ContentProvider on the main looper; the
       // 020 fix guarantees the Future always completes (success or error) even
       // if the provider throws — so this await must not hang.
@@ -45,8 +48,9 @@ void main() {
       expect(dupe, isA<bool>());
     });
 
-    testWidgets('mineEntry adds a note to AnkiDroid',
-        (WidgetTester tester) async {
+    testWidgets('mineEntry adds a note to AnkiDroid', (
+      WidgetTester tester,
+    ) async {
       final AnkiFetchResult fetch = await repo.fetchConfiguration();
       expect(fetch, isA<AnkiFetchSuccess>());
 
@@ -59,7 +63,7 @@ void main() {
       await repo.updateSettings(
         (AnkiSettings s) => s.copyWith(
           fieldMappings: <String, String>{
-            noteType.fields.first: '{expression}'
+            noteType.fields.first: '{expression}',
           },
         ),
       );
@@ -81,7 +85,8 @@ void main() {
       expect(
         outcome.result,
         anyOf(MineResult.success, MineResult.duplicate),
-        reason: 'mineEntry must add the card or detect a duplicate, not '
+        reason:
+            'mineEntry must add the card or detect a duplicate, not '
             'fail/notConfigured',
       );
     });

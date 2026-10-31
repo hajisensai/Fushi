@@ -34,9 +34,9 @@ class WebViewPrewarmSession {
     required Future<void> Function() disposeWebView,
     Duration timeout = kDefaultTimeout,
     void Function(String reason)? onFinished,
-  })  : _disposeWebView = disposeWebView,
-        _timeout = timeout,
-        _onFinished = onFinished;
+  }) : _disposeWebView = disposeWebView,
+       _timeout = timeout,
+       _onFinished = onFinished;
 
   /// 兜底时限：预热收益只有几百毫秒到 1.5 秒，超过这个量级还没回调就已经没有
   /// 预热价值了，留着只剩泄漏成本。不是「等久一点也许就好了」的重试窗口。

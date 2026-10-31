@@ -56,7 +56,11 @@ int pcmDurationMs(int pcmByteLength, int byteRate) {
 /// 收敛后 `start>=end`（区间空/倒置/越界）时返回空 [Uint8List]（调用方据此提示「未选到音频」，
 /// 不塞空段假装成功）。返回的是**拷贝**（不与入参共享底层 buffer）。
 Uint8List slicePcmByMs(
-    Uint8List pcm, PcmFormat format, int startMs, int endMs) {
+  Uint8List pcm,
+  PcmFormat format,
+  int startMs,
+  int endMs,
+) {
   final int blockAlign = format.blockAlign;
   final int byteRate = format.byteRate;
   if (pcm.isEmpty || blockAlign <= 0 || byteRate <= 0) {
@@ -267,29 +271,27 @@ Future<Uint8List?> transcodeVoiceResourceToMiningAudio({
   if (!File(resourcePath).existsSync()) {
     return null;
   }
-  final Directory dir =
-      Directory('$tempDir/gal_voice_${resourcePath.hashCode}');
+  final Directory dir = Directory(
+    '$tempDir/gal_voice_${resourcePath.hashCode}',
+  );
   await dir.create(recursive: true);
   try {
     final String outPath = '${dir.path}/voice.$outputExtension';
-    final FfmpegRunResult result = await resolveFfmpegBackend().run(
-      <String>[
-        '-y',
-        '-i',
-        resourcePath,
-        '-vn',
-        '-ac',
-        '$audioChannels',
-        '-ar',
-        '44100',
-        '-c:a',
-        'aac',
-        '-b:a',
-        audioBitrate,
-        outPath,
-      ],
-      const Duration(seconds: 30),
-    );
+    final FfmpegRunResult result = await resolveFfmpegBackend().run(<String>[
+      '-y',
+      '-i',
+      resourcePath,
+      '-vn',
+      '-ac',
+      '$audioChannels',
+      '-ar',
+      '44100',
+      '-c:a',
+      'aac',
+      '-b:a',
+      audioBitrate,
+      outPath,
+    ], const Duration(seconds: 30));
     final File out = File(outPath);
     if (result.returnCode == 0 && out.existsSync() && out.lengthSync() > 0) {
       return await out.readAsBytes();

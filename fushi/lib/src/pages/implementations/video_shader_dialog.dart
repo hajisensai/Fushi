@@ -58,7 +58,8 @@ class VideoShaderManagerView extends StatefulWidget {
     VideoShaderTier tier,
     bool highQuality,
     List<String> enabledNames,
-  ) onSelectTier;
+  )
+  onSelectTier;
 
   /// 用户上次手动指定的本机 mpv 配置/着色器目录（空=未指定，走自动候选）。
   final String initialMpvDir;
@@ -115,8 +116,9 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView>
   /// → 多选导入到 mpv_shaders。自动扫不到时**引导手动指定 mpv 目录**（见
   /// [_pickMpvDirAndSearch]）。
   Future<void> _importFromMpv() async {
-    final List<String> found =
-        await discoverLocalMpvShaders(overrideDir: _mpvDir);
+    final List<String> found = await discoverLocalMpvShaders(
+      overrideDir: _mpvDir,
+    );
     if (!mounted) return;
     if (found.isEmpty) {
       // 自动找不到：直接转入「手动指定目录并搜索」，而不是只弹个失败提示（用户诉求）。
@@ -133,15 +135,18 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView>
     // 选中的目录随后要被 `dart:io` 遍历（扫 .glsl/.hook），必须是真实路径。
     final String? dir = await pickRealDirectoryPath(
       context: context,
-      appModel:
-          ProviderScope.containerOf(context, listen: false).read(appProvider),
+      appModel: ProviderScope.containerOf(
+        context,
+        listen: false,
+      ).read(appProvider),
       dialogTitle: t.video_shader_pick_mpv_dir,
       initialDirectory: _mpvDir.isNotEmpty ? _mpvDir : null,
     );
     if (dir == null || !mounted) {
       if (autoFallback) {
         messenger.showSnackBar(
-            FushiSnackBar(content: Text(t.video_shader_mpv_not_found)));
+          FushiSnackBar(content: Text(t.video_shader_mpv_not_found)),
+        );
       }
       return;
     }
@@ -150,8 +155,9 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView>
     final List<String> found = await discoverLocalMpvShaders(overrideDir: dir);
     if (!mounted) return;
     if (found.isEmpty) {
-      messenger
-          .showSnackBar(FushiSnackBar(content: Text(t.video_shader_mpv_dir_empty)));
+      messenger.showSnackBar(
+        FushiSnackBar(content: Text(t.video_shader_mpv_dir_empty)),
+      );
       return;
     }
     await _pickAndImportFrom(found);
@@ -174,7 +180,9 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView>
     await _refresh();
     if (!mounted) return;
     messenger.showSnackBar(
-      FushiSnackBar(content: Text(t.video_shader_import_done(count: picked.length))),
+      FushiSnackBar(
+        content: Text(t.video_shader_import_done(count: picked.length)),
+      ),
     );
   }
 
@@ -187,8 +195,9 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView>
       }
     });
     // 按目录列表顺序排出启用集，保证着色器叠加顺序稳定可复现。
-    final List<String> ordered =
-        _files.where(_enabled.contains).toList(growable: false);
+    final List<String> ordered = _files
+        .where(_enabled.contains)
+        .toList(growable: false);
     await widget.onApply(ordered);
   }
 
@@ -241,20 +250,27 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView>
     if (!mounted) return;
     await _refresh();
     if (!mounted) return;
-    messenger.showSnackBar(FushiSnackBar(
-      content: Text(name != null
-          ? t.video_shader_download_done(count: 1)
-          : t.video_shader_download_failed),
-    ));
+    messenger.showSnackBar(
+      FushiSnackBar(
+        content: Text(
+          name != null
+              ? t.video_shader_download_done(count: 1)
+              : t.video_shader_download_failed,
+        ),
+      ),
+    );
   }
 
   /// 下载某预设的全部着色器到 mpv_shaders（进度对话框 + 取消），完成刷新列表 + 提示。
   /// 返回 true 表示该预设的全部文件现已就绪（全部下载成功或已存在），可据此启用该档。
   Future<bool> _downloadPreset(Anime4kPreset preset) async {
     final ValueNotifier<({int index, int total, double? progress})>
-        progressNotifier =
-        ValueNotifier<({int index, int total, double? progress})>(
-            (index: 0, total: preset.shaders.length, progress: null));
+    progressNotifier =
+        ValueNotifier<({int index, int total, double? progress})>((
+          index: 0,
+          total: preset.shaders.length,
+          progress: null,
+        ));
     final CancelToken cancelToken = CancelToken();
     final ScaffoldMessengerState messenger = ScaffoldMessenger.of(context);
     // 在弹框之前拿住 navigator：收尾时的那次 pop 不能依赖本 State 还 mounted
@@ -367,9 +383,9 @@ class _VideoShaderManagerViewState extends State<VideoShaderManagerView>
 
   /// 当前命中的画质档（据内置缩放开关 + 已启用集反查）；都不命中=用户自定义勾选→null。
   VideoShaderTier? get _currentTier => tierFromState(
-        highQuality: widget.qualityEnhancementEnabled,
-        enabledShaders: _files.where(_enabled.contains).toList(),
-      );
+    highQuality: widget.qualityEnhancementEnabled,
+    enabledShaders: _files.where(_enabled.contains).toList(),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -584,11 +600,12 @@ class _AppleSeparator extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final FushiAppleMetrics metrics = FushiAppleMetrics.of(context);
-    final double start = metrics.rowHorizontal +
+    final double start =
+        metrics.rowHorizontal +
         (afterIcon
             ? metrics.iconTileSize +
-                FushiDesignTokens.of(context).spacing.gap +
-                4
+                  FushiDesignTokens.of(context).spacing.gap +
+                  4
             : 0);
     return Container(
       height: fushiHairline(context),
@@ -615,8 +632,8 @@ class _ShaderGroupLabel extends StatelessWidget {
     final TextStyle? style = glass
         ? FushiAppleMetrics.of(context).footnoteStyle(context)
         : Theme.of(context).textTheme.labelMedium?.copyWith(
-              color: Theme.of(context).colorScheme.onSurfaceVariant,
-            );
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          );
     return Padding(
       padding: EdgeInsets.fromLTRB(
         tokens.spacing.rowHorizontal + iconColumn + tokens.spacing.gap + 4,
@@ -660,9 +677,9 @@ class _ShaderFootnote extends StatelessWidget {
       );
     }
     final TextStyle? style = isGlassDesign(context)
-        ? FushiAppleMetrics.of(context).footnoteStyle(context).copyWith(
-              color: warning ? appleColorsOf(context).warning : null,
-            )
+        ? FushiAppleMetrics.of(context)
+              .footnoteStyle(context)
+              .copyWith(color: warning ? appleColorsOf(context).warning : null)
         : theme.textTheme.bodySmall?.copyWith(
             color: warning
                 ? theme.colorScheme.tertiary
@@ -723,8 +740,9 @@ class _MpvShaderPickerDialogState extends State<_MpvShaderPickerDialog> {
                   for (final String path in widget.discovered)
                     () {
                       final String name = p.basename(path);
-                      final bool imported =
-                          widget.alreadyImported.contains(name);
+                      final bool imported = widget.alreadyImported.contains(
+                        name,
+                      );
                       return FushiCheckboxListTile(
                         contentPadding: EdgeInsets.zero,
                         dense: true,
@@ -736,12 +754,12 @@ class _MpvShaderPickerDialogState extends State<_MpvShaderPickerDialog> {
                         onChanged: imported
                             ? null
                             : (bool? v) => setState(() {
-                                  if (v ?? false) {
-                                    _selected.add(path);
-                                  } else {
-                                    _selected.remove(path);
-                                  }
-                                }),
+                                if (v ?? false) {
+                                  _selected.add(path);
+                                } else {
+                                  _selected.remove(path);
+                                }
+                              }),
                       );
                     }(),
                 ],
@@ -771,10 +789,7 @@ class _MpvShaderPickerDialogState extends State<_MpvShaderPickerDialog> {
 /// 全部文件的预设标「已下载」。预设标题用技术名（Mode A/B/C），说明走 i18n。
 @visibleForTesting
 class Anime4kPresetPickerDialog extends StatelessWidget {
-  const Anime4kPresetPickerDialog({
-    required this.downloadedFiles,
-    super.key,
-  });
+  const Anime4kPresetPickerDialog({required this.downloadedFiles, super.key});
 
   /// 当前 mpv_shaders 目录已有的文件名集合（判预设是否「已下载」）。
   final Set<String> downloadedFiles;
@@ -822,15 +837,17 @@ class Anime4kPresetPickerDialog extends StatelessWidget {
                 children: <Widget>[
                   for (final Anime4kPreset preset in kAnime4kPresets)
                     () {
-                      final bool added =
-                          preset.fileNames.every(downloadedFiles.contains);
+                      final bool added = preset.fileNames.every(
+                        downloadedFiles.contains,
+                      );
                       // BUG-1425：预设选择行走共享 MD3 组件，不再裸 ListTile。
                       // 本文件的 reviewed 豁免只写了「导入的 shader 文件以勾选行
                       // 列出」（即那两处 CheckboxListTile），从不覆盖这个预设列表。
                       return FushiListItem(
                         padding: EdgeInsets.symmetric(
-                          vertical:
-                              FushiDesignTokens.of(context).spacing.rowVertical,
+                          vertical: FushiDesignTokens.of(
+                            context,
+                          ).spacing.rowVertical,
                         ),
                         title: Text(preset.name),
                         // 预设说明是两三句话，裸 ListTile 的 subtitle 不截行；
@@ -838,8 +855,10 @@ class Anime4kPresetPickerDialog extends StatelessWidget {
                         subtitleMaxLines: 3,
                         subtitle: Text(presetDescription(preset.id)),
                         trailing: added
-                            ? FushiIcon(FushiIcons.downloadDone,
-                                color: cs.primary)
+                            ? FushiIcon(
+                                FushiIcons.downloadDone,
+                                color: cs.primary,
+                              )
                             : const FushiIcon(FushiIcons.download),
                         onTap: () => Navigator.pop(context, preset),
                       );
@@ -870,7 +889,7 @@ class _Anime4kProgressDialog extends StatelessWidget {
 
   final String presetName;
   final ValueNotifier<({int index, int total, double? progress})>
-      progressNotifier;
+  progressNotifier;
   final VoidCallback onCancel;
 
   @override
@@ -883,30 +902,30 @@ class _Anime4kProgressDialog extends StatelessWidget {
         width: 320,
         child:
             ValueListenableBuilder<({int index, int total, double? progress})>(
-          valueListenable: progressNotifier,
-          builder: (_, ({int index, int total, double? progress}) v, __) {
-            return Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                Text(
-                  presetName,
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-                const SizedBox(height: 8),
-                // M3E：文件序号用 Display 大数字（等宽），进度条走波浪线。
-                Text(
-                  '${v.index + 1} / ${v.total}',
-                  textAlign: TextAlign.center,
-                  style: type.displaySmallEmphasized.tabular,
-                ),
-                const SizedBox(height: 12),
-                FushiLinearProgressIndicator(value: v.progress),
-              ],
-            );
-          },
-        ),
+              valueListenable: progressNotifier,
+              builder: (_, ({int index, int total, double? progress}) v, __) {
+                return Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    Text(
+                      presetName,
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.bodyMedium,
+                    ),
+                    const SizedBox(height: 8),
+                    // M3E：文件序号用 Display 大数字（等宽），进度条走波浪线。
+                    Text(
+                      '${v.index + 1} / ${v.total}',
+                      textAlign: TextAlign.center,
+                      style: type.displaySmallEmphasized.tabular,
+                    ),
+                    const SizedBox(height: 12),
+                    FushiLinearProgressIndicator(value: v.progress),
+                  ],
+                );
+              },
+            ),
       ),
       actions: <Widget>[
         FushiDialogAction(label: t.dialog_cancel, onPressed: onCancel),
@@ -1067,23 +1086,21 @@ class VideoShaderTierComparison extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         for (int i = 0; i < specs.length; i++) ...<Widget>[
-          if (glass && i > 0)
-            const _AppleSeparator(afterIcon: true),
+          if (glass && i > 0) const _AppleSeparator(afterIcon: true),
           Semantics(
             selected: current == specs[i].tier,
             child: AdaptiveSettingsRow(
-              key: ValueKey<String>('video-shader-tier-row-${specs[i].tier.name}'),
+              key: ValueKey<String>(
+                'video-shader-tier-row-${specs[i].tier.name}',
+              ),
               title: shaderTierLabel(specs[i].tier),
               subtitle: shaderTierLabelDescription(specs[i].tier),
               icon: _tierIcon(specs[i].tier),
               showIcon: true,
               trailing: current == specs[i].tier
                   ? FushiIcon(FushiIcons.check, color: checkColor)
-
                   : null,
-              onTap: onSelect == null
-                  ? null
-                  : () => onSelect!(specs[i].tier),
+              onTap: onSelect == null ? null : () => onSelect!(specs[i].tier),
             ),
           ),
         ],

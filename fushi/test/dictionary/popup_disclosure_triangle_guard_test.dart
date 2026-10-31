@@ -35,8 +35,11 @@ void main() {
   /// 抽取 `<selector> { ... }` 规则块内容（popup 这些规则无嵌套花括号）。
   String ruleBody(String css, String selector) {
     final int start = css.indexOf('$selector {');
-    expect(start, greaterThanOrEqualTo(0),
-        reason: 'rule "$selector" not found');
+    expect(
+      start,
+      greaterThanOrEqualTo(0),
+      reason: 'rule "$selector" not found',
+    );
     final int open = css.indexOf('{', start);
     final int close = css.indexOf('}', open);
     expect(close, greaterThan(open), reason: 'rule "$selector" not closed');
@@ -70,51 +73,85 @@ void main() {
       setUpAll(() => css = maskCssComments(read(relPath)));
 
       test('TODO-1337 不再用字体字形 ▶ / ▼（旧的脆弱做法）', () {
-        expect(css.contains("content: '▶"), isFalse,
-            reason: '禁止用 ▶ 字体字形（缺字体/emoji 回退会渲染不出来）');
+        expect(
+          css.contains("content: '▶"),
+          isFalse,
+          reason: '禁止用 ▶ 字体字形（缺字体/emoji 回退会渲染不出来）',
+        );
         expect(css.contains("content: '▼"), isFalse, reason: '禁止用 ▼ 字体字形');
       });
 
       test('TODO-1337 收起态 = 右向边框三角（border-left currentColor）', () {
         final String body = ruleBody(css, '.glossary-group > summary::before');
-        expect(body, contains("content: ''"),
-            reason: '::before 需空 content 生成盒子承载边框三角');
-        expect(body, contains('border-left: 5px solid currentColor'),
-            reason: '收起态右向三角：左边框实心 currentColor（顶点朝右）');
-        expect(body, contains('border-top: 4px solid transparent'),
-            reason: '上/下边框透明夹出三角高度');
+        expect(
+          body,
+          contains("content: ''"),
+          reason: '::before 需空 content 生成盒子承载边框三角',
+        );
+        expect(
+          body,
+          contains('border-left: 5px solid currentColor'),
+          reason: '收起态右向三角：左边框实心 currentColor（顶点朝右）',
+        );
+        expect(
+          body,
+          contains('border-top: 4px solid transparent'),
+          reason: '上/下边框透明夹出三角高度',
+        );
       });
 
       test('BUG-2049 展开态只旋转，不声明任何影响布局盒的属性', () {
         final List<String> props = declaredProperties(
-            ruleBody(css, '.glossary-group[open] > summary::before'));
+          ruleBody(css, '.glossary-group[open] > summary::before'),
+        );
         expect(props, isNotEmpty, reason: '展开态必须有朝向声明，否则三角不会变成指下');
-        expect(props, contains('transform'),
-            reason: '展开态朝向必须靠 transform 旋转（transform 不参与布局）');
-        expect(ruleBody(css, '.glossary-group[open] > summary::before'),
-            contains('transform: rotate(90deg)'),
-            reason: '展开态必须是绕盒心旋转 90° 的下向三角；'
-                '只声明 transform 属性名不够——transform: none / rotate(0deg) 会让两态图标同形');
+        expect(
+          props,
+          contains('transform'),
+          reason: '展开态朝向必须靠 transform 旋转（transform 不参与布局）',
+        );
+        expect(
+          ruleBody(css, '.glossary-group[open] > summary::before'),
+          contains('transform: rotate(90deg)'),
+          reason:
+              '展开态必须是绕盒心旋转 90° 的下向三角；'
+              '只声明 transform 属性名不够——transform: none / rotate(0deg) 会让两态图标同形',
+        );
         // 白名单而非黑名单：任何新属性都得先想清楚它会不会改盒子。border-* 会（边框
         // 三角的盒尺寸=两组对边之和），width/height/margin/padding/display/font-size
         // 也会——它们一旦出现，词典名就会随展开状态横向跳动（BUG-2049 原始症状）。
-        expect(props, everyElement(anyOf('transform', 'transform-origin')),
-            reason: '展开态只允许 transform / transform-origin；'
-                '出现 $props 中的其它属性说明布局盒又随状态变了');
+        expect(
+          props,
+          everyElement(anyOf('transform', 'transform-origin')),
+          reason:
+              '展开态只允许 transform / transform-origin；'
+              '出现 $props 中的其它属性说明布局盒又随状态变了',
+        );
       });
 
       test('BUG-2049 卡头与释义的间距不挂在「只在展开态存在」的内容 div 上', () {
         final List<String> contentProps = declaredProperties(
-            ruleBody(css, '.glossary-group > div[data-dictionary]'));
-        expect(contentProps.contains('padding-top'), isFalse,
-            reason: 'div[data-dictionary] 只在展开态参与布局，挂在它上面的固定上间距'
-                '会让「展开一本没有可见释义的词典」凭空长高');
-        expect(contentProps.contains('margin-top'), isFalse,
-            reason: 'margin-top 与 padding-top 同病：状态相关的上间距');
+          ruleBody(css, '.glossary-group > div[data-dictionary]'),
+        );
+        expect(
+          contentProps.contains('padding-top'),
+          isFalse,
+          reason:
+              'div[data-dictionary] 只在展开态参与布局，挂在它上面的固定上间距'
+              '会让「展开一本没有可见释义的词典」凭空长高',
+        );
+        expect(
+          contentProps.contains('margin-top'),
+          isFalse,
+          reason: 'margin-top 与 padding-top 同病：状态相关的上间距',
+        );
 
         final String summaryBody = ruleBody(css, '.glossary-group > summary');
-        expect(summaryBody, contains('padding-bottom: 2px'),
-            reason: '间距的拥有者必须是恒存在的卡头，卡片基线高度才与展开状态无关');
+        expect(
+          summaryBody,
+          contains('padding-bottom: 2px'),
+          reason: '间距的拥有者必须是恒存在的卡头，卡片基线高度才与展开状态无关',
+        );
       });
     });
   });

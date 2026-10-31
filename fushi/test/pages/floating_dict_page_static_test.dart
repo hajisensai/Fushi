@@ -16,17 +16,16 @@ void main() {
     );
   });
 
-  testWidgets('floating dictionary page uses shared overlay popup shell',
-      (WidgetTester tester) async {
+  testWidgets('floating dictionary page uses shared overlay popup shell', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
           appProvider.overrideWith((ref) => AppModel(testPlatformServices())),
         ],
         child: const MaterialApp(
-          home: FloatingDictPage(
-            channel: MethodChannel('fushi.test/floating'),
-          ),
+          home: FloatingDictPage(channel: MethodChannel('fushi.test/floating')),
         ),
       ),
     );

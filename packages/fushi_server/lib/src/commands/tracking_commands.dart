@@ -32,7 +32,8 @@ const int _exitUnavailable = 69;
 const String kBangumiTokenEnv = 'FUSHI_BANGUMI_TOKEN';
 
 /// 服务端发给 Bangumi 的 User-Agent（Bangumi API 要求可识别的 UA；与 app 同形）。
-const String kServerBangumiUserAgent = 'hajisensai/Fushi-Server (https://github.com/hajisensai/fushi)';
+const String kServerBangumiUserAgent =
+    'hajisensai/Fushi-Server (https://github.com/hajisensai/fushi)';
 
 /// 一轮同步结果 → 退出码：未授权 69，有失败 1，否则 0。
 int trackingSyncExitCode(MediaTrackingSyncResult r) {
@@ -41,7 +42,13 @@ int trackingSyncExitCode(MediaTrackingSyncResult r) {
 }
 
 class TrackingModule extends CliModule {
-  const TrackingModule({this.out, this.err, this.env, this.enabled = kMediaTrackingEnabled, this.apiFactory});
+  const TrackingModule({
+    this.out,
+    this.err,
+    this.env,
+    this.enabled = kMediaTrackingEnabled,
+    this.apiFactory,
+  });
 
   final StringSink? out;
   final StringSink? err;
@@ -60,7 +67,9 @@ class TrackingModule extends CliModule {
     tracking.addCommand('sync')
       ..addFlag('force', negatable: false, help: '忽略退避窗口，所有待发条目立刻重试')
       ..addFlag('json', negatable: false, help: '输出 JSON');
-    tracking.addCommand('status').addFlag('json', negatable: false, help: '输出 JSON');
+    tracking
+        .addCommand('status')
+        .addFlag('json', negatable: false, help: '输出 JSON');
   }
 
   @override
@@ -94,13 +103,20 @@ tracking sync [--force] [--json] | tracking status [--json]
         apiFactory: apiFactory,
       );
       try {
-        final String envToken = ((env ?? Platform.environment)[kBangumiTokenEnv] ?? '').trim();
+        final String envToken =
+            ((env ?? Platform.environment)[kBangumiTokenEnv] ?? '').trim();
         if (envToken.isNotEmpty && envToken != service.accessToken) {
           try {
             final BangumiUser user = await service.connect(envToken);
-            e.writeln('已连接 Bangumi 账号 ${user.nickname.isEmpty ? user.username : user.nickname}');
+            e.writeln(
+              '已连接 Bangumi 账号 ${user.nickname.isEmpty ? user.username : user.nickname}',
+            );
           } on BangumiApiException catch (x) {
-            e.writeln(x.isUnauthorized ? '$kBangumiTokenEnv 被 Bangumi 拒绝（令牌无效或过期）' : 'Bangumi 校验令牌失败: $x');
+            e.writeln(
+              x.isUnauthorized
+                  ? '$kBangumiTokenEnv 被 Bangumi 拒绝（令牌无效或过期）'
+                  : 'Bangumi 校验令牌失败: $x',
+            );
             return _exitUnavailable;
           }
         }
@@ -118,23 +134,37 @@ tracking sync [--force] [--json] | tracking status [--json]
             'unlinked': s.unlinked.length,
             'failures': <Object?>[
               for (final MediaTrackingFailure f in s.failures)
-                <String, Object?>{'title': f.mediaTitle, 'subjectId': f.subjectId, 'error': f.error},
+                <String, Object?>{
+                  'title': f.mediaTitle,
+                  'subjectId': f.subjectId,
+                  'error': f.error,
+                },
             ],
           };
           if (sub['json'] as bool) {
             o.writeln(const JsonEncoder.withIndent('  ').convert(status));
           } else {
-            o.writeln(s.configured ? '账号: ${s.accountName.isEmpty ? '（已配置）' : s.accountName}' : '未配置 Bangumi 令牌');
-            o.writeln('待发送: ${s.pending}  已关联: ${s.mappings.length}  未关联: ${s.unlinked.length}');
+            o.writeln(
+              s.configured
+                  ? '账号: ${s.accountName.isEmpty ? '（已配置）' : s.accountName}'
+                  : '未配置 Bangumi 令牌',
+            );
+            o.writeln(
+              '待发送: ${s.pending}  已关联: ${s.mappings.length}  未关联: ${s.unlinked.length}',
+            );
           }
           return _exitOk;
         }
         if (!service.isConfigured) {
-          e.writeln('没有 Bangumi 令牌：设置环境变量 $kBangumiTokenEnv（在 ${BangumiApiClient.accessTokenUrl} 生成）');
+          e.writeln(
+            '没有 Bangumi 令牌：设置环境变量 $kBangumiTokenEnv（在 ${BangumiApiClient.accessTokenUrl} 生成）',
+          );
           return _exitUnavailable;
         }
         e.writeln('同步 Bangumi …');
-        final MediaTrackingSyncResult r = await service.syncNow(force: sub['force'] as bool);
+        final MediaTrackingSyncResult r = await service.syncNow(
+          force: sub['force'] as bool,
+        );
         final Map<String, Object?> report = <String, Object?>{
           'succeeded': r.succeeded,
           'failed': r.failed,
@@ -144,7 +174,9 @@ tracking sync [--force] [--json] | tracking status [--json]
         if (sub['json'] as bool) {
           o.writeln(jsonEncode(report));
         } else {
-          o.writeln('成功 ${r.succeeded}  失败 ${r.failed}  仍待发 ${r.pending}${r.unauthorized ? '  （令牌被拒）' : ''}');
+          o.writeln(
+            '成功 ${r.succeeded}  失败 ${r.failed}  仍待发 ${r.pending}${r.unauthorized ? '  （令牌被拒）' : ''}',
+          );
         }
         return trackingSyncExitCode(r);
       } finally {

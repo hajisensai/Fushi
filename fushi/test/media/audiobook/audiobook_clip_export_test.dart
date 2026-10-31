@@ -11,17 +11,16 @@ void main() {
       endMs: 4000,
     );
 
-    test('empty selection (incl. pure-gaiji → empty text) → emptySelection',
-        () {
+    test('empty selection (incl. pure-gaiji → empty text) → emptySelection', () {
       // Pure-gaiji selections come through with empty text (JS strips gaiji
       // images), so the same branch covers both "no selection" and "gaiji only".
       for (final String text in <String>['', '   ', '\n\t']) {
         final AudiobookClipBoundaryResult result =
             classifyAudiobookClipSelection(
-          selectedText: text,
-          audioFileCount: 2,
-          sentenceRange: validRange,
-        );
+              selectedText: text,
+              audioFileCount: 2,
+              sentenceRange: validRange,
+            );
         expect(result.kind, AudiobookClipBoundaryKind.emptySelection);
         expect(result.isExportable, isFalse);
         expect(result.range, isNull);

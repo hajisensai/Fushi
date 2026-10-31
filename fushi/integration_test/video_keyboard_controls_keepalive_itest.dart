@@ -79,19 +79,30 @@ void main() {
         final VideoBookRepository repo = VideoBookRepository(appModel.database);
 
         final File fixture = File(_kVideoFixture);
-        expect(fixture.existsSync(), isTrue,
-            reason: '测试视频 $_kVideoFixture 应存在');
-        await repo.saveVideoBook(VideoBooksCompanion(
-          bookUid: const Value(_kVideoBookUid),
-          title: const Value('keepalive itest'),
-          videoPath: Value(fixture.absolute.path),
-        ));
+        expect(
+          fixture.existsSync(),
+          isTrue,
+          reason: '测试视频 $_kVideoFixture 应存在',
+        );
+        await repo.saveVideoBook(
+          VideoBooksCompanion(
+            bookUid: const Value(_kVideoBookUid),
+            title: const Value('keepalive itest'),
+            videoPath: Value(fixture.absolute.path),
+          ),
+        );
 
-        final NavigatorState navigator =
-            tester.state<NavigatorState>(find.byType(Navigator).first);
-        unawaited(navigator.push<void>(MaterialPageRoute<void>(
-          builder: (_) => VideoFushiPage(bookUid: _kVideoBookUid, repo: repo),
-        )));
+        final NavigatorState navigator = tester.state<NavigatorState>(
+          find.byType(Navigator).first,
+        );
+        unawaited(
+          navigator.push<void>(
+            MaterialPageRoute<void>(
+              builder: (_) =>
+                  VideoFushiPage(bookUid: _kVideoBookUid, repo: repo),
+            ),
+          ),
+        );
 
         VideoFushiTestHooks hooks() =>
             tester.state<State<VideoFushiPage>>(find.byType(VideoFushiPage))
@@ -127,14 +138,17 @@ void main() {
         // 过渡，一次 requestFocus + 200ms 抢不稳，故轮询重试；**不**在这里硬断言
         // hasFocus——快捷键挂在页面外层 Shortcuts 上，焦点落在页面任一后代都能命中，
         // 「按键到底生没生效」由下面的播放位置断言判定，那才是被测的东西。
-        final FocusNode videoNode =
-            tester.widget<Video>(find.byType(Video)).focusNode!;
+        final FocusNode videoNode = tester
+            .widget<Video>(find.byType(Video))
+            .focusNode!;
         for (int i = 0; i < 20 && !videoNode.hasFocus; i++) {
           videoNode.requestFocus();
           await tester.pump(const Duration(milliseconds: 150));
         }
-        debugPrint('[keepalive] videoNode.hasFocus=${videoNode.hasFocus} '
-            'primaryFocus=${FocusManager.instance.primaryFocus?.debugLabel}');
+        debugPrint(
+          '[keepalive] videoNode.hasFocus=${videoNode.hasFocus} '
+          'primaryFocus=${FocusManager.instance.primaryFocus?.debugLabel}',
+        );
 
         Future<void> pressCtrlRight() async {
           await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
@@ -150,12 +164,20 @@ void main() {
           await tester.pump(const Duration(milliseconds: 250));
           if (!hooks().debugControlsVisible) break;
         }
-        debugPrint('[keepalive] pre: visible=${hooks().debugControlsVisible} '
-            'opacity=${controlsOpacity()}');
-        expect(hooks().debugControlsVisible, isFalse,
-            reason: '前置条件：本步开始时控制条应已隐藏');
-        expect(controlsOpacity(), 0.0,
-            reason: '前置条件：控制条自身的透明度也应为 0（两个真相源必须一致）');
+        debugPrint(
+          '[keepalive] pre: visible=${hooks().debugControlsVisible} '
+          'opacity=${controlsOpacity()}',
+        );
+        expect(
+          hooks().debugControlsVisible,
+          isFalse,
+          reason: '前置条件：本步开始时控制条应已隐藏',
+        );
+        expect(
+          controlsOpacity(),
+          0.0,
+          reason: '前置条件：控制条自身的透明度也应为 0（两个真相源必须一致）',
+        );
 
         final int? posBefore = hooks().debugPositionMs;
         debugPrint('[keepalive] pos before Ctrl+Right: $posBefore');
@@ -164,30 +186,39 @@ void main() {
           await tester.pump(const Duration(milliseconds: 200));
         }
         final int? posAfter = hooks().debugPositionMs;
-        debugPrint('[keepalive] pos after Ctrl+Right: $posAfter '
-            'controlsVisible=${hooks().debugControlsVisible}');
+        debugPrint(
+          '[keepalive] pos after Ctrl+Right: $posAfter '
+          'controlsVisible=${hooks().debugControlsVisible}',
+        );
 
         // 正向证据：快捷键真的执行了（有字幕跳下一句、无字幕退化前进 seekSeconds 秒），
         // 否则「控制条没弹出来」可能只是因为按键压根没生效。
         expect(posAfter, isNotNull);
-        expect(posAfter != posBefore, isTrue,
-            reason: 'Ctrl+→ 应真的改变播放位置（否则下面的断言是假绿）');
+        expect(
+          posAfter != posBefore,
+          isTrue,
+          reason: 'Ctrl+→ 应真的改变播放位置（否则下面的断言是假绿）',
+        );
         // 本 bug 的断言：隐藏的控制条不得被键盘唤起。两个真相源一起断，
         // 单靠 notifier 万一没接上就是假绿。
-        expect(hooks().debugControlsVisible, isFalse,
-            reason: 'BUG-2030：键盘跳句不得把隐藏的控制条(OSC)弹出来');
-        expect(controlsOpacity(), 0.0,
-            reason: 'BUG-2030：控制条自身也必须仍然全透明（没被唤起）');
+        expect(
+          hooks().debugControlsVisible,
+          isFalse,
+          reason: 'BUG-2030：键盘跳句不得把隐藏的控制条(OSC)弹出来',
+        );
+        expect(controlsOpacity(), 0.0, reason: 'BUG-2030：控制条自身也必须仍然全透明（没被唤起）');
 
         // ── ② 可见态：连按跳句必须续命（BUG-176 ②/BUG-215 不回归）──────────
         // 真实鼠标 hover 唤起控制条（走 media_kit 自己的 MouseRegion）。必须用
         // `createGesture(kind: mouse)` + `addPointer` 让 MouseTracker 真正登记这个
         // 设备——裸 `handlePointerEvent(PointerHoverEvent)` 在测试环境里不会让
         // MouseRegion 收到 enter/hover（设备从未 added，实测第一版就卡在这里）。
-        final RenderBox videoBox =
-            tester.renderObject<RenderBox>(find.byType(Video));
-        final Offset center =
-            videoBox.localToGlobal(videoBox.size.center(Offset.zero));
+        final RenderBox videoBox = tester.renderObject<RenderBox>(
+          find.byType(Video),
+        );
+        final Offset center = videoBox.localToGlobal(
+          videoBox.size.center(Offset.zero),
+        );
         final TestGesture mouse = await tester.createGesture(
           kind: PointerDeviceKind.mouse,
           pointer: _kRealMouseDevice,
@@ -203,12 +234,18 @@ void main() {
           await tester.pump(const Duration(milliseconds: 100));
           woke = hooks().debugControlsVisible;
         }
-        debugPrint('[keepalive] after hover: visible=$woke '
-            'opacity=${controlsOpacity()}');
-        expect(woke, isTrue,
-            reason: '真实鼠标 hover 应能唤起控制条（唤起权仍在指针通道）；'
-                '这条同时证明 debugControlsVisible 真的跟着 fork 的 visible 走，'
-                '上面那条「没被唤起」不是初值假绿');
+        debugPrint(
+          '[keepalive] after hover: visible=$woke '
+          'opacity=${controlsOpacity()}',
+        );
+        expect(
+          woke,
+          isTrue,
+          reason:
+              '真实鼠标 hover 应能唤起控制条（唤起权仍在指针通道）；'
+              '这条同时证明 debugControlsVisible 真的跟着 fork 的 visible 走，'
+              '上面那条「没被唤起」不是初值假绿',
+        );
 
         // 可见态下按跳句：控制条**不得**被键盘操作反手收起（可见性只归 media_kit
         // 的隐藏 Timer 管，键盘既不唤起也不收起）。
@@ -217,14 +254,22 @@ void main() {
         for (int i = 0; i < 2; i++) {
           await tester.pump(const Duration(milliseconds: 200));
         }
-        debugPrint('[keepalive] visible-state skip: '
-            'pos $visiblePosBefore -> ${hooks().debugPositionMs} '
-            'visible=${hooks().debugControlsVisible} '
-            'opacity=${controlsOpacity()}');
-        expect(hooks().debugPositionMs != visiblePosBefore, isTrue,
-            reason: '可见态下 Ctrl+→ 也应真的跳句');
-        expect(hooks().debugControlsVisible, isTrue,
-            reason: '键盘跳句不得反手把正在显示的控制条收起来');
+        debugPrint(
+          '[keepalive] visible-state skip: '
+          'pos $visiblePosBefore -> ${hooks().debugPositionMs} '
+          'visible=${hooks().debugControlsVisible} '
+          'opacity=${controlsOpacity()}',
+        );
+        expect(
+          hooks().debugPositionMs != visiblePosBefore,
+          isTrue,
+          reason: '可见态下 Ctrl+→ 也应真的跳句',
+        );
+        expect(
+          hooks().debugControlsVisible,
+          isTrue,
+          reason: '键盘跳句不得反手把正在显示的控制条收起来',
+        );
 
         // 真实 hover 续命：每 <2s 挪一次鼠标，跨过两个 `_videoControlsHoverDuration`
         // (2s) 后控制条仍可见。这条是**对照组**——它证明本测试环境里「hover →
@@ -234,10 +279,15 @@ void main() {
           for (int i = 0; i < 7; i++) {
             await tester.pump(const Duration(milliseconds: 200));
           }
-          debugPrint('[keepalive] hover-keepalive round $round '
-              'visible=${hooks().debugControlsVisible}');
-          expect(hooks().debugControlsVisible, isTrue,
-              reason: '真实 hover 每 <2s 一次应续住控制条（对照组）');
+          debugPrint(
+            '[keepalive] hover-keepalive round $round '
+            'visible=${hooks().debugControlsVisible}',
+          );
+          expect(
+            hooks().debugControlsVisible,
+            isTrue,
+            reason: '真实 hover 每 <2s 一次应续住控制条（对照组）',
+          );
         }
 
         // ── 关于「键盘续命」那一半为什么不在这里断言 ────────────────────────
@@ -254,8 +304,11 @@ void main() {
         // 接线由源码守卫（test/pages/video_controls_poke_guard_test.dart）锁死。
         // 不在这里写一条跑不出真值的断言，也不把它标成已验证。
 
-        expect(errors, isEmpty,
-            reason: errors.map((e) => e.exceptionAsString()).join('\n'));
+        expect(
+          errors,
+          isEmpty,
+          reason: errors.map((e) => e.exceptionAsString()).join('\n'),
+        );
       } finally {
         FlutterError.onError = oldHandler;
         try {
@@ -263,9 +316,9 @@ void main() {
             tester.element(find.byType(MaterialApp).first),
           );
           final FushiDatabase db = container.read(appProvider).database;
-          await (db.delete(db.videoBooks)
-                ..where((VideoBooks t) => t.bookUid.equals(_kVideoBookUid)))
-              .go();
+          await (db.delete(
+            db.videoBooks,
+          )..where((VideoBooks t) => t.bookUid.equals(_kVideoBookUid))).go();
         } catch (_) {}
       }
     },

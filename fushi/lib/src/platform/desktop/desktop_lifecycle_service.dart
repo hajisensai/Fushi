@@ -32,16 +32,18 @@ class DesktopLifecycleService implements PlatformLifecycleService {
       ...restartArgumentsOverride(),
     ];
     if (Platform.isMacOS) {
-      final String appBundle =
-          macOSAppBundlePathForExecutable(Platform.resolvedExecutable);
+      final String appBundle = macOSAppBundlePathForExecutable(
+        Platform.resolvedExecutable,
+      );
       // macOS sandboxed apps must be relaunched as an app bundle through
       // LaunchServices. Starting Contents/MacOS/<exe> directly from the
       // existing app process can crash in libsystem_secinit before Dart starts.
-      await Process.start(
-        '/usr/bin/open',
-        <String>['-n', appBundle, '--args', ...args],
-        mode: ProcessStartMode.detached,
-      );
+      await Process.start('/usr/bin/open', <String>[
+        '-n',
+        appBundle,
+        '--args',
+        ...args,
+      ], mode: ProcessStartMode.detached);
     } else {
       final String executable = Platform.resolvedExecutable;
       // 分离模式：新进程不随当前进程退出而被回收。Process.start 抛错则不退出。

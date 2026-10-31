@@ -9,17 +9,17 @@ void main() {
   tearDown(() => db.close());
 
   Future<String> addBook() => db.insertEpubBook(
-        EpubBooksCompanion.insert(
-          bookKey: 'override-book',
-          title: 'Override book',
-          epubPath: '/tmp/override-book',
-          extractDir: '/tmp/override-book',
-          chapterCount: 1,
-          chaptersJson: '[]',
-          importedAt: 1,
-          format: Value(BookFormat.manga.dbValue),
-        ),
-      );
+    EpubBooksCompanion.insert(
+      bookKey: 'override-book',
+      title: 'Override book',
+      epubPath: '/tmp/override-book',
+      extractDir: '/tmp/override-book',
+      chapterCount: 1,
+      chaptersJson: '[]',
+      importedAt: 1,
+      format: Value(BookFormat.manga.dbValue),
+    ),
+  );
 
   test('作品覆盖按 uid LWW 保存、读取和 reset tombstone', () async {
     final String bookKey = await addBook();
@@ -28,8 +28,9 @@ void main() {
       'mode': 'longStripGaps',
       'scale': 'fitWidth',
     });
-    final MangaReaderOverrideRow first =
-        (await db.getMangaReaderOverride(book.uid))!;
+    final MangaReaderOverrideRow first = (await db.getMangaReaderOverride(
+      book.uid,
+    ))!;
     expect(first.deleted, isFalse);
     expect(first.overridesJson, contains('longStripGaps'));
 
@@ -42,8 +43,10 @@ void main() {
       ),
       isFalse,
     );
-    expect((await db.getMangaReaderOverride(book.uid))!.overridesJson,
-        contains('longStripGaps'));
+    expect(
+      (await db.getMangaReaderOverride(book.uid))!.overridesJson,
+      contains('longStripGaps'),
+    );
 
     expect(
       await db.mergeMangaReaderOverride(
@@ -54,8 +57,9 @@ void main() {
       ),
       isTrue,
     );
-    final MangaReaderOverrideRow reset =
-        (await db.getMangaReaderOverride(book.uid))!;
+    final MangaReaderOverrideRow reset = (await db.getMangaReaderOverride(
+      book.uid,
+    ))!;
     expect(reset.deleted, isTrue);
     expect(reset.overridesJson, '{}');
   });

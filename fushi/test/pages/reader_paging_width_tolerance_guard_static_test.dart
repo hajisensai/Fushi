@@ -29,34 +29,42 @@ void main() {
     expect(
       syncPageSizeBody().contains('w != _lastSyncedWidth'),
       isFalse,
-      reason: '_syncPageSize 不得用零容差精确不等 `w != _lastSyncedWidth` 判宽变 —— '
+      reason:
+          '_syncPageSize 不得用零容差精确不等 `w != _lastSyncedWidth` 判宽变 —— '
           'Windows sub-pixel 宽抖动会误触发整章重载，把翻页弹回章节开头（BUG-210）。',
     );
   });
 
-  test('_syncPageSize routes width/height change through the tolerant helper',
-      () {
-    expect(
-      syncPageSizeBody().contains('readerViewportNeedsRepaginate('),
-      isTrue,
-      reason: '_syncPageSize 必须用 readerViewportNeedsRepaginate（宽高共用 1px 容差）'
-          '判定视口变化。',
-    );
-  });
+  test(
+    '_syncPageSize routes width/height change through the tolerant helper',
+    () {
+      expect(
+        syncPageSizeBody().contains('readerViewportNeedsRepaginate('),
+        isTrue,
+        reason:
+            '_syncPageSize 必须用 readerViewportNeedsRepaginate（宽高共用 1px 容差）'
+            '判定视口变化。',
+      );
+    },
+  );
 
-  test('the tolerant helper applies the same tolerance to width and height',
-      () {
-    // 宽、高都必须用 abs() >= tolerancePx，杜绝任一维度退回精确不等。
-    // 直接全文匹配（两个表达式在文件里唯一），不再脆弱地按括号切片函数体。
-    expect(
-      RegExp(r'\(width - lastWidth\)\.abs\(\) >= tolerancePx').hasMatch(src),
-      isTrue,
-      reason: '宽度必须用 1px 容差。',
-    );
-    expect(
-      RegExp(r'\(height - lastHeight\)\.abs\(\) >= tolerancePx').hasMatch(src),
-      isTrue,
-      reason: '高度必须用同一 1px 容差（对称，消除特例）。',
-    );
-  });
+  test(
+    'the tolerant helper applies the same tolerance to width and height',
+    () {
+      // 宽、高都必须用 abs() >= tolerancePx，杜绝任一维度退回精确不等。
+      // 直接全文匹配（两个表达式在文件里唯一），不再脆弱地按括号切片函数体。
+      expect(
+        RegExp(r'\(width - lastWidth\)\.abs\(\) >= tolerancePx').hasMatch(src),
+        isTrue,
+        reason: '宽度必须用 1px 容差。',
+      );
+      expect(
+        RegExp(
+          r'\(height - lastHeight\)\.abs\(\) >= tolerancePx',
+        ).hasMatch(src),
+        isTrue,
+        reason: '高度必须用同一 1px 容差（对称，消除特例）。',
+      );
+    },
+  );
 }

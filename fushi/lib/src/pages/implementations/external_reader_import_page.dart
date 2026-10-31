@@ -60,7 +60,9 @@ Future<Map<String, Object?>> runExternalReaderImportFromCli(
       registry ?? SettingsCliTaskRegistry.instance;
   if (!File(path).existsSync()) throw ArgumentError('文件不存在：$path');
   if (!dryRun) {
-    final SettingsCliTask? active = tasks.activeOf(kExternalReaderImportTaskKind);
+    final SettingsCliTask? active = tasks.activeOf(
+      kExternalReaderImportTaskKind,
+    );
     if (active != null) {
       throw StateError('已有 Hoshi 备份导入在进行（任务 ${active.id}）');
     }

@@ -52,7 +52,7 @@ Future<T> runWithTransportRetry<T>(
       sleep ?? (Duration d) => Future<void>.delayed(d);
   final bool Function() giveUp = shouldGiveUp ?? () => false;
 
-  for (int attempt = 1;; attempt++) {
+  for (int attempt = 1; ; attempt++) {
     try {
       return await send();
     } catch (error, stack) {

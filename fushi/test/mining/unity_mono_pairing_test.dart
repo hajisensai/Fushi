@@ -28,10 +28,9 @@ void main() {
       expect(config['selected_thread'], 5);
 
       final List<dynamic> events = data['events'] as List<dynamic>;
-      Map<String, dynamic> eventById(String id) =>
-          events.cast<Map<String, dynamic>>().firstWhere(
-            (Map<String, dynamic> e) => e['id'] == id,
-          );
+      Map<String, dynamic> eventById(String id) => events
+          .cast<Map<String, dynamic>>()
+          .firstWhere((Map<String, dynamic> e) => e['id'] == id);
 
       // 「PCM 胜过 loopback」必须是**优先级**判出来的，不能是时间差碰巧判出来的。
       // `replay_trace` 的候选排序键是 (优先级, 时间差)，所以 fixture 必须把

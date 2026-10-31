@@ -22,8 +22,10 @@ void main() {
     });
 
     test('displayTitle 优先级 romaji→english→native→id', () {
-      expect(const AniListMedia(id: 5, english: 'E', native: 'N').displayTitle,
-          'E');
+      expect(
+        const AniListMedia(id: 5, english: 'E', native: 'N').displayTitle,
+        'E',
+      );
       expect(const AniListMedia(id: 5, native: 'N').displayTitle, 'N');
       expect(const AniListMedia(id: 5).displayTitle, 'AniList #5');
     });
@@ -31,8 +33,10 @@ void main() {
     test('结构不符 / 非法 JSON → 空', () {
       expect(parseAniListSearchResponse('not json'), isEmpty);
       expect(parseAniListSearchResponse('{"data":null}'), isEmpty);
-      expect(parseAniListSearchResponse('{"data":{"Page":{"media":"x"}}}'),
-          isEmpty);
+      expect(
+        parseAniListSearchResponse('{"data":{"Page":{"media":"x"}}}'),
+        isEmpty,
+      );
     });
   });
 
@@ -85,15 +89,14 @@ void main() {
     });
 
     test('BUG-1235 inventory 只统计可解析字幕，并汇总集数、语言与未标集号文件', () {
-      final JimakuFileInventory inventory = JimakuFileInventory.fromFiles(
-        const <JimakuFile>[
-          JimakuFile(name: 'Show S01E01.ja.srt', url: 'u1'),
-          JimakuFile(name: 'Show S01E01.zh-cn.ass', url: 'u2'),
-          JimakuFile(name: 'Show S01E02.vtt', url: 'u3'),
-          JimakuFile(name: 'Show extra.ja.srt', url: 'u4'),
-          JimakuFile(name: 'Show S01E03.zip', url: 'u5'),
-        ],
-      );
+      final JimakuFileInventory inventory =
+          JimakuFileInventory.fromFiles(const <JimakuFile>[
+            JimakuFile(name: 'Show S01E01.ja.srt', url: 'u1'),
+            JimakuFile(name: 'Show S01E01.zh-cn.ass', url: 'u2'),
+            JimakuFile(name: 'Show S01E02.vtt', url: 'u3'),
+            JimakuFile(name: 'Show extra.ja.srt', url: 'u4'),
+            JimakuFile(name: 'Show S01E03.zip', url: 'u5'),
+          ]);
 
       expect(inventory.files, hasLength(4));
       expect(inventory.episodes, <int>{1, 2});
@@ -154,8 +157,11 @@ void main() {
     });
 
     test('有 episode → 拼 episode=<n>', () {
-      final Uri uri =
-          buildListFilesUri('https://jimaku.cc/api', 42, episode: 7);
+      final Uri uri = buildListFilesUri(
+        'https://jimaku.cc/api',
+        42,
+        episode: 7,
+      );
       expect(uri.queryParameters['episode'], '7');
       expect(uri.path, '/api/entries/42/files');
     });
@@ -180,8 +186,10 @@ void main() {
     });
 
     test('JimakuFile.episode 派生自文件名', () {
-      const JimakuFile f =
-          JimakuFile(name: 'Bocchi - 07.ja.srt', url: 'https://x/7');
+      const JimakuFile f = JimakuFile(
+        name: 'Bocchi - 07.ja.srt',
+        url: 'https://x/7',
+      );
       expect(f.episode, 7);
     });
   });
@@ -196,7 +204,9 @@ void main() {
           // 用 utf8 字节构造（贴合线上：body 是服务器 utf8 原始字节，
           // 而 http.Response 的 String 构造无 charset 时按 latin1 编码会毁日文）。
           return http.Response.bytes(
-              utf8.encode('[{"id":10,"name":"命中"}]'), 200);
+            utf8.encode('[{"id":10,"name":"命中"}]'),
+            200,
+          );
         }
         calls.add('query:${p['query']}');
         return http.Response('[]', 200);
@@ -222,7 +232,9 @@ void main() {
         calls.add('query:${p['query']}');
         if (p['query'] == 'とむとじぇりーごっこ') {
           return http.Response.bytes(
-              utf8.encode('[{"id":7,"name":"字幕在此"}]'), 200);
+            utf8.encode('[{"id":7,"name":"字幕在此"}]'),
+            200,
+          );
         }
         return http.Response('[]', 200);
       });
@@ -237,8 +249,11 @@ void main() {
       expect(entries, hasLength(1));
       expect(entries.first.name, '字幕在此');
       // 空串被跳过；命中后不再尝试后续（此处第 3 个即命中，无第 4 个）。
-      expect(
-          calls, <String>['id', 'query:Tom Jerry romaji', 'query:とむとじぇりーごっこ']);
+      expect(calls, <String>[
+        'id',
+        'query:Tom Jerry romaji',
+        'query:とむとじぇりーごっこ',
+      ]);
     });
 
     group('BUG-1694 anime 硬过滤', () {
@@ -283,12 +298,15 @@ void main() {
     });
 
     test('anilist_id 与全部文本都空 → 空', () async {
-      final MockClient client =
-          MockClient((http.Request req) async => http.Response('[]', 200));
+      final MockClient client = MockClient(
+        (http.Request req) async => http.Response('[]', 200),
+      );
       final JimakuClient jc = JimakuClient(apiKey: 'k', client: client);
       expect(
-        await jc
-            .searchEntries(anilistId: 1, queryFallbacks: <String>['a', 'b']),
+        await jc.searchEntries(
+          anilistId: 1,
+          queryFallbacks: <String>['a', 'b'],
+        ),
         isEmpty,
       );
     });
@@ -301,8 +319,9 @@ void main() {
         return http.Response('[]', 200);
       });
       final JimakuClient jc = JimakuClient(apiKey: 'k', client: client);
-      final List<JimakuEntry> entries =
-          await jc.searchEntries(queryFallbacks: <String>['x']);
+      final List<JimakuEntry> entries = await jc.searchEntries(
+        queryFallbacks: <String>['x'],
+      );
       expect(entries.single.name, 'q');
     });
   });
@@ -397,7 +416,9 @@ void main() {
         if (p.containsKey('tmdb_id')) {
           calls.add('tmdb:${p['tmdb_id']}');
           return http.Response.bytes(
-              utf8.encode('[{"id":4,"name":"最愛"}]'), 200);
+            utf8.encode('[{"id":4,"name":"最愛"}]'),
+            200,
+          );
         }
         calls.add('query:${p['query']}');
         return http.Response('[]', 200);
@@ -446,7 +467,10 @@ void main() {
         jc.listFiles(42, throwOnError: true),
         throwsA(
           isA<JimakuRequestException>().having(
-              (JimakuRequestException e) => e.statusCode, 'status', 503),
+            (JimakuRequestException e) => e.statusCode,
+            'status',
+            503,
+          ),
         ),
       );
     });
@@ -481,10 +505,7 @@ void main() {
         ),
       );
       addTearDown(validEmpty.close);
-      expect(
-        await validEmpty.listFiles(42, throwOnError: true),
-        isEmpty,
-      );
+      expect(await validEmpty.listFiles(42, throwOnError: true), isEmpty);
     });
 
     test('strict 模式拒绝缺 name/url 的数组元素，默认模式仍跳过', () async {

@@ -21,11 +21,7 @@ void main() {
 
   setUpAll(() {
     final File file = File('lib/src/lookup/gal_attached_text_controller.dart');
-    expect(
-      file.existsSync(),
-      isTrue,
-      reason: 'attached 控制器源文件不在预期路径，守卫失效',
-    );
+    expect(file.existsSync(), isTrue, reason: 'attached 控制器源文件不在预期路径，守卫失效');
     source = file.readAsStringSync();
   });
 

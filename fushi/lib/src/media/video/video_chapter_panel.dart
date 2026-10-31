@@ -170,8 +170,9 @@ class _VideoChapterPanelState extends State<VideoChapterPanel> {
               fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
             ),
           ),
-          trailing:
-              selected ? FushiIcon(Icons.play_arrow, color: selectedFg) : null,
+          trailing: selected
+              ? FushiIcon(Icons.play_arrow, color: selectedFg)
+              : null,
           onTap: () => widget.onTapChapter(chapter),
         );
       },

@@ -31,20 +31,23 @@ void main() {
 
     final String dbPath = '${dir.path}/audio.db';
     final Database db = sqlite3.open(dbPath);
-    db.execute('CREATE TABLE entries '
-        '(expression TEXT, reading TEXT, file TEXT, source TEXT)');
+    db.execute(
+      'CREATE TABLE entries '
+      '(expression TEXT, reading TEXT, file TEXT, source TEXT)',
+    );
     db.execute('CREATE TABLE android (file TEXT, source TEXT, data BLOB)');
-    final PreparedStatement stmt =
-        db.prepare('INSERT INTO android (file, source, data) VALUES (?,?,?)');
+    final PreparedStatement stmt = db.prepare(
+      'INSERT INTO android (file, source, data) VALUES (?,?,?)',
+    );
     stmt.execute(<Object?>[
       fileA,
       source,
-      Uint8List.fromList(<int>[1, 1, 1])
+      Uint8List.fromList(<int>[1, 1, 1]),
     ]);
     stmt.execute(<Object?>[
       fileB,
       source,
-      Uint8List.fromList(<int>[2, 2, 2])
+      Uint8List.fromList(<int>[2, 2, 2]),
     ]);
     stmt.dispose();
     db.dispose();
@@ -66,8 +69,11 @@ void main() {
     expect(second, isNotNull);
     expect(first, isNot(second), reason: '旧弱口径下两键碰撞 → 同一路径；强口径必须区分');
     expect(File(first!).readAsBytesSync(), <int>[1, 1, 1]);
-    expect(File(second!).readAsBytesSync(), <int>[2, 2, 2],
-        reason: '旧实现里第二个词条会因缓存早退拿到第一个词条的音频字节');
+    expect(File(second!).readAsBytesSync(), <int>[
+      2,
+      2,
+      2,
+    ], reason: '旧实现里第二个词条会因缓存早退拿到第一个词条的音频字节');
   });
 
   test('旧弱键 CJK 缓存文件被惰性 rename 到新键名（源库已移除也能复用）', () {

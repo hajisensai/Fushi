@@ -19,11 +19,14 @@ void main() {
       );
 
       // Spot-check a known reader default: readerOpenMenu binds T.
-      final ShortcutBindingSet openMenu =
-          registry.bindingsFor(ShortcutAction.readerOpenMenu);
-      expect(openMenu.keyboardBindings, isNotEmpty,
-          reason:
-              'precondition: readerOpenMenu has a default keyboard binding');
+      final ShortcutBindingSet openMenu = registry.bindingsFor(
+        ShortcutAction.readerOpenMenu,
+      );
+      expect(
+        openMenu.keyboardBindings,
+        isNotEmpty,
+        reason: 'precondition: readerOpenMenu has a default keyboard binding',
+      );
       final LogicalKeyboardKey boundKey = openMenu.keyboardBindings.first.key;
 
       expect(index.isKeyboardBound(boundKey), isTrue);
@@ -51,12 +54,15 @@ void main() {
       );
       // audiobook is co-active with reader; its play/pause keyboard default
       // must surface in the reader-view reverse index.
-      final ShortcutBindingSet play =
-          registry.bindingsFor(ShortcutAction.audiobookPlayPause);
+      final ShortcutBindingSet play = registry.bindingsFor(
+        ShortcutAction.audiobookPlayPause,
+      );
       for (final InputBinding kb in play.keyboardBindings) {
-        expect(index.actionsForKey(kb.key),
-            contains(ShortcutAction.audiobookPlayPause),
-            reason: 'co-active audiobook keyboard binding must appear');
+        expect(
+          index.actionsForKey(kb.key),
+          contains(ShortcutAction.audiobookPlayPause),
+          reason: 'co-active audiobook keyboard binding must appear',
+        );
       }
     });
 
@@ -65,8 +71,9 @@ void main() {
       // Find any action with a gamepad default and assert the reverse mapping.
       GamepadButton? sample;
       ShortcutAction? owner;
-      for (final ShortcutAction action
-          in ShortcutAction.actionsForScope(ShortcutScope.reader)) {
+      for (final ShortcutAction action in ShortcutAction.actionsForScope(
+        ShortcutScope.reader,
+      )) {
         final ShortcutBindingSet set = registry.bindingsFor(action);
         if (set.gamepadBindings.isNotEmpty) {
           sample = set.gamepadBindings.first.button;
@@ -74,10 +81,15 @@ void main() {
           break;
         }
       }
-      expect(sample, isNotNull,
-          reason: 'precondition: a reader action has a gamepad default');
-      final ReverseBindingIndex index =
-          ReverseBindingIndex.fromRegistry(registry, ShortcutScope.reader);
+      expect(
+        sample,
+        isNotNull,
+        reason: 'precondition: a reader action has a gamepad default',
+      );
+      final ReverseBindingIndex index = ReverseBindingIndex.fromRegistry(
+        registry,
+        ShortcutScope.reader,
+      );
       expect(index.isGamepadBound(sample!), isTrue);
       expect(index.actionsForButton(sample), contains(owner));
     });
@@ -93,10 +105,13 @@ void main() {
         ShortcutAction.readerToggleChrome,
         const ShortcutBindingSet(keyboardBindings: <InputBinding>[ctrlG]),
       );
-      final ReverseBindingIndex index =
-          ReverseBindingIndex.fromRegistry(registry, ShortcutScope.reader);
-      final List<InputBinding> bindings =
-          index.keyboardBindingsFor(LogicalKeyboardKey.keyG);
+      final ReverseBindingIndex index = ReverseBindingIndex.fromRegistry(
+        registry,
+        ShortcutScope.reader,
+      );
+      final List<InputBinding> bindings = index.keyboardBindingsFor(
+        LogicalKeyboardKey.keyG,
+      );
       expect(bindings, contains(ctrlG));
       expect(bindings.first.modifiers, contains(ModifierKey.ctrl));
     });
@@ -111,18 +126,25 @@ void main() {
         // Glyph lookups for both brands must not mutate the enum/label.
         GamepadGlyphs.glyphFor(button, GamepadBrand.xbox);
         GamepadGlyphs.glyphFor(button, GamepadBrand.playstation);
-        expect(GamepadBinding(button).serialize(), token,
-            reason: 'serialization for $button must be brand-independent');
+        expect(
+          GamepadBinding(button).serialize(),
+          token,
+          reason: 'serialization for $button must be brand-independent',
+        );
         expect(token, button.label);
       }
     });
 
     test('face buttons differ by brand symbol but share the enum', () {
       // A on Xbox shows "A"; on PlayStation shows the cross glyph. Same enum.
-      final GamepadButtonGlyph xbox =
-          GamepadGlyphs.glyphFor(GamepadButton.a, GamepadBrand.xbox);
-      final GamepadButtonGlyph ps =
-          GamepadGlyphs.glyphFor(GamepadButton.a, GamepadBrand.playstation);
+      final GamepadButtonGlyph xbox = GamepadGlyphs.glyphFor(
+        GamepadButton.a,
+        GamepadBrand.xbox,
+      );
+      final GamepadButtonGlyph ps = GamepadGlyphs.glyphFor(
+        GamepadButton.a,
+        GamepadBrand.playstation,
+      );
       expect(xbox.symbol, 'A');
       expect(ps.symbol, isNot('A'));
       // Both still serialize as "A".
@@ -138,10 +160,14 @@ void main() {
         GamepadButton.start,
         GamepadButton.thumbLeft,
       ]) {
-        final GamepadButtonGlyph xbox =
-            GamepadGlyphs.glyphFor(button, GamepadBrand.xbox);
-        final GamepadButtonGlyph ps =
-            GamepadGlyphs.glyphFor(button, GamepadBrand.playstation);
+        final GamepadButtonGlyph xbox = GamepadGlyphs.glyphFor(
+          button,
+          GamepadBrand.xbox,
+        );
+        final GamepadButtonGlyph ps = GamepadGlyphs.glyphFor(
+          button,
+          GamepadBrand.playstation,
+        );
         expect(xbox.symbol, button.label);
         expect(ps.symbol, button.label);
         expect(xbox.accent, isNull);

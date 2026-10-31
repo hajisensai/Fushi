@@ -37,106 +37,97 @@ void main() {
     'magenta': const Color(0xFFFF00FF),
   };
 
-  List<(String, Color, Color, double)> pairs(ColorScheme cs) =>
-      <(String, Color, Color, double)>[
-        ('primary/onPrimary', cs.primary, cs.onPrimary, 4.5),
-        (
-          'primaryContainer/onPrimaryContainer',
-          cs.primaryContainer,
-          cs.onPrimaryContainer,
-          4.5,
-        ),
-        ('secondary/onSecondary', cs.secondary, cs.onSecondary, 4.5),
-        (
-          'secondaryContainer/onSecondaryContainer',
-          cs.secondaryContainer,
-          cs.onSecondaryContainer,
-          4.5,
-        ),
-        ('tertiary/onTertiary', cs.tertiary, cs.onTertiary, 4.5),
-        (
-          'tertiaryContainer/onTertiaryContainer',
-          cs.tertiaryContainer,
-          cs.onTertiaryContainer,
-          4.5,
-        ),
-        ('error/onError', cs.error, cs.onError, 4.5),
-        (
-          'errorContainer/onErrorContainer',
-          cs.errorContainer,
-          cs.onErrorContainer,
-          4.5,
-        ),
-        ('surface/onSurface', cs.surface, cs.onSurface, 4.5),
-        ('surface/onSurfaceVariant', cs.surface, cs.onSurfaceVariant, 4.5),
-        (
-          'surfaceContainerLowest/onSurface',
-          cs.surfaceContainerLowest,
-          cs.onSurface,
-          4.5,
-        ),
-        (
-          'surfaceContainerLow/onSurface',
-          cs.surfaceContainerLow,
-          cs.onSurface,
-          4.5,
-        ),
-        (
-          'surfaceContainer/onSurface',
-          cs.surfaceContainer,
-          cs.onSurface,
-          4.5,
-        ),
-        (
-          'surfaceContainerHigh/onSurface',
-          cs.surfaceContainerHigh,
-          cs.onSurface,
-          4.5,
-        ),
-        (
-          'surfaceContainerHighest/onSurface',
-          cs.surfaceContainerHighest,
-          cs.onSurface,
-          4.5,
-        ),
-        (
-          'surfaceContainerHighest/onSurfaceVariant',
-          cs.surfaceContainerHighest,
-          cs.onSurfaceVariant,
-          4.5,
-        ),
-        (
-          'inverseSurface/onInverseSurface',
-          cs.inverseSurface,
-          cs.onInverseSurface,
-          4.5,
-        ),
-        (
-          'primaryFixed/onPrimaryFixed',
-          cs.primaryFixed,
-          cs.onPrimaryFixed,
-          4.5,
-        ),
-        (
-          'primaryFixedDim/onPrimaryFixed',
-          cs.primaryFixedDim,
-          cs.onPrimaryFixed,
-          4.5,
-        ),
-        (
-          'secondaryFixed/onSecondaryFixed',
-          cs.secondaryFixed,
-          cs.onSecondaryFixed,
-          4.5,
-        ),
-        (
-          'tertiaryFixed/onTertiaryFixed',
-          cs.tertiaryFixed,
-          cs.onTertiaryFixed,
-          4.5,
-        ),
-        ('surface/primary (UI 组件)', cs.surface, cs.primary, 3),
-      ];
+  List<(String, Color, Color, double)> pairs(
+    ColorScheme cs,
+  ) => <(String, Color, Color, double)>[
+    ('primary/onPrimary', cs.primary, cs.onPrimary, 4.5),
+    (
+      'primaryContainer/onPrimaryContainer',
+      cs.primaryContainer,
+      cs.onPrimaryContainer,
+      4.5,
+    ),
+    ('secondary/onSecondary', cs.secondary, cs.onSecondary, 4.5),
+    (
+      'secondaryContainer/onSecondaryContainer',
+      cs.secondaryContainer,
+      cs.onSecondaryContainer,
+      4.5,
+    ),
+    ('tertiary/onTertiary', cs.tertiary, cs.onTertiary, 4.5),
+    (
+      'tertiaryContainer/onTertiaryContainer',
+      cs.tertiaryContainer,
+      cs.onTertiaryContainer,
+      4.5,
+    ),
+    ('error/onError', cs.error, cs.onError, 4.5),
+    (
+      'errorContainer/onErrorContainer',
+      cs.errorContainer,
+      cs.onErrorContainer,
+      4.5,
+    ),
+    ('surface/onSurface', cs.surface, cs.onSurface, 4.5),
+    ('surface/onSurfaceVariant', cs.surface, cs.onSurfaceVariant, 4.5),
+    (
+      'surfaceContainerLowest/onSurface',
+      cs.surfaceContainerLowest,
+      cs.onSurface,
+      4.5,
+    ),
+    (
+      'surfaceContainerLow/onSurface',
+      cs.surfaceContainerLow,
+      cs.onSurface,
+      4.5,
+    ),
+    ('surfaceContainer/onSurface', cs.surfaceContainer, cs.onSurface, 4.5),
+    (
+      'surfaceContainerHigh/onSurface',
+      cs.surfaceContainerHigh,
+      cs.onSurface,
+      4.5,
+    ),
+    (
+      'surfaceContainerHighest/onSurface',
+      cs.surfaceContainerHighest,
+      cs.onSurface,
+      4.5,
+    ),
+    (
+      'surfaceContainerHighest/onSurfaceVariant',
+      cs.surfaceContainerHighest,
+      cs.onSurfaceVariant,
+      4.5,
+    ),
+    (
+      'inverseSurface/onInverseSurface',
+      cs.inverseSurface,
+      cs.onInverseSurface,
+      4.5,
+    ),
+    ('primaryFixed/onPrimaryFixed', cs.primaryFixed, cs.onPrimaryFixed, 4.5),
+    (
+      'primaryFixedDim/onPrimaryFixed',
+      cs.primaryFixedDim,
+      cs.onPrimaryFixed,
+      4.5,
+    ),
+    (
+      'secondaryFixed/onSecondaryFixed',
+      cs.secondaryFixed,
+      cs.onSecondaryFixed,
+      4.5,
+    ),
+    (
+      'tertiaryFixed/onTertiaryFixed',
+      cs.tertiaryFixed,
+      cs.onTertiaryFixed,
+      4.5,
+    ),
+    ('surface/primary (UI 组件)', cs.surface, cs.primary, 3),
+  ];
 
   for (final MapEntry<String, Color> seed in seeds.entries) {
     for (final Brightness b in Brightness.values) {
@@ -231,7 +222,11 @@ void main() {
           brightness: b,
           dynamicSchemeVariant: DynamicSchemeVariant.tonalSpot,
         );
-        expect(vibrantDefault.primary, tonal.primary, reason: '$seed ${b.name}');
+        expect(
+          vibrantDefault.primary,
+          tonal.primary,
+          reason: '$seed ${b.name}',
+        );
       }
     }
   });

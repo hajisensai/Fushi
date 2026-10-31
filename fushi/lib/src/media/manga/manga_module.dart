@@ -30,14 +30,13 @@ abstract final class MangaModule {
     String? title,
     DuplicatePolicy policy = const DuplicatePolicy.suffix(),
     void Function(int done, int total)? onProgress,
-  }) =>
-      MangaImporter.importFromMokuroPath(
-        db: db,
-        mokuroPath: path,
-        title: title,
-        policy: policy,
-        onProgress: onProgress,
-      );
+  }) => MangaImporter.importFromMokuroPath(
+    db: db,
+    mokuroPath: path,
+    title: title,
+    policy: policy,
+    onProgress: onProgress,
+  );
 
   static bool isImageArchive(String path) =>
       MangaArchiveImporter.looksLikeImageArchive(path);
@@ -69,24 +68,22 @@ abstract final class MangaModule {
     required FushiDatabase db,
     required String path,
     void Function(int done, int total)? onVolumeProgress,
-  }) =>
-      importMangaBatchFolder(
-        db: db,
-        path: path,
-        onVolumeProgress: onVolumeProgress,
-      );
+  }) => importMangaBatchFolder(
+    db: db,
+    path: path,
+    onVolumeProgress: onVolumeProgress,
+  );
 
   /// 一组同时选中 / 拖入的漫画载体逐卷导入（见 [importMangaBatchPaths]）。
   static Future<MangaBatchImportReport> importBatchPaths({
     required FushiDatabase db,
     required List<String> paths,
     void Function(int done, int total)? onVolumeProgress,
-  }) =>
-      importMangaBatchPaths(
-        db: db,
-        paths: paths,
-        onVolumeProgress: onVolumeProgress,
-      );
+  }) => importMangaBatchPaths(
+    db: db,
+    paths: paths,
+    onVolumeProgress: onVolumeProgress,
+  );
 
   /// 整目录页图导入（拖入一个漫画文件夹的落地路径）。OCR blocks 留空，之后可由
   /// 任一整卷引擎补齐——故 OCR 失败绝不会导致这本书消失。
@@ -96,14 +93,13 @@ abstract final class MangaModule {
     String? title,
     DuplicatePolicy policy = const DuplicatePolicy.suffix(),
     void Function(int done, int total)? onProgress,
-  }) =>
-      MangaImporter.importFromImageFolder(
-        db: db,
-        imageDirPath: path,
-        title: title,
-        policy: policy,
-        onProgress: onProgress,
-      );
+  }) => MangaImporter.importFromImageFolder(
+    db: db,
+    imageDirPath: path,
+    title: title,
+    policy: policy,
+    onProgress: onProgress,
+  );
 
   /// 一份 PDF 直接进漫画库（按 PDF 导入 + 转成漫画，见 [importMangaFromPdf]）。
   /// [onProgress] 的 `(done, total)` 单位是**页**。
@@ -114,16 +110,15 @@ abstract final class MangaModule {
     DuplicatePolicy policy = const DuplicatePolicy.suffix(),
     void Function(int done, int total)? onProgress,
     int? sourceId,
-  }) =>
-      importMangaFromPdf(
-        db: db,
-        pdfPath: path,
-        fileName: p.basename(path),
-        title: title,
-        policy: policy,
-        onProgress: onProgress,
-        sourceId: sourceId,
-      );
+  }) => importMangaFromPdf(
+    db: db,
+    pdfPath: path,
+    fileName: p.basename(path),
+    title: title,
+    policy: policy,
+    onProgress: onProgress,
+    sourceId: sourceId,
+  );
 
   static Future<String> importArchive({
     required FushiDatabase db,
@@ -132,15 +127,14 @@ abstract final class MangaModule {
     DuplicatePolicy policy = const DuplicatePolicy.suffix(),
     void Function(int done, int total)? onProgress,
     int? sourceId,
-  }) =>
-      MangaArchiveImporter.importArchive(
-        db: db,
-        archivePath: path,
-        title: title,
-        policy: policy,
-        onProgress: onProgress,
-        sourceId: sourceId,
-      );
+  }) => MangaArchiveImporter.importArchive(
+    db: db,
+    archivePath: path,
+    title: title,
+    policy: policy,
+    onProgress: onProgress,
+    sourceId: sourceId,
+  );
 
   /// 未入库的裸图片文件夹 → 选引擎 → 整卷 OCR → 落库，返回新建 bookKey。
   ///
@@ -219,9 +213,8 @@ abstract final class MangaModule {
   static Future<void> openOnlineCatalog({
     required BuildContext context,
     required FushiDatabase db,
-  }) =>
-      showAppDialog<void>(
-        context: context,
-        builder: (_) => MokuroMoeCatalogDialog(db: db),
-      );
+  }) => showAppDialog<void>(
+    context: context,
+    builder: (_) => MokuroMoeCatalogDialog(db: db),
+  );
 }

@@ -37,13 +37,18 @@ const String kPlexTokenEnv = 'FUSHI_PLEX_TOKEN';
 
 /// 本机 Plex 账号凭据。
 class PlexAccountCredential {
-  const PlexAccountCredential({required this.clientIdentifier, this.accountToken, this.username});
+  const PlexAccountCredential({
+    required this.clientIdentifier,
+    this.accountToken,
+    this.username,
+  });
 
-  factory PlexAccountCredential.fromJson(Map<String, Object?> j) => PlexAccountCredential(
-    clientIdentifier: j['clientIdentifier']! as String,
-    accountToken: j['accountToken'] as String?,
-    username: j['username'] as String?,
-  );
+  factory PlexAccountCredential.fromJson(Map<String, Object?> j) =>
+      PlexAccountCredential(
+        clientIdentifier: j['clientIdentifier']! as String,
+        accountToken: j['accountToken'] as String?,
+        username: j['username'] as String?,
+      );
 
   final String clientIdentifier;
   final String? accountToken;
@@ -62,8 +67,9 @@ class PlexAccountCredential {
 class PlexCredentialStore {
   PlexCredentialStore(this.file);
 
-  factory PlexCredentialStore.under(Directory support) =>
-      PlexCredentialStore(File(p.join(support.path, 'media_server', 'plex.json')));
+  factory PlexCredentialStore.under(Directory support) => PlexCredentialStore(
+    File(p.join(support.path, 'media_server', 'plex.json')),
+  );
 
   final File file;
 
@@ -77,8 +83,13 @@ class PlexCredentialStore {
       return PlexAccountCredential.fromJson(decoded.cast<String, Object?>());
     }
     final Random rng = Random.secure();
-    final String id = List<String>.generate(16, (_) => rng.nextInt(256).toRadixString(16).padLeft(2, '0')).join();
-    final PlexAccountCredential fresh = PlexAccountCredential(clientIdentifier: 'fushi-server-$id');
+    final String id = List<String>.generate(
+      16,
+      (_) => rng.nextInt(256).toRadixString(16).padLeft(2, '0'),
+    ).join();
+    final PlexAccountCredential fresh = PlexAccountCredential(
+      clientIdentifier: 'fushi-server-$id',
+    );
     await save(fresh);
     return fresh;
   }
@@ -86,9 +97,15 @@ class PlexCredentialStore {
   Future<void> save(PlexAccountCredential credential) async {
     await file.parent.create(recursive: true);
     final File tmp = File('${file.path}.tmp');
-    await tmp.writeAsString(const JsonEncoder.withIndent('  ').convert(credential.toJson()), flush: true);
+    await tmp.writeAsString(
+      const JsonEncoder.withIndent('  ').convert(credential.toJson()),
+      flush: true,
+    );
     if (!Platform.isWindows) {
-      final ProcessResult r = await Process.run('chmod', <String>['600', tmp.path]);
+      final ProcessResult r = await Process.run('chmod', <String>[
+        '600',
+        tmp.path,
+      ]);
       if (r.exitCode != 0) {
         await tmp.delete();
         throw FileSystemException('chmod 600 失败: ${r.stderr}', tmp.path);
@@ -101,10 +118,12 @@ class PlexCredentialStore {
 /// 按 `--server`（名字或 machineIdentifier，大小写不敏感）选账号下的服务器；
 /// 不给时只有一台就用它。选不出返回 null。
 PlexResource? pickPlexServer(List<PlexResource> servers, String? selector) {
-  if (selector == null || selector.isEmpty) return servers.length == 1 ? servers.single : null;
+  if (selector == null || selector.isEmpty)
+    return servers.length == 1 ? servers.single : null;
   final String s = selector.toLowerCase();
   for (final PlexResource r in servers) {
-    if (r.clientIdentifier.toLowerCase() == s || r.name.toLowerCase() == s) return r;
+    if (r.clientIdentifier.toLowerCase() == s || r.name.toLowerCase() == s)
+      return r;
   }
   return null;
 }
@@ -125,7 +144,13 @@ Map<String, Object?> plexMetadataToJson(PlexMetadata m) => <String, Object?>{
 };
 
 class MediaServerModule extends CliModule {
-  const MediaServerModule({this.out, this.err, this.env, this.httpClient, this.delay});
+  const MediaServerModule({
+    this.out,
+    this.err,
+    this.env,
+    this.httpClient,
+    this.delay,
+  });
 
   final StringSink? out;
   final StringSink? err;
@@ -141,10 +166,16 @@ class MediaServerModule extends CliModule {
   @override
   void register(ArgParser parser) {
     final ArgParser plex = parser.addCommand('media-server').addCommand('plex');
-    plex.addCommand('login').addOption('timeout', help: '等待浏览器授权的分钟数', defaultsTo: '10');
+    plex
+        .addCommand('login')
+        .addOption('timeout', help: '等待浏览器授权的分钟数', defaultsTo: '10');
     plex.addCommand('logout');
-    plex.addCommand('status').addFlag('json', negatable: false, help: '输出 JSON');
-    plex.addCommand('servers').addFlag('json', negatable: false, help: '输出 JSON');
+    plex
+        .addCommand('status')
+        .addFlag('json', negatable: false, help: '输出 JSON');
+    plex
+        .addCommand('servers')
+        .addFlag('json', negatable: false, help: '输出 JSON');
     plex.addCommand('ls')
       ..addOption('server', help: '账号下的服务器名或 machineIdentifier（只有一台时可省）')
       ..addOption('url', help: '直连某台 PMS（token 取环境变量 $kPlexTokenEnv）')
@@ -179,7 +210,9 @@ media-server plex ls [--server <name|id> | --url <pms>] [--section <key>] [<rati
       return _exitUsage;
     }
     return ctx.withRuntime((ServerRuntime rt) async {
-      final PlexCredentialStore store = PlexCredentialStore.under(rt.paths.support);
+      final PlexCredentialStore store = PlexCredentialStore.under(
+        rt.paths.support,
+      );
       final PlexAccountCredential cred = await store.loadOrCreate();
       final PlexClientInfo info = PlexClientInfo(
         clientIdentifier: cred.clientIdentifier,
@@ -190,8 +223,12 @@ media-server plex ls [--server <name|id> | --url <pms>] [--section <key>] [<rati
           case 'login':
             return await _login(sub, store, cred, info, o, e);
           case 'logout':
-            await store.save(PlexAccountCredential(clientIdentifier: cred.clientIdentifier));
-            o.writeln(cred.signedIn ? '已退出 Plex 账号 ${cred.username ?? ''}' : '本来就没登录');
+            await store.save(
+              PlexAccountCredential(clientIdentifier: cred.clientIdentifier),
+            );
+            o.writeln(
+              cred.signedIn ? '已退出 Plex 账号 ${cred.username ?? ''}' : '本来就没登录',
+            );
             return _exitOk;
           case 'status':
             final Map<String, Object?> status = <String, Object?>{
@@ -202,7 +239,9 @@ media-server plex ls [--server <name|id> | --url <pms>] [--section <key>] [<rati
             o.writeln(
               sub['json'] as bool
                   ? jsonEncode(status)
-                  : (cred.signedIn ? '已登录: ${cred.username}' : '未登录（media-server plex login）'),
+                  : (cred.signedIn
+                        ? '已登录: ${cred.username}'
+                        : '未登录（media-server plex login）'),
             );
             return _exitOk;
           case 'servers':
@@ -212,7 +251,9 @@ media-server plex ls [--server <name|id> | --url <pms>] [--section <key>] [<rati
             }
             final PlexTvApi tv = PlexTvApi(clientInfo: info, client: _client());
             try {
-              final List<PlexResource> servers = await tv.resources(cred.accountToken!);
+              final List<PlexResource> servers = await tv.resources(
+                cred.accountToken!,
+              );
               _renderServers(servers, sub['json'] as bool, o);
               return _exitOk;
             } finally {
@@ -225,7 +266,9 @@ media-server plex ls [--server <name|id> | --url <pms>] [--section <key>] [<rati
         return _exitUsage;
       } on PlexApiException catch (x) {
         if (x.statusCode == 401 || x.statusCode == 403) {
-          e.writeln('Plex 拒绝了凭据（${x.statusCode}）：token 失效，重新 media-server plex login');
+          e.writeln(
+            'Plex 拒绝了凭据（${x.statusCode}）：token 失效，重新 media-server plex login',
+          );
           return _exitUnavailable;
         }
         if (x.statusCode == 404) {
@@ -265,13 +308,15 @@ media-server plex ls [--server <name|id> | --url <pms>] [--section <key>] [<rati
       o.writeln('在浏览器打开下面的链接登录并授权「${info.deviceName}」：');
       o.writeln(tv.authUrl(pin));
       e.writeln('等待授权（最多 $minutes 分钟）…');
-      final ({PlexPinPollOutcome outcome, String? token}) polled = await pollPlexPin(
-        check: () => tv.checkPin(pin),
-        isCancelled: () => false,
-        timeout: Duration(minutes: minutes),
-        delay: delay,
-      );
-      if (polled.outcome != PlexPinPollOutcome.authorized || polled.token == null) {
+      final ({PlexPinPollOutcome outcome, String? token}) polled =
+          await pollPlexPin(
+            check: () => tv.checkPin(pin),
+            isCancelled: () => false,
+            timeout: Duration(minutes: minutes),
+            delay: delay,
+          );
+      if (polled.outcome != PlexPinPollOutcome.authorized ||
+          polled.token == null) {
         e.writeln('PIN 已过期或超时，未登录');
         return _exitFailure;
       }
@@ -300,8 +345,14 @@ media-server plex ls [--server <name|id> | --url <pms>] [--section <key>] [<rati
               'id': r.clientIdentifier,
               'owned': r.owned,
               'connections': <Object?>[
-                for (final PlexConnection c in orderPlexConnections(r.connections))
-                  <String, Object?>{'uri': c.uri, 'local': c.local, 'relay': c.relay},
+                for (final PlexConnection c in orderPlexConnections(
+                  r.connections,
+                ))
+                  <String, Object?>{
+                    'uri': c.uri,
+                    'local': c.local,
+                    'relay': c.relay,
+                  },
               ],
             },
         ]),
@@ -310,7 +361,9 @@ media-server plex ls [--server <name|id> | --url <pms>] [--section <key>] [<rati
     }
     if (servers.isEmpty) o.writeln('（账号下没有服务器）');
     for (final PlexResource r in servers) {
-      o.writeln('${r.name}  ${r.clientIdentifier}${r.owned ? '' : '  (分享)'}  ${r.connections.length} 条连接');
+      o.writeln(
+        '${r.name}  ${r.clientIdentifier}${r.owned ? '' : '  (分享)'}  ${r.connections.length} 条连接',
+      );
     }
   }
 
@@ -322,13 +375,35 @@ media-server plex ls [--server <name|id> | --url <pms>] [--section <key>] [<rati
   ) async {
     final String? url = sub['url'] as String?;
     if (url != null) {
-      final String token = (env ?? Platform.environment)[kPlexTokenEnv] ?? cred.accountToken ?? '';
-      if (token.isEmpty) return (null, _exitUnavailable, '--url 直连需要环境变量 $kPlexTokenEnv（或先 login）');
+      final String token =
+          (env ?? Platform.environment)[kPlexTokenEnv] ??
+          cred.accountToken ??
+          '';
+      if (token.isEmpty)
+        return (
+          null,
+          _exitUnavailable,
+          '--url 直连需要环境变量 $kPlexTokenEnv（或先 login）',
+        );
       final String normalized = PlexApi.normalizeServerUrl(url);
       if (normalized.isEmpty) return (null, _exitUsage, '--url 不是合法地址');
-      return (PlexApi(serverUrl: normalized, token: token, clientInfo: info, client: _client()), _exitOk, '');
+      return (
+        PlexApi(
+          serverUrl: normalized,
+          token: token,
+          clientInfo: info,
+          client: _client(),
+        ),
+        _exitOk,
+        '',
+      );
     }
-    if (!cred.signedIn) return (null, _exitUnavailable, '未登录 Plex：先 media-server plex login，或用 --url 直连');
+    if (!cred.signedIn)
+      return (
+        null,
+        _exitUnavailable,
+        '未登录 Plex：先 media-server plex login，或用 --url 直连',
+      );
     final PlexTvApi tv = PlexTvApi(clientInfo: info, client: _client());
     final List<PlexResource> servers;
     try {
@@ -343,33 +418,65 @@ media-server plex ls [--server <name|id> | --url <pms>] [--section <key>] [<rati
       return (
         null,
         selector == null && servers.length > 1 ? _exitUsage : _exitNoInput,
-        selector == null ? '账号下有多台服务器（$names），用 --server 指定' : '账号下没有服务器「$selector」（有: $names）',
+        selector == null
+            ? '账号下有多台服务器（$names），用 --server 指定'
+            : '账号下没有服务器「$selector」（有: $names）',
       );
     }
     final String token = server.accessToken ?? cred.accountToken!;
-    final String? reachable = await firstReachablePlexConnection(orderPlexConnections(server.connections), (
-      String uri,
-    ) async {
-      final PlexApi probe = PlexApi(serverUrl: uri, token: token, clientInfo: info, client: _client());
-      try {
-        return (await probe.identity()).isNotEmpty;
-      } finally {
-        probe.close();
-      }
-    });
-    if (reachable == null) return (null, _exitUnavailable, '服务器「${server.name}」的所有连接地址都连不上');
-    return (PlexApi(serverUrl: reachable, token: token, clientInfo: info, client: _client()), _exitOk, '');
+    final String? reachable = await firstReachablePlexConnection(
+      orderPlexConnections(server.connections),
+      (String uri) async {
+        final PlexApi probe = PlexApi(
+          serverUrl: uri,
+          token: token,
+          clientInfo: info,
+          client: _client(),
+        );
+        try {
+          return (await probe.identity()).isNotEmpty;
+        } finally {
+          probe.close();
+        }
+      },
+    );
+    if (reachable == null)
+      return (null, _exitUnavailable, '服务器「${server.name}」的所有连接地址都连不上');
+    return (
+      PlexApi(
+        serverUrl: reachable,
+        token: token,
+        clientInfo: info,
+        client: _client(),
+      ),
+      _exitOk,
+      '',
+    );
   }
 
-  Future<int> _ls(ArgResults sub, PlexAccountCredential cred, PlexClientInfo info, StringSink o, StringSink e) async {
+  Future<int> _ls(
+    ArgResults sub,
+    PlexAccountCredential cred,
+    PlexClientInfo info,
+    StringSink o,
+    StringSink e,
+  ) async {
     final int? start = int.tryParse(sub['start'] as String);
     final int? size = int.tryParse(sub['size'] as String);
     final String? section = sub['section'] as String?;
-    if (start == null || start < 0 || size == null || size < 1 || (section != null && sub.rest.isNotEmpty)) {
+    if (start == null ||
+        start < 0 ||
+        size == null ||
+        size < 1 ||
+        (section != null && sub.rest.isNotEmpty)) {
       e.writeln('--start 需 ≥0、--size 需 ≥1；--section 与 <ratingKey> 二选一');
       return _exitUsage;
     }
-    final (PlexApi? api, int code, String why) = await _resolveServer(sub, cred, info);
+    final (PlexApi? api, int code, String why) = await _resolveServer(
+      sub,
+      cred,
+      info,
+    );
     if (api == null) {
       e.writeln(why);
       return code;
@@ -383,7 +490,12 @@ media-server plex ls [--server <name|id> | --url <pms>] [--section <key>] [<rati
             const JsonEncoder.withIndent('  ').convert(<String, Object?>{
               'server': api.serverUrl,
               'sections': <Object?>[
-                for (final PlexSection s in sections) <String, Object?>{'key': s.key, 'title': s.title, 'type': s.type},
+                for (final PlexSection s in sections)
+                  <String, Object?>{
+                    'key': s.key,
+                    'title': s.title,
+                    'type': s.type,
+                  },
               ],
             }),
           );
@@ -403,16 +515,22 @@ media-server plex ls [--server <name|id> | --url <pms>] [--section <key>] [<rati
             'server': api.serverUrl,
             'start': start,
             'totalSize': page.totalSize,
-            'items': <Object?>[for (final PlexMetadata m in page.items) plexMetadataToJson(m)],
+            'items': <Object?>[
+              for (final PlexMetadata m in page.items) plexMetadataToJson(m),
+            ],
           }),
         );
       } else {
         for (final PlexMetadata m in page.items) {
           final String index = m.index == null ? '' : '#${m.index} ';
-          o.writeln('${m.ratingKey}  [${m.type}] $index${m.title}${m.year == null ? '' : ' (${m.year})'}');
+          o.writeln(
+            '${m.ratingKey}  [${m.type}] $index${m.title}${m.year == null ? '' : ' (${m.year})'}',
+          );
         }
         if (start + page.rawCount < page.totalSize) {
-          o.writeln('… 共 ${page.totalSize} 条，下一页 --start ${start + page.rawCount}');
+          o.writeln(
+            '… 共 ${page.totalSize} 条，下一页 --start ${start + page.rawCount}',
+          );
         }
       }
       return _exitOk;

@@ -35,21 +35,30 @@ void main() {
 
     test('显示期（位置落在 cue 时间窗内）精确命中当前句，不回归字幕路径', () {
       // 位置落在 cue1 [2000,3000] 内 → 命中 cue1。
-      final AudioCue? cue =
-          resolveMiningCueForPosition(cues: cues, positionMs: 2500, delayMs: 0);
+      final AudioCue? cue = resolveMiningCueForPosition(
+        cues: cues,
+        positionMs: 2500,
+        delayMs: 0,
+      );
       expect(cue, isNotNull);
       expect(cue!.text, 'line1');
     });
 
     test('cue 起点 / 终点闭区间边界命中当前句', () {
       expect(
-        resolveMiningCueForPosition(cues: cues, positionMs: 2000, delayMs: 0)
-            ?.text,
+        resolveMiningCueForPosition(
+          cues: cues,
+          positionMs: 2000,
+          delayMs: 0,
+        )?.text,
         'line1',
       );
       expect(
-        resolveMiningCueForPosition(cues: cues, positionMs: 3000, delayMs: 0)
-            ?.text,
+        resolveMiningCueForPosition(
+          cues: cues,
+          positionMs: 3000,
+          delayMs: 0,
+        )?.text,
         'line1',
       );
     });
@@ -62,8 +71,11 @@ void main() {
         -1,
         reason: 'gap 时字幕显示路径确实清空（BUG-074），故需独立解析',
       );
-      final AudioCue? cue =
-          resolveMiningCueForPosition(cues: cues, positionMs: 1500, delayMs: 0);
+      final AudioCue? cue = resolveMiningCueForPosition(
+        cues: cues,
+        positionMs: 1500,
+        delayMs: 0,
+      );
       expect(cue, isNotNull, reason: '撤掉 floor 兜底此处转红 = 守卫成立');
       expect(cue!.text, 'line0');
     });
@@ -71,17 +83,25 @@ void main() {
     test('末句之后（currentCue 已清空）解析到最后一条 cue', () {
       // 6500 在末句 cue2(5000..6000) 之后：findCueIndex=-1，制卡取 cue2。
       expect(
-          JsonAlignmentParser.findCueIndex(cues: cues, positionMs: 6500), -1);
-      final AudioCue? cue =
-          resolveMiningCueForPosition(cues: cues, positionMs: 6500, delayMs: 0);
+        JsonAlignmentParser.findCueIndex(cues: cues, positionMs: 6500),
+        -1,
+      );
+      final AudioCue? cue = resolveMiningCueForPosition(
+        cues: cues,
+        positionMs: 6500,
+        delayMs: 0,
+      );
       expect(cue?.text, 'line2');
     });
 
     test('多段 gap 各自回退到前一条已播 cue', () {
       // cue1 与 cue2 之间的 gap(3000..5000)：3500 → 回退 cue1。
       expect(
-        resolveMiningCueForPosition(cues: cues, positionMs: 3500, delayMs: 0)
-            ?.text,
+        resolveMiningCueForPosition(
+          cues: cues,
+          positionMs: 3500,
+          delayMs: 0,
+        )?.text,
         'line1',
       );
     });
@@ -108,14 +128,20 @@ void main() {
     test('音画延迟扣减后再解析（与字幕显示同一 effective 坐标系）', () {
       // delayMs=600：位置 2400 - 600 = 1800 落在 cue0..cue1 的 gap → 回退 cue0。
       expect(
-        resolveMiningCueForPosition(cues: cues, positionMs: 2400, delayMs: 600)
-            ?.text,
+        resolveMiningCueForPosition(
+          cues: cues,
+          positionMs: 2400,
+          delayMs: 600,
+        )?.text,
         'line0',
       );
       // 同位置无延迟时 2400 落在 cue1 时间窗内 → 命中 cue1，证明 delay 真的参与解析。
       expect(
-        resolveMiningCueForPosition(cues: cues, positionMs: 2400, delayMs: 0)
-            ?.text,
+        resolveMiningCueForPosition(
+          cues: cues,
+          positionMs: 2400,
+          delayMs: 0,
+        )?.text,
         'line1',
       );
     });
@@ -131,7 +157,10 @@ void main() {
     test('显示期命中返回该 cue 下标', () {
       expect(
         resolveMiningCueIndexForPosition(
-            cues: cues, positionMs: 2500, delayMs: 0),
+          cues: cues,
+          positionMs: 2500,
+          delayMs: 0,
+        ),
         1,
       );
     });
@@ -140,13 +169,19 @@ void main() {
       // 1500 在 cue0..cue1 gap → floor 回退 cue0（下标 0）。
       expect(
         resolveMiningCueIndexForPosition(
-            cues: cues, positionMs: 1500, delayMs: 0),
+          cues: cues,
+          positionMs: 1500,
+          delayMs: 0,
+        ),
         0,
       );
       // 6500 在末句之后 → floor 回退 cue2（下标 2）。
       expect(
         resolveMiningCueIndexForPosition(
-            cues: cues, positionMs: 6500, delayMs: 0),
+          cues: cues,
+          positionMs: 6500,
+          delayMs: 0,
+        ),
         2,
       );
     });
@@ -154,21 +189,33 @@ void main() {
     test('位置早于全部 cue / 空列表返回 -1（一句都没起播）', () {
       expect(
         resolveMiningCueIndexForPosition(
-            cues: <AudioCue>[_cue(0, 1000, 2000)], positionMs: 500, delayMs: 0),
+          cues: <AudioCue>[_cue(0, 1000, 2000)],
+          positionMs: 500,
+          delayMs: 0,
+        ),
         -1,
       );
       expect(
         resolveMiningCueIndexForPosition(
-            cues: const <AudioCue>[], positionMs: 1234, delayMs: 0),
+          cues: const <AudioCue>[],
+          positionMs: 1234,
+          delayMs: 0,
+        ),
         -1,
       );
     });
 
     test('单句版与下标版同源（idx>=0 时返回同一 cue）', () {
       final int idx = resolveMiningCueIndexForPosition(
-          cues: cues, positionMs: 2500, delayMs: 0);
-      final AudioCue? cue =
-          resolveMiningCueForPosition(cues: cues, positionMs: 2500, delayMs: 0);
+        cues: cues,
+        positionMs: 2500,
+        delayMs: 0,
+      );
+      final AudioCue? cue = resolveMiningCueForPosition(
+        cues: cues,
+        positionMs: 2500,
+        delayMs: 0,
+      );
       expect(idx, greaterThanOrEqualTo(0));
       expect(identical(cue, cues[idx]), isTrue);
     });
@@ -201,8 +248,11 @@ void main() {
       const int playerPos = 12345;
       for (final int delay in <int>[0, 600, -600, 2500]) {
         final int subtitle = effectiveSubtitlePositionMs(playerPos, delay);
-        expect(miningClipTimeMs(subtitle, delay), playerPos,
-            reason: 'delay=$delay 往返应还原');
+        expect(
+          miningClipTimeMs(subtitle, delay),
+          playerPos,
+          reason: 'delay=$delay 往返应还原',
+        );
       }
     });
   });

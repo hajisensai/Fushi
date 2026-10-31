@@ -30,15 +30,15 @@ void main() {
   ).readAsStringSync();
 
   String selectionMenuBody() => _between(
-        chrome,
-        'Future<void> _handleSelectionMenu(',
-        'Future<void> _clearReaderAppSelection(',
-      );
+    chrome,
+    'Future<void> _handleSelectionMenu(',
+    'Future<void> _clearReaderAppSelection(',
+  );
   String desktopMenuBody() => _between(
-        chrome,
-        'Future<void> _showReaderTextContextMenu(',
-        'Future<void> _handleSelectionMenu(',
-      );
+    chrome,
+    'Future<void> _showReaderTextContextMenu(',
+    'Future<void> _handleSelectionMenu(',
+  );
 
   group('① 手机拖选菜单补「收藏」（自绘选区，无原生选区）', () {
     test('菜单项含 favorite + 复用 action_favorite i18n key', () {

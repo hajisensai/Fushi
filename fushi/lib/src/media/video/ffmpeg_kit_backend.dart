@@ -80,11 +80,11 @@ class KitFfmpegBackend implements FfmpegBackend, FfmpegWatchedRunner {
       start:
           (void Function() onComplete, void Function(double timeMs) onTime) =>
               FFmpegKit.executeWithArgumentsAsync(
-        args,
-        (_) => onComplete(),
-        null,
-        (Statistics statistics) => onTime(statistics.getTime()),
-      ),
+                args,
+                (_) => onComplete(),
+                null,
+                (Statistics statistics) => onTime(statistics.getTime()),
+              ),
     );
   }
 
@@ -173,8 +173,9 @@ Future<FfmpegRunResult> runKitFfmpegSession({
   // 会话已完成，读退出码与合并日志。这两步再挂住就只能当结果拿不到——但绝不
   // 能因此让 run() 永不返回。
   try {
-    final ReturnCode? rc =
-        await session.getReturnCode().timeout(epilogueTimeout);
+    final ReturnCode? rc = await session.getReturnCode().timeout(
+      epilogueTimeout,
+    );
     final String output =
         (await session.getOutput().timeout(epilogueTimeout)) ?? '';
     return FfmpegRunResult(
@@ -208,7 +209,8 @@ Future<FfmpegRunResult> runKitFfmpegWatchedSession({
   required Future<Session> Function(
     void Function() onComplete,
     void Function(double timeMs) onTime,
-  ) start,
+  )
+  start,
   required FfmpegWatch watch,
   required String executable,
   Future<void> Function(int sessionId) cancelSession = FFmpegKit.cancel,
@@ -274,8 +276,9 @@ Future<FfmpegRunResult> runKitFfmpegWatchedSession({
     );
   }
   try {
-    final ReturnCode? rc =
-        await session.getReturnCode().timeout(epilogueTimeout);
+    final ReturnCode? rc = await session.getReturnCode().timeout(
+      epilogueTimeout,
+    );
     final String output =
         (await session.getOutput().timeout(epilogueTimeout)) ?? '';
     return FfmpegRunResult(

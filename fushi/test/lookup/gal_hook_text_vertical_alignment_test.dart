@@ -25,7 +25,9 @@ void main() {
     late PreferencesRepository repo;
 
     setUp(() async {
-      db = FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
+      db = FushiDatabase.forTesting(
+        DatabaseConnection(NativeDatabase.memory()),
+      );
       repo = PreferencesRepository(db);
       await repo.loadFromDb();
     });
@@ -80,9 +82,9 @@ void main() {
       GalHookTextOverlayChannel.platformOverride = true;
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, (MethodCall call) async {
-        calls.add(call);
-        return true;
-      });
+            calls.add(call);
+            return true;
+          });
     });
 
     tearDown(() {
@@ -102,8 +104,11 @@ void main() {
       expect(lastArgs()['verticalAlignment'], 0);
 
       await GalHookTextOverlayChannel.show(verticalAlignment: 'bottom');
-      expect(lastArgs()['verticalAlignment'], 0,
-          reason: '非法值必须落回老行为，绝不透传给 native');
+      expect(
+        lastArgs()['verticalAlignment'],
+        0,
+        reason: '非法值必须落回老行为，绝不透传给 native',
+      );
     });
 
     test('show 默认不带偏好时 = 0（老 payload 行为）', () async {
@@ -119,21 +124,20 @@ void main() {
       );
       final Map<Object?, Object?> args = lastArgs();
       expect(args['verticalAlignment'], 1);
-      expect(
-        args['textAlignment'],
-        1,
-        reason: '水平与垂直是两个独立的键，互不覆盖',
-      );
+      expect(args['textAlignment'], 1, reason: '水平与垂直是两个独立的键，互不覆盖');
     });
   });
 
   group('native 消费点源码守卫', () {
-    final String header =
-        File('windows/runner/floating_lyric_window.h').readAsStringSync();
-    final String window =
-        File('windows/runner/floating_lyric_window.cpp').readAsStringSync();
-    final String flutterWindow =
-        File('windows/runner/flutter_window.cpp').readAsStringSync();
+    final String header = File(
+      'windows/runner/floating_lyric_window.h',
+    ).readAsStringSync();
+    final String window = File(
+      'windows/runner/floating_lyric_window.cpp',
+    ).readAsStringSync();
+    final String flutterWindow = File(
+      'windows/runner/flutter_window.cpp',
+    ).readAsStringSync();
 
     test('样式结构体有 vertical_alignment 且默认 0', () {
       expect(header.contains('int vertical_alignment = 0;'), isTrue);
@@ -142,7 +146,8 @@ void main() {
     test('通道参数被解析进样式', () {
       expect(
         flutterWindow.contains(
-            'IntFromValue(args, "verticalAlignment", style.vertical_alignment)'),
+          'IntFromValue(args, "verticalAlignment", style.vertical_alignment)',
+        ),
         isTrue,
         reason: '没有这一行，Dart 传的偏好在 native 侧原地蒸发',
       );
@@ -150,10 +155,13 @@ void main() {
 
     test('每帧覆写处读该偏好：选顶部则恒 NEAR，否则保留溢出判据', () {
       expect(
-        window.contains('(style_.vertical_alignment == 1 ||\n'
-            '               metrics.height > text_rect_.height)'),
+        window.contains(
+          '(style_.vertical_alignment == 1 ||\n'
+          '               metrics.height > text_rect_.height)',
+        ),
         isTrue,
-        reason: '这是真正生效的那处 SetParagraphAlignment（每帧覆写 text_format_ 的初值）；'
+        reason:
+            '这是真正生效的那处 SetParagraphAlignment（每帧覆写 text_format_ 的初值）；'
             '「用户选了顶部」与「文字溢出」是并联条件，溢出场景行为必须与修前一致',
       );
     });
@@ -168,8 +176,9 @@ void main() {
   });
 
   group('设置页入口', () {
-    final String schema =
-        File('lib/src/settings/settings_schema_game.dart').readAsStringSync();
+    final String schema = File(
+      'lib/src/settings/settings_schema_game.dart',
+    ).readAsStringSync();
 
     test('垂直对齐是独立分段项，不与水平对齐合并成三选一', () {
       expect(
@@ -182,10 +191,7 @@ void main() {
         reason: '原来的水平对齐项必须还在——两者是正交的轴',
       );
       expect(schema.contains('t.gal_hook_text_vertical_alignment_top'), isTrue);
-      expect(
-        schema.contains('setGalHookTextVerticalAlignment'),
-        isTrue,
-      );
+      expect(schema.contains('setGalHookTextVerticalAlignment'), isTrue);
     });
   });
 }

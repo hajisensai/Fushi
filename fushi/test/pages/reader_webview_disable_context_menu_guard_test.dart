@@ -21,8 +21,7 @@ void main() {
     return source.substring(startIndex, endIndex);
   }
 
-  test('reader WebView disables the native WebView2 context menu on Windows',
-      () {
+  test('reader WebView disables the native WebView2 context menu on Windows', () {
     final String source = readReaderPageSource();
 
     final String webViewBuild = functionSource(
@@ -33,10 +32,7 @@ void main() {
 
     // The InAppWebViewSettings block must carry the real native-menu kill
     // switch, gated to Windows so mobile keeps its native ContextMenu.
-    expect(
-      webViewBuild,
-      contains('initialSettings: InAppWebViewSettings('),
-    );
+    expect(webViewBuild, contains('initialSettings: InAppWebViewSettings('));
     expect(
       RegExp(r'disableContextMenu:\s*isWindowsPlatform').hasMatch(webViewBuild),
       isTrue,

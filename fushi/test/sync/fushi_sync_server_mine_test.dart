@@ -12,8 +12,10 @@ class _FakeMining implements FushiRemoteMiningService {
   String? lastSentence;
   ImmersionMinePayload? lastImmersion;
   @override
-  Future<RemoteMineResult> mineEntry(
-      {required Map<String, String> fields, required String sentence}) async {
+  Future<RemoteMineResult> mineEntry({
+    required Map<String, String> fields,
+    required String sentence,
+  }) async {
     lastFields = fields;
     lastSentence = sentence;
     return const RemoteMineResult(result: 'success');
@@ -50,8 +52,7 @@ class _FakeMining implements FushiRemoteMiningService {
   Future<AnkiOpenWordOutcome> openWordInAnki({
     required String expression,
     required String reading,
-  }) async =>
-      AnkiOpenWordOutcome.failed;
+  }) async => AnkiOpenWordOutcome.failed;
 
   // 互联 Lapis 客制化端点的捕获（/api/anki/note-type/*）。
   AnkiNoteTypeDefinition? noteTypeDef;
@@ -62,7 +63,8 @@ class _FakeMining implements FushiRemoteMiningService {
 
   @override
   Future<AnkiNoteTypeDefinition?> readNoteTypeDefinition(
-      String modelName) async {
+    String modelName,
+  ) async {
     lastNoteTypeRead = modelName;
     return noteTypeDef;
   }
@@ -75,7 +77,9 @@ class _FakeMining implements FushiRemoteMiningService {
 
   @override
   Future<bool> updateNoteTypeTemplates(
-      String modelName, List<AnkiCardTemplate> templates) async {
+    String modelName,
+    List<AnkiCardTemplate> templates,
+  ) async {
     lastTemplatesWrite = (modelName, templates);
     return noteTypeWriteOk;
   }
@@ -96,11 +100,17 @@ class _FakeMining implements FushiRemoteMiningService {
 }
 
 Future<HttpClientResponse> _post(
-    int port, String path, Object body, String token) async {
+  int port,
+  String path,
+  Object body,
+  String token,
+) async {
   final c = HttpClient();
   final r = await c.post('127.0.0.1', port, path);
   r.headers.set(
-      'authorization', 'Basic ${base64Encode(utf8.encode('hibiki:$token'))}');
+    'authorization',
+    'Basic ${base64Encode(utf8.encode('hibiki:$token'))}',
+  );
   r.headers.contentType = ContentType.json;
   r.write(jsonEncode(body));
   return r.close();
@@ -110,19 +120,16 @@ void main() {
   test('POST /api/mine maps result to JSON', () async {
     final mining = _FakeMining();
     final server = FushiSyncServer(
-        syncDataDir: Directory.systemTemp.createTempSync('hbk').path,
-        port: 0,
-        token: 'tok',
-        miningService: mining);
+      syncDataDir: Directory.systemTemp.createTempSync('hbk').path,
+      port: 0,
+      token: 'tok',
+      miningService: mining,
+    );
     await server.start();
-    final resp = await _post(
-        server.port,
-        '/api/mine',
-        {
-          'fields': {'expression': '分かる', 'sentence': 'これは分かる'},
-          'sentence': 'これは分かる'
-        },
-        'tok');
+    final resp = await _post(server.port, '/api/mine', {
+      'fields': {'expression': '分かる', 'sentence': 'これは分かる'},
+      'sentence': 'これは分かる',
+    }, 'tok');
     expect(resp.statusCode, 200);
     final out = jsonDecode(await resp.transform(utf8.decoder).join());
     expect(out['result'], 'success');
@@ -134,22 +141,19 @@ void main() {
   test('POST /api/mine with screenshot routes to mineImmersion', () async {
     final mining = _FakeMining();
     final server = FushiSyncServer(
-        syncDataDir: Directory.systemTemp.createTempSync('hbk').path,
-        port: 0,
-        token: 'tok',
-        miningService: mining);
+      syncDataDir: Directory.systemTemp.createTempSync('hbk').path,
+      port: 0,
+      token: 'tok',
+      miningService: mining,
+    );
     await server.start();
-    final resp = await _post(
-        server.port,
-        '/api/mine',
-        {
-          'fields': {'expression': '走る'},
-          'sentence': '走り出した',
-          'timestampMs': 1234,
-          'netflixVideoId': '81',
-          'screenshotBase64': base64Encode(<int>[1, 2, 3]),
-        },
-        'tok');
+    final resp = await _post(server.port, '/api/mine', {
+      'fields': {'expression': '走る'},
+      'sentence': '走り出した',
+      'timestampMs': 1234,
+      'netflixVideoId': '81',
+      'screenshotBase64': base64Encode(<int>[1, 2, 3]),
+    }, 'tok');
     expect(resp.statusCode, 200);
     final out = jsonDecode(await resp.transform(utf8.decoder).join());
     expect(out['result'], 'success');
@@ -162,10 +166,11 @@ void main() {
 
   test('POST /api/mine without auth is 401', () async {
     final server = FushiSyncServer(
-        syncDataDir: Directory.systemTemp.createTempSync('hbk').path,
-        port: 0,
-        token: 'tok',
-        miningService: _FakeMining());
+      syncDataDir: Directory.systemTemp.createTempSync('hbk').path,
+      port: 0,
+      token: 'tok',
+      miningService: _FakeMining(),
+    );
     await server.start();
     final c = HttpClient();
     final r = await c.post('127.0.0.1', server.port, '/api/mine');
@@ -179,13 +184,16 @@ void main() {
   test('POST /api/duplicate returns real duplicate flag (TODO-1176)', () async {
     final mining = _FakeMining()..dupResult = true;
     final server = FushiSyncServer(
-        syncDataDir: Directory.systemTemp.createTempSync('hbk').path,
-        port: 0,
-        token: 'tok',
-        miningService: mining);
+      syncDataDir: Directory.systemTemp.createTempSync('hbk').path,
+      port: 0,
+      token: 'tok',
+      miningService: mining,
+    );
     await server.start();
-    final resp = await _post(server.port, '/api/duplicate',
-        {'expression': '分かる', 'reading': 'わかる'}, 'tok');
+    final resp = await _post(server.port, '/api/duplicate', {
+      'expression': '分かる',
+      'reading': 'わかる',
+    }, 'tok');
     expect(resp.statusCode, 200);
     final out = jsonDecode(await resp.transform(utf8.decoder).join());
     expect(out['duplicate'], true);
@@ -194,30 +202,35 @@ void main() {
     await server.stop();
   });
 
-  test('POST /api/duplicate with empty expression short-circuits to false',
-      () async {
-    final mining = _FakeMining()..dupResult = true;
-    final server = FushiSyncServer(
+  test(
+    'POST /api/duplicate with empty expression short-circuits to false',
+    () async {
+      final mining = _FakeMining()..dupResult = true;
+      final server = FushiSyncServer(
         syncDataDir: Directory.systemTemp.createTempSync('hbk').path,
         port: 0,
         token: 'tok',
-        miningService: mining);
-    await server.start();
-    final resp =
-        await _post(server.port, '/api/duplicate', {'expression': ''}, 'tok');
-    expect(resp.statusCode, 200);
-    final out = jsonDecode(await resp.transform(utf8.decoder).join());
-    expect(out['duplicate'], false);
-    expect(mining.lastDupExpression, isNull); // 未触达后端
-    await server.stop();
-  });
+        miningService: mining,
+      );
+      await server.start();
+      final resp = await _post(server.port, '/api/duplicate', {
+        'expression': '',
+      }, 'tok');
+      expect(resp.statusCode, 200);
+      final out = jsonDecode(await resp.transform(utf8.decoder).join());
+      expect(out['duplicate'], false);
+      expect(mining.lastDupExpression, isNull); // 未触达后端
+      await server.stop();
+    },
+  );
 
   test('POST /api/duplicate without auth is 401', () async {
     final server = FushiSyncServer(
-        syncDataDir: Directory.systemTemp.createTempSync('hbk').path,
-        port: 0,
-        token: 'tok',
-        miningService: _FakeMining());
+      syncDataDir: Directory.systemTemp.createTempSync('hbk').path,
+      port: 0,
+      token: 'tok',
+      miningService: _FakeMining(),
+    );
     await server.start();
     final c = HttpClient();
     final r = await c.post('127.0.0.1', server.port, '/api/duplicate');
@@ -241,13 +254,15 @@ void main() {
         css: '.card {}',
       );
     final server = FushiSyncServer(
-        syncDataDir: Directory.systemTemp.createTempSync('hbk').path,
-        port: 0,
-        token: 'tok',
-        miningService: mining);
+      syncDataDir: Directory.systemTemp.createTempSync('hbk').path,
+      port: 0,
+      token: 'tok',
+      miningService: mining,
+    );
     await server.start();
-    final resp = await _post(
-        server.port, '/api/anki/note-type/read', {'modelName': 'Lapis'}, 'tok');
+    final resp = await _post(server.port, '/api/anki/note-type/read', {
+      'modelName': 'Lapis',
+    }, 'tok');
     expect(resp.statusCode, 200);
     final out = jsonDecode(await resp.transform(utf8.decoder).join());
     expect(mining.lastNoteTypeRead, 'Lapis');
@@ -257,42 +272,44 @@ void main() {
     await server.stop();
   });
 
-  test('POST /api/anki/note-type/styling writes through and echoes ok',
-      () async {
-    final mining = _FakeMining();
-    final server = FushiSyncServer(
+  test(
+    'POST /api/anki/note-type/styling writes through and echoes ok',
+    () async {
+      final mining = _FakeMining();
+      final server = FushiSyncServer(
         syncDataDir: Directory.systemTemp.createTempSync('hbk').path,
         port: 0,
         token: 'tok',
-        miningService: mining);
-    await server.start();
-    final resp = await _post(server.port, '/api/anki/note-type/styling',
-        {'modelName': 'Lapis', 'css': '.card { color: red; }'}, 'tok');
-    expect(resp.statusCode, 200);
-    final out = jsonDecode(await resp.transform(utf8.decoder).join());
-    expect(out['ok'], true);
-    expect(mining.lastStylingWrite, ('Lapis', '.card { color: red; }'));
-    await server.stop();
-  });
+        miningService: mining,
+      );
+      await server.start();
+      final resp = await _post(server.port, '/api/anki/note-type/styling', {
+        'modelName': 'Lapis',
+        'css': '.card { color: red; }',
+      }, 'tok');
+      expect(resp.statusCode, 200);
+      final out = jsonDecode(await resp.transform(utf8.decoder).join());
+      expect(out['ok'], true);
+      expect(mining.lastStylingWrite, ('Lapis', '.card { color: red; }'));
+      await server.stop();
+    },
+  );
 
   test('POST /api/anki/note-type/templates writes through', () async {
     final mining = _FakeMining();
     final server = FushiSyncServer(
-        syncDataDir: Directory.systemTemp.createTempSync('hbk').path,
-        port: 0,
-        token: 'tok',
-        miningService: mining);
+      syncDataDir: Directory.systemTemp.createTempSync('hbk').path,
+      port: 0,
+      token: 'tok',
+      miningService: mining,
+    );
     await server.start();
-    final resp = await _post(
-        server.port,
-        '/api/anki/note-type/templates',
-        {
-          'modelName': 'Lapis',
-          'templates': [
-            {'name': 'Card', 'front': 'F', 'back': 'B2'},
-          ],
-        },
-        'tok');
+    final resp = await _post(server.port, '/api/anki/note-type/templates', {
+      'modelName': 'Lapis',
+      'templates': [
+        {'name': 'Card', 'front': 'F', 'back': 'B2'},
+      ],
+    }, 'tok');
     expect(resp.statusCode, 200);
     final out = jsonDecode(await resp.transform(utf8.decoder).join());
     expect(out['ok'], true);
@@ -303,27 +320,36 @@ void main() {
 
   test('POST /api/anki/note-type/read with missing modelName is 400', () async {
     final server = FushiSyncServer(
-        syncDataDir: Directory.systemTemp.createTempSync('hbk').path,
-        port: 0,
-        token: 'tok',
-        miningService: _FakeMining());
+      syncDataDir: Directory.systemTemp.createTempSync('hbk').path,
+      port: 0,
+      token: 'tok',
+      miningService: _FakeMining(),
+    );
     await server.start();
-    final resp =
-        await _post(server.port, '/api/anki/note-type/read', {}, 'tok');
+    final resp = await _post(
+      server.port,
+      '/api/anki/note-type/read',
+      {},
+      'tok',
+    );
     expect(resp.statusCode, 400);
     await server.stop();
   });
 
   test('POST /api/anki/note-type/read without auth is 401', () async {
     final server = FushiSyncServer(
-        syncDataDir: Directory.systemTemp.createTempSync('hbk').path,
-        port: 0,
-        token: 'tok',
-        miningService: _FakeMining());
+      syncDataDir: Directory.systemTemp.createTempSync('hbk').path,
+      port: 0,
+      token: 'tok',
+      miningService: _FakeMining(),
+    );
     await server.start();
     final c = HttpClient();
-    final r =
-        await c.post('127.0.0.1', server.port, '/api/anki/note-type/read');
+    final r = await c.post(
+      '127.0.0.1',
+      server.port,
+      '/api/anki/note-type/read',
+    );
     r.headers.contentType = ContentType.json;
     r.write('{"modelName":"Lapis"}');
     final resp = await r.close();

@@ -52,13 +52,13 @@ Future<VideoMetadataWork?> loadVideoMetadataWork(
   FushiDatabase db,
   VideoMetadataWorkRow row,
 ) async {
-  final VideoMetadataMediaKind? kind =
-      VideoMetadataMediaKind.values.asNameMap()[row.mediaType];
+  final VideoMetadataMediaKind? kind = VideoMetadataMediaKind.values
+      .asNameMap()[row.mediaType];
   if (kind == null) {
     throw StateError('work ${row.id} 的 mediaType 非法: ${row.mediaType}');
   }
-  final List<VideoMetadataProviderIdentityRow> identities =
-      await db.getVideoMetadataProviderIdentities(workId: row.id);
+  final List<VideoMetadataProviderIdentityRow> identities = await db
+      .getVideoMetadataProviderIdentities(workId: row.id);
   // getVideoMetadataProviderIdentities 已按 isPrimary DESC 排：主身份在最前。
   final VideoMetadataProviderIdentityRow? primary = identities.firstOrNull;
   final VideoMetadataProviderKind? provider = primary == null
@@ -102,16 +102,16 @@ Future<VideoMetadataWork?> loadVideoMetadataWork(
 Future<VideoMetadataLookup?> lookupOfWork(FushiDatabase db, int workId) async {
   final VideoMetadataWorkRow? row = await db.getVideoMetadataWorkById(workId);
   if (row == null) return null;
-  final List<VideoMetadataProviderIdentityRow> identities =
-      await db.getVideoMetadataProviderIdentities(workId: workId);
+  final List<VideoMetadataProviderIdentityRow> identities = await db
+      .getVideoMetadataProviderIdentities(workId: workId);
   final VideoMetadataProviderIdentityRow? identity = identities
       .where((VideoMetadataProviderIdentityRow value) => value.isPrimary)
       .firstOrNull;
   if (identity == null) return null;
-  final VideoMetadataProviderKind? provider =
-      VideoMetadataProviderKind.values.asNameMap()[identity.provider];
-  final VideoMetadataMediaKind? kind =
-      VideoMetadataMediaKind.values.asNameMap()[row.mediaType];
+  final VideoMetadataProviderKind? provider = VideoMetadataProviderKind.values
+      .asNameMap()[identity.provider];
+  final VideoMetadataMediaKind? kind = VideoMetadataMediaKind.values
+      .asNameMap()[row.mediaType];
   if (provider == null ||
       provider == VideoMetadataProviderKind.fanart ||
       kind == null) {
@@ -132,8 +132,9 @@ Future<Map<String, List<String>>> _termsByKind(
   int workId,
 ) async {
   final Map<String, List<String>> out = <String, List<String>>{};
-  for (final VideoMetadataTermRow term
-      in await db.getVideoMetadataTermsForWork(workId)) {
+  for (final VideoMetadataTermRow term in await db.getVideoMetadataTermsForWork(
+    workId,
+  )) {
     out.putIfAbsent(term.kind, () => <String>[]).add(term.name);
   }
   return out;
@@ -144,22 +145,25 @@ Future<List<VideoMetadataSeason>> _loadSeasons(
   int workId,
 ) async {
   final List<VideoMetadataSeason> seasons = <VideoMetadataSeason>[];
-  for (final VideoMetadataSeasonRow season
-      in await db.getVideoMetadataSeasons(workId)) {
-    seasons.add(VideoMetadataSeason(
-      seasonNumber: season.seasonNumber,
-      title: season.title ?? '',
-      plot: season.overview,
-      airDate: season.premiereDate,
-      year: season.year,
-      episodeCount: season.episodeCount,
-      rating: season.rating,
-      ids: (await db.getVideoMetadataProviderIdentities(seasonId: season.id))
-          .map(_idOf)
-          .toList(),
-      images: _imagesOf(await db.getVideoMetadataImages(seasonId: season.id)),
-      episodes: await _loadEpisodes(db, season),
-    ));
+  for (final VideoMetadataSeasonRow season in await db.getVideoMetadataSeasons(
+    workId,
+  )) {
+    seasons.add(
+      VideoMetadataSeason(
+        seasonNumber: season.seasonNumber,
+        title: season.title ?? '',
+        plot: season.overview,
+        airDate: season.premiereDate,
+        year: season.year,
+        episodeCount: season.episodeCount,
+        rating: season.rating,
+        ids: (await db.getVideoMetadataProviderIdentities(
+          seasonId: season.id,
+        )).map(_idOf).toList(),
+        images: _imagesOf(await db.getVideoMetadataImages(seasonId: season.id)),
+        episodes: await _loadEpisodes(db, season),
+      ),
+    );
   }
   return seasons;
 }
@@ -171,23 +175,27 @@ Future<List<VideoMetadataEpisode>> _loadEpisodes(
   final List<VideoMetadataEpisode> episodes = <VideoMetadataEpisode>[];
   for (final VideoMetadataEpisodeRow episode
       in await db.getVideoMetadataEpisodes(season.id)) {
-    episodes.add(VideoMetadataEpisode(
-      seasonNumber: season.seasonNumber,
-      episodeNumber: episode.episodeNumber,
-      title: episode.title ?? '',
-      plot: episode.overview,
-      airDate: episode.airDate,
-      year: episode.year,
-      absoluteNumber: episode.absoluteNumber,
-      rating: episode.rating,
-      ratingVotes: episode.ratingCount,
-      runtimeMinutes: episode.runtimeMinutes,
-      ids: (await db.getVideoMetadataProviderIdentities(episodeId: episode.id))
-          .map(_idOf)
-          .toList(),
-      credits: await _loadCredits(db, episodeId: episode.id),
-      images: _imagesOf(await db.getVideoMetadataImages(episodeId: episode.id)),
-    ));
+    episodes.add(
+      VideoMetadataEpisode(
+        seasonNumber: season.seasonNumber,
+        episodeNumber: episode.episodeNumber,
+        title: episode.title ?? '',
+        plot: episode.overview,
+        airDate: episode.airDate,
+        year: episode.year,
+        absoluteNumber: episode.absoluteNumber,
+        rating: episode.rating,
+        ratingVotes: episode.ratingCount,
+        runtimeMinutes: episode.runtimeMinutes,
+        ids: (await db.getVideoMetadataProviderIdentities(
+          episodeId: episode.id,
+        )).map(_idOf).toList(),
+        credits: await _loadCredits(db, episodeId: episode.id),
+        images: _imagesOf(
+          await db.getVideoMetadataImages(episodeId: episode.id),
+        ),
+      ),
+    );
   }
   return episodes;
 }
@@ -222,17 +230,19 @@ Future<List<VideoMetadataCredit>> _loadCredits(
           characters[characterKey] ?? await _loadCharacter(db, characterKey);
       if (character != null) characters[characterKey] = character;
     }
-    credits.add(VideoMetadataCredit(
-      kind: kind,
-      person: person,
-      character: character,
-      language: credit.language,
-      roleName: credit.roleName.isEmpty ? null : credit.roleName,
-      department: credit.department,
-      job: credit.job,
-      providerCreditId: credit.providerCreditId,
-      order: credit.sortOrder,
-    ));
+    credits.add(
+      VideoMetadataCredit(
+        kind: kind,
+        person: person,
+        character: character,
+        language: credit.language,
+        roleName: credit.roleName.isEmpty ? null : credit.roleName,
+        department: credit.department,
+        job: credit.job,
+        providerCreditId: credit.providerCreditId,
+        order: credit.sortOrder,
+      ),
+    );
   }
   return credits;
 }
@@ -241,8 +251,9 @@ Future<VideoMetadataPerson?> _loadPerson(
   FushiDatabase db,
   String personKey,
 ) async {
-  final VideoMetadataPersonRow? row =
-      await db.getVideoMetadataPerson(personKey);
+  final VideoMetadataPersonRow? row = await db.getVideoMetadataPerson(
+    personKey,
+  );
   if (row == null) return null;
   return VideoMetadataPerson(
     name: row.name,
@@ -253,9 +264,9 @@ Future<VideoMetadataPerson?> _loadPerson(
     gender: row.gender,
     placeOfBirth: row.placeOfBirth,
     profileUrl: row.profileUrl,
-    ids: (await db.getVideoMetadataProviderIdentities(personKey: personKey))
-        .map(_idOf)
-        .toList(),
+    ids: (await db.getVideoMetadataProviderIdentities(
+      personKey: personKey,
+    )).map(_idOf).toList(),
   );
 }
 
@@ -263,8 +274,9 @@ Future<VideoMetadataCharacter?> _loadCharacter(
   FushiDatabase db,
   String characterKey,
 ) async {
-  final VideoMetadataCharacterRow? row =
-      await db.getVideoMetadataCharacter(characterKey);
+  final VideoMetadataCharacterRow? row = await db.getVideoMetadataCharacter(
+    characterKey,
+  );
   if (row == null) return null;
   return VideoMetadataCharacter(
     name: row.name,
@@ -273,28 +285,26 @@ Future<VideoMetadataCharacter?> _loadCharacter(
     imageUrl: row.imageUrl,
     ids: (await db.getVideoMetadataProviderIdentities(
       characterKey: characterKey,
-    ))
-        .map(_idOf)
-        .toList(),
+    )).map(_idOf).toList(),
   );
 }
 
 // ─── 行 → 模型 ───────────────────────────────────────────────────────
 
 VideoMetadataId _idOf(VideoMetadataProviderIdentityRow row) => VideoMetadataId(
-      type: row.provider,
-      value: row.externalId,
-      isDefault: row.isPrimary,
-    );
+  type: row.provider,
+  value: row.externalId,
+  isDefault: row.isPrimary,
+);
 
 /// provider / kind 列值不在枚举内的图行跳过（历史 provider 只读兼容）。
 List<VideoMetadataImage> _imagesOf(List<VideoMetadataImageRow> rows) =>
     <VideoMetadataImage>[
       for (final VideoMetadataImageRow row in rows)
         if ((
-          VideoMetadataImageKind.values.asNameMap()[row.kind],
-          VideoMetadataProviderKind.values.asNameMap()[row.provider],
-        )
+              VideoMetadataImageKind.values.asNameMap()[row.kind],
+              VideoMetadataProviderKind.values.asNameMap()[row.provider],
+            )
             case (
               final VideoMetadataImageKind kind,
               final VideoMetadataProviderKind provider,
@@ -336,13 +346,13 @@ List<VideoMetadataExtra> _extrasOf(List<VideoMetadataExtraRow> rows) =>
 /// `_creditKind` 的逆：`voice_actor` → [VideoMetadataCreditKind.voiceActor]，
 /// 其余按枚举名。
 VideoMetadataCreditKind? _creditKindOf(String value) => switch (value) {
-      'voice_actor' => VideoMetadataCreditKind.voiceActor,
-      _ => VideoMetadataCreditKind.values.asNameMap()[value],
-    };
+  'voice_actor' => VideoMetadataCreditKind.voiceActor,
+  _ => VideoMetadataCreditKind.values.asNameMap()[value],
+};
 
 /// `_extraKind` 的逆：snake_case 的两个值映回枚举，其余按枚举名。
 VideoMetadataExtraKind? _extraKindOf(String value) => switch (value) {
-      'behind_the_scenes' => VideoMetadataExtraKind.behindTheScenes,
-      'deleted_scene' => VideoMetadataExtraKind.deletedScene,
-      _ => VideoMetadataExtraKind.values.asNameMap()[value],
-    };
+  'behind_the_scenes' => VideoMetadataExtraKind.behindTheScenes,
+  'deleted_scene' => VideoMetadataExtraKind.deletedScene,
+  _ => VideoMetadataExtraKind.values.asNameMap()[value],
+};

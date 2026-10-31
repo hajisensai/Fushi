@@ -107,10 +107,10 @@ class InterconnectMangaCatalog {
   /// 删除」这类行时墓碑必须写对端键，否则推给 host 认不出、host 不删也不写自己的
   /// 墓碑，整条传播链在这里断掉。
   static String? peerBookKeyOf(String? sourceMetadata) {
-    final OnlineMangaLibraryEntry? entry =
-        OnlineMangaLibraryEntry.tryParse(sourceMetadata);
-    if (entry == null ||
-        entry.runtime != OnlineMangaRuntimeKind.interconnect) {
+    final OnlineMangaLibraryEntry? entry = OnlineMangaLibraryEntry.tryParse(
+      sourceMetadata,
+    );
+    if (entry == null || entry.runtime != OnlineMangaRuntimeKind.interconnect) {
       return null;
     }
     final String key = entry.series.key;
@@ -123,10 +123,10 @@ class InterconnectMangaCatalog {
   /// (bookUid, chapterKey)，用书自己的键能保证同一本在任何时候都定位到同一行，也
   /// 免得将来对端真的分出章节时与旧行撞键。
   static OnlineMangaChapter chapterFor(String seriesKey) => OnlineMangaChapter(
-        key: seriesKey,
-        name: '',
-        raw: <String, Object?>{'bookKey': seriesKey},
-      );
+    key: seriesKey,
+    name: '',
+    raw: <String, Object?>{'bookKey': seriesKey},
+  );
 
   /// 对端章表里的一章 → 书架章节。key / name / number / scanlator / uploadedAt 逐字
   /// 透传（对端的 `chaptersJson` 就是这几列），`raw` 只记页数供作品页显示。
@@ -148,7 +148,7 @@ class InterconnectMangaCatalog {
 /// 和阅读器任何一行」，这次兑现了它。
 class InterconnectLibraryAdapter implements OnlineMangaRuntimeAdapter {
   const InterconnectLibraryAdapter({InterconnectSyncBackend? backend})
-      : _backend = backend;
+    : _backend = backend;
 
   final InterconnectSyncBackend? _backend;
 
@@ -219,8 +219,9 @@ class InterconnectLibraryAdapter implements OnlineMangaRuntimeAdapter {
         stage: 'pages',
       );
     }
-    final String bookKey =
-        manifest.bookKey.isEmpty ? entry.series.key : manifest.bookKey;
+    final String bookKey = manifest.bookKey.isEmpty
+        ? entry.series.key
+        : manifest.bookKey;
     return <OnlineMangaPageRef>[
       for (int index = 0; index < manifest.pages.length; index++)
         InterconnectMangaPageRef(
@@ -283,8 +284,7 @@ class InterconnectLibraryAdapter implements OnlineMangaRuntimeAdapter {
   Future<RemoteMangaManifest> _manifest(
     OnlineMangaLibraryEntry entry,
     String stage,
-  ) =>
-      _guarded(stage, () => backend.remoteMangaManifest(entry.series.key));
+  ) => _guarded(stage, () => backend.remoteMangaManifest(entry.series.key));
 
   /// 章节式条目某一章的页表。对端没下（或只下了一半）这一章 → 404，但这**不是**
   /// 源不可用：对端下完就有了，所以分类成可重试的 runtimeFailure 而不是

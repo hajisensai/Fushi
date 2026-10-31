@@ -142,20 +142,24 @@ Future<GalWindowAnimatedCapture?> captureWindowGifBytes({
     tempDir = await Directory.systemTemp.createTemp('fushi_gal_gif_');
     // 连续抓帧：任一帧失败跳过该帧；帧间 sleep [intervalMs]（捕获本身还有 WGC 延迟）。
     int captured = 0;
-    final GalHookCaptureLease? captureLease =
-        captureLeaseFactory == null ? null : await captureLeaseFactory();
+    final GalHookCaptureLease? captureLease = captureLeaseFactory == null
+        ? null
+        : await captureLeaseFactory();
     // 整句时长的到达状态：未到达期间维持采样（语音还在播，画面正是这句的画面），
     // 到达后按 [galAnimatedFrameBudget] 收口；永不到达则由上限兜底。
     bool targetResolved = targetDuration == null;
     Duration? resolvedTarget;
     if (targetDuration != null) {
       unawaited(
-        targetDuration.then((Duration? value) {
-          resolvedTarget = value;
-          targetResolved = true;
-        }, onError: (Object _) {
-          targetResolved = true;
-        }),
+        targetDuration.then(
+          (Duration? value) {
+            resolvedTarget = value;
+            targetResolved = true;
+          },
+          onError: (Object _) {
+            targetResolved = true;
+          },
+        ),
       );
     }
     // 最终采纳的帧预算。**采样期间会收缩**：`pending` 期间按 [kGalAnimatedMaxDuration]
@@ -167,7 +171,7 @@ Future<GalWindowAnimatedCapture?> captureWindowGifBytes({
       // BUG-1096：native 的成功路径诊断（光标抑制是否真的生效 / 捕获目标是否被从
       // Magpie 缩放窗重定向）。每轮只记一次，逐帧刷会把日志淹掉。
       String? loggedDiagnostics;
-      for (int i = 0;; i++) {
+      for (int i = 0; ; i++) {
         if (i >= frames) {
           frameBudget = galAnimatedFrameBudget(
             baseFrames: frames,
@@ -199,8 +203,9 @@ Future<GalWindowAnimatedCapture?> captureWindowGifBytes({
         final Uint8List png = cap.pngBytes!;
         final String frameName = galAnimationFrameName(captured);
         try {
-          await File(p.join(tempDir.path, frameName))
-              .writeAsBytes(png, flush: true);
+          await File(
+            p.join(tempDir.path, frameName),
+          ).writeAsBytes(png, flush: true);
         } catch (_) {
           continue; // 写盘失败：跳过该帧。
         }
@@ -234,8 +239,10 @@ Future<GalWindowAnimatedCapture?> captureWindowGifBytes({
     final List<MiningAnimatedFormat> attempts = format.encodeAttempts;
 
     for (final MiningAnimatedFormat attempt in attempts) {
-      final String outputPath =
-          p.join(tempDir.path, 'out.${attempt.fileExtension}');
+      final String outputPath = p.join(
+        tempDir.path,
+        'out.${attempt.fileExtension}',
+      );
       final List<String> args = buildGalWindowAnimatedArgs(
         format: attempt,
         inputPattern: inputPattern,
@@ -244,8 +251,10 @@ Future<GalWindowAnimatedCapture?> captureWindowGifBytes({
         maxWidth: maxWidth,
         playOnce: miningAnimatedPlayOnceReader(),
       );
-      final FfmpegRunResult result =
-          await resolveFfmpegBackend().run(args, const Duration(seconds: 60));
+      final FfmpegRunResult result = await resolveFfmpegBackend().run(
+        args,
+        const Duration(seconds: 60),
+      );
       final File output = File(outputPath);
       if (result.returnCode == 0 &&
           output.existsSync() &&
@@ -259,11 +268,16 @@ Future<GalWindowAnimatedCapture?> captureWindowGifBytes({
       final String summary =
           '${attempt.wireName} encode failed: ${result.failureSummary}';
       if (attempt == attempts.last) {
-        ErrorLogService.instance
-            .log('captureWindowGifBytes', summary, StackTrace.current);
+        ErrorLogService.instance.log(
+          'captureWindowGifBytes',
+          summary,
+          StackTrace.current,
+        );
       } else {
-        ErrorLogService.instance.logDiagnostic('captureWindowGifBytes',
-            '$summary (falling back to ${MiningAnimatedFormat.gif.wireName})');
+        ErrorLogService.instance.logDiagnostic(
+          'captureWindowGifBytes',
+          '$summary (falling back to ${MiningAnimatedFormat.gif.wireName})',
+        );
       }
     }
     return null;

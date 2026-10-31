@@ -23,14 +23,13 @@ SrtBooksCompanion _srt({
   required String uid,
   String bookKey = '',
   String title = 'SRT Book',
-}) =>
-    SrtBooksCompanion.insert(
-      uid: uid,
-      title: title,
-      srtPath: '/tmp/$uid.srt',
-      importedAt: 0,
-      bookKey: Value(bookKey),
-    );
+}) => SrtBooksCompanion.insert(
+  uid: uid,
+  title: title,
+  srtPath: '/tmp/$uid.srt',
+  importedAt: 0,
+  bookKey: Value(bookKey),
+);
 
 void main() {
   late FushiDatabase db;
@@ -41,8 +40,8 @@ void main() {
     repo = SrtBookRepository(db);
     // AudiobookStorage.deletePersistDir 会解析文档目录；单测里没有 path_provider
     // 平台通道，注入临时目录解析器（该目录不存在，deletePersistDir 直接 no-op）。
-    AudiobookStorage.documentsRootResolver =
-        () async => Directory.systemTemp.createTemp('srt_tombstone_test');
+    AudiobookStorage.documentsRootResolver = () async =>
+        Directory.systemTemp.createTemp('srt_tombstone_test');
   });
   tearDown(() async {
     AudiobookStorage.documentsRootResolver = null;
@@ -56,8 +55,10 @@ void main() {
     test('standalone + propagateDeletion → 写 srtbook 墓碑，itemKey=uid', () async {
       await db.upsertSrtBook(_srt(uid: 'srt/lonely'));
 
-      final SrtBookDeleteResult removed =
-          await repo.delete('srt/lonely', propagateDeletion: true);
+      final SrtBookDeleteResult removed = await repo.delete(
+        'srt/lonely',
+        propagateDeletion: true,
+      );
 
       expect(removed.deleted, 1);
       final List<SyncDeletionTombstoneRow> rows = await srtTombstones();
@@ -71,8 +72,11 @@ void main() {
 
       await repo.delete('srt/lonely');
 
-      expect(await srtTombstones(), isEmpty,
-          reason: '「仅本机」与消费远端标记的路径都绝不能回写墓碑，否则传播成环');
+      expect(
+        await srtTombstones(),
+        isEmpty,
+        reason: '「仅本机」与消费远端标记的路径都绝不能回写墓碑，否则传播成环',
+      );
     });
 
     test('srt-backed（bookKey 非空）即便 propagateDeletion 也不写 srtbook 墓碑', () async {
@@ -80,9 +84,13 @@ void main() {
 
       await repo.delete('srt/paired', propagateDeletion: true);
 
-      expect(await srtTombstones(), isEmpty,
-          reason: '它的身份是 bookKey，墓碑由 deleteBook 写成 book 种类；'
-              '这里再写一条会让同一资产在对端弹出两条重复的删除确认');
+      expect(
+        await srtTombstones(),
+        isEmpty,
+        reason:
+            '它的身份是 bookKey，墓碑由 deleteBook 写成 book 种类；'
+            '这里再写一条会让同一资产在对端弹出两条重复的删除确认',
+      );
     });
 
     test('uid 不存在 → 不写墓碑（删了 0 行不该产生传播）', () async {
@@ -95,8 +103,8 @@ void main() {
       // 掉线、Windows 句柄占用）。这些尾活一旦排在墓碑前面，一次失败就静默吞掉
       // 用户「从所有设备删除」的意图——而那正是本文件盯的那条契约。
       await db.upsertSrtBook(_srt(uid: 'srt/throws'));
-      AudiobookStorage.documentsRootResolver =
-          () async => throw const FileSystemException('boom');
+      AudiobookStorage.documentsRootResolver = () async =>
+          throw const FileSystemException('boom');
 
       await expectLater(
         repo.delete('srt/throws', propagateDeletion: true),
@@ -114,12 +122,14 @@ void main() {
       await repo.delete('srt/again', propagateDeletion: true);
       expect(await srtTombstones(), hasLength(1));
 
-      await repo.save(SrtBook()
-        ..uid = 'srt/again'
-        ..title = 'SRT Book'
-        ..srtPath = '/tmp/srt/again.srt'
-        ..importedAt = 0
-        ..bookKey = '');
+      await repo.save(
+        SrtBook()
+          ..uid = 'srt/again'
+          ..title = 'SRT Book'
+          ..srtPath = '/tmp/srt/again.srt'
+          ..importedAt = 0
+          ..bookKey = '',
+      );
 
       expect(await srtTombstones(), isEmpty);
     });

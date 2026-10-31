@@ -28,7 +28,8 @@ void main() {
       expect(
         src,
         contains('setDefaultFocusHighlightEnabled(false)'),
-        reason: 'Must disable the Android system default focus highlight to '
+        reason:
+            'Must disable the Android system default focus highlight to '
             'stop the double focus ring on Samsung OneUI.',
       );
 
@@ -36,7 +37,8 @@ void main() {
       expect(
         src,
         contains('Build.VERSION_CODES.O'),
-        reason: 'setDefaultFocusHighlightEnabled is API 26+; the call must be '
+        reason:
+            'setDefaultFocusHighlightEnabled is API 26+; the call must be '
             'gated by Build.VERSION.SDK_INT >= Build.VERSION_CODES.O.',
       );
       expect(src, contains('Build.VERSION.SDK_INT'));
@@ -45,7 +47,8 @@ void main() {
       expect(
         src,
         contains('getWindow().getDecorView()'),
-        reason: 'The highlight must be cleared on the decorView that hosts '
+        reason:
+            'The highlight must be cleared on the decorView that hosts '
             'the programmatically-created FlutterSurfaceView.',
       );
 
@@ -55,9 +58,12 @@ void main() {
       // the call (leaving only a dead helper) turn this test red.
       expect(
         src,
-        contains('super.onCreate(savedInstanceState);\n\n'
-            '        disableSystemFocusHighlight();'),
-        reason: 'disableSystemFocusHighlight() must be invoked from onCreate '
+        contains(
+          'super.onCreate(savedInstanceState);\n\n'
+          '        disableSystemFocusHighlight();',
+        ),
+        reason:
+            'disableSystemFocusHighlight() must be invoked from onCreate '
             'right after super.onCreate, not merely defined.',
       );
       expect(
@@ -85,22 +91,33 @@ void main() {
       expect(
         src,
         contains('adjustSuggestedStreamVolume'),
-        reason: '不拦截翻页时音量键必须用 adjustSuggestedStreamVolume 自行调音量，'
+        reason:
+            '不拦截翻页时音量键必须用 adjustSuggestedStreamVolume 自行调音量，'
             '而不是漏给 super.dispatchKeyEvent（后者会污染 Flutter highlight mode）。',
       );
-      expect(src, contains('AudioManager.USE_DEFAULT_STREAM_TYPE'),
-          reason: '必须用 USE_DEFAULT_STREAM_TYPE 让系统挑活动音频流，等价硬件音量键。');
-      expect(src, contains('AudioManager.FLAG_SHOW_UI'),
-          reason: '必须带 FLAG_SHOW_UI 显示音量滑条，与系统默认音量键体验一致。');
-      expect(src, contains('private void adjustSystemVolume('),
-          reason: '调音量逻辑应在专用 helper 里，便于阅读与守卫。');
+      expect(
+        src,
+        contains('AudioManager.USE_DEFAULT_STREAM_TYPE'),
+        reason: '必须用 USE_DEFAULT_STREAM_TYPE 让系统挑活动音频流，等价硬件音量键。',
+      );
+      expect(
+        src,
+        contains('AudioManager.FLAG_SHOW_UI'),
+        reason: '必须带 FLAG_SHOW_UI 显示音量滑条，与系统默认音量键体验一致。',
+      );
+      expect(
+        src,
+        contains('private void adjustSystemVolume('),
+        reason: '调音量逻辑应在专用 helper 里，便于阅读与守卫。',
+      );
     });
 
     test('音量键在拦截开/关两态都不调 super.dispatchKeyEvent（不进 FlutterView）', () {
       // 找出 dispatchKeyEvent 方法体，断言对音量键的分支都 return true（吞掉），
       // 而 super.dispatchKeyEvent 只用于非音量键的兜底。
-      final int idx =
-          src.indexOf('public boolean dispatchKeyEvent(KeyEvent event)');
+      final int idx = src.indexOf(
+        'public boolean dispatchKeyEvent(KeyEvent event)',
+      );
       expect(idx, greaterThan(0), reason: 'dispatchKeyEvent 必须存在。');
       final int end = src.indexOf('\n    }', idx);
       expect(end, greaterThan(idx));
@@ -114,11 +131,15 @@ void main() {
       );
       // super.dispatchKeyEvent 必须出现在音量键分支之后（作为非音量键兜底），
       // 且音量键分支以 return true 结束——保证音量键永不进 FlutterView。
-      final int superIdx =
-          body.indexOf('return super.dispatchKeyEvent(event);');
+      final int superIdx = body.indexOf(
+        'return super.dispatchKeyEvent(event);',
+      );
       final int volumeIdx = body.indexOf('KeyEvent.KEYCODE_VOLUME_UP');
-      expect(superIdx, greaterThan(volumeIdx),
-          reason: 'super.dispatchKeyEvent 只能作为非音量键兜底，必须在音量键分支之后。');
+      expect(
+        superIdx,
+        greaterThan(volumeIdx),
+        reason: 'super.dispatchKeyEvent 只能作为非音量键兜底，必须在音量键分支之后。',
+      );
       expect(
         body.contains('adjustSystemVolume(') ||
             body.contains('volumeKeyChannel.invokeMethod'),

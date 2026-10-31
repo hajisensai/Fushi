@@ -51,8 +51,9 @@ Directory _screenshotDir() {
     }
   } else {
     final String? runId = fushiTestRunId();
-    final String runLeaf =
-        (runId != null && runId.isNotEmpty) ? runId : 'local';
+    final String runLeaf = (runId != null && runId.isNotEmpty)
+        ? runId
+        : 'local';
     base = Directory('.codex-test/observe/$runLeaf');
   }
   final Directory dir = Directory('${base.path}/screenshots');
@@ -68,8 +69,9 @@ Future<(bool, int, String)> _saveBgraAsPng(
   int height,
   String name,
 ) async {
-  final ui.ImmutableBuffer buffer =
-      await ui.ImmutableBuffer.fromUint8List(bgra);
+  final ui.ImmutableBuffer buffer = await ui.ImmutableBuffer.fromUint8List(
+    bgra,
+  );
   final ui.ImageDescriptor descriptor = ui.ImageDescriptor.raw(
     buffer,
     width: width,
@@ -80,8 +82,9 @@ Future<(bool, int, String)> _saveBgraAsPng(
   final ui.FrameInfo frame = await codec.getNextFrame();
   final ui.Image image = frame.image;
   try {
-    final ByteData? png =
-        await image.toByteData(format: ui.ImageByteFormat.png);
+    final ByteData? png = await image.toByteData(
+      format: ui.ImageByteFormat.png,
+    );
     // 非空白判定直接用原始 BGRA（通道顺序不影响「像素是否有变化」的方差判据）。
     final bool nonBlank = rgbaLooksNonBlank(bgra);
     if (png == null) return (nonBlank, 0, '');
@@ -136,8 +139,9 @@ void main() {
     }
 
     debugPrint('[pdf-spike] step: before PdfDocument.openFile');
-    final PdfDocument document = await PdfDocument.openFile(_kPdfPath)
-        .timeout(const Duration(seconds: 20));
+    final PdfDocument document = await PdfDocument.openFile(
+      _kPdfPath,
+    ).timeout(const Duration(seconds: 20));
     debugPrint('[pdf-spike] step: after PdfDocument.openFile');
     expect(document.pages, isNotEmpty, reason: 'PDF 至少应有一页');
     debugPrint('[pdf-spike] pageCount=${document.pages.length}');
@@ -152,8 +156,11 @@ void main() {
           .loadStructuredText()
           .timeout(const Duration(seconds: 20));
       // 逐页硬校验：charRects 与 fullText 逐字符一一对应（点选查词地基）。
-      expect(t.charRects.length, t.fullText.length,
-          reason: 'page ${i + 1}: charRects 必须与 fullText 逐字符对应');
+      expect(
+        t.charRects.length,
+        t.fullText.length,
+        reason: 'page ${i + 1}: charRects 必须与 fullText 逐字符对应',
+      );
       if (t.fullText.trim().length > bestLen) {
         bestLen = t.fullText.trim().length;
         bestIndex = i;
@@ -165,11 +172,14 @@ void main() {
     final PdfPageText pageText = bestText!;
     final String fullText = pageText.fullText;
     final List<PdfRect> charRects = pageText.charRects;
-    debugPrint('[pdf-spike] richest page=${bestIndex + 1} '
-        'size=${page.width}x${page.height}');
+    debugPrint(
+      '[pdf-spike] richest page=${bestIndex + 1} '
+      'size=${page.width}x${page.height}',
+    );
     debugPrint('[pdf-spike] fullText.length=${fullText.length}');
-    final String sample =
-        fullText.length > 100 ? fullText.substring(0, 100) : fullText;
+    final String sample = fullText.length > 100
+        ? fullText.substring(0, 100)
+        : fullText;
     debugPrint('[pdf-spike] fullText[0:100]=<<<$sample>>>');
     debugPrint('[pdf-spike] charRects.length=${charRects.length}');
     if (charRects.isNotEmpty) {
@@ -178,8 +188,11 @@ void main() {
     }
 
     expect(fullText.trim(), isNotEmpty, reason: '正文页应抽到非空文本');
-    expect(charRects.length, fullText.length,
-        reason: 'charRects 必须与 fullText 逐字符一一对应（点选查词地基）');
+    expect(
+      charRects.length,
+      fullText.length,
+      reason: 'charRects 必须与 fullText 逐字符一一对应（点选查词地基）',
+    );
 
     // ---- 渲染验证：PDFium 直接把这页栅格化成位图并落 PNG ----
     final double fullWidth = page.width * 2; // 2x 提高可读性
@@ -193,8 +206,9 @@ void main() {
         .timeout(const Duration(seconds: 30));
     expect(rendered, isNotNull, reason: 'PDFium 应能栅格化该页');
     debugPrint(
-        '[pdf-spike] rendered bitmap=${rendered!.width}x${rendered.height} '
-        'pixels=${rendered.pixels.length}B');
+      '[pdf-spike] rendered bitmap=${rendered!.width}x${rendered.height} '
+      'pixels=${rendered.pixels.length}B',
+    );
 
     final (bool nonBlank, int pngBytes, String path) = await _saveBgraAsPng(
       rendered.pixels,
@@ -203,8 +217,10 @@ void main() {
       'pdf-spike-prince-page${bestIndex + 1}',
     ).timeout(const Duration(seconds: 30));
     rendered.dispose();
-    debugPrint('[pdf-spike] screenshot nonBlank=$nonBlank '
-        'pngBytes=$pngBytes path=$path');
+    debugPrint(
+      '[pdf-spike] screenshot nonBlank=$nonBlank '
+      'pngBytes=$pngBytes path=$path',
+    );
     expect(nonBlank, isTrue, reason: '正文页应栅格化出非空白像素');
     expect(pngBytes, greaterThan(0), reason: '应写出 PNG');
 
@@ -230,9 +246,13 @@ void main() {
       await tester.pump(const Duration(milliseconds: 200));
     }
     debugPrint(
-        '[pdf-spike] PdfViewer onViewerReady fired=${ready.isCompleted}');
-    expect(ready.isCompleted, isTrue,
-        reason: 'PdfViewer 组件应挂载并在超时前触发 onViewerReady');
+      '[pdf-spike] PdfViewer onViewerReady fired=${ready.isCompleted}',
+    );
+    expect(
+      ready.isCompleted,
+      isTrue,
+      reason: 'PdfViewer 组件应挂载并在超时前触发 onViewerReady',
+    );
 
     await document.dispose();
   });

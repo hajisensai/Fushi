@@ -7,8 +7,9 @@ import '../pages/reader_fushi_page_source_corpus.dart';
 /// 防止未来有人把底栏高度写回硬编码常量或漏掉缩放器，导致界面大小不再吃到底栏、
 /// 或视觉高度与 WebView 预留高度错位。
 void main() {
-  final File reader =
-      File('lib/src/pages/implementations/reader_fushi_page.dart');
+  final File reader = File(
+    'lib/src/pages/implementations/reader_fushi_page.dart',
+  );
 
   test('reader source file exists', () {
     expect(reader.existsSync(), isTrue, reason: '从 fushi/ 目录跑 flutter test');
@@ -18,16 +19,19 @@ void main() {
     final String src = readReaderPageSource();
     // 容忍 dart format 的换行/空白：用允许任意空白的正则匹配，而非脆弱的整串匹配。
     expect(
-        RegExp(r'static\s+const\s+double\s+_readerChromeHeight\s*=\s*56')
-            .hasMatch(src),
-        isFalse,
-        reason: '底栏高度必须随 appUiScale 缩放，不能写死 56');
+      RegExp(
+        r'static\s+const\s+double\s+_readerChromeHeight\s*=\s*56',
+      ).hasMatch(src),
+      isFalse,
+      reason: '底栏高度必须随 appUiScale 缩放，不能写死 56',
+    );
     expect(
-        RegExp(r'_readerChromeHeight\s*=>\s*ReaderChromeScaler\.scaledHeight\(\s*_readerChromeBaseHeight')
-            .hasMatch(src),
-        isTrue,
-        reason:
-            '_readerChromeHeight getter 必须走 ReaderChromeScaler.scaledHeight');
+      RegExp(
+        r'_readerChromeHeight\s*=>\s*ReaderChromeScaler\.scaledHeight\(\s*_readerChromeBaseHeight',
+      ).hasMatch(src),
+      isTrue,
+      reason: '_readerChromeHeight getter 必须走 ReaderChromeScaler.scaledHeight',
+    );
   });
 
   test('both bottom bars wrap content in ReaderChromeScaler', () {
@@ -36,8 +40,11 @@ void main() {
     // 底栏（设置条与有声书播放条共用同一个 ReaderChromeScaler 包裹，chrome.part）。
     // 此前计数 ≥2 里另一处其实是查词弹窗 header；10-09 起弹窗顶栏整条改由
     // DictionaryPopupLayer.topBarScale 统一缩放（见下一条），不再单独套。
-    expect(count, greaterThanOrEqualTo(1),
-        reason: '阅读器底栏必须套 ReaderChromeScaler');
+    expect(
+      count,
+      greaterThanOrEqualTo(1),
+      reason: '阅读器底栏必须套 ReaderChromeScaler',
+    );
   });
 
   // ─── merged verbatim from reader_popup_header_scale_guard_test.dart ───
@@ -46,8 +53,9 @@ void main() {
   // 大小不一；现在整条顶栏由 DictionaryPopupLayer.topBarScale 缩放，宿主传入
   // dictionaryPopupTopBarScale(appUiScale: …, dictionaryFontSize: …)。
   test('dictionary popup top bar scales with the app UI scale', () {
-    final String host =
-        File('lib/src/pages/base_source_page.dart').readAsStringSync();
+    final String host = File(
+      'lib/src/pages/base_source_page.dart',
+    ).readAsStringSync();
     expect(host, contains('topBarScale: dictionaryPopupTopBarScale('));
     expect(host, contains('appUiScale: appModel.appUiScale'));
     final String src = reader.readAsStringSync();
@@ -55,10 +63,16 @@ void main() {
       src,
       '  Widget? buildPopupAudioControls()',
     );
-    expect(toolbar, contains('dictionaryPopupTopActionConstraints()'),
-        reason: 'header buttons share the top-bar hit box');
-    expect(toolbar, isNot(contains('ReaderChromeScaler(')),
-        reason: 'scaling the header alone makes it differ from the clusters');
+    expect(
+      toolbar,
+      contains('dictionaryPopupTopActionConstraints()'),
+      reason: 'header buttons share the top-bar hit box',
+    );
+    expect(
+      toolbar,
+      isNot(contains('ReaderChromeScaler(')),
+      reason: 'scaling the header alone makes it differ from the clusters',
+    );
   });
 }
 

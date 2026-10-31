@@ -146,7 +146,12 @@ Future<List<VideoBookRow>> ensureBlurayDiscTitlesInLibrary(
         );
       }
       if (collectionId != null) {
-        await db.addToCollection(collectionId, MediaKind.video, uid, userIntent: false);
+        await db.addToCollection(
+          collectionId,
+          MediaKind.video,
+          uid,
+          userIntent: false,
+        );
       }
     }
     return <VideoBookRow>[

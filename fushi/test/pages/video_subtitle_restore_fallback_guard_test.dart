@@ -35,7 +35,8 @@ void main() {
     expect(
       containsCodeLine(body, '} else if (cues.isEmpty) {'),
       isFalse,
-      reason: '一旦兜底重新变成 else-if 分支，前面任一支「试过但失败」就会直接空手收场'
+      reason:
+          '一旦兜底重新变成 else-if 分支，前面任一支「试过但失败」就会直接空手收场'
           '——这正是用户报「下载的字幕退出再进就没了」的结构性根因',
     );
   });
@@ -44,7 +45,8 @@ void main() {
     expect(
       containsCodeLine(body, 'if (cues.isEmpty && externalSub == null) {'),
       isFalse,
-      reason: '旧判据下「有持久化源但它恢复不出内容」时连 sidecar 都不试，'
+      reason:
+          '旧判据下「有持久化源但它恢复不出内容」时连 sidecar 都不试，'
           '等于把唯一还能救的一层也关掉了',
     );
     expect(
@@ -63,8 +65,10 @@ void main() {
       reason: '最终仍无 cue 时必须放掉这个外挂路径，否则内封轨兜底永远不触发',
     );
     expect(
-      containsCodeLine(body,
-          'if (cues.isEmpty && !SubtitleSource.isEmbeddedPersisted(externalSub)) {'),
+      containsCodeLine(
+        body,
+        'if (cues.isEmpty && !SubtitleSource.isEmbeddedPersisted(externalSub)) {',
+      ),
       isTrue,
       reason: '只在「确实没恢复出 cue」且源不是内嵌轨时才放掉；内嵌轨要保留给下游解析',
     );

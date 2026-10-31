@@ -37,10 +37,13 @@ Dio _dioWith(_FakeAdapter adapter) {
   return dio;
 }
 
-ResponseBody _body(String text, {int status = 200}) =>
-    ResponseBody.fromString(text, status, headers: <String, List<String>>{
-      Headers.contentTypeHeader: <String>['application/json'],
-    });
+ResponseBody _body(String text, {int status = 200}) => ResponseBody.fromString(
+  text,
+  status,
+  headers: <String, List<String>>{
+    Headers.contentTypeHeader: <String>['application/json'],
+  },
+);
 
 void main() {
   group('DictionaryUpdateService.needsUpdate', () {
@@ -112,14 +115,15 @@ void main() {
 
   group('DictionaryUpdateService.fetchRemoteIndexResult (注入 Dio)', () {
     test('200 + 合法 index.json → revision', () async {
-      final _FakeAdapter adapter =
-          _FakeAdapter((String url) => _body('{"revision":"2026-06-20"}'));
+      final _FakeAdapter adapter = _FakeAdapter(
+        (String url) => _body('{"revision":"2026-06-20"}'),
+      );
       final Dio dio = _dioWith(adapter);
       final DictionaryRemoteIndexResult result =
           await DictionaryUpdateService.fetchRemoteIndexResult(
-        'https://x/index.json',
-        dio: dio,
-      );
+            'https://x/index.json',
+            dio: dio,
+          );
       expect(result.revision, '2026-06-20');
       // 注入的 Dio 不应被 fetchRemoteIndexResult 关闭（调用方负责生命周期）。
       expect(adapter.closed, isFalse);
@@ -129,8 +133,9 @@ void main() {
       final Dio dio = _dioWith(_FakeAdapter((String url) => _body('')));
       final DictionaryRemoteIndexResult result =
           await DictionaryUpdateService.fetchRemoteIndexResult(
-              'https://x/i.json',
-              dio: dio);
+            'https://x/i.json',
+            dio: dio,
+          );
       expect(result.succeeded, isFalse);
       expect(result.revision, isNull);
     });
@@ -146,22 +151,29 @@ void main() {
   // 分目录（Pixiv Light）或换包名（COBUILD8 → COBUILD10）的词典每次都重下旧包，
   // revision 不变，更新永远不生效。夹具取自 2026-09-26 实测的真实远端 index。
   group('BUG-2707 远端 index 的新版地址', () {
-    const String localDownloadUrl = 'https://github.com/MarvNC/pixiv-yomitan/'
+    const String localDownloadUrl =
+        'https://github.com/MarvNC/pixiv-yomitan/'
         'releases/download/2026-03-26/PixivLight_2026-03-26.zip';
-    const String localIndexUrl = 'https://github.com/MarvNC/pixiv-yomitan/'
+    const String localIndexUrl =
+        'https://github.com/MarvNC/pixiv-yomitan/'
         'releases/latest/download/pixiv_light_index.json';
-    const String remoteDownloadUrl = 'https://github.com/MarvNC/pixiv-yomitan/'
+    const String remoteDownloadUrl =
+        'https://github.com/MarvNC/pixiv-yomitan/'
         'releases/download/2026-09-26/PixivLight_2026-09-26.zip';
-    const String pixivRemoteIndex = '{"title":"Pixiv Light [2026-09-26]",'
+    const String pixivRemoteIndex =
+        '{"title":"Pixiv Light [2026-09-26]",'
         '"revision":"2026-09-26","isUpdatable":true,'
         '"indexUrl":"$localIndexUrl","downloadUrl":"$remoteDownloadUrl"}';
 
     test('fetchRemoteIndexResult 带回远端 downloadUrl / indexUrl', () async {
-      final Dio dio =
-          _dioWith(_FakeAdapter((String url) => _body(pixivRemoteIndex)));
+      final Dio dio = _dioWith(
+        _FakeAdapter((String url) => _body(pixivRemoteIndex)),
+      );
       final DictionaryRemoteIndexResult result =
-          await DictionaryUpdateService.fetchRemoteIndexResult(localIndexUrl,
-              dio: dio);
+          await DictionaryUpdateService.fetchRemoteIndexResult(
+            localIndexUrl,
+            dio: dio,
+          );
       expect(result.revision, '2026-09-26');
       expect(result.downloadUrl, remoteDownloadUrl);
       expect(result.indexUrl, localIndexUrl);
@@ -176,9 +188,9 @@ void main() {
     test('回写 metadata 推进到远端地址，下一轮更新不再退回旧包', () {
       final DictionaryRemoteIndexResult result =
           DictionaryUpdateService.parseRemoteIndexJson(
-        '{"revision":"2025.08.28","downloadUrl":"https://h/COBUILD10.zip",'
-        '"indexUrl":"https://h/new/index.json"}',
-      );
+            '{"revision":"2025.08.28","downloadUrl":"https://h/COBUILD10.zip",'
+            '"indexUrl":"https://h/new/index.json"}',
+          );
       expect(
         result.updatedSourceMetadata(
           localDownloadUrl: 'https://h/COBUILD8.zip',
@@ -223,7 +235,8 @@ void main() {
     test('revision 缺失仍判失败，不因带了 downloadUrl 就算成功', () {
       final DictionaryRemoteIndexResult result =
           DictionaryUpdateService.parseRemoteIndexJson(
-              '{"downloadUrl":"https://h/x.zip"}');
+            '{"downloadUrl":"https://h/x.zip"}',
+          );
       expect(result.succeeded, isFalse);
       expect(result.downloadUrl, isNull);
     });
@@ -237,9 +250,9 @@ void main() {
 
       final DictionaryRemoteIndexResult result =
           await DictionaryUpdateService.fetchRemoteIndexResult(
-        'https://x/index.json',
-        dio: dio,
-      );
+            'https://x/index.json',
+            dio: dio,
+          );
 
       expect(result.succeeded, isTrue);
       expect(result.revision, '2026-07-29');
@@ -258,14 +271,14 @@ void main() {
 
       final DictionaryRemoteIndexResult networkResult =
           await DictionaryUpdateService.fetchRemoteIndexResult(
-        'https://x/network.json',
-        dio: networkDio,
-      );
+            'https://x/network.json',
+            dio: networkDio,
+          );
       final DictionaryRemoteIndexResult invalidResult =
           await DictionaryUpdateService.fetchRemoteIndexResult(
-        'https://x/invalid.json',
-        dio: invalidDio,
-      );
+            'https://x/invalid.json',
+            dio: invalidDio,
+          );
 
       expect(networkResult.succeeded, isFalse);
       expect(networkResult.revision, isNull);
@@ -277,7 +290,8 @@ void main() {
   // 用户报告（2026-09-26）：「更新」按钮要自己下新包选文件，和 Yomitan 不一样。
   // 两个根因：钉了版本号的 downloadUrl 用本地旧地址下回来还是旧包；旧版导入的
   // 词典 metadata 缺来源字段，被判不可更新。下面钉这两条的纯函数契约。
-  const String pixivOldIndex = '{"title":"Pixiv Light [2026-03-26]","format":3,'
+  const String pixivOldIndex =
+      '{"title":"Pixiv Light [2026-03-26]","format":3,'
       '"revision":"2026-03-26","isUpdatable":true,'
       '"indexUrl":"https://github.com/MarvNC/pixiv-yomitan/releases/latest/download/pixiv_light_index.json",'
       '"downloadUrl":"https://github.com/MarvNC/pixiv-yomitan/releases/download/2026-03-26/PixivLight_2026-03-26.zip"}';
@@ -286,25 +300,32 @@ void main() {
 
   group('远端 index 的 downloadUrl（钉版本号的包地址）', () {
     test('fetchRemoteIndexResult 带回远端声明的新包地址', () async {
-      final Dio dio = _dioWith(_FakeAdapter((String url) =>
-          _body('{"revision":"2026-04-20","downloadUrl":"$pixivNewZip"}')));
+      final Dio dio = _dioWith(
+        _FakeAdapter(
+          (String url) =>
+              _body('{"revision":"2026-04-20","downloadUrl":"$pixivNewZip"}'),
+        ),
+      );
 
       final DictionaryRemoteIndexResult result =
           await DictionaryUpdateService.fetchRemoteIndexResult(
-        'https://x/pixiv_light_index.json',
-        dio: dio,
-      );
+            'https://x/pixiv_light_index.json',
+            dio: dio,
+          );
 
       expect(result.succeeded, isTrue);
       expect(result.downloadUrl, pixivNewZip);
     });
 
     test('resolveDownloadUrl：远端优先，本地旧地址不能再被用来「更新」', () {
-      final Map<String, String> local =
-          parseSourceMetadataFromIndexJson(pixivOldIndex);
+      final Map<String, String> local = parseSourceMetadataFromIndexJson(
+        pixivOldIndex,
+      );
       const DictionaryRemoteIndexResult remote =
-          DictionaryRemoteIndexResult.success('2026-04-20',
-              downloadUrl: pixivNewZip);
+          DictionaryRemoteIndexResult.success(
+            '2026-04-20',
+            downloadUrl: pixivNewZip,
+          );
 
       expect(remote.resolveDownloadUrl(local['downloadUrl']!), pixivNewZip);
     });
@@ -319,18 +340,20 @@ void main() {
       // 远端 downloadUrl 空白 / 非 http(s) 绝对地址都不采信，回落本地（#1670 口径）。
       expect(
         DictionaryUpdateService.parseRemoteIndexJson(
-                '{"revision":"x","downloadUrl":"  "}')
-            .resolveDownloadUrl(latest),
+          '{"revision":"x","downloadUrl":"  "}',
+        ).resolveDownloadUrl(latest),
         latest,
       );
       expect(
         DictionaryUpdateService.parseRemoteIndexJson(
-                '{"revision":"x","downloadUrl":"PixivLight.zip"}')
-            .resolveDownloadUrl(latest),
+          '{"revision":"x","downloadUrl":"PixivLight.zip"}',
+        ).resolveDownloadUrl(latest),
         latest,
       );
-      expect(DictionaryUpdateService.parseRemoteIndexJson('bad').succeeded,
-          isFalse);
+      expect(
+        DictionaryUpdateService.parseRemoteIndexJson('bad').succeeded,
+        isFalse,
+      );
     });
   });
 
@@ -347,8 +370,9 @@ void main() {
         isFalse,
       );
       expect(
-        needsSourceMetadataBackfill(
-            const <String, String>{kDictSourceProbeKey: '1'}),
+        needsSourceMetadataBackfill(const <String, String>{
+          kDictSourceProbeKey: '1',
+        }),
         isFalse,
       );
     });
@@ -390,7 +414,8 @@ void main() {
       final Map<String, String> merged = mergeBackfilledSourceMetadata(
         const <String, String>{'targetLanguage': 'zh'},
         parseSourceMetadataFromIndexJson(
-            '{"targetLanguage":"ja","revision":"r"}'),
+          '{"targetLanguage":"ja","revision":"r"}',
+        ),
       );
 
       expect(merged['targetLanguage'], 'zh');

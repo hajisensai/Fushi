@@ -17,20 +17,21 @@ FushiDatabase _memDb() => FushiDatabase.forTesting(NativeDatabase.memory());
 class _LiveBookLibraryService implements FushiLibraryHostService {
   // BUG-1004：host 端裁 mining 句子音频（本测试不涉及，返 null 即可）。
   @override
-  Future<File?> clipVideoAudio(String id,
-          {required int startMs,
-          required int endMs,
-          int episodeIndex = 0,
-          int? audioStreamIndex,
-          int? audioStreamCount,
-          int audioChannels = 1,
-          String audioBitrate = '64k'}) async =>
-      null;
+  Future<File?> clipVideoAudio(
+    String id, {
+    required int startMs,
+    required int endMs,
+    int episodeIndex = 0,
+    int? audioStreamIndex,
+    int? audioStreamCount,
+    int audioChannels = 1,
+    String audioBitrate = '64k',
+  }) async => null;
 
   @override
-  Future<List<RemoteActivityEvent>> listActivityEvents(
-          {int limit = 100}) async =>
-      const <RemoteActivityEvent>[];
+  Future<List<RemoteActivityEvent>> listActivityEvents({
+    int limit = 100,
+  }) async => const <RemoteActivityEvent>[];
 
   @override
   Future<String?> videoCoverPath(String id) async {
@@ -61,8 +62,8 @@ class _LiveBookLibraryService implements FushiLibraryHostService {
 
   @override
   Future<CollectionManifest> mergeCollectionManifest(
-          CollectionManifest incoming) async =>
-      incoming;
+    CollectionManifest incoming,
+  ) async => incoming;
 
   const _LiveBookLibraryService(this.bookTitle, {this.manga = false});
 
@@ -74,29 +75,34 @@ class _LiveBookLibraryService implements FushiLibraryHostService {
 
   @override
   Future<List<RemoteBookInfo>> listBooks() async => <RemoteBookInfo>[
-        RemoteBookInfo(
-          title: bookTitle,
-          hasContent: !manga,
-          hasMangaContent: manga,
-          format: manga ? 'manga' : 'epub',
-        ),
-      ];
+    RemoteBookInfo(
+      title: bookTitle,
+      hasContent: !manga,
+      hasMangaContent: manga,
+      format: manga ? 'manga' : 'epub',
+    ),
+  ];
 
   @override
   Future<File> exportBook(String title) async {
-    final Directory tmp =
-        Directory.systemTemp.createTempSync('fushi_compare_live_book');
+    final Directory tmp = Directory.systemTemp.createTempSync(
+      'fushi_compare_live_book',
+    );
     final File file = File('${tmp.path}/book.epub');
     final Archive archive = Archive();
-    archive
-        .addFile(ArchiveFile('mimetype', 20, 'application/epub+zip'.codeUnits));
+    archive.addFile(
+      ArchiveFile('mimetype', 20, 'application/epub+zip'.codeUnits),
+    );
     await file.writeAsBytes(ZipEncoder().encode(archive)!);
     return file;
   }
 
   @override
-  Future<void> importBook(File epubFile,
-      {String? displayTitle, int displayTitleAt = 0}) async {}
+  Future<void> importBook(
+    File epubFile, {
+    String? displayTitle,
+    int displayTitleAt = 0,
+  }) async {}
 
   @override
   Future<void> deleteBook(String title) async {}
@@ -166,29 +172,35 @@ class _LiveBookLibraryService implements FushiLibraryHostService {
   Future<bool> videoExists(String id, {int episodeIndex = 0}) async => false;
 
   @override
-  Future<void> importVideoSubtitle(File subtitleFile,
-      {required String id, required String suffix}) async {}
+  Future<void> importVideoSubtitle(
+    File subtitleFile, {
+    required String id,
+    required String suffix,
+  }) async {}
 
   @override
-  Future<void> importVideo(File videoFile,
-      {required String id,
-      required String title,
-      String? originalFileName}) async {}
+  Future<void> importVideo(
+    File videoFile, {
+    required String id,
+    required String title,
+    String? originalFileName,
+  }) async {}
 
   @override
   Future<File?> resolveVideoFile(String id, {int episodeIndex = 0}) async =>
       null;
 
   @override
-  Future<File?> resolveVideoSubtitle(String id,
-          {String langCode = 'ja', int episodeIndex = 0}) async =>
-      null;
+  Future<File?> resolveVideoSubtitle(
+    String id, {
+    String langCode = 'ja',
+    int episodeIndex = 0,
+  }) async => null;
 
   @override
   Future<({int positionMs, int updatedAtMs})> getAudiobookPosition(
     String bookKey,
-  ) async =>
-      (positionMs: 0, updatedAtMs: 0);
+  ) async => (positionMs: 0, updatedAtMs: 0);
 
   @override
   Future<void> putAudiobookPosition(
@@ -201,8 +213,7 @@ class _LiveBookLibraryService implements FushiLibraryHostService {
   Future<({int positionMs, int updatedAtMs})> getVideoPosition(
     String id, {
     int episodeIndex = 0,
-  }) async =>
-      (positionMs: 0, updatedAtMs: 0);
+  }) async => (positionMs: 0, updatedAtMs: 0);
 
   @override
   Future<void> putVideoPosition(
@@ -223,8 +234,9 @@ Future<InterconnectSyncBackend> _buildLiveBackend({
     FushiClientUrl(url: base, enabled: true),
   ]);
   await repo.setFushiClientToken(token);
-  final InterconnectSyncBackend backend =
-      InterconnectSyncBackend.withProbe((String url, String tok) async => true);
+  final InterconnectSyncBackend backend = InterconnectSyncBackend.withProbe(
+    (String url, String tok) async => true,
+  );
   await backend.restoreAuth(repo);
   await backend.authenticate(repo: repo);
   return backend;
@@ -232,52 +244,64 @@ Future<InterconnectSyncBackend> _buildLiveBackend({
 
 void main() {
   test(
-      'Fushi interconnect compare lists remote-only live book as downloadable',
-      () async {
-    final FushiDatabase db = _memDb();
-    addTearDown(db.close);
-    final Directory tempDir =
-        Directory.systemTemp.createTempSync('fushi_compare_live_tmp');
-    addTearDown(() {
-      try {
-        if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
-      } catch (_) {}
-    });
+    'Fushi interconnect compare lists remote-only live book as downloadable',
+    () async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final Directory tempDir = Directory.systemTemp.createTempSync(
+        'fushi_compare_live_tmp',
+      );
+      addTearDown(() {
+        try {
+          if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
+        } catch (_) {}
+      });
 
-    final FushiSyncServer server = FushiSyncServer(
-      syncDataDir: '${tempDir.path}/server',
-      port: 0,
-      token: 'compare-live-token',
-      allowLan: false,
-      libraryService: const _LiveBookLibraryService('LiveOnlyBook'),
-    );
-    await server.start();
-    addTearDown(server.stop);
+      final FushiSyncServer server = FushiSyncServer(
+        syncDataDir: '${tempDir.path}/server',
+        port: 0,
+        token: 'compare-live-token',
+        allowLan: false,
+        libraryService: const _LiveBookLibraryService('LiveOnlyBook'),
+      );
+      await server.start();
+      addTearDown(server.stop);
 
-    final InterconnectSyncBackend backend = await _buildLiveBackend(
-      db: db,
-      base: 'http://127.0.0.1:${server.port}',
-      token: 'compare-live-token',
-    );
-    addTearDown(backend.clearCache);
+      final InterconnectSyncBackend backend = await _buildLiveBackend(
+        db: db,
+        base: 'http://127.0.0.1:${server.port}',
+        token: 'compare-live-token',
+      );
+      addTearDown(backend.clearCache);
 
-    final List<SyncCompareEntry> entries =
-        await fetchCompareDataForTest(db, backend);
-    final SyncCompareEntry liveEntry =
-        entries.singleWhere((SyncCompareEntry e) => e.title == 'LiveOnlyBook');
+      final List<SyncCompareEntry> entries = await fetchCompareDataForTest(
+        db,
+        backend,
+      );
+      final SyncCompareEntry liveEntry = entries.singleWhere(
+        (SyncCompareEntry e) => e.title == 'LiveOnlyBook',
+      );
 
-    expect(liveEntry.bookKey, isNull);
-    expect(liveEntry.remoteFolderId, isNull,
-        reason: 'live library book does not live in the WebDAV book folder');
-    expect(liveEntry.isDownloadableRemoteOnly, isTrue,
-        reason: 'Fushi 互联 compare 必须读取 live /api/library/books');
-  });
+      expect(liveEntry.bookKey, isNull);
+      expect(
+        liveEntry.remoteFolderId,
+        isNull,
+        reason: 'live library book does not live in the WebDAV book folder',
+      );
+      expect(
+        liveEntry.isDownloadableRemoteOnly,
+        isTrue,
+        reason: 'Fushi 互联 compare 必须读取 live /api/library/books',
+      );
+    },
+  );
 
   test('远端独有的互联漫画同样可下载（hasContent 恒 false，判据须并上 hasMangaContent）', () async {
     final FushiDatabase db = _memDb();
     addTearDown(db.close);
-    final Directory tempDir =
-        Directory.systemTemp.createTempSync('fushi_compare_live_manga');
+    final Directory tempDir = Directory.systemTemp.createTempSync(
+      'fushi_compare_live_manga',
+    );
     addTearDown(() {
       try {
         if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
@@ -289,8 +313,10 @@ void main() {
       port: 0,
       token: 'compare-live-manga',
       allowLan: false,
-      libraryService:
-          const _LiveBookLibraryService('MangaOnlyBook', manga: true),
+      libraryService: const _LiveBookLibraryService(
+        'MangaOnlyBook',
+        manga: true,
+      ),
     );
     await server.start();
     addTearDown(server.stop);
@@ -302,14 +328,20 @@ void main() {
     );
     addTearDown(backend.clearCache);
 
-    final List<SyncCompareEntry> entries =
-        await fetchCompareDataForTest(db, backend);
-    final SyncCompareEntry liveEntry =
-        entries.singleWhere((SyncCompareEntry e) => e.title == 'MangaOnlyBook');
+    final List<SyncCompareEntry> entries = await fetchCompareDataForTest(
+      db,
+      backend,
+    );
+    final SyncCompareEntry liveEntry = entries.singleWhere(
+      (SyncCompareEntry e) => e.title == 'MangaOnlyBook',
+    );
 
     // 修复前判据只看 live.hasContent（漫画恒 false）→ 互联漫画在对比弹窗里
     // 连下载入口都不出现。
-    expect(liveEntry.isDownloadableRemoteOnly, isTrue,
-        reason: '漫画内容走 hasMangaContent，判据必须取并');
+    expect(
+      liveEntry.isDownloadableRemoteOnly,
+      isTrue,
+      reason: '漫画内容走 hasMangaContent，判据必须取并',
+    );
   });
 }

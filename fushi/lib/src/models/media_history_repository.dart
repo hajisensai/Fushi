@@ -81,8 +81,10 @@ class MediaHistoryRepository extends ChangeNotifier {
 
   static MediaOpenHistoryCompanion _mediaItemToCompanion(MediaItem item) {
     final Map<String, dynamic> snapshot = item.toJson()
-      ..removeWhere((String key, Object? value) =>
-          value == null || _columnedKeys.contains(key));
+      ..removeWhere(
+        (String key, Object? value) =>
+            value == null || _columnedKeys.contains(key),
+      );
     return MediaOpenHistoryCompanion(
       mediaType: Value(item.mediaTypeIdentifier),
       mediaSource: Value(item.mediaSourceIdentifier),
@@ -103,15 +105,18 @@ class MediaHistoryRepository extends ChangeNotifier {
     // v80：PK (mediaSource, mediaId) 即 uniqueKey 语义，upsert 天然覆盖旧行。
     await _db.upsertMediaOpenHistory(_mediaItemToCompanion(item));
     await _db.trimMediaHistory(
-        item.mediaTypeIdentifier, maximumMediaHistoryItems);
+      item.mediaTypeIdentifier,
+      maximumMediaHistoryItems,
+    );
 
     final rows = await _db.getAllMediaOpenHistory();
     _mediaItemsCache = rows.map(_rowToMediaItem).toList();
   }
 
   Future<void> updateMediaItem(MediaItem item) async {
-    final idx =
-        _mediaItemsCache.indexWhere((m) => m.uniqueKey == item.uniqueKey);
+    final idx = _mediaItemsCache.indexWhere(
+      (m) => m.uniqueKey == item.uniqueKey,
+    );
     if (idx >= 0) _mediaItemsCache[idx] = item;
     await _db.upsertMediaOpenHistory(_mediaItemToCompanion(item));
   }
@@ -124,7 +129,9 @@ class MediaHistoryRepository extends ChangeNotifier {
   Future<void> deleteMediaItemById(MediaItem item) async {
     _mediaItemsCache.removeWhere((m) => m.uniqueKey == item.uniqueKey);
     await _db.deleteMediaOpenHistory(
-        item.mediaSourceIdentifier, item.mediaIdentifier);
+      item.mediaSourceIdentifier,
+      item.mediaIdentifier,
+    );
   }
 
   // ── media item queries ───────────────────────────────────────────────
@@ -158,11 +165,13 @@ class MediaHistoryRepository extends ChangeNotifier {
       list.removeAt(0);
     }
 
-    await _db.upsertSearchHistoryItem(SearchHistoryItemsCompanion.insert(
-      historyKey: historyKey,
-      searchTerm: searchTerm,
-      uniqueKey: uk,
-    ));
+    await _db.upsertSearchHistoryItem(
+      SearchHistoryItemsCompanion.insert(
+        historyKey: historyKey,
+        searchTerm: searchTerm,
+        uniqueKey: uk,
+      ),
+    );
     await _db.trimSearchHistory(historyKey, maximumSearchHistoryItems);
   }
 

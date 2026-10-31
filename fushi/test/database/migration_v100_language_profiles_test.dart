@@ -18,11 +18,7 @@ void main() {
       isMainProcess: false,
     );
     final int profileId = await original.insertProfile(
-      ProfilesCompanion.insert(
-        name: '日语',
-        createdAt: 111,
-        updatedAt: 222,
-      ),
+      ProfilesCompanion.insert(name: '日语', createdAt: 111, updatedAt: 222),
     );
     await original.setMediaTypeProfile('epub', profileId);
     await original.setBookProfile('book-key-1', profileId);
@@ -40,8 +36,9 @@ void main() {
   }
 
   test('v99 → v100 建出 language_profiles，且既有 Profile 绑定零丢失', () async {
-    final Directory directory =
-        Directory.systemTemp.createTempSync('language_profiles_v100');
+    final Directory directory = Directory.systemTemp.createTempSync(
+      'language_profiles_v100',
+    );
     addTearDown(() => directory.deleteSync(recursive: true));
     final String path = await seedV99Database(directory);
 
@@ -64,18 +61,24 @@ void main() {
     expect(profiles, hasLength(1));
     expect(profiles.single.name, '日语');
     expect(profiles.single.createdAt, 111);
-    expect((await upgraded.getMediaTypeProfile('epub'))?.profileId,
-        profiles.single.id);
-    expect((await upgraded.getBookProfile('book-key-1'))?.profileId,
-        profiles.single.id);
+    expect(
+      (await upgraded.getMediaTypeProfile('epub'))?.profileId,
+      profiles.single.id,
+    );
+    expect(
+      (await upgraded.getBookProfile('book-key-1'))?.profileId,
+      profiles.single.id,
+    );
 
     // 新表存在且为空 —— 空 = 语言级绑定整级空转 = 升级前行为。
     expect(await upgraded.getAllLanguageProfiles(), isEmpty);
 
     // 新表可读写，主键 upsert 生效。
     await upgraded.setLanguageProfile('ja', profiles.single.id);
-    expect((await upgraded.getLanguageProfile('ja'))?.profileId,
-        profiles.single.id);
+    expect(
+      (await upgraded.getLanguageProfile('ja'))?.profileId,
+      profiles.single.id,
+    );
     await upgraded.setLanguageProfile('ja', profiles.single.id);
     expect(await upgraded.getAllLanguageProfiles(), hasLength(1));
 
@@ -84,8 +87,9 @@ void main() {
   });
 
   test('v100 迁移路径上索引一并建出（_ensureIndexes 不跑升级路径）', () async {
-    final Directory directory =
-        Directory.systemTemp.createTempSync('language_profiles_v100_idx');
+    final Directory directory = Directory.systemTemp.createTempSync(
+      'language_profiles_v100_idx',
+    );
     addTearDown(() => directory.deleteSync(recursive: true));
     final String path = await seedV99Database(directory);
 
@@ -116,8 +120,9 @@ void main() {
   });
 
   test('删 Profile 时语言绑定随之 cascade 清除', () async {
-    final Directory directory =
-        Directory.systemTemp.createTempSync('language_profiles_v100_fk');
+    final Directory directory = Directory.systemTemp.createTempSync(
+      'language_profiles_v100_fk',
+    );
     addTearDown(() => directory.deleteSync(recursive: true));
     final String path = await seedV99Database(directory);
 

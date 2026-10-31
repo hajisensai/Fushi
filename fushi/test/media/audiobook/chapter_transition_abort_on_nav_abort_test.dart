@@ -33,9 +33,13 @@ void main() {
 
       controller.abortChapterTransition();
 
-      expect(controller.chapterTransitionHeldForTesting, isFalse,
-          reason: '导航中止意味着 notifySectionRestoreCompleted 永远不会来，'
-              '守卫必须在这里释放，否则 cue 推进永久冻结');
+      expect(
+        controller.chapterTransitionHeldForTesting,
+        isFalse,
+        reason:
+            '导航中止意味着 notifySectionRestoreCompleted 永远不会来，'
+            '守卫必须在这里释放，否则 cue 推进永久冻结',
+      );
     });
 
     test('图片章停留序列在途：abort 不得放掉序列自己持的守卫', () {
@@ -47,9 +51,13 @@ void main() {
 
       controller.abortChapterTransition();
 
-      expect(controller.chapterTransitionHeldForTesting, isTrue,
-          reason: '序列用守卫挡住中间章回执的重入（TODO-1037），'
-              '中止其中一章的导航不得把整段序列的守卫一起放掉');
+      expect(
+        controller.chapterTransitionHeldForTesting,
+        isTrue,
+        reason:
+            '序列用守卫挡住中间章回执的重入（TODO-1037），'
+            '中止其中一章的导航不得把整段序列的守卫一起放掉',
+      );
 
       // 对照组：序列收尾后同一个 abort 正常解除 —— 证明上面断的不是死分支。
       controller.setImageChapterPauseActive(false);
@@ -69,23 +77,32 @@ void main() {
         _cue('old-1', startMs: 1000),
       ];
       controller.setChapterCues(oldChapter);
-      expect(controller.currentCue?.text, 'old-0',
-          reason: '位置 0 落在首句，正常路径解析得到当前 cue');
+      expect(
+        controller.currentCue?.text,
+        'old-0',
+        reason: '位置 0 落在首句，正常路径解析得到当前 cue',
+      );
 
       // 跨章导航在飞：守卫竖起，新章 cue 灌进来只换列表、不重算（既有语义）。
       controller.holdChapterTransition();
       final List<AudioCue> newChapter = <AudioCue>[_cue('new-0', startMs: 0)];
       controller.setChapterCues(newChapter);
-      expect(controller.currentCue?.text, 'old-0',
-          reason: '守卫期间当前 cue 冻结在旧章旧句 —— 卡死时用户看到的正是这个');
+      expect(
+        controller.currentCue?.text,
+        'old-0',
+        reason: '守卫期间当前 cue 冻结在旧章旧句 —— 卡死时用户看到的正是这个',
+      );
 
       // 导航中止：守卫释放后，下一次列表更新（章节真正落地时的 setChapterCues）
       // 恢复重算，状态机自愈。
       controller.abortChapterTransition();
       controller.setChapterCues(newChapter);
 
-      expect(controller.currentCue?.text, 'new-0',
-          reason: '守卫解除后 cue 重算恢复，上下句不再拿冻结索引算目标');
+      expect(
+        controller.currentCue?.text,
+        'new-0',
+        reason: '守卫解除后 cue 重算恢复，上下句不再拿冻结索引算目标',
+      );
     });
   });
 
@@ -96,17 +113,27 @@ void main() {
 
     test('_failNavigation 解除跨章守卫', () {
       final String body = methodBody(navigation, 'void _failNavigation() {');
-      expect(containsIdentifierCall(body, 'abortChapterTransition'), isTrue,
-          reason: '_failNavigation 是三份导航中止的收敛单点，'
-              '跨章守卫必须在这里释放（BUG-2529）');
+      expect(
+        containsIdentifierCall(body, 'abortChapterTransition'),
+        isTrue,
+        reason:
+            '_failNavigation 是三份导航中止的收敛单点，'
+            '跨章守卫必须在这里释放（BUG-2529）',
+      );
     });
 
     test('content-ready 兜底超时经 _failNavigation 收口', () {
-      final String body =
-          methodBody(navigation, 'void _startContentReadyTimeout() {');
-      expect(containsIdentifierCall(body, '_failNavigation'), isTrue,
-          reason: '兜底超时是「WebView 回执永远不来」的那条路径，'
-              '它必须走同一个收口点，否则守卫解除绕不到它');
+      final String body = methodBody(
+        navigation,
+        'void _startContentReadyTimeout() {',
+      );
+      expect(
+        containsIdentifierCall(body, '_failNavigation'),
+        isTrue,
+        reason:
+            '兜底超时是「WebView 回执永远不来」的那条路径，'
+            '它必须走同一个收口点，否则守卫解除绕不到它',
+      );
     });
 
     test('章节装载失败也经 _failNavigation 收口', () {
@@ -114,20 +141,28 @@ void main() {
         navigation,
         'Future<bool> _navigateToChapter(',
       );
-      expect(containsIdentifierCall(body, '_failNavigation'), isTrue,
-          reason: '装载抛错同样让回执永不到达，必须走同一收口点');
+      expect(
+        containsIdentifierCall(body, '_failNavigation'),
+        isTrue,
+        reason: '装载抛错同样让回执永不到达，必须走同一收口点',
+      );
     });
 
     test('解除用 abortChapterTransition 而非裸 cancelChapterTransition', () {
       final String controllerSrc = File(
         'lib/src/media/audiobook/audiobook_controller.dart',
       ).readAsStringSync();
-      final String body =
-          methodBody(controllerSrc, 'void abortChapterTransition() {');
-      expect(containsCodeLine(body, 'if (_imageChapterPauseActive) return;'),
-          isTrue,
-          reason: 'abort 与 cancel 的唯一差别就是尊重图片章停留序列，'
-              '这条早退丢了就会复现 TODO-1037 的一步跳过剩余图片章');
+      final String body = methodBody(
+        controllerSrc,
+        'void abortChapterTransition() {',
+      );
+      expect(
+        containsCodeLine(body, 'if (_imageChapterPauseActive) return;'),
+        isTrue,
+        reason:
+            'abort 与 cancel 的唯一差别就是尊重图片章停留序列，'
+            '这条早退丢了就会复现 TODO-1037 的一步跳过剩余图片章',
+      );
     });
   });
 }

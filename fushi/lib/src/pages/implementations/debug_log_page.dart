@@ -73,11 +73,8 @@ class _DebugLogPageState extends State<DebugLogPage> {
           FushiIconButton(
             icon: FushiIcons.cloudUpload,
             tooltip: t.log_upload_action,
-            onTap: () => uploadLogToServer(
-              context: context,
-              log: _log,
-              kind: 'debug',
-            ),
+            onTap: () =>
+                uploadLogToServer(context: context, log: _log, kind: 'debug'),
           ),
         if (showSaveLogAction)
           FushiIconButton(

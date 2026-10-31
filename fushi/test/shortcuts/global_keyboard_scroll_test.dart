@@ -39,35 +39,37 @@ void main() {
     Map<Type, Action<Intent>>? appActions,
   }) async {
     final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
-    await tester.pumpWidget(MaterialApp(
-      navigatorKey: navKey,
-      home: page,
-      shortcuts: appShortcuts,
-      actions: appActions,
-      builder: (BuildContext context, Widget? child) =>
-          wrapWithGlobalNavigation(
+    await tester.pumpWidget(
+      MaterialApp(
         navigatorKey: navKey,
-        registry: registry,
-        focusNavigationEnabled: focusNavigationEnabled,
-        // 生产结构：焦点导航开启时 FushiFocusRoot 在全局导航层之内、Navigator 之上
-        // （main.dart）。关闭时不挂——`FushiFocusRoot.maybeControllerOf` 为 null
-        // 就是「焦点导航关闭」的判据本身。
-        child: focusNavigationEnabled
-            ? FushiFocusRoot(enabled: true, child: child!)
-            : child!,
+        home: page,
+        shortcuts: appShortcuts,
+        actions: appActions,
+        builder: (BuildContext context, Widget? child) =>
+            wrapWithGlobalNavigation(
+              navigatorKey: navKey,
+              registry: registry,
+              focusNavigationEnabled: focusNavigationEnabled,
+              // 生产结构：焦点导航开启时 FushiFocusRoot 在全局导航层之内、Navigator 之上
+              // （main.dart）。关闭时不挂——`FushiFocusRoot.maybeControllerOf` 为 null
+              // 就是「焦点导航关闭」的判据本身。
+              child: focusNavigationEnabled
+                  ? FushiFocusRoot(enabled: true, child: child!)
+                  : child!,
+            ),
       ),
-    ));
+    );
     await tester.pumpAndSettle();
   }
 
   /// 纯展示长列表本体：零可聚焦子件、`primary: false`（桌面端默认也是如此）。
   Widget bareDisplayList(ScrollController controller) => ListView.builder(
-        controller: controller,
-        primary: false,
-        itemCount: 200,
-        itemExtent: 40,
-        itemBuilder: (BuildContext context, int i) => Text('row $i'),
-      );
+    controller: controller,
+    primary: false,
+    itemCount: 200,
+    itemExtent: 40,
+    itemBuilder: (BuildContext context, int i) => Text('row $i'),
+  );
 
   /// 纯展示长列表页：零可聚焦子件、零登记。
   Widget displayOnlyList(ScrollController controller) =>
@@ -80,38 +82,53 @@ void main() {
       LogicalKeyboardKey soleKey(ShortcutAction action) {
         final List<InputBinding> keys = win[action]!.keyboardBindings;
         expect(keys, hasLength(1), reason: '${action.key} 应恰有一个键盘默认位');
-        expect(keys.single.modifiers, isEmpty,
-            reason: '${action.key} 默认位不带修饰键');
+        expect(
+          keys.single.modifiers,
+          isEmpty,
+          reason: '${action.key} 默认位不带修饰键',
+        );
         return keys.single.key;
       }
 
-      expect(soleKey(ShortcutAction.globalScrollPageDown),
-          LogicalKeyboardKey.pageDown);
-      expect(soleKey(ShortcutAction.globalScrollPageUp),
-          LogicalKeyboardKey.pageUp);
-      expect(soleKey(ShortcutAction.globalScrollLineDown),
-          LogicalKeyboardKey.arrowDown);
-      expect(soleKey(ShortcutAction.globalScrollLineUp),
-          LogicalKeyboardKey.arrowUp);
       expect(
-          soleKey(ShortcutAction.globalScrollToTop), LogicalKeyboardKey.home);
+        soleKey(ShortcutAction.globalScrollPageDown),
+        LogicalKeyboardKey.pageDown,
+      );
       expect(
-          soleKey(ShortcutAction.globalScrollToBottom), LogicalKeyboardKey.end);
+        soleKey(ShortcutAction.globalScrollPageUp),
+        LogicalKeyboardKey.pageUp,
+      );
+      expect(
+        soleKey(ShortcutAction.globalScrollLineDown),
+        LogicalKeyboardKey.arrowDown,
+      );
+      expect(
+        soleKey(ShortcutAction.globalScrollLineUp),
+        LogicalKeyboardKey.arrowUp,
+      );
+      expect(
+        soleKey(ShortcutAction.globalScrollToTop),
+        LogicalKeyboardKey.home,
+      );
+      expect(
+        soleKey(ShortcutAction.globalScrollToBottom),
+        LogicalKeyboardKey.end,
+      );
     });
 
     test('手柄 LB/RB 整屏翻页原样保留；新增四个动作不占手柄键', () {
       final Map<ShortcutAction, ShortcutBindingSet> win =
           ShortcutDefaults.forPlatform(TargetPlatform.windows);
       expect(
-        win[ShortcutAction.globalScrollPageDown]!
-            .gamepadBindings
-            .map((GamepadBinding b) => b.button),
+        win[ShortcutAction.globalScrollPageDown]!.gamepadBindings.map(
+          (GamepadBinding b) => b.button,
+        ),
         <GamepadButton>[GamepadButton.rb],
       );
       expect(
-        win[ShortcutAction.globalScrollPageUp]!
-            .gamepadBindings
-            .map((GamepadBinding b) => b.button),
+        win[ShortcutAction.globalScrollPageUp]!.gamepadBindings.map(
+          (GamepadBinding b) => b.button,
+        ),
         <GamepadButton>[GamepadButton.lb],
       );
       for (final ShortcutAction action in <ShortcutAction>[
@@ -136,28 +153,40 @@ void main() {
         LogicalKeyboardKey.end,
       ]) {
         expect(
-            registry.resolveKeyboard(key,
-                modifiers: const <ModifierKey>{}, scope: ShortcutScope.home),
-            isNull,
-            reason: 'home scope 不得占用 ${key.keyLabel}');
+          registry.resolveKeyboard(
+            key,
+            modifiers: const <ModifierKey>{},
+            scope: ShortcutScope.home,
+          ),
+          isNull,
+          reason: 'home scope 不得占用 ${key.keyLabel}',
+        );
         expect(
-            registry.resolveKeyboard(key,
-                modifiers: const <ModifierKey>{},
-                scope: ShortcutScope.universal),
-            isNull,
-            reason: 'universal scope 不得占用 ${key.keyLabel}');
+          registry.resolveKeyboard(
+            key,
+            modifiers: const <ModifierKey>{},
+            scope: ShortcutScope.universal,
+          ),
+          isNull,
+          reason: 'universal scope 不得占用 ${key.keyLabel}',
+        );
         expect(
-            registry.resolveKeyboard(key,
-                modifiers: const <ModifierKey>{}, scope: ShortcutScope.global),
-            isNotNull,
-            reason: 'global scope 应把 ${key.keyLabel} 解析到滚动动作');
+          registry.resolveKeyboard(
+            key,
+            modifiers: const <ModifierKey>{},
+            scope: ShortcutScope.global,
+          ),
+          isNotNull,
+          reason: 'global scope 应把 ${key.keyLabel} 解析到滚动动作',
+        );
       }
     });
   });
 
   group('零登记纯展示页：键盘真的能滚', () {
-    testWidgets('PageDown / ArrowDown / End / Home 依次改变 controller.offset',
-        (WidgetTester tester) async {
+    testWidgets('PageDown / ArrowDown / End / Home 依次改变 controller.offset', (
+      WidgetTester tester,
+    ) async {
       final ScrollController controller = ScrollController();
       addTearDown(controller.dispose);
       await pumpApp(
@@ -172,20 +201,29 @@ void main() {
       await tester.pumpAndSettle();
       final double afterPageDown = controller.offset;
       expect(afterPageDown, greaterThan(0), reason: 'PageDown 应整屏下滚');
-      expect(afterPageDown, lessThanOrEqualTo(600),
-          reason: '整屏 = 0.9 × viewport（测试 viewport 600）');
+      expect(
+        afterPageDown,
+        lessThanOrEqualTo(600),
+        reason: '整屏 = 0.9 × viewport（测试 viewport 600）',
+      );
 
       expect(await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown), isTrue);
       await tester.pumpAndSettle();
       final double afterArrowDown = controller.offset;
       expect(afterArrowDown, greaterThan(afterPageDown), reason: '↓ 应单步下滚');
-      expect(afterArrowDown - afterPageDown, lessThan(afterPageDown),
-          reason: '单步比整屏小');
+      expect(
+        afterArrowDown - afterPageDown,
+        lessThan(afterPageDown),
+        reason: '单步比整屏小',
+      );
 
       expect(await tester.sendKeyEvent(LogicalKeyboardKey.end), isTrue);
       await tester.pumpAndSettle();
-      expect(controller.offset, controller.position.maxScrollExtent,
-          reason: 'End 应滚到底');
+      expect(
+        controller.offset,
+        controller.position.maxScrollExtent,
+        reason: 'End 应滚到底',
+      );
 
       expect(await tester.sendKeyEvent(LogicalKeyboardKey.home), isTrue);
       await tester.pumpAndSettle();
@@ -214,8 +252,9 @@ void main() {
       await tester.sendKeyUpEvent(LogicalKeyboardKey.arrowDown);
     });
 
-    testWidgets('实验性焦点导航开启时同样能滚（不受开关门控），且不把焦点踢出页面 sink',
-        (WidgetTester tester) async {
+    testWidgets('实验性焦点导航开启时同样能滚（不受开关门控），且不把焦点踢出页面 sink', (
+      WidgetTester tester,
+    ) async {
       final ScrollController controller = ScrollController();
       addTearDown(controller.dispose);
       // 页面级键事件 sink（首页 `_keyboardFocusNode` / 阅读器同款）：skipTraversal、
@@ -223,13 +262,16 @@ void main() {
       // 树里有 FushiFocusRoot、本页零受管目标、焦点停在一个「不可用」节点上：没门时
       // `controller.move()` 走 ensureFocus 把焦点踢到 app 级兜底节点，页面照样滚，
       // 但挂在 sink 上的页面快捷键从此收不到键。变异实测：删门即红。
-      final FocusNode sink =
-          FocusNode(debugLabel: 'page-sink', skipTraversal: true);
+      final FocusNode sink = FocusNode(
+        debugLabel: 'page-sink',
+        skipTraversal: true,
+      );
       addTearDown(sink.dispose);
       await pumpApp(
         tester,
         page: Scaffold(
-            body: Focus(focusNode: sink, child: bareDisplayList(controller))),
+          body: Focus(focusNode: sink, child: bareDisplayList(controller)),
+        ),
         registry: desktopRegistry(),
         focusNavigationEnabled: true,
       );
@@ -254,17 +296,19 @@ void main() {
       final ScrollController controller = ScrollController();
       addTearDown(controller.dispose);
       final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
-      await tester.pumpWidget(MaterialApp(
-        navigatorKey: navKey,
-        home: displayOnlyList(controller),
-        builder: (BuildContext context, Widget? child) =>
-            wrapWithGlobalNavigation(
+      await tester.pumpWidget(
+        MaterialApp(
           navigatorKey: navKey,
-          registry: desktopRegistry(),
-          focusNavigationEnabled: false,
-          child: child!,
+          home: displayOnlyList(controller),
+          builder: (BuildContext context, Widget? child) =>
+              wrapWithGlobalNavigation(
+                navigatorKey: navKey,
+                registry: desktopRegistry(),
+                focusNavigationEnabled: false,
+                child: child!,
+              ),
         ),
-      ));
+      );
       await tester.pumpAndSettle();
       showDialog<void>(
         context: tester.element(find.text('row 0')),
@@ -277,8 +321,9 @@ void main() {
       expect(controller.offset, 0, reason: '非当前路由的 Scrollable 不得被滚');
     });
 
-    testWidgets('已登记 PageScrollRegistry 的页面：可见时经登记滚，被对话框盖住时不滚',
-        (WidgetTester tester) async {
+    testWidgets('已登记 PageScrollRegistry 的页面：可见时经登记滚，被对话框盖住时不滚', (
+      WidgetTester tester,
+    ) async {
       final ScrollController controller = ScrollController();
       final ScrollController decoy = ScrollController();
       addTearDown(controller.dispose);
@@ -314,25 +359,29 @@ void main() {
       await tester.pumpAndSettle();
       await tester.sendKeyEvent(LogicalKeyboardKey.end);
       await tester.pumpAndSettle();
-      expect(controller.offset, visibleScrolled,
-          reason: '登记栈顶仍是被盖住页面的控制器，但它不在当前路由，不得被滚');
+      expect(
+        controller.offset,
+        visibleScrolled,
+        reason: '登记栈顶仍是被盖住页面的控制器，但它不在当前路由，不得被滚',
+      );
     });
   });
 
   group('审查返工：可见性判据', () {
-    testWidgets('IndexedStack 停在 index≥1 的子区：滚可见子区，不滚隐藏子区',
-        (WidgetTester tester) async {
+    testWidgets('IndexedStack 停在 index≥1 的子区：滚可见子区，不滚隐藏子区', (
+      WidgetTester tester,
+    ) async {
       final ScrollController hidden = ScrollController();
       final ScrollController shown = ScrollController();
       addTearDown(hidden.dispose);
       addTearDown(shown.dispose);
       Widget list(ScrollController c, String tag) => ListView.builder(
-            controller: c,
-            primary: false,
-            itemCount: 200,
-            itemExtent: 40,
-            itemBuilder: (BuildContext context, int i) => Text('$tag $i'),
-          );
+        controller: c,
+        primary: false,
+        itemCount: 200,
+        itemExtent: 40,
+        itemBuilder: (BuildContext context, int i) => Text('$tag $i'),
+      );
       await pumpApp(
         tester,
         page: Scaffold(
@@ -353,8 +402,9 @@ void main() {
       expect(hidden.offset, 0);
     });
 
-    testWidgets('已登记但被 Offstage 藏起的控制器不占栈顶语义：滚可见列表',
-        (WidgetTester tester) async {
+    testWidgets('已登记但被 Offstage 藏起的控制器不占栈顶语义：滚可见列表', (
+      WidgetTester tester,
+    ) async {
       final ScrollController offstage = ScrollController();
       final ScrollController visible = ScrollController();
       addTearDown(offstage.dispose);
@@ -404,55 +454,61 @@ void main() {
       addTearDown(first.dispose);
       addTearDown(second.dispose);
       final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
-      await tester.pumpWidget(MaterialApp(
-        navigatorKey: navKey,
-        home: Scaffold(
-          body: ListView(
-            controller: controller,
-            primary: false,
-            children: <Widget>[
-              SizedBox(
-                height: 60,
-                child: TextButton(
-                  focusNode: first,
-                  onPressed: () {},
-                  child: const Text('first'),
-                ),
-              ),
-              SizedBox(
-                height: 60,
-                child: TextButton(
-                  focusNode: second,
-                  onPressed: () {},
-                  child: const Text('second'),
-                ),
-              ),
-              const SizedBox(height: 2000),
-            ],
-          ),
-        ),
-        builder: (BuildContext context, Widget? child) =>
-            wrapWithGlobalNavigation(
+      await tester.pumpWidget(
+        MaterialApp(
           navigatorKey: navKey,
-          registry: desktopRegistry(),
-          focusNavigationEnabled: true,
-          // 生产结构：FushiFocusRoot 在全局导航层之内、Navigator 之上。
-          child: FushiFocusRoot(enabled: true, child: child!),
+          home: Scaffold(
+            body: ListView(
+              controller: controller,
+              primary: false,
+              children: <Widget>[
+                SizedBox(
+                  height: 60,
+                  child: TextButton(
+                    focusNode: first,
+                    onPressed: () {},
+                    child: const Text('first'),
+                  ),
+                ),
+                SizedBox(
+                  height: 60,
+                  child: TextButton(
+                    focusNode: second,
+                    onPressed: () {},
+                    child: const Text('second'),
+                  ),
+                ),
+                const SizedBox(height: 2000),
+              ],
+            ),
+          ),
+          builder: (BuildContext context, Widget? child) =>
+              wrapWithGlobalNavigation(
+                navigatorKey: navKey,
+                registry: desktopRegistry(),
+                focusNavigationEnabled: true,
+                // 生产结构：FushiFocusRoot 在全局导航层之内、Navigator 之上。
+                child: FushiFocusRoot(enabled: true, child: child!),
+              ),
         ),
-      ));
+      );
       await tester.pumpAndSettle();
       first.requestFocus();
       await tester.pump();
       expect(first.hasPrimaryFocus, isTrue);
       expect(await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown), isTrue);
       await tester.pumpAndSettle();
-      expect(second.hasPrimaryFocus, isTrue,
-          reason: '零受管目标不等于零焦点目标：原生控件之间照常移焦');
+      expect(
+        second.hasPrimaryFocus,
+        isTrue,
+        reason: '零受管目标不等于零焦点目标：原生控件之间照常移焦',
+      );
       expect(controller.offset, 0, reason: '目标在视口内，不该滚');
     });
 
-    testWidgets('内容溢出的对话框：焦点停在路由 scope 时 ↓ 先进第一个按钮，再按才滚',
-        (WidgetTester tester) async {
+    testWidgets('内容溢出的对话框：焦点停在路由 scope 时 ↓ 先进第一个按钮，再按才滚', (
+      WidgetTester tester,
+    ) async {
       final ScrollController page = ScrollController();
       final ScrollController dialogScroll = ScrollController();
       addTearDown(page.dispose);
@@ -460,17 +516,19 @@ void main() {
       final FocusNode ok = FocusNode(debugLabel: 'ok');
       addTearDown(ok.dispose);
       final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
-      await tester.pumpWidget(MaterialApp(
-        navigatorKey: navKey,
-        home: displayOnlyList(page),
-        builder: (BuildContext context, Widget? child) =>
-            wrapWithGlobalNavigation(
+      await tester.pumpWidget(
+        MaterialApp(
           navigatorKey: navKey,
-          registry: desktopRegistry(),
-          focusNavigationEnabled: false,
-          child: child!,
+          home: displayOnlyList(page),
+          builder: (BuildContext context, Widget? child) =>
+              wrapWithGlobalNavigation(
+                navigatorKey: navKey,
+                registry: desktopRegistry(),
+                focusNavigationEnabled: false,
+                child: child!,
+              ),
         ),
-      ));
+      );
       await tester.pumpAndSettle();
       showDialog<void>(
         context: tester.element(find.byType(Scaffold)),
@@ -500,15 +558,21 @@ void main() {
 
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
       await tester.pumpAndSettle();
-      expect(ok.hasPrimaryFocus, isTrue,
-          reason: '弹层里焦点未落到控件时，↓ 先由框架 bootstrap 进第一个按钮');
+      expect(
+        ok.hasPrimaryFocus,
+        isTrue,
+        reason: '弹层里焦点未落到控件时，↓ 先由框架 bootstrap 进第一个按钮',
+      );
       expect(dialogScroll.offset, 0, reason: '第一下不滚');
 
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
       await tester.pumpAndSettle();
       expect(ok.hasPrimaryFocus, isTrue, reason: '按钮下方无目标，焦点不动');
-      expect(dialogScroll.offset, greaterThan(0),
-          reason: '焦点已在控件上、无目标 → 滚对话框内容');
+      expect(
+        dialogScroll.offset,
+        greaterThan(0),
+        reason: '焦点已在控件上、无目标 → 滚对话框内容',
+      );
       expect(page.offset, 0, reason: '被盖住的页面不动');
     });
   });
@@ -555,8 +619,11 @@ void main() {
       expect(await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown), isTrue);
       await tester.pumpAndSettle();
       expect(nodes[3].hasPrimaryFocus, isTrue, reason: '方向上有几何焦点目标时归焦点导航');
-      expect(controller.offset, 0,
-          reason: '目标已在视口内，不该触发单步滚动（ensureVisible 也无需动）');
+      expect(
+        controller.offset,
+        0,
+        reason: '目标已在视口内，不该触发单步滚动（ensureVisible 也无需动）',
+      );
     });
 
     testWidgets('焦点在列表末尾的可聚焦项上：↓ 无目标 → 接管滚动', (WidgetTester tester) async {
@@ -651,8 +718,9 @@ void main() {
       expect(controller.offset, greaterThan(0), reason: '受管控件尽头落到滚动');
     });
 
-    testWidgets('解析到了但当前页滚不动：返回 ignored，按键继续冒泡给框架',
-        (WidgetTester tester) async {
+    testWidgets('解析到了但当前页滚不动：返回 ignored，按键继续冒泡给框架', (
+      WidgetTester tester,
+    ) async {
       // 规则 4 的观测点：把 ↑ / ↓ 在 WidgetsApp 层绑到探针 intent——它在 app 根的
       // Focus.onKeyEvent **之后**才有机会跑。页面已在顶端时 ↑ 滚不动，根层必须放行
       // （探针触发）；↓ 能滚则根层认领（探针不触发）。变异实测：无条件 handled 即红。
@@ -664,8 +732,9 @@ void main() {
         page: displayOnlyList(controller),
         registry: desktopRegistry(),
         appShortcuts: <ShortcutActivator, Intent>{
-          const SingleActivator(LogicalKeyboardKey.arrowUp):
-              const _ProbeIntent(LogicalKeyboardKey.arrowUp),
+          const SingleActivator(LogicalKeyboardKey.arrowUp): const _ProbeIntent(
+            LogicalKeyboardKey.arrowUp,
+          ),
           const SingleActivator(LogicalKeyboardKey.arrowDown):
               const _ProbeIntent(LogicalKeyboardKey.arrowDown),
         },
@@ -678,18 +747,21 @@ void main() {
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowUp);
       await tester.pumpAndSettle();
       expect(controller.offset, 0);
-      expect(probed, <LogicalKeyboardKey>[LogicalKeyboardKey.arrowUp],
-          reason: '顶端 ↑ 滚不动 → 根层放行，框架层收到');
+      expect(probed, <LogicalKeyboardKey>[
+        LogicalKeyboardKey.arrowUp,
+      ], reason: '顶端 ↑ 滚不动 → 根层放行，框架层收到');
       await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
       await tester.pumpAndSettle();
       expect(controller.offset, greaterThan(0));
-      expect(probed, <LogicalKeyboardKey>[LogicalKeyboardKey.arrowUp],
-          reason: '↓ 滚成了 → 根层认领，框架层收不到');
+      expect(probed, <LogicalKeyboardKey>[
+        LogicalKeyboardKey.arrowUp,
+      ], reason: '↓ 滚成了 → 根层认领，框架层收不到');
     });
 
     for (final bool focusNav in <bool>[false, true]) {
-      testWidgets('TextField 聚焦时 ↓ / Home / End 一律不接管（焦点导航开关=$focusNav）',
-          (WidgetTester tester) async {
+      testWidgets('TextField 聚焦时 ↓ / Home / End 一律不接管（焦点导航开关=$focusNav）', (
+        WidgetTester tester,
+      ) async {
         final ScrollController controller = ScrollController();
         addTearDown(controller.dispose);
         final FocusNode field = FocusNode(debugLabel: 'field');

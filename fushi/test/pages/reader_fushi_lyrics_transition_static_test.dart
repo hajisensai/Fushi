@@ -36,13 +36,20 @@ void main() {
       '  Widget _buildChapterTransitionOverlay(Color backgroundColor)',
       '  String _buildStyleTag()',
     );
-    final int plainBackgroundEarlyReturn = transitionOverlay
-        .indexOf('if (snapshot == null) return ColoredBox(');
-    expect(plainBackgroundEarlyReturn, isNonNegative,
-        reason: '无跨章快照时必须直接返回纯背景色，歌词模式/重排版切换不得淡出');
+    final int plainBackgroundEarlyReturn = transitionOverlay.indexOf(
+      'if (snapshot == null) return ColoredBox(',
+    );
+    expect(
+      plainBackgroundEarlyReturn,
+      isNonNegative,
+      reason: '无跨章快照时必须直接返回纯背景色，歌词模式/重排版切换不得淡出',
+    );
     final int fadeIndex = transitionOverlay.indexOf('AnimatedOpacity(');
-    expect(fadeIndex, greaterThan(plainBackgroundEarlyReturn),
-        reason: '淡出只能出现在「有跨章快照」的早退之后');
+    expect(
+      fadeIndex,
+      greaterThan(plainBackgroundEarlyReturn),
+      reason: '淡出只能出现在「有跨章快照」的早退之后',
+    );
   });
 }
 

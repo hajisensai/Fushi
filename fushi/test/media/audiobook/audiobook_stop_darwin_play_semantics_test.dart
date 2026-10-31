@@ -84,15 +84,24 @@ void main() {
       unawaited(c.play());
       await Future<void>.delayed(Duration.zero);
       expect(plat.player!.playCalls, 1);
-      expect(plat.player!.playPending, isTrue,
-          reason: '前提：这个假播放器必须复现 Darwin 的「play 挂起」语义');
+      expect(
+        plat.player!.playPending,
+        isTrue,
+        reason: '前提：这个假播放器必须复现 Darwin 的「play 挂起」语义',
+      );
 
       await c.stopPlayback();
 
-      expect(plat.player!.stopCalls, greaterThan(0),
-          reason: 'stopPlayback 必须真的把平台 stop 发下去，而不是卡在等 play');
-      expect(plat.player!.playPending, isFalse,
-          reason: 'stop 应当成为解开挂起 play 的那一方');
+      expect(
+        plat.player!.stopCalls,
+        greaterThan(0),
+        reason: 'stopPlayback 必须真的把平台 stop 发下去，而不是卡在等 play',
+      );
+      expect(
+        plat.player!.playPending,
+        isFalse,
+        reason: 'stop 应当成为解开挂起 play 的那一方',
+      );
     },
     timeout: const Timeout(Duration(seconds: 15)),
   );
@@ -117,8 +126,11 @@ void main() {
       await c.stopPlayback();
 
       expect(writes, isNotEmpty, reason: 'BUG-1240：停止路径必须落一次位置');
-      expect(writes.last, greaterThanOrEqualTo(65000),
-          reason: 'stop 会把 position 归零，落库的必须是 stop **之前**采到的位置');
+      expect(
+        writes.last,
+        greaterThanOrEqualTo(65000),
+        reason: 'stop 会把 position 归零，落库的必须是 stop **之前**采到的位置',
+      );
     },
     timeout: const Timeout(Duration(seconds: 15)),
   );
@@ -136,7 +148,8 @@ class _DarwinPlatform extends JustAudioPlatform {
 
   @override
   Future<DisposePlayerResponse> disposePlayer(
-      DisposePlayerRequest request) async {
+    DisposePlayerRequest request,
+  ) async {
     disposePlayerCalls++;
     await player?.dispose(DisposeRequest());
     return DisposePlayerResponse();
@@ -144,7 +157,8 @@ class _DarwinPlatform extends JustAudioPlatform {
 
   @override
   Future<DisposeAllPlayersResponse> disposeAllPlayers(
-      DisposeAllPlayersRequest request) async {
+    DisposeAllPlayersRequest request,
+  ) async {
     await player?.dispose(DisposeRequest());
     return DisposeAllPlayersResponse();
   }
@@ -176,16 +190,18 @@ class _DarwinPlayer extends AudioPlayerPlatform {
 
   void emit(int ms, ProcessingStateMessage state, {required bool playing}) {
     if (_events.isClosed) return;
-    _events.add(PlaybackEventMessage(
-      processingState: state,
-      updateTime: DateTime.now(),
-      updatePosition: Duration(milliseconds: ms),
-      bufferedPosition: Duration(milliseconds: ms),
-      duration: const Duration(seconds: 100),
-      icyMetadata: null,
-      currentIndex: 0,
-      androidAudioSessionId: null,
-    ));
+    _events.add(
+      PlaybackEventMessage(
+        processingState: state,
+        updateTime: DateTime.now(),
+        updatePosition: Duration(milliseconds: ms),
+        bufferedPosition: Duration(milliseconds: ms),
+        duration: const Duration(seconds: 100),
+        icyMetadata: null,
+        currentIndex: 0,
+        androidAudioSessionId: null,
+      ),
+    );
   }
 
   @override
@@ -193,9 +209,11 @@ class _DarwinPlayer extends AudioPlayerPlatform {
 
   @override
   Future<LoadResponse> load(LoadRequest request) async {
-    emit(request.initialPosition?.inMilliseconds ?? 0,
-        ProcessingStateMessage.ready,
-        playing: false);
+    emit(
+      request.initialPosition?.inMilliseconds ?? 0,
+      ProcessingStateMessage.ready,
+      playing: false,
+    );
     return LoadResponse(duration: const Duration(seconds: 100));
   }
 
@@ -229,26 +247,28 @@ class _DarwinPlayer extends AudioPlayerPlatform {
 
   @override
   Future<SeekResponse> seek(SeekRequest request) async {
-    emit(request.position?.inMilliseconds ?? 0, ProcessingStateMessage.ready,
-        playing: false);
+    emit(
+      request.position?.inMilliseconds ?? 0,
+      ProcessingStateMessage.ready,
+      playing: false,
+    );
     return SeekResponse();
   }
 
   @override
   Future<SetAndroidAudioAttributesResponse> setAndroidAudioAttributes(
-          SetAndroidAudioAttributesRequest request) async =>
-      SetAndroidAudioAttributesResponse();
+    SetAndroidAudioAttributesRequest request,
+  ) async => SetAndroidAudioAttributesResponse();
   @override
   Future<SetAutomaticallyWaitsToMinimizeStallingResponse>
-      setAutomaticallyWaitsToMinimizeStalling(
-              SetAutomaticallyWaitsToMinimizeStallingRequest request) async =>
-          SetAutomaticallyWaitsToMinimizeStallingResponse();
+  setAutomaticallyWaitsToMinimizeStalling(
+    SetAutomaticallyWaitsToMinimizeStallingRequest request,
+  ) async => SetAutomaticallyWaitsToMinimizeStallingResponse();
   @override
   Future<SetCanUseNetworkResourcesForLiveStreamingWhilePausedResponse>
-      setCanUseNetworkResourcesForLiveStreamingWhilePaused(
-              SetCanUseNetworkResourcesForLiveStreamingWhilePausedRequest
-                  request) async =>
-          SetCanUseNetworkResourcesForLiveStreamingWhilePausedResponse();
+  setCanUseNetworkResourcesForLiveStreamingWhilePaused(
+    SetCanUseNetworkResourcesForLiveStreamingWhilePausedRequest request,
+  ) async => SetCanUseNetworkResourcesForLiveStreamingWhilePausedResponse();
   @override
   Future<SetLoopModeResponse> setLoopMode(SetLoopModeRequest request) async =>
       SetLoopModeResponse();
@@ -257,20 +277,20 @@ class _DarwinPlayer extends AudioPlayerPlatform {
       SetPitchResponse();
   @override
   Future<SetPreferredPeakBitRateResponse> setPreferredPeakBitRate(
-          SetPreferredPeakBitRateRequest request) async =>
-      SetPreferredPeakBitRateResponse();
+    SetPreferredPeakBitRateRequest request,
+  ) async => SetPreferredPeakBitRateResponse();
   @override
   Future<SetShuffleModeResponse> setShuffleMode(
-          SetShuffleModeRequest request) async =>
-      SetShuffleModeResponse();
+    SetShuffleModeRequest request,
+  ) async => SetShuffleModeResponse();
   @override
   Future<SetShuffleOrderResponse> setShuffleOrder(
-          SetShuffleOrderRequest request) async =>
-      SetShuffleOrderResponse();
+    SetShuffleOrderRequest request,
+  ) async => SetShuffleOrderResponse();
   @override
   Future<SetSkipSilenceResponse> setSkipSilence(
-          SetSkipSilenceRequest request) async =>
-      SetSkipSilenceResponse();
+    SetSkipSilenceRequest request,
+  ) async => SetSkipSilenceResponse();
   @override
   Future<SetSpeedResponse> setSpeed(SetSpeedRequest request) async =>
       SetSpeedResponse();
@@ -279,6 +299,6 @@ class _DarwinPlayer extends AudioPlayerPlatform {
       SetVolumeResponse();
   @override
   Future<SetWebCrossOriginResponse> setWebCrossOrigin(
-          SetWebCrossOriginRequest request) async =>
-      SetWebCrossOriginResponse();
+    SetWebCrossOriginRequest request,
+  ) async => SetWebCrossOriginResponse();
 }

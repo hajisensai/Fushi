@@ -26,8 +26,10 @@ void main() {
         ShortcutAction.mangaPageForward,
       );
       expect(
-        registry.resolveGamepad(GamepadButton.dpadRight,
-            scope: ShortcutScope.manga),
+        registry.resolveGamepad(
+          GamepadButton.dpadRight,
+          scope: ShortcutScope.manga,
+        ),
         ShortcutAction.mangaPageForward,
       );
       expect(
@@ -35,8 +37,10 @@ void main() {
         ShortcutAction.mangaPageBackward,
       );
       expect(
-        registry.resolveGamepad(GamepadButton.dpadLeft,
-            scope: ShortcutScope.manga),
+        registry.resolveGamepad(
+          GamepadButton.dpadLeft,
+          scope: ShortcutScope.manga,
+        ),
         ShortcutAction.mangaPageBackward,
       );
     });
@@ -49,8 +53,10 @@ void main() {
         isNull,
       );
       expect(
-        registry.resolveGamepad(GamepadButton.b,
-            scope: ShortcutScope.universal),
+        registry.resolveGamepad(
+          GamepadButton.b,
+          scope: ShortcutScope.universal,
+        ),
         ShortcutAction.globalBack,
       );
     });

@@ -43,55 +43,70 @@ void main() {
     'launchFushiTestApp()',
   ];
 
-  test('every Tab-traversing integration test enables focus navigation first',
-      () {
-    final Directory dir = Directory('integration_test');
-    expect(dir.existsSync(), isTrue,
-        reason: 'run from the fushi/ package root (cwd=fushi/)');
+  test(
+    'every Tab-traversing integration test enables focus navigation first',
+    () {
+      final Directory dir = Directory('integration_test');
+      expect(
+        dir.existsSync(),
+        isTrue,
+        reason: 'run from the fushi/ package root (cwd=fushi/)',
+      );
 
-    final List<String> offenders = <String>[];
-    int inScope = 0;
+      final List<String> offenders = <String>[];
+      int inScope = 0;
 
-    for (final FileSystemEntity entity in dir.listSync(recursive: true)) {
-      if (entity is! File || !entity.path.endsWith('.dart')) continue;
-      final String rel = entity.path.replaceAll('\\', '/');
-      // helpers/ 是驱动器本体与夹具，不是用例。
-      if (rel.contains('/helpers/')) continue;
+      for (final FileSystemEntity entity in dir.listSync(recursive: true)) {
+        if (entity is! File || !entity.path.endsWith('.dart')) continue;
+        final String rel = entity.path.replaceAll('\\', '/');
+        // helpers/ 是驱动器本体与夹具，不是用例。
+        if (rel.contains('/helpers/')) continue;
 
-      // 只看代码：注释里提一嘴 `app.main()` 不算起真 app，注释里写
-      // enableFocusNavigation 也不算真开了开关。
-      final String source = _stripComments(entity.readAsStringSync());
-      if (!traversalApis.any((String api) => source.contains(api))) continue;
-      if (!bootsRealApp.any(source.contains)) continue;
-      inScope++;
-      if (source.contains(helperCall) || source.contains(rawSetter)) continue;
-      offenders.add(rel);
-    }
+        // 只看代码：注释里提一嘴 `app.main()` 不算起真 app，注释里写
+        // enableFocusNavigation 也不算真开了开关。
+        final String source = _stripComments(entity.readAsStringSync());
+        if (!traversalApis.any((String api) => source.contains(api))) continue;
+        if (!bootsRealApp.any(source.contains)) continue;
+        inScope++;
+        if (source.contains(helperCall) || source.contains(rawSetter)) continue;
+        offenders.add(rel);
+      }
 
-    expect(
-      offenders,
-      isEmpty,
-      reason: '这些集成测试起真 app 并用 Tab 遍历，却没先打开实验焦点导航开关，'
-          '在全新 profile 上必红（BUG-1106 同根因）。修法：第一次遍历之前调 '
-          '`await enableFocusNavigation(tester);`（integration_test/helpers/'
-          'focus_driver.dart）。违规文件：\n${offenders.join('\n')}',
-    );
+      expect(
+        offenders,
+        isEmpty,
+        reason:
+            '这些集成测试起真 app 并用 Tab 遍历，却没先打开实验焦点导航开关，'
+            '在全新 profile 上必红（BUG-1106 同根因）。修法：第一次遍历之前调 '
+            '`await enableFocusNavigation(tester);`（integration_test/helpers/'
+            'focus_driver.dart）。违规文件：\n${offenders.join('\n')}',
+      );
 
-    // 防守卫自己被重构掉底：若真 app 启动 / 遍历 API 改名，扫描集会静默清空。
-    expect(inScope, greaterThanOrEqualTo(25),
-        reason: '扫描集只剩 $inScope 个文件，远低于当前实际规模——很可能是 '
-            '真 app 启动或 FocusDriver 遍历 API 改名后守卫认不出来了，先修判据再跑。');
-  });
+      // 防守卫自己被重构掉底：若真 app 启动 / 遍历 API 改名，扫描集会静默清空。
+      expect(
+        inScope,
+        greaterThanOrEqualTo(25),
+        reason:
+            '扫描集只剩 $inScope 个文件，远低于当前实际规模——很可能是 '
+            '真 app 启动或 FocusDriver 遍历 API 改名后守卫认不出来了，先修判据再跑。',
+      );
+    },
+  );
 
   test('the shared enabler helper really flips the AppModel preference', () {
     final File helper = File('integration_test/helpers/focus_driver.dart');
     expect(helper.existsSync(), isTrue);
     final String source = _stripComments(helper.readAsStringSync());
-    expect(source.contains('Future<AppModel> enableFocusNavigation('), isTrue,
-        reason: 'enableFocusNavigation 是上面那条契约的唯一共享入口，不得删除/改名');
     expect(
-        source.contains('setExperimentalFocusNavigationEnabled(true)'), isTrue,
-        reason: 'helper 必须真写开关，否则守卫只是在数字符串');
+      source.contains('Future<AppModel> enableFocusNavigation('),
+      isTrue,
+      reason: 'enableFocusNavigation 是上面那条契约的唯一共享入口，不得删除/改名',
+    );
+    expect(
+      source.contains('setExperimentalFocusNavigationEnabled(true)'),
+      isTrue,
+      reason: 'helper 必须真写开关，否则守卫只是在数字符串',
+    );
   });
 }
 

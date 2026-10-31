@@ -13,8 +13,9 @@ String? _friendlyClause(Object error) {
   // 破坏性动作之前就拒绝了，当前数据没动；告诉用户先装桥接版本导入一次。
   if (error is UnsupportedLegacySchemaException) {
     return t.backup_legacy_schema(
-        version: kLegacySchemaBridgeAppVersion,
-        url: kLegacySchemaBridgeReleaseUrl);
+      version: kLegacySchemaBridgeAppVersion,
+      url: kLegacySchemaBridgeReleaseUrl,
+    );
   }
   // BUG-1323 / BUG-1348：凡是**有类型可依**的鉴权失败都在这里一次分派掉，绝不落到
   // 下面的字符串猜测区。下面那条 `error is SyncAuthError && l.contains('auth')` 会把
@@ -30,8 +31,9 @@ String? _friendlyClause(Object error) {
   if (error is SyncPeerUnreachableError) {
     return t.sync_err_peer_unreachable;
   }
-  final String msg =
-      error is SyncBackendError ? error.message : _rawMessage(error);
+  final String msg = error is SyncBackendError
+      ? error.message
+      : _rawMessage(error);
   final String l = msg.toLowerCase();
 
   // This build has no real OAuth credentials baked in (the placeholder secret
@@ -151,8 +153,8 @@ String friendlySyncAuthFailure(SyncAuthFailureKind kind, String? serverReason) {
 String _rawMessage(Object error) => error is SyncBackendError
     ? error.message
     : error is SyncAuthError
-        ? error.message
-        : error.toString();
+    ? error.message
+    : error.toString();
 
 /// Complete, user-facing message for an error shown on its own (snackbar,
 /// dialog body). Known errors become a friendly localized sentence; unknown
@@ -181,7 +183,8 @@ String interconnectTestFailureReason(
 }) {
   if (error is SyncAuthError) return friendlySyncErrorDetail(error);
   final String l = _rawMessage(error).toLowerCase();
-  final bool tls = l.contains('handshakeexception') ||
+  final bool tls =
+      l.contains('handshakeexception') ||
       l.contains('certificate_verify_failed') ||
       l.contains('certificate verify failed');
   if (tls) {

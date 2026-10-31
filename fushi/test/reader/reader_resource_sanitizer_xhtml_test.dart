@@ -3,8 +3,7 @@ import 'package:fushi/src/reader/reader_resource_sanitizer.dart';
 
 void main() {
   group('ReaderResourceSanitizer.sanitizeXhtml', () {
-    test('converts self-closing <script/> to a paired tag so body survives',
-        () {
+    test('converts self-closing <script/> to a paired tag so body survives', () {
       // BUG-079: Kadokawa/BookWalker XHTML ships a self-closing <script .../>
       // with no matching </script>. Served as text/html, the HTML5 parser
       // enters "script data" state and swallows everything to EOF (whole body),
@@ -16,12 +15,21 @@ void main() {
 
       final String out = ReaderResourceSanitizer.sanitizeXhtml(input);
 
-      expect(out, contains('</script>'),
-          reason: 'self-closing script must become a paired tag');
-      expect(out, contains('<p>本文が見える</p>'),
-          reason: 'body content must be preserved verbatim');
-      expect(out, isNot(contains('kobo.js"/>')),
-          reason: 'the self-closing form must be gone');
+      expect(
+        out,
+        contains('</script>'),
+        reason: 'self-closing script must become a paired tag',
+      );
+      expect(
+        out,
+        contains('<p>本文が見える</p>'),
+        reason: 'body content must be preserved verbatim',
+      );
+      expect(
+        out,
+        isNot(contains('kobo.js"/>')),
+        reason: 'the self-closing form must be gone',
+      );
     });
 
     test('normalizes self-closing <style/>, <title/>, <textarea/> too', () {
@@ -37,9 +45,11 @@ void main() {
       const String input =
           '<head><script src="a/b.js"></script></head><body>x</body>';
       final String out = ReaderResourceSanitizer.sanitizeXhtml(input);
-      expect(out, equals(input),
-          reason:
-              'paired tags (even with / in attribute values) are unchanged');
+      expect(
+        out,
+        equals(input),
+        reason: 'paired tags (even with / in attribute values) are unchanged',
+      );
     });
 
     test('preserves attributes when expanding the self-closing form', () {
@@ -47,9 +57,9 @@ void main() {
           '<script type="text/javascript" src="../../js/x.js"/>';
       final String out = ReaderResourceSanitizer.sanitizeXhtml(input);
       expect(
-          out,
-          equals(
-              '<script type="text/javascript" src="../../js/x.js"></script>'));
+        out,
+        equals('<script type="text/javascript" src="../../js/x.js"></script>'),
+      );
     });
 
     test('handles whitespace before the self-closing slash', () {
@@ -58,16 +68,21 @@ void main() {
       expect(out, equals('<script src="x.js"></script>'));
     });
 
-    test('does not corrupt a paired tag whose attribute value contains "/>"',
-        () {
-      // The self-closing detector must not mistake a literal `/>` inside a
-      // quoted attribute value for the tag's own self-closing end.
-      const String input =
-          '<head><script data-x="a/>b"></script></head><body>x</body>';
-      final String out = ReaderResourceSanitizer.sanitizeXhtml(input);
-      expect(out, equals(input),
-          reason: 'a paired tag with "/>" inside an attribute is unchanged');
-    });
+    test(
+      'does not corrupt a paired tag whose attribute value contains "/>"',
+      () {
+        // The self-closing detector must not mistake a literal `/>` inside a
+        // quoted attribute value for the tag's own self-closing end.
+        const String input =
+            '<head><script data-x="a/>b"></script></head><body>x</body>';
+        final String out = ReaderResourceSanitizer.sanitizeXhtml(input);
+        expect(
+          out,
+          equals(input),
+          reason: 'a paired tag with "/>" inside an attribute is unchanged',
+        );
+      },
+    );
 
     test('still expands a genuine self-close after a quoted attr value', () {
       const String input = '<script src="a/b.js"/>';
@@ -82,12 +97,16 @@ void main() {
     });
 
     test('leaves the full void-element set self-closing', () {
-      const String input = '<head><meta charset="utf-8"/>'
+      const String input =
+          '<head><meta charset="utf-8"/>'
           '<link rel="stylesheet" href="s.css"/></head>'
           '<body><hr/><input type="text"/><br/></body>';
       final String out = ReaderResourceSanitizer.sanitizeXhtml(input);
-      expect(out, equals(input),
-          reason: 'meta/link/hr/input/br are void — keep self-closing');
+      expect(
+        out,
+        equals(input),
+        reason: 'meta/link/hr/input/br are void — keep self-closing',
+      );
     });
 
     // BUG-737: a self-closing <a id="toc-N"/> (the per-chapter anchor in many
@@ -102,10 +121,16 @@ void main() {
           '<body><p><a id="toc-001"/><span>第一章</span></p>'
           '<p>本文の続き。</p></body>';
       final String out = ReaderResourceSanitizer.sanitizeXhtml(input);
-      expect(out, contains('<a id="toc-001"></a>'),
-          reason: 'the empty anchor must be explicitly closed');
-      expect(out, isNot(contains('id="toc-001"/>')),
-          reason: 'no self-closing anchor may remain');
+      expect(
+        out,
+        contains('<a id="toc-001"></a>'),
+        reason: 'the empty anchor must be explicitly closed',
+      );
+      expect(
+        out,
+        isNot(contains('id="toc-001"/>')),
+        reason: 'no self-closing anchor may remain',
+      );
     });
 
     test('normalizes other self-closing non-void inline elements', () {
@@ -116,25 +141,32 @@ void main() {
       expect(out, contains('<b></b>'));
     });
 
-    test('does not corrupt a self-closing <a> whose attr value contains "/>"',
-        () {
-      const String input = '<body><a href="a/>b"/>x</body>';
-      final String out = ReaderResourceSanitizer.sanitizeXhtml(input);
-      expect(out, equals('<body><a href="a/>b"></a>x</body>'),
-          reason: 'the "/>" inside the quoted href is not the tag end');
-    });
+    test(
+      'does not corrupt a self-closing <a> whose attr value contains "/>"',
+      () {
+        const String input = '<body><a href="a/>b"/>x</body>';
+        final String out = ReaderResourceSanitizer.sanitizeXhtml(input);
+        expect(
+          out,
+          equals('<body><a href="a/>b"></a>x</body>'),
+          reason: 'the "/>" inside the quoted href is not the tag end',
+        );
+      },
+    );
   });
 
   group('ReaderResourceSanitizer.injectImagesAfterBodyOpen (TODO-1174)', () {
-    const String img = '<div class="fushi-merged-image">'
+    const String img =
+        '<div class="fushi-merged-image">'
         '<img src="a.png" class="block-img"/></div>';
 
-    test(
-        'inserts the images right AFTER the <body> open tag, not before '
+    test('inserts the images right AFTER the <body> open tag, not before '
         '</body>', () {
       const String html = '<html><body><p>本文</p></body></html>';
-      final String out =
-          ReaderResourceSanitizer.injectImagesAfterBodyOpen(html, img);
+      final String out = ReaderResourceSanitizer.injectImagesAfterBodyOpen(
+        html,
+        img,
+      );
 
       final int bodyOpenEnd = out.indexOf('<body>') + '<body>'.length;
       final int imgAt = out.indexOf('fushi-merged-image');
@@ -143,33 +175,45 @@ void main() {
       // original first content — i.e. merged illustrations open the chapter.
       expect(imgAt, greaterThan(0));
       expect(imgAt, greaterThanOrEqualTo(bodyOpenEnd));
-      expect(imgAt, lessThan(paraAt),
-          reason: 'merged image must precede the chapter body content');
+      expect(
+        imgAt,
+        lessThan(paraAt),
+        reason: 'merged image must precede the chapter body content',
+      );
     });
 
     test('preserves <body> attributes and injects after the full open tag', () {
       const String html =
           '<html><body class="c" dir="rtl"><p>x</p></body></html>';
-      final String out =
-          ReaderResourceSanitizer.injectImagesAfterBodyOpen(html, img);
+      final String out = ReaderResourceSanitizer.injectImagesAfterBodyOpen(
+        html,
+        img,
+      );
       expect(out, contains('<body class="c" dir="rtl">'));
-      final int openEnd = out.indexOf('<body class="c" dir="rtl">') +
+      final int openEnd =
+          out.indexOf('<body class="c" dir="rtl">') +
           '<body class="c" dir="rtl">'.length;
       expect(out.indexOf('fushi-merged-image'), greaterThanOrEqualTo(openEnd));
     });
 
     test('empty images string is a verbatim no-op', () {
       const String html = '<html><body><p>x</p></body></html>';
-      expect(ReaderResourceSanitizer.injectImagesAfterBodyOpen(html, ''),
-          equals(html));
+      expect(
+        ReaderResourceSanitizer.injectImagesAfterBodyOpen(html, ''),
+        equals(html),
+      );
     });
 
     test('no <body> tag falls back to prepending before the document', () {
       const String html = '<p>x</p>';
-      final String out =
-          ReaderResourceSanitizer.injectImagesAfterBodyOpen(html, img);
+      final String out = ReaderResourceSanitizer.injectImagesAfterBodyOpen(
+        html,
+        img,
+      );
       expect(
-          out.indexOf('fushi-merged-image'), lessThan(out.indexOf('<p>x</p>')));
+        out.indexOf('fushi-merged-image'),
+        lessThan(out.indexOf('<p>x</p>')),
+      );
     });
   });
 }

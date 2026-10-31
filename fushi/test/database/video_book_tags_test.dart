@@ -23,11 +23,13 @@ Future<FushiDatabase> _openRealDb() async {
 }
 
 Future<String> _insertVideoBook(FushiDatabase db, String uid) async {
-  await db.upsertVideoBook(VideoBooksCompanion(
-    bookUid: Value(uid),
-    title: Value(uid),
-    videoPath: Value('/abs/$uid.mp4'),
-  ));
+  await db.upsertVideoBook(
+    VideoBooksCompanion(
+      bookUid: Value(uid),
+      title: Value(uid),
+      videoPath: Value('/abs/$uid.mp4'),
+    ),
+  );
   return uid;
 }
 
@@ -45,17 +47,19 @@ void main() {
       expect(tags.single.name, 'Anime');
     });
 
-    test('addTagToVideoBook is idempotent (insertOrIgnore on unique key)',
-        () async {
-      final db = await _openDb();
-      final uid = await _insertVideoBook(db, 'video/1');
-      final tagId = await db.createTag('Anime', 0xFF00FF00);
+    test(
+      'addTagToVideoBook is idempotent (insertOrIgnore on unique key)',
+      () async {
+        final db = await _openDb();
+        final uid = await _insertVideoBook(db, 'video/1');
+        final tagId = await db.createTag('Anime', 0xFF00FF00);
 
-      await db.addTagToVideoBook(uid, tagId);
-      await db.addTagToVideoBook(uid, tagId);
+        await db.addTagToVideoBook(uid, tagId);
+        await db.addTagToVideoBook(uid, tagId);
 
-      expect(await db.getTagsForVideoBook(uid), hasLength(1));
-    });
+        expect(await db.getTagsForVideoBook(uid), hasLength(1));
+      },
+    );
 
     test('removeTagFromVideoBook removes the mapping', () async {
       final db = await _openDb();
@@ -111,15 +115,17 @@ void main() {
     test('video and EPUB share the same BookTags row', () async {
       final db = await _openDb();
       final uid = await _insertVideoBook(db, 'video/1');
-      await db.insertEpubBook(EpubBooksCompanion.insert(
-        bookKey: 'novel',
-        title: 'Novel',
-        epubPath: '/tmp/n.epub',
-        extractDir: '/tmp/n',
-        chapterCount: 1,
-        chaptersJson: '[]',
-        importedAt: DateTime.now().millisecondsSinceEpoch,
-      ));
+      await db.insertEpubBook(
+        EpubBooksCompanion.insert(
+          bookKey: 'novel',
+          title: 'Novel',
+          epubPath: '/tmp/n.epub',
+          extractDir: '/tmp/n',
+          chapterCount: 1,
+          chaptersJson: '[]',
+          importedAt: DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
       final tagId = await db.createTag('Shared', 0xFF123456);
 
       await db.addTagToVideoBook(uid, tagId);

@@ -36,7 +36,8 @@ class CommandIo {
   StringSink get err => _err ?? stderr;
 
   /// `--json` 结果（缩进两格，便于人眼复查；脚本照样能 `jq`）。
-  void json(Object? value) => out.writeln(const JsonEncoder.withIndent('  ').convert(value));
+  void json(Object? value) =>
+      out.writeln(const JsonEncoder.withIndent('  ').convert(value));
 
   /// 用法错误：消息 + 用法行打到 stderr，返回 64。
   int usage(String message, String usageLine) {
@@ -47,7 +48,9 @@ class CommandIo {
 }
 
 /// 子命令（`import epub` 里的 `epub`）的叶子参数表上都挂同一个 `--json`。
-ArgParser addJsonFlag(ArgParser parser) => parser..addFlag('json', negatable: false, help: '输出机器可读 JSON（stdout）');
+ArgParser addJsonFlag(ArgParser parser) =>
+    parser..addFlag('json', negatable: false, help: '输出机器可读 JSON（stdout）');
 
 /// 叶子命令有没有要 `--json`。
-bool wantsJson(ArgResults leaf) => leaf.options.contains('json') && leaf['json'] as bool;
+bool wantsJson(ArgResults leaf) =>
+    leaf.options.contains('json') && leaf['json'] as bool;

@@ -20,8 +20,10 @@ void main() {
   /// 建一个空的音频库骨架（两张表，无任何索引）。
   void createSchema() {
     final Database db = sqlite3.open(dbPath);
-    db.execute('CREATE TABLE entries '
-        '(expression TEXT, reading TEXT, file TEXT, source TEXT)');
+    db.execute(
+      'CREATE TABLE entries '
+      '(expression TEXT, reading TEXT, file TEXT, source TEXT)',
+    );
     db.execute('CREATE TABLE android (file TEXT, source TEXT, data BLOB)');
     db.dispose();
   }
@@ -36,8 +38,9 @@ void main() {
     final Database db = sqlite3.open(dbPath, mode: OpenMode.readOnly);
     try {
       return <String>{
-        for (final Row r
-            in db.select("SELECT name FROM sqlite_master WHERE type='index'"))
+        for (final Row r in db.select(
+          "SELECT name FROM sqlite_master WHERE type='index'",
+        ))
           if (r['name'] is String) r['name'] as String,
       };
     } finally {
@@ -73,10 +76,16 @@ void main() {
     final Set<String> names = indexNames();
     expect(names, contains('idx_expr_reading'));
     expect(names, contains('idx_android'));
-    expect(names, isNot(contains('idx_entries_expr_read')),
-        reason: 'idx_expr_reading 已覆盖 entries(expression, reading)，不该再建一条');
-    expect(names, isNot(contains('idx_android_file_source')),
-        reason: 'idx_android 已覆盖 android(file, source)，不该再建一条');
+    expect(
+      names,
+      isNot(contains('idx_entries_expr_read')),
+      reason: 'idx_expr_reading 已覆盖 entries(expression, reading)，不该再建一条',
+    );
+    expect(
+      names,
+      isNot(contains('idx_android_file_source')),
+      reason: 'idx_android 已覆盖 android(file, source)，不该再建一条',
+    );
   });
 
   test('更宽索引的前缀已覆盖目标列：也不重复建', () async {
@@ -100,20 +109,27 @@ void main() {
   });
 
   test('部分索引不算等价：只覆盖部分行，仍要建', () async {
-    exec('CREATE INDEX idx_partial ON entries(expression, reading) '
-        "WHERE source = 'nhk16'");
+    exec(
+      'CREATE INDEX idx_partial ON entries(expression, reading) '
+      "WHERE source = 'nhk16'",
+    );
 
     await LocalAudioDb.ensureIndexes(dbPath);
 
-    expect(indexNames(), contains('idx_entries_expr_read'),
-        reason: '部分索引只覆盖 source=nhk16 的行，不能替代全量索引');
+    expect(
+      indexNames(),
+      contains('idx_entries_expr_read'),
+      reason: '部分索引只覆盖 source=nhk16 的行，不能替代全量索引',
+    );
   });
 
   test('表达式索引不算等价：仍要建', () async {
     // 真库里的 `idx_entries_unique_audio` 用了 IFNULL(...)：
     // PRAGMA index_info 对表达式列回 name=null，不该被当成列名匹配上。
-    exec('CREATE UNIQUE INDEX idx_expr_index ON entries('
-        "expression, IFNULL(reading, ''), source, file)");
+    exec(
+      'CREATE UNIQUE INDEX idx_expr_index ON entries('
+      "expression, IFNULL(reading, ''), source, file)",
+    );
 
     await LocalAudioDb.ensureIndexes(dbPath);
 
@@ -132,8 +148,11 @@ void main() {
     await LocalAudioDb.ensureIndexes(dbPath);
     await LocalAudioDb.waitForPendingIndexing(dbPath);
 
-    expect(File(dbPath).lastModifiedSync(), before,
-        reason: '等价索引齐备时不该打开 readWrite 句柄、不该写用户的库文件');
+    expect(
+      File(dbPath).lastModifiedSync(),
+      before,
+      reason: '等价索引齐备时不该打开 readWrite 句柄、不该写用户的库文件',
+    );
     // 同时确认没有留下写连接的旁文件。
     expect(File('$dbPath-wal').existsSync(), isFalse);
     expect(File('$dbPath-shm').existsSync(), isFalse);

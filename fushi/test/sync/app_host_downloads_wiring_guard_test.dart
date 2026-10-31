@@ -18,16 +18,28 @@ void main() {
   test('AppModel 把三面工厂交给 FushiSyncServerController', () {
     final String src = read('lib/src/models/app_model.dart');
     expect(src, contains('downloadsFactory: () => appDownloadHost'));
-    expect(src,
-        contains('subscriptionsFactory: () => appDownloadHost.subscriptions'));
+    expect(
+      src,
+      contains('subscriptionsFactory: () => appDownloadHost.subscriptions'),
+    );
     expect(src, contains('hostJobsFactory: () async {'));
-    expect(src, contains('AsrHostJobRunner('),
-        reason: '通用任务面至少要挂 ASR runner，否则 /api/jobs 的 kinds 为空');
-    expect(src, contains('VideoSubtitleHostJobRunner('),
-        reason: '视频字幕管线任务（kind video_subtitle）app 与 fushi_server 两端都要挂，'
-            '少挂一端对端就看不到「在电脑上生成字幕」');
-    expect(src, contains('resolveAppVideoSubtitleRecognizer('),
-        reason: 'host 任务挑识别器必须走 asr_host.dart 的同一份装配（子进程登记表）');
+    expect(
+      src,
+      contains('AsrHostJobRunner('),
+      reason: '通用任务面至少要挂 ASR runner，否则 /api/jobs 的 kinds 为空',
+    );
+    expect(
+      src,
+      contains('VideoSubtitleHostJobRunner('),
+      reason:
+          '视频字幕管线任务（kind video_subtitle）app 与 fushi_server 两端都要挂，'
+          '少挂一端对端就看不到「在电脑上生成字幕」',
+    );
+    expect(
+      src,
+      contains('resolveAppVideoSubtitleRecognizer('),
+      reason: 'host 任务挑识别器必须走 asr_host.dart 的同一份装配（子进程登记表）',
+    );
   });
 
   test('FushiSyncServerController 把三面传给 FushiSyncServer', () {
@@ -35,33 +47,51 @@ void main() {
     expect(src, contains('downloads: _downloadsFactory?.call()'));
     expect(src, contains('subscriptions: _subscriptionsFactory?.call()'));
     expect(src, contains('hostJobs: hostJobs'));
-    expect(src, contains('await _hostJobsFactory?.call()'),
-        reason: '任务管理器要 load() 磁盘记录后再挂，工厂必须被 await');
+    expect(
+      src,
+      contains('await _hostJobsFactory?.call()'),
+      reason: '任务管理器要 load() 磁盘记录后再挂，工厂必须被 await',
+    );
   });
 
   test('AI 助手会话面（手机把一句话交给电脑办）接到 server，且首页与 host 共用同一份装配', () {
     final String model = read('lib/src/models/app_model.dart');
-    expect(model, contains('assistantFactory: () => createAppAssistantHost(this)'));
+    expect(
+      model,
+      contains('assistantFactory: () => createAppAssistantHost(this)'),
+    );
     // 组合 provider：AI 下视频与 AI 助手并存，AI 下视频仍是首页同一份装配。
-    final String assembly = read('lib/src/ai/agent/ai_agent_assistant_host.dart');
+    final String assembly = read(
+      'lib/src/ai/agent/ai_agent_assistant_host.dart',
+    );
     expect(assembly, contains('createVideoAcquisitionAssistantHost('));
     expect(assembly, contains('createAppAgentAssistantHost(appModel)'));
     final String controller = read('lib/src/sync/fushi_server_controller.dart');
     expect(controller, contains('assistant: _assistantFactory?.call()'));
     final String home = read('lib/src/pages/implementations/home_page.dart');
-    expect(home, contains('createAppVideoAcquisitionService('),
-        reason: '首页入口与 host 会话必须同一份端口装配，否则两边行为悄悄分叉');
-    expect(home, isNot(contains('VideoAcquisitionPorts(')),
-        reason: '端口装配只许在 app_video_acquisition_assembly.dart 写一次');
+    expect(
+      home,
+      contains('createAppVideoAcquisitionService('),
+      reason: '首页入口与 host 会话必须同一份端口装配，否则两边行为悄悄分叉',
+    );
+    expect(
+      home,
+      isNot(contains('VideoAcquisitionPorts(')),
+      reason: '端口装配只许在 app_video_acquisition_assembly.dart 写一次',
+    );
   });
 
   test('AppDownloadHost 的落点 / 后端判据来自 AppModel 同一真相源', () {
     final String src = read('lib/src/models/app_model.dart');
     expect(src, contains('backendTarget: currentVideoDownloadBackendTarget'));
     expect(src, contains('readyBackend: () => readyVideoDownloadBackend'));
-    final String actions =
-        read('lib/src/pages/implementations/download_actions.dart');
-    expect(actions, contains('appModel.readyVideoDownloadBackend != null'),
-        reason: '下载页「添加任务」与 host 能力位必须是同一个就绪判据');
+    final String actions = read(
+      'lib/src/pages/implementations/download_actions.dart',
+    );
+    expect(
+      actions,
+      contains('appModel.readyVideoDownloadBackend != null'),
+      reason: '下载页「添加任务」与 host 能力位必须是同一个就绪判据',
+    );
   });
 }

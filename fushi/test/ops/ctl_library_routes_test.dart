@@ -807,10 +807,7 @@ void main() {
     setUp(() {
       registry = ReaderSessionRemoteRegistry();
       routes = buildReaderCtlRoutes(
-        OpContext(
-          ref: _UnusedWidgetRef(),
-          focusMainWindow: () async {},
-        ),
+        OpContext(ref: _UnusedWidgetRef(), focusMainWindow: () async {}),
         registry: registry,
       );
     });
@@ -1260,10 +1257,7 @@ void main() {
       final _FakeReaderRemote remote = _FakeReaderRemote(snap: pdf);
       registry.register(remote);
       final List<CtlRoute> routes = buildReaderCtlRoutes(
-        OpContext(
-          ref: _UnusedWidgetRef(),
-          focusMainWindow: () async {},
-        ),
+        OpContext(ref: _UnusedWidgetRef(), focusMainWindow: () async {}),
         registry: registry,
       );
       await _call(

@@ -17,15 +17,21 @@ void main() {
   late String enterBody;
 
   setUpAll(() {
-    final String cpp =
-        File('../third_party/media_kit_video/windows/utils.cc')
-            .readAsStringSync();
+    final String cpp = File(
+      '../third_party/media_kit_video/windows/utils.cc',
+    ).readAsStringSync();
     final int enter = cpp.indexOf('void Utils::EnterNativeFullscreen');
     final int exit = cpp.indexOf('void Utils::ExitNativeFullscreen');
-    expect(enter, greaterThanOrEqualTo(0),
-        reason: 'EnterNativeFullscreen must exist in vendored utils.cc');
-    expect(exit, greaterThan(enter),
-        reason: 'ExitNativeFullscreen must follow EnterNativeFullscreen');
+    expect(
+      enter,
+      greaterThanOrEqualTo(0),
+      reason: 'EnterNativeFullscreen must exist in vendored utils.cc',
+    );
+    expect(
+      exit,
+      greaterThan(enter),
+      reason: 'ExitNativeFullscreen must follow EnterNativeFullscreen',
+    );
     enterBody = cpp.substring(enter, exit);
   });
 
@@ -33,21 +39,28 @@ void main() {
     test('window lands non-topmost so other apps can cover it', () {
       // Must place the fullscreen window on the non-topmost band and clear any
       // leftover always-on-top, so an activated app can rise above it.
-      expect(enterBody.contains('HWND_NOTOPMOST'), isTrue,
-          reason: 'Fullscreen window must be forced non-topmost (BUG-837).');
-      expect(enterBody.contains('HWND_TOP,'), isFalse,
-          reason:
-              'HWND_TOP re-introduces exclusive-fullscreen z-order seizure.');
+      expect(
+        enterBody.contains('HWND_NOTOPMOST'),
+        isTrue,
+        reason: 'Fullscreen window must be forced non-topmost (BUG-837).',
+      );
+      expect(
+        enterBody.contains('HWND_TOP,'),
+        isFalse,
+        reason: 'HWND_TOP re-introduces exclusive-fullscreen z-order seizure.',
+      );
     });
 
-    test('client rect is not an exact monitor cover (breaks exclusive flip)',
-        () {
+    test('client rect is not an exact monitor cover (breaks exclusive flip)', () {
       // One pixel taller than the monitor keeps the window off the DWM
       // exclusive-fullscreen path; the extra pixel is off-screen and invisible.
-      expect(enterBody.contains('monitor_height + 1'), isTrue,
-          reason:
-              'Fullscreen height must differ from the monitor rect so DWM does '
-              'not promote it to an exclusive flip (BUG-837).');
+      expect(
+        enterBody.contains('monitor_height + 1'),
+        isTrue,
+        reason:
+            'Fullscreen height must differ from the monitor rect so DWM does '
+            'not promote it to an exclusive flip (BUG-837).',
+      );
     });
   });
 }

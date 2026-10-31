@@ -121,8 +121,9 @@ void main() {
   }
 
   final EmbeddedTorrentEngine? engine = tryOpen();
-  final String? skip =
-      engine == null ? 'fushi_torrent_ffi native lib not built' : null;
+  final String? skip = engine == null
+      ? 'fushi_torrent_ffi native lib not built'
+      : null;
 
   late Directory tempDir;
 
@@ -172,7 +173,8 @@ void main() {
       await _pollUntil(
         () => leecher.listenPort > 0,
         timeout: const Duration(seconds: 10),
-        what: 'a listen port although UDP $port is refused with WSAEACCES and '
+        what:
+            'a listen port although UDP $port is refused with WSAEACCES and '
             'TCP accepts it (libtorrent dropped the whole listen socket '
             'instead of falling back on the UDP side, BUG-2023)',
       );
@@ -187,8 +189,8 @@ void main() {
       expect(added.ok, isTrue, reason: 'addMagnet: ${added.error}');
       await _pollUntil(
         () => leecher.listTorrents().any(
-              (FtTorrentStatus t) => t.id == rig.infoHash && t.hasMetadata,
-            ),
+          (FtTorrentStatus t) => t.id == rig.infoHash && t.hasMetadata,
+        ),
         timeout: const Duration(seconds: 30),
         what: 'metadata over a session whose uTP port was refused',
         onTick: () =>
@@ -223,7 +225,8 @@ void main() {
       await _pollUntil(
         () => session.listenPort > 0,
         timeout: const Duration(seconds: 10),
-        what: 'a listen port although $port is refused with EACCES '
+        what:
+            'a listen port although $port is refused with EACCES '
             '(listen_system_port_fallback must let the OS pick one, BUG-2023)',
       );
       expect(session.listenPort, isNot(port));

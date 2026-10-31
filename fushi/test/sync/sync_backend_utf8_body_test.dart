@@ -31,20 +31,21 @@ import 'package:drift/native.dart';
 class _CapturingLibraryService implements FushiLibraryHostService {
   // BUG-1004：host 端裁 mining 句子音频（本测试不涉及，返 null 即可）。
   @override
-  Future<File?> clipVideoAudio(String id,
-          {required int startMs,
-          required int endMs,
-          int episodeIndex = 0,
-          int? audioStreamIndex,
-          int? audioStreamCount,
-          int audioChannels = 1,
-          String audioBitrate = '64k'}) async =>
-      null;
+  Future<File?> clipVideoAudio(
+    String id, {
+    required int startMs,
+    required int endMs,
+    int episodeIndex = 0,
+    int? audioStreamIndex,
+    int? audioStreamCount,
+    int audioChannels = 1,
+    String audioBitrate = '64k',
+  }) async => null;
 
   @override
-  Future<List<RemoteActivityEvent>> listActivityEvents(
-          {int limit = 100}) async =>
-      const <RemoteActivityEvent>[];
+  Future<List<RemoteActivityEvent>> listActivityEvents({
+    int limit = 100,
+  }) async => const <RemoteActivityEvent>[];
 
   @override
   Future<String?> videoCoverPath(String id) async {
@@ -80,8 +81,8 @@ class _CapturingLibraryService implements FushiLibraryHostService {
 
   @override
   Future<CollectionManifest> mergeCollectionManifest(
-          CollectionManifest incoming) async =>
-      incoming;
+    CollectionManifest incoming,
+  ) async => incoming;
 
   @override
   Future<RemoteBookProgress> getBookProgress(String bookKey) async =>
@@ -104,8 +105,11 @@ class _CapturingLibraryService implements FushiLibraryHostService {
       throw UnimplementedError('not used');
 
   @override
-  Future<void> importBook(File epubFile,
-      {String? displayTitle, int displayTitleAt = 0}) async {}
+  Future<void> importBook(
+    File epubFile, {
+    String? displayTitle,
+    int displayTitleAt = 0,
+  }) async {}
 
   @override
   Future<void> deleteBook(String title) async {}
@@ -150,8 +154,10 @@ class _CapturingLibraryService implements FushiLibraryHostService {
   Future<bool> audiobookExists(String bookKey) async => false;
 
   @override
-  Future<void> importAudiobook(File packageFile,
-      {String? bookKeyOverride}) async {}
+  Future<void> importAudiobook(
+    File packageFile, {
+    String? bookKeyOverride,
+  }) async {}
 
   @override
   Future<void> deleteAudiobook(String bookKey) async {}
@@ -163,29 +169,35 @@ class _CapturingLibraryService implements FushiLibraryHostService {
   Future<bool> videoExists(String id, {int episodeIndex = 0}) async => false;
 
   @override
-  Future<void> importVideoSubtitle(File subtitleFile,
-      {required String id, required String suffix}) async {}
+  Future<void> importVideoSubtitle(
+    File subtitleFile, {
+    required String id,
+    required String suffix,
+  }) async {}
 
   @override
-  Future<void> importVideo(File videoFile,
-      {required String id,
-      required String title,
-      String? originalFileName}) async {}
+  Future<void> importVideo(
+    File videoFile, {
+    required String id,
+    required String title,
+    String? originalFileName,
+  }) async {}
 
   @override
   Future<File?> resolveVideoFile(String id, {int episodeIndex = 0}) async =>
       null;
 
   @override
-  Future<File?> resolveVideoSubtitle(String id,
-          {String langCode = 'ja', int episodeIndex = 0}) async =>
-      null;
+  Future<File?> resolveVideoSubtitle(
+    String id, {
+    String langCode = 'ja',
+    int episodeIndex = 0,
+  }) async => null;
 
   @override
   Future<({int positionMs, int updatedAtMs})> getAudiobookPosition(
     String bookKey,
-  ) async =>
-      (positionMs: 0, updatedAtMs: 0);
+  ) async => (positionMs: 0, updatedAtMs: 0);
 
   @override
   Future<void> putAudiobookPosition(
@@ -198,8 +210,7 @@ class _CapturingLibraryService implements FushiLibraryHostService {
   Future<({int positionMs, int updatedAtMs})> getVideoPosition(
     String id, {
     int episodeIndex = 0,
-  }) async =>
-      (positionMs: 0, updatedAtMs: 0);
+  }) async => (positionMs: 0, updatedAtMs: 0);
 
   @override
   Future<void> putVideoPosition(
@@ -223,8 +234,9 @@ Future<InterconnectSyncBackend> _buildBackend({
     FushiClientUrl(url: base, enabled: true),
   ]);
   await repo.setFushiClientToken(token);
-  final InterconnectSyncBackend backend =
-      InterconnectSyncBackend.withProbe((String u, String t) async => true);
+  final InterconnectSyncBackend backend = InterconnectSyncBackend.withProbe(
+    (String u, String t) async => true,
+  );
   await backend.restoreAuth(repo);
   await backend.authenticate(repo: repo);
   return backend;
@@ -241,8 +253,9 @@ void main() {
   setUp(() async {
     lib = _CapturingLibraryService();
     server = FushiSyncServer(
-      syncDataDir:
-          Directory.systemTemp.createTempSync('hbk_utf8_body_srv').path,
+      syncDataDir: Directory.systemTemp
+          .createTempSync('hbk_utf8_body_srv')
+          .path,
       port: 0,
       token: token,
       allowLan: false,
@@ -255,56 +268,63 @@ void main() {
   tearDown(() async => server.stop());
 
   test(
-      'putRemoteAggregate with Japanese title round-trips UTF-8 (no latin1 crash)',
-      () async {
-    final InterconnectSyncBackend backend =
-        await _buildBackend(base: base, token: token);
+    'putRemoteAggregate with Japanese title round-trips UTF-8 (no latin1 crash)',
+    () async {
+      final InterconnectSyncBackend backend = await _buildBackend(
+        base: base,
+        token: token,
+      );
 
-    final AggregateSnapshot snapshot = AggregateSnapshot(
-      readingStats: <ReadingStatRecord>[
-        ReadingStatRecord(
-          title: japaneseTitle,
-          dateKey: '2026-07-03',
-          charactersRead: 12345,
-          readingTimeMs: 600000,
-          lastStatisticModified: 1700000000000,
-        ),
-      ],
-    );
+      final AggregateSnapshot snapshot = AggregateSnapshot(
+        readingStats: <ReadingStatRecord>[
+          ReadingStatRecord(
+            title: japaneseTitle,
+            dateKey: '2026-07-03',
+            charactersRead: 12345,
+            readingTimeMs: 600000,
+            lastStatisticModified: 1700000000000,
+          ),
+        ],
+      );
 
-    // On the old code, req.write(jsonEncode(...)) throws
-    // "Invalid argument (string): Contains invalid characters." here; the
-    // request never leaves the client.
-    await backend.putRemoteAggregate(snapshot.toJson());
+      // On the old code, req.write(jsonEncode(...)) throws
+      // "Invalid argument (string): Contains invalid characters." here; the
+      // request never leaves the client.
+      await backend.putRemoteAggregate(snapshot.toJson());
 
-    // Server UTF-8-decodes the body; the Japanese title must survive intact.
-    expect(lib.applied, isNotNull);
-    expect(lib.applied!.readingStats, hasLength(1));
-    expect(lib.applied!.readingStats.first.title, japaneseTitle);
-    expect(lib.applied!.readingStats.first.charactersRead, 12345);
-  });
+      // Server UTF-8-decodes the body; the Japanese title must survive intact.
+      expect(lib.applied, isNotNull);
+      expect(lib.applied!.readingStats, hasLength(1));
+      expect(lib.applied!.readingStats.first.title, japaneseTitle);
+      expect(lib.applied!.readingStats.first.charactersRead, 12345);
+    },
+  );
 
   test(
-      'putRemoteBookProgress with Japanese bookKey round-trips UTF-8 (no crash)',
-      () async {
-    final InterconnectSyncBackend backend =
-        await _buildBackend(base: base, token: token);
+    'putRemoteBookProgress with Japanese bookKey round-trips UTF-8 (no crash)',
+    () async {
+      final InterconnectSyncBackend backend = await _buildBackend(
+        base: base,
+        token: token,
+      );
 
-    await backend.putRemoteBookProgress(
-      japaneseTitle,
-      const RemoteBookProgress(
-        sectionIndex: 7,
-        normCharOffset: 7000,
-        charOffset: 42,
-        updatedAtMs: 1700000001234,
-      ),
-    );
+      await backend.putRemoteBookProgress(
+        japaneseTitle,
+        const RemoteBookProgress(
+          sectionIndex: 7,
+          normCharOffset: 7000,
+          charOffset: 42,
+          updatedAtMs: 1700000001234,
+        ),
+      );
 
-    expect(lib.bookProgress[japaneseTitle]?.sectionIndex, 7);
-    final RemoteBookProgress read =
-        await backend.remoteBookProgress(japaneseTitle);
-    expect(read.sectionIndex, 7);
-    expect(read.normCharOffset, 7000);
-    expect(read.updatedAtMs, 1700000001234);
-  });
+      expect(lib.bookProgress[japaneseTitle]?.sectionIndex, 7);
+      final RemoteBookProgress read = await backend.remoteBookProgress(
+        japaneseTitle,
+      );
+      expect(read.sectionIndex, 7);
+      expect(read.normCharOffset, 7000);
+      expect(read.updatedAtMs, 1700000001234);
+    },
+  );
 }

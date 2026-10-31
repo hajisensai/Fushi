@@ -215,20 +215,22 @@ InterconnectDownloadBadgeState? interconnectDownloadBadgeState(
 /// 执行一次实际下载到 [dest] 的原语（注入，便于测试与解耦具体 client）。
 /// [onProgress] 上报 0..1 进度。书 / 有声书走这一形；它们的传输不支持中途
 /// 中止，所以没有暂停。
-typedef InterconnectDownloadRunner = Future<void> Function(
-  File dest, {
-  void Function(double progress)? onProgress,
-});
+typedef InterconnectDownloadRunner =
+    Future<void> Function(
+      File dest, {
+      void Function(double progress)? onProgress,
+    });
 
 /// 视频下载原语：在 [InterconnectDownloadRunner] 之上多报字节（[onBytes]，
 /// received 含续传前已有的 `.part`），并接受 [cancelSignal]——它完成时传输中止、
 /// 抛 [RemoteDownloadCancelled]、`.part` 留着供续传（即「暂停」）。
-typedef InterconnectVideoDownloadRunner = Future<void> Function(
-  File dest, {
-  void Function(double progress)? onProgress,
-  void Function(int received, int? total)? onBytes,
-  Future<void>? cancelSignal,
-});
+typedef InterconnectVideoDownloadRunner =
+    Future<void> Function(
+      File dest, {
+      void Function(double progress)? onProgress,
+      void Function(int received, int? total)? onBytes,
+      Future<void>? cancelSignal,
+    });
 
 /// 下载成功后落库/建行等收尾（注入；任一失败计入任务失败，不静默丢半成品）。
 typedef InterconnectDownloadComplete = Future<void> Function(File dest);
@@ -280,8 +282,8 @@ class InterconnectDownloadManager extends ChangeNotifier {
   InterconnectDownloadManager({
     DownloadKeepAlive? keepAlive,
     int Function()? now,
-  })  : _keepAlive = keepAlive,
-        _now = now ?? _wallClock;
+  }) : _keepAlive = keepAlive,
+       _now = now ?? _wallClock;
 
   static int _wallClock() => DateTime.now().millisecondsSinceEpoch;
 
@@ -508,20 +510,19 @@ class InterconnectDownloadManager extends ChangeNotifier {
     InterconnectDownloadComplete? onComplete,
     InterconnectVideoResumeRecord? resumeRecord,
     InterconnectDownloadOrigin origin = InterconnectDownloadOrigin.ownDevice,
-  }) =>
-      _startDownload(
-        id,
-        _DownloadSpec(
-          title: title,
-          kind: InterconnectDownloadKind.video,
-          dest: dest,
-          run: run,
-          onComplete: onComplete,
-          pausable: true,
-          resumeRecord: resumeRecord,
-          origin: origin,
-        ),
-      );
+  }) => _startDownload(
+    id,
+    _DownloadSpec(
+      title: title,
+      kind: InterconnectDownloadKind.video,
+      dest: dest,
+      run: run,
+      onComplete: onComplete,
+      pausable: true,
+      resumeRecord: resumeRecord,
+      origin: origin,
+    ),
+  );
 
   /// 启动一个远端原盘整盘下载（键 = [discTaskId]）。与视频任务同一套生命周期：
   /// 可暂停 / 继续 / 取消，续传由 [run] 承接（已落地的文件跳过、没下完的按
@@ -534,19 +535,18 @@ class InterconnectDownloadManager extends ChangeNotifier {
     required InterconnectVideoDownloadRunner run,
     required Future<bool> Function() discard,
     InterconnectDownloadComplete? onComplete,
-  }) =>
-      _startDownload(
-        discTaskId(discKey),
-        _DownloadSpec(
-          title: title,
-          kind: InterconnectDownloadKind.video,
-          dest: dest,
-          run: run,
-          onComplete: onComplete,
-          pausable: true,
-          discardLeftovers: discard,
-        ),
-      );
+  }) => _startDownload(
+    discTaskId(discKey),
+    _DownloadSpec(
+      title: title,
+      kind: InterconnectDownloadKind.video,
+      dest: dest,
+      run: run,
+      onComplete: onComplete,
+      pausable: true,
+      discardLeftovers: discard,
+    ),
+  );
 
   /// 把一个**不在跑**的视频任务以暂停态登记进来（进程重启后从续传清单接回、且
   /// 用户上次是主动暂停的）。之后 [resume] 用同一份 [run] / [onComplete] 续传。
@@ -595,18 +595,17 @@ class InterconnectDownloadManager extends ChangeNotifier {
     required File dest,
     required InterconnectDownloadRunner run,
     InterconnectDownloadComplete? onComplete,
-  }) =>
-      _startDownload(
-        bookTaskId(downloadId),
-        _DownloadSpec(
-          title: title,
-          kind: InterconnectDownloadKind.book,
-          dest: dest,
-          run: _adaptRunner(run),
-          onComplete: onComplete,
-          pausable: false,
-        ),
-      );
+  }) => _startDownload(
+    bookTaskId(downloadId),
+    _DownloadSpec(
+      title: title,
+      kind: InterconnectDownloadKind.book,
+      dest: dest,
+      run: _adaptRunner(run),
+      onComplete: onComplete,
+      pausable: false,
+    ),
+  );
 
   /// 启动一个纯 SRT（standalone）远端有声书下载任务（键 = [srtAudiobookTaskId]）。
   /// 已在跑（同 [identity]）则忽略重复调用，返回当前任务。
@@ -616,18 +615,17 @@ class InterconnectDownloadManager extends ChangeNotifier {
     required File dest,
     required InterconnectDownloadRunner run,
     InterconnectDownloadComplete? onComplete,
-  }) =>
-      _startDownload(
-        srtAudiobookTaskId(identity),
-        _DownloadSpec(
-          title: title,
-          kind: InterconnectDownloadKind.audiobook,
-          dest: dest,
-          run: _adaptRunner(run),
-          onComplete: onComplete,
-          pausable: false,
-        ),
-      );
+  }) => _startDownload(
+    srtAudiobookTaskId(identity),
+    _DownloadSpec(
+      title: title,
+      kind: InterconnectDownloadKind.audiobook,
+      dest: dest,
+      run: _adaptRunner(run),
+      onComplete: onComplete,
+      pausable: false,
+    ),
+  );
 
   static InterconnectVideoDownloadRunner _adaptRunner(
     InterconnectDownloadRunner run,
@@ -637,8 +635,7 @@ class InterconnectDownloadManager extends ChangeNotifier {
       void Function(double progress)? onProgress,
       void Function(int received, int? total)? onBytes,
       Future<void>? cancelSignal,
-    }) =>
-        run(dest, onProgress: onProgress);
+    }) => run(dest, onProgress: onProgress);
   }
 
   /// 暂停一个在跑的视频任务：发中止信号，传输原语停下并保留 `.part`，任务落到
@@ -687,8 +684,9 @@ class InterconnectDownloadManager extends ChangeNotifier {
       progress: existing?.isPaused == true ? existing!.progress : null,
       kind: spec.kind,
       origin: spec.origin,
-      receivedBytes:
-          existing?.isPaused == true ? existing!.receivedBytes : null,
+      receivedBytes: existing?.isPaused == true
+          ? existing!.receivedBytes
+          : null,
       totalBytes: existing?.isPaused == true ? existing!.totalBytes : null,
       startedAt: _now(),
       destPath: spec.dest.path,
@@ -757,22 +755,25 @@ class InterconnectDownloadManager extends ChangeNotifier {
       );
 
   void _queueRecordClear(String destPath) => _enqueueRecordOp(
-        destPath,
-        () => InterconnectVideoResumeStore.clear(destPath),
-      );
+    destPath,
+    () => InterconnectVideoResumeStore.clear(destPath),
+  );
 
   void _enqueueRecordOp(String destPath, Future<void> Function() op) {
     final Future<void> previous =
         _recordWrites[destPath] ?? Future<void>.value();
     late final Future<void> next;
-    next = previous.then((_) => op()).catchError((Object e) {
-      // 清单写不进去只丢「被杀后自动接回」这一项能力，下载本身照跑。
-      debugPrint('[interconnect-download] resume manifest op failed: $e');
-    }).whenComplete(() {
-      if (identical(_recordWrites[destPath], next)) {
-        _recordWrites.remove(destPath);
-      }
-    });
+    next = previous
+        .then((_) => op())
+        .catchError((Object e) {
+          // 清单写不进去只丢「被杀后自动接回」这一项能力，下载本身照跑。
+          debugPrint('[interconnect-download] resume manifest op failed: $e');
+        })
+        .whenComplete(() {
+          if (identical(_recordWrites[destPath], next)) {
+            _recordWrites.remove(destPath);
+          }
+        });
     _recordWrites[destPath] = next;
   }
 
@@ -988,18 +989,21 @@ class InterconnectDownloadManager extends ChangeNotifier {
       received += task.receivedBytes ?? 0;
       total += taskTotal;
     }
-    final int? percent =
-        totalsKnown && total > 0 ? (received * 100 ~/ total) : null;
+    final int? percent = totalsKnown && total > 0
+        ? (received * 100 ~/ total)
+        : null;
     final String title = running.length == 1
         ? running.single.title
         : t.interconnect_download_notification_title(count: running.length);
-    unawaited(keepAlive.update(
-      title: title,
-      text: percent == null
-          ? t.download_task_status_downloading
-          : '${t.download_task_status_downloading} · $percent%',
-      percent: percent,
-    ));
+    unawaited(
+      keepAlive.update(
+        title: title,
+        text: percent == null
+            ? t.download_task_status_downloading
+            : '${t.download_task_status_downloading} · $percent%',
+        percent: percent,
+      ),
+    );
   }
 
   @override
@@ -1013,6 +1017,7 @@ class InterconnectDownloadManager extends ChangeNotifier {
 /// app 级单例 provider：在整个 app 生命周期内持有互联下载任务，跨页面存活。
 final interconnectDownloadManagerProvider =
     ChangeNotifierProvider<InterconnectDownloadManager>(
-  (ref) => InterconnectDownloadManager(
-      keepAlive: downloadKeepAliveHub.lease('interconnect')),
-);
+      (ref) => InterconnectDownloadManager(
+        keepAlive: downloadKeepAliveHub.lease('interconnect'),
+      ),
+    );

@@ -95,8 +95,9 @@ List<String> _topLevelArgs(String call) {
 List<String> _callArgumentLists(String source, String name) {
   final String searchable = maskComments(source);
   final String structural = maskCommentsAndStrings(source);
-  final RegExp call =
-      RegExp(r'(?<![A-Za-z0-9_])' + RegExp.escape(name) + r'\s*\(');
+  final RegExp call = RegExp(
+    r'(?<![A-Za-z0-9_])' + RegExp.escape(name) + r'\s*\(',
+  );
   final List<String> out = <String>[];
   for (final RegExpMatch m in call.allMatches(searchable)) {
     final int open = m.end - 1;
@@ -133,8 +134,14 @@ List<String> _timerHandlerBodies(String source) {
     if (probe >= structural.length || structural[probe] != '{') {
       fail('case WM_TIMER 分支体必须用花括号包起来，否则闭包分析取不到右边界');
     }
-    out.add(balancedBlockFrom(source, idx,
-        openSearchFrom: probe, what: 'case WM_TIMER 分支体'));
+    out.add(
+      balancedBlockFrom(
+        source,
+        idx,
+        openSearchFrom: probe,
+        what: 'case WM_TIMER 分支体',
+      ),
+    );
     from = idx + label.length;
   }
   return out;
@@ -144,11 +151,13 @@ List<String> _timerHandlerBodies(String source) {
 String? _memberDefinitionBody(String source, String className, String name) {
   final String searchable = maskComments(source);
   final String structural = maskCommentsAndStrings(source);
-  final RegExp def = RegExp(r'(?<![A-Za-z0-9_])' +
-      RegExp.escape(className) +
-      r'::' +
-      RegExp.escape(name) +
-      r'\s*\(');
+  final RegExp def = RegExp(
+    r'(?<![A-Za-z0-9_])' +
+        RegExp.escape(className) +
+        r'::' +
+        RegExp.escape(name) +
+        r'\s*\(',
+  );
   for (final RegExpMatch m in def.allMatches(searchable)) {
     final int open = m.end - 1;
     final int close = _matchingParen(structural, open);
@@ -161,8 +170,9 @@ String? _memberDefinitionBody(String source, String className, String name) {
         probe++;
         continue;
       }
-      final RegExpMatch? word = RegExp(r'^[A-Za-z_][A-Za-z0-9_]*')
-          .firstMatch(structural.substring(probe));
+      final RegExpMatch? word = RegExp(
+        r'^[A-Za-z_][A-Za-z0-9_]*',
+      ).firstMatch(structural.substring(probe));
       if (word != null) {
         probe += word.group(0)!.length;
         continue;
@@ -170,8 +180,12 @@ String? _memberDefinitionBody(String source, String className, String name) {
       break;
     }
     if (probe < structural.length && structural[probe] == '{') {
-      return balancedBlockFrom(source, m.start,
-          openSearchFrom: probe, what: '$className::$name 定义体');
+      return balancedBlockFrom(
+        source,
+        m.start,
+        openSearchFrom: probe,
+        what: '$className::$name 定义体',
+      );
     }
   }
   return null;
@@ -187,8 +201,9 @@ Set<String> _calledIdentifiers(String body) {
   // 路径，看起来能一路走到 ApplyPassThroughExStyle / SetBodyExTransparent。
   // 过近似不是「保守所以安全」：它让守卫在真正该红的时候也说不清红在哪，而且会
   // 逼着人去改**实现**来迁就一个错误的可达图。
-  final RegExp call =
-      RegExp(r'(?<![A-Za-z0-9_.>])([A-Za-z_][A-Za-z0-9_]*)\s*\(');
+  final RegExp call = RegExp(
+    r'(?<![A-Za-z0-9_.>])([A-Za-z_][A-Za-z0-9_]*)\s*\(',
+  );
   return call
       .allMatches(maskCommentsAndStrings(body))
       .map((RegExpMatch m) => m.group(1)!)
@@ -239,32 +254,50 @@ void expectTimerCannotFlipInteractivity(
   for (final String installer in _timerInstallers) {
     for (final String args in _callArgumentLists(source, installer)) {
       final List<String> parts = _topLevelArgs(args);
-      expect(parts.length, greaterThanOrEqualTo(4),
-          reason: '$label：$installer$args 参数个数不对，判据读不到 TIMERPROC');
-      expect(parts[3], 'nullptr',
-          reason: '$label：$installer 必须把 TIMERPROC 传 nullptr，'
-              '否则定时器回调不止 case WM_TIMER 一处，'
-              '「定时器不翻转可交互性」这条判据就分析不完整了（PR#460 不变式）。');
+      expect(
+        parts.length,
+        greaterThanOrEqualTo(4),
+        reason: '$label：$installer$args 参数个数不对，判据读不到 TIMERPROC',
+      );
+      expect(
+        parts[3],
+        'nullptr',
+        reason:
+            '$label：$installer 必须把 TIMERPROC 传 nullptr，'
+            '否则定时器回调不止 case WM_TIMER 一处，'
+            '「定时器不翻转可交互性」这条判据就分析不完整了（PR#460 不变式）。',
+      );
     }
   }
 
   // 2) 离线程光标钩子整个禁掉。
-  expect(maskComments(source).contains('SetWindowsHookEx'), isFalse,
-      reason: '$label：低级鼠标钩子是绕开消息循环轮询光标的另一条路，'
-          '源码扫描分析不了它的回调，因此不许出现在这份语料里（PR#460 不变式）。');
+  expect(
+    maskComments(source).contains('SetWindowsHookEx'),
+    isFalse,
+    reason:
+        '$label：低级鼠标钩子是绕开消息循环轮询光标的另一条路，'
+        '源码扫描分析不了它的回调，因此不许出现在这份语料里（PR#460 不变式）。',
+  );
 
   // 3) 每个定时器回调的可达闭包里不得有可交互性写操作。
   for (final String handler in _timerHandlerBodies(source)) {
-    final String closure =
-        reachableFromTimerCallback(source, className, handler);
+    final String closure = reachableFromTimerCallback(
+      source,
+      className,
+      handler,
+    );
     final String structural = maskCommentsAndStrings(closure);
     for (final RegExp write in _interactivityWrites) {
-      expect(write.hasMatch(structural), isFalse,
-          reason: '$label：从 case WM_TIMER 可达的代码里出现了 '
-              '${write.pattern} —— 定时器又在翻转窗口的鼠标可交互性了。'
-              '这正是 PR#460 被 revert 的原因：表被饿死时，用户已经把光标甩到'
-              '工具条上点下去，位还没清掉，点击穿进游戏推台词 / 选分支。'
-              '定时器只许**读**穿透态（读到就把自己停掉），不许写。');
+      expect(
+        write.hasMatch(structural),
+        isFalse,
+        reason:
+            '$label：从 case WM_TIMER 可达的代码里出现了 '
+            '${write.pattern} —— 定时器又在翻转窗口的鼠标可交互性了。'
+            '这正是 PR#460 被 revert 的原因：表被饿死时，用户已经把光标甩到'
+            '工具条上点下去，位还没清掉，点击穿进游戏推台词 / 选分支。'
+            '定时器只许**读**穿透态（读到就把自己停掉），不许写。',
+      );
     }
   }
 }

@@ -21,7 +21,8 @@ int? adtsDurationMs(Uint8List bytes) {
     final int rate = _adtsSampleRates[frequencyIndex];
     if (rate == 0) return null;
     sampleRate ??= rate;
-    final int frameLength = ((bytes[offset + 3] & 0x03) << 11) |
+    final int frameLength =
+        ((bytes[offset + 3] & 0x03) << 11) |
         (bytes[offset + 4] << 3) |
         ((bytes[offset + 5] & 0xE0) >> 5);
     if (frameLength < 7) return null;

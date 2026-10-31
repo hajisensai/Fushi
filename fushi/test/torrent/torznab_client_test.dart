@@ -29,8 +29,9 @@ void main() {
         'categories': <int>[5000, 5070],
       },
     );
-    final List<Map<String, Object?>> encoded =
-        encodeTorznabIndexerConfigs(<TorznabIndexerConfig>[config]);
+    final List<Map<String, Object?>> encoded = encodeTorznabIndexerConfigs(
+      <TorznabIndexerConfig>[config],
+    );
     expect(decodeTorznabIndexerConfigs(encoded).single.apiKey, 'super-secret');
     expect(config.toJson(includeSecrets: false), isNot(contains('apiKey')));
     expect(
@@ -65,65 +66,69 @@ void main() {
     );
   });
 
-  test('uses tv search then general fallback and resolves validated metainfo',
-      () async {
-    final Uint8List metainfo = _v1Metainfo();
-    final String infoHash = inspectTorrentMetainfo(metainfo).torrentId;
-    int tvSearches = 0;
-    int generalSearches = 0;
-    final MockClient httpClient = MockClient((http.Request request) async {
-      switch (request.url.queryParameters['t']) {
-        case 'caps':
-          expect(request.url.queryParameters['apikey'], 'secret-key');
-          return http.Response(_capsXml, 200);
-        case 'tvsearch':
-          tvSearches++;
-          return http.Response(_emptyRss, 200);
-        case 'search':
-          generalSearches++;
-          return http.Response(_resultRss(infoHash), 200);
-      }
-      if (request.url.path == '/download/one.torrent') {
-        return http.Response.bytes(metainfo, 200);
-      }
-      return http.Response('not found', 404);
-    });
-    final TorznabClient client = TorznabClient(
-      indexers: <TorznabIndexerConfig>[
-        TorznabIndexerConfig(
-          id: 'local',
-          name: 'Local',
-          endpoint: Uri.parse('http://localhost/api'),
-          apiKey: 'secret-key',
-        ),
-      ],
-      client: httpClient,
-      closesClient: false,
-    );
+  test(
+    'uses tv search then general fallback and resolves validated metainfo',
+    () async {
+      final Uint8List metainfo = _v1Metainfo();
+      final String infoHash = inspectTorrentMetainfo(metainfo).torrentId;
+      int tvSearches = 0;
+      int generalSearches = 0;
+      final MockClient httpClient = MockClient((http.Request request) async {
+        switch (request.url.queryParameters['t']) {
+          case 'caps':
+            expect(request.url.queryParameters['apikey'], 'secret-key');
+            return http.Response(_capsXml, 200);
+          case 'tvsearch':
+            tvSearches++;
+            return http.Response(_emptyRss, 200);
+          case 'search':
+            generalSearches++;
+            return http.Response(_resultRss(infoHash), 200);
+        }
+        if (request.url.path == '/download/one.torrent') {
+          return http.Response.bytes(metainfo, 200);
+        }
+        return http.Response('not found', 404);
+      });
+      final TorznabClient client = TorznabClient(
+        indexers: <TorznabIndexerConfig>[
+          TorznabIndexerConfig(
+            id: 'local',
+            name: 'Local',
+            endpoint: Uri.parse('http://localhost/api'),
+            apiKey: 'secret-key',
+          ),
+        ],
+        client: httpClient,
+        closesClient: false,
+      );
 
-    final ProviderBatchResult<VideoResourceCandidate> result =
-        await client.search(
-      VideoResourceSearchRequest(
-        media: VideoMediaReference(
-          providerId: 'anilist',
-          mediaId: '1',
-          mediaKind: VideoMetadataMediaKind.tv,
-          discoveryCategory: VideoDiscoveryCategory.anime,
-          title: 'Test Show',
-          season: 1,
-          episode: 2,
-        ),
-      ),
-    );
+      final ProviderBatchResult<VideoResourceCandidate> result = await client
+          .search(
+            VideoResourceSearchRequest(
+              media: VideoMediaReference(
+                providerId: 'anilist',
+                mediaId: '1',
+                mediaKind: VideoMetadataMediaKind.tv,
+                discoveryCategory: VideoDiscoveryCategory.anime,
+                title: 'Test Show',
+                season: 1,
+                episode: 2,
+              ),
+            ),
+          );
 
-    expect(result.failures, isEmpty);
-    expect(result.items, hasLength(1));
-    expect(tvSearches, 1);
-    expect(generalSearches, 1);
-    final TorrentAddPayload payload = await client.resolve(result.items.single);
-    expect(payload, isA<TorrentMetainfoPayload>());
-    expect(payload.torrentId, infoHash);
-  });
+      expect(result.failures, isEmpty);
+      expect(result.items, hasLength(1));
+      expect(tvSearches, 1);
+      expect(generalSearches, 1);
+      final TorrentAddPayload payload = await client.resolve(
+        result.items.single,
+      );
+      expect(payload, isA<TorrentMetainfoPayload>());
+      expect(payload.torrentId, infoHash);
+    },
+  );
 
   test('caps maximum controls page limit and offset', () async {
     final List<Map<String, String>> searchQueries = <Map<String, String>>[];
@@ -131,8 +136,9 @@ void main() {
       if (request.url.queryParameters['t'] == 'caps') {
         return http.Response(_capsXml, 200);
       }
-      final Map<String, String> query =
-          Map<String, String>.of(request.url.queryParameters);
+      final Map<String, String> query = Map<String, String>.of(
+        request.url.queryParameters,
+      );
       searchQueries.add(query);
       final int offset = int.parse(query['offset']!);
       return http.Response(
@@ -157,18 +163,15 @@ void main() {
       closesClient: false,
     );
 
-    final TorznabCapabilities capabilities =
-        await client.fetchCapabilities('paged');
+    final TorznabCapabilities capabilities = await client.fetchCapabilities(
+      'paged',
+    );
     expect(capabilities.maximumPageSize, 25);
     expect(capabilities.defaultPageSize, 10);
-    final ProviderBatchResult<VideoResourceCandidate> result =
-        await client.search(
-      const VideoResourceSearchRequest(
-        query: 'Test',
-        page: 3,
-        limit: 40,
-      ),
-    );
+    final ProviderBatchResult<VideoResourceCandidate> result = await client
+        .search(
+          const VideoResourceSearchRequest(query: 'Test', page: 3, limit: 40),
+        );
 
     expect(result.failures, isEmpty);
     expect(result.items, hasLength(40));
@@ -182,126 +185,130 @@ void main() {
     );
   });
 
-  test('multi-indexer page two preserves an unconsumed page-one tail',
-      () async {
-    final MockClient httpClient = MockClient((http.Request request) async {
-      if (request.url.queryParameters['t'] == 'caps') {
-        return http.Response(_capsXml, 200);
-      }
-      final int offset = int.parse(request.url.queryParameters['offset']!);
-      if (request.url.path == '/a') {
+  test(
+    'multi-indexer page two preserves an unconsumed page-one tail',
+    () async {
+      final MockClient httpClient = MockClient((http.Request request) async {
+        if (request.url.queryParameters['t'] == 'caps') {
+          return http.Response(_capsXml, 200);
+        }
+        final int offset = int.parse(request.url.queryParameters['offset']!);
+        if (request.url.path == '/a') {
+          return http.Response(
+            offset == 0
+                ? _resultsRss(start: 0, count: 1, prefix: 'a')
+                : _emptyRss,
+            200,
+          );
+        }
         return http.Response(
-          offset == 0
-              ? _resultsRss(start: 0, count: 1, prefix: 'a')
-              : _emptyRss,
+          _resultsRss(start: offset, count: 2, prefix: 'b'),
           200,
         );
-      }
-      return http.Response(
-        _resultsRss(start: offset, count: 2, prefix: 'b'),
-        200,
+      });
+      final TorznabClient client = TorznabClient(
+        indexers: <TorznabIndexerConfig>[
+          TorznabIndexerConfig(
+            id: 'a',
+            name: 'A',
+            endpoint: Uri.parse('http://localhost/a'),
+            apiKey: '',
+            priority: 0,
+          ),
+          TorznabIndexerConfig(
+            id: 'b',
+            name: 'B',
+            endpoint: Uri.parse('http://localhost/b'),
+            apiKey: '',
+            priority: 1,
+          ),
+        ],
+        client: httpClient,
+        closesClient: false,
       );
-    });
-    final TorznabClient client = TorznabClient(
-      indexers: <TorznabIndexerConfig>[
-        TorznabIndexerConfig(
-          id: 'a',
-          name: 'A',
-          endpoint: Uri.parse('http://localhost/a'),
-          apiKey: '',
-          priority: 0,
-        ),
-        TorznabIndexerConfig(
-          id: 'b',
-          name: 'B',
-          endpoint: Uri.parse('http://localhost/b'),
-          apiKey: '',
-          priority: 1,
-        ),
-      ],
-      client: httpClient,
-      closesClient: false,
-    );
 
-    final ProviderBatchResult<VideoResourceCandidate> pageOne =
-        await client.search(
-      const VideoResourceSearchRequest(query: 'Test', limit: 2),
-    );
-    final ProviderBatchResult<VideoResourceCandidate> pageTwo =
-        await client.search(
-      const VideoResourceSearchRequest(query: 'Test', page: 2, limit: 2),
-    );
+      final ProviderBatchResult<VideoResourceCandidate> pageOne = await client
+          .search(const VideoResourceSearchRequest(query: 'Test', limit: 2));
+      final ProviderBatchResult<VideoResourceCandidate> pageTwo = await client
+          .search(
+            const VideoResourceSearchRequest(query: 'Test', page: 2, limit: 2),
+          );
 
-    expect(
-      pageOne.items.map((VideoResourceCandidate item) => item.title),
-      <String>['a-0', 'b-0'],
-    );
-    expect(
-      pageTwo.items.map((VideoResourceCandidate item) => item.title),
-      <String>['b-1', 'b-2'],
-    );
-  });
-
-  test('later indexer-page failure keeps another indexer page usable',
-      () async {
-    final MockClient httpClient = MockClient((http.Request request) async {
-      if (request.url.queryParameters['t'] == 'caps') {
-        return http.Response(_capsXml, 200);
-      }
-      final int offset = int.parse(request.url.queryParameters['offset']!);
-      if (request.url.path == '/partial-a' && offset > 0) {
-        return http.Response('rate limited', 429);
-      }
-      final String prefix = request.url.path == '/partial-a' ? 'c' : 'd';
-      return http.Response(
-        _resultsRss(start: offset, count: 2, prefix: prefix),
-        200,
+      expect(
+        pageOne.items.map((VideoResourceCandidate item) => item.title),
+        <String>['a-0', 'b-0'],
       );
-    });
-    final TorznabClient client = TorznabClient(
-      indexers: <TorznabIndexerConfig>[
-        TorznabIndexerConfig(
-          id: 'partial-a',
-          name: 'Partial A',
-          endpoint: Uri.parse('http://localhost/partial-a'),
-          apiKey: '',
-          priority: 0,
-        ),
-        TorznabIndexerConfig(
-          id: 'healthy-b',
-          name: 'Healthy B',
-          endpoint: Uri.parse('http://localhost/healthy-b'),
-          apiKey: '',
-          priority: 1,
-        ),
-      ],
-      client: httpClient,
-      closesClient: false,
-    );
+      expect(
+        pageTwo.items.map((VideoResourceCandidate item) => item.title),
+        <String>['b-1', 'b-2'],
+      );
+    },
+  );
 
-    final ProviderBatchResult<VideoResourceCandidate> result =
-        await client.search(
-      const VideoResourceSearchRequest(query: 'Test', page: 2, limit: 2),
-    );
+  test(
+    'later indexer-page failure keeps another indexer page usable',
+    () async {
+      final MockClient httpClient = MockClient((http.Request request) async {
+        if (request.url.queryParameters['t'] == 'caps') {
+          return http.Response(_capsXml, 200);
+        }
+        final int offset = int.parse(request.url.queryParameters['offset']!);
+        if (request.url.path == '/partial-a' && offset > 0) {
+          return http.Response('rate limited', 429);
+        }
+        final String prefix = request.url.path == '/partial-a' ? 'c' : 'd';
+        return http.Response(
+          _resultsRss(start: offset, count: 2, prefix: prefix),
+          200,
+        );
+      });
+      final TorznabClient client = TorznabClient(
+        indexers: <TorznabIndexerConfig>[
+          TorznabIndexerConfig(
+            id: 'partial-a',
+            name: 'Partial A',
+            endpoint: Uri.parse('http://localhost/partial-a'),
+            apiKey: '',
+            priority: 0,
+          ),
+          TorznabIndexerConfig(
+            id: 'healthy-b',
+            name: 'Healthy B',
+            endpoint: Uri.parse('http://localhost/healthy-b'),
+            apiKey: '',
+            priority: 1,
+          ),
+        ],
+        client: httpClient,
+        closesClient: false,
+      );
 
-    expect(result.isPartial, isTrue);
-    expect(result.successfulProviderCount, 2);
-    expect(
-      result.items.map((VideoResourceCandidate item) => item.title),
-      <String>['d-0', 'd-1'],
-    );
-    expect(
-      result.failures.single.kind,
-      ExternalProviderFailureKind.rateLimited,
-    );
-  });
+      final ProviderBatchResult<VideoResourceCandidate> result = await client
+          .search(
+            const VideoResourceSearchRequest(query: 'Test', page: 2, limit: 2),
+          );
 
-  test('torrent body is capped while streaming, before an extra chunk is read',
-      () async {
-    int emittedChunks = 0;
-    final Uint8List chunk = Uint8List(1024 * 1024);
-    final _RoutingStreamClient httpClient = _RoutingStreamClient(
-      (http.BaseRequest request) async {
+      expect(result.isPartial, isTrue);
+      expect(result.successfulProviderCount, 2);
+      expect(
+        result.items.map((VideoResourceCandidate item) => item.title),
+        <String>['d-0', 'd-1'],
+      );
+      expect(
+        result.failures.single.kind,
+        ExternalProviderFailureKind.rateLimited,
+      );
+    },
+  );
+
+  test(
+    'torrent body is capped while streaming, before an extra chunk is read',
+    () async {
+      int emittedChunks = 0;
+      final Uint8List chunk = Uint8List(1024 * 1024);
+      final _RoutingStreamClient httpClient = _RoutingStreamClient((
+        http.BaseRequest request,
+      ) async {
         if (request.url.queryParameters['t'] == 'caps') {
           return _textStreamedResponse(_capsXml);
         }
@@ -309,40 +316,46 @@ void main() {
           return _textStreamedResponse(_resultRss('a' * 40));
         }
         if (request.url.path == '/download/one.torrent') {
-          final Stream<List<int>> stream = Stream<List<int>>.fromIterable(
-            List<List<int>>.filled(18, chunk),
-          ).map((List<int> value) {
-            emittedChunks++;
-            return value;
-          });
+          final Stream<List<int>> stream =
+              Stream<List<int>>.fromIterable(
+                List<List<int>>.filled(18, chunk),
+              ).map((List<int> value) {
+                emittedChunks++;
+                return value;
+              });
           return http.StreamedResponse(stream, 200);
         }
         return _textStreamedResponse('not found', statusCode: 404);
-      },
-    );
-    final TorznabClient client = _clientWith(httpClient);
-    final ProviderBatchResult<VideoResourceCandidate> result =
-        await client.search(const VideoResourceSearchRequest(query: 'Test'));
+      });
+      final TorznabClient client = _clientWith(httpClient);
+      final ProviderBatchResult<VideoResourceCandidate> result = await client
+          .search(const VideoResourceSearchRequest(query: 'Test'));
 
-    await expectLater(
-      client.resolve(result.items.single),
-      throwsA(
-        isA<ExternalProviderFailure>().having(
-          (ExternalProviderFailure failure) => failure.kind,
-          'kind',
-          ExternalProviderFailureKind.invalidResponse,
+      await expectLater(
+        client.resolve(result.items.single),
+        throwsA(
+          isA<ExternalProviderFailure>().having(
+            (ExternalProviderFailure failure) => failure.kind,
+            'kind',
+            ExternalProviderFailureKind.invalidResponse,
+          ),
         ),
-      ),
-    );
-    expect(emittedChunks, 17,
-        reason: 'the 17th MiB crosses the 16 MiB cap; chunk 18 stays unread');
-  });
+      );
+      expect(
+        emittedChunks,
+        17,
+        reason: 'the 17th MiB crosses the 16 MiB cap; chunk 18 stays unread',
+      );
+    },
+  );
 
-  test('unsafe redirect is rejected before sending and failure is redacted',
-      () async {
-    int downloadCalls = 0;
-    final _RoutingStreamClient httpClient = _RoutingStreamClient(
-      (http.BaseRequest request) async {
+  test(
+    'unsafe redirect is rejected before sending and failure is redacted',
+    () async {
+      int downloadCalls = 0;
+      final _RoutingStreamClient httpClient = _RoutingStreamClient((
+        http.BaseRequest request,
+      ) async {
         if (request.url.queryParameters['t'] == 'caps') {
           return _textStreamedResponse(_capsXml);
         }
@@ -366,35 +379,37 @@ void main() {
             'location': 'http://evil.example/file?passkey=redirect-secret',
           },
         );
-      },
-    );
-    final TorznabClient client = _clientWith(
-      httpClient,
-      endpoint: Uri.parse('https://indexer.example/api'),
-    );
-    final ProviderBatchResult<VideoResourceCandidate> result =
-        await client.search(const VideoResourceSearchRequest(query: 'Test'));
+      });
+      final TorznabClient client = _clientWith(
+        httpClient,
+        endpoint: Uri.parse('https://indexer.example/api'),
+      );
+      final ProviderBatchResult<VideoResourceCandidate> result = await client
+          .search(const VideoResourceSearchRequest(query: 'Test'));
 
-    Object? failure;
-    try {
-      await client.resolve(result.items.single);
-      fail('resolve must reject the unsafe redirect');
-    } on Object catch (error) {
-      failure = error;
-    }
-    expect(downloadCalls, 1);
-    expect(failure, isA<ExternalProviderFailure>());
-    expect(failure.toString(), isNot(contains('source-secret')));
-    expect(failure.toString(), isNot(contains('redirect-secret')));
-  });
+      Object? failure;
+      try {
+        await client.resolve(result.items.single);
+        fail('resolve must reject the unsafe redirect');
+      } on Object catch (error) {
+        failure = error;
+      }
+      expect(downloadCalls, 1);
+      expect(failure, isA<ExternalProviderFailure>());
+      expect(failure.toString(), isNot(contains('source-secret')));
+      expect(failure.toString(), isNot(contains('redirect-secret')));
+    },
+  );
 
-  test('safe redirect is fetched without forwarding indexer credentials',
-      () async {
-    final Uint8List metainfo = _v1Metainfo();
-    final String infoHash = inspectTorrentMetainfo(metainfo).torrentId;
-    int downloadCalls = 0;
-    final _RoutingStreamClient httpClient = _RoutingStreamClient(
-      (http.BaseRequest request) async {
+  test(
+    'safe redirect is fetched without forwarding indexer credentials',
+    () async {
+      final Uint8List metainfo = _v1Metainfo();
+      final String infoHash = inspectTorrentMetainfo(metainfo).torrentId;
+      int downloadCalls = 0;
+      final _RoutingStreamClient httpClient = _RoutingStreamClient((
+        http.BaseRequest request,
+      ) async {
         if (request.url.queryParameters['t'] == 'caps') {
           return _textStreamedResponse(_capsXml);
         }
@@ -427,20 +442,22 @@ void main() {
           200,
           contentLength: metainfo.length,
         );
-      },
-    );
-    final TorznabClient client = _clientWith(
-      httpClient,
-      endpoint: Uri.parse('https://indexer.example/api'),
-    );
-    final ProviderBatchResult<VideoResourceCandidate> result =
-        await client.search(const VideoResourceSearchRequest(query: 'Test'));
+      });
+      final TorznabClient client = _clientWith(
+        httpClient,
+        endpoint: Uri.parse('https://indexer.example/api'),
+      );
+      final ProviderBatchResult<VideoResourceCandidate> result = await client
+          .search(const VideoResourceSearchRequest(query: 'Test'));
 
-    final TorrentAddPayload payload = await client.resolve(result.items.single);
-    expect(payload, isA<TorrentMetainfoPayload>());
-    expect(payload.torrentId, infoHash);
-    expect(downloadCalls, 2);
-  });
+      final TorrentAddPayload payload = await client.resolve(
+        result.items.single,
+      );
+      expect(payload, isA<TorrentMetainfoPayload>());
+      expect(payload.torrentId, infoHash);
+      expect(downloadCalls, 2);
+    },
+  );
 
   test('network errors never expose the API key', () async {
     final TorznabClient client = TorznabClient(
@@ -458,10 +475,8 @@ void main() {
       closesClient: false,
     );
 
-    final ProviderBatchResult<VideoResourceCandidate> result =
-        await client.search(
-      const VideoResourceSearchRequest(query: 'query'),
-    );
+    final ProviderBatchResult<VideoResourceCandidate> result = await client
+        .search(const VideoResourceSearchRequest(query: 'query'));
 
     expect(result.failures, hasLength(1));
     expect(result.failures.single.kind, ExternalProviderFailureKind.network);
@@ -523,15 +538,12 @@ ${List<String>.generate(count, (int relative) {
 ''';
 
 Uint8List _v1Metainfo() => Uint8List.fromList(
-      utf8.encode(
-        'd4:infod6:lengthi1e4:name4:test6:pieces20:aaaaaaaaaaaaaaaaaaaaee',
-      ),
-    );
+  utf8.encode(
+    'd4:infod6:lengthi1e4:name4:test6:pieces20:aaaaaaaaaaaaaaaaaaaaee',
+  ),
+);
 
-TorznabClient _clientWith(
-  http.Client httpClient, {
-  Uri? endpoint,
-}) =>
+TorznabClient _clientWith(http.Client httpClient, {Uri? endpoint}) =>
     TorznabClient(
       indexers: <TorznabIndexerConfig>[
         TorznabIndexerConfig(
@@ -561,7 +573,7 @@ class _RoutingStreamClient extends http.BaseClient {
   _RoutingStreamClient(this.handler);
 
   final Future<http.StreamedResponse> Function(http.BaseRequest request)
-      handler;
+  handler;
 
   @override
   Future<http.StreamedResponse> send(http.BaseRequest request) =>

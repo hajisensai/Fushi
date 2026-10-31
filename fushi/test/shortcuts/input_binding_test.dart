@@ -50,9 +50,7 @@ void main() {
 
   group('InputBinding', () {
     test('serialize simple key', () {
-      final binding = InputBinding(
-        key: LogicalKeyboardKey.pageDown,
-      );
+      final binding = InputBinding(key: LogicalKeyboardKey.pageDown);
       expect(binding.serialize(), 'PageDown');
     });
 
@@ -141,8 +139,10 @@ void main() {
     test('serialize keeps readable labels for whitelisted keys', () {
       // Whitelisted keys must NOT switch to the keyId sentinel, so existing
       // saved JSON stays valid and human-readable.
-      expect(InputBinding(key: LogicalKeyboardKey.pageDown).serialize(),
-          'PageDown');
+      expect(
+        InputBinding(key: LogicalKeyboardKey.pageDown).serialize(),
+        'PageDown',
+      );
       expect(
         InputBinding(
           key: LogicalKeyboardKey.keyD,
@@ -271,36 +271,52 @@ void main() {
     ];
 
     test(
-        'every non-game known key has a non-null physicalKey (no missing keys)',
-        () {
-      for (final key in nonGameKnownKeys) {
-        expect(
-          InputBinding(key: key).physicalKey,
-          isNotNull,
-          reason: '${key.keyLabel} missing from _logicalToPhysical — would '
-              'still fail under IME',
-        );
-      }
-    });
+      'every non-game known key has a non-null physicalKey (no missing keys)',
+      () {
+        for (final key in nonGameKnownKeys) {
+          expect(
+            InputBinding(key: key).physicalKey,
+            isNotNull,
+            reason:
+                '${key.keyLabel} missing from _logicalToPhysical — would '
+                'still fail under IME',
+          );
+        }
+      },
+    );
 
-    test('physicalKey maps representative keys to the matching physical key',
-        () {
-      expect(InputBinding(key: LogicalKeyboardKey.pageDown).physicalKey,
-          PhysicalKeyboardKey.pageDown);
-      expect(InputBinding(key: LogicalKeyboardKey.keyM).physicalKey,
-          PhysicalKeyboardKey.keyM);
-      expect(InputBinding(key: LogicalKeyboardKey.digit1).physicalKey,
-          PhysicalKeyboardKey.digit1);
-      expect(InputBinding(key: LogicalKeyboardKey.arrowLeft).physicalKey,
-          PhysicalKeyboardKey.arrowLeft);
-      expect(InputBinding(key: LogicalKeyboardKey.space).physicalKey,
-          PhysicalKeyboardKey.space);
-    });
+    test(
+      'physicalKey maps representative keys to the matching physical key',
+      () {
+        expect(
+          InputBinding(key: LogicalKeyboardKey.pageDown).physicalKey,
+          PhysicalKeyboardKey.pageDown,
+        );
+        expect(
+          InputBinding(key: LogicalKeyboardKey.keyM).physicalKey,
+          PhysicalKeyboardKey.keyM,
+        );
+        expect(
+          InputBinding(key: LogicalKeyboardKey.digit1).physicalKey,
+          PhysicalKeyboardKey.digit1,
+        );
+        expect(
+          InputBinding(key: LogicalKeyboardKey.arrowLeft).physicalKey,
+          PhysicalKeyboardKey.arrowLeft,
+        );
+        expect(
+          InputBinding(key: LogicalKeyboardKey.space).physicalKey,
+          PhysicalKeyboardKey.space,
+        );
+      },
+    );
 
     test('physicalKey is null for keys outside the override set', () {
       // game* / numpad / F13+ 不在覆盖集 → null（IME 下不参与物理回退，符合预期）。
-      expect(InputBinding(key: LogicalKeyboardKey.gameButtonA).physicalKey,
-          isNull);
+      expect(
+        InputBinding(key: LogicalKeyboardKey.gameButtonA).physicalKey,
+        isNull,
+      );
       expect(InputBinding(key: LogicalKeyboardKey.numpad1).physicalKey, isNull);
       expect(InputBinding(key: LogicalKeyboardKey.f13).physicalKey, isNull);
     });
@@ -342,11 +358,15 @@ void main() {
     test('deserialize', () {
       expect(GamepadBinding.deserialize('A')?.button, GamepadButton.a);
       expect(GamepadBinding.deserialize('RB')?.button, GamepadButton.rb);
-      expect(GamepadBinding.deserialize('DpadLeft')?.button,
-          GamepadButton.dpadLeft);
+      expect(
+        GamepadBinding.deserialize('DpadLeft')?.button,
+        GamepadButton.dpadLeft,
+      );
       expect(GamepadBinding.deserialize('L3')?.button, GamepadButton.thumbLeft);
       expect(
-          GamepadBinding.deserialize('R3')?.button, GamepadButton.thumbRight);
+        GamepadBinding.deserialize('R3')?.button,
+        GamepadButton.thumbRight,
+      );
       expect(GamepadBinding.deserialize('Mode')?.button, GamepadButton.mode);
     });
 
@@ -363,15 +383,22 @@ void main() {
     });
 
     test('fromLogicalKey maps gamepad keys correctly', () {
-      expect(GamepadButton.fromLogicalKey(LogicalKeyboardKey.gameButtonA),
-          GamepadButton.a);
-      expect(GamepadButton.fromLogicalKey(LogicalKeyboardKey.gameButtonLeft1),
-          GamepadButton.lb);
       expect(
-          GamepadButton.fromLogicalKey(LogicalKeyboardKey.gameButtonThumbLeft),
-          GamepadButton.thumbLeft);
-      expect(GamepadButton.fromLogicalKey(LogicalKeyboardKey.gameButtonMode),
-          GamepadButton.mode);
+        GamepadButton.fromLogicalKey(LogicalKeyboardKey.gameButtonA),
+        GamepadButton.a,
+      );
+      expect(
+        GamepadButton.fromLogicalKey(LogicalKeyboardKey.gameButtonLeft1),
+        GamepadButton.lb,
+      );
+      expect(
+        GamepadButton.fromLogicalKey(LogicalKeyboardKey.gameButtonThumbLeft),
+        GamepadButton.thumbLeft,
+      );
+      expect(
+        GamepadButton.fromLogicalKey(LogicalKeyboardKey.gameButtonMode),
+        GamepadButton.mode,
+      );
     });
 
     test('fromLogicalKey returns null for non-gamepad keys', () {
@@ -379,20 +406,27 @@ void main() {
       expect(GamepadButton.fromLogicalKey(LogicalKeyboardKey.escape), isNull);
     });
 
-    test('fromLogicalKey maps D-Pad arrow keys (keyboard wins on conflict)',
-        () {
+    test('fromLogicalKey maps D-Pad arrow keys (keyboard wins on conflict)', () {
       // D-Pad shares LogicalKeyboardKey with arrow keys. fromLogicalKey returns
       // the D-Pad button so a standalone D-Pad gamepad binding can resolve via
       // the gamepad fallback path. Keyboard arrow bindings still take priority
       // because resolveKeyboard runs first.
-      expect(GamepadButton.fromLogicalKey(LogicalKeyboardKey.arrowUp),
-          GamepadButton.dpadUp);
-      expect(GamepadButton.fromLogicalKey(LogicalKeyboardKey.arrowDown),
-          GamepadButton.dpadDown);
-      expect(GamepadButton.fromLogicalKey(LogicalKeyboardKey.arrowLeft),
-          GamepadButton.dpadLeft);
-      expect(GamepadButton.fromLogicalKey(LogicalKeyboardKey.arrowRight),
-          GamepadButton.dpadRight);
+      expect(
+        GamepadButton.fromLogicalKey(LogicalKeyboardKey.arrowUp),
+        GamepadButton.dpadUp,
+      );
+      expect(
+        GamepadButton.fromLogicalKey(LogicalKeyboardKey.arrowDown),
+        GamepadButton.dpadDown,
+      );
+      expect(
+        GamepadButton.fromLogicalKey(LogicalKeyboardKey.arrowLeft),
+        GamepadButton.dpadLeft,
+      );
+      expect(
+        GamepadButton.fromLogicalKey(LogicalKeyboardKey.arrowRight),
+        GamepadButton.dpadRight,
+      );
     });
   });
 
@@ -460,7 +494,8 @@ void main() {
       expect(
         source.indexOf('InputBinding.normalizeCapturedKey('),
         lessThan(
-            source.indexOf('InputBinding(key: key, modifiers: modifiers)')),
+          source.indexOf('InputBinding(key: key, modifiers: modifiers)'),
+        ),
       );
     });
   });
@@ -475,9 +510,7 @@ void main() {
             modifiers: {ModifierKey.shift},
           ),
         ],
-        gamepadBindings: const [
-          GamepadBinding(GamepadButton.rb),
-        ],
+        gamepadBindings: const [GamepadBinding(GamepadButton.rb)],
       );
       final json = set.toJson();
       final restored = ShortcutBindingSet.fromJson(json);

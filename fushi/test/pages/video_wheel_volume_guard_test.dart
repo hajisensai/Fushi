@@ -42,15 +42,23 @@ void main() {
     // the wheel signal must ride the SAME Listener so it covers the whole picture.
     final int pointerUp = src.indexOf('onPointerUp: _handleVideoPointerUp,');
     expect(pointerUp, greaterThanOrEqualTo(0));
-    final int pointerSignal =
-        src.indexOf('onPointerSignal: _handleVideoWheelSignal,', pointerUp);
-    expect(pointerSignal, greaterThan(pointerUp),
-        reason: 'the wheel handler must be wired on the same video-body '
-            'Listener that owns tap-to-pause, right after onPointerUp');
+    final int pointerSignal = src.indexOf(
+      'onPointerSignal: _handleVideoWheelSignal,',
+      pointerUp,
+    );
+    expect(
+      pointerSignal,
+      greaterThan(pointerUp),
+      reason:
+          'the wheel handler must be wired on the same video-body '
+          'Listener that owns tap-to-pause, right after onPointerUp',
+    );
     // and be reasonably adjacent (same Listener, not some far-away widget).
-    expect(pointerSignal - pointerUp, lessThan(400),
-        reason:
-            'onPointerSignal should sit on the same Listener as onPointerUp');
+    expect(
+      pointerSignal - pointerUp,
+      lessThan(400),
+      reason: 'onPointerSignal should sit on the same Listener as onPointerUp',
+    );
   });
 
   test('_handleVideoWheelSignal gates and delegates to the volume channel', () {
@@ -58,21 +66,40 @@ void main() {
       'void _handleVideoWheelSignal(PointerSignalEvent event) {',
       'bool _handleDoubleTapSeek(',
     );
-    expect(h.contains('if (event is! PointerScrollEvent) return;'), isTrue,
-        reason: 'only wheel scroll signals adjust volume');
-    expect(h.contains('if (!_isDesktopVideoControls) return;'), isTrue,
-        reason: 'wheel volume is desktop-only (mobile has no wheel)');
-    expect(h.contains('if (!_immersiveAllowsFullControls) return;'), isTrue,
-        reason: 'respect the immersive lock like the keyboard volume keys');
-    expect(h.contains('if (_videoSidePanel.value != null) return;'), isTrue,
-        reason: 'do not steal the wheel while a side panel is open');
-    expect(h.contains('videoPointerHitsChrome('), isTrue,
-        reason: 'wheel over control-bar chrome is left to the chrome '
-            '(the bottom volume chip owns its own wheel Listener)');
     expect(
-        h.contains('_onVolumeWheel(controller, event.scrollDelta.dy)'), isTrue,
-        reason: 'delegate to the existing _onVolumeWheel -> _adjustVolume path '
-            '(which drives the right-side level HUD / OSD feedback)');
+      h.contains('if (event is! PointerScrollEvent) return;'),
+      isTrue,
+      reason: 'only wheel scroll signals adjust volume',
+    );
+    expect(
+      h.contains('if (!_isDesktopVideoControls) return;'),
+      isTrue,
+      reason: 'wheel volume is desktop-only (mobile has no wheel)',
+    );
+    expect(
+      h.contains('if (!_immersiveAllowsFullControls) return;'),
+      isTrue,
+      reason: 'respect the immersive lock like the keyboard volume keys',
+    );
+    expect(
+      h.contains('if (_videoSidePanel.value != null) return;'),
+      isTrue,
+      reason: 'do not steal the wheel while a side panel is open',
+    );
+    expect(
+      h.contains('videoPointerHitsChrome('),
+      isTrue,
+      reason:
+          'wheel over control-bar chrome is left to the chrome '
+          '(the bottom volume chip owns its own wheel Listener)',
+    );
+    expect(
+      h.contains('_onVolumeWheel(controller, event.scrollDelta.dy)'),
+      isTrue,
+      reason:
+          'delegate to the existing _onVolumeWheel -> _adjustVolume path '
+          '(which drives the right-side level HUD / OSD feedback)',
+    );
   });
 
   test('the delegated wheel path drives the volume OSD feedback', () {
@@ -81,10 +108,15 @@ void main() {
       'void _onVolumeWheel(VideoPlayerController controller, double scrollDeltaY) {',
       'void _syncVolumeDisplay(double volume) {',
     );
-    expect(wheel.contains('_adjustVolume(delta)'), isTrue,
-        reason: 'wheel adjusts through the shared _adjustVolume channel');
-    expect(wheel.contains('_VideoFushiPageState._volumeStep'), isTrue,
-        reason:
-            'wheel uses the shared _volumeStep, up-scroll increases volume');
+    expect(
+      wheel.contains('_adjustVolume(delta)'),
+      isTrue,
+      reason: 'wheel adjusts through the shared _adjustVolume channel',
+    );
+    expect(
+      wheel.contains('_VideoFushiPageState._volumeStep'),
+      isTrue,
+      reason: 'wheel uses the shared _volumeStep, up-scroll increases volume',
+    );
   });
 }

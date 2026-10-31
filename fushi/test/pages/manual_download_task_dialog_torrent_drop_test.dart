@@ -54,9 +54,9 @@ void main() {
         theme: ThemeData(useMaterial3: true),
         home: Builder(
           builder: (BuildContext context) => MediaQuery(
-            data: MediaQuery.of(context).copyWith(
-              disableAnimations: reduceMotion,
-            ),
+            data: MediaQuery.of(
+              context,
+            ).copyWith(disableAnimations: reduceMotion),
             child: Scaffold(body: Center(child: child)),
           ),
         ),
@@ -82,7 +82,11 @@ void main() {
   }
 
   String titleText(WidgetTester tester) => tester
-      .widget<TextField>(glassUnwrap<TextField>(find.byKey(const ValueKey<String>('manual-task-title'))))
+      .widget<TextField>(
+        glassUnwrap<TextField>(
+          find.byKey(const ValueKey<String>('manual-task-title')),
+        ),
+      )
       .controller!
       .text;
 
@@ -116,8 +120,9 @@ void main() {
     required Finder until,
   }) async {
     // 走 FushiFileDropTarget 的唯一咽喉，与 desktop_drop 真回调同一条路径。
-    final FushiFileDropTarget target =
-        tester.widget<FushiFileDropTarget>(find.byType(FushiFileDropTarget));
+    final FushiFileDropTarget target = tester.widget<FushiFileDropTarget>(
+      find.byType(FushiFileDropTarget),
+    );
     await tester.runAsync(() => target.runDrop(paths, Offset.zero));
     await settle(tester, until);
   }
@@ -169,8 +174,9 @@ void main() {
     );
   }
 
-  testWidgets('initialTorrentPath prefills file name, title and content kind',
-      (WidgetTester tester) async {
+  testWidgets('initialTorrentPath prefills file name, title and content kind', (
+    WidgetTester tester,
+  ) async {
     await pumpDialog(
       tester,
       dialog(
@@ -186,14 +192,19 @@ void main() {
     expect(find.text(t.discovery_kind_manga), findsOneWidget);
   });
 
-  testWidgets('dropping another .torrent onto the open dialog replaces it',
-      (WidgetTester tester) async {
-    await pumpDialog(tester, dialog(initialTorrentPath: validTorrent),
-        until: find.text('first.torrent'));
+  testWidgets('dropping another .torrent onto the open dialog replaces it', (
+    WidgetTester tester,
+  ) async {
+    await pumpDialog(
+      tester,
+      dialog(initialTorrentPath: validTorrent),
+      until: find.text('first.torrent'),
+    );
     expect(find.text('first.torrent'), findsOneWidget);
 
-    await dropOnDialog(tester, <String>[otherTorrent],
-        until: find.text('second.torrent'));
+    await dropOnDialog(tester, <String>[
+      otherTorrent,
+    ], until: find.text('second.torrent'));
 
     expect(find.text('second.torrent'), findsOneWidget);
     expect(find.text('first.torrent'), findsNothing);
@@ -201,24 +212,34 @@ void main() {
     expect(titleText(tester), 'other');
   });
 
-  testWidgets('dropping non-torrent files onto the dialog is ignored',
-      (WidgetTester tester) async {
-    await pumpDialog(tester, dialog(initialTorrentPath: validTorrent),
-        until: find.text('first.torrent'));
+  testWidgets('dropping non-torrent files onto the dialog is ignored', (
+    WidgetTester tester,
+  ) async {
+    await pumpDialog(
+      tester,
+      dialog(initialTorrentPath: validTorrent),
+      until: find.text('first.torrent'),
+    );
 
     // 非种子在 _handleDialogDrop 里同步早退，没有任何异步落字段可等——立刻断言
     // 「什么都没变」。
-    await dropOnDialog(tester, <String>[r'C:\x\a.mkv', r'C:\x\b.srt'],
-        until: find.text('first.torrent'));
+    await dropOnDialog(tester, <String>[
+      r'C:\x\a.mkv',
+      r'C:\x\b.srt',
+    ], until: find.text('first.torrent'));
 
     expect(find.text('first.torrent'), findsOneWidget);
     expect(titleText(tester), 'test');
   });
 
-  testWidgets('a broken torrent reports the same invalid hint as the picker',
-      (WidgetTester tester) async {
-    await pumpDialog(tester, dialog(initialTorrentPath: brokenTorrent),
-        until: find.text(t.download_task_add_invalid));
+  testWidgets('a broken torrent reports the same invalid hint as the picker', (
+    WidgetTester tester,
+  ) async {
+    await pumpDialog(
+      tester,
+      dialog(initialTorrentPath: brokenTorrent),
+      until: find.text(t.download_task_add_invalid),
+    );
 
     expect(find.text(t.download_task_add_invalid), findsOneWidget);
     expect(find.text('broken.torrent'), findsNothing);
@@ -235,25 +256,40 @@ void main() {
       test('$name handles DropIntent.importTorrent', () {
         final String src = File(path).readAsStringSync();
         final int at = src.indexOf('case DropIntent.importTorrent:');
-        expect(at, greaterThan(-1),
-            reason: '$name must switch on DropIntent.importTorrent');
+        expect(
+          at,
+          greaterThan(-1),
+          reason: '$name must switch on DropIntent.importTorrent',
+        );
         final int next = src.indexOf('case DropIntent.', at + 1);
         final String body = src.substring(at, next > at ? next : src.length);
-        expect(body.contains('showManualDownloadTaskDialog('), isTrue,
-            reason: '$name must open the manual download dialog for torrents');
-        expect(body.contains('torrentPaths: files.torrents'), isTrue,
-            reason: '$name must hand every dropped torrent to the dialog');
+        expect(
+          body.contains('showManualDownloadTaskDialog('),
+          isTrue,
+          reason: '$name must open the manual download dialog for torrents',
+        );
+        expect(
+          body.contains('torrentPaths: files.torrents'),
+          isTrue,
+          reason: '$name must hand every dropped torrent to the dialog',
+        );
       });
     });
 
     test('downloads page is itself a .torrent drop surface', () {
-      final String src =
-          File('lib/src/pages/implementations/browse_page.dart')
-              .readAsStringSync();
-      expect(src.contains('FushiFileDropTarget('), isTrue,
-          reason: 'downloads page must accept dropped torrents');
-      expect(src.contains('torrentPaths: files.torrents'), isTrue,
-          reason: 'downloads page must hand dropped torrents to the dialog');
+      final String src = File(
+        'lib/src/pages/implementations/browse_page.dart',
+      ).readAsStringSync();
+      expect(
+        src.contains('FushiFileDropTarget('),
+        isTrue,
+        reason: 'downloads page must accept dropped torrents',
+      );
+      expect(
+        src.contains('torrentPaths: files.torrents'),
+        isTrue,
+        reason: 'downloads page must hand dropped torrents to the dialog',
+      );
     });
   });
 }

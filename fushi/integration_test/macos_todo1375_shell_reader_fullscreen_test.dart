@@ -60,9 +60,9 @@ void main() {
       // offline degradation in production.
       ui.PlatformDispatcher.instance.onError =
           (Object error, StackTrace stack) {
-        debugPrint('[t1375] swallowed async error: $error');
-        return true;
-      };
+            debugPrint('[t1375] swallowed async error: $error');
+            return true;
+          };
 
       bool shell = false;
       for (int i = 0; i < 180; i++) {
@@ -85,28 +85,45 @@ void main() {
       await _cap(tester, '$tmp/t1375_1_home.png');
 
       // Symptom (3) -- the bookshelf tab has no back button...
-      expect(find.byType(MacosBackButton), findsNothing,
-          reason: 'no back button on the bookshelf tab');
+      expect(
+        find.byType(MacosBackButton),
+        findsNothing,
+        reason: 'no back button on the bookshelf tab',
+      );
       final Finder settingsItem = find.byWidgetPredicate(
-          (Widget w) => w is MacosIcon && w.icon == Icons.tune);
-      expect(settingsItem, findsWidgets,
-          reason: 'sidebar settings destination present');
-      await tester.tap(settingsItem.first,
-          warnIfMissed: false); // itest-tap-allow: macos_ui shell nav
+        (Widget w) => w is MacosIcon && w.icon == Icons.tune,
+      );
+      expect(
+        settingsItem,
+        findsWidgets,
+        reason: 'sidebar settings destination present',
+      );
+      await tester.tap(
+        settingsItem.first,
+        warnIfMissed: false,
+      ); // itest-tap-allow: macos_ui shell nav
       await drainPump(tester, 24);
       // ...but the settings tab DOES, independent of the sidebar (never trapped).
-      expect(find.byType(MacosBackButton), findsWidgets,
-          reason:
-              'TODO-1375 (3): settings tab must expose a sidebar-independent '
-              'back exit (MacosBackButton in the ToolBar leading).');
+      expect(
+        find.byType(MacosBackButton),
+        findsWidgets,
+        reason:
+            'TODO-1375 (3): settings tab must expose a sidebar-independent '
+            'back exit (MacosBackButton in the ToolBar leading).',
+      );
       await _cap(tester, '$tmp/t1375_4_settings_back.png');
 
       // Activating back returns to the bookshelf tab (no back button there).
-      await tester.tap(find.byType(MacosBackButton).first,
-          warnIfMissed: false); // itest-tap-allow: macos_ui shell nav
+      await tester.tap(
+        find.byType(MacosBackButton).first,
+        warnIfMissed: false,
+      ); // itest-tap-allow: macos_ui shell nav
       await drainPump(tester, 24);
-      expect(find.byType(MacosBackButton), findsNothing,
-          reason: 'back returned to the bookshelf tab (no back button)');
+      expect(
+        find.byType(MacosBackButton),
+        findsNothing,
+        reason: 'back returned to the bookshelf tab (no back button)',
+      );
       await _cap(tester, '$tmp/t1375_5_after_back.png');
       debugPrint('[t1375] DONE');
     },

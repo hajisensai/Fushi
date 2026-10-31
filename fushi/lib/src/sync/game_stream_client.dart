@@ -208,14 +208,12 @@ class FushiGameStreamClient {
     required String clientId,
     int after = -1,
   }) async {
-    final GameStreamPostResult result = await _post(
-      '/api/game-stream/signal',
-      <String, dynamic>{
-        'sessionId': sessionId,
-        'clientId': effectiveClientId(clientId),
-        'after': after,
-      },
-    );
+    final GameStreamPostResult result =
+        await _post('/api/game-stream/signal', <String, dynamic>{
+          'sessionId': sessionId,
+          'clientId': effectiveClientId(clientId),
+          'after': after,
+        });
     final Object? signals = result.json?['signals'];
     if (signals is! List) return const <GameStreamSignal>[];
     return <GameStreamSignal>[

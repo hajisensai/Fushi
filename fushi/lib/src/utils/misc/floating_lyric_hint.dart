@@ -3,11 +3,7 @@ import 'package:fushi/i18n/strings.g.dart';
 /// TODO-1227: ColorOS-based OEMs whose risk control ("permission monitoring")
 /// can silently refuse the "draw over other apps" permission in system
 /// settings. Matched against Android `Build.MANUFACTURER`, case-insensitive.
-const Set<String> kColorOsManufacturers = <String>{
-  'oppo',
-  'realme',
-  'oneplus',
-};
+const Set<String> kColorOsManufacturers = <String>{'oppo', 'realme', 'oneplus'};
 
 /// Whether [manufacturer] (Android `Build.MANUFACTURER`) belongs to a
 /// ColorOS OEM ([kColorOsManufacturers]); case-insensitive, `null`-safe.

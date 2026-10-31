@@ -47,7 +47,8 @@ Future<bool> hasGoogleLensDisclosure({
   GoogleLensDisclosureScene scene = GoogleLensDisclosureScene.mangaPages,
 }) async {
   final SharedPreferences preferences = await SharedPreferences.getInstance();
-  return preferences.getInt(scene.preferenceKey) == kGoogleLensDisclosureVersion;
+  return preferences.getInt(scene.preferenceKey) ==
+      kGoogleLensDisclosureVersion;
 }
 
 /// 记下本设备对 [scene] 当前版本同意书的同意——与同意框点「同意」写同一个键同一个

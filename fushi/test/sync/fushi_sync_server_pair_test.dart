@@ -27,15 +27,17 @@ void main() {
 
   Uri pairUri() => Uri.parse('http://127.0.0.1:${server.port}/api/pair');
 
-  test('POST /api/pair returns 403/unavailable when no handler is wired',
-      () async {
-    final http.Response resp = await http.post(pairUri());
-    expect(resp.statusCode, 403);
-    expect(
-      (jsonDecode(resp.body) as Map<String, dynamic>)['reason'],
-      'unavailable',
-    );
-  });
+  test(
+    'POST /api/pair returns 403/unavailable when no handler is wired',
+    () async {
+      final http.Response resp = await http.post(pairUri());
+      expect(resp.statusCode, 403);
+      expect(
+        (jsonDecode(resp.body) as Map<String, dynamic>)['reason'],
+        'unavailable',
+      );
+    },
+  );
 
   test('POST /api/pair returns the token when the host approves', () async {
     server.onPairRequest = (FushiPairRequest _) async => true;
@@ -56,23 +58,25 @@ void main() {
     );
   });
 
-  test('the approval handler receives the client name and remote address',
-      () async {
-    FushiPairRequest? seen;
-    server.onPairRequest = (FushiPairRequest req) async {
-      seen = req;
-      return true;
-    };
-    await http.post(
-      pairUri(),
-      headers: <String, String>{'Content-Type': 'application/json'},
-      body: jsonEncode(<String, String>{'name': 'Galaxy S21'}),
-    );
-    expect(seen, isNotNull);
-    expect(seen!.deviceName, 'Galaxy S21');
-    // shelf_io attaches the connection info, so the loopback IP is resolved.
-    expect(seen!.remoteAddress, isNotNull);
-  });
+  test(
+    'the approval handler receives the client name and remote address',
+    () async {
+      FushiPairRequest? seen;
+      server.onPairRequest = (FushiPairRequest req) async {
+        seen = req;
+        return true;
+      };
+      await http.post(
+        pairUri(),
+        headers: <String, String>{'Content-Type': 'application/json'},
+        body: jsonEncode(<String, String>{'name': 'Galaxy S21'}),
+      );
+      expect(seen, isNotNull);
+      expect(seen!.deviceName, 'Galaxy S21');
+      // shelf_io attaches the connection info, so the loopback IP is resolved.
+      expect(seen!.remoteAddress, isNotNull);
+    },
+  );
 
   test('GET /api/pair is rejected with 405', () async {
     server.onPairRequest = (FushiPairRequest _) async => true;
@@ -82,8 +86,9 @@ void main() {
 
   test('pairing endpoint needs no auth header (bypasses Basic auth)', () async {
     // No Authorization header at all, yet a normal WebDAV path returns 401.
-    final http.Response davResp =
-        await http.get(Uri.parse('http://127.0.0.1:${server.port}/'));
+    final http.Response davResp = await http.get(
+      Uri.parse('http://127.0.0.1:${server.port}/'),
+    );
     expect(davResp.statusCode, 401);
     server.onPairRequest = (FushiPairRequest _) async => true;
     final http.Response pairResp = await http.post(pairUri());

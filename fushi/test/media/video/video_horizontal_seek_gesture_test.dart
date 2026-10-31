@@ -28,8 +28,10 @@ void main() {
 
   group('BUG-1485: 灵敏度与视频总时长解耦', () {
     test('拖满整屏：24 分钟番剧与 2 小时电影跨越同一段时间（默认档 90 秒）', () {
-      final Duration anime =
-          delta(dx: width, duration: const Duration(minutes: 24));
+      final Duration anime = delta(
+        dx: width,
+        duration: const Duration(minutes: 24),
+      );
       final Duration movie = delta(
         dx: width,
         duration: const Duration(hours: 2),
@@ -43,8 +45,10 @@ void main() {
     });
 
     test('旧模型的「越长越飞」被消除：时长翻 5 倍，同一位移的跨度远不到 5 倍', () {
-      final Duration short =
-          delta(dx: 100, duration: const Duration(minutes: 24));
+      final Duration short = delta(
+        dx: 100,
+        duration: const Duration(minutes: 24),
+      );
       final Duration long = delta(
         dx: 100,
         duration: const Duration(minutes: 120),

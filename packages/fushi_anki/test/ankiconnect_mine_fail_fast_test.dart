@@ -32,7 +32,7 @@ class _UnresponsiveClient extends http.BaseClient {
 /// call — matching the reported stack (findNotesByField -> isDuplicate).
 class _ConfiguredRepo extends AnkiConnectRepository {
   _ConfiguredRepo({required AnkiConnectService service, required this.settings})
-      : super(service: service);
+    : super(service: service);
 
   final AnkiSettings settings;
 
@@ -41,50 +41,51 @@ class _ConfiguredRepo extends AnkiConnectRepository {
 }
 
 AnkiSettings _dupeCheckSettings() => const AnkiSettings(
-      selectedDeckId: 1,
-      selectedNoteTypeId: 2,
-      availableDecks: <AnkiDeck>[AnkiDeck(id: 1, name: 'Mining')],
-      availableNoteTypes: <AnkiNoteType>[
-        AnkiNoteType(id: 2, name: 'Fushi', fields: <String>['Expression']),
-      ],
-      fieldMappings: <String, String>{'Expression': '{expression}'},
-      allowDupes: false,
-    );
+  selectedDeckId: 1,
+  selectedNoteTypeId: 2,
+  availableDecks: <AnkiDeck>[AnkiDeck(id: 1, name: 'Mining')],
+  availableNoteTypes: <AnkiNoteType>[
+    AnkiNoteType(id: 2, name: 'Fushi', fields: <String>['Expression']),
+  ],
+  fieldMappings: <String, String>{'Expression': '{expression}'},
+  allowDupes: false,
+);
 
 const String _payload = '{"expression":"勉強","reading":"べんきょう"}';
 
 void main() {
   const Duration shortTimeout = Duration(milliseconds: 200);
 
-  test('findNotesByField fails fast (once) when AnkiConnect never responds',
-      () async {
-    final client = _UnresponsiveClient();
-    final service = AnkiConnectService(
-      host: '127.0.0.1',
-      port: 8765,
-      client: client,
-      timeout: shortTimeout,
-    );
-
-    final stopwatch = Stopwatch()..start();
-    await expectLater(
-      service.findNotesByField(
-        deckName: 'Mining',
-        fieldName: 'Expression',
-        fieldValue: '勉強',
-      ),
-      throwsA(isA<TimeoutException>()),
-    );
-    stopwatch.stop();
-
-    // A timeout is not a connection-drop, so it must not be retried.
-    expect(client.sent, 1);
-    // Bounded by the (short) request budget — the request did not hang.
-    expect(stopwatch.elapsed, lessThan(const Duration(seconds: 3)));
-  });
-
   test(
-      'mineEntry returns commit-unknown (no hang, no retry) when atomic '
+    'findNotesByField fails fast (once) when AnkiConnect never responds',
+    () async {
+      final client = _UnresponsiveClient();
+      final service = AnkiConnectService(
+        host: '127.0.0.1',
+        port: 8765,
+        client: client,
+        timeout: shortTimeout,
+      );
+
+      final stopwatch = Stopwatch()..start();
+      await expectLater(
+        service.findNotesByField(
+          deckName: 'Mining',
+          fieldName: 'Expression',
+          fieldValue: '勉強',
+        ),
+        throwsA(isA<TimeoutException>()),
+      );
+      stopwatch.stop();
+
+      // A timeout is not a connection-drop, so it must not be retried.
+      expect(client.sent, 1);
+      // Bounded by the (short) request budget — the request did not hang.
+      expect(stopwatch.elapsed, lessThan(const Duration(seconds: 3)));
+    },
+  );
+
+  test('mineEntry returns commit-unknown (no hang, no retry) when atomic '
       'addNote times out', () async {
     final client = _UnresponsiveClient();
     final service = AnkiConnectService(
@@ -93,8 +94,10 @@ void main() {
       client: client,
       timeout: shortTimeout,
     );
-    final repo =
-        _ConfiguredRepo(service: service, settings: _dupeCheckSettings());
+    final repo = _ConfiguredRepo(
+      service: service,
+      settings: _dupeCheckSettings(),
+    );
 
     final stopwatch = Stopwatch()..start();
     final MineOutcome outcome = await repo.mineEntry(

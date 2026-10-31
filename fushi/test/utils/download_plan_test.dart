@@ -42,17 +42,26 @@ void main() {
     test('参数非法时当场拒绝', () {
       expect(
         () => DownloadPlan.ranged(
-            urls: const <String>[], totalBytes: 10, partSize: 5),
+          urls: const <String>[],
+          totalBytes: 10,
+          partSize: 5,
+        ),
         throwsArgumentError,
       );
       expect(
         () => DownloadPlan.ranged(
-            urls: const <String>['https://a'], totalBytes: 0, partSize: 5),
+          urls: const <String>['https://a'],
+          totalBytes: 0,
+          partSize: 5,
+        ),
         throwsArgumentError,
       );
       expect(
         () => DownloadPlan.ranged(
-            urls: const <String>['https://a'], totalBytes: 10, partSize: 0),
+          urls: const <String>['https://a'],
+          totalBytes: 10,
+          partSize: 0,
+        ),
         throwsArgumentError,
       );
     });
@@ -60,11 +69,11 @@ void main() {
 
   group('铺砖校验', () {
     DownloadPart part(int index, int offset, int length) => DownloadPart(
-          index: index,
-          offset: offset,
-          length: length,
-          sources: const <DownloadSource>[DownloadSource(url: 'https://a')],
-        );
+      index: index,
+      offset: offset,
+      length: length,
+      sources: const <DownloadSource>[DownloadSource(url: 'https://a')],
+    );
 
     test('有缝隙就拒绝（下完会是个中间带洞的坏包）', () {
       expect(
@@ -135,18 +144,18 @@ void main() {
   group('hasPerPartDigests', () {
     test('全带摘要为 true，缺一片为 false', () {
       DownloadPart withSha(int i, int off, String? sha) => DownloadPart(
-            index: i,
-            offset: off,
-            length: 100,
-            sha256: sha,
-            sources: const <DownloadSource>[DownloadSource(url: 'https://a')],
-          );
+        index: i,
+        offset: off,
+        length: 100,
+        sha256: sha,
+        sources: const <DownloadSource>[DownloadSource(url: 'https://a')],
+      );
       expect(
         DownloadPlan(
           totalBytes: 200,
           parts: <DownloadPart>[
             withSha(0, 0, 'a' * 64),
-            withSha(1, 100, 'b' * 64)
+            withSha(1, 100, 'b' * 64),
           ],
         ).hasPerPartDigests,
         isTrue,

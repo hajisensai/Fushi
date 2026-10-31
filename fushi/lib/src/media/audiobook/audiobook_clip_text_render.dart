@@ -105,13 +105,17 @@ AudiobookClipTextLayout computeClipTextLayout({
   final double base = baseFontSize <= 0 ? 22 : baseFontSize;
   final double effectiveLineHeight = lineHeight <= 0 ? 1.6 : lineHeight;
   final int safeLen = textLength <= 0 ? 1 : textLength;
-  final double shorterEdge =
-      (outWidth < outHeight ? outWidth : outHeight).toDouble();
+  final double shorterEdge = (outWidth < outHeight ? outWidth : outHeight)
+      .toDouble();
   final double padding = (shorterEdge * 0.08).clamp(24.0, 96.0);
-  final double usableW =
-      (outWidth - padding * 2).clamp(1.0, outWidth.toDouble());
-  final double usableH =
-      (outHeight - padding * 2).clamp(1.0, outHeight.toDouble());
+  final double usableW = (outWidth - padding * 2).clamp(
+    1.0,
+    outWidth.toDouble(),
+  );
+  final double usableH = (outHeight - padding * 2).clamp(
+    1.0,
+    outHeight.toDouble(),
+  );
   // fillFactor 0.55：留换行不满行 + 高亮衬底内边距的余量，避免一上来就被 fit 大幅回缩。
   const double fillFactor = 0.55;
   final double areaFit = math.sqrt(
@@ -154,9 +158,7 @@ Future<Uint8List?> renderAudiobookClipTextToPng({
   // 单句静态图：一段文本、该段高亮（highlightIndex 0），等价旧行为。
   final Widget card = _AudiobookClipTextCard(
     boundaryKey: boundaryKey,
-    segments: <AudiobookClipTextSegment>[
-      AudiobookClipTextSegment(text: text),
-    ],
+    segments: <AudiobookClipTextSegment>[AudiobookClipTextSegment(text: text)],
     highlightIndex: 0,
     layout: layout,
     onFirstFrame: () {
@@ -169,10 +171,7 @@ Future<Uint8List?> renderAudiobookClipTextToPng({
     builder: (BuildContext context) => Positioned(
       left: -100000,
       top: -100000,
-      child: Material(
-        type: MaterialType.transparency,
-        child: card,
-      ),
+      child: Material(type: MaterialType.transparency, child: card),
     ),
   );
 
@@ -197,8 +196,8 @@ Future<Uint8List?> renderAudiobookClipTextToPng({
       return null;
     }
 
-    final RenderObject? renderObject =
-        boundaryKey.currentContext?.findRenderObject();
+    final RenderObject? renderObject = boundaryKey.currentContext
+        ?.findRenderObject();
     if (renderObject is! RenderRepaintBoundary) {
       ErrorLogService.instance.log(
         'AudiobookClipTextRender.noBoundary',
@@ -228,8 +227,9 @@ Future<Uint8List?> renderAudiobookClipTextToPng({
 
     final ui.Image image = await renderObject.toImage(pixelRatio: pixelRatio);
     try {
-      final ByteData? bytes =
-          await image.toByteData(format: ui.ImageByteFormat.png);
+      final ByteData? bytes = await image.toByteData(
+        format: ui.ImageByteFormat.png,
+      );
       if (bytes == null) {
         ErrorLogService.instance.log(
           'AudiobookClipTextRender.toByteDataNull',
@@ -324,10 +324,8 @@ class AudiobookClipTextSegment {
 ///
 /// 用回调而非返回 `List<Uint8List?>`：让每次内存里只驻留一帧 PNG，渲一帧→编码落盘→释放，
 /// 避免把 N 帧 1080×1920 PNG（+ 竖排路径每帧 8.3MB native 位图）同时驻留导致 native OOM。
-typedef AudiobookClipFrameSink = Future<bool> Function(
-  int highlightIndex,
-  Uint8List? pngBytes,
-);
+typedef AudiobookClipFrameSink =
+    Future<bool> Function(int highlightIndex, Uint8List? pngBytes);
 
 /// 批量把「多句整段文本」离屏渲成 [segments].length 张 PNG（每张高亮不同一句），逐帧
 /// 经 [onFrame] 回调交给调用方即时消费（TODO-1167 流式，见 [AudiobookClipFrameSink]）。
@@ -347,7 +345,8 @@ Future<void> renderAudiobookClipFrames({
   List<int>? highlightIndices,
   double pixelRatio = 1.0,
 }) async {
-  final List<int> indices = highlightIndices ??
+  final List<int> indices =
+      highlightIndices ??
       List<int>.generate(segments.length, (int i) => i, growable: false);
   // 流式（TODO-1167）：渲一帧立刻交给 [onFrame] 消费，不再攒成 List<Uint8List?> 返回，
   // 避免 N 帧 PNG 同时驻留。onFrame 返回 false（编码失败/只需单帧）即提前停止。
@@ -390,10 +389,7 @@ Future<Uint8List?> _renderClipFramePng({
     builder: (BuildContext context) => Positioned(
       left: -100000,
       top: -100000,
-      child: Material(
-        type: MaterialType.transparency,
-        child: card,
-      ),
+      child: Material(type: MaterialType.transparency, child: card),
     ),
   );
 
@@ -416,8 +412,8 @@ Future<Uint8List?> _renderClipFramePng({
       return null;
     }
 
-    final RenderObject? renderObject =
-        boundaryKey.currentContext?.findRenderObject();
+    final RenderObject? renderObject = boundaryKey.currentContext
+        ?.findRenderObject();
     if (renderObject is! RenderRepaintBoundary) {
       ErrorLogService.instance.log(
         'AudiobookClipTextRender.frameNoBoundary',
@@ -442,8 +438,9 @@ Future<Uint8List?> _renderClipFramePng({
 
     final ui.Image image = await renderObject.toImage(pixelRatio: pixelRatio);
     try {
-      final ByteData? bytes =
-          await image.toByteData(format: ui.ImageByteFormat.png);
+      final ByteData? bytes = await image.toByteData(
+        format: ui.ImageByteFormat.png,
+      );
       if (bytes == null) {
         ErrorLogService.instance.log(
           'AudiobookClipTextRender.frameToByteDataNull',
@@ -557,10 +554,7 @@ class _AudiobookClipTextCardState extends State<_AudiobookClipTextCard> {
               for (final Uint8List imageBytes in segment.images)
                 Padding(
                   padding: EdgeInsets.only(top: highlightPadV),
-                  child: Image.memory(
-                    imageBytes,
-                    fit: BoxFit.contain,
-                  ),
+                  child: Image.memory(imageBytes, fit: BoxFit.contain),
                 ),
             ],
           ),
@@ -573,8 +567,10 @@ class _AudiobookClipTextCardState extends State<_AudiobookClipTextCard> {
     // 内容宽度 = 卡片宽 - 两侧 padding。文本按此宽换行（与旧单句路径一致），Column 竖向
     // 堆叠多句；再用 FittedBox(scaleDown) 让整段（尤其小图/长内容）超高时等比缩小、永不
     // RenderFlex 溢出，单句时不放大（scaleDown 只缩不放），保留原单句观感。
-    final double contentWidth =
-        (layout.width - layout.padding * 2).clamp(1.0, layout.width.toDouble());
+    final double contentWidth = (layout.width - layout.padding * 2).clamp(
+      1.0,
+      layout.width.toDouble(),
+    );
     final Widget body = FittedBox(
       fit: BoxFit.scaleDown,
       child: SizedBox(

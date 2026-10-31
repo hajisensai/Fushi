@@ -18,17 +18,16 @@ import 'package:fushi/utils.dart';
 Future<void> openLibraryOrganizeHistoryPage(
   BuildContext context,
   AppModel appModel,
-) =>
-    Navigator.push<void>(
-      context,
-      adaptivePageRoute<void>(
-        context: context,
-        builder: (_) => LibraryOrganizeHistoryPage(
-          db: appModel.database,
-          prefs: appModel.prefsRepo,
-        ),
-      ),
-    );
+) => Navigator.push<void>(
+  context,
+  adaptivePageRoute<void>(
+    context: context,
+    builder: (_) => LibraryOrganizeHistoryPage(
+      db: appModel.database,
+      prefs: appModel.prefsRepo,
+    ),
+  ),
+);
 
 /// 一次运行最多列多少次（更早的仍在库里，只是不展示）。
 const int kLibraryOrganizeHistoryRuns = 50;
@@ -72,29 +71,37 @@ class _LibraryOrganizeHistoryPageState
 
   Future<void> _load() async {
     final FushiDatabase db = widget.db;
-    final List<({LibraryOrganizeRunRow run, List<LibraryOrganizeChangeRow> changes})>
-        history =
-        await loadLibraryOrganizeHistory(db, limit: kLibraryOrganizeHistoryRuns);
+    final List<
+      ({LibraryOrganizeRunRow run, List<LibraryOrganizeChangeRow> changes})
+    >
+    history = await loadLibraryOrganizeHistory(
+      db,
+      limit: kLibraryOrganizeHistoryRuns,
+    );
     final Set<String> allowed = widget.prefs.libraryOrganizeAllowedKeys;
     final List<({String key, String name})> rejected =
         <({String key, String name})>[
-      for (final MapEntry<String, String> e
-          in (await db.getRejectedOrganizeGroups()).entries)
-        if (!allowed.contains(e.key)) (key: e.key, name: e.value),
-    ];
+          for (final MapEntry<String, String> e
+              in (await db.getRejectedOrganizeGroups()).entries)
+            if (!allowed.contains(e.key)) (key: e.key, name: e.value),
+        ];
     if (!mounted) return;
     setState(() {
       _runs = <_RunView>[
         for (final ({
               LibraryOrganizeRunRow run,
-              List<LibraryOrganizeChangeRow> changes
-            }) h in history)
+              List<LibraryOrganizeChangeRow> changes,
+            })
+            h
+            in history)
           if (h.changes.isNotEmpty || h.run.error != null)
             _RunView(h.run, h.changes),
       ];
       _rejected = rejected
-        ..sort((({String key, String name}) a, ({String key, String name}) b) =>
-            a.name.compareTo(b.name));
+        ..sort(
+          (({String key, String name}) a, ({String key, String name}) b) =>
+              a.name.compareTo(b.name),
+        );
       _loading = false;
       _generation++;
     });
@@ -118,8 +125,8 @@ class _LibraryOrganizeHistoryPageState
       body: _loading
           ? const Center(child: FushiCircularProgressIndicator())
           : _runs.isEmpty && _rejected.isEmpty
-              ? Center(child: Text(t.library_organize_history_empty))
-              : _buildList(context),
+          ? Center(child: Text(t.library_organize_history_empty))
+          : _buildList(context),
     );
   }
 
@@ -165,16 +172,20 @@ class _LibraryOrganizeHistoryPageState
                 children: <Widget>[
                   for (final ({String key, String name}) r in _rejected)
                     FushiListItem(
-                      key: ValueKey<String>('library_organize_rejected_${r.key}'),
+                      key: ValueKey<String>(
+                        'library_organize_rejected_${r.key}',
+                      ),
                       leading: const FushiListLeadingIcon(FushiIcons.block),
                       title: Text(r.name),
                       trailing: FushiTextButton(
                         onPressed: _busy
                             ? null
-                            : () => unawaited(_guard(
+                            : () => unawaited(
+                                _guard(
                                   () => widget.prefs
                                       .addLibraryOrganizeAllowedKey(r.key),
-                                )),
+                                ),
+                              ),
                         child: Text(t.library_organize_history_allow_again),
                       ),
                     ),
@@ -188,8 +199,7 @@ class _LibraryOrganizeHistoryPageState
   }
 
   Widget _runHeader(_RunView run) {
-    final DateTime at =
-        DateTime.fromMillisecondsSinceEpoch(run.run.startedAt);
+    final DateTime at = DateTime.fromMillisecondsSinceEpoch(run.run.startedAt);
     final CollectionShelfDomain? domain = CollectionShelfDomain.values
         .where((CollectionShelfDomain d) => d.name == run.run.domain)
         .firstOrNull;
@@ -200,8 +210,9 @@ class _LibraryOrganizeHistoryPageState
           : t.library_organize_trigger_manual,
       n: run.changes.length,
     );
-    final bool anyLive =
-        run.changes.any((LibraryOrganizeChangeRow c) => c.undoneAt == null);
+    final bool anyLive = run.changes.any(
+      (LibraryOrganizeChangeRow c) => c.undoneAt == null,
+    );
     return Padding(
       padding: const EdgeInsets.fromLTRB(32, 16, 24, 6),
       child: Row(
@@ -218,12 +229,14 @@ class _LibraryOrganizeHistoryPageState
               key: ValueKey<String>('library_organize_undo_run_${run.run.id}'),
               onPressed: _busy
                   ? null
-                  : () => unawaited(_guard(() async {
+                  : () => unawaited(
+                      _guard(() async {
                         await undoLibraryOrganizeChanges(widget.db, <int>[
                           for (final LibraryOrganizeChangeRow c in run.changes)
                             if (c.undoneAt == null) c.id,
                         ]);
-                      })),
+                      }),
+                    ),
               child: Text(t.library_organize_history_undo_run),
             ),
         ],
@@ -238,7 +251,10 @@ class _LibraryOrganizeHistoryPageState
       _ => (payload['members'] as List<Object?>?)?.length ?? 0,
     };
     final String title = switch (c.kind) {
-      'create' => t.library_organize_change_create(name: c.collectionName, n: n),
+      'create' => t.library_organize_change_create(
+        name: c.collectionName,
+        n: n,
+      ),
       'add' => t.library_organize_change_add(name: c.collectionName, n: n),
       'merge' => t.library_organize_change_merge(name: c.collectionName),
       'evict' => t.library_organize_change_evict(name: c.collectionName, n: n),
@@ -260,27 +276,33 @@ class _LibraryOrganizeHistoryPageState
       leading: FushiListLeadingIcon(icon),
       title: Text(title),
       titleMaxLines: 2,
-      subtitle: Text(undone ? '$source · ${t.library_organize_change_undone}' : source),
+      subtitle: Text(
+        undone ? '$source · ${t.library_organize_change_undone}' : source,
+      ),
       trailing: undone
           ? null
           : FushiTextButton(
               key: ValueKey<String>('library_organize_undo_${c.id}'),
               onPressed: _busy
                   ? null
-                  : () => unawaited(_guard(() async {
-                        await undoLibraryOrganizeChanges(widget.db, <int>[c.id]);
-                      })),
+                  : () => unawaited(
+                      _guard(() async {
+                        await undoLibraryOrganizeChanges(widget.db, <int>[
+                          c.id,
+                        ]);
+                      }),
+                    ),
               child: Text(t.library_organize_undo),
             ),
     );
   }
 
   static String _domainLabel(CollectionShelfDomain d) => switch (d) {
-        CollectionShelfDomain.books => t.library_organize_domain_books,
-        CollectionShelfDomain.manga => t.library_organize_domain_manga,
-        CollectionShelfDomain.video => t.library_organize_domain_video,
-        CollectionShelfDomain.games => t.library_organize_domain_games,
-      };
+    CollectionShelfDomain.books => t.library_organize_domain_books,
+    CollectionShelfDomain.manga => t.library_organize_domain_manga,
+    CollectionShelfDomain.video => t.library_organize_domain_video,
+    CollectionShelfDomain.games => t.library_organize_domain_games,
+  };
 
   static Map<String, Object?> _payload(String raw) {
     try {

@@ -30,8 +30,10 @@ class _FakeWebDavServer {
   static const String srtBody = '1\n00:00:01,000 --> 00:00:02,000\nこんにちは\n';
 
   static Future<_FakeWebDavServer> start() async {
-    final HttpServer srv =
-        await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final HttpServer srv = await HttpServer.bind(
+      InternetAddress.loopbackIPv4,
+      0,
+    );
     final String origin = 'http://127.0.0.1:${srv.port}';
     final _FakeWebDavServer fake = _FakeWebDavServer(srv, origin);
     fake._listen();
@@ -58,8 +60,10 @@ class _FakeWebDavServer {
 
   void _respondXml(HttpRequest req, String xml) {
     req.response.statusCode = 207;
-    req.response.headers
-        .set(HttpHeaders.contentTypeHeader, 'application/xml; charset=utf-8');
+    req.response.headers.set(
+      HttpHeaders.contentTypeHeader,
+      'application/xml; charset=utf-8',
+    );
     req.response.write(xml);
     req.response.close();
   }
@@ -67,22 +71,24 @@ class _FakeWebDavServer {
   void _handlePropfind(HttpRequest req, String path) {
     if (path == '/dav/books' || path == '/dav/books/') {
       _respondXml(
-          req,
-          _multistatus(<_DavRes>[
-            const _DavRes('/dav/books/', 'books', true),
-            const _DavRes('/dav/books/novel.epub', 'novel.epub', false),
-            const _DavRes('/dav/books/novel.srt', 'novel.srt', false),
-            const _DavRes('/dav/books/season1/', 'season1', true),
-          ]));
+        req,
+        _multistatus(<_DavRes>[
+          const _DavRes('/dav/books/', 'books', true),
+          const _DavRes('/dav/books/novel.epub', 'novel.epub', false),
+          const _DavRes('/dav/books/novel.srt', 'novel.srt', false),
+          const _DavRes('/dav/books/season1/', 'season1', true),
+        ]),
+      );
       return;
     }
     if (path == '/dav/books/season1' || path == '/dav/books/season1/') {
       _respondXml(
-          req,
-          _multistatus(<_DavRes>[
-            const _DavRes('/dav/books/season1/', 'season1', true),
-            const _DavRes('/dav/books/season1/ep1.epub', 'ep1.epub', false),
-          ]));
+        req,
+        _multistatus(<_DavRes>[
+          const _DavRes('/dav/books/season1/', 'season1', true),
+          const _DavRes('/dav/books/season1/ep1.epub', 'ep1.epub', false),
+        ]),
+      );
       return;
     }
     req.response.statusCode = HttpStatus.notFound;
@@ -103,8 +109,10 @@ class _FakeWebDavServer {
     }
     final List<int> bytes = utf8.encode(body);
     req.response.statusCode = HttpStatus.ok;
-    req.response.headers
-        .set(HttpHeaders.contentLengthHeader, '${bytes.length}');
+    req.response.headers.set(
+      HttpHeaders.contentLengthHeader,
+      '${bytes.length}',
+    );
     req.response.add(bytes);
     req.response.close();
   }
@@ -118,9 +126,11 @@ class _FakeWebDavServer {
         ..write('<d:response>')
         ..write('<d:href>${r.href}</d:href>')
         ..write('<d:propstat><d:prop>')
-        ..write(r.isCollection
-            ? '<d:resourcetype><d:collection/></d:resourcetype>'
-            : '<d:resourcetype/>')
+        ..write(
+          r.isCollection
+              ? '<d:resourcetype><d:collection/></d:resourcetype>'
+              : '<d:resourcetype/>',
+        )
         ..write('<d:displayname>${r.displayName}</d:displayname>')
         ..write('</d:prop><d:status>HTTP/1.1 200 OK</d:status></d:propstat>')
         ..write('</d:response>');
@@ -145,13 +155,15 @@ void main() {
   setUp(() async {
     fakeServer = await _FakeWebDavServer.start();
     rootUrl = '${fakeServer.origin}/dav/books';
-    fs = NetworkSourceFileSystem(NetworkSourceConfig(
-      transport: 'webdav',
-      host: '127.0.0.1',
-      port: fakeServer.server.port,
-      username: 'reader',
-      password: 'pw',
-    ));
+    fs = NetworkSourceFileSystem(
+      NetworkSourceConfig(
+        transport: 'webdav',
+        host: '127.0.0.1',
+        port: fakeServer.server.port,
+        username: 'reader',
+        password: 'pw',
+      ),
+    );
   });
 
   tearDown(() async {
@@ -165,18 +177,27 @@ void main() {
   });
 
   test('listFiles(recursive) 深度遍历只回文件，path 为完整 href URL，跳过集合自身', () async {
-    final List<SourceFileEntry> entries =
-        await fs.listFiles(rootUrl, recursive: true);
+    final List<SourceFileEntry> entries = await fs.listFiles(
+      rootUrl,
+      recursive: true,
+    );
     final Map<String, SourceFileEntry> byName = <String, SourceFileEntry>{
       for (final SourceFileEntry e in entries) e.name: e,
     };
-    expect(
-        byName.keys.toSet(), <String>{'novel.epub', 'novel.srt', 'ep1.epub'});
+    expect(byName.keys.toSet(), <String>{
+      'novel.epub',
+      'novel.srt',
+      'ep1.epub',
+    });
     expect(entries.every((SourceFileEntry e) => !e.isDirectory), isTrue);
-    expect(byName['novel.epub']!.path,
-        '${fakeServer.origin}/dav/books/novel.epub');
-    expect(byName['ep1.epub']!.path,
-        '${fakeServer.origin}/dav/books/season1/ep1.epub');
+    expect(
+      byName['novel.epub']!.path,
+      '${fakeServer.origin}/dav/books/novel.epub',
+    );
+    expect(
+      byName['ep1.epub']!.path,
+      '${fakeServer.origin}/dav/books/season1/ep1.epub',
+    );
   });
 
   test('listFiles(非递归) 列直接子项：文件 + 子目录，集合自身不出现', () async {
@@ -191,8 +212,9 @@ void main() {
   });
 
   test('copyToLocal 用 GET 下载远端文件到本地临时盘，字节一致', () async {
-    final Directory tmp =
-        Directory.systemTemp.createTempSync('todo1274_webdav_dl_');
+    final Directory tmp = Directory.systemTemp.createTempSync(
+      'todo1274_webdav_dl_',
+    );
     addTearDown(() {
       try {
         tmp.deleteSync(recursive: true);
@@ -205,8 +227,9 @@ void main() {
   });
 
   test('readText 用 GET 读回 UTF-8 文本（字幕）', () async {
-    final String text =
-        await fs.readText('${fakeServer.origin}/dav/books/novel.srt');
+    final String text = await fs.readText(
+      '${fakeServer.origin}/dav/books/novel.srt',
+    );
     expect(text, _FakeWebDavServer.srtBody);
     expect(text, contains('こんにちは'));
   });
@@ -215,8 +238,9 @@ void main() {
     await fs.listFiles(rootUrl);
     expect(fakeServer.authHeaders, isNotEmpty);
     expect(
-      fakeServer.authHeaders
-          .every((String? h) => h != null && h.startsWith('Basic ')),
+      fakeServer.authHeaders.every(
+        (String? h) => h != null && h.startsWith('Basic '),
+      ),
       isTrue,
       reason: 'WebDAV 请求必须带注入凭据的 Basic 认证头',
     );

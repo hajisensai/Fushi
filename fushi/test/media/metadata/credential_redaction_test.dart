@@ -50,7 +50,8 @@ void main() {
   });
 
   test('纯函数：各类凭据参数被脱敏，非凭据参数原样保留', () {
-    const String raw = 'uri=https://h/p?query=Yani+Neko&api_key=AAA&token=BBB'
+    const String raw =
+        'uri=https://h/p?query=Yani+Neko&api_key=AAA&token=BBB'
         '&password=CCC&client_secret=DDD&language=zh-CN&page=2';
     final String out = redactCredentialsInText(raw);
     for (final String secret in <String>['AAA', 'BBB', 'CCC', 'DDD']) {

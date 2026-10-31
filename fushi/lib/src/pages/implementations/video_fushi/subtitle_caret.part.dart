@@ -59,8 +59,9 @@ extension _VideoSubtitleCaret on _VideoFushiPageState {
     // 迁移追踪的初值来自**进入时的播放态**（见 [SubtitleCaretPauseTracker]）：
     // 本来就暂停时进光标不会调 pause、播放态不翻转、播放器也不再通知，恒 false 的
     // 初值会让「外部恢复播放自动退光标」永久失效。
-    _caretPauseTracker =
-        SubtitleCaretPauseTracker(playingAtEntry: controller.isPlaying);
+    _caretPauseTracker = SubtitleCaretPauseTracker(
+      playingAtEntry: controller.isPlaying,
+    );
     _caretCueSignature = _caretCurrentCueSignature(controller);
     controller.addListener(_onCaretControllerTick);
     setState(() {
@@ -158,7 +159,8 @@ extension _VideoSubtitleCaret on _VideoFushiPageState {
     // jumpDictPrev/Next，而主面对这两个动作是空 return —— 用户在光标态按 RT(全屏)
     // / LT(重听当前句) 静默无反应。主面把两个扳机整体交回注册表解析（弹窗面仍是
     // 跳词典段，那里才有词典段）。
-    final bool shoulderOnSubtitleSurface = _caretOnSubtitleSurface &&
+    final bool shoulderOnSubtitleSurface =
+        _caretOnSubtitleSurface &&
         (button == GamepadButton.lt || button == GamepadButton.rt);
     final CaretAction? caretAction = shoulderOnSubtitleSurface
         ? null
@@ -319,7 +321,11 @@ extension _VideoSubtitleCaret on _VideoFushiPageState {
         // 与点击查词完全同链路（含沉浸门控）：弹窗渲染完成后
         // [onNestedPopupRendered] 会把光标 transfer 进弹窗。
         _handleSubtitleLookupTap(
-            hit.sentence, hit.graphemeIndex, hit.charRect, hit.cue);
+          hit.sentence,
+          hit.graphemeIndex,
+          hit.charRect,
+          hit.cue,
+        );
         return;
       case CaretAction.longPress:
       case CaretAction.jumpDictNext:

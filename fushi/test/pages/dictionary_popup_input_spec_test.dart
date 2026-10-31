@@ -26,55 +26,59 @@ void main() {
   }
 
   test('导出宿主动作的当前键盘/鼠标绑定（改键自动跟随）', () {
-    final FushiShortcutRegistry registry =
-        registryWith(<ShortcutAction, ShortcutBindingSet>{
-      ShortcutAction.readerDismissDict: const ShortcutBindingSet(
-        keyboardBindings: <InputBinding>[
-          InputBinding(
-            key: LogicalKeyboardKey.keyD,
-            modifiers: <ModifierKey>{ModifierKey.ctrl},
-          ),
-        ],
-        mouseBindings: <MouseBinding>[MouseBinding(3)],
-      ),
-    });
+    final FushiShortcutRegistry registry = registryWith(
+      <ShortcutAction, ShortcutBindingSet>{
+        ShortcutAction.readerDismissDict: const ShortcutBindingSet(
+          keyboardBindings: <InputBinding>[
+            InputBinding(
+              key: LogicalKeyboardKey.keyD,
+              modifiers: <ModifierKey>{ModifierKey.ctrl},
+            ),
+          ],
+          mouseBindings: <MouseBinding>[MouseBinding(3)],
+        ),
+      },
+    );
 
     final DictionaryPopupInputSpec spec = dictionaryPopupInputSpecFor(
       registry: registry,
       actions: <ShortcutAction>{ShortcutAction.readerDismissDict},
     );
 
-    expect(spec.keyTokens, <String>['Ctrl+KeyD'],
-        reason: 'token 直接取 InputBinding.serialize()，与 JS 侧判据同一套字面量');
+    expect(spec.keyTokens, <String>[
+      'Ctrl+KeyD',
+    ], reason: 'token 直接取 InputBinding.serialize()，与 JS 侧判据同一套字面量');
     expect(spec.mouseButtons, <int>[3]);
   });
 
   test('恒减去 dictionaryPopup scope 已占用的键（弹窗内动作优先于宿主）', () {
     // 用户把视频的某个动作和弹窗「上一个词条」绑到了同一个键 / 同一个鼠标键。
-    final FushiShortcutRegistry registry =
-        registryWith(<ShortcutAction, ShortcutBindingSet>{
-      ShortcutAction.videoTogglePlayPause: const ShortcutBindingSet(
-        keyboardBindings: <InputBinding>[
-          InputBinding(key: LogicalKeyboardKey.arrowLeft),
-          InputBinding(key: LogicalKeyboardKey.escape),
-        ],
-        mouseBindings: <MouseBinding>[MouseBinding(3), MouseBinding(4)],
-      ),
-      ShortcutAction.popupPrevEntry: const ShortcutBindingSet(
-        keyboardBindings: <InputBinding>[
-          InputBinding(key: LogicalKeyboardKey.arrowLeft),
-        ],
-        mouseBindings: <MouseBinding>[MouseBinding(4)],
-      ),
-    });
+    final FushiShortcutRegistry registry = registryWith(
+      <ShortcutAction, ShortcutBindingSet>{
+        ShortcutAction.videoTogglePlayPause: const ShortcutBindingSet(
+          keyboardBindings: <InputBinding>[
+            InputBinding(key: LogicalKeyboardKey.arrowLeft),
+            InputBinding(key: LogicalKeyboardKey.escape),
+          ],
+          mouseBindings: <MouseBinding>[MouseBinding(3), MouseBinding(4)],
+        ),
+        ShortcutAction.popupPrevEntry: const ShortcutBindingSet(
+          keyboardBindings: <InputBinding>[
+            InputBinding(key: LogicalKeyboardKey.arrowLeft),
+          ],
+          mouseBindings: <MouseBinding>[MouseBinding(4)],
+        ),
+      },
+    );
 
     final DictionaryPopupInputSpec spec = dictionaryPopupInputSpecFor(
       registry: registry,
       actions: <ShortcutAction>{ShortcutAction.videoTogglePlayPause},
     );
 
-    expect(spec.keyTokens, <String>['Escape'],
-        reason: 'ArrowLeft 被弹窗的「上一个词条」占着，宿主不得抢走');
+    expect(spec.keyTokens, <String>[
+      'Escape',
+    ], reason: 'ArrowLeft 被弹窗的「上一个词条」占着，宿主不得抢走');
     expect(spec.mouseButtons, <int>[3], reason: '鼠标侧同理：4 号键归弹窗，只留 3');
   });
 
@@ -89,15 +93,16 @@ void main() {
   });
 
   test('token → 动作解析：键盘与鼠标取值域不相交，共用一个入口', () {
-    final FushiShortcutRegistry registry =
-        registryWith(<ShortcutAction, ShortcutBindingSet>{
-      ShortcutAction.readerDismissDict: const ShortcutBindingSet(
-        keyboardBindings: <InputBinding>[
-          InputBinding(key: LogicalKeyboardKey.escape),
-        ],
-        mouseBindings: <MouseBinding>[MouseBinding(3)],
-      ),
-    });
+    final FushiShortcutRegistry registry = registryWith(
+      <ShortcutAction, ShortcutBindingSet>{
+        ShortcutAction.readerDismissDict: const ShortcutBindingSet(
+          keyboardBindings: <InputBinding>[
+            InputBinding(key: LogicalKeyboardKey.escape),
+          ],
+          mouseBindings: <MouseBinding>[MouseBinding(3)],
+        ),
+      },
+    );
 
     expect(
       resolveDictionaryPopupInputToken(

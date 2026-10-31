@@ -67,8 +67,9 @@ Future<bool> isFakeIpDnsActive({
 }) async {
   for (final String host in probeHosts) {
     try {
-      final List<InternetAddress> addresses =
-          await lookup(host).timeout(const Duration(seconds: 5));
+      final List<InternetAddress> addresses = await lookup(
+        host,
+      ).timeout(const Duration(seconds: 5));
       if (addresses.any(isFakeIpAddress)) return true;
     } catch (_) {
       // 单个域名解析失败不代表什么，继续问下一个。
@@ -104,12 +105,15 @@ class DohResolver {
     }
     for (final String endpoint in endpoints) {
       try {
-        final Uri uri = Uri.parse(endpoint).replace(
-            queryParameters: <String, String>{'name': host, 'type': 'A'});
-        final http.Response response = await _client.get(
-          uri,
-          headers: const <String, String>{'accept': 'application/dns-json'},
-        ).timeout(timeout);
+        final Uri uri = Uri.parse(
+          endpoint,
+        ).replace(queryParameters: <String, String>{'name': host, 'type': 'A'});
+        final http.Response response = await _client
+            .get(
+              uri,
+              headers: const <String, String>{'accept': 'application/dns-json'},
+            )
+            .timeout(timeout);
         if (response.statusCode != 200) continue;
         final List<String> ips = parseDohJsonARecords(response.body);
         if (ips.isNotEmpty) return ips;

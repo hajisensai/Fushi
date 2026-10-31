@@ -22,16 +22,17 @@ void main() {
     final String movie = p.join(temporary.path, 'Movies', 'Film.mkv');
     final VideoSidecarLayout dedicated =
         VideoSidecarTargetResolver.resolveMovie(
-      sourceRoot: temporary.path,
-      videoPath: movie,
-      knownSourceVideoPaths: <String>[movie],
-    );
+          sourceRoot: temporary.path,
+          videoPath: movie,
+          knownSourceVideoPaths: <String>[movie],
+        );
     expect(
-        dedicated.work?.nfoPath, p.join(temporary.path, 'Movies', 'Film.nfo'));
-    expect(
-      dedicated.work?.imagePaths(VideoMetadataImageKind.cover),
-      <String>[p.join(temporary.path, 'Movies', 'poster.jpg')],
+      dedicated.work?.nfoPath,
+      p.join(temporary.path, 'Movies', 'Film.nfo'),
     );
+    expect(dedicated.work?.imagePaths(VideoMetadataImageKind.cover), <String>[
+      p.join(temporary.path, 'Movies', 'poster.jpg'),
+    ]);
     expect(
       dedicated.work?.imagePaths(VideoMetadataImageKind.backdrop),
       <String>[
@@ -48,17 +49,13 @@ void main() {
         p.join(temporary.path, 'Movies', 'Other.mp4'),
       ],
     );
-    expect(
-      shared.work?.imagePaths(VideoMetadataImageKind.cover),
-      <String>[p.join(temporary.path, 'Movies', 'Film-poster.jpg')],
-    );
-    expect(
-      shared.work?.imagePaths(VideoMetadataImageKind.backdrop),
-      <String>[
-        p.join(temporary.path, 'Movies', 'Film-backdrop.jpg'),
-        p.join(temporary.path, 'Movies', 'Film-fanart.jpg'),
-      ],
-    );
+    expect(shared.work?.imagePaths(VideoMetadataImageKind.cover), <String>[
+      p.join(temporary.path, 'Movies', 'Film-poster.jpg'),
+    ]);
+    expect(shared.work?.imagePaths(VideoMetadataImageKind.backdrop), <String>[
+      p.join(temporary.path, 'Movies', 'Film-backdrop.jpg'),
+      p.join(temporary.path, 'Movies', 'Film-fanart.jpg'),
+    ]);
   });
 
   test('电影直接位于来源根时始终使用视频名前缀', () {
@@ -69,10 +66,9 @@ void main() {
       knownSourceVideoPaths: <String>[movie],
     ).work!;
 
-    expect(
-      target.imagePaths(VideoMetadataImageKind.cover),
-      <String>[p.join(temporary.path, 'Film-poster.jpg')],
-    );
+    expect(target.imagePaths(VideoMetadataImageKind.cover), <String>[
+      p.join(temporary.path, 'Film-poster.jpg'),
+    ]);
   });
 
   test('嵌套电视剧推导唯一作品根、季目录与稳定逐集目标', () {
@@ -116,14 +112,11 @@ void main() {
         p.join(root, 'My Show', 'Season 01', 'poster.png'),
       ],
     );
-    expect(
-      firstSeason.imagePaths(VideoMetadataImageKind.backdrop),
-      <String>[
-        p.join(root, 'My Show', 'season01-backdrop.jpg'),
-        p.join(root, 'My Show', 'Season 01', 'backdrop.jpg'),
-        p.join(root, 'My Show', 'Season 01', 'fanart.jpg'),
-      ],
-    );
+    expect(firstSeason.imagePaths(VideoMetadataImageKind.backdrop), <String>[
+      p.join(root, 'My Show', 'season01-backdrop.jpg'),
+      p.join(root, 'My Show', 'Season 01', 'backdrop.jpg'),
+      p.join(root, 'My Show', 'Season 01', 'fanart.jpg'),
+    ]);
     expect(
       layout.episodes.first.imagePaths(VideoMetadataImageKind.thumb),
       <String>[p.join(root, 'My Show', 'Season 01', 'S01E01.jpg')],
@@ -181,7 +174,9 @@ void main() {
 
     expect(layout.work, isNull);
     expect(
-        layout.episodes.single.nfoPath, p.join(root, 'My Show', 'S01E01.nfo'));
+      layout.episodes.single.nfoPath,
+      p.join(root, 'My Show', 'S01E01.nfo'),
+    );
   });
 
   test('跨多个非季度目录不把分类祖先误判为作品根', () {
@@ -247,10 +242,8 @@ void main() {
     ).work!;
 
     expect(
-      () => target.imagePaths(
-        VideoMetadataImageKind.cover,
-        extension: '../evil',
-      ),
+      () =>
+          target.imagePaths(VideoMetadataImageKind.cover, extension: '../evil'),
       throwsArgumentError,
     );
   });

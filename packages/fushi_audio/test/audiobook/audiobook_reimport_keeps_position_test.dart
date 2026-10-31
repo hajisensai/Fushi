@@ -34,81 +34,88 @@ void main() {
     required int startMs,
     required int endMs,
     String chapter = 'chapter.xhtml',
-  }) =>
-      AudioCue()
-        ..bookKey = key
-        ..chapterHref = chapter
-        ..sentenceIndex = index
-        ..textFragmentId = 'f$index'
-        ..text = 'cue $index'
-        ..startMs = startMs
-        ..endMs = endMs
-        ..audioFileIndex = file;
+  }) => AudioCue()
+    ..bookKey = key
+    ..chapterHref = chapter
+    ..sentenceIndex = index
+    ..textFragmentId = 'f$index'
+    ..text = 'cue $index'
+    ..startMs = startMs
+    ..endMs = endMs
+    ..audioFileIndex = file;
 
   /// 三个音频文件的旧字幕：各文件最后一句结束于 100s / 200s / 300s。
   List<AudioCue> oldCues(String key, {String chapter = 'chapter.xhtml'}) =>
       <AudioCue>[
         cue(
-            key: key,
-            index: 0,
-            file: 0,
-            startMs: 0,
-            endMs: 100000,
-            chapter: chapter),
+          key: key,
+          index: 0,
+          file: 0,
+          startMs: 0,
+          endMs: 100000,
+          chapter: chapter,
+        ),
         cue(
-            key: key,
-            index: 1,
-            file: 1,
-            startMs: 0,
-            endMs: 200000,
-            chapter: chapter),
+          key: key,
+          index: 1,
+          file: 1,
+          startMs: 0,
+          endMs: 200000,
+          chapter: chapter,
+        ),
         cue(
-            key: key,
-            index: 2,
-            file: 2,
-            startMs: 0,
-            endMs: 300000,
-            chapter: chapter),
+          key: key,
+          index: 2,
+          file: 2,
+          startMs: 0,
+          endMs: 300000,
+          chapter: chapter,
+        ),
       ];
 
   /// 新字幕：句子切法、条数、各文件末句时间全都不同（cue 序号对不上）。
   List<AudioCue> newCues(String key, {String chapter = 'chapter.xhtml'}) =>
       <AudioCue>[
         cue(
-            key: key,
-            index: 0,
-            file: 0,
-            startMs: 0,
-            endMs: 50000,
-            chapter: chapter),
+          key: key,
+          index: 0,
+          file: 0,
+          startMs: 0,
+          endMs: 50000,
+          chapter: chapter,
+        ),
         cue(
-            key: key,
-            index: 1,
-            file: 0,
-            startMs: 50000,
-            endMs: 120000,
-            chapter: chapter),
+          key: key,
+          index: 1,
+          file: 0,
+          startMs: 50000,
+          endMs: 120000,
+          chapter: chapter,
+        ),
         cue(
-            key: key,
-            index: 2,
-            file: 1,
-            startMs: 0,
-            endMs: 90000,
-            chapter: chapter),
+          key: key,
+          index: 2,
+          file: 1,
+          startMs: 0,
+          endMs: 90000,
+          chapter: chapter,
+        ),
         cue(
-            key: key,
-            index: 3,
-            file: 1,
-            startMs: 90000,
-            endMs: 180000,
-            chapter: chapter),
+          key: key,
+          index: 3,
+          file: 1,
+          startMs: 90000,
+          endMs: 180000,
+          chapter: chapter,
+        ),
         cue(
-            key: key,
-            index: 4,
-            file: 2,
-            startMs: 0,
-            endMs: 250000,
-            chapter: chapter),
+          key: key,
+          index: 4,
+          file: 2,
+          startMs: 0,
+          endMs: 250000,
+          chapter: chapter,
+        ),
       ];
 
   group('rebaseAudiobookGlobalPositionMs', () {
@@ -139,19 +146,28 @@ void main() {
     test('single-file book and zero position are identity', () {
       expect(
         rebaseAudiobookGlobalPositionMs(
-            75000, const <int>[100000], const <int>[60000]),
+          75000,
+          const <int>[100000],
+          const <int>[60000],
+        ),
         75000,
       );
       expect(
         rebaseAudiobookGlobalPositionMs(
-            0, const <int>[1, 2], const <int>[3, 4]),
+          0,
+          const <int>[1, 2],
+          const <int>[3, 4],
+        ),
         0,
       );
     });
 
     test('durations come from the max cue end per file', () {
-      expect(audiobookFileDurationsFromCues(newCues('k')),
-          const <int>[120000, 180000, 250000]);
+      expect(audiobookFileDurationsFromCues(newCues('k')), const <int>[
+        120000,
+        180000,
+        250000,
+      ]);
       expect(audiobookFileDurationsFromCues(const <AudioCue>[]), isEmpty);
     });
   });
@@ -167,8 +183,9 @@ void main() {
     await repo.saveCues(bookKey: 'Demo', cues: newCues('Demo'));
 
     final int stored = await repo.readPositionMs('Demo');
-    final List<int> newDurations =
-        audiobookFileDurationsFromCues(await repo.cuesForBook('Demo'));
+    final List<int> newDurations = audiobookFileDurationsFromCues(
+      await repo.cuesForBook('Demo'),
+    );
     expect(stored, 120000 + 180000 + 42000);
     // 按新 cue 拆回去仍是文件 2 的第 42 秒——与开书恢复 seek 同一口径。
     int remaining = stored;
@@ -178,74 +195,89 @@ void main() {
       remaining -= newDurations[file];
     }
     expect((file, remaining), (2, 42000));
-    expect(await repo.readPositionUpdatedAtMs('Demo'), stampBefore,
-        reason: '同一个时间位置只是换了编码，不得盖新时间戳（BUG-2328 LWW）');
-  });
-
-  test('saveCues with an identical timeline leaves the position untouched',
-      () async {
-    final AudiobookRepository repo = AudiobookRepository(db);
-    await repo.ensureAudiobook('Demo');
-    await repo.saveCues(bookKey: 'Demo', cues: oldCues('Demo'));
-    await repo.updatePositionMs(bookKey: 'Demo', positionMs: 342000);
-
-    await repo.saveCues(bookKey: 'Demo', cues: oldCues('Demo'));
-
-    expect(await repo.readPositionMs('Demo'), 342000);
-  });
-
-  test('SrtBookRepository.saveCues keeps the uid-keyed audio position',
-      () async {
-    final SrtBookRepository srtRepo = SrtBookRepository(db);
-    final AudiobookRepository prefs = AudiobookRepository(db);
-    await srtRepo.save(SrtBook()
-      ..uid = 'srtbook_1'
-      ..title = 'Demo'
-      ..srtPath = '/src/demo.srt'
-      ..importedAt = 1);
-    await srtRepo.saveCues(
-      uid: 'srtbook_1',
-      cues: oldCues('srtbook_1', chapter: SrtParser.defaultChapter),
+    expect(
+      await repo.readPositionUpdatedAtMs('Demo'),
+      stampBefore,
+      reason: '同一个时间位置只是换了编码，不得盖新时间戳（BUG-2328 LWW）',
     );
-    // 第 2 个文件的第 30 秒。
-    await prefs.updatePositionMs(bookKey: 'srtbook_1', positionMs: 130000);
-
-    await srtRepo.saveCues(
-      uid: 'srtbook_1',
-      cues: newCues('srtbook_1', chapter: SrtParser.defaultChapter),
-    );
-
-    expect(await prefs.readPositionMs('srtbook_1'), 120000 + 30000);
   });
 
   test(
-      'streamed book without subtitle: adding one keeps the position encoded '
+    'saveCues with an identical timeline leaves the position untouched',
+    () async {
+      final AudiobookRepository repo = AudiobookRepository(db);
+      await repo.ensureAudiobook('Demo');
+      await repo.saveCues(bookKey: 'Demo', cues: oldCues('Demo'));
+      await repo.updatePositionMs(bookKey: 'Demo', positionMs: 342000);
+
+      await repo.saveCues(bookKey: 'Demo', cues: oldCues('Demo'));
+
+      expect(await repo.readPositionMs('Demo'), 342000);
+    },
+  );
+
+  test(
+    'SrtBookRepository.saveCues keeps the uid-keyed audio position',
+    () async {
+      final SrtBookRepository srtRepo = SrtBookRepository(db);
+      final AudiobookRepository prefs = AudiobookRepository(db);
+      await srtRepo.save(
+        SrtBook()
+          ..uid = 'srtbook_1'
+          ..title = 'Demo'
+          ..srtPath = '/src/demo.srt'
+          ..importedAt = 1,
+      );
+      await srtRepo.saveCues(
+        uid: 'srtbook_1',
+        cues: oldCues('srtbook_1', chapter: SrtParser.defaultChapter),
+      );
+      // 第 2 个文件的第 30 秒。
+      await prefs.updatePositionMs(bookKey: 'srtbook_1', positionMs: 130000);
+
+      await srtRepo.saveCues(
+        uid: 'srtbook_1',
+        cues: newCues('srtbook_1', chapter: SrtParser.defaultChapter),
+      );
+
+      expect(await prefs.readPositionMs('srtbook_1'), 120000 + 30000);
+    },
+  );
+
+  test('streamed book without subtitle: adding one keeps the position encoded '
       'with the server track durations', () async {
     final SrtBookRepository srtRepo = SrtBookRepository(db);
     final AudiobookRepository prefs = AudiobookRepository(db);
-    await srtRepo.save(SrtBook()
-      ..uid = 'srtbook_1'
-      ..title = 'Demo'
-      ..srtPath = ''
-      ..importedAt = 1);
+    await srtRepo.save(
+      SrtBook()
+        ..uid = 'srtbook_1'
+        ..title = 'Demo'
+        ..srtPath = ''
+        ..importedAt = 1,
+    );
     // 纯听的流式书：没有 cue，控制器按服务器音轨时长（100s / 100s / 100s）编码。
-    await RemoteAudioBindingRepository(db).save(const RemoteAudioBinding(
-      srtBookUid: 'srtbook_1',
-      provider: RemoteAudioBinding.providerAudiobookshelf,
-      serverConfigId: 'srv',
-      itemId: 'item_1',
-      tracks: <RemoteAudioTrack>[
-        RemoteAudioTrack(ino: '1', startOffsetMs: 0, durationMs: 100000),
-        RemoteAudioTrack(ino: '2', startOffsetMs: 100000, durationMs: 100000),
-        RemoteAudioTrack(ino: '3', startOffsetMs: 200000, durationMs: 100000),
-      ],
-      createdAt: 1,
-      updatedAt: 1,
-    ));
+    await RemoteAudioBindingRepository(db).save(
+      const RemoteAudioBinding(
+        srtBookUid: 'srtbook_1',
+        provider: RemoteAudioBinding.providerAudiobookshelf,
+        serverConfigId: 'srv',
+        itemId: 'item_1',
+        tracks: <RemoteAudioTrack>[
+          RemoteAudioTrack(ino: '1', startOffsetMs: 0, durationMs: 100000),
+          RemoteAudioTrack(ino: '2', startOffsetMs: 100000, durationMs: 100000),
+          RemoteAudioTrack(ino: '3', startOffsetMs: 200000, durationMs: 100000),
+        ],
+        createdAt: 1,
+        updatedAt: 1,
+      ),
+    );
     expect(
-        audiobookPositionDurationsMs(const <AudioCue>[],
-            remoteTrackDurationsMs: <int>[100000, 100000, 100000]),
-        <int>[100000, 100000, 100000]);
+      audiobookPositionDurationsMs(
+        const <AudioCue>[],
+        remoteTrackDurationsMs: <int>[100000, 100000, 100000],
+      ),
+      <int>[100000, 100000, 100000],
+    );
     // 第 2 个文件的第 30 秒。
     await prefs.updatePositionMs(bookKey: 'srtbook_1', positionMs: 130000);
 

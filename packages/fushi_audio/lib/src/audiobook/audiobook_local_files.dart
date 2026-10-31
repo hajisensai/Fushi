@@ -64,20 +64,18 @@ List<String> audiobookLocalFilePaths({
 bool audiobookHasLocalFiles({
   required List<String>? audioPaths,
   required String persistRoot,
-}) =>
-    audiobookLocalFilePaths(
-      audioPaths: audioPaths,
-      persistRoot: persistRoot,
-    ).isNotEmpty;
+}) => audiobookLocalFilePaths(
+  audioPaths: audioPaths,
+  persistRoot: persistRoot,
+).isNotEmpty;
 
 /// [audiobookLocalFilePaths] 的取根版本（持久根从 [AudiobookStorage] 现取）。
 Future<List<String>> resolveAudiobookLocalFiles(
   List<String>? audioPaths,
-) async =>
-    audiobookLocalFilePaths(
-      audioPaths: audioPaths,
-      persistRoot: await AudiobookStorage.audiobooksRootDir(),
-    );
+) async => audiobookLocalFilePaths(
+  audioPaths: audioPaths,
+  persistRoot: await AudiobookStorage.audiobooksRootDir(),
+);
 
 /// [audiobookHasLocalFiles] 的取根版本。
 Future<bool> resolveAudiobookHasLocalFiles(List<String>? audioPaths) async =>
@@ -87,5 +85,4 @@ Future<bool> resolveAudiobookHasLocalFiles(List<String>? audioPaths) async =>
 /// 调用方负责记 ErrorLog 并把失败条数告诉用户——最常见的失败就是「这本正在播放」。
 Future<LocalFileDeleteReport> deleteAudiobookLocalFiles(
   List<String>? audioPaths,
-) async =>
-    deleteLocalFiles(await resolveAudiobookLocalFiles(audioPaths));
+) async => deleteLocalFiles(await resolveAudiobookLocalFiles(audioPaths));

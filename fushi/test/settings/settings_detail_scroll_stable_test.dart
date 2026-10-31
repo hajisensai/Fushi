@@ -80,42 +80,44 @@ Future<ScrollController> _pumpSyncDetail(
   final ScrollController controller = ScrollController();
   addTearDown(controller.dispose);
 
-  await tester.pumpWidget(ProviderScope(
-    overrides: <Override>[appProvider.overrideWith((Ref ref) => appModel)],
-    child: MaterialApp(
-      theme: ThemeData(
-        useMaterial3: true,
-        platform: TargetPlatform.android,
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF386A58)),
-        extensions: <ThemeExtension<dynamic>>[
-          FushiDesignSystemTheme(themeNotifier.designSystemTheme),
-        ],
-      ),
-      home: Scaffold(
-        body: FushiFocusRoot(
-          child: SizedBox(
-            height: 360,
-            child: Consumer(
-              builder: (BuildContext context, WidgetRef ref, _) {
-                final SettingsContext sc = SettingsContext(
-                  context: context,
-                  appModel: ref.read(appProvider),
-                  ref: ref,
-                  readerSource: ReaderFushiSource.instance,
-                  refresh: () {},
-                );
-                return renderer.buildDetailContent(
-                  settingsContext: sc,
-                  destination: buildSyncBackupDestination(),
-                  scrollController: controller,
-                );
-              },
+  await tester.pumpWidget(
+    ProviderScope(
+      overrides: <Override>[appProvider.overrideWith((Ref ref) => appModel)],
+      child: MaterialApp(
+        theme: ThemeData(
+          useMaterial3: true,
+          platform: TargetPlatform.android,
+          colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF386A58)),
+          extensions: <ThemeExtension<dynamic>>[
+            FushiDesignSystemTheme(themeNotifier.designSystemTheme),
+          ],
+        ),
+        home: Scaffold(
+          body: FushiFocusRoot(
+            child: SizedBox(
+              height: 360,
+              child: Consumer(
+                builder: (BuildContext context, WidgetRef ref, _) {
+                  final SettingsContext sc = SettingsContext(
+                    context: context,
+                    appModel: ref.read(appProvider),
+                    ref: ref,
+                    readerSource: ReaderFushiSource.instance,
+                    refresh: () {},
+                  );
+                  return renderer.buildDetailContent(
+                    settingsContext: sc,
+                    destination: buildSyncBackupDestination(),
+                    scrollController: controller,
+                  );
+                },
+              ),
             ),
           ),
         ),
       ),
     ),
-  ));
+  );
 
   await tester.pumpAndSettle();
   return controller;
@@ -149,32 +151,42 @@ void main() {
   // push 页 + 宽屏主从，Cupertino 走宽屏 master-detail（iPad/macOS-Cupertino）。
   for (final ({String name, SettingsRenderer renderer}) variant
       in <({String name, SettingsRenderer renderer})>[
-    (name: 'material', renderer: const MaterialSettingsRenderer()),
-    (name: 'cupertino', renderer: const CupertinoSettingsRenderer()),
-  ]) {
+        (name: 'material', renderer: const MaterialSettingsRenderer()),
+        (name: 'cupertino', renderer: const CupertinoSettingsRenderer()),
+      ]) {
     testWidgets(
-        '${variant.name}: sync/backup detail keeps a stable scroll extent at '
-        'every offset', (WidgetTester tester) async {
-      final ScrollController controller =
-          await _pumpSyncDetail(tester, variant.renderer);
+      '${variant.name}: sync/backup detail keeps a stable scroll extent at '
+      'every offset',
+      (WidgetTester tester) async {
+        final ScrollController controller = await _pumpSyncDetail(
+          tester,
+          variant.renderer,
+        );
 
-      final double maxTop = controller.position.maxScrollExtent;
-      expect(maxTop, greaterThan(0), reason: '内容必须超出视口，否则 extent 稳定性断言为空');
+        final double maxTop = controller.position.maxScrollExtent;
+        expect(maxTop, greaterThan(0), reason: '内容必须超出视口，否则 extent 稳定性断言为空');
 
-      controller.jumpTo(maxTop / 2);
-      await tester.pumpAndSettle();
-      final double maxMid = controller.position.maxScrollExtent;
+        controller.jumpTo(maxTop / 2);
+        await tester.pumpAndSettle();
+        final double maxMid = controller.position.maxScrollExtent;
 
-      controller.jumpTo(controller.position.maxScrollExtent);
-      await tester.pumpAndSettle();
-      final double maxBottom = controller.position.maxScrollExtent;
+        controller.jumpTo(controller.position.maxScrollExtent);
+        await tester.pumpAndSettle();
+        final double maxBottom = controller.position.maxScrollExtent;
 
-      // 懒加载变高列表：maxScrollExtent 随布局到的子项不同而漂移 → 弹道落点被重
-      // clamp → 视觉跳跃。非懒加载（全 section 布局）下三处必须逐像素相等。
-      expect(maxMid, maxTop,
-          reason: '滚到中部后 extent 从 $maxTop 漂移到 $maxMid（懒加载估算不稳）');
-      expect(maxBottom, maxTop,
-          reason: '滚到底部后 extent 从 $maxTop 漂移到 $maxBottom（懒加载估算不稳）');
-    });
+        // 懒加载变高列表：maxScrollExtent 随布局到的子项不同而漂移 → 弹道落点被重
+        // clamp → 视觉跳跃。非懒加载（全 section 布局）下三处必须逐像素相等。
+        expect(
+          maxMid,
+          maxTop,
+          reason: '滚到中部后 extent 从 $maxTop 漂移到 $maxMid（懒加载估算不稳）',
+        );
+        expect(
+          maxBottom,
+          maxTop,
+          reason: '滚到底部后 extent 从 $maxTop 漂移到 $maxBottom（懒加载估算不稳）',
+        );
+      },
+    );
   }
 }

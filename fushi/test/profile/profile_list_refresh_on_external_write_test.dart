@@ -31,9 +31,7 @@ void main() {
 
     // 与互联下载 / host 入站同形：一份独立构造的仓库，createNew 导入。
     final ProfileRepository other = ProfileRepository(db, FakeAnkiRepository());
-    final String json = await other.exportProfileToJson(
-      loaded.activeProfileId,
-    );
+    final String json = await other.exportProfileToJson(loaded.activeProfileId);
     final int importedId = await other.importProfileFromJson(json);
 
     final ProfileUiState refreshed = await viewModel.stream
@@ -90,8 +88,11 @@ void main() {
     expect(at, greaterThanOrEqualTo(0));
     final String body = src.substring(at, src.indexOf('\n  }\n', at));
     expect(body, contains('importAndSwitchProfile('));
-    expect(body, isNot(contains('importProfileFromJson(')),
-        reason: '绕过视图模型直接写库就不会切换，也不会刷新界面');
+    expect(
+      body,
+      isNot(contains('importProfileFromJson(')),
+      reason: '绕过视图模型直接写库就不会切换，也不会刷新界面',
+    );
     expect(src, contains('if (!_isUpload) widget.settingsContext.refresh();'));
   });
 }

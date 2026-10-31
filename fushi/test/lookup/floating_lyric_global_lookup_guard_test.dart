@@ -35,94 +35,141 @@ void main() {
     });
 
     test('空白词返回 false（no-op，不发起查词）', () async {
-      expect(
-        await GlobalLookupController.instance.lookupText('   '),
-        isFalse,
-      );
+      expect(await GlobalLookupController.instance.lookupText('   '), isFalse);
     });
   });
 
   group('controller wiring (source scan)', () {
     late String controller;
-    setUpAll(() =>
-        controller = read('lib/src/lookup/global_lookup_controller.dart'));
+    setUpAll(
+      () => controller = read('lib/src/lookup/global_lookup_controller.dart'),
+    );
 
     test('公开 lookupText 程序化入口存在且带 _started 门', () {
       // 真机第 5 轮（剪贴板面板）起签名多了可选 anchorScreenRect（文字锚点）；
       // 悬浮字幕调用方不传即旧 atCursor 语义，契约不变。
-      expect(controller.contains('Future<bool> lookupText('), isTrue,
-          reason: '867 覆盖窗必须暴露程序化文本查词入口（TODO-872）');
-      expect(controller.contains("String sentence = ''"), isTrue,
-          reason: 'sentence 可选参数（悬浮字幕带整句）不得丢');
+      expect(
+        controller.contains('Future<bool> lookupText('),
+        isTrue,
+        reason: '867 覆盖窗必须暴露程序化文本查词入口（TODO-872）',
+      );
+      expect(
+        controller.contains("String sentence = ''"),
+        isTrue,
+        reason: 'sentence 可选参数（悬浮字幕带整句）不得丢',
+      );
       final int at = controller.indexOf('Future<bool> lookupText(');
-      final String fn =
-          controller.substring(at, controller.indexOf('return true;', at));
-      expect(fn.contains('_started'), isTrue,
-          reason: 'lookupText 必须在控制器未 start 时拒接（返回 false）');
-      expect(fn.contains('isSupported'), isTrue,
-          reason: 'lookupText 必须门控平台支持（Windows-only）');
+      final String fn = controller.substring(
+        at,
+        controller.indexOf('return true;', at),
+      );
+      expect(
+        fn.contains('_started'),
+        isTrue,
+        reason: 'lookupText 必须在控制器未 start 时拒接（返回 false）',
+      );
+      expect(
+        fn.contains('isSupported'),
+        isTrue,
+        reason: 'lookupText 必须门控平台支持（Windows-only）',
+      );
     });
 
     test('热键与 lookupText 共用同一条查词链（_lookupExternal，无复制粘贴）', () {
-      expect(controller.contains('_lookupExternal('), isTrue,
-          reason: '查词链必须抽成共享方法');
+      expect(
+        controller.contains('_lookupExternal('),
+        isTrue,
+        reason: '查词链必须抽成共享方法',
+      );
       // searchDictionary（含带原文振假名的 searchDictionaryWithRuby）在控制器里只允许
       // 出现在共享链 + 嵌套查词两处调用。
-      final int calls = RegExp(r'searchDictionary(WithRuby)?\(')
-          .allMatches(controller)
-          .length;
-      expect(calls, 2,
-          reason: '根查词只能活在 _lookupExternal（另一处是 _lookupNested）；'
-              '出现第三处说明热键/programmatic 链又分叉了');
+      final int calls = RegExp(
+        r'searchDictionary(WithRuby)?\(',
+      ).allMatches(controller).length;
+      expect(
+        calls,
+        2,
+        reason:
+            '根查词只能活在 _lookupExternal（另一处是 _lookupNested）；'
+            '出现第三处说明热键/programmatic 链又分叉了',
+      );
     });
   });
 
   group('desktop floating-lyric routes are overlay-first (source scan)', () {
     test('reader 路由（lyrics.part.dart）：覆盖窗优先，切 tab 回落保留', () {
-      final String src =
-          read('lib/src/pages/implementations/reader_fushi/lyrics.part.dart');
+      final String src = read(
+        'lib/src/pages/implementations/reader_fushi/lyrics.part.dart',
+      );
       final int fnAt = src.indexOf('Future<void> _lookupFromFloatingLyric(');
       expect(fnAt, greaterThan(-1));
       final String fn = src.substring(fnAt);
       final int overlayAt = fn.indexOf('tryFloatingLyricGlobalLookup(');
       final int tabAt = fn.indexOf('requestHomeDictionaryTab()');
-      expect(overlayAt, greaterThan(-1),
-          reason: 'reader 在场的悬浮歌词点词必须先试 app 外覆盖窗');
-      expect(tabAt, greaterThan(overlayAt),
-          reason: '原「切主窗词典 tab」路由必须保留为回落（覆盖窗不可用时）');
+      expect(
+        overlayAt,
+        greaterThan(-1),
+        reason: 'reader 在场的悬浮歌词点词必须先试 app 外覆盖窗',
+      );
+      expect(
+        tabAt,
+        greaterThan(overlayAt),
+        reason: '原「切主窗词典 tab」路由必须保留为回落（覆盖窗不可用时）',
+      );
     });
 
     test('app 级路由（app_model.dart）：覆盖窗优先，in-app 宿主回落保留', () {
       final String src = read('lib/src/models/app_model.dart');
       final int at = src.indexOf(
-          'onFloatingLyricLookup: (String text, int index, Rect? wordRect)');
+        'onFloatingLyricLookup: (String text, int index, Rect? wordRect)',
+      );
       expect(at, greaterThan(-1));
       // handler 闭包体（到下一个顶层参数 controlStreams 为止）。
       final int end = src.indexOf('controlStreams:', at);
       expect(end, greaterThan(at));
       final String handler = src.substring(at, end);
       final int overlayAt = handler.indexOf('tryFloatingLyricGlobalLookup(');
-      final int hostAt = handler
-          .indexOf('FloatingLyricLookupNotifier.instance.requestLookup(');
-      expect(overlayAt, greaterThan(-1),
-          reason: '无 reader 的悬浮歌词点词必须先试 app 外覆盖窗');
-      expect(hostAt, greaterThan(overlayAt),
-          reason: '原 in-app 查词宿主必须保留为回落（覆盖窗不可用/移动端）');
+      final int hostAt = handler.indexOf(
+        'FloatingLyricLookupNotifier.instance.requestLookup(',
+      );
+      expect(
+        overlayAt,
+        greaterThan(-1),
+        reason: '无 reader 的悬浮歌词点词必须先试 app 外覆盖窗',
+      );
+      expect(
+        hostAt,
+        greaterThan(overlayAt),
+        reason: '原 in-app 查词宿主必须保留为回落（覆盖窗不可用/移动端）',
+      );
     });
 
     test('适配器：分词单一真相源 + 平台门控 + 整行作句子上下文', () {
-      final String src =
-          read('lib/src/media/audiobook/floating_lyric_lookup_routing.dart');
-      expect(src.contains('GlobalLookupController.isSupported'), isTrue,
-          reason: '适配器必须先门控平台（非 Windows 直接回落，零开销）');
-      expect(src.contains('floatingLyricSearchTerm('), isTrue,
-          reason: '分词必须走与旧路由同一把 floatingLyricSearchTerm，防漂移');
-      expect(src.contains('sentence: text.trim()'), isTrue,
-          reason: '整行字幕必须作为制卡 sentence 字段传给覆盖窗');
+      final String src = read(
+        'lib/src/media/audiobook/floating_lyric_lookup_routing.dart',
+      );
+      expect(
+        src.contains('GlobalLookupController.isSupported'),
+        isTrue,
+        reason: '适配器必须先门控平台（非 Windows 直接回落，零开销）',
+      );
+      expect(
+        src.contains('floatingLyricSearchTerm('),
+        isTrue,
+        reason: '分词必须走与旧路由同一把 floatingLyricSearchTerm，防漂移',
+      );
+      expect(
+        src.contains('sentence: text.trim()'),
+        isTrue,
+        reason: '整行字幕必须作为制卡 sentence 字段传给覆盖窗',
+      );
       // 被点字的屏幕矩形必须一路透传成覆盖窗的锚点。断了这条，卡片会退回「跟着
       // 鼠标飘」——功能看起来还在，只是每次都弹偏，最难在回归里发现的那种。
-      expect(src.contains('anchorScreenRect: wordRect'), isTrue,
-          reason: 'native 回传的词矩形必须作为覆盖窗锚点，否则卡片退回光标锚定');
+      expect(
+        src.contains('anchorScreenRect: wordRect'),
+        isTrue,
+        reason: 'native 回传的词矩形必须作为覆盖窗锚点，否则卡片退回光标锚定',
+      );
     });
   });
 }

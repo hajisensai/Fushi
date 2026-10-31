@@ -160,19 +160,22 @@ class VideoDanmakuLayout {
       // 左边缘」换算回「文本框左边缘」。progress=1 时文本右边缘停在 -阴影溢出 处，
       // 连同阴影一起走完全屏，下一帧离开活动集才不会在画面里被抹掉。
       final double x = switch (activeItem.item.mode) {
-        VideoDanmakuMode.scroll => viewportSize.width -
-            (viewportSize.width + occupiedWidth) * progress +
-            kVideoDanmakuShadowOverflow,
+        VideoDanmakuMode.scroll =>
+          viewportSize.width -
+              (viewportSize.width + occupiedWidth) * progress +
+              kVideoDanmakuShadowOverflow,
         VideoDanmakuMode.top => viewportSize.width * 0.5,
         VideoDanmakuMode.bottom => viewportSize.width * 0.5,
       };
-      entries.add(VideoDanmakuLayoutEntry(
-        item: activeItem.item,
-        lane: row,
-        position: Offset(x, row * laneHeight),
-        width: width,
-        opacity: _opacityFor(activeItem.item.mode, progress),
-      ));
+      entries.add(
+        VideoDanmakuLayoutEntry(
+          item: activeItem.item,
+          lane: row,
+          position: Offset(x, row * laneHeight),
+          width: width,
+          opacity: _opacityFor(activeItem.item.mode, progress),
+        ),
+      );
     }
     return VideoDanmakuLayoutSnapshot(
       entries: entries,

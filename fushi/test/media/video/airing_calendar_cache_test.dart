@@ -10,12 +10,11 @@ AiringScheduleCache _cache({
   int fetchedAtMs = 1000,
   String signature = 'sig',
   List<AniListAiringEpisode> episodes = const <AniListAiringEpisode>[],
-}) =>
-    AiringScheduleCache(
-      fetchedAtMs: fetchedAtMs,
-      signature: signature,
-      episodes: episodes,
-    );
+}) => AiringScheduleCache(
+  fetchedAtMs: fetchedAtMs,
+  signature: signature,
+  episodes: episodes,
+);
 
 void main() {
   setUp(AiringMemoryCache.reset);
@@ -72,9 +71,13 @@ void main() {
       expect(episode.media.displayTitle, 'Frieren');
       expect(episode.media.native, '葬送のフリーレン');
       expect(episode.media.coverUrl, 'https://x/c.png');
-      expect(episode.media.format, 'TV',
-          reason: 'format 参与 movie/tv 归类（日历条目直达发现详情页），'
-              '缓存丢字段会让剧场版被当成剧集');
+      expect(
+        episode.media.format,
+        'TV',
+        reason:
+            'format 参与 movie/tv 归类（日历条目直达发现详情页），'
+            '缓存丢字段会让剧场版被当成剧集',
+      );
     });
 
     test('misses on mismatched signature', () {
@@ -101,10 +104,7 @@ void main() {
     });
 
     test('rejects malformed payloads without throwing', () {
-      expect(
-        decodeAiringScheduleCache('', signature: 'sig', nowMs: 0),
-        isNull,
-      );
+      expect(decodeAiringScheduleCache('', signature: 'sig', nowMs: 0), isNull);
       expect(
         decodeAiringScheduleCache('not json', signature: 'sig', nowMs: 0),
         isNull,

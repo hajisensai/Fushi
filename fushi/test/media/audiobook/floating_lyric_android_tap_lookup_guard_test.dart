@@ -49,103 +49,158 @@ void main() {
     final int at = src.indexOf(sig);
     expect(at, greaterThanOrEqualTo(0), reason: 'handleTap 入口必须存在');
     final int end = src.indexOf('startLookupActivity(intent);', at);
-    expect(end, greaterThan(at),
-        reason: 'handleTap 必须以 startLookupActivity(intent) 收尾');
+    expect(
+      end,
+      greaterThan(at),
+      reason: 'handleTap 必须以 startLookupActivity(intent) 收尾',
+    );
     return src.substring(at, end);
   }
 
   /// 悬浮字幕的 startLookupActivity 函数体（到下一个 javadoc 为止）。
-  String lyricLaunchBody(String src) => slice(
-      src, 'private void startLookupActivity(Intent intent)', '/**');
+  String lyricLaunchBody(String src) =>
+      slice(src, 'private void startLookupActivity(Intent intent)', '/**');
 
   /// 共享启动器入口 `start`（到 bringAppToFront 为止）。
   String launcherStartBody(String src) => slice(
-      src,
-      'static void start(@NonNull Context context, @NonNull Intent intent)',
-      'static void bringAppToFront(');
+    src,
+    'static void start(@NonNull Context context, @NonNull Intent intent)',
+    'static void bringAppToFront(',
+  );
 
   /// 共享启动器 `bringAppToFront`（到 opt-in helper 为止）。
   String launcherFrontBody(String src) => slice(
-      src,
-      'static void bringAppToFront(@NonNull Context context)',
-      'private static boolean sendAllowingBackgroundStart(');
+    src,
+    'static void bringAppToFront(@NonNull Context context)',
+    'private static boolean sendAllowingBackgroundStart(',
+  );
 
   /// 共享启动器的 API 34+ opt-in helper（到文件尾）。
   String launcherOptInBody(String src) {
     const String sig = 'private static boolean sendAllowingBackgroundStart(';
     final int at = src.indexOf(sig);
-    expect(at, greaterThanOrEqualTo(0), reason: '共享启动器必须有 API 34+ opt-in helper');
+    expect(
+      at,
+      greaterThanOrEqualTo(0),
+      reason: '共享启动器必须有 API 34+ opt-in helper',
+    );
     return src.substring(at);
   }
 
   group('TODO-1268 Android 悬浮字幕点词后台启动', () {
     test('handleTap 经弹性 helper 启动，不再裸 startActivity', () {
       final String body = handleTapBody(read(service));
-      expect(body.contains('startActivity('), isFalse,
-          reason: 'handleTap 内不得直接 startActivity——后台点词会被 BAL 拦掉，'
-              '必须走 startLookupActivity 的 opt-in + 回退');
+      expect(
+        body.contains('startActivity('),
+        isFalse,
+        reason:
+            'handleTap 内不得直接 startActivity——后台点词会被 BAL 拦掉，'
+            '必须走 startLookupActivity 的 opt-in + 回退',
+      );
     });
 
     test('handleTap 仍保留点词契约（PopupDictFlutterActivity + 文本 + charIndex）', () {
       final String body = handleTapBody(read(service));
-      expect(body.contains('new Intent(this, PopupDictFlutterActivity.class)'),
-          isTrue,
-          reason: '路由目标必须仍是 Flutter 弹窗 Activity');
-      expect(body.contains('Intent.EXTRA_PROCESS_TEXT'), isTrue,
-          reason: '必须仍携带当前字幕文本');
-      expect(body.contains('PopupDictFlutterActivity.EXTRA_CHAR_INDEX'), isTrue,
-          reason: '必须仍携带命中字 charIndex（去键盘分词，BUG-214）');
+      expect(
+        body.contains('new Intent(this, PopupDictFlutterActivity.class)'),
+        isTrue,
+        reason: '路由目标必须仍是 Flutter 弹窗 Activity',
+      );
+      expect(
+        body.contains('Intent.EXTRA_PROCESS_TEXT'),
+        isTrue,
+        reason: '必须仍携带当前字幕文本',
+      );
+      expect(
+        body.contains('PopupDictFlutterActivity.EXTRA_CHAR_INDEX'),
+        isTrue,
+        reason: '必须仍携带命中字 charIndex（去键盘分词，BUG-214）',
+      );
     });
 
     test('startLookupActivity 委托共享启动器，不自己裸启动', () {
       final String body = lyricLaunchBody(read(service));
-      expect(body.contains('BackgroundActivityLauncher.start(this, intent)'),
-          isTrue,
-          reason: '悬浮字幕点词必须走共享的弹性启动器（与悬浮球 / 截屏 OCR 同一条路径）');
-      expect(body.contains('startActivity('), isFalse,
-          reason: '不得在这里另写一份裸 startActivity 分支');
+      expect(
+        body.contains('BackgroundActivityLauncher.start(this, intent)'),
+        isTrue,
+        reason: '悬浮字幕点词必须走共享的弹性启动器（与悬浮球 / 截屏 OCR 同一条路径）',
+      );
+      expect(
+        body.contains('startActivity('),
+        isFalse,
+        reason: '不得在这里另写一份裸 startActivity 分支',
+      );
     });
 
     test('共享启动器在 API 34+ 显式 opt-in 后台 activity 启动', () {
       final String src = read(launcher);
       final String start = launcherStartBody(src);
-      expect(start.contains('FLAG_ACTIVITY_NEW_TASK'), isTrue,
-          reason: '从非 Activity 上下文启动 Activity 必须带 NEW_TASK');
-      expect(start.contains('sendAllowingBackgroundStart(context, intent)'),
-          isTrue,
-          reason: '入口必须先走 opt-in helper');
+      expect(
+        start.contains('FLAG_ACTIVITY_NEW_TASK'),
+        isTrue,
+        reason: '从非 Activity 上下文启动 Activity 必须带 NEW_TASK',
+      );
+      expect(
+        start.contains('sendAllowingBackgroundStart(context, intent)'),
+        isTrue,
+        reason: '入口必须先走 opt-in helper',
+      );
 
       final String optIn = launcherOptInBody(src);
-      expect(optIn.contains('Build.VERSION_CODES.UPSIDE_DOWN_CAKE'), isTrue,
-          reason: '后台启动 opt-in 门控在 API 34（Android 14）+');
-      expect(optIn.contains('PendingIntent.getActivity('), isTrue,
-          reason: '走自发 PendingIntent 以携带后台启动授权');
       expect(
-          optIn.contains('setPendingIntentBackgroundActivityStartMode'), isTrue,
-          reason: 'BUG：必须用官方 opt-in 显式授予后台启动特权');
+        optIn.contains('Build.VERSION_CODES.UPSIDE_DOWN_CAKE'),
+        isTrue,
+        reason: '后台启动 opt-in 门控在 API 34（Android 14）+',
+      );
       expect(
-          optIn.contains(
-              'ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED'),
-          isTrue,
-          reason: '必须选 ALLOWED 模式，否则 Android 14+ 默认拦截');
-      expect(optIn.contains('Log.w(TAG'), isTrue,
-          reason: 'PendingIntent 失败要记 log，真机复现可看到命中了哪条分支');
+        optIn.contains('PendingIntent.getActivity('),
+        isTrue,
+        reason: '走自发 PendingIntent 以携带后台启动授权',
+      );
+      expect(
+        optIn.contains('setPendingIntentBackgroundActivityStartMode'),
+        isTrue,
+        reason: 'BUG：必须用官方 opt-in 显式授予后台启动特权',
+      );
+      expect(
+        optIn.contains(
+          'ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED',
+        ),
+        isTrue,
+        reason: '必须选 ALLOWED 模式，否则 Android 14+ 默认拦截',
+      );
+      expect(
+        optIn.contains('Log.w(TAG'),
+        isTrue,
+        reason: 'PendingIntent 失败要记 log，真机复现可看到命中了哪条分支',
+      );
     });
 
     test('启动失败绝不静默吞：回退直接 startActivity + 前台化', () {
       final String src = read(launcher);
       final String start = launcherStartBody(src);
-      expect(start.contains('context.startActivity(intent)'), isTrue,
-          reason: '<34 及 PendingIntent 失败时回退直接 startActivity');
-      expect(start.contains('bringAppToFront(context)'), isTrue,
-          reason: '两条启动都失败时把 app 拉到前台——一次点词绝不被静默丢弃');
-      expect(start.contains('Log.w(TAG'), isTrue,
-          reason: '每条回退都记 log，真机复现可看到命中了哪条分支');
+      expect(
+        start.contains('context.startActivity(intent)'),
+        isTrue,
+        reason: '<34 及 PendingIntent 失败时回退直接 startActivity',
+      );
+      expect(
+        start.contains('bringAppToFront(context)'),
+        isTrue,
+        reason: '两条启动都失败时把 app 拉到前台——一次点词绝不被静默丢弃',
+      );
+      expect(
+        start.contains('Log.w(TAG'),
+        isTrue,
+        reason: '每条回退都记 log，真机复现可看到命中了哪条分支',
+      );
 
       final String front = launcherFrontBody(src);
-      expect(front.contains('sendAllowingBackgroundStart(context, intent)'),
-          isTrue,
-          reason: '前台化本身也是后台启动，同样要走 opt-in');
+      expect(
+        front.contains('sendAllowingBackgroundStart(context, intent)'),
+        isTrue,
+        reason: '前台化本身也是后台启动，同样要走 opt-in',
+      );
     });
   });
 }

@@ -33,111 +33,136 @@ void main() {
     await db.close();
   });
 
-  test('reminder hides only when the optional video services are configured',
-      () async {
-    expect(shouldShowVideoOnlineServicesReminder(preferences), isTrue);
-    await preferences.setPref(kVideoAniDbHashEnabledPref, true);
-    expect(shouldShowVideoOnlineServicesReminder(preferences), isTrue);
-    await preferences.setPref(kVideoAniDbUsernamePref, 'tester');
-    expect(shouldShowVideoOnlineServicesReminder(preferences), isTrue);
-    await preferences.setPref(kVideoAniDbPasswordPref, 'password');
-    expect(shouldShowVideoOnlineServicesReminder(preferences), isTrue);
-    await preferences.setJimakuApiKey('jimaku-key');
-    expect(shouldShowVideoOnlineServicesReminder(preferences), isTrue);
-    await preferences.setVideoSubtitleOpenSubtitlesConfig(
-      OpenSubtitlesConfig(apiKey: 'subtitle-key'),
-    );
-    expect(shouldShowVideoOnlineServicesReminder(preferences), isFalse);
-    await preferences.setJimakuEnabled(false);
-    expect(shouldShowVideoOnlineServicesReminder(preferences), isTrue);
-    await preferences.setJimakuEnabled(true);
-    await preferences.setVideoSubtitleOpenSubtitlesConfig(
-      OpenSubtitlesConfig(apiKey: 'subtitle-key', enabled: false),
-    );
-    expect(shouldShowVideoOnlineServicesReminder(preferences), isTrue);
-    await preferences.setVideoSubtitleOpenSubtitlesConfig(
-      OpenSubtitlesConfig(apiKey: 'subtitle-key'),
-    );
-    await preferences.setPref(kVideoAniDbHashEnabledPref, false);
-    expect(shouldShowVideoOnlineServicesReminder(preferences), isTrue);
-  });
+  test(
+    'reminder hides only when the optional video services are configured',
+    () async {
+      expect(shouldShowVideoOnlineServicesReminder(preferences), isTrue);
+      await preferences.setPref(kVideoAniDbHashEnabledPref, true);
+      expect(shouldShowVideoOnlineServicesReminder(preferences), isTrue);
+      await preferences.setPref(kVideoAniDbUsernamePref, 'tester');
+      expect(shouldShowVideoOnlineServicesReminder(preferences), isTrue);
+      await preferences.setPref(kVideoAniDbPasswordPref, 'password');
+      expect(shouldShowVideoOnlineServicesReminder(preferences), isTrue);
+      await preferences.setJimakuApiKey('jimaku-key');
+      expect(shouldShowVideoOnlineServicesReminder(preferences), isTrue);
+      await preferences.setVideoSubtitleOpenSubtitlesConfig(
+        OpenSubtitlesConfig(apiKey: 'subtitle-key'),
+      );
+      expect(shouldShowVideoOnlineServicesReminder(preferences), isFalse);
+      await preferences.setJimakuEnabled(false);
+      expect(shouldShowVideoOnlineServicesReminder(preferences), isTrue);
+      await preferences.setJimakuEnabled(true);
+      await preferences.setVideoSubtitleOpenSubtitlesConfig(
+        OpenSubtitlesConfig(apiKey: 'subtitle-key', enabled: false),
+      );
+      expect(shouldShowVideoOnlineServicesReminder(preferences), isTrue);
+      await preferences.setVideoSubtitleOpenSubtitlesConfig(
+        OpenSubtitlesConfig(apiKey: 'subtitle-key'),
+      );
+      await preferences.setPref(kVideoAniDbHashEnabledPref, false);
+      expect(shouldShowVideoOnlineServicesReminder(preferences), isTrue);
+    },
+  );
 
   // BUG-2586：AniDB 就绪与设置页状态、协调器同一判据——自定义客户端名不合规
   // 时登录根本发不出去，不能只看账号密码填没填。
-  test('reminder stays while a custom AniDB client identity is unusable',
-      () async {
-    await preferences.setPref(kVideoAniDbHashEnabledPref, true);
-    await preferences.setPref(kVideoAniDbUsernamePref, 'tester');
-    await preferences.setPref(kVideoAniDbPasswordPref, 'password');
-    await preferences.setJimakuApiKey('jimaku-key');
-    await preferences.setVideoSubtitleOpenSubtitlesConfig(
-      OpenSubtitlesConfig(apiKey: 'subtitle-key'),
-    );
-    expect(shouldShowVideoOnlineServicesReminder(preferences), isFalse,
-        reason: '客户端留空走内置 fushiplayer，账号齐即就绪');
-    await preferences.setPref(kVideoMetadataAniDbClientNamePref, 'customapp');
-    expect(shouldShowVideoOnlineServicesReminder(preferences), isTrue,
-        reason: '自定义客户端没填版本，UDP 配置不可用');
-    await preferences.setPref(kVideoMetadataAniDbClientVersionPref, '2');
-    expect(shouldShowVideoOnlineServicesReminder(preferences), isFalse);
-  });
+  test(
+    'reminder stays while a custom AniDB client identity is unusable',
+    () async {
+      await preferences.setPref(kVideoAniDbHashEnabledPref, true);
+      await preferences.setPref(kVideoAniDbUsernamePref, 'tester');
+      await preferences.setPref(kVideoAniDbPasswordPref, 'password');
+      await preferences.setJimakuApiKey('jimaku-key');
+      await preferences.setVideoSubtitleOpenSubtitlesConfig(
+        OpenSubtitlesConfig(apiKey: 'subtitle-key'),
+      );
+      expect(
+        shouldShowVideoOnlineServicesReminder(preferences),
+        isFalse,
+        reason: '客户端留空走内置 fushiplayer，账号齐即就绪',
+      );
+      await preferences.setPref(kVideoMetadataAniDbClientNamePref, 'customapp');
+      expect(
+        shouldShowVideoOnlineServicesReminder(preferences),
+        isTrue,
+        reason: '自定义客户端没填版本，UDP 配置不可用',
+      );
+      await preferences.setPref(kVideoMetadataAniDbClientVersionPref, '2');
+      expect(shouldShowVideoOnlineServicesReminder(preferences), isFalse);
+    },
+  );
 
-  test('permanent dismissal survives reload and excludes profile snapshots',
-      () async {
-    await preferences.setPref(kVideoAniDbHashEnabledPref, true);
-    await preferences.setPref(kVideoAniDbUsernamePref, 'tester');
-    await preferences.setPref(kVideoAniDbPasswordPref, ' password ');
-    await preferences.setJimakuApiKey('jimaku-key');
-    await preferences.setVideoSubtitleOpenSubtitlesConfig(
-      OpenSubtitlesConfig(apiKey: 'subtitle-key'),
-    );
-    await dismissVideoOnlineServicesReminder(preferences);
-    final PreferencesRepository reloaded = PreferencesRepository(db);
-    addTearDown(reloaded.dispose);
-    await reloaded.loadFromDb();
-    expect(shouldShowVideoOnlineServicesReminder(reloaded), isFalse);
-    expect(reloaded.getPref(kVideoAniDbHashEnabledPref, defaultValue: false),
-        isTrue);
-    expect(
-        reloaded.getPref(kVideoAniDbUsernamePref, defaultValue: ''), 'tester');
-    expect(reloaded.getPref(kVideoAniDbPasswordPref, defaultValue: ''),
-        ' password ');
-    expect(reloaded.jimakuApiKey, 'jimaku-key');
-    expect(reloaded.jimakuEnabled, isTrue);
-    expect(reloaded.videoSubtitleOpenSubtitlesConfig.apiKey, 'subtitle-key');
-    expect(reloaded.videoSubtitleOpenSubtitlesConfig.enabled, isTrue);
-    expect(ProfileKeys.isExcludedPref(kVideoOnlineServicesSetupDismissedPref),
-        isTrue);
-    await reloaded.setPref(kVideoAniDbHashEnabledPref, false);
-    expect(shouldShowVideoOnlineServicesReminder(reloaded), isFalse);
-  });
+  test(
+    'permanent dismissal survives reload and excludes profile snapshots',
+    () async {
+      await preferences.setPref(kVideoAniDbHashEnabledPref, true);
+      await preferences.setPref(kVideoAniDbUsernamePref, 'tester');
+      await preferences.setPref(kVideoAniDbPasswordPref, ' password ');
+      await preferences.setJimakuApiKey('jimaku-key');
+      await preferences.setVideoSubtitleOpenSubtitlesConfig(
+        OpenSubtitlesConfig(apiKey: 'subtitle-key'),
+      );
+      await dismissVideoOnlineServicesReminder(preferences);
+      final PreferencesRepository reloaded = PreferencesRepository(db);
+      addTearDown(reloaded.dispose);
+      await reloaded.loadFromDb();
+      expect(shouldShowVideoOnlineServicesReminder(reloaded), isFalse);
+      expect(
+        reloaded.getPref(kVideoAniDbHashEnabledPref, defaultValue: false),
+        isTrue,
+      );
+      expect(
+        reloaded.getPref(kVideoAniDbUsernamePref, defaultValue: ''),
+        'tester',
+      );
+      expect(
+        reloaded.getPref(kVideoAniDbPasswordPref, defaultValue: ''),
+        ' password ',
+      );
+      expect(reloaded.jimakuApiKey, 'jimaku-key');
+      expect(reloaded.jimakuEnabled, isTrue);
+      expect(reloaded.videoSubtitleOpenSubtitlesConfig.apiKey, 'subtitle-key');
+      expect(reloaded.videoSubtitleOpenSubtitlesConfig.enabled, isTrue);
+      expect(
+        ProfileKeys.isExcludedPref(kVideoOnlineServicesSetupDismissedPref),
+        isTrue,
+      );
+      await reloaded.setPref(kVideoAniDbHashEnabledPref, false);
+      expect(shouldShowVideoOnlineServicesReminder(reloaded), isFalse);
+    },
+  );
 
-  testWidgets('narrow banner actions and dismissal survive widget recreation',
-      (WidgetTester tester) async {
+  testWidgets('narrow banner actions and dismissal survive widget recreation', (
+    WidgetTester tester,
+  ) async {
     tester.view.physicalSize = const Size(320, 900);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
     int registrations = 0;
     Widget buildBanner() => MaterialApp(
-          home: Scaffold(
-            body: VideoOnlineServicesBanner(
-              preferences: preferences,
-              onRegister: () async {
-                registrations++;
-              },
-              onOpenSettings: () async {},
-            ),
-          ),
-        );
+      home: Scaffold(
+        body: VideoOnlineServicesBanner(
+          preferences: preferences,
+          onRegister: () async {
+            registrations++;
+          },
+          onOpenSettings: () async {},
+        ),
+      ),
+    );
     await tester.pumpWidget(buildBanner());
     expect(tester.takeException(), isNull);
     await tester.tap(find.text(t.video_online_services_setup_register));
     expect(registrations, 1);
-    final TextButton dismiss = tester.widget<TextButton>(glassUnwrap<TextButton>(find.ancestor(
-      of: find.text(t.video_online_services_setup_dismiss),
-      matching: find.byType(TextButton),
-    )));
+    final TextButton dismiss = tester.widget<TextButton>(
+      glassUnwrap<TextButton>(
+        find.ancestor(
+          of: find.text(t.video_online_services_setup_dismiss),
+          matching: find.byType(TextButton),
+        ),
+      ),
+    );
     await tester.runAsync(() async {
       await (dismiss.onPressed! as Future<void> Function())();
     });
@@ -148,51 +173,66 @@ void main() {
     expect(find.text(t.video_online_services_setup_title), findsNothing);
   });
 
-  testWidgets('dismissal updates every mounted video section immediately',
-      (WidgetTester tester) async {
-    await tester.pumpWidget(MaterialApp(
+  testWidgets('dismissal updates every mounted video section immediately', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
         home: Scaffold(
-            body: SingleChildScrollView(
-      child: Column(children: <Widget>[
-        for (final String section in <String>['home', 'series'])
-          VideoOnlineServicesBanner(
-            key: ValueKey<String>(section),
-            preferences: preferences,
-            onRegister: () async {},
-            onOpenSettings: () async {},
+          body: SingleChildScrollView(
+            child: Column(
+              children: <Widget>[
+                for (final String section in <String>['home', 'series'])
+                  VideoOnlineServicesBanner(
+                    key: ValueKey<String>(section),
+                    preferences: preferences,
+                    onRegister: () async {},
+                    onOpenSettings: () async {},
+                  ),
+              ],
+            ),
           ),
-      ]),
-    ))));
+        ),
+      ),
+    );
     expect(find.text(t.video_online_services_setup_title), findsNWidgets(2));
-    await tester
-        .runAsync(() => dismissVideoOnlineServicesReminder(preferences));
+    await tester.runAsync(
+      () => dismissVideoOnlineServicesReminder(preferences),
+    );
     await tester.pumpAndSettle();
     expect(find.text(t.video_online_services_setup_title), findsNothing);
   });
 
-  testWidgets('returning from settings immediately hides configured reminder',
-      (WidgetTester tester) async {
-    await tester.pumpWidget(MaterialApp(
-      home: Scaffold(
-        body: VideoOnlineServicesBanner(
-          preferences: preferences,
-          onRegister: () async {},
-          onOpenSettings: () async {
-            await preferences.setPref(kVideoAniDbUsernamePref, 'tester');
-            await preferences.setPref(kVideoAniDbPasswordPref, 'password');
-            await preferences.setPref(kVideoAniDbHashEnabledPref, true);
-            await preferences.setJimakuApiKey('jimaku-key');
-            await preferences.setVideoSubtitleOpenSubtitlesConfig(
-              OpenSubtitlesConfig(apiKey: 'subtitle-key'),
-            );
-          },
+  testWidgets('returning from settings immediately hides configured reminder', (
+    WidgetTester tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: VideoOnlineServicesBanner(
+            preferences: preferences,
+            onRegister: () async {},
+            onOpenSettings: () async {
+              await preferences.setPref(kVideoAniDbUsernamePref, 'tester');
+              await preferences.setPref(kVideoAniDbPasswordPref, 'password');
+              await preferences.setPref(kVideoAniDbHashEnabledPref, true);
+              await preferences.setJimakuApiKey('jimaku-key');
+              await preferences.setVideoSubtitleOpenSubtitlesConfig(
+                OpenSubtitlesConfig(apiKey: 'subtitle-key'),
+              );
+            },
+          ),
         ),
       ),
-    ));
-    final FilledButton settings = tester.widget<FilledButton>(glassUnwrap<FilledButton>(find.ancestor(
-      of: find.text(t.video_online_services_setup_settings),
-      matching: find.byType(FilledButton),
-    )));
+    );
+    final FilledButton settings = tester.widget<FilledButton>(
+      glassUnwrap<FilledButton>(
+        find.ancestor(
+          of: find.text(t.video_online_services_setup_settings),
+          matching: find.byType(FilledButton),
+        ),
+      ),
+    );
     await tester.runAsync(() async {
       await (settings.onPressed! as Future<void> Function())();
     });

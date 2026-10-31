@@ -67,8 +67,7 @@ void main() {
       );
     });
 
-    test('exports complete sentence audio range instead of padding one cue',
-        () {
+    test('exports complete sentence audio range instead of padding one cue', () {
       final String source = readReaderPageSource();
 
       expect(
@@ -132,7 +131,8 @@ void main() {
       expect(
         source,
         contains(
-            'if (audioFiles != null && !(overrides?.omitAudio ?? false)) {'),
+          'if (audioFiles != null && !(overrides?.omitAudio ?? false)) {',
+        ),
         reason:
             'Sentence-audio mining should attempt a clip whenever audio files '
             'exist (unless the user opted out for this card) and let '
@@ -153,7 +153,8 @@ void main() {
       expect(
         source,
         contains('bool requestedSentenceAudioClip = false'),
-        reason: 'The reader must remember that a real sentence-audio clip was '
+        reason:
+            'The reader must remember that a real sentence-audio clip was '
             'requested; otherwise ffmpeg failures become silent no-audio cards.',
       );
       expect(
@@ -166,7 +167,8 @@ void main() {
       expect(
         source,
         contains(
-            'if (requestedSentenceAudioClip && sentenceAudioPath == null)'),
+          'if (requestedSentenceAudioClip && sentenceAudioPath == null)',
+        ),
         reason:
             'A requested but failed sentence-audio export must stop card mining '
             'with a visible error instead of continuing as a success.',
@@ -179,13 +181,15 @@ void main() {
       expect(
         source,
         contains('String? sentenceAudioFailure'),
-        reason: 'The reader must preserve the ffmpeg failure summary for the '
+        reason:
+            'The reader must preserve the ffmpeg failure summary for the '
             'visible no-audio-card guard.',
       );
       expect(
         source,
         contains('onFailure: (String summary)'),
-        reason: 'TtsChannel/extractor diagnostics should flow back to the '
+        reason:
+            'TtsChannel/extractor diagnostics should flow back to the '
             'reader mining path.',
       );
       expect(
@@ -211,8 +215,7 @@ void main() {
     // but WITHOUT sentence audio. That used to be a debugPrint-only silent drop -
     // the exact symptom users reported for local audiobooks. The card must now
     // tell the user no sentence audio was attached instead of silently dropping.
-    test('surfaces a toast when no sentence-audio range resolves (TODO-811)',
-        () {
+    test('surfaces a toast when no sentence-audio range resolves (TODO-811)', () {
       final String source = readReaderPageSource();
 
       expect(
@@ -220,8 +223,9 @@ void main() {
         contains(
           // 走 showMine（addedWithWarning：关掉「制卡成功提示」也照样弹）。
           compactCode(
-              'FushiToast.showMine(msg: t.card_mined_without_sentence_audio,'
-              ' status: MineToastStatus.addedWithWarning,'),
+            'FushiToast.showMine(msg: t.card_mined_without_sentence_audio,'
+            ' status: MineToastStatus.addedWithWarning,',
+          ),
         ),
         reason:
             'A card created with audio files present but no resolvable sentence '
@@ -229,11 +233,15 @@ void main() {
             'not silently produce an audio-less card.',
       );
       final int branchIndex = source.indexOf('} else if (cue == null) {');
-      final int toastIndex =
-          source.indexOf('t.card_mined_without_sentence_audio');
+      final int toastIndex = source.indexOf(
+        't.card_mined_without_sentence_audio',
+      );
       expect(branchIndex, greaterThanOrEqualTo(0));
-      expect(toastIndex, greaterThan(branchIndex),
-          reason: 'The toast must live inside the no-range gap branch.');
+      expect(
+        toastIndex,
+        greaterThan(branchIndex),
+        reason: 'The toast must live inside the no-range gap branch.',
+      );
     });
   });
 }

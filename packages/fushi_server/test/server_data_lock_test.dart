@@ -28,14 +28,19 @@ Future<({Process proc, int pid})> _holdLock(String dataDir, String mode) async {
   ]);
   final Completer<int> ready = Completer<int>();
   final StringBuffer err = StringBuffer();
-  proc.stdout.transform(utf8.decoder).transform(const LineSplitter()).listen((String line) {
-    final int? holderPid = line.startsWith('locked ') ? int.tryParse(line.substring(7)) : null;
+  proc.stdout.transform(utf8.decoder).transform(const LineSplitter()).listen((
+    String line,
+  ) {
+    final int? holderPid = line.startsWith('locked ')
+        ? int.tryParse(line.substring(7))
+        : null;
     if (holderPid != null && !ready.isCompleted) ready.complete(holderPid);
   });
   proc.stderr.transform(utf8.decoder).listen(err.write);
   unawaited(
     proc.exitCode.then((int code) {
-      if (!ready.isCompleted) ready.completeError(StateError('持锁进程提前退出 $code: $err'));
+      if (!ready.isCompleted)
+        ready.completeError(StateError('持锁进程提前退出 $code: $err'));
     }),
   );
   final int holderPid = await ready.future.timeout(const Duration(minutes: 2));
@@ -53,22 +58,39 @@ void main() {
   setUp(() async => h = await CommandHarness.create());
   tearDown(() => h.dispose());
 
-  List<String> cli(List<String> args) => <String>['-c', h.configFile.path, ...args];
+  List<String> cli(List<String> args) => <String>[
+    '-c',
+    h.configFile.path,
+    ...args,
+  ];
 
   test('serve 持锁：离线命令 75、第二个 serve 75；锁释放后可用', () async {
-    final ({Process proc, int pid}) holder = await _holdLock(h.dataDir, 'serve');
+    final ({Process proc, int pid}) holder = await _holdLock(
+      h.dataDir,
+      'serve',
+    );
     try {
       expect(await runFushiServerCli(cli(<String>['status'])), 75);
       expect(await runFushiServerCli(cli(<String>['serve', '--no-scan'])), 75);
       // 模块化离线命令（经 CliContext.withRuntime）同一条门。
       final String epub = p.join(h.tmp.path, 'book.epub');
       writeTestEpub(epub, 'Neko');
-      expect(await h.run(ImportCommands(io: h.io), <String>['import', 'epub', epub]), 75);
+      expect(
+        await h.run(ImportCommands(io: h.io), <String>['import', 'epub', epub]),
+        75,
+      );
       // 提示里带持有者 pid 与 WebUI 地址，指向 ctl。
       final ServerDataLockedException e = await _expectLocked(h.dataDir);
       expect(e.holder?.pid, holder.pid);
       expect(e.holder?.isServe, isTrue);
-      expect(e.describe(), allOf(contains('pid ${holder.pid}'), contains('http://127.0.0.1:38766'), contains('ctl')));
+      expect(
+        e.describe(),
+        allOf(
+          contains('pid ${holder.pid}'),
+          contains('http://127.0.0.1:38766'),
+          contains('ctl'),
+        ),
+      );
     } finally {
       await _releaseHolder(holder.proc);
     }
@@ -76,17 +98,30 @@ void main() {
   });
 
   test('离线命令持锁：serve 拒绝启动 75，提示是离线命令占用', () async {
-    final ({Process proc, int pid}) holder = await _holdLock(h.dataDir, 'offline');
+    final ({Process proc, int pid}) holder = await _holdLock(
+      h.dataDir,
+      'offline',
+    );
     try {
       expect(await runFushiServerCli(cli(<String>['serve', '--no-scan'])), 75);
       final ServerDataLockedException e = await _expectLocked(h.dataDir);
       expect(e.holder?.mode, 'offline');
-      expect(e.describe(), allOf(contains('离线命令'), contains('pid ${holder.pid}'), contains('test holder')));
+      expect(
+        e.describe(),
+        allOf(
+          contains('离线命令'),
+          contains('pid ${holder.pid}'),
+          contains('test holder'),
+        ),
+      );
     } finally {
       await _releaseHolder(holder.proc);
     }
     // 锁释放后持有者信息被清空，再拿锁不受影响。
-    final ServerDataLock lock = await ServerDataLock.acquire(h.dataDir, mode: 'offline');
+    final ServerDataLock lock = await ServerDataLock.acquire(
+      h.dataDir,
+      mode: 'offline',
+    );
     await lock.release();
   });
 
@@ -96,7 +131,10 @@ void main() {
     h.configFile.writeAsStringSync(
       yaml
           .replaceFirst(RegExp(r'^port: .*$', multiLine: true), 'port: 0')
-          .replaceFirst(RegExp(r'^admin_port: .*$', multiLine: true), 'admin_port: 0'),
+          .replaceFirst(
+            RegExp(r'^admin_port: .*$', multiLine: true),
+            'admin_port: 0',
+          ),
     );
     final Process serve = await Process.start(dartExecutable(), <String>[
       'run',
@@ -111,7 +149,8 @@ void main() {
     serve.stderr.transform(utf8.decoder).listen(err.write);
     unawaited(
       serve.exitCode.then((int code) {
-        if (!started.isCompleted) started.completeError(StateError('serve 提前退出 $code: $err'));
+        if (!started.isCompleted)
+          started.completeError(StateError('serve 提前退出 $code: $err'));
       }),
     );
     try {
@@ -131,7 +170,10 @@ void main() {
 
 Future<ServerDataLockedException> _expectLocked(String dataDir) async {
   try {
-    final ServerDataLock lock = await ServerDataLock.acquire(dataDir, mode: 'offline');
+    final ServerDataLock lock = await ServerDataLock.acquire(
+      dataDir,
+      mode: 'offline',
+    );
     await lock.release();
   } on ServerDataLockedException catch (e) {
     return e;

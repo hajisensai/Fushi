@@ -29,20 +29,30 @@ void main() {
   group('两个消费端共用同一张表（防再漂移）', () {
     test('表内每个扩展名两侧推断一致', () {
       for (final MapEntry<String, String> e in kAudioMimeByExtension.entries) {
-        expect(audioMimeForPath('f.${e.key}'), e.value,
-            reason: 'data: URL 侧 .${e.key} 偏离共享表');
-        expect(remoteAudioContentTypeForPath('f.${e.key}'), e.value,
-            reason: 'HTTP 端点侧 .${e.key} 偏离共享表');
+        expect(
+          audioMimeForPath('f.${e.key}'),
+          e.value,
+          reason: 'data: URL 侧 .${e.key} 偏离共享表',
+        );
+        expect(
+          remoteAudioContentTypeForPath('f.${e.key}'),
+          e.value,
+          reason: 'HTTP 端点侧 .${e.key} 偏离共享表',
+        );
       }
     });
 
     test('兜底是刻意的消费端差异：data: URL 必须给定 audio/*，HTTP 端点诚实报未知', () {
       expect(audioMimeForPath('f.xyz'), 'audio/mpeg');
       expect(
-          remoteAudioContentTypeForPath('f.xyz'), 'application/octet-stream');
+        remoteAudioContentTypeForPath('f.xyz'),
+        'application/octet-stream',
+      );
       expect(audioMimeForPath('noext'), 'audio/mpeg');
       expect(
-          remoteAudioContentTypeForPath('noext'), 'application/octet-stream');
+        remoteAudioContentTypeForPath('noext'),
+        'application/octet-stream',
+      );
     });
   });
 
@@ -62,10 +72,16 @@ void main() {
 
     test('分歧集合内确实存在分歧（防集合腐化成免检白名单）', () {
       for (final String ext in intentionalDivergence) {
-        expect(kAudioMimeByExtension.containsKey(ext), isTrue,
-            reason: '.$ext 已不在音频表内，请从分歧集合移除');
-        expect(kAudioMimeByExtension[ext], isNot(kMimeTypeByExtension[ext]),
-            reason: '.$ext 两表已一致，请从分歧集合移除');
+        expect(
+          kAudioMimeByExtension.containsKey(ext),
+          isTrue,
+          reason: '.$ext 已不在音频表内，请从分歧集合移除',
+        );
+        expect(
+          kAudioMimeByExtension[ext],
+          isNot(kMimeTypeByExtension[ext]),
+          reason: '.$ext 两表已一致，请从分歧集合移除',
+        );
       }
     });
   });

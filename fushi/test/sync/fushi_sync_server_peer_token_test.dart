@@ -22,14 +22,15 @@ void main() {
   Future<void> startServer({bool wirePeerCallbacks = true}) async {
     tempDir = Directory.systemTemp.createTempSync('fushi_peer_token_test');
     peerTable = <String, String>{};
-    server = FushiSyncServer(
-      syncDataDir: tempDir.path,
-      port: 0,
-      token: 'shared-token',
-      allowLan: true,
-    )
-      ..onPairRequest = ((FushiPairRequest _) async => true)
-      ..lanRequiresPinProvider = (() async => false);
+    server =
+        FushiSyncServer(
+            syncDataDir: tempDir.path,
+            port: 0,
+            token: 'shared-token',
+            allowLan: true,
+          )
+          ..onPairRequest = ((FushiPairRequest _) async => true)
+          ..lanRequiresPinProvider = (() async => false);
     if (wirePeerCallbacks) {
       server
         ..onPeerPaired = ((FushiPairedPeerRegistration reg) async {
@@ -51,10 +52,13 @@ void main() {
   Uri capabilitiesUri() =>
       Uri.parse('http://127.0.0.1:${server.port}/api/capabilities');
   Uri serviceConfigUri() => Uri.parse(
-      'http://127.0.0.1:${server.port}/api/interconnect/service-config');
+    'http://127.0.0.1:${server.port}/api/interconnect/service-config',
+  );
 
-  Future<String> startSession(String clientNonce,
-      {String? clientDeviceId}) async {
+  Future<String> startSession(
+    String clientNonce, {
+    String? clientDeviceId,
+  }) async {
     final http.Response resp = await http.post(
       v2Uri(),
       headers: <String, String>{'Content-Type': 'application/json'},
@@ -91,17 +95,22 @@ void main() {
     return resp.statusCode;
   }
 
-  test('confirm with clientDeviceId mints a per-peer token and persists it',
-      () async {
-    await startServer();
-    final String sid = await startSession('cn-1', clientDeviceId: 'device-aaa');
-    final String issued = await confirm(sid);
+  test(
+    'confirm with clientDeviceId mints a per-peer token and persists it',
+    () async {
+      await startServer();
+      final String sid = await startSession(
+        'cn-1',
+        clientDeviceId: 'device-aaa',
+      );
+      final String issued = await confirm(sid);
 
-    // 派发的是 per-peer token，绝非共享 token。
-    expect(issued, isNot('shared-token'));
-    // 经 onPeerPaired 落库：fake 表里 device-aaa 的 token 正是回给 client 的那个。
-    expect(peerTable['device-aaa'], issued);
-  });
+      // 派发的是 per-peer token，绝非共享 token。
+      expect(issued, isNot('shared-token'));
+      // 经 onPeerPaired 落库：fake 表里 device-aaa 的 token 正是回给 client 的那个。
+      expect(peerTable['device-aaa'], issued);
+    },
+  );
 
   test('per-peer token authenticates; shared token still works too', () async {
     await startServer();
@@ -116,23 +125,27 @@ void main() {
     expect(await authProbe('bogus-token'), 401);
   });
 
-  test('service config refuses plaintext HTTP even for a paired peer',
-      () async {
-    await startServer();
-    final String sid =
-        await startSession('cn-secure', clientDeviceId: 'device-secure');
-    final String peerToken = await confirm(sid);
+  test(
+    'service config refuses plaintext HTTP even for a paired peer',
+    () async {
+      await startServer();
+      final String sid = await startSession(
+        'cn-secure',
+        clientDeviceId: 'device-secure',
+      );
+      final String peerToken = await confirm(sid);
 
-    final http.Response response = await http.get(
-      serviceConfigUri(),
-      headers: <String, String>{
-        'Authorization':
-            'Basic ${base64Encode(utf8.encode('hibiki:$peerToken'))}',
-      },
-    );
-    expect(response.statusCode, 403);
-    expect(response.body, contains('HTTPS required'));
-  });
+      final http.Response response = await http.get(
+        serviceConfigUri(),
+        headers: <String, String>{
+          'Authorization':
+              'Basic ${base64Encode(utf8.encode('hibiki:$peerToken'))}',
+        },
+      );
+      expect(response.statusCode, 403);
+      expect(response.body, contains('HTTPS required'));
+    },
+  );
 
   test('revoking a peer token rejects it on the next request', () async {
     await startServer();
@@ -150,41 +163,54 @@ void main() {
     expect(await authProbe('shared-token'), 200);
   });
 
-  test('confirm without clientDeviceId falls back to shared token (compat)',
-      () async {
-    await startServer();
-    final String sid = await startSession('cn-4'); // 无 clientDeviceId
-    final String issued = await confirm(sid);
+  test(
+    'confirm without clientDeviceId falls back to shared token (compat)',
+    () async {
+      await startServer();
+      final String sid = await startSession('cn-4'); // 无 clientDeviceId
+      final String issued = await confirm(sid);
 
-    // 旧 client 无稳定身份 -> 回退共享 token，不落 per-peer 行。
-    expect(issued, 'shared-token');
-    expect(peerTable, isEmpty);
-  });
+      // 旧 client 无稳定身份 -> 回退共享 token，不落 per-peer 行。
+      expect(issued, 'shared-token');
+      expect(peerTable, isEmpty);
+    },
+  );
 
-  test('no peer callbacks wired: confirm always returns shared token',
-      () async {
-    await startServer(wirePeerCallbacks: false);
-    final String sid = await startSession('cn-5', clientDeviceId: 'device-ddd');
-    final String issued = await confirm(sid);
+  test(
+    'no peer callbacks wired: confirm always returns shared token',
+    () async {
+      await startServer(wirePeerCallbacks: false);
+      final String sid = await startSession(
+        'cn-5',
+        clientDeviceId: 'device-ddd',
+      );
+      final String issued = await confirm(sid);
 
-    // 无 onPeerPaired 接线（如纯协议单测 / 无 DB）-> 共享 token，行为零变化。
-    expect(issued, 'shared-token');
-    expect(peerTable, isEmpty);
-  });
+      // 无 onPeerPaired 接线（如纯协议单测 / 无 DB）-> 共享 token，行为零变化。
+      expect(issued, 'shared-token');
+      expect(peerTable, isEmpty);
+    },
+  );
 
-  test('re-pairing the same device rotates its token (peerId is stable id)',
-      () async {
-    await startServer();
-    final String sid1 =
-        await startSession('cn-6a', clientDeviceId: 'device-eee');
-    final String token1 = await confirm(sid1);
-    final String sid2 =
-        await startSession('cn-6b', clientDeviceId: 'device-eee');
-    final String token2 = await confirm(sid2);
+  test(
+    're-pairing the same device rotates its token (peerId is stable id)',
+    () async {
+      await startServer();
+      final String sid1 = await startSession(
+        'cn-6a',
+        clientDeviceId: 'device-eee',
+      );
+      final String token1 = await confirm(sid1);
+      final String sid2 = await startSession(
+        'cn-6b',
+        clientDeviceId: 'device-eee',
+      );
+      final String token2 = await confirm(sid2);
 
-    // 同一 deviceId 二次配对派新 token；fake 表按 peerId upsert，仍只有一行。
-    expect(token2, isNot(token1));
-    expect(peerTable.length, 1);
-    expect(peerTable['device-eee'], token2);
-  });
+      // 同一 deviceId 二次配对派新 token；fake 表按 peerId upsert，仍只有一行。
+      expect(token2, isNot(token1));
+      expect(peerTable.length, 1);
+      expect(peerTable['device-eee'], token2);
+    },
+  );
 }

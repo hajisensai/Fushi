@@ -33,8 +33,9 @@ void main() {
       canvas.drawRect(Rect.fromLTWH(x, y, 1, 1), black);
     }
     final ui.Image image = await recorder.endRecording().toImage(kSide, kSide);
-    final ByteData? data =
-        await image.toByteData(format: ui.ImageByteFormat.png);
+    final ByteData? data = await image.toByteData(
+      format: ui.ImageByteFormat.png,
+    );
     image.dispose();
     return data!.buffer.asUint8List();
   }
@@ -43,15 +44,19 @@ void main() {
     // 实测 macOS vs Windows 基准的差异分布是 0.0000 ~ 0.0010（33 条全量实跑）。
     // 阈值必须明显高于噪声上限，又必须远低于任何真实布局回归的量级。
     expect(kGoldenMaxDiffRatio, 0.005);
-    expect(kGoldenMaxDiffRatio, greaterThan(0.0010 * 2),
-        reason: '低于实测噪声上限的 2 倍就等于没修，非参考平台会继续恒红');
+    expect(
+      kGoldenMaxDiffRatio,
+      greaterThan(0.0010 * 2),
+      reason: '低于实测噪声上限的 2 倍就等于没修，非参考平台会继续恒红',
+    );
     expect(kGoldenMaxDiffRatio, lessThan(0.01), reason: '再宽就开始吃真实回归了');
   });
 
   testWidgets('低于阈值的光栅噪声：通过', (WidgetTester tester) async {
     await tester.runAsync(() async {
-      final Directory dir =
-          Directory.systemTemp.createTempSync('golden_tolerance_pass');
+      final Directory dir = Directory.systemTemp.createTempSync(
+        'golden_tolerance_pass',
+      );
       addTearDown(() => dir.deleteSync(recursive: true));
 
       final Uint8List base = await png(0);
@@ -59,8 +64,9 @@ void main() {
 
       // 40 / 10000 = 0.0040 < 0.005。
       final Uint8List noisy = await png(40);
-      final ToleranceGoldenComparator comparator =
-          ToleranceGoldenComparator(Uri.directory(dir.path));
+      final ToleranceGoldenComparator comparator = ToleranceGoldenComparator(
+        Uri.directory(dir.path),
+      );
 
       expect(await comparator.compare(noisy, Uri.parse('base.png')), isTrue);
     });
@@ -68,8 +74,9 @@ void main() {
 
   testWidgets('高于阈值的真实差异：仍然失败', (WidgetTester tester) async {
     await tester.runAsync(() async {
-      final Directory dir =
-          Directory.systemTemp.createTempSync('golden_tolerance_fail');
+      final Directory dir = Directory.systemTemp.createTempSync(
+        'golden_tolerance_fail',
+      );
       addTearDown(() => dir.deleteSync(recursive: true));
 
       final Uint8List base = await png(0);
@@ -77,8 +84,9 @@ void main() {
 
       // 100 / 10000 = 0.0100 > 0.005。真实回归（改内边距/换配色）比这大得多。
       final Uint8List regressed = await png(100);
-      final ToleranceGoldenComparator comparator =
-          ToleranceGoldenComparator(Uri.directory(dir.path));
+      final ToleranceGoldenComparator comparator = ToleranceGoldenComparator(
+        Uri.directory(dir.path),
+      );
 
       await expectLater(
         () => comparator.compare(regressed, Uri.parse('base.png')),

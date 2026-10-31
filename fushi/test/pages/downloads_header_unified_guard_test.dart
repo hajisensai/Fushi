@@ -20,29 +20,43 @@ import '../helpers/source_guard.dart';
 void main() {
   test('下载页门头走浮动工具栏行 + 共享分区导航，不再用 AppBar', () {
     final File f = File('lib/src/pages/implementations/browse_page.dart');
-    expect(f.existsSync(), isTrue,
-        reason: '找不到 browse_page.dart（路径变了要同步本守卫）');
+    expect(f.existsSync(), isTrue, reason: '找不到 browse_page.dart（路径变了要同步本守卫）');
     final String code = maskCommentsAndScriptLines(f.readAsStringSync());
 
     // 2026-10-06：库页顶部统一成 M3E 浮动工具栏行（[FushiFloatingChromeBar]：
     // 贴合内容宽的页签浮动胶囊 + 右侧同高按钮组胶囊），浏览页跟着换。
-    expect(code, contains('FushiFloatingChromeBar('),
-        reason: '浏览页门头必须与四个库页同范式（浮动页签胶囊 + 悬浮按钮组）');
-    expect(code, contains('floating: true'),
-        reason: '一级页签是单层浮动胶囊，不再是整宽等分的轨道');
-    expect(code, contains('LibrarySectionTabs<BrowseTab>.controlled'),
-        reason: '子页导航必须走库页共享的 LibrarySectionTabs；本页有 TabBarView，'
-            '须用 controlled 形态与它共用同一个 TabController（镜像出第二份选中态会让'
-            '横滑时指示器只能跳、不跟手）');
+    expect(
+      code,
+      contains('FushiFloatingChromeBar('),
+      reason: '浏览页门头必须与四个库页同范式（浮动页签胶囊 + 悬浮按钮组）',
+    );
+    expect(code, contains('floating: true'), reason: '一级页签是单层浮动胶囊，不再是整宽等分的轨道');
+    expect(
+      code,
+      contains('LibrarySectionTabs<BrowseTab>.controlled'),
+      reason:
+          '子页导航必须走库页共享的 LibrarySectionTabs；本页有 TabBarView，'
+          '须用 controlled 形态与它共用同一个 TabController（镜像出第二份选中态会让'
+          '横滑时指示器只能跳、不跟手）',
+    );
     final String header = methodBody(
       f.readAsStringSync(),
       'Widget _buildHeader(',
     );
-    expect(header, isNot(contains('FushiSegmentedStrip<')),
-        reason: 'MD3：分段按钮是 section 级单选控件，不得替代导航 tabs');
-    expect(code, isNot(contains('appBar: AppBar(')),
-        reason: '不得回退到独有的 AppBar 门头（与其它库页不一致）');
-    expect(code, isNot(contains('bottom: TabBar(')),
-        reason: '不得回退到 AppBar 内嵌居中 TabBar 的旧形态');
+    expect(
+      header,
+      isNot(contains('FushiSegmentedStrip<')),
+      reason: 'MD3：分段按钮是 section 级单选控件，不得替代导航 tabs',
+    );
+    expect(
+      code,
+      isNot(contains('appBar: AppBar(')),
+      reason: '不得回退到独有的 AppBar 门头（与其它库页不一致）',
+    );
+    expect(
+      code,
+      isNot(contains('bottom: TabBar(')),
+      reason: '不得回退到 AppBar 内嵌居中 TabBar 的旧形态',
+    );
   });
 }

@@ -65,8 +65,10 @@ class _CacheTrackingBackend implements SyncBackend {
   Future<List<AssetEntry>> listChildren(String namespaceId) async =>
       const <AssetEntry>[];
   @override
-  void restoreCache(
-      {String? rootFolderId, Map<String, String>? titleToFolderId}) {
+  void restoreCache({
+    String? rootFolderId,
+    Map<String, String>? titleToFolderId,
+  }) {
     if (titleToFolderId != null) _titleToFolderId.addAll(titleToFolderId);
   }
 
@@ -97,8 +99,7 @@ class _CacheTrackingBackend implements SyncBackend {
     required String bookTitle,
     required String rootFolderId,
     SyncCoverDataProvider? readCoverData,
-  }) async =>
-      throw UnimplementedError();
+  }) async => throw UnimplementedError();
   @override
   Future<TtuProgress> getProgressFile(String fileId) async =>
       throw UnimplementedError();
@@ -107,50 +108,46 @@ class _CacheTrackingBackend implements SyncBackend {
       throw UnimplementedError();
   @override
   Future<TtuAudioBook> getAudioBookFile(String fileId) async => TtuAudioBook(
-        title: 'BookA',
-        playbackPositionSec: 0,
-        lastAudioBookModified: 0,
-      );
+    title: 'BookA',
+    playbackPositionSec: 0,
+    lastAudioBookModified: 0,
+  );
   @override
   Future<void> updateProgressFile({
     required String folderId,
     required String? fileId,
     required TtuProgress progress,
-  }) async =>
-      throw UnimplementedError();
+  }) async => throw UnimplementedError();
   @override
   Future<void> updateStatsFile({
     required String folderId,
     required String? fileId,
     required List<TtuStatistics> stats,
-  }) async =>
-      throw UnimplementedError();
+  }) async => throw UnimplementedError();
   @override
   Future<void> updateAudioBookFile({
     required String folderId,
     required String? fileId,
     required TtuAudioBook audioBook,
-  }) async =>
-      throw UnimplementedError();
+  }) async => throw UnimplementedError();
   @override
   Future<void> uploadContentFile({
     required String folderId,
     required String fileName,
     required File file,
     void Function(double progress)? onProgress,
-  }) async =>
-      throw UnimplementedError();
+  }) async => throw UnimplementedError();
   @override
   Future<void> downloadContentFile({
     required String fileId,
     required File destination,
     void Function(double progress)? onProgress,
-  }) async =>
-      throw UnimplementedError();
+  }) async => throw UnimplementedError();
   @override
   Future<SyncFileRef?> findContentFile(
-          String folderId, String fileName) async =>
-      throw UnimplementedError();
+    String folderId,
+    String fileName,
+  ) async => throw UnimplementedError();
   @override
   Future<AssetEntry?> findAsset(String namespaceId, String name) async =>
       throw UnimplementedError();
@@ -158,13 +155,18 @@ class _CacheTrackingBackend implements SyncBackend {
   Future<String> ensureFolder(String parentId, String name) async =>
       throw UnimplementedError();
   @override
-  Future<void> putAsset(String namespaceId, String name, File file,
-          {void Function(double progress)? onProgress}) async =>
-      throw UnimplementedError();
+  Future<void> putAsset(
+    String namespaceId,
+    String name,
+    File file, {
+    void Function(double progress)? onProgress,
+  }) async => throw UnimplementedError();
   @override
-  Future<void> getAsset(String assetId, File destination,
-          {void Function(double progress)? onProgress}) async =>
-      throw UnimplementedError();
+  Future<void> getAsset(
+    String assetId,
+    File destination, {
+    void Function(double progress)? onProgress,
+  }) async => throw UnimplementedError();
   @override
   Future<Object?> getJsonAsset(String assetId) async =>
       throw UnimplementedError();
@@ -214,52 +216,56 @@ void main() {
   }
 
   testWidgets(
-      'deleting a remote book folder evicts its folderId from the in-memory '
-      'cache and rewrites the persisted folder cache (BUG-202)',
-      (WidgetTester tester) async {
-    const String sanitizedTitle = 'BookA';
-    const String folderId = 'folderX';
+    'deleting a remote book folder evicts its folderId from the in-memory '
+    'cache and rewrites the persisted folder cache (BUG-202)',
+    (WidgetTester tester) async {
+      const String sanitizedTitle = 'BookA';
+      const String folderId = 'folderX';
 
-    final FushiDatabase db = _memDb();
-    addTearDown(db.close);
-    final SyncRepository repo = SyncRepository(db);
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final SyncRepository repo = SyncRepository(db);
 
-    // Start: cache maps BookA -> folderX, already persisted (a prior sync ran).
-    await repo.setFolderCache(
-        SyncChannelScope.unscoped, <String, String>{sanitizedTitle: folderId});
+      // Start: cache maps BookA -> folderX, already persisted (a prior sync ran).
+      await repo.setFolderCache(SyncChannelScope.unscoped, <String, String>{
+        sanitizedTitle: folderId,
+      });
 
-    final _CacheTrackingBackend backend = _CacheTrackingBackend(
-      books: <SyncFileRef>[
-        const SyncFileRef(id: folderId, name: sanitizedTitle)
-      ],
-      initialCache: <String, String>{sanitizedTitle: folderId},
-    );
+      final _CacheTrackingBackend backend = _CacheTrackingBackend(
+        books: <SyncFileRef>[
+          const SyncFileRef(id: folderId, name: sanitizedTitle),
+        ],
+        initialCache: <String, String>{sanitizedTitle: folderId},
+      );
 
-    await pumpDialog(tester, backend, db);
-    expect(find.text(sanitizedTitle), findsOneWidget);
+      await pumpDialog(tester, backend, db);
+      expect(find.text(sanitizedTitle), findsOneWidget);
 
-    await tapDeleteBook(tester);
+      await tapDeleteBook(tester);
 
-    // Row optimistically removed on success.
-    expect(find.text(sanitizedTitle), findsNothing);
+      // Row optimistically removed on success.
+      expect(find.text(sanitizedTitle), findsNothing);
 
-    // (1) In-memory cache no longer maps to the deleted folderId.
-    expect(
-      backend.cachedFolderIds.containsValue(folderId),
-      isFalse,
-      reason: 'in-memory _titleToFolderId still maps to the deleted folderId',
-    );
-    expect(backend.cachedFolderIds.containsKey(sanitizedTitle), isFalse);
+      // (1) In-memory cache no longer maps to the deleted folderId.
+      expect(
+        backend.cachedFolderIds.containsValue(folderId),
+        isFalse,
+        reason: 'in-memory _titleToFolderId still maps to the deleted folderId',
+      );
+      expect(backend.cachedFolderIds.containsKey(sanitizedTitle), isFalse);
 
-    // (2) Persisted cache (DB) no longer references it: no stale revival on
-    // restart.
-    final Map<String, String> persisted =
-        await repo.getFolderCache(SyncChannelScope.unscoped);
-    expect(
-      persisted.containsValue(folderId),
-      isFalse,
-      reason: 'persisted sync_folder_cache still references the deleted folder',
-    );
-    expect(persisted.containsKey(sanitizedTitle), isFalse);
-  });
+      // (2) Persisted cache (DB) no longer references it: no stale revival on
+      // restart.
+      final Map<String, String> persisted = await repo.getFolderCache(
+        SyncChannelScope.unscoped,
+      );
+      expect(
+        persisted.containsValue(folderId),
+        isFalse,
+        reason:
+            'persisted sync_folder_cache still references the deleted folder',
+      );
+      expect(persisted.containsKey(sanitizedTitle), isFalse);
+    },
+  );
 }

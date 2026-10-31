@@ -220,11 +220,9 @@ void main() {
       expect(page.hasMore, isTrue); // (1+1)*50 = 100 < 120
       final List<DiscoveryResourceItem> items = page.entries
           .cast<DiscoveryResourceItem>();
-      expect(
-        items.map((DiscoveryResourceItem i) => i.id),
-        <String>['li_1'],
-        reason: '只有电子书没有音频的条目在有声书页里点下载必然导入失败',
-      );
+      expect(items.map((DiscoveryResourceItem i) => i.id), <String>[
+        'li_1',
+      ], reason: '只有电子书没有音频的条目在有声书页里点下载必然导入失败');
       final DiscoveryResourceItem alpha = items.single;
       expect(alpha.title, 'Alpha');
       expect(alpha.kind, DiscoveryMediaKind.audiobook);

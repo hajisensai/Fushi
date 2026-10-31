@@ -8,21 +8,18 @@ import 'package:fushi_core/fushi_core.dart';
 /// 折进合集组、与同名 entryKey 的其它 mediaType 不串键、组内按 sortIndex 排序、
 /// 散游戏保持输入序。
 MediaCollectionRow _collection(int id, String name) => MediaCollectionRow(
-      origin: 'user',
-      organizeAliases: '',
-      id: id,
-      name: name,
-      collectionType: 'collection',
-      sortOrder: 0,
-      coverSource: null,
-      createdAt: 0,
-      orderUpdatedAt: 0,
-    );
+  origin: 'user',
+  organizeAliases: '',
+  id: id,
+  name: name,
+  collectionType: 'collection',
+  sortOrder: 0,
+  coverSource: null,
+  createdAt: 0,
+  orderUpdatedAt: 0,
+);
 
-CollectionOrderingItem<String> _game(
-  String id, {
-  int importedAt = 0,
-}) =>
+CollectionOrderingItem<String> _game(String id, {int importedAt = 0}) =>
     CollectionOrderingItem<String>(
       mediaType: MediaKind.game,
       entryKey: id,
@@ -41,10 +38,7 @@ void main() {
         _game('g2'),
         _game('g3'),
       ],
-      primaryCollectionIdByEntry: <String, int>{
-        'game|g1': 7,
-        'game|g3': 7,
-      },
+      primaryCollectionIdByEntry: <String, int>{'game|g1': 7, 'game|g3': 7},
       collectionsById: collections,
       memberSortIndex: <String, int>{'game|g1': 1, 'game|g3': 0},
     );

@@ -87,11 +87,7 @@ void main() {
 
   test('下载页任务 tab 挂了直链队列区块（BUG-1936 接线守卫）', () {
     final File f = File('lib/src/pages/implementations/browse_page.dart');
-    expect(
-      f.existsSync(),
-      isTrue,
-      reason: '找不到 browse_page.dart（路径变了要同步本守卫）',
-    );
+    expect(f.existsSync(), isTrue, reason: '找不到 browse_page.dart（路径变了要同步本守卫）');
     final String code = maskCommentsAndScriptLines(f.readAsStringSync());
     final int mokuro = code.indexOf('MangaDownloadTasksSection(');
     final int direct = code.indexOf('DiscoveryDownloadTasksSection(');
@@ -218,12 +214,9 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('行内「打开文件位置」调文件管理器；失败出声', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('行内「打开文件位置」调文件管理器；失败出声', (WidgetTester tester) async {
     final DiscoveryDownloadQueue queue = DiscoveryDownloadQueue(
-      resolvePayload: (DiscoveryResourceItem item) =>
-          throw StateError('boom'),
+      resolvePayload: (DiscoveryResourceItem item) => throw StateError('boom'),
       importer: (DiscoveryDownloadTask task, File file) async =>
           const DiscoveryImportOutcome(),
     );
@@ -277,24 +270,18 @@ void main() {
     expect(discoveryDownloadRevealTarget(task(dir: '  ')), isNull);
   });
 
-  testWidgets('行内「删除任务」：确认后摘行、文件留着；取消则什么都不做', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('行内「删除任务」：确认后摘行、文件留着；取消则什么都不做', (WidgetTester tester) async {
     // 用「必失败」的 resolver 让两条都停在终态：running 行的进度环是无限动画，
     // 会让确认框的 pumpAndSettle 永远等不到静止。
     final DiscoveryDownloadQueue queue = DiscoveryDownloadQueue(
-      resolvePayload: (DiscoveryResourceItem item) =>
-          throw StateError('boom'),
+      resolvePayload: (DiscoveryResourceItem item) => throw StateError('boom'),
       importer: (DiscoveryDownloadTask task, File file) async =>
           const DiscoveryImportOutcome(),
     );
     addTearDown(queue.dispose);
     await _pump(tester, queue);
     queue.enqueue(_item('g1', title: 'Game One'), destinationDir: r'C:\dl');
-    queue.enqueue(
-      _item('g2', title: 'Game Two'),
-      destinationDir: r'C:\dl',
-    );
+    queue.enqueue(_item('g2', title: 'Game Two'), destinationDir: r'C:\dl');
     await tester.pump();
     await tester.pump();
     await tester.pump();
@@ -337,9 +324,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('移动端没有文件管理器契约：隐藏「打开文件位置」，删除仍在', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('移动端没有文件管理器契约：隐藏「打开文件位置」，删除仍在', (WidgetTester tester) async {
     final DiscoveryDownloadQueue queue = _hangingQueue();
     addTearDown(queue.dispose);
     await _pump(tester, queue, revealHostProbe: () => null);

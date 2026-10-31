@@ -17,19 +17,25 @@ List<String> applyReorder(List<String> list, int oldIndex, int newIndex) {
 void main() {
   group('gamepad reorder index math (up = index-1, down = index+2)', () {
     test('move up swaps the item with the previous one', () {
-      expect(
-        applyReorder(<String>['a', 'b', 'c', 'd'], 2, 2 - 1),
-        <String>['a', 'c', 'b', 'd'],
-      );
+      expect(applyReorder(<String>['a', 'b', 'c', 'd'], 2, 2 - 1), <String>[
+        'a',
+        'c',
+        'b',
+        'd',
+      ]);
     });
 
-    test('move down swaps the item with the next one (the +2 compensation)',
-        () {
-      expect(
-        applyReorder(<String>['a', 'b', 'c', 'd'], 1, 1 + 2),
-        <String>['a', 'c', 'b', 'd'],
-      );
-    });
+    test(
+      'move down swaps the item with the next one (the +2 compensation)',
+      () {
+        expect(applyReorder(<String>['a', 'b', 'c', 'd'], 1, 1 + 2), <String>[
+          'a',
+          'c',
+          'b',
+          'd',
+        ]);
+      },
+    );
 
     test('move up at the second slot reaches the top', () {
       expect(applyReorder(<String>['a', 'b'], 1, 1 - 1), <String>['b', 'a']);

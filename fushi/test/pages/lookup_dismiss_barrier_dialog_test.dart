@@ -97,7 +97,8 @@ void main() {
                                   behavior: HitTestBehavior.translucent,
                                   onTap: onBarrierTap,
                                   child: const ColoredBox(
-                                      color: Colors.transparent),
+                                    color: Colors.transparent,
+                                  ),
                                 ),
                               ),
                           ],
@@ -127,8 +128,9 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    testWidgets('barrier 挂着时，点「确认制卡」落到 barrier 而不是按钮（复现）',
-        (WidgetTester tester) async {
+    testWidgets('barrier 挂着时，点「确认制卡」落到 barrier 而不是按钮（复现）', (
+      WidgetTester tester,
+    ) async {
       int barrierTaps = 0;
       int confirmTaps = 0;
       await pumpHarness(
@@ -145,8 +147,9 @@ void main() {
       expect(barrierTaps, 1, reason: '这一下还会被判成「点浮层外面」→ 宿主清整栈（弹窗被关）');
     });
 
-    testWidgets('对话框期间撤掉 barrier，点「确认制卡」真的点到按钮（修复）',
-        (WidgetTester tester) async {
+    testWidgets('对话框期间撤掉 barrier，点「确认制卡」真的点到按钮（修复）', (
+      WidgetTester tester,
+    ) async {
       int barrierTaps = 0;
       int confirmTaps = 0;
       await pumpHarness(
@@ -175,41 +178,51 @@ void main() {
     }
 
     test('mixin 暴露 lookupPopupHiddenByDialog（barrier 与 parked visible 同源）', () {
-      final String src =
-          read('lib/src/pages/implementations/dictionary_page_mixin.dart');
-      expect(src.contains('bool get lookupPopupHiddenByDialog'), isTrue,
-          reason: '宿主页要拿到「对话框正开着」才能同时撤掉 barrier');
+      final String src = read(
+        'lib/src/pages/implementations/dictionary_page_mixin.dart',
+      );
+      expect(
+        src.contains('bool get lookupPopupHiddenByDialog'),
+        isTrue,
+        reason: '宿主页要拿到「对话框正开着」才能同时撤掉 barrier',
+      );
       expect(src.contains('_popupHidingDialogDepth > 0'), isTrue);
     });
 
     for (final ({String path, String name}) page
         in const <({String path, String name})>[
-      (
-        path: 'lib/src/pages/implementations/video_fushi_page.dart',
-        name: '视频页'
-      ),
-      (
-        path: 'lib/src/pages/implementations/home_dictionary_page.dart',
-        name: '首页词典页'
-      ),
-      (
-        path: 'lib/src/pages/implementations/texthooker_page.dart',
-        name: 'texthooker'
-      ),
-    ]) {
+          (
+            path: 'lib/src/pages/implementations/video_fushi_page.dart',
+            name: '视频页',
+          ),
+          (
+            path: 'lib/src/pages/implementations/home_dictionary_page.dart',
+            name: '首页词典页',
+          ),
+          (
+            path: 'lib/src/pages/implementations/texthooker_page.dart',
+            name: 'texthooker',
+          ),
+        ]) {
       test('${page.name} barrier 走 shouldShowLookupDismissBarrier', () {
         final String src = read(page.path);
-        expect(src.contains('shouldShowLookupDismissBarrier('), isTrue,
-            reason: '${page.name}的 dismiss barrier 必须走收口判据，别再手写裸条件');
         expect(
-            src.contains('hiddenByDialog: lookupPopupHiddenByDialog'), isTrue,
-            reason: '${page.name}漏接对话框门控 → 对话框点不动且一点就关栈（BUG-1327）');
+          src.contains('shouldShowLookupDismissBarrier('),
+          isTrue,
+          reason: '${page.name}的 dismiss barrier 必须走收口判据，别再手写裸条件',
+        );
+        expect(
+          src.contains('hiddenByDialog: lookupPopupHiddenByDialog'),
+          isTrue,
+          reason: '${page.name}漏接对话框门控 → 对话框点不动且一点就关栈（BUG-1327）',
+        );
         // 裸条件（不带门控）复发即红。只盯 barrier 本身——正则要求这个 if 紧跟着
         // `Positioned.fill(`，避免误伤同文件里其它「有可见层 || 正在搜索」的判断
         // （如首页词典页下拉刷新的 _clearSearchFromResultPull）。
         expect(
-          RegExp(r'if \([^)]*isSearchingUi\)\s*Positioned\.fill\(')
-              .hasMatch(src),
+          RegExp(
+            r'if \([^)]*isSearchingUi\)\s*Positioned\.fill\(',
+          ).hasMatch(src),
           isFalse,
           reason: '${page.name}又出现漏门控的裸 barrier 条件（BUG-1327）',
         );
@@ -217,8 +230,7 @@ void main() {
     }
   });
 
-  group('openAdvancedMining / openSentenceContextModal 参数形态三镜像（BUG-1326 守卫）',
-      () {
+  group('openAdvancedMining / openSentenceContextModal 参数形态三镜像（BUG-1326 守卫）', () {
     // popup.js 三镜像：app 内 assets + app 内扩展 vendor + 仓库根扩展 vendor。
     const List<String> mirrors = <String>[
       'assets/popup/popup.js',
@@ -232,30 +244,35 @@ void main() {
         expect(file.existsSync(), isTrue, reason: 'missing $path');
         final String js = file.readAsStringSync();
         expect(
-          RegExp(r"callHandler\(\s*'openSentenceContextModal',\s*JSON\.stringify")
-              .hasMatch(js),
+          RegExp(
+            r"callHandler\(\s*'openSentenceContextModal',\s*JSON\.stringify",
+          ).hasMatch(js),
           isFalse,
-          reason: '$path 又把参数 stringify 了：宿主 handler 只认 Map，'
+          reason:
+              '$path 又把参数 stringify 了：宿主 handler 只认 Map，'
               'entryIndex 会静默退化成 0 → 确认制卡永远点第一个词条（BUG-1326）',
         );
         expect(
-          RegExp(r"callHandler\(\s*'openSentenceContextModal',\s*"
-                  r'\{ entryIndex: idx, matched: matched \}\)')
-              .hasMatch(js),
+          RegExp(
+            r"callHandler\(\s*'openSentenceContextModal',\s*"
+            r'\{ entryIndex: idx, matched: matched \}\)',
+          ).hasMatch(js),
           isTrue,
           reason: '$path 的扩展「调整上下文」分支必须原样传 {entryIndex, matched} 对象',
         );
         // app 内的「高级制卡」入口同一条纪律：对象，不 stringify。
         expect(
-          RegExp(r"callHandler\(\s*'openAdvancedMining',\s*JSON\.stringify")
-              .hasMatch(js),
+          RegExp(
+            r"callHandler\(\s*'openAdvancedMining',\s*JSON\.stringify",
+          ).hasMatch(js),
           isFalse,
           reason: '$path 的「高级制卡」入口把参数 stringify 了（BUG-1326）',
         );
         expect(
-          RegExp(r"callHandler\(\s*'openAdvancedMining',\s*"
-                  r'\{ entryIndex: idx, matched: matched, expression: expression \}\)')
-              .hasMatch(js),
+          RegExp(
+            r"callHandler\(\s*'openAdvancedMining',\s*"
+            r'\{ entryIndex: idx, matched: matched, expression: expression \}\)',
+          ).hasMatch(js),
           isTrue,
           reason: '$path 的「高级制卡」按钮必须原样传 {entryIndex, matched, expression} 对象',
         );
@@ -265,19 +282,25 @@ void main() {
 
   group('decodeBridgeMap：JS 桥参数形态（BUG-1326）', () {
     test('对象原样解析（popup.js 现行契约）', () {
-      final Map<dynamic, dynamic>? m =
-          decodeBridgeMap(<String, Object?>{'entryIndex': 2, 'matched': '見る'});
+      final Map<dynamic, dynamic>? m = decodeBridgeMap(<String, Object?>{
+        'entryIndex': 2,
+        'matched': '見る',
+      });
       expect(m, isNotNull);
       expect((m!['entryIndex'] as num).toInt(), 2);
       expect(m['matched'], '見る');
     });
 
     test('JSON 字符串也解析（老扩展 vendor 副本仍会 stringify）', () {
-      final Map<dynamic, dynamic>? m =
-          decodeBridgeMap('{"entryIndex":3,"matched":"読む"}');
+      final Map<dynamic, dynamic>? m = decodeBridgeMap(
+        '{"entryIndex":3,"matched":"読む"}',
+      );
       expect(m, isNotNull);
-      expect((m!['entryIndex'] as num).toInt(), 3,
-          reason: '若只认 Map，entryIndex 会静默退化成 0 → 确认制卡永远点第一个词条');
+      expect(
+        (m!['entryIndex'] as num).toInt(),
+        3,
+        reason: '若只认 Map，entryIndex 会静默退化成 0 → 确认制卡永远点第一个词条',
+      );
       expect(m['matched'], '読む');
     });
 

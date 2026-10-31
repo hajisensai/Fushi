@@ -27,8 +27,11 @@ void main() {
       final Map<String, dynamic> en = _load('strings.i18n.json');
       for (final String key in hintKeys) {
         final String v = (en[key] as String).toLowerCase();
-        expect(v.contains('live-action') || v.contains('live action'), isTrue,
-            reason: '$key 必须点明真人内容也适用（用户怕只能看动画）');
+        expect(
+          v.contains('live-action') || v.contains('live action'),
+          isTrue,
+          reason: '$key 必须点明真人内容也适用（用户怕只能看动画）',
+        );
       }
     });
 
@@ -37,8 +40,10 @@ void main() {
       for (final String key in hintKeys) {
         final String v = zh[key] as String;
         expect(
-            v.contains('真人') || v.contains('电视剧') || v.contains('影视'), isTrue,
-            reason: '$key 必须点明真人内容也适用');
+          v.contains('真人') || v.contains('电视剧') || v.contains('影视'),
+          isTrue,
+          reason: '$key 必须点明真人内容也适用',
+        );
       }
     });
 
@@ -47,8 +52,10 @@ void main() {
       for (final String key in hintKeys) {
         final String v = zh[key] as String;
         expect(
-            v.contains('真人') || v.contains('電視劇') || v.contains('影視'), isTrue,
-            reason: '$key 必须点明真人内容也适用');
+          v.contains('真人') || v.contains('電視劇') || v.contains('影視'),
+          isTrue,
+          reason: '$key 必须点明真人内容也适用',
+        );
       }
     });
 
@@ -56,8 +63,11 @@ void main() {
       final Map<String, dynamic> en = _load('strings.i18n.json');
       for (final String key in hintKeys) {
         final String v = (en[key] as String).toLowerCase();
-        expect(v.contains('only for anime'), isFalse,
-            reason: '$key 不得把着色器写成动画专用');
+        expect(
+          v.contains('only for anime'),
+          isFalse,
+          reason: '$key 不得把着色器写成动画专用',
+        );
         expect(v.contains('anime only'), isFalse, reason: '$key 不得把着色器写成动画专用');
       }
     });

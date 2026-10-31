@@ -67,10 +67,10 @@ typedef _Layout = ControlLayout<_Slot, _Item>;
 
 const ControlLayoutScheme<_Slot, _Item> _scheme =
     ControlLayoutScheme<_Slot, _Item>(
-  slots: _Slot.values,
-  hiddenSlot: _Slot.hidden,
-  items: _Item.values,
-);
+      slots: _Slot.values,
+      hiddenSlot: _Slot.hidden,
+      items: _Item.values,
+    );
 
 const Map<_Item, _Slot> _defaultAssignments = <_Item, _Slot>{
   _Item.title: _Slot.left,
@@ -81,12 +81,12 @@ const Map<_Item, _Slot> _defaultAssignments = <_Item, _Slot>{
 };
 
 _Layout _defaults() => _Layout.fromAssignments(
-      _scheme,
-      _defaultAssignments,
-      explicitOrder: const <_Slot, List<_Item>>{
-        _Slot.right: <_Item>[_Item.bookmark, _Item.speed, _Item.settings],
-      },
-    );
+  _scheme,
+  _defaultAssignments,
+  explicitOrder: const <_Slot, List<_Item>>{
+    _Slot.right: <_Item>[_Item.bookmark, _Item.speed, _Item.settings],
+  },
+);
 
 void main() {
   group('construction + invariants', () {
@@ -94,64 +94,72 @@ void main() {
       final _Layout layout = _defaults();
       expect(layout.itemsIn(_Slot.left), <_Item>[_Item.title]);
       expect(layout.itemsIn(_Slot.center), <_Item>[_Item.play]);
-      expect(
-        layout.itemsIn(_Slot.right),
-        <_Item>[_Item.bookmark, _Item.speed, _Item.settings],
-      );
+      expect(layout.itemsIn(_Slot.right), <_Item>[
+        _Item.bookmark,
+        _Item.speed,
+        _Item.settings,
+      ]);
       expect(layout.hiddenItems, isEmpty);
       expect(layout.removedItems, isEmpty);
     });
 
-    test('unassigned removable items land in removed; required ones recover',
-        () {
-      final _Layout layout = _Layout.fromAssignments(
-        _scheme,
-        const <_Item, _Slot>{_Item.speed: _Slot.left},
-      );
-      expect(layout.itemsIn(_Slot.left), <_Item>[_Item.speed]);
-      // play 是必需项：没有 assignment 也不能落 removed，回到 recoverySlot。
-      expect(layout.itemsIn(_Slot.center), <_Item>[_Item.play]);
-      expect(layout.isOnPlayer(_Item.play), isTrue);
-      expect(
-        layout.removedItems,
-        <_Item>[_Item.settings, _Item.title, _Item.bookmark],
-      );
-      expect(layout.slotsOf(_Item.settings), <_Slot>[_Slot.hidden]);
-    });
+    test(
+      'unassigned removable items land in removed; required ones recover',
+      () {
+        final _Layout layout = _Layout.fromAssignments(
+          _scheme,
+          const <_Item, _Slot>{_Item.speed: _Slot.left},
+        );
+        expect(layout.itemsIn(_Slot.left), <_Item>[_Item.speed]);
+        // play 是必需项：没有 assignment 也不能落 removed，回到 recoverySlot。
+        expect(layout.itemsIn(_Slot.center), <_Item>[_Item.play]);
+        expect(layout.isOnPlayer(_Item.play), isTrue);
+        expect(layout.removedItems, <_Item>[
+          _Item.settings,
+          _Item.title,
+          _Item.bookmark,
+        ]);
+        expect(layout.slotsOf(_Item.settings), <_Slot>[_Slot.hidden]);
+      },
+    );
 
-    test('canMoveToSlot is enforced on construction (title only left/right)',
-        () {
-      final _Layout layout = _Layout.fromAssignments(
-        _scheme,
-        const <_Item, _Slot>{_Item.title: _Slot.center},
-      );
-      expect(layout.itemsIn(_Slot.center), isNot(contains(_Item.title)));
-      expect(layout.removedItems, contains(_Item.title));
-    });
+    test(
+      'canMoveToSlot is enforced on construction (title only left/right)',
+      () {
+        final _Layout layout = _Layout.fromAssignments(
+          _scheme,
+          const <_Item, _Slot>{_Item.title: _Slot.center},
+        );
+        expect(layout.itemsIn(_Slot.center), isNot(contains(_Item.title)));
+        expect(layout.removedItems, contains(_Item.title));
+      },
+    );
 
-    test('fromSlots keeps one item in several slots but dedupes within a slot',
-        () {
-      final _Layout layout = _Layout.fromSlots(
-        _scheme,
-        const <_Slot, List<_Item>>{
-          _Slot.left: <_Item>[_Item.speed, _Item.speed],
-          _Slot.right: <_Item>[_Item.speed],
-        },
-        assignments: _defaultAssignments,
-      );
-      // 槽内重复的 speed 只留一份；title 按 assignments 回填到 left 末尾。
-      expect(layout.itemsIn(_Slot.left), <_Item>[_Item.speed, _Item.title]);
-      expect(layout.slotsOf(_Item.speed), <_Slot>[_Slot.left, _Slot.right]);
-      // 其它按钮按 assignments 回填。
-      expect(layout.itemsIn(_Slot.center), <_Item>[_Item.play]);
-      expect(layout.itemsIn(_Slot.right), contains(_Item.settings));
-    });
+    test(
+      'fromSlots keeps one item in several slots but dedupes within a slot',
+      () {
+        final _Layout layout = _Layout.fromSlots(
+          _scheme,
+          const <_Slot, List<_Item>>{
+            _Slot.left: <_Item>[_Item.speed, _Item.speed],
+            _Slot.right: <_Item>[_Item.speed],
+          },
+          assignments: _defaultAssignments,
+        );
+        // 槽内重复的 speed 只留一份；title 按 assignments 回填到 left 末尾。
+        expect(layout.itemsIn(_Slot.left), <_Item>[_Item.speed, _Item.title]);
+        expect(layout.slotsOf(_Item.speed), <_Slot>[_Slot.left, _Slot.right]);
+        // 其它按钮按 assignments 回填。
+        expect(layout.itemsIn(_Slot.center), <_Item>[_Item.play]);
+        expect(layout.itemsIn(_Slot.right), contains(_Item.settings));
+      },
+    );
 
     test('fromSlots respects removedItems, except for required keys', () {
       final _Layout layout = _Layout.fromSlots(
         _scheme,
         const <_Slot, List<_Item>>{
-          _Slot.left: <_Item>[_Item.speed]
+          _Slot.left: <_Item>[_Item.speed],
         },
         assignments: _defaultAssignments,
         removedItems: <_Item>{_Item.settings, _Item.play},
@@ -186,20 +194,24 @@ void main() {
       final _Layout base = _defaults();
       final _Layout removed = base.moveItem(_Item.bookmark, _Slot.hidden);
       expect(removed.removedItems, <_Item>[_Item.bookmark]);
-      expect(
-          removed.itemsIn(_Slot.right), <_Item>[_Item.speed, _Item.settings]);
+      expect(removed.itemsIn(_Slot.right), <_Item>[
+        _Item.speed,
+        _Item.settings,
+      ]);
       expect(identical(base.moveItem(_Item.play, _Slot.hidden), base), isTrue);
     });
 
-    test('addItemToSlot copies, is idempotent, moves single-instance items',
-        () {
-      final _Layout once = _defaults().addItemToSlot(_Item.speed, _Slot.left);
-      expect(once.slotsOf(_Item.speed), <_Slot>[_Slot.left, _Slot.right]);
-      final _Layout twice = once.addItemToSlot(_Item.speed, _Slot.left);
-      expect(identical(twice, once), isTrue);
-      final _Layout title = once.addItemToSlot(_Item.title, _Slot.right);
-      expect(title.slotsOf(_Item.title), <_Slot>[_Slot.right]);
-    });
+    test(
+      'addItemToSlot copies, is idempotent, moves single-instance items',
+      () {
+        final _Layout once = _defaults().addItemToSlot(_Item.speed, _Slot.left);
+        expect(once.slotsOf(_Item.speed), <_Slot>[_Slot.left, _Slot.right]);
+        final _Layout twice = once.addItemToSlot(_Item.speed, _Slot.left);
+        expect(identical(twice, once), isTrue);
+        final _Layout title = once.addItemToSlot(_Item.title, _Slot.right);
+        expect(title.slotsOf(_Item.title), <_Slot>[_Slot.right]);
+      },
+    );
 
     test('moveDraggedItem from palette adds a copy at targetIndex', () {
       final _Layout layout = _defaults().moveDraggedItem(
@@ -225,10 +237,11 @@ void main() {
         _Slot.right,
         targetIndex: 3,
       );
-      expect(
-        layout.itemsIn(_Slot.right),
-        <_Item>[_Item.speed, _Item.settings, _Item.bookmark],
-      );
+      expect(layout.itemsIn(_Slot.right), <_Item>[
+        _Item.speed,
+        _Item.settings,
+        _Item.bookmark,
+      ]);
     });
 
     test('moveDraggedItem to hidden drops only that copy', () {
@@ -286,17 +299,17 @@ void main() {
     test('runs after backfill and before the final removed cleanup', () {
       final ControlLayoutScheme<_Slot, _Item> pinned =
           ControlLayoutScheme<_Slot, _Item>(
-        slots: _Slot.values,
-        hiddenSlot: _Slot.hidden,
-        items: _Item.values,
-        postNormalize: (Map<_Slot, List<_Item>> slots, Set<_Item> removed) {
-          // 宿主特判：bookmark 永远钉在 left 的最前面，且不可移除。
-          for (final _Slot slot in _Slot.values) {
-            slots[slot]!.remove(_Item.bookmark);
-          }
-          slots[_Slot.left]!.insert(0, _Item.bookmark);
-        },
-      );
+            slots: _Slot.values,
+            hiddenSlot: _Slot.hidden,
+            items: _Item.values,
+            postNormalize: (Map<_Slot, List<_Item>> slots, Set<_Item> removed) {
+              // 宿主特判：bookmark 永远钉在 left 的最前面，且不可移除。
+              for (final _Slot slot in _Slot.values) {
+                slots[slot]!.remove(_Item.bookmark);
+              }
+              slots[_Slot.left]!.insert(0, _Item.bookmark);
+            },
+          );
       final _Layout layout = _Layout.fromAssignments(
         pinned,
         const <_Item, _Slot>{_Item.speed: _Slot.right},
@@ -308,45 +321,51 @@ void main() {
   });
 
   group('codec', () {
-    test('encodeSlots omits hidden by default and round-trips via decodeSlots',
-        () {
-      final _Layout layout = _defaults()
-          .addItemToSlot(_Item.speed, _Slot.left)
-          .moveItem(_Item.bookmark, _Slot.hidden);
-      final Map<String, List<String>> slots = layout.encodeSlots();
-      expect(slots.keys, <String>['left', 'center', 'right']);
-      expect(slots['left'], <String>['title', 'speed']);
-      expect(layout.encodeRemoved(), <String>['bookmark']);
-      expect(layout.encodeSlots(includeHidden: true)['hidden'], isEmpty);
+    test(
+      'encodeSlots omits hidden by default and round-trips via decodeSlots',
+      () {
+        final _Layout layout = _defaults()
+            .addItemToSlot(_Item.speed, _Slot.left)
+            .moveItem(_Item.bookmark, _Slot.hidden);
+        final Map<String, List<String>> slots = layout.encodeSlots();
+        expect(slots.keys, <String>['left', 'center', 'right']);
+        expect(slots['left'], <String>['title', 'speed']);
+        expect(layout.encodeRemoved(), <String>['bookmark']);
+        expect(layout.encodeSlots(includeHidden: true)['hidden'], isEmpty);
 
-      final _Layout? decoded = _Layout.decodeSlots<_Slot, _Item>(
-        _scheme,
-        slots,
-        removedRaw: layout.encodeRemoved(),
-        fallbackAssignments: _defaultAssignments,
-      );
-      expect(decoded, layout);
-      expect(decoded.hashCode, layout.hashCode);
-    });
+        final _Layout? decoded = _Layout.decodeSlots<_Slot, _Item>(
+          _scheme,
+          slots,
+          removedRaw: layout.encodeRemoved(),
+          fallbackAssignments: _defaultAssignments,
+        );
+        expect(decoded, layout);
+        expect(decoded.hashCode, layout.hashCode);
+      },
+    );
 
-    test('decodeSlots treats hidden-slot entries as removed (v2 semantics)',
-        () {
-      final _Layout? decoded = _Layout.decodeSlots<_Slot, _Item>(
-        _scheme,
-        <String, dynamic>{
-          'left': <String>['title'],
-          'hidden': <String>['speed', 'play', 'unknown'],
-        },
-        fallbackAssignments: _defaultAssignments,
-      );
-      expect(decoded, isNotNull);
-      expect(decoded!.removedItems, <_Item>[_Item.speed]);
-      // play 必需：hidden 里列了也回到播放器。
-      expect(decoded.itemsIn(_Slot.center), <_Item>[_Item.play]);
-      // 没提到的按钮按 fallback 回填。
-      expect(decoded.itemsIn(_Slot.right),
-          <_Item>[_Item.settings, _Item.bookmark]);
-    });
+    test(
+      'decodeSlots treats hidden-slot entries as removed (v2 semantics)',
+      () {
+        final _Layout? decoded = _Layout.decodeSlots<_Slot, _Item>(
+          _scheme,
+          <String, dynamic>{
+            'left': <String>['title'],
+            'hidden': <String>['speed', 'play', 'unknown'],
+          },
+          fallbackAssignments: _defaultAssignments,
+        );
+        expect(decoded, isNotNull);
+        expect(decoded!.removedItems, <_Item>[_Item.speed]);
+        // play 必需：hidden 里列了也回到播放器。
+        expect(decoded.itemsIn(_Slot.center), <_Item>[_Item.play]);
+        // 没提到的按钮按 fallback 回填。
+        expect(decoded.itemsIn(_Slot.right), <_Item>[
+          _Item.settings,
+          _Item.bookmark,
+        ]);
+      },
+    );
 
     test('decodeSlots skips unknown / disallowed entries, null when empty', () {
       expect(

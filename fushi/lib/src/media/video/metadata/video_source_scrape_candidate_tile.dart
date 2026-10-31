@@ -240,7 +240,8 @@ class _AiSuggestionBlock extends StatelessWidget {
     return FushiWavyLinearProgress(
       value: value,
       color: theme.progressIndicatorTheme.color ?? theme.colorScheme.primary,
-      trackColor: theme.progressIndicatorTheme.linearTrackColor ??
+      trackColor:
+          theme.progressIndicatorTheme.linearTrackColor ??
           theme.colorScheme.secondaryContainer,
       waving: false,
     );
@@ -251,10 +252,10 @@ class _AiSuggestionBlock extends StatelessWidget {
     final ColorScheme cs = Theme.of(context).colorScheme;
     final FushiCardColors colors =
         fushiCardToneColors(context, FushiCardTone.tertiary) ??
-            FushiCardColors(
-              container: FushiDesignTokens.of(context).surfaces.overlay,
-              onContainer: cs.onSurface,
-            );
+        FushiCardColors(
+          container: FushiDesignTokens.of(context).surfaces.overlay,
+          onContainer: cs.onSurface,
+        );
     final int? percent = this.percent;
     return DecoratedBox(
       decoration: BoxDecoration(

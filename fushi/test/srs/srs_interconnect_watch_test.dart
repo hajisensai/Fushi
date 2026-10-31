@@ -170,15 +170,27 @@ void main() {
         batching: () => reviewing,
         clock: () => DateTime(2026).add(fa.elapsed),
       );
-      expect(kSrsLocalPushMaxWait, greaterThanOrEqualTo(const Duration(seconds: 30)));
-      expect(kSrsLocalPushMaxWait, lessThanOrEqualTo(const Duration(seconds: 60)));
+      expect(
+        kSrsLocalPushMaxWait,
+        greaterThanOrEqualTo(const Duration(seconds: 30)),
+      );
+      expect(
+        kSrsLocalPushMaxWait,
+        lessThanOrEqualTo(const Duration(seconds: 60)),
+      );
       // 每 5 s 答一张卡，共 3 分钟：去抖的话一张卡一轮（或一直顺延），这里是每 maxWait 一轮。
       for (int i = 0; i < 36; i++) {
         push.trigger();
         fa.elapse(const Duration(seconds: 5));
       }
-      final int expected = const Duration(minutes: 3).inSeconds ~/ kSrsLocalPushMaxWait.inSeconds;
-      expect(at.length, inInclusiveRange(expected - 1, expected + 1), reason: '$at');
+      final int expected =
+          const Duration(minutes: 3).inSeconds ~/
+          kSrsLocalPushMaxWait.inSeconds;
+      expect(
+        at.length,
+        inInclusiveRange(expected - 1, expected + 1),
+        reason: '$at',
+      );
       for (int i = 1; i < at.length; i++) {
         expect(at[i] - at[i - 1], greaterThanOrEqualTo(kSrsLocalPushMaxWait));
       }

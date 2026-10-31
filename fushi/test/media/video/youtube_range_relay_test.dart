@@ -56,8 +56,9 @@ class _FakeGoogleVideo {
         await req.response.close();
         return;
       }
-      final RegExpMatch? m = RegExp(r'^bytes=(\d+)-(\d+)$')
-          .firstMatch(req.headers.value(HttpHeaders.rangeHeader) ?? '');
+      final RegExpMatch? m = RegExp(
+        r'^bytes=(\d+)-(\d+)$',
+      ).firstMatch(req.headers.value(HttpHeaders.rangeHeader) ?? '');
       if (m == null) {
         req.response.statusCode = HttpStatus.forbidden;
         await req.response.close();
@@ -74,7 +75,9 @@ class _FakeGoogleVideo {
       req.response.statusCode = HttpStatus.partialContent;
       req.response.headers.set(HttpHeaders.contentTypeHeader, 'video/mp4');
       req.response.headers.set(
-          HttpHeaders.contentRangeHeader, 'bytes $start-$end/${body.length}');
+        HttpHeaders.contentRangeHeader,
+        'bytes $start-$end/${body.length}',
+      );
       req.response.headers.contentLength = end - start + 1;
       if (req.method != 'HEAD') {
         req.response.add(body.sublist(start, end + 1));
@@ -109,7 +112,8 @@ Future<({int status, Map<String, String> headers, Uint8List body})> _get(
 }
 
 Uint8List _pattern(int n) => Uint8List.fromList(
-    List<int>.generate(n, (int i) => (i * 7 + i ~/ 251) & 0xff));
+  List<int>.generate(n, (int i) => (i * 7 + i ~/ 251) & 0xff),
+);
 
 void main() {
   group('parseRelayRange', () {
@@ -128,8 +132,11 @@ void main() {
 
   group('parseContentRange', () {
     test('带总长 / 总长未知 / 非法', () {
-      expect(
-          parseContentRange('bytes 0-9/100'), (start: 0, end: 9, total: 100));
+      expect(parseContentRange('bytes 0-9/100'), (
+        start: 0,
+        end: 9,
+        total: 100,
+      ));
       expect(parseContentRange('bytes 5-9/*'), (start: 5, end: 9, total: null));
       expect(parseContentRange('bytes 0-9'), isNull);
       expect(parseContentRange(null), isNull);
@@ -139,13 +146,19 @@ void main() {
   group('isYoutubeMediaStreamUrl', () {
     test('只认 googlevideo 直链', () {
       expect(
-          isYoutubeMediaStreamUrl(
-              'https://rr2---sn-x.googlevideo.com/videoplayback?a=1'),
-          isTrue);
-      expect(isYoutubeMediaStreamUrl('https://www.youtube.com/watch?v=x'),
-          isFalse);
+        isYoutubeMediaStreamUrl(
+          'https://rr2---sn-x.googlevideo.com/videoplayback?a=1',
+        ),
+        isTrue,
+      );
       expect(
-          isYoutubeMediaStreamUrl('https://cdn.example.com/a.m3u8'), isFalse);
+        isYoutubeMediaStreamUrl('https://www.youtube.com/watch?v=x'),
+        isFalse,
+      );
+      expect(
+        isYoutubeMediaStreamUrl('https://cdn.example.com/a.m3u8'),
+        isFalse,
+      );
       expect(isYoutubeMediaStreamUrl('not a url'), isFalse);
     });
   });
@@ -180,42 +193,56 @@ void main() {
       expect(upstream.seenRanges, isNotEmpty);
       expect(
         upstream.seenRanges.every(
-            (String? r) => r != null && RegExp(r'^bytes=\d+-\d+$').hasMatch(r)),
+          (String? r) => r != null && RegExp(r'^bytes=\d+-\d+$').hasMatch(r),
+        ),
         isTrue,
         reason: '上游绝不能收到无 Range / 开放区间请求（那正是 403 的根因）',
       );
-      expect(upstream.seenUserAgents.toSet(), <String?>{'fushi-test-ua'},
-          reason: '回放 header 必须原样带到上游');
+      expect(upstream.seenUserAgents.toSet(), <String?>{
+        'fushi-test-ua',
+      }, reason: '回放 header 必须原样带到上游');
     });
 
     test('开放区间 bytes=X-（内核 seek）：206 + Content-Range，从 X 起到末尾', () async {
-      final Uri local =
-          relay.register(upstream.url.toString(), const <String, String>{});
+      final Uri local = relay.register(
+        upstream.url.toString(),
+        const <String, String>{},
+      );
       const int from = 1500000;
       final res = await _get(local, range: 'bytes=$from-');
       expect(res.status, HttpStatus.partialContent);
-      expect(res.headers['content-range'],
-          'bytes $from-${body.length - 1}/${body.length}');
+      expect(
+        res.headers['content-range'],
+        'bytes $from-${body.length - 1}/${body.length}',
+      );
       expect(res.headers['content-length'], '${body.length - from}');
       expect(res.body, body.sublist(from));
     });
 
     test('闭区间 bytes=a-b 精确返回；越过末尾按总长截断', () async {
-      final Uri local =
-          relay.register(upstream.url.toString(), const <String, String>{});
+      final Uri local = relay.register(
+        upstream.url.toString(),
+        const <String, String>{},
+      );
       final res = await _get(local, range: 'bytes=100-2099');
       expect(res.status, HttpStatus.partialContent);
       expect(res.body, body.sublist(100, 2100));
-      final res2 = await _get(local,
-          range: 'bytes=${body.length - 10}-${body.length + 1000}');
+      final res2 = await _get(
+        local,
+        range: 'bytes=${body.length - 10}-${body.length + 1000}',
+      );
       expect(res2.body, body.sublist(body.length - 10));
-      expect(res2.headers['content-range'],
-          'bytes ${body.length - 10}-${body.length - 1}/${body.length}');
+      expect(
+        res2.headers['content-range'],
+        'bytes ${body.length - 10}-${body.length - 1}/${body.length}',
+      );
     });
 
     test('HEAD 只探一块就回总长，不拉正文', () async {
-      final Uri local =
-          relay.register(upstream.url.toString(), const <String, String>{});
+      final Uri local = relay.register(
+        upstream.url.toString(),
+        const <String, String>{},
+      );
       final res = await _get(local, method: 'HEAD');
       expect(res.status, HttpStatus.ok);
       expect(res.headers['content-length'], '${body.length}');
@@ -224,13 +251,18 @@ void main() {
     });
 
     test('未登记 token → 404；同一 URL 重复登记复用同一地址', () async {
-      final res =
-          await _get(Uri.parse('http://127.0.0.1:${relay.port}/yt/nope'));
+      final res = await _get(
+        Uri.parse('http://127.0.0.1:${relay.port}/yt/nope'),
+      );
       expect(res.status, HttpStatus.notFound);
-      final Uri a =
-          relay.register(upstream.url.toString(), const <String, String>{});
-      final Uri b =
-          relay.register(upstream.url.toString(), const <String, String>{});
+      final Uri a = relay.register(
+        upstream.url.toString(),
+        const <String, String>{},
+      );
+      final Uri b = relay.register(
+        upstream.url.toString(),
+        const <String, String>{},
+      );
       expect(a, b);
     });
 
@@ -245,12 +277,18 @@ void main() {
       );
       await slow.start();
       try {
-        final Uri local =
-            relay.register(slow.url.toString(), const <String, String>{});
-        final Socket socket =
-            await Socket.connect(InternetAddress.loopbackIPv4, local.port);
-        socket.write('GET ${local.path} HTTP/1.1\r\n'
-            'Host: 127.0.0.1\r\nRange: bytes=0-\r\n\r\n');
+        final Uri local = relay.register(
+          slow.url.toString(),
+          const <String, String>{},
+        );
+        final Socket socket = await Socket.connect(
+          InternetAddress.loopbackIPv4,
+          local.port,
+        );
+        socket.write(
+          'GET ${local.path} HTTP/1.1\r\n'
+          'Host: 127.0.0.1\r\nRange: bytes=0-\r\n\r\n',
+        );
         await socket.flush();
         int got = 0;
         await for (final List<int> chunk in socket) {
@@ -283,23 +321,33 @@ void main() {
       );
       await flaky.start();
       try {
-        final Uri local =
-            relay.register(flaky.url.toString(), const <String, String>{});
+        final Uri local = relay.register(
+          flaky.url.toString(),
+          const <String, String>{},
+        );
         // 修复前：头已发出后 statusCode= 抛 StateError 被吞、response 不 close，
         // 这个 await 会一直挂到 timeout。
         Object? failure;
         ({int status, Map<String, String> headers, Uint8List body})? res;
         try {
-          res = await _get(local, range: 'bytes=0-')
-              .timeout(const Duration(seconds: 5));
+          res = await _get(
+            local,
+            range: 'bytes=0-',
+          ).timeout(const Duration(seconds: 5));
         } on Object catch (e) {
           failure = e;
         }
-        expect(failure, isNot(isA<TimeoutException>()),
-            reason: '中途失败必须让内核立刻看到连接结束');
+        expect(
+          failure,
+          isNot(isA<TimeoutException>()),
+          reason: '中途失败必须让内核立刻看到连接结束',
+        );
         if (res != null) {
-          expect(res.body.length, lessThan(body.length),
-              reason: '只可能拿到首块，绝不能伪造出完整正文');
+          expect(
+            res.body.length,
+            lessThan(body.length),
+            reason: '只可能拿到首块，绝不能伪造出完整正文',
+          );
         }
       } finally {
         await flaky.close();
@@ -310,8 +358,10 @@ void main() {
       final _FakeGoogleVideo dead = _FakeGoogleVideo(body, forceStatus: 403);
       await dead.start();
       try {
-        final Uri local =
-            relay.register(dead.url.toString(), const <String, String>{});
+        final Uri local = relay.register(
+          dead.url.toString(),
+          const <String, String>{},
+        );
         final res = await _get(local, range: 'bytes=0-');
         expect(res.status, HttpStatus.forbidden);
       } finally {
@@ -326,8 +376,10 @@ void main() {
       final _FakeGoogleVideo dead = _FakeGoogleVideo(body, forceStatus: 403);
       await dead.start();
       try {
-        final Uri local =
-            relay.register(dead.url.toString(), const <String, String>{});
+        final Uri local = relay.register(
+          dead.url.toString(),
+          const <String, String>{},
+        );
         await _get(local, range: 'bytes=0-');
         final List<ErrorLogEntry> logged = ErrorLogService.instance.entries
             .where((ErrorLogEntry e) => e.source == 'youtube_relay')
@@ -335,8 +387,10 @@ void main() {
         expect(logged, hasLength(1));
         expect(logged.single.error, contains('403'));
         expect(logged.single.error, contains('first chunk'));
-        expect(logged.single.error,
-            contains('bytes=0-${YoutubeRangeRelay.chunkBytes - 1}'));
+        expect(
+          logged.single.error,
+          contains('bytes=0-${YoutubeRangeRelay.chunkBytes - 1}'),
+        );
         expect(logged.single.error, contains(dead.url.host));
       } finally {
         await dead.close();
@@ -345,12 +399,15 @@ void main() {
 
     test('上游首块 206 正常时不落 error_log（日志只记异常，不刷正常流）', () async {
       await ErrorLogService.instance.clear();
-      final Uri local =
-          relay.register(upstream.url.toString(), const <String, String>{});
+      final Uri local = relay.register(
+        upstream.url.toString(),
+        const <String, String>{},
+      );
       await _get(local, range: 'bytes=0-');
       expect(
-        ErrorLogService.instance.entries
-            .where((ErrorLogEntry e) => e.source == 'youtube_relay'),
+        ErrorLogService.instance.entries.where(
+          (ErrorLogEntry e) => e.source == 'youtube_relay',
+        ),
         isEmpty,
       );
     });
@@ -384,8 +441,9 @@ void main() {
         streamUrl: 'https://cdn.example.com/a.m3u8',
         youtubeStreamRelay: fake,
       );
-      final RemoteVideoStreamUrls plainUrls =
-          await plain.remoteVideoStreamUrls('y');
+      final RemoteVideoStreamUrls plainUrls = await plain.remoteVideoStreamUrls(
+        'y',
+      );
       expect(plainUrls.streamUrl, 'https://cdn.example.com/a.m3u8');
       expect(relayed.length, 3);
     });

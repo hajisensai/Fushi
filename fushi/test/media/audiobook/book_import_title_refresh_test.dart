@@ -130,26 +130,37 @@ void main() {
   });
 
   group('源码守卫：五个回填点必须统一走 _autoFillTitle，无残留 isEmpty 闸门', () {
-    final String source =
-        File('lib/src/media/audiobook/book_import_dialog.dart')
-            .readAsStringSync();
+    final String source = File(
+      'lib/src/media/audiobook/book_import_dialog.dart',
+    ).readAsStringSync();
 
     test('标题回填不再用 `_titleCtrl.text.isEmpty` 闸门（那是本 bug 的根因）', () {
-      expect(source.contains('_titleCtrl.text.isEmpty'), isFalse,
-          reason: '任何以标题为空判断是否回填的闸门都会复发 BUG-668，'
-              '必须改走 _autoFillTitle + 来源身份。');
+      expect(
+        source.contains('_titleCtrl.text.isEmpty'),
+        isFalse,
+        reason:
+            '任何以标题为空判断是否回填的闸门都会复发 BUG-668，'
+            '必须改走 _autoFillTitle + 来源身份。',
+      );
     });
 
     test('标题框 onChanged 把来源锁定为 user（保护用户手打）', () {
-      expect(source.contains('_titleSource = ImportTitleSource.user'), isTrue,
-          reason: '缺少 onChanged→user，用户手打的标题会被后续自动派生覆盖。');
+      expect(
+        source.contains('_titleSource = ImportTitleSource.user'),
+        isTrue,
+        reason: '缺少 onChanged→user，用户手打的标题会被后续自动派生覆盖。',
+      );
     });
 
     test('五个回填点 + 方法定义共计至少 6 处 _autoFillTitle', () {
       final int occurrences = '_autoFillTitle('.allMatches(source).length;
-      expect(occurrences, greaterThanOrEqualTo(6),
-          reason: 'initState / 拖放 / 选书 / 选字幕 / 音频标签五点加方法定义，'
-              '任一回填点绕过 _autoFillTitle 都会重现书名不刷新。');
+      expect(
+        occurrences,
+        greaterThanOrEqualTo(6),
+        reason:
+            'initState / 拖放 / 选书 / 选字幕 / 音频标签五点加方法定义，'
+            '任一回填点绕过 _autoFillTitle 都会重现书名不刷新。',
+      );
     });
   });
 }

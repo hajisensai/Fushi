@@ -2,11 +2,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/video/video_danmaku_model.dart';
 
 VideoDanmakuItem _item(String text) => VideoDanmakuItem(
-      startMs: 0,
-      text: text,
-      mode: VideoDanmakuMode.scroll,
-      colorArgb: 0xFFFFFFFF,
-    );
+  startMs: 0,
+  text: text,
+  mode: VideoDanmakuMode.scroll,
+  colorArgb: 0xFFFFFFFF,
+);
 
 void main() {
   group('VideoDanmakuStyle', () {
@@ -39,8 +39,9 @@ void main() {
         speedScale: 1.8,
         areaFraction: 0.5,
       );
-      final VideoDanmakuStyle back =
-          VideoDanmakuStyle.decode(VideoDanmakuStyle.encode(s));
+      final VideoDanmakuStyle back = VideoDanmakuStyle.decode(
+        VideoDanmakuStyle.encode(s),
+      );
       expect(back, s);
     });
 
@@ -72,15 +73,17 @@ void main() {
     });
 
     test('plain rule matches case-insensitive substring', () {
-      final VideoDanmakuBlockRules rules =
-          parseVideoDanmakuBlockRules('Spoiler');
+      final VideoDanmakuBlockRules rules = parseVideoDanmakuBlockRules(
+        'Spoiler',
+      );
       expect(rules.blocks('big SPOILER here'), isTrue);
       expect(rules.blocks('nothing to see'), isFalse);
     });
 
     test('slash-wrapped rule is treated as a regular expression', () {
-      final VideoDanmakuBlockRules rules =
-          parseVideoDanmakuBlockRules(r'/^\d+$/');
+      final VideoDanmakuBlockRules rules = parseVideoDanmakuBlockRules(
+        r'/^\d+$/',
+      );
       expect(rules.regexes, hasLength(1));
       expect(rules.plainWords, isEmpty);
       expect(rules.blocks('12345'), isTrue);
@@ -88,8 +91,9 @@ void main() {
     });
 
     test('invalid regex line is dropped without aborting other rules', () {
-      final VideoDanmakuBlockRules rules =
-          parseVideoDanmakuBlockRules('/(/\nbanned');
+      final VideoDanmakuBlockRules rules = parseVideoDanmakuBlockRules(
+        '/(/\nbanned',
+      );
       // The malformed regex is dropped; the plain rule still applies.
       expect(rules.regexes, isEmpty);
       expect(rules.plainWords, contains('banned'));
@@ -103,13 +107,15 @@ void main() {
         _item('88888'),
         _item('also keep'),
       ];
-      final VideoDanmakuBlockRules rules =
-          parseVideoDanmakuBlockRules('spoiler\n' r'/^\d+$/');
-      final List<VideoDanmakuItem> visible = filterVideoDanmaku(items, rules);
-      expect(
-        visible.map((VideoDanmakuItem i) => i.text),
-        <String>['keep me', 'also keep'],
+      final VideoDanmakuBlockRules rules = parseVideoDanmakuBlockRules(
+        'spoiler\n'
+        r'/^\d+$/',
       );
+      final List<VideoDanmakuItem> visible = filterVideoDanmaku(items, rules);
+      expect(visible.map((VideoDanmakuItem i) => i.text), <String>[
+        'keep me',
+        'also keep',
+      ]);
     });
   });
 }

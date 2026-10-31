@@ -39,7 +39,8 @@ import 'package:fushi_engine/media/video/video_clip_exporter.dart';
 import 'package:fushi_engine/media/video/video_clip_subtitle.dart';
 import 'package:fushi_engine/media/video/video_duration_probe.dart';
 import 'package:fushi_server/src/commands/cli_module.dart';
-import 'package:fushi_server/src/commands/subs_commands.dart' show ffmpegUnavailableReason;
+import 'package:fushi_server/src/commands/subs_commands.dart'
+    show ffmpegUnavailableReason;
 import 'package:fushi_server/src/commands/video_cli_support.dart';
 import 'package:fushi_server/src/server_runtime.dart';
 import 'package:fushi_server/src/video_scrape_host.dart';
@@ -68,7 +69,8 @@ class VideoCliModule extends CliModule {
   String get usage => _usage;
 
   @override
-  void register(ArgParser parser) => buildVideoParser(parser.addCommand('video'));
+  void register(ArgParser parser) =>
+      buildVideoParser(parser.addCommand('video'));
 
   @override
   Future<int> run(String name, ArgResults command, CliContext ctx) {
@@ -81,7 +83,9 @@ class VideoCliModule extends CliModule {
     final CliIo io = CliIo(json: jsonFlag(leaf));
     // hash / probe-bluray 是纯本地文件操作，不开数据库也能跑——但 identify / sidecar
     // 要 DB 与偏好，统一走 runtime 保持一处前置（配置缺失照样 66）。
-    return ctx.withRuntime((ServerRuntime rt) => runVideoCommand(sub, rt: rt, io: io));
+    return ctx.withRuntime(
+      (ServerRuntime rt) => runVideoCommand(sub, rt: rt, io: io),
+    );
   }
 }
 
@@ -92,7 +96,11 @@ void buildVideoParser(ArgParser video) {
   final ArgParser sidecar = video.addCommand('sidecar');
   addJsonFlag(sidecar.addCommand('write'))
     ..addFlag('all', negatable: false, help: '库里所有已刮出规范身份的作品')
-    ..addFlag('replace', negatable: false, help: '替换 Fushi 自己写下且未被改动过的旧 sidecar（第三方文件仍受保护）');
+    ..addFlag(
+      'replace',
+      negatable: false,
+      help: '替换 Fushi 自己写下且未被改动过的旧 sidecar（第三方文件仍受保护）',
+    );
   addJsonFlag(video.addCommand('clip'))
     ..addOption('from', help: '起点（秒 / mm:ss / hh:mm:ss.mmm / 1500ms）')
     ..addOption('to', help: '终点（同上）')
@@ -100,7 +108,8 @@ void buildVideoParser(ArgParser video) {
     ..addOption('subs', help: '把这份字幕裁到区间内软封进片段（mkv / webm；mp4 封不下文本字幕会自动跳过）')
     ..addOption(
       'burn-subs',
-      help: '用 ffmpeg 的 libass（subtitles 滤镜）把这份 SRT / ASS / VTT 硬烧进画面（重编码视频；与 --subs 互斥）',
+      help:
+          '用 ffmpeg 的 libass（subtitles 滤镜）把这份 SRT / ASS / VTT 硬烧进画面（重编码视频；与 --subs 互斥）',
     )
     ..addOption('audio-track', help: '音轨序号（0 起）')
     ..addOption('bitrate', help: '视频目标码率 kbps（缺省能 copy 就 copy）');
@@ -125,13 +134,22 @@ class VideoDeps {
   final Map<String, String>? environment;
 
   /// 造 AniDB 身份服务（null = 生产装配：真 UDP 客户端 + DB 持久层）。
-  final AnidbHashIdentityService Function(AnidbUdpConfig config, FushiDatabase db)? identityServiceFactory;
+  final AnidbHashIdentityService Function(
+    AnidbUdpConfig config,
+    FushiDatabase db,
+  )?
+  identityServiceFactory;
 
   /// ffmpeg / ffprobe 可用性探测。
   final Future<String?> Function({required bool probe}) ffmpegProblem;
 
   /// sidecar 重写（null = 生产：服务端刮削协调器）。返回 null = 作品不存在。
-  final Future<SourceScrapeReport?> Function(ServerRuntime rt, int workId, {required bool replace})? sidecarRewriter;
+  final Future<SourceScrapeReport?> Function(
+    ServerRuntime rt,
+    int workId, {
+    required bool replace,
+  })?
+  sidecarRewriter;
 
   /// `--burn-subs` 探滤镜与烧录用的 ffmpeg 后端（生产：引擎装配点 [resolveFfmpegBackend]，
   /// 与片段导出 / 字幕对齐同一套查找与覆盖规则）。
@@ -157,7 +175,8 @@ Future<int> runVideoCommand(
       return videoIdentify(sub, rt: rt, io: io, deps: deps);
     case 'sidecar':
       final ArgResults? leaf = sub.command;
-      if (leaf == null || leaf.name != 'write') return io.fail(kExitUsage, '用法: video sidecar write <workId>|--all');
+      if (leaf == null || leaf.name != 'write')
+        return io.fail(kExitUsage, '用法: video sidecar write <workId>|--all');
       return videoSidecarWrite(leaf, rt: rt, io: io, deps: deps);
     case 'clip':
       return videoClip(sub, io: io, deps: deps);
@@ -169,7 +188,8 @@ Future<int> runVideoCommand(
 
 int? _requireOneFile(ArgResults sub, CliIo io, String usage) {
   if (sub.rest.length != 1) return io.fail(kExitUsage, '用法: $usage');
-  if (!File(sub.rest.single).existsSync()) return io.fail(kExitNoInput, '找不到文件: ${sub.rest.single}');
+  if (!File(sub.rest.single).existsSync())
+    return io.fail(kExitNoInput, '找不到文件: ${sub.rest.single}');
   return null;
 }
 
@@ -190,21 +210,34 @@ void Function(int, int) _progressPrinter(CliIo io, String label) {
 String ed2kLink(String fileName, int size, String ed2k) =>
     'ed2k://|file|${fileName.replaceAll('|', '_')}|$size|$ed2k|/';
 
-Map<String, Object?> _hashJson(String path, AnidbEd2kHash hash) => <String, Object?>{
-  'path': path,
-  'size': hash.size,
-  'ed2k': hash.ed2k,
-  if (hash.alternativeEd2k != null && hash.alternativeEd2k != hash.ed2k) 'alternativeEd2k': hash.alternativeEd2k,
-  'link': ed2kLink(p.basename(path), hash.size, hash.ed2k),
-};
+Map<String, Object?> _hashJson(String path, AnidbEd2kHash hash) =>
+    <String, Object?>{
+      'path': path,
+      'size': hash.size,
+      'ed2k': hash.ed2k,
+      if (hash.alternativeEd2k != null && hash.alternativeEd2k != hash.ed2k)
+        'alternativeEd2k': hash.alternativeEd2k,
+      'link': ed2kLink(p.basename(path), hash.size, hash.ed2k),
+    };
 
-Future<int> videoHash(ArgResults sub, {required CliIo io, required VideoDeps deps}) async {
+Future<int> videoHash(
+  ArgResults sub, {
+  required CliIo io,
+  required VideoDeps deps,
+}) async {
   final int? bad = _requireOneFile(sub, io, 'video hash <file>');
   if (bad != null) return bad;
   final String path = p.absolute(sub.rest.single);
-  final AnidbEd2kHash hash = await deps.hasher(path, onProgress: _progressPrinter(io, 'ED2K'));
+  final AnidbEd2kHash hash = await deps.hasher(
+    path,
+    onProgress: _progressPrinter(io, 'ED2K'),
+  );
   if (io.json) {
-    io.writeJson(<String, Object?>{'ok': true, 'exitCode': kExitOk, ..._hashJson(path, hash)});
+    io.writeJson(<String, Object?>{
+      'ok': true,
+      'exitCode': kExitOk,
+      ..._hashJson(path, hash),
+    });
   } else {
     io.out.writeln('${hash.ed2k}  ${hash.size}  $path');
     if (hash.alternativeEd2k != null && hash.alternativeEd2k != hash.ed2k) {
@@ -215,12 +248,17 @@ Future<int> videoHash(ArgResults sub, {required CliIo io, required VideoDeps dep
 }
 
 /// AniDB UDP 配置：偏好表（与 app 同一判据，含客户端身份解析）+ 环境变量里的账号。
-AnidbUdpConfig resolveAniDbUdpConfig(PrefStore prefs, Map<String, String> env, {required String locale}) {
-  final VideoSourceScrapeGlobalConfig config = VideoSourceScrapeGlobalConfig.fromPreferences(
-    prefs,
-    resolvedTmdbApiKey: '',
-    uiLocaleTag: locale,
-  );
+AnidbUdpConfig resolveAniDbUdpConfig(
+  PrefStore prefs,
+  Map<String, String> env, {
+  required String locale,
+}) {
+  final VideoSourceScrapeGlobalConfig config =
+      VideoSourceScrapeGlobalConfig.fromPreferences(
+        prefs,
+        resolvedTmdbApiKey: '',
+        uiLocaleTag: locale,
+      );
   final AnidbUdpConfig fromPrefs = config.anidbUdpConfig;
   final String user = (env[kAniDbUsernameEnv] ?? '').trim();
   final String password = env[kAniDbPasswordEnv] ?? '';
@@ -237,7 +275,9 @@ AnidbUdpConfig resolveAniDbUdpConfig(PrefStore prefs, Map<String, String> env, {
 String? aniDbUnavailableReason(AnidbUdpConfig config) {
   if (config.isAvailable) return null;
   final List<String> missing = <String>[
-    if (!RegExp(r'^[a-z]{4,16}$').hasMatch(config.clientName) || config.clientVersion <= 0) '已登记的 AniDB UDP 客户端身份',
+    if (!RegExp(r'^[a-z]{4,16}$').hasMatch(config.clientName) ||
+        config.clientVersion <= 0)
+      '已登记的 AniDB UDP 客户端身份',
     if (!RegExp(r'^[a-zA-Z0-9_-]+$').hasMatch(config.username)) 'AniDB 用户名',
     if (config.password.isEmpty) 'AniDB 密码',
   ];
@@ -246,7 +286,9 @@ String? aniDbUnavailableReason(AnidbUdpConfig config) {
       '只算哈希用 video hash';
 }
 
-Map<String, Object?> _identityJson(AnidbFileIdentity identity) => <String, Object?>{
+Map<String, Object?> _identityJson(
+  AnidbFileIdentity identity,
+) => <String, Object?>{
   'fileId': identity.fileId,
   'animeId': identity.animeId,
   'episodeId': identity.episodeId,
@@ -258,7 +300,8 @@ Map<String, Object?> _identityJson(AnidbFileIdentity identity) => <String, Objec
   'episodeTitle': identity.episodeTitle,
   'episodeRomajiTitle': identity.episodeRomajiTitle,
   'episodeKanjiTitle': identity.episodeKanjiTitle,
-  if (identity.episodeAirDate != null) 'episodeAirDate': identity.episodeAirDate,
+  if (identity.episodeAirDate != null)
+    'episodeAirDate': identity.episodeAirDate,
   if (identity.isDeprecated) 'deprecated': true,
   'fileVersion': identity.fileVersion,
   if (identity.crcMatches != null) 'crcMatches': identity.crcMatches,
@@ -277,7 +320,8 @@ Map<String, Object?> _identityJson(AnidbFileIdentity identity) => <String, Objec
 int aniDbFailureExitCode(Object? error) {
   if (error is AnidbUdpException) {
     return switch (error.reason) {
-      AnidbUdpFailure.invalidInput || AnidbUdpFailure.malformedResponse => kExitFailure,
+      AnidbUdpFailure.invalidInput ||
+      AnidbUdpFailure.malformedResponse => kExitFailure,
       _ => kExitUnavailable,
     };
   }
@@ -294,7 +338,11 @@ Future<int> videoIdentify(
   final int? bad = _requireOneFile(sub, io, 'video identify <file>');
   if (bad != null) return bad;
   final String path = p.absolute(sub.rest.single);
-  final AnidbUdpConfig config = resolveAniDbUdpConfig(rt.prefs, deps.env, locale: rt.config.metadataLocale);
+  final AnidbUdpConfig config = resolveAniDbUdpConfig(
+    rt.prefs,
+    deps.env,
+    locale: rt.config.metadataLocale,
+  );
   // 发请求前的硬门：缺账号或缺已登记客户端身份就不开 socket。
   final String? reason = aniDbUnavailableReason(config);
   if (reason != null) return io.fail(kExitUnavailable, reason);
@@ -309,14 +357,18 @@ Future<int> videoIdentify(
         );
   final AnidbHashIdentityResult result;
   try {
-    result = await service.identifyFile(path, onProgress: _progressPrinter(io, 'ED2K'));
+    result = await service.identifyFile(
+      path,
+      onProgress: _progressPrinter(io, 'ED2K'),
+    );
   } finally {
     await service.close();
   }
   final int code = switch (result.status) {
     AnidbHashIdentityStatus.matched => kExitOk,
     AnidbHashIdentityStatus.notFound => kExitFailure,
-    AnidbHashIdentityStatus.disabled || AnidbHashIdentityStatus.unavailable => kExitUnavailable,
+    AnidbHashIdentityStatus.disabled ||
+    AnidbHashIdentityStatus.unavailable => kExitUnavailable,
     AnidbHashIdentityStatus.cancelled => kExitFailure,
     AnidbHashIdentityStatus.failed => aniDbFailureExitCode(result.error),
   };
@@ -331,13 +383,16 @@ Future<int> videoIdentify(
       'fromStore': result.fromStore,
       if (identity != null) 'identity': _identityJson(identity),
       if (result.confirmedMalId != null) 'malId': result.confirmedMalId,
-      if (result.status == AnidbHashIdentityStatus.notFound) ...<String, Object?>{
+      if (result.status ==
+          AnidbHashIdentityStatus.notFound) ...<String, Object?>{
         'missAttempts': result.missAttempts,
         'missExhausted': result.missExhausted,
       },
       if (result.error != null) 'error': result.error.toString(),
-      if (result.mappingError != null) 'mappingError': result.mappingError.toString(),
-      if (result.episodeInfoError != null) 'episodeInfoError': result.episodeInfoError.toString(),
+      if (result.mappingError != null)
+        'mappingError': result.mappingError.toString(),
+      if (result.episodeInfoError != null)
+        'episodeInfoError': result.episodeInfoError.toString(),
     });
   } else {
     switch (result.status) {
@@ -349,29 +404,50 @@ Future<int> videoIdentify(
           '${result.fromStore ? '  (本地记录)' : ''}',
         );
       case AnidbHashIdentityStatus.notFound:
-        io.out.writeln('AniDB 未收录这份文件（ed2k ${result.hash?.ed2k}，第 ${result.missAttempts} 次未命中）');
+        io.out.writeln(
+          'AniDB 未收录这份文件（ed2k ${result.hash?.ed2k}，第 ${result.missAttempts} 次未命中）',
+        );
       default:
-        io.err.writeln('识别失败: ${result.status.name}${result.error == null ? '' : ' ${result.error}'}');
+        io.err.writeln(
+          '识别失败: ${result.status.name}${result.error == null ? '' : ' ${result.error}'}',
+        );
     }
   }
   return code;
 }
 
-Map<String, Object?> _reportJson(SourceScrapeReport report) => <String, Object?>{
-  'nfoWritten': report.nfoWritten,
-  'imagesWritten': report.imagesWritten,
-  'protected': report.protectedArtifacts,
-  'unchanged': report.unchangedArtifacts,
-  'warnings': <String>[for (final SourceScrapeIssue w in report.warnings) _issueText(w)],
-  'errors': <String>[for (final SourceScrapeIssue e in report.errors) _issueText(e)],
-};
+Map<String, Object?> _reportJson(SourceScrapeReport report) =>
+    <String, Object?>{
+      'nfoWritten': report.nfoWritten,
+      'imagesWritten': report.imagesWritten,
+      'protected': report.protectedArtifacts,
+      'unchanged': report.unchangedArtifacts,
+      'warnings': <String>[
+        for (final SourceScrapeIssue w in report.warnings) _issueText(w),
+      ],
+      'errors': <String>[
+        for (final SourceScrapeIssue e in report.errors) _issueText(e),
+      ],
+    };
 
-String _issueText(SourceScrapeIssue issue) => '${issue.message}${issue.path == null ? '' : ' (${issue.path})'}';
+String _issueText(SourceScrapeIssue issue) =>
+    '${issue.message}${issue.path == null ? '' : ' (${issue.path})'}';
 
-Future<SourceScrapeReport?> _productionSidecarRewriter(ServerRuntime rt, int workId, {required bool replace}) async {
-  final ServerVideoScrape scrape = ServerVideoScrape(db: rt.db, prefs: rt.prefs, config: () => rt.config);
+Future<SourceScrapeReport?> _productionSidecarRewriter(
+  ServerRuntime rt,
+  int workId, {
+  required bool replace,
+}) async {
+  final ServerVideoScrape scrape = ServerVideoScrape(
+    db: rt.db,
+    prefs: rt.prefs,
+    config: () => rt.config,
+  );
   try {
-    return await scrape.coordinator.rewriteSidecarsForStoredWork(workId, replaceOwnArtifacts: replace);
+    return await scrape.coordinator.rewriteSidecarsForStoredWork(
+      workId,
+      replaceOwnArtifacts: replace,
+    );
   } finally {
     scrape.close();
   }
@@ -385,14 +461,25 @@ Future<int> videoSidecarWrite(
 }) async {
   final bool all = leaf['all'] as bool;
   if (all == leaf.rest.isNotEmpty || leaf.rest.length > 1) {
-    return io.fail(kExitUsage, '用法: video sidecar write <workId> | video sidecar write --all');
+    return io.fail(
+      kExitUsage,
+      '用法: video sidecar write <workId> | video sidecar write --all',
+    );
   }
   final List<int> workIds;
   if (all) {
-    workIds = <int>[for (final VideoMetadataWorkRow row in await rt.db.getAllVideoMetadataWorks()) row.id];
+    workIds = <int>[
+      for (final VideoMetadataWorkRow row
+          in await rt.db.getAllVideoMetadataWorks())
+        row.id,
+    ];
   } else {
     final int? id = int.tryParse(leaf.rest.single);
-    if (id == null) return io.fail(kExitUsage, 'workId 需要整数（video_metadata_works.id），收到 "${leaf.rest.single}"');
+    if (id == null)
+      return io.fail(
+        kExitUsage,
+        'workId 需要整数（video_metadata_works.id），收到 "${leaf.rest.single}"',
+      );
     workIds = <int>[id];
   }
   final rewrite = deps.sidecarRewriter ?? _productionSidecarRewriter;
@@ -401,24 +488,42 @@ Future<int> videoSidecarWrite(
   int failures = 0;
   for (int i = 0; i < workIds.length; i++) {
     final int id = workIds[i];
-    if (workIds.length > 1) io.err.writeln('[${i + 1}/${workIds.length}] work $id');
+    if (workIds.length > 1)
+      io.err.writeln('[${i + 1}/${workIds.length}] work $id');
     try {
-      final SourceScrapeReport? report = await rewrite(rt, id, replace: replace);
+      final SourceScrapeReport? report = await rewrite(
+        rt,
+        id,
+        replace: replace,
+      );
       if (report == null) {
         if (!all) return io.fail(kExitNoInput, '没有这个作品: $id');
         continue;
       }
       if (report.errors.isNotEmpty) failures++;
-      rows.add(<String, Object?>{'workId': id, 'ok': report.errors.isEmpty, ..._reportJson(report)});
+      rows.add(<String, Object?>{
+        'workId': id,
+        'ok': report.errors.isEmpty,
+        ..._reportJson(report),
+      });
     } on StateError catch (e) {
       // 没有规范身份 / 不在本地来源里：单个作品时是业务失败，--all 时记下跳过。
       failures++;
-      rows.add(<String, Object?>{'workId': id, 'ok': false, 'skipped': true, 'reason': e.message});
+      rows.add(<String, Object?>{
+        'workId': id,
+        'ok': false,
+        'skipped': true,
+        'reason': e.message,
+      });
     }
   }
   final int code = failures == 0 ? kExitOk : kExitFailure;
   if (io.json) {
-    io.writeJson(<String, Object?>{'ok': code == kExitOk, 'exitCode': code, 'works': rows});
+    io.writeJson(<String, Object?>{
+      'ok': code == kExitOk,
+      'exitCode': code,
+      'works': rows,
+    });
   } else {
     for (final Map<String, Object?> row in rows) {
       if (row['skipped'] == true) {
@@ -449,35 +554,46 @@ List<AudioCue>? parseSubtitleFileCues(String path, String content) {
   };
 }
 
-Future<int> videoClip(ArgResults sub, {required CliIo io, required VideoDeps deps}) async {
+Future<int> videoClip(
+  ArgResults sub, {
+  required CliIo io,
+  required VideoDeps deps,
+}) async {
   const String usage = 'video clip <file> --from <t> --to <t> -o <out>';
   if (sub.rest.length != 1) return io.fail(kExitUsage, '用法: $usage');
   final String? fromRaw = sub['from'] as String?;
   final String? toRaw = sub['to'] as String?;
   final String? outRaw = sub['out'] as String?;
-  if (fromRaw == null || toRaw == null || outRaw == null || outRaw.trim().isEmpty) {
+  if (fromRaw == null ||
+      toRaw == null ||
+      outRaw == null ||
+      outRaw.trim().isEmpty) {
     return io.fail(kExitUsage, '用法: $usage（--from / --to / -o 都必填）');
   }
   final int? startMs = parseClockArgToMs(fromRaw);
   final int? endMs = parseClockArgToMs(toRaw);
-  if (startMs == null || endMs == null) return io.fail(kExitUsage, '时间写法不认识：--from $fromRaw --to $toRaw');
+  if (startMs == null || endMs == null)
+    return io.fail(kExitUsage, '时间写法不认识：--from $fromRaw --to $toRaw');
   if (endMs <= startMs) return io.fail(kExitUsage, '--to 必须晚于 --from');
   int? audioTrack;
   int? bitrate;
   if (sub['audio-track'] != null) {
     audioTrack = int.tryParse(sub['audio-track'] as String);
-    if (audioTrack == null || audioTrack < 0) return io.fail(kExitUsage, '--audio-track 需要非负整数');
+    if (audioTrack == null || audioTrack < 0)
+      return io.fail(kExitUsage, '--audio-track 需要非负整数');
   }
   if (sub['bitrate'] != null) {
     bitrate = int.tryParse(sub['bitrate'] as String);
-    if (bitrate == null || bitrate <= 0) return io.fail(kExitUsage, '--bitrate 需要正整数（kbps）');
+    if (bitrate == null || bitrate <= 0)
+      return io.fail(kExitUsage, '--bitrate 需要正整数（kbps）');
   }
   final String? burnPath = sub['burn-subs'] as String?;
   if (burnPath != null && sub['subs'] != null) {
     return io.fail(kExitUsage, '--subs（软封）与 --burn-subs（硬烧）只能二选一');
   }
   final String input = p.absolute(sub.rest.single);
-  if (!File(input).existsSync()) return io.fail(kExitNoInput, '找不到视频文件: $input');
+  if (!File(input).existsSync())
+    return io.fail(kExitNoInput, '找不到视频文件: $input');
   final String output = p.absolute(outRaw);
   if (p.equals(input, output)) return io.fail(kExitUsage, '输出不能覆盖输入文件');
 
@@ -498,16 +614,30 @@ Future<int> videoClip(ArgResults sub, {required CliIo io, required VideoDeps dep
   final List<String> subtitleContents = <String>[];
   final String? subsPath = sub['subs'] as String?;
   if (subsPath != null) {
-    if (!File(subsPath).existsSync()) return io.fail(kExitNoInput, '找不到字幕文件: $subsPath');
-    final List<AudioCue>? cues = parseSubtitleFileCues(subsPath, await File(subsPath).readAsString());
-    if (cues == null) return io.fail(kExitUsage, '字幕格式不认识（支持 .srt / .vtt / .ass / .ssa）: $subsPath');
-    final String? srt = buildClipSrtContent(cues: cues, startMs: startMs, endMs: endMs);
+    if (!File(subsPath).existsSync())
+      return io.fail(kExitNoInput, '找不到字幕文件: $subsPath');
+    final List<AudioCue>? cues = parseSubtitleFileCues(
+      subsPath,
+      await File(subsPath).readAsString(),
+    );
+    if (cues == null)
+      return io.fail(
+        kExitUsage,
+        '字幕格式不认识（支持 .srt / .vtt / .ass / .ssa）: $subsPath',
+      );
+    final String? srt = buildClipSrtContent(
+      cues: cues,
+      startMs: startMs,
+      endMs: endMs,
+    );
     if (srt == null) {
       io.err.writeln('区间内没有字幕台词，只导出视频音频');
     } else {
       subtitleContents.add(srt);
       if (resolveClipSubtitleCodec(output) == null) {
-        io.err.writeln('${p.extension(output)} 容器封不下文本字幕（见 resolveClipSubtitleCodec），将跳过字幕；要带字幕用 .mkv');
+        io.err.writeln(
+          '${p.extension(output)} 容器封不下文本字幕（见 resolveClipSubtitleCodec），将跳过字幕；要带字幕用 .mkv',
+        );
       }
     }
   }
@@ -531,7 +661,10 @@ Future<int> videoClip(ArgResults sub, {required CliIo io, required VideoDeps dep
       VideoClipExportFailure.invalidRange => kExitUsage,
       _ => kExitFailure,
     };
-    return io.fail(code, '导出失败: ${result.failure?.name}${result.detail == null ? '' : ' ${result.detail}'}');
+    return io.fail(
+      code,
+      '导出失败: ${result.failure?.name}${result.detail == null ? '' : ' ${result.detail}'}',
+    );
   }
   if (io.json) {
     io.writeJson(<String, Object?>{
@@ -544,13 +677,20 @@ Future<int> videoClip(ArgResults sub, {required CliIo io, required VideoDeps dep
       'bytes': File(result.outputPath!).lengthSync(),
     });
   } else {
-    io.out.writeln('已写入 ${result.outputPath}（字幕轨 ${result.subtitleTrackCount} 条）');
+    io.out.writeln(
+      '已写入 ${result.outputPath}（字幕轨 ${result.subtitleTrackCount} 条）',
+    );
   }
   return kExitOk;
 }
 
 /// 烧录允许的字幕扩展名（libass 经 libavformat 读：SRT / ASS / SSA / WebVTT）。
-const Set<String> kBurnSubtitleExtensions = <String>{'.srt', '.ass', '.ssa', '.vtt'};
+const Set<String> kBurnSubtitleExtensions = <String>{
+  '.srt',
+  '.ass',
+  '.ssa',
+  '.vtt',
+};
 
 /// 跑 `ffmpeg -hide_banner -filters` 取滤镜名；起不来 / 超时 / 解不出返回空集合
 /// （调用方按「不能烧」处理）。
@@ -582,9 +722,13 @@ Future<int> _videoClipBurn({
   required VideoDeps deps,
 }) async {
   final String subs = p.absolute(subtitlePath);
-  if (!File(subs).existsSync()) return io.fail(kExitNoInput, '找不到字幕文件: $subtitlePath');
+  if (!File(subs).existsSync())
+    return io.fail(kExitNoInput, '找不到字幕文件: $subtitlePath');
   if (!kBurnSubtitleExtensions.contains(p.extension(subs).toLowerCase())) {
-    return io.fail(kExitUsage, '字幕格式不认识（--burn-subs 支持 .srt / .ass / .ssa / .vtt）: $subtitlePath');
+    return io.fail(
+      kExitUsage,
+      '字幕格式不认识（--burn-subs 支持 .srt / .ass / .ssa / .vtt）: $subtitlePath',
+    );
   }
   final String? ffmpeg = await deps.ffmpegProblem(probe: false);
   if (ffmpeg != null) return io.fail(kExitUnavailable, ffmpeg);
@@ -601,7 +745,9 @@ Future<int> _videoClipBurn({
   final FfmpegBackend backend = deps.ffmpegBackend();
   final File out = File(output);
   out.parent.createSync(recursive: true);
-  io.err.writeln('硬烧字幕导出 ${formatClockMs(startMs)} → ${formatClockMs(endMs)}（重编码）…');
+  io.err.writeln(
+    '硬烧字幕导出 ${formatClockMs(startMs)} → ${formatClockMs(endMs)}（重编码）…',
+  );
   final FfmpegRunResult result;
   try {
     result = await backend.run(
@@ -618,12 +764,18 @@ Future<int> _videoClipBurn({
       _kBurnTimeout,
     );
   } on ProcessException catch (e) {
-    return io.fail(kExitUnavailable, '找不到 ffmpeg（${describeFfmpegProcessException(e)}）');
+    return io.fail(
+      kExitUnavailable,
+      '找不到 ffmpeg（${describeFfmpegProcessException(e)}）',
+    );
   }
   if (!result.isSuccess || !out.existsSync() || out.lengthSync() == 0) {
     if (out.existsSync()) out.deleteSync();
     final String reason = extractFfmpegFailureReason(result.output);
-    return io.fail(kExitFailure, '硬烧字幕失败${reason.isEmpty ? '（${result.failureSummary}）' : ': $reason'}');
+    return io.fail(
+      kExitFailure,
+      '硬烧字幕失败${reason.isEmpty ? '（${result.failureSummary}）' : ': $reason'}',
+    );
   }
   if (io.json) {
     io.writeJson(<String, Object?>{
@@ -665,23 +817,33 @@ Map<String, Object?> _factsJson(VideoProbeFacts facts) => <String, Object?>{
     'video': <String, Object?>{
       if (facts.video!.codec != null) 'codec': facts.video!.codec,
       if (facts.video!.height != null) 'height': facts.video!.height,
-      if (facts.video!.frameRateMilli != null) 'fps': facts.video!.frameRateMilli! / 1000,
+      if (facts.video!.frameRateMilli != null)
+        'fps': facts.video!.frameRateMilli! / 1000,
     },
-  'audio': <Map<String, Object?>>[for (final AudioTrackFacts a in facts.audioTracks) _audioJson(a)],
-  'subtitles': <Map<String, Object?>>[for (final SubtitleTrackFacts s in facts.subtitleTracks) _subtitleJson(s)],
+  'audio': <Map<String, Object?>>[
+    for (final AudioTrackFacts a in facts.audioTracks) _audioJson(a),
+  ],
+  'subtitles': <Map<String, Object?>>[
+    for (final SubtitleTrackFacts s in facts.subtitleTracks) _subtitleJson(s),
+  ],
 };
 
 Future<int> videoProbeBluray(ArgResults sub, {required CliIo io}) async {
-  if (sub.rest.length != 1) return io.fail(kExitUsage, '用法: video probe-bluray <dir>');
+  if (sub.rest.length != 1)
+    return io.fail(kExitUsage, '用法: video probe-bluray <dir>');
   final String dir = p.absolute(sub.rest.single);
-  if (!await Directory(dir).exists()) return io.fail(kExitNoInput, '找不到目录: $dir');
+  if (!await Directory(dir).exists())
+    return io.fail(kExitNoInput, '找不到目录: $dir');
   final String? root = await blurayDiscRootForDirectory(dir);
-  if (root == null) return io.fail(kExitNoInput, '不是蓝光盘目录（找不到 BDMV/PLAYLIST）: $dir');
+  if (root == null)
+    return io.fail(kExitNoInput, '不是蓝光盘目录（找不到 BDMV/PLAYLIST）: $dir');
   final BlurayDisc? disc = await readBlurayDisc(root);
   if (disc == null) return io.fail(kExitFailure, '读不出这张盘的播放列表: $root');
   final List<Map<String, Object?>> titles = <Map<String, Object?>>[];
   for (final BlurayTitle title in disc.titles) {
-    final VideoProbeFacts facts = await probeBlurayPlaylistFacts(title.playlistPath);
+    final VideoProbeFacts facts = await probeBlurayPlaylistFacts(
+      title.playlistPath,
+    );
     titles.add(<String, Object?>{
       'playlist': title.playlist.fileName,
       'path': title.playlistPath,
@@ -704,12 +866,17 @@ Future<int> videoProbeBluray(ArgResults sub, {required CliIo io}) async {
       'titles': titles,
     });
   } else {
-    io.out.writeln('${disc.name}  (${disc.rootPath})  播放列表 ${disc.playlists.length} 条，可播标题 ${titles.length} 条');
+    io.out.writeln(
+      '${disc.name}  (${disc.rootPath})  播放列表 ${disc.playlists.length} 条，可播标题 ${titles.length} 条',
+    );
     for (final Map<String, Object?> t in titles) {
       final Map<String, Object?>? facts = t['facts'] as Map<String, Object?>?;
-      final Map<String, Object?>? video = facts?['video'] as Map<String, Object?>?;
-      final List<Object?> audio = facts?['audio'] as List<Object?>? ?? const <Object?>[];
-      final List<Object?> subs = facts?['subtitles'] as List<Object?>? ?? const <Object?>[];
+      final Map<String, Object?>? video =
+          facts?['video'] as Map<String, Object?>?;
+      final List<Object?> audio =
+          facts?['audio'] as List<Object?>? ?? const <Object?>[];
+      final List<Object?> subs =
+          facts?['subtitles'] as List<Object?>? ?? const <Object?>[];
       io.out.writeln(
         '${t['mainFeature'] == true ? '*' : ' '} ${t['playlist']}  ${formatClockMs(t['durationMs'] as int)}  '
         '${video?['codec'] ?? '?'} ${video?['height'] ?? '?'}p  音轨 ${audio.length}  字幕 ${subs.length}  ${t['name']}',

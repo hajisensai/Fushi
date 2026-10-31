@@ -12,8 +12,7 @@ void main() {
     setUp(() => BookExitSyncScope.instance.clear());
     tearDown(() => BookExitSyncScope.instance.clear());
 
-    test(
-        'registered sync future runs to completion AFTER its page is disposed '
+    test('registered sync future runs to completion AFTER its page is disposed '
         '(app-scope, not page-scope)', () async {
       bool synced = false;
       final Completer<void> gate = Completer<void>();
@@ -36,8 +35,11 @@ void main() {
       await BookExitSyncScope.instance.drain();
 
       expect(synced, isTrue, reason: '页面销毁后，app-scope 同步动作必须仍跑完（HSA 契约）');
-      expect(BookExitSyncScope.instance.inFlightCount, 0,
-          reason: '完成后自动注销，集合不泄漏');
+      expect(
+        BookExitSyncScope.instance.inFlightCount,
+        0,
+        reason: '完成后自动注销，集合不泄漏',
+      );
     });
 
     test('completed future auto-unregisters (no leak)', () async {
@@ -75,8 +77,9 @@ void main() {
 
     test('a throwing sync future does not abort drain or throw', () async {
       bool other = false;
-      BookExitSyncScope.instance
-          .register(Future<void>.error(StateError('remote boom')));
+      BookExitSyncScope.instance.register(
+        Future<void>.error(StateError('remote boom')),
+      );
       BookExitSyncScope.instance.register(() async {
         await Future<void>.delayed(const Duration(milliseconds: 5));
         other = true;
@@ -88,21 +91,27 @@ void main() {
       expect(other, isTrue, reason: '一个关书同步失败不得拖垮其余 / 不得让退出报错');
     });
 
-    test('a stuck sync future is bounded by drain timeout (does not hang exit)',
-        () async {
-      final Completer<void> neverCompletes = Completer<void>();
-      BookExitSyncScope.instance.register(neverCompletes.future);
+    test(
+      'a stuck sync future is bounded by drain timeout (does not hang exit)',
+      () async {
+        final Completer<void> neverCompletes = Completer<void>();
+        BookExitSyncScope.instance.register(neverCompletes.future);
 
-      final Stopwatch sw = Stopwatch()..start();
-      // 卡住的传输不得无限阻塞退出：有界放行。
-      await BookExitSyncScope.instance
-          .drain(timeout: const Duration(milliseconds: 50));
-      sw.stop();
+        final Stopwatch sw = Stopwatch()..start();
+        // 卡住的传输不得无限阻塞退出：有界放行。
+        await BookExitSyncScope.instance.drain(
+          timeout: const Duration(milliseconds: 50),
+        );
+        sw.stop();
 
-      expect(sw.elapsed, lessThan(const Duration(seconds: 2)),
-          reason: '卡住的关书同步必须被 drain 上限放行，不能拖死退出');
-      // 收尾，避免悬挂 completer 报 pending（测试卫生）。
-      neverCompletes.complete();
-    });
+        expect(
+          sw.elapsed,
+          lessThan(const Duration(seconds: 2)),
+          reason: '卡住的关书同步必须被 drain 上限放行，不能拖死退出',
+        );
+        // 收尾，避免悬挂 completer 报 pending（测试卫生）。
+        neverCompletes.complete();
+      },
+    );
   });
 }

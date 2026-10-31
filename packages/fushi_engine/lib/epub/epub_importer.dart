@@ -41,7 +41,9 @@ class EpubImporter {
   }) async {
     final String tempDir = await EpubStorage.bookDirectory(nextTempDirName());
 
-    final _ParseResult result = await Isolate.run(() => _parseInIsolate(_ParseArgs(bytes: bytes, extractDir: tempDir)));
+    final _ParseResult result = await Isolate.run(
+      () => _parseInIsolate(_ParseArgs(bytes: bytes, extractDir: tempDir)),
+    );
     return _persistParsed(
       db: db,
       result: result,
@@ -79,7 +81,11 @@ class EpubImporter {
   }) async {
     final String tempDir = await EpubStorage.bookDirectory(nextTempDirName());
 
-    final _ParseResult result = await Isolate.run(() => _parseFromPathInIsolate(_ParseArgsFromPath(filePath: filePath, extractDir: tempDir)));
+    final _ParseResult result = await Isolate.run(
+      () => _parseFromPathInIsolate(
+        _ParseArgsFromPath(filePath: filePath, extractDir: tempDir),
+      ),
+    );
     return _persistParsed(
       db: db,
       result: result,
@@ -118,18 +124,17 @@ class EpubImporter {
       final String? tocJson = book.toc.isNotEmpty
           ? jsonEncode(
               book.toc
-                  .map((e) => <String, Object?>{
-                        'title': e.label,
-                        'href': e.href,
-                      })
+                  .map(
+                    (e) => <String, Object?>{'title': e.label, 'href': e.href},
+                  )
                   .toList(),
             )
           : null;
 
       final String resolvedTitle =
           book.title == p.basenameWithoutExtension(tempDir)
-              ? p.basenameWithoutExtension(fileName)
-              : book.title;
+          ? p.basenameWithoutExtension(fileName)
+          : book.title;
 
       // 瘦投影：重复检查只要 title（+ 下面的 extractDir），不拉整库章节 JSON。
       final List<EpubBookMeta> existingBooks = await db.getEpubBookMetas();
@@ -162,8 +167,9 @@ class EpubImporter {
             extractDir = moveExtractedDirIntoPlace(
               srcDir: srcDir,
               targetDir: realDir,
-              liveExtractDirs:
-                  existingBooks.map((EpubBookMeta b) => b.extractDir),
+              liveExtractDirs: existingBooks.map(
+                (EpubBookMeta b) => b.extractDir,
+              ),
             );
           } catch (e) {
             engineLog.log('EpubImporter.rename', e, StackTrace.current);
@@ -179,8 +185,9 @@ class EpubImporter {
         EpubBooksCompanion.insert(
           bookKey: bookKey,
           title: storedTitle,
-          author:
-              book.author != null ? Value(book.author) : const Value.absent(),
+          author: book.author != null
+              ? Value(book.author)
+              : const Value.absent(),
           coverPath: book.coverHref != null
               ? Value(book.coverHref)
               : const Value.absent(),
@@ -220,7 +227,8 @@ class EpubImporter {
           title: storedTitle,
           mediaKey: bookKey,
           dateKey: FushiTimeFormat.dayKey(
-              DateTime.fromMillisecondsSinceEpoch(importedAtMs)),
+            DateTime.fromMillisecondsSinceEpoch(importedAtMs),
+          ),
           timestampMs: importedAtMs,
         );
       } catch (e) {
@@ -253,16 +261,18 @@ class EpubImporter {
       book.chapters
           .asMap()
           .entries
-          .map((entry) => <String, Object>{
-                'id': entry.value.id,
-                'href': entry.value.href,
-                'mediaType': entry.value.mediaType,
-                'characters': characterCounts[entry.key],
-                // TODO-1192: 标记该 characters 计数的口径版本，供开书判定是否需
-                // 要按新口径（`countStudyChars`）后台重算并回写（见
-                // [kChapterCharCountCaliber] / charCountsFromChaptersJson）。
-                'charCaliber': kChapterCharCountCaliber,
-              })
+          .map(
+            (entry) => <String, Object>{
+              'id': entry.value.id,
+              'href': entry.value.href,
+              'mediaType': entry.value.mediaType,
+              'characters': characterCounts[entry.key],
+              // TODO-1192: 标记该 characters 计数的口径版本，供开书判定是否需
+              // 要按新口径（`countStudyChars`）后台重算并回写（见
+              // [kChapterCharCountCaliber] / charCountsFromChaptersJson）。
+              'charCaliber': kChapterCharCountCaliber,
+            },
+          )
           .toList(),
     );
   }
@@ -280,16 +290,22 @@ class EpubImporter {
   /// 目录，成功后旧树改名成 `.bak-<ts>` 让位、新树就位、再删 bak；中途失败把 bak
   /// 改回来。绝不先删后建——中间崩一次两份都没了。
   static Future<({int chapterCount, String chaptersJson, String? coverPath})>
-      rebuildExtractedInPlace({
+  rebuildExtractedInPlace({
     required String epubFilePath,
     required String extractDir,
   }) async {
     final String tempDir = await EpubStorage.bookDirectory(nextTempDirName());
     try {
-      final _ParseResult result = await Isolate.run(() => _parseFromPathInIsolate(_ParseArgsFromPath(filePath: epubFilePath, extractDir: tempDir)));
+      final _ParseResult result = await Isolate.run(
+        () => _parseFromPathInIsolate(
+          _ParseArgsFromPath(filePath: epubFilePath, extractDir: tempDir),
+        ),
+      );
       // chaptersJson / coverHref 都是**相对**解压根的路径，先算再搬位置等价。
-      final String chaptersJson =
-          buildChaptersJson(result.book, result.characterCounts);
+      final String chaptersJson = buildChaptersJson(
+        result.book,
+        result.characterCounts,
+      );
       // liveExtractDirs 传空 = 允许覆盖目标目录：这里的目标正是本书自己的解压树，
       // 覆盖它就是本方法的全部意图（导入路径传 live 列表是为了不撞**别的**书）。
       moveExtractedDirIntoPlace(
@@ -316,9 +332,10 @@ class EpubImporter {
   /// （BUG-088），所以「撤销」不存在——只能拿解压树重新算一遍。DOM 解析与字数统计
   /// 放 isolate（与导入同款 [compute]），不卡 UI。
   static Future<({int chapterCount, String chaptersJson, String? coverPath})>
-      reparseExtractedBook(String extractDir) async {
-    final _ParseResult result =
-        await Isolate.run(() => _reparseExtractedInIsolate(extractDir));
+  reparseExtractedBook(String extractDir) async {
+    final _ParseResult result = await Isolate.run(
+      () => _reparseExtractedInIsolate(extractDir),
+    );
     return (
       chapterCount: result.book.chapters.length,
       chaptersJson: buildChaptersJson(result.book, result.characterCounts),
@@ -365,10 +382,11 @@ class EpubImporter {
     }
 
     final String canonicalTarget = p.canonicalize(targetDir);
-    final bool owned = liveExtractDirs.any((String dir) =>
-        dir.isNotEmpty && p.canonicalize(dir) == canonicalTarget);
+    final bool owned = liveExtractDirs.any(
+      (String dir) => dir.isNotEmpty && p.canonicalize(dir) == canonicalTarget,
+    );
     if (owned) {
-      for (int i = 2;; i++) {
+      for (int i = 2; ; i++) {
         final String alt = '$targetDir~$i';
         if (!Directory(alt).existsSync()) {
           _moveDirInto(srcDir, alt, forceCopy: forceCopyFallback);
@@ -421,7 +439,11 @@ class EpubImporter {
       } on FileSystemException catch (e) {
         // Rename rejected (Android fuse/sdcardfs, custom data root on another
         // volume, or a residual target): fall through to copy+delete.
-        engineLog.log('EpubImporter.moveDirCopyFallback', e, StackTrace.current);
+        engineLog.log(
+          'EpubImporter.moveDirCopyFallback',
+          e,
+          StackTrace.current,
+        );
       }
     }
     final Directory destDir = Directory(dest);
@@ -518,8 +540,10 @@ _ParseResult _parseInIsolate(_ParseArgs args) {
 }
 
 _ParseResult _parseFromPathInIsolate(_ParseArgsFromPath args) {
-  final EpubBook book =
-      EpubParser.parseSyncFromPath(args.filePath, args.extractDir);
+  final EpubBook book = EpubParser.parseSyncFromPath(
+    args.filePath,
+    args.extractDir,
+  );
   return _ParseResult(
     book: book,
     characterCounts: _computeCharacterCounts(book),

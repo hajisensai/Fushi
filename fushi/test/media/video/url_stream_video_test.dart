@@ -45,8 +45,10 @@ void main() {
     test('trim does not change identity; different urls differ', () {
       const String url = 'https://a.test/live.m3u8';
       expect(streamVideoBookUid('  $url  '), streamVideoBookUid(url));
-      expect(streamVideoBookUid('https://a.test/other.m3u8'),
-          isNot(streamVideoBookUid(url)));
+      expect(
+        streamVideoBookUid('https://a.test/other.m3u8'),
+        isNot(streamVideoBookUid(url)),
+      );
     });
 
     test('prefix does not collide with other video uid families', () {
@@ -72,48 +74,59 @@ void main() {
 
   group('UrlStreamVideoClient contract (6 methods, TODO-885)', () {
     test('listRemoteVideos returns empty (no enumeration)', () async {
-      final UrlStreamVideoClient c =
-          UrlStreamVideoClient(streamUrl: 'https://a.test/v.mp4');
+      final UrlStreamVideoClient c = UrlStreamVideoClient(
+        streamUrl: 'https://a.test/v.mp4',
+      );
       expect(await c.listRemoteVideos(), isEmpty);
     });
 
-    test('remoteVideoStreamUrls ignores episodeIndex, returns same stream',
-        () async {
-      final UrlStreamVideoClient c = UrlStreamVideoClient(
-        streamUrl: 'https://a.test/v.mp4',
-        subtitleUrl: 'https://a.test/v.srt',
-        subtitleFileName: 'v.srt',
-      );
-      final RemoteVideoStreamUrls a = await c.remoteVideoStreamUrls('id');
-      final RemoteVideoStreamUrls b =
-          await c.remoteVideoStreamUrls('id', episodeIndex: 7);
-      expect(a.streamUrl, 'https://a.test/v.mp4');
-      expect(b.streamUrl, a.streamUrl);
-      expect(a.subtitleUrl, 'https://a.test/v.srt');
-      expect(b.subtitleUrl, a.subtitleUrl);
-      expect(a.subtitleFileName, 'v.srt');
-    });
+    test(
+      'remoteVideoStreamUrls ignores episodeIndex, returns same stream',
+      () async {
+        final UrlStreamVideoClient c = UrlStreamVideoClient(
+          streamUrl: 'https://a.test/v.mp4',
+          subtitleUrl: 'https://a.test/v.srt',
+          subtitleFileName: 'v.srt',
+        );
+        final RemoteVideoStreamUrls a = await c.remoteVideoStreamUrls('id');
+        final RemoteVideoStreamUrls b = await c.remoteVideoStreamUrls(
+          'id',
+          episodeIndex: 7,
+        );
+        expect(a.streamUrl, 'https://a.test/v.mp4');
+        expect(b.streamUrl, a.streamUrl);
+        expect(a.subtitleUrl, 'https://a.test/v.srt');
+        expect(b.subtitleUrl, a.subtitleUrl);
+        expect(a.subtitleFileName, 'v.srt');
+      },
+    );
 
-    test('getRemoteVideoSubtitle downloads to dest when subtitleUrl present',
-        () async {
-      final MockClient mock = MockClient((http.Request req) async {
-        expect(req.url.toString(), 'https://a.test/v.srt');
-        expect(req.headers['Referer'], 'https://a.test/');
-        return http.Response('1\n00:00:01,000 --> 00:00:02,000\nhi\n', 200);
-      });
-      final UrlStreamVideoClient c = UrlStreamVideoClient(
-        streamUrl: 'https://a.test/v.mp4',
-        subtitleUrl: 'https://a.test/v.srt',
-        httpHeaderFields: const <String, String>{'Referer': 'https://a.test/'},
-        httpClient: mock,
-      );
-      final Directory tmp = await Directory.systemTemp.createTemp('urlstream');
-      final File dest = File(p.join(tmp.path, 'out.srt'));
-      await c.getRemoteVideoSubtitle('id', dest);
-      expect(await dest.exists(), isTrue);
-      expect(await dest.readAsString(), contains('hi'));
-      await tmp.delete(recursive: true);
-    });
+    test(
+      'getRemoteVideoSubtitle downloads to dest when subtitleUrl present',
+      () async {
+        final MockClient mock = MockClient((http.Request req) async {
+          expect(req.url.toString(), 'https://a.test/v.srt');
+          expect(req.headers['Referer'], 'https://a.test/');
+          return http.Response('1\n00:00:01,000 --> 00:00:02,000\nhi\n', 200);
+        });
+        final UrlStreamVideoClient c = UrlStreamVideoClient(
+          streamUrl: 'https://a.test/v.mp4',
+          subtitleUrl: 'https://a.test/v.srt',
+          httpHeaderFields: const <String, String>{
+            'Referer': 'https://a.test/',
+          },
+          httpClient: mock,
+        );
+        final Directory tmp = await Directory.systemTemp.createTemp(
+          'urlstream',
+        );
+        final File dest = File(p.join(tmp.path, 'out.srt'));
+        await c.getRemoteVideoSubtitle('id', dest);
+        expect(await dest.exists(), isTrue);
+        expect(await dest.readAsString(), contains('hi'));
+        await tmp.delete(recursive: true);
+      },
+    );
 
     test('getRemoteVideoSubtitle is no-op when no subtitleUrl', () async {
       bool called = false;
@@ -134,25 +147,29 @@ void main() {
     });
 
     test('downloadRemoteVideo throws UnsupportedError', () async {
-      final UrlStreamVideoClient c =
-          UrlStreamVideoClient(streamUrl: 'https://a.test/v.mp4');
+      final UrlStreamVideoClient c = UrlStreamVideoClient(
+        streamUrl: 'https://a.test/v.mp4',
+      );
       expect(
         () => c.downloadRemoteVideo('id', File('x')),
         throwsA(isA<UnsupportedError>()),
       );
     });
 
-    test('remoteVideoPosition reads (0,0); putRemoteVideoPosition is no-op',
-        () async {
-      final UrlStreamVideoClient c =
-          UrlStreamVideoClient(streamUrl: 'https://a.test/v.mp4');
-      final ({int positionMs, int updatedAtMs}) pos =
-          await c.remoteVideoPosition('id', episodeIndex: 3);
-      expect(pos.positionMs, 0);
-      expect(pos.updatedAtMs, 0);
-      // no-op: must not throw / no observable side-effect.
-      await c.putRemoteVideoPosition('id', 12345, 999, episodeIndex: 3);
-    });
+    test(
+      'remoteVideoPosition reads (0,0); putRemoteVideoPosition is no-op',
+      () async {
+        final UrlStreamVideoClient c = UrlStreamVideoClient(
+          streamUrl: 'https://a.test/v.mp4',
+        );
+        final ({int positionMs, int updatedAtMs}) pos = await c
+            .remoteVideoPosition('id', episodeIndex: 3);
+        expect(pos.positionMs, 0);
+        expect(pos.updatedAtMs, 0);
+        // no-op: must not throw / no observable side-effect.
+        await c.putRemoteVideoPosition('id', 12345, 999, episodeIndex: 3);
+      },
+    );
   });
 
   group('isKnownWebPageVideoHost / isKnownWebPageVideoUrl (TODO-1000 A1)', () {
@@ -169,21 +186,30 @@ void main() {
         'abema.tv',
       ]) {
         expect(
-            isKnownWebPageVideoHost(Uri.parse('https://$h/watch?v=x')), isTrue,
-            reason: h);
+          isKnownWebPageVideoHost(Uri.parse('https://$h/watch?v=x')),
+          isTrue,
+          reason: h,
+        );
       }
     });
 
     test('subdomains match via .suffix rule', () {
       expect(
-          isKnownWebPageVideoHost(Uri.parse('https://www.youtube.com/watch')),
-          isTrue);
-      expect(isKnownWebPageVideoHost(Uri.parse('https://m.youtube.com/watch')),
-          isTrue);
-      expect(isKnownWebPageVideoHost(Uri.parse('https://music.youtube.com/x')),
-          isTrue);
-      expect(isKnownWebPageVideoHost(Uri.parse('https://www.netflix.com/x')),
-          isTrue);
+        isKnownWebPageVideoHost(Uri.parse('https://www.youtube.com/watch')),
+        isTrue,
+      );
+      expect(
+        isKnownWebPageVideoHost(Uri.parse('https://m.youtube.com/watch')),
+        isTrue,
+      );
+      expect(
+        isKnownWebPageVideoHost(Uri.parse('https://music.youtube.com/x')),
+        isTrue,
+      );
+      expect(
+        isKnownWebPageVideoHost(Uri.parse('https://www.netflix.com/x')),
+        isTrue,
+      );
     });
 
     test('case-insensitive and trailing-dot (FQDN) tolerant', () {
@@ -193,17 +219,22 @@ void main() {
 
     test('direct-stream hosts and bare IP do NOT match', () {
       expect(
-          isKnownWebPageVideoHost(Uri.parse('https://cdn.example.com/v.mp4')),
-          isFalse);
+        isKnownWebPageVideoHost(Uri.parse('https://cdn.example.com/v.mp4')),
+        isFalse,
+      );
       expect(
-          isKnownWebPageVideoHost(Uri.parse('https://192.168.1.34/live.m3u8')),
-          isFalse);
+        isKnownWebPageVideoHost(Uri.parse('https://192.168.1.34/live.m3u8')),
+        isFalse,
+      );
       // substring/suffix spoof must not false-positive (host != *.youtube.com).
       expect(
-          isKnownWebPageVideoHost(Uri.parse('https://youtube.com.evil.test/x')),
-          isFalse);
-      expect(isKnownWebPageVideoHost(Uri.parse('https://notyoutube.com/x')),
-          isFalse);
+        isKnownWebPageVideoHost(Uri.parse('https://youtube.com.evil.test/x')),
+        isFalse,
+      );
+      expect(
+        isKnownWebPageVideoHost(Uri.parse('https://notyoutube.com/x')),
+        isFalse,
+      );
     });
 
     test('empty host / garbage url -> false', () {
@@ -214,21 +245,22 @@ void main() {
     });
 
     test(
-        'REGRESSION: soft-warn never degrades to hard-reject — '
-        'web-page URLs stay isPlayableStreamUrl==true (Never break userspace)',
-        () {
-      // A1 only adds a confirm prompt; it must NOT gate import by host.
-      for (final String url in <String>[
-        'https://www.youtube.com/watch?v=x',
-        'https://youtu.be/abc',
-        'https://www.netflix.com/title/123',
-        'https://www.bilibili.com/video/BVxxx',
-      ]) {
-        expect(isKnownWebPageVideoUrl(url), isTrue, reason: url);
-        // The play button stays enabled; user keeps the escape hatch.
-        expect(isPlayableStreamUrl(url), isTrue, reason: url);
-      }
-    });
+      'REGRESSION: soft-warn never degrades to hard-reject — '
+      'web-page URLs stay isPlayableStreamUrl==true (Never break userspace)',
+      () {
+        // A1 only adds a confirm prompt; it must NOT gate import by host.
+        for (final String url in <String>[
+          'https://www.youtube.com/watch?v=x',
+          'https://youtu.be/abc',
+          'https://www.netflix.com/title/123',
+          'https://www.bilibili.com/video/BVxxx',
+        ]) {
+          expect(isKnownWebPageVideoUrl(url), isTrue, reason: url);
+          // The play button stays enabled; user keeps the escape hatch.
+          expect(isPlayableStreamUrl(url), isTrue, reason: url);
+        }
+      },
+    );
   });
 
   group('streamVideoBookUid YouTube canonicalization (TODO-1304 去重)', () {
@@ -280,31 +312,35 @@ void main() {
       expect(a, isNot(b));
     });
 
-    test('YouTube uid still 3-segment video/stream/ family (no prefix clash)',
-        () {
-      final String uid = streamVideoBookUid('https://youtu.be/dQw4w9WgXcQ');
-      expect(uid.startsWith('video/stream/'), isTrue);
-      expect(uid.startsWith('video/ext/'), isFalse);
-      expect(uid.startsWith('video/playlist/'), isFalse);
-      expect(uid.split('/').length, 3);
-    });
+    test(
+      'YouTube uid still 3-segment video/stream/ family (no prefix clash)',
+      () {
+        final String uid = streamVideoBookUid('https://youtu.be/dQw4w9WgXcQ');
+        expect(uid.startsWith('video/stream/'), isTrue);
+        expect(uid.startsWith('video/ext/'), isFalse);
+        expect(uid.startsWith('video/playlist/'), isFalse);
+        expect(uid.split('/').length, 3);
+      },
+    );
 
-    test('non-YouTube direct/HLS URLs keep sha1 identity (unchanged behavior)',
-        () {
-      // 直链保持原 sha1 行为：12 位 hex，不同 URL 各异（query 是签名/token 身份，不归一）。
-      const String hls = 'https://cdn.example.com/live.m3u8?token=abc';
-      final String uid = streamVideoBookUid(hls);
-      final String digest = uid.substring('video/stream/'.length);
-      expect(uid.startsWith('video/stream/'), isTrue);
-      expect(RegExp(r'^[0-9a-f]{12}$').hasMatch(digest), isTrue);
-      // 直链带不同 token → 不同身份（不被误合并）。
-      expect(
-        streamVideoBookUid('https://cdn.example.com/live.m3u8?token=xyz'),
-        isNot(uid),
-      );
-      // YouTube 与直链身份形状不同（前者 yt: 前缀，后者 hex）。
-      expect(digest.startsWith('yt:'), isFalse);
-    });
+    test(
+      'non-YouTube direct/HLS URLs keep sha1 identity (unchanged behavior)',
+      () {
+        // 直链保持原 sha1 行为：12 位 hex，不同 URL 各异（query 是签名/token 身份，不归一）。
+        const String hls = 'https://cdn.example.com/live.m3u8?token=abc';
+        final String uid = streamVideoBookUid(hls);
+        final String digest = uid.substring('video/stream/'.length);
+        expect(uid.startsWith('video/stream/'), isTrue);
+        expect(RegExp(r'^[0-9a-f]{12}$').hasMatch(digest), isTrue);
+        // 直链带不同 token → 不同身份（不被误合并）。
+        expect(
+          streamVideoBookUid('https://cdn.example.com/live.m3u8?token=xyz'),
+          isNot(uid),
+        );
+        // YouTube 与直链身份形状不同（前者 yt: 前缀，后者 hex）。
+        expect(digest.startsWith('yt:'), isFalse);
+      },
+    );
 
     test('unparseable YouTube-host URL falls back to sha1 (no crash)', () {
       // youtube.com 根 URL 无 videoId → youtubeVideoIdOrNull 返 null → 回退 sha1。
@@ -322,42 +358,50 @@ void main() {
         'https://m.youtube.com/watch?v=dQw4w9WgXcQ',
         'https://www.youtube.com/shorts/dQw4w9WgXcQ',
       ]) {
-        expect(streamImportCoverStrategy(url),
-            StreamImportCoverStrategy.youtubeThumbnail,
-            reason: url);
-      }
-    });
-
-    test(
-        'REGRESSION: direct/HLS/m3u8 URLs -> ffmpegFrame (no longer coverless) '
-        '— 旧代码把下封面门控在 isYoutubeUrl 内，直链恒无封面', () {
-      for (final String url in <String>[
-        'https://cdn.example.com/movie.mp4',
-        'https://cdn.example.com/live.m3u8',
-        'https://192.168.1.34/stream.ts',
-        'https://example.com/playlist.m3u8?token=abc',
-      ]) {
-        expect(streamImportCoverStrategy(url),
-            StreamImportCoverStrategy.ffmpegFrame,
-            reason: url);
-      }
-    });
-
-    test('BUG-1975: known non-YouTube webpage URLs skip ffmpeg cover probing',
-        () {
-      for (final String url in <String>[
-        'https://www.bilibili.com/video/BVxxx',
-        'https://www.netflix.com/watch/123',
-        'https://www.nicovideo.jp/watch/sm9',
-        'https://tver.jp/episodes/example',
-      ]) {
         expect(
           streamImportCoverStrategy(url),
-          StreamImportCoverStrategy.noAutomaticCover,
+          StreamImportCoverStrategy.youtubeThumbnail,
           reason: url,
         );
       }
     });
+
+    test(
+      'REGRESSION: direct/HLS/m3u8 URLs -> ffmpegFrame (no longer coverless) '
+      '— 旧代码把下封面门控在 isYoutubeUrl 内，直链恒无封面',
+      () {
+        for (final String url in <String>[
+          'https://cdn.example.com/movie.mp4',
+          'https://cdn.example.com/live.m3u8',
+          'https://192.168.1.34/stream.ts',
+          'https://example.com/playlist.m3u8?token=abc',
+        ]) {
+          expect(
+            streamImportCoverStrategy(url),
+            StreamImportCoverStrategy.ffmpegFrame,
+            reason: url,
+          );
+        }
+      },
+    );
+
+    test(
+      'BUG-1975: known non-YouTube webpage URLs skip ffmpeg cover probing',
+      () {
+        for (final String url in <String>[
+          'https://www.bilibili.com/video/BVxxx',
+          'https://www.netflix.com/watch/123',
+          'https://www.nicovideo.jp/watch/sm9',
+          'https://tver.jp/episodes/example',
+        ]) {
+          expect(
+            streamImportCoverStrategy(url),
+            StreamImportCoverStrategy.noAutomaticCover,
+            reason: url,
+          );
+        }
+      },
+    );
   });
 
   group('StreamVideoSpec (TODO-1157 流媒体入库重开规格)', () {
@@ -397,8 +441,9 @@ void main() {
     });
 
     test('httpHeaderFields omits empty referer/userAgent', () {
-      const StreamVideoSpec spec =
-          StreamVideoSpec(subtitleUrl: 'https://x/y.srt');
+      const StreamVideoSpec spec = StreamVideoSpec(
+        subtitleUrl: 'https://x/y.srt',
+      );
       expect(spec.isEmpty, isFalse);
       expect(spec.httpHeaderFields, isEmpty);
     });
@@ -427,8 +472,9 @@ void main() {
     });
 
     test('非 YouTube 直链 client 无 youtubeCaptionsUrl（不触发字幕后置）', () {
-      final UrlStreamVideoClient client =
-          UrlStreamVideoClient(streamUrl: 'https://cdn.test/live.m3u8');
+      final UrlStreamVideoClient client = UrlStreamVideoClient(
+        streamUrl: 'https://cdn.test/live.m3u8',
+      );
       expect(client.youtubeCaptionsUrl, isNull);
       expect(client.preresolvedCues, isEmpty);
       client.close();
@@ -451,8 +497,10 @@ void main() {
         ),
       ]);
       expect(client.youtubeCaptionTracks.length, 1);
-      expect(client.youtubeCaptionTracks.first.trackKey,
-          'youtube:captions:ja:human');
+      expect(
+        client.youtubeCaptionTracks.first.trackKey,
+        'youtube:captions:ja:human',
+      );
       client.close();
     });
 

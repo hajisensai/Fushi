@@ -21,7 +21,9 @@ void main() {
 
   Widget buildApp(Widget child) {
     return TranslationProvider(
-      child: MaterialApp(home: Scaffold(body: Center(child: child))),
+      child: MaterialApp(
+        home: Scaffold(body: Center(child: child)),
+      ),
     );
   }
 
@@ -80,9 +82,11 @@ void main() {
       ),
     );
     // `_initExisting` 是一次 DB 往返：显式 pump 排空，等导入表单出现。
-    for (int i = 0;
-        i < 20 && find.text(t.dialog_import).evaluate().isEmpty;
-        i++) {
+    for (
+      int i = 0;
+      i < 20 && find.text(t.dialog_import).evaluate().isEmpty;
+      i++
+    ) {
       await tester.pump(const Duration(milliseconds: 50));
     }
     expect(find.text(t.dialog_import), findsOneWidget);

@@ -9,13 +9,13 @@ import 'package:fushi/models.dart';
 class AddToStashAction extends QuickAction {
   /// Initialise this enhancement with the hardset parameters.
   AddToStashAction()
-      : super(
-          uniqueKey: key,
-          label: 'Add To Stash',
-          description:
-              'Quickly save the headword of a dictionary entry to the Stash.',
-          icon: Icons.bookmark_add_outlined,
-        );
+    : super(
+        uniqueKey: key,
+        label: 'Add To Stash',
+        description:
+            'Quickly save the headword of a dictionary entry to the Stash.',
+        icon: Icons.bookmark_add_outlined,
+      );
 
   /// Used to identify this enhancement and to allow a constant value for the
   /// default mappings value of [AnkiMapping].

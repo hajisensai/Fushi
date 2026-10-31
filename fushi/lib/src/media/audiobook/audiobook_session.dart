@@ -319,7 +319,11 @@ class AudiobookSession extends ChangeNotifier {
               ),
             )
             .catchError((Object e, StackTrace stack) {
-              ErrorLogService.instance.log('AudiobookSession.remoteAttach', e, stack);
+              ErrorLogService.instance.log(
+                'AudiobookSession.remoteAttach',
+                e,
+                stack,
+              );
             }),
       );
     }

@@ -43,8 +43,9 @@ import '../test/helpers/glass_unwrap.dart';
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('TODO-1058：视频画面区滚轮真改音量，chrome 区滚轮不接管',
-      (WidgetTester tester) async {
+  testWidgets('TODO-1058：视频画面区滚轮真改音量，chrome 区滚轮不接管', (
+    WidgetTester tester,
+  ) async {
     final List<FlutterErrorDetails> errors = <FlutterErrorDetails>[];
     final FlutterExceptionHandler? oldHandler = FlutterError.onError;
     FlutterError.onError = (FlutterErrorDetails details) {
@@ -65,11 +66,16 @@ void main() {
       final String uid = await seedVideo(tester);
       final AppModel appModel = await readyAppModel(tester);
       final VideoBookRepository repo = VideoBookRepository(appModel.database);
-      final NavigatorState navigator =
-          tester.state<NavigatorState>(find.byType(Navigator).first);
-      unawaited(navigator.push<void>(MaterialPageRoute<void>(
-        builder: (_) => VideoFushiPage(bookUid: uid, repo: repo),
-      )));
+      final NavigatorState navigator = tester.state<NavigatorState>(
+        find.byType(Navigator).first,
+      );
+      unawaited(
+        navigator.push<void>(
+          MaterialPageRoute<void>(
+            builder: (_) => VideoFushiPage(bookUid: uid, repo: repo),
+          ),
+        ),
+      );
 
       // 等 controller load（debugPositionMs 可读即 controller 就绪；桌面控制条要
       // hover 才显示图标，不靠图标判就绪，与 video_shader_focus_test 一致）。
@@ -85,8 +91,11 @@ void main() {
           break;
         }
       }
-      expect(ready, isTrue,
-          reason: 'video controller 应 load（debugPositionMs 可读）');
+      expect(
+        ready,
+        isTrue,
+        reason: 'video controller 应 load（debugPositionMs 可读）',
+      );
 
       // 真实播放，贴近用户在放视频时滚轮调音量的场景。
       await hooks().debugPlay();
@@ -94,8 +103,9 @@ void main() {
 
       // ── 2) 定位视频页几何：中心=画面区、底部=控制条 chrome 区 ────────────
       final Finder pageFinder = find.byType(VideoFushiPage);
-      final RenderBox pageBox =
-          tester.renderObject<RenderBox>(pageFinder.first);
+      final RenderBox pageBox = tester.renderObject<RenderBox>(
+        pageFinder.first,
+      );
       final Offset topLeft = pageBox.localToGlobal(Offset.zero);
       final Size pageSize = pageBox.size;
       // 画面区中心：远离顶/底 chrome，videoPointerHitsChrome 判定为「非 chrome」放行。
@@ -112,8 +122,10 @@ void main() {
       double? readHudVolumePercent() {
         final Finder hud = find.byKey(videoVolumeHudProgressKey);
         if (hud.evaluate().isEmpty) return null;
-        final LinearProgressIndicator w =
-            tester.widget<LinearProgressIndicator>(glassUnwrap<LinearProgressIndicator>(hud));
+        final LinearProgressIndicator w = tester
+            .widget<LinearProgressIndicator>(
+              glassUnwrap<LinearProgressIndicator>(hud),
+            );
         final double? v = w.value;
         return v == null ? null : v * 100.0;
       }
@@ -122,8 +134,10 @@ void main() {
       // TestPointer 先 hover 到该点（注册鼠标指针位置，使随后的滚轮信号能命中该点
       // 的 RenderPointerListener），再 sendEventToBinding 发 scroll——这是 Flutter
       // 测试注入滚轮的规范路径，会走真实 hit-test 命中画面 Listener.onPointerSignal。
-      final TestPointer wheelPointer =
-          TestPointer(1, ui.PointerDeviceKind.mouse);
+      final TestPointer wheelPointer = TestPointer(
+        1,
+        ui.PointerDeviceKind.mouse,
+      );
       Future<void> sendWheel(Offset at, double dy) async {
         await tester.sendEventToBinding(wheelPointer.hover(at));
         await tester.sendEventToBinding(wheelPointer.scroll(Offset(0, dy)));
@@ -138,9 +152,13 @@ void main() {
       }
       final double? baseline = readHudVolumePercent();
       debugPrint('[wheel-vol] baseline=$baseline');
-      expect(baseline, isNotNull,
-          reason: '压低音量后音量 HUD 应出现并可读（说明画面区滚轮已被 '
-              '_handleVideoWheelSignal 接管并改了音量）');
+      expect(
+        baseline,
+        isNotNull,
+        reason:
+            '压低音量后音量 HUD 应出现并可读（说明画面区滚轮已被 '
+            '_handleVideoWheelSignal 接管并改了音量）',
+      );
       expect(baseline!, lessThan(100.0), reason: '向下滚数次后音量应已低于满值（画面区滚轮真的在减音量）');
 
       // ── ① 画面区向上滚 → 音量真升 ─────────────────────────────────────────
@@ -149,8 +167,11 @@ void main() {
       final double? afterUp = readHudVolumePercent();
       debugPrint('[wheel-vol] afterUp=$afterUp (baseline=$baseline)');
       expect(afterUp, isNotNull, reason: '向上滚后音量 HUD 应可读');
-      expect(afterUp!, greaterThan(baseline),
-          reason: '画面区向上滚音量应上升（$baseline → $afterUp）');
+      expect(
+        afterUp!,
+        greaterThan(baseline),
+        reason: '画面区向上滚音量应上升（$baseline → $afterUp）',
+      );
 
       // ── ② 画面区向下滚 → 音量真降 ─────────────────────────────────────────
       await sendWheel(pictureCenter, 40); // dy>0（向下）= 减
@@ -158,8 +179,11 @@ void main() {
       final double? afterDown = readHudVolumePercent();
       debugPrint('[wheel-vol] afterDown=$afterDown (afterUp=$afterUp)');
       expect(afterDown, isNotNull, reason: '向下滚后音量 HUD 应可读');
-      expect(afterDown!, lessThan(afterUp),
-          reason: '画面区向下滚音量应下降（$afterUp → $afterDown）');
+      expect(
+        afterDown!,
+        lessThan(afterUp),
+        reason: '画面区向下滚音量应下降（$afterUp → $afterDown）',
+      );
 
       // ── ③ 门控反证：滚轮落在底栏 chrome 区 → 音量不变 ────────────────────
       // 先读一个稳定的「反证前」音量真值（再滚一次画面区确保 HUD 在场、拿到确定值）。
@@ -177,8 +201,10 @@ void main() {
         (Offset a, Offset b) => a.dy >= b.dy ? a : b,
       );
       final double? beforeChrome = readHudVolumePercent();
-      debugPrint('[wheel-vol] beforeChrome=$beforeChrome '
-          'chromeAt=$bottomChrome (page=$pageSize)');
+      debugPrint(
+        '[wheel-vol] beforeChrome=$beforeChrome '
+        'chromeAt=$bottomChrome (page=$pageSize)',
+      );
       expect(beforeChrome, isNotNull, reason: '反证前音量 HUD 应可读');
       // 向底栏 chrome 区连发多次滚轮：若画面级 handler 误接管，音量会明显变化。
       for (int i = 0; i < 5; i++) {
@@ -189,9 +215,13 @@ void main() {
       // afterChrome 可能为 null（HUD 已淡出且 chrome 滚轮没触发新 HUD）——那本身也
       // 证明 chrome 区滚轮没经画面级 handler 改音量（否则会刷出新音量 HUD）。
       if (afterChrome != null) {
-        expect((afterChrome - beforeChrome!).abs(), lessThan(1.0),
-            reason: 'chrome 区滚轮不应被画面级 handler 接管改音量'
-                '（$beforeChrome → $afterChrome，应几乎不变）');
+        expect(
+          (afterChrome - beforeChrome!).abs(),
+          lessThan(1.0),
+          reason:
+              'chrome 区滚轮不应被画面级 handler 接管改音量'
+              '（$beforeChrome → $afterChrome，应几乎不变）',
+        );
       } else {
         debugPrint('[wheel-vol] chrome 区滚轮未刷出新音量 HUD → 未接管（符合门控）');
       }
@@ -199,11 +229,15 @@ void main() {
       // ── 4) 抓一帧作证据 ───────────────────────────────────────────────────
       // 再滚一次画面区让音量 HUD 在场，然后抓帧。
       await sendWheel(pictureCenter, -40);
-      final ObserveShot shot =
-          await captureFlutterFrame(tester, 'todo1058-wheel-volume-hud');
+      final ObserveShot shot = await captureFlutterFrame(
+        tester,
+        'todo1058-wheel-volume-hud',
+      );
       expect(shot.saved, isTrue, reason: '证据帧应落盘');
-      debugPrint('[wheel-vol] evidence=${shot.path} (${shot.bytes}B '
-          'nonBlank=${shot.nonBlank})');
+      debugPrint(
+        '[wheel-vol] evidence=${shot.path} (${shot.bytes}B '
+        'nonBlank=${shot.nonBlank})',
+      );
 
       assertStrictErrors(errors);
     } finally {

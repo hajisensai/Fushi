@@ -9,13 +9,13 @@ import 'package:fushi_dictionary/fushi_dictionary.dart';
 class CopyToClipboardAction extends QuickAction {
   /// Initialise this enhancement with the hardset parameters.
   CopyToClipboardAction()
-      : super(
-          uniqueKey: key,
-          label: 'Copy To Clipboard',
-          description:
-              'Copy the headword of a dictionary entry to the clipboard.',
-          icon: Icons.copy_outlined,
-        );
+    : super(
+        uniqueKey: key,
+        label: 'Copy To Clipboard',
+        description:
+            'Copy the headword of a dictionary entry to the clipboard.',
+        icon: Icons.copy_outlined,
+      );
 
   /// Used to identify this enhancement and to allow a constant value for the
   /// default mappings value of [AnkiMapping].

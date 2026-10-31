@@ -481,10 +481,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
       contentBuilder: _buildContent,
     );
     if (widget.embedded) return buildEmbeddedStatTab(context, body);
-    return FushiPageScaffold(
-      title: t.reading_statistics,
-      body: body,
-    );
+    return FushiPageScaffold(title: t.reading_statistics, body: body);
   }
 
   /// 页面骨架与总览 / 观看 / 游戏 tab 同一套（2026-10 统计中心重设计，
@@ -508,10 +505,7 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
     return StatDashboardBody(
       hero: hero,
       tail: buildStatTailSliver(context),
-      trend: <Widget>[
-        ..._buildRangeSection(),
-        _buildAnalysisFold(),
-      ],
+      trend: <Widget>[..._buildRangeSection(), _buildAnalysisFold()],
       details: <Widget>[
         buildStatSessionSection(
           context,
@@ -1252,7 +1246,9 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
   String? _sessionCollectionName(StudySession s) => s.mediaKey.isEmpty
       ? null
       : statCollectionName(
-          MediaKind.epub.compositeKey(_epubUidByBookKey[s.mediaKey] ?? s.mediaKey),
+          MediaKind.epub.compositeKey(
+            _epubUidByBookKey[s.mediaKey] ?? s.mediaKey,
+          ),
           _primaryCollectionByEntry,
           _collectionNamesById,
         );
@@ -1328,7 +1324,8 @@ class _ReadingStatisticsPageState extends BasePageState<ReadingStatisticsPage> {
             ),
       title: _bookDisplayTitle(book),
       collectionName: _collectionNameForBook(book),
-      meta: '${formatStatChars(book.chars)} · '
+      meta:
+          '${formatStatChars(book.chars)} · '
           '${t.stat_sessions_count(n: sessionCount)}$speed',
       meta2:
           '${t.stat_lookup}: ${counter.lookups} · ${t.stat_mined}: ${counter.mines} · ${t.stat_favorited}: $favorites',
@@ -1377,10 +1374,12 @@ class StatMiniTile extends StatelessWidget {
     // 回落中性最高层，Apple 保持 tertiaryGrouped 嵌套底。
     final bool apple = isGlassDesign(context);
     final bool tonal = !apple && !isEinkTheme(context);
-    final Color valueColor =
-        tonal ? scheme.onSecondaryContainer : scheme.onSurface;
-    final Color labelColor =
-        tonal ? scheme.onSecondaryContainer : scheme.onSurfaceVariant;
+    final Color valueColor = tonal
+        ? scheme.onSecondaryContainer
+        : scheme.onSurface;
+    final Color labelColor = tonal
+        ? scheme.onSecondaryContainer
+        : scheme.onSurfaceVariant;
     return Container(
       margin: EdgeInsets.only(right: tokens.spacing.gap),
       padding: EdgeInsets.symmetric(

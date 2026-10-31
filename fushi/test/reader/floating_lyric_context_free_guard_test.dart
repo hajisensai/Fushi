@@ -28,30 +28,41 @@ void main() {
     expect(
       src.contains('Theme.of(context)'),
       isFalse,
-      reason: '悬浮歌词样式在进程级 session 求值，State.context 可能为 null；'
+      reason:
+          '悬浮歌词样式在进程级 session 求值，State.context 可能为 null；'
           '强调色必须走 context-free 的 _readerLyricAccentColor()',
     );
   });
 
   test('存在 context-free 强调色 helper _readerLyricAccentColor', () {
-    expect(src.contains('Color _readerLyricAccentColor()'), isTrue,
-        reason: '应抽出 context-free accent helper 统一三处用色');
+    expect(
+      src.contains('Color _readerLyricAccentColor()'),
+      isTrue,
+      reason: '应抽出 context-free accent helper 统一三处用色',
+    );
     final int idx = src.indexOf('Color _readerLyricAccentColor()');
     expect(idx, greaterThan(0));
     final int end = src.indexOf('\n  }', idx);
     final String body = src.substring(idx, end);
     // 容忍 formatter 在 `appModel` 与 `.buildColorScheme(` 之间折行（BUG-2187
     // 主题重设计后这段被重排），但仍钉死「取自 appModel 的那一条」。
-    expect(RegExp(r'appModel\s*\.\s*buildColorScheme\(').hasMatch(body), isTrue,
-        reason:
-            'accent 浅色支必须取自 appModel.buildColorScheme（与 ThemeData 同源、context-free）');
-    expect(body.contains('context'), isFalse,
-        reason: 'accent helper 体内绝不可触碰 State.context');
+    expect(
+      RegExp(r'appModel\s*\.\s*buildColorScheme\(').hasMatch(body),
+      isTrue,
+      reason:
+          'accent 浅色支必须取自 appModel.buildColorScheme（与 ThemeData 同源、context-free）',
+    );
+    expect(
+      body.contains('context'),
+      isFalse,
+      reason: 'accent helper 体内绝不可触碰 State.context',
+    );
   });
 
   test('悬浮窗样式 getter 的配色是 context-free 的', () {
-    final int idx =
-        src.indexOf('FloatingLyricStyle _readerFloatingLyricStyle(');
+    final int idx = src.indexOf(
+      'FloatingLyricStyle _readerFloatingLyricStyle(',
+    );
     expect(idx, greaterThan(0));
     final int end = src.indexOf('\n  }', idx);
     final String body = src.substring(idx, end);
@@ -59,12 +70,21 @@ void main() {
     // ThemeData：按阅读器明暗传 appModel.darkTheme / appModel.theme（经单一主题工厂
     // 成型，墨水屏 / Apple 配色都在里面；其 colorScheme 与 buildColorScheme 同源），
     // 不碰 State.context。
-    expect(RegExp(r'appModel\s*\.\s*darkTheme\b').hasMatch(body), isTrue,
-        reason: '悬浮窗配色必须取自 context-free 的 appModel.darkTheme / theme');
-    expect(RegExp(r'appModel\s*\.\s*theme\b').hasMatch(body), isTrue,
-        reason: '悬浮窗配色必须取自 context-free 的 appModel.darkTheme / theme');
+    expect(
+      RegExp(r'appModel\s*\.\s*darkTheme\b').hasMatch(body),
+      isTrue,
+      reason: '悬浮窗配色必须取自 context-free 的 appModel.darkTheme / theme',
+    );
+    expect(
+      RegExp(r'appModel\s*\.\s*theme\b').hasMatch(body),
+      isTrue,
+      reason: '悬浮窗配色必须取自 context-free 的 appModel.darkTheme / theme',
+    );
     expect(body.contains('Theme.of('), isFalse);
-    expect(body.contains('context'), isFalse,
-        reason: '悬浮窗样式 getter 体内绝不可触碰 State.context');
+    expect(
+      body.contains('context'),
+      isFalse,
+      reason: '悬浮窗样式 getter 体内绝不可触碰 State.context',
+    );
   });
 }

@@ -24,8 +24,9 @@ void main() {
 
   late Directory pathProviderDir;
   setUpAll(() {
-    pathProviderDir =
-        Directory.systemTemp.createTempSync('fushi_fav_words_collections_pp');
+    pathProviderDir = Directory.systemTemp.createTempSync(
+      'fushi_fav_words_collections_pp',
+    );
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
       const MethodChannel('plugins.flutter.io/path_provider'),
       (MethodCall call) async => pathProviderDir.path,
@@ -72,16 +73,15 @@ void main() {
   }
 
   Widget buildPage() => ProviderScope(
-        overrides: <Override>[
-          appProvider.overrideWith((ref) => appModel),
-        ],
-        child: TranslationProvider(
-          child: const MaterialApp(home: CollectionsPage()),
-        ),
-      );
+    overrides: <Override>[appProvider.overrideWith((ref) => appModel)],
+    child: TranslationProvider(
+      child: const MaterialApp(home: CollectionsPage()),
+    ),
+  );
 
-  testWidgets('收藏的单词在收藏列表里真渲染（词形 + 读音 + 释义 + 类型标签）',
-      (WidgetTester tester) async {
+  testWidgets('收藏的单词在收藏列表里真渲染（词形 + 读音 + 释义 + 类型标签）', (
+    WidgetTester tester,
+  ) async {
     await seedWord(
       expression: '邂逅',
       reading: 'かいこう',
@@ -94,15 +94,17 @@ void main() {
     // 词形（标题行）。
     expect(find.text('邂逅'), findsOneWidget, reason: '收藏的单词词形必须出现在收藏列表');
     // 类型标签「单词」（leading 列）。
-    expect(find.text(t.collection_word), findsWidgets,
-        reason: '收藏词行必须标注「单词」类型');
+    expect(
+      find.text(t.collection_word),
+      findsWidgets,
+      reason: '收藏词行必须标注「单词」类型',
+    );
     // 副标题包含读音 + 释义（用 textContaining，因副标题还拼了日期）。
     expect(find.textContaining('かいこう'), findsOneWidget);
     expect(find.textContaining('chance meeting'), findsOneWidget);
   });
 
-  testWidgets('收藏词带上收藏时的原句：列表行显示原句，详情显示释义与原句',
-      (WidgetTester tester) async {
+  testWidgets('收藏词带上收藏时的原句：列表行显示原句，详情显示释义与原句', (WidgetTester tester) async {
     await db.addFavoriteWord(
       expression: 'normie',
       reading: '',
@@ -116,8 +118,11 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('normie'), findsOneWidget);
-    expect(find.text('She could be described as a normie.'), findsOneWidget,
-        reason: '收藏词行必须显示收藏时所在的原句（此前只剩词形）');
+    expect(
+      find.text('She could be described as a normie.'),
+      findsOneWidget,
+      reason: '收藏词行必须显示收藏时所在的原句（此前只剩词形）',
+    );
     expect(find.textContaining('a normal person'), findsOneWidget);
 
     await tester.longPress(find.text('normie'));
@@ -155,8 +160,11 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('She could be described as a normie.'), findsOneWidget);
-    expect(find.text('normie'), findsOneWidget,
-        reason: '句子收藏必须显示对应的单词（用户报：收藏了句子却看不到单词）');
+    expect(
+      find.text('normie'),
+      findsOneWidget,
+      reason: '句子收藏必须显示对应的单词（用户报：收藏了句子却看不到单词）',
+    );
   });
 
   testWidgets('分类筛选：只看单词时隐藏收藏句', (WidgetTester tester) async {
@@ -177,16 +185,12 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('一期一会の邂逅だった。'), findsOneWidget);
 
-    await tester.tap(
-      find.widgetWithText(ChoiceChip, t.collection_word),
-    );
+    await tester.tap(find.widgetWithText(ChoiceChip, t.collection_word));
     await tester.pumpAndSettle();
     expect(find.text('邂逅'), findsOneWidget);
     expect(find.text('一期一会の邂逅だった。'), findsNothing);
 
-    await tester.tap(
-      find.widgetWithText(ChoiceChip, t.collection_filter_all),
-    );
+    await tester.tap(find.widgetWithText(ChoiceChip, t.collection_filter_all));
     await tester.pumpAndSettle();
     expect(find.text('一期一会の邂逅だった。'), findsOneWidget);
   });

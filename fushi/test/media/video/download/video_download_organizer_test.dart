@@ -144,81 +144,78 @@ void main() {
     },
   );
 
-  test(
-    'movie organizer keeps sibling standalone movies out of Extras and '
-    'mirrors their source names without lossy renaming (BUG-2007)',
-    () async {
-      final Directory root = await Directory.systemTemp.createTemp(
-        'fushi-organizer-multimovie-',
-      );
-      addTearDown(() async {
-        if (await root.exists()) await root.delete(recursive: true);
-      });
-      final VideoOrganizationPlan plan = const VideoDownloadOrganizer().plan(
-        VideoOrganizationRequest(
-          torrentId: 'hash',
-          title: 'Doraemon Movie 1',
-          year: 2013,
-          kind: VideoOrganizationKind.movie,
-          sourceRoot: root.path,
-          pathMapping: VideoDownloadPathMapping(
-            remoteRoot: '/library',
-            localRoot: root.path,
-          ),
+  test('movie organizer keeps sibling standalone movies out of Extras and '
+      'mirrors their source names without lossy renaming (BUG-2007)', () async {
+    final Directory root = await Directory.systemTemp.createTemp(
+      'fushi-organizer-multimovie-',
+    );
+    addTearDown(() async {
+      if (await root.exists()) await root.delete(recursive: true);
+    });
+    final VideoOrganizationPlan plan = const VideoDownloadOrganizer().plan(
+      VideoOrganizationRequest(
+        torrentId: 'hash',
+        title: 'Doraemon Movie 1',
+        year: 2013,
+        kind: VideoOrganizationKind.movie,
+        sourceRoot: root.path,
+        pathMapping: VideoDownloadPathMapping(
+          remoteRoot: '/library',
+          localRoot: root.path,
         ),
-        <TorrentFileEntry>[
-          const TorrentFileEntry(
-            name: 'Movies/Doraemon 2013.mkv',
-            size: 200,
-            progress: 1,
-            index: 0,
-          ),
-          // 前編/後編：文件名解析会把两者归约成同一个标题——目标路径绝不允许
-          // 用有损解析结果命名，否则这里撞名、整条 job 硬失败（BUG-2007 重做：
-          // 并列正片沿用 Extras 同款「镜像源结构」，唯一性由源路径保证）。
-          const TorrentFileEntry(
-            name: 'Movies/Gekijouban Aoi Zenpen (2011).mkv',
-            size: 150,
-            progress: 1,
-            index: 1,
-          ),
-          const TorrentFileEntry(
-            name: 'Movies/Gekijouban Aoi Kouhen (2011).mkv',
-            size: 150,
-            progress: 1,
-            index: 2,
-          ),
-          // 特典目录照旧进 Extras，体量够大也不例外。
-          const TorrentFileEntry(
-            name: 'Movies/SPs/Bonus Feature.mkv',
-            size: 150,
-            progress: 1,
-            index: 3,
-          ),
-          // 小文件（< 主片 1/4）照旧进 Extras。
-          const TorrentFileEntry(
-            name: 'Movies/CM Collection.mkv',
-            size: 20,
-            progress: 1,
-            index: 4,
-          ),
-        ],
-      );
+      ),
+      <TorrentFileEntry>[
+        const TorrentFileEntry(
+          name: 'Movies/Doraemon 2013.mkv',
+          size: 200,
+          progress: 1,
+          index: 0,
+        ),
+        // 前編/後編：文件名解析会把两者归约成同一个标题——目标路径绝不允许
+        // 用有损解析结果命名，否则这里撞名、整条 job 硬失败（BUG-2007 重做：
+        // 并列正片沿用 Extras 同款「镜像源结构」，唯一性由源路径保证）。
+        const TorrentFileEntry(
+          name: 'Movies/Gekijouban Aoi Zenpen (2011).mkv',
+          size: 150,
+          progress: 1,
+          index: 1,
+        ),
+        const TorrentFileEntry(
+          name: 'Movies/Gekijouban Aoi Kouhen (2011).mkv',
+          size: 150,
+          progress: 1,
+          index: 2,
+        ),
+        // 特典目录照旧进 Extras，体量够大也不例外。
+        const TorrentFileEntry(
+          name: 'Movies/SPs/Bonus Feature.mkv',
+          size: 150,
+          progress: 1,
+          index: 3,
+        ),
+        // 小文件（< 主片 1/4）照旧进 Extras。
+        const TorrentFileEntry(
+          name: 'Movies/CM Collection.mkv',
+          size: 20,
+          progress: 1,
+          index: 4,
+        ),
+      ],
+    );
 
-      expect(
-        plan.files.map(
-          (VideoOrganizationFilePlan file) => file.targetRelativePath,
-        ),
-        <String>[
-          'Doraemon Movie 1 (2013)/Doraemon Movie 1 (2013).mkv',
-          'Doraemon Movie 1 (2013)/Gekijouban Aoi Zenpen (2011).mkv',
-          'Doraemon Movie 1 (2013)/Gekijouban Aoi Kouhen (2011).mkv',
-          'Doraemon Movie 1 (2013)/Extras/SPs/Bonus Feature.mkv',
-          'Doraemon Movie 1 (2013)/Extras/CM Collection.mkv',
-        ],
-      );
-    },
-  );
+    expect(
+      plan.files.map(
+        (VideoOrganizationFilePlan file) => file.targetRelativePath,
+      ),
+      <String>[
+        'Doraemon Movie 1 (2013)/Doraemon Movie 1 (2013).mkv',
+        'Doraemon Movie 1 (2013)/Gekijouban Aoi Zenpen (2011).mkv',
+        'Doraemon Movie 1 (2013)/Gekijouban Aoi Kouhen (2011).mkv',
+        'Doraemon Movie 1 (2013)/Extras/SPs/Bonus Feature.mkv',
+        'Doraemon Movie 1 (2013)/Extras/CM Collection.mkv',
+      ],
+    );
+  });
 
   test(
     'a numbered movie pack (Movie 01…NN) keeps every film as a standalone '
@@ -351,35 +348,33 @@ void main() {
     });
 
     test('a genuine movie with NCOP / PV extras keeps the movie layout', () {
-      final VideoOrganizationPlan plan = const VideoDownloadOrganizer().plan(
-        movieRequest(_localRoot),
-        <TorrentFileEntry>[
-          const TorrentFileEntry(
-            name: 'Release/Some Film (2024) [BD 1080p].mkv',
-            size: 1000,
-            progress: 1,
-            index: 0,
-          ),
-          const TorrentFileEntry(
-            name: 'Release/Some Film NCOP.mkv',
-            size: 50,
-            progress: 1,
-            index: 1,
-          ),
-          const TorrentFileEntry(
-            name: 'Release/Some Film PV01.mkv',
-            size: 40,
-            progress: 1,
-            index: 2,
-          ),
-          const TorrentFileEntry(
-            name: 'Release/Some Film PV02.mkv',
-            size: 40,
-            progress: 1,
-            index: 3,
-          ),
-        ],
-      );
+      final VideoOrganizationPlan plan = const VideoDownloadOrganizer()
+          .plan(movieRequest(_localRoot), <TorrentFileEntry>[
+            const TorrentFileEntry(
+              name: 'Release/Some Film (2024) [BD 1080p].mkv',
+              size: 1000,
+              progress: 1,
+              index: 0,
+            ),
+            const TorrentFileEntry(
+              name: 'Release/Some Film NCOP.mkv',
+              size: 50,
+              progress: 1,
+              index: 1,
+            ),
+            const TorrentFileEntry(
+              name: 'Release/Some Film PV01.mkv',
+              size: 40,
+              progress: 1,
+              index: 2,
+            ),
+            const TorrentFileEntry(
+              name: 'Release/Some Film PV02.mkv',
+              size: 40,
+              progress: 1,
+              index: 3,
+            ),
+          ]);
 
       const String film = 'スーパーの裏でヤニ吸うふたり (2026)';
       expect(plan.kind, VideoOrganizationKind.movie);
@@ -398,29 +393,27 @@ void main() {
 
     test('an unnumbered main feature beside numbered bonus clips stays a '
         'movie', () {
-      final VideoOrganizationPlan plan = const VideoDownloadOrganizer().plan(
-        movieRequest(_localRoot),
-        <TorrentFileEntry>[
-          const TorrentFileEntry(
-            name: 'Some Film (2024).mkv',
-            size: 1000,
-            progress: 1,
-            index: 0,
-          ),
-          const TorrentFileEntry(
-            name: 'Bonus Clip - 01.mkv',
-            size: 30,
-            progress: 1,
-            index: 1,
-          ),
-          const TorrentFileEntry(
-            name: 'Bonus Clip - 02.mkv',
-            size: 30,
-            progress: 1,
-            index: 2,
-          ),
-        ],
-      );
+      final VideoOrganizationPlan plan = const VideoDownloadOrganizer()
+          .plan(movieRequest(_localRoot), <TorrentFileEntry>[
+            const TorrentFileEntry(
+              name: 'Some Film (2024).mkv',
+              size: 1000,
+              progress: 1,
+              index: 0,
+            ),
+            const TorrentFileEntry(
+              name: 'Bonus Clip - 01.mkv',
+              size: 30,
+              progress: 1,
+              index: 1,
+            ),
+            const TorrentFileEntry(
+              name: 'Bonus Clip - 02.mkv',
+              size: 30,
+              progress: 1,
+              index: 2,
+            ),
+          ]);
 
       expect(plan.kind, VideoOrganizationKind.movie);
       expect(
@@ -428,9 +421,9 @@ void main() {
         'スーパーの裏でヤニ吸うふたり (2026)/スーパーの裏でヤニ吸うふたり (2026).mkv',
       );
       expect(
-        plan.files.skip(1).map(
-          (VideoOrganizationFilePlan file) => file.targetRelativePath,
-        ),
+        plan.files
+            .skip(1)
+            .map((VideoOrganizationFilePlan file) => file.targetRelativePath),
         everyElement(contains('/Extras/')),
       );
     });
@@ -446,7 +439,10 @@ void main() {
       );
       // 一集的两个版本不构成合集。
       expect(
-        looksLikeEpisodicPack(<String>['Show - 01 [v1].mkv', 'Show - 01 [v2].mkv']),
+        looksLikeEpisodicPack(<String>[
+          'Show - 01 [v1].mkv',
+          'Show - 01 [v2].mkv',
+        ]),
         isFalse,
       );
       // 单文件、没有集号的真电影。

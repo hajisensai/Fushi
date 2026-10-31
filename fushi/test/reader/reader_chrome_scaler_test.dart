@@ -24,8 +24,9 @@ void main() {
   });
 
   group('ReaderChromeScaler widget', () {
-    testWidgets('scale 1.0 passes child through (no extra box height)',
-        (tester) async {
+    testWidgets('scale 1.0 passes child through (no extra box height)', (
+      tester,
+    ) async {
       await tester.pumpWidget(
         Directionality(
           textDirection: TextDirection.ltr,
@@ -48,8 +49,9 @@ void main() {
       expect(find.byType(FittedBox), findsNothing);
     });
 
-    testWidgets('scale 1.5 renders box at base*scale height, full width',
-        (tester) async {
+    testWidgets('scale 1.5 renders box at base*scale height, full width', (
+      tester,
+    ) async {
       await tester.pumpWidget(
         Directionality(
           textDirection: TextDirection.ltr,

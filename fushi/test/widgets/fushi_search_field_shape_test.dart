@@ -53,14 +53,16 @@ Future<void> _pumpSearchField(
             child: bare,
           ),
         );
-  await tester.pumpWidget(buildTestApp(
-    Align(alignment: Alignment.topCenter, child: field),
-  ));
+  await tester.pumpWidget(
+    buildTestApp(Align(alignment: Alignment.topCenter, child: field)),
+  );
   await tester.pumpAndSettle();
 }
 
 InputDecoration _decorationOf(WidgetTester tester) {
-  final TextField field = tester.widget<TextField>(glassUnwrap<TextField>(find.byType(TextField)));
+  final TextField field = tester.widget<TextField>(
+    glassUnwrap<TextField>(find.byType(TextField)),
+  );
   final InputDecoration? decoration = field.decoration;
   expect(decoration, isNotNull, reason: '搜索框必须带 InputDecoration');
   return decoration!;
@@ -92,22 +94,14 @@ void main() {
     expect(find.byType(TextField), findsOneWidget);
 
     final Size size = tester.getSize(find.byType(TextField));
-    expect(
-      size.height,
-      _libraryPageFieldHeight,
-      reason: '搜索框高度必须与库页工具条一致',
-    );
+    expect(size.height, _libraryPageFieldHeight, reason: '搜索框高度必须与库页工具条一致');
     expect(kFushiSearchFieldHeight, _libraryPageFieldHeight);
 
     final InputDecoration decoration = _decorationOf(tester);
     expect(decoration.border, isA<OutlineInputBorder>());
     final OutlineInputBorder border = decoration.border! as OutlineInputBorder;
     expect(border.borderSide, BorderSide.none, reason: '静止态不描边');
-    expect(
-      border.borderRadius,
-      BorderRadius.circular(999),
-      reason: '搜索框是全胶囊',
-    );
+    expect(border.borderRadius, BorderRadius.circular(999), reason: '搜索框是全胶囊');
     expect(decoration.isDense, isTrue);
     expect(decoration.filled, isTrue, reason: '填充胶囊形态');
 
@@ -135,6 +129,8 @@ void main() {
     // RenderFlex overflow 会以异常形式记录，这里必须是干净的一帧。
     expect(tester.takeException(), isNull);
     expect(
-        tester.getSize(find.byType(TextField)).height, _libraryPageFieldHeight);
+      tester.getSize(find.byType(TextField)).height,
+      _libraryPageFieldHeight,
+    );
   });
 }

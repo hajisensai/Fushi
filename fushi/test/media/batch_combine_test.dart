@@ -49,13 +49,12 @@ void main() {
 
   group('chooseMergeTarget 目标 = 成员最多合集', () {
     test('取成员最多合集，其名作默认名', () {
-      final MergeTargetChoice choice = chooseMergeTarget(
-        <({int id, String name, int memberCount})>[
-          (id: 1, name: 'A', memberCount: 2),
-          (id: 2, name: 'B', memberCount: 5),
-          (id: 3, name: 'C', memberCount: 3),
-        ],
-      );
+      final MergeTargetChoice choice =
+          chooseMergeTarget(<({int id, String name, int memberCount})>[
+            (id: 1, name: 'A', memberCount: 2),
+            (id: 2, name: 'B', memberCount: 5),
+            (id: 3, name: 'C', memberCount: 3),
+          ]);
       expect(choice.targetId, 2);
       expect(choice.defaultName, 'B');
     });

@@ -24,9 +24,9 @@ void main() {
   ) async {
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(channel, (MethodCall call) async {
-      expect(call.method, 'consumeInfoForAddingPasteboard');
-      return reply;
-    });
+          expect(call.method, 'consumeInfoForAddingPasteboard');
+          return reply;
+        });
     addTearDown(() {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(channel, null);
@@ -62,7 +62,8 @@ void main() {
   test('原生 "ok" + 有牌组的 JSON 一路走通到成功', () async {
     final result = await consumeWithNativeReply(<Object?, Object?>{
       'status': 'ok',
-      'json': '{"decks":[{"id":1,"name":"Default"}],'
+      'json':
+          '{"decks":[{"id":1,"name":"Default"}],'
           '"notetypes":[{"id":2,"name":"Basic","fields":["Front","Back"]}]}',
     });
     expect(result, isA<AnkiFetchSuccess>());

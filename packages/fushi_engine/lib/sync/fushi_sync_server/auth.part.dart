@@ -51,8 +51,10 @@ extension _FushiSyncServerAuth on FushiSyncServer {
         }
         final auth = request.headers['authorization'];
         if (auth == null || !await _validateAuth(auth)) {
-          return shelf.Response(401,
-              headers: {'WWW-Authenticate': 'Basic realm="Fushi Sync"'});
+          return shelf.Response(
+            401,
+            headers: {'WWW-Authenticate': 'Basic realm="Fushi Sync"'},
+          );
         }
         return innerHandler(request);
       };
@@ -77,7 +79,9 @@ extension _FushiSyncServerAuth on FushiSyncServer {
       final Uint8List pw = Uint8List.fromList(utf8.encode(password));
       for (final String peerToken in peerTokens) {
         if (_constantTimeEquals(
-            pw, Uint8List.fromList(utf8.encode(peerToken)))) {
+          pw,
+          Uint8List.fromList(utf8.encode(peerToken)),
+        )) {
           return true;
         }
       }
@@ -132,8 +136,10 @@ bool _isVideoStreamPath(String urlPath) {
   if (!urlPath.startsWith(prefix)) return false;
   for (final String suffix in _kVideoStreamSuffixes) {
     if (!urlPath.endsWith(suffix)) continue;
-    final String idPart =
-        urlPath.substring(prefix.length, urlPath.length - suffix.length);
+    final String idPart = urlPath.substring(
+      prefix.length,
+      urlPath.length - suffix.length,
+    );
     if (idPart.isNotEmpty) return true;
   }
   return false;
@@ -154,8 +160,9 @@ bool _isLookupAudioFilePath(String urlPath) =>
 String? _basicPassword(String header) {
   if (!header.startsWith('Basic ')) return null;
   try {
-    final String decoded =
-        utf8.decode(base64Decode(header.substring('Basic '.length)));
+    final String decoded = utf8.decode(
+      base64Decode(header.substring('Basic '.length)),
+    );
     final int colonIdx = decoded.indexOf(':');
     return colonIdx < 0 ? null : decoded.substring(colonIdx + 1);
   } catch (_) {

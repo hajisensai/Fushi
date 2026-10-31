@@ -45,10 +45,14 @@ CREATE TABLE epub_books (
   uid TEXT NOT NULL DEFAULT '',
   title TEXT NOT NULL
 )''');
-          rawDb.execute('CREATE UNIQUE INDEX idx_epub_books_uid '
-              "ON epub_books (uid) WHERE uid != ''");
-          rawDb.execute('CREATE TABLE series (id INTEGER NOT NULL PRIMARY KEY '
-              'AUTOINCREMENT, name TEXT NOT NULL)');
+          rawDb.execute(
+            'CREATE UNIQUE INDEX idx_epub_books_uid '
+            "ON epub_books (uid) WHERE uid != ''",
+          );
+          rawDb.execute(
+            'CREATE TABLE series (id INTEGER NOT NULL PRIMARY KEY '
+            'AUTOINCREMENT, name TEXT NOT NULL)',
+          );
           rawDb.execute('''
 CREATE TABLE shelf_entries (
   media_type TEXT NOT NULL,
@@ -76,36 +80,44 @@ CREATE TABLE media_collection_items (
   PRIMARY KEY (collection_id, media_type, entry_key)
 )''');
 
-          rawDb.execute('INSERT INTO epub_books (book_key, uid, title) '
-              "VALUES ('book-a', 'uid-a', '书A'), ('book-b', 'uid-b', '书B')");
+          rawDb.execute(
+            'INSERT INTO epub_books (book_key, uid, title) '
+            "VALUES ('book-a', 'uid-a', '书A'), ('book-b', 'uid-b', '书B')",
+          );
 
           // shelf_entries：epub 命中 / epub 透传（无本地书）/ 三个非 epub 域。
-          rawDb.execute('INSERT INTO shelf_entries '
-              '(media_type, entry_key, sort_order) VALUES '
-              "('epub', 'book-a', 5), "
-              "('epub', 'ghost-key', 7), "
-              "('srt', 'srt-1', 1), "
-              "('video', 'vid-1', 2), "
-              "('game', 'game-1', 3)");
+          rawDb.execute(
+            'INSERT INTO shelf_entries '
+            '(media_type, entry_key, sort_order) VALUES '
+            "('epub', 'book-a', 5), "
+            "('epub', 'ghost-key', 7), "
+            "('srt', 'srt-1', 1), "
+            "('video', 'vid-1', 2), "
+            "('game', 'game-1', 3)",
+          );
 
-          rawDb.execute('INSERT INTO media_collections '
-              '(id, name, collection_type, cover_source, sort_order, '
-              'created_at) VALUES '
-              "(1, '甲', 'collection', 'epub|book-a', 0, 100), "
-              "(2, '乙', 'playlist', 'epub|ghost-key', 1, 200), "
-              "(3, '丙', 'collection', 'video|vid-1', 2, 300)");
+          rawDb.execute(
+            'INSERT INTO media_collections '
+            '(id, name, collection_type, cover_source, sort_order, '
+            'created_at) VALUES '
+            "(1, '甲', 'collection', 'epub|book-a', 0, 100), "
+            "(2, '乙', 'playlist', 'epub|ghost-key', 1, 200), "
+            "(3, '丙', 'collection', 'video|vid-1', 2, 300)",
+          );
 
           // 合集甲：epub 命中行 + **撞 PK 脏数据**（同 cid 下 bookKey 行与
           // uid 行并存，换键后同为 uid-a）+ 透传行 + 四 kind 混排。
-          rawDb.execute('INSERT INTO media_collection_items '
-              '(collection_id, media_type, entry_key, sort_index) VALUES '
-              "(1, 'epub', 'book-a', 0), "
-              "(1, 'epub', 'uid-a', 1), "
-              "(1, 'epub', 'ghost-key', 2), "
-              "(1, 'srt', 'srt-1', 3), "
-              "(1, 'video', 'vid-1', 4), "
-              "(1, 'game', 'game-1', 5), "
-              "(2, 'epub', 'book-b', 0)");
+          rawDb.execute(
+            'INSERT INTO media_collection_items '
+            '(collection_id, media_type, entry_key, sort_index) VALUES '
+            "(1, 'epub', 'book-a', 0), "
+            "(1, 'epub', 'uid-a', 1), "
+            "(1, 'epub', 'ghost-key', 2), "
+            "(1, 'srt', 'srt-1', 3), "
+            "(1, 'video', 'vid-1', 4), "
+            "(1, 'game', 'game-1', 5), "
+            "(2, 'epub', 'book-b', 0)",
+          );
           rawDb.execute('PRAGMA user_version = 82');
         },
       ),
@@ -116,8 +128,10 @@ CREATE TABLE media_collection_items (
 
   Future<int> count(FushiDatabase db, String table, [String? where]) async {
     final QueryRow row = await db
-        .customSelect('SELECT COUNT(*) AS c FROM $table'
-            '${where == null ? '' : ' WHERE $where'}')
+        .customSelect(
+          'SELECT COUNT(*) AS c FROM $table'
+          '${where == null ? '' : ' WHERE $where'}',
+        )
         .getSingle();
     return row.read<int>('c');
   }
@@ -125,52 +139,74 @@ CREATE TABLE media_collection_items (
   test('v83：epub 命中换 uid、透传照抄不清、非 epub 照抄、撞 PK 去重、cover 换键、行数核对', () async {
     final FushiDatabase db = await openV82Db();
 
-    final QueryRow version =
-        await db.customSelect('PRAGMA user_version').getSingle();
+    final QueryRow version = await db
+        .customSelect('PRAGMA user_version')
+        .getSingle();
     expect(version.read<int>('user_version'), db.schemaVersion);
-    expect(db.schemaVersion, 142,
-        reason: 'v83 = shelf_entries / media_collection_items epub 键切 uid');
+    expect(
+      db.schemaVersion,
+      142,
+      reason: 'v83 = shelf_entries / media_collection_items epub 键切 uid',
+    );
 
     // ── shelf_entries：epub 命中换 uid、透传照抄、非 epub 照抄、零丢行 ──
     expect(await count(db, 'shelf_entries'), 5, reason: 'shelf_entries 零丢行');
     final QueryRow shelfEpub = await db
-        .customSelect('SELECT sort_order FROM shelf_entries '
-            "WHERE media_type = 'epub' AND entry_key = 'uid-a'")
+        .customSelect(
+          'SELECT sort_order FROM shelf_entries '
+          "WHERE media_type = 'epub' AND entry_key = 'uid-a'",
+        )
         .getSingle();
     expect(shelfEpub.read<int>('sort_order'), 5, reason: 'epub 命中行换 uid，负载列原样');
     expect(
-        await count(db, 'shelf_entries',
-            "media_type = 'epub' AND entry_key = 'book-a'"),
-        0,
-        reason: '旧 bookKey 键形不得残留');
+      await count(
+        db,
+        'shelf_entries',
+        "media_type = 'epub' AND entry_key = 'book-a'",
+      ),
+      0,
+      reason: '旧 bookKey 键形不得残留',
+    );
     // 透传行照抄**不清**——与 v82 清孤儿刻意不同：epub 无主行可能是「替对端
     // 转发」的远端书归属（跨端 union），与真孤儿在库内不可区分，清了丢数据。
     expect(
-        await count(db, 'shelf_entries',
-            "media_type = 'epub' AND entry_key = 'ghost-key'"),
-        1,
-        reason: '透传行（epub 无本地书）必须照抄保留');
+      await count(
+        db,
+        'shelf_entries',
+        "media_type = 'epub' AND entry_key = 'ghost-key'",
+      ),
+      1,
+      reason: '透传行（epub 无本地书）必须照抄保留',
+    );
     for (final (String kind, String key) in <(String, String)>[
       ('srt', 'srt-1'),
       ('video', 'vid-1'),
       ('game', 'game-1'),
     ]) {
       expect(
-          await count(db, 'shelf_entries',
-              "media_type = '$kind' AND entry_key = '$key'"),
-          1,
-          reason: '$kind 键天然稳定，必须照抄（误换算即数据损坏）');
+        await count(
+          db,
+          'shelf_entries',
+          "media_type = '$kind' AND entry_key = '$key'",
+        ),
+        1,
+        reason: '$kind 键天然稳定，必须照抄（误换算即数据损坏）',
+      );
     }
 
     // ── media_collection_items：换键 + INSERT OR IGNORE 去重 ──
     final List<QueryRow> c1 = await db
-        .customSelect('SELECT media_type, entry_key '
-            'FROM media_collection_items WHERE collection_id = 1')
+        .customSelect(
+          'SELECT media_type, entry_key '
+          'FROM media_collection_items WHERE collection_id = 1',
+        )
         .get();
     expect(
       c1
-          .map((QueryRow r) =>
-              '${r.read<String>('media_type')}|${r.read<String>('entry_key')}')
+          .map(
+            (QueryRow r) =>
+                '${r.read<String>('media_type')}|${r.read<String>('entry_key')}',
+          )
           .toSet(),
       <String>{
         'epub|uid-a',
@@ -181,27 +217,46 @@ CREATE TABLE media_collection_items (
       },
       reason: 'epub 命中换 uid、透传照抄、非 epub 照抄',
     );
-    expect(c1, hasLength(5),
-        reason: '撞 PK 脏数据（book-a 行与 uid-a 行并存）换键后收敛同键，'
-            'INSERT OR IGNORE 去重为一行（6→5）');
     expect(
-        await count(db, 'media_collection_items',
-            "collection_id = 2 AND entry_key = 'uid-b'"),
-        1,
-        reason: '合集乙的 epub 命中行换 uid');
-    expect(await count(db, 'media_collection_items'), 6,
-        reason: '总行数 7→6：仅撞 PK 去重减一行，其余零丢');
+      c1,
+      hasLength(5),
+      reason:
+          '撞 PK 脏数据（book-a 行与 uid-a 行并存）换键后收敛同键，'
+          'INSERT OR IGNORE 去重为一行（6→5）',
+    );
+    expect(
+      await count(
+        db,
+        'media_collection_items',
+        "collection_id = 2 AND entry_key = 'uid-b'",
+      ),
+      1,
+      reason: '合集乙的 epub 命中行换 uid',
+    );
+    expect(
+      await count(db, 'media_collection_items'),
+      6,
+      reason: '总行数 7→6：仅撞 PK 去重减一行，其余零丢',
+    );
 
     // ── cover_source 隐藏载体同步换键 ──
-    Future<String?> coverOf(int id) async => (await db
-            .customSelect(
-                'SELECT cover_source FROM media_collections WHERE id = $id')
-            .getSingle())
-        .read<String?>('cover_source');
-    expect(await coverOf(1), 'epub|uid-a',
-        reason: 'epub 借用封面键与成员行同律换 uid（漏了 = 封面静默回退占位）');
-    expect(await coverOf(2), 'epub|ghost-key',
-        reason: '查不上的 epub 封面键照抄（透传/游离），EXISTS 门控不置 NULL');
+    Future<String?> coverOf(int id) async =>
+        (await db
+                .customSelect(
+                  'SELECT cover_source FROM media_collections WHERE id = $id',
+                )
+                .getSingle())
+            .read<String?>('cover_source');
+    expect(
+      await coverOf(1),
+      'epub|uid-a',
+      reason: 'epub 借用封面键与成员行同律换 uid（漏了 = 封面静默回退占位）',
+    );
+    expect(
+      await coverOf(2),
+      'epub|ghost-key',
+      reason: '查不上的 epub 封面键照抄（透传/游离），EXISTS 门控不置 NULL',
+    );
     expect(await coverOf(3), 'video|vid-1', reason: '非 epub 前缀原样直搬');
   });
 }

@@ -15,14 +15,14 @@ class VideoMetadataSearchDiscoveryProvider implements VideoDiscoveryProvider {
     required Iterable<VideoDiscoveryCategory> categories,
     this.priority = 100,
     bool closesProvider = false,
-  })  : _provider = provider,
-        _closesProvider = closesProvider,
-        capabilities = VideoDiscoveryCapabilities(
-          categories: categories,
-          feeds: const <VideoDiscoveryFeed>{},
-          supportsSearch: true,
-          supportsPaging: false,
-        );
+  }) : _provider = provider,
+       _closesProvider = closesProvider,
+       capabilities = VideoDiscoveryCapabilities(
+         categories: categories,
+         feeds: const <VideoDiscoveryFeed>{},
+         supportsSearch: true,
+         supportsPaging: false,
+       );
 
   final VideoMetadataProvider _provider;
   final bool _closesProvider;
@@ -31,7 +31,8 @@ class VideoMetadataSearchDiscoveryProvider implements VideoDiscoveryProvider {
   String get id => _provider.providerKind.name;
 
   @override
-  String get displayName => videoMetadataProviderDisplayName(_provider.providerKind);
+  String get displayName =>
+      videoMetadataProviderDisplayName(_provider.providerKind);
 
   @override
   final int priority;
@@ -42,15 +43,14 @@ class VideoMetadataSearchDiscoveryProvider implements VideoDiscoveryProvider {
   @override
   Future<ProviderBatchResult<VideoDiscoveryPage>> discover(
     VideoDiscoveryRequest request,
-  ) async =>
-      ProviderBatchResult<VideoDiscoveryPage>.failure(
-        ExternalProviderFailure(
-          providerId: id,
-          operation: 'discover',
-          kind: ExternalProviderFailureKind.unsupported,
-          message: 'metadata provider does not expose discovery feeds',
-        ),
-      );
+  ) async => ProviderBatchResult<VideoDiscoveryPage>.failure(
+    ExternalProviderFailure(
+      providerId: id,
+      operation: 'discover',
+      kind: ExternalProviderFailureKind.unsupported,
+      message: 'metadata provider does not expose discovery feeds',
+    ),
+  );
 
   @override
   Future<ProviderBatchResult<VideoDiscoveryPage>> search(
@@ -150,9 +150,11 @@ class VideoMetadataSearchDiscoveryProvider implements VideoDiscoveryProvider {
     List<List<VideoMetadataWork>> lists,
   ) {
     final List<VideoMetadataWork> result = <VideoMetadataWork>[];
-    for (int index = 0;
-        lists.any((List<VideoMetadataWork> list) => index < list.length);
-        index++) {
+    for (
+      int index = 0;
+      lists.any((List<VideoMetadataWork> list) => index < list.length);
+      index++
+    ) {
       for (final List<VideoMetadataWork> list in lists) {
         if (index < list.length) result.add(list[index]);
       }

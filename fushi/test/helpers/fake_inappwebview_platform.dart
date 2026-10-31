@@ -14,14 +14,15 @@ void installFakeInAppWebViewPlatform() {
 class _FakeInAppWebViewPlatform extends InAppWebViewPlatform {
   @override
   PlatformInAppWebViewWidget createPlatformInAppWebViewWidget(
-      PlatformInAppWebViewWidgetCreationParams params) {
+    PlatformInAppWebViewWidgetCreationParams params,
+  ) {
     return _FakeInAppWebViewWidget(params);
   }
 }
 
 class _FakeInAppWebViewWidget extends PlatformInAppWebViewWidget {
   _FakeInAppWebViewWidget(PlatformInAppWebViewWidgetCreationParams params)
-      : super.implementation(params);
+    : super.implementation(params);
 
   @override
   Widget build(BuildContext context) => const SizedBox.shrink();
@@ -29,7 +30,8 @@ class _FakeInAppWebViewWidget extends PlatformInAppWebViewWidget {
   @override
   T controllerFromPlatform<T>(PlatformInAppWebViewController controller) {
     throw UnimplementedError(
-        'controllerFromPlatform is not used by the fake WebView');
+      'controllerFromPlatform is not used by the fake WebView',
+    );
   }
 
   @override

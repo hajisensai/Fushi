@@ -37,15 +37,15 @@ void main() {
     };
     final VideoMiningHistorySnapshot snapshot =
         VideoMiningHistorySnapshot.capture(
-      fields: fields,
-      sentence: 'old sentence',
-      documentTitle: 'Old episode',
-      bookKey: 'old-book',
-      sectionIndex: 1,
-      cueStartMs: 1200,
-      cueEndMs: 2450,
-      dateKey: '2026-07-29',
-    );
+          fields: fields,
+          sentence: 'old sentence',
+          documentTitle: 'Old episode',
+          bookKey: 'old-book',
+          sectionIndex: 1,
+          cueStartMs: 1200,
+          cueEndMs: 2450,
+          dateKey: '2026-07-29',
+        );
 
     // 模拟任务排队期间 popup fields 与远端当前集都已切到下一集。
     fields
@@ -66,8 +66,9 @@ void main() {
   });
 
   test('连续制卡整笔串行，换集后仍使用各自入队快照', () async {
-    final Directory tmp =
-        await Directory.systemTemp.createTemp('immersion_mining_queue');
+    final Directory tmp = await Directory.systemTemp.createTemp(
+      'immersion_mining_queue',
+    );
     addTearDown(() async {
       if (tmp.existsSync()) await tmp.delete(recursive: true);
     });
@@ -110,8 +111,7 @@ void main() {
       String audioBitrate = '64k',
       String? tlsPinSha256,
       Map<String, String> httpHeaders = const {},
-    }) async =>
-        outputPath;
+    }) async => outputPath;
 
     final ImmersionMiningEngine engine = ImmersionMiningEngine(
       gifExtractor: gif,
@@ -153,30 +153,24 @@ void main() {
     // 模拟弹窗字段和当前播放集在任务等待期间已经变化。
     firstFields['expression'] = 'mutated after enqueue';
     await Future<void>.delayed(Duration.zero);
-    expect(
-      startedSources,
-      isEmpty,
-      reason: '第一张仍在解析临时目录时，第二张也不得越过它先执行',
-    );
+    expect(startedSources, isEmpty, reason: '第一张仍在解析临时目录时，第二张也不得越过它先执行');
 
     firstTempDir.complete(tmp.path);
     await firstStarted.future;
-    expect(
-      startedSources,
-      <String>['/episode-1.mp4'],
-      reason: '第一集整笔任务完成前，第二集不得开始抽媒体',
-    );
+    expect(startedSources, <String>[
+      '/episode-1.mp4',
+    ], reason: '第一集整笔任务完成前，第二集不得开始抽媒体');
 
     releaseFirst.complete();
-    await Future.wait<ImmersionMiningResult>(
-      <Future<ImmersionMiningResult>>[first, second],
-    );
+    await Future.wait<ImmersionMiningResult>(<Future<ImmersionMiningResult>>[
+      first,
+      second,
+    ]);
 
-    expect(
-      startedSources,
-      <String>['/episode-1.mp4', '/episode-2.mp4'],
-      reason: '换集只改变后续入队快照，不取消或篡改第一集任务',
-    );
+    expect(startedSources, <String>[
+      '/episode-1.mp4',
+      '/episode-2.mp4',
+    ], reason: '换集只改变后续入队快照，不取消或篡改第一集任务');
     expect(
       repo.payloads.map((Map<String, dynamic> p) => p['expression']),
       <String>['episode one', 'episode two'],

@@ -101,7 +101,11 @@ void main() {
       final int start = src.indexOf(startSig);
       expect(start, greaterThanOrEqualTo(0), reason: 'missing $startSig');
       final int end = src.indexOf(endSig, start + startSig.length);
-      expect(end, greaterThan(start), reason: 'missing $endSig after $startSig');
+      expect(
+        end,
+        greaterThan(start),
+        reason: 'missing $endSig after $startSig',
+      );
       return code.substring(start, end);
     }
 
@@ -118,13 +122,18 @@ void main() {
       expect(resumed, greaterThan(paused));
       // 标记只能出现在 paused/hidden 这一段里：落进 inactive 段就等于「通知栏下拉一下
       // 也要 seek」，落在 resumed 段之后就永远不会被置真。
-      expect(body.substring(inactive, paused).contains('_enteredRealBackground'),
-          isFalse,
-          reason: 'inactive 期间 app 仍持有解码器，不该记「进过后台」（BUG-1863）');
       expect(
-          body.substring(paused, resumed).contains('_enteredRealBackground = true'),
-          isTrue,
-          reason: '真后台（paused / hidden）必须记下标记，否则回前台无从判断（BUG-1863）');
+        body.substring(inactive, paused).contains('_enteredRealBackground'),
+        isFalse,
+        reason: 'inactive 期间 app 仍持有解码器，不该记「进过后台」（BUG-1863）',
+      );
+      expect(
+        body
+            .substring(paused, resumed)
+            .contains('_enteredRealBackground = true'),
+        isTrue,
+        reason: '真后台（paused / hidden）必须记下标记，否则回前台无从判断（BUG-1863）',
+      );
     });
 
     test('resumed 分支调用解码链刷新', () {
@@ -132,8 +141,11 @@ void main() {
         'case AppLifecycleState.resumed:',
         'case AppLifecycleState.detached:',
       );
-      expect(body.contains('_refreshDecodeAfterResumeIfNeeded()'), isTrue,
-          reason: '回前台必须走一次刷新判断（BUG-1863）');
+      expect(
+        body.contains('_refreshDecodeAfterResumeIfNeeded()'),
+        isTrue,
+        reason: '回前台必须走一次刷新判断（BUG-1863）',
+      );
     });
 
     test('标记无条件清除，不会攒到下一次 resume', () {
@@ -148,36 +160,52 @@ void main() {
       // 清除必须在任何 return 之前：若被塞进「判据成立」分支里，某次不满足条件的 resume
       // 会把标记留到下一次 resume，变成「某次切窗后莫名 seek 一下」。
       final int firstReturn = body.indexOf('return');
-      expect(firstReturn, greaterThan(clear),
-          reason: '标记要在第一个 return 之前就清掉（BUG-1863）');
-      expect(body.contains('controller.refreshDecodeAfterResume()'), isTrue,
-          reason: '判据成立时必须真调刷新');
+      expect(
+        firstReturn,
+        greaterThan(clear),
+        reason: '标记要在第一个 return 之前就清掉（BUG-1863）',
+      );
+      expect(
+        body.contains('controller.refreshDecodeAfterResume()'),
+        isTrue,
+        reason: '判据成立时必须真调刷新',
+      );
     });
 
     test('刷新不走用户 seek 链路', () {
       // seekMs 是「用户改变了播放位置」：会清主动跳转快照、作废「只播这一句就停」、
       // 触发字幕权威重算。解码链刷新的播放位置根本没变，套那套副作用是错的。
       // 断言落在 controller 文件（不在视频页语料里），同样先掩注释再切。
-      final String controllerSrc =
-          File(kVideoPlayerControllerPath).readAsStringSync();
-      final String controllerCode =
-          maskCommentsAndScriptLines(controllerSrc.replaceAll('\r\n', '\n'));
+      final String controllerSrc = File(
+        kVideoPlayerControllerPath,
+      ).readAsStringSync();
+      final String controllerCode = maskCommentsAndScriptLines(
+        controllerSrc.replaceAll('\r\n', '\n'),
+      );
       const String sig = 'Future<void> refreshDecodeAfterResume() async {';
       final int start = controllerCode.indexOf(sig);
       expect(start, greaterThanOrEqualTo(0), reason: 'missing $sig');
       final int end = controllerCode.indexOf('bool get isBuffering', start);
       expect(end, greaterThan(start), reason: 'missing isBuffering after $sig');
       final String body = controllerCode.substring(start, end);
-      expect(body.contains('seekMs('), isFalse,
-          reason: '刷新只是把播放头 seek 回原地，不该带用户 seek 的副作用（BUG-1863）');
-      expect(body.contains('player.seek(player.state.position)'), isTrue,
-          reason: '刷新必须 seek 到当前位置本身（BUG-1863）');
+      expect(
+        body.contains('seekMs('),
+        isFalse,
+        reason: '刷新只是把播放头 seek 回原地，不该带用户 seek 的副作用（BUG-1863）',
+      );
+      expect(
+        body.contains('player.seek(player.state.position)'),
+        isTrue,
+        reason: '刷新必须 seek 到当前位置本身（BUG-1863）',
+      );
     });
 
     test('刷新判据不在页面里被重新实现一遍', () {
-      expect(code.contains('VideoPlayerController.shouldRefreshDecodeOnResume('),
-          isTrue,
-          reason: '判据是 controller 上的纯函数（可单测），页面不得另写一份（BUG-1863）');
+      expect(
+        code.contains('VideoPlayerController.shouldRefreshDecodeOnResume('),
+        isTrue,
+        reason: '判据是 controller 上的纯函数（可单测），页面不得另写一份（BUG-1863）',
+      );
     });
   });
 }

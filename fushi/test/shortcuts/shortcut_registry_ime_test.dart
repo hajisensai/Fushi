@@ -63,30 +63,34 @@ void main() {
       expect(result, isNull);
     });
 
-    test('does NOT use fallback when key != process even if physicalKey given',
-        () {
-      // 合取条件：physicalKey 单独不触发回退；只有 logicalKey==process 才启用。
-      // 这里 logicalKey 是真实的 escape（不绑 readerPageForward），即便顺手传了
-      // pageDown 物理键，也绝不能错误命中 readerPageForward。
-      final result = registry.resolveKeyboard(
-        LogicalKeyboardKey.escape,
-        modifiers: const {},
-        scope: ShortcutScope.reader,
-        physicalKey: PhysicalKeyboardKey.pageDown,
-      );
-      expect(result, isNot(ShortcutAction.readerPageForward));
-    });
+    test(
+      'does NOT use fallback when key != process even if physicalKey given',
+      () {
+        // 合取条件：physicalKey 单独不触发回退；只有 logicalKey==process 才启用。
+        // 这里 logicalKey 是真实的 escape（不绑 readerPageForward），即便顺手传了
+        // pageDown 物理键，也绝不能错误命中 readerPageForward。
+        final result = registry.resolveKeyboard(
+          LogicalKeyboardKey.escape,
+          modifiers: const {},
+          scope: ShortcutScope.reader,
+          physicalKey: PhysicalKeyboardKey.pageDown,
+        );
+        expect(result, isNot(ShortcutAction.readerPageForward));
+      },
+    );
 
-    test('fallback respects modifiers exactly (Ctrl+Digit1 → homeTabBooks)',
-        () {
-      final result = registry.resolveKeyboard(
-        LogicalKeyboardKey.process,
-        modifiers: const {ModifierKey.ctrl},
-        scope: ShortcutScope.home,
-        physicalKey: PhysicalKeyboardKey.digit1,
-      );
-      expect(result, ShortcutAction.homeTabBooks);
-    });
+    test(
+      'fallback respects modifiers exactly (Ctrl+Digit1 → homeTabBooks)',
+      () {
+        final result = registry.resolveKeyboard(
+          LogicalKeyboardKey.process,
+          modifiers: const {ModifierKey.ctrl},
+          scope: ShortcutScope.home,
+          physicalKey: PhysicalKeyboardKey.digit1,
+        );
+        expect(result, ShortcutAction.homeTabBooks);
+      },
+    );
 
     test('fallback misses when modifiers differ from the binding', () {
       // Ctrl+Digit1 绑 homeTabBooks；裸 Digit1（无 Ctrl）不应命中。

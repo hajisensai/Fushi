@@ -25,7 +25,8 @@ void main() {
     expect(
       overlay.contains('autoReadFirstEntry('),
       true,
-      reason: '覆盖窗查词成功路径必须调用 autoReadFirstEntry，'
+      reason:
+          '覆盖窗查词成功路径必须调用 autoReadFirstEntry，'
           '否则 autoReadOnLookup 开关对覆盖窗完全无效',
     );
   });
@@ -34,7 +35,8 @@ void main() {
     expect(
       overlay.contains('maybeHandleWordAudioPlayed('),
       true,
-      reason: '覆盖窗的 _onJsMessage 必须处理 wordAudioPlayed，'
+      reason:
+          '覆盖窗的 _onJsMessage 必须处理 wordAudioPlayed，'
           '否则 Completer 永远等不到回报、每次都要等满超时才回落 Dart 播放器',
     );
   });

@@ -6,16 +6,16 @@ import 'package:fushi_core/fushi_core.dart';
 /// v2 后本函数只折叠不排卡（卡片间序由页面按排序模式做）；组内序真相源 =
 /// memberSortIndex（[MediaCollectionItems].sortIndex），与详情页/播放器同源。
 MediaCollectionRow _col(int id, String name) => MediaCollectionRow(
-      origin: 'user',
-      organizeAliases: '',
-      id: id,
-      name: name,
-      collectionType: 'playlist',
-      coverSource: null,
-      sortOrder: 0,
-      createdAt: 0,
-      orderUpdatedAt: 0,
-    );
+  origin: 'user',
+  organizeAliases: '',
+  id: id,
+  name: name,
+  collectionType: 'playlist',
+  coverSource: null,
+  sortOrder: 0,
+  createdAt: 0,
+  orderUpdatedAt: 0,
+);
 
 CollectionOrderingItem<String> _item(String key, int importedAt) =>
     CollectionOrderingItem<String>(
@@ -33,22 +33,23 @@ void main() {
         _item('v2', -1),
         _item('v3', -2), // 散条目
       ],
-      primaryCollectionIdByEntry: <String, int>{
-        'video|v1': 1,
-        'video|v2': 1,
-      },
+      primaryCollectionIdByEntry: <String, int>{'video|v1': 1, 'video|v2': 1},
       collectionsById: <int, MediaCollectionRow>{1: _col(1, 'Show')},
       memberSortIndex: <String, int>{},
     );
 
     // 合集卡 + 散条目卡。
-    final CollectionGroup<String> col =
-        groups.firstWhere((CollectionGroup<String> g) => g.collection != null);
+    final CollectionGroup<String> col = groups.firstWhere(
+      (CollectionGroup<String> g) => g.collection != null,
+    );
     expect(col.collection!.name, 'Show');
-    expect(col.items.map((CollectionOrderingItem<String> i) => i.entryKey),
-        <String>['v1', 'v2']);
-    final Iterable<CollectionGroup<String>> loose =
-        groups.where((CollectionGroup<String> g) => g.collection == null);
+    expect(
+      col.items.map((CollectionOrderingItem<String> i) => i.entryKey),
+      <String>['v1', 'v2'],
+    );
+    final Iterable<CollectionGroup<String>> loose = groups.where(
+      (CollectionGroup<String> g) => g.collection == null,
+    );
     expect(loose, hasLength(1));
     expect(loose.single.coverItem.entryKey, 'v3');
   });
@@ -71,10 +72,7 @@ void main() {
         _item('e2', 100), // importedAt 更新，但 sortIndex 靠后
         _item('e1', 50),
       ],
-      primaryCollectionIdByEntry: <String, int>{
-        'video|e1': 1,
-        'video|e2': 1,
-      },
+      primaryCollectionIdByEntry: <String, int>{'video|e1': 1, 'video|e2': 1},
       collectionsById: <int, MediaCollectionRow>{1: _col(1, 'S')},
       memberSortIndex: <String, int>{'video|e1': 0, 'video|e2': 1},
     );
@@ -114,17 +112,16 @@ void main() {
         _item('looseB', 0),
         _item('m2', 0), // 合集 1 后续成员，不再新增位置
       ],
-      primaryCollectionIdByEntry: <String, int>{
-        'video|m1': 1,
-        'video|m2': 1,
-      },
+      primaryCollectionIdByEntry: <String, int>{'video|m1': 1, 'video|m2': 1},
       collectionsById: <int, MediaCollectionRow>{1: _col(1, 'S')},
       memberSortIndex: <String, int>{'video|m1': 0, 'video|m2': 1},
     );
     expect(
       groups
-          .map((CollectionGroup<String> g) =>
-              g.collection?.name ?? g.coverItem.entryKey)
+          .map(
+            (CollectionGroup<String> g) =>
+                g.collection?.name ?? g.coverItem.entryKey,
+          )
           .toList(),
       <String>['looseA', 'S', 'looseB'],
     );

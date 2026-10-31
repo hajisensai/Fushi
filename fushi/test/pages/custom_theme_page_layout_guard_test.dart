@@ -16,7 +16,10 @@ bool _pinsSurfaceThroughSharedScheme(
   final String preview = code(page, 'ColorScheme _buildSchemeFor(');
   // 190147fb54f：编辑页经 AppModel 门面取配色（不穿透 themeNotifier），门面与
   // ThemeNotifier 同名方法都委托到同一个顶层纯函数——派生链仍只有一份。
-  final String facade = code(appModel, 'ColorScheme buildCustomThemeColorScheme(');
+  final String facade = code(
+    appModel,
+    'ColorScheme buildCustomThemeColorScheme(',
+  );
   final String delegate = code(
     notifier,
     'ColorScheme buildCustomThemeColorScheme(',

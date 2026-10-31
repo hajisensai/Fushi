@@ -127,7 +127,9 @@ void main() {
       );
 
       // v82：bookmarks 键 = epub_books.uid（insertEpubBook 自动生成，取回换算）。
-      await db.into(db.bookmarks).insert(
+      await db
+          .into(db.bookmarks)
+          .insert(
             BookmarksCompanion.insert(
               bookUid: (await db.resolveEpubBookUid(bookKey))!,
               sectionIndex: 2,
@@ -157,7 +159,9 @@ void main() {
           importedAt: now,
         ),
       );
-      await db.into(db.bookmarks).insert(
+      await db
+          .into(db.bookmarks)
+          .insert(
             BookmarksCompanion.insert(
               bookUid: (await db.resolveEpubBookUid(bookKey))!,
               sectionIndex: 0,

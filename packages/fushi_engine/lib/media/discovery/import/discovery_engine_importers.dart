@@ -135,7 +135,7 @@ Future<bool> isDuplicateDiscoveryAudiobookContent(
 ) async {
   final String proposed = contentPath.toLowerCase().endsWith('.epub')
       ? (await Isolate.run(() => EpubParser.readTitleSync(contentPath))) ??
-          discoveryImportStem(contentPath)
+            discoveryImportStem(contentPath)
       : discoveryImportStem(contentPath);
   final String key = sanitizeTtuFilename(proposed);
   final List<EpubBookMeta> existing = await db.getEpubBookMetas();
@@ -261,8 +261,9 @@ String audiobookTitleForAudioPaths(List<String> audioPaths) {
     // 公共祖先是盘符根（`D:`）或文件系统根（空段）时没有书名可言。
     if (ancestor.isNotEmpty && !ancestor.endsWith(':')) raw = ancestor;
   }
-  final String title =
-      raw.replaceFirst(RegExp(r'\s*\[[A-Z0-9]{10}\]$'), '').trim();
+  final String title = raw
+      .replaceFirst(RegExp(r'\s*\[[A-Z0-9]{10}\]$'), '')
+      .trim();
   return title.isEmpty ? raw : title;
 }
 

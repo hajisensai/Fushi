@@ -22,7 +22,8 @@ void main() {
       expect(
         src.contains('onLookupCue: _handleSubtitleListLookup'),
         isTrue,
-        reason: 'jump panel must receive onLookupCue so list rows can look up '
+        reason:
+            'jump panel must receive onLookupCue so list rows can look up '
             'words (revert -> rows cannot look up, BUG-266)',
       );
     });
@@ -54,34 +55,40 @@ void main() {
   group('TODO-301/BUG-267 favorite marker wiring', () {
     test('VideoSubtitleOverlay receives isCueFavorited', () {
       expect(
-        RegExp(r'VideoSubtitleOverlay\([\s\S]*?isCueFavorited: _isCueFavorited')
-            .hasMatch(src),
+        RegExp(
+          r'VideoSubtitleOverlay\([\s\S]*?isCueFavorited: _isCueFavorited',
+        ).hasMatch(src),
         isTrue,
-        reason: 'bottom overlay must know if the current cue is favorited to '
+        reason:
+            'bottom overlay must know if the current cue is favorited to '
             'draw the star marker (BUG-267)',
       );
     });
 
     test('VideoSubtitleJumpPanel receives isCueFavorited', () {
       expect(
-        RegExp(r'VideoSubtitleJumpPanel\([\s\S]*?isCueFavorited: _isCueFavorited')
-            .hasMatch(src),
+        RegExp(
+          r'VideoSubtitleJumpPanel\([\s\S]*?isCueFavorited: _isCueFavorited',
+        ).hasMatch(src),
         isTrue,
         reason: 'list rows must know favorite state to draw the row marker',
       );
     });
 
-    test('favorite cache is refreshed on video open (after warm-popup seed)',
-        () {
-      expect(
-        RegExp(r'_seedWarmPopup\(\);[\s\S]*?_refreshFavoritedCueCache\(\)')
-            .hasMatch(src),
-        isTrue,
-        reason:
-            'favorite cache must be filled on open so the bottom star shows '
-            'before the subtitle list is ever opened (BUG-267)',
-      );
-    });
+    test(
+      'favorite cache is refreshed on video open (after warm-popup seed)',
+      () {
+        expect(
+          RegExp(
+            r'_seedWarmPopup\(\);[\s\S]*?_refreshFavoritedCueCache\(\)',
+          ).hasMatch(src),
+          isTrue,
+          reason:
+              'favorite cache must be filled on open so the bottom star shows '
+              'before the subtitle list is ever opened (BUG-267)',
+        );
+      },
+    );
   });
 
   group('TODO-566 favorite star shows instantly when opening the list', () {
@@ -96,12 +103,16 @@ void main() {
         r'_subtitleListVisible\.value = true;[\s\S]*?_focusOwnership\.reclaim\(',
       );
       final Match? match = openBranch.firstMatch(src);
-      expect(match, isNotNull,
-          reason: 'must find the open branch of _toggleSubtitleJumpList');
+      expect(
+        match,
+        isNotNull,
+        reason: 'must find the open branch of _toggleSubtitleJumpList',
+      );
       expect(
         match!.group(0)!.contains('_refreshFavoritedCueCache'),
         isFalse,
-        reason: 'opening the subtitle list must read the already-filled '
+        reason:
+            'opening the subtitle list must read the already-filled '
             'favorite cache (O(1) instant stars), not trigger another async '
             'DB round-trip that delays the filled stars (TODO-566)',
       );
@@ -113,12 +124,21 @@ void main() {
       // TODO-631: the standalone "episode favorites" panel was the ONLY lockable
       // side panel; with it removed the whole side-panel lock machinery
       // (notifier / reset / lockable flag / onToggleLock) is dead and deleted.
-      expect(src.contains('_sidePanelLocked'), isFalse,
-          reason: 'side-panel lock notifier removed with the favorite panel');
-      expect(src.contains('_resetSidePanelLockWhenHidden'), isFalse,
-          reason: 'side-panel lock reset removed with the favorite panel');
-      expect(src.contains('_subtitleListLocked'), isFalse,
-          reason: 'subtitle-list lock already removed (TODO-637/634)');
+      expect(
+        src.contains('_sidePanelLocked'),
+        isFalse,
+        reason: 'side-panel lock notifier removed with the favorite panel',
+      );
+      expect(
+        src.contains('_resetSidePanelLockWhenHidden'),
+        isFalse,
+        reason: 'side-panel lock reset removed with the favorite panel',
+      );
+      expect(
+        src.contains('_subtitleListLocked'),
+        isFalse,
+        reason: 'subtitle-list lock already removed (TODO-637/634)',
+      );
     });
 
     test('no side panel is lockable anymore', () {
@@ -136,13 +156,15 @@ void main() {
       );
     });
 
-    test('the favorite-sentences side panel kind and entry points are gone',
-        () {
-      expect(src.contains('_VideoSidePanelKind.favoriteSentences'), isFalse);
-      expect(src.contains('_showFavoriteSentencesPanel'), isFalse);
-      expect(src.contains('_buildFavoriteSentencesSidePanel'), isFalse);
-      expect(src.contains('VideoFavoriteSentencesPanel'), isFalse);
-    });
+    test(
+      'the favorite-sentences side panel kind and entry points are gone',
+      () {
+        expect(src.contains('_VideoSidePanelKind.favoriteSentences'), isFalse);
+        expect(src.contains('_showFavoriteSentencesPanel'), isFalse);
+        expect(src.contains('_buildFavoriteSentencesSidePanel'), isFalse);
+        expect(src.contains('VideoFavoriteSentencesPanel'), isFalse);
+      },
+    );
 
     test('subtitle-list video area has no tap-outside barrier', () {
       // TODO-637/636: the subtitle list is a non-blocking sidebar; the video
@@ -169,10 +191,12 @@ void main() {
       // appModel.videoSubtitleListAutoScroll 可能被折到两行（subtitle.part.dart
       // 缩进较深时会换行），用 \s+ 匹配而非写死单空格。
       expect(
-        RegExp(r'initialAutoScroll:\s*appModel\.videoSubtitleListAutoScroll,')
-            .hasMatch(src),
+        RegExp(
+          r'initialAutoScroll:\s*appModel\.videoSubtitleListAutoScroll,',
+        ).hasMatch(src),
         isTrue,
-        reason: 'auto-scroll initial state must come from Drift preferences '
+        reason:
+            'auto-scroll initial state must come from Drift preferences '
             '(TODO-613)',
       );
     });
@@ -182,11 +206,13 @@ void main() {
         // 与上一条同样要容忍 dart format 的换行：缩进变深时 `appModel` 与
         // `.setVideoSubtitleListAutoScroll` 之间也会被折行（接线没变、只是排版变了），
         // 写死点号紧邻会让这条守卫在无关改动上假红。
-        RegExp(r'onAutoScrollChanged:\s*\(bool value\) => unawaited\(\s*'
-                r'appModel\s*\.\s*setVideoSubtitleListAutoScroll\(value\)')
-            .hasMatch(src),
+        RegExp(
+          r'onAutoScrollChanged:\s*\(bool value\) => unawaited\(\s*'
+          r'appModel\s*\.\s*setVideoSubtitleListAutoScroll\(value\)',
+        ).hasMatch(src),
         isTrue,
-        reason: 'auto-scroll toggle must be persisted via the appModel setter '
+        reason:
+            'auto-scroll toggle must be persisted via the appModel setter '
             '(TODO-613)',
       );
     });

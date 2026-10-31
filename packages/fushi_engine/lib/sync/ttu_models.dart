@@ -25,19 +25,18 @@ class TtuProgress {
   // ッツ/Hoshi, so an int may arrive as a JSON float/null/string. A bare
   // `as int` would throw TypeError and abort the whole decode (HBK-AUDIT-030).
   factory TtuProgress.fromJson(Map<String, dynamic> json) => TtuProgress(
-        dataId: (json['dataId'] as num?)?.toInt() ?? 0,
-        exploredCharCount: (json['exploredCharCount'] as num?)?.toInt() ?? 0,
-        progress: (json['progress'] as num?)?.toDouble() ?? 0,
-        lastBookmarkModified:
-            (json['lastBookmarkModified'] as num?)?.toInt() ?? 0,
-      );
+    dataId: (json['dataId'] as num?)?.toInt() ?? 0,
+    exploredCharCount: (json['exploredCharCount'] as num?)?.toInt() ?? 0,
+    progress: (json['progress'] as num?)?.toDouble() ?? 0,
+    lastBookmarkModified: (json['lastBookmarkModified'] as num?)?.toInt() ?? 0,
+  );
 
   Map<String, dynamic> toJson() => {
-        'dataId': dataId,
-        'exploredCharCount': exploredCharCount,
-        'progress': progress,
-        'lastBookmarkModified': lastBookmarkModified,
-      };
+    'dataId': dataId,
+    'exploredCharCount': exploredCharCount,
+    'progress': progress,
+    'lastBookmarkModified': lastBookmarkModified,
+  };
 
   static TtuProgress decode(String source) =>
       TtuProgress.fromJson(jsonDecode(source) as Map<String, dynamic>);
@@ -74,29 +73,29 @@ class TtuStatistics {
   // would make a bare `as String` throw a CastError that bypasses the
   // SyncBackendError contract. Coercing to '' keeps the decode total.
   factory TtuStatistics.fromJson(Map<String, dynamic> json) => TtuStatistics(
-        title: json['title'] as String? ?? '',
-        dateKey: json['dateKey'] as String? ?? '',
-        charactersRead: (json['charactersRead'] as num?)?.toInt() ?? 0,
-        readingTimeSec: (json['readingTime'] as num?)?.toDouble() ?? 0,
-        minReadingSpeed: (json['minReadingSpeed'] as num?)?.toInt() ?? 0,
-        altMinReadingSpeed: (json['altMinReadingSpeed'] as num?)?.toInt() ?? 0,
-        lastReadingSpeed: (json['lastReadingSpeed'] as num?)?.toInt() ?? 0,
-        maxReadingSpeed: (json['maxReadingSpeed'] as num?)?.toInt() ?? 0,
-        lastStatisticModified:
-            (json['lastStatisticModified'] as num?)?.toInt() ?? 0,
-      );
+    title: json['title'] as String? ?? '',
+    dateKey: json['dateKey'] as String? ?? '',
+    charactersRead: (json['charactersRead'] as num?)?.toInt() ?? 0,
+    readingTimeSec: (json['readingTime'] as num?)?.toDouble() ?? 0,
+    minReadingSpeed: (json['minReadingSpeed'] as num?)?.toInt() ?? 0,
+    altMinReadingSpeed: (json['altMinReadingSpeed'] as num?)?.toInt() ?? 0,
+    lastReadingSpeed: (json['lastReadingSpeed'] as num?)?.toInt() ?? 0,
+    maxReadingSpeed: (json['maxReadingSpeed'] as num?)?.toInt() ?? 0,
+    lastStatisticModified:
+        (json['lastStatisticModified'] as num?)?.toInt() ?? 0,
+  );
 
   Map<String, dynamic> toJson() => {
-        'title': title,
-        'dateKey': dateKey,
-        'charactersRead': charactersRead,
-        'readingTime': readingTimeSec,
-        'minReadingSpeed': minReadingSpeed,
-        'altMinReadingSpeed': altMinReadingSpeed,
-        'lastReadingSpeed': lastReadingSpeed,
-        'maxReadingSpeed': maxReadingSpeed,
-        'lastStatisticModified': lastStatisticModified,
-      };
+    'title': title,
+    'dateKey': dateKey,
+    'charactersRead': charactersRead,
+    'readingTime': readingTimeSec,
+    'minReadingSpeed': minReadingSpeed,
+    'altMinReadingSpeed': altMinReadingSpeed,
+    'lastReadingSpeed': lastReadingSpeed,
+    'maxReadingSpeed': maxReadingSpeed,
+    'lastStatisticModified': lastStatisticModified,
+  };
 
   static List<TtuStatistics> decodeList(String source) =>
       (jsonDecode(source) as List)
@@ -121,18 +120,17 @@ class TtuAudioBook {
 
   // HBK-AUDIT-142: tolerant `as String?` fallback (see TtuStatistics.fromJson).
   factory TtuAudioBook.fromJson(Map<String, dynamic> json) => TtuAudioBook(
-        title: json['title'] as String? ?? '',
-        playbackPositionSec:
-            (json['playbackPosition'] as num?)?.toDouble() ?? 0,
-        lastAudioBookModified:
-            (json['lastAudioBookModified'] as num?)?.toInt() ?? 0,
-      );
+    title: json['title'] as String? ?? '',
+    playbackPositionSec: (json['playbackPosition'] as num?)?.toDouble() ?? 0,
+    lastAudioBookModified:
+        (json['lastAudioBookModified'] as num?)?.toInt() ?? 0,
+  );
 
   Map<String, dynamic> toJson() => {
-        'title': title,
-        'playbackPosition': playbackPositionSec,
-        'lastAudioBookModified': lastAudioBookModified,
-      };
+    'title': title,
+    'playbackPosition': playbackPositionSec,
+    'lastAudioBookModified': lastAudioBookModified,
+  };
 
   static TtuAudioBook decode(String source) =>
       TtuAudioBook.fromJson(jsonDecode(source) as Map<String, dynamic>);

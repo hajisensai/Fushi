@@ -7,8 +7,10 @@ import 'package:fushi_engine/media/torrent/qbittorrent_client.dart';
 
 void main() {
   test('qB WebUI contract works through the real local HTTP stack', () async {
-    final HttpServer server =
-        await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final HttpServer server = await HttpServer.bind(
+      InternetAddress.loopbackIPv4,
+      0,
+    );
     final List<String> requests = <String>[];
     final List<Map<String, String>> forms = <Map<String, String>>[];
 
@@ -27,8 +29,10 @@ void main() {
               ..headers.add(HttpHeaders.setCookieHeader, 'SID=local-test')
               ..write('Ok.');
           case '/api/v2/app/version':
-            expect(request.headers.value(HttpHeaders.cookieHeader),
-                contains('SID=local-test'));
+            expect(
+              request.headers.value(HttpHeaders.cookieHeader),
+              contains('SID=local-test'),
+            );
             response
               ..statusCode = HttpStatus.ok
               ..write('v5.0.4');
@@ -42,29 +46,33 @@ void main() {
             response
               ..statusCode = HttpStatus.ok
               ..headers.contentType = ContentType.json
-              ..write(jsonEncode(<Map<String, Object>>[
-                <String, Object>{
-                  'hash': 'abc123',
-                  'name': 'Example Show 02',
-                  'progress': 0.5,
-                  'state': 'downloading',
-                  'save_path': r'C:\Downloads',
-                  'content_path': r'C:\Downloads\Example Show 02.mkv',
-                  'amount_left': 1024,
-                },
-              ]));
+              ..write(
+                jsonEncode(<Map<String, Object>>[
+                  <String, Object>{
+                    'hash': 'abc123',
+                    'name': 'Example Show 02',
+                    'progress': 0.5,
+                    'state': 'downloading',
+                    'save_path': r'C:\Downloads',
+                    'content_path': r'C:\Downloads\Example Show 02.mkv',
+                    'amount_left': 1024,
+                  },
+                ]),
+              );
           case '/api/v2/torrents/files':
             response
               ..statusCode = HttpStatus.ok
               ..headers.contentType = ContentType.json
-              ..write(jsonEncode(<Map<String, Object>>[
-                <String, Object>{
-                  'name': 'Example Show 02.mkv',
-                  'size': 2048,
-                  'progress': 0.5,
-                  'index': 0,
-                },
-              ]));
+              ..write(
+                jsonEncode(<Map<String, Object>>[
+                  <String, Object>{
+                    'name': 'Example Show 02.mkv',
+                    'size': 2048,
+                    'progress': 0.5,
+                    'index': 0,
+                  },
+                ]),
+              );
           default:
             response.statusCode = HttpStatus.notFound;
         }
@@ -106,11 +114,13 @@ void main() {
         '/api/v2/torrents/files',
       ]);
       expect(
-        forms.any((Map<String, String> form) =>
-            form['category'] == 'hibiki' &&
-            form['urls'] == 'magnet:?xt=urn:btih:abc123' &&
-            form['sequentialDownload'] == 'true' &&
-            form['firstLastPiecePrio'] == 'true'),
+        forms.any(
+          (Map<String, String> form) =>
+              form['category'] == 'hibiki' &&
+              form['urls'] == 'magnet:?xt=urn:btih:abc123' &&
+              form['sequentialDownload'] == 'true' &&
+              form['firstLastPiecePrio'] == 'true',
+        ),
         isTrue,
       );
     } finally {

@@ -11,13 +11,14 @@ import 'package:fushi/models.dart';
 class FrequencyField extends Field {
   /// Initialise this field with the predetermined and hardset values.
   FrequencyField._privateConstructor()
-      : super(
-          uniqueKey: key,
-          label: 'Frequency',
-          description: 'Adds frequency of headword for sorting purposes,'
-              ' calculated using the harmonic mean.',
-          icon: Icons.insert_chart_outlined,
-        );
+    : super(
+        uniqueKey: key,
+        label: 'Frequency',
+        description:
+            'Adds frequency of headword for sorting purposes,'
+            ' calculated using the harmonic mean.',
+        icon: Icons.insert_chart_outlined,
+      );
 
   /// Get the singleton instance of this field.
   static FrequencyField get instance => _instance;
@@ -92,8 +93,10 @@ class FrequencyField extends Field {
       }
     }
 
-    final int? rank =
-        aggregateFrequencyRanks(values, FrequencyAggregate.harmonic);
+    final int? rank = aggregateFrequencyRanks(
+      values,
+      FrequencyAggregate.harmonic,
+    );
     return rank?.toString() ?? '';
   }
 
@@ -133,16 +136,20 @@ class FrequencyField extends Field {
         if (rawValue is! Map) {
           continue;
         }
-        values.add(_FrequencyValue(
-          value: (rawValue['value'] as num?)?.toInt() ?? 0,
-          display: rawValue['display']?.toString() ?? '',
-        ));
+        values.add(
+          _FrequencyValue(
+            value: (rawValue['value'] as num?)?.toInt() ?? 0,
+            display: rawValue['display']?.toString() ?? '',
+          ),
+        );
       }
       if (values.isNotEmpty) {
-        groups.add(_FrequencyGroup(
-          dictName: rawGroup['dictName']?.toString() ?? '',
-          values: values,
-        ));
+        groups.add(
+          _FrequencyGroup(
+            dictName: rawGroup['dictName']?.toString() ?? '',
+            values: values,
+          ),
+        );
       }
     }
     return groups;
@@ -150,10 +157,7 @@ class FrequencyField extends Field {
 }
 
 class _FrequencyGroup {
-  const _FrequencyGroup({
-    required this.dictName,
-    required this.values,
-  });
+  const _FrequencyGroup({required this.dictName, required this.values});
 
   final String dictName;
 
@@ -161,10 +165,7 @@ class _FrequencyGroup {
 }
 
 class _FrequencyValue {
-  const _FrequencyValue({
-    required this.value,
-    required this.display,
-  });
+  const _FrequencyValue({required this.value, required this.display});
 
   final int value;
 

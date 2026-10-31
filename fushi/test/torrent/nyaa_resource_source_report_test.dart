@@ -235,21 +235,22 @@ void main() {
 
   group('VideoResourceRegistry 逐源回执', () {
     test('每个参与的源一份：Nyaa 0 条可见、失败源带原因', () async {
-      final VideoResourceRegistry registry =
-          VideoResourceRegistry(<VideoResourceProvider>[
-            NyaaVideoResourceProvider(
-              siteId: 'nyaa-test',
-              categoryByDomain: const <VideoDiscoveryCategory, String>{
-                VideoDiscoveryCategory.anime: '1_0',
-              },
-              client: NyaaClient(
-                baseUrl: 'https://nyaa.si',
-                minRequestInterval: Duration.zero,
-                client: _nyaaServer(<String>[]),
-              ),
+      final VideoResourceRegistry registry = VideoResourceRegistry(
+        <VideoResourceProvider>[
+          NyaaVideoResourceProvider(
+            siteId: 'nyaa-test',
+            categoryByDomain: const <VideoDiscoveryCategory, String>{
+              VideoDiscoveryCategory.anime: '1_0',
+            },
+            client: NyaaClient(
+              baseUrl: 'https://nyaa.si',
+              minRequestInterval: Duration.zero,
+              client: _nyaaServer(<String>[]),
             ),
-            _TimeoutProvider(),
-          ]);
+          ),
+          _TimeoutProvider(),
+        ],
+      );
       addTearDown(registry.close);
       // 没有罗马字别名的 TMDB 卡片 + 预填日文原名：Nyaa 如实报 0 条。
       final VideoResourceSearchResult result = await registry.search(

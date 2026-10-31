@@ -13,14 +13,12 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
 GalgameRateLimiter _fastLimiter() => GalgameRateLimiter(
-      capacity: 1000,
-      refillInterval: const Duration(microseconds: 1),
-    );
+  capacity: 1000,
+  refillInterval: const Duration(microseconds: 1),
+);
 
-VndbMetadataAdapter _adapter(MockClient client) => VndbMetadataAdapter(
-      client: client,
-      rateLimiter: _fastLimiter(),
-    );
+VndbMetadataAdapter _adapter(MockClient client) =>
+    VndbMetadataAdapter(client: client, rateLimiter: _fastLimiter());
 
 /// `POST /kana/vn` 单条结果的真实形状（字段裁剪但结构照抄官方响应）。
 const Map<String, Object?> _vnFixture = <String, Object?>{
@@ -49,22 +47,23 @@ const Map<String, Object?> _vnFixture = <String, Object?>{
 };
 
 Map<String, Object?> _results(List<Object?> results) => <String, Object?>{
-      'results': results,
-      'more': false,
-    };
+  'results': results,
+  'more': false,
+};
 
 http.Response _json(Object? body, {int status = 200}) => http.Response(
-      jsonEncode(body),
-      status,
-      headers: const <String, String>{
-        'content-type': 'application/json; charset=utf-8',
-      },
-    );
+  jsonEncode(body),
+  status,
+  headers: const <String, String>{
+    'content-type': 'application/json; charset=utf-8',
+  },
+);
 
 void main() {
   group('validateId / externalUrl', () {
     final VndbMetadataAdapter adapter = _adapter(
-        MockClient((http.Request _) async => _json(_results(<Object?>[]))));
+      MockClient((http.Request _) async => _json(_results(<Object?>[]))),
+    );
 
     test('source 是 vndb', () {
       expect(adapter.source, GalgameMetadataSource.vndb);
@@ -108,10 +107,13 @@ void main() {
       expect(draft!.name, '月姫'); // main == true
       expect(draft.nameCn, '月姬'); // zh-Hans 优先于 zh-Hant
       expect(draft.aliases, <String>['Moon Princess']);
-      expect(
-        draft.allTitles,
-        <String>['月姫', 'Tsukihime', '月姬（繁）', '月姬', 'Moon Princess'],
-      );
+      expect(draft.allTitles, <String>[
+        '月姫',
+        'Tsukihime',
+        '月姬（繁）',
+        '月姬',
+        'Moon Princess',
+      ]);
       expect(draft.summary, '「ものを壊す線が視える。」');
       expect(draft.developer, 'TYPE-MOON');
       expect(draft.releaseDate, '2000-12-29');
@@ -145,17 +147,24 @@ void main() {
     test('400 / 500 → 抛 GalgameMetadataException 且带状态码', () async {
       for (final int status in <int>[400, 500]) {
         final VndbMetadataAdapter adapter = _adapter(
-          MockClient((http.Request _) async =>
-              http.Response('Invalid filter', status)),
+          MockClient(
+            (http.Request _) async => http.Response('Invalid filter', status),
+          ),
         );
         await expectLater(
           adapter.fetchById('v17'),
           throwsA(
             isA<GalgameMetadataException>()
-                .having((GalgameMetadataException e) => e.statusCode,
-                    'statusCode', status)
-                .having((GalgameMetadataException e) => e.source, 'source',
-                    GalgameMetadataSource.vndb),
+                .having(
+                  (GalgameMetadataException e) => e.statusCode,
+                  'statusCode',
+                  status,
+                )
+                .having(
+                  (GalgameMetadataException e) => e.source,
+                  'source',
+                  GalgameMetadataSource.vndb,
+                ),
           ),
         );
       }
@@ -241,8 +250,10 @@ void main() {
         }),
       );
 
-      final List<SourceCandidate> candidates =
-          await adapter.searchByName('tsukihime', limit: 5);
+      final List<SourceCandidate> candidates = await adapter.searchByName(
+        'tsukihime',
+        limit: 5,
+      );
 
       final Map<String, Object?> sent =
           jsonDecode(body) as Map<String, Object?>;
@@ -316,7 +327,7 @@ void main() {
           <String, Object?>{
             'name': 'tag$i',
             'rating': 3.0 - i * 0.05,
-            'spoiler': 0
+            'spoiler': 0,
           },
         <String, Object?>{'name': 'spoilered', 'rating': 3.0, 'spoiler': 1},
       ]);
@@ -338,18 +349,20 @@ void main() {
     });
 
     test('titles 无 main 标记时退回第一条；无 titles 时全为 null', () {
-      final GalgameMetadataDraft draft =
-          parseVndbVisualNovel(<Object?, Object?>{
-        'id': 'v1',
-        'titles': <Object?>[
-          <String, Object?>{'lang': 'en', 'title': 'Only One'},
-        ],
-      });
+      final GalgameMetadataDraft draft = parseVndbVisualNovel(
+        <Object?, Object?>{
+          'id': 'v1',
+          'titles': <Object?>[
+            <String, Object?>{'lang': 'en', 'title': 'Only One'},
+          ],
+        },
+      );
       expect(draft.name, 'Only One');
       expect(draft.nameCn, isNull);
 
-      final GalgameMetadataDraft bare =
-          parseVndbVisualNovel(<Object?, Object?>{'id': 'v2'});
+      final GalgameMetadataDraft bare = parseVndbVisualNovel(<Object?, Object?>{
+        'id': 'v2',
+      });
       expect(bare.name, isNull);
       expect(bare.allTitles, isEmpty);
       expect(bare.externalId, 'v2');
@@ -373,12 +386,13 @@ void main() {
     });
 
     test('image 给字符串也认；released 是 TBA 时不落日期', () {
-      final GalgameMetadataDraft draft =
-          parseVndbVisualNovel(<Object?, Object?>{
-        'id': 'v3',
-        'image': 'https://t.vndb.org/cv/x.jpg',
-        'released': 'TBA',
-      });
+      final GalgameMetadataDraft draft = parseVndbVisualNovel(
+        <Object?, Object?>{
+          'id': 'v3',
+          'image': 'https://t.vndb.org/cv/x.jpg',
+          'released': 'TBA',
+        },
+      );
       expect(draft.coverUrl, 'https://t.vndb.org/cv/x.jpg');
       expect(draft.releaseDate, isNull);
     });

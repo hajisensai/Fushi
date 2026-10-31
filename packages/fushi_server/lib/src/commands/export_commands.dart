@@ -64,7 +64,9 @@ Future<File> exportSyncAsset({
 }) async {
   switch (kind) {
     case ExportKind.dictionary:
-      final bool exists = (await db.getAllDictionaryMetadata()).any((DictionaryMetaRow r) => r.name == key);
+      final bool exists = (await db.getAllDictionaryMetadata()).any(
+        (DictionaryMetaRow r) => r.name == key,
+      );
       if (!exists) throw ExportSourceMissing('没有名为「$key」的词典');
       return packages.exportDictionaryPackage(
         dictionaryName: key,
@@ -73,9 +75,14 @@ Future<File> exportSyncAsset({
       );
     case ExportKind.audiobook:
       // 键既可以是字幕书 uid，也可以是它挂的 EPUB bookKey（app 两种身份都在用）。
-      final SrtBookRow? book = await db.getSrtBookByUid(key) ?? await db.getSrtBookByBookKey(key);
-      if (book == null) throw ExportSourceMissing('没有 uid 或 bookKey 为「$key」的有声书');
-      return packages.exportAudioDatabasePackage(srtBookUid: book.uid, outputFile: output);
+      final SrtBookRow? book =
+          await db.getSrtBookByUid(key) ?? await db.getSrtBookByBookKey(key);
+      if (book == null)
+        throw ExportSourceMissing('没有 uid 或 bookKey 为「$key」的有声书');
+      return packages.exportAudioDatabasePackage(
+        srtBookUid: book.uid,
+        outputFile: output,
+      );
     case ExportKind.localAudio:
       LocalAudioDbEntry? entry;
       for (final LocalAudioDbEntry e in localAudioEntries()) {
@@ -83,7 +90,8 @@ Future<File> exportSyncAsset({
       }
       if (entry == null) throw ExportSourceMissing('没有名为「$key」的本地音频库');
       final File dbFile = File(entry.path);
-      if (!await dbFile.exists()) throw ExportSourceMissing('本地音频库「$key」的数据库文件不在: ${entry.path}');
+      if (!await dbFile.exists())
+        throw ExportSourceMissing('本地音频库「$key」的数据库文件不在: ${entry.path}');
       return packages.exportLocalAudioPackage(
         displayName: entry.displayName,
         enabled: entry.enabled,
@@ -124,7 +132,10 @@ export dictionary|audiobook|local-audio <key> -o <file> [--force] [--json]
     final List<String> rest = command.rest;
     final ExportKind? kind = rest.isEmpty ? null : ExportKind.parse(rest.first);
     final String? outPath = command['out'] as String?;
-    if (rest.length != 2 || kind == null || outPath == null || outPath.isEmpty) {
+    if (rest.length != 2 ||
+        kind == null ||
+        outPath == null ||
+        outPath.isEmpty) {
       e.writeln('用法: export dictionary|audiobook|local-audio <key> -o <file>');
       return _exitUsage;
     }
@@ -145,7 +156,10 @@ export dictionary|audiobook|local-audio <key> -o <file> [--force] [--json]
           key: rest[1],
           output: partial,
           dictionaryResourceRoot: rt.paths.dictionaryResources,
-          localAudioEntries: () => LocalAudioLibraryStore(prefs: rt.prefs, databaseDirectory: rt.paths.support).entries,
+          localAudioEntries: () => LocalAudioLibraryStore(
+            prefs: rt.prefs,
+            databaseDirectory: rt.paths.support,
+          ).entries,
         );
         written = await partial.rename(output.path);
       } on ExportSourceMissing catch (x) {
@@ -157,7 +171,12 @@ export dictionary|audiobook|local-audio <key> -o <file> [--force] [--json]
       final int bytes = await written.length();
       if (command['json'] as bool) {
         o.writeln(
-          jsonEncode(<String, Object?>{'kind': kind.arg, 'key': rest[1], 'file': written.path, 'bytes': bytes}),
+          jsonEncode(<String, Object?>{
+            'kind': kind.arg,
+            'key': rest[1],
+            'file': written.path,
+            'bytes': bytes,
+          }),
         );
       } else {
         o.writeln('已导出 ${kind.arg} 「${rest[1]}」→ ${written.path}（$bytes 字节）');

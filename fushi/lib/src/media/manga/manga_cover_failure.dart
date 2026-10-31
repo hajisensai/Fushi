@@ -31,12 +31,14 @@ class MangaCoverFailure extends StatelessWidget {
 
   /// Mihon runtime；没有挑战求解器的来源传 null，即恒走重试图标。
   final Object? runtime;
+
   /// 底色；null 时跟随主题中性色（surfaceContainerHighest），深浅色都可读。
   final Color? backgroundColor;
 
   @override
   Widget build(BuildContext context) {
-    final bool cloudflare = runtime is ChallengeMihonRuntime &&
+    final bool cloudflare =
+        runtime is ChallengeMihonRuntime &&
         mihonCloudflareChallenge(error) != null;
     final Widget action = cloudflare
         ? MihonCloudflareAction(
@@ -58,10 +60,7 @@ class MangaCoverFailure extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            FushiIcon(
-              Icons.broken_image_outlined,
-              color: cs.onSurfaceVariant,
-            ),
+            FushiIcon(Icons.broken_image_outlined, color: cs.onSurfaceVariant),
             action,
           ],
         ),

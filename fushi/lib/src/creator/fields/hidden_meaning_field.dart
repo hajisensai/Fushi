@@ -7,13 +7,14 @@ import 'package:fushi/models.dart';
 class HiddenMeaningField extends Field {
   /// Initialise this field with the predetermined and hardset values.
   HiddenMeaningField._privateConstructor()
-      : super(
-          uniqueKey: key,
-          label: 'Hidden Meaning',
-          description: 'Dictionary definitions only from hidden'
-              ' dictionaries.',
-          icon: Icons.visibility_off_outlined,
-        );
+    : super(
+        uniqueKey: key,
+        label: 'Hidden Meaning',
+        description:
+            'Dictionary definitions only from hidden'
+            ' dictionaries.',
+        icon: Icons.visibility_off_outlined,
+      );
 
   /// Get the singleton instance of this field.
   static HiddenMeaningField get instance => _instance;

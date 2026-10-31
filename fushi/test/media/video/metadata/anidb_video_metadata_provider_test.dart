@@ -182,10 +182,10 @@ void main() {
         final VideoMediaReference reference = scrapedMediaReference(work);
         expect(reference.tmdbId, isNull);
         expect(reference.imdbId, isNull);
-        expect(
-          <String?>[reference.title, ...reference.aliases],
-          containsAll(<String>['Your Name.', 'Kimi no Na wa.']),
-        );
+        expect(<String?>[
+          reference.title,
+          ...reference.aliases,
+        ], containsAll(<String>['Your Name.', 'Kimi no Na wa.']));
         expect(
           checkSubtitleWork(
             reference,
@@ -261,94 +261,92 @@ void main() {
       },
     );
 
-    test(
-      'AniDB 下发 banned 后闩住 endpoint：封禁期间零请求，到期自动恢复',
-      () async {
-        final _CatalogFixture fixture = await _catalogFixture();
-        addTearDown(fixture.dispose);
-        DateTime now = DateTime.utc(2026, 9, 1, 12);
-        int apiCalls = 0;
-        final AniDbVideoMetadataProvider provider = AniDbVideoMetadataProvider(
-          clientName: 'fushitest',
-          clientVersion: 7,
-          language: 'zh-CN',
-          titleCatalog: fixture.catalog,
-          now: () => now,
-          sleep: (Duration duration) async => now = now.add(duration),
-          client: MockClient((http.Request request) async {
-            apiCalls++;
-            // 封禁是 HTTP 200 + <error>banned</error>，传输层看不出异常。
-            return http.Response.bytes(
-              utf8.encode('<error>banned</error>'),
-              200,
-              headers: const <String, String>{
-                'content-type': 'application/xml',
-              },
-            );
-          }),
-        );
-        addTearDown(provider.close);
+    test('AniDB 下发 banned 后闩住 endpoint：封禁期间零请求，到期自动恢复', () async {
+      final _CatalogFixture fixture = await _catalogFixture();
+      addTearDown(fixture.dispose);
+      DateTime now = DateTime.utc(2026, 9, 1, 12);
+      int apiCalls = 0;
+      final AniDbVideoMetadataProvider provider = AniDbVideoMetadataProvider(
+        clientName: 'fushitest',
+        clientVersion: 7,
+        language: 'zh-CN',
+        titleCatalog: fixture.catalog,
+        now: () => now,
+        sleep: (Duration duration) async => now = now.add(duration),
+        client: MockClient((http.Request request) async {
+          apiCalls++;
+          // 封禁是 HTTP 200 + <error>banned</error>，传输层看不出异常。
+          return http.Response.bytes(
+            utf8.encode('<error>banned</error>'),
+            200,
+            headers: const <String, String>{'content-type': 'application/xml'},
+          );
+        }),
+      );
+      addTearDown(provider.close);
 
-        // 目录里没有 999，没有可降级的目录身份，封禁如实抛到调用方。
-        await expectLater(
-          provider.fetchWork(
-            const VideoMetadataLookup(
-              provider: VideoMetadataProviderKind.anidb,
-              externalId: '999',
-              mediaKind: VideoMetadataMediaKind.tv,
-            ),
+      // 目录里没有 999，没有可降级的目录身份，封禁如实抛到调用方。
+      await expectLater(
+        provider.fetchWork(
+          const VideoMetadataLookup(
+            provider: VideoMetadataProviderKind.anidb,
+            externalId: '999',
+            mediaKind: VideoMetadataMediaKind.tv,
           ),
-          throwsA(isA<AniDbBannedException>()),
-        );
-        expect(apiCalls, 1);
-        expect(provider.isBanned, isTrue);
-        expect(provider.isHttpApiAvailable, isFalse,
-            reason: '闸必须在发请求之前就关掉 httpapi');
-        expect(provider.banRemaining, isNotNull);
+        ),
+        throwsA(isA<AniDbBannedException>()),
+      );
+      expect(apiCalls, 1);
+      expect(provider.isBanned, isTrue);
+      expect(
+        provider.isHttpApiAvailable,
+        isFalse,
+        reason: '闸必须在发请求之前就关掉 httpapi',
+      );
+      expect(provider.banRemaining, isNotNull);
 
-        // 批量刮削的下一个作品：一次请求都不许再发，退回目录身份。
-        final VideoMetadataWork? next = await provider.fetchWork(
+      // 批量刮削的下一个作品：一次请求都不许再发，退回目录身份。
+      final VideoMetadataWork? next = await provider.fetchWork(
+        const VideoMetadataLookup(
+          provider: VideoMetadataProviderKind.anidb,
+          externalId: '42',
+          mediaKind: VideoMetadataMediaKind.tv,
+        ),
+      );
+      expect(apiCalls, 1, reason: '封禁期间继续请求只会延长封禁');
+      expect(next?.ids.single.value, '42');
+
+      // 分集抓取按封禁如实报错，不谎称「缺客户端身份」。
+      await expectLater(
+        provider.fetchEpisodes(
           const VideoMetadataLookup(
             provider: VideoMetadataProviderKind.anidb,
             externalId: '42',
             mediaKind: VideoMetadataMediaKind.tv,
           ),
-        );
-        expect(apiCalls, 1, reason: '封禁期间继续请求只会延长封禁');
-        expect(next?.ids.single.value, '42');
+          seasonNumber: 1,
+        ),
+        throwsA(isA<AniDbBannedException>()),
+      );
+      expect(apiCalls, 1);
 
-        // 分集抓取按封禁如实报错，不谎称「缺客户端身份」。
-        await expectLater(
-          provider.fetchEpisodes(
-            const VideoMetadataLookup(
-              provider: VideoMetadataProviderKind.anidb,
-              externalId: '42',
-              mediaKind: VideoMetadataMediaKind.tv,
-            ),
-            seasonNumber: 1,
+      // 到期自动解闩：长驻进程不必重启才能恢复。
+      now = now.add(const Duration(hours: 24, minutes: 1));
+      expect(provider.isBanned, isFalse);
+      expect(provider.banRemaining, isNull);
+      expect(provider.isHttpApiAvailable, isTrue);
+      await expectLater(
+        provider.fetchWork(
+          const VideoMetadataLookup(
+            provider: VideoMetadataProviderKind.anidb,
+            externalId: '999',
+            mediaKind: VideoMetadataMediaKind.tv,
           ),
-          throwsA(isA<AniDbBannedException>()),
-        );
-        expect(apiCalls, 1);
-
-        // 到期自动解闩：长驻进程不必重启才能恢复。
-        now = now.add(const Duration(hours: 24, minutes: 1));
-        expect(provider.isBanned, isFalse);
-        expect(provider.banRemaining, isNull);
-        expect(provider.isHttpApiAvailable, isTrue);
-        await expectLater(
-          provider.fetchWork(
-            const VideoMetadataLookup(
-              provider: VideoMetadataProviderKind.anidb,
-              externalId: '999',
-              mediaKind: VideoMetadataMediaKind.tv,
-            ),
-          ),
-          throwsA(isA<AniDbBannedException>()),
-        );
-        expect(apiCalls, 2, reason: '解闩后重新允许请求');
-      },
-    );
+        ),
+        throwsA(isA<AniDbBannedException>()),
+      );
+      expect(apiCalls, 2, reason: '解闩后重新允许请求');
+    });
 
     test(
       'falls back to catalog identity when the configured HTTP API fails',
@@ -379,8 +377,11 @@ void main() {
         expect(work?.title, '紫罗兰永恒花园');
         expect(work?.ids.single.type, 'anidb');
         expect(work?.ids.single.value, '42');
-        expect(work?.year, isNull,
-            reason: 'catalog fallback has no fake detail');
+        expect(
+          work?.year,
+          isNull,
+          reason: 'catalog fallback has no fake detail',
+        );
         expect(apiCalls, 1);
       },
     );
@@ -420,8 +421,8 @@ void main() {
         final List<VideoMetadataSeason> seasons = await provider.fetchSeasons(
           lookup,
         );
-        final List<VideoMetadataEpisode> episodes =
-            await provider.fetchEpisodes(lookup, seasonNumber: 1);
+        final List<VideoMetadataEpisode> episodes = await provider
+            .fetchEpisodes(lookup, seasonNumber: 1);
 
         expect(
           requestedUri?.queryParameters,
@@ -489,8 +490,10 @@ void main() {
         expect(specials.episodes.single.title, 'Special');
         expect(specials.episodes.single.absoluteNumber, isNull);
         expect(
-          (await provider.fetchEpisodes(lookup, seasonNumber: 0))
-              .map((VideoMetadataEpisode value) => value.title),
+          (await provider.fetchEpisodes(
+            lookup,
+            seasonNumber: 0,
+          )).map((VideoMetadataEpisode value) => value.title),
           <String>['Special'],
         );
         expect(
@@ -534,18 +537,19 @@ void main() {
           mediaKind: VideoMetadataMediaKind.movie,
         );
 
-        final VideoMetadataResolution result = await VideoMetadataResolver(
-          registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
-            provider,
-          ]),
-        ).resolve(
-          VideoMetadataResolveRequest(
-            selectedProvider: VideoMetadataProviderKind.anidb,
-            mediaKind: VideoMetadataMediaKind.movie,
-            titleCandidates: const <String>['Violet Evergarden OVA'],
-            confirmedLookup: lookup,
-          ),
-        );
+        final VideoMetadataResolution result =
+            await VideoMetadataResolver(
+              registry: VideoMetadataProviderRegistry(<VideoMetadataProvider>[
+                provider,
+              ]),
+            ).resolve(
+              VideoMetadataResolveRequest(
+                selectedProvider: VideoMetadataProviderKind.anidb,
+                mediaKind: VideoMetadataMediaKind.movie,
+                titleCandidates: const <String>['Violet Evergarden OVA'],
+                confirmedLookup: lookup,
+              ),
+            );
 
         expect(result.status, VideoMetadataResolutionStatus.matched);
         expect(result.work?.kind, VideoMetadataMediaKind.movie);
@@ -658,25 +662,28 @@ void main() {
         AniDbVideoMetadataProvider createProvider(
           String clientName,
           int clientVersion,
-        ) =>
-            AniDbVideoMetadataProvider(
-              clientName: clientName,
-              clientVersion: clientVersion,
-              apiUrl: 'http://anidb-gate.test/httpapi',
-              shareRequestGate: true,
-              titleCatalog: fixture.catalog,
-              now: () => clock,
-              sleep: (Duration duration) async {
-                sleeps.add(duration);
-                clock = clock.add(duration);
-              },
-              client: MockClient(handle),
-            );
+        ) => AniDbVideoMetadataProvider(
+          clientName: clientName,
+          clientVersion: clientVersion,
+          apiUrl: 'http://anidb-gate.test/httpapi',
+          shareRequestGate: true,
+          titleCatalog: fixture.catalog,
+          now: () => clock,
+          sleep: (Duration duration) async {
+            sleeps.add(duration);
+            clock = clock.add(duration);
+          },
+          client: MockClient(handle),
+        );
 
-        final AniDbVideoMetadataProvider first =
-            createProvider('fushitest-old', 6);
-        final AniDbVideoMetadataProvider second =
-            createProvider('fushitest-new', 7);
+        final AniDbVideoMetadataProvider first = createProvider(
+          'fushitest-old',
+          6,
+        );
+        final AniDbVideoMetadataProvider second = createProvider(
+          'fushitest-new',
+          7,
+        );
         addTearDown(first.close);
         addTearDown(second.close);
 
@@ -778,13 +785,13 @@ Future<_CatalogFixture> _catalogFixture() async {
 
 class _EnglishCandidate extends VideoSubtitleCandidate {
   _EnglishCandidate(String fileName)
-      : super(
-          providerId: 'opensubtitles',
-          remoteId: fileName,
-          fileName: fileName,
-          language: 'en',
-          providerPriority: 0,
-        );
+    : super(
+        providerId: 'opensubtitles',
+        remoteId: fileName,
+        fileName: fileName,
+        language: 'en',
+        providerPriority: 0,
+      );
 }
 
 class _CatalogFixture {

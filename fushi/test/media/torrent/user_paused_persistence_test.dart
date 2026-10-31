@@ -35,20 +35,23 @@ void main() {
   });
 
   test('坏 JSON 返回空集而不是抛（暂停态丢失可接受，崩溃不可接受）', () {
-    File(p.join(tempDir.path, kUserPausedFileName))
-        .writeAsStringSync('{not json');
+    File(
+      p.join(tempDir.path, kUserPausedFileName),
+    ).writeAsStringSync('{not json');
     expect(readUserPausedFile(tempDir.path), isEmpty);
   });
 
   test('JSON 是对象而非数组时同样空集', () {
-    File(p.join(tempDir.path, kUserPausedFileName))
-        .writeAsStringSync('{"a":1}');
+    File(
+      p.join(tempDir.path, kUserPausedFileName),
+    ).writeAsStringSync('{"a":1}');
     expect(readUserPausedFile(tempDir.path), isEmpty);
   });
 
   test('数组里的非字符串/空串条目被丢弃', () {
-    File(p.join(tempDir.path, kUserPausedFileName))
-        .writeAsStringSync('["aa", 42, "", null, "BB"]');
+    File(
+      p.join(tempDir.path, kUserPausedFileName),
+    ).writeAsStringSync('["aa", 42, "", null, "BB"]');
     expect(readUserPausedFile(tempDir.path), <String>{'aa', 'bb'});
   });
 
@@ -57,10 +60,9 @@ void main() {
     writeUserPausedFile(tempDir.path, <String>{'bb'});
     expect(readUserPausedFile(tempDir.path), <String>{'bb'});
     expect(
-      tempDir
-          .listSync()
-          .whereType<File>()
-          .where((File f) => f.path.endsWith('.tmp')),
+      tempDir.listSync().whereType<File>().where(
+        (File f) => f.path.endsWith('.tmp'),
+      ),
       isEmpty,
     );
   });
@@ -82,9 +84,13 @@ void main() {
         wanted: <String>{'aa', 'bb', 'cc'},
         restoredIds: <String>['aa'],
       );
-      expect(keep, <String>{'aa', 'bb'},
-          reason: 'bb 的 .resume 还在 —— 剪掉它，下次成功加载就会以跑态复活，'
-              '用户按过的暂停凭空消失');
+      expect(
+        keep,
+        <String>{'aa', 'bb'},
+        reason:
+            'bb 的 .resume 还在 —— 剪掉它，下次成功加载就会以跑态复活，'
+            '用户按过的暂停凭空消失',
+      );
     });
 
     test('加载成功的记录保留，不依赖 .resume 文件是否存在', () {

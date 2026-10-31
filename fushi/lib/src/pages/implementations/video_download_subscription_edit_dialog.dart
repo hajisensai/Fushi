@@ -66,9 +66,9 @@ List<String> videoSubscriptionFilterValues(String rawJson, String key) {
 
 /// **纯函数**：把输入框里「逗号 / 顿号分隔」的多个值拆成去重列表。
 List<String> splitVideoSubscriptionList(String text) => <String>{
-      for (final String part in text.split(RegExp(r'[,，、]')))
-        if (part.trim().isNotEmpty) part.trim(),
-    }.toList(growable: false);
+  for (final String part in text.split(RegExp(r'[,，、]')))
+    if (part.trim().isNotEmpty) part.trim(),
+}.toList(growable: false);
 
 /// **纯函数**：只改版本规则里「编辑订阅」管得着的四项（字幕组 / 分辨率 / 标题包含 /
 /// 标题排除），其余规则（strict、trusted、编码、语言、分类 …）原样保留。空列表 =
@@ -109,14 +109,11 @@ Future<VideoDownloadSubscriptionEdit?> showVideoDownloadSubscriptionEditDialog({
   required BuildContext context,
   required VideoDownloadSubscriptionRow subscription,
   required List<MediaSourceRow> sources,
-}) =>
-    showAppDialog<VideoDownloadSubscriptionEdit>(
-      context: context,
-      builder: (BuildContext _) => _SubscriptionEditDialog(
-        subscription: subscription,
-        sources: sources,
-      ),
-    );
+}) => showAppDialog<VideoDownloadSubscriptionEdit>(
+  context: context,
+  builder: (BuildContext _) =>
+      _SubscriptionEditDialog(subscription: subscription, sources: sources),
+);
 
 class _SubscriptionEditDialog extends StatefulWidget {
   const _SubscriptionEditDialog({
@@ -133,14 +130,15 @@ class _SubscriptionEditDialog extends StatefulWidget {
 }
 
 class _SubscriptionEditDialogState extends State<_SubscriptionEditDialog> {
-  late final TextEditingController _queryController =
-      TextEditingController(text: widget.subscription.searchQuery);
+  late final TextEditingController _queryController = TextEditingController(
+    text: widget.subscription.searchQuery,
+  );
   late final TextEditingController _startAfterController =
       TextEditingController(
-    text: widget.subscription.startAfterEpisode?.toString() ?? '',
-  );
-  late VideoDownloadSubtitlePolicy _subtitlePolicy = VideoDownloadSubtitlePolicy
-          .values
+        text: widget.subscription.startAfterEpisode?.toString() ?? '',
+      );
+  late VideoDownloadSubtitlePolicy _subtitlePolicy =
+      VideoDownloadSubtitlePolicy.values
           .asNameMap()[widget.subscription.subtitlePolicy] ??
       VideoDownloadSubtitlePolicy.bestEffort;
 
@@ -156,11 +154,11 @@ class _SubscriptionEditDialogState extends State<_SubscriptionEditDialog> {
   );
   late final TextEditingController _resolutionController =
       TextEditingController(
-    text: videoSubscriptionFilterValues(
-      widget.subscription.filterJson,
-      'resolution',
-    ).join(', '),
-  );
+        text: videoSubscriptionFilterValues(
+          widget.subscription.filterJson,
+          'resolution',
+        ).join(', '),
+      );
   late final TextEditingController _includeController = TextEditingController(
     text: videoSubscriptionFilterValues(
       widget.subscription.filterJson,
@@ -269,8 +267,9 @@ class _SubscriptionEditDialogState extends State<_SubscriptionEditDialog> {
         startAfterEpisode: _parsedStartAfter.$2,
         subtitlePolicy: _subtitlePolicy,
         // 没动过就传 null（宿主据此不写这一列）。
-        targetSourceId:
-            _sourceId == widget.subscription.targetSourceId ? null : _sourceId,
+        targetSourceId: _sourceId == widget.subscription.targetSourceId
+            ? null
+            : _sourceId,
         filterJson: _editedFilterJson,
       ),
     );
@@ -306,40 +305,38 @@ class _SubscriptionEditDialogState extends State<_SubscriptionEditDialog> {
               FushiTextFieldControl(
                 key: const ValueKey<String>('subscription-edit-query'),
                 controller: _queryController,
-                decoration: InputDecoration(
-                  labelText: t.video_jimaku_query,
-                ),
+                decoration: InputDecoration(labelText: t.video_jimaku_query),
                 maxLines: 1,
                 onChanged: (_) => setState(() {}),
               ),
               SizedBox(height: tokens.spacing.gap),
               for (final (Key, TextEditingController, String, String?) field
                   in <(Key, TextEditingController, String, String?)>[
-                (
-                  const ValueKey<String>('subscription-edit-release-group'),
-                  _groupController,
-                  t.subscription_edit_release_group,
-                  _groupError,
-                ),
-                (
-                  const ValueKey<String>('subscription-edit-resolution'),
-                  _resolutionController,
-                  t.subscription_edit_resolution,
-                  _resolutionError,
-                ),
-                (
-                  const ValueKey<String>('subscription-edit-title-include'),
-                  _includeController,
-                  t.subscription_edit_title_include,
-                  null,
-                ),
-                (
-                  const ValueKey<String>('subscription-edit-title-exclude'),
-                  _excludeController,
-                  t.subscription_edit_title_exclude,
-                  null,
-                ),
-              ]) ...<Widget>[
+                    (
+                      const ValueKey<String>('subscription-edit-release-group'),
+                      _groupController,
+                      t.subscription_edit_release_group,
+                      _groupError,
+                    ),
+                    (
+                      const ValueKey<String>('subscription-edit-resolution'),
+                      _resolutionController,
+                      t.subscription_edit_resolution,
+                      _resolutionError,
+                    ),
+                    (
+                      const ValueKey<String>('subscription-edit-title-include'),
+                      _includeController,
+                      t.subscription_edit_title_include,
+                      null,
+                    ),
+                    (
+                      const ValueKey<String>('subscription-edit-title-exclude'),
+                      _excludeController,
+                      t.subscription_edit_title_exclude,
+                      null,
+                    ),
+                  ]) ...<Widget>[
                 FushiTextFieldControl(
                   key: field.$1,
                   controller: field.$2,

@@ -26,7 +26,8 @@ void main() {
       expect(
         gamepadKeyDrivesFocusRing(letter),
         isFalse,
-        reason: 'typing a letter is not focus navigation; it must not show the '
+        reason:
+            'typing a letter is not focus navigation; it must not show the '
             'focus ring',
       );
     });
@@ -73,66 +74,69 @@ void main() {
 
   group('GamepadService._onKey wiring (root cause 1)', () {
     testWidgets(
-        'a non-nav key on a focused Material control keeps touch highlight',
-        (WidgetTester tester) async {
-      final GamepadService service =
-          GamepadService(navigatorKey: GlobalKey<NavigatorState>());
-      // start() installs the HardwareKeyboard handler that contains _onKey on
-      // every desktop/Apple platform (the test host qualifies). On Android it
-      // early-returns; this test is therefore desktop-only behaviour, which is
-      // exactly where the residue was reported.
-      service.start();
-      addTearDown(service.dispose);
+      'a non-nav key on a focused Material control keeps touch highlight',
+      (WidgetTester tester) async {
+        final GamepadService service = GamepadService(
+          navigatorKey: GlobalKey<NavigatorState>(),
+        );
+        // start() installs the HardwareKeyboard handler that contains _onKey on
+        // every desktop/Apple platform (the test host qualifies). On Android it
+        // early-returns; this test is therefore desktop-only behaviour, which is
+        // exactly where the residue was reported.
+        service.start();
+        addTearDown(service.dispose);
 
-      // Seed touch mode (what the default build shows after launch).
-      FocusManager.instance.highlightStrategy =
-          FocusHighlightStrategy.alwaysTouch;
+        // Seed touch mode (what the default build shows after launch).
+        FocusManager.instance.highlightStrategy =
+            FocusHighlightStrategy.alwaysTouch;
 
-      await tester.pumpWidget(
-        const MaterialApp(
-          home: Scaffold(
-            body: Center(
-              child: ElevatedButton(
-                onPressed: _noop,
-                autofocus: true,
-                child: Text('btn'),
+        await tester.pumpWidget(
+          const MaterialApp(
+            home: Scaffold(
+              body: Center(
+                child: ElevatedButton(
+                  onPressed: _noop,
+                  autofocus: true,
+                  child: Text('btn'),
+                ),
               ),
             ),
           ),
-        ),
-      );
-      await tester.pump();
+        );
+        await tester.pump();
 
-      // User types a letter (NOT focus navigation).
-      await tester.sendKeyEvent(LogicalKeyboardKey.keyA);
-      await tester.pump();
+        // User types a letter (NOT focus navigation).
+        await tester.sendKeyEvent(LogicalKeyboardKey.keyA);
+        await tester.pump();
 
-      expect(
-        FocusManager.instance.highlightStrategy,
-        isNot(FocusHighlightStrategy.alwaysTraditional),
-        reason: 'a plain letter must not light the focus ring (root cause 1)',
-      );
+        expect(
+          FocusManager.instance.highlightStrategy,
+          isNot(FocusHighlightStrategy.alwaysTraditional),
+          reason: 'a plain letter must not light the focus ring (root cause 1)',
+        );
 
-      // A real arrow press still arms the ring so navigation stays visible.
-      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
-      await tester.pump();
-      expect(
-        FocusManager.instance.highlightStrategy,
-        FocusHighlightStrategy.alwaysTraditional,
-        reason: 'directional navigation must still show the ring',
-      );
+        // A real arrow press still arms the ring so navigation stays visible.
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pump();
+        expect(
+          FocusManager.instance.highlightStrategy,
+          FocusHighlightStrategy.alwaysTraditional,
+          reason: 'directional navigation must still show the ring',
+        );
 
-      // Dispose now (before the widget tree is torn down) so the poller Timer
-      // installed by start() is cancelled and the framework sees no pending
-      // timer. The addTearDown dispose above is idempotent.
-      service.dispose();
-    });
+        // Dispose now (before the widget tree is torn down) so the poller Timer
+        // installed by start() is cancelled and the framework sees no pending
+        // timer. The addTearDown dispose above is idempotent.
+        service.dispose();
+      },
+    );
   });
 
   group('screen/tab switch resets the highlight (root cause 2)', () {
     test('resetHighlightForScreenSwitch flips traditional back to touch', () {
-      final GamepadService service =
-          GamepadService(navigatorKey: GlobalKey<NavigatorState>());
+      final GamepadService service = GamepadService(
+        navigatorKey: GlobalKey<NavigatorState>(),
+      );
       service.start();
       addTearDown(service.dispose);
 
@@ -148,14 +152,17 @@ void main() {
       );
     });
 
-    testWidgets('a NavigatorObserver push/pop resets the highlight',
-        (WidgetTester tester) async {
+    testWidgets('a NavigatorObserver push/pop resets the highlight', (
+      WidgetTester tester,
+    ) async {
       // No start(): resetHighlightForScreenSwitch only touches FocusManager, so
       // the observer can drive it without the polling Timer the service owns.
-      final GamepadService service =
-          GamepadService(navigatorKey: GlobalKey<NavigatorState>());
+      final GamepadService service = GamepadService(
+        navigatorKey: GlobalKey<NavigatorState>(),
+      );
       final NavigatorObserver observer = HighlightResetNavigatorObserver(
-          service.resetHighlightForScreenSwitch);
+        service.resetHighlightForScreenSwitch,
+      );
       final GlobalKey<NavigatorState> navKey = GlobalKey<NavigatorState>();
 
       await tester.pumpWidget(
@@ -199,21 +206,21 @@ void main() {
 }
 
 KeyDownEvent _keyDown(LogicalKeyboardKey key) => KeyDownEvent(
-      physicalKey: PhysicalKeyboardKey.keyA,
-      logicalKey: key,
-      timeStamp: Duration.zero,
-    );
+  physicalKey: PhysicalKeyboardKey.keyA,
+  logicalKey: key,
+  timeStamp: Duration.zero,
+);
 
 KeyUpEvent _keyUp(LogicalKeyboardKey key) => KeyUpEvent(
-      physicalKey: PhysicalKeyboardKey.keyA,
-      logicalKey: key,
-      timeStamp: Duration.zero,
-    );
+  physicalKey: PhysicalKeyboardKey.keyA,
+  logicalKey: key,
+  timeStamp: Duration.zero,
+);
 
 KeyRepeatEvent _keyRepeat(LogicalKeyboardKey key) => KeyRepeatEvent(
-      physicalKey: PhysicalKeyboardKey.keyA,
-      logicalKey: key,
-      timeStamp: Duration.zero,
-    );
+  physicalKey: PhysicalKeyboardKey.keyA,
+  logicalKey: key,
+  timeStamp: Duration.zero,
+);
 
 void _noop() {}

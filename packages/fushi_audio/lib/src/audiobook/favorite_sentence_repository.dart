@@ -97,8 +97,8 @@ class FavoriteSentence {
     this.dateKey,
     this.expression,
     this.reading,
-  })  : id = id ?? _generateFavoriteId(),
-        source = source ?? kFavoriteSentenceSourceBook;
+  }) : id = id ?? _generateFavoriteId(),
+       source = source ?? kFavoriteSentenceSourceBook;
 
   final String id;
   final String text;
@@ -133,21 +133,21 @@ class FavoriteSentence {
       'hl_${DateTime.now().microsecondsSinceEpoch}_${_idCounter++}';
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'text': text,
-        'bookTitle': bookTitle,
-        if (chapterLabel != null) 'chapterLabel': chapterLabel,
-        'createdAt': createdAt.toIso8601String(),
-        if (bookKey != null) 'bookKey': bookKey,
-        if (sectionIndex != null) 'sectionIndex': sectionIndex,
-        if (normCharOffset != null) 'normCharOffset': normCharOffset,
-        if (normCharLength != null) 'normCharLength': normCharLength,
-        if (color != null) 'color': color,
-        'source': source,
-        if (dateKey != null) 'dateKey': dateKey,
-        if (expression != null) 'expression': expression,
-        if (reading != null) 'reading': reading,
-      };
+    'id': id,
+    'text': text,
+    'bookTitle': bookTitle,
+    if (chapterLabel != null) 'chapterLabel': chapterLabel,
+    'createdAt': createdAt.toIso8601String(),
+    if (bookKey != null) 'bookKey': bookKey,
+    if (sectionIndex != null) 'sectionIndex': sectionIndex,
+    if (normCharOffset != null) 'normCharOffset': normCharOffset,
+    if (normCharLength != null) 'normCharLength': normCharLength,
+    if (color != null) 'color': color,
+    'source': source,
+    if (dateKey != null) 'dateKey': dateKey,
+    if (expression != null) 'expression': expression,
+    if (reading != null) 'reading': reading,
+  };
 }
 
 class FavoriteSentenceRepository {
@@ -170,23 +170,27 @@ class FavoriteSentenceRepository {
     const String nul = '<null>';
     final String bk = bookKey ?? nul;
     final String section = sectionIndex == null ? nul : sectionIndex.toString();
-    final String offset =
-        normCharOffset == null ? nul : normCharOffset.toString();
+    final String offset = normCharOffset == null
+        ? nul
+        : normCharOffset.toString();
     return '${text.length}:$text|$bk|$section|$offset';
   }
 
   /// [itemKey] 的便捷重载：直接从一条收藏句取内容键。
   static String itemKeyOf(FavoriteSentence s) => itemKey(
-        text: s.text,
-        bookKey: s.bookKey,
-        sectionIndex: s.sectionIndex,
-        normCharOffset: s.normCharOffset,
-      );
+    text: s.text,
+    bookKey: s.bookKey,
+    sectionIndex: s.sectionIndex,
+    normCharOffset: s.normCharOffset,
+  );
 
   /// 写删除墓碑（取消收藏 → 传播删除）。
   Future<void> _writeTombstone(FavoriteSentence s) =>
-      _db.writeSyncDeletionTombstone(kFavoriteSentenceTombstoneType,
-          itemKeyOf(s), DateTime.now().millisecondsSinceEpoch);
+      _db.writeSyncDeletionTombstone(
+        kFavoriteSentenceTombstoneType,
+        itemKeyOf(s),
+        DateTime.now().millisecondsSinceEpoch,
+      );
 
   Future<List<FavoriteSentence>> getAll() async {
     final raw = await _db.getPref(_key);
@@ -215,7 +219,9 @@ class FavoriteSentenceRepository {
     // 重新收藏 → 清除该内容键的删除墓碑；否则墓碑会在 aggregate 并集里把这条刚收藏的句
     // 再次抑制掉（与收藏词 addFavoriteWord 清墓碑同律）。
     await _db.clearSyncDeletionTombstone(
-        kFavoriteSentenceTombstoneType, itemKeyOf(sentence));
+      kFavoriteSentenceTombstoneType,
+      itemKeyOf(sentence),
+    );
   }
 
   /// 查已收藏项：返回**匹配到的条目 id**（未收藏 → null）。id-first——先按内容键（含
@@ -265,11 +271,13 @@ class FavoriteSentenceRepository {
     final sentences = await getAll();
     // BUG-494：只删**第一条**匹配内容键的记录（非 removeWhere 全删），避免同章重复短句
     // （offset 均 null → 内容键相同）取消收藏时把另一条同内容记录连坐删掉。
-    final int idx = sentences.indexWhere((s) =>
-        s.text == text &&
-        s.bookKey == bookKey &&
-        s.sectionIndex == sectionIndex &&
-        s.normCharOffset == normCharOffset);
+    final int idx = sentences.indexWhere(
+      (s) =>
+          s.text == text &&
+          s.bookKey == bookKey &&
+          s.sectionIndex == sectionIndex &&
+          s.normCharOffset == normCharOffset,
+    );
     if (idx < 0) return;
     final FavoriteSentence removed = sentences[idx];
     sentences.removeAt(idx);
@@ -296,8 +304,9 @@ class FavoriteSentenceRepository {
     final sentences = await getAll();
     // id 理论唯一，但 BUG-494 前的旧数据可能撞 id；捕获全部被删条目各写一次墓碑（同内容
     // 键幂等）。
-    final List<FavoriteSentence> removed =
-        sentences.where((s) => s.id == id).toList();
+    final List<FavoriteSentence> removed = sentences
+        .where((s) => s.id == id)
+        .toList();
     if (removed.isEmpty) return;
     sentences.removeWhere((s) => s.id == id);
     await _db.setPref(
@@ -314,14 +323,19 @@ class FavoriteSentenceRepository {
   /// 按内容键取消收藏（删除传播**接收端**确认后调用）。默认写墓碑：本设备也需墓碑抑制
   /// 第三设备 aggregate 快照的并集复活（与收藏词 `_applyConfirmedDeletions` 同律）。本地
   /// 已无此句时仍写墓碑（幂等，防复活）。
-  Future<void> removeByItemKey(String key,
-      {bool propagateDeletion = true}) async {
+  Future<void> removeByItemKey(
+    String key, {
+    bool propagateDeletion = true,
+  }) async {
     final sentences = await getAll();
     final int idx = sentences.indexWhere((s) => itemKeyOf(s) == key);
     if (idx < 0) {
       if (propagateDeletion) {
-        await _db.writeSyncDeletionTombstone(kFavoriteSentenceTombstoneType,
-            key, DateTime.now().millisecondsSinceEpoch);
+        await _db.writeSyncDeletionTombstone(
+          kFavoriteSentenceTombstoneType,
+          key,
+          DateTime.now().millisecondsSinceEpoch,
+        );
       }
       return;
     }

@@ -32,8 +32,9 @@ void main() {
   final IntegrationTestWidgetsFlutterBinding binding =
       IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
-  testWidgets('import dictionary and verify search returns results',
-      (WidgetTester tester) async {
+  testWidgets('import dictionary and verify search returns results', (
+    WidgetTester tester,
+  ) async {
     final List<FlutterErrorDetails> errors = [];
     final FlutterExceptionHandler? oldHandler = FlutterError.onError;
     FlutterError.onError = (FlutterErrorDetails details) {
@@ -80,8 +81,9 @@ void main() {
         // but is blocked for the app uid under scoped storage.
         // `getExternalStorageDirectory` is Android-only. Desktop app-level
         // verification uses the generated fixture fallback below.
-        final Directory? extDir =
-            Platform.isAndroid ? await getExternalStorageDirectory() : null;
+        final Directory? extDir = Platform.isAndroid
+            ? await getExternalStorageDirectory()
+            : null;
         final List<File> candidates = <File>[
           if (extDir != null) File('${extDir.path}/test_dict.zip'),
           File('/sdcard/Download/test_dict.zip'),
@@ -97,8 +99,10 @@ void main() {
           src.copySync(dictFile.path);
           debugPrint('[popup-test] Copied dict from ${src.path} to cache');
         } else {
-          fail('Dictionary fixture not found. The runner pushes it to '
-              "the app's external-files dir; run via ci/integration-test.sh.");
+          fail(
+            'Dictionary fixture not found. The runner pushes it to '
+            "the app's external-files dir; run via ci/integration-test.sh.",
+          );
         }
       }
 
@@ -136,17 +140,22 @@ void main() {
       }
 
       if (!importSuccess) {
-        fail('Dictionary import did not succeed within 30s. '
-            'Progress: ${progressNotifier.value}. '
-            'Error: $importError');
+        fail(
+          'Dictionary import did not succeed within 30s. '
+          'Progress: ${progressNotifier.value}. '
+          'Error: $importError',
+        );
       }
 
       progressNotifier.dispose();
 
       // Phase 4 below needs the deterministic `testword` entry even when the
       // Android runner supplied a full Japanese dictionary fixture.
-      expect(await seedDictionary(tester), isTrue,
-          reason: 'generated popup-action fixture must be installed');
+      expect(
+        await seedDictionary(tester),
+        isTrue,
+        reason: 'generated popup-action fixture must be installed',
+      );
 
       // ── Phase 2: Navigate to dictionary tab ──
 
@@ -154,8 +163,11 @@ void main() {
       // production identity instead of assuming it is always index 1.
       final Finder dictionaryTab = findNavTargetForTab(HomeTab.dictionaries);
       final bool focusedDict = await driver.focusWidget(dictionaryTab);
-      expect(focusedDict, isTrue,
-          reason: 'Dictionary tab must be reachable by focus');
+      expect(
+        focusedDict,
+        isTrue,
+        reason: 'Dictionary tab must be reachable by focus',
+      );
       await driver.activate();
       await tester.pump(const Duration(seconds: 3));
 
@@ -165,9 +177,9 @@ void main() {
 
       final Finder searchField = findSearchField();
       await tester.enterText(searchField, primarySearchTerm);
-      final HomeDictionarySearchDebug popupDebug = tester.state(
-        find.byType(HomeDictionaryPage),
-      ) as HomeDictionarySearchDebug;
+      final HomeDictionarySearchDebug popupDebug =
+          tester.state(find.byType(HomeDictionaryPage))
+              as HomeDictionarySearchDebug;
       await popupDebug.debugSearch(primarySearchTerm, writeHistory: true);
       await tester.pump(const Duration(seconds: 5));
 
@@ -177,17 +189,17 @@ void main() {
       final int resultCount = resultEvidence.evaluate().length;
       debugPrint('[popup-test] Search results: $resultCount evidence widgets');
 
-      expect(resultCount, greaterThan(0),
-          reason:
-              'Dictionary search for $primarySearchTerm must return results');
+      expect(
+        resultCount,
+        greaterThan(0),
+        reason: 'Dictionary search for $primarySearchTerm must return results',
+      );
 
       // ── Phase 4: Exercise the real in-app nested popup host ──
 
       final bool originalBottomDocked = appModel.popupBottomDocked;
       await appModel.setPopupBottomDocked(false);
-      addTearDown(
-        () => appModel.setPopupBottomDocked(originalBottomDocked),
-      );
+      addTearDown(() => appModel.setPopupBottomDocked(originalBottomDocked));
       final int popupMatches = await popupDebug.debugOpenPopup('testword');
       expect(popupMatches, greaterThan(0));
 
@@ -209,19 +221,27 @@ void main() {
         }
       }
 
-      debugPrint('[popup-test] Nested popup snapshot: $snapshot; '
-          'autoFit=${popupDebug.debugTopPopupAutoFitHeight}');
-      expect(snapshot, isNotNull,
-          reason: 'real popup WebView must render mine/favorite controls');
+      debugPrint(
+        '[popup-test] Nested popup snapshot: $snapshot; '
+        'autoFit=${popupDebug.debugTopPopupAutoFitHeight}',
+      );
+      expect(
+        snapshot,
+        isNotNull,
+        reason: 'real popup WebView must render mine/favorite controls',
+      );
       expect(snapshot!['mineButtons'], 1);
       expect(snapshot['favoriteButtons'], 1);
-      expect(popupDebug.debugTopPopupAutoFitHeight, isNotNull,
-          reason:
-              'popupRendered must feed DOM metrics back to the Flutter host');
+      expect(
+        popupDebug.debugTopPopupAutoFitHeight,
+        isNotNull,
+        reason: 'popupRendered must feed DOM metrics back to the Flutter host',
+      );
       expect(
         popupDebug.debugTopPopupAutoFitHeight!,
         lessThan(appModel.popupMaxHeight * appModel.appUiScale),
-        reason: 'single generated entry must shrink below the configured max '
+        reason:
+            'single generated entry must shrink below the configured max '
             'instead of leaving the reported blank lower half',
       );
 
@@ -240,9 +260,12 @@ void main() {
         );
         if (favorited) break;
       }
-      expect(favorited, isTrue,
-          reason:
-              'favorite button must cross the real JS/Dart bridge and write DB');
+      expect(
+        favorited,
+        isTrue,
+        reason:
+            'favorite button must cross the real JS/Dart bridge and write DB',
+      );
 
       await popupDebug.debugEvaluateTopPopup(
         "document.querySelector('.favorite-button').click(); true",
@@ -256,8 +279,11 @@ void main() {
         );
         if (!favorited) break;
       }
-      expect(favorited, isFalse,
-          reason: 'second favorite activation must remove the same DB row');
+      expect(
+        favorited,
+        isFalse,
+        reason: 'second favorite activation must remove the same DB row',
+      );
 
       // ── Phase 5: BUG-2039 ③ 嵌套 realm 停驻与接管（真 WebView2 平台视图）──
       // 嵌套 → 关掉 → 再嵌套：第二次必须接管第一次那个 WebView State（同一把
@@ -281,9 +307,13 @@ void main() {
           }
         }
         sw.stop();
-        expect(rendered, isTrue,
-            reason: 'nested popup must reveal (popupRendered) and render its '
-                'DOM controls');
+        expect(
+          rendered,
+          isTrue,
+          reason:
+              'nested popup must reveal (popupRendered) and render its '
+              'DOM controls',
+        );
         return sw.elapsed;
       }
 
@@ -294,17 +324,24 @@ void main() {
 
       popupDebug.debugClosePopup(); // 只关嵌套层，父层仍在
       await tester.pump(const Duration(milliseconds: 300));
-      expect(popupDebug.debugPopupStackShape,
-          (depth: 1, parkedRealms: 1),
-          reason: 'the dismissed nested realm must be parked, not destroyed');
+      expect(popupDebug.debugPopupStackShape, (
+        depth: 1,
+        parkedRealms: 1,
+      ), reason: 'the dismissed nested realm must be parked, not destroyed');
 
       final Duration nestedWarm = await openNestedAndWaitRendered();
       expect(popupDebug.debugPopupStackShape, (depth: 2, parkedRealms: 0));
-      expect(identical(popupDebug.debugTopPopupWebViewState, nestedState), isTrue,
-          reason: 'the second nested lookup must take over the parked WebView '
-              'State (same GlobalKey ⇒ same element, no cold platform view)');
-      debugPrint('[popup-test] nested realm reuse: cold=${nestedCold.inMilliseconds}ms '
-          'warm=${nestedWarm.inMilliseconds}ms');
+      expect(
+        identical(popupDebug.debugTopPopupWebViewState, nestedState),
+        isTrue,
+        reason:
+            'the second nested lookup must take over the parked WebView '
+            'State (same GlobalKey ⇒ same element, no cold platform view)',
+      );
+      debugPrint(
+        '[popup-test] nested realm reuse: cold=${nestedCold.inMilliseconds}ms '
+        'warm=${nestedWarm.inMilliseconds}ms',
+      );
 
       popupDebug.debugClosePopup();
       await tester.pump(const Duration(milliseconds: 300));

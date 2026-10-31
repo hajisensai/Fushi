@@ -12,14 +12,15 @@ AudioCue _cue(int idx, String text) => AudioCue()
   ..audioFileIndex = 0;
 
 List<AudioCue> _cues(List<String> texts) => <AudioCue>[
-      for (int i = 0; i < texts.length; i++) _cue(i, texts[i]),
-    ];
+  for (int i = 0; i < texts.length; i++) _cue(i, texts[i]),
+];
 
 /// BUG-2928（『やはり俺の青春ラブコメはまちがっている。』1 卷，用户 VN 模式录屏）：
 /// 正文 ruby 按传统排版不用小書き仮名（「オイレン・シルフイード」「きようがく」），
 /// ASR 吐的是现代写法「シルフィード」「きょうがく」。同一读音的 ruby 在一段里出现三次，
 /// 后两次紧挨着。
-const String _text = '「そういえば聞いたことがある……。風を意のままに操る伝説の技、'
+const String _text =
+    '「そういえば聞いたことがある……。風を意のままに操る伝説の技、'
     'その名も『風を継ぐ者・風精悪戯』!!」'
     '空気を読まない材木座だけが大声を張り上げた。'
     '勝手に名前付けんなよ。台無しもいいところだ。'
@@ -34,11 +35,9 @@ List<EpubRubySpan> _rubies() {
   final List<EpubRubySpan> out = <EpubRubySpan>[];
   int at = _text.indexOf(_ruby);
   while (at >= 0) {
-    out.add(EpubRubySpan(
-      start: at,
-      end: at + _ruby.length,
-      reading: 'オイレン・シルフイード',
-    ));
+    out.add(
+      EpubRubySpan(start: at, end: at + _ruby.length, reading: 'オイレン・シルフイード'),
+    );
     at = _text.indexOf(_ruby, at + _ruby.length);
   }
   void add(String base, String reading) {

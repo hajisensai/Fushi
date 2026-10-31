@@ -18,7 +18,7 @@ const String androidUnifiedFfmpegAar =
 /// [contents] is libmpv.so; [codec] is the unified FFmpeg's libavcodec.so for
 /// the same ABI from the FFmpegKitNext AAR (libmpv carries no FFmpeg itself).
 Iterable<({String abi, String contents, String codec})>
-    verifiedAndroidLibmpv() sync* {
+verifiedAndroidLibmpv() sync* {
   // Flutter has no 32-bit x86 target; the unified FFmpeg ships these three.
   const Map<String, int> machines = <String, int>{
     'arm64-v8a': 183,
@@ -91,8 +91,12 @@ Iterable<({String abi, String contents, String codec})>
     expect(codec, isNotNull, reason: '$abi: unified FFmpeg libavcodec.so');
     // 16 KB page alignment is a 64-bit requirement (16 KB-page devices run no
     // 32-bit code); FFmpegKitNext links arm64 / x86_64 with max-page-size=16384.
-    _verifyElf(codec!.content as List<int>, entry.value, '$abi/libavcodec.so',
-        require16kPages: entry.value != 40);
+    _verifyElf(
+      codec!.content as List<int>,
+      entry.value,
+      '$abi/libavcodec.so',
+      require16kPages: entry.value != 40,
+    );
     yield (
       abi: abi,
       contents: latin1.decode(mpv, allowInvalid: true),

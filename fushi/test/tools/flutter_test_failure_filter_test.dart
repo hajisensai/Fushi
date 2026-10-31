@@ -7,18 +7,16 @@ import '../../tool/test_flow/flutter_test_failure_filter.dart';
 void main() {
   group('flutter test failure filter', () {
     test('renders only error events and omits passing tests', () {
-      final FlutterTestRunSummary summary = parseFlutterTestJsonEvents(
-        <String>[
-          '{"type":"suite","suite":{"id":0,"path":"test/pass_test.dart"}}',
-          '{"type":"testStart","test":{"id":1,"name":"passing test","suiteID":0}}',
-          '{"type":"testDone","testID":1,"result":"success"}',
-          '{"type":"suite","suite":{"id":1,"path":"test/fail_test.dart"}}',
-          '{"type":"testStart","test":{"id":2,"name":"failing test","suiteID":1}}',
-          '{"type":"error","testID":2,"error":"Expected: true\\n  Actual: false","stackTrace":"package:test/fail_test.dart 10:3","isFailure":true}',
-          '{"type":"testDone","testID":2,"result":"failure"}',
-          '{"type":"done","success":false}',
-        ],
-      );
+      final FlutterTestRunSummary summary = parseFlutterTestJsonEvents(<String>[
+        '{"type":"suite","suite":{"id":0,"path":"test/pass_test.dart"}}',
+        '{"type":"testStart","test":{"id":1,"name":"passing test","suiteID":0}}',
+        '{"type":"testDone","testID":1,"result":"success"}',
+        '{"type":"suite","suite":{"id":1,"path":"test/fail_test.dart"}}',
+        '{"type":"testStart","test":{"id":2,"name":"failing test","suiteID":1}}',
+        '{"type":"error","testID":2,"error":"Expected: true\\n  Actual: false","stackTrace":"package:test/fail_test.dart 10:3","isFailure":true}',
+        '{"type":"testDone","testID":2,"result":"failure"}',
+        '{"type":"done","success":false}',
+      ]);
 
       final String rendered = renderFlutterTestFailureSummary(
         summary,
@@ -36,12 +34,10 @@ void main() {
     });
 
     test('renders a load error without a test id', () {
-      final FlutterTestRunSummary summary = parseFlutterTestJsonEvents(
-        <String>[
-          '{"type":"error","error":"Failed to load test file","stackTrace":"loader.dart 1:1"}',
-          '{"type":"done","success":false}',
-        ],
-      );
+      final FlutterTestRunSummary summary = parseFlutterTestJsonEvents(<String>[
+        '{"type":"error","error":"Failed to load test file","stackTrace":"loader.dart 1:1"}',
+        '{"type":"done","success":false}',
+      ]);
 
       final String rendered = renderFlutterTestFailureSummary(summary);
 
@@ -54,13 +50,11 @@ void main() {
       for (int i = 0; i < 80; i++) {
         longError.writeln('line $i');
       }
-      final FlutterTestRunSummary summary = parseFlutterTestJsonEvents(
-        <String>[
-          '{"type":"testStart","test":{"id":1,"name":"large failure"}}',
-          '{"type":"error","testID":1,"error":${jsonEncode(longError.toString())},"stackTrace":"","isFailure":true}',
-          '{"type":"done","success":false}',
-        ],
-      );
+      final FlutterTestRunSummary summary = parseFlutterTestJsonEvents(<String>[
+        '{"type":"testStart","test":{"id":1,"name":"large failure"}}',
+        '{"type":"error","testID":1,"error":${jsonEncode(longError.toString())},"stackTrace":"","isFailure":true}',
+        '{"type":"done","success":false}',
+      ]);
 
       final String rendered = renderFlutterTestFailureSummary(
         summary,
@@ -85,93 +79,70 @@ void main() {
       expect(summary.success, isNull);
       expect(summary.testsCompleted, 0);
       expect(summary.hasFailures, isTrue);
+      expect(summary.failureReason(), contains('never reported a result'));
       expect(
-        summary.failureReason(),
-        contains('never reported a result'),
-      );
-      expect(
-        resolveFlutterTestVerdictFailure(
-          flutterExitCode: 0,
-          summary: summary,
-        ),
+        resolveFlutterTestVerdictFailure(flutterExitCode: 0, summary: summary),
         isNotNull,
       );
     });
 
     test('a successful done event with zero tests still fails', () {
-      final FlutterTestRunSummary summary = parseFlutterTestJsonEvents(
-        <String>[
-          '{"type":"start","protocolVersion":"0.1.1"}',
-          '{"type":"done","success":true}',
-        ],
-      );
+      final FlutterTestRunSummary summary = parseFlutterTestJsonEvents(<String>[
+        '{"type":"start","protocolVersion":"0.1.1"}',
+        '{"type":"done","success":true}',
+      ]);
 
       expect(summary.success, isTrue);
       expect(summary.testsCompleted, 0);
       expect(summary.hasFailures, isTrue);
       expect(summary.failureReason(), contains('Only 0 test(s) ran'));
       expect(
-        resolveFlutterTestVerdictFailure(
-          flutterExitCode: 0,
-          summary: summary,
-        ),
+        resolveFlutterTestVerdictFailure(flutterExitCode: 0, summary: summary),
         contains('Only 0 test(s) ran'),
       );
     });
 
     test('synthetic loading tests do not count as executed tests', () {
-      final FlutterTestRunSummary summary = parseFlutterTestJsonEvents(
-        <String>[
-          '{"type":"suite","suite":{"id":0,"path":"test/a_test.dart"}}',
-          '{"type":"testStart","test":{"id":1,"name":"loading test/a_test.dart","suiteID":0}}',
-          '{"type":"testDone","testID":1,"result":"success","hidden":true}',
-          '{"type":"done","success":true}',
-        ],
-      );
+      final FlutterTestRunSummary summary = parseFlutterTestJsonEvents(<String>[
+        '{"type":"suite","suite":{"id":0,"path":"test/a_test.dart"}}',
+        '{"type":"testStart","test":{"id":1,"name":"loading test/a_test.dart","suiteID":0}}',
+        '{"type":"testDone","testID":1,"result":"success","hidden":true}',
+        '{"type":"done","success":true}',
+      ]);
 
       expect(summary.testsCompleted, 0);
       expect(summary.hasFailures, isTrue);
     });
 
     test('a real passing run is green and reports its test count', () {
-      final FlutterTestRunSummary summary = parseFlutterTestJsonEvents(
-        <String>[
-          '{"type":"suite","suite":{"id":0,"path":"test/a_test.dart"}}',
-          '{"type":"testStart","test":{"id":1,"name":"loading test/a_test.dart","suiteID":0}}',
-          '{"type":"testDone","testID":1,"result":"success","hidden":true}',
-          '{"type":"testStart","test":{"id":2,"name":"real test","suiteID":0}}',
-          '{"type":"testDone","testID":2,"result":"success","hidden":false}',
-          '{"type":"done","success":true}',
-        ],
-      );
+      final FlutterTestRunSummary summary = parseFlutterTestJsonEvents(<String>[
+        '{"type":"suite","suite":{"id":0,"path":"test/a_test.dart"}}',
+        '{"type":"testStart","test":{"id":1,"name":"loading test/a_test.dart","suiteID":0}}',
+        '{"type":"testDone","testID":1,"result":"success","hidden":true}',
+        '{"type":"testStart","test":{"id":2,"name":"real test","suiteID":0}}',
+        '{"type":"testDone","testID":2,"result":"success","hidden":false}',
+        '{"type":"done","success":true}',
+      ]);
 
       expect(summary.testsCompleted, 1);
       expect(summary.hasFailures, isFalse);
       expect(summary.failureReason(), isNull);
       expect(
-        resolveFlutterTestVerdictFailure(
-          flutterExitCode: 0,
-          summary: summary,
-        ),
+        resolveFlutterTestVerdictFailure(flutterExitCode: 0, summary: summary),
         isNull,
       );
     });
 
     test('a non-zero flutter exit code always fails the verdict', () {
-      final FlutterTestRunSummary summary = parseFlutterTestJsonEvents(
-        <String>[
-          '{"type":"testStart","test":{"id":1,"name":"real test"}}',
-          '{"type":"testDone","testID":1,"result":"success","hidden":false}',
-          '{"type":"done","success":true}',
-        ],
-      );
+      final FlutterTestRunSummary summary = parseFlutterTestJsonEvents(<String>[
+        '{"type":"testStart","test":{"id":1,"name":"real test"}}',
+        '{"type":"testDone","testID":1,"result":"success","hidden":false}',
+        '{"type":"done","success":true}',
+      ]);
 
       expect(summary.hasFailures, isFalse);
       expect(
-        resolveFlutterTestVerdictFailure(
-          flutterExitCode: 1,
-          summary: summary,
-        ),
+        resolveFlutterTestVerdictFailure(flutterExitCode: 1, summary: summary),
         contains('flutter test exited with 1'),
       );
     });
@@ -181,17 +152,15 @@ void main() {
       // "Test failed. See exception logs above." and dumps the real exception
       // through `print` events. Dropping those made every widget-test red on
       // CI unreadable: the summary named the test and explained nothing.
-      final FlutterTestRunSummary summary = parseFlutterTestJsonEvents(
-        <String>[
-          '{"type":"suite","suite":{"id":0,"path":"test/pages/manga_test.dart"}}',
-          '{"type":"testStart","test":{"id":1,"name":"loads the book","suiteID":0}}',
-          '{"type":"print","testID":1,"message":"══╡ EXCEPTION CAUGHT BY WIDGETS ╞══"}',
-          '{"type":"print","testID":1,"message":"MissingPluginException(No implementation found for method isFullScreen)"}',
-          '{"type":"error","testID":1,"error":"Test failed. See exception logs above.","stackTrace":""}',
-          '{"type":"testDone","testID":1,"result":"failure"}',
-          '{"type":"done","success":false}',
-        ],
-      );
+      final FlutterTestRunSummary summary = parseFlutterTestJsonEvents(<String>[
+        '{"type":"suite","suite":{"id":0,"path":"test/pages/manga_test.dart"}}',
+        '{"type":"testStart","test":{"id":1,"name":"loads the book","suiteID":0}}',
+        '{"type":"print","testID":1,"message":"══╡ EXCEPTION CAUGHT BY WIDGETS ╞══"}',
+        '{"type":"print","testID":1,"message":"MissingPluginException(No implementation found for method isFullScreen)"}',
+        '{"type":"error","testID":1,"error":"Test failed. See exception logs above.","stackTrace":""}',
+        '{"type":"testDone","testID":1,"result":"failure"}',
+        '{"type":"done","success":false}',
+      ]);
 
       expect(summary.errors.single.printedOutput, hasLength(2));
 
@@ -202,17 +171,15 @@ void main() {
     });
 
     test('print events from passing tests never reach the summary', () {
-      final FlutterTestRunSummary summary = parseFlutterTestJsonEvents(
-        <String>[
-          '{"type":"testStart","test":{"id":1,"name":"chatty pass","suiteID":0}}',
-          '{"type":"print","testID":1,"message":"noise from a green test"}',
-          '{"type":"testDone","testID":1,"result":"success"}',
-          '{"type":"testStart","test":{"id":2,"name":"the failure","suiteID":0}}',
-          '{"type":"error","testID":2,"error":"boom","stackTrace":""}',
-          '{"type":"testDone","testID":2,"result":"failure"}',
-          '{"type":"done","success":false}',
-        ],
-      );
+      final FlutterTestRunSummary summary = parseFlutterTestJsonEvents(<String>[
+        '{"type":"testStart","test":{"id":1,"name":"chatty pass","suiteID":0}}',
+        '{"type":"print","testID":1,"message":"noise from a green test"}',
+        '{"type":"testDone","testID":1,"result":"success"}',
+        '{"type":"testStart","test":{"id":2,"name":"the failure","suiteID":0}}',
+        '{"type":"error","testID":2,"error":"boom","stackTrace":""}',
+        '{"type":"testDone","testID":2,"result":"failure"}',
+        '{"type":"done","success":false}',
+      ]);
 
       final String rendered = renderFlutterTestFailureSummary(summary);
       expect(rendered, contains('the failure'));
@@ -243,13 +210,11 @@ void main() {
     });
 
     test('minimumTests can pin a baseline so a shrunken run fails', () {
-      final FlutterTestRunSummary summary = parseFlutterTestJsonEvents(
-        <String>[
-          '{"type":"testStart","test":{"id":1,"name":"real test"}}',
-          '{"type":"testDone","testID":1,"result":"success","hidden":false}',
-          '{"type":"done","success":true}',
-        ],
-      );
+      final FlutterTestRunSummary summary = parseFlutterTestJsonEvents(<String>[
+        '{"type":"testStart","test":{"id":1,"name":"real test"}}',
+        '{"type":"testDone","testID":1,"result":"success","hidden":false}',
+        '{"type":"done","success":true}',
+      ]);
 
       expect(summary.hasFailuresFor(minimumTests: 1), isFalse);
       expect(summary.hasFailuresFor(minimumTests: 100), isTrue);
@@ -261,11 +226,15 @@ void main() {
   });
 
   group('FlutterTestRunSummary.merge (batched shard)', () {
-    FlutterTestRunSummary run(bool? success, int tests,
-            [List<FlutterTestErrorEvent> errors =
-                const <FlutterTestErrorEvent>[]]) =>
-        FlutterTestRunSummary(
-            errors: errors, success: success, testsCompleted: tests);
+    FlutterTestRunSummary run(
+      bool? success,
+      int tests, [
+      List<FlutterTestErrorEvent> errors = const <FlutterTestErrorEvent>[],
+    ]) => FlutterTestRunSummary(
+      errors: errors,
+      success: success,
+      testsCompleted: tests,
+    );
     const FlutterTestErrorEvent boom = FlutterTestErrorEvent(
       testName: 't',
       suitePath: 'test/a_test.dart',
@@ -274,41 +243,41 @@ void main() {
     );
 
     test('green only when every batch reported success', () {
-      final FlutterTestRunSummary merged =
-          FlutterTestRunSummary.merge(<FlutterTestRunSummary>[
-        run(true, 10),
-        run(true, 5),
-      ]);
+      final FlutterTestRunSummary merged = FlutterTestRunSummary.merge(
+        <FlutterTestRunSummary>[run(true, 10), run(true, 5)],
+      );
       expect(merged.success, isTrue);
       expect(merged.testsCompleted, 15);
       expect(merged.failureReason(), isNull);
     });
 
     test('a failed batch fails the shard and keeps its errors', () {
-      final FlutterTestRunSummary merged =
-          FlutterTestRunSummary.merge(<FlutterTestRunSummary>[
-        run(true, 10),
-        run(false, 5, <FlutterTestErrorEvent>[boom]),
-      ]);
+      final FlutterTestRunSummary merged = FlutterTestRunSummary.merge(
+        <FlutterTestRunSummary>[
+          run(true, 10),
+          run(false, 5, <FlutterTestErrorEvent>[boom]),
+        ],
+      );
       expect(merged.success, isFalse);
       expect(merged.errors, <FlutterTestErrorEvent>[boom]);
     });
 
-    test('a batch that died without a verdict makes the shard verdict-less',
-        () {
-      final FlutterTestRunSummary merged =
-          FlutterTestRunSummary.merge(<FlutterTestRunSummary>[
-        run(false, 10),
-        run(null, 3),
-        run(true, 7),
-      ]);
-      expect(merged.success, isNull);
-      expect(merged.failureReason(), contains('never reported a result'));
-    });
+    test(
+      'a batch that died without a verdict makes the shard verdict-less',
+      () {
+        final FlutterTestRunSummary merged = FlutterTestRunSummary.merge(
+          <FlutterTestRunSummary>[run(false, 10), run(null, 3), run(true, 7)],
+        );
+        expect(merged.success, isNull);
+        expect(merged.failureReason(), contains('never reported a result'));
+      },
+    );
 
     test('no batches is not a pass', () {
-      expect(FlutterTestRunSummary.merge(<FlutterTestRunSummary>[]).success,
-          isFalse);
+      expect(
+        FlutterTestRunSummary.merge(<FlutterTestRunSummary>[]).success,
+        isFalse,
+      );
     });
   });
 }

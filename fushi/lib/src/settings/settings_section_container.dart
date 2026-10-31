@@ -116,7 +116,8 @@ class _SettingsSectionContainerState extends State<SettingsSectionContainer> {
       summary: widget.summary,
       // 「玻璃」设计系统：不可折叠分组的标题在卡片上方（Apple inset grouped /
       // macOS 系统设置的分组标题），可折叠分组仍把披露头放在卡片里。
-      titlePlacement: isGlassDesign(context) &&
+      titlePlacement:
+          isGlassDesign(context) &&
               !isCupertinoPlatform(context) &&
               !collapsible
           ? SettingsSectionTitlePlacement.outside

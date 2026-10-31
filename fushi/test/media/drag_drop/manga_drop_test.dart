@@ -15,8 +15,9 @@ import 'package:fushi/src/media/drag_drop/drop_decision.dart';
 void main() {
   group('classifyDroppedFiles — 漫画载体', () {
     test('.mokuro 归 mangas', () {
-      final DroppedFiles files =
-          classifyDroppedFiles(<String>['/a/vol1.mokuro']);
+      final DroppedFiles files = classifyDroppedFiles(<String>[
+        '/a/vol1.mokuro',
+      ]);
       expect(files.mangas, <String>['/a/vol1.mokuro']);
       expect(files.unknown, isEmpty, reason: '曾经落 unknown → 静默无反应');
     });
@@ -28,26 +29,27 @@ void main() {
     });
 
     test('.cbr/.rar/.cb7 归 mangas', () {
-      final DroppedFiles files =
-          classifyDroppedFiles(<String>['/a/v.cbr', '/a/v.rar', '/a/v.cb7']);
+      final DroppedFiles files = classifyDroppedFiles(<String>[
+        '/a/v.cbr',
+        '/a/v.rar',
+        '/a/v.cb7',
+      ]);
       expect(files.mangas, <String>['/a/v.cbr', '/a/v.rar', '/a/v.cb7']);
       expect(files.unsupportedMangas, isEmpty);
       expect(files.hasAny, isTrue);
     });
 
     test('目录经 isDirectory 谓词归 mangas（页图文件夹）', () {
-      final DroppedFiles files = classifyDroppedFiles(
-        <String>['/a/第01巻'],
-        isDirectory: (String pth) => pth == '/a/第01巻',
-      );
+      final DroppedFiles files = classifyDroppedFiles(<String>[
+        '/a/第01巻',
+      ], isDirectory: (String pth) => pth == '/a/第01巻');
       expect(files.mangas, <String>['/a/第01巻']);
     });
 
     test('目录名带点也归 mangas（不被 p.extension 误当扩展名）', () {
-      final DroppedFiles files = classifyDroppedFiles(
-        <String>['/a/第01巻.v2'],
-        isDirectory: (String pth) => pth == '/a/第01巻.v2',
-      );
+      final DroppedFiles files = classifyDroppedFiles(<String>[
+        '/a/第01巻.v2',
+      ], isDirectory: (String pth) => pth == '/a/第01巻.v2');
       expect(files.mangas, <String>['/a/第01巻.v2']);
       expect(files.unknown, isEmpty);
     });
@@ -63,20 +65,21 @@ void main() {
     //   走到 `files.hasAny` 兜底回「本页面不支持」，而导入对话框导得了它（其分派
     //   对 .zip 会真读包）——又一处「按钮能导、拖进去不认」。
     test('图片型 .zip 经 isImageArchive 判据归 mangas（此前回「本页面不支持」）', () {
-      final DroppedFiles files = classifyDroppedFiles(
-        <String>['/a/vol1.zip'],
-        isImageArchive: (String pth) => pth == '/a/vol1.zip',
-      );
+      final DroppedFiles files = classifyDroppedFiles(<String>[
+        '/a/vol1.zip',
+      ], isImageArchive: (String pth) => pth == '/a/vol1.zip');
       expect(files.mangas, <String>['/a/vol1.zip']);
-      expect(files.dictionaries, isEmpty,
-          reason: '命中图片包判据后不得再落 dictionaries（否则归属歧义）');
+      expect(
+        files.dictionaries,
+        isEmpty,
+        reason: '命中图片包判据后不得再落 dictionaries（否则归属歧义）',
+      );
     });
 
     test('图片型 .zip 在两个表面都 -> importNewManga', () {
-      final DroppedFiles files = classifyDroppedFiles(
-        <String>['/a/vol1.zip'],
-        isImageArchive: (String _) => true,
-      );
+      final DroppedFiles files = classifyDroppedFiles(<String>[
+        '/a/vol1.zip',
+      ], isImageArchive: (String _) => true);
       for (final DropSurface surface in <DropSurface>[
         DropSurface.books,
         DropSurface.manga,
@@ -90,10 +93,9 @@ void main() {
     });
 
     test('词典 .zip 有判据也仍归 dictionaries（不误把词典包当漫画导）', () {
-      final DroppedFiles files = classifyDroppedFiles(
-        <String>['/a/dict.zip'],
-        isImageArchive: (String _) => false,
-      );
+      final DroppedFiles files = classifyDroppedFiles(<String>[
+        '/a/dict.zip',
+      ], isImageArchive: (String _) => false);
       expect(files.mangas, isEmpty);
       expect(files.dictionaries, <String>['/a/dict.zip']);
     });
@@ -139,7 +141,10 @@ void main() {
       expect(files.books, isEmpty, reason: '同时落 books 会让归属歧义');
       expect(
         decideDropIntent(
-            surface: DropSurface.manga, files: files, cardHit: false),
+          surface: DropSurface.manga,
+          files: files,
+          cardHit: false,
+        ),
         DropIntent.importNewManga,
       );
     });
@@ -155,8 +160,9 @@ void main() {
     });
 
     test('.pdf 在漫画库直接归 mangas（漫画框会逐页栅格化）', () {
-      final DroppedFiles files =
-          classifyDroppedFiles(<String>['/a/vol1.pdf'], preferManga: true);
+      final DroppedFiles files = classifyDroppedFiles(<String>[
+        '/a/vol1.pdf',
+      ], preferManga: true);
       expect(files.mangas, <String>['/a/vol1.pdf']);
       expect(files.books, isEmpty);
     });
@@ -192,19 +198,18 @@ void main() {
       List<String> books = const <String>[],
       List<String> videos = const <String>[],
       List<String> subtitles = const <String>[],
-    }) =>
-        DroppedFiles(
-          books: books,
-          videos: videos,
-          subtitles: subtitles,
-          audios: const <String>[],
-          playlists: const <String>[],
-          dictionaries: const <String>[],
-          urls: const <String>[],
-          mangas: mangas,
-          unsupportedMangas: unsupportedMangas,
-          unknown: const <String>[],
-        );
+    }) => DroppedFiles(
+      books: books,
+      videos: videos,
+      subtitles: subtitles,
+      audios: const <String>[],
+      playlists: const <String>[],
+      dictionaries: const <String>[],
+      urls: const <String>[],
+      mangas: mangas,
+      unsupportedMangas: unsupportedMangas,
+      unknown: const <String>[],
+    );
 
     test('漫画载体 -> importNewManga', () {
       expect(
@@ -296,19 +301,18 @@ void main() {
       List<String> mangas = const <String>[],
       List<String> unsupportedMangas = const <String>[],
       List<String> books = const <String>[],
-    }) =>
-        DroppedFiles(
-          books: books,
-          videos: const <String>[],
-          subtitles: const <String>[],
-          audios: const <String>[],
-          playlists: const <String>[],
-          dictionaries: const <String>[],
-          urls: const <String>[],
-          mangas: mangas,
-          unsupportedMangas: unsupportedMangas,
-          unknown: const <String>[],
-        );
+    }) => DroppedFiles(
+      books: books,
+      videos: const <String>[],
+      subtitles: const <String>[],
+      audios: const <String>[],
+      playlists: const <String>[],
+      dictionaries: const <String>[],
+      urls: const <String>[],
+      mangas: mangas,
+      unsupportedMangas: unsupportedMangas,
+      unknown: const <String>[],
+    );
 
     test('普通书架拖漫画包也导入漫画，不静默', () {
       expect(

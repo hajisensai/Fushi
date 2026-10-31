@@ -32,8 +32,9 @@ void main() {
 
   late Directory pathProviderDir;
   setUpAll(() {
-    pathProviderDir =
-        Directory.systemTemp.createTempSync('fushi_collections_kind_pp');
+    pathProviderDir = Directory.systemTemp.createTempSync(
+      'fushi_collections_kind_pp',
+    );
     // AppModel 构造会惰性触碰 DefaultCacheManager → getApplicationSupportDirectory；
     // 不 mock 该 channel 会抛 MissingPluginException 异步泄漏到下一条测试。
     binding.defaultBinaryMessenger.setMockMethodCallHandler(
@@ -70,48 +71,52 @@ void main() {
     final FavoriteSentenceRepository repo = FavoriteSentenceRepository(db);
     // bookKey 全部非空 → 行可跳转（长按弹窗渲染打开按钮）。内存库无对应
     // SrtBook/Audiobook/VideoBook 行 → 音频解析路径全部空跳，不影响展示断言。
-    await repo.add(FavoriteSentence(
-      text: '本の文です。',
-      bookTitle: 'BOOKTITLE_A',
-      createdAt: DateTime(2026, 7, 20, 10),
-      bookKey: 'book-key-a',
-      source: kFavoriteSentenceSourceBook,
-    ));
-    await repo.add(FavoriteSentence(
-      text: 'ビデオの文です。',
-      bookTitle: 'VIDEOTITLE_B',
-      createdAt: DateTime(2026, 7, 20, 11),
-      bookKey: 'video-uid-b',
-      source: kFavoriteSentenceSourceVideo,
-    ));
-    await repo.add(FavoriteSentence(
-      text: '朗読の文です。',
-      bookTitle: 'AUDIOBOOKTITLE_C',
-      createdAt: DateTime(2026, 7, 20, 12),
-      bookKey: 'book-key-c',
-      source: kFavoriteSentenceSourceAudiobook,
-    ));
-    await repo.add(FavoriteSentence(
-      text: '歌詞の文です。',
-      bookTitle: 'LYRICSTITLE_D',
-      createdAt: DateTime(2026, 7, 20, 13),
-      bookKey: 'book-key-d',
-      source: kFavoriteSentenceSourceLyrics,
-    ));
+    await repo.add(
+      FavoriteSentence(
+        text: '本の文です。',
+        bookTitle: 'BOOKTITLE_A',
+        createdAt: DateTime(2026, 7, 20, 10),
+        bookKey: 'book-key-a',
+        source: kFavoriteSentenceSourceBook,
+      ),
+    );
+    await repo.add(
+      FavoriteSentence(
+        text: 'ビデオの文です。',
+        bookTitle: 'VIDEOTITLE_B',
+        createdAt: DateTime(2026, 7, 20, 11),
+        bookKey: 'video-uid-b',
+        source: kFavoriteSentenceSourceVideo,
+      ),
+    );
+    await repo.add(
+      FavoriteSentence(
+        text: '朗読の文です。',
+        bookTitle: 'AUDIOBOOKTITLE_C',
+        createdAt: DateTime(2026, 7, 20, 12),
+        bookKey: 'book-key-c',
+        source: kFavoriteSentenceSourceAudiobook,
+      ),
+    );
+    await repo.add(
+      FavoriteSentence(
+        text: '歌詞の文です。',
+        bookTitle: 'LYRICSTITLE_D',
+        createdAt: DateTime(2026, 7, 20, 13),
+        bookKey: 'book-key-d',
+        source: kFavoriteSentenceSourceLyrics,
+      ),
+    );
   }
 
   Widget buildPage() => ProviderScope(
-        overrides: <Override>[
-          appProvider.overrideWith((ref) => appModel),
-        ],
-        child: TranslationProvider(
-          child: const MaterialApp(home: CollectionsPage()),
-        ),
-      );
+    overrides: <Override>[appProvider.overrideWith((ref) => appModel)],
+    child: TranslationProvider(
+      child: const MaterialApp(home: CollectionsPage()),
+    ),
+  );
 
-  testWidgets('列表按来源标注前缀（book 无前缀），书名升级为媒体小节头', (
-    WidgetTester tester,
-  ) async {
+  testWidgets('列表按来源标注前缀（book 无前缀），书名升级为媒体小节头', (WidgetTester tester) async {
     // 阶段 3（收藏夹按合集/媒体分节）：所属书/视频名不再拼进行副标题，而是
     // 作为媒体小节头独立成行；来源前缀（BUG-1120 四值穷尽）仍在行副标题。
     await seedFourSourceFavorites();

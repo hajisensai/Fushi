@@ -29,11 +29,11 @@ const ExternalWindowInfo kOtherWindow = ExternalWindowInfo(
 class _FakeLoopbackSource extends LoopbackGalAudioSource {
   @override
   Future<PcmFormat?> start() async => const PcmFormat(
-        sampleRate: 44100,
-        channels: 2,
-        bitsPerSample: 32,
-        isFloat: true,
-      );
+    sampleRate: 44100,
+    channels: 2,
+    bitsPerSample: 32,
+    isFloat: true,
+  );
 
   @override
   Future<void> stop() async {}
@@ -106,8 +106,9 @@ void main() {
           boundWindow: kWindow,
           phase: phase,
         );
-        final int? expected =
-            phase == GalHookSessionPhase.idle ? null : kWindow.hwnd;
+        final int? expected = phase == GalHookSessionPhase.idle
+            ? null
+            : kWindow.hwnd;
         expect(
           GalHookSessionController.magpieUpscalingTargetHwnd(state),
           expected,
