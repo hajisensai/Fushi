@@ -2,7 +2,13 @@ import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fading_edge_scrollview/fading_edge_scrollview.dart';
 import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:flutter/rendering.dart' show RenderProxyBox;
+import 'package:flutter/rendering.dart'
+    show
+        BoxHitTestResult,
+        ContainerBoxParentData,
+        ContainerRenderObjectMixin,
+        RenderBoxContainerDefaultsMixin,
+        RenderProxyBox;
 import 'package:flutter/services.dart';
 import 'package:fushi/src/shortcuts/gamepad_forwarding_action.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -388,27 +394,20 @@ class AdaptiveSettingsSurface extends StatelessWidget {
     // 折叠头：标题 + 尾随箭头拼成整头，整头可点、可焦点驱动展开/收起。焦点驱动走
     // 与设置行一致的 _SettingsRowFocusTarget（Enter/手柄 A 触发 Activate），保证纯
     // 手柄/键盘用户也能展开折叠 section；无焦点根时退回平台原生可点组件。
-    // 尾随区（摘要 + 箭头）是非 flex 子，量到的是无界宽，摘要会整句铺开、把 `Expanded`
-    // 的标题挤到只剩几个字宽（手机上「功能提供商」折成三行）。给它设半宽上限：摘要
-    // 在自己的 `Flexible` 里省略，标题至少保有一半。摘要不长时上限不起作用。
-    final Widget header = LayoutBuilder(
-      builder: (BuildContext context, BoxConstraints constraints) => Row(
-        children: <Widget>[
-          Expanded(child: label),
-          if (titleTrailing != null)
-            Padding(
-              padding: EdgeInsets.only(
-                right: cupertino
+    // 标题与尾随区（摘要 + 箭头）的分宽规则见 [_CollapsibleHeaderLayout]：尾随区
+    // 上限 = max(半宽, 总宽 − 标题天然宽)，摘要在自己的 `Flexible` 里省略。
+    final Widget header = _CollapsibleHeaderLayout(
+      label: label,
+      trailing: titleTrailing == null
+          ? const SizedBox.shrink()
+          : Padding(
+              padding: EdgeInsetsDirectional.only(
+                end: cupertino
                     ? 12
                     : (glassDesign ? 16 : tokens.spacing.rowHorizontal),
               ),
-              child: ConstrainedBox(
-                constraints: BoxConstraints(maxWidth: constraints.maxWidth / 2),
-                child: titleTrailing!,
-              ),
+              child: titleTrailing!,
             ),
-        ],
-      ),
     );
     final bool hasFocusRoot = FushiFocusRoot.maybeControllerOf(context) != null;
     // 玻璃：iOS 单元格口径的实色行（按下 systemFill）。无焦点根时行自己是 Tab
@@ -1375,6 +1374,204 @@ class _RenderSettingsRowIntrinsics extends RenderProxyBox {
   double computeMaxIntrinsicHeight(double width) => _height;
 }
 
+/// 折叠分组头：[label]（标题，自带两侧 padding）+ [trailing]（摘要 + 箭头）横排。
+///
+/// 分宽规则：trailing 先量，宽度上限
+/// `max(总宽 / 2, 总宽 − 标题天然宽)`；label 拿余下全部宽（等同 `Expanded`）。
+/// - 标题短：余量大于半宽，长摘要可以占到余量，不被无谓截到半宽；
+/// - 标题长：trailing 最多半宽，标题至少保有一半（不然非 flex 的摘要量到无界宽、
+///   整句铺开，`Expanded` 的标题只剩几十 dp、手机上折成三行）。
+/// 标题与 trailing 之间的间距就是 label 自带的尾侧 padding（量天然宽时已计入）。
+///
+/// 写成自定义 RenderBox 而不是 `LayoutBuilder` + `Row`：分组可能直接当
+/// AlertDialog 正文，对话框把正文包在 `IntrinsicWidth` 里，`LayoutBuilder` 回答
+/// 不了 intrinsic（release 恒答 0、debug 抛错，BUG-3501）。这里按同一分宽规则
+/// 回答 intrinsic 宽 / 高与 dry layout。
+class _CollapsibleHeaderLayout extends MultiChildRenderObjectWidget {
+  _CollapsibleHeaderLayout({required Widget label, required Widget trailing})
+    : super(children: <Widget>[label, trailing]);
+
+  @override
+  _RenderCollapsibleHeader createRenderObject(BuildContext context) =>
+      _RenderCollapsibleHeader(textDirection: Directionality.of(context));
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderCollapsibleHeader renderObject,
+  ) {
+    renderObject.textDirection = Directionality.of(context);
+  }
+}
+
+class _CollapsibleHeaderParentData extends ContainerBoxParentData<RenderBox> {}
+
+class _RenderCollapsibleHeader extends RenderBox
+    with
+        ContainerRenderObjectMixin<RenderBox, _CollapsibleHeaderParentData>,
+        RenderBoxContainerDefaultsMixin<
+          RenderBox,
+          _CollapsibleHeaderParentData
+        > {
+  _RenderCollapsibleHeader({required TextDirection textDirection})
+    : _textDirection = textDirection;
+
+  TextDirection _textDirection;
+  set textDirection(TextDirection value) {
+    if (value == _textDirection) return;
+    _textDirection = value;
+    markNeedsLayout();
+  }
+
+  RenderBox get _label => firstChild!;
+  RenderBox get _trailing => lastChild!;
+
+  @override
+  void setupParentData(RenderBox child) {
+    if (child.parentData is! _CollapsibleHeaderParentData) {
+      child.parentData = _CollapsibleHeaderParentData();
+    }
+  }
+
+  /// trailing 在总宽 [width] 下的宽度上限（见类注释）。
+  double _trailingCap(double width) {
+    final double titleNatural = _label.getMaxIntrinsicWidth(double.infinity);
+    final double cap = width / 2 > width - titleNatural
+        ? width / 2
+        : width - titleNatural;
+    return cap > width ? width : cap;
+  }
+
+  /// intrinsic 高度查询用：总宽 [width] 下 (label 宽, trailing 宽)。
+  (double, double) _splitForIntrinsics(double width) {
+    final double trailingNatural = _trailing.getMaxIntrinsicWidth(
+      double.infinity,
+    );
+    if (!width.isFinite) {
+      return (_label.getMaxIntrinsicWidth(double.infinity), trailingNatural);
+    }
+    final double cap = _trailingCap(width);
+    final double trailingWidth = trailingNatural < cap ? trailingNatural : cap;
+    final double labelWidth = width - trailingWidth;
+    return (labelWidth < 0 ? 0 : labelWidth, trailingWidth);
+  }
+
+  @override
+  double computeMinIntrinsicWidth(double height) =>
+      _label.getMinIntrinsicWidth(height) +
+      _trailing.getMinIntrinsicWidth(height);
+
+  @override
+  double computeMaxIntrinsicWidth(double height) =>
+      _label.getMaxIntrinsicWidth(height) +
+      _trailing.getMaxIntrinsicWidth(height);
+
+  @override
+  double computeMinIntrinsicHeight(double width) {
+    final (double labelWidth, double trailingWidth) = _splitForIntrinsics(
+      width,
+    );
+    final double a = _label.getMinIntrinsicHeight(labelWidth);
+    final double b = _trailing.getMinIntrinsicHeight(trailingWidth);
+    return a > b ? a : b;
+  }
+
+  @override
+  double computeMaxIntrinsicHeight(double width) {
+    final (double labelWidth, double trailingWidth) = _splitForIntrinsics(
+      width,
+    );
+    final double a = _label.getMaxIntrinsicHeight(labelWidth);
+    final double b = _trailing.getMaxIntrinsicHeight(trailingWidth);
+    return a > b ? a : b;
+  }
+
+  @override
+  double? computeDistanceToActualBaseline(TextBaseline baseline) =>
+      defaultComputeDistanceToHighestActualBaseline(baseline);
+
+  /// 两个孩子的约束：先定 trailing（带上限），再把余宽整给 label。
+  (BoxConstraints, BoxConstraints Function(Size trailingSize))
+  _childConstraints(BoxConstraints constraints) {
+    final double width = constraints.maxWidth;
+    final BoxConstraints trailing = width.isFinite
+        ? BoxConstraints(
+            maxWidth: _trailingCap(width),
+            maxHeight: constraints.maxHeight,
+          )
+        : BoxConstraints(maxHeight: constraints.maxHeight);
+    BoxConstraints label(Size trailingSize) {
+      if (!width.isFinite) {
+        return BoxConstraints(maxHeight: constraints.maxHeight);
+      }
+      final double rest = width - trailingSize.width;
+      final double labelWidth = rest < 0 ? 0 : rest;
+      return BoxConstraints(
+        minWidth: labelWidth,
+        maxWidth: labelWidth,
+        maxHeight: constraints.maxHeight,
+      );
+    }
+
+    return (trailing, label);
+  }
+
+  Size _sizeFor(BoxConstraints constraints, Size label, Size trailing) {
+    final double width = constraints.maxWidth.isFinite
+        ? constraints.maxWidth
+        : label.width + trailing.width;
+    final double height = label.height > trailing.height
+        ? label.height
+        : trailing.height;
+    return constraints.constrain(Size(width, height));
+  }
+
+  @override
+  Size computeDryLayout(covariant BoxConstraints constraints) {
+    final (
+      BoxConstraints trailingConstraints,
+      BoxConstraints Function(Size) labelConstraints,
+    ) = _childConstraints(
+      constraints,
+    );
+    final Size trailing = _trailing.getDryLayout(trailingConstraints);
+    final Size label = _label.getDryLayout(labelConstraints(trailing));
+    return _sizeFor(constraints, label, trailing);
+  }
+
+  @override
+  void performLayout() {
+    final (
+      BoxConstraints trailingConstraints,
+      BoxConstraints Function(Size) labelConstraints,
+    ) = _childConstraints(
+      constraints,
+    );
+    _trailing.layout(trailingConstraints, parentUsesSize: true);
+    _label.layout(labelConstraints(_trailing.size), parentUsesSize: true);
+    size = _sizeFor(constraints, _label.size, _trailing.size);
+    final bool rtl = _textDirection == TextDirection.rtl;
+    final double labelX = rtl ? size.width - _label.size.width : 0;
+    final double trailingX = rtl ? 0 : size.width - _trailing.size.width;
+    (_label.parentData! as _CollapsibleHeaderParentData).offset = Offset(
+      labelX,
+      (size.height - _label.size.height) / 2,
+    );
+    (_trailing.parentData! as _CollapsibleHeaderParentData).offset = Offset(
+      trailingX,
+      (size.height - _trailing.size.height) / 2,
+    );
+  }
+
+  @override
+  void paint(PaintingContext context, Offset offset) =>
+      defaultPaint(context, offset);
+
+  @override
+  bool hitTestChildren(BoxHitTestResult result, {required Offset position}) =>
+      defaultHitTestChildren(result, position: position);
+}
+
 class _SettingsRowFocusTarget extends StatefulWidget {
   const _SettingsRowFocusTarget({
     required this.onTap,
@@ -2339,6 +2536,35 @@ class GlassSettingsPopUpButton extends StatefulWidget {
   /// 当前值文字的最大宽：超长选项省略，不把行标题挤没。
   final double maxLabelWidth;
 
+  /// 触屏（iOS pull-down）当前值的宽上限：行窄（≈ 360），再收一截给行标题。
+  static const double _touchLabelMaxWidth = 150;
+
+  /// 按钮面的水平几何（桌面 / 触屏）：前后内边距、值与箭头的间距、箭头尺寸。
+  /// [build] 与 [maxFaceWidth] 共用这一份，宽度判据不另抄一遍数字。
+  static double _leadingPadding(bool desktop) => desktop ? 12 : 8;
+  static double _trailingPadding(bool desktop) => desktop ? 10 : 4;
+  static double _chevronGap(bool desktop) => desktop ? 6 : 5;
+  static double _chevronSize(bool desktop) => desktop ? 10 : 13;
+  static double _labelMaxWidth(bool desktop, double maxLabelWidth) =>
+      desktop || maxLabelWidth < _touchLabelMaxWidth
+      ? maxLabelWidth
+      : _touchLabelMaxWidth;
+
+  /// 当前值顶到 [maxLabelWidth] 时按钮的最大宽度（按当前平台的桌面 / 触屏形态）。
+  /// 调用方声明 [AdaptiveSettingsRow.trailingWidth] 时用它，让行的堆叠判据跟着
+  /// 按钮的真实宽度走。
+  static double maxFaceWidth(
+    BuildContext context, {
+    double maxLabelWidth = 240,
+  }) {
+    final bool desktop = FushiAppleMetrics.of(context).desktop;
+    return _leadingPadding(desktop) +
+        _labelMaxWidth(desktop, maxLabelWidth) +
+        _chevronGap(desktop) +
+        _chevronSize(desktop) +
+        _trailingPadding(desktop);
+  }
+
   @override
   State<GlassSettingsPopUpButton> createState() =>
       _GlassSettingsPopUpButtonState();
@@ -2433,7 +2659,10 @@ class _GlassSettingsPopUpButtonState extends State<GlassSettingsPopUpButton> {
     final Widget face = Container(
       key: _anchorKey,
       constraints: BoxConstraints(minHeight: desktop ? 28 : 34),
-      padding: EdgeInsets.only(left: desktop ? 12 : 8, right: desktop ? 10 : 4),
+      padding: EdgeInsets.only(
+        left: GlassSettingsPopUpButton._leadingPadding(desktop),
+        right: GlassSettingsPopUpButton._trailingPadding(desktop),
+      ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
@@ -2443,9 +2672,10 @@ class _GlassSettingsPopUpButtonState extends State<GlassSettingsPopUpButton> {
             ConstrainedBox(
               // 触屏行窄（≈ 360），当前值再收一截，给行标题留出位置。
               constraints: BoxConstraints(
-                maxWidth: desktop
-                    ? widget.maxLabelWidth
-                    : (widget.maxLabelWidth < 150 ? widget.maxLabelWidth : 150),
+                maxWidth: GlassSettingsPopUpButton._labelMaxWidth(
+                  desktop,
+                  widget.maxLabelWidth,
+                ),
               ),
               child: Text(
                 value,
@@ -2454,10 +2684,10 @@ class _GlassSettingsPopUpButtonState extends State<GlassSettingsPopUpButton> {
                 overflow: TextOverflow.ellipsis,
               ),
             ),
-          SizedBox(width: desktop ? 6 : 5),
+          SizedBox(width: GlassSettingsPopUpButton._chevronGap(desktop)),
           FushiIcon(
             CupertinoIcons.chevron_up_chevron_down,
-            size: desktop ? 10 : 13,
+            size: GlassSettingsPopUpButton._chevronSize(desktop),
             color: desktop ? apple.secondaryLabel : apple.tertiaryLabel,
           ),
         ],
