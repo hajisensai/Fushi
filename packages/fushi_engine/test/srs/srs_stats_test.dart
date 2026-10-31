@@ -615,7 +615,7 @@ void main() {
         ],
         maturityEvents: const <SrsStatMaturityEvent>[],
       );
-      final SrsRwkvNow now = d.rwkvNow()!;
+      final SrsRwkvNow now = d.rwkvNow!;
       expect(now.total, 3);
       expect(now.due, 1);
       expect(now.near, 1);
@@ -623,7 +623,7 @@ void main() {
       expect(d.hasDueDateCards, isTrue, reason: 'FSRS 卡 f 按到期日');
       final SrsStatsData onlyRwkv = d.subset(<String>{'a', 'b', 'c'});
       expect(onlyRwkv.hasDueDateCards, isFalse);
-      expect(d.subset(<String>{'f'}).rwkvNow(), isNull, reason: '没有按 R 排队的卡');
+      expect(d.subset(<String>{'f'}).rwkvNow, isNull, reason: '没有按 R 排队的卡');
     });
   });
 
