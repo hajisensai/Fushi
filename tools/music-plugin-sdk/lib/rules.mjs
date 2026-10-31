@@ -48,6 +48,12 @@ export const LIMITS = {
   httpTimeoutMinMs: 1000,
   httpTimeoutMaxMs: 60000,
   maxRedirects: 5,
+  // native/fushi_music/src/plugin/runtime.rs MAX_INFLIGHT_CALLS / MAX_CALLS_PER_STEP: exceeding either
+  // kills the plugin instance.
+  maxInflightCalls: 32,
+  maxCallsPerStep: 64,
+  // native/fushi_music/src/plugin/vault.rs MAX_ENTRIES (credential keys per plugin).
+  maxCredentialEntries: 64,
 };
 
 /// Headers the player accepts on `stream` / `mvStream` results (lowercase).

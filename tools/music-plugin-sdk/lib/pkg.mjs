@@ -20,7 +20,8 @@ export function listPackFiles(dir) {
     }
   };
   walk('');
-  return out.sort();
+  // Code-unit order (what the default sort did), spelled out so it is not mistaken for a numeric sort.
+  return out.sort((a, b) => (a < b ? -1 : Number(a > b)));
 }
 
 const sha256 = (b) => crypto.createHash('sha256').update(b).digest('hex');

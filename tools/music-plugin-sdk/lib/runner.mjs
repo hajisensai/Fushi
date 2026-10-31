@@ -1,10 +1,16 @@
 // Local plugin runner: executes a plugin directory in a Node `vm` sandbox that behaves like the Fushi
 // host — the same prelude (lib/prelude.js is a byte copy of native/fushi_music/src/plugin/prelude.js),
 // the same globals (no fetch / setTimeout / TextEncoder / process / import), the same network policy,
-// request limits, redirect checks and a per-step CPU budget.
+// request limits (in-flight / per-step host calls, credential entries), redirect checks and a per-step
+// CPU budget. Globals the app's QuickJS does not have (`Intl`, `Atomics`, `WebAssembly`) are removed so
+// code that leans on them fails here instead of only in the app.
 //
-// Not emulated: the 64 MiB heap limit and QuickJS-vs-V8 language differences (QuickJS supports ES2023;
-// avoid engine-specific APIs like Intl and you are fine).
+// NOT a security boundary: `node:vm` does not isolate untrusted code (a plugin can escape to the Node
+// process). Only run plugins you wrote or trust.
+//
+// Not emulated: the 64 MiB heap limit and QuickJS-vs-V8 language differences (QuickJS supports ES2023);
+// a GET / HEAD request with a body is rejected here (Node's fetch cannot send one) although the app
+// would send it.
 import crypto from 'node:crypto';
 import dns from 'node:dns/promises';
 import fs from 'node:fs';
@@ -102,6 +108,9 @@ export class PluginRunner {
     this.credentials = new DevStore(dir, 'credentials');
     this.nextCall = 0;
     this.pendingCalls = 0;
+    this.stepCalls = 0;
+    /// Set when a host limit is exceeded: like the app, the instance is dead from then on.
+    this.fatal = null;
     this.invocations = new Map();
     this.nextInv = 0;
     this.httpCount = 0;
@@ -111,6 +120,10 @@ export class PluginRunner {
   boot() {
     const ctx = vm.createContext({}, { name: `plugin:${this.manifest.id}`, microtaskMode: 'afterEvaluate', codeGeneration: { strings: true, wasm: false } });
     this.ctx = ctx;
+    // The app's engine (QuickJS-ng, rquickjs `Context::full`) has no Intl and no WebAssembly, and Atomics
+    // only on builds with C11 atomics: drop them so the local sandbox is never wider than the app.
+    // SharedArrayBuffer stays — the host always registers it with the typed arrays.
+    vm.runInContext('delete globalThis.Intl; delete globalThis.Atomics; delete globalThis.WebAssembly;', ctx);
     const CU8 = vm.runInContext('Uint8Array', ctx);
     const u8 = (buf) => {
       const out = new CU8(buf.length);
@@ -200,16 +213,35 @@ export class PluginRunner {
 
   /// Runs [fn] (which evaluates in the context; microtasks drain inside the same timeout).
   step(fn, prefix) {
+    if (this.fatal) throw new Error(`插件实例已作废：${this.fatal}`);
+    // Like runtime.rs `begin_step`: the per-step host-call count restarts with every step.
+    this.stepCalls = 0;
     try {
       return fn();
     } catch (e) {
       if (e && e.code === 'ERR_SCRIPT_EXECUTION_TIMEOUT') throw new Error(`插件单步 CPU 超过 ${this.budgetMs} ms，已终止（宿主会作废这个实例）`);
       if (prefix) throw new Error(`${prefix}：${e && e.stack ? e.stack : e}`);
       throw e;
+    } finally {
+      if (this.fatal) this.abortAll();
     }
   }
 
+  /// A host limit was exceeded: the app turns that into a fatal step and drops the instance, so every
+  /// capability call still waiting fails with that reason.
+  abortAll() {
+    const reason = new Error(`插件实例已作废：${this.fatal}`);
+    for (const p of this.invocations.values()) p.reject(reason);
+    this.invocations.clear();
+  }
+
+  fail(msg) {
+    if (!this.fatal) this.fatal = msg;
+    return new Error(msg);
+  }
+
   invoke(method, args) {
+    if (this.fatal) return Promise.reject(new Error(`插件实例已作废：${this.fatal}`));
     const inv = ++this.nextInv;
     const p = new Promise((resolve, reject) => this.invocations.set(inv, { resolve, reject }));
     this.ctx.__dev_args = [inv, method, JSON.stringify(args ?? {})];
@@ -218,17 +250,24 @@ export class PluginRunner {
   }
 
   complete(id, ok, payload, body) {
+    if (this.fatal) return;
     this.ctx.__dev_args = [id, ok, payload, body === undefined ? undefined : this.u8(body)];
     this.step(() => vm.runInContext('__fushi_complete.apply(null, __dev_args)', this.ctx, { timeout: this.budgetMs }));
   }
 
   hostCall(op, argsJson, body) {
     const args = JSON.parse(argsJson);
+    if (this.fatal) throw new Error(`插件实例已作废：${this.fatal}`);
     if (body && op !== 'http') throw new Error(`宿主调用 ${op} 不收二进制数据`);
     if (body && body.length > LIMITS.maxRequestBodyBytes) throw new Error('请求体超过 4 MiB');
     let run;
     if (op === 'http') {
       const req = this.checkHttp(args);
+      // The app sends a GET / HEAD body as given; Node's fetch refuses to. Fail loudly instead of
+      // silently dropping it (which would make the local run differ from the app without a trace).
+      if (body && body.length && (req.method === 'GET' || req.method === 'HEAD')) {
+        throw new Error(`本地运行器无法发送带请求体的 ${req.method}（Node fetch 限制，app 会照发）；请改用 POST 或去掉 body`);
+      }
       run = () => this.http(req, body);
     } else if (op.startsWith('storage.') || op.startsWith('credentials.')) {
       const [kind, action] = op.split('.');
@@ -245,12 +284,18 @@ export class PluginRunner {
       }
       run = async () => {
         if (action === 'get') return { value: store.get(key) };
+        // vault.rs: a plugin keeps at most 64 credential entries; overwriting an existing key is fine.
+        if (action === 'set' && kind === 'credentials' && store.get(key) === null && Object.keys(store.data).length >= LIMITS.maxCredentialEntries) {
+          throw new Error('凭据条目过多');
+        }
         if (action === 'set') store.set(key, args.value);
         else store.remove(key);
         return { value: null };
       };
     } else throw new Error(`未知宿主调用 ${op}`);
-    if (this.pendingCalls >= 32) throw new Error('在途宿主调用超过 32 个，插件已终止');
+    if (this.pendingCalls >= LIMITS.maxInflightCalls) throw this.fail(`在途宿主调用超过 ${LIMITS.maxInflightCalls} 个，插件已终止`);
+    if (this.stepCalls >= LIMITS.maxCallsPerStep) throw this.fail(`单步宿主调用超过 ${LIMITS.maxCallsPerStep} 个，插件已终止`);
+    this.stepCalls++;
     const id = ++this.nextCall;
     this.pendingCalls++;
     run().then(
@@ -303,7 +348,8 @@ export class PluginRunner {
       const res = await fetch(url, {
         method,
         headers: hasUa ? headers : { ...headers, 'User-Agent': 'Dart/3.11 (dart:io)' },
-        body: body && method !== 'GET' && method !== 'HEAD' ? body : undefined,
+        // GET / HEAD with a body is rejected in hostCall; after a 303 / POST→GET redirect body is undefined.
+        body,
         redirect: 'manual',
         signal: AbortSignal.timeout(req.timeoutMs),
       }).catch((e) => {

@@ -245,7 +245,7 @@ declare namespace Fushi {
     readonly http: { request(req: HttpRequest): Promise<HttpResponse> };
     /** Needs the storage permission. Values up to 1 MiB. */
     readonly storage: KeyValueStore;
-    /** Needs the credentials permission. Encrypted at rest, values up to 64 KiB. */
+    /** Needs the credentials permission. Encrypted at rest, values up to 64 KiB, at most 64 keys. */
     readonly credentials: KeyValueStore;
     readonly crypto: {
       md5(data: Bytes): Uint8Array;

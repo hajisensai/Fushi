@@ -30,6 +30,10 @@ appear on the music page (For you / search).
 `run` and `smoke` execute your code in a sandbox that mirrors the app (same prelude, same globals, same
 network rules, same limits) and then check every return value the way the app parses it:
 
+The local sandbox is for **your own or trusted code only**: it is Node's `vm`, which is not a security
+boundary (a hostile plugin can reach the Node process and your files). The app's QuickJS sandbox is the real
+isolation; the local runner only reproduces its rules.
+
 - `ERROR` = the app would fail this call (exit code 1).
 - `WARN` = the app would silently drop or ignore something. **Treat warnings as bugs**: a dropped entry is
   the #1 reason "my results don't show". `--strict` makes warnings fail too.
@@ -162,6 +166,8 @@ res.text; res.json; res.bytes;  // per responseType
   POST and any 303 become GET without body.
 - Gzip/deflate responses are decompressed automatically. Response limit 8 MiB, request body 4 MiB, ≤64
   headers, ≤32 requests in flight.
+- Do not send a body with `GET` / `HEAD`: the app passes it through, but the local runner rejects it (Node's
+  `fetch` cannot send one) and most servers ignore it anyway.
 - You may not set `Host`, `Content-Length`, `Connection`, `Transfer-Encoding`. There is **no cookie jar**:
   read `res.setCookies` and send `Cookie` yourself. The default User-Agent is Dart's; set your own if the
   site cares.
@@ -171,7 +177,7 @@ res.text; res.json; res.bytes;  // per responseType
 await fushi.storage.get(key)            // → string | null           (permission: storage)
 await fushi.storage.set(key, value)     // value: string ≤ 1 MiB, key ≤ 256 bytes
 await fushi.storage.remove(key)
-await fushi.credentials.get/set/remove  // same, encrypted at rest, ≤ 64 KiB (permission: credentials)
+await fushi.credentials.get/set/remove  // same, encrypted at rest, ≤ 64 KiB, ≤ 64 keys (permission: credentials)
 
 fushi.crypto.md5(data) / sha1(data) / sha256(data)        // → Uint8Array
 fushi.crypto.hmac('sha256' | 'sha1' | 'md5', key, data)   // → Uint8Array
@@ -190,8 +196,11 @@ require('./relative/path')                                // only .js files insi
 `data` / `key` / `iv` accept a `Uint8Array` or a string (UTF-8). Base64url: convert with
 `.replace(/-/g, '+').replace(/_/g, '/')` and pad with `=`.
 
-Sandbox limits: 64 MiB heap, 256 KiB stack, 2 s CPU per step, result ≤ 8 MiB. The engine is QuickJS
-(ES2023). There is no `Intl`; format dates and numbers by hand.
+Sandbox limits: 64 MiB heap, 256 KiB stack, 2 s CPU per step, result ≤ 8 MiB, ≤32 host calls
+(`http` / `storage` / `credentials`) in flight and ≤64 started in one step — exceeding a host-call limit
+kills the plugin instance. The engine is QuickJS (ES2023). There is no `Intl` (format dates and numbers
+by hand), no `WebAssembly` and no `Atomics`; `SharedArrayBuffer` exists but there are no threads to share
+it with. The local runner removes the same globals.
 
 ---
 
