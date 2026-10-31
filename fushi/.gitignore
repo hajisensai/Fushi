@@ -74,3 +74,6 @@ test_screenshots/
 .codex-test/
 # dist_test --itest: generated entry point (tool/dist_test/itest_entry.sh)
 /integration_test/.dist/
+# Slang output: generated from lib/i18n/*.i18n.json by tool/gen_i18n.dart
+# (bootstrap / CI / dist workers run it); never tracked.
+/lib/i18n/strings.g.dart
