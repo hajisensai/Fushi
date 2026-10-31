@@ -247,6 +247,12 @@ fn configure(conn: &Connection) -> Result<(), String> {
 impl SrsCore {
     /// 打开（不存在就建）。建表 / 升级在写连接上一个事务里做完才开读连接。
     pub fn open(path: &Path) -> Result<Self, String> {
+        Self::open_with_free_space(path, compact::free_bytes)
+    }
+
+    /// [open]，库所在卷的空闲空间由 [free] 给（测试注入）：升级前空间不够就不升级、报
+    /// [schema::UPGRADE_NO_SPACE]（库不动）。
+    pub(crate) fn open_with_free_space(path: &Path, free: impl Fn(&Path) -> Option<u64>) -> Result<Self, String> {
         let mut writer = Connection::open_with_flags(
             path,
             OpenFlags::SQLITE_OPEN_READ_WRITE
@@ -263,10 +269,11 @@ impl SrsCore {
         if !mode.eq_ignore_ascii_case("wal") {
             return Err(format!("srs.db journal_mode is {mode}, expected wal"));
         }
+        schema::check_upgrade_space(&writer, free(path))?;
         schema::migrate(&mut writer)?;
         // 格式升级后的一次性整理（读连接还没开；空间不够 / 失败都不影响打开，下次再试）。
         let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as i64);
-        compact::run(&writer, path.parent().unwrap_or(Path::new(".")), compact::free_bytes(path), now);
+        compact::run(&writer, path.parent().unwrap_or(Path::new(".")), free(path), now);
         let study_hub = Arc::new(queue::StudyHub::default());
         queue::StudyHub::install(&study_hub, &writer)?;
         let reader = Connection::open_with_flags(
