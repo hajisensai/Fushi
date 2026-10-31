@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart'
     show gamepadSeekableSlider;
+import 'package:fushi/src/utils/misc/playback_speed.dart';
 
 /// 有声书倍速拖动条：普通阅读模式快捷设置（`reader_quick_settings_sheet`）
 /// 与歌词模式倍速面板（`lyrics_speed_panel`）共用的**唯一实现**。
@@ -20,18 +21,17 @@ class AudiobookSpeedSlider extends StatelessWidget {
     this.autofocus = false,
   });
 
-  /// 倍速下限。
-  static const double minSpeed = 0.25;
+  /// 倍速下限（[kPlaybackSpeedMin]）。
+  static const double minSpeed = kPlaybackSpeedMin;
 
-  /// 倍速上限。
-  static const double maxSpeed = 3.0;
+  /// 倍速上限（[kPlaybackSpeedMax]）。
+  static const double maxSpeed = kPlaybackSpeedMax;
 
-  /// 拖动吸附档数：(3.0 - 0.25) / 0.05 = 55 档。
-  static const int divisions = 55;
+  /// 拖动吸附档数（[kPlaybackSpeedDivisions]）。
+  static const int divisions = kPlaybackSpeedDivisions;
 
-  /// 吸附到 0.05× 一档并夹进范围（键盘步进累加的浮点误差也在这里抹平）。
-  static double snap(double value) =>
-      ((value * 20).roundToDouble() / 20).clamp(minSpeed, maxSpeed);
+  /// 吸附到 0.05× 一档并夹进范围，见 [snapPlaybackSpeed]。
+  static double snap(double value) => snapPlaybackSpeed(value);
 
   /// 读数文案：`1.25x`（两位小数，与普通模式快捷设置标题同一写法）。
   static String format(double speed) => '${speed.toStringAsFixed(2)}x';

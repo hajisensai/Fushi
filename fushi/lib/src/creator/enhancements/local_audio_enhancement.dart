@@ -250,6 +250,9 @@ class LocalAudioEnhancement extends AudioEnhancement {
             languageTag: languageTag,
           ),
       voices: () => miningTtsVoiceSourceOf(TtsServices.of(appModel.prefsRepo)),
+      // 倍速是 TTS 声音本身的属性：卡片里的 TTS 发音一律按「兜底发音倍速」，与查词
+      // 时听到的一致；有声书「句子音频跟随播放倍速」开关只管句子音频，不管这里。
+      tempo: ttsFallbackSpeedOf(appModel.prefsRepo),
     );
   }
 

@@ -413,12 +413,13 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 「查词触发方式」是下拉（picker）不是开关。它以前根本不在 _focusedSettingsRow 的
   // 识别名单里，所以既不在遍历中、也不在此表——现在两者都补上了（见本表末尾「下拉型
   // 设置项」那一段）。
-  // 台词朗读（Game › Line read-aloud）三项：写进 GalLineTtsSettings JSON，生效点是
+  // 台词朗读（Game › Line read-aloud）四项：写进 GalLineTtsSettings JSON，生效点是
   // GalLineTtsPlayer（harness 里没有文本钩子和 TTS 引擎）。decideGalLineTts 咬住
-  // 自动朗读开关与「读哪些句子」，播放器测试咬住音量原样传给播放。
+  // 自动朗读开关与「读哪些句子」，播放器测试咬住音量 / 倍速原样传给播放。
   'game/Auto-read lines': 'test/lookup/gal_line_tts_test.dart',
   'game/What to read': 'test/lookup/gal_line_tts_test.dart',
   'game/TTS volume': 'test/lookup/gal_line_tts_test.dart',
+  'game/TTS speed': 'test/lookup/gal_line_tts_test.dart',
   'game/Tap a word to look it up':
       'test/lookup/gal_hook_overlay_interaction_prefs_test.dart',
   'game/Auto-hide the toolbar':
@@ -1615,6 +1616,10 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/ops/ctl_video_subtitle_routes_test.dart（没给 segmenter 用设置里的值）',
   'models/MOSS backend':
       'test/ops/ctl_video_subtitle_routes_test.dart（没给 mossBackend 用设置里的值）',
+  // TTS 兜底发音倍速（Models › Fallback voice speed）：写设备本地偏好
+  // tts_fallback_speed，生效点是查词 / 制卡的 TTS 兜底合成（倍速烧进音频文件），
+  // harness 里没有 TTS 引擎。窄测试咬住读写夹范围 + 合成按倍速变速且按倍速分缓存。
+  'models/Fallback voice speed': 'test/creator/mining_tts_fallback_test.dart',
   'ai/Default quality':
       'test/settings/ai_video_download_settings_test.dart + '
       'test/ai/ai_video_acquisition_preferences_test.dart',

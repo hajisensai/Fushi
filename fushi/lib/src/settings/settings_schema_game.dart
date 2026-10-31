@@ -24,6 +24,7 @@ import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/overlay_color_setting_item.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/misc/playback_speed.dart';
 import 'package:fushi/utils.dart';
 
 /// 「游戏」一级设置分类（审计 K / Phase 3.12：游戏域此前没有任何 destination，
@@ -210,6 +211,31 @@ SettingsDestination buildGameDestination() {
                 settingsContext,
               );
               await c.setLineTtsSettings(c.lineTtsSettings.copyWith(volume: v));
+              settingsContext.refresh();
+            },
+          ),
+          SettingsSliderItem(
+            id: 'game.gal_line_tts_speed',
+            title: t.gal_line_tts_speed,
+            icon: FushiIcons.speed,
+            visible: (_) => Platform.isWindows,
+            min: kGalLineTtsSpeedMin,
+            max: kGalLineTtsSpeedMax,
+            divisions: kPlaybackSpeedDivisions,
+            step: kPlaybackSpeedStep,
+            defaultValue: 1.0,
+            titleReadout: true,
+            commitOnRelease: true,
+            label: (double v) => '${v.toStringAsFixed(2)}x',
+            value: (SettingsContext settingsContext) =>
+                _lineTtsController(settingsContext).lineTtsSettings.speed,
+            onChanged: (SettingsContext settingsContext, double v) async {
+              final GalHookTextOverlayController c = _lineTtsController(
+                settingsContext,
+              );
+              await c.setLineTtsSettings(
+                c.lineTtsSettings.copyWith(speed: snapPlaybackSpeed(v)),
+              );
               settingsContext.refresh();
             },
           ),

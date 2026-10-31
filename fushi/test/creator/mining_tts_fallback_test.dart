@@ -13,6 +13,7 @@ import 'package:fushi_engine/tts/tts_audio_cache.dart';
 import 'package:fushi_engine/tts/tts_provider.dart';
 import 'package:fushi_engine/tts/tts_types.dart';
 import 'package:fushi_engine/tts/tts_voice_preset.dart';
+import 'package:path/path.dart' as p;
 
 /// 制卡单词音频 TTS 兜底：系统语音默认行为不变；选了朗读声音预设时走 provider 与
 /// 共用缓存、扩展名随真实格式、失败带原因且不回退系统语音；「不使用」跳过 TTS。
@@ -270,6 +271,115 @@ void main() {
         await setMiningTtsFallbackVoice(prefs, v);
         expect(miningTtsFallbackVoiceOf(prefs), v);
       }
+    });
+  });
+
+  group('TTS 兜底倍速', () {
+    test('偏好：默认 1.0、坏值回落、越界夹回范围', () async {
+      final _MemoryPrefs prefs = _MemoryPrefs();
+      expect(ttsFallbackSpeedOf(prefs), 1.0);
+      prefs.values[kTtsFallbackSpeedPref] = 'fast';
+      expect(ttsFallbackSpeedOf(prefs), 1.0);
+      await setTtsFallbackSpeed(prefs, 1.5);
+      expect(ttsFallbackSpeedOf(prefs), 1.5);
+      await setTtsFallbackSpeed(prefs, 10);
+      expect(ttsFallbackSpeedOf(prefs), kTtsFallbackSpeedMax);
+    });
+
+    test('制卡单词音频的 TTS 兜底一律按兜底倍速，不受有声书「句子音频跟随播放倍速」开关影响', () {
+      // 倍速是 TTS 声音本身的属性（所有者拍板）。生效点在 LocalAudioEnhancement
+      // 的兜底合成调用里，它要 AppModel + 平台目录，单测起不来，所以咬源码：
+      // tempo 直接取 ttsFallbackSpeedOf，整个文件不再读那个有声书开关。
+      final String src = File(
+        'lib/src/creator/enhancements/local_audio_enhancement.dart',
+      ).readAsStringSync();
+      expect(src, contains('tempo: ttsFallbackSpeedOf(appModel.prefsRepo),'));
+      expect(src, isNot(contains('miningAudioFollowPlaybackSpeed')));
+    });
+
+    Future<File?> runAt(
+      MiningTtsFallbackVoice choice,
+      double? tempo,
+      List<String> retempoCalls, {
+      bool fail = false,
+    }) => synthesizeMiningTtsFallback(
+      text: 'たべる',
+      choice: choice,
+      outputDir: outDir,
+      systemTts: fakeSystemTts,
+      voices: () => _FakeSource(
+        const <TtsVoicePreset>[preset],
+        <String, TtsProviderDescriptor>{'fake': _FakeDescriptor()},
+        cache,
+      ),
+      tempo: tempo,
+      retempo:
+          ({
+            required String inputPath,
+            required String outputPath,
+            required double tempo,
+          }) async {
+            retempoCalls.add('${p.basename(inputPath)}>$tempo');
+            if (fail) return null;
+            await File(outputPath).writeAsBytes(<int>[1, 2, 3]);
+            return outputPath;
+          },
+    );
+
+    test('1.0 / null 不变速，原样返回合成产物', () async {
+      final List<String> calls = <String>[];
+      final File? a = await runAt(
+        const MiningTtsFallbackVoice.system(),
+        null,
+        calls,
+      );
+      final File? b = await runAt(
+        const MiningTtsFallbackVoice.system(),
+        1.0,
+        calls,
+      );
+      expect(a!.path, endsWith(kSystemTtsTermAudioFileName));
+      expect(b!.path, endsWith(kSystemTtsTermAudioFileName));
+      expect(calls, isEmpty);
+    });
+
+    test('非 1× 时变速产物另存为 _x<倍速> 文件', () async {
+      final List<String> calls = <String>[];
+      final File? file = await runAt(
+        const MiningTtsFallbackVoice.system(),
+        1.5,
+        calls,
+      );
+      expect(calls, <String>['$kSystemTtsTermAudioFileName>1.5']);
+      expect(p.basename(file!.path), startsWith('tts_term_audio_x1.50.'));
+    });
+
+    test('预设产物已变速过就复用，系统语音每次重做', () async {
+      final List<String> presetCalls = <String>[];
+      const MiningTtsFallbackVoice presetChoice = MiningTtsFallbackVoice.preset(
+        'p1',
+      );
+      final File? first = await runAt(presetChoice, 1.25, presetCalls);
+      final File? second = await runAt(presetChoice, 1.25, presetCalls);
+      expect(presetCalls, hasLength(1));
+      expect(second!.path, first!.path);
+
+      final List<String> systemRetempo = <String>[];
+      await runAt(const MiningTtsFallbackVoice.system(), 1.25, systemRetempo);
+      await runAt(const MiningTtsFallbackVoice.system(), 1.25, systemRetempo);
+      expect(systemRetempo, hasLength(2));
+    });
+
+    test('变速失败退回原速产物（发音照常可用）', () async {
+      final List<String> calls = <String>[];
+      final File? file = await runAt(
+        const MiningTtsFallbackVoice.system(),
+        2.0,
+        calls,
+        fail: true,
+      );
+      expect(calls, hasLength(1));
+      expect(file!.path, endsWith(kSystemTtsTermAudioFileName));
     });
   });
 

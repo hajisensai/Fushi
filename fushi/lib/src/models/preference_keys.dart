@@ -700,6 +700,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'torrent_upload_intro_shown',
   // String：当前朗读声音预设 id（TtsPresetStore）。指向本机预设，设备本地。
   'tts_active_preset_id',
+  // double（默认 1.0）：查词 / 制卡 TTS 兜底发音的倍速（变速不变调，ffmpeg atempo
+  // 烧进合成文件；制卡另受 mining_audio_follow_playback_speed 开关管）。
+  'tts_fallback_speed',
   // JSON：本机一键部署的 GPT-SoVITS（GptSovitsLocalEngine）：整合包目录 / 端口 /
   // 下载源 / 是否 app 所装。路径与端口只对这台电脑成立，设备本地。
   'tts_gpt_sovits_local',
