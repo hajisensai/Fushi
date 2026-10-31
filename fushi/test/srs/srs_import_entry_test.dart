@@ -209,7 +209,7 @@ void main() {
     );
   });
 
-  test('冲突笔记按原因与笔记类型分行，写明类型名（BUG-3887）', () {
+  test('冲突笔记按原因与笔记类型分行，写明类型名（BUG-3890）', () {
     SrsImportNoteIssue issue(String guid, String nt, String reason) =>
         SrsImportNoteIssue(guid: guid, noteType: nt, reason: reason);
     final SrsImportReport report = SrsImportReport()

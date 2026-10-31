@@ -1378,7 +1378,7 @@ void main() {
       expect((await other.note(g4))!.noteTypeId, dup);
     });
 
-    test('来源换了笔记类型（Anki「更改笔记类型」）：本机仍在的记冲突；本机删掉后再导入按新类型恢复（BUG-3887）', () async {
+    test('来源换了笔记类型（Anki「更改笔记类型」）：本机仍在的记冲突；本机删掉后再导入按新类型恢复（BUG-3890）', () async {
       const int kKiku = 1700000000003;
       // 同一批 guid 在来源里改挂到另一个笔记类型（Anki 改类型不换 guid）。
       Uint8List retyped() {
