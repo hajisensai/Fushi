@@ -41,6 +41,11 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v6
+      # Prebuilt third-party binaries are not in git (tool/vendored_binaries.json).
+      - name: Fetch vendored binaries
+        uses: ./.github/actions/fetch-vendored-binaries
+        with:
+          groups: all
       - name: Validate unified release policy
         shell: pwsh
         run: ./tool/check_release_policy.ps1

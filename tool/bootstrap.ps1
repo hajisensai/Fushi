@@ -380,6 +380,12 @@ if (-not $env:FUSHI_BOOTSTRAP_SKIP_NETCHECK) {
     }
 }
 
+# 预编译第三方二进制（libmpv / ANGLE / libplacebo / FFmpegKit / LunaHook / jogamp …）不在 git 里：
+# tool/vendored_binaries.json 钉 path / sha256 / URL，tool/vendored_binaries.py 按原路径取回并逐个校验，
+# 已对上的只算一遍 sha256；下载件缓存在 %LOCALAPPDATA%\fushi\vendored-binaries，所有 worktree 共用。
+# 放在代理解析之后：python 的 urllib 认 HTTPS_PROXY / HTTP_PROXY。
+& (Join-Path $PSScriptRoot 'vendored_binaries.ps1')
+
 # Pub workspace：解析只在根发生一次，产出唯一的 pubspec.lock 和唯一的
 # .dart_tool/package_config.json，所有成员共用。
 #

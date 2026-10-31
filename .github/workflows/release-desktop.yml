@@ -49,6 +49,9 @@ on:
       - 'tool/simplysign_connect.ps1'
       - 'tool/engine_overlay.ps1'
       - 'third_party/**'
+      - 'tool/vendored_binaries.json'
+      - 'tool/vendored_binaries.py'
+      - '.github/actions/fetch-vendored-binaries/**'
       - 'tools/build_magpie_slim.ps1'
       - 'tools/bundle_7za.ps1'
       - '.github/workflows/release-desktop.yml'
@@ -156,6 +159,11 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+      # Prebuilt third-party binaries are not in git (tool/vendored_binaries.json).
+      - name: Fetch vendored binaries
+        uses: ./.github/actions/fetch-vendored-binaries
+        with:
+          groups: windows galgame mihon
       - name: Validate unified release policy
         shell: pwsh
         run: ./tool/check_release_policy.ps1
@@ -1336,6 +1344,11 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+      # Prebuilt third-party binaries are not in git (tool/vendored_binaries.json).
+      - name: Fetch vendored binaries
+        uses: ./.github/actions/fetch-vendored-binaries
+        with:
+          groups: macos mihon
       # 原生产物持久库名字（唯一算法 .github/actions/native-store-names/names.sh）。p2p
       # arm64 dylib 与 build-multiplatform.yml macos job 同名：这里（develop push）存的件
       # 就是 PR 门首跑命中的那一份。
@@ -2476,6 +2489,11 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+      # Prebuilt third-party binaries are not in git (tool/vendored_binaries.json).
+      - name: Fetch vendored binaries
+        uses: ./.github/actions/fetch-vendored-binaries
+        with:
+          groups: ios
       # 原生产物持久库名字（唯一算法 .github/actions/native-store-names/names.sh）。与
       # build-multiplatform.yml ios job 同名：同一个 device staticlib。
       - name: Resolve native artifact store names

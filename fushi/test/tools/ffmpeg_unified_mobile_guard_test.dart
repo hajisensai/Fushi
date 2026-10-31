@@ -1,4 +1,4 @@
-// 守卫：入库的 Android / iOS / macOS 统一 FFmpeg 产物（tool/ffmpeg-unified，FFmpegKitNext
+// 守卫：随包（vendored-binaries 清单钉住）的 Android / iOS / macOS 统一 FFmpeg 产物（tool/ffmpeg-unified，FFmpegKitNext
 // 构建）必须是「配方声明的那一份」，且具备播放器与制卡都依赖的能力。
 //
 // 这批二进制同时服务两端：

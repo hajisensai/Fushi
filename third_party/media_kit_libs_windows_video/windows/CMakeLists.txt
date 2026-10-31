@@ -22,15 +22,21 @@ add_compile_definitions(_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR)
 # TODO-1137 already mirrored libmpv to a permanent release to survive
 # zhongfly's rolling-window pruning, but the archives were still downloaded
 # at build time -- so a transient network failure still broke the build.
-# Both archives are now VENDORED into ../vendored (committed, self-contained,
-# same rationale as third_party/ffmpeg-min). This step reads + MD5-verifies
-# the local copy; no runtime GitHub download remains. The integrity check now
-# guards against a corrupt committed file and never deletes the source.
+# Both archives are now VENDORED into ../vendored (self-contained, same
+# rationale as third_party/ffmpeg-min). Since 2026-11-01 the bytes are not in
+# git: tool/vendored_binaries.json pins them (sha256) as assets of the
+# vendored-binaries release, and `python3 tool/vendored_binaries.py fetch`
+# (Windows: tool/vendored_binaries.ps1; run by tool/bootstrap.* and CI's
+# fetch-vendored-binaries action) puts them here before the build. This step
+# reads + MD5-verifies the local copy; CMake never downloads. The integrity
+# check guards against a corrupt / stale local file and never deletes it.
 function(verify_vendored_archive path md5 label)
   if(NOT EXISTS "${path}")
     message(FATAL_ERROR
-      "${label}: vendored archive missing at ${path}. It must be committed "
-      "under third_party/media_kit_libs_windows_video/vendored (TODO-1172).")
+      "${label}: vendored archive missing at ${path}. It is not in git; "
+      "restore it with `python3 tool/vendored_binaries.py fetch --group windows` "
+      "(Windows: tool/vendored_binaries.ps1 --group windows; pinned by "
+      "tool/vendored_binaries.json, TODO-1172).")
   endif()
 
   file(MD5 "${path}" ARCHIVE_MD5)
@@ -40,8 +46,11 @@ function(verify_vendored_archive path md5 label)
   else()
     message(FATAL_ERROR
       "${label}: vendored archive ${path} integrity check failed "
-      "(expected ${md5}, got ${ARCHIVE_MD5}). The committed file is corrupt; "
-      "restore it from git.")
+      "(expected ${md5}, got ${ARCHIVE_MD5}). The local file is corrupt or stale; "
+      "re-run `python3 tool/vendored_binaries.py fetch --group windows` "
+      "(it replaces any file that differs from tool/vendored_binaries.json). "
+      "If fetch succeeds and this still fails, the MD5 pinned here and the "
+      "manifest disagree: fix the pin, do not bypass the check.")
   endif()
 endfunction()
 
@@ -63,7 +72,8 @@ function(check_directory_exists_and_not_empty dir result_var)
   endif()
 endfunction()
 
-# Directory holding the vendored (committed) .7z archives, resolved to a
+# Directory holding the vendored .7z archives (fetched by
+# tool/vendored_binaries.py, not in git), resolved to a
 # clean absolute path so the extract commands below never carry a "../"
 # segment (TODO-1172).
 get_filename_component(
@@ -124,11 +134,11 @@ get_filename_component(
 # early). See NATIVE_BUILD.md.
 set(LIBMPV "mpv-dev-x86_64-20261008-git-36abaa32d0-fushi-discnav2-hwcrop1-lua1-mkvlace1-mkvdts1-dovi1-ffu2-dvd1-rdisc1-cdda1.7z")
 
-# Upstream source provenance; the committed patched archive is the build input.
+# Upstream source provenance; the vendored patched archive is the build input.
 set(LIBMPV_URL "https://github.com/mpv-player/mpv/tree/36abaa32d00a7229ee206aae12dc0e97e7962dca")
 set(LIBMPV_MD5 "8e7ee2aacddce372fb6b813c3ffddf83")
 
-# Vendored archive (committed) + build-dir extraction target (TODO-1172).
+# Vendored archive (tool/vendored_binaries.json) + build-dir extraction target (TODO-1172).
 set(LIBMPV_ARCHIVE "${VENDORED_DIR}/${LIBMPV}")
 set(LIBMPV_SRC "${CMAKE_BINARY_DIR}/libmpv-${LIBMPV_MD5}")
 set(MEDIA_KIT_LIBMPV_SRC "${LIBMPV_SRC}" CACHE INTERNAL "Pinned libmpv SDK directory" FORCE)
@@ -165,7 +175,7 @@ set(ANGLE "ANGLE.7z")
 set(ANGLE_URL "https://github.com/alexmercerind/flutter-windows-ANGLE-OpenGL-ES/releases/download/v1.0.1/ANGLE.7z")
 set(ANGLE_MD5 "e866f13e8d552348058afaafe869b1ed")
 
-# Vendored archive (committed) + build-dir extraction target (TODO-1172).
+# Vendored archive (tool/vendored_binaries.json) + build-dir extraction target (TODO-1172).
 set(ANGLE_ARCHIVE "${VENDORED_DIR}/${ANGLE}")
 set(ANGLE_SRC "${CMAKE_BINARY_DIR}/ANGLE")
 

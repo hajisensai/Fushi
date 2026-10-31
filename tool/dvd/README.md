@@ -34,10 +34,10 @@
 
 `dvdvideo` 目前登记在 `tool/ffmpeg-unified/capabilities.json` 的 `staged` 区：新构建
 （`build_libmpv.ps1`、`build_macos.sh` 调 `verify_ffmpeg_capabilities.py --require-staged`，
-移动端 CI 调 `verify_mobile_outputs.py --require-staged`）必须带；已入库的产物不被它判红。
+移动端 CI 调 `verify_mobile_outputs.py --require-staged`）必须带；已随包（vendored-binaries 清单钉住）的产物不被它判红。
 **提升条件**：Windows（2026-10-24 已带，`…-dvd1.7z`）、Android AAR、iOS xcframework、macOS
-`ffmpeg-unified-macos.tar.gz` 四份入库产物**全部**带上 `dvdvideo` 后，才把它挪进 `demuxers`
-下限并删掉 `staged` 里的这一项（Linux 用系统 FFmpeg，不在入库产物之列）。
+`ffmpeg-unified-macos.tar.gz` 四份 vendored 产物**全部**带上 `dvdvideo` 后，才把它挪进 `demuxers`
+下限并删掉 `staged` 里的这一项（Linux 用系统 FFmpeg，不在 vendored 产物之列）。
 
 ## 运行时探测
 

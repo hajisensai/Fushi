@@ -178,3 +178,47 @@ third_party/media_kit_video/macos/Headers/
 
 # dist_test worker list (hosts, keys): machine-local, never committed.
 fushi/tool/dist_test/workers.local.json
+
+# Prebuilt third-party binaries: NOT in git. They live in the `vendored-binaries`
+# GitHub release; tool/vendored_binaries.json pins path / size / sha256 / URL and
+# `python3 tool/vendored_binaries.py fetch` restores them (bootstrap, CI, dist workers).
+# One line per manifest path; guard fushi/test/build/vendored_binaries_manifest_guard_test.dart
+# keeps this list and the manifest in sync. Bump procedure: docs/agent/build.md.
+/native/galgame_hook/third_party/lunahook/LunaHook32.dll
+/native/galgame_hook/third_party/lunahook/LunaHook64.dll
+/native/galgame_hook/third_party/lunahook/LunaHost32.dll
+/native/galgame_hook/third_party/lunahook/LunaHost64.dll
+/third_party/ffmpeg_kit_next_flutter/android/libs/ffmpeg-kit-next.aar
+/third_party/ffmpeg_kit_next_flutter/ios/ffmpeg_kit_next_flutter/Frameworks/ffmpegkit.xcframework/ios-arm64/ffmpegkit.framework/ffmpegkit
+/third_party/ffmpeg_kit_next_flutter/ios/ffmpeg_kit_next_flutter/Frameworks/ffmpegkit.xcframework/ios-arm64_x86_64-simulator/ffmpegkit.framework/ffmpegkit
+/third_party/ffmpeg_kit_next_flutter/ios/ffmpeg_kit_next_flutter/Frameworks/libavcodec.xcframework/ios-arm64/libavcodec.framework/libavcodec
+/third_party/ffmpeg_kit_next_flutter/ios/ffmpeg_kit_next_flutter/Frameworks/libavcodec.xcframework/ios-arm64_x86_64-simulator/libavcodec.framework/libavcodec
+/third_party/ffmpeg_kit_next_flutter/ios/ffmpeg_kit_next_flutter/Frameworks/libavdevice.xcframework/ios-arm64/libavdevice.framework/libavdevice
+/third_party/ffmpeg_kit_next_flutter/ios/ffmpeg_kit_next_flutter/Frameworks/libavdevice.xcframework/ios-arm64_x86_64-simulator/libavdevice.framework/libavdevice
+/third_party/ffmpeg_kit_next_flutter/ios/ffmpeg_kit_next_flutter/Frameworks/libavfilter.xcframework/ios-arm64/libavfilter.framework/libavfilter
+/third_party/ffmpeg_kit_next_flutter/ios/ffmpeg_kit_next_flutter/Frameworks/libavfilter.xcframework/ios-arm64_x86_64-simulator/libavfilter.framework/libavfilter
+/third_party/ffmpeg_kit_next_flutter/ios/ffmpeg_kit_next_flutter/Frameworks/libavformat.xcframework/ios-arm64/libavformat.framework/libavformat
+/third_party/ffmpeg_kit_next_flutter/ios/ffmpeg_kit_next_flutter/Frameworks/libavformat.xcframework/ios-arm64_x86_64-simulator/libavformat.framework/libavformat
+/third_party/ffmpeg_kit_next_flutter/ios/ffmpeg_kit_next_flutter/Frameworks/libavutil.xcframework/ios-arm64/libavutil.framework/libavutil
+/third_party/ffmpeg_kit_next_flutter/ios/ffmpeg_kit_next_flutter/Frameworks/libavutil.xcframework/ios-arm64_x86_64-simulator/libavutil.framework/libavutil
+/third_party/ffmpeg_kit_next_flutter/ios/ffmpeg_kit_next_flutter/Frameworks/libdvdcss.xcframework/ios-arm64/libdvdcss.framework/libdvdcss
+/third_party/ffmpeg_kit_next_flutter/ios/ffmpeg_kit_next_flutter/Frameworks/libdvdcss.xcframework/ios-arm64_x86_64-simulator/libdvdcss.framework/libdvdcss
+/third_party/ffmpeg_kit_next_flutter/ios/ffmpeg_kit_next_flutter/Frameworks/libdvdnav.xcframework/ios-arm64/libdvdnav.framework/libdvdnav
+/third_party/ffmpeg_kit_next_flutter/ios/ffmpeg_kit_next_flutter/Frameworks/libdvdnav.xcframework/ios-arm64_x86_64-simulator/libdvdnav.framework/libdvdnav
+/third_party/ffmpeg_kit_next_flutter/ios/ffmpeg_kit_next_flutter/Frameworks/libdvdread.xcframework/ios-arm64/libdvdread.framework/libdvdread
+/third_party/ffmpeg_kit_next_flutter/ios/ffmpeg_kit_next_flutter/Frameworks/libdvdread.xcframework/ios-arm64_x86_64-simulator/libdvdread.framework/libdvdread
+/third_party/ffmpeg_kit_next_flutter/ios/ffmpeg_kit_next_flutter/Frameworks/libswresample.xcframework/ios-arm64/libswresample.framework/libswresample
+/third_party/ffmpeg_kit_next_flutter/ios/ffmpeg_kit_next_flutter/Frameworks/libswresample.xcframework/ios-arm64_x86_64-simulator/libswresample.framework/libswresample
+/third_party/ffmpeg_kit_next_flutter/ios/ffmpeg_kit_next_flutter/Frameworks/libswscale.xcframework/ios-arm64/libswscale.framework/libswscale
+/third_party/ffmpeg_kit_next_flutter/ios/ffmpeg_kit_next_flutter/Frameworks/libswscale.xcframework/ios-arm64_x86_64-simulator/libswscale.framework/libswscale
+/third_party/jogamp/org/jogamp/gluegen/gluegen-rt/2.5.0/gluegen-rt-2.5.0.jar
+/third_party/jogamp/org/jogamp/jogl/jogl-all/2.5.0/jogl-all-2.5.0.jar
+/third_party/libplacebo-win/bin/libplacebo-360.dll
+/third_party/media_kit_libs_android_video/android/native/bluray-menu-v1/full-arm64-v8a.jar
+/third_party/media_kit_libs_android_video/android/native/bluray-menu-v1/full-armeabi-v7a.jar
+/third_party/media_kit_libs_android_video/android/native/bluray-menu-v1/full-x86_64.jar
+/third_party/media_kit_libs_ios_video/native/libmpv-xcframeworks-bluray.tar.gz
+/third_party/media_kit_libs_macos_video/native/ffmpeg-unified-macos.tar.gz
+/third_party/media_kit_libs_macos_video/native/libmpv-xcframeworks-bluray.tar.gz
+/third_party/media_kit_libs_windows_video/vendored/ANGLE.7z
+/third_party/media_kit_libs_windows_video/vendored/mpv-dev-x86_64-20261008-git-36abaa32d0-fushi-discnav2-hwcrop1-lua1-mkvlace1-mkvdts1-dovi1-ffu2-dvd1-rdisc1-cdda1.7z

@@ -17,17 +17,24 @@ import '../helpers/source_guard.dart';
 /// (zhongfly/mpv-winbuild) prunes old releases on a ~30-day window, so a pinned
 /// asset can 404 outright. TODO-1137 mirrored libmpv to a permanent release, but
 /// the archives were still downloaded at build time. Fix (TODO-1172): both
-/// archives are committed under `../vendored/` and CMake reads + MD5-verifies the
-/// local copy. This test guards the mechanism so it cannot silently regress to a
-/// network fetch and so the committed archives stay real (not empty/LFS/wrong).
+/// archives sit under `../vendored/` and CMake reads + MD5-verifies the local
+/// copy. Since 2026-11-01 they are no longer committed: tool/vendored_binaries.json
+/// pins them (vendored-binaries release, sha256) and tool/vendored_binaries.py
+/// fetch puts them there before any build (bootstrap / CI / dist workers;
+/// vendored_binaries_manifest_guard_test.dart). This test guards the mechanism so
+/// CMake cannot silently regress to a configure-time network fetch and so the
+/// fetched archives stay real (not empty/LFS/wrong).
 void main() {
   // Tests run with CWD = `fushi/`; the vendored package lives at workspace root.
   const String pkgRoot = '../third_party/media_kit_libs_windows_video';
   final File cmakeFile = File('$pkgRoot/windows/CMakeLists.txt');
 
   String cmake() {
-    expect(cmakeFile.existsSync(), isTrue,
-        reason: 'expected CMakeLists at ${cmakeFile.absolute.path}');
+    expect(
+      cmakeFile.existsSync(),
+      isTrue,
+      reason: 'expected CMakeLists at ${cmakeFile.absolute.path}',
+    );
     return cmakeFile.readAsStringSync();
   }
 
@@ -45,19 +52,31 @@ void main() {
   String codeOnly(String text) => maskHashComments(text);
 
   void expectRealSevenZip(File archive) {
-    expect(archive.existsSync(), isTrue,
-        reason: 'vendored archive must exist at ${archive.absolute.path} '
-            '(TODO-1172); CMake reads it instead of downloading');
+    expect(
+      archive.existsSync(),
+      isTrue,
+      reason:
+          'vendored archive must exist at ${archive.absolute.path} '
+          '(TODO-1172); CMake reads it instead of downloading. It is not in '
+          'git: run python3 tool/vendored_binaries.py fetch',
+    );
     final List<int> bytes = archive.readAsBytesSync();
     // Never an empty/LFS-pointer/placeholder; the real 7z archives are MBs.
-    expect(bytes.length, greaterThan(1024 * 1024),
-        reason: '${archive.path} is suspiciously small (${bytes.length} '
-            'bytes) - likely a placeholder, not the real archive');
+    expect(
+      bytes.length,
+      greaterThan(1024 * 1024),
+      reason:
+          '${archive.path} is suspiciously small (${bytes.length} '
+          'bytes) - likely a placeholder, not the real archive',
+    );
     // 7z signature: 37 7A BC AF 27 1C.
     const List<int> magic = <int>[0x37, 0x7A, 0xBC, 0xAF, 0x27, 0x1C];
     expect(bytes.length, greaterThanOrEqualTo(magic.length));
-    expect(bytes.sublist(0, magic.length), equals(magic),
-        reason: '${archive.path} does not start with the 7z magic bytes');
+    expect(
+      bytes.sublist(0, magic.length),
+      equals(magic),
+      reason: '${archive.path} does not start with the 7z magic bytes',
+    );
   }
 
   test('libmpv archive is vendored, real, and MD5 matches the CMake pin', () {
@@ -68,10 +87,14 @@ void main() {
 
     expectRealSevenZip(archive);
     final String actual = md5.convert(archive.readAsBytesSync()).toString();
-    expect(actual, equals(md5Pin),
-        reason: 'vendored $name MD5 ($actual) must match the pinned '
-            'LIBMPV_MD5 ($md5Pin); a mismatch means the wrong build was '
-            'vendored and CMake would FATAL at configure time');
+    expect(
+      actual,
+      equals(md5Pin),
+      reason:
+          'vendored $name MD5 ($actual) must match the pinned '
+          'LIBMPV_MD5 ($md5Pin); a mismatch means the wrong build was '
+          'vendored and CMake would FATAL at configure time',
+    );
   });
 
   test('ANGLE archive is vendored, real, and MD5 matches the CMake pin', () {
@@ -82,38 +105,59 @@ void main() {
 
     expectRealSevenZip(archive);
     final String actual = md5.convert(archive.readAsBytesSync()).toString();
-    expect(actual, equals(md5Pin),
-        reason: 'vendored $name MD5 ($actual) must match the pinned '
-            'ANGLE_MD5 ($md5Pin)');
+    expect(
+      actual,
+      equals(md5Pin),
+      reason:
+          'vendored $name MD5 ($actual) must match the pinned '
+          'ANGLE_MD5 ($md5Pin)',
+    );
   });
 
   test(
-      'CMakeLists reads the vendored archives and never downloads at build time',
-      () {
-    final String text = codeOnly(cmake());
+    'CMakeLists reads the vendored archives and never downloads at build time',
+    () {
+      final String text = codeOnly(cmake());
 
-    // Regression fence: no runtime GitHub download of the archives.
-    expect(text.contains('file(DOWNLOAD'), isFalse,
+      // Regression fence: no runtime GitHub download of the archives.
+      expect(
+        text.contains('file(DOWNLOAD'),
+        isFalse,
         reason:
             'CMake must not download the .7z at configure time (TODO-1172); '
-            'a network/integrity hiccup would FATAL the whole Windows build');
-    expect(text.contains('download_and_verify('), isFalse,
-        reason: 'the old downloading helper must be gone; use '
-            'verify_vendored_archive on the committed local copy');
+            'a network/integrity hiccup would FATAL the whole Windows build',
+      );
+      expect(
+        text.contains('download_and_verify('),
+        isFalse,
+        reason:
+            'the old downloading helper must be gone; use '
+            'verify_vendored_archive on the vendored local copy',
+      );
 
-    // The vendored mechanism must be wired.
-    expect(text.contains('verify_vendored_archive('), isTrue,
-        reason: 'CMake must verify the committed archive locally');
-    expect(RegExp(r'get_filename_component\(\s*VENDORED_DIR').hasMatch(text),
+      // The vendored mechanism must be wired.
+      expect(
+        text.contains('verify_vendored_archive('),
         isTrue,
-        reason: 'VENDORED_DIR must resolve the committed archive directory');
+        reason: 'CMake must verify the vendored archive locally',
+      );
+      expect(
+        RegExp(r'get_filename_component\(\s*VENDORED_DIR').hasMatch(text),
+        isTrue,
+        reason: 'VENDORED_DIR must resolve the vendored archive directory',
+      );
 
-    // Both archive paths must come from VENDORED_DIR, not a build-dir download.
-    expect(text.contains(r'set(LIBMPV_ARCHIVE "${VENDORED_DIR}/${LIBMPV}")'),
+      // Both archive paths must come from VENDORED_DIR, not a build-dir download.
+      expect(
+        text.contains(r'set(LIBMPV_ARCHIVE "${VENDORED_DIR}/${LIBMPV}")'),
         isTrue,
-        reason: 'LIBMPV_ARCHIVE must point at the vendored copy');
-    expect(
-        text.contains(r'set(ANGLE_ARCHIVE "${VENDORED_DIR}/${ANGLE}")'), isTrue,
-        reason: 'ANGLE_ARCHIVE must point at the vendored copy');
-  });
+        reason: 'LIBMPV_ARCHIVE must point at the vendored copy',
+      );
+      expect(
+        text.contains(r'set(ANGLE_ARCHIVE "${VENDORED_DIR}/${ANGLE}")'),
+        isTrue,
+        reason: 'ANGLE_ARCHIVE must point at the vendored copy',
+      );
+    },
+  );
 }

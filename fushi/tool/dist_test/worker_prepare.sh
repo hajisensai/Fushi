@@ -44,6 +44,18 @@ else
   echo "==> dependencies unchanged"
 fi
 
+# Prebuilt third-party binaries are not in git (tool/vendored_binaries.json);
+# many unit tests read them (libmpv archives, FFmpegKit AAR / xcframeworks,
+# LunaHook, libplacebo). Files that already match cost one sha256 pass; misses
+# come from the per-user cache shared by every slot on this machine, else the
+# release (prepareEnv's proxy applies). Runs before the Windows early exit.
+echo "==> vendored binaries"
+if command -v python3 >/dev/null 2>&1 && python3 -c '' >/dev/null 2>&1; then
+  python3 tool/vendored_binaries.py fetch
+else
+  python tool/vendored_binaries.py fetch
+fi
+
 # Rust test hard dependencies (same crate list as tool/bootstrap.sh and
 # tool/native_libs.ps1), keyed by the crate's tree hash in this snapshot.
 case "$(uname -s)" in
