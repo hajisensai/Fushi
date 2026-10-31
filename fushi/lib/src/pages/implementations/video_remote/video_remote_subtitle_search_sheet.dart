@@ -219,9 +219,11 @@ class _VideoRemoteSubtitleSearchSheetState
       title: t.video_subtitle_search_open,
       leadingIcon: FushiIcons.subtitles,
       maxHeightFactor: 0.86,
-      body: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+      // 整块可滚：横屏手机弹出软键盘后弹层只剩 ~110dp，搜索框一行加结果列表放不下，
+      // 原来的 Column 会溢出并把结果列表挤成 0；现在在弹层给的高度内滚动。
+      body: ListView(
+        shrinkWrap: true,
+        padding: EdgeInsets.zero,
         children: <Widget>[
           Row(
             children: <Widget>[
@@ -278,7 +280,7 @@ class _VideoRemoteSubtitleSearchSheetState
               ),
             ),
           const SizedBox(height: 8),
-          Flexible(child: _list(context)),
+          _list(context),
         ],
       ),
     );
@@ -308,6 +310,8 @@ class _VideoRemoteSubtitleSearchSheetState
       child: ListView.builder(
         key: const ValueKey<String>('video-remote-subtitle-search-list'),
         shrinkWrap: true,
+        // 外层 ListView 负责滚动，这里只负责按内容撑高。
+        physics: const NeverScrollableScrollPhysics(),
         itemCount: _candidates.length,
         itemBuilder: fushiStaggeredItemBuilder(
           (BuildContext context, int i) => _tile(_candidates[i]),
