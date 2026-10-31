@@ -680,6 +680,54 @@ void main() {
     expect(find.textContaining('Invalid argument'), findsNothing);
   });
 
+  group('asrEncoderFallbackLine（运行中那行回退说明）', () {
+    const String probeRaw =
+        'Invalid argument(s): Provider WEBGPU is not a valid OrtProvider.';
+
+    test('探测失败导致的回退：给可读说明，不带异常原文', () {
+      final String? line = asrEncoderFallbackLine(
+        const OnnxProviderResolution(
+          requested: <OnnxExecutionProvider>[OnnxExecutionProvider.cpu],
+          effective: OnnxExecutionProvider.cpu,
+          fallbackReason: 'accelerated provider probe failed: $probeRaw',
+        ),
+        probeError: probeRaw,
+      );
+      expect(line, t.audiobook_transcribe_probe_failed_hint);
+      expect(line, isNot(contains('WEBGPU')));
+    });
+
+    test('GPU 会话被 ORT 拒绝的回退：照旧展示 code: message', () {
+      expect(
+        asrEncoderFallbackLine(
+          const OnnxProviderResolution(
+            requested: <OnnxExecutionProvider>[
+              OnnxExecutionProvider.directml,
+              OnnxExecutionProvider.cpu,
+            ],
+            effective: OnnxExecutionProvider.cpu,
+            fallbackReason: 'ORT_ERROR: D3D12 device lost',
+          ),
+          probeError: null,
+        ),
+        t.audiobook_transcribe_fallback(reason: 'ORT_ERROR: D3D12 device lost'),
+      );
+    });
+
+    test('没回退：不出这一行', () {
+      expect(
+        asrEncoderFallbackLine(
+          const OnnxProviderResolution(
+            requested: <OnnxExecutionProvider>[OnnxExecutionProvider.cpu],
+            effective: OnnxExecutionProvider.cpu,
+          ),
+          probeError: probeRaw,
+        ),
+        isNull,
+      );
+    });
+  });
+
   testWidgets('plan 无 probeError：就绪行不含探测失败提示', (WidgetTester tester) async {
     final _FakeService service = _FakeService(ready: true, jobsDir: tmp);
     await tester.pumpWidget(wrap(service, (String? _) {}));
