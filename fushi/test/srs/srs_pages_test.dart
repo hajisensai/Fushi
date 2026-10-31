@@ -1835,7 +1835,7 @@ void main() {
       expect(c.relearnStepsMinutes, <double>[10]);
 
       // 反过来：FSRS → RWKV，显示跟着变成「不用步长」，保存后生效值也是空。
-      await pickAlgorithm('RWKV');
+      await pickAlgorithm(t.srs_settings_algorithm_rwkv_recommended);
       await reveal('srs-settings-learn-steps');
       expect(stepsText('srs-settings-learn-steps'), '');
       expect(stepsText('srs-settings-relearn-steps'), '');
