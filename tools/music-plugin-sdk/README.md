@@ -39,6 +39,9 @@ search / album / stream / lyrics」就行。验收标准是 `smoke --strict` 退
 上限和 CPU 预算；返回值按 app 的解析逻辑逐项检查。`ERROR` 表示 app 里会失败，`WARN` 表示 app 会静默丢掉
 或忽略某些数据。
 
+**本地运行器不是安全隔离**：它基于 Node 的 `vm`，恶意插件可以逃逸到 Node 进程、读写你的文件。只用它跑
+自己写的或可信的插件；真正的隔离边界是 app 内的 QuickJS 沙箱，本地运行器只复刻它的规则。
+
 ## 目录
 
 | 路径 | 内容 |
@@ -54,5 +57,9 @@ search / album / stream / lyrics」就行。验收标准是 `smoke --strict` 退
 
 宿主契约的真相源仍是 `docs/specs/2026-10-28-music-plugins.md` 与 `native/fushi_music/src/plugin/`、
 `packages/fushi_music/lib/src/plugin/`。改了宿主规则（能力、权限、上限、实体字段、前奏）要同步改
-`lib/rules.mjs` / `lib/validate.mjs` / `fushi-plugin.d.ts` / `GUIDE.md`。前奏副本和能力 / 权限清单由守卫
+`lib/rules.mjs` / `lib/validate.mjs` / `fushi-plugin.d.ts` / `GUIDE.md`。前奏副本、能力 / 权限清单与
+`LIMITS` 里有宿主常量对应的上限（包大小、请求头 / 请求体、存储、在途 / 单步宿主调用、凭据条数）由守卫
 `fushi/test/build/music_plugin_sdk_sync_guard_test.dart` 钉住，其余靠审查。
+
+`lib/prelude.js` 与 `lib/runner.mjs` 在 `.sonarcloud.properties` 里排除出 Sonar 分析：前者是宿主前奏的逐字节
+副本（重复与问题都记在宿主那份上），后者按设计用 `vm.runInContext` 执行插件代码（S1523 是它的职责本身）。
