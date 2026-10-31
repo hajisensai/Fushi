@@ -367,7 +367,7 @@ void main() {
       expect(await members(id), titles.reversed.toList());
     });
 
-    // BUG-3915：主系列 + 番外（SS / 外传）的合集以前整张不自愈，阅读器卷 chip 行
+    // BUG-3923：主系列 + 番外（SS / 外传）的合集以前整张不自愈，阅读器卷 chip 行
     // 照存储的乱序显示。现在主系列各卷在自己占的位置里按卷号排，番外原位不动。
     Future<(int, Map<String, String>)> addCollection(
       String name,
