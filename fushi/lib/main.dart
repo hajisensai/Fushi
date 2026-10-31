@@ -145,6 +145,7 @@ import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/video_storage.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
+import 'package:fushi/src/profile/extension_profile_adapter.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:fushi_core/fushi_core.dart'
@@ -655,6 +656,11 @@ void main([List<String> args = const <String>[]]) {
             mediaType: ProfileMediaKind.browser,
             restoreFallback: false,
           );
+      // 反馈 biLEesNqWb：浏览器扩展里手动选配置。查词 / 制卡请求带所选配置时，server 先
+      // 让它生效（等同「浏览器」绑定命中，压过该绑定）再处理。同样须在 initialise() 之前。
+      appModel.browserExtensionProfileApi = ProfileViewModelExtensionProfileApi(
+        () => container.read(profileViewModelProvider.notifier),
+      );
       appModel.ankiRepositoryReader = () =>
           container.read(ankiRepositoryProvider);
       appModel.hostMiningRepositoryReader = () =>

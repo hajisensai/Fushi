@@ -6,6 +6,7 @@ import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
 import 'package:fushi/src/media/video/browser_video_study_bridge.dart'
     show BrowserVideoSample;
 import 'package:fushi/src/sync/extension_font_api.dart';
+import 'package:fushi/src/sync/extension_profile_api.dart';
 import 'package:fushi/src/sync/fushi_api_access_policy.dart';
 import 'package:fushi/src/sync/fushi_api_server.dart';
 import 'package:fushi/src/sync/fushi_extension_api_core.dart';
@@ -37,6 +38,7 @@ class FushiApiServerManager {
     String Function()? extensionTestPageProvider,
     ExtensionFontApi? fontApi,
     SrsExtensionApi? Function()? srsApiProvider,
+    ExtensionProfileApi? profileApi,
     FushiExtensionApiCore? extensionApiCore,
   }) : _lookup = lookupService,
        _mining = miningService,
@@ -59,6 +61,7 @@ class FushiApiServerManager {
        _extensionTestPageProvider = extensionTestPageProvider,
        _fontApi = fontApi,
        _srsApiProvider = srsApiProvider,
+       _profileApi = profileApi,
        _extensionApiCore = extensionApiCore;
 
   final FushiRemoteLookupService _lookup;
@@ -101,6 +104,8 @@ class FushiApiServerManager {
   final ExtensionFontApi? _fontApi;
   // 复习（SRS）扩展端点供给器，透传给 [FushiApiServer]（模块关着时回 null → 404）。
   final SrsExtensionApi? Function()? _srsApiProvider;
+  // 反馈 biLEesNqWb：扩展手动选配置，透传给 [FushiApiServer]。
+  final ExtensionProfileApi? _profileApi;
   // 浏览器扩展端点核心（与 app 内浏览器共用同一实例），透传给 [FushiApiServer]；
   // null 时 server 用上面那批 sink / 供给器自建一个。
   final FushiExtensionApiCore? _extensionApiCore;
@@ -150,6 +155,7 @@ class FushiApiServerManager {
       extensionTestPageProvider: _extensionTestPageProvider,
       fontApi: _fontApi,
       srsApiProvider: _srsApiProvider,
+      profileApi: _profileApi,
       apiKey: apiKey.isEmpty ? null : apiKey,
       accessPolicy: accessPolicy,
       ankiConnectEndpoint: _ankiConnectEndpoint,

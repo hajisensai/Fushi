@@ -378,6 +378,8 @@ import 'package:fushi_engine/sync/fushi_remote_api_handlers.dart'
 import 'package:fushi/src/onboarding/onboarding_sample_text.dart';
 import 'package:fushi/src/sync/browser_extension_test_page.dart';
 import 'package:fushi/src/sync/fushi_api_server.dart';
+import 'package:fushi/src/sync/extension_profile_api.dart'
+    show ExtensionProfileApi;
 import 'package:fushi/src/sync/fushi_api_server_manager.dart';
 import 'package:fushi/src/sync/fushi_extension_api_core.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart';
@@ -10979,6 +10981,8 @@ class AppModel with ChangeNotifier {
       fontApi: _browserExtensionFontCatalog,
       // 复习（SRS）扩展端点：模块开着时 SrsAppHost.current 非 null；关着时 404。
       srsApiProvider: () => SrsAppHost.current,
+      // 反馈 biLEesNqWb：扩展手动选配置（列表端点 + 请求头所选配置先生效再处理）。
+      profileApi: browserExtensionProfileApi,
       // 上面四个扩展端点依赖的同一份核心：server 与 app 内浏览器共用一个实例。
       extensionApiCore: extensionApiCore,
       tokenizer: JapaneseLanguage.instance.textsToWordsWithReadingsInBackground,
@@ -11003,6 +11007,11 @@ class AppModel with ChangeNotifier {
   /// 后注入（`autoApplyBinding(mediaType: ProfileMediaKind.browser,
   /// restoreFallback: false)`：查词不回退到绑定前的配置）。
   Future<void> Function()? browserLookupProfileApplier;
+
+  /// 反馈 biLEesNqWb：浏览器扩展手动切换配置的 app 侧实现（列配置 + 按扩展所选配置
+  /// 处理查词 / 制卡）。同 [browserLookupProfileApplier]，由 main.dart 在 initialise()
+  /// 之前注入；未注入时扩展的配置列表端点 404、请求头被忽略。
+  ExtensionProfileApi? browserExtensionProfileApi;
 
   /// 读 `ankiRepositoryProvider` 的委托（待发队列 / 自动重排 / 转发互联主机都在那条
   /// 装饰器链里）。AppModel 不在 Riverpod 图里，由 main.dart 在根容器建好后注入。

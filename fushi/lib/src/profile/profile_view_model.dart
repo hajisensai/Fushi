@@ -137,13 +137,13 @@ class ProfileUiState {
       pendingProfile ?? (isLoading ? null : activeProfile);
 
   ProfileUiState withPendingProfile(ProfileRow? pending) => ProfileUiState(
-        profiles: profiles,
-        activeProfileId: activeProfileId,
-        mediaTypeBindings: mediaTypeBindings,
-        languageBindings: languageBindings,
-        isLoading: isLoading,
-        pendingProfile: pending,
-      );
+    profiles: profiles,
+    activeProfileId: activeProfileId,
+    mediaTypeBindings: mediaTypeBindings,
+    languageBindings: languageBindings,
+    isLoading: isLoading,
+    pendingProfile: pending,
+  );
 
   ProfileUiState copyWith({
     List<ProfileRow>? profiles,
@@ -151,15 +151,14 @@ class ProfileUiState {
     Map<String, int>? mediaTypeBindings,
     Map<String, int>? languageBindings,
     bool? isLoading,
-  }) =>
-      ProfileUiState(
-        profiles: profiles ?? this.profiles,
-        activeProfileId: activeProfileId ?? this.activeProfileId,
-        mediaTypeBindings: mediaTypeBindings ?? this.mediaTypeBindings,
-        languageBindings: languageBindings ?? this.languageBindings,
-        isLoading: isLoading ?? this.isLoading,
-        pendingProfile: pendingProfile,
-      );
+  }) => ProfileUiState(
+    profiles: profiles ?? this.profiles,
+    activeProfileId: activeProfileId ?? this.activeProfileId,
+    mediaTypeBindings: mediaTypeBindings ?? this.mediaTypeBindings,
+    languageBindings: languageBindings ?? this.languageBindings,
+    isLoading: isLoading ?? this.isLoading,
+    pendingProfile: pendingProfile,
+  );
 }
 
 class ProfileViewModel extends StateNotifier<ProfileUiState> {
@@ -168,14 +167,15 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
     this._onProfileApplied,
     this._profileDraftCoordinator, {
     ProfileDeletionCascade? deletionCascade,
-  })  : _deletionCascade = deletionCascade,
-        super(
-          ProfileUiState(
-            pendingProfile: _profileDraftCoordinator.pendingSwitchTarget.value,
-          ),
-        ) {
-    _profileDraftCoordinator.pendingSwitchTarget
-        .addListener(_onPendingSwitchTargetChanged);
+  }) : _deletionCascade = deletionCascade,
+       super(
+         ProfileUiState(
+           pendingProfile: _profileDraftCoordinator.pendingSwitchTarget.value,
+         ),
+       ) {
+    _profileDraftCoordinator.pendingSwitchTarget.addListener(
+      _onPendingSwitchTargetChanged,
+    );
     _load();
     // BUG-3148：别处（互联下载 / 对端上传入站）写进 profiles 表的新配置，列表要跟着
     // 刷新，不必等重启。只重读列表本身——激活 id 与绑定的切换都经本类，不受影响。
@@ -202,8 +202,9 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
   @override
   void dispose() {
     _profilesChanged?.cancel();
-    _profileDraftCoordinator.pendingSwitchTarget
-        .removeListener(_onPendingSwitchTargetChanged);
+    _profileDraftCoordinator.pendingSwitchTarget.removeListener(
+      _onPendingSwitchTargetChanged,
+    );
     _repo.snapshotCurrentSettings(state.activeProfileId).catchError((Object e) {
       debugPrint('[profile] snapshot on dispose failed: $e');
     });
@@ -217,9 +218,7 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
   /// 删 Profile 时连带清理的、主库外键级联管不到的数据（复习数据在 srs.db）；null = 不清（测试）。
   final ProfileDeletionCascade? _deletionCascade;
 
-  Future<T> _whileInvalidatingProfileDrafts<T>(
-    Future<T> Function() action,
-  ) =>
+  Future<T> _whileInvalidatingProfileDrafts<T>(Future<T> Function() action) =>
       _profileDraftCoordinator.runProfileChange(action);
 
   Future<void> _load() async {
@@ -274,8 +273,10 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
         ),
       );
     } catch (e, st) {
-      debugPrint('[profile] auto-apply "${mediaType.dbValue}" binding failed '
-          '(non-fatal): $e\n$st');
+      debugPrint(
+        '[profile] auto-apply "${mediaType.dbValue}" binding failed '
+        '(non-fatal): $e\n$st',
+      );
     }
   }
 
@@ -296,13 +297,12 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
     final int currentActiveId = await _repo.getActiveProfileId();
     final int? fallbackId = await _repo.getFallbackProfileId();
     if (boundId != null) {
-      if (boundId == currentActiveId) return;
-      // 绑定只是「这本书临时用」：第一次离开用户自己选的配置时记下它，之后
-      // 无绑定的条目才有地方回去（否则切过去的绑定配置就成了新的默认）。
-      if (fallbackId == null) {
-        await _repo.setFallbackProfileId(currentActiveId);
-      }
-      await _switchLocked(mutation, boundId);
+      await _switchToBoundLocked(
+        mutation,
+        boundId,
+        currentActiveId: currentActiveId,
+        fallbackId: fallbackId,
+      );
       return;
     }
     if (!restoreFallback || fallbackId == null) return;
@@ -311,6 +311,72 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
     final bool stillExists = profiles.any((ProfileRow p) => p.id == fallbackId);
     if (stillExists && fallbackId != currentActiveId) {
       await _switchLocked(mutation, fallbackId);
+    }
+  }
+
+  /// 切到「临时生效」的配置（绑定命中 / 浏览器扩展显式选择）；只能在配置变更锁里调用。
+  /// 绑定只是「这本书 / 这个旁路临时用」：第一次离开用户自己选的配置时记下它，之后
+  /// 无绑定的条目才有地方回去（否则切过去的绑定配置就成了新的默认）。
+  Future<void> _switchToBoundLocked(
+    _ProfileDraftMutation mutation,
+    int boundId, {
+    required int currentActiveId,
+    required int? fallbackId,
+  }) async {
+    if (boundId == currentActiveId) return;
+    if (fallbackId == null) {
+      await _repo.setFallbackProfileId(currentActiveId);
+    }
+    await _switchLocked(mutation, boundId);
+  }
+
+  /// 反馈 biLEesNqWb：浏览器扩展列配置用（id + 名称 + 当前激活）。
+  Future<({List<ProfileRow> profiles, int activeProfileId})>
+  profilesForExtension() async => (
+    profiles: await _repo.getAllProfiles(),
+    activeProfileId: await _repo.getActiveProfileId(),
+  );
+
+  /// 反馈 biLEesNqWb：浏览器扩展显式选了 [profileId]，查词 / 制卡请求要按它处理。
+  ///
+  /// app 的配置是「一份活设置 + 各配置快照」的单激活模型（[ProfileRepository.applyProfile]
+  /// 把快照整份写回全局偏好 / 词典元数据 / Anki 设置），查词与制卡读的都是活设置，所以
+  /// 「按扩展所选配置处理」= 处理前把激活配置切到它。语义与「浏览器」媒体类型绑定命中一致
+  /// （扩展显式选择压过该绑定）：记下回退点，之后打开无绑定的条目仍回到用户自己选的配置。
+  ///
+  /// 返回时切换已完成，调用方（server）随后再处理请求。所选配置已被删除时不切换，
+  /// `found = false`；切换失败时只记日志，`activeProfileId` 如实回报实际生效的配置，
+  /// 扩展据响应头看得到「没切过去」。
+  Future<({bool found, int activeProfileId})> applyExtensionSelectedProfile(
+    int profileId,
+  ) async {
+    // 稳态快路径：所选配置已生效（state 只在应用完成后才更新），不排锁、不读库。
+    if (!state.isLoading && state.activeProfileId == profileId) {
+      return (found: true, activeProfileId: profileId);
+    }
+    try {
+      return await _profileDraftCoordinator._runProfileMutation((
+        _ProfileDraftMutation mutation,
+      ) async {
+        final List<ProfileRow> profiles = await _repo.getAllProfiles();
+        final int currentActiveId = await _repo.getActiveProfileId();
+        if (_profileById(profiles, profileId) == null) {
+          return (found: false, activeProfileId: currentActiveId);
+        }
+        await _switchToBoundLocked(
+          mutation,
+          profileId,
+          currentActiveId: currentActiveId,
+          fallbackId: await _repo.getFallbackProfileId(),
+        );
+        return (found: true, activeProfileId: profileId);
+      });
+    } catch (e, st) {
+      debugPrint(
+        '[profile] extension-selected profile $profileId apply failed '
+        '(request served with the current profile): $e\n$st',
+      );
+      return (found: true, activeProfileId: await _repo.getActiveProfileId());
     }
   }
 
@@ -326,8 +392,9 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
         _profileDraftCoordinator.pendingSwitchTarget;
     if (target != null) pending.value = target;
     try {
-      await _profileDraftCoordinator
-          ._runProfileMutation((_ProfileDraftMutation mutation) async {
+      await _profileDraftCoordinator._runProfileMutation((
+        _ProfileDraftMutation mutation,
+      ) async {
         await _repo.setFallbackProfileId(null);
         await _switchLocked(mutation, profileId);
       });
@@ -390,9 +457,7 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
       await _repo.snapshotCurrentSettings(sourceId);
     }
     await _repo.copyProfile(sourceId, newName);
-    state = state.copyWith(
-      profiles: await _repo.getAllProfiles(),
-    );
+    state = state.copyWith(profiles: await _repo.getAllProfiles());
   }
 
   Future<void> renameProfile(int id, String name) async {
@@ -413,13 +478,15 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
   /// [ProfileDeletionBackupException]，什么都不删），再删 `profiles` 行（主库外键级联其余），最后清复习数据。
   /// 只剩一个 Profile 或 [id] 不存在时不删，返回 null。
   Future<ProfileDeletionOutcome?> deleteProfile(int id) =>
-      _profileDraftCoordinator
-          ._runProfileMutation((_ProfileDraftMutation mutation) async {
+      _profileDraftCoordinator._runProfileMutation((
+        _ProfileDraftMutation mutation,
+      ) async {
         final List<ProfileRow> before = await _repo.getAllProfiles();
         final ProfileRow? target = _profileById(before, id);
         if (target == null || before.length <= 1) return null;
-        final ProfileDeletionCleanup? cleanup =
-            await _deletionCascade?.prepare(target);
+        final ProfileDeletionCleanup? cleanup = await _deletionCascade?.prepare(
+          target,
+        );
 
         // This repository read must happen after acquiring the same lock used
         // by switch/create/Save. State may still describe the previous Profile
@@ -464,7 +531,9 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
   }
 
   Future<void> setMediaTypeBinding(
-      ProfileMediaKind mediaType, int? profileId) async {
+    ProfileMediaKind mediaType,
+    int? profileId,
+  ) async {
     if (profileId == null) {
       await _repo.removeMediaTypeBinding(mediaType);
     } else {
@@ -494,10 +563,7 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
 
   /// 把指定 Profile 序列化成可分享的 JSON（凭据已剔除、字体绝对路径已剥离）。
   /// [fontsRootDirectory] 是本机 `custom_fonts/` 根，用于 A1 字体路径剥离。
-  Future<String> exportProfile(
-    int profileId, {
-    String? fontsRootDirectory,
-  }) =>
+  Future<String> exportProfile(int profileId, {String? fontsRootDirectory}) =>
       _repo.exportProfileToJson(
         profileId,
         fontsRootDirectory: fontsRootDirectory,
@@ -512,31 +578,31 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
     String json, {
     ProfileImportMode mode = ProfileImportMode.createNew,
     int? targetProfileId,
-  }) =>
-      _profileDraftCoordinator
-          ._runProfileMutation((_ProfileDraftMutation mutation) async {
-        // Do not decide this from [state] before entering the lock: a queued
-        // switch can make [targetProfileId] active before the overwrite runs.
-        final int activeProfileId = await _repo.getActiveProfileId();
-        final bool overwritesActiveProfile =
-            mode == ProfileImportMode.overwrite &&
-                targetProfileId == activeProfileId;
-        if (overwritesActiveProfile) {
-          mutation.invalidateDrafts();
-        }
+  }) => _profileDraftCoordinator._runProfileMutation((
+    _ProfileDraftMutation mutation,
+  ) async {
+    // Do not decide this from [state] before entering the lock: a queued
+    // switch can make [targetProfileId] active before the overwrite runs.
+    final int activeProfileId = await _repo.getActiveProfileId();
+    final bool overwritesActiveProfile =
+        mode == ProfileImportMode.overwrite &&
+        targetProfileId == activeProfileId;
+    if (overwritesActiveProfile) {
+      mutation.invalidateDrafts();
+    }
 
-        final int writtenId = await _repo.importProfileFromJson(
-          json,
-          mode: mode,
-          targetProfileId: targetProfileId,
-        );
-        state = state.copyWith(profiles: await _repo.getAllProfiles());
-        if (overwritesActiveProfile && writtenId == activeProfileId) {
-          await _repo.applyProfile(writtenId);
-          await _onProfileApplied();
-        }
-        return writtenId;
-      });
+    final int writtenId = await _repo.importProfileFromJson(
+      json,
+      mode: mode,
+      targetProfileId: targetProfileId,
+    );
+    state = state.copyWith(profiles: await _repo.getAllProfiles());
+    if (overwritesActiveProfile && writtenId == activeProfileId) {
+      await _repo.applyProfile(writtenId);
+      await _onProfileApplied();
+    }
+    return writtenId;
+  });
 }
 
 final fushiDatabaseProvider = Provider<FushiDatabase>((ref) {
@@ -568,36 +634,39 @@ final profileDraftCoordinatorProvider = Provider<ProfileDraftCoordinator>(
 
 final profileViewModelProvider =
     StateNotifierProvider<ProfileViewModel, ProfileUiState>((ref) {
-  final repo = ref.watch(profileRepositoryProvider);
-  final ProfileDraftCoordinator profileDraftCoordinator =
-      ref.watch(profileDraftCoordinatorProvider);
-  Future<void> onApplied() async {
-    final PlatformServices platformServices =
-        ref.read(platformServicesProvider);
-    final AnkiSettings ankiSettings =
-        await ref.read(ankiRepositoryProvider).loadSettings();
-    platformServices.setUseAnkiConnectOnMobile(
-      ankiSettings.useAnkiConnectOnMobile,
-      apiKey: ankiSettings.ankiConnectApiKey,
-    );
-    platformServices.setUseAnkiSyncClient(ankiSettings.useAnkiSyncClient);
-    ref.invalidate(ankiRepositoryProvider);
-    final appModel = ref.read(appProvider);
-    await appModel.refreshPrefCache();
-    // TODO-1077: the profile switch replaced the dictionary_metadata table, so
-    // reload the dictionary cache + native engine to pick up the new enable
-    // list / order / language visibility for the switched-to profile.
-    await appModel.reloadDictionariesFromDb();
-    await ReaderFushiSource.readerSettings?.refreshFromDb();
-  }
+      final repo = ref.watch(profileRepositoryProvider);
+      final ProfileDraftCoordinator profileDraftCoordinator = ref.watch(
+        profileDraftCoordinatorProvider,
+      );
+      Future<void> onApplied() async {
+        final PlatformServices platformServices = ref.read(
+          platformServicesProvider,
+        );
+        final AnkiSettings ankiSettings = await ref
+            .read(ankiRepositoryProvider)
+            .loadSettings();
+        platformServices.setUseAnkiConnectOnMobile(
+          ankiSettings.useAnkiConnectOnMobile,
+          apiKey: ankiSettings.ankiConnectApiKey,
+        );
+        platformServices.setUseAnkiSyncClient(ankiSettings.useAnkiSyncClient);
+        ref.invalidate(ankiRepositoryProvider);
+        final appModel = ref.read(appProvider);
+        await appModel.refreshPrefCache();
+        // TODO-1077: the profile switch replaced the dictionary_metadata table, so
+        // reload the dictionary cache + native engine to pick up the new enable
+        // list / order / language visibility for the switched-to profile.
+        await appModel.reloadDictionariesFromDb();
+        await ReaderFushiSource.readerSettings?.refreshFromDb();
+      }
 
-  return ProfileViewModel(
-    repo,
-    onApplied,
-    profileDraftCoordinator,
-    deletionCascade: srsProfileCleanupFor(ref),
-  );
-});
+      return ProfileViewModel(
+        repo,
+        onApplied,
+        profileDraftCoordinator,
+        deletionCascade: srsProfileCleanupFor(ref),
+      );
+    });
 
 /// 另一个进程 / engine 改过偏好（[AppModel.refreshPrefCacheIfChanged] 返回 true）后，
 /// 丢掉本 engine 里由 Anki 设置派生的 Riverpod 状态：仓库装饰链（后端选择已由
