@@ -282,7 +282,7 @@ AI 助手是 IO 和编排代码，按「Rust 胖核心」规则留在 Dart（不
 - AI 生成代码、脚本并执行；AI 直接写 SQL 或偏好键（只能经设置 schema）。
 - AI 读写凭据类设置。
 - 让模型自己决定某个不可逆操作「这次不用确认了」：要不要确认只由操作描述（有没有 undo）决定。
-- 用 MCP 对外暴露这份目录。以后可以加（`OpCatalog` 很容易导出成 MCP tools），但本期只服务 app 内 AI 和 CLI。
+- ~~用 MCP 对外暴露这份目录。~~ 已于 2026-10-31 加上（反馈 uILXKiYRhl，所有者要求做完），见 §12.5。
 
 ## 11. 风险
 
@@ -322,6 +322,41 @@ AI 助手是 IO 和编排代码，按「Rust 胖核心」规则留在 Dart（不
 
 ### 12.3 顺带修掉的问题
 BUG-3783（字幕补全把已存在的同名字幕报成「已安装」）、BUG-3784（并发 `ensureDefaultProfile` 撞唯一约束；`_copyProfile` 找不到时回退成源 Profile）、BUG-3785（删音乐扫描根留下孤儿曲目）、BUG-3786（LNReader 卸载静默删除插件登录态）；`PUT /api/admin/ai/providers/:id` 现在认显式空串。
+
+### 12.5 外部 AI 接入（MCP，2026-10-31）
+
+接入说明：[`docs/mcp-external-ai.md`](../mcp-external-ai.md)。
+
+| 部分 | 位置 |
+|---|---|
+| 协议层（JSON-RPC、`initialize` / `tools/list` / `tools/call`）、目录 → 工具生成 | `packages/fushi_cli/lib/src/mcp/mcp_server.dart`（`McpServer`、`mcpToolOf`） |
+| Streamable HTTP 传输 | `mcp_http.dart`（`McpHttpEndpoint`），挂在桌面控制通道 `CtlServer` 的 `/mcp` 上 |
+| stdio 传输 | `fushi_cli mcp`（`mcp_stdio_bridge.dart`）：stdin 每行 → `POST /mcp`，每条消息现读发现文件 |
+| app 侧适配 | `fushi/lib/src/ai/mcp/`：`AiMcpToolHost`（经 `AiAgentToolbox` 执行 / 记账 / 撤销）、app 内确认弹窗、开关与配对令牌 |
+
+取舍：
+
+- **复用控制通道的监听，不另起服务**：控制通道已经只绑 127.0.0.1、拒带 `Origin` 的请求、
+  有跨平台的发现文件。另开固定端口要处理端口占用和第二套发现机制，收益只有「HTTP 客户端
+  能写死 URL」，而主流客户端（Claude Desktop）本来就只拉起 stdio 进程。所以 HTTP 端点
+  随控制通道随机端口，客户端配置一律走 `fushi_cli mcp` 这个 stdio 桥。
+- **不复用控制通道 token**：控制通道 token 等于用户本人（`fushi_cli` 能敲 `--yes` 等表态
+  flag），且每次启动都换。MCP 用用户在设置页亲手生成的配对令牌（只存 SHA-256、设备本地），
+  `/mcp` 只认它，其它路由只认控制通道 token，两者互不通用。
+- **外部调用一律按模型身份**（`OpCaller.model`）：与 app 内 AI 助手同一条执行管线
+  （`AiAgentToolbox`），所以表态参数注入、凭据脱敏、`fromModel` 拒写凭据地址 / 机密值 /
+  授权开关、记账与撤销全部沿用，不另写一份规则。
+- **需要确认的操作在 app 内弹框**：MCP 有 elicitation，但那是让**客户端**问用户，等于把
+  确认交给调用方，违背「外部调用方不能绕过」。确认框由 app 画、在本机点；2 秒防误按、
+  2 分钟无人回答按拒绝、多个确认排队。
+- **工具清单全量列出**（约 300 个，每次 `tools/list` 现算可用性），不像 app 内 AI 那样做
+  「常驻 + `ops.search`」两级：MCP 客户端（Claude Code 等）自己会对大量工具做检索 / 延迟
+  加载，全量列出最贴近「清单由目录生成」；进程内专有（`nav.open`）与结果含一次性凭据的
+  操作不对外。另加一个 `undo_action`（只撤 `mcp:` 会话的记录）。
+- **会话只用来记客户端身份**：`initialize` 开 `Mcp-Session-Id`，用于确认框显示请求方、
+  操作记录按 `mcp:<会话>` 分组；不认识的会话 id（app 重启过）不报 404，按匿名客户端处理，
+  鉴权每个请求都做，不依赖会话。
+- 只做桌面：控制通道只在桌面开；手机上没有可让本机 MCP 客户端连接的场景。
 
 ### 12.4 已知缺口
 - 没有真机 / 模拟器端到端验证（焦点驱动集成测试的三条脚本未跑）；验证靠单测、路由测试与撤销往返测试。
