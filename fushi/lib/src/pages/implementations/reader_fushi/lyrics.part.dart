@@ -1033,8 +1033,9 @@ extension _ReaderLyrics on _ReaderFushiPageState {
   /// 「弹出停留」（偏好 `lyrics_illustration_cue` = popup，默认）：顺着播放新走过
   /// 插图时状态机已把插图卡弹出，这里再按「图片暂停」秒数（`imagePauseSec`，与正文
   /// 同一个设置、同一条 [AudiobookPlayerController.triggerImagePause] 原语）停留。
-  /// 暂停态、拖进度 / ±10 秒、显式跳句经过插图都不停：只认「正在播、且音频前进量
-  /// 不超过这段墙钟时间该播的量」的连续播放。同一张插图一次经过只停一次（状态机
+  /// 暂停态、拖进度 / ±10 秒、显式跳句经过插图都不停：只认「正在播、且两次观测
+  /// 之间控制器没有登记过跳转（[AudiobookPlayerController.playbackJumpSerial]）」的
+  /// 连续播放。同一张插图一次经过只停一次（状态机
   /// 只在新走过时报一次）。
   void _observeLyricsIllustrations(AudioCue cue, Duration audioPosition) {
     final LyricsIllustrationController? illustrations = _lyricsIllustrations;
@@ -1042,13 +1043,14 @@ extension _ReaderLyrics on _ReaderFushiPageState {
     final LyricsBookPosition? position = _lyricsBookPositionOfCue(cue);
     if (position == null) return;
     final AudiobookPlayerController? ctrl = _audiobookController;
-    final DateTime now = DateTime.now();
-    final ({DateTime at, int audioMs})? last =
+    final ({int jumpSerial, int audioMs})? last =
         _lyricsIllustrationLastObservation;
-    _lyricsIllustrationLastObservation = (
-      at: now,
-      audioMs: audioPosition.inMilliseconds,
-    );
+    _lyricsIllustrationLastObservation = ctrl == null
+        ? null
+        : (
+            jumpSerial: ctrl.playbackJumpSerial,
+            audioMs: audioPosition.inMilliseconds,
+          );
     final bool revealed = illustrations.observe(
       position,
       audioPosition: audioPosition,
@@ -1062,10 +1064,9 @@ extension _ReaderLyrics on _ReaderFushiPageState {
         last != null &&
         isContinuousLyricsPlayback(
           playing: ctrl.isPlaying,
-          explicitNavigation: ctrl.hasPendingExplicitNavigationReveal,
+          previousJumpSerial: last.jumpSerial,
+          currentJumpSerial: ctrl.playbackJumpSerial,
           audioDeltaMs: audioPosition.inMilliseconds - last.audioMs,
-          wallDeltaMs: now.difference(last.at).inMilliseconds,
-          speed: ctrl.speed,
         );
     if (!continuous) return;
     _beginLyricsIllustrationStay(ctrl, illustrations);

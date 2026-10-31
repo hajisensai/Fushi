@@ -476,10 +476,19 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// （歌词层只读 [consumeForceReveal]）。
   AudioCue? _explicitNavigationRevealCue;
 
-  /// 是否有一次显式跳句还没被 reader 消费（只读，不清登记）。歌词模式「弹出停留」
-  /// 据此认出「跳句经过插图」、不停留。
-  bool get hasPendingExplicitNavigationReveal =>
-      _explicitNavigationRevealCue != null;
+  /// 播放位置被**非连续**移动的次数（单调递增，只增不减）：拖进度条 / ±10 秒
+  /// （[seekMs] / [seekRelative] / [seekGlobalMs]）、跳句与按位置定音频（[skipToCue]、
+  /// [playCueOnce] 及其回跳、[restoreToFileOffset]、[replaceStreamSources]）、载入时
+  /// 落到上次位置。在跳转意图成立处、下发平台 seek / 换源之前加一。
+  ///
+  /// 歌词模式「弹出停留」据此区分「顺着播过去」与「跳过去」：两次观测之间这个
+  /// 序号没变、且一直在播，才是连续播放（见 `isContinuousLyricsPlayback`）。与
+  /// [_explicitNavigationRevealCue] 同为控制器在跳转发生处登记的显式标记，不靠
+  /// 墙钟与音频进度的差值去猜。
+  int get playbackJumpSerial => _playbackJumpSerial;
+  int _playbackJumpSerial = 0;
+
+  void _notePlaybackJump() => _playbackJumpSerial++;
 
   /// reader 的 `_onCueChanged` 读一次：当前句就是刚显式跳到的那句、且正文跟随开着
   /// 时返回 true（reader 据此 reveal：翻页 / 滚动 / VN 翻屏由各 view mode 的 JS 按同一个
@@ -1208,6 +1217,7 @@ class AudiobookPlayerController extends ChangeNotifier {
       // 的文件内毫秒」，按全书毫秒解释落点 ≤ 旧行为（旧行为恒落文件 0），不会更糟。
       final int savedMs = initialPositionMs;
       if (savedMs > 0) {
+        _notePlaybackJump();
         try {
           if (_fileDurationsMs.isEmpty) {
             await _player.seek(Duration(milliseconds: savedMs));
@@ -1572,6 +1582,9 @@ class AudiobookPlayerController extends ChangeNotifier {
     // 手动改音频位置同样取代上一次显式 seek 的平台在途窗口（那次 seek 的回执可能
     // 永远不来，见 [_explicitSeekPlatformOp]）；本次 seek 不登记窗口（BUG-903 语义）。
     _explicitSeekPlatformOp = null;
+    // 同理按意图登记跳转（歌词「弹出停留」的连续播放判据）：宁可多认一次跳转少弹一张
+    // 插图，也不让一次真的 seek 被当成顺着播过去。
+    _notePlaybackJump();
     final Duration? dur = _player.duration;
     if (dur == null || dur.inMilliseconds <= 0) return;
     final int clampedMs = positionMs.clamp(0, dur.inMilliseconds);
@@ -1740,6 +1753,7 @@ class AudiobookPlayerController extends ChangeNotifier {
   /// 显式 seek 的平台操作（seek / 整列换源）一律经这里：窗口期间产生的位置都是
   /// 操作之前的，不能作为「已到位」的证据（见 [_updateCurrentCue]）。
   Future<T> _awaitPlatformForExplicitSeek<T>(Future<T> Function() op) async {
+    _notePlaybackJump();
     final int id = ++_explicitSeekPlatformOpSeq;
     _explicitSeekPlatformOp = id;
     try {
@@ -2194,6 +2208,7 @@ class AudiobookPlayerController extends ChangeNotifier {
       _returnToPosition = null;
       unawaited(_player.pause());
       if (returnTo != null) {
+        _notePlaybackJump();
         unawaited(
           _player.seek(
             Duration(milliseconds: returnTo.positionMs),
