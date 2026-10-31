@@ -48,14 +48,14 @@ class HostJobManager {
     Duration jobTtl = const Duration(hours: 24),
     Random? random,
     HostInputMatcher? inputMatcher,
-  })  : _jobRoot = jobRoot,
-        _inputMatcher = inputMatcher,
-        _runners = <String, HostJobRunner>{
-          for (final HostJobRunner r in runners) r.kind: r,
-        },
-        _now = now ?? DateTime.now,
-        _jobTtl = jobTtl,
-        _random = random ?? Random.secure();
+  }) : _jobRoot = jobRoot,
+       _inputMatcher = inputMatcher,
+       _runners = <String, HostJobRunner>{
+         for (final HostJobRunner r in runners) r.kind: r,
+       },
+       _now = now ?? DateTime.now,
+       _jobTtl = jobTtl,
+       _random = random ?? Random.secure();
 
   final Directory _jobRoot;
 
@@ -66,7 +66,8 @@ class HostJobManager {
   final Duration _jobTtl;
   final Random _random;
   final Map<String, HostJobRecord> _jobs = <String, HostJobRecord>{};
-  final Map<String, HostJobCancelToken> _cancels = <String, HostJobCancelToken>{};
+  final Map<String, HostJobCancelToken> _cancels =
+      <String, HostJobCancelToken>{};
   final List<String> _queue = <String>[];
   bool _draining = false;
 
@@ -147,8 +148,12 @@ class HostJobManager {
       createdAt: now,
       updatedAt: now,
     );
-    await Directory(p.join(dirFor(rec.id).path, 'inputs')).create(recursive: true);
-    await Directory(p.join(dirFor(rec.id).path, 'outputs')).create(recursive: true);
+    await Directory(
+      p.join(dirFor(rec.id).path, 'inputs'),
+    ).create(recursive: true);
+    await Directory(
+      p.join(dirFor(rec.id).path, 'outputs'),
+    ).create(recursive: true);
     _jobs[rec.id] = rec;
     await _persist(rec);
     return rec;
@@ -161,12 +166,15 @@ class HostJobManager {
   }
 
   List<HostJobRecord> list() => _jobs.values.toList(growable: false)
-    ..sort((HostJobRecord a, HostJobRecord b) => b.createdAt.compareTo(a.createdAt));
+    ..sort(
+      (HostJobRecord a, HostJobRecord b) => b.createdAt.compareTo(a.createdAt),
+    );
 
   /// 写入一个输入文件（流式落盘；名字经 [safeName] 过滤）。
   Future<void> putInput(String id, String name, Stream<List<int>> body) async {
     final HostJobRecord rec = get(id);
-    if (rec.state != HostJobState.pending && rec.state != HostJobState.uploading) {
+    if (rec.state != HostJobState.pending &&
+        rec.state != HostJobState.uploading) {
       throw HostJobConflict('job ${rec.state.name}, inputs are sealed');
     }
     final String safe = safeName(name);
@@ -187,38 +195,65 @@ class HostJobManager {
   }
 
   /// 按内容哈希找 host 本地已有的输入（`POST /api/jobs/<id>/inputs/match`）。命中
-  /// 的名字记进 [HostJobRecord.hostInputs]，客户端就不必上传它们；返回命中的名字。
-  /// 已经上传过的名字不再匹配。host 没配 [HostInputMatcher] 时恒返回空。
-  Future<List<String>> matchInputs(
+  /// 的名字记进 [HostJobRecord.hostInputs]，客户端就不必上传它们。返回本次清单里
+  /// **至今**已命中的全部名字（多次询问累计），以及 host 是否还在后台给候选算哈希
+  /// （`pending`：客户端稍后再问）。已经上传过的名字不再匹配。host 没配
+  /// [HostInputMatcher] 时恒返回空。
+  Future<({List<String> matched, bool pending})> matchInputs(
     String id,
     List<HostInputWanted> wanted,
   ) async {
-    final HostJobRecord rec = get(id);
-    if (rec.state != HostJobState.pending && rec.state != HostJobState.uploading) {
+    HostJobRecord rec = get(id);
+    _ensureInputsOpen(rec);
+    final HostInputMatcher? matcher = _inputMatcher;
+    if (matcher == null) return (matched: const <String>[], pending: false);
+    final List<HostInputWanted> asked = <HostInputWanted>[
+      for (final HostInputWanted w in wanted)
+        HostInputWanted(
+          name: hostJobInputName(w.name),
+          sha256: w.sha256,
+          size: w.size,
+        ),
+    ];
+    final List<HostInputWanted> pending = <HostInputWanted>[
+      for (final HostInputWanted w in asked)
+        if (!rec.inputs.contains(w.name) && !rec.hostInputs.containsKey(w.name))
+          w,
+    ];
+    final HostInputMatchResult result = await matcher.match(pending);
+    // 匹配期间任务可能已被删 / 开跑，同名输入也可能已经传上来了（客户端等不及这次
+    // 应答、按「没命中」上传了）——上传优先，不能再把它记成 host 本地文件。
+    rec = get(id);
+    _ensureInputsOpen(rec);
+    final Map<String, HostInputRef> fresh = <String, HostInputRef>{
+      for (final MapEntry<String, HostInputRef> e in result.matched.entries)
+        if (!rec.inputs.contains(e.key)) e.key: e.value,
+    };
+    if (fresh.isNotEmpty) {
+      rec.hostInputs.addAll(fresh);
+      rec.updatedAt = _now();
+      await _persist(rec);
+    }
+    return (
+      matched: <String>[
+        for (final HostInputWanted w in asked)
+          if (rec.hostInputs.containsKey(w.name)) w.name,
+      ],
+      pending: result.pending,
+    );
+  }
+
+  void _ensureInputsOpen(HostJobRecord rec) {
+    if (rec.state != HostJobState.pending &&
+        rec.state != HostJobState.uploading) {
       throw HostJobConflict('job ${rec.state.name}, inputs are sealed');
     }
-    final HostInputMatcher? matcher = _inputMatcher;
-    if (matcher == null) return const <String>[];
-    final List<HostInputWanted> pending = <HostInputWanted>[
-      for (final HostInputWanted w in wanted)
-        if (!rec.inputs.contains(hostJobInputName(w.name)))
-          HostInputWanted(
-            name: hostJobInputName(w.name),
-            sha256: w.sha256,
-            size: w.size,
-          ),
-    ];
-    final Map<String, HostInputRef> matched = await matcher.match(pending);
-    if (matched.isEmpty) return const <String>[];
-    rec.hostInputs.addAll(matched);
-    rec.updatedAt = _now();
-    await _persist(rec);
-    return matched.keys.toList(growable: false);
   }
 
   Future<void> start(String id) async {
     final HostJobRecord rec = get(id);
-    if (rec.state != HostJobState.pending && rec.state != HostJobState.uploading) {
+    if (rec.state != HostJobState.pending &&
+        rec.state != HostJobState.uploading) {
       throw HostJobConflict('job already ${rec.state.name}');
     }
     rec
@@ -255,11 +290,10 @@ class HostJobManager {
 
   /// 所有在飞的终态落盘都完成。测试在观察到终态之后、清理作业根目录之前等它；
   /// 生产里 [delete] 已按 job 逐个等。
-  Future<void> whenIdle() =>
-      Future.wait<void>(<Future<void>>[
-        for (final Future<void> f in _persisting.values)
-          f.then<void>((_) {}, onError: (Object _) {}),
-      ]);
+  Future<void> whenIdle() => Future.wait<void>(<Future<void>>[
+    for (final Future<void> f in _persisting.values)
+      f.then<void>((_) {}, onError: (Object _) {}),
+  ]);
 
   /// 产物文件；[name] 为空取 primaryOutput。
   File? result(String id, [String? name]) {
@@ -272,7 +306,8 @@ class HostJobManager {
   }
 
   String contentTypeFor(String id, String name) =>
-      _runners[get(id).kind]?.contentTypeFor(name) ?? 'application/octet-stream';
+      _runners[get(id).kind]?.contentTypeFor(name) ??
+      'application/octet-stream';
 
   Future<void> pruneExpired() async {
     final DateTime cutoff = _now().subtract(_jobTtl);
@@ -320,23 +355,26 @@ class HostJobManager {
       if (changedBefore.isNotEmpty) {
         throw _HostInputChanged(changedBefore);
       }
-      final HostJobOutcome outcome = await runner.run(HostJobContext(
-        jobId: rec.id,
-        params: rec.params,
-        inputsDir: Directory(p.join(dir.path, 'inputs')),
-        outputsDir: Directory(p.join(dir.path, 'outputs')),
-        onProgress: (double progress, String? message) {
-          rec
-            ..progress = progress.clamp(0, 1).toDouble()
-            ..message = message
-            ..updatedAt = _now();
-        },
-        cancel: cancel,
-        hostInputs: <String, String>{
-          for (final MapEntry<String, HostInputRef> e in rec.hostInputs.entries)
-            e.key: e.value.path,
-        },
-      ));
+      final HostJobOutcome outcome = await runner.run(
+        HostJobContext(
+          jobId: rec.id,
+          params: rec.params,
+          inputsDir: Directory(p.join(dir.path, 'inputs')),
+          outputsDir: Directory(p.join(dir.path, 'outputs')),
+          onProgress: (double progress, String? message) {
+            rec
+              ..progress = progress.clamp(0, 1).toDouble()
+              ..message = message
+              ..updatedAt = _now();
+          },
+          cancel: cancel,
+          hostInputs: <String, String>{
+            for (final MapEntry<String, HostInputRef> e
+                in rec.hostInputs.entries)
+              e.key: e.value.path,
+          },
+        ),
+      );
       // 跑完整份重读核对：转录途中被改过，产物就是拿错内容算的，不能交出去。
       if (!cancel.isCancelled) {
         final List<String> changedAfter = await _changedHostInputs(
@@ -361,7 +399,9 @@ class HostJobManager {
       rec.state = HostJobState.cancelled;
     } on _HostInputChanged catch (e) {
       rec
-        ..state = cancel.isCancelled ? HostJobState.cancelled : HostJobState.error
+        ..state = cancel.isCancelled
+            ? HostJobState.cancelled
+            : HostJobState.error
         ..error = '$e';
     } catch (e, stack) {
       engineLog.log('HostJobManager.run(${rec.kind}/${rec.id})', e, stack);
@@ -418,7 +458,8 @@ class HostJobManager {
     final HostInputMatcher? matcher = _inputMatcher;
     final List<String> changed = <String>[];
     for (final MapEntry<String, HostInputRef> e in rec.hostInputs.entries) {
-      if (matcher == null || !await matcher.stillMatches(e.value, force: force)) {
+      if (matcher == null ||
+          !await matcher.stillMatches(e.value, force: force)) {
         changed.add(e.key);
       }
     }
