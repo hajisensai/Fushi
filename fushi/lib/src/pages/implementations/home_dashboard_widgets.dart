@@ -559,7 +559,11 @@ class HomeWeekBars extends StatelessWidget {
                   message: labels[i],
                   excludeFromSemantics: true,
                   child: TweenAnimationBuilder<double>(
-                    tween: Tween<double>(end: peak == 0 ? 0 : values[i] / peak),
+                    // begin: 0：首次出现也从底长起（只给 end 时首帧直接画终值）。
+                    tween: Tween<double>(
+                      begin: 0,
+                      end: peak == 0 ? 0 : values[i] / peak,
+                    ),
                     duration: fushiMotionDuration(context, FushiMotion.medium),
                     curve: FushiMotion.standard,
                     builder: (BuildContext _, double f, Widget? __) =>
