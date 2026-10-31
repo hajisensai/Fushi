@@ -35,6 +35,51 @@ final class SrsCoreException implements Exception {
   String toString() => 'SrsCoreException($code): $message';
 }
 
+/// 打开时 srs.db 要升级格式，而所在卷的空闲空间不够（store/ffi.rs `STORE_NO_SPACE`）：升级没开始，库一个字节没动；
+/// 腾出 [neededBytes] - [freeBytes] 以上的空间后重试即可。
+final class SrsUpgradeNoSpaceException extends SrsCoreException {
+  const SrsUpgradeNoSpaceException(
+    super.code,
+    super.message, {
+    required this.neededBytes,
+    required this.freeBytes,
+  });
+
+  /// store/ffi.rs 的状态码。
+  static const int statusCode = -3;
+
+  /// Rust 侧错误文本的前缀（store/schema.rs `UPGRADE_NO_SPACE`），后面是 `{"need","free","from","to"}`。
+  static const String prefix = 'srs.db upgrade needs more free disk space: ';
+
+  final int neededBytes;
+  final int freeBytes;
+
+  /// 按 [statusCode] 的错误文本解析；文本不是约定的形状为 null（照一般错误报）。
+  static SrsUpgradeNoSpaceException? tryParse(int code, String message) {
+    if (code != statusCode || !message.startsWith(prefix)) return null;
+    try {
+      final Object? j = jsonDecode(message.substring(prefix.length));
+      if (j is! Map) return null;
+      final Object? need = j['need'];
+      final Object? free = j['free'];
+      if (need is! int || free is! int) return null;
+      return SrsUpgradeNoSpaceException(
+        code,
+        message,
+        neededBytes: need,
+        freeBytes: free,
+      );
+    } on FormatException {
+      return null;
+    }
+  }
+
+  @override
+  String toString() =>
+      'SrsUpgradeNoSpaceException: upgrading srs.db needs $neededBytes bytes '
+      'free on its volume, only $freeBytes available';
+}
+
 typedef _OpenC =
     ffi.Int32 Function(
       ffi.Pointer<ffi.Uint8>,
@@ -761,7 +806,8 @@ final class SrsCore {
       message = err.value.cast<Utf8>().toDartString();
       b._freeString(err.value);
     }
-    throw SrsCoreException(rc, message);
+    throw SrsUpgradeNoSpaceException.tryParse(rc, message) ??
+        SrsCoreException(rc, message);
   }
 }
 

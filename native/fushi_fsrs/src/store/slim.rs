@@ -7,6 +7,8 @@
 //! - 去掉「值与列逐字节相同」的那些键，前面加 [SLIM] 标记；列有值而原文没有的键（导入锚点没有 `rtype` / `dur` 之类）
 //!   记在标记与 `{` 之间（`~rtype,dur{…}`），拼回时不补；
 //! - 写入时先拼回一次，与原文逐字节相同才存瘦的，否则原样存原文（非规范的旧行、键缺失 / 不等的行）——无损。
+//!   原文自己就以 [SLIM] 开头（不是 JSON 的外来文本）时存成 `~` + 原文（`~~…`）：瘦形态的「原文没有的键」只是键名，
+//!   不会以 `~` 开头，两种形态不会混。
 //!
 //! `json` 成了 VIRTUAL 生成列 `srs_log_json(jslim, 列…)` / `srs_edit_json(…)`：Rust、Dart、摘要触发器读到的仍是逐字节
 //! 相同的原文，读法不变。拼回只按顶层成员做字节拼接（不经 serde 解析 / 序列化）。写入方写 `jslim`，值用
@@ -153,6 +155,10 @@ fn members(s: &str) -> Option<Vec<(&str, &str)>> {
 /// 原样返回。
 pub(crate) fn expand<F: AsRef<str>>(stored: &str, keys: &[&str], frags: &[Option<F>]) -> String {
     let Some(rest) = stored.strip_prefix(SLIM) else { return stored.to_owned() };
+    if rest.starts_with(SLIM) {
+        // 转义存的原文（[pack]）。
+        return rest.to_owned();
+    }
     let Some(brace) = rest.find('{') else { return rest.to_owned() };
     let (absent, slim) = rest.split_at(brace);
     let Some(have) = members(slim) else { return slim.to_owned() };
@@ -197,6 +203,13 @@ pub(crate) fn expand<F: AsRef<str>>(stored: &str, keys: &[&str], frags: &[Option
 
 /// 原文 → 存储值：去掉与列逐字节相同的键；拼回与原文不同（非规范 / 不一致）就存原文。
 pub(crate) fn pack<F: AsRef<str>>(full: &str, keys: &[&str], frags: &[Option<F>]) -> String {
+    if full.starts_with(SLIM) {
+        // 原文本身以标记开头：原样存会被读成瘦形态拼坏，转义一层（[expand] 去掉）。
+        let mut out = String::with_capacity(full.len() + 1);
+        out.push(SLIM);
+        out.push_str(full);
+        return out;
+    }
     let Some(have) = members(full) else { return full.to_owned() };
     let mut slim = String::with_capacity(full.len());
     slim.push(SLIM);
@@ -301,6 +314,10 @@ fn read_row<T>(
     let stored: String = r.get(at)?;
     if !stored.starts_with(SLIM) {
         return Ok((stored, None));
+    }
+    if stored[SLIM.len_utf8()..].starts_with(SLIM) {
+        // 转义存的原文（[pack]）：去掉一层标记就是原文。
+        return Ok((stored[SLIM.len_utf8()..].to_owned(), None));
     }
     let mut cols: Vec<Col> = (1..=n).map(|i| r.get_ref(at + i).map(col)).collect::<rusqlite::Result<_>>()?;
     if let Some(t) = typed(&mut cols) {
@@ -563,6 +580,41 @@ mod tests {
             assert_eq!(expand(&stored, &keys, &frags), full, "{full} -> {stored}");
         }
         assert_eq!(pack(r#"{"id":"a1","at":5}"#, &keys, &frags), r#"{"id":"a1","at":5}"#);
+    }
+
+    /// 回归：以标记 `~` 开头的非 JSON 原文以前原样存，读回时被当成瘦形态拼坏。现在转义存，经 SQL 生成列与热路径
+    /// 读者（[read_row]）都逐字节读回原文。
+    #[test]
+    fn text_starting_with_the_marker_round_trips() {
+        let keys = keys_of(&LOG_KEYS);
+        let frags = log_frags("a1", "C", 5);
+        for full in ["~", "~~", "~x", "~{\"at\":5}", "~p,kind{\"x\":1}", "~~p{}"] {
+            let stored = pack(full, &keys, &frags);
+            assert_eq!(expand(&stored, &keys, &frags), full, "{full} -> {stored}");
+        }
+        let c = Connection::open_in_memory().unwrap();
+        register(&c).unwrap();
+        c.execute_batch(
+            "CREATE TABLE t (jslim TEXT, id TEXT, p TEXT, card TEXT, kind TEXT, rating INTEGER, at INTEGER, rtype TEXT, origin TEXT, dur INTEGER);",
+        )
+        .unwrap();
+        for full in ["~", "~x{\"at\":5}", "~p,kind{\"x\":1}"] {
+            c.execute("DELETE FROM t", []).unwrap();
+            c.execute(
+                "INSERT INTO t SELECT srs_log_pack(?1, 'a1', 'p', 'C', 'review', 3, 5, 'review', 'fushi', 0), 'a1', 'p', 'C', 'review', 3, 5, 'review', 'fushi', 0",
+                [full],
+            )
+            .unwrap();
+            let via_sql: String = c
+                .query_row("SELECT srs_log_json(jslim, id, p, card, kind, rating, at, rtype, origin, dur) FROM t", [], |r| r.get(0))
+                .unwrap();
+            assert_eq!(via_sql, full);
+            let (hot, cols) = c
+                .query_row("SELECT jslim AS l_jslim, id, p, card, kind, rating, at, rtype, origin, dur FROM t", [], |r| log_row(r, 0))
+                .unwrap();
+            assert!(cols.is_none());
+            assert_eq!(hot, full);
+        }
     }
 }
 

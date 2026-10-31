@@ -97,6 +97,79 @@ fn config_snapshots_are_stored_once() {
     assert_eq!(da, db);
 }
 
+/// 全部操作载荷经 [super::load_op] 读回（按主键序）。
+fn all_payloads(d: &Device) -> Vec<Vec<u8>> {
+    let w = d.core.writer().unwrap();
+    let ids: Vec<(Vec<u8>, i64)> = w
+        .prepare("SELECT device, seq FROM sync2_ops ORDER BY device, seq")
+        .unwrap()
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    ids.into_iter()
+        .map(|(dv, s)| {
+            let id = crate::sync2::vv::OpId { device: crate::sync2::id::Id(dv.try_into().unwrap()), seq: s as u64 };
+            super::load_op(&w, P, &id).unwrap().unwrap().payload.to_vec()
+        })
+        .collect()
+}
+
+/// 退回 v15 的载荷形态：快照原文拼回载荷、引用两列清空、快照表清空。
+fn inline_snapshots(w: &rusqlite::Connection) {
+    let ops: Vec<(Vec<u8>, i64, Vec<u8>, Option<String>, Option<i64>)> = w
+        .prepare("SELECT device, seq, payload, sc, sc_at FROM sync2_ops")
+        .unwrap()
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)))
+        .unwrap()
+        .collect::<Result<_, _>>()
+        .unwrap();
+    for (dv, s, p, sc, at) in ops {
+        let p = super::snapshots::unpack_payload(w, p, sc, at).unwrap();
+        w.execute("UPDATE sync2_ops SET payload = ?3, sc = NULL, sc_at = NULL WHERE device = ?1 AND seq = ?2", rusqlite::params![dv, s, p])
+            .unwrap();
+    }
+    w.execute_batch("DELETE FROM sync2_snapshots;").unwrap();
+}
+
+/// 回归：v16 升级以前把全部日志载荷一次读进内存（大库升级内存随库线性涨）。现在在同一事务里按主键键集分页读、
+/// 逐页改：几千条日志按小页走完，每页不超过页大小，结果与改之前逐字节相同。
+#[test]
+fn v16_upgrade_reads_the_log_in_bounded_pages() {
+    let deck = super::config::default_deck_id(P);
+    let a = Device::new("fp-pages");
+    a.apply(T0, vec![deck_entity(&deck), edit("deck", &deck, "retention", json!(0.85))]);
+    let n: i64 = 3000;
+    for chunk in 0..(n / 500) {
+        a.apply(
+            T0 + 10 + chunk * DAY,
+            (0..500)
+                .map(|i| {
+                    let k = chunk * 500 + i;
+                    review(&format!("b{k}"), &format!("C{}", k % 97), T0 + 10 + chunk * DAY + i, 1 + (k % 4), "review")
+                })
+                .collect(),
+        );
+    }
+    let digest = a.digest();
+    let before = all_payloads(&a);
+    let logs = count(&a, "SELECT COUNT(*) FROM sync2_ops WHERE kind = 3");
+    assert!(logs >= n, "{logs} log ops");
+    {
+        let w = a.core.writer().unwrap();
+        inline_snapshots(&w);
+        let tx = w.unchecked_transaction().unwrap();
+        let (pages, widest) = super::snapshots::migrate_paged(&tx, 64).unwrap();
+        tx.commit().unwrap();
+        assert!(widest <= 64, "a page held {widest} rows");
+        assert!(pages as i64 >= logs / 64, "{pages} pages for {logs} log ops");
+    }
+    assert_eq!(count(&a, "SELECT COUNT(*) FROM sync2_ops WHERE kind = 3 AND sc IS NULL"), 0);
+    assert_eq!(count(&a, "SELECT COUNT(*) FROM sync2_snapshots"), 1);
+    assert_eq!(all_payloads(&a), before, "op payloads read back byte for byte");
+    assert_eq!(a.digest(), digest);
+}
+
 /// v15 → v16 升级：操作载荷里存量的内联快照改成引用，读回来逐字节相同；投影与摘要不变；升级可重放（标回 15
 /// 再开一次结果相同）。
 #[test]
@@ -251,6 +324,40 @@ fn upgrading_from_before_v16_adds_the_snapshot_columns_before_reading_ops() {
     assert_eq!(b.digest(), digest);
     assert_eq!(count(&b, "SELECT COUNT(*) FROM srs_meta WHERE key = 'compact_pending'"), 0, "compacted on open");
     assert_eq!(count(&b, "PRAGMA freelist_count"), 0);
+}
+
+/// 升级前空间不够：开事务之前就报 [crate::store::schema::UPGRADE_NO_SPACE]（带需要 / 可用字节），库一个字节不动
+/// （版本号、投影、摘要都还是升级前的）；空间够了再打开照常升级。
+#[test]
+fn upgrade_refuses_to_start_without_disk_space() {
+    let a = busy_device("fp-nospace");
+    let before = super::tests::projection(&a);
+    let digest = a.digest();
+    let path = a._dir.0.join("srs.db");
+    rusqlite::Connection::open(&path).unwrap().execute_batch("UPDATE srs_meta SET value = '15' WHERE key = 'schema';").unwrap();
+    let bytes = std::fs::read(&path).unwrap();
+    let err = match SrsCore::open_with_free_space(&path, |_| Some(1024)) {
+        Err(e) => e,
+        Ok(_) => panic!("upgrade started without disk space"),
+    };
+    assert!(err.starts_with(crate::store::schema::UPGRADE_NO_SPACE), "{err}");
+    let detail: Value = serde_json::from_str(&err[crate::store::schema::UPGRADE_NO_SPACE.len()..]).unwrap();
+    assert_eq!(detail["free"], json!(1024));
+    assert!(detail["need"].as_u64().unwrap() > 1024);
+    assert_eq!(detail["from"], json!(15));
+    assert_eq!(std::fs::read(&path).unwrap(), bytes, "main file untouched");
+    assert_eq!(count(&a, "SELECT value FROM srs_meta WHERE key = 'schema'"), 15);
+    // 不用升级的库（已是当前版本）不受空间守卫影响。
+    rusqlite::Connection::open(&path)
+        .unwrap()
+        .execute_batch(&format!("UPDATE srs_meta SET value = '{}' WHERE key = 'schema';", crate::store::schema::SCHEMA_VERSION))
+        .unwrap();
+    drop(SrsCore::open_with_free_space(&path, |_| Some(1024)).unwrap());
+    rusqlite::Connection::open(&path).unwrap().execute_batch("UPDATE srs_meta SET value = '15' WHERE key = 'schema';").unwrap();
+    let b = Device { core: SrsCore::open_with_free_space(&path, |_| Some(u64::MAX)).unwrap(), _dir: super::tests::tempdir::new("fp-nospace-unused") };
+    assert_eq!(count(&b, "SELECT value FROM srs_meta WHERE key = 'schema'"), crate::store::schema::SCHEMA_VERSION);
+    assert_eq!(super::tests::projection(&b), before);
+    assert_eq!(b.digest(), digest);
 }
 
 /// 空间不够就不整理：记下原因、标记留着、库照常可用；空间够了下次打开再整理。

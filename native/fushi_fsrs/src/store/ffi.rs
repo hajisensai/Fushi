@@ -24,6 +24,9 @@ use super::{ReadSession, SrsCore, CLOSED};
 pub const STORE_OK: i32 = 0;
 pub const STORE_ERROR: i32 = -1;
 pub const STORE_BAD_ARGUMENT: i32 = -2;
+/// 打开时库要升级而所在卷空间不够（[super::schema::UPGRADE_NO_SPACE]，错误文本后面是 `{"need","free","from","to"}`）：
+/// 库没动，腾出空间后再打开。
+pub const STORE_NO_SPACE: i32 = -3;
 pub const STORE_PANIC: i32 = -100;
 
 fn set_error(error_out: *mut *mut c_char, message: &str) {
@@ -172,7 +175,11 @@ pub extern "C" fn ffsrs_store_open(
         }
         Ok(Err(e)) => {
             set_error(error_out, &e);
-            STORE_ERROR
+            if e.starts_with(super::schema::UPGRADE_NO_SPACE) {
+                STORE_NO_SPACE
+            } else {
+                STORE_ERROR
+            }
         }
         Err(_) => {
             set_error(error_out, "panic in srs store open");

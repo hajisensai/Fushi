@@ -349,6 +349,44 @@ pub fn backfill_anki_ids(c: &rusqlite::Connection) -> Result<(), String> {
     Ok(())
 }
 
+/// 升级前空间不够时的错误前缀（store/ffi.rs 据此回报 `STORE_NO_SPACE`，Dart 侧解析后面的 JSON 报可读错误）。
+pub const UPGRADE_NO_SPACE: &str = "srs.db upgrade needs more free disk space: ";
+
+/// 升级余量。
+const UPGRADE_MARGIN: u64 = 64 << 20;
+
+/// 升级前的空间守卫（与 store/compact.rs 同一套估算）：库要升级（`0 < 现版本 < [SCHEMA_VERSION]`）时，升级在一个事务
+/// 里整表重建（v17 的 ID 编码、v18 的瘦 JSON），新页先写进 WAL、提交前旧页不能复用，峰值约多占「两倍有效数据」。
+/// [free] 是库所在卷的空闲字节（拿不到为 None：照样升级）。空间不够就在开事务之前报错（库一个字节不动），而不是
+/// 写到一半磁盘满、整个事务回滚、每次打开都白写一遍。
+pub fn check_upgrade_space(c: &rusqlite::Connection, free: Option<u64>) -> Result<(), String> {
+    let Some(free) = free else { return Ok(()) };
+    let has_meta = c.query_row("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'srs_meta'", [], |_| Ok(())).is_ok();
+    if !has_meta {
+        return Ok(());
+    }
+    let current: i64 = c
+        .query_row("SELECT value FROM srs_meta WHERE key = 'schema'", [], |r| r.get::<_, String>(0))
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(0);
+    if current < 1 || current >= SCHEMA_VERSION {
+        return Ok(());
+    }
+    let pragma = |name: &str| -> Result<u64, String> {
+        c.query_row(&format!("PRAGMA {name}"), [], |r| r.get::<_, i64>(0)).map(|v| v.max(0) as u64).map_err(|e| e.to_string())
+    };
+    let live = pragma("page_size")? * pragma("page_count")?.saturating_sub(pragma("freelist_count")?);
+    let need = live.saturating_mul(2).saturating_add(UPGRADE_MARGIN);
+    if free < need {
+        return Err(format!(
+            "{UPGRADE_NO_SPACE}{}",
+            serde_json::json!({"need": need, "free": free, "from": current, "to": SCHEMA_VERSION})
+        ));
+    }
+    Ok(())
+}
+
 /// 建表 / 升级到 [SCHEMA_VERSION]。在一个事务里做；版本只升不降（库比本程序新 = 打开失败，
 /// 免得旧版本写坏新版本的库）。
 pub fn migrate(conn: &mut rusqlite::Connection) -> Result<(), String> {

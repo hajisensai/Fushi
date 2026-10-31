@@ -117,34 +117,75 @@ pub(crate) fn ensure_columns(c: &Connection) -> Result<(), String> {
     Ok(())
 }
 
+/// 一页读多少行（[migrate]）：内存里同时只有一页的载荷。
+const MIGRATE_PAGE: usize = 512;
+
 /// 存量行改成引用形态（升级一次；可重放：已是引用的行不再动）。
 pub(crate) fn migrate(c: &Connection) -> Result<(), String> {
+    migrate_paged(c, MIGRATE_PAGE).map(|_| ())
+}
+
+/// [migrate] 的实现：在调用方的事务里按主键 `(profile_uid, device, seq)` 键集分页读、逐页改，同一时刻内存里只有
+/// 一页（≤ [page] 行）的载荷——以前把全部日志载荷一次读进内存，几十万条作答的大库升级时内存随库线性涨。键集游标
+/// 用存储的原值（ID 列此时可能已是 v17 的 BLOB）比较，不经编码函数；改不了的行（找不到原文）`sc` 仍为 NULL，靠游标
+/// 前进不会重读。返回 (页数, 单页最多行数)。
+pub(crate) fn migrate_paged(c: &Connection, page: usize) -> Result<(usize, usize), String> {
+    use rusqlite::types::Value as Sql;
     ensure_columns(c)?;
-    // 操作日志：按主键分批读、逐行改（只有带快照原文的日志操作）。
-    let ops: Vec<(String, Vec<u8>, i64, Vec<u8>)> = {
-        let mut stmt = c
-            .prepare("SELECT srs_idt(profile_uid) AS profile_uid, device, seq, payload FROM sync2_ops WHERE kind = ?1 AND sc IS NULL AND purged = 0")
-            .map_err(sql)?;
-        let mut q = stmt.query([i64::from(op::KIND_LOG)]).map_err(sql)?;
-        let mut out = Vec::new();
-        while let Some(r) = q.next().map_err(sql)? {
-            let p: Vec<u8> = r.get(3).map_err(sql)?;
-            if contains(&p, b"\"sc\":{") {
-                out.push((r.get(0).map_err(sql)?, r.get(1).map_err(sql)?, r.get(2).map_err(sql)?, p));
-            }
-        }
-        out
-    };
-    let mut up = c
-        .prepare("UPDATE sync2_ops SET payload = ?4, sc = ?5, sc_at = ?6 WHERE profile_uid = srs_id(?1) AND device = ?2 AND seq = ?3")
+    let has_ops = c.query_row("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'sync2_ops'", [], |_| Ok(())).is_ok();
+    if !has_ops {
+        return Ok((0, 0));
+    }
+    let page = page.max(1);
+    let kind = i64::from(op::KIND_LOG);
+    let mut first = c
+        .prepare(
+            "SELECT profile_uid, device, seq, payload FROM sync2_ops \
+             WHERE kind = ?1 AND sc IS NULL AND purged = 0 \
+             ORDER BY profile_uid, device, seq LIMIT ?2",
+        )
         .map_err(sql)?;
-    for (profile, device, seq, payload) in ops {
-        let (stored, sc, at) = pack_payload(c, op::KIND_LOG, &payload)?;
-        if sc.is_some() {
-            up.execute(params![profile, device, seq, stored, sc, at]).map_err(sql)?;
+    let mut next = c
+        .prepare(
+            "SELECT profile_uid, device, seq, payload FROM sync2_ops \
+             WHERE kind = ?1 AND sc IS NULL AND purged = 0 AND (profile_uid, device, seq) > (?3, ?4, ?5) \
+             ORDER BY profile_uid, device, seq LIMIT ?2",
+        )
+        .map_err(sql)?;
+    let mut up = c
+        .prepare("UPDATE sync2_ops SET payload = ?4, sc = ?5, sc_at = ?6 WHERE profile_uid = ?1 AND device = ?2 AND seq = ?3")
+        .map_err(sql)?;
+    let row = |r: &rusqlite::Row<'_>| -> rusqlite::Result<(Sql, Sql, i64, Vec<u8>)> { Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)) };
+    let mut cursor: Option<(Sql, Sql, i64)> = None;
+    let (mut pages, mut widest) = (0usize, 0usize);
+    loop {
+        let rows: Vec<(Sql, Sql, i64, Vec<u8>)> = match &cursor {
+            None => first.query_map(params![kind, page as i64], row),
+            Some((p, d, s)) => next.query_map(params![kind, page as i64, p, d, s], row),
+        }
+        .map_err(sql)?
+        .collect::<Result<_, _>>()
+        .map_err(sql)?;
+        if rows.is_empty() {
+            break;
+        }
+        pages += 1;
+        widest = widest.max(rows.len());
+        let full = rows.len() == page;
+        for (profile, device, seq, payload) in rows {
+            if contains(&payload, b"\"sc\":{") {
+                let (stored, sc, at) = pack_payload(c, op::KIND_LOG, &payload)?;
+                if sc.is_some() {
+                    up.execute(params![profile, device, seq, stored, sc, at]).map_err(sql)?;
+                }
+            }
+            cursor = Some((profile, device, seq));
+        }
+        if !full {
+            break;
         }
     }
-    Ok(())
+    Ok((pages, widest))
 }
 
 #[cfg(test)]
