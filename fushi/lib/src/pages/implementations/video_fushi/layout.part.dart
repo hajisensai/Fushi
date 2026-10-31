@@ -215,17 +215,17 @@ extension _VideoLayout on _VideoFushiPageState {
       fullscreenRouteActive: _videoFullscreenActive,
       child: _wrapVideoControlsBackKey(
         // 控制条密度档（小窗 / 窄窗按档缩控件，见 video_controls_density.dart）依赖
-        // **播放区实际尺寸**，而尺寸只有到布局期才知道。用 [LayoutBuilder] 把整棵
-        // controls 子树都建在它的回调里：theme、字幕避让 reserve、底部细进度条读到
-        // 的都是**同一帧同一个值**，不会出现「theme 已经缩了、字幕还按旧几何让位」
-        // 的跨帧错位。约束恒有界（本 builder 由 media_kit 铺在 Video 上），非有限 /
-        // 0 的退化情形由 [resolveVideoControlsDensity] 兜回 full 档。
-        LayoutBuilder(
-          builder: (BuildContext context, BoxConstraints constraints) {
-            _activeControlsDensity = resolveVideoControlsDensity(
-              playerSize: constraints.biggest,
-              surface: _miniSurface.value,
-            );
+        // **播放区实际尺寸**，而尺寸只有到布局期才知道。把整棵 controls 子树都建在
+        // 布局期回调里：theme、字幕避让 reserve、底部细进度条读到的都是**同一帧同一
+        // 个值**，不会出现「theme 已经缩了、字幕还按旧几何让位」的跨帧错位。约束恒
+        // 有界（本 builder 由 media_kit 铺在 Video 上），非有限 / 0 的退化情形由
+        // [resolveVideoControlsDensity] 兜回 full 档。
+        // 只在**换档**时重建：字幕跳转侧栏开 / 关的宽度动画每帧都改播放区宽度，裸
+        // LayoutBuilder 会把整套 chrome 重建几十次（字幕列表开关卡顿）。
+        VideoControlsDensityBuilder(
+          surface: _miniSurface,
+          builder: (BuildContext context, VideoControlsDensitySpec spec) {
+            _activeControlsDensity = spec;
             return Stack(
               fit: StackFit.expand,
               children: <Widget>[

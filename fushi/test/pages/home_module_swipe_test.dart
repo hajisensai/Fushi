@@ -378,7 +378,7 @@ void main() {
       expect(host.current, HomeTab.browse);
     });
 
-    testWidgets('enabled=false（桌面布局 / Apple 玻璃底栏）不挂识别器', (
+    testWidgets('enabled=false（桌面布局）不挂识别器', (
       WidgetTester tester,
     ) async {
       final _SwipeHostState host = await pumpHost(tester, enabled: false);
