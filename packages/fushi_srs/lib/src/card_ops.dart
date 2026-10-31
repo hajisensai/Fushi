@@ -47,21 +47,16 @@ class SrsAnswerPreview {
     required this.params,
     required this.nowMs,
     required this.timeSource,
-    this.rwkvUnavailable = false,
   });
 
   final SrsAnswerPlan plan;
   final SrsMemory? memoryBefore;
 
-  /// 这次作答的排程方式，写进日志的 `alg`：RWKV 牌组且 RWKV 可用（卡是按此刻的回忆率进的队）
-  /// 时是 [SrsAlgorithm.rwkv]，否则是牌组算法的 [SrsAlgorithm.memoryAlgorithm]。间隔与记忆状态
-  /// 一律由记忆算法算（RWKV 牌组是 FSRS-7）：RWKV-Instant 不给间隔，存下的到期日只在 RWKV
-  /// 不可用时排队、导出给 Anki 时用；统计据日志的 `alg` 区分按 R 排的复习。
+  /// 这次作答的排程方式，写进日志的 `alg`：RWKV 牌组是 [SrsAlgorithm.rwkv]（RWKV 没准备好时它的复习卡
+  /// 根本不出，不存在「RWKV 牌组按 FSRS-7 排」），否则是牌组算法的 [SrsAlgorithm.memoryAlgorithm]。间隔与
+  /// 记忆状态一律由记忆算法算（RWKV 牌组是 FSRS-7）：RWKV-Instant 不给间隔，存下的到期日只在导出给 Anki
+  /// 时用；统计据日志的 `alg` 区分按 R 排的复习。
   final SrsAlgorithm algorithm;
-
-  /// 牌组设的是 RWKV，但现在没法用它排队（运行时未就绪 / 权重未下载 / 出错），这个牌组按存下的
-  /// 到期日排队。界面据此提示。
-  final bool rwkvUnavailable;
   final List<double> params;
   final int nowMs;
   final SrsTimeSource timeSource;
@@ -74,15 +69,11 @@ class SrsCardOps {
   final FsrsEngine engine;
 
   /// 算四个评分的结果（显示间隔预览，也是 [answer] 的第一步）。
-  ///
-  /// [rwkvUnavailable]：RWKV 牌组现在没法按 R 排队（见 [SrsAnswerPreview.rwkvUnavailable]）；
-  /// 只决定日志的 `alg`，不影响间隔与记忆状态。
   SrsAnswerPreview preview({
     required String cardId,
     required SrsCardHistory history,
     required SrsSchedulingConfig config,
     required SrsLogContext ctx,
-    bool rwkvUnavailable = false,
   }) {
     final (int nowMs, SrsTimeSource source) = ctx.now();
     final SrsAlgorithm algorithm = config.algorithm.memoryAlgorithm;
@@ -116,13 +107,10 @@ class SrsCardOps {
     return SrsAnswerPreview(
       plan: srsPlanAnswer(answerCtx, next),
       memoryBefore: memory,
-      algorithm: config.algorithm.usesRwkv && !rwkvUnavailable
-          ? SrsAlgorithm.rwkv
-          : algorithm,
+      algorithm: config.algorithm.usesRwkv ? SrsAlgorithm.rwkv : algorithm,
       params: params,
       nowMs: nowMs,
       timeSource: source,
-      rwkvUnavailable: rwkvUnavailable,
     );
   }
 
@@ -134,7 +122,6 @@ class SrsCardOps {
     required SrsSchedulingConfig config,
     required SrsLogContext ctx,
     int durationMs = 0,
-    bool rwkvUnavailable = false,
   }) {
     if (rating < 1 || rating > 4) {
       throw ArgumentError.value(rating, 'rating', 'must be 1..4');
@@ -146,7 +133,6 @@ class SrsCardOps {
       history: history,
       config: config,
       ctx: ctx,
-      rwkvUnavailable: rwkvUnavailable,
     );
     final SrsScheduleResult before = history.state;
     final Hlc hlc = ctx.clock.tick(p.nowMs);

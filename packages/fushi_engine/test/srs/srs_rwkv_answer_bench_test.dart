@@ -182,7 +182,7 @@ void main() {
         await store.nextCard(deck);
         final SrsAnswerPreview p = await store.preview(logs[i].cardId);
         undoMs.add(sw.elapsedMilliseconds);
-        readyAfter.add(!p.rwkvUnavailable && service.ready);
+        readyAfter.add(p.algorithm == SrsAlgorithm.rwkv && service.ready);
       }
       print('undo+counts+nextCard ms: $undoMs; rwkv ready after: $readyAfter');
       await service.close();
