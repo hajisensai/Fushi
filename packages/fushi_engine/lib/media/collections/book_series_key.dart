@@ -181,8 +181,8 @@ BookSeriesKey declaredBookSeriesKey({
 /// [titles] 是否全都是同一系列的分卷（每个都解析得出 [BookSeriesKey] 且 `key` 相同）：
 /// 是则返回该系列键，否则（含空输入、任一解析不出）null。
 ///
-/// 系列合集的「同系列」判据只有这一份：`BookSeriesOrder` 判合集能否按卷号定序、
-/// 首页续读卡判书名尾数能否当卷号，都经它。
+/// 系列合集的「同系列」判据只有这一份：`BookSeriesOrder` 判合集能否按卷号定序时
+/// 经它（「第 N 卷」标签的卷号判据见 [collectionMemberVolumeNumber]）。
 String? sharedBookSeriesKey(Iterable<String> titles) {
   String? shared;
   for (final String title in titles) {
@@ -191,4 +191,43 @@ String? sharedBookSeriesKey(Iterable<String> titles) {
     shared = key;
   }
   return shared;
+}
+
+/// 合集成员「第 N 卷」标签里的 N（首页续读卡徽标、书架合集卡「读到第 N 卷」共用
+/// 这一份，不各写一套）。
+///
+/// [title] 是该成员显示的书名，[memberTitles] 是合集全部成员的显示书名（含本卷，
+/// 合集内顺序），[memberOrdinal] 是该成员在合集内第几个（1 起，与合集详情页同序）。
+///
+/// N 是**卷号**，不是存储位置：本卷书名解析出的系列（[parseBookSeriesKey]）在合集
+/// 里至少有两卷（本卷 + 一个同系列兄弟）时，取书名卷号；书名没卷号、而同系列兄弟
+/// 都带卷号且没有第 1 卷，它就是第 1 卷（`安達としまむら` + `安達としまむら2…`）。
+/// 其余——主题合集里只此一本的「Fahrenheit 451」、番外 / 外传（`安達としまむらSS`
+/// 系列键与正篇不同、合集里只此一本）、无卷号且认不出是第几卷——退回合集内序号。
+///
+/// 用户实报（BUG continue-card-volume-number）：「安達としまむら」合集混了番外，旧
+/// 判据要求**全体**成员同系列，一混番外就整组退回位置；合集顺序又被打乱，正在读的
+/// 第 3 卷排在第 13 位，续读卡显示「第 13 卷」。只看本卷所在系列，不看全体是否同系列。
+num collectionMemberVolumeNumber({
+  required String title,
+  required List<String> memberTitles,
+  required int memberOrdinal,
+}) {
+  final BookSeriesKey? own = parseBookSeriesKey(title);
+  if (own == null) return memberOrdinal;
+  // 同系列成员（含本卷）的卷号；本卷在 [memberTitles] 里出现一次即计一次。
+  final List<num?> siblingVolumes = <num?>[
+    for (final String member in memberTitles)
+      if (parseBookSeriesKey(member) case final BookSeriesKey k
+          when k.key == own.key)
+        k.volume,
+  ];
+  if (siblingVolumes.length < 2) return memberOrdinal;
+  final num? volume = own.volume;
+  if (volume != null) return volume;
+  // 无卷号的卷：同系列里恰好只有它没卷号、且没有别的卷自称第 1 卷，才是第 1 卷。
+  final bool onlyUnnumbered =
+      siblingVolumes.where((num? v) => v == null).length == 1;
+  final bool hasVolumeOne = siblingVolumes.any((num? v) => v == 1);
+  return onlyUnnumbered && !hasVolumeOne ? 1 : memberOrdinal;
 }
