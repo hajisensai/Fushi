@@ -42,6 +42,8 @@ void main() {
   ) async {
     final String path = '${dir.path}/test.db';
     final FushiDatabase db = FushiDatabase.atFile(path, isMainProcess: false);
+    // drift 惰性开库：先跑一句把库真正建出来（[prepare] 可能什么都不写）。
+    await db.customSelect('SELECT 1').get();
     await prepare(db);
     await db.close();
     final sqlite.Database raw = sqlite.sqlite3.open(path);
