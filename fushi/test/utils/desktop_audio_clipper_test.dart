@@ -231,6 +231,58 @@ void main() {
     });
   });
 
+  // TTS 倍速（查词 / 制卡 TTS 兜底）：合成出的整段短音频变速不变调。
+  group('buildFfmpegRetempoArgs', () {
+    test('1.0 → null（调用方保留原文件，不跑 ffmpeg）', () {
+      expect(
+        buildFfmpegRetempoArgs(
+          inputPath: 'in.wav',
+          outputPath: 'out.aac',
+          tempo: 1.0,
+        ),
+        isNull,
+      );
+    });
+
+    test('整段 atempo + 单声道 64k AAC', () {
+      expect(
+        buildFfmpegRetempoArgs(
+          inputPath: 'in.wav',
+          outputPath: 'out.aac',
+          tempo: 1.5,
+        ),
+        <String>[
+          '-y',
+          '-i',
+          'in.wav',
+          '-vn',
+          '-map_chapters',
+          '-1',
+          '-af',
+          'atempo=1.500',
+          '-c:a',
+          'aac',
+          '-ac',
+          '1',
+          '-b:a',
+          '64k',
+          'out.aac',
+        ],
+      );
+    });
+
+    test('1.0 时 retempoAudioFileViaFfmpeg 原样返回输入、不碰 ffmpeg', () async {
+      expect(
+        await retempoAudioFileViaFfmpeg(
+          inputPath: 'does-not-exist.wav',
+          outputPath: 'out.aac',
+          tempo: 1.0,
+        ),
+        'does-not-exist.wav',
+      );
+    });
+  });
+
   group('buildFfmpegClipArgs tempo', () {
     test('tempo 非 1 时在编码器前插 -af atempo，其余参数不变', () {
       final List<String> args = buildFfmpegClipArgs(

@@ -277,6 +277,7 @@ SettingsDestination _buildTtsDestination() {
         title: t.models_tts_card_fallback_section,
         items: <SettingsItem>[
           _miningTtsFallbackVoiceItem(),
+          _ttsFallbackSpeedItem(),
           SettingsStatusItem(
             id: 'models.tts_usage',
             title: t.models_tts_usage_title,
@@ -287,6 +288,31 @@ SettingsDestination _buildTtsDestination() {
     ],
   );
 }
+
+/// TTS 兜底发音的倍速：查词 ♪ / 自动发音一律生效；制卡单词音频受「句子音频跟随
+/// 播放倍速」开关管（与有声书倍速制卡同一开关）。0.25×–3.0×，0.05× 一档。
+SettingsSliderItem _ttsFallbackSpeedItem() => SettingsSliderItem(
+  id: 'models.tts_fallback_speed',
+  title: t.models_tts_fallback_speed,
+  subtitle: t.models_tts_fallback_speed_hint,
+  icon: FushiIcons.speed,
+  min: kTtsFallbackSpeedMin,
+  max: kTtsFallbackSpeedMax,
+  divisions: 55,
+  step: 0.05,
+  defaultValue: 1.0,
+  titleReadout: true,
+  commitOnRelease: true,
+  label: (double v) => '${v.toStringAsFixed(2)}x',
+  value: (SettingsContext c) => ttsFallbackSpeedOf(c.appModel.prefsRepo),
+  onChanged: (SettingsContext c, double v) async {
+    await setTtsFallbackSpeed(
+      c.appModel.prefsRepo,
+      (v * 20).roundToDouble() / 20,
+    );
+    c.refresh();
+  },
+);
 
 /// 「制卡发音兜底」的声音选择（单词音频；句子音频不做 TTS 兜底，BUG-172）。
 /// 偏好设备本地（可能指向本机声音预设），见 [kMiningTtsFallbackVoicePref]。
