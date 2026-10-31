@@ -32,7 +32,8 @@ typedef BookSeriesGroupSummary = ({
 ///   同名 playlist → 同系列 ≥2 卷时新建 playlist；
 /// - 用户删过的同名合集不复活（合集级墓碑）；用户移出过的卷不再加回（成员墓碑，
 ///   EPUB 按合集 wire 键、SRT 按 uid 比对）；
-/// - 合集内按卷号 → natural 书名排；用户手动排过（`orderUpdatedAt > 0`）不重排。
+/// - 合集内主系列各卷按卷号 → natural 书名排（番外原位，见 [BookSeriesOrder.orderOf]）；
+///   用户手动排过（`orderUpdatedAt > 0`）不重排。
 ///
 /// 幂等：重复调用结果不变，可在每次导入后、打开书架时放心调用。
 class BookSeriesGrouper {
@@ -299,7 +300,9 @@ class BookSeriesGrouper {
       }
     }
     if (!added) return null;
-    if (collection.orderUpdatedAt == 0) await _sortMembers(collection.id);
+    if (collection.orderUpdatedAt == 0) {
+      await _sortMembers(collection.id, groupKey);
+    }
     return collection.id;
   }
 
@@ -343,7 +346,9 @@ class BookSeriesGrouper {
   /// 顺序尾插，不经 [_sortMembers]；这里在之后任一次归组时补排。
   ///
   /// 只动用户没手动排过（`orderUpdatedAt == 0`）、且 [BookSeriesOrder.orderOf]
-  /// 能完整定序的合集；顺序已对时不写库。返回是否重排了。合集同步合并时走同一判据
+  /// 能定序的合集（纯系列，或主系列 + 番外——BUG-3915 用户实报「安達としまむら」合集混了
+  /// 一本 SS，旧判据要求整张合集同一系列键，整张不排，阅读器卷 chip 行照存储的
+  /// 乱序显示）；顺序已对时不写库。返回是否重排了。合集同步合并时走同一判据
   /// （`loadBookSeriesRuleOrder`），本地与共享清单不会各持一序来回翻。
   /// [collectionItems] 是本合集的成员行（[groupAll] 预先分好桶）。
   Future<bool> _healSeriesOrder(
@@ -371,9 +376,11 @@ class BookSeriesGrouper {
     return true;
   }
 
-  /// 合集内能解析出卷号的成员按卷号（无卷号当第 0 卷）→ natural 书名排；同卷的
-  /// EPUB 与 SRT 相邻。其余成员（别的种类 / 解析不出）原位不动。
-  Future<void> _sortMembers(int collectionId) async {
+  /// 归组后给合集 [collectionId] 定卷序：本系列（[groupKey]）的卷在它们自己占的
+  /// 位置里按卷号（无卷号当第 0 卷）→ natural 书名排，同卷的 EPUB 与 SRT 相邻；
+  /// 其余成员（番外 / 别的系列 / 别的种类 / 解析不出的）原位不动——与卷序自愈
+  /// [BookSeriesOrder.orderOf] 同一条槽位规则（[_orderSeriesInPlace]）。
+  Future<void> _sortMembers(int collectionId, String groupKey) async {
     final Map<String, _Volume> byMember = <String, _Volume>{
       for (final _Volume v in await _loadVolumes())
         for (final _Member m in v.members) m.id: v,
@@ -382,14 +389,16 @@ class BookSeriesGrouper {
       for (final MediaCollectionItemRow i in await _database.getCollectionItems(
         collectionId,
       ))
-        if (byMember.containsKey('${i.mediaType}|${i.entryKey}'))
-          (mediaType: i.mediaType, entryKey: i.entryKey),
+        (mediaType: i.mediaType, entryKey: i.entryKey),
     ];
-    members.sort(
-      (CollectionMemberKey a, CollectionMemberKey b) =>
-          _compareMembers(a, b, byMember),
+    await _database.reorderCollectionItemsAutomatically(
+      collectionId,
+      _orderSeriesInPlace(
+        members,
+        byMember,
+        (_Volume v) => v.groupKey == groupKey,
+      ),
     );
-    await _database.reorderCollectionItemsAutomatically(collectionId, members);
   }
 }
 
@@ -411,14 +420,23 @@ class BookSeriesOrder {
 
   final Map<String, _Volume> _byMember;
 
-  /// [members]（当前顺序）是「规则能完整定序」的系列合集时，返回按卷号排好的
-  /// 顺序（可能与输入相同）；否则 null（不定序，调用方保持原序）。
+  /// [members]（当前顺序）是「规则能定序」的系列合集时，返回按卷号排好的顺序
+  /// （可能与输入相同）；否则 null（不定序，调用方保持原序）。
   ///
-  /// 能完整定序 = 每个成员都是本机书架上同一系列（同书架）的分卷、卷号互不重复且
-  /// 至多一卷无卷号（当第 1 卷）、成员键无重复。混了外传 / 汉字卷号 / 别的系列 /
-  /// 本机没有的书（透传成员）的合集留给 AI 排序或原序，这里不碰，免得互相覆盖。
-  /// 同卷多个成员（EPUB + SRT）按种类 → 成员键排，是全序：结果只取决于成员集合，
-  /// 不取决于输入顺序，也不受 `List.sort` 不稳定影响。
+  /// 能定序 = 每个成员都是本机书架上同一书架的分卷、成员键无重复，且能认出唯一的
+  /// **主系列**：卷数最多的系列键（并列 = 认不出），至少 2 卷、卷号互不重复、至多
+  /// 一卷无卷号（当第 1 卷）；其余成员都是它的**番外**——系列键以主系列键开头
+  /// （「安達としまむらSS」「志乃と恋 外伝」「X 三巻」）。混了别的系列 / 本机没有的书
+  /// （透传成员）的合集不碰：本机认不全，交给持有全套书的一端或 AI 排序。
+  ///
+  /// 排法（[_orderSeriesInPlace]）：主系列各卷在它们**自己占的位置**里按卷号排，
+  /// 番外原位不动。番外该插在哪一卷后面规则判不出（外传 / SS 常按出版时间夹在卷
+  /// 之间），那是 AI 排序的活：AI 只在锚点（有卷号的卷）之间放置判不出的成员、
+  /// 落盘不置手动标记；这里若把番外挪到固定位置（如全部殿后），每次归组都会把 AI
+  /// 放好的位置冲掉、再触发一轮 AI，来回翻。槽位排法对 AI 的结果是不动点，对自己
+  /// 也幂等。纯系列合集（无番外）所有位置都是主系列的，结果只取决于成员集合，
+  /// 不取决于输入顺序；同卷多个成员（EPUB + SRT）按种类 → 成员键排，是全序，
+  /// 不受 `List.sort` 不稳定影响。
   List<CollectionMemberKey>? orderOf(List<CollectionMemberKey> members) {
     final Set<String> seen = <String>{};
     final Set<_Volume> volumes = <_Volume>{};
@@ -433,19 +451,66 @@ class BookSeriesOrder {
     if (volumes.map((_Volume v) => v.shelf).toSet().length != 1) return null;
     // 同系列看各卷已定的系列键（书名启发式或包里声明的系列），不再从书名重解析：
     // 声明了系列的卷书名里未必有系列线索。
-    if (volumes.map((_Volume v) => v.key.key).toSet().length != 1) {
-      return null;
+    final Map<String, List<_Volume>> bySeries = <String, List<_Volume>>{};
+    for (final _Volume v in volumes) {
+      bySeries.putIfAbsent(v.key.key, () => <_Volume>[]).add(v);
+    }
+    String? main;
+    int best = 0;
+    bool tied = false;
+    for (final MapEntry<String, List<_Volume>> e in bySeries.entries) {
+      if (e.value.length > best) {
+        main = e.key;
+        best = e.value.length;
+        tied = false;
+      } else if (e.value.length == best) {
+        tied = true;
+      }
+    }
+    if (main == null || tied || best < 2) return null;
+    final String mainKey = main;
+    // 其余系列键都得是主系列的番外（键以主系列键开头）；别的系列一律不碰。
+    for (final String key in bySeries.keys) {
+      if (key != mainKey && !key.startsWith(mainKey)) return null;
     }
     final List<num?> numbers = <num?>[
-      for (final _Volume v in volumes) v.key.volume,
+      for (final _Volume v in bySeries[mainKey]!) v.key.volume,
     ];
     if (numbers.where((num? n) => n == null).length > 1) return null;
     if (numbers.toSet().length != numbers.length) return null;
-    return List<CollectionMemberKey>.of(members)..sort(
-      (CollectionMemberKey a, CollectionMemberKey b) =>
-          _compareMembers(a, b, _byMember),
+    return _orderSeriesInPlace(
+      members,
+      _byMember,
+      (_Volume v) => v.key.key == mainKey,
     );
   }
+}
+
+/// 槽位规则：[members] 里 [isMain] 的分卷成员占的那些位置，按 [_compareMembers]
+/// 重新填入这些成员；其余成员（番外 / 本机认不出的）原位不动。
+List<CollectionMemberKey> _orderSeriesInPlace(
+  List<CollectionMemberKey> members,
+  Map<String, _Volume> byMember,
+  bool Function(_Volume v) isMain,
+) {
+  bool inMain(CollectionMemberKey m) {
+    final _Volume? v = byMember['${m.mediaType}|${m.entryKey}'];
+    return v != null && isMain(v);
+  }
+
+  final List<CollectionMemberKey> sorted =
+      <CollectionMemberKey>[
+        for (final CollectionMemberKey m in members)
+          if (inMain(m)) m,
+      ]..sort(
+        (CollectionMemberKey a, CollectionMemberKey b) =>
+            _compareMembers(a, b, byMember),
+      );
+  int next = 0;
+  return <CollectionMemberKey>[
+    for (final CollectionMemberKey m in members)
+      if (inMain(m)) sorted[next++] else m,
+  ];
 }
 
 bool _sameMemberOrder(
