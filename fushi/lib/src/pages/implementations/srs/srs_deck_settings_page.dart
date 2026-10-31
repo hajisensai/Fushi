@@ -109,9 +109,8 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
   bool _replayQuestionAudio = true;
   SrsNewCardOrder _newCardOrder = SrsNewCardOrder.frequency;
 
-  /// 打开时实际用的步长（没写过步长的 RWKV 牌组为空，见 [SrsDeckView.learnStepsFor]）。
-  List<double> _loadedLearn = const <double>[];
-  List<double> _loadedRelearn = const <double>[];
+  /// 父牌组那条继承链上的参数归属牌组的算法（切到「随上级」后本牌组按它排程）；顶层为 null。
+  SrsAlgorithm? _parentOwnerAlgorithm;
 
   String? _learnError;
   String? _relearnError;
@@ -169,11 +168,10 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
         _name.text = deck.name;
         _newPerDay.text = '${deck.newPerDay}';
         _reviewsPerDay.text = '${deck.reviewsPerDay}';
-        final SrsSchedulingConfig config = tree.schedulingConfig(deck.id);
-        _loadedLearn = config.learnStepsMinutes;
-        _loadedRelearn = config.relearnStepsMinutes;
-        _learnSteps.text = _formatSteps(_loadedLearn);
-        _relearnSteps.text = _formatSteps(_loadedRelearn);
+        final String? parent = tree.parentOf(deck.id);
+        _parentOwnerAlgorithm = parent == null
+            ? null
+            : tree.paramsOwner(parent).localAlgorithm;
         _maxInterval.text = '${deck.maxIntervalDays}';
         _retention = deck.desiredRetention.clamp(0.7, 0.97);
         _algorithm = deck.localAlgorithm;
@@ -190,6 +188,10 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
         _newLoadAuto = deck.newCardPlan.autoLoad;
         _newLoadBudget.text = '${deck.newCardPlan.budgetPercent}';
         _newLoadBoost.text = '${deck.newCardPlan.boostPercent}';
+        // 步长按此刻生效的算法显示（没写过步长的 RWKV 牌组为空，见 [SrsDeckView.learnStepsFor]）；
+        // 要在 _algorithm / _ownParams / _hasParent 都就位之后算。
+        _learnSteps.text = _formatSteps(_baselineLearn);
+        _relearnSteps.text = _formatSteps(_baselineRelearn);
         _loading = false;
       });
     } catch (e, stack) {
@@ -200,6 +202,35 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
           _error = e;
         });
       }
+    }
+  }
+
+  /// 保存后本牌组按哪个算法排程：自己管参数（或顶层）= 页面上选的算法；随上级 = 上级的。
+  /// 没写过步长时实际用的步长取决于它（RWKV 不用步长，FSRS 用默认步长）。
+  SrsAlgorithm get _stepsAlgorithm => (_ownParams || !_hasParent)
+      ? _algorithm
+      : (_parentOwnerAlgorithm ?? _algorithm);
+
+  /// 不改步长、按 [_stepsAlgorithm] 保存后实际生效的学习 / 重学步长。
+  List<double> get _baselineLearn => _deck!.learnStepsFor(_stepsAlgorithm);
+  List<double> get _baselineRelearn => _deck!.relearnStepsFor(_stepsAlgorithm);
+
+  /// 改了决定排程算法的选项（算法、随上级 / 自己管）：输入框还是原先生效值的，换成新算法下的
+  /// 生效值，免得显示的步长与保存后实际用的对不上；用户已改过的输入原样保留（保存时与新生效值比）。
+  void _changeStepsAlgorithm(VoidCallback change) {
+    final String learnBefore = _formatSteps(_baselineLearn);
+    final String relearnBefore = _formatSteps(_baselineRelearn);
+    change();
+    bool untouched(TextEditingController c, String before) {
+      final List<double>? parsed = parseSrsSteps(c.text);
+      return parsed != null && _formatSteps(parsed) == before;
+    }
+
+    if (untouched(_learnSteps, learnBefore)) {
+      _learnSteps.text = _formatSteps(_baselineLearn);
+    }
+    if (untouched(_relearnSteps, relearnBefore)) {
+      _relearnSteps.text = _formatSteps(_baselineRelearn);
     }
   }
 
@@ -261,8 +292,9 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
         ? t.srs_settings_steps_invalid
         : null;
     if (_learnError != null || _relearnError != null) return null;
-    if (_formatSteps(learn!) != _formatSteps(_loadedLearn) ||
-        _formatSteps(relearn!) != _formatSteps(_loadedRelearn)) {
+    // 与「不写步长、按保存后的算法」实际生效的步长比（同一次编辑里切了算法也对得上）。
+    if (_formatSteps(learn!) != _formatSteps(_baselineLearn) ||
+        _formatSteps(relearn!) != _formatSteps(_baselineRelearn)) {
       out[SrsFieldKeys.deckSteps] = <String, Object?>{
         'learn': learn,
         'relearn': relearn,
@@ -918,7 +950,7 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
           ],
           selected: <bool>{_ownParams},
           onSelectionChanged: (Set<bool> v) =>
-              setState(() => _ownParams = v.first),
+              setState(() => _changeStepsAlgorithm(() => _ownParams = v.first)),
         ),
       );
       add(_conflictNote(context, SrsFieldKeys.deckParamsMode));
@@ -972,7 +1004,7 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
           ],
           selected: <SrsAlgorithm>{_algorithm},
           onSelectionChanged: (Set<SrsAlgorithm> v) =>
-              setState(() => _algorithm = v.first),
+              setState(() => _changeStepsAlgorithm(() => _algorithm = v.first)),
         ),
       );
       if (deck.algorithmUnknownLocally) {
