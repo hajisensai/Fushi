@@ -111,7 +111,7 @@ class _FakeAppModel extends AppModel {
   }
 
   /// 与 `DictionaryRepository.setDictionaryLanguageOverride` 同一语义：换组则
-  /// 排到新组最后（序号取 [dictionaryOrderTailOf]），同组不动。
+  /// 排到新组最后，本分区按 [sectionAfterLanguageChange] 规范化重编号；同组不动。
   @override
   Future<void> setDictionaryLanguageOverride(
     Dictionary dictionary,
@@ -123,9 +123,13 @@ class _FakeAppModel extends AppModel {
     final String? before = dictionaryLanguageGroupOf(stored);
     stored.languageOverride = language;
     if (dictionaryLanguageGroupOf(stored) != before) {
-      stored.order = dictionaryOrderTailOf(
-        store.where((Dictionary d) => d.name != stored.name),
+      final List<Dictionary> section = sectionAfterLanguageChange(
+        _ofType(stored.type),
+        stored,
       );
+      for (int i = 0; i < section.length; i++) {
+        section[i].order = i;
+      }
     }
   }
 
@@ -732,11 +736,42 @@ void main() {
       await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
       await tester.pump();
       expect(model.orderWrites, 1);
-      // 日语组内换位，英语 / 未标注组的槽位不动。
+      // 日语组内换位；写回的是规范顺序（各组首尾相接），英语 / 未标注组的组内
+      // 顺序不动——显示顺序 == 查词顺序。
       expect(_termOrder(model), <String>[
         '大辞林',
+        'JMdict',
+        'OALDPE',
+        'local-pack',
+      ]);
+    });
+
+    testWidgets('a stale group (membership changed elsewhere) still reorders '
+        'from the latest partition, no exception', (WidgetTester tester) async {
+      final _FakeAppModel model = await _pumpPage(
+        tester,
+        size: const Size(1280, 800),
+        dictionaries: mixedLanguages(),
+      );
+      // 列表按 [JMdict, 大辞林] 渲染了日语组；随后别处（ctl 路由 / 另一窗口）把
+      // OALDPE 改成日语，页面还没重建，手里仍是旧组。
+      model.store
+              .firstWhere((Dictionary d) => d.name == 'OALDPE')
+              .languageOverride =
+          'ja';
+      Focus.of(tester.element(find.text('JMdict'))).requestFocus();
+      await tester.pump();
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+      expect(model.orderWrites, 1);
+      // 最新日语组是 [JMdict, OALDPE, 大辞林]：JMdict 下移一位。
+      expect(_termOrder(model), <String>[
         'OALDPE',
         'JMdict',
+        '大辞林',
         'local-pack',
       ]);
     });
