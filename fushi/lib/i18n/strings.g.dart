@@ -1,7 +1,7 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 179367 (10551 per locale)
+/// Strings: 180829 (10637 per locale)
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -300,8 +300,21 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get ai_agent_screen_text_unavailable =>
       'Text recognition isn\'t available on this device';
   String get ai_agent_send => 'Send';
+  String get ai_agent_session_current => 'Current';
+  String get ai_agent_session_delete => 'Delete';
+  String ai_agent_session_delete_message({required Object title}) =>
+      '“${title}” will be removed from this device. Changes the assistant made stay in the AI action log and can still be undone there.';
+  String get ai_agent_session_delete_title => 'Delete this conversation?';
+  String get ai_agent_session_more => 'Conversation options';
+  String get ai_agent_session_open_failed => 'Couldn\'t open this conversation';
+  String get ai_agent_session_rename => 'Rename';
+  String get ai_agent_session_rename_title => 'Rename conversation';
   String ai_agent_session_summary({required Object n}) =>
       '${n} changes in this conversation';
+  String get ai_agent_sessions_empty => 'No earlier conversations yet';
+  String get ai_agent_sessions_retention_hint =>
+      'Conversations stay on this device for 30 days';
+  String get ai_agent_sessions_title => 'Conversations';
   String get ai_agent_stop => 'Stop';
   String get ai_agent_stop_cancelled => 'Stopped.';
   String ai_agent_stop_llm_error({required Object reason}) =>
@@ -425,6 +438,23 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get ai_interconnect_host_title => 'Run on a paired computer';
   String get ai_interconnect_host_unpaired =>
       'No paired device yet. Pair a computer in Fushi Interconnect to let it handle AI video downloads with its own AI.';
+  String get ai_mcp_access => 'External AI access (MCP)';
+  String get ai_mcp_access_hint =>
+      'Lets MCP clients on this computer (Claude Desktop, Claude Code…) call Fushi\'s operations. Listens on this computer only and needs the pairing token below. Changes that can be undone run directly and show up in the AI action log; anything that can\'t be undone, and installing extensions, asks you here first. Off by default.';
+  String get ai_mcp_confirm_arguments => 'Arguments';
+  String ai_mcp_confirm_body({required Object client, required Object op}) =>
+      '${client} wants to run: ${op}';
+  String ai_mcp_confirm_expire({required Object minutes}) =>
+      'Declined automatically if you do not answer within ${minutes} minutes.';
+  String get ai_mcp_confirm_title => 'Request from an external AI';
+  String get ai_mcp_token => 'Pairing token';
+  String get ai_mcp_token_copy => 'Copy token';
+  String get ai_mcp_token_copy_config => 'Copy client config';
+  String get ai_mcp_token_hint =>
+      'Generate a token for your MCP client. Generating a new one revokes the old one.';
+  String get ai_mcp_token_issued_body =>
+      'Put this token in your MCP client\'s configuration as FUSHI_MCP_TOKEN (the setup guide shows how). It is shown only once.';
+  String get ai_mcp_token_issued_title => 'New pairing token';
   String get ai_media_acquire_ai_failed =>
       'AI is unavailable right now; results are from your original text, sorted by seeders.';
   String get ai_media_acquire_download => 'Download';
@@ -967,6 +997,7 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get anki_dedup_section => 'Anki media storage optimization';
   String get anki_dedup_unavailable =>
       'Requires Anki running on this machine (AnkiConnect).';
+  String get anki_delivery_section => 'Sending & pending cards';
   String get anki_desktop_auto_launch => 'Launch Anki when Fushi starts';
   String get anki_desktop_auto_launch_hint =>
       'If AnkiConnect on this computer isn\'t responding when Fushi starts, open Anki desktop automatically.';
@@ -1229,6 +1260,8 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'Failed: ${error}';
   String get anki_pending_mines_status_pending => 'Waiting to send';
   String get anki_pending_mines_status_sending => 'Sending';
+  String anki_pending_mines_stopped({required Object reason}) =>
+      '${reason} The remaining cards stay in the queue.';
   String get anki_pending_mines_title => 'Pending cards';
   String get anki_pending_mines_unreachable =>
       'Anki can\'t be reached right now. The remaining cards stay in the queue.';
@@ -1322,6 +1355,8 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'Don\'t enable this unless you know what you\'re doing. Syncing to AnkiWeb is not allowed for third-party clients and may fail or put your account at risk.';
   String get anki_sync_client_enable_warn_confirm => 'I understand, enable';
   String get anki_sync_client_enable_warn_title => 'Enable Anki sync?';
+  String anki_sync_client_error_not_sync_server({required Object detail}) =>
+      'The server did not answer with the Anki sync protocol (the anki-original-size response header is missing). Make sure the address points at an Anki sync server (the official anki-sync-server, or the one built into Anki desktop) rather than a web page; a reverse proxy must keep this header. Details: ${detail}';
   String anki_sync_client_has_unsynced({required Object count}) =>
       '${count} card(s) haven\'t synced yet. Sync them before switching account or signing out.';
   String get anki_sync_client_password_title => 'Password';
@@ -1447,6 +1482,8 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get audio_panel_auto => 'Auto';
   String get audio_panel_pick_new_subtitle => 'Pick new subtitle file';
   String get audio_source_added => 'Audio source added';
+  String audio_source_connection_refused({required Object host}) =>
+      'Audio source refused the connection: nothing is listening at "${host}" — make sure the service is running, or remove this source in settings';
   String audio_source_dns_error({required Object host}) =>
       'Audio source connection failed: cannot resolve "${host}" — check your network, or remove this source in settings';
   String get audio_source_edit_target_gone =>
@@ -2750,6 +2787,12 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get card_mined_without_sentence_audio =>
       'Card created without sentence audio (none found for this selection).';
   String get card_mining_pending => 'Adding card…';
+  String get card_notice_title_added => 'Card added';
+  String get card_notice_title_duplicate => 'Card already exists';
+  String get card_notice_title_failed => 'Card not created';
+  String get card_notice_title_overwritten => 'Card overwritten';
+  String get card_notice_title_queued => 'Card queued';
+  String get card_notice_title_warning => 'Card added, something missing';
   String card_overwritten({required Object deck}) =>
       'Card overwritten in 『${deck}』.';
   String get card_source_open => 'Go to source';
@@ -3196,12 +3239,11 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'These items were deleted on another device. Delete them here too?';
   String get delete_prompt_select_all => 'Select all';
   String get delete_prompt_title => 'Deleted on another device';
-  String get delete_scope_keep_local_desc => 'Other devices keep their copy';
   String get delete_scope_no_channel =>
       'No sync configured - this deletion only affects this device';
   String get delete_scope_sync_everywhere => 'Delete from all devices';
   String get delete_scope_sync_everywhere_desc =>
-      'Other devices confirm the deletion on next sync';
+      'If checked, other devices confirm the deletion on their next sync; if not, they keep their copy';
   String get delete_statistics => 'Also delete statistics';
   String get delete_statistics_book_desc =>
       'Reading time, characters read and lookup/mining counts for this book are removed from statistics on every device';
@@ -3346,6 +3388,11 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get dict_language_auto => 'Automatic';
   String get dict_language_description =>
       'Decides which font renders this dictionary\'s text. Automatic uses the language the dictionary declares.';
+  String dict_language_group_title({
+    required Object language,
+    required Object n,
+  }) => '${language} · ${n}';
+  String get dict_language_group_unset => 'Language not set';
   String get dict_language_title => 'Dictionary content language';
   String get dict_language_tooltip => 'Content language';
   String dict_manager_summary({required Object n, required Object m}) =>
@@ -4151,6 +4198,43 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   }) =>
       'You can attach 1 video (up to ${max}). It is compressed to ${resolution} before uploading.';
   String get feedback_compose_video_retry => 'Compress again';
+  String get feedback_crash_auto_send_setting =>
+      'Automatically send crash logs';
+  String get feedback_crash_auto_send_setting_hint =>
+      'After Fushi crashes or quits unexpectedly, send the logs to the developers on next launch without asking (the logs leave this device)';
+  String get feedback_crash_auto_sent_notice =>
+      'Logs from the last crash were sent to the developers automatically';
+  String get feedback_crash_kind_anr => 'not responding';
+  String get feedback_crash_kind_crash => 'crash';
+  String get feedback_crash_kind_memory =>
+      'closed by the system for low memory';
+  String get feedback_crash_kind_native => 'native crash';
+  String get feedback_crash_kind_startup => 'while starting';
+  String get feedback_crash_kind_unexpected => 'unexpected exit';
+  String get feedback_crash_notice_view => 'View';
+  String get feedback_crash_prompt_always => 'Always send';
+  String get feedback_crash_prompt_body =>
+      'Send the logs to the developers to help fix it? You can follow it in Feedback.';
+  String get feedback_crash_prompt_decline => 'No thanks';
+  String get feedback_crash_prompt_retry => 'Retry';
+  String get feedback_crash_prompt_send => 'Send to developers';
+  String get feedback_crash_prompt_sending => 'Sending…';
+  String get feedback_crash_prompt_skip => 'Skip';
+  String feedback_crash_prompt_title({required Object kind}) =>
+      'Fushi quit unexpectedly last time (${kind})';
+  String feedback_crash_prompt_title_many({
+    required Object n,
+    required Object kind,
+  }) => 'Fushi quit unexpectedly ${n} times (${kind})';
+  String get feedback_crash_report_header =>
+      'Generated by Fushi after it quit unexpectedly; logs and device info are attached.';
+  String feedback_crash_report_title({
+    required Object kind,
+    required Object version,
+  }) => 'Crash report: ${kind} (${version})';
+  String get feedback_crash_send_failed =>
+      'Could not send the crash logs. Fushi will ask again next time.';
+  String get feedback_crash_sent_notice => 'Crash logs sent to the developers';
   String get feedback_detail_add_shot => 'Add screenshot';
   String feedback_detail_attachments({required Object n}) =>
       '${n} attachment(s)';
@@ -6826,6 +6910,13 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get lyrics_control_zone_top => 'Top';
   String get lyrics_control_zone_top_hint =>
       'Top bar on phones, top-right corner on wide screens';
+  String get lyrics_controls_collapse => 'Collapse playback controls';
+  String get lyrics_controls_expand => 'Expand playback controls';
+  String get lyrics_controls_style => 'Playback controls layout';
+  String get lyrics_controls_style_classic => 'Classic';
+  String get lyrics_controls_style_hint =>
+      'New: a collapsible mini bar on phones and floating islands on wide screens. Classic: the previous layout.';
+  String get lyrics_controls_style_modern => 'New';
   String get lyrics_exit_to_library => 'Close and return to library';
   String get lyrics_font_size => 'Lyrics font size';
   String get lyrics_font_size_hint =>
@@ -6834,6 +6925,11 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get lyrics_highlight_color_hint =>
       'Use your own color for the line being read instead of the player theme color';
   String get lyrics_illustration_back_to_cover => 'Back to cover';
+  String get lyrics_illustration_cue => 'Illustration prompt';
+  String get lyrics_illustration_cue_dot => 'Dot';
+  String get lyrics_illustration_cue_hint =>
+      'Pop up: show the illustration card and pause for the image pause duration below. Dot: only mark the cover thumbnail.';
+  String get lyrics_illustration_cue_popup => 'Pop up';
   String get lyrics_illustration_next => 'Next illustration';
   String get lyrics_illustration_open => 'View illustrations';
   String get lyrics_illustration_previous => 'Previous illustration';
@@ -7515,6 +7611,8 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'Private items are never uploaded to the leaderboard or shared: they are left off your public shelf and share cards, and their progress is not pushed to Bangumi. Anything already uploaded is removed at the next leaderboard sync. Your daily character total still counts them, without saying what you read.';
   String media_privacy_inherited_note({required Object collections}) =>
       'Private because it is in the private collection “${collections}”. To make it public, turn off privacy on that collection.';
+  String media_privacy_inherited_source_note({required Object source}) =>
+      'Private because its source library “${source}” is private. To make it public, turn off privacy on that source library.';
   String media_privacy_load_failed({required Object reason}) =>
       'Could not read the privacy setting, so it cannot be changed right now: ${reason}';
   String get media_privacy_marked_toast => 'Marked private';
@@ -7581,6 +7679,20 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String get media_source_open_folder => 'Open folder';
   String get media_source_open_folder_failed =>
       'Couldn\'t open the folder. It may have been moved, deleted, or disconnected.';
+  String get media_source_privacy_action => 'Privacy';
+  String get media_source_privacy_badge =>
+      'Private: not uploaded to the leaderboard';
+  String get media_source_privacy_cleared_toast =>
+      'Source library is no longer private';
+  String get media_source_privacy_hint =>
+      'Everything this source library brings in is treated as private: it is never uploaded to the leaderboard, so it stays off your public shelf, profile and share cards, and its progress is not pushed to Bangumi. Items already uploaded are removed from the leaderboard as soon as you turn this on (or at the next sync if that fails). Your daily character total still counts them, without saying what you read. Removing this source keeps its items private.';
+  String get media_source_privacy_marked_toast =>
+      'Source library is now private';
+  String get media_source_privacy_switch => 'Keep this source library private';
+  String media_source_privacy_withdraw_failed({required Object reason}) =>
+      'Source library is now private, but removing its items from the leaderboard failed; the next sync will try again: ${reason}';
+  String get media_source_privacy_withdrawn_toast =>
+      'Source library is now private; its items were removed from the leaderboard';
   String get media_source_remove => 'Remove source';
   String get media_source_remove_download_keep =>
       'Don\'t move (pause those subscriptions)';
@@ -9681,7 +9793,12 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'Re-download audiobook from peer';
   String get remote_book_audiobook_redownloaded =>
       'Audiobook re-downloaded from peer';
-  String get remote_book_delete_everywhere => 'Delete permanently';
+  String remote_book_delete_cloud_confirm({
+    required Object name,
+    required Object backend,
+  }) =>
+      'Delete "${name}" from ${backend}? The book\'s files, cover, progress and audiobook in the cloud are permanently deleted. This device has no copy and this can\'t be undone. Other devices will ask whether to delete their copy on their next sync.';
+  String get remote_book_delete_everywhere => 'Also delete on host';
   String remote_book_delete_everywhere_confirm({
     required Object name,
     required Object host,
@@ -9732,7 +9849,19 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'TMDB episode ordering on host…';
   String get remote_delete_audiobook_partial =>
       'Book deleted, but its audiobook could not be removed on the paired device';
+  String get remote_delete_cloud_checking =>
+      'Checking whether the cloud storage is reachable…';
+  String get remote_delete_cloud_offline =>
+      'Can\'t reach the cloud storage. Delete it there once it\'s reachable.';
+  String get remote_delete_cloud_signed_out =>
+      'The cloud storage sign-in has expired. Sign in again to delete it there.';
   String get remote_delete_failed => 'Could not delete it on the paired device';
+  String get remote_delete_host_checking =>
+      'Checking whether the host is online…';
+  String get remote_delete_host_offline =>
+      'The host is offline or unreachable. Delete it there once it\'s connected.';
+  String get remote_delete_host_pairing_rejected =>
+      'The host rejected this device\'s pairing. Pair again to delete it there.';
   String get remote_delete_unsupported =>
       'The paired device is too old to support remote deletion. Update Fushi there first.';
   String get remote_dict_lookup => 'Remote dictionary lookup';
@@ -12892,6 +13021,10 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
       'Cannot reach AniList (graphql.anilist.co). Check your network connection, or configure a proxy in download settings.';
   String get video_audio_track => 'Audio track';
   String get video_audio_track_empty => 'No switchable audio tracks';
+  String get video_audio_track_fallback_muxed =>
+      'The audio stream was refused; switched to a compatible stream with sound (lower quality)';
+  String get video_audio_track_load_failed =>
+      'Couldn\'t load the audio stream — there is no sound. The source refused access; try again later.';
   String video_audio_track_switched({required Object label}) =>
       'Audio track: ${label}';
   String get video_auto_play_next_cancel => 'Cancel';
@@ -15437,8 +15570,32 @@ class _StringsAr extends _StringsEn {
   @override
   String get ai_agent_send => 'Send';
   @override
+  String get ai_agent_session_current => 'Current';
+  @override
+  String get ai_agent_session_delete => 'Delete';
+  @override
+  String ai_agent_session_delete_message({required Object title}) =>
+      '“${title}” will be removed from this device. Changes the assistant made stay in the AI action log and can still be undone there.';
+  @override
+  String get ai_agent_session_delete_title => 'Delete this conversation?';
+  @override
+  String get ai_agent_session_more => 'Conversation options';
+  @override
+  String get ai_agent_session_open_failed => 'Couldn\'t open this conversation';
+  @override
+  String get ai_agent_session_rename => 'Rename';
+  @override
+  String get ai_agent_session_rename_title => 'Rename conversation';
+  @override
   String ai_agent_session_summary({required Object n}) =>
       '${n} changes in this conversation';
+  @override
+  String get ai_agent_sessions_empty => 'No earlier conversations yet';
+  @override
+  String get ai_agent_sessions_retention_hint =>
+      'Conversations stay on this device for 30 days';
+  @override
+  String get ai_agent_sessions_title => 'Conversations';
   @override
   String get ai_agent_stop => 'Stop';
   @override
@@ -15642,6 +15799,35 @@ class _StringsAr extends _StringsEn {
   @override
   String get ai_interconnect_host_unpaired =>
       'No paired device yet. Pair a computer in Fushi Interconnect to let it handle AI video downloads with its own AI.';
+  @override
+  String get ai_mcp_access => 'External AI access (MCP)';
+  @override
+  String get ai_mcp_access_hint =>
+      'Lets MCP clients on this computer (Claude Desktop, Claude Code…) call Fushi\'s operations. Listens on this computer only and needs the pairing token below. Changes that can be undone run directly and show up in the AI action log; anything that can\'t be undone, and installing extensions, asks you here first. Off by default.';
+  @override
+  String get ai_mcp_confirm_arguments => 'Arguments';
+  @override
+  String ai_mcp_confirm_body({required Object client, required Object op}) =>
+      '${client} wants to run: ${op}';
+  @override
+  String ai_mcp_confirm_expire({required Object minutes}) =>
+      'Declined automatically if you do not answer within ${minutes} minutes.';
+  @override
+  String get ai_mcp_confirm_title => 'Request from an external AI';
+  @override
+  String get ai_mcp_token => 'Pairing token';
+  @override
+  String get ai_mcp_token_copy => 'Copy token';
+  @override
+  String get ai_mcp_token_copy_config => 'Copy client config';
+  @override
+  String get ai_mcp_token_hint =>
+      'Generate a token for your MCP client. Generating a new one revokes the old one.';
+  @override
+  String get ai_mcp_token_issued_body =>
+      'Put this token in your MCP client\'s configuration as FUSHI_MCP_TOKEN (the setup guide shows how). It is shown only once.';
+  @override
+  String get ai_mcp_token_issued_title => 'New pairing token';
   @override
   String get ai_media_acquire_ai_failed =>
       'الذكاء الاصطناعي غير متاح حاليًا؛ النتائج من نصك الأصلي مرتبة حسب البذور.';
@@ -16517,6 +16703,8 @@ class _StringsAr extends _StringsEn {
   String get anki_dedup_unavailable =>
       'يتطلب تشغيل Anki على هذا الجهاز (AnkiConnect).';
   @override
+  String get anki_delivery_section => 'Sending & pending cards';
+  @override
   String get anki_desktop_auto_launch => 'Launch Anki when Fushi starts';
   @override
   String get anki_desktop_auto_launch_hint =>
@@ -16962,6 +17150,9 @@ class _StringsAr extends _StringsEn {
   @override
   String get anki_pending_mines_status_sending => 'جارٍ الإرسال';
   @override
+  String anki_pending_mines_stopped({required Object reason}) =>
+      '${reason} The remaining cards stay in the queue.';
+  @override
   String get anki_pending_mines_title => 'البطاقات المعلّقة';
   @override
   String get anki_pending_mines_unreachable =>
@@ -17108,6 +17299,9 @@ class _StringsAr extends _StringsEn {
   String get anki_sync_client_enable_warn_confirm => 'I understand, enable';
   @override
   String get anki_sync_client_enable_warn_title => 'Enable Anki sync?';
+  @override
+  String anki_sync_client_error_not_sync_server({required Object detail}) =>
+      'The server did not answer with the Anki sync protocol (the anki-original-size response header is missing). Make sure the address points at an Anki sync server (the official anki-sync-server, or the one built into Anki desktop) rather than a web page; a reverse proxy must keep this header. Details: ${detail}';
   @override
   String anki_sync_client_has_unsynced({required Object count}) =>
       '${count} بطاقة لم تُزامَن بعد. زامِنها قبل تبديل الحساب أو تسجيل الخروج.';
@@ -17315,6 +17509,9 @@ class _StringsAr extends _StringsEn {
   String get audio_panel_pick_new_subtitle => 'اختيار ملف ترجمة جديد';
   @override
   String get audio_source_added => 'تمت إضافة مصدر الصوت';
+  @override
+  String audio_source_connection_refused({required Object host}) =>
+      'Audio source refused the connection: nothing is listening at "${host}" — make sure the service is running, or remove this source in settings';
   @override
   String audio_source_dns_error({required Object host}) =>
       'فشل اتصال مصدر الصوت: تعذر حل "${host}" — تحقق من الشبكة أو أزل هذا المصدر في الإعدادات';
@@ -19458,6 +19655,18 @@ class _StringsAr extends _StringsEn {
   @override
   String get card_mining_pending => 'جارٍ إضافة البطاقة…';
   @override
+  String get card_notice_title_added => 'Card added';
+  @override
+  String get card_notice_title_duplicate => 'Card already exists';
+  @override
+  String get card_notice_title_failed => 'Card not created';
+  @override
+  String get card_notice_title_overwritten => 'Card overwritten';
+  @override
+  String get card_notice_title_queued => 'Card queued';
+  @override
+  String get card_notice_title_warning => 'Card added, something missing';
+  @override
   String card_overwritten({required Object deck}) =>
       'تمت الكتابة فوق البطاقة في『${deck}』.';
   @override
@@ -20236,15 +20445,13 @@ class _StringsAr extends _StringsEn {
   @override
   String get delete_prompt_title => 'محذوف على جهاز آخر';
   @override
-  String get delete_scope_keep_local_desc => 'الأجهزة الأخرى تحتفظ بنسختها';
-  @override
   String get delete_scope_no_channel =>
       'لا توجد مزامنة مكوّنة - هذا الحذف يؤثر على هذا الجهاز فقط';
   @override
   String get delete_scope_sync_everywhere => 'حذف من جميع الأجهزة';
   @override
   String get delete_scope_sync_everywhere_desc =>
-      'الأجهزة الأخرى تؤكد الحذف عند المزامنة التالية';
+      'عند التحديد، تؤكد الأجهزة الأخرى الحذف عند المزامنة التالية؛ وإلا فتحتفظ بنسختها';
   @override
   String get delete_statistics => 'حذف الإحصاءات أيضًا';
   @override
@@ -20497,6 +20704,13 @@ class _StringsAr extends _StringsEn {
   @override
   String get dict_language_description =>
       'تحدد الخط المستخدم لعرض نص هذا القاموس. التلقائي يستخدم اللغة التي يعلنها القاموس.';
+  @override
+  String dict_language_group_title({
+    required Object language,
+    required Object n,
+  }) => '${language} · ${n}';
+  @override
+  String get dict_language_group_unset => 'Language not set';
   @override
   String get dict_language_title => 'لغة محتوى القاموس';
   @override
@@ -21855,6 +22069,66 @@ class _StringsAr extends _StringsEn {
       'You can attach 1 video (up to ${max}). It is compressed to ${resolution} before uploading.';
   @override
   String get feedback_compose_video_retry => 'Compress again';
+  @override
+  String get feedback_crash_auto_send_setting =>
+      'Automatically send crash logs';
+  @override
+  String get feedback_crash_auto_send_setting_hint =>
+      'After Fushi crashes or quits unexpectedly, send the logs to the developers on next launch without asking (the logs leave this device)';
+  @override
+  String get feedback_crash_auto_sent_notice =>
+      'Logs from the last crash were sent to the developers automatically';
+  @override
+  String get feedback_crash_kind_anr => 'not responding';
+  @override
+  String get feedback_crash_kind_crash => 'crash';
+  @override
+  String get feedback_crash_kind_memory =>
+      'closed by the system for low memory';
+  @override
+  String get feedback_crash_kind_native => 'native crash';
+  @override
+  String get feedback_crash_kind_startup => 'while starting';
+  @override
+  String get feedback_crash_kind_unexpected => 'unexpected exit';
+  @override
+  String get feedback_crash_notice_view => 'View';
+  @override
+  String get feedback_crash_prompt_always => 'Always send';
+  @override
+  String get feedback_crash_prompt_body =>
+      'Send the logs to the developers to help fix it? You can follow it in Feedback.';
+  @override
+  String get feedback_crash_prompt_decline => 'No thanks';
+  @override
+  String get feedback_crash_prompt_retry => 'Retry';
+  @override
+  String get feedback_crash_prompt_send => 'Send to developers';
+  @override
+  String get feedback_crash_prompt_sending => 'Sending…';
+  @override
+  String get feedback_crash_prompt_skip => 'Skip';
+  @override
+  String feedback_crash_prompt_title({required Object kind}) =>
+      'Fushi quit unexpectedly last time (${kind})';
+  @override
+  String feedback_crash_prompt_title_many({
+    required Object n,
+    required Object kind,
+  }) => 'Fushi quit unexpectedly ${n} times (${kind})';
+  @override
+  String get feedback_crash_report_header =>
+      'Generated by Fushi after it quit unexpectedly; logs and device info are attached.';
+  @override
+  String feedback_crash_report_title({
+    required Object kind,
+    required Object version,
+  }) => 'Crash report: ${kind} (${version})';
+  @override
+  String get feedback_crash_send_failed =>
+      'Could not send the crash logs. Fushi will ask again next time.';
+  @override
+  String get feedback_crash_sent_notice => 'Crash logs sent to the developers';
   @override
   String get feedback_detail_add_shot => 'Add screenshot';
   @override
@@ -26383,6 +26657,19 @@ class _StringsAr extends _StringsEn {
   String get lyrics_control_zone_top_hint =>
       'Top bar on phones, top-right corner on wide screens';
   @override
+  String get lyrics_controls_collapse => 'Collapse playback controls';
+  @override
+  String get lyrics_controls_expand => 'Expand playback controls';
+  @override
+  String get lyrics_controls_style => 'Playback controls layout';
+  @override
+  String get lyrics_controls_style_classic => 'Classic';
+  @override
+  String get lyrics_controls_style_hint =>
+      'New: a collapsible mini bar on phones and floating islands on wide screens. Classic: the previous layout.';
+  @override
+  String get lyrics_controls_style_modern => 'New';
+  @override
   String get lyrics_exit_to_library => 'Close and return to library';
   @override
   String get lyrics_font_size => 'حجم خط كلمات الأغاني';
@@ -26396,6 +26683,15 @@ class _StringsAr extends _StringsEn {
       'Use your own color for the line being read instead of the player theme color';
   @override
   String get lyrics_illustration_back_to_cover => 'Back to cover';
+  @override
+  String get lyrics_illustration_cue => 'Illustration prompt';
+  @override
+  String get lyrics_illustration_cue_dot => 'Dot';
+  @override
+  String get lyrics_illustration_cue_hint =>
+      'Pop up: show the illustration card and pause for the image pause duration below. Dot: only mark the cover thumbnail.';
+  @override
+  String get lyrics_illustration_cue_popup => 'Pop up';
   @override
   String get lyrics_illustration_next => 'Next illustration';
   @override
@@ -27587,6 +27883,9 @@ class _StringsAr extends _StringsEn {
   String media_privacy_inherited_note({required Object collections}) =>
       'Private because it is in the private collection “${collections}”. To make it public, turn off privacy on that collection.';
   @override
+  String media_privacy_inherited_source_note({required Object source}) =>
+      'Private because its source library “${source}” is private. To make it public, turn off privacy on that source library.';
+  @override
   String media_privacy_load_failed({required Object reason}) =>
       'Could not read the privacy setting, so it cannot be changed right now: ${reason}';
   @override
@@ -27703,6 +28002,28 @@ class _StringsAr extends _StringsEn {
   @override
   String get media_source_open_folder_failed =>
       'Couldn\'t open the folder. It may have been moved, deleted, or disconnected.';
+  @override
+  String get media_source_privacy_action => 'Privacy';
+  @override
+  String get media_source_privacy_badge =>
+      'Private: not uploaded to the leaderboard';
+  @override
+  String get media_source_privacy_cleared_toast =>
+      'Source library is no longer private';
+  @override
+  String get media_source_privacy_hint =>
+      'Everything this source library brings in is treated as private: it is never uploaded to the leaderboard, so it stays off your public shelf, profile and share cards, and its progress is not pushed to Bangumi. Items already uploaded are removed from the leaderboard as soon as you turn this on (or at the next sync if that fails). Your daily character total still counts them, without saying what you read. Removing this source keeps its items private.';
+  @override
+  String get media_source_privacy_marked_toast =>
+      'Source library is now private';
+  @override
+  String get media_source_privacy_switch => 'Keep this source library private';
+  @override
+  String media_source_privacy_withdraw_failed({required Object reason}) =>
+      'Source library is now private, but removing its items from the leaderboard failed; the next sync will try again: ${reason}';
+  @override
+  String get media_source_privacy_withdrawn_toast =>
+      'Source library is now private; its items were removed from the leaderboard';
   @override
   String get media_source_remove => 'Remove Source';
   @override
@@ -31334,7 +31655,13 @@ class _StringsAr extends _StringsEn {
   String get remote_book_audiobook_redownloaded =>
       'Audiobook re-downloaded from peer';
   @override
-  String get remote_book_delete_everywhere => 'Delete permanently';
+  String remote_book_delete_cloud_confirm({
+    required Object name,
+    required Object backend,
+  }) =>
+      'Delete "${name}" from ${backend}? The book\'s files, cover, progress and audiobook in the cloud are permanently deleted. This device has no copy and this can\'t be undone. Other devices will ask whether to delete their copy on their next sync.';
+  @override
+  String get remote_book_delete_everywhere => 'Also delete on host';
   @override
   String remote_book_delete_everywhere_confirm({
     required Object name,
@@ -31415,7 +31742,25 @@ class _StringsAr extends _StringsEn {
   String get remote_delete_audiobook_partial =>
       'تم حذف الكتاب، لكن تعذّرت إزالة الكتاب الصوتي على الجهاز المقترن';
   @override
+  String get remote_delete_cloud_checking =>
+      'Checking whether the cloud storage is reachable…';
+  @override
+  String get remote_delete_cloud_offline =>
+      'Can\'t reach the cloud storage. Delete it there once it\'s reachable.';
+  @override
+  String get remote_delete_cloud_signed_out =>
+      'The cloud storage sign-in has expired. Sign in again to delete it there.';
+  @override
   String get remote_delete_failed => 'تعذر الحذف على الجهاز المقترن';
+  @override
+  String get remote_delete_host_checking =>
+      'Checking whether the host is online…';
+  @override
+  String get remote_delete_host_offline =>
+      'The host is offline or unreachable. Delete it there once it\'s connected.';
+  @override
+  String get remote_delete_host_pairing_rejected =>
+      'The host rejected this device\'s pairing. Pair again to delete it there.';
   @override
   String get remote_delete_unsupported =>
       'الجهاز المقترن قديم جدًا لدعم الحذف عن بُعد. حدّث Fushi هناك أولًا.';
@@ -36888,6 +37233,12 @@ class _StringsAr extends _StringsEn {
   @override
   String get video_audio_track_empty => 'لا توجد مسارات صوتية قابلة للتبديل';
   @override
+  String get video_audio_track_fallback_muxed =>
+      'The audio stream was refused; switched to a compatible stream with sound (lower quality)';
+  @override
+  String get video_audio_track_load_failed =>
+      'Couldn\'t load the audio stream — there is no sound. The source refused access; try again later.';
+  @override
   String video_audio_track_switched({required Object label}) =>
       'المسار الصوتي: ${label}';
   @override
@@ -41013,8 +41364,32 @@ class _StringsDe extends _StringsEn {
   @override
   String get ai_agent_send => 'Send';
   @override
+  String get ai_agent_session_current => 'Current';
+  @override
+  String get ai_agent_session_delete => 'Delete';
+  @override
+  String ai_agent_session_delete_message({required Object title}) =>
+      '“${title}” will be removed from this device. Changes the assistant made stay in the AI action log and can still be undone there.';
+  @override
+  String get ai_agent_session_delete_title => 'Delete this conversation?';
+  @override
+  String get ai_agent_session_more => 'Conversation options';
+  @override
+  String get ai_agent_session_open_failed => 'Couldn\'t open this conversation';
+  @override
+  String get ai_agent_session_rename => 'Rename';
+  @override
+  String get ai_agent_session_rename_title => 'Rename conversation';
+  @override
   String ai_agent_session_summary({required Object n}) =>
       '${n} changes in this conversation';
+  @override
+  String get ai_agent_sessions_empty => 'No earlier conversations yet';
+  @override
+  String get ai_agent_sessions_retention_hint =>
+      'Conversations stay on this device for 30 days';
+  @override
+  String get ai_agent_sessions_title => 'Conversations';
   @override
   String get ai_agent_stop => 'Stop';
   @override
@@ -41221,6 +41596,35 @@ class _StringsDe extends _StringsEn {
   @override
   String get ai_interconnect_host_unpaired =>
       'No paired device yet. Pair a computer in Fushi Interconnect to let it handle AI video downloads with its own AI.';
+  @override
+  String get ai_mcp_access => 'External AI access (MCP)';
+  @override
+  String get ai_mcp_access_hint =>
+      'Lets MCP clients on this computer (Claude Desktop, Claude Code…) call Fushi\'s operations. Listens on this computer only and needs the pairing token below. Changes that can be undone run directly and show up in the AI action log; anything that can\'t be undone, and installing extensions, asks you here first. Off by default.';
+  @override
+  String get ai_mcp_confirm_arguments => 'Arguments';
+  @override
+  String ai_mcp_confirm_body({required Object client, required Object op}) =>
+      '${client} wants to run: ${op}';
+  @override
+  String ai_mcp_confirm_expire({required Object minutes}) =>
+      'Declined automatically if you do not answer within ${minutes} minutes.';
+  @override
+  String get ai_mcp_confirm_title => 'Request from an external AI';
+  @override
+  String get ai_mcp_token => 'Pairing token';
+  @override
+  String get ai_mcp_token_copy => 'Copy token';
+  @override
+  String get ai_mcp_token_copy_config => 'Copy client config';
+  @override
+  String get ai_mcp_token_hint =>
+      'Generate a token for your MCP client. Generating a new one revokes the old one.';
+  @override
+  String get ai_mcp_token_issued_body =>
+      'Put this token in your MCP client\'s configuration as FUSHI_MCP_TOKEN (the setup guide shows how). It is shown only once.';
+  @override
+  String get ai_mcp_token_issued_title => 'New pairing token';
   @override
   String get ai_media_acquire_ai_failed =>
       'Die KI ist gerade nicht verfügbar; die Ergebnisse stammen aus deinem ursprünglichen Text, nach Seedern sortiert.';
@@ -42108,6 +42512,8 @@ class _StringsDe extends _StringsEn {
   String get anki_dedup_unavailable =>
       'Erfordert Anki auf diesem Computer (AnkiConnect).';
   @override
+  String get anki_delivery_section => 'Sending & pending cards';
+  @override
   String get anki_desktop_auto_launch => 'Launch Anki when Fushi starts';
   @override
   String get anki_desktop_auto_launch_hint =>
@@ -42563,6 +42969,9 @@ class _StringsDe extends _StringsEn {
   @override
   String get anki_pending_mines_status_sending => 'Wird gesendet';
   @override
+  String anki_pending_mines_stopped({required Object reason}) =>
+      '${reason} The remaining cards stay in the queue.';
+  @override
   String get anki_pending_mines_title => 'Ausstehende Karten';
   @override
   String get anki_pending_mines_unreachable =>
@@ -42713,6 +43122,9 @@ class _StringsDe extends _StringsEn {
   String get anki_sync_client_enable_warn_confirm => 'I understand, enable';
   @override
   String get anki_sync_client_enable_warn_title => 'Enable Anki sync?';
+  @override
+  String anki_sync_client_error_not_sync_server({required Object detail}) =>
+      'The server did not answer with the Anki sync protocol (the anki-original-size response header is missing). Make sure the address points at an Anki sync server (the official anki-sync-server, or the one built into Anki desktop) rather than a web page; a reverse proxy must keep this header. Details: ${detail}';
   @override
   String anki_sync_client_has_unsynced({required Object count}) =>
       '${count} Karte(n) wurden noch nicht synchronisiert. Synchronisiere sie, bevor du das Konto wechselst oder dich abmeldest.';
@@ -42923,6 +43335,9 @@ class _StringsDe extends _StringsEn {
   String get audio_panel_pick_new_subtitle => 'Neue Untertiteldatei auswählen';
   @override
   String get audio_source_added => 'Audioquelle hinzugefügt';
+  @override
+  String audio_source_connection_refused({required Object host}) =>
+      'Audio source refused the connection: nothing is listening at "${host}" — make sure the service is running, or remove this source in settings';
   @override
   String audio_source_dns_error({required Object host}) =>
       'Verbindung zur Audioquelle fehlgeschlagen: "${host}" kann nicht aufgelöst werden — überprüfen Sie Ihr Netzwerk oder entfernen Sie diese Quelle in den Einstellungen';
@@ -45089,6 +45504,18 @@ class _StringsDe extends _StringsEn {
   @override
   String get card_mining_pending => 'Karte wird hinzugefügt…';
   @override
+  String get card_notice_title_added => 'Card added';
+  @override
+  String get card_notice_title_duplicate => 'Card already exists';
+  @override
+  String get card_notice_title_failed => 'Card not created';
+  @override
+  String get card_notice_title_overwritten => 'Card overwritten';
+  @override
+  String get card_notice_title_queued => 'Card queued';
+  @override
+  String get card_notice_title_warning => 'Card added, something missing';
+  @override
   String card_overwritten({required Object deck}) =>
       'Karte in 『${deck}』 überschrieben.';
   @override
@@ -45876,16 +46303,13 @@ class _StringsDe extends _StringsEn {
   @override
   String get delete_prompt_title => 'Auf anderem Gerät gelöscht';
   @override
-  String get delete_scope_keep_local_desc =>
-      'Andere Geräte behalten ihre Kopie';
-  @override
   String get delete_scope_no_channel =>
       'Keine Synchronisierung konfiguriert – diese Löschung betrifft nur dieses Gerät';
   @override
   String get delete_scope_sync_everywhere => 'Von allen Geräten löschen';
   @override
   String get delete_scope_sync_everywhere_desc =>
-      'Andere Geräte bestätigen die Löschung bei der nächsten Synchronisierung';
+      'Wenn aktiviert, bestätigen andere Geräte die Löschung bei der nächsten Synchronisierung; sonst behalten sie ihre Kopie';
   @override
   String get delete_statistics => 'Auch Statistiken löschen';
   @override
@@ -46142,6 +46566,13 @@ class _StringsDe extends _StringsEn {
   @override
   String get dict_language_description =>
       'Bestimmt, welche Schriftart den Text dieses Wörterbuchs rendert. Automatisch verwendet die vom Wörterbuch deklarierte Sprache.';
+  @override
+  String dict_language_group_title({
+    required Object language,
+    required Object n,
+  }) => '${language} · ${n}';
+  @override
+  String get dict_language_group_unset => 'Language not set';
   @override
   String get dict_language_title => 'Inhaltssprache des Wörterbuchs';
   @override
@@ -47533,6 +47964,66 @@ class _StringsDe extends _StringsEn {
       'You can attach 1 video (up to ${max}). It is compressed to ${resolution} before uploading.';
   @override
   String get feedback_compose_video_retry => 'Compress again';
+  @override
+  String get feedback_crash_auto_send_setting =>
+      'Automatically send crash logs';
+  @override
+  String get feedback_crash_auto_send_setting_hint =>
+      'After Fushi crashes or quits unexpectedly, send the logs to the developers on next launch without asking (the logs leave this device)';
+  @override
+  String get feedback_crash_auto_sent_notice =>
+      'Logs from the last crash were sent to the developers automatically';
+  @override
+  String get feedback_crash_kind_anr => 'not responding';
+  @override
+  String get feedback_crash_kind_crash => 'crash';
+  @override
+  String get feedback_crash_kind_memory =>
+      'closed by the system for low memory';
+  @override
+  String get feedback_crash_kind_native => 'native crash';
+  @override
+  String get feedback_crash_kind_startup => 'while starting';
+  @override
+  String get feedback_crash_kind_unexpected => 'unexpected exit';
+  @override
+  String get feedback_crash_notice_view => 'View';
+  @override
+  String get feedback_crash_prompt_always => 'Always send';
+  @override
+  String get feedback_crash_prompt_body =>
+      'Send the logs to the developers to help fix it? You can follow it in Feedback.';
+  @override
+  String get feedback_crash_prompt_decline => 'No thanks';
+  @override
+  String get feedback_crash_prompt_retry => 'Retry';
+  @override
+  String get feedback_crash_prompt_send => 'Send to developers';
+  @override
+  String get feedback_crash_prompt_sending => 'Sending…';
+  @override
+  String get feedback_crash_prompt_skip => 'Skip';
+  @override
+  String feedback_crash_prompt_title({required Object kind}) =>
+      'Fushi quit unexpectedly last time (${kind})';
+  @override
+  String feedback_crash_prompt_title_many({
+    required Object n,
+    required Object kind,
+  }) => 'Fushi quit unexpectedly ${n} times (${kind})';
+  @override
+  String get feedback_crash_report_header =>
+      'Generated by Fushi after it quit unexpectedly; logs and device info are attached.';
+  @override
+  String feedback_crash_report_title({
+    required Object kind,
+    required Object version,
+  }) => 'Crash report: ${kind} (${version})';
+  @override
+  String get feedback_crash_send_failed =>
+      'Could not send the crash logs. Fushi will ask again next time.';
+  @override
+  String get feedback_crash_sent_notice => 'Crash logs sent to the developers';
   @override
   String get feedback_detail_add_shot => 'Add screenshot';
   @override
@@ -52154,6 +52645,19 @@ class _StringsDe extends _StringsEn {
   String get lyrics_control_zone_top_hint =>
       'Top bar on phones, top-right corner on wide screens';
   @override
+  String get lyrics_controls_collapse => 'Collapse playback controls';
+  @override
+  String get lyrics_controls_expand => 'Expand playback controls';
+  @override
+  String get lyrics_controls_style => 'Playback controls layout';
+  @override
+  String get lyrics_controls_style_classic => 'Classic';
+  @override
+  String get lyrics_controls_style_hint =>
+      'New: a collapsible mini bar on phones and floating islands on wide screens. Classic: the previous layout.';
+  @override
+  String get lyrics_controls_style_modern => 'New';
+  @override
   String get lyrics_exit_to_library => 'Close and return to library';
   @override
   String get lyrics_font_size => 'Liedtext-Schriftgröße';
@@ -52167,6 +52671,15 @@ class _StringsDe extends _StringsEn {
       'Use your own color for the line being read instead of the player theme color';
   @override
   String get lyrics_illustration_back_to_cover => 'Back to cover';
+  @override
+  String get lyrics_illustration_cue => 'Illustration prompt';
+  @override
+  String get lyrics_illustration_cue_dot => 'Dot';
+  @override
+  String get lyrics_illustration_cue_hint =>
+      'Pop up: show the illustration card and pause for the image pause duration below. Dot: only mark the cover thumbnail.';
+  @override
+  String get lyrics_illustration_cue_popup => 'Pop up';
   @override
   String get lyrics_illustration_next => 'Next illustration';
   @override
@@ -53388,6 +53901,9 @@ class _StringsDe extends _StringsEn {
   String media_privacy_inherited_note({required Object collections}) =>
       'Private because it is in the private collection “${collections}”. To make it public, turn off privacy on that collection.';
   @override
+  String media_privacy_inherited_source_note({required Object source}) =>
+      'Private because its source library “${source}” is private. To make it public, turn off privacy on that source library.';
+  @override
   String media_privacy_load_failed({required Object reason}) =>
       'Could not read the privacy setting, so it cannot be changed right now: ${reason}';
   @override
@@ -53507,6 +54023,28 @@ class _StringsDe extends _StringsEn {
   @override
   String get media_source_open_folder_failed =>
       'Couldn\'t open the folder. It may have been moved, deleted, or disconnected.';
+  @override
+  String get media_source_privacy_action => 'Privacy';
+  @override
+  String get media_source_privacy_badge =>
+      'Private: not uploaded to the leaderboard';
+  @override
+  String get media_source_privacy_cleared_toast =>
+      'Source library is no longer private';
+  @override
+  String get media_source_privacy_hint =>
+      'Everything this source library brings in is treated as private: it is never uploaded to the leaderboard, so it stays off your public shelf, profile and share cards, and its progress is not pushed to Bangumi. Items already uploaded are removed from the leaderboard as soon as you turn this on (or at the next sync if that fails). Your daily character total still counts them, without saying what you read. Removing this source keeps its items private.';
+  @override
+  String get media_source_privacy_marked_toast =>
+      'Source library is now private';
+  @override
+  String get media_source_privacy_switch => 'Keep this source library private';
+  @override
+  String media_source_privacy_withdraw_failed({required Object reason}) =>
+      'Source library is now private, but removing its items from the leaderboard failed; the next sync will try again: ${reason}';
+  @override
+  String get media_source_privacy_withdrawn_toast =>
+      'Source library is now private; its items were removed from the leaderboard';
   @override
   String get media_source_remove => 'Remove Source';
   @override
@@ -57188,7 +57726,13 @@ class _StringsDe extends _StringsEn {
   String get remote_book_audiobook_redownloaded =>
       'Audiobook re-downloaded from peer';
   @override
-  String get remote_book_delete_everywhere => 'Delete permanently';
+  String remote_book_delete_cloud_confirm({
+    required Object name,
+    required Object backend,
+  }) =>
+      'Delete "${name}" from ${backend}? The book\'s files, cover, progress and audiobook in the cloud are permanently deleted. This device has no copy and this can\'t be undone. Other devices will ask whether to delete their copy on their next sync.';
+  @override
+  String get remote_book_delete_everywhere => 'Also delete on host';
   @override
   String remote_book_delete_everywhere_confirm({
     required Object name,
@@ -57270,8 +57814,26 @@ class _StringsDe extends _StringsEn {
   String get remote_delete_audiobook_partial =>
       'Buch gelöscht, aber das Hörbuch konnte auf dem gekoppelten Gerät nicht entfernt werden';
   @override
+  String get remote_delete_cloud_checking =>
+      'Checking whether the cloud storage is reachable…';
+  @override
+  String get remote_delete_cloud_offline =>
+      'Can\'t reach the cloud storage. Delete it there once it\'s reachable.';
+  @override
+  String get remote_delete_cloud_signed_out =>
+      'The cloud storage sign-in has expired. Sign in again to delete it there.';
+  @override
   String get remote_delete_failed =>
       'Konnte auf dem gekoppelten Gerät nicht gelöscht werden';
+  @override
+  String get remote_delete_host_checking =>
+      'Checking whether the host is online…';
+  @override
+  String get remote_delete_host_offline =>
+      'The host is offline or unreachable. Delete it there once it\'s connected.';
+  @override
+  String get remote_delete_host_pairing_rejected =>
+      'The host rejected this device\'s pairing. Pair again to delete it there.';
   @override
   String get remote_delete_unsupported =>
       'Das gekoppelte Gerät ist zu alt, um Remote-Löschung zu unterstützen. Aktualisieren Sie dort zuerst Fushi.';
@@ -62792,6 +63354,12 @@ class _StringsDe extends _StringsEn {
   @override
   String get video_audio_track_empty => 'Keine umschaltbaren Audiospuren';
   @override
+  String get video_audio_track_fallback_muxed =>
+      'The audio stream was refused; switched to a compatible stream with sound (lower quality)';
+  @override
+  String get video_audio_track_load_failed =>
+      'Couldn\'t load the audio stream — there is no sound. The source refused access; try again later.';
+  @override
   String video_audio_track_switched({required Object label}) =>
       'Tonspur: ${label}';
   @override
@@ -66981,8 +67549,32 @@ class _StringsEs extends _StringsEn {
   @override
   String get ai_agent_send => 'Send';
   @override
+  String get ai_agent_session_current => 'Current';
+  @override
+  String get ai_agent_session_delete => 'Delete';
+  @override
+  String ai_agent_session_delete_message({required Object title}) =>
+      '“${title}” will be removed from this device. Changes the assistant made stay in the AI action log and can still be undone there.';
+  @override
+  String get ai_agent_session_delete_title => 'Delete this conversation?';
+  @override
+  String get ai_agent_session_more => 'Conversation options';
+  @override
+  String get ai_agent_session_open_failed => 'Couldn\'t open this conversation';
+  @override
+  String get ai_agent_session_rename => 'Rename';
+  @override
+  String get ai_agent_session_rename_title => 'Rename conversation';
+  @override
   String ai_agent_session_summary({required Object n}) =>
       '${n} changes in this conversation';
+  @override
+  String get ai_agent_sessions_empty => 'No earlier conversations yet';
+  @override
+  String get ai_agent_sessions_retention_hint =>
+      'Conversations stay on this device for 30 days';
+  @override
+  String get ai_agent_sessions_title => 'Conversations';
   @override
   String get ai_agent_stop => 'Stop';
   @override
@@ -67190,6 +67782,35 @@ class _StringsEs extends _StringsEn {
   @override
   String get ai_interconnect_host_unpaired =>
       'No paired device yet. Pair a computer in Fushi Interconnect to let it handle AI video downloads with its own AI.';
+  @override
+  String get ai_mcp_access => 'External AI access (MCP)';
+  @override
+  String get ai_mcp_access_hint =>
+      'Lets MCP clients on this computer (Claude Desktop, Claude Code…) call Fushi\'s operations. Listens on this computer only and needs the pairing token below. Changes that can be undone run directly and show up in the AI action log; anything that can\'t be undone, and installing extensions, asks you here first. Off by default.';
+  @override
+  String get ai_mcp_confirm_arguments => 'Arguments';
+  @override
+  String ai_mcp_confirm_body({required Object client, required Object op}) =>
+      '${client} wants to run: ${op}';
+  @override
+  String ai_mcp_confirm_expire({required Object minutes}) =>
+      'Declined automatically if you do not answer within ${minutes} minutes.';
+  @override
+  String get ai_mcp_confirm_title => 'Request from an external AI';
+  @override
+  String get ai_mcp_token => 'Pairing token';
+  @override
+  String get ai_mcp_token_copy => 'Copy token';
+  @override
+  String get ai_mcp_token_copy_config => 'Copy client config';
+  @override
+  String get ai_mcp_token_hint =>
+      'Generate a token for your MCP client. Generating a new one revokes the old one.';
+  @override
+  String get ai_mcp_token_issued_body =>
+      'Put this token in your MCP client\'s configuration as FUSHI_MCP_TOKEN (the setup guide shows how). It is shown only once.';
+  @override
+  String get ai_mcp_token_issued_title => 'New pairing token';
   @override
   String get ai_media_acquire_ai_failed =>
       'La IA no está disponible ahora mismo; los resultados provienen de tu texto original, ordenados por seeders.';
@@ -68077,6 +68698,8 @@ class _StringsEs extends _StringsEn {
   String get anki_dedup_unavailable =>
       'Requiere Anki ejecutándose en esta máquina (AnkiConnect).';
   @override
+  String get anki_delivery_section => 'Sending & pending cards';
+  @override
   String get anki_desktop_auto_launch => 'Launch Anki when Fushi starts';
   @override
   String get anki_desktop_auto_launch_hint =>
@@ -68536,6 +69159,9 @@ class _StringsEs extends _StringsEn {
   @override
   String get anki_pending_mines_status_sending => 'Enviando';
   @override
+  String anki_pending_mines_stopped({required Object reason}) =>
+      '${reason} The remaining cards stay in the queue.';
+  @override
   String get anki_pending_mines_title => 'Tarjetas pendientes';
   @override
   String get anki_pending_mines_unreachable =>
@@ -68685,6 +69311,9 @@ class _StringsEs extends _StringsEn {
   String get anki_sync_client_enable_warn_confirm => 'I understand, enable';
   @override
   String get anki_sync_client_enable_warn_title => 'Enable Anki sync?';
+  @override
+  String anki_sync_client_error_not_sync_server({required Object detail}) =>
+      'The server did not answer with the Anki sync protocol (the anki-original-size response header is missing). Make sure the address points at an Anki sync server (the official anki-sync-server, or the one built into Anki desktop) rather than a web page; a reverse proxy must keep this header. Details: ${detail}';
   @override
   String anki_sync_client_has_unsynced({required Object count}) =>
       '${count} tarjeta(s) aún no se han sincronizado. Sincronízalas antes de cambiar de cuenta o cerrar sesión.';
@@ -68900,6 +69529,9 @@ class _StringsEs extends _StringsEn {
       'Elegir nuevo archivo de subtítulos';
   @override
   String get audio_source_added => 'Fuente de audio añadida';
+  @override
+  String audio_source_connection_refused({required Object host}) =>
+      'Audio source refused the connection: nothing is listening at "${host}" — make sure the service is running, or remove this source in settings';
   @override
   String audio_source_dns_error({required Object host}) =>
       'Error de conexión de fuente de audio: no se puede resolver "${host}" — verifica tu red o elimina esta fuente en ajustes';
@@ -71067,6 +71699,18 @@ class _StringsEs extends _StringsEn {
   @override
   String get card_mining_pending => 'Añadiendo tarjeta…';
   @override
+  String get card_notice_title_added => 'Card added';
+  @override
+  String get card_notice_title_duplicate => 'Card already exists';
+  @override
+  String get card_notice_title_failed => 'Card not created';
+  @override
+  String get card_notice_title_overwritten => 'Card overwritten';
+  @override
+  String get card_notice_title_queued => 'Card queued';
+  @override
+  String get card_notice_title_warning => 'Card added, something missing';
+  @override
   String card_overwritten({required Object deck}) =>
       'Tarjeta sobrescrita en 『${deck}』.';
   @override
@@ -71855,9 +72499,6 @@ class _StringsEs extends _StringsEn {
   @override
   String get delete_prompt_title => 'Eliminados en otro dispositivo';
   @override
-  String get delete_scope_keep_local_desc =>
-      'Otros dispositivos conservan su copia';
-  @override
   String get delete_scope_no_channel =>
       'Sin sincronización configurada — esta eliminación solo afecta este dispositivo';
   @override
@@ -71865,7 +72506,7 @@ class _StringsEs extends _StringsEn {
       'Eliminar de todos los dispositivos';
   @override
   String get delete_scope_sync_everywhere_desc =>
-      'Otros dispositivos confirman la eliminación en la próxima sincronización';
+      'Si está marcado, los demás dispositivos confirman la eliminación en la próxima sincronización; si no, conservan su copia';
   @override
   String get delete_statistics => 'Eliminar también las estadísticas';
   @override
@@ -72123,6 +72764,13 @@ class _StringsEs extends _StringsEn {
   @override
   String get dict_language_description =>
       'Decide qué fuente renderiza el texto de este diccionario. Automático usa el idioma que el diccionario declara.';
+  @override
+  String dict_language_group_title({
+    required Object language,
+    required Object n,
+  }) => '${language} · ${n}';
+  @override
+  String get dict_language_group_unset => 'Language not set';
   @override
   String get dict_language_title => 'Idioma del contenido del diccionario';
   @override
@@ -73518,6 +74166,66 @@ class _StringsEs extends _StringsEn {
       'You can attach 1 video (up to ${max}). It is compressed to ${resolution} before uploading.';
   @override
   String get feedback_compose_video_retry => 'Compress again';
+  @override
+  String get feedback_crash_auto_send_setting =>
+      'Automatically send crash logs';
+  @override
+  String get feedback_crash_auto_send_setting_hint =>
+      'After Fushi crashes or quits unexpectedly, send the logs to the developers on next launch without asking (the logs leave this device)';
+  @override
+  String get feedback_crash_auto_sent_notice =>
+      'Logs from the last crash were sent to the developers automatically';
+  @override
+  String get feedback_crash_kind_anr => 'not responding';
+  @override
+  String get feedback_crash_kind_crash => 'crash';
+  @override
+  String get feedback_crash_kind_memory =>
+      'closed by the system for low memory';
+  @override
+  String get feedback_crash_kind_native => 'native crash';
+  @override
+  String get feedback_crash_kind_startup => 'while starting';
+  @override
+  String get feedback_crash_kind_unexpected => 'unexpected exit';
+  @override
+  String get feedback_crash_notice_view => 'View';
+  @override
+  String get feedback_crash_prompt_always => 'Always send';
+  @override
+  String get feedback_crash_prompt_body =>
+      'Send the logs to the developers to help fix it? You can follow it in Feedback.';
+  @override
+  String get feedback_crash_prompt_decline => 'No thanks';
+  @override
+  String get feedback_crash_prompt_retry => 'Retry';
+  @override
+  String get feedback_crash_prompt_send => 'Send to developers';
+  @override
+  String get feedback_crash_prompt_sending => 'Sending…';
+  @override
+  String get feedback_crash_prompt_skip => 'Skip';
+  @override
+  String feedback_crash_prompt_title({required Object kind}) =>
+      'Fushi quit unexpectedly last time (${kind})';
+  @override
+  String feedback_crash_prompt_title_many({
+    required Object n,
+    required Object kind,
+  }) => 'Fushi quit unexpectedly ${n} times (${kind})';
+  @override
+  String get feedback_crash_report_header =>
+      'Generated by Fushi after it quit unexpectedly; logs and device info are attached.';
+  @override
+  String feedback_crash_report_title({
+    required Object kind,
+    required Object version,
+  }) => 'Crash report: ${kind} (${version})';
+  @override
+  String get feedback_crash_send_failed =>
+      'Could not send the crash logs. Fushi will ask again next time.';
+  @override
+  String get feedback_crash_sent_notice => 'Crash logs sent to the developers';
   @override
   String get feedback_detail_add_shot => 'Add screenshot';
   @override
@@ -78143,6 +78851,19 @@ class _StringsEs extends _StringsEn {
   String get lyrics_control_zone_top_hint =>
       'Top bar on phones, top-right corner on wide screens';
   @override
+  String get lyrics_controls_collapse => 'Collapse playback controls';
+  @override
+  String get lyrics_controls_expand => 'Expand playback controls';
+  @override
+  String get lyrics_controls_style => 'Playback controls layout';
+  @override
+  String get lyrics_controls_style_classic => 'Classic';
+  @override
+  String get lyrics_controls_style_hint =>
+      'New: a collapsible mini bar on phones and floating islands on wide screens. Classic: the previous layout.';
+  @override
+  String get lyrics_controls_style_modern => 'New';
+  @override
   String get lyrics_exit_to_library => 'Close and return to library';
   @override
   String get lyrics_font_size => 'Tamaño de fuente de letras';
@@ -78156,6 +78877,15 @@ class _StringsEs extends _StringsEn {
       'Use your own color for the line being read instead of the player theme color';
   @override
   String get lyrics_illustration_back_to_cover => 'Back to cover';
+  @override
+  String get lyrics_illustration_cue => 'Illustration prompt';
+  @override
+  String get lyrics_illustration_cue_dot => 'Dot';
+  @override
+  String get lyrics_illustration_cue_hint =>
+      'Pop up: show the illustration card and pause for the image pause duration below. Dot: only mark the cover thumbnail.';
+  @override
+  String get lyrics_illustration_cue_popup => 'Pop up';
   @override
   String get lyrics_illustration_next => 'Next illustration';
   @override
@@ -79382,6 +80112,9 @@ class _StringsEs extends _StringsEn {
   String media_privacy_inherited_note({required Object collections}) =>
       'Private because it is in the private collection “${collections}”. To make it public, turn off privacy on that collection.';
   @override
+  String media_privacy_inherited_source_note({required Object source}) =>
+      'Private because its source library “${source}” is private. To make it public, turn off privacy on that source library.';
+  @override
   String media_privacy_load_failed({required Object reason}) =>
       'Could not read the privacy setting, so it cannot be changed right now: ${reason}';
   @override
@@ -79502,6 +80235,28 @@ class _StringsEs extends _StringsEn {
   @override
   String get media_source_open_folder_failed =>
       'Couldn\'t open the folder. It may have been moved, deleted, or disconnected.';
+  @override
+  String get media_source_privacy_action => 'Privacy';
+  @override
+  String get media_source_privacy_badge =>
+      'Private: not uploaded to the leaderboard';
+  @override
+  String get media_source_privacy_cleared_toast =>
+      'Source library is no longer private';
+  @override
+  String get media_source_privacy_hint =>
+      'Everything this source library brings in is treated as private: it is never uploaded to the leaderboard, so it stays off your public shelf, profile and share cards, and its progress is not pushed to Bangumi. Items already uploaded are removed from the leaderboard as soon as you turn this on (or at the next sync if that fails). Your daily character total still counts them, without saying what you read. Removing this source keeps its items private.';
+  @override
+  String get media_source_privacy_marked_toast =>
+      'Source library is now private';
+  @override
+  String get media_source_privacy_switch => 'Keep this source library private';
+  @override
+  String media_source_privacy_withdraw_failed({required Object reason}) =>
+      'Source library is now private, but removing its items from the leaderboard failed; the next sync will try again: ${reason}';
+  @override
+  String get media_source_privacy_withdrawn_toast =>
+      'Source library is now private; its items were removed from the leaderboard';
   @override
   String get media_source_remove => 'Remove Source';
   @override
@@ -83173,7 +83928,13 @@ class _StringsEs extends _StringsEn {
   String get remote_book_audiobook_redownloaded =>
       'Audiobook re-downloaded from peer';
   @override
-  String get remote_book_delete_everywhere => 'Delete permanently';
+  String remote_book_delete_cloud_confirm({
+    required Object name,
+    required Object backend,
+  }) =>
+      'Delete "${name}" from ${backend}? The book\'s files, cover, progress and audiobook in the cloud are permanently deleted. This device has no copy and this can\'t be undone. Other devices will ask whether to delete their copy on their next sync.';
+  @override
+  String get remote_book_delete_everywhere => 'Also delete on host';
   @override
   String remote_book_delete_everywhere_confirm({
     required Object name,
@@ -83256,8 +84017,26 @@ class _StringsEs extends _StringsEn {
   String get remote_delete_audiobook_partial =>
       'Libro eliminado, pero su audiolibro no pudo eliminarse en el dispositivo emparejado';
   @override
+  String get remote_delete_cloud_checking =>
+      'Checking whether the cloud storage is reachable…';
+  @override
+  String get remote_delete_cloud_offline =>
+      'Can\'t reach the cloud storage. Delete it there once it\'s reachable.';
+  @override
+  String get remote_delete_cloud_signed_out =>
+      'The cloud storage sign-in has expired. Sign in again to delete it there.';
+  @override
   String get remote_delete_failed =>
       'No se pudo eliminar en el dispositivo emparejado';
+  @override
+  String get remote_delete_host_checking =>
+      'Checking whether the host is online…';
+  @override
+  String get remote_delete_host_offline =>
+      'The host is offline or unreachable. Delete it there once it\'s connected.';
+  @override
+  String get remote_delete_host_pairing_rejected =>
+      'The host rejected this device\'s pairing. Pair again to delete it there.';
   @override
   String get remote_delete_unsupported =>
       'El dispositivo emparejado es demasiado antiguo para soportar eliminación remota. Actualice Fushi allí primero.';
@@ -88800,6 +89579,12 @@ class _StringsEs extends _StringsEn {
   @override
   String get video_audio_track_empty => 'Sin pistas de audio intercambiables';
   @override
+  String get video_audio_track_fallback_muxed =>
+      'The audio stream was refused; switched to a compatible stream with sound (lower quality)';
+  @override
+  String get video_audio_track_load_failed =>
+      'Couldn\'t load the audio stream — there is no sound. The source refused access; try again later.';
+  @override
   String video_audio_track_switched({required Object label}) =>
       'Pista de audio: ${label}';
   @override
@@ -93005,8 +93790,32 @@ class _StringsFr extends _StringsEn {
   @override
   String get ai_agent_send => 'Send';
   @override
+  String get ai_agent_session_current => 'Current';
+  @override
+  String get ai_agent_session_delete => 'Delete';
+  @override
+  String ai_agent_session_delete_message({required Object title}) =>
+      '“${title}” will be removed from this device. Changes the assistant made stay in the AI action log and can still be undone there.';
+  @override
+  String get ai_agent_session_delete_title => 'Delete this conversation?';
+  @override
+  String get ai_agent_session_more => 'Conversation options';
+  @override
+  String get ai_agent_session_open_failed => 'Couldn\'t open this conversation';
+  @override
+  String get ai_agent_session_rename => 'Rename';
+  @override
+  String get ai_agent_session_rename_title => 'Rename conversation';
+  @override
   String ai_agent_session_summary({required Object n}) =>
       '${n} changes in this conversation';
+  @override
+  String get ai_agent_sessions_empty => 'No earlier conversations yet';
+  @override
+  String get ai_agent_sessions_retention_hint =>
+      'Conversations stay on this device for 30 days';
+  @override
+  String get ai_agent_sessions_title => 'Conversations';
   @override
   String get ai_agent_stop => 'Stop';
   @override
@@ -93212,6 +94021,35 @@ class _StringsFr extends _StringsEn {
   @override
   String get ai_interconnect_host_unpaired =>
       'No paired device yet. Pair a computer in Fushi Interconnect to let it handle AI video downloads with its own AI.';
+  @override
+  String get ai_mcp_access => 'External AI access (MCP)';
+  @override
+  String get ai_mcp_access_hint =>
+      'Lets MCP clients on this computer (Claude Desktop, Claude Code…) call Fushi\'s operations. Listens on this computer only and needs the pairing token below. Changes that can be undone run directly and show up in the AI action log; anything that can\'t be undone, and installing extensions, asks you here first. Off by default.';
+  @override
+  String get ai_mcp_confirm_arguments => 'Arguments';
+  @override
+  String ai_mcp_confirm_body({required Object client, required Object op}) =>
+      '${client} wants to run: ${op}';
+  @override
+  String ai_mcp_confirm_expire({required Object minutes}) =>
+      'Declined automatically if you do not answer within ${minutes} minutes.';
+  @override
+  String get ai_mcp_confirm_title => 'Request from an external AI';
+  @override
+  String get ai_mcp_token => 'Pairing token';
+  @override
+  String get ai_mcp_token_copy => 'Copy token';
+  @override
+  String get ai_mcp_token_copy_config => 'Copy client config';
+  @override
+  String get ai_mcp_token_hint =>
+      'Generate a token for your MCP client. Generating a new one revokes the old one.';
+  @override
+  String get ai_mcp_token_issued_body =>
+      'Put this token in your MCP client\'s configuration as FUSHI_MCP_TOKEN (the setup guide shows how). It is shown only once.';
+  @override
+  String get ai_mcp_token_issued_title => 'New pairing token';
   @override
   String get ai_media_acquire_ai_failed =>
       'L\'IA est indisponible pour le moment ; les résultats proviennent de votre texte d\'origine, triés par seeders.';
@@ -94101,6 +94939,8 @@ class _StringsFr extends _StringsEn {
   String get anki_dedup_unavailable =>
       'Nécessite Anki en cours d\'exécution sur cette machine (AnkiConnect).';
   @override
+  String get anki_delivery_section => 'Sending & pending cards';
+  @override
   String get anki_desktop_auto_launch => 'Launch Anki when Fushi starts';
   @override
   String get anki_desktop_auto_launch_hint =>
@@ -94561,6 +95401,9 @@ class _StringsFr extends _StringsEn {
   @override
   String get anki_pending_mines_status_sending => 'Envoi';
   @override
+  String anki_pending_mines_stopped({required Object reason}) =>
+      '${reason} The remaining cards stay in the queue.';
+  @override
   String get anki_pending_mines_title => 'Cartes en attente';
   @override
   String get anki_pending_mines_unreachable =>
@@ -94714,6 +95557,9 @@ class _StringsFr extends _StringsEn {
   String get anki_sync_client_enable_warn_confirm => 'I understand, enable';
   @override
   String get anki_sync_client_enable_warn_title => 'Enable Anki sync?';
+  @override
+  String anki_sync_client_error_not_sync_server({required Object detail}) =>
+      'The server did not answer with the Anki sync protocol (the anki-original-size response header is missing). Make sure the address points at an Anki sync server (the official anki-sync-server, or the one built into Anki desktop) rather than a web page; a reverse proxy must keep this header. Details: ${detail}';
   @override
   String anki_sync_client_has_unsynced({required Object count}) =>
       '${count} carte(s) pas encore synchronisée(s). Synchronisez-les avant de changer de compte ou de vous déconnecter.';
@@ -94929,6 +95775,9 @@ class _StringsFr extends _StringsEn {
       'Choisir un nouveau fichier de sous-titres';
   @override
   String get audio_source_added => 'Source audio ajoutée';
+  @override
+  String audio_source_connection_refused({required Object host}) =>
+      'Audio source refused the connection: nothing is listening at "${host}" — make sure the service is running, or remove this source in settings';
   @override
   String audio_source_dns_error({required Object host}) =>
       'Échec de connexion de la source audio : impossible de résoudre "${host}" — vérifiez votre réseau ou supprimez cette source dans les paramètres';
@@ -97106,6 +97955,18 @@ class _StringsFr extends _StringsEn {
   @override
   String get card_mining_pending => 'Ajout de la carte…';
   @override
+  String get card_notice_title_added => 'Card added';
+  @override
+  String get card_notice_title_duplicate => 'Card already exists';
+  @override
+  String get card_notice_title_failed => 'Card not created';
+  @override
+  String get card_notice_title_overwritten => 'Card overwritten';
+  @override
+  String get card_notice_title_queued => 'Card queued';
+  @override
+  String get card_notice_title_warning => 'Card added, something missing';
+  @override
   String card_overwritten({required Object deck}) =>
       'Carte remplacée dans « ${deck} ».';
   @override
@@ -97902,16 +98763,13 @@ class _StringsFr extends _StringsEn {
   @override
   String get delete_prompt_title => 'Supprimé sur un autre appareil';
   @override
-  String get delete_scope_keep_local_desc =>
-      'Les autres appareils conservent leur copie';
-  @override
   String get delete_scope_no_channel =>
       'Pas de synchronisation configurée — cette suppression n\'affecte que cet appareil';
   @override
   String get delete_scope_sync_everywhere => 'Supprimer de tous les appareils';
   @override
   String get delete_scope_sync_everywhere_desc =>
-      'Les autres appareils confirment la suppression lors de la prochaine synchronisation';
+      'Si coché, les autres appareils confirment la suppression lors de la prochaine synchronisation ; sinon, ils conservent leur copie';
   @override
   String get delete_statistics => 'Supprimer aussi les statistiques';
   @override
@@ -98171,6 +99029,13 @@ class _StringsFr extends _StringsEn {
   @override
   String get dict_language_description =>
       'Détermine quelle police affiche le texte de ce dictionnaire. Automatique utilise la langue déclarée par le dictionnaire.';
+  @override
+  String dict_language_group_title({
+    required Object language,
+    required Object n,
+  }) => '${language} · ${n}';
+  @override
+  String get dict_language_group_unset => 'Language not set';
   @override
   String get dict_language_title => 'Langue du contenu du dictionnaire';
   @override
@@ -99568,6 +100433,66 @@ class _StringsFr extends _StringsEn {
       'You can attach 1 video (up to ${max}). It is compressed to ${resolution} before uploading.';
   @override
   String get feedback_compose_video_retry => 'Compress again';
+  @override
+  String get feedback_crash_auto_send_setting =>
+      'Automatically send crash logs';
+  @override
+  String get feedback_crash_auto_send_setting_hint =>
+      'After Fushi crashes or quits unexpectedly, send the logs to the developers on next launch without asking (the logs leave this device)';
+  @override
+  String get feedback_crash_auto_sent_notice =>
+      'Logs from the last crash were sent to the developers automatically';
+  @override
+  String get feedback_crash_kind_anr => 'not responding';
+  @override
+  String get feedback_crash_kind_crash => 'crash';
+  @override
+  String get feedback_crash_kind_memory =>
+      'closed by the system for low memory';
+  @override
+  String get feedback_crash_kind_native => 'native crash';
+  @override
+  String get feedback_crash_kind_startup => 'while starting';
+  @override
+  String get feedback_crash_kind_unexpected => 'unexpected exit';
+  @override
+  String get feedback_crash_notice_view => 'View';
+  @override
+  String get feedback_crash_prompt_always => 'Always send';
+  @override
+  String get feedback_crash_prompt_body =>
+      'Send the logs to the developers to help fix it? You can follow it in Feedback.';
+  @override
+  String get feedback_crash_prompt_decline => 'No thanks';
+  @override
+  String get feedback_crash_prompt_retry => 'Retry';
+  @override
+  String get feedback_crash_prompt_send => 'Send to developers';
+  @override
+  String get feedback_crash_prompt_sending => 'Sending…';
+  @override
+  String get feedback_crash_prompt_skip => 'Skip';
+  @override
+  String feedback_crash_prompt_title({required Object kind}) =>
+      'Fushi quit unexpectedly last time (${kind})';
+  @override
+  String feedback_crash_prompt_title_many({
+    required Object n,
+    required Object kind,
+  }) => 'Fushi quit unexpectedly ${n} times (${kind})';
+  @override
+  String get feedback_crash_report_header =>
+      'Generated by Fushi after it quit unexpectedly; logs and device info are attached.';
+  @override
+  String feedback_crash_report_title({
+    required Object kind,
+    required Object version,
+  }) => 'Crash report: ${kind} (${version})';
+  @override
+  String get feedback_crash_send_failed =>
+      'Could not send the crash logs. Fushi will ask again next time.';
+  @override
+  String get feedback_crash_sent_notice => 'Crash logs sent to the developers';
   @override
   String get feedback_detail_add_shot => 'Add screenshot';
   @override
@@ -104204,6 +105129,19 @@ class _StringsFr extends _StringsEn {
   String get lyrics_control_zone_top_hint =>
       'Top bar on phones, top-right corner on wide screens';
   @override
+  String get lyrics_controls_collapse => 'Collapse playback controls';
+  @override
+  String get lyrics_controls_expand => 'Expand playback controls';
+  @override
+  String get lyrics_controls_style => 'Playback controls layout';
+  @override
+  String get lyrics_controls_style_classic => 'Classic';
+  @override
+  String get lyrics_controls_style_hint =>
+      'New: a collapsible mini bar on phones and floating islands on wide screens. Classic: the previous layout.';
+  @override
+  String get lyrics_controls_style_modern => 'New';
+  @override
   String get lyrics_exit_to_library => 'Close and return to library';
   @override
   String get lyrics_font_size => 'Taille de police des paroles';
@@ -104217,6 +105155,15 @@ class _StringsFr extends _StringsEn {
       'Use your own color for the line being read instead of the player theme color';
   @override
   String get lyrics_illustration_back_to_cover => 'Back to cover';
+  @override
+  String get lyrics_illustration_cue => 'Illustration prompt';
+  @override
+  String get lyrics_illustration_cue_dot => 'Dot';
+  @override
+  String get lyrics_illustration_cue_hint =>
+      'Pop up: show the illustration card and pause for the image pause duration below. Dot: only mark the cover thumbnail.';
+  @override
+  String get lyrics_illustration_cue_popup => 'Pop up';
   @override
   String get lyrics_illustration_next => 'Next illustration';
   @override
@@ -105448,6 +106395,9 @@ class _StringsFr extends _StringsEn {
   String media_privacy_inherited_note({required Object collections}) =>
       'Private because it is in the private collection “${collections}”. To make it public, turn off privacy on that collection.';
   @override
+  String media_privacy_inherited_source_note({required Object source}) =>
+      'Private because its source library “${source}” is private. To make it public, turn off privacy on that source library.';
+  @override
   String media_privacy_load_failed({required Object reason}) =>
       'Could not read the privacy setting, so it cannot be changed right now: ${reason}';
   @override
@@ -105568,6 +106518,28 @@ class _StringsFr extends _StringsEn {
   @override
   String get media_source_open_folder_failed =>
       'Couldn\'t open the folder. It may have been moved, deleted, or disconnected.';
+  @override
+  String get media_source_privacy_action => 'Privacy';
+  @override
+  String get media_source_privacy_badge =>
+      'Private: not uploaded to the leaderboard';
+  @override
+  String get media_source_privacy_cleared_toast =>
+      'Source library is no longer private';
+  @override
+  String get media_source_privacy_hint =>
+      'Everything this source library brings in is treated as private: it is never uploaded to the leaderboard, so it stays off your public shelf, profile and share cards, and its progress is not pushed to Bangumi. Items already uploaded are removed from the leaderboard as soon as you turn this on (or at the next sync if that fails). Your daily character total still counts them, without saying what you read. Removing this source keeps its items private.';
+  @override
+  String get media_source_privacy_marked_toast =>
+      'Source library is now private';
+  @override
+  String get media_source_privacy_switch => 'Keep this source library private';
+  @override
+  String media_source_privacy_withdraw_failed({required Object reason}) =>
+      'Source library is now private, but removing its items from the leaderboard failed; the next sync will try again: ${reason}';
+  @override
+  String get media_source_privacy_withdrawn_toast =>
+      'Source library is now private; its items were removed from the leaderboard';
   @override
   String get media_source_remove => 'Remove Source';
   @override
@@ -109258,7 +110230,13 @@ class _StringsFr extends _StringsEn {
   String get remote_book_audiobook_redownloaded =>
       'Audiobook re-downloaded from peer';
   @override
-  String get remote_book_delete_everywhere => 'Delete permanently';
+  String remote_book_delete_cloud_confirm({
+    required Object name,
+    required Object backend,
+  }) =>
+      'Delete "${name}" from ${backend}? The book\'s files, cover, progress and audiobook in the cloud are permanently deleted. This device has no copy and this can\'t be undone. Other devices will ask whether to delete their copy on their next sync.';
+  @override
+  String get remote_book_delete_everywhere => 'Also delete on host';
   @override
   String remote_book_delete_everywhere_confirm({
     required Object name,
@@ -109342,8 +110320,26 @@ class _StringsFr extends _StringsEn {
   String get remote_delete_audiobook_partial =>
       'Livre supprimé, mais son livre audio n\'a pas pu être retiré sur l\'appareil apparié';
   @override
+  String get remote_delete_cloud_checking =>
+      'Checking whether the cloud storage is reachable…';
+  @override
+  String get remote_delete_cloud_offline =>
+      'Can\'t reach the cloud storage. Delete it there once it\'s reachable.';
+  @override
+  String get remote_delete_cloud_signed_out =>
+      'The cloud storage sign-in has expired. Sign in again to delete it there.';
+  @override
   String get remote_delete_failed =>
       'Impossible de supprimer sur l\'appareil apparié';
+  @override
+  String get remote_delete_host_checking =>
+      'Checking whether the host is online…';
+  @override
+  String get remote_delete_host_offline =>
+      'The host is offline or unreachable. Delete it there once it\'s connected.';
+  @override
+  String get remote_delete_host_pairing_rejected =>
+      'The host rejected this device\'s pairing. Pair again to delete it there.';
   @override
   String get remote_delete_unsupported =>
       'L\'appareil apparié est trop ancien pour prendre en charge la suppression à distance. Mettez d\'abord Fushi à jour dessus.';
@@ -114883,6 +115879,12 @@ class _StringsFr extends _StringsEn {
   @override
   String get video_audio_track_empty => 'Aucune piste audio commutable';
   @override
+  String get video_audio_track_fallback_muxed =>
+      'The audio stream was refused; switched to a compatible stream with sound (lower quality)';
+  @override
+  String get video_audio_track_load_failed =>
+      'Couldn\'t load the audio stream — there is no sound. The source refused access; try again later.';
+  @override
   String video_audio_track_switched({required Object label}) =>
       'Piste audio : ${label}';
   @override
@@ -119110,8 +120112,32 @@ class _StringsId extends _StringsEn {
   @override
   String get ai_agent_send => 'Send';
   @override
+  String get ai_agent_session_current => 'Current';
+  @override
+  String get ai_agent_session_delete => 'Delete';
+  @override
+  String ai_agent_session_delete_message({required Object title}) =>
+      '“${title}” will be removed from this device. Changes the assistant made stay in the AI action log and can still be undone there.';
+  @override
+  String get ai_agent_session_delete_title => 'Delete this conversation?';
+  @override
+  String get ai_agent_session_more => 'Conversation options';
+  @override
+  String get ai_agent_session_open_failed => 'Couldn\'t open this conversation';
+  @override
+  String get ai_agent_session_rename => 'Rename';
+  @override
+  String get ai_agent_session_rename_title => 'Rename conversation';
+  @override
   String ai_agent_session_summary({required Object n}) =>
       '${n} changes in this conversation';
+  @override
+  String get ai_agent_sessions_empty => 'No earlier conversations yet';
+  @override
+  String get ai_agent_sessions_retention_hint =>
+      'Conversations stay on this device for 30 days';
+  @override
+  String get ai_agent_sessions_title => 'Conversations';
   @override
   String get ai_agent_stop => 'Stop';
   @override
@@ -119317,6 +120343,35 @@ class _StringsId extends _StringsEn {
   @override
   String get ai_interconnect_host_unpaired =>
       'No paired device yet. Pair a computer in Fushi Interconnect to let it handle AI video downloads with its own AI.';
+  @override
+  String get ai_mcp_access => 'External AI access (MCP)';
+  @override
+  String get ai_mcp_access_hint =>
+      'Lets MCP clients on this computer (Claude Desktop, Claude Code…) call Fushi\'s operations. Listens on this computer only and needs the pairing token below. Changes that can be undone run directly and show up in the AI action log; anything that can\'t be undone, and installing extensions, asks you here first. Off by default.';
+  @override
+  String get ai_mcp_confirm_arguments => 'Arguments';
+  @override
+  String ai_mcp_confirm_body({required Object client, required Object op}) =>
+      '${client} wants to run: ${op}';
+  @override
+  String ai_mcp_confirm_expire({required Object minutes}) =>
+      'Declined automatically if you do not answer within ${minutes} minutes.';
+  @override
+  String get ai_mcp_confirm_title => 'Request from an external AI';
+  @override
+  String get ai_mcp_token => 'Pairing token';
+  @override
+  String get ai_mcp_token_copy => 'Copy token';
+  @override
+  String get ai_mcp_token_copy_config => 'Copy client config';
+  @override
+  String get ai_mcp_token_hint =>
+      'Generate a token for your MCP client. Generating a new one revokes the old one.';
+  @override
+  String get ai_mcp_token_issued_body =>
+      'Put this token in your MCP client\'s configuration as FUSHI_MCP_TOKEN (the setup guide shows how). It is shown only once.';
+  @override
+  String get ai_mcp_token_issued_title => 'New pairing token';
   @override
   String get ai_media_acquire_ai_failed =>
       'AI tidak tersedia saat ini; hasil berasal dari teks asli Anda, diurutkan menurut seeder.';
@@ -120201,6 +121256,8 @@ class _StringsId extends _StringsEn {
   String get anki_dedup_unavailable =>
       'Memerlukan Anki yang berjalan di mesin ini (AnkiConnect).';
   @override
+  String get anki_delivery_section => 'Sending & pending cards';
+  @override
   String get anki_desktop_auto_launch => 'Launch Anki when Fushi starts';
   @override
   String get anki_desktop_auto_launch_hint =>
@@ -120650,6 +121707,9 @@ class _StringsId extends _StringsEn {
   @override
   String get anki_pending_mines_status_sending => 'Mengirim';
   @override
+  String anki_pending_mines_stopped({required Object reason}) =>
+      '${reason} The remaining cards stay in the queue.';
+  @override
   String get anki_pending_mines_title => 'Kartu tertunda';
   @override
   String get anki_pending_mines_unreachable =>
@@ -120798,6 +121858,9 @@ class _StringsId extends _StringsEn {
   String get anki_sync_client_enable_warn_confirm => 'I understand, enable';
   @override
   String get anki_sync_client_enable_warn_title => 'Enable Anki sync?';
+  @override
+  String anki_sync_client_error_not_sync_server({required Object detail}) =>
+      'The server did not answer with the Anki sync protocol (the anki-original-size response header is missing). Make sure the address points at an Anki sync server (the official anki-sync-server, or the one built into Anki desktop) rather than a web page; a reverse proxy must keep this header. Details: ${detail}';
   @override
   String anki_sync_client_has_unsynced({required Object count}) =>
       '${count} kartu belum disinkronkan. Sinkronkan sebelum berganti akun atau keluar.';
@@ -121007,6 +122070,9 @@ class _StringsId extends _StringsEn {
   String get audio_panel_pick_new_subtitle => 'Pilih file subtitle baru';
   @override
   String get audio_source_added => 'Sumber audio ditambahkan';
+  @override
+  String audio_source_connection_refused({required Object host}) =>
+      'Audio source refused the connection: nothing is listening at "${host}" — make sure the service is running, or remove this source in settings';
   @override
   String audio_source_dns_error({required Object host}) =>
       'Koneksi sumber audio gagal: tidak dapat menemukan "${host}" — periksa jaringan Anda, atau hapus sumber ini di pengaturan';
@@ -123157,6 +124223,18 @@ class _StringsId extends _StringsEn {
   @override
   String get card_mining_pending => 'Menambah kartu…';
   @override
+  String get card_notice_title_added => 'Card added';
+  @override
+  String get card_notice_title_duplicate => 'Card already exists';
+  @override
+  String get card_notice_title_failed => 'Card not created';
+  @override
+  String get card_notice_title_overwritten => 'Card overwritten';
+  @override
+  String get card_notice_title_queued => 'Card queued';
+  @override
+  String get card_notice_title_warning => 'Card added, something missing';
+  @override
   String card_overwritten({required Object deck}) =>
       'Kartu ditimpa di 『${deck}』.';
   @override
@@ -123937,16 +125015,13 @@ class _StringsId extends _StringsEn {
   @override
   String get delete_prompt_title => 'Dihapus di perangkat lain';
   @override
-  String get delete_scope_keep_local_desc =>
-      'Perangkat lain menyimpan salinannya';
-  @override
   String get delete_scope_no_channel =>
       'Tidak ada sinkronisasi yang dikonfigurasi - penghapusan ini hanya memengaruhi perangkat ini';
   @override
   String get delete_scope_sync_everywhere => 'Hapus dari semua perangkat';
   @override
   String get delete_scope_sync_everywhere_desc =>
-      'Perangkat lain mengonfirmasi penghapusan pada sinkronisasi berikutnya';
+      'Jika dicentang, perangkat lain mengonfirmasi penghapusan pada sinkronisasi berikutnya; jika tidak, perangkat lain menyimpan salinannya';
   @override
   String get delete_statistics => 'Hapus juga statistik';
   @override
@@ -124200,6 +125275,13 @@ class _StringsId extends _StringsEn {
   @override
   String get dict_language_description =>
       'Menentukan font mana yang merender teks kamus ini. Otomatis menggunakan bahasa yang dideklarasikan kamus.';
+  @override
+  String dict_language_group_title({
+    required Object language,
+    required Object n,
+  }) => '${language} · ${n}';
+  @override
+  String get dict_language_group_unset => 'Language not set';
   @override
   String get dict_language_title => 'Bahasa konten kamus';
   @override
@@ -125572,6 +126654,66 @@ class _StringsId extends _StringsEn {
       'You can attach 1 video (up to ${max}). It is compressed to ${resolution} before uploading.';
   @override
   String get feedback_compose_video_retry => 'Compress again';
+  @override
+  String get feedback_crash_auto_send_setting =>
+      'Automatically send crash logs';
+  @override
+  String get feedback_crash_auto_send_setting_hint =>
+      'After Fushi crashes or quits unexpectedly, send the logs to the developers on next launch without asking (the logs leave this device)';
+  @override
+  String get feedback_crash_auto_sent_notice =>
+      'Logs from the last crash were sent to the developers automatically';
+  @override
+  String get feedback_crash_kind_anr => 'not responding';
+  @override
+  String get feedback_crash_kind_crash => 'crash';
+  @override
+  String get feedback_crash_kind_memory =>
+      'closed by the system for low memory';
+  @override
+  String get feedback_crash_kind_native => 'native crash';
+  @override
+  String get feedback_crash_kind_startup => 'while starting';
+  @override
+  String get feedback_crash_kind_unexpected => 'unexpected exit';
+  @override
+  String get feedback_crash_notice_view => 'View';
+  @override
+  String get feedback_crash_prompt_always => 'Always send';
+  @override
+  String get feedback_crash_prompt_body =>
+      'Send the logs to the developers to help fix it? You can follow it in Feedback.';
+  @override
+  String get feedback_crash_prompt_decline => 'No thanks';
+  @override
+  String get feedback_crash_prompt_retry => 'Retry';
+  @override
+  String get feedback_crash_prompt_send => 'Send to developers';
+  @override
+  String get feedback_crash_prompt_sending => 'Sending…';
+  @override
+  String get feedback_crash_prompt_skip => 'Skip';
+  @override
+  String feedback_crash_prompt_title({required Object kind}) =>
+      'Fushi quit unexpectedly last time (${kind})';
+  @override
+  String feedback_crash_prompt_title_many({
+    required Object n,
+    required Object kind,
+  }) => 'Fushi quit unexpectedly ${n} times (${kind})';
+  @override
+  String get feedback_crash_report_header =>
+      'Generated by Fushi after it quit unexpectedly; logs and device info are attached.';
+  @override
+  String feedback_crash_report_title({
+    required Object kind,
+    required Object version,
+  }) => 'Crash report: ${kind} (${version})';
+  @override
+  String get feedback_crash_send_failed =>
+      'Could not send the crash logs. Fushi will ask again next time.';
+  @override
+  String get feedback_crash_sent_notice => 'Crash logs sent to the developers';
   @override
   String get feedback_detail_add_shot => 'Add screenshot';
   @override
@@ -130146,6 +131288,19 @@ class _StringsId extends _StringsEn {
   String get lyrics_control_zone_top_hint =>
       'Top bar on phones, top-right corner on wide screens';
   @override
+  String get lyrics_controls_collapse => 'Collapse playback controls';
+  @override
+  String get lyrics_controls_expand => 'Expand playback controls';
+  @override
+  String get lyrics_controls_style => 'Playback controls layout';
+  @override
+  String get lyrics_controls_style_classic => 'Classic';
+  @override
+  String get lyrics_controls_style_hint =>
+      'New: a collapsible mini bar on phones and floating islands on wide screens. Classic: the previous layout.';
+  @override
+  String get lyrics_controls_style_modern => 'New';
+  @override
   String get lyrics_exit_to_library => 'Close and return to library';
   @override
   String get lyrics_font_size => 'Ukuran Font Lirik';
@@ -130159,6 +131314,15 @@ class _StringsId extends _StringsEn {
       'Use your own color for the line being read instead of the player theme color';
   @override
   String get lyrics_illustration_back_to_cover => 'Back to cover';
+  @override
+  String get lyrics_illustration_cue => 'Illustration prompt';
+  @override
+  String get lyrics_illustration_cue_dot => 'Dot';
+  @override
+  String get lyrics_illustration_cue_hint =>
+      'Pop up: show the illustration card and pause for the image pause duration below. Dot: only mark the cover thumbnail.';
+  @override
+  String get lyrics_illustration_cue_popup => 'Pop up';
   @override
   String get lyrics_illustration_next => 'Next illustration';
   @override
@@ -131364,6 +132528,9 @@ class _StringsId extends _StringsEn {
   String media_privacy_inherited_note({required Object collections}) =>
       'Private because it is in the private collection “${collections}”. To make it public, turn off privacy on that collection.';
   @override
+  String media_privacy_inherited_source_note({required Object source}) =>
+      'Private because its source library “${source}” is private. To make it public, turn off privacy on that source library.';
+  @override
   String media_privacy_load_failed({required Object reason}) =>
       'Could not read the privacy setting, so it cannot be changed right now: ${reason}';
   @override
@@ -131482,6 +132649,28 @@ class _StringsId extends _StringsEn {
   @override
   String get media_source_open_folder_failed =>
       'Couldn\'t open the folder. It may have been moved, deleted, or disconnected.';
+  @override
+  String get media_source_privacy_action => 'Privacy';
+  @override
+  String get media_source_privacy_badge =>
+      'Private: not uploaded to the leaderboard';
+  @override
+  String get media_source_privacy_cleared_toast =>
+      'Source library is no longer private';
+  @override
+  String get media_source_privacy_hint =>
+      'Everything this source library brings in is treated as private: it is never uploaded to the leaderboard, so it stays off your public shelf, profile and share cards, and its progress is not pushed to Bangumi. Items already uploaded are removed from the leaderboard as soon as you turn this on (or at the next sync if that fails). Your daily character total still counts them, without saying what you read. Removing this source keeps its items private.';
+  @override
+  String get media_source_privacy_marked_toast =>
+      'Source library is now private';
+  @override
+  String get media_source_privacy_switch => 'Keep this source library private';
+  @override
+  String media_source_privacy_withdraw_failed({required Object reason}) =>
+      'Source library is now private, but removing its items from the leaderboard failed; the next sync will try again: ${reason}';
+  @override
+  String get media_source_privacy_withdrawn_toast =>
+      'Source library is now private; its items were removed from the leaderboard';
   @override
   String get media_source_remove => 'Remove Source';
   @override
@@ -135134,7 +136323,13 @@ class _StringsId extends _StringsEn {
   String get remote_book_audiobook_redownloaded =>
       'Audiobook re-downloaded from peer';
   @override
-  String get remote_book_delete_everywhere => 'Delete permanently';
+  String remote_book_delete_cloud_confirm({
+    required Object name,
+    required Object backend,
+  }) =>
+      'Delete "${name}" from ${backend}? The book\'s files, cover, progress and audiobook in the cloud are permanently deleted. This device has no copy and this can\'t be undone. Other devices will ask whether to delete their copy on their next sync.';
+  @override
+  String get remote_book_delete_everywhere => 'Also delete on host';
   @override
   String remote_book_delete_everywhere_confirm({
     required Object name,
@@ -135215,8 +136410,26 @@ class _StringsId extends _StringsEn {
   String get remote_delete_audiobook_partial =>
       'Buku dihapus, tetapi buku audionya tidak bisa dihapus di perangkat pasangan';
   @override
+  String get remote_delete_cloud_checking =>
+      'Checking whether the cloud storage is reachable…';
+  @override
+  String get remote_delete_cloud_offline =>
+      'Can\'t reach the cloud storage. Delete it there once it\'s reachable.';
+  @override
+  String get remote_delete_cloud_signed_out =>
+      'The cloud storage sign-in has expired. Sign in again to delete it there.';
+  @override
   String get remote_delete_failed =>
       'Tidak bisa menghapus di perangkat pasangan';
+  @override
+  String get remote_delete_host_checking =>
+      'Checking whether the host is online…';
+  @override
+  String get remote_delete_host_offline =>
+      'The host is offline or unreachable. Delete it there once it\'s connected.';
+  @override
+  String get remote_delete_host_pairing_rejected =>
+      'The host rejected this device\'s pairing. Pair again to delete it there.';
   @override
   String get remote_delete_unsupported =>
       'Perangkat pasangan terlalu lama untuk mendukung penghapusan jarak jauh. Perbarui Fushi di sana terlebih dahulu.';
@@ -140707,6 +141920,12 @@ class _StringsId extends _StringsEn {
   String get video_audio_track_empty =>
       'Tidak ada trek audio yang bisa dialihkan';
   @override
+  String get video_audio_track_fallback_muxed =>
+      'The audio stream was refused; switched to a compatible stream with sound (lower quality)';
+  @override
+  String get video_audio_track_load_failed =>
+      'Couldn\'t load the audio stream — there is no sound. The source refused access; try again later.';
+  @override
   String video_audio_track_switched({required Object label}) =>
       'Trek audio: ${label}';
   @override
@@ -144870,8 +146089,32 @@ class _StringsIt extends _StringsEn {
   @override
   String get ai_agent_send => 'Send';
   @override
+  String get ai_agent_session_current => 'Current';
+  @override
+  String get ai_agent_session_delete => 'Delete';
+  @override
+  String ai_agent_session_delete_message({required Object title}) =>
+      '“${title}” will be removed from this device. Changes the assistant made stay in the AI action log and can still be undone there.';
+  @override
+  String get ai_agent_session_delete_title => 'Delete this conversation?';
+  @override
+  String get ai_agent_session_more => 'Conversation options';
+  @override
+  String get ai_agent_session_open_failed => 'Couldn\'t open this conversation';
+  @override
+  String get ai_agent_session_rename => 'Rename';
+  @override
+  String get ai_agent_session_rename_title => 'Rename conversation';
+  @override
   String ai_agent_session_summary({required Object n}) =>
       '${n} changes in this conversation';
+  @override
+  String get ai_agent_sessions_empty => 'No earlier conversations yet';
+  @override
+  String get ai_agent_sessions_retention_hint =>
+      'Conversations stay on this device for 30 days';
+  @override
+  String get ai_agent_sessions_title => 'Conversations';
   @override
   String get ai_agent_stop => 'Stop';
   @override
@@ -145079,6 +146322,35 @@ class _StringsIt extends _StringsEn {
   @override
   String get ai_interconnect_host_unpaired =>
       'No paired device yet. Pair a computer in Fushi Interconnect to let it handle AI video downloads with its own AI.';
+  @override
+  String get ai_mcp_access => 'External AI access (MCP)';
+  @override
+  String get ai_mcp_access_hint =>
+      'Lets MCP clients on this computer (Claude Desktop, Claude Code…) call Fushi\'s operations. Listens on this computer only and needs the pairing token below. Changes that can be undone run directly and show up in the AI action log; anything that can\'t be undone, and installing extensions, asks you here first. Off by default.';
+  @override
+  String get ai_mcp_confirm_arguments => 'Arguments';
+  @override
+  String ai_mcp_confirm_body({required Object client, required Object op}) =>
+      '${client} wants to run: ${op}';
+  @override
+  String ai_mcp_confirm_expire({required Object minutes}) =>
+      'Declined automatically if you do not answer within ${minutes} minutes.';
+  @override
+  String get ai_mcp_confirm_title => 'Request from an external AI';
+  @override
+  String get ai_mcp_token => 'Pairing token';
+  @override
+  String get ai_mcp_token_copy => 'Copy token';
+  @override
+  String get ai_mcp_token_copy_config => 'Copy client config';
+  @override
+  String get ai_mcp_token_hint =>
+      'Generate a token for your MCP client. Generating a new one revokes the old one.';
+  @override
+  String get ai_mcp_token_issued_body =>
+      'Put this token in your MCP client\'s configuration as FUSHI_MCP_TOKEN (the setup guide shows how). It is shown only once.';
+  @override
+  String get ai_mcp_token_issued_title => 'New pairing token';
   @override
   String get ai_media_acquire_ai_failed =>
       'L\'IA non è disponibile al momento; i risultati derivano dal testo originale, ordinati per seeder.';
@@ -145965,6 +147237,8 @@ class _StringsIt extends _StringsEn {
   String get anki_dedup_unavailable =>
       'Richiede Anki in esecuzione su questa macchina (AnkiConnect).';
   @override
+  String get anki_delivery_section => 'Sending & pending cards';
+  @override
   String get anki_desktop_auto_launch => 'Launch Anki when Fushi starts';
   @override
   String get anki_desktop_auto_launch_hint =>
@@ -146418,6 +147692,9 @@ class _StringsIt extends _StringsEn {
   @override
   String get anki_pending_mines_status_sending => 'Invio in corso';
   @override
+  String anki_pending_mines_stopped({required Object reason}) =>
+      '${reason} The remaining cards stay in the queue.';
+  @override
   String get anki_pending_mines_title => 'Carte in sospeso';
   @override
   String get anki_pending_mines_unreachable =>
@@ -146564,6 +147841,9 @@ class _StringsIt extends _StringsEn {
   String get anki_sync_client_enable_warn_confirm => 'I understand, enable';
   @override
   String get anki_sync_client_enable_warn_title => 'Enable Anki sync?';
+  @override
+  String anki_sync_client_error_not_sync_server({required Object detail}) =>
+      'The server did not answer with the Anki sync protocol (the anki-original-size response header is missing). Make sure the address points at an Anki sync server (the official anki-sync-server, or the one built into Anki desktop) rather than a web page; a reverse proxy must keep this header. Details: ${detail}';
   @override
   String anki_sync_client_has_unsynced({required Object count}) =>
       '${count} carta/e non ancora sincronizzata/e. Sincronizzale prima di cambiare account o uscire.';
@@ -146776,6 +148056,9 @@ class _StringsIt extends _StringsEn {
   String get audio_panel_pick_new_subtitle => 'Scegli nuovo file sottotitoli';
   @override
   String get audio_source_added => 'Sorgente audio aggiunta';
+  @override
+  String audio_source_connection_refused({required Object host}) =>
+      'Audio source refused the connection: nothing is listening at "${host}" — make sure the service is running, or remove this source in settings';
   @override
   String audio_source_dns_error({required Object host}) =>
       'Connessione sorgente audio fallita: impossibile risolvere "${host}" — controlla la rete o rimuovi questa sorgente nelle impostazioni';
@@ -148941,6 +150224,18 @@ class _StringsIt extends _StringsEn {
   @override
   String get card_mining_pending => 'Aggiunta carta…';
   @override
+  String get card_notice_title_added => 'Card added';
+  @override
+  String get card_notice_title_duplicate => 'Card already exists';
+  @override
+  String get card_notice_title_failed => 'Card not created';
+  @override
+  String get card_notice_title_overwritten => 'Card overwritten';
+  @override
+  String get card_notice_title_queued => 'Card queued';
+  @override
+  String get card_notice_title_warning => 'Card added, something missing';
+  @override
   String card_overwritten({required Object deck}) =>
       'Carta sovrascritta in『${deck}』.';
   @override
@@ -149725,16 +151020,13 @@ class _StringsIt extends _StringsEn {
   @override
   String get delete_prompt_title => 'Eliminati su un altro dispositivo';
   @override
-  String get delete_scope_keep_local_desc =>
-      'Gli altri dispositivi mantengono la loro copia';
-  @override
   String get delete_scope_no_channel =>
       'Nessuna sincronizzazione configurata — questa eliminazione riguarda solo questo dispositivo';
   @override
   String get delete_scope_sync_everywhere => 'Elimina da tutti i dispositivi';
   @override
   String get delete_scope_sync_everywhere_desc =>
-      'Gli altri dispositivi confermano l\'eliminazione alla prossima sincronizzazione';
+      'Se selezionato, gli altri dispositivi confermano l\'eliminazione alla prossima sincronizzazione; altrimenti mantengono la loro copia';
   @override
   String get delete_statistics => 'Elimina anche le statistiche';
   @override
@@ -149989,6 +151281,13 @@ class _StringsIt extends _StringsEn {
   @override
   String get dict_language_description =>
       'Decide quale font renderizza il testo di questo dizionario. Automatico usa la lingua dichiarata dal dizionario.';
+  @override
+  String dict_language_group_title({
+    required Object language,
+    required Object n,
+  }) => '${language} · ${n}';
+  @override
+  String get dict_language_group_unset => 'Language not set';
   @override
   String get dict_language_title => 'Lingua del contenuto del dizionario';
   @override
@@ -151375,6 +152674,66 @@ class _StringsIt extends _StringsEn {
       'You can attach 1 video (up to ${max}). It is compressed to ${resolution} before uploading.';
   @override
   String get feedback_compose_video_retry => 'Compress again';
+  @override
+  String get feedback_crash_auto_send_setting =>
+      'Automatically send crash logs';
+  @override
+  String get feedback_crash_auto_send_setting_hint =>
+      'After Fushi crashes or quits unexpectedly, send the logs to the developers on next launch without asking (the logs leave this device)';
+  @override
+  String get feedback_crash_auto_sent_notice =>
+      'Logs from the last crash were sent to the developers automatically';
+  @override
+  String get feedback_crash_kind_anr => 'not responding';
+  @override
+  String get feedback_crash_kind_crash => 'crash';
+  @override
+  String get feedback_crash_kind_memory =>
+      'closed by the system for low memory';
+  @override
+  String get feedback_crash_kind_native => 'native crash';
+  @override
+  String get feedback_crash_kind_startup => 'while starting';
+  @override
+  String get feedback_crash_kind_unexpected => 'unexpected exit';
+  @override
+  String get feedback_crash_notice_view => 'View';
+  @override
+  String get feedback_crash_prompt_always => 'Always send';
+  @override
+  String get feedback_crash_prompt_body =>
+      'Send the logs to the developers to help fix it? You can follow it in Feedback.';
+  @override
+  String get feedback_crash_prompt_decline => 'No thanks';
+  @override
+  String get feedback_crash_prompt_retry => 'Retry';
+  @override
+  String get feedback_crash_prompt_send => 'Send to developers';
+  @override
+  String get feedback_crash_prompt_sending => 'Sending…';
+  @override
+  String get feedback_crash_prompt_skip => 'Skip';
+  @override
+  String feedback_crash_prompt_title({required Object kind}) =>
+      'Fushi quit unexpectedly last time (${kind})';
+  @override
+  String feedback_crash_prompt_title_many({
+    required Object n,
+    required Object kind,
+  }) => 'Fushi quit unexpectedly ${n} times (${kind})';
+  @override
+  String get feedback_crash_report_header =>
+      'Generated by Fushi after it quit unexpectedly; logs and device info are attached.';
+  @override
+  String feedback_crash_report_title({
+    required Object kind,
+    required Object version,
+  }) => 'Crash report: ${kind} (${version})';
+  @override
+  String get feedback_crash_send_failed =>
+      'Could not send the crash logs. Fushi will ask again next time.';
+  @override
+  String get feedback_crash_sent_notice => 'Crash logs sent to the developers';
   @override
   String get feedback_detail_add_shot => 'Add screenshot';
   @override
@@ -155976,6 +157335,19 @@ class _StringsIt extends _StringsEn {
   String get lyrics_control_zone_top_hint =>
       'Top bar on phones, top-right corner on wide screens';
   @override
+  String get lyrics_controls_collapse => 'Collapse playback controls';
+  @override
+  String get lyrics_controls_expand => 'Expand playback controls';
+  @override
+  String get lyrics_controls_style => 'Playback controls layout';
+  @override
+  String get lyrics_controls_style_classic => 'Classic';
+  @override
+  String get lyrics_controls_style_hint =>
+      'New: a collapsible mini bar on phones and floating islands on wide screens. Classic: the previous layout.';
+  @override
+  String get lyrics_controls_style_modern => 'New';
+  @override
   String get lyrics_exit_to_library => 'Close and return to library';
   @override
   String get lyrics_font_size => 'Dimensione carattere testi';
@@ -155989,6 +157361,15 @@ class _StringsIt extends _StringsEn {
       'Use your own color for the line being read instead of the player theme color';
   @override
   String get lyrics_illustration_back_to_cover => 'Back to cover';
+  @override
+  String get lyrics_illustration_cue => 'Illustration prompt';
+  @override
+  String get lyrics_illustration_cue_dot => 'Dot';
+  @override
+  String get lyrics_illustration_cue_hint =>
+      'Pop up: show the illustration card and pause for the image pause duration below. Dot: only mark the cover thumbnail.';
+  @override
+  String get lyrics_illustration_cue_popup => 'Pop up';
   @override
   String get lyrics_illustration_next => 'Next illustration';
   @override
@@ -157213,6 +158594,9 @@ class _StringsIt extends _StringsEn {
   String media_privacy_inherited_note({required Object collections}) =>
       'Private because it is in the private collection “${collections}”. To make it public, turn off privacy on that collection.';
   @override
+  String media_privacy_inherited_source_note({required Object source}) =>
+      'Private because its source library “${source}” is private. To make it public, turn off privacy on that source library.';
+  @override
   String media_privacy_load_failed({required Object reason}) =>
       'Could not read the privacy setting, so it cannot be changed right now: ${reason}';
   @override
@@ -157333,6 +158717,28 @@ class _StringsIt extends _StringsEn {
   @override
   String get media_source_open_folder_failed =>
       'Couldn\'t open the folder. It may have been moved, deleted, or disconnected.';
+  @override
+  String get media_source_privacy_action => 'Privacy';
+  @override
+  String get media_source_privacy_badge =>
+      'Private: not uploaded to the leaderboard';
+  @override
+  String get media_source_privacy_cleared_toast =>
+      'Source library is no longer private';
+  @override
+  String get media_source_privacy_hint =>
+      'Everything this source library brings in is treated as private: it is never uploaded to the leaderboard, so it stays off your public shelf, profile and share cards, and its progress is not pushed to Bangumi. Items already uploaded are removed from the leaderboard as soon as you turn this on (or at the next sync if that fails). Your daily character total still counts them, without saying what you read. Removing this source keeps its items private.';
+  @override
+  String get media_source_privacy_marked_toast =>
+      'Source library is now private';
+  @override
+  String get media_source_privacy_switch => 'Keep this source library private';
+  @override
+  String media_source_privacy_withdraw_failed({required Object reason}) =>
+      'Source library is now private, but removing its items from the leaderboard failed; the next sync will try again: ${reason}';
+  @override
+  String get media_source_privacy_withdrawn_toast =>
+      'Source library is now private; its items were removed from the leaderboard';
   @override
   String get media_source_remove => 'Remove Source';
   @override
@@ -161000,7 +162406,13 @@ class _StringsIt extends _StringsEn {
   String get remote_book_audiobook_redownloaded =>
       'Audiobook re-downloaded from peer';
   @override
-  String get remote_book_delete_everywhere => 'Delete permanently';
+  String remote_book_delete_cloud_confirm({
+    required Object name,
+    required Object backend,
+  }) =>
+      'Delete "${name}" from ${backend}? The book\'s files, cover, progress and audiobook in the cloud are permanently deleted. This device has no copy and this can\'t be undone. Other devices will ask whether to delete their copy on their next sync.';
+  @override
+  String get remote_book_delete_everywhere => 'Also delete on host';
   @override
   String remote_book_delete_everywhere_confirm({
     required Object name,
@@ -161082,8 +162494,26 @@ class _StringsIt extends _StringsEn {
   String get remote_delete_audiobook_partial =>
       'Libro eliminato, ma il suo audiolibro non è stato rimosso sul dispositivo accoppiato';
   @override
+  String get remote_delete_cloud_checking =>
+      'Checking whether the cloud storage is reachable…';
+  @override
+  String get remote_delete_cloud_offline =>
+      'Can\'t reach the cloud storage. Delete it there once it\'s reachable.';
+  @override
+  String get remote_delete_cloud_signed_out =>
+      'The cloud storage sign-in has expired. Sign in again to delete it there.';
+  @override
   String get remote_delete_failed =>
       'Impossibile eliminarlo sul dispositivo accoppiato';
+  @override
+  String get remote_delete_host_checking =>
+      'Checking whether the host is online…';
+  @override
+  String get remote_delete_host_offline =>
+      'The host is offline or unreachable. Delete it there once it\'s connected.';
+  @override
+  String get remote_delete_host_pairing_rejected =>
+      'The host rejected this device\'s pairing. Pair again to delete it there.';
   @override
   String get remote_delete_unsupported =>
       'Il dispositivo accoppiato è troppo vecchio per supportare l\'eliminazione remota. Aggiorna prima Fushi lì.';
@@ -166607,6 +168037,12 @@ class _StringsIt extends _StringsEn {
   @override
   String get video_audio_track_empty => 'Nessuna traccia audio commutabile';
   @override
+  String get video_audio_track_fallback_muxed =>
+      'The audio stream was refused; switched to a compatible stream with sound (lower quality)';
+  @override
+  String get video_audio_track_load_failed =>
+      'Couldn\'t load the audio stream — there is no sound. The source refused access; try again later.';
+  @override
   String video_audio_track_switched({required Object label}) =>
       'Traccia audio: ${label}';
   @override
@@ -170793,8 +172229,32 @@ class _StringsJa extends _StringsEn {
   @override
   String get ai_agent_send => 'Send';
   @override
+  String get ai_agent_session_current => 'Current';
+  @override
+  String get ai_agent_session_delete => 'Delete';
+  @override
+  String ai_agent_session_delete_message({required Object title}) =>
+      '“${title}” will be removed from this device. Changes the assistant made stay in the AI action log and can still be undone there.';
+  @override
+  String get ai_agent_session_delete_title => 'Delete this conversation?';
+  @override
+  String get ai_agent_session_more => 'Conversation options';
+  @override
+  String get ai_agent_session_open_failed => 'Couldn\'t open this conversation';
+  @override
+  String get ai_agent_session_rename => 'Rename';
+  @override
+  String get ai_agent_session_rename_title => 'Rename conversation';
+  @override
   String ai_agent_session_summary({required Object n}) =>
       '${n} changes in this conversation';
+  @override
+  String get ai_agent_sessions_empty => 'No earlier conversations yet';
+  @override
+  String get ai_agent_sessions_retention_hint =>
+      'Conversations stay on this device for 30 days';
+  @override
+  String get ai_agent_sessions_title => 'Conversations';
   @override
   String get ai_agent_stop => 'Stop';
   @override
@@ -170993,6 +172453,35 @@ class _StringsJa extends _StringsEn {
   @override
   String get ai_interconnect_host_unpaired =>
       'No paired device yet. Pair a computer in Fushi Interconnect to let it handle AI video downloads with its own AI.';
+  @override
+  String get ai_mcp_access => 'External AI access (MCP)';
+  @override
+  String get ai_mcp_access_hint =>
+      'Lets MCP clients on this computer (Claude Desktop, Claude Code…) call Fushi\'s operations. Listens on this computer only and needs the pairing token below. Changes that can be undone run directly and show up in the AI action log; anything that can\'t be undone, and installing extensions, asks you here first. Off by default.';
+  @override
+  String get ai_mcp_confirm_arguments => 'Arguments';
+  @override
+  String ai_mcp_confirm_body({required Object client, required Object op}) =>
+      '${client} wants to run: ${op}';
+  @override
+  String ai_mcp_confirm_expire({required Object minutes}) =>
+      'Declined automatically if you do not answer within ${minutes} minutes.';
+  @override
+  String get ai_mcp_confirm_title => 'Request from an external AI';
+  @override
+  String get ai_mcp_token => 'Pairing token';
+  @override
+  String get ai_mcp_token_copy => 'Copy token';
+  @override
+  String get ai_mcp_token_copy_config => 'Copy client config';
+  @override
+  String get ai_mcp_token_hint =>
+      'Generate a token for your MCP client. Generating a new one revokes the old one.';
+  @override
+  String get ai_mcp_token_issued_body =>
+      'Put this token in your MCP client\'s configuration as FUSHI_MCP_TOKEN (the setup guide shows how). It is shown only once.';
+  @override
+  String get ai_mcp_token_issued_title => 'New pairing token';
   @override
   String get ai_media_acquire_ai_failed =>
       '現在AIを利用できません。結果は入力した元のテキストによるもので、シーダー数順に並べています。';
@@ -171836,6 +173325,8 @@ class _StringsJa extends _StringsEn {
   @override
   String get anki_dedup_unavailable => 'このマシンでAnkiが実行中である必要があります（AnkiConnect）。';
   @override
+  String get anki_delivery_section => 'Sending & pending cards';
+  @override
   String get anki_desktop_auto_launch => 'Launch Anki when Fushi starts';
   @override
   String get anki_desktop_auto_launch_hint =>
@@ -172270,6 +173761,9 @@ class _StringsJa extends _StringsEn {
   @override
   String get anki_pending_mines_status_sending => '送信中';
   @override
+  String anki_pending_mines_stopped({required Object reason}) =>
+      '${reason} The remaining cards stay in the queue.';
+  @override
   String get anki_pending_mines_title => '保留カード';
   @override
   String get anki_pending_mines_unreachable =>
@@ -172410,6 +173904,9 @@ class _StringsJa extends _StringsEn {
   String get anki_sync_client_enable_warn_confirm => 'I understand, enable';
   @override
   String get anki_sync_client_enable_warn_title => 'Enable Anki sync?';
+  @override
+  String anki_sync_client_error_not_sync_server({required Object detail}) =>
+      'The server did not answer with the Anki sync protocol (the anki-original-size response header is missing). Make sure the address points at an Anki sync server (the official anki-sync-server, or the one built into Anki desktop) rather than a web page; a reverse proxy must keep this header. Details: ${detail}';
   @override
   String anki_sync_client_has_unsynced({required Object count}) =>
       '未同期のカードが ${count} 枚あります。アカウントを切り替えるかサインアウトする前に同期してください。';
@@ -172616,6 +174113,9 @@ class _StringsJa extends _StringsEn {
   String get audio_panel_pick_new_subtitle => '新しい字幕ファイルを選択';
   @override
   String get audio_source_added => '音声ソースを追加しました';
+  @override
+  String audio_source_connection_refused({required Object host}) =>
+      'Audio source refused the connection: nothing is listening at "${host}" — make sure the service is running, or remove this source in settings';
   @override
   String audio_source_dns_error({required Object host}) =>
       '音声ソース接続失敗："${host}" を解決できません — ネットワークを確認するか、設定でこのソースを削除してください';
@@ -174721,6 +176221,18 @@ class _StringsJa extends _StringsEn {
   @override
   String get card_mining_pending => 'カードを追加中…';
   @override
+  String get card_notice_title_added => 'カードを追加しました';
+  @override
+  String get card_notice_title_duplicate => 'カードは既に存在します';
+  @override
+  String get card_notice_title_failed => 'カードを作成できませんでした';
+  @override
+  String get card_notice_title_overwritten => 'カードを上書きしました';
+  @override
+  String get card_notice_title_queued => '送信待ちに追加しました';
+  @override
+  String get card_notice_title_warning => 'カードを追加（一部欠落）';
+  @override
   String card_overwritten({required Object deck}) => '『${deck}』のカードを上書きしました。';
   @override
   String get card_source_open => 'Go to source';
@@ -175458,13 +176970,12 @@ class _StringsJa extends _StringsEn {
   @override
   String get delete_prompt_title => '別のデバイスで削除済み';
   @override
-  String get delete_scope_keep_local_desc => '他のデバイスはそのコピーを保持します';
-  @override
   String get delete_scope_no_channel => '同期が設定されていません - この削除はこのデバイスにのみ影響します';
   @override
   String get delete_scope_sync_everywhere => 'すべてのデバイスから削除';
   @override
-  String get delete_scope_sync_everywhere_desc => '他のデバイスは次回の同期で削除を確認します';
+  String get delete_scope_sync_everywhere_desc =>
+      'オンにすると、他のデバイスは次回の同期で削除を確認します。オフなら他のデバイスはコピーを保持します';
   @override
   String get delete_statistics => '統計データも削除';
   @override
@@ -175714,6 +177225,13 @@ class _StringsJa extends _StringsEn {
   @override
   String get dict_language_description =>
       'この辞書のテキストを表示するフォントを決定します。自動の場合、辞書が宣言した言語を使用します。';
+  @override
+  String dict_language_group_title({
+    required Object language,
+    required Object n,
+  }) => '${language} · ${n}';
+  @override
+  String get dict_language_group_unset => 'Language not set';
   @override
   String get dict_language_title => '辞書コンテンツ言語';
   @override
@@ -177037,6 +178555,66 @@ class _StringsJa extends _StringsEn {
       'You can attach 1 video (up to ${max}). It is compressed to ${resolution} before uploading.';
   @override
   String get feedback_compose_video_retry => 'Compress again';
+  @override
+  String get feedback_crash_auto_send_setting =>
+      'Automatically send crash logs';
+  @override
+  String get feedback_crash_auto_send_setting_hint =>
+      'After Fushi crashes or quits unexpectedly, send the logs to the developers on next launch without asking (the logs leave this device)';
+  @override
+  String get feedback_crash_auto_sent_notice =>
+      'Logs from the last crash were sent to the developers automatically';
+  @override
+  String get feedback_crash_kind_anr => 'not responding';
+  @override
+  String get feedback_crash_kind_crash => 'crash';
+  @override
+  String get feedback_crash_kind_memory =>
+      'closed by the system for low memory';
+  @override
+  String get feedback_crash_kind_native => 'native crash';
+  @override
+  String get feedback_crash_kind_startup => 'while starting';
+  @override
+  String get feedback_crash_kind_unexpected => 'unexpected exit';
+  @override
+  String get feedback_crash_notice_view => 'View';
+  @override
+  String get feedback_crash_prompt_always => 'Always send';
+  @override
+  String get feedback_crash_prompt_body =>
+      'Send the logs to the developers to help fix it? You can follow it in Feedback.';
+  @override
+  String get feedback_crash_prompt_decline => 'No thanks';
+  @override
+  String get feedback_crash_prompt_retry => 'Retry';
+  @override
+  String get feedback_crash_prompt_send => 'Send to developers';
+  @override
+  String get feedback_crash_prompt_sending => 'Sending…';
+  @override
+  String get feedback_crash_prompt_skip => 'Skip';
+  @override
+  String feedback_crash_prompt_title({required Object kind}) =>
+      'Fushi quit unexpectedly last time (${kind})';
+  @override
+  String feedback_crash_prompt_title_many({
+    required Object n,
+    required Object kind,
+  }) => 'Fushi quit unexpectedly ${n} times (${kind})';
+  @override
+  String get feedback_crash_report_header =>
+      'Generated by Fushi after it quit unexpectedly; logs and device info are attached.';
+  @override
+  String feedback_crash_report_title({
+    required Object kind,
+    required Object version,
+  }) => 'Crash report: ${kind} (${version})';
+  @override
+  String get feedback_crash_send_failed =>
+      'Could not send the crash logs. Fushi will ask again next time.';
+  @override
+  String get feedback_crash_sent_notice => 'Crash logs sent to the developers';
   @override
   String get feedback_detail_add_shot => 'Add screenshot';
   @override
@@ -181416,6 +182994,19 @@ class _StringsJa extends _StringsEn {
   String get lyrics_control_zone_top_hint =>
       'Top bar on phones, top-right corner on wide screens';
   @override
+  String get lyrics_controls_collapse => 'Collapse playback controls';
+  @override
+  String get lyrics_controls_expand => 'Expand playback controls';
+  @override
+  String get lyrics_controls_style => 'Playback controls layout';
+  @override
+  String get lyrics_controls_style_classic => 'Classic';
+  @override
+  String get lyrics_controls_style_hint =>
+      'New: a collapsible mini bar on phones and floating islands on wide screens. Classic: the previous layout.';
+  @override
+  String get lyrics_controls_style_modern => 'New';
+  @override
   String get lyrics_exit_to_library => 'Close and return to library';
   @override
   String get lyrics_font_size => '歌詞フォントサイズ';
@@ -181428,6 +183019,15 @@ class _StringsJa extends _StringsEn {
       'Use your own color for the line being read instead of the player theme color';
   @override
   String get lyrics_illustration_back_to_cover => 'Back to cover';
+  @override
+  String get lyrics_illustration_cue => 'Illustration prompt';
+  @override
+  String get lyrics_illustration_cue_dot => 'Dot';
+  @override
+  String get lyrics_illustration_cue_hint =>
+      'Pop up: show the illustration card and pause for the image pause duration below. Dot: only mark the cover thumbnail.';
+  @override
+  String get lyrics_illustration_cue_popup => 'Pop up';
   @override
   String get lyrics_illustration_next => 'Next illustration';
   @override
@@ -182593,6 +184193,9 @@ class _StringsJa extends _StringsEn {
   String media_privacy_inherited_note({required Object collections}) =>
       'Private because it is in the private collection “${collections}”. To make it public, turn off privacy on that collection.';
   @override
+  String media_privacy_inherited_source_note({required Object source}) =>
+      'Private because its source library “${source}” is private. To make it public, turn off privacy on that source library.';
+  @override
   String media_privacy_load_failed({required Object reason}) =>
       'Could not read the privacy setting, so it cannot be changed right now: ${reason}';
   @override
@@ -182706,6 +184309,28 @@ class _StringsJa extends _StringsEn {
   @override
   String get media_source_open_folder_failed =>
       'Couldn\'t open the folder. It may have been moved, deleted, or disconnected.';
+  @override
+  String get media_source_privacy_action => 'Privacy';
+  @override
+  String get media_source_privacy_badge =>
+      'Private: not uploaded to the leaderboard';
+  @override
+  String get media_source_privacy_cleared_toast =>
+      'Source library is no longer private';
+  @override
+  String get media_source_privacy_hint =>
+      'Everything this source library brings in is treated as private: it is never uploaded to the leaderboard, so it stays off your public shelf, profile and share cards, and its progress is not pushed to Bangumi. Items already uploaded are removed from the leaderboard as soon as you turn this on (or at the next sync if that fails). Your daily character total still counts them, without saying what you read. Removing this source keeps its items private.';
+  @override
+  String get media_source_privacy_marked_toast =>
+      'Source library is now private';
+  @override
+  String get media_source_privacy_switch => 'Keep this source library private';
+  @override
+  String media_source_privacy_withdraw_failed({required Object reason}) =>
+      'Source library is now private, but removing its items from the leaderboard failed; the next sync will try again: ${reason}';
+  @override
+  String get media_source_privacy_withdrawn_toast =>
+      'Source library is now private; its items were removed from the leaderboard';
   @override
   String get media_source_remove => 'Remove Source';
   @override
@@ -186255,7 +187880,13 @@ class _StringsJa extends _StringsEn {
   String get remote_book_audiobook_redownloaded =>
       'Audiobook re-downloaded from peer';
   @override
-  String get remote_book_delete_everywhere => 'Delete permanently';
+  String remote_book_delete_cloud_confirm({
+    required Object name,
+    required Object backend,
+  }) =>
+      'Delete "${name}" from ${backend}? The book\'s files, cover, progress and audiobook in the cloud are permanently deleted. This device has no copy and this can\'t be undone. Other devices will ask whether to delete their copy on their next sync.';
+  @override
+  String get remote_book_delete_everywhere => 'Also delete on host';
   @override
   String remote_book_delete_everywhere_confirm({
     required Object name,
@@ -186330,7 +187961,25 @@ class _StringsJa extends _StringsEn {
   String get remote_delete_audiobook_partial =>
       '書籍は削除されましたが、ペアリングされたデバイス上のオーディオブックを削除できませんでした';
   @override
+  String get remote_delete_cloud_checking =>
+      'Checking whether the cloud storage is reachable…';
+  @override
+  String get remote_delete_cloud_offline =>
+      'Can\'t reach the cloud storage. Delete it there once it\'s reachable.';
+  @override
+  String get remote_delete_cloud_signed_out =>
+      'The cloud storage sign-in has expired. Sign in again to delete it there.';
+  @override
   String get remote_delete_failed => 'ペアリングされたデバイスで削除できませんでした';
+  @override
+  String get remote_delete_host_checking =>
+      'Checking whether the host is online…';
+  @override
+  String get remote_delete_host_offline =>
+      'The host is offline or unreachable. Delete it there once it\'s connected.';
+  @override
+  String get remote_delete_host_pairing_rejected =>
+      'The host rejected this device\'s pairing. Pair again to delete it there.';
   @override
   String get remote_delete_unsupported =>
       'ペアリングされたデバイスが古すぎてリモート削除に対応していません。先にそちらのFushiを更新してください。';
@@ -191694,6 +193343,12 @@ class _StringsJa extends _StringsEn {
   @override
   String get video_audio_track_empty => '切り替え可能な音声トラックがありません';
   @override
+  String get video_audio_track_fallback_muxed =>
+      'The audio stream was refused; switched to a compatible stream with sound (lower quality)';
+  @override
+  String get video_audio_track_load_failed =>
+      'Couldn\'t load the audio stream — there is no sound. The source refused access; try again later.';
+  @override
   String video_audio_track_switched({required Object label}) =>
       '音声トラック：${label}';
   @override
@@ -195678,8 +197333,32 @@ class _StringsKo extends _StringsEn {
   @override
   String get ai_agent_send => 'Send';
   @override
+  String get ai_agent_session_current => 'Current';
+  @override
+  String get ai_agent_session_delete => 'Delete';
+  @override
+  String ai_agent_session_delete_message({required Object title}) =>
+      '“${title}” will be removed from this device. Changes the assistant made stay in the AI action log and can still be undone there.';
+  @override
+  String get ai_agent_session_delete_title => 'Delete this conversation?';
+  @override
+  String get ai_agent_session_more => 'Conversation options';
+  @override
+  String get ai_agent_session_open_failed => 'Couldn\'t open this conversation';
+  @override
+  String get ai_agent_session_rename => 'Rename';
+  @override
+  String get ai_agent_session_rename_title => 'Rename conversation';
+  @override
   String ai_agent_session_summary({required Object n}) =>
       '${n} changes in this conversation';
+  @override
+  String get ai_agent_sessions_empty => 'No earlier conversations yet';
+  @override
+  String get ai_agent_sessions_retention_hint =>
+      'Conversations stay on this device for 30 days';
+  @override
+  String get ai_agent_sessions_title => 'Conversations';
   @override
   String get ai_agent_stop => 'Stop';
   @override
@@ -195879,6 +197558,35 @@ class _StringsKo extends _StringsEn {
   @override
   String get ai_interconnect_host_unpaired =>
       'No paired device yet. Pair a computer in Fushi Interconnect to let it handle AI video downloads with its own AI.';
+  @override
+  String get ai_mcp_access => 'External AI access (MCP)';
+  @override
+  String get ai_mcp_access_hint =>
+      'Lets MCP clients on this computer (Claude Desktop, Claude Code…) call Fushi\'s operations. Listens on this computer only and needs the pairing token below. Changes that can be undone run directly and show up in the AI action log; anything that can\'t be undone, and installing extensions, asks you here first. Off by default.';
+  @override
+  String get ai_mcp_confirm_arguments => 'Arguments';
+  @override
+  String ai_mcp_confirm_body({required Object client, required Object op}) =>
+      '${client} wants to run: ${op}';
+  @override
+  String ai_mcp_confirm_expire({required Object minutes}) =>
+      'Declined automatically if you do not answer within ${minutes} minutes.';
+  @override
+  String get ai_mcp_confirm_title => 'Request from an external AI';
+  @override
+  String get ai_mcp_token => 'Pairing token';
+  @override
+  String get ai_mcp_token_copy => 'Copy token';
+  @override
+  String get ai_mcp_token_copy_config => 'Copy client config';
+  @override
+  String get ai_mcp_token_hint =>
+      'Generate a token for your MCP client. Generating a new one revokes the old one.';
+  @override
+  String get ai_mcp_token_issued_body =>
+      'Put this token in your MCP client\'s configuration as FUSHI_MCP_TOKEN (the setup guide shows how). It is shown only once.';
+  @override
+  String get ai_mcp_token_issued_title => 'New pairing token';
   @override
   String get ai_media_acquire_ai_failed =>
       'AI를 지금 사용할 수 없습니다. 입력하신 원문 기준으로 시더 수 순으로 정렬한 결과입니다.';
@@ -196719,6 +198427,8 @@ class _StringsKo extends _StringsEn {
   String get anki_dedup_unavailable =>
       '이 컴퓨터에서 Anki가 실행 중이어야 합니다 (AnkiConnect).';
   @override
+  String get anki_delivery_section => 'Sending & pending cards';
+  @override
   String get anki_desktop_auto_launch => 'Launch Anki when Fushi starts';
   @override
   String get anki_desktop_auto_launch_hint =>
@@ -197150,6 +198860,9 @@ class _StringsKo extends _StringsEn {
   @override
   String get anki_pending_mines_status_sending => '전송 중';
   @override
+  String anki_pending_mines_stopped({required Object reason}) =>
+      '${reason} The remaining cards stay in the queue.';
+  @override
   String get anki_pending_mines_title => '보류 카드';
   @override
   String get anki_pending_mines_unreachable =>
@@ -197290,6 +199003,9 @@ class _StringsKo extends _StringsEn {
   String get anki_sync_client_enable_warn_confirm => 'I understand, enable';
   @override
   String get anki_sync_client_enable_warn_title => 'Enable Anki sync?';
+  @override
+  String anki_sync_client_error_not_sync_server({required Object detail}) =>
+      'The server did not answer with the Anki sync protocol (the anki-original-size response header is missing). Make sure the address points at an Anki sync server (the official anki-sync-server, or the one built into Anki desktop) rather than a web page; a reverse proxy must keep this header. Details: ${detail}';
   @override
   String anki_sync_client_has_unsynced({required Object count}) =>
       '아직 동기화되지 않은 카드가 ${count}장 있습니다. 계정을 바꾸거나 로그아웃하기 전에 동기화하세요.';
@@ -197495,6 +199211,9 @@ class _StringsKo extends _StringsEn {
   String get audio_panel_pick_new_subtitle => '새 자막 파일 선택';
   @override
   String get audio_source_added => '오디오 소스가 추가됨';
+  @override
+  String audio_source_connection_refused({required Object host}) =>
+      'Audio source refused the connection: nothing is listening at "${host}" — make sure the service is running, or remove this source in settings';
   @override
   String audio_source_dns_error({required Object host}) =>
       '오디오 소스 연결 실패: "${host}"를 확인할 수 없음 — 네트워크를 확인하거나 설정에서 이 소스를 제거하세요';
@@ -199603,6 +201322,18 @@ class _StringsKo extends _StringsEn {
   @override
   String get card_mining_pending => '카드 추가 중…';
   @override
+  String get card_notice_title_added => 'Card added';
+  @override
+  String get card_notice_title_duplicate => 'Card already exists';
+  @override
+  String get card_notice_title_failed => 'Card not created';
+  @override
+  String get card_notice_title_overwritten => 'Card overwritten';
+  @override
+  String get card_notice_title_queued => 'Card queued';
+  @override
+  String get card_notice_title_warning => 'Card added, something missing';
+  @override
   String card_overwritten({required Object deck}) => '『${deck}』에 카드를 덮어썼습니다.';
   @override
   String get card_source_open => 'Go to source';
@@ -200347,13 +202078,12 @@ class _StringsKo extends _StringsEn {
   @override
   String get delete_prompt_title => '다른 기기에서 삭제됨';
   @override
-  String get delete_scope_keep_local_desc => '다른 기기에는 사본이 유지됩니다';
-  @override
   String get delete_scope_no_channel => '동기화가 설정되지 않았습니다 - 이 삭제는 이 기기에만 적용됩니다';
   @override
   String get delete_scope_sync_everywhere => '모든 기기에서 삭제';
   @override
-  String get delete_scope_sync_everywhere_desc => '다음 동기화 시 다른 기기에서 삭제가 확인됩니다';
+  String get delete_scope_sync_everywhere_desc =>
+      '체크하면 다음 동기화 때 다른 기기에서 삭제를 확인합니다. 체크하지 않으면 다른 기기에는 사본이 유지됩니다';
   @override
   String get delete_statistics => '통계도 함께 삭제';
   @override
@@ -200600,6 +202330,13 @@ class _StringsKo extends _StringsEn {
   @override
   String get dict_language_description =>
       '이 사전의 텍스트를 렌더링할 글꼴을 결정합니다. 자동은 사전이 선언한 언어를 사용합니다.';
+  @override
+  String dict_language_group_title({
+    required Object language,
+    required Object n,
+  }) => '${language} · ${n}';
+  @override
+  String get dict_language_group_unset => 'Language not set';
   @override
   String get dict_language_title => '사전 콘텐츠 언어';
   @override
@@ -201921,6 +203658,66 @@ class _StringsKo extends _StringsEn {
       'You can attach 1 video (up to ${max}). It is compressed to ${resolution} before uploading.';
   @override
   String get feedback_compose_video_retry => 'Compress again';
+  @override
+  String get feedback_crash_auto_send_setting =>
+      'Automatically send crash logs';
+  @override
+  String get feedback_crash_auto_send_setting_hint =>
+      'After Fushi crashes or quits unexpectedly, send the logs to the developers on next launch without asking (the logs leave this device)';
+  @override
+  String get feedback_crash_auto_sent_notice =>
+      'Logs from the last crash were sent to the developers automatically';
+  @override
+  String get feedback_crash_kind_anr => 'not responding';
+  @override
+  String get feedback_crash_kind_crash => 'crash';
+  @override
+  String get feedback_crash_kind_memory =>
+      'closed by the system for low memory';
+  @override
+  String get feedback_crash_kind_native => 'native crash';
+  @override
+  String get feedback_crash_kind_startup => 'while starting';
+  @override
+  String get feedback_crash_kind_unexpected => 'unexpected exit';
+  @override
+  String get feedback_crash_notice_view => 'View';
+  @override
+  String get feedback_crash_prompt_always => 'Always send';
+  @override
+  String get feedback_crash_prompt_body =>
+      'Send the logs to the developers to help fix it? You can follow it in Feedback.';
+  @override
+  String get feedback_crash_prompt_decline => 'No thanks';
+  @override
+  String get feedback_crash_prompt_retry => 'Retry';
+  @override
+  String get feedback_crash_prompt_send => 'Send to developers';
+  @override
+  String get feedback_crash_prompt_sending => 'Sending…';
+  @override
+  String get feedback_crash_prompt_skip => 'Skip';
+  @override
+  String feedback_crash_prompt_title({required Object kind}) =>
+      'Fushi quit unexpectedly last time (${kind})';
+  @override
+  String feedback_crash_prompt_title_many({
+    required Object n,
+    required Object kind,
+  }) => 'Fushi quit unexpectedly ${n} times (${kind})';
+  @override
+  String get feedback_crash_report_header =>
+      'Generated by Fushi after it quit unexpectedly; logs and device info are attached.';
+  @override
+  String feedback_crash_report_title({
+    required Object kind,
+    required Object version,
+  }) => 'Crash report: ${kind} (${version})';
+  @override
+  String get feedback_crash_send_failed =>
+      'Could not send the crash logs. Fushi will ask again next time.';
+  @override
+  String get feedback_crash_sent_notice => 'Crash logs sent to the developers';
   @override
   String get feedback_detail_add_shot => 'Add screenshot';
   @override
@@ -206312,6 +208109,19 @@ class _StringsKo extends _StringsEn {
   String get lyrics_control_zone_top_hint =>
       'Top bar on phones, top-right corner on wide screens';
   @override
+  String get lyrics_controls_collapse => 'Collapse playback controls';
+  @override
+  String get lyrics_controls_expand => 'Expand playback controls';
+  @override
+  String get lyrics_controls_style => 'Playback controls layout';
+  @override
+  String get lyrics_controls_style_classic => 'Classic';
+  @override
+  String get lyrics_controls_style_hint =>
+      'New: a collapsible mini bar on phones and floating islands on wide screens. Classic: the previous layout.';
+  @override
+  String get lyrics_controls_style_modern => 'New';
+  @override
   String get lyrics_exit_to_library => 'Close and return to library';
   @override
   String get lyrics_font_size => '가사 글꼴 크기';
@@ -206324,6 +208134,15 @@ class _StringsKo extends _StringsEn {
       'Use your own color for the line being read instead of the player theme color';
   @override
   String get lyrics_illustration_back_to_cover => 'Back to cover';
+  @override
+  String get lyrics_illustration_cue => 'Illustration prompt';
+  @override
+  String get lyrics_illustration_cue_dot => 'Dot';
+  @override
+  String get lyrics_illustration_cue_hint =>
+      'Pop up: show the illustration card and pause for the image pause duration below. Dot: only mark the cover thumbnail.';
+  @override
+  String get lyrics_illustration_cue_popup => 'Pop up';
   @override
   String get lyrics_illustration_next => 'Next illustration';
   @override
@@ -207498,6 +209317,9 @@ class _StringsKo extends _StringsEn {
   String media_privacy_inherited_note({required Object collections}) =>
       'Private because it is in the private collection “${collections}”. To make it public, turn off privacy on that collection.';
   @override
+  String media_privacy_inherited_source_note({required Object source}) =>
+      'Private because its source library “${source}” is private. To make it public, turn off privacy on that source library.';
+  @override
   String media_privacy_load_failed({required Object reason}) =>
       'Could not read the privacy setting, so it cannot be changed right now: ${reason}';
   @override
@@ -207611,6 +209433,28 @@ class _StringsKo extends _StringsEn {
   @override
   String get media_source_open_folder_failed =>
       'Couldn\'t open the folder. It may have been moved, deleted, or disconnected.';
+  @override
+  String get media_source_privacy_action => 'Privacy';
+  @override
+  String get media_source_privacy_badge =>
+      'Private: not uploaded to the leaderboard';
+  @override
+  String get media_source_privacy_cleared_toast =>
+      'Source library is no longer private';
+  @override
+  String get media_source_privacy_hint =>
+      'Everything this source library brings in is treated as private: it is never uploaded to the leaderboard, so it stays off your public shelf, profile and share cards, and its progress is not pushed to Bangumi. Items already uploaded are removed from the leaderboard as soon as you turn this on (or at the next sync if that fails). Your daily character total still counts them, without saying what you read. Removing this source keeps its items private.';
+  @override
+  String get media_source_privacy_marked_toast =>
+      'Source library is now private';
+  @override
+  String get media_source_privacy_switch => 'Keep this source library private';
+  @override
+  String media_source_privacy_withdraw_failed({required Object reason}) =>
+      'Source library is now private, but removing its items from the leaderboard failed; the next sync will try again: ${reason}';
+  @override
+  String get media_source_privacy_withdrawn_toast =>
+      'Source library is now private; its items were removed from the leaderboard';
   @override
   String get media_source_remove => 'Remove Source';
   @override
@@ -211168,7 +213012,13 @@ class _StringsKo extends _StringsEn {
   String get remote_book_audiobook_redownloaded =>
       'Audiobook re-downloaded from peer';
   @override
-  String get remote_book_delete_everywhere => 'Delete permanently';
+  String remote_book_delete_cloud_confirm({
+    required Object name,
+    required Object backend,
+  }) =>
+      'Delete "${name}" from ${backend}? The book\'s files, cover, progress and audiobook in the cloud are permanently deleted. This device has no copy and this can\'t be undone. Other devices will ask whether to delete their copy on their next sync.';
+  @override
+  String get remote_book_delete_everywhere => 'Also delete on host';
   @override
   String remote_book_delete_everywhere_confirm({
     required Object name,
@@ -211243,7 +213093,25 @@ class _StringsKo extends _StringsEn {
   String get remote_delete_audiobook_partial =>
       '책은 삭제되었으나, 페어링된 기기에서 오디오북을 제거할 수 없습니다';
   @override
+  String get remote_delete_cloud_checking =>
+      'Checking whether the cloud storage is reachable…';
+  @override
+  String get remote_delete_cloud_offline =>
+      'Can\'t reach the cloud storage. Delete it there once it\'s reachable.';
+  @override
+  String get remote_delete_cloud_signed_out =>
+      'The cloud storage sign-in has expired. Sign in again to delete it there.';
+  @override
   String get remote_delete_failed => '페어링된 기기에서 삭제할 수 없습니다';
+  @override
+  String get remote_delete_host_checking =>
+      'Checking whether the host is online…';
+  @override
+  String get remote_delete_host_offline =>
+      'The host is offline or unreachable. Delete it there once it\'s connected.';
+  @override
+  String get remote_delete_host_pairing_rejected =>
+      'The host rejected this device\'s pairing. Pair again to delete it there.';
   @override
   String get remote_delete_unsupported =>
       '페어링된 기기가 원격 삭제를 지원하기에 너무 오래된 버전입니다. 먼저 해당 기기의 Fushi를 업데이트하세요.';
@@ -216611,6 +218479,12 @@ class _StringsKo extends _StringsEn {
   @override
   String get video_audio_track_empty => '전환 가능한 오디오 트랙 없음';
   @override
+  String get video_audio_track_fallback_muxed =>
+      'The audio stream was refused; switched to a compatible stream with sound (lower quality)';
+  @override
+  String get video_audio_track_load_failed =>
+      'Couldn\'t load the audio stream — there is no sound. The source refused access; try again later.';
+  @override
   String video_audio_track_switched({required Object label}) =>
       '오디오 트랙: ${label}';
   @override
@@ -220630,8 +222504,32 @@ class _StringsNl extends _StringsEn {
   @override
   String get ai_agent_send => 'Send';
   @override
+  String get ai_agent_session_current => 'Current';
+  @override
+  String get ai_agent_session_delete => 'Delete';
+  @override
+  String ai_agent_session_delete_message({required Object title}) =>
+      '“${title}” will be removed from this device. Changes the assistant made stay in the AI action log and can still be undone there.';
+  @override
+  String get ai_agent_session_delete_title => 'Delete this conversation?';
+  @override
+  String get ai_agent_session_more => 'Conversation options';
+  @override
+  String get ai_agent_session_open_failed => 'Couldn\'t open this conversation';
+  @override
+  String get ai_agent_session_rename => 'Rename';
+  @override
+  String get ai_agent_session_rename_title => 'Rename conversation';
+  @override
   String ai_agent_session_summary({required Object n}) =>
       '${n} changes in this conversation';
+  @override
+  String get ai_agent_sessions_empty => 'No earlier conversations yet';
+  @override
+  String get ai_agent_sessions_retention_hint =>
+      'Conversations stay on this device for 30 days';
+  @override
+  String get ai_agent_sessions_title => 'Conversations';
   @override
   String get ai_agent_stop => 'Stop';
   @override
@@ -220838,6 +222736,35 @@ class _StringsNl extends _StringsEn {
   @override
   String get ai_interconnect_host_unpaired =>
       'No paired device yet. Pair a computer in Fushi Interconnect to let it handle AI video downloads with its own AI.';
+  @override
+  String get ai_mcp_access => 'External AI access (MCP)';
+  @override
+  String get ai_mcp_access_hint =>
+      'Lets MCP clients on this computer (Claude Desktop, Claude Code…) call Fushi\'s operations. Listens on this computer only and needs the pairing token below. Changes that can be undone run directly and show up in the AI action log; anything that can\'t be undone, and installing extensions, asks you here first. Off by default.';
+  @override
+  String get ai_mcp_confirm_arguments => 'Arguments';
+  @override
+  String ai_mcp_confirm_body({required Object client, required Object op}) =>
+      '${client} wants to run: ${op}';
+  @override
+  String ai_mcp_confirm_expire({required Object minutes}) =>
+      'Declined automatically if you do not answer within ${minutes} minutes.';
+  @override
+  String get ai_mcp_confirm_title => 'Request from an external AI';
+  @override
+  String get ai_mcp_token => 'Pairing token';
+  @override
+  String get ai_mcp_token_copy => 'Copy token';
+  @override
+  String get ai_mcp_token_copy_config => 'Copy client config';
+  @override
+  String get ai_mcp_token_hint =>
+      'Generate a token for your MCP client. Generating a new one revokes the old one.';
+  @override
+  String get ai_mcp_token_issued_body =>
+      'Put this token in your MCP client\'s configuration as FUSHI_MCP_TOKEN (the setup guide shows how). It is shown only once.';
+  @override
+  String get ai_mcp_token_issued_title => 'New pairing token';
   @override
   String get ai_media_acquire_ai_failed =>
       'AI is nu niet beschikbaar; de resultaten komen uit je oorspronkelijke tekst, gesorteerd op seeders.';
@@ -221728,6 +223655,8 @@ class _StringsNl extends _StringsEn {
   String get anki_dedup_unavailable =>
       'Vereist Anki op deze machine (AnkiConnect).';
   @override
+  String get anki_delivery_section => 'Sending & pending cards';
+  @override
   String get anki_desktop_auto_launch => 'Launch Anki when Fushi starts';
   @override
   String get anki_desktop_auto_launch_hint =>
@@ -222175,6 +224104,9 @@ class _StringsNl extends _StringsEn {
   @override
   String get anki_pending_mines_status_sending => 'Verzenden';
   @override
+  String anki_pending_mines_stopped({required Object reason}) =>
+      '${reason} The remaining cards stay in the queue.';
+  @override
   String get anki_pending_mines_title => 'Openstaande kaarten';
   @override
   String get anki_pending_mines_unreachable =>
@@ -222324,6 +224256,9 @@ class _StringsNl extends _StringsEn {
   String get anki_sync_client_enable_warn_confirm => 'I understand, enable';
   @override
   String get anki_sync_client_enable_warn_title => 'Enable Anki sync?';
+  @override
+  String anki_sync_client_error_not_sync_server({required Object detail}) =>
+      'The server did not answer with the Anki sync protocol (the anki-original-size response header is missing). Make sure the address points at an Anki sync server (the official anki-sync-server, or the one built into Anki desktop) rather than a web page; a reverse proxy must keep this header. Details: ${detail}';
   @override
   String anki_sync_client_has_unsynced({required Object count}) =>
       '${count} kaart(en) zijn nog niet gesynchroniseerd. Synchroniseer ze voordat je van account wisselt of afmeldt.';
@@ -222536,6 +224471,9 @@ class _StringsNl extends _StringsEn {
   String get audio_panel_pick_new_subtitle => 'Nieuw ondertitelbestand kiezen';
   @override
   String get audio_source_added => 'Audiobron toegevoegd';
+  @override
+  String audio_source_connection_refused({required Object host}) =>
+      'Audio source refused the connection: nothing is listening at "${host}" — make sure the service is running, or remove this source in settings';
   @override
   String audio_source_dns_error({required Object host}) =>
       'Audiobron verbinding mislukt: kan "${host}" niet oplossen — controleer uw netwerk of verwijder deze bron in instellingen';
@@ -224697,6 +226635,18 @@ class _StringsNl extends _StringsEn {
   @override
   String get card_mining_pending => 'Kaart toevoegen…';
   @override
+  String get card_notice_title_added => 'Card added';
+  @override
+  String get card_notice_title_duplicate => 'Card already exists';
+  @override
+  String get card_notice_title_failed => 'Card not created';
+  @override
+  String get card_notice_title_overwritten => 'Card overwritten';
+  @override
+  String get card_notice_title_queued => 'Card queued';
+  @override
+  String get card_notice_title_warning => 'Card added, something missing';
+  @override
   String card_overwritten({required Object deck}) =>
       'Kaart overschreven in 『${deck}』.';
   @override
@@ -225481,16 +227431,13 @@ class _StringsNl extends _StringsEn {
   @override
   String get delete_prompt_title => 'Verwijderd op een ander apparaat';
   @override
-  String get delete_scope_keep_local_desc =>
-      'Andere apparaten behouden hun kopie';
-  @override
   String get delete_scope_no_channel =>
       'Geen sync geconfigureerd — deze verwijdering betreft alleen dit apparaat';
   @override
   String get delete_scope_sync_everywhere => 'Overal verwijderen';
   @override
   String get delete_scope_sync_everywhere_desc =>
-      'Andere apparaten bevestigen de verwijdering bij de volgende sync';
+      'Indien aangevinkt, bevestigen andere apparaten de verwijdering bij de volgende sync; anders behouden ze hun kopie';
   @override
   String get delete_statistics => 'Ook statistieken verwijderen';
   @override
@@ -225746,6 +227693,13 @@ class _StringsNl extends _StringsEn {
   @override
   String get dict_language_description =>
       'Bepaalt welk lettertype de tekst van dit woordenboek weergeeft. Automatisch gebruikt de taal die het woordenboek declareert.';
+  @override
+  String dict_language_group_title({
+    required Object language,
+    required Object n,
+  }) => '${language} · ${n}';
+  @override
+  String get dict_language_group_unset => 'Language not set';
   @override
   String get dict_language_title => 'Woordenboek-inhoudstaal';
   @override
@@ -227130,6 +229084,66 @@ class _StringsNl extends _StringsEn {
       'You can attach 1 video (up to ${max}). It is compressed to ${resolution} before uploading.';
   @override
   String get feedback_compose_video_retry => 'Compress again';
+  @override
+  String get feedback_crash_auto_send_setting =>
+      'Automatically send crash logs';
+  @override
+  String get feedback_crash_auto_send_setting_hint =>
+      'After Fushi crashes or quits unexpectedly, send the logs to the developers on next launch without asking (the logs leave this device)';
+  @override
+  String get feedback_crash_auto_sent_notice =>
+      'Logs from the last crash were sent to the developers automatically';
+  @override
+  String get feedback_crash_kind_anr => 'not responding';
+  @override
+  String get feedback_crash_kind_crash => 'crash';
+  @override
+  String get feedback_crash_kind_memory =>
+      'closed by the system for low memory';
+  @override
+  String get feedback_crash_kind_native => 'native crash';
+  @override
+  String get feedback_crash_kind_startup => 'while starting';
+  @override
+  String get feedback_crash_kind_unexpected => 'unexpected exit';
+  @override
+  String get feedback_crash_notice_view => 'View';
+  @override
+  String get feedback_crash_prompt_always => 'Always send';
+  @override
+  String get feedback_crash_prompt_body =>
+      'Send the logs to the developers to help fix it? You can follow it in Feedback.';
+  @override
+  String get feedback_crash_prompt_decline => 'No thanks';
+  @override
+  String get feedback_crash_prompt_retry => 'Retry';
+  @override
+  String get feedback_crash_prompt_send => 'Send to developers';
+  @override
+  String get feedback_crash_prompt_sending => 'Sending…';
+  @override
+  String get feedback_crash_prompt_skip => 'Skip';
+  @override
+  String feedback_crash_prompt_title({required Object kind}) =>
+      'Fushi quit unexpectedly last time (${kind})';
+  @override
+  String feedback_crash_prompt_title_many({
+    required Object n,
+    required Object kind,
+  }) => 'Fushi quit unexpectedly ${n} times (${kind})';
+  @override
+  String get feedback_crash_report_header =>
+      'Generated by Fushi after it quit unexpectedly; logs and device info are attached.';
+  @override
+  String feedback_crash_report_title({
+    required Object kind,
+    required Object version,
+  }) => 'Crash report: ${kind} (${version})';
+  @override
+  String get feedback_crash_send_failed =>
+      'Could not send the crash logs. Fushi will ask again next time.';
+  @override
+  String get feedback_crash_sent_notice => 'Crash logs sent to the developers';
   @override
   String get feedback_detail_add_shot => 'Add screenshot';
   @override
@@ -231717,6 +233731,19 @@ class _StringsNl extends _StringsEn {
   String get lyrics_control_zone_top_hint =>
       'Top bar on phones, top-right corner on wide screens';
   @override
+  String get lyrics_controls_collapse => 'Collapse playback controls';
+  @override
+  String get lyrics_controls_expand => 'Expand playback controls';
+  @override
+  String get lyrics_controls_style => 'Playback controls layout';
+  @override
+  String get lyrics_controls_style_classic => 'Classic';
+  @override
+  String get lyrics_controls_style_hint =>
+      'New: a collapsible mini bar on phones and floating islands on wide screens. Classic: the previous layout.';
+  @override
+  String get lyrics_controls_style_modern => 'New';
+  @override
   String get lyrics_exit_to_library => 'Close and return to library';
   @override
   String get lyrics_font_size => 'Lettergrootte songtekst';
@@ -231730,6 +233757,15 @@ class _StringsNl extends _StringsEn {
       'Use your own color for the line being read instead of the player theme color';
   @override
   String get lyrics_illustration_back_to_cover => 'Back to cover';
+  @override
+  String get lyrics_illustration_cue => 'Illustration prompt';
+  @override
+  String get lyrics_illustration_cue_dot => 'Dot';
+  @override
+  String get lyrics_illustration_cue_hint =>
+      'Pop up: show the illustration card and pause for the image pause duration below. Dot: only mark the cover thumbnail.';
+  @override
+  String get lyrics_illustration_cue_popup => 'Pop up';
   @override
   String get lyrics_illustration_next => 'Next illustration';
   @override
@@ -232940,6 +234976,9 @@ class _StringsNl extends _StringsEn {
   String media_privacy_inherited_note({required Object collections}) =>
       'Private because it is in the private collection “${collections}”. To make it public, turn off privacy on that collection.';
   @override
+  String media_privacy_inherited_source_note({required Object source}) =>
+      'Private because its source library “${source}” is private. To make it public, turn off privacy on that source library.';
+  @override
   String media_privacy_load_failed({required Object reason}) =>
       'Could not read the privacy setting, so it cannot be changed right now: ${reason}';
   @override
@@ -233059,6 +235098,28 @@ class _StringsNl extends _StringsEn {
   @override
   String get media_source_open_folder_failed =>
       'Couldn\'t open the folder. It may have been moved, deleted, or disconnected.';
+  @override
+  String get media_source_privacy_action => 'Privacy';
+  @override
+  String get media_source_privacy_badge =>
+      'Private: not uploaded to the leaderboard';
+  @override
+  String get media_source_privacy_cleared_toast =>
+      'Source library is no longer private';
+  @override
+  String get media_source_privacy_hint =>
+      'Everything this source library brings in is treated as private: it is never uploaded to the leaderboard, so it stays off your public shelf, profile and share cards, and its progress is not pushed to Bangumi. Items already uploaded are removed from the leaderboard as soon as you turn this on (or at the next sync if that fails). Your daily character total still counts them, without saying what you read. Removing this source keeps its items private.';
+  @override
+  String get media_source_privacy_marked_toast =>
+      'Source library is now private';
+  @override
+  String get media_source_privacy_switch => 'Keep this source library private';
+  @override
+  String media_source_privacy_withdraw_failed({required Object reason}) =>
+      'Source library is now private, but removing its items from the leaderboard failed; the next sync will try again: ${reason}';
+  @override
+  String get media_source_privacy_withdrawn_toast =>
+      'Source library is now private; its items were removed from the leaderboard';
   @override
   String get media_source_remove => 'Remove Source';
   @override
@@ -236729,7 +238790,13 @@ class _StringsNl extends _StringsEn {
   String get remote_book_audiobook_redownloaded =>
       'Audiobook re-downloaded from peer';
   @override
-  String get remote_book_delete_everywhere => 'Delete permanently';
+  String remote_book_delete_cloud_confirm({
+    required Object name,
+    required Object backend,
+  }) =>
+      'Delete "${name}" from ${backend}? The book\'s files, cover, progress and audiobook in the cloud are permanently deleted. This device has no copy and this can\'t be undone. Other devices will ask whether to delete their copy on their next sync.';
+  @override
+  String get remote_book_delete_everywhere => 'Also delete on host';
   @override
   String remote_book_delete_everywhere_confirm({
     required Object name,
@@ -236810,8 +238877,26 @@ class _StringsNl extends _StringsEn {
   String get remote_delete_audiobook_partial =>
       'Boek verwijderd, maar het luisterboek kon niet worden verwijderd op het gekoppelde apparaat';
   @override
+  String get remote_delete_cloud_checking =>
+      'Checking whether the cloud storage is reachable…';
+  @override
+  String get remote_delete_cloud_offline =>
+      'Can\'t reach the cloud storage. Delete it there once it\'s reachable.';
+  @override
+  String get remote_delete_cloud_signed_out =>
+      'The cloud storage sign-in has expired. Sign in again to delete it there.';
+  @override
   String get remote_delete_failed =>
       'Kon het niet verwijderen op het gekoppelde apparaat';
+  @override
+  String get remote_delete_host_checking =>
+      'Checking whether the host is online…';
+  @override
+  String get remote_delete_host_offline =>
+      'The host is offline or unreachable. Delete it there once it\'s connected.';
+  @override
+  String get remote_delete_host_pairing_rejected =>
+      'The host rejected this device\'s pairing. Pair again to delete it there.';
   @override
   String get remote_delete_unsupported =>
       'Het gekoppelde apparaat draait een te oude versie om externe verwijdering te ondersteunen. Werk Fushi daar eerst bij.';
@@ -242329,6 +244414,12 @@ class _StringsNl extends _StringsEn {
   @override
   String get video_audio_track_empty => 'Geen wisselbare audiotracks';
   @override
+  String get video_audio_track_fallback_muxed =>
+      'The audio stream was refused; switched to a compatible stream with sound (lower quality)';
+  @override
+  String get video_audio_track_load_failed =>
+      'Couldn\'t load the audio stream — there is no sound. The source refused access; try again later.';
+  @override
   String video_audio_track_switched({required Object label}) =>
       'Audiotrack: ${label}';
   @override
@@ -246503,8 +248594,32 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get ai_agent_send => 'Send';
   @override
+  String get ai_agent_session_current => 'Current';
+  @override
+  String get ai_agent_session_delete => 'Delete';
+  @override
+  String ai_agent_session_delete_message({required Object title}) =>
+      '“${title}” will be removed from this device. Changes the assistant made stay in the AI action log and can still be undone there.';
+  @override
+  String get ai_agent_session_delete_title => 'Delete this conversation?';
+  @override
+  String get ai_agent_session_more => 'Conversation options';
+  @override
+  String get ai_agent_session_open_failed => 'Couldn\'t open this conversation';
+  @override
+  String get ai_agent_session_rename => 'Rename';
+  @override
+  String get ai_agent_session_rename_title => 'Rename conversation';
+  @override
   String ai_agent_session_summary({required Object n}) =>
       '${n} changes in this conversation';
+  @override
+  String get ai_agent_sessions_empty => 'No earlier conversations yet';
+  @override
+  String get ai_agent_sessions_retention_hint =>
+      'Conversations stay on this device for 30 days';
+  @override
+  String get ai_agent_sessions_title => 'Conversations';
   @override
   String get ai_agent_stop => 'Stop';
   @override
@@ -246712,6 +248827,35 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get ai_interconnect_host_unpaired =>
       'No paired device yet. Pair a computer in Fushi Interconnect to let it handle AI video downloads with its own AI.';
+  @override
+  String get ai_mcp_access => 'External AI access (MCP)';
+  @override
+  String get ai_mcp_access_hint =>
+      'Lets MCP clients on this computer (Claude Desktop, Claude Code…) call Fushi\'s operations. Listens on this computer only and needs the pairing token below. Changes that can be undone run directly and show up in the AI action log; anything that can\'t be undone, and installing extensions, asks you here first. Off by default.';
+  @override
+  String get ai_mcp_confirm_arguments => 'Arguments';
+  @override
+  String ai_mcp_confirm_body({required Object client, required Object op}) =>
+      '${client} wants to run: ${op}';
+  @override
+  String ai_mcp_confirm_expire({required Object minutes}) =>
+      'Declined automatically if you do not answer within ${minutes} minutes.';
+  @override
+  String get ai_mcp_confirm_title => 'Request from an external AI';
+  @override
+  String get ai_mcp_token => 'Pairing token';
+  @override
+  String get ai_mcp_token_copy => 'Copy token';
+  @override
+  String get ai_mcp_token_copy_config => 'Copy client config';
+  @override
+  String get ai_mcp_token_hint =>
+      'Generate a token for your MCP client. Generating a new one revokes the old one.';
+  @override
+  String get ai_mcp_token_issued_body =>
+      'Put this token in your MCP client\'s configuration as FUSHI_MCP_TOKEN (the setup guide shows how). It is shown only once.';
+  @override
+  String get ai_mcp_token_issued_title => 'New pairing token';
   @override
   String get ai_media_acquire_ai_failed =>
       'A IA está indisponível no momento; os resultados vêm do seu texto original, ordenados por seeders.';
@@ -247599,6 +249743,8 @@ class _StringsPtBr extends _StringsEn {
   String get anki_dedup_unavailable =>
       'Requer Anki rodando nesta máquina (AnkiConnect).';
   @override
+  String get anki_delivery_section => 'Sending & pending cards';
+  @override
   String get anki_desktop_auto_launch => 'Launch Anki when Fushi starts';
   @override
   String get anki_desktop_auto_launch_hint =>
@@ -248059,6 +250205,9 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get anki_pending_mines_status_sending => 'Enviando';
   @override
+  String anki_pending_mines_stopped({required Object reason}) =>
+      '${reason} The remaining cards stay in the queue.';
+  @override
   String get anki_pending_mines_title => 'Cartões pendentes';
   @override
   String get anki_pending_mines_unreachable =>
@@ -248206,6 +250355,9 @@ class _StringsPtBr extends _StringsEn {
   String get anki_sync_client_enable_warn_confirm => 'I understand, enable';
   @override
   String get anki_sync_client_enable_warn_title => 'Enable Anki sync?';
+  @override
+  String anki_sync_client_error_not_sync_server({required Object detail}) =>
+      'The server did not answer with the Anki sync protocol (the anki-original-size response header is missing). Make sure the address points at an Anki sync server (the official anki-sync-server, or the one built into Anki desktop) rather than a web page; a reverse proxy must keep this header. Details: ${detail}';
   @override
   String anki_sync_client_has_unsynced({required Object count}) =>
       '${count} cartão(ões) ainda não sincronizaram. Sincronize-os antes de trocar de conta ou sair.';
@@ -248420,6 +250572,9 @@ class _StringsPtBr extends _StringsEn {
       'Escolher novo arquivo de legendas';
   @override
   String get audio_source_added => 'Fonte de áudio adicionada';
+  @override
+  String audio_source_connection_refused({required Object host}) =>
+      'Audio source refused the connection: nothing is listening at "${host}" — make sure the service is running, or remove this source in settings';
   @override
   String audio_source_dns_error({required Object host}) =>
       'Falha na conexão da fonte de áudio: não é possível resolver "${host}" — verifique sua rede ou remova esta fonte nas configurações';
@@ -250582,6 +252737,18 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get card_mining_pending => 'Adicionando cartão…';
   @override
+  String get card_notice_title_added => 'Card added';
+  @override
+  String get card_notice_title_duplicate => 'Card already exists';
+  @override
+  String get card_notice_title_failed => 'Card not created';
+  @override
+  String get card_notice_title_overwritten => 'Card overwritten';
+  @override
+  String get card_notice_title_queued => 'Card queued';
+  @override
+  String get card_notice_title_warning => 'Card added, something missing';
+  @override
   String card_overwritten({required Object deck}) =>
       'Cartão sobrescrito em 『${deck}』.';
   @override
@@ -251366,16 +253533,13 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get delete_prompt_title => 'Excluído em outro dispositivo';
   @override
-  String get delete_scope_keep_local_desc =>
-      'Outros dispositivos mantêm sua cópia';
-  @override
   String get delete_scope_no_channel =>
       'Nenhuma sincronização configurada - esta exclusão afeta apenas este dispositivo';
   @override
   String get delete_scope_sync_everywhere => 'Excluir de todos os dispositivos';
   @override
   String get delete_scope_sync_everywhere_desc =>
-      'Outros dispositivos confirmam a exclusão na próxima sincronização';
+      'Se marcado, os outros dispositivos confirmam a exclusão na próxima sincronização; se não, mantêm sua cópia';
   @override
   String get delete_statistics => 'Excluir também as estatísticas';
   @override
@@ -251632,6 +253796,13 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get dict_language_description =>
       'Define qual fonte renderiza o texto deste dicionário. Automático usa o idioma declarado pelo dicionário.';
+  @override
+  String dict_language_group_title({
+    required Object language,
+    required Object n,
+  }) => '${language} · ${n}';
+  @override
+  String get dict_language_group_unset => 'Language not set';
   @override
   String get dict_language_title => 'Idioma do conteúdo do dicionário';
   @override
@@ -253020,6 +255191,66 @@ class _StringsPtBr extends _StringsEn {
       'You can attach 1 video (up to ${max}). It is compressed to ${resolution} before uploading.';
   @override
   String get feedback_compose_video_retry => 'Compress again';
+  @override
+  String get feedback_crash_auto_send_setting =>
+      'Automatically send crash logs';
+  @override
+  String get feedback_crash_auto_send_setting_hint =>
+      'After Fushi crashes or quits unexpectedly, send the logs to the developers on next launch without asking (the logs leave this device)';
+  @override
+  String get feedback_crash_auto_sent_notice =>
+      'Logs from the last crash were sent to the developers automatically';
+  @override
+  String get feedback_crash_kind_anr => 'not responding';
+  @override
+  String get feedback_crash_kind_crash => 'crash';
+  @override
+  String get feedback_crash_kind_memory =>
+      'closed by the system for low memory';
+  @override
+  String get feedback_crash_kind_native => 'native crash';
+  @override
+  String get feedback_crash_kind_startup => 'while starting';
+  @override
+  String get feedback_crash_kind_unexpected => 'unexpected exit';
+  @override
+  String get feedback_crash_notice_view => 'View';
+  @override
+  String get feedback_crash_prompt_always => 'Always send';
+  @override
+  String get feedback_crash_prompt_body =>
+      'Send the logs to the developers to help fix it? You can follow it in Feedback.';
+  @override
+  String get feedback_crash_prompt_decline => 'No thanks';
+  @override
+  String get feedback_crash_prompt_retry => 'Retry';
+  @override
+  String get feedback_crash_prompt_send => 'Send to developers';
+  @override
+  String get feedback_crash_prompt_sending => 'Sending…';
+  @override
+  String get feedback_crash_prompt_skip => 'Skip';
+  @override
+  String feedback_crash_prompt_title({required Object kind}) =>
+      'Fushi quit unexpectedly last time (${kind})';
+  @override
+  String feedback_crash_prompt_title_many({
+    required Object n,
+    required Object kind,
+  }) => 'Fushi quit unexpectedly ${n} times (${kind})';
+  @override
+  String get feedback_crash_report_header =>
+      'Generated by Fushi after it quit unexpectedly; logs and device info are attached.';
+  @override
+  String feedback_crash_report_title({
+    required Object kind,
+    required Object version,
+  }) => 'Crash report: ${kind} (${version})';
+  @override
+  String get feedback_crash_send_failed =>
+      'Could not send the crash logs. Fushi will ask again next time.';
+  @override
+  String get feedback_crash_sent_notice => 'Crash logs sent to the developers';
   @override
   String get feedback_detail_add_shot => 'Add screenshot';
   @override
@@ -257630,6 +259861,19 @@ class _StringsPtBr extends _StringsEn {
   String get lyrics_control_zone_top_hint =>
       'Top bar on phones, top-right corner on wide screens';
   @override
+  String get lyrics_controls_collapse => 'Collapse playback controls';
+  @override
+  String get lyrics_controls_expand => 'Expand playback controls';
+  @override
+  String get lyrics_controls_style => 'Playback controls layout';
+  @override
+  String get lyrics_controls_style_classic => 'Classic';
+  @override
+  String get lyrics_controls_style_hint =>
+      'New: a collapsible mini bar on phones and floating islands on wide screens. Classic: the previous layout.';
+  @override
+  String get lyrics_controls_style_modern => 'New';
+  @override
   String get lyrics_exit_to_library => 'Close and return to library';
   @override
   String get lyrics_font_size => 'Tamanho da fonte das letras';
@@ -257643,6 +259887,15 @@ class _StringsPtBr extends _StringsEn {
       'Use your own color for the line being read instead of the player theme color';
   @override
   String get lyrics_illustration_back_to_cover => 'Back to cover';
+  @override
+  String get lyrics_illustration_cue => 'Illustration prompt';
+  @override
+  String get lyrics_illustration_cue_dot => 'Dot';
+  @override
+  String get lyrics_illustration_cue_hint =>
+      'Pop up: show the illustration card and pause for the image pause duration below. Dot: only mark the cover thumbnail.';
+  @override
+  String get lyrics_illustration_cue_popup => 'Pop up';
   @override
   String get lyrics_illustration_next => 'Next illustration';
   @override
@@ -258859,6 +261112,9 @@ class _StringsPtBr extends _StringsEn {
   String media_privacy_inherited_note({required Object collections}) =>
       'Private because it is in the private collection “${collections}”. To make it public, turn off privacy on that collection.';
   @override
+  String media_privacy_inherited_source_note({required Object source}) =>
+      'Private because its source library “${source}” is private. To make it public, turn off privacy on that source library.';
+  @override
   String media_privacy_load_failed({required Object reason}) =>
       'Could not read the privacy setting, so it cannot be changed right now: ${reason}';
   @override
@@ -258979,6 +261235,28 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get media_source_open_folder_failed =>
       'Couldn\'t open the folder. It may have been moved, deleted, or disconnected.';
+  @override
+  String get media_source_privacy_action => 'Privacy';
+  @override
+  String get media_source_privacy_badge =>
+      'Private: not uploaded to the leaderboard';
+  @override
+  String get media_source_privacy_cleared_toast =>
+      'Source library is no longer private';
+  @override
+  String get media_source_privacy_hint =>
+      'Everything this source library brings in is treated as private: it is never uploaded to the leaderboard, so it stays off your public shelf, profile and share cards, and its progress is not pushed to Bangumi. Items already uploaded are removed from the leaderboard as soon as you turn this on (or at the next sync if that fails). Your daily character total still counts them, without saying what you read. Removing this source keeps its items private.';
+  @override
+  String get media_source_privacy_marked_toast =>
+      'Source library is now private';
+  @override
+  String get media_source_privacy_switch => 'Keep this source library private';
+  @override
+  String media_source_privacy_withdraw_failed({required Object reason}) =>
+      'Source library is now private, but removing its items from the leaderboard failed; the next sync will try again: ${reason}';
+  @override
+  String get media_source_privacy_withdrawn_toast =>
+      'Source library is now private; its items were removed from the leaderboard';
   @override
   String get media_source_remove => 'Remove Source';
   @override
@@ -262648,7 +264926,13 @@ class _StringsPtBr extends _StringsEn {
   String get remote_book_audiobook_redownloaded =>
       'Audiobook re-downloaded from peer';
   @override
-  String get remote_book_delete_everywhere => 'Delete permanently';
+  String remote_book_delete_cloud_confirm({
+    required Object name,
+    required Object backend,
+  }) =>
+      'Delete "${name}" from ${backend}? The book\'s files, cover, progress and audiobook in the cloud are permanently deleted. This device has no copy and this can\'t be undone. Other devices will ask whether to delete their copy on their next sync.';
+  @override
+  String get remote_book_delete_everywhere => 'Also delete on host';
   @override
   String remote_book_delete_everywhere_confirm({
     required Object name,
@@ -262729,8 +265013,26 @@ class _StringsPtBr extends _StringsEn {
   String get remote_delete_audiobook_partial =>
       'Livro excluído, mas seu audiobook não pôde ser removido no dispositivo pareado';
   @override
+  String get remote_delete_cloud_checking =>
+      'Checking whether the cloud storage is reachable…';
+  @override
+  String get remote_delete_cloud_offline =>
+      'Can\'t reach the cloud storage. Delete it there once it\'s reachable.';
+  @override
+  String get remote_delete_cloud_signed_out =>
+      'The cloud storage sign-in has expired. Sign in again to delete it there.';
+  @override
   String get remote_delete_failed =>
       'Não foi possível excluir no dispositivo pareado';
+  @override
+  String get remote_delete_host_checking =>
+      'Checking whether the host is online…';
+  @override
+  String get remote_delete_host_offline =>
+      'The host is offline or unreachable. Delete it there once it\'s connected.';
+  @override
+  String get remote_delete_host_pairing_rejected =>
+      'The host rejected this device\'s pairing. Pair again to delete it there.';
   @override
   String get remote_delete_unsupported =>
       'O dispositivo pareado é muito antigo para suportar exclusão remota. Atualize o Fushi lá primeiro.';
@@ -268247,6 +270549,12 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get video_audio_track_empty => 'Nenhuma faixa de áudio alternável';
   @override
+  String get video_audio_track_fallback_muxed =>
+      'The audio stream was refused; switched to a compatible stream with sound (lower quality)';
+  @override
+  String get video_audio_track_load_failed =>
+      'Couldn\'t load the audio stream — there is no sound. The source refused access; try again later.';
+  @override
   String video_audio_track_switched({required Object label}) =>
       'Faixa de áudio: ${label}';
   @override
@@ -272444,8 +274752,32 @@ class _StringsRu extends _StringsEn {
   @override
   String get ai_agent_send => 'Send';
   @override
+  String get ai_agent_session_current => 'Current';
+  @override
+  String get ai_agent_session_delete => 'Delete';
+  @override
+  String ai_agent_session_delete_message({required Object title}) =>
+      '“${title}” will be removed from this device. Changes the assistant made stay in the AI action log and can still be undone there.';
+  @override
+  String get ai_agent_session_delete_title => 'Delete this conversation?';
+  @override
+  String get ai_agent_session_more => 'Conversation options';
+  @override
+  String get ai_agent_session_open_failed => 'Couldn\'t open this conversation';
+  @override
+  String get ai_agent_session_rename => 'Rename';
+  @override
+  String get ai_agent_session_rename_title => 'Rename conversation';
+  @override
   String ai_agent_session_summary({required Object n}) =>
       '${n} changes in this conversation';
+  @override
+  String get ai_agent_sessions_empty => 'No earlier conversations yet';
+  @override
+  String get ai_agent_sessions_retention_hint =>
+      'Conversations stay on this device for 30 days';
+  @override
+  String get ai_agent_sessions_title => 'Conversations';
   @override
   String get ai_agent_stop => 'Stop';
   @override
@@ -272651,6 +274983,35 @@ class _StringsRu extends _StringsEn {
   @override
   String get ai_interconnect_host_unpaired =>
       'No paired device yet. Pair a computer in Fushi Interconnect to let it handle AI video downloads with its own AI.';
+  @override
+  String get ai_mcp_access => 'External AI access (MCP)';
+  @override
+  String get ai_mcp_access_hint =>
+      'Lets MCP clients on this computer (Claude Desktop, Claude Code…) call Fushi\'s operations. Listens on this computer only and needs the pairing token below. Changes that can be undone run directly and show up in the AI action log; anything that can\'t be undone, and installing extensions, asks you here first. Off by default.';
+  @override
+  String get ai_mcp_confirm_arguments => 'Arguments';
+  @override
+  String ai_mcp_confirm_body({required Object client, required Object op}) =>
+      '${client} wants to run: ${op}';
+  @override
+  String ai_mcp_confirm_expire({required Object minutes}) =>
+      'Declined automatically if you do not answer within ${minutes} minutes.';
+  @override
+  String get ai_mcp_confirm_title => 'Request from an external AI';
+  @override
+  String get ai_mcp_token => 'Pairing token';
+  @override
+  String get ai_mcp_token_copy => 'Copy token';
+  @override
+  String get ai_mcp_token_copy_config => 'Copy client config';
+  @override
+  String get ai_mcp_token_hint =>
+      'Generate a token for your MCP client. Generating a new one revokes the old one.';
+  @override
+  String get ai_mcp_token_issued_body =>
+      'Put this token in your MCP client\'s configuration as FUSHI_MCP_TOKEN (the setup guide shows how). It is shown only once.';
+  @override
+  String get ai_mcp_token_issued_title => 'New pairing token';
   @override
   String get ai_media_acquire_ai_failed =>
       'ИИ сейчас недоступен; результаты получены по вашему исходному тексту и отсортированы по числу сидов.';
@@ -273536,6 +275897,8 @@ class _StringsRu extends _StringsEn {
   String get anki_dedup_unavailable =>
       'Требуется Anki, запущенный на этом компьютере (AnkiConnect).';
   @override
+  String get anki_delivery_section => 'Sending & pending cards';
+  @override
   String get anki_desktop_auto_launch => 'Launch Anki when Fushi starts';
   @override
   String get anki_desktop_auto_launch_hint =>
@@ -273988,6 +276351,9 @@ class _StringsRu extends _StringsEn {
   @override
   String get anki_pending_mines_status_sending => 'Отправка';
   @override
+  String anki_pending_mines_stopped({required Object reason}) =>
+      '${reason} The remaining cards stay in the queue.';
+  @override
   String get anki_pending_mines_title => 'Ожидающие карточки';
   @override
   String get anki_pending_mines_unreachable =>
@@ -274137,6 +276503,9 @@ class _StringsRu extends _StringsEn {
   String get anki_sync_client_enable_warn_confirm => 'I understand, enable';
   @override
   String get anki_sync_client_enable_warn_title => 'Enable Anki sync?';
+  @override
+  String anki_sync_client_error_not_sync_server({required Object detail}) =>
+      'The server did not answer with the Anki sync protocol (the anki-original-size response header is missing). Make sure the address points at an Anki sync server (the official anki-sync-server, or the one built into Anki desktop) rather than a web page; a reverse proxy must keep this header. Details: ${detail}';
   @override
   String anki_sync_client_has_unsynced({required Object count}) =>
       'Карточек ещё не синхронизировано: ${count}. Синхронизируйте их, прежде чем сменить аккаунт или выйти.';
@@ -274349,6 +276718,9 @@ class _StringsRu extends _StringsEn {
   String get audio_panel_pick_new_subtitle => 'Выбрать новый файл субтитров';
   @override
   String get audio_source_added => 'Источник аудио добавлен';
+  @override
+  String audio_source_connection_refused({required Object host}) =>
+      'Audio source refused the connection: nothing is listening at "${host}" — make sure the service is running, or remove this source in settings';
   @override
   String audio_source_dns_error({required Object host}) =>
       'Не удалось подключиться к источнику аудио: невозможно разрешить "${host}" — проверьте сеть или удалите этот источник в настройках';
@@ -276509,6 +278881,18 @@ class _StringsRu extends _StringsEn {
   @override
   String get card_mining_pending => 'Добавление карточки…';
   @override
+  String get card_notice_title_added => 'Card added';
+  @override
+  String get card_notice_title_duplicate => 'Card already exists';
+  @override
+  String get card_notice_title_failed => 'Card not created';
+  @override
+  String get card_notice_title_overwritten => 'Card overwritten';
+  @override
+  String get card_notice_title_queued => 'Card queued';
+  @override
+  String get card_notice_title_warning => 'Card added, something missing';
+  @override
   String card_overwritten({required Object deck}) =>
       'Карточка перезаписана в «${deck}».';
   @override
@@ -277294,16 +279678,13 @@ class _StringsRu extends _StringsEn {
   @override
   String get delete_prompt_title => 'Удалено на другом устройстве';
   @override
-  String get delete_scope_keep_local_desc =>
-      'Другие устройства сохранят свою копию';
-  @override
   String get delete_scope_no_channel =>
       'Синхронизация не настроена — удаление затронет только это устройство';
   @override
   String get delete_scope_sync_everywhere => 'Удалить со всех устройств';
   @override
   String get delete_scope_sync_everywhere_desc =>
-      'Другие устройства подтвердят удаление при следующей синхронизации';
+      'Если отмечено, другие устройства подтвердят удаление при следующей синхронизации; иначе они сохранят свою копию';
   @override
   String get delete_statistics => 'Также удалить статистику';
   @override
@@ -277556,6 +279937,13 @@ class _StringsRu extends _StringsEn {
   @override
   String get dict_language_description =>
       'Определяет, какой шрифт используется для отображения текста словаря. «Автоматически» использует язык, указанный в словаре.';
+  @override
+  String dict_language_group_title({
+    required Object language,
+    required Object n,
+  }) => '${language} · ${n}';
+  @override
+  String get dict_language_group_unset => 'Language not set';
   @override
   String get dict_language_title => 'Язык содержимого словаря';
   @override
@@ -278934,6 +281322,66 @@ class _StringsRu extends _StringsEn {
       'You can attach 1 video (up to ${max}). It is compressed to ${resolution} before uploading.';
   @override
   String get feedback_compose_video_retry => 'Compress again';
+  @override
+  String get feedback_crash_auto_send_setting =>
+      'Automatically send crash logs';
+  @override
+  String get feedback_crash_auto_send_setting_hint =>
+      'After Fushi crashes or quits unexpectedly, send the logs to the developers on next launch without asking (the logs leave this device)';
+  @override
+  String get feedback_crash_auto_sent_notice =>
+      'Logs from the last crash were sent to the developers automatically';
+  @override
+  String get feedback_crash_kind_anr => 'not responding';
+  @override
+  String get feedback_crash_kind_crash => 'crash';
+  @override
+  String get feedback_crash_kind_memory =>
+      'closed by the system for low memory';
+  @override
+  String get feedback_crash_kind_native => 'native crash';
+  @override
+  String get feedback_crash_kind_startup => 'while starting';
+  @override
+  String get feedback_crash_kind_unexpected => 'unexpected exit';
+  @override
+  String get feedback_crash_notice_view => 'View';
+  @override
+  String get feedback_crash_prompt_always => 'Always send';
+  @override
+  String get feedback_crash_prompt_body =>
+      'Send the logs to the developers to help fix it? You can follow it in Feedback.';
+  @override
+  String get feedback_crash_prompt_decline => 'No thanks';
+  @override
+  String get feedback_crash_prompt_retry => 'Retry';
+  @override
+  String get feedback_crash_prompt_send => 'Send to developers';
+  @override
+  String get feedback_crash_prompt_sending => 'Sending…';
+  @override
+  String get feedback_crash_prompt_skip => 'Skip';
+  @override
+  String feedback_crash_prompt_title({required Object kind}) =>
+      'Fushi quit unexpectedly last time (${kind})';
+  @override
+  String feedback_crash_prompt_title_many({
+    required Object n,
+    required Object kind,
+  }) => 'Fushi quit unexpectedly ${n} times (${kind})';
+  @override
+  String get feedback_crash_report_header =>
+      'Generated by Fushi after it quit unexpectedly; logs and device info are attached.';
+  @override
+  String feedback_crash_report_title({
+    required Object kind,
+    required Object version,
+  }) => 'Crash report: ${kind} (${version})';
+  @override
+  String get feedback_crash_send_failed =>
+      'Could not send the crash logs. Fushi will ask again next time.';
+  @override
+  String get feedback_crash_sent_notice => 'Crash logs sent to the developers';
   @override
   String get feedback_detail_add_shot => 'Add screenshot';
   @override
@@ -283529,6 +285977,19 @@ class _StringsRu extends _StringsEn {
   String get lyrics_control_zone_top_hint =>
       'Top bar on phones, top-right corner on wide screens';
   @override
+  String get lyrics_controls_collapse => 'Collapse playback controls';
+  @override
+  String get lyrics_controls_expand => 'Expand playback controls';
+  @override
+  String get lyrics_controls_style => 'Playback controls layout';
+  @override
+  String get lyrics_controls_style_classic => 'Classic';
+  @override
+  String get lyrics_controls_style_hint =>
+      'New: a collapsible mini bar on phones and floating islands on wide screens. Classic: the previous layout.';
+  @override
+  String get lyrics_controls_style_modern => 'New';
+  @override
   String get lyrics_exit_to_library => 'Close and return to library';
   @override
   String get lyrics_font_size => 'Размер шрифта текста песен';
@@ -283542,6 +286003,15 @@ class _StringsRu extends _StringsEn {
       'Use your own color for the line being read instead of the player theme color';
   @override
   String get lyrics_illustration_back_to_cover => 'Back to cover';
+  @override
+  String get lyrics_illustration_cue => 'Illustration prompt';
+  @override
+  String get lyrics_illustration_cue_dot => 'Dot';
+  @override
+  String get lyrics_illustration_cue_hint =>
+      'Pop up: show the illustration card and pause for the image pause duration below. Dot: only mark the cover thumbnail.';
+  @override
+  String get lyrics_illustration_cue_popup => 'Pop up';
   @override
   String get lyrics_illustration_next => 'Next illustration';
   @override
@@ -284754,6 +287224,9 @@ class _StringsRu extends _StringsEn {
   String media_privacy_inherited_note({required Object collections}) =>
       'Private because it is in the private collection “${collections}”. To make it public, turn off privacy on that collection.';
   @override
+  String media_privacy_inherited_source_note({required Object source}) =>
+      'Private because its source library “${source}” is private. To make it public, turn off privacy on that source library.';
+  @override
   String media_privacy_load_failed({required Object reason}) =>
       'Could not read the privacy setting, so it cannot be changed right now: ${reason}';
   @override
@@ -284873,6 +287346,28 @@ class _StringsRu extends _StringsEn {
   @override
   String get media_source_open_folder_failed =>
       'Couldn\'t open the folder. It may have been moved, deleted, or disconnected.';
+  @override
+  String get media_source_privacy_action => 'Privacy';
+  @override
+  String get media_source_privacy_badge =>
+      'Private: not uploaded to the leaderboard';
+  @override
+  String get media_source_privacy_cleared_toast =>
+      'Source library is no longer private';
+  @override
+  String get media_source_privacy_hint =>
+      'Everything this source library brings in is treated as private: it is never uploaded to the leaderboard, so it stays off your public shelf, profile and share cards, and its progress is not pushed to Bangumi. Items already uploaded are removed from the leaderboard as soon as you turn this on (or at the next sync if that fails). Your daily character total still counts them, without saying what you read. Removing this source keeps its items private.';
+  @override
+  String get media_source_privacy_marked_toast =>
+      'Source library is now private';
+  @override
+  String get media_source_privacy_switch => 'Keep this source library private';
+  @override
+  String media_source_privacy_withdraw_failed({required Object reason}) =>
+      'Source library is now private, but removing its items from the leaderboard failed; the next sync will try again: ${reason}';
+  @override
+  String get media_source_privacy_withdrawn_toast =>
+      'Source library is now private; its items were removed from the leaderboard';
   @override
   String get media_source_remove => 'Remove Source';
   @override
@@ -288545,7 +291040,13 @@ class _StringsRu extends _StringsEn {
   String get remote_book_audiobook_redownloaded =>
       'Audiobook re-downloaded from peer';
   @override
-  String get remote_book_delete_everywhere => 'Delete permanently';
+  String remote_book_delete_cloud_confirm({
+    required Object name,
+    required Object backend,
+  }) =>
+      'Delete "${name}" from ${backend}? The book\'s files, cover, progress and audiobook in the cloud are permanently deleted. This device has no copy and this can\'t be undone. Other devices will ask whether to delete their copy on their next sync.';
+  @override
+  String get remote_book_delete_everywhere => 'Also delete on host';
   @override
   String remote_book_delete_everywhere_confirm({
     required Object name,
@@ -288627,8 +291128,26 @@ class _StringsRu extends _StringsEn {
   String get remote_delete_audiobook_partial =>
       'Книга удалена, но аудиокнигу не удалось удалить на сопряжённом устройстве';
   @override
+  String get remote_delete_cloud_checking =>
+      'Checking whether the cloud storage is reachable…';
+  @override
+  String get remote_delete_cloud_offline =>
+      'Can\'t reach the cloud storage. Delete it there once it\'s reachable.';
+  @override
+  String get remote_delete_cloud_signed_out =>
+      'The cloud storage sign-in has expired. Sign in again to delete it there.';
+  @override
   String get remote_delete_failed =>
       'Не удалось удалить на сопряжённом устройстве';
+  @override
+  String get remote_delete_host_checking =>
+      'Checking whether the host is online…';
+  @override
+  String get remote_delete_host_offline =>
+      'The host is offline or unreachable. Delete it there once it\'s connected.';
+  @override
+  String get remote_delete_host_pairing_rejected =>
+      'The host rejected this device\'s pairing. Pair again to delete it there.';
   @override
   String get remote_delete_unsupported =>
       'Сопряжённое устройство слишком старой версии для удалённого удаления. Сначала обновите Fushi на нём.';
@@ -294139,6 +296658,12 @@ class _StringsRu extends _StringsEn {
   @override
   String get video_audio_track_empty => 'Нет переключаемых аудиодорожек';
   @override
+  String get video_audio_track_fallback_muxed =>
+      'The audio stream was refused; switched to a compatible stream with sound (lower quality)';
+  @override
+  String get video_audio_track_load_failed =>
+      'Couldn\'t load the audio stream — there is no sound. The source refused access; try again later.';
+  @override
   String video_audio_track_switched({required Object label}) =>
       'Аудиодорожка: ${label}';
   @override
@@ -298330,8 +300855,32 @@ class _StringsTh extends _StringsEn {
   @override
   String get ai_agent_send => 'Send';
   @override
+  String get ai_agent_session_current => 'Current';
+  @override
+  String get ai_agent_session_delete => 'Delete';
+  @override
+  String ai_agent_session_delete_message({required Object title}) =>
+      '“${title}” will be removed from this device. Changes the assistant made stay in the AI action log and can still be undone there.';
+  @override
+  String get ai_agent_session_delete_title => 'Delete this conversation?';
+  @override
+  String get ai_agent_session_more => 'Conversation options';
+  @override
+  String get ai_agent_session_open_failed => 'Couldn\'t open this conversation';
+  @override
+  String get ai_agent_session_rename => 'Rename';
+  @override
+  String get ai_agent_session_rename_title => 'Rename conversation';
+  @override
   String ai_agent_session_summary({required Object n}) =>
       '${n} changes in this conversation';
+  @override
+  String get ai_agent_sessions_empty => 'No earlier conversations yet';
+  @override
+  String get ai_agent_sessions_retention_hint =>
+      'Conversations stay on this device for 30 days';
+  @override
+  String get ai_agent_sessions_title => 'Conversations';
   @override
   String get ai_agent_stop => 'Stop';
   @override
@@ -298535,6 +301084,35 @@ class _StringsTh extends _StringsEn {
   @override
   String get ai_interconnect_host_unpaired =>
       'No paired device yet. Pair a computer in Fushi Interconnect to let it handle AI video downloads with its own AI.';
+  @override
+  String get ai_mcp_access => 'External AI access (MCP)';
+  @override
+  String get ai_mcp_access_hint =>
+      'Lets MCP clients on this computer (Claude Desktop, Claude Code…) call Fushi\'s operations. Listens on this computer only and needs the pairing token below. Changes that can be undone run directly and show up in the AI action log; anything that can\'t be undone, and installing extensions, asks you here first. Off by default.';
+  @override
+  String get ai_mcp_confirm_arguments => 'Arguments';
+  @override
+  String ai_mcp_confirm_body({required Object client, required Object op}) =>
+      '${client} wants to run: ${op}';
+  @override
+  String ai_mcp_confirm_expire({required Object minutes}) =>
+      'Declined automatically if you do not answer within ${minutes} minutes.';
+  @override
+  String get ai_mcp_confirm_title => 'Request from an external AI';
+  @override
+  String get ai_mcp_token => 'Pairing token';
+  @override
+  String get ai_mcp_token_copy => 'Copy token';
+  @override
+  String get ai_mcp_token_copy_config => 'Copy client config';
+  @override
+  String get ai_mcp_token_hint =>
+      'Generate a token for your MCP client. Generating a new one revokes the old one.';
+  @override
+  String get ai_mcp_token_issued_body =>
+      'Put this token in your MCP client\'s configuration as FUSHI_MCP_TOKEN (the setup guide shows how). It is shown only once.';
+  @override
+  String get ai_mcp_token_issued_title => 'New pairing token';
   @override
   String get ai_media_acquire_ai_failed =>
       'ขณะนี้ AI ไม่พร้อมใช้งาน ผลลัพธ์มาจากข้อความเดิมของคุณ เรียงตามผู้แชร์';
@@ -299409,6 +301987,8 @@ class _StringsTh extends _StringsEn {
   String get anki_dedup_unavailable =>
       'ต้องการ Anki ทำงานบนเครื่องนี้ (AnkiConnect)';
   @override
+  String get anki_delivery_section => 'Sending & pending cards';
+  @override
   String get anki_desktop_auto_launch => 'Launch Anki when Fushi starts';
   @override
   String get anki_desktop_auto_launch_hint =>
@@ -299850,6 +302430,9 @@ class _StringsTh extends _StringsEn {
   @override
   String get anki_pending_mines_status_sending => 'กำลังส่ง';
   @override
+  String anki_pending_mines_stopped({required Object reason}) =>
+      '${reason} The remaining cards stay in the queue.';
+  @override
   String get anki_pending_mines_title => 'การ์ดที่รอส่ง';
   @override
   String get anki_pending_mines_unreachable =>
@@ -299994,6 +302577,9 @@ class _StringsTh extends _StringsEn {
   String get anki_sync_client_enable_warn_confirm => 'I understand, enable';
   @override
   String get anki_sync_client_enable_warn_title => 'Enable Anki sync?';
+  @override
+  String anki_sync_client_error_not_sync_server({required Object detail}) =>
+      'The server did not answer with the Anki sync protocol (the anki-original-size response header is missing). Make sure the address points at an Anki sync server (the official anki-sync-server, or the one built into Anki desktop) rather than a web page; a reverse proxy must keep this header. Details: ${detail}';
   @override
   String anki_sync_client_has_unsynced({required Object count}) =>
       'ยังไม่ได้ซิงค์การ์ด ${count} ใบ ซิงค์ก่อนสลับบัญชีหรือออกจากระบบ';
@@ -300201,6 +302787,9 @@ class _StringsTh extends _StringsEn {
   String get audio_panel_pick_new_subtitle => 'เลือกไฟล์ซับไตเติลใหม่';
   @override
   String get audio_source_added => 'เพิ่มแหล่งเสียงแล้ว';
+  @override
+  String audio_source_connection_refused({required Object host}) =>
+      'Audio source refused the connection: nothing is listening at "${host}" — make sure the service is running, or remove this source in settings';
   @override
   String audio_source_dns_error({required Object host}) =>
       'เชื่อมต่อแหล่งเสียงล้มเหลว: ไม่สามารถหา "${host}" — ตรวจสอบเครือข่ายหรือลบแหล่งนี้ในการตั้งค่า';
@@ -302344,6 +304933,18 @@ class _StringsTh extends _StringsEn {
   @override
   String get card_mining_pending => 'กำลังเพิ่มบัตร...';
   @override
+  String get card_notice_title_added => 'Card added';
+  @override
+  String get card_notice_title_duplicate => 'Card already exists';
+  @override
+  String get card_notice_title_failed => 'Card not created';
+  @override
+  String get card_notice_title_overwritten => 'Card overwritten';
+  @override
+  String get card_notice_title_queued => 'Card queued';
+  @override
+  String get card_notice_title_warning => 'Card added, something missing';
+  @override
   String card_overwritten({required Object deck}) =>
       'เขียนทับการ์ดใน『${deck}』แล้ว';
   @override
@@ -303115,15 +305716,13 @@ class _StringsTh extends _StringsEn {
   @override
   String get delete_prompt_title => 'ถูกลบบนอุปกรณ์อื่น';
   @override
-  String get delete_scope_keep_local_desc => 'อุปกรณ์อื่นยังเก็บสำเนาไว้';
-  @override
   String get delete_scope_no_channel =>
       'ไม่ได้ตั้งค่าซิงค์ — การลบนี้มีผลเฉพาะอุปกรณ์นี้';
   @override
   String get delete_scope_sync_everywhere => 'ลบจากทุกอุปกรณ์';
   @override
   String get delete_scope_sync_everywhere_desc =>
-      'อุปกรณ์อื่นยืนยันการลบเมื่อซิงค์ครั้งถัดไป';
+      'หากเลือก อุปกรณ์อื่นจะยืนยันการลบเมื่อซิงค์ครั้งถัดไป หากไม่เลือก อุปกรณ์อื่นยังเก็บสำเนาไว้';
   @override
   String get delete_statistics => 'ลบสถิติด้วย';
   @override
@@ -303376,6 +305975,13 @@ class _StringsTh extends _StringsEn {
   @override
   String get dict_language_description =>
       'กำหนดฟอนต์ที่ใช้แสดงข้อความพจนานุกรม อัตโนมัติจะใช้ภาษาที่พจนานุกรมระบุไว้';
+  @override
+  String dict_language_group_title({
+    required Object language,
+    required Object n,
+  }) => '${language} · ${n}';
+  @override
+  String get dict_language_group_unset => 'Language not set';
   @override
   String get dict_language_title => 'ภาษาเนื้อหาพจนานุกรม';
   @override
@@ -304741,6 +307347,66 @@ class _StringsTh extends _StringsEn {
       'You can attach 1 video (up to ${max}). It is compressed to ${resolution} before uploading.';
   @override
   String get feedback_compose_video_retry => 'Compress again';
+  @override
+  String get feedback_crash_auto_send_setting =>
+      'Automatically send crash logs';
+  @override
+  String get feedback_crash_auto_send_setting_hint =>
+      'After Fushi crashes or quits unexpectedly, send the logs to the developers on next launch without asking (the logs leave this device)';
+  @override
+  String get feedback_crash_auto_sent_notice =>
+      'Logs from the last crash were sent to the developers automatically';
+  @override
+  String get feedback_crash_kind_anr => 'not responding';
+  @override
+  String get feedback_crash_kind_crash => 'crash';
+  @override
+  String get feedback_crash_kind_memory =>
+      'closed by the system for low memory';
+  @override
+  String get feedback_crash_kind_native => 'native crash';
+  @override
+  String get feedback_crash_kind_startup => 'while starting';
+  @override
+  String get feedback_crash_kind_unexpected => 'unexpected exit';
+  @override
+  String get feedback_crash_notice_view => 'View';
+  @override
+  String get feedback_crash_prompt_always => 'Always send';
+  @override
+  String get feedback_crash_prompt_body =>
+      'Send the logs to the developers to help fix it? You can follow it in Feedback.';
+  @override
+  String get feedback_crash_prompt_decline => 'No thanks';
+  @override
+  String get feedback_crash_prompt_retry => 'Retry';
+  @override
+  String get feedback_crash_prompt_send => 'Send to developers';
+  @override
+  String get feedback_crash_prompt_sending => 'Sending…';
+  @override
+  String get feedback_crash_prompt_skip => 'Skip';
+  @override
+  String feedback_crash_prompt_title({required Object kind}) =>
+      'Fushi quit unexpectedly last time (${kind})';
+  @override
+  String feedback_crash_prompt_title_many({
+    required Object n,
+    required Object kind,
+  }) => 'Fushi quit unexpectedly ${n} times (${kind})';
+  @override
+  String get feedback_crash_report_header =>
+      'Generated by Fushi after it quit unexpectedly; logs and device info are attached.';
+  @override
+  String feedback_crash_report_title({
+    required Object kind,
+    required Object version,
+  }) => 'Crash report: ${kind} (${version})';
+  @override
+  String get feedback_crash_send_failed =>
+      'Could not send the crash logs. Fushi will ask again next time.';
+  @override
+  String get feedback_crash_sent_notice => 'Crash logs sent to the developers';
   @override
   String get feedback_detail_add_shot => 'Add screenshot';
   @override
@@ -309262,6 +311928,19 @@ class _StringsTh extends _StringsEn {
   String get lyrics_control_zone_top_hint =>
       'Top bar on phones, top-right corner on wide screens';
   @override
+  String get lyrics_controls_collapse => 'Collapse playback controls';
+  @override
+  String get lyrics_controls_expand => 'Expand playback controls';
+  @override
+  String get lyrics_controls_style => 'Playback controls layout';
+  @override
+  String get lyrics_controls_style_classic => 'Classic';
+  @override
+  String get lyrics_controls_style_hint =>
+      'New: a collapsible mini bar on phones and floating islands on wide screens. Classic: the previous layout.';
+  @override
+  String get lyrics_controls_style_modern => 'New';
+  @override
   String get lyrics_exit_to_library => 'Close and return to library';
   @override
   String get lyrics_font_size => 'ขนาดตัวอักษรเนื้อเพลง';
@@ -309275,6 +311954,15 @@ class _StringsTh extends _StringsEn {
       'Use your own color for the line being read instead of the player theme color';
   @override
   String get lyrics_illustration_back_to_cover => 'Back to cover';
+  @override
+  String get lyrics_illustration_cue => 'Illustration prompt';
+  @override
+  String get lyrics_illustration_cue_dot => 'Dot';
+  @override
+  String get lyrics_illustration_cue_hint =>
+      'Pop up: show the illustration card and pause for the image pause duration below. Dot: only mark the cover thumbnail.';
+  @override
+  String get lyrics_illustration_cue_popup => 'Pop up';
   @override
   String get lyrics_illustration_next => 'Next illustration';
   @override
@@ -310468,6 +313156,9 @@ class _StringsTh extends _StringsEn {
   String media_privacy_inherited_note({required Object collections}) =>
       'Private because it is in the private collection “${collections}”. To make it public, turn off privacy on that collection.';
   @override
+  String media_privacy_inherited_source_note({required Object source}) =>
+      'Private because its source library “${source}” is private. To make it public, turn off privacy on that source library.';
+  @override
   String media_privacy_load_failed({required Object reason}) =>
       'Could not read the privacy setting, so it cannot be changed right now: ${reason}';
   @override
@@ -310584,6 +313275,28 @@ class _StringsTh extends _StringsEn {
   @override
   String get media_source_open_folder_failed =>
       'Couldn\'t open the folder. It may have been moved, deleted, or disconnected.';
+  @override
+  String get media_source_privacy_action => 'Privacy';
+  @override
+  String get media_source_privacy_badge =>
+      'Private: not uploaded to the leaderboard';
+  @override
+  String get media_source_privacy_cleared_toast =>
+      'Source library is no longer private';
+  @override
+  String get media_source_privacy_hint =>
+      'Everything this source library brings in is treated as private: it is never uploaded to the leaderboard, so it stays off your public shelf, profile and share cards, and its progress is not pushed to Bangumi. Items already uploaded are removed from the leaderboard as soon as you turn this on (or at the next sync if that fails). Your daily character total still counts them, without saying what you read. Removing this source keeps its items private.';
+  @override
+  String get media_source_privacy_marked_toast =>
+      'Source library is now private';
+  @override
+  String get media_source_privacy_switch => 'Keep this source library private';
+  @override
+  String media_source_privacy_withdraw_failed({required Object reason}) =>
+      'Source library is now private, but removing its items from the leaderboard failed; the next sync will try again: ${reason}';
+  @override
+  String get media_source_privacy_withdrawn_toast =>
+      'Source library is now private; its items were removed from the leaderboard';
   @override
   String get media_source_remove => 'Remove Source';
   @override
@@ -314220,7 +316933,13 @@ class _StringsTh extends _StringsEn {
   String get remote_book_audiobook_redownloaded =>
       'Audiobook re-downloaded from peer';
   @override
-  String get remote_book_delete_everywhere => 'Delete permanently';
+  String remote_book_delete_cloud_confirm({
+    required Object name,
+    required Object backend,
+  }) =>
+      'Delete "${name}" from ${backend}? The book\'s files, cover, progress and audiobook in the cloud are permanently deleted. This device has no copy and this can\'t be undone. Other devices will ask whether to delete their copy on their next sync.';
+  @override
+  String get remote_book_delete_everywhere => 'Also delete on host';
   @override
   String remote_book_delete_everywhere_confirm({
     required Object name,
@@ -314300,7 +317019,25 @@ class _StringsTh extends _StringsEn {
   String get remote_delete_audiobook_partial =>
       'ลบหนังสือแล้ว แต่ไม่สามารถลบหนังสือเสียงบนอุปกรณ์ที่จับคู่ได้';
   @override
+  String get remote_delete_cloud_checking =>
+      'Checking whether the cloud storage is reachable…';
+  @override
+  String get remote_delete_cloud_offline =>
+      'Can\'t reach the cloud storage. Delete it there once it\'s reachable.';
+  @override
+  String get remote_delete_cloud_signed_out =>
+      'The cloud storage sign-in has expired. Sign in again to delete it there.';
+  @override
   String get remote_delete_failed => 'ไม่สามารถลบบนอุปกรณ์ที่จับคู่ได้';
+  @override
+  String get remote_delete_host_checking =>
+      'Checking whether the host is online…';
+  @override
+  String get remote_delete_host_offline =>
+      'The host is offline or unreachable. Delete it there once it\'s connected.';
+  @override
+  String get remote_delete_host_pairing_rejected =>
+      'The host rejected this device\'s pairing. Pair again to delete it there.';
   @override
   String get remote_delete_unsupported =>
       'อุปกรณ์ที่จับคู่เป็นเวอร์ชันเก่าเกินไปที่จะรองรับการลบระยะไกล อัปเดต Fushi ที่นั่นก่อน';
@@ -319773,6 +322510,12 @@ class _StringsTh extends _StringsEn {
   @override
   String get video_audio_track_empty => 'ไม่มีแทร็กเสียงที่สลับได้';
   @override
+  String get video_audio_track_fallback_muxed =>
+      'The audio stream was refused; switched to a compatible stream with sound (lower quality)';
+  @override
+  String get video_audio_track_load_failed =>
+      'Couldn\'t load the audio stream — there is no sound. The source refused access; try again later.';
+  @override
   String video_audio_track_switched({required Object label}) =>
       'แทร็กเสียง: ${label}';
   @override
@@ -323894,8 +326637,32 @@ class _StringsTr extends _StringsEn {
   @override
   String get ai_agent_send => 'Send';
   @override
+  String get ai_agent_session_current => 'Current';
+  @override
+  String get ai_agent_session_delete => 'Delete';
+  @override
+  String ai_agent_session_delete_message({required Object title}) =>
+      '“${title}” will be removed from this device. Changes the assistant made stay in the AI action log and can still be undone there.';
+  @override
+  String get ai_agent_session_delete_title => 'Delete this conversation?';
+  @override
+  String get ai_agent_session_more => 'Conversation options';
+  @override
+  String get ai_agent_session_open_failed => 'Couldn\'t open this conversation';
+  @override
+  String get ai_agent_session_rename => 'Rename';
+  @override
+  String get ai_agent_session_rename_title => 'Rename conversation';
+  @override
   String ai_agent_session_summary({required Object n}) =>
       '${n} changes in this conversation';
+  @override
+  String get ai_agent_sessions_empty => 'No earlier conversations yet';
+  @override
+  String get ai_agent_sessions_retention_hint =>
+      'Conversations stay on this device for 30 days';
+  @override
+  String get ai_agent_sessions_title => 'Conversations';
   @override
   String get ai_agent_stop => 'Stop';
   @override
@@ -324102,6 +326869,35 @@ class _StringsTr extends _StringsEn {
   @override
   String get ai_interconnect_host_unpaired =>
       'No paired device yet. Pair a computer in Fushi Interconnect to let it handle AI video downloads with its own AI.';
+  @override
+  String get ai_mcp_access => 'External AI access (MCP)';
+  @override
+  String get ai_mcp_access_hint =>
+      'Lets MCP clients on this computer (Claude Desktop, Claude Code…) call Fushi\'s operations. Listens on this computer only and needs the pairing token below. Changes that can be undone run directly and show up in the AI action log; anything that can\'t be undone, and installing extensions, asks you here first. Off by default.';
+  @override
+  String get ai_mcp_confirm_arguments => 'Arguments';
+  @override
+  String ai_mcp_confirm_body({required Object client, required Object op}) =>
+      '${client} wants to run: ${op}';
+  @override
+  String ai_mcp_confirm_expire({required Object minutes}) =>
+      'Declined automatically if you do not answer within ${minutes} minutes.';
+  @override
+  String get ai_mcp_confirm_title => 'Request from an external AI';
+  @override
+  String get ai_mcp_token => 'Pairing token';
+  @override
+  String get ai_mcp_token_copy => 'Copy token';
+  @override
+  String get ai_mcp_token_copy_config => 'Copy client config';
+  @override
+  String get ai_mcp_token_hint =>
+      'Generate a token for your MCP client. Generating a new one revokes the old one.';
+  @override
+  String get ai_mcp_token_issued_body =>
+      'Put this token in your MCP client\'s configuration as FUSHI_MCP_TOKEN (the setup guide shows how). It is shown only once.';
+  @override
+  String get ai_mcp_token_issued_title => 'New pairing token';
   @override
   String get ai_media_acquire_ai_failed =>
       'Yapay zeka şu anda kullanılamıyor; sonuçlar özgün metninizden, tohumlayıcı sayısına göre sıralı.';
@@ -324986,6 +327782,8 @@ class _StringsTr extends _StringsEn {
   String get anki_dedup_unavailable =>
       'Bu bilgisayarda çalışan Anki gerektirir (AnkiConnect).';
   @override
+  String get anki_delivery_section => 'Sending & pending cards';
+  @override
   String get anki_desktop_auto_launch => 'Launch Anki when Fushi starts';
   @override
   String get anki_desktop_auto_launch_hint =>
@@ -325433,6 +328231,9 @@ class _StringsTr extends _StringsEn {
   @override
   String get anki_pending_mines_status_sending => 'Gönderiliyor';
   @override
+  String anki_pending_mines_stopped({required Object reason}) =>
+      '${reason} The remaining cards stay in the queue.';
+  @override
   String get anki_pending_mines_title => 'Bekleyen kartlar';
   @override
   String get anki_pending_mines_unreachable =>
@@ -325580,6 +328381,9 @@ class _StringsTr extends _StringsEn {
   String get anki_sync_client_enable_warn_confirm => 'I understand, enable';
   @override
   String get anki_sync_client_enable_warn_title => 'Enable Anki sync?';
+  @override
+  String anki_sync_client_error_not_sync_server({required Object detail}) =>
+      'The server did not answer with the Anki sync protocol (the anki-original-size response header is missing). Make sure the address points at an Anki sync server (the official anki-sync-server, or the one built into Anki desktop) rather than a web page; a reverse proxy must keep this header. Details: ${detail}';
   @override
   String anki_sync_client_has_unsynced({required Object count}) =>
       '${count} kart henüz eşitlenmedi. Hesap değiştirmeden veya çıkış yapmadan önce bunları eşitleyin.';
@@ -325787,6 +328591,9 @@ class _StringsTr extends _StringsEn {
   String get audio_panel_pick_new_subtitle => 'Yeni altyazı dosyası seç';
   @override
   String get audio_source_added => 'Ses kaynağı eklendi';
+  @override
+  String audio_source_connection_refused({required Object host}) =>
+      'Audio source refused the connection: nothing is listening at "${host}" — make sure the service is running, or remove this source in settings';
   @override
   String audio_source_dns_error({required Object host}) =>
       'Ses kaynağı bağlantısı başarısız: "${host}" çözümlenemedi — ağınızı kontrol edin veya bu kaynağı ayarlardan kaldırın';
@@ -327942,6 +330749,18 @@ class _StringsTr extends _StringsEn {
   @override
   String get card_mining_pending => 'Kart ekleniyor…';
   @override
+  String get card_notice_title_added => 'Card added';
+  @override
+  String get card_notice_title_duplicate => 'Card already exists';
+  @override
+  String get card_notice_title_failed => 'Card not created';
+  @override
+  String get card_notice_title_overwritten => 'Card overwritten';
+  @override
+  String get card_notice_title_queued => 'Card queued';
+  @override
+  String get card_notice_title_warning => 'Card added, something missing';
+  @override
   String card_overwritten({required Object deck}) =>
       'Kart 『${deck}』 destesinde üzerine yazıldı.';
   @override
@@ -328723,16 +331542,13 @@ class _StringsTr extends _StringsEn {
   @override
   String get delete_prompt_title => 'Başka bir cihazda silindi';
   @override
-  String get delete_scope_keep_local_desc =>
-      'Diğer cihazlar kendi kopyalarını tutar';
-  @override
   String get delete_scope_no_channel =>
       'Senkronizasyon yapılandırılmamış - bu silme yalnızca bu cihazı etkiler';
   @override
   String get delete_scope_sync_everywhere => 'Tüm cihazlardan sil';
   @override
   String get delete_scope_sync_everywhere_desc =>
-      'Diğer cihazlar bir sonraki senkronizasyonda silmeyi onaylar';
+      'İşaretlenirse diğer cihazlar bir sonraki senkronizasyonda silmeyi onaylar; işaretlenmezse kendi kopyalarını tutar';
   @override
   String get delete_statistics => 'İstatistikleri de sil';
   @override
@@ -328986,6 +331802,13 @@ class _StringsTr extends _StringsEn {
   @override
   String get dict_language_description =>
       'Bu sözlüğün metnini hangi yazı tipinin oluşturacağını belirler. Otomatik, sözlüğün beyan ettiği dili kullanır.';
+  @override
+  String dict_language_group_title({
+    required Object language,
+    required Object n,
+  }) => '${language} · ${n}';
+  @override
+  String get dict_language_group_unset => 'Language not set';
   @override
   String get dict_language_title => 'Sözlük içerik dili';
   @override
@@ -330365,6 +333188,66 @@ class _StringsTr extends _StringsEn {
       'You can attach 1 video (up to ${max}). It is compressed to ${resolution} before uploading.';
   @override
   String get feedback_compose_video_retry => 'Compress again';
+  @override
+  String get feedback_crash_auto_send_setting =>
+      'Automatically send crash logs';
+  @override
+  String get feedback_crash_auto_send_setting_hint =>
+      'After Fushi crashes or quits unexpectedly, send the logs to the developers on next launch without asking (the logs leave this device)';
+  @override
+  String get feedback_crash_auto_sent_notice =>
+      'Logs from the last crash were sent to the developers automatically';
+  @override
+  String get feedback_crash_kind_anr => 'not responding';
+  @override
+  String get feedback_crash_kind_crash => 'crash';
+  @override
+  String get feedback_crash_kind_memory =>
+      'closed by the system for low memory';
+  @override
+  String get feedback_crash_kind_native => 'native crash';
+  @override
+  String get feedback_crash_kind_startup => 'while starting';
+  @override
+  String get feedback_crash_kind_unexpected => 'unexpected exit';
+  @override
+  String get feedback_crash_notice_view => 'View';
+  @override
+  String get feedback_crash_prompt_always => 'Always send';
+  @override
+  String get feedback_crash_prompt_body =>
+      'Send the logs to the developers to help fix it? You can follow it in Feedback.';
+  @override
+  String get feedback_crash_prompt_decline => 'No thanks';
+  @override
+  String get feedback_crash_prompt_retry => 'Retry';
+  @override
+  String get feedback_crash_prompt_send => 'Send to developers';
+  @override
+  String get feedback_crash_prompt_sending => 'Sending…';
+  @override
+  String get feedback_crash_prompt_skip => 'Skip';
+  @override
+  String feedback_crash_prompt_title({required Object kind}) =>
+      'Fushi quit unexpectedly last time (${kind})';
+  @override
+  String feedback_crash_prompt_title_many({
+    required Object n,
+    required Object kind,
+  }) => 'Fushi quit unexpectedly ${n} times (${kind})';
+  @override
+  String get feedback_crash_report_header =>
+      'Generated by Fushi after it quit unexpectedly; logs and device info are attached.';
+  @override
+  String feedback_crash_report_title({
+    required Object kind,
+    required Object version,
+  }) => 'Crash report: ${kind} (${version})';
+  @override
+  String get feedback_crash_send_failed =>
+      'Could not send the crash logs. Fushi will ask again next time.';
+  @override
+  String get feedback_crash_sent_notice => 'Crash logs sent to the developers';
   @override
   String get feedback_detail_add_shot => 'Add screenshot';
   @override
@@ -334939,6 +337822,19 @@ class _StringsTr extends _StringsEn {
   String get lyrics_control_zone_top_hint =>
       'Top bar on phones, top-right corner on wide screens';
   @override
+  String get lyrics_controls_collapse => 'Collapse playback controls';
+  @override
+  String get lyrics_controls_expand => 'Expand playback controls';
+  @override
+  String get lyrics_controls_style => 'Playback controls layout';
+  @override
+  String get lyrics_controls_style_classic => 'Classic';
+  @override
+  String get lyrics_controls_style_hint =>
+      'New: a collapsible mini bar on phones and floating islands on wide screens. Classic: the previous layout.';
+  @override
+  String get lyrics_controls_style_modern => 'New';
+  @override
   String get lyrics_exit_to_library => 'Close and return to library';
   @override
   String get lyrics_font_size => 'Şarkı Sözü Yazı Boyutu';
@@ -334952,6 +337848,15 @@ class _StringsTr extends _StringsEn {
       'Use your own color for the line being read instead of the player theme color';
   @override
   String get lyrics_illustration_back_to_cover => 'Back to cover';
+  @override
+  String get lyrics_illustration_cue => 'Illustration prompt';
+  @override
+  String get lyrics_illustration_cue_dot => 'Dot';
+  @override
+  String get lyrics_illustration_cue_hint =>
+      'Pop up: show the illustration card and pause for the image pause duration below. Dot: only mark the cover thumbnail.';
+  @override
+  String get lyrics_illustration_cue_popup => 'Pop up';
   @override
   String get lyrics_illustration_next => 'Next illustration';
   @override
@@ -336156,6 +339061,9 @@ class _StringsTr extends _StringsEn {
   String media_privacy_inherited_note({required Object collections}) =>
       'Private because it is in the private collection “${collections}”. To make it public, turn off privacy on that collection.';
   @override
+  String media_privacy_inherited_source_note({required Object source}) =>
+      'Private because its source library “${source}” is private. To make it public, turn off privacy on that source library.';
+  @override
   String media_privacy_load_failed({required Object reason}) =>
       'Could not read the privacy setting, so it cannot be changed right now: ${reason}';
   @override
@@ -336272,6 +339180,28 @@ class _StringsTr extends _StringsEn {
   @override
   String get media_source_open_folder_failed =>
       'Couldn\'t open the folder. It may have been moved, deleted, or disconnected.';
+  @override
+  String get media_source_privacy_action => 'Privacy';
+  @override
+  String get media_source_privacy_badge =>
+      'Private: not uploaded to the leaderboard';
+  @override
+  String get media_source_privacy_cleared_toast =>
+      'Source library is no longer private';
+  @override
+  String get media_source_privacy_hint =>
+      'Everything this source library brings in is treated as private: it is never uploaded to the leaderboard, so it stays off your public shelf, profile and share cards, and its progress is not pushed to Bangumi. Items already uploaded are removed from the leaderboard as soon as you turn this on (or at the next sync if that fails). Your daily character total still counts them, without saying what you read. Removing this source keeps its items private.';
+  @override
+  String get media_source_privacy_marked_toast =>
+      'Source library is now private';
+  @override
+  String get media_source_privacy_switch => 'Keep this source library private';
+  @override
+  String media_source_privacy_withdraw_failed({required Object reason}) =>
+      'Source library is now private, but removing its items from the leaderboard failed; the next sync will try again: ${reason}';
+  @override
+  String get media_source_privacy_withdrawn_toast =>
+      'Source library is now private; its items were removed from the leaderboard';
   @override
   String get media_source_remove => 'Remove Source';
   @override
@@ -339929,7 +342859,13 @@ class _StringsTr extends _StringsEn {
   String get remote_book_audiobook_redownloaded =>
       'Audiobook re-downloaded from peer';
   @override
-  String get remote_book_delete_everywhere => 'Delete permanently';
+  String remote_book_delete_cloud_confirm({
+    required Object name,
+    required Object backend,
+  }) =>
+      'Delete "${name}" from ${backend}? The book\'s files, cover, progress and audiobook in the cloud are permanently deleted. This device has no copy and this can\'t be undone. Other devices will ask whether to delete their copy on their next sync.';
+  @override
+  String get remote_book_delete_everywhere => 'Also delete on host';
   @override
   String remote_book_delete_everywhere_confirm({
     required Object name,
@@ -340009,7 +342945,25 @@ class _StringsTr extends _StringsEn {
   String get remote_delete_audiobook_partial =>
       'Kitap silindi, ancak sesli kitabı eşleştirilmiş cihazdan kaldırılamadı';
   @override
+  String get remote_delete_cloud_checking =>
+      'Checking whether the cloud storage is reachable…';
+  @override
+  String get remote_delete_cloud_offline =>
+      'Can\'t reach the cloud storage. Delete it there once it\'s reachable.';
+  @override
+  String get remote_delete_cloud_signed_out =>
+      'The cloud storage sign-in has expired. Sign in again to delete it there.';
+  @override
   String get remote_delete_failed => 'Eşleştirilmiş cihazda silinemedi';
+  @override
+  String get remote_delete_host_checking =>
+      'Checking whether the host is online…';
+  @override
+  String get remote_delete_host_offline =>
+      'The host is offline or unreachable. Delete it there once it\'s connected.';
+  @override
+  String get remote_delete_host_pairing_rejected =>
+      'The host rejected this device\'s pairing. Pair again to delete it there.';
   @override
   String get remote_delete_unsupported =>
       'Eşleştirilmiş cihaz uzaktan silmeyi destekleyemeyecek kadar eski. Önce oradaki Fushi\'yi güncelleyin.';
@@ -345505,6 +348459,12 @@ class _StringsTr extends _StringsEn {
   @override
   String get video_audio_track_empty => 'Değiştirilebilir ses parçası yok';
   @override
+  String get video_audio_track_fallback_muxed =>
+      'The audio stream was refused; switched to a compatible stream with sound (lower quality)';
+  @override
+  String get video_audio_track_load_failed =>
+      'Couldn\'t load the audio stream — there is no sound. The source refused access; try again later.';
+  @override
   String video_audio_track_switched({required Object label}) =>
       'Ses izi: ${label}';
   @override
@@ -349662,8 +352622,32 @@ class _StringsVi extends _StringsEn {
   @override
   String get ai_agent_send => 'Send';
   @override
+  String get ai_agent_session_current => 'Current';
+  @override
+  String get ai_agent_session_delete => 'Delete';
+  @override
+  String ai_agent_session_delete_message({required Object title}) =>
+      '“${title}” will be removed from this device. Changes the assistant made stay in the AI action log and can still be undone there.';
+  @override
+  String get ai_agent_session_delete_title => 'Delete this conversation?';
+  @override
+  String get ai_agent_session_more => 'Conversation options';
+  @override
+  String get ai_agent_session_open_failed => 'Couldn\'t open this conversation';
+  @override
+  String get ai_agent_session_rename => 'Rename';
+  @override
+  String get ai_agent_session_rename_title => 'Rename conversation';
+  @override
   String ai_agent_session_summary({required Object n}) =>
       '${n} changes in this conversation';
+  @override
+  String get ai_agent_sessions_empty => 'No earlier conversations yet';
+  @override
+  String get ai_agent_sessions_retention_hint =>
+      'Conversations stay on this device for 30 days';
+  @override
+  String get ai_agent_sessions_title => 'Conversations';
   @override
   String get ai_agent_stop => 'Stop';
   @override
@@ -349869,6 +352853,35 @@ class _StringsVi extends _StringsEn {
   @override
   String get ai_interconnect_host_unpaired =>
       'No paired device yet. Pair a computer in Fushi Interconnect to let it handle AI video downloads with its own AI.';
+  @override
+  String get ai_mcp_access => 'External AI access (MCP)';
+  @override
+  String get ai_mcp_access_hint =>
+      'Lets MCP clients on this computer (Claude Desktop, Claude Code…) call Fushi\'s operations. Listens on this computer only and needs the pairing token below. Changes that can be undone run directly and show up in the AI action log; anything that can\'t be undone, and installing extensions, asks you here first. Off by default.';
+  @override
+  String get ai_mcp_confirm_arguments => 'Arguments';
+  @override
+  String ai_mcp_confirm_body({required Object client, required Object op}) =>
+      '${client} wants to run: ${op}';
+  @override
+  String ai_mcp_confirm_expire({required Object minutes}) =>
+      'Declined automatically if you do not answer within ${minutes} minutes.';
+  @override
+  String get ai_mcp_confirm_title => 'Request from an external AI';
+  @override
+  String get ai_mcp_token => 'Pairing token';
+  @override
+  String get ai_mcp_token_copy => 'Copy token';
+  @override
+  String get ai_mcp_token_copy_config => 'Copy client config';
+  @override
+  String get ai_mcp_token_hint =>
+      'Generate a token for your MCP client. Generating a new one revokes the old one.';
+  @override
+  String get ai_mcp_token_issued_body =>
+      'Put this token in your MCP client\'s configuration as FUSHI_MCP_TOKEN (the setup guide shows how). It is shown only once.';
+  @override
+  String get ai_mcp_token_issued_title => 'New pairing token';
   @override
   String get ai_media_acquire_ai_failed =>
       'AI hiện không khả dụng; kết quả lấy từ văn bản gốc của bạn, sắp xếp theo seeder.';
@@ -350749,6 +353762,8 @@ class _StringsVi extends _StringsEn {
   String get anki_dedup_unavailable =>
       'Yêu cầu Anki đang chạy trên máy này (AnkiConnect).';
   @override
+  String get anki_delivery_section => 'Sending & pending cards';
+  @override
   String get anki_desktop_auto_launch => 'Launch Anki when Fushi starts';
   @override
   String get anki_desktop_auto_launch_hint =>
@@ -351195,6 +354210,9 @@ class _StringsVi extends _StringsEn {
   @override
   String get anki_pending_mines_status_sending => 'Đang gửi';
   @override
+  String anki_pending_mines_stopped({required Object reason}) =>
+      '${reason} The remaining cards stay in the queue.';
+  @override
   String get anki_pending_mines_title => 'Thẻ chờ';
   @override
   String get anki_pending_mines_unreachable =>
@@ -351338,6 +354356,9 @@ class _StringsVi extends _StringsEn {
   String get anki_sync_client_enable_warn_confirm => 'I understand, enable';
   @override
   String get anki_sync_client_enable_warn_title => 'Enable Anki sync?';
+  @override
+  String anki_sync_client_error_not_sync_server({required Object detail}) =>
+      'The server did not answer with the Anki sync protocol (the anki-original-size response header is missing). Make sure the address points at an Anki sync server (the official anki-sync-server, or the one built into Anki desktop) rather than a web page; a reverse proxy must keep this header. Details: ${detail}';
   @override
   String anki_sync_client_has_unsynced({required Object count}) =>
       '${count} thẻ chưa được đồng bộ. Hãy đồng bộ chúng trước khi đổi tài khoản hoặc đăng xuất.';
@@ -351547,6 +354568,9 @@ class _StringsVi extends _StringsEn {
   String get audio_panel_pick_new_subtitle => 'Chọn tệp phụ đề mới';
   @override
   String get audio_source_added => 'Đã thêm nguồn âm thanh';
+  @override
+  String audio_source_connection_refused({required Object host}) =>
+      'Audio source refused the connection: nothing is listening at "${host}" — make sure the service is running, or remove this source in settings';
   @override
   String audio_source_dns_error({required Object host}) =>
       'Kết nối nguồn âm thanh thất bại: không thể phân giải "${host}" — kiểm tra mạng hoặc xóa nguồn này trong cài đặt';
@@ -353699,6 +356723,18 @@ class _StringsVi extends _StringsEn {
   @override
   String get card_mining_pending => 'Đang thêm thẻ…';
   @override
+  String get card_notice_title_added => 'Card added';
+  @override
+  String get card_notice_title_duplicate => 'Card already exists';
+  @override
+  String get card_notice_title_failed => 'Card not created';
+  @override
+  String get card_notice_title_overwritten => 'Card overwritten';
+  @override
+  String get card_notice_title_queued => 'Card queued';
+  @override
+  String get card_notice_title_warning => 'Card added, something missing';
+  @override
   String card_overwritten({required Object deck}) =>
       'Đã ghi đè thẻ trong 『${deck}』.';
   @override
@@ -354478,16 +357514,13 @@ class _StringsVi extends _StringsEn {
   @override
   String get delete_prompt_title => 'Đã xóa trên thiết bị khác';
   @override
-  String get delete_scope_keep_local_desc =>
-      'Các thiết bị khác giữ bản sao của chúng';
-  @override
   String get delete_scope_no_channel =>
       'Chưa cấu hình đồng bộ - việc xóa này chỉ ảnh hưởng đến thiết bị này';
   @override
   String get delete_scope_sync_everywhere => 'Xóa khỏi tất cả thiết bị';
   @override
   String get delete_scope_sync_everywhere_desc =>
-      'Các thiết bị khác xác nhận xóa khi đồng bộ tiếp theo';
+      'Nếu chọn, các thiết bị khác sẽ xác nhận xóa khi đồng bộ tiếp theo; nếu không, chúng giữ bản sao của mình';
   @override
   String get delete_statistics => 'Xóa cả thống kê';
   @override
@@ -354741,6 +357774,13 @@ class _StringsVi extends _StringsEn {
   @override
   String get dict_language_description =>
       'Quyết định phông chữ nào hiển thị văn bản của từ điển này. Tự động sử dụng ngôn ngữ mà từ điển khai báo.';
+  @override
+  String dict_language_group_title({
+    required Object language,
+    required Object n,
+  }) => '${language} · ${n}';
+  @override
+  String get dict_language_group_unset => 'Language not set';
   @override
   String get dict_language_title => 'Ngôn ngữ nội dung từ điển';
   @override
@@ -356115,6 +359155,66 @@ class _StringsVi extends _StringsEn {
       'You can attach 1 video (up to ${max}). It is compressed to ${resolution} before uploading.';
   @override
   String get feedback_compose_video_retry => 'Compress again';
+  @override
+  String get feedback_crash_auto_send_setting =>
+      'Automatically send crash logs';
+  @override
+  String get feedback_crash_auto_send_setting_hint =>
+      'After Fushi crashes or quits unexpectedly, send the logs to the developers on next launch without asking (the logs leave this device)';
+  @override
+  String get feedback_crash_auto_sent_notice =>
+      'Logs from the last crash were sent to the developers automatically';
+  @override
+  String get feedback_crash_kind_anr => 'not responding';
+  @override
+  String get feedback_crash_kind_crash => 'crash';
+  @override
+  String get feedback_crash_kind_memory =>
+      'closed by the system for low memory';
+  @override
+  String get feedback_crash_kind_native => 'native crash';
+  @override
+  String get feedback_crash_kind_startup => 'while starting';
+  @override
+  String get feedback_crash_kind_unexpected => 'unexpected exit';
+  @override
+  String get feedback_crash_notice_view => 'View';
+  @override
+  String get feedback_crash_prompt_always => 'Always send';
+  @override
+  String get feedback_crash_prompt_body =>
+      'Send the logs to the developers to help fix it? You can follow it in Feedback.';
+  @override
+  String get feedback_crash_prompt_decline => 'No thanks';
+  @override
+  String get feedback_crash_prompt_retry => 'Retry';
+  @override
+  String get feedback_crash_prompt_send => 'Send to developers';
+  @override
+  String get feedback_crash_prompt_sending => 'Sending…';
+  @override
+  String get feedback_crash_prompt_skip => 'Skip';
+  @override
+  String feedback_crash_prompt_title({required Object kind}) =>
+      'Fushi quit unexpectedly last time (${kind})';
+  @override
+  String feedback_crash_prompt_title_many({
+    required Object n,
+    required Object kind,
+  }) => 'Fushi quit unexpectedly ${n} times (${kind})';
+  @override
+  String get feedback_crash_report_header =>
+      'Generated by Fushi after it quit unexpectedly; logs and device info are attached.';
+  @override
+  String feedback_crash_report_title({
+    required Object kind,
+    required Object version,
+  }) => 'Crash report: ${kind} (${version})';
+  @override
+  String get feedback_crash_send_failed =>
+      'Could not send the crash logs. Fushi will ask again next time.';
+  @override
+  String get feedback_crash_sent_notice => 'Crash logs sent to the developers';
   @override
   String get feedback_detail_add_shot => 'Add screenshot';
   @override
@@ -360674,6 +363774,19 @@ class _StringsVi extends _StringsEn {
   String get lyrics_control_zone_top_hint =>
       'Top bar on phones, top-right corner on wide screens';
   @override
+  String get lyrics_controls_collapse => 'Collapse playback controls';
+  @override
+  String get lyrics_controls_expand => 'Expand playback controls';
+  @override
+  String get lyrics_controls_style => 'Playback controls layout';
+  @override
+  String get lyrics_controls_style_classic => 'Classic';
+  @override
+  String get lyrics_controls_style_hint =>
+      'New: a collapsible mini bar on phones and floating islands on wide screens. Classic: the previous layout.';
+  @override
+  String get lyrics_controls_style_modern => 'New';
+  @override
   String get lyrics_exit_to_library => 'Close and return to library';
   @override
   String get lyrics_font_size => 'Cỡ chữ lời bài hát';
@@ -360687,6 +363800,15 @@ class _StringsVi extends _StringsEn {
       'Use your own color for the line being read instead of the player theme color';
   @override
   String get lyrics_illustration_back_to_cover => 'Back to cover';
+  @override
+  String get lyrics_illustration_cue => 'Illustration prompt';
+  @override
+  String get lyrics_illustration_cue_dot => 'Dot';
+  @override
+  String get lyrics_illustration_cue_hint =>
+      'Pop up: show the illustration card and pause for the image pause duration below. Dot: only mark the cover thumbnail.';
+  @override
+  String get lyrics_illustration_cue_popup => 'Pop up';
   @override
   String get lyrics_illustration_next => 'Next illustration';
   @override
@@ -361886,6 +365008,9 @@ class _StringsVi extends _StringsEn {
   String media_privacy_inherited_note({required Object collections}) =>
       'Private because it is in the private collection “${collections}”. To make it public, turn off privacy on that collection.';
   @override
+  String media_privacy_inherited_source_note({required Object source}) =>
+      'Private because its source library “${source}” is private. To make it public, turn off privacy on that source library.';
+  @override
   String media_privacy_load_failed({required Object reason}) =>
       'Could not read the privacy setting, so it cannot be changed right now: ${reason}';
   @override
@@ -362004,6 +365129,28 @@ class _StringsVi extends _StringsEn {
   @override
   String get media_source_open_folder_failed =>
       'Couldn\'t open the folder. It may have been moved, deleted, or disconnected.';
+  @override
+  String get media_source_privacy_action => 'Privacy';
+  @override
+  String get media_source_privacy_badge =>
+      'Private: not uploaded to the leaderboard';
+  @override
+  String get media_source_privacy_cleared_toast =>
+      'Source library is no longer private';
+  @override
+  String get media_source_privacy_hint =>
+      'Everything this source library brings in is treated as private: it is never uploaded to the leaderboard, so it stays off your public shelf, profile and share cards, and its progress is not pushed to Bangumi. Items already uploaded are removed from the leaderboard as soon as you turn this on (or at the next sync if that fails). Your daily character total still counts them, without saying what you read. Removing this source keeps its items private.';
+  @override
+  String get media_source_privacy_marked_toast =>
+      'Source library is now private';
+  @override
+  String get media_source_privacy_switch => 'Keep this source library private';
+  @override
+  String media_source_privacy_withdraw_failed({required Object reason}) =>
+      'Source library is now private, but removing its items from the leaderboard failed; the next sync will try again: ${reason}';
+  @override
+  String get media_source_privacy_withdrawn_toast =>
+      'Source library is now private; its items were removed from the leaderboard';
   @override
   String get media_source_remove => 'Remove Source';
   @override
@@ -365642,7 +368789,13 @@ class _StringsVi extends _StringsEn {
   String get remote_book_audiobook_redownloaded =>
       'Audiobook re-downloaded from peer';
   @override
-  String get remote_book_delete_everywhere => 'Delete permanently';
+  String remote_book_delete_cloud_confirm({
+    required Object name,
+    required Object backend,
+  }) =>
+      'Delete "${name}" from ${backend}? The book\'s files, cover, progress and audiobook in the cloud are permanently deleted. This device has no copy and this can\'t be undone. Other devices will ask whether to delete their copy on their next sync.';
+  @override
+  String get remote_book_delete_everywhere => 'Also delete on host';
   @override
   String remote_book_delete_everywhere_confirm({
     required Object name,
@@ -365723,7 +368876,25 @@ class _StringsVi extends _StringsEn {
   String get remote_delete_audiobook_partial =>
       'Đã xóa sách, nhưng sách nói không thể được gỡ trên thiết bị đã ghép nối';
   @override
+  String get remote_delete_cloud_checking =>
+      'Checking whether the cloud storage is reachable…';
+  @override
+  String get remote_delete_cloud_offline =>
+      'Can\'t reach the cloud storage. Delete it there once it\'s reachable.';
+  @override
+  String get remote_delete_cloud_signed_out =>
+      'The cloud storage sign-in has expired. Sign in again to delete it there.';
+  @override
   String get remote_delete_failed => 'Không thể xóa trên thiết bị đã ghép nối';
+  @override
+  String get remote_delete_host_checking =>
+      'Checking whether the host is online…';
+  @override
+  String get remote_delete_host_offline =>
+      'The host is offline or unreachable. Delete it there once it\'s connected.';
+  @override
+  String get remote_delete_host_pairing_rejected =>
+      'The host rejected this device\'s pairing. Pair again to delete it there.';
   @override
   String get remote_delete_unsupported =>
       'Thiết bị đã ghép nối quá cũ để hỗ trợ xóa từ xa. Hãy cập nhật Fushi trên thiết bị đó trước.';
@@ -371208,6 +374379,12 @@ class _StringsVi extends _StringsEn {
   String get video_audio_track_empty =>
       'Không có bản âm thanh có thể chuyển đổi';
   @override
+  String get video_audio_track_fallback_muxed =>
+      'The audio stream was refused; switched to a compatible stream with sound (lower quality)';
+  @override
+  String get video_audio_track_load_failed =>
+      'Couldn\'t load the audio stream — there is no sound. The source refused access; try again later.';
+  @override
   String video_audio_track_switched({required Object label}) =>
       'Bản âm thanh: ${label}';
   @override
@@ -375344,7 +378521,30 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get ai_agent_send => '发送';
   @override
+  String get ai_agent_session_current => '当前';
+  @override
+  String get ai_agent_session_delete => '删除';
+  @override
+  String ai_agent_session_delete_message({required Object title}) =>
+      '「${title}」将从本机删除。助手做过的改动仍留在「AI 操作记录」里，可以在那里撤销。';
+  @override
+  String get ai_agent_session_delete_title => '删除这个会话？';
+  @override
+  String get ai_agent_session_more => '会话选项';
+  @override
+  String get ai_agent_session_open_failed => '无法打开这个会话';
+  @override
+  String get ai_agent_session_rename => '重命名';
+  @override
+  String get ai_agent_session_rename_title => '重命名会话';
+  @override
   String ai_agent_session_summary({required Object n}) => '本次对话做了 ${n} 处改动';
+  @override
+  String get ai_agent_sessions_empty => '还没有历史会话';
+  @override
+  String get ai_agent_sessions_retention_hint => '会话只保存在本机，保留 30 天';
+  @override
+  String get ai_agent_sessions_title => '会话';
   @override
   String get ai_agent_stop => '停止';
   @override
@@ -375527,6 +378727,34 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get ai_interconnect_host_unpaired =>
       '还没有配对设备。先在「Fushi 互联」里配对电脑，就能把 AI 下视频交给它，用它的 AI 来办。';
+  @override
+  String get ai_mcp_access => '外部 AI 访问（MCP）';
+  @override
+  String get ai_mcp_access_hint =>
+      '让本机的 MCP 客户端（Claude Desktop、Claude Code 等）调用 Fushi 的操作。只监听本机，需要下面的配对令牌。可撤销的改动直接执行并记入「AI 操作记录」；撤销不了的操作和安装扩展会先在这里请你确认。默认关闭。';
+  @override
+  String get ai_mcp_confirm_arguments => '参数';
+  @override
+  String ai_mcp_confirm_body({required Object client, required Object op}) =>
+      '${client} 请求执行：${op}';
+  @override
+  String ai_mcp_confirm_expire({required Object minutes}) =>
+      '${minutes} 分钟内不回答将自动拒绝。';
+  @override
+  String get ai_mcp_confirm_title => '外部 AI 请求执行操作';
+  @override
+  String get ai_mcp_token => '配对令牌';
+  @override
+  String get ai_mcp_token_copy => '复制令牌';
+  @override
+  String get ai_mcp_token_copy_config => '复制客户端配置';
+  @override
+  String get ai_mcp_token_hint => '为 MCP 客户端生成令牌。重新生成会作废旧令牌。';
+  @override
+  String get ai_mcp_token_issued_body =>
+      '把这个令牌填进 MCP 客户端配置的 FUSHI_MCP_TOKEN（接入说明里有示例）。它只显示这一次。';
+  @override
+  String get ai_mcp_token_issued_title => '新的配对令牌';
   @override
   String get ai_media_acquire_ai_failed => 'AI 暂不可用，已按原文搜索并按做种数排序。';
   @override
@@ -376329,6 +379557,8 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get anki_dedup_unavailable => '需要本机运行 Anki（AnkiConnect）。';
   @override
+  String get anki_delivery_section => '发送与待发卡片';
+  @override
   String get anki_desktop_auto_launch => '启动 Fushi 时自动启动 Anki';
   @override
   String get anki_desktop_auto_launch_hint =>
@@ -376745,6 +379975,9 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get anki_pending_mines_status_sending => '发送中';
   @override
+  String anki_pending_mines_stopped({required Object reason}) =>
+      '${reason} 剩下的卡片继续留在队列里。';
+  @override
   String get anki_pending_mines_title => '待发卡片';
   @override
   String get anki_pending_mines_unreachable => '现在连不上 Anki，剩下的卡片继续留在队列里';
@@ -376877,6 +380110,9 @@ class _StringsZhCn extends _StringsEn {
   String get anki_sync_client_enable_warn_confirm => '我明白，仍然启用';
   @override
   String get anki_sync_client_enable_warn_title => '要启用 Anki 同步吗？';
+  @override
+  String anki_sync_client_error_not_sync_server({required Object detail}) =>
+      '服务器的回复不是 Anki 同步协议（缺少 anki-original-size 响应头）。请确认地址指向 Anki 同步服务器（官方 anki-sync-server，或 Anki 桌面版自带的同步服务），而不是网页；经反向代理时须保留这个响应头。原始信息：${detail}';
   @override
   String anki_sync_client_has_unsynced({required Object count}) =>
       '还有 ${count} 张卡没有同步，请先同步再切换账号或退出登录。';
@@ -377071,6 +380307,9 @@ class _StringsZhCn extends _StringsEn {
   String get audio_panel_pick_new_subtitle => '选择新字幕文件';
   @override
   String get audio_source_added => '已添加音频来源';
+  @override
+  String audio_source_connection_refused({required Object host}) =>
+      '音频源拒绝连接："${host}" 上没有服务在监听 — 请确认服务已启动，或在设置中移除此音频源';
   @override
   String audio_source_dns_error({required Object host}) =>
       '音频源连接失败：无法解析 "${host}" — 请检查网络，或在设置中移除此音频源';
@@ -379017,6 +382256,18 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get card_mining_pending => '制卡中…';
   @override
+  String get card_notice_title_added => '已制卡';
+  @override
+  String get card_notice_title_duplicate => '卡片已存在';
+  @override
+  String get card_notice_title_failed => '制卡失败';
+  @override
+  String get card_notice_title_overwritten => '已覆盖卡片';
+  @override
+  String get card_notice_title_queued => '已存入待发队列';
+  @override
+  String get card_notice_title_warning => '已制卡，有缺失';
+  @override
   String card_overwritten({required Object deck}) => '卡片已覆盖到『${deck}』。';
   @override
   String get card_source_open => '回到出处';
@@ -379735,13 +382986,12 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get delete_prompt_title => '其他设备已删除';
   @override
-  String get delete_scope_keep_local_desc => '其他设备保留';
-  @override
   String get delete_scope_no_channel => '未配置同步，本次删除只影响这台设备';
   @override
   String get delete_scope_sync_everywhere => '从所有设备删除';
   @override
-  String get delete_scope_sync_everywhere_desc => '其他设备下次同步时会确认删除';
+  String get delete_scope_sync_everywhere_desc =>
+      '勾选后，其他设备下次同步时会确认删除；不勾选则其他设备保留';
   @override
   String get delete_statistics => '同时删除统计数据';
   @override
@@ -379981,6 +383231,13 @@ class _StringsZhCn extends _StringsEn {
   String get dict_language_auto => '自动';
   @override
   String get dict_language_description => '决定这本词典的文字用哪种字体渲染。自动 = 用词典自己声明的语言。';
+  @override
+  String dict_language_group_title({
+    required Object language,
+    required Object n,
+  }) => '${language} · ${n} 本';
+  @override
+  String get dict_language_group_unset => '未标注语言';
   @override
   String get dict_language_title => '词典内容语言';
   @override
@@ -381248,6 +384505,60 @@ class _StringsZhCn extends _StringsEn {
   }) => '可附 1 个视频（不超过 ${max}），上传前会自动压缩为 ${resolution}。';
   @override
   String get feedback_compose_video_retry => '重新压缩';
+  @override
+  String get feedback_crash_auto_send_setting => '自动发送闪退日志';
+  @override
+  String get feedback_crash_auto_send_setting_hint =>
+      'Fushi 闪退或异常退出后，下次启动时不再询问、直接把日志发给开发者（日志会离开这台设备）';
+  @override
+  String get feedback_crash_auto_sent_notice => '已自动把上次的闪退日志发给开发者';
+  @override
+  String get feedback_crash_kind_anr => '无响应';
+  @override
+  String get feedback_crash_kind_crash => '崩溃';
+  @override
+  String get feedback_crash_kind_memory => '内存不足被系统关闭';
+  @override
+  String get feedback_crash_kind_native => '原生崩溃';
+  @override
+  String get feedback_crash_kind_startup => '启动时';
+  @override
+  String get feedback_crash_kind_unexpected => '意外退出';
+  @override
+  String get feedback_crash_notice_view => '查看';
+  @override
+  String get feedback_crash_prompt_always => '以后自动发送';
+  @override
+  String get feedback_crash_prompt_body => '把日志发给开发者帮忙修复？发出后可以在反馈中心看进度。';
+  @override
+  String get feedback_crash_prompt_decline => '不用了';
+  @override
+  String get feedback_crash_prompt_retry => '重试';
+  @override
+  String get feedback_crash_prompt_send => '发送给开发者';
+  @override
+  String get feedback_crash_prompt_sending => '正在发送…';
+  @override
+  String get feedback_crash_prompt_skip => '跳过';
+  @override
+  String feedback_crash_prompt_title({required Object kind}) =>
+      'Fushi 上次意外退出了（${kind}）';
+  @override
+  String feedback_crash_prompt_title_many({
+    required Object n,
+    required Object kind,
+  }) => 'Fushi 已经意外退出 ${n} 次（${kind}）';
+  @override
+  String get feedback_crash_report_header => 'Fushi 在异常退出后自动生成，已附日志与设备信息。';
+  @override
+  String feedback_crash_report_title({
+    required Object kind,
+    required Object version,
+  }) => '闪退报告：${kind}（${version}）';
+  @override
+  String get feedback_crash_send_failed => '闪退日志没发出去，下次启动时会再问你。';
+  @override
+  String get feedback_crash_sent_notice => '闪退日志已发给开发者';
   @override
   String get feedback_detail_add_shot => '追加截图';
   @override
@@ -385398,6 +388709,18 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get lyrics_control_zone_top_hint => '手机在顶栏，宽屏在右上角';
   @override
+  String get lyrics_controls_collapse => '收起播放控件';
+  @override
+  String get lyrics_controls_expand => '展开播放控件';
+  @override
+  String get lyrics_controls_style => '播放控件布局';
+  @override
+  String get lyrics_controls_style_classic => '经典';
+  @override
+  String get lyrics_controls_style_hint => '新版：手机上是可收起的迷你条，宽屏是底部浮岛；经典：原来的布局';
+  @override
+  String get lyrics_controls_style_modern => '新版';
+  @override
   String get lyrics_exit_to_library => '关闭并返回书架';
   @override
   String get lyrics_font_size => '歌词字号';
@@ -385409,6 +388732,15 @@ class _StringsZhCn extends _StringsEn {
   String get lyrics_highlight_color_hint => '正在朗读的一行改用自定义颜色，不跟随播放器主题取色';
   @override
   String get lyrics_illustration_back_to_cover => '回到封面';
+  @override
+  String get lyrics_illustration_cue => '插图提示方式';
+  @override
+  String get lyrics_illustration_cue_dot => '红点';
+  @override
+  String get lyrics_illustration_cue_hint =>
+      '弹出停留：弹出插图卡，并按下面的「图片暂停」秒数暂停后继续；红点：只在封面缩略图上标红点';
+  @override
+  String get lyrics_illustration_cue_popup => '弹出停留';
   @override
   String get lyrics_illustration_next => '下一张插图';
   @override
@@ -386530,6 +389862,9 @@ class _StringsZhCn extends _StringsEn {
   String media_privacy_inherited_note({required Object collections}) =>
       '因所在合集「${collections}」已设为私密，这部作品也是私密的。要取消，请到该合集的「私密」里关闭。';
   @override
+  String media_privacy_inherited_source_note({required Object source}) =>
+      '因所在来源库「${source}」已设为私密，这部作品也是私密的。要取消，请到该来源库的「隐私」里关闭。';
+  @override
   String media_privacy_load_failed({required Object reason}) =>
       '读取私密状态失败，暂时无法修改：${reason}';
   @override
@@ -386638,6 +389973,24 @@ class _StringsZhCn extends _StringsEn {
   String get media_source_open_folder => '打开文件夹';
   @override
   String get media_source_open_folder_failed => '无法打开文件夹，它可能已被移动、删除或断开连接。';
+  @override
+  String get media_source_privacy_action => '隐私';
+  @override
+  String get media_source_privacy_badge => '私密：不上传排行榜';
+  @override
+  String get media_source_privacy_cleared_toast => '来源库已取消私密';
+  @override
+  String get media_source_privacy_hint =>
+      '这个来源库里的所有条目都按私密处理：不上传到排行榜，不出现在公开书架、个人主页与分享卡上，进度也不推送到 Bangumi。打开后，已经上传过的条目会立即从排行榜撤下（失败则在下次同步时撤下）。每日总字数仍会计入，但不带作品信息。移除此来源后，这些条目仍保持私密。';
+  @override
+  String get media_source_privacy_marked_toast => '来源库已设为私密';
+  @override
+  String get media_source_privacy_switch => '将此来源库设为私密';
+  @override
+  String media_source_privacy_withdraw_failed({required Object reason}) =>
+      '来源库已设为私密，但从排行榜撤下失败，下次同步会再试：${reason}';
+  @override
+  String get media_source_privacy_withdrawn_toast => '来源库已设为私密，其条目已从排行榜撤下';
   @override
   String get media_source_remove => '移除来源';
   @override
@@ -389985,7 +393338,13 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get remote_book_audiobook_redownloaded => '已从互联对端重新下载有声书';
   @override
-  String get remote_book_delete_everywhere => '彻底删除';
+  String remote_book_delete_cloud_confirm({
+    required Object backend,
+    required Object name,
+  }) =>
+      '确定从云盘「${backend}」删除「${name}」吗？云盘上这本书的文件、封面、进度和有声书会被永久删除，本机没有副本，此操作不可撤销。其他设备下次同步时会确认是否一并删除。';
+  @override
+  String get remote_book_delete_everywhere => '同时从远端删除';
   @override
   String remote_book_delete_everywhere_confirm({
     required Object host,
@@ -390056,7 +393415,19 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get remote_delete_audiobook_partial => '书已在对端删除，但它的有声书没能删掉';
   @override
+  String get remote_delete_cloud_checking => '正在检查云盘能否连上…';
+  @override
+  String get remote_delete_cloud_offline => '连不上云盘，连上后才能从远端删除';
+  @override
+  String get remote_delete_cloud_signed_out => '云盘登录已失效，重新登录后才能从远端删除';
+  @override
   String get remote_delete_failed => '无法在对端设备上删除';
+  @override
+  String get remote_delete_host_checking => '正在检查对端是否在线…';
+  @override
+  String get remote_delete_host_offline => '对端离线或连不上，连上后才能从远端删除';
+  @override
+  String get remote_delete_host_pairing_rejected => '对端拒绝了本机的配对凭据，重新配对后才能从远端删除';
   @override
   String get remote_delete_unsupported => '对端设备版本过旧，不支持远端删除，请先升级对端 Fushi';
   @override
@@ -395101,6 +398472,10 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get video_audio_track_empty => '没有可切换的音频轨';
   @override
+  String get video_audio_track_fallback_muxed => '音频流被拒绝，已切换到带声音的兼容流（画质较低）';
+  @override
+  String get video_audio_track_load_failed => '音频流加载失败，当前没有声音（来源拒绝访问），请稍后重试';
+  @override
   String video_audio_track_switched({required Object label}) => '音轨: ${label}';
   @override
   String get video_auto_play_next_cancel => '取消';
@@ -398859,8 +402234,32 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get ai_agent_send => 'Send';
   @override
+  String get ai_agent_session_current => 'Current';
+  @override
+  String get ai_agent_session_delete => 'Delete';
+  @override
+  String ai_agent_session_delete_message({required Object title}) =>
+      '“${title}” will be removed from this device. Changes the assistant made stay in the AI action log and can still be undone there.';
+  @override
+  String get ai_agent_session_delete_title => 'Delete this conversation?';
+  @override
+  String get ai_agent_session_more => 'Conversation options';
+  @override
+  String get ai_agent_session_open_failed => 'Couldn\'t open this conversation';
+  @override
+  String get ai_agent_session_rename => 'Rename';
+  @override
+  String get ai_agent_session_rename_title => 'Rename conversation';
+  @override
   String ai_agent_session_summary({required Object n}) =>
       '${n} changes in this conversation';
+  @override
+  String get ai_agent_sessions_empty => 'No earlier conversations yet';
+  @override
+  String get ai_agent_sessions_retention_hint =>
+      'Conversations stay on this device for 30 days';
+  @override
+  String get ai_agent_sessions_title => 'Conversations';
   @override
   String get ai_agent_stop => 'Stop';
   @override
@@ -399053,6 +402452,35 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get ai_interconnect_host_unpaired =>
       'No paired device yet. Pair a computer in Fushi Interconnect to let it handle AI video downloads with its own AI.';
+  @override
+  String get ai_mcp_access => 'External AI access (MCP)';
+  @override
+  String get ai_mcp_access_hint =>
+      'Lets MCP clients on this computer (Claude Desktop, Claude Code…) call Fushi\'s operations. Listens on this computer only and needs the pairing token below. Changes that can be undone run directly and show up in the AI action log; anything that can\'t be undone, and installing extensions, asks you here first. Off by default.';
+  @override
+  String get ai_mcp_confirm_arguments => 'Arguments';
+  @override
+  String ai_mcp_confirm_body({required Object client, required Object op}) =>
+      '${client} wants to run: ${op}';
+  @override
+  String ai_mcp_confirm_expire({required Object minutes}) =>
+      'Declined automatically if you do not answer within ${minutes} minutes.';
+  @override
+  String get ai_mcp_confirm_title => 'Request from an external AI';
+  @override
+  String get ai_mcp_token => 'Pairing token';
+  @override
+  String get ai_mcp_token_copy => 'Copy token';
+  @override
+  String get ai_mcp_token_copy_config => 'Copy client config';
+  @override
+  String get ai_mcp_token_hint =>
+      'Generate a token for your MCP client. Generating a new one revokes the old one.';
+  @override
+  String get ai_mcp_token_issued_body =>
+      'Put this token in your MCP client\'s configuration as FUSHI_MCP_TOKEN (the setup guide shows how). It is shown only once.';
+  @override
+  String get ai_mcp_token_issued_title => 'New pairing token';
   @override
   String get ai_media_acquire_ai_failed => 'AI 暫不可用，已按原文搜尋並按做種數排序。';
   @override
@@ -399861,6 +403289,8 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get anki_dedup_unavailable => '需要本機運行 Anki（AnkiConnect）。';
   @override
+  String get anki_delivery_section => 'Sending & pending cards';
+  @override
   String get anki_desktop_auto_launch => 'Launch Anki when Fushi starts';
   @override
   String get anki_desktop_auto_launch_hint =>
@@ -400281,6 +403711,9 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get anki_pending_mines_status_sending => '發送中';
   @override
+  String anki_pending_mines_stopped({required Object reason}) =>
+      '${reason} The remaining cards stay in the queue.';
+  @override
   String get anki_pending_mines_title => '待發卡片';
   @override
   String get anki_pending_mines_unreachable => '現在連不上 Anki，剩下的卡片繼續留在隊列裡';
@@ -400414,6 +403847,9 @@ class _StringsZhHk extends _StringsEn {
   String get anki_sync_client_enable_warn_confirm => 'I understand, enable';
   @override
   String get anki_sync_client_enable_warn_title => 'Enable Anki sync?';
+  @override
+  String anki_sync_client_error_not_sync_server({required Object detail}) =>
+      'The server did not answer with the Anki sync protocol (the anki-original-size response header is missing). Make sure the address points at an Anki sync server (the official anki-sync-server, or the one built into Anki desktop) rather than a web page; a reverse proxy must keep this header. Details: ${detail}';
   @override
   String anki_sync_client_has_unsynced({required Object count}) =>
       '還有 ${count} 張卡沒有同步，請先同步再切換帳户或退出登入。';
@@ -400613,6 +404049,9 @@ class _StringsZhHk extends _StringsEn {
   String get audio_panel_pick_new_subtitle => '選擇新字幕檔';
   @override
   String get audio_source_added => '已新增音訊來源';
+  @override
+  String audio_source_connection_refused({required Object host}) =>
+      'Audio source refused the connection: nothing is listening at "${host}" — make sure the service is running, or remove this source in settings';
   @override
   String audio_source_dns_error({required Object host}) =>
       '音頻來源連線失敗：無法解析 "${host}" — 請檢查網絡，或在設定中移除此來源';
@@ -402682,6 +406121,18 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get card_mining_pending => '製卡中…';
   @override
+  String get card_notice_title_added => '已製卡';
+  @override
+  String get card_notice_title_duplicate => '卡片已存在';
+  @override
+  String get card_notice_title_failed => '製卡失敗';
+  @override
+  String get card_notice_title_overwritten => '已覆蓋卡片';
+  @override
+  String get card_notice_title_queued => '已存入待發佇列';
+  @override
+  String get card_notice_title_warning => '已製卡，有缺失';
+  @override
   String card_overwritten({required Object deck}) => '卡片已覆寫至『${deck}』。';
   @override
   String get card_source_open => 'Go to source';
@@ -403405,13 +406856,12 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get delete_prompt_title => '其他設備已刪除';
   @override
-  String get delete_scope_keep_local_desc => '其他設備保留';
-  @override
   String get delete_scope_no_channel => '未配置同步，本次刪除只影響這台設備';
   @override
   String get delete_scope_sync_everywhere => '從所有設備刪除';
   @override
-  String get delete_scope_sync_everywhere_desc => '其他設備下次同步時會確認刪除';
+  String get delete_scope_sync_everywhere_desc =>
+      '勾選後，其他設備下次同步時會確認刪除；不勾選則其他設備保留';
   @override
   String get delete_statistics => '同時刪除統計數據';
   @override
@@ -403655,6 +407105,13 @@ class _StringsZhHk extends _StringsEn {
   String get dict_language_auto => '自動';
   @override
   String get dict_language_description => '決定這本詞典的文字用哪種字體渲染。自動 = 用詞典自己聲明的語言。';
+  @override
+  String dict_language_group_title({
+    required Object language,
+    required Object n,
+  }) => '${language} · ${n}';
+  @override
+  String get dict_language_group_unset => 'Language not set';
   @override
   String get dict_language_title => '詞典內容語言';
   @override
@@ -404939,6 +408396,66 @@ class _StringsZhHk extends _StringsEn {
       'You can attach 1 video (up to ${max}). It is compressed to ${resolution} before uploading.';
   @override
   String get feedback_compose_video_retry => 'Compress again';
+  @override
+  String get feedback_crash_auto_send_setting =>
+      'Automatically send crash logs';
+  @override
+  String get feedback_crash_auto_send_setting_hint =>
+      'After Fushi crashes or quits unexpectedly, send the logs to the developers on next launch without asking (the logs leave this device)';
+  @override
+  String get feedback_crash_auto_sent_notice =>
+      'Logs from the last crash were sent to the developers automatically';
+  @override
+  String get feedback_crash_kind_anr => 'not responding';
+  @override
+  String get feedback_crash_kind_crash => 'crash';
+  @override
+  String get feedback_crash_kind_memory =>
+      'closed by the system for low memory';
+  @override
+  String get feedback_crash_kind_native => 'native crash';
+  @override
+  String get feedback_crash_kind_startup => 'while starting';
+  @override
+  String get feedback_crash_kind_unexpected => 'unexpected exit';
+  @override
+  String get feedback_crash_notice_view => 'View';
+  @override
+  String get feedback_crash_prompt_always => 'Always send';
+  @override
+  String get feedback_crash_prompt_body =>
+      'Send the logs to the developers to help fix it? You can follow it in Feedback.';
+  @override
+  String get feedback_crash_prompt_decline => 'No thanks';
+  @override
+  String get feedback_crash_prompt_retry => 'Retry';
+  @override
+  String get feedback_crash_prompt_send => 'Send to developers';
+  @override
+  String get feedback_crash_prompt_sending => 'Sending…';
+  @override
+  String get feedback_crash_prompt_skip => 'Skip';
+  @override
+  String feedback_crash_prompt_title({required Object kind}) =>
+      'Fushi quit unexpectedly last time (${kind})';
+  @override
+  String feedback_crash_prompt_title_many({
+    required Object n,
+    required Object kind,
+  }) => 'Fushi quit unexpectedly ${n} times (${kind})';
+  @override
+  String get feedback_crash_report_header =>
+      'Generated by Fushi after it quit unexpectedly; logs and device info are attached.';
+  @override
+  String feedback_crash_report_title({
+    required Object kind,
+    required Object version,
+  }) => 'Crash report: ${kind} (${version})';
+  @override
+  String get feedback_crash_send_failed =>
+      'Could not send the crash logs. Fushi will ask again next time.';
+  @override
+  String get feedback_crash_sent_notice => 'Crash logs sent to the developers';
   @override
   String get feedback_detail_add_shot => 'Add screenshot';
   @override
@@ -409177,6 +412694,19 @@ class _StringsZhHk extends _StringsEn {
   String get lyrics_control_zone_top_hint =>
       'Top bar on phones, top-right corner on wide screens';
   @override
+  String get lyrics_controls_collapse => 'Collapse playback controls';
+  @override
+  String get lyrics_controls_expand => 'Expand playback controls';
+  @override
+  String get lyrics_controls_style => 'Playback controls layout';
+  @override
+  String get lyrics_controls_style_classic => 'Classic';
+  @override
+  String get lyrics_controls_style_hint =>
+      'New: a collapsible mini bar on phones and floating islands on wide screens. Classic: the previous layout.';
+  @override
+  String get lyrics_controls_style_modern => 'New';
+  @override
   String get lyrics_exit_to_library => 'Close and return to library';
   @override
   String get lyrics_font_size => '歌詞字體大小';
@@ -409188,6 +412718,15 @@ class _StringsZhHk extends _StringsEn {
   String get lyrics_highlight_color_hint => '正在朗讀的一行改用自訂顏色，不跟隨播放器主題取色';
   @override
   String get lyrics_illustration_back_to_cover => 'Back to cover';
+  @override
+  String get lyrics_illustration_cue => 'Illustration prompt';
+  @override
+  String get lyrics_illustration_cue_dot => 'Dot';
+  @override
+  String get lyrics_illustration_cue_hint =>
+      'Pop up: show the illustration card and pause for the image pause duration below. Dot: only mark the cover thumbnail.';
+  @override
+  String get lyrics_illustration_cue_popup => 'Pop up';
   @override
   String get lyrics_illustration_next => 'Next illustration';
   @override
@@ -410331,6 +413870,9 @@ class _StringsZhHk extends _StringsEn {
   String media_privacy_inherited_note({required Object collections}) =>
       'Private because it is in the private collection “${collections}”. To make it public, turn off privacy on that collection.';
   @override
+  String media_privacy_inherited_source_note({required Object source}) =>
+      'Private because its source library “${source}” is private. To make it public, turn off privacy on that source library.';
+  @override
   String media_privacy_load_failed({required Object reason}) =>
       'Could not read the privacy setting, so it cannot be changed right now: ${reason}';
   @override
@@ -410440,6 +413982,28 @@ class _StringsZhHk extends _StringsEn {
   String get media_source_open_folder => 'Open Folder';
   @override
   String get media_source_open_folder_failed => '無法開啟資料夾，可能已被移動、刪除或中斷連線。';
+  @override
+  String get media_source_privacy_action => 'Privacy';
+  @override
+  String get media_source_privacy_badge =>
+      'Private: not uploaded to the leaderboard';
+  @override
+  String get media_source_privacy_cleared_toast =>
+      'Source library is no longer private';
+  @override
+  String get media_source_privacy_hint =>
+      'Everything this source library brings in is treated as private: it is never uploaded to the leaderboard, so it stays off your public shelf, profile and share cards, and its progress is not pushed to Bangumi. Items already uploaded are removed from the leaderboard as soon as you turn this on (or at the next sync if that fails). Your daily character total still counts them, without saying what you read. Removing this source keeps its items private.';
+  @override
+  String get media_source_privacy_marked_toast =>
+      'Source library is now private';
+  @override
+  String get media_source_privacy_switch => 'Keep this source library private';
+  @override
+  String media_source_privacy_withdraw_failed({required Object reason}) =>
+      'Source library is now private, but removing its items from the leaderboard failed; the next sync will try again: ${reason}';
+  @override
+  String get media_source_privacy_withdrawn_toast =>
+      'Source library is now private; its items were removed from the leaderboard';
   @override
   String get media_source_remove => 'Remove Source';
   @override
@@ -413905,7 +417469,13 @@ class _StringsZhHk extends _StringsEn {
   String get remote_book_audiobook_redownloaded =>
       'Audiobook re-downloaded from peer';
   @override
-  String get remote_book_delete_everywhere => '徹底刪除';
+  String remote_book_delete_cloud_confirm({
+    required Object backend,
+    required Object name,
+  }) =>
+      '確定從雲端硬碟「${backend}」刪除「${name}」嗎？雲端上這本書的檔案、封面、進度和有聲書會被永久刪除，本機沒有副本，此操作無法復原。其他設備下次同步時會確認是否一併刪除。';
+  @override
+  String get remote_book_delete_everywhere => '同時從遠端刪除';
   @override
   String remote_book_delete_everywhere_confirm({
     required Object host,
@@ -413976,7 +417546,19 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get remote_delete_audiobook_partial => '書已在對端刪除，但它的有聲書沒能刪掉';
   @override
+  String get remote_delete_cloud_checking => '正在檢查雲端硬碟能否連上…';
+  @override
+  String get remote_delete_cloud_offline => '連不上雲端硬碟，連上後才能從遠端刪除';
+  @override
+  String get remote_delete_cloud_signed_out => '雲端硬碟登入已失效，重新登入後才能從遠端刪除';
+  @override
   String get remote_delete_failed => '無法在對端設備上刪除';
+  @override
+  String get remote_delete_host_checking => '正在檢查對端是否在線…';
+  @override
+  String get remote_delete_host_offline => '對端離線或連不上，連上後才能從遠端刪除';
+  @override
+  String get remote_delete_host_pairing_rejected => '對端拒絕了本機的配對憑據，重新配對後才能從遠端刪除';
   @override
   String get remote_delete_unsupported => '對端設備版本過舊，不支持遠端刪除，請先升級對端 Fushi';
   @override
@@ -419268,6 +422850,12 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get video_audio_track_empty => '沒有可切換的音頻軌';
   @override
+  String get video_audio_track_fallback_muxed =>
+      'The audio stream was refused; switched to a compatible stream with sound (lower quality)';
+  @override
+  String get video_audio_track_load_failed =>
+      'Couldn\'t load the audio stream — there is no sound. The source refused access; try again later.';
+  @override
   String video_audio_track_switched({required Object label}) => '音軌：${label}';
   @override
   String get video_auto_play_next_cancel => '取消';
@@ -423096,8 +426684,31 @@ extension on _StringsEn {
         return 'Text recognition isn\'t available on this device';
       case 'ai_agent_send':
         return 'Send';
+      case 'ai_agent_session_current':
+        return 'Current';
+      case 'ai_agent_session_delete':
+        return 'Delete';
+      case 'ai_agent_session_delete_message':
+        return ({required Object title}) =>
+            '“${title}” will be removed from this device. Changes the assistant made stay in the AI action log and can still be undone there.';
+      case 'ai_agent_session_delete_title':
+        return 'Delete this conversation?';
+      case 'ai_agent_session_more':
+        return 'Conversation options';
+      case 'ai_agent_session_open_failed':
+        return 'Couldn\'t open this conversation';
+      case 'ai_agent_session_rename':
+        return 'Rename';
+      case 'ai_agent_session_rename_title':
+        return 'Rename conversation';
       case 'ai_agent_session_summary':
         return ({required Object n}) => '${n} changes in this conversation';
+      case 'ai_agent_sessions_empty':
+        return 'No earlier conversations yet';
+      case 'ai_agent_sessions_retention_hint':
+        return 'Conversations stay on this device for 30 days';
+      case 'ai_agent_sessions_title':
+        return 'Conversations';
       case 'ai_agent_stop':
         return 'Stop';
       case 'ai_agent_stop_cancelled':
@@ -423269,6 +426880,32 @@ extension on _StringsEn {
         return 'Run on a paired computer';
       case 'ai_interconnect_host_unpaired':
         return 'No paired device yet. Pair a computer in Fushi Interconnect to let it handle AI video downloads with its own AI.';
+      case 'ai_mcp_access':
+        return 'External AI access (MCP)';
+      case 'ai_mcp_access_hint':
+        return 'Lets MCP clients on this computer (Claude Desktop, Claude Code…) call Fushi\'s operations. Listens on this computer only and needs the pairing token below. Changes that can be undone run directly and show up in the AI action log; anything that can\'t be undone, and installing extensions, asks you here first. Off by default.';
+      case 'ai_mcp_confirm_arguments':
+        return 'Arguments';
+      case 'ai_mcp_confirm_body':
+        return ({required Object client, required Object op}) =>
+            '${client} wants to run: ${op}';
+      case 'ai_mcp_confirm_expire':
+        return ({required Object minutes}) =>
+            'Declined automatically if you do not answer within ${minutes} minutes.';
+      case 'ai_mcp_confirm_title':
+        return 'Request from an external AI';
+      case 'ai_mcp_token':
+        return 'Pairing token';
+      case 'ai_mcp_token_copy':
+        return 'Copy token';
+      case 'ai_mcp_token_copy_config':
+        return 'Copy client config';
+      case 'ai_mcp_token_hint':
+        return 'Generate a token for your MCP client. Generating a new one revokes the old one.';
+      case 'ai_mcp_token_issued_body':
+        return 'Put this token in your MCP client\'s configuration as FUSHI_MCP_TOKEN (the setup guide shows how). It is shown only once.';
+      case 'ai_mcp_token_issued_title':
+        return 'New pairing token';
       case 'ai_media_acquire_ai_failed':
         return 'AI is unavailable right now; results are from your original text, sorted by seeders.';
       case 'ai_media_acquire_download':
@@ -424011,6 +427648,8 @@ extension on _StringsEn {
         return 'Anki media storage optimization';
       case 'anki_dedup_unavailable':
         return 'Requires Anki running on this machine (AnkiConnect).';
+      case 'anki_delivery_section':
+        return 'Sending & pending cards';
       case 'anki_desktop_auto_launch':
         return 'Launch Anki when Fushi starts';
       case 'anki_desktop_auto_launch_hint':
@@ -424384,6 +428023,9 @@ extension on _StringsEn {
         return 'Waiting to send';
       case 'anki_pending_mines_status_sending':
         return 'Sending';
+      case 'anki_pending_mines_stopped':
+        return ({required Object reason}) =>
+            '${reason} The remaining cards stay in the queue.';
       case 'anki_pending_mines_title':
         return 'Pending cards';
       case 'anki_pending_mines_unreachable':
@@ -424502,6 +428144,9 @@ extension on _StringsEn {
         return 'I understand, enable';
       case 'anki_sync_client_enable_warn_title':
         return 'Enable Anki sync?';
+      case 'anki_sync_client_error_not_sync_server':
+        return ({required Object detail}) =>
+            'The server did not answer with the Anki sync protocol (the anki-original-size response header is missing). Make sure the address points at an Anki sync server (the official anki-sync-server, or the one built into Anki desktop) rather than a web page; a reverse proxy must keep this header. Details: ${detail}';
       case 'anki_sync_client_has_unsynced':
         return ({required Object count}) =>
             '${count} card(s) haven\'t synced yet. Sync them before switching account or signing out.';
@@ -424672,6 +428317,9 @@ extension on _StringsEn {
         return 'Pick new subtitle file';
       case 'audio_source_added':
         return 'Audio source added';
+      case 'audio_source_connection_refused':
+        return ({required Object host}) =>
+            'Audio source refused the connection: nothing is listening at "${host}" — make sure the service is running, or remove this source in settings';
       case 'audio_source_dns_error':
         return ({required Object host}) =>
             'Audio source connection failed: cannot resolve "${host}" — check your network, or remove this source in settings';
@@ -426451,6 +430099,18 @@ extension on _StringsEn {
         return 'Card created without sentence audio (none found for this selection).';
       case 'card_mining_pending':
         return 'Adding card…';
+      case 'card_notice_title_added':
+        return 'Card added';
+      case 'card_notice_title_duplicate':
+        return 'Card already exists';
+      case 'card_notice_title_failed':
+        return 'Card not created';
+      case 'card_notice_title_overwritten':
+        return 'Card overwritten';
+      case 'card_notice_title_queued':
+        return 'Card queued';
+      case 'card_notice_title_warning':
+        return 'Card added, something missing';
       case 'card_overwritten':
         return ({required Object deck}) => 'Card overwritten in 『${deck}』.';
       case 'card_source_open':
@@ -427129,14 +430789,12 @@ extension on _StringsEn {
         return 'Select all';
       case 'delete_prompt_title':
         return 'Deleted on another device';
-      case 'delete_scope_keep_local_desc':
-        return 'Other devices keep their copy';
       case 'delete_scope_no_channel':
         return 'No sync configured - this deletion only affects this device';
       case 'delete_scope_sync_everywhere':
         return 'Delete from all devices';
       case 'delete_scope_sync_everywhere_desc':
-        return 'Other devices confirm the deletion on next sync';
+        return 'If checked, other devices confirm the deletion on their next sync; if not, they keep their copy';
       case 'delete_statistics':
         return 'Also delete statistics';
       case 'delete_statistics_book_desc':
@@ -427367,6 +431025,11 @@ extension on _StringsEn {
         return 'Automatic';
       case 'dict_language_description':
         return 'Decides which font renders this dictionary\'s text. Automatic uses the language the dictionary declares.';
+      case 'dict_language_group_title':
+        return ({required Object language, required Object n}) =>
+            '${language} · ${n}';
+      case 'dict_language_group_unset':
+        return 'Language not set';
       case 'dict_language_title':
         return 'Dictionary content language';
       case 'dict_language_tooltip':
@@ -428537,6 +432200,55 @@ extension on _StringsEn {
             'You can attach 1 video (up to ${max}). It is compressed to ${resolution} before uploading.';
       case 'feedback_compose_video_retry':
         return 'Compress again';
+      case 'feedback_crash_auto_send_setting':
+        return 'Automatically send crash logs';
+      case 'feedback_crash_auto_send_setting_hint':
+        return 'After Fushi crashes or quits unexpectedly, send the logs to the developers on next launch without asking (the logs leave this device)';
+      case 'feedback_crash_auto_sent_notice':
+        return 'Logs from the last crash were sent to the developers automatically';
+      case 'feedback_crash_kind_anr':
+        return 'not responding';
+      case 'feedback_crash_kind_crash':
+        return 'crash';
+      case 'feedback_crash_kind_memory':
+        return 'closed by the system for low memory';
+      case 'feedback_crash_kind_native':
+        return 'native crash';
+      case 'feedback_crash_kind_startup':
+        return 'while starting';
+      case 'feedback_crash_kind_unexpected':
+        return 'unexpected exit';
+      case 'feedback_crash_notice_view':
+        return 'View';
+      case 'feedback_crash_prompt_always':
+        return 'Always send';
+      case 'feedback_crash_prompt_body':
+        return 'Send the logs to the developers to help fix it? You can follow it in Feedback.';
+      case 'feedback_crash_prompt_decline':
+        return 'No thanks';
+      case 'feedback_crash_prompt_retry':
+        return 'Retry';
+      case 'feedback_crash_prompt_send':
+        return 'Send to developers';
+      case 'feedback_crash_prompt_sending':
+        return 'Sending…';
+      case 'feedback_crash_prompt_skip':
+        return 'Skip';
+      case 'feedback_crash_prompt_title':
+        return ({required Object kind}) =>
+            'Fushi quit unexpectedly last time (${kind})';
+      case 'feedback_crash_prompt_title_many':
+        return ({required Object n, required Object kind}) =>
+            'Fushi quit unexpectedly ${n} times (${kind})';
+      case 'feedback_crash_report_header':
+        return 'Generated by Fushi after it quit unexpectedly; logs and device info are attached.';
+      case 'feedback_crash_report_title':
+        return ({required Object kind, required Object version}) =>
+            'Crash report: ${kind} (${version})';
+      case 'feedback_crash_send_failed':
+        return 'Could not send the crash logs. Fushi will ask again next time.';
+      case 'feedback_crash_sent_notice':
+        return 'Crash logs sent to the developers';
       case 'feedback_detail_add_shot':
         return 'Add screenshot';
       case 'feedback_detail_attachments':
@@ -432380,6 +436092,18 @@ extension on _StringsEn {
         return 'Top';
       case 'lyrics_control_zone_top_hint':
         return 'Top bar on phones, top-right corner on wide screens';
+      case 'lyrics_controls_collapse':
+        return 'Collapse playback controls';
+      case 'lyrics_controls_expand':
+        return 'Expand playback controls';
+      case 'lyrics_controls_style':
+        return 'Playback controls layout';
+      case 'lyrics_controls_style_classic':
+        return 'Classic';
+      case 'lyrics_controls_style_hint':
+        return 'New: a collapsible mini bar on phones and floating islands on wide screens. Classic: the previous layout.';
+      case 'lyrics_controls_style_modern':
+        return 'New';
       case 'lyrics_exit_to_library':
         return 'Close and return to library';
       case 'lyrics_font_size':
@@ -432392,6 +436116,14 @@ extension on _StringsEn {
         return 'Use your own color for the line being read instead of the player theme color';
       case 'lyrics_illustration_back_to_cover':
         return 'Back to cover';
+      case 'lyrics_illustration_cue':
+        return 'Illustration prompt';
+      case 'lyrics_illustration_cue_dot':
+        return 'Dot';
+      case 'lyrics_illustration_cue_hint':
+        return 'Pop up: show the illustration card and pause for the image pause duration below. Dot: only mark the cover thumbnail.';
+      case 'lyrics_illustration_cue_popup':
+        return 'Pop up';
       case 'lyrics_illustration_next':
         return 'Next illustration';
       case 'lyrics_illustration_open':
@@ -433450,6 +437182,9 @@ extension on _StringsEn {
       case 'media_privacy_inherited_note':
         return ({required Object collections}) =>
             'Private because it is in the private collection “${collections}”. To make it public, turn off privacy on that collection.';
+      case 'media_privacy_inherited_source_note':
+        return ({required Object source}) =>
+            'Private because its source library “${source}” is private. To make it public, turn off privacy on that source library.';
       case 'media_privacy_load_failed':
         return ({required Object reason}) =>
             'Could not read the privacy setting, so it cannot be changed right now: ${reason}';
@@ -433557,6 +437292,23 @@ extension on _StringsEn {
         return 'Open folder';
       case 'media_source_open_folder_failed':
         return 'Couldn\'t open the folder. It may have been moved, deleted, or disconnected.';
+      case 'media_source_privacy_action':
+        return 'Privacy';
+      case 'media_source_privacy_badge':
+        return 'Private: not uploaded to the leaderboard';
+      case 'media_source_privacy_cleared_toast':
+        return 'Source library is no longer private';
+      case 'media_source_privacy_hint':
+        return 'Everything this source library brings in is treated as private: it is never uploaded to the leaderboard, so it stays off your public shelf, profile and share cards, and its progress is not pushed to Bangumi. Items already uploaded are removed from the leaderboard as soon as you turn this on (or at the next sync if that fails). Your daily character total still counts them, without saying what you read. Removing this source keeps its items private.';
+      case 'media_source_privacy_marked_toast':
+        return 'Source library is now private';
+      case 'media_source_privacy_switch':
+        return 'Keep this source library private';
+      case 'media_source_privacy_withdraw_failed':
+        return ({required Object reason}) =>
+            'Source library is now private, but removing its items from the leaderboard failed; the next sync will try again: ${reason}';
+      case 'media_source_privacy_withdrawn_toast':
+        return 'Source library is now private; its items were removed from the leaderboard';
       case 'media_source_remove':
         return 'Remove source';
       case 'media_source_remove_download_keep':
@@ -436721,8 +440473,11 @@ extension on _StringsEn {
         return 'Re-download audiobook from peer';
       case 'remote_book_audiobook_redownloaded':
         return 'Audiobook re-downloaded from peer';
+      case 'remote_book_delete_cloud_confirm':
+        return ({required Object name, required Object backend}) =>
+            'Delete "${name}" from ${backend}? The book\'s files, cover, progress and audiobook in the cloud are permanently deleted. This device has no copy and this can\'t be undone. Other devices will ask whether to delete their copy on their next sync.';
       case 'remote_book_delete_everywhere':
-        return 'Delete permanently';
+        return 'Also delete on host';
       case 'remote_book_delete_everywhere_confirm':
         return ({required Object name, required Object host}) =>
             'Delete "${name}" on host "${host}"? Its files, reading progress, bookmarks and audiobook there are removed for good, and this device has no copy. This cannot be undone.';
@@ -436783,8 +440538,20 @@ extension on _StringsEn {
         return 'TMDB episode ordering on host…';
       case 'remote_delete_audiobook_partial':
         return 'Book deleted, but its audiobook could not be removed on the paired device';
+      case 'remote_delete_cloud_checking':
+        return 'Checking whether the cloud storage is reachable…';
+      case 'remote_delete_cloud_offline':
+        return 'Can\'t reach the cloud storage. Delete it there once it\'s reachable.';
+      case 'remote_delete_cloud_signed_out':
+        return 'The cloud storage sign-in has expired. Sign in again to delete it there.';
       case 'remote_delete_failed':
         return 'Could not delete it on the paired device';
+      case 'remote_delete_host_checking':
+        return 'Checking whether the host is online…';
+      case 'remote_delete_host_offline':
+        return 'The host is offline or unreachable. Delete it there once it\'s connected.';
+      case 'remote_delete_host_pairing_rejected':
+        return 'The host rejected this device\'s pairing. Pair again to delete it there.';
       case 'remote_delete_unsupported':
         return 'The paired device is too old to support remote deletion. Update Fushi there first.';
       case 'remote_dict_lookup':
@@ -441567,6 +445334,10 @@ extension on _StringsEn {
         return 'Audio track';
       case 'video_audio_track_empty':
         return 'No switchable audio tracks';
+      case 'video_audio_track_fallback_muxed':
+        return 'The audio stream was refused; switched to a compatible stream with sound (lower quality)';
+      case 'video_audio_track_load_failed':
+        return 'Couldn\'t load the audio stream — there is no sound. The source refused access; try again later.';
       case 'video_audio_track_switched':
         return ({required Object label}) => 'Audio track: ${label}';
       case 'video_auto_play_next_cancel':
@@ -445022,8 +448793,31 @@ extension on _StringsAr {
         return 'Text recognition isn\'t available on this device';
       case 'ai_agent_send':
         return 'Send';
+      case 'ai_agent_session_current':
+        return 'Current';
+      case 'ai_agent_session_delete':
+        return 'Delete';
+      case 'ai_agent_session_delete_message':
+        return ({required Object title}) =>
+            '“${title}” will be removed from this device. Changes the assistant made stay in the AI action log and can still be undone there.';
+      case 'ai_agent_session_delete_title':
+        return 'Delete this conversation?';
+      case 'ai_agent_session_more':
+        return 'Conversation options';
+      case 'ai_agent_session_open_failed':
+        return 'Couldn\'t open this conversation';
+      case 'ai_agent_session_rename':
+        return 'Rename';
+      case 'ai_agent_session_rename_title':
+        return 'Rename conversation';
       case 'ai_agent_session_summary':
         return ({required Object n}) => '${n} changes in this conversation';
+      case 'ai_agent_sessions_empty':
+        return 'No earlier conversations yet';
+      case 'ai_agent_sessions_retention_hint':
+        return 'Conversations stay on this device for 30 days';
+      case 'ai_agent_sessions_title':
+        return 'Conversations';
       case 'ai_agent_stop':
         return 'Stop';
       case 'ai_agent_stop_cancelled':
@@ -445195,6 +448989,32 @@ extension on _StringsAr {
         return 'Run on a paired computer';
       case 'ai_interconnect_host_unpaired':
         return 'No paired device yet. Pair a computer in Fushi Interconnect to let it handle AI video downloads with its own AI.';
+      case 'ai_mcp_access':
+        return 'External AI access (MCP)';
+      case 'ai_mcp_access_hint':
+        return 'Lets MCP clients on this computer (Claude Desktop, Claude Code…) call Fushi\'s operations. Listens on this computer only and needs the pairing token below. Changes that can be undone run directly and show up in the AI action log; anything that can\'t be undone, and installing extensions, asks you here first. Off by default.';
+      case 'ai_mcp_confirm_arguments':
+        return 'Arguments';
+      case 'ai_mcp_confirm_body':
+        return ({required Object client, required Object op}) =>
+            '${client} wants to run: ${op}';
+      case 'ai_mcp_confirm_expire':
+        return ({required Object minutes}) =>
+            'Declined automatically if you do not answer within ${minutes} minutes.';
+      case 'ai_mcp_confirm_title':
+        return 'Request from an external AI';
+      case 'ai_mcp_token':
+        return 'Pairing token';
+      case 'ai_mcp_token_copy':
+        return 'Copy token';
+      case 'ai_mcp_token_copy_config':
+        return 'Copy client config';
+      case 'ai_mcp_token_hint':
+        return 'Generate a token for your MCP client. Generating a new one revokes the old one.';
+      case 'ai_mcp_token_issued_body':
+        return 'Put this token in your MCP client\'s configuration as FUSHI_MCP_TOKEN (the setup guide shows how). It is shown only once.';
+      case 'ai_mcp_token_issued_title':
+        return 'New pairing token';
       case 'ai_media_acquire_ai_failed':
         return 'الذكاء الاصطناعي غير متاح حاليًا؛ النتائج من نصك الأصلي مرتبة حسب البذور.';
       case 'ai_media_acquire_download':
@@ -445936,6 +449756,8 @@ extension on _StringsAr {
         return 'تحسين تخزين وسائط Anki';
       case 'anki_dedup_unavailable':
         return 'يتطلب تشغيل Anki على هذا الجهاز (AnkiConnect).';
+      case 'anki_delivery_section':
+        return 'Sending & pending cards';
       case 'anki_desktop_auto_launch':
         return 'Launch Anki when Fushi starts';
       case 'anki_desktop_auto_launch_hint':
@@ -446309,6 +450131,9 @@ extension on _StringsAr {
         return 'في انتظار الإرسال';
       case 'anki_pending_mines_status_sending':
         return 'جارٍ الإرسال';
+      case 'anki_pending_mines_stopped':
+        return ({required Object reason}) =>
+            '${reason} The remaining cards stay in the queue.';
       case 'anki_pending_mines_title':
         return 'البطاقات المعلّقة';
       case 'anki_pending_mines_unreachable':
@@ -446429,6 +450254,9 @@ extension on _StringsAr {
         return 'I understand, enable';
       case 'anki_sync_client_enable_warn_title':
         return 'Enable Anki sync?';
+      case 'anki_sync_client_error_not_sync_server':
+        return ({required Object detail}) =>
+            'The server did not answer with the Anki sync protocol (the anki-original-size response header is missing). Make sure the address points at an Anki sync server (the official anki-sync-server, or the one built into Anki desktop) rather than a web page; a reverse proxy must keep this header. Details: ${detail}';
       case 'anki_sync_client_has_unsynced':
         return ({required Object count}) =>
             '${count} بطاقة لم تُزامَن بعد. زامِنها قبل تبديل الحساب أو تسجيل الخروج.';
@@ -446599,6 +450427,9 @@ extension on _StringsAr {
         return 'اختيار ملف ترجمة جديد';
       case 'audio_source_added':
         return 'تمت إضافة مصدر الصوت';
+      case 'audio_source_connection_refused':
+        return ({required Object host}) =>
+            'Audio source refused the connection: nothing is listening at "${host}" — make sure the service is running, or remove this source in settings';
       case 'audio_source_dns_error':
         return ({required Object host}) =>
             'فشل اتصال مصدر الصوت: تعذر حل "${host}" — تحقق من الشبكة أو أزل هذا المصدر في الإعدادات';
@@ -448377,6 +452208,18 @@ extension on _StringsAr {
         return 'تم إنشاء البطاقة بدون صوت الجملة (لم يُعثر على صوت لهذا التحديد).';
       case 'card_mining_pending':
         return 'جارٍ إضافة البطاقة…';
+      case 'card_notice_title_added':
+        return 'Card added';
+      case 'card_notice_title_duplicate':
+        return 'Card already exists';
+      case 'card_notice_title_failed':
+        return 'Card not created';
+      case 'card_notice_title_overwritten':
+        return 'Card overwritten';
+      case 'card_notice_title_queued':
+        return 'Card queued';
+      case 'card_notice_title_warning':
+        return 'Card added, something missing';
       case 'card_overwritten':
         return ({required Object deck}) =>
             'تمت الكتابة فوق البطاقة في『${deck}』.';
@@ -449056,14 +452899,12 @@ extension on _StringsAr {
         return 'تحديد الكل';
       case 'delete_prompt_title':
         return 'محذوف على جهاز آخر';
-      case 'delete_scope_keep_local_desc':
-        return 'الأجهزة الأخرى تحتفظ بنسختها';
       case 'delete_scope_no_channel':
         return 'لا توجد مزامنة مكوّنة - هذا الحذف يؤثر على هذا الجهاز فقط';
       case 'delete_scope_sync_everywhere':
         return 'حذف من جميع الأجهزة';
       case 'delete_scope_sync_everywhere_desc':
-        return 'الأجهزة الأخرى تؤكد الحذف عند المزامنة التالية';
+        return 'عند التحديد، تؤكد الأجهزة الأخرى الحذف عند المزامنة التالية؛ وإلا فتحتفظ بنسختها';
       case 'delete_statistics':
         return 'حذف الإحصاءات أيضًا';
       case 'delete_statistics_book_desc':
@@ -449294,6 +453135,11 @@ extension on _StringsAr {
         return 'تلقائي';
       case 'dict_language_description':
         return 'تحدد الخط المستخدم لعرض نص هذا القاموس. التلقائي يستخدم اللغة التي يعلنها القاموس.';
+      case 'dict_language_group_title':
+        return ({required Object language, required Object n}) =>
+            '${language} · ${n}';
+      case 'dict_language_group_unset':
+        return 'Language not set';
       case 'dict_language_title':
         return 'لغة محتوى القاموس';
       case 'dict_language_tooltip':
@@ -450463,6 +454309,55 @@ extension on _StringsAr {
             'You can attach 1 video (up to ${max}). It is compressed to ${resolution} before uploading.';
       case 'feedback_compose_video_retry':
         return 'Compress again';
+      case 'feedback_crash_auto_send_setting':
+        return 'Automatically send crash logs';
+      case 'feedback_crash_auto_send_setting_hint':
+        return 'After Fushi crashes or quits unexpectedly, send the logs to the developers on next launch without asking (the logs leave this device)';
+      case 'feedback_crash_auto_sent_notice':
+        return 'Logs from the last crash were sent to the developers automatically';
+      case 'feedback_crash_kind_anr':
+        return 'not responding';
+      case 'feedback_crash_kind_crash':
+        return 'crash';
+      case 'feedback_crash_kind_memory':
+        return 'closed by the system for low memory';
+      case 'feedback_crash_kind_native':
+        return 'native crash';
+      case 'feedback_crash_kind_startup':
+        return 'while starting';
+      case 'feedback_crash_kind_unexpected':
+        return 'unexpected exit';
+      case 'feedback_crash_notice_view':
+        return 'View';
+      case 'feedback_crash_prompt_always':
+        return 'Always send';
+      case 'feedback_crash_prompt_body':
+        return 'Send the logs to the developers to help fix it? You can follow it in Feedback.';
+      case 'feedback_crash_prompt_decline':
+        return 'No thanks';
+      case 'feedback_crash_prompt_retry':
+        return 'Retry';
+      case 'feedback_crash_prompt_send':
+        return 'Send to developers';
+      case 'feedback_crash_prompt_sending':
+        return 'Sending…';
+      case 'feedback_crash_prompt_skip':
+        return 'Skip';
+      case 'feedback_crash_prompt_title':
+        return ({required Object kind}) =>
+            'Fushi quit unexpectedly last time (${kind})';
+      case 'feedback_crash_prompt_title_many':
+        return ({required Object n, required Object kind}) =>
+            'Fushi quit unexpectedly ${n} times (${kind})';
+      case 'feedback_crash_report_header':
+        return 'Generated by Fushi after it quit unexpectedly; logs and device info are attached.';
+      case 'feedback_crash_report_title':
+        return ({required Object kind, required Object version}) =>
+            'Crash report: ${kind} (${version})';
+      case 'feedback_crash_send_failed':
+        return 'Could not send the crash logs. Fushi will ask again next time.';
+      case 'feedback_crash_sent_notice':
+        return 'Crash logs sent to the developers';
       case 'feedback_detail_add_shot':
         return 'Add screenshot';
       case 'feedback_detail_attachments':
@@ -454301,6 +458196,18 @@ extension on _StringsAr {
         return 'Top';
       case 'lyrics_control_zone_top_hint':
         return 'Top bar on phones, top-right corner on wide screens';
+      case 'lyrics_controls_collapse':
+        return 'Collapse playback controls';
+      case 'lyrics_controls_expand':
+        return 'Expand playback controls';
+      case 'lyrics_controls_style':
+        return 'Playback controls layout';
+      case 'lyrics_controls_style_classic':
+        return 'Classic';
+      case 'lyrics_controls_style_hint':
+        return 'New: a collapsible mini bar on phones and floating islands on wide screens. Classic: the previous layout.';
+      case 'lyrics_controls_style_modern':
+        return 'New';
       case 'lyrics_exit_to_library':
         return 'Close and return to library';
       case 'lyrics_font_size':
@@ -454313,6 +458220,14 @@ extension on _StringsAr {
         return 'Use your own color for the line being read instead of the player theme color';
       case 'lyrics_illustration_back_to_cover':
         return 'Back to cover';
+      case 'lyrics_illustration_cue':
+        return 'Illustration prompt';
+      case 'lyrics_illustration_cue_dot':
+        return 'Dot';
+      case 'lyrics_illustration_cue_hint':
+        return 'Pop up: show the illustration card and pause for the image pause duration below. Dot: only mark the cover thumbnail.';
+      case 'lyrics_illustration_cue_popup':
+        return 'Pop up';
       case 'lyrics_illustration_next':
         return 'Next illustration';
       case 'lyrics_illustration_open':
@@ -455371,6 +459286,9 @@ extension on _StringsAr {
       case 'media_privacy_inherited_note':
         return ({required Object collections}) =>
             'Private because it is in the private collection “${collections}”. To make it public, turn off privacy on that collection.';
+      case 'media_privacy_inherited_source_note':
+        return ({required Object source}) =>
+            'Private because its source library “${source}” is private. To make it public, turn off privacy on that source library.';
       case 'media_privacy_load_failed':
         return ({required Object reason}) =>
             'Could not read the privacy setting, so it cannot be changed right now: ${reason}';
@@ -455478,6 +459396,23 @@ extension on _StringsAr {
         return 'Open Folder';
       case 'media_source_open_folder_failed':
         return 'Couldn\'t open the folder. It may have been moved, deleted, or disconnected.';
+      case 'media_source_privacy_action':
+        return 'Privacy';
+      case 'media_source_privacy_badge':
+        return 'Private: not uploaded to the leaderboard';
+      case 'media_source_privacy_cleared_toast':
+        return 'Source library is no longer private';
+      case 'media_source_privacy_hint':
+        return 'Everything this source library brings in is treated as private: it is never uploaded to the leaderboard, so it stays off your public shelf, profile and share cards, and its progress is not pushed to Bangumi. Items already uploaded are removed from the leaderboard as soon as you turn this on (or at the next sync if that fails). Your daily character total still counts them, without saying what you read. Removing this source keeps its items private.';
+      case 'media_source_privacy_marked_toast':
+        return 'Source library is now private';
+      case 'media_source_privacy_switch':
+        return 'Keep this source library private';
+      case 'media_source_privacy_withdraw_failed':
+        return ({required Object reason}) =>
+            'Source library is now private, but removing its items from the leaderboard failed; the next sync will try again: ${reason}';
+      case 'media_source_privacy_withdrawn_toast':
+        return 'Source library is now private; its items were removed from the leaderboard';
       case 'media_source_remove':
         return 'Remove Source';
       case 'media_source_remove_download_keep':
@@ -458643,8 +462578,11 @@ extension on _StringsAr {
         return 'Re-download audiobook from peer';
       case 'remote_book_audiobook_redownloaded':
         return 'Audiobook re-downloaded from peer';
+      case 'remote_book_delete_cloud_confirm':
+        return ({required Object name, required Object backend}) =>
+            'Delete "${name}" from ${backend}? The book\'s files, cover, progress and audiobook in the cloud are permanently deleted. This device has no copy and this can\'t be undone. Other devices will ask whether to delete their copy on their next sync.';
       case 'remote_book_delete_everywhere':
-        return 'Delete permanently';
+        return 'Also delete on host';
       case 'remote_book_delete_everywhere_confirm':
         return ({required Object name, required Object host}) =>
             'Delete "${name}" on host "${host}"? Its files, reading progress, bookmarks and audiobook there are removed for good, and this device has no copy. This cannot be undone.';
@@ -458705,8 +462643,20 @@ extension on _StringsAr {
         return 'ترتيب حلقات TMDB على المضيف…';
       case 'remote_delete_audiobook_partial':
         return 'تم حذف الكتاب، لكن تعذّرت إزالة الكتاب الصوتي على الجهاز المقترن';
+      case 'remote_delete_cloud_checking':
+        return 'Checking whether the cloud storage is reachable…';
+      case 'remote_delete_cloud_offline':
+        return 'Can\'t reach the cloud storage. Delete it there once it\'s reachable.';
+      case 'remote_delete_cloud_signed_out':
+        return 'The cloud storage sign-in has expired. Sign in again to delete it there.';
       case 'remote_delete_failed':
         return 'تعذر الحذف على الجهاز المقترن';
+      case 'remote_delete_host_checking':
+        return 'Checking whether the host is online…';
+      case 'remote_delete_host_offline':
+        return 'The host is offline or unreachable. Delete it there once it\'s connected.';
+      case 'remote_delete_host_pairing_rejected':
+        return 'The host rejected this device\'s pairing. Pair again to delete it there.';
       case 'remote_delete_unsupported':
         return 'الجهاز المقترن قديم جدًا لدعم الحذف عن بُعد. حدّث Fushi هناك أولًا.';
       case 'remote_dict_lookup':
@@ -463486,6 +467436,10 @@ extension on _StringsAr {
         return 'المسار الصوتي';
       case 'video_audio_track_empty':
         return 'لا توجد مسارات صوتية قابلة للتبديل';
+      case 'video_audio_track_fallback_muxed':
+        return 'The audio stream was refused; switched to a compatible stream with sound (lower quality)';
+      case 'video_audio_track_load_failed':
+        return 'Couldn\'t load the audio stream — there is no sound. The source refused access; try again later.';
       case 'video_audio_track_switched':
         return ({required Object label}) => 'المسار الصوتي: ${label}';
       case 'video_auto_play_next_cancel':
@@ -466942,8 +470896,31 @@ extension on _StringsDe {
         return 'Text recognition isn\'t available on this device';
       case 'ai_agent_send':
         return 'Send';
+      case 'ai_agent_session_current':
+        return 'Current';
+      case 'ai_agent_session_delete':
+        return 'Delete';
+      case 'ai_agent_session_delete_message':
+        return ({required Object title}) =>
+            '“${title}” will be removed from this device. Changes the assistant made stay in the AI action log and can still be undone there.';
+      case 'ai_agent_session_delete_title':
+        return 'Delete this conversation?';
+      case 'ai_agent_session_more':
+        return 'Conversation options';
+      case 'ai_agent_session_open_failed':
+        return 'Couldn\'t open this conversation';
+      case 'ai_agent_session_rename':
+        return 'Rename';
+      case 'ai_agent_session_rename_title':
+        return 'Rename conversation';
       case 'ai_agent_session_summary':
         return ({required Object n}) => '${n} changes in this conversation';
+      case 'ai_agent_sessions_empty':
+        return 'No earlier conversations yet';
+      case 'ai_agent_sessions_retention_hint':
+        return 'Conversations stay on this device for 30 days';
+      case 'ai_agent_sessions_title':
+        return 'Conversations';
       case 'ai_agent_stop':
         return 'Stop';
       case 'ai_agent_stop_cancelled':
@@ -467116,6 +471093,32 @@ extension on _StringsDe {
         return 'Run on a paired computer';
       case 'ai_interconnect_host_unpaired':
         return 'No paired device yet. Pair a computer in Fushi Interconnect to let it handle AI video downloads with its own AI.';
+      case 'ai_mcp_access':
+        return 'External AI access (MCP)';
+      case 'ai_mcp_access_hint':
+        return 'Lets MCP clients on this computer (Claude Desktop, Claude Code…) call Fushi\'s operations. Listens on this computer only and needs the pairing token below. Changes that can be undone run directly and show up in the AI action log; anything that can\'t be undone, and installing extensions, asks you here first. Off by default.';
+      case 'ai_mcp_confirm_arguments':
+        return 'Arguments';
+      case 'ai_mcp_confirm_body':
+        return ({required Object client, required Object op}) =>
+            '${client} wants to run: ${op}';
+      case 'ai_mcp_confirm_expire':
+        return ({required Object minutes}) =>
+            'Declined automatically if you do not answer within ${minutes} minutes.';
+      case 'ai_mcp_confirm_title':
+        return 'Request from an external AI';
+      case 'ai_mcp_token':
+        return 'Pairing token';
+      case 'ai_mcp_token_copy':
+        return 'Copy token';
+      case 'ai_mcp_token_copy_config':
+        return 'Copy client config';
+      case 'ai_mcp_token_hint':
+        return 'Generate a token for your MCP client. Generating a new one revokes the old one.';
+      case 'ai_mcp_token_issued_body':
+        return 'Put this token in your MCP client\'s configuration as FUSHI_MCP_TOKEN (the setup guide shows how). It is shown only once.';
+      case 'ai_mcp_token_issued_title':
+        return 'New pairing token';
       case 'ai_media_acquire_ai_failed':
         return 'Die KI ist gerade nicht verfügbar; die Ergebnisse stammen aus deinem ursprünglichen Text, nach Seedern sortiert.';
       case 'ai_media_acquire_download':
@@ -467860,6 +471863,8 @@ extension on _StringsDe {
         return 'Anki-Medienspeicher-Optimierung';
       case 'anki_dedup_unavailable':
         return 'Erfordert Anki auf diesem Computer (AnkiConnect).';
+      case 'anki_delivery_section':
+        return 'Sending & pending cards';
       case 'anki_desktop_auto_launch':
         return 'Launch Anki when Fushi starts';
       case 'anki_desktop_auto_launch_hint':
@@ -468238,6 +472243,9 @@ extension on _StringsDe {
         return 'Wartet auf Versand';
       case 'anki_pending_mines_status_sending':
         return 'Wird gesendet';
+      case 'anki_pending_mines_stopped':
+        return ({required Object reason}) =>
+            '${reason} The remaining cards stay in the queue.';
       case 'anki_pending_mines_title':
         return 'Ausstehende Karten';
       case 'anki_pending_mines_unreachable':
@@ -468359,6 +472367,9 @@ extension on _StringsDe {
         return 'I understand, enable';
       case 'anki_sync_client_enable_warn_title':
         return 'Enable Anki sync?';
+      case 'anki_sync_client_error_not_sync_server':
+        return ({required Object detail}) =>
+            'The server did not answer with the Anki sync protocol (the anki-original-size response header is missing). Make sure the address points at an Anki sync server (the official anki-sync-server, or the one built into Anki desktop) rather than a web page; a reverse proxy must keep this header. Details: ${detail}';
       case 'anki_sync_client_has_unsynced':
         return ({required Object count}) =>
             '${count} Karte(n) wurden noch nicht synchronisiert. Synchronisiere sie, bevor du das Konto wechselst oder dich abmeldest.';
@@ -468533,6 +472544,9 @@ extension on _StringsDe {
         return 'Neue Untertiteldatei auswählen';
       case 'audio_source_added':
         return 'Audioquelle hinzugefügt';
+      case 'audio_source_connection_refused':
+        return ({required Object host}) =>
+            'Audio source refused the connection: nothing is listening at "${host}" — make sure the service is running, or remove this source in settings';
       case 'audio_source_dns_error':
         return ({required Object host}) =>
             'Verbindung zur Audioquelle fehlgeschlagen: "${host}" kann nicht aufgelöst werden — überprüfen Sie Ihr Netzwerk oder entfernen Sie diese Quelle in den Einstellungen';
@@ -470319,6 +474333,18 @@ extension on _StringsDe {
         return 'Karte ohne Satz-Audio erstellt (keines für diese Auswahl gefunden).';
       case 'card_mining_pending':
         return 'Karte wird hinzugefügt…';
+      case 'card_notice_title_added':
+        return 'Card added';
+      case 'card_notice_title_duplicate':
+        return 'Card already exists';
+      case 'card_notice_title_failed':
+        return 'Card not created';
+      case 'card_notice_title_overwritten':
+        return 'Card overwritten';
+      case 'card_notice_title_queued':
+        return 'Card queued';
+      case 'card_notice_title_warning':
+        return 'Card added, something missing';
       case 'card_overwritten':
         return ({required Object deck}) => 'Karte in 『${deck}』 überschrieben.';
       case 'card_source_open':
@@ -470998,14 +475024,12 @@ extension on _StringsDe {
         return 'Alle auswählen';
       case 'delete_prompt_title':
         return 'Auf anderem Gerät gelöscht';
-      case 'delete_scope_keep_local_desc':
-        return 'Andere Geräte behalten ihre Kopie';
       case 'delete_scope_no_channel':
         return 'Keine Synchronisierung konfiguriert – diese Löschung betrifft nur dieses Gerät';
       case 'delete_scope_sync_everywhere':
         return 'Von allen Geräten löschen';
       case 'delete_scope_sync_everywhere_desc':
-        return 'Andere Geräte bestätigen die Löschung bei der nächsten Synchronisierung';
+        return 'Wenn aktiviert, bestätigen andere Geräte die Löschung bei der nächsten Synchronisierung; sonst behalten sie ihre Kopie';
       case 'delete_statistics':
         return 'Auch Statistiken löschen';
       case 'delete_statistics_book_desc':
@@ -471239,6 +475263,11 @@ extension on _StringsDe {
         return 'Automatisch';
       case 'dict_language_description':
         return 'Bestimmt, welche Schriftart den Text dieses Wörterbuchs rendert. Automatisch verwendet die vom Wörterbuch deklarierte Sprache.';
+      case 'dict_language_group_title':
+        return ({required Object language, required Object n}) =>
+            '${language} · ${n}';
+      case 'dict_language_group_unset':
+        return 'Language not set';
       case 'dict_language_title':
         return 'Inhaltssprache des Wörterbuchs';
       case 'dict_language_tooltip':
@@ -472415,6 +476444,55 @@ extension on _StringsDe {
             'You can attach 1 video (up to ${max}). It is compressed to ${resolution} before uploading.';
       case 'feedback_compose_video_retry':
         return 'Compress again';
+      case 'feedback_crash_auto_send_setting':
+        return 'Automatically send crash logs';
+      case 'feedback_crash_auto_send_setting_hint':
+        return 'After Fushi crashes or quits unexpectedly, send the logs to the developers on next launch without asking (the logs leave this device)';
+      case 'feedback_crash_auto_sent_notice':
+        return 'Logs from the last crash were sent to the developers automatically';
+      case 'feedback_crash_kind_anr':
+        return 'not responding';
+      case 'feedback_crash_kind_crash':
+        return 'crash';
+      case 'feedback_crash_kind_memory':
+        return 'closed by the system for low memory';
+      case 'feedback_crash_kind_native':
+        return 'native crash';
+      case 'feedback_crash_kind_startup':
+        return 'while starting';
+      case 'feedback_crash_kind_unexpected':
+        return 'unexpected exit';
+      case 'feedback_crash_notice_view':
+        return 'View';
+      case 'feedback_crash_prompt_always':
+        return 'Always send';
+      case 'feedback_crash_prompt_body':
+        return 'Send the logs to the developers to help fix it? You can follow it in Feedback.';
+      case 'feedback_crash_prompt_decline':
+        return 'No thanks';
+      case 'feedback_crash_prompt_retry':
+        return 'Retry';
+      case 'feedback_crash_prompt_send':
+        return 'Send to developers';
+      case 'feedback_crash_prompt_sending':
+        return 'Sending…';
+      case 'feedback_crash_prompt_skip':
+        return 'Skip';
+      case 'feedback_crash_prompt_title':
+        return ({required Object kind}) =>
+            'Fushi quit unexpectedly last time (${kind})';
+      case 'feedback_crash_prompt_title_many':
+        return ({required Object n, required Object kind}) =>
+            'Fushi quit unexpectedly ${n} times (${kind})';
+      case 'feedback_crash_report_header':
+        return 'Generated by Fushi after it quit unexpectedly; logs and device info are attached.';
+      case 'feedback_crash_report_title':
+        return ({required Object kind, required Object version}) =>
+            'Crash report: ${kind} (${version})';
+      case 'feedback_crash_send_failed':
+        return 'Could not send the crash logs. Fushi will ask again next time.';
+      case 'feedback_crash_sent_notice':
+        return 'Crash logs sent to the developers';
       case 'feedback_detail_add_shot':
         return 'Add screenshot';
       case 'feedback_detail_attachments':
@@ -476263,6 +480341,18 @@ extension on _StringsDe {
         return 'Top';
       case 'lyrics_control_zone_top_hint':
         return 'Top bar on phones, top-right corner on wide screens';
+      case 'lyrics_controls_collapse':
+        return 'Collapse playback controls';
+      case 'lyrics_controls_expand':
+        return 'Expand playback controls';
+      case 'lyrics_controls_style':
+        return 'Playback controls layout';
+      case 'lyrics_controls_style_classic':
+        return 'Classic';
+      case 'lyrics_controls_style_hint':
+        return 'New: a collapsible mini bar on phones and floating islands on wide screens. Classic: the previous layout.';
+      case 'lyrics_controls_style_modern':
+        return 'New';
       case 'lyrics_exit_to_library':
         return 'Close and return to library';
       case 'lyrics_font_size':
@@ -476275,6 +480365,14 @@ extension on _StringsDe {
         return 'Use your own color for the line being read instead of the player theme color';
       case 'lyrics_illustration_back_to_cover':
         return 'Back to cover';
+      case 'lyrics_illustration_cue':
+        return 'Illustration prompt';
+      case 'lyrics_illustration_cue_dot':
+        return 'Dot';
+      case 'lyrics_illustration_cue_hint':
+        return 'Pop up: show the illustration card and pause for the image pause duration below. Dot: only mark the cover thumbnail.';
+      case 'lyrics_illustration_cue_popup':
+        return 'Pop up';
       case 'lyrics_illustration_next':
         return 'Next illustration';
       case 'lyrics_illustration_open':
@@ -477339,6 +481437,9 @@ extension on _StringsDe {
       case 'media_privacy_inherited_note':
         return ({required Object collections}) =>
             'Private because it is in the private collection “${collections}”. To make it public, turn off privacy on that collection.';
+      case 'media_privacy_inherited_source_note':
+        return ({required Object source}) =>
+            'Private because its source library “${source}” is private. To make it public, turn off privacy on that source library.';
       case 'media_privacy_load_failed':
         return ({required Object reason}) =>
             'Could not read the privacy setting, so it cannot be changed right now: ${reason}';
@@ -477446,6 +481547,23 @@ extension on _StringsDe {
         return 'Open Folder';
       case 'media_source_open_folder_failed':
         return 'Couldn\'t open the folder. It may have been moved, deleted, or disconnected.';
+      case 'media_source_privacy_action':
+        return 'Privacy';
+      case 'media_source_privacy_badge':
+        return 'Private: not uploaded to the leaderboard';
+      case 'media_source_privacy_cleared_toast':
+        return 'Source library is no longer private';
+      case 'media_source_privacy_hint':
+        return 'Everything this source library brings in is treated as private: it is never uploaded to the leaderboard, so it stays off your public shelf, profile and share cards, and its progress is not pushed to Bangumi. Items already uploaded are removed from the leaderboard as soon as you turn this on (or at the next sync if that fails). Your daily character total still counts them, without saying what you read. Removing this source keeps its items private.';
+      case 'media_source_privacy_marked_toast':
+        return 'Source library is now private';
+      case 'media_source_privacy_switch':
+        return 'Keep this source library private';
+      case 'media_source_privacy_withdraw_failed':
+        return ({required Object reason}) =>
+            'Source library is now private, but removing its items from the leaderboard failed; the next sync will try again: ${reason}';
+      case 'media_source_privacy_withdrawn_toast':
+        return 'Source library is now private; its items were removed from the leaderboard';
       case 'media_source_remove':
         return 'Remove Source';
       case 'media_source_remove_download_keep':
@@ -480621,8 +484739,11 @@ extension on _StringsDe {
         return 'Re-download audiobook from peer';
       case 'remote_book_audiobook_redownloaded':
         return 'Audiobook re-downloaded from peer';
+      case 'remote_book_delete_cloud_confirm':
+        return ({required Object name, required Object backend}) =>
+            'Delete "${name}" from ${backend}? The book\'s files, cover, progress and audiobook in the cloud are permanently deleted. This device has no copy and this can\'t be undone. Other devices will ask whether to delete their copy on their next sync.';
       case 'remote_book_delete_everywhere':
-        return 'Delete permanently';
+        return 'Also delete on host';
       case 'remote_book_delete_everywhere_confirm':
         return ({required Object name, required Object host}) =>
             'Delete "${name}" on host "${host}"? Its files, reading progress, bookmarks and audiobook there are removed for good, and this device has no copy. This cannot be undone.';
@@ -480683,8 +484804,20 @@ extension on _StringsDe {
         return 'TMDB-Folgenreihenfolge auf dem Host…';
       case 'remote_delete_audiobook_partial':
         return 'Buch gelöscht, aber das Hörbuch konnte auf dem gekoppelten Gerät nicht entfernt werden';
+      case 'remote_delete_cloud_checking':
+        return 'Checking whether the cloud storage is reachable…';
+      case 'remote_delete_cloud_offline':
+        return 'Can\'t reach the cloud storage. Delete it there once it\'s reachable.';
+      case 'remote_delete_cloud_signed_out':
+        return 'The cloud storage sign-in has expired. Sign in again to delete it there.';
       case 'remote_delete_failed':
         return 'Konnte auf dem gekoppelten Gerät nicht gelöscht werden';
+      case 'remote_delete_host_checking':
+        return 'Checking whether the host is online…';
+      case 'remote_delete_host_offline':
+        return 'The host is offline or unreachable. Delete it there once it\'s connected.';
+      case 'remote_delete_host_pairing_rejected':
+        return 'The host rejected this device\'s pairing. Pair again to delete it there.';
       case 'remote_delete_unsupported':
         return 'Das gekoppelte Gerät ist zu alt, um Remote-Löschung zu unterstützen. Aktualisieren Sie dort zuerst Fushi.';
       case 'remote_dict_lookup':
@@ -485475,6 +489608,10 @@ extension on _StringsDe {
         return 'Tonspur';
       case 'video_audio_track_empty':
         return 'Keine umschaltbaren Audiospuren';
+      case 'video_audio_track_fallback_muxed':
+        return 'The audio stream was refused; switched to a compatible stream with sound (lower quality)';
+      case 'video_audio_track_load_failed':
+        return 'Couldn\'t load the audio stream — there is no sound. The source refused access; try again later.';
       case 'video_audio_track_switched':
         return ({required Object label}) => 'Tonspur: ${label}';
       case 'video_auto_play_next_cancel':
@@ -488938,8 +493075,31 @@ extension on _StringsEs {
         return 'Text recognition isn\'t available on this device';
       case 'ai_agent_send':
         return 'Send';
+      case 'ai_agent_session_current':
+        return 'Current';
+      case 'ai_agent_session_delete':
+        return 'Delete';
+      case 'ai_agent_session_delete_message':
+        return ({required Object title}) =>
+            '“${title}” will be removed from this device. Changes the assistant made stay in the AI action log and can still be undone there.';
+      case 'ai_agent_session_delete_title':
+        return 'Delete this conversation?';
+      case 'ai_agent_session_more':
+        return 'Conversation options';
+      case 'ai_agent_session_open_failed':
+        return 'Couldn\'t open this conversation';
+      case 'ai_agent_session_rename':
+        return 'Rename';
+      case 'ai_agent_session_rename_title':
+        return 'Rename conversation';
       case 'ai_agent_session_summary':
         return ({required Object n}) => '${n} changes in this conversation';
+      case 'ai_agent_sessions_empty':
+        return 'No earlier conversations yet';
+      case 'ai_agent_sessions_retention_hint':
+        return 'Conversations stay on this device for 30 days';
+      case 'ai_agent_sessions_title':
+        return 'Conversations';
       case 'ai_agent_stop':
         return 'Stop';
       case 'ai_agent_stop_cancelled':
@@ -489112,6 +493272,32 @@ extension on _StringsEs {
         return 'Run on a paired computer';
       case 'ai_interconnect_host_unpaired':
         return 'No paired device yet. Pair a computer in Fushi Interconnect to let it handle AI video downloads with its own AI.';
+      case 'ai_mcp_access':
+        return 'External AI access (MCP)';
+      case 'ai_mcp_access_hint':
+        return 'Lets MCP clients on this computer (Claude Desktop, Claude Code…) call Fushi\'s operations. Listens on this computer only and needs the pairing token below. Changes that can be undone run directly and show up in the AI action log; anything that can\'t be undone, and installing extensions, asks you here first. Off by default.';
+      case 'ai_mcp_confirm_arguments':
+        return 'Arguments';
+      case 'ai_mcp_confirm_body':
+        return ({required Object client, required Object op}) =>
+            '${client} wants to run: ${op}';
+      case 'ai_mcp_confirm_expire':
+        return ({required Object minutes}) =>
+            'Declined automatically if you do not answer within ${minutes} minutes.';
+      case 'ai_mcp_confirm_title':
+        return 'Request from an external AI';
+      case 'ai_mcp_token':
+        return 'Pairing token';
+      case 'ai_mcp_token_copy':
+        return 'Copy token';
+      case 'ai_mcp_token_copy_config':
+        return 'Copy client config';
+      case 'ai_mcp_token_hint':
+        return 'Generate a token for your MCP client. Generating a new one revokes the old one.';
+      case 'ai_mcp_token_issued_body':
+        return 'Put this token in your MCP client\'s configuration as FUSHI_MCP_TOKEN (the setup guide shows how). It is shown only once.';
+      case 'ai_mcp_token_issued_title':
+        return 'New pairing token';
       case 'ai_media_acquire_ai_failed':
         return 'La IA no está disponible ahora mismo; los resultados provienen de tu texto original, ordenados por seeders.';
       case 'ai_media_acquire_download':
@@ -489854,6 +494040,8 @@ extension on _StringsEs {
         return 'Optimización de almacenamiento de medios de Anki';
       case 'anki_dedup_unavailable':
         return 'Requiere Anki ejecutándose en esta máquina (AnkiConnect).';
+      case 'anki_delivery_section':
+        return 'Sending & pending cards';
       case 'anki_desktop_auto_launch':
         return 'Launch Anki when Fushi starts';
       case 'anki_desktop_auto_launch_hint':
@@ -490229,6 +494417,9 @@ extension on _StringsEs {
         return 'Esperando a enviarse';
       case 'anki_pending_mines_status_sending':
         return 'Enviando';
+      case 'anki_pending_mines_stopped':
+        return ({required Object reason}) =>
+            '${reason} The remaining cards stay in the queue.';
       case 'anki_pending_mines_title':
         return 'Tarjetas pendientes';
       case 'anki_pending_mines_unreachable':
@@ -490349,6 +494540,9 @@ extension on _StringsEs {
         return 'I understand, enable';
       case 'anki_sync_client_enable_warn_title':
         return 'Enable Anki sync?';
+      case 'anki_sync_client_error_not_sync_server':
+        return ({required Object detail}) =>
+            'The server did not answer with the Anki sync protocol (the anki-original-size response header is missing). Make sure the address points at an Anki sync server (the official anki-sync-server, or the one built into Anki desktop) rather than a web page; a reverse proxy must keep this header. Details: ${detail}';
       case 'anki_sync_client_has_unsynced':
         return ({required Object count}) =>
             '${count} tarjeta(s) aún no se han sincronizado. Sincronízalas antes de cambiar de cuenta o cerrar sesión.';
@@ -490521,6 +494715,9 @@ extension on _StringsEs {
         return 'Elegir nuevo archivo de subtítulos';
       case 'audio_source_added':
         return 'Fuente de audio añadida';
+      case 'audio_source_connection_refused':
+        return ({required Object host}) =>
+            'Audio source refused the connection: nothing is listening at "${host}" — make sure the service is running, or remove this source in settings';
       case 'audio_source_dns_error':
         return ({required Object host}) =>
             'Error de conexión de fuente de audio: no se puede resolver "${host}" — verifica tu red o elimina esta fuente en ajustes';
@@ -492310,6 +496507,18 @@ extension on _StringsEs {
         return 'Tarjeta creada sin audio de frase (no se encontró para esta selección).';
       case 'card_mining_pending':
         return 'Añadiendo tarjeta…';
+      case 'card_notice_title_added':
+        return 'Card added';
+      case 'card_notice_title_duplicate':
+        return 'Card already exists';
+      case 'card_notice_title_failed':
+        return 'Card not created';
+      case 'card_notice_title_overwritten':
+        return 'Card overwritten';
+      case 'card_notice_title_queued':
+        return 'Card queued';
+      case 'card_notice_title_warning':
+        return 'Card added, something missing';
       case 'card_overwritten':
         return ({required Object deck}) => 'Tarjeta sobrescrita en 『${deck}』.';
       case 'card_source_open':
@@ -492989,14 +497198,12 @@ extension on _StringsEs {
         return 'Seleccionar todos';
       case 'delete_prompt_title':
         return 'Eliminados en otro dispositivo';
-      case 'delete_scope_keep_local_desc':
-        return 'Otros dispositivos conservan su copia';
       case 'delete_scope_no_channel':
         return 'Sin sincronización configurada — esta eliminación solo afecta este dispositivo';
       case 'delete_scope_sync_everywhere':
         return 'Eliminar de todos los dispositivos';
       case 'delete_scope_sync_everywhere_desc':
-        return 'Otros dispositivos confirman la eliminación en la próxima sincronización';
+        return 'Si está marcado, los demás dispositivos confirman la eliminación en la próxima sincronización; si no, conservan su copia';
       case 'delete_statistics':
         return 'Eliminar también las estadísticas';
       case 'delete_statistics_book_desc':
@@ -493229,6 +497436,11 @@ extension on _StringsEs {
         return 'Automático';
       case 'dict_language_description':
         return 'Decide qué fuente renderiza el texto de este diccionario. Automático usa el idioma que el diccionario declara.';
+      case 'dict_language_group_title':
+        return ({required Object language, required Object n}) =>
+            '${language} · ${n}';
+      case 'dict_language_group_unset':
+        return 'Language not set';
       case 'dict_language_title':
         return 'Idioma del contenido del diccionario';
       case 'dict_language_tooltip':
@@ -494401,6 +498613,55 @@ extension on _StringsEs {
             'You can attach 1 video (up to ${max}). It is compressed to ${resolution} before uploading.';
       case 'feedback_compose_video_retry':
         return 'Compress again';
+      case 'feedback_crash_auto_send_setting':
+        return 'Automatically send crash logs';
+      case 'feedback_crash_auto_send_setting_hint':
+        return 'After Fushi crashes or quits unexpectedly, send the logs to the developers on next launch without asking (the logs leave this device)';
+      case 'feedback_crash_auto_sent_notice':
+        return 'Logs from the last crash were sent to the developers automatically';
+      case 'feedback_crash_kind_anr':
+        return 'not responding';
+      case 'feedback_crash_kind_crash':
+        return 'crash';
+      case 'feedback_crash_kind_memory':
+        return 'closed by the system for low memory';
+      case 'feedback_crash_kind_native':
+        return 'native crash';
+      case 'feedback_crash_kind_startup':
+        return 'while starting';
+      case 'feedback_crash_kind_unexpected':
+        return 'unexpected exit';
+      case 'feedback_crash_notice_view':
+        return 'View';
+      case 'feedback_crash_prompt_always':
+        return 'Always send';
+      case 'feedback_crash_prompt_body':
+        return 'Send the logs to the developers to help fix it? You can follow it in Feedback.';
+      case 'feedback_crash_prompt_decline':
+        return 'No thanks';
+      case 'feedback_crash_prompt_retry':
+        return 'Retry';
+      case 'feedback_crash_prompt_send':
+        return 'Send to developers';
+      case 'feedback_crash_prompt_sending':
+        return 'Sending…';
+      case 'feedback_crash_prompt_skip':
+        return 'Skip';
+      case 'feedback_crash_prompt_title':
+        return ({required Object kind}) =>
+            'Fushi quit unexpectedly last time (${kind})';
+      case 'feedback_crash_prompt_title_many':
+        return ({required Object n, required Object kind}) =>
+            'Fushi quit unexpectedly ${n} times (${kind})';
+      case 'feedback_crash_report_header':
+        return 'Generated by Fushi after it quit unexpectedly; logs and device info are attached.';
+      case 'feedback_crash_report_title':
+        return ({required Object kind, required Object version}) =>
+            'Crash report: ${kind} (${version})';
+      case 'feedback_crash_send_failed':
+        return 'Could not send the crash logs. Fushi will ask again next time.';
+      case 'feedback_crash_sent_notice':
+        return 'Crash logs sent to the developers';
       case 'feedback_detail_add_shot':
         return 'Add screenshot';
       case 'feedback_detail_attachments':
@@ -498246,6 +502507,18 @@ extension on _StringsEs {
         return 'Top';
       case 'lyrics_control_zone_top_hint':
         return 'Top bar on phones, top-right corner on wide screens';
+      case 'lyrics_controls_collapse':
+        return 'Collapse playback controls';
+      case 'lyrics_controls_expand':
+        return 'Expand playback controls';
+      case 'lyrics_controls_style':
+        return 'Playback controls layout';
+      case 'lyrics_controls_style_classic':
+        return 'Classic';
+      case 'lyrics_controls_style_hint':
+        return 'New: a collapsible mini bar on phones and floating islands on wide screens. Classic: the previous layout.';
+      case 'lyrics_controls_style_modern':
+        return 'New';
       case 'lyrics_exit_to_library':
         return 'Close and return to library';
       case 'lyrics_font_size':
@@ -498258,6 +502531,14 @@ extension on _StringsEs {
         return 'Use your own color for the line being read instead of the player theme color';
       case 'lyrics_illustration_back_to_cover':
         return 'Back to cover';
+      case 'lyrics_illustration_cue':
+        return 'Illustration prompt';
+      case 'lyrics_illustration_cue_dot':
+        return 'Dot';
+      case 'lyrics_illustration_cue_hint':
+        return 'Pop up: show the illustration card and pause for the image pause duration below. Dot: only mark the cover thumbnail.';
+      case 'lyrics_illustration_cue_popup':
+        return 'Pop up';
       case 'lyrics_illustration_next':
         return 'Next illustration';
       case 'lyrics_illustration_open':
@@ -499321,6 +503602,9 @@ extension on _StringsEs {
       case 'media_privacy_inherited_note':
         return ({required Object collections}) =>
             'Private because it is in the private collection “${collections}”. To make it public, turn off privacy on that collection.';
+      case 'media_privacy_inherited_source_note':
+        return ({required Object source}) =>
+            'Private because its source library “${source}” is private. To make it public, turn off privacy on that source library.';
       case 'media_privacy_load_failed':
         return ({required Object reason}) =>
             'Could not read the privacy setting, so it cannot be changed right now: ${reason}';
@@ -499428,6 +503712,23 @@ extension on _StringsEs {
         return 'Open Folder';
       case 'media_source_open_folder_failed':
         return 'Couldn\'t open the folder. It may have been moved, deleted, or disconnected.';
+      case 'media_source_privacy_action':
+        return 'Privacy';
+      case 'media_source_privacy_badge':
+        return 'Private: not uploaded to the leaderboard';
+      case 'media_source_privacy_cleared_toast':
+        return 'Source library is no longer private';
+      case 'media_source_privacy_hint':
+        return 'Everything this source library brings in is treated as private: it is never uploaded to the leaderboard, so it stays off your public shelf, profile and share cards, and its progress is not pushed to Bangumi. Items already uploaded are removed from the leaderboard as soon as you turn this on (or at the next sync if that fails). Your daily character total still counts them, without saying what you read. Removing this source keeps its items private.';
+      case 'media_source_privacy_marked_toast':
+        return 'Source library is now private';
+      case 'media_source_privacy_switch':
+        return 'Keep this source library private';
+      case 'media_source_privacy_withdraw_failed':
+        return ({required Object reason}) =>
+            'Source library is now private, but removing its items from the leaderboard failed; the next sync will try again: ${reason}';
+      case 'media_source_privacy_withdrawn_toast':
+        return 'Source library is now private; its items were removed from the leaderboard';
       case 'media_source_remove':
         return 'Remove Source';
       case 'media_source_remove_download_keep':
@@ -502603,8 +506904,11 @@ extension on _StringsEs {
         return 'Re-download audiobook from peer';
       case 'remote_book_audiobook_redownloaded':
         return 'Audiobook re-downloaded from peer';
+      case 'remote_book_delete_cloud_confirm':
+        return ({required Object name, required Object backend}) =>
+            'Delete "${name}" from ${backend}? The book\'s files, cover, progress and audiobook in the cloud are permanently deleted. This device has no copy and this can\'t be undone. Other devices will ask whether to delete their copy on their next sync.';
       case 'remote_book_delete_everywhere':
-        return 'Delete permanently';
+        return 'Also delete on host';
       case 'remote_book_delete_everywhere_confirm':
         return ({required Object name, required Object host}) =>
             'Delete "${name}" on host "${host}"? Its files, reading progress, bookmarks and audiobook there are removed for good, and this device has no copy. This cannot be undone.';
@@ -502665,8 +506969,20 @@ extension on _StringsEs {
         return 'Orden de episodios de TMDB en el anfitrión…';
       case 'remote_delete_audiobook_partial':
         return 'Libro eliminado, pero su audiolibro no pudo eliminarse en el dispositivo emparejado';
+      case 'remote_delete_cloud_checking':
+        return 'Checking whether the cloud storage is reachable…';
+      case 'remote_delete_cloud_offline':
+        return 'Can\'t reach the cloud storage. Delete it there once it\'s reachable.';
+      case 'remote_delete_cloud_signed_out':
+        return 'The cloud storage sign-in has expired. Sign in again to delete it there.';
       case 'remote_delete_failed':
         return 'No se pudo eliminar en el dispositivo emparejado';
+      case 'remote_delete_host_checking':
+        return 'Checking whether the host is online…';
+      case 'remote_delete_host_offline':
+        return 'The host is offline or unreachable. Delete it there once it\'s connected.';
+      case 'remote_delete_host_pairing_rejected':
+        return 'The host rejected this device\'s pairing. Pair again to delete it there.';
       case 'remote_delete_unsupported':
         return 'El dispositivo emparejado es demasiado antiguo para soportar eliminación remota. Actualice Fushi allí primero.';
       case 'remote_dict_lookup':
@@ -507455,6 +511771,10 @@ extension on _StringsEs {
         return 'Pista de audio';
       case 'video_audio_track_empty':
         return 'Sin pistas de audio intercambiables';
+      case 'video_audio_track_fallback_muxed':
+        return 'The audio stream was refused; switched to a compatible stream with sound (lower quality)';
+      case 'video_audio_track_load_failed':
+        return 'Couldn\'t load the audio stream — there is no sound. The source refused access; try again later.';
       case 'video_audio_track_switched':
         return ({required Object label}) => 'Pista de audio: ${label}';
       case 'video_auto_play_next_cancel':
@@ -510916,8 +515236,31 @@ extension on _StringsFr {
         return 'Text recognition isn\'t available on this device';
       case 'ai_agent_send':
         return 'Send';
+      case 'ai_agent_session_current':
+        return 'Current';
+      case 'ai_agent_session_delete':
+        return 'Delete';
+      case 'ai_agent_session_delete_message':
+        return ({required Object title}) =>
+            '“${title}” will be removed from this device. Changes the assistant made stay in the AI action log and can still be undone there.';
+      case 'ai_agent_session_delete_title':
+        return 'Delete this conversation?';
+      case 'ai_agent_session_more':
+        return 'Conversation options';
+      case 'ai_agent_session_open_failed':
+        return 'Couldn\'t open this conversation';
+      case 'ai_agent_session_rename':
+        return 'Rename';
+      case 'ai_agent_session_rename_title':
+        return 'Rename conversation';
       case 'ai_agent_session_summary':
         return ({required Object n}) => '${n} changes in this conversation';
+      case 'ai_agent_sessions_empty':
+        return 'No earlier conversations yet';
+      case 'ai_agent_sessions_retention_hint':
+        return 'Conversations stay on this device for 30 days';
+      case 'ai_agent_sessions_title':
+        return 'Conversations';
       case 'ai_agent_stop':
         return 'Stop';
       case 'ai_agent_stop_cancelled':
@@ -511091,6 +515434,32 @@ extension on _StringsFr {
         return 'Run on a paired computer';
       case 'ai_interconnect_host_unpaired':
         return 'No paired device yet. Pair a computer in Fushi Interconnect to let it handle AI video downloads with its own AI.';
+      case 'ai_mcp_access':
+        return 'External AI access (MCP)';
+      case 'ai_mcp_access_hint':
+        return 'Lets MCP clients on this computer (Claude Desktop, Claude Code…) call Fushi\'s operations. Listens on this computer only and needs the pairing token below. Changes that can be undone run directly and show up in the AI action log; anything that can\'t be undone, and installing extensions, asks you here first. Off by default.';
+      case 'ai_mcp_confirm_arguments':
+        return 'Arguments';
+      case 'ai_mcp_confirm_body':
+        return ({required Object client, required Object op}) =>
+            '${client} wants to run: ${op}';
+      case 'ai_mcp_confirm_expire':
+        return ({required Object minutes}) =>
+            'Declined automatically if you do not answer within ${minutes} minutes.';
+      case 'ai_mcp_confirm_title':
+        return 'Request from an external AI';
+      case 'ai_mcp_token':
+        return 'Pairing token';
+      case 'ai_mcp_token_copy':
+        return 'Copy token';
+      case 'ai_mcp_token_copy_config':
+        return 'Copy client config';
+      case 'ai_mcp_token_hint':
+        return 'Generate a token for your MCP client. Generating a new one revokes the old one.';
+      case 'ai_mcp_token_issued_body':
+        return 'Put this token in your MCP client\'s configuration as FUSHI_MCP_TOKEN (the setup guide shows how). It is shown only once.';
+      case 'ai_mcp_token_issued_title':
+        return 'New pairing token';
       case 'ai_media_acquire_ai_failed':
         return 'L\'IA est indisponible pour le moment ; les résultats proviennent de votre texte d\'origine, triés par seeders.';
       case 'ai_media_acquire_download':
@@ -511835,6 +516204,8 @@ extension on _StringsFr {
         return 'Optimisation du stockage média Anki';
       case 'anki_dedup_unavailable':
         return 'Nécessite Anki en cours d\'exécution sur cette machine (AnkiConnect).';
+      case 'anki_delivery_section':
+        return 'Sending & pending cards';
       case 'anki_desktop_auto_launch':
         return 'Launch Anki when Fushi starts';
       case 'anki_desktop_auto_launch_hint':
@@ -512210,6 +516581,9 @@ extension on _StringsFr {
         return 'En attente d\'envoi';
       case 'anki_pending_mines_status_sending':
         return 'Envoi';
+      case 'anki_pending_mines_stopped':
+        return ({required Object reason}) =>
+            '${reason} The remaining cards stay in the queue.';
       case 'anki_pending_mines_title':
         return 'Cartes en attente';
       case 'anki_pending_mines_unreachable':
@@ -512332,6 +516706,9 @@ extension on _StringsFr {
         return 'I understand, enable';
       case 'anki_sync_client_enable_warn_title':
         return 'Enable Anki sync?';
+      case 'anki_sync_client_error_not_sync_server':
+        return ({required Object detail}) =>
+            'The server did not answer with the Anki sync protocol (the anki-original-size response header is missing). Make sure the address points at an Anki sync server (the official anki-sync-server, or the one built into Anki desktop) rather than a web page; a reverse proxy must keep this header. Details: ${detail}';
       case 'anki_sync_client_has_unsynced':
         return ({required Object count}) =>
             '${count} carte(s) pas encore synchronisée(s). Synchronisez-les avant de changer de compte ou de vous déconnecter.';
@@ -512505,6 +516882,9 @@ extension on _StringsFr {
         return 'Choisir un nouveau fichier de sous-titres';
       case 'audio_source_added':
         return 'Source audio ajoutée';
+      case 'audio_source_connection_refused':
+        return ({required Object host}) =>
+            'Audio source refused the connection: nothing is listening at "${host}" — make sure the service is running, or remove this source in settings';
       case 'audio_source_dns_error':
         return ({required Object host}) =>
             'Échec de connexion de la source audio : impossible de résoudre "${host}" — vérifiez votre réseau ou supprimez cette source dans les paramètres';
@@ -514293,6 +518673,18 @@ extension on _StringsFr {
         return 'Carte créée sans audio de phrase (aucun trouvé pour cette sélection).';
       case 'card_mining_pending':
         return 'Ajout de la carte…';
+      case 'card_notice_title_added':
+        return 'Card added';
+      case 'card_notice_title_duplicate':
+        return 'Card already exists';
+      case 'card_notice_title_failed':
+        return 'Card not created';
+      case 'card_notice_title_overwritten':
+        return 'Card overwritten';
+      case 'card_notice_title_queued':
+        return 'Card queued';
+      case 'card_notice_title_warning':
+        return 'Card added, something missing';
       case 'card_overwritten':
         return ({required Object deck}) => 'Carte remplacée dans « ${deck} ».';
       case 'card_source_open':
@@ -514972,14 +519364,12 @@ extension on _StringsFr {
         return 'Tout sélectionner';
       case 'delete_prompt_title':
         return 'Supprimé sur un autre appareil';
-      case 'delete_scope_keep_local_desc':
-        return 'Les autres appareils conservent leur copie';
       case 'delete_scope_no_channel':
         return 'Pas de synchronisation configurée — cette suppression n\'affecte que cet appareil';
       case 'delete_scope_sync_everywhere':
         return 'Supprimer de tous les appareils';
       case 'delete_scope_sync_everywhere_desc':
-        return 'Les autres appareils confirment la suppression lors de la prochaine synchronisation';
+        return 'Si coché, les autres appareils confirment la suppression lors de la prochaine synchronisation ; sinon, ils conservent leur copie';
       case 'delete_statistics':
         return 'Supprimer aussi les statistiques';
       case 'delete_statistics_book_desc':
@@ -515215,6 +519605,11 @@ extension on _StringsFr {
         return 'Automatique';
       case 'dict_language_description':
         return 'Détermine quelle police affiche le texte de ce dictionnaire. Automatique utilise la langue déclarée par le dictionnaire.';
+      case 'dict_language_group_title':
+        return ({required Object language, required Object n}) =>
+            '${language} · ${n}';
+      case 'dict_language_group_unset':
+        return 'Language not set';
       case 'dict_language_title':
         return 'Langue du contenu du dictionnaire';
       case 'dict_language_tooltip':
@@ -516392,6 +520787,55 @@ extension on _StringsFr {
             'You can attach 1 video (up to ${max}). It is compressed to ${resolution} before uploading.';
       case 'feedback_compose_video_retry':
         return 'Compress again';
+      case 'feedback_crash_auto_send_setting':
+        return 'Automatically send crash logs';
+      case 'feedback_crash_auto_send_setting_hint':
+        return 'After Fushi crashes or quits unexpectedly, send the logs to the developers on next launch without asking (the logs leave this device)';
+      case 'feedback_crash_auto_sent_notice':
+        return 'Logs from the last crash were sent to the developers automatically';
+      case 'feedback_crash_kind_anr':
+        return 'not responding';
+      case 'feedback_crash_kind_crash':
+        return 'crash';
+      case 'feedback_crash_kind_memory':
+        return 'closed by the system for low memory';
+      case 'feedback_crash_kind_native':
+        return 'native crash';
+      case 'feedback_crash_kind_startup':
+        return 'while starting';
+      case 'feedback_crash_kind_unexpected':
+        return 'unexpected exit';
+      case 'feedback_crash_notice_view':
+        return 'View';
+      case 'feedback_crash_prompt_always':
+        return 'Always send';
+      case 'feedback_crash_prompt_body':
+        return 'Send the logs to the developers to help fix it? You can follow it in Feedback.';
+      case 'feedback_crash_prompt_decline':
+        return 'No thanks';
+      case 'feedback_crash_prompt_retry':
+        return 'Retry';
+      case 'feedback_crash_prompt_send':
+        return 'Send to developers';
+      case 'feedback_crash_prompt_sending':
+        return 'Sending…';
+      case 'feedback_crash_prompt_skip':
+        return 'Skip';
+      case 'feedback_crash_prompt_title':
+        return ({required Object kind}) =>
+            'Fushi quit unexpectedly last time (${kind})';
+      case 'feedback_crash_prompt_title_many':
+        return ({required Object n, required Object kind}) =>
+            'Fushi quit unexpectedly ${n} times (${kind})';
+      case 'feedback_crash_report_header':
+        return 'Generated by Fushi after it quit unexpectedly; logs and device info are attached.';
+      case 'feedback_crash_report_title':
+        return ({required Object kind, required Object version}) =>
+            'Crash report: ${kind} (${version})';
+      case 'feedback_crash_send_failed':
+        return 'Could not send the crash logs. Fushi will ask again next time.';
+      case 'feedback_crash_sent_notice':
+        return 'Crash logs sent to the developers';
       case 'feedback_detail_add_shot':
         return 'Add screenshot';
       case 'feedback_detail_attachments':
@@ -520239,6 +524683,18 @@ extension on _StringsFr {
         return 'Top';
       case 'lyrics_control_zone_top_hint':
         return 'Top bar on phones, top-right corner on wide screens';
+      case 'lyrics_controls_collapse':
+        return 'Collapse playback controls';
+      case 'lyrics_controls_expand':
+        return 'Expand playback controls';
+      case 'lyrics_controls_style':
+        return 'Playback controls layout';
+      case 'lyrics_controls_style_classic':
+        return 'Classic';
+      case 'lyrics_controls_style_hint':
+        return 'New: a collapsible mini bar on phones and floating islands on wide screens. Classic: the previous layout.';
+      case 'lyrics_controls_style_modern':
+        return 'New';
       case 'lyrics_exit_to_library':
         return 'Close and return to library';
       case 'lyrics_font_size':
@@ -520251,6 +524707,14 @@ extension on _StringsFr {
         return 'Use your own color for the line being read instead of the player theme color';
       case 'lyrics_illustration_back_to_cover':
         return 'Back to cover';
+      case 'lyrics_illustration_cue':
+        return 'Illustration prompt';
+      case 'lyrics_illustration_cue_dot':
+        return 'Dot';
+      case 'lyrics_illustration_cue_hint':
+        return 'Pop up: show the illustration card and pause for the image pause duration below. Dot: only mark the cover thumbnail.';
+      case 'lyrics_illustration_cue_popup':
+        return 'Pop up';
       case 'lyrics_illustration_next':
         return 'Next illustration';
       case 'lyrics_illustration_open':
@@ -521313,6 +525777,9 @@ extension on _StringsFr {
       case 'media_privacy_inherited_note':
         return ({required Object collections}) =>
             'Private because it is in the private collection “${collections}”. To make it public, turn off privacy on that collection.';
+      case 'media_privacy_inherited_source_note':
+        return ({required Object source}) =>
+            'Private because its source library “${source}” is private. To make it public, turn off privacy on that source library.';
       case 'media_privacy_load_failed':
         return ({required Object reason}) =>
             'Could not read the privacy setting, so it cannot be changed right now: ${reason}';
@@ -521420,6 +525887,23 @@ extension on _StringsFr {
         return 'Open Folder';
       case 'media_source_open_folder_failed':
         return 'Couldn\'t open the folder. It may have been moved, deleted, or disconnected.';
+      case 'media_source_privacy_action':
+        return 'Privacy';
+      case 'media_source_privacy_badge':
+        return 'Private: not uploaded to the leaderboard';
+      case 'media_source_privacy_cleared_toast':
+        return 'Source library is no longer private';
+      case 'media_source_privacy_hint':
+        return 'Everything this source library brings in is treated as private: it is never uploaded to the leaderboard, so it stays off your public shelf, profile and share cards, and its progress is not pushed to Bangumi. Items already uploaded are removed from the leaderboard as soon as you turn this on (or at the next sync if that fails). Your daily character total still counts them, without saying what you read. Removing this source keeps its items private.';
+      case 'media_source_privacy_marked_toast':
+        return 'Source library is now private';
+      case 'media_source_privacy_switch':
+        return 'Keep this source library private';
+      case 'media_source_privacy_withdraw_failed':
+        return ({required Object reason}) =>
+            'Source library is now private, but removing its items from the leaderboard failed; the next sync will try again: ${reason}';
+      case 'media_source_privacy_withdrawn_toast':
+        return 'Source library is now private; its items were removed from the leaderboard';
       case 'media_source_remove':
         return 'Remove Source';
       case 'media_source_remove_download_keep':
@@ -524596,8 +529080,11 @@ extension on _StringsFr {
         return 'Re-download audiobook from peer';
       case 'remote_book_audiobook_redownloaded':
         return 'Audiobook re-downloaded from peer';
+      case 'remote_book_delete_cloud_confirm':
+        return ({required Object name, required Object backend}) =>
+            'Delete "${name}" from ${backend}? The book\'s files, cover, progress and audiobook in the cloud are permanently deleted. This device has no copy and this can\'t be undone. Other devices will ask whether to delete their copy on their next sync.';
       case 'remote_book_delete_everywhere':
-        return 'Delete permanently';
+        return 'Also delete on host';
       case 'remote_book_delete_everywhere_confirm':
         return ({required Object name, required Object host}) =>
             'Delete "${name}" on host "${host}"? Its files, reading progress, bookmarks and audiobook there are removed for good, and this device has no copy. This cannot be undone.';
@@ -524658,8 +529145,20 @@ extension on _StringsFr {
         return 'Ordre des épisodes TMDB sur l\'hôte…';
       case 'remote_delete_audiobook_partial':
         return 'Livre supprimé, mais son livre audio n\'a pas pu être retiré sur l\'appareil apparié';
+      case 'remote_delete_cloud_checking':
+        return 'Checking whether the cloud storage is reachable…';
+      case 'remote_delete_cloud_offline':
+        return 'Can\'t reach the cloud storage. Delete it there once it\'s reachable.';
+      case 'remote_delete_cloud_signed_out':
+        return 'The cloud storage sign-in has expired. Sign in again to delete it there.';
       case 'remote_delete_failed':
         return 'Impossible de supprimer sur l\'appareil apparié';
+      case 'remote_delete_host_checking':
+        return 'Checking whether the host is online…';
+      case 'remote_delete_host_offline':
+        return 'The host is offline or unreachable. Delete it there once it\'s connected.';
+      case 'remote_delete_host_pairing_rejected':
+        return 'The host rejected this device\'s pairing. Pair again to delete it there.';
       case 'remote_delete_unsupported':
         return 'L\'appareil apparié est trop ancien pour prendre en charge la suppression à distance. Mettez d\'abord Fushi à jour dessus.';
       case 'remote_dict_lookup':
@@ -529449,6 +533948,10 @@ extension on _StringsFr {
         return 'Piste audio';
       case 'video_audio_track_empty':
         return 'Aucune piste audio commutable';
+      case 'video_audio_track_fallback_muxed':
+        return 'The audio stream was refused; switched to a compatible stream with sound (lower quality)';
+      case 'video_audio_track_load_failed':
+        return 'Couldn\'t load the audio stream — there is no sound. The source refused access; try again later.';
       case 'video_audio_track_switched':
         return ({required Object label}) => 'Piste audio : ${label}';
       case 'video_auto_play_next_cancel':
@@ -532912,8 +537415,31 @@ extension on _StringsId {
         return 'Text recognition isn\'t available on this device';
       case 'ai_agent_send':
         return 'Send';
+      case 'ai_agent_session_current':
+        return 'Current';
+      case 'ai_agent_session_delete':
+        return 'Delete';
+      case 'ai_agent_session_delete_message':
+        return ({required Object title}) =>
+            '“${title}” will be removed from this device. Changes the assistant made stay in the AI action log and can still be undone there.';
+      case 'ai_agent_session_delete_title':
+        return 'Delete this conversation?';
+      case 'ai_agent_session_more':
+        return 'Conversation options';
+      case 'ai_agent_session_open_failed':
+        return 'Couldn\'t open this conversation';
+      case 'ai_agent_session_rename':
+        return 'Rename';
+      case 'ai_agent_session_rename_title':
+        return 'Rename conversation';
       case 'ai_agent_session_summary':
         return ({required Object n}) => '${n} changes in this conversation';
+      case 'ai_agent_sessions_empty':
+        return 'No earlier conversations yet';
+      case 'ai_agent_sessions_retention_hint':
+        return 'Conversations stay on this device for 30 days';
+      case 'ai_agent_sessions_title':
+        return 'Conversations';
       case 'ai_agent_stop':
         return 'Stop';
       case 'ai_agent_stop_cancelled':
@@ -533085,6 +537611,32 @@ extension on _StringsId {
         return 'Run on a paired computer';
       case 'ai_interconnect_host_unpaired':
         return 'No paired device yet. Pair a computer in Fushi Interconnect to let it handle AI video downloads with its own AI.';
+      case 'ai_mcp_access':
+        return 'External AI access (MCP)';
+      case 'ai_mcp_access_hint':
+        return 'Lets MCP clients on this computer (Claude Desktop, Claude Code…) call Fushi\'s operations. Listens on this computer only and needs the pairing token below. Changes that can be undone run directly and show up in the AI action log; anything that can\'t be undone, and installing extensions, asks you here first. Off by default.';
+      case 'ai_mcp_confirm_arguments':
+        return 'Arguments';
+      case 'ai_mcp_confirm_body':
+        return ({required Object client, required Object op}) =>
+            '${client} wants to run: ${op}';
+      case 'ai_mcp_confirm_expire':
+        return ({required Object minutes}) =>
+            'Declined automatically if you do not answer within ${minutes} minutes.';
+      case 'ai_mcp_confirm_title':
+        return 'Request from an external AI';
+      case 'ai_mcp_token':
+        return 'Pairing token';
+      case 'ai_mcp_token_copy':
+        return 'Copy token';
+      case 'ai_mcp_token_copy_config':
+        return 'Copy client config';
+      case 'ai_mcp_token_hint':
+        return 'Generate a token for your MCP client. Generating a new one revokes the old one.';
+      case 'ai_mcp_token_issued_body':
+        return 'Put this token in your MCP client\'s configuration as FUSHI_MCP_TOKEN (the setup guide shows how). It is shown only once.';
+      case 'ai_mcp_token_issued_title':
+        return 'New pairing token';
       case 'ai_media_acquire_ai_failed':
         return 'AI tidak tersedia saat ini; hasil berasal dari teks asli Anda, diurutkan menurut seeder.';
       case 'ai_media_acquire_download':
@@ -533828,6 +538380,8 @@ extension on _StringsId {
         return 'Optimasi penyimpanan media Anki';
       case 'anki_dedup_unavailable':
         return 'Memerlukan Anki yang berjalan di mesin ini (AnkiConnect).';
+      case 'anki_delivery_section':
+        return 'Sending & pending cards';
       case 'anki_desktop_auto_launch':
         return 'Launch Anki when Fushi starts';
       case 'anki_desktop_auto_launch_hint':
@@ -534202,6 +538756,9 @@ extension on _StringsId {
         return 'Menunggu dikirim';
       case 'anki_pending_mines_status_sending':
         return 'Mengirim';
+      case 'anki_pending_mines_stopped':
+        return ({required Object reason}) =>
+            '${reason} The remaining cards stay in the queue.';
       case 'anki_pending_mines_title':
         return 'Kartu tertunda';
       case 'anki_pending_mines_unreachable':
@@ -534322,6 +538879,9 @@ extension on _StringsId {
         return 'I understand, enable';
       case 'anki_sync_client_enable_warn_title':
         return 'Enable Anki sync?';
+      case 'anki_sync_client_error_not_sync_server':
+        return ({required Object detail}) =>
+            'The server did not answer with the Anki sync protocol (the anki-original-size response header is missing). Make sure the address points at an Anki sync server (the official anki-sync-server, or the one built into Anki desktop) rather than a web page; a reverse proxy must keep this header. Details: ${detail}';
       case 'anki_sync_client_has_unsynced':
         return ({required Object count}) =>
             '${count} kartu belum disinkronkan. Sinkronkan sebelum berganti akun atau keluar.';
@@ -534493,6 +539053,9 @@ extension on _StringsId {
         return 'Pilih file subtitle baru';
       case 'audio_source_added':
         return 'Sumber audio ditambahkan';
+      case 'audio_source_connection_refused':
+        return ({required Object host}) =>
+            'Audio source refused the connection: nothing is listening at "${host}" — make sure the service is running, or remove this source in settings';
       case 'audio_source_dns_error':
         return ({required Object host}) =>
             'Koneksi sumber audio gagal: tidak dapat menemukan "${host}" — periksa jaringan Anda, atau hapus sumber ini di pengaturan';
@@ -536275,6 +540838,18 @@ extension on _StringsId {
         return 'Kartu dibuat tanpa audio kalimat (tidak ditemukan untuk pilihan ini).';
       case 'card_mining_pending':
         return 'Menambah kartu…';
+      case 'card_notice_title_added':
+        return 'Card added';
+      case 'card_notice_title_duplicate':
+        return 'Card already exists';
+      case 'card_notice_title_failed':
+        return 'Card not created';
+      case 'card_notice_title_overwritten':
+        return 'Card overwritten';
+      case 'card_notice_title_queued':
+        return 'Card queued';
+      case 'card_notice_title_warning':
+        return 'Card added, something missing';
       case 'card_overwritten':
         return ({required Object deck}) => 'Kartu ditimpa di 『${deck}』.';
       case 'card_source_open':
@@ -536954,14 +541529,12 @@ extension on _StringsId {
         return 'Pilih semua';
       case 'delete_prompt_title':
         return 'Dihapus di perangkat lain';
-      case 'delete_scope_keep_local_desc':
-        return 'Perangkat lain menyimpan salinannya';
       case 'delete_scope_no_channel':
         return 'Tidak ada sinkronisasi yang dikonfigurasi - penghapusan ini hanya memengaruhi perangkat ini';
       case 'delete_scope_sync_everywhere':
         return 'Hapus dari semua perangkat';
       case 'delete_scope_sync_everywhere_desc':
-        return 'Perangkat lain mengonfirmasi penghapusan pada sinkronisasi berikutnya';
+        return 'Jika dicentang, perangkat lain mengonfirmasi penghapusan pada sinkronisasi berikutnya; jika tidak, perangkat lain menyimpan salinannya';
       case 'delete_statistics':
         return 'Hapus juga statistik';
       case 'delete_statistics_book_desc':
@@ -537193,6 +541766,11 @@ extension on _StringsId {
         return 'Otomatis';
       case 'dict_language_description':
         return 'Menentukan font mana yang merender teks kamus ini. Otomatis menggunakan bahasa yang dideklarasikan kamus.';
+      case 'dict_language_group_title':
+        return ({required Object language, required Object n}) =>
+            '${language} · ${n}';
+      case 'dict_language_group_unset':
+        return 'Language not set';
       case 'dict_language_title':
         return 'Bahasa konten kamus';
       case 'dict_language_tooltip':
@@ -538364,6 +542942,55 @@ extension on _StringsId {
             'You can attach 1 video (up to ${max}). It is compressed to ${resolution} before uploading.';
       case 'feedback_compose_video_retry':
         return 'Compress again';
+      case 'feedback_crash_auto_send_setting':
+        return 'Automatically send crash logs';
+      case 'feedback_crash_auto_send_setting_hint':
+        return 'After Fushi crashes or quits unexpectedly, send the logs to the developers on next launch without asking (the logs leave this device)';
+      case 'feedback_crash_auto_sent_notice':
+        return 'Logs from the last crash were sent to the developers automatically';
+      case 'feedback_crash_kind_anr':
+        return 'not responding';
+      case 'feedback_crash_kind_crash':
+        return 'crash';
+      case 'feedback_crash_kind_memory':
+        return 'closed by the system for low memory';
+      case 'feedback_crash_kind_native':
+        return 'native crash';
+      case 'feedback_crash_kind_startup':
+        return 'while starting';
+      case 'feedback_crash_kind_unexpected':
+        return 'unexpected exit';
+      case 'feedback_crash_notice_view':
+        return 'View';
+      case 'feedback_crash_prompt_always':
+        return 'Always send';
+      case 'feedback_crash_prompt_body':
+        return 'Send the logs to the developers to help fix it? You can follow it in Feedback.';
+      case 'feedback_crash_prompt_decline':
+        return 'No thanks';
+      case 'feedback_crash_prompt_retry':
+        return 'Retry';
+      case 'feedback_crash_prompt_send':
+        return 'Send to developers';
+      case 'feedback_crash_prompt_sending':
+        return 'Sending…';
+      case 'feedback_crash_prompt_skip':
+        return 'Skip';
+      case 'feedback_crash_prompt_title':
+        return ({required Object kind}) =>
+            'Fushi quit unexpectedly last time (${kind})';
+      case 'feedback_crash_prompt_title_many':
+        return ({required Object n, required Object kind}) =>
+            'Fushi quit unexpectedly ${n} times (${kind})';
+      case 'feedback_crash_report_header':
+        return 'Generated by Fushi after it quit unexpectedly; logs and device info are attached.';
+      case 'feedback_crash_report_title':
+        return ({required Object kind, required Object version}) =>
+            'Crash report: ${kind} (${version})';
+      case 'feedback_crash_send_failed':
+        return 'Could not send the crash logs. Fushi will ask again next time.';
+      case 'feedback_crash_sent_notice':
+        return 'Crash logs sent to the developers';
       case 'feedback_detail_add_shot':
         return 'Add screenshot';
       case 'feedback_detail_attachments':
@@ -542207,6 +546834,18 @@ extension on _StringsId {
         return 'Top';
       case 'lyrics_control_zone_top_hint':
         return 'Top bar on phones, top-right corner on wide screens';
+      case 'lyrics_controls_collapse':
+        return 'Collapse playback controls';
+      case 'lyrics_controls_expand':
+        return 'Expand playback controls';
+      case 'lyrics_controls_style':
+        return 'Playback controls layout';
+      case 'lyrics_controls_style_classic':
+        return 'Classic';
+      case 'lyrics_controls_style_hint':
+        return 'New: a collapsible mini bar on phones and floating islands on wide screens. Classic: the previous layout.';
+      case 'lyrics_controls_style_modern':
+        return 'New';
       case 'lyrics_exit_to_library':
         return 'Close and return to library';
       case 'lyrics_font_size':
@@ -542219,6 +546858,14 @@ extension on _StringsId {
         return 'Use your own color for the line being read instead of the player theme color';
       case 'lyrics_illustration_back_to_cover':
         return 'Back to cover';
+      case 'lyrics_illustration_cue':
+        return 'Illustration prompt';
+      case 'lyrics_illustration_cue_dot':
+        return 'Dot';
+      case 'lyrics_illustration_cue_hint':
+        return 'Pop up: show the illustration card and pause for the image pause duration below. Dot: only mark the cover thumbnail.';
+      case 'lyrics_illustration_cue_popup':
+        return 'Pop up';
       case 'lyrics_illustration_next':
         return 'Next illustration';
       case 'lyrics_illustration_open':
@@ -543278,6 +547925,9 @@ extension on _StringsId {
       case 'media_privacy_inherited_note':
         return ({required Object collections}) =>
             'Private because it is in the private collection “${collections}”. To make it public, turn off privacy on that collection.';
+      case 'media_privacy_inherited_source_note':
+        return ({required Object source}) =>
+            'Private because its source library “${source}” is private. To make it public, turn off privacy on that source library.';
       case 'media_privacy_load_failed':
         return ({required Object reason}) =>
             'Could not read the privacy setting, so it cannot be changed right now: ${reason}';
@@ -543385,6 +548035,23 @@ extension on _StringsId {
         return 'Open Folder';
       case 'media_source_open_folder_failed':
         return 'Couldn\'t open the folder. It may have been moved, deleted, or disconnected.';
+      case 'media_source_privacy_action':
+        return 'Privacy';
+      case 'media_source_privacy_badge':
+        return 'Private: not uploaded to the leaderboard';
+      case 'media_source_privacy_cleared_toast':
+        return 'Source library is no longer private';
+      case 'media_source_privacy_hint':
+        return 'Everything this source library brings in is treated as private: it is never uploaded to the leaderboard, so it stays off your public shelf, profile and share cards, and its progress is not pushed to Bangumi. Items already uploaded are removed from the leaderboard as soon as you turn this on (or at the next sync if that fails). Your daily character total still counts them, without saying what you read. Removing this source keeps its items private.';
+      case 'media_source_privacy_marked_toast':
+        return 'Source library is now private';
+      case 'media_source_privacy_switch':
+        return 'Keep this source library private';
+      case 'media_source_privacy_withdraw_failed':
+        return ({required Object reason}) =>
+            'Source library is now private, but removing its items from the leaderboard failed; the next sync will try again: ${reason}';
+      case 'media_source_privacy_withdrawn_toast':
+        return 'Source library is now private; its items were removed from the leaderboard';
       case 'media_source_remove':
         return 'Remove Source';
       case 'media_source_remove_download_keep':
@@ -546549,8 +551216,11 @@ extension on _StringsId {
         return 'Re-download audiobook from peer';
       case 'remote_book_audiobook_redownloaded':
         return 'Audiobook re-downloaded from peer';
+      case 'remote_book_delete_cloud_confirm':
+        return ({required Object name, required Object backend}) =>
+            'Delete "${name}" from ${backend}? The book\'s files, cover, progress and audiobook in the cloud are permanently deleted. This device has no copy and this can\'t be undone. Other devices will ask whether to delete their copy on their next sync.';
       case 'remote_book_delete_everywhere':
-        return 'Delete permanently';
+        return 'Also delete on host';
       case 'remote_book_delete_everywhere_confirm':
         return ({required Object name, required Object host}) =>
             'Delete "${name}" on host "${host}"? Its files, reading progress, bookmarks and audiobook there are removed for good, and this device has no copy. This cannot be undone.';
@@ -546611,8 +551281,20 @@ extension on _StringsId {
         return 'Urutan episode TMDB di host…';
       case 'remote_delete_audiobook_partial':
         return 'Buku dihapus, tetapi buku audionya tidak bisa dihapus di perangkat pasangan';
+      case 'remote_delete_cloud_checking':
+        return 'Checking whether the cloud storage is reachable…';
+      case 'remote_delete_cloud_offline':
+        return 'Can\'t reach the cloud storage. Delete it there once it\'s reachable.';
+      case 'remote_delete_cloud_signed_out':
+        return 'The cloud storage sign-in has expired. Sign in again to delete it there.';
       case 'remote_delete_failed':
         return 'Tidak bisa menghapus di perangkat pasangan';
+      case 'remote_delete_host_checking':
+        return 'Checking whether the host is online…';
+      case 'remote_delete_host_offline':
+        return 'The host is offline or unreachable. Delete it there once it\'s connected.';
+      case 'remote_delete_host_pairing_rejected':
+        return 'The host rejected this device\'s pairing. Pair again to delete it there.';
       case 'remote_delete_unsupported':
         return 'Perangkat pasangan terlalu lama untuk mendukung penghapusan jarak jauh. Perbarui Fushi di sana terlebih dahulu.';
       case 'remote_dict_lookup':
@@ -551395,6 +556077,10 @@ extension on _StringsId {
         return 'Trek audio';
       case 'video_audio_track_empty':
         return 'Tidak ada trek audio yang bisa dialihkan';
+      case 'video_audio_track_fallback_muxed':
+        return 'The audio stream was refused; switched to a compatible stream with sound (lower quality)';
+      case 'video_audio_track_load_failed':
+        return 'Couldn\'t load the audio stream — there is no sound. The source refused access; try again later.';
       case 'video_audio_track_switched':
         return ({required Object label}) => 'Trek audio: ${label}';
       case 'video_auto_play_next_cancel':
@@ -554852,8 +559538,31 @@ extension on _StringsIt {
         return 'Text recognition isn\'t available on this device';
       case 'ai_agent_send':
         return 'Send';
+      case 'ai_agent_session_current':
+        return 'Current';
+      case 'ai_agent_session_delete':
+        return 'Delete';
+      case 'ai_agent_session_delete_message':
+        return ({required Object title}) =>
+            '“${title}” will be removed from this device. Changes the assistant made stay in the AI action log and can still be undone there.';
+      case 'ai_agent_session_delete_title':
+        return 'Delete this conversation?';
+      case 'ai_agent_session_more':
+        return 'Conversation options';
+      case 'ai_agent_session_open_failed':
+        return 'Couldn\'t open this conversation';
+      case 'ai_agent_session_rename':
+        return 'Rename';
+      case 'ai_agent_session_rename_title':
+        return 'Rename conversation';
       case 'ai_agent_session_summary':
         return ({required Object n}) => '${n} changes in this conversation';
+      case 'ai_agent_sessions_empty':
+        return 'No earlier conversations yet';
+      case 'ai_agent_sessions_retention_hint':
+        return 'Conversations stay on this device for 30 days';
+      case 'ai_agent_sessions_title':
+        return 'Conversations';
       case 'ai_agent_stop':
         return 'Stop';
       case 'ai_agent_stop_cancelled':
@@ -555026,6 +559735,32 @@ extension on _StringsIt {
         return 'Run on a paired computer';
       case 'ai_interconnect_host_unpaired':
         return 'No paired device yet. Pair a computer in Fushi Interconnect to let it handle AI video downloads with its own AI.';
+      case 'ai_mcp_access':
+        return 'External AI access (MCP)';
+      case 'ai_mcp_access_hint':
+        return 'Lets MCP clients on this computer (Claude Desktop, Claude Code…) call Fushi\'s operations. Listens on this computer only and needs the pairing token below. Changes that can be undone run directly and show up in the AI action log; anything that can\'t be undone, and installing extensions, asks you here first. Off by default.';
+      case 'ai_mcp_confirm_arguments':
+        return 'Arguments';
+      case 'ai_mcp_confirm_body':
+        return ({required Object client, required Object op}) =>
+            '${client} wants to run: ${op}';
+      case 'ai_mcp_confirm_expire':
+        return ({required Object minutes}) =>
+            'Declined automatically if you do not answer within ${minutes} minutes.';
+      case 'ai_mcp_confirm_title':
+        return 'Request from an external AI';
+      case 'ai_mcp_token':
+        return 'Pairing token';
+      case 'ai_mcp_token_copy':
+        return 'Copy token';
+      case 'ai_mcp_token_copy_config':
+        return 'Copy client config';
+      case 'ai_mcp_token_hint':
+        return 'Generate a token for your MCP client. Generating a new one revokes the old one.';
+      case 'ai_mcp_token_issued_body':
+        return 'Put this token in your MCP client\'s configuration as FUSHI_MCP_TOKEN (the setup guide shows how). It is shown only once.';
+      case 'ai_mcp_token_issued_title':
+        return 'New pairing token';
       case 'ai_media_acquire_ai_failed':
         return 'L\'IA non è disponibile al momento; i risultati derivano dal testo originale, ordinati per seeder.';
       case 'ai_media_acquire_download':
@@ -555769,6 +560504,8 @@ extension on _StringsIt {
         return 'Ottimizzazione archiviazione media Anki';
       case 'anki_dedup_unavailable':
         return 'Richiede Anki in esecuzione su questa macchina (AnkiConnect).';
+      case 'anki_delivery_section':
+        return 'Sending & pending cards';
       case 'anki_desktop_auto_launch':
         return 'Launch Anki when Fushi starts';
       case 'anki_desktop_auto_launch_hint':
@@ -556144,6 +560881,9 @@ extension on _StringsIt {
         return 'In attesa di invio';
       case 'anki_pending_mines_status_sending':
         return 'Invio in corso';
+      case 'anki_pending_mines_stopped':
+        return ({required Object reason}) =>
+            '${reason} The remaining cards stay in the queue.';
       case 'anki_pending_mines_title':
         return 'Carte in sospeso';
       case 'anki_pending_mines_unreachable':
@@ -556264,6 +561004,9 @@ extension on _StringsIt {
         return 'I understand, enable';
       case 'anki_sync_client_enable_warn_title':
         return 'Enable Anki sync?';
+      case 'anki_sync_client_error_not_sync_server':
+        return ({required Object detail}) =>
+            'The server did not answer with the Anki sync protocol (the anki-original-size response header is missing). Make sure the address points at an Anki sync server (the official anki-sync-server, or the one built into Anki desktop) rather than a web page; a reverse proxy must keep this header. Details: ${detail}';
       case 'anki_sync_client_has_unsynced':
         return ({required Object count}) =>
             '${count} carta/e non ancora sincronizzata/e. Sincronizzale prima di cambiare account o uscire.';
@@ -556436,6 +561179,9 @@ extension on _StringsIt {
         return 'Scegli nuovo file sottotitoli';
       case 'audio_source_added':
         return 'Sorgente audio aggiunta';
+      case 'audio_source_connection_refused':
+        return ({required Object host}) =>
+            'Audio source refused the connection: nothing is listening at "${host}" — make sure the service is running, or remove this source in settings';
       case 'audio_source_dns_error':
         return ({required Object host}) =>
             'Connessione sorgente audio fallita: impossibile risolvere "${host}" — controlla la rete o rimuovi questa sorgente nelle impostazioni';
@@ -558221,6 +562967,18 @@ extension on _StringsIt {
         return 'Carta creata senza audio della frase (nessuno trovato per questa selezione).';
       case 'card_mining_pending':
         return 'Aggiunta carta…';
+      case 'card_notice_title_added':
+        return 'Card added';
+      case 'card_notice_title_duplicate':
+        return 'Card already exists';
+      case 'card_notice_title_failed':
+        return 'Card not created';
+      case 'card_notice_title_overwritten':
+        return 'Card overwritten';
+      case 'card_notice_title_queued':
+        return 'Card queued';
+      case 'card_notice_title_warning':
+        return 'Card added, something missing';
       case 'card_overwritten':
         return ({required Object deck}) => 'Carta sovrascritta in『${deck}』.';
       case 'card_source_open':
@@ -558900,14 +563658,12 @@ extension on _StringsIt {
         return 'Seleziona tutto';
       case 'delete_prompt_title':
         return 'Eliminati su un altro dispositivo';
-      case 'delete_scope_keep_local_desc':
-        return 'Gli altri dispositivi mantengono la loro copia';
       case 'delete_scope_no_channel':
         return 'Nessuna sincronizzazione configurata — questa eliminazione riguarda solo questo dispositivo';
       case 'delete_scope_sync_everywhere':
         return 'Elimina da tutti i dispositivi';
       case 'delete_scope_sync_everywhere_desc':
-        return 'Gli altri dispositivi confermano l\'eliminazione alla prossima sincronizzazione';
+        return 'Se selezionato, gli altri dispositivi confermano l\'eliminazione alla prossima sincronizzazione; altrimenti mantengono la loro copia';
       case 'delete_statistics':
         return 'Elimina anche le statistiche';
       case 'delete_statistics_book_desc':
@@ -559139,6 +563895,11 @@ extension on _StringsIt {
         return 'Automatico';
       case 'dict_language_description':
         return 'Decide quale font renderizza il testo di questo dizionario. Automatico usa la lingua dichiarata dal dizionario.';
+      case 'dict_language_group_title':
+        return ({required Object language, required Object n}) =>
+            '${language} · ${n}';
+      case 'dict_language_group_unset':
+        return 'Language not set';
       case 'dict_language_title':
         return 'Lingua del contenuto del dizionario';
       case 'dict_language_tooltip':
@@ -560314,6 +565075,55 @@ extension on _StringsIt {
             'You can attach 1 video (up to ${max}). It is compressed to ${resolution} before uploading.';
       case 'feedback_compose_video_retry':
         return 'Compress again';
+      case 'feedback_crash_auto_send_setting':
+        return 'Automatically send crash logs';
+      case 'feedback_crash_auto_send_setting_hint':
+        return 'After Fushi crashes or quits unexpectedly, send the logs to the developers on next launch without asking (the logs leave this device)';
+      case 'feedback_crash_auto_sent_notice':
+        return 'Logs from the last crash were sent to the developers automatically';
+      case 'feedback_crash_kind_anr':
+        return 'not responding';
+      case 'feedback_crash_kind_crash':
+        return 'crash';
+      case 'feedback_crash_kind_memory':
+        return 'closed by the system for low memory';
+      case 'feedback_crash_kind_native':
+        return 'native crash';
+      case 'feedback_crash_kind_startup':
+        return 'while starting';
+      case 'feedback_crash_kind_unexpected':
+        return 'unexpected exit';
+      case 'feedback_crash_notice_view':
+        return 'View';
+      case 'feedback_crash_prompt_always':
+        return 'Always send';
+      case 'feedback_crash_prompt_body':
+        return 'Send the logs to the developers to help fix it? You can follow it in Feedback.';
+      case 'feedback_crash_prompt_decline':
+        return 'No thanks';
+      case 'feedback_crash_prompt_retry':
+        return 'Retry';
+      case 'feedback_crash_prompt_send':
+        return 'Send to developers';
+      case 'feedback_crash_prompt_sending':
+        return 'Sending…';
+      case 'feedback_crash_prompt_skip':
+        return 'Skip';
+      case 'feedback_crash_prompt_title':
+        return ({required Object kind}) =>
+            'Fushi quit unexpectedly last time (${kind})';
+      case 'feedback_crash_prompt_title_many':
+        return ({required Object n, required Object kind}) =>
+            'Fushi quit unexpectedly ${n} times (${kind})';
+      case 'feedback_crash_report_header':
+        return 'Generated by Fushi after it quit unexpectedly; logs and device info are attached.';
+      case 'feedback_crash_report_title':
+        return ({required Object kind, required Object version}) =>
+            'Crash report: ${kind} (${version})';
+      case 'feedback_crash_send_failed':
+        return 'Could not send the crash logs. Fushi will ask again next time.';
+      case 'feedback_crash_sent_notice':
+        return 'Crash logs sent to the developers';
       case 'feedback_detail_add_shot':
         return 'Add screenshot';
       case 'feedback_detail_attachments':
@@ -564159,6 +568969,18 @@ extension on _StringsIt {
         return 'Top';
       case 'lyrics_control_zone_top_hint':
         return 'Top bar on phones, top-right corner on wide screens';
+      case 'lyrics_controls_collapse':
+        return 'Collapse playback controls';
+      case 'lyrics_controls_expand':
+        return 'Expand playback controls';
+      case 'lyrics_controls_style':
+        return 'Playback controls layout';
+      case 'lyrics_controls_style_classic':
+        return 'Classic';
+      case 'lyrics_controls_style_hint':
+        return 'New: a collapsible mini bar on phones and floating islands on wide screens. Classic: the previous layout.';
+      case 'lyrics_controls_style_modern':
+        return 'New';
       case 'lyrics_exit_to_library':
         return 'Close and return to library';
       case 'lyrics_font_size':
@@ -564171,6 +568993,14 @@ extension on _StringsIt {
         return 'Use your own color for the line being read instead of the player theme color';
       case 'lyrics_illustration_back_to_cover':
         return 'Back to cover';
+      case 'lyrics_illustration_cue':
+        return 'Illustration prompt';
+      case 'lyrics_illustration_cue_dot':
+        return 'Dot';
+      case 'lyrics_illustration_cue_hint':
+        return 'Pop up: show the illustration card and pause for the image pause duration below. Dot: only mark the cover thumbnail.';
+      case 'lyrics_illustration_cue_popup':
+        return 'Pop up';
       case 'lyrics_illustration_next':
         return 'Next illustration';
       case 'lyrics_illustration_open':
@@ -565232,6 +570062,9 @@ extension on _StringsIt {
       case 'media_privacy_inherited_note':
         return ({required Object collections}) =>
             'Private because it is in the private collection “${collections}”. To make it public, turn off privacy on that collection.';
+      case 'media_privacy_inherited_source_note':
+        return ({required Object source}) =>
+            'Private because its source library “${source}” is private. To make it public, turn off privacy on that source library.';
       case 'media_privacy_load_failed':
         return ({required Object reason}) =>
             'Could not read the privacy setting, so it cannot be changed right now: ${reason}';
@@ -565339,6 +570172,23 @@ extension on _StringsIt {
         return 'Open Folder';
       case 'media_source_open_folder_failed':
         return 'Couldn\'t open the folder. It may have been moved, deleted, or disconnected.';
+      case 'media_source_privacy_action':
+        return 'Privacy';
+      case 'media_source_privacy_badge':
+        return 'Private: not uploaded to the leaderboard';
+      case 'media_source_privacy_cleared_toast':
+        return 'Source library is no longer private';
+      case 'media_source_privacy_hint':
+        return 'Everything this source library brings in is treated as private: it is never uploaded to the leaderboard, so it stays off your public shelf, profile and share cards, and its progress is not pushed to Bangumi. Items already uploaded are removed from the leaderboard as soon as you turn this on (or at the next sync if that fails). Your daily character total still counts them, without saying what you read. Removing this source keeps its items private.';
+      case 'media_source_privacy_marked_toast':
+        return 'Source library is now private';
+      case 'media_source_privacy_switch':
+        return 'Keep this source library private';
+      case 'media_source_privacy_withdraw_failed':
+        return ({required Object reason}) =>
+            'Source library is now private, but removing its items from the leaderboard failed; the next sync will try again: ${reason}';
+      case 'media_source_privacy_withdrawn_toast':
+        return 'Source library is now private; its items were removed from the leaderboard';
       case 'media_source_remove':
         return 'Remove Source';
       case 'media_source_remove_download_keep':
@@ -568511,8 +573361,11 @@ extension on _StringsIt {
         return 'Re-download audiobook from peer';
       case 'remote_book_audiobook_redownloaded':
         return 'Audiobook re-downloaded from peer';
+      case 'remote_book_delete_cloud_confirm':
+        return ({required Object name, required Object backend}) =>
+            'Delete "${name}" from ${backend}? The book\'s files, cover, progress and audiobook in the cloud are permanently deleted. This device has no copy and this can\'t be undone. Other devices will ask whether to delete their copy on their next sync.';
       case 'remote_book_delete_everywhere':
-        return 'Delete permanently';
+        return 'Also delete on host';
       case 'remote_book_delete_everywhere_confirm':
         return ({required Object name, required Object host}) =>
             'Delete "${name}" on host "${host}"? Its files, reading progress, bookmarks and audiobook there are removed for good, and this device has no copy. This cannot be undone.';
@@ -568573,8 +573426,20 @@ extension on _StringsIt {
         return 'Ordinamento episodi TMDB sull\'host…';
       case 'remote_delete_audiobook_partial':
         return 'Libro eliminato, ma il suo audiolibro non è stato rimosso sul dispositivo accoppiato';
+      case 'remote_delete_cloud_checking':
+        return 'Checking whether the cloud storage is reachable…';
+      case 'remote_delete_cloud_offline':
+        return 'Can\'t reach the cloud storage. Delete it there once it\'s reachable.';
+      case 'remote_delete_cloud_signed_out':
+        return 'The cloud storage sign-in has expired. Sign in again to delete it there.';
       case 'remote_delete_failed':
         return 'Impossibile eliminarlo sul dispositivo accoppiato';
+      case 'remote_delete_host_checking':
+        return 'Checking whether the host is online…';
+      case 'remote_delete_host_offline':
+        return 'The host is offline or unreachable. Delete it there once it\'s connected.';
+      case 'remote_delete_host_pairing_rejected':
+        return 'The host rejected this device\'s pairing. Pair again to delete it there.';
       case 'remote_delete_unsupported':
         return 'Il dispositivo accoppiato è troppo vecchio per supportare l\'eliminazione remota. Aggiorna prima Fushi lì.';
       case 'remote_dict_lookup':
@@ -573367,6 +578232,10 @@ extension on _StringsIt {
         return 'Traccia audio';
       case 'video_audio_track_empty':
         return 'Nessuna traccia audio commutabile';
+      case 'video_audio_track_fallback_muxed':
+        return 'The audio stream was refused; switched to a compatible stream with sound (lower quality)';
+      case 'video_audio_track_load_failed':
+        return 'Couldn\'t load the audio stream — there is no sound. The source refused access; try again later.';
       case 'video_audio_track_switched':
         return ({required Object label}) => 'Traccia audio: ${label}';
       case 'video_auto_play_next_cancel':
@@ -576828,8 +581697,31 @@ extension on _StringsJa {
         return 'Text recognition isn\'t available on this device';
       case 'ai_agent_send':
         return 'Send';
+      case 'ai_agent_session_current':
+        return 'Current';
+      case 'ai_agent_session_delete':
+        return 'Delete';
+      case 'ai_agent_session_delete_message':
+        return ({required Object title}) =>
+            '“${title}” will be removed from this device. Changes the assistant made stay in the AI action log and can still be undone there.';
+      case 'ai_agent_session_delete_title':
+        return 'Delete this conversation?';
+      case 'ai_agent_session_more':
+        return 'Conversation options';
+      case 'ai_agent_session_open_failed':
+        return 'Couldn\'t open this conversation';
+      case 'ai_agent_session_rename':
+        return 'Rename';
+      case 'ai_agent_session_rename_title':
+        return 'Rename conversation';
       case 'ai_agent_session_summary':
         return ({required Object n}) => '${n} changes in this conversation';
+      case 'ai_agent_sessions_empty':
+        return 'No earlier conversations yet';
+      case 'ai_agent_sessions_retention_hint':
+        return 'Conversations stay on this device for 30 days';
+      case 'ai_agent_sessions_title':
+        return 'Conversations';
       case 'ai_agent_stop':
         return 'Stop';
       case 'ai_agent_stop_cancelled':
@@ -577000,6 +581892,32 @@ extension on _StringsJa {
         return 'Run on a paired computer';
       case 'ai_interconnect_host_unpaired':
         return 'No paired device yet. Pair a computer in Fushi Interconnect to let it handle AI video downloads with its own AI.';
+      case 'ai_mcp_access':
+        return 'External AI access (MCP)';
+      case 'ai_mcp_access_hint':
+        return 'Lets MCP clients on this computer (Claude Desktop, Claude Code…) call Fushi\'s operations. Listens on this computer only and needs the pairing token below. Changes that can be undone run directly and show up in the AI action log; anything that can\'t be undone, and installing extensions, asks you here first. Off by default.';
+      case 'ai_mcp_confirm_arguments':
+        return 'Arguments';
+      case 'ai_mcp_confirm_body':
+        return ({required Object client, required Object op}) =>
+            '${client} wants to run: ${op}';
+      case 'ai_mcp_confirm_expire':
+        return ({required Object minutes}) =>
+            'Declined automatically if you do not answer within ${minutes} minutes.';
+      case 'ai_mcp_confirm_title':
+        return 'Request from an external AI';
+      case 'ai_mcp_token':
+        return 'Pairing token';
+      case 'ai_mcp_token_copy':
+        return 'Copy token';
+      case 'ai_mcp_token_copy_config':
+        return 'Copy client config';
+      case 'ai_mcp_token_hint':
+        return 'Generate a token for your MCP client. Generating a new one revokes the old one.';
+      case 'ai_mcp_token_issued_body':
+        return 'Put this token in your MCP client\'s configuration as FUSHI_MCP_TOKEN (the setup guide shows how). It is shown only once.';
+      case 'ai_mcp_token_issued_title':
+        return 'New pairing token';
       case 'ai_media_acquire_ai_failed':
         return '現在AIを利用できません。結果は入力した元のテキストによるもので、シーダー数順に並べています。';
       case 'ai_media_acquire_download':
@@ -577736,6 +582654,8 @@ extension on _StringsJa {
         return 'Ankiメディアストレージの最適化';
       case 'anki_dedup_unavailable':
         return 'このマシンでAnkiが実行中である必要があります（AnkiConnect）。';
+      case 'anki_delivery_section':
+        return 'Sending & pending cards';
       case 'anki_desktop_auto_launch':
         return 'Launch Anki when Fushi starts';
       case 'anki_desktop_auto_launch_hint':
@@ -578109,6 +583029,9 @@ extension on _StringsJa {
         return '送信待ち';
       case 'anki_pending_mines_status_sending':
         return '送信中';
+      case 'anki_pending_mines_stopped':
+        return ({required Object reason}) =>
+            '${reason} The remaining cards stay in the queue.';
       case 'anki_pending_mines_title':
         return '保留カード';
       case 'anki_pending_mines_unreachable':
@@ -578227,6 +583150,9 @@ extension on _StringsJa {
         return 'I understand, enable';
       case 'anki_sync_client_enable_warn_title':
         return 'Enable Anki sync?';
+      case 'anki_sync_client_error_not_sync_server':
+        return ({required Object detail}) =>
+            'The server did not answer with the Anki sync protocol (the anki-original-size response header is missing). Make sure the address points at an Anki sync server (the official anki-sync-server, or the one built into Anki desktop) rather than a web page; a reverse proxy must keep this header. Details: ${detail}';
       case 'anki_sync_client_has_unsynced':
         return ({required Object count}) =>
             '未同期のカードが ${count} 枚あります。アカウントを切り替えるかサインアウトする前に同期してください。';
@@ -578397,6 +583323,9 @@ extension on _StringsJa {
         return '新しい字幕ファイルを選択';
       case 'audio_source_added':
         return '音声ソースを追加しました';
+      case 'audio_source_connection_refused':
+        return ({required Object host}) =>
+            'Audio source refused the connection: nothing is listening at "${host}" — make sure the service is running, or remove this source in settings';
       case 'audio_source_dns_error':
         return ({required Object host}) =>
             '音声ソース接続失敗："${host}" を解決できません — ネットワークを確認するか、設定でこのソースを削除してください';
@@ -580167,6 +585096,18 @@ extension on _StringsJa {
         return 'カードを作成しましたが、今回の選択範囲では例文の音声が見つかりませんでした。';
       case 'card_mining_pending':
         return 'カードを追加中…';
+      case 'card_notice_title_added':
+        return 'カードを追加しました';
+      case 'card_notice_title_duplicate':
+        return 'カードは既に存在します';
+      case 'card_notice_title_failed':
+        return 'カードを作成できませんでした';
+      case 'card_notice_title_overwritten':
+        return 'カードを上書きしました';
+      case 'card_notice_title_queued':
+        return '送信待ちに追加しました';
+      case 'card_notice_title_warning':
+        return 'カードを追加（一部欠落）';
       case 'card_overwritten':
         return ({required Object deck}) => '『${deck}』のカードを上書きしました。';
       case 'card_source_open':
@@ -580844,14 +585785,12 @@ extension on _StringsJa {
         return 'すべて選択';
       case 'delete_prompt_title':
         return '別のデバイスで削除済み';
-      case 'delete_scope_keep_local_desc':
-        return '他のデバイスはそのコピーを保持します';
       case 'delete_scope_no_channel':
         return '同期が設定されていません - この削除はこのデバイスにのみ影響します';
       case 'delete_scope_sync_everywhere':
         return 'すべてのデバイスから削除';
       case 'delete_scope_sync_everywhere_desc':
-        return '他のデバイスは次回の同期で削除を確認します';
+        return 'オンにすると、他のデバイスは次回の同期で削除を確認します。オフなら他のデバイスはコピーを保持します';
       case 'delete_statistics':
         return '統計データも削除';
       case 'delete_statistics_book_desc':
@@ -581081,6 +586020,11 @@ extension on _StringsJa {
         return '自動';
       case 'dict_language_description':
         return 'この辞書のテキストを表示するフォントを決定します。自動の場合、辞書が宣言した言語を使用します。';
+      case 'dict_language_group_title':
+        return ({required Object language, required Object n}) =>
+            '${language} · ${n}';
+      case 'dict_language_group_unset':
+        return 'Language not set';
       case 'dict_language_title':
         return '辞書コンテンツ言語';
       case 'dict_language_tooltip':
@@ -582247,6 +587191,55 @@ extension on _StringsJa {
             'You can attach 1 video (up to ${max}). It is compressed to ${resolution} before uploading.';
       case 'feedback_compose_video_retry':
         return 'Compress again';
+      case 'feedback_crash_auto_send_setting':
+        return 'Automatically send crash logs';
+      case 'feedback_crash_auto_send_setting_hint':
+        return 'After Fushi crashes or quits unexpectedly, send the logs to the developers on next launch without asking (the logs leave this device)';
+      case 'feedback_crash_auto_sent_notice':
+        return 'Logs from the last crash were sent to the developers automatically';
+      case 'feedback_crash_kind_anr':
+        return 'not responding';
+      case 'feedback_crash_kind_crash':
+        return 'crash';
+      case 'feedback_crash_kind_memory':
+        return 'closed by the system for low memory';
+      case 'feedback_crash_kind_native':
+        return 'native crash';
+      case 'feedback_crash_kind_startup':
+        return 'while starting';
+      case 'feedback_crash_kind_unexpected':
+        return 'unexpected exit';
+      case 'feedback_crash_notice_view':
+        return 'View';
+      case 'feedback_crash_prompt_always':
+        return 'Always send';
+      case 'feedback_crash_prompt_body':
+        return 'Send the logs to the developers to help fix it? You can follow it in Feedback.';
+      case 'feedback_crash_prompt_decline':
+        return 'No thanks';
+      case 'feedback_crash_prompt_retry':
+        return 'Retry';
+      case 'feedback_crash_prompt_send':
+        return 'Send to developers';
+      case 'feedback_crash_prompt_sending':
+        return 'Sending…';
+      case 'feedback_crash_prompt_skip':
+        return 'Skip';
+      case 'feedback_crash_prompt_title':
+        return ({required Object kind}) =>
+            'Fushi quit unexpectedly last time (${kind})';
+      case 'feedback_crash_prompt_title_many':
+        return ({required Object n, required Object kind}) =>
+            'Fushi quit unexpectedly ${n} times (${kind})';
+      case 'feedback_crash_report_header':
+        return 'Generated by Fushi after it quit unexpectedly; logs and device info are attached.';
+      case 'feedback_crash_report_title':
+        return ({required Object kind, required Object version}) =>
+            'Crash report: ${kind} (${version})';
+      case 'feedback_crash_send_failed':
+        return 'Could not send the crash logs. Fushi will ask again next time.';
+      case 'feedback_crash_sent_notice':
+        return 'Crash logs sent to the developers';
       case 'feedback_detail_add_shot':
         return 'Add screenshot';
       case 'feedback_detail_attachments':
@@ -586075,6 +591068,18 @@ extension on _StringsJa {
         return 'Top';
       case 'lyrics_control_zone_top_hint':
         return 'Top bar on phones, top-right corner on wide screens';
+      case 'lyrics_controls_collapse':
+        return 'Collapse playback controls';
+      case 'lyrics_controls_expand':
+        return 'Expand playback controls';
+      case 'lyrics_controls_style':
+        return 'Playback controls layout';
+      case 'lyrics_controls_style_classic':
+        return 'Classic';
+      case 'lyrics_controls_style_hint':
+        return 'New: a collapsible mini bar on phones and floating islands on wide screens. Classic: the previous layout.';
+      case 'lyrics_controls_style_modern':
+        return 'New';
       case 'lyrics_exit_to_library':
         return 'Close and return to library';
       case 'lyrics_font_size':
@@ -586087,6 +591092,14 @@ extension on _StringsJa {
         return 'Use your own color for the line being read instead of the player theme color';
       case 'lyrics_illustration_back_to_cover':
         return 'Back to cover';
+      case 'lyrics_illustration_cue':
+        return 'Illustration prompt';
+      case 'lyrics_illustration_cue_dot':
+        return 'Dot';
+      case 'lyrics_illustration_cue_hint':
+        return 'Pop up: show the illustration card and pause for the image pause duration below. Dot: only mark the cover thumbnail.';
+      case 'lyrics_illustration_cue_popup':
+        return 'Pop up';
       case 'lyrics_illustration_next':
         return 'Next illustration';
       case 'lyrics_illustration_open':
@@ -587144,6 +592157,9 @@ extension on _StringsJa {
       case 'media_privacy_inherited_note':
         return ({required Object collections}) =>
             'Private because it is in the private collection “${collections}”. To make it public, turn off privacy on that collection.';
+      case 'media_privacy_inherited_source_note':
+        return ({required Object source}) =>
+            'Private because its source library “${source}” is private. To make it public, turn off privacy on that source library.';
       case 'media_privacy_load_failed':
         return ({required Object reason}) =>
             'Could not read the privacy setting, so it cannot be changed right now: ${reason}';
@@ -587251,6 +592267,23 @@ extension on _StringsJa {
         return 'Open Folder';
       case 'media_source_open_folder_failed':
         return 'Couldn\'t open the folder. It may have been moved, deleted, or disconnected.';
+      case 'media_source_privacy_action':
+        return 'Privacy';
+      case 'media_source_privacy_badge':
+        return 'Private: not uploaded to the leaderboard';
+      case 'media_source_privacy_cleared_toast':
+        return 'Source library is no longer private';
+      case 'media_source_privacy_hint':
+        return 'Everything this source library brings in is treated as private: it is never uploaded to the leaderboard, so it stays off your public shelf, profile and share cards, and its progress is not pushed to Bangumi. Items already uploaded are removed from the leaderboard as soon as you turn this on (or at the next sync if that fails). Your daily character total still counts them, without saying what you read. Removing this source keeps its items private.';
+      case 'media_source_privacy_marked_toast':
+        return 'Source library is now private';
+      case 'media_source_privacy_switch':
+        return 'Keep this source library private';
+      case 'media_source_privacy_withdraw_failed':
+        return ({required Object reason}) =>
+            'Source library is now private, but removing its items from the leaderboard failed; the next sync will try again: ${reason}';
+      case 'media_source_privacy_withdrawn_toast':
+        return 'Source library is now private; its items were removed from the leaderboard';
       case 'media_source_remove':
         return 'Remove Source';
       case 'media_source_remove_download_keep':
@@ -590408,8 +595441,11 @@ extension on _StringsJa {
         return 'Re-download audiobook from peer';
       case 'remote_book_audiobook_redownloaded':
         return 'Audiobook re-downloaded from peer';
+      case 'remote_book_delete_cloud_confirm':
+        return ({required Object name, required Object backend}) =>
+            'Delete "${name}" from ${backend}? The book\'s files, cover, progress and audiobook in the cloud are permanently deleted. This device has no copy and this can\'t be undone. Other devices will ask whether to delete their copy on their next sync.';
       case 'remote_book_delete_everywhere':
-        return 'Delete permanently';
+        return 'Also delete on host';
       case 'remote_book_delete_everywhere_confirm':
         return ({required Object name, required Object host}) =>
             'Delete "${name}" on host "${host}"? Its files, reading progress, bookmarks and audiobook there are removed for good, and this device has no copy. This cannot be undone.';
@@ -590470,8 +595506,20 @@ extension on _StringsJa {
         return 'ホストで TMDB のエピソード順を選択…';
       case 'remote_delete_audiobook_partial':
         return '書籍は削除されましたが、ペアリングされたデバイス上のオーディオブックを削除できませんでした';
+      case 'remote_delete_cloud_checking':
+        return 'Checking whether the cloud storage is reachable…';
+      case 'remote_delete_cloud_offline':
+        return 'Can\'t reach the cloud storage. Delete it there once it\'s reachable.';
+      case 'remote_delete_cloud_signed_out':
+        return 'The cloud storage sign-in has expired. Sign in again to delete it there.';
       case 'remote_delete_failed':
         return 'ペアリングされたデバイスで削除できませんでした';
+      case 'remote_delete_host_checking':
+        return 'Checking whether the host is online…';
+      case 'remote_delete_host_offline':
+        return 'The host is offline or unreachable. Delete it there once it\'s connected.';
+      case 'remote_delete_host_pairing_rejected':
+        return 'The host rejected this device\'s pairing. Pair again to delete it there.';
       case 'remote_delete_unsupported':
         return 'ペアリングされたデバイスが古すぎてリモート削除に対応していません。先にそちらのFushiを更新してください。';
       case 'remote_dict_lookup':
@@ -595237,6 +600285,10 @@ extension on _StringsJa {
         return '音声トラック';
       case 'video_audio_track_empty':
         return '切り替え可能な音声トラックがありません';
+      case 'video_audio_track_fallback_muxed':
+        return 'The audio stream was refused; switched to a compatible stream with sound (lower quality)';
+      case 'video_audio_track_load_failed':
+        return 'Couldn\'t load the audio stream — there is no sound. The source refused access; try again later.';
       case 'video_audio_track_switched':
         return ({required Object label}) => '音声トラック：${label}';
       case 'video_auto_play_next_cancel':
@@ -598669,8 +603721,31 @@ extension on _StringsKo {
         return 'Text recognition isn\'t available on this device';
       case 'ai_agent_send':
         return 'Send';
+      case 'ai_agent_session_current':
+        return 'Current';
+      case 'ai_agent_session_delete':
+        return 'Delete';
+      case 'ai_agent_session_delete_message':
+        return ({required Object title}) =>
+            '“${title}” will be removed from this device. Changes the assistant made stay in the AI action log and can still be undone there.';
+      case 'ai_agent_session_delete_title':
+        return 'Delete this conversation?';
+      case 'ai_agent_session_more':
+        return 'Conversation options';
+      case 'ai_agent_session_open_failed':
+        return 'Couldn\'t open this conversation';
+      case 'ai_agent_session_rename':
+        return 'Rename';
+      case 'ai_agent_session_rename_title':
+        return 'Rename conversation';
       case 'ai_agent_session_summary':
         return ({required Object n}) => '${n} changes in this conversation';
+      case 'ai_agent_sessions_empty':
+        return 'No earlier conversations yet';
+      case 'ai_agent_sessions_retention_hint':
+        return 'Conversations stay on this device for 30 days';
+      case 'ai_agent_sessions_title':
+        return 'Conversations';
       case 'ai_agent_stop':
         return 'Stop';
       case 'ai_agent_stop_cancelled':
@@ -598841,6 +603916,32 @@ extension on _StringsKo {
         return 'Run on a paired computer';
       case 'ai_interconnect_host_unpaired':
         return 'No paired device yet. Pair a computer in Fushi Interconnect to let it handle AI video downloads with its own AI.';
+      case 'ai_mcp_access':
+        return 'External AI access (MCP)';
+      case 'ai_mcp_access_hint':
+        return 'Lets MCP clients on this computer (Claude Desktop, Claude Code…) call Fushi\'s operations. Listens on this computer only and needs the pairing token below. Changes that can be undone run directly and show up in the AI action log; anything that can\'t be undone, and installing extensions, asks you here first. Off by default.';
+      case 'ai_mcp_confirm_arguments':
+        return 'Arguments';
+      case 'ai_mcp_confirm_body':
+        return ({required Object client, required Object op}) =>
+            '${client} wants to run: ${op}';
+      case 'ai_mcp_confirm_expire':
+        return ({required Object minutes}) =>
+            'Declined automatically if you do not answer within ${minutes} minutes.';
+      case 'ai_mcp_confirm_title':
+        return 'Request from an external AI';
+      case 'ai_mcp_token':
+        return 'Pairing token';
+      case 'ai_mcp_token_copy':
+        return 'Copy token';
+      case 'ai_mcp_token_copy_config':
+        return 'Copy client config';
+      case 'ai_mcp_token_hint':
+        return 'Generate a token for your MCP client. Generating a new one revokes the old one.';
+      case 'ai_mcp_token_issued_body':
+        return 'Put this token in your MCP client\'s configuration as FUSHI_MCP_TOKEN (the setup guide shows how). It is shown only once.';
+      case 'ai_mcp_token_issued_title':
+        return 'New pairing token';
       case 'ai_media_acquire_ai_failed':
         return 'AI를 지금 사용할 수 없습니다. 입력하신 원문 기준으로 시더 수 순으로 정렬한 결과입니다.';
       case 'ai_media_acquire_download':
@@ -599576,6 +604677,8 @@ extension on _StringsKo {
         return 'Anki 미디어 저장소 최적화';
       case 'anki_dedup_unavailable':
         return '이 컴퓨터에서 Anki가 실행 중이어야 합니다 (AnkiConnect).';
+      case 'anki_delivery_section':
+        return 'Sending & pending cards';
       case 'anki_desktop_auto_launch':
         return 'Launch Anki when Fushi starts';
       case 'anki_desktop_auto_launch_hint':
@@ -599949,6 +605052,9 @@ extension on _StringsKo {
         return '전송 대기 중';
       case 'anki_pending_mines_status_sending':
         return '전송 중';
+      case 'anki_pending_mines_stopped':
+        return ({required Object reason}) =>
+            '${reason} The remaining cards stay in the queue.';
       case 'anki_pending_mines_title':
         return '보류 카드';
       case 'anki_pending_mines_unreachable':
@@ -600067,6 +605173,9 @@ extension on _StringsKo {
         return 'I understand, enable';
       case 'anki_sync_client_enable_warn_title':
         return 'Enable Anki sync?';
+      case 'anki_sync_client_error_not_sync_server':
+        return ({required Object detail}) =>
+            'The server did not answer with the Anki sync protocol (the anki-original-size response header is missing). Make sure the address points at an Anki sync server (the official anki-sync-server, or the one built into Anki desktop) rather than a web page; a reverse proxy must keep this header. Details: ${detail}';
       case 'anki_sync_client_has_unsynced':
         return ({required Object count}) =>
             '아직 동기화되지 않은 카드가 ${count}장 있습니다. 계정을 바꾸거나 로그아웃하기 전에 동기화하세요.';
@@ -600237,6 +605346,9 @@ extension on _StringsKo {
         return '새 자막 파일 선택';
       case 'audio_source_added':
         return '오디오 소스가 추가됨';
+      case 'audio_source_connection_refused':
+        return ({required Object host}) =>
+            'Audio source refused the connection: nothing is listening at "${host}" — make sure the service is running, or remove this source in settings';
       case 'audio_source_dns_error':
         return ({required Object host}) =>
             '오디오 소스 연결 실패: "${host}"를 확인할 수 없음 — 네트워크를 확인하거나 설정에서 이 소스를 제거하세요';
@@ -602009,6 +607121,18 @@ extension on _StringsKo {
         return '카드를 만들었지만 이번 선택 범위에서 문장 오디오를 찾지 못했습니다.';
       case 'card_mining_pending':
         return '카드 추가 중…';
+      case 'card_notice_title_added':
+        return 'Card added';
+      case 'card_notice_title_duplicate':
+        return 'Card already exists';
+      case 'card_notice_title_failed':
+        return 'Card not created';
+      case 'card_notice_title_overwritten':
+        return 'Card overwritten';
+      case 'card_notice_title_queued':
+        return 'Card queued';
+      case 'card_notice_title_warning':
+        return 'Card added, something missing';
       case 'card_overwritten':
         return ({required Object deck}) => '『${deck}』에 카드를 덮어썼습니다.';
       case 'card_source_open':
@@ -602687,14 +607811,12 @@ extension on _StringsKo {
         return '모두 선택';
       case 'delete_prompt_title':
         return '다른 기기에서 삭제됨';
-      case 'delete_scope_keep_local_desc':
-        return '다른 기기에는 사본이 유지됩니다';
       case 'delete_scope_no_channel':
         return '동기화가 설정되지 않았습니다 - 이 삭제는 이 기기에만 적용됩니다';
       case 'delete_scope_sync_everywhere':
         return '모든 기기에서 삭제';
       case 'delete_scope_sync_everywhere_desc':
-        return '다음 동기화 시 다른 기기에서 삭제가 확인됩니다';
+        return '체크하면 다음 동기화 때 다른 기기에서 삭제를 확인합니다. 체크하지 않으면 다른 기기에는 사본이 유지됩니다';
       case 'delete_statistics':
         return '통계도 함께 삭제';
       case 'delete_statistics_book_desc':
@@ -602924,6 +608046,11 @@ extension on _StringsKo {
         return '자동';
       case 'dict_language_description':
         return '이 사전의 텍스트를 렌더링할 글꼴을 결정합니다. 자동은 사전이 선언한 언어를 사용합니다.';
+      case 'dict_language_group_title':
+        return ({required Object language, required Object n}) =>
+            '${language} · ${n}';
+      case 'dict_language_group_unset':
+        return 'Language not set';
       case 'dict_language_title':
         return '사전 콘텐츠 언어';
       case 'dict_language_tooltip':
@@ -604091,6 +609218,55 @@ extension on _StringsKo {
             'You can attach 1 video (up to ${max}). It is compressed to ${resolution} before uploading.';
       case 'feedback_compose_video_retry':
         return 'Compress again';
+      case 'feedback_crash_auto_send_setting':
+        return 'Automatically send crash logs';
+      case 'feedback_crash_auto_send_setting_hint':
+        return 'After Fushi crashes or quits unexpectedly, send the logs to the developers on next launch without asking (the logs leave this device)';
+      case 'feedback_crash_auto_sent_notice':
+        return 'Logs from the last crash were sent to the developers automatically';
+      case 'feedback_crash_kind_anr':
+        return 'not responding';
+      case 'feedback_crash_kind_crash':
+        return 'crash';
+      case 'feedback_crash_kind_memory':
+        return 'closed by the system for low memory';
+      case 'feedback_crash_kind_native':
+        return 'native crash';
+      case 'feedback_crash_kind_startup':
+        return 'while starting';
+      case 'feedback_crash_kind_unexpected':
+        return 'unexpected exit';
+      case 'feedback_crash_notice_view':
+        return 'View';
+      case 'feedback_crash_prompt_always':
+        return 'Always send';
+      case 'feedback_crash_prompt_body':
+        return 'Send the logs to the developers to help fix it? You can follow it in Feedback.';
+      case 'feedback_crash_prompt_decline':
+        return 'No thanks';
+      case 'feedback_crash_prompt_retry':
+        return 'Retry';
+      case 'feedback_crash_prompt_send':
+        return 'Send to developers';
+      case 'feedback_crash_prompt_sending':
+        return 'Sending…';
+      case 'feedback_crash_prompt_skip':
+        return 'Skip';
+      case 'feedback_crash_prompt_title':
+        return ({required Object kind}) =>
+            'Fushi quit unexpectedly last time (${kind})';
+      case 'feedback_crash_prompt_title_many':
+        return ({required Object n, required Object kind}) =>
+            'Fushi quit unexpectedly ${n} times (${kind})';
+      case 'feedback_crash_report_header':
+        return 'Generated by Fushi after it quit unexpectedly; logs and device info are attached.';
+      case 'feedback_crash_report_title':
+        return ({required Object kind, required Object version}) =>
+            'Crash report: ${kind} (${version})';
+      case 'feedback_crash_send_failed':
+        return 'Could not send the crash logs. Fushi will ask again next time.';
+      case 'feedback_crash_sent_notice':
+        return 'Crash logs sent to the developers';
       case 'feedback_detail_add_shot':
         return 'Add screenshot';
       case 'feedback_detail_attachments':
@@ -607921,6 +613097,18 @@ extension on _StringsKo {
         return 'Top';
       case 'lyrics_control_zone_top_hint':
         return 'Top bar on phones, top-right corner on wide screens';
+      case 'lyrics_controls_collapse':
+        return 'Collapse playback controls';
+      case 'lyrics_controls_expand':
+        return 'Expand playback controls';
+      case 'lyrics_controls_style':
+        return 'Playback controls layout';
+      case 'lyrics_controls_style_classic':
+        return 'Classic';
+      case 'lyrics_controls_style_hint':
+        return 'New: a collapsible mini bar on phones and floating islands on wide screens. Classic: the previous layout.';
+      case 'lyrics_controls_style_modern':
+        return 'New';
       case 'lyrics_exit_to_library':
         return 'Close and return to library';
       case 'lyrics_font_size':
@@ -607933,6 +613121,14 @@ extension on _StringsKo {
         return 'Use your own color for the line being read instead of the player theme color';
       case 'lyrics_illustration_back_to_cover':
         return 'Back to cover';
+      case 'lyrics_illustration_cue':
+        return 'Illustration prompt';
+      case 'lyrics_illustration_cue_dot':
+        return 'Dot';
+      case 'lyrics_illustration_cue_hint':
+        return 'Pop up: show the illustration card and pause for the image pause duration below. Dot: only mark the cover thumbnail.';
+      case 'lyrics_illustration_cue_popup':
+        return 'Pop up';
       case 'lyrics_illustration_next':
         return 'Next illustration';
       case 'lyrics_illustration_open':
@@ -608989,6 +614185,9 @@ extension on _StringsKo {
       case 'media_privacy_inherited_note':
         return ({required Object collections}) =>
             'Private because it is in the private collection “${collections}”. To make it public, turn off privacy on that collection.';
+      case 'media_privacy_inherited_source_note':
+        return ({required Object source}) =>
+            'Private because its source library “${source}” is private. To make it public, turn off privacy on that source library.';
       case 'media_privacy_load_failed':
         return ({required Object reason}) =>
             'Could not read the privacy setting, so it cannot be changed right now: ${reason}';
@@ -609096,6 +614295,23 @@ extension on _StringsKo {
         return 'Open Folder';
       case 'media_source_open_folder_failed':
         return 'Couldn\'t open the folder. It may have been moved, deleted, or disconnected.';
+      case 'media_source_privacy_action':
+        return 'Privacy';
+      case 'media_source_privacy_badge':
+        return 'Private: not uploaded to the leaderboard';
+      case 'media_source_privacy_cleared_toast':
+        return 'Source library is no longer private';
+      case 'media_source_privacy_hint':
+        return 'Everything this source library brings in is treated as private: it is never uploaded to the leaderboard, so it stays off your public shelf, profile and share cards, and its progress is not pushed to Bangumi. Items already uploaded are removed from the leaderboard as soon as you turn this on (or at the next sync if that fails). Your daily character total still counts them, without saying what you read. Removing this source keeps its items private.';
+      case 'media_source_privacy_marked_toast':
+        return 'Source library is now private';
+      case 'media_source_privacy_switch':
+        return 'Keep this source library private';
+      case 'media_source_privacy_withdraw_failed':
+        return ({required Object reason}) =>
+            'Source library is now private, but removing its items from the leaderboard failed; the next sync will try again: ${reason}';
+      case 'media_source_privacy_withdrawn_toast':
+        return 'Source library is now private; its items were removed from the leaderboard';
       case 'media_source_remove':
         return 'Remove Source';
       case 'media_source_remove_download_keep':
@@ -612253,8 +617469,11 @@ extension on _StringsKo {
         return 'Re-download audiobook from peer';
       case 'remote_book_audiobook_redownloaded':
         return 'Audiobook re-downloaded from peer';
+      case 'remote_book_delete_cloud_confirm':
+        return ({required Object name, required Object backend}) =>
+            'Delete "${name}" from ${backend}? The book\'s files, cover, progress and audiobook in the cloud are permanently deleted. This device has no copy and this can\'t be undone. Other devices will ask whether to delete their copy on their next sync.';
       case 'remote_book_delete_everywhere':
-        return 'Delete permanently';
+        return 'Also delete on host';
       case 'remote_book_delete_everywhere_confirm':
         return ({required Object name, required Object host}) =>
             'Delete "${name}" on host "${host}"? Its files, reading progress, bookmarks and audiobook there are removed for good, and this device has no copy. This cannot be undone.';
@@ -612315,8 +617534,20 @@ extension on _StringsKo {
         return '호스트의 TMDB 에피소드 순서…';
       case 'remote_delete_audiobook_partial':
         return '책은 삭제되었으나, 페어링된 기기에서 오디오북을 제거할 수 없습니다';
+      case 'remote_delete_cloud_checking':
+        return 'Checking whether the cloud storage is reachable…';
+      case 'remote_delete_cloud_offline':
+        return 'Can\'t reach the cloud storage. Delete it there once it\'s reachable.';
+      case 'remote_delete_cloud_signed_out':
+        return 'The cloud storage sign-in has expired. Sign in again to delete it there.';
       case 'remote_delete_failed':
         return '페어링된 기기에서 삭제할 수 없습니다';
+      case 'remote_delete_host_checking':
+        return 'Checking whether the host is online…';
+      case 'remote_delete_host_offline':
+        return 'The host is offline or unreachable. Delete it there once it\'s connected.';
+      case 'remote_delete_host_pairing_rejected':
+        return 'The host rejected this device\'s pairing. Pair again to delete it there.';
       case 'remote_delete_unsupported':
         return '페어링된 기기가 원격 삭제를 지원하기에 너무 오래된 버전입니다. 먼저 해당 기기의 Fushi를 업데이트하세요.';
       case 'remote_dict_lookup':
@@ -617085,6 +622316,10 @@ extension on _StringsKo {
         return '오디오 트랙';
       case 'video_audio_track_empty':
         return '전환 가능한 오디오 트랙 없음';
+      case 'video_audio_track_fallback_muxed':
+        return 'The audio stream was refused; switched to a compatible stream with sound (lower quality)';
+      case 'video_audio_track_load_failed':
+        return 'Couldn\'t load the audio stream — there is no sound. The source refused access; try again later.';
       case 'video_audio_track_switched':
         return ({required Object label}) => '오디오 트랙: ${label}';
       case 'video_auto_play_next_cancel':
@@ -620527,8 +625762,31 @@ extension on _StringsNl {
         return 'Text recognition isn\'t available on this device';
       case 'ai_agent_send':
         return 'Send';
+      case 'ai_agent_session_current':
+        return 'Current';
+      case 'ai_agent_session_delete':
+        return 'Delete';
+      case 'ai_agent_session_delete_message':
+        return ({required Object title}) =>
+            '“${title}” will be removed from this device. Changes the assistant made stay in the AI action log and can still be undone there.';
+      case 'ai_agent_session_delete_title':
+        return 'Delete this conversation?';
+      case 'ai_agent_session_more':
+        return 'Conversation options';
+      case 'ai_agent_session_open_failed':
+        return 'Couldn\'t open this conversation';
+      case 'ai_agent_session_rename':
+        return 'Rename';
+      case 'ai_agent_session_rename_title':
+        return 'Rename conversation';
       case 'ai_agent_session_summary':
         return ({required Object n}) => '${n} changes in this conversation';
+      case 'ai_agent_sessions_empty':
+        return 'No earlier conversations yet';
+      case 'ai_agent_sessions_retention_hint':
+        return 'Conversations stay on this device for 30 days';
+      case 'ai_agent_sessions_title':
+        return 'Conversations';
       case 'ai_agent_stop':
         return 'Stop';
       case 'ai_agent_stop_cancelled':
@@ -620700,6 +625958,32 @@ extension on _StringsNl {
         return 'Run on a paired computer';
       case 'ai_interconnect_host_unpaired':
         return 'No paired device yet. Pair a computer in Fushi Interconnect to let it handle AI video downloads with its own AI.';
+      case 'ai_mcp_access':
+        return 'External AI access (MCP)';
+      case 'ai_mcp_access_hint':
+        return 'Lets MCP clients on this computer (Claude Desktop, Claude Code…) call Fushi\'s operations. Listens on this computer only and needs the pairing token below. Changes that can be undone run directly and show up in the AI action log; anything that can\'t be undone, and installing extensions, asks you here first. Off by default.';
+      case 'ai_mcp_confirm_arguments':
+        return 'Arguments';
+      case 'ai_mcp_confirm_body':
+        return ({required Object client, required Object op}) =>
+            '${client} wants to run: ${op}';
+      case 'ai_mcp_confirm_expire':
+        return ({required Object minutes}) =>
+            'Declined automatically if you do not answer within ${minutes} minutes.';
+      case 'ai_mcp_confirm_title':
+        return 'Request from an external AI';
+      case 'ai_mcp_token':
+        return 'Pairing token';
+      case 'ai_mcp_token_copy':
+        return 'Copy token';
+      case 'ai_mcp_token_copy_config':
+        return 'Copy client config';
+      case 'ai_mcp_token_hint':
+        return 'Generate a token for your MCP client. Generating a new one revokes the old one.';
+      case 'ai_mcp_token_issued_body':
+        return 'Put this token in your MCP client\'s configuration as FUSHI_MCP_TOKEN (the setup guide shows how). It is shown only once.';
+      case 'ai_mcp_token_issued_title':
+        return 'New pairing token';
       case 'ai_media_acquire_ai_failed':
         return 'AI is nu niet beschikbaar; de resultaten komen uit je oorspronkelijke tekst, gesorteerd op seeders.';
       case 'ai_media_acquire_download':
@@ -621445,6 +626729,8 @@ extension on _StringsNl {
         return 'Anki media-opslagoptimalisatie';
       case 'anki_dedup_unavailable':
         return 'Vereist Anki op deze machine (AnkiConnect).';
+      case 'anki_delivery_section':
+        return 'Sending & pending cards';
       case 'anki_desktop_auto_launch':
         return 'Launch Anki when Fushi starts';
       case 'anki_desktop_auto_launch_hint':
@@ -621820,6 +627106,9 @@ extension on _StringsNl {
         return 'Wacht op verzending';
       case 'anki_pending_mines_status_sending':
         return 'Verzenden';
+      case 'anki_pending_mines_stopped':
+        return ({required Object reason}) =>
+            '${reason} The remaining cards stay in the queue.';
       case 'anki_pending_mines_title':
         return 'Openstaande kaarten';
       case 'anki_pending_mines_unreachable':
@@ -621940,6 +627229,9 @@ extension on _StringsNl {
         return 'I understand, enable';
       case 'anki_sync_client_enable_warn_title':
         return 'Enable Anki sync?';
+      case 'anki_sync_client_error_not_sync_server':
+        return ({required Object detail}) =>
+            'The server did not answer with the Anki sync protocol (the anki-original-size response header is missing). Make sure the address points at an Anki sync server (the official anki-sync-server, or the one built into Anki desktop) rather than a web page; a reverse proxy must keep this header. Details: ${detail}';
       case 'anki_sync_client_has_unsynced':
         return ({required Object count}) =>
             '${count} kaart(en) zijn nog niet gesynchroniseerd. Synchroniseer ze voordat je van account wisselt of afmeldt.';
@@ -622112,6 +627404,9 @@ extension on _StringsNl {
         return 'Nieuw ondertitelbestand kiezen';
       case 'audio_source_added':
         return 'Audiobron toegevoegd';
+      case 'audio_source_connection_refused':
+        return ({required Object host}) =>
+            'Audio source refused the connection: nothing is listening at "${host}" — make sure the service is running, or remove this source in settings';
       case 'audio_source_dns_error':
         return ({required Object host}) =>
             'Audiobron verbinding mislukt: kan "${host}" niet oplossen — controleer uw netwerk of verwijder deze bron in instellingen';
@@ -623894,6 +629189,18 @@ extension on _StringsNl {
         return 'Kaart aangemaakt zonder zinsaudio (geen gevonden voor deze selectie).';
       case 'card_mining_pending':
         return 'Kaart toevoegen…';
+      case 'card_notice_title_added':
+        return 'Card added';
+      case 'card_notice_title_duplicate':
+        return 'Card already exists';
+      case 'card_notice_title_failed':
+        return 'Card not created';
+      case 'card_notice_title_overwritten':
+        return 'Card overwritten';
+      case 'card_notice_title_queued':
+        return 'Card queued';
+      case 'card_notice_title_warning':
+        return 'Card added, something missing';
       case 'card_overwritten':
         return ({required Object deck}) => 'Kaart overschreven in 『${deck}』.';
       case 'card_source_open':
@@ -624574,14 +629881,12 @@ extension on _StringsNl {
         return 'Alles selecteren';
       case 'delete_prompt_title':
         return 'Verwijderd op een ander apparaat';
-      case 'delete_scope_keep_local_desc':
-        return 'Andere apparaten behouden hun kopie';
       case 'delete_scope_no_channel':
         return 'Geen sync geconfigureerd — deze verwijdering betreft alleen dit apparaat';
       case 'delete_scope_sync_everywhere':
         return 'Overal verwijderen';
       case 'delete_scope_sync_everywhere_desc':
-        return 'Andere apparaten bevestigen de verwijdering bij de volgende sync';
+        return 'Indien aangevinkt, bevestigen andere apparaten de verwijdering bij de volgende sync; anders behouden ze hun kopie';
       case 'delete_statistics':
         return 'Ook statistieken verwijderen';
       case 'delete_statistics_book_desc':
@@ -624816,6 +630121,11 @@ extension on _StringsNl {
         return 'Automatisch';
       case 'dict_language_description':
         return 'Bepaalt welk lettertype de tekst van dit woordenboek weergeeft. Automatisch gebruikt de taal die het woordenboek declareert.';
+      case 'dict_language_group_title':
+        return ({required Object language, required Object n}) =>
+            '${language} · ${n}';
+      case 'dict_language_group_unset':
+        return 'Language not set';
       case 'dict_language_title':
         return 'Woordenboek-inhoudstaal';
       case 'dict_language_tooltip':
@@ -625987,6 +631297,55 @@ extension on _StringsNl {
             'You can attach 1 video (up to ${max}). It is compressed to ${resolution} before uploading.';
       case 'feedback_compose_video_retry':
         return 'Compress again';
+      case 'feedback_crash_auto_send_setting':
+        return 'Automatically send crash logs';
+      case 'feedback_crash_auto_send_setting_hint':
+        return 'After Fushi crashes or quits unexpectedly, send the logs to the developers on next launch without asking (the logs leave this device)';
+      case 'feedback_crash_auto_sent_notice':
+        return 'Logs from the last crash were sent to the developers automatically';
+      case 'feedback_crash_kind_anr':
+        return 'not responding';
+      case 'feedback_crash_kind_crash':
+        return 'crash';
+      case 'feedback_crash_kind_memory':
+        return 'closed by the system for low memory';
+      case 'feedback_crash_kind_native':
+        return 'native crash';
+      case 'feedback_crash_kind_startup':
+        return 'while starting';
+      case 'feedback_crash_kind_unexpected':
+        return 'unexpected exit';
+      case 'feedback_crash_notice_view':
+        return 'View';
+      case 'feedback_crash_prompt_always':
+        return 'Always send';
+      case 'feedback_crash_prompt_body':
+        return 'Send the logs to the developers to help fix it? You can follow it in Feedback.';
+      case 'feedback_crash_prompt_decline':
+        return 'No thanks';
+      case 'feedback_crash_prompt_retry':
+        return 'Retry';
+      case 'feedback_crash_prompt_send':
+        return 'Send to developers';
+      case 'feedback_crash_prompt_sending':
+        return 'Sending…';
+      case 'feedback_crash_prompt_skip':
+        return 'Skip';
+      case 'feedback_crash_prompt_title':
+        return ({required Object kind}) =>
+            'Fushi quit unexpectedly last time (${kind})';
+      case 'feedback_crash_prompt_title_many':
+        return ({required Object n, required Object kind}) =>
+            'Fushi quit unexpectedly ${n} times (${kind})';
+      case 'feedback_crash_report_header':
+        return 'Generated by Fushi after it quit unexpectedly; logs and device info are attached.';
+      case 'feedback_crash_report_title':
+        return ({required Object kind, required Object version}) =>
+            'Crash report: ${kind} (${version})';
+      case 'feedback_crash_send_failed':
+        return 'Could not send the crash logs. Fushi will ask again next time.';
+      case 'feedback_crash_sent_notice':
+        return 'Crash logs sent to the developers';
       case 'feedback_detail_add_shot':
         return 'Add screenshot';
       case 'feedback_detail_attachments':
@@ -629833,6 +635192,18 @@ extension on _StringsNl {
         return 'Top';
       case 'lyrics_control_zone_top_hint':
         return 'Top bar on phones, top-right corner on wide screens';
+      case 'lyrics_controls_collapse':
+        return 'Collapse playback controls';
+      case 'lyrics_controls_expand':
+        return 'Expand playback controls';
+      case 'lyrics_controls_style':
+        return 'Playback controls layout';
+      case 'lyrics_controls_style_classic':
+        return 'Classic';
+      case 'lyrics_controls_style_hint':
+        return 'New: a collapsible mini bar on phones and floating islands on wide screens. Classic: the previous layout.';
+      case 'lyrics_controls_style_modern':
+        return 'New';
       case 'lyrics_exit_to_library':
         return 'Close and return to library';
       case 'lyrics_font_size':
@@ -629845,6 +635216,14 @@ extension on _StringsNl {
         return 'Use your own color for the line being read instead of the player theme color';
       case 'lyrics_illustration_back_to_cover':
         return 'Back to cover';
+      case 'lyrics_illustration_cue':
+        return 'Illustration prompt';
+      case 'lyrics_illustration_cue_dot':
+        return 'Dot';
+      case 'lyrics_illustration_cue_hint':
+        return 'Pop up: show the illustration card and pause for the image pause duration below. Dot: only mark the cover thumbnail.';
+      case 'lyrics_illustration_cue_popup':
+        return 'Pop up';
       case 'lyrics_illustration_next':
         return 'Next illustration';
       case 'lyrics_illustration_open':
@@ -630909,6 +636288,9 @@ extension on _StringsNl {
       case 'media_privacy_inherited_note':
         return ({required Object collections}) =>
             'Private because it is in the private collection “${collections}”. To make it public, turn off privacy on that collection.';
+      case 'media_privacy_inherited_source_note':
+        return ({required Object source}) =>
+            'Private because its source library “${source}” is private. To make it public, turn off privacy on that source library.';
       case 'media_privacy_load_failed':
         return ({required Object reason}) =>
             'Could not read the privacy setting, so it cannot be changed right now: ${reason}';
@@ -631016,6 +636398,23 @@ extension on _StringsNl {
         return 'Open Folder';
       case 'media_source_open_folder_failed':
         return 'Couldn\'t open the folder. It may have been moved, deleted, or disconnected.';
+      case 'media_source_privacy_action':
+        return 'Privacy';
+      case 'media_source_privacy_badge':
+        return 'Private: not uploaded to the leaderboard';
+      case 'media_source_privacy_cleared_toast':
+        return 'Source library is no longer private';
+      case 'media_source_privacy_hint':
+        return 'Everything this source library brings in is treated as private: it is never uploaded to the leaderboard, so it stays off your public shelf, profile and share cards, and its progress is not pushed to Bangumi. Items already uploaded are removed from the leaderboard as soon as you turn this on (or at the next sync if that fails). Your daily character total still counts them, without saying what you read. Removing this source keeps its items private.';
+      case 'media_source_privacy_marked_toast':
+        return 'Source library is now private';
+      case 'media_source_privacy_switch':
+        return 'Keep this source library private';
+      case 'media_source_privacy_withdraw_failed':
+        return ({required Object reason}) =>
+            'Source library is now private, but removing its items from the leaderboard failed; the next sync will try again: ${reason}';
+      case 'media_source_privacy_withdrawn_toast':
+        return 'Source library is now private; its items were removed from the leaderboard';
       case 'media_source_remove':
         return 'Remove Source';
       case 'media_source_remove_download_keep':
@@ -634188,8 +639587,11 @@ extension on _StringsNl {
         return 'Re-download audiobook from peer';
       case 'remote_book_audiobook_redownloaded':
         return 'Audiobook re-downloaded from peer';
+      case 'remote_book_delete_cloud_confirm':
+        return ({required Object name, required Object backend}) =>
+            'Delete "${name}" from ${backend}? The book\'s files, cover, progress and audiobook in the cloud are permanently deleted. This device has no copy and this can\'t be undone. Other devices will ask whether to delete their copy on their next sync.';
       case 'remote_book_delete_everywhere':
-        return 'Delete permanently';
+        return 'Also delete on host';
       case 'remote_book_delete_everywhere_confirm':
         return ({required Object name, required Object host}) =>
             'Delete "${name}" on host "${host}"? Its files, reading progress, bookmarks and audiobook there are removed for good, and this device has no copy. This cannot be undone.';
@@ -634250,8 +639652,20 @@ extension on _StringsNl {
         return 'TMDB-afleveringsvolgorde op host…';
       case 'remote_delete_audiobook_partial':
         return 'Boek verwijderd, maar het luisterboek kon niet worden verwijderd op het gekoppelde apparaat';
+      case 'remote_delete_cloud_checking':
+        return 'Checking whether the cloud storage is reachable…';
+      case 'remote_delete_cloud_offline':
+        return 'Can\'t reach the cloud storage. Delete it there once it\'s reachable.';
+      case 'remote_delete_cloud_signed_out':
+        return 'The cloud storage sign-in has expired. Sign in again to delete it there.';
       case 'remote_delete_failed':
         return 'Kon het niet verwijderen op het gekoppelde apparaat';
+      case 'remote_delete_host_checking':
+        return 'Checking whether the host is online…';
+      case 'remote_delete_host_offline':
+        return 'The host is offline or unreachable. Delete it there once it\'s connected.';
+      case 'remote_delete_host_pairing_rejected':
+        return 'The host rejected this device\'s pairing. Pair again to delete it there.';
       case 'remote_delete_unsupported':
         return 'Het gekoppelde apparaat draait een te oude versie om externe verwijdering te ondersteunen. Werk Fushi daar eerst bij.';
       case 'remote_dict_lookup':
@@ -639035,6 +644449,10 @@ extension on _StringsNl {
         return 'Audiotrack';
       case 'video_audio_track_empty':
         return 'Geen wisselbare audiotracks';
+      case 'video_audio_track_fallback_muxed':
+        return 'The audio stream was refused; switched to a compatible stream with sound (lower quality)';
+      case 'video_audio_track_load_failed':
+        return 'Couldn\'t load the audio stream — there is no sound. The source refused access; try again later.';
       case 'video_audio_track_switched':
         return ({required Object label}) => 'Audiotrack: ${label}';
       case 'video_auto_play_next_cancel':
@@ -642498,8 +647916,31 @@ extension on _StringsPtBr {
         return 'Text recognition isn\'t available on this device';
       case 'ai_agent_send':
         return 'Send';
+      case 'ai_agent_session_current':
+        return 'Current';
+      case 'ai_agent_session_delete':
+        return 'Delete';
+      case 'ai_agent_session_delete_message':
+        return ({required Object title}) =>
+            '“${title}” will be removed from this device. Changes the assistant made stay in the AI action log and can still be undone there.';
+      case 'ai_agent_session_delete_title':
+        return 'Delete this conversation?';
+      case 'ai_agent_session_more':
+        return 'Conversation options';
+      case 'ai_agent_session_open_failed':
+        return 'Couldn\'t open this conversation';
+      case 'ai_agent_session_rename':
+        return 'Rename';
+      case 'ai_agent_session_rename_title':
+        return 'Rename conversation';
       case 'ai_agent_session_summary':
         return ({required Object n}) => '${n} changes in this conversation';
+      case 'ai_agent_sessions_empty':
+        return 'No earlier conversations yet';
+      case 'ai_agent_sessions_retention_hint':
+        return 'Conversations stay on this device for 30 days';
+      case 'ai_agent_sessions_title':
+        return 'Conversations';
       case 'ai_agent_stop':
         return 'Stop';
       case 'ai_agent_stop_cancelled':
@@ -642672,6 +648113,32 @@ extension on _StringsPtBr {
         return 'Run on a paired computer';
       case 'ai_interconnect_host_unpaired':
         return 'No paired device yet. Pair a computer in Fushi Interconnect to let it handle AI video downloads with its own AI.';
+      case 'ai_mcp_access':
+        return 'External AI access (MCP)';
+      case 'ai_mcp_access_hint':
+        return 'Lets MCP clients on this computer (Claude Desktop, Claude Code…) call Fushi\'s operations. Listens on this computer only and needs the pairing token below. Changes that can be undone run directly and show up in the AI action log; anything that can\'t be undone, and installing extensions, asks you here first. Off by default.';
+      case 'ai_mcp_confirm_arguments':
+        return 'Arguments';
+      case 'ai_mcp_confirm_body':
+        return ({required Object client, required Object op}) =>
+            '${client} wants to run: ${op}';
+      case 'ai_mcp_confirm_expire':
+        return ({required Object minutes}) =>
+            'Declined automatically if you do not answer within ${minutes} minutes.';
+      case 'ai_mcp_confirm_title':
+        return 'Request from an external AI';
+      case 'ai_mcp_token':
+        return 'Pairing token';
+      case 'ai_mcp_token_copy':
+        return 'Copy token';
+      case 'ai_mcp_token_copy_config':
+        return 'Copy client config';
+      case 'ai_mcp_token_hint':
+        return 'Generate a token for your MCP client. Generating a new one revokes the old one.';
+      case 'ai_mcp_token_issued_body':
+        return 'Put this token in your MCP client\'s configuration as FUSHI_MCP_TOKEN (the setup guide shows how). It is shown only once.';
+      case 'ai_mcp_token_issued_title':
+        return 'New pairing token';
       case 'ai_media_acquire_ai_failed':
         return 'A IA está indisponível no momento; os resultados vêm do seu texto original, ordenados por seeders.';
       case 'ai_media_acquire_download':
@@ -643415,6 +648882,8 @@ extension on _StringsPtBr {
         return 'Otimização de mídia do Anki';
       case 'anki_dedup_unavailable':
         return 'Requer Anki rodando nesta máquina (AnkiConnect).';
+      case 'anki_delivery_section':
+        return 'Sending & pending cards';
       case 'anki_desktop_auto_launch':
         return 'Launch Anki when Fushi starts';
       case 'anki_desktop_auto_launch_hint':
@@ -643790,6 +649259,9 @@ extension on _StringsPtBr {
         return 'Aguardando envio';
       case 'anki_pending_mines_status_sending':
         return 'Enviando';
+      case 'anki_pending_mines_stopped':
+        return ({required Object reason}) =>
+            '${reason} The remaining cards stay in the queue.';
       case 'anki_pending_mines_title':
         return 'Cartões pendentes';
       case 'anki_pending_mines_unreachable':
@@ -643910,6 +649382,9 @@ extension on _StringsPtBr {
         return 'I understand, enable';
       case 'anki_sync_client_enable_warn_title':
         return 'Enable Anki sync?';
+      case 'anki_sync_client_error_not_sync_server':
+        return ({required Object detail}) =>
+            'The server did not answer with the Anki sync protocol (the anki-original-size response header is missing). Make sure the address points at an Anki sync server (the official anki-sync-server, or the one built into Anki desktop) rather than a web page; a reverse proxy must keep this header. Details: ${detail}';
       case 'anki_sync_client_has_unsynced':
         return ({required Object count}) =>
             '${count} cartão(ões) ainda não sincronizaram. Sincronize-os antes de trocar de conta ou sair.';
@@ -644082,6 +649557,9 @@ extension on _StringsPtBr {
         return 'Escolher novo arquivo de legendas';
       case 'audio_source_added':
         return 'Fonte de áudio adicionada';
+      case 'audio_source_connection_refused':
+        return ({required Object host}) =>
+            'Audio source refused the connection: nothing is listening at "${host}" — make sure the service is running, or remove this source in settings';
       case 'audio_source_dns_error':
         return ({required Object host}) =>
             'Falha na conexão da fonte de áudio: não é possível resolver "${host}" — verifique sua rede ou remova esta fonte nas configurações';
@@ -645867,6 +651345,18 @@ extension on _StringsPtBr {
         return 'Cartão criado sem áudio da frase (nenhum encontrado para esta seleção).';
       case 'card_mining_pending':
         return 'Adicionando cartão…';
+      case 'card_notice_title_added':
+        return 'Card added';
+      case 'card_notice_title_duplicate':
+        return 'Card already exists';
+      case 'card_notice_title_failed':
+        return 'Card not created';
+      case 'card_notice_title_overwritten':
+        return 'Card overwritten';
+      case 'card_notice_title_queued':
+        return 'Card queued';
+      case 'card_notice_title_warning':
+        return 'Card added, something missing';
       case 'card_overwritten':
         return ({required Object deck}) => 'Cartão sobrescrito em 『${deck}』.';
       case 'card_source_open':
@@ -646546,14 +652036,12 @@ extension on _StringsPtBr {
         return 'Selecionar tudo';
       case 'delete_prompt_title':
         return 'Excluído em outro dispositivo';
-      case 'delete_scope_keep_local_desc':
-        return 'Outros dispositivos mantêm sua cópia';
       case 'delete_scope_no_channel':
         return 'Nenhuma sincronização configurada - esta exclusão afeta apenas este dispositivo';
       case 'delete_scope_sync_everywhere':
         return 'Excluir de todos os dispositivos';
       case 'delete_scope_sync_everywhere_desc':
-        return 'Outros dispositivos confirmam a exclusão na próxima sincronização';
+        return 'Se marcado, os outros dispositivos confirmam a exclusão na próxima sincronização; se não, mantêm sua cópia';
       case 'delete_statistics':
         return 'Excluir também as estatísticas';
       case 'delete_statistics_book_desc':
@@ -646786,6 +652274,11 @@ extension on _StringsPtBr {
         return 'Automático';
       case 'dict_language_description':
         return 'Define qual fonte renderiza o texto deste dicionário. Automático usa o idioma declarado pelo dicionário.';
+      case 'dict_language_group_title':
+        return ({required Object language, required Object n}) =>
+            '${language} · ${n}';
+      case 'dict_language_group_unset':
+        return 'Language not set';
       case 'dict_language_title':
         return 'Idioma do conteúdo do dicionário';
       case 'dict_language_tooltip':
@@ -647957,6 +653450,55 @@ extension on _StringsPtBr {
             'You can attach 1 video (up to ${max}). It is compressed to ${resolution} before uploading.';
       case 'feedback_compose_video_retry':
         return 'Compress again';
+      case 'feedback_crash_auto_send_setting':
+        return 'Automatically send crash logs';
+      case 'feedback_crash_auto_send_setting_hint':
+        return 'After Fushi crashes or quits unexpectedly, send the logs to the developers on next launch without asking (the logs leave this device)';
+      case 'feedback_crash_auto_sent_notice':
+        return 'Logs from the last crash were sent to the developers automatically';
+      case 'feedback_crash_kind_anr':
+        return 'not responding';
+      case 'feedback_crash_kind_crash':
+        return 'crash';
+      case 'feedback_crash_kind_memory':
+        return 'closed by the system for low memory';
+      case 'feedback_crash_kind_native':
+        return 'native crash';
+      case 'feedback_crash_kind_startup':
+        return 'while starting';
+      case 'feedback_crash_kind_unexpected':
+        return 'unexpected exit';
+      case 'feedback_crash_notice_view':
+        return 'View';
+      case 'feedback_crash_prompt_always':
+        return 'Always send';
+      case 'feedback_crash_prompt_body':
+        return 'Send the logs to the developers to help fix it? You can follow it in Feedback.';
+      case 'feedback_crash_prompt_decline':
+        return 'No thanks';
+      case 'feedback_crash_prompt_retry':
+        return 'Retry';
+      case 'feedback_crash_prompt_send':
+        return 'Send to developers';
+      case 'feedback_crash_prompt_sending':
+        return 'Sending…';
+      case 'feedback_crash_prompt_skip':
+        return 'Skip';
+      case 'feedback_crash_prompt_title':
+        return ({required Object kind}) =>
+            'Fushi quit unexpectedly last time (${kind})';
+      case 'feedback_crash_prompt_title_many':
+        return ({required Object n, required Object kind}) =>
+            'Fushi quit unexpectedly ${n} times (${kind})';
+      case 'feedback_crash_report_header':
+        return 'Generated by Fushi after it quit unexpectedly; logs and device info are attached.';
+      case 'feedback_crash_report_title':
+        return ({required Object kind, required Object version}) =>
+            'Crash report: ${kind} (${version})';
+      case 'feedback_crash_send_failed':
+        return 'Could not send the crash logs. Fushi will ask again next time.';
+      case 'feedback_crash_sent_notice':
+        return 'Crash logs sent to the developers';
       case 'feedback_detail_add_shot':
         return 'Add screenshot';
       case 'feedback_detail_attachments':
@@ -651801,6 +657343,18 @@ extension on _StringsPtBr {
         return 'Top';
       case 'lyrics_control_zone_top_hint':
         return 'Top bar on phones, top-right corner on wide screens';
+      case 'lyrics_controls_collapse':
+        return 'Collapse playback controls';
+      case 'lyrics_controls_expand':
+        return 'Expand playback controls';
+      case 'lyrics_controls_style':
+        return 'Playback controls layout';
+      case 'lyrics_controls_style_classic':
+        return 'Classic';
+      case 'lyrics_controls_style_hint':
+        return 'New: a collapsible mini bar on phones and floating islands on wide screens. Classic: the previous layout.';
+      case 'lyrics_controls_style_modern':
+        return 'New';
       case 'lyrics_exit_to_library':
         return 'Close and return to library';
       case 'lyrics_font_size':
@@ -651813,6 +657367,14 @@ extension on _StringsPtBr {
         return 'Use your own color for the line being read instead of the player theme color';
       case 'lyrics_illustration_back_to_cover':
         return 'Back to cover';
+      case 'lyrics_illustration_cue':
+        return 'Illustration prompt';
+      case 'lyrics_illustration_cue_dot':
+        return 'Dot';
+      case 'lyrics_illustration_cue_hint':
+        return 'Pop up: show the illustration card and pause for the image pause duration below. Dot: only mark the cover thumbnail.';
+      case 'lyrics_illustration_cue_popup':
+        return 'Pop up';
       case 'lyrics_illustration_next':
         return 'Next illustration';
       case 'lyrics_illustration_open':
@@ -652875,6 +658437,9 @@ extension on _StringsPtBr {
       case 'media_privacy_inherited_note':
         return ({required Object collections}) =>
             'Private because it is in the private collection “${collections}”. To make it public, turn off privacy on that collection.';
+      case 'media_privacy_inherited_source_note':
+        return ({required Object source}) =>
+            'Private because its source library “${source}” is private. To make it public, turn off privacy on that source library.';
       case 'media_privacy_load_failed':
         return ({required Object reason}) =>
             'Could not read the privacy setting, so it cannot be changed right now: ${reason}';
@@ -652982,6 +658547,23 @@ extension on _StringsPtBr {
         return 'Open Folder';
       case 'media_source_open_folder_failed':
         return 'Couldn\'t open the folder. It may have been moved, deleted, or disconnected.';
+      case 'media_source_privacy_action':
+        return 'Privacy';
+      case 'media_source_privacy_badge':
+        return 'Private: not uploaded to the leaderboard';
+      case 'media_source_privacy_cleared_toast':
+        return 'Source library is no longer private';
+      case 'media_source_privacy_hint':
+        return 'Everything this source library brings in is treated as private: it is never uploaded to the leaderboard, so it stays off your public shelf, profile and share cards, and its progress is not pushed to Bangumi. Items already uploaded are removed from the leaderboard as soon as you turn this on (or at the next sync if that fails). Your daily character total still counts them, without saying what you read. Removing this source keeps its items private.';
+      case 'media_source_privacy_marked_toast':
+        return 'Source library is now private';
+      case 'media_source_privacy_switch':
+        return 'Keep this source library private';
+      case 'media_source_privacy_withdraw_failed':
+        return ({required Object reason}) =>
+            'Source library is now private, but removing its items from the leaderboard failed; the next sync will try again: ${reason}';
+      case 'media_source_privacy_withdrawn_toast':
+        return 'Source library is now private; its items were removed from the leaderboard';
       case 'media_source_remove':
         return 'Remove Source';
       case 'media_source_remove_download_keep':
@@ -656154,8 +661736,11 @@ extension on _StringsPtBr {
         return 'Re-download audiobook from peer';
       case 'remote_book_audiobook_redownloaded':
         return 'Audiobook re-downloaded from peer';
+      case 'remote_book_delete_cloud_confirm':
+        return ({required Object name, required Object backend}) =>
+            'Delete "${name}" from ${backend}? The book\'s files, cover, progress and audiobook in the cloud are permanently deleted. This device has no copy and this can\'t be undone. Other devices will ask whether to delete their copy on their next sync.';
       case 'remote_book_delete_everywhere':
-        return 'Delete permanently';
+        return 'Also delete on host';
       case 'remote_book_delete_everywhere_confirm':
         return ({required Object name, required Object host}) =>
             'Delete "${name}" on host "${host}"? Its files, reading progress, bookmarks and audiobook there are removed for good, and this device has no copy. This cannot be undone.';
@@ -656216,8 +661801,20 @@ extension on _StringsPtBr {
         return 'Ordenação de episódios do TMDB no host…';
       case 'remote_delete_audiobook_partial':
         return 'Livro excluído, mas seu audiobook não pôde ser removido no dispositivo pareado';
+      case 'remote_delete_cloud_checking':
+        return 'Checking whether the cloud storage is reachable…';
+      case 'remote_delete_cloud_offline':
+        return 'Can\'t reach the cloud storage. Delete it there once it\'s reachable.';
+      case 'remote_delete_cloud_signed_out':
+        return 'The cloud storage sign-in has expired. Sign in again to delete it there.';
       case 'remote_delete_failed':
         return 'Não foi possível excluir no dispositivo pareado';
+      case 'remote_delete_host_checking':
+        return 'Checking whether the host is online…';
+      case 'remote_delete_host_offline':
+        return 'The host is offline or unreachable. Delete it there once it\'s connected.';
+      case 'remote_delete_host_pairing_rejected':
+        return 'The host rejected this device\'s pairing. Pair again to delete it there.';
       case 'remote_delete_unsupported':
         return 'O dispositivo pareado é muito antigo para suportar exclusão remota. Atualize o Fushi lá primeiro.';
       case 'remote_dict_lookup':
@@ -661000,6 +666597,10 @@ extension on _StringsPtBr {
         return 'Faixa de áudio';
       case 'video_audio_track_empty':
         return 'Nenhuma faixa de áudio alternável';
+      case 'video_audio_track_fallback_muxed':
+        return 'The audio stream was refused; switched to a compatible stream with sound (lower quality)';
+      case 'video_audio_track_load_failed':
+        return 'Couldn\'t load the audio stream — there is no sound. The source refused access; try again later.';
       case 'video_audio_track_switched':
         return ({required Object label}) => 'Faixa de áudio: ${label}';
       case 'video_auto_play_next_cancel':
@@ -664461,8 +670062,31 @@ extension on _StringsRu {
         return 'Text recognition isn\'t available on this device';
       case 'ai_agent_send':
         return 'Send';
+      case 'ai_agent_session_current':
+        return 'Current';
+      case 'ai_agent_session_delete':
+        return 'Delete';
+      case 'ai_agent_session_delete_message':
+        return ({required Object title}) =>
+            '“${title}” will be removed from this device. Changes the assistant made stay in the AI action log and can still be undone there.';
+      case 'ai_agent_session_delete_title':
+        return 'Delete this conversation?';
+      case 'ai_agent_session_more':
+        return 'Conversation options';
+      case 'ai_agent_session_open_failed':
+        return 'Couldn\'t open this conversation';
+      case 'ai_agent_session_rename':
+        return 'Rename';
+      case 'ai_agent_session_rename_title':
+        return 'Rename conversation';
       case 'ai_agent_session_summary':
         return ({required Object n}) => '${n} changes in this conversation';
+      case 'ai_agent_sessions_empty':
+        return 'No earlier conversations yet';
+      case 'ai_agent_sessions_retention_hint':
+        return 'Conversations stay on this device for 30 days';
+      case 'ai_agent_sessions_title':
+        return 'Conversations';
       case 'ai_agent_stop':
         return 'Stop';
       case 'ai_agent_stop_cancelled':
@@ -664633,6 +670257,32 @@ extension on _StringsRu {
         return 'Run on a paired computer';
       case 'ai_interconnect_host_unpaired':
         return 'No paired device yet. Pair a computer in Fushi Interconnect to let it handle AI video downloads with its own AI.';
+      case 'ai_mcp_access':
+        return 'External AI access (MCP)';
+      case 'ai_mcp_access_hint':
+        return 'Lets MCP clients on this computer (Claude Desktop, Claude Code…) call Fushi\'s operations. Listens on this computer only and needs the pairing token below. Changes that can be undone run directly and show up in the AI action log; anything that can\'t be undone, and installing extensions, asks you here first. Off by default.';
+      case 'ai_mcp_confirm_arguments':
+        return 'Arguments';
+      case 'ai_mcp_confirm_body':
+        return ({required Object client, required Object op}) =>
+            '${client} wants to run: ${op}';
+      case 'ai_mcp_confirm_expire':
+        return ({required Object minutes}) =>
+            'Declined automatically if you do not answer within ${minutes} minutes.';
+      case 'ai_mcp_confirm_title':
+        return 'Request from an external AI';
+      case 'ai_mcp_token':
+        return 'Pairing token';
+      case 'ai_mcp_token_copy':
+        return 'Copy token';
+      case 'ai_mcp_token_copy_config':
+        return 'Copy client config';
+      case 'ai_mcp_token_hint':
+        return 'Generate a token for your MCP client. Generating a new one revokes the old one.';
+      case 'ai_mcp_token_issued_body':
+        return 'Put this token in your MCP client\'s configuration as FUSHI_MCP_TOKEN (the setup guide shows how). It is shown only once.';
+      case 'ai_mcp_token_issued_title':
+        return 'New pairing token';
       case 'ai_media_acquire_ai_failed':
         return 'ИИ сейчас недоступен; результаты получены по вашему исходному тексту и отсортированы по числу сидов.';
       case 'ai_media_acquire_download':
@@ -665377,6 +671027,8 @@ extension on _StringsRu {
         return 'Оптимизация хранилища медиа Anki';
       case 'anki_dedup_unavailable':
         return 'Требуется Anki, запущенный на этом компьютере (AnkiConnect).';
+      case 'anki_delivery_section':
+        return 'Sending & pending cards';
       case 'anki_desktop_auto_launch':
         return 'Launch Anki when Fushi starts';
       case 'anki_desktop_auto_launch_hint':
@@ -665753,6 +671405,9 @@ extension on _StringsRu {
         return 'Ожидает отправки';
       case 'anki_pending_mines_status_sending':
         return 'Отправка';
+      case 'anki_pending_mines_stopped':
+        return ({required Object reason}) =>
+            '${reason} The remaining cards stay in the queue.';
       case 'anki_pending_mines_title':
         return 'Ожидающие карточки';
       case 'anki_pending_mines_unreachable':
@@ -665874,6 +671529,9 @@ extension on _StringsRu {
         return 'I understand, enable';
       case 'anki_sync_client_enable_warn_title':
         return 'Enable Anki sync?';
+      case 'anki_sync_client_error_not_sync_server':
+        return ({required Object detail}) =>
+            'The server did not answer with the Anki sync protocol (the anki-original-size response header is missing). Make sure the address points at an Anki sync server (the official anki-sync-server, or the one built into Anki desktop) rather than a web page; a reverse proxy must keep this header. Details: ${detail}';
       case 'anki_sync_client_has_unsynced':
         return ({required Object count}) =>
             'Карточек ещё не синхронизировано: ${count}. Синхронизируйте их, прежде чем сменить аккаунт или выйти.';
@@ -666046,6 +671704,9 @@ extension on _StringsRu {
         return 'Выбрать новый файл субтитров';
       case 'audio_source_added':
         return 'Источник аудио добавлен';
+      case 'audio_source_connection_refused':
+        return ({required Object host}) =>
+            'Audio source refused the connection: nothing is listening at "${host}" — make sure the service is running, or remove this source in settings';
       case 'audio_source_dns_error':
         return ({required Object host}) =>
             'Не удалось подключиться к источнику аудио: невозможно разрешить "${host}" — проверьте сеть или удалите этот источник в настройках';
@@ -667834,6 +673495,18 @@ extension on _StringsRu {
         return 'Карточка создана без аудио предложения (для этого выделения ничего не найдено).';
       case 'card_mining_pending':
         return 'Добавление карточки…';
+      case 'card_notice_title_added':
+        return 'Card added';
+      case 'card_notice_title_duplicate':
+        return 'Card already exists';
+      case 'card_notice_title_failed':
+        return 'Card not created';
+      case 'card_notice_title_overwritten':
+        return 'Card overwritten';
+      case 'card_notice_title_queued':
+        return 'Card queued';
+      case 'card_notice_title_warning':
+        return 'Card added, something missing';
       case 'card_overwritten':
         return ({required Object deck}) => 'Карточка перезаписана в «${deck}».';
       case 'card_source_open':
@@ -668513,14 +674186,12 @@ extension on _StringsRu {
         return 'Выбрать все';
       case 'delete_prompt_title':
         return 'Удалено на другом устройстве';
-      case 'delete_scope_keep_local_desc':
-        return 'Другие устройства сохранят свою копию';
       case 'delete_scope_no_channel':
         return 'Синхронизация не настроена — удаление затронет только это устройство';
       case 'delete_scope_sync_everywhere':
         return 'Удалить со всех устройств';
       case 'delete_scope_sync_everywhere_desc':
-        return 'Другие устройства подтвердят удаление при следующей синхронизации';
+        return 'Если отмечено, другие устройства подтвердят удаление при следующей синхронизации; иначе они сохранят свою копию';
       case 'delete_statistics':
         return 'Также удалить статистику';
       case 'delete_statistics_book_desc':
@@ -668753,6 +674424,11 @@ extension on _StringsRu {
         return 'Автоматически';
       case 'dict_language_description':
         return 'Определяет, какой шрифт используется для отображения текста словаря. «Автоматически» использует язык, указанный в словаре.';
+      case 'dict_language_group_title':
+        return ({required Object language, required Object n}) =>
+            '${language} · ${n}';
+      case 'dict_language_group_unset':
+        return 'Language not set';
       case 'dict_language_title':
         return 'Язык содержимого словаря';
       case 'dict_language_tooltip':
@@ -669927,6 +675603,55 @@ extension on _StringsRu {
             'You can attach 1 video (up to ${max}). It is compressed to ${resolution} before uploading.';
       case 'feedback_compose_video_retry':
         return 'Compress again';
+      case 'feedback_crash_auto_send_setting':
+        return 'Automatically send crash logs';
+      case 'feedback_crash_auto_send_setting_hint':
+        return 'After Fushi crashes or quits unexpectedly, send the logs to the developers on next launch without asking (the logs leave this device)';
+      case 'feedback_crash_auto_sent_notice':
+        return 'Logs from the last crash were sent to the developers automatically';
+      case 'feedback_crash_kind_anr':
+        return 'not responding';
+      case 'feedback_crash_kind_crash':
+        return 'crash';
+      case 'feedback_crash_kind_memory':
+        return 'closed by the system for low memory';
+      case 'feedback_crash_kind_native':
+        return 'native crash';
+      case 'feedback_crash_kind_startup':
+        return 'while starting';
+      case 'feedback_crash_kind_unexpected':
+        return 'unexpected exit';
+      case 'feedback_crash_notice_view':
+        return 'View';
+      case 'feedback_crash_prompt_always':
+        return 'Always send';
+      case 'feedback_crash_prompt_body':
+        return 'Send the logs to the developers to help fix it? You can follow it in Feedback.';
+      case 'feedback_crash_prompt_decline':
+        return 'No thanks';
+      case 'feedback_crash_prompt_retry':
+        return 'Retry';
+      case 'feedback_crash_prompt_send':
+        return 'Send to developers';
+      case 'feedback_crash_prompt_sending':
+        return 'Sending…';
+      case 'feedback_crash_prompt_skip':
+        return 'Skip';
+      case 'feedback_crash_prompt_title':
+        return ({required Object kind}) =>
+            'Fushi quit unexpectedly last time (${kind})';
+      case 'feedback_crash_prompt_title_many':
+        return ({required Object n, required Object kind}) =>
+            'Fushi quit unexpectedly ${n} times (${kind})';
+      case 'feedback_crash_report_header':
+        return 'Generated by Fushi after it quit unexpectedly; logs and device info are attached.';
+      case 'feedback_crash_report_title':
+        return ({required Object kind, required Object version}) =>
+            'Crash report: ${kind} (${version})';
+      case 'feedback_crash_send_failed':
+        return 'Could not send the crash logs. Fushi will ask again next time.';
+      case 'feedback_crash_sent_notice':
+        return 'Crash logs sent to the developers';
       case 'feedback_detail_add_shot':
         return 'Add screenshot';
       case 'feedback_detail_attachments':
@@ -673771,6 +679496,18 @@ extension on _StringsRu {
         return 'Top';
       case 'lyrics_control_zone_top_hint':
         return 'Top bar on phones, top-right corner on wide screens';
+      case 'lyrics_controls_collapse':
+        return 'Collapse playback controls';
+      case 'lyrics_controls_expand':
+        return 'Expand playback controls';
+      case 'lyrics_controls_style':
+        return 'Playback controls layout';
+      case 'lyrics_controls_style_classic':
+        return 'Classic';
+      case 'lyrics_controls_style_hint':
+        return 'New: a collapsible mini bar on phones and floating islands on wide screens. Classic: the previous layout.';
+      case 'lyrics_controls_style_modern':
+        return 'New';
       case 'lyrics_exit_to_library':
         return 'Close and return to library';
       case 'lyrics_font_size':
@@ -673783,6 +679520,14 @@ extension on _StringsRu {
         return 'Use your own color for the line being read instead of the player theme color';
       case 'lyrics_illustration_back_to_cover':
         return 'Back to cover';
+      case 'lyrics_illustration_cue':
+        return 'Illustration prompt';
+      case 'lyrics_illustration_cue_dot':
+        return 'Dot';
+      case 'lyrics_illustration_cue_hint':
+        return 'Pop up: show the illustration card and pause for the image pause duration below. Dot: only mark the cover thumbnail.';
+      case 'lyrics_illustration_cue_popup':
+        return 'Pop up';
       case 'lyrics_illustration_next':
         return 'Next illustration';
       case 'lyrics_illustration_open':
@@ -674845,6 +680590,9 @@ extension on _StringsRu {
       case 'media_privacy_inherited_note':
         return ({required Object collections}) =>
             'Private because it is in the private collection “${collections}”. To make it public, turn off privacy on that collection.';
+      case 'media_privacy_inherited_source_note':
+        return ({required Object source}) =>
+            'Private because its source library “${source}” is private. To make it public, turn off privacy on that source library.';
       case 'media_privacy_load_failed':
         return ({required Object reason}) =>
             'Could not read the privacy setting, so it cannot be changed right now: ${reason}';
@@ -674952,6 +680700,23 @@ extension on _StringsRu {
         return 'Open Folder';
       case 'media_source_open_folder_failed':
         return 'Couldn\'t open the folder. It may have been moved, deleted, or disconnected.';
+      case 'media_source_privacy_action':
+        return 'Privacy';
+      case 'media_source_privacy_badge':
+        return 'Private: not uploaded to the leaderboard';
+      case 'media_source_privacy_cleared_toast':
+        return 'Source library is no longer private';
+      case 'media_source_privacy_hint':
+        return 'Everything this source library brings in is treated as private: it is never uploaded to the leaderboard, so it stays off your public shelf, profile and share cards, and its progress is not pushed to Bangumi. Items already uploaded are removed from the leaderboard as soon as you turn this on (or at the next sync if that fails). Your daily character total still counts them, without saying what you read. Removing this source keeps its items private.';
+      case 'media_source_privacy_marked_toast':
+        return 'Source library is now private';
+      case 'media_source_privacy_switch':
+        return 'Keep this source library private';
+      case 'media_source_privacy_withdraw_failed':
+        return ({required Object reason}) =>
+            'Source library is now private, but removing its items from the leaderboard failed; the next sync will try again: ${reason}';
+      case 'media_source_privacy_withdrawn_toast':
+        return 'Source library is now private; its items were removed from the leaderboard';
       case 'media_source_remove':
         return 'Remove Source';
       case 'media_source_remove_download_keep':
@@ -678124,8 +683889,11 @@ extension on _StringsRu {
         return 'Re-download audiobook from peer';
       case 'remote_book_audiobook_redownloaded':
         return 'Audiobook re-downloaded from peer';
+      case 'remote_book_delete_cloud_confirm':
+        return ({required Object name, required Object backend}) =>
+            'Delete "${name}" from ${backend}? The book\'s files, cover, progress and audiobook in the cloud are permanently deleted. This device has no copy and this can\'t be undone. Other devices will ask whether to delete their copy on their next sync.';
       case 'remote_book_delete_everywhere':
-        return 'Delete permanently';
+        return 'Also delete on host';
       case 'remote_book_delete_everywhere_confirm':
         return ({required Object name, required Object host}) =>
             'Delete "${name}" on host "${host}"? Its files, reading progress, bookmarks and audiobook there are removed for good, and this device has no copy. This cannot be undone.';
@@ -678186,8 +683954,20 @@ extension on _StringsRu {
         return 'Порядок серий TMDB на хосте…';
       case 'remote_delete_audiobook_partial':
         return 'Книга удалена, но аудиокнигу не удалось удалить на сопряжённом устройстве';
+      case 'remote_delete_cloud_checking':
+        return 'Checking whether the cloud storage is reachable…';
+      case 'remote_delete_cloud_offline':
+        return 'Can\'t reach the cloud storage. Delete it there once it\'s reachable.';
+      case 'remote_delete_cloud_signed_out':
+        return 'The cloud storage sign-in has expired. Sign in again to delete it there.';
       case 'remote_delete_failed':
         return 'Не удалось удалить на сопряжённом устройстве';
+      case 'remote_delete_host_checking':
+        return 'Checking whether the host is online…';
+      case 'remote_delete_host_offline':
+        return 'The host is offline or unreachable. Delete it there once it\'s connected.';
+      case 'remote_delete_host_pairing_rejected':
+        return 'The host rejected this device\'s pairing. Pair again to delete it there.';
       case 'remote_delete_unsupported':
         return 'Сопряжённое устройство слишком старой версии для удалённого удаления. Сначала обновите Fushi на нём.';
       case 'remote_dict_lookup':
@@ -682971,6 +688751,10 @@ extension on _StringsRu {
         return 'Аудиодорожка';
       case 'video_audio_track_empty':
         return 'Нет переключаемых аудиодорожек';
+      case 'video_audio_track_fallback_muxed':
+        return 'The audio stream was refused; switched to a compatible stream with sound (lower quality)';
+      case 'video_audio_track_load_failed':
+        return 'Couldn\'t load the audio stream — there is no sound. The source refused access; try again later.';
       case 'video_audio_track_switched':
         return ({required Object label}) => 'Аудиодорожка: ${label}';
       case 'video_auto_play_next_cancel':
@@ -686429,8 +692213,31 @@ extension on _StringsTh {
         return 'Text recognition isn\'t available on this device';
       case 'ai_agent_send':
         return 'Send';
+      case 'ai_agent_session_current':
+        return 'Current';
+      case 'ai_agent_session_delete':
+        return 'Delete';
+      case 'ai_agent_session_delete_message':
+        return ({required Object title}) =>
+            '“${title}” will be removed from this device. Changes the assistant made stay in the AI action log and can still be undone there.';
+      case 'ai_agent_session_delete_title':
+        return 'Delete this conversation?';
+      case 'ai_agent_session_more':
+        return 'Conversation options';
+      case 'ai_agent_session_open_failed':
+        return 'Couldn\'t open this conversation';
+      case 'ai_agent_session_rename':
+        return 'Rename';
+      case 'ai_agent_session_rename_title':
+        return 'Rename conversation';
       case 'ai_agent_session_summary':
         return ({required Object n}) => '${n} changes in this conversation';
+      case 'ai_agent_sessions_empty':
+        return 'No earlier conversations yet';
+      case 'ai_agent_sessions_retention_hint':
+        return 'Conversations stay on this device for 30 days';
+      case 'ai_agent_sessions_title':
+        return 'Conversations';
       case 'ai_agent_stop':
         return 'Stop';
       case 'ai_agent_stop_cancelled':
@@ -686602,6 +692409,32 @@ extension on _StringsTh {
         return 'Run on a paired computer';
       case 'ai_interconnect_host_unpaired':
         return 'No paired device yet. Pair a computer in Fushi Interconnect to let it handle AI video downloads with its own AI.';
+      case 'ai_mcp_access':
+        return 'External AI access (MCP)';
+      case 'ai_mcp_access_hint':
+        return 'Lets MCP clients on this computer (Claude Desktop, Claude Code…) call Fushi\'s operations. Listens on this computer only and needs the pairing token below. Changes that can be undone run directly and show up in the AI action log; anything that can\'t be undone, and installing extensions, asks you here first. Off by default.';
+      case 'ai_mcp_confirm_arguments':
+        return 'Arguments';
+      case 'ai_mcp_confirm_body':
+        return ({required Object client, required Object op}) =>
+            '${client} wants to run: ${op}';
+      case 'ai_mcp_confirm_expire':
+        return ({required Object minutes}) =>
+            'Declined automatically if you do not answer within ${minutes} minutes.';
+      case 'ai_mcp_confirm_title':
+        return 'Request from an external AI';
+      case 'ai_mcp_token':
+        return 'Pairing token';
+      case 'ai_mcp_token_copy':
+        return 'Copy token';
+      case 'ai_mcp_token_copy_config':
+        return 'Copy client config';
+      case 'ai_mcp_token_hint':
+        return 'Generate a token for your MCP client. Generating a new one revokes the old one.';
+      case 'ai_mcp_token_issued_body':
+        return 'Put this token in your MCP client\'s configuration as FUSHI_MCP_TOKEN (the setup guide shows how). It is shown only once.';
+      case 'ai_mcp_token_issued_title':
+        return 'New pairing token';
       case 'ai_media_acquire_ai_failed':
         return 'ขณะนี้ AI ไม่พร้อมใช้งาน ผลลัพธ์มาจากข้อความเดิมของคุณ เรียงตามผู้แชร์';
       case 'ai_media_acquire_download':
@@ -687342,6 +693175,8 @@ extension on _StringsTh {
         return 'การจัดเก็บสื่อ Anki ที่เหมาะสม';
       case 'anki_dedup_unavailable':
         return 'ต้องการ Anki ทำงานบนเครื่องนี้ (AnkiConnect)';
+      case 'anki_delivery_section':
+        return 'Sending & pending cards';
       case 'anki_desktop_auto_launch':
         return 'Launch Anki when Fushi starts';
       case 'anki_desktop_auto_launch_hint':
@@ -687715,6 +693550,9 @@ extension on _StringsTh {
         return 'รอส่ง';
       case 'anki_pending_mines_status_sending':
         return 'กำลังส่ง';
+      case 'anki_pending_mines_stopped':
+        return ({required Object reason}) =>
+            '${reason} The remaining cards stay in the queue.';
       case 'anki_pending_mines_title':
         return 'การ์ดที่รอส่ง';
       case 'anki_pending_mines_unreachable':
@@ -687835,6 +693673,9 @@ extension on _StringsTh {
         return 'I understand, enable';
       case 'anki_sync_client_enable_warn_title':
         return 'Enable Anki sync?';
+      case 'anki_sync_client_error_not_sync_server':
+        return ({required Object detail}) =>
+            'The server did not answer with the Anki sync protocol (the anki-original-size response header is missing). Make sure the address points at an Anki sync server (the official anki-sync-server, or the one built into Anki desktop) rather than a web page; a reverse proxy must keep this header. Details: ${detail}';
       case 'anki_sync_client_has_unsynced':
         return ({required Object count}) =>
             'ยังไม่ได้ซิงค์การ์ด ${count} ใบ ซิงค์ก่อนสลับบัญชีหรือออกจากระบบ';
@@ -688005,6 +693846,9 @@ extension on _StringsTh {
         return 'เลือกไฟล์ซับไตเติลใหม่';
       case 'audio_source_added':
         return 'เพิ่มแหล่งเสียงแล้ว';
+      case 'audio_source_connection_refused':
+        return ({required Object host}) =>
+            'Audio source refused the connection: nothing is listening at "${host}" — make sure the service is running, or remove this source in settings';
       case 'audio_source_dns_error':
         return ({required Object host}) =>
             'เชื่อมต่อแหล่งเสียงล้มเหลว: ไม่สามารถหา "${host}" — ตรวจสอบเครือข่ายหรือลบแหล่งนี้ในการตั้งค่า';
@@ -689784,6 +695628,18 @@ extension on _StringsTh {
         return 'สร้างการ์ดโดยไม่มีเสียงประโยค (ไม่พบเสียงสำหรับส่วนที่เลือกนี้)';
       case 'card_mining_pending':
         return 'กำลังเพิ่มบัตร...';
+      case 'card_notice_title_added':
+        return 'Card added';
+      case 'card_notice_title_duplicate':
+        return 'Card already exists';
+      case 'card_notice_title_failed':
+        return 'Card not created';
+      case 'card_notice_title_overwritten':
+        return 'Card overwritten';
+      case 'card_notice_title_queued':
+        return 'Card queued';
+      case 'card_notice_title_warning':
+        return 'Card added, something missing';
       case 'card_overwritten':
         return ({required Object deck}) => 'เขียนทับการ์ดใน『${deck}』แล้ว';
       case 'card_source_open':
@@ -690462,14 +696318,12 @@ extension on _StringsTh {
         return 'เลือกทั้งหมด';
       case 'delete_prompt_title':
         return 'ถูกลบบนอุปกรณ์อื่น';
-      case 'delete_scope_keep_local_desc':
-        return 'อุปกรณ์อื่นยังเก็บสำเนาไว้';
       case 'delete_scope_no_channel':
         return 'ไม่ได้ตั้งค่าซิงค์ — การลบนี้มีผลเฉพาะอุปกรณ์นี้';
       case 'delete_scope_sync_everywhere':
         return 'ลบจากทุกอุปกรณ์';
       case 'delete_scope_sync_everywhere_desc':
-        return 'อุปกรณ์อื่นยืนยันการลบเมื่อซิงค์ครั้งถัดไป';
+        return 'หากเลือก อุปกรณ์อื่นจะยืนยันการลบเมื่อซิงค์ครั้งถัดไป หากไม่เลือก อุปกรณ์อื่นยังเก็บสำเนาไว้';
       case 'delete_statistics':
         return 'ลบสถิติด้วย';
       case 'delete_statistics_book_desc':
@@ -690700,6 +696554,11 @@ extension on _StringsTh {
         return 'อัตโนมัติ';
       case 'dict_language_description':
         return 'กำหนดฟอนต์ที่ใช้แสดงข้อความพจนานุกรม อัตโนมัติจะใช้ภาษาที่พจนานุกรมระบุไว้';
+      case 'dict_language_group_title':
+        return ({required Object language, required Object n}) =>
+            '${language} · ${n}';
+      case 'dict_language_group_unset':
+        return 'Language not set';
       case 'dict_language_title':
         return 'ภาษาเนื้อหาพจนานุกรม';
       case 'dict_language_tooltip':
@@ -691871,6 +697730,55 @@ extension on _StringsTh {
             'You can attach 1 video (up to ${max}). It is compressed to ${resolution} before uploading.';
       case 'feedback_compose_video_retry':
         return 'Compress again';
+      case 'feedback_crash_auto_send_setting':
+        return 'Automatically send crash logs';
+      case 'feedback_crash_auto_send_setting_hint':
+        return 'After Fushi crashes or quits unexpectedly, send the logs to the developers on next launch without asking (the logs leave this device)';
+      case 'feedback_crash_auto_sent_notice':
+        return 'Logs from the last crash were sent to the developers automatically';
+      case 'feedback_crash_kind_anr':
+        return 'not responding';
+      case 'feedback_crash_kind_crash':
+        return 'crash';
+      case 'feedback_crash_kind_memory':
+        return 'closed by the system for low memory';
+      case 'feedback_crash_kind_native':
+        return 'native crash';
+      case 'feedback_crash_kind_startup':
+        return 'while starting';
+      case 'feedback_crash_kind_unexpected':
+        return 'unexpected exit';
+      case 'feedback_crash_notice_view':
+        return 'View';
+      case 'feedback_crash_prompt_always':
+        return 'Always send';
+      case 'feedback_crash_prompt_body':
+        return 'Send the logs to the developers to help fix it? You can follow it in Feedback.';
+      case 'feedback_crash_prompt_decline':
+        return 'No thanks';
+      case 'feedback_crash_prompt_retry':
+        return 'Retry';
+      case 'feedback_crash_prompt_send':
+        return 'Send to developers';
+      case 'feedback_crash_prompt_sending':
+        return 'Sending…';
+      case 'feedback_crash_prompt_skip':
+        return 'Skip';
+      case 'feedback_crash_prompt_title':
+        return ({required Object kind}) =>
+            'Fushi quit unexpectedly last time (${kind})';
+      case 'feedback_crash_prompt_title_many':
+        return ({required Object n, required Object kind}) =>
+            'Fushi quit unexpectedly ${n} times (${kind})';
+      case 'feedback_crash_report_header':
+        return 'Generated by Fushi after it quit unexpectedly; logs and device info are attached.';
+      case 'feedback_crash_report_title':
+        return ({required Object kind, required Object version}) =>
+            'Crash report: ${kind} (${version})';
+      case 'feedback_crash_send_failed':
+        return 'Could not send the crash logs. Fushi will ask again next time.';
+      case 'feedback_crash_sent_notice':
+        return 'Crash logs sent to the developers';
       case 'feedback_detail_add_shot':
         return 'Add screenshot';
       case 'feedback_detail_attachments':
@@ -695714,6 +701622,18 @@ extension on _StringsTh {
         return 'Top';
       case 'lyrics_control_zone_top_hint':
         return 'Top bar on phones, top-right corner on wide screens';
+      case 'lyrics_controls_collapse':
+        return 'Collapse playback controls';
+      case 'lyrics_controls_expand':
+        return 'Expand playback controls';
+      case 'lyrics_controls_style':
+        return 'Playback controls layout';
+      case 'lyrics_controls_style_classic':
+        return 'Classic';
+      case 'lyrics_controls_style_hint':
+        return 'New: a collapsible mini bar on phones and floating islands on wide screens. Classic: the previous layout.';
+      case 'lyrics_controls_style_modern':
+        return 'New';
       case 'lyrics_exit_to_library':
         return 'Close and return to library';
       case 'lyrics_font_size':
@@ -695726,6 +701646,14 @@ extension on _StringsTh {
         return 'Use your own color for the line being read instead of the player theme color';
       case 'lyrics_illustration_back_to_cover':
         return 'Back to cover';
+      case 'lyrics_illustration_cue':
+        return 'Illustration prompt';
+      case 'lyrics_illustration_cue_dot':
+        return 'Dot';
+      case 'lyrics_illustration_cue_hint':
+        return 'Pop up: show the illustration card and pause for the image pause duration below. Dot: only mark the cover thumbnail.';
+      case 'lyrics_illustration_cue_popup':
+        return 'Pop up';
       case 'lyrics_illustration_next':
         return 'Next illustration';
       case 'lyrics_illustration_open':
@@ -696784,6 +702712,9 @@ extension on _StringsTh {
       case 'media_privacy_inherited_note':
         return ({required Object collections}) =>
             'Private because it is in the private collection “${collections}”. To make it public, turn off privacy on that collection.';
+      case 'media_privacy_inherited_source_note':
+        return ({required Object source}) =>
+            'Private because its source library “${source}” is private. To make it public, turn off privacy on that source library.';
       case 'media_privacy_load_failed':
         return ({required Object reason}) =>
             'Could not read the privacy setting, so it cannot be changed right now: ${reason}';
@@ -696891,6 +702822,23 @@ extension on _StringsTh {
         return 'Open Folder';
       case 'media_source_open_folder_failed':
         return 'Couldn\'t open the folder. It may have been moved, deleted, or disconnected.';
+      case 'media_source_privacy_action':
+        return 'Privacy';
+      case 'media_source_privacy_badge':
+        return 'Private: not uploaded to the leaderboard';
+      case 'media_source_privacy_cleared_toast':
+        return 'Source library is no longer private';
+      case 'media_source_privacy_hint':
+        return 'Everything this source library brings in is treated as private: it is never uploaded to the leaderboard, so it stays off your public shelf, profile and share cards, and its progress is not pushed to Bangumi. Items already uploaded are removed from the leaderboard as soon as you turn this on (or at the next sync if that fails). Your daily character total still counts them, without saying what you read. Removing this source keeps its items private.';
+      case 'media_source_privacy_marked_toast':
+        return 'Source library is now private';
+      case 'media_source_privacy_switch':
+        return 'Keep this source library private';
+      case 'media_source_privacy_withdraw_failed':
+        return ({required Object reason}) =>
+            'Source library is now private, but removing its items from the leaderboard failed; the next sync will try again: ${reason}';
+      case 'media_source_privacy_withdrawn_toast':
+        return 'Source library is now private; its items were removed from the leaderboard';
       case 'media_source_remove':
         return 'Remove Source';
       case 'media_source_remove_download_keep':
@@ -700054,8 +706002,11 @@ extension on _StringsTh {
         return 'Re-download audiobook from peer';
       case 'remote_book_audiobook_redownloaded':
         return 'Audiobook re-downloaded from peer';
+      case 'remote_book_delete_cloud_confirm':
+        return ({required Object name, required Object backend}) =>
+            'Delete "${name}" from ${backend}? The book\'s files, cover, progress and audiobook in the cloud are permanently deleted. This device has no copy and this can\'t be undone. Other devices will ask whether to delete their copy on their next sync.';
       case 'remote_book_delete_everywhere':
-        return 'Delete permanently';
+        return 'Also delete on host';
       case 'remote_book_delete_everywhere_confirm':
         return ({required Object name, required Object host}) =>
             'Delete "${name}" on host "${host}"? Its files, reading progress, bookmarks and audiobook there are removed for good, and this device has no copy. This cannot be undone.';
@@ -700116,8 +706067,20 @@ extension on _StringsTh {
         return 'ลำดับตอนของ TMDB บนโฮสต์…';
       case 'remote_delete_audiobook_partial':
         return 'ลบหนังสือแล้ว แต่ไม่สามารถลบหนังสือเสียงบนอุปกรณ์ที่จับคู่ได้';
+      case 'remote_delete_cloud_checking':
+        return 'Checking whether the cloud storage is reachable…';
+      case 'remote_delete_cloud_offline':
+        return 'Can\'t reach the cloud storage. Delete it there once it\'s reachable.';
+      case 'remote_delete_cloud_signed_out':
+        return 'The cloud storage sign-in has expired. Sign in again to delete it there.';
       case 'remote_delete_failed':
         return 'ไม่สามารถลบบนอุปกรณ์ที่จับคู่ได้';
+      case 'remote_delete_host_checking':
+        return 'Checking whether the host is online…';
+      case 'remote_delete_host_offline':
+        return 'The host is offline or unreachable. Delete it there once it\'s connected.';
+      case 'remote_delete_host_pairing_rejected':
+        return 'The host rejected this device\'s pairing. Pair again to delete it there.';
       case 'remote_delete_unsupported':
         return 'อุปกรณ์ที่จับคู่เป็นเวอร์ชันเก่าเกินไปที่จะรองรับการลบระยะไกล อัปเดต Fushi ที่นั่นก่อน';
       case 'remote_dict_lookup':
@@ -704899,6 +710862,10 @@ extension on _StringsTh {
         return 'แทร็กเสียง';
       case 'video_audio_track_empty':
         return 'ไม่มีแทร็กเสียงที่สลับได้';
+      case 'video_audio_track_fallback_muxed':
+        return 'The audio stream was refused; switched to a compatible stream with sound (lower quality)';
+      case 'video_audio_track_load_failed':
+        return 'Couldn\'t load the audio stream — there is no sound. The source refused access; try again later.';
       case 'video_audio_track_switched':
         return ({required Object label}) => 'แทร็กเสียง: ${label}';
       case 'video_auto_play_next_cancel':
@@ -708353,8 +714320,31 @@ extension on _StringsTr {
         return 'Text recognition isn\'t available on this device';
       case 'ai_agent_send':
         return 'Send';
+      case 'ai_agent_session_current':
+        return 'Current';
+      case 'ai_agent_session_delete':
+        return 'Delete';
+      case 'ai_agent_session_delete_message':
+        return ({required Object title}) =>
+            '“${title}” will be removed from this device. Changes the assistant made stay in the AI action log and can still be undone there.';
+      case 'ai_agent_session_delete_title':
+        return 'Delete this conversation?';
+      case 'ai_agent_session_more':
+        return 'Conversation options';
+      case 'ai_agent_session_open_failed':
+        return 'Couldn\'t open this conversation';
+      case 'ai_agent_session_rename':
+        return 'Rename';
+      case 'ai_agent_session_rename_title':
+        return 'Rename conversation';
       case 'ai_agent_session_summary':
         return ({required Object n}) => '${n} changes in this conversation';
+      case 'ai_agent_sessions_empty':
+        return 'No earlier conversations yet';
+      case 'ai_agent_sessions_retention_hint':
+        return 'Conversations stay on this device for 30 days';
+      case 'ai_agent_sessions_title':
+        return 'Conversations';
       case 'ai_agent_stop':
         return 'Stop';
       case 'ai_agent_stop_cancelled':
@@ -708526,6 +714516,32 @@ extension on _StringsTr {
         return 'Run on a paired computer';
       case 'ai_interconnect_host_unpaired':
         return 'No paired device yet. Pair a computer in Fushi Interconnect to let it handle AI video downloads with its own AI.';
+      case 'ai_mcp_access':
+        return 'External AI access (MCP)';
+      case 'ai_mcp_access_hint':
+        return 'Lets MCP clients on this computer (Claude Desktop, Claude Code…) call Fushi\'s operations. Listens on this computer only and needs the pairing token below. Changes that can be undone run directly and show up in the AI action log; anything that can\'t be undone, and installing extensions, asks you here first. Off by default.';
+      case 'ai_mcp_confirm_arguments':
+        return 'Arguments';
+      case 'ai_mcp_confirm_body':
+        return ({required Object client, required Object op}) =>
+            '${client} wants to run: ${op}';
+      case 'ai_mcp_confirm_expire':
+        return ({required Object minutes}) =>
+            'Declined automatically if you do not answer within ${minutes} minutes.';
+      case 'ai_mcp_confirm_title':
+        return 'Request from an external AI';
+      case 'ai_mcp_token':
+        return 'Pairing token';
+      case 'ai_mcp_token_copy':
+        return 'Copy token';
+      case 'ai_mcp_token_copy_config':
+        return 'Copy client config';
+      case 'ai_mcp_token_hint':
+        return 'Generate a token for your MCP client. Generating a new one revokes the old one.';
+      case 'ai_mcp_token_issued_body':
+        return 'Put this token in your MCP client\'s configuration as FUSHI_MCP_TOKEN (the setup guide shows how). It is shown only once.';
+      case 'ai_mcp_token_issued_title':
+        return 'New pairing token';
       case 'ai_media_acquire_ai_failed':
         return 'Yapay zeka şu anda kullanılamıyor; sonuçlar özgün metninizden, tohumlayıcı sayısına göre sıralı.';
       case 'ai_media_acquire_download':
@@ -709270,6 +715286,8 @@ extension on _StringsTr {
         return 'Anki medya depolama optimizasyonu';
       case 'anki_dedup_unavailable':
         return 'Bu bilgisayarda çalışan Anki gerektirir (AnkiConnect).';
+      case 'anki_delivery_section':
+        return 'Sending & pending cards';
       case 'anki_desktop_auto_launch':
         return 'Launch Anki when Fushi starts';
       case 'anki_desktop_auto_launch_hint':
@@ -709644,6 +715662,9 @@ extension on _StringsTr {
         return 'Gönderilmeyi bekliyor';
       case 'anki_pending_mines_status_sending':
         return 'Gönderiliyor';
+      case 'anki_pending_mines_stopped':
+        return ({required Object reason}) =>
+            '${reason} The remaining cards stay in the queue.';
       case 'anki_pending_mines_title':
         return 'Bekleyen kartlar';
       case 'anki_pending_mines_unreachable':
@@ -709765,6 +715786,9 @@ extension on _StringsTr {
         return 'I understand, enable';
       case 'anki_sync_client_enable_warn_title':
         return 'Enable Anki sync?';
+      case 'anki_sync_client_error_not_sync_server':
+        return ({required Object detail}) =>
+            'The server did not answer with the Anki sync protocol (the anki-original-size response header is missing). Make sure the address points at an Anki sync server (the official anki-sync-server, or the one built into Anki desktop) rather than a web page; a reverse proxy must keep this header. Details: ${detail}';
       case 'anki_sync_client_has_unsynced':
         return ({required Object count}) =>
             '${count} kart henüz eşitlenmedi. Hesap değiştirmeden veya çıkış yapmadan önce bunları eşitleyin.';
@@ -709937,6 +715961,9 @@ extension on _StringsTr {
         return 'Yeni altyazı dosyası seç';
       case 'audio_source_added':
         return 'Ses kaynağı eklendi';
+      case 'audio_source_connection_refused':
+        return ({required Object host}) =>
+            'Audio source refused the connection: nothing is listening at "${host}" — make sure the service is running, or remove this source in settings';
       case 'audio_source_dns_error':
         return ({required Object host}) =>
             'Ses kaynağı bağlantısı başarısız: "${host}" çözümlenemedi — ağınızı kontrol edin veya bu kaynağı ayarlardan kaldırın';
@@ -711722,6 +717749,18 @@ extension on _StringsTr {
         return 'Kart cümle sesi olmadan oluşturuldu (bu seçim için bulunamadı).';
       case 'card_mining_pending':
         return 'Kart ekleniyor…';
+      case 'card_notice_title_added':
+        return 'Card added';
+      case 'card_notice_title_duplicate':
+        return 'Card already exists';
+      case 'card_notice_title_failed':
+        return 'Card not created';
+      case 'card_notice_title_overwritten':
+        return 'Card overwritten';
+      case 'card_notice_title_queued':
+        return 'Card queued';
+      case 'card_notice_title_warning':
+        return 'Card added, something missing';
       case 'card_overwritten':
         return ({required Object deck}) =>
             'Kart 『${deck}』 destesinde üzerine yazıldı.';
@@ -712402,14 +718441,12 @@ extension on _StringsTr {
         return 'Tümünü seç';
       case 'delete_prompt_title':
         return 'Başka bir cihazda silindi';
-      case 'delete_scope_keep_local_desc':
-        return 'Diğer cihazlar kendi kopyalarını tutar';
       case 'delete_scope_no_channel':
         return 'Senkronizasyon yapılandırılmamış - bu silme yalnızca bu cihazı etkiler';
       case 'delete_scope_sync_everywhere':
         return 'Tüm cihazlardan sil';
       case 'delete_scope_sync_everywhere_desc':
-        return 'Diğer cihazlar bir sonraki senkronizasyonda silmeyi onaylar';
+        return 'İşaretlenirse diğer cihazlar bir sonraki senkronizasyonda silmeyi onaylar; işaretlenmezse kendi kopyalarını tutar';
       case 'delete_statistics':
         return 'İstatistikleri de sil';
       case 'delete_statistics_book_desc':
@@ -712640,6 +718677,11 @@ extension on _StringsTr {
         return 'Otomatik';
       case 'dict_language_description':
         return 'Bu sözlüğün metnini hangi yazı tipinin oluşturacağını belirler. Otomatik, sözlüğün beyan ettiği dili kullanır.';
+      case 'dict_language_group_title':
+        return ({required Object language, required Object n}) =>
+            '${language} · ${n}';
+      case 'dict_language_group_unset':
+        return 'Language not set';
       case 'dict_language_title':
         return 'Sözlük içerik dili';
       case 'dict_language_tooltip':
@@ -713812,6 +719854,55 @@ extension on _StringsTr {
             'You can attach 1 video (up to ${max}). It is compressed to ${resolution} before uploading.';
       case 'feedback_compose_video_retry':
         return 'Compress again';
+      case 'feedback_crash_auto_send_setting':
+        return 'Automatically send crash logs';
+      case 'feedback_crash_auto_send_setting_hint':
+        return 'After Fushi crashes or quits unexpectedly, send the logs to the developers on next launch without asking (the logs leave this device)';
+      case 'feedback_crash_auto_sent_notice':
+        return 'Logs from the last crash were sent to the developers automatically';
+      case 'feedback_crash_kind_anr':
+        return 'not responding';
+      case 'feedback_crash_kind_crash':
+        return 'crash';
+      case 'feedback_crash_kind_memory':
+        return 'closed by the system for low memory';
+      case 'feedback_crash_kind_native':
+        return 'native crash';
+      case 'feedback_crash_kind_startup':
+        return 'while starting';
+      case 'feedback_crash_kind_unexpected':
+        return 'unexpected exit';
+      case 'feedback_crash_notice_view':
+        return 'View';
+      case 'feedback_crash_prompt_always':
+        return 'Always send';
+      case 'feedback_crash_prompt_body':
+        return 'Send the logs to the developers to help fix it? You can follow it in Feedback.';
+      case 'feedback_crash_prompt_decline':
+        return 'No thanks';
+      case 'feedback_crash_prompt_retry':
+        return 'Retry';
+      case 'feedback_crash_prompt_send':
+        return 'Send to developers';
+      case 'feedback_crash_prompt_sending':
+        return 'Sending…';
+      case 'feedback_crash_prompt_skip':
+        return 'Skip';
+      case 'feedback_crash_prompt_title':
+        return ({required Object kind}) =>
+            'Fushi quit unexpectedly last time (${kind})';
+      case 'feedback_crash_prompt_title_many':
+        return ({required Object n, required Object kind}) =>
+            'Fushi quit unexpectedly ${n} times (${kind})';
+      case 'feedback_crash_report_header':
+        return 'Generated by Fushi after it quit unexpectedly; logs and device info are attached.';
+      case 'feedback_crash_report_title':
+        return ({required Object kind, required Object version}) =>
+            'Crash report: ${kind} (${version})';
+      case 'feedback_crash_send_failed':
+        return 'Could not send the crash logs. Fushi will ask again next time.';
+      case 'feedback_crash_sent_notice':
+        return 'Crash logs sent to the developers';
       case 'feedback_detail_add_shot':
         return 'Add screenshot';
       case 'feedback_detail_attachments':
@@ -717657,6 +723748,18 @@ extension on _StringsTr {
         return 'Top';
       case 'lyrics_control_zone_top_hint':
         return 'Top bar on phones, top-right corner on wide screens';
+      case 'lyrics_controls_collapse':
+        return 'Collapse playback controls';
+      case 'lyrics_controls_expand':
+        return 'Expand playback controls';
+      case 'lyrics_controls_style':
+        return 'Playback controls layout';
+      case 'lyrics_controls_style_classic':
+        return 'Classic';
+      case 'lyrics_controls_style_hint':
+        return 'New: a collapsible mini bar on phones and floating islands on wide screens. Classic: the previous layout.';
+      case 'lyrics_controls_style_modern':
+        return 'New';
       case 'lyrics_exit_to_library':
         return 'Close and return to library';
       case 'lyrics_font_size':
@@ -717669,6 +723772,14 @@ extension on _StringsTr {
         return 'Use your own color for the line being read instead of the player theme color';
       case 'lyrics_illustration_back_to_cover':
         return 'Back to cover';
+      case 'lyrics_illustration_cue':
+        return 'Illustration prompt';
+      case 'lyrics_illustration_cue_dot':
+        return 'Dot';
+      case 'lyrics_illustration_cue_hint':
+        return 'Pop up: show the illustration card and pause for the image pause duration below. Dot: only mark the cover thumbnail.';
+      case 'lyrics_illustration_cue_popup':
+        return 'Pop up';
       case 'lyrics_illustration_next':
         return 'Next illustration';
       case 'lyrics_illustration_open':
@@ -718729,6 +724840,9 @@ extension on _StringsTr {
       case 'media_privacy_inherited_note':
         return ({required Object collections}) =>
             'Private because it is in the private collection “${collections}”. To make it public, turn off privacy on that collection.';
+      case 'media_privacy_inherited_source_note':
+        return ({required Object source}) =>
+            'Private because its source library “${source}” is private. To make it public, turn off privacy on that source library.';
       case 'media_privacy_load_failed':
         return ({required Object reason}) =>
             'Could not read the privacy setting, so it cannot be changed right now: ${reason}';
@@ -718836,6 +724950,23 @@ extension on _StringsTr {
         return 'Open Folder';
       case 'media_source_open_folder_failed':
         return 'Couldn\'t open the folder. It may have been moved, deleted, or disconnected.';
+      case 'media_source_privacy_action':
+        return 'Privacy';
+      case 'media_source_privacy_badge':
+        return 'Private: not uploaded to the leaderboard';
+      case 'media_source_privacy_cleared_toast':
+        return 'Source library is no longer private';
+      case 'media_source_privacy_hint':
+        return 'Everything this source library brings in is treated as private: it is never uploaded to the leaderboard, so it stays off your public shelf, profile and share cards, and its progress is not pushed to Bangumi. Items already uploaded are removed from the leaderboard as soon as you turn this on (or at the next sync if that fails). Your daily character total still counts them, without saying what you read. Removing this source keeps its items private.';
+      case 'media_source_privacy_marked_toast':
+        return 'Source library is now private';
+      case 'media_source_privacy_switch':
+        return 'Keep this source library private';
+      case 'media_source_privacy_withdraw_failed':
+        return ({required Object reason}) =>
+            'Source library is now private, but removing its items from the leaderboard failed; the next sync will try again: ${reason}';
+      case 'media_source_privacy_withdrawn_toast':
+        return 'Source library is now private; its items were removed from the leaderboard';
       case 'media_source_remove':
         return 'Remove Source';
       case 'media_source_remove_download_keep':
@@ -722002,8 +728133,11 @@ extension on _StringsTr {
         return 'Re-download audiobook from peer';
       case 'remote_book_audiobook_redownloaded':
         return 'Audiobook re-downloaded from peer';
+      case 'remote_book_delete_cloud_confirm':
+        return ({required Object name, required Object backend}) =>
+            'Delete "${name}" from ${backend}? The book\'s files, cover, progress and audiobook in the cloud are permanently deleted. This device has no copy and this can\'t be undone. Other devices will ask whether to delete their copy on their next sync.';
       case 'remote_book_delete_everywhere':
-        return 'Delete permanently';
+        return 'Also delete on host';
       case 'remote_book_delete_everywhere_confirm':
         return ({required Object name, required Object host}) =>
             'Delete "${name}" on host "${host}"? Its files, reading progress, bookmarks and audiobook there are removed for good, and this device has no copy. This cannot be undone.';
@@ -722064,8 +728198,20 @@ extension on _StringsTr {
         return 'Ana makinede TMDB bölüm sıralaması…';
       case 'remote_delete_audiobook_partial':
         return 'Kitap silindi, ancak sesli kitabı eşleştirilmiş cihazdan kaldırılamadı';
+      case 'remote_delete_cloud_checking':
+        return 'Checking whether the cloud storage is reachable…';
+      case 'remote_delete_cloud_offline':
+        return 'Can\'t reach the cloud storage. Delete it there once it\'s reachable.';
+      case 'remote_delete_cloud_signed_out':
+        return 'The cloud storage sign-in has expired. Sign in again to delete it there.';
       case 'remote_delete_failed':
         return 'Eşleştirilmiş cihazda silinemedi';
+      case 'remote_delete_host_checking':
+        return 'Checking whether the host is online…';
+      case 'remote_delete_host_offline':
+        return 'The host is offline or unreachable. Delete it there once it\'s connected.';
+      case 'remote_delete_host_pairing_rejected':
+        return 'The host rejected this device\'s pairing. Pair again to delete it there.';
       case 'remote_delete_unsupported':
         return 'Eşleştirilmiş cihaz uzaktan silmeyi destekleyemeyecek kadar eski. Önce oradaki Fushi\'yi güncelleyin.';
       case 'remote_dict_lookup':
@@ -726849,6 +732995,10 @@ extension on _StringsTr {
         return 'Ses izi';
       case 'video_audio_track_empty':
         return 'Değiştirilebilir ses parçası yok';
+      case 'video_audio_track_fallback_muxed':
+        return 'The audio stream was refused; switched to a compatible stream with sound (lower quality)';
+      case 'video_audio_track_load_failed':
+        return 'Couldn\'t load the audio stream — there is no sound. The source refused access; try again later.';
       case 'video_audio_track_switched':
         return ({required Object label}) => 'Ses izi: ${label}';
       case 'video_auto_play_next_cancel':
@@ -730308,8 +736458,31 @@ extension on _StringsVi {
         return 'Text recognition isn\'t available on this device';
       case 'ai_agent_send':
         return 'Send';
+      case 'ai_agent_session_current':
+        return 'Current';
+      case 'ai_agent_session_delete':
+        return 'Delete';
+      case 'ai_agent_session_delete_message':
+        return ({required Object title}) =>
+            '“${title}” will be removed from this device. Changes the assistant made stay in the AI action log and can still be undone there.';
+      case 'ai_agent_session_delete_title':
+        return 'Delete this conversation?';
+      case 'ai_agent_session_more':
+        return 'Conversation options';
+      case 'ai_agent_session_open_failed':
+        return 'Couldn\'t open this conversation';
+      case 'ai_agent_session_rename':
+        return 'Rename';
+      case 'ai_agent_session_rename_title':
+        return 'Rename conversation';
       case 'ai_agent_session_summary':
         return ({required Object n}) => '${n} changes in this conversation';
+      case 'ai_agent_sessions_empty':
+        return 'No earlier conversations yet';
+      case 'ai_agent_sessions_retention_hint':
+        return 'Conversations stay on this device for 30 days';
+      case 'ai_agent_sessions_title':
+        return 'Conversations';
       case 'ai_agent_stop':
         return 'Stop';
       case 'ai_agent_stop_cancelled':
@@ -730480,6 +736653,32 @@ extension on _StringsVi {
         return 'Run on a paired computer';
       case 'ai_interconnect_host_unpaired':
         return 'No paired device yet. Pair a computer in Fushi Interconnect to let it handle AI video downloads with its own AI.';
+      case 'ai_mcp_access':
+        return 'External AI access (MCP)';
+      case 'ai_mcp_access_hint':
+        return 'Lets MCP clients on this computer (Claude Desktop, Claude Code…) call Fushi\'s operations. Listens on this computer only and needs the pairing token below. Changes that can be undone run directly and show up in the AI action log; anything that can\'t be undone, and installing extensions, asks you here first. Off by default.';
+      case 'ai_mcp_confirm_arguments':
+        return 'Arguments';
+      case 'ai_mcp_confirm_body':
+        return ({required Object client, required Object op}) =>
+            '${client} wants to run: ${op}';
+      case 'ai_mcp_confirm_expire':
+        return ({required Object minutes}) =>
+            'Declined automatically if you do not answer within ${minutes} minutes.';
+      case 'ai_mcp_confirm_title':
+        return 'Request from an external AI';
+      case 'ai_mcp_token':
+        return 'Pairing token';
+      case 'ai_mcp_token_copy':
+        return 'Copy token';
+      case 'ai_mcp_token_copy_config':
+        return 'Copy client config';
+      case 'ai_mcp_token_hint':
+        return 'Generate a token for your MCP client. Generating a new one revokes the old one.';
+      case 'ai_mcp_token_issued_body':
+        return 'Put this token in your MCP client\'s configuration as FUSHI_MCP_TOKEN (the setup guide shows how). It is shown only once.';
+      case 'ai_mcp_token_issued_title':
+        return 'New pairing token';
       case 'ai_media_acquire_ai_failed':
         return 'AI hiện không khả dụng; kết quả lấy từ văn bản gốc của bạn, sắp xếp theo seeder.';
       case 'ai_media_acquire_download':
@@ -731224,6 +737423,8 @@ extension on _StringsVi {
         return 'Tối ưu lưu trữ media Anki';
       case 'anki_dedup_unavailable':
         return 'Yêu cầu Anki đang chạy trên máy này (AnkiConnect).';
+      case 'anki_delivery_section':
+        return 'Sending & pending cards';
       case 'anki_desktop_auto_launch':
         return 'Launch Anki when Fushi starts';
       case 'anki_desktop_auto_launch_hint':
@@ -731597,6 +737798,9 @@ extension on _StringsVi {
         return 'Đang chờ gửi';
       case 'anki_pending_mines_status_sending':
         return 'Đang gửi';
+      case 'anki_pending_mines_stopped':
+        return ({required Object reason}) =>
+            '${reason} The remaining cards stay in the queue.';
       case 'anki_pending_mines_title':
         return 'Thẻ chờ';
       case 'anki_pending_mines_unreachable':
@@ -731717,6 +737921,9 @@ extension on _StringsVi {
         return 'I understand, enable';
       case 'anki_sync_client_enable_warn_title':
         return 'Enable Anki sync?';
+      case 'anki_sync_client_error_not_sync_server':
+        return ({required Object detail}) =>
+            'The server did not answer with the Anki sync protocol (the anki-original-size response header is missing). Make sure the address points at an Anki sync server (the official anki-sync-server, or the one built into Anki desktop) rather than a web page; a reverse proxy must keep this header. Details: ${detail}';
       case 'anki_sync_client_has_unsynced':
         return ({required Object count}) =>
             '${count} thẻ chưa được đồng bộ. Hãy đồng bộ chúng trước khi đổi tài khoản hoặc đăng xuất.';
@@ -731888,6 +738095,9 @@ extension on _StringsVi {
         return 'Chọn tệp phụ đề mới';
       case 'audio_source_added':
         return 'Đã thêm nguồn âm thanh';
+      case 'audio_source_connection_refused':
+        return ({required Object host}) =>
+            'Audio source refused the connection: nothing is listening at "${host}" — make sure the service is running, or remove this source in settings';
       case 'audio_source_dns_error':
         return ({required Object host}) =>
             'Kết nối nguồn âm thanh thất bại: không thể phân giải "${host}" — kiểm tra mạng hoặc xóa nguồn này trong cài đặt';
@@ -733669,6 +739879,18 @@ extension on _StringsVi {
         return 'Đã tạo thẻ nhưng không có âm thanh câu (không tìm thấy cho vùng chọn này).';
       case 'card_mining_pending':
         return 'Đang thêm thẻ…';
+      case 'card_notice_title_added':
+        return 'Card added';
+      case 'card_notice_title_duplicate':
+        return 'Card already exists';
+      case 'card_notice_title_failed':
+        return 'Card not created';
+      case 'card_notice_title_overwritten':
+        return 'Card overwritten';
+      case 'card_notice_title_queued':
+        return 'Card queued';
+      case 'card_notice_title_warning':
+        return 'Card added, something missing';
       case 'card_overwritten':
         return ({required Object deck}) => 'Đã ghi đè thẻ trong 『${deck}』.';
       case 'card_source_open':
@@ -734348,14 +740570,12 @@ extension on _StringsVi {
         return 'Chọn tất cả';
       case 'delete_prompt_title':
         return 'Đã xóa trên thiết bị khác';
-      case 'delete_scope_keep_local_desc':
-        return 'Các thiết bị khác giữ bản sao của chúng';
       case 'delete_scope_no_channel':
         return 'Chưa cấu hình đồng bộ - việc xóa này chỉ ảnh hưởng đến thiết bị này';
       case 'delete_scope_sync_everywhere':
         return 'Xóa khỏi tất cả thiết bị';
       case 'delete_scope_sync_everywhere_desc':
-        return 'Các thiết bị khác xác nhận xóa khi đồng bộ tiếp theo';
+        return 'Nếu chọn, các thiết bị khác sẽ xác nhận xóa khi đồng bộ tiếp theo; nếu không, chúng giữ bản sao của mình';
       case 'delete_statistics':
         return 'Xóa cả thống kê';
       case 'delete_statistics_book_desc':
@@ -734587,6 +740807,11 @@ extension on _StringsVi {
         return 'Tự động';
       case 'dict_language_description':
         return 'Quyết định phông chữ nào hiển thị văn bản của từ điển này. Tự động sử dụng ngôn ngữ mà từ điển khai báo.';
+      case 'dict_language_group_title':
+        return ({required Object language, required Object n}) =>
+            '${language} · ${n}';
+      case 'dict_language_group_unset':
+        return 'Language not set';
       case 'dict_language_title':
         return 'Ngôn ngữ nội dung từ điển';
       case 'dict_language_tooltip':
@@ -735760,6 +741985,55 @@ extension on _StringsVi {
             'You can attach 1 video (up to ${max}). It is compressed to ${resolution} before uploading.';
       case 'feedback_compose_video_retry':
         return 'Compress again';
+      case 'feedback_crash_auto_send_setting':
+        return 'Automatically send crash logs';
+      case 'feedback_crash_auto_send_setting_hint':
+        return 'After Fushi crashes or quits unexpectedly, send the logs to the developers on next launch without asking (the logs leave this device)';
+      case 'feedback_crash_auto_sent_notice':
+        return 'Logs from the last crash were sent to the developers automatically';
+      case 'feedback_crash_kind_anr':
+        return 'not responding';
+      case 'feedback_crash_kind_crash':
+        return 'crash';
+      case 'feedback_crash_kind_memory':
+        return 'closed by the system for low memory';
+      case 'feedback_crash_kind_native':
+        return 'native crash';
+      case 'feedback_crash_kind_startup':
+        return 'while starting';
+      case 'feedback_crash_kind_unexpected':
+        return 'unexpected exit';
+      case 'feedback_crash_notice_view':
+        return 'View';
+      case 'feedback_crash_prompt_always':
+        return 'Always send';
+      case 'feedback_crash_prompt_body':
+        return 'Send the logs to the developers to help fix it? You can follow it in Feedback.';
+      case 'feedback_crash_prompt_decline':
+        return 'No thanks';
+      case 'feedback_crash_prompt_retry':
+        return 'Retry';
+      case 'feedback_crash_prompt_send':
+        return 'Send to developers';
+      case 'feedback_crash_prompt_sending':
+        return 'Sending…';
+      case 'feedback_crash_prompt_skip':
+        return 'Skip';
+      case 'feedback_crash_prompt_title':
+        return ({required Object kind}) =>
+            'Fushi quit unexpectedly last time (${kind})';
+      case 'feedback_crash_prompt_title_many':
+        return ({required Object n, required Object kind}) =>
+            'Fushi quit unexpectedly ${n} times (${kind})';
+      case 'feedback_crash_report_header':
+        return 'Generated by Fushi after it quit unexpectedly; logs and device info are attached.';
+      case 'feedback_crash_report_title':
+        return ({required Object kind, required Object version}) =>
+            'Crash report: ${kind} (${version})';
+      case 'feedback_crash_send_failed':
+        return 'Could not send the crash logs. Fushi will ask again next time.';
+      case 'feedback_crash_sent_notice':
+        return 'Crash logs sent to the developers';
       case 'feedback_detail_add_shot':
         return 'Add screenshot';
       case 'feedback_detail_attachments':
@@ -739602,6 +745876,18 @@ extension on _StringsVi {
         return 'Top';
       case 'lyrics_control_zone_top_hint':
         return 'Top bar on phones, top-right corner on wide screens';
+      case 'lyrics_controls_collapse':
+        return 'Collapse playback controls';
+      case 'lyrics_controls_expand':
+        return 'Expand playback controls';
+      case 'lyrics_controls_style':
+        return 'Playback controls layout';
+      case 'lyrics_controls_style_classic':
+        return 'Classic';
+      case 'lyrics_controls_style_hint':
+        return 'New: a collapsible mini bar on phones and floating islands on wide screens. Classic: the previous layout.';
+      case 'lyrics_controls_style_modern':
+        return 'New';
       case 'lyrics_exit_to_library':
         return 'Close and return to library';
       case 'lyrics_font_size':
@@ -739614,6 +745900,14 @@ extension on _StringsVi {
         return 'Use your own color for the line being read instead of the player theme color';
       case 'lyrics_illustration_back_to_cover':
         return 'Back to cover';
+      case 'lyrics_illustration_cue':
+        return 'Illustration prompt';
+      case 'lyrics_illustration_cue_dot':
+        return 'Dot';
+      case 'lyrics_illustration_cue_hint':
+        return 'Pop up: show the illustration card and pause for the image pause duration below. Dot: only mark the cover thumbnail.';
+      case 'lyrics_illustration_cue_popup':
+        return 'Pop up';
       case 'lyrics_illustration_next':
         return 'Next illustration';
       case 'lyrics_illustration_open':
@@ -740672,6 +746966,9 @@ extension on _StringsVi {
       case 'media_privacy_inherited_note':
         return ({required Object collections}) =>
             'Private because it is in the private collection “${collections}”. To make it public, turn off privacy on that collection.';
+      case 'media_privacy_inherited_source_note':
+        return ({required Object source}) =>
+            'Private because its source library “${source}” is private. To make it public, turn off privacy on that source library.';
       case 'media_privacy_load_failed':
         return ({required Object reason}) =>
             'Could not read the privacy setting, so it cannot be changed right now: ${reason}';
@@ -740779,6 +747076,23 @@ extension on _StringsVi {
         return 'Open Folder';
       case 'media_source_open_folder_failed':
         return 'Couldn\'t open the folder. It may have been moved, deleted, or disconnected.';
+      case 'media_source_privacy_action':
+        return 'Privacy';
+      case 'media_source_privacy_badge':
+        return 'Private: not uploaded to the leaderboard';
+      case 'media_source_privacy_cleared_toast':
+        return 'Source library is no longer private';
+      case 'media_source_privacy_hint':
+        return 'Everything this source library brings in is treated as private: it is never uploaded to the leaderboard, so it stays off your public shelf, profile and share cards, and its progress is not pushed to Bangumi. Items already uploaded are removed from the leaderboard as soon as you turn this on (or at the next sync if that fails). Your daily character total still counts them, without saying what you read. Removing this source keeps its items private.';
+      case 'media_source_privacy_marked_toast':
+        return 'Source library is now private';
+      case 'media_source_privacy_switch':
+        return 'Keep this source library private';
+      case 'media_source_privacy_withdraw_failed':
+        return ({required Object reason}) =>
+            'Source library is now private, but removing its items from the leaderboard failed; the next sync will try again: ${reason}';
+      case 'media_source_privacy_withdrawn_toast':
+        return 'Source library is now private; its items were removed from the leaderboard';
       case 'media_source_remove':
         return 'Remove Source';
       case 'media_source_remove_download_keep':
@@ -743945,8 +750259,11 @@ extension on _StringsVi {
         return 'Re-download audiobook from peer';
       case 'remote_book_audiobook_redownloaded':
         return 'Audiobook re-downloaded from peer';
+      case 'remote_book_delete_cloud_confirm':
+        return ({required Object name, required Object backend}) =>
+            'Delete "${name}" from ${backend}? The book\'s files, cover, progress and audiobook in the cloud are permanently deleted. This device has no copy and this can\'t be undone. Other devices will ask whether to delete their copy on their next sync.';
       case 'remote_book_delete_everywhere':
-        return 'Delete permanently';
+        return 'Also delete on host';
       case 'remote_book_delete_everywhere_confirm':
         return ({required Object name, required Object host}) =>
             'Delete "${name}" on host "${host}"? Its files, reading progress, bookmarks and audiobook there are removed for good, and this device has no copy. This cannot be undone.';
@@ -744007,8 +750324,20 @@ extension on _StringsVi {
         return 'Thứ tự tập TMDB trên máy chủ…';
       case 'remote_delete_audiobook_partial':
         return 'Đã xóa sách, nhưng sách nói không thể được gỡ trên thiết bị đã ghép nối';
+      case 'remote_delete_cloud_checking':
+        return 'Checking whether the cloud storage is reachable…';
+      case 'remote_delete_cloud_offline':
+        return 'Can\'t reach the cloud storage. Delete it there once it\'s reachable.';
+      case 'remote_delete_cloud_signed_out':
+        return 'The cloud storage sign-in has expired. Sign in again to delete it there.';
       case 'remote_delete_failed':
         return 'Không thể xóa trên thiết bị đã ghép nối';
+      case 'remote_delete_host_checking':
+        return 'Checking whether the host is online…';
+      case 'remote_delete_host_offline':
+        return 'The host is offline or unreachable. Delete it there once it\'s connected.';
+      case 'remote_delete_host_pairing_rejected':
+        return 'The host rejected this device\'s pairing. Pair again to delete it there.';
       case 'remote_delete_unsupported':
         return 'Thiết bị đã ghép nối quá cũ để hỗ trợ xóa từ xa. Hãy cập nhật Fushi trên thiết bị đó trước.';
       case 'remote_dict_lookup':
@@ -748793,6 +755122,10 @@ extension on _StringsVi {
         return 'Bản âm thanh';
       case 'video_audio_track_empty':
         return 'Không có bản âm thanh có thể chuyển đổi';
+      case 'video_audio_track_fallback_muxed':
+        return 'The audio stream was refused; switched to a compatible stream with sound (lower quality)';
+      case 'video_audio_track_load_failed':
+        return 'Couldn\'t load the audio stream — there is no sound. The source refused access; try again later.';
       case 'video_audio_track_switched':
         return ({required Object label}) => 'Bản âm thanh: ${label}';
       case 'video_auto_play_next_cancel':
@@ -752243,8 +758576,31 @@ extension on _StringsZhCn {
         return '本机的文字识别不可用';
       case 'ai_agent_send':
         return '发送';
+      case 'ai_agent_session_current':
+        return '当前';
+      case 'ai_agent_session_delete':
+        return '删除';
+      case 'ai_agent_session_delete_message':
+        return ({required Object title}) =>
+            '「${title}」将从本机删除。助手做过的改动仍留在「AI 操作记录」里，可以在那里撤销。';
+      case 'ai_agent_session_delete_title':
+        return '删除这个会话？';
+      case 'ai_agent_session_more':
+        return '会话选项';
+      case 'ai_agent_session_open_failed':
+        return '无法打开这个会话';
+      case 'ai_agent_session_rename':
+        return '重命名';
+      case 'ai_agent_session_rename_title':
+        return '重命名会话';
       case 'ai_agent_session_summary':
         return ({required Object n}) => '本次对话做了 ${n} 处改动';
+      case 'ai_agent_sessions_empty':
+        return '还没有历史会话';
+      case 'ai_agent_sessions_retention_hint':
+        return '会话只保存在本机，保留 30 天';
+      case 'ai_agent_sessions_title':
+        return '会话';
       case 'ai_agent_stop':
         return '停止';
       case 'ai_agent_stop_cancelled':
@@ -752415,6 +758771,31 @@ extension on _StringsZhCn {
         return '交给互联电脑办';
       case 'ai_interconnect_host_unpaired':
         return '还没有配对设备。先在「Fushi 互联」里配对电脑，就能把 AI 下视频交给它，用它的 AI 来办。';
+      case 'ai_mcp_access':
+        return '外部 AI 访问（MCP）';
+      case 'ai_mcp_access_hint':
+        return '让本机的 MCP 客户端（Claude Desktop、Claude Code 等）调用 Fushi 的操作。只监听本机，需要下面的配对令牌。可撤销的改动直接执行并记入「AI 操作记录」；撤销不了的操作和安装扩展会先在这里请你确认。默认关闭。';
+      case 'ai_mcp_confirm_arguments':
+        return '参数';
+      case 'ai_mcp_confirm_body':
+        return ({required Object client, required Object op}) =>
+            '${client} 请求执行：${op}';
+      case 'ai_mcp_confirm_expire':
+        return ({required Object minutes}) => '${minutes} 分钟内不回答将自动拒绝。';
+      case 'ai_mcp_confirm_title':
+        return '外部 AI 请求执行操作';
+      case 'ai_mcp_token':
+        return '配对令牌';
+      case 'ai_mcp_token_copy':
+        return '复制令牌';
+      case 'ai_mcp_token_copy_config':
+        return '复制客户端配置';
+      case 'ai_mcp_token_hint':
+        return '为 MCP 客户端生成令牌。重新生成会作废旧令牌。';
+      case 'ai_mcp_token_issued_body':
+        return '把这个令牌填进 MCP 客户端配置的 FUSHI_MCP_TOKEN（接入说明里有示例）。它只显示这一次。';
+      case 'ai_mcp_token_issued_title':
+        return '新的配对令牌';
       case 'ai_media_acquire_ai_failed':
         return 'AI 暂不可用，已按原文搜索并按做种数排序。';
       case 'ai_media_acquire_download':
@@ -753133,6 +759514,8 @@ extension on _StringsZhCn {
         return 'Anki 媒体存储优化';
       case 'anki_dedup_unavailable':
         return '需要本机运行 Anki（AnkiConnect）。';
+      case 'anki_delivery_section':
+        return '发送与待发卡片';
       case 'anki_desktop_auto_launch':
         return '启动 Fushi 时自动启动 Anki';
       case 'anki_desktop_auto_launch_hint':
@@ -753506,6 +759889,8 @@ extension on _StringsZhCn {
         return '等待发送';
       case 'anki_pending_mines_status_sending':
         return '发送中';
+      case 'anki_pending_mines_stopped':
+        return ({required Object reason}) => '${reason} 剩下的卡片继续留在队列里。';
       case 'anki_pending_mines_title':
         return '待发卡片';
       case 'anki_pending_mines_unreachable':
@@ -753623,6 +760008,9 @@ extension on _StringsZhCn {
         return '我明白，仍然启用';
       case 'anki_sync_client_enable_warn_title':
         return '要启用 Anki 同步吗？';
+      case 'anki_sync_client_error_not_sync_server':
+        return ({required Object detail}) =>
+            '服务器的回复不是 Anki 同步协议（缺少 anki-original-size 响应头）。请确认地址指向 Anki 同步服务器（官方 anki-sync-server，或 Anki 桌面版自带的同步服务），而不是网页；经反向代理时须保留这个响应头。原始信息：${detail}';
       case 'anki_sync_client_has_unsynced':
         return ({required Object count}) =>
             '还有 ${count} 张卡没有同步，请先同步再切换账号或退出登录。';
@@ -753793,6 +760181,9 @@ extension on _StringsZhCn {
         return '选择新字幕文件';
       case 'audio_source_added':
         return '已添加音频来源';
+      case 'audio_source_connection_refused':
+        return ({required Object host}) =>
+            '音频源拒绝连接："${host}" 上没有服务在监听 — 请确认服务已启动，或在设置中移除此音频源';
       case 'audio_source_dns_error':
         return ({required Object host}) =>
             '音频源连接失败：无法解析 "${host}" — 请检查网络，或在设置中移除此音频源';
@@ -755543,6 +761934,18 @@ extension on _StringsZhCn {
         return '已制卡，但本次选区找不到句子音频。';
       case 'card_mining_pending':
         return '制卡中…';
+      case 'card_notice_title_added':
+        return '已制卡';
+      case 'card_notice_title_duplicate':
+        return '卡片已存在';
+      case 'card_notice_title_failed':
+        return '制卡失败';
+      case 'card_notice_title_overwritten':
+        return '已覆盖卡片';
+      case 'card_notice_title_queued':
+        return '已存入待发队列';
+      case 'card_notice_title_warning':
+        return '已制卡，有缺失';
       case 'card_overwritten':
         return ({required Object deck}) => '卡片已覆盖到『${deck}』。';
       case 'card_source_open':
@@ -756217,14 +762620,12 @@ extension on _StringsZhCn {
         return '全选';
       case 'delete_prompt_title':
         return '其他设备已删除';
-      case 'delete_scope_keep_local_desc':
-        return '其他设备保留';
       case 'delete_scope_no_channel':
         return '未配置同步，本次删除只影响这台设备';
       case 'delete_scope_sync_everywhere':
         return '从所有设备删除';
       case 'delete_scope_sync_everywhere_desc':
-        return '其他设备下次同步时会确认删除';
+        return '勾选后，其他设备下次同步时会确认删除；不勾选则其他设备保留';
       case 'delete_statistics':
         return '同时删除统计数据';
       case 'delete_statistics_book_desc':
@@ -756452,6 +762853,11 @@ extension on _StringsZhCn {
         return '自动';
       case 'dict_language_description':
         return '决定这本词典的文字用哪种字体渲染。自动 = 用词典自己声明的语言。';
+      case 'dict_language_group_title':
+        return ({required Object language, required Object n}) =>
+            '${language} · ${n} 本';
+      case 'dict_language_group_unset':
+        return '未标注语言';
       case 'dict_language_title':
         return '词典内容语言';
       case 'dict_language_tooltip':
@@ -757604,6 +764010,54 @@ extension on _StringsZhCn {
             '可附 1 个视频（不超过 ${max}），上传前会自动压缩为 ${resolution}。';
       case 'feedback_compose_video_retry':
         return '重新压缩';
+      case 'feedback_crash_auto_send_setting':
+        return '自动发送闪退日志';
+      case 'feedback_crash_auto_send_setting_hint':
+        return 'Fushi 闪退或异常退出后，下次启动时不再询问、直接把日志发给开发者（日志会离开这台设备）';
+      case 'feedback_crash_auto_sent_notice':
+        return '已自动把上次的闪退日志发给开发者';
+      case 'feedback_crash_kind_anr':
+        return '无响应';
+      case 'feedback_crash_kind_crash':
+        return '崩溃';
+      case 'feedback_crash_kind_memory':
+        return '内存不足被系统关闭';
+      case 'feedback_crash_kind_native':
+        return '原生崩溃';
+      case 'feedback_crash_kind_startup':
+        return '启动时';
+      case 'feedback_crash_kind_unexpected':
+        return '意外退出';
+      case 'feedback_crash_notice_view':
+        return '查看';
+      case 'feedback_crash_prompt_always':
+        return '以后自动发送';
+      case 'feedback_crash_prompt_body':
+        return '把日志发给开发者帮忙修复？发出后可以在反馈中心看进度。';
+      case 'feedback_crash_prompt_decline':
+        return '不用了';
+      case 'feedback_crash_prompt_retry':
+        return '重试';
+      case 'feedback_crash_prompt_send':
+        return '发送给开发者';
+      case 'feedback_crash_prompt_sending':
+        return '正在发送…';
+      case 'feedback_crash_prompt_skip':
+        return '跳过';
+      case 'feedback_crash_prompt_title':
+        return ({required Object kind}) => 'Fushi 上次意外退出了（${kind}）';
+      case 'feedback_crash_prompt_title_many':
+        return ({required Object n, required Object kind}) =>
+            'Fushi 已经意外退出 ${n} 次（${kind}）';
+      case 'feedback_crash_report_header':
+        return 'Fushi 在异常退出后自动生成，已附日志与设备信息。';
+      case 'feedback_crash_report_title':
+        return ({required Object kind, required Object version}) =>
+            '闪退报告：${kind}（${version}）';
+      case 'feedback_crash_send_failed':
+        return '闪退日志没发出去，下次启动时会再问你。';
+      case 'feedback_crash_sent_notice':
+        return '闪退日志已发给开发者';
       case 'feedback_detail_add_shot':
         return '追加截图';
       case 'feedback_detail_attachments':
@@ -761415,6 +767869,18 @@ extension on _StringsZhCn {
         return '顶部';
       case 'lyrics_control_zone_top_hint':
         return '手机在顶栏，宽屏在右上角';
+      case 'lyrics_controls_collapse':
+        return '收起播放控件';
+      case 'lyrics_controls_expand':
+        return '展开播放控件';
+      case 'lyrics_controls_style':
+        return '播放控件布局';
+      case 'lyrics_controls_style_classic':
+        return '经典';
+      case 'lyrics_controls_style_hint':
+        return '新版：手机上是可收起的迷你条，宽屏是底部浮岛；经典：原来的布局';
+      case 'lyrics_controls_style_modern':
+        return '新版';
       case 'lyrics_exit_to_library':
         return '关闭并返回书架';
       case 'lyrics_font_size':
@@ -761427,6 +767893,14 @@ extension on _StringsZhCn {
         return '正在朗读的一行改用自定义颜色，不跟随播放器主题取色';
       case 'lyrics_illustration_back_to_cover':
         return '回到封面';
+      case 'lyrics_illustration_cue':
+        return '插图提示方式';
+      case 'lyrics_illustration_cue_dot':
+        return '红点';
+      case 'lyrics_illustration_cue_hint':
+        return '弹出停留：弹出插图卡，并按下面的「图片暂停」秒数暂停后继续；红点：只在封面缩略图上标红点';
+      case 'lyrics_illustration_cue_popup':
+        return '弹出停留';
       case 'lyrics_illustration_next':
         return '下一张插图';
       case 'lyrics_illustration_open':
@@ -762479,6 +768953,9 @@ extension on _StringsZhCn {
       case 'media_privacy_inherited_note':
         return ({required Object collections}) =>
             '因所在合集「${collections}」已设为私密，这部作品也是私密的。要取消，请到该合集的「私密」里关闭。';
+      case 'media_privacy_inherited_source_note':
+        return ({required Object source}) =>
+            '因所在来源库「${source}」已设为私密，这部作品也是私密的。要取消，请到该来源库的「隐私」里关闭。';
       case 'media_privacy_load_failed':
         return ({required Object reason}) => '读取私密状态失败，暂时无法修改：${reason}';
       case 'media_privacy_marked_toast':
@@ -762582,6 +769059,23 @@ extension on _StringsZhCn {
         return '打开文件夹';
       case 'media_source_open_folder_failed':
         return '无法打开文件夹，它可能已被移动、删除或断开连接。';
+      case 'media_source_privacy_action':
+        return '隐私';
+      case 'media_source_privacy_badge':
+        return '私密：不上传排行榜';
+      case 'media_source_privacy_cleared_toast':
+        return '来源库已取消私密';
+      case 'media_source_privacy_hint':
+        return '这个来源库里的所有条目都按私密处理：不上传到排行榜，不出现在公开书架、个人主页与分享卡上，进度也不推送到 Bangumi。打开后，已经上传过的条目会立即从排行榜撤下（失败则在下次同步时撤下）。每日总字数仍会计入，但不带作品信息。移除此来源后，这些条目仍保持私密。';
+      case 'media_source_privacy_marked_toast':
+        return '来源库已设为私密';
+      case 'media_source_privacy_switch':
+        return '将此来源库设为私密';
+      case 'media_source_privacy_withdraw_failed':
+        return ({required Object reason}) =>
+            '来源库已设为私密，但从排行榜撤下失败，下次同步会再试：${reason}';
+      case 'media_source_privacy_withdrawn_toast':
+        return '来源库已设为私密，其条目已从排行榜撤下';
       case 'media_source_remove':
         return '移除来源';
       case 'media_source_remove_download_keep':
@@ -765716,8 +772210,11 @@ extension on _StringsZhCn {
         return '从互联对端重新下载有声书';
       case 'remote_book_audiobook_redownloaded':
         return '已从互联对端重新下载有声书';
+      case 'remote_book_delete_cloud_confirm':
+        return ({required Object backend, required Object name}) =>
+            '确定从云盘「${backend}」删除「${name}」吗？云盘上这本书的文件、封面、进度和有声书会被永久删除，本机没有副本，此操作不可撤销。其他设备下次同步时会确认是否一并删除。';
       case 'remote_book_delete_everywhere':
-        return '彻底删除';
+        return '同时从远端删除';
       case 'remote_book_delete_everywhere_confirm':
         return ({required Object host, required Object name}) =>
             '确定在 host「${host}」上删除「${name}」吗？那台设备上的文件、阅读进度、书签和有声书会被永久删除，本机没有副本，此操作不可撤销。';
@@ -765777,8 +772274,20 @@ extension on _StringsZhCn {
         return '在 host 上选择 TMDB 集编排…';
       case 'remote_delete_audiobook_partial':
         return '书已在对端删除，但它的有声书没能删掉';
+      case 'remote_delete_cloud_checking':
+        return '正在检查云盘能否连上…';
+      case 'remote_delete_cloud_offline':
+        return '连不上云盘，连上后才能从远端删除';
+      case 'remote_delete_cloud_signed_out':
+        return '云盘登录已失效，重新登录后才能从远端删除';
       case 'remote_delete_failed':
         return '无法在对端设备上删除';
+      case 'remote_delete_host_checking':
+        return '正在检查对端是否在线…';
+      case 'remote_delete_host_offline':
+        return '对端离线或连不上，连上后才能从远端删除';
+      case 'remote_delete_host_pairing_rejected':
+        return '对端拒绝了本机的配对凭据，重新配对后才能从远端删除';
       case 'remote_delete_unsupported':
         return '对端设备版本过旧，不支持远端删除，请先升级对端 Fushi';
       case 'remote_dict_lookup':
@@ -770504,6 +777013,10 @@ extension on _StringsZhCn {
         return '音轨';
       case 'video_audio_track_empty':
         return '没有可切换的音频轨';
+      case 'video_audio_track_fallback_muxed':
+        return '音频流被拒绝，已切换到带声音的兼容流（画质较低）';
+      case 'video_audio_track_load_failed':
+        return '音频流加载失败，当前没有声音（来源拒绝访问），请稍后重试';
       case 'video_audio_track_switched':
         return ({required Object label}) => '音轨: ${label}';
       case 'video_auto_play_next_cancel':
@@ -773909,8 +780422,31 @@ extension on _StringsZhHk {
         return 'Text recognition isn\'t available on this device';
       case 'ai_agent_send':
         return 'Send';
+      case 'ai_agent_session_current':
+        return 'Current';
+      case 'ai_agent_session_delete':
+        return 'Delete';
+      case 'ai_agent_session_delete_message':
+        return ({required Object title}) =>
+            '“${title}” will be removed from this device. Changes the assistant made stay in the AI action log and can still be undone there.';
+      case 'ai_agent_session_delete_title':
+        return 'Delete this conversation?';
+      case 'ai_agent_session_more':
+        return 'Conversation options';
+      case 'ai_agent_session_open_failed':
+        return 'Couldn\'t open this conversation';
+      case 'ai_agent_session_rename':
+        return 'Rename';
+      case 'ai_agent_session_rename_title':
+        return 'Rename conversation';
       case 'ai_agent_session_summary':
         return ({required Object n}) => '${n} changes in this conversation';
+      case 'ai_agent_sessions_empty':
+        return 'No earlier conversations yet';
+      case 'ai_agent_sessions_retention_hint':
+        return 'Conversations stay on this device for 30 days';
+      case 'ai_agent_sessions_title':
+        return 'Conversations';
       case 'ai_agent_stop':
         return 'Stop';
       case 'ai_agent_stop_cancelled':
@@ -774081,6 +780617,32 @@ extension on _StringsZhHk {
         return 'Run on a paired computer';
       case 'ai_interconnect_host_unpaired':
         return 'No paired device yet. Pair a computer in Fushi Interconnect to let it handle AI video downloads with its own AI.';
+      case 'ai_mcp_access':
+        return 'External AI access (MCP)';
+      case 'ai_mcp_access_hint':
+        return 'Lets MCP clients on this computer (Claude Desktop, Claude Code…) call Fushi\'s operations. Listens on this computer only and needs the pairing token below. Changes that can be undone run directly and show up in the AI action log; anything that can\'t be undone, and installing extensions, asks you here first. Off by default.';
+      case 'ai_mcp_confirm_arguments':
+        return 'Arguments';
+      case 'ai_mcp_confirm_body':
+        return ({required Object client, required Object op}) =>
+            '${client} wants to run: ${op}';
+      case 'ai_mcp_confirm_expire':
+        return ({required Object minutes}) =>
+            'Declined automatically if you do not answer within ${minutes} minutes.';
+      case 'ai_mcp_confirm_title':
+        return 'Request from an external AI';
+      case 'ai_mcp_token':
+        return 'Pairing token';
+      case 'ai_mcp_token_copy':
+        return 'Copy token';
+      case 'ai_mcp_token_copy_config':
+        return 'Copy client config';
+      case 'ai_mcp_token_hint':
+        return 'Generate a token for your MCP client. Generating a new one revokes the old one.';
+      case 'ai_mcp_token_issued_body':
+        return 'Put this token in your MCP client\'s configuration as FUSHI_MCP_TOKEN (the setup guide shows how). It is shown only once.';
+      case 'ai_mcp_token_issued_title':
+        return 'New pairing token';
       case 'ai_media_acquire_ai_failed':
         return 'AI 暫不可用，已按原文搜尋並按做種數排序。';
       case 'ai_media_acquire_download':
@@ -774801,6 +781363,8 @@ extension on _StringsZhHk {
         return 'Anki 媒體存儲優化';
       case 'anki_dedup_unavailable':
         return '需要本機運行 Anki（AnkiConnect）。';
+      case 'anki_delivery_section':
+        return 'Sending & pending cards';
       case 'anki_desktop_auto_launch':
         return 'Launch Anki when Fushi starts';
       case 'anki_desktop_auto_launch_hint':
@@ -775174,6 +781738,9 @@ extension on _StringsZhHk {
         return '等待發送';
       case 'anki_pending_mines_status_sending':
         return '發送中';
+      case 'anki_pending_mines_stopped':
+        return ({required Object reason}) =>
+            '${reason} The remaining cards stay in the queue.';
       case 'anki_pending_mines_title':
         return '待發卡片';
       case 'anki_pending_mines_unreachable':
@@ -775291,6 +781858,9 @@ extension on _StringsZhHk {
         return 'I understand, enable';
       case 'anki_sync_client_enable_warn_title':
         return 'Enable Anki sync?';
+      case 'anki_sync_client_error_not_sync_server':
+        return ({required Object detail}) =>
+            'The server did not answer with the Anki sync protocol (the anki-original-size response header is missing). Make sure the address points at an Anki sync server (the official anki-sync-server, or the one built into Anki desktop) rather than a web page; a reverse proxy must keep this header. Details: ${detail}';
       case 'anki_sync_client_has_unsynced':
         return ({required Object count}) =>
             '還有 ${count} 張卡沒有同步，請先同步再切換帳户或退出登入。';
@@ -775461,6 +782031,9 @@ extension on _StringsZhHk {
         return '選擇新字幕檔';
       case 'audio_source_added':
         return '已新增音訊來源';
+      case 'audio_source_connection_refused':
+        return ({required Object host}) =>
+            'Audio source refused the connection: nothing is listening at "${host}" — make sure the service is running, or remove this source in settings';
       case 'audio_source_dns_error':
         return ({required Object host}) =>
             '音頻來源連線失敗：無法解析 "${host}" — 請檢查網絡，或在設定中移除此來源';
@@ -777226,6 +783799,18 @@ extension on _StringsZhHk {
         return '已製卡，但今次選取範圍找不到例句音訊。';
       case 'card_mining_pending':
         return '製卡中…';
+      case 'card_notice_title_added':
+        return '已製卡';
+      case 'card_notice_title_duplicate':
+        return '卡片已存在';
+      case 'card_notice_title_failed':
+        return '製卡失敗';
+      case 'card_notice_title_overwritten':
+        return '已覆蓋卡片';
+      case 'card_notice_title_queued':
+        return '已存入待發佇列';
+      case 'card_notice_title_warning':
+        return '已製卡，有缺失';
       case 'card_overwritten':
         return ({required Object deck}) => '卡片已覆寫至『${deck}』。';
       case 'card_source_open':
@@ -777901,14 +784486,12 @@ extension on _StringsZhHk {
         return '全選';
       case 'delete_prompt_title':
         return '其他設備已刪除';
-      case 'delete_scope_keep_local_desc':
-        return '其他設備保留';
       case 'delete_scope_no_channel':
         return '未配置同步，本次刪除只影響這台設備';
       case 'delete_scope_sync_everywhere':
         return '從所有設備刪除';
       case 'delete_scope_sync_everywhere_desc':
-        return '其他設備下次同步時會確認刪除';
+        return '勾選後，其他設備下次同步時會確認刪除；不勾選則其他設備保留';
       case 'delete_statistics':
         return '同時刪除統計數據';
       case 'delete_statistics_book_desc':
@@ -778138,6 +784721,11 @@ extension on _StringsZhHk {
         return '自動';
       case 'dict_language_description':
         return '決定這本詞典的文字用哪種字體渲染。自動 = 用詞典自己聲明的語言。';
+      case 'dict_language_group_title':
+        return ({required Object language, required Object n}) =>
+            '${language} · ${n}';
+      case 'dict_language_group_unset':
+        return 'Language not set';
       case 'dict_language_title':
         return '詞典內容語言';
       case 'dict_language_tooltip':
@@ -779295,6 +785883,55 @@ extension on _StringsZhHk {
             'You can attach 1 video (up to ${max}). It is compressed to ${resolution} before uploading.';
       case 'feedback_compose_video_retry':
         return 'Compress again';
+      case 'feedback_crash_auto_send_setting':
+        return 'Automatically send crash logs';
+      case 'feedback_crash_auto_send_setting_hint':
+        return 'After Fushi crashes or quits unexpectedly, send the logs to the developers on next launch without asking (the logs leave this device)';
+      case 'feedback_crash_auto_sent_notice':
+        return 'Logs from the last crash were sent to the developers automatically';
+      case 'feedback_crash_kind_anr':
+        return 'not responding';
+      case 'feedback_crash_kind_crash':
+        return 'crash';
+      case 'feedback_crash_kind_memory':
+        return 'closed by the system for low memory';
+      case 'feedback_crash_kind_native':
+        return 'native crash';
+      case 'feedback_crash_kind_startup':
+        return 'while starting';
+      case 'feedback_crash_kind_unexpected':
+        return 'unexpected exit';
+      case 'feedback_crash_notice_view':
+        return 'View';
+      case 'feedback_crash_prompt_always':
+        return 'Always send';
+      case 'feedback_crash_prompt_body':
+        return 'Send the logs to the developers to help fix it? You can follow it in Feedback.';
+      case 'feedback_crash_prompt_decline':
+        return 'No thanks';
+      case 'feedback_crash_prompt_retry':
+        return 'Retry';
+      case 'feedback_crash_prompt_send':
+        return 'Send to developers';
+      case 'feedback_crash_prompt_sending':
+        return 'Sending…';
+      case 'feedback_crash_prompt_skip':
+        return 'Skip';
+      case 'feedback_crash_prompt_title':
+        return ({required Object kind}) =>
+            'Fushi quit unexpectedly last time (${kind})';
+      case 'feedback_crash_prompt_title_many':
+        return ({required Object n, required Object kind}) =>
+            'Fushi quit unexpectedly ${n} times (${kind})';
+      case 'feedback_crash_report_header':
+        return 'Generated by Fushi after it quit unexpectedly; logs and device info are attached.';
+      case 'feedback_crash_report_title':
+        return ({required Object kind, required Object version}) =>
+            'Crash report: ${kind} (${version})';
+      case 'feedback_crash_send_failed':
+        return 'Could not send the crash logs. Fushi will ask again next time.';
+      case 'feedback_crash_sent_notice':
+        return 'Crash logs sent to the developers';
       case 'feedback_detail_add_shot':
         return 'Add screenshot';
       case 'feedback_detail_attachments':
@@ -783119,6 +789756,18 @@ extension on _StringsZhHk {
         return 'Top';
       case 'lyrics_control_zone_top_hint':
         return 'Top bar on phones, top-right corner on wide screens';
+      case 'lyrics_controls_collapse':
+        return 'Collapse playback controls';
+      case 'lyrics_controls_expand':
+        return 'Expand playback controls';
+      case 'lyrics_controls_style':
+        return 'Playback controls layout';
+      case 'lyrics_controls_style_classic':
+        return 'Classic';
+      case 'lyrics_controls_style_hint':
+        return 'New: a collapsible mini bar on phones and floating islands on wide screens. Classic: the previous layout.';
+      case 'lyrics_controls_style_modern':
+        return 'New';
       case 'lyrics_exit_to_library':
         return 'Close and return to library';
       case 'lyrics_font_size':
@@ -783131,6 +789780,14 @@ extension on _StringsZhHk {
         return '正在朗讀的一行改用自訂顏色，不跟隨播放器主題取色';
       case 'lyrics_illustration_back_to_cover':
         return 'Back to cover';
+      case 'lyrics_illustration_cue':
+        return 'Illustration prompt';
+      case 'lyrics_illustration_cue_dot':
+        return 'Dot';
+      case 'lyrics_illustration_cue_hint':
+        return 'Pop up: show the illustration card and pause for the image pause duration below. Dot: only mark the cover thumbnail.';
+      case 'lyrics_illustration_cue_popup':
+        return 'Pop up';
       case 'lyrics_illustration_next':
         return 'Next illustration';
       case 'lyrics_illustration_open':
@@ -784186,6 +790843,9 @@ extension on _StringsZhHk {
       case 'media_privacy_inherited_note':
         return ({required Object collections}) =>
             'Private because it is in the private collection “${collections}”. To make it public, turn off privacy on that collection.';
+      case 'media_privacy_inherited_source_note':
+        return ({required Object source}) =>
+            'Private because its source library “${source}” is private. To make it public, turn off privacy on that source library.';
       case 'media_privacy_load_failed':
         return ({required Object reason}) =>
             'Could not read the privacy setting, so it cannot be changed right now: ${reason}';
@@ -784293,6 +790953,23 @@ extension on _StringsZhHk {
         return 'Open Folder';
       case 'media_source_open_folder_failed':
         return '無法開啟資料夾，可能已被移動、刪除或中斷連線。';
+      case 'media_source_privacy_action':
+        return 'Privacy';
+      case 'media_source_privacy_badge':
+        return 'Private: not uploaded to the leaderboard';
+      case 'media_source_privacy_cleared_toast':
+        return 'Source library is no longer private';
+      case 'media_source_privacy_hint':
+        return 'Everything this source library brings in is treated as private: it is never uploaded to the leaderboard, so it stays off your public shelf, profile and share cards, and its progress is not pushed to Bangumi. Items already uploaded are removed from the leaderboard as soon as you turn this on (or at the next sync if that fails). Your daily character total still counts them, without saying what you read. Removing this source keeps its items private.';
+      case 'media_source_privacy_marked_toast':
+        return 'Source library is now private';
+      case 'media_source_privacy_switch':
+        return 'Keep this source library private';
+      case 'media_source_privacy_withdraw_failed':
+        return ({required Object reason}) =>
+            'Source library is now private, but removing its items from the leaderboard failed; the next sync will try again: ${reason}';
+      case 'media_source_privacy_withdrawn_toast':
+        return 'Source library is now private; its items were removed from the leaderboard';
       case 'media_source_remove':
         return 'Remove Source';
       case 'media_source_remove_download_keep':
@@ -787447,8 +794124,11 @@ extension on _StringsZhHk {
         return 'Re-download audiobook from peer';
       case 'remote_book_audiobook_redownloaded':
         return 'Audiobook re-downloaded from peer';
+      case 'remote_book_delete_cloud_confirm':
+        return ({required Object backend, required Object name}) =>
+            '確定從雲端硬碟「${backend}」刪除「${name}」嗎？雲端上這本書的檔案、封面、進度和有聲書會被永久刪除，本機沒有副本，此操作無法復原。其他設備下次同步時會確認是否一併刪除。';
       case 'remote_book_delete_everywhere':
-        return '徹底刪除';
+        return '同時從遠端刪除';
       case 'remote_book_delete_everywhere_confirm':
         return ({required Object host, required Object name}) =>
             '確定在 host「${host}」上刪除「${name}」嗎？那台裝置上的檔案、閱讀進度、書籤和有聲書會被永久刪除，本機沒有副本，此操作不可撤銷。';
@@ -787508,8 +794188,20 @@ extension on _StringsZhHk {
         return '在 host 上選擇 TMDB 集編排…';
       case 'remote_delete_audiobook_partial':
         return '書已在對端刪除，但它的有聲書沒能刪掉';
+      case 'remote_delete_cloud_checking':
+        return '正在檢查雲端硬碟能否連上…';
+      case 'remote_delete_cloud_offline':
+        return '連不上雲端硬碟，連上後才能從遠端刪除';
+      case 'remote_delete_cloud_signed_out':
+        return '雲端硬碟登入已失效，重新登入後才能從遠端刪除';
       case 'remote_delete_failed':
         return '無法在對端設備上刪除';
+      case 'remote_delete_host_checking':
+        return '正在檢查對端是否在線…';
+      case 'remote_delete_host_offline':
+        return '對端離線或連不上，連上後才能從遠端刪除';
+      case 'remote_delete_host_pairing_rejected':
+        return '對端拒絕了本機的配對憑據，重新配對後才能從遠端刪除';
       case 'remote_delete_unsupported':
         return '對端設備版本過舊，不支持遠端刪除，請先升級對端 Fushi';
       case 'remote_dict_lookup':
@@ -792269,6 +798961,10 @@ extension on _StringsZhHk {
         return '音軌';
       case 'video_audio_track_empty':
         return '沒有可切換的音頻軌';
+      case 'video_audio_track_fallback_muxed':
+        return 'The audio stream was refused; switched to a compatible stream with sound (lower quality)';
+      case 'video_audio_track_load_failed':
+        return 'Couldn\'t load the audio stream — there is no sound. The source refused access; try again later.';
       case 'video_audio_track_switched':
         return ({required Object label}) => '音軌：${label}';
       case 'video_auto_play_next_cancel':
