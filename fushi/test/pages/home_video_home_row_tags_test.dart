@@ -6,7 +6,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/media/video/video_continue_spotlight.dart';
+import 'package:fushi/src/utils/components/fushi_continue_hero.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
@@ -129,7 +129,7 @@ void main() {
     await tester.pumpAndSettle();
   }
 
-  /// 有播放痕迹（未看完）→ 进首屏继续观看区（VideoContinueSpotlight）。
+  /// 有播放痕迹（未看完）→ 进首屏继续观看区（FushiContinueSpotlight）。
   Future<void> seedInProgress(String uid, String title) => db.upsertVideoBook(
     VideoBooksCompanion(
       bookUid: Value<String>(uid),
@@ -169,7 +169,7 @@ void main() {
     ),
   );
 
-  // 2026-10-28 方案 F：继续观看全在首屏 VideoContinueSpotlight（16:9 剧照卡，
+  // 2026-10-28 方案 F：继续观看全在首屏 FushiContinueSpotlight（16:9 剧照卡，
   // 图下只有一行片名），与原首屏主卡同一口径不画标签；标签（BUG-1808）留在
   // 「已更新未看」「最近添加」行卡与库墙卡上。散片 / 合集 / 远端三种卡一起钉：
   // 任一种悄悄长出标签都会红。
@@ -208,7 +208,7 @@ void main() {
       final Finder card = find.byKey(ValueKey<String>(key));
       expect(card, findsOneWidget, reason: '前提：$key 在首屏继续观看区');
       expect(
-        find.ancestor(of: card, matching: find.byType(VideoContinueSpotlight)),
+        find.ancestor(of: card, matching: find.byType(FushiContinueSpotlight)),
         findsOneWidget,
         reason: '前提：$key 是首屏卡，不是横滚行卡',
       );
@@ -329,9 +329,9 @@ void main() {
     );
     expect(hero, findsOneWidget, reason: '唯一在看的一部被提成首屏主卡');
     expect(
-      find.ancestor(of: hero, matching: find.byType(VideoContinueSpotlight)),
+      find.ancestor(of: hero, matching: find.byType(FushiContinueSpotlight)),
       findsOneWidget,
-      reason: '前提：这张是首屏主卡（VideoContinueSpotlight），不是横滚行卡',
+      reason: '前提：这张是首屏主卡（FushiContinueSpotlight），不是横滚行卡',
     );
     expect(
       tagTextIn('home_video_continue_collection_$heroCid', 'HeroTag'),

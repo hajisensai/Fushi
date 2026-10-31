@@ -37,7 +37,7 @@ import '../helpers/test_platform_services.dart';
 /// 另有一条几何门：横滚行视口高度若恰等于卡高，放大溢出的上下沿会被 ListView
 /// 视口裁成平边（墙格无此问题：格间不裁）。行高必须给 (scale-1)/2 留余量。
 ///
-/// 2026-10-28 方案 F：继续观看全在首屏 VideoContinueSpotlight（主卡 + 小卡），
+/// 2026-10-28 方案 F：继续观看全在首屏 FushiContinueSpotlight（主卡 + 小卡），
 /// 不再有「继续观看」横滚行；横滚行的几何门改用「最近添加」行（[seedRecent]）
 /// 验，首屏小卡另验悬停（被测小卡要先种一部更近播放的「主卡占位」
 /// [seedHeroDecoy]，才会落到小卡位）。

@@ -58,9 +58,10 @@ void main() {
       ).readAsStringSync(),
     );
     expect(
-      shelf.contains('FushiContinueHero('),
+      shelf.contains('FushiContinueSpotlight('),
       isTrue,
-      reason: '书架继续阅读 hero 必须走共用的 FushiContinueHero',
+      reason:
+          '书架继续阅读 hero 必须走共用的 FushiContinueSpotlight（主卡皮是 FushiContinueHero）',
     );
     expect(
       countIn('lib/src/utils/components/fushi_continue_hero.dart'),

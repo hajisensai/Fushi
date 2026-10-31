@@ -33,7 +33,7 @@ import '../helpers/test_platform_services.dart';
 /// 探测横 / 竖卡、也不再沿用库墙目标卡宽。这里量**真渲染出来的卡宽**而不是复述
 /// 公式：退回库墙卡宽（桌面 ~200+）时立刻红。
 ///
-/// 2026-10-28 起继续观看全在首屏 VideoContinueSpotlight（16:9 剧照卡，不是行卡），
+/// 2026-10-28 起继续观看全在首屏 FushiContinueSpotlight（16:9 剧照卡，不是行卡），
 /// 横滚行只剩「已更新未看」「最近添加」；这里用「最近添加」行验行卡宽。
 void main() {
   final TestWidgetsFlutterBinding binding =

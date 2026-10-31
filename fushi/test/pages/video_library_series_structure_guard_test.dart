@@ -36,9 +36,9 @@ void main() {
       'lib/src/pages/implementations/home_video_page.dart',
     ).readAsStringSync();
 
-    // 2026-10-28 方案 F：首屏 [VideoContinueSpotlight] 就是全部的继续观看，下面
+    // 2026-10-28 方案 F：首屏 [FushiContinueSpotlight] 就是全部的继续观看，下面
     // 不再另起一行（用户「最上面不就是继续观看，这不就重复了吗」）。
-    expect(page, contains('VideoContinueSpotlight('));
+    expect(page, contains('FushiContinueSpotlight('));
     expect(
       page,
       isNot(contains('_buildContinueRow(')),

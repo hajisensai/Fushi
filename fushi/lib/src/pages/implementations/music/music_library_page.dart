@@ -286,7 +286,9 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
   }
 
   /// 最近播放的那首（播放事件流最新一条）；null = 没听过 / 测试注入快照。
-  MusicTrackRow? _lastPlayed;
+  /// 最近播放过的曲目，每张专辑（散曲按曲目）只留最近那首、按最近播放排；
+  /// 首个是「继续收听」主卡，其余是宽屏时主卡旁的封面行。
+  List<MusicTrackRow> _recentTracks = const <MusicTrackRow>[];
 
   AppModel get _app => ref.read(appProvider);
 
@@ -332,12 +334,16 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
               ? await MusicLibrarySnapshot.load(_app.database)
               : MusicLibrarySnapshot.empty);
     final List<MusicTrackRow> recent = loader == null && _app.isDatabaseReady
-        ? await _app.database.listRecentlyPlayedMusicTracks(limit: 1)
+        ? await _app.database.listRecentlyPlayedMusicTracks(limit: 40)
         : const <MusicTrackRow>[];
     if (!mounted) return;
+    final Set<String> seen = <String>{};
     setState(() {
       _snapshot = snap;
-      _lastPlayed = recent.isEmpty ? null : recent.first;
+      _recentTracks = <MusicTrackRow>[
+        for (final MusicTrackRow t in recent)
+          if (seen.add(t.albumUid ?? 'track:${t.trackUid}')) t,
+      ].take(13).toList();
     });
     _publishSearchInputs();
   }
@@ -368,36 +374,61 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
     );
   }
 
-  /// 曲库顶部「继续收听」卡：与书架 / 视频 / 游戏同一张 [FushiContinueHero]。
-  /// 点按 = 续播，长按 / 右键 = 打开专辑（卡上不放按钮）。
+  /// 曲库顶部「继续收听」区：所有库页共用的「继续」组件
+  /// [FushiContinueSpotlight]（2026-10-31 方案 A + 合一）。主卡是上次那首（专辑
+  /// 封面 + 专辑名 + 曲名 · 艺人）；宽屏时最近听过的其余专辑排在旁边。点按 =
+  /// 续播，长按 / 右键 = 打开专辑（卡上不放按钮）。
   Widget? _buildContinueHero(MusicLibrarySnapshot snap) {
-    final MusicTrackRow? track = _lastPlayed;
-    if (track == null) return null;
-    final MusicAlbumRow? album = track.albumUid == null
-        ? null
-        : snap.albumByUid[track.albumUid];
-    final Widget cover = MusicCover(
-      coverPath: album?.coverPath,
-      embeddedFromPath: album == null
-          ? track.path
-          : snap.embeddedCoverPathOf(album),
-    );
-    return FushiContinueHero(
-      cardKey: const ValueKey<String>('music-continue-hero'),
-      focusId: const FushiFocusId('music-continue-hero'),
-      cover: cover,
-      coverAspectRatio: 1,
-      eyebrow: t.music_continue_listening,
-      title: album?.title ?? track.title,
-      metaLines: <String>[
-        <String>[
-          if (album != null) track.title,
-          if ((track.artistCredit ?? album?.albumArtistCredit) != null)
-            (track.artistCredit ?? album!.albumArtistCredit)!,
-        ].join(' · '),
+    if (_recentTracks.isEmpty) return null;
+    MusicAlbumRow? albumOf(MusicTrackRow track) =>
+        track.albumUid == null ? null : snap.albumByUid[track.albumUid];
+    Widget coverOf(MusicTrackRow track) {
+      final MusicAlbumRow? album = albumOf(track);
+      return MusicCover(
+        coverPath: album?.coverPath,
+        embeddedFromPath: album == null
+            ? track.path
+            : snap.embeddedCoverPathOf(album),
+      );
+    }
+
+    String? artistOf(MusicTrackRow track) =>
+        track.artistCredit ?? albumOf(track)?.albumArtistCredit;
+
+    final MusicTrackRow track = _recentTracks.first;
+    final MusicAlbumRow? album = albumOf(track);
+    return FushiContinueSpotlight(
+      sideRowKey: const ValueKey<String>('music-continue-side-row'),
+      main: FushiContinueEntry(
+        key: const ValueKey<String>('music-continue-hero'),
+        focusId: const FushiFocusId('music-continue-hero'),
+        cover: coverOf(track),
+        coverAspectRatio: 1,
+        eyebrow: t.music_continue_listening,
+        title: album?.title ?? track.title,
+        metaLines: <String>[
+          <String>[
+            if (album != null) track.title,
+            if (artistOf(track) case final String artist) artist,
+          ].join(' · '),
+        ],
+        onOpen: () => _continueListening(track, snap),
+        onLongPress: album == null ? null : () => _openAlbum(album),
+      ),
+      side: <FushiContinueEntry>[
+        for (final MusicTrackRow t in _recentTracks.skip(1))
+          if (albumOf(t) case final MusicAlbumRow? a)
+            FushiContinueEntry(
+              key: ValueKey<String>('music-continue-side/${t.trackUid}'),
+              material: ShelfCoverMaterial.glossyAlbum,
+              cover: coverOf(t),
+              coverAspectRatio: 1,
+              title: a?.title ?? t.title,
+              subtitle: artistOf(t),
+              onOpen: () => _continueListening(t, snap),
+              onLongPress: a == null ? null : () => _openAlbum(a),
+            ),
       ],
-      onOpen: () => _continueListening(track, snap),
-      onLongPress: album == null ? null : () => _openAlbum(album),
     );
   }
 
