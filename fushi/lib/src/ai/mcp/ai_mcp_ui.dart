@@ -27,17 +27,37 @@ Future<void> _confirmQueue = Future<void>.value();
 ///
 /// 弹窗由 app 自己画、只在本机界面上点；MCP 调用方拿不到这个按钮，也填不出
 /// 表态参数（见 [AiMcpToolHost]）。
+///
+/// 客户端取消了这次调用（[AiMcpConfirmRequest.cancellation]）：还在排队的立即以
+/// [AiMcpConfirmOutcome.cancelled] 结束、轮到时不再弹；已弹出的关掉。
 Future<AiMcpConfirmOutcome> confirmAiMcpOperation(
   OpContext context,
   AiMcpConfirmRequest request, {
   Duration timeout = kAiMcpConfirmTimeout,
-}) {
+}) => enqueueAiMcpConfirmation(
+  request,
+  () => _showConfirm(context, request, timeout),
+);
+
+/// 确认排队（单独暴露给测试）：[show] 一个接一个跑；排队期间被取消的直接以
+/// [AiMcpConfirmOutcome.cancelled] 结束，轮到时不调 [show]。
+Future<AiMcpConfirmOutcome> enqueueAiMcpConfirmation(
+  AiMcpConfirmRequest request,
+  Future<AiMcpConfirmOutcome> Function() show,
+) {
   final Completer<AiMcpConfirmOutcome> done = Completer<AiMcpConfirmOutcome>();
+  unawaited(
+    request.cancellation.whenCancelled.then((_) {
+      if (!done.isCompleted) done.complete(AiMcpConfirmOutcome.cancelled);
+    }),
+  );
   _confirmQueue = _confirmQueue.then((_) async {
+    if (done.isCompleted) return;
     try {
-      done.complete(await _showConfirm(context, request, timeout));
+      final AiMcpConfirmOutcome outcome = await show();
+      if (!done.isCompleted) done.complete(outcome);
     } on Object catch (error, stack) {
-      done.completeError(error, stack);
+      if (!done.isCompleted) done.completeError(error, stack);
     }
   });
   return done.future;
@@ -48,9 +68,24 @@ Future<AiMcpConfirmOutcome> _showConfirm(
   AiMcpConfirmRequest request,
   Duration timeout,
 ) async {
+  // 排队期间被取消的不再把窗口拉到前台。
+  if (request.cancellation.isCancelled) return AiMcpConfirmOutcome.cancelled;
   await context.focusMainWindow();
   final BuildContext? ui = context.navigator?.context;
   if (ui == null || !ui.mounted) return AiMcpConfirmOutcome.unavailable;
+  return showAiMcpConfirmDialog(ui, request, timeout: timeout);
+}
+
+/// 在 [ui] 所在的 Navigator 上弹确认，等到用户回答、超时或客户端取消（取消时
+/// 弹窗自己关掉）。单独暴露给测试。
+Future<AiMcpConfirmOutcome> showAiMcpConfirmDialog(
+  BuildContext ui,
+  AiMcpConfirmRequest request, {
+  Duration timeout = kAiMcpConfirmTimeout,
+}) {
+  if (request.cancellation.isCancelled) {
+    return Future<AiMcpConfirmOutcome>.value(AiMcpConfirmOutcome.cancelled);
+  }
   final FushiOpSpec op = request.op;
   final bool irreversible = op.risk == OpRisk.irreversible;
   final Future<bool> answer = showFushiConfirmDialog(
@@ -65,13 +100,24 @@ Future<AiMcpConfirmOutcome> _showConfirm(
     cancelLabel: t.ai_agent_confirm_decline,
     content: _AiMcpConfirmContent(request: request, timeout: timeout),
   );
-  final bool? approved = await Future.any<bool?>(<Future<bool?>>[
-    answer,
+  return Future.any<AiMcpConfirmOutcome>(<Future<AiMcpConfirmOutcome>>[
+    answer.then(
+      (bool approved) => request.cancellation.isCancelled
+          // 弹窗因取消被关（pop(false)）：结论是取消，不是用户拒绝。
+          ? AiMcpConfirmOutcome.cancelled
+          : approved
+          ? AiMcpConfirmOutcome.approved
+          : AiMcpConfirmOutcome.declined,
+    ),
+    request.cancellation.whenCancelled.then(
+      (_) => AiMcpConfirmOutcome.cancelled,
+    ),
     // 弹窗自己到点会关；被别的路由盖住关不掉时这里兜住结论。
-    Future<bool?>.delayed(timeout + const Duration(seconds: 1)),
+    Future<AiMcpConfirmOutcome>.delayed(
+      timeout + const Duration(seconds: 1),
+      () => AiMcpConfirmOutcome.expired,
+    ),
   ]);
-  if (approved == null) return AiMcpConfirmOutcome.expired;
-  return approved ? AiMcpConfirmOutcome.approved : AiMcpConfirmOutcome.declined;
 }
 
 class _AiMcpConfirmContent extends StatefulWidget {
@@ -95,6 +141,20 @@ class _AiMcpConfirmContentState extends State<_AiMcpConfirmContent> {
       final ModalRoute<Object?>? route = ModalRoute.of(context);
       if (route != null && route.isCurrent) Navigator.of(context).pop(false);
     });
+    unawaited(widget.request.cancellation.whenCancelled.then((_) => _close()));
+  }
+
+  /// 客户端取消：关掉这个弹窗。被别的路由盖住时直接把它从栈里摘掉。
+  void _close() {
+    if (!mounted) return;
+    final ModalRoute<Object?>? route = ModalRoute.of(context);
+    if (route == null || !route.isActive) return;
+    final NavigatorState navigator = Navigator.of(context);
+    if (route.isCurrent) {
+      navigator.pop(false);
+    } else {
+      navigator.removeRoute<Object?>(route, false);
+    }
   }
 
   @override

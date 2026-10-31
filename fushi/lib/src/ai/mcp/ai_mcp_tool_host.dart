@@ -5,8 +5,15 @@ import 'package:fushi_engine/ai/agent/agent_tool.dart';
 import 'package:fushi/src/ai/agent/ai_agent_toolbox.dart';
 
 /// 外部 AI 的操作写进 `ai_agent_actions` 时会话 id 的前缀（`mcp:<MCP 会话 id>`）：
-/// 「AI 操作记录」按会话分组列出、可撤销；`undo_action` 只认这个前缀的记录。
+/// 「AI 操作记录」按会话分组列出、可撤销；`undo_action` 只认调用方这条连接自己
+/// 的会话 id（[aiMcpActionSessionIdOf]）。
 const String kAiMcpSessionPrefix = 'mcp:';
+
+/// 一条 MCP 连接的操作记在 `ai_agent_actions` 里的会话 id。没带 / 带了不认识的
+/// 会话 id 的调用一律是 [kMcpAnonymousSessionId]：它们彼此分不开，共用
+/// `mcp:anonymous` 这一个名下（能互相撤销对方的记录——都持同一个配对令牌）。
+String aiMcpActionSessionIdOf(McpCallContext context) =>
+    '$kAiMcpSessionPrefix${context.sessionId}';
 
 /// 撤销工具名。目录工具名只由「小写字母 / 数字 / `-` / `__`」组成（id 的点换成
 /// `__`），单个下划线永远撞不上。
@@ -18,6 +25,7 @@ class AiMcpConfirmRequest {
     required this.client,
     required this.op,
     required this.arguments,
+    this.cancellation = const McpCancellation.never(),
   });
 
   /// 客户端自报的身份（不可信，只作展示）。
@@ -26,6 +34,10 @@ class AiMcpConfirmRequest {
 
   /// 已过参数校验的参数（不含表态参数）。
   final Map<String, Object?> arguments;
+
+  /// 客户端放弃了这次调用（MCP `notifications/cancelled`）：还在排队的确认不再
+  /// 弹，已弹出的关掉，结论按 [AiMcpConfirmOutcome.cancelled]。
+  final McpCancellation cancellation;
 }
 
 /// 确认的结论。
@@ -38,6 +50,9 @@ enum AiMcpConfirmOutcome {
 
   /// app 没有可弹窗的界面（还在启动 / 窗口已销毁），按拒绝处理。
   unavailable,
+
+  /// 客户端在用户回答前取消了这次调用：不执行。
+  cancelled,
 }
 
 typedef AiMcpConfirm =
@@ -96,10 +111,11 @@ class AiMcpToolHost implements McpToolHost {
     name: kAiMcpUndoTool,
     title: 'undo_action',
     description:
-        'Undo one change you made earlier through this MCP connection, by the '
-        'actionId returned in that tool result. If the user changed the same '
-        'thing again afterwards, their change is kept and the undo reports '
-        '"superseded".',
+        'Undo one change you made earlier through this MCP connection (this '
+        'MCP session), by the actionId returned in that tool result. Changes '
+        'made through other connections or by the in-app assistant cannot be '
+        'undone here. If the user changed the same thing again afterwards, '
+        'their change is kept and the undo reports "superseded".',
     inputSchema: <String, Object?>{
       'type': 'object',
       'properties': <String, Object?>{
@@ -119,32 +135,30 @@ class AiMcpToolHost implements McpToolHost {
     McpCallContext context,
   ) async {
     final AiAgentToolbox box = _box;
-    if (name == kAiMcpUndoTool) return _undo(box, arguments);
+    if (name == kAiMcpUndoTool) return _undo(box, arguments, context);
     final String id = mcpOpIdOf(name);
     final FushiOp? op = box.catalog[id];
+    // 进程内专有 / 含一次性凭据的不在清单里，按不认识处理；不可用的（模块关了…）
+    // 由 [AiAgentToolbox] 按与清单同一判据拒绝（下面的预检与 execute）。
     if (op == null || !mcpExposesOp(op.spec)) throw McpUnknownTool(name);
     final FushiOpSpec spec = op.spec;
     bool confirmed = false;
     if (spec.needsConfirmation) {
-      // 先过参数校验与可用性，别为一个注定 400 的调用打扰用户。
-      final OpAvailability availability = op.currentAvailability();
-      if (!availability.isAvailable) {
-        return McpToolResult.error(
-          'rejected',
-          '${availability.code}'
-              '${availability.message == null ? '' : ': ${availability.message}'}',
-        );
-      }
+      // 先过可用性与参数校验，别为一个注定被拒的调用打扰用户。
+      final AgentToolResult? unavailable = box.unavailableResultOf(op);
+      if (unavailable != null) return _errorOf(unavailable);
       try {
         box.invoker.buildCall(op, arguments, caller: OpCaller.model);
       } on CtlFailure catch (failure) {
         return McpToolResult.error(failure.code, failure.message);
       }
+      if (context.cancellation.isCancelled) return _cancelled;
       final AiMcpConfirmOutcome outcome = await confirm(
         AiMcpConfirmRequest(
           client: context.client,
           op: spec,
           arguments: arguments,
+          cancellation: context.cancellation,
         ),
       );
       switch (outcome) {
@@ -165,19 +179,22 @@ class AiMcpToolHost implements McpToolHost {
             'confirmation_unavailable',
             'The Fushi app cannot show a confirmation right now.',
           );
+        case AiMcpConfirmOutcome.cancelled:
+          return _cancelled;
       }
     }
+    // 客户端已放弃（确认期间、或还没轮到执行就取消了）：不执行。客户端重试时
+    // 不会因为旧调用在背后照样跑完而做两遍。
+    if (context.cancellation.isCancelled) return _cancelled;
     final AgentToolResult result = await box.execute(
       AgentToolInvocation(
-        sessionId: '$kAiMcpSessionPrefix${context.sessionId}',
+        sessionId: aiMcpActionSessionIdOf(context),
         name: id,
         arguments: arguments,
         confirmed: confirmed,
       ),
     );
-    if (result.isError) {
-      return McpToolResult.error(result.errorCode!, result.errorMessage);
-    }
+    if (result.isError) return _errorOf(result);
     return McpToolResult.ok(<String, Object?>{
       'result': result.data,
       if (result.actionId != null) 'actionId': result.actionId,
@@ -188,9 +205,18 @@ class AiMcpToolHost implements McpToolHost {
     });
   }
 
+  static const McpToolResult _cancelled = McpToolResult.error(
+    'cancelled',
+    'The client cancelled this call; it was not executed.',
+  );
+
+  static McpToolResult _errorOf(AgentToolResult result) =>
+      McpToolResult.error(result.errorCode!, result.errorMessage);
+
   Future<McpToolResult> _undo(
     AiAgentToolbox box,
     Map<String, Object?> arguments,
+    McpCallContext context,
   ) async {
     final Object? raw = arguments['actionId'];
     final int? id = raw is int ? raw : int.tryParse('${raw ?? ''}'.trim());
@@ -198,8 +224,9 @@ class AiMcpToolHost implements McpToolHost {
       return const McpToolResult.error('bad_request', 'actionId is required');
     }
     final AiAgentActionRow? row = await box.database.getAiAgentAction(id);
-    // 只撤外部 AI 自己做的：app 内 AI 助手的记录由用户在 app 里撤。
-    if (row == null || !row.sessionId.startsWith(kAiMcpSessionPrefix)) {
+    // 只撤这条连接自己做的：别的 MCP 连接、app 内 AI 助手的记录由用户在 app 的
+    // 「AI 操作记录」里撤。别人的记录与不存在一样回 not_found，不透露有没有。
+    if (row == null || row.sessionId != aiMcpActionSessionIdOf(context)) {
       return McpToolResult.error('not_found', 'No such action: $id');
     }
     final AgentUndoResult result = await box.undo('$id');

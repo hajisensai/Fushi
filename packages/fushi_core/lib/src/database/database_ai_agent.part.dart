@@ -139,8 +139,10 @@ mixin _FushiDbAiAgent
 
   /// 会话列表（最近更新的在前），只投影元数据列。[profileUid] 非空时只列这个
   /// Profile 的会话与归属不明（空串）的会话；null = 全部 Profile（操作记录页配标题用）。
+  /// [excludeScenes]：不列这些场景的会话（在 SQL 里过滤，[limit] 按过滤后计）。
   Future<List<AiAgentSessionSummary>> listAiAgentSessionSummaries({
     String? profileUid,
+    Set<String> excludeScenes = const <String>{},
     int limit = 200,
   }) async {
     final $AiAgentSessionsTable t = aiAgentSessions;
@@ -157,6 +159,9 @@ mixin _FushiDbAiAgent
       ]);
     if (profileUid != null) {
       query.where(t.profileUid.isIn(<String>{profileUid, ''}));
+    }
+    if (excludeScenes.isNotEmpty) {
+      query.where(t.scene.isNotIn(excludeScenes));
     }
     query
       ..orderBy(<OrderingTerm>[

@@ -144,10 +144,27 @@ class AiAgentToolbox implements AgentToolbox, AgentSkillProvider {
     return op;
   }
 
+  /// 一条操作此刻不能用的拒绝结果；能用返回 null。工具清单（[residentTools] /
+  /// [describeTool] / MCP `tools/list`）与执行（[execute]、MCP 确认前预检）共用
+  /// 这一个判据：清单里藏起来的操作，按名字也调不动。
+  AgentToolResult? unavailableResultOf(FushiOp op) {
+    final OpAvailability availability = op.currentAvailability();
+    if (availability.isAvailable) return null;
+    return AgentToolResult.error(
+      'rejected',
+      '${availability.code}'
+          '${availability.message == null ? '' : ': ${availability.message}'}',
+    );
+  }
+
   @override
   Future<AgentToolResult> execute(AgentToolInvocation invocation) async {
     final FushiOp? op = catalog[invocation.name];
     if (op == null) return const AgentToolResult.error('unknown_tool');
+    // 不可用（模块关了、平台不支持、没配置……）：与清单同一判据，在记账之前
+    // 拒绝——这不是一次「AI 试过的写操作」，不进操作记录。
+    final AgentToolResult? unavailable = unavailableResultOf(op);
+    if (unavailable != null) return unavailable;
     final FushiOpSpec spec = op.spec;
     if (spec.needsConfirmation && !invocation.confirmed) {
       // agent loop 保证不会走到这里；万一走到，绝不替用户表态。
