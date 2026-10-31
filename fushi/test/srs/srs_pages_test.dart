@@ -1758,6 +1758,120 @@ void main() {
       await _unmount(tester);
     });
 
+    testWidgets('牌组设置页：同一次编辑里切换算法，步长显示与「是否改动」按新算法重算，保存后的生效值与显示一致', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      final String id = store.defaultDeckId;
+      // 默认牌组是 RWKV、没写过步长：生效的是「不用步长」。
+      SrsDeckTree tree = (await tester.runAsync(store.deckTree))!;
+      expect(tree[id]!.localAlgorithm, SrsAlgorithm.rwkv);
+      expect(tree[id]!.learnStepsSet, isFalse);
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: false,
+        page: SrsDeckSettingsPage(deckId: id),
+      );
+      String stepsText(String key) => tester
+          .widget<EditableText>(
+            find.descendant(
+              of: find.byKey(ValueKey<String>(key)),
+              matching: find.byType(EditableText),
+            ),
+          )
+          .controller
+          .text;
+      Future<void> reveal(String key) async {
+        final Finder f = find.byKey(ValueKey<String>(key));
+        await tester.scrollUntilVisible(
+          f,
+          200,
+          scrollable: find.byType(Scrollable).first,
+        );
+        await Scrollable.ensureVisible(tester.element(f), alignment: 0.5);
+        await tester.pumpAndSettle();
+      }
+
+      Future<void> pickAlgorithm(String label) async {
+        await reveal('srs-settings-algorithm');
+        await tester.tap(
+          find.descendant(
+            of: find.byKey(const ValueKey<String>('srs-settings-algorithm')),
+            matching: find.text(label),
+          ),
+        );
+        await _settle(tester);
+      }
+
+      // 保存后重开设置页（测试里设置页是根页面，保存的 maybePop 不会退出）。
+      Future<void> save() async {
+        await tester.tap(
+          find.byKey(const ValueKey<String>('srs_settings_save')).first,
+        );
+        await _settle(tester);
+        await _unmount(tester);
+        await _pumpPage(
+          tester,
+          store: store,
+          apple: false,
+          page: SrsDeckSettingsPage(deckId: id),
+        );
+      }
+
+      await reveal('srs-settings-learn-steps');
+      expect(stepsText('srs-settings-learn-steps'), '');
+      expect(stepsText('srs-settings-relearn-steps'), '');
+      // 切到 FSRS-7：没改过的步长输入换成 FSRS 下的生效值（默认 1 10 / 10）。
+      await pickAlgorithm('FSRS-7');
+      expect(stepsText('srs-settings-learn-steps'), '1 10');
+      expect(stepsText('srs-settings-relearn-steps'), '10');
+      await save();
+      tree = (await tester.runAsync(store.deckTree))!;
+      expect(tree[id]!.localAlgorithm, SrsAlgorithm.fsrs7);
+      expect(tree[id]!.learnStepsSet, isFalse, reason: '显示的就是 FSRS 下的生效值：不写步长');
+      SrsSchedulingConfig c = tree.schedulingConfig(id);
+      expect(c.learnStepsMinutes, <double>[1, 10]);
+      expect(c.relearnStepsMinutes, <double>[10]);
+
+      // 反过来：FSRS → RWKV，显示跟着变成「不用步长」，保存后生效值也是空。
+      await pickAlgorithm('RWKV');
+      await reveal('srs-settings-learn-steps');
+      expect(stepsText('srs-settings-learn-steps'), '');
+      expect(stepsText('srs-settings-relearn-steps'), '');
+      await save();
+      tree = (await tester.runAsync(store.deckTree))!;
+      c = tree.schedulingConfig(id);
+      expect(tree[id]!.localAlgorithm, SrsAlgorithm.rwkv);
+      expect(c.learnStepsMinutes, isEmpty);
+      expect(c.relearnStepsMinutes, isEmpty);
+
+      // 用户先改了步长再切算法：输入保留，保存时按切换后的算法与生效值比，写进牌组。
+      await reveal('srs-settings-learn-steps');
+      await tester.enterText(
+        find.descendant(
+          of: find.byKey(const ValueKey<String>('srs-settings-learn-steps')),
+          matching: find.byType(EditableText),
+        ),
+        '5',
+      );
+      await tester.pump();
+      await pickAlgorithm('FSRS-7');
+      await reveal('srs-settings-learn-steps');
+      expect(stepsText('srs-settings-learn-steps'), '5');
+      expect(
+        stepsText('srs-settings-relearn-steps'),
+        '10',
+        reason: '重学步长没改过：换成 FSRS 下的生效值',
+      );
+      await save();
+      tree = (await tester.runAsync(store.deckTree))!;
+      c = tree.schedulingConfig(id);
+      expect(c.learnStepsMinutes, <double>[5]);
+      expect(c.relearnStepsMinutes, <double>[10]);
+      await _unmount(tester);
+    });
+
     testWidgets('牌组设置页：新卡计划（按复习量调整的预算与多出比例 / 关掉调整）写进牌组', (
       WidgetTester tester,
     ) async {
