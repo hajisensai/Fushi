@@ -247,6 +247,7 @@ import 'package:fushi/src/media/video/video_custom_action_picker.dart';
 import 'package:fushi/src/media/video/video_control_layout_edit_overlay.dart';
 import 'package:fushi/src/media/video/video_control_popover_placement.dart';
 import 'package:fushi/src/media/video/video_controls_density.dart';
+import 'package:fushi/src/media/video/video_push_aside_column.dart';
 import 'package:fushi/src/media/video/video_tabletop_panel.dart';
 import 'package:fushi/src/utils/adaptive/fushi_tabletop_split.dart';
 import 'package:fushi/src/media/video/video_controls_focus_gate.dart';
