@@ -35,7 +35,7 @@ void main() {
       planIn('fushi', <String>[_flutter, ...args]);
 
   group('flutter test', () {
-    test('suites go out; dist_test owns pub, concurrency and reporter', () {
+    test('suites go out; dist_test owns pub and reporter', () {
       final HeavyOffload? o = plan(<String>[
         'test',
         r'test\reader\a_test.dart',
@@ -49,9 +49,40 @@ void main() {
       expect(o!.distArgs, <String>[
         '--offload',
         '--busy-retries=$kHeavyOffloadBusyRetries',
+        '--concurrency=4',
         'test/reader/a_test.dart',
         'test/b_test.dart',
       ]);
+    });
+
+    test('an explicit -j caps the workers instead of being dropped', () {
+      // heavy.dart plans from the command as typed (its own default
+      // --concurrency is for this machine only), so any -j here is the
+      // caller's.
+      for (final List<String> j in <List<String>>[
+        <String>['-j', '1'],
+        <String>['-j1'],
+        <String>['-j=1'],
+        <String>['--concurrency', '1'],
+        <String>['--concurrency=1'],
+      ]) {
+        expect(
+          plan(<String>['test', ...j, 'test/b_test.dart'])!.distArgs,
+          <String>[
+            '--offload',
+            '--busy-retries=$kHeavyOffloadBusyRetries',
+            '--concurrency=1',
+            'test/b_test.dart',
+          ],
+          reason: j.join(' '),
+        );
+      }
+      expect(plan(<String>['test', '-j', 'x']), isNull);
+      expect(plan(<String>['test', '--concurrency=0']), isNull);
+      expect(
+        plan(<String>['test', 'test/b_test.dart'])!.distArgs,
+        isNot(contains(startsWith('--concurrency'))),
+      );
     });
 
     test('no paths: the whole of test/', () {
@@ -164,6 +195,7 @@ void main() {
         '--offload',
         '--busy-retries=$kHeavyOffloadBusyRetries',
         '--package=packages/fushi_engine',
+        '--concurrency=2',
         'test/reader',
       ]);
       expect(

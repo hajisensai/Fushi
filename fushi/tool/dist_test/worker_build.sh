@@ -131,8 +131,11 @@ case "$need" in
     cmd.exe //c mklink //J "$(cygpath -w "$probe")" \
       "$(cygpath -w "$state/junction-probe-target")" > /dev/null 2>&1 ||
       lack "this account cannot make junctions, which Windows builds with plugins need"
+    # Relative to $state, from inside it: cmd takes no quotes from Git Bash
+    # inside its command string, and the absolute path may hold spaces.
     followed=
-    cmd.exe //c "if exist $(cygpath -w "$probe")\\ok (exit 0) else (exit 1)" \
+    (cd "$state" &&
+      cmd.exe //c "if exist junction-probe\\ok (exit 0) else (exit 1)") \
       > /dev/null 2>&1 && followed=1
     cmd.exe //c rmdir "$(cygpath -w "$probe")" > /dev/null 2>&1
     [ -n "$followed" ] ||

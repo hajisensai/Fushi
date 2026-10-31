@@ -81,9 +81,20 @@ Future<void> main(List<String> args) async {
   final int maxMinutes = _intArg(own, '--max-minutes=') ?? 120;
   final String label = command.take(3).join(' ');
 
+  // Joined before anything starts: the offloaded run (dist_test and its own
+  // local fallback worker) and a run here after it declined both live in this
+  // Job (below-normal priority, memory ceiling, whatever is left killed when
+  // this process ends), as a run that never tried the other machines would.
+  final HeavyJob? job = joinHeavyJob(
+    need.capMb,
+    log: (String l) => stderr.writeln(l),
+  );
+
   if (!own.contains('--here') && checkout != null) {
+    // Planned from the command as typed: the default --concurrency above is
+    // this machine's, while an explicit -j caps the other machines too.
     final int? remote = await _offload(
-      command,
+      sdk.command,
       checkout: checkout,
       checkOnly: own.contains('--check-only'),
       maxMinutes: maxMinutes,
@@ -91,10 +102,6 @@ Future<void> main(List<String> args) async {
     if (remote != null) exit(remote);
   }
 
-  final HeavyJob? job = joinHeavyJob(
-    need.capMb,
-    log: (String l) => stderr.writeln(l),
-  );
   final HeavyLease lease;
   try {
     lease = await acquireHeavyLease(
@@ -187,7 +194,15 @@ Future<int?> _offload(
   );
   if (plan == null) return null;
   final String? config = heavyOffloadConfig(env, appDir);
-  if (config == null) return null;
+  if (config == null) {
+    final String? named = env['FUSHI_DIST_CONFIG'];
+    if (named != null && named.isNotEmpty) {
+      stderr.writeln(
+        'heavy: FUSHI_DIST_CONFIG=$named does not exist; running it here',
+      );
+    }
+    return null;
+  }
   stderr.writeln(
     'heavy: handing this ${plan.kind.name} to the other machines '
     '(tool/dist_test.dart ${plan.distArgs.join(' ')}); --here or '
@@ -197,7 +212,14 @@ Future<int?> _offload(
   try {
     p = await Process.start(
       Platform.resolvedExecutable,
-      <String>['tool/dist_test.dart', '--config=$config', ...plan.distArgs],
+      <String>[
+        'tool/dist_test.dart',
+        '--config=$config',
+        // dist_test keeps the deadline itself: it kills the remote run and
+        // releases the worker's checkout before exiting 124.
+        if (maxMinutes > 0) '--max-minutes=$maxMinutes',
+        ...plan.distArgs,
+      ],
       workingDirectory: appDir,
       mode: ProcessStartMode.inheritStdio,
     );
@@ -207,22 +229,51 @@ Future<int?> _offload(
     );
     return null;
   }
+  // Ctrl-C reaches dist_test too (same console / process group): it kills
+  // the remote run and releases the worker before it exits, and this process
+  // waits for that instead of dying first and leaving it half done.
+  bool interrupted = false;
+  final List<StreamSubscription<ProcessSignal>> signals =
+      <StreamSubscription<ProcessSignal>>[
+        ProcessSignal.sigint.watch().listen((_) {
+          interrupted = true;
+          if (!Platform.isWindows) p.kill(ProcessSignal.sigint);
+        }),
+        if (!Platform.isWindows)
+          ProcessSignal.sigterm.watch().listen((_) {
+            interrupted = true;
+            p.kill(ProcessSignal.sigint);
+          }),
+      ];
+  // Only a backstop for a dist_test that does not stop by itself at
+  // --max-minutes (its own deadline cleans up; this kill cannot).
   bool cut = false;
   final Timer? limit = maxMinutes <= 0
       ? null
-      : Timer(Duration(minutes: maxMinutes), () {
+      : Timer(Duration(minutes: maxMinutes) + kHeavyOffloadStopGrace, () {
           cut = true;
           stderr.writeln(
-            'heavy: offloaded run still going after $maxMinutes min; '
-            'killing it',
+            'heavy: offloaded run did not stop by itself '
+            '${kHeavyOffloadStopGrace.inMinutes} min after its '
+            '$maxMinutes min limit; killing it (the remote run may go on '
+            'until its own timeout)',
           );
           _killTree(p);
         });
   final int code = await p.exitCode;
   limit?.cancel();
+  for (final StreamSubscription<ProcessSignal> s in signals) {
+    await s.cancel();
+  }
   if (cut) return 124;
+  if (interrupted) return 130;
+  // Over its time limit there: as over it here, never run once more.
+  if (code == 124) return 124;
   if (code == kDistOffloadDeclined) {
-    stderr.writeln('heavy: no other machine took it; running it here');
+    stderr.writeln(
+      'heavy: dist_test did not run it elsewhere (the DIST OFFLOAD line '
+      'above says why); running it here',
+    );
     return null;
   }
   if (plan.kind == HeavyOffloadKind.build && code != 0) {
