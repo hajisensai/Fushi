@@ -34,6 +34,9 @@ import 'package:fushi_engine/sync/fushi_manga_ocr_host.dart';
 import 'package:fushi_engine/sync/assistant/agent_assistant_host.dart';
 import 'package:fushi_engine/sync/assistant/host_assistant.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
+import 'package:fushi_engine/sync/host_jobs/file_content_hash_cache.dart';
+import 'package:fushi_engine/sync/host_jobs/host_audiobook_inputs.dart';
+import 'package:fushi_engine/sync/host_jobs/host_input_matcher.dart';
 import 'package:fushi_engine/sync/host_jobs/host_job_manager.dart';
 import 'package:fushi_engine/sync/host_jobs/host_job_runner.dart';
 import 'package:fushi_engine/sync/interconnect_graphic_subtitle_export.dart';
@@ -233,6 +236,13 @@ class HeadlessHost {
     // 通用任务（第 1 期：ASR）。任务目录持久化，重启可续。
     final HostJobManager jobs = HostJobManager(
       jobRoot: paths.hostJobs,
+      // 对端交来的有声书转录：本机库里已有内容相同（SHA-256）的音频就不必上传。
+      inputMatcher: HostInputMatcher(
+        candidates: () => hostAudiobookInputCandidates(db),
+        cache: FileContentHashCache(
+          store: File(p.join(paths.support.path, 'content_hash_cache.json')),
+        ),
+      ),
       runners: <HostJobRunner>[
         AsrHostJobRunner(
           serviceFactory: (asr.AsrAudioProfile profile) =>

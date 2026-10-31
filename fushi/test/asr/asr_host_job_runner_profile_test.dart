@@ -11,6 +11,56 @@ class _FactoryCalled implements Exception {
   const _FactoryCalled();
 }
 
+/// 只记录 runner 交给服务的音频清单；start 抛 [_FactoryCalled] 结束本次 run。
+class _RecordingService implements asr.AsrTranscriptionService {
+  _RecordingService(this.jobDir);
+
+  final Directory jobDir;
+  List<String>? started;
+  bool jobDirAsked = false;
+
+  @override
+  Future<asr.AsrTranscribePlan> plan({
+    required asr.AsrLanguage language,
+    required asr.AsrAccelerationPreference preference,
+  }) async => asr.AsrTranscribePlan(
+    language: language,
+    variant: asr.AsrEncoderVariant.int8,
+    expectedProvider: asr.OnnxExecutionProvider.cpu,
+    modelStatus: const asr.AsrModelStatus(
+      ready: true,
+      diskBytes: 0,
+      totalBytes: 0,
+      obtainedBytes: 0,
+    ),
+  );
+
+  @override
+  Future<Directory> jobDirFor(
+    List<String> audioPaths,
+    asr.AsrLanguage language, {
+    List<asr.AsrSegmentSpan>? segments,
+  }) async {
+    jobDirAsked = true;
+    return jobDir;
+  }
+
+  @override
+  Future<asr.AsrRunningTranscription> start({
+    required List<String> audioPaths,
+    required asr.AsrLanguage language,
+    required asr.AsrEncoderVariant variant,
+    required asr.AsrAccelerationPreference preference,
+    List<asr.AsrSegmentSpan>? segments,
+  }) async {
+    started = audioPaths;
+    throw const _FactoryCalled();
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
 void main() {
   group('asrAudioProfileForJob', () {
     test('explicit parameter wins (case-insensitive)', () {
@@ -120,6 +170,45 @@ void main() {
         asr.AsrAudioProfile.cleanSpeech,
       );
     });
+
+    test(
+      'all inputs (uploaded + host-local) reach the service in name order; '
+      'host-library inputs check for a pre-existing service job dir',
+      () async {
+        final Directory inputs = Directory('${tmp.path}/inputs')..createSync();
+        final Directory outputs = Directory('${tmp.path}/outputs')
+          ..createSync();
+        File('${inputs.path}/001_b.mp3').writeAsBytesSync(<int>[1]);
+        final File hostFile = File('${tmp.path}/library/a.mp3')
+          ..createSync(recursive: true)
+          ..writeAsBytesSync(<int>[0]);
+        final Directory serviceJobDir = Directory('${tmp.path}/asr_job')
+          ..createSync();
+        final _RecordingService service = _RecordingService(serviceJobDir);
+        final AsrHostJobRunner runner = AsrHostJobRunner(
+          serviceFactory: (asr.AsrAudioProfile _) => service,
+        );
+        await expectLater(
+          runner.run(
+            HostJobContext(
+              jobId: 'j',
+              params: const <String, Object?>{'language': 'ja'},
+              inputsDir: inputs,
+              outputsDir: outputs,
+              onProgress: (double _, String? _) {},
+              cancel: HostJobCancelToken(),
+              hostInputs: <String, String>{'000_a.mp3': hostFile.path},
+            ),
+          ),
+          throwsA(isA<_FactoryCalled>()),
+        );
+        expect(service.started, <String>[
+          hostFile.path,
+          '${inputs.path}/001_b.mp3',
+        ]);
+        expect(service.jobDirAsked, isTrue);
+      },
+    );
 
     test('validateParams rejects an unknown audioProfile', () {
       final AsrHostJobRunner runner = AsrHostJobRunner(

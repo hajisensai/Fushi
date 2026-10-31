@@ -106,7 +106,11 @@ Future<String?> showAsrTranscribeSheet({
       remoteClient ??
       (appModel == null
           ? null
-          : InterconnectJobClient(repo: SyncRepository(appModel.database)));
+          : InterconnectJobClient(
+              repo: SyncRepository(appModel.database),
+              // host 本地已有内容相同的音频就不上传（按 SHA-256 判，结果缓存）。
+              hashCache: appModel.contentHashCache,
+            ));
   // 云端转录 / AI 校对：提供商按 AI 设置里的功能指派现取（见 asr_ai_hosts.dart）。
   // 没有 app 模型或偏好仓库还没就绪（测试宿主 / 启动早期）就两样都不提供。
   final AppModel? model = appModel != null && appModel.isPreferencesReady
