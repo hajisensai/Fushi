@@ -549,4 +549,89 @@ void main() {
       expect(smash.contains('owner_kind'), isFalse);
     });
   });
+
+  // 反馈 -AynHxzwNe / 4c0IeCpSjb：中键 / 侧键与键盘在 LL 钩子里直接吞掉（被吞的事件
+  // 不进任何输入队列、不更新异步键态，所有采样读法同时生效），不走注入侧护盾。
+  group('runner: 中键 / 侧键改投与键盘护盾', () {
+    final String hookProc = compactCode(
+      hookSource.substring(
+        hookSource.indexOf('LRESULT CALLBACK HookProc('),
+        hookSource.indexOf('HWND KeyboardShieldCardTarget()'),
+      ),
+    );
+
+    test('覆盖窗口上的中键 / 侧键 down 在 g_target 闸门之前吞掉并改投，up 成对', () {
+      final int relayDown = hookProc.indexOf(
+        'PostRelayedButton(relay,wparam,info,true);return1;',
+      );
+      final int targetGate = hookProc.indexOf(
+        'constHWNDtarget=g_target.load(std::memory_order_acquire);',
+      );
+      expect(relayDown, greaterThanOrEqualTo(0));
+      expect(relayDown, lessThan(targetGate));
+      expect(
+        hookProc.contains(
+          'g_swallowed_buttons.fetch_or(button_bit,std::memory_order_relaxed);'
+          'g_relayed_button_window[relay_slot].store(relay,',
+        ),
+        isTrue,
+        reason: '吞掉的 down 必须记位，配对 up 才会同样被吞',
+      );
+      final int relayUp = hookProc.indexOf(
+        'PostRelayedButton(relay,wparam,info,false);',
+      );
+      expect(relayUp, greaterThanOrEqualTo(0));
+      expect(relayUp, lessThan(targetGate));
+      final String slot = compactCode(
+        methodBody(hookSource, 'int RelayedButtonSlot(uint32_t button_bit)'),
+      );
+      expect(
+        slot.contains('kSwallowedLeftButton') ||
+            slot.contains('kSwallowedRightButton'),
+        isFalse,
+        reason: '左键走 v19 护盾（要落到卡片 WebView 上），右键要给卡片原生右键菜单',
+      );
+    });
+
+    test('键盘钩子与鼠标钩子同生共死，回调放行自己的重放并探测全局热键', () {
+      final String thread = compactCode(
+        methodBody(hookSource, 'void HookThreadMain()'),
+      );
+      expect(
+        thread.contains('SyncKeyboardHook(hook!=nullptr,&keyboard_hook);'),
+        isTrue,
+      );
+      expect(
+        thread.contains('SyncKeyboardHook(false,&keyboard_hook);'),
+        isTrue,
+      );
+      final String proc = compactCode(
+        methodBody(
+          hookSource,
+          'LRESULT CALLBACK KeyboardHookProc(int code, WPARAM wparam, LPARAM lparam)',
+        ),
+      );
+      expect(
+        proc.indexOf('info->dwExtraInfo==kKeyboardShieldReplayTag'),
+        lessThan(proc.indexOf('g_keyboard_shield.OnKey(')),
+        reason: '重放的热键不能被自己再吞一次',
+      );
+      expect(
+        proc.contains('PostMessage(card,kLowLevelKeyboardCopyMessage,0,0);'),
+        isTrue,
+      );
+      expect(
+        proc.contains('IsRegisteredGlobalHotkey('),
+        isTrue,
+        reason: '吞掉的组合若是全局热键（应用外查词 / 截屏识字）必须交还',
+      );
+      expect(
+        compactCode(
+          cardSource,
+        ).contains('casefushi::kLowLevelKeyboardCopyMessage:'),
+        isTrue,
+        reason: '吞掉的 Ctrl+C 由卡片自己复制选区',
+      );
+    });
+  });
 }

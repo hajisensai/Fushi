@@ -1870,9 +1870,64 @@ HWND KeyboardShieldCardTarget() {
   return target;
 }
 
+// 本钩子重新注入的按键带这个标记：钩子见到它直接放行，不把自己交还的热键再吞一次。
+constexpr ULONG_PTR kKeyboardShieldReplayTag = 0x46534B52;  // 'FSKR'
+// 热键探测用的线程热键 id（应用可用区间 0x0000-0xBFFF 的顶端，不与插件自增 id 撞）。
+constexpr int kKeyboardShieldHotkeyProbeId = 0xBFF0;
+
+UINT CurrentHotkeyModifiers(bool ctrl) {
+  UINT mods = ctrl ? MOD_CONTROL : 0u;
+  if ((GetAsyncKeyState(VK_SHIFT) & 0x8000) != 0) mods |= MOD_SHIFT;
+  if ((GetAsyncKeyState(VK_MENU) & 0x8000) != 0) mods |= MOD_ALT;
+  if ((GetAsyncKeyState(VK_LWIN) & 0x8000) != 0 ||
+      (GetAsyncKeyState(VK_RWIN) & 0x8000) != 0) {
+    mods |= MOD_WIN;
+  }
+  return mods;
+}
+
+// (|mods|, |vk|) 是否已被任何程序（含 Fushi 自己经 hotkey_manager 注册的应用外查词 /
+// 截屏识字热键）注册为全局热键。Windows 没有查询接口，只能试注册：撞上已注册的组合
+// 会以 ERROR_HOTKEY_ALREADY_REGISTERED 失败；试成功立刻注销（钩子线程有消息队列，
+// 线程热键在返回前就撤掉，不会抢到这次按键）。
+bool IsRegisteredGlobalHotkey(UINT mods, uint32_t vk) {
+  if (RegisterHotKey(nullptr, kKeyboardShieldHotkeyProbeId, mods,
+                     static_cast<UINT>(vk))) {
+    UnregisterHotKey(nullptr, kKeyboardShieldHotkeyProbeId);
+    return false;
+  }
+  return GetLastError() == ERROR_HOTKEY_ALREADY_REGISTERED;
+}
+
+// 把交还的热键按「原顺序」重新注入：先补此前吞掉的 Ctrl down，再补这个键的 down。
+// 在 LL 回调里 SendInput 的事件排在当前事件之后，所以当前事件必须吞掉、整组重放，
+// 否则键会先于 Ctrl 到达。之后真实的 up / 自动重复由系统按普通键配对。
+void ReplayHotkeyDown(const uint32_t* controls, int control_count, uint32_t vk,
+                      DWORD flags) {
+  INPUT inputs[4] = {};
+  int count = 0;
+  for (int i = 0; i < control_count && count < 3; ++i) {
+    INPUT& input = inputs[count++];
+    input.type = INPUT_KEYBOARD;
+    input.ki.wVk = static_cast<WORD>(controls[i]);
+    input.ki.dwFlags =
+        controls[i] == VK_RCONTROL ? KEYEVENTF_EXTENDEDKEY : 0u;
+    input.ki.dwExtraInfo = kKeyboardShieldReplayTag;
+  }
+  INPUT& key = inputs[count++];
+  key.type = INPUT_KEYBOARD;
+  key.ki.wVk = static_cast<WORD>(vk);
+  key.ki.dwFlags = (flags & LLKHF_EXTENDED) != 0 ? KEYEVENTF_EXTENDEDKEY : 0u;
+  key.ki.dwExtraInfo = kKeyboardShieldReplayTag;
+  SendInput(static_cast<UINT>(count), inputs, sizeof(INPUT));
+}
+
 LRESULT CALLBACK KeyboardHookProc(int code, WPARAM wparam, LPARAM lparam) {
   if (code != HC_ACTION) return CallNextHookEx(nullptr, code, wparam, lparam);
   const auto* info = reinterpret_cast<const KBDLLHOOKSTRUCT*>(lparam);
+  if (info->dwExtraInfo == kKeyboardShieldReplayTag) {
+    return CallNextHookEx(nullptr, code, wparam, lparam);
+  }
   const uint32_t vk = static_cast<uint32_t>(info->vkCode);
   const bool up = (info->flags & LLKHF_UP) != 0;
   // up 只关心「它的 down 是不是被吞了」：没吞就是纯放行，不碰任何窗口状态。
@@ -1885,6 +1940,7 @@ LRESULT CALLBACK KeyboardHookProc(int code, WPARAM wparam, LPARAM lparam) {
   const bool down_in_system =
       !up && (GetAsyncKeyState(static_cast<int>(vk)) & 0x8000) != 0;
   const bool ctrl_in_system = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
+  const bool was_swallowed = g_keyboard_shield.IsSwallowed(vk);
   const auto action = g_keyboard_shield.OnKey(vk, up, card != nullptr,
                                               down_in_system, ctrl_in_system);
   if (action == fushi::lookup_keyboard_shield::Action::kPass) {
@@ -1893,6 +1949,18 @@ LRESULT CALLBACK KeyboardHookProc(int code, WPARAM wparam, LPARAM lparam) {
   if (action == fushi::lookup_keyboard_shield::Action::kSwallowAndCopy &&
       card != nullptr) {
     PostMessage(card, kLowLevelKeyboardCopyMessage, 0, 0);
+    return 1;
+  }
+  // 新吞下的非 Ctrl 键：若（修饰键 + 键）是某个全局热键，交还并整组重放，让热键照常
+  // 触发（游戏在这种情况下看到的与没有护盾时一致）。自动重复 / up 不探测。
+  if (!up && !was_swallowed &&
+      !fushi::lookup_keyboard_shield::KeyboardShieldLatch::IsControlKey(vk)) {
+    const bool ctrl = ctrl_in_system || g_keyboard_shield.ControlSwallowed();
+    if (IsRegisteredGlobalHotkey(CurrentHotkeyModifiers(ctrl), vk)) {
+      uint32_t controls[3] = {};
+      const int control_count = g_keyboard_shield.ReleaseForHotkey(vk, controls);
+      ReplayHotkeyDown(controls, control_count, vk, info->flags);
+    }
   }
   return 1;
 }

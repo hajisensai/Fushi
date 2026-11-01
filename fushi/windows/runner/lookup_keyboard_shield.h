@@ -26,6 +26,9 @@
 //     Shift 也放行：它是查词的悬停修饰键，吞掉会让卡内悬停查词失效。
 //   * Ctrl+C（Ctrl 来自本状态机吞掉的 Ctrl，或系统里已经按住的 Ctrl）在吞掉 C 的同时
 //     请求复制；自动重复不重复复制（对齐 RegisterHotKey 的 MOD_NOREPEAT）。
+//   * 全局热键不能被吞死：钩子对每个被吞的新按下探测（修饰键 + 键）是否已被任何程序
+//     注册为热键，是就用 ReleaseForHotkey 交还，并把它与之前吞掉的 Ctrl 一起重新
+//     注入（带标记，钩子放行自己的注入），热键照常触发。
 
 #include <atomic>
 #include <cstdint>
@@ -112,6 +115,25 @@ class KeyboardShieldLatch {
       if (word.load(std::memory_order_relaxed) != 0) return true;
     }
     return false;
+  }
+
+  static bool IsControlKey(uint32_t vk) {
+    return vk == kVkControl || vk == kVkLControl || vk == kVkRControl;
+  }
+
+  // 被吞的 |vk| 这一次按下其实是一个全局热键（Fushi 自己的应用外查词 / 截屏识字热键，
+  // 或别的程序的热键）：热键在 LL 钩子之后才由系统识别，吞了就永远触发不了。调用方
+  // 把它连同此前吞掉的 Ctrl 一起重新注入；这里清掉这些位（之后真实的 up / 自动重复
+  // 都在系统键态里是按下态，按普通键放行配对），并按顺序写出需要补注入 down 的 Ctrl
+  // （最多 3 个），返回个数。
+  int ReleaseForHotkey(uint32_t vk, uint32_t out_controls[3]) {
+    int count = 0;
+    constexpr uint32_t kControls[3] = {kVkLControl, kVkRControl, kVkControl};
+    for (int i = 0; i < 3; ++i) {
+      if (Clear(kControls[i])) out_controls[count++] = kControls[i];
+    }
+    if (vk < 256u) Clear(vk);
+    return count;
   }
 
   // 钩子卸载时调用：之后的 up 不会再经过本状态机。

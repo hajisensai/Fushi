@@ -91,6 +91,24 @@ int main() {
     assert(!latch.AnySwallowed());
   }
 
+  // 被吞的组合其实是全局热键：交还 Ctrl 与该键，之后的 up 放行（不再算被吞）。
+  {
+    KeyboardShieldLatch latch;
+    constexpr uint32_t kVkX = 0x58;
+    assert(Down(latch, k::kVkLControl, true) == Action::kSwallow);
+    assert(Down(latch, kVkX, true) == Action::kSwallow);
+    uint32_t controls[3] = {};
+    assert(latch.ReleaseForHotkey(kVkX, controls) == 1);
+    assert(controls[0] == k::kVkLControl);
+    assert(!latch.AnySwallowed());
+    assert(Up(latch, kVkX, true) == Action::kPass);
+    assert(Up(latch, k::kVkLControl, true) == Action::kPass);
+    // 没有被吞的 Ctrl 时只交还键本身。
+    assert(Down(latch, kVkX, true) == Action::kSwallow);
+    assert(latch.ReleaseForHotkey(kVkX, controls) == 0);
+    assert(!latch.AnySwallowed());
+  }
+
   // 没有 Ctrl 的 C 只吞不复制；越界 vk 放行；Reset 清空。
   {
     KeyboardShieldLatch latch;
