@@ -702,6 +702,23 @@ enum ShortcutAction {
   ),
   webBrowserNextTab(ShortcutScope.webBrowser, 'web_browser_next_tab'),
   webBrowserPreviousTab(ShortcutScope.webBrowser, 'web_browser_previous_tab'),
+  // Ctrl+1…8 跳到第 N 个标签页、Ctrl+9 跳到最后一个（Chrome / Edge / Firefox 通行）。
+  webBrowserSelectTab1(ShortcutScope.webBrowser, 'web_browser_select_tab_1'),
+  webBrowserSelectTab2(ShortcutScope.webBrowser, 'web_browser_select_tab_2'),
+  webBrowserSelectTab3(ShortcutScope.webBrowser, 'web_browser_select_tab_3'),
+  webBrowserSelectTab4(ShortcutScope.webBrowser, 'web_browser_select_tab_4'),
+  webBrowserSelectTab5(ShortcutScope.webBrowser, 'web_browser_select_tab_5'),
+  webBrowserSelectTab6(ShortcutScope.webBrowser, 'web_browser_select_tab_6'),
+  webBrowserSelectTab7(ShortcutScope.webBrowser, 'web_browser_select_tab_7'),
+  webBrowserSelectTab8(ShortcutScope.webBrowser, 'web_browser_select_tab_8'),
+  webBrowserSelectLastTab(
+    ShortcutScope.webBrowser,
+    'web_browser_select_last_tab',
+  ),
+  webBrowserNewIncognitoTab(
+    ShortcutScope.webBrowser,
+    'web_browser_new_incognito_tab',
+  ),
   webBrowserFocusAddress(ShortcutScope.webBrowser, 'web_browser_focus_address'),
   // 网页历史后退 / 前进。⚠️ 后退的桌面默认**不含** Alt+←：那是 universal
   // globalBack 的默认键，页面 scope 绑同键会把「返回上一级」静默遮蔽（守卫
@@ -711,6 +728,8 @@ enum ShortcutAction {
   webBrowserForward(ShortcutScope.webBrowser, 'web_browser_forward'),
   webBrowserReload(ShortcutScope.webBrowser, 'web_browser_reload'),
   webBrowserFindInPage(ShortcutScope.webBrowser, 'web_browser_find_in_page'),
+  webBrowserFindNext(ShortcutScope.webBrowser, 'web_browser_find_next'),
+  webBrowserFindPrevious(ShortcutScope.webBrowser, 'web_browser_find_previous'),
   webBrowserToggleBookmark(
     ShortcutScope.webBrowser,
     'web_browser_toggle_bookmark',
@@ -718,6 +737,16 @@ enum ShortcutAction {
   webBrowserZoomIn(ShortcutScope.webBrowser, 'web_browser_zoom_in'),
   webBrowserZoomOut(ShortcutScope.webBrowser, 'web_browser_zoom_out'),
   webBrowserZoomReset(ShortcutScope.webBrowser, 'web_browser_zoom_reset'),
+  // 浏览器数据页：历史 / 书签 / 下载。
+  webBrowserHistoryOpen(ShortcutScope.webBrowser, 'web_browser_history_open'),
+  webBrowserBookmarksOpen(
+    ShortcutScope.webBrowser,
+    'web_browser_bookmarks_open',
+  ),
+  webBrowserDownloadsOpen(
+    ShortcutScope.webBrowser,
+    'web_browser_downloads_open',
+  ),
   // 音乐（音乐模块 P0）：曲库页 / 播放条的播放控制。键盘一条通道，由音乐库页按
   // ShortcutScope.music 解析（music_library_page.dart 的 _handleKey）。
   musicTogglePlayPause(ShortcutScope.music, 'music_toggle_play_pause'),

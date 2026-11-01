@@ -400,6 +400,38 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('焦点离开地址栏后 Ctrl+F / Ctrl+T 真按键照样生效', (WidgetTester tester) async {
+    // 生产启动时注册表按平台装默认键位；测试里 AppModel 没走启动流程，手动装。
+    appModel.shortcutRegistry.loadDefaults(TargetPlatform.windows);
+    await pumpBrowser(tester, const Size(1280, 720));
+    final FushiWebBrowserPageState state = page(tester);
+    // 先让地址栏持焦，再走它回车 / Esc 时的 unfocus()：焦点交回最近的 scope。
+    state.runShortcut(ShortcutAction.webBrowserFocusAddress);
+    await tester.pumpAndSettle();
+    expect(
+      FocusManager.instance.primaryFocus?.debugLabel,
+      contains('web-browser-address'),
+    );
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pumpAndSettle();
+
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyF);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pumpAndSettle();
+    expect(state.tabsController.activeTab?.findOpen, isTrue);
+
+    // 查找条的输入框此刻持焦；它失焦后同样要落回页面 scope。
+    FocusManager.instance.primaryFocus?.unfocus();
+    await tester.pumpAndSettle();
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.controlLeft);
+    await tester.sendKeyEvent(LogicalKeyboardKey.keyT);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.controlLeft);
+    await tester.pumpAndSettle();
+    expect(state.tabsController.length, 2);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('标签区域右键菜单：改样式 / 关闭其他 / 重开', (WidgetTester tester) async {
     await pumpBrowser(tester, const Size(1280, 720));
     final FushiWebBrowserPageState state = page(tester);

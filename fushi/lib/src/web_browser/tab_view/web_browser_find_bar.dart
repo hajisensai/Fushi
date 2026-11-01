@@ -30,10 +30,12 @@ class WebBrowserFindBar extends StatefulWidget {
   final WebBrowserFindRunner? runner;
 
   @override
-  State<WebBrowserFindBar> createState() => _WebBrowserFindBarState();
+  State<WebBrowserFindBar> createState() => WebBrowserFindBarState();
 }
 
-class _WebBrowserFindBarState extends State<WebBrowserFindBar>
+/// 壳经 `GlobalKey` 调 [step] / [focusQuery]：F3 / Ctrl+G 查找下一处、查找条已开时
+/// 再按 Ctrl+F 回到输入框（与桌面浏览器一致）。
+class WebBrowserFindBarState extends State<WebBrowserFindBar>
     with SingleTickerProviderStateMixin {
   final TextEditingController _query = TextEditingController();
   final FocusNode _focus = FocusNode(debugLabel: 'web-browser-find');
@@ -102,6 +104,18 @@ class _WebBrowserFindBarState extends State<WebBrowserFindBar>
   void _step({required bool forward}) {
     if (_query.text.isEmpty) return;
     unawaited(_apply(webBrowserFindStepScript(forward: forward)));
+  }
+
+  /// 跳到下一处 / 上一处结果（查找词为空时不动）。
+  void step({required bool forward}) => _step(forward: forward);
+
+  /// 把焦点放回查找输入框并全选已有查找词。
+  void focusQuery() {
+    _focus.requestFocus();
+    _query.selection = TextSelection(
+      baseOffset: 0,
+      extentOffset: _query.text.length,
+    );
   }
 
   void _close() => widget.tab.update(findOpen: false);

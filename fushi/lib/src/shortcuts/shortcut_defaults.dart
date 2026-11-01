@@ -525,18 +525,55 @@ class ShortcutDefaults {
     ]),
     ShortcutAction.webBrowserCloseTab: _kb([
       _key(LogicalKeyboardKey.keyW, {ModifierKey.ctrl}),
+      _key(LogicalKeyboardKey.f4, {ModifierKey.ctrl}),
     ]),
     ShortcutAction.webBrowserReopenClosedTab: _kb([
       _key(LogicalKeyboardKey.keyT, {ModifierKey.ctrl, ModifierKey.shift}),
     ]),
     ShortcutAction.webBrowserNextTab: _kb([
       _key(LogicalKeyboardKey.tab, {ModifierKey.ctrl}),
+      _key(LogicalKeyboardKey.pageDown, {ModifierKey.ctrl}),
     ]),
     ShortcutAction.webBrowserPreviousTab: _kb([
       _key(LogicalKeyboardKey.tab, {ModifierKey.ctrl, ModifierKey.shift}),
+      _key(LogicalKeyboardKey.pageUp, {ModifierKey.ctrl}),
+    ]),
+    // Ctrl+1…8 / Ctrl+9：与首页 homeTab* 的 Ctrl+1/2/3 同键，但两边不同时激活
+    // （webBrowser 独立 co-active 组，浏览页先解析自己的 scope）。
+    ShortcutAction.webBrowserSelectTab1: _kb([
+      _key(LogicalKeyboardKey.digit1, {ModifierKey.ctrl}),
+    ]),
+    ShortcutAction.webBrowserSelectTab2: _kb([
+      _key(LogicalKeyboardKey.digit2, {ModifierKey.ctrl}),
+    ]),
+    ShortcutAction.webBrowserSelectTab3: _kb([
+      _key(LogicalKeyboardKey.digit3, {ModifierKey.ctrl}),
+    ]),
+    ShortcutAction.webBrowserSelectTab4: _kb([
+      _key(LogicalKeyboardKey.digit4, {ModifierKey.ctrl}),
+    ]),
+    ShortcutAction.webBrowserSelectTab5: _kb([
+      _key(LogicalKeyboardKey.digit5, {ModifierKey.ctrl}),
+    ]),
+    ShortcutAction.webBrowserSelectTab6: _kb([
+      _key(LogicalKeyboardKey.digit6, {ModifierKey.ctrl}),
+    ]),
+    ShortcutAction.webBrowserSelectTab7: _kb([
+      _key(LogicalKeyboardKey.digit7, {ModifierKey.ctrl}),
+    ]),
+    ShortcutAction.webBrowserSelectTab8: _kb([
+      _key(LogicalKeyboardKey.digit8, {ModifierKey.ctrl}),
+    ]),
+    ShortcutAction.webBrowserSelectLastTab: _kb([
+      _key(LogicalKeyboardKey.digit9, {ModifierKey.ctrl}),
+    ]),
+    ShortcutAction.webBrowserNewIncognitoTab: _kb([
+      _key(LogicalKeyboardKey.keyN, {ModifierKey.ctrl, ModifierKey.shift}),
     ]),
     ShortcutAction.webBrowserFocusAddress: _kb([
       _key(LogicalKeyboardKey.keyL, {ModifierKey.ctrl}),
+      _key(LogicalKeyboardKey.keyD, {ModifierKey.alt}),
+      _key(LogicalKeyboardKey.f6),
     ]),
     // 网页后退：**不绑 Alt+←**——那是 universal globalBack 的默认键，页面 scope 绑同键
     // 会静默遮蔽「返回上一级」（universal_back_test）。浏览器页在 universal 兜底里把
@@ -554,17 +591,40 @@ class ShortcutDefaults {
     ShortcutAction.webBrowserFindInPage: _kb([
       _key(LogicalKeyboardKey.keyF, {ModifierKey.ctrl}),
     ]),
+    ShortcutAction.webBrowserFindNext: _kb([
+      _key(LogicalKeyboardKey.f3),
+      _key(LogicalKeyboardKey.keyG, {ModifierKey.ctrl}),
+    ]),
+    ShortcutAction.webBrowserFindPrevious: _kb([
+      _key(LogicalKeyboardKey.f3, {ModifierKey.shift}),
+      _key(LogicalKeyboardKey.keyG, {ModifierKey.ctrl, ModifierKey.shift}),
+    ]),
     ShortcutAction.webBrowserToggleBookmark: _kb([
       _key(LogicalKeyboardKey.keyD, {ModifierKey.ctrl}),
     ]),
     ShortcutAction.webBrowserZoomIn: _kb([
       _key(LogicalKeyboardKey.equal, {ModifierKey.ctrl}),
+      _key(LogicalKeyboardKey.numpadAdd, {ModifierKey.ctrl}),
     ]),
     ShortcutAction.webBrowserZoomOut: _kb([
       _key(LogicalKeyboardKey.minus, {ModifierKey.ctrl}),
+      _key(LogicalKeyboardKey.numpadSubtract, {ModifierKey.ctrl}),
     ]),
     ShortcutAction.webBrowserZoomReset: _kb([
       _key(LogicalKeyboardKey.digit0, {ModifierKey.ctrl}),
+      _key(LogicalKeyboardKey.numpad0, {ModifierKey.ctrl}),
+    ]),
+    // 历史 Ctrl+H、书签管理 Ctrl+Shift+O（Chrome / Edge）。下载不用 Chrome 的 Ctrl+J：
+    // 那是全局 AI 助手键，全 scope 都不许占（global_open_ai_assistant_shortcut_test），
+    // 取 Firefox 的 Ctrl+Shift+Y。
+    ShortcutAction.webBrowserHistoryOpen: _kb([
+      _key(LogicalKeyboardKey.keyH, {ModifierKey.ctrl}),
+    ]),
+    ShortcutAction.webBrowserBookmarksOpen: _kb([
+      _key(LogicalKeyboardKey.keyO, {ModifierKey.ctrl, ModifierKey.shift}),
+    ]),
+    ShortcutAction.webBrowserDownloadsOpen: _kb([
+      _key(LogicalKeyboardKey.keyY, {ModifierKey.ctrl, ModifierKey.shift}),
     ]),
     // 音乐：K 播放暂停（与视频页同一习惯键）、N / P 上下曲、Shift+←/→ ±5 秒，外加媒体键。
     ShortcutAction.musicTogglePlayPause: _kb([
@@ -785,6 +845,23 @@ class ShortcutDefaults {
     ShortcutAction.webBrowserForward: <InputBinding>[
       _key(LogicalKeyboardKey.bracketRight, {ModifierKey.meta}),
       _key(LogicalKeyboardKey.browserForward),
+    ],
+    // macOS：⌘H 是系统「隐藏应用」、⌥D 打出 ∂、⌘F4 / F6 不是 Mac 习惯，按 Safari
+    // 键位换：历史 ⌘Y、书签 ⌥⌘B、下载 ⌥⌘L、地址栏只留 ⌘L、关标签只留 ⌘W。
+    ShortcutAction.webBrowserCloseTab: <InputBinding>[
+      _key(LogicalKeyboardKey.keyW, {ModifierKey.meta}),
+    ],
+    ShortcutAction.webBrowserFocusAddress: <InputBinding>[
+      _key(LogicalKeyboardKey.keyL, {ModifierKey.meta}),
+    ],
+    ShortcutAction.webBrowserHistoryOpen: <InputBinding>[
+      _key(LogicalKeyboardKey.keyY, {ModifierKey.meta}),
+    ],
+    ShortcutAction.webBrowserBookmarksOpen: <InputBinding>[
+      _key(LogicalKeyboardKey.keyB, {ModifierKey.meta, ModifierKey.alt}),
+    ],
+    ShortcutAction.webBrowserDownloadsOpen: <InputBinding>[
+      _key(LogicalKeyboardKey.keyL, {ModifierKey.meta, ModifierKey.alt}),
     ],
     // SRS 复习页：⌘ 与 Ctrl 都认（与改造前一致），见 [_withMetaTwins]。
     ShortcutAction.srsReviewUndo: _withMetaTwins(_srsReviewUndoKeys),

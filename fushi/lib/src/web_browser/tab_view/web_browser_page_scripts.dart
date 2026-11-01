@@ -104,6 +104,10 @@ const String kWebBrowserExitFullscreenScript =
 
 /// 取站点图标：`link[rel~=icon]`（取声明尺寸最接近 32 的），退到 apple-touch-icon，
 /// 再退到 `/favicon.ico`。返回绝对地址字符串。
+///
+/// SVG 图标（`type=image/svg+xml` / `.svg` / `data:image/svg`）一律跳过：标签栏用
+/// Flutter `Image` 解码，不认 SVG，选中它只会退回首字母色块（jiten.moe 的
+/// `favicon.svg` 声明 `sizes="any"`，与 48px ico 同分且排在前面）。
 const String kWebBrowserFaviconScript = '''
 (function(){
   function abs(h){ try { return new URL(h, location.href).href; } catch (e) { return null; } }
@@ -115,6 +119,9 @@ const String kWebBrowserFaviconScript = '''
     if (rel.indexOf('icon') < 0 && rel.indexOf('apple-touch-icon') < 0) continue;
     var href = l.getAttribute('href');
     if (!href) continue;
+    var type = (l.getAttribute('type') || '').toLowerCase();
+    if (type.indexOf('svg') >= 0 || /\\.svgz?(\\?|#|\$)/i.test(href) ||
+        /^data:image\\/svg/i.test(href)) continue;
     var size = 0;
     var m = /(\\d+)x(\\d+)/.exec(l.getAttribute('sizes') || '');
     if (m) size = parseInt(m[1], 10);
