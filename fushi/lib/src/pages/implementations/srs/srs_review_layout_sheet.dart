@@ -44,6 +44,7 @@ class SrsReviewLayoutSheet extends ConsumerWidget {
     );
     final bool intervals = ref.watch(srsReviewShowIntervalsProvider);
     final bool counts = ref.watch(srsReviewShowCountsProvider);
+    final bool inlineEdit = ref.watch(srsReviewInlineEditProvider);
     final bool floating = ref.watch(srsReviewChromeFloatingProvider);
     final bool hideHardEasy = ref.watch(srsReviewHideHardEasyProvider);
     final double volume = ref.watch(srsReviewVolumeProvider);
@@ -112,6 +113,14 @@ class SrsReviewLayoutSheet extends ConsumerWidget {
             subtitle: t.srs_review_layout_show_counts_hint,
             value: counts,
             onChanged: (bool v) => app.setSrsReviewShowCounts(v),
+          ),
+          AdaptiveSettingsSwitchRow(
+            key: const ValueKey<String>('srs-review-layout-inline-edit'),
+            title: t.srs_review_inline_edit,
+            subtitle: t.srs_review_inline_edit_hint,
+            subtitleMaxLines: 3,
+            value: inlineEdit,
+            onChanged: (bool v) => app.setSrsReviewInlineEdit(v),
           ),
           AdaptiveSettingsSwitchRow(
             key: const ValueKey<String>('srs-review-layout-hide-hard-easy'),

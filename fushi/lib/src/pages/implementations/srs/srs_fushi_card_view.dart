@@ -19,7 +19,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart'
     show ValueListenable, defaultTargetPlatform;
-import 'package:flutter/rendering.dart' show RenderProxyBox;
+import 'package:flutter/rendering.dart' show RenderProxyBox, SelectedContent;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_anki/fushi_anki.dart' show CardSourceLink;
@@ -36,6 +36,7 @@ import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_video_clip.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
 import 'package:fushi/src/srs/srs_card_appearance.dart';
+import 'package:fushi/src/srs/srs_review_edit.dart';
 import 'package:fushi/src/srs/srs_card_autoplay.dart'
     show SrsFushiCardMedia, srsFushiCardMedia;
 import 'package:fushi/src/srs/srs_card_video_channel.dart';
@@ -428,6 +429,14 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
       // 原生绘制的文字可拖选 / 复制（与 WebView 释义区一致）；点按手势不受影响。
       child: SelectionArea(
         focusNode: _selectionFocus,
+        // 复习时编辑：原生区选中的文字交给复习页（没有序号；整页清空选区不报）。
+        onSelectionChanged: widget.face.onEditSelection == null
+            ? null
+            : (SelectedContent? content) {
+                final String text = content?.plainText ?? '';
+                if (text.trim().isEmpty) return;
+                widget.face.onEditSelection!(SrsCardSelection(text));
+              },
         // 包在取词区外面：抬起时取词区先处理（[SrsNativeLookupRegionState.tookTap] 已定）。
         child: SrsCardGestureRegion(
           onGesture: widget.face.onCardGesture,
@@ -1158,6 +1167,16 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     // 释义区的卡面手势由页内指针脚本回报（原生区那一层见 [SrsCardGestureRegion]）。
     onCardGesture: widget.face.onCardGesture,
     gestureArming: widget.face.gestureArming,
+    // 释义页整页就是释义字段：选区序号对得上字段里的序号，且只在释义字段里找。
+    onEditSelection: widget.face.onEditSelection == null
+        ? null
+        : (SrsCardSelection sel) => widget.face.onEditSelection!(
+            SrsCardSelection(
+              sel.text,
+              occurrence: sel.occurrence,
+              definitionsOnly: true,
+            ),
+          ),
   );
 
   Widget? _definitions(BuildContext context, {required bool wide}) {

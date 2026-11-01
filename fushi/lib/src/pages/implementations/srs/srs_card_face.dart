@@ -40,6 +40,7 @@ import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/srs/srs_review_gestures.dart';
 import 'package:fushi/src/utils/misc/desktop_audio_playback.dart';
 import 'package:fushi/src/utils/misc/dictionary_external_link.dart';
+import 'package:fushi/src/srs/srs_review_edit.dart';
 import 'package:fushi/src/webview/webview_death_guard.dart';
 import 'package:fushi/utils.dart';
 
@@ -68,6 +69,7 @@ class SrsCardFace {
     this.onCardGesture,
     this.gestureArming = SrsCardGestureArming.none,
     this.onImageTap,
+    this.onEditSelection,
   });
 
   final String cardId;
@@ -152,6 +154,10 @@ class SrsCardFace {
   /// 宿主据此全屏查看（[srsMediaNameFromUrl] 换回媒体名）。null = 图片点击不拦。
   final void Function(String src)? onImageTap;
 
+  /// 复习时编辑（复习页「允许复习时直接编辑」开着时给出）：卡面上选中了文字（原生区经 SelectionArea，
+  /// WebView 经页内 `selectionchange` 脚本 [kSrsCardEditSelectionScript]）。null = 不上报。
+  final void Function(SrsCardSelection selection)? onEditSelection;
+
   /// 同一面卡，换版式 / 页面 zoom。
   SrsCardFace withLayout(SrsCardLayout layout, {double? pageZoom}) =>
       SrsCardFace(
@@ -176,6 +182,7 @@ class SrsCardFace {
         onCardGesture: onCardGesture,
         gestureArming: gestureArming,
         onImageTap: onImageTap,
+        onEditSelection: onEditSelection,
       );
 }
 
@@ -430,6 +437,48 @@ final class SrsCardLookupLink extends SrsCardLinkAction {
   final String query;
   final Rect rect;
 }
+
+/// 页内选区 → 宿主（复习时编辑，见 [kSrsCardEditSelectionScript]）。
+const String kSrsEditSelectionHandler = 'onSrsEditSelection';
+
+/// 复习时编辑：页内选区变了（防抖 200 ms）且选中了文字时，把选中的文字与它是文档里第几处同样的文字
+/// （都去掉注音 `<rt>` / `<rp>` 与空白，与 Dart 侧 srsFieldMatchText 同口径）交给宿主。选区清空不报：
+/// 查词弹窗关掉时会清页内选区，宿主留着最后一次选中的文字。幂等：外壳重放时不重复挂。
+const String kSrsCardEditSelectionScript = r'''
+(function () {
+  if (window.__fushiSrsEditSel) return;
+  window.__fushiSrsEditSel = true;
+  var timer = null;
+  function plain(range) {
+    var f = range.cloneContents();
+    var hidden = f.querySelectorAll('rt,rp,script,style');
+    for (var i = 0; i < hidden.length; i++) hidden[i].remove();
+    return (f.textContent || '').replace(/\s+/g, '');
+  }
+  function report() {
+    timer = null;
+    var sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return;
+    var r = sel.getRangeAt(0);
+    var text = plain(r);
+    if (!text) return;
+    var before = document.createRange();
+    before.setStart(document.body, 0);
+    before.setEnd(r.startContainer, r.startOffset);
+    var prefix = plain(before);
+    var occ = 0;
+    for (var at = prefix.indexOf(text); at >= 0; at = prefix.indexOf(text, at + 1)) occ++;
+    try {
+      window.flutter_inappwebview.callHandler('onSrsEditSelection',
+        JSON.stringify({ text: sel.toString(), occ: occ }));
+    } catch (e) {}
+  }
+  document.addEventListener('selectionchange', function () {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(report, 200);
+  });
+})();
+''';
 
 /// 页内图片点击 → 宿主（见 [kSrsCardImageTapScript]）。
 const String kSrsImageTapHandler = 'onSrsImageTap';
@@ -1899,6 +1948,24 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
     return r is RenderBox && r.attached && r.hasSize ? r : null;
   }
 
+  /// 页内选区（[kSrsCardEditSelectionScript]）→ 复习时编辑。`occ` 是在这一面文档里的序号：只有释义页
+  /// （整页就是释义字段）里它对得上字段内的序号，整面模板卡面里不用它。
+  void _onEditSelection(String raw) {
+    final void Function(SrsCardSelection)? report = widget.face.onEditSelection;
+    if (report == null) return;
+    final Object? json;
+    try {
+      json = jsonDecode(raw);
+    } on FormatException {
+      return;
+    }
+    if (json is! Map) return;
+    final Object? text = json['text'];
+    if (text is! String || text.trim().isEmpty) return;
+    final Object? occ = json['occ'];
+    report(SrsCardSelection(text, occurrence: occ is int ? occ : null));
+  }
+
   void _onTextSelected(Object? raw) {
     final SrsCardLookupController? lookup = _lookup;
     final RenderBox? box = _box;
@@ -2049,6 +2116,11 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
       if (widget.face.onImageTap != null) {
         await controller.evaluateJavascript(source: kSrsCardImageTapScript);
       }
+      if (widget.face.onEditSelection != null) {
+        await controller.evaluateJavascript(
+          source: kSrsCardEditSelectionScript,
+        );
+      }
       final bool height = widget.face.onContentHeight != null;
       final bool wheel = widget.face.onWheel != null;
       final bool zoom = widget.face.onZoomWheel != null;
@@ -2187,6 +2259,14 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
                   ? CardSourceLink.tryParse(href)
                   : null;
               if (link != null && mounted) widget.face.onSourceLink?.call(link);
+              return null;
+            },
+          );
+          controller.addJavaScriptHandler(
+            handlerName: kSrsEditSelectionHandler,
+            callback: (List<dynamic> arguments) {
+              final Object? raw = arguments.isEmpty ? null : arguments.first;
+              if (raw is String && mounted) _onEditSelection(raw);
               return null;
             },
           );
