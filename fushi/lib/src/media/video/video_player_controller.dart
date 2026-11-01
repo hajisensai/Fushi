@@ -3179,6 +3179,9 @@ class VideoPlayerController extends ChangeNotifier
     String? externalAudioTrackUrl,
     void Function(DefaultEmbeddedSubtitleLoadResult result)?
     onEmbeddedSubtitleAutoLoad,
+    // 主字幕默认语言偏好（反馈 Fz9HXThdSW，见 parseSubtitleLanguagePreferences）：
+    // 自动抽内封文本轨时按它挑轨，空 = 第一条文本轨（旧行为）。
+    List<String> preferredSubtitleLanguages = const <String>[],
   }) async {
     assert(
       (videoFile == null) != (mediaUri == null),
@@ -3829,6 +3832,7 @@ class VideoPlayerController extends ChangeNotifier
       subtitleExplicitlyOff: subtitleExplicitlyOff,
       externalSubtitlePath: externalSubtitlePath,
       onEmbeddedSubtitleAutoLoad: onEmbeddedSubtitleAutoLoad,
+      preferredSubtitleLanguages: preferredSubtitleLanguages,
     );
   }
 
@@ -3905,6 +3909,7 @@ class VideoPlayerController extends ChangeNotifier
     required String? externalSubtitlePath,
     required void Function(DefaultEmbeddedSubtitleLoadResult result)?
     onEmbeddedSubtitleAutoLoad,
+    required List<String> preferredSubtitleLanguages,
   }) async {
     // 恢复「图形内封字幕」选择（BUG-122）：上次选的是 PGS 等位图轨，没有文本 cue，
     // 交给 libmpv 当画面字幕渲染。不阻塞首帧（轨列表 open 后才就绪，方法内等待）。
@@ -3925,6 +3930,7 @@ class VideoPlayerController extends ChangeNotifier
           loadToken: loadToken,
           bookUid: bookUid,
           onResult: onEmbeddedSubtitleAutoLoad,
+          preferredLanguages: preferredSubtitleLanguages,
         ),
       );
     }
@@ -4202,6 +4208,7 @@ class VideoPlayerController extends ChangeNotifier
     required int loadToken,
     required String bookUid,
     void Function(DefaultEmbeddedSubtitleLoadResult result)? onResult,
+    List<String> preferredLanguages = const <String>[],
   }) async {
     // 桌面走系统 ffmpeg、移动端走捆绑 ffmpeg-kit（见 resolveFfmpegBackend），两端都能
     // 抽内封字幕，故不再按平台门控（早先「移动端无 ffmpeg」的限制已随捆绑解除）。
@@ -4220,6 +4227,7 @@ class VideoPlayerController extends ChangeNotifier
             bookUid: bookUid,
             waitForReady: () => _waitUntilSubtitleTracksReady(player),
             isStillCurrent: () => _isCurrentLoad(player, loadToken),
+            preferredLanguages: preferredLanguages,
           );
       if (!_isCurrentLoad(player, loadToken)) return;
 

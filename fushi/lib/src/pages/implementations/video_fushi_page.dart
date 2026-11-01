@@ -5892,6 +5892,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         remoteDiscTitle: remoteDiscTitle,
         remoteDisc: remoteDisc,
         onEmbeddedSubtitleAutoLoad: _handleEmbeddedSubtitleAutoLoad,
+        preferredSubtitleLanguages: parseSubtitleLanguagePreferences(
+          appModel.videoSubtitlePreferredLanguages,
+        ),
       );
     } catch (e, stack) {
       debugPrint('[VideoFushiPage] video load failed: $e\n$stack');
@@ -6087,8 +6090,69 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         }
       }
     } else {
-      unawaited(_restoreSecondarySubtitle(controller));
+      unawaited(_restoreOrDefaultSecondarySubtitle(controller));
     }
+  }
+
+  /// 恢复已记住的副字幕；这集从没选过副字幕、主字幕又是用户显式选定的（不会走
+  /// [_handleEmbeddedSubtitleAutoLoad] 那条自动挑轨路径）时，按副字幕默认语言挑一条
+  /// （反馈 Fz9HXThdSW）。
+  Future<void> _restoreOrDefaultSecondarySubtitle(
+    VideoPlayerController controller,
+  ) async {
+    await _restoreSecondarySubtitle(controller);
+    final String? primary = _currentSubtitleSource;
+    if (primary == null || primary.isEmpty || SubtitleSource.isOff(primary)) {
+      return;
+    }
+    await _applyDefaultSecondarySubtitle(controller, primarySource: primary);
+  }
+
+  /// 副字幕默认语言（反馈 Fz9HXThdSW，参考 PotPlayer「次字幕语言」）：这集没记住过副字幕
+  /// （null，不含「显式关闭」）且用户填了偏好时，从本地可选源里按偏好挑第一条命中、
+  /// 能转文本、且不是主字幕那条的源挂成副字幕。只是本次默认，**不持久化**——改了偏好
+  /// 下次打开就按新偏好挑；用户在菜单里显式选择才记住。
+  Future<void> _applyDefaultSecondarySubtitle(
+    VideoPlayerController controller, {
+    required String primarySource,
+    List<SubtitleSource>? sources,
+  }) async {
+    if (_isRemote || controller.isBlurayNavigationSession) return;
+    if (_currentSecondarySubtitleSource != null) return;
+    final List<String> preferences = parseSubtitleLanguagePreferences(
+      appModel.videoSecondarySubtitlePreferredLanguages,
+    );
+    if (preferences.isEmpty) return;
+    final String? videoPath = _currentVideoPath;
+    if (videoPath == null) return;
+    final String bookUid = _activeBookUid;
+    final int generation = _episodeLoadSeq;
+    bool current() =>
+        mounted &&
+        generation == _episodeLoadSeq &&
+        bookUid == _activeBookUid &&
+        identical(_controller, controller) &&
+        _currentSecondarySubtitleSource == null;
+    final List<SubtitleSource> all =
+        sources ??
+        await listAllSubtitleSources(videoPath, langCode: _targetLangCode);
+    if (!current()) return;
+    final SubtitleSource? pick = pickSubtitleSourceByPreference(
+      all,
+      preferences,
+      accept: (SubtitleSource s) =>
+          s.toPersistedValue() != primarySource &&
+          (!s.isEmbedded || isTextEmbeddedSubtitleSource(s)),
+    );
+    if (pick == null) return;
+    final SubtitleCueLoadResult result = await loadSubtitleCueResult(
+      pick,
+      videoPath,
+      bookUid,
+    );
+    if (!current() || result.isFailure || result.cues.isEmpty) return;
+    controller.setSecondaryCues(result.cues);
+    _rebuild(() => _currentSecondarySubtitleSource = pick.toPersistedValue());
   }
 
   /// 观看统计的身份 `(uid, episodeIndex)` = 本页此刻播的那个视频：书架书（本地视频 /
@@ -6331,6 +6395,15 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       final SubtitleSource? source = result.source;
       if (source != null) {
         setState(() => _currentSubtitleSource = source.toPersistedValue());
+        final VideoPlayerController? controller = _controller;
+        if (controller != null) {
+          unawaited(
+            _applyDefaultSecondarySubtitle(
+              controller,
+              primarySource: source.toPersistedValue(),
+            ),
+          );
+        }
       }
       return;
     }

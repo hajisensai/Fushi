@@ -5717,6 +5717,16 @@ class AppModel with ChangeNotifier {
   /// 是否尊重 .ass 字幕自带样式（TODO-1105；默认 true）。
   bool get videoRespectAssStyle => prefsRepo.videoRespectAssStyle;
 
+  /// 主 / 副字幕轨默认语言偏好原文（反馈 Fz9HXThdSW）。
+  String get videoSubtitlePreferredLanguages =>
+      prefsRepo.videoSubtitlePreferredLanguages;
+  Future<void> setVideoSubtitlePreferredLanguages(String value) =>
+      prefsRepo.setVideoSubtitlePreferredLanguages(value);
+  String get videoSecondarySubtitlePreferredLanguages =>
+      prefsRepo.videoSecondarySubtitlePreferredLanguages;
+  Future<void> setVideoSecondarySubtitlePreferredLanguages(String value) =>
+      prefsRepo.setVideoSecondarySubtitlePreferredLanguages(value);
+
   Future<void> setVideoRespectAssStyle(bool value) =>
       prefsRepo.setVideoRespectAssStyle(value);
 

@@ -2828,6 +2828,24 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 主 / 副字幕轨默认语言偏好原文（反馈 Fz9HXThdSW）。空串 = 不表态（旧行为）。
+  String get videoSubtitlePreferredLanguages =>
+      getPref('video_subtitle_preferred_languages', defaultValue: '') as String;
+
+  Future<void> setVideoSubtitlePreferredLanguages(String value) async {
+    await setPref('video_subtitle_preferred_languages', value.trim());
+    notifyListeners();
+  }
+
+  String get videoSecondarySubtitlePreferredLanguages =>
+      getPref('video_secondary_subtitle_preferred_languages', defaultValue: '')
+          as String;
+
+  Future<void> setVideoSecondarySubtitlePreferredLanguages(String value) async {
+    await setPref('video_secondary_subtitle_preferred_languages', value.trim());
+    notifyListeners();
+  }
+
   /// 视频 mpv 配置（JSON；解析见 VideoMpvConfig.encode/decode）。空串=默认全 mpv 默认值。
   String get videoMpvConfig =>
       getPref('video_mpv_config', defaultValue: '') as String;

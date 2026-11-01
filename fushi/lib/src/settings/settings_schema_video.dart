@@ -1189,6 +1189,40 @@ SettingsDestination buildVideoDestination() {
             },
             defaultValue: true,
           ),
+          // 主 / 副字幕轨默认语言（反馈 Fz9HXThdSW，参考 PotPlayer）：按顺序挑第一条
+          // 命中的轨，见 parseSubtitleLanguagePreferences。schema 项 → MD3 与 Apple
+          // 两套渲染器同一份。下次打开视频生效。
+          SettingsTextItem(
+            id: 'video.subtitle.preferred_languages',
+            title: t.video_setting_subtitle_preferred_languages,
+            subtitle: t.video_setting_subtitle_preferred_languages_hint,
+            icon: Icons.translate,
+            placeholder: 'jpn, ja, japanese',
+            value: (SettingsContext c) =>
+                c.appModel.videoSubtitlePreferredLanguages,
+            resetValue: (SettingsContext c) => '',
+            onChanged: (SettingsContext c, String value) async {
+              await c.appModel.setVideoSubtitlePreferredLanguages(value);
+              c.refresh();
+            },
+          ),
+          SettingsTextItem(
+            id: 'video.subtitle.secondary_preferred_languages',
+            title: t.video_setting_secondary_subtitle_preferred_languages,
+            subtitle:
+                t.video_setting_secondary_subtitle_preferred_languages_hint,
+            icon: Icons.subtitles_outlined,
+            placeholder: 'chs, chi, zh, eng',
+            value: (SettingsContext c) =>
+                c.appModel.videoSecondarySubtitlePreferredLanguages,
+            resetValue: (SettingsContext c) => '',
+            onChanged: (SettingsContext c, String value) async {
+              await c.appModel.setVideoSecondarySubtitlePreferredLanguages(
+                value,
+              );
+              c.refresh();
+            },
+          ),
         ],
       ),
       SettingsSection(

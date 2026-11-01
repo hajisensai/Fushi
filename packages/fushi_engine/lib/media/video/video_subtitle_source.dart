@@ -7,6 +7,7 @@ import 'package:path/path.dart' as p;
 import 'package:fushi_engine/media/video/strm_file.dart'
     show lacksLocalMediaFile;
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
+import 'package:fushi_engine/media/video/subtitle/subtitle_language_preference.dart';
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:meta/meta.dart';
@@ -555,10 +556,12 @@ loadDefaultTextEmbeddedSubtitleCuesWithReadinessRetry({
   required Future<void> Function() waitForReady,
   required bool Function() isStillCurrent,
   String langCode = 'ja',
+  List<String> preferredLanguages = const <String>[],
   Future<DefaultEmbeddedSubtitleLoadResult> Function({
     required String videoPath,
     required String bookUid,
     String langCode,
+    List<String> preferredLanguages,
   })?
   loadOnce,
 }) async {
@@ -566,6 +569,7 @@ loadDefaultTextEmbeddedSubtitleCuesWithReadinessRetry({
     required String videoPath,
     required String bookUid,
     String langCode,
+    List<String> preferredLanguages,
   })
   load = loadOnce ?? loadDefaultTextEmbeddedSubtitleCues;
 
@@ -573,6 +577,7 @@ loadDefaultTextEmbeddedSubtitleCuesWithReadinessRetry({
     videoPath: videoPath,
     bookUid: bookUid,
     langCode: langCode,
+    preferredLanguages: preferredLanguages,
   );
   if (!isStillCurrent()) return result;
   if (!isTransientDefaultEmbeddedSubtitleLoad(result.status)) return result;
@@ -583,6 +588,7 @@ loadDefaultTextEmbeddedSubtitleCuesWithReadinessRetry({
     videoPath: videoPath,
     bookUid: bookUid,
     langCode: langCode,
+    preferredLanguages: preferredLanguages,
   );
   return result;
 }
@@ -1130,10 +1136,14 @@ Future<SubtitleCueLoadResult> loadSubtitleCueResult(
   return loadExternalSubtitleCueResult(source.externalPath!, bookUid);
 }
 
+/// 自动挑一条能转文本的内封轨抽成 cue。[preferredLanguages]（用户的主字幕默认语言，
+/// 见 [parseSubtitleLanguagePreferences]）非空时按其顺序挑第一条命中的文本轨，都不命中
+/// 才回退「第一条文本轨」（反馈 Fz9HXThdSW）。
 Future<DefaultEmbeddedSubtitleLoadResult> loadDefaultTextEmbeddedSubtitleCues({
   required String videoPath,
   required String bookUid,
   String langCode = 'ja',
+  List<String> preferredLanguages = const <String>[],
 }) async {
   final SubtitleSourceListing listing =
       await listAllSubtitleSourcesWithDiagnostics(
@@ -1177,9 +1187,13 @@ Future<DefaultEmbeddedSubtitleLoadResult> loadDefaultTextEmbeddedSubtitleCues({
     );
   }
 
-  final SubtitleSource? chosen = firstTextEmbeddedSubtitleSource(
-    listing.sources,
-  );
+  final SubtitleSource? chosen =
+      pickSubtitleSourceByPreference(
+        listing.sources,
+        preferredLanguages,
+        accept: isTextEmbeddedSubtitleSource,
+      ) ??
+      firstTextEmbeddedSubtitleSource(listing.sources);
   if (chosen == null) {
     return DefaultEmbeddedSubtitleLoadResult(
       status: DefaultEmbeddedSubtitleLoadStatus.noTextTrack,
