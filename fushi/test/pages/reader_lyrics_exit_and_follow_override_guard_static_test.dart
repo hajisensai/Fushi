@@ -5,13 +5,12 @@ import 'package:flutter_test/flutter_test.dart';
 /// 歌词覆盖层的两条生命周期不变式（源码守卫；阅读器整页依赖 WebView / DB，
 /// pumpWidget 过重，沿用本目录 `reader_lyrics_*_static_test` 的源码切片范式）。
 ///
-/// ① 退出不被歌词层截胡：阅读器 PopScope 在歌词层在场时把 pop 转成「关歌词层」，
-///    这一级只该拦用户的系统返回手势。面板「退出」（chrome.part.dart 的
-///    `onExitReader`）与重导入后正文作废（audiobook.part.dart 的 `bodyRebuilt`
-///    分支）是**显式退书**：之前它们裸 `maybePop()`，歌词层在场时被截成关歌词层，
-///    前者书不退出、后者留在解析树已作废的阅读器里。修法是两处都走
+/// ① 退出不被返回阶梯截胡：阅读器 PopScope 的返回阶梯（`resolveReaderBackStep`，
+///    路由返回只先关词典弹窗；歌词层不再拦，NJIIDAhIZL）只该拦用户的系统返回。
+///    面板「退出」（chrome.part.dart 的 `onExitReader`）与重导入后正文作废
+///    （audiobook.part.dart 的 `bodyRebuilt` 分支）是**显式退书**：两处都走
 ///    `_exitReaderBook()`，在 maybePop 在途期间挂 `_exitBookRequested`，PopScope
-///    的歌词分支以 `!_exitBookRequested` 为门。
+///    把它作为 `explicitExit` 传给阶梯、整条跳过。
 ///
 /// ② 强制跟随随歌词层一起撤：进歌词层时给（会话级、可能比页面活得久的）有声书
 ///    控制器挂 `setReaderFollowOverride(true)`。关歌词层撤了，但页面 dispose 没撤；
@@ -38,22 +37,39 @@ void main() {
   }
 
   group('① 显式退书绕过 PopScope 的歌词层拦截', () {
-    test('PopScope 的歌词分支以 !_exitBookRequested 为门', () {
+    test('PopScope 走路由来源的阶梯，并以 _exitBookRequested 为显式退书门', () {
       final String popScope = slice(
         read(pagePath),
         'onPopInvokedWithResult:',
         'exitAfterPersist(',
       );
       expect(
-        popScope.contains('if (_lyricsMode && !_exitBookRequested)'),
+        popScope.contains('source: ReaderBackSource.route'),
         isTrue,
-        reason: '歌词层拦截不带退书旗标的门，面板「退出」等显式退书会被截成关歌词层',
+        reason: '系统返回必须按路由来源判阶梯（歌词模式直接退书，NJIIDAhIZL）',
       );
       expect(
-        RegExp(r'if \(_lyricsMode\)\s*\{').hasMatch(popScope),
-        isFalse,
-        reason: '不许残留无门的 `if (_lyricsMode) {` 拦截',
+        popScope.contains('explicitExit: _exitBookRequested'),
+        isTrue,
+        reason: '阶梯不带退书旗标，面板「退出」等显式退书会被截成关弹窗',
       );
+      expect(
+        RegExp(r'if \(_lyricsMode').hasMatch(popScope),
+        isFalse,
+        reason: 'PopScope 不许再自己拦歌词层：系统返回在歌词模式下直接回书架',
+      );
+    });
+
+    test('globalBack 快捷键走快捷键来源的阶梯（Esc 先退歌词）', () {
+      final String body = slice(
+        read('lib/src/pages/implementations/reader_fushi/caret.part.dart'),
+        'case ShortcutAction.globalBack:',
+        'case ShortcutAction.readerToggleChrome:',
+      );
+      expect(body.contains('source: ReaderBackSource.shortcut'), isTrue);
+      expect(body.contains('case ReaderBackStep.closeLyrics:'), isTrue);
+      expect(body.contains('_toggleLyricsMode()'), isTrue);
+      expect(body.contains('_exitWindowFullscreenOrPopReader()'), isTrue);
     });
 
     test('_exitReaderBook 挂旗 → maybePop → finally 撤旗', () {

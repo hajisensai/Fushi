@@ -2309,8 +2309,8 @@ extension _ReaderChrome on _ReaderFushiPageState {
   ///
   /// 仍然走 `maybePop()`（不绕过 PopScope → onWillPop 的 flush / closeMedia /
   /// 关书同步，BUG-782），只是在途期间挂上 [_exitBookRequested]，让 PopScope 里
-  /// 「歌词层在场 → 先掀开歌词层」那一级只拦用户的系统返回手势、不把显式退书截
-  /// 成「关歌词层」。旗标在 `maybePop()` 完成后立即撤下：PopScope 回调是在
+  /// 的返回阶梯（[resolveReaderBackStep]：词典弹窗先关）只拦用户的路由返回、不把
+  /// 显式退书截成「关弹窗」。旗标在 `maybePop()` 完成后立即撤下：PopScope 回调是在
   /// `maybePop()` 内部同一调用链里被调用的；若顶上压着别的路由（`maybePop` 弹的是
   /// 它），旗标也不会残留去影响之后的系统返回。
   ///
