@@ -341,6 +341,7 @@ class AnkiRepository extends BaseAnkiRepository {
       source: context.source,
       includeHibiki: settings.tagIncludeHibiki,
       includeCategory: settings.tagIncludeCategory,
+      nestTitleUnderCategory: settings.tagNestTitleUnderCategory,
       // TODO-681 / BUG-393：调用方按「自动添加书名到标签」开关注入已清洗书名/番名标签
       // （书籍/视频同语义）；关闭或无标题时为 null，buildNoteTags 不追加。
       titleTag: context.bookTitleTag,
@@ -544,6 +545,7 @@ class AnkiRepository extends BaseAnkiRepository {
         source: context.source,
         includeHibiki: settings.tagIncludeHibiki,
         includeCategory: settings.tagIncludeCategory,
+        nestTitleUnderCategory: settings.tagNestTitleUnderCategory,
         titleTag: context.bookTitleTag,
         collectionTag: context.collectionTag,
         charPositionTag: context.charPositionTag,
@@ -725,6 +727,20 @@ class AnkiRepository extends BaseAnkiRepository {
 
   @override
   bool get canOpenMinedNote => true;
+
+  @override
+  Future<bool> deleteMinedNote(int noteId) async {
+    // 原生侧 `AnkiProvider.deleteNote`（CardContentProvider.delete notes/<id>）；
+    // 没权限 / provider 出错经 PlatformException 照抛。
+    final Object? deleted = await _channel.invokeMethod<Object?>(
+      'deleteNote',
+      <String, dynamic>{'noteId': noteId},
+    );
+    return deleted == true;
+  }
+
+  @override
+  bool get canDeleteMinedNotes => true;
 
   // TODO-1007/1008：用 ACTION_VIEW intent 在 AnkiDroid 中打开该 note（native `openNote`）。
   @override

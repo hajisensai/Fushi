@@ -148,6 +148,9 @@ void main() {
             1,
         'lib/src/pages/implementations/leaderboard/leaderboard_sign_in_page.dart':
             1,
+        // 复习时编辑：卡片 HTML 里一个字符实体解码后是否恰好是单个码点（能否当作一个
+        // 可见字符映射回字段 HTML 偏移），是选区映射判据不是学习计数。
+        'lib/src/srs/srs_review_edit.dart': 1,
         // galgame 校准 OCR：判断一个 CTC token / 墨迹单元是否恰好是单个码点（能否
         // 与源文本逐字对齐），是对齐校验不是记账。
         'lib/src/ocr/gal_lookup_calibration_ocr.dart': 1,

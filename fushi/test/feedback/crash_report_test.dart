@@ -109,6 +109,30 @@ void main() {
       expect(v.worthReporting, isFalse);
     });
 
+    test('Android 装新版本被系统停掉（PACKAGE_UPDATED）：停在前台也不算闪退', () {
+      // 反馈 8z1tk0jEna / U_gWy3lDbx：自动更新装完，会话标记显示停在前台，
+      // 系统给的原因是 PACKAGE_UPDATED（installPackageLI），却被报成「意外退出」。
+      final PreviousExitVerdict v = classifyPreviousExit(
+        <ExitReportEntry>[
+          _markerEntry(dir),
+          ...formatAndroidExitReports(<Object?, Object?>{
+            'reasons': <Object?>[
+              <Object?, Object?>{
+                'reason': 'PACKAGE_UPDATED',
+                'importance': 100,
+                'timestamp': 2500,
+                'description': 'stop app.fushi.reader due to installPackageLI',
+              },
+            ],
+          }),
+        ],
+        version: '1.2.3',
+        nowMs: 9000,
+      )!;
+      expect(v.kind, PreviousExitKind.appUpdated);
+      expect(v.worthReporting, isFalse);
+    });
+
     test('Android 内存回收：前台算闪退，后台不算', () {
       PreviousExitVerdict lowMemory(int importance) => classifyPreviousExit(
         formatAndroidExitReports(<Object?, Object?>{

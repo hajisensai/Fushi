@@ -220,6 +220,38 @@ class FushiDesktopTitleBar extends StatefulWidget {
     }
   }
 
+  /// 沉浸页自己的 chrome 正显示时登记的 owner（视频播放页控制条浮出时）。有 owner
+  /// 时沉浸标题行跟着浮出（[_ImmersiveCaptionReveal]），不必先在窗口顶边停留：
+  /// 播放器的控制条一出来，窗口按钮与拖动区就在（mpv / PotPlayer 同款），否则
+  /// 播放中想拖窗口只能摸到顶边那 8 像素再等一下，用户读作「播放器里窗口拖不动」
+  /// （反馈 BEX2_5K1zV，BUG-3929）。与配色同一套 owner 语义，页面一般用
+  /// [FushiTitleBarRevealScope]。
+  static final Set<Object> _captionRevealOwners = <Object>{};
+  static final ValueNotifier<bool> _captionRevealRequested =
+      ValueNotifier<bool>(false);
+
+  /// 是否有沉浸页要求标题行此刻浮出（测试读）。
+  static ValueListenable<bool> get captionRevealRequested =>
+      _captionRevealRequested;
+
+  static void setCaptionRevealed({
+    required Object owner,
+    required bool revealed,
+  }) {
+    final bool changed = revealed
+        ? _captionRevealOwners.add(owner)
+        : _captionRevealOwners.remove(owner);
+    if (!changed) return;
+    void publish() =>
+        _captionRevealRequested.value = _captionRevealOwners.isNotEmpty;
+    if (SchedulerBinding.instance.schedulerPhase ==
+        SchedulerPhase.persistentCallbacks) {
+      SchedulerBinding.instance.addPostFrameCallback((_) => publish());
+    } else {
+      publish();
+    }
+  }
+
   /// 接管标题行的页面必须让开的左右宽度：macOS 左侧系统红绿灯留位；
   /// Windows / Linux 右侧 MD3 窗口按钮组 + 组右侧页边。未装自绘顶栏时为零。
   static EdgeInsets captionReservedInsets(BuildContext context) {
@@ -813,6 +845,13 @@ class _ImmersiveCaptionRevealState extends State<_ImmersiveCaptionReveal> {
       return;
     }
     if (_hovered) return;
+    // 已经因别的理由显示着（页面 chrome 带出来的、键盘焦点、触摸）：指针进了
+    // 带子就是奔着窗口按钮 / 拖动区来的，接着显示，不能在它下面隐去。
+    if (_shown) {
+      _cancelRevealDwell();
+      _setHovered(true);
+      return;
+    }
     if (dy > _kImmersiveRevealEdge) {
       _cancelRevealDwell();
       return;
@@ -859,6 +898,8 @@ class _ImmersiveCaptionRevealState extends State<_ImmersiveCaptionReveal> {
     }
   });
 
+  void _onPageRevealRequest() => _update(() {});
+
   @override
   void initState() {
     super.initState();
@@ -871,6 +912,9 @@ class _ImmersiveCaptionRevealState extends State<_ImmersiveCaptionReveal> {
     WindowCaptionChannel.captionMaxButtonPressed.addListener(
       _onNativeMaxButton,
     );
+    FushiDesktopTitleBar._captionRevealRequested.addListener(
+      _onPageRevealRequest,
+    );
     GestureBinding.instance.pointerRouter.addGlobalRoute(_onGlobalPointer);
     // 挂上即把初始显隐推给红绿灯（沉浸页从隐藏态开始）。
     _syncConcealed();
@@ -881,6 +925,9 @@ class _ImmersiveCaptionRevealState extends State<_ImmersiveCaptionReveal> {
     _cancelRevealDwell();
     FushiDesktopTitleBar._setImmersiveCaptionConcealed(false);
     GestureBinding.instance.pointerRouter.removeGlobalRoute(_onGlobalPointer);
+    FushiDesktopTitleBar._captionRevealRequested.removeListener(
+      _onPageRevealRequest,
+    );
     WindowCaptionChannel.captionMaxButtonHovered.removeListener(
       _onNativeMaxButton,
     );
@@ -910,6 +957,7 @@ class _ImmersiveCaptionRevealState extends State<_ImmersiveCaptionReveal> {
       _hovered ||
       _focused ||
       _touchRevealed ||
+      FushiDesktopTitleBar._captionRevealRequested.value ||
       WindowCaptionChannel.captionMaxButtonHovered.value ||
       WindowCaptionChannel.captionMaxButtonPressed.value;
 
@@ -1703,6 +1751,80 @@ class _FushiTitleBarPassthroughScopeState
     _publish();
     return widget.child;
   }
+}
+
+/// 沉浸页声明「我的 chrome 此刻浮出，标题行跟着浮出」：[revealed] 为真且本页
+/// 没被别的整页盖住时登记 [FushiDesktopTitleBar.setCaptionRevealed]，被盖住 /
+/// dispose 时撤回（与 [FushiTitleBarColorScope] 同一套撤回语义）。普通页的标题行
+/// 本就常显，登记无副作用；未挂自绘顶栏时无人消费。
+class FushiTitleBarRevealScope extends StatefulWidget {
+  const FushiTitleBarRevealScope({
+    required this.revealed,
+    required this.child,
+    super.key,
+  });
+
+  final ValueListenable<bool> revealed;
+  final Widget child;
+
+  @override
+  State<FushiTitleBarRevealScope> createState() =>
+      _FushiTitleBarRevealScopeState();
+}
+
+class _FushiTitleBarRevealScopeState extends State<FushiTitleBarRevealScope> {
+  Animation<double>? _coverAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.revealed.addListener(_publish);
+  }
+
+  @override
+  void didUpdateWidget(covariant FushiTitleBarRevealScope oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.revealed, widget.revealed)) {
+      oldWidget.revealed.removeListener(_publish);
+      widget.revealed.addListener(_publish);
+      _publish();
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final Animation<double>? next = ModalRoute.of(context)?.secondaryAnimation;
+    if (!identical(next, _coverAnimation)) {
+      _coverAnimation?.removeStatusListener(_onCoverStatus);
+      _coverAnimation = next;
+      _coverAnimation?.addStatusListener(_onCoverStatus);
+    }
+    _publish();
+  }
+
+  void _onCoverStatus(AnimationStatus _) => _publish();
+
+  void _publish() {
+    final bool covered =
+        (_coverAnimation?.status ?? AnimationStatus.dismissed) !=
+        AnimationStatus.dismissed;
+    FushiDesktopTitleBar.setCaptionRevealed(
+      owner: this,
+      revealed: widget.revealed.value && !covered,
+    );
+  }
+
+  @override
+  void dispose() {
+    widget.revealed.removeListener(_publish);
+    _coverAnimation?.removeStatusListener(_onCoverStatus);
+    FushiDesktopTitleBar.setCaptionRevealed(owner: this, revealed: false);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }
 
 /// 透明标题行上窗口按钮背后柔光的半径（压扁前；见 [_buildCaptionRow]）。

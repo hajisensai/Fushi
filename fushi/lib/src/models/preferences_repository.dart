@@ -23,6 +23,7 @@ import 'package:fushi_engine/ai/web_knowledge.dart'
 import 'package:fushi/src/models/preference_keys.dart'
     show kLibraryManualOrderPrefKeyPrefix;
 import 'package:fushi/src/utils/adaptive/nav_bar_style.dart';
+import 'package:fushi/src/ai/ai_saved_prompts.dart';
 import 'package:fushi/src/dictionary/dict_style_rules.dart';
 import 'package:fushi/src/floating_ball/floating_ball_config.dart';
 import 'package:fushi/src/media/audiobook/audiobook_jump_threshold.dart';
@@ -33,6 +34,7 @@ import 'package:fushi/src/media/kavita/kavita_server_config.dart';
 import 'package:fushi/src/media/video/video_jump_pill_hover.dart'
     show kVideoJumpPillAutoHideDefaultSeconds;
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/lookup/popup_ui_scale.dart';
 import 'package:fushi/src/utils/misc/toast_severity.dart'
     show MineToastStatus, mineToastShown;
 import 'package:fushi/src/sync/hidden_remote_books.dart'
@@ -47,6 +49,8 @@ import 'package:fushi/src/media/manga/ocr/manga_ocr_job_registry.dart'
     show kMangaOcrMaxSelectableTasks;
 import 'package:fushi_engine/ocr/manga_ocr_local_model.dart'
     show kDefaultMangaOcrLocalModel, MangaOcrLocalModel;
+import 'package:fushi_engine/media/music/apple_music/apple_music_catalog_client.dart'
+    show normalizeAppleMusicStorefront;
 import 'package:fushi_engine/media/music/server/subsonic_server_config.dart';
 import 'package:fushi_engine/media/torrent/anime_download_config.dart';
 import 'package:fushi_engine/media/torrent/torznab_client.dart';
@@ -82,6 +86,10 @@ import 'package:fushi/src/media/video/video_lua_capability.dart';
 import 'package:fushi/src/media/video/video_clip_export_preferences.dart';
 import 'package:fushi/src/media/video/video_screenshot_destination.dart';
 import 'package:fushi/src/mining/video_online_mining_mode.dart';
+import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.dart'
+    show normalizeAdvancedMiningAudioNudgeStepMs;
+import 'package:fushi_engine/mining/sentence_audio_source.dart'
+    show SentenceAudioSourcePick;
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
 import 'package:fushi/src/media/video/video_pause_ocr_scope.dart';
 import 'package:fushi/src/media/audiobook/mining_audio_clip.dart'
@@ -200,7 +208,7 @@ enum FloatingLyricColorRole {
 }
 
 class PreferencesRepository extends ChangeNotifier
-    implements PrefStore, AiSettingsSource {
+    implements PrefStore, AiSettingsSource, AiSavedPromptStore {
   PreferencesRepository(this._db) : _readOnly = false;
 
   /// 反馈 biLEesNqWb：某个配置（Profile）的**只读**偏好视图——浏览器扩展选了一个不是
@@ -1291,6 +1299,18 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 查词弹窗独立缩放系数（反馈 2jGkpD-iD6），乘在界面大小之上；读写都夹进
+  /// [kPopupUiScaleMin]..[kPopupUiScaleMax]，非法值回落 1.0。
+  double get popupUiScale => clampPopupUiScaleFactor(
+    (getPref('popup_ui_scale', defaultValue: kPopupUiScaleDefault) as num)
+        .toDouble(),
+  );
+
+  Future<void> setPopupUiScale(double factor) async {
+    await setPref('popup_ui_scale', clampPopupUiScaleFactor(factor));
+    notifyListeners();
+  }
+
   final double defaultPopupMaxWidth = kLookupPopupDefaultWidth;
 
   double get popupMaxWidth =>
@@ -2361,6 +2381,31 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 用户保存的 AI 提示词（反馈 _LLhOKwmI3；全部场景，按保存顺序）。
+  ///
+  /// 逐条容错在 [decodeAiSavedPrompts] 里；整串坏掉记日志并当空列表，不让输入框
+  /// 旁的按钮打不开。
+  @override
+  List<AiSavedPrompt> get aiSavedPrompts {
+    final String raw = getPref('ai_saved_prompts', defaultValue: '') as String;
+    try {
+      return decodeAiSavedPrompts(raw);
+    } on FormatException catch (error, stack) {
+      ErrorLogService.instance.log(
+        'PreferencesRepository.aiSavedPrompts.decode',
+        error,
+        stack,
+      );
+      return const <AiSavedPrompt>[];
+    }
+  }
+
+  @override
+  Future<void> setAiSavedPrompts(Iterable<AiSavedPrompt> prompts) async {
+    await setPref('ai_saved_prompts', encodeAiSavedPrompts(prompts));
+    notifyListeners();
+  }
+
   /// 运行时**生效**的「哪个功能用哪家 AI」：AI 模块（[ModuleId.ai]）关掉时投影成
   /// 空指派，于是每个 `AiFeature` 都解析不到提供商——行为与「从没配过 AI」完全
   /// 一致，后台刮削 / 补字幕 / AI 下载 / 漫画 OCR 重读一个请求都不发。
@@ -2823,6 +2868,24 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setVideoRespectAssStyle(bool value) async {
     await setPref('video_respect_ass_style', value);
+    notifyListeners();
+  }
+
+  /// 主 / 副字幕轨默认语言偏好原文（反馈 Fz9HXThdSW）。空串 = 不表态（旧行为）。
+  String get videoSubtitlePreferredLanguages =>
+      getPref('video_subtitle_preferred_languages', defaultValue: '') as String;
+
+  Future<void> setVideoSubtitlePreferredLanguages(String value) async {
+    await setPref('video_subtitle_preferred_languages', value.trim());
+    notifyListeners();
+  }
+
+  String get videoSecondarySubtitlePreferredLanguages =>
+      getPref('video_secondary_subtitle_preferred_languages', defaultValue: '')
+          as String;
+
+  Future<void> setVideoSecondarySubtitlePreferredLanguages(String value) async {
+    await setPref('video_secondary_subtitle_preferred_languages', value.trim());
     notifyListeners();
   }
 
@@ -3489,6 +3552,15 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  // 复习时直接编辑（卡面选中文字 → 加粗 / 高亮 / 清除，字段 AI 改写）。默认 false。
+  bool get srsReviewInlineEdit =>
+      getPref('srs_review_inline_edit', defaultValue: false) as bool;
+
+  Future<void> setSrsReviewInlineEdit(bool value) async {
+    await setPref('srs_review_inline_edit', value);
+    notifyListeners();
+  }
+
   // 复习卡面音频音量（0–1，手动点播与自动连播共用）。默认 1.0。
   double get srsReviewVolume {
     final Object? v = getPref('srs_review_volume', defaultValue: 1.0);
@@ -3769,6 +3841,18 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  // 视频制卡句子音频来源（反馈 pNF2ZL7Kfc，见 [SentenceAudioSourcePick]）。默认当前
+  // 播放音轨（= 改动前）；解析不了的值同样回退默认。
+  SentenceAudioSourcePick get videoMiningAudioSource =>
+      SentenceAudioSourcePick.fromWireName(
+        getPref('video_mining_audio_source', defaultValue: null) as String?,
+      );
+
+  Future<void> setVideoMiningAudioSource(SentenceAudioSourcePick pick) async {
+    await setPref('video_mining_audio_source', pick.wireName);
+    notifyListeners();
+  }
+
   // 在线视频点制卡后弹窗等不等（见 [VideoOnlineMiningMode]）。默认 background。
   VideoOnlineMiningMode get videoOnlineMiningMode =>
       VideoOnlineMiningMode.fromWireName(
@@ -3909,6 +3993,28 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 「高级制卡」卡片字段分区里显示（可编辑）的 Anki 字段名（反馈 -K86qlwBg6）。
+  /// null = 用户从没选过（对话框按字段映射挑默认）；空列表 = 用户明确一个都不显示。
+  List<String>? get advancedMiningVisibleFields {
+    final Object? raw = getPref('advanced_mining_visible_fields');
+    if (raw is! String || raw.isEmpty) return null;
+    try {
+      final Object? decoded = jsonDecode(raw);
+      if (decoded is! List) return null;
+      return <String>[
+        for (final Object? e in decoded)
+          if (e is String && e.isNotEmpty) e,
+      ];
+    } catch (e) {
+      fushiDebugPrint('advancedMiningVisibleFields: bad pref ($e)');
+      return null;
+    }
+  }
+
+  Future<void> setAdvancedMiningVisibleFields(List<String> names) async {
+    await setPref('advanced_mining_visible_fields', jsonEncode(names));
+  }
+
   /// 制卡动图只播放一次（反馈 ZxyIMK-C5V）。默认 false = 无限循环（存量行为）。
   /// 两条动图链（视频 cue、galgame 窗口）共用；见 `animatedLoopArgs`。
   bool get miningAnimatedPlayOnce =>
@@ -3987,6 +4093,21 @@ class PreferencesRepository extends ChangeNotifier
   // [padSentenceRange] 夹相邻 cue 边界，所以填大了也不会把下一句混进来。
   // 默认值 = 原有声书硬编码常量（头 120 / 尾 200，[kMiningHeadPadMs]/[kMiningTailPadMs]），
   // 有声书用户行为零变化；视频链此前完全没 padding，默认即获得余量。
+  /// 高级制卡句子音频起止微调步长（反馈 3_VB7kAeHj），未知值回退 250 ms。
+  int get advancedMiningAudioNudgeStepMs =>
+      normalizeAdvancedMiningAudioNudgeStepMs(
+        getPref('advanced_mining_audio_nudge_step_ms', defaultValue: null)
+            as int?,
+      );
+
+  Future<void> setAdvancedMiningAudioNudgeStepMs(int ms) async {
+    await setPref(
+      'advanced_mining_audio_nudge_step_ms',
+      normalizeAdvancedMiningAudioNudgeStepMs(ms),
+    );
+    notifyListeners();
+  }
+
   int get miningAudioHeadPadMs =>
       (getPref('mining_audio_head_pad_ms', defaultValue: kMiningHeadPadMs)
               as int)
@@ -4787,6 +4908,33 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 服务器曲库里显示 Apple Music catalog 来源（只浏览 + 30 秒试听）。默认关（显式 opt-in：
+  /// 开了才会向 Worker 取 developer token、向 Apple 发请求）。
+  bool get musicAppleMusicEnabled =>
+      getPref('music_apple_music_enabled', defaultValue: false) == true;
+
+  Future<void> setMusicAppleMusicEnabled(bool value) async {
+    await setPref('music_apple_music_enabled', value);
+    notifyListeners();
+  }
+
+  /// Apple Music catalog 的 storefront（两位小写国家码，缺省 `jp`）。
+  String get musicAppleMusicStorefront {
+    final Object? raw = getPref(
+      'music_apple_music_storefront',
+      defaultValue: '',
+    );
+    return normalizeAppleMusicStorefront(raw is String ? raw : null);
+  }
+
+  Future<void> setMusicAppleMusicStorefront(String storefront) async {
+    await setPref(
+      'music_apple_music_storefront',
+      normalizeAppleMusicStorefront(storefront),
+    );
+    notifyListeners();
+  }
+
   /// VGMdb 补充开关（社区镜像，无官方 API）。默认关。
   bool get musicVgmdbEnabled =>
       getPref('music_vgmdb_enabled', defaultValue: false) == true;
@@ -5436,6 +5584,17 @@ class PreferencesRepository extends ChangeNotifier
       'manga_ocr_parallel_tasks',
       value.clamp(0, kMangaOcrMaxSelectableTasks),
     );
+    notifyListeners();
+  }
+
+  /// 「OCR 忽略振假名」（反馈 ZBJTgLuPIb）：本机逐列 CTC 识别前裁掉贴在正文旁的
+  /// 注音带。默认关：裁剪是按墨迹投影判的，对没有注音的页是空操作，但它改变
+  /// 识别结果与缓存目录，由用户在注音密集的作品上自己打开。
+  bool get mangaOcrIgnoreFurigana =>
+      getPref('manga_ocr_ignore_furigana', defaultValue: false) as bool;
+
+  Future<void> setMangaOcrIgnoreFurigana(bool value) async {
+    await setPref('manga_ocr_ignore_furigana', value);
     notifyListeners();
   }
 

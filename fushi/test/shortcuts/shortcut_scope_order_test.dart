@@ -15,7 +15,7 @@ void main() {
         ShortcutScope.global,
         ShortcutScope.universal,
         ShortcutScope.globalExternal,
-        // 各页面（首页 → 阅读器及其有声书 → 漫画 → 视频 → 浏览器 → 音乐）
+        // 各页面（首页 → 阅读器及其有声书 → 漫画 → 视频 → 浏览器 → 音乐 → SRS 复习）
         ShortcutScope.home,
         ShortcutScope.reader,
         ShortcutScope.audiobook,
@@ -23,6 +23,7 @@ void main() {
         ShortcutScope.video,
         ShortcutScope.webBrowser,
         ShortcutScope.music,
+        ShortcutScope.srsReview,
         // 输入设备
         ShortcutScope.gamepad,
         // 查词弹窗

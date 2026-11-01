@@ -18,9 +18,13 @@ import 'package:fushi_engine/ocr/manga_ocr_service_impl.dart';
 
 /// 无 Riverpod 场景（AppModel → 互联 host 代跑 OCR 接线）的服务工厂。与
 /// [mangaOcrServiceProvider] 同源，保持「唯一直接引用 Impl 的文件」不变。
+///
+/// [ignoreFurigana]：「OCR 忽略振假名」开关的现读入口（每次开跑调用）；不传 = 关。
 MangaOcrService createMangaOcrService({
   MangaOcrLocalModel localModel = kDefaultMangaOcrLocalModel,
-}) => MangaOcrServiceImpl(localModel: localModel);
+  bool Function()? ignoreFurigana,
+}) =>
+    MangaOcrServiceImpl(localModel: localModel, ignoreFurigana: ignoreFurigana);
 
 /// Interconnect hosts keep this facade while new jobs follow model changes.
 MangaOcrService createSelectedMangaOcrService(String Function() modelKey) =>
@@ -54,6 +58,11 @@ final Provider<MangaOcrService> mangaOcrServiceProvider =
       );
       return createMangaOcrService(
         localModel: MangaOcrLocalModel.forPlatform(key),
+        // 开关现读：设置里改了不必重建服务，下一次识别就按新值组装识别器与缓存签名。
+        ignoreFurigana: () {
+          final AppModel app = ref.read(appProvider);
+          return app.isInitialised && app.mangaOcrIgnoreFurigana;
+        },
       );
     });
 

@@ -17,6 +17,8 @@ import 'package:fushi/src/pages/implementations/music/music_library_page.dart';
 import 'package:fushi/src/pages/implementations/music/music_server_pages.dart';
 import 'package:fushi/src/sync/jellyfin_video_client.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/music/apple_music/apple_music_catalog_client.dart'
+    show AppleMusicCatalogClient;
 import 'package:fushi_engine/media/music/server/music_server.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -324,4 +326,63 @@ void main() {
     expect(await loadMusicServerBrowsers(app), isEmpty);
     expect(await loadMixedServerAlbums(app), isEmpty);
   });
+
+  test('Apple Music：默认关、storefront 归一化往返；不参与混排', () async {
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    final PreferencesRepository prefs = PreferencesRepository(db);
+    await prefs.loadFromDb();
+    expect(prefs.musicAppleMusicEnabled, isFalse);
+    expect(prefs.musicAppleMusicStorefront, 'jp');
+    await prefs.setMusicAppleMusicEnabled(true);
+    await prefs.setMusicAppleMusicStorefront('US');
+    expect(prefs.musicAppleMusicEnabled, isTrue);
+    expect(prefs.musicAppleMusicStorefront, 'us');
+    await prefs.setMusicAppleMusicStorefront('not-a-storefront');
+    expect(prefs.musicAppleMusicStorefront, 'jp');
+
+    expect(musicServerSupportsLibraryMix(MusicServerKind.appleMusic), isFalse);
+    expect(musicServerSupportsLibraryMix(MusicServerKind.jellyfin), isTrue);
+    expect(musicServerSupportsLibraryMix(MusicServerKind.subsonic), isTrue);
+  });
+
+  test(
+    'Apple Music 开关生效：开 = 来源清单里有 catalog 客户端且用设置的 storefront；关 = 没有',
+    () async {
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
+      addTearDown(db.close);
+      final PreferencesRepository prefs = PreferencesRepository(db);
+      await prefs.loadFromDb();
+      final Directory dir = await Directory.systemTemp.createTemp('fushi_am_');
+      addTearDown(() => dir.delete(recursive: true));
+      final AppModel app = AppModel(testPlatformServices())
+        ..wireLocalAudioForTesting(prefsRepo: prefs, databaseDirectory: dir)
+        ..wireDatabaseForTesting(db)
+        ..wireMusicPluginManagerForTesting(_noPlugins());
+      expect(app.isPreferencesReady, isTrue);
+
+      expect(
+        (await loadMusicServerBrowsers(
+          app,
+        )).whereType<AppleMusicCatalogClient>(),
+        isEmpty,
+      );
+      await prefs.setMusicAppleMusicEnabled(true);
+      await prefs.setMusicAppleMusicStorefront('us');
+      final List<AppleMusicCatalogClient> on = (await loadMusicServerBrowsers(
+        app,
+      )).whereType<AppleMusicCatalogClient>().toList();
+      expect(on, hasLength(1));
+      expect(on.single.storefront, 'us');
+      await prefs.setMusicAppleMusicEnabled(false);
+      expect(
+        (await loadMusicServerBrowsers(
+          app,
+        )).whereType<AppleMusicCatalogClient>(),
+        isEmpty,
+      );
+    },
+  );
 }

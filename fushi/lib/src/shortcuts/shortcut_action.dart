@@ -1,6 +1,7 @@
 /// 声明顺序**就是**快捷键设置页的卡片顺序（页面直接遍历 `values`，不另存一份
 /// 显示顺序表）：跨页面通用（global / universal / globalExternal）→ 各页面
-/// （home / reader / audiobook / manga / video / webBrowser）→ 输入设备（gamepad）→ 查词弹窗。
+/// （home / reader / audiobook / manga / video / webBrowser / music / srsReview）→ 输入设备
+/// （gamepad）→ 查词弹窗。
 /// 没有任何地方按 index 持久化或解析 scope，调整顺序只影响显示。
 enum ShortcutScope {
   global,
@@ -45,9 +46,24 @@ enum ShortcutScope {
   webBrowser,
   // 音乐播放（播放 / 上下曲 / ±5 s）。音乐页自成 co-active 组，与视频 / 阅读器不同时激活。
   music,
-  // TODO-700 T6：摇杆与 dpad 解耦后，dpad 四向成为「可绑触发键」，落在独立的
-  // gamepad 作用域（自成 co-active 组，不与 reader/home 等任何组冲突）。摇杆固定
-  // 做方向焦点移动、永不经注册表，故没有对应 action——只有 dpad 进这个 scope。
+  // SRS 复习页（翻面 / 四个评分 / 重播音频 / 撤销 / 卡面缩放，反馈 itlb0djDq6 要求可改键）。
+  // 复习页只解析自己这一组绑定，未命中的键（Esc / Alt+← / 手柄 B）冒泡到根上由
+  // universal 的「返回上一级」兜底，故自成 co-active 组。
+  srsReview,
+  // 「焦点导航」：上 / 下 / 左 / 右移焦 + 确认（反馈 bjPjRHsaUy，所有者拍板）。
+  // 设置页里显示为「焦点导航」分组；枚举名 `gamepad` 与动作名 `dpad*` 是**冻结**
+  // 的历史名（操作目录 / MCP 的 `keys` 路由按 `scope.name` / `action.name` 收发，
+  // 持久化按 `dpad_*` key），不追改。
+  //
+  // 来历：TODO-700 T6 让 dpad 四向成为「可绑触发键」，落在本作用域；摇杆固定做方向
+  // 焦点移动、永不经注册表。2026-11 起本作用域开放**键盘**通道：方向键移焦从
+  // `global_navigation.dart` 的硬编码收进注册表，用户可给焦点移动加 WASD /
+  // Shift+方向键之类的备选键，在左右键被句子导航占用的媒体页里也能把焦点移到按钮上。
+  //
+  // 与页面的优先级：本作用域自成 co-active 组，与 universal 一样是**兜底**——页面
+  // scope（阅读器 / 有声书 / 视频…）先解析，页面没占用的键才落到焦点导航。所以
+  // 默认的裸方向键在媒体页仍是翻页 / seek / 句子导航（行为不变），用户要在这些页面
+  // 移焦就给焦点导航绑一个页面没占用的键。
   gamepad,
 
   // 查词弹窗内部的导航动作（Yomitan 式「上/下一个词条」）。这些动作**不经
@@ -98,6 +114,9 @@ enum ShortcutScope {
       // 音乐库页只解析自己的绑定（与 video / manga 同理），自成 co-active 组。
       case music:
         return const <ShortcutScope>[music];
+      // SRS 复习页只解析自己的绑定（与 music / video 同理），自成 co-active 组。
+      case srsReview:
+        return const <ShortcutScope>[srsReview];
       // gamepad（dpad 四向）是独立 co-active 组：dpad 绑定永不与 reader/home 的
       // 按钮跨组冲突，冲突检测只扫 gamepad 自身。
       case gamepad:
@@ -210,13 +229,17 @@ enum ShortcutScope {
           ShortcutChannel.gamepad,
           ShortcutChannel.mouse,
         };
-      // dpad 四向：唯一消费者是 GamepadService._dispatchButton，按 `GamepadButton`
-      // 做 `resolveGamepad(scope: gamepad)`，且结果只被映射成 TraversalDirection。
-      // 键盘/鼠标绑定在这里**按构造不可读**（没有也不可能有 resolveKeyboard/
-      // resolveMouse(scope: gamepad)）；默认表也刻意把键盘留空——方向焦点移动由箭头键
-      // 与摇杆负责，见 shortcut_defaults 的 dpad* 注释。
+      // 焦点导航（枚举名 gamepad 冻结）：键盘 + 手柄。
+      //   · 手柄：GamepadService._dispatchButton 在页面 Actions / 弹窗 / 滚页兜底都
+      //     没消费后 `resolveGamepad(scope: gamepad)`，映射成移焦 / ActivateIntent；
+      //   · 键盘：app 根 `wrapWithGlobalNavigation` 的 `_handleGlobalFocusNavigation`
+      //     `resolveKeyboard(scope: gamepad)`（页面处理器都没消费才轮到它）。
+      // 鼠标不开：指针本身就能点按钮，没有「用鼠标键移焦」的派发点。
       case gamepad:
-        return const <ShortcutChannel>{ShortcutChannel.gamepad};
+        return const <ShortcutChannel>{
+          ShortcutChannel.keyboard,
+          ShortcutChannel.gamepad,
+        };
       // app 内浏览器：只开键盘。派发点是浏览器页的键事件节点
       // （`resolveKeyboard(event, scope: webBrowser)` → 未命中兜底 universal）。
       //   · 手柄**不开**：浏览器里手柄走普通焦点遍历（摇杆 / dpad → 焦点移动、A 确认），
@@ -230,6 +253,20 @@ enum ShortcutScope {
       // `resolveKeyboard(scope: music)`）；手柄 / 鼠标还没有派发点，不开通道。
       case music:
         return const <ShortcutChannel>{ShortcutChannel.keyboard};
+      // SRS 复习页：键盘 + 手柄。
+      //   · 键盘：srs_review_page.dart 的 `_onKey` → `resolveKeyboard(scope: srsReview)`；
+      //     WebView 卡面持焦时经键盘桥回传的 token 走同一个 `resolveKeyboard`；
+      //   · 手柄：同文件 `_handleGamepadButton` → `resolveGamepad(scope: srsReview)`
+      //     （桌面轮询的 GamepadButtonIntent 与 Android gameButton* 键事件经全局
+      //     wrapper 汇合到同一 Intent，与漫画页同构）。
+      //   · 鼠标**不开**：复习页没有 Flutter 侧 Listener 解析入口，WebView 卡面的指针
+      //     归卡面手势（点按区 / 滑动）。要开先接解析入口（守卫
+      //     `shortcut_channel_wiring_guard_test`）。
+      case srsReview:
+        return const <ShortcutChannel>{
+          ShortcutChannel.keyboard,
+          ShortcutChannel.gamepad,
+        };
       // app 外全局查词：三通道，但**三条通道各走各的 OS 机制**，不共用一套注册。
       // 这是全 app 唯一一处「同一个动作、三种底层触发机制」的 scope，故在此写明
       // 各自的边界（TODO-1066）：
@@ -501,9 +538,9 @@ enum ShortcutAction {
     ShortcutScope.video,
     'video_replay_current_subtitle',
   ),
-  // 重播上一句（TODO-378，BUG-287）：纯句子跳转到上一条 cue 起点并播放，**不**退化成
-  // 回退几秒。与 videoPreviousSubtitle（Ctrl+←，gap 太远时退化时间 seek，BUG-185/TODO-085）
-  // 语义不同，是两个独立功能；TODO-328 误当重复删掉，此处恢复。
+  // 重播上一句（TODO-378，BUG-287）：跳转到上一条 cue 起点并**起播**。与
+  // videoPreviousSubtitle（Ctrl+←，只跳不改播放 / 暂停态）是两个独立功能；TODO-328
+  // 误当重复删掉，此处恢复。
   videoReplayPreviousSubtitle(
     ShortcutScope.video,
     'video_replay_previous_subtitle',
@@ -689,14 +726,38 @@ enum ShortcutAction {
   musicSeekForward(ShortcutScope.music, 'music_seek_forward'),
   musicSeekBackward(ShortcutScope.music, 'music_seek_backward'),
 
+  // SRS 复习页（[ShortcutScope.srsReview]，反馈 itlb0djDq6）。执行体在
+  // srs_review_page.dart 的 `_executeShortcut`；键盘 / WebView 键盘桥 / 手柄三条入口
+  // 共用。默认键与改造前写死的完全一致（空格 / Enter / 手柄 A、1–4、R、Ctrl+Z、
+  // Ctrl+= / - / 0）。四个评分键只在答案面生效；查词弹窗开着时主键与评分键让位给弹窗。
+  //
+  // 主键：问题面 = 显示答案，答案面 =「良好」（与 Anki 的空格同义）。
+  srsReviewPrimary(ShortcutScope.srsReview, 'srs_review_primary'),
+  srsReviewAgain(ShortcutScope.srsReview, 'srs_review_again'),
+  srsReviewHard(ShortcutScope.srsReview, 'srs_review_hard'),
+  srsReviewGood(ShortcutScope.srsReview, 'srs_review_good'),
+  srsReviewEasy(ShortcutScope.srsReview, 'srs_review_easy'),
+  srsReviewReplayAudio(ShortcutScope.srsReview, 'srs_review_replay_audio'),
+  srsReviewUndo(ShortcutScope.srsReview, 'srs_review_undo'),
+  srsReviewZoomIn(ShortcutScope.srsReview, 'srs_review_zoom_in'),
+  srsReviewZoomOut(ShortcutScope.srsReview, 'srs_review_zoom_out'),
+  srsReviewZoomReset(ShortcutScope.srsReview, 'srs_review_zoom_reset'),
+
   // Gamepad（TODO-700 T6）：dpad 四向作为可绑触发键。默认各绑对应 dpad 键，执行体
   // = 通用方向焦点移动（与摇杆同效果，但摇杆固定走 onStickMove 通道、不经注册表，
   // 故只有 dpad 进注册表）。用户可把 dpad 方向键改绑别的功能，或把别的键绑成方向
   // 焦点移动。
+  //
+  // 2026-11：这四个动作就是「焦点上 / 下 / 左 / 右移」（设置页文案已改），开放
+  // 键盘通道，默认键盘 = 对应裸方向键。名字与持久化 key 冻结（见
+  // [ShortcutScope.gamepad] 注释）。
   dpadUp(ShortcutScope.gamepad, 'dpad_up'),
   dpadDown(ShortcutScope.gamepad, 'dpad_down'),
   dpadLeft(ShortcutScope.gamepad, 'dpad_left'),
   dpadRight(ShortcutScope.gamepad, 'dpad_right'),
+  // 确认（激活当前焦点控件 = ActivateIntent）。默认 Enter / 手柄 A，与框架 / 手柄
+  // 服务的既有确认键一致（行为不变），用户可再加备选键。
+  focusActivate(ShortcutScope.gamepad, 'focus_activate'),
 
   // Global external lookup (TODO-1066)：桌面「app 外全局查词」的系统级触发热键。
   // 执行体是 GlobalLookupController（读本 action 的键盘绑定注册到 hotkey_manager，

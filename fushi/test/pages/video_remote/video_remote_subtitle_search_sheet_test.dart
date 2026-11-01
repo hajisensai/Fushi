@@ -60,7 +60,8 @@ void main() {
     expect(find.text('葬送のフリーレン'), findsOneWidget);
     expect(find.text('3'), findsOneWidget);
     expect(find.text('frieren_03.ja.srt'), findsOneWidget);
-    expect(find.text('jimaku · ja'), findsOneWidget);
+    expect(find.text('jimaku'), findsOneWidget);
+    expect(find.text('JA'), findsOneWidget);
 
     await tester.enterText(
       find.descendant(

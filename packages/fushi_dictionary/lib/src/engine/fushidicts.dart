@@ -981,10 +981,12 @@ class FushiDicts {
   // max_results 截断之前生效）；[primaryReading] 让 reading 精确匹配者排最前
   //（Yomitan 内链语义）。当前无设置 UI 消费方，管道先行。
   //
-  // [chineseSimpToTrad]：查询语言为中文时置 true，引擎在原查询之外额外试简体 → 繁體
-  // 拼写（OpenCC 全部候选 + 台/港字形，一简多繁全展开、由词典认真词），让按繁體建索引
-  // 的词典命中简体查询；原形结果照常在、同长度时排在前面。引擎语言无关，由调用方按
-  // 内容/查词来源语言声明；默认 false，日语等其它语言的查询一字不变。
+  // [chineseSimpToTrad]：这次查词按中文处理时置 true，引擎在原查询之外额外试另一种
+  // 字形的拼写，**双向**：简体 → 繁體（OpenCC STCharacters 全部候选 + 台/港字形）让按
+  // 繁體建索引的词典命中简体查询，繁體 → 简体（OpenCC TSCharacters）让按简体建索引的
+  // 词典命中繁體查询；一字多候选全展开、由词典认真词，原形结果照常在、同长度时排在
+  // 前面。引擎语言无关，由调用方判定（AppModel.lookupChineseSimpToTradFor）；默认
+  // false，日语等其它语言的查询一字不变。参数名沿用历史的 SimpToTrad。
   List<FushiLookupResult> lookup(
     String text, {
     int maxResults = defaultMaxResults,

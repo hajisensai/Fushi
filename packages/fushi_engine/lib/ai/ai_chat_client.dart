@@ -336,6 +336,10 @@ AiChatUsage? parseAiChatUsage(
 
 /// 调用失败。[message] 是**已脱敏**的短文案，可以直接进 UI——绝不含 API Key、
 /// 完整 URL 或响应体原文（后两者都可能回显凭据）。
+/// 2xx 应答里只有 `error`、没有应答本体（端点不对 / 兼容层拒绝）的失败短码，
+/// 见 [AiChatClient] 的 `_postChat`。
+const String kAiEndpointErrorCode = 'endpoint_error';
+
 class AiChatFailure implements Exception {
   const AiChatFailure(this.message, {this.retryAfter});
 
@@ -960,6 +964,19 @@ class AiChatClient {
     final Object? body = _decodeBody(response);
     if (body is! Map) {
       throw const AiChatFailure('bad_response');
+    }
+    // 2xx 却是一份错误体、没有应答本体：LM Studio 对它不认识的路径回
+    // `200 {"error":"Unexpected endpoint or method. (POST /chat/completions)"}`
+    // （base URL 少了 `/v1` 时就是这样）。当成功解析只会报「AI 没有返回内容」，
+    // 用户无从下手；单独报 `endpoint_error`，界面提示检查接口地址（反馈
+    // GewyVIt5oo）。短码不带服务端原文（可能含路径等）。
+    final String replyKey = switch (provider.protocol) {
+      AiWireProtocol.openAiCompatible => 'choices',
+      AiWireProtocol.anthropicMessages => 'content',
+      AiWireProtocol.geminiGenerateContent => 'candidates',
+    };
+    if (body[replyKey] == null && body['error'] != null) {
+      throw const AiChatFailure(kAiEndpointErrorCode);
     }
     return body;
   }
@@ -1645,6 +1662,33 @@ const List<String> _kQuotaMarkers = <String>[
   '欠费',
 ];
 
+/// 请求超出模型上下文窗口的失败短码（反馈 GewyVIt5oo：本地小上下文模型被 AI 助手
+/// 的系统提示 + 对话撑爆）。界面据此提示调大服务端上下文长度或开新对话，而不是
+/// 只报一个看不懂的 `http_400`。不是临时性失败：原样重发还是超长。
+const String kAiContextOverflowCode = 'context_overflow';
+
+/// 上下文超长的特征词（小写比较）：
+/// - OpenAI / 兼容层：`context_length_exceeded`、「maximum context length」；
+/// - llama.cpp server：「the request exceeds the available context size」；
+/// - LM Studio：「…context length of only 4096 tokens」「context the overflows」；
+/// - Ollama / vLLM：「context window」「n_ctx」；Anthropic：「prompt is too long」；
+/// - Gemini：「exceeds the maximum number of tokens」。
+///
+/// 只认 400 / 413 / 422 / 500：OpenAI 的 TPM 限流是 429「Request too large … tokens
+/// per min」，那是限流不是窗口，交给 `rate_limited`。
+const List<String> _kContextOverflowMarkers = <String>[
+  'context_length_exceeded',
+  'context length',
+  'context size',
+  'context window',
+  'maximum context',
+  'context the overflows',
+  'context overflow',
+  'n_ctx',
+  'prompt is too long',
+  'maximum number of tokens',
+];
+
 /// key 本身无效的特征词：Gemini 对坏 key 回的是 **400** `API_KEY_INVALID`
 /// （「API key not valid」），只看状态码认不出是鉴权问题。
 const List<String> _kInvalidKeyMarkers = <String>[
@@ -1659,6 +1703,7 @@ const List<String> _kInvalidKeyMarkers = <String>[
 ///
 /// - 402，或 400/403/429 且体里有余额特征词 → `quota_exhausted`（换 key 重试）；
 /// - 401 / 403，或 400 且体里有坏 key 特征词 → `unauthorized`（换 key 重试）；
+/// - 400/413/422/500 且体里有上下文超长特征词 → [kAiContextOverflowCode]（不重试）；
 /// - 429 → `rate_limited`，带上 `Retry-After`（换 key 重试，这把按它冷却）；
 /// - 其余 → `http_<状态码>`（与 key 无关，不换 key）。
 ///
@@ -1688,6 +1733,13 @@ AiChatFailure classifyAiHttpFailure({
       statusCode == 403 ||
       (statusCode == 400 && has(_kInvalidKeyMarkers))) {
     return const AiChatFailure('unauthorized');
+  }
+  if ((statusCode == 400 ||
+          statusCode == 413 ||
+          statusCode == 422 ||
+          statusCode == 500) &&
+      has(_kContextOverflowMarkers)) {
+    return const AiChatFailure(kAiContextOverflowCode);
   }
   if (statusCode == 429) {
     return AiChatFailure(

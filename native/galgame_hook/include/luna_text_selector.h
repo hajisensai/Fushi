@@ -9,6 +9,8 @@
 #include <string>
 #include <vector>
 
+#include "immediate_text_repeat_filter.h"
+
 namespace fushi_voice_hook {
 
 // 一个完整句的最小字符数。低于它不做前缀折叠，避免把「ああ」这类叠字噪声
@@ -299,12 +301,15 @@ inline bool LunaTextRequiresExactThreadContext(const char* hook_name) {
 // the player legitimately sees twice in a row needs a click in between, which
 // the engine's own double run never waits for.  Other hooks are untouched
 // (cross-engine negative in luna_text_replay_test).
-inline constexpr uint64_t kLunaImmediateRepeatWindowMs = 1000u;
+inline constexpr uint64_t kLunaImmediateRepeatWindowMs =
+    kImmediateTextRepeatWindowMs;
 
 inline bool LunaHookRepeatsEachMessage(const char* hook_name) {
   return hook_name != nullptr && std::strcmp(hook_name, "EmbedCS2") == 0;
 }
 
+// The shared per-thread rule lives in immediate_text_repeat_filter.h; Luna only
+// decides which hook surfaces have the double-run artifact.
 class LunaImmediateRepeatFilter {
  public:
   // True when this event only repeats the previous event of the same thread
@@ -312,31 +317,14 @@ class LunaImmediateRepeatFilter {
   // becomes the thread's new reference.
   bool IsRepeat(uint64_t thread_id, const char* hook_name,
                 const wchar_t* text, int len, uint64_t now_ms) {
-    if (!LunaHookRepeatsEachMessage(hook_name) || text == nullptr ||
-        len <= 0) {
-      return false;
-    }
-    Last& last = last_[thread_id];
-    const bool repeat =
-        last.valid && now_ms >= last.at_ms &&
-        now_ms - last.at_ms <= kLunaImmediateRepeatWindowMs &&
-        last.text.size() == static_cast<size_t>(len) &&
-        std::wmemcmp(last.text.data(), text, static_cast<size_t>(len)) == 0;
-    last.valid = true;
-    last.at_ms = now_ms;
-    last.text.assign(text, text + len);
-    return repeat;
+    if (!LunaHookRepeatsEachMessage(hook_name)) return false;
+    return filter_.IsRepeat(thread_id, text, len, now_ms);
   }
 
-  void Reset() { last_.clear(); }
+  void Reset() { filter_.Reset(); }
 
  private:
-  struct Last {
-    bool valid = false;
-    uint64_t at_ms = 0u;
-    std::wstring text;
-  };
-  std::map<uint64_t, Last> last_;
+  ImmediateTextRepeatFilter filter_;
 };
 
 // Characters a script writes as runs on purpose: pause / prolongation marks.

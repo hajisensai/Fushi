@@ -68,7 +68,7 @@ void main() {
       path,
       isMainProcess: false,
     );
-    expect(migrated.schemaVersion, 142);
+    expect(migrated.schemaVersion, 143);
     final MusicPlayEventRow old = await migrated
         .select(migrated.musicPlayEvents)
         .getSingle();
@@ -82,7 +82,7 @@ void main() {
     await migrated.close();
 
     final sqlite.Database probe = sqlite.sqlite3.open(path);
-    expect(probe.select('PRAGMA user_version').first.values.first, 142);
+    expect(probe.select('PRAGMA user_version').first.values.first, 143);
     expect(columnsOf(probe), containsAll(newColumns));
     // 重跑 v139 步：列已在，不得报错。
     probe.execute('PRAGMA user_version = 138');

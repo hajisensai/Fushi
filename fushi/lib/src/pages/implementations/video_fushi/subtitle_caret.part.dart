@@ -187,10 +187,7 @@ extension _VideoSubtitleCaret on _VideoFushiPageState {
       final VideoPlayerController? controller = _controller;
       if (controller != null) {
         videoActionCallbacks(
-          _buildVideoShortcutActions(
-            controller,
-            input: VideoActionInput.button,
-          ),
+          _buildVideoShortcutActions(controller),
         )[action]?.call();
       }
       return true;

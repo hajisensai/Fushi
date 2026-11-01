@@ -6,6 +6,7 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:drift/native.dart';
+import 'package:flutter/foundation.dart' show TargetPlatform;
 import 'package:fushi/models.dart' show AppModel;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
@@ -21,8 +22,13 @@ import '../helpers/test_platform_services.dart';
 /// 牌组列表首帧会问一次首次同步（`ensureSrsFirstSyncConfirmed`）：偏好层没初始化时 getter 恒为 false，
 /// 有笔记就弹确认框挡住后续点按、没笔记则写偏好失败——与被测功能无关，在这里钉成已确认。
 /// 专门测这个确认框的用例自己装真偏好层。
+///
+/// 快捷键注册表装出厂默认（真 app 在 `initialise` 里装）：复习页的键盘 / 手柄按
+/// `ShortcutScope.srsReview` 解析，未装载的注册表对每个动作都是空绑定。
 class SrsTestAppModel extends AppModel {
-  SrsTestAppModel() : super(testPlatformServices());
+  SrsTestAppModel() : super(testPlatformServices()) {
+    shortcutRegistry.loadDefaults(TargetPlatform.windows);
+  }
 
   @override
   bool get srsSync2MergeConfirmed => true;

@@ -144,6 +144,12 @@ class DictionaryRepository {
       for (final Dictionary d in dictionaries)
         if (d.type == DictionaryType.term) d.name,
     ]),
+    hasChineseTermDictionary: dictionaries.any(
+      (Dictionary d) =>
+          d.type == DictionaryType.term &&
+          !d.isHidden(JapaneseLanguage.instance) &&
+          isChineseLanguageTag(d.effectiveSourceLanguage),
+    ),
   );
 
   /// `dictionary_metadata` 行 → 按管理页顺序排好的 [Dictionary] 列表（与
@@ -1018,6 +1024,7 @@ class DictionaryLookupFilters {
   const DictionaryLookupFilters({
     required this.hiddenDictionaryNames,
     required this.termDictionaryOrder,
+    this.hasChineseTermDictionary = false,
   });
 
   /// 被用户关掉的词典名。
@@ -1025,6 +1032,15 @@ class DictionaryLookupFilters {
 
   /// term 词典的管理页顺序（真名）。
   final List<String> termDictionaryOrder;
+
+  /// 启用中的 term 词典里是否有声明为中文的（[Dictionary.effectiveSourceLanguage]
+  /// 经 [isChineseLanguageTag] 判定：手动指定语言优先，其次包内 `sourceLanguage`）。
+  ///
+  /// 查词来源语言未知时（首页 / 查词页独立查词：没有媒体页登记语言、全局默认内容语言
+  /// 也没设）用它决定是否展开简繁变体（反馈 3FY6vTqwV-）——查词集合里有中文词典，
+  /// 简繁拼写才有意义；没有就一个变体都不多产。不用来过滤词典（所有者否决过按语言
+  /// 过滤查词，见 dictionary_language_groups.dart 文件头）。
+  final bool hasChineseTermDictionary;
 }
 
 int estimateDictionaryPopupCacheEntryBytes(DictionaryPopupCacheEntry entry) =>

@@ -248,6 +248,7 @@ class ProfileKeys {
     'tags': s.tags,
     'tagIncludeHibiki': s.tagIncludeHibiki.toString(),
     'tagIncludeCategory': s.tagIncludeCategory.toString(),
+    'tagNestTitleUnderCategory': s.tagNestTitleUnderCategory.toString(),
     'allowDupes': s.allowDupes.toString(),
     'compactGlossaries': s.compactGlossaries.toString(),
     'embedMedia': s.embedMedia.toString(),
@@ -287,6 +288,7 @@ class ProfileKeys {
       'tagIncludeCategory': m.containsKey('tagIncludeCategory')
           ? m['tagIncludeCategory'] == 'true'
           : true,
+      'tagNestTitleUnderCategory': m['tagNestTitleUnderCategory'] == 'true',
       'allowDupes': m['allowDupes'] == 'true',
       'compactGlossaries': m['compactGlossaries'] == 'true',
       'embedMedia': m.containsKey('embedMedia')

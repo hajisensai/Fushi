@@ -807,7 +807,7 @@ class AdapterStructureTest(unittest.TestCase):
         siglus_publish = self._function_body(
             siglus, "SiglusLookupSubmissionResult TryPublishSiglusLookupPayload("
         )
-        self.assertEqual(siglus_publish.count("CheckSiglusLookupSubmission(payload, awaiting_glyph_seq, rejection)"), 2)
+        self.assertEqual(siglus_publish.count("payload, required_glyph_seq, awaiting_glyph_seq, rejection)"), 2)
         siglus_capture = self._function_body(
             siglus, "void ConsumeSiglusLookupCaptures()"
         )
@@ -834,7 +834,11 @@ class AdapterStructureTest(unittest.TestCase):
         self.assertNotIn("g_siglus_lookup_click_processed_seq =", waiting)
         check = self._function_body(source, "SiglusLookupSubmissionResult CheckSiglusLookupSubmission(")
         self.assertIn("IsSiglusLookupPayloadEligible(payload, rejection)", check)
-        self.assertIn("latest_glyph != g_siglus_lookup_glyph_processed_seq", check)
+        self.assertIn("g_siglus_lookup_glyph_processed_seq < required_glyph_seq", check)
+        queue = self._function_body(source, "void QueueSiglusLookupClickSubmit(")
+        self.assertLess(queue.index("event->release_glyph_seq"),
+                        queue.index("InterlockedExchange64(&event->seq, static_cast<LONG64>(next))"))
+        self.assertIn("click_event.release_glyph_seq", submit)
         eligible = self._function_body(source, "bool IsSiglusLookupPayloadEligible(")
         self.assertIn("IsSiglusLookupLayoutSubmissionCurrent", eligible)
         self.assertIn("latest_text != g_siglus_lookup_text_processed_seq", eligible)
@@ -2100,11 +2104,34 @@ class AdapterStructureTest(unittest.TestCase):
         export = self._strip_comments((adapters / "siglus_voice_export.inc").read_text(encoding="utf-8"))
         worker = self._function_body(export, "void ProcessSiglusVoiceTask(")
         self.assertLess(worker.index("IsSiglusMessageTextInstalled()"), worker.index("g_orig_CreateFileW("))
+        self.assertLess(worker.index("IsSiglusMessageVoiceOwned()"), worker.index("g_orig_CreateFileW("))
+        queue = self._function_body(
+            self._strip_comments((adapters / "siglus_adapter.inc").read_text(encoding="utf-8")),
+            "void QueueSiglusVoice(")
+        self.assertIn("IsSiglusMessageVoiceOwned()", queue)
         for required in ("task->proved_source", "entry.byte_len == task->source_length",
                          "SameSiglusArchiveFile(identity_before, identity_after)",
                          "ValidateSiglusMessageVoiceTask(*task, revision, entry)",
-                         "task->text_event_id))", "task->exported = true"):
+                         "task->exported = true"):
             self.assertIn(required, worker)
+        # A voice-proved identity outranks the silent lane's following line.
+        flat_worker = " ".join(worker.split())
+        self.assertIn("task->text_event_id != 0 ? task->text_event_id : task->following_text_event_id",
+                      flat_worker)
+        self.assertIn("task->tick_ms, marker))", flat_worker)
+        adapter = self._strip_comments((adapters / "siglus_adapter.inc").read_text(encoding="utf-8"))
+        # The silent lane samples its own lane and the global seq at the read,
+        # never the host selection, and holds the task until its line or expiry.
+        self.assertIn("SiglusMessageLaneThreadId()", queue)
+        self.assertIn("&g_header->text_write_count", queue)
+        follow = self._function_body(adapter, "bool ResolveSiglusFollowingText(")
+        self.assertIn("CollectLaneCandidates(task->following_lane_id, candidates)", follow)
+        self.assertNotIn("CollectSelectedLaneCandidates", follow)
+        self.assertIn("kSiglusFollowingTextWindowMs", follow)
+        self.assertIn("task->following_baseline_seq", follow)
+        drain = self._function_body(adapter, "void ProcessSiglusVoiceTasks(")
+        self.assertLess(drain.index("ResolveSiglusFollowingText("), drain.index("ProcessSiglusVoiceTask("))
+        self.assertIn("InterlockedExchange(&g_siglus_tasks[i].state, 2);", drain)
         source = self._strip_comments((adapters / "siglus_message_voice.inc").read_text(encoding="utf-8"))
         resource = self._function_body(source, "uint64_t ObserveSiglusMessageResource(")
         for required in ("GetFinalPathNameByHandleW", "component != expected_key / 100000u",

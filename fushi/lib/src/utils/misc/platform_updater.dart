@@ -5,6 +5,7 @@ import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:fushi_compute/fushi_compute.dart' show ffcSha256File;
 
+import 'package:fushi/src/diagnostics/previous_exit_log.dart';
 import 'package:fushi/src/mining/galgame_helper_installer.dart'
     show kGalgameHelperInstallDirectoryName;
 import 'package:fushi/src/platform/desktop/windows_native_pre_exit.dart';
@@ -1140,6 +1141,10 @@ class WindowsInstaller {
     // 只有安装器杀不掉的真外部锁（非 Fushi/WebView2 占用目标目录 libmpv）才在 preflight
     // 硬中止并要求用户手动关闭（见 _throwIfWindowsInstallBlocked，TODO-1181）。
     await Future<void>.delayed(Duration.zero);
+    // 主动让位给安装器是正常退出：不标 clean 的话下次启动会把这次更新当成
+    // 「停在前台时没了，疑似闪退」弹闪退报告（反馈 3PqGTEsweI / 9ZYafFWPky /
+    // hfzlMGXJWr / msySECp2Cy 都是 WindowsInstaller.handoff 之后的这种误报）。
+    PreviousExitLog.markCleanExit();
     await WindowsNativePreExit.prepareForExit(WindowsExitReason.update);
     (exitProcess ?? exit)(0);
   }
@@ -2007,7 +2012,9 @@ class MacInstaller {
       );
     }
 
-    // 7. 退出本进程，让脚本接管替换。
+    // 7. 退出本进程，让脚本接管替换。主动退出 = 正常退出，标 clean，免得下次启动
+    // 把这次更新误报成闪退（同 Windows 安装器交接）。
+    PreviousExitLog.markCleanExit();
     (exitProcess ?? _defaultExit)(0);
   }
 

@@ -411,7 +411,18 @@ extension _ReaderMining on _ReaderFushiPageState {
     if (described.success) {
       // 制卡结果一律走 showMine：它过「制卡提示」开关（反馈 iH6RY1kqQn——此前这里
       // 直接 FushiToast.show，关掉「制卡成功提示」后阅读时照样弹）。
-      FushiToast.showMine(msg: described.message, status: described.status);
+      FushiToast.showMine(
+        msg: described.message,
+        status: described.status,
+        // 反馈 JNyykxvuY9：成功提示带「撤销」，几秒内点一下删掉刚加的卡。
+        action: _sourceReviewSession != null
+            ? null
+            : minedCardUndoToastAction(
+                repo,
+                outcome,
+                expression: fields['expression'],
+              ),
+      );
       // TODO-270 F/G：合并卡已落地 → 清空多句草稿（popup.js 同事件把角标清零，
       // 两端在同一事件归零、不漂移）。下一次查词从空草稿重新累积。
       _miningDraft.clear();

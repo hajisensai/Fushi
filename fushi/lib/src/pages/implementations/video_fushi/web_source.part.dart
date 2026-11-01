@@ -1015,7 +1015,7 @@ extension _VideoWebSource on _VideoFushiPageState {
       return;
     }
     videoActionCallbacks(
-      _buildVideoShortcutActions(controller, input: VideoActionInput.keyboard),
+      _buildVideoShortcutActions(controller),
     )[action]?.call();
   }
 

@@ -957,6 +957,7 @@ Future<String?> showFushiTextInputDialog({
   int maxLines = 1,
   TextInputType? keyboardType,
   String? Function(String value)? validator,
+  Widget Function(TextEditingController controller)? fieldAccessoryBuilder,
 }) {
   return showAppDialog<String>(
     context: context,
@@ -975,6 +976,7 @@ Future<String?> showFushiTextInputDialog({
       maxLines: maxLines,
       keyboardType: keyboardType,
       validator: validator,
+      fieldAccessoryBuilder: fieldAccessoryBuilder,
     ),
   );
 }
@@ -995,6 +997,7 @@ class _FushiTextInputDialog extends StatefulWidget {
     required this.maxLines,
     required this.keyboardType,
     required this.validator,
+    this.fieldAccessoryBuilder,
   });
 
   final String title;
@@ -1011,6 +1014,11 @@ class _FushiTextInputDialog extends StatefulWidget {
   final int maxLines;
   final TextInputType? keyboardType;
   final String? Function(String value)? validator;
+
+  /// 输入框下方、与输入框共用控制器的附加控件（如 AI 提示词输入框的「已保存的
+  /// 提示词」按钮）。拿到的是对话框自己的控制器，改它即改输入框。
+  final Widget Function(TextEditingController controller)?
+  fieldAccessoryBuilder;
 
   @override
   State<_FushiTextInputDialog> createState() => _FushiTextInputDialogState();
@@ -1096,6 +1104,11 @@ class _FushiTextInputDialogState extends State<_FushiTextInputDialog> {
                   context,
                 ).footnoteStyle(context).copyWith(color: cs.error),
               ),
+            ),
+          if (widget.fieldAccessoryBuilder != null)
+            Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: widget.fieldAccessoryBuilder!(_controller),
             ),
         ],
       ),

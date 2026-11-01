@@ -487,6 +487,7 @@ String srsFieldKeyLabel(SrsEntityKind kind, String key) => switch (key) {
   SrsFieldKeys.deckAlgorithm => t.srs_settings_algorithm,
   SrsFieldKeys.deckRwkvQueue => t.srs_settings_rwkv_queue,
   SrsFieldKeys.deckNewPlan => t.srs_settings_new_plan,
+  SrsFieldKeys.deckExtendLimits => t.srs_custom_study_title,
   SrsFieldKeys.deckFsrs6Params ||
   SrsFieldKeys.deckFsrs7Params => t.srs_key_params,
   SrsFieldKeys.deckAutoOptimize => t.srs_settings_auto_optimize,

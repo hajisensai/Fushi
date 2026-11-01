@@ -190,6 +190,14 @@ class _StatSessionsClearAllButton extends StatelessWidget {
 /// 编辑：弹 [showStatSessionEditDialog] → [onEdit] → 本地换成展示副本 + 通知调用方
 /// 整页重聚合（重聚合才算得出最终形态：改完日期的会话要重新按 gap 归并、重新排序，
 /// 甚至与相邻会话合并成一条）。
+///
+/// 两种形态：默认是一个 box（[Column]，区块里最多 limit 行，全量建无所谓）；
+/// [sliver] 为 true 时返回**懒加载**的 [SliverList]，只建视口内（含缓存区）的行，
+/// 供「全部会话」sheet 放进 [CustomScrollView]。反馈 bXmmmN1vLZ：sheet 曾是
+/// SingleChildScrollView + Column，600 条会话就是 600 行（带封面）全量建出来；
+/// 底部 sheet 路由依赖整份 MediaQuery，编辑框拉起软键盘时 viewInsets 每帧一变，
+/// sheet 每帧整批重建 600 行——点开一条记录就卡。会话数量没有上限，列全量的
+/// 地方一律走 sliver 形态。
 class StatSessionList extends StatefulWidget {
   const StatSessionList({
     required this.sessions,
@@ -200,6 +208,7 @@ class StatSessionList extends StatefulWidget {
     this.coverOf,
     this.onDeleted,
     this.staggered = false,
+    this.sliver = false,
     super.key,
   });
 
@@ -223,6 +232,9 @@ class StatSessionList extends StatefulWidget {
   /// 行错峰进场（sheet 打开时用；页面区块整卡已在页面的错峰序列里，不再逐行）。
   final bool staggered;
 
+  /// true = 返回懒加载 [SliverList]（调用方放进 [CustomScrollView]）；false = box。
+  final bool sliver;
+
   @override
   State<StatSessionList> createState() => _StatSessionListState();
 }
@@ -240,51 +252,72 @@ class _StatSessionListState extends State<StatSessionList> {
 
   @override
   Widget build(BuildContext context) {
+    final Widget list = widget.sliver
+        ? SliverList.builder(
+            itemCount: _rows.length,
+            // 行带 key（会话 key）：删掉中间一行后其余行按 key 找回原 element，
+            // 不因下标平移而整批重建 / 重播进场。
+            findChildIndexCallback: _indexOfKey,
+            itemBuilder: _buildEntryAt,
+          )
+        : Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              for (int i = 0; i < _rows.length; i++) _buildEntryAt(context, i),
+            ],
+          );
+    return widget.staggered ? FushiEntranceScope(child: list) : list;
+  }
+
+  /// 第 [index] 行（错峰时外包一层 [FushiStaggeredEntrance]）。最外层恒带会话
+  /// key：懒列表的 [_indexOfKey] 认的是最外层 key。
+  Widget _buildEntryAt(BuildContext context, int index) {
+    final StudySession s = _rows[index];
+    final Widget row = _buildRow(context, s);
+    return widget.staggered
+        ? FushiStaggeredEntrance(
+            key: ValueKey<String>(s.key),
+            index: index,
+            child: row,
+          )
+        : row;
+  }
+
+  int? _indexOfKey(Key key) {
+    if (key is! ValueKey<String>) return null;
+    final int at = _rows.indexWhere((StudySession s) => s.key == key.value);
+    return at < 0 ? null : at;
+  }
+
+  Widget _buildRow(BuildContext context, StudySession s) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme colors = Theme.of(context).colorScheme;
-    final List<Widget> rows = <Widget>[
-      for (final StudySession s in _rows)
-        FushiListItem(
-          key: ValueKey<String>(s.key),
-          density: FushiListDensity.compact,
-          // 2026-10 体验优化：统计各列表行最小高度统一 48（触控目标）。
-          minHeight: kStatRowMinHeight,
-          padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 4),
-          leading: _buildLeading(s, colors),
-          // BUG-2417：媒体名常年比一行宽（长篇番剧标题、带副标题的书名），
-          // 单行 ellipsis 只看得到开头几个字。本区块的父容器（页面 sliver /
-          // sheet 的 Column）高度自由，放到 2 行不会撑破谁。
-          // 带封面槽时文本列窄了一个槽宽（400dp 手机宽下 2 行恰好装不下同一个
-          // 长标题），放宽到 3 行；行高本来就被 2:3 封面撑高，多一行不额外撑破。
-          titleMaxLines: widget.coverOf == null ? 2 : 3,
-          title: _buildTitle(context, s),
-          subtitle: Text(
-            '${formatStatSessionRange(s.startAt, s.endAt)} · '
-            '${formatStatSessionMeta(s)}',
-          ),
-          // 整行 = 编辑入口（见文件头：trailing 放不下第二颗按钮）。
-          onTap: () => unawaited(_edit(s)),
-          trailing: FushiIconButtonControl(
-            tooltip: t.stat_session_delete,
-            icon: const FushiIcon(Icons.delete_outline),
-            onPressed: () => unawaited(_confirmAndDelete(s)),
-          ),
-        ),
-    ];
-    final Widget list = Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        for (int i = 0; i < rows.length; i++)
-          widget.staggered
-              ? FushiStaggeredEntrance(
-                  key: rows[i].key,
-                  index: i,
-                  child: rows[i],
-                )
-              : rows[i],
-      ],
+    return FushiListItem(
+      key: ValueKey<String>(s.key),
+      density: FushiListDensity.compact,
+      // 2026-10 体验优化：统计各列表行最小高度统一 48（触控目标）。
+      minHeight: kStatRowMinHeight,
+      padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 4),
+      leading: _buildLeading(s, colors),
+      // BUG-2417：媒体名常年比一行宽（长篇番剧标题、带副标题的书名），
+      // 单行 ellipsis 只看得到开头几个字。本区块的父容器（页面 sliver /
+      // sheet 的滚动视图）高度自由，放到 2 行不会撑破谁。
+      // 带封面槽时文本列窄了一个槽宽（400dp 手机宽下 2 行恰好装不下同一个
+      // 长标题），放宽到 3 行；行高本来就被 2:3 封面撑高，多一行不额外撑破。
+      titleMaxLines: widget.coverOf == null ? 2 : 3,
+      title: _buildTitle(context, s),
+      subtitle: Text(
+        '${formatStatSessionRange(s.startAt, s.endAt)} · '
+        '${formatStatSessionMeta(s)}',
+      ),
+      // 整行 = 编辑入口（见文件头：trailing 放不下第二颗按钮）。
+      onTap: () => unawaited(_edit(s)),
+      trailing: FushiIconButtonControl(
+        tooltip: t.stat_session_delete,
+        icon: const FushiIcon(Icons.delete_outline),
+        onPressed: () => unawaited(_confirmAndDelete(s)),
+      ),
     );
-    return widget.staggered ? FushiEntranceScope(child: list) : list;
   }
 
   Widget _buildLeading(StudySession s, ColorScheme colors) {
@@ -397,34 +430,54 @@ Future<bool> showStatSessionsSheet(
     context,
     builder: (BuildContext sheetContext) {
       final FushiDesignTokens tokens = FushiDesignTokens.of(sheetContext);
+      final double pad = tokens.spacing.card;
+      // 懒加载（反馈 bXmmmN1vLZ，见 [StatSessionList] 文档）：会话行是
+      // [SliverList]，只建视口内的行。shrinkWrap：会话少时 sheet 按内容高度收拢，
+      // 多时由 statSheetHeightCap / 桌面对话框的高度上限截住、在内部滚动——
+      // shrinkWrap 的视口照样只布局到上限为止，不会退化成全量建。
       return SafeArea(
-        child: SingleChildScrollView(
-          padding: EdgeInsets.all(tokens.spacing.card),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              StatSheetHeader(
-                title: title,
-                subtitle: t.stat_sessions_count(n: sessions.length),
-                trailing: sessions.isEmpty
-                    ? null
-                    : _StatSessionsClearAllButton(
-                        sessions: sessions,
-                        onClearAll: (List<StudySession> batch) async {
-                          touched = true;
-                          await onClearAll(batch);
-                          if (sheetContext.mounted) {
-                            Navigator.of(sheetContext).pop();
-                          }
-                        },
-                      ),
+        child: CustomScrollView(
+          shrinkWrap: true,
+          slivers: <Widget>[
+            SliverPadding(
+              padding: EdgeInsets.fromLTRB(
+                pad,
+                pad,
+                pad,
+                sessions.isEmpty ? pad : 0,
               ),
-              SizedBox(height: tokens.spacing.gap),
-              if (sessions.isEmpty)
-                Text(t.stat_sessions_empty, style: tokens.type.metadata)
-              else
-                StatSessionList(
+              sliver: SliverToBoxAdapter(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    StatSheetHeader(
+                      title: title,
+                      subtitle: t.stat_sessions_count(n: sessions.length),
+                      trailing: sessions.isEmpty
+                          ? null
+                          : _StatSessionsClearAllButton(
+                              sessions: sessions,
+                              onClearAll: (List<StudySession> batch) async {
+                                touched = true;
+                                await onClearAll(batch);
+                                if (sheetContext.mounted) {
+                                  Navigator.of(sheetContext).pop();
+                                }
+                              },
+                            ),
+                    ),
+                    SizedBox(height: tokens.spacing.gap),
+                    if (sessions.isEmpty)
+                      Text(t.stat_sessions_empty, style: tokens.type.metadata),
+                  ],
+                ),
+              ),
+            ),
+            if (sessions.isNotEmpty)
+              SliverPadding(
+                padding: EdgeInsets.fromLTRB(pad, 0, pad, pad),
+                sliver: StatSessionList(
                   sessions: sessions,
                   titleOf: titleOf,
                   collectionOf: collectionOf,
@@ -433,9 +486,10 @@ Future<bool> showStatSessionsSheet(
                   onEdit: onEdit,
                   onDeleted: () => touched = true,
                   staggered: true,
+                  sliver: true,
                 ),
-            ],
-          ),
+              ),
+          ],
         ),
       );
     },

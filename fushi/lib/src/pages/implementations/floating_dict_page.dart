@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/anki/mined_card_undo.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
@@ -129,7 +130,16 @@ class _FloatingDictPageState extends ConsumerState<FloatingDictPage> {
     final described = describeMineOutcome(outcome);
     // 制卡结果的语义已由 describeMineOutcome 算出（added/duplicate/failed）；走
     // showMine 才过「制卡提示」开关（popup_main 装了同一份偏好闭包）。
-    FushiToast.showMine(msg: described.message, status: described.status);
+    FushiToast.showMine(
+      msg: described.message,
+      status: described.status,
+      // 反馈 JNyykxvuY9：成功提示带「撤销」，几秒内点一下删掉刚加的卡。
+      action: minedCardUndoToastAction(
+        repo,
+        outcome,
+        expression: fields['expression'],
+      ),
+    );
   }
 
   @override

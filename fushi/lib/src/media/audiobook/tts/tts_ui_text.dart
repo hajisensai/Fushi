@@ -8,15 +8,18 @@ import 'package:fushi_engine/tts/providers/edge_tts_provider.dart';
 import 'package:fushi_engine/tts/providers/google_cloud_tts_provider.dart';
 import 'package:fushi_engine/tts/providers/gpt_sovits_tts_provider.dart';
 import 'package:fushi_engine/tts/providers/irodori_server_tts_provider.dart';
+import 'package:fushi_engine/tts/providers/openai_compatible_tts_provider.dart';
 import 'package:fushi_engine/tts/providers/irodori_tts_provider.dart';
 import 'package:fushi_engine/tts/providers/translate_tts_providers.dart';
 import 'package:fushi_engine/tts/providers/voicepeak_tts_provider.dart';
 import 'package:fushi_engine/tts/providers/voicevox_tts_provider.dart';
 import 'package:fushi_engine/tts/tts_provider.dart';
 import 'package:fushi_engine/tts/tts_types.dart';
+import 'package:fushi_engine/tts/tts_voice_preset.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/audiobook/tts/system_tts_provider.dart';
+import 'package:fushi/src/onboarding/onboarding_sample_text.dart';
 import 'package:fushi/src/utils/misc/system_tts.dart';
 
 /// 「删除本机引擎」删不掉时的提示（路径 + 系统给的原因）。
@@ -31,6 +34,8 @@ String ttsProviderLabel(String providerId) => switch (providerId) {
   IrodoriTtsDescriptor.providerId => t.audiobook_tts_provider_irodori,
   IrodoriServerTtsDescriptor.providerId =>
     t.audiobook_tts_provider_irodori_server,
+  OpenAiCompatibleTtsDescriptor.providerId =>
+    t.audiobook_tts_provider_openai_compatible,
   EdgeTtsDescriptor.providerId => t.audiobook_tts_provider_edge,
   MicrosoftTranslatorTtsDescriptor.providerId =>
     t.audiobook_tts_provider_ms_translator,
@@ -58,6 +63,8 @@ String? ttsProviderHint(String providerId) => switch (providerId) {
   AivisSpeechTtsDescriptor.providerId ||
   SharevoxTtsDescriptor.providerId => t.audiobook_tts_provider_voicevox_hint,
   VoicepeakTtsDescriptor.providerId => t.audiobook_tts_provider_voicepeak_hint,
+  OpenAiCompatibleTtsDescriptor.providerId =>
+    t.audiobook_tts_provider_openai_compatible_hint,
   _ => null,
 };
 
@@ -81,6 +88,7 @@ String ttsParamLabel(String key) => switch (key) {
   GptSovitsTtsDescriptor.promptLangKey => t.audiobook_tts_param_prompt_lang,
   AzureTtsDescriptor.regionKey => t.audiobook_tts_param_region,
   IrodoriServerTtsDescriptor.captionKey => t.audiobook_tts_param_caption,
+  OpenAiCompatibleTtsDescriptor.modelKey => t.audiobook_tts_param_model,
   'api_key' => t.audiobook_tts_param_api_key,
   'voice' => t.audiobook_tts_param_voice,
   SystemTtsDescriptor.engineKey => t.audiobook_tts_param_engine,
@@ -131,6 +139,11 @@ String? ttsParamHint(String providerId, String key) => switch ((
     t.audiobook_tts_param_ref_audio_hint,
   (GptSovitsTtsDescriptor.providerId, GptSovitsTtsDescriptor.apiKeyKey) =>
     t.audiobook_tts_param_bearer_hint,
+  (
+    OpenAiCompatibleTtsDescriptor.providerId,
+    OpenAiCompatibleTtsDescriptor.modelKey,
+  ) =>
+    t.audiobook_tts_param_model_hint,
   (IrodoriTtsDescriptor.providerId, IrodoriTtsDescriptor.endpointKey) =>
     t.audiobook_tts_param_irodori_endpoint_hint,
   (
@@ -204,3 +217,41 @@ String ttsFailureText(
         TtsFailureCode.unsupported => t.audiobook_tts_failure_unsupported,
         TtsFailureCode.cancelled => t.audiobook_tts_failure_cancelled,
       };
+
+/// 日语试听文本（日语声音 / 认不出语言时的默认）。
+const String kTtsDefaultSampleText = 'こんにちは。これは朗読のテストです。';
+
+/// 声音配置的试听文本：按 [languageTag]（BCP 47，取主语言子标签）给一句该语言的
+/// 日常短句（与新手引导练习句同一份数据）；日语、认不出或没有该语言的句子时用
+/// [kTtsDefaultSampleText]。
+String ttsSampleTextFor(String? languageTag) {
+  final String? primary = onboardingPrimaryLanguageSubtag(languageTag);
+  if (primary == null || primary == 'ja') return kTtsDefaultSampleText;
+  return kOnboardingSampleSentences[primary] ?? kTtsDefaultSampleText;
+}
+
+/// GPT-SoVITS 语言代码 → BCP 47 主语言（`all_ja` → `ja`，`yue` → `zh`）；
+/// `auto` / `auto_yue` 按文字自动判，没有确定语言，返回 null。
+String? ttsLanguageCodeToTag(String code) {
+  final String bare = code.startsWith('all_') ? code.substring(4) : code;
+  return switch (bare) {
+    'ja' || 'zh' || 'en' || 'ko' => bare,
+    'yue' => 'zh',
+    _ => null,
+  };
+}
+
+final RegExp _kVoiceLocalePrefix = RegExp(r'^([a-z]{2,3})-[A-Z]{2}(?:-|$)');
+
+/// 从声音配置推断它要读的语言（试听文本跟着换）：GPT-SoVITS 看「文本语言」；
+/// 其余提供商看声音 id 前缀的地区代码（Edge / Azure / Google 的 `en-US-…`）。
+/// 推不出返回 null（VOICEVOX / VOICEPEAK / Irodori 等日语引擎也落到这里，用日语）。
+String? ttsPresetLanguage(TtsVoicePreset preset) {
+  if (preset.providerId == GptSovitsTtsDescriptor.providerId) {
+    return ttsLanguageCodeToTag(
+      preset.param(GptSovitsTtsDescriptor.textLangKey, fallback: 'ja'),
+    );
+  }
+  final String voice = preset.params['voice'] ?? '';
+  return _kVoiceLocalePrefix.firstMatch(voice)?.group(1);
+}

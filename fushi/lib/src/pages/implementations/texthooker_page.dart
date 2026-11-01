@@ -6,6 +6,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart' show HardwareKeyboard, KeyEvent;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/anki/mined_card_undo.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
@@ -903,7 +904,17 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     }
     // 失败原因交给弹窗就地说，不另弹 toast（见 MinePopupResult.message）。
     if (described.success) {
-      FushiToast.showMine(msg: described.message, status: described.status);
+      FushiToast.showMine(
+        msg: described.message,
+        status: described.status,
+        // 反馈 JNyykxvuY9：成功提示带「撤销」，几秒内点一下删掉刚加的卡。
+        action: minedCardUndoToastAction(
+          repo,
+          outcome,
+          expression: fields['expression'],
+          overwrite: updateNoteId != null,
+        ),
+      );
     }
     if (result.sentenceAudioMissing) {
       // 卡片建成了、只是缺句子音频 = 部分成功。

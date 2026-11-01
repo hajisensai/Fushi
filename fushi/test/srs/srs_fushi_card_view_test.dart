@@ -493,6 +493,222 @@ void main() {
     expect(find.byKey(const ValueKey<String>('srs-fushi-pitch-1')), findsOne);
   });
 
+  testWidgets('三个声调 + 长假名、窄屏：每个声调各一张图、不溢出，声调核序号是图右上角的角标', (
+    WidgetTester tester,
+  ) async {
+    const String kana = 'ちょうしゅうせきにんしゃ';
+    await pump(
+      tester,
+      answer: true,
+      size: const Size(320, 700),
+      fields: _fields(<String, String>{
+        'TermFurigana': '',
+        'TermReading': kana,
+        'PitchPosition': '0, 3, 5',
+        'PitchCategories': '',
+        // 读音行里不再出词频聚合标签以外的标签：声调序号不是 _Chip。
+        'FrequencyRank': '',
+      }),
+    );
+    // pump 内已断言没有布局溢出异常（RenderFlex overflow 会作为 takeException 抛出）。
+    final Finder graphs = find.byType(SrsPitchGraph);
+    expect(graphs, findsNWidgets(3));
+    expect(
+      tester
+          .widgetList<SrsPitchGraph>(graphs)
+          .map((SrsPitchGraph g) => g.position),
+      <int?>[0, 3, 5],
+    );
+    final Rect row = tester.getRect(
+      find.byKey(const ValueKey<String>('srs-fushi-reading-row')),
+    );
+    expect(row.right, lessThanOrEqualTo(320));
+    for (final Element e in graphs.evaluate()) {
+      final Rect r = tester.getRect(find.byWidget(e.widget));
+      expect(r.left, greaterThanOrEqualTo(row.left - 0.5));
+      expect(r.right, lessThanOrEqualTo(row.right + 0.5), reason: '$r vs $row');
+    }
+    // 每张图一个角标，数字取自字段（不推断），角标在最后一拍假名的右侧、顶端对齐。
+    final Finder badges = find.byKey(
+      const ValueKey<String>('srs-fushi-pitch-position'),
+    );
+    expect(badges, findsNWidgets(3));
+    for (final (int i, String n) in <(int, String)>[
+      (0, '0'),
+      (1, '3'),
+      (2, '5'),
+    ]) {
+      final Finder badge = find.descendant(
+        of: find.byKey(
+          ValueKey<String>(i == 0 ? 'srs-fushi-pitch' : 'srs-fushi-pitch-$i'),
+        ),
+        matching: badges,
+      );
+      expect(find.descendant(of: badge, matching: find.text(n)), findsOne);
+      final Rect b = tester.getRect(badge);
+      final Rect g = tester.getRect(
+        find.byKey(
+          ValueKey<String>(i == 0 ? 'srs-fushi-pitch' : 'srs-fushi-pitch-$i'),
+        ),
+      );
+      expect(b.top, closeTo(g.top, 0.5));
+      expect(b.height, lessThan(g.height));
+    }
+  });
+
+  testWidgets('正面不出声调角标（只画图，与原来一致）', (WidgetTester tester) async {
+    await pump(
+      tester,
+      answer: false,
+      appearance: const SrsCardAppearance(frontReading: true),
+      fields: _fields(<String, String>{
+        'TermFurigana': '',
+        'TermReading': 'かよう',
+        'PitchPosition': '0, 2',
+      }),
+    );
+    expect(find.byType(SrsPitchGraph), findsNWidgets(2));
+    expect(
+      find.byKey(const ValueKey<String>('srs-fushi-pitch-position')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('例句对齐 / 首行缩进：居中占满栏宽、缩进在段首占位（不进取词文字）', (
+    WidgetTester tester,
+  ) async {
+    await pump(
+      tester,
+      answer: true,
+      appearance: const SrsCardAppearance(
+        sentenceAlign: SrsCardTextAlign.center,
+        sentenceIndent: 2,
+      ),
+    );
+    final SrsRubyText sentence = tester.widget<SrsRubyText>(
+      find.byKey(const ValueKey<String>('srs-fushi-sentence')),
+    );
+    expect(sentence.textAlign, TextAlign.center);
+    expect(sentence.indent, 2 * sentence.style.fontSize!);
+    final Text translation = tester.widget<Text>(
+      find.byKey(const ValueKey<String>('srs-fushi-translation')),
+    );
+    expect(translation.textAlign, TextAlign.center);
+    // 默认外观：背面例句左对齐、不缩进（旧外观不变）。
+    await tester.pumpWidget(const SizedBox());
+    await pump(tester, answer: true);
+    final SrsRubyText plain = tester.widget<SrsRubyText>(
+      find.byKey(const ValueKey<String>('srs-fushi-sentence')),
+    );
+    expect(plain.textAlign, TextAlign.start);
+    expect(plain.indent, 0);
+  });
+
+  testWidgets('正面例句：默认居中；选左对齐后左对齐并占满栏宽', (WidgetTester tester) async {
+    final Map<String, String> sentenceCard = _fields(<String, String>{
+      'IsSentenceCard': 'x',
+      'IsWordAndSentenceCard': '',
+      // 没有释义 = 正面不叠预热释义的 Stack，测试宿主的松约束下也能量到正面宽度。
+      'MainDefinition': '',
+      'Glossary': '',
+      'LookupSelection': '',
+      'DefinitionMedia': '',
+    });
+    await pump(tester, answer: false, fields: sentenceCard);
+    const ValueKey<String> key = ValueKey<String>('srs-fushi-front-sentence');
+    expect(
+      tester.widget<SrsRubyText>(find.byKey(key)).textAlign,
+      TextAlign.center,
+    );
+    await tester.pumpWidget(const SizedBox());
+    await pump(
+      tester,
+      answer: false,
+      fields: sentenceCard,
+      appearance: const SrsCardAppearance(
+        sentenceAlign: SrsCardTextAlign.start,
+      ),
+    );
+    expect(
+      tester.widget<SrsRubyText>(find.byKey(key)).textAlign,
+      TextAlign.start,
+    );
+    // ignore: avoid_print
+    expect(tester.getRect(find.byKey(key)).width, greaterThan(300));
+  });
+
+  testWidgets('正反面字号分开：正面词条按正面倍率，背面不受影响', (WidgetTester tester) async {
+    double frontTermSize() => tester
+        .widget<SrsRubyText>(
+          find.descendant(
+            of: find.byKey(const ValueKey<String>('srs-fushi-front-term')),
+            matching: find.byType(SrsRubyText),
+          ),
+        )
+        .style
+        .fontSize!;
+    double backTermSize() => tester
+        .widget<SrsRubyText>(
+          find.byKey(const ValueKey<String>('srs-fushi-term')),
+        )
+        .style
+        .fontSize!;
+    final Map<String, String> wordCard = _fields(<String, String>{
+      'IsWordAndSentenceCard': '',
+    });
+    await pump(tester, answer: false, fields: wordCard);
+    final double shared = frontTermSize();
+    await tester.pumpWidget(const SizedBox());
+    await pump(tester, answer: true, fields: wordCard);
+    final double sharedBack = backTermSize();
+    const SrsCardAppearance separate = SrsCardAppearance(
+      separateFrontSize: true,
+      frontTermScale: 1.3,
+    );
+    await tester.pumpWidget(const SizedBox());
+    await pump(tester, answer: false, fields: wordCard, appearance: separate);
+    expect(frontTermSize(), closeTo(shared * 1.3, 0.01));
+    await tester.pumpWidget(const SizedBox());
+    await pump(tester, answer: true, fields: wordCard, appearance: separate);
+    expect(backTermSize(), closeTo(sharedBack, 0.01));
+  });
+
+  group('声调图逐拍画法与模板一致（反馈 kP5GJ0pahv）', () {
+    const SrsPitchMoraMark low = SrsPitchMoraMark(high: false, drop: false);
+    const SrsPitchMoraMark high = SrsPitchMoraMark(high: true, drop: false);
+    const SrsPitchMoraMark highDrop = SrsPitchMoraMark(high: true, drop: true);
+
+    test('平板 [0]：首拍低、其余高，没有降调符', () {
+      expect(srsPitchMoraMarks(0, 4), <SrsPitchMoraMark>[
+        low,
+        high,
+        high,
+        high,
+      ]);
+    });
+
+    test('中高 [3]：か低 すれ高、れ后降、る低', () {
+      expect(srsPitchMoraMarks(3, 4), <SrsPitchMoraMark>[
+        low,
+        high,
+        highDrop,
+        low,
+      ]);
+    });
+
+    test('头高 [1]：首拍高并降', () {
+      expect(srsPitchMoraMarks(1, 3), <SrsPitchMoraMark>[highDrop, low, low]);
+    });
+
+    test('尾高 [2]（2 拍）：末拍降 + 尾拍', () {
+      expect(srsPitchMoraMarks(2, 2), <SrsPitchMoraMark>[
+        low,
+        highDrop,
+        const SrsPitchMoraMark(high: false, drop: false, tail: true),
+      ]);
+    });
+  });
+
   testWidgets('没有可解析的声调：只画一份读音', (WidgetTester tester) async {
     await pump(
       tester,

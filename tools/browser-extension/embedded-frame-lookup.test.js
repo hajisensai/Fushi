@@ -43,7 +43,10 @@ function loadGate(opts) {
       addEventListener(type, fn) { (listeners[type] = listeners[type] || []).push(fn); },
       removeEventListener(type, fn) { listeners[type] = (listeners[type] || []).filter((f) => f !== fn); },
     },
-    chrome: { runtime: { sendMessage(msg, cb) { sent.push(msg); if (cb) cb(); }, lastError: undefined } },
+    chrome: {
+      runtime: { sendMessage(msg, cb) { sent.push(msg); if (cb) cb(); }, lastError: undefined },
+      storage: { local: { get(_key, cb) { if (cb) cb(opts.stored || {}); } } },
+    },
   };
   vm.runInNewContext(fs.readFileSync(path.join(__dirname, 'frame-gate.js'), 'utf8'), sandbox, { filename: 'frame-gate.js' });
   return {
@@ -51,6 +54,10 @@ function loadGate(opts) {
     count(type) { return (listeners[type] || []).length; },
     fire(type, e) { for (const fn of (listeners[type] || []).slice()) fn(e); },
   };
+}
+
+function loadGateWithStorage(stored) {
+  return loadGate({ top: false, protocol: 'about:', stored });
 }
 
 test('frame-gate：顶层页 / http 子 frame / 已注入的 frame 一律不挂监听', () => {
@@ -78,11 +85,26 @@ test('frame-gate：about: 子 frame 里只有 Shift 悬停（查词手势）才�
   assert.strictEqual(h.sent.length, 1, '只请求一次');
 });
 
-test('frame-gate 注入后 content.js 认的就是同一个手势：查词修饰键是 shiftKey（Shift 悬停接得上）', () => {
+test('frame-gate 注入后 content.js 认的就是同一个手势：同一个可配置触发键（默认 Shift）', () => {
   const src = fs.readFileSync(path.join(__dirname, 'content.js'), 'utf8');
-  assert.match(src, /const FUSHI_MOD = 'shiftKey';/);
-  assert.match(src, /document\.addEventListener\('mousemove', \(e\) => \{[\s\S]{0,200}if \(!e\[FUSHI_MOD\]\)/,
-    'content.js 的悬停查词按 mousemove 的 shiftKey 判（闸门唤起后按住 Shift 再挪一下即查词）');
+  assert.match(src, /let fushiScanModifier = 'shift';/);
+  assert.match(src, /document\.addEventListener\('mousemove', \(e\) => \{[\s\S]{0,200}if \(!fushiScanModifierHeld\(e, fushiScanModifier\)\)/,
+    'content.js 的悬停查词按 mousemove 时触发键是否按着判（闸门唤起后按住触发键再挪一下即查词）');
+});
+
+test('frame-gate 跟随设置里的触发键（scanModifier）；none 仍要 Shift 唤起', () => {
+  for (const [stored, prop, other] of [
+    [{}, 'shiftKey', 'ctrlKey'],
+    [{ scanModifier: 'ctrl' }, 'ctrlKey', 'shiftKey'],
+    [{ scanModifier: 'alt' }, 'altKey', 'shiftKey'],
+    [{ scanModifier: 'none' }, 'shiftKey', 'altKey'],
+  ]) {
+    const h = loadGateWithStorage(stored);
+    h.fire('mousemove', { [other]: true, buttons: 0 });
+    assert.strictEqual(h.sent.length, 0, JSON.stringify(stored) + ' 非触发键不唤起');
+    h.fire('mousemove', { [prop]: true, buttons: 0 });
+    assert.strictEqual(h.sent.length, 1, JSON.stringify(stored) + ' 触发键悬停唤起');
+  }
 });
 
 function loadBackground(probeResult) {

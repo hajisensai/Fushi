@@ -244,6 +244,12 @@ Apple 侧怎么建 Auth Key、App ID 勾 Push、sandbox / production 怎么选�
 过 `READ_LIMITER`，`no-store`。缺 secret 回 `503 musickit_not_configured`。密钥来历与 `secret put`
 命令见 [`docs/agent/apple-signing.md`](../../docs/agent/apple-signing.md)「MusicKit 密钥」。
 
+`GET /musickit/`（+ `/musickit/bridge.js`，`src/musickit_page.js`）：MusicKit JS 托管页，供 Windows / Android
+隐藏 WebView 做网页播放桥（MusicKit JS 的 `authorize()` 只认 https 页面）。页面无内联脚本，CSP 只放行本站与
+Apple 域名；桥接脚本挂 `window.fushiMusicKit`（init / authorize / play / pause / seek / state …），事件经
+`flutter_inappwebview.callHandler('fushiMusicKit', …)` / `chrome.webview.postMessage` 发给宿主。
+`?debug=1` 显示手动调试面板。
+
 反馈系统（回执、附件、开发者处理、防投毒、清理策略）设计见
 [`docs/specs/2026-10-08-feedback.md`](../../docs/specs/2026-10-08-feedback.md)。
 

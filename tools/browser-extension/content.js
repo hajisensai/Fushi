@@ -18,7 +18,6 @@ window.__fushiCssHighlightsSupported = false;
 // 设计，注入宿主页后宿主页自身 hover/click 会误触 selectText→clearSelection，拆掉刚画的划词高亮；
 // popup.js 读此 flag 后只处理落在 #entries-container 内的事件（content.js 与 popup.js 同隔离世界共享 window）。
 window.__fushiExtension = true;
-const FUSHI_MOD = 'shiftKey';
 const FUSHI_MAX_LEN = 12;
 let fushiContainer = null;
 // BUG-688：弹窗渲染进 Shadow DOM，宿主网页 CSS 无法穿透 shadow 边界（ruby/行距/定位等
@@ -492,22 +491,60 @@ try {
 // 另有用途（选区扩展、站点快捷键），用户可以关掉这条入口，只留点击 / 悬浮字幕自动查词等
 // 其余入口。只认显式 false；storage.onChanged 实时生效。
 let fushiShiftHoverLookup = true;
+// 悬停查词的触发键（反馈 ulS75hVkAK，对齐 Yomitan 的 scan modifier）：storage.scanModifier，
+// shift（默认，旧行为）/ ctrl / alt / meta（⌘ / Win）/ none（不按键，指针停在字上即查）；未知值回落 shift。
+// 变量 / 函数名里的 "Shift" 是历史名，语义已是「悬停查词触发键」。side-panel.js 的字幕行
+// 悬停用同名函数的副本（扩展页不装 content.js），scan-modifier.test.js 逐例交叉比对两份。
+let fushiScanModifier = 'shift';
+const FUSHI_SCAN_MODIFIER_KEYS = Object.freeze({ shift: 'Shift', ctrl: 'Control', alt: 'Alt', meta: 'Meta' });
+function fushiNormalizeScanModifier(value) {
+  return value === 'none' || Object.prototype.hasOwnProperty.call(FUSHI_SCAN_MODIFIER_KEYS, value) ? value : 'shift';
+}
+// 事件发生时触发键是否按着（mousemove / pointermove / mousedown 都带这四个布尔位）。
+function fushiScanModifierHeld(event, modifier) {
+  if (!event) return false;
+  const mod = fushiNormalizeScanModifier(modifier);
+  if (mod === 'none') return true;
+  return event[mod + 'Key'] === true;
+}
+// 「指针静止时按下触发键立即查」：只认触发键本身首次按下，且没同按别的修饰键（Ctrl+Shift 之类
+// 是快捷键组合，不是查词）。none 无键可按，恒 false。
+function fushiScanModifierKeydown(event, modifier) {
+  if (!event || event.repeat) return false;
+  const mod = fushiNormalizeScanModifier(modifier);
+  if (mod === 'none' || event.key !== FUSHI_SCAN_MODIFIER_KEYS[mod]) return false;
+  for (const other of Object.keys(FUSHI_SCAN_MODIFIER_KEYS)) {
+    if (other !== mod && event[other + 'Key'] === true) return false;
+  }
+  return true;
+}
+// 松开触发键：复位同词去重与待补查。
+function fushiScanModifierKeyup(event, modifier) {
+  const mod = fushiNormalizeScanModifier(modifier);
+  return !!(event && mod !== 'none' && event.key === FUSHI_SCAN_MODIFIER_KEYS[mod]);
+}
 function fushiApplyShiftHoverLookupPref(saved) {
   if (saved && typeof saved.shiftHoverLookup === 'boolean') {
     fushiShiftHoverLookup = saved.shiftHoverLookup;
   }
+  if (saved && typeof saved.scanModifier === 'string') {
+    fushiScanModifier = fushiNormalizeScanModifier(saved.scanModifier);
+  }
 }
+// 弹窗内嵌套查词（vendor/popup.js，与 app 共用）经这个钩子认同一个触发键；app 内无此钩子时它退回 Shift。
+window.__fushiScanModifierHeld = (e) => fushiScanModifierHeld(e, fushiScanModifier);
 try {
   const fushiShiftPrefPromise = chrome.storage.local.get(
-    ['shiftHoverLookup'],
+    ['shiftHoverLookup', 'scanModifier'],
     fushiApplyShiftHoverLookupPref,
   );
   if (fushiShiftPrefPromise && typeof fushiShiftPrefPromise.then === 'function') {
     fushiShiftPrefPromise.then(fushiApplyShiftHoverLookupPref, () => {});
   }
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area !== 'local' || !changes || !changes.shiftHoverLookup) return;
-    fushiShiftHoverLookup = changes.shiftHoverLookup.newValue !== false;
+    if (area !== 'local' || !changes) return;
+    if (changes.shiftHoverLookup) fushiShiftHoverLookup = changes.shiftHoverLookup.newValue !== false;
+    if (changes.scanModifier) fushiScanModifier = fushiNormalizeScanModifier(changes.scanModifier.newValue);
   });
 } catch (_) {}
 
@@ -2385,7 +2422,7 @@ function fushiSubtitleCaretAtPoint(x, y) {
 document.addEventListener('mousemove', (e) => {
   if (fushiNfBatchRunning) return; // 批量回放录制中：不查词、不自动暂停，免误触把当前句录制截断
   // 松开 Shift 复位，下次可重查同词；在途期间被吞的那次取词也随之作废（用户已不在扫词）。
-  if (!e[FUSHI_MOD]) { fushiLastLookupKey = ''; fushiDeferShiftScan(null); return; }
+  if (!fushiScanModifierHeld(e, fushiScanModifier)) { fushiLastLookupKey = ''; fushiDeferShiftScan(null); return; }
   fushiShiftHoverAt(e.clientX, e.clientY, e.target, e.buttons === 0, false);
 });
 // Shift 悬停的共同入口：mousemove（指针在动）与 keydown（指针静止时按下 Shift）都走这里。
@@ -2424,8 +2461,8 @@ function fushiShiftHoverAt(x, y, target, clearNativeSelection, bypassMoveThresho
 // - 不清原生选区：单按 Shift 不会扩选（那要指针移动），清了反而毁掉用户正要 Shift+点击 / Shift+方向键扩的选区；
 // - 其余门控（批量录制、宿主模式、总开关、在途闸、同词去重）与 mousemove 入口完全相同。
 document.addEventListener('keydown', (e) => {
-  if (e.key !== 'Shift' || e.repeat) return;
-  if (e.ctrlKey || e.altKey || e.metaKey) return;
+  // 触发键本身首次按下、且没有同按别的修饰键（scan.js fushiScanModifierKeydown）；none 模式无键可按。
+  if (!fushiScanModifierKeydown(e, fushiScanModifier)) return;
   if (fushiNfBatchRunning) return;
   if (fushiHoverPointerX < 0 || fushiHoverPointerY < 0 || fushiPointerOutsideDocument) return;
   if (fushiNodeInEditable(e.target) || fushiNodeInEditable(document.activeElement)) return;
@@ -2440,7 +2477,7 @@ document.addEventListener('keydown', (e) => {
 // 松开 Shift：与「不按 Shift 的 mousemove」同样复位同词去重与待补查——否则鼠标不动、松开再按
 // Shift 查同一个词会被去重吞掉。
 document.addEventListener('keyup', (e) => {
-  if (e.key !== 'Shift') return;
+  if (!fushiScanModifierKeyup(e, fushiScanModifier)) return;
   fushiLastLookupKey = '';
   fushiDeferShiftScan(null);
 }, true);

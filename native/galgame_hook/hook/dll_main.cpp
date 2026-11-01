@@ -44,6 +44,7 @@
 #include <vector>
 
 #include "il2cpp_thread_scope.h"
+#include "immediate_text_repeat_filter.h"
 #include "adapters/unity_mono_text.h"
 #include "adapters/unity_mono_lookup_core.h"
 #include "adapters/unity_mono_audio.h"
@@ -106,6 +107,8 @@
 #include "adapters/siglus_eightarg_owner.h"
 #include "adapters/siglus_eightarg_message_capture.h"
 #include "adapters/siglus_eightarg_glyph_batch.h"
+#include "adapters/siglus_ninearg_family.h"
+#include "adapters/siglus_ninearg_runtime.h"
 #include "adapters/siglus_native_autoprofile.h"
 #include "adapters/siglus_native_viewport.h"
 #include "adapters/siglus_message_profile.h"

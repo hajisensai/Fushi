@@ -6,6 +6,8 @@ library;
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi_engine/media/music/apple_music/apple_music_catalog_client.dart'
+    show kAppleMusicStorefrontChoices;
 import 'package:fushi_engine/media/music/server/music_server.dart';
 import 'package:fushi_engine/media/music/server/subsonic_music_client.dart';
 import 'package:fushi_engine/media/music/server/subsonic_server_config.dart';
@@ -34,8 +36,14 @@ class _MusicServerSettingsBodyState extends State<MusicServerSettingsBody> {
     widget.appModel,
   );
 
-  void _reload() =>
-      setState(() => _servers = loadMusicServerBrowsers(widget.appModel));
+  // setState 的回调不能返回 Future：赋值表达式的值就是那个 Future，箭头写法会被
+  // 框架判成「async 回调」直接抛断言（偏好写完、组件已卸载时也不再重建）。
+  void _reload() {
+    if (!mounted) return;
+    setState(() {
+      _servers = loadMusicServerBrowsers(widget.appModel);
+    });
+  }
 
   Future<void> _toggleMix(MusicServerBrowser server, bool on) async {
     final Set<String> mix = <String>{
@@ -68,6 +76,16 @@ class _MusicServerSettingsBodyState extends State<MusicServerSettingsBody> {
     _reload();
   }
 
+  Future<void> _setAppleMusicEnabled(bool on) async {
+    await widget.appModel.prefsRepo.setMusicAppleMusicEnabled(on);
+    _reload();
+  }
+
+  Future<void> _setAppleMusicStorefront(String storefront) async {
+    await widget.appModel.prefsRepo.setMusicAppleMusicStorefront(storefront);
+    _reload();
+  }
+
   Future<void> _add() async {
     final SubsonicServerConfig? added =
         await showAppDialog<SubsonicServerConfig>(
@@ -96,8 +114,14 @@ class _MusicServerSettingsBodyState extends State<MusicServerSettingsBody> {
       future: _servers,
       builder:
           (BuildContext context, AsyncSnapshot<List<MusicServerBrowser>> snap) {
-            final List<MusicServerBrowser> servers =
-                snap.data ?? const <MusicServerBrowser>[];
+            // 混排开关只列能混排的（Apple Music 只有热门榜，不混；它的开关在下面单列）。
+            final List<MusicServerBrowser> servers = <MusicServerBrowser>[
+              for (final MusicServerBrowser s
+                  in snap.data ?? const <MusicServerBrowser>[])
+                if (musicServerSupportsLibraryMix(s.kind)) s,
+            ];
+            final bool appleMusicOn =
+                widget.appModel.prefsRepo.musicAppleMusicEnabled;
             return FushiEntranceScope(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -129,6 +153,8 @@ class _MusicServerSettingsBodyState extends State<MusicServerSettingsBody> {
                             t.music_server_jellyfin_subtitle,
                           MusicServerKind.subsonic =>
                             t.music_server_subsonic_subtitle,
+                          MusicServerKind.appleMusic =>
+                            t.music_server_apple_music_subtitle,
                         },
                         value: mix.contains(servers[i].serverId),
                         onChanged: (bool v) =>
@@ -162,6 +188,38 @@ class _MusicServerSettingsBodyState extends State<MusicServerSettingsBody> {
                       ),
                     ),
                   ),
+                  AdaptiveSettingsSwitchRow(
+                    key: const ValueKey<String>('music_apple_music_enabled'),
+                    icon: FushiIcons.music,
+                    showIcon: true,
+                    title: t.music_apple_music_enable,
+                    subtitle: t.music_apple_music_enable_hint,
+                    value: appleMusicOn,
+                    onChanged: (bool v) => unawaited(_setAppleMusicEnabled(v)),
+                  ),
+                  if (appleMusicOn)
+                    AdaptiveSettingsPickerRow<String>(
+                      key: const ValueKey<String>(
+                        'music_apple_music_storefront',
+                      ),
+                      title: t.music_apple_music_storefront,
+                      subtitle: t.music_apple_music_storefront_hint,
+                      options: <AdaptiveSettingsPickerOption<String>>[
+                        for (final String sf in kAppleMusicStorefrontChoices)
+                          AdaptiveSettingsPickerOption<String>(
+                            value: sf,
+                            label: sf.toUpperCase(),
+                          ),
+                      ],
+                      selected:
+                          kAppleMusicStorefrontChoices.contains(
+                            widget.appModel.prefsRepo.musicAppleMusicStorefront,
+                          )
+                          ? widget.appModel.prefsRepo.musicAppleMusicStorefront
+                          : kAppleMusicStorefrontChoices.first,
+                      onChanged: (String v) =>
+                          unawaited(_setAppleMusicStorefront(v)),
+                    ),
                 ],
               ),
             );

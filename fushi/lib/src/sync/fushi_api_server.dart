@@ -10,6 +10,8 @@ import 'package:shelf/shelf_io.dart' as shelf_io;
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart'
     show VideoSubtitleRegistry;
 import 'package:fushi/src/media/manga/cookie/browser_cookie_import.dart';
+import 'package:fushi/src/media/favorites/web_video_favorite.dart'
+    show ExtensionVideoFavoriteHandler;
 import 'package:fushi/src/media/video/browser_video_study_bridge.dart'
     show BrowserVideoSample;
 import 'package:fushi/src/srs/srs_term_status_bridge.dart'
@@ -62,6 +64,7 @@ const Set<String> _kExtensionSeenPaths = <String>{
   '/api/duplicate',
   '/api/anki/open',
   '/api/extension/favorite',
+  '/api/extension/video-favorite',
   '/api/srs/term-status',
   '/api/srs/term-status-batch',
 };
@@ -162,6 +165,7 @@ class FushiApiServer {
     void Function(double maxWidth, double maxHeight)? onExtensionPopupSize,
     void Function(BrowserVideoSample sample)? onExtensionStudy,
     ExtensionFavoriteHandler? onExtensionFavorite,
+    ExtensionVideoFavoriteHandler? onExtensionVideoFavorite,
     void Function()? onExtensionSeen,
     void Function(String build, String? version)? onExtensionReport,
     Future<VideoSubtitleRegistry?> Function()? subtitleRegistryProvider,
@@ -205,6 +209,7 @@ class FushiApiServer {
              fontApi: fontApi,
              onExtensionPopupSize: onExtensionPopupSize,
              onExtensionStudy: onExtensionStudy,
+             onVideoFavorite: onExtensionVideoFavorite,
            );
 
   final int _requestedPort;

@@ -5,6 +5,7 @@ import 'dart:ui' show FontFeature, PathMetric;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart';
+import 'package:fushi/src/mining/advanced_mining/advanced_mining_audio_source.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_controller.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_mosaic.dart';
@@ -33,10 +34,21 @@ String formatAdvancedMiningTime(int ms) {
 String formatAdvancedMiningDuration(int ms) =>
     '${(ms / 1000).toStringAsFixed(1)} s';
 
-/// 微调按钮文案：`−0.25s` / `+0.25s`（用真正的减号，与「−」字形对齐）。
+/// 微调按钮文案：`−0.25s` / `+0.1s`（用真正的减号，与「−」字形对齐）。
 String formatAdvancedMiningStep(int ms, {required bool forward}) {
-  final String value = (ms / 1000).toStringAsFixed(2);
-  return forward ? '+${value}s' : '−${value}s';
+  final String value = formatAdvancedMiningStepSize(ms);
+  return forward ? '+$value' : '−$value';
+}
+
+/// 步长文案：`0.05s` / `0.1s` / `0.25s` / `1s`（去掉多余的尾零）。
+String formatAdvancedMiningStepSize(int ms) {
+  String value = (ms / 1000).toStringAsFixed(2);
+  if (value.contains('.')) {
+    value = value
+        .replaceFirst(RegExp(r'0+$'), '')
+        .replaceFirst(RegExp(r'\.$'), '');
+  }
+  return '${value}s';
 }
 
 /// 视频图片方式的显示名。
@@ -745,6 +757,7 @@ class AdvancedMiningAudioPanel extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
           if (embedded) ...<Widget>[choices, const SizedBox(height: 10)],
+          AdvancedMiningAudioSourceChips(controller: c),
           FushiAnimatedSize(
             duration: context.fushiMotion.spatialDefault.duration,
             curve: context.fushiMotion.spatialDefault.curve,
@@ -770,7 +783,7 @@ class _AudioDetails extends StatelessWidget {
   Widget build(BuildContext context) {
     final AdvancedMiningController c = controller;
     final AdvancedMiningAudioWindow w = c.audioWindow!;
-    final int step = c.audioSection!.nudgeStepMs;
+    final int step = c.audioNudgeStepMs;
     VoidCallback? nudge(bool start, bool forward) => c.locked
         ? null
         : () => c.nudgeAudioEdge(start: start, deltaMs: forward ? step : -step);
@@ -824,6 +837,31 @@ class _AudioDetails extends StatelessWidget {
           children: <Widget>[
             edge(t.popup_advanced_mining_audio_start, start: true),
             edge(t.popup_advanced_mining_audio_end, start: false),
+          ],
+        ),
+        const SizedBox(height: 8),
+        // 微调步长（反馈 3_VB7kAeHj）：0.05–1 s 五档，宿主记住上次选择。
+        Row(
+          children: <Widget>[
+            _caption(context, t.popup_advanced_mining_audio_step),
+            const SizedBox(width: 8),
+            Expanded(
+              child: adaptiveSegmentedButton<int>(
+                context: context,
+                segments: <ButtonSegment<int>>[
+                  for (final int ms in kAdvancedMiningAudioNudgeStepsMs)
+                    ButtonSegment<int>(
+                      value: ms,
+                      label: Text(formatAdvancedMiningStepSize(ms)),
+                    ),
+                ],
+                selected: <int>{step},
+                onSelectionChanged: (Set<int> v) {
+                  if (c.locked || v.isEmpty) return;
+                  c.setAudioNudgeStep(v.first);
+                },
+              ),
+            ),
           ],
         ),
         const SizedBox(height: 8),
@@ -1354,6 +1392,200 @@ class _AdvancedMiningFrameThumbState extends State<AdvancedMiningFrameThumb> {
               errorBuilder: (BuildContext _, Object _, StackTrace? _) =>
                   const SizedBox.expand(),
             ),
+    );
+  }
+}
+
+// ───────────────────────────── 卡片字段 ─────────────────────────────
+
+/// 卡片字段分区（反馈 -K86qlwBg6）：「选择字段」胶囊行挑出要在这里编辑的字段（记住
+/// 选择），每个显示中的字段一个输入框；留空 = 照字段映射自动生成，填了就只替换这张卡
+/// 的对应字段（[AdvancedMiningController.editedFieldValues]）。
+class AdvancedMiningFieldsPanel extends StatelessWidget {
+  const AdvancedMiningFieldsPanel({
+    super.key,
+    required this.controller,
+    this.embedded = false,
+  });
+
+  final AdvancedMiningController controller;
+  final bool embedded;
+
+  @override
+  Widget build(BuildContext context) {
+    final AdvancedMiningController c = controller;
+    final AdvancedMiningFieldsSection section = c.fieldsSection!;
+    final List<AdvancedMiningField> shown = c.shownFields;
+    return AdvancedMiningSectionShell(
+      title: t.popup_advanced_mining_fields_section,
+      embedded: embedded,
+      trailing: Align(
+        alignment: AlignmentDirectional.centerEnd,
+        child: FushiIconButtonControl(
+          tooltip: t.popup_advanced_mining_fields_choose,
+          size: ButtonSizeVariant.xSmall,
+          isSelected: c.choosingFields,
+          onPressed: c.busy ? null : c.toggleChoosingFields,
+          icon: const FushiIcon(FushiIcons.checklist, size: 18),
+        ),
+      ),
+      // 显示 / 隐藏字段、展开「选择字段」时整块高度跟着补间，新出现的输入框错峰进场。
+      child: FushiAnimatedSize(
+        duration: context.fushiMotion.spatialDefault.duration,
+        curve: context.fushiMotion.spatialDefault.curve,
+        alignment: Alignment.topCenter,
+        child: FushiEntranceScope(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              if (c.choosingFields || shown.isEmpty)
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: <Widget>[
+                    for (final AdvancedMiningField f in section.fields)
+                      AdvancedMiningChoiceChip(
+                        key: ValueKey<String>(
+                          'advanced-mining-field-chip-${f.name}',
+                        ),
+                        label: f.name,
+                        selected: c.visibleFields.contains(f.name),
+                        onSelected: c.busy
+                            ? null
+                            : () => unawaited(c.toggleFieldVisible(f.name)),
+                      ),
+                  ],
+                ),
+              if (shown.isEmpty) ...<Widget>[
+                const SizedBox(height: 8),
+                _caption(context, t.popup_advanced_mining_fields_empty),
+              ] else ...<Widget>[
+                if (c.previewLoading) ...<Widget>[
+                  const SizedBox(height: 8),
+                  const FushiLinearProgressIndicator(),
+                  const SizedBox(height: 4),
+                  _caption(context, t.popup_advanced_mining_fields_loading),
+                ] else if (c.previewFailed) ...<Widget>[
+                  const SizedBox(height: 8),
+                  _caption(
+                    context,
+                    t.popup_advanced_mining_fields_preview_failed,
+                  ),
+                ],
+                for (final (int i, AdvancedMiningField f) in shown.indexed)
+                  FushiStaggeredEntrance(
+                    key: ValueKey<String>('advanced-mining-field-${f.name}'),
+                    index: i,
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: f.generatedAtMining
+                          ? _GeneratedFieldRow(field: f)
+                          : _EditableFieldRow(controller: c, field: f),
+                    ),
+                  ),
+                const SizedBox(height: 6),
+                _caption(context, t.popup_advanced_mining_fields_hint),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 落卡时才生成的字段（媒体 / 出处 / 时间窗）：只读，写明它会在制卡时生成。
+class _GeneratedFieldRow extends StatelessWidget {
+  const _GeneratedFieldRow({required this.field});
+
+  final AdvancedMiningField field;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+    child: Row(
+      children: <Widget>[
+        Flexible(
+          child: Text(
+            field.name,
+            style: context.fushiType.bodyMediumEmphasized,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: _caption(
+            context,
+            '${t.popup_advanced_mining_fields_generated} · ${field.template}',
+            align: TextAlign.end,
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+/// 可编辑字段：**源码视图**——输入框里就是管线渲染出的原文（释义是 HTML 源码），
+/// 提交时原样发出。选源码视图而不是纯文本视图：纯文本视图要把 HTML 拆成文字再拼回
+/// 去，结构（列表 / 词典样式 / 外字图片占位）很难无损往返；源码视图没改就是逐字节
+/// 原样，改了也只动用户动过的那几个字。释义很长时点右侧按钮展开成大编辑框。
+class _EditableFieldRow extends StatelessWidget {
+  const _EditableFieldRow({required this.controller, required this.field});
+
+  final AdvancedMiningController controller;
+  final AdvancedMiningField field;
+
+  @override
+  Widget build(BuildContext context) {
+    final AdvancedMiningController c = controller;
+    final bool expanded = c.expandedFields.contains(field.name);
+    final bool markup = c.prefillOf(field.name).contains('<');
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Expanded(
+          child: FushiTextFieldControl(
+            key: ValueKey<String>('advanced-mining-field-input-${field.name}'),
+            controller: c.fieldController(field.name),
+            enabled: !c.busy,
+            minLines: expanded ? 8 : 1,
+            maxLines: expanded ? 20 : 4,
+            keyboardType: TextInputType.multiline,
+            textInputAction: TextInputAction.newline,
+            style: markup
+                ? context.fushiType.bodySmall.copyWith(
+                    fontFamily: 'monospace',
+                    fontFamilyFallback: const <String>['Consolas', 'Menlo'],
+                  )
+                : context.fushiType.bodyMedium,
+            decoration: InputDecoration(
+              border: const FushiOutlinedFieldBorder(),
+              isDense: true,
+              labelText: field.name,
+              hintText: t.popup_advanced_mining_fields_auto_hint(
+                template: field.template,
+              ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 10,
+                vertical: 8,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 4),
+        FushiIconButtonControl(
+          tooltip: expanded
+              ? t.popup_advanced_mining_fields_collapse
+              : t.popup_advanced_mining_fields_expand,
+          size: ButtonSizeVariant.xSmall,
+          onPressed: () => c.toggleFieldExpanded(field.name),
+          icon: FushiIcon(
+            expanded ? FushiIcons.expandLess : FushiIcons.expandMore,
+            size: 18,
+          ),
+        ),
+      ],
     );
   }
 }

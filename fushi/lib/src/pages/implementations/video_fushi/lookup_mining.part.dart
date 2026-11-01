@@ -679,7 +679,22 @@ extension _VideoLookupMining on _VideoFushiPageState {
       mediaSource = relayed.url;
       mediaSourceRouteReady = relayed.ready;
     }
-    final int? audioStreamIndex = controller.currentAudioStreamIndex;
+    // 反馈 pNF2ZL7Kfc：句子音频来源（设置 / 高级制卡的本次覆盖）→ 这一次 map 哪条轨、
+    // 要不要只取中置声道；取不到所选来源时回退当前播放音轨，落卡时提示（不静默）。
+    final SentenceAudioSourcePick audioSourcePick = _sentenceAudioSourcePickFor(
+      overrides,
+    );
+    final SentenceAudioSourcePlan audioPlan = _planVideoSentenceAudio(
+      controller,
+      pick: audioSourcePick,
+      omitAudio: overrides?.omitAudio ?? false,
+    );
+    SentenceAudioFallbackReason? audioSourceFallback = audioPlan.fallback;
+    // 播放器缓冲副本里只有正在播的那条轨：指定了另一条轨时不能对副本抽。
+    final bool snapshotCarriesAudio = !audioPlan.differsFromPlaying(
+      controller.currentAudioStreamIndex,
+    );
+    final int? audioStreamIndex = audioPlan.audioStreamIndex;
     final int audioStreamCount = controller.realAudioStreamCount;
     final int episode = _currentEpisode;
     final SourceReviewSession? reviewSession = _sourceReviewSession;
@@ -787,7 +802,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
     // 高级制卡对话框打开时已经落过一份覆盖这段的副本（缩略图从它抽）：够用就直接交给
     // 引擎，不再落第二份；交出去之后归引擎删（用完即删），会话关闭时不再碰它。
     final Future<CachedMediaSnapshot?>? dialogSnapshot =
-        needsMedia && audioSource == null
+        needsMedia && audioSource == null && snapshotCarriesAudio
         ? advancedSession?.takeSnapshotCovering(
             clipStartMs: clipStartMs,
             clipEndMs: clipEndMs,
@@ -800,6 +815,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
                 playbackSource != null &&
                 isNetworkStreamUri(playbackSource) &&
                 audioSource == null &&
+                snapshotCarriesAudio &&
                 clipEndMs > clipStartMs
             ? tempDir.then(
                 (String dir) => controller.snapshotCachedRange(
@@ -958,6 +974,8 @@ extension _VideoLookupMining on _VideoFushiPageState {
         documentTitle: documentTitle,
         audioStreamIndex: audioStreamIndex,
         audioStreamCount: audioStreamCount,
+        audioFrontCenter: audioPlan.frontCenter,
+        audioFrontCenterNeedsProbe: audioPlan.frontCenterNeedsProbe,
         // TODO-115：视频来源 → 卡片追加 `video` 分类标签。
         source: AnkiMiningSource.video,
         sourceLinkResolver: resolveSourceLink,
@@ -1007,19 +1025,34 @@ extension _VideoLookupMining on _VideoFushiPageState {
       // 各取首个摘要：同一来源多次回退（GIF→起点帧→当前帧）时，最先的那条最贴近根因。
       onCoverFailure: (String summary) => coverFailure ??= summary,
       onAudioFailure: (String summary) => audioFailure ??= summary,
+      onAudioSourceFallback: (SentenceAudioFallbackReason reason) =>
+          audioSourceFallback ??= reason,
     );
-    MinePopupResult land(ImmersionMiningResult res) => _landVideoMine(
-      res,
-      coverFailure: coverFailure,
-      audioFailure: audioFailure,
-      staged: stageNote != null,
-      overwrite: reviewSession != null || updateNoteId != null,
-      recordStats: reviewSession == null,
-      mineDb: mineDb,
-      statIdentity: statIdentity,
-      silent: silent,
-      onFailure: onFailure,
-    );
+    MinePopupResult land(ImmersionMiningResult res) {
+      final _VideoOsdMessage? osdBeforeLanding = _osdNotifier.value;
+      final MinePopupResult landed = _landVideoMine(
+        res,
+        coverFailure: coverFailure,
+        audioFailure: audioFailure,
+        staged: stageNote != null,
+        overwrite: reviewSession != null || updateNoteId != null,
+        recordStats: reviewSession == null,
+        mineDb: mineDb,
+        statIdentity: statIdentity,
+        silent: silent,
+        onFailure: onFailure,
+        undoRepo: repo,
+        expression: fields['expression'],
+      );
+      _reportSentenceAudioFallback(
+        reason: audioSourceFallback,
+        pick: audioSourcePick,
+        osdBeforeLanding: osdBeforeLanding,
+        silent: silent,
+      );
+      return landed;
+    }
+
     if (onlineMode == VideoOnlineMiningMode.wait) return land(await job);
     // BUG-3492：后台**写入 Anki** 的这张卡（不是暂存、不是回看改卡）在落地前可以被排队
     // 覆盖。登记在途，落地时（成功或失败）结算排队的覆盖请求。
@@ -1106,6 +1139,8 @@ extension _VideoLookupMining on _VideoFushiPageState {
     required ({String bookKey, String title}) statIdentity,
     bool silent = false,
     void Function(String code)? onFailure,
+    BaseAnkiRepository? undoRepo,
+    String? expression,
   }) {
     // BUG-296 / TODO-390：应带句子音频却抽取失败 → 显式 OSD + 中止，不建无音频卡。
     if (res.aborted) {
@@ -1170,7 +1205,12 @@ extension _VideoLookupMining on _VideoFushiPageState {
     // describeMineOutcome 早就算出了 status，此前只被拿去选 prominent 布尔、颜色
     // 整个丢掉，于是视频页制卡成功与失败长得一模一样。透传语义即可对齐其它入口。
     // 经 _showMineOsd 过「制卡提示」开关（关掉成功 / 重复提示后不再弹）。
-    _showMineOsd(described.message, described.status);
+    // 反馈 JNyykxvuY9：新制成功的结果卡带「撤销」（覆写 / 暂存不带：撤销会删掉
+    // 原有的卡 / 卡还没进 Anki）。
+    final MinedCardUndo? undo = overwrite || undoRepo == null
+        ? null
+        : MinedCardUndo.of(undoRepo, outcome, expression: expression);
+    _showMineOsd(described.message, described.status, undo);
     return result;
   }
 

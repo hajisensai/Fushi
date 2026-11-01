@@ -200,16 +200,17 @@ void main() {
           );
         });
 
-        test('Shift 悬停查词接线未断（mousemove→shiftKey→发 lookup）', () {
+        test('悬停查词接线未断（mousemove→触发键→发 lookup）', () {
           // TODO-1132 回归守卫：用户复诉「浏览器按 Shift 没反应」。5657c55d1 把发查词逻辑
           // 从 mousemove 抽成 fushiSendLookup、1219 P1-P3 又在前后加脚本——守住这条主查词
           // 接线不被重构悄悄拆断。行为层实证见 tools/browser-extension/shift-hover.test.js。
           final String src = content.readAsStringSync();
-          // 修饰键必须是 Shift，且 mousemove 顶层注册（不能被塞进只在某站点调用的函数里）。
+          // 触发键可在扩展设置里换（反馈 ulS75hVkAK，storage.scanModifier），缺省必须仍是
+          // Shift；mousemove 顶层注册（不能被塞进只在某站点调用的函数里）。
           expect(
-            src.contains("const FUSHI_MOD = 'shiftKey'"),
+            src.contains("let fushiScanModifier = 'shift';"),
             isTrue,
-            reason: '${content.path} 查词修饰键不再是 Shift',
+            reason: '${content.path} 查词触发键缺省不再是 Shift',
           );
           expect(
             RegExp(
@@ -219,11 +220,11 @@ void main() {
             isTrue,
             reason: '${content.path} mousemove 监听器不在顶层，Shift 悬停可能永不触发',
           );
-          // mousemove 分支必须以 Shift 为门（松开即复位）。
+          // mousemove 分支必须以触发键为门（松开即复位）。
           expect(
-            src.contains('if (!e[FUSHI_MOD])'),
+            src.contains('if (!fushiScanModifierHeld(e, fushiScanModifier))'),
             isTrue,
-            reason: '${content.path} mousemove 未以 Shift 为门',
+            reason: '${content.path} mousemove 未以查词触发键为门',
           );
           // 取词后必须真的发出 lookup 查词消息（接线终点）。消息体除 term 外还可
           // 携带诊断/埋点字段（PR #804 加了 clientSentEpochMs 量 IPC 派发延迟），

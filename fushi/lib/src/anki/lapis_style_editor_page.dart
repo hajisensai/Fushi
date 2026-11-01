@@ -7,6 +7,8 @@ import 'package:fushi/src/utils/components/fushi_dialog_color_picker.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:fushi/src/utils/components/fushi_bottom_action_bar.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/ai/ai_saved_prompt_picker.dart';
+import 'package:fushi/src/ai/ai_saved_prompts.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart';
@@ -334,20 +336,32 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
             maxLines: 3,
           ),
           SizedBox(height: tokens.spacing.gap),
-          Align(
-            alignment: AlignmentDirectional.centerStart,
-            child: FushiFilledButton.icon(
-              key: const ValueKey<String>('lapis-ai-generate'),
-              onPressed: _aiBusy ? null : () => unawaited(_runAi()),
-              icon: _aiBusy
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: FushiCircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const FushiIcon(FushiIcons.ai),
-              label: Text(_aiBusy ? t.ai_assist_working : t.ai_assist_generate),
-            ),
+          Wrap(
+            spacing: tokens.spacing.gap,
+            runSpacing: tokens.spacing.gap / 2,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: <Widget>[
+              FushiFilledButton.icon(
+                key: const ValueKey<String>('lapis-ai-generate'),
+                onPressed: _aiBusy ? null : () => unawaited(_runAi()),
+                icon: _aiBusy
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: FushiCircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const FushiIcon(FushiIcons.ai),
+                label: Text(
+                  _aiBusy ? t.ai_assist_working : t.ai_assist_generate,
+                ),
+              ),
+              AiSavedPromptButton(
+                scene: AiPromptScene.lapisStyle,
+                controller: _aiRequestController,
+                enabled: !_aiBusy,
+                showLabel: true,
+              ),
+            ],
           ),
           if (_aiMessage != null) ...<Widget>[
             SizedBox(height: tokens.spacing.gap),

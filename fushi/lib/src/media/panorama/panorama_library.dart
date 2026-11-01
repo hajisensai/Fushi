@@ -550,48 +550,38 @@ Future<PanoramaLibrary> loadPanoramaLibrary({
               (n) => OrderingTerm.asc(n.createdAt),
             ]))
           .get();
-  // 出处 / 字段只有物化后的笔记才有，而物化是逐条读修改记录再过一次 FFI，全量物化 1.5 万条
-  // 笔记要 10 秒以上。分两步只物化真正要用的：
-  // 1. 带出处修改记录的笔记（制卡时写入，本机实测 1.48 万条里 113 条）——挂作品要它；
-  // 2. 按作品分组均匀抽样后，抽中且 sort_field 是内部编号、要回退读字段的那些。
-  final Set<String> sourced = <String>{
-    for (final TypedResult r
-        in await (srs.db.selectOnly(srs.db.srsFieldEdits, distinct: true)
-              ..addColumns(<Expression<Object>>[srs.db.srsFieldEdits.entityId])
-              ..where(
-                srs.db.srsFieldEdits.profileUid.equals(srs.profileUid) &
-                    srs.db.srsFieldEdits.entityKind.equals(
-                      SrsEntityKind.note.wire,
-                    ) &
-                    srs.db.srsFieldEdits.fieldKey.equals(
-                      SrsFieldKeys.noteSource,
-                    ),
-              ))
-            .get())
-      r.read(srs.db.srsFieldEdits.entityId)!,
+  // 不物化整条笔记：全景只要每条笔记的出处，和抽中笔记里 sort_field 是内部编号的那几条的字段。
+  // 以前对「带出处修改记录的笔记」整批 [SrsDbStore.notes]——假设这种笔记很少（开发机 1.48 万条里
+  // 113 条），但全在 Fushi 里制卡的用户每条都带出处：2 万卡、字段里带整段释义 HTML 的库，每次打开首页
+  // 都把上 GB 的字段原文读进主 isolate 再整批过一次内核，主线程卡在 `ffsrs_materialize` 直到 ANR /
+  // OOM（反馈 lGXA8zC1A2 / i8qNDs_V_D）。现在：
+  // 1. 出处：只读 `source` 这一个键的修改记录（[SrsDbStore.noteFieldKeyValues]），与笔记大小无关；
+  // 2. 按作品分组均匀抽样后，抽中且 sort_field 是内部编号、要回退读字段的那些才物化（有上限）。
+  final Map<String, Object?> sources = await srs.noteFieldKeyValues(<String>[
+    for (final SrsNoteCacheRow r in rows) r.id,
+  ], SrsFieldKeys.noteSource);
+  final Map<String, List<String>> sourceKeys = <String, List<String>>{
+    for (final MapEntry<String, Object?> e in sources.entries)
+      e.key: panoramaSourceKeys(SrsSourceRef.fromJson(e.value)),
   };
-  final Map<String, SrsNoteView?> views = await srs.notes(<String>[
-    for (final SrsNoteCacheRow r in rows)
-      if (sourced.contains(r.id)) r.id,
-  ]);
+  final Map<String, List<String>> fields = <String, List<String>>{};
   PanoramaNoteInput input(SrsNoteCacheRow r) => PanoramaNoteInput(
     sortField: r.sortField,
     tags: _decodeTags(r.tagsJson),
-    fields: views[r.id]?.fields.values.toList() ?? const <String>[],
-    sourceKeys: panoramaSourceKeys(views[r.id]?.source),
+    fields: fields[r.id] ?? const <String>[],
+    sourceKeys: sourceKeys[r.id] ?? const <String>[],
   );
   final List<PanoramaNoteInput> all = <PanoramaNoteInput>[
     for (final SrsNoteCacheRow r in rows) input(r),
   ];
   final List<int> picked = panoramaSampleNoteIndices(works, all);
-  views.addAll(
-    await srs.notes(<String>[
-      for (final int i in picked)
-        if (!views.containsKey(rows[i].id) &&
-            panoramaLooksLikeInternalId(rows[i].sortField))
-          rows[i].id,
-    ]),
-  );
+  for (final MapEntry<String, SrsNoteView?> e in (await srs.notes(<String>[
+    for (final int i in picked)
+      if (panoramaLooksLikeInternalId(rows[i].sortField)) rows[i].id,
+  ])).entries) {
+    final SrsNoteView? v = e.value;
+    if (v != null) fields[e.key] = v.fields.values.toList();
+  }
   final List<PanoramaNoteInput> notes = <PanoramaNoteInput>[
     for (final int i in picked) input(rows[i]),
   ];

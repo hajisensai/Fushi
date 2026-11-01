@@ -830,8 +830,9 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
           ),
         ),
         // 顶部渐隐遮罩 + 工具区：同一弹簧驱动。遮罩只盖「此刻看得见的工具区」
-        // 再往下渐隐一段，收起后只剩顶边一条柔和淡出——不再有整块实色底带把
-        // 内容齐刷刷切掉。胶囊自己有表面色与投影，不靠底色遮挡内容。
+        // 再往下渐隐一段；工具区完全收起时遮罩也随弹簧整体淡出、不留任何底色
+        // 带（反馈 03cff3908u / Sb7jHbNO43，见下方 Positioned 处的说明）。胶囊
+        // 自己有表面色与投影，不靠底色遮挡内容。
         AnimatedBuilder(
           animation: Listenable.merge(<Listenable>[
             spring.animation,
@@ -891,7 +892,14 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
                   // 嵌套层本身为空（库页当前组不画二级页签）时也不画：外层已经
                   // 在自己下沿收尾渐隐，这里再从 0.72 起画一段会与之叠成一道
                   // 更浓的白边（2026-10-30 用户截图「白雾」）。
-                  child: nested && (shown <= 0.001 || _chromeHeight <= 0)
+                  //
+                  // 最外层同理：遮罩只为「看得见的工具区」垫底，整段不透明度乘同一
+                  // 弹簧的显隐。曾经收起后仍从视口顶边画一段页面底色（让位区
+                  // `outer` 实色 + [kFushiTopFadeExtent] 渐隐）——让位区里此时已
+                  // 没有任何可见工具（MD3 库页的外壳标题条是收起态），这条纯色带
+                  // 只会盖住页面背景装饰，成了「下滑后顶部一条白边」（2026-11
+                  // 用户截图，反馈 03cff3908u / Sb7jHbNO43）。
+                  child: shown <= 0.001 || (nested && _chromeHeight <= 0)
                       ? const SizedBox.shrink()
                       : AnimatedOpacity(
                           opacity: controller.contentUnderTop ? 1 : 0,
@@ -899,22 +907,25 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
                             context,
                             FushiMotion.short,
                           ),
-                          child: FushiTopFadeScrim(
-                            solidHeight: scrimSeam - scrimTop,
-                            fadeExtent: continuesBelow
-                                ? 0
-                                : kFushiTopFadeExtent,
-                            // 整摞要实底（见 [FushiFloatingChromeOverlay
-                            // .opaqueChrome]）时每层都是页面底色实底，只在最下沿
-                            // 渐隐；否则沿用顶端实色 → 薄纱。
-                            topOpacity: opaque
-                                ? 1
-                                : nested
-                                ? kFushiTopScrimOverlayOpacity
-                                : 1,
-                            shoulderOpacity: opaque
-                                ? 1
-                                : kFushiTopScrimOverlayOpacity,
+                          child: Opacity(
+                            opacity: nested ? 1 : shown,
+                            child: FushiTopFadeScrim(
+                              solidHeight: scrimSeam - scrimTop,
+                              fadeExtent: continuesBelow
+                                  ? 0
+                                  : kFushiTopFadeExtent,
+                              // 整摞要实底（见 [FushiFloatingChromeOverlay
+                              // .opaqueChrome]）时每层都是页面底色实底，只在最下沿
+                              // 渐隐；否则沿用顶端实色 → 薄纱。
+                              topOpacity: opaque
+                                  ? 1
+                                  : nested
+                                  ? kFushiTopScrimOverlayOpacity
+                                  : 1,
+                              shoulderOpacity: opaque
+                                  ? 1
+                                  : kFushiTopScrimOverlayOpacity,
+                            ),
                           ),
                         ),
                 ),
@@ -1508,6 +1519,26 @@ class FushiShellInlineTitle extends InheritedWidget {
   @override
   bool updateShouldNotify(FushiShellInlineTitle oldWidget) =>
       enabled != oldWidget.enabled;
+}
+
+/// 库页壳一级只剩一组、不画分区页签时，页签位置改放的标题胶囊（iOS 合规门下
+/// 书 / 漫画 / 视频库只剩「书架 / 媒体库」，左上角原本整块空着，2026-10-31）。
+/// 宽窗外壳已经把页面名画进本行（[FushiShellInlineTitle]）时不再重复。
+class FushiFloatingChromeSoloTitle extends StatelessWidget {
+  const FushiFloatingChromeSoloTitle({required this.title, super.key});
+
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    if (title.isEmpty || FushiShellInlineTitle.of(context)) {
+      return const SizedBox.shrink();
+    }
+    return Align(
+      alignment: AlignmentDirectional.centerStart,
+      child: FushiPageChromeTitle(title: Text(title)),
+    );
+  }
 }
 
 class FushiFloatingChromeBar extends StatefulWidget {

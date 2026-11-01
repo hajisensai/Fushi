@@ -64,6 +64,56 @@ inline constexpr Signature kLeftButtonConsumer{
     "83 3A 01 8A 85 F9 FE FF FF 88 85 F6 FE FF FF 75 0E 84 C0 78 0A 83 EC 08 8B CA E8 ?? ?? ?? ??"};
 inline constexpr Signature kInputReturn{"8B E5 5D C2 0C 00"};
 
+// Plain-frame code generation of the same contracts (measured on Rewrite+,
+// SiglusEngine 1.1.101.0). The scenario entry keeps the this/arg0 roles, the
+// std::wstring size/capacity fields and the 0x3b4 glyph-vector stride; only the
+// frame size and the instruction order differ. The input entry has no aligned
+// frame, the C_tnm_wnd message procedure forwards (message, wparam, lparam) in
+// different registers, and the key sampler holds the pointer in EBX with the
+// index in EDI. The left-button consumer reads the same sampled byte (key 1).
+inline constexpr Signature kPlainScenarioEntryTail{
+    "68 ?? ?? ?? ?? 64 A1 00 00 00 00 50 81 EC CC 04 00 00 A1 ?? ?? ?? ?? 33 C5 89 45 F0 53 56 57 50 8D 45 F4 64 A3 00 00 00 00 8B D9 8B 7D 08 83 7F 10 00 8B 45 0C 89 85 38 FB FF FF 8D 47 10 89 BD 54 FB FF FF 89 85 40 FB FF FF 0F 84 ?? ?? ?? ?? 8B 8B B0 01 00 00 B8 71 F8 42 8A 2B 8B AC 01 00 00"};
+// The one-byte NOP is the compiler's loop alignment before the size reload.
+inline constexpr Signature kPlainScenarioStringAbi{
+    "83 7F 14 08 72 04 8B 37 EB 02 8B F7 89 B5 50 FB FF FF 90 8B 57 14 83 FA 08 72 04 8B 07 EB 02 8B C7"};
+inline constexpr Signature kPlainMainInputCall{
+    "51 53 56 8B 75 08 8B D9 57 FF 75 10 8B 7D 0C 57 56 E8 ?? ?? ?? ?? 81 FE 04 01 00 00"};
+inline constexpr size_t kPlainMainInputCallOffset = 17u;
+inline constexpr Signature kPlainKeyboardLoop{
+    "8B 1D ?? ?? ?? ?? 33 FF 8D 64 24 00 57 FF D3 C1 E8 08 24 80 88 84 3D F8 FE FF FF 47 81 FF 00 01 00 00 7C E8"};
+inline constexpr Signature kPlainLeftButtonConsumer{
+    "83 BE ?? ?? 00 00 01 8A 85 F9 FE FF FF 88 85 F7 FE FF FF 75 ?? 84 C0 78 ??"};
+
+// One complete code-generation shape of the scenario/input contracts. Both
+// shapes share every other anchor (glyph entry, dialogue caller, coordinates).
+struct ScenarioInputCodegen {
+  exact_lookup::MaskedPattern scenario_tail;
+  exact_lookup::MaskedPattern scenario_string_abi;
+  const exact_lookup::MaskedPattern* input_entry;
+  exact_lookup::MaskedPattern main_call;
+  size_t main_call_offset;
+  exact_lookup::MaskedPattern keyboard;
+  exact_lookup::MaskedPattern consumer;
+  size_t consumer_window;
+  SiglusInputEntryAbi input_abi;
+};
+
+inline ScenarioInputCodegen AlignedFrameCodegen() {
+  return {kScenarioEntryTail.pattern(), kScenarioStringAbi.pattern(),
+          &siglus_exact::kSprbInputMessageEntryPattern,
+          kMainInputCall.pattern(), kMainInputCallOffset,
+          kKeyboardLoop.pattern(), kLeftButtonConsumer.pattern(), 0x100u,
+          SiglusInputEntryAbi::kAlignedFrame};
+}
+
+inline ScenarioInputCodegen PlainFrameCodegen() {
+  return {kPlainScenarioEntryTail.pattern(), kPlainScenarioStringAbi.pattern(),
+          &siglus_exact::kPlainFrameInputMessageEntryPattern,
+          kPlainMainInputCall.pattern(), kPlainMainInputCallOffset,
+          kPlainKeyboardLoop.pattern(), kPlainLeftButtonConsumer.pattern(),
+          0x200u, SiglusInputEntryAbi::kPlainFrame};
+}
+
 // self+4 and self+8 are submitted alongside the glyph kind to the font cache.
 inline constexpr Signature kGlyphFontArguments{
     "8D 45 D0 FF 76 08 FF 76 04 FF 36 50 E8 ?? ?? ?? ?? C7 45 FC 00 00 00 00"};
@@ -138,33 +188,25 @@ inline bool OriginalOrExternalDetour(const exact_lookup::LoadedPeImage& image,
 
 }  // namespace fushi_voice_hook::siglus_family
 
-namespace fushi_voice_hook {
+namespace fushi_voice_hook::siglus_family {
 
-// get_key_state_iat_rva must be resolved by import name (user32/GetKeyState)
-// by the caller. Returning true admits this ABI only; runtime dimensions and
-// glyph observations still have to pass before a provider can become ready.
-inline bool ResolveSiglusFamilyProfile(
-    const exact_lookup::LoadedPeImage& image, uintptr_t get_key_state_iat_rva,
-    SiglusLookupProfile* out) {
-  using namespace siglus_family;
-  if (out == nullptr) return false;
+// named_key_iat_rva != 0: the sampler slot must be that named USER32 import.
+// named_key_iat_rva == 0: the image names no GetKeyState import (a protector
+// rebuilt them). The slot is then reported in get_key_state_slot_rva and the
+// caller must prove its live target before installing anything.
+inline bool ResolveScenarioInputCodegen(
+    const exact_lookup::LoadedPeImage& image, const ScenarioInputCodegen& shape,
+    uintptr_t named_key_iat_rva, SiglusLookupProfile* out) {
   *out = {};
-  if (image.base == nullptr || image.machine != IMAGE_FILE_MACHINE_I386 ||
-      image.pointer_bits != 32u || get_key_state_iat_rva == 0u ||
-      !exact_lookup::SectionHasRole(exact_lookup::FindSectionForRva(
-                                       image, get_key_state_iat_rva, 4u),
-                                   IMAGE_SCN_MEM_READ, IMAGE_SCN_MEM_EXECUTE)) {
-    return false;
-  }
   uintptr_t glyph = 0u, dialogue = 0u, scenario_tail = 0u, input = 0u;
   uintptr_t main_call = 0u, keyboard = 0u, coordinates = 0u, writer = 0u;
   if (!Unique(image, siglus_exact::kGlyphLayoutEntryPattern, &glyph) ||
       !siglus_exact::IsMeasuredGlyphStackSize(image.base + glyph) ||
       !Unique(image, kDialogueCall.pattern(), &dialogue) ||
-      !Unique(image, kScenarioEntryTail.pattern(), &scenario_tail) ||
-      !Unique(image, siglus_exact::kSprbInputMessageEntryPattern, &input) ||
-      !Unique(image, kMainInputCall.pattern(), &main_call) ||
-      !Unique(image, kKeyboardLoop.pattern(), &keyboard) ||
+      !Unique(image, shape.scenario_tail, &scenario_tail) ||
+      !Unique(image, *shape.input_entry, &input) ||
+      !Unique(image, shape.main_call, &main_call) ||
+      !Unique(image, shape.keyboard, &keyboard) ||
       !Unique(image, kGlyphCoordinates.pattern(), &coordinates) ||
       !Unique(image, kCoordinateWriter.pattern(), &writer) ||
       scenario_tail < 5u) {
@@ -185,27 +227,36 @@ inline bool ResolveSiglusFamilyProfile(
       coordinates + kGlyphCoordinates.bytes.size() > glyph_end ||
       !UniqueWithin(image, scenario, scenario_limit, kScenarioReturn.pattern(),
                     &scenario_end) ||
-      !UniqueWithin(image, scenario, scenario_end, kScenarioStringAbi.pattern(),
+      !UniqueWithin(image, scenario, scenario_end, shape.scenario_string_abi,
                     &ignored) ||
       !OriginalOrExternalDetour(image, scenario) ||
       !UniqueWithin(image, input, BoundedFunctionEnd(image, input, 0x50u),
                     kInputReturn.pattern(), &ignored) ||
       !UniqueWithin(image, keyboard,
-                    BoundedFunctionEnd(image, keyboard, 0x100u),
-                    kLeftButtonConsumer.pattern(), &ignored)) {
+                    BoundedFunctionEnd(image, keyboard, shape.consumer_window),
+                    shape.consumer, &ignored)) {
     return false;
   }
-  uintptr_t observed_iat = 0u, observed_iat_rva = 0u;
+  uintptr_t observed_slot = 0u, observed_slot_rva = 0u;
   if (!exact_lookup::DecodeAbsolute32ImageAddress(
-          image, image.base + keyboard + 2u, &observed_iat,
-          &observed_iat_rva) ||
-      observed_iat_rva != get_key_state_iat_rva ||
+          image, image.base + keyboard + 2u, &observed_slot,
+          &observed_slot_rva) ||
+      (observed_slot_rva & 3u) != 0u ||
       !exact_lookup::MatchesRel32CallEndingAt(
           image, dialogue + kDialogueCallOffset + 5u, glyph) ||
       !exact_lookup::MatchesRel32CallEndingAt(
-          image, main_call + kMainInputCallOffset + 5u, input) ||
+          image, main_call + shape.main_call_offset + 5u, input) ||
       !exact_lookup::MatchesRel32CallEndingAt(
           image, coordinates + kCoordinateCallOffset + 5u, writer)) {
+    return false;
+  }
+  if (named_key_iat_rva != 0u) {
+    if (observed_slot_rva != named_key_iat_rva) return false;
+  } else if (!exact_lookup::SectionHasRole(
+                 exact_lookup::FindSectionForRva(image, observed_slot_rva, 4u),
+                 IMAGE_SCN_MEM_READ)) {
+    // A rebuilt import table may live in a merged executable section; the
+    // live target proof, not the section role, identifies the API.
     return false;
   }
   out->pe_machine = IMAGE_FILE_MACHINE_I386;
@@ -216,7 +267,10 @@ inline bool ResolveSiglusFamilyProfile(
   out->exact_text_rva = scenario;
   out->get_key_state_return_rva = keyboard + 15u;
   out->input_message_rva = input;
-  out->main_input_message_return_rva = main_call + kMainInputCallOffset + 5u;
+  out->main_input_message_return_rva =
+      main_call + shape.main_call_offset + 5u;
+  out->input_entry_abi = shape.input_abi;
+  out->get_key_state_slot_rva = named_key_iat_rva == 0u ? observed_slot_rva : 0u;
   uintptr_t selection = 0u;
   if (Unique(image, kSelectionCall.pattern(), &selection) &&
       exact_lookup::MatchesRel32CallEndingAt(
@@ -225,6 +279,58 @@ inline bool ResolveSiglusFamilyProfile(
   }
   // No executable digest or guessed viewport becomes part of admission.
   return true;
+}
+
+// Both code generations are tried; exactly one complete shape must match.
+inline bool ResolveScenarioInputFamily(const exact_lookup::LoadedPeImage& image,
+                                       uintptr_t named_key_iat_rva,
+                                       SiglusLookupProfile* out) {
+  if (out == nullptr) return false;
+  *out = {};
+  if (image.base == nullptr || image.machine != IMAGE_FILE_MACHINE_I386 ||
+      image.pointer_bits != 32u) {
+    return false;
+  }
+  SiglusLookupProfile aligned, plain;
+  const bool aligned_matched = ResolveScenarioInputCodegen(
+      image, AlignedFrameCodegen(), named_key_iat_rva, &aligned);
+  const bool plain_matched = ResolveScenarioInputCodegen(
+      image, PlainFrameCodegen(), named_key_iat_rva, &plain);
+  if (aligned_matched == plain_matched) return false;
+  *out = aligned_matched ? aligned : plain;
+  return true;
+}
+
+}  // namespace fushi_voice_hook::siglus_family
+
+namespace fushi_voice_hook {
+
+// get_key_state_iat_rva must be resolved by import name (user32/GetKeyState)
+// by the caller. Returning true admits this ABI only; runtime dimensions and
+// glyph observations still have to pass before a provider can become ready.
+inline bool ResolveSiglusFamilyProfile(
+    const exact_lookup::LoadedPeImage& image, uintptr_t get_key_state_iat_rva,
+    SiglusLookupProfile* out) {
+  if (out == nullptr) return false;
+  *out = {};
+  if (image.base == nullptr || image.machine != IMAGE_FILE_MACHINE_I386 ||
+      image.pointer_bits != 32u || get_key_state_iat_rva == 0u ||
+      !exact_lookup::SectionHasRole(exact_lookup::FindSectionForRva(
+                                       image, get_key_state_iat_rva, 4u),
+                                   IMAGE_SCN_MEM_READ, IMAGE_SCN_MEM_EXECUTE)) {
+    return false;
+  }
+  return siglus_family::ResolveScenarioInputFamily(image, get_key_state_iat_rva,
+                                                   out);
+}
+
+// For an image whose imports name no GetKeyState (protector-rebuilt). The
+// returned profile carries get_key_state_slot_rva; it is not admissible until
+// the caller proves the slot's live target (see VerifyProtectorKeyStateSlot).
+inline bool ResolveSiglusFamilyProfileWithUnnamedKeySlot(
+    const exact_lookup::LoadedPeImage& image, SiglusLookupProfile* out) {
+  return siglus_family::ResolveScenarioInputFamily(image, 0u, out) &&
+         out->get_key_state_slot_rva != 0u;
 }
 
 }  // namespace fushi_voice_hook

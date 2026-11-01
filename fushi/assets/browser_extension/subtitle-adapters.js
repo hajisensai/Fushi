@@ -507,8 +507,47 @@ function fushiResolveActiveSubtitleTrack(tracks, activeLang, liveLang) {
   return active;
 }
 
+/**
+ * 外挂字幕持久化的 LRU 账本（反馈 HlBC5BcpED：搜索 / 拖入的外挂字幕只活在页面内存
+ * window.fushiEpisodeCues 里，刷新即丢）。账本是 chrome.storage.local 里的一个数组，
+ * 从旧到新排；正文按 entry.id 单独存键。chrome.storage.local 默认只有 10 MB 且与其它
+ * 偏好共用，所以条数、总字节、单条字节都封顶，超了从最旧的淘汰（新存的那条绝不淘汰）。
+ * @param {*} index 账本旧值（任意脏数据都按空处理）
+ * @param {{id:string,video:string,label:string,bytes:number,at:number,offsetMs:number}} entry
+ * @param {{maxEntries:number,maxBytes:number,maxEntryBytes:number}} limits
+ * @returns {{index:Array<Object>, evicted:string[], stored:boolean}}
+ *   evicted = 要从 storage 删掉正文的 id；stored=false 表示这条太大不存（同 id 旧档也一并删）。
+ */
+function fushiPlanExternalSubtitleSave(index, entry, limits) {
+  const clean = [];
+  const evicted = [];
+  const list = Array.isArray(index) ? index : [];
+  for (let i = 0; i < list.length; i++) {
+    const e = list[i];
+    if (!e || typeof e.id !== 'string' || typeof e.video !== 'string' ||
+        typeof e.label !== 'string' || !(e.bytes >= 0)) continue;
+    if (e.id === entry.id) { evicted.push(e.id); continue; }
+    clean.push(e);
+  }
+  if (!(entry.bytes <= limits.maxEntryBytes)) {
+    return { index: clean, evicted: evicted, stored: false };
+  }
+  // 同 id 是覆盖重存，不是淘汰：正文键会被新值直接改写，不能再删。
+  evicted.length = 0;
+  clean.push(entry);
+  let total = 0;
+  for (let i = 0; i < clean.length; i++) total += clean[i].bytes;
+  while (clean.length > 1 && (clean.length > limits.maxEntries || total > limits.maxBytes)) {
+    const old = clean.shift();
+    total -= old.bytes;
+    evicted.push(old.id);
+  }
+  return { index: clean, evicted: evicted, stored: true };
+}
+
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
+    fushiPlanExternalSubtitleSave,
     fushiListSubtitleTracks,
     fushiResolveActiveSubtitleTrack,
     extractNetflixCueText,

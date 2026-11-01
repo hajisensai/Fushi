@@ -40,6 +40,108 @@ class _Fake implements AnidbUdpTransport {
   }
 }
 
+/// Fixture-side sender: `send` returning 0 is would-block (routine on Windows),
+/// so wait for [RawSocketEvent.write] and resend, keeping datagram order.
+class _FixtureSender {
+  _FixtureSender(this.socket);
+  final RawDatagramSocket socket;
+  Completer<void>? _writable;
+  Future<void> _tail = Future<void>.value();
+
+  /// Returns true when [event] was a write event consumed by this sender.
+  bool onEvent(RawSocketEvent event) {
+    if (event != RawSocketEvent.write) return false;
+    final Completer<void>? writable = _writable;
+    _writable = null;
+    writable?.complete();
+    return true;
+  }
+
+  void send(List<int> bytes, InternetAddress address, int port) {
+    _tail = _tail.then((_) async {
+      while (true) {
+        final int sent = socket.send(bytes, address, port);
+        if (sent != 0) {
+          expect(sent, bytes.length, reason: 'UDP send is all-or-nothing');
+          return;
+        }
+        final Completer<void> writable = _writable ??= Completer<void>();
+        socket.writeEventsEnabled = true;
+        await writable.future;
+      }
+    });
+  }
+
+  Future<void> get flushed => _tail;
+}
+
+/// Delegates to a real loopback socket but reports would-block (0) for the
+/// first [blockedSends] sends, like Windows does when the send buffer is full.
+class _WouldBlockSocket extends Stream<RawSocketEvent>
+    implements RawDatagramSocket {
+  _WouldBlockSocket(this.inner, {required this.blockedSends});
+  final RawDatagramSocket inner;
+  int blockedSends;
+  int sendCalls = 0;
+  int writeEventsSinceBlock = 0;
+  final List<int> writeEventsBeforeEachSend = [];
+
+  @override
+  StreamSubscription<RawSocketEvent> listen(
+    void Function(RawSocketEvent event)? onData, {
+    Function? onError,
+    void Function()? onDone,
+    bool? cancelOnError,
+  }) => inner.listen(
+    (RawSocketEvent event) {
+      if (event == RawSocketEvent.write) writeEventsSinceBlock++;
+      onData?.call(event);
+    },
+    onError: onError,
+    onDone: onDone,
+    cancelOnError: cancelOnError,
+  );
+
+  @override
+  int send(List<int> buffer, InternetAddress address, int port) {
+    sendCalls++;
+    writeEventsBeforeEachSend.add(writeEventsSinceBlock);
+    if (blockedSends > 0) {
+      blockedSends--;
+      writeEventsSinceBlock = 0;
+      return 0;
+    }
+    return inner.send(buffer, address, port);
+  }
+
+  @override
+  Datagram? receive() => inner.receive();
+
+  @override
+  bool get writeEventsEnabled => inner.writeEventsEnabled;
+
+  @override
+  set writeEventsEnabled(bool value) => inner.writeEventsEnabled = value;
+
+  @override
+  bool get readEventsEnabled => inner.readEventsEnabled;
+
+  @override
+  set readEventsEnabled(bool value) => inner.readEventsEnabled = value;
+
+  @override
+  int get port => inner.port;
+
+  @override
+  InternetAddress get address => inner.address;
+
+  @override
+  void close() => inner.close();
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
 String _normal(String packet, String tag) {
   if (packet.startsWith('AUTH ')) return '$tag 200 Ab12 LOGIN ACCEPTED';
   if (packet.startsWith('LOGOUT ')) return '$tag 203 LOGGED OUT';
@@ -403,9 +505,11 @@ void main() {
       final List<int> ports = [];
       final Completer<void> logoutSeen = Completer<void>();
       final Completer<void> unansweredFileSeen = Completer<void>();
+      final _FixtureSender sender = _FixtureSender(server);
       final StreamSubscription<RawSocketEvent> subscription = server.listen((
         event,
       ) {
+        if (sender.onEvent(event)) return;
         if (event != RawSocketEvent.read) return;
         while (true) {
           final Datagram? datagram = server.receive();
@@ -422,17 +526,16 @@ void main() {
             continue;
           }
           final String tag = RegExp(r'&tag=(\w+)$').firstMatch(packet)![1]!;
-          final List<int> stale = utf8.encode('stale 200 Zzzz LOGIN ACCEPTED');
-          expect(
-            server.send(stale, datagram.address, datagram.port),
-            stale.length,
-            reason: 'fixture must send the stale datagram',
+          // Stale first, then the current reply: the sender keeps the order.
+          sender.send(
+            utf8.encode('stale 200 Zzzz LOGIN ACCEPTED'),
+            datagram.address,
+            datagram.port,
           );
-          final List<int> reply = utf8.encode(_normal(packet, tag));
-          expect(
-            server.send(reply, datagram.address, datagram.port),
-            reply.length,
-            reason: 'fixture must send the current $tag response',
+          sender.send(
+            utf8.encode(_normal(packet, tag)),
+            datagram.address,
+            datagram.port,
           );
         }
       });
@@ -488,6 +591,7 @@ void main() {
         ]);
         expect(ports.toSet(), {localPort});
         expect(packets.first, contains('日本語'));
+        await sender.flushed;
       } finally {
         await client.close();
         await replacement.close();
@@ -496,6 +600,75 @@ void main() {
       }
     },
   );
+
+  test('send returning 0 (would-block) waits for writability, then resends '
+      'and receives the reply', () async {
+    final RawDatagramSocket server = await RawDatagramSocket.bind(
+      InternetAddress.loopbackIPv4,
+      0,
+    );
+    final _FixtureSender sender = _FixtureSender(server);
+    final List<String> received = [];
+    final Completer<void> logoutSeen = Completer<void>();
+    final StreamSubscription<RawSocketEvent> subscription = server.listen((
+      event,
+    ) {
+      if (sender.onEvent(event)) return;
+      if (event != RawSocketEvent.read) return;
+      while (true) {
+        final Datagram? datagram = server.receive();
+        if (datagram == null) break;
+        final String packet = utf8.decode(datagram.data);
+        received.add(packet);
+        if (packet.startsWith('LOGOUT ') && !logoutSeen.isCompleted) {
+          logoutSeen.complete();
+        }
+        final String tag = RegExp(r'&tag=(\w+)$').firstMatch(packet)![1]!;
+        sender.send(
+          utf8.encode(_normal(packet, tag)),
+          datagram.address,
+          datagram.port,
+        );
+      }
+    });
+    final _WouldBlockSocket socket = _WouldBlockSocket(
+      await RawDatagramSocket.bind(InternetAddress.loopbackIPv4, 0),
+      blockedSends: 2,
+    );
+    final AnidbUdpTransport transport = AnidbDatagramTransport.forSocket(
+      socket,
+      InternetAddress.loopbackIPv4,
+      server.port,
+    );
+    try {
+      final String reply = await transport.exchange(
+        'AUTH user=u&tag=t1',
+        't1',
+        const Duration(seconds: 5),
+      );
+      expect(reply, 't1 200 Ab12 LOGIN ACCEPTED');
+      expect(received, ['AUTH user=u&tag=t1']);
+      expect(socket.sendCalls, 3, reason: 'two would-block sends, one real');
+      // Every resend followed a write event, never a blind retry.
+      expect(
+        socket.writeEventsBeforeEachSend.skip(1),
+        everyElement(greaterThanOrEqualTo(1)),
+      );
+
+      // Fire-and-forget sends (LOGOUT) take the same would-block path.
+      socket.blockedSends = 1;
+      await transport.send('LOGOUT s=Ab12&tag=t2');
+      expect(socket.sendCalls, 5);
+      expect(socket.writeEventsBeforeEachSend.last, greaterThanOrEqualTo(1));
+      await logoutSeen.future.timeout(const Duration(seconds: 5));
+      expect(received.last, 'LOGOUT s=Ab12&tag=t2');
+      await sender.flushed;
+    } finally {
+      await transport.close();
+      server.close();
+      await subscription.cancel();
+    }
+  });
 
   group('shared rate gate: timeout is not a ban (BUG-2592, Shoko parity)', () {
     int nowMs = 0;

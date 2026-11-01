@@ -55,6 +55,8 @@ SettingsDestination buildOcrSettingsPage(SettingsDestinationId owner) {
       enginePreferenceSetter: c.appModel.setMangaOcrEnginePreference,
       parallelTasksGetter: () => c.appModel.mangaOcrParallelTasks,
       parallelTasksSetter: c.appModel.setMangaOcrParallelTasks,
+      ignoreFuriganaGetter: () => c.appModel.mangaOcrIgnoreFurigana,
+      ignoreFuriganaSetter: c.appModel.setMangaOcrIgnoreFurigana,
       localModelGetter: () => c.appModel.mangaOcrLocalModel,
       localModelSetter: c.appModel.setMangaOcrLocalModel,
       lensLanguageGetter: () => c.appModel.mangaOcrLensLanguage,

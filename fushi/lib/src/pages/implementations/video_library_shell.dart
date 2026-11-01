@@ -57,6 +57,7 @@ class VideoLibraryShell extends StatefulWidget {
     required this.onLibraryChanged,
     this.loadPendingScrapeWorks,
     this.refreshPendingScrapeWorks,
+    this.pendingScrapeChangedSignal,
     this.localLibraryPageBuilder,
     this.mediaServerServersLoader,
     this.mediaServerPageBuilder,
@@ -87,6 +88,9 @@ class VideoLibraryShell extends StatefulWidget {
   /// 刮削结果变化后只读重算待确认清单（见 [HomeVideoPage]，BUG-3072）。
   final Future<List<VideoPendingScrapeWork>> Function()?
   refreshPendingScrapeWorks;
+
+  /// 待确认清单在刮削之外变了（忽略 / 撤销忽略，见 [HomeVideoPage]）。
+  final Listenable? pendingScrapeChangedSignal;
 
   /// 允许宿主测试替换本地库叶子；生产环境保持 null，使用 [HomeVideoPage]。
   final Widget Function(
@@ -342,10 +346,12 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
             for (final LibrarySectionTab<VideoLibrarySection> tab in tabs)
               if (_groupOf(tab.value) == currentGroup) tab,
           ];
-    // 一级只剩一组（iOS 合规门下没有在线分区）时不画胶囊；停在导入页时高亮
-    // 「媒体库」组（导入管理的就是本地库）。
+    // 一级只剩一组（iOS 合规门下没有在线分区）时不画胶囊、改放该组名的标题
+    // 胶囊（媒体库）；停在导入页时高亮「媒体库」组（导入管理的就是本地库）。
     final Widget navigation = groupTabs.length < 2
-        ? const SizedBox.shrink()
+        ? FushiFloatingChromeSoloTitle(
+            title: groupTabs.isEmpty ? '' : groupTabs.single.label,
+          )
         : LibrarySectionTabs<VideoLibrarySection>(
             tabs: groupTabs,
             selected: currentGroup == null ? groupTabs.first.value : _section,
@@ -493,6 +499,8 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
                       loadPendingScrapeWorks: widget.loadPendingScrapeWorks,
                       refreshPendingScrapeWorks:
                           widget.refreshPendingScrapeWorks,
+                      pendingScrapeChangedSignal:
+                          widget.pendingScrapeChangedSignal,
                       onOpenSources: () => _select(VideoLibrarySection.sources),
                     ),
               ),

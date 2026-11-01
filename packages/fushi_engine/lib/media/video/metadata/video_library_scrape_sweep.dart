@@ -30,6 +30,7 @@ import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/media/video/download/download_confirmed_identity.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
+import 'package:fushi_engine/media/video/metadata/video_scrape_ignored_works.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_pending_note.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_sweep_ledger.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
@@ -314,9 +315,22 @@ class VideoLibraryScrapeSweep {
   List<VideoPendingScrapeWork> _lastPending = const <VideoPendingScrapeWork>[];
 
   /// 当前所有本地视频来源里「从未刮出规范身份」的作品——待确认队列的数据源。
-  /// 只读：不发起补刮。
+  /// 只读：不发起补刮。用户忽略过的作品不在内（见 [ignoredWorks]）。
   Future<List<VideoPendingScrapeWork>> pendingWorks() async =>
       _lastPending = (await _plannedWorks()).pending;
+
+  /// 没有规范身份、但用户在待确认队列里选了「忽略」的作品（反馈 Fbchzxuq6f），
+  /// 带挂起原因。它们不计入提醒条、不进自动补刮，只在待确认队列的「已忽略」里
+  /// 列出、供撤销。
+  Future<List<VideoPendingScrapeWork>> ignoredWorks() async =>
+      _withPendingNotes((await _plannedWorks()).ignored);
+
+  /// 忽略（[ignored] = true）或撤销忽略这些作品（按 stableKey）。忽略永久生效，
+  /// 直到撤销；撤销后作品回到待确认清单，自动补刮照常按退避记账认领它。
+  Future<void> setWorksIgnored(
+    Iterable<String> stableKeys, {
+    required bool ignored,
+  }) => setVideoScrapeWorksIgnored(_database, stableKeys, ignored: ignored);
 
   /// 刮削结果落库 / 批次结束后刷新待确认清单（提醒条计数）。
   ///
@@ -376,7 +390,11 @@ class VideoLibraryScrapeSweep {
   /// 一次计划两用：待确认清单 + 哈希待补文件所在的已识别作品。
   Future<_PlannedWorks> _plannedWorks() async {
     final List<VideoPendingScrapeWork> pending = <VideoPendingScrapeWork>[];
+    final List<VideoPendingScrapeWork> ignored = <VideoPendingScrapeWork>[];
     final List<VideoPendingScrapeWork> identified = <VideoPendingScrapeWork>[];
+    final Set<String> ignoredKeys = await loadIgnoredVideoScrapeWorks(
+      _database,
+    );
     for (final SourceLibraryRow source in await _localVideoSources()) {
       final VideoSourceScrapeSettingRow? settings = await _database
           .getVideoSourceScrapeSettings(source.id);
@@ -385,12 +403,26 @@ class VideoLibraryScrapeSweep {
         _database,
       ).plan(source);
       for (final VideoSourceScrapeWork work in works) {
-        (await _hasCanonicalIdentity(work) ? identified : pending).add(
-          VideoPendingScrapeWork(source: source, work: work),
+        final VideoPendingScrapeWork entry = VideoPendingScrapeWork(
+          source: source,
+          work: work,
         );
+        if (await _hasCanonicalIdentity(work)) {
+          identified.add(entry);
+        } else if (ignoredKeys.contains(work.stableKey)) {
+          // 已识别的作品照常进 identified（资料刷新 / 哈希补齐不受忽略影响）；
+          // 忽略只作用于「没有身份」这一个判据。
+          ignored.add(entry);
+        } else {
+          pending.add(entry);
+        }
       }
     }
-    return _PlannedWorks(pending: pending, identified: identified);
+    return _PlannedWorks(
+      pending: pending,
+      ignored: ignored,
+      identified: identified,
+    );
   }
 
   /// 需要刷新资料的已识别作品（见 [_tmdbChangedTvIds] 的说明）。
@@ -696,11 +728,15 @@ Future<bool> hasCanonicalVideoMetadataIdentity(
 class _PlannedWorks {
   const _PlannedWorks({
     this.pending = const <VideoPendingScrapeWork>[],
+    this.ignored = const <VideoPendingScrapeWork>[],
     this.identified = const <VideoPendingScrapeWork>[],
   });
 
-  /// 没有规范身份的作品（待确认清单 + 自动补刮候选）。
+  /// 没有规范身份、用户也没忽略的作品（待确认清单 + 自动补刮候选）。
   final List<VideoPendingScrapeWork> pending;
+
+  /// 没有规范身份、但用户选了「忽略」的作品：不提醒、不自动补刮。
+  final List<VideoPendingScrapeWork> ignored;
 
   /// 已有规范身份的作品（只在哈希就绪时看成员是否缺文件身份）。
   final List<VideoPendingScrapeWork> identified;

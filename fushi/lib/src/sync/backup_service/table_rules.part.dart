@@ -183,6 +183,11 @@ const Map<String, BackupTableRule> backupTableRules = <String, BackupTableRule>{
   'video_subtitle_glossaries': BackupTableRule.follows(<BackupCategory>{
     BackupCategory.videos,
   }),
+  // v143 用户在字幕列表里手改的单条字幕文本（用户数据），随「视频」类别出境。
+  // 键是本机视频 uid，与 video_subtitle_glossaries 一样不进合并导入。
+  'video_subtitle_text_overrides': BackupTableRule.follows(<BackupCategory>{
+    BackupCategory.videos,
+  }),
 
   // ── 游戏 ──
   'galgame_sources': BackupTableRule.rowLevel('_retainGames（FK cascade）'),

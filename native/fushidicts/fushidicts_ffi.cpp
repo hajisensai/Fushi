@@ -807,7 +807,7 @@ FfiLookupResults fushidicts_lookup(void* handle, const char* text, int32_t max_r
 // 老导出 fushidicts_lookup 原样保留（Never break ABI），返回结构同一套，
 // 释放同走 fushidicts_free_lookup_results。
 // 查询标志位（fushidicts_lookup_with_flags）。
-// bit0：查询语言为中文，额外尝试简体 → 繁體拼写（见 LookupOptions::chinese_simp_to_trad）。
+// bit0：按中文处理，额外尝试简体 ↔ 繁體双向拼写（见 LookupOptions::chinese_simp_to_trad）。
 // 老导出签名不动（Never break ABI），新增带 flags 的导出；未知位忽略。
 static constexpr int32_t kLookupFlagChineseSimpToTrad = 1;
 

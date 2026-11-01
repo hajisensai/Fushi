@@ -103,6 +103,19 @@
     if (overlayOn && !s.hidden && s.hasTrack && !s.externalTrack && !s.replaceNative && !s.allTracks) {
       items.push({ id: 'hint', kind: 'hint', label: tr('pc_hint_site_track'), action: 'replaceNative', icon: 'info' });
     }
+    // 收藏进 Fushi 收藏夹（反馈 KGC1ifR1a3，执行端 video-favorite.js）：当前句（文本 + 时间点）与
+    // 视频本身。与 App 收藏夹是同一份数据；已收藏的显示实心星 / 开关开态，再点即取消收藏。
+    // 没有当前句（无 Fushi 字幕 / 字幕间隙之前）时「收藏当前句」置灰。
+    var line = typeof s.lineText === 'string' ? s.lineText : '';
+    items.push({
+      id: 'favLine',
+      kind: 'action',
+      label: tr(s.lineFavorited ? 'pc_fav_line_remove' : 'pc_fav_line_add'),
+      detail: line.length > 40 ? line.slice(0, 40) + '…' : line,
+      icon: s.lineFavorited ? 'star_fill' : 'star',
+      disabled: !line,
+    });
+    items.push({ id: 'favVideo', kind: 'switch', on: !!s.videoFavorited, label: tr('pc_fav_video'), icon: 'star' });
     // 选字幕轨（就地切换，不必开侧边栏）：子页列出这个视频的全部 Fushi 字幕轨。
     items.push({
       id: 'track',
@@ -524,7 +537,7 @@
   function renderMain() {
     if (!mainPageEl) return;
     mainPageEl.textContent = '';
-    var items = menuModel({
+    var items = menuModel(Object.assign({
       overlayOn: overlayEffective(),
       replaceNative: !!st.prefs.subtitleReplaceNative,
       allTracks: !!st.prefs.subtitleOverlayAllTracks,
@@ -535,7 +548,7 @@
       study: st.prefs.studyTrackVideo !== false,
       trackLabel: activeTrackLabel(),
       offsetMs: trackInfo().offsetMs,
-    });
+    }, favoriteState()));
     for (var i = 0; i < items.length; i++) mainPageEl.appendChild(renderItem(items[i]));
   }
 
@@ -606,7 +619,9 @@
     a.setAttribute('role', 'button');
     a.setAttribute('tabindex', '0');
     function go() {
-      if (item.id === 'style') showPage('style');
+      if (item.disabled) return;
+      if (item.id === 'favLine') toggleFavoriteLine();
+      else if (item.id === 'style') showPage('style');
       else if (item.id === 'track') showPage('tracks');
       else if (item.id === 'list') runShortcut('toggle-panel');
       else if (item.id === 'settings') openOptions();
@@ -901,6 +916,10 @@
     applyMenuTheme();
     st.open = true;
     st.page = 'main';
+    var vf = videoFavorite();
+    if (vf && typeof vf.refresh === 'function') {
+      try { Promise.resolve(vf.refresh(false)).then(rerenderIfOpen, function () {}); } catch (_) { /* no-op */ }
+    }
     renderMain();
     if (mainPageEl) mainPageEl.hidden = false;
     if (stylePageEl) stylePageEl.hidden = true;
@@ -984,6 +1003,37 @@
     if (id === 'allTracks') return writePrefs({ subtitleOverlayAllTracks: !st.prefs.subtitleOverlayAllTracks });
     if (id === 'background') return writePrefs({ subtitleOverlayBackground: st.prefs.subtitleOverlayBackground === false });
     if (id === 'study') return writePrefs({ studyTrackVideo: st.prefs.studyTrackVideo === false });
+    if (id === 'favVideo') {
+      var vf = videoFavorite();
+      if (vf) Promise.resolve(vf.toggleVideo()).then(rerenderIfOpen, rerenderIfOpen);
+    }
+  }
+
+  // ── 收藏（反馈 KGC1ifR1a3）：状态与执行端都在 video-favorite.js，这里只读与转发 ──
+  function videoFavorite() {
+    var vf = window.fushiVideoFavorite;
+    return vf && typeof vf.toggleVideo === 'function' ? vf : null;
+  }
+  function favoriteState() {
+    var vf = videoFavorite();
+    if (!vf) return { lineText: '', lineFavorited: false, videoFavorited: false };
+    var cue = null;
+    try { cue = vf.currentCue(); } catch (_) { cue = null; }
+    return {
+      lineText: cue && cue.text ? String(cue.text) : '',
+      lineFavorited: !!(cue && vf.isCueFavorited(cue)),
+      videoFavorited: !!vf.isVideoFavorited(),
+    };
+  }
+  function rerenderIfOpen() {
+    if (st.open && st.page === 'main') renderMain();
+  }
+  function toggleFavoriteLine() {
+    var vf = videoFavorite();
+    if (!vf) return;
+    var cue = vf.currentCue();
+    if (!cue) return;
+    Promise.resolve(vf.toggleCue(cue)).then(rerenderIfOpen, rerenderIfOpen);
   }
 
   function runShortcut(action) {
@@ -1148,6 +1198,10 @@
 
   if (window.fushiTheme && typeof window.fushiTheme.onChange === 'function') {
     try { window.fushiTheme.onChange(applyMenuTheme); } catch (_) { /* no-op */ }
+  }
+  // 收藏状态由 App 回包更新（别的入口收藏了 / 换视频）：菜单开着就跟着重画。
+  if (window.fushiVideoFavorite && typeof window.fushiVideoFavorite.onChange === 'function') {
+    try { window.fushiVideoFavorite.onChange(rerenderIfOpen); } catch (_) { /* no-op */ }
   }
   if (window.fushiI18n && typeof window.fushiI18n.onChange === 'function') {
     try {

@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/diagnostics/previous_exit_log.dart';
 import 'package:fushi/src/utils/misc/platform_updater.dart';
 import 'package:fushi/src/utils/misc/update_handoff.dart';
 
@@ -560,6 +561,65 @@ void main() {
         );
         expect(startedArgs, contains('/LOG=${record!.innoLogPath}'));
         expect(exitCode, 0);
+      },
+    );
+
+    test(
+      'marks the session clean before exiting, so the update is not reported '
+      'as a crash on the next launch',
+      () async {
+        // 反馈 3PqGTEsweI / 9ZYafFWPky / hfzlMGXJWr：交接给安装器后 exit(0) 没标
+        // clean，下次启动「停在前台时没了，疑似闪退」弹闪退报告。
+        final File marker = await _markerFile();
+        final Directory dir = marker.parent;
+        final Directory appDir = Directory(
+          '${dir.path}${Platform.pathSeparator}app',
+        )..createSync();
+        await PreviousExitLog.collect(
+          appDir: appDir,
+          version: '1.2.2',
+          isAndroid: false,
+          isWindows: false,
+          isMacOS: false,
+          isIOS: false,
+          nowMs: 1000,
+        );
+        final File installer = File(
+          '${dir.path}${Platform.pathSeparator}fushi-1.2.3-windows-setup.exe',
+        );
+        await installer.writeAsBytes(<int>[0x4D, 0x5A, 0x90, 0x00]);
+
+        bool? cleanAtExit;
+        await WindowsInstaller.runAndExit(
+          installer.path,
+          targetVersion: '1.2.3',
+          handoffMarkerFile: marker,
+          now: () => DateTime.utc(2026, 11, 1, 11, 27),
+          collectDiagnostics: () async => WindowsInstallerDiagnostics(
+            currentExecutablePath:
+                '${dir.path}${Platform.pathSeparator}fushi.exe',
+            currentInstallDir: dir.path,
+            targetInstallDir: dir.path,
+          ),
+          startProcess: (String executable, List<String> args) async =>
+              const WindowsInstallerStartedProcess(pid: 4242),
+          exitProcess: (int code) {
+            final Object? m = jsonDecode(
+              File(
+                '${appDir.path}${Platform.pathSeparator}session_marker.json',
+              ).readAsStringSync(),
+            );
+            cleanAtExit = m is Map && m['clean'] == true;
+          },
+        );
+
+        expect(cleanAtExit, isTrue);
+        final PreviousSession? previous = SessionMarker(
+          File('${appDir.path}${Platform.pathSeparator}session_marker.json'),
+          pid: pid + 1,
+          version: '1.2.3',
+        ).start(nowMs: 5000);
+        expect(describeUncleanPreviousSession(previous), isNull);
       },
     );
 

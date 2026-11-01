@@ -25,6 +25,7 @@ import 'package:fushi/src/media/manga/interconnect/interconnect_manga_source.dar
     show InterconnectMangaCatalog;
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/reader/page_turn_animation.dart';
+import 'package:fushi/src/reader/reader_tap_zones.dart';
 import 'package:fushi/src/reader/reader_chrome_floating.dart';
 import 'package:fushi/src/reader/highlight_stroke_style.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
@@ -1740,6 +1741,24 @@ class ReaderFushiSource extends ReaderMediaSource {
         setPreference<bool>(
           key: ReaderSettings.pageTurnFollowDragKey,
           value: value,
+        ));
+  }
+
+  /// 点击翻页区域模板（落盘 key 与 [ReaderSettings.tapZoneLayout] 同一个）。
+  ReaderTapZoneLayout get tapZoneLayout =>
+      readerSettings?.tapZoneLayout ??
+      ReaderTapZoneLayout.fromKey(
+        getPreference<String?>(
+          key: ReaderSettings.tapZoneLayoutKey,
+          defaultValue: null,
+        ),
+      );
+
+  Future<void> setTapZoneLayout(ReaderTapZoneLayout value) async {
+    await (readerSettings?.setTapZoneLayout(value) ??
+        setPreference<String>(
+          key: ReaderSettings.tapZoneLayoutKey,
+          value: value.key,
         ));
   }
 

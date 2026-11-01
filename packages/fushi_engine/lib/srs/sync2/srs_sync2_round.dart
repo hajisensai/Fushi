@@ -140,6 +140,11 @@ class SrsSync2Report {
 /// 批次都已提交）；发件的每批确认后也问一次（已确认的批次水位已持久化）。[ingestBudgetBytes] 见
 /// [kSrsSync2IngestBudgetBytes]；[fetchConcurrency] = 拉段时同时在途的下载数；[outboxBudgetBytes] = 发件一批的
 /// 字节预算（null = 内核默认 `OUTBOX_BATCH_BYTES`，测试用小值逼出多批）。
+/// 一轮里的细分步骤（诊断用）：调度器把它写进活动面包屑，进程死在一轮里时下次启动能报出死在哪一步、当时多少
+/// 内存（反馈 i8qNDs_V_D：大库上一轮卡在「开始」4.5 分钟后被系统杀，开头这段原本只有一个阶段名）。只做记录，
+/// 不得抛出、不得做慢事。
+typedef SrsSyncStepCallback = void Function(String step);
+
 Future<SrsSync2Report> srsSync2Round({
   required SrsSync2Host host,
   required SrsLocationStore location,
@@ -155,13 +160,16 @@ Future<SrsSync2Report> srsSync2Round({
   int ingestBudgetBytes = kSrsSync2IngestBudgetBytes,
   int fetchConcurrency = kSrsSync2Concurrency,
   int? outboxBudgetBytes,
+  SrsSyncStepCallback? onStep,
 }) async {
   final SrsSync2Report report = SrsSync2Report();
+  onStep?.call('identity');
   // meta.json：协议版本与集合身份，创建后只读（§6.1）；加密握手（§9）以位置上的 kdf 为准。
   final Map<String, Object?> id = (await host.sync2Command(<String, Object?>{
     'op': 'identity',
     'now': nowMs(),
   })).map;
+  onStep?.call('handshake');
   final SrsLocationHandshake hs = await srsLocationHandshake(
     location,
     key: key,
@@ -197,6 +205,7 @@ Future<SrsSync2Report> srsSync2Round({
     shouldStop: shouldStop,
     ingestBudgetBytes: ingestBudgetBytes,
     fetchConcurrency: fetchConcurrency,
+    onStep: onStep,
   )) {
     return report;
   }
@@ -207,6 +216,7 @@ Future<SrsSync2Report> srsSync2Round({
   // XDV7Mzc2gw / kB2ltk0u9F / U37Aku3oeL）。head 仍在全部批次写完后才写，读者看到的永远是一致前缀。
   // 媒体先于引用它的段（设计 §6.1 写入纪律 3，审查 S-10）：本机新绑定的媒体此刻先传上去（绑定本身是操作，随下面
   // 的段一起发），读到这些段的设备就拿得到它们引用的内容。媒体失败由调用方处理，不打断操作同步。
+  onStep?.call('beforeUpload');
   if (beforeUpload != null) await beforeUpload(keyHex);
   onUploadStart?.call();
   int upto = 0;
@@ -353,8 +363,10 @@ Future<bool> srsSync2Pull({
   bool Function()? shouldStop,
   int ingestBudgetBytes = kSrsSync2IngestBudgetBytes,
   int fetchConcurrency = kSrsSync2Concurrency,
+  SrsSyncStepCallback? onStep,
 }) async {
   // 1. 全部设备的 head：每台设备取代号最大的（同一代号的都要）。
+  onStep?.call('heads');
   final List<String> deviceDirs = <String>[
     for (final SrsLocationEntry d in await location.list('devices'))
       if (d.isFolder) 'devices/${d.name}',
@@ -387,6 +399,7 @@ Future<bool> srsSync2Pull({
   ];
 
   // 2. 定要拉的段 → 拉 → 收。
+  onStep?.call('plan heads=${heads.length}');
   // `location`：内核记下这个位置上有谁的哪些段（别的位置缺、本机可以转发的，见步骤 3 之后的转发）。
   final Map<String, Object?> plan = (await host.sync2Command(<String, Object?>{
     'op': 'plan',
@@ -423,6 +436,9 @@ Future<bool> srsSync2Pull({
     ]);
   }
 
+  onStep?.call(
+    'planned fetch=${wanted.length} finishPending=${plan['finishPending'] == true}',
+  );
   if (wanted.isNotEmpty) {
     int done = 0;
     onFetchProgress?.call(0, wanted.length);
@@ -440,14 +456,17 @@ Future<bool> srsSync2Pull({
       }
       done += batch.covered;
       onFetchProgress?.call(done, wanted.length);
+      onStep?.call('ingest $done/${wanted.length}');
       if (shouldStop?.call() ?? false) {
         report.error = kSrsSync2Stopped;
         return false;
       }
     }
+    onStep?.call('ingestFinish');
     absorb(await host.sync2IngestFinish());
   } else if (plan['finishPending'] == true) {
     // 上一轮收段被打断在收尾之前：受影响的卡还在内核的待重放集合里（审查 S-4），这一轮没段可拉也收个尾。
+    onStep?.call('finishPending');
     await host.sync2IngestBegin();
     absorb(await host.sync2IngestFinish());
   }

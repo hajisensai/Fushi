@@ -68,6 +68,10 @@ void main() {
       // ShortcutAction.globalToggleFullscreen from the registry inside
       // wrapWithGlobalNavigation and flips WindowManager.setFullScreen on desktop.
       'lib/src/shortcuts/global_navigation.dart',
+      // 焦点导航（反馈 bjPjRHsaUy）：dpadUp/Down/Left/Right → TraversalDirection
+      // 的唯一映射（focusNavigationDirectionOf），键盘 wrapper 与 GamepadService
+      // 共用它派发移焦；focusActivate 的执行体在上面两个文件里。
+      'lib/src/shortcuts/focus_navigation_shortcuts.dart',
       // 查词弹窗「上/下一个词条」（popupNextEntry / popupPrevEntry）的执行体：弹窗
       // 内容是 WebView，滚轮事件先到 popup.js，故这里把注册表里的滚轮绑定序列化成
       // window.__fushiEntryWheelBindings 注入过去，popup.js 命中即调
@@ -90,6 +94,9 @@ void main() {
       'lib/src/pages/implementations/fushi_web_browser_page.dart',
       // 音乐（ShortcutScope.music）的执行体：曲库页 _handleKey → dispatchMusicShortcut。
       'lib/src/pages/implementations/music/music_library_page.dart',
+      // SRS 复习页（ShortcutScope.srsReview）的执行体：_onKey / 卡面键盘桥 /
+      // _handleGamepadButton → _executeShortcut。
+      'lib/src/pages/implementations/srs/srs_review_page.dart',
     ];
 
     final StringBuffer corpus = StringBuffer();

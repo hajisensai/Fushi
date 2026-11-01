@@ -66,13 +66,13 @@ void main() {
       path,
       isMainProcess: false,
     );
-    expect(migrated.schemaVersion, 142);
+    expect(migrated.schemaVersion, 143);
     final List<MinedSentenceRow> rows = await migrated.getAllMinedSentences();
     expect(rows, hasLength(3));
     await migrated.close();
 
     final sqlite.Database probe = sqlite.sqlite3.open(path);
-    expect(probe.select('PRAGMA user_version').first.values.first, 142);
+    expect(probe.select('PRAGMA user_version').first.values.first, 143);
     for (final String column in <String>[
       'position_ms',
       'duration_ms',

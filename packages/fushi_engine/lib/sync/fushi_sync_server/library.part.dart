@@ -68,7 +68,20 @@ extension _FushiSyncServerLibrary on FushiSyncServer {
         } on FileSystemException {
           return shelf.Response.notFound(notFoundMessage);
         }
-        return serveFileWithRange(file, request, etag: etag);
+        final shelf.Response served = await serveFileWithRange(
+          file,
+          request,
+          etag: etag,
+          reprDigest: _exportCache.reprDigestFor(file),
+        );
+        // 流式发送期间每出一块就给缓存续期（滑动 TTL）：长传输断在第 20 分钟时，
+        // 续传仍命中同一份字节，而不是撞上过期重导出从 0 重来（Sn4fYseBt4）。
+        return served.change(
+          body: served.read().map((List<int> chunk) {
+            _exportCache.markUsed(cacheKind, id);
+            return chunk;
+          }),
+        );
 
       case 'PUT':
         if (vetoPush != null && await vetoPush()) {

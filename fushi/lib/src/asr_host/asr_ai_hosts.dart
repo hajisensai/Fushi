@@ -76,6 +76,7 @@ AsrProofreadHost appAsrProofreadHost(PreferencesRepository prefs) =>
                     provider: provider,
                   ),
                   languageTag: languageTag,
+                  concurrency: provider.batchConcurrency,
                   // 只有批序号与脱敏原因码（见 AsrTranscriptProofreader.log），
                   // 不含回复原文与 key。
                   log: (String message) =>

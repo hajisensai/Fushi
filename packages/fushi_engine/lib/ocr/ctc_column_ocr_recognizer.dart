@@ -27,6 +27,7 @@ import 'package:image/image.dart' as img;
 import 'package:fushi_engine/ocr/manga_ocr_pipeline.dart';
 import 'package:fushi_engine/ocr/ocr_glyph_boxes.dart';
 import 'package:fushi_engine/ocr/ocr_line_layout.dart';
+import 'package:fushi_engine/ocr/ocr_ruby_trim.dart';
 import 'package:fushi_engine/ocr/ocr_types.dart';
 import 'package:fushi_engine/ocr/ppocr_line_detector.dart';
 import 'package:fushi_engine/ocr/ppocr_line_recognizer.dart';
@@ -35,11 +36,17 @@ class CtcColumnOcrRecognizer implements LineOcrRecognizer {
   CtcColumnOcrRecognizer({
     required PpOcrLineDetector lineDetector,
     required PpOcrLineRecognizer lineRecognizer,
+    this.ignoreFurigana = false,
   }) : _lineDetector = lineDetector,
        _lineRecognizer = lineRecognizer;
 
   final PpOcrLineDetector _lineDetector;
   final PpOcrLineRecognizer _lineRecognizer;
+
+  /// 「OCR 忽略振假名」：每列识别前再把列框里贴着正文的注音带裁掉
+  /// （[trimOcrRubyBands]）——行检测器把注音和正文检成同一条框时，
+  /// [dropOcrRubyLines] 删不到它。
+  final bool ignoreFurigana;
 
   /// 单框识别（路由横排路径里的竖行也走这里）：块方向先按外形猜，再由检出的
   /// 行改判。
@@ -94,10 +101,11 @@ class CtcColumnOcrRecognizer implements LineOcrRecognizer {
     int utf16Offset = 0;
     double? confidence;
     for (final OcrRect line in lines) {
-      final OcrRect region = line.clamp(
-        page.width.toDouble(),
-        page.height.toDouble(),
-      );
+      final OcrRect region =
+          (ignoreFurigana
+                  ? trimOcrRubyBands(page, line, vertical: blockVertical)
+                  : line)
+              .clamp(page.width.toDouble(), page.height.toDouble());
       if (region.width < 1 || region.height < 1) continue;
       final _ReadLine read = await _readRegion(
         page,

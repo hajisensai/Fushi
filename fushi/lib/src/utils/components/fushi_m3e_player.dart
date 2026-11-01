@@ -216,6 +216,14 @@ class _FushiMeshBackdropState extends State<FushiMeshBackdrop> {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final EdgeInsets padding = MediaQuery.paddingOf(context);
     final bool dark = cs.brightness == Brightness.dark;
+    // 缓存小图的分辨率（图像素 / 逻辑像素）。静止时只画一次，按物理像素全分辨率
+    // 画：低分辨率图拉伸到整屏，8-bit 量化的渐变经双线性插值会露出菱形网格，
+    // 静止不动时网格钉在屏幕上（BUG-3933）。流动时网格随相位漂移看不出，仍按
+    // [_kMeshAnimatedTexelPx] 个**物理**像素一个纹素降采样省 GPU。
+    final double devicePixelRatio = MediaQuery.devicePixelRatioOf(context);
+    final double rasterScale = _driver.isActive
+        ? devicePixelRatio / _kMeshAnimatedTexelPx
+        : devicePixelRatio;
     return RepaintBoundary(
       child: LayoutBuilder(
         builder: (BuildContext context, BoxConstraints constraints) {
@@ -239,6 +247,7 @@ class _FushiMeshBackdropState extends State<FushiMeshBackdrop> {
             painter: _MeshPainter(
               phase: _phase,
               cache: _cache,
+              rasterScale: rasterScale,
               base: colors.base,
               blobs: colors.blobs,
               plate: plate,
@@ -308,6 +317,7 @@ class _MeshPainter extends CustomPainter {
   _MeshPainter({
     required this.phase,
     required this.cache,
+    required this.rasterScale,
     required this.base,
     required this.blobs,
     required this.plate,
@@ -316,6 +326,9 @@ class _MeshPainter extends CustomPainter {
 
   final ValueListenable<double> phase;
   final _MeshImageCache cache;
+
+  /// 缓存图分辨率：图像素 / 逻辑像素（见 [_MeshImageCache.resolve]）。
+  final double rasterScale;
   final Color base;
   final List<Color> blobs;
   final Rect? plate;
@@ -339,13 +352,14 @@ class _MeshPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final Rect bounds = Offset.zero & size;
-    // 整屏四团径向渐变按 1/[_kMeshDownscale] 分辨率画成一张小图，这里只贴图
+    // 整屏四团径向渐变按 [rasterScale] 画成一张图缓存起来，这里只贴图
     // （Impeller 没有栅格缓存：直接整屏画渐变的话，页面上任何一处每帧变化——
     // 歌词逐帧擦色、进度条——都会让四个整屏 shader 跟着重新栅格化，宽屏高刷下
-    // 就是音乐歌词页的卡顿）。渐变本身是低频内容，放大后看不出差别。
+    // 就是音乐歌词页的卡顿）。
     final ui.Image? image = cache.resolve(
       size,
       phase.value,
+      rasterScale,
       (Canvas c, Size s) => _paintMesh(c, s, phase.value, base, blobs),
     );
     if (image == null) {
@@ -414,6 +428,7 @@ class _MeshPainter extends CustomPainter {
     if (colors) cache.invalidate();
     return colors ||
         old.phase != phase ||
+        old.rasterScale != rasterScale ||
         old.plate != plate ||
         old.plateColor != plateColor;
   }
@@ -1223,14 +1238,21 @@ class _FushiExpressivePlayButtonState extends State<FushiExpressivePlayButton>
   }
 }
 
-/// mesh 背景画成小图时的缩小倍数。
-const int _kMeshDownscale = 8;
+/// mesh 背景流动时缓存图一个纹素覆盖的**物理**像素边长。按物理像素算：按逻辑
+/// 像素算的话 DPR 3 的手机上一个纹素会被拉成 24×24 物理像素（BUG-3933）。
+const double _kMeshAnimatedTexelPx = 8;
 
-/// [FushiMeshBackdrop] 的渐变小图缓存：同一尺寸、同一相位只画一次。
+/// 测试钩子：[FushiMeshBackdrop] 每重画一次缓存图就回调一次（参数是本次产出的图，
+/// 归背景 State 所有，测试只读不释放）。
+@visibleForTesting
+ValueChanged<ui.Image>? debugOnFushiMeshImageRendered;
+
+/// [FushiMeshBackdrop] 的渐变图缓存：同一尺寸、同一相位、同一分辨率只画一次。
 class _MeshImageCache {
   ui.Image? _image;
   Size? _size;
   double? _phase;
+  double? _rasterScale;
 
   void invalidate() {
     _phase = null;
@@ -1239,12 +1261,18 @@ class _MeshImageCache {
   ui.Image? resolve(
     Size size,
     double phase,
+    double rasterScale,
     void Function(Canvas canvas, Size size) paint,
   ) {
-    if (size.isEmpty) return null;
-    if (_image != null && _size == size && _phase == phase) return _image;
-    final int w = math.max(1, (size.width / _kMeshDownscale).ceil());
-    final int h = math.max(1, (size.height / _kMeshDownscale).ceil());
+    if (size.isEmpty || !size.isFinite || rasterScale <= 0) return null;
+    if (_image != null &&
+        _size == size &&
+        _phase == phase &&
+        _rasterScale == rasterScale) {
+      return _image;
+    }
+    final int w = math.max(1, (size.width * rasterScale).ceil());
+    final int h = math.max(1, (size.height * rasterScale).ceil());
     final ui.PictureRecorder recorder = ui.PictureRecorder();
     final Canvas c = Canvas(recorder);
     paint(c, Size(w.toDouble(), h.toDouble()));
@@ -1255,6 +1283,8 @@ class _MeshImageCache {
     _image = image;
     _size = size;
     _phase = phase;
+    _rasterScale = rasterScale;
+    debugOnFushiMeshImageRendered?.call(image);
     return image;
   }
 

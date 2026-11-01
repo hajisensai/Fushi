@@ -235,6 +235,125 @@ class SrsNewCardPlan {
   int get hashCode => Object.hash(autoLoad, budgetPercent, boostPercent);
 }
 
+/// 自定义学习「提升今日上限」（[SrsFieldKeys.deckExtendLimits]，Anki Custom Study 的 Increase today's
+/// new / review card limit）：只对 [day] 这一天生效（第二天自动失效），加在牌组自己这一层的每日上限上。
+/// 规则在 Rust 排队内核（native/fushi_fsrs/src/store/study.rs `today_extension`）。
+class SrsDeckLimitExtension {
+  const SrsDeckLimitExtension({
+    required this.day,
+    this.newCards = 0,
+    this.reviews = 0,
+  });
+
+  /// 写入时的日序（[SrsDayContext.dayIndex] 同口径）。
+  final int day;
+  final int newCards;
+  final int reviews;
+
+  /// 一天最多追加的张数（内核 `MAX_EXTENSION`）。
+  static const int max = 9999;
+
+  static SrsDeckLimitExtension? fromValue(Object? v) {
+    if (v is! Map || v['day'] is! int) return null;
+    int read(String k) => switch (v[k]) {
+      final int n => n.clamp(0, max),
+      _ => 0,
+    };
+    return SrsDeckLimitExtension(
+      day: v['day']! as int,
+      newCards: read('new'),
+      reviews: read('review'),
+    );
+  }
+
+  /// [today] 这一天还有效的追加量（不是今天写的 = 0）。
+  ({int newCards, int reviews}) on(int today) => day == today
+      ? (newCards: newCards, reviews: reviews)
+      : (newCards: 0, reviews: 0);
+
+  Map<String, Object?> toValue() => <String, Object?>{
+    'day': day,
+    'new': newCards,
+    'review': reviews,
+  };
+}
+
+/// 自定义学习临时会话的选卡方式（不改上限的几种）。
+enum SrsCustomStudyMode {
+  /// 最近 N 天里评过「重来」的卡。
+  forgotten('forgotten'),
+
+  /// N 天内（今天之后）到期的复习卡，按到期先后。
+  ahead('ahead'),
+
+  /// 按卡片状态 / 笔记标签筛。
+  filter('filter');
+
+  const SrsCustomStudyMode(this.wire);
+  final String wire;
+}
+
+/// 按状态筛的取值（[SrsCustomStudy.states]）。
+enum SrsCustomStudyState {
+  newCards('new'),
+  learning('learning'),
+  review('review'),
+  due('due');
+
+  const SrsCustomStudyState(this.wire);
+  final String wire;
+}
+
+/// 自定义学习的临时会话（Anki Custom Study）：不建筛选牌组、不挪卡、不改设置，只在排队时换一套选卡条件；
+/// 作答照常写日志、照常排程。会话无状态：「答过的卡」= [sinceMs] 之后有作答日志的卡，结束什么都不用清。
+/// 选卡规则全在 Rust 排队内核（native/fushi_fsrs/src/store/study.rs `CustomStudy`）。
+class SrsCustomStudy {
+  const SrsCustomStudy({
+    required this.mode,
+    required this.sinceMs,
+    this.days = 1,
+    this.limit = 100,
+    this.states = const <SrsCustomStudyState>{},
+    this.tags = const <String>[],
+  });
+
+  final SrsCustomStudyMode mode;
+  final int sinceMs;
+  final int days;
+  final int limit;
+  final Set<SrsCustomStudyState> states;
+  final List<String> tags;
+
+  static const int maxDays = 3650;
+  static const int maxCards = 9999;
+
+  Map<String, Object?> toRequest() => <String, Object?>{
+    'since': sinceMs,
+    'mode': mode.wire,
+    'days': days.clamp(1, maxDays),
+    'limit': limit.clamp(0, maxCards),
+    if (states.isNotEmpty)
+      'states': <String>[for (final SrsCustomStudyState s in states) s.wire],
+    if (tags.isNotEmpty) 'tags': tags,
+  };
+}
+
+/// 自定义学习会话的进度（排队结果的 `custom`）：还没答的候选张数（已按上限扣）与会话里的学习卡数。
+class SrsCustomStudyProgress {
+  const SrsCustomStudyProgress({required this.left, required this.learn});
+
+  final int left;
+  final int learn;
+
+  static SrsCustomStudyProgress? fromValue(Object? v) {
+    if (v is! Map) return null;
+    return SrsCustomStudyProgress(
+      left: (v['left'] as int?) ?? 0,
+      learn: (v['learn'] as int?) ?? 0,
+    );
+  }
+}
+
 /// 物化后的牌组。
 class SrsDeckView {
   SrsDeckView({
@@ -260,6 +379,7 @@ class SrsDeckView {
     this.rwkvQueue = const SrsRwkvQueueSettings(),
     this.newCardOrder = SrsNewCardOrder.frequency,
     this.newCardPlan = const SrsNewCardPlan(),
+    this.limitExtension,
     required this.optimizeBaselineAt,
     required this.optimizeBaselineCount,
     required this.deletedAt,
@@ -340,6 +460,9 @@ class SrsDeckView {
 
   /// 每周新卡任务与按复习量自动调整。牌组自己的值（同 [newPerDay]）。
   final SrsNewCardPlan newCardPlan;
+
+  /// 自定义学习「提升今日上限」的追加（没写过 = null）。牌组自己的值（同 [newPerDay]）。
+  final SrsDeckLimitExtension? limitExtension;
   final int? optimizeBaselineAt;
   final int? optimizeBaselineCount;
   final int? deletedAt;

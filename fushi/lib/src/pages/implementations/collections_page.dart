@@ -22,6 +22,8 @@ import 'package:fushi/src/utils/misc/collection_exporter.dart';
 import 'package:fushi/src/media/display_title.dart';
 import 'package:fushi/src/media/favorites/favorite_batch_mining.dart';
 import 'package:fushi/src/media/favorites/favorite_mining_item.dart';
+import 'package:fushi/src/media/favorites/web_video_favorite.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:fushi/src/mining/mined_origin_navigation.dart';
 import 'package:fushi_engine/media/video/m3u8_playlist.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
@@ -216,7 +218,8 @@ MediaItem buildCollectionReaderMediaItem({
 /// 制卡历史行的定位是否在媒体时间轴上（v132 position_ms / duration_ms）。
 bool _minedIsTimeAxis(String source) =>
     source == kFavoriteSentenceSourceVideo ||
-    source == kFavoriteSentenceSourceMusic;
+    source == kFavoriteSentenceSourceMusic ||
+    source == kFavoriteSentenceSourceWeb;
 
 class _CollectionItem {
   _CollectionItem({
@@ -282,6 +285,13 @@ class _CollectionItem {
   final String? headwordReading;
 
   bool get isWord => type == _CollectionType.word;
+
+  /// 浏览器扩展收藏的「视频本身」（KGC1ifR1a3）：网页来源、没有句子文本。标题显示视频名，
+  /// 类型标「网页视频」，没有时间点。
+  bool get isWebVideoFavorite =>
+      !isWord &&
+      source == kFavoriteSentenceSourceWeb &&
+      (text == null || text!.isEmpty);
 
   /// 词行是否带可定位的收藏上下文（有归属 + 章节或偏移锚点）。存量词行没有锚点，
   /// 仍不可跳转、不播音频——拿词形去匹配音频会命中错句。
@@ -498,6 +508,8 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
 
     final allBookKeys = <String>{};
     for (final fav in allFavorites) {
+      // 网页视频收藏（KGC1ifR1a3）的 bookKey 是网页地址，不是书身份。
+      if (fav.source == kFavoriteSentenceSourceWeb) continue;
       if (fav.bookKey != null && fav.bookKey!.isNotEmpty) {
         allBookKeys.add(fav.bookKey!);
       }
@@ -670,6 +682,8 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
         ? rawSnapshot
         : null;
     if (bookKey == null || bookKey.isEmpty) return raw;
+    // 网页视频（KGC1ifR1a3）：bookKey 是网页地址，标题快照就是网页标题。
+    if (source == kFavoriteSentenceSourceWeb) return raw ?? bookKey;
     if (source == kFavoriteSentenceSourceVideo) {
       final VideoBookRow? row = _videoRowMap[bookKey];
       return row != null ? displayTitleForVideo(row) : raw;
@@ -1447,6 +1461,8 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     SentenceSourceKind.game => ModuleId.games,
     SentenceSourceKind.manga => ModuleId.manga,
     SentenceSourceKind.music => ModuleId.music,
+    // 网页视频收藏归视频模块（[_canNavigateTo] 对它另判：打开的是系统浏览器，不受模块开关限制）。
+    SentenceSourceKind.web => ModuleId.video,
     SentenceSourceKind.book ||
     SentenceSourceKind.audiobook ||
     SentenceSourceKind.lyrics => ModuleId.books,
@@ -1487,6 +1503,8 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
             positionMs: item.normCharOffset ?? 0,
           ),
         );
+      case SentenceSourceKind.web:
+        unawaited(_openWebOrigin(item));
       case SentenceSourceKind.book:
       case SentenceSourceKind.audiobook:
       case SentenceSourceKind.lyrics:
@@ -1494,6 +1512,37 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
         // （内部处理有声书/歌词模式）。
         unawaited(_openBook(item));
     }
+  }
+
+  /// 网页视频收藏（KGC1ifR1a3）跳回原网页：支持时间参数的站点直接从收藏的时间点起播
+  /// （YouTube `t=` / niconico `from=` / bilibili `t=`），其余站点只打开原网页并告诉用户
+  /// 这句在第几分几秒。
+  Future<void> _openWebOrigin(_CollectionItem item) async {
+    final String? url = item.bookKey;
+    if (url == null) return;
+    final int? position = item.isWebVideoFavorite ? null : item.normCharOffset;
+    final WebVideoJumpTarget? target = webVideoJumpTarget(url, position);
+    bool opened = false;
+    if (target != null) {
+      try {
+        opened = await launchUrl(
+          target.uri,
+          mode: LaunchMode.externalApplication,
+        );
+      } on Object catch (error, stack) {
+        ErrorLogService.instance.log('Collections.openWebOrigin', error, stack);
+      }
+    }
+    if (!mounted) return;
+    final String? message = !opened
+        ? t.collection_web_page_open_failed
+        : (target != null && !target.timed && position != null)
+        ? t.collection_web_page_untimed(time: formatWebVideoPosition(position))
+        : null;
+    if (message == null) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(FushiSnackBar(content: Text(message)));
   }
 
   /// 收藏行能否「跳回原文」的**唯一**谓词：条目菜单（[_showItemDialog]）与列表行
@@ -1512,6 +1561,10 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     if (item.isWord && !item.hasWordAnchor) return false;
     final String? bookKey = item.bookKey;
     if (bookKey == null || bookKey.isEmpty) return false;
+    // 网页视频（KGC1ifR1a3）回到系统浏览器里的原网页，与 App 内模块开关无关。
+    if (item.sourceKind == SentenceSourceKind.web) {
+      return webVideoJumpTarget(bookKey, null) != null;
+    }
     return appModel.moduleVisibility.isEnabled(
       _moduleOfSentenceSource(item.sourceKind),
     );
@@ -1554,7 +1607,9 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     final FavoriteMiningItem? miningItem = _miningItemOf(item);
     final bool canMine = miningItem != null && _cardCreationEnabled;
     final hasAudio = _hasAudio(item);
-    final displayTitle = item.text ?? '';
+    final displayTitle = item.isWebVideoFavorite
+        ? (_itemDisplayBookTitle(item) ?? '')
+        : item.text ?? '';
     // P4：副标题（所属书/视频名）过 display-title 门面（快照列保持 raw 身份）。
     final String? bookDisplayTitle = _itemDisplayBookTitle(item);
     final cs = Theme.of(context).colorScheme;
@@ -1675,11 +1730,13 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
                 SentenceSourceKind.game => FushiIcons.games,
                 SentenceSourceKind.manga => FushiIcons.manga,
                 SentenceSourceKind.music => FushiIcons.music,
+                SentenceSourceKind.web => FushiIcons.openInNew,
               }, size: 18),
               label: Text(switch (kind) {
                 SentenceSourceKind.video => t.nav_video,
                 SentenceSourceKind.game => t.nav_game,
                 SentenceSourceKind.music => t.nav_music,
+                SentenceSourceKind.web => t.collection_web_page_open,
                 SentenceSourceKind.book ||
                 SentenceSourceKind.audiobook ||
                 SentenceSourceKind.lyrics ||
@@ -2062,15 +2119,20 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final bool isMined = item.type == _CollectionType.mined;
     final bool isWord = item.type == _CollectionType.word;
+    final bool isWebVideo = item.isWebVideoFavorite;
     final IconData icon = isMined
         ? FushiIcons.ankiCard
         : isWord
         ? FushiIcons.star
+        : isWebVideo
+        ? FushiIcons.video
         : FushiIcons.quote;
     final String typeLabel = isMined
         ? t.collection_mined
         : isWord
         ? t.collection_word
+        : isWebVideo
+        ? t.collection_web_video
         : t.collection_sentence;
 
     final String title;
@@ -2107,14 +2169,22 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
         SentenceSourceKind.game => t.nav_game,
         SentenceSourceKind.manga => t.manga_library,
         SentenceSourceKind.music => t.nav_music,
+        // 网页视频：来源网站名在 chapterLabel（YouTube / niconico / 域名）。
+        SentenceSourceKind.web => isWebVideo ? null : t.collection_web_video,
         SentenceSourceKind.book => null,
       };
-      title = item.text ?? '';
+      final int? webPosition = kind == SentenceSourceKind.web && !isWebVideo
+          ? item.normCharOffset
+          : null;
+      title = isWebVideo
+          ? (_itemDisplayBookTitle(item) ?? '')
+          : item.text ?? '';
       subtitle = [
         sourcePrefix,
         // 阶段 3：所属书/视频名升级为媒体小节头（[_buildGroupedListView]），
         // 行副标题不再重复拼书名，只留来源前缀 + 章节。
         item.chapterLabel,
+        if (webPosition != null) formatWebVideoPosition(webPosition),
       ].where((s) => s != null && s.isNotEmpty).join(' · ');
     }
 

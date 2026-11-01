@@ -132,6 +132,7 @@ import 'package:fushi/src/pages/implementations/media_sources_dialog.dart';
 import 'package:fushi/src/pages/implementations/library_filter_dropdown.dart';
 import 'package:fushi/src/pages/implementations/library_filter_panel.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_bar.dart';
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_header_search.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_sheet.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
@@ -299,6 +300,7 @@ class HomeVideoPage extends BaseModuleTabPage {
     this.scrapeTaskController,
     this.loadPendingScrapeWorks,
     this.refreshPendingScrapeWorks,
+    this.pendingScrapeChangedSignal,
     this.onOpenSources,
     this.remoteVideoClientLoader,
     this.cloudRemoteVideoClientLoader,
@@ -340,6 +342,10 @@ class HomeVideoPage extends BaseModuleTabPage {
   /// 变化后不刷新提醒条计数。
   final Future<List<VideoPendingScrapeWork>> Function()?
   refreshPendingScrapeWorks;
+
+  /// 待确认清单在刮削之外变了：用户在待确认队列里忽略 / 撤销忽略了作品（反馈
+  /// Fbchzxuq6f）。触发时走 [refreshPendingScrapeWorks] 只读重算提醒条。
+  final Listenable? pendingScrapeChangedSignal;
 
   final VoidCallback? onOpenSources;
   final Future<RemoteVideoClient?> Function()? remoteVideoClientLoader;
@@ -427,8 +433,24 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// 本页实例已尝试接回过的中断下载（视频 id）。见 [_resumeInterruptedRemoteDownloads]。
   final Set<String> _resumeAttempted = <String>{};
 
-  /// 待人工确认身份的作品数（0 = 不显示提醒条）。
-  int _pendingScrapeCount = 0;
+  /// 待人工确认身份的作品（stableKey；空 = 不显示提醒条）。用户忽略过的作品
+  /// 不在内（引擎侧已剔除）。
+  Set<String> _pendingScrapeKeys = const <String>{};
+
+  /// 用户点提醒条「×」那一刻提醒条在提示的作品。只要当前待确认作品都在这里面，
+  /// 提醒条就保持收起；冒出一部新的待确认作品就重新亮出来（反馈 Fbchzxuq6f）。
+  ///
+  /// 只记在本次会话里、不落盘：「×」是「知道了」，不是对这批作品下结论——
+  /// 要永久不再提示某部作品（特典这类本来就没有条目的），在待确认队列里逐部
+  /// 「忽略」，那里记得住、看得见、能撤销。若「×」直接忽略全部，真正等着认的
+  /// 正片也会被一起永久挪出自动补刮。
+  Set<String> _dismissedPendingScrapeKeys = const <String>{};
+
+  int get _pendingScrapeCount => _pendingScrapeKeys.length;
+
+  bool get _pendingScrapeBannerVisible =>
+      _pendingScrapeKeys.isNotEmpty &&
+      !_dismissedPendingScrapeKeys.containsAll(_pendingScrapeKeys);
   bool _pendingScrapeInFlight = false;
 
   /// 计数重算在飞时又来了一次请求：在飞那次读到的可能是旧状态（批次结束前那
@@ -812,6 +834,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     _legacySubscriptionStore = appModelNoUpdate.animeDownloadSubscriptionStore
       ?..revision.addListener(_onLegacySubscriptionStoreChanged);
     widget.libraryRefreshSignal?.addListener(_onLibraryRefreshRequested);
+    widget.pendingScrapeChangedSignal?.addListener(_onPendingScrapeChanged);
     // BUG-1182：「显示远端条目」开关落在 prefsRepo（独立 ChangeNotifier），不经
     // AppModel 通知，本页不会因它重建 → 门控翻转后既不重取也不重渲染。显式订阅。
     // 用 appModelNoUpdate：initState 里读 appModel 会走 ref.watch，触发
@@ -908,6 +931,13 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       widget.scrapeTaskController?.addListener(_onScrapeTaskBusyChanged);
       _scrapeBatchWasBusy = widget.scrapeTaskController?.isBusy == true;
     }
+    if (oldWidget.pendingScrapeChangedSignal !=
+        widget.pendingScrapeChangedSignal) {
+      oldWidget.pendingScrapeChangedSignal?.removeListener(
+        _onPendingScrapeChanged,
+      );
+      widget.pendingScrapeChangedSignal?.addListener(_onPendingScrapeChanged);
+    }
     if (oldWidget.libraryRefreshSignal == widget.libraryRefreshSignal) return;
     oldWidget.libraryRefreshSignal?.removeListener(_onLibraryRefreshRequested);
     widget.libraryRefreshSignal?.addListener(_onLibraryRefreshRequested);
@@ -936,6 +966,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     _scrapePresentationReloadDebounce?.cancel();
     widget.scrapeTaskController?.removeListener(_onScrapeTaskBusyChanged);
     widget.libraryRefreshSignal?.removeListener(_onLibraryRefreshRequested);
+    widget.pendingScrapeChangedSignal?.removeListener(_onPendingScrapeChanged);
     _autoScrape?.dispose();
     appModelNoUpdate.prefsRepo.removeListener(_onPrefsChangedForRemoteGate);
     SyncRepository.fushiClientUrlsRevision.removeListener(
@@ -1016,6 +1047,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
 
   void _onLibraryRefreshRequested() {
     if (mounted) _refresh();
+  }
+
+  /// 忽略 / 撤销忽略只改待确认清单，不改库：只读重算提醒条，不整页刷新、不补刮。
+  void _onPendingScrapeChanged() {
+    if (mounted) unawaited(_refreshPendingScrapeCount());
   }
 
   /// BUG-1699：合集表写入回调。同步/导入常是一批行连写，300ms 合并窗口后重载
@@ -4878,8 +4914,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     if (load == null) return;
     try {
       final List<VideoPendingScrapeWork> pending = await load();
-      if (!mounted || pending.length == _pendingScrapeCount) return;
-      setState(() => _pendingScrapeCount = pending.length);
+      final Set<String> keys = <String>{
+        for (final VideoPendingScrapeWork entry in pending)
+          entry.work.stableKey,
+      };
+      if (!mounted || setEquals(keys, _pendingScrapeKeys)) return;
+      setState(() => _pendingScrapeKeys = keys);
     } catch (_) {
       // 提醒条是附加信息：取不到就保留上一次的数字，不打扰页面。
     }
@@ -4890,10 +4930,30 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// 这些作品刮不出资料**没有任何其他可见症状**——封面照样有（抽帧兜底的那张），
   /// 卡片照样进库，用户只会觉得「封面怎么是视频截图」而不知道有个确认队列在等他
   /// （BUG-2201）。数量为 0 时零高度，与相邻的 [SyncProgressBanner] 一致。
+  ///
+  /// 右侧「×」收起（见 [_dismissedPendingScrapeKeys]），出现 / 收起都带尺寸 +
+  /// 淡入淡出过渡。
   Widget _buildPendingScrapeBanner() {
-    if (_pendingScrapeCount <= 0) return const SizedBox.shrink();
+    final Duration duration = fushiMotionDuration(context, FushiMotion.medium);
+    return FushiAnimatedSize(
+      duration: duration,
+      curve: FushiMotion.standard,
+      alignment: Alignment.topCenter,
+      child: AnimatedSwitcher(
+        duration: duration,
+        switchInCurve: FushiMotion.enter,
+        switchOutCurve: FushiMotion.exit,
+        child: _pendingScrapeBannerVisible
+            ? _buildPendingScrapeBannerCard()
+            : const SizedBox.shrink(key: ValueKey<String>('hidden')),
+      ),
+    );
+  }
+
+  Widget _buildPendingScrapeBannerCard() {
     final VoidCallback? open = widget.onOpenScrapeTasks;
     return Padding(
+      key: const ValueKey<String>('video-library-scrape-pending-banner'),
       padding: const EdgeInsets.only(bottom: 8),
       child: FushiCard(
         child: Padding(
@@ -4916,6 +4976,17 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
                   child: Text(t.video_library_scrape_pending_banner_action),
                 ),
               ],
+              const SizedBox(width: 4),
+              FushiIconButtonControl(
+                key: const ValueKey<String>(
+                  'video-library-scrape-pending-banner-dismiss',
+                ),
+                tooltip: t.video_library_scrape_pending_banner_dismiss,
+                onPressed: () => setState(
+                  () => _dismissedPendingScrapeKeys = _pendingScrapeKeys,
+                ),
+                icon: const FushiIcon(FushiIcons.close),
+              ),
             ],
           ),
         ),

@@ -12,6 +12,7 @@ import 'package:fushi/models.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi_engine/media/video/metadata/video_library_scrape_sweep.dart';
+import 'package:fushi_engine/media/video/metadata/video_scrape_ignored_works.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
@@ -152,6 +153,7 @@ void main() {
     Future<List<VideoPendingScrapeWork>> Function()? load, {
     VoidCallback? onOpenScrapeTasks,
     Future<List<VideoPendingScrapeWork>> Function()? refresh,
+    Listenable? pendingScrapeChangedSignal,
   }) => ProviderScope(
     overrides: <Override>[
       platformServicesProvider.overrideWithValue(platformServices),
@@ -166,6 +168,7 @@ void main() {
             section: VideoLibrarySection.allVideos,
             loadPendingScrapeWorks: load,
             refreshPendingScrapeWorks: refresh,
+            pendingScrapeChangedSignal: pendingScrapeChangedSignal,
             onOpenScrapeTasks: onOpenScrapeTasks,
             scrapeTaskController: controller,
           ),
@@ -472,6 +475,144 @@ void main() {
     expect(
       find.text(t.video_library_scrape_pending_banner(count: 2)),
       findsNothing,
+    );
+  });
+
+  // 反馈 Fbchzxuq6f：提醒条以前没有关闭按钮，特典这类本来就认不出的作品让它永远
+  // 钉在库页顶上。「×」= 知道了：收起到出现新的待确认作品为止（本次会话）。
+  testWidgets('提醒条可收起；冒出新的待确认作品时重新亮出', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final int sourceId = await addSource();
+    await addVideo(
+      'movie-a',
+      'D:/A/Unscraped Movie (2020).mkv',
+      sourceId,
+      'Unscraped Movie',
+    );
+    final ValueNotifier<int> changed = ValueNotifier<int>(0);
+    addTearDown(changed.dispose);
+    final ({
+      Future<List<VideoPendingScrapeWork>> Function() load,
+      Future<List<VideoPendingScrapeWork>> Function() refresh,
+      List<int> callCount,
+      List<int> refreshCount,
+    })
+    port = makePort();
+    await tester.pumpWidget(
+      buildApp(
+        port.load,
+        refresh: port.refresh,
+        pendingScrapeChangedSignal: changed,
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.text(t.video_library_scrape_pending_banner(count: 1)),
+      findsOneWidget,
+    );
+
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>('video-library-scrape-pending-banner-dismiss'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.text(t.video_library_scrape_pending_banner(count: 1)),
+      findsNothing,
+      reason: '提醒条必须能关掉',
+    );
+
+    // 同一批作品重算不能把它又顶出来。
+    changed.value++;
+    await tester.pumpAndSettle();
+    expect(port.refreshCount[0], greaterThan(0), reason: '确实重算过');
+    expect(
+      find.byKey(const ValueKey<String>('video-library-scrape-pending-banner')),
+      findsNothing,
+    );
+
+    await addVideo(
+      'movie-b',
+      'D:/A/Fresh Download (2023).mkv',
+      sourceId,
+      'Fresh Download',
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.text(t.video_library_scrape_pending_banner(count: 2)),
+      findsOneWidget,
+      reason: '新作品入库仍要提醒：收起的只是用户已经看过的那一批',
+    );
+  });
+
+  testWidgets('在待确认队列里忽略作品后，提醒条当场按剩余作品重算', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final int sourceId = await addSource();
+    await addVideo(
+      'movie-a',
+      'D:/A/Unscraped Movie (2020).mkv',
+      sourceId,
+      'Unscraped Movie',
+    );
+    await addVideo(
+      'movie-b',
+      'D:/A/Bonus Feature (2019).mkv',
+      sourceId,
+      'Bonus Feature',
+    );
+    final ValueNotifier<int> changed = ValueNotifier<int>(0);
+    addTearDown(changed.dispose);
+    final ({
+      Future<List<VideoPendingScrapeWork>> Function() load,
+      Future<List<VideoPendingScrapeWork>> Function() refresh,
+      List<int> callCount,
+      List<int> refreshCount,
+    })
+    port = makePort();
+    await tester.pumpWidget(
+      buildApp(
+        port.load,
+        refresh: port.refresh,
+        pendingScrapeChangedSignal: changed,
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.text(t.video_library_scrape_pending_banner(count: 2)),
+      findsOneWidget,
+    );
+
+    await setVideoScrapeWorksIgnored(db, <String>[
+      'book:movie-b',
+    ], ignored: true);
+    changed.value++;
+    await tester.pumpAndSettle();
+
+    expect(
+      find.text(t.video_library_scrape_pending_banner(count: 1)),
+      findsOneWidget,
+      reason: '被忽略的作品不再计入提醒条',
+    );
+    expect(port.callCount[0], 1, reason: '忽略只重算计数，不发起补刮');
+
+    await setVideoScrapeWorksIgnored(db, <String>[
+      'book:movie-a',
+    ], ignored: true);
+    changed.value++;
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey<String>('video-library-scrape-pending-banner')),
+      findsNothing,
+      reason: '全部忽略后提醒条消失',
     );
   });
 }

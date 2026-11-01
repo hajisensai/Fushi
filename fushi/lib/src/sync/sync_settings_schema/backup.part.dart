@@ -1174,6 +1174,10 @@ Future<void> runBackupImportFlowForFile({
     // 「请勿关闭」遮罩、没有进度条，直到进程重启。await endOfFrame 等这帧真正把遮罩画出来
     // 再继续（复用 validating→app 切换 [_rootContextAfterOverlay] 已依赖的同一原语）。
     await WidgetsBinding.instance.endOfFrame;
+    // 「合并导入时包含设置」（AWp-0BtDDv）要在关库之前读。
+    final bool mergeSettings =
+        choice.mode == BackupImportMode.merge &&
+        await SyncRepository(appModel.database).isBackupMergeSettingsEnabled();
     await appModel.closeDatabase();
     if (choice.mode == BackupImportMode.merge) {
       // TODO-888 merge: keep this device's library + settings, only ADD what
@@ -1193,6 +1197,7 @@ Future<void> runBackupImportFlowForFile({
         gameCoversRootDirectory: gameCoversRoot,
         // TODO-1183: 后台解压 isolate 经 SendPort 回报字节 → 确定进度条。
         onProgress: appModel.reportBackupImportProgress,
+        mergePortableSettings: mergeSettings,
       );
     } else {
       await BackupRestoreService.restoreBackup(

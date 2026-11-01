@@ -622,20 +622,25 @@ extension _ReaderCaret on _ReaderFushiPageState {
         // 两级都在**本页**消费，不再依赖「返回 ignored → 冒泡到最外层硬编码 Esc」
         // 那条隐形链路：那条链路让退书行为与设置页显示的键位对不上（设置页写
         // Ctrl+W，实际 Esc 也能退），也让改键改不动真正生效的那个键。
-        if (isDictionaryShown) {
-          clearDictionaryResult();
-          return KeyEventResult.handled;
+        //   ②' 歌词覆盖层在场 → 先回到下面的阅读器（Niratan：Esc 先退歌词再关窗口）。
+        //      覆盖层只是盖在正文上的一层，退一级就是把它掀开，不是退书。**只有快捷键
+        //      这条来源这样**：系统返回（PopScope）在歌词模式下直接退书（NJIIDAhIZL），
+        //      两条来源的阶梯单点在 [resolveReaderBackStep]。
+        switch (resolveReaderBackStep(
+          source: ReaderBackSource.shortcut,
+          dictionaryShown: isDictionaryShown,
+          lyricsMode: _lyricsMode,
+        )) {
+          case ReaderBackStep.closeDictionary:
+            clearDictionaryResult();
+          case ReaderBackStep.closeLyrics:
+            unawaited(_toggleLyricsMode());
+          case ReaderBackStep.exitBook:
+            // ③ 窗口全屏中 → 先退全屏、留在书里；不在全屏才真的退书。用户裁定「Esc
+            //    也可以退出全屏」，次序见 [_exitWindowFullscreenOrPopReader]。非全屏时
+            //    它只多读一次窗口状态就落回原来的 maybePop，退书路径本身没变。
+            unawaited(_exitWindowFullscreenOrPopReader());
         }
-        // ②' 歌词覆盖层在场 → 先回到下面的阅读器（Niratan：Esc 先退歌词再关窗口）。
-        //    覆盖层只是盖在正文上的一层，退一级就是把它掀开，不是退书。
-        if (_lyricsMode) {
-          unawaited(_toggleLyricsMode());
-          return KeyEventResult.handled;
-        }
-        // ③ 窗口全屏中 → 先退全屏、留在书里；不在全屏才真的退书。用户裁定「Esc 也可以
-        //    退出全屏」，次序见 [_exitWindowFullscreenOrPopReader]。非全屏时它只多读一次
-        //    窗口状态就落回原来的 maybePop，退书路径本身没变。
-        unawaited(_exitWindowFullscreenOrPopReader());
         return KeyEventResult.handled;
       case ShortcutAction.readerToggleChrome:
         if (isDictionaryShown) {

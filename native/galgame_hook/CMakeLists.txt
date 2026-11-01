@@ -328,6 +328,18 @@ if(MSVC)
   target_compile_options(fushi_siglus_legacy_owner_test PRIVATE /W4 /WX)
 endif()
 add_test(NAME fushi_siglus_legacy_owner_test COMMAND fushi_siglus_legacy_owner_test)
+add_executable(fushi_siglus_ninearg_family_test "tests/siglus_ninearg_family_test.cpp")
+target_include_directories(fushi_siglus_ninearg_family_test PRIVATE "hook/adapters")
+if(MSVC)
+  target_compile_options(fushi_siglus_ninearg_family_test PRIVATE /W4 /WX)
+endif()
+add_test(NAME fushi_siglus_ninearg_family_test COMMAND fushi_siglus_ninearg_family_test)
+add_executable(fushi_siglus_ninearg_runtime_test "tests/siglus_ninearg_runtime_test.cpp")
+target_include_directories(fushi_siglus_ninearg_runtime_test PRIVATE "hook/adapters")
+if(MSVC)
+  target_compile_options(fushi_siglus_ninearg_runtime_test PRIVATE /W4 /WX)
+endif()
+add_test(NAME fushi_siglus_ninearg_runtime_test COMMAND fushi_siglus_ninearg_runtime_test)
 if(MSVC AND CMAKE_SIZEOF_VOID_P EQUAL 4)
   add_executable(fushi_siglus_glyph_abi_test "tests/siglus_glyph_abi_test.cpp")
   target_compile_options(fushi_siglus_glyph_abi_test PRIVATE /O2 /W4 /WX)
@@ -813,6 +825,13 @@ target_compile_definitions(fushi_unity_text_mesh_reassembler_test
   PRIVATE UNICODE _UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 add_test(NAME fushi_unity_text_mesh_reassembler_test
   COMMAND fushi_unity_text_mesh_reassembler_test)
+
+add_executable(fushi_immediate_text_repeat_filter_test
+  tests/immediate_text_repeat_filter_test.cpp)
+target_include_directories(fushi_immediate_text_repeat_filter_test
+  PRIVATE include)
+add_test(NAME fushi_immediate_text_repeat_filter_test
+  COMMAND fushi_immediate_text_repeat_filter_test)
 
 add_executable(fushi_adapter_contract_test tests/adapter_contract_test.cpp)
 # v19 起 adapter.h 依赖 IPC 头（LookupAdmissionReport 是 adapter 契约的一部分：

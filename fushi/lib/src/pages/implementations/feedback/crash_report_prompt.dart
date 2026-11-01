@@ -48,6 +48,7 @@ String crashKindLabel(PreviousExitKind kind) => switch (kind) {
   PreviousExitKind.memoryKill => t.feedback_crash_kind_memory,
   PreviousExitKind.unexpected ||
   PreviousExitKind.userStopped ||
+  PreviousExitKind.appUpdated ||
   PreviousExitKind.backgroundReclaim => t.feedback_crash_kind_unexpected,
 };
 

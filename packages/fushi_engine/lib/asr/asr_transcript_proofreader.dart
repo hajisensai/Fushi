@@ -167,7 +167,7 @@ class AsrTranscriptProofreader {
     required this.completer,
     this.batchSize = 40,
     this.contextLines = 2,
-    this.concurrency = 2,
+    this.concurrency = 4,
     this.languageTag,
     this.log,
   }) : assert(batchSize > 0 && contextLines >= 0 && concurrency > 0);
@@ -176,7 +176,8 @@ class AsrTranscriptProofreader {
   final int batchSize;
   final int contextLines;
 
-  /// 同时在途的批数（限频由 `AiChatClient` 把关）。
+  /// 同时在途的批数（限频由 `AiChatClient` 把关）。app 按提供商传
+  /// `AiProviderConfig.batchConcurrency`，与视频字幕校对同一个推算。
   final int concurrency;
 
   /// 稿子的语言（BCP 47 等）；非空时写进提示词。

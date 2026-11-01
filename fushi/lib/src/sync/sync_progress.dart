@@ -51,6 +51,9 @@ enum SyncPhase {
   /// Collections plus what hangs off them (tags, media links, scraped metadata).
   collections,
 
+  /// 可移植偏好设置（「同步设置」，反馈 AWp-0BtDDv）。
+  settings,
+
   /// Deletion-propagation tombstones.
   deletions,
 

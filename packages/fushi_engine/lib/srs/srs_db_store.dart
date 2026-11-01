@@ -766,6 +766,61 @@ class SrsDbStore implements SrsSync2Host {
     Iterable<String> ids,
   ) => _entityEditsMany(kind, ids);
 
+  /// 一组笔记**一个字段键**（如 [SrsFieldKeys.noteSource]）的生效值：只读这个键的修改记录、只把它们交给
+  /// 字段寄存器内核（一块一次 FFI 调用），不物化整条笔记。没有这个键的记录（或笔记不存在）的 ID 不出现在
+  /// 结果里。
+  ///
+  /// 只要一个键的批量读者（全景的作品出处）不能走 [notes]：那会把每条笔记的全部字段原文、全部修改记录读进
+  /// 调用方 isolate 再整批过一次内核——字段里带整段释义 HTML 的 2 万卡大库这是上 GB 的原文，主 isolate 上
+  /// 直接 ANR / OOM（反馈 lGXA8zC1A2 / i8qNDs_V_D：启动时主线程卡在 `ffsrs_materialize`，PSS 1.58 GB）。
+  /// 寄存器按键独立合并（支配 / 排序键 / 冲突都只看同一个键上的记录），所以只给一个键的记录与整条物化后
+  /// 取同一个键逐值相同。
+  Future<Map<String, Object?>> noteFieldKeyValues(
+    Iterable<String> ids,
+    String fieldKey,
+  ) async {
+    final Map<String, Object?> out = <String, Object?>{};
+    final String kind = SrsEntityKind.note.wire;
+    for (final List<String> chunk in _chunks(ids.toSet())) {
+      final Map<String, List<SrsEditItem>> byId = <String, List<SrsEditItem>>{};
+      for (final QueryRow q
+          in await db
+              .customSelect(
+                'SELECT f.entity_id AS e, '
+                'CAST(f.json AS BLOB) AS j, s.server_time AS st '
+                'FROM srs_field_edits f '
+                'LEFT JOIN srs_event_local s ON s.event_id = f.id '
+                'WHERE f.entity_kind = ? AND f.field_key = ? '
+                'AND f.entity_id IN (${_marks(chunk)})',
+                variables: <Variable<Object>>[
+                  Variable<String>(kind),
+                  Variable<String>(fieldKey),
+                  for (final String id in chunk)
+                    Variable<String>(id, srsIdType),
+                ],
+                readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
+                  db.srsFieldEdits,
+                  db.srsEventLocal,
+                },
+              )
+              .get()) {
+        (byId[q.read<String>('e')] ??= <SrsEditItem>[]).add(
+          SrsEditItem.stored(q.read<Uint8List>('j'), q.readNullable<int>('st')),
+        );
+      }
+      if (byId.isEmpty) continue;
+      final List<String> order = byId.keys.toList();
+      final List<SrsEntityEdits> edits = srsEntityEditsOf(<List<SrsEditItem>>[
+        for (final String id in order) byId[id]!,
+      ]);
+      for (int i = 0; i < order.length; i++) {
+        final SrsRegister? r = edits[i][fieldKey];
+        if (r != null) out[order[i]] = r.value;
+      }
+    }
+    return out;
+  }
+
   Future<SrsEntityEdits> _entityEdits(SrsEntityKind kind, String id) async =>
       srsEntityEditsOf(<List<SrsEditItem>>[await _editItems(kind, id)]).single;
 
@@ -3170,6 +3225,7 @@ class SrsDbStore implements SrsSync2Host {
     int rating, {
     int durationMs = 0,
     String? studyDeckId,
+    SrsCustomStudy? custom,
   }) async {
     if (rating < 1 || rating > 4) {
       throw ArgumentError.value(rating, 'rating', 'must be 1..4');
@@ -3204,16 +3260,18 @@ class SrsDbStore implements SrsSync2Host {
         dayRolloverHour: raw.day.rolloverHour,
         result: p.plan[rating],
       );
+      // 自定义学习不按 RWKV 出卡（选卡条件在内核里），同样一次命令排完。
       final bool merge =
           studyDeckId != null &&
           tree[studyDeckId] != null &&
-          !_instantPossible(tree, tree.subtree(studyDeckId));
+          (custom != null ||
+              !_instantPossible(tree, tree.subtree(studyDeckId)));
       Map<String, Object?>? study;
       await _emit(
         <SrsEvent>[SrsLogEvent(log)],
         logNotes: <String, String>{cardId: raw.note},
         study: merge
-            ? await _studyRequest(tree, studyDeckId, pick: true)
+            ? await _studyRequest(tree, studyDeckId, pick: true, custom: custom)
             : null,
         onStudy: (Map<String, Object?> s) => study = s,
       );
@@ -3224,7 +3282,7 @@ class SrsDbStore implements SrsSync2Host {
     if (studyDeckId == null) return SrsAnswerOutcome(log, null);
     final SrsStudyState? study = merged != null
         ? _studyStateOf(merged, tree, studyDeckId)
-        : await studyState(studyDeckId);
+        : await studyState(studyDeckId, custom: custom);
     return SrsAnswerOutcome(log, study);
   }
 
@@ -3309,18 +3367,17 @@ class SrsDbStore implements SrsSync2Host {
     String? deckId, {
     bool pick = false,
     Set<String> exclude = const <String>{},
+    SrsCustomStudy? custom,
   }) async {
     final SrsDayContext day = await dayContext();
     final (int nowMs, _) = now();
     final List<String> decks = deckId == null
         ? <String>[for (final SrsDeckView d in tree.decks) d.id]
         : tree.subtree(deckId);
-    final Map<String, Object?>? rw = await _instantInput(
-      tree,
-      decks,
-      day,
-      nowMs,
-    );
+    // 自定义学习的出卡不看 RWKV 分数（[SrsCustomStudy]），不必等 RWKV 打分。
+    final Map<String, Object?>? rw = custom != null
+        ? null
+        : await _instantInput(tree, decks, day, nowMs);
     return <String, Object?>{
       'op': 'study',
       'deck': ?deckId,
@@ -3330,6 +3387,7 @@ class SrsDbStore implements SrsSync2Host {
       'pick': pick,
       if (exclude.isNotEmpty) 'exclude': exclude.toList(),
       'rwkv': ?rw,
+      if (custom != null && deckId != null) 'custom': custom.toRequest(),
     };
   }
 
@@ -3411,14 +3469,19 @@ class SrsDbStore implements SrsSync2Host {
       ),
       next: r['next'] as String?,
       after: r['after'] as String?,
+      custom: SrsCustomStudyProgress.fromValue(r['custom']),
     );
   }
 
   /// 复习页的一次排队：[deckId]（含子树）的计数、下一张、排除它之后的再下一张（预取用），一次命令。
   /// 牌组不存在时 null。
+  ///
+  /// [custom] 不为 null = 自定义学习的临时会话（[SrsCustomStudy]）：出卡换成会话的选卡条件，结果带
+  /// [SrsStudyState.custom] 进度。
   Future<SrsStudyState?> studyState(
     String deckId, {
     Set<String> exclude = const <String>{},
+    SrsCustomStudy? custom,
   }) async {
     final SrsDeckTree tree = await deckTree();
     if (tree[deckId] == null) return null;
@@ -3427,6 +3490,7 @@ class SrsDbStore implements SrsSync2Host {
       deckId,
       pick: true,
       exclude: exclude,
+      custom: custom,
     );
     return _studyStateOf(await _sync2(request), tree, deckId, request: request);
   }
@@ -3473,6 +3537,35 @@ class SrsDbStore implements SrsSync2Host {
       deckId,
       request: request,
     )?.summary;
+  }
+
+  /// 自定义学习「提升今日上限」：给 [deckId] 今天的新卡 / 复习上限各追加 [newCards] / [reviews] 张（与今天
+  /// 已追加的累加；昨天以前的追加作废）。走修改记录，随同步到其它设备；第二天自动失效。返回今天的追加总量。
+  Future<({int newCards, int reviews})> extendTodayLimits(
+    String deckId, {
+    int newCards = 0,
+    int reviews = 0,
+  }) async {
+    final SrsDeckView? deck = (await deckTree())[deckId];
+    if (deck == null) throw StateError('deck not found: $deckId');
+    final SrsDayContext day = await dayContext();
+    final int today = day.dayIndexOf(now().$1);
+    final ({int newCards, int reviews}) cur =
+        deck.limitExtension?.on(today) ?? (newCards: 0, reviews: 0);
+    final SrsDeckLimitExtension next = SrsDeckLimitExtension(
+      day: today,
+      newCards: (cur.newCards + newCards.clamp(0, SrsDeckLimitExtension.max))
+          .clamp(0, SrsDeckLimitExtension.max),
+      reviews: (cur.reviews + reviews.clamp(0, SrsDeckLimitExtension.max))
+          .clamp(0, SrsDeckLimitExtension.max),
+    );
+    await editField(
+      SrsEntityKind.deck,
+      deckId,
+      SrsFieldKeys.deckExtendLimits,
+      next.toValue(),
+    );
+    return (newCards: next.newCards, reviews: next.reviews);
   }
 
   /// 牌组列表里收起 / 展开子牌组（Anki 的 deck collapsed）。走修改记录，随同步到其它设备；
@@ -3919,7 +4012,9 @@ class SrsDbStore implements SrsSync2Host {
   Future<String?> nextCard(
     String deckId, {
     Set<String> exclude = const <String>{},
-  }) async => (await studyState(deckId, exclude: exclude))?.next;
+    SrsCustomStudy? custom,
+  }) async =>
+      (await studyState(deckId, exclude: exclude, custom: custom))?.next;
 
   Future<SrsCardDetail?> cardDetail(String cardId) async {
     final SrsCardCacheRow? c = await cardRow(cardId);
@@ -4169,14 +4264,24 @@ class SrsDbStore implements SrsSync2Host {
   /// （SQLite 侧 GROUP BY）挑出这些字段键，只把它们的记录读回来解析。以前把本 profile 全部修改
   /// 记录（含每条笔记的字段正文）整表读回 UI isolate 逐条 JSON 解析，牌组列表每次重读都付一遍
   /// O(全部修改记录) 的代价（BUG-3548）。
+  ///
+  /// 只读标志类 / 设置类的字段键（[srsFieldClassSqlFilter]，与 [srsFieldClassOf] 同一张表）：内容类（笔记字段
+  /// 正文）的并发候选不进这份清单（它们走待裁决），以前却连同正文全部读回来再丢掉。两台设备各自导入同一个
+  /// 包（笔记 ID 由 guid 确定）后，每条笔记的每个字段都留着两条互不支配的记录——这条查询一次读回整库正文两遍
+  /// （1.9 万张卡的库上过 GB），牌组列表的冲突角标每次重读都跑，原生分配失败闪退（BUG-3947）。
   Future<List<(SrsEntityKind, String, SrsRegister)>> syncConflicts() async {
+    final String tracked = srsFieldClassSqlFilter(
+      _kSyncConflictClasses,
+      kindColumn: 'entity_kind',
+      keyColumn: 'field_key',
+    );
     final List<QueryRow> rows = await db
         .customSelect(
           'SELECT e.entity_kind AS k, e.entity_id AS i, e.field_key AS f, '
           'CAST(e.json AS BLOB) AS j, s.server_time AS st '
           'FROM srs_field_edits e '
           'JOIN (SELECT entity_kind AS k, entity_id AS i, field_key AS f '
-          'FROM srs_field_edits WHERE profile_uid = ? '
+          'FROM srs_field_edits WHERE profile_uid = ? AND $tracked '
           'GROUP BY entity_kind, entity_id, field_key HAVING COUNT(*) > 1) m '
           'ON e.entity_kind = m.k AND e.entity_id = m.i AND e.field_key = m.f '
           'LEFT JOIN srs_event_local s ON s.event_id = e.id '
@@ -4207,20 +4312,27 @@ class SrsDbStore implements SrsSync2Host {
     final List<SrsEntityEdits> built = srsEntityEditsOf(<List<SrsEditItem>>[
       for (final (String _, List<SrsEditItem> items) in regs) items,
     ]);
+    debugSyncConflictRowsRead = rows.length;
     final List<(SrsEntityKind, String, SrsRegister)> out =
         <(SrsEntityKind, String, SrsRegister)>[];
     for (int i = 0; i < regs.length; i++) {
       final SrsRegister reg = built[i][regs[i].$1]!;
       if (reg.visibleLosers.isEmpty) continue;
       final SrsFieldEdit w = reg.winner!;
-      final SrsFieldClass cls = srsFieldClassOf(w.entityKind, w.fieldKey);
-      if (cls == SrsFieldClass.content || cls == SrsFieldClass.viewState) {
-        continue;
-      }
       out.add((w.entityKind, w.entityId, reg));
     }
     return out;
   }
+
+  /// [syncConflicts] 收的字段类别：内容类走待裁决，界面状态（折叠 / 新卡位置）最后修改生效、不进冲突记录。
+  static const Set<SrsFieldClass> _kSyncConflictClasses = <SrsFieldClass>{
+    SrsFieldClass.flag,
+    SrsFieldClass.setting,
+  };
+
+  /// 最近一次 [syncConflicts] 从库里读回的修改记录条数（测试核对内容类正文没被读回来）。
+  @visibleForTesting
+  int debugSyncConflictRowsRead = 0;
 
   /// 改回 / 确认：写一条覆盖全部候选的新修改记录。
   Future<void> resolveConflict(
@@ -4853,9 +4965,13 @@ class SrsStudyState {
     required this.summary,
     required this.next,
     required this.after,
+    this.custom,
   });
 
   final SrsDeckSummary summary;
+
+  /// 自定义学习会话的进度（只在按 [SrsCustomStudy] 排队时有）。
+  final SrsCustomStudyProgress? custom;
 
   /// 下一张；null = 今天这棵子树没有可出的卡。
   final String? next;

@@ -722,23 +722,36 @@ std::span<const char32_t> traditional_candidates(char32_t ch) {
   if (it == table.end() || it->simplified != ch) return {};
   return std::span<const char32_t>(opencc_st::kCandidates).subspan(it->first, it->count);
 }
+
+// 繁體码点 → OpenCC TSCharacters 全部简体候选（上游顺序：乾 → 干 / 乾，鍾 → 钟 / 锺）。
+// 表外字符（已是简体的字、假名、拉丁…）返回空。
+std::span<const char32_t> simplified_candidates(char32_t ch) {
+  const auto& table = opencc_st::kTradToSimp;
+  if (ch < table.front().traditional) return {};
+  const auto it = std::ranges::lower_bound(table, ch, {}, &opencc_st::TradToSimp::traditional);
+  if (it == table.end() || it->traditional != ch) return {};
+  return std::span<const char32_t>(opencc_st::kSimpCandidates).subspan(it->first, it->count);
 }
 
-std::vector<std::u32string> text_processor::simplified_to_traditional_variants(const std::u32string& text,
-                                                                               std::size_t max_variants) {
-  // 一简多繁（发 → 發/髮、干 → 幹/乾/干、后 → 後/后、里 → 裏/裡）只按首选项转会把
-  // 头发转成「頭發」、关系转成「關系」，词典永远对不上。这里把每个字的全部候选展开成
-  // 多个拼写，交给词典去认哪个是真词（头发 → 頭發 / 頭髮，只有 頭髮 命中）。
-  //
-  // 组合数随歧义字个数指数增长，所以按「各字所选候选的序号之和」从小到大保留前
-  // max_variants 个（首选项组合排第一）。逐字扩展、每步排序截断即可得到全局最优的
-  // 前 K 个：一个全局前 K 的组合，它的任何前缀在该步一定也在前 K 内。扫描是逐前缀
-  // 分别调用的，短前缀（真正的词）组合数小、不会被截断；只有很长、歧义字很多的前缀
-  // 才会丢掉排序靠后的拼写。
+// 逐字取 [candidates_of] 的全部候选做组合，按「各字所选候选的序号之和」从小到大保留
+// 前 [max_variants] 个（首选项组合排第一），不含与 [text] 相同的那一个。简 → 繁、
+// 繁 → 简两个方向共用这一份展开，只是候选表不同。
+//
+// 一字多候选（发 → 發/髮、干 → 幹/乾/干、乾 → 干/乾）只按首选项转会把头发转成
+// 「頭發」、关系转成「關系」，词典永远对不上。这里把每个字的全部候选展开成多个拼写，
+// 交给词典去认哪个是真词（头发 → 頭發 / 頭髮，只有 頭髮 命中）。
+//
+// 组合数随歧义字个数指数增长，所以按序号和截断。逐字扩展、每步排序截断即可得到全局
+// 最优的前 K 个：一个全局前 K 的组合，它的任何前缀在该步一定也在前 K 内。扫描是逐
+// 前缀分别调用的，短前缀（真正的词）组合数小、不会被截断；只有很长、歧义字很多的
+// 前缀才会丢掉排序靠后的拼写。
+template <typename CandidatesOf>
+std::vector<std::u32string> expand_script_variants(const std::u32string& text, std::size_t max_variants,
+                                                   CandidatesOf candidates_of) {
   std::vector<std::pair<std::u32string, std::size_t>> combos;
   bool any = false;
   for (std::size_t i = 0; i < text.size(); ++i) {
-    const auto candidates = traditional_candidates(text[i]);
+    const std::span<const char32_t> candidates = candidates_of(text[i]);
     if (candidates.empty()) continue;
     if (!any) {
       combos.emplace_back(text, 0);
@@ -763,6 +776,17 @@ std::vector<std::u32string> text_processor::simplified_to_traditional_variants(c
     if (combo != text) out.push_back(std::move(combo));
   }
   return out;
+}
+}  // namespace
+
+std::vector<std::u32string> text_processor::simplified_to_traditional_variants(const std::u32string& text,
+                                                                               std::size_t max_variants) {
+  return expand_script_variants(text, max_variants, traditional_candidates);
+}
+
+std::vector<std::u32string> text_processor::traditional_to_simplified_variants(const std::u32string& text,
+                                                                               std::size_t max_variants) {
+  return expand_script_variants(text, max_variants, simplified_candidates);
 }
 
 // https://github.com/yomidevs/yomitan/blob/81d17d877fb18c62ba826210bf6db2b7f4d4deed/ext/js/language/translator.js#L564
@@ -803,16 +827,21 @@ std::vector<TextVariant> text_processor::process(const std::string& src, bool ch
     variants = std::move(next);
   }
 
-  // 简体 → 繁體只在调用方声明查询语言为中文时展开（引擎无语言路由，由 LookupOptions
-  // 传入；非中文查询的变体集与此前逐字节一致）。挂在链尾、对每个已有变体展开：原形
-  // 变体始终保留，繁體拼写是额外多出的若干个（steps + 1，同长度时排在原形之后）。
+  // 简繁双向只在调用方判定这次按中文处理时展开（引擎无语言路由，由 LookupOptions
+  // 传入；非中文查询的变体集与此前逐字节一致）。挂在链尾、对每个已有变体两个方向各
+  // 展开一次：原形变体始终保留，另一种字形的拼写是额外多出的若干个（steps + 1，同长度
+  // 时排在原形之后）。两个方向都要：词典按简体建索引时繁體查询（之間 → 之间）要靠
+  // 繁 → 简，按繁體建索引时简体查询（之间 → 之間）要靠简 → 繁（反馈 3FY6vTqwV-）；
+  // 简繁混排的文本（头髮）各自朝一种字形收敛（頭髮 / 头发）。
   if (chinese_simp_to_trad) {
     std::map<std::u32string, int> next = variants;
+    const auto add = [&next](std::u32string spelling, int steps) {
+      auto [it, inserted] = next.try_emplace(std::move(spelling), steps);
+      if (!inserted && steps < it->second) it->second = steps;
+    };
     for (const auto& [variant, steps] : variants) {
-      for (auto& traditional : simplified_to_traditional_variants(variant)) {
-        auto [it, inserted] = next.try_emplace(std::move(traditional), steps + 1);
-        if (!inserted && steps + 1 < it->second) it->second = steps + 1;
-      }
+      for (auto& traditional : simplified_to_traditional_variants(variant)) add(std::move(traditional), steps + 1);
+      for (auto& simplified : traditional_to_simplified_variants(variant)) add(std::move(simplified), steps + 1);
     }
     variants = std::move(next);
   }

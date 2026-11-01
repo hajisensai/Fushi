@@ -16,6 +16,7 @@
 #include "siglus_legacy_live_admission.h"
 #include "siglus_eight_arg_glyph.h"
 #include "siglus_eightarg_message_capture.h"
+#include "siglus_ninearg_family.h"
 #include "siglus_image.h"
 // Exercise the production clock write deterministically, without sleeping or
 // substituting a second implementation of TextLaneEvent publication.
@@ -81,6 +82,48 @@ Memory MemoryFixture() {
   return {{{0x11f8, 42}, {0x11e0, 1}, {0x1228, 0x2000},
            {0x122c, 0x2380}, {0x3000, 0x3ffc}, {0x3004, 0x7001},
            {0x2f00, 0x7002}}};
+}
+
+// Plain-frame message entry calls Scenario itself: Scenario's caller frame is
+// the armed entry's own EBP (entryESP-4) and there is no wrapper return.
+void TestDirectTicket() {
+  SiglusMessageLayout layout{0x1f8, 0x1e0, 0x228, 0x22c, 0x1c0, 0, 0x7002, true};
+  auto memory = MemoryFixture();
+  SiglusMessageTicket ticket{};
+  SiglusMessageOwnerSnapshot frozen;
+  Check(ArmSiglusMessageTicket(layout, 0x1000, 0x4000, memory, &ticket));
+  Check(ConsumeSiglusMessageTicket(layout, 0x21c0, 0x2f00, 0x3ffc,
+                                  memory, &ticket, &frozen));
+  Check(frozen.voice_key == 42 && frozen.surface == 0x21c0);
+  // A nested/foreign Scenario frame, even one with the aligned wrapper shape,
+  // is not the armed entry's own frame.
+  Check(ArmSiglusMessageTicket(layout, 0x1000, 0x4000, memory, &ticket));
+  Check(!ConsumeSiglusMessageTicket(layout, 0x21c0, 0x2f00, 0x3000,
+                                   memory, &ticket, &frozen));
+  Check(!ticket.armed);
+  // The return into the message entry is still required.
+  memory.words[0x2f00] = 0x7001;
+  Check(ArmSiglusMessageTicket(layout, 0x1000, 0x4000, memory, &ticket));
+  Check(!ConsumeSiglusMessageTicket(layout, 0x21c0, 0x2f00, 0x3ffc,
+                                   memory, &ticket, &frozen));
+  memory = MemoryFixture();
+  // Owner state changed between entry and Scenario.
+  Check(ArmSiglusMessageTicket(layout, 0x1000, 0x4000, memory, &ticket));
+  ++memory.words[0x11f8];
+  Check(!ConsumeSiglusMessageTicket(layout, 0x21c0, 0x2f00, 0x3ffc,
+                                   memory, &ticket, &frozen));
+  memory = MemoryFixture();
+  // Mixed layouts fail closed in both directions.
+  layout.message_surface_return = 0x7001;
+  Check(!ArmSiglusMessageTicket(layout, 0x1000, 0x4000, memory, &ticket));
+  auto wrapped = Layout();
+  wrapped.message_surface_return = 0;
+  Check(!ArmSiglusMessageTicket(wrapped, 0x1000, 0x4000, memory, &ticket));
+  // The wrapped layout never accepts a direct frame.
+  wrapped = Layout();
+  Check(ArmSiglusMessageTicket(wrapped, 0x1000, 0x4000, memory, &ticket));
+  Check(!ConsumeSiglusMessageTicket(wrapped, 0x21c0, 0x2f00, 0x3ffc,
+                                   memory, &ticket, &frozen));
 }
 
 void TestTicket() {
@@ -195,6 +238,10 @@ struct { SiglusEightArgGlyphSites glyph; } g_siglus_eightarg_sites;
 bool IsEightArgSiglusLookup(const SiglusLookupProfile& profile) {
   return profile.glyph_abi == SiglusGlyphLayoutAbi::kEcxEightArguments;
 }
+siglus_ninearg::Sites g_siglus_ninearg_sites;
+bool IsNineArgSiglusLookup(const SiglusLookupProfile& profile) {
+  return profile.glyph_abi == SiglusGlyphLayoutAbi::kStackNineArguments;
+}
 uint64_t eightarg_epoch = 0, observed_epoch = 0, bound_epoch = 0;
 int begin_calls = 0, observed_calls = 0, sync_calls = 0, bind_calls = 0;
 bool bind_allowed = true;
@@ -268,12 +315,14 @@ uint64_t published_seq = 0, snapshot_seq = 0, queued_voice_seq = 0;
 uint64_t queued_voice_tick = 0, last_writer_tick = 0;
 bool use_real_lane_writer = false;
 int writes = 0;
+const wchar_t* last_code = nullptr;
 uint64_t WriteTextRingEntryLocked(const wchar_t* text, int units,
                                  uint64_t thread_id, uint64_t address,
                                  uint64_t context, uint32_t source_kind,
                                  const char* name, const wchar_t* code,
                                  uint64_t* committed_tick_ms = nullptr) {
   ++writes;
+  last_code = code;
   if (committed_tick_ms != nullptr) *committed_tick_ms = 0;
   if (use_real_lane_writer) {
     TextLaneWrite write;
@@ -413,10 +462,18 @@ void TestProductionWorkerAndRollback() {
   g_siglus_message_install_state.store(1);
   Check(IsSiglusMessageTextInstalled());
   Check(!IsSiglusMessageVoiceMappingProved());
+  // A voice-owning lane fences unproved archive reads; a silent one does not.
+  Check(IsSiglusMessageVoiceOwned());
+  g_siglus_message_silent_voice = true;
+  Check(!IsSiglusMessageVoiceOwned() && IsSiglusMessageTextInstalled());
+  g_siglus_message_silent_voice = false;
   published_seq = 123;
   Check(g_siglus_message_tasks.TryPush(task));
   ProcessSiglusMessageTextTasks();
   Check(writes == 1 && snapshot_seq == 123 && queued_voice_seq == 0);
+  // The app auto-selects only ENGINE:-coded threads; this lane is one.
+  Check(last_code != nullptr &&
+        std::wcscmp(last_code, L"ENGINE:SIGLUS:message") == 0);
   g_siglus_message_profile.voice_key_resource_mapping_proved = true;
   Check(!IsSiglusMessageVoiceMappingProved());  // Static profile is insufficient.
   published_seq = 124;
@@ -645,9 +702,11 @@ void TestInstallationFailures() {
       g_siglus_message_targets[i] = reinterpret_cast<void*>(static_cast<uintptr_t>(0x5000 + i));
     }
   };
+  g_header->luna_active = 0;
   for (int failure = 0; failure < 2; ++failure) {
     reset(); mock_create_status[failure] = MH_ERROR_NOT_CREATED;
     Check(!InstallSiglusMessageHookGroup());
+    Check(g_header->luna_active == 0);
     Check(!IsSiglusMessageTextInstalled() && !IsSiglusMessageTextOwnershipBlocked());
     Check(mock_removed == failure && mock_enabled == 0);
   }
@@ -707,9 +766,12 @@ void TestInstallationFailures() {
   Check(mock_detours[1] == reinterpret_cast<void*>(&Detour_SiglusEightArgMessageScenario));
   Check(IsSiglusMessageTextInstalled() && g_siglus_message_capture_enabled.load());
   reset();
+  g_header->luna_active = 0;
   Check(InstallSiglusMessageHookGroup());
   Check(IsSiglusMessageTextInstalled() && g_siglus_message_capture_enabled.load());
   Check(mock_created == 2 && mock_enabled == 2 && mock_removed == 0);
+  // Installed ownership silences the GDI fallback before the first line.
+  Check(g_header->luna_active == 1);
   ShutdownSiglusMessageText();
   Check(!IsSiglusMessageTextInstalled() && !IsSiglusMessageTextOwnershipBlocked());
   Check(mock_removed == 0 && g_orig_SiglusMessageEntry != nullptr &&
@@ -772,6 +834,55 @@ void TestLegacyProductionObservers() {
   ObserveSiglusLegacyMessageText(&call);
   Check(!g_siglus_legacy_message_ticket.armed &&
         !g_siglus_message_tasks.TryPop(&task));
+  g_siglus_message_capture_enabled.store(false);
+}
+
+// The nine-argument wrapper shares the legacy frame but carries no script
+// voice key, and its inner call keeps the caller's ESI instead of zero.
+void TestNineArgProductionObservers() {
+  uint32_t owner[80] = {}, frames[128] = {};
+  const auto address = [](const void* p) {
+    return static_cast<uint32_t>(reinterpret_cast<uintptr_t>(p));
+  };
+  const uint32_t outer = address(&frames[80]), inner = outer - 0x68;
+  auto* text = reinterpret_cast<SiglusTextUnionW*>(outer + 8);
+  text->size = 2; text->capacity = 7;
+  text->storage.chars[0] = L'C'; text->storage.chars[1] = L'D';
+  frames[80] = 0x8000;
+  *reinterpret_cast<uint32_t*>(inner) = 0x7004;
+  // Saved callee registers sit below the outer frame exactly as in legacy.
+  frames[80 - 0x60 / 4] = 0;
+  frames[80 - 0x5c / 4] = 0x2468;
+  g_siglus_legacy_message_layout = {0u, 0x7004, 1500, false};
+  SiglusNativeMessageSavedRegisters entry{}, call{};
+  entry.saved_esp = outer - 4; entry.ecx = address(owner); entry.esi = 0x2468;
+  call.saved_esp = inner - 4; call.ecx = outer + 4; call.edi = address(owner);
+  call.esi = 0x2468;
+  g_siglus_message_capture_enabled.store(true);
+  g_capture_enabled = true;
+  SiglusMessageTextTask task;
+  while (g_siglus_message_tasks.TryPop(&task)) {}
+  ObserveSiglusLegacyMessageEntry(&entry);
+  Check(g_siglus_legacy_message_ticket.armed);
+  ObserveSiglusLegacyMessageText(&call);
+  Check(g_siglus_message_tasks.TryPop(&task));
+  Check(task.voice_key == UINT32_MAX && task.text_units == 2 &&
+        std::wcscmp(task.text, L"CD") == 0);
+  // ESI is bound to the saved caller value, not to zero.
+  call.esi = 0;
+  ObserveSiglusLegacyMessageEntry(&entry);
+  ObserveSiglusLegacyMessageText(&call);
+  Check(!g_siglus_message_tasks.TryPop(&task));
+  call.esi = 0x2468;
+  // A script slot contradicts the silent contract and never arms.
+  uint32_t script_slot = 0;
+  g_siglus_legacy_message_layout = {address(&script_slot), 0x7004, 1500, false};
+  ObserveSiglusLegacyMessageEntry(&entry);
+  Check(!g_siglus_legacy_message_ticket.armed);
+  // The legacy contract without a script slot stays rejected.
+  g_siglus_legacy_message_layout = {0u, 0x7004, 1500, true};
+  ObserveSiglusLegacyMessageEntry(&entry);
+  Check(!g_siglus_legacy_message_ticket.armed);
   g_siglus_message_capture_enabled.store(false);
 }
 
@@ -1005,12 +1116,13 @@ void TestEightArgProduction() {
 }  // namespace
 
 int main() {
-  TestTicket(); TestQueue(); TestCommittedTextLaneTimestamp();
+  TestTicket(); TestDirectTicket(); TestQueue(); TestCommittedTextLaneTimestamp();
 #if defined(_M_IX86)
   TestNakedAbi(); TestProductionObservers(); TestProductionWorkerAndRollback();
   TestDelayedWorkerUsesCommittedTimestamp();
   TestNativeProductionObservers();
   TestLegacyProductionObservers();
+  TestNineArgProductionObservers();
   TestInstallationFailures();
   TestEightArgProduction();
   TestEightArgLiveEntryAdmission();

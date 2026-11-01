@@ -268,7 +268,7 @@ assert.equal(_releaseVelocity(drag,180),0);
         );
         final String half = splitDocument.substring(
           halfStart,
-          splitDocument.indexOf('  _recenterPan();', halfStart),
+          splitDocument.indexOf('  function _applyStartPan(){', halfStart),
         );
         final int turnStart = splitDocument.indexOf(
           '  window.__mangaTurnWithinPage = function',

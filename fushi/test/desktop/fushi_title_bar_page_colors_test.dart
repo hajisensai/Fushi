@@ -334,6 +334,67 @@ void main() {
         expect(captionOpacity(tester), 0);
       });
 
+      // 反馈 BEX2_5K1zV / BUG-3929：播放页控制条浮出时标题行跟着浮出，窗口按钮与
+      // 拖动区随控制条出现；不再只能摸到顶边 8 像素停留才拖得动窗口。
+      testWidgets('页面 chrome 浮出时标题行跟着浮出；指针在带子里时控制条收起也不隐去', (
+        WidgetTester tester,
+      ) async {
+        final ValueNotifier<bool> controls = ValueNotifier<bool>(false);
+        addTearDown(controls.dispose);
+        await pumpShell(
+          tester,
+          FushiTitleBarRevealScope(revealed: controls, child: reader()),
+        );
+        expect(captionOpacity(tester), 0);
+
+        controls.value = true;
+        await tester.pumpAndSettle();
+        expect(captionOpacity(tester), 1, reason: '控制条一出来就能拖窗口 / 点窗口按钮');
+
+        controls.value = false;
+        await tester.pumpAndSettle();
+        expect(captionOpacity(tester), 0);
+
+        // 控制条带出标题行后指针进带子（去拖窗口）：控制条随后自动收起，标题行
+        // 不能在指针下面隐去。
+        controls.value = true;
+        await tester.pumpAndSettle();
+        final TestGesture mouse = await tester.createGesture(
+          kind: PointerDeviceKind.mouse,
+        );
+        addTearDown(mouse.removePointer);
+        await mouse.addPointer(location: const Offset(200, 300));
+        await mouse.moveTo(const Offset(200, 20));
+        await tester.pumpAndSettle();
+        controls.value = false;
+        await tester.pumpAndSettle();
+        expect(captionOpacity(tester), 1);
+
+        await mouse.moveTo(const Offset(200, 300));
+        await tester.pumpAndSettle();
+        expect(captionOpacity(tester), 0);
+      });
+
+      testWidgets('被另一整页盖住时撤回浮出请求', (WidgetTester tester) async {
+        final ValueNotifier<bool> controls = ValueNotifier<bool>(true);
+        addTearDown(controls.dispose);
+        await pumpShell(
+          tester,
+          FushiTitleBarRevealScope(revealed: controls, child: reader()),
+        );
+        expect(FushiDesktopTitleBar.captionRevealRequested.value, isTrue);
+
+        navigatorKey.currentState!.push(
+          MaterialPageRoute<void>(builder: (_) => const Scaffold()),
+        );
+        await tester.pumpAndSettle();
+        expect(FushiDesktopTitleBar.captionRevealRequested.value, isFalse);
+
+        navigatorKey.currentState!.pop();
+        await tester.pumpAndSettle();
+        expect(FushiDesktopTitleBar.captionRevealRequested.value, isTrue);
+      });
+
       testWidgets('普通页（未上报配色）顶栏常显', (WidgetTester tester) async {
         await pumpShell(tester, const Scaffold());
         expect(captionOpacity(tester), 1);

@@ -45,6 +45,7 @@ Future<void> _pump(
   StatSessionClearAll? onClearAll,
   StatSessionCollectionOf? collectionOf,
   StatSessionCoverOf? coverOf,
+  StatSessionTitleOf? titleOf,
   int limit = 8,
 }) async {
   await tester.pumpWidget(
@@ -56,7 +57,7 @@ Future<void> _pump(
               builder: (BuildContext context) => buildStatSessionSection(
                 context,
                 sessions: sessions,
-                titleOf: (StudySession s) => s.title,
+                titleOf: titleOf ?? (StudySession s) => s.title,
                 collectionOf: collectionOf,
                 coverOf: coverOf,
                 onDelete: onDelete,
@@ -578,5 +579,71 @@ void main() {
           .first,
     );
     expect(find.text('S39'), findsOneWidget);
+  });
+
+  // 反馈 bXmmmN1vLZ（Android，约 600 条会话）：「全部会话」里点开一条记录，编辑弹窗
+  // 一打开就卡。sheet 曾经是 SingleChildScrollView + Column，600 行（带封面槽）全量
+  // 建出来；编辑框日期栏 autofocus 拉起软键盘，键盘动画每帧改 MediaQuery.viewInsets，
+  // 底部 sheet 路由的 buildPage 依赖整份 MediaQuery，于是 sheet builder 每帧重跑、
+  // 600 行每帧整批重建。sheet 改成懒加载列表后，任何一次重建只碰视口里那几行。
+  testWidgets('反馈 bXmmmN1vLZ：600 条会话的 sheet 懒加载，开编辑框 + 键盘弹出不整批重建', (
+    WidgetTester tester,
+  ) async {
+    tester.view.physicalSize = const Size(393, 852);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    int titleCalls = 0;
+    await _pump(
+      tester,
+      sessions: <StudySession>[
+        for (int i = 0; i < 600; i++) _session('s$i', title: 'S$i'),
+      ],
+      onDelete: (_) async {},
+      titleOf: (StudySession s) {
+        titleCalls++;
+        return s.title;
+      },
+      limit: 2,
+    );
+    titleCalls = 0;
+    await tester.tap(find.text('${t.stat_sessions_show_all} (600)'));
+    await tester.pumpAndSettle();
+    expect(
+      titleCalls,
+      lessThan(100),
+      reason: '打开 sheet 只建视口内（含缓存区）的行，不建全部 600 行',
+    );
+
+    final Finder sheet = find.byType(BottomSheet);
+    titleCalls = 0;
+    await tester.tap(find.descendant(of: sheet, matching: find.text('S0')));
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey<String>('stat-session-edit-date')),
+      findsOneWidget,
+    );
+    // 模拟软键盘逐帧升起（Android 上 viewInsets 每帧一变）。
+    for (final double inset in <double>[60, 120, 180, 240, 300]) {
+      tester.view.viewInsets = FakeViewPadding(bottom: inset);
+      await tester.pump();
+    }
+    await tester.pumpAndSettle();
+    expect(
+      titleCalls,
+      lessThan(150),
+      reason: '开编辑框 + 键盘 5 帧动画：每帧只重建视口内的行（未修前每帧 600 行）',
+    );
+    // 懒加载不丢功能：最后一条照样滚得到。
+    tester.view.resetViewInsets();
+    await tester.tap(find.text(t.dialog_cancel));
+    await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.text('S599'),
+      2000,
+      scrollable: find
+          .descendant(of: sheet, matching: find.byType(Scrollable))
+          .first,
+    );
+    expect(find.text('S599'), findsOneWidget);
   });
 }

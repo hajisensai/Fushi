@@ -20,12 +20,14 @@ test('subtitle row click seeks unless this row owns a native text selection', ()
   // 行内文字 click=查词已恢复（详见下方专项守卫）；seek 只属于时间戳与行空白区域。
 });
 
-test('Shift scans immediately at the last pointer without changing native selection', () => {
+test('Shift (the configured scan key) scans immediately at the last pointer without changing native selection', () => {
   assert.doesNotMatch(SIDE_PANEL, /lookupTimer/);
   assert.match(SIDE_PANEL, /text\.addEventListener\('pointermove', rememberPointer/);
+  // 触发键可配置（反馈 ulS75hVkAK）：判定走 fushiScanModifierKeydown（只认触发键本身、非 repeat，
+  // 行为见 scan-modifier.test.js）。
   assert.match(
     SIDE_PANEL,
-    /event\.key === 'Shift'[\s\S]*?!event\.repeat[\s\S]*?lookupAtPointer\(lastPointer, \{ explicit: true, announceMissing: true \}\)/,
+    /fushiScanModifierKeydown\(event, scanModifier\)\) \{\s*lookupAtPointer\(lastPointer, \{ explicit: true, announceMissing: true \}\)/,
   );
   assert.doesNotMatch(SIDE_PANEL, /removeAllRanges|preventDefault\(\)/);
 });
