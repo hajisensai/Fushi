@@ -159,3 +159,22 @@ class TtsResult {
 - Edge 多声优 4× 倍速可行；并发 3 起单次失败明显增多（限流前兆），默认保持 2。
 - **Edge 免费接口的日语声音只有 Nanami、Keita 可用**（`tts_edge_voice_probe.dart` 实测：Aoi / Daichi / Mayu / Naoki 连接即被关闭 `closed early`，随后 429）。Edge provider 的 SSML 把 pitch / rate 写死为 +0，要用同一底子派生更多角色需另开参数。
 - 只做了引擎层真实网络实测（真实 Edge + 真实调度器 + 模拟播放器）；未在真 app 里用带选角表的书端到端朗读。
+
+### OpenAI 兼容语音接口 + VPTTS 实测（2026-11-01）
+
+- 新引擎 `openai_compatible`（`openai_compatible_tts_provider.dart`）：`POST /v1/audio/speech`（wav、服务端倍速 1.0）、`GET /v1/audio/voices` 列音色（显示「名字（id）」）。model 留空时探一次 `GET /v1/models`，只有一个模型就用它，否则 / 没有该接口用 `tts-1`；缓存身份带 host + port，不带密钥。默认地址 `http://127.0.0.1:8000`、并发 1。
+- 起因：本机 VPTTS 0.5.0（VOICEPEAK 声库的 OpenAI 兼容服务，42 个音色）只认 `model: voicepeak`；现有 Irodori-TTS-Server 引擎写死 `irodori-tts`，被拒 400 `unknown_model`。
+
+素材同上，前 40 句 / 1041 字；旁白「女性1」，台词在「男性1」「東北イタコ」间轮流；每轮冷缓存，本机 CPU 推理。
+
+| VPTTS 驻留上限 | 声音数 | 每声音并发 | 吞吐（×实时） | 单句延迟 p50 / p90 s | 2× 卡顿 | 3× 卡顿 |
+|---|---|---|---|---|---|---|
+| 2（默认） | 3 | 1 | 1.37 | 4.1 / 17.7 | 8 次 / 57 s | 13 次 / 73 s |
+| 4 | 3 | 1 | 2.22 | 3.7 / 7.2 | 1 次 / 3 s | 10 次 / 14 s |
+| 4 | 3 | 2 | 2.55 | 7.2 / 12.0 | — | — |
+| 4 | 2 | 1 | 2.65 | 2.8 / 4.7 | 0 | 5 次 / 9 s |
+| 4 | 2 | 2 | 2.63 | 5.9 / 7.9 | — | — |
+
+- 声音数超过 VPTTS 驻留上限（`vptts.toml` `[backends.voicebank] max_resident_voices`，按需模式 1–8，默认 2）时每次换声音要重新加载（十几秒）。驻留数应 ≥ 一本书实际用到的声音数；每个驻留音色约 540 MB 内存。
+- VPTTS 整体吞吐约 2.6× 实时封顶（CPU 吃满），每声音并发 2 不增吞吐、只加延迟，默认并发 1 合适。实时朗读 2× 可用，3× 会卡；更高倍速走制作台离线生成。
+- 首句等待 3.5～4.8 s。提前生成与 60 秒窗口在这里同样没有差别（吞吐不超过 3× 消耗，缓冲攒不起来）。
