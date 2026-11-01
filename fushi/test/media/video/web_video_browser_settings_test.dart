@@ -301,7 +301,10 @@ void main() {
     ).readAsStringSync();
     expect(page, contains('adblock: adblock,'));
     expect(page, contains('browserPrefs: appModel.prefsRepo,'));
-    expect(page, contains("'video-web-nav-browser-settings'"));
-    expect(page, contains('openWebBrowserSettings(context)'));
+    // 播放器层不再是第二个浏览器：没有地址栏 / 档位切换 / 自己的设置入口，站点设置只在
+    // app 内浏览器里改（docs/specs/2026-11-01-one-browser.md）。
+    expect(page, isNot(contains('FushiSearchField')));
+    expect(page, isNot(contains('adaptiveSegmentedButton')));
+    expect(page, isNot(contains('openWebBrowserSettings(')));
   });
 }

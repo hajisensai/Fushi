@@ -6,9 +6,10 @@ import 'package:fushi_engine/foundation/pref_store.dart';
 /// app 内浏览器（`FushiWebBrowserPage`）的一个站点书签。
 ///
 /// 视频站点与浏览器站点是同一份表（用户 2026-10-26「这个站点和视频站点有什么关系？
-/// 有必要分开吗？」）：[openInPlayer] 为 true 的站点点开时进 Fushi 播放页（Windows 的
-/// 网页播放器，Netflix 硬件 DRM / Fushi 字幕层 / 每集落库），否则进普通浏览器标签页。
-/// 播放页只在 Windows 上有，其它平台忽略这个标记。
+/// 有必要分开吗？」）。站点一律在浏览器里打开（用户只看到一个浏览器，
+/// `docs/specs/2026-11-01-one-browser.md`）；[openInPlayer] 为 true 的站点，观看页由浏览器
+/// 自动交给 Fushi 播放器层（Windows 的网页站点后端，Netflix 硬件 DRM / Fushi 字幕层 / 每集
+/// 落库）。播放器层只在 Windows 上有，其它平台忽略这个标记。
 @immutable
 class WebBrowserSite {
   const WebBrowserSite({
@@ -20,7 +21,8 @@ class WebBrowserSite {
   final String name;
   final Uri url;
 
-  /// 点开时默认用播放页打开（只在有播放页的平台生效，见 `webVideoSitesAvailable`）。
+  /// 「用 Fushi 播放本站视频」：观看页自动交给播放器层（只在有播放器层的平台生效，见
+  /// `webBrowserSiteAutoPlays`）。名字与 JSON 键 `player` 是旧「用播放页打开」的持久化名，冻结。
   final bool openInPlayer;
 
   WebBrowserSite copyWith({bool? openInPlayer}) => WebBrowserSite(
@@ -58,8 +60,8 @@ class WebBrowserSite {
   int get hashCode => Object.hash(name, url, openInPlayer);
 }
 
-/// 新加站点时「默认用播放页打开」的初值：不进播放页基本没法看的站（Netflix 要硬件
-/// DRM）默认开，其它站默认走浏览器。[playerAvailable] 由调用方按平台给。
+/// 新加站点时「用 Fushi 播放本站视频」的初值：不进播放器层基本没法看的站（Netflix 要硬件
+/// DRM）默认开，其它站默认关。[playerAvailable] 由调用方按平台给。
 bool webBrowserSiteDefaultsToPlayer(Uri url, {required bool playerAvailable}) {
   if (!playerAvailable) return false;
   final String host = url.host.toLowerCase();
