@@ -36,7 +36,10 @@
     var h = location.hostname;
     return h.endsWith('netflix.com') ? 'netflix' : 'other';
   }
-  function video() { return document.querySelector('video'); }
+  // 快照 / 播放命令 / 只留画面共用同一个主视频判据（[mainVideo]）。以前这里取 DOM 里第一个
+  // <video>：YouTube 从首页进 /watch 后首页的内联预览 <video> 还在 DOM 里且可能排在前面，
+  // 时钟、暂停、音量全落到预览上。
+  function video() { return mainVideo(); }
   function videoKey() {
     try { if (typeof window.fushiVideoKey === 'function') return String(window.fushiVideoKey() || ''); } catch (_) {}
     return (location.hostname + location.pathname).replace(/\|/g, '_');
@@ -400,6 +403,7 @@
   }
   function sample() {
     healVideoOnly();
+    silenceStrayVideos();
     healNativeSubtitlesHidden();
     var s = snapshot();
     if (same(last, s)) return;
@@ -529,9 +533,18 @@
     ' height: 100vh !important; max-width: none !important; max-height: none !important;' +
     ' object-fit: contain !important; transform: none !important; margin: 0 !important;' +
     ' z-index: 2147483647 !important; background: #000 !important; }';
-  // 主画面：正在播的优先（广告结束后 YouTube 可能换 / 重建 <video>，旧元素还留着最后一帧的
-  // 尺寸），其次有画面尺寸的，再按面积。
+  // 站点明确标出的主播放器 <video>：YouTube 观看页是 #movie_player 里的 html5-main-video
+  // （首页内联预览在 ytd-video-preview 里，也带 html5-main-video 类，所以必须限定在 #movie_player）。
+  function siteMainVideo() {
+    if (location.hostname.indexOf('youtube.com') < 0) return null;
+    return document.querySelector('#movie_player video.html5-main-video') ||
+      document.querySelector('#movie_player video');
+  }
+  // 主画面：站点标出的主播放器优先；否则正在播的优先（广告结束后 YouTube 可能换 / 重建
+  // <video>，旧元素还留着最后一帧的尺寸），其次有画面尺寸的，再按面积。
   function mainVideo() {
+    var site = siteMainVideo();
+    if (site) return site;
     var vs = document.querySelectorAll('video');
     var best = null, bestScore = -1;
     for (var i = 0; i < vs.length; i++) {
@@ -589,6 +602,26 @@
   }
   // 只留画面期间标记自愈：站点换了 / 重建了 <video>（YouTube 广告结束换回正片、SPA 换集）或
   // 抹掉了属性 / 样式，新画面会落在「body * 一律隐藏」里 = 黑屏。每轮核对、不对就重标。
+  // 观看中只留主视频出声：其余 <video>（YouTube 首页 / 推荐栏的内联悬停预览、SPA 留下的旧
+  // 播放器）一律暂停并静音。播放器档里它们只是被 CSS 藏起来、声音照常；观看页网页档里也会
+  // 在底下继续播。首页（非观看页、网页档）不动，悬停预览照常可用。
+  function youtubeWatchPage() {
+    return location.hostname.indexOf('youtube.com') >= 0 &&
+      (location.pathname === '/watch' || location.pathname.indexOf('/shorts/') === 0 ||
+       location.pathname.indexOf('/live/') === 0);
+  }
+  function silenceStrayVideos() {
+    if (!videoOnlyOn && !youtubeWatchPage()) return;
+    var main = mainVideo();
+    if (!main) return;
+    var vs = document.querySelectorAll('video');
+    for (var i = 0; i < vs.length; i++) {
+      var v = vs[i];
+      if (v === main) continue;
+      try { if (!v.muted) v.muted = true; } catch (_) {}
+      try { if (!v.paused) v.pause(); } catch (_) {}
+    }
+  }
   function healVideoOnly() {
     if (!videoOnlyOn) return;
     var v = mainVideo();
