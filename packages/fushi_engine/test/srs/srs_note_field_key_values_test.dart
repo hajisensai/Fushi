@@ -167,20 +167,31 @@ void main() {
       SrsFieldKeys.noteSource,
     );
     read.stop();
+    final int perNote = counter.bytes ~/ notes;
+
+    // 对照：以前的读法（整条物化）在 1000 条上每条读回多少。
+    const int slice = 1000;
+    counter.bytes = 0;
+    final Stopwatch whole = Stopwatch()..start();
+    await s.notes(ids.sublist(0, slice));
+    whole.stop();
+    final int wholePerNote = counter.bytes ~/ slice;
     // ignore: avoid_print
     print(
-      'noteFieldKeyValues: $notes notes, built in ${build.elapsedMilliseconds} ms, '
-      'read ${counter.bytes} B (field text $fieldBytes B) in '
-      '${read.elapsedMilliseconds} ms',
+      'noteFieldKeyValues: $notes notes (field text $fieldBytes B, built in '
+      '${build.elapsedMilliseconds} ms): read ${perNote * notes} B '
+      '($perNote B/note) in ${read.elapsedMilliseconds} ms; '
+      'materializing $slice notes read $wholePerNote B/note in '
+      '${whole.elapsedMilliseconds} ms',
     );
     expect(sources, hasLength(notes));
     expect(
       SrsSourceRef.fromJson(sources[ids[12345]])!.data['bookKey'],
       'book-${12345 % 37}',
     );
-    // 只有出处那一个键的记录回到 Dart：每条笔记一两百字节，与字段正文大小无关（整条物化要读回全部
-    // 4 KiB × 2 万条正文）。
-    expect(counter.bytes, lessThan(notes * 400));
-    expect(counter.bytes, lessThan(fieldBytes ~/ 10));
+    // 只有出处那一个键的记录（含修改记录的信封）回到 Dart：每条笔记几百字节、与字段正文大小无关；
+    // 整条物化每条要读回全部 4 KiB 正文。
+    expect(perNote, lessThan(1024));
+    expect(perNote * 5, lessThan(wholePerNote));
   }, timeout: const Timeout(Duration(minutes: 10)));
 }
