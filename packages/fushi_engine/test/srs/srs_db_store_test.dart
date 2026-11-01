@@ -320,6 +320,46 @@ void main() {
     );
   });
 
+  test('同步冲突按实体查：只读回这一个实体的记录（牌组设置页打开慢）', () async {
+    final SrsDbStore a = await device('a');
+    final SrsDbStore b = await device('b');
+    final List<String> cards = <String>[
+      for (int i = 0; i < 3; i++)
+        (await a.cardsOfNote(
+          await a.createNote(
+            noteTypeId: a.lapisNoteTypeId,
+            fieldsById: lapis('猫$i'),
+          ),
+        )).single.id,
+    ];
+    await syncAll(<SrsDbStore>[a, b]);
+    // 前两张卡各有一个标志类冲突，第三张没有。
+    for (final String id in cards.take(2)) {
+      await a.setSuspended(id, true);
+      t += 1000;
+      await b.setSuspended(id, false);
+    }
+    await syncAll(<SrsDbStore>[a, b]);
+    expect(await a.syncConflicts(), hasLength(2), reason: '前提：不限实体时两条都在');
+
+    final List<(SrsEntityKind, String, SrsRegister)> one = await a
+        .syncConflicts(entity: (kind: SrsEntityKind.card, id: cards[1]));
+    expect(one.single.$2, cards[1]);
+    expect(one.single.$3.key, SrsFieldKeys.suspended);
+    expect(a.debugSyncConflictRowsRead, 2, reason: '只读回这张卡的两条记录');
+
+    expect(
+      await a.syncConflicts(entity: (kind: SrsEntityKind.card, id: cards[2])),
+      isEmpty,
+    );
+    expect(a.debugSyncConflictRowsRead, 0);
+    expect(
+      await a.syncConflicts(entity: (kind: SrsEntityKind.note, id: cards[0])),
+      isEmpty,
+      reason: '种类也参与筛选',
+    );
+  });
+
   test('词状态：按词形 + 读音，同形异读不合并（第六轮审查第 20 条）', () async {
     final SrsDbStore a = await device('a');
     await a.createNote(
