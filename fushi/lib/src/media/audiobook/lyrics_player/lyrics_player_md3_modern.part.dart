@@ -42,8 +42,9 @@ const double _kModernWideMargin = 24;
 const double _kModernIslandGap = 16;
 const double _kModernSeekBand = 24;
 
-/// 宽屏底栏自动隐藏后，歌词区底边离窗口底边的距离（留给贴底的细进度线）。
-const double _kModernImmersiveBottom = 16;
+/// 宽屏底栏自动隐藏后，歌词区底边离窗口底边的距离：贴底细进度线所在的带子，
+/// 也是隐藏后唯一的唤出区（正文上的指针活动不唤出），所以给到 24 便于移过去。
+const double _kModernImmersiveBottom = 24;
 
 /// 宽屏左岛 / 两端时间的字号档位：按窗口宽度分三档（与左岛最大宽同一套断点），
 /// 大屏上底栏文字跟着放大，不再是固定 14 / 11（大屏上看不清）。档位只取

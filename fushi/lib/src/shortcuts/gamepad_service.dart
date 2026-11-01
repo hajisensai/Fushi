@@ -308,7 +308,7 @@ class GamepadFrameBits {
 ///   1. [GamepadButtonIntent] → the active page's registry-resolved action;
 ///   2. else A → [ActivateIntent], B → global back (maybePop),
 ///      D-pad → directional focus (same as arrow keys).
-/// 硬件导航活动计数：手柄按键 / 摇杆 / 长按派发进 app、以及键盘方向导航时 +1。
+/// 手柄导航活动计数：手柄按键 / 摇杆 / 长按派发进 app 时 +1（键盘不计）。
 /// 桌面手柄走 [GamepadService] 轮询直接 `Actions.maybeInvoke`，**不产生
 /// KeyEvent**，只听 `HardwareKeyboard` 的「有人在操作」判断（如歌词底栏自动
 /// 隐藏）会漏掉手柄——订阅这个。
@@ -496,7 +496,7 @@ class GamepadService {
     if (tryGlobalExternalLookupGamepadButton(registry, button)) return;
     final BuildContext? ctx = _dispatchContext;
     if (ctx == null) return;
-    _setHighlightForHardwareNav();
+    _onGamepadNav();
 
     final bool handled =
         Actions.maybeInvoke<GamepadButtonIntent>(
@@ -593,7 +593,7 @@ class GamepadService {
     if (GalIngameLookupGamepadRoute.current != null) return;
     final BuildContext? ctx = _dispatchContext;
     if (ctx == null) return;
-    _setHighlightForHardwareNav();
+    _onGamepadNav();
     gamepadMoveFocusInDirection(ctx, dir);
   }
 
@@ -642,7 +642,7 @@ class GamepadService {
     if (GalIngameLookupGamepadRoute.current != null) return;
     final BuildContext? ctx = _dispatchContext;
     if (ctx == null) return;
-    _setHighlightForHardwareNav();
+    _onGamepadNav();
     final bool handled =
         Actions.maybeInvoke<GamepadLongPressIntent>(
           ctx,
@@ -668,6 +668,11 @@ class GamepadService {
   void _setHighlightForHardwareNav() {
     FocusManager.instance.highlightStrategy =
         FocusHighlightStrategy.alwaysTraditional;
+  }
+
+  /// 手柄按键 / 摇杆 / 长按进入 app 派发：点亮焦点环并发出 [gamepadInputActivity]。
+  void _onGamepadNav() {
+    _setHighlightForHardwareNav();
     gamepadInputActivity.value++;
   }
 

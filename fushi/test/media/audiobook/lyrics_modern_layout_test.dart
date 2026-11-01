@@ -2,6 +2,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/gestures.dart' show PointerDeviceKind;
+import 'package:flutter/rendering.dart' show RendererBinding;
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_control_layout.dart';
@@ -294,61 +295,110 @@ void main() {
         )
         .opacity;
 
-    Future<void> waitForHide(WidgetTester tester) async {
+    Future<void> idleUntilHidden(WidgetTester tester) async {
       await tester.pump(kLyricsChromeIdleHideDelay);
       await tester.pump(const Duration(milliseconds: 400));
       await tester.pump(const Duration(milliseconds: 400));
     }
 
-    testWidgets('playing: bottom chrome auto-hides, lyrics extend; '
-        'a click only wakes it, then a mouse move alone brings it back', (
+    testWidgets('playing: bottom chrome auto-hides and lyrics extend; '
+        'only the bottom edge band brings it back', (
       WidgetTester tester,
     ) async {
       await pumpAt(tester, const Size(1600, 900), app(playing: true));
       final Rect shown = tester.getRect(key('lyrics_view_probe'));
       expect(chromeOpacity(tester), 1);
 
-      await waitForHide(tester);
+      await idleUntilHidden(tester);
       expect(chromeOpacity(tester), 0);
       final Rect hidden = tester.getRect(key('lyrics_view_probe'));
       expect(hidden.top, shown.top);
-      expect(hidden.bottom, closeTo(900 - 16, 0.5));
-      // 隐藏时看不见的钮不吃点击：这一下只唤出底栏。
+      expect(hidden.bottom, closeTo(900 - 24, 0.5));
+      // 隐藏时看不见的钮不吃点击，也不唤出底栏（点在底栏原位置、带子之上）。
       await tester.tap(key('lyrics_close_button'), warnIfMissed: false);
       await tester.pump();
       expect(calls, isNot(contains('exit')));
-      expect(chromeOpacity(tester), 1);
-
-      // 再次隐藏后单独测鼠标悬停移动（不带按下）。
-      await waitForHide(tester);
       expect(chromeOpacity(tester), 0);
+
+      // 查词场景：鼠标在正文上移动 / 点击，底栏不出来、歌词矩形不变（不重排）。
       final TestGesture mouse = await tester.createGesture(
         kind: PointerDeviceKind.mouse,
       );
       await mouse.addPointer(location: const Offset(800, 300));
       await mouse.moveTo(const Offset(820, 320));
+      await mouse.moveTo(const Offset(840, 860));
+      await tester.pump();
+      await tester.tapAt(const Offset(820, 320));
+      await tester.pump();
+      expect(chromeOpacity(tester), 0);
+      expect(tester.getRect(key('lyrics_view_probe')), hidden);
+      // 普通快捷键也不唤出。
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowRight);
+      await tester.pump();
+      expect(chromeOpacity(tester), 0);
+
+      // 移到底边带子 → 唤出，歌词矩形复位。
+      await mouse.moveTo(const Offset(800, 890));
       await tester.pump();
       expect(chromeOpacity(tester), 1);
       expect(tester.getRect(key('lyrics_view_probe')), shown);
+
+      // 鼠标停在底栏上不动：不在它底下收走。
+      await mouse.moveTo(const Offset(800, 850));
+      await idleUntilHidden(tester);
+      expect(chromeOpacity(tester), 1);
+
+      // 回到正文上，空闲后照常隐藏；Tab 唤出。
+      await mouse.moveTo(const Offset(800, 300));
+      await idleUntilHidden(tester);
+      expect(chromeOpacity(tester), 0);
+      await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+      await tester.pump();
+      expect(chromeOpacity(tester), 1);
       await mouse.removePointer();
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('playing: a key press brings the hidden chrome back', (
-      WidgetTester tester,
-    ) async {
+    MouseCursor? activeCursor() =>
+        RendererBinding.instance.mouseTracker.debugDeviceActiveCursor(1);
+
+    testWidgets('playing: idle mouse cursor hides (above the WebView), '
+        'any movement shows it; paused keeps it', (WidgetTester tester) async {
       await pumpAt(tester, const Size(1600, 900), app(playing: true));
-      await waitForHide(tester);
-      expect(chromeOpacity(tester), 0);
-      await tester.sendKeyEvent(LogicalKeyboardKey.shiftLeft);
+      final TestGesture mouse = await tester.createGesture(
+        kind: PointerDeviceKind.mouse,
+      );
+      await mouse.addPointer(location: const Offset(800, 300));
       await tester.pump();
-      expect(chromeOpacity(tester), 1);
+      expect(activeCursor(), isNot(SystemMouseCursors.none));
+
+      await tester.pump(kLyricsChromeIdleHideDelay);
+      await tester.pump();
+      expect(activeCursor(), SystemMouseCursors.none);
+      final Rect hidden = tester.getRect(key('lyrics_view_probe'));
+
+      // 正文上一动光标就回来，但底栏不出来、歌词矩形不变。
+      await mouse.moveTo(const Offset(810, 300));
+      await tester.pump();
+      expect(activeCursor(), isNot(SystemMouseCursors.none));
+      expect(chromeOpacity(tester), 0);
+      expect(tester.getRect(key('lyrics_view_probe')), hidden);
+
+      // 暂停：光标常显。
+      await pumpAt(tester, const Size(1600, 900), app());
+      await mouse.moveTo(const Offset(820, 300));
+      await tester.pump(kLyricsChromeIdleHideDelay * 2);
+      await tester.pump();
+      expect(activeCursor(), isNot(SystemMouseCursors.none));
+      await mouse.removePointer();
     });
 
-    testWidgets('playing: desktop gamepad activity (no KeyEvent) brings '
-        'the hidden chrome back', (WidgetTester tester) async {
+    testWidgets('playing: desktop gamepad activity (no KeyEvent) reveals '
+        'the hidden chrome, like Tab', (WidgetTester tester) async {
       await pumpAt(tester, const Size(1600, 900), app(playing: true));
-      await waitForHide(tester);
+      await tester.pump(kLyricsChromeIdleHideDelay);
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pump(const Duration(milliseconds: 400));
       expect(chromeOpacity(tester), 0);
       // 桌面手柄轮询派发只经 gamepadInputActivity，不经 HardwareKeyboard。
       gamepadInputActivity.value++;
@@ -356,17 +406,19 @@ void main() {
       expect(chromeOpacity(tester), 1);
     });
 
-    testWidgets('pausing while hidden restores the chrome at once', (
-      WidgetTester tester,
-    ) async {
+    testWidgets('playing: an Android gamepad key event reveals the hidden '
+        'chrome, a keyboard arrow does not', (WidgetTester tester) async {
       await pumpAt(tester, const Size(1600, 900), app(playing: true));
-      final Rect shown = tester.getRect(key('lyrics_view_probe'));
-      await waitForHide(tester);
+      await tester.pump(kLyricsChromeIdleHideDelay);
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pump(const Duration(milliseconds: 400));
       expect(chromeOpacity(tester), 0);
-      await tester.pumpWidget(app());
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.pump();
+      expect(chromeOpacity(tester), 0);
+      await tester.sendKeyEvent(LogicalKeyboardKey.gameButtonA);
       await tester.pump();
       expect(chromeOpacity(tester), 1);
-      expect(tester.getRect(key('lyrics_view_probe')), shown);
     });
 
     testWidgets('screen reader on: chrome never auto-hides (a 0-opacity '
