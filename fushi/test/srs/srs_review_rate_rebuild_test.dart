@@ -78,7 +78,9 @@ void main() {
         ),
       );
     }
-    final AppModel app = AppModel(testPlatformServices());
+    // 复习页按快捷键注册表解析按键：装出厂默认（真 app 在 initialise 里装）。
+    final AppModel app = AppModel(testPlatformServices())
+      ..shortcutRegistry.loadDefaults(TargetPlatform.windows);
     final ProviderContainer container = ProviderContainer(
       overrides: <Override>[
         appProvider.overrideWith((Ref ref) => app),

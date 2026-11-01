@@ -114,7 +114,11 @@ Future<void> _pumpReview(
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
-  final AppModel appModel = app ?? AppModel(testPlatformServices());
+  // 复习页按快捷键注册表解析按键：装出厂默认（真 app 在 initialise 里装）。
+  final AppModel appModel =
+      app ??
+      (AppModel(testPlatformServices())
+        ..shortcutRegistry.loadDefaults(TargetPlatform.windows));
   await tester.pumpWidget(
     ProviderScope(
       overrides: <Override>[

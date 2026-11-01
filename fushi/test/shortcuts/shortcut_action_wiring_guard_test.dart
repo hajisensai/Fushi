@@ -90,6 +90,9 @@ void main() {
       'lib/src/pages/implementations/fushi_web_browser_page.dart',
       // 音乐（ShortcutScope.music）的执行体：曲库页 _handleKey → dispatchMusicShortcut。
       'lib/src/pages/implementations/music/music_library_page.dart',
+      // SRS 复习页（ShortcutScope.srsReview）的执行体：_onKey / 卡面键盘桥 /
+      // _handleGamepadButton → _executeShortcut。
+      'lib/src/pages/implementations/srs/srs_review_page.dart',
     ];
 
     final StringBuffer corpus = StringBuffer();

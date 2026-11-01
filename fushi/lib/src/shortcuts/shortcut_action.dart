@@ -1,6 +1,7 @@
 /// 声明顺序**就是**快捷键设置页的卡片顺序（页面直接遍历 `values`，不另存一份
 /// 显示顺序表）：跨页面通用（global / universal / globalExternal）→ 各页面
-/// （home / reader / audiobook / manga / video / webBrowser）→ 输入设备（gamepad）→ 查词弹窗。
+/// （home / reader / audiobook / manga / video / webBrowser / music / srsReview）→ 输入设备
+/// （gamepad）→ 查词弹窗。
 /// 没有任何地方按 index 持久化或解析 scope，调整顺序只影响显示。
 enum ShortcutScope {
   global,
@@ -45,6 +46,10 @@ enum ShortcutScope {
   webBrowser,
   // 音乐播放（播放 / 上下曲 / ±5 s）。音乐页自成 co-active 组，与视频 / 阅读器不同时激活。
   music,
+  // SRS 复习页（翻面 / 四个评分 / 重播音频 / 撤销 / 卡面缩放，反馈 itlb0djDq6 要求可改键）。
+  // 复习页只解析自己这一组绑定，未命中的键（Esc / Alt+← / 手柄 B）冒泡到根上由
+  // universal 的「返回上一级」兜底，故自成 co-active 组。
+  srsReview,
   // TODO-700 T6：摇杆与 dpad 解耦后，dpad 四向成为「可绑触发键」，落在独立的
   // gamepad 作用域（自成 co-active 组，不与 reader/home 等任何组冲突）。摇杆固定
   // 做方向焦点移动、永不经注册表，故没有对应 action——只有 dpad 进这个 scope。
@@ -98,6 +103,9 @@ enum ShortcutScope {
       // 音乐库页只解析自己的绑定（与 video / manga 同理），自成 co-active 组。
       case music:
         return const <ShortcutScope>[music];
+      // SRS 复习页只解析自己的绑定（与 music / video 同理），自成 co-active 组。
+      case srsReview:
+        return const <ShortcutScope>[srsReview];
       // gamepad（dpad 四向）是独立 co-active 组：dpad 绑定永不与 reader/home 的
       // 按钮跨组冲突，冲突检测只扫 gamepad 自身。
       case gamepad:
@@ -230,6 +238,20 @@ enum ShortcutScope {
       // `resolveKeyboard(scope: music)`）；手柄 / 鼠标还没有派发点，不开通道。
       case music:
         return const <ShortcutChannel>{ShortcutChannel.keyboard};
+      // SRS 复习页：键盘 + 手柄。
+      //   · 键盘：srs_review_page.dart 的 `_onKey` → `resolveKeyboard(scope: srsReview)`；
+      //     WebView 卡面持焦时经键盘桥回传的 token 走同一个 `resolveKeyboard`；
+      //   · 手柄：同文件 `_handleGamepadButton` → `resolveGamepad(scope: srsReview)`
+      //     （桌面轮询的 GamepadButtonIntent 与 Android gameButton* 键事件经全局
+      //     wrapper 汇合到同一 Intent，与漫画页同构）。
+      //   · 鼠标**不开**：复习页没有 Flutter 侧 Listener 解析入口，WebView 卡面的指针
+      //     归卡面手势（点按区 / 滑动）。要开先接解析入口（守卫
+      //     `shortcut_channel_wiring_guard_test`）。
+      case srsReview:
+        return const <ShortcutChannel>{
+          ShortcutChannel.keyboard,
+          ShortcutChannel.gamepad,
+        };
       // app 外全局查词：三通道，但**三条通道各走各的 OS 机制**，不共用一套注册。
       // 这是全 app 唯一一处「同一个动作、三种底层触发机制」的 scope，故在此写明
       // 各自的边界（TODO-1066）：
@@ -688,6 +710,23 @@ enum ShortcutAction {
   musicPreviousTrack(ShortcutScope.music, 'music_previous_track'),
   musicSeekForward(ShortcutScope.music, 'music_seek_forward'),
   musicSeekBackward(ShortcutScope.music, 'music_seek_backward'),
+
+  // SRS 复习页（[ShortcutScope.srsReview]，反馈 itlb0djDq6）。执行体在
+  // srs_review_page.dart 的 `_executeShortcut`；键盘 / WebView 键盘桥 / 手柄三条入口
+  // 共用。默认键与改造前写死的完全一致（空格 / Enter / 手柄 A、1–4、R、Ctrl+Z、
+  // Ctrl+= / - / 0）。四个评分键只在答案面生效；查词弹窗开着时主键与评分键让位给弹窗。
+  //
+  // 主键：问题面 = 显示答案，答案面 =「良好」（与 Anki 的空格同义）。
+  srsReviewPrimary(ShortcutScope.srsReview, 'srs_review_primary'),
+  srsReviewAgain(ShortcutScope.srsReview, 'srs_review_again'),
+  srsReviewHard(ShortcutScope.srsReview, 'srs_review_hard'),
+  srsReviewGood(ShortcutScope.srsReview, 'srs_review_good'),
+  srsReviewEasy(ShortcutScope.srsReview, 'srs_review_easy'),
+  srsReviewReplayAudio(ShortcutScope.srsReview, 'srs_review_replay_audio'),
+  srsReviewUndo(ShortcutScope.srsReview, 'srs_review_undo'),
+  srsReviewZoomIn(ShortcutScope.srsReview, 'srs_review_zoom_in'),
+  srsReviewZoomOut(ShortcutScope.srsReview, 'srs_review_zoom_out'),
+  srsReviewZoomReset(ShortcutScope.srsReview, 'srs_review_zoom_reset'),
 
   // Gamepad（TODO-700 T6）：dpad 四向作为可绑触发键。默认各绑对应 dpad 键，执行体
   // = 通用方向焦点移动（与摇杆同效果，但摇杆固定走 onStickMove 通道、不经注册表，
