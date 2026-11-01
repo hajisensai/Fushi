@@ -64,6 +64,8 @@ class AdvancedMiningController extends ChangeNotifier {
 
   /// 打开后拉一遍所有异步数据（句子预览 → 音频区间；漫画原图与建议框并行）。
   Future<void> load() async {
+    // 有句子分区时预填跟着句子走（refreshSentences 末尾触发）；没有就现在取。
+    if (sentenceSection == null) unawaited(refreshFieldPreview());
     await Future.wait(<Future<void>>[
       _loadSentenceThenAudio(),
       if (mangaSection != null) _loadManga(),
@@ -161,6 +163,8 @@ class AdvancedMiningController extends ChangeNotifier {
     }
     sentenceLoading = false;
     _notify();
+    // 句子变了（加减句 / 改句 / 移除），句子类字段的预填跟着刷新；用户改过的不动。
+    unawaited(refreshFieldPreview());
   }
 
   /// 前文 / 后文整体加一句或减一句（宿主 `setContext` 是整体替换语义）。
@@ -346,9 +350,79 @@ class AdvancedMiningController extends ChangeNotifier {
   final Map<String, TextEditingController> _fieldControllers =
       <String, TextEditingController>{};
 
-  /// 某个字段的输入框控制器（懒建，跟着控制器一起释放；隐藏再显示时内容还在）。
+  /// 某个字段的输入框控制器（懒建，初值是预填；跟着控制器一起释放，隐藏再显示时
+  /// 内容还在）。
   TextEditingController fieldController(String name) =>
-      _fieldControllers.putIfAbsent(name, TextEditingController.new);
+      _fieldControllers.putIfAbsent(
+        name,
+        () => TextEditingController(text: _prefill[name] ?? ''),
+      );
+
+  /// 预填值：与落卡同一条管线渲染出的「这张卡此刻会自动生成的值」。改没改都拿它比。
+  Map<String, String> _prefill = const <String, String>{};
+
+  /// 某字段的预填值（没有 = 空串）。
+  String prefillOf(String name) => _prefill[name] ?? '';
+
+  /// 预填正在生成。
+  bool previewLoading = false;
+
+  /// 最近一次预填生成失败（输入框保持空 / 上一次的值，对话框提示留空即自动生成）。
+  bool previewFailed = false;
+
+  int _previewSeq = 0;
+
+  /// 对话框句子分区合成的句子：与宿主落卡时 `MiningSentenceDraft.composeText` 同口径
+  /// （保留的前文 + 当前句 + 保留的后文，[joinMinedSentences]）。没有句子分区为 null。
+  String? get composedSentence {
+    if (sentenceSection == null) return null;
+    return joinMinedSentences(<String>[
+      for (int i = 0; i < prev.length; i++)
+        if (!(i < prevRemoved.length && prevRemoved[i])) prev[i],
+      current,
+      for (int i = 0; i < next.length; i++)
+        if (!(i < nextRemoved.length && nextRemoved[i])) next[i],
+    ]);
+  }
+
+  /// 重新生成预填（反馈 -K86qlwBg6）。只覆盖**还停在旧预填值上**的输入框——用户改过的
+  /// 字段一个字都不动；失败时保留现有内容并标记 [previewFailed]，不卡对话框。
+  Future<void> refreshFieldPreview() async {
+    final AdvancedMiningFieldPreview? load = fieldsSection?.loadPreview;
+    if (load == null) return;
+    final int seq = ++_previewSeq;
+    previewLoading = true;
+    _notify();
+    Map<String, String>? values;
+    try {
+      values = await load(composedSentence);
+    } catch (e, stack) {
+      fushiDebugPrint('AdvancedMining.refreshFieldPreview: $e\n$stack');
+      values = null;
+    }
+    // 晚到的旧结果不许盖掉新结果。
+    if (_disposed || seq != _previewSeq) return;
+    previewLoading = false;
+    previewFailed = values == null;
+    if (values != null) {
+      for (final MapEntry<String, TextEditingController> e
+          in _fieldControllers.entries) {
+        if (e.value.text == prefillOf(e.key)) {
+          e.value.text = values[e.key] ?? '';
+        }
+      }
+      _prefill = Map<String, String>.unmodifiable(values);
+    }
+    _notify();
+  }
+
+  /// 展开成大编辑框的字段（释义 HTML 很长时用）。
+  final Set<String> expandedFields = <String>{};
+
+  void toggleFieldExpanded(String name) {
+    if (!expandedFields.remove(name)) expandedFields.add(name);
+    _notify();
+  }
 
   /// 映射顺序下当前显示的字段。
   List<AdvancedMiningField> get shownFields => <AdvancedMiningField>[
@@ -381,13 +455,15 @@ class AdvancedMiningController extends ChangeNotifier {
     }
   }
 
-  /// 确认时带走的手改字段：只取**显示中且非空白**的字段（隐藏的字段即使填过也不写，
-  /// 所见即所得）。
+  /// 确认时带走的手改字段：只取**显示中、可编辑、且与预填值不同**的字段。没改的字段
+  /// 不发——照常由落卡管线生成，延迟生成的内容（媒体占位、刷新后的句子）不会被冻结成
+  /// 预览时的样子；清空 = 回到自动生成；隐藏的字段即使改过也不发（所见即所得）。
   Map<String, String> get editedFieldValues => <String, String>{
     for (final AdvancedMiningField f in shownFields)
-      if (_fieldControllers[f.name]?.text.trim() case final String v
-          when v.isNotEmpty)
-        f.name: v,
+      if (!f.generatedAtMining)
+        if (_fieldControllers[f.name]?.text case final String v
+            when v.trim().isNotEmpty && v.trim() != prefillOf(f.name).trim())
+          f.name: v,
   };
 
   // ───────────────────────────── 音频 ─────────────────────────────
@@ -920,9 +996,10 @@ class AdvancedMiningController extends ChangeNotifier {
     _stillDeltaMs.clear();
     videoImageMode = _initialVideoImageMode;
     mosaicRegions = const <MiningMosaicRegion>[];
-    // 手改的字段清空 = 回到按映射自动生成（显示哪些字段是用户的长期偏好，不还原）。
-    for (final TextEditingController c in _fieldControllers.values) {
-      c.clear();
+    // 手改的字段回到预填值 = 回到按映射自动生成（显示哪些字段是用户的长期偏好，不还原）。
+    for (final MapEntry<String, TextEditingController> e
+        in _fieldControllers.entries) {
+      e.value.text = prefillOf(e.key);
     }
     if (mangaSection != null && !mangaLoading) {
       cropChoice = isCropChoiceAvailable(_initialCropChoice)

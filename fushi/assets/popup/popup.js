@@ -5691,6 +5691,11 @@ function createEntryHeader(entry, idx) {
             }
         }
     });
+    // 反馈 -K86qlwBg6：「高级制卡」字段预填要的是**这颗按钮点下去会发出的那份** payload
+    // ——同一组闭包参数、同一个 buildMinePayload、同一份选区快照（lastSelection），
+    // 只是不走 mineEntry 桥、不改按钮状态。见 fushiPopupBuildMinePayloadByIndex。
+    mineButton.__fushiBuildMinePayload = () => buildMinePayload(
+        expression, reading, frequencies, pitches, rules, matched, idx, lastSelection);
     if (miningEnabled) {
         buttonsContainer.appendChild(mineButton);
     }
@@ -6036,6 +6041,20 @@ window.fushiPopupMineEntryByIndex = function(idx) {
     // Dart await 到 mineEntry 回执再关窗。三条 `return false` 保持同步（没点到）。
     const result = typeof b.onclick === 'function' ? b.onclick() : b.click();
     return Promise.resolve(result).then(() => true);
+};
+
+// 反馈 -K86qlwBg6：「高级制卡」的卡片字段预填。按与 fushiPopupMineEntryByIndex 相同的
+// DOM 序（:scope > .entry）找到第 idx 个词条的「+」，取回它点下去会发出的 payload
+// （按钮上挂的 __fushiBuildMinePayload），不点按钮、不走桥。找不到 → null。
+window.fushiPopupBuildMinePayloadByIndex = async function(idx) {
+    const root = __fushiRootNode();
+    const first = root && root.querySelector('.entry');
+    const container = first && first.parentNode;
+    if (!container) return null;
+    const entry = container.querySelectorAll(':scope > .entry')[idx];
+    const b = entry && entry.querySelector('.mine-button');
+    if (!b || typeof b.__fushiBuildMinePayload !== 'function') return null;
+    return await b.__fushiBuildMinePayload();
 };
 
 // 收藏夹一键制卡：为 (expression, reading) 在当前 window.lookupEntries 里挑一个词条，

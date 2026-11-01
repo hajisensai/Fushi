@@ -1371,7 +1371,12 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
       final AdvancedMiningDeckSection deck =
           await loadAdvancedMiningDeckSection(ref);
       final AdvancedMiningFieldsSection? fields =
-          await loadAdvancedMiningFieldsSection(ref);
+          await loadAdvancedMiningFieldsSection(
+            ref,
+            fetchPayload: () async =>
+                webViewKey.currentState?.buildMinePayloadByIndex(entryIndex),
+            fallbackSentence: () => favoriteLookupContext?.sentence ?? '',
+          );
       final AdvancedMiningSections sections = await buildAdvancedMiningSections(
         matched: matched,
       );

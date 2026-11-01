@@ -326,7 +326,12 @@ mixin DictionaryPageMixin {
       // 机器上，这里的映射对不上，不给改。
       final AdvancedMiningFieldsSection? fields =
           popupResourceSource == null && advancedMiningDeckChoiceAvailable
-          ? await loadAdvancedMiningFieldsSection(ref)
+          ? await loadAdvancedMiningFieldsSection(
+              ref,
+              fetchPayload: () async =>
+                  webViewKey.currentState?.buildMinePayloadByIndex(entryIndex),
+              fallbackSentence: () => favoriteLookupContext?.sentence ?? '',
+            )
           : null;
       final AdvancedMiningSections sections = await buildAdvancedMiningSections(
         matched: matched,

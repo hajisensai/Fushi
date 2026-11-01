@@ -1423,33 +1423,27 @@ class AdvancedMiningFieldsPanel extends StatelessWidget {
                 const SizedBox(height: 8),
                 _caption(context, t.popup_advanced_mining_fields_empty),
               ] else ...<Widget>[
+                if (c.previewLoading) ...<Widget>[
+                  const SizedBox(height: 8),
+                  const FushiLinearProgressIndicator(),
+                  const SizedBox(height: 4),
+                  _caption(context, t.popup_advanced_mining_fields_loading),
+                ] else if (c.previewFailed) ...<Widget>[
+                  const SizedBox(height: 8),
+                  _caption(
+                    context,
+                    t.popup_advanced_mining_fields_preview_failed,
+                  ),
+                ],
                 for (final (int i, AdvancedMiningField f) in shown.indexed)
                   FushiStaggeredEntrance(
                     key: ValueKey<String>('advanced-mining-field-${f.name}'),
                     index: i,
                     child: Padding(
                       padding: const EdgeInsets.only(top: 8),
-                      child: FushiTextFieldControl(
-                        controller: c.fieldController(f.name),
-                        enabled: !c.busy,
-                        minLines: 1,
-                        maxLines: 4,
-                        keyboardType: TextInputType.multiline,
-                        textInputAction: TextInputAction.newline,
-                        style: context.fushiType.bodyMedium,
-                        decoration: InputDecoration(
-                          border: const FushiOutlinedFieldBorder(),
-                          isDense: true,
-                          labelText: f.name,
-                          hintText: t.popup_advanced_mining_fields_auto_hint(
-                            template: f.template,
-                          ),
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 10,
-                            vertical: 8,
-                          ),
-                        ),
-                      ),
+                      child: f.generatedAtMining
+                          ? _GeneratedFieldRow(field: f)
+                          : _EditableFieldRow(controller: c, field: f),
                     ),
                   ),
                 const SizedBox(height: 6),
@@ -1459,6 +1453,101 @@ class AdvancedMiningFieldsPanel extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// 落卡时才生成的字段（媒体 / 出处 / 时间窗）：只读，写明它会在制卡时生成。
+class _GeneratedFieldRow extends StatelessWidget {
+  const _GeneratedFieldRow({required this.field});
+
+  final AdvancedMiningField field;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+    child: Row(
+      children: <Widget>[
+        Flexible(
+          child: Text(
+            field.name,
+            style: context.fushiType.bodyMediumEmphasized,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: _caption(
+            context,
+            '${t.popup_advanced_mining_fields_generated} · ${field.template}',
+            align: TextAlign.end,
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+/// 可编辑字段：**源码视图**——输入框里就是管线渲染出的原文（释义是 HTML 源码），
+/// 提交时原样发出。选源码视图而不是纯文本视图：纯文本视图要把 HTML 拆成文字再拼回
+/// 去，结构（列表 / 词典样式 / 外字图片占位）很难无损往返；源码视图没改就是逐字节
+/// 原样，改了也只动用户动过的那几个字。释义很长时点右侧按钮展开成大编辑框。
+class _EditableFieldRow extends StatelessWidget {
+  const _EditableFieldRow({required this.controller, required this.field});
+
+  final AdvancedMiningController controller;
+  final AdvancedMiningField field;
+
+  @override
+  Widget build(BuildContext context) {
+    final AdvancedMiningController c = controller;
+    final bool expanded = c.expandedFields.contains(field.name);
+    final bool markup = c.prefillOf(field.name).contains('<');
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Expanded(
+          child: FushiTextFieldControl(
+            key: ValueKey<String>('advanced-mining-field-input-${field.name}'),
+            controller: c.fieldController(field.name),
+            enabled: !c.busy,
+            minLines: expanded ? 8 : 1,
+            maxLines: expanded ? 20 : 4,
+            keyboardType: TextInputType.multiline,
+            textInputAction: TextInputAction.newline,
+            style: markup
+                ? context.fushiType.bodySmall.copyWith(
+                    fontFamily: 'monospace',
+                    fontFamilyFallback: const <String>['Consolas', 'Menlo'],
+                  )
+                : context.fushiType.bodyMedium,
+            decoration: InputDecoration(
+              border: const FushiOutlinedFieldBorder(),
+              isDense: true,
+              labelText: field.name,
+              hintText: t.popup_advanced_mining_fields_auto_hint(
+                template: field.template,
+              ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 10,
+                vertical: 8,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 4),
+        FushiIconButtonControl(
+          tooltip: expanded
+              ? t.popup_advanced_mining_fields_collapse
+              : t.popup_advanced_mining_fields_expand,
+          size: ButtonSizeVariant.xSmall,
+          onPressed: () => c.toggleFieldExpanded(field.name),
+          icon: FushiIcon(
+            expanded ? FushiIcons.expandLess : FushiIcons.expandMore,
+            size: 18,
+          ),
+        ),
+      ],
     );
   }
 }

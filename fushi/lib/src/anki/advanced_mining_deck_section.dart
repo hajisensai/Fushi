@@ -65,11 +65,16 @@ AdvancedMiningFieldsSection? buildAdvancedMiningFieldsSection(
   AnkiSettings settings, {
   List<String>? remembered,
   Future<void> Function(Set<String> names)? setVisibleFields,
+  AdvancedMiningFieldPreview? loadPreview,
 }) {
   final List<AdvancedMiningField> fields = <AdvancedMiningField>[
     for (final MapEntry<String, String> e in settings.fieldMappings.entries)
       if (e.value.trim().isNotEmpty)
-        AdvancedMiningField(name: e.key, template: e.value.trim()),
+        AdvancedMiningField(
+          name: e.key,
+          template: e.value.trim(),
+          generatedAtMining: AnkiNoteComposer.isLateBoundTemplate(e.value),
+        ),
   ];
   if (fields.isEmpty) return null;
   final Set<String> visible = remembered != null
@@ -85,21 +90,62 @@ AdvancedMiningFieldsSection? buildAdvancedMiningFieldsSection(
         if (visible.contains(f.name)) f.name,
     },
     setVisibleFields: setVisibleFields,
+    loadPreview: loadPreview,
   );
 }
 
+/// 字段预填（反馈 -K86qlwBg6）：取回「+」点下去会发出的那份 payload（[fetchPayload]），
+/// 交给后端的 [AnkiNoteComposer.previewMinedFields]——与落卡同一条渲染管线。句子取
+/// 对话框句子分区合成的那句；没有句子分区时用 [fallbackSentence]（宿主当前句）。
+/// payload 取不到 → null（对话框退回空输入框 + 提示）。
+AdvancedMiningFieldPreview advancedMiningFieldPreview({
+  required BaseAnkiRepository repository,
+  required AnkiSettings settings,
+  required Future<Map<String, String>?> Function() fetchPayload,
+  required String Function() fallbackSentence,
+}) {
+  // payload 与句子无关（释义 / 读音 / 单词音频），对话框里加减句子只重渲染不重取：
+  // 取一次要走 WebView 往返、还会重新解析单词音频。取失败（null）下次再试。
+  Future<Map<String, String>?>? pending;
+  return (String? sentence) async {
+    final Future<Map<String, String>?> fetch = pending ??= fetchPayload();
+    final Map<String, String>? raw = await fetch;
+    if (raw == null) {
+      if (identical(pending, fetch)) pending = null;
+      return null;
+    }
+    return repository.previewMinedFields(
+      settings: settings,
+      payload: AnkiMiningPayload.fromJson(raw),
+      context: AnkiMiningContext(sentence: sentence ?? fallbackSentence()),
+    );
+  };
+}
+
 /// 开窗函数用：读当前 Anki 设置与记住的「显示哪些字段」组装卡片字段分区。
+///
+/// [fetchPayload] / [fallbackSentence] 见 [advancedMiningFieldPreview]；[fetchPayload]
+/// 为 null 时不给预填。
 Future<AdvancedMiningFieldsSection?> loadAdvancedMiningFieldsSection(
-  WidgetRef ref,
-) async {
-  final AnkiSettings settings = await ref
-      .read(ankiRepositoryProvider)
-      .loadSettings();
+  WidgetRef ref, {
+  Future<Map<String, String>?> Function()? fetchPayload,
+  String Function()? fallbackSentence,
+}) async {
+  final BaseAnkiRepository repository = ref.read(ankiRepositoryProvider);
+  final AnkiSettings settings = await repository.loadSettings();
   final AppModel appModel = ref.read(appProvider);
   return buildAdvancedMiningFieldsSection(
     settings,
     remembered: appModel.advancedMiningVisibleFields,
     setVisibleFields: (Set<String> names) =>
         appModel.setAdvancedMiningVisibleFields(names.toList()..sort()),
+    loadPreview: fetchPayload == null
+        ? null
+        : advancedMiningFieldPreview(
+            repository: repository,
+            settings: settings,
+            fetchPayload: fetchPayload,
+            fallbackSentence: fallbackSentence ?? () => '',
+          ),
   );
 }
