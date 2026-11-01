@@ -101,6 +101,8 @@
 | [BUG-3930](bugs/BUG-3930-ext-mined-duplicate-add-silently-rejected.md) | ✅ | ✅ | 浏览器扩展里已制卡的词点 ✓ 没有「是否添加重复卡」的选择，再制只得到「已存在」 |
 | [BUG-3929](bugs/BUG-3929-ext-external-subtitle-lost-on-reload.md) | ✅ | ✅ | 扩展「查字幕」/ 外挂字幕装上后刷新网页即消失 |
 | [BUG-3928](bugs/BUG-3928-ext-subs-results-long-title-overlap.md) | ✅ | ✅ | 扩展侧边栏查字幕结果被超长番名挤压、行重叠、看不到集数 |
+| [BUG-3929](bugs/BUG-3929-siglus-ninearg-harvest-festa.md) | ✅ | ✅ | Rewrite Harvest festa!（九参一代 SiglusEngine）不识别引擎：台词混入人名、内嵌查词不可用 |
+| [BUG-3928](bugs/BUG-3928-siglus-enigma-plain-frame.md) | ✅ | ✅ | Rewrite+（Enigma 保护的 SiglusEngine）不识别引擎：内嵌查词要等 120 秒后才放行 Luna，且查词不可用 |
 | [BUG-3927](bugs/BUG-3927-reader-jp-gothic-alias-theme-font.md) | ✅ | ✅ | 電書協书的章标题在换了主题字体的 Android 机上竖排叠字 |
 | [BUG-3926](bugs/BUG-3926-download-subtitle-retry-drops-anilist.md) | ✅ | ✅ | download-subtitle-retry-drops-anilist |
 > 共 3530 条。点号进各自文件。

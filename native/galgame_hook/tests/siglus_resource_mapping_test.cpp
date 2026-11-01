@@ -149,8 +149,183 @@ struct Image {
            out.archive_builder_rva == 0u && out.ovk_path_return_rva == 0u);
   }
 };
+// Plain-frame generation behind a protector: every section merged into one
+// CODE|EXECUTE|READ header, so literals/vtable live in executable memory.
+struct PlainImage {
+  static constexpr size_t kBytes = 0x20000u;
+  // Literals live in fixed 0x80-byte slots below the 0x1cf00 vtable words.
+  static constexpr uintptr_t kStringBase = 0x1c000u, kStringSlot = 0x80u;
+  static constexpr uintptr_t kStringEnd = 0x1cf00u;
+  uint8_t *bytes = static_cast<uint8_t *>(VirtualAlloc(
+      nullptr, kBytes, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE));
+  exact_lookup::LoadedPeImage view;
+  uintptr_t voice = 0x1000u, play = 0x2000u, resource = 0x4000u;
+  uintptr_t builder = 0x7000u, concat = 0xa000u, formatter = 0xc000u;
+  uintptr_t crt = 0xe000u, assign = 0x3000u, archive_open = 0x6000u;
+  uintptr_t archive_read = 0x9000u, ogg_ctor = 0xb000u, ogg_open = 0xd000u;
+  uintptr_t ogg_read = 0xf000u;
+  std::vector<std::pair<uintptr_t, uintptr_t>> edges;
+  size_t strings = 0;
+  PlainImage() {
+    assert(bytes);
+    std::memset(bytes, 0xcc, kBytes);
+    view.base = bytes;
+    view.size = kBytes;
+    view.absolute_base = 0x13000000u;
+    view.machine = IMAGE_FILE_MACHINE_I386;
+    view.pointer_bits = 32u;
+    view.section_count = 1u;
+    view.sections[0] = {bytes + 0x1000u, 0x1f000u, 0x1000u,
+                        IMAGE_SCN_CNT_CODE | IMAGE_SCN_MEM_READ |
+                            IMAGE_SCN_MEM_EXECUTE};
+    Put(voice, kPlainVoiceRequest.pattern());
+    Put(play, kPlainPlay.pattern());
+    Put(resource, kPlainResource.pattern());
+    Put(builder, kBuilder.pattern());
+    Put(concat, kConcat.pattern());
+    Put(formatter, kPlainFormatter.pattern());
+    Put(crt, kCrtFormat.pattern());
+    Put(assign, kWideAssign.pattern());
+    Put(ogg_ctor, kOggCtor.pattern());
+    Put(ogg_open, kOggOpen.pattern());
+    Put(ogg_read, kOggRead.pattern());
+    Put(archive_open, kPlainArchiveOpen.pattern());
+    Put(archive_read, kPlainArchiveRead.pattern());
+    edges = {{voice + 0xa1u, play},          {play + 0x47u, resource},
+             {resource + 0x133u, builder},   {builder + 0x2a2u, concat},
+             {builder + 0x3c4u, concat},     {builder + 0x4e0u, concat},
+             {builder + 0x22bu, formatter},  {builder + 0x34du, formatter},
+             {builder + 0x469u, formatter},  {formatter + 0x5cu, crt + 0x77u},
+             {crt + 0x88u, crt},             {formatter + 0xa9u, assign},
+             {builder + 0x222u, assign},     {builder + 0x27bu, assign},
+             {builder + 0x344u, assign},     {builder + 0x39du, assign},
+             {builder + 0x460u, assign},     {builder + 0x4b9u, assign},
+             {resource + 0x539u, archive_open},
+             {resource + 0x5f4u, archive_read},
+             {resource + 0x648u, archive_read},
+             {resource + 0x779u, ogg_ctor}};
+    for (const auto &e : edges)
+      Call(e.first, e.second);
+    String(resource + 0x101u, L"koe");
+    String(resource + 0x51au, L"rb");
+    String(builder + 0x21bu, L"%04d\\z%09d");
+    String(builder + 0x33du, L"%04d\\z%09d");
+    String(builder + 0x269u, L"wav");
+    String(builder + 0x38bu, L"nwa");
+    String(builder + 0x459u, L"z%04d");
+    String(builder + 0x4a7u, L"ovk");
+    String(concat + 0x47u, L"\\");
+    String(concat + 0x7cu, L"\\");
+    String(concat + 0xa7u, L"\\");
+    String(concat + 0xcfu, L".");
+    String(ogg_open + 0x26u, L"rb");
+    Absolute(ogg_ctor + 0x52u, 0x1cf00u);
+    Absolute(0x1cf04u, ogg_open);
+    Absolute(ogg_open + 0x70u, ogg_read);
+  }
+  ~PlainImage() { VirtualFree(bytes, 0, MEM_RELEASE); }
+  PlainImage(const PlainImage &) = delete;
+  PlainImage &operator=(const PlainImage &) = delete;
+  void Put(uintptr_t rva, const exact_lookup::MaskedPattern &p) {
+    std::memcpy(bytes + rva, p.bytes, p.size);
+  }
+  void Call(uintptr_t at, uintptr_t target) {
+    assert(bytes[at] == 0xe8u);
+    const int32_t rel = static_cast<int32_t>(target - at - 5u);
+    std::memcpy(bytes + at + 1u, &rel, 4u);
+  }
+  void Absolute(uintptr_t at, uintptr_t rva) {
+    const uint32_t va = static_cast<uint32_t>(view.absolute_base + rva);
+    std::memcpy(bytes + at, &va, 4u);
+  }
+  template <size_t N> void String(uintptr_t at, const wchar_t (&s)[N]) {
+    static_assert(sizeof(s) <= kStringSlot, "literal exceeds its slot");
+    const uintptr_t rva = kStringBase + strings++ * kStringSlot;
+    assert(rva + kStringSlot <= kStringEnd);
+    std::memcpy(bytes + rva, s, sizeof(s));
+    Absolute(at, rva);
+  }
+  void Check() {
+    SiglusResourceMappingProfile out;
+    assert(ResolvePlainFrameResourceMappingProfile(view, voice, &out));
+    assert(out.voice_entry_rva == voice && out.resource_entry_rva == resource);
+    assert(out.archive_builder_rva == builder);
+    assert(out.ovk_path_return_rva == builder + 0x4e5u);
+    assert(out.archive_open_rva == archive_open);
+    assert(out.archive_read_rva == archive_read);
+    assert(out.ogg_open_rva == ogg_open && out.ogg_read_rva == ogg_read);
+    assert(out.payload_return_rva == resource + 0x7aeu);
+    assert(out.ogg_vtable_rva == 0x1cf00u);
+    assert(out.resource_key_frame_offset == 8);
+    assert(out.resource_key_copy_frame_displacement == -0x100);
+    assert(out.resource_path_frame_displacement == -0x74);
+    assert(out.resource_reader_frame_displacement == -0x110);
+    assert(out.resource_length_frame_displacement == -0xec);
+    // The aligned resolver never admits this generation.
+    assert(!ResolveSiglusResourceMappingProfile(view, voice, &out));
+  }
+  void Reject() {
+    SiglusResourceMappingProfile out;
+    out.voice_entry_rva = 1u;
+    out.resource_length_frame_displacement = 1;
+    assert(!ResolvePlainFrameResourceMappingProfile(view, voice, &out));
+    assert(out.voice_entry_rva == 0u &&
+           out.resource_length_frame_displacement == 0);
+  }
+};
+
+void TestPlainFrame() {
+  PlainImage{}.Check();
+  // Every proved edge is load-bearing.
+  for (size_t i = 0; i < PlainImage{}.edges.size(); ++i) {
+    PlainImage x;
+    x.Call(x.edges[i].first, 0x18000u);
+    x.Reject();
+  }
+  {
+    PlainImage x;  // archive helpers are complete spans, not any callee
+    x.bytes[x.archive_read + 0x14au] ^= 1u;  // bounded-read count compare
+    x.Reject();
+  }
+  for (size_t i = 0; i < 13u; ++i) {
+    PlainImage x;
+    x.bytes[0x1c000u + i * 0x80u] ^= 1u;
+    x.Reject();
+  }
+  {
+    PlainImage x;  // the voice entry comes from the message profile
+    SiglusResourceMappingProfile out;
+    assert(!ResolvePlainFrameResourceMappingProfile(x.view, x.voice + 1u, &out));
+  }
+  // OVK kind=3 branch, row member +8, stride 0x10, saved length local.
+  for (uintptr_t at : {0x503u, 0x672u, 0x67cu, 0x71cu}) {
+    PlainImage x;
+    x.bytes[x.resource + at] ^= 1u;
+    x.Reject();
+  }
+  for (const auto &candidate :
+       {kPlainResource.pattern(), kPlainArchiveOpen.pattern(),
+        kPlainArchiveRead.pattern(), kPlainFormatter.pattern()}) {
+    PlainImage x;
+    x.Put(0x15000u, candidate);
+    x.Reject();
+  }
+  {
+    PlainImage x;
+    x.view.machine = IMAGE_FILE_MACHINE_AMD64;
+    x.Reject();
+  }
+  {
+    // The plain resolver never admits the aligned generation.
+    Image aligned;
+    SiglusResourceMappingProfile out;
+    assert(!ResolvePlainFrameResourceMappingProfile(aligned.view, aligned.voice,
+                                                    &out));
+  }
+}
 } // namespace
 int main() {
+  TestPlainFrame();
   Image{}.Check();
   Image{0x31u}.Check();
   // A rel32 into some other executable code is not evidence of this chain.

@@ -49,33 +49,54 @@ void TestSplitRedrawLifetime() {
   AdvanceSiglusLookupClickSample(true, false, false, 0, &held);
   edge = AdvanceSiglusLookupClickSample(true, true, false, 0, &held);
   assert(edge.consume && edge.begin);
-  // The production consumer runs between A and BC of an identical redraw.
+  // The production consumer runs between A and BC of an identical redraw
+  // (engines that lay the line out every frame are sliced like this all the
+  // time). The tail repeats the complete pass, so nothing is revoked.
   Push(u'A', 100, 200, &captures);
+  assert(UpdateSiglusLookupLayout(profile, captures, u"ABC", 3, &state));
+  assert(state.current_valid && state.line_has_complete_layout);
+  assert(state.generation == committed_generation &&
+         state.snapshot_epoch == pressed_epoch);
+  Push(u'B', 140, 200, &captures);
+  assert(UpdateSiglusLookupLayout(profile, captures, u"ABC", 3, &state));
+  Push(u'C', 180, 200, &captures);
+  assert(UpdateSiglusLookupLayout(profile, captures, u"ABC", 3, &state));
+  edge = AdvanceSiglusLookupClickSample(true, false, false,
+                                        kSiglusLookupNoGlyph, &held);
+  assert(edge.consume && edge.submit);
+  // A press spanning identical redraws stays current and submits.
+  assert(IsSiglusLookupLayoutSubmissionCurrent(state, committed_generation,
+                                                pressed_epoch));
+
+  // A divergent glyph in the tail is not the same pass: revoke until a
+  // complete capture, and never revive the press begun before it.
+  Push(u'A', 100, 200, &captures);
+  Push(u'X', 140, 200, &captures);
   assert(!UpdateSiglusLookupLayout(profile, captures, u"ABC", 3, &state));
   assert(!state.current_valid && state.line_has_complete_layout);
-  assert(state.generation == committed_generation);
   assert(!IsSiglusLookupLayoutSubmissionCurrent(state, committed_generation,
                                                  pressed_epoch));
-  auto released_during_gap = held;
-  edge = AdvanceSiglusLookupClickSample(true, false, false,
-                                        kSiglusLookupNoGlyph,
-                                        &released_during_gap);
-  // The raw tail stays consumed, but the production publication gate rejects
-  // this submit intent because no current click snapshot exists.
-  assert(edge.consume && edge.submit);
+  // Same glyph, other extent: also divergent.
+  Push(u'A', 100, 200, &captures);
+  Push(u'B', 140, 200, &captures);
+  Push(u'C', 180, 200, &captures);
+  assert(UpdateSiglusLookupLayout(profile, captures, u"ABC", 3, &state));
+  const uint64_t extent_epoch = state.snapshot_epoch;
+  Push(u'A', 100, 200, &captures, 41);
+  assert(!UpdateSiglusLookupLayout(profile, captures, u"ABC", 3, &state));
   assert(!IsSiglusLookupLayoutSubmissionCurrent(state, committed_generation,
-                                                 pressed_epoch));
+                                                 extent_epoch));
+  Push(u'A', 100, 200, &captures);
   Push(u'B', 140, 200, &captures);
   Push(u'C', 180, 200, &captures);
   assert(UpdateSiglusLookupLayout(profile, captures, u"ABC", 3, &state));
   assert(state.line_has_complete_layout && state.current_valid);
   assert(state.generation == committed_generation);
-  edge = AdvanceSiglusLookupClickSample(true, false, false,
-                                        kSiglusLookupNoGlyph, &held);
-  assert(edge.consume && edge.submit);
-  // Recovery of identical geometry must not revive a pre-gap down payload.
+  // Recovery of identical geometry must not revive a pre-divergence payload.
   assert(!IsSiglusLookupLayoutSubmissionCurrent(state, committed_generation,
                                                  pressed_epoch));
+  assert(!IsSiglusLookupLayoutSubmissionCurrent(state, committed_generation,
+                                                 extent_epoch));
   assert(IsSiglusLookupLayoutSubmissionCurrent(state, state.generation,
                                                 state.snapshot_epoch));
 

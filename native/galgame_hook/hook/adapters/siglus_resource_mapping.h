@@ -23,10 +23,15 @@ struct SiglusResourceMappingProfile {
   uintptr_t ogg_read_rva = 0;
   // Caller EBP belongs to Resource, callee entryESP belongs to OggOpen.
   // The path is a pointer to a 0x18-byte UTF-16 TextUnion, not wchar_t*.
-  static constexpr int32_t resource_key_frame_offset = 8;
-  static constexpr int32_t resource_key_copy_frame_displacement = -0x128;
-  static constexpr int32_t resource_path_frame_displacement = -0xb8;
-  static constexpr int32_t resource_reader_frame_displacement = -0x30;
+  // Defaults are the aligned-frame layout; the plain-frame resolver replaces
+  // them with the displacements its own complete Resource span proves.
+  int32_t resource_key_frame_offset = 8;
+  int32_t resource_key_copy_frame_displacement = -0x128;
+  int32_t resource_path_frame_displacement = -0xb8;
+  int32_t resource_reader_frame_displacement = -0x30;
+  // Zero: offset/length arrive in ESI/EBX. Nonzero: offset in EBX and length
+  // in this Resource frame local (see SiglusVoiceSourceLayout).
+  int32_t resource_length_frame_displacement = 0;
   static constexpr uint32_t ogg_path_argument_offset = 4u;
   static constexpr uint32_t ogg_offset_argument_offset = 8u;
   static constexpr uint32_t ogg_length_argument_offset = 12u;
@@ -350,19 +355,191 @@ inline constexpr Signature kOggRead{
     "?? 8B D0 83 C4 10 8B CA 0F AF 4D 0C 85 C9 7E 16 EB 06 8D 9B 00 00 00 00 "
     "8A 43 0C 8D 76 01 30 46 FF 49 75 F4 8B C2 5E 5B 5D C3"};
 
+// ---- Plain-frame code generation (SiglusEngine builds without the aligned
+// ESP frame, e.g. behind an Enigma import emulator). Same Voice -> Play ->
+// Resource -> Builder -> OggOpen chain; register allocation and the Resource
+// frame differ, and the archive reader is a separate stream object.
+
+// ECX owner kept in [ebp-8]; EDX key saved in EBX, passed to Play and finally
+// stored at owner+1f8 exactly like the aligned generation.
+inline constexpr Signature kPlainVoiceRequest{
+    "55 8B EC 83 EC 0C 53 8B C1 8B DA 89 45 F8 56 57 85 C0 0F 84 F8 00 00 00 "
+    "8B 35 ?? ?? ?? ?? 8B 45 0C 89 86 28 03 00 00 8B 45 10 89 86 2C 03 00 00 "
+    "E8 ?? ?? ?? ?? E8 ?? ?? ?? ?? 8B 7D 08 8B CF E8 ?? ?? ?? ?? 80 BE 3D 03 "
+    "00 00 00 8B 0D ?? ?? ?? ?? 88 45 FF 75 12 80 B9 35 01 00 00 00 75 09 80 "
+    "B9 48 01 00 00 00 EB 07 80 B9 49 01 00 00 00 74 08 8B 89 4C 01 00 00 EB "
+    "05 B9 64 00 00 00 84 C0 0F 94 C0 0F B6 C0 50 6A 00 FF 75 1C FF 75 18 FF "
+    "75 14 51 8B 0D ?? ?? ?? ?? 57 53 8D 89 D8 00 00 00 E8 ?? ?? ?? ?? 8B 4D "
+    "F8 8A 45 FF 88 81 FC 01 00 00 A1 ?? ?? ?? ?? 89 99 F8 01 00 00 81 C1 EC "
+    "01 00 00"
+};
+
+// The first stack argument is preserved in ESI and passed to Resource.
+inline constexpr Signature kPlainPlay{
+    "55 8B EC 56 57 8B F9 6A 01 8B 8F A0 00 00 00 E8 ?? ?? ?? ?? 8B 45 0C 32 "
+    "C9 8B 75 08 89 87 B0 00 00 00 8A 45 20 89 B7 AC 00 00 00 88 87 B8 00 00 "
+    "00 E8 ?? ?? ?? ?? FF 75 24 8B 8F A0 00 00 00 6A 00 FF 75 10 6A 00 56 E8 "
+    "?? ?? ?? ??"
+};
+
+// Formatter wrapper: same 0x400 bounded CRT call, length measured inline
+// before the WideAssign copy into the output TextUnion.
+inline constexpr Signature kPlainFormatter{
+    "55 8B EC 6A FF 68 ?? ?? ?? ?? 64 A1 00 00 00 00 50 81 EC 08 08 00 00 A1 "
+    "?? ?? ?? ?? 33 C5 89 45 F0 56 50 8D 45 F4 64 A3 00 00 00 00 8B 75 08 C7 "
+    "85 EC F7 FF FF 00 00 00 00 C7 45 FC 00 00 00 00 8D 4D 24 83 7D 20 08 8D "
+    "45 0C 51 0F 43 45 0C 50 8D 85 F0 F7 FF FF 68 00 04 00 00 50 E8 ?? ?? ?? "
+    "?? 33 C0 C7 46 14 07 00 00 00 C7 46 10 00 00 00 00 83 C4 10 66 89 06 66 "
+    "39 85 F0 F7 FF FF 75 04 33 C9 EB 1B 8D 8D F0 F7 FF FF 8D 51 02 8D 49 00 "
+    "66 8B 01 83 C1 02 66 85 C0 75 F5 2B CA D1 F9 51 8D 85 F0 F7 FF FF 8B CE "
+    "50 E8 ?? ?? ?? ??"
+};
+
+// Resource through the OVK payload hand-off. EDI owner; ESI = key from
+// [ebp+8], copied to [ebp-100]; key % 100000 -> [ebp-d8]. Builder stores the
+// kind to [ebp-e4]; only kind 3 opens [ebp-74] ("rb"), reads the 4-byte row
+// count then the 0x10-stride table, matches [row+8] against the remainder and
+// takes offset [row+4] -> EBX, length [row] -> [ebp-ec]. The Ogg reader object
+// is held in [ebp-110]; its vtable+4 OggOpen receives (path, offset, length).
+inline constexpr Signature kPlainResource{
+    "55 8B EC 6A FF 68 ?? ?? ?? ?? 64 A1 00 00 00 00 50 81 EC 08 01 00 00 A1 "
+    "?? ?? ?? ?? 33 C5 89 45 EC 53 56 57 50 8D 45 F4 64 A3 00 00 00 00 8B F9 "
+    "89 BD 0C FF FF FF 8B 75 08 6A 01 89 B5 00 FF FF FF E8 ?? ?? ?? ?? 8D 87 "
+    "34 01 00 00 C7 87 28 01 00 00 FF FF FF FF C7 87 2C 01 00 00 FF FF FF FF "
+    "C7 87 30 01 00 00 FF FF FF FF 83 78 14 08 C7 40 10 00 00 00 00 72 02 8B "
+    "00 33 C9 66 89 08 A1 ?? ?? ?? ?? C7 87 4C 01 00 00 FF FF FF FF 38 08 75 "
+    "0C 38 4D 18 74 07 B0 01 E9 ?? ?? ?? ?? 85 F6 78 F5 B8 89 B5 F8 14 C7 85 "
+    "1C FF FF FF 00 00 00 00 F7 EE 8B CE C7 85 58 FF FF FF 07 00 00 00 C1 FA "
+    "0D 8B C2 C7 85 54 FF FF FF 00 00 00 00 C1 E8 1F 03 C2 69 C0 A0 86 01 00 "
+    "6A FF 2B C8 A1 ?? ?? ?? ?? 89 8D 28 FF FF FF 83 C0 18 33 C9 51 66 89 8D "
+    "44 FF FF FF 8D 8D 44 FF FF FF 50 E8 ?? ?? ?? ?? 68 ?? ?? ?? ?? 8D 8D 5C "
+    "FF FF FF C7 45 FC 00 00 00 00 E8 ?? ?? ?? ?? 8D 85 1C FF FF FF C6 45 FC "
+    "01 50 8D 85 5C FF FF FF 56 50 8D 95 44 FF FF FF 8D 4D 8C E8 ?? ?? ?? ?? "
+    "83 C4 0C C6 45 FC 03 83 BD 70 FF FF FF 08 72 0E FF B5 5C FF FF FF E8 ?? "
+    "?? ?? ?? 83 C4 04 33 C0 C7 85 70 FF FF FF 07 00 00 00 C7 85 6C FF FF FF "
+    "00 00 00 00 66 89 85 5C FF FF FF 39 45 9C 0F 85 AD 00 00 00 51 8B D6 8D "
+    "4D BC E8 ?? ?? ?? ?? 83 C4 04 50 BA ?? ?? ?? ?? C6 45 FC 04 8D 4D D4 E8 "
+    "?? ?? ?? ?? 83 C4 04 68 ?? ?? ?? ?? 8B D0 C6 45 FC 05 8D 4D A4 E8 ?? ?? "
+    "?? ?? 83 C4 04 50 C6 45 FC 06 8B 0D ?? ?? ?? ?? 6A 0C E8 ?? ?? ?? ?? 83 "
+    "7D B8 08 72 0B FF 75 A4 E8 ?? ?? ?? ?? 83 C4 04 33 C0 C7 45 B8 07 00 00 "
+    "00 83 7D E8 08 C7 45 B4 00 00 00 00 66 89 45 A4 72 0B FF 75 D4 E8 ?? ?? "
+    "?? ?? 83 C4 04 33 C0 C7 45 E8 07 00 00 00 83 7D D0 08 C7 45 E4 00 00 00 "
+    "00 66 89 45 D4 72 0B FF 75 BC E8 ?? ?? ?? ?? 83 C4 04 32 DB E9 ?? ?? ?? "
+    "?? 8B 9D 1C FF FF FF 83 FB 03 74 0C 38 45 18 74 07 B3 01 E9 ?? ?? ?? ?? "
+    "6A 1C E8 ?? ?? ?? ?? 83 C4 04 85 C0 74 09 8B C8 E8 ?? ?? ?? ?? EB 02 33 "
+    "C0 50 8D 8D 04 FF FF FF E8 ?? ?? ?? ?? 6A 20 C6 45 FC 07 E8 ?? ?? ?? ?? "
+    "83 C4 04 85 C0 74 09 8B C8 E8 ?? ?? ?? ?? EB 02 33 C0 50 8D 8D F8 FE FF "
+    "FF E8 ?? ?? ?? ?? C6 45 FC 08 83 FB 01 0F 85 29 01 00 00 68 AC 00 00 00 "
+    "E8 ?? ?? ?? ?? 83 C4 04 85 C0 74 09 8B C8 E8 ?? ?? ?? ?? EB 02 33 C0 50 "
+    "8D 8D 24 FF FF FF E8 ?? ?? ?? ?? C6 45 FC 09 8D 55 8C 8B 8D 24 FF FF FF "
+    "6A 00 6A 00 52 8B 01 8B 40 04 FF D0 84 C0 75 42 51 8B D6 8D 4D D4 E8 ?? "
+    "?? ?? ?? 83 C4 04 50 BA ?? ?? ?? ?? C6 45 FC 0A 8D 4D A4 E8 ?? ?? ?? ?? "
+    "83 C4 04 68 ?? ?? ?? ?? 8B D0 C6 45 FC 0B 8D 4D BC E8 ?? ?? ?? ?? 83 C4 "
+    "04 50 C6 45 FC 0C 6A 0C EB 55 FF B5 24 FF FF FF 8B 8D 04 FF FF FF E8 ?? "
+    "?? ?? ?? 84 C0 75 79 51 8B D6 8D 4D D4 E8 ?? ?? ?? ?? 83 C4 04 50 BA ?? "
+    "?? ?? ?? C6 45 FC 0D 8D 4D A4 E8 ?? ?? ?? ?? 83 C4 04 68 ?? ?? ?? ?? 8B "
+    "D0 C6 45 FC 0E 8D 4D BC E8 ?? ?? ?? ?? 83 C4 04 50 C6 45 FC 0F 6A 02 8B "
+    "0D ?? ?? ?? ?? E8 ?? ?? ?? ?? 8D 4D BC 8A D8 E8 ?? ?? ?? ?? 8D 4D A4 E8 "
+    "?? ?? ?? ?? 8D 4D D4 E8 ?? ?? ?? ?? 8D 8D 24 FF FF FF C6 45 FC 08 E8 ?? "
+    "?? ?? ?? E9 ?? ?? ?? ?? 8D 8D 24 FF FF FF C6 45 FC 08 E8 ?? ?? ?? ?? E9 "
+    "?? ?? ?? ?? 83 FB 02 0F 85 34 01 00 00 6A 1C E8 ?? ?? ?? ?? 83 C4 04 89 "
+    "85 28 FF FF FF C6 45 FC 10 85 C0 74 09 8B C8 E8 ?? ?? ?? ?? EB 02 33 C0 "
+    "50 8D 8D 10 FF FF FF C6 45 FC 08 E8 ?? ?? ?? ?? C6 45 FC 11 8D 55 8C 8B "
+    "8D 10 FF FF FF 6A 00 6A 00 52 8B 01 8B 40 04 FF D0 84 C0 75 42 51 8B D6 "
+    "8D 4D D4 E8 ?? ?? ?? ?? 83 C4 04 50 BA ?? ?? ?? ?? C6 45 FC 12 8D 4D A4 "
+    "E8 ?? ?? ?? ?? 83 C4 04 68 ?? ?? ?? ?? 8B D0 C6 45 FC 13 8D 4D BC E8 ?? "
+    "?? ?? ?? 83 C4 04 50 C6 45 FC 14 6A 0C EB 55 FF B5 10 FF FF FF 8B 8D 04 "
+    "FF FF FF E8 ?? ?? ?? ?? 84 C0 75 79 51 8B D6 8D 4D D4 E8 ?? ?? ?? ?? 83 "
+    "C4 04 50 BA ?? ?? ?? ?? C6 45 FC 15 8D 4D A4 E8 ?? ?? ?? ?? 83 C4 04 68 "
+    "?? ?? ?? ?? 8B D0 C6 45 FC 16 8D 4D BC E8 ?? ?? ?? ?? 83 C4 04 50 C6 45 "
+    "FC 17 6A 02 8B 0D ?? ?? ?? ?? E8 ?? ?? ?? ?? 8D 4D BC 8A D8 E8 ?? ?? ?? "
+    "?? 8D 4D A4 E8 ?? ?? ?? ?? 8D 4D D4 E8 ?? ?? ?? ?? 8D 8D 10 FF FF FF C6 "
+    "45 FC 08 E8 ?? ?? ?? ?? E9 ?? ?? ?? ?? 8D 8D 10 FF FF FF C6 45 FC 08 E8 "
+    "?? ?? ?? ?? E9 ?? ?? ?? ?? 83 FB 03 0F 85 B2 03 00 00 0F 57 C0 C7 45 AC "
+    "00 00 00 00 66 0F 13 45 B4 68 ?? ?? ?? ?? 8D 4D BC C6 45 FC 18 E8 ?? ?? "
+    "?? ?? 8D 45 BC C6 45 FC 19 50 8D 45 8C 50 8D 4D AC E8 ?? ?? ?? ?? 84 C0 "
+    "C6 45 FC 18 8D 4D BC 0F 94 C3 E8 ?? ?? ?? ?? 84 DB 74 7C 51 8B D6 8D 8D "
+    "74 FF FF FF E8 ?? ?? ?? ?? 83 C4 04 50 BA ?? ?? ?? ?? C6 45 FC 1A 8D 4D "
+    "D4 E8 ?? ?? ?? ?? 83 C4 04 68 ?? ?? ?? ?? 8B D0 C6 45 FC 1B 8D 4D BC E8 "
+    "?? ?? ?? ?? 83 C4 04 50 C6 45 FC 1C 8B 0D ?? ?? ?? ?? 6A 0C E8 ?? ?? ?? "
+    "?? 8D 4D BC 8A D8 E8 ?? ?? ?? ?? 8D 4D D4 E8 ?? ?? ?? ?? 8D 8D 74 FF FF "
+    "FF E8 ?? ?? ?? ?? 8D 4D AC C6 45 FC 08 E8 ?? ?? ?? ?? E9 ?? ?? ?? ?? FF "
+    "75 AC BA 04 00 00 00 C7 85 14 FF FF FF 00 00 00 00 8D 8D 1C FF FF FF C7 "
+    "85 1C FF FF FF 00 00 00 00 83 CB FF E8 ?? ?? ?? ?? 8B 85 1C FF FF FF 83 "
+    "C4 04 85 C0 0F 84 3A 01 00 00 C7 45 E0 00 00 00 00 C7 45 E4 00 00 00 00 "
+    "C7 45 E8 00 00 00 00 C1 E0 04 8D 4D E0 50 C6 45 FC 1D E8 ?? ?? ?? ?? 8B "
+    "5D E0 33 C0 3B 5D E4 8B CB 8B 95 1C FF FF FF FF 75 AC 0F 44 C8 C1 E2 04 "
+    "E8 ?? ?? ?? ?? 8B B5 1C FF FF FF 33 C9 83 C4 04 8B C3 3B 5D E4 0F 44 C1 "
+    "85 F6 7E 1D 8B 95 28 FF FF FF 8D 9B 00 00 00 00 39 50 08 0F 84 96 00 00 "
+    "00 41 83 C0 10 3B CE 7C EF 8B 95 00 FF FF FF 51 8D 8D 2C FF FF FF E8 ?? "
+    "?? ?? ?? 83 C4 04 50 BA ?? ?? ?? ?? C6 45 FC 1E 8D 4D BC E8 ?? ?? ?? ?? "
+    "83 C4 04 68 ?? ?? ?? ?? 8B D0 C6 45 FC 1F 8D 8D 74 FF FF FF E8 ?? ?? ?? "
+    "?? 83 C4 04 50 C6 45 FC 20 8B 0D ?? ?? ?? ?? 6A 0C E8 ?? ?? ?? ?? 8D 8D "
+    "74 FF FF FF 8A D8 E8 ?? ?? ?? ?? 8D 4D BC E8 ?? ?? ?? ?? 8D 8D 2C FF FF "
+    "FF E8 ?? ?? ?? ?? 8D 4D E0 E8 ?? ?? ?? ?? 8D 4D AC C6 45 FC 08 E8 ?? ?? "
+    "?? ?? E9 ?? ?? ?? ?? 8B 48 04 8B 00 89 8D 28 FF FF FF 89 85 14 FF FF FF "
+    "83 F9 FF 0F 84 58 FF FF FF 8D 4D E0 89 5D E4 C6 45 FC 18 E8 ?? ?? ?? ?? "
+    "8B B5 00 FF FF FF 8B 9D 28 FF FF FF 80 7D 18 00 74 13 8D 4D AC C6 45 FC "
+    "08 B3 01 E8 ?? ?? ?? ?? E9 ?? ?? ?? ?? 6A 20 E8 ?? ?? ?? ?? 83 C4 04 89 "
+    "85 28 FF FF FF C6 45 FC 21 85 C0 74 0B 6A 00 8B C8 E8 ?? ?? ?? ?? EB 02 "
+    "33 C0 50 8D 8D F0 FE FF FF C6 45 FC 18 E8 ?? ?? ?? ?? C6 45 FC 22 8D 55 "
+    "8C 8B 8D F0 FE FF FF FF B5 14 FF FF FF 53 8B 01 52 8B 40 04 FF D0"
+};
+
+// Archive stream open (path TextUnion, mode TextUnion; ret 8) and bounded
+// read (ECX stream, EDX bytes, one stack destination) used by plain Resource.
+inline constexpr Signature kPlainArchiveOpen{
+    "55 8B EC 51 53 8B 5D 0C 56 8B 75 08 57 8B F9 8B 0F E8 ?? ?? ?? ?? 84 C0 "
+    "0F 84 CE 00 00 00 53 8B D6 C7 07 00 00 00 00 8B CF C7 47 08 00 00 00 00 "
+    "C7 47 0C 00 00 00 00 E8 ?? ?? ?? ?? 83 C4 04 84 C0 0F 84 A5 00 00 00 8B "
+    "0F BA 02 00 00 00 6A 00 6A 00 E8 ?? ?? ?? ?? 83 C4 08 84 C0 0F 84 8A 00 "
+    "00 00 64 A1 2C 00 00 00 8B 1F 8B 30 83 7E 04 00 75 29 6A 0C E8 ?? ?? ?? "
+    "?? 83 C4 04 85 C0 74 16 C7 00 00 00 00 00 C7 40 04 00 00 00 00 C7 40 08 "
+    "00 00 00 00 EB 02 33 C0 89 46 04 8B 76 04 FF 75 FC 51 8B 56 04 8B 0E E8 "
+    "?? ?? ?? ?? 8B 06 83 C4 08 89 46 04 85 DB 75 07 E8 ?? ?? ?? ?? EB 09 53 "
+    "E8 ?? ?? ?? ?? 83 C4 04 8B 0F 89 57 0C 33 D2 6A 00 6A 00 89 47 08 E8 ?? "
+    "?? ?? ?? 83 C4 08 84 C0 0F 95 C0 5F 5E 5B 8B E5 5D C2 08 00"
+};
+
+inline constexpr Signature kPlainArchiveRead{
+    "55 8B EC 6A FF 68 ?? ?? ?? ?? 64 A1 00 00 00 00 50 83 EC 58 A1 ?? ?? ?? "
+    "?? 33 C5 89 45 EC 53 56 57 50 8D 45 F4 64 A3 00 00 00 00 8B FA 89 4D A0 "
+    "64 A1 2C 00 00 00 8B 5D 08 8B 30 83 7E 04 00 75 29 6A 0C E8 ?? ?? ?? ?? "
+    "83 C4 04 85 C0 74 16 C7 00 00 00 00 00 C7 40 04 00 00 00 00 C7 40 08 00 "
+    "00 00 00 EB 02 33 C0 89 46 04 8B 76 04 FF 75 A0 51 8B 56 04 8B 0E E8 ?? "
+    "?? ?? ?? 8B 06 83 C4 08 89 46 04 85 DB 75 69 68 ?? ?? ?? ?? 8D 4D D4 E8 "
+    "?? ?? ?? ?? 68 ?? ?? ?? ?? 8D 4D BC 89 5D FC E8 ?? ?? ?? ?? 8D 55 D4 C6 "
+    "45 FC 01 8D 4D BC E8 ?? ?? ?? ?? 83 7D D0 08 72 0B FF 75 BC E8 ?? ?? ?? "
+    "?? 83 C4 04 33 C0 C7 45 D0 07 00 00 00 C7 45 CC 00 00 00 00 66 89 45 BC "
+    "83 7D E8 08 72 0B FF 75 D4 E8 ?? ?? ?? ?? 83 C4 04 33 C0 E9 91 00 00 00 "
+    "8B 45 A0 85 C0 75 2A 68 ?? ?? ?? ?? 8D 4D D4 E8 ?? ?? ?? ?? C7 45 FC 02 "
+    "00 00 00 BA 16 00 00 00 8D 45 D4 50 8D 4A EB E8 ?? ?? ?? ?? 83 C4 04 EB "
+    "B7 85 FF 79 16 68 ?? ?? ?? ?? 8D 4D D4 E8 ?? ?? ?? ?? C7 45 FC 03 00 00 "
+    "00 EB D0 53 57 6A 01 50 E8 ?? ?? ?? ?? 8B F0 83 C4 10 3B F7 7D 31 53 E8 "
+    "?? ?? ?? ?? 83 C4 04 85 C0 74 24 68 ?? ?? ?? ?? 8D 4D A4 E8 ?? ?? ?? ?? "
+    "8D 4D A4 C7 45 FC 04 00 00 00 E8 ?? ?? ?? ?? 8D 4D A4 E8 ?? ?? ?? ?? 8B "
+    "C6 8B 4D F4 64 89 0D 00 00 00 00 59 5F 5E 5B 8B 4D EC 33 CD E8 ?? ?? ?? "
+    "?? 8B E5 5D C3"
+};
+
 // Decode data through the image's actual/preferred base. The measured family
 // also places literals in merged writable data; section WRITE is not a literal
 // identity. Require readable non-executable image data and its exact value.
+// merged_sections: protector builds collapse every section into one
+// CODE|EXECUTE|READ header, so EXECUTE no longer separates data. The exact
+// literal value plus its fixed operand position remain the identity.
 template <size_t N>
 inline bool WideLiteral(const exact_lookup::LoadedPeImage& image,
-                        uintptr_t operand, const wchar_t (&literal)[N]) {
+                        uintptr_t operand, const wchar_t (&literal)[N],
+                        bool merged_sections = false) {
   if (!siglus_family::ExecutableSpan(image, operand, 4u)) return false;
   uintptr_t address = 0, rva = 0;
   return exact_lookup::DecodeAbsolute32ImageAddress(
              image, image.base + operand, &address, &rva) &&
          exact_lookup::SectionHasRole(
              exact_lookup::FindSectionForRva(image, rva, N * sizeof(wchar_t)),
-             IMAGE_SCN_MEM_READ, IMAGE_SCN_MEM_EXECUTE) &&
+             IMAGE_SCN_MEM_READ,
+             merged_sections ? 0u : static_cast<uint32_t>(IMAGE_SCN_MEM_EXECUTE)) &&
          exact_lookup::IsReadableSpan(image.base + rva, N * sizeof(wchar_t)) &&
          std::memcmp(image.base + rva, literal, N * sizeof(wchar_t)) == 0;
 }
@@ -465,6 +642,98 @@ inline bool ResolveSiglusResourceMappingProfile(
   out->payload_return_rva = resource + 0x7b6u;
   out->ogg_vtable_rva = vtable;
   out->ogg_read_rva = ogg_read;
+  return true;
+}
+
+// Plain-frame counterpart. voice_entry must come from the plain-frame message
+// profile; the shared Builder/Concat/CRT/WideAssign/Ogg components are the
+// same complete spans as above, reached through the plain Voice/Play/Resource.
+inline bool ResolvePlainFrameResourceMappingProfile(
+    const exact_lookup::LoadedPeImage& image, uintptr_t voice_entry,
+    SiglusResourceMappingProfile* out) {
+  using namespace siglus_resource;
+  using siglus_family::Unique;
+  if (out == nullptr) return false;
+  *out = {};
+  if (image.base == nullptr || image.machine != IMAGE_FILE_MACHINE_I386 ||
+      image.pointer_bits != 32u || voice_entry == 0u) return false;
+  uintptr_t voice = 0, play = 0, resource = 0, builder = 0;
+  uintptr_t concat = 0, formatter = 0, crt = 0, assign = 0;
+  uintptr_t ogg_ctor = 0, ogg_open = 0, ogg_read = 0;
+  if (!Unique(image, kPlainVoiceRequest.pattern(), &voice) ||
+      voice != voice_entry ||
+      !Unique(image, kPlainPlay.pattern(), &play) ||
+      !Unique(image, kPlainResource.pattern(), &resource) ||
+      !Unique(image, kBuilder.pattern(), &builder) ||
+      !Unique(image, kConcat.pattern(), &concat) ||
+      !Unique(image, kPlainFormatter.pattern(), &formatter) ||
+      !Unique(image, kCrtFormat.pattern(), &crt) ||
+      !Unique(image, kWideAssign.pattern(), &assign) ||
+      !Unique(image, kOggCtor.pattern(), &ogg_ctor) ||
+      !Unique(image, kOggOpen.pattern(), &ogg_open) ||
+      !Unique(image, kOggRead.pattern(), &ogg_read)) return false;
+  uintptr_t archive_open = 0, archive_read = 0;
+  if (!Unique(image, kPlainArchiveOpen.pattern(), &archive_open) ||
+      !Unique(image, kPlainArchiveRead.pattern(), &archive_read) ||
+      !Calls(image, resource + 0x539u, archive_open) ||
+      !Calls(image, resource + 0x5f4u, archive_read) ||
+      !Calls(image, resource + 0x648u, archive_read)) return false;
+  if (!Calls(image, voice + 0xa1u, play) ||
+      !Calls(image, play + 0x47u, resource) ||
+      !Calls(image, resource + 0x133u, builder) ||
+      !Calls(image, builder + 0x2a2u, concat) ||
+      !Calls(image, builder + 0x3c4u, concat) ||
+      !Calls(image, builder + 0x4e0u, concat) ||
+      !Calls(image, builder + 0x22bu, formatter) ||
+      !Calls(image, builder + 0x34du, formatter) ||
+      !Calls(image, builder + 0x469u, formatter) ||
+      !Calls(image, formatter + 0x5cu, crt + 0x77u) ||
+      !Calls(image, crt + 0x88u, crt) ||
+      !Calls(image, formatter + 0xa9u, assign) ||
+      !Calls(image, builder + 0x222u, assign) ||
+      !Calls(image, builder + 0x27bu, assign) ||
+      !Calls(image, builder + 0x344u, assign) ||
+      !Calls(image, builder + 0x39du, assign) ||
+      !Calls(image, builder + 0x460u, assign) ||
+      !Calls(image, builder + 0x4b9u, assign) ||
+      !Calls(image, resource + 0x779u, ogg_ctor) ||
+      !WideLiteral(image, resource + 0x101u, L"koe", true) ||
+      !WideLiteral(image, resource + 0x51au, L"rb", true) ||
+      !WideLiteral(image, builder + 0x21bu, L"%04d\\z%09d", true) ||
+      !WideLiteral(image, builder + 0x33du, L"%04d\\z%09d", true) ||
+      !WideLiteral(image, builder + 0x269u, L"wav", true) ||
+      !WideLiteral(image, builder + 0x38bu, L"nwa", true) ||
+      !WideLiteral(image, builder + 0x459u, L"z%04d", true) ||
+      !WideLiteral(image, builder + 0x4a7u, L"ovk", true) ||
+      !WideLiteral(image, concat + 0x47u, L"\\", true) ||
+      !WideLiteral(image, concat + 0x7cu, L"\\", true) ||
+      !WideLiteral(image, concat + 0xa7u, L"\\", true) ||
+      !WideLiteral(image, concat + 0xcfu, L".", true)) return false;
+  uintptr_t vtable = 0, method = 0, read_callback = 0;
+  if (!ImagePointer(image, ogg_ctor + 0x52u, &vtable) ||
+      !exact_lookup::SectionHasRole(
+          exact_lookup::FindSectionForRva(image, vtable, 8u), IMAGE_SCN_MEM_READ) ||
+      !ImagePointer(image, vtable + 4u, &method) || method != ogg_open ||
+      !ImagePointer(image, ogg_open + 0x70u, &read_callback) ||
+      read_callback != ogg_read ||
+      !WideLiteral(image, ogg_open + 0x26u, L"rb", true)) return false;
+  out->voice_entry_rva = voice;
+  out->resource_entry_rva = resource;
+  out->archive_builder_rva = builder;
+  out->ovk_path_return_rva = builder + 0x4e5u;
+  out->archive_open_rva = archive_open;
+  out->archive_open_return_rva = resource + 0x53eu;
+  out->archive_read_rva = archive_read;
+  out->archive_header_return_rva = resource + 0x5f9u;
+  out->archive_table_return_rva = resource + 0x64du;
+  out->ogg_open_rva = ogg_open;
+  out->payload_return_rva = resource + 0x7aeu;
+  out->ogg_vtable_rva = vtable;
+  out->ogg_read_rva = ogg_read;
+  out->resource_key_copy_frame_displacement = -0x100;
+  out->resource_path_frame_displacement = -0x74;
+  out->resource_reader_frame_displacement = -0x110;
+  out->resource_length_frame_displacement = -0xec;
   return true;
 }
 }  // namespace fushi_voice_hook
