@@ -2802,9 +2802,14 @@ async function buildMinePayload(expression, reading, frequencies, pitches, rules
     };
 }
 
-async function mineEntry(expression, reading, frequencies, pitches, rules, matched, entryIndex, popupSelectionText) {
+// [allowDuplicate]：用户已被告知「卡已在 Anki」并明确选了「新增为重复卡」。与 app 内原生
+// 对话框的 AnkiMiningPayload.withAllowDuplicate（BUG-2605）同一 wire 键 / 同一字符串值：
+// 三个后端的 addNote 以 `settings.allowDupes || payload.allowDuplicate` 放行，单次裁决、
+// 不改全局偏好。不带这个键时 payload 与旧版逐字节一致。
+async function mineEntry(expression, reading, frequencies, pitches, rules, matched, entryIndex, popupSelectionText, allowDuplicate) {
     const payload = await buildMinePayload(
         expression, reading, frequencies, pitches, rules, matched, entryIndex, popupSelectionText);
+    if (allowDuplicate === true) payload.allowDuplicate = 'true';
     return await window.flutter_inappwebview.callHandler('mineEntry', payload);
 }
 
@@ -2862,13 +2867,15 @@ function hasNativeMinedCardAction() {
     return window.__fushiMinedCardActionNative === true;
 }
 
-// 反查 Anki 里这个词的全部命中卡。永不抛：拿不到就当没有命中，调用方按「卡已不在」
+// 反查 Anki 里这个词的全部命中卡。永不抛：桥抛了就当没有命中，调用方按「卡已不在」
 // 走重新制卡（与 app 内 runAnkiMinedCardAction 的 matches.isEmpty 分支同语义）。
+// 宿主回的不是数组（null）= 这个宿主**列不出**命中卡（浏览器扩展：服务端没有反查笔记的
+// 端点，shim 未接这根桥）→ 返回 null，与「查了，确实没有」的 [] 区分开（反馈 _3tWQR6J2G）。
 async function findMinedMatches(expression, reading) {
     try {
         const reply = await window.flutter_inappwebview.callHandler(
             'findMinedMatches', { expression, reading });
-        if (!Array.isArray(reply)) return [];
+        if (!Array.isArray(reply)) return null;
         return reply
             .map((row) => ({
                 noteId: (row && typeof row.noteId === 'number' && Number.isFinite(row.noteId))
@@ -3098,8 +3105,24 @@ async function openWordInAnki(button, expression, reading) {
 //   'fallthrough' —— Anki 里其实已经没有这张卡（别处删了），按普通新卡制卡。
 async function runInPageMinedCardAction(
         expression, reading, frequencies, pitches, rules, matched, entryIndex, popupSelectionText) {
-    const matches = await findMinedMatches(expression, reading);
-    if (!matches.length) {
+    let matches = await findMinedMatches(expression, reading);
+    if (matches === null) {
+        // 宿主列不出命中卡（浏览器扩展）：用画 ✓ 的同一判据再核一次「卡还在不在」。还在就
+        // 照样问用户——面板只剩「新增为重复卡 / 取消」（没有可覆写的行），对齐 app 交互式
+        // 单条制卡的 DuplicatePolicy.ask；此前这里一律当「卡已不在」重制，后端判重复拒掉，
+        // 用户只看到「已存在」，根本没有加重复卡的机会（反馈 _3tWQR6J2G）。
+        let stillMined = false;
+        try {
+            stillMined = await window.flutter_inappwebview.callHandler(
+                'duplicateCheck', { expression, reading }) === true;
+        } catch (_) {
+            stillMined = false;
+        }
+        if (!stillMined) {
+            return { outcome: 'fallthrough', result: { ankiConnect: false, noteId: null } };
+        }
+        matches = [];
+    } else if (!matches.length) {
         return { outcome: 'fallthrough', result: { ankiConnect: false, noteId: null } };
     }
     const choice = await showMinedCardActionPanel(matches);
@@ -3110,8 +3133,11 @@ async function runInPageMinedCardAction(
         return { outcome: 'handled', result: parseMineResult(reply) };
     }
     if (choice.action === 'duplicate') {
+        // 反馈 _3tWQR6J2G：页内车道（浏览器扩展 / app 外裸窗）此前不带重复标记，后端按全局
+        // allowDupes（默认关）把这次判成重复拒掉——用户选了「新增为重复卡」却只得到「已存在」。
         const reply = await mineEntry(
-            expression, reading, frequencies, pitches, rules, matched, entryIndex, popupSelectionText);
+            expression, reading, frequencies, pitches, rules, matched, entryIndex, popupSelectionText,
+            true);
         return { outcome: 'handled', result: parseMineResult(reply) };
     }
     return { outcome: 'handled', result: { ankiConnect: false, noteId: null } };

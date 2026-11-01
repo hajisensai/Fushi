@@ -1,0 +1,6 @@
+## BUG-3930 · 浏览器扩展里已制卡的词点 ✓ 没有「是否添加重复卡」的选择，再制只得到「已存在」
+- **报告**：2026-11-01（用户：反馈 _3tWQR6J2G，Windows，建议「浏览器添加卡片时也能选择是否添加重复卡，像 Fushi 软件一样」）
+- **真实性**：✅ 真 bug（两处叠加）。`fushi/assets/popup/popup.js`：① `findMinedMatches`（原 :2876）把「宿主列不出命中卡」（扩展 `bridge-shim.js` 没接这根桥，default 回 null）和「查了确实没有」都折成 `[]`，`runInPageMinedCardAction`（原 :3107）据此一律当「卡已不在」走 fallthrough 重制，页内面板在扩展里永远不弹；② 即使面板弹出（app 外裸窗），「新增为重复卡」分支（原 :3113）调 `mineEntry` 也不带 `allowDuplicate`，与 app 内原生车道（BUG-2605 `AnkiMiningPayload.withAllowDuplicate`）不同口径，后端按全局 `allowDupes`（默认关）判重复拒掉。App 侧 `/api/mine` → `AnkiMiningPayload.fromJson` 早已认 `fields.allowDuplicate`，无需改 Dart。
+- **[x] ① 已修复** — `findMinedMatches` 非数组回 null；`runInPageMinedCardAction` 遇 null 用 `duplicateCheck` 再核，卡仍在就弹面板（只剩「新增为重复卡 / 取消」，对齐 app 交互式单条的 `DuplicatePolicy.ask`），卡真不在才重制；`mineEntry` 增可选 `allowDuplicate`，面板「新增为重复卡」带 `allowDuplicate: 'true'`（与 `withAllowDuplicate` 同 wire 键同值）。三份 popup.js 同步。
+- **[x] ② 已加自动化测试** — `fushi/test/utils/misc/popup_asset_behavior_test.js`（扩展宿主列不出命中卡时仍询问 / 取消不写 / 卡真不在才重制且不带重复标记；既有 app 外面板「新增为重复卡」断言带 `allowDuplicate`）；回退两处改动 3 条变红（已变异实测）。
+- **备注**：扩展面板没有「覆写这张卡」行——服务端没有按词列出笔记的端点（`findMinedMatches` / `updateEntry` 未经扩展桥暴露），要补需新增 `/api/anki/matches` 等路由，本次不做。未在真浏览器里点验，只有 JS 行为测试。
