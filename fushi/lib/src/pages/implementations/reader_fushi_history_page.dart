@@ -1,4 +1,5 @@
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/components/fushi_continue_card_row.dart';
 import 'package:fushi/src/utils/components/fushi_continue_hero.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'dart:async' show StreamSubscription, Timer, unawaited;
@@ -1721,19 +1722,6 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     );
   }
 
-  /// 宽屏时「继续阅读」卡只铺到第三本书的封面右缘（2026-10-30 用户「宽屏这块
-  /// 长度对齐到第三本书一样长」）。书卡自带内边距 `card - gap`，封面左缘落在
-  /// 页边 `card` 上（见网格的 gridInset 注释），所以三格封面外缘总宽 =
-  /// 3 × 格宽 − 2 × 卡内边距。不到三列时不封顶（照常铺满）。
-  double? _heroWidthCap(BoxConstraints constraints, FushiDesignTokens tokens) {
-    final ({int columns, double cardWidth}) layout = _shelfCardLayout(
-      constraints,
-    );
-    if (layout.columns <= 3) return null;
-    final double cardInner = tokens.spacing.card - tokens.spacing.gap;
-    return layout.cardWidth * 3 - cardInner * 2;
-  }
-
   Widget _buildShelfOverviewSection(
     List<MediaItem> progressBooks,
     BoxConstraints constraints,
@@ -1766,7 +1754,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
         tokens,
         tally.inProgress.where((MediaItem m) => !identical(m, hero)).toList()
           ..sort((MediaItem a, MediaItem b) => readAt(b).compareTo(readAt(a))),
-        widthCap: _heroWidthCap(constraints, tokens),
+        constraints: constraints,
       ),
     );
   }
@@ -1779,7 +1767,7 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
     MediaItem hero,
     FushiDesignTokens tokens,
     List<MediaItem> others, {
-    double? widthCap,
+    required BoxConstraints constraints,
   }) {
     double fractionOf(MediaItem item) => item.duration > 0
         ? (item.position / item.duration).clamp(0.0, 1.0)
@@ -1799,40 +1787,50 @@ class _ReaderFushiHistoryPageState<T extends HistoryReaderPage>
       await appModel.openMedia(ref: ref, mediaSource: source, item: item);
     };
 
-    final double fraction = fractionOf(hero);
+    final ({int columns, double cardWidth}) layout = _shelfCardLayout(
+      constraints,
+    );
     // BUG-1108：与同卡封面（getDisplayThumbnailFromMediaItem）同源，经
     // getDisplayTitleFromMediaItem 应用编辑弹窗写入的 override 书名；直读 DB
     // 原始列 hero.title 会在改名后仍显示旧名。
-    return FushiContinueSpotlight(
-      soloWidthCap: widthCap,
-      sideRowKey: const ValueKey<String>('reader_shelf_continue_side_row'),
-      main: FushiContinueEntry(
-        key: const ValueKey<String>('reader_shelf_continue_hero'),
-        focusId: const FushiFocusId('reader-shelf-continue-hero'),
-        progressKey: const ValueKey<String>(
-          'reader_shelf_continue_hero_progress',
-        ),
-        // 与书架网格同一个光面书皮材质（网格的 Scope 只包 SliverGrid）。
-        material: ShelfCoverMaterial.glossyBook,
-        cover: coverOf(hero),
-        eyebrow: t.book_continue_reading,
-        title: mediaSource.getDisplayTitleFromMediaItem(hero),
-        progress: fraction,
-        progressLabel: t.book_read_progress(percent: (fraction * 100).round()),
-        onOpen: openerOf(hero),
-      ),
-      side: <FushiContinueEntry>[
-        for (final MediaItem item in others.take(12))
-          FushiContinueEntry(
-            key: ValueKey<String>(
-              'reader_shelf_continue_side/${item.mediaIdentifier}',
-            ),
-            material: ShelfCoverMaterial.glossyBook,
-            cover: coverOf(item),
-            title: mediaSource.getDisplayTitleFromMediaItem(item),
-            progress: fractionOf(item),
-            onOpen: openerOf(item),
+    FushiContinueEntry entryOf(MediaItem item, {required bool main}) =>
+        FushiContinueEntry(
+          key: main
+              ? const ValueKey<String>('reader_shelf_continue_hero')
+              : ValueKey<String>(
+                  'reader_shelf_continue_side/${item.mediaIdentifier}',
+                ),
+          focusId: main
+              ? const FushiFocusId('reader-shelf-continue-hero')
+              : null,
+          progressKey: main
+              ? const ValueKey<String>('reader_shelf_continue_hero_progress')
+              : null,
+          // 与书架网格同一个光面书皮材质（网格的 Scope 只包 SliverGrid）。
+          material: ShelfCoverMaterial.glossyBook,
+          cover: coverOf(item),
+          colorSource: mediaSource.getDisplayThumbnailFromMediaItem(
+            appModel: appModel,
+            item: item,
           ),
+          title: mediaSource.getDisplayTitleFromMediaItem(item),
+          progress: fractionOf(item),
+          onOpen: openerOf(item),
+        );
+    // 封面取色并列卡（2026-11-01 用户选定设计稿「5 · 封面取色卡」）：主卡与
+    // 其余在读的书同款同大，卡宽卡在网格列上。
+    return FushiContinueCardRow(
+      rowKey: const ValueKey<String>('reader_shelf_continue_side_row'),
+      label: t.book_continue_reading,
+      // 外层 Padding 的左右页边距：横滑行在页边才裁切。
+      bleed: tokens.spacing.card,
+      cellWidth: layout.cardWidth,
+      cellInset: tokens.spacing.card - tokens.spacing.gap,
+      columns: layout.columns,
+      entries: <FushiContinueEntry>[
+        entryOf(hero, main: true),
+        for (final MediaItem item in others.take(12))
+          entryOf(item, main: false),
       ],
     );
   }

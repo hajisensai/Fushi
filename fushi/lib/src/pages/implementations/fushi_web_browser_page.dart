@@ -29,6 +29,8 @@ import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
+import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
+    show FushiFloatingChromeInset;
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
@@ -99,14 +101,15 @@ Future<void> openFushiWebBrowser(BuildContext context, Uri url) => Navigator.of(
 /// 2026-10-19「这个页面应该是独立的子页面，底栏不应该再继续原样显示」——旧版把
 /// WebView 嵌在模块页里，底栏与「阅读本章」FAB 叠在网页上互相遮挡）。
 ///
-/// [navigation] 非 null 时由宿主 hub 提供页头主位（子页页签）；null（手机上本模块
-/// 只有这一个子页）时 MD3 不画页头——模块名已在底部导航上，地址栏就是顶部锚点；
-/// Apple 保留 iOS 根页的左对齐大标题。
+/// [hostedByHub] 为 true（「浏览器」模块 [WebHubPage] 的子页）时本页不画页头：
+/// 「标题胶囊 + 子页页签」那一行由宿主统一画、叠在本页上，正文从它下方开始
+/// （[FushiFloatingChromeInset]）。false（独立挂载，如组件测试）时 MD3 不画页头、
+/// 地址栏就是顶部锚点，Apple 保留 iOS 根页的左对齐大标题。
 class FushiWebBrowserHomePage extends ConsumerStatefulWidget {
-  const FushiWebBrowserHomePage({this.navigation, super.key});
+  const FushiWebBrowserHomePage({this.hostedByHub = false, super.key});
 
-  /// hub 的子页页签（占页头主位）；null = 本模块只有这一个子页。
-  final Widget? navigation;
+  /// 是否作 [WebHubPage] 的子页（页头由宿主画）。
+  final bool hostedByHub;
 
   @override
   ConsumerState<FushiWebBrowserHomePage> createState() =>
@@ -370,8 +373,11 @@ class _FushiWebBrowserHomePageState
     final ThemeData theme = Theme.of(context);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final double page = tokens.spacing.page;
-    // 正文从窗口顶端画起（脚手架默认叠放页头）：顶部让出「状态栏 + 页头」。
-    final double top = MediaQuery.paddingOf(context).top;
+    // 正文从窗口顶端画起（脚手架默认叠放页头）：顶部让出「状态栏 + 页头」，
+    // 作 hub 子页时再让出宿主叠在上面的工具栏行（独立挂载时为 0）。
+    final double top =
+        MediaQuery.paddingOf(context).top +
+        FushiFloatingChromeInset.of(context);
     return CustomScrollView(
       key: const ValueKey<String>('web-browser-site-list'),
       slivers: <Widget>[
@@ -469,12 +475,11 @@ class _FushiWebBrowserHomePageState
 
   @override
   Widget build(BuildContext context) {
-    final Widget? navigation = widget.navigation;
     return FushiPageScaffold(
       title: t.web_browser_title,
-      headerTitle: navigation,
-      // 只有这一个子页时：MD3 整条页头不画（见类注释），Apple 走默认大标题。
-      header: navigation == null && !isGlassDesign(context)
+      // 作 hub 子页时页头由宿主画；独立挂载时 MD3 整条页头不画（见类注释），
+      // Apple 走默认大标题。
+      header: widget.hostedByHub || !isGlassDesign(context)
           ? const SizedBox.shrink()
           : null,
       // Builder：正文必须用脚手架内部的 context 读 MediaQuery——脚手架在那里

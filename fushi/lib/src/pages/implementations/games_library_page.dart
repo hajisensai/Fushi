@@ -1,3 +1,5 @@
+import 'package:fushi/src/utils/components/fushi_continue_card_row.dart';
+import 'package:fushi/src/utils/components/fushi_continue_hero.dart';
 import 'package:fushi/src/media/collections/library_organize_runner.dart';
 import 'package:fushi/src/media/privacy/media_privacy_dialog.dart';
 import 'package:fushi/src/media/downloads/download_source_method.dart';
@@ -86,7 +88,6 @@ import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
     show FushiFloatingChromeOverlay, FushiFloatingChromeScrollInset;
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
-import 'package:fushi/src/utils/components/prebaked_blur_image.dart';
 import 'package:fushi/src/utils/cover_image.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -1662,59 +1663,54 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
     return played.take(_kContinueMaxItems).toList();
   }
 
-  /// 「继续游戏」段：分区标题 + 横滑行。卡宽宽屏 340、窄屏取视口约 80%（露出下一张
-  /// 的边，提示可横滑），高按 16:9 算；行内错峰进场与网格共用同一个进场窗口。
+  /// 「继续游戏」段（2026-11-01 用户：「游戏也套用继续阅读这个并列卡统一一下」）：
+  /// 与书架同一个封面取色并列卡（[FushiContinueCardRow]）——每张卡占两格以上、
+  /// 卡缘对齐下方网格的封面竖线，底色取自游戏封面。卡上是卡盒封面 + 名字 +
+  /// 累计时长 · 最近游玩；点按启动，长按 / 右键进详情。
   Widget _buildContinueSection(
     BuildContext context,
     List<GalgameEntry> games,
     _GameGridMetrics metrics,
   ) {
-    final double viewport = metrics.viewportWidth;
-    final double cardWidth = viewport < 600
-        ? (viewport - _kGameGridEdge * 2) * 0.86
-        : _kContinueCardWidth;
-    final double cardHeight = cardWidth * 9 / 16;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        FushiSectionTitle(
-          t.game_focus_continue,
-          padding: const EdgeInsets.fromLTRB(
-            _kGameGridEdge,
-            16,
-            _kGameGridEdge,
-            8,
+    FushiContinueEntry entryOf(GalgameEntry game) {
+      final String? cover = game.coverPath;
+      final bool hasCover =
+          cover != null && cover.isNotEmpty && File(cover).existsSync();
+      final List<String> meta = <String>[
+        if (game.totalPlaySeconds > 0)
+          formatStatTime(game.totalPlaySeconds * 1000),
+        if (game.lastPlayedMs > 0)
+          formatGalgameDate(
+            DateTime.fromMillisecondsSinceEpoch(game.lastPlayedMs),
           ),
-        ),
-        SizedBox(
-          // 卡片悬停抬升 + 投影需要上下各留几像素，不被横向列表裁掉。
-          height: cardHeight + 16,
-          // 桌面默认 dragDevices 不含鼠标：横排行要放开鼠标 / 触控板拖动。
-          child: HorizontalDragScrollable(
-            child: ListView.separated(
-              key: const ValueKey<String>('games_continue_row'),
-              scrollDirection: Axis.horizontal,
-              padding: const EdgeInsets.symmetric(
-                horizontal: _kGameGridEdge,
-                vertical: 8,
-              ),
-              clipBehavior: Clip.none,
-              itemCount: games.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 16),
-              itemBuilder: fushiStaggeredItemBuilder(
-                (BuildContext context, int i) => SizedBox(
-                  width: cardWidth,
-                  child: _ContinuePlayCard(
-                    game: games[i],
-                    onLaunch: () => unawaited(_launchGame(games[i])),
-                    onDetail: () => unawaited(_openDetail(games[i])),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ],
+      ];
+      return FushiContinueEntry(
+        key: ValueKey<String>('games_continue_card_${game.id}'),
+        focusId: FushiFocusId('games-continue-${game.id}'),
+        cover: GameCoverThumb(game: game),
+        material: ShelfCoverMaterial.gameCase,
+        coverAspectRatio: kShelfGameCaseAspectRatio,
+        colorSource: hasCover ? resizedFileImage(File(cover)) : null,
+        title: game.displayName,
+        subtitle: meta.isEmpty ? null : meta.join(' · '),
+        onOpen: () => unawaited(_launchGame(game)),
+        onLongPress: () => unawaited(_openDetail(game)),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(_kGameGridEdge, 16, _kGameGridEdge, 0),
+      child: FushiContinueCardRow(
+        rowKey: const ValueKey<String>('games_continue_row'),
+        label: t.game_focus_continue,
+        bleed: _kGameGridEdge,
+        columns: metrics.columns,
+        cellWidth: metrics.cardWidth + _kGameGridSpacing,
+        cellInset: _kGameGridSpacing / 2,
+        entries: <FushiContinueEntry>[
+          for (final GalgameEntry g in games) entryOf(g),
+        ],
+      ),
     );
   }
 
@@ -2093,9 +2089,6 @@ class _GameGridMetrics {
 
 /// 「继续游戏」横滑行最多几张。
 const int _kContinueMaxItems = 10;
-
-/// 「继续游戏」横版卡的宽屏宽度（窄屏按视口比例算，见 `_buildContinueSection`）。
-const double _kContinueCardWidth = 380;
 
 /// BUG-1911：从下载队列里挑出**尚未入库**的游戏下载（顶层纯函数，供测试直接驱动；
 /// 同文件的 [buildGameCollectionMemberCard] 是同一个范式）。
@@ -3024,209 +3017,6 @@ class GalgameStatusBadge extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-/// 「继续游戏」横版卡（Apple Arcade / Game Center「继续玩」式）：封面模糊放大铺
-/// 满做 key art 背景 + 自上而下压暗渐变，左侧竖版封面缩略、右侧状态 / 标题 /
-/// 累计时长 · 最近游玩，右下一枚播放圆钮（纯装饰，整卡点击即启动）。
-///
-/// 交互壳同库卡（[shelfCoverCard] + [FushiHoverLift]：按压下沉、悬停抬升、焦点
-/// `games-continue-<id>` 可手柄 / 方向键到达，A/Enter 启动）；长按 / 右键进详情。
-/// 墨水屏：不模糊、不压暗（灰阶渐变 = 抖动脏块），文字改前景色压在封面框衬底上。
-class _ContinuePlayCard extends StatelessWidget {
-  const _ContinuePlayCard({
-    required this.game,
-    required this.onLaunch,
-    required this.onDetail,
-  });
-
-  final GalgameEntry game;
-  final VoidCallback onLaunch;
-  final VoidCallback onDetail;
-
-  @override
-  Widget build(BuildContext context) {
-    // 游戏卡封面圆角（M3E 20）只在本卡子树生效，与海报卡同一份。
-    final BorderRadius radius = galgameCoverRadius(context);
-    return ShelfCoverRadiusScope(
-      radius: radius,
-      child: FushiHoverLift(
-        builder: (BuildContext context, bool _) => shelfCoverCard(
-          key: ValueKey<String>('games_continue_card_${game.id}'),
-          focusId: FushiFocusId('games-continue-${game.id}'),
-          borderRadius: radius,
-          onTap: onLaunch,
-          onLongPress: onDetail,
-          onSecondaryTap: onDetail,
-          child: Semantics(
-            label: '${t.game_focus_continue} · ${game.displayName}',
-            button: true,
-            child: ShelfCoverFrame(child: _buildContent(context)),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildContent(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
-    final bool eink = isEinkTheme(context);
-    final Color foreground = eink ? theme.colorScheme.onSurface : Colors.white;
-    final Color secondary = eink
-        ? theme.colorScheme.onSurfaceVariant
-        : Colors.white.withValues(alpha: 0.78);
-    final String? cover = game.coverPath;
-    final bool hasCover =
-        cover != null && cover.isNotEmpty && File(cover).existsSync();
-    final List<String> meta = <String>[
-      if (game.totalPlaySeconds > 0)
-        formatStatTime(game.totalPlaySeconds * 1000),
-      if (game.lastPlayedMs > 0)
-        formatGalgameDate(
-          DateTime.fromMillisecondsSinceEpoch(game.lastPlayedMs),
-        ),
-    ];
-    final Widget? badge = galgamePlayStatusBadge(game.playStatus);
-    final double topAlpha = eink ? 0 : (hasCover ? 0.18 : 0.30);
-    final double bottomAlpha = eink ? 0 : (hasCover ? 0.62 : 0.55);
-    return Stack(
-      fit: StackFit.expand,
-      children: <Widget>[
-        // key art 背景：同一张封面放大模糊（竖版包装图裁成横版只剩局部，模糊后
-        // 只取色调与氛围）。无封面时透出封面框衬底（MD3 中性容器 / Apple 填充）。
-        // 模糊预烘焙成小纹理（PrebakedBlurImage）：渲染期 ImageFiltered 每帧重算
-        // sigma 22 的卷积，滚动 / 悬停缩放时游戏库掉到 ~23 fps（2026-10-05 录屏）。
-        if (!eink && hasCover)
-          PrebakedBlurImage(image: resizedFileImage(File(cover)), sigma: 22)
-        else
-          const SizedBox.shrink(),
-        DecoratedBox(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: <Color>[
-                Colors.black.withValues(alpha: topAlpha),
-                Colors.black.withValues(alpha: bottomAlpha),
-              ],
-            ),
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.all(12),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              AspectRatio(
-                aspectRatio: 3 / 4,
-                // M3E 形状分级：卡内缩略图走 small（12），与外层封面框拉开
-                // 形状对比。
-                child: ClipRRect(
-                  borderRadius: FushiM3eShape.smallRadius,
-                  child: GameCoverThumb(game: game),
-                ),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: <Widget>[
-                    if (badge != null)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 6),
-                        child: badge,
-                      ),
-                    Text(
-                      game.displayName,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: context.fushiType.titleLargeEmphasized.copyWith(
-                        color: foreground,
-                        height: 1.25,
-                      ),
-                    ),
-                    if (meta.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 4),
-                        child: Text(
-                          meta.join(' · '),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: context.fushiType.labelMedium.tabular.copyWith(
-                            color: secondary,
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-              // 给右下角播放圆钮让出位置，长标题不压到它下面。
-              const SizedBox(width: 44),
-            ],
-          ),
-        ),
-        Positioned(
-          right: 12,
-          bottom: 12,
-          child: _ContinuePlayGlyph(eink: eink),
-        ),
-      ],
-    );
-  }
-}
-
-/// 「继续游戏」卡右下的播放钮（装饰；整卡点击即启动）。MD3 = M3E 饱和 primary
-/// 色块 + 四瓣 cookie 形（形状对比：卡是圆角矩形、钮是 cookie），悬停卡片时
-/// 弹簧转半圈；Apple = 白色实心圆 + 黑色播放符（Arcade / TV 的「播放」钮）；
-/// 墨水屏 = 前景色描边圆。
-class _ContinuePlayGlyph extends StatelessWidget {
-  const _ContinuePlayGlyph({required this.eink});
-
-  final bool eink;
-
-  @override
-  Widget build(BuildContext context) {
-    final ColorScheme cs = Theme.of(context).colorScheme;
-    final bool apple = isGlassDesign(context) && !eink;
-    final bool m3e = !eink && !apple;
-    final Color fill = eink
-        ? cs.surface
-        : apple
-        ? Colors.white
-        : cs.primary;
-    final Color glyph = eink
-        ? cs.onSurface
-        : apple
-        ? Colors.black
-        : cs.onPrimary;
-    final FushiMotionScheme motion = context.fushiMotion;
-    final bool lifted = m3e && FushiHoverLift.liftedOf(context);
-    final ShapeBorder shape = m3e
-        ? MaterialShapeBorder(shape: MaterialShapes.cookie4Sided)
-        : CircleBorder(
-            side: BorderSide(color: eink ? cs.onSurface : Colors.transparent),
-          );
-    return IgnorePointer(
-      child: AnimatedRotation(
-        turns: lifted ? 0.125 : 0,
-        duration: motion.spatialDefault.duration,
-        curve: motion.spatialDefault.curve,
-        child: Container(
-          width: m3e ? 40 : 36,
-          height: m3e ? 40 : 36,
-          decoration: ShapeDecoration(color: fill, shape: shape),
-          child: AnimatedRotation(
-            // 反向转回：形状在转，播放符保持正立。
-            turns: lifted ? -0.125 : 0,
-            duration: motion.spatialDefault.duration,
-            curve: motion.spatialDefault.curve,
-            child: FushiIcon(FushiIcons.play, size: 22, color: glyph),
-          ),
-        ),
       ),
     );
   }

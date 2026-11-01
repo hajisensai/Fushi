@@ -1714,7 +1714,7 @@ class _HomePageState extends BasePageState<HomePage>
   /// Apple（iOS 26 / macOS 26）下视频源后台补刮任务面板的入口：主操作进导航
   /// 栏——这里是外壳大标题行右侧的一颗 bar button，带「进行中」角标。页头自带
   /// 同一颗按钮的 tab（[_tabHeaderHasScrapeEntry]）不另放（同一外壳动作槽里，
-  /// 不画两颗）。外壳大标题行对可见 tab 高度为 0 时（首页 / 浏览器扩展 / 设置）
+  /// 不画两颗）。外壳大标题行对可见 tab 高度为 0 时（首页 / 复习 / 设置）
   /// 这颗按钮画不出来，入口退回右下 FAB（见 [_scrapeEntryHostedByChrome]）。
   /// MD3 返回 null（页面 FAB 并进悬浮底栏 / 桌面右下 FAB）。
   Widget? _appleScrapeTaskAction() {
@@ -1762,7 +1762,10 @@ class _HomePageState extends BasePageState<HomePage>
     HomeTab.video ||
     HomeTab.games ||
     HomeTab.music ||
-    HomeTab.browse => true,
+    HomeTab.browse ||
+    // 「浏览器」模块（WebHubPage）同一套「标题胶囊 + 页签胶囊」工具栏行，子页
+    // 消费 [FushiFloatingChromeInset]。
+    HomeTab.web => true,
     _ => false,
   };
 
@@ -1853,8 +1856,8 @@ class _HomePageState extends BasePageState<HomePage>
   }
 
   /// 外壳为 [tab] 显示的页面大标题：有自己分区页签行、却没有页面名的库页
-  /// （书架 / 漫画 / 视频 / 游戏）与浏览、查词。桌面自绘控制条已不再显示
-  /// 页面标题，这里是这些页面唯一的页面名。首页（仪表盘）、浏览器扩展与设置
+  /// （书架 / 漫画 / 视频 / 游戏）与浏览、浏览器、查词。桌面自绘控制条已不再显示
+  /// 页面标题，这里是这些页面唯一的页面名。首页（仪表盘）、复习与设置
   /// 自带标题或不需要，返回 null。
   String? _shellTitleFor(HomeTab tab) => homeShellTitleFor(
     tab,
@@ -1944,7 +1947,7 @@ class _HomePageState extends BasePageState<HomePage>
   Widget _buildDesktopLayout(WindowSizeClass sizeClass) {
     _inMobileLayout = false;
     // Apple：补刮任务入口进外壳大标题行（[_appleScrapeTaskAction]）——只在
-    // 可见 tab 确有那一行时；首页 / 设置 / 浏览器扩展没有，仍画右下 FAB。
+    // 可见 tab 确有那一行时；首页 / 设置 / 复习没有，仍画右下 FAB。
     _shellFabHostedByBar = _scrapeEntryHostedByChrome(mobileLayout: false);
     // 自绘标题栏（[FushiDesktopTitleBar.isEnabled]，Windows + macOS）已经把当前
     // tab 名画在应用顶栏上，主导航 rail 始终可见，再叠一层「隐藏 rail + 页头返回
@@ -4268,9 +4271,12 @@ String? homeShellTitleFor(
     HomeTab.browse ||
     // 音乐库页与其他库页同一套浮动工具栏行（2026-10-30），页面名同样由外壳给。
     HomeTab.music ||
+    // 「浏览器」模块：标题胶囊由 WebHubPage 的工具栏行画（宽窗 M3E inline），
+    // 与其它库页同一套；此前返回 null，模块页左上只有页签没有标题。
+    HomeTab.web ||
     HomeTab.dictionaries => homeNavItemFor(tab).label,
-    // 复习页自己画页头（标题 + 牌组动作），同「网页」页（子页自己画页头）。
-    HomeTab.home || HomeTab.web || HomeTab.srs || HomeTab.settings => null,
+    // 复习页自己画页头（标题 + 牌组动作）。
+    HomeTab.home || HomeTab.srs || HomeTab.settings => null,
   };
 }
 
@@ -4281,7 +4287,7 @@ String? homeShellTitleFor(
 /// - Apple（Cupertino）：没有悬浮底栏 FAB 位，入口进导航栏——但**只有**可见
 ///   tab 确实渲染了承载它的页头时才收走 FAB：外壳大标题行有高度
 ///   （[shellTitleVisible]，右侧动作位画补刮按钮），或该 tab 页头自带同一颗按钮
-///   （[tabHeaderHasEntry]）。首页 / 设置 / 浏览器扩展的外壳标题行高度为 0，
+///   （[tabHeaderHasEntry]）。首页 / 设置 / 复习的外壳标题行高度为 0，
 ///   此前一律收走 FAB 会让后台补刮跑着时既看不到进度也打不开任务面板。
 @visibleForTesting
 bool homeScrapeEntryHostedByChrome({

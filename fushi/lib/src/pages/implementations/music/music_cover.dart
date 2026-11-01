@@ -170,3 +170,21 @@ class MusicCover extends StatelessWidget {
     );
   }
 }
+
+/// [MusicCover] 同一套来源规则下的封面 provider（取色用，[size] 同显示尺寸）：
+/// `http(s)://` 走 [AppHttpImage]，本地文件走 [FileImage]；内嵌封面 / 没有封面
+/// 返回 null。
+ImageProvider? musicCoverImageProvider(String? coverPath, {double size = 64}) {
+  final String? file = coverPath;
+  if (file == null || file.isEmpty) return null;
+  final int width = (size * 2).round();
+  if (file.startsWith('http://') || file.startsWith('https://')) {
+    return ResizeImage.resizeIfNeeded(
+      width,
+      null,
+      AppHttpImage(file, headers: kMusicCoverRequestHeaders),
+    );
+  }
+  if (!File(file).existsSync()) return null;
+  return ResizeImage.resizeIfNeeded(width, null, FileImage(File(file)));
+}

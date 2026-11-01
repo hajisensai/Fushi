@@ -170,6 +170,7 @@ import 'package:fushi/utils.dart';
 import 'package:fushi/src/utils/components/batch_action_bar.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
+import 'package:fushi/src/utils/components/fushi_continue_card_row.dart';
 import 'package:fushi/src/utils/components/fushi_continue_hero.dart';
 import 'package:fushi/src/utils/cover_image.dart';
 import 'package:fushi/src/pages/implementations/collection_name_dialog.dart';
@@ -5480,12 +5481,32 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       for (final _HomeContinueItem item in continueItems.take(15))
         _spotlightEntry(item.hero()),
     ];
+    // 首屏（2026-11-01 用户：「留一个大屏的显示，其他都按这个并列卡」）：最近
+    // 在看的那部仍是大卡（剧照叠层 / 竖海报封面皮），其余条目换成与书架同一个
+    // 封面取色并列卡（[FushiContinueCardRow]）——宽屏排在大卡旁、与大卡等高
+    // （高度够就两行），窄屏挂在大卡下面一行横滑。首页没有网格，按约 200 宽
+    // 虚拟分列，卡宽随剧照 / 海报自动占几列。
+    final double cellInset = tokens.spacing.gap * 0.75;
+    Widget sideCards(double? height) => LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints c) {
+        final int columns = (c.maxWidth / 200).floor().clamp(1, 1 << 20);
+        return FushiContinueCardRow(
+          rowKey: const ValueKey<String>('video_home_continue_row'),
+          bleed: height == null ? tokens.spacing.card : 0,
+          fitHeight: height,
+          fillWidth: true,
+          columns: columns,
+          cellInset: cellInset,
+          cellWidth: (c.maxWidth + cellInset * 2) / columns,
+          entries: spotlight.sublist(1),
+        );
+      },
+    );
     final Widget? hero = spotlight.isEmpty
         ? null
         : FushiContinueSpotlight(
             main: spotlight.first,
-            side: spotlight.sublist(1),
-            showSideWhenNarrow: true,
+            sideBuilder: spotlight.length > 1 ? sideCards : null,
           );
     final Widget? subscriptionRow = _buildSubscriptionUpdatesRow(
       updates,
@@ -5556,6 +5577,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         key: hero.cardKey,
         focusId: hero.focusId,
         cover: _buildHomePosterImage(hero.poster!),
+        colorSource: hero.poster,
         material: ShelfCoverMaterial.glossyPoster,
         title: hero.title,
         eyebrow: hero.subtitle,
@@ -5571,6 +5593,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       key: hero.cardKey,
       focusId: hero.focusId,
       cover: _buildHomeHeroImage(still),
+      colorSource: still,
       coverAspectRatio: 16 / 9,
       title: hero.title,
       eyebrow: subtitle,
