@@ -145,7 +145,7 @@ CREATE TABLE media_collection_items (
     expect(version.read<int>('user_version'), db.schemaVersion);
     expect(
       db.schemaVersion,
-      142,
+      143,
       reason: 'v83 = shelf_entries / media_collection_items epub 键切 uid',
     );
 

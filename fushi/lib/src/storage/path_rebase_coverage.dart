@@ -726,6 +726,15 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
     '生成专名表所用资料的摘要指纹（撞正则是因为 source），不是路径。',
   ),
 
+  // ── video_subtitle_text_overrides（schema v143，用户手改的单条字幕文本）──
+  PathRebaseColumn(
+    'VideoSubtitleTextOverrides',
+    'sourceKey',
+    PathRebaseKind.notAPath,
+    '字幕源归一化键：外挂文件只存 `file:<文件名>`（刻意不存绝对路径，数据根迁移'
+        '不影响命中），其余是 embedded:<n> / 在线轨键，不是路径。',
+  ),
+
   // ── video_metadata_extras（schema v69 本地/在线附加内容）──────────
   PathRebaseColumn(
     'VideoMetadataExtras',
