@@ -63,8 +63,8 @@ import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_service.dart';
 import 'package:fushi_engine/sync/remote_lookup_routes.dart';
-import 'package:fushi_engine/srs/srs_remote_review.dart';
-import 'package:fushi_engine/srs/srs_remote_review_routes.dart';
+import 'package:fushi_engine/srs/srs_remote_store.dart';
+import 'package:fushi_engine/srs/srs_remote_store_routes.dart';
 import 'package:fushi_engine/sync/srs_change_feed.dart';
 import 'package:fushi_engine/sync/video_remote_service.dart';
 import 'package:fushi_core/fushi_core.dart'
@@ -514,9 +514,9 @@ class FushiSyncServer {
   /// 端点 404、`/api/capabilities` 不声明，行为同升级前。
   InterconnectLeaderboardLinkHost? leaderboardLinkHost;
 
-  /// 复习远程刷卡（docs/specs/2026-11-01-srs-remote-review-design.md）：每个请求现取，复习模块关着时回 null →
-  /// `/api/srs/review/*` 404、`/api/capabilities` 不声明 [kSrsRemoteReviewCapability]。
-  SrsRemoteReviewService? Function()? srsRemoteReviewProvider;
+  /// 远程复习库（docs/specs/2026-11-01-srs-remote-review-design.md）：每个请求现取，复习模块关着时回 null →
+  /// `/api/srs/remote/*` 404、`/api/capabilities` 不声明 [kSrsRemoteStoreCapability]。
+  SrsRemoteStoreService? Function()? srsRemoteStoreProvider;
 
   /// 本 host 的稳定设备 id（与 LAN 广播 TXT `id=` 同值）。非 null 时
   /// `/api/capabilities` 公布 `hostId` + `addresses`，client 据此把同一台 host 的
@@ -932,19 +932,19 @@ class FushiSyncServer {
       );
       return jsonResponse(<String, dynamic>{'token': token});
     }
-    // 复习远程刷卡：客户端不下载卡组，在本机复习上出卡 / 作答。鉴权走上方 middleware。
-    if (reqPath.startsWith(kSrsRemoteReviewPathPrefix)) {
-      final SrsRemoteReviewService? review = srsRemoteReviewProvider?.call();
+    // 远程复习库：已配对设备不下载卡组，直接在本机的复习库上复习。鉴权走上方 middleware。
+    if (reqPath.startsWith(kSrsRemoteStorePathPrefix)) {
+      final SrsRemoteStoreService? review = srsRemoteStoreProvider?.call();
       if (review == null) return shelf.Response.notFound('SRS review off');
-      return handleSrsRemoteReviewRequest(review, request, method, reqPath);
+      return handleSrsRemoteStoreRequest(review, request, method, reqPath);
     }
     if (reqPath == '/api/capabilities') {
       if (method != 'GET') return shelf.Response(405);
       final shelf.Response response = await _handleCapabilities();
-      final bool srsRemoteReview = srsRemoteReviewProvider?.call() != null;
+      final bool srsRemoteStore = srsRemoteStoreProvider?.call() != null;
       if (_videoRemoteService == null &&
           !_leaderboardLinkAvailable &&
-          !srsRemoteReview) {
+          !srsRemoteStore) {
         return response;
       }
       final Map<String, dynamic> capabilities =
@@ -955,7 +955,7 @@ class FushiSyncServer {
       if (_leaderboardLinkAvailable) {
         capabilities[kInterconnectLeaderboardLinkCapability] = true;
       }
-      if (srsRemoteReview) capabilities[kSrsRemoteReviewCapability] = true;
+      if (srsRemoteStore) capabilities[kSrsRemoteStoreCapability] = true;
       return jsonResponse(capabilities);
     }
     if (reqPath == '/api/host/addresses') {

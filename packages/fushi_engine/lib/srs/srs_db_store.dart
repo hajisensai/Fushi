@@ -1893,6 +1893,48 @@ class SrsDbStore implements SrsSync2Host {
     return out;
   }
 
+  /// 一组实体的物化输入（身份记录 + 全部修改记录），按输入顺序、跳过不存在的 ID；[ids] 为 null = 本 profile 该类的
+  /// 全部实体。远程复习库把它交给客户端，客户端用同一个物化内核得出与这里逐字相同的视图（srs_remote_store.dart）。
+  Future<List<SrsEntitySource>> entitySources(
+    SrsEntityKind kind, {
+    Iterable<String>? ids,
+  }) async {
+    final List<String> wanted =
+        ids?.toSet().toList() ??
+        <String>[
+          for (final SrsEntityRow r
+              in await (db.select(db.srsEntities)..where(
+                    (t) =>
+                        t.profileUid.equals(profileUid) &
+                        t.kind.equals(kind.wire),
+                  ))
+                  .get())
+            r.id,
+        ];
+    final List<SrsEntitySource> out = <SrsEntitySource>[];
+    for (final List<String> chunk in _chunks(wanted)) {
+      final _RefreshPrefetch pre = _RefreshPrefetch();
+      await _prefetchEntities(pre, chunk);
+      await _prefetchEdits(pre, kind, chunk);
+      await _readWith(pre, () async {
+        for (final String id in chunk) {
+          final SrsEntityRow? row = await _entityRow(id);
+          if (row == null) continue;
+          out.add(
+            SrsEntitySource(id, row.payloadJson, await _editItems(kind, id)),
+          );
+        }
+      });
+    }
+    return out;
+  }
+
+  /// [deckTree] 缓存所认的键：键不变，牌组树不变。
+  String get deckTreeKey => _structureKey;
+
+  /// 库已关（底下的 Rust 句柄已释放）。
+  bool get isClosed => core.isClosed;
+
   /// 牌组树：身份记录一次读、全部牌组的修改记录分块一次预读（以前每个牌组各查两次，
   /// 导入几百个牌组的包时每建一个牌组都重读一遍整棵树，BUG-3543）。
   Future<SrsDeckTree> deckTree() async {

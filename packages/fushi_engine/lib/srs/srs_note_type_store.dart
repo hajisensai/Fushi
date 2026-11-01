@@ -19,6 +19,7 @@ import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_remote_store.dart';
 
 /// 新建笔记类型的起点（Anki「添加笔记类型」里的基础类型）。
 enum SrsStockNoteType {
@@ -120,6 +121,13 @@ extension SrsNoteTypeStoreOps on SrsDbStore {
   /// 某笔记类型下的笔记（未删除），按落库顺序。走 idx_srs_notes_cache_type、只读 id 列；
   /// [limit] 给了就只取前几条（取样本预览用）。
   Future<List<String>> noteIdsOfType(String noteTypeId, {int? limit}) async {
+    final SrsDbStore self = this;
+    if (self is SrsRemoteForwarding) {
+      return (self as SrsRemoteForwarding).remoteNoteIdsOfType(
+        noteTypeId,
+        limit: limit,
+      );
+    }
     final $SrsNotesCacheTable n = db.srsNotesCache;
     final JoinedSelectStatement<$SrsNotesCacheTable, SrsNoteCacheRow> q =
         db.selectOnly(n)
