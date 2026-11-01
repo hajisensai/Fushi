@@ -566,6 +566,26 @@ class VideoSubtitleJumpPanel extends StatefulWidget {
   /// 见 [VideoSubtitleListLayout]。
   final VideoSubtitleListLayout layout;
 
+  /// 本面板走不走 M3E 贴边列（与 [colorScheme] 一起决定底色），测量与渲染同源。
+  static bool usesM3eColumn(
+    BuildContext context, {
+    VideoSubtitleListLayout layout = VideoSubtitleListLayout.auto,
+  }) => switch (layout) {
+    VideoSubtitleListLayout.m3e => true,
+    VideoSubtitleListLayout.classic => false,
+    VideoSubtitleListLayout.auto => videoM3ePanelNeutral(context),
+  };
+
+  /// 面板整列的不透明底色（唯一真相源）。面板外的东西要「看起来还是这块面板」时用它，
+  /// 例如 push-aside 收起动画里画面宽度冻结、列与画面之间露出的那条（BUG-3888）。
+  static Color columnSurfaceColor(
+    BuildContext context, {
+    required ColorScheme colorScheme,
+    VideoSubtitleListLayout layout = VideoSubtitleListLayout.auto,
+  }) => usesM3eColumn(context, layout: layout)
+      ? Theme.of(context).colorScheme.surfaceContainer
+      : colorScheme.surface;
+
   final VideoPlayerController controller;
   final void Function(AudioCue cue) onTapCue;
 
@@ -1104,11 +1124,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     _textDirection = Directionality.of(context);
     _textScaler = MediaQuery.textScalerOf(context);
     // 行高缓存 key 带 M3E / 经典前缀，切换形态不必作废。
-    _m3e = switch (widget.layout) {
-      VideoSubtitleListLayout.m3e => true,
-      VideoSubtitleListLayout.classic => false,
-      VideoSubtitleListLayout.auto => videoM3ePanelNeutral(context),
-    };
+    _m3e = VideoSubtitleJumpPanel.usesM3eColumn(context, layout: widget.layout);
   }
 
   /// BUG-878：同步 Ctrl / ⌘ 修饰键状态（纯观察、恒返回 false 不消费按键，不干扰任何快捷键
@@ -1712,7 +1728,11 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
           top: widget.safeAreaInsets.top,
           right: widget.safeAreaInsets.right,
         ),
-        color: cs.surface,
+        color: VideoSubtitleJumpPanel.columnSurfaceColor(
+          context,
+          colorScheme: cs,
+          layout: widget.layout,
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
@@ -2315,7 +2335,11 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
       type: MaterialType.transparency,
       child: ColoredBox(
         key: const ValueKey<String>('video-subtitle-jump-panel-surface'),
-        color: cs.surfaceContainer,
+        color: VideoSubtitleJumpPanel.columnSurfaceColor(
+          context,
+          colorScheme: widget.colorScheme,
+          layout: widget.layout,
+        ),
         child: Padding(
           padding: EdgeInsets.only(
             top: widget.safeAreaInsets.top,

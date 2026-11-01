@@ -12,7 +12,14 @@ import 'package:fushi_core/fushi_core.dart' show FushiDatabase;
 /// suppress first-run UI. They write the same persisted preferences as a user
 /// who has completed onboarding. The dedicated clean-install test deliberately
 /// calls [app.main] directly so the onboarding path remains covered.
-Future<void> launchFushiTestApp() async {
+///
+/// [seedPrefs] are raw `preferences` rows (`key` → typed value such as
+/// `s:material`) written before the app starts, for probes that must reproduce a
+/// user's configuration (prefs read once during startup would ignore later
+/// writes).
+Future<void> launchFushiTestApp({
+  Map<String, String> seedPrefs = const <String, String>{},
+}) async {
   WidgetsFlutterBinding.ensureInitialized();
   isolateSharedPreferencesUnderTestRoot();
   await migrateLegacySupportDir();
@@ -22,6 +29,7 @@ Future<void> launchFushiTestApp() async {
   try {
     await db.setPrefTyped<bool>('first_time_setup', false);
     await db.setPrefTyped<bool>('onboarding_completed', true);
+    await db.setPrefs(seedPrefs);
   } finally {
     await db.close();
   }
