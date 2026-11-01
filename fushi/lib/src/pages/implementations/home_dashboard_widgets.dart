@@ -11,6 +11,7 @@ library;
 
 import 'dart:math' as math;
 
+import 'package:flutter/rendering.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
@@ -423,25 +424,30 @@ class HomeStudyHeader extends StatelessWidget {
 double homeContinuePortraitAspect(ShelfCoverMaterial? material) =>
     material == ShelfCoverMaterial.gameCase ? kShelfGameCaseAspectRatio : 2 / 3;
 
-/// 首页面板自适应分列（用户 2026-10-31「有空地的时候可以自适应一下这些面板」）：
-/// 列数 = 按 [minColumnWidth] 放得下几列，且不超过面板数与 [maxColumns]——
-/// 面板少时每列更宽、铺满整行，不在右侧留空；面板按顺序轮流落进各列（第 i 个
-/// 落第 i % 列数 列），列内上下排。
-class HomePanelFlow extends StatelessWidget {
+/// 首页面板自适应分列（用户 2026-10-31「有空地的时候可以自适应一下这些面板」；
+/// 2026-11-01「宽屏下首页有点空，最好就是自适应」）：
+///
+/// - 列数上限 = 按 [minColumnWidth] 放得下几列，且不超过面板数与 [maxColumns]
+///   （[columnsFor]）。
+/// - 按真实高度排：在 2..上限 列里逐个试，每种列数下先量出各面板高度，按「最高的
+///   先放进当前最矮的列」分配，选列底参差（空白）占比最小的那种。一个很长的面板
+///   （最近添加）独占一列、几条矮面板（复习 / AI 助手）叠在另一列，不再出现某列
+///   只有一条矮面板、下面一大片空。
+/// - 列内保持面板原顺序；含第一个面板（今日）的列排在最前。
+class HomePanelFlow extends MultiChildRenderObjectWidget {
   const HomePanelFlow({
     super.key,
-    required this.children,
+    required super.children,
     required this.gap,
     this.minColumnWidth = 320,
     this.maxColumns = 3,
   });
 
-  final List<Widget> children;
   final double gap;
   final double minColumnWidth;
   final int maxColumns;
 
-  /// 宽 [width] 下 [count] 个面板分几列（纯函数，测试与版面共用）。
+  /// 宽 [width] 下 [count] 个面板最多分几列（纯函数，测试与版面共用）。
   static int columnsFor({
     required double width,
     required int count,
@@ -454,57 +460,196 @@ class HomePanelFlow extends StatelessWidget {
     return fit.clamp(1, math.min(count, maxColumns));
   }
 
-  @override
-  Widget build(BuildContext context) {
-    if (children.isEmpty) return const SizedBox.shrink();
-    return LayoutBuilder(
-      builder: (BuildContext context, BoxConstraints c) {
-        final int columns = columnsFor(
-          width: c.maxWidth,
-          count: children.length,
-          gap: gap,
-          minColumnWidth: minColumnWidth,
-          maxColumns: maxColumns,
-        );
-        if (columns == 1) {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              for (int i = 0; i < children.length; i++) ...<Widget>[
-                if (i > 0) SizedBox(height: gap),
-                children[i],
-              ],
-            ],
-          );
-        }
-        return Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            for (int col = 0; col < columns; col++) ...<Widget>[
-              if (col > 0) SizedBox(width: gap),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  mainAxisSize: MainAxisSize.min,
-                  children: <Widget>[
-                    for (
-                      int i = col;
-                      i < children.length;
-                      i += columns
-                    ) ...<Widget>[
-                      if (i >= columns) SizedBox(height: gap),
-                      children[i],
-                    ],
-                  ],
-                ),
-              ),
-            ],
-          ],
-        );
-      },
+  /// 按高度给 [heights] 分 [columns] 列：最高的先放进当前最矮的列；返回每列的
+  /// 面板序号（列内按原顺序）与各列总高（含 [gap]）。纯函数，测试可直接验。
+  static ({List<List<int>> columns, List<double> heights}) balance(
+    List<double> heights,
+    int columns,
+    double gap,
+  ) {
+    final List<List<int>> cols = <List<int>>[
+      for (int c = 0; c < columns; c++) <int>[],
+    ];
+    final List<double> totals = List<double>.filled(columns, 0);
+    final List<int> order = List<int>.generate(heights.length, (int i) => i)
+      ..sort((int a, int b) {
+        final int byHeight = heights[b].compareTo(heights[a]);
+        return byHeight != 0 ? byHeight : a.compareTo(b);
+      });
+    for (final int i in order) {
+      int shortest = 0;
+      for (int c = 1; c < columns; c++) {
+        if (totals[c] < totals[shortest]) shortest = c;
+      }
+      totals[shortest] += (cols[shortest].isEmpty ? 0 : gap) + heights[i];
+      cols[shortest].add(i);
+    }
+    for (final List<int> col in cols) {
+      col.sort();
+    }
+    // 含第一个面板的列排最前，其余按各自首个面板的顺序。
+    final List<int> colOrder = List<int>.generate(columns, (int c) => c)
+      ..removeWhere((int c) => cols[c].isEmpty)
+      ..sort((int a, int b) => cols[a].first.compareTo(cols[b].first));
+    return (
+      columns: <List<int>>[for (final int c in colOrder) cols[c]],
+      heights: <double>[for (final int c in colOrder) totals[c]],
     );
   }
+
+  @override
+  RenderObject createRenderObject(BuildContext context) => _RenderPanelFlow(
+    gap: gap,
+    minColumnWidth: minColumnWidth,
+    maxColumns: maxColumns,
+  );
+
+  @override
+  void updateRenderObject(BuildContext context, _RenderPanelFlow renderObject) {
+    renderObject
+      ..gap = gap
+      ..minColumnWidth = minColumnWidth
+      ..maxColumns = maxColumns;
+  }
+}
+
+class _PanelFlowParentData extends ContainerBoxParentData<RenderBox> {}
+
+class _RenderPanelFlow extends RenderBox
+    with
+        ContainerRenderObjectMixin<RenderBox, _PanelFlowParentData>,
+        RenderBoxContainerDefaultsMixin<RenderBox, _PanelFlowParentData> {
+  _RenderPanelFlow({
+    required double gap,
+    required double minColumnWidth,
+    required int maxColumns,
+  }) : _gap = gap,
+       _minColumnWidth = minColumnWidth,
+       _maxColumns = maxColumns;
+
+  double _gap;
+  set gap(double v) {
+    if (v == _gap) return;
+    _gap = v;
+    markNeedsLayout();
+  }
+
+  double _minColumnWidth;
+  set minColumnWidth(double v) {
+    if (v == _minColumnWidth) return;
+    _minColumnWidth = v;
+    markNeedsLayout();
+  }
+
+  int _maxColumns;
+  set maxColumns(int v) {
+    if (v == _maxColumns) return;
+    _maxColumns = v;
+    markNeedsLayout();
+  }
+
+  @override
+  void setupParentData(RenderBox child) {
+    if (child.parentData is! _PanelFlowParentData) {
+      child.parentData = _PanelFlowParentData();
+    }
+  }
+
+  List<RenderBox> get _kids {
+    final List<RenderBox> out = <RenderBox>[];
+    RenderBox? child = firstChild;
+    while (child != null) {
+      out.add(child);
+      child = childAfter(child);
+    }
+    return out;
+  }
+
+  double _columnWidth(double width, int columns) =>
+      (width - _gap * (columns - 1)) / columns;
+
+  /// 按列宽真排一遍量高度（面板里有 LayoutBuilder，不支持 dry layout）；
+  /// performLayout 末尾会按选定列宽再排一次，最后那次生效。
+  List<double> _measure(List<RenderBox> kids, double colWidth) {
+    final BoxConstraints c = BoxConstraints.tightFor(width: colWidth);
+    return <double>[
+      for (final RenderBox k in kids)
+        (k..layout(c, parentUsesSize: true)).size.height,
+    ];
+  }
+
+  @override
+  void performLayout() {
+    final List<RenderBox> kids = _kids;
+    final double width = constraints.maxWidth;
+    if (kids.isEmpty) {
+      size = constraints.constrain(Size(width, 0));
+      return;
+    }
+    final int maxCols = HomePanelFlow.columnsFor(
+      width: width,
+      count: kids.length,
+      gap: _gap,
+      minColumnWidth: _minColumnWidth,
+      maxColumns: _maxColumns,
+    );
+    int best = 1;
+    double bestWaste = double.infinity;
+    // 单列恒为零空白，不参与比较；放得下两列以上时才挑。
+    for (int cols = maxCols; cols >= 2; cols--) {
+      final ({List<List<int>> columns, List<double> heights}) plan =
+          HomePanelFlow.balance(
+            _measure(kids, _columnWidth(width, cols)),
+            cols,
+            _gap,
+          );
+      final double tallest = plan.heights.fold<double>(0, math.max);
+      if (tallest <= 0) continue;
+      final double filled = plan.heights.fold<double>(
+        0,
+        (double a, double h) => a + h,
+      );
+      final double waste = 1 - filled / (tallest * cols);
+      // 空白差不多时偏向更多列（更矮）。
+      if (waste < bestWaste - 0.05) {
+        best = cols;
+        bestWaste = waste;
+      }
+    }
+    final double colWidth = _columnWidth(width, best);
+    final BoxConstraints childConstraints = BoxConstraints.tightFor(
+      width: colWidth,
+    );
+    for (final RenderBox k in kids) {
+      k.layout(childConstraints, parentUsesSize: true);
+    }
+    final ({List<List<int>> columns, List<double> heights}) plan =
+        HomePanelFlow.balance(
+          <double>[for (final RenderBox k in kids) k.size.height],
+          best,
+          _gap,
+        );
+    double height = 0;
+    for (int c = 0; c < plan.columns.length; c++) {
+      double y = 0;
+      for (final int i in plan.columns[c]) {
+        final _PanelFlowParentData pd =
+            kids[i].parentData! as _PanelFlowParentData;
+        pd.offset = Offset(c * (colWidth + _gap), y);
+        y += kids[i].size.height + _gap;
+      }
+      height = math.max(height, y - _gap);
+    }
+    size = constraints.constrain(Size(width, height));
+  }
+
+  @override
+  void paint(PaintingContext context, Offset offset) =>
+      defaultPaint(context, offset);
+
+  @override
+  bool hitTestChildren(BoxHitTestResult result, {required Offset position}) =>
+      defaultHitTestChildren(result, position: position);
 }
 
 /// 「今日」面板宽屏时的近 7 天柱条（2026-10-31 方案 A 补齐「今日」）：每天一根，
