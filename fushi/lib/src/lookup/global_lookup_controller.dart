@@ -2545,6 +2545,11 @@ class GlobalLookupController {
     final String script = beginRoute == null
         ? stackRender.script
         : '${buildBeginLookupScript(kGlobalLookupRootFrameId, source: beginRoute.source, routeEpoch: beginRoute.routeEpoch, lookupEpoch: beginRoute.lookupEpoch)}${stackRender.script}';
+    if (beginRoute != null && beginRoute.source == 'galCard') {
+      GalLookupLatencyTrace.note(
+        'script=${(script.length / 1024).toStringAsFixed(0)}K',
+      );
+    }
     await GlobalLookupChannel.render(script);
     // Commit only after the platform call accepted the complete script. A
     // thrown/invalidated send must leave the revision unknown so the next render

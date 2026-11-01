@@ -121,7 +121,7 @@ void main() {
         'ready': 120,
         'by': 'timer',
       }),
-      'arm[raf1=49 ready=120 by=timer]',
+      'arm[at=- raf1=49 ready=120 by=timer] longtask[sum=- n=- max=-]',
     );
     expect(galLookupCaptureReadyPerfDetail(<Object>[]), isNull);
   });

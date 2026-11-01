@@ -1730,6 +1730,11 @@ void GlobalLookupWindow::ResizeStackForGal(int dx, int dy, int width,
   if (!BeginGeometryRequest(geometry_epoch)) {
     return;
   }
+  // 游戏内嵌查词耗时诊断：Dart 的 revealStack 何时真正到达平台线程、对应脚本何时在
+  // 页面里执行完，两个 QPC 微秒读数与 gal-latency 行同一时钟。
+  const uint64_t resize_enter_qpc_us = fushi_voice_hook::QpcMicrosNow();
+  NativeGlog("gal resize enter epoch=" + std::to_string(geometry_epoch) +
+             " qpc=" + std::to_string(resize_enter_qpc_us));
   // BUG-2921 — 根卡实测高度随每次 revealStack 到达（0 = 旧 Dart 未上报），贴字形时用它
   // 而不是 union 高度。
   if (root_height > 0) {
@@ -1907,7 +1912,17 @@ void GlobalLookupWindow::ResizeStackForGal(int dx, int dy, int width,
   // animation frames (with a bounded fallback when an off-screen WebView2
   // suspends rAF); WebMessageReceived commits the matching HRGN/shadow
   // immediately before forwarding that paint-ready ack to Dart.
-  const HRESULT shift_hr = webview_->ExecuteScript(shift_script.c_str(), nullptr);
+  const HRESULT shift_hr = webview_->ExecuteScript(
+      shift_script.c_str(),
+      Callback<ICoreWebView2ExecuteScriptCompletedHandler>(
+          [geometry_epoch, resize_enter_qpc_us](HRESULT, LPCWSTR) -> HRESULT {
+            const uint64_t done = fushi_voice_hook::QpcMicrosNow();
+            NativeGlog("gal resize script done epoch=" +
+                       std::to_string(geometry_epoch) + " after_us=" +
+                       std::to_string(done - resize_enter_qpc_us));
+            return S_OK;
+          })
+          .Get());
   if (FAILED(shift_hr)) {
     ReportOverlayError("gal layer-shift ExecuteScript call failed", shift_hr);
   }

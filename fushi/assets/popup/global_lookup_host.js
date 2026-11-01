@@ -2872,7 +2872,31 @@
       inject: -1,
       render: -1,
       reported: false,
+      longTaskMs: 0,
+      longTaskCount: 0,
+      longTaskMax: 0,
     };
+  }
+  // 同一事件循环（宿主 + 同源 iframe）上 >50 ms 的长任务：captureReady 前主线程被
+  // 谁占住，直接看这里。浏览器不支持 longtask 时整段静默。
+  try {
+    if (typeof PerformanceObserver === 'function') {
+      new PerformanceObserver(function (list) {
+        if (!lookupPerf) {
+          return;
+        }
+        list.getEntries().forEach(function (entry) {
+          var duration = entry.duration || 0;
+          lookupPerf.longTaskMs += duration;
+          lookupPerf.longTaskCount += 1;
+          if (duration > lookupPerf.longTaskMax) {
+            lookupPerf.longTaskMax = duration;
+          }
+        });
+      }).observe({entryTypes: ['longtask']});
+    }
+  } catch (e) {
+    // Diagnostics only.
   }
   function noteLookupPerf(route, field) {
     if (!lookupPerf || lookupPerf.key !== routeKey(route) ||
@@ -3448,6 +3472,14 @@
             raf1: Math.round(firstRafMs),
             ready: Math.round(perfNow() - armedAt),
             by: releasedBy,
+            armAt: lookupPerf && lookupPerf.key === key
+                ? Math.round(armedAt - lookupPerf.t0) : -1,
+            lt: lookupPerf && lookupPerf.key === key
+                ? Math.round(lookupPerf.longTaskMs) : -1,
+            ltn: lookupPerf && lookupPerf.key === key
+                ? lookupPerf.longTaskCount : -1,
+            ltmax: lookupPerf && lookupPerf.key === key
+                ? Math.round(lookupPerf.longTaskMax) : -1,
           }],
           route);
     };

@@ -91,6 +91,13 @@ class GalLookupLatencyTrace {
     _active?._mark(stage, detail);
   }
 
+  /// 给当前记录附一段与阶段无关的明细（例如下发脚本的体积）。
+  static void note(String detail) {
+    final GalLookupLatencyTrace? trace = _active;
+    if (trace == null || trace._done || detail.isEmpty) return;
+    trace._details.add(detail);
+  }
+
   /// 以 [outcome] 收尾当前记录并写出一行。
   static void finish(String outcome) {
     _active?._finish(outcome);
@@ -191,6 +198,7 @@ String? galLookupCaptureReadyPerfDetail(Object? perf) {
   }
 
   final Object? by = perf['by'];
-  return 'arm[raf1=${part('raf1')} ready=${part('ready')} '
-      'by=${by is String ? by : '-'}]';
+  return 'arm[at=${part('armAt')} raf1=${part('raf1')} ready=${part('ready')} '
+      'by=${by is String ? by : '-'}] '
+      'longtask[sum=${part('lt')} n=${part('ltn')} max=${part('ltmax')}]';
 }
