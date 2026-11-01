@@ -1,7 +1,7 @@
 /// Generated file. Do not edit.
 ///
 /// Locales: 17
-/// Strings: 181526 (10678 per locale)
+/// Strings: 181730 (10690 per locale)
 
 // coverage:ignore-file
 // ignore_for_file: type=lint
@@ -8512,7 +8512,21 @@ class _StringsEn implements BaseTranslations<AppLocale, _StringsEn> {
   String music_sleep_minutes({required Object n}) => '${n} min';
   String get music_sleep_off => 'Off';
   String get music_sleep_title => 'Sleep timer';
+  String get music_sources_add => 'Add source';
+  String get music_sources_add_plugin => 'Music source plugin';
+  String get music_sources_add_server =>
+      'Jellyfin / Emby / OpenSubsonic server';
+  String get music_sources_local => 'Local folders';
+  String get music_sources_local_hint => 'Folders scanned into your library';
   String get music_sources_manage => 'Manage music folders';
+  String get music_sources_online_hint =>
+      'Online sources appear in Recommended and Search in this order. Switch one off to hide it there.';
+  String get music_sources_plugin_subtitle => 'Plugin';
+  String get music_sources_region => 'Region';
+  String get music_sources_tab_lyrics => 'Lyrics';
+  String get music_sources_tab_music => 'Music';
+  String get music_sources_title => 'Sources';
+  String get music_sources_view_all => 'View all';
   String get music_speed_title => 'Speed (pitch preserved)';
   String get music_stop => 'Stop music';
   String get music_tag_field_album => 'Album';
@@ -29496,7 +29510,33 @@ class _StringsAr extends _StringsEn {
   @override
   String get music_sleep_title => 'Sleep timer';
   @override
+  String get music_sources_add => 'Add source';
+  @override
+  String get music_sources_add_plugin => 'Music source plugin';
+  @override
+  String get music_sources_add_server =>
+      'Jellyfin / Emby / OpenSubsonic server';
+  @override
+  String get music_sources_local => 'Local folders';
+  @override
+  String get music_sources_local_hint => 'Folders scanned into your library';
+  @override
   String get music_sources_manage => 'Manage music folders';
+  @override
+  String get music_sources_online_hint =>
+      'Online sources appear in Recommended and Search in this order. Switch one off to hide it there.';
+  @override
+  String get music_sources_plugin_subtitle => 'Plugin';
+  @override
+  String get music_sources_region => 'Region';
+  @override
+  String get music_sources_tab_lyrics => 'Lyrics';
+  @override
+  String get music_sources_tab_music => 'Music';
+  @override
+  String get music_sources_title => 'Sources';
+  @override
+  String get music_sources_view_all => 'View all';
   @override
   String get music_speed_title => 'Speed (pitch preserved)';
   @override
@@ -55632,7 +55672,33 @@ class _StringsDe extends _StringsEn {
   @override
   String get music_sleep_title => 'Sleep timer';
   @override
+  String get music_sources_add => 'Add source';
+  @override
+  String get music_sources_add_plugin => 'Music source plugin';
+  @override
+  String get music_sources_add_server =>
+      'Jellyfin / Emby / OpenSubsonic server';
+  @override
+  String get music_sources_local => 'Local folders';
+  @override
+  String get music_sources_local_hint => 'Folders scanned into your library';
+  @override
   String get music_sources_manage => 'Manage music folders';
+  @override
+  String get music_sources_online_hint =>
+      'Online sources appear in Recommended and Search in this order. Switch one off to hide it there.';
+  @override
+  String get music_sources_plugin_subtitle => 'Plugin';
+  @override
+  String get music_sources_region => 'Region';
+  @override
+  String get music_sources_tab_lyrics => 'Lyrics';
+  @override
+  String get music_sources_tab_music => 'Music';
+  @override
+  String get music_sources_title => 'Sources';
+  @override
+  String get music_sources_view_all => 'View all';
   @override
   String get music_speed_title => 'Speed (pitch preserved)';
   @override
@@ -81943,7 +82009,33 @@ class _StringsEs extends _StringsEn {
   @override
   String get music_sleep_title => 'Sleep timer';
   @override
+  String get music_sources_add => 'Add source';
+  @override
+  String get music_sources_add_plugin => 'Music source plugin';
+  @override
+  String get music_sources_add_server =>
+      'Jellyfin / Emby / OpenSubsonic server';
+  @override
+  String get music_sources_local => 'Local folders';
+  @override
+  String get music_sources_local_hint => 'Folders scanned into your library';
+  @override
   String get music_sources_manage => 'Manage music folders';
+  @override
+  String get music_sources_online_hint =>
+      'Online sources appear in Recommended and Search in this order. Switch one off to hide it there.';
+  @override
+  String get music_sources_plugin_subtitle => 'Plugin';
+  @override
+  String get music_sources_region => 'Region';
+  @override
+  String get music_sources_tab_lyrics => 'Lyrics';
+  @override
+  String get music_sources_tab_music => 'Music';
+  @override
+  String get music_sources_title => 'Sources';
+  @override
+  String get music_sources_view_all => 'View all';
   @override
   String get music_speed_title => 'Speed (pitch preserved)';
   @override
@@ -108332,7 +108424,33 @@ class _StringsFr extends _StringsEn {
   @override
   String get music_sleep_title => 'Sleep timer';
   @override
+  String get music_sources_add => 'Add source';
+  @override
+  String get music_sources_add_plugin => 'Music source plugin';
+  @override
+  String get music_sources_add_server =>
+      'Jellyfin / Emby / OpenSubsonic server';
+  @override
+  String get music_sources_local => 'Local folders';
+  @override
+  String get music_sources_local_hint => 'Folders scanned into your library';
+  @override
   String get music_sources_manage => 'Manage music folders';
+  @override
+  String get music_sources_online_hint =>
+      'Online sources appear in Recommended and Search in this order. Switch one off to hide it there.';
+  @override
+  String get music_sources_plugin_subtitle => 'Plugin';
+  @override
+  String get music_sources_region => 'Region';
+  @override
+  String get music_sources_tab_lyrics => 'Lyrics';
+  @override
+  String get music_sources_tab_music => 'Music';
+  @override
+  String get music_sources_title => 'Sources';
+  @override
+  String get music_sources_view_all => 'View all';
   @override
   String get music_speed_title => 'Speed (pitch preserved)';
   @override
@@ -134558,7 +134676,33 @@ class _StringsId extends _StringsEn {
   @override
   String get music_sleep_title => 'Sleep timer';
   @override
+  String get music_sources_add => 'Add source';
+  @override
+  String get music_sources_add_plugin => 'Music source plugin';
+  @override
+  String get music_sources_add_server =>
+      'Jellyfin / Emby / OpenSubsonic server';
+  @override
+  String get music_sources_local => 'Local folders';
+  @override
+  String get music_sources_local_hint => 'Folders scanned into your library';
+  @override
   String get music_sources_manage => 'Manage music folders';
+  @override
+  String get music_sources_online_hint =>
+      'Online sources appear in Recommended and Search in this order. Switch one off to hide it there.';
+  @override
+  String get music_sources_plugin_subtitle => 'Plugin';
+  @override
+  String get music_sources_region => 'Region';
+  @override
+  String get music_sources_tab_lyrics => 'Lyrics';
+  @override
+  String get music_sources_tab_music => 'Music';
+  @override
+  String get music_sources_title => 'Sources';
+  @override
+  String get music_sources_view_all => 'View all';
   @override
   String get music_speed_title => 'Speed (pitch preserved)';
   @override
@@ -160735,7 +160879,33 @@ class _StringsIt extends _StringsEn {
   @override
   String get music_sleep_title => 'Sleep timer';
   @override
+  String get music_sources_add => 'Add source';
+  @override
+  String get music_sources_add_plugin => 'Music source plugin';
+  @override
+  String get music_sources_add_server =>
+      'Jellyfin / Emby / OpenSubsonic server';
+  @override
+  String get music_sources_local => 'Local folders';
+  @override
+  String get music_sources_local_hint => 'Folders scanned into your library';
+  @override
   String get music_sources_manage => 'Manage music folders';
+  @override
+  String get music_sources_online_hint =>
+      'Online sources appear in Recommended and Search in this order. Switch one off to hide it there.';
+  @override
+  String get music_sources_plugin_subtitle => 'Plugin';
+  @override
+  String get music_sources_region => 'Region';
+  @override
+  String get music_sources_tab_lyrics => 'Lyrics';
+  @override
+  String get music_sources_tab_music => 'Music';
+  @override
+  String get music_sources_title => 'Sources';
+  @override
+  String get music_sources_view_all => 'View all';
   @override
   String get music_speed_title => 'Speed (pitch preserved)';
   @override
@@ -186393,7 +186563,33 @@ class _StringsJa extends _StringsEn {
   @override
   String get music_sleep_title => 'Sleep timer';
   @override
+  String get music_sources_add => 'Add source';
+  @override
+  String get music_sources_add_plugin => 'Music source plugin';
+  @override
+  String get music_sources_add_server =>
+      'Jellyfin / Emby / OpenSubsonic server';
+  @override
+  String get music_sources_local => 'Local folders';
+  @override
+  String get music_sources_local_hint => 'Folders scanned into your library';
+  @override
   String get music_sources_manage => 'Manage music folders';
+  @override
+  String get music_sources_online_hint =>
+      'Online sources appear in Recommended and Search in this order. Switch one off to hide it there.';
+  @override
+  String get music_sources_plugin_subtitle => 'Plugin';
+  @override
+  String get music_sources_region => 'Region';
+  @override
+  String get music_sources_tab_lyrics => 'Lyrics';
+  @override
+  String get music_sources_tab_music => 'Music';
+  @override
+  String get music_sources_title => 'Sources';
+  @override
+  String get music_sources_view_all => 'View all';
   @override
   String get music_speed_title => 'Speed (pitch preserved)';
   @override
@@ -211613,7 +211809,33 @@ class _StringsKo extends _StringsEn {
   @override
   String get music_sleep_title => 'Sleep timer';
   @override
+  String get music_sources_add => 'Add source';
+  @override
+  String get music_sources_add_plugin => 'Music source plugin';
+  @override
+  String get music_sources_add_server =>
+      'Jellyfin / Emby / OpenSubsonic server';
+  @override
+  String get music_sources_local => 'Local folders';
+  @override
+  String get music_sources_local_hint => 'Folders scanned into your library';
+  @override
   String get music_sources_manage => 'Manage music folders';
+  @override
+  String get music_sources_online_hint =>
+      'Online sources appear in Recommended and Search in this order. Switch one off to hide it there.';
+  @override
+  String get music_sources_plugin_subtitle => 'Plugin';
+  @override
+  String get music_sources_region => 'Region';
+  @override
+  String get music_sources_tab_lyrics => 'Lyrics';
+  @override
+  String get music_sources_tab_music => 'Music';
+  @override
+  String get music_sources_title => 'Sources';
+  @override
+  String get music_sources_view_all => 'View all';
   @override
   String get music_speed_title => 'Speed (pitch preserved)';
   @override
@@ -237404,7 +237626,33 @@ class _StringsNl extends _StringsEn {
   @override
   String get music_sleep_title => 'Sleep timer';
   @override
+  String get music_sources_add => 'Add source';
+  @override
+  String get music_sources_add_plugin => 'Music source plugin';
+  @override
+  String get music_sources_add_server =>
+      'Jellyfin / Emby / OpenSubsonic server';
+  @override
+  String get music_sources_local => 'Local folders';
+  @override
+  String get music_sources_local_hint => 'Folders scanned into your library';
+  @override
   String get music_sources_manage => 'Manage music folders';
+  @override
+  String get music_sources_online_hint =>
+      'Online sources appear in Recommended and Search in this order. Switch one off to hide it there.';
+  @override
+  String get music_sources_plugin_subtitle => 'Plugin';
+  @override
+  String get music_sources_region => 'Region';
+  @override
+  String get music_sources_tab_lyrics => 'Lyrics';
+  @override
+  String get music_sources_tab_music => 'Music';
+  @override
+  String get music_sources_title => 'Sources';
+  @override
+  String get music_sources_view_all => 'View all';
   @override
   String get music_speed_title => 'Speed (pitch preserved)';
   @override
@@ -263646,7 +263894,33 @@ class _StringsPtBr extends _StringsEn {
   @override
   String get music_sleep_title => 'Sleep timer';
   @override
+  String get music_sources_add => 'Add source';
+  @override
+  String get music_sources_add_plugin => 'Music source plugin';
+  @override
+  String get music_sources_add_server =>
+      'Jellyfin / Emby / OpenSubsonic server';
+  @override
+  String get music_sources_local => 'Local folders';
+  @override
+  String get music_sources_local_hint => 'Folders scanned into your library';
+  @override
   String get music_sources_manage => 'Manage music folders';
+  @override
+  String get music_sources_online_hint =>
+      'Online sources appear in Recommended and Search in this order. Switch one off to hide it there.';
+  @override
+  String get music_sources_plugin_subtitle => 'Plugin';
+  @override
+  String get music_sources_region => 'Region';
+  @override
+  String get music_sources_tab_lyrics => 'Lyrics';
+  @override
+  String get music_sources_tab_music => 'Music';
+  @override
+  String get music_sources_title => 'Sources';
+  @override
+  String get music_sources_view_all => 'View all';
   @override
   String get music_speed_title => 'Speed (pitch preserved)';
   @override
@@ -289859,7 +290133,33 @@ class _StringsRu extends _StringsEn {
   @override
   String get music_sleep_title => 'Sleep timer';
   @override
+  String get music_sources_add => 'Add source';
+  @override
+  String get music_sources_add_plugin => 'Music source plugin';
+  @override
+  String get music_sources_add_server =>
+      'Jellyfin / Emby / OpenSubsonic server';
+  @override
+  String get music_sources_local => 'Local folders';
+  @override
+  String get music_sources_local_hint => 'Folders scanned into your library';
+  @override
   String get music_sources_manage => 'Manage music folders';
+  @override
+  String get music_sources_online_hint =>
+      'Online sources appear in Recommended and Search in this order. Switch one off to hide it there.';
+  @override
+  String get music_sources_plugin_subtitle => 'Plugin';
+  @override
+  String get music_sources_region => 'Region';
+  @override
+  String get music_sources_tab_lyrics => 'Lyrics';
+  @override
+  String get music_sources_tab_music => 'Music';
+  @override
+  String get music_sources_title => 'Sources';
+  @override
+  String get music_sources_view_all => 'View all';
   @override
   String get music_speed_title => 'Speed (pitch preserved)';
   @override
@@ -315886,7 +316186,33 @@ class _StringsTh extends _StringsEn {
   @override
   String get music_sleep_title => 'Sleep timer';
   @override
+  String get music_sources_add => 'Add source';
+  @override
+  String get music_sources_add_plugin => 'Music source plugin';
+  @override
+  String get music_sources_add_server =>
+      'Jellyfin / Emby / OpenSubsonic server';
+  @override
+  String get music_sources_local => 'Local folders';
+  @override
+  String get music_sources_local_hint => 'Folders scanned into your library';
+  @override
   String get music_sources_manage => 'Manage music folders';
+  @override
+  String get music_sources_online_hint =>
+      'Online sources appear in Recommended and Search in this order. Switch one off to hide it there.';
+  @override
+  String get music_sources_plugin_subtitle => 'Plugin';
+  @override
+  String get music_sources_region => 'Region';
+  @override
+  String get music_sources_tab_lyrics => 'Lyrics';
+  @override
+  String get music_sources_tab_music => 'Music';
+  @override
+  String get music_sources_title => 'Sources';
+  @override
+  String get music_sources_view_all => 'View all';
   @override
   String get music_speed_title => 'Speed (pitch preserved)';
   @override
@@ -341896,7 +342222,33 @@ class _StringsTr extends _StringsEn {
   @override
   String get music_sleep_title => 'Sleep timer';
   @override
+  String get music_sources_add => 'Add source';
+  @override
+  String get music_sources_add_plugin => 'Music source plugin';
+  @override
+  String get music_sources_add_server =>
+      'Jellyfin / Emby / OpenSubsonic server';
+  @override
+  String get music_sources_local => 'Local folders';
+  @override
+  String get music_sources_local_hint => 'Folders scanned into your library';
+  @override
   String get music_sources_manage => 'Manage music folders';
+  @override
+  String get music_sources_online_hint =>
+      'Online sources appear in Recommended and Search in this order. Switch one off to hide it there.';
+  @override
+  String get music_sources_plugin_subtitle => 'Plugin';
+  @override
+  String get music_sources_region => 'Region';
+  @override
+  String get music_sources_tab_lyrics => 'Lyrics';
+  @override
+  String get music_sources_tab_music => 'Music';
+  @override
+  String get music_sources_title => 'Sources';
+  @override
+  String get music_sources_view_all => 'View all';
   @override
   String get music_speed_title => 'Speed (pitch preserved)';
   @override
@@ -367940,7 +368292,33 @@ class _StringsVi extends _StringsEn {
   @override
   String get music_sleep_title => 'Sleep timer';
   @override
+  String get music_sources_add => 'Add source';
+  @override
+  String get music_sources_add_plugin => 'Music source plugin';
+  @override
+  String get music_sources_add_server =>
+      'Jellyfin / Emby / OpenSubsonic server';
+  @override
+  String get music_sources_local => 'Local folders';
+  @override
+  String get music_sources_local_hint => 'Folders scanned into your library';
+  @override
   String get music_sources_manage => 'Manage music folders';
+  @override
+  String get music_sources_online_hint =>
+      'Online sources appear in Recommended and Search in this order. Switch one off to hide it there.';
+  @override
+  String get music_sources_plugin_subtitle => 'Plugin';
+  @override
+  String get music_sources_region => 'Region';
+  @override
+  String get music_sources_tab_lyrics => 'Lyrics';
+  @override
+  String get music_sources_tab_music => 'Music';
+  @override
+  String get music_sources_title => 'Sources';
+  @override
+  String get music_sources_view_all => 'View all';
   @override
   String get music_speed_title => 'Speed (pitch preserved)';
   @override
@@ -392772,7 +393150,31 @@ class _StringsZhCn extends _StringsEn {
   @override
   String get music_sleep_title => '睡眠定时';
   @override
+  String get music_sources_add => '添加来源';
+  @override
+  String get music_sources_add_plugin => '音源插件';
+  @override
+  String get music_sources_add_server => 'Jellyfin / Emby / OpenSubsonic 服务器';
+  @override
+  String get music_sources_local => '本地文件夹';
+  @override
+  String get music_sources_local_hint => '扫描进曲库的文件夹';
+  @override
   String get music_sources_manage => '管理音乐文件夹';
+  @override
+  String get music_sources_online_hint => '在线来源按这个顺序出现在「推荐」和搜索里；关掉开关就不在那里显示。';
+  @override
+  String get music_sources_plugin_subtitle => '插件';
+  @override
+  String get music_sources_region => '地区';
+  @override
+  String get music_sources_tab_lyrics => '歌词';
+  @override
+  String get music_sources_tab_music => '音源';
+  @override
+  String get music_sources_title => '来源';
+  @override
+  String get music_sources_view_all => '查看全部';
   @override
   String get music_speed_title => '速度（不变调）';
   @override
@@ -416937,7 +417339,33 @@ class _StringsZhHk extends _StringsEn {
   @override
   String get music_sleep_title => 'Sleep timer';
   @override
+  String get music_sources_add => 'Add source';
+  @override
+  String get music_sources_add_plugin => 'Music source plugin';
+  @override
+  String get music_sources_add_server =>
+      'Jellyfin / Emby / OpenSubsonic server';
+  @override
+  String get music_sources_local => 'Local folders';
+  @override
+  String get music_sources_local_hint => 'Folders scanned into your library';
+  @override
   String get music_sources_manage => 'Manage music folders';
+  @override
+  String get music_sources_online_hint =>
+      'Online sources appear in Recommended and Search in this order. Switch one off to hide it there.';
+  @override
+  String get music_sources_plugin_subtitle => 'Plugin';
+  @override
+  String get music_sources_region => 'Region';
+  @override
+  String get music_sources_tab_lyrics => 'Lyrics';
+  @override
+  String get music_sources_tab_music => 'Music';
+  @override
+  String get music_sources_title => 'Sources';
+  @override
+  String get music_sources_view_all => 'View all';
   @override
   String get music_speed_title => 'Speed (pitch preserved)';
   @override
@@ -440213,8 +440641,32 @@ extension on _StringsEn {
         return 'Off';
       case 'music_sleep_title':
         return 'Sleep timer';
+      case 'music_sources_add':
+        return 'Add source';
+      case 'music_sources_add_plugin':
+        return 'Music source plugin';
+      case 'music_sources_add_server':
+        return 'Jellyfin / Emby / OpenSubsonic server';
+      case 'music_sources_local':
+        return 'Local folders';
+      case 'music_sources_local_hint':
+        return 'Folders scanned into your library';
       case 'music_sources_manage':
         return 'Manage music folders';
+      case 'music_sources_online_hint':
+        return 'Online sources appear in Recommended and Search in this order. Switch one off to hide it there.';
+      case 'music_sources_plugin_subtitle':
+        return 'Plugin';
+      case 'music_sources_region':
+        return 'Region';
+      case 'music_sources_tab_lyrics':
+        return 'Lyrics';
+      case 'music_sources_tab_music':
+        return 'Music';
+      case 'music_sources_title':
+        return 'Sources';
+      case 'music_sources_view_all':
+        return 'View all';
       case 'music_speed_title':
         return 'Speed (pitch preserved)';
       case 'music_stop':
@@ -462401,8 +462853,32 @@ extension on _StringsAr {
         return 'Off';
       case 'music_sleep_title':
         return 'Sleep timer';
+      case 'music_sources_add':
+        return 'Add source';
+      case 'music_sources_add_plugin':
+        return 'Music source plugin';
+      case 'music_sources_add_server':
+        return 'Jellyfin / Emby / OpenSubsonic server';
+      case 'music_sources_local':
+        return 'Local folders';
+      case 'music_sources_local_hint':
+        return 'Folders scanned into your library';
       case 'music_sources_manage':
         return 'Manage music folders';
+      case 'music_sources_online_hint':
+        return 'Online sources appear in Recommended and Search in this order. Switch one off to hide it there.';
+      case 'music_sources_plugin_subtitle':
+        return 'Plugin';
+      case 'music_sources_region':
+        return 'Region';
+      case 'music_sources_tab_lyrics':
+        return 'Lyrics';
+      case 'music_sources_tab_music':
+        return 'Music';
+      case 'music_sources_title':
+        return 'Sources';
+      case 'music_sources_view_all':
+        return 'View all';
       case 'music_speed_title':
         return 'Speed (pitch preserved)';
       case 'music_stop':
@@ -484640,8 +485116,32 @@ extension on _StringsDe {
         return 'Off';
       case 'music_sleep_title':
         return 'Sleep timer';
+      case 'music_sources_add':
+        return 'Add source';
+      case 'music_sources_add_plugin':
+        return 'Music source plugin';
+      case 'music_sources_add_server':
+        return 'Jellyfin / Emby / OpenSubsonic server';
+      case 'music_sources_local':
+        return 'Local folders';
+      case 'music_sources_local_hint':
+        return 'Folders scanned into your library';
       case 'music_sources_manage':
         return 'Manage music folders';
+      case 'music_sources_online_hint':
+        return 'Online sources appear in Recommended and Search in this order. Switch one off to hide it there.';
+      case 'music_sources_plugin_subtitle':
+        return 'Plugin';
+      case 'music_sources_region':
+        return 'Region';
+      case 'music_sources_tab_lyrics':
+        return 'Lyrics';
+      case 'music_sources_tab_music':
+        return 'Music';
+      case 'music_sources_title':
+        return 'Sources';
+      case 'music_sources_view_all':
+        return 'View all';
       case 'music_speed_title':
         return 'Speed (pitch preserved)';
       case 'music_stop':
@@ -506889,8 +507389,32 @@ extension on _StringsEs {
         return 'Off';
       case 'music_sleep_title':
         return 'Sleep timer';
+      case 'music_sources_add':
+        return 'Add source';
+      case 'music_sources_add_plugin':
+        return 'Music source plugin';
+      case 'music_sources_add_server':
+        return 'Jellyfin / Emby / OpenSubsonic server';
+      case 'music_sources_local':
+        return 'Local folders';
+      case 'music_sources_local_hint':
+        return 'Folders scanned into your library';
       case 'music_sources_manage':
         return 'Manage music folders';
+      case 'music_sources_online_hint':
+        return 'Online sources appear in Recommended and Search in this order. Switch one off to hide it there.';
+      case 'music_sources_plugin_subtitle':
+        return 'Plugin';
+      case 'music_sources_region':
+        return 'Region';
+      case 'music_sources_tab_lyrics':
+        return 'Lyrics';
+      case 'music_sources_tab_music':
+        return 'Music';
+      case 'music_sources_title':
+        return 'Sources';
+      case 'music_sources_view_all':
+        return 'View all';
       case 'music_speed_title':
         return 'Speed (pitch preserved)';
       case 'music_stop':
@@ -529148,8 +529672,32 @@ extension on _StringsFr {
         return 'Off';
       case 'music_sleep_title':
         return 'Sleep timer';
+      case 'music_sources_add':
+        return 'Add source';
+      case 'music_sources_add_plugin':
+        return 'Music source plugin';
+      case 'music_sources_add_server':
+        return 'Jellyfin / Emby / OpenSubsonic server';
+      case 'music_sources_local':
+        return 'Local folders';
+      case 'music_sources_local_hint':
+        return 'Folders scanned into your library';
       case 'music_sources_manage':
         return 'Manage music folders';
+      case 'music_sources_online_hint':
+        return 'Online sources appear in Recommended and Search in this order. Switch one off to hide it there.';
+      case 'music_sources_plugin_subtitle':
+        return 'Plugin';
+      case 'music_sources_region':
+        return 'Region';
+      case 'music_sources_tab_lyrics':
+        return 'Lyrics';
+      case 'music_sources_tab_music':
+        return 'Music';
+      case 'music_sources_title':
+        return 'Sources';
+      case 'music_sources_view_all':
+        return 'View all';
       case 'music_speed_title':
         return 'Speed (pitch preserved)';
       case 'music_stop':
@@ -551376,8 +551924,32 @@ extension on _StringsId {
         return 'Off';
       case 'music_sleep_title':
         return 'Sleep timer';
+      case 'music_sources_add':
+        return 'Add source';
+      case 'music_sources_add_plugin':
+        return 'Music source plugin';
+      case 'music_sources_add_server':
+        return 'Jellyfin / Emby / OpenSubsonic server';
+      case 'music_sources_local':
+        return 'Local folders';
+      case 'music_sources_local_hint':
+        return 'Folders scanned into your library';
       case 'music_sources_manage':
         return 'Manage music folders';
+      case 'music_sources_online_hint':
+        return 'Online sources appear in Recommended and Search in this order. Switch one off to hide it there.';
+      case 'music_sources_plugin_subtitle':
+        return 'Plugin';
+      case 'music_sources_region':
+        return 'Region';
+      case 'music_sources_tab_lyrics':
+        return 'Lyrics';
+      case 'music_sources_tab_music':
+        return 'Music';
+      case 'music_sources_title':
+        return 'Sources';
+      case 'music_sources_view_all':
+        return 'View all';
       case 'music_speed_title':
         return 'Speed (pitch preserved)';
       case 'music_stop':
@@ -573601,8 +574173,32 @@ extension on _StringsIt {
         return 'Off';
       case 'music_sleep_title':
         return 'Sleep timer';
+      case 'music_sources_add':
+        return 'Add source';
+      case 'music_sources_add_plugin':
+        return 'Music source plugin';
+      case 'music_sources_add_server':
+        return 'Jellyfin / Emby / OpenSubsonic server';
+      case 'music_sources_local':
+        return 'Local folders';
+      case 'music_sources_local_hint':
+        return 'Folders scanned into your library';
       case 'music_sources_manage':
         return 'Manage music folders';
+      case 'music_sources_online_hint':
+        return 'Online sources appear in Recommended and Search in this order. Switch one off to hide it there.';
+      case 'music_sources_plugin_subtitle':
+        return 'Plugin';
+      case 'music_sources_region':
+        return 'Region';
+      case 'music_sources_tab_lyrics':
+        return 'Lyrics';
+      case 'music_sources_tab_music':
+        return 'Music';
+      case 'music_sources_title':
+        return 'Sources';
+      case 'music_sources_view_all':
+        return 'View all';
       case 'music_speed_title':
         return 'Speed (pitch preserved)';
       case 'music_stop':
@@ -595774,8 +596370,32 @@ extension on _StringsJa {
         return 'Off';
       case 'music_sleep_title':
         return 'Sleep timer';
+      case 'music_sources_add':
+        return 'Add source';
+      case 'music_sources_add_plugin':
+        return 'Music source plugin';
+      case 'music_sources_add_server':
+        return 'Jellyfin / Emby / OpenSubsonic server';
+      case 'music_sources_local':
+        return 'Local folders';
+      case 'music_sources_local_hint':
+        return 'Folders scanned into your library';
       case 'music_sources_manage':
         return 'Manage music folders';
+      case 'music_sources_online_hint':
+        return 'Online sources appear in Recommended and Search in this order. Switch one off to hide it there.';
+      case 'music_sources_plugin_subtitle':
+        return 'Plugin';
+      case 'music_sources_region':
+        return 'Region';
+      case 'music_sources_tab_lyrics':
+        return 'Lyrics';
+      case 'music_sources_tab_music':
+        return 'Music';
+      case 'music_sources_title':
+        return 'Sources';
+      case 'music_sources_view_all':
+        return 'View all';
       case 'music_speed_title':
         return 'Speed (pitch preserved)';
       case 'music_stop':
@@ -617885,8 +618505,32 @@ extension on _StringsKo {
         return 'Off';
       case 'music_sleep_title':
         return 'Sleep timer';
+      case 'music_sources_add':
+        return 'Add source';
+      case 'music_sources_add_plugin':
+        return 'Music source plugin';
+      case 'music_sources_add_server':
+        return 'Jellyfin / Emby / OpenSubsonic server';
+      case 'music_sources_local':
+        return 'Local folders';
+      case 'music_sources_local_hint':
+        return 'Folders scanned into your library';
       case 'music_sources_manage':
         return 'Manage music folders';
+      case 'music_sources_online_hint':
+        return 'Online sources appear in Recommended and Search in this order. Switch one off to hide it there.';
+      case 'music_sources_plugin_subtitle':
+        return 'Plugin';
+      case 'music_sources_region':
+        return 'Region';
+      case 'music_sources_tab_lyrics':
+        return 'Lyrics';
+      case 'music_sources_tab_music':
+        return 'Music';
+      case 'music_sources_title':
+        return 'Sources';
+      case 'music_sources_view_all':
+        return 'View all';
       case 'music_speed_title':
         return 'Speed (pitch preserved)';
       case 'music_stop':
@@ -640079,8 +640723,32 @@ extension on _StringsNl {
         return 'Off';
       case 'music_sleep_title':
         return 'Sleep timer';
+      case 'music_sources_add':
+        return 'Add source';
+      case 'music_sources_add_plugin':
+        return 'Music source plugin';
+      case 'music_sources_add_server':
+        return 'Jellyfin / Emby / OpenSubsonic server';
+      case 'music_sources_local':
+        return 'Local folders';
+      case 'music_sources_local_hint':
+        return 'Folders scanned into your library';
       case 'music_sources_manage':
         return 'Manage music folders';
+      case 'music_sources_online_hint':
+        return 'Online sources appear in Recommended and Search in this order. Switch one off to hide it there.';
+      case 'music_sources_plugin_subtitle':
+        return 'Plugin';
+      case 'music_sources_region':
+        return 'Region';
+      case 'music_sources_tab_lyrics':
+        return 'Lyrics';
+      case 'music_sources_tab_music':
+        return 'Music';
+      case 'music_sources_title':
+        return 'Sources';
+      case 'music_sources_view_all':
+        return 'View all';
       case 'music_speed_title':
         return 'Speed (pitch preserved)';
       case 'music_stop':
@@ -662312,8 +662980,32 @@ extension on _StringsPtBr {
         return 'Off';
       case 'music_sleep_title':
         return 'Sleep timer';
+      case 'music_sources_add':
+        return 'Add source';
+      case 'music_sources_add_plugin':
+        return 'Music source plugin';
+      case 'music_sources_add_server':
+        return 'Jellyfin / Emby / OpenSubsonic server';
+      case 'music_sources_local':
+        return 'Local folders';
+      case 'music_sources_local_hint':
+        return 'Folders scanned into your library';
       case 'music_sources_manage':
         return 'Manage music folders';
+      case 'music_sources_online_hint':
+        return 'Online sources appear in Recommended and Search in this order. Switch one off to hide it there.';
+      case 'music_sources_plugin_subtitle':
+        return 'Plugin';
+      case 'music_sources_region':
+        return 'Region';
+      case 'music_sources_tab_lyrics':
+        return 'Lyrics';
+      case 'music_sources_tab_music':
+        return 'Music';
+      case 'music_sources_title':
+        return 'Sources';
+      case 'music_sources_view_all':
+        return 'View all';
       case 'music_speed_title':
         return 'Speed (pitch preserved)';
       case 'music_stop':
@@ -684549,8 +685241,32 @@ extension on _StringsRu {
         return 'Off';
       case 'music_sleep_title':
         return 'Sleep timer';
+      case 'music_sources_add':
+        return 'Add source';
+      case 'music_sources_add_plugin':
+        return 'Music source plugin';
+      case 'music_sources_add_server':
+        return 'Jellyfin / Emby / OpenSubsonic server';
+      case 'music_sources_local':
+        return 'Local folders';
+      case 'music_sources_local_hint':
+        return 'Folders scanned into your library';
       case 'music_sources_manage':
         return 'Manage music folders';
+      case 'music_sources_online_hint':
+        return 'Online sources appear in Recommended and Search in this order. Switch one off to hide it there.';
+      case 'music_sources_plugin_subtitle':
+        return 'Plugin';
+      case 'music_sources_region':
+        return 'Region';
+      case 'music_sources_tab_lyrics':
+        return 'Lyrics';
+      case 'music_sources_tab_music':
+        return 'Music';
+      case 'music_sources_title':
+        return 'Sources';
+      case 'music_sources_view_all':
+        return 'View all';
       case 'music_speed_title':
         return 'Speed (pitch preserved)';
       case 'music_stop':
@@ -706751,8 +707467,32 @@ extension on _StringsTh {
         return 'Off';
       case 'music_sleep_title':
         return 'Sleep timer';
+      case 'music_sources_add':
+        return 'Add source';
+      case 'music_sources_add_plugin':
+        return 'Music source plugin';
+      case 'music_sources_add_server':
+        return 'Jellyfin / Emby / OpenSubsonic server';
+      case 'music_sources_local':
+        return 'Local folders';
+      case 'music_sources_local_hint':
+        return 'Folders scanned into your library';
       case 'music_sources_manage':
         return 'Manage music folders';
+      case 'music_sources_online_hint':
+        return 'Online sources appear in Recommended and Search in this order. Switch one off to hide it there.';
+      case 'music_sources_plugin_subtitle':
+        return 'Plugin';
+      case 'music_sources_region':
+        return 'Region';
+      case 'music_sources_tab_lyrics':
+        return 'Lyrics';
+      case 'music_sources_tab_music':
+        return 'Music';
+      case 'music_sources_title':
+        return 'Sources';
+      case 'music_sources_view_all':
+        return 'View all';
       case 'music_speed_title':
         return 'Speed (pitch preserved)';
       case 'music_stop':
@@ -728966,8 +729706,32 @@ extension on _StringsTr {
         return 'Off';
       case 'music_sleep_title':
         return 'Sleep timer';
+      case 'music_sources_add':
+        return 'Add source';
+      case 'music_sources_add_plugin':
+        return 'Music source plugin';
+      case 'music_sources_add_server':
+        return 'Jellyfin / Emby / OpenSubsonic server';
+      case 'music_sources_local':
+        return 'Local folders';
+      case 'music_sources_local_hint':
+        return 'Folders scanned into your library';
       case 'music_sources_manage':
         return 'Manage music folders';
+      case 'music_sources_online_hint':
+        return 'Online sources appear in Recommended and Search in this order. Switch one off to hide it there.';
+      case 'music_sources_plugin_subtitle':
+        return 'Plugin';
+      case 'music_sources_region':
+        return 'Region';
+      case 'music_sources_tab_lyrics':
+        return 'Lyrics';
+      case 'music_sources_tab_music':
+        return 'Music';
+      case 'music_sources_title':
+        return 'Sources';
+      case 'music_sources_view_all':
+        return 'View all';
       case 'music_speed_title':
         return 'Speed (pitch preserved)';
       case 'music_stop':
@@ -751173,8 +751937,32 @@ extension on _StringsVi {
         return 'Off';
       case 'music_sleep_title':
         return 'Sleep timer';
+      case 'music_sources_add':
+        return 'Add source';
+      case 'music_sources_add_plugin':
+        return 'Music source plugin';
+      case 'music_sources_add_server':
+        return 'Jellyfin / Emby / OpenSubsonic server';
+      case 'music_sources_local':
+        return 'Local folders';
+      case 'music_sources_local_hint':
+        return 'Folders scanned into your library';
       case 'music_sources_manage':
         return 'Manage music folders';
+      case 'music_sources_online_hint':
+        return 'Online sources appear in Recommended and Search in this order. Switch one off to hide it there.';
+      case 'music_sources_plugin_subtitle':
+        return 'Plugin';
+      case 'music_sources_region':
+        return 'Region';
+      case 'music_sources_tab_lyrics':
+        return 'Lyrics';
+      case 'music_sources_tab_music':
+        return 'Music';
+      case 'music_sources_title':
+        return 'Sources';
+      case 'music_sources_view_all':
+        return 'View all';
       case 'music_speed_title':
         return 'Speed (pitch preserved)';
       case 'music_stop':
@@ -773220,8 +774008,32 @@ extension on _StringsZhCn {
         return '关闭';
       case 'music_sleep_title':
         return '睡眠定时';
+      case 'music_sources_add':
+        return '添加来源';
+      case 'music_sources_add_plugin':
+        return '音源插件';
+      case 'music_sources_add_server':
+        return 'Jellyfin / Emby / OpenSubsonic 服务器';
+      case 'music_sources_local':
+        return '本地文件夹';
+      case 'music_sources_local_hint':
+        return '扫描进曲库的文件夹';
       case 'music_sources_manage':
         return '管理音乐文件夹';
+      case 'music_sources_online_hint':
+        return '在线来源按这个顺序出现在「推荐」和搜索里；关掉开关就不在那里显示。';
+      case 'music_sources_plugin_subtitle':
+        return '插件';
+      case 'music_sources_region':
+        return '地区';
+      case 'music_sources_tab_lyrics':
+        return '歌词';
+      case 'music_sources_tab_music':
+        return '音源';
+      case 'music_sources_title':
+        return '来源';
+      case 'music_sources_view_all':
+        return '查看全部';
       case 'music_speed_title':
         return '速度（不变调）';
       case 'music_stop':
@@ -795213,8 +796025,32 @@ extension on _StringsZhHk {
         return 'Off';
       case 'music_sleep_title':
         return 'Sleep timer';
+      case 'music_sources_add':
+        return 'Add source';
+      case 'music_sources_add_plugin':
+        return 'Music source plugin';
+      case 'music_sources_add_server':
+        return 'Jellyfin / Emby / OpenSubsonic server';
+      case 'music_sources_local':
+        return 'Local folders';
+      case 'music_sources_local_hint':
+        return 'Folders scanned into your library';
       case 'music_sources_manage':
         return 'Manage music folders';
+      case 'music_sources_online_hint':
+        return 'Online sources appear in Recommended and Search in this order. Switch one off to hide it there.';
+      case 'music_sources_plugin_subtitle':
+        return 'Plugin';
+      case 'music_sources_region':
+        return 'Region';
+      case 'music_sources_tab_lyrics':
+        return 'Lyrics';
+      case 'music_sources_tab_music':
+        return 'Music';
+      case 'music_sources_title':
+        return 'Sources';
+      case 'music_sources_view_all':
+        return 'View all';
       case 'music_speed_title':
         return 'Speed (pitch preserved)';
       case 'music_stop':

@@ -120,6 +120,11 @@ AppleMusicBridge (Dart 接口：授权 / 订阅状态 / 播放控制 / 事件流
   （原生可调 `.musicSubscriptionOffer`）。
 - 音乐页来源列表多一项「Apple Music」，复用服务器曲库页面；条目带 Apple Music 标识（品牌规范）。
 - 混排进本地曲库：不做（与服务器曲库一样留 opt-in，v1 不开）。
+- **来源整合（2026-11-01 所有者选方案 A，设计稿 `fushi/build/music_design/music_sources.html`）**：
+  - 音乐页右上角「来源」（取代原「服务器曲库」云图标）→ `music_sources_page.dart`：「音源」页签 = 本地文件夹 + 在线来源表（插件音源 / Jellyfin·Emby / OpenSubsonic / Apple Music），可排序、可开关，顺序与开关存 `music_online_sources`（`[{id, enabled}]`，id 为 `plugin:<id>` / `server:<serverId>` / `apple-music`），决定「推荐」与统一搜索里的出现顺序；Apple Music 的开关即 `music_apple_music_enabled`，开着时就地选地区；「歌词」页签复用歌词来源列表。
+  - 「推荐」页签只要有任一在线来源即出现，顶部来源 chip（`music_sources_recommend.dart`）：全部 = 插件推荐 + 每个服务器一排专辑；单个插件 = 该插件推荐；单个服务器 = 内嵌 `MusicServerBrowsePage(embedded: true)`，Apple Music 旁带地区按钮。
+  - 统一搜索的来源 chip / 结果 / 综合结果并入服务器来源（`music_unified_search.dart`，服务器结果按服务器分段）。
+  - Apple Music 地区未选过时跟系统地区（不在可选表里落 `jp`）。
 - 新页面按 CLAUDE.md 规则带动效、工具栏自适应溢出；i18n 走 `i18n_sync`。
 
 ## 5. 非目标

@@ -1,5 +1,7 @@
 import 'dart:convert';
 import 'dart:io' show Platform;
+import 'dart:ui' show PlatformDispatcher;
+
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi_audio/fushi_audio.dart'
     show kDefaultReadingIdleTimeout, kStudyIdleTimeoutPrefKey;
@@ -48,7 +50,9 @@ import 'package:fushi/src/media/manga/ocr/manga_ocr_job_registry.dart'
 import 'package:fushi_engine/ocr/manga_ocr_local_model.dart'
     show kDefaultMangaOcrLocalModel, MangaOcrLocalModel;
 import 'package:fushi_engine/media/music/apple_music/apple_music_catalog_client.dart'
-    show normalizeAppleMusicStorefront;
+    show kAppleMusicStorefrontChoices, normalizeAppleMusicStorefront;
+import 'package:fushi/src/media/music/music_online_sources.dart'
+    show appleMusicStorefrontForCountry;
 import 'package:fushi_engine/media/music/server/subsonic_server_config.dart';
 import 'package:fushi_engine/media/torrent/anime_download_config.dart';
 import 'package:fushi_engine/media/torrent/torznab_client.dart';
@@ -4805,7 +4809,23 @@ class PreferencesRepository extends ChangeNotifier
       'music_apple_music_storefront',
       defaultValue: '',
     );
-    return normalizeAppleMusicStorefront(raw is String ? raw : null);
+    // 没选过：跟系统地区（不在可选表里就落 jp）。
+    if (raw is! String || raw.trim().isEmpty) {
+      return appleMusicStorefrontForCountry(
+        PlatformDispatcher.instance.locale.countryCode,
+        kAppleMusicStorefrontChoices,
+      );
+    }
+    return normalizeAppleMusicStorefront(raw);
+  }
+
+  /// 音乐在线来源（插件音源 + 服务器）的顺序与「推荐 / 搜索里显示」开关（JSON `[{id, enabled}]`）。
+  String get musicOnlineSourcesRaw =>
+      getPref('music_online_sources', defaultValue: '') as String;
+
+  Future<void> setMusicOnlineSourcesRaw(String value) async {
+    await setPref('music_online_sources', value);
+    notifyListeners();
   }
 
   Future<void> setMusicAppleMusicStorefront(String storefront) async {
