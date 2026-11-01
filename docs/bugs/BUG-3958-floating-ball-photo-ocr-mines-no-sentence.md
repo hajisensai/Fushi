@@ -1,4 +1,4 @@
-## BUG-3931 · 悬浮球拍照查词、悬浮字幕点字制卡没有例句
+## BUG-3958 · 悬浮球拍照查词、悬浮字幕点字制卡没有例句
 - **报告**：2026-11-01（用户反馈 1Mwaro8UTC，Android：应用外 OCR 查词制卡只有单词、没有例句；BUG-3487 修完截屏识字后追问入口，回复「悬浮球」）
 - **真实性**：✅ 真 bug（悬浮球上走主窗查词宿主的 OCR 入口）。悬浮球有两条 OCR 路：
   - 「截屏识字」（Android）：`FloatingBallService.runAction` → `ScreenOcrService.onSelectionTap` → `PopupDictFlutterActivity`，带整行 + 所属块，app 外查词窗 `PopupDictionaryPage._withSourceSentence` 补例句——BUG-3487 已修，这条代码路径是通的。

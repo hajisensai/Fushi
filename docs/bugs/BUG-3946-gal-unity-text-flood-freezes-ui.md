@@ -1,4 +1,4 @@
-## BUG-3929 · gal-unity-text-flood-freezes-ui
+## BUG-3946 · gal-unity-text-flood-freezes-ui
 - **报告**：2026-11-01（用户：反馈 bfaVEbHL_s「Steam《Road to Empress》找到含全部文本的线程后 Fushi 冻住、什么都点不了，直到关游戏」）
 - **真实性**：✅ 真 bug（证据：用户截图——选中线程 `Unity UI.Text`，同一句在同一秒内以独立行出现 5 次以上，相邻两条选中行之间夹着约 180 个其它线程的 seq，会话 seq 已到 3.8 万；附带 log.txt 不含 galgame 会话事件。根因两层：① `native/galgame_hook/hook/adapters/unity_adapter.inc` `WriteUnityTextEvent`：Unity 文本 setter 每次被脚本赋值（常见每帧、且值不变）都写一条 line 事件进文本道，native 只对 CatSystem2 EmbedCS2 做「立即重复」去重；② `fushi/lib/src/mining/gal_hook_session_controller.dart` `_consumeTextLane`：每条行（含所有未选中线程的行，v13 每轮最多 64 道 × 8 槽）都调 `TexthookerService.observeTextThreadLine`，后者逐行 `notifyListeners()`，每次通知让控制器转发 + 工作台 setState + 线程目录 O(entries) 重建，一轮几百次同步重算把 UI isolate 压满）
 - **[x] ① 已修复** — native：抽出引擎无关的 `ImmediateTextRepeatFilter`（`include/immediate_text_repeat_filter.h`，按线程、全文相等、1 s 窗、每次事件刷新参照），Luna EmbedCS2 规则改为委托它；Unity 文本道写入（IL2CPP 与 Mono 共用的 `WriteUnityTextEvent`）对「setter 重赋同值」不再写 line 事件，预览槽照常刷新。Dart：`observeTextThreadLine(notify: false)` + 整批结束后 `notifyTextThreadsObserved()` 一次（try/finally，过期轮询提前返回也会通知）。分支 fix/feedback-galgame

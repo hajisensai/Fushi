@@ -218,7 +218,7 @@ class _FushiMeshBackdropState extends State<FushiMeshBackdrop> {
     final bool dark = cs.brightness == Brightness.dark;
     // 缓存小图的分辨率（图像素 / 逻辑像素）。静止时只画一次，按物理像素全分辨率
     // 画：低分辨率图拉伸到整屏，8-bit 量化的渐变经双线性插值会露出菱形网格，
-    // 静止不动时网格钉在屏幕上（BUG-3926）。流动时网格随相位漂移看不出，仍按
+    // 静止不动时网格钉在屏幕上（BUG-3933）。流动时网格随相位漂移看不出，仍按
     // [_kMeshAnimatedTexelPx] 个**物理**像素一个纹素降采样省 GPU。
     final double devicePixelRatio = MediaQuery.devicePixelRatioOf(context);
     final double rasterScale = _driver.isActive
@@ -1239,7 +1239,7 @@ class _FushiExpressivePlayButtonState extends State<FushiExpressivePlayButton>
 }
 
 /// mesh 背景流动时缓存图一个纹素覆盖的**物理**像素边长。按物理像素算：按逻辑
-/// 像素算的话 DPR 3 的手机上一个纹素会被拉成 24×24 物理像素（BUG-3926）。
+/// 像素算的话 DPR 3 的手机上一个纹素会被拉成 24×24 物理像素（BUG-3933）。
 const double _kMeshAnimatedTexelPx = 8;
 
 /// 测试钩子：[FushiMeshBackdrop] 每重画一次缓存图就回调一次（参数是本次产出的图，

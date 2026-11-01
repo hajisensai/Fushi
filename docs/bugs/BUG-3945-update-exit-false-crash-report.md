@@ -1,4 +1,4 @@
-## BUG-3929 · 应用内更新 / 安装新版本后误报「意外退出」
+## BUG-3945 · 应用内更新 / 安装新版本后误报「意外退出」
 - **报告**：2026-11-01（应用内自动闪退报告：Windows 3PqGTEsweI / 9ZYafFWPky / hfzlMGXJWr / msySECp2Cy，macOS bY4NXr-B8u，Android 8z1tk0jEna / U_gWy3lDbx，另 jmgMk1gHG2 截图里的提示条）
 - **真实性**：✅ 真 bug（误报）。
   - Windows：日志里旧进程最后一条都是 `WindowsInstaller.handoff` / `stageLauncher`，下一次启动 `windowsHandoff status=installed`。`WindowsInstaller.runAndExit`（`fushi/lib/src/utils/misc/platform_updater.dart:1147` 修前位置）交接完直接 `exit(0)`，没调 `PreviousExitLog.markCleanExit()`，会话标记停在 resumed/inactive → 下次启动判「停在前台时没了，疑似闪退」。

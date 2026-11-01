@@ -1,4 +1,4 @@
-## BUG-3928 · Rewrite+（Enigma 保护的 SiglusEngine）不识别引擎：内嵌查词要等 120 秒后才放行 Luna，且查词不可用
+## BUG-3944 · Rewrite+（Enigma 保护的 SiglusEngine）不识别引擎：内嵌查词要等 120 秒后才放行 Luna，且查词不可用
 - **报告**：2026-10-31（用户：适配 Rewrite+ 时发现文本要等约两分钟才出现、内嵌查词不可用）
 - **真实性**：✅ 真 bug。Rewrite+（SiglusEngine 1.1.101.0，x86，Enigma Protector）走的是 LunaScenario 家族，但两处结构判据把它挡在门外：
   1. `native/galgame_hook/hook/adapters/siglus_lookup.inc:349`（修复前）`luna_matched = key_iat != 0 && ...`：Enigma 的 API 模拟把导入表换成私有替身，镜像里没有 `user32!GetKeyState` 的导入名，`FindGetKeyStateImport` 恒为 0，家族直接判不匹配。
@@ -22,4 +22,4 @@
   - 测试：`tests/siglus_message_capture_test.cpp`（生产写环带 `ENGINE:SIGLUS:message`；安装成功置位、安装失败不置位）。x86 / x64 CTest 与守卫全绿。
   - 副作用：之前手选并记住过 Siglus 原生线程的游戏，记忆指纹按旧的线程名记录，换成 hook code 后对不上，会再弹一次选择框；选一次后重新记住。
 - **备注**：离线用 Rewrite+ 内存镜像验证：家族 `abi=1`、槽位 RVA `0x5ed4bc`、配置槽 `0x6d3e30`（实测 1280×720）；HF（Rewrite Harvest festa!，1.0.17.19）为负样本，全部不命中。HF 是另一种代码形态，见 BUG-3929。
-- **真机复测（2026-11-01，用户本地构建，含 BUG-3929 的共用修复）**：不再等 120 秒、正文为原生消息线程且不含人名、逐句有语音、游戏画面内弹出查词卡、鼠标点词不推进，用户确认均正常；**触摸点词不推进未测**，按「适配成功」定义只算部分适配，支持状态保持 `implemented_unverified`。
+- **真机复测（2026-11-01，用户本地构建，含 BUG-3951 的共用修复）**：不再等 120 秒、正文为原生消息线程且不含人名、逐句有语音、游戏画面内弹出查词卡、鼠标点词不推进，用户确认均正常；**触摸点词不推进未测**，按「适配成功」定义只算部分适配，支持状态保持 `implemented_unverified`。

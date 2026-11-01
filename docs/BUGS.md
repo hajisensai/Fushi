@@ -33,83 +33,43 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3533 条。点号进各自文件。
+> 共 3562 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3958](bugs/BUG-3958-floating-ball-photo-ocr-mines-no-sentence.md) | ✅ | ✅ | 悬浮球拍照查词、悬浮字幕点字制卡没有例句 |
+| [BUG-3957](bugs/BUG-3957-srs-native-pitch-graph-notation.md) | ✅ | ✅ | 复习卡原生声调图给低拍画下划线，与模板记法不一致 |
+| [BUG-3956](bugs/BUG-3956-reader-lyrics-system-back-twice.md) | ✅ | ✅ | 歌词模式下系统返回要两次才回书架 |
+| [BUG-3955](bugs/BUG-3955-ext-mined-duplicate-add-silently-rejected.md) | ✅ | ✅ | 浏览器扩展里已制卡的词点 ✓ 没有「是否添加重复卡」的选择，再制只得到「已存在」 |
+| [BUG-3954](bugs/BUG-3954-popup-ui-text-cjk-font.md) | ✅ | ✅ | 查词弹窗「音调 · N」药丸中文字形混用 |
+| [BUG-3953](bugs/BUG-3953-ai-2xx-error-body-empty-response.md) | ✅ | ✅ | 本地 LLM 回 200 错误体时 AI 助手只报「没有返回内容」 |
+| [BUG-3952](bugs/BUG-3952-gal-lookup-card-middle-button-and-left-click-leak.md) | ✅ | ✅ | gal-lookup-card-middle-button-and-left-click-leak |
+| [BUG-3951](bugs/BUG-3951-siglus-ninearg-harvest-festa.md) | ✅ | ✅ | Rewrite Harvest festa!（九参一代 SiglusEngine）不识别引擎：台词混入人名、内嵌查词不可用 |
+| [BUG-3950](bugs/BUG-3950-ext-external-subtitle-lost-on-reload.md) | ✅ | ✅ | 扩展「查字幕」/ 外挂字幕装上后刷新网页即消失 |
+| [BUG-3949](bugs/BUG-3949-interconnect-forwarded-mine-dict-media.md) | ✅ | ✅ | 经互联主机制卡，词典插图变空框 |
+| [BUG-3948](bugs/BUG-3948-floating-chrome-collapsed-top-band.md) | ✅ | ✅ | 顶栏收起后顶部留一条页面底色白边盖住背景 |
+| [BUG-3947](bugs/BUG-3947-srs-sync-conflicts-reads-note-content.md) | ✅ | ✅ | 牌组列表的冲突角标把整库笔记正文读回来，大库同步 / 导入后原生内存分配失败闪退 |
+| [BUG-3946](bugs/BUG-3946-gal-unity-text-flood-freezes-ui.md) | ✅ | ✅ | gal-unity-text-flood-freezes-ui |
+| [BUG-3945](bugs/BUG-3945-update-exit-false-crash-report.md) | ✅ | ✅ | 应用内更新 / 安装新版本后误报「意外退出」 |
+| [BUG-3944](bugs/BUG-3944-siglus-enigma-plain-frame.md) | ✅ | ✅ | Rewrite+（Enigma 保护的 SiglusEngine）不识别引擎：内嵌查词要等 120 秒后才放行 Luna，且查词不可用 |
+| [BUG-3943](bugs/BUG-3943-ext-subs-results-long-title-overlap.md) | ✅ | ✅ | 扩展侧边栏查字幕结果被超长番名挤压、行重叠、看不到集数 |
+| [BUG-3942](bugs/BUG-3942-zh-trad-simp-lookup.md) | ✅ | ✅ | 中文词典繁简互查失败：繁体查不到简体词头、独立查词页不开简繁回落 |
+| [BUG-3941](bugs/BUG-3941-ai-lan-http-base-url.md) | ✅ | ✅ | 自定义 OpenAI 兼容地址只接受 http://localhost，不接受局域网 IP |
+| [BUG-3940](bugs/BUG-3940-ai-agent-json-catalog-overflow.md) | ✅ | ✅ | AI 助手降级协议把整份工具 schema 塞进系统提示，小上下文本地模型超长 |
+| [BUG-3939](bugs/BUG-3939-stat-sessions-sheet-edit-jank.md) | ✅ | ✅ | stat-sessions-sheet-edit-jank |
+| [BUG-3938](bugs/BUG-3938-manga-spread-offset-ignored-after-wide-page.md) | ✅ | ✅ | manga-spread-offset-ignored-after-wide-page |
+| [BUG-3937](bugs/BUG-3937-ffmpeg-remote-input-bypasses-app-proxy.md) | ✅ | ✅ | ffmpeg-remote-input-bypasses-app-proxy |
+| [BUG-3936](bugs/BUG-3936-srs-panorama-materializes-all-notes.md) | ✅ | ✅ | 首页全景整批物化全部带出处的笔记，2 万卡大库启动主线程 ANR / OOM |
+| [BUG-3935](bugs/BUG-3935-texthooker-custom-endpoint-url.md) | ✅ | ✅ | texthooker-custom-endpoint-url |
+| [BUG-3934](bugs/BUG-3934-desktop-prefs-corrupt-startup-fail.md) | ✅ | ✅ | Windows 偏好文件断电损坏后每次启动都 FormatException 失败 |
+| [BUG-3933](bugs/BUG-3933-lyrics-mesh-backdrop-lattice.md) | ✅ | ✅ | lyrics-mesh-backdrop-lattice |
+| [BUG-3932](bugs/BUG-3932-web-video-page-lookup-ruby-rt.md) | ✅ | ✅ | 网页视频页取词混入 ruby 注音 <rt> |
+| [BUG-3931](bugs/BUG-3931-gal-lookup-card-keyboard-reaches-game.md) | ✅ | ✅ | gal-lookup-card-keyboard-reaches-game |
+| [BUG-3930](bugs/BUG-3930-stale-snackbar-after-root-remount.md) | ✅ | ✅ | 根树重挂后闪退报告提示条冻结半透明、点按钮 Null check 关不掉 |
 | [BUG-3929](bugs/BUG-3929-video-player-window-not-draggable.md) | ✅ | ✅ | Windows 进入视频播放器后窗口拖不动（主界面正常，上一版正常） |
 | [BUG-3928](bugs/BUG-3928-secondary-subtitle-embedded-restore-lost.md) | ✅ | ✅ | 退出视频再进，内封副字幕不显示（菜单仍高亮该轨，得重选一遍） |
-> 共 3534 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3930](bugs/BUG-3930-stale-snackbar-after-root-remount.md) | ✅ | ✅ | 根树重挂后闪退报告提示条冻结半透明、点按钮 Null check 关不掉 |
-| [BUG-3929](bugs/BUG-3929-update-exit-false-crash-report.md) | ✅ | ✅ | 应用内更新 / 安装新版本后误报「意外退出」 |
-| [BUG-3928](bugs/BUG-3928-desktop-prefs-corrupt-startup-fail.md) | ✅ | ✅ | Windows 偏好文件断电损坏后每次启动都 FormatException 失败 |
-> 共 3535 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3931](bugs/BUG-3931-gal-lookup-card-keyboard-reaches-game.md) | ✅ | ✅ | gal-lookup-card-keyboard-reaches-game |
-| [BUG-3930](bugs/BUG-3930-gal-lookup-card-middle-button-and-left-click-leak.md) | ✅ | ✅ | gal-lookup-card-middle-button-and-left-click-leak |
-| [BUG-3929](bugs/BUG-3929-gal-unity-text-flood-freezes-ui.md) | ✅ | ✅ | gal-unity-text-flood-freezes-ui |
-| [BUG-3928](bugs/BUG-3928-texthooker-custom-endpoint-url.md) | ✅ | ✅ | texthooker-custom-endpoint-url |
-> 共 3532 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3928](bugs/BUG-3928-srs-panorama-materializes-all-notes.md) | ✅ | ✅ | 首页全景整批物化全部带出处的笔记，2 万卡大库启动主线程 ANR / OOM |
-> 共 3532 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3928](bugs/BUG-3928-ffmpeg-remote-input-bypasses-app-proxy.md) | ✅ | ✅ | ffmpeg-remote-input-bypasses-app-proxy |
-> 共 3532 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3928](bugs/BUG-3928-manga-spread-offset-ignored-after-wide-page.md) | ✅ | ✅ | manga-spread-offset-ignored-after-wide-page |
-| [BUG-3929](bugs/BUG-3929-srs-sync-conflicts-reads-note-content.md) | ✅ | ✅ | 牌组列表的冲突角标把整库笔记正文读回来，大库同步 / 导入后原生内存分配失败闪退 |
-| [BUG-3928](bugs/BUG-3928-stat-sessions-sheet-edit-jank.md) | ✅ | ✅ | stat-sessions-sheet-edit-jank |
-> 共 3532 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3928](bugs/BUG-3928-ai-agent-json-catalog-overflow.md) | ✅ | ✅ | AI 助手降级协议把整份工具 schema 塞进系统提示，小上下文本地模型超长 |
-> 共 3535 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3931](bugs/BUG-3931-reader-lyrics-system-back-twice.md) | ✅ | ✅ | 歌词模式下系统返回要两次才回书架 |
-| [BUG-3930](bugs/BUG-3930-ai-2xx-error-body-empty-response.md) | ✅ | ✅ | 本地 LLM 回 200 错误体时 AI 助手只报「没有返回内容」 |
-| [BUG-3929](bugs/BUG-3929-floating-chrome-collapsed-top-band.md) | ✅ | ✅ | 顶栏收起后顶部留一条页面底色白边盖住背景 |
-| [BUG-3928](bugs/BUG-3928-ai-lan-http-base-url.md) | ✅ | ✅ | 自定义 OpenAI 兼容地址只接受 http://localhost，不接受局域网 IP |
-> 共 3536 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3932](bugs/BUG-3932-web-video-page-lookup-ruby-rt.md) | ✅ | ✅ | 网页视频页取词混入 ruby 注音 <rt> |
-| [BUG-3931](bugs/BUG-3931-srs-native-pitch-graph-notation.md) | ✅ | ✅ | 复习卡原生声调图给低拍画下划线，与模板记法不一致 |
-| [BUG-3930](bugs/BUG-3930-popup-ui-text-cjk-font.md) | ✅ | ✅ | 查词弹窗「音调 · N」药丸中文字形混用 |
-| [BUG-3929](bugs/BUG-3929-interconnect-forwarded-mine-dict-media.md) | ✅ | ✅ | 经互联主机制卡，词典插图变空框 |
-| [BUG-3928](bugs/BUG-3928-zh-trad-simp-lookup.md) | ✅ | ✅ | 中文词典繁简互查失败：繁体查不到简体词头、独立查词页不开简繁回落 |
-> 共 3535 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3931](bugs/BUG-3931-floating-ball-photo-ocr-mines-no-sentence.md) | ✅ | ✅ | 悬浮球拍照查词、悬浮字幕点字制卡没有例句 |
-| [BUG-3930](bugs/BUG-3930-ext-mined-duplicate-add-silently-rejected.md) | ✅ | ✅ | 浏览器扩展里已制卡的词点 ✓ 没有「是否添加重复卡」的选择，再制只得到「已存在」 |
-| [BUG-3929](bugs/BUG-3929-ext-external-subtitle-lost-on-reload.md) | ✅ | ✅ | 扩展「查字幕」/ 外挂字幕装上后刷新网页即消失 |
-| [BUG-3928](bugs/BUG-3928-ext-subs-results-long-title-overlap.md) | ✅ | ✅ | 扩展侧边栏查字幕结果被超长番名挤压、行重叠、看不到集数 |
-| [BUG-3929](bugs/BUG-3929-siglus-ninearg-harvest-festa.md) | ✅ | ✅ | Rewrite Harvest festa!（九参一代 SiglusEngine）不识别引擎：台词混入人名、内嵌查词不可用 |
-| [BUG-3928](bugs/BUG-3928-siglus-enigma-plain-frame.md) | ✅ | ✅ | Rewrite+（Enigma 保护的 SiglusEngine）不识别引擎：内嵌查词要等 120 秒后才放行 Luna，且查词不可用 |
 | [BUG-3927](bugs/BUG-3927-reader-jp-gothic-alias-theme-font.md) | ✅ | ✅ | 電書協书的章标题在换了主题字体的 Android 机上竖排叠字 |
 | [BUG-3926](bugs/BUG-3926-download-subtitle-retry-drops-anilist.md) | ✅ | ✅ | download-subtitle-retry-drops-anilist |
-> 共 3530 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3926](bugs/BUG-3926-lyrics-mesh-backdrop-lattice.md) | ✅ | ✅ | lyrics-mesh-backdrop-lattice |
 | [BUG-3925](bugs/BUG-3925-ai-panel-tight-mode-hides-context-chip.md) | ✅ | ✅ | ai-panel-tight-mode-hides-context-chip |
 | [BUG-3924](bugs/BUG-3924-srs-webview-blank-tap-needs-lookup.md) | ✅ | ✅ | srs-webview-blank-tap-needs-lookup |
 | [BUG-3923](bugs/BUG-3923-reader-volume-chips-order-and-center.md) | ✅ | ✅ | 导航侧板目录页的卷 chip 行顺序错乱、当前卷不居中 |

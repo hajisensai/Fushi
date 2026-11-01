@@ -269,7 +269,7 @@ void main() {
     expect((await b.cardRow(cardId))!.suspended, isTrue);
   });
 
-  test('同步冲突只读标志 / 设置类：两台设备各自写下同样的笔记正文，正文记录不被读回（BUG-3929）', () async {
+  test('同步冲突只读标志 / 设置类：两台设备各自写下同样的笔记正文，正文记录不被读回（BUG-3947）', () async {
     final SrsDbStore a = await device('a');
     final SrsDbStore b = await device('b');
     final String sentence = srsLapisFieldId(kProfile, 'Sentence');

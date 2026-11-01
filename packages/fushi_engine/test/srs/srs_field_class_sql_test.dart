@@ -1,5 +1,5 @@
 // srsFieldClassSqlFilter（SQLite 侧按字段类别筛修改记录）与 srsFieldClassOf（Dart 侧逐条判）必须恒等：
-// [SrsDbStore.syncConflicts] 靠前者在读回之前筛掉笔记字段正文（BUG-3929），两者一旦分叉，冲突记录要么漏项、
+// [SrsDbStore.syncConflicts] 靠前者在读回之前筛掉笔记字段正文（BUG-3947），两者一旦分叉，冲突记录要么漏项、
 // 要么又把整库正文读回来。这里对全部实体种类 × 全部已知字段键（含带参数的前缀键与没见过的键）× 全部类别
 // 子集，在真 SQLite 里求值比对。
 import 'package:fushi_srs/fushi_srs.dart';

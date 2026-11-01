@@ -1,4 +1,4 @@
-## BUG-3928 · Windows 偏好文件断电损坏后每次启动都 FormatException 失败
+## BUG-3934 · Windows 偏好文件断电损坏后每次启动都 FormatException 失败
 - **报告**：2026-11-01（用户：QQ 群反馈 p8vt5jHJgC，Windows，GitHub 下载版）
 - **真实性**：✅ 真 bug（据截图 + 代码路径确认，用户日志未到）。现象：配置完重启后启动先出看门狗，Retry 后「Initialisation failed: FormatException: Unexpected character (at character 1)」+ 一长串方框（NUL）。根因在官方 `shared_preferences_windows` 2.3.2（Linux 版同构）：
   - 写盘原地 `localDataFile.writeAsStringSync(stringMap)`（`shared_preferences_windows.dart:94`，不 flush、不走临时文件），写完不久断电 / 强制关机，NTFS 留下长度不变、内容全 NUL 的 `%APPDATA%\Fushi\Fushi\shared_preferences.json`；

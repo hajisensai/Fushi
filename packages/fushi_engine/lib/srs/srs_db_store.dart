@@ -4268,7 +4268,7 @@ class SrsDbStore implements SrsSync2Host {
   /// 只读标志类 / 设置类的字段键（[srsFieldClassSqlFilter]，与 [srsFieldClassOf] 同一张表）：内容类（笔记字段
   /// 正文）的并发候选不进这份清单（它们走待裁决），以前却连同正文全部读回来再丢掉。两台设备各自导入同一个
   /// 包（笔记 ID 由 guid 确定）后，每条笔记的每个字段都留着两条互不支配的记录——这条查询一次读回整库正文两遍
-  /// （1.9 万张卡的库上过 GB），牌组列表的冲突角标每次重读都跑，原生分配失败闪退（BUG-3929）。
+  /// （1.9 万张卡的库上过 GB），牌组列表的冲突角标每次重读都跑，原生分配失败闪退（BUG-3947）。
   Future<List<(SrsEntityKind, String, SrsRegister)>> syncConflicts() async {
     final String tracked = srsFieldClassSqlFilter(
       _kSyncConflictClasses,
