@@ -12426,6 +12426,9 @@ class _AppModelRemoteLookupService
     return withMaterializedMiningContext<T>(
       payload,
       (String raw, AnkiMiningContext context) => action(repo, raw, context),
+      // 瘦客户端经本机查词时词典只在本机：客户端搬不来字节的插图由本机词典补齐，
+      // 与 /api/mine（[mineEntry]）同一步骤（反馈 PDgaHL5qmj）。
+      writeHostDictionaryMedia: writeDictionaryMediaCache,
     );
   }
 

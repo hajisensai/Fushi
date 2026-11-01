@@ -118,6 +118,9 @@ class ServerRemoteMiningService implements FushiRemoteMiningService {
           await _mineCard(raw, context),
           source: 'ServerMining.mineForwarded',
         ),
+        // 客户端经本服务端查词时词典只在这里：搬不来字节的插图由本机词典补齐，
+        // 与 [mineEntry] 同一步骤（反馈 PDgaHL5qmj）。
+        writeHostDictionaryMedia: _writeDictionaryMedia,
       );
     } catch (e, st) {
       engineLog.log('ServerMining.mineForwarded', e, st);
