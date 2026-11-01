@@ -33,10 +33,15 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3531 条。点号进各自文件。
+> 共 3536 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3932](bugs/BUG-3932-web-video-page-lookup-ruby-rt.md) | ✅ | ✅ | 网页视频页取词混入 ruby 注音 <rt> |
+| [BUG-3931](bugs/BUG-3931-srs-native-pitch-graph-notation.md) | ✅ | ✅ | 复习卡原生声调图给低拍画下划线，与模板记法不一致 |
+| [BUG-3930](bugs/BUG-3930-popup-ui-text-cjk-font.md) | ✅ | ✅ | 查词弹窗「音调 · N」药丸中文字形混用 |
+| [BUG-3929](bugs/BUG-3929-interconnect-forwarded-mine-dict-media.md) | ✅ | ✅ | 经互联主机制卡，词典插图变空框 |
+| [BUG-3928](bugs/BUG-3928-zh-trad-simp-lookup.md) | ✅ | ✅ | 中文词典繁简互查失败：繁体查不到简体词头、独立查词页不开简繁回落 |
 | [BUG-3927](bugs/BUG-3927-reader-jp-gothic-alias-theme-font.md) | ✅ | ✅ | 電書協书的章标题在换了主题字体的 Android 机上竖排叠字 |
 | [BUG-3926](bugs/BUG-3926-download-subtitle-retry-drops-anilist.md) | ✅ | ✅ | download-subtitle-retry-drops-anilist |
 | [BUG-3925](bugs/BUG-3925-ai-panel-tight-mode-hides-context-chip.md) | ✅ | ✅ | ai-panel-tight-mode-hides-context-chip |
