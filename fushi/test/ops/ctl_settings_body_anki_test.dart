@@ -179,6 +179,7 @@ void main() {
         'mining_audio_head_pad',
         'mining_audio_tail_pad',
         'mining_audio_follow_playback_speed',
+        'video_mining_audio_source',
         'video_mining_image_mode',
         'video_mining_clip_format',
         'video_mining_animated_format',

@@ -401,6 +401,8 @@ import 'package:fushi/src/mining/web_mine_queue_store.dart'
     show WebMineQueueStore, decodeWebMineFields;
 import 'package:fushi/src/media/video/video_mine_queue_dialog.dart';
 import 'package:fushi_engine/mining/immersion_mining_request.dart';
+import 'package:fushi_engine/mining/sentence_audio_source.dart';
+import 'package:fushi/src/mining/sentence_audio_source_text.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart'
     show adaptivePageRoute, adaptiveSegmentedButton;
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
@@ -465,6 +467,7 @@ part 'video_fushi/layout.part.dart';
 part 'video_fushi/playback_remote.part.dart';
 part 'video_fushi/remote_control.part.dart';
 part 'video_fushi/advanced_mining.part.dart';
+part 'video_fushi/sentence_audio_source.part.dart';
 part 'video_fushi/web_source.part.dart';
 part 'video_fushi/jump_history.part.dart';
 part 'video_fushi/theme_song.part.dart';

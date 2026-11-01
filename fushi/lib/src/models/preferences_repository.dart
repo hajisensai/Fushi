@@ -82,6 +82,8 @@ import 'package:fushi/src/media/video/video_lua_capability.dart';
 import 'package:fushi/src/media/video/video_clip_export_preferences.dart';
 import 'package:fushi/src/media/video/video_screenshot_destination.dart';
 import 'package:fushi/src/mining/video_online_mining_mode.dart';
+import 'package:fushi_engine/mining/sentence_audio_source.dart'
+    show SentenceAudioSourcePick;
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
 import 'package:fushi/src/media/video/video_pause_ocr_scope.dart';
 import 'package:fushi/src/media/audiobook/mining_audio_clip.dart'
@@ -3766,6 +3768,18 @@ class PreferencesRepository extends ChangeNotifier
       'video_mining_image_mode',
       mode,
     );
+    notifyListeners();
+  }
+
+  // 视频制卡句子音频来源（反馈 pNF2ZL7Kfc，见 [SentenceAudioSourcePick]）。默认当前
+  // 播放音轨（= 改动前）；解析不了的值同样回退默认。
+  SentenceAudioSourcePick get videoMiningAudioSource =>
+      SentenceAudioSourcePick.fromWireName(
+        getPref('video_mining_audio_source', defaultValue: null) as String?,
+      );
+
+  Future<void> setVideoMiningAudioSource(SentenceAudioSourcePick pick) async {
+    await setPref('video_mining_audio_source', pick.wireName);
     notifyListeners();
   }
 

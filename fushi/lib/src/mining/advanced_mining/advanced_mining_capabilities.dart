@@ -6,6 +6,8 @@ import 'package:fushi/src/media/range_playback.dart';
 import 'package:fushi_anki/fushi_anki_core.dart';
 import 'package:fushi_engine/mining/immersion_mining_request.dart'
     show VideoMiningImageMode;
+import 'package:fushi_engine/mining/sentence_audio_source.dart'
+    show SentenceAudioSourcePick;
 
 /// 「高级制卡」对话框（查词弹窗里「+」旁边的按钮）的**能力契约**。
 ///
@@ -91,6 +93,7 @@ class AdvancedMiningAudioSection {
     required this.preview,
     required this.stopPreview,
     this.nudgeStepMs = 250,
+    this.sources,
   });
 
   /// 当前会写进卡片的区间；null = 这句没有可用音频（对话框显示「无音频」，不给微调）。
@@ -114,6 +117,23 @@ class AdvancedMiningAudioSection {
 
   /// 起止微调的步长。
   final int nudgeStepMs;
+
+  /// 句子音频来源的临时切换（视频，反馈 pNF2ZL7Kfc）；null = 这个页面不给选。
+  final AdvancedMiningAudioSources? sources;
+}
+
+/// 句子音频来源的可选项（只对这一张卡生效，不改设置）。
+class AdvancedMiningAudioSources {
+  const AdvancedMiningAudioSources({
+    required this.choices,
+    required this.defaultPick,
+  });
+
+  /// 对话框里列出的来源（顺序即显示顺序），总包含 [defaultPick]。
+  final List<SentenceAudioSourcePick> choices;
+
+  /// 设置里的来源（一键「+」的行为）。
+  final SentenceAudioSourcePick defaultPick;
 }
 
 /// 视频图片分区。

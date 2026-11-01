@@ -795,6 +795,15 @@ void _reportFfmpegUnexpectedException(
 /// historical byte-identical output. The range is still expressed in **source**
 /// time (`-ss`/`-t` precede `-i`, so `-t` is the input duration); only the
 /// output shrinks/grows by the factor.
+///
+/// [frontCenterOnly] keeps only the front-centre channel FC of a multichannel
+/// track (`-af pan=mono|c0=FC`, chained before any atempo stage), which is where
+/// film / anime mixes put the dialogue — the sentence clip loses most of the
+/// music and effects (feedback pNF2ZL7Kfc). The output is then mono whatever
+/// [audioChannels] says. The caller must have checked the track really has FC
+/// (`channelLayoutHasFrontCenter` / [probeAudioStreamChannelLayout]): `pan` on a
+/// layout without FC silently produces a silent clip. false (default) leaves the
+/// argument list byte-identical to before.
 List<String> buildFfmpegClipArgs({
   required String inputPath,
   required int startMs,
@@ -811,6 +820,8 @@ List<String> buildFfmpegClipArgs({
   Map<String, String> httpHeaders = const {},
   // 有声书倍速制卡：句子音频按播放倍速变速不变调（`-af atempo=…`）。null / 1.0 不加滤镜。
   double? tempo,
+  // 视频制卡只取多声道的中置声道 FC（人声）。false = 现状（逐字节不变）。
+  bool frontCenterOnly = false,
 }) {
   final double startSeconds = startMs / 1000.0;
   final double durationSeconds = (endMs - startMs) / 1000.0;
@@ -818,7 +829,10 @@ List<String> buildFfmpegClipArgs({
     audioStreamIndex: audioStreamIndex,
     audioStreamCount: audioStreamCount,
   );
-  final String? tempoFilter = buildFfmpegAtempoFilter(tempo);
+  final String? tempoFilter = buildFfmpegSentenceAudioFilter(
+    tempo: tempo,
+    frontCenterOnly: frontCenterOnly,
+  );
   return <String>[
     '-y',
     ...buildFfmpegRemoteInputArgs(
@@ -861,11 +875,108 @@ List<String> buildFfmpegClipArgs({
     // Android 原生 AacAdtsCueAudioRewriter 是无损 re-mux（跟源、不重编码），不经此
     // 路径、不受压缩开关影响。
     '-ac',
-    '$audioChannels',
+    // 中置声道已是单声道：`-ac 2` 只会把同一路复制成两路，白占一倍体积。
+    frontCenterOnly ? '1' : '$audioChannels',
     '-b:a',
     audioBitrate,
     outputPath,
   ];
+}
+
+/// `-af` 里取中置声道 FC 的那一段（输出单声道）。
+const String kFfmpegFrontCenterFilter = 'pan=mono|c0=FC';
+
+/// 句子音频的整条 `-af` 链：先取中置声道（[frontCenterOnly]），再变速
+/// （[buildFfmpegAtempoFilter]）。两样都不要时返回 null（不加 `-af`，= 现状）。纯函数。
+String? buildFfmpegSentenceAudioFilter({
+  double? tempo,
+  bool frontCenterOnly = false,
+}) {
+  final String? atempo = buildFfmpegAtempoFilter(tempo);
+  final List<String> stages = <String>[
+    if (frontCenterOnly) kFfmpegFrontCenterFilter,
+    if (atempo != null) atempo,
+  ];
+  return stages.isEmpty ? null : stages.join(',');
+}
+
+/// ffprobe 参数：只读 [inputPath] 第 [audioStreamIndex] 条音轨（`a:N`）的声道布局与
+/// 声道数，JSON 输出。远端输入带上与裁剪同一组连接参数（UA / Referer / TLS 钉扎）。纯函数。
+List<String> buildFfprobeAudioChannelLayoutArgs({
+  required String inputPath,
+  required int audioStreamIndex,
+  String? tlsPinSha256,
+  Map<String, String> httpHeaders = const {},
+}) => <String>[
+  ...buildFfmpegRemoteInputArgs(
+    inputPath,
+    tlsPinSha256: tlsPinSha256,
+    httpHeaders: httpHeaders,
+  ),
+  '-v',
+  'error',
+  '-select_streams',
+  'a:${audioStreamIndex < 0 ? 0 : audioStreamIndex}',
+  '-show_entries',
+  'stream=channels,channel_layout',
+  '-of',
+  'json',
+  inputPath,
+];
+
+/// 解析 [buildFfprobeAudioChannelLayoutArgs] 的输出：首条流的 `(layout, channels)`；
+/// 解析不了 / 没有流时两者都是 null。纯函数，绝不抛。
+({String? layout, int? channels}) parseFfprobeAudioChannelLayout(
+  String stdout,
+) {
+  try {
+    final Object? decoded = jsonDecode(stdout.trim());
+    if (decoded is! Map) return (layout: null, channels: null);
+    final Object? streams = decoded['streams'];
+    if (streams is! List || streams.isEmpty) {
+      return (layout: null, channels: null);
+    }
+    final Object? first = streams.first;
+    if (first is! Map) return (layout: null, channels: null);
+    final Object? layout = first['channel_layout'];
+    final Object? channels = first['channels'];
+    return (
+      layout: layout is String && layout.trim().isNotEmpty
+          ? layout.trim()
+          : null,
+      channels: channels is num ? channels.toInt() : null,
+    );
+  } catch (_) {
+    return (layout: null, channels: null);
+  }
+}
+
+/// 探测 [inputPath] 第 [audioStreamIndex] 条音轨的声道布局（中置声道取音前的确认，
+/// 播放器没报布局时才用）。ffprobe 不可用 / 超时 / 解析不了时两者都是 null，绝不抛。
+Future<({String? layout, int? channels})> probeAudioStreamChannelLayout({
+  required String inputPath,
+  required int audioStreamIndex,
+  String? tlsPinSha256,
+  Map<String, String> httpHeaders = const {},
+  Duration timeout = const Duration(seconds: 20),
+}) async {
+  try {
+    final FfmpegRunResult result = await resolveFfmpegBackend().runProbe(
+      buildFfprobeAudioChannelLayoutArgs(
+        inputPath: inputPath,
+        audioStreamIndex: audioStreamIndex,
+        tlsPinSha256: tlsPinSha256,
+        httpHeaders: httpHeaders,
+      ),
+      timeout,
+    );
+    if (result.returnCode != 0) return (layout: null, channels: null);
+    return parseFfprobeAudioChannelLayout(result.output);
+  } catch (e) {
+    // 缺 ffprobe / 远端打不开是正常降级（调用方按「布局未知」回退并提示），不是错误。
+    engineLog.logDiagnostic('probeAudioStreamChannelLayout', e);
+    return (layout: null, channels: null);
+  }
 }
 
 /// [buildFfmpegAtempoFilter] treats a tempo this close to 1.0 as "no change".
@@ -1884,6 +1995,8 @@ Future<String?> extractAudioSegmentViaFfmpeg({
   Map<String, String> httpHeaders = const {},
   // 有声书倍速制卡：句子音频按播放倍速变速不变调；null / 1.0 = 原速（现状）。
   double? tempo,
+  // 视频制卡只取多声道的中置声道 FC（见 [buildFfmpegClipArgs]）；false = 现状。
+  bool frontCenterOnly = false,
   // 句子级片段默认 120s 足够；整集音轨（远端对轴 / 重定时）由调用方按时长放大。
   Duration timeout = const Duration(seconds: 120),
 }) async {
@@ -1929,6 +2042,7 @@ Future<String?> extractAudioSegmentViaFfmpeg({
         tlsPinSha256: tlsPinSha256,
         httpHeaders: httpHeaders,
         tempo: tempo,
+        frontCenterOnly: frontCenterOnly,
       ),
       timeout,
     );

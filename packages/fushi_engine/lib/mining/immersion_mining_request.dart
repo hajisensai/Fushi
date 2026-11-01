@@ -393,6 +393,8 @@ class ImmersionMiningRequest {
     this.documentTitle,
     this.audioStreamIndex,
     this.audioStreamCount,
+    this.audioFrontCenter = false,
+    this.audioFrontCenterNeedsProbe = false,
     // BUG-1137：不给默认值。曾默认 video，gal 场景卡忘传 source 就被静默标成
     // 视频；来源必须由每个调用点显式声明，漏传直接编译不过。
     required this.source,
@@ -450,6 +452,14 @@ class ImmersionMiningRequest {
   final String? documentTitle;
   final int? audioStreamIndex;
   final int? audioStreamCount;
+
+  /// 句子音频只取 [audioStreamIndex] 那条轨的中置声道 FC（多声道资源里的人声，反馈
+  /// pNF2ZL7Kfc；决策见 `planSentenceAudioSource`）。false = 现状。取不到时引擎回退
+  /// 整条音轨重抽，并经 `onAudioSourceFallback` 告诉调用方。
+  final bool audioFrontCenter;
+
+  /// [audioFrontCenter] 为真但调用方不知道声道布局：引擎抽取前先 ffprobe 确认有 FC。
+  final bool audioFrontCenterNeedsProbe;
   final AnkiMiningSource source;
   final String? bookTitleTag;
 
@@ -619,6 +629,10 @@ class ImmersionMiningRequest {
         mediaSource: snapshot.path,
         cueSentence: cueSentence,
         documentTitle: documentTitle,
+        // 副本里只有正在播放的那一条轨，中置模式取的正是它（调用方对「指定另一条轨」
+        // 不落副本，见 `SentenceAudioSourcePlan.differsFromPlaying`）：中置取音照旧。
+        audioFrontCenter: audioFrontCenter,
+        audioFrontCenterNeedsProbe: audioFrontCenterNeedsProbe,
         source: source,
         bookTitleTag: bookTitleTag,
         collectionTag: collectionTag,
@@ -681,6 +695,8 @@ class ImmersionMiningRequest {
     documentTitle: documentTitle,
     audioStreamIndex: audioStreamIndex,
     audioStreamCount: audioStreamCount,
+    audioFrontCenter: audioFrontCenter,
+    audioFrontCenterNeedsProbe: audioFrontCenterNeedsProbe,
     source: source,
     bookTitleTag: bookTitleTag,
     collectionTag: collectionTag,

@@ -13,6 +13,9 @@ import 'package:fushi/src/anki/lapis_style_editor_page.dart'
     show LapisVisualEditorResult, applyLapisVisualEditorResult;
 import 'package:fushi/src/anki/lapis_template_service.dart';
 import 'package:fushi/src/mining/video_online_mining_mode.dart';
+import 'package:fushi/src/mining/sentence_audio_source_text.dart';
+import 'package:fushi_engine/mining/sentence_audio_source.dart'
+    show SentenceAudioSourcePick;
 import 'package:fushi/src/ops/ctl_settings_body_items.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
@@ -626,6 +629,22 @@ CtlBodyPage _mediaPage() {
             c.appModel.toggleMiningAudioFollowPlaybackSpeed();
           }
         },
+      ),
+      _choice<SentenceAudioSourcePick>(
+        id: 'video_mining_audio_source',
+        title: t.video_mining_audio_source,
+        subtitle: t.video_mining_audio_source_hint,
+        options: <SettingsSegmentOption<SentenceAudioSourcePick>>[
+          for (final SentenceAudioSourcePick pick
+              in sentenceAudioSourceSettingChoices())
+            SettingsSegmentOption<SentenceAudioSourcePick>(
+              value: pick,
+              label: sentenceAudioSourceLabel(pick),
+            ),
+        ],
+        selected: (SettingsContext c) => c.appModel.videoMiningAudioSource,
+        onChanged: (SettingsContext c, SentenceAudioSourcePick v) =>
+            c.appModel.setVideoMiningAudioSource(v),
       ),
       _choice<VideoMiningImageMode>(
         id: 'video_mining_image_mode',

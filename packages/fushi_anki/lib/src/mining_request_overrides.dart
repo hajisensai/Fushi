@@ -192,6 +192,7 @@ class MiningRequestOverrides {
     this.omitAudio = false,
     this.audioStartDeltaMs = 0,
     this.audioEndDeltaMs = 0,
+    this.audioSource,
     this.omitImage = false,
     this.videoImageMode,
     this.coverFrameAtMs,
@@ -215,6 +216,10 @@ class MiningRequestOverrides {
 
   /// 句子音频终点偏移（毫秒，正数 = 推后）。同 [audioStartDeltaMs]。
   final int audioEndDeltaMs;
+
+  /// 视频句子音频来源：`SentenceAudioSourcePick.wireName`（current / front_center /
+  /// `track:<N>`）；null = 用设置。本包不依赖引擎，所以存 wire 字符串。
+  final String? audioSource;
 
   /// 不要卡图（封面 / 截图 / 动图 / 视频片段都不要）。
   final bool omitImage;
@@ -245,6 +250,7 @@ class MiningRequestOverrides {
       deckName == null &&
       !omitAudio &&
       !hasAudioDelta &&
+      audioSource == null &&
       !omitImage &&
       videoImageMode == null &&
       coverFrameAtMs == null &&
@@ -257,6 +263,8 @@ class MiningRequestOverrides {
     bool? omitAudio,
     int? audioStartDeltaMs,
     int? audioEndDeltaMs,
+    String? audioSource,
+    bool clearAudioSource = false,
     bool? omitImage,
     String? videoImageMode,
     bool clearVideoImageMode = false,
@@ -270,6 +278,7 @@ class MiningRequestOverrides {
     omitAudio: omitAudio ?? this.omitAudio,
     audioStartDeltaMs: audioStartDeltaMs ?? this.audioStartDeltaMs,
     audioEndDeltaMs: audioEndDeltaMs ?? this.audioEndDeltaMs,
+    audioSource: clearAudioSource ? null : (audioSource ?? this.audioSource),
     omitImage: omitImage ?? this.omitImage,
     videoImageMode: clearVideoImageMode
         ? null
@@ -286,6 +295,7 @@ class MiningRequestOverrides {
     if (omitAudio) 'omitAudio': true,
     if (audioStartDeltaMs != 0) 'audioStartDeltaMs': audioStartDeltaMs,
     if (audioEndDeltaMs != 0) 'audioEndDeltaMs': audioEndDeltaMs,
+    if (audioSource != null) 'audioSource': audioSource,
     if (omitImage) 'omitImage': true,
     if (videoImageMode != null) 'videoImageMode': videoImageMode,
     if (coverFrameAtMs != null) 'coverFrameAtMs': coverFrameAtMs,
@@ -302,11 +312,13 @@ class MiningRequestOverrides {
     final Object? frame = json['coverFrameAtMs'];
     final Object? start = json['audioStartDeltaMs'];
     final Object? end = json['audioEndDeltaMs'];
+    final Object? source = json['audioSource'];
     return MiningRequestOverrides(
       deckName: deck is String && deck.trim().isNotEmpty ? deck : null,
       omitAudio: json['omitAudio'] == true,
       audioStartDeltaMs: start is num ? start.toInt() : 0,
       audioEndDeltaMs: end is num ? end.toInt() : 0,
+      audioSource: source is String && source.isNotEmpty ? source : null,
       omitImage: json['omitImage'] == true,
       videoImageMode: mode is String && mode.isNotEmpty ? mode : null,
       coverFrameAtMs: frame is num ? frame.toInt() : null,
