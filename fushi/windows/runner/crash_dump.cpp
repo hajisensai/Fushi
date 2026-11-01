@@ -3,6 +3,7 @@
 #include <windows.h>
 #include <dbghelp.h>
 #include <shlobj.h>
+#include <array>
 #include <cstdio>
 #include <cwchar>
 
@@ -308,20 +309,22 @@ namespace fushi
     const unsigned long long unix_ms =
       (t.QuadPart - 116444736000000000ULL) / 10000ULL;
 
-    char line[96];
-    const int len = sprintf_s(line, sizeof(line), "%lu %llu %ls\n",
+    std::array<char, 96> line{};
+    const int len = sprintf_s(line.data(), line.size(), "%lu %llu %ls\n",
       GetCurrentProcessId(), unix_ms, reason);
     if (len <= 0) return;
 
-    wchar_t log_path[MAX_PATH];
-    if (!ResolveCrashDumpDirectory(log_path)) return;
-    size_t lp = wcsnlen(log_path, MAX_PATH);
-    if (!AppendSegmentW(log_path, &lp, L"\\session_end.log")) return;
-    HANDLE file = CreateFileW(log_path, FILE_APPEND_DATA, FILE_SHARE_READ,
-      nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    std::array<wchar_t, MAX_PATH> log_path{};
+    if (!ResolveCrashDumpDirectory(log_path.data())) return;
+    if (size_t lp = wcsnlen(log_path.data(), MAX_PATH);
+        !AppendSegmentW(log_path.data(), &lp, L"\\session_end.log")) {
+      return;
+    }
+    HANDLE file = CreateFileW(log_path.data(), FILE_APPEND_DATA,
+      FILE_SHARE_READ, nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
     if (file == INVALID_HANDLE_VALUE) return;
     DWORD written = 0;
-    WriteFile(file, line, static_cast<DWORD>(len), &written, nullptr);
+    WriteFile(file, line.data(), static_cast<DWORD>(len), &written, nullptr);
     // 关机路径：返回后进程随时被结束，落盘不能留在缓存里。
     FlushFileBuffers(file);
     CloseHandle(file);
