@@ -302,6 +302,7 @@ extension _VideoWebSource on _VideoFushiPageState {
       _controller?.rebindWebBook(null);
       _webVideoKey = state.videoKey;
       _webActiveTrackKey = null;
+      _webPinnedTrackKey = null;
       _webPendingTrackKey = null;
       _webFailedTrackKeys.clear();
       // 上一集选的图片字幕轨不跟到新视频（新文档的 glue 也已按宿主开关藏起站点字幕）。
@@ -624,8 +625,9 @@ extension _VideoWebSource on _VideoFushiPageState {
     if (controller == null || !controller.isWebBackend) return;
     final String? pending = _webPendingTrackKey;
     if (pending != null && (_webTracks[pending]?.cues.isNotEmpty ?? false)) {
+      // 显式请求的那条采到了：钉住它。
       _webPendingTrackKey = null;
-      _webActiveTrackKey = pending;
+      _webPinnedTrackKey = pending;
     }
     final String? next = _webSubtitlesOff
         ? null
@@ -633,7 +635,7 @@ extension _VideoWebSource on _VideoFushiPageState {
             tracks: _webTracks.values,
             videoKey: _webVideoKey,
             preferredLanguage: _webPreferredSubtitleLanguage,
-            current: _webActiveTrackKey,
+            pinned: _webPinnedTrackKey,
           );
     final bool changed = next != _webActiveTrackKey;
     _webActiveTrackKey = next;
@@ -652,13 +654,18 @@ extension _VideoWebSource on _VideoFushiPageState {
     globalDefaultContentLanguage: appModel.defaultContentLanguage,
   );
 
-  /// 让站点播放器切到 [track]：它随即下载那条字幕文件，bridge 截下整轨后由
-  /// [_reselectWebTrack] 选中（[_webPendingTrackKey]）。
+  /// 加载 [track] 的整轨：站点播放器轨（Netflix）让播放器切过去，它随即下载那条字幕文件、bridge
+  /// 截下整轨；按需加载的占位轨（YouTube 等，[WebVideoSiteTrack.isLazy]）让站点桥去取。整轨到了由
+  /// [_reselectWebTrack] 选中并钉住（[_webPendingTrackKey]）。
   void _requestWebSiteTrack(WebVideoSiteTrack track, {bool byUser = false}) {
     final WebVideoSession? session = _webSession;
     if (session == null) return;
     if (byUser) _webSubtitleUserChosen = true;
     _webSubtitlesOff = false;
+    if (track.isLazy) {
+      _requestWebLazyTrack(session, track);
+      return;
+    }
     unawaited(
       session.evaluate(
         'window.__fushiWebVideo.selectNetflixTrack(${jsonEncode(track.id)})',
@@ -667,6 +674,7 @@ extension _VideoWebSource on _VideoFushiPageState {
     if (track.imageBased) {
       // 图片字幕截不到文字：不进 Fushi 叠层，让站点自己画（不可查词）。
       _webPendingTrackKey = null;
+      _webPinnedTrackKey = null;
       _webActiveTrackKey = null;
       _setWebSiteImageTrackShown(true);
       _reselectWebTrack();
@@ -674,18 +682,50 @@ extension _VideoWebSource on _VideoFushiPageState {
       return;
     }
     _setWebSiteImageTrackShown(false);
-    final String key = track.storeKey(_webVideoKey);
+    _markWebTrackRequested(track.storeKey(_webVideoKey));
+  }
+
+  /// 记下显式请求的整轨：早已采到就直接钉住，否则等它到（[_webPendingTrackKey]）。
+  void _markWebTrackRequested(String key) {
     _webFailedTrackKeys.remove(key);
     _webPendingLiveCueCount = _webLiveCueCount();
     if (_webTracks[key]?.cues.isNotEmpty ?? false) {
       // 早已采到（Netflix 选回之前看过的轨不会重新下载）：直接选中。
       _webPendingTrackKey = null;
-      _webActiveTrackKey = key;
+      _webPinnedTrackKey = key;
     } else {
       _webPendingTrackKey = key;
     }
     _reselectWebTrack();
     _rebuild(() {});
+  }
+
+  /// 按需加载的占位轨：让站点桥取整轨（glue `requestLazyTrack` → providers
+  /// `fushiRequestLazyTrack`）。整轨照常经 `{type:'track'}` 到；取不到时桥发失败回执
+  /// （`{type:'trackFailed'}` → [_onWebTrackFailed]）。页面答「已不是占位」而 Dart 这边也没有
+  /// 这条整轨（换了视频 / 清单过期），同样是确定的失败。
+  void _requestWebLazyTrack(WebVideoSession session, WebVideoSiteTrack track) {
+    _setWebSiteImageTrackShown(false);
+    final String key = track.storeKey(_webVideoKey);
+    _markWebTrackRequested(key);
+    if (_webPendingTrackKey != key) return; // 早已采到
+    unawaited(
+      session
+          .evaluate(
+            'window.__fushiWebVideo.requestLazyTrack(${jsonEncode(key)})',
+          )
+          .then((Object? result) {
+            if (!mounted || result == 'requested') return;
+            if (_webPendingTrackKey == key &&
+                !(_webTracks[key]?.cues.isNotEmpty ?? false)) {
+              ErrorLogService.instance.log(
+                'VideoFushi.web',
+                'lazy subtitle track not requestable ($result): $key',
+              );
+              _onWebTrackFailed(key);
+            }
+          }),
+    );
   }
 
   void _setWebSiteImageTrackShown(bool shown) {
@@ -962,6 +1002,7 @@ extension _VideoWebSource on _VideoFushiPageState {
     _webSubtitlesOff = key == null;
     _webPendingTrackKey = null;
     _setWebSiteImageTrackShown(false);
+    _webPinnedTrackKey = key;
     _webActiveTrackKey = key;
     _reselectWebTrack();
     _rebuild(() {});

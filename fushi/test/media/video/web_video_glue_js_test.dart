@@ -246,6 +246,89 @@ out(h.posted.filter((m) => m.type === 'track' || m.type === 'trackFailed'));
     );
   }, skip: !hasNode);
 
+  // 回归：youtube-bridge 发了整份轨清单（只急取一条），providers 登记成占位轨，glue 却把占位轨
+  // 整个跳过、Dart 的站点轨清单又只认 Netflix 的 nftt——字幕轨列表只剩急取的那一条。
+  test(
+    'YouTube 占位轨经快照 lzt 进 Dart 站点轨清单；点选取轨，整轨带 languageCode 投递，失败有回执',
+    () async {
+      final Object? r = await run(
+        r'''
+window.postMessage({ __fushiStream: 'tracks', videoKey: 'yt-vid1', tracks: [
+  { lang: 'English (auto)', languageCode: 'en' }, { lang: '日本語', languageCode: 'ja' } ] });
+window.postMessage({ __fushiStream: 'tracks', videoKey: 'yt-other', tracks: [{ lang: 'Deutsch', languageCode: 'de' }] });
+const before = JSON.parse(fw.state()).lzt;
+const fetches = [];
+window.addEventListener('message', (e) => { if (e.data && e.data.__fushiStream === 'fetchTrack') fetches.push(e.data); });
+const req = fw.requestLazyTrack('yt-vid1|日本語');
+const notLazy = fw.requestLazyTrack('yt-vid1|nope');
+window.postMessage({ __fushiStream: 'cues', videoKey: 'yt-vid1', lang: '日本語', languageCode: 'ja', format: 'cues',
+  cues: [{ startMs: 0, endMs: 1000, text: 'こんにちは' }] });
+window.postMessage({ __fushiStream: 'cuesFailed', videoKey: 'yt-vid1', lang: 'English (auto)', err: 'no cues' });
+h.flush();
+const after = JSON.parse(fw.state()).lzt;
+out({ before, after, req, notLazy, fetches,
+  msgs: h.posted.filter((m) => m.type === 'track' || m.type === 'trackFailed') });
+''',
+        setup: '''
+globalThis.location = { hostname: 'www.youtube.com', href: 'https://www.youtube.com/watch?v=vid1',
+  pathname: '/watch', search: '?v=vid1', origin: 'https://www.youtube.com' };
+window.origin = location.origin;
+''',
+      );
+      final Map<String, dynamic> m = r! as Map<String, dynamic>;
+      final List<WebVideoSiteTrack> before = parseWebVideoLazySiteTracks(
+        m['before'],
+      );
+      expect(
+        before.map((WebVideoSiteTrack t) => t.storeKey('yt-vid1')).toList(),
+        <String>['yt-vid1|English (auto)', 'yt-vid1|日本語'],
+        reason: '只列当前视频的占位轨',
+      );
+      expect(before.map((WebVideoSiteTrack t) => t.lang).toList(), <String>[
+        'en',
+        'ja',
+      ]);
+      expect(m['req'], 'requested');
+      expect(m['notLazy'], 'not-lazy');
+      expect(m['fetches'], <Object>[
+        <String, Object>{
+          '__fushiStream': 'fetchTrack',
+          'videoKey': 'yt-vid1',
+          'lang': '日本語',
+        },
+      ]);
+      expect(
+        parseWebVideoLazySiteTracks(
+          m['after'],
+        ).map((WebVideoSiteTrack t) => t.id).toList(),
+        <String>['English (auto)'],
+        reason: '整轨到了就不再是占位',
+      );
+      final List<dynamic> msgs = m['msgs'] as List<dynamic>;
+      final WebVideoTrack ja = parseWebVideoTrackPayload(
+        msgs.firstWhere((dynamic x) => x['type'] == 'track'),
+        bookUid: 'b',
+      )!;
+      expect(ja.key, 'yt-vid1|日本語');
+      expect(ja.lang, '日本語');
+      expect(ja.languageCode, 'ja');
+      expect(
+        msgs.where(
+          (dynamic x) => x['type'] == 'track' && (x['cues'] as List).isEmpty,
+        ),
+        isEmpty,
+        reason: '占位轨不当「已加载、0 句」投递',
+      );
+      expect(
+        parseWebVideoTrackFailedKey(
+          msgs.firstWhere((dynamic x) => x['type'] == 'trackFailed'),
+        ),
+        'yt-vid1|English (auto)',
+      );
+    },
+    skip: !hasNode,
+  );
+
   test('YouTube 画质跟随「YouTube 画质」目标：起播带下、播放中改、自愈重入不丢', () async {
     final Object? r = await run('''
 location.hostname = 'www.youtube.com';
