@@ -1153,14 +1153,17 @@ extension _VideoSubtitle on _VideoFushiPageState {
     if (videoPath == null) return;
     final SubtitleSource? source;
     if (persisted.startsWith(SubtitleSource.embeddedPrefix)) {
-      final int? streamIndex = int.tryParse(
-        persisted.substring(SubtitleSource.embeddedPrefix.length),
+      // 内嵌轨必须从真实枚举结果里取（与主字幕 [_restorePersistedSubtitle] 同一
+      // 匹配），不能凭 `embedded:<n>` 自己拼一个 SubtitleSource：拼出来的没有
+      // codec，[loadCuesForSource] 按 codec 选解析器，codec 为空恒判「格式不支持」
+      // 返回空 cue → 重开视频副字幕静默丢失（菜单仍高亮该轨，用户得重选一遍）。
+      final SubtitleSource? listed = _firstMatching(
+        await listAllSubtitleSources(videoPath, langCode: _targetLangCode),
+        persisted,
       );
-      if (streamIndex == null) return;
-      source = SubtitleSource.embedded(
-        streamIndex: streamIndex,
-        label: 'embedded:$streamIndex',
-      );
+      // 轨不在了 / 图形位图轨（无文本 cue，副字幕层画不了）：保持无副字幕。
+      if (listed == null || listed.isGraphicEmbedded) return;
+      source = listed;
     } else if (await File(persisted).exists()) {
       // 外挂源持久化值即其绝对路径（[SubtitleSource.toPersistedValue]）。
       // async：外挂字幕常是视频同目录 sidecar，可能在网络盘上（BUG-3756）。
