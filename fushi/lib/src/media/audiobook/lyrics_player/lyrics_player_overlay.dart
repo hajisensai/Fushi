@@ -17,6 +17,8 @@ import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart'
     show FushiMotion, fushiMotionDuration;
+import 'package:fushi/src/utils/misc/fushi_toast.dart'
+    show FushiToast, FushiToastCornerAnchor;
 
 /// 新版宽屏底栏：播放中无指针 / 按键活动多久后自动隐藏。
 const Duration kLyricsChromeIdleHideDelay = Duration(seconds: 3);
@@ -138,6 +140,7 @@ class _ReaderLyricsPlayerOverlayState extends State<ReaderLyricsPlayerOverlay> {
     // 桌面手柄走轮询直接派发 Actions，不产生 KeyEvent：单独订阅。
     gamepadInputActivity.addListener(_onGamepadActivity);
     WidgetsBinding.instance.addPostFrameCallback((_) => _syncAutoHide());
+    _mineToastAnchor = FushiToast.anchorMineToCorner(_lyricsRegionGlobal);
   }
 
   /// 手柄导航与 Tab 同义：焦点要在底栏按钮间移动，隐藏中也唤出——否则焦点会
@@ -267,6 +270,28 @@ class _ReaderLyricsPlayerOverlayState extends State<ReaderLyricsPlayerOverlay> {
   /// 侧栏 / 对话框 / 查词浮层）一起换成歌词模式配色。
   LyricsThemeHostState? _host;
 
+  /// 歌词 WebView 的矩形（本组件坐标，[lyricsViewRectFor] 口径），每次布局刷新；
+  /// 制卡结果卡贴它的底部起始角（见 [FushiToast.anchorMineToCorner]）。
+  Rect? _lyricsRect;
+
+  /// 本页当前是否在屏上可见：上面压了不透明路由（歌词模式上再推一个页面）时
+  /// Overlay 把本页设为 offstage、[TickerMode] 关掉。此时不能再把制卡结果贴到
+  /// 一块看不见的区域角上，[_lyricsRegionGlobal] 返回 null、退回默认大卡。
+  /// 半透明弹层（查词浮层 / 对话框）不关 TickerMode，歌词仍在底下可见，照常贴角。
+  bool _onstage = true;
+
+  /// 歌词模式期间制卡结果改成角落小卡：正文铺满全屏，底部正中的大卡正好压在
+  /// 正文上（群反馈 2026-11-01「字卡提示好大，还挡正文」）。
+  late final FushiToastCornerAnchor _mineToastAnchor;
+
+  Rect? _lyricsRegionGlobal() {
+    final Rect? rect = _lyricsRect;
+    if (!mounted || rect == null || !_onstage) return null;
+    final RenderObject? box = context.findRenderObject();
+    if (box is! RenderBox || !box.hasSize || !box.attached) return null;
+    return box.localToGlobal(rect.topLeft) & rect.size;
+  }
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -294,6 +319,7 @@ class _ReaderLyricsPlayerOverlayState extends State<ReaderLyricsPlayerOverlay> {
     _idleTimer?.cancel();
     _expandTimer?.cancel();
     _cursorTimer?.cancel();
+    _mineToastAnchor.release();
     _host?.detach(this);
     super.dispose();
   }
@@ -368,6 +394,8 @@ class _ReaderLyricsPlayerOverlayState extends State<ReaderLyricsPlayerOverlay> {
 
   @override
   Widget build(BuildContext context) {
+    // 建立对 TickerMode 的依赖：被不透明路由盖住 / 揭开时重建并刷新可见性。
+    _onstage = TickerMode.valuesOf(context).enabled;
     _host?.attach(this, _coverScheme);
     final bool apple = isGlassDesign(context);
     // 左右互换带换位动画：进度 0↔1 按 M3E 时长补间，外观按进度插值两端几何，
@@ -454,6 +482,14 @@ class _ReaderLyricsPlayerOverlayState extends State<ReaderLyricsPlayerOverlay> {
               final EdgeInsets padding = MediaQuery.paddingOf(context);
               final Rect rect = design.lyricsRect(context, size, padding);
               _updateAutoHideZones(context, design, size, padding);
+              // 制卡角落小卡贴的是歌词 WebView 的真实矩形（有浮动件时已从底边
+              // 让出那条带子），不是外观给的原始歌词矩形：否则小卡底边落进
+              // 浮动件带子、压在跳转胶囊上。
+              final Rect lyricsViewRect = lyricsViewRectFor(
+                rect,
+                hasAccessory: widget.navigationAccessory != null,
+              );
+              _lyricsRect = lyricsViewRect;
               return FushiTitleBarColorScope(
                 colors: (background: topEdge, foreground: topEdgeForeground),
                 child: Stack(
@@ -467,10 +503,7 @@ class _ReaderLyricsPlayerOverlayState extends State<ReaderLyricsPlayerOverlay> {
                       ),
                     ),
                     Positioned.fromRect(
-                      rect: lyricsViewRectFor(
-                        rect,
-                        hasAccessory: widget.navigationAccessory != null,
-                      ),
+                      rect: lyricsViewRect,
                       child: widget.lyricsView,
                     ),
                     if (widget.navigationAccessory != null)
