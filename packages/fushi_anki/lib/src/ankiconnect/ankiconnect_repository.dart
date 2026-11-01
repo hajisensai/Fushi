@@ -1116,6 +1116,19 @@ class AnkiConnectRepository extends BaseAnkiRepository {
   bool get canOpenMinedNote => true;
 
   @override
+  Future<bool> deleteMinedNote(int noteId) async {
+    final AnkiConnectService service = await _getService();
+    // `deleteNotes` 不回「原本在不在」：先问一次，删一张已经不在的 note 报 false，
+    // 界面据此说「卡已经不在了」而不是「已删除」。
+    if (await service.notesInfo(noteId) == null) return false;
+    await service.deleteNotes(<int>[noteId]);
+    return true;
+  }
+
+  @override
+  bool get canDeleteMinedNotes => true;
+
+  @override
   Future<bool> openNoteInAnki(int noteId) async {
     try {
       final service = await _getService();

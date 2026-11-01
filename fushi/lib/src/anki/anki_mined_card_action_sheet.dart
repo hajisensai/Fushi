@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 
+import 'package:fushi/src/anki/mined_card_undo.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/utils.dart'
@@ -63,12 +64,17 @@ class AnkiMinedCardActionResult {
 /// （覆写哪张 / 新增重复卡 / 去 Anki 看），不是可下拉浏览的内容面板；底部 sheet 贴在
 /// 屏幕下沿、在视频页还会被播放器控件与窗口边缘裁掉半截（用户附图里进度条已被切）。
 /// 与同族的 [showAnkiNoteViewer] / `showAdvancedMiningDialog` 统一走 [showAppDialog]。
+///
+/// 反馈 JNyykxvuY9：后端删得了（[BaseAnkiRepository.canDeleteMinedNotes]）时，每张
+/// 命中卡多一个次要动作「从 Anki 删除这张卡」——在本对话框里先确认再删；✓ 单击
+/// 行为不变，不新增手势。[expression] 用于删完通知界面重新探测这个词的制卡态。
 Future<AnkiMinedCardActionResult> showAnkiMinedCardActionSheet({
   required BuildContext context,
   required List<MinedNoteRef> matches,
   required BaseAnkiRepository repo,
   required Future<AnkiCardMutationResult> Function() mineNew,
   required Future<AnkiCardMutationResult> Function(int noteId) overwrite,
+  String? expression,
 }) async {
   final result = await showAppDialog<AnkiMinedCardActionResult>(
     context: context,
@@ -79,6 +85,7 @@ Future<AnkiMinedCardActionResult> showAnkiMinedCardActionSheet({
       repo: repo,
       mineNew: mineNew,
       overwrite: overwrite,
+      expression: expression,
     ),
   );
   return result ?? const AnkiMinedCardActionResult.unchanged();
@@ -90,9 +97,11 @@ class _MinedCardActionDialog extends StatefulWidget {
     required this.repo,
     required this.mineNew,
     required this.overwrite,
+    this.expression,
   });
 
   final List<MinedNoteRef> matches;
+  final String? expression;
   final BaseAnkiRepository repo;
   final Future<AnkiCardMutationResult> Function() mineNew;
   final Future<AnkiCardMutationResult> Function(int noteId) overwrite;
@@ -104,6 +113,95 @@ class _MinedCardActionDialog extends StatefulWidget {
 class _MinedCardActionDialogState extends State<_MinedCardActionDialog> {
   bool _busy = false;
   int? _viewingNoteId;
+
+  /// 还在的命中卡：删掉一张就从这里摘掉，删光了关对话框。
+  late List<MinedNoteRef> _matches = List<MinedNoteRef>.of(widget.matches);
+
+  /// 正在确认删除的那张（对话框内的状态切换，不叠第二个模态，同 BUG-2503）。
+  MinedNoteRef? _confirmingDelete;
+
+  Future<void> _runDelete(MinedNoteRef note) async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    final MinedCardDeleteResult result = await deleteMinedCard(
+      repo: widget.repo,
+      noteId: note.noteId,
+      expression: widget.expression,
+    );
+    if (!mounted) return;
+    FushiToast.show(
+      msg: minedCardDeleteResultText(result),
+      severity: minedCardDeleteResultSeverity(result),
+    );
+    if (result == MinedCardDeleteResult.failed) {
+      setState(() {
+        _busy = false;
+        _confirmingDelete = null;
+      });
+      return;
+    }
+    final List<MinedNoteRef> remaining = <MinedNoteRef>[
+      for (final MinedNoteRef m in _matches)
+        if (m.noteId != note.noteId) m,
+    ];
+    if (remaining.isEmpty) {
+      // 删光了：这个词已不在库里。弹窗收到回包后照常重问 duplicateCheck，✓ 变回 +。
+      popAppDialog<AnkiMinedCardActionResult>(
+        context,
+        const AnkiMinedCardActionResult(mined: false),
+      );
+      return;
+    }
+    setState(() {
+      _busy = false;
+      _confirmingDelete = null;
+      _matches = remaining;
+    });
+  }
+
+  Widget _buildDeleteConfirm(BuildContext context, MinedNoteRef note) {
+    final String preview = note.preview.isEmpty
+        ? '#${note.noteId}'
+        : note.preview;
+    return FushiAlertDialog(
+      icon: const FushiDialogHeroIcon(
+        icon: FushiIcons.delete,
+        tone: FushiHeroTone.destructive,
+      ),
+      title: Text(t.anki_mined_delete_confirm_title),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(preview, maxLines: 3, overflow: TextOverflow.ellipsis),
+          const SizedBox(height: 8),
+          Text(
+            t.anki_mined_delete_confirm_body,
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+          if (_busy)
+            const Padding(
+              padding: EdgeInsets.only(top: 12),
+              child: FushiLinearProgressIndicator(),
+            ),
+        ],
+      ),
+      actions: [
+        FushiTextButton(
+          onPressed: _busy
+              ? null
+              : () => setState(() => _confirmingDelete = null),
+          child: Text(t.dialog_cancel),
+        ),
+        FushiTextButton(
+          key: const ValueKey<String>('anki-mined-delete-confirm'),
+          destructive: true,
+          onPressed: _busy ? null : () => _runDelete(note),
+          child: Text(t.dialog_delete),
+        ),
+      ],
+    );
+  }
 
   Future<void> _runMineNew() async {
     if (_busy) return;
@@ -171,6 +269,8 @@ class _MinedCardActionDialogState extends State<_MinedCardActionDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final MinedNoteRef? confirming = _confirmingDelete;
+    if (confirming != null) return _buildDeleteConfirm(context, confirming);
     final int? viewingNoteId = _viewingNoteId;
     if (viewingNoteId != null) {
       return _AnkiNoteViewerDialog(
@@ -182,7 +282,8 @@ class _MinedCardActionDialogState extends State<_MinedCardActionDialog> {
       );
     }
     final theme = Theme.of(context);
-    final matches = widget.matches;
+    final matches = _matches;
+    final bool canDelete = widget.repo.canDeleteMinedNotes;
     // 窄屏（手机）时不硬撑 420，取可用宽度的九成，避免对话框横向溢出。
     final double width = MediaQuery.sizeOf(context).width * 0.9 < 420
         ? MediaQuery.sizeOf(context).width * 0.9
@@ -253,6 +354,21 @@ class _MinedCardActionDialogState extends State<_MinedCardActionDialog> {
                                 ? null
                                 : () => _viewNote(note.noteId),
                           ),
+                          // 反馈 JNyykxvuY9：次要动作「从 Anki 删除这张卡」，点下先在
+                          // 本对话框里确认。后端删不了（AnkiMobile / 互联转发）就不出。
+                          if (canDelete)
+                            FushiIconButtonControl(
+                              key: ValueKey<String>(
+                                'anki-mined-delete-${note.noteId}',
+                              ),
+                              tooltip: _deleteLabel(widget.repo),
+                              icon: const FushiIcon(FushiIcons.delete),
+                              onPressed: _busy
+                                  ? null
+                                  : () => setState(
+                                      () => _confirmingDelete = note,
+                                    ),
+                            ),
                         ],
                       ),
                       onTap: _busy ? null : () => _viewNote(note.noteId),
@@ -467,6 +583,12 @@ class _AnkiNoteViewerDialogState extends State<_AnkiNoteViewerDialog> {
 }
 
 /// 已有卡行尾「查看」按钮的提示：能打开时说去哪打开（BUG-3790），打不开只说查看。
+/// 「删除」动作的文案：卡住在 Anki 还是 Fushi 复习里（BUG-3790 同口径）。
+String _deleteLabel(BaseAnkiRepository repo) => switch (repo.minedNoteHome) {
+  MinedNoteHome.anki => t.anki_mined_action_delete,
+  MinedNoteHome.fushiReview => t.anki_mined_action_delete_review,
+};
+
 String _viewLabel(BaseAnkiRepository repo) {
   if (!repo.canOpenMinedNote) return t.anki_mined_action_view_only;
   return switch (repo.minedNoteHome) {
@@ -746,6 +868,12 @@ class _UnverifiedMinedCardDialogState
               t.anki_mined_unverified_subtitle,
               style: theme.textTheme.bodySmall,
             ),
+            const SizedBox(height: 8),
+            // 反馈 JNyykxvuY9：AnkiMobile 只有 URL scheme，Fushi 删不了卡——说清楚去哪删。
+            Text(
+              t.anki_mined_delete_in_ankimobile_hint,
+              style: theme.textTheme.bodySmall,
+            ),
             const SizedBox(height: 12),
             // 两个出口做成一组分段卡片行：再加一张 = primary 色块，划掉 = error 色块。
             FushiGroupedList(
@@ -851,6 +979,7 @@ Future<AnkiCardMutationResult> runAnkiMinedCardAction({
       repo: repo,
       mineNew: mineNew,
       overwrite: overwrite,
+      expression: expression,
     ),
   );
   return (ankiConnect: result.ankiConnect, noteId: result.noteId);

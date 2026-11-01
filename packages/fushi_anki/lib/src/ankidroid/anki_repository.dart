@@ -726,6 +726,20 @@ class AnkiRepository extends BaseAnkiRepository {
   @override
   bool get canOpenMinedNote => true;
 
+  @override
+  Future<bool> deleteMinedNote(int noteId) async {
+    // 原生侧 `AnkiProvider.deleteNote`（CardContentProvider.delete notes/<id>）；
+    // 没权限 / provider 出错经 PlatformException 照抛。
+    final Object? deleted = await _channel.invokeMethod<Object?>(
+      'deleteNote',
+      <String, dynamic>{'noteId': noteId},
+    );
+    return deleted == true;
+  }
+
+  @override
+  bool get canDeleteMinedNotes => true;
+
   // TODO-1007/1008：用 ACTION_VIEW intent 在 AnkiDroid 中打开该 note（native `openNote`）。
   @override
   Future<bool> openNoteInAnki(int noteId) async {
