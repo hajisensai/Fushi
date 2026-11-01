@@ -1128,6 +1128,7 @@
   "audiobook_tts_cache_cleared": "Synthesized audio cleared",
   "audiobook_tts_cache_section": "Cache",
   "audiobook_tts_cache_size": "Synthesized audio: ${size}",
+  "audiobook_tts_cast_voice_unavailable": "A character voice assigned in the audiobook studio is missing or not fully configured",
   "audiobook_tts_category_external": "External service",
   "audiobook_tts_category_external_hint": "GPT-SoVITS, Irodori and other services on this computer or network",
   "audiobook_tts_category_online": "Online service",

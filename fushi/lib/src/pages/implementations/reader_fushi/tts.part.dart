@@ -247,6 +247,8 @@ extension _ReaderTtsExtension on _ReaderFushiPageState {
         info: info,
         startPoint: at ?? (resume ? TtsStartAtResume(fallback: here) : here),
         autoplay: autoplay,
+        // 制作台给角色配过声音的书：朗读也按角色换声音。
+        cast: await ttsCastStoreFor(appModel).load(widget.bookKey),
       );
     } on TtsStartException catch (e) {
       if (!mounted) return;
@@ -255,11 +257,20 @@ extension _ReaderTtsExtension on _ReaderFushiPageState {
           TtsStartProblem.noVoice => t.audiobook_tts_no_voice,
           TtsStartProblem.voiceIncomplete => t.audiobook_tts_voice_incomplete,
           TtsStartProblem.emptyBook => t.audiobook_tts_empty_book,
+          TtsStartProblem.castVoiceUnavailable =>
+            t.audiobook_tts_cast_voice_unavailable,
         },
         severity: ToastSeverity.warning,
       );
-      if (e.problem != TtsStartProblem.emptyBook) {
-        await _openTtsVoiceSettings();
+      switch (e.problem) {
+        case TtsStartProblem.emptyBook:
+          break;
+        case TtsStartProblem.castVoiceUnavailable:
+          // 角色声音在制作台的选角里改。
+          await _openTtsStudio();
+        case TtsStartProblem.noVoice:
+        case TtsStartProblem.voiceIncomplete:
+          await _openTtsVoiceSettings();
       }
       return;
     } catch (e, stack) {
@@ -272,14 +283,18 @@ extension _ReaderTtsExtension on _ReaderFushiPageState {
       }
       return;
     }
-    // 提示里带上出错的声音名：声音能在播放中换，用户要知道是哪个声音失败了。
-    readAlong.onFailure = (TtsFailure failure) => FushiToast.show(
-      msg:
-          '${ttsVoiceDisplayName(readAlong.preset)}: '
-          '${ttsFailureText(failure, descriptor: readAlong.descriptor)}\n'
-          '${t.audiobook_tts_retry_hint}',
-      severity: ToastSeverity.error,
-    );
+    // 提示里带上出错的声音名：声音能在播放中换、多声优时每个角色一个声音，用户
+    // 要知道是哪个声音失败了。
+    readAlong.onFailure = (TtsFailure failure) {
+      final TtsResolvedVoice voice = readAlong.failedVoice;
+      FushiToast.show(
+        msg:
+            '${ttsVoiceDisplayName(voice.preset)}: '
+            '${ttsFailureText(failure, descriptor: voice.descriptor)}\n'
+            '${t.audiobook_tts_retry_hint}',
+        severity: ToastSeverity.error,
+      );
+    };
     final AudiobookPlayerController? controller = session.controller;
     if (!mounted || controller == null) return;
     await _attachTtsSession(session, readAlong, controller);
