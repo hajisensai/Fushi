@@ -99,20 +99,39 @@ h1 { margin: 0; font-size: 18px; line-height: 1.3; }
   gap: 4px;
   margin-top: 6px;
   max-height: 40vh;
+  overflow-x: hidden;
   overflow-y: auto;
 }
 
+/* 反馈 auJaOKXl3W：行互相压叠的根因是这里是 max-height 的纵向 flex 容器，而全局
+   `button { min-height: 32px }` 把 flex 项的自动最小尺寸（= 内容高）换成了 32px——
+   结果一多，每行被 flex-shrink 压到 32px，换了行的长标题溢进下一行。行一律不收缩、
+   宽度钉在容器内（不出横向滚动），长串任意处可断。 */
 .subs-item {
   display: flex;
+  flex: 0 0 auto;
   flex-direction: column;
   align-items: flex-start;
   gap: 2px;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
   padding: 6px 10px;
   text-align: left;
 }
 
-.subs-item-name { font-weight: 600; word-break: break-all; }
+.subs-item-name,
+.subs-item-meta { max-width: 100%; overflow-wrap: anywhere; word-break: normal; }
+.subs-item-name { font-weight: 600; }
 .subs-item-meta { color: var(--muted); font-size: 12px; }
+.subs-item-ep {
+  flex: 0 0 auto;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent);
+  white-space: nowrap;
+}
 .subs-empty { color: var(--muted); font-size: 12px; padding: 4px 2px; }
 
 /* 手填偏移（用户群 10-09，与 app 视频页一致）：与两侧按钮同高，等宽数字，聚焦主色描边。 */
@@ -546,6 +565,7 @@ html.fushi-embed body.hdr-folded #subs-results { display: none !important; }
 }
 
 :root:not([data-style="glass"]) :is(.subs-item-meta, .subs-empty, .empty) { color: var(--md-sys-color-on-surface-variant); }
+:root:not([data-style="glass"]) .subs-item-ep { color: var(--md-sys-color-primary); }
 
 /* ③ 字幕列表：行是大圆角块，当前句 secondary-container 更大圆角；时间戳是 assist chip。 */
 :root:not([data-style="glass"]) .subtitle-row {

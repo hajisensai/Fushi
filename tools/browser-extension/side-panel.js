@@ -1347,6 +1347,38 @@
     notice.appendChild(copy);
     return notice;
   }
+  // 结果文件名里的集号（反馈 auJaOKXl3W：超长番名把「- 01」挤出可视区，用户分不清哪条是哪集）。
+  // 认 ` - 01`、`[01]`、`E01` / `EP01` / `S01E01`、`第1話/集/话`、`#01`；返回 {episode, index}
+  // （index = 集号标记在原串里的起点，供中段省略保住它及其后的 [WebRip 1080p] 等关键信息）。
+  function findSubsEpisode(name) {
+    var text = String(name == null ? '' : name);
+    var patterns = [
+      /[\s_]-[\s_]*(\d{1,4}(?:\.\d)?)(?:v\d)?(?=[\s_\[\(.]|$)/,
+      /S\d{1,2}[\s_.]*E[Pp]?(\d{1,4})/i,
+      /(?:^|[\s_.\[\(])EP?[\s_.]?(\d{1,4})(?=[\s_\]\).v]|$)/i,
+      /第\s*(\d{1,4})\s*[話话集回]/,
+      /\[(\d{1,4})(?:v\d)?\]/,
+      /#(\d{1,4})(?!\d)/,
+    ];
+    for (var i = 0; i < patterns.length; i++) {
+      var m = patterns[i].exec(text);
+      if (m) return { episode: String(Number(m[1])), index: m.index };
+    }
+    return null;
+  }
+  // 超长文件名做中段省略：保留开头（字幕组 + 番名起头）与集号起的整段尾巴，中间用 … 代替。
+  // 认不出集号时保留末尾 24 个字符（扩展名 + 版本标签通常在那）。完整名放 title 提示里。
+  function compactSubsName(name, maxChars) {
+    var text = String(name == null ? '' : name);
+    var limit = maxChars > 0 ? maxChars : 72;
+    if (text.length <= limit) return text;
+    var hit = findSubsEpisode(text);
+    var tailStart = hit ? hit.index : text.length - 24;
+    var tail = text.slice(tailStart);
+    var headLen = Math.max(12, limit - tail.length - 1);
+    if (headLen >= tailStart) return text;
+    return text.slice(0, headLen).replace(/[\s_.\-]+$/, '') + '…' + tail;
+  }
   function renderSubsResults(candidates, truncated) {
     subsResultsEl.textContent = '';
     if (!candidates.length) {
@@ -1360,15 +1392,25 @@
       row.className = 'subs-item';
       var name = document.createElement('span');
       name.className = 'subs-item-name';
-      name.textContent = candidate.fileName;
+      name.textContent = compactSubsName(candidate.fileName, 72);
+      row.title = String(candidate.fileName || '');
       var meta = document.createElement('span');
       meta.className = 'subs-item-meta';
+      // 集号放在 meta 行最前、单独成块（不随番名换行 / 省略被挤掉）：来源给了用来源的，
+      // 没给就从文件名里认。
+      var hit = candidate.episode != null ? null : findSubsEpisode(candidate.fileName);
+      var episode = candidate.episode != null ? candidate.episode : (hit ? hit.episode : null);
+      if (episode != null) {
+        var ep = document.createElement('span');
+        ep.className = 'subs-item-ep';
+        ep.textContent = tr('subs_episode_label', { n: episode });
+        row.appendChild(ep);
+      }
       var parts = [];
       var label = providerLabel(candidate.provider);
       if (label) parts.push(label);
       if (candidate.entryName) parts.push(candidate.entryName);
       if (candidate.language) parts.push(candidate.language);
-      if (candidate.episode != null) parts.push(tr('subs_episode_label', { n: candidate.episode }));
       // 机翻档与人工档并排时质量差一个数量级，来源既然标了就得显示出来。
       if (candidate.aiTranslated === true) parts.push(tr('subs_machine_translated'));
       meta.textContent = parts.join(' · ');
