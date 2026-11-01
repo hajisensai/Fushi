@@ -449,6 +449,11 @@ final List<_ForbiddenPattern> _forbiddenPathForms = <_ForbiddenPattern>[
       r'assets|android|ios\b|macos|windows|linux|integration_test|pubspec|'
       r'i18n|CLAUDE\.md|build\b|docs\b)',
     ),
+    allowed: <String, String>{
+      '.github/workflows/history-guard.yml':
+          '识别 2026-11-01 重写前旧历史的标记：旧历史里 app 目录还叫 hibiki/，'
+          '生成的 hibiki/lib/i18n/strings.g.dart 必须按原路径写才认得出。',
+    },
   ),
 ];
 
@@ -652,6 +657,11 @@ void main() {
       if (_pathFormExcluded(path)) continue;
       final String source = f.readAsStringSync();
       for (final _ForbiddenPattern pattern in _forbiddenPathForms) {
+        if (pattern.allowed.keys.any(
+          (String suffix) => path.endsWith(suffix),
+        )) {
+          continue; // 文件 + 模式豁免；存活性由下面的 W6 过期检测负责。
+        }
         for (final RegExpMatch m in pattern.regex.allMatches(source)) {
           violations.add(
             '[${pattern.name}] $path:${_lineOf(source, m.start)} '
@@ -668,6 +678,30 @@ void main() {
           'native/fushidicts + fushidicts_{src,include,external}；历史文档走 '
           'docs/bugs|specs|reviews|plans，不该出现在这些活跃面里）：\n'
           '${violations.join('\n')}',
+    );
+  });
+
+  test('W6 白名单无过期豁免（文件 + 模式豁免仍有真实命中）', () {
+    final List<File> files = _pathFormScanFiles().toList();
+    final List<String> stale = <String>[];
+    for (final _ForbiddenPattern pattern in _forbiddenPathForms) {
+      for (final String suffix in pattern.allowed.keys) {
+        final Iterable<File> hits = files.where(
+          (File f) => _normalize(f.path).endsWith(suffix),
+        );
+        if (hits.isEmpty) {
+          stale.add('[${pattern.name}] $suffix（文件不在扫描面）');
+        } else if (!hits.any(
+          (File f) => pattern.regex.hasMatch(f.readAsStringSync()),
+        )) {
+          stale.add('[${pattern.name}] $suffix（已无命中）');
+        }
+      }
+    }
+    expect(
+      stale,
+      isEmpty,
+      reason: 'W6 白名单条目已无真实命中，请删除对应豁免：\n${stale.join('\n')}',
     );
   });
 
