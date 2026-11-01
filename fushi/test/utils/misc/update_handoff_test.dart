@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/diagnostics/previous_exit_log.dart';
 import 'package:fushi/src/utils/misc/platform_updater.dart';
 import 'package:fushi/src/utils/misc/update_handoff.dart';
 
@@ -562,6 +563,52 @@ void main() {
         expect(exitCode, 0);
       },
     );
+
+    test('marks the session clean before exiting so the update is not reported '
+        'as a crash on next launch (feedback msySECp2Cy)', () async {
+      final File marker = await _markerFile();
+      final Directory dir = marker.parent;
+      // 本次会话标记接到 PreviousExitLog（生产启动同一条装配）。
+      await PreviousExitLog.collect(
+        appDir: dir,
+        version: '1.2.2',
+        isAndroid: false,
+        isWindows: false,
+        isMacOS: false,
+        isIOS: false,
+        nowMs: 1000,
+      );
+      final File sessionMarker = File(
+        '${dir.path}${Platform.pathSeparator}session_marker.json',
+      );
+      final File installer = File(
+        '${dir.path}${Platform.pathSeparator}hibiki-1.2.3-windows-setup.exe',
+      );
+      await installer.writeAsBytes(<int>[0x4D, 0x5A, 0x90, 0x00]);
+
+      PreviousSession? atExit;
+      await WindowsInstaller.runAndExit(
+        installer.path,
+        targetVersion: '1.2.3',
+        handoffMarkerFile: marker,
+        now: () => DateTime.utc(2026, 6, 17, 10, 30),
+        collectDiagnostics: () async => WindowsInstallerDiagnostics(
+          currentExecutablePath:
+              '${dir.path}${Platform.pathSeparator}hibiki.exe',
+          currentInstallDir: dir.path,
+          targetInstallDir: dir.path,
+        ),
+        startProcess: (String executable, List<String> args) async =>
+            const WindowsInstallerStartedProcess(pid: 4242),
+        exitProcess: (int code) {
+          atExit = PreviousSession.tryParse(sessionMarker.readAsStringSync());
+        },
+      );
+
+      expect(atExit, isNotNull);
+      expect(atExit!.clean, isTrue);
+      expect(describeUncleanPreviousSession(atExit), isNull);
+    });
 
     test(
       'records launch failure before surfacing the installer exception',

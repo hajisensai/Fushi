@@ -2,9 +2,14 @@
 // 状态与流程在 `feedback/crash_report.dart`（[CrashReporter]）。
 //
 // 两个出口：
-// - 首页出来之后（[offerCrashReportAfterStartup]）：底部 SnackBar，15 秒不点自动收起、
-//   不挡后面的提示（持久的 SnackBar 会把之后所有提示堵在队列里）。没点任何按钮 = 下次
+// - 首页出来之后（[offerCrashReportAfterStartup]）：app 级浮层卡片（[CrashReportPromptHost]，
+//   挂在 MaterialApp builder 里、导航之上），15 秒不点自动收起。没点任何按钮 = 下次
 //   启动再问（攒下的几次合在一起）；「不用了」= 这批作废。
+//   不用 SnackBar：提示要活过根 MaterialApp 的整树重挂（界面语言 key 一变就重挂），
+//   而 SnackBar 绑在当时的 ScaffoldMessengerState 上——旧 messenger 被 dispose 后，经
+//   GlobalKey 搬进新树的首页 Scaffold 还画着旧提示条，点「不用了 / 发送」都在已 dispose
+//   的动画控制器上抛空指针：关不掉、也发不出去（反馈 msySECp2Cy）；它还画在首页 Scaffold
+//   里，会被推上来的页面盖住（反馈 jmgMk1gHG2）。
 // - 启动即闪退（[runCrashReportStartupGate]）：上次死在初始化完成之前，这次的初始化多半
 //   还会死、首页根本出不来，所以提示放在加载页上、**等用户选完再初始化**（开着自动发送
 //   时不问，提交在后台跑、不拖住初始化）；那时数据库还没开，提交落在
@@ -48,6 +53,7 @@ String crashKindLabel(PreviousExitKind kind) => switch (kind) {
   PreviousExitKind.memoryKill => t.feedback_crash_kind_memory,
   PreviousExitKind.unexpected ||
   PreviousExitKind.userStopped ||
+  PreviousExitKind.appUpdated ||
   PreviousExitKind.backgroundReclaim => t.feedback_crash_kind_unexpected,
 };
 
@@ -250,8 +256,33 @@ class _CrashReportPromptCardState extends State<CrashReportPromptCard> {
 
 // ───────────────────────── 首页出来之后 ─────────────────────────
 
+/// 首页出来后的提示（null = 没有）。[CrashReportPromptHost] 监听它显示 / 收起卡片；状态
+/// 不挂在任何 widget 上，根 MaterialApp 重挂也不丢、不失效。
+final ValueNotifier<CrashReportPromptRequest?> crashReportHomePrompt =
+    ValueNotifier<CrashReportPromptRequest?>(null);
+
+/// 一次首页出来后的提示：卡片按钮的回调。
+class CrashReportPromptRequest {
+  CrashReportPromptRequest({
+    required this.offer,
+    required this.onSend,
+    required this.onDecline,
+  });
+
+  final CrashReportOffer offer;
+  final Future<void> Function(bool alwaysSend) onSend;
+  final VoidCallback onDecline;
+}
+
+/// 收起 [request]（已经换成别的提示时不动）。
+void _closeHomePrompt(CrashReportPromptRequest request) {
+  if (identical(crashReportHomePrompt.value, request)) {
+    crashReportHomePrompt.value = null;
+  }
+}
+
 /// 首页出来后调一次：先并入启动前提交的回执；本次启动还没处理过、有该问的报告时，
-/// 开着自动发送就直接发（发完给一条可点「查看」的提示），否则弹提示条。
+/// 开着自动发送就直接发（发完给一条可点「查看」的提示），否则显示浮层提示卡片。
 Future<void> offerCrashReportAfterStartup({
   required BuildContext Function() context,
   required CrashReporter reporter,
@@ -272,32 +303,172 @@ Future<void> offerCrashReportAfterStartup({
     }
     return;
   }
-  final BuildContext ctx = context();
-  if (!ctx.mounted) return;
-  final ScaffoldMessengerState? messenger = ScaffoldMessenger.maybeOf(ctx);
-  if (messenger == null) return;
-  final Color fg = Theme.of(ctx).colorScheme.onInverseSurface;
-  messenger.showSnackBar(
-    FushiSnackBar(
-      key: const ValueKey<String>('crash-report-prompt'),
-      persist: false,
-      duration: kCrashReportPromptDuration,
-      content: CrashReportPromptCard(
-        offer: offer,
-        foreground: fg,
-        onDecline: () {
-          reporter.decline();
-          messenger.hideCurrentSnackBar(reason: SnackBarClosedReason.action);
-        },
-        onSend: (bool always) async {
-          if (always) reporter.setAutoSend(true);
-          // 提示条马上收起（它 15 秒后反正会收），提交在后台跑完再报结果。
-          messenger.hideCurrentSnackBar(reason: SnackBarClosedReason.action);
-          unawaited(_submitInBackground(context, reporter, service));
-        },
-      ),
-    ),
+  late final CrashReportPromptRequest request;
+  request = CrashReportPromptRequest(
+    offer: offer,
+    onDecline: () {
+      reporter.decline();
+      _closeHomePrompt(request);
+    },
+    onSend: (bool always) async {
+      if (always) reporter.setAutoSend(true);
+      // 卡片马上收起（它 15 秒后反正会收），提交在后台跑完再报结果。
+      _closeHomePrompt(request);
+      unawaited(_submitInBackground(context, reporter, service));
+    },
   );
+  crashReportHomePrompt.value = request;
+}
+
+/// 首页出来后的提示卡片宿主：挂在 MaterialApp builder 的导航之上（盖住所有页面），
+/// 没有提示时不占位。卡片显示满 [duration] 没点就收起（这批留着，下次启动再问）。
+class CrashReportPromptHost extends StatelessWidget {
+  const CrashReportPromptHost({
+    this.duration = kCrashReportPromptDuration,
+    super.key,
+  });
+
+  final Duration duration;
+
+  @override
+  Widget build(BuildContext context) {
+    return ValueListenableBuilder<CrashReportPromptRequest?>(
+      valueListenable: crashReportHomePrompt,
+      builder:
+          (
+            BuildContext context,
+            CrashReportPromptRequest? request,
+            Widget? child,
+          ) {
+            if (request == null) return const SizedBox.shrink();
+            return _CrashReportHomePrompt(
+              // 换了一次提示就重新入场、重新计时。
+              key: ObjectKey(request),
+              request: request,
+              duration: duration,
+            );
+          },
+    );
+  }
+}
+
+class _CrashReportHomePrompt extends StatefulWidget {
+  const _CrashReportHomePrompt({
+    required this.request,
+    required this.duration,
+    super.key,
+  });
+
+  final CrashReportPromptRequest request;
+  final Duration duration;
+
+  @override
+  State<_CrashReportHomePrompt> createState() => _CrashReportHomePromptState();
+}
+
+class _CrashReportHomePromptState extends State<_CrashReportHomePrompt> {
+  Timer? _timeout;
+
+  @override
+  void initState() {
+    super.initState();
+    _timeout = Timer(widget.duration, () => _closeHomePrompt(widget.request));
+  }
+
+  @override
+  void dispose() {
+    _timeout?.cancel();
+    super.dispose();
+  }
+
+  void _cancelTimeout() {
+    _timeout?.cancel();
+    _timeout = null;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return _CrashReportFloatingCard(
+      cardKey: const ValueKey<String>('crash-report-prompt'),
+      offer: widget.request.offer,
+      onSend: (bool always) {
+        _cancelTimeout();
+        return widget.request.onSend(always);
+      },
+      onDecline: () {
+        _cancelTimeout();
+        widget.request.onDecline();
+      },
+    );
+  }
+}
+
+/// 底部浮动卡片（滑入 + 淡入）：启动前提示与首页出来后的提示共用。
+class _CrashReportFloatingCard extends StatefulWidget {
+  const _CrashReportFloatingCard({
+    required this.cardKey,
+    required this.offer,
+    required this.onSend,
+    required this.onDecline,
+    this.onSkip,
+  });
+
+  final Key cardKey;
+  final CrashReportOffer offer;
+  final Future<void> Function(bool alwaysSend) onSend;
+  final VoidCallback onDecline;
+  final VoidCallback? onSkip;
+
+  @override
+  State<_CrashReportFloatingCard> createState() =>
+      _CrashReportFloatingCardState();
+}
+
+class _CrashReportFloatingCardState extends State<_CrashReportFloatingCard> {
+  bool _shown = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) setState(() => _shown = true);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final Duration motion = fushiMotionDuration(context, FushiMotion.medium);
+    return SafeArea(
+      child: Align(
+        alignment: Alignment.bottomCenter,
+        child: AnimatedSlide(
+          offset: _shown ? Offset.zero : const Offset(0, 0.3),
+          duration: motion,
+          curve: context.fushiMotion.spatialDefault.curve,
+          child: AnimatedOpacity(
+            opacity: _shown ? 1 : 0,
+            duration: motion,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 560),
+              child: FushiCard(
+                key: widget.cardKey,
+                margin: const EdgeInsets.all(16),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 12, 8),
+                  child: CrashReportPromptCard(
+                    offer: widget.offer,
+                    onSend: widget.onSend,
+                    onDecline: widget.onDecline,
+                    onSkip: widget.onSkip,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 Future<void> _submitInBackground(
@@ -444,51 +615,17 @@ class CrashReportStartupPrompt extends StatefulWidget {
 }
 
 class _CrashReportStartupPromptState extends State<CrashReportStartupPrompt> {
-  bool _shown = false;
-
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) setState(() => _shown = true);
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
-    final Duration motion = fushiMotionDuration(context, FushiMotion.medium);
-    return SafeArea(
-      child: Align(
-        alignment: Alignment.bottomCenter,
-        child: AnimatedSlide(
-          offset: _shown ? Offset.zero : const Offset(0, 0.3),
-          duration: motion,
-          curve: context.fushiMotion.spatialDefault.curve,
-          child: AnimatedOpacity(
-            opacity: _shown ? 1 : 0,
-            duration: motion,
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 560),
-              child: FushiCard(
-                key: const ValueKey<String>('crash-report-startup-prompt'),
-                margin: const EdgeInsets.all(16),
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 12, 8),
-                  child: CrashReportPromptCard(
-                    offer: widget.request.offer,
-                    onSend: widget.request.send,
-                    onDecline: () {
-                      widget.reporter.decline();
-                      widget.request.finish();
-                    },
-                    onSkip: widget.request.finish,
-                  ),
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
+    return _CrashReportFloatingCard(
+      cardKey: const ValueKey<String>('crash-report-startup-prompt'),
+      offer: widget.request.offer,
+      onSend: widget.request.send,
+      onDecline: () {
+        widget.reporter.decline();
+        widget.request.finish();
+      },
+      onSkip: widget.request.finish,
     );
   }
 }

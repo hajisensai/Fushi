@@ -3027,6 +3027,9 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
                                     key: feedbackScreenshotBoundaryKey,
                                     child: child!,
                                   ),
+                                  // 闪退报告提示：盖住所有页面（不进首页 Scaffold
+                                  // 的 SnackBar，见 crash_report_prompt.dart 文件头）。
+                                  const CrashReportPromptHost(),
                                   const AppFloatingBallHost(),
                                   const FloatingLyricLookupHost(),
                                   // galgame Hook 浮窗（native 窗口）跟随 app 主题。
