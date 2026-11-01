@@ -10,6 +10,8 @@ import 'package:fushi_engine/ai/ai_chat_client.dart' show AiChatFailure;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/ai/ai_failure_text.dart';
+import 'package:fushi/src/ai/ai_saved_prompt_picker.dart';
+import 'package:fushi/src/ai/ai_saved_prompts.dart';
 import 'package:fushi/src/ai/ai_srs_field_assistant.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -56,6 +58,7 @@ Future<String?> showSrsFieldAiSheet(
   required String fieldName,
   required String current,
   required SrsFieldAiRunner run,
+  AiSavedPromptStore? promptStore,
 }) => adaptiveModalSheet<String>(
   context: context,
   builder: (BuildContext context) => SrsFieldAiSheet(
@@ -63,6 +66,7 @@ Future<String?> showSrsFieldAiSheet(
     fieldName: fieldName,
     current: current,
     run: run,
+    promptStore: promptStore,
   ),
 );
 
@@ -73,12 +77,16 @@ class SrsFieldAiSheet extends StatefulWidget {
     required this.fieldName,
     required this.current,
     required this.run,
+    this.promptStore,
   });
 
   final String fieldLabel;
   final String fieldName;
   final String current;
   final SrsFieldAiRunner run;
+
+  /// 「已保存的提示词」的存取实现；null = 应用偏好（测试注入内存实现）。
+  final AiSavedPromptStore? promptStore;
 
   @override
   State<SrsFieldAiSheet> createState() => _SrsFieldAiSheetState();
@@ -156,15 +164,28 @@ class _SrsFieldAiSheetState extends State<SrsFieldAiSheet> {
         onSelectionChanged: (Set<AiSrsFieldTask> s) =>
             setState(() => _task = s.first),
       ),
-      FushiTextField(
-        key: const ValueKey<String>('srs-field-ai-instruction'),
-        controller: _instruction,
-        hintText: _task == AiSrsFieldTask.custom
-            ? t.srs_note_field_ai_custom_hint
-            : t.srs_note_field_ai_instruction_hint,
-        minLines: 1,
-        maxLines: 4,
-        onSubmitted: (_) => unawaited(_generate()),
+      Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Expanded(
+            child: FushiTextField(
+              key: const ValueKey<String>('srs-field-ai-instruction'),
+              controller: _instruction,
+              hintText: _task == AiSrsFieldTask.custom
+                  ? t.srs_note_field_ai_custom_hint
+                  : t.srs_note_field_ai_instruction_hint,
+              minLines: 1,
+              maxLines: 4,
+              onSubmitted: (_) => unawaited(_generate()),
+            ),
+          ),
+          AiSavedPromptButton(
+            scene: AiPromptScene.srsField,
+            controller: _instruction,
+            enabled: !_busy,
+            store: widget.promptStore,
+          ),
+        ],
       ),
       Row(
         spacing: tokens.spacing.gap,

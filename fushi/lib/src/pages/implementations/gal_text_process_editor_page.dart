@@ -17,6 +17,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/src/utils/components/fushi_bottom_action_bar.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/ai/ai_saved_prompt_picker.dart';
+import 'package:fushi/src/ai/ai_saved_prompts.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
@@ -962,20 +964,30 @@ class _GalTextProcessEditorPageState extends State<GalTextProcessEditorPage> {
             maxLines: 3,
           ),
           SizedBox(height: tokens.spacing.gap),
-          Align(
-            alignment: AlignmentDirectional.centerStart,
-            child: FushiFilledButton.icon(
-              key: const ValueKey<String>('gtp-ai-generate'),
-              onPressed: _aiBusy ? null : () => unawaited(_runAi()),
-              icon: _aiBusy
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: FushiCircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const FushiIcon(Icons.auto_awesome_outlined),
-              label: Text(t.game_text_process_ai_generate),
-            ),
+          Wrap(
+            spacing: tokens.spacing.gap,
+            runSpacing: tokens.spacing.gap / 2,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: <Widget>[
+              FushiFilledButton.icon(
+                key: const ValueKey<String>('gtp-ai-generate'),
+                onPressed: _aiBusy ? null : () => unawaited(_runAi()),
+                icon: _aiBusy
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: FushiCircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const FushiIcon(Icons.auto_awesome_outlined),
+                label: Text(t.game_text_process_ai_generate),
+              ),
+              AiSavedPromptButton(
+                scene: AiPromptScene.galTextProcess,
+                controller: _aiRequestController,
+                enabled: !_aiBusy,
+                showLabel: true,
+              ),
+            ],
           ),
           if (_aiMessage != null) ...<Widget>[
             SizedBox(height: tokens.spacing.gap),

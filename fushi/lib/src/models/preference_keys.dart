@@ -67,6 +67,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 同时登记在 kCredentialPreferenceKeys、PrefRedactionPolicy.sensitiveKeys
   // 与 deviceLocalPrefKeys。
   'ai_providers',
+  // String（JSON 列表）：用户保存的 AI 提示词（`ai/ai_saved_prompts.dart`），
+  // 每条 {id, name, text, scene?}。纯用户文本、非凭据，跨设备。
+  'ai_saved_prompts',
   // String：「AI 下视频」的码率偏好（只排序）。`''` 不限 / `high` 高码率优先 /
   // `low` 小体积优先。非凭据、跨设备。
   'ai_video_download_bitrate',
