@@ -13,6 +13,7 @@ import 'package:fushi_engine/media/video/video_clip_exporter.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/media/image_mosaic.dart';
 import 'package:fushi_engine/mining/immersion_mining_request.dart';
+import 'package:fushi_engine/mining/sentence_audio_source.dart';
 import 'package:fushi/src/mining/mining_image_mode_target.dart';
 import 'package:fushi/src/mining/serial_job_queue.dart';
 
@@ -89,6 +90,19 @@ typedef AudioExtractor =
       String? tlsPinSha256,
       Map<String, String> httpHeaders,
     });
+
+/// 句子音频取中置声道前确认声道布局（默认 [probeAudioStreamChannelLayout]）。
+typedef AudioChannelLayoutProbe =
+    Future<({String? layout, int? channels})> Function({
+      required String inputPath,
+      required int audioStreamIndex,
+      String? tlsPinSha256,
+      Map<String, String> httpHeaders,
+    });
+
+/// 引擎没取到所选句子音频来源、已回退到整条当前音轨时的通知（调用方据此提示用户）。
+typedef AudioSourceFallbackReporter =
+    void Function(SentenceAudioFallbackReason reason);
 
 /// 已裁音频从零读取；同源快路按视频的时间窗与选定音轨一次导出。
 typedef SynchronizedVideoExtractor =
@@ -311,8 +325,14 @@ class ImmersionMiningEngine {
     RemoteAudioMaterializer? audioMaterializer,
     SynchronizedVideoExtractor? synchronizedVideoExtractor,
     SnapshotAudioVerifier? snapshotAudioVerifier,
+    AudioExtractor? frontCenterAudioExtractor,
+    AudioChannelLayoutProbe? channelLayoutProbe,
   }) : _gif = gifExtractor ?? extractClipGifViaFfmpeg,
        _audio = audioExtractor ?? extractAudioSegmentViaFfmpeg,
+       _frontCenterAudio =
+           frontCenterAudioExtractor ?? _extractFrontCenterAudio,
+       _probeChannelLayout =
+           channelLayoutProbe ?? probeAudioStreamChannelLayout,
        _frame = frameExtractor ?? extractVideoFrameViaFfmpeg,
        _materialize = audioMaterializer ?? _defaultAudioMaterializer,
        _synchronizedVideo =
@@ -326,6 +346,38 @@ class ImmersionMiningEngine {
   final RemoteAudioMaterializer _materialize;
   final SynchronizedVideoExtractor _synchronizedVideo;
   final SnapshotAudioVerifier _snapshotAudioCovers;
+
+  /// 只取中置声道 FC 的句子音频抽取（反馈 pNF2ZL7Kfc）。与 [_audio] 分开注入：
+  /// [AudioExtractor] 的既有假件不必为一个新参数全部改签名。
+  final AudioExtractor _frontCenterAudio;
+  final AudioChannelLayoutProbe _probeChannelLayout;
+
+  static Future<String?> _extractFrontCenterAudio({
+    required String inputPath,
+    required int startMs,
+    required int endMs,
+    required String outputPath,
+    int? audioStreamIndex,
+    int? audioStreamCount,
+    FfmpegFailureReporter? onFailure,
+    int audioChannels = 1,
+    String audioBitrate = '64k',
+    String? tlsPinSha256,
+    Map<String, String> httpHeaders = const <String, String>{},
+  }) => extractAudioSegmentViaFfmpeg(
+    inputPath: inputPath,
+    startMs: startMs,
+    endMs: endMs,
+    outputPath: outputPath,
+    audioStreamIndex: audioStreamIndex,
+    audioStreamCount: audioStreamCount,
+    onFailure: onFailure,
+    audioChannels: audioChannels,
+    audioBitrate: audioBitrate,
+    tlsPinSha256: tlsPinSha256,
+    httpHeaders: httpHeaders,
+    frontCenterOnly: true,
+  );
 
   static Future<bool> _defaultSnapshotAudioVerifier({
     required String snapshotPath,
@@ -404,6 +456,7 @@ class ImmersionMiningEngine {
     FfmpegFailureReporter? onFailure,
     FfmpegFailureReporter? onCoverFailure,
     FfmpegFailureReporter? onAudioFailure,
+    AudioSourceFallbackReporter? onAudioSourceFallback,
   }) {
     final ImmersionMiningRequest frozenRequest = req.frozen();
     // 副本 Future 在点击当下就开跑，轮到本任务前可能早已失败：当场接住，否则排队期间
@@ -441,6 +494,7 @@ class ImmersionMiningEngine {
                 onFailure: onFailure,
                 onCoverFailure: onCoverFailure,
                 onAudioFailure: onAudioFailure,
+                onAudioSourceFallback: onAudioSourceFallback,
               );
               if (!local.aborted) return local;
             }
@@ -459,6 +513,7 @@ class ImmersionMiningEngine {
           onFailure: onFailure,
           onCoverFailure: onCoverFailure,
           onAudioFailure: onAudioFailure,
+          onAudioSourceFallback: onAudioSourceFallback,
         );
       },
     );
@@ -531,6 +586,7 @@ class ImmersionMiningEngine {
     FfmpegFailureReporter? onFailure,
     FfmpegFailureReporter? onCoverFailure,
     FfmpegFailureReporter? onAudioFailure,
+    AudioSourceFallbackReporter? onAudioSourceFallback,
   }) async {
     String? coverPath;
     Directory? exportedVideoDir;
@@ -757,6 +813,8 @@ class ImmersionMiningEngine {
         req.providedAudioBytes == null &&
         req.audioSource == null &&
         req.remoteAudioClipper == null &&
+        // 中置声道要经 `pan` 滤镜重编码，不能把原音轨直接搬进片段。
+        !req.audioFrontCenter &&
         (selectedAudio != null || req.audioStreamCount == 1);
     Object? audioError;
     StackTrace? audioStack;
@@ -773,6 +831,7 @@ class ImmersionMiningEngine {
                     tempDir: tempDir,
                     audioSrc: audioSrc,
                     reportAudio: reportAudio,
+                    onAudioSourceFallback: onAudioSourceFallback,
                   ))
             .catchError((Object e, StackTrace st) {
               audioError = e;
@@ -882,6 +941,7 @@ class ImmersionMiningEngine {
               tempDir: tempDir,
               audioSrc: audioSrc,
               reportAudio: reportAudio,
+              onAudioSourceFallback: onAudioSourceFallback,
             ),
             runAnimatedLadder().then((_) => null),
           ]);
@@ -1017,6 +1077,7 @@ class ImmersionMiningEngine {
     required String tempDir,
     required String? audioSrc,
     required FfmpegFailureReporter reportAudio,
+    AudioSourceFallbackReporter? onAudioSourceFallback,
   }) async {
     String? audioPath;
     if (req.providedAudioBytes != null) {
@@ -1029,6 +1090,19 @@ class ImmersionMiningEngine {
     }
     // 同 tryGif：`audioSrc != null` 已判源，这里只问窗几何。
     if (audioSrc == null || !req.hasClipWindow) return null;
+
+    // 反馈 pNF2ZL7Kfc：只取中置声道（人声）。取不到就落到下面整条音轨的现有流程，
+    // 并告诉调用方回退了——绝不静默。
+    if (req.audioFrontCenter) {
+      final String? center = await _resolveFrontCenterAudio(
+        req,
+        compression: compression,
+        tempDir: tempDir,
+        audioSrc: audioSrc,
+        onAudioSourceFallback: onAudioSourceFallback,
+      );
+      if (center != null) return center;
+    }
 
     // BUG-1004：互联 host（LAN Fushi 库）远端流优先走 **host 端裁**——host 用本地文件裁好
     // 句子音频再经已鉴权/钉扎的下载通道回传，client 全程不用 ffmpeg 抓远端流，从根上绕开
@@ -1095,6 +1169,68 @@ class ImmersionMiningEngine {
       } catch (_) {}
     }
     return audioPath;
+  }
+
+  /// 中置声道 FC 的句子音频；取不到返回 null 并经 [onAudioSourceFallback] 说明原因。
+  ///
+  /// - 不走互联 host 端裁（host 的 clipaudio 端点不认中置声道），直接 ffmpeg 对源裁；
+  ///   远端流照常带 TLS 钉扎与请求头。
+  /// - 调用方不知道声道布局时（[ImmersionMiningRequest.audioFrontCenterNeedsProbe]）
+  ///   先 ffprobe 确认有 FC：`pan` 对没有 FC 的布局不报错、只会产出一段静音。
+  /// - 中置抽取的失败摘要只进诊断日志，不进 [reportAudio]：随后整条音轨的回退若也
+  ///   失败，中止原因应是那次失败，而不是这里。
+  Future<String?> _resolveFrontCenterAudio(
+    ImmersionMiningRequest req, {
+    required MiningMediaCompression compression,
+    required String tempDir,
+    required String audioSrc,
+    AudioSourceFallbackReporter? onAudioSourceFallback,
+  }) async {
+    final int streamIndex = req.audioStreamIndex ?? 0;
+    if (req.audioFrontCenterNeedsProbe) {
+      final ({String? layout, int? channels}) probed =
+          await _probeChannelLayout(
+            inputPath: audioSrc,
+            audioStreamIndex: streamIndex,
+            tlsPinSha256: req.mediaSourceTlsPinSha256,
+            httpHeaders: req.mediaSourceHttpHeaders,
+          );
+      final bool? hasCenter = channelLayoutHasFrontCenter(
+        probed.layout,
+        channelCount: probed.channels,
+      );
+      if (hasCenter != true) {
+        onAudioSourceFallback?.call(
+          hasCenter == false
+              ? SentenceAudioFallbackReason.noFrontCenter
+              : SentenceAudioFallbackReason.frontCenterUnknown,
+        );
+        return null;
+      }
+    }
+    final int audioOffsetMs = req.audioSource == null
+        ? req.mediaTimeOffsetMs
+        : 0;
+    final String? path = await _frontCenterAudio(
+      inputPath: audioSrc,
+      startMs: req.clipStartMs - audioOffsetMs,
+      endMs: req.clipEndMs - audioOffsetMs,
+      outputPath: '$tempDir/immersion_audio.${immersionMiningAudioExtension()}',
+      audioStreamIndex: req.audioStreamIndex,
+      audioStreamCount: req.audioStreamCount,
+      audioChannels: 1,
+      audioBitrate: compression.audioBitrate,
+      onFailure: (String summary) =>
+          engineLog.logDiagnostic('Anki.frontCenterAudio', summary),
+      tlsPinSha256: req.mediaSourceTlsPinSha256,
+      httpHeaders: req.mediaSourceHttpHeaders,
+    );
+    if (path == null) {
+      onAudioSourceFallback?.call(
+        SentenceAudioFallbackReason.frontCenterFailed,
+      );
+    }
+    return path;
   }
 
   /// 给已落盘的静态封面 [path] 打码，返回打好码的新文件路径；解不开 / 读写失败返回

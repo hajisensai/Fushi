@@ -29,7 +29,7 @@
     "aformat", "aresample", "setpts", "asetpts", "select", "aselect",
     "trim", "atrim", "pad", "crop", "asetnsamples", "astats", "ametadata",
     "overlay", "atempo", "loudnorm", "ebur128", "volume", "alimiter",
-    "apad", "anullsrc"
+    "apad", "anullsrc", "pan"
   ],
   "protocols": ["file", "pipe", "http", "https", "tcp", "tls", "crypto"],
   "bsfs": ["aac_adtstoasc", "h264_mp4toannexb", "hevc_mp4toannexb"],
