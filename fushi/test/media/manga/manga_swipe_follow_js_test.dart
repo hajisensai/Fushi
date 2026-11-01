@@ -97,6 +97,8 @@ function _applyCanvas(){}
 function _currentPageIsWide(){ return false; }
 function _flashPageChange(){}
 function _retryFailedPagesWhere(){}
+let zoomResets=0;
+function _resetZoomForNewPage(){ zoomResets++; }
 let turns=[], taps=0, dart=null;
 function _bridge(){ return {callHandler:(n,d)=>{
   if(n!=='onMangaTurn') return undefined;
@@ -495,6 +497,22 @@ later(300,()=>{
   assert.equal(vp.children.length,0);
   assert.equal(tx(),-1236);
 });
+'''),
+    );
+  });
+
+  // 反馈 8HxGrnNy3x：换到另一跨页复位缩放；原地重放（窗口就绪 / resize 重投影
+  // 调到同一跨页）不能把用户正在看的放大清掉。
+  test('换页才复位缩放：翻到别的跨页复位一次，原地重放不复位', () async {
+    await runJs(
+      harness('''
+PAGE_ANIM='none';
+window.__mangaApplyTranslate(2);
+assert.equal(zoomResets,0,'同一跨页重放不复位');
+window.__mangaApplyTranslate(3);
+assert.equal(zoomResets,1,'翻页复位');
+window.__mangaApplyTranslate(1);
+assert.equal(zoomResets,2,'跳页同样复位');
 '''),
     );
   });

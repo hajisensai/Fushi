@@ -1303,7 +1303,9 @@ String _mangaGestureJs({
     ZOOM_REST = ZOOM_REST_DEFAULT;
     if(SPLIT_ACTIVE){
       SPLIT_ACTIVE=false;
-      ZOOM=_clampZoom(${zoomPercent / 100.0});
+      // 离开切半的宽页回默认缩放；不用文档初值 zoomPercent——那是重建文档时带的
+      // 会话倍率，可能是上一页残留的放大。
+      ZOOM=ZOOM_REST_DEFAULT;
       _recenterPan();_applyCanvas();
     }
     var autoWide = AUTO_ZOOM_WIDE && _currentPageIsWide();
@@ -1348,9 +1350,30 @@ String _mangaGestureJs({
     PAN_Y=(window.innerHeight-page.offsetHeight*ZOOM)/2-page.offsetTop*ZOOM;
     _applyCanvas();
   }
-  _recenterPan();
-  if (!IS_WEBTOON && '$zoomStartPosition' === 'left') PAN_X = 0;
-  if (!IS_WEBTOON && '$zoomStartPosition' === 'right') PAN_X = window.innerWidth * (1 - ZOOM);
+  // 起始平移：页面从哪一侧开始看（设置「缩放起始位置」）。文档加载与换页复位共用。
+  function _applyStartPan(){
+    _recenterPan();
+    if (!IS_WEBTOON && '$zoomStartPosition' === 'left') PAN_X = 0;
+    if (!IS_WEBTOON && '$zoomStartPosition' === 'right') PAN_X = window.innerWidth * (1 - ZOOM);
+  }
+  // 换页复位（反馈 8HxGrnNy3x，所有者定为默认行为、无开关）：翻到另一跨页时，
+  // 用户捏合 / 双击 / 滚轮 / 右键菜单带出的倍率与平移不跟到新页，回到默认缩放 +
+  // 起始位置。宽页切半 / 宽页自动放大随后由 _applyWidePolicy 按新页重新套用。
+  // 倍率变了才回报 Dart：会话倍率 _zoomPercent 是重建文档时的初值，不同步的话
+  // 下次跨窗口重建又把放大带回来。
+  function _resetZoomForNewPage(){
+    _cancelDoubleTapZoom();
+    var changed = Math.abs(ZOOM - ZOOM_REST_DEFAULT) > 0.0005;
+    ZOOM = ZOOM_REST_DEFAULT;
+    ZOOM_REST = ZOOM_REST_DEFAULT;
+    AUTO_ZOOM = null;
+    _applyStartPan();
+    _applyCanvas();
+    if (!changed) return;
+    var b = _bridge();
+    if (b) b.callHandler('onMangaZoomChanged', Math.round(ZOOM * 100));
+  }
+  _applyStartPan();
   var rightDrag = null;
   // ── 临时合成层提升（BUG-1759）──
   // will-change:transform 一旦常驻，Chromium 就把该层的栅格化尺度钉成只升不降：
@@ -1703,6 +1726,7 @@ String _mangaGestureJs({
     _finishPageAnim();
     if(target !== from) _flashPageChange();
     if(target!==from) PAGE_HALF=target<from ? 1 : 0;
+    if(target!==from) _resetZoomForNewPage();
     CURRENT = target;
     var ms = _animMs();
     var dist = Math.abs(target - from);
@@ -1798,6 +1822,9 @@ String _mangaGestureJs({
     var page = document.querySelector('.manga-page[data-spread="'+target+'"]');
     if (!page) return;
     var from = CURRENT;
+    // 纵向分页的换页同样复位缩放；条漫是一整条连续长图，缩放属于整条，不复位。
+    // 必须在下面按 ZOOM 换算滚动目标之前。
+    if (IS_VERTICAL_PAGED && target !== from) _resetZoomForNewPage();
     CURRENT = target;
     RESTORE_FRACTION = fraction || 0;
     // offsetTop/offsetHeight 是布局坐标；#manga-canvas 被 scale(ZOOM) 后
