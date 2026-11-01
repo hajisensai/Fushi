@@ -233,7 +233,8 @@ test('跟随 Fushi：app 镜像色（cssRgb 的 rgb() 串）映射到 --fushi-*�
 
 test('格式契约：app 侧 popup_theme_css.dart 的 cssRgb 仍产出 rgb(r, g, b)，与 parseCssColor 同口径', () => {
   const dart = fs.readFileSync(path.join(__dirname, '..', '..', 'fushi', 'lib', 'src', 'utils', 'popup_theme_css.dart'), 'utf8');
-  assert.match(dart, /String cssRgb\(Color c\) => 'rgb\(/, 'app 下发格式变了就要同步 theme-palette.js parseCssColor');
+  // `=>` 后允许换行：全仓 dart format 会把长箭头函数体折到下一行。
+  assert.match(dart, /String cssRgb\(Color c\) =>\s*'rgb\(/, 'app 下发格式变了就要同步 theme-palette.js parseCssColor');
   const P = loadPalette();
   assert.strictEqual(P.toHex(P.parseCssColor('rgb(1, 2, 3)')), P.toHex({ r: 1, g: 2, b: 3 }));
 });
