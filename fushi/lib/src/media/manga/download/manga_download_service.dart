@@ -429,7 +429,7 @@ class MangaDownloadService {
         status: MangaDownloadJobStatus.cancelled,
         updatedAt: _now,
       );
-      await _deleteChapterDirectory(row);
+      await _discardPartialDownload(row);
     }
   }
 
@@ -580,7 +580,7 @@ class MangaDownloadService {
           status: MangaDownloadJobStatus.cancelled,
           updatedAt: _now,
         );
-        await _deleteChapterDirectory(job);
+        await _discardPartialDownload(job);
         return;
       } on Object catch (error, stack) {
         ErrorLogService.instance.log(
@@ -619,7 +619,7 @@ class MangaDownloadService {
             status: MangaDownloadJobStatus.cancelled,
             updatedAt: _now,
           );
-          await _deleteChapterDirectory(job);
+          await _discardPartialDownload(job);
           return;
         }
       }
@@ -990,16 +990,31 @@ class MangaDownloadService {
     }
   }
 
-  Future<void> _deleteChapterDirectory(MangaDownloadJobRow job) async {
-    // mokuro 卷的半成品是下载器 staging 目录里的 `.part`，刻意保留供续传。
-    if (job.kind != MangaDownloadJobKind.chapter) return;
+  /// 用户取消后丢掉这条任务的半成品（issue #2720）。
+  ///
+  /// - 章节任务：删未完成章的目录（页图 / `.tmp`）；章已完整落地（manga.json
+  ///   在、判据 [isChapterDownloaded] 为真）就是用户的内容，**不删**——取消一条
+  ///   排队中的重下任务不能把已下好的章顺手抹掉。
+  /// - mokuro 卷：删下载器 staging（`.part` / 未导入的 `.cbz`）；已导入的卷在库
+  ///   目录里，不在 staging，不受影响。失败 / 服务停止不走这里，`.part` 照留续传。
+  Future<void> _discardPartialDownload(MangaDownloadJobRow job) async {
     try {
+      if (job.kind == MangaDownloadJobKind.mokuroVolume) {
+        final String? seriesName = mokuroMoeSeriesNameOf(job.bookKey);
+        final MokuroMoeVolumeDownloaderFactory? factory = _mokuroDownloader;
+        if (seriesName == null || factory == null) return;
+        await factory().discardStaging(
+          seriesName: seriesName,
+          volumeName: job.chapterKey,
+        );
+        return;
+      }
+      if (job.kind != MangaDownloadJobKind.chapter) return;
       final EpubBookRow? row = await _database.getEpubBook(job.bookKey);
       if (row == null) return;
-      await deleteChapterDownload(
-        await MangaStorage.bookPath(row.bookKey),
-        job.chapterKey,
-      );
+      final String bookDir = await MangaStorage.bookPath(row.bookKey);
+      if (await isChapterDownloaded(bookDir, job.chapterKey)) return;
+      await deleteChapterDownload(bookDir, job.chapterKey);
     } on Object catch (error, stack) {
       ErrorLogService.instance.log(
         'MangaDownloadService.deleteChapter ${job.jobId}',

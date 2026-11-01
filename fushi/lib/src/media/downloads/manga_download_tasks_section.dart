@@ -4,6 +4,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/downloads/download_source_method.dart';
 import 'package:fushi/src/media/downloads/download_task_card.dart';
@@ -165,6 +166,18 @@ DownloadTaskEntry mangaDownloadTaskEntry(
       status: status,
       subtitle: collectionTitle,
       progress: progress,
+      tone: _toneOf(job),
+      leading: const FushiIcon(FushiIcons.manga),
+      quickAction: _mangaQuickAction(job, downloads),
+      menuActions: <DownloadTaskMenuAction>[
+        if (finished)
+          DownloadTaskMenuAction(
+            id: 'clear',
+            icon: FushiIcons.remove,
+            label: t.download_batch_clear,
+            onSelected: () => unawaited(downloads.remove(job.jobId)),
+          ),
+      ],
       details: _MangaDownloadTaskRow(
         job: job,
         status: status,
@@ -173,6 +186,40 @@ DownloadTaskEntry mangaDownloadTaskEntry(
     ),
   );
 }
+
+/// 卡片行尾主操作（issue #2720）：排队 / 下载中 → 取消，失败 / 已取消 → 重试，
+/// 完成 → 无。与视频任务卡同一个折叠态主操作位——之前取消只藏在展开详情里，
+/// 折叠的卡片上看不到，用户以为漫画下载没法取消。
+DownloadTaskQuickAction? _mangaQuickAction(
+  MangaDownloadJobRow job,
+  MangaDownloadService downloads,
+) => switch (job.status) {
+  MangaDownloadJobStatus.queued ||
+  MangaDownloadJobStatus.running => DownloadTaskQuickAction(
+    key: ValueKey<String>('manga-download-quick-cancel-${job.jobId}'),
+    icon: FushiIcons.close,
+    tooltip: t.dialog_cancel,
+    onPressed: () => unawaited(downloads.cancel(job.jobId)),
+  ),
+  MangaDownloadJobStatus.failed ||
+  MangaDownloadJobStatus.cancelled => DownloadTaskQuickAction(
+    key: ValueKey<String>('manga-download-quick-retry-${job.jobId}'),
+    icon: FushiIcons.refresh,
+    tooltip: t.retry,
+    onPressed: () => unawaited(downloads.retry(job.jobId)),
+  ),
+  _ => null,
+};
+
+/// 状态 → 卡片色调（与视频任务卡同口径：下载中 primary、完成 tertiary、
+/// 失败 error、排队 / 已取消中性）。
+DownloadTaskTone _toneOf(MangaDownloadJobRow job) => switch (job.status) {
+  MangaDownloadJobStatus.running => DownloadTaskTone.active,
+  MangaDownloadJobStatus.done => DownloadTaskTone.completed,
+  MangaDownloadJobStatus.failed => DownloadTaskTone.error,
+  MangaDownloadJobStatus.cancelled => DownloadTaskTone.paused,
+  _ => DownloadTaskTone.neutral,
+};
 
 /// 漫画下载任务的传输方式与是否外部来源（按 `runtime` 列）：Mihon / 旧
 /// Aidoku 是扩展从第三方站点抓、mokuro.moe 是该站的 HTTP 直链、互联是从自己
