@@ -126,6 +126,28 @@ void main() {
     expect(galLookupCaptureReadyPerfDetail(<Object>[]), isNull);
   });
 
+  test('宿主页带回可见性时一并输出（v=可见，h=隐藏）', () {
+    expect(
+      galLookupHostPerfDetail(<String, Object>{
+        'inject': 1,
+        'render': 2,
+        'measure': 3,
+        'vis': 'hv',
+        'flips': 4,
+      }),
+      'js[inject=1 render=2 measure=3 vis=hv flips=4]',
+    );
+    expect(
+      galLookupCaptureReadyPerfDetail(<String, Object>{
+        'raf1': 1,
+        'ready': 2,
+        'by': 'raf',
+        'vis': 'v',
+      }),
+      'arm[at=- raf1=1 ready=2 by=raf vis=v] longtask[sum=- n=- max=-]',
+    );
+  });
+
   test('桌面路由单独计数，从 Dart 收到算起，冷启动各自判定', () {
     now = 1000;
     GalLookupLatencyTrace.begin(_hit(seq: 3));

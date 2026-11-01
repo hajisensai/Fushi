@@ -215,8 +215,10 @@ String? galLookupHostPerfDetail(Object? perf) {
     return value is num && value >= 0 ? value.round().toString() : '-';
   }
 
+  final Object? vis = perf['vis'];
   return 'js[inject=${part('inject')} render=${part('render')} '
-      'measure=${part('measure')}]';
+      'measure=${part('measure')}'
+      '${vis is String ? ' vis=$vis flips=${part('flips')}' : ''}]';
 }
 
 /// 宿主页随 captureReady 回报的握手明细（args[3]）：arm → 第一个 rAF、arm → 放行的
@@ -229,7 +231,8 @@ String? galLookupCaptureReadyPerfDetail(Object? perf) {
   }
 
   final Object? by = perf['by'];
+  final Object? vis = perf['vis'];
   return 'arm[at=${part('armAt')} raf1=${part('raf1')} ready=${part('ready')} '
-      'by=${by is String ? by : '-'}] '
+      'by=${by is String ? by : '-'}${vis is String ? ' vis=$vis' : ''}] '
       'longtask[sum=${part('lt')} n=${part('ltn')} max=${part('ltmax')}]';
 }

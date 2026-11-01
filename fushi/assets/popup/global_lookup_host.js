@@ -2883,6 +2883,23 @@
   // overlaySize 发出三个时刻，随首个 overlaySize 的 box.perf 一起带回 Dart。
   // performance.now 是本文档自己的时钟，所以只回报相对时长，不回报绝对时刻。
   var lookupPerf = null;
+  // 页面可见性诊断：浏览器内核判定窗口被遮挡 / 在屏外时会把页面置为 hidden 并降速。
+  // 每次查词记下开始时与报尺寸时的状态，以及进程内累计切换次数（两行之差即期间
+  // 切换了几次），用来确认偶发的几百毫秒停顿是不是它。
+  var visibilityFlips = 0;
+  try {
+    document.addEventListener('visibilitychange', function () {
+      visibilityFlips++;
+    });
+  } catch (e) {
+    // 精简测试环境没有 document 事件：诊断静默。
+  }
+  function visibilityTag() {
+    var state = (typeof document !== 'undefined' && document &&
+        typeof document.visibilityState === 'string')
+        ? document.visibilityState : '';
+    return state === 'visible' ? 'v' : (state === 'hidden' ? 'h' : '-');
+  }
   function perfNow() {
     return (typeof performance !== 'undefined' &&
         typeof performance.now === 'function') ? performance.now() : Date.now();
@@ -2901,6 +2918,7 @@
       longTaskMs: 0,
       longTaskCount: 0,
       longTaskMax: 0,
+      vis0: visibilityTag(),
     };
   }
   // 同一事件循环（宿主 + 同源 iframe）上 >50 ms 的长任务：captureReady 前主线程被
@@ -2941,6 +2959,8 @@
       inject: Math.round(lookupPerf.inject),
       render: Math.round(lookupPerf.render),
       measure: Math.round(perfNow() - lookupPerf.t0),
+      vis: lookupPerf.vis0 + visibilityTag(),
+      flips: visibilityFlips,
     };
   }
 
@@ -3528,6 +3548,7 @@
             raf1: Math.round(firstRafMs),
             ready: Math.round(perfNow() - armedAt),
             by: releasedBy,
+            vis: visibilityTag(),
             armAt: lookupPerf && lookupPerf.key === key
                 ? Math.round(armedAt - lookupPerf.t0) : -1,
             lt: lookupPerf && lookupPerf.key === key
