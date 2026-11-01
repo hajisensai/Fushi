@@ -462,6 +462,11 @@ void TestProductionWorkerAndRollback() {
   g_siglus_message_install_state.store(1);
   Check(IsSiglusMessageTextInstalled());
   Check(!IsSiglusMessageVoiceMappingProved());
+  // A voice-owning lane fences unproved archive reads; a silent one does not.
+  Check(IsSiglusMessageVoiceOwned());
+  g_siglus_message_silent_voice = true;
+  Check(!IsSiglusMessageVoiceOwned() && IsSiglusMessageTextInstalled());
+  g_siglus_message_silent_voice = false;
   published_seq = 123;
   Check(g_siglus_message_tasks.TryPush(task));
   ProcessSiglusMessageTextTasks();

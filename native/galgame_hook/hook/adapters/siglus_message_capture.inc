@@ -30,6 +30,9 @@ fushi_voice_hook::SiglusMessageLayout g_siglus_message_layout;
 bool g_siglus_message_native_ecx = false;
 bool g_siglus_message_legacy = false;
 bool g_siglus_message_eightarg = false;
+// The nine-argument wrapper carries no script voice key. Its lane owns the
+// text only; archive reads keep the time-paired OVK capture.
+bool g_siglus_message_silent_voice = false;
 fushi_voice_hook::siglus_eightarg_message::Layout g_siglus_eightarg_message_layout;
 fushi_voice_hook::SiglusLegacyMessageProfile g_siglus_legacy_message_profile;
 fushi_voice_hook::SiglusLegacyMessageLayout g_siglus_legacy_message_layout;
@@ -279,6 +282,12 @@ bool IsSiglusMessageVoiceMappingProved() {
          IsSiglusVoiceSourceInstalled();
 }
 
+// Whether the installed message lane decides voice: then unproved archive
+// reads must not reach the time matcher. A silent lane decides nothing.
+bool IsSiglusMessageVoiceOwned() {
+  return IsSiglusMessageTextInstalled() && !g_siglus_message_silent_voice;
+}
+
 // Never free a trampoline that a thread already inside an observer may jump to.
 // Disabled previously-enabled hooks keep their trampolines until DLL-wide
 // MinHook teardown. A failed disable prevents Luna ownership from being granted.
@@ -469,6 +478,7 @@ bool TryHookSiglusMessageText() {
       return false;
     }
     g_siglus_message_legacy = true;
+    g_siglus_message_silent_voice = true;
     g_siglus_legacy_message_layout = {
         0u, static_cast<uint32_t>(base + sites.message_text_return),
         kSiglusMessageMaxTextUnits, false};
@@ -607,6 +617,7 @@ bool TryHookSiglusMessageText() { return false; }
 bool IsSiglusMessageTextInstalled() { return false; }
 bool IsSiglusMessageTextOwnershipBlocked() { return false; }
 bool IsSiglusMessageVoiceMappingProved() { return false; }
+bool IsSiglusMessageVoiceOwned() { return false; }
 void ProcessSiglusMessageTextTasks() {}
 void ShutdownSiglusMessageText() {}
 
