@@ -201,9 +201,7 @@ class WebVideoFushiPage extends ConsumerStatefulWidget {
     ),
   );
 
-  /// 窗口宿主档（4K）环境：同上，见 [webVideoWindowedEnvironment]。
-  static String windowedUserDataFolder() => webVideoWindowedUserDataFolder();
-
+  /// 窗口宿主档（4K）环境：与 app 内浏览器共享 cookie 罐，见 [webVideoWindowedEnvironment]。
   static Future<WebViewEnvironment> windowedEnvironment() =>
       webVideoWindowedEnvironment();
 
@@ -599,7 +597,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     }());
     // BUG-2230：`_init` 的异常必须有归宿。它是 fire-and-forget，内部又有几处**真会抛**
     // 的 await（`rootBundle.loadString` 资源缺失、`WebViewEnvironment.create` 在 WebView2
-    // Runtime 缺失 / 用户数据目录被占用时直接抛、`_copyLoginCookiesFromBuiltin` 的 IO）。
+    // Runtime 缺失 / 用户数据目录被占用时直接抛、`_copyLoginCookiesFromSharedJar` 的 IO）。
     // 从前抛出后 `_failReason` 恒 null、`_row` 恒 null ⇒ 页面永久停在**无 AppBar 的转圈**
     // 分支上，桌面端没有系统返回键 ⇒ 用户进来就出不去（与 BUG-2229 同构）。
     if (widget.idleAutoMining) {
@@ -656,9 +654,10 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     _mineStopRequested = true;
     _unregisterRemote();
     _autoStartDeadline?.cancel();
-    // 本页里登录的站点会话抄回 app 内浏览器（登录入口主要在浏览器，BUG-3801）。
+    // 内置档页里登录的站点会话抄回共享 cookie 罐（app 内浏览器，BUG-3801）。窗口档本来就住在
+    // 共享罐里，不抄（抄可捕获档只会拿它的旧值盖掉新值）。
     final Uri? site = _siteUri;
-    if (site != null) unawaited(syncWebVideoLoginToBrowser(site));
+    if (site != null && !_windowed) unawaited(syncWebVideoLoginToBrowser(site));
     _idleScheduler?.dispose();
     // 交接页没开跑就离开：停掉预起的静音采集（native 随即还原会话音量）。
     unawaited(_preStartedAudio?.source.stop());
@@ -735,9 +734,9 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
         : await WebVideoFushiPage.capturableEnvironment();
     if (!mounted) return;
     _siteUri = uri;
-    // 两档都抄：内置档是制卡队列重放的宿主，只抄窗口档时它永远拿不到浏览器 / 播放页里的
-    // 登录态，点「制作队列中的卡片」就落到站点登录页（BUG-3801）。
-    await _copyLoginCookiesFromBuiltin(uri);
+    // 内置档（制卡队列重放的宿主）从共享罐抄登录态，否则点「制作队列中的卡片」就落到站点
+    // 登录页（BUG-3801）；窗口档就住在共享罐里，不用抄。
+    if (!_windowed) await _copyLoginCookiesFromSharedJar(uri);
     if (!mounted) return;
     unawaited(_refreshFavoriteCache());
     unawaited(_refreshMinePending());
@@ -1897,10 +1896,10 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     await _syncDomSubtitleTrack();
   }
 
-  /// 两档各用独立环境（浏览器参数不同 → 独立 user data folder → 独立 cookie 罐）：把其它视频
-  /// 环境与 app 内浏览器已登录的站点 cookie 复制到本页环境（[kWebVideoLoginCookieSources]，
-  /// 本页自己那份跳过），用户不用登录两次。尽力而为，失败只记日志（站点会要求登录）。
-  Future<void> _copyLoginCookiesFromBuiltin(Uri uri) async {
+  /// 内置档是独立 cookie 罐（`--disable-direct-composition` → 独立 user data folder）：把共享罐
+  /// （app 内浏览器 = 原生播放器页网页档）里已登录的站点 cookie 复制到本页环境
+  /// （[kWebVideoLoginCookieSources]），用户不用登录两次。尽力而为，失败只记日志（站点会要求登录）。
+  Future<void> _copyLoginCookiesFromSharedJar(Uri uri) async {
     final WebViewEnvironment? to = _env;
     if (to == null) return;
     await copyWebVideoLoginCookies(uri: uri, to: to);
