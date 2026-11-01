@@ -21,6 +21,7 @@ import 'package:fushi_engine/sync/interconnect_dav_tree_listing.dart';
 import 'package:fushi_engine/sync/interconnect_service_config.dart';
 import 'package:fushi_engine/sync/interconnect_profile_transfer.dart';
 import 'package:fushi_engine/sync/host_update/host_update_protocol.dart';
+import 'package:fushi/src/sync/interconnect_package_download.dart';
 import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
 import 'package:fushi/src/sync/remote_book_client.dart';
 import 'package:fushi/src/sync/remote_cover_fetcher.dart';
@@ -804,6 +805,11 @@ class InterconnectSyncBackend extends SyncBackend
     _ops!.checkStatus(response.statusCode, 'PUT $path');
   }
 
+  /// 测试缝：让明文 http 会话也走后台 isolate 下载（生产里明文会话留在当前 isolate，
+  /// 因为它的 HttpClient 要经应用代理出口，而代理裁决是 UI isolate 的进程级状态）。
+  @visibleForTesting
+  static bool debugIsolateUnpinnedDownloads = false;
+
   @override
   Future<void> downloadContentFile({
     required String fileId,
@@ -811,129 +817,59 @@ class InterconnectSyncBackend extends SyncBackend
     SyncTransferProgress? onProgress,
   }) async {
     // Range 续传（视频 TODO-819 同款范式推广到库包下载：epub/词典/有声书/本地
-    // 音频）。旧实现是裸 GET，中断即删截断文件、下次从 0——大词典/有声书包在
-    // 抖动 Wi-Fi 上反复整包重下。host 包端点现带 ETag + If-Range（导出缓存保证
-    // TTL 内字节稳定）；验证器经 `.part.etag` 侧车持久化，续传时以 If-Range
-    // 携带——host 字节换代则收 200 全量重写，绝不拼错字节（见
-    // [_downloadWithValidatorSidecar]）。旧 host 无 Range 支持时同样收 200 → 丢弃
-    // 旧 part 从 0，零兼容破坏。
-    await _downloadWithValidatorSidecar(
-      url: fileId,
-      destination: destination,
-      // 弱网停顿超时：流内空闲超 downloadStallTimeout 即中断保 part 可续；打包型
-      // 包端点首字节（=打包耗时）给足 packageFirstByteTimeout 余量。
-      firstByteTimeout: packageFirstByteTimeout,
-      open: (Uri uri, Map<String, String> headers) async {
-        final HttpClientRequest req = await _ops!.buildRequest(
-          'GET',
-          uri.toString(),
-        );
-        for (final MapEntry<String, String> entry in headers.entries) {
-          req.headers.set(entry.key, entry.value);
-        }
-        final HttpClientResponse res = await req.close();
-        // 保留原错误契约：401/403 → SyncAuthError、404 → 可重试 SyncBackendError
-        // （上层认证/重试流依赖这些类型）。416 放行给 ResumableDownloader——那是
-        // 它「丢弃旧 part 从 0 重来」的合法信号。
-        if (res.statusCode >= 400 && res.statusCode != 416) {
-          await res.drain<void>().catchError((_) {});
-          _ops!.checkStatus(res.statusCode, 'GET $fileId');
-        }
-        return _wrapResumableResponse(res);
-      },
-      onProgress: (int received, int? total) {
-        if (total != null && total > 0) {
-          onProgress?.call(received / total, received);
-        }
-      },
-    );
-  }
-
-  /// Range 续传 + `.part.etag` 验证器侧车的共用下载骨架（库包与视频下载共用）。
-  ///
-  /// 上次响应的 ETag 落到 `<dest>.part.etag`，下次续传以 `If-Range` 携带；host
-  /// 字节换代（验证器不匹配）时 host 回 200，[ResumableDownloader] 丢弃旧 part
-  /// 从 0 重写。成功后清侧车；失败 / 中断保留（与 `.part` 配对供续传）。
-  ///
-  /// [requireValidatorToResume]：有 `.part` 却没有侧车验证器时直接丢弃旧 part。
-  /// 视频 `/stream` 为了播放器 seek 接受不带 `If-Range` 的盲 Range，旧版本留下的
-  /// 无验证器 `.part` 若照常续传，host 上文件一换就会拼成坏片——宁可重下。
-  Future<void> _downloadWithValidatorSidecar({
-    required String url,
-    required File destination,
-    required ResumableDownloadOpen open,
-    required Duration firstByteTimeout,
-    bool requireValidatorToResume = false,
-    ResumableDownloadProgress? onProgress,
-  }) async {
-    final File partFile = File('${destination.path}.part');
-    final File etagFile = File('${destination.path}.part.etag');
-    await destination.parent.create(recursive: true);
-    String? storedEtag;
-    try {
-      if (partFile.existsSync() && etagFile.existsSync()) {
-        storedEtag = etagFile.readAsStringSync().trim();
+    // 音频）。host 包端点带 ETag + If-Range（导出缓存保证字节稳定，滑动 TTL）；
+    // 验证器经 `.part.etag` 侧车持久化，续传时以 If-Range 携带——host 字节换代
+    // 则收 200 全量重写，绝不拼错字节。旧 host 无 Range 支持时同样收 200 → 丢弃
+    // 旧 part 从 0，零兼容破坏。拼完按响应声明的总长 + Repr-Digest 整体校验。
+    //
+    // Sn4fYseBt4：收包循环放后台 isolate——在 UI isolate 上收，阅读器 / 歌词模式
+    // 一占满帧预算，socket 读就被推迟，吞吐掉七成以上（见
+    // interconnect_package_download.dart 文件头）。
+    void progress(int received, int? total) {
+      if (total != null && total > 0) {
+        onProgress?.call(received / total, received);
       }
-    } catch (_) {
-      // 侧车读不出：当无验证器处理（见下）。
     }
-    if (storedEtag != null && storedEtag.isEmpty) storedEtag = null;
-    if (storedEtag == null && requireValidatorToResume) {
-      _deleteQuietly(partFile);
-      _deleteQuietly(etagFile);
-    }
-    final ResumableDownloader downloader = ResumableDownloader(
-      url: url,
-      destination: destination,
-      partFile: partFile,
-      resumeState: ResumableDownloadState(etag: storedEtag),
-      firstByteTimeout: firstByteTimeout,
-      bodyTimeout: downloadStallTimeout,
-      open: open,
-      onMeta: (ResumableDownloadMetaInfo meta) {
-        // 把本次响应的 ETag 落侧车，供中断后下次进程的 If-Range 使用。
-        try {
-          final String? etag = meta.etag;
-          if (etag != null && etag.isNotEmpty) {
-            etagFile.writeAsStringSync(etag);
-          } else if (etagFile.existsSync()) {
-            etagFile.deleteSync();
-          }
-        } catch (_) {
-          // best-effort：侧车写失败只损失续传能力，不影响本次下载。
-        }
-      },
-      onProgress: onProgress,
-    );
-    try {
-      await downloader.download();
-    } finally {
-      // 成功后清侧车；失败保留（与 .part 配对供续传）。
-      if (!partFile.existsSync()) _deleteQuietly(etagFile);
-    }
-  }
 
-  static void _deleteQuietly(File file) {
+    final WebDavOps ops = _ops!;
+    final String? fp = _activeFingerprint;
+    final String? token = _activeToken;
+    final bool pinned = fp != null && fp.isNotEmpty;
     try {
-      if (file.existsSync()) file.deleteSync();
-    } catch (_) {
-      // best-effort
+      if (token != null && (pinned || debugIsolateUnpinnedDownloads)) {
+        await runPinnedPackageDownloadInIsolate(
+          PinnedPackageDownloadSpec(
+            url: fileId,
+            destinationPath: destination.path,
+            baseUrl: ops.baseUrl,
+            token: token,
+            pinnedFingerprint: pinned ? fp : null,
+            connectionTimeout: requestTimeout,
+            // 打包型包端点首字节（=打包耗时 + 整包摘要）给足余量；流内空闲超
+            // downloadStallTimeout 即中断，保 part 从断点接着拉。
+            firstByteTimeout: packageFirstByteTimeout,
+            stallTimeout: downloadStallTimeout,
+          ),
+          onProgress: progress,
+        );
+        return;
+      }
+      await downloadWithResumeSidecar(
+        url: fileId,
+        destination: destination,
+        firstByteTimeout: packageFirstByteTimeout,
+        stallTimeout: downloadStallTimeout,
+        verifyResponseIntegrity: true,
+        open: (Uri uri, Map<String, String> headers) =>
+            openInterconnectPackageGet(ops, uri, headers, context: fileId),
+        onProgress: progress,
+      );
+    } catch (e) {
+      // 后台 isolate 里的句柄没有会话回调：连接类失败在这里补报，让会话置脏换路
+      // （BUG-1693）。主 isolate 路径的 ops 自己已报过一次，重复置脏无害。
+      ops.reportConnectivityFailure(e);
+      rethrow;
     }
-  }
-
-  /// 把 dart:io 响应包成 [ResumableDownloadResponse]（多值头以逗号拼接）。
-  static ResumableDownloadResponse _wrapResumableResponse(
-    HttpClientResponse res,
-  ) {
-    final Map<String, String> responseHeaders = <String, String>{};
-    res.headers.forEach((String name, List<String> values) {
-      if (values.isNotEmpty) responseHeaders[name] = values.join(',');
-    });
-    return ResumableDownloadResponse(
-      statusCode: res.statusCode,
-      headers: responseHeaders,
-      stream: res,
-    );
   }
 
   @override
@@ -2908,7 +2844,7 @@ class InterconnectSyncBackend extends SyncBackend
   ///   流（`streamIsOriginalContainer == false`）就直接报错，绝不落盘。
   /// * **安全续传**：`.part` + `.part.etag` 侧车，续传带 `If-Range`；host 上文件被
   ///   替换（ETag 变了）时 host 回 200，旧 part 丢弃从 0 重写，不会拼坏
-  ///   （[_downloadWithValidatorSidecar]）。没有验证器的旧 `.part` 不续。
+  ///   （[downloadWithResumeSidecar]）。没有验证器的旧 `.part` 不续。
   /// * **取消**：[cancelSignal] 完成即强关本次专用的 HttpClient 打断传输，抛
   ///   [RemoteDownloadCancelled]；`.part` 与侧车保留，下次同一 [dest] 从断点续上。
   @override
@@ -2962,7 +2898,7 @@ class InterconnectSyncBackend extends SyncBackend
     try {
       // 根因修复（TODO-819）：Range + 同目录 .part + 中断保留 part 可续传。LAN 单源
       // 不分片（单连接 Range 已足够，避免共享出口限流）。
-      await _downloadWithValidatorSidecar(
+      await downloadWithResumeSidecar(
         url: urls.streamUrl,
         destination: dest,
         open: (Uri uri, Map<String, String> headers) async {
@@ -2980,7 +2916,11 @@ class InterconnectSyncBackend extends SyncBackend
         },
         // 稳定视频文件首字节快（videoFirstByteTimeout）。
         firstByteTimeout: videoFirstByteTimeout,
+        stallTimeout: downloadStallTimeout,
         requireValidatorToResume: true,
+        // 取消靠强关本次专用 client 实现；在调用内接续会撞上已关的 client，
+        // 视频下载的接续交给下载管理器的下一次尝试（同一 dest 的 .part 照样续上）。
+        resumeInCall: false,
         onProgress: (int received, int? total) {
           if (cancelled) return;
           onBytes?.call(received, total);
@@ -3159,7 +3099,7 @@ class InterconnectSyncBackend extends SyncBackend
         : HttpClient();
     client = activeClient;
     try {
-      await _downloadWithValidatorSidecar(
+      await downloadWithResumeSidecar(
         url: share.fileUrl(file.path).toString(),
         destination: dest,
         open: (Uri uri, Map<String, String> headers) async {
@@ -3176,7 +3116,11 @@ class InterconnectSyncBackend extends SyncBackend
           );
         },
         firstByteTimeout: videoFirstByteTimeout,
+        stallTimeout: downloadStallTimeout,
         requireValidatorToResume: true,
+        // 取消靠强关本次专用 client 实现；在调用内接续会撞上已关的 client，
+        // 视频下载的接续交给下载管理器的下一次尝试（同一 dest 的 .part 照样续上）。
+        resumeInCall: false,
         onProgress: (int received, int? total) {
           if (!cancelled) onBytes?.call(received, total);
         },
@@ -3200,7 +3144,7 @@ class InterconnectSyncBackend extends SyncBackend
     for (final MapEntry<String, String> entry in headers.entries) {
       request.headers.set(entry.key, entry.value);
     }
-    return _wrapResumableResponse(await request.close());
+    return wrapResumableResponse(await request.close());
   }
 
   /// 读 host 端视频 [id] 的播放断点（TODO-653）。host 返回 404（视频不存在）或网络

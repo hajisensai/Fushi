@@ -1,4 +1,7 @@
+import 'dart:convert';
 import 'dart:io';
+
+import 'package:crypto/crypto.dart' show sha1;
 import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
 import 'package:fushi/src/anki/pending_mining/pending_mine_relay.dart';
 import 'package:fushi/src/epub/book_css_repository.dart';
@@ -706,6 +709,22 @@ class SyncOrchestrator {
   File _tmpFile(String suffix) {
     _tmpCounter++;
     return File(p.join(_tempDir.path, 'fushi_sync_$_tmpCounter$suffix'));
+  }
+
+  /// 互联 live 拉取用的**稳定**临时文件：同一 ([kind], [name]) 每一轮都落在同一路径。
+  ///
+  /// Sn4fYseBt4：下载器的断点（`<dest>.part` + `.part.etag` 侧车）挂在目标路径上，
+  /// 而 [_tmpFile] 每次给新序号——上一轮断在 90% 的本地音频库，下一轮换了个名字，
+  /// 断点永远对不上号，只能从 0 重来。换成按内容身份定名后，下一轮同一项直接带
+  /// `If-Range` 续上；host 那份字节变了（ETag 不符）时 host 回 200，下载器丢弃旧
+  /// 断点重下，不会拼错。成功后 finally 照旧删掉成品；失败只留 `.part` 供续传。
+  @visibleForTesting
+  File resumableTmpFile(String kind, String name, String suffix) {
+    final String id = sha1
+        .convert(utf8.encode('$kind $name'))
+        .toString()
+        .substring(0, 24);
+    return File(p.join(_tempDir.path, 'fushi_sync_pull_$id$suffix'));
   }
 
   /// Runs the full sweep. File-content switches are upload-only: remote-only
