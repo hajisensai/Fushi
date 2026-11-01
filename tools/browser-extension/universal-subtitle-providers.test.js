@@ -406,7 +406,8 @@ test('SPA A→B→A：回访已有轨的短前缀只读 replay，不追加重复
   assert.strictEqual(track.map((cue) => cue.text).join('|'), 'line-full');
 });
 
-test('SPA A→B→A：回访已有短轨的长前缀快照也只读 replay', () => {
+// 区间合并契约：回访看到同一句更完整的文本，并进原来那一条（不追加第二条）。
+test('SPA A→B→A：回访已有短轨的长前缀快照并进原条（取更完整文本，不追加）', () => {
   const h = loadContent({ hostname: 'www.youtube.com', pathname: '/watch', search: '?v=A-long' });
   h.video.currentTime = 10;
   h.state.subText = 'line';
@@ -424,7 +425,7 @@ test('SPA A→B→A：回访已有短轨的长前缀快照也只读 replay', () 
 
   const track = h.windowObj.fushiEpisodeCues['yt-A-long|live'];
   assert.strictEqual(track.length, 1);
-  assert.strictEqual(track.map((cue) => cue.text).join('|'), 'line');
+  assert.strictEqual(track.map((cue) => cue.text).join('|'), 'line-full');
 });
 
 test('player 销毁：定格当前代且不凭空插入 t=0 cue', () => {
@@ -461,8 +462,9 @@ test('同视频 remount：旧代引用清空、旧轨稳定，离开 replay 后�
   h.state.video.currentTime = 10.2;
   h.state.subText = 'same-new';
   h.sampler.fn();
-  assert.strictEqual(track.length, 1, 'remount 的同窗快照只能只读 replay');
-  assert.strictEqual(track[0].text, 'same', '新代不得持有并改写旧代 liveCue 引用');
+  assert.strictEqual(track.length, 1, 'remount 的同窗快照并进原条，不另起一条');
+  assert.strictEqual(track[0].text, 'same-new', '同一句更完整的快照按区间合并进原条');
+  assert.strictEqual(track[0].startMs, 10000, '原条起点不被晚到的快照推后');
 
   h.state.video.currentTime = 12;
   h.state.subText = 'fresh';
@@ -535,7 +537,7 @@ test('seek 后空白帧不消费 replay 门，短前缀稍后到达仍不重复'
   assert.strictEqual(track[0].text, 'AB');
 });
 
-test('replay 窗口与文本关系保持窄匹配，窗外/仅子串相似均不得抑制', () => {
+test('replay 窗口与文本关系：中间包含只在时间相交时合并，窗外同文必须作为新句', () => {
   const h = loadContent({ hostname: 'www.youtube.com', pathname: '/watch', search: '?v=boundary' });
   h.video.currentTime = 1;
   h.state.subText = 'xxsameyy';
@@ -544,18 +546,34 @@ test('replay 窗口与文本关系保持窄匹配，窗外/仅子串相似均不
   h.state.subText = '';
   h.sampler.fn();
 
-  h.seekTo(1);
+  // 落在 [1000,2000) 之内只看到中间几个字：同一句的部分快照，并进原条。
+  h.seekTo(1.5);
   h.state.subText = 'same';
+  h.sampler.fn();
+  h.video.currentTime = 1.9;
+  h.state.subText = '';
+  h.sampler.fn();
+  // 原条结束后 500ms（前缀判据的 +750 容差之内）出现仅中间包含的短句：时间不相交，是新句。
+  h.seekTo(2.5);
+  h.state.subText = 'same';
+  h.sampler.fn();
+  h.video.currentTime = 3;
+  h.state.subText = '';
   h.sampler.fn();
   h.seekTo(10);
   h.state.subText = 'xxsameyy';
   h.sampler.fn();
 
   const track = h.windowObj.fushiEpisodeCues['yt-boundary|live'];
-  assert.strictEqual(track.filter((cue) => cue.startMs === 1000).length, 2,
-    '仅子串相似不是前缀相关，不能误判 replay');
+  assert.strictEqual(track.filter((cue) => cue.startMs === 1000).length, 1);
+  assert.strictEqual(track.find((cue) => cue.startMs === 1000).text, 'xxsameyy', '保留更完整的文本');
+  assert.strictEqual(track.filter((cue) => cue.startMs === 2500 && cue.text === 'same').length, 1,
+    '仅中间包含且时间不相交不是同一句');
   assert.strictEqual(track.filter((cue) => cue.startMs === 10000).length, 1,
     '同文但落在旧 cue 窗外必须作为新句');
+  for (let i = 1; i < track.length; i++) {
+    assert.ok(track[i - 1].endMs <= track[i].startMs, 'live 轨 cue 两两不重叠');
+  }
 });
 
 test('textTracks 收割：原生字幕轨整轨读出（清洗标签）并增量刷新', () => {
