@@ -933,3 +933,19 @@ on the controls or on the picture" decision uses it, always at pointer-down:
   brightness drags that go down on the chrome. Both drag layers keep their
   bottom dead zone (`16 + subtitleVerticalShiftOffset`) unchanged: it applies
   while the bar is hidden too and is not a chrome test.
+
+## Seek on drag (`seekOnDrag`)
+
+`lib/media_kit_video_controls/src/controls/material_desktop.dart` and
+`lib/media_kit_video_controls/src/controls/material.dart`
+(`MaterialDesktopVideoControlsThemeData.seekOnDrag` /
+`MaterialVideoControlsThemeData.seekOnDrag`, read in the seek bar's
+`onPointerMove`).
+
+Upstream calls `player.seek` on every pointer move while the seek bar is
+dragged. For the web-site backend (Netflix / YouTube in a WebView2) each call is
+a page round-trip, and a long drag fed Netflix's player dozens of large seeks in
+a row until it stalled ("jumping far freezes"). With `seekOnDrag: false` a drag
+only moves the thumb and `onPointerUp` seeks once to the release point. Default
+`true` keeps upstream behaviour; Fushi sets `false` only when
+`VideoPlayerController.isWebBackend`.
