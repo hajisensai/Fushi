@@ -1168,6 +1168,12 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   bool _readerLookupOpen = false;
   int _zoomPercent = 100;
 
+  /// 静止倍率 = 设置里的默认缩放（钳到合法区间）。换页 / 换章复位到它。
+  int get _restZoomPercent => _readerPreferences.zoomStart.clamp(
+    kMangaZoomMinPercent,
+    kMangaZoomMaxPercent,
+  );
+
   /// 观看偏好快照（打开书时从 [AppModel] 读一次，随文档注入 WebView）。
   /// 与 [_zoomPercent] 不同，这三项没有页内切换入口，只在设置里改。
   int _zoomSensitivity = kMangaZoomSensitivityDefault;
@@ -3020,10 +3026,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       spreadGutterPx: _spreadGutterPx,
       zoomPercent: _zoomPercent,
       // 静止倍率 = 设置里的默认缩放；会话里捏出来的放大不算（BUG-3633）。
-      restZoomPercent: _readerPreferences.zoomStart.clamp(
-        kMangaZoomMinPercent,
-        kMangaZoomMaxPercent,
-      ),
+      restZoomPercent: _restZoomPercent,
       inlineSelectionJs: inlineSelectionJs,
       pageSpreadIndices: pageSpreadIndices,
       pagesPerSpread: pagesPerSpread,
@@ -3564,6 +3567,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     setState(() {
       _switchingChapter = true;
       _switchingChapterTarget = index;
+      // 换章也是换页（反馈 8HxGrnNy3x）：新章文档以默认缩放打开，不带上一章
+      // 捏出来的放大。条漫的缩放属于整条长图，保留。
+      if (_mode.isPaged) _zoomPercent = _restZoomPercent;
     });
     // 换章前排队的剩余步（长按 / 连滑撞到章尾时攒下的）属于旧章，丢掉，否则
     // 新章一装好就被继续消费成「自己往后翻几页」（BUG-3221）。
