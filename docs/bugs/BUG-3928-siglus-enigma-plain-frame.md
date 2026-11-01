@@ -16,9 +16,10 @@
   - `siglus_resource_mapping.h`：`ResolvePlainFrameResourceMappingProfile`。语音请求 / 播放 / 资源 / 格式化 / 归档打开 / 归档读取六个函数是普通栈帧专有的完整片段；构建器、拼接、CRT、WideAssign、Ogg 三件与对齐一代共用。资源帧布局不同：键副本 `-0x100`、路径 `-0x74`、读取器 `-0x110`，offset 在 EBX、length 只在帧局部 `-0xec`。保护壳合并节头后字面量与 vtable 位于可执行节，`WideLiteral` 只在这条路径上放宽节属性，身份由固定操作数位置 + 精确内容证明。
   - `siglus_voice_source.h`：`SiglusVoiceSourceLayout::length_frame_displacement`，非零时 offset 取 EBX、length 必须与帧局部一致。
 - **[x] ④ 原生接管测试** — `tests/siglus_message_profile_test.cpp`（普通栈帧正向 / 组件移位 / 入口内第二处直调 / 直调目标不对 / surface 出界 / 剧情尾部变异 / 语音写回出界 / prepare 调用错 / 重复入口；对齐 ABI 下同一镜像不命中）、`tests/siglus_message_capture_test.cpp`（`TestDirectTicket`：直调帧正向、外来帧、返回地址、所有者变化、两种布局互斥）、`tests/siglus_resource_mapping_test.cpp`（`TestPlainFrame`：合并节头正向、全部调用边改向、归档函数片段变异、13 个字面量、kind=3 / 行成员 +8 / 步长 0x10 / length 局部、重复片段、两代互不接纳）、`tests/siglus_voice_source_test.cpp`（`TestPlainFrameSource`）。x86 143 / x64 139 项 CTest 全绿，`tools/run_guards.ps1` 全绿。离线镜像：Rewrite+ 消息入口 `0x2233e0`、直调返回 `0x2234eb`、语音 `0x222bd0`、资源 `0x1db9b0`、OggOpen `0x2b3800`、载荷返回 `0x1dc15e`；HF 全部不命中。真机未跑。
-- **[x] ⑤ 原生线程自动选中、GDI 兜底让位** — 待提交。真机复测（2026-11-01）：原生接管生效（不再起 Luna，`SiglusEngine message` 正常出句），但仍弹「完成捕获设置」，且多一条 `GDI fallback`（存档界面日期的逐字重绘伪影）。根因两处，均为 Siglus 引擎级、对 anemoi 等同样生效：
+- **[x] ⑤ 原生线程自动选中、GDI 兜底让位** — `df2df58aa4`。真机复测（2026-11-01）：原生接管生效（不再起 Luna，`SiglusEngine message` 正常出句），但仍弹「完成捕获设置」，且多一条 `GDI fallback`（存档界面日期的逐字重绘伪影）。根因两处，均为 Siglus 引擎级、对 anemoi 等同样生效：
   - `siglus_message_capture.inc` 写环时 hook code 传 `nullptr`，而消费端只自动选中 `ENGINE:` 前缀线程（`texthooker_service.dart` `isEngineExactTextThread`），原生消息线程因此永远要用户手选（anemoi 能直接显示靠的是之前记住的选择）。改为 `ENGINE:SIGLUS:message`。
   - GDI 兜底只在第一句原生台词写出后才让位（`luna_active` 置位在写环成功处），载入存档时的日期绘制早于第一句，于是被当成一条线程登记。改为原生消息钩子组安装成功即置位。
   - 测试：`tests/siglus_message_capture_test.cpp`（生产写环带 `ENGINE:SIGLUS:message`；安装成功置位、安装失败不置位）。x86 / x64 CTest 与守卫全绿。
   - 副作用：之前手选并记住过 Siglus 原生线程的游戏，记忆指纹按旧的线程名记录，换成 hook code 后对不上，会再弹一次选择框；选一次后重新记住。
-- **备注**：离线用 Rewrite+ 内存镜像验证：家族 `abi=1`、槽位 RVA `0x5ed4bc`、配置槽 `0x6d3e30`（实测 1280×720）；HF（Rewrite Harvest festa!，1.0.17.19）为负样本，全部不命中。真机门（不再等 120 秒、内嵌查词、鼠标与触摸点击查词不推进）尚未跑，支持状态保持 `implemented_unverified`。HF 是另一种代码形态，需另行分析。
+- **备注**：离线用 Rewrite+ 内存镜像验证：家族 `abi=1`、槽位 RVA `0x5ed4bc`、配置槽 `0x6d3e30`（实测 1280×720）；HF（Rewrite Harvest festa!，1.0.17.19）为负样本，全部不命中。HF 是另一种代码形态，见 BUG-3929。
+- **真机复测（2026-11-01，用户本地构建，含 BUG-3929 的共用修复）**：不再等 120 秒、正文为原生消息线程且不含人名、逐句有语音、游戏画面内弹出查词卡、鼠标点词不推进，用户确认均正常；**触摸点词不推进未测**，按「适配成功」定义只算部分适配，支持状态保持 `implemented_unverified`。
