@@ -842,7 +842,7 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
       hasChildPopup: index < _popup.entries.length - 1,
       isDark: isDark,
       topBarScale: dictionaryPopupTopBarScale(
-        appUiScale: appModel.appUiScale,
+        appUiScale: appModel.popupUiScale,
         dictionaryFontSize: appModel.dictionaryFontSize,
       ),
       showBorder: false,

@@ -1128,6 +1128,8 @@ BoxConstraints dictionaryPopupTopActionConstraints() {
 /// A−/A+ / Ctrl+滚轮改的就是词典字号），夹到 [0.8, 1.5]：再小点不中，再大顶栏会吃掉
 /// 正文高度。弹窗处在界面缩放中和器之下（净缩放 1），界面大小只能由这里乘进来——此前
 /// 只有阅读器 header 自己乘了界面大小，左右两簇没乘，于是中间的收藏按钮与两侧大小不一。
+/// 反馈 2jGkpD-iD6：[appUiScale] 传的是弹窗生效缩放 `AppModel.popupUiScale`（界面大小 ×
+/// 弹窗缩放系数），与正文 zoom 同源。
 double dictionaryPopupTopBarScale({
   required double appUiScale,
   required double dictionaryFontSize,

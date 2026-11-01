@@ -1604,7 +1604,8 @@ class _RenderNoBaseline extends RenderProxyBox {
   ) => null;
 }
 
-/// 音调图：读音逐拍，高拍画上线、低拍画下线，降调处画竖线（与模板脚本同一套规则）。
+/// 音调图：读音逐拍，高拍画上划线、降调处画一小段降调符、低拍不画（与模板脚本同一套规则，
+/// 见 [srsPitchMoraMarks]）。
 class SrsPitchGraph extends StatelessWidget {
   const SrsPitchGraph({
     super.key,
@@ -1636,33 +1637,19 @@ class SrsPitchGraph extends StatelessWidget {
       srsPitchType(p, morae.length, categories),
       dark: dark,
     );
-    final BorderSide line = BorderSide(color: color, width: 2);
-    Widget mora(String text, {required bool high, required bool drop}) =>
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 1, vertical: 2),
-          decoration: BoxDecoration(
-            border: Border(
-              top: high ? line : BorderSide.none,
-              bottom: high ? BorderSide.none : line,
-              right: drop ? line : BorderSide.none,
-            ),
-          ),
-          child: Text(text, style: style),
-        );
+    final List<SrsPitchMoraMark> marks = srsPitchMoraMarks(p, morae.length);
+    Widget mora(String text, SrsPitchMoraMark mark) => CustomPaint(
+      foregroundPainter: _SrsPitchMoraPainter(mark: mark, color: color),
+      child: Padding(
+        padding: const EdgeInsets.only(left: 1, right: 1, top: 4),
+        child: Text(text, style: style),
+      ),
+    );
     final Widget graph = Row(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        for (int i = 0; i < morae.length; i++)
-          mora(
-            morae[i],
-            high: p == 0
-                ? i > 0
-                : p == 1
-                ? i == 0
-                : i > 0 && i < p,
-            drop: p > 0 && i == p - 1,
-          ),
-        if (p > 0 && p >= morae.length) mora(' ', high: false, drop: false),
+        for (int i = 0; i < marks.length; i++)
+          mora(i < morae.length ? morae[i] : ' ', marks[i]),
       ],
     );
     return Semantics(
@@ -1706,6 +1693,96 @@ class SrsPitchGraph extends StatelessWidget {
       ),
     );
   }
+}
+
+/// 声调图里一拍的画法（与 Fushi 卡片模板脚本 `drawPitch` + styling.css `.fc-mora*`、
+/// Yomitan 的文字式声调图同一套记法）：高拍画上划线；降调前最后一个高拍在右侧向下画
+/// 一小段降调符；低拍**什么都不画**（反馈 kP5GJ0pahv：原生卡面给低拍画下划线，和导出到
+/// Anki 的模板卡面不是一套图，平板型 / 中高型看起来像「上下框」完全读错）。尾高型在
+/// 最后多一个 [tail] 拍，画一段虚线表示后接助词变低。
+@immutable
+class SrsPitchMoraMark {
+  const SrsPitchMoraMark({
+    required this.high,
+    required this.drop,
+    this.tail = false,
+  });
+
+  final bool high;
+  final bool drop;
+  final bool tail;
+
+  @override
+  bool operator ==(Object other) =>
+      other is SrsPitchMoraMark &&
+      other.high == high &&
+      other.drop == drop &&
+      other.tail == tail;
+
+  @override
+  int get hashCode => Object.hash(high, drop, tail);
+
+  @override
+  String toString() =>
+      'SrsPitchMoraMark(high: $high, drop: $drop, tail: $tail)';
+}
+
+/// 声调号 [position]（0 = 平板，n = 第 n 拍后降）在 [moraCount] 拍读音上的逐拍画法；
+/// 尾高型（position ≥ 拍数）多出一个尾拍。
+List<SrsPitchMoraMark> srsPitchMoraMarks(int position, int moraCount) {
+  final int p = position;
+  return <SrsPitchMoraMark>[
+    for (int i = 0; i < moraCount; i++)
+      SrsPitchMoraMark(
+        high: p == 0
+            ? i > 0
+            : p == 1
+            ? i == 0
+            : i > 0 && i < p,
+        drop: p > 0 && i == p - 1,
+      ),
+    if (p > 0 && p >= moraCount)
+      const SrsPitchMoraMark(high: false, drop: false, tail: true),
+  ];
+}
+
+class _SrsPitchMoraPainter extends CustomPainter {
+  const _SrsPitchMoraPainter({required this.mark, required this.color});
+
+  final SrsPitchMoraMark mark;
+  final Color color;
+
+  static const double _stroke = 2;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final Paint paint = Paint()
+      ..color = color
+      ..strokeWidth = _stroke
+      ..style = PaintingStyle.stroke;
+    const double y = _stroke / 2;
+    if (mark.high) {
+      canvas.drawLine(const Offset(0, y), Offset(size.width, y), paint);
+    }
+    if (mark.drop) {
+      final double x = size.width - _stroke / 2;
+      canvas.drawLine(Offset(x, y), Offset(x, size.height * 0.45), paint);
+    }
+    if (mark.tail) {
+      final double ty = size.height * 0.62;
+      for (double x = 0; x < size.width; x += 4) {
+        canvas.drawLine(
+          Offset(x, ty),
+          Offset(math.min(x + 2, size.width), ty),
+          paint,
+        );
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(_SrsPitchMoraPainter old) =>
+      old.mark != mark || old.color != color;
 }
 
 class _Chip extends StatelessWidget {

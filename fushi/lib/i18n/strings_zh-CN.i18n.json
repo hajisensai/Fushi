@@ -4617,6 +4617,8 @@
   "lookup_popup_close_after_mining_hint": "制卡成功（或进入待发队列）后关掉整个查词弹窗，不再挡住正文",
   "lookup_popup_size_preview_effective": "当前屏幕实际：$width × $height",
   "lookup_popup_size_shared_hint": "与漫画、视频的查词弹窗共用；拖动弹窗右下角也会修改。",
+  "lookup_popup_ui_scale": "查词弹窗缩放",
+  "lookup_popup_ui_scale_hint": "在界面大小之上单独缩放弹窗内容与按钮，弹窗窗口尺寸不变",
   "lookup_recent_searches": "最近搜索",
   "low_memory_mode": "小内存模式",
   "low_memory_mode_hint": "减少缓存和内存使用，适合低端设备。部分更改需重启后生效。",

@@ -34,6 +34,7 @@ import 'package:fushi/src/media/kavita/kavita_server_config.dart';
 import 'package:fushi/src/media/video/video_jump_pill_hover.dart'
     show kVideoJumpPillAutoHideDefaultSeconds;
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/lookup/popup_ui_scale.dart';
 import 'package:fushi/src/utils/misc/toast_severity.dart'
     show MineToastStatus, mineToastShown;
 import 'package:fushi/src/sync/hidden_remote_books.dart'
@@ -1293,6 +1294,18 @@ class PreferencesRepository extends ChangeNotifier
 
   void setDictionaryFontSize(double fontSize) async {
     await setPref('dictionary_entry_font_size', fontSize);
+    notifyListeners();
+  }
+
+  /// 查词弹窗独立缩放系数（反馈 2jGkpD-iD6），乘在界面大小之上；读写都夹进
+  /// [kPopupUiScaleMin]..[kPopupUiScaleMax]，非法值回落 1.0。
+  double get popupUiScale => clampPopupUiScaleFactor(
+    (getPref('popup_ui_scale', defaultValue: kPopupUiScaleDefault) as num)
+        .toDouble(),
+  );
+
+  Future<void> setPopupUiScale(double factor) async {
+    await setPref('popup_ui_scale', clampPopupUiScaleFactor(factor));
     notifyListeners();
   }
 

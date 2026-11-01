@@ -1185,7 +1185,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
               },
         headerWidget: index == 0 ? buildPopupAudioControls() : null,
         topBarScale: dictionaryPopupTopBarScale(
-          appUiScale: appModel.appUiScale,
+          appUiScale: appModel.popupUiScale,
           dictionaryFontSize: appModel.dictionaryFontSize,
         ),
         overlayWidget: isTop ? buildDictionaryLoading() : null,

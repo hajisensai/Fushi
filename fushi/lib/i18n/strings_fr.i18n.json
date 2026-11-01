@@ -4617,6 +4617,8 @@
   "lookup_popup_close_after_mining_hint": "Once a card is added (or queued), the whole lookup popup closes so it stops covering the text",
   "lookup_popup_size_preview_effective": "On this screen: $width × $height",
   "lookup_popup_size_shared_hint": "Shared with manga and video lookups. Dragging the popup's bottom-right corner changes it too.",
+  "lookup_popup_ui_scale": "Popup UI scale",
+  "lookup_popup_ui_scale_hint": "Scales popup content and buttons on top of the app UI size; the popup window size is unchanged",
   "lookup_recent_searches": "Recent searches",
   "low_memory_mode": "Mode mémoire réduite",
   "low_memory_mode_hint": "Réduit l'utilisation du cache et de la mémoire pour les appareils bas de gamme. Certains changements nécessitent un redémarrage.",

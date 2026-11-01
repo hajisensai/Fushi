@@ -15,6 +15,7 @@ import 'package:fushi/src/lookup/effective_lookup_size.dart'
         kLookupPopupMinWidth;
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
 import 'package:fushi/src/lookup/lookup_popup_size_preview.dart';
+import 'package:fushi/src/lookup/popup_ui_scale.dart';
 import 'package:fushi/src/lookup/lookup_ime_channel.dart';
 import 'package:fushi/src/lookup/selection_capture_ffi.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
@@ -699,6 +700,30 @@ SettingsDestination buildLookupDestination() {
                 settingsContext.appModel.defaultDictionaryFontSize,
             onChanged: (SettingsContext settingsContext, num value) {
               settingsContext.appModel.setDictionaryFontSize(value.toDouble());
+              settingsContext.refresh();
+            },
+          ),
+          // 反馈 2jGkpD-iD6：查词弹窗独立缩放，乘在「界面大小」之上，只缩放弹窗内容
+          // （WebView zoom）与弹窗顶栏按钮，不改弹窗盒子尺寸。取值单点
+          // AppModel.popupUiScale，所有弹窗宿主共用。schema 项由 MD3 / Apple 两套设置
+          // 渲染器共同渲染。松手才提交，免拖动时逐帧写库 + 已开弹窗逐帧重注入。
+          SettingsSliderItem(
+            id: 'lookup.popup_ui_scale',
+            title: t.lookup_popup_ui_scale,
+            subtitle: t.lookup_popup_ui_scale_hint,
+            icon: Icons.zoom_in_outlined,
+            reader: const ReaderPlacement(group: ReaderGroup.lookup, order: 6),
+            min: kPopupUiScaleMin,
+            max: kPopupUiScaleMax,
+            divisions: kPopupUiScaleDivisions,
+            label: (double value) => '${(value * 100).round()}%',
+            titleReadout: true,
+            commitOnRelease: true,
+            defaultValue: kPopupUiScaleDefault,
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.popupUiScaleFactor,
+            onChanged: (SettingsContext settingsContext, double value) async {
+              await settingsContext.appModel.setPopupUiScaleFactor(value);
               settingsContext.refresh();
             },
           ),

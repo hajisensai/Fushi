@@ -149,6 +149,37 @@ void main() {
     expect(sanitizeVideoRemoteDictionaryMediaJson(''), '');
   });
 
+  test('sanitizeVideoRemoteDictionaryMediaJson 保留 popup.js 占位符 filename', () {
+    // 丢了 filename，落卡时映射键是空串：replaceAll('', ref) 把媒体名插进字段每个
+    // 字符之间（反馈 PDgaHL5qmj 排查时发现）。
+    final String out = sanitizeVideoRemoteDictionaryMediaJson(
+      jsonEncode(<Map<String, String>>[
+        <String, String>{
+          'dictionary': 'd',
+          'path': 'img/悩殺 挿絵.png',
+          'filename': 'fushi_dict_0.png',
+        },
+        <String, String>{
+          'dictionary': 'd',
+          'path': 'gaiji/a.svg',
+          'filename': 'x" onerror="y',
+        },
+      ]),
+    );
+    final List<dynamic> decoded = jsonDecode(out) as List<dynamic>;
+    expect(decoded, hasLength(2));
+    expect(decoded[0], <String, dynamic>{
+      'dictionary': 'd',
+      'path': 'img/悩殺 挿絵.png',
+      'filename': 'fushi_dict_0.png',
+    });
+    expect(
+      (decoded[1] as Map<String, dynamic>).containsKey('filename'),
+      isFalse,
+      reason: '不是占位符形态的 filename 只丢掉它本身',
+    );
+  });
+
   group('matchVideoRemoteFavoriteCue', () {
     final List<VideoRemoteCue> rows = videoRemoteTrackRows(
       <AudioCue>[

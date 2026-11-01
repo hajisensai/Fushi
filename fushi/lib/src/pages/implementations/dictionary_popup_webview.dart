@@ -1071,6 +1071,8 @@ class DictionaryPopupWebViewState extends ConsumerState<DictionaryPopupWebView>
   /// 划词弹窗内容 CSS `zoom` 系数：跟随「界面大小」与「词典字号」一起放大，
   /// 与 Dart 侧盒子尺寸（base_source_page / dictionary_page_mixin 乘 appUiScale）一致。
   /// 默认 (appUiScale=1, fontSize=16) → 1.0，保持改动前观感。clamp 防御非法输入。
+  /// 反馈 2jGkpD-iD6：调用方传的 [appUiScale] 是弹窗生效缩放 `AppModel.popupUiScale`
+  /// （界面大小 × 弹窗缩放系数），盒子尺寸则只乘界面大小。
   static double popupContentZoom({
     required double appUiScale,
     required double dictionaryFontSize,

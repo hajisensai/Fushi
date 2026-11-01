@@ -23,10 +23,20 @@ import 'package:fushi_engine/sync/forwarded_mine_payload.dart';
 /// 绝不透传对端给的本地路径 / URL：下游 `materializeAnkiWordAudio` 会读本地文件、
 /// 对任意 URL 发 GET（BUG-2778）。rawPayloadJson 不是 JSON 对象时抛
 /// [FormatException]（无法剥离就不落）。
+///
+/// [writeHostDictionaryMedia]：执行方**自己的**词典媒体写缓存函数（app 的
+/// `writeDictionaryMediaCache` / 无头服务端的 `ServerDictionaryHost.writeDictionaryMediaCache`，
+/// 入参是 `[{dictionary, path, ...}]` JSON 串，已存在的缓存文件跳过）。随附字节落盘之后
+/// 用它把**没随附字节**的词典媒体从执行方本机词典补齐。瘦客户端经互联查词时查的就是
+/// 这台主机的词典：客户端本机没有这些词典，`ForwardedMinePayloadBuilder` 取不到字节，
+/// 只有主机补得上——缺了这一步，插图占位符在渲染时降级成空 alt，整张 `<img>` 连同
+/// 外层链接一起消失（反馈 PDgaHL5qmj）。它只按「词典名 + 相对路径」查执行方的词典
+/// 索引，不碰对端给的文件路径 / URL，故与 [bundledMediaOnly] 的剥离契约不冲突。
 Future<T> withMaterializedMiningContext<T>(
   ForwardedMinePayload payload,
   Future<T> Function(String rawPayloadJson, AnkiMiningContext context) action, {
   bool bundledMediaOnly = false,
+  Future<void> Function(String dictionaryMediaJson)? writeHostDictionaryMedia,
 }) async {
   // 先剥离再落文件：剥不了就不必建临时目录。
   String rawPayloadJson = bundledMediaOnly
@@ -60,6 +70,13 @@ Future<T> withMaterializedMiningContext<T>(
     }
     // ④ 词典外字 → 落到 repo 会读取的共享缓存目录（按 path 派生同名，与 repo 读取对齐）
     await _materializeDictionaryMedia(payload.dictionaryMedia);
+    // ④' 没随附字节的词典媒体 → 执行方本机词典补齐（随附的已在上一步落盘，写入方跳过）。
+    if (writeHostDictionaryMedia != null) {
+      final String dictionaryMediaJson = _dictionaryMediaJsonOf(rawPayloadJson);
+      if (dictionaryMediaJson.isNotEmpty) {
+        await writeHostDictionaryMedia(dictionaryMediaJson);
+      }
+    }
     // ⑤ 重建 context
     final AnkiMiningContext context = AnkiMiningContext(
       sentence: payload.sentence,
@@ -143,6 +160,22 @@ String _stripUnbundledMedia(ForwardedMinePayload payload) {
 }
 
 String _dictKey(String dictionary, String path) => '$dictionary\u0000$path';
+
+/// rawPayloadJson 里 `dictionaryMedia` 的 JSON 串形态（popup.js 给 JSON 串，部分调用方
+/// 给原生 List，两种都收）。缺失 / 空 / 不是 JSON 对象返回空串（无可补齐）。
+String _dictionaryMediaJsonOf(String rawPayloadJson) {
+  final Object? decoded;
+  try {
+    decoded = jsonDecode(rawPayloadJson);
+  } on FormatException {
+    return '';
+  }
+  if (decoded is! Map) return '';
+  final Object? media = decoded['dictionaryMedia'];
+  if (media is String) return media == '[]' ? '' : media;
+  if (media is List && media.isNotEmpty) return jsonEncode(media);
+  return '';
+}
 
 /// 把 rawPayloadJson 里的 `audio` 字段改写成本机文件路径。
 String _rewriteAudioField(String rawJson, String newAudioPath) {

@@ -540,6 +540,9 @@ mixin AnkiNoteComposer {
   ) async {
     final tags = <String, String>{};
     for (final m in media) {
+      // 没有占位符就没有可替换的位置；空键进映射会让 buildMinedFields 的
+      // `replaceAll('', ref)` 把媒体名插进字段每个字符之间，整张卡变乱码。
+      if (m.filename.isEmpty) continue;
       final ref = await storeBareRef(m);
       if (ref != null && ref.isNotEmpty) {
         tags[m.filename] = ref;

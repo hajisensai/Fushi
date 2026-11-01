@@ -21,12 +21,15 @@ Dictionary _dict(
   int order = 0,
   DictionaryType type = DictionaryType.term,
   List<String> hiddenLanguages = const <String>[],
+  String? sourceLanguage,
 }) => Dictionary(
   name: name,
   formatKey: 'yomichan',
   order: order,
   type: type,
-  metadata: const <String, String>{},
+  metadata: <String, String>{
+    if (sourceLanguage != null) 'sourceLanguage': sourceLanguage,
+  },
   hiddenLanguages: hiddenLanguages,
   collapsedLanguages: const <String>[],
 );
@@ -120,6 +123,51 @@ void main() {
       await repo.loadFromDb();
       await repo.clearDictionaryMetadata();
       expect(repo.lookupFilters.termDictionaryOrder, isEmpty);
+    });
+  });
+
+  group('lookupFilters.hasChineseTermDictionary（反馈 3FY6vTqwV-）', () {
+    test('只认启用中、声明为中文的 term 词典', () async {
+      await repo.persistDictionaries(<Dictionary>[
+        _dict('JMdict', sourceLanguage: 'ja'),
+        _dict('Unlabelled', order: 1),
+        _dict(
+          'ZhFreq',
+          order: 2,
+          type: DictionaryType.frequency,
+          sourceLanguage: 'zh',
+        ),
+      ]);
+      expect(
+        repo.lookupFilters.hasChineseTermDictionary,
+        isFalse,
+        reason: '日语 / 未标注 term 词典、中文频率词典都不算',
+      );
+
+      await repo.persistDictionary(
+        _dict('ABC', order: 3, sourceLanguage: 'zh-Hans'),
+      );
+      expect(repo.lookupFilters.hasChineseTermDictionary, isTrue);
+    });
+
+    test('被关掉的中文词典不算；开回来又算', () async {
+      final Dictionary drEye = _dict('DrEye', sourceLanguage: 'zh-Hant');
+      await repo.persistDictionary(drEye);
+      expect(repo.lookupFilters.hasChineseTermDictionary, isTrue);
+      await repo.setDictionaryHidden(drEye, ja, true);
+      expect(repo.lookupFilters.hasChineseTermDictionary, isFalse);
+      await repo.setDictionaryHidden(drEye, ja, false);
+      expect(repo.lookupFilters.hasChineseTermDictionary, isTrue);
+    });
+
+    test('手动指定语言优先于包内声明，改语言后快照失效', () async {
+      final Dictionary dict = _dict('Cedict');
+      await repo.persistDictionary(dict);
+      expect(repo.lookupFilters.hasChineseTermDictionary, isFalse);
+      await repo.setDictionaryLanguageOverride(dict, 'zh');
+      expect(repo.lookupFilters.hasChineseTermDictionary, isTrue);
+      await repo.setDictionaryLanguageOverride(dict, null);
+      expect(repo.lookupFilters.hasChineseTermDictionary, isFalse);
     });
   });
 

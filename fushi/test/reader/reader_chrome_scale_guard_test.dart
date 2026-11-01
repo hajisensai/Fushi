@@ -57,7 +57,22 @@ void main() {
       'lib/src/pages/base_source_page.dart',
     ).readAsStringSync();
     expect(host, contains('topBarScale: dictionaryPopupTopBarScale('));
-    expect(host, contains('appUiScale: appModel.appUiScale'));
+    // 顶栏缩放取「弹窗生效缩放」= 界面大小 × 弹窗缩放系数（反馈 2jGkpD-iD6）：
+    // 仍随 appUiScale 走，只是多乘了弹窗专用系数。两头都钉住，防退回裸 appUiScale
+    // （系数失效）或 popupUiScale 不再派生自 appUiScale（顶栏不随界面大小）。
+    expect(host, contains('appUiScale: appModel.popupUiScale'));
+    final String model = File(
+      'lib/src/models/app_model.dart',
+    ).readAsStringSync();
+    expect(
+      model,
+      matches(
+        RegExp(
+          r'double get popupUiScale => resolvePopupUiScale\(\s*'
+          r'appUiScale: appUiScale,\s*popupScaleFactor: popupUiScaleFactor,',
+        ),
+      ),
+    );
     final String src = reader.readAsStringSync();
     final String toolbar = _functionSource(
       src,

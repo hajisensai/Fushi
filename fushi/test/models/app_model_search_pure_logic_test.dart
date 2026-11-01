@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/dictionary_repository.dart';
 import 'package:fushi/src/utils/misc/lookup_input_limits.dart';
 import 'package:characters/characters.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
@@ -325,6 +326,50 @@ void main() {
       ]) {
         expect(isChineseLanguageTag(tag), isFalse, reason: '$tag');
       }
+    });
+
+    test('判据：语言已知只看语言；未知时看启用词典里有没有中文词典（反馈 3FY6vTqwV-）', () {
+      const DictionaryLookupFilters withZh = DictionaryLookupFilters(
+        hiddenDictionaryNames: <String>{},
+        termDictionaryOrder: <String>['ABC', 'DrEye'],
+        hasChineseTermDictionary: true,
+      );
+      const DictionaryLookupFilters withoutZh = DictionaryLookupFilters(
+        hiddenDictionaryNames: <String>{},
+        termDictionaryOrder: <String>['JMdict'],
+      );
+      // 首页 / 查词页：没有媒体页登记语言、默认内容语言出厂为空。此前恒为 false。
+      for (final String? unknown in <String?>[null, '', '  ']) {
+        expect(
+          lookupUsesChineseScriptVariants(
+            lookupLanguage: unknown,
+            filters: withZh,
+          ),
+          isTrue,
+          reason: '语言未知 + 装了中文词典 → 展开简繁（"$unknown"）',
+        );
+        expect(
+          lookupUsesChineseScriptVariants(
+            lookupLanguage: unknown,
+            filters: withoutZh,
+          ),
+          isFalse,
+          reason: '语言未知 + 没有中文词典 → 不动查询（"$unknown"）',
+        );
+      }
+      // 语言已知：只看语言，词典集合不改变结论。
+      expect(
+        lookupUsesChineseScriptVariants(lookupLanguage: 'ja', filters: withZh),
+        isFalse,
+        reason: '日语书里查词不因装了中文词典而多出简繁变体',
+      );
+      expect(
+        lookupUsesChineseScriptVariants(
+          lookupLanguage: 'zh-Hant',
+          filters: withoutZh,
+        ),
+        isTrue,
+      );
     });
 
     test('缓存键：关着时与旧格式逐字相同，开着时带 /zh 后缀不与之共用', () {

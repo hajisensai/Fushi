@@ -813,6 +813,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 层没有可观测探针；由专项测试逐环锁死注入链路（偏好 → 注入/theme 下发 → 三份
   // popup.js 读取并乘进 factor）。
   'lookup/Popup scroll speed': 'test/reader/popup_wheel_speed_asset_test.dart',
+  // 反馈 2jGkpD-iD6：查词弹窗独立缩放。生效面是弹窗 WebView 的 CSS zoom 注入与弹窗
+  // 顶栏缩放（非 reader CSS / 主题树），由取值 / zoom 纯函数 + 偏好往返 + 注入 memo
+  // 失效用例咬住。
+  'lookup/Popup UI scale':
+      'test/lookup/popup_ui_scale_test.dart + test/pages/popup_settings_injection_memo_test.dart',
   // 瞬时滚动步长（滚轮 / 触摸）：生效面同样在 popup.js 的 wheel / touch 监听器，由
   // 专项守卫逐环锁死（偏好 clamp → 注入 / theme 下发 → 三份 popup.js 读取并替代常量）。
   'lookup/Instant scroll wheel step':

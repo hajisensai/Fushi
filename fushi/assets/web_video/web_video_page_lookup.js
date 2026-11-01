@@ -88,6 +88,60 @@
     return null;
   }
 
+  // 注音（<ruby> 的 <rt> / <rp>）不是正文：取词与取句都要跳过（反馈 flt5vvT-5X）。
+  // 不跳过时，悬停在注音上会把假名当成词查；悬停在正文上，句子也只剩这一个 <rb>
+  // 文本节点（「漢<rt>かん</rt>字<rt>じ</rt>」被拆成两段），或混进注音变成「漢かん字じ」。
+  var ANNOTATION_TAGS = { RT: true, RP: true, SCRIPT: true, STYLE: true, NOSCRIPT: true };
+  function insideAnnotation(node, stop) {
+    for (var n = node && node.nodeType === 1 ? node : node && node.parentElement;
+      n && n !== stop; n = n.parentElement) {
+      if (ANNOTATION_TAGS[n.tagName]) return true;
+    }
+    return false;
+  }
+
+  // 正文段拼成一条：segments 是块内按文档序、已剔除注音的文本节点内容，命中节点是第
+  // hitSegment 段、段内偏移 hitOffset；返回拼接后的全文与命中字符在全文里的偏移。
+  function joinSegments(segments, hitSegment, hitOffset) {
+    var text = '';
+    var offset = -1;
+    for (var i = 0; i < segments.length; i++) {
+      if (i === hitSegment) offset = text.length + hitOffset;
+      text += segments[i];
+    }
+    return { text: text, offset: offset };
+  }
+
+  // 命中文本节点所在的块级祖先：句子在块内跨 inline 元素（<ruby>、<span>、<b>…）取。
+  function blockOf(node) {
+    for (var n = node.parentElement; n; n = n.parentElement) {
+      if (n === document.body) return n;
+      var display = '';
+      try { display = window.getComputedStyle(n).display || ''; } catch (_) {}
+      if (display && display.indexOf('inline') !== 0 && display.indexOf('ruby') !== 0 &&
+        display !== 'contents') {
+        return n;
+      }
+    }
+    return node.parentElement;
+  }
+
+  // 命中节点所在块的正文（剔除注音）+ 命中字符的全文偏移；命中节点本身在注音里返回 null。
+  function blockText(node, offset) {
+    var block = blockOf(node);
+    if (!block || insideAnnotation(node, null)) return null;
+    var segments = [];
+    var hitSegment = -1;
+    var walker = document.createTreeWalker(block, 4 /* NodeFilter.SHOW_TEXT */);
+    for (var t = walker.nextNode(); t; t = walker.nextNode()) {
+      if (insideAnnotation(t, block)) continue;
+      if (t === node) hitSegment = segments.length;
+      segments.push(t.data);
+    }
+    if (hitSegment < 0) return { text: node.data, offset: offset };
+    return joinSegments(segments, hitSegment, offset);
+  }
+
   var lastKey = '';
   var lastAt = 0;
   var mouse = null;
@@ -98,7 +152,9 @@
     if (!parent || editable(parent)) return;
     var hit = hitChar(c.node, c.offset, x, y);
     if (!hit) return;
-    var s = sentenceAt(c.node.data, hit.offset);
+    var flat = blockText(c.node, hit.offset);
+    if (!flat) return;
+    var s = sentenceAt(flat.text, flat.offset);
     if (!s) return;
     var key = s.sentence + '\u0000' + s.index;
     var now = Date.now();
@@ -129,5 +185,8 @@
     if (e.key === key && !e.repeat && mouse) scan(mouse.x, mouse.y);
   }, true);
 
-  window.__fushiPageLookup = { _pure: { sentenceAt: sentenceAt, graphemes: graphemes } };
+  window.__fushiPageLookup = {
+    _pure: { sentenceAt: sentenceAt, graphemes: graphemes, joinSegments: joinSegments },
+    _dom: { blockText: blockText, insideAnnotation: insideAnnotation },
+  };
 })();
