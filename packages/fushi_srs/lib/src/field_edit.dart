@@ -153,37 +153,99 @@ abstract final class SrsFieldKeys {
 
 /// 字段类别表（只在这里写一次）。
 SrsFieldClass srsFieldClassOf(SrsEntityKind kind, String fieldKey) {
-  switch (kind) {
-    case SrsEntityKind.note:
-      if (fieldKey == SrsFieldKeys.noteDeck) return SrsFieldClass.setting;
-      // 换类型：最后修改生效，被覆盖的进同步冲突记录、可一键改回（字段值另按内容类处理）。
-      if (fieldKey == SrsFieldKeys.noteType) return SrsFieldClass.setting;
-      if (fieldKey == SrsFieldKeys.deleted) return SrsFieldClass.content;
-      return SrsFieldClass.content;
-    case SrsEntityKind.noteType:
-      // 词条字段 / 词频序字段都是「指向哪个字段」的设置：最后修改生效，不按内容冲突处理。
-      if (fieldKey == SrsFieldKeys.name ||
-          fieldKey == SrsFieldKeys.termField ||
-          fieldKey == SrsFieldKeys.freqField) {
-        return SrsFieldClass.setting;
+  final _SrsFieldClassRule rule = _kSrsFieldClassRules[kind]!;
+  return rule.exceptions[fieldKey] ?? rule.fallback;
+}
+
+/// 一种实体的字段类别：没列出的键都是 [fallback]，[exceptions] 里的键按各自的类别。
+typedef _SrsFieldClassRule = ({
+  SrsFieldClass fallback,
+  Map<String, SrsFieldClass> exceptions,
+});
+
+/// 字段类别的唯一真相：[srsFieldClassOf]（Dart 侧逐条判）与 [srsFieldClassSqlFilter]（让 SQLite 在读回之前
+/// 就筛掉不需要的类别）都只读这张表。
+const Map<SrsEntityKind, _SrsFieldClassRule> _kSrsFieldClassRules =
+    <SrsEntityKind, _SrsFieldClassRule>{
+      // 笔记：字段值、标签、来源、删除都是内容。首选牌组是设置；换类型也是设置：最后修改生效，被覆盖的进同步
+      // 冲突记录、可一键改回（字段值另按内容类处理）。
+      SrsEntityKind.note: (
+        fallback: SrsFieldClass.content,
+        exceptions: <String, SrsFieldClass>{
+          SrsFieldKeys.noteDeck: SrsFieldClass.setting,
+          SrsFieldKeys.noteType: SrsFieldClass.setting,
+        },
+      ),
+      // 笔记类型：字段 / 模板定义与 CSS 是内容。名字、词条字段、词频序字段都是「指向哪个字段」的设置：最后修改
+      // 生效，不按内容冲突处理。
+      SrsEntityKind.noteType: (
+        fallback: SrsFieldClass.content,
+        exceptions: <String, SrsFieldClass>{
+          SrsFieldKeys.name: SrsFieldClass.setting,
+          SrsFieldKeys.termField: SrsFieldClass.setting,
+          SrsFieldKeys.freqField: SrsFieldClass.setting,
+        },
+      ),
+      // 卡片：新卡位置是一整批机械重排的产物，两台设备各自重排同一牌组是常态，每张卡都进「同步冲突记录」只会
+      // 刷屏，所以同折叠状态一样按界面状态处理（最后修改生效）。
+      SrsEntityKind.card: (
+        fallback: SrsFieldClass.flag,
+        exceptions: <String, SrsFieldClass>{
+          SrsFieldKeys.cardNewPosition: SrsFieldClass.viewState,
+        },
+      ),
+      SrsEntityKind.deck: (
+        fallback: SrsFieldClass.setting,
+        exceptions: <String, SrsFieldClass>{
+          SrsFieldKeys.deckCollapsed: SrsFieldClass.viewState,
+          SrsFieldKeys.deckPosition: SrsFieldClass.viewState,
+        },
+      ),
+      SrsEntityKind.profile: (
+        fallback: SrsFieldClass.setting,
+        exceptions: <String, SrsFieldClass>{},
+      ),
+    };
+
+/// SQL 布尔表达式：[kindColumn]（实体种类 wire 值）/ [keyColumn]（字段键）这一行的类别（[srsFieldClassOf]）属于
+/// [classes]。与 [srsFieldClassOf] 读同一张表，二者恒等（回归：fushi_engine
+/// `test/srs/srs_field_class_sql_test.dart`）。
+///
+/// 用途：只要某几类修改记录时让 SQLite 先筛，别把笔记字段正文（内容类，大库上全部加起来是 GB 级）读回来再丢。
+String srsFieldClassSqlFilter(
+  Set<SrsFieldClass> classes, {
+  required String kindColumn,
+  required String keyColumn,
+}) {
+  String quote(String s) => "'${s.replaceAll("'", "''")}'";
+  String inList(Iterable<String> keys) => keys.map(quote).join(', ');
+  final List<String> terms = <String>[];
+  for (final SrsEntityKind kind in SrsEntityKind.values) {
+    final _SrsFieldClassRule rule = _kSrsFieldClassRules[kind]!;
+    final String isKind = '$kindColumn = ${quote(kind.wire)}';
+    if (classes.contains(rule.fallback)) {
+      // 缺省类别要：这种实体除了「类别不要的例外键」以外都要。
+      final List<String> drop = <String>[
+        for (final MapEntry<String, SrsFieldClass> e in rule.exceptions.entries)
+          if (!classes.contains(e.value)) e.key,
+      ];
+      terms.add(
+        drop.isEmpty
+            ? '($isKind)'
+            : '($isKind AND $keyColumn NOT IN (${inList(drop)}))',
+      );
+    } else {
+      // 缺省类别不要：只要类别在 [classes] 里的例外键。
+      final List<String> keep = <String>[
+        for (final MapEntry<String, SrsFieldClass> e in rule.exceptions.entries)
+          if (classes.contains(e.value)) e.key,
+      ];
+      if (keep.isNotEmpty) {
+        terms.add('($isKind AND $keyColumn IN (${inList(keep)}))');
       }
-      return SrsFieldClass.content;
-    case SrsEntityKind.card:
-      // 新卡位置是一整批机械重排的产物：两台设备各自重排同一牌组是常态，每张卡都进
-      // 「同步冲突记录」只会刷屏，所以同折叠状态一样按界面状态处理（最后修改生效）。
-      if (fieldKey == SrsFieldKeys.cardNewPosition) {
-        return SrsFieldClass.viewState;
-      }
-      return SrsFieldClass.flag;
-    case SrsEntityKind.deck:
-      if (fieldKey == SrsFieldKeys.deckCollapsed ||
-          fieldKey == SrsFieldKeys.deckPosition) {
-        return SrsFieldClass.viewState;
-      }
-      return SrsFieldClass.setting;
-    case SrsEntityKind.profile:
-      return SrsFieldClass.setting;
+    }
   }
+  return terms.isEmpty ? '(0)' : '(${terms.join(' OR ')})';
 }
 
 /// 一条修改记录。创建即不可变；ID 由 dot 决定。
