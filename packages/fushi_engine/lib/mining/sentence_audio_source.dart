@@ -90,8 +90,10 @@ class SentenceAudioSourcePick {
   @override
   int get hashCode => Object.hash(kind, trackOrdinal);
 
+  /// = [wireName]：操作目录 / `fushi_cli config set` 的选项记号就取 `toString()`
+  /// （`ctlSettingOptionToken`），必须是可以原样写回的值。
   @override
-  String toString() => 'SentenceAudioSourcePick($wireName)';
+  String toString() => wireName;
 }
 
 /// 一条音轨制卡时用得到的事实（来自播放器的轨道元数据）。

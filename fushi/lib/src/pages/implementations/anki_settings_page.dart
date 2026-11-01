@@ -41,6 +41,9 @@ import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/mining/video_online_mining_mode.dart';
+import 'package:fushi/src/mining/sentence_audio_source_text.dart';
+import 'package:fushi_engine/mining/sentence_audio_source.dart'
+    show SentenceAudioSourcePick;
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/profile/profile_selector.dart';
@@ -1178,6 +1181,11 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
             },
           ),
         ),
+        // 反馈 pNF2ZL7Kfc：视频卡句子音频从哪里取（当前播放音轨 / 中置声道 / 指定音轨）。
+        SettingsSearchTarget(
+          id: 'card_creation.anki.video_mining_audio_source',
+          child: _buildVideoMiningAudioSourcePicker(),
+        ),
         SettingsSearchTarget(
           id: 'card_creation.anki.video_mining_image_mode',
           child: _buildVideoMiningImageModePicker(),
@@ -1364,6 +1372,32 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
       onChanged: (VideoMiningImageMode mode) {
         appModel.setVideoMiningImageMode(mode);
         setState(_resetClipSupportProbe);
+      },
+    );
+  }
+
+  /// 视频制卡句子音频来源（反馈 pNF2ZL7Kfc）：当前播放音轨（默认 = 改动前）/ 多声道的
+  /// 中置声道（人声）/ 指定第 N 条音轨。某个视频没有所选来源时制卡回退当前播放音轨并
+  /// OSD 提示。高级制卡对话框可只对这一张卡临时改，不动这里。透传
+  /// [AppModel.videoMiningAudioSource]。
+  Widget _buildVideoMiningAudioSourcePicker() {
+    return AdaptiveSettingsPickerRow<SentenceAudioSourcePick>(
+      title: t.video_mining_audio_source,
+      subtitle: t.video_mining_audio_source_hint,
+      icon: FushiIcons.audio,
+      controlBelow: true,
+      selected: appModel.videoMiningAudioSource,
+      options: <AdaptiveSettingsPickerOption<SentenceAudioSourcePick>>[
+        for (final SentenceAudioSourcePick pick
+            in sentenceAudioSourceSettingChoices())
+          AdaptiveSettingsPickerOption<SentenceAudioSourcePick>(
+            value: pick,
+            label: sentenceAudioSourceLabel(pick),
+          ),
+      ],
+      onChanged: (SentenceAudioSourcePick value) async {
+        await appModel.setVideoMiningAudioSource(value);
+        if (mounted) setState(() {});
       },
     );
   }
