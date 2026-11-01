@@ -7419,7 +7419,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   void _ocrCurrentFrame() {
     final VideoPlayerController? controller = _controller;
     if (controller == null) return;
-    if (controller.isWebBackend) {
+    if (!controller.canCaptureFrame) {
       _showOsd(t.video_ocr_frame_web_unsupported, icon: FushiIcons.ocr);
       return;
     }
@@ -9714,6 +9714,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         !videoWebBackendSupportsControlItem(
           item,
           hasSiteAudioTracks: _controller?.audioTracks.isNotEmpty ?? false,
+          canCaptureFrame: _controller?.canCaptureFrame ?? false,
         )) {
       return false;
     }

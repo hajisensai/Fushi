@@ -45,6 +45,20 @@ void main() {
     }
   });
 
+  test('识别画面文字按钮：站点画面能截帧（非 DRM）才画', () {
+    expect(
+      videoWebBackendSupportsControlItem(
+        VideoControlItem.ocrFrame,
+        canCaptureFrame: true,
+      ),
+      isTrue,
+    );
+    expect(
+      videoWebBackendSupportsControlItem(VideoControlItem.ocrFrame),
+      isFalse,
+    );
+  });
+
   test('音轨按钮跟着站点音轨走；章节按钮交给通用门控（站点给了片头片尾标记才有章节）', () {
     expect(
       videoWebBackendSupportsControlItem(
