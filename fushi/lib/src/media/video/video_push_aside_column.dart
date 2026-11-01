@@ -18,7 +18,7 @@ class VideoPushAsideColumn extends StatefulWidget {
     required this.width,
     required this.duration,
     required this.builder,
-    this.curve = Curves.easeOut,
+    required this.curve,
   });
 
   /// 侧栏是否打开（动画目标）。

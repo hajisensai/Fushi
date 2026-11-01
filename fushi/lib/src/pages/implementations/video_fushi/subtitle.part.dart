@@ -3642,8 +3642,10 @@ extension _VideoSubtitle on _VideoFushiPageState {
     return VideoPushAsideColumn(
       open: visible,
       width: columnWidth,
-      // eink 下归零（墨水屏残影，UI 巡检 PR-4），与剧集侧栏同款。
-      duration: einkSafeDuration(context, const Duration(milliseconds: 200)),
+      // 时长 / 曲线取 FushiMotion token（墨水屏与「减弱动态效果」自动归零）。列宽驱动
+      // 推挤布局，用不过冲的 standard：spatial 弹簧过冲会让列宽短暂超过面板、露出空隙。
+      duration: fushiMotionDuration(context, FushiMotion.short),
+      curve: FushiMotion.standard,
       // BUG-391 r5 根因修：整列最外层包一层声明式 opaque MouseRegion（cursor:basic），
       // 让 MouseTracker 把侧栏列视为独立 annotation、鼠标进列即进干净 basic 会话，绕开
       // 「视频列 none 会话残留 + lastSession 去重」竞态（见 _withSidePanelOpaqueCursor）。

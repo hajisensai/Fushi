@@ -5,6 +5,8 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart'
     show adaptiveModalSheet;
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart'
+    show FushiM3eShape;
 import 'package:fushi/src/utils/components/fushi_material_components.dart'
     show
         FushiInputSize,
@@ -15,7 +17,7 @@ import 'package:fushi/src/utils/components/fushi_material_components.dart'
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
-    show FushiCircularProgressIndicator;
+    show FushiCircularProgressIndicator, FushiTooltip;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:material_ui/material_ui.dart';
@@ -303,7 +305,7 @@ class _VideoRemoteSubtitleSearchSheetState
               const SizedBox(width: 8),
               SizedBox(
                 width: 88,
-                child: Tooltip(
+                child: FushiTooltip(
                   message: t.video_jimaku_episode,
                   child: FushiTextField(
                     key: const ValueKey<String>(
@@ -466,7 +468,7 @@ class _LanguageBadge extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 4),
       decoration: BoxDecoration(
         color: colors.secondaryContainer,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: FushiM3eShape.smallRadius,
       ),
       child: code == null || code.isEmpty
           ? FushiIcon(

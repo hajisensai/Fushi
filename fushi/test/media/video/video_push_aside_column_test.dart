@@ -34,6 +34,7 @@ class _Harness extends StatelessWidget {
             open: open,
             width: width,
             duration: duration,
+            curve: Curves.easeOut,
             builder: (BuildContext _) {
               onBuildPanel();
               return LayoutBuilder(

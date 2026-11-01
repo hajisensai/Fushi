@@ -207,7 +207,7 @@ void main() {
         // `.setVideoSubtitleListAutoScroll` 之间也会被折行（接线没变、只是排版变了），
         // 写死点号紧邻会让这条守卫在无关改动上假红。
         RegExp(
-          r'onAutoScrollChanged:\s*\(bool value\) => unawaited\(\s*'
+          r'onAutoScrollChanged:\s*\(bool value\)\s*=>\s*unawaited\(\s*'
           r'appModel\s*\.\s*setVideoSubtitleListAutoScroll\(value\)',
         ).hasMatch(src),
         isTrue,
