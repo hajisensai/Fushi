@@ -76,8 +76,10 @@ void main() {
   ///     （`video.mouse` 曾与它们同列，BUG-1995 已按「接上解析入口」那一侧销账：
   ///     `video_fushi_page.dart` 的页面根 Listener 现在真的收 onPointerDown 并
   ///     `resolveMouse(scope: video)` 派发，所以它不再出现在本清单里。）
-  ///   · `gamepad.keyboard/mouse`：dpad 四向只由 `GamepadService._dispatchButton` 按
-  ///     `GamepadButton` 解析，键盘/鼠标绑定没有也不可能有读取方；
+  ///   · `gamepad.mouse`（`gamepad.keyboard` 曾与它同列；2026-11 焦点导航进快捷键
+  ///     体系后 `global_navigation.dart` 的 `_handleGlobalFocusNavigation` 真的
+  ///     `resolveKeyboard(scope: gamepad)` 了，按「接上解析入口」销账）：没有
+  ///     「用鼠标键移焦」的派发点；
   ///   （`globalExternal.gamepad/mouse` 曾在此列，理由是「OS 级热键走 win32
   ///     `RegisterHotKey`，`HotKey.key` 类型就是 `KeyboardKey`，手柄/鼠标压根无法
   ///     表达」——TODO-1066 之后两条都真接上了消费者：手柄经 `GamepadService` 的
