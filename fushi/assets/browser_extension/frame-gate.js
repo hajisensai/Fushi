@@ -30,6 +30,19 @@
       });
     } catch (_) {}
   }
-  function onMove(e) { if (e && e.shiftKey && !e.buttons) request(); }
+  // 查词触发键可在设置里换（反馈 ulS75hVkAK，storage.scanModifier，判定同 content.js fushiScanModifierHeld）。本脚本独立
+  // 注入、不带 scan.js，这里内联同一张表。none（不按键悬停即查）在这里仍要 Shift 唤起：
+  // 「指针划过」不是明确手势，不能凭它往每个 about:blank 编辑器里注整套脚本。
+  var modifierProp = 'shiftKey';
+  function applyModifier(value) {
+    modifierProp = { ctrl: 'ctrlKey', alt: 'altKey', meta: 'metaKey' }[value] || 'shiftKey';
+  }
+  try {
+    chrome.storage.local.get('scanModifier', function (saved) {
+      try { if (chrome.runtime.lastError) return; } catch (_) { return; }
+      if (saved) applyModifier(saved.scanModifier);
+    });
+  } catch (_) {}
+  function onMove(e) { if (e && e[modifierProp] === true && !e.buttons) request(); }
   document.addEventListener('mousemove', onMove, true);
 })();

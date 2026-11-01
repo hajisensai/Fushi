@@ -600,3 +600,100 @@ test('pBDjgW3T4v 在途期间按 Shift 记为待补查，不另发请求', () =>
   pressShift(h);
   assert.strictEqual(shiftLookups(h).length, 1, '在途闸必须同样拦住 keydown 入口');
 });
+
+// ── 反馈 ulS75hVkAK：悬停查词的触发键可在设置里换（storage.scanModifier，对齐 Yomitan scan modifier）──
+test('scanModifier=ctrl：Ctrl 悬停 / 静止按 Ctrl 查词，Shift 不再触发', () => {
+  const h = loadContentAndFireShift({ stored: { scanModifier: 'ctrl' } });
+  for (const fn of h.docListeners.mousemove) fn({ shiftKey: true, clientX: 300, clientY: 400, buttons: 0 });
+  assert.strictEqual(shiftLookups(h).length, 0, '换成 Ctrl 后 Shift 悬停不得查词');
+  for (const fn of h.docListeners.mousemove) fn({ ctrlKey: true, clientX: 300, clientY: 400, buttons: 0 });
+  assert.strictEqual(shiftLookups(h).length, 1, 'Ctrl 悬停必须查词');
+
+  const k = loadContentAndFireShift({ stored: { scanModifier: 'ctrl' } });
+  movePointer(k, 300, 400);
+  pressShift(k);
+  assert.strictEqual(shiftLookups(k).length, 0, '静止按 Shift 不查（触发键是 Ctrl）');
+  pressShift(k, { key: 'Control', shiftKey: false, ctrlKey: true });
+  assert.strictEqual(shiftLookups(k).length, 1, '静止按 Ctrl 立即查词');
+  k.nowRef.value += 60000;
+  for (const fn of k.docListeners.keyup || []) fn({ key: 'Control', ctrlKey: false, target: {} });
+  pressShift(k, { key: 'Control', shiftKey: true, ctrlKey: true });
+  assert.strictEqual(shiftLookups(k).length, 1, 'Ctrl+Shift 组合不算查词');
+  pressShift(k, { key: 'Control', shiftKey: false, ctrlKey: true });
+  assert.strictEqual(shiftLookups(k).length, 2, '松开 Ctrl 复位同词去重，再按可重查');
+});
+
+test('scanModifier=none：不按键悬停即查词；没有可按的键（keydown 不触发）', () => {
+  const h = loadContentAndFireShift({ stored: { scanModifier: 'none' } });
+  for (const fn of h.docListeners.mousemove) fn({ clientX: 300, clientY: 400, buttons: 0 });
+  assert.strictEqual(shiftLookups(h).length, 1);
+  const k = loadContentAndFireShift({ stored: { scanModifier: 'none' } });
+  for (const fn of k.winListeners.mousemove || []) fn({ clientX: 300, clientY: 400, target: {} });
+  pressShift(k);
+  assert.strictEqual(shiftLookups(k).length, 0);
+});
+
+test('scanModifier 经 storage.onChanged 热切换；未知值回落 Shift', () => {
+  const h = loadContentAndFireShift();
+  for (const listener of h.storageListeners) listener({ scanModifier: { newValue: 'alt' } }, 'local');
+  for (const fn of h.docListeners.mousemove) fn({ shiftKey: true, clientX: 300, clientY: 400, buttons: 0 });
+  assert.strictEqual(shiftLookups(h).length, 0);
+  for (const fn of h.docListeners.mousemove) fn({ altKey: true, clientX: 300, clientY: 400, buttons: 0 });
+  assert.strictEqual(shiftLookups(h).length, 1);
+
+  const bogus = loadContentAndFireShift({ stored: { scanModifier: 'hyper' } });
+  fireShiftLookup(bogus.docListeners, 300, 400);
+  assert.strictEqual(shiftLookups(bogus).length, 1, '未知值按 Shift');
+});
+
+test('弹窗内嵌套查词经 window.__fushiScanModifierHeld 认同一个触发键', () => {
+  const h = loadContentAndFireShift({ stored: { scanModifier: 'alt' } });
+  assert.strictEqual(typeof h.windowObj.__fushiScanModifierHeld, 'function');
+  assert.strictEqual(h.windowObj.__fushiScanModifierHeld({ altKey: true }), true);
+  assert.strictEqual(h.windowObj.__fushiScanModifierHeld({ shiftKey: true }), false);
+  const popup = fs.readFileSync(path.join(__dirname, 'vendor', 'popup.js'), 'utf8');
+  assert.match(popup, /typeof window\.__fushiScanModifierHeld === 'function'\s*\? window\.__fushiScanModifierHeld\(e\) : e\.shiftKey/);
+});
+
+test('side-panel.js 的触发键判定副本与 content.js 逐例同义', () => {
+  function extract(src, name) {
+    const start = src.indexOf('function ' + name + '(');
+    assert.ok(start >= 0, name + ' 不见了');
+    let depth = 0;
+    for (let i = src.indexOf('{', start); i < src.length; i++) {
+      if (src[i] === '{') depth++;
+      else if (src[i] === '}' && --depth === 0) return src.slice(start, i + 1);
+    }
+    throw new Error('unbalanced ' + name);
+  }
+  const names = ['fushiNormalizeScanModifier', 'fushiScanModifierHeld', 'fushiScanModifierKeydown', 'fushiScanModifierKeyup'];
+  const table = "var FUSHI_SCAN_MODIFIER_KEYS = { shift: 'Shift', ctrl: 'Control', alt: 'Alt', meta: 'Meta' };\n";
+  const contentSrc = fs.readFileSync(CONTENT, 'utf8');
+  const panelSrc = fs.readFileSync(path.join(__dirname, 'side-panel.js'), 'utf8');
+  assert.match(contentSrc, /const FUSHI_SCAN_MODIFIER_KEYS = Object\.freeze\(\{ shift: 'Shift', ctrl: 'Control', alt: 'Alt', meta: 'Meta' \}\);/);
+  assert.match(panelSrc, /var FUSHI_SCAN_MODIFIER_KEYS = \{ shift: 'Shift', ctrl: 'Control', alt: 'Alt', meta: 'Meta' \};/);
+  const a = vm.createContext({});
+  const b = vm.createContext({});
+  vm.runInContext(table + names.map((n) => extract(contentSrc, n)).join('\n'), a);
+  vm.runInContext(table + names.map((n) => extract(panelSrc, n)).join('\n'), b);
+  const mods = ['shift', 'ctrl', 'alt', 'meta', 'none', 'bogus', undefined];
+  const keys = ['Shift', 'Control', 'Alt', 'Meta', 'a'];
+  for (const mod of mods) {
+    assert.strictEqual(a.fushiNormalizeScanModifier(mod), b.fushiNormalizeScanModifier(mod));
+    for (let bits = 0; bits < 16; bits++) {
+      const flags = { shiftKey: !!(bits & 1), ctrlKey: !!(bits & 2), altKey: !!(bits & 4), metaKey: !!(bits & 8) };
+      assert.strictEqual(a.fushiScanModifierHeld(flags, mod), b.fushiScanModifierHeld(flags, mod));
+      for (const key of keys) {
+        for (const repeat of [false, true]) {
+          const ev = Object.assign({ key, repeat }, flags);
+          assert.strictEqual(a.fushiScanModifierKeydown(ev, mod), b.fushiScanModifierKeydown(ev, mod), JSON.stringify([mod, ev]));
+          assert.strictEqual(a.fushiScanModifierKeyup(ev, mod), b.fushiScanModifierKeyup(ev, mod));
+        }
+      }
+    }
+  }
+  // 抽样语义：ctrl 模式只认 Control 单按。
+  assert.strictEqual(a.fushiScanModifierKeydown({ key: 'Control', ctrlKey: true }, 'ctrl'), true);
+  assert.strictEqual(a.fushiScanModifierKeydown({ key: 'Control', ctrlKey: true, shiftKey: true }, 'ctrl'), false);
+  assert.strictEqual(a.fushiScanModifierHeld({}, 'none'), true);
+});

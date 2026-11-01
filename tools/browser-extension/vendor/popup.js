@@ -9605,7 +9605,11 @@ function __fushiPopupClick(e) {
 var _popupShiftLastX = -1, _popupShiftLastY = -1;
 function __fushiPopupMouseMove(e) {
     if (!__fushiEventInsidePopup(e)) return;
-    if (!e.shiftKey) { _popupShiftLastX = -1; _popupShiftLastY = -1; return; }
+    // 浏览器扩展里查词触发键可配置（content.js 注入 __fushiScanModifierHeld，反馈 ulS75hVkAK）；
+    // app 内没有这个钩子，仍是 Shift。
+    var scanHeld = typeof window.__fushiScanModifierHeld === 'function'
+        ? window.__fushiScanModifierHeld(e) : e.shiftKey;
+    if (!scanHeld) { _popupShiftLastX = -1; _popupShiftLastY = -1; return; }
     var dx = e.clientX - _popupShiftLastX, dy = e.clientY - _popupShiftLastY;
     if (dx * dx + dy * dy < 64) return;
     _popupShiftLastX = e.clientX; _popupShiftLastY = e.clientY;

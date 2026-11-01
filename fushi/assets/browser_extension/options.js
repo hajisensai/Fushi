@@ -101,6 +101,8 @@ const shortcutKeys = Object.freeze(Object.values(toggleIds).filter((key) => key.
 const selectSettings = Object.freeze({
   extensionTheme: { key: 'extensionTheme', fallback: 'auto' },
   extensionLanguage: { key: 'extensionLanguage', fallback: 'app' },
+  // 悬停查词的触发键（content.js / side-panel.js fushiScanModifierHeld 读）：shift / ctrl / alt / meta / none。
+  scanModifier: { key: 'scanModifier', fallback: 'shift' },
   // 网页视频计入沉浸时间的条件（study-tracker.js 的字幕门）：
   // fushiSubtitle = 正在用 Fushi / 外挂字幕（默认）；anySubtitle = 这个视频有字幕轨即可；
   // always = 旧行为，任何正片都计。
