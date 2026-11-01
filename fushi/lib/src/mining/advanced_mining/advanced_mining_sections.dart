@@ -33,10 +33,21 @@ String formatAdvancedMiningTime(int ms) {
 String formatAdvancedMiningDuration(int ms) =>
     '${(ms / 1000).toStringAsFixed(1)} s';
 
-/// 微调按钮文案：`−0.25s` / `+0.25s`（用真正的减号，与「−」字形对齐）。
+/// 微调按钮文案：`−0.25s` / `+0.1s`（用真正的减号，与「−」字形对齐）。
 String formatAdvancedMiningStep(int ms, {required bool forward}) {
-  final String value = (ms / 1000).toStringAsFixed(2);
-  return forward ? '+${value}s' : '−${value}s';
+  final String value = formatAdvancedMiningStepSize(ms);
+  return forward ? '+$value' : '−$value';
+}
+
+/// 步长文案：`0.05s` / `0.1s` / `0.25s` / `1s`（去掉多余的尾零）。
+String formatAdvancedMiningStepSize(int ms) {
+  String value = (ms / 1000).toStringAsFixed(2);
+  if (value.contains('.')) {
+    value = value
+        .replaceFirst(RegExp(r'0+$'), '')
+        .replaceFirst(RegExp(r'\.$'), '');
+  }
+  return '${value}s';
 }
 
 /// 视频图片方式的显示名。
@@ -770,7 +781,7 @@ class _AudioDetails extends StatelessWidget {
   Widget build(BuildContext context) {
     final AdvancedMiningController c = controller;
     final AdvancedMiningAudioWindow w = c.audioWindow!;
-    final int step = c.audioSection!.nudgeStepMs;
+    final int step = c.audioNudgeStepMs;
     VoidCallback? nudge(bool start, bool forward) => c.locked
         ? null
         : () => c.nudgeAudioEdge(start: start, deltaMs: forward ? step : -step);
@@ -824,6 +835,31 @@ class _AudioDetails extends StatelessWidget {
           children: <Widget>[
             edge(t.popup_advanced_mining_audio_start, start: true),
             edge(t.popup_advanced_mining_audio_end, start: false),
+          ],
+        ),
+        const SizedBox(height: 8),
+        // 微调步长（反馈 3_VB7kAeHj）：0.05–1 s 五档，宿主记住上次选择。
+        Row(
+          children: <Widget>[
+            _caption(context, t.popup_advanced_mining_audio_step),
+            const SizedBox(width: 8),
+            Expanded(
+              child: adaptiveSegmentedButton<int>(
+                context: context,
+                segments: <ButtonSegment<int>>[
+                  for (final int ms in kAdvancedMiningAudioNudgeStepsMs)
+                    ButtonSegment<int>(
+                      value: ms,
+                      label: Text(formatAdvancedMiningStepSize(ms)),
+                    ),
+                ],
+                selected: <int>{step},
+                onSelectionChanged: (Set<int> v) {
+                  if (c.locked || v.isEmpty) return;
+                  c.setAudioNudgeStep(v.first);
+                },
+              ),
+            ),
           ],
         ),
         const SizedBox(height: 8),

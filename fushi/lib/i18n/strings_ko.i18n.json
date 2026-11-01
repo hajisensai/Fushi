@@ -6311,6 +6311,7 @@
   "popup_advanced_mining_audio_range_hint": "The range follows the selected sentences",
   "popup_advanced_mining_audio_section": "Sentence audio",
   "popup_advanced_mining_audio_start": "Start",
+  "popup_advanced_mining_audio_step": "Step",
   "popup_advanced_mining_audio_unavailable": "No audio for these sentences",
   "popup_advanced_mining_button": "Advanced mining",
   "popup_advanced_mining_confirm_to_deck": "Add to ${deck}",

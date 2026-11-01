@@ -6311,6 +6311,7 @@
   "popup_advanced_mining_audio_range_hint": "区间随所选句子自动重算",
   "popup_advanced_mining_audio_section": "句子音频",
   "popup_advanced_mining_audio_start": "起点",
+  "popup_advanced_mining_audio_step": "步长",
   "popup_advanced_mining_audio_unavailable": "这几句没有可用的音频",
   "popup_advanced_mining_button": "高级制卡",
   "popup_advanced_mining_confirm_to_deck": "制卡到 ${deck}",

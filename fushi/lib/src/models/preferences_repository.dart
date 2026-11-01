@@ -82,6 +82,8 @@ import 'package:fushi/src/media/video/video_lua_capability.dart';
 import 'package:fushi/src/media/video/video_clip_export_preferences.dart';
 import 'package:fushi/src/media/video/video_screenshot_destination.dart';
 import 'package:fushi/src/mining/video_online_mining_mode.dart';
+import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.dart'
+    show normalizeAdvancedMiningAudioNudgeStepMs;
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
 import 'package:fushi/src/media/video/video_pause_ocr_scope.dart';
 import 'package:fushi/src/media/audiobook/mining_audio_clip.dart'
@@ -3987,6 +3989,21 @@ class PreferencesRepository extends ChangeNotifier
   // [padSentenceRange] 夹相邻 cue 边界，所以填大了也不会把下一句混进来。
   // 默认值 = 原有声书硬编码常量（头 120 / 尾 200，[kMiningHeadPadMs]/[kMiningTailPadMs]），
   // 有声书用户行为零变化；视频链此前完全没 padding，默认即获得余量。
+  /// 高级制卡句子音频起止微调步长（反馈 3_VB7kAeHj），未知值回退 250 ms。
+  int get advancedMiningAudioNudgeStepMs =>
+      normalizeAdvancedMiningAudioNudgeStepMs(
+        getPref('advanced_mining_audio_nudge_step_ms', defaultValue: null)
+            as int?,
+      );
+
+  Future<void> setAdvancedMiningAudioNudgeStepMs(int ms) async {
+    await setPref(
+      'advanced_mining_audio_nudge_step_ms',
+      normalizeAdvancedMiningAudioNudgeStepMs(ms),
+    );
+    notifyListeners();
+  }
+
   int get miningAudioHeadPadMs =>
       (getPref('mining_audio_head_pad_ms', defaultValue: kMiningHeadPadMs)
               as int)

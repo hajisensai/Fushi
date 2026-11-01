@@ -10459,6 +10459,12 @@ class AppModel with ChangeNotifier {
   void setGalMiningClipFormat(MiningClipFormat format) =>
       prefsRepo.setGalMiningClipFormat(format);
 
+  /// 高级制卡句子音频起止微调步长（毫秒，反馈 3_VB7kAeHj），各宿主共用。
+  int get advancedMiningAudioNudgeStepMs =>
+      prefsRepo.advancedMiningAudioNudgeStepMs;
+  void setAdvancedMiningAudioNudgeStepMs(int ms) =>
+      unawaited(prefsRepo.setAdvancedMiningAudioNudgeStepMs(ms));
+
   /// 制卡句子音频头/尾 padding（毫秒），视频字幕与有声书两条制卡链共用。
   int get miningAudioHeadPadMs => prefsRepo.miningAudioHeadPadMs;
   void setMiningAudioHeadPadMs(int ms) => prefsRepo.setMiningAudioHeadPadMs(ms);
