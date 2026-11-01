@@ -1940,9 +1940,16 @@ LRESULT CALLBACK KeyboardHookProc(int code, WPARAM wparam, LPARAM lparam) {
   const bool down_in_system =
       !up && (GetAsyncKeyState(static_cast<int>(vk)) & 0x8000) != 0;
   const bool ctrl_in_system = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
+  // Alt / Win 按住时的新按下属于系统（Alt+F4 / Alt+Tab / Win+D …）：Alt 从本事件的
+  // LLKHF_ALTDOWN 读，Win 从键态读（两者永远放行，系统键态与真实一致）。
+  const bool system_combo =
+      !up && ((info->flags & LLKHF_ALTDOWN) != 0 ||
+              (GetAsyncKeyState(VK_LWIN) & 0x8000) != 0 ||
+              (GetAsyncKeyState(VK_RWIN) & 0x8000) != 0);
   const bool was_swallowed = g_keyboard_shield.IsSwallowed(vk);
-  const auto action = g_keyboard_shield.OnKey(vk, up, card != nullptr,
-                                              down_in_system, ctrl_in_system);
+  const auto action =
+      g_keyboard_shield.OnKey(vk, up, card != nullptr, down_in_system,
+                              ctrl_in_system, system_combo);
   if (action == fushi::lookup_keyboard_shield::Action::kPass) {
     return CallNextHookEx(nullptr, code, wparam, lparam);
   }

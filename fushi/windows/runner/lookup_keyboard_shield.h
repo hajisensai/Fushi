@@ -24,6 +24,12 @@
 //     游戏从头到尾看不到这一次按键。
 //   * 系统级修饰键 Alt / Win 永远放行（Alt+Tab、Win 键、Alt+F4 属于系统，不属于游戏）；
 //     Shift 也放行：它是查词的悬停修饰键，吞掉会让卡内悬停查词失效。
+//   * Alt 或 Win 按住期间的新按下（Alt+F4、Alt+Tab、Win+D …）同样属于系统，整体放行：
+//     光放行修饰键本身不够——Alt+F4 由 DefWindowProc 的 WM_SYSKEYDOWN 处理、Alt+Tab /
+//     Win+D 由系统 shell 处理，都不是 RegisterHotKey 热键，热键探测救不回来。调用方从
+//     LL 回调的 LLKHF_ALTDOWN 与 Win 键当前键态算出 |system_combo| 传进来。
+//   * 音量 / 媒体 / 浏览器 / 启动键（VK 0xA6–0xB7）永远放行：它们是系统 / shell 级功能
+//     键，不是游戏输入，也大多不经 RegisterHotKey。
 //   * Ctrl+C（Ctrl 来自本状态机吞掉的 Ctrl，或系统里已经按住的 Ctrl）在吞掉 C 的同时
 //     请求复制；自动重复不重复复制（对齐 RegisterHotKey 的 MOD_NOREPEAT）。
 //   * 全局热键不能被吞死：钩子对每个被吞的新按下探测（修饰键 + 键）是否已被任何程序
@@ -48,6 +54,9 @@ constexpr uint32_t kVkLControl = 0xA2;
 constexpr uint32_t kVkRControl = 0xA3;
 constexpr uint32_t kVkLMenu = 0xA4;
 constexpr uint32_t kVkRMenu = 0xA5;
+// VK_BROWSER_BACK .. VK_LAUNCH_APP2：浏览器 / 音量 / 媒体 / 启动应用键。
+constexpr uint32_t kVkSystemFunctionFirst = 0xA6;
+constexpr uint32_t kVkSystemFunctionLast = 0xB7;
 
 enum class Action {
   kPass,
@@ -56,6 +65,7 @@ enum class Action {
 };
 
 inline bool IsAlwaysPassedKey(uint32_t vk) {
+  if (vk >= kVkSystemFunctionFirst && vk <= kVkSystemFunctionLast) return true;
   switch (vk) {
     case kVkShift:
     case kVkLShift:
@@ -78,8 +88,10 @@ class KeyboardShieldLatch {
   //   所以一次真正的新按下这里是 false；自动重复 / 卡片出现前就按住的键是 true）。
   // |ctrl_down_in_system|: 同口径的 Ctrl 键态（被本状态机吞掉的 Ctrl 系统看不到，
   //   单独从 Swallowed 位读）。
+  // |system_combo|: 这次按下时 Alt 或 Win 处于按下态（Alt / Win 永远放行，所以系统
+  //   键态可信）——组合属于系统（Alt+F4、Alt+Tab、Win+D …），新按下一律放行。
   Action OnKey(uint32_t vk, bool up, bool shield_active, bool down_in_system,
-               bool ctrl_down_in_system) {
+               bool ctrl_down_in_system, bool system_combo) {
     if (vk >= 256u) return Action::kPass;
     if (up) {
       return Clear(vk) ? Action::kSwallow : Action::kPass;
@@ -88,7 +100,8 @@ class KeyboardShieldLatch {
       // 被吞的键的自动重复：继续吞，保持 down/up 成对地对游戏不可见。
       return Action::kSwallow;
     }
-    if (!shield_active || down_in_system || IsAlwaysPassedKey(vk)) {
+    if (!shield_active || down_in_system || system_combo ||
+        IsAlwaysPassedKey(vk)) {
       return Action::kPass;
     }
     Set(vk);

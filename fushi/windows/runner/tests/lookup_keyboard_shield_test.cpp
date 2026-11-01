@@ -17,12 +17,19 @@ constexpr uint32_t kVkReturn = 0x0D;
 constexpr uint32_t kVkSpace = 0x20;
 
 Action Down(KeyboardShieldLatch& latch, uint32_t vk, bool shield,
-            bool down_in_system = false, bool ctrl_in_system = false) {
-  return latch.OnKey(vk, false, shield, down_in_system, ctrl_in_system);
+            bool down_in_system = false, bool ctrl_in_system = false,
+            bool system_combo = false) {
+  return latch.OnKey(vk, false, shield, down_in_system, ctrl_in_system,
+                     system_combo);
+}
+
+// Alt / Win 按住时的新按下（钩子按 LLKHF_ALTDOWN / Win 键态传 system_combo=true）。
+Action ComboDown(KeyboardShieldLatch& latch, uint32_t vk, bool shield) {
+  return Down(latch, vk, shield, false, false, true);
 }
 
 Action Up(KeyboardShieldLatch& latch, uint32_t vk, bool shield) {
-  return latch.OnKey(vk, true, shield, true, false);
+  return latch.OnKey(vk, true, shield, true, false, false);
 }
 
 }  // namespace
@@ -91,6 +98,79 @@ int main() {
     assert(!latch.AnySwallowed());
   }
 
+  // Alt / Win 按住时的新按下属于系统：Alt+F4、Alt+Tab、Win+D 整组放行，不记位。
+  {
+    KeyboardShieldLatch latch;
+    constexpr uint32_t kVkTab = 0x09;
+    constexpr uint32_t kVkF4 = 0x73;
+    constexpr uint32_t kVkD = 0x44;
+    // Alt+F4
+    assert(Down(latch, k::kVkLMenu, true) == Action::kPass);
+    assert(ComboDown(latch, kVkF4, true) == Action::kPass);
+    assert(Up(latch, kVkF4, true) == Action::kPass);
+    assert(Up(latch, k::kVkLMenu, true) == Action::kPass);
+    // Alt+Tab（含按住 Alt 连按 Tab）
+    assert(Down(latch, k::kVkRMenu, true) == Action::kPass);
+    assert(ComboDown(latch, kVkTab, true) == Action::kPass);
+    assert(Up(latch, kVkTab, true) == Action::kPass);
+    assert(ComboDown(latch, kVkTab, true) == Action::kPass);
+    assert(Up(latch, kVkTab, true) == Action::kPass);
+    assert(Up(latch, k::kVkRMenu, true) == Action::kPass);
+    // Win+D
+    assert(Down(latch, k::kVkLWin, true) == Action::kPass);
+    assert(ComboDown(latch, kVkD, true) == Action::kPass);
+    assert(Up(latch, kVkD, true) == Action::kPass);
+    assert(Up(latch, k::kVkLWin, true) == Action::kPass);
+    assert(!latch.AnySwallowed());
+    // 同一批键不带 Alt / Win 时仍按普通键吞（护盾本身没被放宽）。
+    assert(Down(latch, kVkF4, true) == Action::kSwallow);
+    assert(Down(latch, kVkTab, true) == Action::kSwallow);
+    assert(Down(latch, kVkD, true) == Action::kSwallow);
+    assert(Up(latch, kVkF4, true) == Action::kSwallow);
+    assert(Up(latch, kVkTab, true) == Action::kSwallow);
+    assert(Up(latch, kVkD, true) == Action::kSwallow);
+    assert(!latch.AnySwallowed());
+  }
+
+  // 已被吞住的键在 Alt 后按下时的自动重复仍吞（down/up 对游戏保持成对不可见）。
+  {
+    KeyboardShieldLatch latch;
+    assert(Down(latch, kVkReturn, true) == Action::kSwallow);
+    assert(ComboDown(latch, kVkReturn, true) == Action::kSwallow);
+    assert(Up(latch, kVkReturn, true) == Action::kSwallow);
+    assert(!latch.AnySwallowed());
+  }
+
+  // 音量 / 媒体 / 浏览器 / 启动键（VK 0xA6–0xB7）永远放行；边界外的 0xB8 仍被吞。
+  {
+    KeyboardShieldLatch latch;
+    constexpr uint32_t kVkVolumeMute = 0xAD;
+    constexpr uint32_t kVkVolumeDown = 0xAE;
+    constexpr uint32_t kVkVolumeUp = 0xAF;
+    constexpr uint32_t kVkMediaPlayPause = 0xB3;
+    assert(Down(latch, kVkVolumeMute, true) == Action::kPass);
+    assert(Down(latch, kVkVolumeDown, true) == Action::kPass);
+    assert(Down(latch, kVkVolumeUp, true) == Action::kPass);
+    assert(Down(latch, kVkMediaPlayPause, true) == Action::kPass);
+    for (uint32_t vk = 0xA6; vk <= 0xB7; ++vk) {
+      assert(Down(latch, vk, true) == Action::kPass);
+      assert(Up(latch, vk, true) == Action::kPass);
+    }
+    assert(!latch.AnySwallowed());
+    assert(Down(latch, 0xB8, true) == Action::kSwallow);
+    assert(Up(latch, 0xB8, true) == Action::kSwallow);
+  }
+
+  // 普通键在卡在屏时照旧被挡（回归：系统组合键放行不得放宽普通键）。
+  {
+    KeyboardShieldLatch latch;
+    assert(Down(latch, kVkSpace, true) == Action::kSwallow);
+    assert(Down(latch, kVkReturn, true) == Action::kSwallow);
+    assert(Up(latch, kVkSpace, true) == Action::kSwallow);
+    assert(Up(latch, kVkReturn, true) == Action::kSwallow);
+    assert(!latch.AnySwallowed());
+  }
+
   // 被吞的组合其实是全局热键：交还 Ctrl 与该键，之后的 up 放行（不再算被吞）。
   {
     KeyboardShieldLatch latch;
@@ -113,7 +193,7 @@ int main() {
   {
     KeyboardShieldLatch latch;
     assert(Down(latch, k::kVkC, true) == Action::kSwallow);
-    assert(latch.OnKey(300, false, true, false, false) == Action::kPass);
+    assert(latch.OnKey(300, false, true, false, false, false) == Action::kPass);
     latch.Reset();
     assert(!latch.AnySwallowed());
     assert(Up(latch, k::kVkC, true) == Action::kPass);
