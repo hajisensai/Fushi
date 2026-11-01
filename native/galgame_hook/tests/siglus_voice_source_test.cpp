@@ -3,6 +3,7 @@
 #include <cassert>
 #include <cstdio>
 #include <cstring>
+#include <iterator>
 #include <map>
 #include <string>
 #include "siglus_voice_source.h"
@@ -139,8 +140,8 @@ struct PlainFixture {
     memory.Word(0x1ef0, 0x3000);
     memory.Word(0x1f14, 0x40);
     memory.Word(0x3000, 0x7000);
-    const wchar_t* path = L"C:\\koe\\z0001.ovk";
-    const uint32_t units = static_cast<uint32_t>(std::wcslen(path));
+    static constexpr wchar_t path[] = L"C:\\koe\\z0001.ovk";
+    constexpr uint32_t units = static_cast<uint32_t>(std::size(path) - 1);
     const uint32_t empty[6] = {};
     memory.Put(0x1f8c, empty, sizeof(empty));
     memory.Word(0x1f8c, 0x4000);

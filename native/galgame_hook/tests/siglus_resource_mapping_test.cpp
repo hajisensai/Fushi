@@ -152,8 +152,12 @@ struct Image {
 // Plain-frame generation behind a protector: every section merged into one
 // CODE|EXECUTE|READ header, so literals/vtable live in executable memory.
 struct PlainImage {
+  static constexpr size_t kBytes = 0x20000u;
+  // Literals live in fixed 0x80-byte slots below the 0x1cf00 vtable words.
+  static constexpr uintptr_t kStringBase = 0x1c000u, kStringSlot = 0x80u;
+  static constexpr uintptr_t kStringEnd = 0x1cf00u;
   uint8_t *bytes = static_cast<uint8_t *>(VirtualAlloc(
-      nullptr, 0x20000u, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE));
+      nullptr, kBytes, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE));
   exact_lookup::LoadedPeImage view;
   uintptr_t voice = 0x1000u, play = 0x2000u, resource = 0x4000u;
   uintptr_t builder = 0x7000u, concat = 0xa000u, formatter = 0xc000u;
@@ -164,9 +168,9 @@ struct PlainImage {
   size_t strings = 0;
   PlainImage() {
     assert(bytes);
-    std::memset(bytes, 0xcc, 0x20000u);
+    std::memset(bytes, 0xcc, kBytes);
     view.base = bytes;
-    view.size = 0x20000u;
+    view.size = kBytes;
     view.absolute_base = 0x13000000u;
     view.machine = IMAGE_FILE_MACHINE_I386;
     view.pointer_bits = 32u;
@@ -235,7 +239,9 @@ struct PlainImage {
     std::memcpy(bytes + at, &va, 4u);
   }
   template <size_t N> void String(uintptr_t at, const wchar_t (&s)[N]) {
-    const uintptr_t rva = 0x1c000u + strings++ * 0x80u;
+    static_assert(sizeof(s) <= kStringSlot, "literal exceeds its slot");
+    const uintptr_t rva = kStringBase + strings++ * kStringSlot;
+    assert(rva + kStringSlot <= kStringEnd);
     std::memcpy(bytes + rva, s, sizeof(s));
     Absolute(at, rva);
   }
