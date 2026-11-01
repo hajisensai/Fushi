@@ -181,6 +181,24 @@ void main() {
       expect(track.cues[1].sentenceIndex, 1);
     });
 
+    test('languageCode 单独上报（YouTube 语言段是显示名）；旧 glue 没有时等于 lang', () {
+      final WebVideoTrack yt = parseWebVideoTrackPayload(<String, Object?>{
+        'key': 'yt-abc|English (auto)',
+        'lang': 'English (auto)',
+        'languageCode': 'en',
+        'cues': <Object?>[
+          <String, Object?>{'s': 0, 'e': 1000, 't': 'hi'},
+        ],
+      }, bookUid: 'b')!;
+      expect(yt.lang, 'English (auto)', reason: '面板标签照旧用语言段');
+      expect(yt.languageCode, 'en');
+      final WebVideoTrack legacy = parseWebVideoTrackPayload(<String, Object?>{
+        'key': '81236554|ja',
+        'cues': <Object?>[],
+      }, bookUid: 'b')!;
+      expect(legacy.languageCode, 'ja');
+    });
+
     test('缺 videoKey/lang 时从 key 拆；live 轨识别；坏形状回 null', () {
       final WebVideoTrack? t = parseWebVideoTrackPayload(<String, Object?>{
         'key': 'yt-abc|live',
@@ -249,6 +267,45 @@ void main() {
       expect(legacy.buffering, isFalse);
     });
 
+    test('YouTube 按需加载的占位轨（lzt）进站点轨清单，与 Netflix 的 nftt 同一清单', () {
+      final WebVideoPlaybackState s =
+          parseWebVideoStatePayload(<String, Object?>{
+            'videoKey': 'yt-x',
+            'hasVideo': true,
+            'lzt':
+                'English (auto)\ten\tEnglish (auto)\t\t0\n'
+                '日本語\tja\t日本語\t\t0\n'
+                '#',
+          })!;
+      expect(s.siteTracks, hasLength(2));
+      final WebVideoSiteTrack ja = s.siteTracks[1];
+      expect(ja.isLazy, isTrue);
+      expect(ja.lang, 'ja', reason: '语言码给语言偏好挑轨');
+      expect(ja.name, '日本語');
+      expect(
+        ja.storeKey('yt-x'),
+        'yt-x|日本語',
+        reason: '与 providers 的占位轨 key 同形',
+      );
+      expect(s.siteTrackCurrent, '', reason: '占位轨没有「站点当前轨」');
+      expect(
+        pickWebVideoSiteTrackForLanguage(s.siteTracks, 'ja'),
+        ja,
+        reason: '每集按语言偏好替用户开轨对占位轨同样生效',
+      );
+
+      final WebVideoPlaybackState nf =
+          parseWebVideoStatePayload(<String, Object?>{
+            'videoKey': '81001',
+            'hasVideo': true,
+            'nftt': 'T:ja\tja\t日本語\tPRIMARY\t0\n#T:ja',
+            'lzt': '',
+          })!;
+      expect(nf.siteTracks, hasLength(1));
+      expect(nf.siteTracks.single.isLazy, isFalse);
+      expect(nf.siteTracks.single.storeKey('81001'), '81001|ja~T:ja');
+    });
+
     test('无 video 时 paused 视为 true、position null；非 Map 回 null', () {
       final WebVideoPlaybackState? s = parseWebVideoStatePayload(
         <String, Object?>{'hasVideo': false},
@@ -315,27 +372,81 @@ void main() {
       expect(chooseWebVideoTrackKey(tracks: tracks, videoKey: 'v3'), isNull);
     });
 
-    test('用户已选且仍属于当前视频则保持；换视频后丢弃旧选择', () {
+    test('用户显式选定且仍属于当前视频则保持；换视频后丢弃旧选择', () {
       final List<WebVideoTrack> tracks = <WebVideoTrack>[
         track('v1|en'),
         track('v1|ja'),
         track('v2|ja'),
       ];
       expect(
-        chooseWebVideoTrackKey(
-          tracks: tracks,
-          videoKey: 'v1',
-          current: 'v1|ja',
-        ),
+        chooseWebVideoTrackKey(tracks: tracks, videoKey: 'v1', pinned: 'v1|ja'),
         'v1|ja',
       );
       expect(
+        chooseWebVideoTrackKey(tracks: tracks, videoKey: 'v2', pinned: 'v1|ja'),
+        'v2|ja',
+      );
+    });
+
+    // 回归：页面把上一次的自动结果当 current 传回、而函数「current 在就保持」，先到的 live 轨
+    // （DOM 采样）就被钉死，后到的整轨永远选不上。自动结果每次重算，只有显式选择钉住。
+    test('整轨后到取代自动选中的 live；用户显式选 live 则钉住', () {
+      final List<WebVideoTrack> early = <WebVideoTrack>[track('v1|live')];
+      final String? auto = chooseWebVideoTrackKey(
+        tracks: early,
+        videoKey: 'v1',
+        preferredLanguage: 'en',
+      );
+      expect(auto, 'v1|live', reason: '只有 live 时先显示 live');
+      final List<WebVideoTrack> later = <WebVideoTrack>[
+        ...early,
+        track('v1|en'),
+      ];
+      expect(
+        chooseWebVideoTrackKey(
+          tracks: later,
+          videoKey: 'v1',
+          preferredLanguage: 'en',
+        ),
+        'v1|en',
+        reason: '整轨到了：自动结果改成整轨',
+      );
+      expect(
+        chooseWebVideoTrackKey(
+          tracks: later,
+          videoKey: 'v1',
+          preferredLanguage: 'en',
+          pinned: 'v1|live',
+        ),
+        'v1|live',
+        reason: '用户亲手选了 live：不被自动规则改掉',
+      );
+    });
+
+    test('语言偏好按 languageCode 匹配：YouTube 轨 key 语言段是显示名', () {
+      WebVideoTrack yt(String label, String code) => WebVideoTrack(
+        key: 'yt-x|$label',
+        videoKey: 'yt-x',
+        lang: label,
+        languageCode: code,
+        cues: track('yt-x|$label').cues,
+      );
+      final List<WebVideoTrack> tracks = <WebVideoTrack>[
+        yt('English (auto)', 'en'),
+        yt('日本語 (自動生成)', 'ja'),
+      ];
+      expect(
         chooseWebVideoTrackKey(
           tracks: tracks,
-          videoKey: 'v2',
-          current: 'v1|ja',
+          videoKey: 'yt-x',
+          preferredLanguage: 'ja',
         ),
-        'v2|ja',
+        'yt-x|日本語 (自動生成)',
+      );
+      expect(
+        track('v1|ja-JP').languageCode,
+        'ja-JP',
+        reason: '没有 languageCode 时语言段就是语言码',
       );
     });
 

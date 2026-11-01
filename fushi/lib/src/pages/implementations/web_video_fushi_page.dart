@@ -375,7 +375,13 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
 
   /// store 里所有轨（key = `videoKey|lang`）；当前视频身份 [_videoKey] 过滤后供面板选轨。
   final Map<String, WebVideoTrack> _tracks = <String, WebVideoTrack>{};
+
+  /// 当前显示的轨（[chooseWebVideoTrackKey] 的结果，每次轨集变化重算）。
   String? _activeTrackKey;
+
+  /// 用户（或手机遥控）显式选的轨：只有它钉住选择，自动结果不回写——后到的整轨才能取代
+  /// 先到的 live 轨。
+  String? _pinnedTrackKey;
 
   /// 用户（或手机遥控）显式关了字幕：[_reselectTrack] 不再自动挑轨。
   bool _subtitlesOff = false;
@@ -792,7 +798,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
             videoKey: _videoKey,
             // v87 内容语言（用户手动指定的 BCP-47）作默认轨偏好；未指定则取首条整轨。
             preferredLanguage: _row?.language,
-            current: _activeTrackKey,
+            pinned: _pinnedTrackKey,
           );
     final bool changed = next != _activeTrackKey;
     _activeTrackKey = next;
@@ -817,6 +823,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
     if (videoChanged) {
       _videoKey = state.videoKey;
       _activeTrackKey = null;
+      _pinnedTrackKey = null;
       _reselectTrack();
     }
     final int? pos = state.positionMs;
@@ -2268,6 +2275,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
 
   void _selectTrack(String? key) {
     _subtitlesOff = key == null;
+    _pinnedTrackKey = key;
     _activeTrackKey = key;
     _reselectTrack();
   }
