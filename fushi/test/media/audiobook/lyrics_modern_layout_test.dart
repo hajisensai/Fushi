@@ -2,6 +2,7 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/gestures.dart' show PointerDeviceKind;
+import 'package:flutter/rendering.dart' show RendererBinding;
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_control_layout.dart';
@@ -354,6 +355,40 @@ void main() {
       expect(chromeOpacity(tester), 1);
       await mouse.removePointer();
       expect(tester.takeException(), isNull);
+    });
+
+    MouseCursor? activeCursor() =>
+        RendererBinding.instance.mouseTracker.debugDeviceActiveCursor(1);
+
+    testWidgets('playing: idle mouse cursor hides (above the WebView), '
+        'any movement shows it; paused keeps it', (WidgetTester tester) async {
+      await pumpAt(tester, const Size(1600, 900), app(playing: true));
+      final TestGesture mouse = await tester.createGesture(
+        kind: PointerDeviceKind.mouse,
+      );
+      await mouse.addPointer(location: const Offset(800, 300));
+      await tester.pump();
+      expect(activeCursor(), isNot(SystemMouseCursors.none));
+
+      await tester.pump(kLyricsChromeIdleHideDelay);
+      await tester.pump();
+      expect(activeCursor(), SystemMouseCursors.none);
+      final Rect hidden = tester.getRect(key('lyrics_view_probe'));
+
+      // 正文上一动光标就回来，但底栏不出来、歌词矩形不变。
+      await mouse.moveTo(const Offset(810, 300));
+      await tester.pump();
+      expect(activeCursor(), isNot(SystemMouseCursors.none));
+      expect(chromeOpacity(tester), 0);
+      expect(tester.getRect(key('lyrics_view_probe')), hidden);
+
+      // 暂停：光标常显。
+      await pumpAt(tester, const Size(1600, 900), app());
+      await mouse.moveTo(const Offset(820, 300));
+      await tester.pump(kLyricsChromeIdleHideDelay * 2);
+      await tester.pump();
+      expect(activeCursor(), isNot(SystemMouseCursors.none));
+      await mouse.removePointer();
     });
 
     testWidgets('paused: bottom chrome never auto-hides', (

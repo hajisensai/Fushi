@@ -60,7 +60,9 @@ Rect navigationAccessoryRectFor(Rect lyricsRect) {
 ///    歌词区下方的底边带子（或按 Tab）才唤出**：正文上的移动 / 点击 / 查词不唤出——
 ///    唤出会把歌词矩形缩回去、竖排正文重排，鼠标下的字会挪位，查词就点不准了。
 ///    显示期间任何点击 / 拖动（含菜单、弹层）、按键或在底栏区域悬停都续上计时；
-///    暂停 / 切布局立即复位。
+///    暂停 / 切布局立即复位；
+///  * 同一条件下鼠标指针空闲 [kLyricsChromeIdleHideDelay] 后隐藏（不论停在哪），
+///    一动就回来。与底栏分开计：光标显隐不改歌词矩形，正文上一动就该看得见。
 class ReaderLyricsPlayerOverlay extends StatefulWidget {
   const ReaderLyricsPlayerOverlay({
     super.key,
@@ -121,12 +123,36 @@ class _ReaderLyricsPlayerOverlayState extends State<ReaderLyricsPlayerOverlay> {
   /// 最近一次悬停的纵坐标（本地）：鼠标停在底栏上不动时不隐藏。
   double? _hoverY;
 
+  /// 鼠标指针已隐藏（空闲）。
+  bool _cursorHidden = false;
+  Timer? _cursorTimer;
+
   @override
   void initState() {
     super.initState();
     GestureBinding.instance.pointerRouter.addGlobalRoute(_onGlobalPointer);
     HardwareKeyboard.instance.addHandler(_onKey);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _syncIdle());
+    WidgetsBinding.instance.addPostFrameCallback((_) => _syncAutoHide());
+  }
+
+  /// 条件（播放态 / 布局 / 宽窄）变化：底栏与光标一起复位重排。
+  void _syncAutoHide() {
+    _syncIdle();
+    _syncCursor();
+  }
+
+  /// 光标复位并按当前条件重排（或撤掉）空闲隐藏计时。
+  void _syncCursor() {
+    if (!mounted) return;
+    _cursorTimer?.cancel();
+    _cursorTimer = null;
+    if (_cursorHidden) setState(() => _cursorHidden = false);
+    if (!_autoHideEnabled) return;
+    _cursorTimer = Timer(kLyricsChromeIdleHideDelay, () {
+      _cursorTimer = null;
+      if (!mounted || !_autoHideEnabled) return;
+      setState(() => _cursorHidden = true);
+    });
   }
 
   /// 只有 MD3 新版布局播放中才自动隐藏（Apple / 经典 / 暂停一律常显）。宽窄由外观
@@ -150,6 +176,7 @@ class _ReaderLyricsPlayerOverlayState extends State<ReaderLyricsPlayerOverlay> {
     final bool hover = event is PointerHoverEvent;
     final bool press = event is PointerDownEvent || event is PointerMoveEvent;
     if (!hover && !press) return;
+    _syncCursor();
     final double? y = _localY(event.position);
     if (hover) _hoverY = y;
     if (_chromeHidden) {
@@ -233,6 +260,7 @@ class _ReaderLyricsPlayerOverlayState extends State<ReaderLyricsPlayerOverlay> {
     HardwareKeyboard.instance.removeHandler(_onKey);
     _idleTimer?.cancel();
     _expandTimer?.cancel();
+    _cursorTimer?.cancel();
     _host?.detach(this);
     super.dispose();
   }
@@ -244,7 +272,7 @@ class _ReaderLyricsPlayerOverlayState extends State<ReaderLyricsPlayerOverlay> {
     if (oldWidget.data.isPlaying != widget.data.isPlaying ||
         oldWidget.data.controlsStyle != widget.data.controlsStyle) {
       // 播放态变化本身算一次活动：刚按下播放不该立刻吞掉底栏。
-      WidgetsBinding.instance.addPostFrameCallback((_) => _syncIdle());
+      WidgetsBinding.instance.addPostFrameCallback((_) => _syncAutoHide());
     }
   }
 
@@ -343,7 +371,7 @@ class _ReaderLyricsPlayerOverlayState extends State<ReaderLyricsPlayerOverlay> {
     }
     if (wide != _wide) {
       _wide = wide;
-      WidgetsBinding.instance.addPostFrameCallback((_) => _syncIdle());
+      WidgetsBinding.instance.addPostFrameCallback((_) => _syncAutoHide());
     }
   }
 
@@ -424,6 +452,19 @@ class _ReaderLyricsPlayerOverlayState extends State<ReaderLyricsPlayerOverlay> {
                         size: size,
                         padding: padding,
                         lyricsRect: rect,
+                      ),
+                    ),
+                    // 空闲隐藏光标：必须盖在最上层——WebView 插件自己的
+                    // MouseRegion 会覆盖外层设的光标。半透明命中（不拦事件），
+                    // 不隐藏时 defer 给下面的区域。
+                    Positioned.fill(
+                      child: MouseRegion(
+                        key: const ValueKey<String>('lyrics_cursor_hider'),
+                        opaque: false,
+                        hitTestBehavior: HitTestBehavior.translucent,
+                        cursor: _cursorHidden
+                            ? SystemMouseCursors.none
+                            : MouseCursor.defer,
                       ),
                     ),
                   ],
