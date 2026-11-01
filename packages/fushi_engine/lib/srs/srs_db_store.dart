@@ -5027,8 +5027,19 @@ class SrsStudyState {
 }
 
 /// 单次作答记入日志的最长用时（与 Anki「最长作答秒数」默认 60 秒同口径）：走神、切出去之类的长停顿
-/// 不该把复习用时统计撑爆。本机复习页与远程作答（srs_remote_review.dart）共用。
+/// 不该把复习用时统计撑爆。本机复习页与远程复习库主机端（srs_remote_store.dart）共用。
 const int kSrsMaxAnswerDurationMs = 60000;
+
+/// [SrsDbStore.answerAndStudy] 拒绝作答：这张卡出题之后已在别处被复习过（只有远程复习库会抛——
+/// 本机库没有「出题之后」这一说）。没记日志；调用方跳过这张、重新排队。
+class SrsCardChangedError implements Exception {
+  const SrsCardChangedError(this.cardId);
+
+  final String cardId;
+
+  @override
+  String toString() => 'SrsCardChangedError($cardId)';
+}
 
 /// [SrsDbStore.answerAndStudy] 的结果：写出的日志（撤销栈用）与评分之后的排队（没要求排队时 null）。
 class SrsAnswerOutcome {

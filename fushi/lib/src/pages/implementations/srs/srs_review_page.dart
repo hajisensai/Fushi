@@ -863,16 +863,27 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
         // 不把显示问题面时算的预览传进去：预览的时刻是出题那一刻，日志的发生时刻
         // 必须是现在（学习步长按分钟算，差几十秒就差一档）。
         // 评分与排出下一张是一次调用（落库 + 计数 + 下一张 + 再下一张，SrsDbStore.answerAndStudy）。
-        final SrsAnswerOutcome out = await store.answerAndStudy(
-          detail.card.id,
-          rating,
-          durationMs: math.min(
-            _answerClock.elapsedMilliseconds,
-            kSrsMaxAnswerDurationMs,
-          ),
-          studyDeckId: widget.deckId,
-          custom: widget.custom,
-        );
+        final SrsAnswerOutcome out;
+        try {
+          out = await store.answerAndStudy(
+            detail.card.id,
+            rating,
+            durationMs: math.min(
+              _answerClock.elapsedMilliseconds,
+              kSrsMaxAnswerDurationMs,
+            ),
+            studyDeckId: widget.deckId,
+            custom: widget.custom,
+          );
+        } on SrsCardChangedError {
+          // 远程复习：这张卡出题后已在别处复习过，这次没记。跳过它、按最新状态重排。
+          FushiToast.show(
+            msg: t.srs_remote_review_card_changed,
+            severity: ToastSeverity.warning,
+          );
+          await _loadNext();
+          return;
+        }
         SrsReviewPage.debugPhase?.call('answer:done');
         _undo.add(_UndoStep(cardId: detail.card.id, logId: out.log.id));
         _reviewedThisSession++;

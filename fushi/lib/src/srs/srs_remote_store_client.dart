@@ -646,19 +646,28 @@ class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
     SrsCustomStudy? custom,
   }) async {
     final bool known = _bases.containsKey(cardId);
-    final Map<String, Object?> m =
-        ((await _write('answerAndStudy', <String, Object?>{
-                  'card': cardId,
-                  'rating': rating,
-                  'durationMs': durationMs,
-                  'deck': studyDeckId,
-                  'custom': SrsRemoteWire.customStudy(custom),
-                  if (known) 'checkBase': true,
-                  if (known) 'base': _bases[cardId],
-                }))!
-                as Map)
-            .cast<String, Object?>();
-    _bases.remove(cardId);
+    final String? base = _bases.remove(cardId);
+    final Object? result;
+    try {
+      result = await _write('answerAndStudy', <String, Object?>{
+        'card': cardId,
+        'rating': rating,
+        'durationMs': durationMs,
+        'deck': studyDeckId,
+        'custom': SrsRemoteWire.customStudy(custom),
+        if (known) 'checkBase': true,
+        if (known) 'base': base,
+      });
+    } on InterconnectHostError catch (e) {
+      // 出题之后卡在主机上变了：基线作废（不然重新出这张卡也永远 stale），交给复习页跳过重排。
+      if (e.message == SrsRemoteStoreError.stale) {
+        throw SrsCardChangedError(cardId);
+      }
+      // 其余失败（连不上等）没写成，基线仍有效，留着给重试。
+      if (known) _bases[cardId] = base;
+      rethrow;
+    }
+    final Map<String, Object?> m = (result! as Map).cast<String, Object?>();
     return SrsAnswerOutcome(
       SrsRemoteWire.logFrom(m['log']),
       SrsRemoteWire.studyFrom(m['study'], await _currentTree()),
