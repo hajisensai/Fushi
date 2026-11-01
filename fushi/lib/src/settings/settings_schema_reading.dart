@@ -8,6 +8,7 @@ import 'package:fushi/src/pages/implementations/custom_fonts_page.dart';
 import 'package:fushi/src/pages/implementations/highlight_style_page.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart';
 import 'package:fushi/src/reader/page_turn_animation.dart';
+import 'package:fushi/src/reader/reader_tap_zones.dart';
 import 'package:fushi/src/reader/reader_control_layout.dart';
 import 'package:fushi/src/reader/reader_content_styles.dart';
 import 'package:fushi/src/reader/reader_control_layout_editor.dart';
@@ -814,6 +815,53 @@ SettingsDestination buildReadingDestination() {
             value: (SettingsContext c) => c.readerSource.pageTurnFollowDrag,
             onChanged: (SettingsContext c, bool value) async {
               await c.readerSource.setPageTurnFollowDrag(value);
+              notifyReaderSettingsChanged(c);
+            },
+          ),
+          // indZkg2A0I：点击翻页区域模板。三种 view mode 都生效（滚动 = 滚一屏、
+          // VN = 上一屏 / 下一屏），只作用于没点到文字的点击——点词查词优先。
+          // 消费端在点击时现读 ReaderFushiSource，不需要重注脚本。
+          SettingsSegmentedItem<ReaderTapZoneLayout>(
+            id: 'reading_controls.tap_zone_layout',
+            title: t.reader_tap_zone_layout,
+            icon: FushiIcons.touch,
+            defaultValue: ReaderSettings.defaultTapZoneLayout,
+            subtitleBuilder: (SettingsContext c) =>
+                switch (c.readerSource.tapZoneLayout) {
+                  ReaderTapZoneLayout.disabled =>
+                    t.reader_tap_zone_layout_disabled_description,
+                  ReaderTapZoneLayout.leftRight =>
+                    t.reader_tap_zone_layout_left_right_description,
+                  ReaderTapZoneLayout.allForward =>
+                    t.reader_tap_zone_layout_all_forward_description,
+                  ReaderTapZoneLayout.topBottom =>
+                    t.reader_tap_zone_layout_top_bottom_description,
+                },
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 25,
+            ),
+            options: <SettingsSegmentOption<ReaderTapZoneLayout>>[
+              SettingsSegmentOption<ReaderTapZoneLayout>(
+                value: ReaderTapZoneLayout.disabled,
+                label: t.reader_tap_zone_layout_disabled,
+              ),
+              SettingsSegmentOption<ReaderTapZoneLayout>(
+                value: ReaderTapZoneLayout.leftRight,
+                label: t.reader_tap_zone_layout_left_right,
+              ),
+              SettingsSegmentOption<ReaderTapZoneLayout>(
+                value: ReaderTapZoneLayout.allForward,
+                label: t.reader_tap_zone_layout_all_forward,
+              ),
+              SettingsSegmentOption<ReaderTapZoneLayout>(
+                value: ReaderTapZoneLayout.topBottom,
+                label: t.reader_tap_zone_layout_top_bottom,
+              ),
+            ],
+            selected: (SettingsContext c) => c.readerSource.tapZoneLayout,
+            onChanged: (SettingsContext c, ReaderTapZoneLayout value) async {
+              await c.readerSource.setTapZoneLayout(value);
               notifyReaderSettingsChanged(c);
             },
           ),

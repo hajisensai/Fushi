@@ -1388,6 +1388,40 @@ extension _ReaderChrome on _ReaderFushiPageState {
   ///
   /// BUG-1245：悬浮底栏已隐藏时，这一下只唤栏、不推进。用户看到“底栏出来”的同时
   /// 丢掉当前句属于双重副作用；底栏已经可见时，下一次空白点击才推进。
+  /// indZkg2A0I：按「点击翻页区域」模板分发一次**没有点到文字**的点击。
+  ///
+  /// [args] 是 JS 回传的参数表：`args[xIndex]` / `args[xIndex + 1]` 为视口 CSS
+  /// 坐标，`args[sizeIndex]` / `args[sizeIndex + 1]` 为 `innerWidth` /
+  /// `innerHeight`（缺省紧跟在 onTap 的 shift 旗之后，即下标 3）。命中翻页区就
+  /// 翻页、夺回焦点并返回 true；未命中（模板关闭 / 点在中间 / 坐标缺失）返回
+  /// false，调用方照旧走工具栏分支。三种 view mode 共用 [_paginate]，含义见
+  /// reader_tap_zones.dart；歌词覆盖层有自己的桥，不经这里。
+  bool _turnPageByTapZone(List<dynamic> args, int xIndex, {int sizeIndex = 3}) {
+    if (_lyricsMode) return false;
+    final ReaderTapZoneLayout layout = ReaderFushiSource.instance.tapZoneLayout;
+    if (layout == ReaderTapZoneLayout.disabled) return false;
+    double? at(int i) =>
+        i < args.length ? _ReaderFushiPageState._toDouble(args[i]) : null;
+    final ({double x, double y})? point = normalizeReaderTapPoint(
+      x: at(xIndex),
+      y: at(xIndex + 1),
+      viewportWidth: at(sizeIndex),
+      viewportHeight: at(sizeIndex + 1),
+    );
+    if (point == null) return false;
+    final ReaderNavigationDirection? direction = readerTapZoneTurn(
+      layout,
+      x: point.x,
+      y: point.y,
+      rtl: _isRtlReading,
+    );
+    if (direction == null) return false;
+    // 本次 pointer 手势把 OS 焦点交给了 WebView（BUG-136）。
+    _focusOwnership.reclaim(FocusReclaimCause.gesture);
+    unawaited(_paginate(direction));
+    return true;
+  }
+
   void _handleVnBlankTap() {
     if (_lyricsMode) return;
     // 与 onTapEmpty 同语义：有可见查词弹窗时，本次点击只清弹窗栈（BUG-072 续播 /

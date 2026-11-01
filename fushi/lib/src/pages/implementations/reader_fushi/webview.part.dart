@@ -1387,7 +1387,9 @@ install: function(C) {
           // 镜像缺失或 fushiSelection 未就绪时回落旧 onTap 链，行为不变。
           window.fushiSelection.selectText(x, y, tapGate.maxLen || 400, false);
         } else {
-          window.flutter_inappwebview.callHandler('onTap', x, y, shiftTap);
+          // 视口尺寸给 Dart 侧的点击翻页区域模板归一化坐标（reader_tap_zones.dart）。
+          window.flutter_inappwebview.callHandler('onTap', x, y, shiftTap,
+            window.innerWidth, window.innerHeight);
         }
       }
     }
@@ -2414,6 +2416,14 @@ updateLive: function(patch) {
             // BUG-2276：抽屉压着正文时，这次点击是「点遮罩关抽屉」，不是正文点击。
             if (_closeSideSheetForWebViewPointer()) return;
             final bool shiftKey = args.length >= 3 && args[2] == true;
+            // indZkg2A0I：下面两条分支都**不查词**（挤压态栏收起 / 点按查词关闭），
+            // 点击翻页区域模板在这里先认领两侧，中间照旧。
+            if (!shiftKey &&
+                (!_tapGateChrome ||
+                    !ReaderFushiSource.instance.highlightOnTap) &&
+                _turnPageByTapZone(args, 0)) {
+              return;
+            }
             if (!_tapGateChrome && !shiftKey) {
               _toggleChrome();
               // Tap handed OS focus to the WebView; reclaim it so ESC still
@@ -2454,7 +2464,7 @@ updateLive: function(patch) {
 
         controller.addJavaScriptHandler(
           handlerName: 'onTapEmpty',
-          callback: (_) {
+          callback: (List<dynamic> args) {
             // BUG-2276：抽屉压着正文时，这次点击是「点遮罩关抽屉」，不是正文点击。
             if (_closeSideSheetForWebViewPointer()) return;
             // TODO-1027：有可见查词弹窗时，本 onTapEmpty 是 dismiss barrier 转发的
@@ -2470,6 +2480,12 @@ updateLive: function(patch) {
             // 菜单被 dismiss 后不再清选区（留着让用户拖手柄改选），于是「点空白 = 取消选择」
             // 成为自然清除路径；无选区时 clearSelection 是空操作，零副作用。
             _clearReaderAppSelection();
+            // indZkg2A0I：点击翻页区域模板认领两侧（或上下）三分之一；中间三分之一与
+            // 关闭模板时落到下面原来的工具栏分支。查词弹窗在场时上面已经 return，
+            // 所以「点空白关弹窗」永远先于翻页。
+            if (args.length >= 4 && _turnPageByTapZone(args, 0, sizeIndex: 2)) {
+              return;
+            }
             // TODO-975 决策#3：开启「点空白处隐藏控制栏」即底栏悬浮模式。此时点空白
             // 走悬浮唤出/收起状态机（_handleFloatingChromeReveal，不改预留高、不重锚），
             // 而非旧的挤压 _toggleChrome。未开启（挤压）时维持旧行为（不响应空白点）。

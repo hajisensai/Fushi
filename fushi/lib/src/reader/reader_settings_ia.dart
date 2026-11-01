@@ -191,6 +191,7 @@ final List<ReaderSettingsSectionSpec> kReaderSettingsSections =
           'reading_controls.page_turn_animation',
           'reading_controls.page_turn_animation_speed',
           'reading_controls.page_turn_follow_drag',
+          'reading_controls.tap_zone_layout',
           'reading_controls.keep_screen_awake',
         ],
       ),

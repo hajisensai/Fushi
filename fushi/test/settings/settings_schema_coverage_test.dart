@@ -1327,6 +1327,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'reading/Follow finger while dragging':
       'test/settings/reader_page_turn_animation_settings_test.dart'
       ' + test/reader/page_turn_animation_behavior_test.dart',
+  // indZkg2A0I 点击翻页区域：消费端在点击时现读 ReaderFushiSource，不进渲染输入；
+  // 模板几何 / 偏好 / 宿主接线（空白才分发、弹窗与 VN 点击前进优先）由专项测试守，
+  // 真实点按翻页是 WebView 设备项。
+  'reading/Tap zones to turn pages':
+      'test/reader/reader_tap_zones_test.dart (DEVICE for real WebView taps)',
   'reading/Keep screen awake': 'DEVICE: WakelockPlus channel',
   'reading/Volume button page turning': 'DEVICE: native VolumeKeyChannel',
   'reading/Invert volume buttons': 'DEVICE: native volume-key direction',
