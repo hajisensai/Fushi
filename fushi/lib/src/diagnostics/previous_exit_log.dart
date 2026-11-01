@@ -87,6 +87,11 @@ enum PreviousExitKind {
   /// 用户主动强停（Android `USER_REQUESTED` / `USER_STOPPED`：设置里强行停止等）。
   userStopped,
 
+  /// 安装新版本时被系统停掉（Android `PACKAGE_UPDATED`：`installPackageLI`，自动更新 /
+  /// 覆盖安装）。平台给了明确原因，压过会话标记的「停在前台时没了」——否则每次应用内
+  /// 更新装完都弹一次「意外退出」（反馈 8z1tk0jEna / U_gWy3lDbx / jmgMk1gHG2）。
+  appUpdated,
+
   /// 停在前台时没了、平台没给原因（会话标记推断，疑似闪退 / 卡死后被强杀）。
   unexpected,
 
@@ -98,7 +103,7 @@ enum PreviousExitKind {
   bool worthReporting({required bool foreground}) => switch (this) {
     nativeCrash || crash || anr || unexpected => true,
     memoryKill => foreground,
-    userStopped || backgroundReclaim => false,
+    userStopped || appUpdated || backgroundReclaim => false,
   };
 }
 
@@ -354,7 +359,8 @@ const Set<String> kSevereAndroidExitReasons = <String>{
   'FREEZER',
 };
 
-/// Android 退出原因 → [PreviousExitKind]；不说明问题的原因（自行退出、包更新、
+/// Android 退出原因 → [PreviousExitKind]；包更新映射成 [PreviousExitKind.appUpdated]
+/// （明确的良性原因，要压过会话标记的「疑似闪退」）；不说明问题的原因（自行退出、
 /// `SIGNALED`——lmkd 与 `Process.killProcess` 重启都报它，分不清）返回 null，交给会话标记。
 PreviousExitKind? androidExitKind(String reason) => switch (reason) {
   'CRASH_NATIVE' => PreviousExitKind.nativeCrash,
@@ -362,6 +368,7 @@ PreviousExitKind? androidExitKind(String reason) => switch (reason) {
   'ANR' => PreviousExitKind.anr,
   'LOW_MEMORY' || 'EXCESSIVE_RESOURCE_USAGE' => PreviousExitKind.memoryKill,
   'USER_REQUESTED' || 'USER_STOPPED' => PreviousExitKind.userStopped,
+  'PACKAGE_UPDATED' => PreviousExitKind.appUpdated,
   _ => null,
 };
 

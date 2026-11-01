@@ -1,0 +1,6 @@
+## BUG-3930 · 根树重挂后闪退报告提示条冻结半透明、点按钮 Null check 关不掉
+- **报告**：2026-11-01（jmgMk1gHG2 Android「提示条画在其它界面下面」；msySECp2Cy Windows「报错弹窗关不掉」）
+- **真实性**：✅ 真 bug。两张截图都是闪退报告提示条（`offerCrashReportAfterStartup` 的 SnackBar）半透明地夹在界面里；msySECp2Cy 日志里用户连点 5 次，每次 `CrashReport.prompt_send: Null check operator used on a null value`，栈 `AnimationController.stop ← ScaffoldMessengerState.hideCurrentSnackBar ← crash_report_prompt.dart:296`（另有 9ZYafFWPky / hfzlMGXJWr / bY4NXr-B8u / U_gWy3lDbx 同栈）。`_ticker!` 为空 = messenger 的 SnackBar 动画控制器已被 dispose：主 `MaterialApp`（`fushi/lib/main.dart` 根 build，外层 locale `KeyedSubtree` 等会整棵重挂）没有 `scaffoldMessengerKey`，重挂时内部 `ScaffoldMessengerState` 随之 dispose，而 material_ui 的新 messenger 注册 Scaffold 时不清旧条——已挂在 Scaffold 上的提示条留在原地，动画冻在入场途中（半透明，看着像压在界面底下），按钮调的是已销毁 messenger 的 `hideCurrentSnackBar`，永远关不掉。
+- **[x] ① 已修复** — `AppModel.scaffoldMessengerKey`（全局 `GlobalKey<ScaffoldMessengerState>`），主 `MaterialApp` 接上（`fushi/lib/main.dart` `scaffoldMessengerKey: appModel.scaffoldMessengerKey`）：重挂时 messenger 被 reparent，状态与控制器原样保留，与已有的 `navigatorKey` 同理。
+- **[x] ② 已加自动化测试** — `fushi/test/widgets/root_scaffold_messenger_remount_test.dart`（无 key 时重挂后 messenger 已卸载 = 复现根因；有 key 时重挂后同一 messenger 仍能正常收起提示条无异常；源码断言主 MaterialApp 接上 key）。
+- **备注**：本次重挂的具体触发点未从日志里定位到（日志不记根 build 分支切换）；修复覆盖所有重挂来源。误报本身（更新后弹提示）见 BUG-3929。未做真机复测。

@@ -1295,6 +1295,21 @@ class AppModel with ChangeNotifier {
   late final GlobalKey<NavigatorState> _navigatorKey =
       GlobalKey<NavigatorState>();
 
+  /// 主 [MaterialApp] 的 [ScaffoldMessenger] 钉一把全局 key（与 [navigatorKey] 同理）。
+  ///
+  /// 根 build 会整棵重挂 MaterialApp（界面语言切换的 locale `KeyedSubtree`、启动 /
+  /// 迁移 / 备份导入分支切回主树）。没有 key 时 MaterialApp 内部的 messenger 随之
+  /// dispose、新建一个空的：已经显示在 Scaffold 上的 SnackBar 留在原地（新 messenger
+  /// 注册 Scaffold 时不清旧条），它的动画控制器却已被旧 messenger 销毁——提示条冻在
+  /// 半透明的入场帧上、看着像压在界面底下，按钮再调旧 messenger 的
+  /// `hideCurrentSnackBar` 直接 `Null check operator`，永远关不掉（反馈
+  /// jmgMk1gHG2 / msySECp2Cy）。带 GlobalKey 的 messenger 在重挂时被 reparent，
+  /// 状态与控制器原样保留。
+  GlobalKey<ScaffoldMessengerState> get scaffoldMessengerKey =>
+      _scaffoldMessengerKey;
+  late final GlobalKey<ScaffoldMessengerState> _scaffoldMessengerKey =
+      GlobalKey<ScaffoldMessengerState>();
+
   BuildContext? get _ctx => _navigatorKey.currentContext;
 
   /// Used to get the versioning metadata of the app. See [initialise].
