@@ -13,7 +13,8 @@ import 'dart:async';
 import 'dart:collection';
 import 'dart:io';
 
-import 'package:flutter/foundation.dart' show listEquals;
+import 'package:flutter/foundation.dart'
+    show TargetPlatform, defaultTargetPlatform, listEquals;
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:material_ui/material_ui.dart';
@@ -22,6 +23,7 @@ import 'package:fushi/src/focus/webview_key_bridge.dart';
 import 'package:fushi/src/media/manga/cookie/browser_cookie_import.dart';
 import 'package:fushi/src/media/manga/cookie/manga_web_view_environment.dart';
 import 'package:fushi/src/media/video/web_video_bridge.dart';
+import 'package:fushi/src/media/video/web_video_browser_settings.dart';
 import 'package:fushi/src/media/video/web_video_hosting.dart';
 import 'package:fushi/src/media/video/underlay_composition.dart'
     show UnderlayInputExclusion, underlayInputExclusions;
@@ -33,6 +35,11 @@ import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/webview/webview_death_guard.dart';
 import 'package:fushi/src/lookup/hover_lookup_modifier.dart';
 import 'package:fushi/src/webview/web_payload_limits.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/web_adblock/web_adblock_wiring.dart';
+import 'package:fushi/src/web_browser/data/web_browser_site_settings.dart';
+import 'package:fushi/src/web_browser/tab_view/web_browser_page_settings.dart';
+import 'package:fushi/src/web_browser/tab_view/web_browser_permissions.dart';
 
 /// JS→Dart 单一 handler 名（glue 的 `HANDLER`），载荷按 `type` 分派。
 const String kWebVideoJsHandler = 'fushiWebVideo';
@@ -416,7 +423,18 @@ class WebVideoSession {
     this.onTrackFailed,
     this.onCommandFailed,
     this.onNetflixMetadata,
+    this.adblock,
+    this.browserPrefs,
   });
+
+  /// 浏览器的广告拦截服务（与 app 内浏览器标签页同一个，[webVideoSurfaceWiring]）；null = 不接
+  /// （测试宿主）。
+  final WebAdblockPolicy? adblock;
+
+  /// 浏览器的偏好 / 网站设置所在的偏好库（网页深色、按站点权限，见
+  /// `web_video_browser_settings.dart`）；null = 不接（测试宿主）。改了浏览器设置，已打开的本页
+  /// 当场跟上（[_onBrowserPrefsChanged]）。
+  final PreferencesRepository? browserPrefs;
 
   /// seek 回执（[WebVideoPlatformPlayer.applySeekDone]）。
   void Function(WebVideoSeekDone done)? onSeekDone;
@@ -453,6 +471,12 @@ class WebVideoSession {
 
   WebViewEnvironment? _environment;
   UnmodifiableListView<UserScript>? _userScripts;
+
+  /// 浏览器广告拦截接线（[prepare] 里建；渲染进程死后重建 WebView 沿用同一份）。
+  WebAdblockWiring? _adblock;
+
+  /// 最近一次下发给页面的网页深色状态；null = 新建的 WebView 还没同步过。
+  bool? _appliedPageDark;
   InAppWebViewController? _web;
   Object? _viewId;
   bool _disposed = false;
@@ -534,8 +558,96 @@ class WebVideoSession {
         );
     final WebViewEnvironment env = await webVideoWindowedEnvironment();
     await copyWebVideoLoginCookies(uri: uri, to: env);
+    final WebAdblockPolicy? policy = adblock;
+    _adblock = policy == null ? null : webVideoSurfaceWiring(policy: policy);
     _userScripts = scripts;
     _environment = env;
+    browserPrefs?.addListener(_onBrowserPrefsChanged);
+  }
+
+  /// 建 WebView 用的设置：播放器必需项 + 浏览器广告拦截（[webVideoSurfaceWiring]）。
+  InAppWebViewSettings _surfaceSettings() {
+    final InAppWebViewSettings? shared = _adblock?.settings;
+    if (shared != null) return shared;
+    final InAppWebViewSettings settings = InAppWebViewSettings();
+    enforceWebVideoRequiredSettings(settings);
+    return settings;
+  }
+
+  /// 建 WebView 时的 document-start 脚本：播放器自己的排前面（垫片 / bridge / glue 的顺序
+  /// 约束见 [loadWebVideoUserScripts]），浏览器共享的广告拦截 cosmetic 与页内样式接在后面。
+  UnmodifiableListView<UserScript>? _surfaceUserScripts() {
+    final UnmodifiableListView<UserScript>? own = _userScripts;
+    if (own == null) return null;
+    return UnmodifiableListView<UserScript>(<UserScript>[
+      ...own,
+      ...?_adblock?.userScripts,
+      webBrowserPageStyleUserScript(
+        platform: _platform,
+        textZoom: 100,
+        forceDark: _pageDark,
+      ),
+    ]);
+  }
+
+  TargetPlatform get _platform => defaultTargetPlatform;
+
+  /// 当前该不该给页面套网页深色（浏览器偏好 × 网页档，[webVideoPageForceDark]）。
+  bool get _pageDark {
+    final PreferencesRepository? prefs = browserPrefs;
+    return webVideoPageForceDark(
+      browserForceDark: prefs != null && webVideoBrowserForceDark(prefs),
+      playerMode: _playerMode,
+    );
+  }
+
+  void _onBrowserPrefsChanged() {
+    if (_disposed) return;
+    _applyPageStyle();
+  }
+
+  /// 网页深色跟上当前状态（浏览器偏好变了 / 档位切了）：换掉以后每个文档的样式脚本并对当前
+  /// 文档立即生效（[applyWebBrowserPageStyle]，与浏览器标签页同一段）。
+  void _applyPageStyle() {
+    final InAppWebViewController? web = _web;
+    if (web == null || _disposed) return;
+    final bool dark = _pageDark;
+    if (_appliedPageDark == dark) return;
+    _appliedPageDark = dark;
+    unawaited(
+      applyWebBrowserPageStyle(
+        web,
+        platform: _platform,
+        textZoom: 100,
+        forceDark: dark,
+      ).catchError((Object e) {
+        ErrorLogService.instance.log('web_video', 'page style: $e');
+      }),
+    );
+  }
+
+  /// 站点权限申请（摄像头 / 麦克风 / 通知 / 剪贴板……）：按浏览器的「网站设置」答，没记住的
+  /// 弹同一个框（[resolveWebBrowserPermissionRequest]）；不接浏览器设置时一律拒绝（与 WebView2
+  /// 插件在没有 Dart 回调时的默认行为一致）。
+  Future<PermissionResponse> _onPermissionRequest(
+    BuildContext context,
+    PermissionRequest request,
+  ) {
+    final PreferencesRepository? prefs = browserPrefs;
+    if (prefs == null || _disposed) {
+      return Future<PermissionResponse>.value(
+        PermissionResponse(
+          resources: request.resources,
+          action: PermissionResponseAction.DENY,
+        ),
+      );
+    }
+    return resolveWebBrowserPermissionRequest(
+      context: context,
+      settings: WebBrowserSiteSettings(prefs),
+      request: request,
+      platform: _platform,
+    );
   }
 
   /// 在站点页面里执行一条 `window.__fushiWebVideo.*` 表达式（[WebVideoPlatformPlayer.evaluate]
@@ -656,6 +768,8 @@ class WebVideoSession {
     _playerMode = playerMode;
     _applyInputEnabled();
     if (changed || (videoChanged && playerMode)) _applyPageMode();
+    // 播放器档不套网页深色（受保护视频套滤镜可能变黑），回网页档再按浏览器偏好套回来。
+    if (changed) _applyPageStyle();
   }
 
   /// 退出站点自己的元素全屏（网页档里点了站点的全屏钮 → 换成本页的播放器档 + 窗口全屏）。
@@ -737,6 +851,9 @@ class WebVideoSession {
     _applyInputEnabled();
     _sentExclusions = null;
     _applyInputExclusions();
+    _adblock?.onWebViewCreated(controller);
+    // 建时的样式脚本按建 WebView 那一刻的状态生成（[_surfaceUserScripts]）；之后的变化从这里跟。
+    _appliedPageDark = _pageDark;
     controller.addJavaScriptHandler(
       handlerName: kWebVideoJsHandler,
       callback: limitWebPayload(
@@ -839,6 +956,7 @@ class WebVideoSession {
       );
     }
     _disposed = true;
+    browserPrefs?.removeListener(_onBrowserPrefsChanged);
     nav.dispose();
     _web = null;
     _viewId = null;
@@ -927,25 +1045,29 @@ class _WebVideoSurfaceState extends State<WebVideoSurface> {
       child: InAppWebView(
         webViewEnvironment: session._environment,
         initialUrlRequest: URLRequest(url: WebUri(session.surfaceUrl)),
-        initialUserScripts: session._userScripts,
-        initialSettings: InAppWebViewSettings(
-          javaScriptEnabled: true,
-          sharedCookiesEnabled: true,
-          mediaPlaybackRequiresUserGesture: false,
-          disableContextMenu: true,
-          supportZoom: false,
-        ),
+        // 播放器必需项 + 浏览器共享的站点设置（广告拦截 / 网页深色 / 网站设置权限，见
+        // `web_video_browser_settings.dart`）。
+        initialUserScripts: session._surfaceUserScripts(),
+        initialSettings: session._surfaceSettings(),
+        shouldInterceptRequest: session._adblock?.shouldInterceptRequest,
         onWebViewCreated: session._onWebViewCreated,
-        onLoadStart: (InAppWebViewController _, WebUri? url) =>
-            session._onLoading(true, url?.toString()),
+        onLoadStart: (InAppWebViewController _, WebUri? url) {
+          session._adblock?.onLoadStart(url);
+          session._onLoading(true, url?.toString());
+        },
+        onPermissionRequest:
+            (InAppWebViewController _, PermissionRequest request) =>
+                session._onPermissionRequest(context, request),
         onLoadStop: (InAppWebViewController _, WebUri? url) {
           session._onLoading(false, url?.toString());
           unawaited(session._refreshHistory(url?.toString()));
           session._onLoadStop();
         },
         onUpdateVisitedHistory:
-            (InAppWebViewController _, WebUri? url, bool? __) =>
-                unawaited(session._refreshHistory(url?.toString())),
+            (InAppWebViewController _, WebUri? url, bool? __) {
+              session._adblock?.onUpdateVisitedHistory(url);
+              unawaited(session._refreshHistory(url?.toString()));
+            },
         onWebContentProcessDidTerminate: (InAppWebViewController _) =>
             unawaited(_deathGuard.handleWebContentTerminated()),
         onRenderProcessGone:
