@@ -10650,6 +10650,7 @@
   "web_video_mine_switch_builtin": "Passer en mode intégré pour créer $count cartes en attente",
   "web_video_mode_page": "Web page",
   "web_video_mode_player": "Player",
+  "web_video_nav_browser_settings": "Browser settings (also apply to this page)",
   "web_video_nav_close": "Close",
   "web_video_nav_forward": "Forward",
   "web_video_no_tracks": "Aucun sous-titre capturé pour l’instant",

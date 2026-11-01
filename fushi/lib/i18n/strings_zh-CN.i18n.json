@@ -10650,6 +10650,7 @@
   "web_video_mine_switch_builtin": "切到内置模式制作 $count 张排队卡片",
   "web_video_mode_page": "网页",
   "web_video_mode_player": "播放器",
+  "web_video_nav_browser_settings": "浏览器设置（本页同样生效）",
   "web_video_nav_close": "关闭",
   "web_video_nav_forward": "前进",
   "web_video_no_tracks": "尚未采集到字幕",
