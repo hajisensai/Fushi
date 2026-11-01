@@ -150,8 +150,8 @@ pub(crate) fn plan(conn: &Connection, profile: &str, target: &Vv, retract_review
                 }
                 continue;
             }
-            let then = value_at(conn, profile, k, entity, key, Some(target))?;
-            let cur = value_at(conn, profile, k, entity, key, None)?;
+            let then = restored_value(conn, profile, k, entity, key, target)?;
+            let cur = value_at(conn, profile, k, entity, key, None)?.unwrap_or(Value::Null);
             if !crate::registers::same_value(&then, &cur) {
                 if key == "deleted" {
                     if cur.is_i64() && then.is_null() {
@@ -212,8 +212,70 @@ fn edit_body(kind: EntKind, entity: &str, key: &str, v: Value) -> Body {
     Body::Edit(EditBody { kind, entity: Key::of(entity), key: key.into(), value: canonical(&v), machine: false, ts: 0, legacy: None })
 }
 
+/// 恢复要写回的值：[target] 那一刻这个寄存器的生效值。
+///
+/// 那一刻**没有任何生效记录**时（键是之后才第一次写的），要还原的是「没有记录」，不是某个值：
+/// - 卡片标志（`deck` / `suspended` / `buried` / `flag` / `newPos`）没有自己的记录时按血统继承前身的（registers.rs
+///   `cards_group`），而自己记一条 null 会**挡住**继承（`buried = null` 是「取消埋卡」的显式写法）——所以写回那一刻
+///   从血统继承到的值；血统里也没有就写 null。
+/// - 其余寄存器写 null：读路径把「生效值为 null」与「没有记录」视为同一状态（registers.rs `Entity::is_set`），
+///   带子键的映射（笔记类型 `fieldDef/` `tmplDef/` `fieldDesc/`、笔记 `f/`）里这一项消失，内置笔记类型回到跟随代码的默认值。
+fn restored_value(conn: &Connection, profile: &str, kind: EntKind, entity: &str, key: &str, target: &Vv) -> Result<Value, String> {
+    if let Some(v) = value_at(conn, profile, kind, entity, key, Some(target))? {
+        return Ok(v);
+    }
+    if kind == EntKind::Card && !key.starts_with(HISTORY_FROM) {
+        if let Some(v) = card_inherited_at(conn, profile, entity, key, target)? {
+            return Ok(v);
+        }
+    }
+    Ok(Value::Null)
+}
+
+const HISTORY_FROM: &str = "historyFrom/";
+
+/// [card] 在 [target] 时从血统继承到的 [key]：与 registers.rs `cards_group` 同一规则——血统按广度优先（自己在前，
+/// 前身按 ID 排，防环，最多 256 张），第一张对这个键有生效记录的前身的值。只在 [card] 自己那时没有记录时调用。
+fn card_inherited_at(conn: &Connection, profile: &str, card: &str, key: &str, target: &Vv) -> Result<Option<Value>, String> {
+    let mut seen: Vec<String> = vec![card.to_owned()];
+    let mut queue: std::collections::VecDeque<String> = std::collections::VecDeque::from([card.to_owned()]);
+    let mut visited = 0usize;
+    while let Some(id) = queue.pop_front() {
+        if visited >= 256 {
+            break;
+        }
+        visited += 1;
+        if id != card {
+            if let Some(v) = value_at(conn, profile, EntKind::Card, &id, key, Some(target))? {
+                return Ok(Some(v));
+            }
+        }
+        let mut keys: Vec<String> = super::semantics::ops_of(conn, profile, "card", &id)?
+            .into_iter()
+            .filter_map(|(_, w)| w.starts_with(HISTORY_FROM).then_some(w))
+            .collect();
+        keys.sort();
+        keys.dedup();
+        let mut preds: Vec<String> = Vec::new();
+        for k in keys {
+            if value_at(conn, profile, EntKind::Card, &id, &k, Some(target))? == Some(Value::Bool(true)) {
+                preds.push(k[HISTORY_FROM.len()..].to_owned());
+            }
+        }
+        preds.sort_by(|a, b| crate::ordering::cmp_utf16(a, b));
+        for p in preds {
+            if !seen.contains(&p) {
+                seen.push(p.clone());
+                queue.push_back(p);
+            }
+        }
+    }
+    Ok(None)
+}
+
 /// 某寄存器在 [target]（None = 现在）时的生效值：把那时已有的写入按落库规则重新落一遍、取胜者。
-fn value_at(conn: &Connection, profile: &str, kind: EntKind, entity: &str, key: &str, target: Option<&Vv>) -> Result<Value, String> {
+/// 那时没有任何生效记录 = None（与「记录了 null」区分，见 [restored_value]）。
+fn value_at(conn: &Connection, profile: &str, kind: EntKind, entity: &str, key: &str, target: Option<&Vv>) -> Result<Option<Value>, String> {
     let mut rows: Vec<String> = Vec::new();
     let mut stmt = conn
         .prepare_cached("SELECT device, seq FROM sync2_ent_ops WHERE profile_uid = srs_id(?1) AND kind = ?2 AND entity = srs_id(?3) AND what = ?4 ORDER BY device, seq")
@@ -245,8 +307,11 @@ fn value_at(conn: &Connection, profile: &str, kind: EntKind, entity: &str, key: 
             live.insert(i);
         }
     }
+    if live.is_empty() {
+        return Ok(None);
+    }
     let live_rows: Vec<crate::registers::StoredEdit<'_>> = live.iter().map(|&i| (rows[i].as_str(), None, None)).collect();
-    crate::registers::register_value(&live_rows, key)
+    crate::registers::register_value(&live_rows, key).map(Some)
 }
 
 /// 某笔记在 [target] 时的标签（OR-Set 按那时已有的添加 / 观察删除重算）。
@@ -398,3 +463,7 @@ impl SrsCore {
         Ok(Value::Array(out.into_iter().map(|x| x.2).collect()))
     }
 }
+
+#[cfg(test)]
+#[path = "tests_timeline.rs"]
+mod tests;
