@@ -241,7 +241,8 @@ class _AiSavedPromptSheetState extends State<AiSavedPromptSheet> {
       children: <Widget>[
         FushiIcon(icon, size: 20),
         const SizedBox(width: 12),
-        Text(label),
+        // 「仅在此功能中使用」等长标签在窄菜单（≤280）里会撑破行：允许折行。
+        Flexible(child: Text(label)),
       ],
     ),
   );
