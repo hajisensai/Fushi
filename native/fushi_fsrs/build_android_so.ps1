@@ -50,5 +50,11 @@ foreach ($abi in $Abis) {
         Remove-Item -Force
     $so = Join-Path $outDir "$abi\libfushi_fsrs.so"
     if (-not (Test-Path $so)) { throw "缺少产物 $so" }
+    # libsqlite3-sys 给 Android 硬编码 TEMP_STORE=3（临时库全进内存，大库 VACUUM 撑爆进程）；.cargo/config.toml
+    # 改回 1。从别的目录构建会丢那份配置，这里按产物里的编译选项字符串核对。
+    $soText = [System.Text.Encoding]::ASCII.GetString([System.IO.File]::ReadAllBytes($so))
+    if ($soText.Contains("TEMP_STORE=3") -or -not $soText.Contains("TEMP_STORE=1")) {
+        throw "$so : bundled SQLite is not built with SQLITE_TEMP_STORE=1 (see native/fushi_fsrs/.cargo/config.toml)"
+    }
     Write-Host ("  {0}  {1:N0} bytes" -f $so, (Get-Item $so).Length)
 }

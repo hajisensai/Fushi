@@ -5,8 +5,12 @@
 //!
 //! - 空间：WAL 模式下 VACUUM 先把整理后的库写进临时文件，再经 WAL 写回，峰值约多占「两倍有效数据」。库所在卷的
 //!   空闲空间不够 `2 × 有效数据 + 余量` 就不做，原因记进 `srs_meta` 的 [LAST]，标记留着，下次打开再试。
-//! - 临时文件放在库所在目录（`temp_store_directory`）：Android 等平台没有可写的默认临时目录。
+//! - 临时文件放在库所在目录（`temp_store_directory`）：Android 等平台没有可写的默认临时目录。整理副本必须落文件：
+//!   libsqlite3-sys 给 Android 硬编码 `SQLITE_TEMP_STORE=3`（临时库全进内存、pragma 改不动），GB 级的库一整理就把
+//!   进程撑到 SIGABRT。`.cargo/config.toml` 把它编回 1；编出来仍是 3 的库（[temp_store_forced_memory]）这里不整理。
 //! - 失败（磁盘满、被别的连接占着）不影响打开：VACUUM 本身是原子的，失败时库不变；截断 WAL、记原因、下次再试。
+//! - 进程死在整理中途（被杀、崩溃）不会留下结果，[PENDING] 还在，下次打开又整理一遍：每次开始前记一次 [ATTEMPTS]，
+//!   正常结束（成功或失败）都清掉；连着 [MAX_ATTEMPTS] 次没结束就放弃这次整理，库照常打开，不陷入打开即崩的循环。
 
 use std::path::Path;
 
@@ -17,6 +21,10 @@ use serde_json::json;
 pub(crate) const PENDING: &str = "compact_pending";
 /// 最近一次整理的结果（JSON；排查用）。
 pub(crate) const LAST: &str = "compact_last";
+/// 已开始、还没正常结束的整理次数（开始前 +1，成功或失败都删）。
+pub(crate) const ATTEMPTS: &str = "compact_attempts";
+/// 连着这么多次进程死在整理中途就放弃。
+pub(crate) const MAX_ATTEMPTS: i64 = 2;
 /// 空间余量。
 const MARGIN: u64 = 64 << 20;
 
@@ -38,12 +46,32 @@ fn record(c: &Connection, v: serde_json::Value) {
 /// 随 Profile 被删掉的目录留给别的库。
 pub(crate) fn set_temp_dir(c: &Connection, dir: &Path) {
     let dir_text = dir.to_string_lossy().replace('\'', "''");
-    let _ = c.execute_batch(&format!("PRAGMA temp_store_directory = '{dir_text}';"));
+    let _ = c.execute_batch(&format!("PRAGMA temp_store_directory = '{dir_text}'; PRAGMA temp_store = FILE;"));
 }
+
+/// 这份 SQLite 是否编成「临时库只能放内存」（`SQLITE_TEMP_STORE=3`：`PRAGMA temp_store` 改不动）。
+pub(crate) fn temp_store_forced_memory(c: &Connection) -> bool {
+    let Ok(mut st) = c.prepare("PRAGMA compile_options") else {
+        return false;
+    };
+    let Ok(rows) = st.query_map([], |r| r.get::<_, String>(0)) else {
+        return false;
+    };
+    let forced = rows.flatten().any(|o| o == "TEMP_STORE=3");
+    forced
+}
+
+/// 整库重写以外的临时库放哪：Android 进程没有可写的默认临时目录，放内存（与改编译选项前一致）；别的平台用默认
+/// （文件，系统临时目录）。
+#[cfg(target_os = "android")]
+pub(crate) const ORDINARY_TEMP_STORE: &str = "PRAGMA temp_store = MEMORY;";
+#[cfg(not(target_os = "android"))]
+pub(crate) const ORDINARY_TEMP_STORE: &str = "PRAGMA temp_store = DEFAULT;";
 
 /// 还原 [set_temp_dir]（回到平台默认）。
 pub(crate) fn clear_temp_dir(c: &Connection) {
     let _ = c.execute_batch("PRAGMA temp_store_directory = '';");
+    let _ = c.execute_batch(ORDINARY_TEMP_STORE);
 }
 
 /// 有 [PENDING] 就整理一次。[free] 是库所在卷的空闲字节（拿不到为 None：照样试，失败按上面的路径处理）。
@@ -63,11 +91,33 @@ pub(crate) fn run(c: &Connection, dir: &Path, free: Option<u64>, now: i64) -> bo
         record(c, json!({"at": now, "ok": false, "reason": "disk", "need": need, "free": free, "bytes": before}));
         return false;
     }
+    if temp_store_forced_memory(c) {
+        record(c, json!({"at": now, "ok": false, "reason": "temp_store_memory", "bytes": before}));
+        return false;
+    }
+    let attempts: i64 = c
+        .query_row("SELECT CAST(value AS INTEGER) FROM srs_meta WHERE key = ?1", [ATTEMPTS], |r| r.get(0))
+        .unwrap_or(0);
+    if attempts >= MAX_ATTEMPTS {
+        let _ = c.execute("DELETE FROM srs_meta WHERE key IN (?1, ?2)", [PENDING, ATTEMPTS]);
+        record(c, json!({"at": now, "ok": false, "reason": "interrupted", "attempts": attempts, "bytes": before}));
+        return false;
+    }
+    // 自动提交：进程死在 VACUUM 里时这一笔已经在 WAL 里了。
+    let marked = c.execute(
+        "INSERT INTO srs_meta (key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        rusqlite::params![ATTEMPTS, (attempts + 1).to_string()],
+    );
+    if let Err(e) = marked {
+        record(c, json!({"at": now, "ok": false, "reason": e.to_string(), "bytes": before}));
+        return false;
+    }
     set_temp_dir(c, dir);
     let out = c.execute_batch("PRAGMA wal_checkpoint(TRUNCATE); VACUUM;");
     clear_temp_dir(c);
     // 成功时把整理后的页写回主文件、WAL 归零；失败时丢掉 VACUUM 写进 WAL 又回滚掉的那些帧占的空间。
     let _ = c.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);");
+    let _ = c.execute("DELETE FROM srs_meta WHERE key = ?1", [ATTEMPTS]);
     match out {
         Ok(()) => {
             let after = pragma(c, "page_count").unwrap_or(0) * size;
