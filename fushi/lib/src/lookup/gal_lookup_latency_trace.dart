@@ -10,6 +10,9 @@
 //   poll→dart   runner 投递 → Dart handleHit 收到（平台通道 + UI isolate 排队）
 //   其后各段     见 [GalLookupLatencyStage]
 //
+// 桌面路由（台词文本浮窗点词、快捷键查词）用同一套阶段记一条 `desktop-latency`：
+// 没有 hook 时刻，从 lookupText 收到算起，到 revealStack 返回（窗口已显示）为止。
+//
 // 只是诊断：任何一步量不到都只让那一段留空，绝不影响查词本身。
 
 import 'dart:developer' show Timeline;
@@ -57,6 +60,7 @@ class GalLookupLatencyTrace {
     required this.dispatchQpcUs,
     required this.receivedUs,
     required this.cold,
+    this.source = 'galCard',
   });
 
   /// 测试可替换的时钟（QPC 微秒）。
@@ -67,6 +71,8 @@ class GalLookupLatencyTrace {
 
   static GalLookupLatencyTrace? _active;
   static bool _sawFirstLookup = false;
+  static bool _sawFirstDesktopLookup = false;
+  static int _desktopSeq = 0;
 
   /// 当前在途的记录；没有时为 null。
   static GalLookupLatencyTrace? get active => _active;
@@ -82,6 +88,22 @@ class GalLookupLatencyTrace {
       cold: !_sawFirstLookup,
     );
     _sawFirstLookup = true;
+    _active = trace;
+    return trace;
+  }
+
+  /// 桌面路由的一次查词（lookupText 收到）：开一条新记录。
+  static GalLookupLatencyTrace beginDesktop() {
+    _active?._finish('superseded');
+    final GalLookupLatencyTrace trace = GalLookupLatencyTrace._(
+      seq: ++_desktopSeq,
+      publishQpcUs: 0,
+      dispatchQpcUs: 0,
+      receivedUs: clock(),
+      cold: !_sawFirstDesktopLookup,
+      source: 'desktop',
+    );
+    _sawFirstDesktopLookup = true;
     _active = trace;
     return trace;
   }
@@ -107,6 +129,8 @@ class GalLookupLatencyTrace {
   static void resetForTesting() {
     _active = null;
     _sawFirstLookup = false;
+    _sawFirstDesktopLookup = false;
+    _desktopSeq = 0;
     clock = () => Timeline.now;
     sink = glog;
   }
@@ -118,6 +142,9 @@ class GalLookupLatencyTrace {
 
   /// 本会话（本进程）的第一次查词：WebView 与词典都可能是冷的。
   final bool cold;
+
+  /// 记录所属路由：`galCard`（游戏内卡片）或 `desktop`（桌面查词窗）。
+  final String source;
 
   final Map<GalLookupLatencyStage, int> _marks = <GalLookupLatencyStage, int>{};
   final List<String> _details = <String>[];
@@ -138,7 +165,9 @@ class GalLookupLatencyTrace {
 
   /// 一行摘要：总耗时（从 hook 发布算起；量不到发布时刻时从 Dart 收到算起）+ 逐段耗时。
   String format(String outcome) {
-    final StringBuffer out = StringBuffer('gal-latency seq=$seq $outcome');
+    final StringBuffer out = StringBuffer(
+      '${source == 'desktop' ? 'desktop' : 'gal'}-latency seq=$seq $outcome',
+    );
     if (cold) out.write(' cold');
     final int? last = _marks.isEmpty
         ? null

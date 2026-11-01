@@ -36,7 +36,7 @@ void main() {
     final String source = File(
       'lib/src/lookup/global_lookup_controller.dart',
     ).readAsStringSync();
-    final int start = source.indexOf('Future<void> prewarmGalCardStatic(');
+    final int start = source.indexOf('Future<void> _prewarmHostStatic(');
     expect(start, isNonNegative);
     final int end = source.indexOf('\n  }\n', start);
     final String body = source.substring(start, end);
@@ -64,6 +64,35 @@ void main() {
     expect(
       source,
       contains('if (admitted && nativeAccepted) _prewarmCardIfIdle();'),
+    );
+  });
+
+  test('台词文本浮窗显示后预热桌面查词窗，查词窗正显示时不做', () {
+    final String overlay = File(
+      'lib/src/lookup/gal_hook_text_overlay_controller.dart',
+    ).readAsStringSync();
+    expect(
+      overlay,
+      contains('GlobalLookupController.instance.prewarmDesktopStatic()'),
+    );
+    final String controller = File(
+      'lib/src/lookup/global_lookup_controller.dart',
+    ).readAsStringSync();
+    final int start = controller.indexOf(
+      'Future<void> prewarmDesktopStatic() async {',
+    );
+    expect(start, isNonNegative);
+    final String body = controller.substring(
+      start,
+      controller.indexOf('\n  }\n', start),
+    );
+    final int showing = body.indexOf('GlobalLookupChannel.isShowing()');
+    final int prewarm = body.indexOf('_prewarmHostStatic(');
+    expect(showing, isNonNegative);
+    expect(prewarm, greaterThan(showing));
+    expect(
+      body,
+      contains('GlobalLookupRoute.desktop(lookupEpoch: ++_desktopLookupEpoch)'),
     );
   });
 }

@@ -463,16 +463,31 @@ class GlobalLookupController {
   /// 导航完时首查紧跟着到达：原生只缓存最后一条脚本，预热脚本被顶掉；那时宿主会按
   /// 既有的 `staticSettingsRequired` 恢复路径要回静态段，只多一次往返。
   Future<void> prewarmGalCardStatic(GlobalLookupRoute route) async {
+    if (route.source != 'galCard') return;
+    await _prewarmHostStatic(route);
+  }
+
+  /// 桌面查词窗的同一种预热：台词文本浮窗一显示就调用，浮窗里第一次点词不必再
+  /// 现场灌静态段。查词窗正显示着时不做（换路由上下文会打断在场的卡片）；宿主
+  /// 已装过同一版静态段时直接跳过，所以反复调用只是一次比对。
+  Future<void> prewarmDesktopStatic() async {
+    if (!isSupported || !_started) return;
+    if (await GlobalLookupChannel.isShowing()) return;
+    await _prewarmHostStatic(
+      GlobalLookupRoute.desktop(lookupEpoch: ++_desktopLookupEpoch),
+    );
+  }
+
+  Future<void> _prewarmHostStatic(GlobalLookupRoute route) async {
     final BuildContext? ctx = _appModel?.navigatorKey.currentContext;
     final AppModel? model = _appModel;
     if (!isSupported || ctx == null || model == null) return;
-    if (route.source != 'galCard') return;
     final PopupStaticSettingsJs settings = buildPopupStaticSettingsJs(
       appModel: model,
       theme: Theme.of(ctx),
       options: const PopupSettingsOptions(globalLookup: true),
     );
-    final String hostKey = route.target;
+    final String hostKey = route.target.isEmpty ? 'desktop' : route.target;
     if (_hostStaticRevisions.snapshotFor(hostKey).contains(settings.revision)) {
       return;
     }
@@ -482,14 +497,14 @@ class GlobalLookupController {
         () => GlobalLookupChannel.render(buildPrewarmStaticScript(settings)),
       );
     } catch (e) {
-      glog('gal-card prewarm FAILED (non-fatal): $e');
+      glog('${route.source} prewarm FAILED (non-fatal): $e');
       return;
     }
     // 路由失效时 channel 静默丢弃调用，await 照样正常返回：再确认一次才记账。
     if (!GlobalLookupChannel.isRouteValid(route)) return;
     _hostStaticRevisions.commit(hostKey, <int>{settings.revision});
     glog(
-      'gal-card prewarm sent rev=${settings.revision} '
+      '${route.source} prewarm sent rev=${settings.revision} '
       'static=${((settings.head.length + settings.tail.length) / 1024).toStringAsFixed(0)}K',
     );
   }
@@ -1125,6 +1140,9 @@ class GlobalLookupController {
     }
     if (physicalPlacement != null && !physicalPlacement.isValid) return false;
     _activateRoute(GlobalLookupChannel.currentRoute);
+    if (GlobalLookupChannel.currentRoute.source == 'desktop') {
+      GalLookupLatencyTrace.beginDesktop();
+    }
     glog('lookupText: "$term"');
     // [rubySpans] 以 [text] 为坐标系：跟着 trim 掉的句首空白平移到 [term]。
     final List<FushiRubySpan> termRubySpans = shiftRubySpans(
@@ -1178,9 +1196,14 @@ class GlobalLookupController {
     return search;
   }
 
-  /// 游戏内嵌查词的耗时打点：只记 galCard route，桌面查词不受影响。
-  void _traceGal(GalLookupLatencyStage stage, {String? detail}) {
-    if (GlobalLookupChannel.currentRoute.source != 'galCard') return;
+  /// 查词耗时打点：只记在**同一路由来源**的在途记录上（游戏卡片与桌面窗各记各的，
+  /// 一方的回调不会误打到另一方的记录里）。
+  void _traceLookup(GalLookupLatencyStage stage, {String? detail}) {
+    final GalLookupLatencyTrace? trace = GalLookupLatencyTrace.active;
+    if (trace == null ||
+        trace.source != GlobalLookupChannel.currentRoute.source) {
+      return;
+    }
     GalLookupLatencyTrace.mark(stage, detail: detail);
   }
 
@@ -1274,7 +1297,7 @@ class GlobalLookupController {
       // not look like a user dismissal.
       await GlobalLookupChannel.hide(notify: false);
       if (!_isCurrentRoute) return false;
-      _traceGal(GalLookupLatencyStage.hide);
+      _traceLookup(GalLookupLatencyStage.hide);
       // attached 表面打开的弹窗：hide 刚把 native 的 consume owner 清空，这里在
       // showAt/reveal 之前重新记下游戏 HWND，reveal/revealStack 才会走同步吞点击
       // Arm。普通桌面查词（null）不发这条 channel——非 Windows 也走本控制器。
@@ -1295,7 +1318,7 @@ class GlobalLookupController {
       final DictionarySearchResult result = await search;
       if (!_isCurrentRoute) return false;
       glog('lookup: searched "$text" -> entries=${result.entries.length}');
-      _traceGal(
+      _traceLookup(
         GalLookupLatencyStage.search,
         detail:
             'entries=${result.entries.length} '
@@ -1440,7 +1463,7 @@ class GlobalLookupController {
         'monitorDpr=${shown.monitorDpr})',
       );
       if (!_isCurrentRoute) return false;
-      _traceGal(GalLookupLatencyStage.show);
+      _traceLookup(GalLookupLatencyStage.show);
       if (!shown.ok) {
         glog('lookup: showAt rejected the current route');
         await GlobalLookupChannel.hide(notify: false);
@@ -1505,7 +1528,7 @@ class GlobalLookupController {
       _originFloorTop = floor.top;
       await _renderStack(beginRoute: route);
       if (!_isCurrentRoute) return false;
-      _traceGal(GalLookupLatencyStage.renderSent);
+      _traceLookup(GalLookupLatencyStage.renderSent);
       glog(
         'lookup: showAt(atCursor)=${shown.ok} off-screen w0=$w0 h0=$h0 '
         'workCss=${_screenWorkW}x$_screenWorkH rendered',
@@ -1599,6 +1622,11 @@ class GlobalLookupController {
         } else {
           unawaited(GlobalLookupChannel.reveal(width: width, height: height));
           _notifyRevealed(width, height);
+          // 兜底显示的是**还没渲染好**的窗口：记成单独的结局，别混进正常耗时。
+          if (GalLookupLatencyTrace.active?.source == 'desktop') {
+            _traceLookup(GalLookupLatencyStage.presented);
+            GalLookupLatencyTrace.finish('ready-safety');
+          }
         }
         return;
       }
@@ -1869,7 +1897,7 @@ class GlobalLookupController {
           _galCaptureReadySafety?.cancel();
           _galCaptureReadySafety = null;
           _pendingGalCapture = null;
-          _traceGal(
+          _traceLookup(
             GalLookupLatencyStage.captureReady,
             detail: galLookupCaptureReadyPerfDetail(
               args is List && args.length > 3 ? args[3] : null,
@@ -2054,7 +2082,7 @@ class GlobalLookupController {
             // D2 union bounding box (window-local CSS px) -> place + size window.
             final Map<Object?, Object?> box = second.cast<Object?, Object?>();
             final GlobalLookupRoute route = GlobalLookupChannel.currentRoute;
-            _traceGal(
+            _traceLookup(
               GalLookupLatencyStage.measured,
               detail: galLookupHostPerfDetail(box['perf']),
             );
@@ -2621,7 +2649,7 @@ class GlobalLookupController {
     final String script = beginRoute == null
         ? stackRender.script
         : '${buildBeginLookupScript(kGlobalLookupRootFrameId, source: beginRoute.source, routeEpoch: beginRoute.routeEpoch, lookupEpoch: beginRoute.lookupEpoch)}${stackRender.script}';
-    if (beginRoute != null && beginRoute.source == 'galCard') {
+    if (beginRoute != null) {
       GalLookupLatencyTrace.note(
         'script=${(script.length / 1024).toStringAsFixed(0)}K',
       );
@@ -2731,18 +2759,29 @@ class GlobalLookupController {
         'ratchet=(${ratcheted.left},${ratcheted.top}) '
         '-> dx=$dx dy=$dy w=$w h=$h root=$rootHeight epoch=$geometryEpoch',
       );
-      unawaited(
-        GlobalLookupChannel.revealStack(
-          dx: dx,
-          dy: dy,
-          width: w,
-          height: h,
-          geometryEpoch: geometryEpoch,
-          left: ratcheted.left,
-          top: ratcheted.top,
-          rootHeight: rootHeight,
-        ),
+      final Future<void> revealed = GlobalLookupChannel.revealStack(
+        dx: dx,
+        dy: dy,
+        width: w,
+        height: h,
+        geometryEpoch: geometryEpoch,
+        left: ratcheted.left,
+        top: ratcheted.top,
+        rootHeight: rootHeight,
       );
+      if (GlobalLookupChannel.currentRoute.source == 'desktop') {
+        // 桌面窗在这一步才真正显示：耗时记录到此收尾（游戏卡片在投帧后收尾）。
+        unawaited(
+          revealed.then((_) {
+            _traceLookup(GalLookupLatencyStage.presented);
+            if (GalLookupLatencyTrace.active?.source == 'desktop') {
+              GalLookupLatencyTrace.finish('ok');
+            }
+          }),
+        );
+      } else {
+        unawaited(revealed);
+      }
       _notifyAfterResizeReady(
         w,
         h,

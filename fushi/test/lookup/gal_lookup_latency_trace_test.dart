@@ -125,4 +125,26 @@ void main() {
     );
     expect(galLookupCaptureReadyPerfDetail(<Object>[]), isNull);
   });
+
+  test('桌面路由单独计数，从 Dart 收到算起，冷启动各自判定', () {
+    now = 1000;
+    GalLookupLatencyTrace.begin(_hit(seq: 3));
+    GalLookupLatencyTrace.finish('ok');
+    now = 2000;
+    final GalLookupLatencyTrace desk = GalLookupLatencyTrace.beginDesktop();
+    expect(desk.source, 'desktop');
+    now = 2500;
+    GalLookupLatencyTrace.mark(GalLookupLatencyStage.search);
+    now = 4000;
+    GalLookupLatencyTrace.mark(GalLookupLatencyStage.presented);
+    GalLookupLatencyTrace.finish('ok');
+    expect(
+      lines.last,
+      'desktop-latency seq=1 ok cold total=2.0(from-dart) | '
+      'search=0.5 present=1.5',
+    );
+    GalLookupLatencyTrace.beginDesktop();
+    GalLookupLatencyTrace.finish('ok');
+    expect(lines.last, startsWith('desktop-latency seq=2 ok |'));
+  });
 }
