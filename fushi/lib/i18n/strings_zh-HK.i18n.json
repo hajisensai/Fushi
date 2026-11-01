@@ -10650,6 +10650,7 @@
   "web_video_mine_switch_builtin": "切換到內建模式製作 $count 張排隊卡片",
   "web_video_mode_page": "Web page",
   "web_video_mode_player": "Player",
+  "web_video_nav_browser_settings": "Browser settings (also apply to this page)",
   "web_video_nav_close": "關閉",
   "web_video_nav_forward": "前進",
   "web_video_no_tracks": "尚未擷取到字幕",

@@ -167,6 +167,14 @@ extension _VideoWebSource on _VideoFushiPageState {
         appModel.videoImmersiveControlLayoutJson;
     _customActionBindingsNotifier.value = appModel.videoCustomActionBindings;
     _videoFitMode = appModel.videoFitMode;
+    // 浏览器共享的站点设置（广告拦截 / 网页深色 / 网站设置）：与 app 内浏览器同一个服务、同一份
+    // 偏好，见 `web_video_browser_settings.dart`。引擎在后台按需同步（浏览器页打开时同法）。
+    final WebAdblockService adblock = ref.read(webAdblockServiceProvider);
+    unawaited(
+      adblock.ensureLoaded().catchError((Object e, StackTrace s) {
+        ErrorLogService.instance.log('VideoFushi.web.adblockLoad', e, s);
+      }),
+    );
     final WebVideoSession session = WebVideoSession(
       bookUid: _activeBookUid,
       pageUrl: row.videoPath,
@@ -180,6 +188,8 @@ extension _VideoWebSource on _VideoFushiPageState {
           _webPlatform?.applyCommandFailed(command),
       onTrackFailed: _onWebTrackFailed,
       onNetflixMetadata: _onWebNetflixMetadata,
+      adblock: adblock,
+      browserPrefs: appModel.prefsRepo,
     )..qualityTargetHeight = appModel.youtubeQualityTargetHeight;
     final VideoPlayerController controller = VideoPlayerController();
     final WebVideoPlatformPlayer platform = WebVideoPlatformPlayer(
@@ -1192,7 +1202,8 @@ extension _VideoWebSource on _VideoFushiPageState {
 
   /// 网页档（登录 / 选人 / 详情 / 选集）上方的浏览器工具条：后退（一级一级往外退，与
   /// 返回键同一条 [_handleBackOrExit]）/ 前进 / 刷新（加载中是停止）/ 地址栏（网址或搜索词）
-  /// / 档位切换（[_buildWebModeToggle]，常驻）/ 关闭本页（浏览器交接过来的没有）。
+  /// / 浏览器设置（[_openWebBrowserSettings]）/ 档位切换（[_buildWebModeToggle]，常驻）/ 关闭
+  /// 本页（浏览器交接过来的没有）。
   Widget _buildWebPageBar() {
     final ThemeData theme = Theme.of(context);
     final ColorScheme cs = theme.colorScheme;
@@ -1250,6 +1261,15 @@ extension _VideoWebSource on _VideoFushiPageState {
                 WebVideoLoginImportButton(controller: import),
                 const SizedBox(width: 4),
               ],
+              // 本页与 app 内浏览器共用一份站点设置（广告拦截 / 网页深色 / 网站设置）：入口直接
+              // 打开浏览器设置页，不另造视频专属开关。
+              FushiIconButtonControl(
+                key: const ValueKey<String>('video-web-nav-browser-settings'),
+                tooltip: t.web_video_nav_browser_settings,
+                icon: const FushiIcon(FushiIcons.settings),
+                onPressed: () => unawaited(_openWebBrowserSettings()),
+              ),
+              const SizedBox(width: 4),
               // 档位切换常驻（「播放器」段在页面没视频时不可选）：用户从站点格进来时
               // 落在选剧 / 详情页，切换钮要是藏着，他根本不知道这是 Fushi 播放器页的
               // 网页档（2026-10-29 用户：「没有上端的切换播放器 / 普通网页的东西」）。
@@ -1272,6 +1292,16 @@ extension _VideoWebSource on _VideoFushiPageState {
         ),
       ),
     );
+  }
+
+  /// 网页档工具条的「浏览器设置」：推浏览器自己的设置页（[openWebBrowserSettings]，浏览页 ⋯
+  /// 菜单同一个入口）。设置页盖在本页上时 WebView 不收输入（[WebVideoSurface] 的 covered）；
+  /// 改动当场作用到本页：网页深色经偏好监听重套、广告拦截每个请求现问、网站设置每次申请现读。
+  /// 唯一例外是 contentBlockers 平台的规则在建 WebView 时固化——本页只在 Windows（逐请求）跑，
+  /// 不涉及。
+  Future<void> _openWebBrowserSettings() async {
+    _webAddressFocus.unfocus();
+    await openWebBrowserSettings(context);
   }
 
   /// 「从浏览器导入登录」：与漫画源登录、app 内浏览器同一份 [BrowserLoginImport]——登记

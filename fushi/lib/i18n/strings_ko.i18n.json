@@ -10650,6 +10650,7 @@
   "web_video_mine_switch_builtin": "내장 모드로 전환하여 대기 중인 카드 $count개 만들기",
   "web_video_mode_page": "Web page",
   "web_video_mode_player": "Player",
+  "web_video_nav_browser_settings": "Browser settings (also apply to this page)",
   "web_video_nav_close": "Close",
   "web_video_nav_forward": "Forward",
   "web_video_no_tracks": "아직 수집된 자막이 없습니다",
