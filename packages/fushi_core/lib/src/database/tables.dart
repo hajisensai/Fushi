@@ -3626,6 +3626,41 @@ class VideoSubtitleGlossaries extends Table {
   Set<Column> get primaryKey => <Column>{workKey};
 }
 
+// ── video_subtitle_text_overrides（v143：用户手改的单条字幕文本）──────────
+/// 视频播放页字幕列表里用户改过的单条字幕文本（反馈 gleDreKAvo / dpAsMkUjKT）。
+/// 字幕文件 / 内封轨 / 在线轨本身不动：这是一层**覆盖**，按「视频 + 字幕源」存，
+/// 加载出 cue 后按 `(start_ms, original_text)` 命中就换成 [editedText]，用于显示、
+/// 查词与制卡；删掉这一行 = 还原原文。
+///
+/// - [videoKey]：`bookUid`（播放列表 / 远端 host 播放列表第 2 集起是
+///   `bookUid#<集下标>`，与远端字幕偏好键同一口径）。
+/// - [sourceKey]：字幕源指针的归一化（`subtitleTextOverrideSourceKey`）：外挂文件取
+///   `file:<文件名>`（不存绝对路径——数据根迁移不改它；ASR 每次产物文件名带时间戳，
+///   重新生成的字幕自然是另一个源、旧改动不会误套到新识别结果上），内封 / 在线轨 /
+///   YouTube 轨原样存指针，没有显式源的默认字幕存空串。
+/// - [originalText]：解析出的原文，命中键的一部分；源字幕变了（重新识别 / 换版本）
+///   对不上就不生效，不会把改动套到别的句子上。
+///
+/// 设备本地数据：随备份「视频」类别出境，不进 live-sync。逻辑外键：删视频不级联
+/// （同 video_subtitle_glossaries：用户手编内容不因一次删库重导就丢）。
+@DataClassName('VideoSubtitleTextOverrideRow')
+class VideoSubtitleTextOverrides extends Table {
+  TextColumn get videoKey => text()();
+  TextColumn get sourceKey => text()();
+  IntColumn get startMs => integer()();
+  TextColumn get originalText => text()();
+  TextColumn get editedText => text()();
+  IntColumn get updatedAt => integer()();
+
+  @override
+  Set<Column> get primaryKey => <Column>{
+    videoKey,
+    sourceKey,
+    startMs,
+    originalText,
+  };
+}
+
 // ── media_privacy_flags（v122：作品级「私密」标记）──────────────────────
 /// 用户手动把一部作品标成私密：不上传排行榜、不推 Bangumi 进度（也不拿它的标题去
 /// Bangumi 搜自动映射）。外部分级（扩展 contentWarning / 刮削 contentRating / 游戏

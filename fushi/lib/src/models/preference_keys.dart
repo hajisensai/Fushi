@@ -811,6 +811,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 500 条。非凭据、跨设备（服务器条目 id 在哪台设备上都一样）。
   'video_media_server_version_choices',
   'video_mining_animated_format',
+  // String（`SentenceAudioSourcePick.wireName`）：视频制卡句子音频来源——当前播放
+  // 音轨（默认）/ 指定第 N 条音轨 `track:<N>` / 中置声道 `front_center`。
+  'video_mining_audio_source',
   'video_mining_clip_format',
   'video_mining_image_mode',
   'video_mining_still_format',

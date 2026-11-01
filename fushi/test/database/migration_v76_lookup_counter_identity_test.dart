@@ -96,7 +96,7 @@ CREATE TABLE statistics_tombstones (
     expect(version.read<int>('user_version'), db.schemaVersion);
     expect(
       db.schemaVersion,
-      142,
+      143,
       reason: 'v76 给 lookup_mining_counters 的 book_key 进唯一键',
     );
 

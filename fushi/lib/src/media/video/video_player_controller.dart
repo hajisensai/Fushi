@@ -29,6 +29,7 @@ import 'package:fushi_engine/media/video/bitmap_subtitle/bitmap_subtitle_cue.dar
 import 'package:fushi_engine/media/video/bitmap_subtitle/graphic_subtitle_track_extract.dart'
     show extractGraphicSubtitleTrack, readGraphicSubtitleTrackInBackground;
 import 'package:fushi/src/media/video/player_decoded_subtitle_cues.dart';
+import 'package:fushi/src/media/video/subtitle_text_override.dart';
 import 'package:fushi/src/media/video/video_graphic_subtitle_regions.dart';
 import 'package:fushi/src/media/video/video_playback_source.dart';
 import 'package:fushi/src/media/video/video_shader_manager.dart';
@@ -251,6 +252,11 @@ class VideoPlayerController extends ChangeNotifier
 
   List<AudioCue> _cues = <AudioCue>[];
   AudioCue? _currentCue;
+
+  /// 主字幕的用户手改文本覆盖（反馈 gleDreKAvo / dpAsMkUjKT）。[setCues] 与 libmpv
+  /// 回流的每一句都按它套一遍；页面在「视频 + 字幕源」变化时经
+  /// [setCueTextOverrides] 换成对应那份。
+  SubtitleTextOverrides _cueTextOverrides = SubtitleTextOverrides.empty;
   int _currentCueIndex = -1;
 
   /// TODO-1312：当前**主字幕**活动集（区间 [startMs,endMs] 覆盖 effective 位置的所有
@@ -2289,13 +2295,15 @@ class VideoPlayerController extends ChangeNotifier
         text.replaceAll('\r\n', '\n').trim()) {
       return;
     }
-    final AudioCue? cue = buildPlayerDecodedCue(
+    final AudioCue? decoded = buildPlayerDecodedCue(
       text: text,
       startMs: startMs,
       endMs: endMs,
       positionMs: positionAtEvent,
     );
-    if (cue == null) return;
+    if (decoded == null) return;
+    // 用户手改过的句子回流时同样换成改后文本（暂定时长收尾改的是列表里这份副本）。
+    final AudioCue cue = applySubtitleTextOverride(decoded, _cueTextOverrides);
     if (endMs == null || endMs <= cue.startMs) {
       _playerDecodedProvisionalCue = cue;
     }
@@ -2553,10 +2561,13 @@ class VideoPlayerController extends ChangeNotifier
     // 否则迟到的 sub-text 会把旧轨的句子插进新 cue 列表。
     _stopPlayerDecodedText();
     // `\p` 绘图事件分流到渲染专用流（[_drawingCues]），对白流只留可读字幕。
-    _cues = _sortedByStart(<AudioCue>[
-      for (final AudioCue c in cues)
-        if (!c.isRenderOnly) c,
-    ]);
+    _cues = applySubtitleTextOverrides(
+      _sortedByStart(<AudioCue>[
+        for (final AudioCue c in cues)
+          if (!c.isRenderOnly) c,
+      ]),
+      _cueTextOverrides,
+    );
     _drawingCues = _sortedByStart(<AudioCue>[
       for (final AudioCue c in cues)
         if (c.isRenderOnly) c,
@@ -2588,6 +2599,32 @@ class VideoPlayerController extends ChangeNotifier
     if (_cues.isNotEmpty) onCuesReplaced?.call(_cues);
     notifyListeners();
   }
+
+  /// 换一份主字幕文本覆盖（用户手改的单条字幕，见 `subtitle_text_override.dart`），
+  /// 并就地套到当前 [cues] 上。只换文本、不动起止时间：下标类状态（当前句 / 活动集 /
+  /// 单句停 / 循环）全部仍指向同一句，不复位播放态。之后 [setCues] 装进来的新列表与
+  /// libmpv 回流的句子也都按它套。
+  void setCueTextOverrides(SubtitleTextOverrides overrides) {
+    _cueTextOverrides = overrides;
+    final List<AudioCue> next = applySubtitleTextOverrides(_cues, overrides);
+    if (identical(next, _cues)) return;
+    final AudioCue? provisional = _playerDecodedProvisionalCue;
+    if (provisional != null) {
+      final int at = _cues.indexWhere(
+        (AudioCue c) => identical(c, provisional),
+      );
+      _playerDecodedProvisionalCue = at >= 0 ? next[at] : provisional;
+    }
+    _cues = next;
+    if (_currentCueIndex >= 0 && _currentCueIndex < _cues.length) {
+      _currentCue = _cues[_currentCueIndex];
+    }
+    _scheduleLuaSubtitleMirrorSync();
+    notifyListeners();
+  }
+
+  /// 当前生效的主字幕文本覆盖。
+  SubtitleTextOverrides get cueTextOverrides => _cueTextOverrides;
 
   /// 主字幕 cue 列表整体换成了一份非空的新列表（加载 / 换轨 / 换集）。页面接到
   /// 「我库里的例句」的语料喂入（LibraryCorpusService.feedVideoCues）；null = 不关心。

@@ -10,6 +10,8 @@ import 'package:fushi_anki/fushi_anki_core.dart';
 import 'package:fushi_core/fushi_core.dart' show fushiDebugPrint;
 import 'package:fushi_engine/mining/immersion_mining_request.dart'
     show VideoMiningImageMode;
+import 'package:fushi_engine/mining/sentence_audio_source.dart'
+    show SentenceAudioSourcePick;
 
 /// 漫画卡图的取景方式。
 enum MangaCropChoice { wholePage, panel, textArea, custom, none }
@@ -342,6 +344,15 @@ class AdvancedMiningController extends ChangeNotifier {
     if (next == audioNudgeStepMs) return;
     audioNudgeStepMs = next;
     audioSection?.onNudgeStepChanged?.call(next);
+    _notify();
+  }
+
+  /// 这一张卡的句子音频来源；null = 页面不给选（[AdvancedMiningAudioSection.sources]）。
+  SentenceAudioSourcePick? audioSource;
+
+  void setAudioSource(SentenceAudioSourcePick pick) {
+    if (locked || audioSource == pick) return;
+    audioSource = pick;
     _notify();
   }
 
@@ -838,6 +849,7 @@ class AdvancedMiningController extends ChangeNotifier {
     omitAudio = false;
     audioStartDeltaMs = 0;
     audioEndDeltaMs = 0;
+    audioSource = audioSection?.sources?.defaultPick;
     _stillDeltaMs.clear();
     final AdvancedMiningVideoImageSection? video = videoSection;
     if (video != null) {
@@ -859,6 +871,7 @@ class AdvancedMiningController extends ChangeNotifier {
     omitAudio = false;
     audioStartDeltaMs = 0;
     audioEndDeltaMs = 0;
+    audioSource = audioSection?.sources?.defaultPick;
     _stillDeltaMs.clear();
     videoImageMode = _initialVideoImageMode;
     mosaicRegions = const <MiningMosaicRegion>[];
@@ -939,6 +952,8 @@ class AdvancedMiningController extends ChangeNotifier {
         : const <MiningMosaicRegion>[];
 
     final bool audio = audioSection != null;
+    final SentenceAudioSourcePick? sourceDefault =
+        audioSection?.sources?.defaultPick;
     return MiningRequestOverrides(
       deckName: chosenDeck != null && chosenDeck != deck?.defaultDeckName
           ? chosenDeck
@@ -946,6 +961,10 @@ class AdvancedMiningController extends ChangeNotifier {
       omitAudio: audio && omitAudio,
       audioStartDeltaMs: audio ? audioStartDeltaMs : 0,
       audioEndDeltaMs: audio ? audioEndDeltaMs : 0,
+      // 与设置里的来源相同就不写：没动 = 一键「+」。
+      audioSource: !omitAudio && audioSource != sourceDefault
+          ? audioSource?.wireName
+          : null,
       omitImage: omitImage,
       videoImageMode: modeWire,
       coverFrameAtMs: coverFrame,

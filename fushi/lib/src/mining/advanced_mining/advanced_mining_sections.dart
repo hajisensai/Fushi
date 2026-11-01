@@ -5,6 +5,7 @@ import 'dart:ui' show FontFeature, PathMetric;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart';
+import 'package:fushi/src/mining/advanced_mining/advanced_mining_audio_source.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_controller.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_mosaic.dart';
@@ -756,6 +757,7 @@ class AdvancedMiningAudioPanel extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
           if (embedded) ...<Widget>[choices, const SizedBox(height: 10)],
+          AdvancedMiningAudioSourceChips(controller: c),
           FushiAnimatedSize(
             duration: context.fushiMotion.spatialDefault.duration,
             curve: context.fushiMotion.spatialDefault.curve,

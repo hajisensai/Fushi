@@ -152,7 +152,7 @@ CREATE TABLE revealed_images (
         .customSelect('PRAGMA user_version')
         .getSingle();
     expect(version.read<int>('user_version'), db.schemaVersion);
-    expect(db.schemaVersion, 142, reason: 'v82 = 四子表书键切 uid');
+    expect(db.schemaVersion, 143, reason: 'v82 = 四子表书键切 uid');
 
     // ── reader_positions：跨书族，epub 命中换 uid，SRT 照抄 ──
     expect(await count(db, 'reader_positions'), 2, reason: '迁移零丢行');

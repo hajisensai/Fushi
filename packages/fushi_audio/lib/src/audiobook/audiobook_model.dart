@@ -112,6 +112,15 @@ class AudioCue {
   /// （`cue_sentence_resegmenter.dart`）；DB 往返不携带。
   CueTokenTiming? tokenTiming;
 
+  /// 用户手改字幕前的那条原 cue（瞬态、不持久化）。null = 这句没被改过，[text] 就是
+  /// 原文；非 null 时本 cue 是改后副本（[text] 为用户文本，显示 / 查词 / 制卡都用它），
+  /// 原 cue 原样留着（含样式 markup）供还原与覆盖命中（视频字幕文本覆盖层
+  /// `subtitle_text_override.dart`）。
+  AudioCue? uneditedCue;
+
+  /// 字幕源里的原文：被手改过时取 [uneditedCue] 的文本，否则就是 [text]。
+  String get sourceText => uneditedCue?.text ?? text;
+
   /// 渲染专用 cue：无可读正文、只有 ASS `\p` 矢量绘图（招牌白底遮罩等）。它只该被
   /// 视频 overlay 画出来——不进字幕列表 / 跳句 / 制卡 / 句尾暂停，也不落库
   /// （`VideoBookRepository.saveCues` 过滤）。由 `AssParser.parseString(includeDrawings:
@@ -145,7 +154,8 @@ class AudioCue {
         chapterHref: c.chapterHref,
         sentenceIndex: c.sentenceIndex,
         textFragmentId: c.textFragmentId,
-        cueText: c.text,
+        // 落库的永远是字幕源的原文：手改文本是另一层覆盖，不写进 cue 表。
+        cueText: c.sourceText,
         startMs: c.startMs,
         endMs: c.endMs,
         audioFileIndex: c.audioFileIndex,

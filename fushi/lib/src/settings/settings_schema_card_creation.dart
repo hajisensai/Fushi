@@ -497,6 +497,12 @@ SettingsDestination _buildAnkiPanel(AnkiSettingsPanel panel, String title) {
           subtitle: t.mining_audio_follow_playback_speed_hint,
         ),
         SettingsBodySearchEntry(
+          id: 'card_creation.anki.video_mining_audio_source',
+          hasRevealTarget: true,
+          title: t.video_mining_audio_source,
+          subtitle: t.video_mining_audio_source_hint,
+        ),
+        SettingsBodySearchEntry(
           id: 'card_creation.anki.video_mining_image_mode',
           hasRevealTarget: true,
           title: t.video_mining_image_mode,
