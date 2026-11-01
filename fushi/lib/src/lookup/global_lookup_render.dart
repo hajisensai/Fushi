@@ -51,6 +51,7 @@ class GlobalLookupFrameSettingsJs {
     required this.staticRevision,
     required this.entriesJs,
     required this.renderJs,
+    this.entriesAsync = false,
   });
 
   final String staticHeadJs;
@@ -58,6 +59,10 @@ class GlobalLookupFrameSettingsJs {
   final int staticRevision;
   final String entriesJs;
   final String renderJs;
+
+  /// 词条经 [GlobalLookupEntriesStore] 异步取回（渲染在取回之后才发生）。宿主据此
+  /// 等根卡渲染完再上报尺寸。
+  final bool entriesAsync;
 
   /// Legacy/full-frame form used by source-contract tests and any caller that
   /// deliberately wants one self-contained script. The hot host path sends the
@@ -149,6 +154,7 @@ GlobalLookupFrameSettingsJs buildFrameSettingsJsParts({
     entriesJs:
         '$tokenJs${buildPopupFetchedEntriesJs(result: result, url: url, renderToken: token, pending: false, idle: false, afterEntriesJs: renderJs)}',
     renderJs: '',
+    entriesAsync: true,
   );
 }
 
@@ -533,6 +539,7 @@ StackRenderScript buildStackRenderScript({
     map['staticRevision'] = settings.staticRevision;
     map['entriesJs'] = settings.entriesJs;
     map['renderJs'] = settings.renderJs;
+    if (settings.entriesAsync) map['entriesAsync'] = true;
     if (!availableStaticRevisions.contains(settings.staticRevision)) {
       map['staticHeadJs'] = settings.staticHeadJs;
       map['staticTailJs'] = settings.staticTailJs;

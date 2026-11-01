@@ -87,6 +87,24 @@ void main() {
       expect(controller, contains('_entriesStore.retain('));
     });
 
+    test('异步取回的帧在描述里标明，宿主据此等根卡渲染完再报尺寸', () {
+      final String render = File(
+        'lib/src/lookup/global_lookup_render.dart',
+      ).readAsStringSync();
+      expect(
+        render,
+        contains("if (settings.entriesAsync) map['entriesAsync'] = true;"),
+      );
+      expect(render, contains('entriesAsync: true,'));
+      final String host = File(
+        'assets/popup/global_lookup_host.js',
+      ).readAsStringSync();
+      expect(
+        host,
+        contains('record.awaitingAsyncEntries = d.entriesAsync === true;'),
+      );
+    });
+
     test('取回失败回退到字面量并重渲', () {
       final int start = controller.indexOf(
         "if (handler == 'popupEntriesFetchFailed') {",

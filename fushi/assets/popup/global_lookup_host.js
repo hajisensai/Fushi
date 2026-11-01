@@ -1854,6 +1854,7 @@
       record.observer = null;
     }
     setGateFlag(record, ATTR_CONTENT_READY, 'contentReady');
+    record.awaitingAsyncEntries = false;
     // Content height just changed -> the union bbox may grow. Re-measure
     // (coalesced) so Dart resizes the window to fit the filled card.
     // injectContent/width mutations mark the changed record dirty. Reuse clean
@@ -2187,6 +2188,8 @@
         win.eval(script);
       }
       record.injectedStaticRevision = revision;
+      // 词条走异步取回时，根卡要等它渲染完才上报尺寸（见 measureAndReport）。
+      record.awaitingAsyncEntries = d.entriesAsync === true;
       record.injectedEntriesJs = d.entriesJs;
       record.injectedRenderJs = d.renderJs;
       record.injectedSettingsJs = null;
@@ -3251,6 +3254,21 @@
       rootHeight: rootHeight,
       dpr: dpr,
     };
+    // 根卡的词条是异步取回（descriptor.entriesAsync，见 Dart GlobalLookupEntriesStore）
+    // 且新内容还没渲染出来时，不向原生报尺寸（外框高度照常量、照常写）。若照样上报，
+    // 窗口 / 游戏卡片会先以「外框仍被显示门藏着」的透明状态亮出来，等词条到了才有内容
+    // ——查词看起来更快，实际上用户等的时间一点没少。根卡 ready 时 markContentReady
+    // 会再排一次测量；渲染失败也有 CONTENT_READY_SAFETY_MS 兜底，不会卡死。
+    var rootContentPending = false;
+    frames.forEach(function (record) {
+      if (sameRoute(record.route, route) && record.parentIndex < 0 &&
+          record.awaitingAsyncEntries && !record.contentReady) {
+        rootContentPending = true;
+      }
+    });
+    if (rootContentPending) {
+      return;
+    }
     // rootHeight is part of the de-dup key: a root that shrinks under a child
     // still spanning the old bottom leaves the union unchanged, yet the in-game
     // root placement must follow the new root edge.

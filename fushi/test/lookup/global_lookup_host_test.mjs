@@ -1552,6 +1552,37 @@ function flushTimers() {
     'shell reveals once popupRendered + geometry are both in');
 }
 
+// 25b. 大结果词条异步取回（descriptor.entriesAsync）：根卡渲染完之前不向原生报尺寸，
+//      否则窗口 / 游戏卡片会先以透明外框亮出来；popupRendered 一到立即补报。
+{
+  const { host, document } = freshHost();
+  const root = revisionDescriptor(
+    'async-root', -1, 91,
+    '/* ASYNC-ENTRIES */', '',
+    '/* ASYNC-HEAD */', '/* ASYNC-TAIL */',
+  );
+  root.entriesAsync = true;
+  hostPostLog = [];
+  host.renderStack({ popups: [root] });
+  const shell = shellsOf(document)[0];
+  const iframe = shell.children.find((c) => c.tagName === 'IFRAME');
+  iframe._listeners.load[0]();
+  host.measureAndReport();
+  assert.ok(!hostPostLog.some((m) => m.handler === 'overlaySize'),
+    'async root reports no geometry before its entries render');
+  iframe.contentWindow.chrome.webview.postMessage({
+    handler: 'popupRendered',
+    args: [200],
+  });
+  flushTimers();
+  while (pendingAnimationFrames.length) {
+    pendingAnimationFrames.shift()();
+  }
+  host.measureAndReport();
+  assert.ok(hostPostLog.some((m) => m.handler === 'overlaySize'),
+    'popupRendered releases the deferred geometry report');
+}
+
 // 26. TODO-1067 (SUB1): the close-X posts dismissPopupAt for ITS layer. (The
 //     per-layer card close itself is owned by popup.js; the host defers on card
 //     hits, tested in 23.)
