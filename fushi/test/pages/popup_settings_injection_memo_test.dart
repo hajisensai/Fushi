@@ -438,6 +438,12 @@ void main() {
             marker: 'window.__fushiPopupUiScale = 1.5',
           ),
           (
+            // 反馈 2jGkpD-iD6：弹窗缩放系数乘在界面大小之上，同样是 zoom 输入。
+            name: 'popupUiScaleFactor（弹窗缩放 → zoom）',
+            mutate: (MemoAppModel m) => m.popupUiScaleFactorValue = 0.5,
+            marker: 'window.__fushiPopupUiScale = 0.5',
+          ),
+          (
             name: 'dictionaryFontSize（词典字号 → zoom）',
             mutate: (MemoAppModel m) => m.dictionaryFontSizeValue = 24,
             marker: 'window.__fushiPopupFontSize = 24.0',
@@ -867,6 +873,7 @@ class MemoAppModel extends AppModel {
   // 每个可变字段恰好对应 _PopupStaticSettingsMemo 的一个比较项，供「逐字段失效」
   // 用例只翻一个输入（这样删掉某一行比较就只有它对应的用例会红）。
   double appUiScaleValue = 1.0;
+  double popupUiScaleFactorValue = 1.0;
   double dictionaryFontSizeValue = 16;
   double popupWheelSpeedValue = 1.0;
   int popupDictionaryColumnsValue = 1;
@@ -892,6 +899,8 @@ class MemoAppModel extends AppModel {
   bool get librarySentencesEnabled => librarySentencesEnabledValue;
   @override
   double get appUiScale => appUiScaleValue;
+  @override
+  double get popupUiScaleFactor => popupUiScaleFactorValue;
   @override
   double get dictionaryFontSize => dictionaryFontSizeValue;
   @override
