@@ -15,6 +15,8 @@
 //   native crash 与 ANR 附 trace 摘要；外加进程级 `onTrimMemory` 级别记录。
 // - Windows：`crash_dump.cpp` 的未处理异常过滤器在写 minidump 的同时追加一行
 //   `crash_summary.log`（异常码、模块+偏移、线程、x64 栈前若干帧）。不上传 minidump。
+//   关机 / 注销时 runner 在 `WM_ENDSESSION` 里追加一行 `session_end.log`（pid + 时刻 +
+//   原因），按 pid 对上会话标记后判 [PreviousExitKind.systemShutdown]，不算闪退。
 // - macOS：`~/Library/Logs/DiagnosticReports/<进程名>-*.ips`（系统崩溃报告）。
 // - iOS：MetricKit `MXCrashDiagnostic`（`AppDelegate.swift` 订阅，JSON 落
 //   `Documents/metrickit/`）。
@@ -90,6 +92,9 @@ enum PreviousExitKind {
   /// 安装新版本时被系统 / 安装器结束（Android `PACKAGE_UPDATED`）：自动更新、手动装新包。
   appUpdated,
 
+  /// 关机 / 注销 / 系统重启时被系统结束（Windows `WM_ENDSESSION`，`session_end.log`）。
+  systemShutdown,
+
   /// 停在前台时没了、平台没给原因（会话标记推断，疑似闪退 / 卡死后被强杀）。
   unexpected,
 
@@ -97,11 +102,11 @@ enum PreviousExitKind {
   backgroundReclaim;
 
   /// 这种退出值得问用户要不要把日志发给开发者。内存回收只在发生在前台时算（用户眼里
-  /// 就是闪退，且多半是 Fushi 自己吃内存）；用户强停、装新版本与后台回收不算。
+  /// 就是闪退，且多半是 Fushi 自己吃内存）；用户强停、装新版本、关机与后台回收不算。
   bool worthReporting({required bool foreground}) => switch (this) {
     nativeCrash || crash || anr || unexpected => true,
     memoryKill => foreground,
-    userStopped || appUpdated || backgroundReclaim => false,
+    userStopped || appUpdated || systemShutdown || backgroundReclaim => false,
   };
 }
 
@@ -476,6 +481,47 @@ String? readAndClearTextFile(File file) {
   } on FileSystemException {
     return null;
   }
+}
+
+const String kWindowsSessionEndSource = 'Process.windowsSessionEnd';
+
+/// `%LOCALAPPDATA%\Fushi\crashdumps\session_end.log`（`crash_dump.cpp` 的
+/// `RecordSessionEnd` 在 `WM_ENDSESSION` 时追加，与崩溃摘要同目录）。
+File? resolveWindowsSessionEndFile({
+  required bool isWindows,
+  required String? localAppData,
+}) {
+  if (!isWindows || localAppData == null || localAppData.isEmpty) return null;
+  return File('$localAppData\\Fushi\\crashdumps\\session_end.log');
+}
+
+/// 上次没标 clean 的会话是不是被关机 / 注销结束的：[content] 每行
+/// `<pid> <unix 毫秒> <原因>`，取 pid 与上次会话相同的最后一行。上次正常退出、
+/// 没有对上的行（旧进程留下的、别的实例的）返回 null。
+ExitReportEntry? describeWindowsSessionEnd(
+  String content,
+  PreviousSession? previous,
+) {
+  if (previous == null || previous.clean) return null;
+  ExitReportEntry? match;
+  for (final String raw in content.split(RegExp(r'\r?\n'))) {
+    final List<String> parts = raw.trim().split(' ');
+    if (parts.length < 3) continue;
+    final int? linePid = int.tryParse(parts[0]);
+    final int? atMs = int.tryParse(parts[1]);
+    if (linePid != previous.pid || atMs == null) continue;
+    match = ExitReportEntry(
+      kWindowsSessionEndSource,
+      '上次进程在 Windows 关机 / 注销时被系统结束：reason=${parts[2]} '
+      'at=${_iso(atMs)}',
+      severe: false,
+      kind: PreviousExitKind.systemShutdown,
+      foreground: previous.diedInForeground,
+      duringStartup: !previous.initialised,
+      atMs: atMs,
+    );
+  }
+  return match;
 }
 
 List<ExitReportEntry> formatWindowsCrashSummary(String content) {
@@ -980,6 +1026,17 @@ abstract final class PreviousExitLog {
       );
       final String? content = file == null ? null : readAndClearTextFile(file);
       if (content != null) out.addAll(formatWindowsCrashSummary(content));
+      final File? sessionEnd = resolveWindowsSessionEndFile(
+        isWindows: true,
+        localAppData: localAppData ?? Platform.environment['LOCALAPPDATA'],
+      );
+      final String? ended = sessionEnd == null
+          ? null
+          : readAndClearTextFile(sessionEnd);
+      final ExitReportEntry? shutdown = ended == null
+          ? null
+          : describeWindowsSessionEnd(ended, previous);
+      if (shutdown != null) out.add(shutdown);
     }
 
     if (isMacOS ?? Platform.isMacOS) {

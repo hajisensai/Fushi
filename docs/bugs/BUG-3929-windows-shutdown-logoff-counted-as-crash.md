@@ -1,0 +1,6 @@
+## BUG-3929 · Windows 关机 / 注销 / 系统重启后下次启动被判「疑似闪退」
+- **报告**：2026-11-01（用户：BUG-3928 修复时留下的同类缺口，用户要求根本性修复）
+- **真实性**：✅ 真 bug。Windows 关机 / 注销时系统给顶层窗口发 `WM_ENDSESSION`（wParam=TRUE），返回后随时结束进程；`fushi/windows/runner/flutter_window.cpp` 的 `FlutterWindow::MessageHandler` 不处理这条消息，Dart 侧走不到 `DesktopLifecycleService.exitApp` 的 `PreviousExitLog.markCleanExit()`（`fushi/lib/src/platform/desktop/desktop_lifecycle_service.dart:85`），会话标记停在 `resumed` 且没标 clean → 下次启动 `describeUncleanPreviousSession`（`fushi/lib/src/diagnostics/previous_exit_log.dart`）判 `unexpected`，弹闪退报告提示。
+- **[x] ① 已修复** — 原生侧在 `WM_ENDSESSION` 里同步调 `fushi::RecordSessionEnd`（`crash_dump.cpp`），向 `crashdumps\session_end.log` 追加 `<pid> <unix 毫秒> <shutdown|logoff|closeapp|critical>` 并 `FlushFileBuffers`，不消费消息；Dart 侧新增 `PreviousExitKind.systemShutdown`（不值得报，优先级在原生崩溃 / 崩溃 / ANR / 内存回收之后、会话标记推断的 `unexpected` 之前），启动时读出并清空该文件，只认 pid 与上次未 clean 会话相同的行。不走 Dart 方法通道：关机路径上 Dart isolate 来不及跑。
+- **[x] ② 已加自动化测试** — `fushi/test/diagnostics/previous_exit_log_test.dart` 组「Windows 关机 / 注销（BUG-3929）」：前台被注销 → `systemShutdown` 不上报且清空记录；pid 对不上 → 仍判 `unexpected`；同次有原生崩溃摘要 → 崩溃优先；runner 源码守卫（`WM_ENDSESSION` 调 `RecordSessionEnd`、落盘 flush）。
+- **备注**：没有在真实关机 / 注销流程上复测。系统在应用无响应时直接强杀（不发 `WM_ENDSESSION`）的情况仍会被判疑似闪退——那确实是卡死，按设计保留。

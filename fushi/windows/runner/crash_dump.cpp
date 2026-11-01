@@ -3,6 +3,7 @@
 #include <windows.h>
 #include <dbghelp.h>
 #include <shlobj.h>
+#include <cstdio>
 #include <cwchar>
 
 namespace fushi
@@ -286,6 +287,45 @@ namespace fushi
       return EXCEPTION_EXECUTE_HANDLER;
     }
   }  // namespace
+
+  void RecordSessionEnd(LPARAM end_session_flags)
+  {
+    // lParam 是位掩码：ENDSESSION_CRITICAL 可与其它位并存，按「最能说明原因」的先取。
+    const wchar_t* reason = L"shutdown";
+    if (end_session_flags & ENDSESSION_LOGOFF) {
+      reason = L"logoff";
+    } else if (end_session_flags & ENDSESSION_CLOSEAPP) {
+      reason = L"closeapp";
+    } else if (end_session_flags & ENDSESSION_CRITICAL) {
+      reason = L"critical";
+    }
+    FILETIME ft;
+    GetSystemTimeAsFileTime(&ft);
+    ULARGE_INTEGER t;
+    t.LowPart = ft.dwLowDateTime;
+    t.HighPart = ft.dwHighDateTime;
+    // FILETIME（1601 起 100ns）→ Unix 毫秒。
+    const unsigned long long unix_ms =
+      (t.QuadPart - 116444736000000000ULL) / 10000ULL;
+
+    char line[96];
+    const int len = sprintf_s(line, sizeof(line), "%lu %llu %ls\n",
+      GetCurrentProcessId(), unix_ms, reason);
+    if (len <= 0) return;
+
+    wchar_t log_path[MAX_PATH];
+    if (!ResolveCrashDumpDirectory(log_path)) return;
+    size_t lp = wcsnlen(log_path, MAX_PATH);
+    if (!AppendSegmentW(log_path, &lp, L"\\session_end.log")) return;
+    HANDLE file = CreateFileW(log_path, FILE_APPEND_DATA, FILE_SHARE_READ,
+      nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (file == INVALID_HANDLE_VALUE) return;
+    DWORD written = 0;
+    WriteFile(file, line, static_cast<DWORD>(len), &written, nullptr);
+    // 关机路径：返回后进程随时被结束，落盘不能留在缓存里。
+    FlushFileBuffers(file);
+    CloseHandle(file);
+  }
 
   void PreloadMinidumpWriter()
   {
