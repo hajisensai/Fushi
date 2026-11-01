@@ -1462,6 +1462,10 @@ class SrsRubyText extends StatelessWidget {
     fontStyle: s.italic ? FontStyle.italic : null,
     decoration: s.underline ? TextDecoration.underline : null,
     color: s.bold && emphasis != null ? emphasis : null,
+    // 高亮底色半透明叠在卡面上：深色卡面上也看得清字。
+    backgroundColor: s.highlight == null
+        ? null
+        : Color(s.highlight!).withValues(alpha: 0.45),
   );
 
   /// 取词标记：各段在外层段落纯文本（注音段只占一个占位符）与整段纯文本里的偏移。
