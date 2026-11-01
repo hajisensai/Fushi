@@ -3690,6 +3690,9 @@ extension _VideoSubtitle on _VideoFushiPageState {
                             onCopyCue: _copyCueText,
                             onFavoriteCue: _toggleFavoriteCueForVideo,
                             isCueFavorited: _isCueFavorited,
+                            // 反馈 gleDreKAvo / dpAsMkUjKT：行菜单里手改 / 还原单条字幕。
+                            onEditCue: _editCueText,
+                            onRestoreCue: _restoreCueText,
                             // 列表行跟用户设的字幕字体（FontTarget.videoSubtitle），
                             // 与画面上的字幕同一套，不再各用各的。
                             fontFamily: appModel.subtitleFontFamily,

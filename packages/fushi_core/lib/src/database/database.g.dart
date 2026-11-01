@@ -7187,7 +7187,9 @@ class MediaSourceRow extends DataClass implements Insertable<MediaSourceRow> {
   /// 隐私来源（schema v140，反馈 kEAgATi1LF）：true = 本扫描根产出的条目一律按
   /// 「私密」处理（口径同作品级 `media_privacy_flags`，见 fushi_engine
   /// `MediaPrivacySnapshot`）——不上传排行榜公开书架 / 主页、不推 Bangumi。
-  /// 设备本地配置（不进互联同步）；存量来源 false。
+  /// 设备本地配置（不进互联同步）；存量来源 false。移除隐私来源时条目改由
+  /// **会同步**的作品级 `media_privacy_flags` 承载私密（有意为之，理由见
+  /// `deleteMediaSource`）。
   final bool isPrivate;
 
   /// 列表排序权重（同 [BookTags].sortOrder 范式）。
@@ -57391,6 +57393,450 @@ class VideoSubtitleGlossariesCompanion
   }
 }
 
+class $VideoSubtitleTextOverridesTable extends VideoSubtitleTextOverrides
+    with
+        TableInfo<
+          $VideoSubtitleTextOverridesTable,
+          VideoSubtitleTextOverrideRow
+        > {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $VideoSubtitleTextOverridesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _videoKeyMeta = const VerificationMeta(
+    'videoKey',
+  );
+  @override
+  late final GeneratedColumn<String> videoKey = GeneratedColumn<String>(
+    'video_key',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _sourceKeyMeta = const VerificationMeta(
+    'sourceKey',
+  );
+  @override
+  late final GeneratedColumn<String> sourceKey = GeneratedColumn<String>(
+    'source_key',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _startMsMeta = const VerificationMeta(
+    'startMs',
+  );
+  @override
+  late final GeneratedColumn<int> startMs = GeneratedColumn<int>(
+    'start_ms',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _originalTextMeta = const VerificationMeta(
+    'originalText',
+  );
+  @override
+  late final GeneratedColumn<String> originalText = GeneratedColumn<String>(
+    'original_text',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _editedTextMeta = const VerificationMeta(
+    'editedText',
+  );
+  @override
+  late final GeneratedColumn<String> editedText = GeneratedColumn<String>(
+    'edited_text',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _updatedAtMeta = const VerificationMeta(
+    'updatedAt',
+  );
+  @override
+  late final GeneratedColumn<int> updatedAt = GeneratedColumn<int>(
+    'updated_at',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    videoKey,
+    sourceKey,
+    startMs,
+    originalText,
+    editedText,
+    updatedAt,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'video_subtitle_text_overrides';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<VideoSubtitleTextOverrideRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('video_key')) {
+      context.handle(
+        _videoKeyMeta,
+        videoKey.isAcceptableOrUnknown(data['video_key']!, _videoKeyMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_videoKeyMeta);
+    }
+    if (data.containsKey('source_key')) {
+      context.handle(
+        _sourceKeyMeta,
+        sourceKey.isAcceptableOrUnknown(data['source_key']!, _sourceKeyMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_sourceKeyMeta);
+    }
+    if (data.containsKey('start_ms')) {
+      context.handle(
+        _startMsMeta,
+        startMs.isAcceptableOrUnknown(data['start_ms']!, _startMsMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_startMsMeta);
+    }
+    if (data.containsKey('original_text')) {
+      context.handle(
+        _originalTextMeta,
+        originalText.isAcceptableOrUnknown(
+          data['original_text']!,
+          _originalTextMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_originalTextMeta);
+    }
+    if (data.containsKey('edited_text')) {
+      context.handle(
+        _editedTextMeta,
+        editedText.isAcceptableOrUnknown(data['edited_text']!, _editedTextMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_editedTextMeta);
+    }
+    if (data.containsKey('updated_at')) {
+      context.handle(
+        _updatedAtMeta,
+        updatedAt.isAcceptableOrUnknown(data['updated_at']!, _updatedAtMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_updatedAtMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {
+    videoKey,
+    sourceKey,
+    startMs,
+    originalText,
+  };
+  @override
+  VideoSubtitleTextOverrideRow map(
+    Map<String, dynamic> data, {
+    String? tablePrefix,
+  }) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return VideoSubtitleTextOverrideRow(
+      videoKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}video_key'],
+      )!,
+      sourceKey: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}source_key'],
+      )!,
+      startMs: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}start_ms'],
+      )!,
+      originalText: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}original_text'],
+      )!,
+      editedText: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}edited_text'],
+      )!,
+      updatedAt: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}updated_at'],
+      )!,
+    );
+  }
+
+  @override
+  $VideoSubtitleTextOverridesTable createAlias(String alias) {
+    return $VideoSubtitleTextOverridesTable(attachedDatabase, alias);
+  }
+}
+
+class VideoSubtitleTextOverrideRow extends DataClass
+    implements Insertable<VideoSubtitleTextOverrideRow> {
+  final String videoKey;
+  final String sourceKey;
+  final int startMs;
+  final String originalText;
+  final String editedText;
+  final int updatedAt;
+  const VideoSubtitleTextOverrideRow({
+    required this.videoKey,
+    required this.sourceKey,
+    required this.startMs,
+    required this.originalText,
+    required this.editedText,
+    required this.updatedAt,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['video_key'] = Variable<String>(videoKey);
+    map['source_key'] = Variable<String>(sourceKey);
+    map['start_ms'] = Variable<int>(startMs);
+    map['original_text'] = Variable<String>(originalText);
+    map['edited_text'] = Variable<String>(editedText);
+    map['updated_at'] = Variable<int>(updatedAt);
+    return map;
+  }
+
+  VideoSubtitleTextOverridesCompanion toCompanion(bool nullToAbsent) {
+    return VideoSubtitleTextOverridesCompanion(
+      videoKey: Value(videoKey),
+      sourceKey: Value(sourceKey),
+      startMs: Value(startMs),
+      originalText: Value(originalText),
+      editedText: Value(editedText),
+      updatedAt: Value(updatedAt),
+    );
+  }
+
+  factory VideoSubtitleTextOverrideRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return VideoSubtitleTextOverrideRow(
+      videoKey: serializer.fromJson<String>(json['videoKey']),
+      sourceKey: serializer.fromJson<String>(json['sourceKey']),
+      startMs: serializer.fromJson<int>(json['startMs']),
+      originalText: serializer.fromJson<String>(json['originalText']),
+      editedText: serializer.fromJson<String>(json['editedText']),
+      updatedAt: serializer.fromJson<int>(json['updatedAt']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'videoKey': serializer.toJson<String>(videoKey),
+      'sourceKey': serializer.toJson<String>(sourceKey),
+      'startMs': serializer.toJson<int>(startMs),
+      'originalText': serializer.toJson<String>(originalText),
+      'editedText': serializer.toJson<String>(editedText),
+      'updatedAt': serializer.toJson<int>(updatedAt),
+    };
+  }
+
+  VideoSubtitleTextOverrideRow copyWith({
+    String? videoKey,
+    String? sourceKey,
+    int? startMs,
+    String? originalText,
+    String? editedText,
+    int? updatedAt,
+  }) => VideoSubtitleTextOverrideRow(
+    videoKey: videoKey ?? this.videoKey,
+    sourceKey: sourceKey ?? this.sourceKey,
+    startMs: startMs ?? this.startMs,
+    originalText: originalText ?? this.originalText,
+    editedText: editedText ?? this.editedText,
+    updatedAt: updatedAt ?? this.updatedAt,
+  );
+  VideoSubtitleTextOverrideRow copyWithCompanion(
+    VideoSubtitleTextOverridesCompanion data,
+  ) {
+    return VideoSubtitleTextOverrideRow(
+      videoKey: data.videoKey.present ? data.videoKey.value : this.videoKey,
+      sourceKey: data.sourceKey.present ? data.sourceKey.value : this.sourceKey,
+      startMs: data.startMs.present ? data.startMs.value : this.startMs,
+      originalText: data.originalText.present
+          ? data.originalText.value
+          : this.originalText,
+      editedText: data.editedText.present
+          ? data.editedText.value
+          : this.editedText,
+      updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('VideoSubtitleTextOverrideRow(')
+          ..write('videoKey: $videoKey, ')
+          ..write('sourceKey: $sourceKey, ')
+          ..write('startMs: $startMs, ')
+          ..write('originalText: $originalText, ')
+          ..write('editedText: $editedText, ')
+          ..write('updatedAt: $updatedAt')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    videoKey,
+    sourceKey,
+    startMs,
+    originalText,
+    editedText,
+    updatedAt,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is VideoSubtitleTextOverrideRow &&
+          other.videoKey == this.videoKey &&
+          other.sourceKey == this.sourceKey &&
+          other.startMs == this.startMs &&
+          other.originalText == this.originalText &&
+          other.editedText == this.editedText &&
+          other.updatedAt == this.updatedAt);
+}
+
+class VideoSubtitleTextOverridesCompanion
+    extends UpdateCompanion<VideoSubtitleTextOverrideRow> {
+  final Value<String> videoKey;
+  final Value<String> sourceKey;
+  final Value<int> startMs;
+  final Value<String> originalText;
+  final Value<String> editedText;
+  final Value<int> updatedAt;
+  final Value<int> rowid;
+  const VideoSubtitleTextOverridesCompanion({
+    this.videoKey = const Value.absent(),
+    this.sourceKey = const Value.absent(),
+    this.startMs = const Value.absent(),
+    this.originalText = const Value.absent(),
+    this.editedText = const Value.absent(),
+    this.updatedAt = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  VideoSubtitleTextOverridesCompanion.insert({
+    required String videoKey,
+    required String sourceKey,
+    required int startMs,
+    required String originalText,
+    required String editedText,
+    required int updatedAt,
+    this.rowid = const Value.absent(),
+  }) : videoKey = Value(videoKey),
+       sourceKey = Value(sourceKey),
+       startMs = Value(startMs),
+       originalText = Value(originalText),
+       editedText = Value(editedText),
+       updatedAt = Value(updatedAt);
+  static Insertable<VideoSubtitleTextOverrideRow> custom({
+    Expression<String>? videoKey,
+    Expression<String>? sourceKey,
+    Expression<int>? startMs,
+    Expression<String>? originalText,
+    Expression<String>? editedText,
+    Expression<int>? updatedAt,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (videoKey != null) 'video_key': videoKey,
+      if (sourceKey != null) 'source_key': sourceKey,
+      if (startMs != null) 'start_ms': startMs,
+      if (originalText != null) 'original_text': originalText,
+      if (editedText != null) 'edited_text': editedText,
+      if (updatedAt != null) 'updated_at': updatedAt,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  VideoSubtitleTextOverridesCompanion copyWith({
+    Value<String>? videoKey,
+    Value<String>? sourceKey,
+    Value<int>? startMs,
+    Value<String>? originalText,
+    Value<String>? editedText,
+    Value<int>? updatedAt,
+    Value<int>? rowid,
+  }) {
+    return VideoSubtitleTextOverridesCompanion(
+      videoKey: videoKey ?? this.videoKey,
+      sourceKey: sourceKey ?? this.sourceKey,
+      startMs: startMs ?? this.startMs,
+      originalText: originalText ?? this.originalText,
+      editedText: editedText ?? this.editedText,
+      updatedAt: updatedAt ?? this.updatedAt,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (videoKey.present) {
+      map['video_key'] = Variable<String>(videoKey.value);
+    }
+    if (sourceKey.present) {
+      map['source_key'] = Variable<String>(sourceKey.value);
+    }
+    if (startMs.present) {
+      map['start_ms'] = Variable<int>(startMs.value);
+    }
+    if (originalText.present) {
+      map['original_text'] = Variable<String>(originalText.value);
+    }
+    if (editedText.present) {
+      map['edited_text'] = Variable<String>(editedText.value);
+    }
+    if (updatedAt.present) {
+      map['updated_at'] = Variable<int>(updatedAt.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('VideoSubtitleTextOverridesCompanion(')
+          ..write('videoKey: $videoKey, ')
+          ..write('sourceKey: $sourceKey, ')
+          ..write('startMs: $startMs, ')
+          ..write('originalText: $originalText, ')
+          ..write('editedText: $editedText, ')
+          ..write('updatedAt: $updatedAt, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
 class $MediaPrivacyFlagsTable extends MediaPrivacyFlags
     with TableInfo<$MediaPrivacyFlagsTable, MediaPrivacyFlagRow> {
   @override
@@ -75927,6 +76373,8 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
   );
   late final $VideoSubtitleGlossariesTable videoSubtitleGlossaries =
       $VideoSubtitleGlossariesTable(this);
+  late final $VideoSubtitleTextOverridesTable videoSubtitleTextOverrides =
+      $VideoSubtitleTextOverridesTable(this);
   late final $MediaPrivacyFlagsTable mediaPrivacyFlags =
       $MediaPrivacyFlagsTable(this);
   late final $LibraryOrganizeRunsTable libraryOrganizeRuns =
@@ -76079,6 +76527,7 @@ abstract class _$FushiDatabase extends GeneratedDatabase {
     videoEpisodeBindingOverrides,
     pendingMineQueue,
     videoSubtitleGlossaries,
+    videoSubtitleTextOverrides,
     mediaPrivacyFlags,
     libraryOrganizeRuns,
     libraryOrganizeChanges,
@@ -117315,6 +117764,248 @@ typedef $$VideoSubtitleGlossariesTableProcessedTableManager =
       VideoSubtitleGlossaryRow,
       PrefetchHooks Function()
     >;
+typedef $$VideoSubtitleTextOverridesTableCreateCompanionBuilder =
+    VideoSubtitleTextOverridesCompanion Function({
+      required String videoKey,
+      required String sourceKey,
+      required int startMs,
+      required String originalText,
+      required String editedText,
+      required int updatedAt,
+      Value<int> rowid,
+    });
+typedef $$VideoSubtitleTextOverridesTableUpdateCompanionBuilder =
+    VideoSubtitleTextOverridesCompanion Function({
+      Value<String> videoKey,
+      Value<String> sourceKey,
+      Value<int> startMs,
+      Value<String> originalText,
+      Value<String> editedText,
+      Value<int> updatedAt,
+      Value<int> rowid,
+    });
+
+class $$VideoSubtitleTextOverridesTableFilterComposer
+    extends Composer<_$FushiDatabase, $VideoSubtitleTextOverridesTable> {
+  $$VideoSubtitleTextOverridesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get videoKey => $composableBuilder(
+    column: $table.videoKey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get sourceKey => $composableBuilder(
+    column: $table.sourceKey,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get startMs => $composableBuilder(
+    column: $table.startMs,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get originalText => $composableBuilder(
+    column: $table.originalText,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get editedText => $composableBuilder(
+    column: $table.editedText,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$VideoSubtitleTextOverridesTableOrderingComposer
+    extends Composer<_$FushiDatabase, $VideoSubtitleTextOverridesTable> {
+  $$VideoSubtitleTextOverridesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get videoKey => $composableBuilder(
+    column: $table.videoKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get sourceKey => $composableBuilder(
+    column: $table.sourceKey,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get startMs => $composableBuilder(
+    column: $table.startMs,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get originalText => $composableBuilder(
+    column: $table.originalText,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get editedText => $composableBuilder(
+    column: $table.editedText,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get updatedAt => $composableBuilder(
+    column: $table.updatedAt,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$VideoSubtitleTextOverridesTableAnnotationComposer
+    extends Composer<_$FushiDatabase, $VideoSubtitleTextOverridesTable> {
+  $$VideoSubtitleTextOverridesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get videoKey =>
+      $composableBuilder(column: $table.videoKey, builder: (column) => column);
+
+  GeneratedColumn<String> get sourceKey =>
+      $composableBuilder(column: $table.sourceKey, builder: (column) => column);
+
+  GeneratedColumn<int> get startMs =>
+      $composableBuilder(column: $table.startMs, builder: (column) => column);
+
+  GeneratedColumn<String> get originalText => $composableBuilder(
+    column: $table.originalText,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get editedText => $composableBuilder(
+    column: $table.editedText,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get updatedAt =>
+      $composableBuilder(column: $table.updatedAt, builder: (column) => column);
+}
+
+class $$VideoSubtitleTextOverridesTableTableManager
+    extends
+        RootTableManager<
+          _$FushiDatabase,
+          $VideoSubtitleTextOverridesTable,
+          VideoSubtitleTextOverrideRow,
+          $$VideoSubtitleTextOverridesTableFilterComposer,
+          $$VideoSubtitleTextOverridesTableOrderingComposer,
+          $$VideoSubtitleTextOverridesTableAnnotationComposer,
+          $$VideoSubtitleTextOverridesTableCreateCompanionBuilder,
+          $$VideoSubtitleTextOverridesTableUpdateCompanionBuilder,
+          (
+            VideoSubtitleTextOverrideRow,
+            BaseReferences<
+              _$FushiDatabase,
+              $VideoSubtitleTextOverridesTable,
+              VideoSubtitleTextOverrideRow
+            >,
+          ),
+          VideoSubtitleTextOverrideRow,
+          PrefetchHooks Function()
+        > {
+  $$VideoSubtitleTextOverridesTableTableManager(
+    _$FushiDatabase db,
+    $VideoSubtitleTextOverridesTable table,
+  ) : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$VideoSubtitleTextOverridesTableFilterComposer(
+                $db: db,
+                $table: table,
+              ),
+          createOrderingComposer: () =>
+              $$VideoSubtitleTextOverridesTableOrderingComposer(
+                $db: db,
+                $table: table,
+              ),
+          createComputedFieldComposer: () =>
+              $$VideoSubtitleTextOverridesTableAnnotationComposer(
+                $db: db,
+                $table: table,
+              ),
+          updateCompanionCallback:
+              ({
+                Value<String> videoKey = const Value.absent(),
+                Value<String> sourceKey = const Value.absent(),
+                Value<int> startMs = const Value.absent(),
+                Value<String> originalText = const Value.absent(),
+                Value<String> editedText = const Value.absent(),
+                Value<int> updatedAt = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => VideoSubtitleTextOverridesCompanion(
+                videoKey: videoKey,
+                sourceKey: sourceKey,
+                startMs: startMs,
+                originalText: originalText,
+                editedText: editedText,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String videoKey,
+                required String sourceKey,
+                required int startMs,
+                required String originalText,
+                required String editedText,
+                required int updatedAt,
+                Value<int> rowid = const Value.absent(),
+              }) => VideoSubtitleTextOverridesCompanion.insert(
+                videoKey: videoKey,
+                sourceKey: sourceKey,
+                startMs: startMs,
+                originalText: originalText,
+                editedText: editedText,
+                updatedAt: updatedAt,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map((e) => (e.readTable(table), BaseReferences(db, table, e)))
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$VideoSubtitleTextOverridesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$FushiDatabase,
+      $VideoSubtitleTextOverridesTable,
+      VideoSubtitleTextOverrideRow,
+      $$VideoSubtitleTextOverridesTableFilterComposer,
+      $$VideoSubtitleTextOverridesTableOrderingComposer,
+      $$VideoSubtitleTextOverridesTableAnnotationComposer,
+      $$VideoSubtitleTextOverridesTableCreateCompanionBuilder,
+      $$VideoSubtitleTextOverridesTableUpdateCompanionBuilder,
+      (
+        VideoSubtitleTextOverrideRow,
+        BaseReferences<
+          _$FushiDatabase,
+          $VideoSubtitleTextOverridesTable,
+          VideoSubtitleTextOverrideRow
+        >,
+      ),
+      VideoSubtitleTextOverrideRow,
+      PrefetchHooks Function()
+    >;
 typedef $$MediaPrivacyFlagsTableCreateCompanionBuilder =
     MediaPrivacyFlagsCompanion Function({
       required String mediaKind,
@@ -127248,6 +127939,12 @@ class $FushiDatabaseManager {
       $$VideoSubtitleGlossariesTableTableManager(
         _db,
         _db.videoSubtitleGlossaries,
+      );
+  $$VideoSubtitleTextOverridesTableTableManager
+  get videoSubtitleTextOverrides =>
+      $$VideoSubtitleTextOverridesTableTableManager(
+        _db,
+        _db.videoSubtitleTextOverrides,
       );
   $$MediaPrivacyFlagsTableTableManager get mediaPrivacyFlags =>
       $$MediaPrivacyFlagsTableTableManager(_db, _db.mediaPrivacyFlags);

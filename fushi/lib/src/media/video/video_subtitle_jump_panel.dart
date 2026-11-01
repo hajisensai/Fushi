@@ -534,6 +534,8 @@ class VideoSubtitleJumpPanel extends StatefulWidget {
     required this.onFavoriteCue,
     required this.isCueFavorited,
     required this.onClose,
+    this.onEditCue,
+    this.onRestoreCue,
     this.onLookupCue,
     this.hitTester,
     required this.colorScheme,
@@ -573,6 +575,13 @@ class VideoSubtitleJumpPanel extends StatefulWidget {
   final Future<void> Function(AudioCue cue) onFavoriteCue;
   final bool Function(AudioCue cue) isCueFavorited;
   final VoidCallback onClose;
+
+  /// 行菜单「编辑字幕」（反馈 gleDreKAvo / dpAsMkUjKT）：改这一句的文本。null = 不提供
+  /// 编辑（菜单不出这一项）。触屏长按行、桌面右键行弹出行菜单。
+  final Future<void> Function(AudioCue cue)? onEditCue;
+
+  /// 行菜单「还原原文」：只在这句被手改过（[AudioCue.uneditedCue] 非 null）时出现。
+  final Future<void> Function(AudioCue cue)? onRestoreCue;
 
   /// 点列表项字幕文本 → 从点击命中的字符起查词（TODO-340）。[cue] 为被点行的字幕句，
   /// [graphemeIndex] 为点击位置命中的 grapheme 下标（与底部字幕逐字查词同语义，
@@ -2110,34 +2119,56 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
       onExit: (_) {
         if (_hoveredIndex == index) setState(() => _hoveredIndex = -1);
       },
-      child: InkWell(
-        // 行点击 = seek 到该句（与 asbplayer transcript 一致）。文本字符查词由文本区
-        // 叠加的 translucent hit-test 层承载（[onLookupCue] 非 null 时），它赢手势竞技场、
-        // 截断本 InkWell，故点字查词、点空白 / 时间戳 seek，两不冲突（BUG-263）。
-        onTap: () => widget.onTapCue(cue),
-        child: SubtitleTranscriptRow(
-          colorScheme: cs,
-          selected: selected,
-          hovered: hovered,
-          favorited: favorited,
-          leading: SizedBox(
-            width: _timestampColumnWidth,
-            child: Text(
-              formatCueTimestamp(cue.startMs),
-              maxLines: 1,
-              softWrap: false,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: tsColor,
-                fontSize: _effectiveFontSize - 1,
-                fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
+      child: _withRowMenuGestures(
+        cue: cue,
+        rawIndex: rawIndex,
+        child: InkWell(
+          // 行点击 = seek 到该句（与 asbplayer transcript 一致）。文本字符查词由文本区
+          // 叠加的 translucent hit-test 层承载（[onLookupCue] 非 null 时），它赢手势竞技场、
+          // 截断本 InkWell，故点字查词、点空白 / 时间戳 seek，两不冲突（BUG-263）。
+          onTap: () => widget.onTapCue(cue),
+          child: SubtitleTranscriptRow(
+            colorScheme: cs,
+            selected: selected,
+            hovered: hovered,
+            favorited: favorited,
+            leading: SizedBox(
+              width: _timestampColumnWidth,
+              child: Text(
+                formatCueTimestamp(cue.startMs),
+                maxLines: 1,
+                softWrap: false,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: tsColor,
+                  fontSize: _effectiveFontSize - 1,
+                  fontFeatures: const <FontFeature>[
+                    FontFeature.tabularFigures(),
+                  ],
+                ),
               ),
             ),
+            text: _buildRowText(cue, textColor, selected, textKey),
+            trailing: _buildRowActions(cs, cue, rawIndex, selected, favorited),
           ),
-          text: _buildRowText(cue, textColor, selected, textKey),
-          trailing: _buildRowActions(cs, cue, rawIndex, selected, favorited),
         ),
       ),
+    );
+  }
+
+  /// 行菜单手势：触屏长按、桌面右键都弹 [_showM3eRowMenu]（跳到这句 / 复制 / 收藏 /
+  /// 编辑字幕 / 还原原文）。
+  Widget _withRowMenuGestures({
+    required AudioCue cue,
+    required int rawIndex,
+    required Widget child,
+  }) {
+    return GestureDetector(
+      onLongPressStart: (LongPressStartDetails details) =>
+          _showM3eRowMenu(context, cue, rawIndex, details.globalPosition),
+      onSecondaryTapUp: (TapUpDetails details) =>
+          _showM3eRowMenu(context, cue, rawIndex, details.globalPosition),
+      child: child,
     );
   }
 
@@ -2815,10 +2846,11 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
           onExit: (_) {
             if (_hoveredIndex == index) setState(() => _hoveredIndex = -1);
           },
-          child: GestureDetector(
-            // 触屏没有悬停：长按行弹出同一组动作（跳到这句 / 复制 / 收藏）。
-            onLongPressStart: (LongPressStartDetails details) =>
-                _showM3eRowMenu(context, cue, rawIndex, details.globalPosition),
+          // 触屏没有悬停：长按行弹出行菜单；桌面右键同一份菜单（行尾悬停动作列之外的
+          // 编辑字幕 / 还原原文只在菜单里）。
+          child: _withRowMenuGestures(
+            cue: cue,
+            rawIndex: rawIndex,
             child: AnimatedContainer(
               duration: stateDuration,
               curve: FushiMotion.standard,
@@ -2929,6 +2961,9 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     if (overlay is! RenderBox) return;
     final Offset local = overlay.globalToLocal(globalPosition);
     final bool favorited = widget.isCueFavorited(cue);
+    final bool canEdit = widget.onEditCue != null;
+    final bool canRestore =
+        widget.onRestoreCue != null && cue.uneditedCue != null;
     final int? choice = await showFushiMenu<int>(
       context: context,
       position: RelativeRect.fromRect(
@@ -2971,6 +3006,28 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
             ],
           ),
         ),
+        if (canEdit)
+          PopupMenuItem<int>(
+            value: 3,
+            child: Row(
+              children: <Widget>[
+                const FushiIcon(FushiIcons.edit, size: 20),
+                const SizedBox(width: 12),
+                Flexible(child: Text(t.video_subtitle_list_edit)),
+              ],
+            ),
+          ),
+        if (canRestore)
+          PopupMenuItem<int>(
+            value: 4,
+            child: Row(
+              children: <Widget>[
+                const FushiIcon(FushiIcons.undo, size: 20),
+                const SizedBox(width: 12),
+                Flexible(child: Text(t.video_subtitle_list_edit_restore)),
+              ],
+            ),
+          ),
       ],
     );
     if (!mounted) return;
@@ -2981,6 +3038,10 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
         if (widget.onCopyCue(cue)) _markCueCopied(rawIndex);
       case 2:
         await widget.onFavoriteCue(cue);
+      case 3:
+        await widget.onEditCue?.call(cue);
+      case 4:
+        await widget.onRestoreCue?.call(cue);
       default:
         break;
     }

@@ -3599,6 +3599,40 @@ mixin _FushiDbVideoDomain
   Future<void> upsertVideoSubtitleGlossary(
     VideoSubtitleGlossariesCompanion row,
   ) => into(videoSubtitleGlossaries).insertOnConflictUpdate(row);
+
+  // ── video_subtitle_text_overrides（v143 用户手改的单条字幕文本）──────────
+
+  /// 一个「视频 + 字幕源」下的全部手改字幕。
+  Future<List<VideoSubtitleTextOverrideRow>> getVideoSubtitleTextOverrides({
+    required String videoKey,
+    required String sourceKey,
+  }) =>
+      (select(videoSubtitleTextOverrides)..where(
+            ($VideoSubtitleTextOverridesTable t) =>
+                t.videoKey.equals(videoKey) & t.sourceKey.equals(sourceKey),
+          ))
+          .get();
+
+  /// 写入 / 覆盖一条手改字幕（同一句再改一次就是覆盖）。
+  Future<void> upsertVideoSubtitleTextOverride(
+    VideoSubtitleTextOverridesCompanion row,
+  ) => into(videoSubtitleTextOverrides).insertOnConflictUpdate(row);
+
+  /// 删掉一条手改字幕 = 该句还原原文。返回删掉的行数。
+  Future<int> deleteVideoSubtitleTextOverride({
+    required String videoKey,
+    required String sourceKey,
+    required int startMs,
+    required String originalText,
+  }) =>
+      (delete(videoSubtitleTextOverrides)..where(
+            ($VideoSubtitleTextOverridesTable t) =>
+                t.videoKey.equals(videoKey) &
+                t.sourceKey.equals(sourceKey) &
+                t.startMs.equals(startMs) &
+                t.originalText.equals(originalText),
+          ))
+          .go();
 }
 
 /// 一本视频书涉及的全部本地文件路径：主视频 + 播放列表里的每一集。

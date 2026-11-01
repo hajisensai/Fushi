@@ -346,6 +346,7 @@ import 'package:fushi/src/media/video/video_subtitle_sync_row.dart'
 import 'package:fushi/src/media/video/video_top_float_bar_layer.dart';
 import 'package:fushi_engine/media/video/video_sidecar.dart';
 import 'package:fushi/src/media/video/video_subtitle_jump_panel.dart';
+import 'package:fushi/src/media/video/subtitle_text_override.dart';
 import 'package:fushi/src/media/video/video_jump_history.dart';
 import 'package:fushi/src/utils/components/fushi_jump_history_pill.dart';
 import 'package:fushi/src/utils/misc/jump_history.dart';
@@ -408,7 +409,7 @@ import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
     show FushiFloatingTopBar, FushiToolbarItem, kFushiFloatingToolbarEdgeMargin;
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
-    show FushiChoiceOption, showFushiChoiceDialog;
+    show FushiChoiceOption, showFushiChoiceDialog, showFushiTextInputDialog;
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/platform/screen_brightness_controller.dart';
@@ -467,6 +468,7 @@ part 'video_fushi/advanced_mining.part.dart';
 part 'video_fushi/web_source.part.dart';
 part 'video_fushi/jump_history.part.dart';
 part 'video_fushi/theme_song.part.dart';
+part 'video_fushi/subtitle_text_edit.part.dart';
 
 /// 视频页：media_kit 播放器 + 可点击字幕 overlay（点词查词 + 制卡）。
 ///
@@ -3273,9 +3275,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   set _currentSubtitleSource(String? value) {
     _currentSubtitleSourceValue = value;
     unawaited(_refreshPrimarySubtitleAlignment(value));
+    // 手改字幕的覆盖层按「视频 + 字幕源」存：源一变就换成那一份（同上，挂在写入点）。
+    unawaited(_reloadSubtitleTextOverrides());
   }
 
   String? _currentSubtitleSourceValue;
+
+  /// [_reloadSubtitleTextOverrides] 的并发序号：只认最后一次读取。
+  int _subtitleTextOverrideSeq = 0;
 
   /// 当前选中的副字幕源持久化值（TODO-857 / TODO-1312 视频双字幕）：与
   /// [_currentSubtitleSource] 同款四态编码（外挂路径 / `embedded:<n>` / `off:` /
@@ -5858,12 +5865,16 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     controller.onExternalAudioTrackFailed = _handleExternalAudioTrackFailed;
     // 「我库里的例句」：每次换上一份字幕就把这一集喂进本机语料库（内容没变时是空操作；
     // 只认本地库里的视频，网页 / 远端条目在服务里跳过）。
-    controller.onCuesReplaced = (List<AudioCue> cues) =>
-        LibraryCorpusService.instance.feedVideoCues(
-          bookUid: _activeBookUid,
-          episodeIndex: _currentEpisode,
-          cues: cues,
-        );
+    controller.onCuesReplaced = (List<AudioCue> cues) {
+      LibraryCorpusService.instance.feedVideoCues(
+        bookUid: _activeBookUid,
+        episodeIndex: _currentEpisode,
+        cues: cues,
+      );
+      // 换上了一份新字幕（换集 / 重载 / 换源）：按此刻的「视频 + 字幕源」重读手改
+      // 覆盖。字幕源指针常在 setCues 之后才写，那次写入会再触发一次，序号只认最后一次。
+      unawaited(_reloadSubtitleTextOverrides());
+    };
     // TODO-1213：进入「正在缓冲…」阶段——网络流 controller.load 内部连接 + 缓冲最久，
     // 页级 spinner 期间显阶段文案而非裸转圈。纯 UI 状态，不改 load 时序。
     _setLoadingPhase(_VideoLoadPhase.buffering);
