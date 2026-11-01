@@ -1145,6 +1145,13 @@ String _mangaGestureJs({
   // ── canvas zoom/pan ──
   var ZOOM_MIN = ${disableZoomOut ? 1.0 : zoomMinPercent / 100.0};
   var ZOOM_MAX = ${zoomMaxPercent / 100.0};
+  // 反馈 EjyFnomM6w（墨水屏放大看句子后常缩过头 / 误翻页）的三项设置：
+  // ZOOM_OUT_LIMIT  'fit_height' = 最多缩到整页高度撑满视口（见 _zoomFloor）；
+  // QUICK_ZOOM_GESTURE 'double_tap' / 'two_finger_tap' = 一下缩回 QUICK_ZOOM_TARGET
+  //   （'fit_height' / 'fit_width'，见 _quickZoom）；'off' = 双击照旧 100% ↔ 2×。
+  var ZOOM_OUT_LIMIT = '${preferences.zoomOutLimit}';
+  var QUICK_ZOOM_GESTURE = '${preferences.quickZoomGesture}';
+  var QUICK_ZOOM_TARGET = '${preferences.quickZoomTarget}';
   // 灵敏度倍率（设置项，100% = 基准）。
   var ZOOM_SENS = ${zoomSensitivity / 100.0};
   var ZOOM = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, ${zoomPercent / 100.0}));
@@ -1374,7 +1381,40 @@ String _mangaGestureJs({
       'translate(' + PAN_X + 'px,' + PAN_Y + 'px) scale(' + ZOOM + ')';
   }
   function _clampZoom(z){
-    return Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, z));
+    return Math.min(ZOOM_MAX, Math.max(_zoomFloor(), z));
+  }
+  // 当前跨页内容（一页或两页）在 #manga-canvas 本地坐标里的外接框（未乘 ZOOM）。
+  // 用 getBoundingClientRect 而不是 offset* 现算：旋转宽页、裁边、跨页平移都已
+  // 落进去，屏幕坐标减平移再除倍率就是本地坐标。没有可见页时返回 null。
+  function _contentLocalRect(){
+    var pages = document.querySelectorAll('.manga-page[data-spread="'+CURRENT+'"]');
+    var l = Infinity, t = Infinity, r = -Infinity, b = -Infinity;
+    for (var i = 0; i < pages.length; i++) {
+      var rc = pages[i].getBoundingClientRect();
+      if (!(rc.width > 0 && rc.height > 0)) continue;
+      l = Math.min(l, rc.left); t = Math.min(t, rc.top);
+      r = Math.max(r, rc.right); b = Math.max(b, rc.bottom);
+    }
+    if (!(r > l && b > t) || !(ZOOM > 0)) return null;
+    return {l: (l - PAN_X) / ZOOM, t: (t - PAN_Y) / ZOOM,
+            r: (r - PAN_X) / ZOOM, b: (b - PAN_Y) / ZOOM};
+  }
+  // 让当前跨页沿 axis（'fit_height' / 'fit_width'）正好撑满视口的倍率；算不出时 0。
+  function _fitZoomFor(axis, rect){
+    rect = rect || _contentLocalRect();
+    if (!rect) return 0;
+    return axis === 'fit_width'
+        ? (window.innerWidth || 0) / (rect.r - rect.l)
+        : (window.innerHeight || 0) / (rect.b - rect.t);
+  }
+  // 缩小下限：设置里的最小倍率；「最多缩到适应页高」时再抬到页高撑满视口的倍率。
+  // 只抬到 1 为止——页面在默认适配下已经比视口矮（宽页 / 横屏）时，下限就是默认
+  // 适配本身，不为凑页高把页面强行放大裁掉两边。条漫没有「一页」，不设。
+  function _zoomFloor(){
+    if (ZOOM_OUT_LIMIT !== 'fit_height' || IS_WEBTOON) return ZOOM_MIN;
+    var fit = _fitZoomFor('fit_height');
+    if (!(fit > 0) || !isFinite(fit)) return ZOOM_MIN;
+    return Math.max(ZOOM_MIN, Math.min(1, ZOOM_MAX, fit));
   }
   // 以 (ax, ay) 屏幕点为锚缩放到 next：锚点下的图像内容保持不动。缩到 <=1 时回中，
   // 因为此时整页已完全放得下，任何残留平移都只是把页面推出视口。
@@ -1403,11 +1443,13 @@ String _mangaGestureJs({
   }
   // 动画缩放到 target（以 (x, y) 为锚）。收尾把 ZOOM 钉到 target 本身：_zoomAbout
   // 对 <0.0005 的差值是 no-op，不钉的话「回到正常比例」会停在 99.97% 这类值上。
-  function _animateZoomTo(target,x,y){
+  // after：落定后、回报 Dart 之前再摆一次位（快速缩回用它把页面摆正）。
+  function _animateZoomTo(target,x,y,after){
     _cancelDoubleTapZoom();
     target=_clampZoom(target);
     function settle(){
       if(ZOOM!==target){ZOOM=target;if(ZOOM<=1)_recenterPan();_applyCanvas();}
+      if(after)after();
       var b=_bridge();if(b)b.callHandler('onMangaZoomChanged',Math.round(ZOOM*100));
     }
     if(!${animateDoubleTap && !preferences.einkMode}){_zoomAbout(target,x,y,true);settle();return;}
@@ -1425,8 +1467,52 @@ String _mangaGestureJs({
   // 双击：不在正常比例（100%）就一击回到正常比例——缩小到贴合以下也一样；
   // 正好在 100% 才放大到 2×。旧判据 ZOOM>1.01 让缩小态双击先跳 2×，要再双击
   // 一次才回得来，用户只能靠无级捏合去「凑」100%。
+  // 快速缩回手势选了双击：不在目标倍率就一击缩回目标（适应页高 / 页宽），已在
+  // 目标上才放大一倍——与默认的「不在 100% 就回 100%」同一形状，只是落点换成目标。
   function _doubleTapZoom(x,y){
+    if(QUICK_ZOOM_GESTURE==='double_tap'){
+      var fit=_quickZoomFit();
+      if(fit){
+        if(Math.abs(ZOOM-fit.zoom)>0.01){_quickZoomTo(fit);return;}
+        _animateZoomTo(ZOOM*2,x,y);
+        return;
+      }
+    }
     _animateZoomTo(Math.abs(ZOOM-1)>0.01 ? 1 : 2,x,y);
+  }
+  // 快速缩回的目标：{zoom, rect}；条漫 / 算不出版面时 null（手势照旧）。
+  function _quickZoomFit(){
+    if(IS_WEBTOON)return null;
+    var rect=_contentLocalRect();
+    if(!rect)return null;
+    var zoom=_fitZoomFor(QUICK_ZOOM_TARGET,rect);
+    if(!(zoom>0)||!isFinite(zoom))return null;
+    return {zoom:_clampZoom(zoom),rect:rect};
+  }
+  // 缩到目标倍率并把跨页摆正：放得下的方向居中；放不下的方向从起读处开始——
+  // 适应页宽时页面比视口高，从页顶看；适应页高时宽页比视口宽，从阅读方向的
+  // 起始侧看。目标倍率记成静止倍率：缩回来的就是读者要的「整页」状态，点热区
+  // 照常翻页，不算「放大看细节」。
+  function _quickZoomTo(fit){
+    var rect=fit.rect;
+    var cx=PAN_X+(rect.l+rect.r)/2*ZOOM, cy=PAN_Y+(rect.t+rect.b)/2*ZOOM;
+    _animateZoomTo(fit.zoom,cx,cy,function(){
+      ZOOM_REST=Math.max(ZOOM_REST_DEFAULT,ZOOM);
+      if(ZOOM<=1){_recenterPan();_applyCanvas();return;}
+      var vw=window.innerWidth,vh=window.innerHeight;
+      var cw=(rect.r-rect.l)*ZOOM,ch=(rect.b-rect.t)*ZOOM;
+      PAN_X=cw<=vw+0.5 ? vw/2-(rect.l+rect.r)/2*ZOOM
+          : (IS_RTL ? vw-rect.r*ZOOM : -rect.l*ZOOM);
+      PAN_Y=ch<=vh+0.5 ? vh/2-(rect.t+rect.b)/2*ZOOM : -rect.t*ZOOM;
+      _clampPan();
+      _applyCanvas();
+    });
+  }
+  function _quickZoom(){
+    var fit=_quickZoomFit();
+    if(!fit)return false;
+    _quickZoomTo(fit);
+    return true;
   }
   // 捏合结束吸附：落在正常比例 ±ZOOM_SNAP 内就收回正好 100%（并回中）。
   // 无级捏合人手凑不准 100%，残留的 95%/104% 既不贴合、也不触发放大态平移。
@@ -2082,6 +2168,13 @@ String _mangaGestureJs({
   var SWIPE_SLOP = 8;
   var swipe = null;
   var swipeToken = 0;
+  // 「放大时拖过边缘翻页」（反馈 EjyFnomM6w）：关掉后，用户放大看细节时拖到边缘
+  // 只是贴边，余量不再交给翻页、页面也不跟手——放大看句子时手一滑就翻走是那位
+  // 墨水屏用户的原话。未放大 / 只是默认倍率时照常滑动翻页。
+  var ZOOMED_EDGE_TURN = ${preferences.zoomedEdgeTurn};
+  function _zoomedEdgeTurnBlocked(){
+    return !ZOOMED_EDGE_TURN && !IS_WEBTOON && _userZoomedIn();
+  }
   function _followActive(){
     return FOLLOW_DRAG && !IS_WEBTOON;
   }
@@ -2091,7 +2184,7 @@ String _mangaGestureJs({
     _finishPageAnim();
     _dropDragHandoff();
     swipe = {axis: null, base: null, vx: 0, lastX: x, lastT: st, x: 0,
-      cover: null, follow: _followActive()};
+      cover: null, follow: _followActive() && !_zoomedEdgeTurnBlocked()};
   }
   function _swipeMove(x, y){
     if (!has || !swipe || IS_WEBTOON) return;
@@ -2277,6 +2370,18 @@ String _mangaGestureJs({
     flickRaf = requestAnimationFrame(step);
   }
   var pinch = null;
+  // 双指点按（快速缩回手势之一）：两指先后落下、在 TWO_TAP_MS 内抬起，指距与中点
+  // 都几乎没动、倍率没被捏动——它和捏合共用触点表与 pinch 记账，只在第一根手指
+  // 抬起（捏合结束）时分流。没选这个手势时一律按捏合处理（吸附 100%）。
+  var TWO_TAP_MS = 300, TWO_TAP_SLOP = 24;
+  function _isTwoFingerTap(p){
+    if (QUICK_ZOOM_GESTURE !== 'two_finger_tap' || IS_WEBTOON || !p) return false;
+    if (!(p.t0 > 0) || Date.now() - p.t0 > TWO_TAP_MS) return false;
+    var dx = p.cx - p.cx0, dy = p.cy - p.cy0;
+    if (dx * dx + dy * dy > TWO_TAP_SLOP * TWO_TAP_SLOP) return false;
+    if (p.span > TWO_TAP_SLOP) return false;
+    return !(Math.abs(ZOOM - p.zoom) > PINCH_NOOP);
+  }
   // 捏合结束后要吞掉配对的松手事件，否则手指抬起会被 _end 判成 swipe 翻页。
   // （注意：本注释随文档注入 WebView，不得出现松手事件的字面名——
   // manga_overlay_html_test 的 C1 不变式按该字面量计数，全文档恰好允许一个。）
@@ -2533,7 +2638,7 @@ String _mangaGestureJs({
       commit = aux >= 72 || (aux >= 36 && vel >= 900);
     }
     if (!IS_WEBTOON && ax > ay && (ux > 0) === (dx > 0) && !flingBack &&
-        commit) {
+        commit && !_zoomedEdgeTurnBlocked()) {
       var settle = _swipeRelease(true);
       var b = _bridge();
       if (!b) { if (settle) settle(); return; }
@@ -2640,7 +2745,9 @@ String _mangaGestureJs({
       var g = _pinchGeom();
       if (g && g.dist > 0) {
         // 第二指落下：进入捏合，取消已经开始的单指 swipe 计时与拖动。
-        pinch = {dist: g.dist, zoom: ZOOM, cx: g.cx, cy: g.cy};
+        // t0 / cx0 / cy0 / span：双指点按判定（_isTwoFingerTap）用的起点与指距变化。
+        pinch = {dist: g.dist, zoom: ZOOM, cx: g.cx, cy: g.cy,
+          t0: Date.now(), cx0: g.cx, cy0: g.cy, dist0: g.dist, span: 0};
         pinchGuard = true;
         has = false;
         _cancelLongPress();
@@ -2683,6 +2790,9 @@ String _mangaGestureJs({
     e.preventDefault();
     pinch.cx = g.cx;
     pinch.cy = g.cy;
+    if (pinch.dist0) {
+      pinch.span = Math.max(pinch.span, Math.abs(g.dist - pinch.dist0));
+    }
     _zoomAbout(
       pinch.zoom * Math.pow(g.dist / pinch.dist, ZOOM_SENS),
       g.cx,
@@ -2705,7 +2815,16 @@ String _mangaGestureJs({
         if (Object.keys(touchPts).length < 2) {
           var lastPinch = pinch;
           pinch = null;
-          _snapPinchZoom(lastPinch.cx, lastPinch.cy, lastPinch.zoom);
+          if (_isTwoFingerTap(lastPinch)) {
+            // 双指点按 = 快速缩回。两指搭上时的几像素抖动可能已经让倍率动了
+            // 一丝，先退回起点倍率（不回报），再从那里缩回目标。
+            if (ZOOM !== lastPinch.zoom) {
+              _zoomAbout(lastPinch.zoom, lastPinch.cx, lastPinch.cy, true);
+            }
+            _quickZoom();
+          } else {
+            _snapPinchZoom(lastPinch.cx, lastPinch.cy, lastPinch.zoom);
+          }
         } else {
           // 三指及以上抬起一指：参与几何的那一对换了人，按新的一对重定基准，
           // 否则新指距 / 旧基准的比值会让倍率瞬间跳变。起点倍率保留，吸附判据

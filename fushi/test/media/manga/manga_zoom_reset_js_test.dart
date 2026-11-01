@@ -37,6 +37,9 @@ void main() {
   }
 
   String harness(String document, String body) {
+    // 缩放下限 / 快速缩回的设置变量（反馈 EjyFnomM6w）：默认值下双击与吸附
+    // 行为不变，这里注入的就是默认值。
+    final String vars = section(document, '  var ZOOM_OUT_LIMIT', '  // 灵敏度倍率');
     final String zoom = section(
       document,
       '  function _clampZoom(z){',
@@ -54,6 +57,7 @@ let rafQueue=[], rafTime=0;
 function requestAnimationFrame(cb){ rafQueue.push(cb); return rafQueue.length; }
 function cancelAnimationFrame(){ rafQueue=[]; }
 function flushFrames(){ while(rafQueue.length){ const cb=rafQueue.shift(); rafTime+=16; cb(rafTime); } }
+$vars
 $zoom
 function setZoom(z){ ZOOM=z; _recenterPan(); }
 $body
