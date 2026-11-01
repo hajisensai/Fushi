@@ -254,7 +254,9 @@ SettingsDestination buildSyncBackupDestination() {
             title: t.sync_content,
             subtitle: t.sync_content_warning,
             icon: FushiIcons.books,
-            visible: _cloudOutboundSwitchVisible,
+            visible: (SettingsContext ctx) =>
+                _cloudSyncOn(ctx) &&
+                _syncSettings(ctx).backendType != SyncBackendType.fushiServer,
             value: (SettingsContext ctx) => _syncSettings(ctx).syncContent,
             onChanged: (SettingsContext ctx, bool value) async {
               _syncSettings(ctx).syncContent = value;
@@ -270,7 +272,9 @@ SettingsDestination buildSyncBackupDestination() {
             title: t.sync_manga_content,
             subtitle: t.sync_manga_content_warning,
             icon: FushiIcons.manga,
-            visible: _cloudOutboundSwitchVisible,
+            visible: (SettingsContext ctx) =>
+                _cloudSyncOn(ctx) &&
+                _syncSettings(ctx).backendType != SyncBackendType.fushiServer,
             value: (SettingsContext ctx) => _syncSettings(ctx).syncMangaContent,
             onChanged: (SettingsContext ctx, bool value) async {
               _syncSettings(ctx).syncMangaContent = value;
@@ -284,7 +288,9 @@ SettingsDestination buildSyncBackupDestination() {
             title: t.sync_audiobook_files,
             subtitle: t.sync_audiobook_files_warning,
             icon: FushiIcons.audiobook,
-            visible: _cloudOutboundSwitchVisible,
+            visible: (SettingsContext ctx) =>
+                _cloudSyncOn(ctx) &&
+                _syncSettings(ctx).backendType != SyncBackendType.fushiServer,
             value: (SettingsContext ctx) =>
                 _syncSettings(ctx).syncAudioBookFiles,
             onChanged: (SettingsContext ctx, bool value) async {
@@ -304,7 +310,9 @@ SettingsDestination buildSyncBackupDestination() {
             title: t.sync_video_files,
             subtitle: t.sync_video_files_warning,
             icon: FushiIcons.video,
-            visible: _cloudOutboundSwitchVisible,
+            visible: (SettingsContext ctx) =>
+                _cloudSyncOn(ctx) &&
+                _syncSettings(ctx).backendType != SyncBackendType.fushiServer,
             value: (SettingsContext ctx) => _syncSettings(ctx).syncVideoFiles,
             onChanged: (SettingsContext ctx, bool value) async {
               _syncSettings(ctx).syncVideoFiles = value;
@@ -1343,12 +1351,6 @@ bool _cloudOutboundUnavailable(SettingsContext ctx) =>
 /// 云备份通道总开关（`sync.cloud_enabled`）开着。关着时云通道专属的配置 / 上传 /
 /// 自动同步 / 资产传输行全部隐藏——它们在这台设备上已经不会生效。
 bool _cloudSyncOn(SettingsContext ctx) => _syncSettings(ctx).cloudSyncEnabled;
-
-/// 「上传X文件」开关组的可见性：云通道开着，且同步方式不是互联（互联通道按自己的
-/// 专属上传开关走，共享开关是死开关，BUG-988）。
-bool _cloudOutboundSwitchVisible(SettingsContext ctx) =>
-    _cloudSyncOn(ctx) &&
-    _syncSettings(ctx).backendType != SyncBackendType.fushiServer;
 
 _SyncSettingsState _syncSettings(SettingsContext ctx) {
   final AppModel owner = ctx.appModel;

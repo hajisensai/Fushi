@@ -61,6 +61,8 @@ void main() {
       // 「Fushi 互联」分类）。C1：WebDAV/FTP/SFTP 三套凭据表单挪进子页「服务器
       // 设置」，主页只留一行入口（凭据式后端才显示）。
       expect(idsOf(dest.sections[0]), <String>[
+        // 云备份通道总开关（与互联总开关对称），排在最前，其余云通道配置行都门控于它。
+        'sync.cloud_enabled',
         'sync.mode',
         'sync.account_status',
         'sync.server_settings',
@@ -95,12 +97,22 @@ void main() {
       },
     );
 
-    test('selector is unconditional; account config is gated', () {
+    test('cloud switch is unconditional; selector and account config are gated '
+        'on it', () {
       final SettingsSection method = dest.sections[0];
       SettingsItem byId(String id) =>
           method.items.firstWhere((SettingsItem i) => i.id == id);
-      expect(byId('sync.mode').visible, isNull);
+      // 云通道关掉后用户必须还能把它打开：总开关本身永不隐藏。
+      expect(byId('sync.cloud_enabled').visible, isNull);
+      expect(byId('sync.mode').visible, isNotNull);
       expect(byId('sync.account_status').visible, isNotNull);
+      // 资产传输只走云通道，整节随总开关隐藏。
+      expect(
+        dest.sections
+            .singleWhere((SettingsSection s) => s.id == 'sync.assets.section')
+            .visible,
+        isNotNull,
+      );
     });
 
     test('what / when / assets / backup groups remain global', () {
