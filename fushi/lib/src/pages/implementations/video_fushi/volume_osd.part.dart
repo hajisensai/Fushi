@@ -337,6 +337,28 @@ extension _VideoVolumeOsd on _VideoFushiPageState {
                   context,
                   const Duration(milliseconds: 180),
                 ),
+                // M3E 进场（与底部 FushiToast 同一手感）：淡入 + 从左上角锚点由
+                // 0.86 弹到 1（spatialFast 带一点过冲）；退场反向。
+                transitionBuilder: (Widget child, Animation<double> animation) {
+                  return FadeTransition(
+                    opacity: CurvedAnimation(
+                      parent: animation,
+                      curve: FushiMotion.enter,
+                      reverseCurve: FushiMotion.exit,
+                    ),
+                    child: ScaleTransition(
+                      alignment: Alignment.topLeft,
+                      scale: Tween<double>(begin: 0.86, end: 1).animate(
+                        CurvedAnimation(
+                          parent: animation,
+                          curve: FushiMotion.release,
+                          reverseCurve: FushiMotion.exit,
+                        ),
+                      ),
+                      child: child,
+                    ),
+                  );
+                },
                 child: osd == null
                     ? const SizedBox.shrink()
                     : _buildOsdCard(osd),
@@ -408,28 +430,15 @@ extension _VideoVolumeOsd on _VideoFushiPageState {
     }
     final ColorScheme cs = _videoChromeColorScheme(context);
     final bool prominent = osd.prominent;
-    // 语义配色：null（neutral）＝旧的半透明 inverseSurface。着色时保留同样的半透明
-    // 观感，OSD 压在画面上，实心色块会挡视线。
+    // 语义（severity）只落在前置图标上：OSD 压在画面上，整块饱和色既挡视线又和
+    // 全应用的 M3E 通知长得不一样。
     final ({Color background, Color foreground, IconData icon})? palette =
         toastSeverityPalette(osd.severity);
     final bool apple = _appleChrome;
-    final Color surfaceColor = palette == null
-        ? _osdSurfaceColor(cs)
-        : palette.background.withValues(alpha: 0.88);
-    final Color textColor = apple
-        ? videoChromeNeutralForeground
-        : palette == null
-        ? _osdTextColor(cs)
-        : palette.foreground;
-    final Color iconColor = apple && palette != null
-        ? palette.background
-        : textColor;
-    final double fontSize = prominent ? 18 : 14;
-    final double iconSize = prominent ? 24 : 18;
-    final EdgeInsets cardPadding = prominent
-        ? const EdgeInsets.symmetric(horizontal: 20, vertical: 14)
-        : const EdgeInsets.symmetric(horizontal: 12, vertical: 8);
-    final BorderRadius radius = BorderRadius.circular(prominent ? 12 : 6);
+    // 图标：调用点给的 > 语义图标（e-ink / 灰阶下形状是唯一区分手段）> 突出变体
+    // 的勾。
+    final IconData? leadingIcon =
+        osd.icon ?? palette?.icon ?? (prominent ? Icons.check_circle : null);
     const AlignmentGeometry alignment = Alignment.topLeft;
     // OSD 顶部避让从顶栏几何推导（UI 巡检 PR-4）：顶栏高 = [_videoButtonBarHeight]
     // （56×界面缩放）+ 8×缩放 呼吸间距——此前固定 52 不吃 [_videoUiScale]，缩放
@@ -438,19 +447,44 @@ extension _VideoVolumeOsd on _VideoFushiPageState {
       left: 16,
       top: _videoButtonBarHeight + 8 * _videoUiScale,
     );
+    final double maxWidth = math.min(
+      440,
+      MediaQuery.sizeOf(context).width - 32,
+    );
+    if (!apple) {
+      // Material：与底部 [FushiToast] 同一副 M3E 通知胶囊（全胶囊 + 语义图标色块），
+      // 表面换成播放器浮层色，和顶栏 / 底栏胶囊同一族。M3E 进场：淡入 + 从 0.86
+      // 弹到 1（见 [_buildOsdOverlay] 的 transitionBuilder）。
+      return Align(
+        alignment: alignment,
+        child: Padding(
+          padding: outerPadding,
+          child: FushiToastCapsule(
+            key: ValueKey<String>(osd.message),
+            message: osd.message,
+            icon: leadingIcon,
+            severity: osd.severity,
+            surfaceColor: _osdSurfaceColor(cs),
+            foregroundColor: _osdTextColor(cs),
+            progress: osd.progress,
+            maxWidth: maxWidth,
+          ),
+        ),
+      );
+    }
+    const Color textColor = videoChromeNeutralForeground;
+    final Color iconColor = palette != null ? palette.background : textColor;
+    final double fontSize = prominent ? 18 : 14;
+    final double iconSize = prominent ? 24 : 18;
+    final EdgeInsets cardPadding = prominent
+        ? const EdgeInsets.symmetric(horizontal: 20, vertical: 14)
+        : const EdgeInsets.symmetric(horizontal: 12, vertical: 8);
     final Widget content = Row(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        if (osd.icon != null) ...<Widget>[
-          FushiIcon(osd.icon, size: iconSize, color: iconColor),
+        if (leadingIcon != null) ...<Widget>[
+          FushiIcon(leadingIcon, size: iconSize, color: iconColor),
           SizedBox(width: prominent ? 12 : 8),
-        ] else if (palette != null) ...<Widget>[
-          // 语义图标：e-ink / 灰阶下颜色会塌掉，形状是唯一区分手段。
-          FushiIcon(palette.icon, size: iconSize, color: iconColor),
-          SizedBox(width: prominent ? 12 : 8),
-        ] else if (prominent) ...<Widget>[
-          FushiIcon(Icons.check_circle, size: iconSize, color: iconColor),
-          const SizedBox(width: 12),
         ],
         Flexible(
           child: Column(
@@ -489,33 +523,14 @@ extension _VideoVolumeOsd on _VideoFushiPageState {
         padding: outerPadding,
         child: ConstrainedBox(
           key: ValueKey<String>(osd.message),
-          constraints: BoxConstraints(
-            maxWidth: MediaQuery.sizeOf(context).width - 32,
+          constraints: BoxConstraints(maxWidth: maxWidth),
+          // Apple：通知是一枚深色液态玻璃胶囊（iOS 26 系统 HUD），白字；语义色只
+          // 上在图标上（玻璃本身不着色），突出变体更大的圆角与内边距不变。
+          child: VideoGlassHud(
+            radius: prominent ? 20 : 16,
+            padding: cardPadding,
+            child: content,
           ),
-          child: apple
-              // Apple：通知是一枚深色液态玻璃胶囊（iOS 26 系统 HUD），白字；语义色只
-              // 上在图标上（玻璃本身不着色），突出变体更大的圆角与内边距不变。
-              ? VideoGlassHud(
-                  radius: prominent ? 20 : 16,
-                  padding: cardPadding,
-                  child: content,
-                )
-              : DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: surfaceColor,
-                    borderRadius: radius,
-                    boxShadow: prominent
-                        ? <BoxShadow>[
-                            BoxShadow(
-                              color: cs.shadow.withValues(alpha: 0.4),
-                              blurRadius: 16,
-                              offset: const Offset(0, 4),
-                            ),
-                          ]
-                        : null,
-                  ),
-                  child: Padding(padding: cardPadding, child: content),
-                ),
         ),
       ),
     );
