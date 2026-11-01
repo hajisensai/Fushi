@@ -197,6 +197,7 @@ class MiningRequestOverrides {
     this.coverFrameAtMs,
     this.crop,
     this.mosaic = const <MiningMosaicRegion>[],
+    this.fieldValues = const <String, String>{},
   });
 
   /// fields map 里的键名。
@@ -236,6 +237,13 @@ class MiningRequestOverrides {
   /// 失败时宁可不要卡图也不能退回原图——用户打码就是不想让那块进卡。
   final List<MiningMosaicRegion> mosaic;
 
+  /// 用户在对话框里手改的卡片字段（Anki 字段名 → 写进卡片的值，反馈 -K86qlwBg6）。
+  ///
+  /// 只含**真的改过**的字段：值非空才算改，空串 / 纯空白在编解码时一律丢弃（对话框里
+  /// 留空 = 照常按字段映射自动生成）。宿主渲染完映射后用它整段替换同名字段
+  /// （`AnkiNoteComposer.buildMinedFields`），不在映射里的字段名不会凭空多写一个字段。
+  final Map<String, String> fieldValues;
+
   bool get hasMosaic => mosaic.isNotEmpty;
 
   bool get hasAudioDelta => audioStartDeltaMs != 0 || audioEndDeltaMs != 0;
@@ -249,7 +257,8 @@ class MiningRequestOverrides {
       videoImageMode == null &&
       coverFrameAtMs == null &&
       crop == null &&
-      mosaic.isEmpty;
+      mosaic.isEmpty &&
+      fieldValues.isEmpty;
 
   MiningRequestOverrides copyWith({
     String? deckName,
@@ -265,6 +274,7 @@ class MiningRequestOverrides {
     MiningImageCrop? crop,
     bool clearCrop = false,
     List<MiningMosaicRegion>? mosaic,
+    Map<String, String>? fieldValues,
   }) => MiningRequestOverrides(
     deckName: clearDeckName ? null : (deckName ?? this.deckName),
     omitAudio: omitAudio ?? this.omitAudio,
@@ -279,6 +289,7 @@ class MiningRequestOverrides {
         : (coverFrameAtMs ?? this.coverFrameAtMs),
     crop: clearCrop ? null : (crop ?? this.crop),
     mosaic: mosaic ?? this.mosaic,
+    fieldValues: fieldValues ?? this.fieldValues,
   );
 
   Map<String, Object?> toJson() => <String, Object?>{
@@ -294,7 +305,24 @@ class MiningRequestOverrides {
       'mosaic': <Map<String, Object?>>[
         for (final MiningMosaicRegion region in mosaic) region.toJson(),
       ],
+    if (fieldValues.isNotEmpty) 'fields': fieldValues,
   };
+
+  /// 解析 `fields`：只留「非空字符串键 → 非空白字符串值」，坏项逐个丢弃。
+  static Map<String, String> _fieldValuesFromJson(Object? raw) {
+    if (raw is! Map) return const <String, String>{};
+    final Map<String, String> out = <String, String>{
+      for (final MapEntry<Object?, Object?> e in raw.entries)
+        if (e.key case final String name
+            when name.isNotEmpty &&
+                e.value is String &&
+                (e.value! as String).trim().isNotEmpty)
+          name: e.value! as String,
+    };
+    return out.isEmpty
+        ? const <String, String>{}
+        : Map<String, String>.unmodifiable(out);
+  }
 
   static MiningRequestOverrides fromJson(Map<Object?, Object?> json) {
     final Object? deck = json['deck'];
@@ -312,6 +340,7 @@ class MiningRequestOverrides {
       coverFrameAtMs: frame is num ? frame.toInt() : null,
       crop: MiningImageCrop.fromJson(json['crop']),
       mosaic: MiningMosaicRegion.listFromJson(json['mosaic']),
+      fieldValues: _fieldValuesFromJson(json['fields']),
     );
   }
 

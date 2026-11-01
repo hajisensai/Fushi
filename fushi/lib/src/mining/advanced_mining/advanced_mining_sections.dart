@@ -1357,3 +1357,108 @@ class _AdvancedMiningFrameThumbState extends State<AdvancedMiningFrameThumb> {
     );
   }
 }
+
+// ───────────────────────────── 卡片字段 ─────────────────────────────
+
+/// 卡片字段分区（反馈 -K86qlwBg6）：「选择字段」胶囊行挑出要在这里编辑的字段（记住
+/// 选择），每个显示中的字段一个输入框；留空 = 照字段映射自动生成，填了就只替换这张卡
+/// 的对应字段（[AdvancedMiningController.editedFieldValues]）。
+class AdvancedMiningFieldsPanel extends StatelessWidget {
+  const AdvancedMiningFieldsPanel({
+    super.key,
+    required this.controller,
+    this.embedded = false,
+  });
+
+  final AdvancedMiningController controller;
+  final bool embedded;
+
+  @override
+  Widget build(BuildContext context) {
+    final AdvancedMiningController c = controller;
+    final AdvancedMiningFieldsSection section = c.fieldsSection!;
+    final List<AdvancedMiningField> shown = c.shownFields;
+    return AdvancedMiningSectionShell(
+      title: t.popup_advanced_mining_fields_section,
+      embedded: embedded,
+      trailing: Align(
+        alignment: AlignmentDirectional.centerEnd,
+        child: FushiIconButtonControl(
+          tooltip: t.popup_advanced_mining_fields_choose,
+          size: ButtonSizeVariant.xSmall,
+          isSelected: c.choosingFields,
+          onPressed: c.busy ? null : c.toggleChoosingFields,
+          icon: const FushiIcon(FushiIcons.checklist, size: 18),
+        ),
+      ),
+      // 显示 / 隐藏字段、展开「选择字段」时整块高度跟着补间，新出现的输入框错峰进场。
+      child: FushiAnimatedSize(
+        duration: context.fushiMotion.spatialDefault.duration,
+        curve: context.fushiMotion.spatialDefault.curve,
+        alignment: Alignment.topCenter,
+        child: FushiEntranceScope(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              if (c.choosingFields || shown.isEmpty)
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: <Widget>[
+                    for (final AdvancedMiningField f in section.fields)
+                      AdvancedMiningChoiceChip(
+                        key: ValueKey<String>(
+                          'advanced-mining-field-chip-${f.name}',
+                        ),
+                        label: f.name,
+                        selected: c.visibleFields.contains(f.name),
+                        onSelected: c.busy
+                            ? null
+                            : () => unawaited(c.toggleFieldVisible(f.name)),
+                      ),
+                  ],
+                ),
+              if (shown.isEmpty) ...<Widget>[
+                const SizedBox(height: 8),
+                _caption(context, t.popup_advanced_mining_fields_empty),
+              ] else ...<Widget>[
+                for (final (int i, AdvancedMiningField f) in shown.indexed)
+                  FushiStaggeredEntrance(
+                    key: ValueKey<String>('advanced-mining-field-${f.name}'),
+                    index: i,
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: FushiTextFieldControl(
+                        controller: c.fieldController(f.name),
+                        enabled: !c.busy,
+                        minLines: 1,
+                        maxLines: 4,
+                        keyboardType: TextInputType.multiline,
+                        textInputAction: TextInputAction.newline,
+                        style: context.fushiType.bodyMedium,
+                        decoration: InputDecoration(
+                          border: const FushiOutlinedFieldBorder(),
+                          isDense: true,
+                          labelText: f.name,
+                          hintText: t.popup_advanced_mining_fields_auto_hint(
+                            template: f.template,
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 10,
+                            vertical: 8,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                const SizedBox(height: 6),
+                _caption(context, t.popup_advanced_mining_fields_hint),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}

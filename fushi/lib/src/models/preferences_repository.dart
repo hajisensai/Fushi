@@ -3909,6 +3909,28 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 「高级制卡」卡片字段分区里显示（可编辑）的 Anki 字段名（反馈 -K86qlwBg6）。
+  /// null = 用户从没选过（对话框按字段映射挑默认）；空列表 = 用户明确一个都不显示。
+  List<String>? get advancedMiningVisibleFields {
+    final Object? raw = getPref('advanced_mining_visible_fields');
+    if (raw is! String || raw.isEmpty) return null;
+    try {
+      final Object? decoded = jsonDecode(raw);
+      if (decoded is! List) return null;
+      return <String>[
+        for (final Object? e in decoded)
+          if (e is String && e.isNotEmpty) e,
+      ];
+    } catch (e) {
+      fushiDebugPrint('advancedMiningVisibleFields: bad pref ($e)');
+      return null;
+    }
+  }
+
+  Future<void> setAdvancedMiningVisibleFields(List<String> names) async {
+    await setPref('advanced_mining_visible_fields', jsonEncode(names));
+  }
+
   /// 制卡动图只播放一次（反馈 ZxyIMK-C5V）。默认 false = 无限循环（存量行为）。
   /// 两条动图链（视频 cue、galgame 窗口）共用；见 `animatedLoopArgs`。
   bool get miningAnimatedPlayOnce =>

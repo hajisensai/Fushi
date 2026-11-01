@@ -322,6 +322,12 @@ mixin DictionaryPageMixin {
           popupResourceSource == null && advancedMiningDeckChoiceAvailable
           ? await loadAdvancedMiningDeckSection(ref)
           : null;
+      // 卡片字段与卡组同一门槛：远端制卡（popupResourceSource）的字段映射在另一台
+      // 机器上，这里的映射对不上，不给改。
+      final AdvancedMiningFieldsSection? fields =
+          popupResourceSource == null && advancedMiningDeckChoiceAvailable
+          ? await loadAdvancedMiningFieldsSection(ref)
+          : null;
       final AdvancedMiningSections sections = await buildAdvancedMiningSections(
         matched: matched,
       );
@@ -335,6 +341,7 @@ mixin DictionaryPageMixin {
           matched: matched,
           expression: expression.isEmpty ? null : expression,
           deck: deck,
+          fields: fields,
           sections: sections,
           // BUG-2627：回传「有没有真的点到制卡按钮」。弹窗层在这次往返途中被关栈
           // （或 State 已卸载）时为 false，对话框据此提示，不再静默关窗。

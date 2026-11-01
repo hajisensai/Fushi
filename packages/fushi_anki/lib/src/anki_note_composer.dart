@@ -597,7 +597,16 @@ mixin AnkiNoteComposer {
       fieldMappings: fieldMappings,
     );
     final fields = <String, String>{};
+    // 「高级制卡」里手改过的字段（反馈 -K86qlwBg6）：整段替换该字段的渲染结果，只对
+    // 映射里有的字段生效。手写内容不是占位符模板，不走渲染 / 媒体替换。
+    final Map<String, String> edited =
+        payload.overrides?.fieldValues ?? const <String, String>{};
     for (final entry in fieldMappings.entries) {
+      final String? manual = edited[entry.key];
+      if (manual != null && manual.trim().isNotEmpty) {
+        fields[entry.key] = manual.trim();
+        continue;
+      }
       var value = AnkiHandlebarRenderer.render(
         entry.value,
         payload,
@@ -886,6 +895,8 @@ mixin AnkiNoteComposer {
       audio: processedAudio,
       selectedDictionary: payload.selectedDictionary,
       dictionaryMedia: payload.dictionaryMedia,
+      // 「高级制卡」的手改字段要跟到渲染那一步（buildMinedFields 读它）。
+      overrides: payload.overrides,
     );
 
     return RenderedMinedFields(

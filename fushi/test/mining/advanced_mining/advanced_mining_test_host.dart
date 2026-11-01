@@ -56,6 +56,9 @@ class FakeAdvancedMiningHost {
   bool confirmResult = true;
   Completer<bool>? confirmGate;
   final List<String> setDefaultDeckCalls = <String>[];
+
+  /// 卡片字段分区每次「记住显示哪些字段」的入参。
+  final List<Set<String>> setVisibleFieldsCalls = <Set<String>>[];
   int closedCalls = 0;
 
   // ── 视频 ──
@@ -219,8 +222,23 @@ class FakeAdvancedMiningHost {
         : null,
   );
 
+  /// 卡片字段分区（Lapis 风格的三个字段；默认显示释义）。
+  AdvancedMiningFieldsSection fields({
+    Set<String> visible = const <String>{'MainDefinition'},
+  }) => AdvancedMiningFieldsSection(
+    fields: const <AdvancedMiningField>[
+      AdvancedMiningField(name: 'Expression', template: '{expression}'),
+      AdvancedMiningField(name: 'Sentence', template: '{sentence}'),
+      AdvancedMiningField(name: 'MainDefinition', template: '{glossary-first}'),
+    ],
+    visibleFields: visible,
+    setVisibleFields: (Set<String> names) async =>
+        setVisibleFieldsCalls.add(names),
+  );
+
   AdvancedMiningCapabilities capabilities({
     AdvancedMiningDeckSection? deck,
+    AdvancedMiningFieldsSection? fields,
     AdvancedMiningSentenceSection? sentence,
     AdvancedMiningAudioSection? audio,
     AdvancedMiningVideoImageSection? video,
@@ -230,6 +248,7 @@ class FakeAdvancedMiningHost {
     matched: '諦め',
     expression: '諦める',
     deck: deck,
+    fields: fields,
     sections: AdvancedMiningSections(
       sentence: sentence,
       audio: audio,

@@ -10443,6 +10443,12 @@ class AppModel with ChangeNotifier {
   MiningAnimatedFormat get galMiningAnimatedFormat =>
       prefsRepo.galMiningAnimatedFormat;
 
+  /// 「高级制卡」卡片字段分区里显示的字段名（反馈 -K86qlwBg6）；null = 从没选过。
+  List<String>? get advancedMiningVisibleFields =>
+      prefsRepo.advancedMiningVisibleFields;
+  Future<void> setAdvancedMiningVisibleFields(List<String> names) =>
+      prefsRepo.setAdvancedMiningVisibleFields(names);
+
   /// 制卡动图只播放一次（反馈 ZxyIMK-C5V）。
   bool get miningAnimatedPlayOnce => prefsRepo.miningAnimatedPlayOnce;
   Future<void> setMiningAnimatedPlayOnce(bool value) =>

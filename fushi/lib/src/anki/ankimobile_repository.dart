@@ -697,6 +697,8 @@ class AnkiMobileRepository extends BaseAnkiRepository {
       audio: audio.fieldValue,
       selectedDictionary: payload.selectedDictionary,
       dictionaryMedia: payload.dictionaryMedia,
+      // 「高级制卡」的手改字段要跟到渲染那一步（buildMinedFields 读它）。
+      overrides: payload.overrides,
     );
 
     return RenderedMinedFields(

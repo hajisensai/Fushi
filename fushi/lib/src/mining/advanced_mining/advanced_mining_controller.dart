@@ -39,12 +39,21 @@ class AdvancedMiningController extends ChangeNotifier {
   AdvancedMiningMangaImageSection? get mangaSection => sections.mangaImage;
   AdvancedMiningStillImageSection? get stillSection => sections.stillImage;
 
+  /// 卡片字段分区；没配字段映射（字段为空）时当作没有这项能力。
+  AdvancedMiningFieldsSection? get fieldsSection {
+    final AdvancedMiningFieldsSection? section = capabilities.fields;
+    return section == null || section.fields.isEmpty ? null : section;
+  }
+
   bool _disposed = false;
 
   @override
   void dispose() {
     _disposed = true;
     _editController?.dispose();
+    for (final TextEditingController c in _fieldControllers.values) {
+      c.dispose();
+    }
     _downloadSub?.cancel();
     super.dispose();
   }
@@ -324,6 +333,62 @@ class AdvancedMiningController extends ChangeNotifier {
 
   /// 主按钮上显示的目标卡组；null = 不知道（没有卡组分区，或尚未选择任何卡组）。
   String? get targetDeckName => deckSection == null ? null : deckName;
+
+  // ───────────────────────────── 卡片字段 ─────────────────────────────
+
+  /// 在对话框里显示（可编辑）的字段名（初值来自 [AdvancedMiningFieldsSection.visibleFields]，
+  /// 只认映射里真有的字段）。
+  Set<String> visibleFields = <String>{};
+
+  /// 「选择字段」胶囊行是否展开。
+  bool choosingFields = false;
+
+  final Map<String, TextEditingController> _fieldControllers =
+      <String, TextEditingController>{};
+
+  /// 某个字段的输入框控制器（懒建，跟着控制器一起释放；隐藏再显示时内容还在）。
+  TextEditingController fieldController(String name) =>
+      _fieldControllers.putIfAbsent(name, TextEditingController.new);
+
+  /// 映射顺序下当前显示的字段。
+  List<AdvancedMiningField> get shownFields => <AdvancedMiningField>[
+    for (final AdvancedMiningField f
+        in fieldsSection?.fields ?? const <AdvancedMiningField>[])
+      if (visibleFields.contains(f.name)) f,
+  ];
+
+  void toggleChoosingFields() {
+    if (_busy) return;
+    choosingFields = !choosingFields;
+    _notify();
+  }
+
+  /// 显示 / 隐藏一个字段，并记住选择（持久化失败不挡本次对话框）。
+  Future<void> toggleFieldVisible(String name) async {
+    final AdvancedMiningFieldsSection? section = fieldsSection;
+    if (_busy || section == null) return;
+    final Set<String> nextVisible = <String>{...visibleFields};
+    if (!nextVisible.remove(name)) nextVisible.add(name);
+    visibleFields = nextVisible;
+    _notify();
+    final Future<void> Function(Set<String>)? persist =
+        section.setVisibleFields;
+    if (persist == null) return;
+    try {
+      await persist(nextVisible);
+    } catch (e, stack) {
+      fushiDebugPrint('AdvancedMining.setVisibleFields: $e\n$stack');
+    }
+  }
+
+  /// 确认时带走的手改字段：只取**显示中且非空白**的字段（隐藏的字段即使填过也不写，
+  /// 所见即所得）。
+  Map<String, String> get editedFieldValues => <String, String>{
+    for (final AdvancedMiningField f in shownFields)
+      if (_fieldControllers[f.name]?.text.trim() case final String v
+          when v.isNotEmpty)
+        f.name: v,
+  };
 
   // ───────────────────────────── 音频 ─────────────────────────────
 
@@ -834,6 +899,13 @@ class AdvancedMiningController extends ChangeNotifier {
       videoImageMode = _initialVideoImageMode;
     }
     panelModelAvailable = mangaSection?.panelModelAvailable ?? false;
+    final AdvancedMiningFieldsSection? fields = fieldsSection;
+    visibleFields = fields == null
+        ? <String>{}
+        : <String>{
+            for (final AdvancedMiningField f in fields.fields)
+              if (fields.visibleFields.contains(f.name)) f.name,
+          };
   }
 
   /// 「恢复为一键制卡的默认」：所有选择回到打开时的值，句子上下文回到打开时的快照。
@@ -848,6 +920,10 @@ class AdvancedMiningController extends ChangeNotifier {
     _stillDeltaMs.clear();
     videoImageMode = _initialVideoImageMode;
     mosaicRegions = const <MiningMosaicRegion>[];
+    // 手改的字段清空 = 回到按映射自动生成（显示哪些字段是用户的长期偏好，不还原）。
+    for (final TextEditingController c in _fieldControllers.values) {
+      c.clear();
+    }
     if (mangaSection != null && !mangaLoading) {
       cropChoice = isCropChoiceAvailable(_initialCropChoice)
           ? _initialCropChoice
@@ -937,6 +1013,7 @@ class AdvancedMiningController extends ChangeNotifier {
       coverFrameAtMs: coverFrame,
       crop: crop,
       mosaic: mosaic,
+      fieldValues: editedFieldValues,
     );
   }
 }
