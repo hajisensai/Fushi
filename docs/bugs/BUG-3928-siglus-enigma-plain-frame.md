@@ -1,4 +1,4 @@
-## BUG-3892 · Rewrite+（Enigma 保护的 SiglusEngine）不识别引擎：内嵌查词要等 120 秒后才放行 Luna，且查词不可用
+## BUG-3928 · Rewrite+（Enigma 保护的 SiglusEngine）不识别引擎：内嵌查词要等 120 秒后才放行 Luna，且查词不可用
 - **报告**：2026-10-31（用户：适配 Rewrite+ 时发现文本要等约两分钟才出现、内嵌查词不可用）
 - **真实性**：✅ 真 bug。Rewrite+（SiglusEngine 1.1.101.0，x86，Enigma Protector）走的是 LunaScenario 家族，但两处结构判据把它挡在门外：
   1. `native/galgame_hook/hook/adapters/siglus_lookup.inc:349`（修复前）`luna_matched = key_iat != 0 && ...`：Enigma 的 API 模拟把导入表换成私有替身，镜像里没有 `user32!GetKeyState` 的导入名，`FindGetKeyStateImport` 恒为 0，家族直接判不匹配。

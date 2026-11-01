@@ -33,10 +33,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3531 条。点号进各自文件。
+> 共 3533 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3929](bugs/BUG-3929-siglus-ninearg-harvest-festa.md) | ✅ | ✅ | Rewrite Harvest festa!（九参一代 SiglusEngine）不识别引擎：台词混入人名、内嵌查词不可用 |
+| [BUG-3928](bugs/BUG-3928-siglus-enigma-plain-frame.md) | ✅ | ✅ | Rewrite+（Enigma 保护的 SiglusEngine）不识别引擎：内嵌查词要等 120 秒后才放行 Luna，且查词不可用 |
 | [BUG-3927](bugs/BUG-3927-reader-jp-gothic-alias-theme-font.md) | ✅ | ✅ | 電書協书的章标题在换了主题字体的 Android 机上竖排叠字 |
 | [BUG-3926](bugs/BUG-3926-download-subtitle-retry-drops-anilist.md) | ✅ | ✅ | download-subtitle-retry-drops-anilist |
 | [BUG-3925](bugs/BUG-3925-ai-panel-tight-mode-hides-context-chip.md) | ✅ | ✅ | ai-panel-tight-mode-hides-context-chip |
@@ -73,13 +75,6 @@
 | [BUG-3894](bugs/BUG-3894-macos-storage-shared-caches.md) | ✅ | ✅ | macos-storage-shared-caches |
 | [BUG-3893](bugs/BUG-3893-download-keepalive-no-wakelock.md) | ✅ | ✅ | download-keepalive-no-wakelock |
 | [BUG-3892](bugs/BUG-3892-android-white-screen-srs-upgrade-on-ui-thread.md) | ✅ | ✅ | android-white-screen-srs-upgrade-on-ui-thread |
-> 共 3496 条。点号进各自文件。
-> 共 3497 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-3893](bugs/BUG-3893-siglus-ninearg-harvest-festa.md) | ✅ | ✅ | Rewrite Harvest festa!（九参一代 SiglusEngine）不识别引擎：台词混入人名、内嵌查词不可用 |
-| [BUG-3892](bugs/BUG-3892-siglus-enigma-plain-frame.md) | ✅ | ✅ | Rewrite+（Enigma 保护的 SiglusEngine）不识别引擎：内嵌查词要等 120 秒后才放行 Luna，且查词不可用 |
 | [BUG-3891](bugs/BUG-3891-vn-sentence-mode-image-pause.md) | ✅ | ✅ | VN 按句分屏时有声书跨插图不停留；图片停留秒数不能自定义 |
 | [BUG-3890](bugs/BUG-3890-apkg-reimport-deleted-notes-changed-notetype.md) | ✅ | ✅ | apkg-reimport-deleted-notes-changed-notetype |
 | [BUG-3889](bugs/BUG-3889-popup-headword-drag-copy.md) | ✅ | ✅ | 查词弹窗拖选词头后 Ctrl+C 复制不了 |
