@@ -6,6 +6,8 @@ import 'package:fushi/src/pages/implementations/video_fushi_page.dart'
     show
         videoWebBackendSettingsGroups,
         videoWebBackendSupportsControlItem,
+        WebVideoBackAction,
+        webVideoBackAction,
         webVideoPendingTrackCaptureFailed;
 import 'package:fushi/src/settings/settings_destination.dart' show VideoGroup;
 
@@ -114,6 +116,46 @@ void main() {
     expect(
       videoWebBackendSettingsGroups(<VideoGroup>[VideoGroup.subtitle]),
       <VideoGroup>[VideoGroup.subtitle],
+    );
+  });
+
+  test('返回键：播放器档永远先退回网页档（浏览器交接过来的也一样），网页档再回浏览器 / 后退 / 关页', () {
+    for (final bool backToBrowser in <bool>[false, true]) {
+      for (final bool canGoBack in <bool>[false, true]) {
+        expect(
+          webVideoBackAction(
+            playerMode: true,
+            backToBrowser: backToBrowser,
+            canGoBack: canGoBack,
+          ),
+          WebVideoBackAction.toPageMode,
+          reason: 'backToBrowser=$backToBrowser canGoBack=$canGoBack',
+        );
+      }
+    }
+    expect(
+      webVideoBackAction(
+        playerMode: false,
+        backToBrowser: true,
+        canGoBack: true,
+      ),
+      WebVideoBackAction.closePage,
+    );
+    expect(
+      webVideoBackAction(
+        playerMode: false,
+        backToBrowser: false,
+        canGoBack: true,
+      ),
+      WebVideoBackAction.goBack,
+    );
+    expect(
+      webVideoBackAction(
+        playerMode: false,
+        backToBrowser: false,
+        canGoBack: false,
+      ),
+      WebVideoBackAction.closePage,
     );
   });
 }

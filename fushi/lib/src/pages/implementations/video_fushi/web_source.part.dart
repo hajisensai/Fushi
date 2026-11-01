@@ -41,6 +41,31 @@ bool webVideoPendingTrackCaptureFailed({
     requestedSiteTrackId == siteTrackCurrent &&
     liveCueCountNow > liveCueCountAtRequest;
 
+/// 网页档返回键一步要做什么（纯函数，[_VideoWebSource._webBackStep] 与测试同源调用）。
+enum WebVideoBackAction {
+  /// 播放器档退回网页档。
+  toPageMode,
+
+  /// 站点页面后退一页。
+  goBack,
+
+  /// 关掉本页（回浏览器 / 回上一路由）。
+  closePage,
+}
+
+/// 返回键判据：播放器档**永远先**退回网页档（浏览器交接过来的页面也一样，否则用户回不去
+/// 网页档）；网页档里交接过来的回浏览器，否则能后退就后退，退到底再关页。
+@visibleForTesting
+WebVideoBackAction webVideoBackAction({
+  required bool playerMode,
+  required bool backToBrowser,
+  required bool canGoBack,
+}) {
+  if (playerMode) return WebVideoBackAction.toPageMode;
+  if (backToBrowser || !canGoBack) return WebVideoBackAction.closePage;
+  return WebVideoBackAction.goBack;
+}
+
 /// 网页档设置面板的分组：着色器 / mpv / 弹幕都作用在 libmpv 或本地文件上，去掉。
 @visibleForTesting
 List<settings_dest.VideoGroup> videoWebBackendSettingsGroups(
@@ -292,8 +317,13 @@ extension _VideoWebSource on _VideoFushiPageState {
     _syncWebAudioTracks(state);
     _syncWebNetflixMetadata(state);
     _notifyWebBlocker(state);
-    // 站点自己的全屏钮（网页档里点的）= 「我要看了」：换成播放器档 + 窗口全屏。
-    if (state.fullscreen && state.hasVideo && !_webPlayerModeFor(state)) {
+    // 站点自己的全屏钮（网页档里点的）= 「我要看了」：换成播放器档 + 窗口全屏。只认
+    // 「非全屏 → 全屏」的边沿：手动切回网页档时 [_setWebPlayerMode] 拿的快照 `fs` 可能还是
+    // true（exitPageFullscreen 还没生效），按电平判会立刻又被拽回播放器档。
+    final bool enteredPageFullscreen =
+        state.fullscreen && !_webPageWasFullscreen;
+    _webPageWasFullscreen = state.fullscreen;
+    if (enteredPageFullscreen && state.hasVideo && !_webPlayerModeFor(state)) {
       _webForcePlayerKey = state.videoKey;
       _webBrowseVideoKey = null;
       unawaited(session.exitPageFullscreen());
@@ -1257,15 +1287,22 @@ extension _VideoWebSource on _VideoFushiPageState {
   bool _webBackStep() {
     final WebVideoSession? session = _webSession;
     if (session == null || _webClosing) return false;
-    // 浏览器交接过来的：返回就回浏览器（[VideoFushiPage.webBackToBrowser]）。
-    if (widget.webBackToBrowser) return false;
-    if (_webPlayerMode) {
-      _setWebPlayerMode(false);
-      return true;
+    // 浏览器交接过来的（[VideoFushiPage.webBackToBrowser]）也是播放器档先退回网页档，
+    // 以前直接关页回浏览器，用户「回不去」网页档。
+    switch (webVideoBackAction(
+      playerMode: _webPlayerMode,
+      backToBrowser: widget.webBackToBrowser,
+      canGoBack: session.nav.value.canGoBack,
+    )) {
+      case WebVideoBackAction.toPageMode:
+        _setWebPlayerMode(false);
+        return true;
+      case WebVideoBackAction.goBack:
+        unawaited(session.goBack());
+        return true;
+      case WebVideoBackAction.closePage:
+        return false;
     }
-    if (!session.nav.value.canGoBack) return false;
-    unawaited(session.goBack());
-    return true;
   }
 
   /// 网页档制卡（[_onMineEntryImpl] 分流到这里）：**只入队**（schema v90 `web_mine_queue`），
