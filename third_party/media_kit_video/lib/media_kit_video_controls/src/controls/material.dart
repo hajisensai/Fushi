@@ -395,6 +395,14 @@ class MaterialVideoControlsThemeData {
   /// pub.dev. See third_party/media_kit_video/PATCHES.md.
   final void Function(Future<void> seek)? onSeekDispatched;
 
+  /// Fushi patch (seek-on-drag): whether dragging the seek bar issues a
+  /// `player.seek` on every pointer move. `true` (upstream behaviour) keeps the
+  /// live scrub. `false` only moves the thumb while dragging and seeks once on
+  /// pointer up -- the web-site backend sets this, because every move event is
+  /// a page round-trip and a long drag flooded Netflix's player with large
+  /// seeks until it stalled. See third_party/media_kit_video/PATCHES.md.
+  final bool seekOnDrag;
+
   /// Fushi patch (M3 Expressive chrome): host-painted seek-bar track. Null
   /// (upstream default) = upstream track. Gestures stay in the fork. See
   /// PATCHES.md.
@@ -484,6 +492,7 @@ class MaterialVideoControlsThemeData {
     this.onSeekStart,
     this.onSeekEnd,
     this.onSeekDispatched,
+    this.seekOnDrag = true,
     this.relativeSeekBasePosition,
     this.seekBarTrackBuilder,
   });
@@ -548,6 +557,7 @@ class MaterialVideoControlsThemeData {
     void Function()? onSeekStart,
     void Function(Duration)? onSeekEnd,
     void Function(Future<void> seek)? onSeekDispatched,
+    bool? seekOnDrag,
     Duration Function()? relativeSeekBasePosition,
     VideoSeekBarTrackBuilder? seekBarTrackBuilder,
   }) {
@@ -635,6 +645,7 @@ class MaterialVideoControlsThemeData {
       onSeekStart: onSeekStart ?? this.onSeekStart,
       onSeekEnd: onSeekEnd ?? this.onSeekEnd,
       onSeekDispatched: onSeekDispatched ?? this.onSeekDispatched,
+      seekOnDrag: seekOnDrag ?? this.seekOnDrag,
       relativeSeekBasePosition:
           relativeSeekBasePosition ?? this.relativeSeekBasePosition,
       seekBarTrackBuilder: seekBarTrackBuilder ?? this.seekBarTrackBuilder,
@@ -2043,6 +2054,8 @@ class MaterialSeekBarState extends State<MaterialSeekBar> {
       tapped = true;
       slider = percent.clamp(0.0, 1.0);
     });
+    // Fushi patch (seek-on-drag): see [seekOnDrag].
+    if (!_theme(context).seekOnDrag) return;
     controller(context).player.seek(duration * slider);
   }
 
