@@ -1,4 +1,4 @@
-## BUG-3893 · Rewrite Harvest festa!（九参一代 SiglusEngine）不识别引擎：台词混入人名、内嵌查词不可用
+## BUG-3929 · Rewrite Harvest festa!（九参一代 SiglusEngine）不识别引擎：台词混入人名、内嵌查词不可用
 - **报告**：2026-11-01（用户：HF 的台词里混进了人名，有语音；内嵌查词不可用）
 - **真实性**：✅ 真 bug。HF（SiglusEngine 1.0.17.19，x86，保护壳把 .data 与导入表合并进 `.text`）是对齐栈帧、普通栈帧、八参、旧版十六参之外的又一代代码，现有四个家族判据全部不命中：
   1. 字形排版函数是 `__stdcall` 九个 DWORD（含 self，`ret 0x24`），排完不把绝对坐标写回字形：字形只存行内整数偏移（+0x14/+0x18），绝对位置 = 行内偏移 + 对话遍历函数传入的第 8/9 个参数（行原点）。旧解码器都要从字形里读写回的浮点坐标，`siglus_glyph_record.h` 的 `DecodeSiglusGlyphRecord` 对它没有可用布局，查词档案建不起来。
