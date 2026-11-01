@@ -766,6 +766,61 @@ class SrsDbStore implements SrsSync2Host {
     Iterable<String> ids,
   ) => _entityEditsMany(kind, ids);
 
+  /// 一组笔记**一个字段键**（如 [SrsFieldKeys.noteSource]）的生效值：只读这个键的修改记录、只把它们交给
+  /// 字段寄存器内核（一块一次 FFI 调用），不物化整条笔记。没有这个键的记录（或笔记不存在）的 ID 不出现在
+  /// 结果里。
+  ///
+  /// 只要一个键的批量读者（全景的作品出处）不能走 [notes]：那会把每条笔记的全部字段原文、全部修改记录读进
+  /// 调用方 isolate 再整批过一次内核——字段里带整段释义 HTML 的 2 万卡大库这是上 GB 的原文，主 isolate 上
+  /// 直接 ANR / OOM（反馈 lGXA8zC1A2 / i8qNDs_V_D：启动时主线程卡在 `ffsrs_materialize`，PSS 1.58 GB）。
+  /// 寄存器按键独立合并（支配 / 排序键 / 冲突都只看同一个键上的记录），所以只给一个键的记录与整条物化后
+  /// 取同一个键逐值相同。
+  Future<Map<String, Object?>> noteFieldKeyValues(
+    Iterable<String> ids,
+    String fieldKey,
+  ) async {
+    final Map<String, Object?> out = <String, Object?>{};
+    final String kind = SrsEntityKind.note.wire;
+    for (final List<String> chunk in _chunks(ids.toSet())) {
+      final Map<String, List<SrsEditItem>> byId = <String, List<SrsEditItem>>{};
+      for (final QueryRow q
+          in await db
+              .customSelect(
+                'SELECT f.entity_id AS e, '
+                'CAST(f.json AS BLOB) AS j, s.server_time AS st '
+                'FROM srs_field_edits f '
+                'LEFT JOIN srs_event_local s ON s.event_id = f.id '
+                'WHERE f.entity_kind = ? AND f.field_key = ? '
+                'AND f.entity_id IN (${_marks(chunk)})',
+                variables: <Variable<Object>>[
+                  Variable<String>(kind),
+                  Variable<String>(fieldKey),
+                  for (final String id in chunk)
+                    Variable<String>(id, srsIdType),
+                ],
+                readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
+                  db.srsFieldEdits,
+                  db.srsEventLocal,
+                },
+              )
+              .get()) {
+        (byId[q.read<String>('e')] ??= <SrsEditItem>[]).add(
+          SrsEditItem.stored(q.read<Uint8List>('j'), q.readNullable<int>('st')),
+        );
+      }
+      if (byId.isEmpty) continue;
+      final List<String> order = byId.keys.toList();
+      final List<SrsEntityEdits> edits = srsEntityEditsOf(<List<SrsEditItem>>[
+        for (final String id in order) byId[id]!,
+      ]);
+      for (int i = 0; i < order.length; i++) {
+        final SrsRegister? r = edits[i][fieldKey];
+        if (r != null) out[order[i]] = r.value;
+      }
+    }
+    return out;
+  }
+
   Future<SrsEntityEdits> _entityEdits(SrsEntityKind kind, String id) async =>
       srsEntityEditsOf(<List<SrsEditItem>>[await _editItems(kind, id)]).single;
 

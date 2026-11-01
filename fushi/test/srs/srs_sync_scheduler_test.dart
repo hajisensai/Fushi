@@ -1589,6 +1589,37 @@ void main() {
       expect(s.roundStats.running, 0);
     });
 
+    test('开头的细分步骤写进面包屑（i8qNDs_V_D：死在「开始」阶段时要知道是哪一步）', () async {
+      String? atStore;
+      String? atKey;
+      final SrsSyncScheduler s = SrsSyncScheduler(
+        readStore: () async {
+          atStore = crumb().readAsStringSync();
+          return store;
+        },
+        channels: (Future<void> Function(SyncAssetStore) body) async =>
+            (ran: 0, errors: const <Object>[]),
+        directoryKeyOf: (SyncAssetStore b) async {
+          atKey = crumb().readAsStringSync();
+          return 'k';
+        },
+        onDataChanged: () {},
+        onNotice: (SrsSyncNotice _) {},
+        runner:
+            (
+              SyncAssetStore b,
+              SrsDbStore st,
+              String key, {
+              SrsLocationKey? locationKey,
+            }) async => SrsSync2Report(),
+      );
+      await s.syncWithBackend(LocalDirectoryAssetStore(root));
+      expect(atStore, contains('stage=start:store '));
+      expect(atKey, contains('stage=start:directoryKey '));
+      expect(atKey, contains('rss='));
+      expect(crumb().existsSync(), isFalse, reason: '跑完删掉面包屑');
+    });
+
     test('失败轮次累计连续失败数；成功清零；面包屑不残留', () async {
       int runs = 0;
       final SrsSyncScheduler s = SrsSyncScheduler(
