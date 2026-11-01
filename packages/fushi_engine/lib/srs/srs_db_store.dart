@@ -4984,6 +4984,10 @@ class SrsStudyState {
   bool get rwkvPending => summary.rwkvPending;
 }
 
+/// 单次作答记入日志的最长用时（与 Anki「最长作答秒数」默认 60 秒同口径）：走神、切出去之类的长停顿
+/// 不该把复习用时统计撑爆。本机复习页与远程作答（srs_remote_review.dart）共用。
+const int kSrsMaxAnswerDurationMs = 60000;
+
 /// [SrsDbStore.answerAndStudy] 的结果：写出的日志（撤销栈用）与评分之后的排队（没要求排队时 null）。
 class SrsAnswerOutcome {
   const SrsAnswerOutcome(this.log, this.study);

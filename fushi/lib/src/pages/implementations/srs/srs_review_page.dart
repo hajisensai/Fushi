@@ -92,10 +92,6 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
-/// 单次作答记入日志的最长用时（与 Anki「最长作答秒数」默认 60 秒同口径）：走神、
-/// 切出去之类的长停顿不该把复习用时统计撑爆。
-const int kSrsMaxAnswerDurationMs = 60000;
-
 /// 评分按钮上的间隔文案：按界面语言给单位（文案照 Anki 答题按钮：英文 m / h / d /
 /// mo / y，中文 分钟 / 小时 / 天 / 个月 / 年），不再让「1m」与「11.1mo」混着读。
 String srsIntervalLabel(({String amount, SrsIntervalUnit unit}) p) =>

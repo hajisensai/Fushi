@@ -31,6 +31,7 @@ import 'package:fushi/src/pages/implementations/srs/srs_deck_settings_page.dart'
 import 'package:fushi/src/pages/implementations/srs/srs_legacy_lapis_migration_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_note_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_note_types_page.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_remote_review_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_review_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_sync_settings.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
@@ -530,6 +531,16 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
       icon: FushiIcons.ankiCard,
       label: t.srs_note_types_title,
       onPressed: () => srsRunLogged('SrsDeckList.noteTypes', _openNoteTypes),
+    ),
+    // 复习远程刷卡：不下载卡组，在已配对电脑的复习上刷（docs/specs/2026-11-01-srs-remote-review-design.md）。
+    FushiToolbarItem(
+      key: const ValueKey<String>('srs_remote_review'),
+      icon: FushiIcons.devices,
+      label: t.srs_remote_review_title,
+      onPressed: () => srsRunLogged(
+        'SrsDeckList.remoteReview',
+        () => _push<void>((_) => const SrsRemoteReviewEntryPage()),
+      ),
     ),
     FushiToolbarItem(
       key: const ValueKey<String>('srs_timeline'),

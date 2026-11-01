@@ -45,6 +45,7 @@ import 'package:fushi/src/srs/srs_app_host.dart';
 import 'package:fushi/src/srs/srs_legacy_backup_cleanup.dart';
 import 'package:fushi/src/srs/srs_directory_key.dart';
 import 'package:fushi/src/srs/srs_interconnect_watch.dart';
+import 'package:fushi_engine/srs/srs_remote_review.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_optimization_scheduler.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
@@ -313,6 +314,10 @@ class SrsAppRuntime {
       readStore: _readStore,
       openNote: (String noteId) => srsPushNoteEditor(navigator(), noteId),
       openBrowse: () => srsPushBrowse(navigator()),
+      remoteReview: SrsRemoteReviewService(
+        readStore: _readStore,
+        readMedia: (String name) async => (await _readMedia())?.load(name),
+      ),
     );
     fushiAnkiConnectCompatInstanceId = instanceId;
     final SrsAnkiConnectEndpoint endpoint = buildAnkiConnectEndpoint();

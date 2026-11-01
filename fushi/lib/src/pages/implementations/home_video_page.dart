@@ -9837,7 +9837,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     Future<VideoRemoteClient?> hostClient() async {
       if (source is! InterconnectSyncBackend) return null;
       final String identity = await source.connectedHostIdentity();
-      final FushiClientUrl? peer = await videoRemotePeerForHost(
+      final FushiClientUrl? peer = await interconnectHostPeerForHost(
         repository,
         identity,
       );
