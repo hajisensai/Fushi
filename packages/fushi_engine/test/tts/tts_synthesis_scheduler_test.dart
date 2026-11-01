@@ -56,6 +56,62 @@ void main() {
     if (await root.exists()) await root.delete(recursive: true);
   });
 
+  test('multi-voice: each sentence goes to its voice, concurrency is per '
+      'voice, and the cache key carries the voice identity', () async {
+    final FakeTtsProvider other = FakeTtsProvider();
+    provider.gateAll = true;
+    other.gateAll = true;
+    final TtsSynthesisScheduler s = TtsSynthesisScheduler.voices(
+      voices: <TtsSchedulerVoice>[
+        TtsSchedulerVoice(
+          provider: provider,
+          audioIdentity: const <String, Object?>{'voice': 'a'},
+          concurrency: 1,
+        ),
+        TtsSchedulerVoice(
+          provider: other,
+          audioIdentity: const <String, Object?>{'voice': 'b'},
+          concurrency: 1,
+        ),
+      ],
+      // 同一段文本、两个声音：缓存键必须不同。
+      voiceOf: const <int>[0, 1, 0, 1, 0, 1],
+      cache: cache,
+      texts: const <String>['x', 'x', 'y', 'y', 'z', 'z'],
+      lookahead: 5,
+    );
+    schedulers.add(s);
+    s.setCursor(0);
+    await waitFor(() => provider.calls.isNotEmpty && other.calls.isNotEmpty);
+    await settle(50);
+    // 各声音一个名额：两个声音同时各在途一句，不互相占。
+    expect(provider.calls, <String>['x']);
+    expect(other.calls, <String>['x']);
+    expect(s.keyOf(0), isNot(s.keyOf(1)));
+    expect(s.voiceIndexOf(3), 1);
+
+    other.gateAll = false;
+    other.release('x');
+    await waitFor(
+      () => <int>[1, 3, 5].every((int i) => s.readyAudio(i) != null),
+    );
+    // b 声音跑完自己的三句；a 声音仍卡在第一句，名额只有 1。
+    expect(other.calls, <String>['x', 'y', 'z']);
+    expect(provider.calls, <String>['x']);
+    expect(provider.maxActive, 1);
+    expect(other.maxActive, 1);
+
+    provider.gateAll = false;
+    provider.release('x');
+    await waitFor(
+      () => <int>[0, 2, 4].every((int i) => s.readyAudio(i) != null),
+    );
+    expect(provider.calls, <String>['x', 'y', 'z']);
+    for (int i = 0; i < 6; i++) {
+      expect(s.readyAudio(i), isNotNull, reason: 'sentence $i');
+    }
+  });
+
   test('ensure returns published audio and pins it', () async {
     final TtsSynthesisScheduler s = make(lookahead: 0);
     final TtsCachedAudio audio = await s.ensure(0);

@@ -1184,6 +1184,7 @@
   "audiobook_tts_cache_cleared": "已清除合成音频",
   "audiobook_tts_cache_section": "缓存",
   "audiobook_tts_cache_size": "已合成音频：${size}",
+  "audiobook_tts_cast_voice_unavailable": "制作台里给角色分配的声音不可用或尚未配置完整",
   "audiobook_tts_category_external": "外部服务",
   "audiobook_tts_category_external_hint": "GPT-SoVITS、Irodori 等本机或局域网服务",
   "audiobook_tts_category_online": "在线服务",

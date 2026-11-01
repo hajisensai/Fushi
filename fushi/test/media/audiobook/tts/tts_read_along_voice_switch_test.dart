@@ -5,8 +5,10 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_book_plan.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_read_along.dart';
+import 'package:fushi/src/media/audiobook/tts/tts_read_along_voices.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_voice_quick_switch.dart';
 import 'package:fushi_engine/foundation/pref_store.dart';
+import 'package:fushi_engine/tts/render/tts_cast.dart';
 import 'package:fushi_engine/tts/tts_audio_cache.dart';
 import 'package:fushi_engine/tts/tts_provider.dart';
 import 'package:fushi_engine/tts/tts_types.dart';
@@ -423,6 +425,84 @@ void main() {
         const TtsVoiceQuickSwitchChoice.manage(),
         isNot(const TtsVoiceQuickSwitchChoice.preset('a')),
       );
+    });
+  });
+
+  group('multi-voice read-along', () {
+    test('character lines use the cast voice; switching the default voice '
+        'keeps character lines on their voice (served from cache)', () async {
+      final _FakeDescriptor descriptor = _FakeDescriptor();
+      // 句 1、3 是 alice 的台词（选角表按句首坐标 i*10 记），alice 配声音 C。
+      final TtsCast cast = TtsCast(
+        lines: <String, TtsCastLine>{
+          for (final int i in <int>[1, 3])
+            ttsLineKey(0, i * 10): const TtsCastLine(
+              speaker: 'alice',
+              source: TtsCastSource.user,
+            ),
+        },
+        voices: <String, String>{'alice': 'c'},
+      );
+      final TtsReadAlong readAlong = TtsReadAlong.debugCreate(
+        plan: _plan(6),
+        preset: _preset('a', 'A'),
+        descriptor: descriptor,
+        cache: cache,
+        host: const TtsHost(),
+        store: store,
+        cast: cast,
+        slotVoices: <String, TtsResolvedVoice>{
+          'alice': (preset: _preset('c', 'C'), descriptor: descriptor),
+        },
+      );
+      live.add(readAlong);
+      expect(readAlong.isMultiVoice, isTrue);
+      expect(readAlong.voiceAt(1).preset.id, 'c');
+      expect(readAlong.voiceAt(2).preset.id, 'a');
+
+      readAlong.debugScheduler
+        ..setLookahead(5)
+        ..setCursor(0);
+      await descriptor.until((List<_Call> log) => log.length == 6);
+      final Map<int, String> voiceBySentence = <int, String>{
+        for (final _Call c in descriptor.log)
+          int.parse(c.text.substring(c.text.length - 1)): c.voice,
+      };
+      expect(voiceBySentence, <int, String>{
+        0: 'A',
+        1: 'C',
+        2: 'A',
+        3: 'C',
+        4: 'A',
+        5: 'A',
+      });
+      // 六句全部落盘（发布进缓存）后再换声音，角色台词才谈得上「命中缓存」。
+      // 请求记录在合成开始时就有了，所以这里按调度器的就绪事件等，不按请求等。
+      bool allReady() => <int>[
+        for (int i = 0; i < 6; i++) i,
+      ].every((int i) => readAlong.debugScheduler.readyAudio(i) != null);
+      if (!allReady()) {
+        await readAlong.debugScheduler.events
+            .firstWhere((_) => allReady())
+            .timeout(const Duration(seconds: 20));
+      }
+
+      expect(
+        await readAlong.switchVoice(_preset('b', 'B'), descriptor),
+        TtsVoiceSwitchOutcome.switched,
+      );
+      await descriptor.until(
+        (List<_Call> log) => log.where((_Call c) => c.voice == 'B').length == 4,
+      );
+      // alice 的两句仍用 C、命中缓存，没有再请求；默认声音的四句换成 B。
+      expect(
+        _indices(descriptor.log.where((_Call c) => c.voice == 'B').toList())
+          ..sort(),
+        <int>[0, 2, 4, 5],
+      );
+      expect(descriptor.log.where((_Call c) => c.voice == 'C'), hasLength(2));
+      expect(readAlong.voiceAt(1).preset.id, 'c');
+      expect(readAlong.voiceAt(0).preset.id, 'b');
     });
   });
 }
