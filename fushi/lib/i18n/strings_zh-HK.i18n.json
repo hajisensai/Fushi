@@ -4833,7 +4833,7 @@
   "manga_panel_none": "未檢測到分鏡",
   "manga_previous_page": "上一頁",
   "manga_quick_spread_shift": "Offset by one page",
-  "manga_quick_spread_shift_subtitle": "Cover on its own page, then pair pages two by two. Turn off to pair from page 1.",
+  "manga_quick_spread_shift_subtitle": "Cover on its own page, then pair pages two by two. Turn off to shift the pairing by one page, both at the cover and in the part you are reading now.",
   "manga_reader_all_settings": "全部設定",
   "manga_reader_animate_transitions": "翻頁動畫",
   "manga_reader_auto_scroll": "自動捲動",

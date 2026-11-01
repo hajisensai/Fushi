@@ -4833,7 +4833,7 @@
   "manga_panel_none": "未检测到分镜",
   "manga_previous_page": "上一页",
   "manga_quick_spread_shift": "错开一页",
-  "manga_quick_spread_shift_subtitle": "封面单独成页，其余两两配对；关闭则从第一页起配对。",
+  "manga_quick_spread_shift_subtitle": "封面单独成页，其余两两配对；关闭则错开一页配对，封面处与正在读的这一段都会跟着错开。",
   "manga_reader_all_settings": "全部设置",
   "manga_reader_animate_transitions": "翻页动画",
   "manga_reader_auto_scroll": "自动滚动",
