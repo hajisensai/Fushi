@@ -3636,7 +3636,12 @@ extension _VideoSubtitle on _VideoFushiPageState {
     final double columnWidth = panelWidth + panelSafeInsets.right;
     return AnimatedSize(
       // eink 下归零（墨水屏残影，UI 巡检 PR-4），与剧集侧栏同款。
-      duration: einkSafeDuration(context, const Duration(milliseconds: 200)),
+      // 网页档（底层合成）也归零：列宽每帧一变，旁边画面列就每帧把 WebView2 子窗口
+      // SetWindowPos + 重排整页一次（站点播放器跟着重量尺寸），开关字幕列表整段卡顿；
+      // 一次开关只该换一次尺寸。
+      duration: _webUnderlayHeld
+          ? Duration.zero
+          : einkSafeDuration(context, const Duration(milliseconds: 200)),
       curve: Curves.easeOut,
       alignment: Alignment.centerLeft,
       child: SizedBox(
