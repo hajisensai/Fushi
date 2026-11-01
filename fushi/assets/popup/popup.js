@@ -867,6 +867,31 @@ window.resetSelectedDictionaries = function() {
     }
 };
 
+// 这张卡用哪本词典作主释义（payload.selectedDictionary → Dart 渲染器的
+// {glossary-first} 选中优先 / {selected-glossary}，BUG-1035）。
+//   1. 长按词典标题的显式选择优先；
+//   2. 没长按时，用户在某本词典的释义里选中了文本（制卡前的选区快照
+//      lastSelectionSpans，义项下标 → entry.glossaries[gloss].dictionary）→ 选区所在
+//      的那本当主词典。否则选中段只在 {glossary} 里有 <mark>，主释义却仍是第一本，
+//      卡片上看不到用户选的那段。跨多本拖选取文档序第一段所在词典。
+// 只作用于本次制卡：选区快照随换词渲染清掉、每次制卡前重新快照，不改全局词典顺序。
+function miningDictionaryFor(idx) {
+    const explicit = selectedDictionaries[idx]?.name;
+    if (explicit) return explicit;
+    const entry = window.lookupEntries?.[idx];
+    const glossaries = entry && Array.isArray(entry.glossaries) ? entry.glossaries : null;
+    if (!glossaries) return '';
+    const hidden = window.hiddenDictionaryNames || [];
+    for (const span of lastSelectionSpans) {
+        if (span.entry !== idx) continue;
+        const dictName = glossaries[span.gloss]?.dictionary;
+        if (typeof dictName === 'string' && dictName && !hidden.includes(dictName)) {
+            return dictName;
+        }
+    }
+    return '';
+}
+
 // 构造一个句子上下文步进器：两行「上 [➖][N][➕]」+「下 [➖][N][➕]」。点➕该方向 n+=1、点
 // ➖该方向 max(0, n-1)，把该方向的上下文句数整组重发宿主。无 JS 硬上限——由宿主的段落/
 // cue 边界天然封顶（镜像可继续升、宿主合成时按真句封顶）。
@@ -2797,7 +2822,7 @@ async function buildMinePayload(expression, reading, frequencies, pitches, rules
         popupSelectionText,
         glossarySelectionHighlighted,
         audio,
-        selectedDictionary: selectedDictionaries[idx]?.name || '',
+        selectedDictionary: miningDictionaryFor(idx),
         dictionaryMedia: JSON.stringify([...dictionaryMedia.values()])
     };
 }

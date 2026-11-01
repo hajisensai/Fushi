@@ -69,6 +69,8 @@ function makeSandbox() {
     querySelector() { return null; },
     querySelectorAll() { return []; },
     createElement(tag) { return makeElement(tag); },
+    // Glossary selection highlighting walks text nodes; the fake DOM has none.
+    createTreeWalker() { return { nextNode() { return null; } }; },
     addEventListener() {},
   };
 
@@ -84,6 +86,7 @@ function makeSandbox() {
 
   const sandbox = {
     Node: { TEXT_NODE: 3, ELEMENT_NODE: 1 },
+    NodeFilter: { SHOW_TEXT: 4, FILTER_ACCEPT: 1, FILTER_REJECT: 2 },
     Date, Math, URL, JSON, RegExp, Set, Map, Object, Array, console,
     performance: { now() { return 0; } },
     setTimeout, clearTimeout,
@@ -107,6 +110,8 @@ function loadPopup() {
       selectDictionary: function(idx, name) {
         selectedDictionaries[idx] = { name: name, label: { classList: { remove: function() {} } } };
       },
+      miningDictionaryFor: miningDictionaryFor,
+      setSelectionSpans: function(spans) { lastSelectionSpans = spans; },
       selectedDictionaryNames: function() {
         return Object.keys(selectedDictionaries).map(function(k) {
           return k + '=' + selectedDictionaries[k].name;
@@ -193,6 +198,54 @@ async function payloadFor(sandbox, idx) {
     assert.strictEqual(p1.selectedDictionary, 'JMdict',
       'mining idx0 must NOT clear idx1 selection (per-entry independence); got '
         + JSON.stringify(p1.selectedDictionary));
+  }
+
+  // Test 4 (feedback Bd9azvBdKc): text selected inside a dictionary's glossary
+  // makes THAT dictionary the card's main dictionary when nothing was long-pressed;
+  // an explicit long-press still wins; hidden dictionaries and other entries'
+  // selections never leak in; no selection keeps the empty (= first dictionary) default.
+  {
+    const sb = loadPopup();
+    sb.window.lookupEntries = [
+      { expression: '猫', reading: 'ねこ', glossaries: [
+        { dictionary: 'JMdict', content: [] },
+        { dictionary: 'Daijirin', content: [] },
+        { dictionary: 'Hidden', content: [] },
+      ] },
+      { expression: '犬', reading: 'いぬ', glossaries: [
+        { dictionary: 'Meikyo', content: [] },
+      ] },
+    ];
+    const t = sb.window.__test;
+    assert.strictEqual(t.miningDictionaryFor(0), '',
+      'no selection, no long-press → empty (renderer falls back to the first dictionary)');
+
+    t.setSelectionSpans([{ entry: 0, gloss: 1, start: 0, end: 1, text: '猫' }]);
+    assert.strictEqual(t.miningDictionaryFor(0), 'Daijirin',
+      'selected text inside Daijirin must make Daijirin the main dictionary');
+    const p = await payloadFor(sb, 0);
+    assert.strictEqual(p.selectedDictionary, 'Daijirin',
+      'the mining payload must carry the selection dictionary; got '
+        + JSON.stringify(p.selectedDictionary));
+    assert.strictEqual(t.miningDictionaryFor(1), '',
+      'a selection in entry 0 must not leak into entry 1');
+
+    t.setSelectionSpans([
+      { entry: 0, gloss: 0, start: 0, end: 3, text: 'cat' },
+      { entry: 0, gloss: 1, start: 0, end: 1, text: '猫' },
+    ]);
+    assert.strictEqual(t.miningDictionaryFor(0), 'JMdict',
+      'a drag across dictionaries uses the first (document-order) span');
+
+    sb.window.hiddenDictionaryNames = ['Hidden'];
+    t.setSelectionSpans([{ entry: 0, gloss: 2, start: 0, end: 1, text: 'x' }]);
+    assert.strictEqual(t.miningDictionaryFor(0), '',
+      'a hidden dictionary never becomes the main dictionary');
+
+    t.setSelectionSpans([{ entry: 0, gloss: 1, start: 0, end: 1, text: '猫' }]);
+    t.selectDictionary(0, 'JMdict');
+    assert.strictEqual(t.miningDictionaryFor(0), 'JMdict',
+      'an explicit long-press selection wins over the text selection');
   }
 
   console.log('popup_selected_dictionary_oneshot_test.js: all assertions passed');
