@@ -110,6 +110,9 @@ void main() {
         // 设备级「同步浏览历史」（默认关，3fdceb86fa / PR #2500）：云备份与互联
         // 共用、不设 visible 门控，所以同样是全局项，紧跟统计开关。
         'sync.web_history',
+        // 「同步设置」（反馈 AWp-0BtDDv，默认关）：可移植偏好设置跨设备 LWW，
+        // 云与互联共用、不设 visible 门控。
+        'sync.settings',
         'sync.content',
         'sync.manga_content',
         'sync.audiobook_files',
@@ -137,6 +140,8 @@ void main() {
       expect(idsOf(dest.sections[4]), <String>[
         'sync.backup_export',
         'sync.backup_import',
+        // 合并导入时是否带可移植设置（反馈 AWp-0BtDDv，默认关），紧跟导入动作行。
+        'sync.backup_merge_settings',
         // 第三方阅读器（Hoshi Reader）书库备份导入：五端都有。
         'sync.hoshi_import',
       ]);

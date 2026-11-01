@@ -183,10 +183,13 @@ void main() {
     FocusManager.instance.highlightStrategy = FocusHighlightStrategy.automatic;
   });
 
-  for (final ({String name, double width, double height}) size
-      in <({String name, double width, double height})>[
-        (name: 'wide', width: 900, height: 2400),
-        (name: 'narrow', width: 400, height: 3800),
+  // syncHeight：同步与备份页比互联页长（反馈 AWp-0BtDDv 加了「同步设置」与
+  // 「合并导入时包含设置」两行），单独给它更高的视口，互联页基线不动。
+  for (final ({String name, double width, double height, double syncHeight})
+      size
+      in <({String name, double width, double height, double syncHeight})>[
+        (name: 'wide', width: 900, height: 2400, syncHeight: 2640),
+        (name: 'narrow', width: 400, height: 3800, syncHeight: 4540),
       ]) {
     testWidgets('sync & backup page · ${size.name}', (
       WidgetTester tester,
@@ -195,7 +198,7 @@ void main() {
         tester,
         destination: buildSyncBackupDestination,
         width: size.width,
-        height: size.height,
+        height: size.syncHeight,
         seed: _seedSyncPage,
       );
       _expectWholePageVisible(tester);
