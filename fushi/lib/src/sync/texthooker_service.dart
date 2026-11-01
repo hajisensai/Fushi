@@ -790,6 +790,12 @@ class TexthookerService extends ChangeNotifier {
   /// 重放，某些自定义 hook 也可能已经不在新的 helper 预览快照里；此时正文行本身就是
   /// 唯一仍可靠的线程目录证据。正文仍由控制器的选中线程过滤器决定是否发布，这里只
   /// 补目录和观测计数，不能把未选中的文本塞进 [_entries]。
+  ///
+  /// [notify] = false 供批量观测用：引擎一次轮询能带回几百条**所有线程**的行
+  /// （v13 每线程一道，64 道 × 8 槽），逐行通知会让每个监听者（工作台、浮窗、控制器
+  /// 转发）每行都同步跑一遍——Unity 这类每帧重写 set_text 的游戏会因此把 UI isolate
+  /// 压满、整个 Fushi 点不动（反馈 bfaVEbHL_s）。批量调用方在整批结束后调一次
+  /// [notifyTextThreadsObserved]。
   void observeTextThreadLine({
     required String key,
     required String label,
@@ -797,6 +803,7 @@ class TexthookerService extends ChangeNotifier {
     String? hookCode,
     int? nativeThreadId,
     DateTime? observedAt,
+    bool notify = true,
   }) {
     final String normalizedKey = key.trim();
     final String normalizedText = text.trim();
@@ -821,8 +828,11 @@ class TexthookerService extends ChangeNotifier {
       previewIsArtifact: false,
       recentPreviewTexts: previous?.recentPreviewTexts ?? const <String>[],
     );
-    notifyListeners();
+    if (notify) notifyListeners();
   }
+
+  /// 一批 `observeTextThreadLine(notify: false)` 结束后的单次通知。
+  void notifyTextThreadsObserved() => notifyListeners();
 
   /// [threadKey] 为 null 时返回所有行；否则只返回指定 Hook 线程的文本。
   List<TexthookerLineEntry> entriesForTextThread(String? threadKey) {
