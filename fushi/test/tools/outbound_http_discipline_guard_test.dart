@@ -138,8 +138,9 @@ const Map<String, String> kBareOutboundRegistry = <String, String>{
       '组网 / P2P 本地转发口 127.0.0.1），与 manga-OCR 客户端同一理由；隧道口走代理必然取不到。',
   'fushi/lib/src/models/app_model.dart':
       '远端查词 / 远端发音共用的 keep-alive client（TODO-744）：目标恒为已配对的局域网 peer。',
-  'fushi/lib/src/sync/video_remote_client.dart':
-      '手机遥控电脑视频（快照 / 事件流 / 控制命令）：目标恒为已配对 host，与 manga-OCR 客户端同一理由。',
+  'fushi/lib/src/sync/interconnect_host_client.dart':
+      '绑定一台已配对互联 host 的传输（视频遥控的快照 / 事件流 / 控制命令、远程复习库调用与媒体）：'
+      '目标恒为已配对 host，与 manga-OCR 客户端同一理由。',
   'fushi/lib/src/pages/implementations/video_remote_page.dart':
       '手机遥控页的词典资源 client（样式 / 媒体 / 发音由电脑端提供）：目标恒为已配对 host，'
       '与 app_model 的远端查词 client 同一理由。',

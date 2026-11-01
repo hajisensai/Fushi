@@ -103,12 +103,19 @@ Map<String, String> _extensionMethods() {
       multiLine: true,
     ).allMatches(src)) {
       final String body = _block(src, ext.start);
-      for (final RegExpMatch m in RegExp(
-        r'^  (?:Future<[^\n]*?>+|[\w<>?,() ]+?)\s+(?:get\s+)?(_?[a-z]\w*)\s*(?:<[^>]*>)?\(',
+      // 只认两格缩进、同一行里「返回类型 名字(」的声明；调用行（`await f(`、`return f(`、续行的 `f(`）
+      // 不算——否则同名调用会覆盖真声明，结果随文件枚举顺序变（Windows 绿、Linux 红）。
+      final List<RegExpMatch> decls = RegExp(
+        r'^  (?!(?:return|await|final|var|if|for|while|switch|throw|else|case)\b)'
+        r'(?:Future<[^\n]*?>+|[\w<>?,()][\w<>?,() ]*?)[ \t]+(?:get[ \t]+)?'
+        r'(_?[a-z]\w*)[ \t]*(?:<[^>\n]*>)?\(',
         multiLine: true,
-      ).allMatches(body)) {
-        final int end = body.indexOf('\n  }\n', m.start);
-        out[m.group(1)!] = body.substring(m.start, end < 0 ? body.length : end);
+      ).allMatches(body).toList();
+      for (int i = 0; i < decls.length; i++) {
+        final int end = i + 1 < decls.length ? decls[i + 1].start : body.length;
+        final String name = decls[i].group(1)!;
+        if (out.containsKey(name)) throw StateError('重复的扩展方法：$name');
+        out[name] = body.substring(decls[i].start, end);
       }
     }
   }
