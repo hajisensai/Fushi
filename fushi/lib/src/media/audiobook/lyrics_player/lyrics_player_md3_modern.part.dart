@@ -24,7 +24,6 @@ const double _kModernTransportSize = 48;
 
 /// 新版封面 / 插图缩略图的高度（窄屏卡片 / 宽屏左岛）。宽度按原比例变化。
 const double _kModernThumbHeight = 40;
-const double _kModernWideThumbHeight = 44;
 
 /// 迷你条 / 展开卡的上下内边距与行距。
 const double _kModernMiniPadding = 8;
@@ -42,6 +41,59 @@ const double _kModernGrabHeight = 12;
 const double _kModernWideMargin = 24;
 const double _kModernIslandGap = 16;
 const double _kModernSeekBand = 24;
+
+/// 宽屏底栏自动隐藏后，歌词区底边离窗口底边的距离（留给贴底的细进度线）。
+const double _kModernImmersiveBottom = 16;
+
+/// 宽屏左岛 / 两端时间的字号档位：按窗口宽度分三档（与左岛最大宽同一套断点），
+/// 大屏上底栏文字跟着放大，不再是固定 14 / 11（大屏上看不清）。
+@immutable
+class _ModernWideText {
+  const _ModernWideText._({
+    required this.title,
+    required this.detail,
+    required this.thumbHeight,
+    required this.maxInfoWidth,
+  });
+
+  factory _ModernWideText.of(BuildContext context, double width) {
+    final FushiTypography type = context.fushiType;
+    if (width >= 1900) {
+      return _ModernWideText._(
+        title: type.titleMediumEmphasized.copyWith(fontSize: 18),
+        detail: type.labelLarge.copyWith(fontSize: 14),
+        thumbHeight: 56,
+        maxInfoWidth: 420,
+      );
+    }
+    if (width >= 1200) {
+      return _ModernWideText._(
+        title: type.titleMediumEmphasized,
+        detail: type.labelLarge.copyWith(fontSize: 13),
+        thumbHeight: 52,
+        maxInfoWidth: 340,
+      );
+    }
+    return _ModernWideText._(
+      title: type.labelLargeEmphasized,
+      detail: type.labelMedium,
+      thumbHeight: 44,
+      maxInfoWidth: 260,
+    );
+  }
+
+  /// 书名。
+  final TextStyle title;
+
+  /// 章名 · 进度、进度线两端时间。
+  final TextStyle detail;
+
+  /// 左岛封面位高度。
+  final double thumbHeight;
+
+  /// 左岛最大宽。
+  final double maxInfoWidth;
+}
 
 /// 右岛动作收进 ⋯ 的优先级（高 → 低）：放不下时从末尾起收。显示顺序仍按用户的
 /// 按钮布局（[LyricsControlLayout]）。
@@ -173,6 +225,7 @@ class _ModernWideGeometry {
     required this.seekBand,
     required this.timeTop,
     required this.lyrics,
+    required this.text,
   });
 
   factory _ModernWideGeometry.of(
@@ -181,11 +234,13 @@ class _ModernWideGeometry {
     EdgeInsets padding,
   ) {
     final TextScaler scaler = MediaQuery.textScalerOf(context);
-    final FushiTypography type = context.fushiType;
+    final _ModernWideText text = _ModernWideText.of(context, size.width);
     final double textLines =
-        scaler.scale(type.labelLargeEmphasized.fontSize ?? 14) * 1.4 +
-        scaler.scale(type.labelSmall.fontSize ?? 11) * 1.4;
-    final double islandHeight = math.max(64, textLines + 16).ceilToDouble();
+        scaler.scale(text.title.fontSize ?? 14) * 1.4 +
+        scaler.scale(text.detail.fontSize ?? 12) * 1.4;
+    final double islandHeight = math
+        .max(64, math.max(textLines, text.thumbHeight) + 16)
+        .ceilToDouble();
     final double left = padding.left + _kModernWideMargin;
     final double right = math.max(
       left + 1,
@@ -202,8 +257,7 @@ class _ModernWideGeometry {
       right,
       islandTop - 10,
     );
-    final double timeHeight =
-        scaler.scale(type.labelSmall.fontSize ?? 11) * 1.4;
+    final double timeHeight = scaler.scale(text.detail.fontSize ?? 12) * 1.4;
     final double timeTop = seekBand.top - timeHeight;
     final double lyricsTop = padding.top + 28;
     final Rect lyrics = Rect.fromLTRB(
@@ -220,10 +274,14 @@ class _ModernWideGeometry {
       seekBand: seekBand,
       timeTop: timeTop,
       lyrics: lyrics,
+      text: text,
     );
   }
 
   final double islandHeight;
+
+  /// 底栏文字档位（左岛 / 时间）。
+  final _ModernWideText text;
   final double islandTop;
   final double left;
   final double right;
@@ -234,6 +292,17 @@ class _ModernWideGeometry {
   /// 进度线上方左右两端时间的顶边。
   final double timeTop;
   final Rect lyrics;
+
+  /// 底栏隐藏后的歌词矩形：底边一直伸到贴底细进度线上方。
+  Rect immersiveLyrics(Size size, EdgeInsets padding) => Rect.fromLTRB(
+    lyrics.left,
+    lyrics.top,
+    lyrics.right,
+    math.max(
+      lyrics.bottom,
+      size.height - padding.bottom - _kModernImmersiveBottom,
+    ),
+  );
 
   /// 插图弹出卡的最大框：320×460（1920 宽及以上 400×560），高度不超过可用空间。
   Size popupSize(Size page, EdgeInsets padding) {
@@ -252,16 +321,34 @@ class _ModernWideGeometry {
 
 /// 新版 MD3 歌词播放器外观（经典见 [Md3LyricsPlayerDesign]）。
 class Md3ModernLyricsPlayerDesign extends LyricsPlayerDesign {
-  const Md3ModernLyricsPlayerDesign({required this.compactExpanded});
+  const Md3ModernLyricsPlayerDesign({
+    required this.compactExpanded,
+    this.wideChromeHidden = false,
+    this.wideLyricsExpanded = false,
+  });
 
   /// 窄屏播放卡展开（目标态）。歌词矩形直接按目标态算：WebView 不随卡片高度逐帧
   /// 改尺寸（平台视图逐帧 resize 既费又会让歌词重锚抖动），卡片自己做高度动画。
   final bool compactExpanded;
 
+  /// 宽屏底栏（三浮岛 + 时间 + 进度线）已自动隐藏：淡出、不吃指针，只留一根
+  /// 贴底细进度线。窄屏忽略。
+  final bool wideChromeHidden;
+
+  /// 宽屏歌词矩形伸到底（[_ModernWideGeometry.immersiveLyrics]）。与
+  /// [wideChromeHidden] 分开：外壳等底栏淡出完再一次性改矩形（WebView 只 resize
+  /// 一次，不逐帧）；显示时两者同时复位，底栏淡入前歌词已让位。
+  final bool wideLyricsExpanded;
+
   @override
   Rect lyricsRect(BuildContext context, Size size, EdgeInsets padding) {
     if (lyricsPlayerIsWide(size)) {
-      return _ModernWideGeometry.of(context, size, padding).lyrics;
+      final _ModernWideGeometry g = _ModernWideGeometry.of(
+        context,
+        size,
+        padding,
+      );
+      return wideLyricsExpanded ? g.immersiveLyrics(size, padding) : g.lyrics;
     }
     final _ModernNarrowGeometry geometry = _ModernNarrowGeometry.of(
       context,
@@ -304,6 +391,7 @@ class Md3ModernLyricsPlayerDesign extends LyricsPlayerDesign {
         size: size,
         padding: padding,
         geometry: _ModernWideGeometry.of(context, size, padding),
+        hidden: wideChromeHidden,
       );
     }
     final _ModernNarrowGeometry geometry = _ModernNarrowGeometry.of(
@@ -1109,6 +1197,7 @@ class _ModernWideChrome extends StatelessWidget {
     required this.size,
     required this.padding,
     required this.geometry,
+    required this.hidden,
   });
 
   final LyricsPlayerData data;
@@ -1116,6 +1205,9 @@ class _ModernWideChrome extends StatelessWidget {
   final Size size;
   final EdgeInsets padding;
   final _ModernWideGeometry geometry;
+
+  /// 底栏已自动隐藏（见 [Md3ModernLyricsPlayerDesign.wideChromeHidden]）。
+  final bool hidden;
 
   /// 中岛（播放胶囊）宽：五颗 48 的钮 + 间距 2 + 胶囊内边距 8。
   double get _centerWidth {
@@ -1127,20 +1219,26 @@ class _ModernWideChrome extends StatelessWidget {
   Widget build(BuildContext context) {
     final _ModernWideGeometry g = geometry;
     final ColorScheme cs = Theme.of(context).colorScheme;
-    final TextStyle timeStyle = context.fushiType.labelSmall.tabular.copyWith(
+    final TextStyle timeStyle = g.text.detail.tabular.copyWith(
       color: cs.onSurfaceVariant,
     );
     final double center = (g.left + g.right) / 2;
     final double centerLeft = center - _centerWidth / 2;
     final double centerRight = center + _centerWidth / 2;
-    final double maxLeftIsland = size.width >= 1900
-        ? 360
-        : size.width >= 1200
-        ? 300
-        : 240;
     final double leftWidth = math.max(
       0,
-      math.min(maxLeftIsland, centerLeft - _kModernIslandGap - g.left),
+      math.min(g.text.maxInfoWidth, centerLeft - _kModernIslandGap - g.left),
+    );
+    final Duration fade = fushiMotionDuration(context, FushiMotion.medium);
+    // 底栏件：隐藏时淡出且不吃指针（第一下点击只唤出底栏，不误触看不见的钮）。
+    Widget chrome(Widget child) => IgnorePointer(
+      ignoring: hidden,
+      child: AnimatedOpacity(
+        opacity: hidden ? 0 : 1,
+        duration: fade,
+        curve: FushiMotion.standard,
+        child: child,
+      ),
     );
     final double rightBudget = math.max(
       0,
@@ -1176,34 +1274,81 @@ class _ModernWideChrome extends StatelessWidget {
           right: size.width - g.right,
           top: g.timeTop,
           height: g.seekBand.top - g.timeTop,
-          child: IgnorePointer(
-            child: _ClockSecondsBuilder(
-              clock: data.clock,
-              builder:
-                  (
-                    BuildContext context,
-                    Duration position,
-                    Duration total,
-                  ) => Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: <Widget>[
-                      Text(formatLyricsPlayerTime(position), style: timeStyle),
-                      Text(_remainingText(position, total), style: timeStyle),
-                    ],
-                  ),
+          child: chrome(
+            IgnorePointer(
+              child: _ClockSecondsBuilder(
+                clock: data.clock,
+                builder:
+                    (BuildContext context, Duration position, Duration total) =>
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: <Widget>[
+                            Text(
+                              formatLyricsPlayerTime(position),
+                              style: timeStyle,
+                            ),
+                            Text(
+                              _remainingText(position, total),
+                              style: timeStyle,
+                            ),
+                          ],
+                        ),
+              ),
             ),
           ),
         ),
         Positioned.fromRect(
           rect: g.seekBand,
-          child: FushiWavySeekBar(
-            debugLabel: 'lyrics-md3-seek',
-            clock: data.clock,
-            isPlaying: data.isPlaying,
-            onSeek: callbacks.onSeek,
-            strokeWidth: 5,
-            barHeight: g.seekBand.height,
-            showTimes: false,
+          child: chrome(
+            FushiWavySeekBar(
+              debugLabel: 'lyrics-md3-seek',
+              clock: data.clock,
+              // 隐藏时收平：看不见的波浪不该继续逐帧跑。
+              isPlaying: data.isPlaying && !hidden,
+              onSeek: callbacks.onSeek,
+              strokeWidth: 5,
+              barHeight: g.seekBand.height,
+              showTimes: false,
+            ),
+          ),
+        ),
+        // 底栏隐藏时贴底的细进度线（只看不点：点哪儿都先唤出底栏）。
+        Positioned(
+          left: g.left,
+          right: size.width - g.right,
+          bottom: padding.bottom + (_kModernImmersiveBottom - 3) / 2,
+          height: 3,
+          child: IgnorePointer(
+            child: AnimatedOpacity(
+              opacity: hidden ? 1 : 0,
+              duration: fade,
+              curve: FushiMotion.standard,
+              child: _ClockSecondsBuilder(
+                clock: data.clock,
+                builder:
+                    (
+                      BuildContext context,
+                      Duration position,
+                      Duration total,
+                    ) => ClipRRect(
+                      key: const ValueKey<String>(
+                        'lyrics_modern_immersive_progress',
+                      ),
+                      borderRadius: const BorderRadius.all(Radius.circular(2)),
+                      child: LinearProgressIndicator(
+                        value: total.inSeconds > 0
+                            ? (position.inSeconds / total.inSeconds).clamp(
+                                0.0,
+                                1.0,
+                              )
+                            : 0,
+                        minHeight: 3,
+                        color: cs.primary,
+                        backgroundColor: cs.onSurface.withValues(alpha: 0.12),
+                      ),
+                    ),
+              ),
+            ),
           ),
         ),
         if (leftWidth >= g.islandHeight)
@@ -1212,11 +1357,14 @@ class _ModernWideChrome extends StatelessWidget {
             top: g.islandTop,
             width: leftWidth,
             height: g.islandHeight,
-            child: _SpringEntrance(
-              child: _ModernInfoIsland(
-                data: data,
-                callbacks: callbacks,
-                color: island,
+            child: chrome(
+              _SpringEntrance(
+                child: _ModernInfoIsland(
+                  data: data,
+                  callbacks: callbacks,
+                  color: island,
+                  text: g.text,
+                ),
               ),
             ),
           ),
@@ -1225,14 +1373,16 @@ class _ModernWideChrome extends StatelessWidget {
           top: g.islandTop,
           width: _centerWidth,
           height: g.islandHeight,
-          child: _SpringEntrance(
-            delay: 0.08,
-            child: FushiFloatingPill(
-              color: island,
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: _modernTransportButtons(data, callbacks),
+          child: chrome(
+            _SpringEntrance(
+              delay: 0.08,
+              child: FushiFloatingPill(
+                color: island,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: _modernTransportButtons(data, callbacks),
+                ),
               ),
             ),
           ),
@@ -1241,13 +1391,15 @@ class _ModernWideChrome extends StatelessWidget {
           right: size.width - g.right,
           top: g.islandTop,
           height: g.islandHeight,
-          child: _SpringEntrance(
-            delay: 0.16,
-            child: _ModernActionIsland(
-              data: data,
-              callbacks: callbacks,
-              budget: rightBudget,
-              color: island,
+          child: chrome(
+            _SpringEntrance(
+              delay: 0.16,
+              child: _ModernActionIsland(
+                data: data,
+                callbacks: callbacks,
+                budget: rightBudget,
+                color: island,
+              ),
             ),
           ),
         ),
@@ -1262,16 +1414,19 @@ class _ModernInfoIsland extends StatelessWidget {
     required this.data,
     required this.callbacks,
     required this.color,
+    required this.text,
   });
 
   final LyricsPlayerData data;
   final LyricsPlayerCallbacks callbacks;
   final Color color;
 
+  /// 字号档位（随窗口宽度）。
+  final _ModernWideText text;
+
   @override
   Widget build(BuildContext context) {
     final ColorScheme cs = Theme.of(context).colorScheme;
-    final FushiTypography type = context.fushiType;
     final String chapter = (data.chapterLabel ?? '').trim();
     return FushiFloatingPill(
       color: color,
@@ -1279,7 +1434,7 @@ class _ModernInfoIsland extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 10),
       child: Row(
         children: <Widget>[
-          _modernArtwork(data, callbacks, height: _kModernWideThumbHeight),
+          _modernArtwork(data, callbacks, height: text.thumbHeight),
           const SizedBox(width: 10),
           Expanded(
             child: LyricsIllustrationTapTarget(
@@ -1298,9 +1453,7 @@ class _ModernInfoIsland extends StatelessWidget {
                     data.title,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
-                    style: type.labelLargeEmphasized.copyWith(
-                      color: cs.onSurface,
-                    ),
+                    style: text.title.copyWith(color: cs.onSurface),
                   ),
                   _StatsBuilder(
                     clock: data.clock,
@@ -1309,11 +1462,11 @@ class _ModernInfoIsland extends StatelessWidget {
                       return Text(
                         <String>[
                           if (chapter.isNotEmpty) chapter,
-                          if (percent != null) '${percent.toStringAsFixed(2)}%',
+                          if (percent != null) '${percent.toStringAsFixed(1)}%',
                         ].join(' · '),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                        style: type.labelSmall.tabular.copyWith(
+                        style: text.detail.tabular.copyWith(
                           color: cs.onSurfaceVariant,
                         ),
                       );

@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_control_layout.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_illustration_view.dart';
@@ -259,6 +260,74 @@ void main() {
       expect(key('lyrics_swap_sides_button'), findsOneWidget);
       final Rect close = tester.getRect(key('lyrics_close_button'));
       expect(close.center.dy, lessThan(900 * 0.2));
+    });
+
+    double fontSizeOf(WidgetTester tester, String text) =>
+        tester.widget<Text>(find.text(text)).style!.fontSize!;
+
+    testWidgets('info island text scales up with the window width', (
+      WidgetTester tester,
+    ) async {
+      await pumpAt(tester, const Size(1000, 700), app());
+      final double small = fontSizeOf(tester, 'book');
+      await pumpAt(tester, const Size(1600, 900), app());
+      final double medium = fontSizeOf(tester, 'book');
+      await pumpAt(tester, const Size(2000, 1100), app());
+      final double large = fontSizeOf(tester, 'book');
+      expect(small, 14);
+      expect(medium, greaterThan(small));
+      expect(large, greaterThan(medium));
+      expect(tester.takeException(), isNull);
+    });
+
+    double chromeOpacity(WidgetTester tester) => tester
+        .widget<AnimatedOpacity>(
+          find
+              .ancestor(
+                of: find.text('book'),
+                matching: find.byType(AnimatedOpacity),
+              )
+              .first,
+        )
+        .opacity;
+
+    testWidgets('playing: bottom chrome auto-hides, lyrics extend, '
+        'mouse movement brings it back', (WidgetTester tester) async {
+      await pumpAt(tester, const Size(1600, 900), app(playing: true));
+      final Rect shown = tester.getRect(key('lyrics_view_probe'));
+      expect(chromeOpacity(tester), 1);
+
+      await tester.pump(kLyricsChromeIdleHideDelay);
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(chromeOpacity(tester), 0);
+      final Rect hidden = tester.getRect(key('lyrics_view_probe'));
+      expect(hidden.top, shown.top);
+      expect(hidden.bottom, closeTo(900 - 16, 0.5));
+      // 隐藏时看不见的钮不吃点击。
+      await tester.tap(key('lyrics_close_button'), warnIfMissed: false);
+      expect(calls, isNot(contains('exit')));
+
+      final TestGesture mouse = await tester.createGesture(
+        kind: PointerDeviceKind.mouse,
+      );
+      await mouse.addPointer(location: const Offset(800, 300));
+      await mouse.moveTo(const Offset(820, 320));
+      await tester.pump();
+      expect(chromeOpacity(tester), 1);
+      expect(tester.getRect(key('lyrics_view_probe')), shown);
+      await mouse.removePointer();
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('paused: bottom chrome never auto-hides', (
+      WidgetTester tester,
+    ) async {
+      await pumpAt(tester, const Size(1600, 900), app());
+      final Rect shown = tester.getRect(key('lyrics_view_probe'));
+      await tester.pump(kLyricsChromeIdleHideDelay * 3);
+      expect(chromeOpacity(tester), 1);
+      expect(tester.getRect(key('lyrics_view_probe')), shown);
     });
   });
 
