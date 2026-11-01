@@ -32,6 +32,11 @@ import 'package:fushi/src/lookup/selection_capture_ffi.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/pages/implementations/popup_settings_injection.dart'
+    show
+        PopupSettingsOptions,
+        PopupStaticSettingsJs,
+        buildPopupStaticSettingsJs;
 import 'package:fushi/src/pages/implementations/stat_activity.dart';
 import 'package:fushi/src/reader/popup_swipe_close_script.dart'
     show popupSideSwipeDismissAllowed, popupTopPullDismissAllowed;
@@ -438,6 +443,52 @@ class GlobalLookupController {
     } catch (e) {
       glog('start: overlay prewarm FAILED (non-fatal): $e');
     }
+  }
+
+  /// 游戏内嵌查词冷启动预热：在游戏查词会话开门时，用一个**专属**的 galCard 路由
+  /// 把静态段送进卡片宿主页。
+  ///
+  /// 卡片窗按需懒建，过去第一次点词要现场建 WebView2、再随渲染负载灌进几十 MB
+  /// 静态段（自定义字体是内联的 `data:` URL），实测首查 1.6–1.8 s。这里提前做掉：
+  /// 第一个 galCard 调用顺带建窗，宿主 `prewarmStatic` 把静态段装进备用 realm，首查
+  /// 的根卡直接接管它。
+  ///
+  /// [route] 必须是调用方新铸的、比之后任何查词都旧的 galCard 路由，且此刻卡片不可见
+  /// ——原生侧换路由上下文会清掉上一张卡的直绘状态。
+  ///
+  /// 平台调用完成后才记账（与 [_renderStack] 同一纪律）。唯一漏网的情形是窗口还没
+  /// 导航完时首查紧跟着到达：原生只缓存最后一条脚本，预热脚本被顶掉；那时宿主会按
+  /// 既有的 `staticSettingsRequired` 恢复路径要回静态段，只多一次往返。
+  Future<void> prewarmGalCardStatic(GlobalLookupRoute route) async {
+    final BuildContext? ctx = _appModel?.navigatorKey.currentContext;
+    final AppModel? model = _appModel;
+    if (!isSupported || ctx == null || model == null) return;
+    if (route.source != 'galCard') return;
+    final PopupStaticSettingsJs settings = buildPopupStaticSettingsJs(
+      appModel: model,
+      theme: Theme.of(ctx),
+      options: const PopupSettingsOptions(globalLookup: true),
+    );
+    final String hostKey = route.target;
+    if (_hostStaticRevisions.snapshotFor(hostKey).contains(settings.revision)) {
+      return;
+    }
+    try {
+      await GlobalLookupChannel.runWithRoute(
+        route,
+        () => GlobalLookupChannel.render(buildPrewarmStaticScript(settings)),
+      );
+    } catch (e) {
+      glog('gal-card prewarm FAILED (non-fatal): $e');
+      return;
+    }
+    // 路由失效时 channel 静默丢弃调用，await 照样正常返回：再确认一次才记账。
+    if (!GlobalLookupChannel.isRouteValid(route)) return;
+    _hostStaticRevisions.commit(hostKey, <int>{settings.revision});
+    glog(
+      'gal-card prewarm sent rev=${settings.revision} '
+      'static=${((settings.head.length + settings.tail.length) / 1024).toStringAsFixed(0)}K',
+    );
   }
 
   /// globalExternal scope 每个动作的**执行体登记处**——这个 scope 的动作不经

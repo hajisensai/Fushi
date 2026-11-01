@@ -615,6 +615,84 @@ function commitLatestGeometry(host) {
   assert.strictEqual(host.topPopupId(), null, 'topPopupId null when empty');
 }
 
+// 游戏内嵌查词冷启动预热：会话启用时 prewarmStatic 把静态段装进备用 realm，首次查词
+// 的根卡直接接管它——根卡只注入词条与渲染体，不再携带、也不再索要静态段。
+{
+  const { host, document } = freshHost();
+  const warmIframe = standbyShellsOf(document)[0].children.find(
+    (c) => c.tagName === 'IFRAME',
+  );
+  hostPostLog = [];
+  assert.strictEqual(
+    host.prewarmStatic(revisionDescriptor(
+      '__prewarm__', 0, 71, '', '', '/* STATIC-HEAD-71 */', '/* STATIC-TAIL-71 */',
+    )),
+    true,
+    'prewarm accepts a self-contained static descriptor',
+  );
+  while (pendingAnimationFrames.length) {
+    pendingAnimationFrames.shift()();
+  }
+  flushTimers();
+  assert.ok(evalLog.some((e) =>
+    e.frameId.startsWith('__global-lookup-standby-') &&
+      /STATIC-HEAD-71/.test(e.code)),
+    'prewarm installs the static head into the standby realm before any lookup');
+  assert.strictEqual(shellsOf(document).length, 0,
+    'prewarm creates no visible card shell');
+  assert.ok(!hostPostLog.some((m) => m.handler === 'overlaySize'),
+    'prewarm is not a lookup: no geometry is reported');
+
+  evalLog = [];
+  host.renderStack({
+    popups: [revisionDescriptor(
+      'global-lookup-root', -1, 71,
+      '/* ROOT-ENTRIES-71 */', '/* ROOT-RENDER-71 */',
+    )],
+  });
+  const rootShell = shellsOf(document).find(
+    (s) => s.getAttribute('data-frame-id') === 'global-lookup-root',
+  );
+  assert.ok(rootShell, 'root shell exists');
+  assert.strictEqual(
+    rootShell.children.find((c) => c.tagName === 'IFRAME'),
+    warmIframe,
+    'first root takes over the prewarmed realm instead of navigating a new iframe',
+  );
+  assert.ok(rootShell.children.some(
+    (c) => c.className === 'global-lookup-resize-grip'),
+    'an adopted root still gets its resize grip');
+  const rootEval = evalLog.find((e) =>
+    e.frameId === 'global-lookup-root' && /ROOT-ENTRIES-71/.test(e.code));
+  assert.ok(rootEval && !/STATIC-HEAD-71|STATIC-TAIL-71/.test(rootEval.code),
+    'adopted root injects only the dynamic entries/render JS');
+  assert.ok(!hostPostLog.some((m) => m.handler === 'staticSettingsRequired'),
+    'adopted root never asks Dart for the static head');
+}
+
+// 根卡不接管未装好静态段的备用 realm（桌面首查与预热前的行为不变）。
+{
+  const { host, document } = freshHost();
+  const coldIframe = standbyShellsOf(document)[0].children.find(
+    (c) => c.tagName === 'IFRAME',
+  );
+  host.renderStack({
+    popups: [revisionDescriptor(
+      'global-lookup-root', -1, 72,
+      '/* ROOT-ENTRIES-72 */', '/* ROOT-RENDER-72 */',
+      '/* STATIC-HEAD-72 */', '/* STATIC-TAIL-72 */',
+    )],
+  });
+  const rootShell = shellsOf(document).find(
+    (s) => s.getAttribute('data-frame-id') === 'global-lookup-root',
+  );
+  assert.notStrictEqual(
+    rootShell.children.find((c) => c.tagName === 'IFRAME'),
+    coldIframe,
+    'an unprimed standby stays reserved for children',
+  );
+}
+
 // BUG-1833 — the first nested card must consume an already-loaded standby
 // popup realm, and closing/reopening that depth must park/rebind the SAME realm
 // instead of navigating a fresh iframe. Frame ids still rotate so a late message

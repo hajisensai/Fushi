@@ -232,6 +232,22 @@ typedef StackRenderScript = ({String script, Set<int> pendingRevisions});
 /// are genuinely added/removed), so only the root/card layer is pinned.
 const String kGlobalLookupRootFrameId = 'global-lookup-root';
 
+/// 游戏内嵌查词冷启动预热：只把静态段（主题 / 字体 / 词典样式）送进宿主页的脚本。
+///
+/// 宿主（`global_lookup_host.js` 的 `prewarmStatic`）按 revision 缓存这一段，并把它
+/// 装进一个备用 iframe realm；首次查词的根卡直接接管那个 realm，渲染负载里不再
+/// 带这几十 MB。与 [buildStackRenderScript] 同样以 `window.__globalLookupHost &&`
+/// 守卫，宿主未装好时是空操作。
+String buildPrewarmStaticScript(PopupStaticSettingsJs settings) {
+  final String descriptor = jsonEncode(<String, Object>{
+    'staticRevision': settings.revision,
+    'staticHeadJs': settings.head,
+    'staticTailJs': settings.tail,
+  });
+  return 'window.__globalLookupHost && '
+      'window.__globalLookupHost.prewarmStatic($descriptor);';
+}
+
 /// TODO-1095 — builds the host `beginLookup(rootId)` prelude script prepended to
 /// each fresh root render (see [GlobalLookupController]). It tells the host a NEW
 /// hotkey lookup is starting so it (a) clears the union-bbox de-dup key

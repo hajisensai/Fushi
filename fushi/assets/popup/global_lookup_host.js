@@ -305,6 +305,9 @@
   var standbyStaticRevision = null;
   var standbyRefillScheduled = false;
   var standbyRefillGeneration = 0;
+  // 游戏内嵌查词冷启动预热（prewarmStatic）：还没有任何卡片时也维持一个已装好静态段
+  // 的备用 realm，首次查词的根卡直接接管它。destroyStandbyPool 时一并撤销。
+  var standbyPrewarmed = false;
   var STANDBY_REFILL_WATCHDOG_MS = 50;
   // BUG-1833 — large immutable popup settings (notably an inlined custom font)
   // belong to the host lifetime, not to a single lookup. The host converts each
@@ -1580,7 +1583,7 @@
         return;
       }
       try {
-        if (frames.size) {
+        if (frames.size || standbyPrewarmed) {
           ensureStandbyPool(layer);
           for (var i = 0; i < standbyRecords.length; i++) {
             primeStandbyRecord(standbyRecords[i], standbyStaticRevision);
@@ -1621,8 +1624,20 @@
     }
   }
 
+  // 根卡只接管**已装好同一份静态段**的备用 realm（游戏内嵌查词的冷启动预热就是为它
+  // 备的）；没装好的接过来与新建一个没有区别，还会抢走子卡的预热位。子卡照旧任取。
+  function standbyFitsRoot(record, descriptor) {
+    var revision = descriptorStaticRevision(descriptor);
+    return !!record && record.loaded && revision != null &&
+        record.injectedStaticRevision === revision;
+  }
+
   function acquireStandbyRecord(layer, descriptor) {
-    if (!descriptor || descriptor.parentIndex < 0 || !standbyRecords.length) {
+    if (!descriptor || !standbyRecords.length) {
+      return null;
+    }
+    var asRoot = descriptor.parentIndex < 0;
+    if (asRoot && !standbyFitsRoot(standbyRecords[0], descriptor)) {
       return null;
     }
     var record = standbyRecords.shift();
@@ -1667,6 +1682,13 @@
       }
     } else {
       record.closeButton.setAttribute('data-close-frame-id', descriptor.id);
+    }
+    // Phase C — 根卡的 resize grip（createRecord 只给非备用的根卡建）。
+    if (asRoot && !record.resizeGrip) {
+      record.resizeGrip = createResizeGrip();
+      if (record.resizeGrip) {
+        record.shell.appendChild(record.resizeGrip);
+      }
     }
     // Replenish only after this acquired child has had a chance to paint.
     scheduleStandbyRefill(layer);
@@ -1729,6 +1751,7 @@
   }
 
   function destroyStandbyPool() {
+    standbyPrewarmed = false;
     cancelStandbyRefill();
     while (standbyRecords.length) {
       destroyRecord(standbyRecords.shift());
@@ -2916,6 +2939,21 @@
       render: Math.round(lookupPerf.render),
       measure: Math.round(perfNow() - lookupPerf.t0),
     };
+  }
+
+  // 游戏内嵌查词冷启动预热：Dart 在查词会话启用时送来静态段（主题 / 词典样式 /
+  // 内嵌字体，几十 MB），宿主缓存它并在一个隐藏的备用 realm 里先装好、渲染一次空结果，
+  // 让 popup.js / CSS / 字体解码都在用户第一次点词之前完成。不碰 activeRoute、不测量、
+  // 不报尺寸：它不是一次查词。
+  function prewarmStatic(descriptor) {
+    var revision = cacheDescriptorStaticSettings(descriptor);
+    if (revision == null || !staticSettingsByRevision.has(revision)) {
+      return false;
+    }
+    standbyStaticRevision = revision;
+    standbyPrewarmed = true;
+    scheduleStandbyRefill(ensureLayer());
+    return true;
   }
 
   function renderStack(payload) {
@@ -4161,6 +4199,7 @@
     resetSelectionReport: resetSelectionReport,
     _watchFrameSelection: watchFrameSelection,
     renderStack: renderStack,
+    prewarmStatic: prewarmStatic,
     retainStack: retainStack,
     beginLookup: beginLookup,
     topPopupId: topPopupId,
