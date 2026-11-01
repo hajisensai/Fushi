@@ -505,8 +505,13 @@ class _MediaLibraryShellState extends State<MediaLibraryShell> {
         ),
       );
     }
-    // 一级只剩一组（iOS 合规门下没有在线视图）时不画胶囊。
-    if (tabs.length < 2) return const SizedBox.shrink();
+    // 一级只剩一组（iOS 合规门下没有在线视图）时不画胶囊，页签位置改放该组名
+    // 的标题胶囊（书架），左上角不空着。
+    if (tabs.length < 2) {
+      return FushiFloatingChromeSoloTitle(
+        title: tabs.isEmpty ? '' : tabs.single.label,
+      );
+    }
     // 停在导入页时高亮「我的」组：导入管理的就是本地库。
     final MediaLibraryViewKind shown = librarySectionGroupOf(selected) == null
         ? tabs.first.value

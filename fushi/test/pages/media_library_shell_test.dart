@@ -4,7 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/pages/implementations/media_library_shell.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
-    show FushiFloatingChromeBar;
+    show FushiFloatingChromeBar, FushiFloatingChromeSoloTitle;
 import 'package:fushi/utils.dart';
 import '../helpers/glass_unwrap.dart';
 
@@ -287,6 +287,32 @@ void main() {
       find.byKey(const ValueKey<String>('test-library-view-import')),
       findsOneWidget,
       reason: '没有一级页签时导入钮照样在工具栏右端',
+    );
+    expect(
+      find.widgetWithText(FushiFloatingChromeSoloTitle, '书架'),
+      findsOneWidget,
+      reason: '一级页签的位置改放组名标题，左上角不空着',
+    );
+  });
+
+  testWidgets('iOS 形态（只有书架 + 导入）：左上角放「书架」标题胶囊', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      harness(<MediaLibraryViewSpec>[
+        spec(0, MediaLibraryViewKind.library, '书架'),
+        spec(1, MediaLibraryViewKind.sources, '导入'),
+      ]),
+    );
+    await tester.pumpAndSettle();
+
+    expect(topStrip(), findsNothing);
+    expect(subStrip(), findsNothing);
+    expect(
+      find.widgetWithText(FushiFloatingChromeSoloTitle, '书架'),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('test-library-view-import')),
+      findsOneWidget,
     );
   });
 
