@@ -10,6 +10,7 @@ import 'package:fushi/src/focus/fushi_focus_scroll.dart';
 import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/media/video/video_m3e_panel_theme.dart';
 import 'package:fushi/src/media/video/video_player_controller.dart';
+import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/src/shortcuts/platform_modifier_state.dart';
 import 'package:fushi/src/utils/components/fushi_adaptive_action_strip.dart';
 import 'package:fushi/src/utils/components/fushi_search.dart';
@@ -2156,19 +2157,21 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     );
   }
 
-  /// 行菜单手势：触屏长按、桌面右键都弹 [_showM3eRowMenu]（跳到这句 / 复制 / 收藏 /
-  /// 编辑字幕 / 还原原文）。
+  /// 行菜单手势：触屏长按、桌面菜单键（绑定表决定，默认右键）都弹 [_showM3eRowMenu]
+  /// （跳到这句 / 复制 / 收藏 / 编辑字幕 / 还原原文）。
   Widget _withRowMenuGestures({
     required AudioCue cue,
     required int rawIndex,
     required Widget child,
   }) {
-    return GestureDetector(
-      onLongPressStart: (LongPressStartDetails details) =>
-          _showM3eRowMenu(context, cue, rawIndex, details.globalPosition),
-      onSecondaryTapUp: (TapUpDetails details) =>
-          _showM3eRowMenu(context, cue, rawIndex, details.globalPosition),
-      child: child,
+    return ContextMenuTrigger(
+      onInvoke: (Offset position) =>
+          _showM3eRowMenu(context, cue, rawIndex, position),
+      child: GestureDetector(
+        onLongPressStart: (LongPressStartDetails details) =>
+            _showM3eRowMenu(context, cue, rawIndex, details.globalPosition),
+        child: child,
+      ),
     );
   }
 
