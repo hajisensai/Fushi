@@ -33,6 +33,7 @@ extension _VideoVolumeOsd on _VideoFushiPageState {
     bool prominent = false,
     ToastSeverity severity = ToastSeverity.neutral,
     MineToastStatus? mineStatus,
+    MineNoticeAction? mineAction,
   }) {
     if (!mounted) return;
     _osdNotifier.value = _VideoOsdMessage(
@@ -42,11 +43,17 @@ extension _VideoVolumeOsd on _VideoFushiPageState {
       prominent: prominent,
       severity: severity,
       mineStatus: mineStatus,
+      mineAction: mineAction,
     );
     _osdTimer?.cancel();
-    // TODO-971：突出 OSD（制卡成功）停留更久，普通通知仍 2.6s。
+    // TODO-971：突出 OSD（制卡成功）停留更久，普通通知仍 2.6s；带「撤销」按钮的
+    // 再久一点，留出去点的时间。
     _osdTimer = Timer(
-      prominent ? _kProminentOsdDuration : const Duration(milliseconds: 2600),
+      mineAction != null
+          ? kMineNoticeActionVisibleFor
+          : prominent
+          ? _kProminentOsdDuration
+          : const Duration(milliseconds: 2600),
       () {
         _osdNotifier.value = null;
       },
@@ -58,13 +65,34 @@ extension _VideoVolumeOsd on _VideoFushiPageState {
   /// （TODO-971：制卡成功居中放大、停留更久）。视频页所有制卡结果（成功 / 重复 /
   /// 待发）都从这里出，不许直接 [_showOsd]（守卫
   /// `test/anki/mine_notice_single_exit_guard_test.dart`）。
-  void _showMineOsd(String message, MineToastStatus status) {
+  ///
+  /// [undo]（反馈 JNyykxvuY9）：新制成功时卡片上出「撤销」，点下收起 OSD、删卡，
+  /// 结局再用一条普通 OSD 说出来（视频页不走底部 toast，BUG-931）。
+  void _showMineOsd(
+    String message,
+    MineToastStatus status, {
+    MinedCardUndo? undo,
+  }) {
     if (!MineNotices.shown(status)) return;
     _showOsd(
       message,
       prominent: true,
       severity: mineToastSeverity(status),
       mineStatus: status,
+      mineAction: undo == null
+          ? null
+          : MineNoticeAction(
+              label: t.card_notice_undo,
+              onPressed: () async {
+                _osdTimer?.cancel();
+                _osdNotifier.value = null;
+                final MinedCardDeleteResult result = await undo.run();
+                _showOsd(
+                  minedCardDeleteResultText(result),
+                  severity: minedCardDeleteResultSeverity(result),
+                );
+              },
+            ),
     );
   }
 
@@ -292,15 +320,18 @@ extension _VideoVolumeOsd on _VideoFushiPageState {
 
   /// mpv 式左上角 OSD 通知层。监听 [_osdNotifier]，非空时淡入一条圆角半透明提示，
   /// 2.6s 后自动淡出。[IgnorePointer] 确保它从不拦截点击（单击暂停 / 拖放 / 字幕
-  /// 查词都不受影响）。放在控制条上方一点（避开顶栏返回/标题），窗口与全屏复用。
+  /// 查词都不受影响）——唯一例外是带「撤销」的制卡结果卡。放在控制条上方一点（避开顶栏返回/标题），窗口与全屏复用。
   Widget _buildOsdOverlay() {
     return Positioned.fill(
       child: SafeArea(
-        child: IgnorePointer(
-          child: ValueListenableBuilder<_VideoOsdMessage?>(
-            valueListenable: _osdNotifier,
-            builder: (BuildContext _, _VideoOsdMessage? osd, __) {
-              return AnimatedSwitcher(
+        child: ValueListenableBuilder<_VideoOsdMessage?>(
+          valueListenable: _osdNotifier,
+          // 只有带「撤销」的制卡结果卡接收指针（且只有卡片那一块：外层 Align 不拦），
+          // 其余 OSD 照旧从不拦截点击。
+          builder: (BuildContext _, _VideoOsdMessage? osd, __) {
+            return IgnorePointer(
+              ignoring: osd?.mineAction == null,
+              child: AnimatedSwitcher(
                 // eink 下归零（墨水屏残影，UI 巡检 PR-4）。
                 duration: einkSafeDuration(
                   context,
@@ -309,9 +340,9 @@ extension _VideoVolumeOsd on _VideoFushiPageState {
                 child: osd == null
                     ? const SizedBox.shrink()
                     : _buildOsdCard(osd),
-              );
-            },
-          ),
+              ),
+            );
+          },
         ),
       ),
     );
@@ -366,7 +397,10 @@ extension _VideoVolumeOsd on _VideoFushiPageState {
             key: ValueKey<(String, MineToastStatus)>((osd.message, mineStatus)),
             status: mineStatus,
             message: osd.message,
-            visibleFor: _kProminentOsdDuration,
+            visibleFor: osd.mineAction != null
+                ? kMineNoticeActionVisibleFor
+                : _kProminentOsdDuration,
+            action: osd.mineAction,
             maxWidth: math.min(440, MediaQuery.sizeOf(context).width - 32),
           ),
         ),

@@ -103,11 +103,16 @@ ToastSeverity minedCardDeleteResultSeverity(MinedCardDeleteResult result) =>
 
 /// 制卡成功 toast 上的「撤销」按钮：[outcome] 不可撤（见 [MinedCardUndo.of]）时
 /// 返回 null，toast 就不出按钮。点下删卡，结局再用一条 toast 说出来。
+///
+/// [overwrite]：这次是覆写已有卡（结果里的 note id 是**原来那张**）——撤销等于删掉
+/// 用户原有的卡，绝不能给。
 MineNoticeAction? minedCardUndoToastAction(
   BaseAnkiRepository repo,
   MineOutcome outcome, {
   String? expression,
+  bool overwrite = false,
 }) {
+  if (overwrite) return null;
   final MinedCardUndo? undo = MinedCardUndo.of(
     repo,
     outcome,

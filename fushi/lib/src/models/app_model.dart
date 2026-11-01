@@ -9,6 +9,7 @@ import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
+import 'package:fushi/src/anki/mined_card_undo.dart';
 import 'package:fushi/src/corpus/library_corpus_service.dart';
 import 'package:fushi/src/models/preference_keys.dart'
     show kLibrarySentencesEnabledPrefKey;
@@ -11895,7 +11896,12 @@ class AppModel with ChangeNotifier {
           })
           described = describeMineOutcome(outcome);
           // 制卡结果走 showMine：过「制卡提示」开关。
-          FushiToast.showMine(msg: described.message, status: described.status);
+          FushiToast.showMine(
+            msg: described.message,
+            status: described.status,
+            // 反馈 JNyykxvuY9：成功提示带「撤销」，几秒内点一下删掉刚加的卡。
+            action: minedCardUndoToastAction(repo, outcome, expression: word),
+          );
         } catch (e, stack) {
           ErrorLogService.instance.log('FloatingDict.ankiExport', e, stack);
           FushiToast.show(

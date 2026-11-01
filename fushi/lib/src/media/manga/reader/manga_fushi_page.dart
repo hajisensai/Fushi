@@ -12,6 +12,7 @@ import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart'
     show Consumer, WidgetRef;
+import 'package:fushi/src/anki/mined_card_undo.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:path/path.dart' as p;
 import 'package:window_manager/window_manager.dart';
@@ -5121,7 +5122,14 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         );
       }
       if (described.success) {
-        FushiToast.showMine(msg: described.message, status: described.status);
+        FushiToast.showMine(
+          msg: described.message,
+          status: described.status,
+          // 反馈 JNyykxvuY9：成功提示带「撤销」，几秒内点一下删掉刚加的卡。
+          action: reviewSession != null
+              ? null
+              : minedCardUndoToastAction(repo, outcome),
+        );
         return MinePopupResult.mined(outcome);
       }
       // BUG-1908/1915：重复 ≠ 没制成，见 MinePopupResult.duplicate；
