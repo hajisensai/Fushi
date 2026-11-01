@@ -574,6 +574,28 @@ String buildSearchCacheKey({
   return '${term.length}:$term/$maxTerms/$maxResults${chineseSimpToTrad ? '/zh' : ''}';
 }
 
+/// 「按中文处理（引擎双向展开简体 ↔ 繁體拼写）」的唯一判据（反馈 3FY6vTqwV-）。
+///
+/// * 查词语言已知（[lookupLanguage] 非空：远端声明 / 媒体页登记 / 全局默认内容语言）→
+///   只看它是不是中文。日语书里查「学生」不会因为装了中文词典就多出繁體变体。
+/// * 查词语言未知 → 看启用的 term 词典里有没有声明为中文的
+///   （[DictionaryLookupFilters.hasChineseTermDictionary]）。首页 / 查词页的独立查词
+///   没有任何媒体页登记语言，全局默认内容语言出厂为空——此前这里一律 false，学中文、
+///   没去设「默认内容语言」的用户在查词页永远查不到另一种字形的词条。
+///   语言未知时查词集合里的中文词典就是「这次可能是中文」的唯一可读证据；App 里
+///   不存在「学习语言 / Profile 目标语言」这一设置（`targetLanguage` 已于 2026-07-26
+///   删除，Profile 的语言绑定是「内容语言 → 打开哪个 Profile」的反向映射）。
+@visibleForTesting
+bool lookupUsesChineseScriptVariants({
+  required String? lookupLanguage,
+  required DictionaryLookupFilters filters,
+}) {
+  if (lookupLanguage != null && lookupLanguage.trim().isNotEmpty) {
+    return isChineseLanguageTag(lookupLanguage);
+  }
+  return filters.hasChineseTermDictionary;
+}
+
 /// 把阅读器传来的原文振假名区间（以清洗前的 [raw] 为坐标系）对齐到 [normalizeSearchTerm]
 /// 之后的 [normalized]：减去句首被剥掉的标点长度，丢掉越界 / 被截断 / 清洗后基字对不上
 /// 的段（emoji 换空格等改变长度的清洗会让后续坐标失真，宁可不用也不错配）。
@@ -1651,10 +1673,10 @@ class AppModel with ChangeNotifier {
   /// 启动）；app 外查词（剪贴板/扩展）保持 null → 落到全局默认。
   String? currentLookupLanguage;
 
-  /// 当前查词是否按中文处理（引擎额外试简体 → 繁體变体，见 `FushiDicts.lookup` 的
+  /// 当前查词是否按中文处理（引擎额外试简体 ↔ 繁體双向变体，见 `FushiDicts.lookup` 的
   /// `chineseSimpToTrad`）。语言取查词来源语言 [currentLookupLanguage]，缺省落到
   /// 全局默认内容语言——与词头字体链同一套解析（[resolveContentLanguage]）。
-  /// 语言未知时为 false：不对日语等其它语言的查词做任何改动。
+  /// 语言未知时看启用的词典里有没有中文词典（[lookupUsesChineseScriptVariants]）。
   bool get lookupChineseSimpToTrad => lookupChineseSimpToTradFor(null);
 
   /// 本次查词实际按哪种语言处理：[requested]（远端请求方声明的查词语言，非空时优先）→
@@ -1673,14 +1695,32 @@ class AppModel with ChangeNotifier {
     globalDefault: prefs?.defaultContentLanguage ?? defaultContentLanguage,
   );
 
-  /// 「按中文处理（开简体 → 繁體回落）」的唯一判据；[requested] 见
-  /// [effectiveLookupLanguage]。本机查词传 null，替对端查词传对端声明的语言。
+  /// 「按中文处理（简体 ↔ 繁體双向展开）」；[requested] 见 [effectiveLookupLanguage]。
+  /// 本机查词传 null，替对端查词传对端声明的语言。判据本身在
+  /// [lookupUsesChineseScriptVariants]：语言已知看语言，未知看启用词典里有没有中文词典。
+  ///
+  /// [filters]：按哪份词典过滤快照判「有没有中文词典」；null = App 当前生效的词典
+  /// （浏览器扩展所选非激活配置传它的 `lookupFilters`，与查词用的过滤同一份）。
   bool lookupChineseSimpToTradFor(
     String? requested, {
     PreferencesRepository? prefs,
-  }) => isChineseLanguageTag(
-    effectiveLookupLanguage(requested: requested, prefs: prefs),
-  );
+    DictionaryLookupFilters? filters,
+  }) {
+    final DictionaryLookupFilters? effectiveFilters =
+        filters ?? (_dictionaryRepoReady ? dictRepo.lookupFilters : null);
+    return lookupUsesChineseScriptVariants(
+      lookupLanguage: effectiveLookupLanguage(
+        requested: requested,
+        prefs: prefs,
+      ),
+      filters:
+          effectiveFilters ??
+          const DictionaryLookupFilters(
+            hiddenDictionaryNames: <String>{},
+            termDictionaryOrder: <String>[],
+          ),
+    );
+  }
 
   /// 进入一个游戏时登记查词来源语言：[gameLanguage] 是游戏卡上声明的语言
   /// （`GalgameEntry.language`），未声明 / 不在库里落全局默认。hook 台词没有任何语言
@@ -8892,6 +8932,7 @@ class AppModel with ChangeNotifier {
     final bool simpToTrad = lookupChineseSimpToTradFor(
       lookupLanguage,
       prefs: profileView?.prefs,
+      filters: profileView?.lookupFilters,
     );
     // 原文振假名改变同长度候选的先后：带 ruby 的查询单独成键（无 ruby 时后缀为空，
     // 键与此前逐字相同）。
@@ -13032,6 +13073,7 @@ class _AppModelRemoteLookupService
       final bool simpToTrad = _appModel.lookupChineseSimpToTradFor(
         language,
         prefs: view?.prefs,
+        filters: view?.lookupFilters,
       );
       // 与 _searchLocalDictionary 同键：带 ruby 的查询单独成键（无 ruby 后缀为空）；
       // 按配置视图查时带它的命名空间（App 自己的键不变）。
