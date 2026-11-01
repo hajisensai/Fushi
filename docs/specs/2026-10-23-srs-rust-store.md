@@ -188,3 +188,21 @@
 - 血统（字段寄存器内核）仍由 Dart 预读修改记录后给出；搬进 Rust 后这几条命令可以只收卡 ID。
 - Lapis 迁移里还有直接 SQL，`srs_store_ownership_guard_test` 按文件白名单放行。
 - 写路径（事件落库、支配判定、写入者状态）仍是 Dart 组语句、Rust 执行；收编为 Rust 事务命令后删除 Dart 的 `runExclusive`。
+
+### 7.4 事务外查询并发（BUG-3961，2026-11-01）
+
+- 以前：Drift 连接是一个后台 isolate 上的顺序执行器（`isSequential: true`，每条语句一次同步 FFI），内核里事务外查询只有
+  一条 `drift_reader`。同步里一条几秒的长读（全量冲突扫描、媒体对账）跑着时，打开卡片 / 牌组设置的短读排在它后面等满全程。
+- 现在 `srsDatabaseConnection` 是 `SrsSplitExecutor`：
+  - 写那一路（写语句、`runCustom`、批量、事务 / 独占块里的一切语句）仍是原来那条顺序执行器 + 写连接，Drift 的事务语义、
+    读己之写、`drift_tx` 选路不变；
+  - 事务外的 `runSelect` 发到内核命令 worker 的查询道（`SrsCoreLane.query`，3 个 worker），在内核只读连接池
+    （`store/read_pool.rs`，按需开、上限 `DRIFT_READERS` = 4）上并发执行（`ffsrs_store_exec` mode 3 / `SrsCore::snapshot_select`）；
+    不是只读查询（PRAGMA、`… RETURNING`）报 `NOT_SNAPSHOT`，改发写那一路。
+- 一致性：每条事务外查询自成一个读事务，看它开始时已提交的数据——以前单条读连接上前后两条语句之间也可能隔着一次提交，
+  从来没有跨语句快照，所以对调用方是同一种保证。唯一的语义变化：Drift 事务开着时，事务外的查询不再等它提交，而是读到
+  事务开始前的已提交数据（与任何多连接 SQLite 相同）；需要「同一时刻」一致读多张表的调用方本来就要放进 `db.transaction`
+  （写连接上读）或用 `SrsCore.beginRead` 的只读会话。表更新通知（流查询按 `readsFrom` 重跑）由客户端的 `StreamQueryStore`
+  在写返回 / 事务提交后发出，与执行器无关，不变。
+- 生命周期：`SrsSplitExecutor.close` 等在途查询结束再关写那一路；`SrsCore::close` 关池时等借出的连接放回（放回即关），
+  返回时池子开过的连接一条不剩。

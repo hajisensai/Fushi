@@ -45,6 +45,10 @@ enum SrsCoreLane {
 
   /// 媒体文件的流式加解密与哈希（不进写锁，同步时成批并发）。
   file,
+
+  /// Drift 事务外的查询（srs_database_executor.dart 的读查询那一路）：内核只读连接池上并发执行，不进写锁、
+  /// 不排在 Drift 写连接的队列里，也不与上面几条道的长命令互相排队。
+  query,
 }
 
 final class SrsCoreWorkers {
@@ -73,12 +77,19 @@ final class SrsCoreWorkers {
   /// [SrsCoreLane.bulk] 同时在途的命令数上限（超过排队）。
   static const int maxWorkers = 4;
 
+  /// [SrsCoreLane.query] 同时在途的查询数上限。
+  static const int kSrsQueryWorkers = 3;
+
   /// 各道同时在途的命令数上限：交互命令短、一次评分最多两三条并发；文件道给同步的成批加解密留两个并行。
   static int maxWorkersOf(SrsCoreLane lane) => switch (lane) {
     SrsCoreLane.interactive => 2,
     SrsCoreLane.bulk => maxWorkers,
     SrsCoreLane.file => 2,
+    SrsCoreLane.query => kSrsQueryWorkers,
   };
+
+  /// [SrsCoreLane.query] 的 worker 上限：不超过内核只读连接池的上限（Rust `store::DRIFT_READERS` = 4），
+  /// 查询不会在内核里等连接。
 
   final String? libraryPath;
   final Map<SrsCoreLane, _Lane> _lanes = <SrsCoreLane, _Lane>{};

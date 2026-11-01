@@ -382,7 +382,8 @@ fn one_row(page: &[u8]) -> Result<Vec<rusqlite::types::Value>, String> {
 
 /// Drift 执行器：执行一条语句。`select`：0 = 写语句（写连接，返回一行 `[变更行数, last_insert_rowid]`）；
 /// 1 = 写连接上的语句、返回结果行（`runCustom`：事务控制、PRAGMA）；2 = Drift 的查询（`runSelect`，
-/// [SrsCore::select]：Drift 事务外的只读查询走读连接的快照）。1 / 2 返回「列名行 + 结果行」；缓冲区用
+/// [SrsCore::select]：Drift 事务外的只读查询走读连接的快照）；3 = Drift 事务外的查询（[SrsCore::snapshot_select]：
+/// 只读连接池，可并发；不是只读查询报 `NOT_SNAPSHOT`）。1 / 2 / 3 返回「列名行 + 结果行」；缓冲区用
 /// `ffsrs_free_bytes` 释放。
 #[no_mangle]
 pub extern "C" fn ffsrs_store_exec(
@@ -407,6 +408,7 @@ pub extern "C" fn ffsrs_store_exec(
             0 => c.exec(s, &values, false)?,
             1 => c.exec(s, &values, true)?,
             2 => c.select(s, &values)?,
+            3 => c.snapshot_select(s, &values)?,
             m => return Err(format!("unknown exec mode {m}")),
         };
         hand_out(page, out, out_len);

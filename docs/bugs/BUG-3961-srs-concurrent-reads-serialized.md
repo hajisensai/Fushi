@@ -1,0 +1,16 @@
+## BUG-3961 · 同步跑着时打开卡片 / 牌组设置很慢：srs.db 的读全排在一条队列里
+- **报告**：2026-11-01（用户：同步跑着时打开卡片、打开牌组设置都很慢，设置页约 20 s）
+- **真实性**：✅ 真 bug（真实库副本实测复现，数字见备注）。srs.db 上全部 Drift 语句——包括事务外的只读查询——在一条顺序队列里先来后到执行，长读跑多久，后面的短读就等多久：
+  - `packages/fushi_engine/lib/srs/srs_database_executor.dart:107`、`:110`（develop `315f53888b`）：Drift 连接是单个 `DriftIsolate.spawn` 里的 `DelegatedDatabase(..., isSequential: true)`，`SrsRustDelegate.runSelect`（`:65`）是同步 FFI，整个 isolate 一次只跑一条语句；
+  - `native/fushi_fsrs/src/store/mod.rs:52`、`:327`、`:559`：即使 Dart 侧并发发出，事务外查询在内核里也只有一条 `drift_reader`（一把 `Mutex`）。
+  - 于是牌组列表冲突角标的全量 `syncConflicts()`（真实库上冷 26 s、热约 2 s）、同步里媒体对账读 `noteMediaRefs` / `noteTypes` 等长读跑着时，打开卡片读 `cardRow` / `note`、牌组设置页的读全部排在后面。库是 WAL，只读连接之间本来互不阻塞。
+- **[x] ① 已修复** — 事务外的读与写那一路分道（设计记录 `docs/specs/2026-10-23-srs-rust-store.md` §7.4）：
+  - Rust：`native/fushi_fsrs/src/store/read_pool.rs` 只读连接池（按需开、上限 `DRIFT_READERS` = 4、关闭时等借出的放回并全部关掉）取代单条 `drift_reader`；新命令 `SrsCore::snapshot_select`（`ffsrs_store_exec` mode 3）一律在池里执行、不看 `drift_tx`、不碰写连接，非只读语句报 `NOT_SNAPSHOT` 不执行；原 `select`（mode 2）事务外的分支也走池。
+  - Dart：`srsDatabaseConnection` 改为 `SrsSplitExecutor`（`packages/fushi_engine/lib/srs/srs_database_executor.dart`）：写语句 / `runCustom` / 批量 / 事务 / 独占块仍交原来的顺序执行器（Drift 事务语义、读己之写、`drift_tx` 选路不变）；事务外的 `runSelect` 发到内核命令 worker 新的查询道 `SrsCoreLane.query`（3 个 worker，不超过池上限），各自在 worker isolate 上同步 FFI、互不排队，UI isolate 不做同步 FFI；`NOT_SNAPSHOT` 时改发写那一路；`close` 等在途查询结束再关写那一路。表更新通知沿用写那一路连接的 `StreamQueryStore`。
+  - 一致性：事务外每条查询自成读事务、看它开始时已提交的数据（以前单条读连接上前后两条语句之间同样可能隔着提交，没有跨语句快照）；唯一的语义变化是 Drift 事务开着时事务外的查询不再等它提交，读到的是事务开始前的已提交数据。
+- **[x] ② 已加自动化测试** — Rust `native/fushi_fsrs/src/store/read_pool.rs` `tests`（借出的连接被占着时另一条查询立刻返回、长查询跑着时短查询先返回、Drift 事务开着时事务外只看已提交且不在写连接上、非只读语句拒绝、连接数封顶与等待、关闭等借出的放回且全关）；Dart `packages/fushi_engine/test/srs/srs_concurrent_reads_test.dart`（非内联连接：长查询跑着时短查询先返回、事务内读己之写同时事务外不等且不读脏、写后读 + 流查询按 readsFrom 重跑、PRAGMA 改走写连接、关库等在途查询且关完库文件可删）；真实库测量 `srs_concurrent_reads_bench_test.dart`（手动，`FUSHI_SRS_REAL_DB`）。
+- **备注**：真实库副本（2.9 GB，Windows x64，`srs_concurrent_reads_bench_test.dart`，全量 `syncConflicts()` 发出 100 ms 后读一张卡 `cardRow` 再读一条笔记 `note`，三轮）：
+  - 修前（develop `315f53888b`）：`cardRow` 1869 / 2095 / 2691 ms，`cardRow+note` 1871 / 2099 / 2693 ms——等满长读全程（长读 1979–2802 ms，短读返回时长读都已结束）；单独跑时 `cardRow` 1 ms、`note` 2 ms。
+  - 修后：`cardRow` 6 / 0 / 0 ms，`cardRow+note` 11 / 2 / 2 ms，短读返回时长读三轮都还在跑；长读本身 2090–2399 ms（不变）。
+  - 冷启动第一次全量 `syncConflicts()` 修前 26 s、修后 6.9 s，差别来自系统文件缓存（两次之间库刚被拷过 / 读过），不是本修复的收益，不计。
+  - 未验：真 app 里「同步进行中开牌组设置」的端到端耗时；设置页 ~20 s 里有多少是排队、多少是它自己的读（另见 `pr/srs-deck-settings-fast-open`）。`syncConflicts` 结果回到调用方 isolate 后的解析（`srsEntityEditsOf`）仍在调用方 isolate 上，不在本修复范围。

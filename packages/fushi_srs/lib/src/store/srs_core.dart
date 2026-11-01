@@ -382,6 +382,9 @@ final class SrsCoreBindings {
 }
 
 /// 一个打开的 srs.db。
+/// [SrsCore.snapshotQuery] 拒绝非只读查询时的错误消息（与 Rust `store::NOT_SNAPSHOT` 相同）。
+const String kSrsNotSnapshotQuery = 'srs: not a snapshot query';
+
 final class SrsCore {
   SrsCore._(this._b, this._handle, {required this.owned});
 
@@ -557,7 +560,15 @@ final class SrsCore {
   Uint8List execQuery(String sql, List<Object?> params) =>
       _exec(sql, params, 2);
 
-  /// [mode]：0 = 写语句，1 = 写连接上返回结果行的语句，2 = 选路查询（ffi.rs `ffsrs_store_exec`）。
+  /// Drift 事务**外**的查询（fushi_engine `srs_database_executor.dart` 的读查询那一路）：一律在内核的只读连接池
+  /// 里执行，并发的查询各占一条连接、互不排队，只看已提交的数据（native/fushi_fsrs/src/store/mod.rs
+  /// `SrsCore::snapshot_select`）。不是只读查询（PRAGMA、`… RETURNING` 等）不执行、抛 [SrsCoreException]，
+  /// 消息为 [kSrsNotSnapshotQuery]，调用方改走 [execQuery]。返回页同 [execQuery]。
+  Uint8List snapshotQuery(String sql, List<Object?> params) =>
+      _exec(sql, params, 3);
+
+  /// [mode]：0 = 写语句，1 = 写连接上返回结果行的语句，2 = 选路查询，3 = 事务外快照查询
+  /// （ffi.rs `ffsrs_store_exec`）。
   Uint8List _exec(String sql, List<Object?> params, int mode) =>
       using((Arena arena) {
         final (ffi.Pointer<ffi.Uint8> s, int sn) = _utf8(arena, sql);
