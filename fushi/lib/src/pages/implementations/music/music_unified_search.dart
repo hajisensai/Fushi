@@ -1,6 +1,7 @@
 /// 音乐页的统一搜索（用户 2026-10-29 拍板「搜索在首页完成、多加载、少进二级页」，设计稿
 /// `fushi/build/music_design/music_ia.html`）：
-/// - 页签只表示「看什么类型」，搜索词只是过滤条件，来源（本地 / 各插件）是 chip 过滤；
+/// - 页签只表示「看什么类型」，搜索词只是过滤条件，来源（本地 / 各插件 / 各服务器，含
+///   Apple Music catalog）是 chip 过滤；服务器结果排在插件之后、每台只搜一次不翻页；
 /// - 歌曲 / 专辑 / 艺人 / 歌单页签 + 搜索词 = [MusicSearchResultsView]：本地匹配在前、各插件
 ///   结果在后的一条无限下滑列表，哨兵行被 build 时才取下一页；
 /// - 推荐页签 + 搜索词 = [MusicSearchOverview]：最佳匹配 + 歌曲前 5 + 专辑 / 艺人 / 歌单各一行，
@@ -26,6 +27,13 @@ import 'package:fushi_music/fushi_music.dart'
         MusicPluginSearchType,
         MusicPluginSource,
         MusicPluginTrack;
+import 'package:fushi_engine/media/music/server/music_server.dart'
+    show
+        MusicServerAlbum,
+        MusicServerArtist,
+        MusicServerBrowser,
+        MusicServerSearchResult,
+        MusicServerTrack;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/media_search_text.dart';
@@ -138,16 +146,21 @@ Future<MusicPluginPage<Object>> musicPluginSearchPage(
   ),
 };
 
-/// 搜索框下面的来源过滤：全部来源 / 本地 / 每个插件。单选，`null` = 全部来源。
+/// 搜索框下面的来源过滤：全部来源 / 本地 / 每个插件 / 每台服务器（含 Apple Music catalog）。
+/// 单选，`null` = 全部来源；插件取插件 id，服务器取 [MusicServerBrowser.serverId]。
 class MusicSearchSourceChips extends StatelessWidget {
   const MusicSearchSourceChips({
     super.key,
     required this.sources,
     required this.selected,
     required this.onSelected,
+    this.servers = const <MusicServerBrowser>[],
   });
 
   final List<MusicPluginManifest> sources;
+
+  /// 服务器来源（全部，不按选中过滤），排在插件之后。
+  final List<MusicServerBrowser> servers;
   final String? selected;
   final ValueChanged<String?> onSelected;
 
@@ -171,6 +184,8 @@ class MusicSearchSourceChips extends StatelessWidget {
             chip(null, t.music_search_source_all),
             chip(kMusicSearchLocalSource, t.music_search_source_local),
             for (final MusicPluginManifest m in sources) chip(m.id, m.name),
+            for (final MusicServerBrowser s in servers)
+              chip(s.serverId, s.displayName),
           ],
         ),
       ),
@@ -182,8 +197,39 @@ class MusicSearchSourceChips extends StatelessWidget {
 // 共用件：曲目行、封面卡、艺人卡、播放与跳转。
 // ---------------------------------------------------------------------------
 
-/// 一首搜索结果：[plugin] 为空 = 本地曲目（[MusicTrackRow]），否则 [MusicPluginTrack]。
+/// 一首搜索结果：[plugin] 为空时 [track] 是本地曲目（[MusicTrackRow]）或服务器曲目
+/// （[_ServerHit] 包 [MusicServerTrack]），否则 [MusicPluginTrack]。
 typedef _Song = ({MusicPluginManifest? plugin, Object track});
+
+/// 一条服务器搜索结果：[item] 是 [MusicServerTrack] / [MusicServerAlbum] /
+/// [MusicServerArtist]，带上它来自哪台服务器（播放 / 跳转 / 来源标签要用）。
+final class _ServerHit {
+  const _ServerHit(this.browser, this.item);
+
+  final MusicServerBrowser browser;
+  final Object item;
+}
+
+/// [type] 下一台服务器的搜索结果（包成 [_ServerHit]）；歌单服务器不参与，恒空。
+List<_ServerHit> _serverHitsOf(
+  MusicServerBrowser browser,
+  MusicServerSearchResult result,
+  MusicPluginSearchType type,
+) => <_ServerHit>[
+  for (final Object o in switch (type) {
+    MusicPluginSearchType.song => result.tracks,
+    MusicPluginSearchType.album => result.albums,
+    MusicPluginSearchType.artist => result.artists,
+    MusicPluginSearchType.playlist => const <Object>[],
+  })
+    _ServerHit(browser, o),
+];
+
+/// 一首歌的来源名：服务器名 / 插件名 / 「本地」。
+String _songSourceLabel(_Song song) => switch (song.track) {
+  _ServerHit h => h.browser.displayName,
+  _ => song.plugin?.name ?? t.music_search_source_local,
+};
 
 /// 把 [songs] 整列作为队列，从第 [start] 首开始播（不可播的插件曲目跳过）。
 void _playSongs(
@@ -192,6 +238,11 @@ void _playSongs(
   Map<String, MusicAlbumRow> albums,
   int start,
 ) {
+  final AppModel app = ref.read(appProvider);
+  // 服务器曲目按设置的码率上限请转码（偏好没装好时原样直出）。
+  final int? serverBitrate = musicServerBitrateLimit(
+    app.isPreferencesReady ? app.prefsRepo.musicServerMaxBitrate : 0,
+  );
   final List<MusicPlayItem> items = <MusicPlayItem>[];
   int startIndex = 0;
   for (int i = 0; i < songs.length; i++) {
@@ -205,6 +256,11 @@ void _playSongs(
       ),
       MusicPluginTrack p when p.playable && s.plugin != null =>
         musicPluginPlayItem(s.plugin!.id, p),
+      _ServerHit(
+        :final MusicServerBrowser browser,
+        item: MusicServerTrack track,
+      ) =>
+        musicServerPlayItem(browser, track, maxBitrateKbps: serverBitrate),
       _ => null,
     };
     if (item != null) items.add(item);
@@ -214,15 +270,11 @@ void _playSongs(
     return;
   }
   unawaited(
-    ref
-        .read(appProvider)
-        .musicSession
-        .engine
-        .playQueue(
-          items,
-          startIndex: math.min(startIndex, items.length - 1),
-          context: MusicQueueContext.mixed,
-        ),
+    app.musicSession.engine.playQueue(
+      items,
+      startIndex: math.min(startIndex, items.length - 1),
+      context: MusicQueueContext.mixed,
+    ),
   );
 }
 
@@ -246,6 +298,19 @@ void _openPluginItem(
       playlist: p,
     ),
     MusicPluginArtist a => MusicPluginArtistPage(manifest: manifest, artist: a),
+    _ => null,
+  };
+  if (page != null) unawaited(_pushPage(context, page));
+}
+
+/// 打开服务器专辑 / 艺人的详情页（曲目点击是播放，不走这里）。
+void _openServerHit(BuildContext context, _ServerHit hit) {
+  final Widget? page = switch (hit.item) {
+    MusicServerAlbum a => MusicServerAlbumPage(browser: hit.browser, album: a),
+    MusicServerArtist a => MusicServerArtistPage(
+      browser: hit.browser,
+      artist: a,
+    ),
     _ => null,
   };
   if (page != null) unawaited(_pushPage(context, page));
@@ -310,6 +375,34 @@ class _SongTile extends ConsumerWidget {
         playable = p.playable;
         leading = musicMaterialCover(
           MusicCover(coverPath: p.coverUrl, size: 48),
+          size: 48,
+          compact: true,
+        );
+      case _ServerHit(
+        :final MusicServerBrowser browser,
+        item: MusicServerTrack s,
+      ):
+        final String badge = musicFormatBadge(
+          codec: s.codec ?? s.container,
+          isLossless: s.isLossless,
+          sampleRate: s.sampleRate,
+          bitDepth: s.bitDepth,
+          bitrateKbps: s.bitrateKbps,
+        );
+        id = 'server-${browser.serverId}-${s.id}';
+        title = s.title;
+        subtitle = <String>[
+          s.artist ?? t.music_artist_unknown,
+          ?s.album,
+          if (badge.isNotEmpty) badge,
+        ].join(' · ');
+        durationMs = s.durationMs;
+        playable = true;
+        leading = musicMaterialCover(
+          MusicCover(
+            coverPath: browser.coverUri(s.coverRef)?.toString(),
+            size: 48,
+          ),
           size: 48,
           compact: true,
         );
@@ -506,6 +599,29 @@ Widget _entityCard(
         title: p.name,
         subtitle: t.music_search_source_local,
       );
+    case _ServerHit(
+      :final MusicServerBrowser browser,
+      item: MusicServerAlbum a,
+    ):
+      return MusicServerAlbumCard(
+        key: ValueKey<String>(
+          'music-search-server-hit-album-${browser.serverId}-${a.id}',
+        ),
+        browser: browser,
+        album: a,
+      );
+    case _ServerHit(
+      :final MusicServerBrowser browser,
+      item: MusicServerArtist a,
+    ):
+      return _ArtistCard(
+        key: ValueKey<String>(
+          'music-search-server-artist-${browser.serverId}-${a.id}',
+        ),
+        name: a.name,
+        coverUrl: browser.coverUri(a.coverRef)?.toString(),
+        onTap: () => _openServerHit(context, _ServerHit(browser, a)),
+      );
   }
   final MusicPluginManifest? m = plugin;
   if (m == null) return const SizedBox.shrink();
@@ -661,9 +777,34 @@ final class _EmptyRow extends _Row {
   final MusicPluginManifest plugin;
 }
 
+/// 一台服务器在当前查询下的结果（只搜一次、不翻页）。
+class _ServerFeed {
+  MusicServerSearchResult? result;
+  bool loading = false;
+  Object? error;
+}
+
+final class _ServerSentinelRow extends _Row {
+  const _ServerSentinelRow(this.server);
+  final MusicServerBrowser server;
+}
+
+final class _ServerErrorRow extends _Row {
+  const _ServerErrorRow(this.server, this.error);
+  final MusicServerBrowser server;
+  final Object error;
+}
+
+final class _ServerEmptyRow extends _Row {
+  const _ServerEmptyRow(this.server);
+  final MusicServerBrowser server;
+}
+
 /// 有搜索词时的歌曲 / 专辑 / 艺人 / 歌单页签：本地匹配在前，各插件结果按插件顺序接在后面；
 /// 每个插件一段的末尾是哨兵行，被 build（滚到附近）时才请求它的下一页，同一插件同时只发
 /// 一个请求。查询词 / 页签变化后防抖 [kMusicSearchDebounce] 再重新取。
+/// 服务器（[servers]）接在插件之后，每台只 [MusicServerBrowser.search] 一次、不翻页；
+/// 歌单页签服务器不参与。某台出错只在它那段显示错误行。
 class MusicSearchResultsView extends ConsumerStatefulWidget {
   const MusicSearchResultsView({
     super.key,
@@ -672,6 +813,7 @@ class MusicSearchResultsView extends ConsumerStatefulWidget {
     required this.sources,
     required this.local,
     required this.localActions,
+    this.servers = const <MusicServerBrowser>[],
   });
 
   final MusicPluginSearchType type;
@@ -679,6 +821,9 @@ class MusicSearchResultsView extends ConsumerStatefulWidget {
 
   /// 参与本类型搜索的插件（已按来源过滤）。
   final List<MusicPluginManifest> sources;
+
+  /// 参与搜索的服务器（已按来源过滤）。
+  final List<MusicServerBrowser> servers;
 
   /// 本地匹配（来源过滤为某个插件时传 [MusicSearchLocalItems.none]）。
   final MusicSearchLocalItems local;
@@ -692,6 +837,9 @@ class MusicSearchResultsView extends ConsumerStatefulWidget {
 class _MusicSearchResultsViewState
     extends ConsumerState<MusicSearchResultsView> {
   Map<String, _PluginFeed> _feeds = <String, _PluginFeed>{};
+
+  /// 服务器 id → 结果。
+  Map<String, _ServerFeed> _serverFeeds = <String, _ServerFeed>{};
   Timer? _debounce;
 
   /// 防抖结束前哨兵只转圈、不发请求。
@@ -708,8 +856,56 @@ class _MusicSearchResultsViewState
     super.didUpdateWidget(old);
     if (old.query.trim() != widget.query.trim() || old.type != widget.type) {
       _feeds = <String, _PluginFeed>{};
+      _serverFeeds = <String, _ServerFeed>{};
       _schedule();
     }
+  }
+
+  bool get _serversApply => widget.type != MusicPluginSearchType.playlist;
+
+  _ServerFeed _serverFeedOf(String id) =>
+      _serverFeeds.putIfAbsent(id, _ServerFeed.new);
+
+  /// 服务器哨兵行被 build 时调：防抖已过、没在途、没出错、还没结果才排一次搜索。
+  void _requestServer(MusicServerBrowser server) {
+    final _ServerFeed feed = _serverFeedOf(server.serverId);
+    if (!_armed || feed.loading || feed.result != null || feed.error != null) {
+      return;
+    }
+    feed.loading = true;
+    scheduleMicrotask(() => unawaited(_fetchServer(server, feed)));
+  }
+
+  Future<void> _fetchServer(MusicServerBrowser server, _ServerFeed feed) async {
+    try {
+      final MusicServerSearchResult result = await server.search(
+        widget.query.trim(),
+        limit: kMusicSearchPageSize,
+      );
+      if (!mounted || !identical(_serverFeeds[server.serverId], feed)) return;
+      setState(() {
+        feed.result = result;
+        feed.loading = false;
+      });
+    } on Object catch (e) {
+      if (!mounted || !identical(_serverFeeds[server.serverId], feed)) return;
+      setState(() {
+        feed.error = e;
+        feed.loading = false;
+      });
+    }
+  }
+
+  void _retryServer(MusicServerBrowser server) {
+    setState(() => _serverFeedOf(server.serverId).error = null);
+  }
+
+  /// 一台服务器在当前页签下已到的结果（还没到 / 出错时为空）。
+  List<_ServerHit> _serverItems(MusicServerBrowser server) {
+    final MusicServerSearchResult? r = _serverFeedOf(server.serverId).result;
+    return r == null
+        ? const <_ServerHit>[]
+        : _serverHitsOf(server, r, widget.type);
   }
 
   @override
@@ -776,6 +972,9 @@ class _MusicSearchResultsViewState
     for (final MusicPluginManifest m in widget.sources)
       for (final Object o in _feedOf(m.id).items)
         if (o is MusicPluginTrack) (plugin: m, track: o),
+    if (widget.type == MusicPluginSearchType.song)
+      for (final MusicServerBrowser s in widget.servers)
+        for (final _ServerHit h in _serverItems(s)) (plugin: null, track: h),
   ];
 
   List<_Row> _rows(List<_Song> songs, int columns) {
@@ -821,6 +1020,22 @@ class _MusicSearchResultsViewState
         rows.add(_SentinelRow(m));
       } else if (feed.items.isEmpty) {
         rows.add(_EmptyRow(m));
+      }
+    }
+    if (_serversApply) {
+      for (final MusicServerBrowser s in widget.servers) {
+        final _ServerFeed feed = _serverFeedOf(s.serverId);
+        rows.add(_HeaderRow('server-${s.serverId}', s.displayName));
+        final List<_ServerHit> items = _serverItems(s);
+        addItems('server-${s.serverId}', null, items);
+        final Object? error = feed.error;
+        if (error != null) {
+          rows.add(_ServerErrorRow(s, error));
+        } else if (feed.result == null) {
+          rows.add(_ServerSentinelRow(s));
+        } else if (items.isEmpty) {
+          rows.add(_ServerEmptyRow(s));
+        }
       }
     }
     return rows;
@@ -913,13 +1128,39 @@ class _MusicSearchResultsViewState
           key: ValueKey<String>('music-search-empty-${plugin.id}'),
           style: context.fushiType.bodySmall,
         );
+      case _ServerSentinelRow(:final MusicServerBrowser server):
+        _requestServer(server);
+        return Padding(
+          key: ValueKey<String>(
+            'music-search-server-sentinel-${server.serverId}',
+          ),
+          padding: EdgeInsets.all(tokens.spacing.gap),
+          child: const FushiLinearProgressIndicator(),
+        );
+      case _ServerErrorRow(
+        :final MusicServerBrowser server,
+        :final Object error,
+      ):
+        return _ErrorLine(
+          key: ValueKey<String>('music-search-server-error-${server.serverId}'),
+          error: error,
+          onRetry: () => _retryServer(server),
+        );
+      case _ServerEmptyRow(:final MusicServerBrowser server):
+        return Text(
+          t.music_server_search_empty,
+          key: ValueKey<String>('music-search-server-empty-${server.serverId}'),
+          style: context.fushiType.bodySmall,
+        );
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    if (widget.sources.isEmpty && widget.local.of(widget.type).isEmpty) {
+    if (widget.sources.isEmpty &&
+        (!_serversApply || widget.servers.isEmpty) &&
+        widget.local.of(widget.type).isEmpty) {
       return Center(
         child: FushiPlaceholderMessage(
           icon: FushiIcons.search,
@@ -1050,8 +1291,17 @@ String _bestTitleOf(Object item) => switch (item) {
   MusicPluginAlbum a => a.title,
   MusicPluginTrack p => p.title,
   MusicPluginPlaylist p => p.title,
+  _ServerHit(item: MusicServerTrack s) => s.title,
+  _ServerHit(item: MusicServerAlbum a) => a.title,
+  _ServerHit(item: MusicServerArtist a) => a.name,
   _ => '',
 };
+
+/// 一台服务器的综合结果（只搜一次）。
+typedef _ServerOverviewResult = ({
+  MusicServerSearchResult? result,
+  Object? error,
+});
 
 /// 推荐页签上有搜索词时的综合结果（设计稿「示意 1」）：左「最佳匹配」、右「歌曲」前 5，下面
 /// 「专辑」「艺人」「歌单」各一行横滑。段标题右侧「全部」调 [onSeeAll] 切页签（保留搜索词）。
@@ -1064,12 +1314,16 @@ class MusicSearchOverview extends ConsumerStatefulWidget {
     required this.local,
     required this.localActions,
     required this.onSeeAll,
+    this.servers = const <MusicServerBrowser>[],
   });
 
   final String query;
 
   /// 声明 `search` 能力的插件（已按来源过滤）；各类型按插件的 `searchTypes` 再筛。
   final List<MusicPluginManifest> sources;
+
+  /// 参与搜索的服务器（已按来源过滤）：每台搜一次，结果并进歌曲 / 专辑 / 艺人（插件之后）。
+  final List<MusicServerBrowser> servers;
   final MusicSearchLocalItems local;
   final MusicSearchLocalActions localActions;
   final ValueChanged<MusicPluginSearchType> onSeeAll;
@@ -1087,6 +1341,10 @@ class _MusicSearchOverviewState extends ConsumerState<MusicSearchOverview> {
 
   /// 插件 id → `searchBest` 结果（出错当没有）；缺键 = 还没取 / 在途。只取声明了该能力的插件。
   Map<String, MusicPluginSearchBest> _best = <String, MusicPluginSearchBest>{};
+
+  /// 服务器 id → 搜索结果；缺键 = 还没取 / 在途。
+  Map<String, _ServerOverviewResult> _serverResults =
+      <String, _ServerOverviewResult>{};
   final Set<String> _inFlight = <String>{};
   Timer? _debounce;
   bool _armed = false;
@@ -1103,6 +1361,7 @@ class _MusicSearchOverviewState extends ConsumerState<MusicSearchOverview> {
     if (old.query.trim() != widget.query.trim()) {
       _results = <String, _OverviewResult>{};
       _best = <String, MusicPluginSearchBest>{};
+      _serverResults = <String, _ServerOverviewResult>{};
       _inFlight.clear();
       _schedule();
     } else if (_armed) {
@@ -1174,7 +1433,52 @@ class _MusicSearchOverviewState extends ConsumerState<MusicSearchOverview> {
         unawaited(_fetch(m, type, key, _results));
       }
     }
+    for (final MusicServerBrowser s in widget.servers) {
+      final String key = 'server|${s.serverId}';
+      if (_serverResults.containsKey(s.serverId) || _inFlight.contains(key)) {
+        continue;
+      }
+      _inFlight.add(key);
+      unawaited(_fetchServer(s, key, _serverResults));
+    }
   }
+
+  Future<void> _fetchServer(
+    MusicServerBrowser server,
+    String key,
+    Map<String, _ServerOverviewResult> generation,
+  ) async {
+    _ServerOverviewResult result;
+    try {
+      result = (
+        result: await server.search(
+          widget.query.trim(),
+          limit: kMusicSearchOverviewPageSize,
+        ),
+        error: null,
+      );
+    } on Object catch (e) {
+      result = (result: null, error: e);
+    }
+    if (!mounted || !identical(generation, _serverResults)) return;
+    setState(() {
+      _inFlight.remove(key);
+      _serverResults[server.serverId] = result;
+    });
+  }
+
+  void _retryServer(MusicServerBrowser server) {
+    setState(() => _serverResults.remove(server.serverId));
+    _fetchMissing();
+  }
+
+  /// [type] 下各服务器已到的条目，按服务器顺序（歌单恒空）。
+  List<_ServerHit> _serverOnline(MusicPluginSearchType type) => <_ServerHit>[
+    for (final MusicServerBrowser s in widget.servers)
+      if (_serverResults[s.serverId]?.result
+          case final MusicServerSearchResult r)
+        ..._serverHitsOf(s, r, type),
+  ];
 
   Future<void> _fetch(
     MusicPluginManifest m,
@@ -1231,6 +1535,9 @@ class _MusicSearchOverviewState extends ConsumerState<MusicSearchOverview> {
                   _supports(m, type) &&
                   !_results.containsKey('${m.id}|${type.wire}'),
             ),
+      ) ||
+      widget.servers.any(
+        (MusicServerBrowser s) => !_serverResults.containsKey(s.serverId),
       );
 
   /// 最佳匹配卡（0–2 张），规则见 [pickMusicSearchBest]。
@@ -1255,6 +1562,8 @@ class _MusicSearchOverviewState extends ConsumerState<MusicSearchOverview> {
         MusicPluginSearchType.album,
       ))
         (plugin: m, item: o),
+      for (final _ServerHit h in _serverOnline(MusicPluginSearchType.album))
+        (plugin: null, item: h),
     ],
     tracks: <_Best>[
       for (final _Song s in songs) (plugin: s.plugin, item: s.track),
@@ -1334,10 +1643,24 @@ class _MusicSearchOverviewState extends ConsumerState<MusicSearchOverview> {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final Object item = best.item;
     final MusicPluginManifest? plugin = best.plugin;
-    final String source = plugin?.name ?? t.music_search_source_local;
+    final String source = item is _ServerHit
+        ? item.browser.displayName
+        : plugin?.name ?? t.music_search_source_local;
     const double size = 112;
-    final bool round = item is MusicArtistRow || item is MusicPluginArtist;
+    final bool round =
+        item is MusicArtistRow ||
+        item is MusicPluginArtist ||
+        (item is _ServerHit && item.item is MusicServerArtist);
     final String? coverUrl = switch (item) {
+      _ServerHit(:final MusicServerBrowser browser, item: MusicServerTrack s) =>
+        browser.coverUri(s.coverRef)?.toString(),
+      _ServerHit(:final MusicServerBrowser browser, item: MusicServerAlbum a) =>
+        browser.coverUri(a.coverRef)?.toString(),
+      _ServerHit(
+        :final MusicServerBrowser browser,
+        item: MusicServerArtist a,
+      ) =>
+        browser.coverUri(a.coverRef)?.toString(),
       MusicPluginArtist a => a.coverUrl,
       MusicPluginPlaylist p => p.coverUrl,
       MusicPluginAlbum a => a.coverUrl,
@@ -1350,8 +1673,12 @@ class _MusicSearchOverviewState extends ConsumerState<MusicSearchOverview> {
       _ => null,
     };
     final String kind = switch (item) {
-      MusicArtistRow() || MusicPluginArtist() => t.music_section_artists,
-      MusicAlbumRow() || MusicPluginAlbum() => t.music_section_albums,
+      MusicArtistRow() ||
+      MusicPluginArtist() ||
+      _ServerHit(item: MusicServerArtist()) => t.music_section_artists,
+      MusicAlbumRow() ||
+      MusicPluginAlbum() ||
+      _ServerHit(item: MusicServerAlbum()) => t.music_section_albums,
       MusicPluginPlaylist() => t.music_section_playlists,
       _ => t.music_section_songs,
     };
@@ -1372,6 +1699,8 @@ class _MusicSearchOverviewState extends ConsumerState<MusicSearchOverview> {
       MusicPluginAlbum a => a.artistText,
       MusicTrackRow r => r.artistCredit ?? '',
       MusicPluginTrack p => p.artistText,
+      _ServerHit(item: MusicServerTrack s) => s.artist ?? '',
+      _ServerHit(item: MusicServerAlbum a) => a.artist ?? '',
       _ => '',
     };
     final int songIndex = songs.indexWhere(
@@ -1383,10 +1712,14 @@ class _MusicSearchOverviewState extends ConsumerState<MusicSearchOverview> {
           widget.localActions.openArtist(a);
         case MusicAlbumRow a:
           widget.localActions.openAlbum(a);
-        case MusicTrackRow() || MusicPluginTrack():
+        case MusicTrackRow() ||
+            MusicPluginTrack() ||
+            _ServerHit(item: MusicServerTrack()):
           if (songIndex >= 0) {
             _playSongs(ref, songs, widget.local.albumByUid, songIndex);
           }
+        case _ServerHit hit:
+          _openServerHit(context, hit);
         default:
           if (plugin != null) _openPluginItem(context, plugin, item);
       }
@@ -1464,12 +1797,15 @@ class _MusicSearchOverviewState extends ConsumerState<MusicSearchOverview> {
         MusicPluginSearchType.song,
       ))
         if (o is MusicPluginTrack) (plugin: m, track: o),
+      for (final _ServerHit h in _serverOnline(MusicPluginSearchType.song))
+        (plugin: null, track: h),
     ];
     final List<_Best> bests = _bestMatches(songs);
     List<_Best> entities(MusicPluginSearchType type) => <_Best>[
       for (final Object o in widget.local.of(type)) (plugin: null, item: o),
       for (final (MusicPluginManifest m, Object o) in _online(type))
         (plugin: m, item: o),
+      for (final _ServerHit h in _serverOnline(type)) (plugin: null, item: h),
     ];
     final List<_Best> albums = entities(MusicPluginSearchType.album);
     final List<_Best> artists = entities(MusicPluginSearchType.artist);
@@ -1487,13 +1823,20 @@ class _MusicSearchOverviewState extends ConsumerState<MusicSearchOverview> {
                 case final Object e)
               MapEntry<MusicPluginManifest, Object>(m, e),
         ];
+    final List<MapEntry<MusicServerBrowser, Object>> serverErrors =
+        <MapEntry<MusicServerBrowser, Object>>[
+          for (final MusicServerBrowser s in widget.servers)
+            if (_serverResults[s.serverId]?.error case final Object e)
+              MapEntry<MusicServerBrowser, Object>(s, e),
+        ];
     final bool pending = _pending;
     if (!pending &&
         songs.isEmpty &&
         albums.isEmpty &&
         artists.isEmpty &&
         playlists.isEmpty &&
-        errors.isEmpty) {
+        errors.isEmpty &&
+        serverErrors.isEmpty) {
       return Center(
         child: FushiPlaceholderMessage(
           icon: FushiIcons.search,
@@ -1515,8 +1858,7 @@ class _MusicSearchOverviewState extends ConsumerState<MusicSearchOverview> {
             song: topSongs[i],
             index: i,
             count: topSongs.length,
-            sourceLabel:
-                topSongs[i].plugin?.name ?? t.music_search_source_local,
+            sourceLabel: _songSourceLabel(topSongs[i]),
             onTap: () => _playSongs(ref, songs, widget.local.albumByUid, i),
           ),
       ],
@@ -1602,6 +1944,16 @@ class _MusicSearchOverviewState extends ConsumerState<MusicSearchOverview> {
           label: e.key.name,
         ),
         _ErrorLine(error: e.value, onRetry: () => _retry(e.key)),
+      ],
+      for (final MapEntry<MusicServerBrowser, Object> e
+          in serverErrors) ...<Widget>[
+        _SourceHeader(
+          key: ValueKey<String>(
+            'music-search-overview-server-error-${e.key.serverId}',
+          ),
+          label: e.key.displayName,
+        ),
+        _ErrorLine(error: e.value, onRetry: () => _retryServer(e.key)),
       ],
     ];
     return ShelfCoverMaterialScope(

@@ -489,6 +489,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'music_lyrics_online',
   // String（JSON 数组 [{id, enabled}]）：歌词插件来源的顺序与启停；LRCLIB 结构上固定在最前、不存。
   'music_lyrics_providers',
+  // String（JSON 数组 [{id, enabled}]）：音乐在线来源（插件 `plugin:<id>` / 服务器
+  // `server:<serverId>` / `apple-music`）的顺序与「推荐 / 搜索里显示」开关。
+  'music_online_sources',
   'music_replaygain',
   // double（默认 0）：ReplayGain 预放大 dB（设计 §7.3）。
   'music_replaygain_preamp_db',

@@ -606,6 +606,19 @@ Widget musicPluginItemTile(
 }
 
 /// 段标题行：标题 + 可选副标题 + 右侧动作。推荐 / 我的歌单共用。
+/// 推荐页段落标题（插件段与服务器来源段同一套样式）。
+Widget musicRecommendSectionHeader({
+  required String title,
+  String? subtitle,
+  List<Widget> actions = const <Widget>[],
+  bool eyebrow = false,
+}) => _SectionHeader(
+  title: title,
+  subtitle: subtitle,
+  actions: actions,
+  eyebrow: eyebrow,
+);
+
 class _SectionHeader extends StatelessWidget {
   const _SectionHeader({
     required this.title,
@@ -771,9 +784,20 @@ class _ItemColumn extends ConsumerWidget {
 
 /// 音乐页「推荐」页签：各插件 `home()` 的内容。只在有声明 `home` 能力的插件时出现。
 class MusicPluginRecommendView extends ConsumerStatefulWidget {
-  const MusicPluginRecommendView({super.key, required this.sources});
+  const MusicPluginRecommendView({
+    super.key,
+    required this.sources,
+    this.trailing = const <Widget>[],
+    this.showPersonal = true,
+  });
 
   final List<MusicPluginManifest> sources;
+
+  /// 插件段落之后追加的块（「推荐 › 全部」里各服务器来源的一排专辑）。
+  final List<Widget> trailing;
+
+  /// 是否显示「我喜欢 / 最近播放」两行（只看单个来源时不显示）。
+  final bool showPersonal;
 
   @override
   ConsumerState<MusicPluginRecommendView> createState() =>
@@ -1022,16 +1046,19 @@ class _MusicPluginRecommendViewState
         final List<Widget> blocks = <Widget>[
           // 不按刷新代数换 key：换 key 会重建、加载期间整行塌成 0 高，下面所有
           // 内容先上跳再落回（用户 2026-10-29 录屏「刷新抖动」）。
-          _LikedMusic(
-            key: const ValueKey<String>('music-liked'),
-            sources: widget.sources,
-          ),
-          _RecentPlays(
-            key: const ValueKey<String>('music-recent-plays'),
-            generation: _generation,
-            sources: widget.sources,
-          ),
+          if (widget.showPersonal) ...<Widget>[
+            _LikedMusic(
+              key: const ValueKey<String>('music-liked'),
+              sources: widget.sources,
+            ),
+            _RecentPlays(
+              key: const ValueKey<String>('music-recent-plays'),
+              generation: _generation,
+              sources: widget.sources,
+            ),
+          ],
           for (final _HomeResult r in data) ..._pluginBlocks(context, r),
+          ...widget.trailing,
         ];
         return FushiEntranceScope(
           child: ListView.builder(

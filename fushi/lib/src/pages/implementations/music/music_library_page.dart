@@ -12,11 +12,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_music/fushi_music.dart'
-    show
-        InstalledMusicPlugin,
-        MusicPluginCapability,
-        MusicPluginManifest,
-        MusicPluginSearchType;
+    show MusicPluginCapability, MusicPluginManifest, MusicPluginSearchType;
 
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart'
@@ -36,8 +32,12 @@ import 'package:fushi/src/pages/implementations/music/music_disc_actions.dart';
 import 'package:fushi/src/pages/implementations/music/music_plugin_pages.dart';
 import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart'
     show MusicBarReserve, MusicFloatingBarHost;
-import 'package:fushi/src/media/music/plugin/music_plugin_gate.dart';
+import 'package:fushi_engine/media/music/server/music_server.dart'
+    show MusicServerBrowser;
 import 'package:fushi/src/pages/implementations/music/music_server_pages.dart';
+import 'package:fushi/src/pages/implementations/music/music_sources_page.dart';
+import 'package:fushi/src/pages/implementations/music/music_sources_recommend.dart';
+import 'package:fushi/src/media/music/music_online_sources.dart';
 import 'package:fushi/src/media/music/server/music_servers.dart';
 import 'package:fushi/src/pages/implementations/music/music_track_list.dart';
 import 'package:fushi/src/pages/implementations/music/music_unified_search.dart';
@@ -119,12 +119,28 @@ bool dispatchMusicShortcut(ShortcutAction? action, MusicPlayerEngine engine) {
 /// 生效的来源过滤：指向的插件已不在（被停用 / 卸载）时回到全部来源（`null`）。
 String? _musicEffectiveSourceFilter(
   String? filter,
-  List<MusicPluginManifest> searchPlugins,
-) {
+  List<MusicPluginManifest> searchPlugins, [
+  List<MusicServerBrowser> searchServers = const <MusicServerBrowser>[],
+]) {
   if (filter == null || filter == kMusicSearchLocalSource) return filter;
-  return searchPlugins.any((MusicPluginManifest m) => m.id == filter)
+  return searchPlugins.any((MusicPluginManifest m) => m.id == filter) ||
+          searchServers.any((MusicServerBrowser b) => b.serverId == filter)
       ? filter
       : null;
+}
+
+/// 按来源过滤后参与搜索的服务器（歌单类型服务器不参与，由结果视图自己判断）。
+List<MusicServerBrowser> _musicFilteredServers(
+  String? effectiveFilter,
+  List<MusicServerBrowser> searchServers,
+) {
+  if (effectiveFilter == kMusicSearchLocalSource) {
+    return const <MusicServerBrowser>[];
+  }
+  return <MusicServerBrowser>[
+    for (final MusicServerBrowser b in searchServers)
+      if (effectiveFilter == null || b.serverId == effectiveFilter) b,
+  ];
 }
 
 /// 按来源过滤后参与搜索的插件；[type] 非空时只留支持该类型的。[effectiveFilter] 取
@@ -189,6 +205,7 @@ typedef _MusicSearchInputs = ({
   MusicLibrarySnapshot snapshot,
   List<MusicServerAlbumRef> serverAlbums,
   List<MusicPluginManifest> searchPlugins,
+  List<MusicServerBrowser> searchServers,
 });
 
 /// 音乐来源管理对话框（曲库页顶栏与「设置 › 音乐」共用的入口）。
@@ -247,11 +264,30 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
           if (m.can(cap)) m,
       ];
 
-  bool get _hasRecommend => _pluginsWith(MusicPluginCapability.home).isNotEmpty;
+  /// 在线来源（插件音源 + 服务器）按「来源」页的顺序与显示开关。
+  List<MusicOrderedSource> _onlineSources = const <MusicOrderedSource>[];
 
-  /// 有搜索能力的插件（来源 chip 列它们）。
-  List<MusicPluginManifest> get _searchPlugins =>
-      _pluginsWith(MusicPluginCapability.search);
+  /// 「推荐」来源 chip 列的来源：显示中、且有首页可看。
+  List<MusicOnlineSource> get _recommendSources => <MusicOnlineSource>[
+    for (final MusicOnlineSource s in enabledMusicOnlineSources(_onlineSources))
+      if (musicSourceHasRecommend(s)) s,
+  ];
+
+  bool get _hasRecommend => _recommendSources.isNotEmpty;
+
+  /// 有搜索能力、显示中的插件（来源 chip 列它们），按「来源」页顺序。
+  List<MusicPluginManifest> get _searchPlugins => <MusicPluginManifest>[
+    for (final MusicOnlineSource s in enabledMusicOnlineSources(_onlineSources))
+      if (s is MusicPluginOnlineSource &&
+          s.manifest.can(MusicPluginCapability.search))
+        s.manifest,
+  ];
+
+  /// 显示中的服务器来源（统一搜索里与插件并列）。
+  List<MusicServerBrowser> get _searchServers => <MusicServerBrowser>[
+    for (final MusicOnlineSource s in enabledMusicOnlineSources(_onlineSources))
+      if (s is MusicServerOnlineSource) s.browser,
+  ];
 
   /// 已打开的二级搜索页读这里；曲库数据变化时经 [_publishSearchInputs] 推新值。
   final ValueNotifier<_MusicSearchInputs> _searchInputs =
@@ -259,6 +295,7 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
         snapshot: MusicLibrarySnapshot.empty,
         serverAlbums: const <MusicServerAlbumRef>[],
         searchPlugins: const <MusicPluginManifest>[],
+        searchServers: const <MusicServerBrowser>[],
       ));
 
   void _publishSearchInputs() {
@@ -266,6 +303,7 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
       snapshot: _snapshot ?? MusicLibrarySnapshot.empty,
       serverAlbums: _serverAlbums,
       searchPlugins: _searchPlugins,
+      searchServers: _searchServers,
     );
   }
 
@@ -414,10 +452,14 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
     _publishSearchInputs();
   }
 
-  Future<void> _openServers() async {
-    await openMusicServerList(context);
-    // 设置页可能改了混排开关 / 服务器清单。
-    await _reloadServerAlbums();
+  /// 右上角「来源」：管理本地文件夹 / 在线来源 / 歌词来源，回来后重读。
+  Future<void> _openSources() async {
+    await openMusicSourcesPage(context);
+    if (!mounted) return;
+    await Future.wait(<Future<void>>[
+      _reloadOnlineSources(),
+      _reloadServerAlbums(),
+    ]);
   }
 
   Future<void> _addFolder() async {
@@ -465,10 +507,10 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
             onTap: () => unawaited(_openSearchPage()),
           ),
           FushiIconButton(
-            key: const ValueKey<String>('music_servers'),
-            icon: FushiIcons.cloud,
-            tooltip: t.music_servers_title,
-            onTap: () => unawaited(_openServers()),
+            key: const ValueKey<String>('music_sources'),
+            icon: FushiIcons.hub,
+            tooltip: t.music_sources_title,
+            onTap: () => unawaited(_openSources()),
           ),
           FushiIconButton(
             key: const ValueKey<String>('music_rescan'),
@@ -824,15 +866,16 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
   }
 
   Future<void> _reloadOnlineSources() async {
-    if (widget.snapshotLoader != null || !isMusicPluginSourcesAvailable) {
-      return;
-    }
-    final List<InstalledMusicPlugin> all = await _app.musicPluginManager.list();
+    if (widget.snapshotLoader != null || !_app.isPreferencesReady) return;
+    final List<MusicOrderedSource> ordered =
+        await loadOrderedMusicOnlineSources(_app);
     if (!mounted) return;
     setState(() {
+      _onlineSources = ordered;
+      // 账号歌单等不受「来源」页显示开关影响：列全部插件音源。
       _pluginSources = <MusicPluginManifest>[
-        for (final InstalledMusicPlugin p in all)
-          if (p.isMusicSource) p.info!.manifest,
+        for (final MusicOrderedSource o in ordered)
+          if (o.source case final MusicPluginOnlineSource p) p.manifest,
       ];
       if (_hasRecommend && !_sectionTouched) {
         _section = MusicLibrarySection.recommend;
@@ -860,8 +903,9 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
 
   Widget _buildSection(BuildContext context, MusicLibrarySnapshot snap) {
     if (_section == MusicLibrarySection.recommend) {
-      return MusicPluginRecommendView(
-        sources: _pluginsWith(MusicPluginCapability.home),
+      return MusicSourcesRecommendView(
+        sources: _recommendSources,
+        onSourcesChanged: () => unawaited(_reloadOnlineSources()),
       );
     }
     final List<MusicPluginManifest> accountLists = _pluginsWith(
@@ -1298,6 +1342,7 @@ class _MusicLibrarySearchPageState extends State<_MusicLibrarySearchPage> {
                       final String? effective = _musicEffectiveSourceFilter(
                         filter,
                         inputs.searchPlugins,
+                        inputs.searchServers,
                       );
                       return musicBrowseScaffold(
                         context,
@@ -1322,6 +1367,10 @@ class _MusicLibrarySearchPageState extends State<_MusicLibrarySearchPage> {
                             inputs.searchPlugins,
                             type,
                           ),
+                          servers: _musicFilteredServers(
+                            effective,
+                            inputs.searchServers,
+                          ),
                           local: _musicSearchIncludesLocal(effective)
                               ? _musicLocalMatches(
                                   inputs.snapshot,
@@ -1339,7 +1388,11 @@ class _MusicLibrarySearchPageState extends State<_MusicLibrarySearchPage> {
     );
   }
 
-  Widget _header(BuildContext context, List<MusicPluginManifest> plugins) {
+  Widget _header(
+    BuildContext context,
+    List<MusicPluginManifest> plugins,
+    List<MusicServerBrowser> servers,
+  ) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final bool searching = _query.trim().isNotEmpty;
     return Padding(
@@ -1367,13 +1420,18 @@ class _MusicLibrarySearchPageState extends State<_MusicLibrarySearchPage> {
             onClear: () => setState(() => _query = ''),
           ),
           // 来源过滤：同曲库页，只在有搜索词且有在线源时出现。
-          if (searching && plugins.isNotEmpty)
+          if (searching && (plugins.isNotEmpty || servers.isNotEmpty))
             Padding(
               padding: EdgeInsets.only(top: tokens.spacing.gap),
               child: MusicSearchSourceChips(
                 key: const ValueKey<String>('music-search-page-sources'),
                 sources: plugins,
-                selected: _musicEffectiveSourceFilter(_sourceFilter, plugins),
+                servers: servers,
+                selected: _musicEffectiveSourceFilter(
+                  _sourceFilter,
+                  plugins,
+                  servers,
+                ),
                 onSelected: (String? v) => setState(() => _sourceFilter = v),
               ),
             ),
@@ -1398,11 +1456,13 @@ class _MusicLibrarySearchPageState extends State<_MusicLibrarySearchPage> {
     final String? effective = _musicEffectiveSourceFilter(
       _sourceFilter,
       inputs.searchPlugins,
+      inputs.searchServers,
     );
     return MusicSearchOverview(
       key: const ValueKey<String>('music-search-page-overview'),
       query: query,
       sources: _musicFilteredSources(effective, inputs.searchPlugins),
+      servers: _musicFilteredServers(effective, inputs.searchServers),
       local: _musicSearchIncludesLocal(effective)
           ? _musicLocalMatches(inputs.snapshot, inputs.serverAlbums, query)
           : MusicSearchLocalItems.none,
@@ -1419,7 +1479,11 @@ class _MusicLibrarySearchPageState extends State<_MusicLibrarySearchPage> {
         return MusicFloatingBarHost(
           child: FushiPageScaffold(
             title: t.music_library_search_hint,
-            header: _header(context, inputs.searchPlugins),
+            header: _header(
+              context,
+              inputs.searchPlugins,
+              inputs.searchServers,
+            ),
             body: AnimatedSwitcher(
               duration: fushiMotionDuration(context, FushiMotion.medium),
               // 同上：新旧两态各用自己的主滚动控制器。
