@@ -912,6 +912,8 @@ class AnidbDatagramTransport implements AnidbUdpTransport {
   StreamSubscription<RawSocketEvent>? _subscription;
   Completer<String>? _pending;
   String? _expectedTag;
+  // Completed by the next [RawSocketEvent.write] after a would-block send.
+  Completer<void>? _writable;
   static final Map<int, Future<void>> _closingByPort = {};
 
   static void _registerClosing(int port, Future<void> closing) {
@@ -945,10 +947,24 @@ class AnidbDatagramTransport implements AnidbUdpTransport {
       config.localPort,
       reuseAddress: false,
     );
-    final AnidbDatagramTransport transport = AnidbDatagramTransport._(
+    return AnidbDatagramTransport.forSocket(
       socket,
       addresses.first,
       config.port,
+    );
+  }
+
+  /// Wraps an already bound [socket]; [connect] is the production entry point.
+  @visibleForTesting
+  factory AnidbDatagramTransport.forSocket(
+    RawDatagramSocket socket,
+    InternetAddress remote,
+    int port,
+  ) {
+    final AnidbDatagramTransport transport = AnidbDatagramTransport._(
+      socket,
+      remote,
+      port,
     );
     transport._subscription = socket.listen(
       transport._onEvent,
@@ -963,9 +979,24 @@ class AnidbDatagramTransport implements AnidbUdpTransport {
     if (pending != null && !pending.isCompleted) {
       pending.completeError(const AnidbUdpException(AnidbUdpFailure.network));
     }
+    _abandonWrite(AnidbUdpFailure.network);
+  }
+
+  void _abandonWrite(AnidbUdpFailure reason) {
+    final Completer<void>? writable = _writable;
+    _writable = null;
+    if (writable != null && !writable.isCompleted) {
+      writable.completeError(AnidbUdpException(reason));
+    }
   }
 
   void _onEvent(RawSocketEvent event) {
+    if (event == RawSocketEvent.write) {
+      final Completer<void>? writable = _writable;
+      _writable = null;
+      if (writable != null && !writable.isCompleted) writable.complete();
+      return;
+    }
     if (event != RawSocketEvent.read) return;
     Datagram? datagram;
     while ((datagram = _socket.receive()) != null) {
@@ -997,23 +1028,39 @@ class AnidbDatagramTransport implements AnidbUdpTransport {
     _pending = pending;
     _expectedTag = tag;
     try {
-      _sendDatagram(packet);
+      // The timeout covers waiting for writability too; send failures surface
+      // through [pending] so a timed-out request is never sent late.
+      unawaited(
+        _sendDatagram(packet).then<void>(
+          (_) {},
+          onError: (Object error, StackTrace stack) {
+            if (!pending.isCompleted) pending.completeError(error, stack);
+          },
+        ),
+      );
       return await pending.future.timeout(timeout);
     } finally {
       _pending = null;
       _expectedTag = null;
+      _abandonWrite(AnidbUdpFailure.closed);
     }
   }
 
   @override
-  Future<void> send(String packet) async {
-    _sendDatagram(packet);
-  }
+  Future<void> send(String packet) => _sendDatagram(packet);
 
-  void _sendDatagram(String packet) {
+  Future<void> _sendDatagram(String packet) async {
     final List<int> bytes = utf8.encode(packet);
-    if (_socket.send(bytes, _remote, _port) != bytes.length) {
-      throw const AnidbUdpException(AnidbUdpFailure.network);
+    while (true) {
+      final int sent = _socket.send(bytes, _remote, _port);
+      if (sent == bytes.length) return;
+      // UDP is all-or-nothing; a partial count is a broken socket.
+      if (sent != 0) throw const AnidbUdpException(AnidbUdpFailure.network);
+      // 0 means the send buffer is full (Windows reports WSAEWOULDBLOCK this
+      // way), not a network failure: resend once the socket is writable.
+      final Completer<void> writable = _writable ??= Completer<void>();
+      _socket.writeEventsEnabled = true;
+      await writable.future;
     }
   }
 
@@ -1023,6 +1070,7 @@ class AnidbDatagramTransport implements AnidbUdpTransport {
     if (pending != null && !pending.isCompleted) {
       pending.completeError(const AnidbUdpException(AnidbUdpFailure.closed));
     }
+    _abandonWrite(AnidbUdpFailure.closed);
   }
 
   @override
