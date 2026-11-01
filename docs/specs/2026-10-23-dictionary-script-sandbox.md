@@ -103,6 +103,8 @@ sandbox 拦，`location.href = 外网` 被外层 `frame-src 'self'` 在请求前
 - HTML 释义里会被浏览器自动请求的属性（`src` / `srcset` / `poster` / `background` …）指向外部地址的删掉；
   `<a href="https://…">` 保留（用户点了才经 `openLink` 打开）。
 - 沙箱 iframe 自带 CSP：`default-src 'none'`、`connect-src 'none'`，图片 / 字体 / 媒体只认 `image:` / `dictmedia:` / `data:`。
+- **残留外发面（平台限制，app 与扩展同样存在）**：Chromium 的 CSP 不约束 WebRTC（`RTCPeerConnection` 的 STUN/TURN 请求）
+  与 `dns-prefetch`，`connect-src 'none'` ≠ 零外发——恶意词典脚本理论上仍可借此把查词内容带出去。
 
 ## 第二轮：独立审查后补的三条（2026-10-23）
 
