@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/video/underlay_composition.dart';
 import 'package:fushi/src/reader/reader_desktop_chrome.dart';
 import 'package:fushi/src/reader/reader_floating_ball.dart';
 
@@ -66,6 +67,20 @@ Future<List<String>> _pump(
     ),
   );
   return log;
+}
+
+/// [holes] 里是否有一块恰是 [shape] 的内切圆角矩形向内收 [inset]（容浮点误差）。
+bool _hasHole(List<UnderlayInputExclusion> holes, Rect shape, double inset) {
+  final Rect want = shape.deflate(inset);
+  bool near(double a, double b) => (a - b).abs() < 1e-6;
+  return holes.any(
+    (UnderlayInputExclusion h) =>
+        near(h.rect.left, want.left) &&
+        near(h.rect.top, want.top) &&
+        near(h.rect.right, want.right) &&
+        near(h.rect.bottom, want.bottom) &&
+        near(h.radius, shape.shortestSide / 2 - inset),
+  );
 }
 
 Finder _ball() =>
@@ -330,6 +345,78 @@ void main() {
       find.ancestor(of: _ball(), matching: find.byType(Opacity)).first,
     );
     expect(again.opacity, kReaderFloatingBallIdleOpacity);
+  });
+
+  group('底层合成档（网页视频，WebView2 垫在 Flutter 下、按登记区域挖洞）', () {
+    tearDown(() => underlayCompositionActive.value = false);
+
+    testWidgets('收起态球不透明（洞里透出的是黑底，不能半透明）', (WidgetTester tester) async {
+      underlayCompositionActive.value = true;
+      await _pump(tester);
+      await tester.pump();
+      final Opacity idle = tester.widget<Opacity>(
+        find.ancestor(of: _ball(), matching: find.byType(Opacity)).first,
+      );
+      expect(idle.opacity, 1);
+      // 只有球一块，内切圆再内收抗锯齿边。
+      final Rect ball = tester.getRect(_ball());
+      const double i = kUnderlayRegionEdgeInset;
+      expect(underlayInputExclusions.value, <UnderlayInputExclusion>[
+        UnderlayInputExclusion(ball.deflate(i), ball.width / 2 - i),
+      ]);
+    });
+
+    testWidgets('展开动画中途不登记任何洞，走完后按钮 / 标签 / 球都登记且内收', (
+      WidgetTester tester,
+    ) async {
+      underlayCompositionActive.value = true;
+      await _pump(tester);
+      await tester.pump();
+      await tester.tap(_ball());
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 90));
+      expect(
+        underlayInputExclusions.value,
+        isEmpty,
+        reason: '淡入 / 飞入中的半透明像素进了洞就是黑边',
+      );
+
+      await tester.pumpAndSettle();
+      final List<UnderlayInputExclusion> holes = underlayInputExclusions.value;
+      // 3 颗按钮 + 3 个标签 + 球。
+      expect(holes, hasLength(7));
+      final Rect ball = tester.getRect(_ball());
+      expect(
+        _hasHole(holes, ball, kUnderlayRegionEdgeInset),
+        isTrue,
+        reason: '$holes',
+      );
+      final Rect button = tester.getRect(
+        find
+            .ancestor(
+              of: find.byIcon(Icons.play_arrow_outlined),
+              matching: find.byType(Material),
+            )
+            .first,
+      );
+      expect(
+        _hasHole(holes, button, kReaderFloatingBallButtonRegionInset),
+        isTrue,
+        reason: '按钮的洞要扣掉抗锯齿边与按下缩放让出的半圈：$holes',
+      );
+      for (final UnderlayInputExclusion h in holes) {
+        expect(h.rect.width, greaterThan(0));
+        expect(h.radius, lessThanOrEqualTo(h.rect.shortestSide / 2 + 1e-6));
+      }
+
+      // 收起一开始就撤掉按钮 / 标签的洞（球在途中也不登记）。
+      await tester.tap(_ball());
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(underlayInputExclusions.value, isEmpty);
+      await tester.pumpAndSettle();
+      expect(underlayInputExclusions.value, hasLength(1));
+    });
   });
 
   testWidgets('展开是错峰弹出：离球近的先起、中途已飞得更接近落点', (WidgetTester tester) async {
