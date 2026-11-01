@@ -15,6 +15,7 @@ import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 import 'command_harness.dart';
+import 'support/built_cli.dart';
 import 'support/dart_executable.dart';
 
 /// 起一个子进程拿住数据目录锁，等它报 `locked <pid>`；返回进程与它自报的 pid
@@ -137,11 +138,13 @@ void main() {
             'admin_port: 0',
           ),
     );
-    final Process serve = await Process.start(dartExecutable(), <String>[
-      'run',
-      p.join('bin', 'fushi_server.dart'),
-      ...cli(<String>['serve', '--no-scan']),
-    ]);
+    // 跑 `dart build cli` 的产物而不是 `dart run`：本进程前面的用例已加载
+    // `.dart_tool/lib/sqlite3.dll`，`dart run` 要覆盖它，Windows 上必失败（见 built_cli.dart）。
+    final String exe = await buildFushiServerCli(p.join(h.tmp.path, 'cli'));
+    final Process serve = await Process.start(
+      exe,
+      cli(<String>['serve', '--no-scan']),
+    );
     final Completer<void> started = Completer<void>();
     final StringBuffer err = StringBuffer();
     serve.stdout.transform(utf8.decoder).listen((String chunk) {
@@ -167,7 +170,7 @@ void main() {
       await serve.exitCode.timeout(const Duration(minutes: 1));
     }
     expect(await runFushiServerCli(cli(<String>['status'])), 0);
-  }, timeout: const Timeout(Duration(minutes: 6)));
+  }, timeout: const Timeout(Duration(minutes: 10)));
 }
 
 Future<ServerDataLockedException> _expectLocked(String dataDir) async {
