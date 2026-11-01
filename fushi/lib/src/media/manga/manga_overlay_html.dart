@@ -1303,11 +1303,17 @@ String _mangaGestureJs({
   }
   // 宽页自动放大的记账：{from: 放大前倍率, to: 自动放大到的倍率}，null = 没在放大。
   var AUTO_ZOOM = null;
+  // 快速缩回落定的倍率（适应页宽 / 页高）；null = 没有持有。之后任何缩放改动都让
+  // ZOOM 不再等于它，换页时据此判断「整页适配仍是读者当前的状态」。
+  var QUICK_FIT_ZOOM = null;
   function _applyWidePolicy(){
     if (SPLIT_WIDE && !ROTATE_WIDE && !IS_WEBTOON && _currentPageIsWide()) {
       _applyPageHalf(); return;
     }
-    ZOOM_REST = ZOOM_REST_DEFAULT;
+    // 快速缩回落定的整页状态跨页保持（见 _resetZoomForNewPage）：静止倍率跟着它，
+    // 否则新页上的适应倍率会被当成「放大看细节」，点热区翻不了页。
+    ZOOM_REST = QUICK_FIT_ZOOM !== null
+        ? Math.max(ZOOM_REST_DEFAULT, QUICK_FIT_ZOOM) : ZOOM_REST_DEFAULT;
     if(SPLIT_ACTIVE){
       SPLIT_ACTIVE=false;
       // 离开切半的宽页回默认缩放；不用文档初值 zoomPercent——那是重建文档时带的
@@ -1368,15 +1374,26 @@ String _mangaGestureJs({
   // 起始位置。宽页切半 / 宽页自动放大随后由 _applyWidePolicy 按新页重新套用。
   // 倍率变了才回报 Dart：会话倍率 _zoomPercent 是重建文档时的初值，不同步的话
   // 下次跨窗口重建又把放大带回来。
-  function _resetZoomForNewPage(){
+  //
+  // 例外：倍率是「快速缩回」落定的适应页宽 / 页高（反馈 EjyFnomM6w，持续的阅读
+  // 状态）且之后没再动过缩放时，按新页重新适应，不打回默认——两条反馈各管各的：
+  // 捏合出来的放大不跟页，选定的整页适配跟页。复位落点同样受缩小下限约束。
+  // target 是将要显示的跨页：调用点在 CURRENT 更新之前，适配要量新页。
+  function _resetZoomForNewPage(target){
     _cancelDoubleTapZoom();
-    var changed = Math.abs(ZOOM - ZOOM_REST_DEFAULT) > 0.0005;
-    ZOOM = ZOOM_REST_DEFAULT;
-    ZOOM_REST = ZOOM_REST_DEFAULT;
+    var before = ZOOM;
+    var keepFit = QUICK_FIT_ZOOM !== null && Math.abs(ZOOM - QUICK_FIT_ZOOM) < 0.01;
+    QUICK_FIT_ZOOM = null;
+    ZOOM = _clampZoom(ZOOM_REST_DEFAULT);
+    if (keepFit) {
+      var fit = _fitZoomFor(QUICK_ZOOM_TARGET, _contentLocalRect(target));
+      if (fit > 0 && isFinite(fit)) { ZOOM = _clampZoom(fit); QUICK_FIT_ZOOM = ZOOM; }
+    }
+    ZOOM_REST = Math.max(ZOOM_REST_DEFAULT, ZOOM);
     AUTO_ZOOM = null;
     _applyStartPan();
     _applyCanvas();
-    if (!changed) return;
+    if (Math.abs(ZOOM - before) <= 0.0005) return;
     var b = _bridge();
     if (b) b.callHandler('onMangaZoomChanged', Math.round(ZOOM * 100));
   }
@@ -1409,8 +1426,9 @@ String _mangaGestureJs({
   // 当前跨页内容（一页或两页）在 #manga-canvas 本地坐标里的外接框（未乘 ZOOM）。
   // 用 getBoundingClientRect 而不是 offset* 现算：旋转宽页、裁边、跨页平移都已
   // 落进去，屏幕坐标减平移再除倍率就是本地坐标。没有可见页时返回 null。
-  function _contentLocalRect(){
-    var pages = document.querySelectorAll('.manga-page[data-spread="'+CURRENT+'"]');
+  function _contentLocalRect(spread){
+    if (spread === undefined) spread = CURRENT;
+    var pages = document.querySelectorAll('.manga-page[data-spread="'+spread+'"]');
     var l = Infinity, t = Infinity, r = -Infinity, b = -Infinity;
     for (var i = 0; i < pages.length; i++) {
       var rc = pages[i].getBoundingClientRect();
@@ -1521,6 +1539,7 @@ String _mangaGestureJs({
     var cx=PAN_X+(rect.l+rect.r)/2*ZOOM, cy=PAN_Y+(rect.t+rect.b)/2*ZOOM;
     _animateZoomTo(fit.zoom,cx,cy,function(){
       ZOOM_REST=Math.max(ZOOM_REST_DEFAULT,ZOOM);
+      QUICK_FIT_ZOOM=ZOOM;
       if(ZOOM<=1){_recenterPan();_applyCanvas();return;}
       var vw=window.innerWidth,vh=window.innerHeight;
       var cw=(rect.r-rect.l)*ZOOM,ch=(rect.b-rect.t)*ZOOM;
@@ -1812,7 +1831,7 @@ String _mangaGestureJs({
     _finishPageAnim();
     if(target !== from) _flashPageChange();
     if(target!==from) PAGE_HALF=target<from ? 1 : 0;
-    if(target!==from) _resetZoomForNewPage();
+    if(target!==from) _resetZoomForNewPage(target);
     CURRENT = target;
     var ms = _animMs();
     var dist = Math.abs(target - from);
@@ -1910,7 +1929,7 @@ String _mangaGestureJs({
     var from = CURRENT;
     // 纵向分页的换页同样复位缩放；条漫是一整条连续长图，缩放属于整条，不复位。
     // 必须在下面按 ZOOM 换算滚动目标之前。
-    if (IS_VERTICAL_PAGED && target !== from) _resetZoomForNewPage();
+    if (IS_VERTICAL_PAGED && target !== from) _resetZoomForNewPage(target);
     CURRENT = target;
     RESTORE_FRACTION = fraction || 0;
     // offsetTop/offsetHeight 是布局坐标；#manga-canvas 被 scale(ZOOM) 后

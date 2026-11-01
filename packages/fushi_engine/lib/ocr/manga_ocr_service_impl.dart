@@ -1433,7 +1433,9 @@ class MangaOcrServiceImpl
     return freed;
   }
 
-  Future<MangaOcrModelPaths> _resolveModelPaths() async {
+  Future<MangaOcrModelPaths> _resolveModelPaths({
+    required bool ignoreFurigana,
+  }) async {
     final Directory dir = await _modelsDirProvider();
     String pathOf(MangaOcrModelRole role, String suffix) {
       final MangaOcrModelFile model = _manifest.firstWhere(
@@ -1459,13 +1461,19 @@ class MangaOcrServiceImpl
             kPpOcrRecDictFileName,
           ),
           ctcRecPath: ctcRecPath,
-          ignoreFurigana: _ignoreFurigana(),
+          ignoreFurigana: ignoreFurigana,
         );
     }
   }
 
   /// 跑本地 OCR 前的共同闸门：平台支持 + 模型齐全，返回各模型文件的绝对路径。
-  Future<MangaOcrModelPaths> _checkedModelPaths() async {
+  ///
+  /// [ignoreFurigana] 由调用方在开跑时**只读一次**，同一个值同时交给模型路径与
+  /// [_pageEngineSignature]：两处各读一次的话，中间隔着 await，用户恰好切换开关就会
+  /// 「按裁注音识别、写进不带 `_noruby` 的缓存目录」，两种结果串目录。
+  Future<MangaOcrModelPaths> _checkedModelPaths({
+    required bool ignoreFurigana,
+  }) async {
     if (!isSupportedPlatform) {
       throw StateError(
         'manga OCR is not supported on ${Platform.operatingSystem}',
@@ -1476,21 +1484,22 @@ class MangaOcrServiceImpl
     if (!await _manifestComplete()) {
       throw StateError('manga OCR models are not downloaded');
     }
-    return _resolveModelPaths();
+    return _resolveModelPaths(ignoreFurigana: ignoreFurigana);
   }
 
   /// 页级缓存签名的**唯一**来源：按本服务的模型目录与清单解析已安装模型指纹
   /// （BUG-1173）。[resolvePageCacheDirPath] 与 [openPageSession] 都经这里，
   /// 会话 isolate 直接用传进去的签名，不再按 detectorPath 重算——注入自定义
   /// 模型目录时读写缓存也不会分叉到两个目录。
-  Future<String> _pageEngineSignature() async => mangaOcrEngineSignatureFor(
-    await model_fp.resolveLocalMangaOcrEngineSignature(
-      await _modelsDirProvider(),
-      manifest: _manifest,
-      baseSignature: localModel.cacheSignature,
-    ),
-    ignoreFurigana: _ignoreFurigana(),
-  );
+  Future<String> _pageEngineSignature({required bool ignoreFurigana}) async =>
+      mangaOcrEngineSignatureFor(
+        await model_fp.resolveLocalMangaOcrEngineSignature(
+          await _modelsDirProvider(),
+          manifest: _manifest,
+          baseSignature: localModel.cacheSignature,
+        ),
+        ignoreFurigana: ignoreFurigana,
+      );
 
   static String _pageCacheDirPath(String imageDirPath, String signature) =>
       p.join(
@@ -1503,7 +1512,10 @@ class MangaOcrServiceImpl
   @override
   Future<String> resolvePageCacheDirPath({
     required String imageDirPath,
-  }) async => _pageCacheDirPath(imageDirPath, await _pageEngineSignature());
+  }) async => _pageCacheDirPath(
+    imageDirPath,
+    await _pageEngineSignature(ignoreFurigana: _ignoreFurigana()),
+  );
 
   @override
   Future<MangaOcrPageSession> openPageSession({
@@ -1511,8 +1523,13 @@ class MangaOcrServiceImpl
     void Function(MangaOcrAcceleration acceleration)? onAcceleration,
     bool textImagesOnly = false,
   }) async {
-    final MangaOcrModelPaths modelPaths = await _checkedModelPaths();
-    final String signature = await _pageEngineSignature();
+    final bool ignoreFurigana = _ignoreFurigana();
+    final MangaOcrModelPaths modelPaths = await _checkedModelPaths(
+      ignoreFurigana: ignoreFurigana,
+    );
+    final String signature = await _pageEngineSignature(
+      ignoreFurigana: ignoreFurigana,
+    );
     return _pageSessionRunner.open(
       MangaOcrPageSessionRequest(
         imageDirPath: imageDirPath,
@@ -1542,8 +1559,13 @@ class MangaOcrServiceImpl
     controller.onListen = () {
       unawaited(() async {
         try {
-          final MangaOcrModelPaths modelPaths = await _checkedModelPaths();
-          final String engineSignature = await _pageEngineSignature();
+          final bool ignoreFurigana = _ignoreFurigana();
+          final MangaOcrModelPaths modelPaths = await _checkedModelPaths(
+            ignoreFurigana: ignoreFurigana,
+          );
+          final String engineSignature = await _pageEngineSignature(
+            ignoreFurigana: ignoreFurigana,
+          );
           if (cancelled) {
             // 订阅在模型检查期间已被取消：任务根本不启动。
             return;

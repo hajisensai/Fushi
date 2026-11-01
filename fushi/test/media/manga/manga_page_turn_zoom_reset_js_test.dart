@@ -116,6 +116,39 @@ assert.deepEqual(reported,[100],'倍率没变就不再回报');
     );
   });
 
+  test('快速缩回的整页适配跟页：按新页重新适应、静止倍率跟着走；捏合放大不跟页', () async {
+    await runJs(
+      harness(buildDocument(), '''
+var QUICK_ZOOM_TARGET='fit_width';
+var measured=[];
+function _contentLocalRect(spread){ measured.push(spread); return {l:0,t:0,r:300,b:424}; }
+function _fitZoomFor(axis,rect){ return window.innerWidth/(rect.r-rect.l); }
+ZOOM=412/300; QUICK_FIT_ZOOM=ZOOM; ZOOM_REST=ZOOM;
+_resetZoomForNewPage(1);
+assert.deepEqual(measured,[1],'适配量的是将要显示的跨页，不是当前页');
+close(ZOOM,412/300,'整页适配保持');
+close(ZOOM_REST,ZOOM,'静止倍率跟着适配，点热区照常翻页');
+close(QUICK_FIT_ZOOM,ZOOM,'仍持有适配');
+_applyWidePolicy();
+close(ZOOM_REST,412/300,'宽页策略不把适配打回「用户放大」');
+ZOOM=2.4;
+turnTo(1000,1414);
+assert.equal(ZOOM,1,'适配之后又捏合放大：放大不跟页，回默认');
+assert.equal(QUICK_FIT_ZOOM,null,'适配状态随之放弃');
+'''),
+    );
+  });
+
+  test('复位落点受缩小下限约束：默认缩放低于下限时落到下限', () async {
+    await runJs(
+      harness(buildDocument(restZoomPercent: 60), '''
+ZOOM=2; ZOOM_MIN=0.8;
+turnTo(1000,1414);
+close(ZOOM,0.8,'不低于缩小下限');
+'''),
+    );
+  });
+
   test('默认缩放 150%：复位到默认缩放而不是 100%', () async {
     await runJs(
       harness(buildDocument(zoomPercent: 300, restZoomPercent: 150), '''
