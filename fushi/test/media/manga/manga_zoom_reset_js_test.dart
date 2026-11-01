@@ -157,15 +157,22 @@ for (const end of [1.05, 1.052, 1.06, 1.035]) {
     final String document = documentFor(animate: true);
     expect(
       document.contains(
-        'pinch = {dist: g.dist, zoom: ZOOM, cx: g.cx, cy: g.cy};',
+        'pinch = {dist: g.dist, zoom: ZOOM, cx: g.cx, cy: g.cy,',
       ),
       isTrue,
     );
     expect(document.contains('pinch.cx = g.cx;'), isTrue);
+    // 捏合结束先分流双指轻点（快速缩回，反馈 EjyFnomM6w；没选该手势时恒为假），
+    // 其余照旧吸附。
     final int nullAt = document.indexOf(
       '          pinch = null;\n'
-      '          _snapPinchZoom(lastPinch.cx, lastPinch.cy, lastPinch.zoom);',
+      '          if (_isTwoFingerTap(lastPinch)) {',
     );
     expect(nullAt, greaterThanOrEqualTo(0));
+    final int snapAt = document.indexOf(
+      '            _snapPinchZoom(lastPinch.cx, lastPinch.cy, lastPinch.zoom);',
+      nullAt,
+    );
+    expect(snapAt, greaterThan(nullAt));
   });
 }

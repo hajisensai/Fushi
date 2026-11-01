@@ -5793,6 +5793,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                 },
                 parallelTasksGetter: () => appModel.mangaOcrParallelTasks,
                 parallelTasksSetter: appModel.setMangaOcrParallelTasks,
+                ignoreFuriganaGetter: () => appModel.mangaOcrIgnoreFurigana,
+                ignoreFuriganaSetter: appModel.setMangaOcrIgnoreFurigana,
                 localModelGetter: () => appModel.mangaOcrLocalModel,
                 localModelSetter: appModel.setMangaOcrLocalModel,
                 lensLanguageGetter: () => appModel.mangaOcrLensLanguage,
