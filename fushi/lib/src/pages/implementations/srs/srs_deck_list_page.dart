@@ -53,9 +53,11 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/srs/srs_change_note_type.dart';
+import 'package:fushi/src/srs/srs_custom_study_dialog.dart';
 
 /// 行内菜单动作。
 enum _DeckAction {
+  customStudy,
   browse,
   addChild,
   rename,
@@ -185,6 +187,47 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
     (_) => SrsReviewPage(deckId: deck.deck.id, deckName: deck.fullName),
   );
 
+  /// 「自定义学习」（Anki Custom Study）：提升今日上限后照常复习，或开一个临时会话（[SrsCustomStudy]）。
+  Future<void> _customStudy(SrsDeckSummary deck) async {
+    final SrsDbStore? store = await readSrsStore(ref);
+    if (store == null || !mounted) return;
+    final SrsDayContext day = await store.dayContext();
+    final int today = day.dayIndexOf(store.now().$1);
+    if (!mounted) return;
+    final SrsCustomStudyChoice? choice = await showSrsCustomStudyDialog(
+      context: context,
+      deckName: deck.fullName,
+      todayExtension:
+          deck.deck.limitExtension?.on(today) ?? (newCards: 0, reviews: 0),
+    );
+    if (choice == null || !mounted) return;
+    if (choice.isExtension) {
+      final ({int newCards, int reviews}) total = await store.extendTodayLimits(
+        deck.deck.id,
+        newCards: choice.extendNew,
+        reviews: choice.extendReviews,
+      );
+      if (!mounted) return;
+      bumpSrsRevision(ref);
+      FushiToast.show(
+        msg: t.srs_custom_study_extended(
+          newCards: total.newCards,
+          reviews: total.reviews,
+        ),
+        severity: ToastSeverity.success,
+      );
+      await _openReview(deck);
+      return;
+    }
+    await _push<void>(
+      (_) => SrsReviewPage(
+        deckId: deck.deck.id,
+        deckName: deck.fullName,
+        custom: choice.sessionAt(store.now().$1),
+      ),
+    );
+  }
+
   Future<void> _createDeck({String? parentId}) async {
     final String? name = await showFushiTextInputDialog(
       context: context,
@@ -292,6 +335,8 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
 
   void _onDeckAction(SrsDeckSummary deck, _DeckAction action) {
     switch (action) {
+      case _DeckAction.customStudy:
+        srsRunLogged('SrsDeckList.customStudy', () => _customStudy(deck));
       case _DeckAction.browse:
         srsRunLogged(
           'SrsDeckList.browseDeck',
@@ -1221,6 +1266,10 @@ class _DeckRow extends StatelessWidget {
 
   List<PopupMenuEntry<_DeckAction>> _menuItems() =>
       <PopupMenuEntry<_DeckAction>>[
+        PopupMenuItem<_DeckAction>(
+          value: _DeckAction.customStudy,
+          child: Text(t.srs_custom_study_title),
+        ),
         // 默认牌组同样可用：批量移动 / 删除错导的卡从这里进（反馈 SSfSHb5JNt）。
         PopupMenuItem<_DeckAction>(
           value: _DeckAction.browse,

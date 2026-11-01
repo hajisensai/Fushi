@@ -129,10 +129,15 @@ class SrsReviewPage extends ConsumerStatefulWidget {
     super.key,
     required this.deckId,
     required this.deckName,
+    this.custom,
   });
 
   final String deckId;
   final String deckName;
+
+  /// 自定义学习的临时会话（[SrsCustomStudy]）：出卡换成会话的选卡条件（Rust 排队内核），作答照常排程；
+  /// null = 正常复习。
+  final SrsCustomStudy? custom;
 
   /// 集成测试探针：打开首张卡的各阶段（null = 不记）。
   @visibleForTesting
@@ -263,7 +268,12 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
   /// 牌组当前的全名（随计数一起现读；复习中在牌组设置里改了名立即换标题）。
   String? _deckTitle;
 
-  String get _title => _deckTitle ?? widget.deckName;
+  String get _title => widget.custom == null
+      ? _deckTitle ?? widget.deckName
+      : '${t.srs_custom_study_title} · ${_deckTitle ?? widget.deckName}';
+
+  /// 自定义学习会话的进度（[SrsStudyState.custom]，随每次排队更新）。
+  SrsCustomStudyProgress? _customProgress;
   int _reviewedThisSession = 0;
 
   final List<_UndoStep> _undo = <_UndoStep>[];
@@ -408,7 +418,17 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     }
   }
 
-  Future<SrsDeckSummary?> _deckSummary() => _store!.deckSummary(widget.deckId);
+  Future<SrsDeckSummary?> _deckSummary() async {
+    final SrsCustomStudy? custom = widget.custom;
+    if (custom == null) return _store!.deckSummary(widget.deckId);
+    // 自定义学习：进度只有排队结果里有（同一次命令也给计数）。
+    final SrsStudyState? s = await _store!.studyState(
+      widget.deckId,
+      custom: custom,
+    );
+    _customProgress = s?.custom;
+    return s?.summary;
+  }
 
   void _applyCounts(SrsDeckSummary? sum) {
     _newCount = sum?.newCount ?? 0;
@@ -448,6 +468,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
             : await store.nextCard(
                 widget.deckId,
                 exclude: <String>{currentCardId},
+                custom: widget.custom,
               );
         SrsReviewPage.debugPhase?.call('prefetch:nextCard');
         if (id == null) return null;
@@ -515,7 +536,12 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     try {
       final SrsStudyState? plan =
           planned ??
-          (cardId == null ? await store.studyState(widget.deckId) : null);
+          (cardId == null
+              ? await store.studyState(widget.deckId, custom: widget.custom)
+              : null);
+      if (plan != null && widget.custom != null) {
+        _customProgress = plan.custom;
+      }
       final String? id = cardId ?? plan?.next;
       // 排队给的「再下一张」只对它排出的那张有效（指定了 [cardId] 时不是）。
       final bool afterKnown = cardId == null && plan != null;
@@ -835,6 +861,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
             kSrsMaxAnswerDurationMs,
           ),
           studyDeckId: widget.deckId,
+          custom: widget.custom,
         );
         SrsReviewPage.debugPhase?.call('answer:done');
         _undo.add(_UndoStep(cardId: detail.card.id, logId: out.log.id));
@@ -1271,9 +1298,15 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
 
   // ------------------------------------------------------------------ 界面
 
-  String get _countsText =>
-      '${t.srs_count_new} $_newCount · ${t.srs_count_learn} $_learnCount · '
-      '${t.srs_count_review} $_reviewCount';
+  String get _countsText {
+    final SrsCustomStudyProgress? custom = _customProgress;
+    if (widget.custom != null && custom != null) {
+      return '${t.srs_custom_study_left} ${custom.left} · '
+          '${t.srs_count_learn} ${custom.learn}';
+    }
+    return '${t.srs_count_new} $_newCount · ${t.srs_count_learn} $_learnCount · '
+        '${t.srs_count_review} $_reviewCount';
+  }
 
   bool get _pendingDecision => _detail?.note.hasPendingDecision ?? false;
 

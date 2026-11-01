@@ -3957,7 +3957,9 @@ class SrsDbStore implements SrsSync2Host {
   Future<String?> nextCard(
     String deckId, {
     Set<String> exclude = const <String>{},
-  }) async => (await studyState(deckId, exclude: exclude))?.next;
+    SrsCustomStudy? custom,
+  }) async =>
+      (await studyState(deckId, exclude: exclude, custom: custom))?.next;
 
   Future<SrsCardDetail?> cardDetail(String cardId) async {
     final SrsCardCacheRow? c = await cardRow(cardId);
