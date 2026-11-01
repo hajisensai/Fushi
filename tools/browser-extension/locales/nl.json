@@ -469,5 +469,18 @@
   "opt_toast_shortcut_reset": "“{name}” restored to its default key",
   "opt_toast_shortcut_conflict": "{combo} is already used by “{name}”",
   "pc_track_none": "No subtitle track on this video yet",
-  "pc_offset_input_label": "Offset in seconds — press Enter to apply (0 resets)"
+  "pc_offset_input_label": "Offset in seconds — press Enter to apply (0 resets)",
+  "opt_videoShortcutFavoriteCue_title": "Huidige ondertitel aan Fushi-favorieten toevoegen",
+  "pc_fav_line_add": "Deze regel als favoriet",
+  "pc_fav_line_remove": "Deze regel uit favorieten halen",
+  "pc_fav_video": "Deze video als favoriet",
+  "sp_fav_line_add_title": "Deze regel aan Fushi-favorieten toevoegen",
+  "sp_fav_line_remove_title": "Deze regel uit Fushi-favorieten halen",
+  "sp_fav_video_title": "Deze video aan Fushi-favorieten toevoegen",
+  "sp_fav_video_remove_title": "Deze video uit Fushi-favorieten halen",
+  "vfav_line_added": "Regel toegevoegd aan Fushi-favorieten",
+  "vfav_line_removed": "Regel uit Fushi-favorieten gehaald",
+  "vfav_video_added": "Video toegevoegd aan Fushi-favorieten",
+  "vfav_video_removed": "Video uit Fushi-favorieten gehaald",
+  "vfav_no_line": "Er is nu geen ondertitelregel om op te slaan"
 }

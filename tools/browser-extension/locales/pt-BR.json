@@ -469,5 +469,18 @@
   "opt_toast_shortcut_reset": "“{name}” restored to its default key",
   "opt_toast_shortcut_conflict": "{combo} is already used by “{name}”",
   "pc_track_none": "No subtitle track on this video yet",
-  "pc_offset_input_label": "Offset in seconds — press Enter to apply (0 resets)"
+  "pc_offset_input_label": "Offset in seconds — press Enter to apply (0 resets)",
+  "opt_videoShortcutFavoriteCue_title": "Favoritar a legenda atual no Fushi",
+  "pc_fav_line_add": "Favoritar esta linha",
+  "pc_fav_line_remove": "Remover esta linha dos favoritos",
+  "pc_fav_video": "Favoritar este vídeo",
+  "sp_fav_line_add_title": "Adicionar esta linha aos favoritos do Fushi",
+  "sp_fav_line_remove_title": "Remover esta linha dos favoritos do Fushi",
+  "sp_fav_video_title": "Adicionar este vídeo aos favoritos do Fushi",
+  "sp_fav_video_remove_title": "Remover este vídeo dos favoritos do Fushi",
+  "vfav_line_added": "Linha adicionada aos favoritos do Fushi",
+  "vfav_line_removed": "Linha removida dos favoritos do Fushi",
+  "vfav_video_added": "Vídeo adicionado aos favoritos do Fushi",
+  "vfav_video_removed": "Vídeo removido dos favoritos do Fushi",
+  "vfav_no_line": "Não há nenhuma linha de legenda para favoritar agora"
 }

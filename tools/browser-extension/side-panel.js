@@ -12,6 +12,7 @@
   var statusEl = document.getElementById('video-status');
   var fileEl = document.getElementById('subtitle-file');
   var autoButton = document.getElementById('auto-scroll');
+  var favVideoButton = document.getElementById('fav-video');
   var toastEl = document.getElementById('toast');
   var lookupPaneEl = document.getElementById('lookup-pane');
   // 与宿主页 Shift 查词使用同一种 Shadow DOM host 结构；Side Panel 进一步让它在面板
@@ -106,6 +107,10 @@
   var currentState = null;
   var cues = [];
   var rows = [];
+  // 反馈 KGC1ifR1a3：这个视频在 Fushi 收藏夹里的状态（来自标签页 video-favorite.js 的快照）。
+  var favoriteKeys = Object.create(null);
+  var favoriteVideo = false;
+  var favoriteRev = -1;
   var currentIndex = -1;
   var scrollIndex = -1;
   var stateSignature = '';
@@ -1098,11 +1103,80 @@
       });
       row.appendChild(timestamp);
       row.appendChild(text);
+      row.appendChild(cueFavoriteButton(cue));
       rows[index] = row;
       fragment.appendChild(row);
     });
     listEl.appendChild(fragment);
     updateCurrent(currentState && currentState.currentTimeMs);
+  }
+
+  // ── 收藏进 Fushi 收藏夹（反馈 KGC1ifR1a3）──
+  // 执行端在标签页的 video-favorite.js（它知道页面地址 / 标题，并持有收藏状态缓存）；这里只画
+  // ☆/★ 并经 tab 消息转发点击。身份口径与它同一个 cueKey（起点毫秒 + 文本）。
+  function favoriteCueKey(cue) {
+    var mod = window.FUSHI_VIDEO_FAVORITE;
+    return mod && typeof mod.cueKey === 'function' ? mod.cueKey(cue.text, cue.startMs) : '';
+  }
+  function paintCueFavorite(button, on) {
+    button.classList.toggle('is-favorited', on);
+    button.setAttribute('aria-pressed', on ? 'true' : 'false');
+    var label = tr(on ? 'sp_fav_line_remove_title' : 'sp_fav_line_add_title');
+    button.title = label;
+    button.setAttribute('aria-label', label);
+    button.textContent = '';
+    var glyph = typeof window.fushiIcon === 'function' ? window.fushiIcon(on ? 'star_fill' : 'star', { size: 18 }) : null;
+    if (glyph) button.appendChild(glyph);
+    else button.textContent = on ? '★' : '☆';
+  }
+  function cueFavoriteButton(cue) {
+    var button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'cue-fav';
+    button.dataset.favKey = favoriteCueKey(cue);
+    paintCueFavorite(button, !!favoriteKeys[button.dataset.favKey]);
+    button.addEventListener('click', function (event) {
+      event.stopPropagation(); // 不触发整行的 seek
+      sendToTab({
+        type: 'fushiVideoFavoriteToggleCue',
+        cue: { text: cue.text, startMs: cue.startMs, endMs: cue.endMs },
+      }).then(function (response) {
+        if (response && response.ok) applyFavorites(response.favorites, true);
+      });
+    });
+    return button;
+  }
+  function applyFavorites(snapshot, force) {
+    if (!snapshot || typeof snapshot !== 'object') return;
+    if (!force && snapshot.rev === favoriteRev) return;
+    favoriteRev = snapshot.rev;
+    favoriteKeys = Object.create(null);
+    var keys = Array.isArray(snapshot.keys) ? snapshot.keys : [];
+    for (var i = 0; i < keys.length; i++) favoriteKeys[keys[i]] = true;
+    favoriteVideo = snapshot.video === true;
+    for (var r = 0; r < rows.length; r++) {
+      var button = rows[r] && typeof rows[r].querySelector === 'function' ? rows[r].querySelector('.cue-fav') : null;
+      if (button) paintCueFavorite(button, !!favoriteKeys[button.dataset.favKey]);
+    }
+    paintVideoFavorite();
+  }
+  function paintVideoFavorite() {
+    if (!favVideoButton) return;
+    favVideoButton.classList.toggle('is-on', favoriteVideo);
+    favVideoButton.setAttribute('aria-pressed', favoriteVideo ? 'true' : 'false');
+    var label = tr(favoriteVideo ? 'sp_fav_video_remove_title' : 'sp_fav_video_title');
+    favVideoButton.title = label;
+    favVideoButton.setAttribute('aria-label', label);
+    var slot = favVideoButton.querySelector('.msr-slot') || favVideoButton;
+    var glyph = typeof window.fushiIcon === 'function' ? window.fushiIcon(favoriteVideo ? 'star_fill' : 'star', { size: 20 }) : null;
+    if (glyph) { slot.textContent = ''; slot.appendChild(glyph); }
+  }
+  if (favVideoButton) {
+    favVideoButton.addEventListener('click', function () {
+      sendToTab({ type: 'fushiVideoFavoriteToggleVideo' }).then(function (response) {
+        if (response && response.ok) applyFavorites(response.favorites, true);
+      });
+    });
   }
 
   // 高亮只属于正在显示的字幕；列表定位还需覆盖字幕间隙、片头和片尾。
@@ -1140,6 +1214,8 @@
 
   function applyState(state, includesCues) {
     currentState = state;
+    if (includesCues) favoriteRev = -1; // 行重建后按最新快照重画一遍星
+
     statusEl.textContent = tr(state.hasVideo
       ? ((state.tracks || []).length ? 'sp_status_connected' : 'sp_status_waiting_subtitles')
       : 'sp_status_no_video');
@@ -1150,6 +1226,7 @@
     } else {
       updateCurrent(state.currentTimeMs);
     }
+    applyFavorites(state.favorites, false);
   }
 
   async function refresh(forceCues) {

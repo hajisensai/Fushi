@@ -469,5 +469,18 @@
   "opt_toast_shortcut_reset": "「{name}」已恢復預設按鍵",
   "opt_toast_shortcut_conflict": "{combo} 已被「{name}」佔用",
   "pc_track_none": "這段影片還沒有字幕軌",
-  "pc_offset_input_label": "偏移秒數，按 Enter 生效（0 = 復位）"
+  "pc_offset_input_label": "偏移秒數，按 Enter 生效（0 = 復位）",
+  "opt_videoShortcutFavoriteCue_title": "收藏目前字幕到 Fushi",
+  "pc_fav_line_add": "收藏目前這句",
+  "pc_fav_line_remove": "取消收藏目前這句",
+  "pc_fav_video": "收藏這部影片",
+  "sp_fav_line_add_title": "收藏這句到 Fushi",
+  "sp_fav_line_remove_title": "從 Fushi 收藏中移除這句",
+  "sp_fav_video_title": "收藏這部影片到 Fushi",
+  "sp_fav_video_remove_title": "從 Fushi 收藏中移除這部影片",
+  "vfav_line_added": "已收藏這句到 Fushi",
+  "vfav_line_removed": "已從 Fushi 收藏中移除這句",
+  "vfav_video_added": "已收藏這部影片到 Fushi",
+  "vfav_video_removed": "已從 Fushi 收藏中移除這部影片",
+  "vfav_no_line": "目前沒有可收藏的字幕"
 }

@@ -469,5 +469,18 @@
   "opt_toast_shortcut_reset": "“{name}” restored to its default key",
   "opt_toast_shortcut_conflict": "{combo} is already used by “{name}”",
   "pc_track_none": "No subtitle track on this video yet",
-  "pc_offset_input_label": "Offset in seconds — press Enter to apply (0 resets)"
+  "pc_offset_input_label": "Offset in seconds — press Enter to apply (0 resets)",
+  "opt_videoShortcutFavoriteCue_title": "Favoritkan subtitle saat ini di Fushi",
+  "pc_fav_line_add": "Favoritkan baris ini",
+  "pc_fav_line_remove": "Hapus baris ini dari favorit",
+  "pc_fav_video": "Favoritkan video ini",
+  "sp_fav_line_add_title": "Tambahkan baris ini ke favorit Fushi",
+  "sp_fav_line_remove_title": "Hapus baris ini dari favorit Fushi",
+  "sp_fav_video_title": "Tambahkan video ini ke favorit Fushi",
+  "sp_fav_video_remove_title": "Hapus video ini dari favorit Fushi",
+  "vfav_line_added": "Baris ditambahkan ke favorit Fushi",
+  "vfav_line_removed": "Baris dihapus dari favorit Fushi",
+  "vfav_video_added": "Video ditambahkan ke favorit Fushi",
+  "vfav_video_removed": "Video dihapus dari favorit Fushi",
+  "vfav_no_line": "Saat ini tidak ada baris subtitle untuk difavoritkan"
 }

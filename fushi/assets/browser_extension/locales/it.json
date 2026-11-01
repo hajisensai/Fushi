@@ -469,5 +469,18 @@
   "opt_toast_shortcut_reset": "“{name}” restored to its default key",
   "opt_toast_shortcut_conflict": "{combo} is already used by “{name}”",
   "pc_track_none": "No subtitle track on this video yet",
-  "pc_offset_input_label": "Offset in seconds — press Enter to apply (0 resets)"
+  "pc_offset_input_label": "Offset in seconds — press Enter to apply (0 resets)",
+  "opt_videoShortcutFavoriteCue_title": "Aggiungi il sottotitolo attuale ai preferiti di Fushi",
+  "pc_fav_line_add": "Aggiungi questa riga ai preferiti",
+  "pc_fav_line_remove": "Rimuovi questa riga dai preferiti",
+  "pc_fav_video": "Aggiungi questo video ai preferiti",
+  "sp_fav_line_add_title": "Aggiungi questa riga ai preferiti di Fushi",
+  "sp_fav_line_remove_title": "Rimuovi questa riga dai preferiti di Fushi",
+  "sp_fav_video_title": "Aggiungi questo video ai preferiti di Fushi",
+  "sp_fav_video_remove_title": "Rimuovi questo video dai preferiti di Fushi",
+  "vfav_line_added": "Riga aggiunta ai preferiti di Fushi",
+  "vfav_line_removed": "Riga rimossa dai preferiti di Fushi",
+  "vfav_video_added": "Video aggiunto ai preferiti di Fushi",
+  "vfav_video_removed": "Video rimosso dai preferiti di Fushi",
+  "vfav_no_line": "Al momento non c’è nessuna riga di sottotitolo da salvare"
 }

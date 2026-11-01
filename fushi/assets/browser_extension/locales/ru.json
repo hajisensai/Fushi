@@ -469,5 +469,18 @@
   "opt_toast_shortcut_reset": "“{name}” restored to its default key",
   "opt_toast_shortcut_conflict": "{combo} is already used by “{name}”",
   "pc_track_none": "No subtitle track on this video yet",
-  "pc_offset_input_label": "Offset in seconds — press Enter to apply (0 resets)"
+  "pc_offset_input_label": "Offset in seconds — press Enter to apply (0 resets)",
+  "opt_videoShortcutFavoriteCue_title": "Добавить текущий субтитр в избранное Fushi",
+  "pc_fav_line_add": "В избранное эту строку",
+  "pc_fav_line_remove": "Убрать эту строку из избранного",
+  "pc_fav_video": "В избранное это видео",
+  "sp_fav_line_add_title": "Добавить эту строку в избранное Fushi",
+  "sp_fav_line_remove_title": "Убрать эту строку из избранного Fushi",
+  "sp_fav_video_title": "Добавить это видео в избранное Fushi",
+  "sp_fav_video_remove_title": "Убрать это видео из избранного Fushi",
+  "vfav_line_added": "Строка добавлена в избранное Fushi",
+  "vfav_line_removed": "Строка убрана из избранного Fushi",
+  "vfav_video_added": "Видео добавлено в избранное Fushi",
+  "vfav_video_removed": "Видео убрано из избранного Fushi",
+  "vfav_no_line": "Сейчас нет строки субтитров для избранного"
 }

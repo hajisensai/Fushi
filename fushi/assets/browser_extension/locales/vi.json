@@ -469,5 +469,18 @@
   "opt_toast_shortcut_reset": "“{name}” restored to its default key",
   "opt_toast_shortcut_conflict": "{combo} is already used by “{name}”",
   "pc_track_none": "No subtitle track on this video yet",
-  "pc_offset_input_label": "Offset in seconds — press Enter to apply (0 resets)"
+  "pc_offset_input_label": "Offset in seconds — press Enter to apply (0 resets)",
+  "opt_videoShortcutFavoriteCue_title": "Thêm phụ đề hiện tại vào mục yêu thích của Fushi",
+  "pc_fav_line_add": "Yêu thích dòng này",
+  "pc_fav_line_remove": "Bỏ yêu thích dòng này",
+  "pc_fav_video": "Yêu thích video này",
+  "sp_fav_line_add_title": "Thêm dòng này vào mục yêu thích của Fushi",
+  "sp_fav_line_remove_title": "Xóa dòng này khỏi mục yêu thích của Fushi",
+  "sp_fav_video_title": "Thêm video này vào mục yêu thích của Fushi",
+  "sp_fav_video_remove_title": "Xóa video này khỏi mục yêu thích của Fushi",
+  "vfav_line_added": "Đã thêm dòng vào mục yêu thích của Fushi",
+  "vfav_line_removed": "Đã xóa dòng khỏi mục yêu thích của Fushi",
+  "vfav_video_added": "Đã thêm video vào mục yêu thích của Fushi",
+  "vfav_video_removed": "Đã xóa video khỏi mục yêu thích của Fushi",
+  "vfav_no_line": "Hiện không có dòng phụ đề nào để yêu thích"
 }

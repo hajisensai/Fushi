@@ -469,5 +469,18 @@
   "opt_toast_shortcut_reset": "“{name}” restored to its default key",
   "opt_toast_shortcut_conflict": "{combo} is already used by “{name}”",
   "pc_track_none": "No subtitle track on this video yet",
-  "pc_offset_input_label": "Offset in seconds — press Enter to apply (0 resets)"
+  "pc_offset_input_label": "Offset in seconds — press Enter to apply (0 resets)",
+  "opt_videoShortcutFavoriteCue_title": "เพิ่มคำบรรยายปัจจุบันในรายการโปรดของ Fushi",
+  "pc_fav_line_add": "เพิ่มบรรทัดนี้ในรายการโปรด",
+  "pc_fav_line_remove": "นำบรรทัดนี้ออกจากรายการโปรด",
+  "pc_fav_video": "เพิ่มวิดีโอนี้ในรายการโปรด",
+  "sp_fav_line_add_title": "เพิ่มบรรทัดนี้ในรายการโปรดของ Fushi",
+  "sp_fav_line_remove_title": "นำบรรทัดนี้ออกจากรายการโปรดของ Fushi",
+  "sp_fav_video_title": "เพิ่มวิดีโอนี้ในรายการโปรดของ Fushi",
+  "sp_fav_video_remove_title": "นำวิดีโอนี้ออกจากรายการโปรดของ Fushi",
+  "vfav_line_added": "เพิ่มบรรทัดในรายการโปรดของ Fushi แล้ว",
+  "vfav_line_removed": "นำบรรทัดออกจากรายการโปรดของ Fushi แล้ว",
+  "vfav_video_added": "เพิ่มวิดีโอในรายการโปรดของ Fushi แล้ว",
+  "vfav_video_removed": "นำวิดีโอออกจากรายการโปรดของ Fushi แล้ว",
+  "vfav_no_line": "ตอนนี้ไม่มีบรรทัดคำบรรยายให้เพิ่มในรายการโปรด"
 }

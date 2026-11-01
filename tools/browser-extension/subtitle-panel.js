@@ -1350,6 +1350,27 @@
     toast(tr('subtitle_copied', { text: text.length > 30 ? text.slice(0, 30) + '…' : text }));
     return true;
   }
+  // 当前句（复制 / 收藏共用的取句口径）：正在显示的那句，字幕间隙里取刚过去的上一句。
+  // 已应用用户设的时轴偏移（st.cues 是 shiftedCues），所以 startMs 就是画面上的时间点。
+  function currentShortcutCue() {
+    if (!st.cues.length) recomputeShortcutCues();
+    if (!st.cues.length) return null;
+    var now = videoTimeMs();
+    var idx = cueIndexAt(st.cues, now);
+    if (idx < 0) idx = lastCueStartBefore(now);
+    if (idx < 0) return null;
+    var c = st.cues[idx];
+    return { text: c.text, startMs: c.startMs, endMs: c.endMs };
+  }
+  // 反馈 KGC1ifR1a3：收藏当前句进 Fushi 收藏夹（执行端在 video-favorite.js）。
+  function shortcutFavoriteCue() {
+    if (!window.fushiVideoFavorite || typeof window.fushiVideoFavorite.toggleCurrentCue !== 'function') return false;
+    return window.fushiVideoFavorite.toggleCurrentCue() === true;
+  }
+  window.fushiSubtitleCurrentCue = function () {
+    if (!videoEl()) return null;
+    return currentShortcutCue();
+  };
   function shortcutTogglePanel() {
     if (!st.enabled) {
       try { chrome.storage.local.set({ netflixSubtitlePanel: true }); } catch (_) {}
@@ -1371,6 +1392,7 @@
       case 'offset-plus': return shortcutOffset(100);
       case 'offset-reset': return shortcutOffset(0);
       case 'copy-cue': return shortcutCopyCue();
+      case 'favorite-cue': return shortcutFavoriteCue();
       case 'toggle-panel': return shortcutTogglePanel();
       // 隐藏字幕：状态与 style 注入由 content.js 独占（见那里的「所有权」注释）——侧边栏能力
       // 受 netflixSubtitlePanel 门控且默认关，状态放这里会导致「没开侧边栏就不能隐藏字幕」。
@@ -1463,6 +1485,9 @@
         };
       }),
       cues: includeCues ? st.cues : null,
+      // 反馈 KGC1ifR1a3：这个视频在 Fushi 收藏夹里的状态（侧边栏画 ☆/★）。
+      favorites: (window.fushiVideoFavorite && typeof window.fushiVideoFavorite.snapshot === 'function')
+        ? window.fushiVideoFavorite.snapshot() : null,
     };
   }
 

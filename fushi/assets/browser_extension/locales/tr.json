@@ -469,5 +469,18 @@
   "opt_toast_shortcut_reset": "“{name}” restored to its default key",
   "opt_toast_shortcut_conflict": "{combo} is already used by “{name}”",
   "pc_track_none": "No subtitle track on this video yet",
-  "pc_offset_input_label": "Offset in seconds — press Enter to apply (0 resets)"
+  "pc_offset_input_label": "Offset in seconds — press Enter to apply (0 resets)",
+  "opt_videoShortcutFavoriteCue_title": "Geçerli altyazıyı Fushi favorilerine ekle",
+  "pc_fav_line_add": "Bu satırı favorilere ekle",
+  "pc_fav_line_remove": "Bu satırı favorilerden çıkar",
+  "pc_fav_video": "Bu videoyu favorilere ekle",
+  "sp_fav_line_add_title": "Bu satırı Fushi favorilerine ekle",
+  "sp_fav_line_remove_title": "Bu satırı Fushi favorilerinden çıkar",
+  "sp_fav_video_title": "Bu videoyu Fushi favorilerine ekle",
+  "sp_fav_video_remove_title": "Bu videoyu Fushi favorilerinden çıkar",
+  "vfav_line_added": "Satır Fushi favorilerine eklendi",
+  "vfav_line_removed": "Satır Fushi favorilerinden çıkarıldı",
+  "vfav_video_added": "Video Fushi favorilerine eklendi",
+  "vfav_video_removed": "Video Fushi favorilerinden çıkarıldı",
+  "vfav_no_line": "Şu anda favorilere eklenecek altyazı satırı yok"
 }

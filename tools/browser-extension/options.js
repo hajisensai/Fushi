@@ -59,6 +59,7 @@ const settingDefaults = Object.freeze({
   videoShortcutOffsetPlus: true,
   videoShortcutOffsetReset: true,
   videoShortcutCopyCue: true,
+  videoShortcutFavoriteCue: true,
   videoShortcutRateDown: true,
   videoShortcutRateUp: true,
 });
@@ -93,6 +94,7 @@ const toggleIds = Object.freeze({
   videoShortcutOffsetPlus: 'videoShortcutOffsetPlus',
   videoShortcutOffsetReset: 'videoShortcutOffsetReset',
   videoShortcutCopyCue: 'videoShortcutCopyCue',
+  videoShortcutFavoriteCue: 'videoShortcutFavoriteCue',
   videoShortcutRateDown: 'videoShortcutRateDown',
   videoShortcutRateUp: 'videoShortcutRateUp',
 });

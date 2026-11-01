@@ -469,5 +469,18 @@
   "opt_toast_shortcut_reset": "「{name}」を既定のキーに戻しました",
   "opt_toast_shortcut_conflict": "{combo} は「{name}」で使用中です",
   "pc_track_none": "この動画にはまだ字幕トラックがありません",
-  "pc_offset_input_label": "オフセット（秒）。Enter で適用（0 でリセット）"
+  "pc_offset_input_label": "オフセット（秒）。Enter で適用（0 でリセット）",
+  "opt_videoShortcutFavoriteCue_title": "現在の字幕を Fushi のお気に入りに追加",
+  "pc_fav_line_add": "この行をお気に入り",
+  "pc_fav_line_remove": "この行をお気に入りから外す",
+  "pc_fav_video": "この動画をお気に入り",
+  "sp_fav_line_add_title": "この行を Fushi のお気に入りに追加",
+  "sp_fav_line_remove_title": "この行を Fushi のお気に入りから外す",
+  "sp_fav_video_title": "この動画を Fushi のお気に入りに追加",
+  "sp_fav_video_remove_title": "この動画を Fushi のお気に入りから外す",
+  "vfav_line_added": "この行を Fushi のお気に入りに追加しました",
+  "vfav_line_removed": "この行を Fushi のお気に入りから外しました",
+  "vfav_video_added": "この動画を Fushi のお気に入りに追加しました",
+  "vfav_video_removed": "この動画を Fushi のお気に入りから外しました",
+  "vfav_no_line": "いまお気に入りにできる字幕がありません"
 }

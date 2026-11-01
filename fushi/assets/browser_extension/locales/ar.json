@@ -469,5 +469,18 @@
   "opt_toast_shortcut_reset": "“{name}” restored to its default key",
   "opt_toast_shortcut_conflict": "{combo} is already used by “{name}”",
   "pc_track_none": "No subtitle track on this video yet",
-  "pc_offset_input_label": "Offset in seconds — press Enter to apply (0 resets)"
+  "pc_offset_input_label": "Offset in seconds — press Enter to apply (0 resets)",
+  "opt_videoShortcutFavoriteCue_title": "إضافة الترجمة الحالية إلى مفضلة Fushi",
+  "pc_fav_line_add": "إضافة هذا السطر إلى المفضلة",
+  "pc_fav_line_remove": "إزالة هذا السطر من المفضلة",
+  "pc_fav_video": "إضافة هذا الفيديو إلى المفضلة",
+  "sp_fav_line_add_title": "إضافة هذا السطر إلى مفضلة Fushi",
+  "sp_fav_line_remove_title": "إزالة هذا السطر من مفضلة Fushi",
+  "sp_fav_video_title": "إضافة هذا الفيديو إلى مفضلة Fushi",
+  "sp_fav_video_remove_title": "إزالة هذا الفيديو من مفضلة Fushi",
+  "vfav_line_added": "تمت إضافة السطر إلى مفضلة Fushi",
+  "vfav_line_removed": "تمت إزالة السطر من مفضلة Fushi",
+  "vfav_video_added": "تمت إضافة الفيديو إلى مفضلة Fushi",
+  "vfav_video_removed": "تمت إزالة الفيديو من مفضلة Fushi",
+  "vfav_no_line": "لا يوجد سطر ترجمة لإضافته إلى المفضلة الآن"
 }
