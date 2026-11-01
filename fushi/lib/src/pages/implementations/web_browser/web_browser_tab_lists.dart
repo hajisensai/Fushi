@@ -285,15 +285,22 @@ class _StripReorderListState extends State<_StripReorderList> {
             // 触屏长按留给标签菜单、横滑留给平移。
             touchDragEnabled: false,
             feedbackBorderRadius: _kStripTabRadius,
-            itemBuilder: (BuildContext context, int i) => Align(
-              alignment: Alignment.bottomCenter,
+            // 外层定高：FushiReorderableRow 的 Stack 把纵向约束放松成 0..36，不定高时
+            // 整个标签只有 30dp、停在顶上，与地址栏之间露出一道缝。
+            itemBuilder: (BuildContext context, int i) => SizedBox(
+              height: kWebBrowserTabStripHeight,
               child: _GrowIn(
                 axis: Axis.horizontal,
                 child: SizedBox(
                   width: widget.tabWidth,
-                  child: _StripTab(
-                    tab: widget.tabs[i],
-                    callbacks: widget.callbacks,
+                  // 贴底的 Align 必须在 _GrowIn 里面：横向 SizeTransition 纵向撑满且
+                  // 按顶对齐（AlignmentDirectional(x, -1)），套在它外面的 Align 无效。
+                  child: Align(
+                    alignment: Alignment.bottomCenter,
+                    child: _StripTab(
+                      tab: widget.tabs[i],
+                      callbacks: widget.callbacks,
+                    ),
                   ),
                 ),
               ),
