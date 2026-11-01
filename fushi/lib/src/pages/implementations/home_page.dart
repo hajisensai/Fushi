@@ -489,6 +489,11 @@ class _HomePageState extends BasePageState<HomePage>
   final ValueNotifier<DictionaryFocusRequest?> _dictFocusSignal =
       ValueNotifier<DictionaryFocusRequest?>(null);
   final ValueNotifier<int> _videoLibraryRefreshSignal = ValueNotifier<int>(0);
+
+  /// 待确认清单在刮削之外变了（用户在待确认队列里忽略 / 撤销忽略了作品）：视频
+  /// 页据此只读重算提醒条（反馈 Fbchzxuq6f）。
+  final ValueNotifier<int> _videoPendingScrapeChangedSignal =
+      ValueNotifier<int>(0);
   final Map<HomeTab, ScrollController> _tabScrollControllers =
       <HomeTab, ScrollController>{};
 
@@ -1003,6 +1008,7 @@ class _HomePageState extends BasePageState<HomePage>
     _videoDiscoveryController = null;
     _dictFocusSignal.dispose();
     _videoLibraryRefreshSignal.dispose();
+    _videoPendingScrapeChangedSignal.dispose();
     for (final ScrollController controller in _tabScrollControllers.values) {
       controller.dispose();
     }
@@ -3593,6 +3599,14 @@ class _HomePageState extends BasePageState<HomePage>
             appModel.database.getMediaSourceById(sourceId),
         loadPendingWorks: () =>
             _videoLibraryScrapeSweep.pendingWorksWithReasons(),
+        loadIgnoredWorks: () => _videoLibraryScrapeSweep.ignoredWorks(),
+        onSetWorkIgnored:
+            (VideoPendingScrapeWork entry, {required bool ignored}) async {
+              await _videoLibraryScrapeSweep.setWorksIgnored(<String>[
+                entry.work.stableKey,
+              ], ignored: ignored);
+              _videoPendingScrapeChangedSignal.value++;
+            },
         showAiIdentify: isAiModuleEnabled(appModel.moduleVisibility),
         onRetry: (VideoSourceScrapeRunRow run) async {
           final int? sourceId = run.sourceId;
@@ -3887,6 +3901,7 @@ class _HomePageState extends BasePageState<HomePage>
         // 刮削结果落库只读重算，绝不发起补刮（BUG-3072）。
         refreshPendingScrapeWorks: () =>
             _videoLibraryScrapeSweep.refreshPendingAfterScrapeResults(),
+        pendingScrapeChangedSignal: _videoPendingScrapeChangedSignal,
         mediaServerServersLoader: _loadMediaServerEntries,
         // 视频库「发现」分区与浏览页签共用同一个生产端口（同一实例）。
         discoveryController: _productionVideoDiscoveryController,

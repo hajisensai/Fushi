@@ -57,6 +57,7 @@ class VideoLibraryShell extends StatefulWidget {
     required this.onLibraryChanged,
     this.loadPendingScrapeWorks,
     this.refreshPendingScrapeWorks,
+    this.pendingScrapeChangedSignal,
     this.localLibraryPageBuilder,
     this.mediaServerServersLoader,
     this.mediaServerPageBuilder,
@@ -87,6 +88,9 @@ class VideoLibraryShell extends StatefulWidget {
   /// 刮削结果变化后只读重算待确认清单（见 [HomeVideoPage]，BUG-3072）。
   final Future<List<VideoPendingScrapeWork>> Function()?
   refreshPendingScrapeWorks;
+
+  /// 待确认清单在刮削之外变了（忽略 / 撤销忽略，见 [HomeVideoPage]）。
+  final Listenable? pendingScrapeChangedSignal;
 
   /// 允许宿主测试替换本地库叶子；生产环境保持 null，使用 [HomeVideoPage]。
   final Widget Function(
@@ -493,6 +497,8 @@ class _VideoLibraryShellState extends State<VideoLibraryShell> {
                       loadPendingScrapeWorks: widget.loadPendingScrapeWorks,
                       refreshPendingScrapeWorks:
                           widget.refreshPendingScrapeWorks,
+                      pendingScrapeChangedSignal:
+                          widget.pendingScrapeChangedSignal,
                       onOpenSources: () => _select(VideoLibrarySection.sources),
                     ),
               ),

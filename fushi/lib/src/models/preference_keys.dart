@@ -830,6 +830,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'video_resource_disabled_sources',
   'video_resource_torznab_config',
   'video_respect_ass_style',
+  // JSON 字符串数组：待确认队列里被用户「忽略、不再提示」的作品 stableKey
+  // （`collection:<id>` / `book:<uid>`，反馈 Fbchzxuq6f，引擎
+  // video_scrape_ignored_works.dart）。键里是本机自增 id，设备本地。
+  'video_scrape_ignored_works',
   'video_secondary_subtitle_blur',
   'video_secondary_subtitle_obscure_hide',
   // bool（未写过时继承 video_subtitle_obscure_reveal）：副字幕遮蔽态是否允许
