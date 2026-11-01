@@ -58,7 +58,7 @@ void main() {
     expect(
       lines.single,
       'gal-latency seq=7 ok cold total=38.0(from-hook) | '
-      'hook→poll=7.0 poll→dart=1.0 run=1.0 search=4.0 present=25.0 | '
+      'pub=2000 hook→poll=7.0 poll→dart=1.0 run=1.0 search=4.0 present=25.0 | '
       'entries=3',
     );
     expect(GalLookupLatencyTrace.active, isNull);

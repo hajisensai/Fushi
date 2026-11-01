@@ -151,6 +151,8 @@ class GalLookupLatencyTrace {
     }
     out.write(' |');
     if (hasPublish) {
+      // 绝对发布时刻（QPC 微秒）：外部工具（如低层鼠标钩子记下的点击释放）据此对齐。
+      out.write(' pub=$publishQpcUs');
       final bool hasDispatch =
           dispatchQpcUs >= publishQpcUs && dispatchQpcUs <= receivedUs;
       if (hasDispatch) {
