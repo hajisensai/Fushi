@@ -1,5 +1,8 @@
+import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart';
+import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/models/theme_notifier.dart'
     show rethemeFushiWithScheme;
@@ -11,6 +14,9 @@ import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart'
     show FushiMotion, fushiMotionDuration;
+
+/// 新版宽屏底栏：播放中无指针 / 按键活动多久后自动隐藏。
+const Duration kLyricsChromeIdleHideDelay = Duration(seconds: 3);
 
 /// 浮动件（跳转回退胶囊）占的带子高度：胶囊命中区 48dp + 上下各 4dp 留白。
 const double kLyricsNavigationAccessoryBand = 56;
@@ -48,7 +54,10 @@ Rect navigationAccessoryRectFor(Rect lyricsRect) {
 ///  * MD3 下从封面取动态配色（[ColorScheme.fromImageProvider]），整棵子树换上它；
 ///  * 把歌词 WebView 放进外观给出的矩形——**它在 Stack 里的位置恒定**（第 2 个
 ///    孩子），宽窄布局切换 / 旋转只改矩形，不重建平台视图；
-///  * 外观算出的歌词 HTML 主题变化时回调 [onHtmlThemeChanged]，由页面热更 CSS。
+///  * 外观算出的歌词 HTML 主题变化时回调 [onHtmlThemeChanged]，由页面热更 CSS；
+///  * MD3 新版宽屏底栏的空闲自动隐藏：播放中 [kLyricsChromeIdleHideDelay] 内没有
+///    任何指针（全局路由，菜单 / 弹层里的操作也算）或按键活动 → 底栏淡出，淡完再
+///    一次性把歌词矩形伸到底；任意活动 / 暂停 → 立即复位。
 class ReaderLyricsPlayerOverlay extends StatefulWidget {
   const ReaderLyricsPlayerOverlay({
     super.key,
@@ -90,6 +99,87 @@ class _ReaderLyricsPlayerOverlayState extends State<ReaderLyricsPlayerOverlay> {
   int _schemeRequest = 0;
   LyricsHtmlTheme? _lastReportedTheme;
 
+  /// 底栏已淡出（[Md3ModernLyricsPlayerDesign.wideChromeHidden]）。
+  bool _chromeHidden = false;
+
+  /// 歌词矩形已伸到底（[Md3ModernLyricsPlayerDesign.wideLyricsExpanded]）。
+  bool _lyricsExpanded = false;
+
+  /// 空闲计时器：每次活动重排（取消 + 新建，比逐帧轮询便宜）。
+  Timer? _idleTimer;
+  Timer? _expandTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    GestureBinding.instance.pointerRouter.addGlobalRoute(_onGlobalPointer);
+    HardwareKeyboard.instance.addHandler(_onKey);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _syncIdle());
+  }
+
+  /// 只有 MD3 新版布局播放中才自动隐藏（Apple / 经典 / 暂停一律常显）。宽窄由外观
+  /// 自己判断：窄屏忽略这两个标志。
+  bool get _autoHideEnabled =>
+      mounted &&
+      widget.data.isPlaying &&
+      widget.data.controlsStyle == LyricsControlsStyle.modern &&
+      !isGlassDesign(context);
+
+  void _onGlobalPointer(PointerEvent event) {
+    if (event is PointerHoverEvent ||
+        event is PointerDownEvent ||
+        event is PointerMoveEvent ||
+        event is PointerSignalEvent) {
+      _registerActivity();
+    }
+  }
+
+  bool _onKey(KeyEvent event) {
+    _registerActivity();
+    return false;
+  }
+
+  /// 活动：底栏隐藏中则立即复位（歌词矩形与底栏同一帧回来），并重排空闲计时。
+  void _registerActivity() {
+    if (!mounted) return;
+    _syncIdle();
+  }
+
+  /// 复位底栏并按当前条件重排（或撤掉）空闲计时器。
+  void _syncIdle() {
+    if (!mounted) return;
+    _idleTimer?.cancel();
+    _idleTimer = null;
+    _expandTimer?.cancel();
+    _expandTimer = null;
+    if (_chromeHidden || _lyricsExpanded) {
+      setState(() {
+        _chromeHidden = false;
+        _lyricsExpanded = false;
+      });
+    }
+    if (_autoHideEnabled) {
+      _idleTimer = Timer(kLyricsChromeIdleHideDelay, _onIdleTimer);
+    }
+  }
+
+  void _onIdleTimer() {
+    _idleTimer = null;
+    if (!mounted || !_autoHideEnabled) return;
+    final Duration fade = fushiMotionDuration(context, FushiMotion.medium);
+    setState(() {
+      _chromeHidden = true;
+      // 无动效（墨水屏 / 减弱动态效果）时直接一步到位。
+      if (fade == Duration.zero) _lyricsExpanded = true;
+    });
+    if (fade == Duration.zero) return;
+    _expandTimer = Timer(fade, () {
+      _expandTimer = null;
+      if (!mounted || !_chromeHidden) return;
+      setState(() => _lyricsExpanded = true);
+    });
+  }
+
   /// 页面外的歌词主题宿主（路由 builder 包的那层）：登记后整页弹出层（菜单 /
   /// 侧栏 / 对话框 / 查词浮层）一起换成歌词模式配色。
   LyricsThemeHostState? _host;
@@ -107,6 +197,10 @@ class _ReaderLyricsPlayerOverlayState extends State<ReaderLyricsPlayerOverlay> {
 
   @override
   void dispose() {
+    GestureBinding.instance.pointerRouter.removeGlobalRoute(_onGlobalPointer);
+    HardwareKeyboard.instance.removeHandler(_onKey);
+    _idleTimer?.cancel();
+    _expandTimer?.cancel();
     _host?.detach(this);
     super.dispose();
   }
@@ -115,6 +209,11 @@ class _ReaderLyricsPlayerOverlayState extends State<ReaderLyricsPlayerOverlay> {
   void didUpdateWidget(covariant ReaderLyricsPlayerOverlay oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.data.cover != widget.data.cover) _resolveCoverScheme();
+    if (oldWidget.data.isPlaying != widget.data.isPlaying ||
+        oldWidget.data.controlsStyle != widget.data.controlsStyle) {
+      // 播放态变化本身算一次活动：刚按下播放不该立刻吞掉底栏。
+      WidgetsBinding.instance.addPostFrameCallback((_) => _syncIdle());
+    }
   }
 
   /// 封面的「动态取色」（与系统壁纸取色同一算法）。MD3：整棵子树换上这套配色；
@@ -201,6 +300,8 @@ class _ReaderLyricsPlayerOverlayState extends State<ReaderLyricsPlayerOverlay> {
         ? Md3LyricsPlayerDesign(mirrorProgress: mirror)
         : Md3ModernLyricsPlayerDesign(
             compactExpanded: widget.data.compactControlsExpanded,
+            wideChromeHidden: _chromeHidden,
+            wideLyricsExpanded: _lyricsExpanded,
           );
     final ThemeData base = Theme.of(context);
     final ColorScheme? coverScheme = apple ? null : _coverScheme;
