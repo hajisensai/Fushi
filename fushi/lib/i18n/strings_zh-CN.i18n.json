@@ -8732,6 +8732,8 @@
   "sync_client_connected": "已连接",
   "sync_client_token": "对端访问令牌",
   "sync_client_token_manual": "手动填写令牌",
+  "sync_cloud_enable": "启用云备份",
+  "sync_cloud_enable_hint": "通过下方的云服务备份与同步。关闭后本设备不再进行任何云同步；账号保持登录，随时可以重新开启。",
   "sync_compare": "对比数据",
   "sync_compare_all_books": "全部书籍",
   "sync_compare_all_local": "全部 → 本地",

@@ -263,10 +263,11 @@ void logSyncReportErrors(SyncRunReport report) {
   );
 }
 
-/// option B 双通道：把每轮完整同步要跑的通道后端列出来。云备份通道恒尝试（用户
-/// 选定的 [SyncRepository.getBackendType]），互联通道仅当 [SyncRepository
+/// option B 双通道：把每轮完整同步要跑的通道后端列出来。两条通道各有一个总开关：
+/// 云备份通道（用户选定的 [SyncRepository.getBackendType]）仅当 [SyncRepository
+/// .isCloudSyncEnabled]（默认开）时列出，互联通道仅当 [SyncRepository
 /// .isInterconnectEnabled] 时追加——互联与云备份不再互斥（backendType 曾把互联
-/// 当成互斥单选项，现已解耦成独立开关）。两条通道各用自己的后端实例、各自认证成功
+/// 当成互斥单选项，现已解耦成两个对称的独立开关）。两条通道各用自己的后端实例、各自认证成功
 /// 才真正跑（未配置的通道在 [_runSyncChannel] 里 no-op）。
 ///
 /// 去重：互联后端 [InterconnectSyncBackend] 是单例；若用户把「备份后端」也选成互联
@@ -334,24 +335,29 @@ Future<List<SyncChannel>> enabledSyncChannelBackends(
   final Future<List<SyncChannel>> Function(SyncRepository repo)? override =
       debugSyncChannelsOverride;
   if (override != null) return override(repo);
-  final SyncBackendType cloudType = await repo.getBackendType();
-  final SyncBackend cloud = resolveSyncBackend(cloudType);
-  // isInterconnect 由后端身份决定，不由「它排在云通道那一格」决定：备份后端被选成
-  // 互联时只剩这一条通道，它跑的就是互联链路（SyncOrchestrator 内部同样按
-  // `backend is InterconnectSyncBackend` 判断），分资产开关必须跟着读互联专属的
-  // 上传开关——否则用户在互联页看到的四个上传开关会被静默忽略、改由云备份开关决定。
-  final List<SyncChannel> channels = <SyncChannel>[
-    SyncChannel(
-      cloud,
-      type: cloudType,
-      isInterconnect: cloud is InterconnectSyncBackend,
-    ),
-  ];
+  final List<SyncChannel> channels = <SyncChannel>[];
+  // 云备份那一格受自己的总开关管（[SyncRepository.isCloudSyncEnabled]，与互联总开关
+  // 对称）。关掉只是不列出，后端选择与凭据都不动，重新打开即接着用。
+  if (await repo.isCloudSyncEnabled()) {
+    final SyncBackendType cloudType = await repo.getBackendType();
+    final SyncBackend cloud = resolveSyncBackend(cloudType);
+    // isInterconnect 由后端身份决定，不由「它排在云通道那一格」决定：备份后端被选成
+    // 互联时只剩这一条通道，它跑的就是互联链路（SyncOrchestrator 内部同样按
+    // `backend is InterconnectSyncBackend` 判断），分资产开关必须跟着读互联专属的
+    // 上传开关——否则用户在互联页看到的四个上传开关会被静默忽略、改由云备份开关决定。
+    channels.add(
+      SyncChannel(
+        cloud,
+        type: cloudType,
+        isInterconnect: cloud is InterconnectSyncBackend,
+      ),
+    );
+  }
   if (await repo.isInterconnectEnabled()) {
     final SyncBackend interconnect = resolveSyncBackend(
       SyncBackendType.fushiServer,
     );
-    if (!identical(interconnect, cloud)) {
+    if (!channels.any((SyncChannel c) => identical(c.backend, interconnect))) {
       channels.add(
         SyncChannel(
           interconnect,
@@ -936,7 +942,7 @@ Future<ManualSyncResult> runManualFullSync({
       final List<ManualSyncChannelReport> channelReports =
           <ManualSyncChannelReport>[];
       // BUG-1573：手动路径也**逐通道**隔离。BUG-1552 只修了自动 sweep 那个循环；
-      // 这里原来整体裸奔——云通道恒排第一（见 enabledSyncChannelBackends），它令牌
+      // 这里原来整体裸奔——云通道（启用时）恒排第一（见 enabledSyncChannelBackends），它令牌
       // 失效 / WebDAV 不可达时异常直接冒出 runManualFullSync，于是 **已经跑完的通道**
       // 的 channelReports 连同它们的冲突/删除弹窗被整体丢弃，用户只看到一句「同步
       // 失败」。一条通道炸了只该记它自己的账。

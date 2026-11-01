@@ -242,6 +242,9 @@ class SyncRepository {
       'sync_deletion_tombstones_push_baseline_ms';
   static const _keyDesktopCredentials = 'sync_desktop_credentials';
   static const _keyBackendType = 'sync_backend_type';
+  // 云备份通道总开关（默认开），与互联总开关 [_keyInterconnectEnabled] 对称；见
+  // [isCloudSyncEnabled]。设备本地（[deviceLocalPrefKeys]），理由见清单处注释。
+  static const _keyCloudSyncEnabled = 'sync_cloud_enabled';
   // 「与 Hoshi/ッツ 共享」开关：开启后 Google Drive 后端改用可见 My Drive /
   // ttu-reader-data + 完整 drive scope（[GoogleDriveSyncSpace]）。属设备本地（改的是
   // 本机 Drive 存储空间/scope），不随备份导入覆盖。
@@ -639,6 +642,18 @@ class SyncRepository {
 
   Future<void> setBackendType(SyncBackendType type) =>
       _setString(_keyBackendType, type.name);
+
+  /// 云备份通道总开关，与 [isInterconnectEnabled] 对称。默认 true：开关出现前云通道
+  /// 「只要选了后端就恒尝试」，缺行时保持这一既有行为。
+  ///
+  /// 关掉后 `enabledSyncChannelBackends` 不再列出云备份那一格，于是常规同步（自动 /
+  /// 手动）、复习同步（`runOnAuthenticatedSyncChannels`）、资产传输、云端远端占位卡
+  /// 都不再碰云盘。**只停用、不登出**：后端选择与凭据原样保留，重新打开即接着用。
+  Future<bool> isCloudSyncEnabled() =>
+      _db.getPrefTyped<bool>(_keyCloudSyncEnabled, true);
+
+  Future<void> setCloudSyncEnabled(bool v) =>
+      _db.setPrefTyped<bool>(_keyCloudSyncEnabled, v);
 
   /// [type] 这条通道在本机**是否已配置**（凭据/地址已落盘）。
   ///
@@ -1886,6 +1901,11 @@ class SyncRepository {
     // 换一台设备就指向别的作品（反馈 Fbchzxuq6f）。
     kVideoScrapeIgnoredWorksPrefKey,
     _keyBackendType,
+    // 云备份通道开关与上一行的后端选择是同一件事的两半——「这台设备走不走云盘、
+    // 走哪个」——而凭据本就设备本地。随备份 / 设置同步漂走会出错：只想在电脑上
+    // 保留互联的用户一关，手机恢复备份（或收到同步过来的设置）就跟着静默停掉云备份，
+    // 而对只靠云盘同步的设备，这等于用同步本身把同步通道切断。
+    _keyCloudSyncEnabled,
     // 「新下载任务交给哪台互联 host 执行」指向的是本设备配的 host 地址，随备份
     // 到别的设备只会指错（PC 恢复手机的备份后把任务投给它自己）。
     kDownloadExecutionHostPrefKey,

@@ -8732,6 +8732,8 @@
   "sync_client_connected": "Подключено",
   "sync_client_token": "Токен доступа устройства",
   "sync_client_token_manual": "Ввести токен вручную",
+  "sync_cloud_enable": "Enable cloud backup",
+  "sync_cloud_enable_hint": "Back up and sync through the cloud service below. Turning it off stops all cloud sync on this device; your account stays signed in, so you can turn it back on anytime.",
   "sync_compare": "Сравнить данные",
   "sync_compare_all_books": "Все книги",
   "sync_compare_all_local": "Все → Локально",

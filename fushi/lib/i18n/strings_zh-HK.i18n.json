@@ -8732,6 +8732,8 @@
   "sync_client_connected": "已連接",
   "sync_client_token": "對端訪問令牌",
   "sync_client_token_manual": "手動填寫令牌",
+  "sync_cloud_enable": "Enable cloud backup",
+  "sync_cloud_enable_hint": "Back up and sync through the cloud service below. Turning it off stops all cloud sync on this device; your account stays signed in, so you can turn it back on anytime.",
   "sync_compare": "比對資料",
   "sync_compare_all_books": "全部書籍",
   "sync_compare_all_local": "全部 → 本機",
