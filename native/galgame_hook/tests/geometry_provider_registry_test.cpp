@@ -691,6 +691,41 @@ void TestNativePreemptionRevokesAttachedOwnership() {
 
 }  // namespace
 
+// 点击（submit）发布成功后 SetEvent 唤醒事件，host 的查词泵据此立刻读 hit；被拒的发布
+// 不叫醒 host。事件由 host 创建，这里在本进程里扮演 host。
+void TestSubmitHitWakesHostPump() {
+  HANDLE wake = CreateEventW(
+      nullptr, FALSE, FALSE,
+      fushi_voice_hook::LookupWakeEventName(GetCurrentProcessId()).c_str());
+  Check(wake != nullptr, "test host must be able to create the wake event");
+  FakeMapping mapping(true);
+  GeometryProviderRegistry registry;
+  registry.Reset(mapping.header());
+  auto click = Publication(
+      fushi_voice_hook::kLookupGeometryProviderEngineExactLayout,
+      fushi_voice_hook::kLookupGeometryProviderIdSiglus, 3);
+  Check(registry.OfferReady(mapping.header(), click.provider_kind,
+                            click.provider_id),
+        "wake test provider must offer readiness");
+  auto not_submit = click;
+  not_submit.flags = 0;
+  Check(!registry.PublishHit(mapping.header(), not_submit),
+        "a publication without the submit flag must be rejected");
+  Check(WaitForSingleObject(wake, 0) == WAIT_TIMEOUT,
+        "a rejected publication must not wake the host pump");
+  Check(registry.PublishHit(mapping.header(), click),
+        "a click publication must succeed");
+  Check(WaitForSingleObject(wake, 0) == WAIT_OBJECT_0,
+        "a click hit must wake the host pump");
+  auto stale = click;
+  stale.text_generation = 2;
+  Check(!registry.PublishHit(mapping.header(), stale),
+        "a stale click must be rejected");
+  Check(WaitForSingleObject(wake, 0) == WAIT_TIMEOUT,
+        "a rejected click must not wake the host pump");
+  CloseHandle(wake);
+}
+
 int main() {
   TestCompletePublicationAndGenerationFence();
   TestStrictKindIdWhitelist();
@@ -708,6 +743,7 @@ int main() {
   TestHostAdmissionSeparatesGeometryFromShieldRuntime();
   TestProviderSwitchWaitsForShieldRequestWriter();
   TestNativePreemptionRevokesAttachedOwnership();
+  TestSubmitHitWakesHostPump();
   std::puts("geometry provider registry test ok");
   return 0;
 }

@@ -2869,6 +2869,14 @@ inline std::wstring ReadyEventName(DWORD target_pid) {
   return std::wstring(L"Local\\FushiVoiceHookReady_") +
          std::to_wstring(target_pid);
 }
+// 查词点击的唤醒事件（自动复位）：fushi.exe 的查词泵创建并在后台等它，hook 每发布
+// 一次 submit hit 就 SetEvent 一下，泵立刻读 hit，而不是等下一拍 16ms 定时器。
+// 它只是加速信号、不承载数据：打不开（旧版另一侧、完整性级别不允许写）时两边都
+// 照旧靠定时器轮询，行为与没有它时完全相同，所以不需要升协议版本。
+inline std::wstring LookupWakeEventName(DWORD target_pid) {
+  return std::wstring(L"Local\\FushiLookupWake_") +
+         std::to_wstring(target_pid);
+}
 
 }  // namespace fushi_voice_hook
 

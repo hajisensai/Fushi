@@ -4,6 +4,7 @@
 #include <windows.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -506,6 +507,8 @@ class GeometryProviderRegistry {
                      kLookupDiagGeometryObserved | kLookupDiagHitSubmitted);
     if (published_seq != nullptr) *published_seq = next_hit_seq_;
     ReleaseSRWLockExclusive(&lock_);
+    // 能走到这里的发布一定是点击（ValidPublication 只收 kLookupHitFlagSubmit）。
+    SignalLookupWake();
     return true;
   }
 
@@ -526,6 +529,30 @@ class GeometryProviderRegistry {
   uint32_t last_hit_reject() const { return last_hit_reject_; }
 
  private:
+  // 通知 host 的查词泵「有新点击」（见 LookupWakeEventName）。事件由 host 创建；
+  // 还没建 / 打不开就什么都不做，host 的定时器照样会读到这条 hit。句柄打开一次后
+  // 缓存到进程结束：host 关掉再重建同名事件时，这个句柄让对象一直活着，重建拿到的
+  // 就是同一个对象。SetEvent 不阻塞，可以在引擎线程上调。
+  static void SignalLookupWake() {
+    static std::atomic<HANDLE> cached{nullptr};
+    HANDLE event = cached.load(std::memory_order_acquire);
+    if (event == nullptr) {
+      HANDLE opened =
+          OpenEventW(EVENT_MODIFY_STATE, FALSE,
+                     LookupWakeEventName(GetCurrentProcessId()).c_str());
+      if (opened == nullptr) return;
+      HANDLE expected = nullptr;
+      if (cached.compare_exchange_strong(expected, opened,
+                                         std::memory_order_acq_rel)) {
+        event = opened;
+      } else {
+        CloseHandle(opened);
+        event = expected;
+      }
+    }
+    SetEvent(event);
+  }
+
   static bool IsHeaderSane(const SharedHeader* header, bool require_enabled) {
     return header != nullptr && header->magic == kSharedMagic &&
            header->version == kSharedVersion && HasLookupRegion(header) &&

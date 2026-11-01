@@ -10,6 +10,7 @@
 #include <bcrypt.h>
 
 #include <algorithm>
+#include <atomic>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -689,6 +690,10 @@ struct LookupPumpState {
   VoiceHookLookupAdmission admission;
   bool admission_digest_pending = false;
   HWND hwnd = nullptr;
+  // 点击唤醒（见 [EnsureLookupWake]）：本会话 pid 对应的命名事件与它的线程池等待。
+  HANDLE wake_event = nullptr;
+  HANDLE wake_wait = nullptr;
+  uint32_t wake_pid = 0;
   bool timer_running = false;
   // 当前 WM_TIMER 的周期。记着它才能在两档节拍间切换时判断"要不要重设"——
   // 同 id 的 SetTimer 会替换既有定时器，但每拍都无脑重设等于永远推迟第一次触发。
@@ -700,6 +705,61 @@ LookupPumpState& Pump() {
   return pump;
 }
 
+// ── 点击唤醒 ──────────────────────────────────────────────────────────────────
+// 定时器之外的第二个泵入口：hook 每发布一次点击（submit hit）就 SetEvent 这个命名
+// 事件（voice_hook_ipc.h 的 LookupWakeEventName），线程池里的等待一醒就往泵窗口投
+// 一条消息，平台线程立刻跑一次 [PumpLookupOnce]——点击不再平均多等半拍、最坏一整拍
+// 16ms。定时器原样保留：输入环、准入、截图确认都还靠它，hook 打不开事件时它也是
+// 唯一的入口，所以唤醒只会让读到点击更早，不会改变任何结果。
+constexpr UINT kLookupWakeMessage = WM_APP + 0x31;
+// 线程池回调只读这个句柄投消息（PostMessage 不阻塞、可跨线程），不碰泵状态。
+std::atomic<HWND> g_lookup_wake_target{nullptr};
+
+void CALLBACK OnLookupWake(PVOID /*context*/, BOOLEAN /*timed_out*/) {
+  const HWND target = g_lookup_wake_target.load(std::memory_order_acquire);
+  if (target != nullptr) PostMessageW(target, kLookupWakeMessage, 0, 0);
+}
+
+void StopLookupWake() {
+  LookupPumpState& pump = Pump();
+  g_lookup_wake_target.store(nullptr, std::memory_order_release);
+  if (pump.wake_wait != nullptr) {
+    // INVALID_HANDLE_VALUE：等在途回调跑完再返回。回调只 PostMessage，不会反过来
+    // 等平台线程，这里阻塞不会死锁。
+    UnregisterWaitEx(pump.wake_wait, INVALID_HANDLE_VALUE);
+    pump.wake_wait = nullptr;
+  }
+  if (pump.wake_event != nullptr) {
+    CloseHandle(pump.wake_event);
+    pump.wake_event = nullptr;
+  }
+  pump.wake_pid = 0;
+}
+
+void EnsureLookupWake(uint32_t pid) {
+  LookupPumpState& pump = Pump();
+  if (pid == 0 || pump.hwnd == nullptr) {
+    StopLookupWake();
+    return;
+  }
+  if (pump.wake_pid == pid && pump.wake_wait != nullptr) return;
+  StopLookupWake();
+  // 自动复位：连点几下只合并成「至少再泵一次」，泵本来就是 latest-wins。
+  pump.wake_event = CreateEventW(
+      nullptr, FALSE, FALSE,
+      fushi_voice_hook::LookupWakeEventName(static_cast<DWORD>(pid)).c_str());
+  if (pump.wake_event == nullptr) return;
+  g_lookup_wake_target.store(pump.hwnd, std::memory_order_release);
+  if (!RegisterWaitForSingleObject(&pump.wake_wait, pump.wake_event,
+                                   OnLookupWake, nullptr, INFINITE,
+                                   WT_EXECUTEINWAITTHREAD)) {
+    pump.wake_wait = nullptr;
+    StopLookupWake();
+    return;
+  }
+  pump.wake_pid = pid;
+}
+
 void StopLookupPump() {
   LookupPumpState& pump = Pump();
   if (pump.hwnd != nullptr && pump.timer_running) {
@@ -707,6 +767,7 @@ void StopLookupPump() {
   }
   pump.timer_running = false;
   pump.timer_interval_ms = 0;
+  StopLookupWake();
 }
 
 flutter::EncodableValue LookupErrorMap(VoiceHookLookupError error) {
@@ -911,6 +972,14 @@ LRESULT CALLBACK LookupPumpProc(HWND hwnd, UINT message, WPARAM wparam,
     PumpLookupOnce();
     return 0;
   }
+  if (message == kLookupWakeMessage) {
+    // 只在跟手节拍下响应：查词没开时泵只报准入，点击本来就不该被消费。
+    const LookupPumpState& pump = Pump();
+    if (pump.timer_running && pump.timer_interval_ms == kLookupPumpIntervalMs) {
+      PumpLookupOnce();
+    }
+    return 0;
+  }
   return DefWindowProcW(hwnd, message, wparam, lparam);
 }
 
@@ -969,6 +1038,7 @@ void SyncLookupPump() {
       reader.PeekLookupGate(true) == VoiceHookLookupError::kNone
           ? kLookupPumpIntervalMs
           : kLookupAdmissionPumpIntervalMs);
+  EnsureLookupWake(reader.CurrentPid());
 }
 
 int64_t ReadLookupInt(const flutter::MethodCall<flutter::EncodableValue>& call,
