@@ -1010,8 +1010,27 @@ bool RedirectSiglusProtectorKeyStateSlot(
     return false;
   auto* slot = reinterpret_cast<volatile LONG*>(
       reinterpret_cast<uintptr_t>(module) + profile.get_key_state_slot_rva);
+  // Protector builds merge every section into one CODE|EXECUTE|READ header, so
+  // the slot page can hold code other threads are executing. Never drop the
+  // execute right while the slot is writable: under DEP that faults the game.
+  MEMORY_BASIC_INFORMATION info = {};
+  if (VirtualQuery(const_cast<LONG*>(slot), &info, sizeof(info)) == 0 ||
+      info.State != MEM_COMMIT) return false;
+  const DWORD current = info.Protect & 0xffu;
+  const DWORD modifiers = info.Protect & ~0xffu;
+  const bool writable = current == PAGE_READWRITE ||
+                        current == PAGE_WRITECOPY ||
+                        current == PAGE_EXECUTE_READWRITE ||
+                        current == PAGE_EXECUTE_WRITECOPY;
+  const bool executable = current == PAGE_EXECUTE ||
+                          current == PAGE_EXECUTE_READ ||
+                          current == PAGE_EXECUTE_READWRITE ||
+                          current == PAGE_EXECUTE_WRITECOPY;
   DWORD old_protect = 0;
-  if (!VirtualProtect(const_cast<LONG*>(slot), sizeof(LONG), PAGE_READWRITE,
+  if (!writable &&
+      !VirtualProtect(const_cast<LONG*>(slot), sizeof(LONG),
+                      (executable ? PAGE_EXECUTE_READWRITE : PAGE_READWRITE) |
+                          modifiers,
                       &old_protect)) return false;
   const LONG original = *slot;
   g_orig_SiglusGetKeyState = reinterpret_cast<decltype(&GetKeyState)>(
@@ -1020,8 +1039,22 @@ bool RedirectSiglusProtectorKeyStateSlot(
       reinterpret_cast<uintptr_t>(&Detour_SiglusGetKeyState));
   const bool swapped =
       InterlockedCompareExchange(slot, detour, original) == original;
-  DWORD ignored = 0;
-  VirtualProtect(const_cast<LONG*>(slot), sizeof(LONG), old_protect, &ignored);
+  if (!writable) {
+    DWORD ignored = 0;
+    if (!VirtualProtect(const_cast<LONG*>(slot), sizeof(LONG), old_protect,
+                        &ignored)) {
+      // The swap itself already holds or failed closed; the page just stays
+      // writable. Record why, the diag bits cannot carry it.
+      wchar_t line[160] = {};
+      _snwprintf_s(line, _TRUNCATE,
+                   L"[siglus] protector slot rva=0x%08lx restore protect "
+                   L"0x%08lx failed err=%lu swapped=%d",
+                   static_cast<unsigned long>(profile.get_key_state_slot_rva),
+                   static_cast<unsigned long>(old_protect), GetLastError(),
+                   swapped ? 1 : 0);
+      HookLogLine(line);
+    }
+  }
   if (!swapped) g_orig_SiglusGetKeyState = nullptr;
   return swapped;
 }

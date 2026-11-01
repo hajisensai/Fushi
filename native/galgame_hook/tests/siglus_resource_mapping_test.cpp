@@ -5,6 +5,7 @@
 #include "siglus_resource_mapping.h"
 #include <cassert>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <utility>
 #include <vector>
@@ -12,19 +13,30 @@
 namespace {
 using namespace fushi_voice_hook;
 using namespace fushi_voice_hook::siglus_resource;
+// Fixture writes go through an explicit bound: a write that would leave the
+// image is a fixture bug, never a silently corrupted neighbour allocation.
+uint8_t *FixtureSpan(uint8_t *base, size_t size, uintptr_t at, size_t n) {
+  if (base == nullptr || at > size || n > size - at)
+    std::abort();
+  return base + at;
+}
+// Image keeps page-granular VirtualAlloc memory: its negative cases flip
+// individual pages to PAGE_NOACCESS.
 struct Image {
+  static constexpr size_t kBytes = 0x20000u;
   uint8_t *bytes = static_cast<uint8_t *>(VirtualAlloc(
-      nullptr, 0x20000u, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE));
+      nullptr, kBytes, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE));
   exact_lookup::LoadedPeImage view;
   uintptr_t voice, play, resource, builder, concat, formatter, crt;
   uintptr_t assign, archive_open, archive_read, ogg_ctor, ogg_open, ogg_read;
   std::vector<std::pair<uintptr_t, uintptr_t>> edges;
   std::vector<uintptr_t> strings;
   explicit Image(uintptr_t shift = 0u) {
-    assert(bytes);
-    std::memset(bytes, 0xcc, 0x20000u);
+    if (bytes == nullptr)
+      std::abort();
+    std::memset(bytes, 0xcc, kBytes);
     view.base = bytes;
-    view.size = 0x20000u;
+    view.size = kBytes;
     view.absolute_base = 0x13000000u;
     view.machine = IMAGE_FILE_MACHINE_I386;
     view.pointer_bits = 32u;
@@ -106,20 +118,22 @@ struct Image {
   Image(const Image &) = delete;
   Image &operator=(const Image &) = delete;
   void Put(uintptr_t rva, const exact_lookup::MaskedPattern &p) {
-    std::memcpy(bytes + rva, p.bytes, p.size);
+    std::memcpy(FixtureSpan(bytes, kBytes, rva, p.size), p.bytes, p.size);
   }
   void Call(uintptr_t at, uintptr_t target) {
-    assert(bytes[at] == 0xe8u);
+    uint8_t *site = FixtureSpan(bytes, kBytes, at, 5u);
+    assert(site[0] == 0xe8u);
     const int32_t rel = static_cast<int32_t>(target - at - 5u);
-    std::memcpy(bytes + at + 1u, &rel, 4u);
+    std::memcpy(site + 1u, &rel, sizeof(rel));
   }
   void Absolute(uintptr_t at, uintptr_t rva) {
     const uint32_t va = static_cast<uint32_t>(view.absolute_base + rva);
-    std::memcpy(bytes + at, &va, 4u);
+    std::memcpy(FixtureSpan(bytes, kBytes, at, sizeof(va)), &va, sizeof(va));
   }
   template <size_t N> void String(uintptr_t at, const wchar_t (&s)[N]) {
+    static_assert(sizeof(s) <= 0x80u, "literal exceeds its slot");
     const uintptr_t rva = 0x1c000u + strings.size() * 0x80u;
-    std::memcpy(bytes + rva, s, sizeof(s));
+    std::memcpy(FixtureSpan(bytes, kBytes, rva, sizeof(s)), s, sizeof(s));
     Absolute(at, rva);
     strings.push_back(at);
   }
@@ -156,8 +170,9 @@ struct PlainImage {
   // Literals live in fixed 0x80-byte slots below the 0x1cf00 vtable words.
   static constexpr uintptr_t kStringBase = 0x1c000u, kStringSlot = 0x80u;
   static constexpr uintptr_t kStringEnd = 0x1cf00u;
-  uint8_t *bytes = static_cast<uint8_t *>(VirtualAlloc(
-      nullptr, kBytes, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE));
+  // Plain RW heap memory is enough: no PlainImage case changes page protection.
+  std::vector<uint8_t> storage = std::vector<uint8_t>(kBytes, 0xccu);
+  uint8_t *bytes = storage.data();
   exact_lookup::LoadedPeImage view;
   uintptr_t voice = 0x1000u, play = 0x2000u, resource = 0x4000u;
   uintptr_t builder = 0x7000u, concat = 0xa000u, formatter = 0xc000u;
@@ -167,8 +182,6 @@ struct PlainImage {
   std::vector<std::pair<uintptr_t, uintptr_t>> edges;
   size_t strings = 0;
   PlainImage() {
-    assert(bytes);
-    std::memset(bytes, 0xcc, kBytes);
     view.base = bytes;
     view.size = kBytes;
     view.absolute_base = 0x13000000u;
@@ -223,26 +236,27 @@ struct PlainImage {
     Absolute(0x1cf04u, ogg_open);
     Absolute(ogg_open + 0x70u, ogg_read);
   }
-  ~PlainImage() { VirtualFree(bytes, 0, MEM_RELEASE); }
   PlainImage(const PlainImage &) = delete;
   PlainImage &operator=(const PlainImage &) = delete;
   void Put(uintptr_t rva, const exact_lookup::MaskedPattern &p) {
-    std::memcpy(bytes + rva, p.bytes, p.size);
+    std::memcpy(FixtureSpan(bytes, kBytes, rva, p.size), p.bytes, p.size);
   }
   void Call(uintptr_t at, uintptr_t target) {
-    assert(bytes[at] == 0xe8u);
+    uint8_t *site = FixtureSpan(bytes, kBytes, at, 5u);
+    assert(site[0] == 0xe8u);
     const int32_t rel = static_cast<int32_t>(target - at - 5u);
-    std::memcpy(bytes + at + 1u, &rel, 4u);
+    std::memcpy(site + 1u, &rel, sizeof(rel));
   }
   void Absolute(uintptr_t at, uintptr_t rva) {
     const uint32_t va = static_cast<uint32_t>(view.absolute_base + rva);
-    std::memcpy(bytes + at, &va, 4u);
+    std::memcpy(FixtureSpan(bytes, kBytes, at, sizeof(va)), &va, sizeof(va));
   }
   template <size_t N> void String(uintptr_t at, const wchar_t (&s)[N]) {
     static_assert(sizeof(s) <= kStringSlot, "literal exceeds its slot");
     const uintptr_t rva = kStringBase + strings++ * kStringSlot;
-    assert(rva + kStringSlot <= kStringEnd);
-    std::memcpy(bytes + rva, s, sizeof(s));
+    if (rva + kStringSlot > kStringEnd)
+      std::abort();
+    std::memcpy(FixtureSpan(bytes, kBytes, rva, sizeof(s)), s, sizeof(s));
     Absolute(at, rva);
   }
   void Check() {
