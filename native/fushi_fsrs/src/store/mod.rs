@@ -128,10 +128,6 @@ pub(crate) fn trim_idle_cache(c: &Connection) {
     }
 }
 
-/// Drift 事务外查询的只读连接上限（[SrsCore::snapshot_select]）。Dart 侧发这类查询的 worker 数
-/// （`SrsCoreLane.query`）不超过它；每条连接命令之间常驻的页缓存不超过 [IDLE_CACHE_BYTES]。
-pub const DRIFT_READERS: usize = 4;
-
 /// [SrsCore::snapshot_select] 拒绝的语句（不是能放到只读连接上的查询）的错误文本：Dart 侧据此把它改发写连接那一路。
 pub const NOT_SNAPSHOT: &str = "srs: not a snapshot query";
 
@@ -312,7 +308,7 @@ impl SrsCore {
         configure(&reader)?;
         #[cfg(any(test, feature = "id_audit"))]
         let reader = ids::audit::installed(reader);
-        let drift_readers = read_pool::ReadPool::new(path, DRIFT_READERS, open_drift_reader)?;
+        let drift_readers = read_pool::ReadPool::new(path, read_pool::read_concurrency(), open_drift_reader)?;
         Ok(Self {
             writer: Mutex::new(Some(writer)),
             reader: Mutex::new(Some(reader)),
@@ -576,6 +572,12 @@ impl SrsCore {
             }
         }
         self.exec(sql, params, true)
+    }
+
+    /// Drift 事务外查询的并发上限（只读连接池的连接数上限，store/read_pool.rs `read_concurrency`）：Dart 侧
+    /// 查询道的 worker 数取它（`ffsrs_store_read_concurrency`），两边不各写一份常量。
+    pub fn read_concurrency(&self) -> usize {
+        self.drift_readers.cap()
     }
 
     /// Drift 事务**外**的查询（`ffsrs_store_exec` mode 3，Dart 读查询那一路）：一律在只读连接池

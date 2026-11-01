@@ -460,6 +460,24 @@ pub extern "C" fn ffsrs_store_exec_batch(
     })
 }
 
+/// `*out` = Drift 事务外查询的并发上限（只读连接池的连接数上限，`SrsCore::read_concurrency`）：Dart 侧查询道的
+/// worker 数取它。
+#[no_mangle]
+pub extern "C" fn ffsrs_store_read_concurrency(
+    core: *const SrsCoreHandle,
+    out: *mut i32,
+    error_out: *mut *mut c_char,
+) -> i32 {
+    if out.is_null() {
+        set_error(error_out, "null out");
+        return STORE_BAD_ARGUMENT;
+    }
+    run_core(core, error_out, |c| {
+        unsafe { *out = c.read_concurrency() as i32 };
+        Ok(())
+    })
+}
+
 /// `*out` = 1 写连接在事务里。
 #[no_mangle]
 pub extern "C" fn ffsrs_store_in_transaction(

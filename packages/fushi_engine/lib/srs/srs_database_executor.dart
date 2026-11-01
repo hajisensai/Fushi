@@ -7,7 +7,8 @@
 /// - 写那一路：写语句、`runCustom`（含 Drift 用来开关事务的 BEGIN / COMMIT / SAVEPOINT）、事务 / 独占块里的
 ///   一切语句，在一个后台 isolate 的顺序执行器上、经内核的写连接执行（同事务读得到刚写的未提交行，同一条写连接上
 ///   的 Rust 命令同样看得见）。Drift 的事务语义（事务开着时事务外的写等它结束）由这条顺序执行器保证。
-/// - 读那一路：事务**外**的查询不进上面那条队列，直接发到内核命令 worker 的查询道（`SrsCoreLane.query`），
+/// - 读那一路：事务**外**的查询不进上面那条队列，直接发到内核命令 worker 的查询道（`SrsCoreLane.query`，
+///   worker 数 = 内核只读连接池的上限 `SrsCore.readConcurrency`，空闲一分钟多起的 worker 收掉），
 ///   在内核的只读连接池上并发执行（`SrsCore.snapshotQuery`）：同步里几秒的长读跑着时，打开卡片 / 牌组设置的
 ///   短读不再排在它后面（BUG-3961）。只看已提交的数据——事务开着时它看不到那笔事务未提交的行，与事务外的读
 ///   本来的语义相同；不是只读查询（PRAGMA 等）改发写那一路。
@@ -121,12 +122,11 @@ DatabaseConnection srsDatabaseConnection(SrsCore core) {
       return isolate.connect(singleClientMode: true);
     }),
   );
+  // 查询道的 worker 上限 = 内核只读连接池的上限（按核数算，只在 Rust 里算一次；这一下只读一个数，不碰库）。
+  final SrsCoreWorkers workers = SrsCoreWorkers.of(libraryPath)
+    ..setQueryConcurrency(core.readConcurrency);
   return DatabaseConnection(
-    SrsSplitExecutor(
-      write: write,
-      address: address,
-      workers: SrsCoreWorkers.of(libraryPath),
-    ),
+    SrsSplitExecutor(write: write, address: address, workers: workers),
     // 表更新通知与原来同一个 store（写那一路的连接带的）。
     streamQueries: write.streamQueries,
   );

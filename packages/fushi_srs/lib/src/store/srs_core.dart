@@ -300,6 +300,9 @@ final class SrsCoreBindings {
       inTransaction = lib.lookupFunction<_StateC, _StateDart>(
         'ffsrs_store_in_transaction',
       ),
+      readConcurrency = lib.lookupFunction<_StateC, _StateDart>(
+        'ffsrs_store_read_concurrency',
+      ),
       historyStates = lib.lookupFunction<_HistC, _HistDart>(
         'ffsrs_store_history_states',
       ),
@@ -332,6 +335,7 @@ final class SrsCoreBindings {
   final _ExecDart exec;
   final _PageDart execBatch;
   final _StateDart inTransaction;
+  final _StateDart readConcurrency;
   final _HistDart historyStates;
   final _CmdDart optimizerItems;
   final _CmdDart rwkvRows;
@@ -825,6 +829,16 @@ final class SrsCore {
     );
     _b._freeBytes(out.value, len);
     return bytes;
+  });
+
+  /// Drift 事务外查询（[snapshotQuery]）的并发上限：内核只读连接池的连接数上限，按本机核数算
+  /// （native/fushi_fsrs/src/store/read_pool.rs `read_concurrency`）。查询道的 worker 数取它，不另写常量。
+  int get readConcurrency => using((Arena arena) {
+    final ffi.Pointer<ffi.Int32> out = arena();
+    final ffi.Pointer<ffi.Pointer<ffi.Char>> err = arena();
+    err.value = ffi.nullptr;
+    _check(_b, _b.readConcurrency(_h, out, err), err);
+    return out.value;
   });
 
   /// 写连接当前是否在事务里。

@@ -52,20 +52,26 @@ enum SrsCoreLane {
 }
 
 final class SrsCoreWorkers {
-  SrsCoreWorkers._(this.libraryPath) {
+  SrsCoreWorkers._(
+    this.libraryPath, {
+    Duration queryIdleTtl = kSrsQueryWorkerIdleTtl,
+  }) {
     for (final SrsCoreLane lane in SrsCoreLane.values) {
       _lanes[lane] = _Lane(
         libraryPath,
         maxWorkersOf(lane),
         () => debugFailSpawns,
+        idleTtl: lane == SrsCoreLane.query ? queryIdleTtl : null,
       );
     }
   }
 
-  /// 一个不登记进 [of] 的新池（测试：起 worker 失败、句柄缓存）。
+  /// 一个不登记进 [of] 的新池（测试：起 worker 失败、句柄缓存、查询道空闲回收）。
   @visibleForTesting
-  factory SrsCoreWorkers.debugFresh(String? libraryPath) =>
-      SrsCoreWorkers._(libraryPath);
+  factory SrsCoreWorkers.debugFresh(
+    String? libraryPath, {
+    Duration queryIdleTtl = kSrsQueryWorkerIdleTtl,
+  }) => SrsCoreWorkers._(libraryPath, queryIdleTtl: queryIdleTtl);
 
   static final Map<String?, SrsCoreWorkers> _pools =
       <String?, SrsCoreWorkers>{};
@@ -77,19 +83,31 @@ final class SrsCoreWorkers {
   /// [SrsCoreLane.bulk] 同时在途的命令数上限（超过排队）。
   static const int maxWorkers = 4;
 
-  /// [SrsCoreLane.query] 同时在途的查询数上限。
-  static const int kSrsQueryWorkers = 3;
+  /// [SrsCoreLane.query] 的空闲 worker 保留时长：与内核只读连接池的空闲回收（Rust `read_pool::IDLE_TTL`）同长，
+  /// 一阵并发查询（打开设置页、一轮同步）之后多起的 worker 一分钟内没再用就收掉（每个 isolate 几 MB 堆）；
+  /// 至少留一个，下一条查询不付起 isolate + 解析符号的开销。
+  static const Duration kSrsQueryWorkerIdleTtl = Duration(seconds: 60);
 
   /// 各道同时在途的命令数上限：交互命令短、一次评分最多两三条并发；文件道给同步的成批加解密留两个并行。
   static int maxWorkersOf(SrsCoreLane lane) => switch (lane) {
     SrsCoreLane.interactive => 2,
     SrsCoreLane.bulk => maxWorkers,
     SrsCoreLane.file => 2,
-    SrsCoreLane.query => kSrsQueryWorkers,
+    // 真正的上限由 [setQueryConcurrency] 从打开的库上读（内核只读连接池的上限）；读到之前只放一个。
+    SrsCoreLane.query => 1,
   };
 
-  /// [SrsCoreLane.query] 的 worker 上限：不超过内核只读连接池的上限（Rust `store::DRIFT_READERS` = 4），
-  /// 查询不会在内核里等连接。
+  /// 设 [SrsCoreLane.query] 的 worker 上限为 [n]（`SrsCore.readConcurrency`：内核只读连接池的上限，按核数算，
+  /// 只在 Rust 里算一次）。worker 数不超过池上限，查询不会在内核里等连接。调高时排着的查询立即去起 worker。
+  void setQueryConcurrency(int n) => _lanes[SrsCoreLane.query]!.setMax(n);
+
+  /// [lane] 当前活着（空闲 + 在途）的 worker 数（测试看空闲回收）。
+  @visibleForTesting
+  int debugLive(SrsCoreLane lane) => _lanes[lane]!.live;
+
+  /// [lane] 的 worker 上限（测试）。
+  @visibleForTesting
+  int debugMax(SrsCoreLane lane) => _lanes[lane]!.max;
 
   final String? libraryPath;
   final Map<SrsCoreLane, _Lane> _lanes = <SrsCoreLane, _Lane>{};
@@ -131,10 +149,18 @@ final class SrsCoreWorkers {
 
 /// 一条道：自己的 worker、空闲表与等待队列。
 final class _Lane {
-  _Lane(this.libraryPath, this.max, this._failSpawns);
+  _Lane(this.libraryPath, this.max, this._failSpawns, {this.idleTtl});
 
   final String? libraryPath;
-  final int max;
+  int max;
+
+  /// 空闲 worker 的保留时长；null = 常驻不回收。回收时至少留一个。
+  final Duration? idleTtl;
+
+  /// 各空闲 worker 变空闲的时刻（[_clock] 的读数）。
+  final Map<_Worker, Duration> _idleSince = <_Worker, Duration>{};
+  Timer? _retireTimer;
+  static final Stopwatch _clock = Stopwatch()..start();
   final bool Function() _failSpawns;
   final List<_Worker> _idle = <_Worker>[];
   final Set<_Worker> _all = <_Worker>{};
@@ -142,9 +168,55 @@ final class _Lane {
   int _live = 0;
   int spawnedTotal = 0;
 
+  int get live => _live;
+
+  void setMax(int n) {
+    max = n < 1 ? 1 : n;
+    while (_waiting.isNotEmpty && _live < max) {
+      _spawnFor(_waiting.removeFirst());
+    }
+  }
+
+  /// [w] 进空闲表：记时刻，按需排一次回收（一次性定时器，挂根 zone；不轮询）。
+  void _park(_Worker w) {
+    _idle.add(w);
+    final Duration? ttl = idleTtl;
+    if (ttl == null) return;
+    _idleSince[w] = _clock.elapsed;
+    _retireTimer ??= Zone.root.createTimer(ttl, _retireIdle);
+  }
+
+  /// 收掉空闲满 [idleTtl] 的 worker（至少留一个活着的）；还有会到期的就再排一次。
+  void _retireIdle() {
+    _retireTimer = null;
+    final Duration ttl = idleTtl!;
+    final Duration now = _clock.elapsed;
+    // 空闲表里先放回的在前（派发取表尾）。
+    for (final _Worker w in List<_Worker>.of(_idle)) {
+      if (_live <= 1) break;
+      final Duration since = _idleSince[w]!;
+      if (now - since < ttl) continue;
+      _idle.remove(w);
+      _idleSince.remove(w);
+      _all.remove(w);
+      _live--;
+      w.kill();
+    }
+    if (_live > 1 && _idle.isNotEmpty) {
+      final Duration earliest = _idle
+          .map((_Worker w) => _idleSince[w]!)
+          .reduce((Duration a, Duration b) => a < b ? a : b);
+      Duration wait = earliest + ttl - now;
+      if (wait < Duration.zero) wait = Duration.zero;
+      _retireTimer = Zone.root.createTimer(wait, _retireIdle);
+    }
+  }
+
   void submit(_Job<Object?> j) {
     if (_idle.isNotEmpty) {
-      _dispatch(_idle.removeLast(), j);
+      final _Worker w = _idle.removeLast();
+      _idleSince.remove(w);
+      _dispatch(w, j);
     } else if (_live < max) {
       _spawnFor(j);
     } else {
@@ -215,7 +287,7 @@ final class _Lane {
     if (_waiting.isNotEmpty) {
       _dispatch(w, _waiting.removeFirst());
     } else {
-      _idle.add(w);
+      _park(w);
     }
   }
 }
