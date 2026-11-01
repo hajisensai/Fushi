@@ -907,12 +907,13 @@ void main() {
           await tester.tap(find.text(t.srs_review_layout_title).last);
         }
         await _settle(tester);
-        // 设置行整行可点（两套设计系统的开关控件不同，点行最稳）。
-        await tester.tap(
-          find.byKey(
-            const ValueKey<String>('srs-review-layout-hide-hard-easy'),
-          ),
+        // 设置行整行可点（两套设计系统的开关控件不同，点行最稳）；抽屉可滚，先滚到这一行。
+        final Finder hideRow = find.byKey(
+          const ValueKey<String>('srs-review-layout-hide-hard-easy'),
         );
+        await tester.ensureVisible(hideRow);
+        await _settle(tester);
+        await tester.tap(hideRow);
         await _settle(tester);
         Navigator.of(tester.element(find.byType(SrsReviewLayoutSheet))).pop();
         await _settle(tester);
