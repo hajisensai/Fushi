@@ -81,6 +81,7 @@ class MangaOcrModelPaths {
     this.ppRecPath = '',
     this.ppRecDictPath = '',
     this.ctcRecPath = '',
+    this.ignoreFurigana = false,
   });
 
   final String detectorPath;
@@ -92,7 +93,19 @@ class MangaOcrModelPaths {
   final String ppDetPath;
   final String ppRecPath;
   final String ppRecDictPath;
+
+  /// 「OCR 忽略振假名」（反馈 ZBJTgLuPIb）：逐列 CTC 识别前把贴在正文旁的注音带
+  /// 从列框里裁掉（[trimOcrRubyBands]）。不是模型路径，但它和路径一样决定 isolate
+  /// 里怎么组装识别器，跟着同一个对象跨 isolate 传；缓存签名另带后缀
+  /// （[mangaOcrEngineSignatureFor]），开关前后的结果不混在同一个缓存目录。
+  final bool ignoreFurigana;
 }
+
+/// 缓存签名的识别选项后缀：开了「忽略振假名」的结果单独成目录。
+String mangaOcrEngineSignatureFor(
+  String base, {
+  required bool ignoreFurigana,
+}) => ignoreFurigana ? '${base}_noruby' : base;
 
 /// 整卷任务请求。
 class MangaOcrVolumeJobRequest {
@@ -537,6 +550,7 @@ Future<void> _openIsolateOcrEngine(
   final OcrRecognizer primary = CtcColumnOcrRecognizer(
     lineDetector: await openLineDetector(),
     lineRecognizer: columns,
+    ignoreFurigana: modelPaths.ignoreFurigana,
   );
   // 横排行路径：PP-OCRv6 small det/rec 与块识别器同一组 provider（都是识别侧）；
   // 建会话时的降级同样经 record 留痕。
@@ -611,10 +625,13 @@ Future<void> _volumeJobIsolateMain(_JobIsolateArgs args) async {
     const MangaOcrLocalModel jobModel = MangaOcrLocalModel.mangaCtc;
     final String engineSignature =
         args.engineSignature ??
-        await model_fp.resolveLocalMangaOcrEngineSignature(
-          Directory(p.dirname(args.modelPaths.detectorPath)),
-          manifest: jobModel.manifest,
-          baseSignature: jobModel.cacheSignature,
+        mangaOcrEngineSignatureFor(
+          await model_fp.resolveLocalMangaOcrEngineSignature(
+            Directory(p.dirname(args.modelPaths.detectorPath)),
+            manifest: jobModel.manifest,
+            baseSignature: jobModel.cacheSignature,
+          ),
+          ignoreFurigana: args.modelPaths.ignoreFurigana,
         );
     final String mangaJsonPath = await runMangaOcrFolderJob(
       imageDirPath: args.imageDirPath,
@@ -1276,8 +1293,10 @@ class MangaOcrServiceImpl
     MangaOcrVolumeJobRunner? jobRunner,
     MangaOcrPageSessionRunner? pageSessionRunner,
     bool Function()? platformSupport,
+    bool Function()? ignoreFurigana,
     this.localModel = kDefaultMangaOcrLocalModel,
-  }) : _modelsDirProvider = modelsDirProvider ?? localModel.modelsDirectory,
+  }) : _ignoreFurigana = ignoreFurigana ?? _never,
+       _modelsDirProvider = modelsDirProvider ?? localModel.modelsDirectory,
        _downloader = downloader ?? MangaOcrModelDownloader(),
        _manifest = manifest ?? localModel.manifest,
        _jobRunner = jobRunner ?? const IsolateMangaOcrVolumeJobRunner(),
@@ -1292,6 +1311,10 @@ class MangaOcrServiceImpl
   final MangaOcrPageSessionRunner _pageSessionRunner;
   final bool Function() _platformSupport;
   final MangaOcrLocalModel localModel;
+
+  /// 「OCR 忽略振假名」开关，每次开跑现读（设置页改了下一次识别就生效）。
+  final bool Function() _ignoreFurigana;
+  static bool _never() => false;
 
   /// 默认模型目录：`<appSupport>/ocr_models/manga`（经 [AppPaths] 数据根
   /// 单一入口，不硬编码平台路径）。指纹层与本类共用同一个解析函数。
@@ -1436,6 +1459,7 @@ class MangaOcrServiceImpl
             kPpOcrRecDictFileName,
           ),
           ctcRecPath: ctcRecPath,
+          ignoreFurigana: _ignoreFurigana(),
         );
     }
   }
@@ -1459,12 +1483,14 @@ class MangaOcrServiceImpl
   /// （BUG-1173）。[resolvePageCacheDirPath] 与 [openPageSession] 都经这里，
   /// 会话 isolate 直接用传进去的签名，不再按 detectorPath 重算——注入自定义
   /// 模型目录时读写缓存也不会分叉到两个目录。
-  Future<String> _pageEngineSignature() async =>
-      model_fp.resolveLocalMangaOcrEngineSignature(
-        await _modelsDirProvider(),
-        manifest: _manifest,
-        baseSignature: localModel.cacheSignature,
-      );
+  Future<String> _pageEngineSignature() async => mangaOcrEngineSignatureFor(
+    await model_fp.resolveLocalMangaOcrEngineSignature(
+      await _modelsDirProvider(),
+      manifest: _manifest,
+      baseSignature: localModel.cacheSignature,
+    ),
+    ignoreFurigana: _ignoreFurigana(),
+  );
 
   static String _pageCacheDirPath(String imageDirPath, String signature) =>
       p.join(

@@ -64,6 +64,11 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-3928](bugs/BUG-3928-ffmpeg-remote-input-bypasses-app-proxy.md) | ✅ | ✅ | ffmpeg-remote-input-bypasses-app-proxy |
+> 共 3532 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-3928](bugs/BUG-3928-manga-spread-offset-ignored-after-wide-page.md) | ✅ | ✅ | manga-spread-offset-ignored-after-wide-page |
 | [BUG-3927](bugs/BUG-3927-reader-jp-gothic-alias-theme-font.md) | ✅ | ✅ | 電書協书的章标题在换了主题字体的 Android 机上竖排叠字 |
 | [BUG-3926](bugs/BUG-3926-download-subtitle-retry-drops-anilist.md) | ✅ | ✅ | download-subtitle-retry-drops-anilist |
 | [BUG-3925](bugs/BUG-3925-ai-panel-tight-mode-hides-context-chip.md) | ✅ | ✅ | ai-panel-tight-mode-hides-context-chip |

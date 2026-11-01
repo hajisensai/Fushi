@@ -171,6 +171,30 @@ List<MangaReaderPreferenceDescriptor> mangaReaderPreferenceDescriptors(
     kind: MangaReaderPreferenceKind.toggle,
     title: t.manga_reader_crop_borders,
   ),
+  // 放大态三项（反馈 EjyFnomM6w）：拖过边缘翻页、缩小下限、快速缩回手势与目标。
+  MangaReaderPreferenceDescriptor(
+    key: 'zoomedEdgeTurn',
+    kind: MangaReaderPreferenceKind.toggle,
+    title: t.manga_reader_zoomed_edge_turn,
+  ),
+  MangaReaderPreferenceDescriptor(
+    key: 'zoomOutLimit',
+    kind: MangaReaderPreferenceKind.choice,
+    title: t.manga_reader_zoom_out_limit,
+    choices: const <String>['free', 'fit_height'],
+  ),
+  MangaReaderPreferenceDescriptor(
+    key: 'quickZoomGesture',
+    kind: MangaReaderPreferenceKind.choice,
+    title: t.manga_reader_quick_zoom_gesture,
+    choices: const <String>['off', 'double_tap', 'two_finger_tap'],
+  ),
+  MangaReaderPreferenceDescriptor(
+    key: 'quickZoomTarget',
+    kind: MangaReaderPreferenceKind.choice,
+    title: t.manga_reader_quick_zoom_target,
+    choices: const <String>['fit_height', 'fit_width'],
+  ),
   MangaReaderPreferenceDescriptor(
     key: 'splitWidePages',
     kind: MangaReaderPreferenceKind.toggle,
@@ -595,6 +619,17 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
       'smart' => t.manga_scale_smart,
       _ => t.manga_scale_fit_screen,
     },
+    'zoomOutLimit' =>
+      value == 'fit_height'
+          ? t.manga_scale_fit_height
+          : t.manga_reader_zoom_out_limit_free,
+    'quickZoomGesture' => switch (value) {
+      'double_tap' => t.manga_reader_quick_zoom_gesture_double_tap,
+      'two_finger_tap' => t.manga_reader_quick_zoom_gesture_two_finger_tap,
+      _ => t.manga_reader_quick_zoom_gesture_off,
+    },
+    'quickZoomTarget' =>
+      value == 'fit_width' ? t.manga_scale_fit_width : t.manga_scale_fit_height,
     'tapZones' => switch (value) {
       'edge' => t.manga_reader_tap_edge,
       'disabled' => t.manga_reader_tap_disabled,
@@ -630,6 +665,10 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
     'autoScrollSpeed' => FushiIcons.speed,
     'animateDoubleTap' => FushiIcons.touch,
     'disableZoomOut' => FushiIcons.zoomOut,
+    'zoomedEdgeTurn' => FushiIcons.swap,
+    'zoomOutLimit' => FushiIcons.zoomOut,
+    'quickZoomGesture' => FushiIcons.touch,
+    'quickZoomTarget' => FushiIcons.zoomOut,
     'invertHorizontal' => FushiIcons.swap,
     'invertVertical' => FushiIcons.swap,
     'invertBoth' => FushiIcons.swap,
@@ -922,6 +961,10 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
         <String>[
           'animateDoubleTap',
           'disableZoomOut',
+          'zoomedEdgeTurn',
+          'zoomOutLimit',
+          'quickZoomGesture',
+          'quickZoomTarget',
           'invertHorizontal',
           'invertVertical',
           'invertBoth',

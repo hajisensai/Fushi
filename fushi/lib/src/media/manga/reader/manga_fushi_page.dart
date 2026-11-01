@@ -1210,6 +1210,12 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   int _spreadOffset = 1;
   bool _widePageSolo = true;
 
+  /// 双页配对锚点（页索引，-1 = 无；见 [buildMangaSpreads] 的 `anchorPage`）。
+  /// 会话状态、按卷：换卷 / 换章（[_loadLocalPayload]）清掉。由两处设定：
+  /// 单页→双页（旋转 / 切双页）时取当前聚焦页做一对的前页；在宽页之后的段里
+  /// 拨「错开一页」时取当前对的前页，让偏移作用到眼前这一段（反馈 haetN22fJI）。
+  int _spreadAnchorPage = -1;
+
   /// 「显示识别范围」（BUG-2481）：把 OCR 块框画出来。会话内状态，不落偏好——
   /// 它是检查识别质量用的，不是阅读姿势。
   bool _showOcrBoxes = false;
@@ -1908,6 +1914,18 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       _spreads,
       _currentSpread,
     );
+    // 单页→双页（旋转 / 切双页）：以此刻聚焦的那页定位配对，它做一对的前页
+    // （阅读方向上先读的那侧：右开本在右、左开本在左），而不是按全卷奇偶把它
+    // 配到后页、画面跳成「上一页 + 这页」（反馈 haetN22fJI）。
+    if (_pageLayout == MangaPageLayout.single &&
+        _resolveLayout(_mode) == MangaPageLayout.double) {
+      _spreadAnchorPage = mangaSpreadAnchorLeading(
+        currentPage,
+        pageCount: payload.images.length,
+        spreadOffset: _spreadOffset,
+        soloPages: _soloPagesFor(payload),
+      );
+    }
     final List<MangaSpreadEntry> spreads = _buildSpreadsFor(payload, _mode);
     // 同一页换单元边界（单页↔双页）不是翻页：下一次 arrive 只替换边界、不结算。
     _readLedger.rebaseOnNextArrive();
@@ -1983,6 +2001,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     required String mangaJsonPath,
     int? initialPage,
   }) async {
+    // 锚点是页索引，只对当前这一卷有效。
+    _spreadAnchorPage = -1;
     final File jsonFile = File(mangaJsonPath);
     if (!jsonFile.existsSync()) {
       ErrorLogService.instance.log(
@@ -2828,6 +2848,27 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       soloPages: _soloPagesFor(payload),
       layout: layout,
       spreadOffset: _spreadOffset,
+      anchorPage: _spreadAnchorPage,
+    );
+  }
+
+  /// 拨「错开一页」前调用：当前页落在宽页之后、还没有锚点的段里时，偏移本来
+  /// 作用不到这一段（只管首段与锚点段），先把「当前对的前页」记成锚点——
+  /// 按旧偏移它与现状一致，偏移一翻，这一段就跟着错开。
+  void _anchorSpreadShiftAtCurrentPage() {
+    final MokuroPayload? payload = _payload;
+    if (payload == null || _pageLayout != MangaPageLayout.double) return;
+    final int page = MangaFushiPage.firstPageOfSpread(_spreads, _currentSpread);
+    final List<bool> solo = _soloPagesFor(payload);
+    final int pageCount = payload.images.length;
+    final (int, int)? run = mangaSpreadRunOf(page, pageCount, solo);
+    if (run == null || run.$1 == 0) return;
+    if (_spreadAnchorPage >= run.$1 && _spreadAnchorPage < run.$2) return;
+    _spreadAnchorPage = mangaSpreadAnchorLeading(
+      page,
+      pageCount: pageCount,
+      spreadOffset: _spreadOffset,
+      soloPages: solo,
     );
   }
 
@@ -5758,6 +5799,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                 },
                 parallelTasksGetter: () => appModel.mangaOcrParallelTasks,
                 parallelTasksSetter: appModel.setMangaOcrParallelTasks,
+                ignoreFuriganaGetter: () => appModel.mangaOcrIgnoreFurigana,
+                ignoreFuriganaSetter: appModel.setMangaOcrIgnoreFurigana,
                 localModelGetter: () => appModel.mangaOcrLocalModel,
                 localModelSetter: appModel.setMangaOcrLocalModel,
                 lensLanguageGetter: () => appModel.mangaOcrLensLanguage,
@@ -6061,6 +6104,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
               if (patch.length == 1 && patch['direction'] is String) {
                 await _setSpreadDirection(patch['direction']! as String);
                 return;
+              }
+              if (patch.containsKey('spreadOffset')) {
+                _anchorSpreadShiftAtCurrentPage();
               }
               if (!await _patchReaderOverride(row.uid, patch)) {
                 throw StateError('manga reader override not saved');

@@ -371,6 +371,7 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'manga_mining_crop_to_panel',
   'manga_ocr_ai_mode',
   'manga_ocr_engine_preference',
+  'manga_ocr_ignore_furigana',
   'manga_ocr_lens_language',
   'manga_ocr_local_model',
   'manga_ocr_paired_host_model',

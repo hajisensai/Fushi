@@ -12020,6 +12020,10 @@ class AppModel with ChangeNotifier {
   Future<void> setMangaOcrParallelTasks(int value) =>
       prefsRepo.setMangaOcrParallelTasks(value);
 
+  bool get mangaOcrIgnoreFurigana => prefsRepo.mangaOcrIgnoreFurigana;
+  Future<void> setMangaOcrIgnoreFurigana(bool value) =>
+      prefsRepo.setMangaOcrIgnoreFurigana(value);
+
   String get mangaOcrAiMode => prefsRepo.mangaOcrAiMode;
   Future<void> setMangaOcrAiMode(String value) =>
       prefsRepo.setMangaOcrAiMode(value);

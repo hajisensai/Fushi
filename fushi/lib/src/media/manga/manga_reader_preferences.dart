@@ -77,6 +77,10 @@ class MangaReaderPreferences {
     this.panWide = true,
     this.animateDoubleTap = true,
     this.disableZoomOut = false,
+    this.zoomedEdgeTurn = true,
+    this.zoomOutLimit = 'free',
+    this.quickZoomGesture = 'off',
+    this.quickZoomTarget = 'fit_height',
     this.cropBorders = false,
     this.splitWidePages = false,
     this.rotateWidePages = false,
@@ -133,6 +137,19 @@ class MangaReaderPreferences {
   final bool panWide;
   final bool animateDoubleTap;
   final bool disableZoomOut;
+
+  /// 放大看细节时把页面拖过边缘继续拖是否翻页（反馈 EjyFnomM6w：墨水屏上放大看
+  /// 句子常被翻走）。默认开 = 旧行为。
+  final bool zoomedEdgeTurn;
+
+  /// 缩小下限：`free` = 只受最小倍率约束；`fit_height` = 最多缩到页高撑满视口。
+  final String zoomOutLimit;
+
+  /// 快速缩回手势：`off` / `double_tap` / `two_finger_tap`，缩回到 [quickZoomTarget]。
+  final String quickZoomGesture;
+
+  /// 快速缩回的目标：`fit_height` = 适应页高，`fit_width` = 适应页宽。
+  final String quickZoomTarget;
   final bool cropBorders;
   final bool splitWidePages;
   final bool rotateWidePages;
@@ -203,6 +220,10 @@ class MangaReaderPreferences {
     'panWide': panWide,
     'animateDoubleTap': animateDoubleTap,
     'disableZoomOut': disableZoomOut,
+    'zoomedEdgeTurn': zoomedEdgeTurn,
+    'zoomOutLimit': zoomOutLimit,
+    'quickZoomGesture': quickZoomGesture,
+    'quickZoomTarget': quickZoomTarget,
     'cropBorders': cropBorders,
     'splitWidePages': splitWidePages,
     'rotateWidePages': rotateWidePages,
@@ -297,6 +318,20 @@ class MangaReaderPreferences {
       panWide: flag('panWide', true),
       animateDoubleTap: flag('animateDoubleTap', true),
       disableZoomOut: flag('disableZoomOut', false),
+      zoomedEdgeTurn: flag('zoomedEdgeTurn', true),
+      zoomOutLimit: text('zoomOutLimit', 'free', <String>{
+        'free',
+        'fit_height',
+      }),
+      quickZoomGesture: text('quickZoomGesture', 'off', <String>{
+        'off',
+        'double_tap',
+        'two_finger_tap',
+      }),
+      quickZoomTarget: text('quickZoomTarget', 'fit_height', <String>{
+        'fit_height',
+        'fit_width',
+      }),
       cropBorders: flag('cropBorders', false),
       splitWidePages: flag('splitWidePages', false),
       rotateWidePages: flag('rotateWidePages', false),

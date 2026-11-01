@@ -5474,6 +5474,17 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 「OCR 忽略振假名」（反馈 ZBJTgLuPIb）：本机逐列 CTC 识别前裁掉贴在正文旁的
+  /// 注音带。默认关：裁剪是按墨迹投影判的，对没有注音的页是空操作，但它改变
+  /// 识别结果与缓存目录，由用户在注音密集的作品上自己打开。
+  bool get mangaOcrIgnoreFurigana =>
+      getPref('manga_ocr_ignore_furigana', defaultValue: false) as bool;
+
+  Future<void> setMangaOcrIgnoreFurigana(bool value) async {
+    await setPref('manga_ocr_ignore_furigana', value);
+    notifyListeners();
+  }
+
   /// 本机 OCR 模型 key。经典 manga-ocr（`'manga_ocr'`）与 Baberu（`'baberu'`）
   /// 已于 2026-10 删除：存着它们的旧偏好由 [MangaOcrLocalModel.fromKey] 统一映射到
   /// 默认模型，偏好键与存量值都不改写。
