@@ -96,11 +96,10 @@ void main() {
         '_resetGeometryHandshakeForLookup();',
         lookupStart,
       );
-      // 根查词带原文振假名时走 searchDictionaryWithRuby，同一个 await 点。
-      // token 之间容忍任意空白：dart format 会把长调用折成
-      // `await model\n    .searchDictionaryWithRuby(`，守卫只钉语义不钉排版。
+      // 搜索在进入本方法前（或本方法开头）就已发起，与 hide 往返重叠；这里钉的是
+      // **等待它结果的那个让出点**——旧握手必须在那之前清掉。
       final int search = source.indexOf(
-        RegExp(r'await\s+model\s*\.\s*searchDictionary(WithRuby)?\s*\('),
+        RegExp(r'await\s+search\s*;'),
         lookupStart,
       );
       expect(lookupStart, isNonNegative);

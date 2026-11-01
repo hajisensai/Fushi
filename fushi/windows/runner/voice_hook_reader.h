@@ -194,6 +194,11 @@ struct VoiceHookLookupHit {
   int32_t client_w = 0;
   int32_t client_h = 0;
   bool submit = false;  // true=点击提交，false=悬停预览
+  // 查词耗时链的两个跨进程时刻，单位都是 QPC 微秒（与 Dart Timeline.now 同一时钟）：
+  // hook 发布这条 hit 的时刻（IPC v26 槽字段），和 runner 把它投给 Dart 的时刻。
+  // 0 = 没量到。只用于诊断，不参与任何判定。
+  uint64_t publish_qpc_us = 0;
+  uint64_t dispatch_qpc_us = 0;
 };
 
 // 一条落在卡片矩形内、要喂回离屏 WebView2 的输入事件。坐标已是**卡片局部**坐标。

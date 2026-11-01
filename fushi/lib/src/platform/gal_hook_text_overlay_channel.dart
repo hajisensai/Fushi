@@ -165,6 +165,8 @@ class GalLookupHit {
     required this.submit,
     this.clientW = 0,
     this.clientH = 0,
+    this.publishQpcUs = 0,
+    this.dispatchQpcUs = 0,
   });
 
   /// hook 侧单调递增的命中序号：host 据此判新、hook 据此丢弃过期帧。
@@ -213,6 +215,12 @@ class GalLookupHit {
   /// 和「玩家中途全屏↔窗口化后读到旧值」这两个失效面。
   final int clientW;
   final int clientH;
+
+  /// 查词耗时链的跨进程时刻，单位 QPC 微秒（与 `Timeline.now` 同一时钟）：hook
+  /// 发布这条 hit 的时刻、runner 把它投给 Dart 的时刻。`0` = 没量到（旧 helper /
+  /// 测试桩）。只用于 [GalLookupLatencyTrace] 诊断，不参与任何判定。
+  final int publishQpcUs;
+  final int dispatchQpcUs;
 
   /// true = 真查词（点击 / hook 侧判定的悬停即查词）；false = 纯悬停，只更新高亮。
   final bool submit;
@@ -314,6 +322,8 @@ class GalLookupHit {
       // 尺寸上界，拿不到时退回画布口径仍是一次可用的查词。
       clientW: _nonNegativeWireInt(map['clientW']),
       clientH: _nonNegativeWireInt(map['clientH']),
+      publishQpcUs: _nonNegativeWireInt(map['publishQpcUs']),
+      dispatchQpcUs: _nonNegativeWireInt(map['dispatchQpcUs']),
     );
   }
 }

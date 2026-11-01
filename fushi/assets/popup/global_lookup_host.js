@@ -305,6 +305,9 @@
   var standbyStaticRevision = null;
   var standbyRefillScheduled = false;
   var standbyRefillGeneration = 0;
+  // 游戏内嵌查词冷启动预热（prewarmStatic）：还没有任何卡片时也维持一个已装好静态段
+  // 的备用 realm，首次查词的根卡直接接管它。destroyStandbyPool 时一并撤销。
+  var standbyPrewarmed = false;
   var STANDBY_REFILL_WATCHDOG_MS = 50;
   // BUG-1833 — large immutable popup settings (notably an inlined custom font)
   // belong to the host lifetime, not to a single lookup. The host converts each
@@ -953,6 +956,9 @@
         if (message && typeof message === 'object' &&
             message.handler === 'popupRendered') {
           record.contentMeasureDirty = true;
+          if (record.parentIndex < 0) {
+            noteLookupPerf(messageRoute, 'render');
+          }
           markContentReady(record, messageRoute);
         }
       } catch (e) {
@@ -1577,7 +1583,7 @@
         return;
       }
       try {
-        if (frames.size) {
+        if (frames.size || standbyPrewarmed) {
           ensureStandbyPool(layer);
           for (var i = 0; i < standbyRecords.length; i++) {
             primeStandbyRecord(standbyRecords[i], standbyStaticRevision);
@@ -1618,8 +1624,20 @@
     }
   }
 
+  // 根卡只接管**已装好同一份静态段**的备用 realm（游戏内嵌查词的冷启动预热就是为它
+  // 备的）；没装好的接过来与新建一个没有区别，还会抢走子卡的预热位。子卡照旧任取。
+  function standbyFitsRoot(record, descriptor) {
+    var revision = descriptorStaticRevision(descriptor);
+    return !!record && record.loaded && revision != null &&
+        record.injectedStaticRevision === revision;
+  }
+
   function acquireStandbyRecord(layer, descriptor) {
-    if (!descriptor || descriptor.parentIndex < 0 || !standbyRecords.length) {
+    if (!descriptor || !standbyRecords.length) {
+      return null;
+    }
+    var asRoot = descriptor.parentIndex < 0;
+    if (asRoot && !standbyFitsRoot(standbyRecords[0], descriptor)) {
       return null;
     }
     var record = standbyRecords.shift();
@@ -1664,6 +1682,13 @@
       }
     } else {
       record.closeButton.setAttribute('data-close-frame-id', descriptor.id);
+    }
+    // Phase C — 根卡的 resize grip（createRecord 只给非备用的根卡建）。
+    if (asRoot && !record.resizeGrip) {
+      record.resizeGrip = createResizeGrip();
+      if (record.resizeGrip) {
+        record.shell.appendChild(record.resizeGrip);
+      }
     }
     // Replenish only after this acquired child has had a chance to paint.
     scheduleStandbyRefill(layer);
@@ -1726,6 +1751,7 @@
   }
 
   function destroyStandbyPool() {
+    standbyPrewarmed = false;
     cancelStandbyRefill();
     while (standbyRecords.length) {
       destroyRecord(standbyRecords.shift());
@@ -1828,6 +1854,7 @@
       record.observer = null;
     }
     setGateFlag(record, ATTR_CONTENT_READY, 'contentReady');
+    record.awaitingAsyncEntries = false;
     // Content height just changed -> the union bbox may grow. Re-measure
     // (coalesced) so Dart resizes the window to fit the filled card.
     // injectContent/width mutations mark the changed record dirty. Reuse clean
@@ -2161,6 +2188,8 @@
         win.eval(script);
       }
       record.injectedStaticRevision = revision;
+      // 词条走异步取回时，根卡要等它渲染完才上报尺寸（见 measureAndReport）。
+      record.awaitingAsyncEntries = d.entriesAsync === true;
       record.injectedEntriesJs = d.entriesJs;
       record.injectedRenderJs = d.renderJs;
       record.injectedSettingsJs = null;
@@ -2849,8 +2878,112 @@
     originFloorTop = t < 0 ? t : 0;
   }
 
+  // 游戏内嵌查词耗时（GalLookupLatencyTrace 的宿主侧分段）。每条 route 一份：从
+  // renderStack 收到这次查词起算，记下脚本注入完、卡片首次报 popupRendered、首个
+  // overlaySize 发出三个时刻，随首个 overlaySize 的 box.perf 一起带回 Dart。
+  // performance.now 是本文档自己的时钟，所以只回报相对时长，不回报绝对时刻。
+  var lookupPerf = null;
+  // 页面可见性诊断：浏览器内核判定窗口被遮挡 / 在屏外时会把页面置为 hidden 并降速。
+  // 每次查词记下开始时与报尺寸时的状态，以及进程内累计切换次数（两行之差即期间
+  // 切换了几次），用来确认偶发的几百毫秒停顿是不是它。
+  var visibilityFlips = 0;
+  try {
+    document.addEventListener('visibilitychange', function () {
+      visibilityFlips++;
+    });
+  } catch (e) {
+    // 精简测试环境没有 document 事件：诊断静默。
+  }
+  function visibilityTag() {
+    var state = (typeof document !== 'undefined' && document &&
+        typeof document.visibilityState === 'string')
+        ? document.visibilityState : '';
+    return state === 'visible' ? 'v' : (state === 'hidden' ? 'h' : '-');
+  }
+  function perfNow() {
+    return (typeof performance !== 'undefined' &&
+        typeof performance.now === 'function') ? performance.now() : Date.now();
+  }
+  function beginLookupPerf(route) {
+    var key = routeKey(route);
+    if (lookupPerf && lookupPerf.key === key) {
+      return;
+    }
+    lookupPerf = {
+      key: key,
+      t0: perfNow(),
+      inject: -1,
+      render: -1,
+      reported: false,
+      longTaskMs: 0,
+      longTaskCount: 0,
+      longTaskMax: 0,
+      vis0: visibilityTag(),
+    };
+  }
+  // 同一事件循环（宿主 + 同源 iframe）上 >50 ms 的长任务：captureReady 前主线程被
+  // 谁占住，直接看这里。浏览器不支持 longtask 时整段静默。
+  try {
+    if (typeof PerformanceObserver === 'function') {
+      new PerformanceObserver(function (list) {
+        if (!lookupPerf) {
+          return;
+        }
+        list.getEntries().forEach(function (entry) {
+          var duration = entry.duration || 0;
+          lookupPerf.longTaskMs += duration;
+          lookupPerf.longTaskCount += 1;
+          if (duration > lookupPerf.longTaskMax) {
+            lookupPerf.longTaskMax = duration;
+          }
+        });
+      }).observe({entryTypes: ['longtask']});
+    }
+  } catch (e) {
+    // Diagnostics only.
+  }
+  function noteLookupPerf(route, field) {
+    if (!lookupPerf || lookupPerf.key !== routeKey(route) ||
+        lookupPerf[field] >= 0) {
+      return;
+    }
+    lookupPerf[field] = perfNow() - lookupPerf.t0;
+  }
+  function takeLookupPerf(route) {
+    if (!lookupPerf || lookupPerf.reported ||
+        lookupPerf.key !== routeKey(route)) {
+      return null;
+    }
+    lookupPerf.reported = true;
+    return {
+      inject: Math.round(lookupPerf.inject),
+      render: Math.round(lookupPerf.render),
+      measure: Math.round(perfNow() - lookupPerf.t0),
+      vis: lookupPerf.vis0 + visibilityTag(),
+      flips: visibilityFlips,
+    };
+  }
+
+  // 游戏内嵌查词冷启动预热：Dart 在查词会话启用时送来静态段（主题 / 词典样式 /
+  // 内嵌字体，几十 MB），宿主缓存它并在一个隐藏的备用 realm 里先装好、渲染一次空结果，
+  // 让 popup.js / CSS / 字体解码都在用户第一次点词之前完成。不碰 activeRoute、不测量、
+  // 不报尺寸：它不是一次查词。
+  function prewarmStatic(descriptor) {
+    var revision = cacheDescriptorStaticSettings(descriptor);
+    if (revision == null || !staticSettingsByRevision.has(revision)) {
+      return false;
+    }
+    standbyStaticRevision = revision;
+    standbyPrewarmed = true;
+    scheduleStandbyRefill(ensureLayer());
+    return true;
+  }
+
   function renderStack(payload) {
     var popups = (payload && payload.popups) || [];
+    if (popups.length) {
+      beginLookupPerf(activeRoute);
+    }
     // BUG-1857 — Dart 的权威重排接管 root 尺寸；live-fit 到此为止。
     endLiveResize();
     // TODO-1345 — pick up this lookup's reserved origin floor BEFORE the diff +
@@ -2888,6 +3021,7 @@
       renderedIds.push(descriptor.id);
       renderPayload(layer, descriptor, i);
     }
+    noteLookupPerf(activeRoute, 'inject');
     ids = renderedIds;
     // TODO-1079 (C) — a changed ROOT frame id means a fresh lookup: clear the
     // bbox de-dup so the new card's first overlaySize is never suppressed by a
@@ -3140,6 +3274,21 @@
       rootHeight: rootHeight,
       dpr: dpr,
     };
+    // 根卡的词条是异步取回（descriptor.entriesAsync，见 Dart GlobalLookupEntriesStore）
+    // 且新内容还没渲染出来时，不向原生报尺寸（外框高度照常量、照常写）。若照样上报，
+    // 窗口 / 游戏卡片会先以「外框仍被显示门藏着」的透明状态亮出来，等词条到了才有内容
+    // ——查词看起来更快，实际上用户等的时间一点没少。根卡 ready 时 markContentReady
+    // 会再排一次测量；渲染失败也有 CONTENT_READY_SAFETY_MS 兜底，不会卡死。
+    var rootContentPending = false;
+    frames.forEach(function (record) {
+      if (sameRoute(record.route, route) && record.parentIndex < 0 &&
+          record.awaitingAsyncEntries && !record.contentReady) {
+        rootContentPending = true;
+      }
+    });
+    if (rootContentPending) {
+      return;
+    }
     // rootHeight is part of the de-dup key: a root that shrinks under a child
     // still spanning the old bottom leaves the union unchanged, yet the in-game
     // root placement must follow the new root edge.
@@ -3193,6 +3342,10 @@
     }
     lastBBoxKey = key;
     box.geometryEpoch = geometryEpoch;
+    var perf = takeLookupPerf(route);
+    if (perf) {
+      box.perf = perf;
+    }
     // overlaySize args: [dpr, box]. Dart reveal/resize the window to this CSS-px
     // box (times dpr at the C++ window boundary). A shellRects-only change still
     // posts this message so the native region update receives a causal ack.
@@ -3366,6 +3519,12 @@
         : null;
     var fallbackTimer = null;
     var finished = false;
+    // 耗时诊断（GalLookupLatencyTrace）：arm → 第一 / 第二个 rAF 的毫秒数，以及最终是
+    // 被哪条路径放行的（raf / timer）。离屏 WebView2 被判遮挡时 rAF 会降频甚至停摆，
+    // 这组数字就是判定它的证据。
+    var armedAt = perfNow();
+    var firstRafMs = -1;
+    var releasedBy = 'raf';
     var postIfCurrent = function () {
       if (finished) {
         return;
@@ -3384,7 +3543,22 @@
         return;
       }
       postToHost(
-          'captureReady', [physicalWidth, physicalHeight, epoch], route);
+          'captureReady',
+          [physicalWidth, physicalHeight, epoch, {
+            raf1: Math.round(firstRafMs),
+            ready: Math.round(perfNow() - armedAt),
+            by: releasedBy,
+            vis: visibilityTag(),
+            armAt: lookupPerf && lookupPerf.key === key
+                ? Math.round(armedAt - lookupPerf.t0) : -1,
+            lt: lookupPerf && lookupPerf.key === key
+                ? Math.round(lookupPerf.longTaskMs) : -1,
+            ltn: lookupPerf && lookupPerf.key === key
+                ? lookupPerf.longTaskCount : -1,
+            ltmax: lookupPerf && lookupPerf.key === key
+                ? Math.round(lookupPerf.longTaskMax) : -1,
+          }],
+          route);
     };
     if (!raf) {
       postIfCurrent();
@@ -3393,10 +3567,13 @@
     // A permanently off-screen WebView2 can expose requestAnimationFrame while
     // suspending its callbacks. Prefer two paint opportunities, but do not let
     // Dart wait forever for a callback Chromium may never schedule.
-    fallbackTimer = setTimerSafe(
-        postIfCurrent, GAL_CAPTURE_READY_RAF_FALLBACK_MS);
+    fallbackTimer = setTimerSafe(function () {
+      releasedBy = 'timer';
+      postIfCurrent();
+    }, GAL_CAPTURE_READY_RAF_FALLBACK_MS);
     try {
       raf(function () {
+        firstRafMs = perfNow() - armedAt;
         if (routeKey(activeRoute) !== key ||
             galCaptureReadySchedules.get(key) !== token ||
             epoch !== committedGeometryEpoch ||
@@ -4061,6 +4238,7 @@
     resetSelectionReport: resetSelectionReport,
     _watchFrameSelection: watchFrameSelection,
     renderStack: renderStack,
+    prewarmStatic: prewarmStatic,
     retainStack: retainStack,
     beginLookup: beginLookup,
     topPopupId: topPopupId,

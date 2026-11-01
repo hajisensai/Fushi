@@ -140,7 +140,12 @@ constexpr uint32_t kSharedMagic = 0x31485648;  // 'H''V''H''1'
 // v25 appends the game-stream native input request/status plane. It is
 // deliberately independent from lookup_shield: remote confirm input targets the
 // game itself, not the lookup popup suppression contract.
-constexpr uint32_t kSharedVersion = 25;
+// v26 — LookupHitSlot 尾部纯追加 `publish_qpc_us`（hook 发布 hit 那一刻的
+//     QueryPerformanceCounter，换算成微秒）。QPC 在同一台机器的所有进程间是同一时钟，
+//     host 用它量「hook 发布 → runner 读到」这一段，再与 Dart 的 Timeline.now（同为
+//     QPC 微秒）接成一条跨进程的查词耗时链。槽变长 8 字节，其后的输入槽 / 帧 / 位图
+//     区整体后移，新旧混装会错位而版本门本会放行——必须升版。
+constexpr uint32_t kSharedVersion = 26;
 
 enum class NativeTextOwner : uint32_t {
   kPending = 0,
@@ -1101,6 +1106,21 @@ inline void FormatSha256Hex(const uint8_t* digest, size_t digest_bytes,
   out[digest_bytes * 2] = '\0';
 }
 
+// 当前 QueryPerformanceCounter 换算成微秒。QPC 是全机单调时钟、跨进程同值，所以
+// hook / runner / Dart（Timeline.now 在 Windows 上同样由 QPC 换算）三处的读数可以直接
+// 相减。先除后乘，避免 ticks * 1e6 在长时间开机后溢出 int64。
+inline uint64_t QpcMicrosNow() {
+  LARGE_INTEGER frequency;
+  LARGE_INTEGER counter;
+  if (!QueryPerformanceFrequency(&frequency) || frequency.QuadPart <= 0 ||
+      !QueryPerformanceCounter(&counter) || counter.QuadPart < 0) {
+    return 0;
+  }
+  const uint64_t ticks = static_cast<uint64_t>(counter.QuadPart);
+  const uint64_t hz = static_cast<uint64_t>(frequency.QuadPart);
+  return (ticks / hz) * 1000000u + (ticks % hz) * 1000000u / hz;
+}
+
 // hook → host：用户真正提交查词时命中了哪个字符。hover 由游戏线程即时画高亮，不写这个
 // 单槽，避免后到 hover 覆盖尚未被 host 消费的 submit。写侧先把 `seq` 清 0，再写 payload，
 // 最后用 Interlocked 发布新 `seq`，与 VoiceClip / LoopbackMarker 同一套纪律。
@@ -1133,6 +1153,8 @@ struct LookupHitSlot {
   // **整行**台词，不截断。prototype 从点击字向后截 48 字，结果是制卡拿不到完整句子；
   // 分词也不该在注入侧做——host 的分词才是全 app 唯一真值。
   uint8_t line_utf8[kLookupLineBytes];
+  // v26：发布时刻，QPC 微秒（见 QpcMicrosNow）。0 = 发布侧没填（只出现在测试桩里）。
+  uint64_t publish_qpc_us;
 };
 
 constexpr uint32_t kLookupHitFlagSubmit = 0x00000001u;
@@ -2845,6 +2867,14 @@ inline std::wstring SharedMemoryName(DWORD target_pid) {
 }
 inline std::wstring ReadyEventName(DWORD target_pid) {
   return std::wstring(L"Local\\FushiVoiceHookReady_") +
+         std::to_wstring(target_pid);
+}
+// 查词点击的唤醒事件（自动复位）：fushi.exe 的查词泵创建并在后台等它，hook 每发布
+// 一次 submit hit 就 SetEvent 一下，泵立刻读 hit，而不是等下一拍 16ms 定时器。
+// 它只是加速信号、不承载数据：打不开（旧版另一侧、完整性级别不允许写）时两边都
+// 照旧靠定时器轮询，行为与没有它时完全相同，所以不需要升协议版本。
+inline std::wstring LookupWakeEventName(DWORD target_pid) {
+  return std::wstring(L"Local\\FushiLookupWake_") +
          std::to_wstring(target_pid);
 }
 

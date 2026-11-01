@@ -636,8 +636,8 @@ void TestV14LookupRegionIsPureAppendOverV13() {
 }
 
 void TestV16V17AndV19OnlyAppendOverV15() {
-  Check(kSharedVersion == 25,
-        "本测试锁的是 v25 契约（game-stream native input 尾追加）");
+  Check(kSharedVersion == 26,
+        "本测试锁的是 v26 契约（LookupHitSlot 尾追加发布时刻）");
 
   // v14 的最后一个字段是 lookup_diag。v15 只能紧随其后追加一个 64 位 applied seq；
   // 把字段插进 v14 中间，或在 applied seq 后再偷偷长出别的字段，都必须判红。
@@ -1270,6 +1270,10 @@ void TestHeaderMirrorsCompileTimeConstants() {
   Check(sizeof(LookupHitSlot) % 8 == 0, "hit 槽结构 8 对齐");
   Check(offsetof(LookupHitSlot, provider_kind) == sizeof(uint64_t),
         "v19 provider kind 必须紧跟 hit seq");
+  Check(offsetof(LookupHitSlot, publish_qpc_us) ==
+            offsetof(LookupHitSlot, line_utf8) + kLookupLineBytes &&
+            offsetof(LookupHitSlot, publish_qpc_us) % 8 == 0,
+        "v26 发布时刻只能在整行台词之后尾追加，且 8 对齐");
   Check(offsetof(LookupHitSlot, source_length) >
             offsetof(LookupHitSlot, char_index) &&
             offsetof(LookupHitSlot, text_generation) <
