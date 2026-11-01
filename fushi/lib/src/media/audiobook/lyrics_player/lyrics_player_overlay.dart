@@ -56,8 +56,11 @@ Rect navigationAccessoryRectFor(Rect lyricsRect) {
 ///    孩子），宽窄布局切换 / 旋转只改矩形，不重建平台视图；
 ///  * 外观算出的歌词 HTML 主题变化时回调 [onHtmlThemeChanged]，由页面热更 CSS；
 ///  * MD3 新版宽屏底栏的空闲自动隐藏：播放中 [kLyricsChromeIdleHideDelay] 内没有
-///    任何指针（全局路由，菜单 / 弹层里的操作也算）或按键活动 → 底栏淡出，淡完再
-///    一次性把歌词矩形伸到底；任意活动 / 暂停 → 立即复位。
+///    底栏相关活动 → 底栏淡出，淡完再一次性把歌词矩形伸到底。**隐藏后只有指针进入
+///    歌词区下方的底边带子（或按 Tab）才唤出**：正文上的移动 / 点击 / 查词不唤出——
+///    唤出会把歌词矩形缩回去、竖排正文重排，鼠标下的字会挪位，查词就点不准了。
+///    显示期间任何点击 / 拖动（含菜单、弹层）、按键或在底栏区域悬停都续上计时；
+///    暂停 / 切布局立即复位。
 class ReaderLyricsPlayerOverlay extends StatefulWidget {
   const ReaderLyricsPlayerOverlay({
     super.key,
@@ -109,6 +112,15 @@ class _ReaderLyricsPlayerOverlayState extends State<ReaderLyricsPlayerOverlay> {
   Timer? _idleTimer;
   Timer? _expandTimer;
 
+  /// 上一帧布局的判据（本地坐标）：是否宽屏、底栏区域顶边（= 正常歌词矩形底边）、
+  /// 唤出带子顶边（= 伸到底的歌词矩形底边）。build 里随布局更新。
+  bool _wide = false;
+  double _chromeZoneTop = double.infinity;
+  double _revealZoneTop = double.infinity;
+
+  /// 最近一次悬停的纵坐标（本地）：鼠标停在底栏上不动时不隐藏。
+  double? _hoverY;
+
   @override
   void initState() {
     super.initState();
@@ -123,26 +135,40 @@ class _ReaderLyricsPlayerOverlayState extends State<ReaderLyricsPlayerOverlay> {
       mounted &&
       widget.data.isPlaying &&
       widget.data.controlsStyle == LyricsControlsStyle.modern &&
+      _wide &&
       !isGlassDesign(context);
 
+  /// 全局坐标 → 本覆盖层的纵坐标；还没布局时 null。
+  double? _localY(Offset global) {
+    final RenderObject? box = context.findRenderObject();
+    if (box is! RenderBox || !box.hasSize) return null;
+    return box.globalToLocal(global).dy;
+  }
+
   void _onGlobalPointer(PointerEvent event) {
-    if (event is PointerHoverEvent ||
-        event is PointerDownEvent ||
-        event is PointerMoveEvent ||
-        event is PointerSignalEvent) {
-      _registerActivity();
+    if (!mounted) return;
+    final bool hover = event is PointerHoverEvent;
+    final bool press = event is PointerDownEvent || event is PointerMoveEvent;
+    if (!hover && !press) return;
+    final double? y = _localY(event.position);
+    if (hover) _hoverY = y;
+    if (_chromeHidden) {
+      // 隐藏中只认底边带子：正文上的移动 / 点击（查词）不唤出、不改歌词矩形。
+      if (y != null && y >= _revealZoneTop) _syncIdle();
+      return;
     }
+    // 显示中：点击 / 拖动（含菜单与弹层里的）或在底栏区域悬停都续上计时；
+    // 只在正文上悬停不续，否则边读边动鼠标底栏永远不走。
+    if (press || (y != null && y >= _chromeZoneTop)) _syncIdle();
   }
 
   bool _onKey(KeyEvent event) {
-    _registerActivity();
+    if (!mounted || event is! KeyDownEvent) return false;
+    // 隐藏中只有 Tab（焦点要进底栏）唤出；其余快捷键不动底栏、不重排正文。
+    if (!_chromeHidden || event.logicalKey == LogicalKeyboardKey.tab) {
+      _syncIdle();
+    }
     return false;
-  }
-
-  /// 活动：底栏隐藏中则立即复位（歌词矩形与底栏同一帧回来），并重排空闲计时。
-  void _registerActivity() {
-    if (!mounted) return;
-    _syncIdle();
   }
 
   /// 复位底栏并按当前条件重排（或撤掉）空闲计时器。
@@ -166,6 +192,12 @@ class _ReaderLyricsPlayerOverlayState extends State<ReaderLyricsPlayerOverlay> {
   void _onIdleTimer() {
     _idleTimer = null;
     if (!mounted || !_autoHideEnabled) return;
+    final double? hoverY = _hoverY;
+    if (hoverY != null && hoverY >= _chromeZoneTop) {
+      // 鼠标停在底栏上：不在它底下把底栏收走。
+      _idleTimer = Timer(kLyricsChromeIdleHideDelay, _onIdleTimer);
+      return;
+    }
     final Duration fade = fushiMotionDuration(context, FushiMotion.medium);
     setState(() {
       _chromeHidden = true;
@@ -288,6 +320,33 @@ class _ReaderLyricsPlayerOverlayState extends State<ReaderLyricsPlayerOverlay> {
     );
   }
 
+  /// 记下这次布局的宽窄与两条判据线（只读几何，不触发重建）。宽窄变了重排计时。
+  void _updateAutoHideZones(
+    BuildContext context,
+    LyricsPlayerDesign design,
+    Size size,
+    EdgeInsets padding,
+  ) {
+    final bool wide =
+        design is Md3ModernLyricsPlayerDesign && lyricsPlayerIsWide(size);
+    if (wide) {
+      _chromeZoneTop = Md3ModernLyricsPlayerDesign(
+        compactExpanded: widget.data.compactControlsExpanded,
+      ).lyricsRect(context, size, padding).bottom;
+      _revealZoneTop = Md3ModernLyricsPlayerDesign(
+        compactExpanded: widget.data.compactControlsExpanded,
+        wideLyricsExpanded: true,
+      ).lyricsRect(context, size, padding).bottom;
+    } else {
+      _chromeZoneTop = double.infinity;
+      _revealZoneTop = double.infinity;
+    }
+    if (wide != _wide) {
+      _wide = wide;
+      WidgetsBinding.instance.addPostFrameCallback((_) => _syncIdle());
+    }
+  }
+
   Widget _buildWithMirror(
     BuildContext context, {
     required bool apple,
@@ -332,6 +391,7 @@ class _ReaderLyricsPlayerOverlayState extends State<ReaderLyricsPlayerOverlay> {
               final Size size = constraints.biggest;
               final EdgeInsets padding = MediaQuery.paddingOf(context);
               final Rect rect = design.lyricsRect(context, size, padding);
+              _updateAutoHideZones(context, design, size, padding);
               return FushiTitleBarColorScope(
                 colors: (background: topEdge, foreground: topEdgeForeground),
                 child: Stack(
