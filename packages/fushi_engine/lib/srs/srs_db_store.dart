@@ -4169,14 +4169,24 @@ class SrsDbStore implements SrsSync2Host {
   /// （SQLite 侧 GROUP BY）挑出这些字段键，只把它们的记录读回来解析。以前把本 profile 全部修改
   /// 记录（含每条笔记的字段正文）整表读回 UI isolate 逐条 JSON 解析，牌组列表每次重读都付一遍
   /// O(全部修改记录) 的代价（BUG-3548）。
+  ///
+  /// 只读标志类 / 设置类的字段键（[srsFieldClassSqlFilter]，与 [srsFieldClassOf] 同一张表）：内容类（笔记字段
+  /// 正文）的并发候选不进这份清单（它们走待裁决），以前却连同正文全部读回来再丢掉。两台设备各自导入同一个
+  /// 包（笔记 ID 由 guid 确定）后，每条笔记的每个字段都留着两条互不支配的记录——这条查询一次读回整库正文两遍
+  /// （1.9 万张卡的库上过 GB），牌组列表的冲突角标每次重读都跑，原生分配失败闪退（BUG-3929）。
   Future<List<(SrsEntityKind, String, SrsRegister)>> syncConflicts() async {
+    final String tracked = srsFieldClassSqlFilter(
+      _kSyncConflictClasses,
+      kindColumn: 'entity_kind',
+      keyColumn: 'field_key',
+    );
     final List<QueryRow> rows = await db
         .customSelect(
           'SELECT e.entity_kind AS k, e.entity_id AS i, e.field_key AS f, '
           'CAST(e.json AS BLOB) AS j, s.server_time AS st '
           'FROM srs_field_edits e '
           'JOIN (SELECT entity_kind AS k, entity_id AS i, field_key AS f '
-          'FROM srs_field_edits WHERE profile_uid = ? '
+          'FROM srs_field_edits WHERE profile_uid = ? AND $tracked '
           'GROUP BY entity_kind, entity_id, field_key HAVING COUNT(*) > 1) m '
           'ON e.entity_kind = m.k AND e.entity_id = m.i AND e.field_key = m.f '
           'LEFT JOIN srs_event_local s ON s.event_id = e.id '
@@ -4207,20 +4217,27 @@ class SrsDbStore implements SrsSync2Host {
     final List<SrsEntityEdits> built = srsEntityEditsOf(<List<SrsEditItem>>[
       for (final (String _, List<SrsEditItem> items) in regs) items,
     ]);
+    debugSyncConflictRowsRead = rows.length;
     final List<(SrsEntityKind, String, SrsRegister)> out =
         <(SrsEntityKind, String, SrsRegister)>[];
     for (int i = 0; i < regs.length; i++) {
       final SrsRegister reg = built[i][regs[i].$1]!;
       if (reg.visibleLosers.isEmpty) continue;
       final SrsFieldEdit w = reg.winner!;
-      final SrsFieldClass cls = srsFieldClassOf(w.entityKind, w.fieldKey);
-      if (cls == SrsFieldClass.content || cls == SrsFieldClass.viewState) {
-        continue;
-      }
       out.add((w.entityKind, w.entityId, reg));
     }
     return out;
   }
+
+  /// [syncConflicts] 收的字段类别：内容类走待裁决，界面状态（折叠 / 新卡位置）最后修改生效、不进冲突记录。
+  static const Set<SrsFieldClass> _kSyncConflictClasses = <SrsFieldClass>{
+    SrsFieldClass.flag,
+    SrsFieldClass.setting,
+  };
+
+  /// 最近一次 [syncConflicts] 从库里读回的修改记录条数（测试核对内容类正文没被读回来）。
+  @visibleForTesting
+  int debugSyncConflictRowsRead = 0;
 
   /// 改回 / 确认：写一条覆盖全部候选的新修改记录。
   Future<void> resolveConflict(

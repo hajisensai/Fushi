@@ -54,6 +54,27 @@ enum SrsCardDensity {
   );
 }
 
+/// 文字区块（例句 / 释义）的对齐方式。
+enum SrsCardTextAlign {
+  /// 模板默认：正面例句居中、背面例句与释义左对齐。
+  auto('auto'),
+
+  /// 一律左对齐（从书写方向起点排）。
+  start('start'),
+
+  /// 居中。
+  center('center');
+
+  const SrsCardTextAlign(this.wire);
+
+  final String wire;
+
+  static SrsCardTextAlign fromWire(Object? wire) => values.firstWhere(
+    (SrsCardTextAlign v) => v.wire == wire,
+    orElse: () => SrsCardTextAlign.auto,
+  );
+}
+
 /// 卡面外观设置。默认值 = 模板默认外观（不注入任何覆盖时的样子）。
 @immutable
 class SrsCardAppearance {
@@ -76,7 +97,21 @@ class SrsCardAppearance {
     this.compactPhone = true,
     this.designSkin = true,
     this.aggregateFrequency = true,
+    this.glossaryDictLimit = 0,
+    this.sentenceAlign = SrsCardTextAlign.auto,
+    this.sentenceIndent = 0,
+    this.glossaryAlign = SrsCardTextAlign.auto,
+    this.glossaryIndent = 0,
+    this.separateFrontSize = false,
+    this.frontTextScale = 1.0,
+    this.frontTermScale = 1.0,
   });
+
+  /// [glossaryDictLimit] 的上限（UI 只给 全部 / 前 2 本 / 前 3 本）。
+  static const int maxGlossaryDictLimit = 9;
+
+  /// 首行缩进的上限（字数，UI 只给 无 / 1 字 / 2 字）。
+  static const int maxIndent = 4;
 
   /// 字号缩放的取值范围（正文 / 词条 / 行距共用夹取）。
   static const double minTextScale = 0.85;
@@ -143,6 +178,41 @@ class SrsCardAppearance {
   /// 叠上），所以不进 [toJson] / 不从 JSON 读，只参与相等判断（切换后卡面要重建）。
   final bool aggregateFrequency;
 
+  /// 释义只显示前 N 本词典（含主词典；0 = 全部）。对齐 Lapis 的 `{glossary-first-N}`：
+  /// 主词典（选中优先）算第一本，其余按「全部释义」里的原顺序补足。**只影响显示**——
+  /// 制卡照旧把全部词典写进 Glossary 字段，改设置对已有的卡同样生效，调回「全部」不丢内容。
+  final int glossaryDictLimit;
+
+  /// 例句（正面例句、背面例句卡与翻译）的对齐。
+  final SrsCardTextAlign sentenceAlign;
+
+  /// 例句首行缩进（字数，0 = 不缩进）。
+  final int sentenceIndent;
+
+  /// 释义区的对齐。
+  final SrsCardTextAlign glossaryAlign;
+
+  /// 释义每条首行缩进（字数，0 = 不缩进）。
+  final int glossaryIndent;
+
+  /// 正面单独设置字号：开 = 正面用 [frontTextScale] / [frontTermScale]，[textScale] /
+  /// [termScale] 只管背面；关 = 正反面共用一套（旧行为）。
+  final bool separateFrontSize;
+
+  /// 正面正文（例句、提示、读音）字号倍率，[separateFrontSize] 开时生效。
+  final double frontTextScale;
+
+  /// 正面词条字号倍率，[separateFrontSize] 开时生效。
+  final double frontTermScale;
+
+  /// 正面实际用的正文倍率。
+  double get effectiveFrontTextScale =>
+      separateFrontSize ? frontTextScale : textScale;
+
+  /// 正面实际用的词条倍率。
+  double get effectiveFrontTermScale =>
+      separateFrontSize ? frontTermScale : termScale;
+
   SrsCardAppearance copyWith({
     double? textScale,
     double? termScale,
@@ -162,6 +232,14 @@ class SrsCardAppearance {
     bool? compactPhone,
     bool? designSkin,
     bool? aggregateFrequency,
+    int? glossaryDictLimit,
+    SrsCardTextAlign? sentenceAlign,
+    int? sentenceIndent,
+    SrsCardTextAlign? glossaryAlign,
+    int? glossaryIndent,
+    bool? separateFrontSize,
+    double? frontTextScale,
+    double? frontTermScale,
   }) => SrsCardAppearance(
     textScale: textScale ?? this.textScale,
     termScale: termScale ?? this.termScale,
@@ -181,12 +259,23 @@ class SrsCardAppearance {
     compactPhone: compactPhone ?? this.compactPhone,
     designSkin: designSkin ?? this.designSkin,
     aggregateFrequency: aggregateFrequency ?? this.aggregateFrequency,
+    glossaryDictLimit: glossaryDictLimit ?? this.glossaryDictLimit,
+    sentenceAlign: sentenceAlign ?? this.sentenceAlign,
+    sentenceIndent: sentenceIndent ?? this.sentenceIndent,
+    glossaryAlign: glossaryAlign ?? this.glossaryAlign,
+    glossaryIndent: glossaryIndent ?? this.glossaryIndent,
+    separateFrontSize: separateFrontSize ?? this.separateFrontSize,
+    frontTextScale: frontTextScale ?? this.frontTextScale,
+    frontTermScale: frontTermScale ?? this.frontTermScale,
   );
 
   static double _num(Object? v, double fallback, double min, double max) =>
       v is num && v.isFinite ? v.toDouble().clamp(min, max) : fallback;
 
   static bool _bool(Object? v, bool fallback) => v is bool ? v : fallback;
+
+  static int _int(Object? v, int fallback, int max) =>
+      v is int && v >= 0 && v <= max ? v : fallback;
 
   /// 从偏好 JSON 读；坏值 / 缺项一律按默认值，绝不抛。
   factory SrsCardAppearance.fromJson(Object? json) {
@@ -226,6 +315,28 @@ class SrsCardAppearance {
       frontFrequency: _bool(json['frontFrequency'], d.frontFrequency),
       compactPhone: _bool(json['compactPhone'], d.compactPhone),
       designSkin: _bool(json['designSkin'], d.designSkin),
+      glossaryDictLimit: _int(
+        json['glossaryDictLimit'],
+        d.glossaryDictLimit,
+        maxGlossaryDictLimit,
+      ),
+      sentenceAlign: SrsCardTextAlign.fromWire(json['sentenceAlign']),
+      sentenceIndent: _int(json['sentenceIndent'], d.sentenceIndent, maxIndent),
+      glossaryAlign: SrsCardTextAlign.fromWire(json['glossaryAlign']),
+      glossaryIndent: _int(json['glossaryIndent'], d.glossaryIndent, maxIndent),
+      separateFrontSize: _bool(json['separateFrontSize'], d.separateFrontSize),
+      frontTextScale: _num(
+        json['frontTextScale'],
+        d.frontTextScale,
+        minTextScale,
+        maxTextScale,
+      ),
+      frontTermScale: _num(
+        json['frontTermScale'],
+        d.frontTermScale,
+        minTermScale,
+        maxTermScale,
+      ),
     );
   }
 
@@ -257,6 +368,14 @@ class SrsCardAppearance {
     'frontFrequency': frontFrequency,
     'compactPhone': compactPhone,
     'designSkin': designSkin,
+    'glossaryDictLimit': glossaryDictLimit,
+    'sentenceAlign': sentenceAlign.wire,
+    'sentenceIndent': sentenceIndent,
+    'glossaryAlign': glossaryAlign.wire,
+    'glossaryIndent': glossaryIndent,
+    'separateFrontSize': separateFrontSize,
+    'frontTextScale': frontTextScale,
+    'frontTermScale': frontTermScale,
   };
 
   String encode() => jsonEncode(toJson());

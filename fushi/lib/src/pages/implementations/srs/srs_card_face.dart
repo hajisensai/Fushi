@@ -83,8 +83,9 @@ class SrsCardFace {
   /// WebView 持有键盘焦点时，页内截获的按键 token（见 [bridgeKeys]）。
   final void Function(String token) onBridgeKey;
 
-  /// WebView 持焦时要交回 Dart 的键：复习页用 [kSrsReviewBridgeKeys]，浏览页的预览用
-  /// [kSrsBrowseBridgeKeys]。
+  /// WebView 持焦时要交回 Dart 的键：复习页按快捷键注册表当前绑定导出
+  /// （`srsReviewBridgeTokens`，可改键），浏览页的预览用 [kSrsBrowseBridgeKeys]；
+  /// 不传时是复习页出厂默认键的固定表 [kSrsReviewBridgeKeys]。
   final List<String> bridgeKeys;
 
   /// 卡面版式：默认按卡面宽度自动（模板的断点）；外观页预览强制成手机 / 桌面版式。

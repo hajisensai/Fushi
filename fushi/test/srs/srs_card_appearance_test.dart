@@ -287,6 +287,74 @@ void main() {
       expect(clamped.density, SrsCardDensity.standard);
     });
 
+    test('新字段（前 N 本词典 / 对齐 / 缩进 / 正面单独字号）：JSON 往返、参与 ==', () {
+      const SrsCardAppearance a = SrsCardAppearance(
+        textScale: 1.1,
+        termScale: 0.9,
+        glossaryDictLimit: 2,
+        sentenceAlign: SrsCardTextAlign.start,
+        sentenceIndent: 2,
+        glossaryAlign: SrsCardTextAlign.center,
+        glossaryIndent: 1,
+        separateFrontSize: true,
+        frontTextScale: 1.3,
+        frontTermScale: 0.8,
+      );
+      final SrsCardAppearance back = SrsCardAppearance.decode(a.encode());
+      expect(back, a);
+      expect(back.glossaryDictLimit, 2);
+      expect(back.sentenceAlign, SrsCardTextAlign.start);
+      expect(back.sentenceIndent, 2);
+      expect(back.glossaryAlign, SrsCardTextAlign.center);
+      expect(back.glossaryIndent, 1);
+      expect(back.separateFrontSize, isTrue);
+      expect(back.effectiveFrontTextScale, 1.3);
+      expect(back.effectiveFrontTermScale, 0.8);
+      expect(a == a.copyWith(glossaryDictLimit: 3), isFalse);
+      expect(a == a.copyWith(sentenceAlign: SrsCardTextAlign.auto), isFalse);
+      // 关掉单独字号：正面跟背面共用（存着的正面值不生效）。
+      final SrsCardAppearance shared = a.copyWith(separateFrontSize: false);
+      expect(shared.effectiveFrontTextScale, 1.1);
+      expect(shared.effectiveFrontTermScale, 0.9);
+    });
+
+    test('旧数据缺新字段：取原默认行为（全部词典、模板对齐、不缩进、正反面共用字号）', () {
+      // 新字段加入前写下的偏好（只有旧键）。
+      const String legacy =
+          '{"textScale":1.2,"termScale":1.1,"lineSpacing":1,"colorSource":"app",'
+          '"customAccent":4281887320,"density":"standard","dictUnified":true,'
+          '"showPicture":true,"showTranslation":true,"blurTranslation":false,'
+          '"showFrequency":true,"showSource":true,"glossaryExpanded":true,'
+          '"frontReading":false,"frontFrequency":false,"compactPhone":true,'
+          '"designSkin":true}';
+      final SrsCardAppearance old = SrsCardAppearance.decode(legacy);
+      expect(old.glossaryDictLimit, 0);
+      expect(old.sentenceAlign, SrsCardTextAlign.auto);
+      expect(old.sentenceIndent, 0);
+      expect(old.glossaryAlign, SrsCardTextAlign.auto);
+      expect(old.glossaryIndent, 0);
+      expect(old.separateFrontSize, isFalse);
+      expect(old.effectiveFrontTextScale, 1.2);
+      expect(old.effectiveFrontTermScale, 1.1);
+      expect(old, const SrsCardAppearance(textScale: 1.2, termScale: 1.1));
+      // 坏值 / 越界：退回默认，不抛。
+      final SrsCardAppearance bad =
+          SrsCardAppearance.fromJson(const <String, Object?>{
+            'glossaryDictLimit': -1,
+            'sentenceIndent': 99,
+            'glossaryIndent': 'x',
+            'sentenceAlign': 'justify',
+            'separateFrontSize': 'yes',
+            'frontTextScale': 9,
+          });
+      expect(bad.glossaryDictLimit, 0);
+      expect(bad.sentenceIndent, 0);
+      expect(bad.glossaryIndent, 0);
+      expect(bad.sentenceAlign, SrsCardTextAlign.auto);
+      expect(bad.separateFrontSize, isFalse);
+      expect(bad.frontTextScale, SrsCardAppearance.maxTextScale);
+    });
+
     test('只换外观走换主题、不重放卡片', () async {
       final List<String> sent = <String>[];
       final SrsCardFaceSync sync = SrsCardFaceSync(

@@ -535,12 +535,12 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
   }
 
   /// 正面大字词条相对 [SrsCardTokens.hero] 的倍率：随卡面宽度在字阶下限与其两倍之间取，
-  /// 再乘用户的词条倍率。
+  /// 再乘用户的正面词条倍率（没单独设置时与背面共用）。
   double _heroScale(_SrsCardStyle s, BoxConstraints c) {
     final double min = s.sizeOf(s.tokens.hero);
     return (c.maxWidth * 0.21).clamp(min, min * 2) /
         min *
-        s.appearance.termScale;
+        s.appearance.effectiveFrontTermScale;
   }
 
   Widget _frontTerm(_SrsCardStyle s, BoxConstraints c) {
@@ -565,7 +565,12 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
           textAlign: TextAlign.center,
           lookup: true,
         ),
-        if (s.appearance.frontReading) ..._pitchRow(s, center: true),
+        if (s.appearance.frontReading)
+          ..._pitchRow(
+            s,
+            center: true,
+            scale: s.appearance.effectiveFrontTextScale,
+          ),
       ],
     );
   }
@@ -580,24 +585,34 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     final double scale =
         (c.maxWidth * 0.064).clamp(min, s.sizeOf(s.tokens.frontSentenceMax)) /
         min *
-        s.appearance.textScale *
+        s.appearance.effectiveFrontTextScale *
         (context ? 0.74 : 1);
     final String plain = srsKanaFree(widget.fields['Sentence'] ?? '');
-    final Widget text = Text(
-      masked ? srsMaskBold(widget.fields['Sentence'] ?? '') : plain,
+    final TextStyle style = s.text(
+      s.tokens.frontSentenceMin,
+      scale: scale,
+      height: (context ? 1.8 : 1.75) * s.appearance.lineSpacing,
+      color: context ? s.muted : null,
+    );
+    // 例句对齐：默认（模板）正面居中。左对齐时占满栏宽，短句也从左边起。
+    final bool centered = s.appearance.sentenceAlign != SrsCardTextAlign.start;
+    final Widget text = SrsRubyText(
       key: ValueKey<String>(
         masked ? 'srs-fushi-front-masked' : 'srs-fushi-front-sentence',
       ),
-      textAlign: TextAlign.center,
-      style: s.text(
-        s.tokens.frontSentenceMin,
-        scale: scale,
-        height: (context ? 1.8 : 1.75) * s.appearance.lineSpacing,
-        color: context ? s.muted : null,
-      ),
+      segments: <SrsInline>[
+        SrsInline(
+          masked ? srsMaskBold(widget.fields['Sentence'] ?? '') : plain,
+        ),
+      ],
+      style: style,
+      rubyStyle: style,
+      textAlign: centered ? TextAlign.center : TextAlign.start,
+      indent: s.indentOf(style, s.appearance.sentenceIndent),
+      // 挖空的听力卡不取词（挖掉的正是答案）。
+      lookup: !masked,
     );
-    // 挖空的听力卡不取词（挖掉的正是答案）。
-    return masked ? text : srsLookupText(text: plain, child: text);
+    return centered ? text : SizedBox(width: double.infinity, child: text);
   }
 
   Widget _frontClick(_SrsCardStyle s, BoxConstraints c) {
@@ -643,7 +658,14 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
 
   // ---------------------------------------------------------------- 背面
 
-  List<Widget> _pitchRow(_SrsCardStyle s, {bool center = false}) {
+  /// 读音 + 音调图。[scale] = 正文倍率（正面传正面倍率）；[badge] = 声调核序号画成假名右上角的
+  /// 小角标（背面读音行；正面只画图，与原来一致）。只画字段里已有的读音与声调，不推断。
+  List<Widget> _pitchRow(
+    _SrsCardStyle s, {
+    bool center = false,
+    double? scale,
+    bool badge = false,
+  }) {
     final Map<String, String> f = widget.fields;
     final String kana = srsFieldFilled(f['TermFurigana'])
         ? srsKanaOf(srsParseInline(f['TermFurigana']!))
@@ -655,26 +677,32 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     if (kana.isEmpty) return const <Widget>[];
     final TextStyle style = s.text(
       s.tokens.emphasisLine,
-      scale: s.appearance.textScale,
+      scale: scale ?? s.appearance.textScale,
       height: 1.3,
     );
     // 一个读音有几种声调就画几张图（没有可解析的声调时只显示读音本身）；key 各不相同，
-    // 同一个 Wrap 里重复 key 会直接抛错。
+    // 同一个 Wrap 里重复 key 会直接抛错。每张图放不下一行时整体等比缩小（长假名 /
+    // 窄屏不溢出），几张图并排放不下由外层 Wrap 折行。
     final List<int?> graphs = positions.isEmpty
         ? const <int?>[null]
         : positions;
     final List<Widget> out = <Widget>[
       for (int i = 0; i < graphs.length; i++)
-        SrsPitchGraph(
-          key: ValueKey<String>(
-            i == 0 ? 'srs-fushi-pitch' : 'srs-fushi-pitch-$i',
+        FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: AlignmentDirectional.centerStart,
+          child: SrsPitchGraph(
+            key: ValueKey<String>(
+              i == 0 ? 'srs-fushi-pitch' : 'srs-fushi-pitch-$i',
+            ),
+            kana: kana,
+            position: graphs[i],
+            categories: f['PitchCategories'] ?? '',
+            style: style,
+            dark: s.dark,
+            fallbackColor: s.scheme.onSurface,
+            showPosition: badge,
           ),
-          kana: kana,
-          position: graphs[i],
-          categories: f['PitchCategories'] ?? '',
-          style: style,
-          dark: s.dark,
-          fallbackColor: s.scheme.onSurface,
         ),
     ];
     if (!center || out.length < 2) return out;
@@ -691,28 +719,14 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
 
   Widget _readingRow(_SrsCardStyle s) {
     final Map<String, String> f = widget.fields;
-    final String kana = srsFieldFilled(f['TermFurigana'])
-        ? srsKanaOf(srsParseInline(f['TermFurigana']!))
-        : srsPlainText(f['TermReading'] ?? '');
-    final List<int> positions = srsPitchPositions(
-      f['PitchPosition'] ?? '',
-      kana,
-    );
-    final int morae = srsMorae(kana).length;
-    final String cats = f['PitchCategories'] ?? '';
     return Wrap(
       key: const ValueKey<String>('srs-fushi-reading-row'),
       spacing: 8,
       runSpacing: 6,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: <Widget>[
-        ..._pitchRow(s),
-        for (final int p in positions)
-          _Chip(
-            text: '$p',
-            style: s,
-            color: srsPitchColor(srsPitchType(p, morae, cats), dark: s.dark),
-          ),
+        // 声调核序号是每张图右上角的小角标（不再与词频同一个大标签，多声调时一一对应）。
+        ..._pitchRow(s, badge: true),
         // 平均词频（聚合）：关了「显示词频」不出；下方明细区在时不重复。
         if (s.appearance.showFrequency &&
             srsFieldFilled(f['FrequencyRank']) &&
@@ -870,24 +884,32 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     // 注音收起时第一下点按是「显示注音」（原有操作），不取词；注音显示后点在字上 =
     // 查词，点在字外 = 收起注音。
     final bool rubyToggle = hasRuby;
-    final Widget text = SrsRubyText(
+    final TextStyle style = s.text(
+      s.tokens.emphasisLine,
+      scale: s.appearance.textScale,
+      height: 1.9 * s.appearance.lineSpacing,
+    );
+    final bool centered = s.appearance.sentenceAlign == SrsCardTextAlign.center;
+    final Widget ruby = SrsRubyText(
       key: const ValueKey<String>('srs-fushi-sentence'),
       segments: showRuby
           ? segs
           : <SrsInline>[for (final SrsInline x in segs) x.withoutRuby()],
-      style: s.text(
-        s.tokens.emphasisLine,
-        scale: s.appearance.textScale,
-        height: 1.9 * s.appearance.lineSpacing,
-      ),
+      style: style,
       rubyStyle: s.text(
         s.tokens.ruby,
         scale: s.appearance.textScale,
         color: s.muted,
       ),
       emphasis: s.scheme.primary,
+      textAlign: centered ? TextAlign.center : TextAlign.start,
+      indent: s.indentOf(style, s.appearance.sentenceIndent),
       lookup: !rubyToggle || _sentenceRuby,
     );
+    // 居中要占满栏宽（否则短句按自身宽度靠左）。
+    final Widget text = centered
+        ? SizedBox(width: double.infinity, child: ruby)
+        : ruby;
     return FushiCard(
       key: const ValueKey<String>('srs-fushi-sentence-block'),
       padding: EdgeInsets.all(s.pad),
@@ -950,9 +972,12 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
   /// 例句翻译。「模糊到点按」开着（[SrsCardAppearance.blurTranslation]）时默认模糊且不可取词，
   /// 点一下显示；显示后点在字上 = 查词，点在字外（行内空白）= 再次模糊（与注音同一套规则）。
   Widget _translation(_SrsCardStyle s, String text) {
-    final Widget body = Text(
+    // 翻译跟随例句对齐（同一个例句区块）；首行缩进只作用于例句本身。
+    final bool centered = s.appearance.sentenceAlign == SrsCardTextAlign.center;
+    final Widget line = Text(
       text,
       key: const ValueKey<String>('srs-fushi-translation'),
+      textAlign: centered ? TextAlign.center : TextAlign.start,
       style: s.text(
         s.tokens.bodySecondary,
         scale: s.appearance.textScale,
@@ -961,6 +986,9 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
         ui: true,
       ),
     );
+    final Widget body = centered
+        ? SizedBox(width: double.infinity, child: line)
+        : line;
     if (!s.appearance.blurTranslation) {
       return srsLookupText(text: text, child: body);
     }
@@ -1118,7 +1146,9 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
         // 宽版式释义栏铺到底栏背后、页内自己滚：末尾留出底栏高度，最后一条能滚到底栏以上。
         '${wide && _bottomInset > 0 ? 'html{padding-bottom:${_bottomInset.round()}px;}' : ''}'
         // 主词典通栏 + 其他词典分列，展开规则跟查词设置（srs_card_defs_layout.dart）。
-        '${ref.watch(srsDefsLayoutCssProvider)}',
+        '${ref.watch(srsDefsLayoutCssProvider)}'
+        // 卡面外观：释义显示前几本词典、释义对齐 / 首行缩进（只改显示，字段不动）。
+        '${srsDefsAppearanceCss(ref.watch(srsCardAppearanceProvider))}',
     hostScript: kSrsDefsLayoutScript,
     onWheel: wide ? null : _onDefsWheel,
     onSourceLink: widget.face.onSourceLink,
@@ -1385,6 +1415,10 @@ class _SrsCardStyle {
     );
   }
 
+  /// 首行缩进 [chars] 个字（按 [style] 的字号，1 字 = 1em）的逻辑像素宽度。
+  double indentOf(TextStyle style, int chars) =>
+      chars <= 0 ? 0 : chars * (style.fontSize ?? 16);
+
   TextStyle term(TextStyle role, {double scale = 1}) => text(
     role,
     scale: scale,
@@ -1404,12 +1438,17 @@ class SrsRubyText extends StatelessWidget {
     this.textAlign = TextAlign.start,
     this.emphasis,
     this.lookup = false,
+    this.indent = 0,
   });
 
   final List<SrsInline> segments;
   final TextStyle style;
   final TextStyle rubyStyle;
   final TextAlign textAlign;
+
+  /// 首行缩进（逻辑像素，0 = 不缩进）：段首放一个等宽的空白占位。占位在外层段落里占一个
+  /// 占位符，取词偏移换算（[_lookupData]）把它算成不可取词的一段，取词范围不受影响。
+  final double indent;
 
   /// 标成可取词（[SrsNativeLookupRegion]）：整段纯文本 = 各段基字拼起来，注音段里点基字 /
   /// 注音都换算回整段偏移。
@@ -1431,6 +1470,17 @@ class SrsRubyText extends StatelessWidget {
     final List<SrsLookupTextSegment> map = <SrsLookupTextSegment>[];
     final List<FushiRubySpan> rubySpans = <FushiRubySpan>[];
     int outer = 0;
+    if (indent > 0) {
+      map.add(
+        const SrsLookupTextSegment(
+          outerStart: 0,
+          outerLength: 1,
+          fullStart: 0,
+          placeholder: true,
+        ),
+      );
+      outer = 1;
+    }
     for (final SrsInline s in segments) {
       final bool placeholder = s.ruby != null;
       final String reading = (s.ruby ?? '').trim();
@@ -1465,7 +1515,13 @@ class SrsRubyText extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     int fullStart = 0;
-    final List<InlineSpan> spans = <InlineSpan>[];
+    final List<InlineSpan> spans = <InlineSpan>[
+      if (indent > 0)
+        WidgetSpan(
+          alignment: PlaceholderAlignment.middle,
+          child: SizedBox(width: indent),
+        ),
+    ];
     for (final SrsInline s in segments) {
       if (s.ruby == null) {
         spans.add(TextSpan(text: s.text, style: _styleOf(s)));
@@ -1558,6 +1614,7 @@ class SrsPitchGraph extends StatelessWidget {
     required this.style,
     required this.dark,
     required this.fallbackColor,
+    this.showPosition = false,
   });
 
   final String kana;
@@ -1566,6 +1623,9 @@ class SrsPitchGraph extends StatelessWidget {
   final TextStyle style;
   final bool dark;
   final Color fallbackColor;
+
+  /// 在图的右上角画声调核序号角标（取自字段 PitchPosition，不推断）。
+  final bool showPosition;
 
   @override
   Widget build(BuildContext context) {
@@ -1589,44 +1649,79 @@ class SrsPitchGraph extends StatelessWidget {
           ),
           child: Text(text, style: style),
         );
+    final Widget graph = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        for (int i = 0; i < morae.length; i++)
+          mora(
+            morae[i],
+            high: p == 0
+                ? i > 0
+                : p == 1
+                ? i == 0
+                : i > 0 && i < p,
+            drop: p > 0 && i == p - 1,
+          ),
+        if (p > 0 && p >= morae.length) mora(' ', high: false, drop: false),
+      ],
+    );
     return Semantics(
       label: '$kana [$p]',
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          for (int i = 0; i < morae.length; i++)
-            mora(
-              morae[i],
-              high: p == 0
-                  ? i > 0
-                  : p == 1
-                  ? i == 0
-                  : i > 0 && i < p,
-              drop: p > 0 && i == p - 1,
-            ),
-          if (p > 0 && p >= morae.length) mora(' ', high: false, drop: false),
-        ],
+      child: showPosition
+          // 声调核序号：假名右上角的小号带圈数字（顶端对齐），颜色同这张图。
+          ? Row(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                graph,
+                const SizedBox(width: 2),
+                ExcludeSemantics(child: _pitchBadge(p, color)),
+              ],
+            )
+          : graph,
+    );
+  }
+
+  Widget _pitchBadge(int p, Color color) {
+    final double base = style.fontSize ?? 16;
+    final double size = math.max(14, base * 0.62);
+    return Container(
+      key: const ValueKey<String>('srs-fushi-pitch-position'),
+      constraints: BoxConstraints(minWidth: size, minHeight: size),
+      padding: const EdgeInsets.symmetric(horizontal: 3),
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        border: Border.all(color: color, width: 1),
+        borderRadius: BorderRadius.circular(size / 2),
+      ),
+      child: Text(
+        '$p',
+        style: style.copyWith(
+          fontSize: math.max(9, base * 0.42),
+          height: 1,
+          color: color,
+          fontWeight: FontWeight.w600,
+        ),
       ),
     );
   }
 }
 
 class _Chip extends StatelessWidget {
-  const _Chip({super.key, required this.text, required this.style, this.color});
+  const _Chip({super.key, required this.text, required this.style});
 
   final String text;
   final _SrsCardStyle style;
-  final Color? color;
 
-  /// 设计系统标签：MD3 = M3E 小标签（圆角小件、语义色淡底）；Apple = 空心胶囊、语义色
-  /// 落在圆点上（[FushiTag]）。
+  /// 设计系统标签（词频）：MD3 = M3E 小标签（圆角小件、淡底）；Apple = 空心胶囊
+  /// （[FushiTag]）。声调核序号不用它，见 [SrsPitchGraph.showPosition]。
   @override
   Widget build(BuildContext context) => FushiTag(
     text: text,
     dense: true,
-    backgroundColor:
-        color?.withValues(alpha: 0.14) ?? style.scheme.secondaryContainer,
-    foregroundColor: color ?? style.scheme.onSecondaryContainer,
+    backgroundColor: style.scheme.secondaryContainer,
+    foregroundColor: style.scheme.onSecondaryContainer,
   );
 }
 
