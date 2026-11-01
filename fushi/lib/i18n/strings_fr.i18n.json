@@ -2420,6 +2420,7 @@
   "download_notice_dont_show": "Don't show again",
   "download_open_settings": "Ouvrir les paramètres",
   "download_p2p_notice_body": "BT / magnet downloads are peer-to-peer (P2P). The files come from other users, not from Fushi, and others sharing the same torrent can see your IP address. If uploading (seeding) is on, you also upload data to them — Fushi's built-in engine keeps uploading off by default, and an external qBittorrent follows its own settings. Please follow the laws where you live.",
+  "download_p2p_notice_legal_warning": "Télécharger ou partager du contenu protégé par le droit d'auteur peut être illégal dans certains pays ou régions. Vous en assumez seul les risques.",
   "download_p2p_notice_title": "About BT / magnet downloads",
   "download_pause_all": "Pause all",
   "download_rate_limit_lan_exempt": "Ne s'applique pas sur votre réseau local ; les transferts LAN fonctionnent toujours à pleine vitesse.",

@@ -2420,6 +2420,7 @@
   "download_notice_dont_show": "不再提示",
   "download_open_settings": "去设置",
   "download_p2p_notice_body": "BT / 磁力下载是点对点（P2P）传输：文件来自其他用户，不是 Fushi 提供的；分享同一种子的其他用户能看到你的 IP 地址。开启上传（做种）时，你也会向他们上传数据——Fushi 内置引擎默认关闭上传，外接 qBittorrent 按它自己的设置。请遵守你所在地区的法律。",
+  "download_p2p_notice_legal_warning": "在部分国家或地区，下载或分享受版权保护的内容可能违法，风险由用户自行承担。",
   "download_p2p_notice_title": "关于 BT / 磁力下载",
   "download_pause_all": "全部暂停",
   "download_rate_limit_lan_exempt": "不作用于局域网；局域网内的传输始终全速进行。",
