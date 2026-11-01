@@ -1231,6 +1231,14 @@ class VideoPlayerController extends ChangeNotifier
   bool get isWebBackend => _webBackend;
   bool _webBackend = false;
 
+  /// 能否截当前画面（[screenshot] / [captureFrameWithSubtitles] 会有结果）：libmpv 恒可；网页档
+  /// 只有非 DRM 站点可以（[WebVideoPlatformPlayer.frameCaptureSupported]，Netflix 不行）。
+  bool get canCaptureFrame {
+    if (!_webBackend) return true;
+    final Object? platform = _player?.platform;
+    return platform is WebVideoPlatformPlayer && platform.frameCaptureSupported;
+  }
+
   /// 后台抽取/解析内封文本字幕 cue 是否仍在进行。
   bool get isSubtitleCuesLoading => _subtitleCuesLoading;
 
