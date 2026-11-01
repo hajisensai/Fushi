@@ -8825,6 +8825,8 @@
   "texthooker": "Texthooker",
   "texthooker_enabled": "Texthooker (ricevi testo)",
   "texthooker_enabled_hint": "Connettiti a Textractor/mpv/agent e cerca il testo in arrivo",
+  "texthooker_urls": "Text endpoint URLs",
+  "texthooker_urls_hint": "WebSocket addresses to receive text from, separated by commas or spaces. For LunaTranslator use ws://127.0.0.1:<port>/api/ws/text/origin (original text).",
   "theme_accent_auto_tone": "Regola la tonalità per modalità chiara e scura",
   "theme_accent_auto_tone_desc": "Disattivato: viene usato il colore esatto. Attivato: per ogni modalità viene generata una tonalità più chiara o più scura, quindi ciò che vedi differisce da ciò che hai scelto.",
   "theme_accent_auto_tone_short": "Separate tones for light and dark",

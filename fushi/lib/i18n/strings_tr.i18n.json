@@ -8825,6 +8825,8 @@
   "texthooker": "Metin yakalayıcı",
   "texthooker_enabled": "Texthooker (metin al)",
   "texthooker_enabled_hint": "Textractor/mpv/agent'a bağlanın ve gelen metni arayın",
+  "texthooker_urls": "Text endpoint URLs",
+  "texthooker_urls_hint": "WebSocket addresses to receive text from, separated by commas or spaces. For LunaTranslator use ws://127.0.0.1:<port>/api/ws/text/origin (original text).",
   "theme_accent_auto_tone": "Tonu açık ve koyu moda göre ayarla",
   "theme_accent_auto_tone_desc": "Kapalı: tam renk kullanılır. Açık: her mod için daha açık veya daha koyu bir ton üretilir, bu yüzden gördüğünüz seçtiğinizden farklı olur.",
   "theme_accent_auto_tone_short": "Separate tones for light and dark",
