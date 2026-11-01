@@ -107,6 +107,7 @@
   "ai_assist_working": "Đang hỏi AI…",
   "ai_error_bad_response": "Phản hồi không mong đợi",
   "ai_error_empty_response": "Mô hình không trả về gì",
+  "ai_error_endpoint": "The server answered with an error instead of a reply. Check the base URL — OpenAI-compatible servers (LM Studio, Ollama…) usually end with /v1.",
   "ai_error_http": "Dịch vụ trả về lỗi (${code})",
   "ai_error_network": "Lỗi mạng",
   "ai_error_not_configured": "Nhà cung cấp này chưa được cấu hình đầy đủ",

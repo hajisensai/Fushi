@@ -107,6 +107,7 @@
   "ai_assist_working": "KI wird gefragt…",
   "ai_error_bad_response": "Unerwartete Antwort",
   "ai_error_empty_response": "Das Modell hat nichts zurückgegeben",
+  "ai_error_endpoint": "The server answered with an error instead of a reply. Check the base URL — OpenAI-compatible servers (LM Studio, Ollama…) usually end with /v1.",
   "ai_error_http": "Der Dienst hat einen Fehler zurückgegeben (${code})",
   "ai_error_network": "Netzwerkfehler",
   "ai_error_not_configured": "Dieser Anbieter ist nicht vollständig konfiguriert",

@@ -18,6 +18,8 @@ String aiFailureText(String code) {
     'network_error' => t.ai_error_network,
     'bad_response' => t.ai_error_bad_response,
     'empty_response' => t.ai_error_empty_response,
+    // `kAiEndpointErrorCode`：服务端 2xx 回了一份错误体（多半是接口地址不对）。
+    'endpoint_error' => t.ai_error_endpoint,
     'provider_not_configured' => t.ai_error_not_configured,
     // `kAiTranscriptionUnsupportedProtocol`：云端转录只认 OpenAI 兼容协议。
     'unsupported_protocol' => t.ai_error_unsupported_protocol,

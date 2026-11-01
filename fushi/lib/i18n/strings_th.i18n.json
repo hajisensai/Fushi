@@ -107,6 +107,7 @@
   "ai_assist_working": "กำลังถาม AI…",
   "ai_error_bad_response": "การตอบกลับที่ไม่คาดคิด",
   "ai_error_empty_response": "โมเดลไม่ส่งอะไรกลับมา",
+  "ai_error_endpoint": "The server answered with an error instead of a reply. Check the base URL — OpenAI-compatible servers (LM Studio, Ollama…) usually end with /v1.",
   "ai_error_http": "บริการส่งข้อผิดพลาดกลับมา (${code})",
   "ai_error_network": "ข้อผิดพลาดเครือข่าย",
   "ai_error_not_configured": "ผู้ให้บริการนี้ยังตั้งค่าไม่ครบ",

@@ -107,6 +107,7 @@
   "ai_assist_working": "AI vragen…",
   "ai_error_bad_response": "Onverwacht antwoord",
   "ai_error_empty_response": "Het model gaf niets terug",
+  "ai_error_endpoint": "The server answered with an error instead of a reply. Check the base URL — OpenAI-compatible servers (LM Studio, Ollama…) usually end with /v1.",
   "ai_error_http": "De service gaf een fout terug (${code})",
   "ai_error_network": "Netwerkfout",
   "ai_error_not_configured": "Deze provider is niet volledig geconfigureerd",

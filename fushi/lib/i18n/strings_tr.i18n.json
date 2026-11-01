@@ -107,6 +107,7 @@
   "ai_assist_working": "Yapay zekaya soruluyor…",
   "ai_error_bad_response": "Beklenmeyen yanıt",
   "ai_error_empty_response": "Model hiçbir şey döndürmedi",
+  "ai_error_endpoint": "The server answered with an error instead of a reply. Check the base URL — OpenAI-compatible servers (LM Studio, Ollama…) usually end with /v1.",
   "ai_error_http": "Hizmet bir hata döndürdü (${code})",
   "ai_error_network": "Ağ hatası",
   "ai_error_not_configured": "Bu sağlayıcı tam olarak yapılandırılmamış",

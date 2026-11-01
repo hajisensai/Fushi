@@ -107,6 +107,7 @@
   "ai_assist_working": "正在詢問 AI…",
   "ai_error_bad_response": "響應格式異常",
   "ai_error_empty_response": "模型沒有返回內容",
+  "ai_error_endpoint": "伺服器返回了錯誤而不是回覆。請檢查介面位址——OpenAI 相容服務（LM Studio、Ollama 等）通常以 /v1 結尾。",
   "ai_error_http": "服務返回錯誤（${code}）",
   "ai_error_network": "網絡錯誤",
   "ai_error_not_configured": "這家提供商還沒配置完整",

@@ -107,6 +107,7 @@
   "ai_assist_working": "جارٍ سؤال الذكاء الاصطناعي…",
   "ai_error_bad_response": "استجابة غير متوقعة",
   "ai_error_empty_response": "لم يُرجع النموذج شيئًا",
+  "ai_error_endpoint": "The server answered with an error instead of a reply. Check the base URL — OpenAI-compatible servers (LM Studio, Ollama…) usually end with /v1.",
   "ai_error_http": "أرجعت الخدمة خطأ (${code})",
   "ai_error_network": "خطأ في الشبكة",
   "ai_error_not_configured": "هذا المزود غير مضبوط بالكامل",

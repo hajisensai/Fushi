@@ -336,6 +336,10 @@ AiChatUsage? parseAiChatUsage(
 
 /// 调用失败。[message] 是**已脱敏**的短文案，可以直接进 UI——绝不含 API Key、
 /// 完整 URL 或响应体原文（后两者都可能回显凭据）。
+/// 2xx 应答里只有 `error`、没有应答本体（端点不对 / 兼容层拒绝）的失败短码，
+/// 见 [AiChatClient] 的 `_postChat`。
+const String kAiEndpointErrorCode = 'endpoint_error';
+
 class AiChatFailure implements Exception {
   const AiChatFailure(this.message, {this.retryAfter});
 
@@ -960,6 +964,19 @@ class AiChatClient {
     final Object? body = _decodeBody(response);
     if (body is! Map) {
       throw const AiChatFailure('bad_response');
+    }
+    // 2xx 却是一份错误体、没有应答本体：LM Studio 对它不认识的路径回
+    // `200 {"error":"Unexpected endpoint or method. (POST /chat/completions)"}`
+    // （base URL 少了 `/v1` 时就是这样）。当成功解析只会报「AI 没有返回内容」，
+    // 用户无从下手；单独报 `endpoint_error`，界面提示检查接口地址（反馈
+    // GewyVIt5oo）。短码不带服务端原文（可能含路径等）。
+    final String replyKey = switch (provider.protocol) {
+      AiWireProtocol.openAiCompatible => 'choices',
+      AiWireProtocol.anthropicMessages => 'content',
+      AiWireProtocol.geminiGenerateContent => 'candidates',
+    };
+    if (body[replyKey] == null && body['error'] != null) {
+      throw const AiChatFailure(kAiEndpointErrorCode);
     }
     return body;
   }

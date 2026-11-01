@@ -107,6 +107,7 @@
   "ai_assist_working": "AI에게 요청하는 중…",
   "ai_error_bad_response": "예상치 못한 응답",
   "ai_error_empty_response": "모델이 아무것도 반환하지 않았습니다",
+  "ai_error_endpoint": "The server answered with an error instead of a reply. Check the base URL — OpenAI-compatible servers (LM Studio, Ollama…) usually end with /v1.",
   "ai_error_http": "서비스에서 오류를 반환했습니다(${code})",
   "ai_error_network": "네트워크 오류",
   "ai_error_not_configured": "이 제공자는 설정이 완료되지 않았습니다",

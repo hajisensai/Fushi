@@ -107,6 +107,7 @@
   "ai_assist_working": "Richiesta all'IA…",
   "ai_error_bad_response": "Risposta inattesa",
   "ai_error_empty_response": "Il modello non ha restituito nulla",
+  "ai_error_endpoint": "The server answered with an error instead of a reply. Check the base URL — OpenAI-compatible servers (LM Studio, Ollama…) usually end with /v1.",
   "ai_error_http": "Il servizio ha restituito un errore (${code})",
   "ai_error_network": "Errore di rete",
   "ai_error_not_configured": "Questo provider non è configurato completamente",

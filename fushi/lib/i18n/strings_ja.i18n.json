@@ -107,6 +107,7 @@
   "ai_assist_working": "AI に問い合わせ中…",
   "ai_error_bad_response": "想定外のレスポンス",
   "ai_error_empty_response": "モデルから何も返されませんでした",
+  "ai_error_endpoint": "サーバーが応答ではなくエラーを返しました。ベース URL を確認してください。OpenAI 互換サーバー（LM Studio、Ollama など）は通常 /v1 で終わります。",
   "ai_error_http": "サービスがエラーを返しました（${code}）",
   "ai_error_network": "ネットワークエラー",
   "ai_error_not_configured": "このプロバイダーは設定が完了していません",

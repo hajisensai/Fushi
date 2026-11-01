@@ -107,6 +107,7 @@
   "ai_assist_working": "Bertanya ke AI…",
   "ai_error_bad_response": "Respons tak terduga",
   "ai_error_empty_response": "Model tidak mengembalikan apa pun",
+  "ai_error_endpoint": "The server answered with an error instead of a reply. Check the base URL — OpenAI-compatible servers (LM Studio, Ollama…) usually end with /v1.",
   "ai_error_http": "Layanan mengembalikan galat (${code})",
   "ai_error_network": "Galat jaringan",
   "ai_error_not_configured": "Penyedia ini belum dikonfigurasi sepenuhnya",
