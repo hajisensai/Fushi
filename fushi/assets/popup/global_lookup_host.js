@@ -953,6 +953,9 @@
         if (message && typeof message === 'object' &&
             message.handler === 'popupRendered') {
           record.contentMeasureDirty = true;
+          if (record.parentIndex < 0) {
+            noteLookupPerf(messageRoute, 'render');
+          }
           markContentReady(record, messageRoute);
         }
       } catch (e) {
@@ -2849,8 +2852,53 @@
     originFloorTop = t < 0 ? t : 0;
   }
 
+  // 游戏内嵌查词耗时（GalLookupLatencyTrace 的宿主侧分段）。每条 route 一份：从
+  // renderStack 收到这次查词起算，记下脚本注入完、卡片首次报 popupRendered、首个
+  // overlaySize 发出三个时刻，随首个 overlaySize 的 box.perf 一起带回 Dart。
+  // performance.now 是本文档自己的时钟，所以只回报相对时长，不回报绝对时刻。
+  var lookupPerf = null;
+  function perfNow() {
+    return (typeof performance !== 'undefined' &&
+        typeof performance.now === 'function') ? performance.now() : Date.now();
+  }
+  function beginLookupPerf(route) {
+    var key = routeKey(route);
+    if (lookupPerf && lookupPerf.key === key) {
+      return;
+    }
+    lookupPerf = {
+      key: key,
+      t0: perfNow(),
+      inject: -1,
+      render: -1,
+      reported: false,
+    };
+  }
+  function noteLookupPerf(route, field) {
+    if (!lookupPerf || lookupPerf.key !== routeKey(route) ||
+        lookupPerf[field] >= 0) {
+      return;
+    }
+    lookupPerf[field] = perfNow() - lookupPerf.t0;
+  }
+  function takeLookupPerf(route) {
+    if (!lookupPerf || lookupPerf.reported ||
+        lookupPerf.key !== routeKey(route)) {
+      return null;
+    }
+    lookupPerf.reported = true;
+    return {
+      inject: Math.round(lookupPerf.inject),
+      render: Math.round(lookupPerf.render),
+      measure: Math.round(perfNow() - lookupPerf.t0),
+    };
+  }
+
   function renderStack(payload) {
     var popups = (payload && payload.popups) || [];
+    if (popups.length) {
+      beginLookupPerf(activeRoute);
+    }
     // BUG-1857 — Dart 的权威重排接管 root 尺寸；live-fit 到此为止。
     endLiveResize();
     // TODO-1345 — pick up this lookup's reserved origin floor BEFORE the diff +
@@ -2888,6 +2936,7 @@
       renderedIds.push(descriptor.id);
       renderPayload(layer, descriptor, i);
     }
+    noteLookupPerf(activeRoute, 'inject');
     ids = renderedIds;
     // TODO-1079 (C) — a changed ROOT frame id means a fresh lookup: clear the
     // bbox de-dup so the new card's first overlaySize is never suppressed by a
@@ -3193,6 +3242,10 @@
     }
     lastBBoxKey = key;
     box.geometryEpoch = geometryEpoch;
+    var perf = takeLookupPerf(route);
+    if (perf) {
+      box.perf = perf;
+    }
     // overlaySize args: [dpr, box]. Dart reveal/resize the window to this CSS-px
     // box (times dpr at the C++ window boundary). A shellRects-only change still
     // posts this message so the native region update receives a causal ack.

@@ -30,6 +30,7 @@ import 'package:fushi/src/lookup/global_lookup_channel.dart';
 import 'package:fushi/src/sync/desktop_foreground_guard.dart';
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
 import 'package:fushi/src/lookup/global_lookup_layout.dart';
+import 'package:fushi/src/lookup/gal_lookup_latency_trace.dart';
 import 'package:fushi/src/lookup/global_lookup_log.dart';
 import 'package:fushi/src/lookup/overlay_bridge_handlers.dart';
 import 'package:fushi/src/lookup/sentence_extraction.dart';
@@ -722,6 +723,7 @@ class GalIngameLookupController {
       // highlight 帧不仅重复，还会和查词卡争双缓冲的最新发布序。
       return;
     }
+    GalLookupLatencyTrace.begin(hit);
     _latestSubmitHit = hit;
     _sameLineReplayLoggedSubmitSeq = null;
     // latest-wins：在途查词不打断，但只保留最后一次意图。代数也在入队时递增，
@@ -1246,8 +1248,10 @@ class GalIngameLookupController {
     GlobalLookupRoute route,
   ) async {
     if (!_isCurrentLookup(generation, route)) return;
+    GalLookupLatencyTrace.mark(GalLookupLatencyStage.run);
     final String query = lookupQueryFromIndex(hit.line, hit.charIndex);
     if (query.isEmpty) {
+      GalLookupLatencyTrace.finish('empty-query');
       if (_isCurrentLookup(generation, route)) {
         await _terminateCurrentLookup();
       }
@@ -1287,6 +1291,7 @@ class GalIngameLookupController {
     }
     if (!taken) {
       glog('gal-ingame: overlay refused lookup seq=${hit.seq}');
+      GalLookupLatencyTrace.finish('refused');
       await _terminateCurrentLookup();
       return;
     }
@@ -1437,8 +1442,14 @@ class GalIngameLookupController {
     if (_captureSuppressed || !_isCurrentLookup(generation, route)) return;
     if (!result.ok) {
       glog('gal-ingame: present seq=${hit.seq} FAILED ${result.error}');
+      GalLookupLatencyTrace.finish('present-failed');
       return;
     }
+    GalLookupLatencyTrace.mark(
+      GalLookupLatencyStage.presented,
+      detail: result.directSurface ? 'surface=direct' : 'surface=bitmap',
+    );
+    GalLookupLatencyTrace.finish('ok');
     // A successful present is the authoritative mode transition. In
     // particular, direct composition may become unavailable after a mining
     // hide; a successful bitmap fallback must re-enable dirty recaptures.
@@ -1507,6 +1518,7 @@ class GalIngameLookupController {
   /// of reappearing. This is used for line changes, empty/refused lookups,
   /// genuine popup dismissal, session disable and test shutdown alike.
   Future<void> _terminateCurrentLookup({bool requireNativeAck = false}) async {
+    GalLookupLatencyTrace.finish('terminated');
     final GlobalLookupRoute? route = _activeRoute;
     final GalLookupHit? hit = _latestSubmitHit ?? _activeHit;
     final ({int seq, int routeEpoch})? pending = _pendingDismiss;

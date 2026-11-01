@@ -20,6 +20,7 @@ import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:fushi/src/anki/mine_failure_notice.dart';
 import 'package:fushi/src/lookup/overlay_auto_read.dart';
 import 'package:fushi/src/lookup/effective_lookup_size.dart';
+import 'package:fushi/src/lookup/gal_lookup_latency_trace.dart';
 import 'package:fushi/src/lookup/global_lookup_channel.dart';
 import 'package:fushi/src/lookup/global_lookup_layout.dart';
 import 'package:fushi/src/lookup/global_lookup_log.dart';
@@ -1102,6 +1103,12 @@ class GlobalLookupController {
     );
   }
 
+  /// 游戏内嵌查词的耗时打点：只记 galCard route，桌面查词不受影响。
+  void _traceGal(GalLookupLatencyStage stage, {String? detail}) {
+    if (GlobalLookupChannel.currentRoute.source != 'galCard') return;
+    GalLookupLatencyTrace.mark(stage, detail: detail);
+  }
+
   void _activateRoute(GlobalLookupRoute route) {
     final GlobalLookupRoute? previous = _activeRoute;
     if (previous == route) {
@@ -1186,6 +1193,7 @@ class GlobalLookupController {
       // not look like a user dismissal.
       await GlobalLookupChannel.hide(notify: false);
       if (!_isCurrentRoute) return false;
+      _traceGal(GalLookupLatencyStage.hide);
       // attached 表面打开的弹窗：hide 刚把 native 的 consume owner 清空，这里在
       // showAt/reveal 之前重新记下游戏 HWND，reveal/revealStack 才会走同步吞点击
       // Arm。普通桌面查词（null）不发这条 channel——非 Windows 也走本控制器。
@@ -1209,6 +1217,12 @@ class GlobalLookupController {
           .searchDictionaryWithRuby(searchTerm: text, rubySpans: rubySpans);
       if (!_isCurrentRoute) return false;
       glog('lookup: searched "$text" -> entries=${result.entries.length}');
+      _traceGal(
+        GalLookupLatencyStage.search,
+        detail:
+            'entries=${result.entries.length} '
+            'json=${((result.popupJson?.length ?? 0) / 1024).toStringAsFixed(0)}K',
+      );
       // New card: forget the previous size + reveal state so the overlay
       // re-measures and reveals from scratch.
       _revealed = false;
@@ -1348,6 +1362,7 @@ class GlobalLookupController {
         'monitorDpr=${shown.monitorDpr})',
       );
       if (!_isCurrentRoute) return false;
+      _traceGal(GalLookupLatencyStage.show);
       if (!shown.ok) {
         glog('lookup: showAt rejected the current route');
         await GlobalLookupChannel.hide(notify: false);
@@ -1412,6 +1427,7 @@ class GlobalLookupController {
       _originFloorTop = floor.top;
       await _renderStack(beginRoute: route);
       if (!_isCurrentRoute) return false;
+      _traceGal(GalLookupLatencyStage.renderSent);
       glog(
         'lookup: showAt(atCursor)=${shown.ok} off-screen w0=$w0 h0=$h0 '
         'workCss=${_screenWorkW}x$_screenWorkH rendered',
@@ -1759,6 +1775,7 @@ class GlobalLookupController {
           _galCaptureReadySafety?.cancel();
           _galCaptureReadySafety = null;
           _pendingGalCapture = null;
+          _traceGal(GalLookupLatencyStage.captureReady);
           _notifyRevealed(
             pending.width,
             pending.height,
@@ -1938,6 +1955,10 @@ class GlobalLookupController {
             // D2 union bounding box (window-local CSS px) -> place + size window.
             final Map<Object?, Object?> box = second.cast<Object?, Object?>();
             final GlobalLookupRoute route = GlobalLookupChannel.currentRoute;
+            _traceGal(
+              GalLookupLatencyStage.measured,
+              detail: galLookupHostPerfDetail(box['perf']),
+            );
             final int? reportedEpoch = parseGlobalLookupGeometryEpoch(
               box['geometryEpoch'],
             );

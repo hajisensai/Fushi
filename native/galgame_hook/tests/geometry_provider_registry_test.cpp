@@ -113,6 +113,11 @@ void TestCompletePublicationAndGenerationFence() {
             hit->writing_mode ==
                 fushi_voice_hook::kLookupWritingModeHorizontal,
         "wire hit must carry provider/span/generations/writing mode together");
+  // v26：发布时刻在同一把锁里、seq 发布之前盖上，与 host 的 QPC 读数同一时钟。
+  const uint64_t after_publish = fushi_voice_hook::QpcMicrosNow();
+  Check(hit != nullptr && hit->publish_qpc_us != 0 &&
+            hit->publish_qpc_us <= after_publish,
+        "wire hit must carry its QPC publish time");
   Check(mapping.header()->lookup_geometry_active_kind == exact.provider_kind &&
             mapping.header()->lookup_geometry_active_id == exact.provider_id &&
             mapping.header()->lookup_geometry_status ==

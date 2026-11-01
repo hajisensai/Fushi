@@ -497,6 +497,7 @@ class GeometryProviderRegistry {
     std::memset(slot->line_utf8, 0, sizeof(slot->line_utf8));
     std::memcpy(slot->line_utf8, publication.line_utf8,
                 publication.line_bytes);
+    slot->publish_qpc_us = QpcMicrosNow();
 
     PublishProviderStateLocked(header);
     AtomicStorePreview64(&slot->seq, next_hit_seq_);

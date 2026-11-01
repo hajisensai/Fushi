@@ -778,6 +778,10 @@ flutter::EncodableValue LookupHitMap(const VoiceHookLookupHit& hit) {
        flutter::EncodableValue(hit.client_w)},
       {flutter::EncodableValue("clientH"),
        flutter::EncodableValue(hit.client_h)},
+      {flutter::EncodableValue("publishQpcUs"),
+       flutter::EncodableValue(static_cast<int64_t>(hit.publish_qpc_us))},
+      {flutter::EncodableValue("dispatchQpcUs"),
+       flutter::EncodableValue(static_cast<int64_t>(hit.dispatch_qpc_us))},
       {flutter::EncodableValue("submit"), flutter::EncodableValue(hit.submit)},
   });
 }
@@ -882,6 +886,7 @@ void PumpLookupOnce() {
     // 查词开始之前就知道。量不到就留 0，host 退回画布口径（保守但不越界）。
     fushi::game_client_extent::QueryGameClientExtent(
         reader.CurrentPid(), &hit.client_w, &hit.client_h);
+    hit.dispatch_qpc_us = fushi_voice_hook::QpcMicrosNow();
     pump.channel->InvokeMethod(
         "onGalLookupHit",
         std::make_unique<flutter::EncodableValue>(LookupHitMap(hit)));
@@ -2603,6 +2608,7 @@ bool VoiceHookReader::PollLookupHit(VoiceHookLookupHit* out) {
     hit.view_w = slot->view_w;
     hit.view_h = slot->view_h;
     hit.submit = (slot->flags & fushi_voice_hook::kLookupHitFlagSubmit) != 0;
+    hit.publish_qpc_us = slot->publish_qpc_us;
     const uint32_t line_bytes = slot->line_bytes;
     if (line_bytes == 0 || line_bytes > fushi_voice_hook::kLookupLineBytes) {
       continue;
