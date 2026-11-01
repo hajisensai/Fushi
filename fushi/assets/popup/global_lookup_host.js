@@ -3419,6 +3419,12 @@
         : null;
     var fallbackTimer = null;
     var finished = false;
+    // 耗时诊断（GalLookupLatencyTrace）：arm → 第一 / 第二个 rAF 的毫秒数，以及最终是
+    // 被哪条路径放行的（raf / timer）。离屏 WebView2 被判遮挡时 rAF 会降频甚至停摆，
+    // 这组数字就是判定它的证据。
+    var armedAt = perfNow();
+    var firstRafMs = -1;
+    var releasedBy = 'raf';
     var postIfCurrent = function () {
       if (finished) {
         return;
@@ -3437,7 +3443,13 @@
         return;
       }
       postToHost(
-          'captureReady', [physicalWidth, physicalHeight, epoch], route);
+          'captureReady',
+          [physicalWidth, physicalHeight, epoch, {
+            raf1: Math.round(firstRafMs),
+            ready: Math.round(perfNow() - armedAt),
+            by: releasedBy,
+          }],
+          route);
     };
     if (!raf) {
       postIfCurrent();
@@ -3446,10 +3458,13 @@
     // A permanently off-screen WebView2 can expose requestAnimationFrame while
     // suspending its callbacks. Prefer two paint opportunities, but do not let
     // Dart wait forever for a callback Chromium may never schedule.
-    fallbackTimer = setTimerSafe(
-        postIfCurrent, GAL_CAPTURE_READY_RAF_FALLBACK_MS);
+    fallbackTimer = setTimerSafe(function () {
+      releasedBy = 'timer';
+      postIfCurrent();
+    }, GAL_CAPTURE_READY_RAF_FALLBACK_MS);
     try {
       raf(function () {
+        firstRafMs = perfNow() - armedAt;
         if (routeKey(activeRoute) !== key ||
             galCaptureReadySchedules.get(key) !== token ||
             epoch !== committedGeometryEpoch ||

@@ -180,3 +180,17 @@ String? galLookupHostPerfDetail(Object? perf) {
   return 'js[inject=${part('inject')} render=${part('render')} '
       'measure=${part('measure')}]';
 }
+
+/// 宿主页随 captureReady 回报的握手明细（args[3]）：arm → 第一个 rAF、arm → 放行的
+/// 毫秒数，以及放行路径（`raf` = 两帧都画了，`timer` = rAF 停摆走了兜底计时器）。
+String? galLookupCaptureReadyPerfDetail(Object? perf) {
+  if (perf is! Map) return null;
+  String part(String key) {
+    final Object? value = perf[key];
+    return value is num && value >= 0 ? value.round().toString() : '-';
+  }
+
+  final Object? by = perf['by'];
+  return 'arm[raf1=${part('raf1')} ready=${part('ready')} '
+      'by=${by is String ? by : '-'}]';
+}

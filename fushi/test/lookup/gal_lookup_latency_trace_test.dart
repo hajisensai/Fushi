@@ -113,4 +113,16 @@ void main() {
     expect(galLookupHostPerfDetail(null), isNull);
     expect(galLookupHostPerfDetail(3), isNull);
   });
+
+  test('captureReady 握手明细区分 rAF 与兜底计时器', () {
+    expect(
+      galLookupCaptureReadyPerfDetail(<String, Object>{
+        'raf1': 48.6,
+        'ready': 120,
+        'by': 'timer',
+      }),
+      'arm[raf1=49 ready=120 by=timer]',
+    );
+    expect(galLookupCaptureReadyPerfDetail(<Object>[]), isNull);
+  });
 }

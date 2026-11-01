@@ -2441,9 +2441,15 @@ function flushTimers() {
   const ready = hostPostLog.find((m) => m.handler === 'captureReady');
   assert.ok(ready, 'matching B epoch publishes captureReady');
   assert.deepStrictEqual(
-    Array.from(ready.args), [500, 400, boxB.geometryEpoch],
+    Array.from(ready.args).slice(0, 3), [500, 400, boxB.geometryEpoch],
     'captureReady carries the exact committed epoch',
   );
+  // args[3] is the latency-trace detail (GalLookupLatencyTrace); Dart only
+  // reads it for the log line, never for the handshake decision.
+  assert.strictEqual(ready.args[3].by, 'raf',
+    'captureReady reports which path released it');
+  assert.ok(typeof ready.args[3].ready === 'number' && ready.args[3].ready >= 0,
+    'captureReady reports arm → release milliseconds');
 
   host.beginLookup('global-lookup-root', {
     source: 'galCard', routeEpoch: 9, lookupEpoch: 5,
@@ -2488,9 +2494,12 @@ function flushTimers() {
   assert.strictEqual(readyAfterTimer.length, 1,
     'bounded fallback publishes captureReady exactly once');
   assert.deepStrictEqual(
-    Array.from(readyAfterTimer[0].args), [500, 400, box.geometryEpoch],
+    Array.from(readyAfterTimer[0].args).slice(0, 3),
+    [500, 400, box.geometryEpoch],
     'timer path preserves physical bounds and committed epoch',
   );
+  assert.strictEqual(readyAfterTimer[0].args[3].by, 'timer',
+    'suspended rAF is reported as a timer release');
   while (pendingAnimationFrames.length) {
     pendingAnimationFrames.shift()();
   }

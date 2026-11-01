@@ -1775,7 +1775,12 @@ class GlobalLookupController {
           _galCaptureReadySafety?.cancel();
           _galCaptureReadySafety = null;
           _pendingGalCapture = null;
-          _traceGal(GalLookupLatencyStage.captureReady);
+          _traceGal(
+            GalLookupLatencyStage.captureReady,
+            detail: galLookupCaptureReadyPerfDetail(
+              args is List && args.length > 3 ? args[3] : null,
+            ),
+          );
           _notifyRevealed(
             pending.width,
             pending.height,
