@@ -20,3 +20,4 @@
     （普通箭头=时间 seek、Ctrl+箭头=句子 seek、Ctrl+←走 skipToPrevCueOrSeekBack、阈值=seekSeconds 秒、> 才退化）。
 - **备注**：真机未验（桌面键盘 ←/→/Ctrl+←/→ 实际播放需用户复测；测试宿主无 libmpv，`load()`/Player 构造即抛，
   故键盘交互走源码守卫 + 纯函数行为测试，与既有 video 键盘测试范式一致）。
+- **后续（2026-11-01，反馈 yNNhNgXm_M）**：「上一句太远退 3 秒」（TODO-085）已整体删除——用户按 ⌘/Ctrl+← 没跳到上一句，以为快捷键坏了。现在所有输入（键盘 / 手柄 / 按钮 / 双击 / 远程）有 cue 时都跳到相邻上一句开头，无 cue 时仍回退 seekSeconds 秒（BUG-200 不回归）；`PrevSeekDecision` / `prevSeekDecisionFor` / `VideoActionInput` 随之删除。

@@ -300,16 +300,21 @@ void main() {
       );
     });
 
-    test('TODO-085: Ctrl+Left far-prev degrades to seek back Xs', () {
+    test('Ctrl+Left always jumps to the previous cue (yNNhNgXm_M)', () {
       expect(
         page.contains('skipToPrevCueOrSeekBack('),
         isTrue,
-        reason: 'Ctrl+Left goes through the degrade decision method',
+        reason: 'Ctrl+Left goes through the shared prev-sentence method',
       );
       expect(
         page.contains('seekSeconds: _asbConfig.seekSeconds'),
         isTrue,
-        reason: 'degrade threshold uses the configured seekSeconds',
+        reason: 'no-subtitle fallback uses the configured seekSeconds',
+      );
+      expect(
+        page.contains('degradeFarCueToTimeSeek'),
+        isFalse,
+        reason: 'the far-cue 3s fallback (BUG-185) was removed',
       );
       expect(
         page.contains('skipToNextCueOrSeekForward('),
@@ -358,23 +363,16 @@ void main() {
       );
     });
 
-    test('TODO-085 prevSeekDecisionFor exists and degrades on seekSeconds', () {
+    test('controller has no far-cue time-seek fallback (yNNhNgXm_M)', () {
       final String controller = read(
         'lib/src/media/video/video_player_controller.dart',
       );
+      expect(controller.contains('prevSeekDecisionFor'), isFalse);
+      expect(controller.contains('degradeFarCueToTimeSeek'), isFalse);
       expect(
-        controller.contains('static PrevSeekDecision prevSeekDecisionFor('),
+        controller.contains('await skipToPrevCue();'),
         isTrue,
-      );
-      expect(
-        controller.contains('final int thresholdMs = seekSeconds * 1000;'),
-        isTrue,
-        reason: 'threshold = seekSeconds',
-      );
-      expect(
-        controller.contains('if (gapMs > thresholdMs)'),
-        isTrue,
-        reason: 'only degrade when gap exceeds threshold',
+        reason: 'with cues, prev-sentence always jumps to the previous cue',
       );
     });
 

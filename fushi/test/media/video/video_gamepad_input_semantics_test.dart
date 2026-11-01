@@ -10,51 +10,32 @@ import '../../pages/video_fushi_page_source_corpus.dart';
 ///
 /// BUG-3339：手柄「上一句字幕」曾复用键盘 Ctrl+← 的执行体，上一句离得远时退化成
 /// 回退 3 秒（用户：「像固定秒数倒退，连跳一两下才到句首」），而屏幕双击一直恒跳句。
-/// 输入种类现在是构造动作表的显式参数 [VideoActionInput]。
+/// 反馈 yNNhNgXm_M 起键盘也不再退化，所有输入同一语义。
 ///
 /// BUG-3330：手柄「按住临时倍速」只有按下沿，退化成点按翻转。现在键盘与手柄共用
 /// 同一个按住状态机 [resolveHoldSpeedTransition]，手柄的松开沿来自 Android 原生
 /// KeyUpEvent 或桌面轮询的 GamepadButtonReleaseIntent。
 void main() {
-  group('BUG-3339：上一句字幕按输入种类分语义', () {
-    test('只有键盘把太远的上一句退化成时间回退；按钮类输入恒跳句', () {
-      expect(
-        videoPrevSubtitleDegradesFarCue(VideoActionInput.keyboard),
-        isTrue,
-      );
-      expect(videoPrevSubtitleDegradesFarCue(VideoActionInput.button), isFalse);
-    });
-
-    test('每个派发点都显式声明输入种类，且手柄 / 鼠标 / 屏幕按钮是 button', () {
+  group('BUG-3339：上一句字幕在所有输入上同一语义', () {
+    test('动作表不再按输入种类分叉，上一句字幕不带「太远退化」开关', () {
       final String src = maskComments(readVideoFushiSource());
-      String inputAt(String signature) {
-        final String body = methodBody(src, signature);
-        final RegExpMatch? m = RegExp(
-          r'_buildVideoShortcutActions\(\s*\w+!?,\s*input:\s*VideoActionInput\.(\w+)',
-        ).firstMatch(body);
-        expect(m, isNotNull, reason: '$signature 里找不到带 input 的动作表构造');
-        return m!.group(1)!;
-      }
-
-      expect(inputAt('bool _handleVideoGamepadButton('), 'button');
-      expect(inputAt('void _handleVideoPointerDown('), 'button');
-      expect(inputAt('bool _handleVideoKeyboardShortcut('), 'keyboard');
-      // 动作表构造本身必须要求 input（不是带默认值的可选参数）——默认值会让新派发点
-      // 静默继承某一类语义，正是本 bug 的形态。
+      // 反馈 yNNhNgXm_M 删掉了键盘 Ctrl+← 的「太远退 3 秒」：手柄 / 键盘 / 屏幕按钮
+      // 共用一份动作表，执行体完全一致，不再有 input 参数可以让某个通道悄悄换语义。
+      expect(src.contains('VideoActionInput'), isFalse);
+      expect(src.contains('degradeFarCueToTimeSeek'), isFalse);
       expect(
         RegExp(
-          r'_buildVideoShortcutActions\(\s*VideoPlayerController controller,\s*\{\s*required VideoActionInput input,',
+          r'_buildVideoShortcutActions\(\s*VideoPlayerController controller,?\s*\)',
         ).hasMatch(src),
         isTrue,
       );
-      expect(
-        containsCodeLine(
-          src,
-          'degradeFarCueToTimeSeek: videoPrevSubtitleDegradesFarCue(input),',
-        ),
-        isTrue,
-        reason: '上一句字幕的退化开关必须来自 input，不能写死',
+      final String gamepad = methodBody(src, 'bool _handleVideoGamepadButton(');
+      final String keyboard = methodBody(
+        src,
+        'bool _handleVideoKeyboardShortcut(',
       );
+      expect(gamepad.contains('_buildVideoShortcutActions('), isTrue);
+      expect(keyboard.contains('_buildVideoShortcutActions('), isTrue);
     });
   });
 

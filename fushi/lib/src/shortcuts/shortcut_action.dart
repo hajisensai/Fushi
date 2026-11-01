@@ -501,9 +501,9 @@ enum ShortcutAction {
     ShortcutScope.video,
     'video_replay_current_subtitle',
   ),
-  // 重播上一句（TODO-378，BUG-287）：纯句子跳转到上一条 cue 起点并播放，**不**退化成
-  // 回退几秒。与 videoPreviousSubtitle（Ctrl+←，gap 太远时退化时间 seek，BUG-185/TODO-085）
-  // 语义不同，是两个独立功能；TODO-328 误当重复删掉，此处恢复。
+  // 重播上一句（TODO-378，BUG-287）：跳转到上一条 cue 起点并**起播**。与
+  // videoPreviousSubtitle（Ctrl+←，只跳不改播放 / 暂停态）是两个独立功能；TODO-328
+  // 误当重复删掉，此处恢复。
   videoReplayPreviousSubtitle(
     ShortcutScope.video,
     'video_replay_previous_subtitle',
