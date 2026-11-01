@@ -98,6 +98,7 @@ import 'package:fushi/src/startup/webview_prewarm.dart';
 import 'package:fushi/src/startup/exit_flush_registry.dart';
 import 'package:fushi/src/startup/android_view_lifecycle.dart';
 import 'package:fushi/src/startup/test_root_shared_preferences.dart';
+import 'package:fushi/src/startup/durable_shared_preferences.dart';
 import 'package:fushi/src/sync/book_exit_sync_scope.dart';
 import 'package:fushi/src/anki/anki_desktop_auto_launch.dart';
 import 'package:fushi/src/anki/anki_video_template_entry.dart';
@@ -304,6 +305,10 @@ void main([List<String> args = const <String>[]]) {
       // 测试根（FUSHI_TEST_ROOT）下 SharedPreferences 也要隔离，且必须抢在下面第一次
       // 读 prefs 之前：否则集成测试写的 Anki 设置会落进用户真实的 prefs 文件。
       isolateSharedPreferencesUnderTestRoot();
+      // 反馈 p8vt5jHJgC：官方 Windows / Linux 偏好插件原地写、读时不接异常，断电留下
+      // 的 NUL 文件让每次 getInstance() 都抛 FormatException、整个启动失败。换成原子写
+      // + 坏文件隔离 / 备份恢复的同文件存储（测试根已隔离时不动）。
+      installDurableDesktopSharedPreferences();
       // Fushi 改名：app-support 根一次性搬迁（Windows
       // %APPDATA%\Hibiki\Hibiki -> %APPDATA%\Fushi\Fushi；macOS
       // ~/Library/Application Support/com.example.hibiki -> app.fushi.reader）。
@@ -603,6 +608,10 @@ void main([List<String> args = const <String>[]]) {
 
       /// Initialise error log service.
       await ErrorLogService.instance.init();
+      for (final String report
+          in DurableFileSharedPreferencesStore.drainRecoveryReports()) {
+        ErrorLogService.instance.log('SharedPreferences.recovered', report);
+      }
       // 统计诊断流水（用户 2026-09-12：导出日志排查阅读速度异常）。StudyClock 在
       // fushi_audio 包里，靠静态 sink 接进来——五个装配点一处不改。
       await StudyDiagLog.instance.init();
@@ -2878,6 +2887,9 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
         child: MaterialApp(
           debugShowCheckedModeBanner: false,
           navigatorKey: appModel.navigatorKey,
+          // 与 navigatorKey 同理：根重挂（locale KeyedSubtree 等）时 messenger 被
+          // reparent 而非销毁，已显示的 SnackBar 不会变成关不掉的僵尸条。
+          scaffoldMessengerKey: appModel.scaffoldMessengerKey,
           // Resets the focus highlight to touch on every route push/pop so a ring
           // lit by keyboard/gamepad navigation on one page is not carried onto the
           // freshly-entered page (BUG-398).
