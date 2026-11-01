@@ -3596,13 +3596,13 @@ extension _VideoSubtitle on _VideoFushiPageState {
     _rebuild(() => _currentSubtitleSource = SubtitleSource.offSentinel);
   }
 
-  /// [_videoWithSubtitlePanel] 的右侧面板列。用 [AnimatedSize] 让列宽在 0 ↔ panelWidth
-  /// 之间平滑伸缩（画面被挤窄/还原也跟着动），可见时渲染 [VideoSubtitleJumpPanel]，隐藏
-  /// 时宽度收成 0（[ClipRect] 裁掉收缩中溢出的内容，避免动画期文字越界）。[OverflowBox]
-  /// 把面板内容固定在 panelWidth、不随收缩中的列宽被挤压，故伸缩动画里文字布局稳定。
+  /// [_videoWithSubtitlePanel] 的「画面格 + 右侧字幕列表列」。列宽在 0 ↔ panelWidth
+  /// 之间伸缩、画面格让位，几何与动画规则（面板收起全程保留、动画期间画面宽度冻结）
+  /// 全在 [VideoPushAsideRow]；这里只算面板宽度并装配 [VideoSubtitleJumpPanel]。
   Widget _subtitleJumpSidePanel(
     VideoPlayerController controller,
     bool visible,
+    Widget content,
   ) {
     final ColorScheme cs = _videoChromeColorScheme(context);
     final double screenWidth = MediaQuery.sizeOf(context).width;
@@ -3637,11 +3637,18 @@ extension _VideoSubtitle on _VideoFushiPageState {
       bottom: systemPadding.bottom,
     );
     final double columnWidth = panelWidth + panelSafeInsets.right;
-    // BUG-3888 续：列宽伸缩交给 [VideoPushAsideColumn]——面板在收起动画全程保留
-    // （不再当帧卸载、露出底色白条），且动画帧里面板约束恒定、不重建不重排。
-    return VideoPushAsideColumn(
+    // BUG-3888：列宽伸缩交给 [VideoPushAsideRow]——面板在收起动画全程保留（不再
+    // 当帧卸载、露出底色白条），动画帧里面板约束恒定、不重建不重排；画面格宽度在
+    // 动画期间冻结（Windows 上视频纹理逐帧换尺寸绘制会卡住 present，见该类注释）。
+    return VideoPushAsideRow(
       open: visible,
       width: columnWidth,
+      content: content,
+      // 收起时画面冻结在窄宽，与滑出中的列之间那条用面板整列底色填上（不露页面底色）。
+      gapColor: VideoSubtitleJumpPanel.columnSurfaceColor(
+        context,
+        colorScheme: cs,
+      ),
       // 时长 / 曲线取 FushiMotion token（墨水屏与「减弱动态效果」自动归零）。列宽驱动
       // 推挤布局，用不过冲的 standard：spatial 弹簧过冲会让列宽短暂超过面板、露出空隙。
       duration: fushiMotionDuration(context, FushiMotion.short),

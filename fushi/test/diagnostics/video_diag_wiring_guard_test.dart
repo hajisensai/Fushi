@@ -198,6 +198,32 @@ void main() {
       );
     });
 
+    test('字幕列表开 / 关进日志，且诊断关闭时先短路（BUG-3888）', () {
+      // 用户导出的流水里每秒一窗帧耗时，没有开关时刻就对不上是哪一下卡的。
+      expect(
+        src,
+        contains(
+          '_subtitleListVisible.addListener(_logSubtitleListToggleForDiag);',
+        ),
+      );
+      expect(
+        src,
+        contains(
+          '_subtitleListVisible.removeListener(_logSubtitleListToggleForDiag);',
+        ),
+      );
+      final int idx = src.indexOf('void _logSubtitleListToggleForDiag() {');
+      expect(idx, greaterThan(0));
+      final String body = src.substring(idx, src.indexOf('\n  }', idx));
+      final int gate = body.indexOf(
+        'videoDiagEnabledFor(VideoDiagCategory.video, VideoDiagLevel.info)',
+      );
+      expect(gate, greaterThan(0), reason: '诊断关闭时零开销：先问开关');
+      expect(body.indexOf('videoDiag('), greaterThan(gate));
+      expect(body, contains("'subtitle list open'"));
+      expect(body, contains("'subtitle list close'"));
+    });
+
     test('热槽 seed 的结果进日志（小内存分叉点）', () {
       final int idx = src.indexOf('void _seedWarmPopup() {');
       expect(idx, greaterThan(0));

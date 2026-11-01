@@ -11,7 +11,14 @@
 //   dart tool/heavy.dart -- pwsh -File tool/run_windows_itest.ps1
 //     integration_test/video_subtitle_list_toggle_perf_itest.dart -Visible
 // 可选 `-DartDefine FUSHI_PROBE_VIDEO=<本地视频绝对路径>` 用真片代替生成的素材。
+//
+// 复现用户环境（profile、可见窗口、补丁引擎）时再加：
+//   SUBLIST_PREFS=<json 文件>  启动前写入的 preferences 原始行（`{"design_system":"s:material"}`）；
+//   SUBLIST_PLAY=true          不暂停，边播边开关（用户的真实路径）；
+//   SUBLIST_WIDGET_TRACE=false 不开 widget 级 build/layout/paint 事件，只看引擎（含 raster 线程）；
+//   SUBLIST_TRACE_ALL=true     每一轮开关都录 timeline。
 import 'dart:async';
+import 'dart:convert' show jsonDecode, jsonEncode;
 import 'dart:developer' show Timeline;
 import 'dart:io';
 import 'dart:ui' show FramePhase, FrameTiming;
@@ -36,6 +43,7 @@ import 'package:media_kit_video/media_kit_video.dart' show Video;
 import 'package:vm_service/vm_service.dart' as vm;
 
 import 'helpers/focus_driver.dart';
+import 'helpers/layer_tree_probe.dart';
 import 'helpers/library_fixture.dart';
 import 'helpers/media_fixtures.dart';
 import 'helpers/observe_capture.dart';
@@ -43,17 +51,77 @@ import 'support/test_app_launcher.dart';
 import 'test_helpers.dart';
 
 const Key _kPanelKey = ValueKey<String>('video-subtitle-jump-panel');
-const String _kProbeVideo = String.fromEnvironment('FUSHI_PROBE_VIDEO');
+
+/// 探针开关：先读进程环境变量，再退回 `--dart-define`。环境变量让同一份预编译
+/// 二进制（`flutter drive --use-application-binary`，便于换补丁引擎 DLL）跑多组对照。
+String _knob(String name, String compiled) =>
+    Platform.environment[name] ?? compiled;
+bool _flag(String name, bool compiled) {
+  final String? v = Platform.environment[name];
+  return v == null ? compiled : v == 'true' || v == '1';
+}
+
+final String _kProbeVideo = _knob(
+  'FUSHI_PROBE_VIDEO',
+  const String.fromEnvironment('FUSHI_PROBE_VIDEO'),
+);
 const String _tag = '[sublist-perf]';
 
 /// `--dart-define=SUBLIST_TRACE=false`：首轮也不录 timeline（纯帧时对照用）。
-const bool _kTraceFirstCycle = bool.fromEnvironment(
+final bool _kTraceFirstCycle = _flag(
   'SUBLIST_TRACE',
-  defaultValue: true,
+  const bool.fromEnvironment('SUBLIST_TRACE', defaultValue: true),
+);
+final bool _kTraceAll = _flag(
+  'SUBLIST_TRACE_ALL',
+  const bool.fromEnvironment('SUBLIST_TRACE_ALL'),
+);
+final bool _kWidgetTrace = _flag(
+  'SUBLIST_WIDGET_TRACE',
+  const bool.fromEnvironment('SUBLIST_WIDGET_TRACE', defaultValue: true),
+);
+final bool _kPlay = _flag(
+  'SUBLIST_PLAY',
+  const bool.fromEnvironment('SUBLIST_PLAY'),
+);
+final String _kSeedPrefsPath = _knob(
+  'SUBLIST_PREFS',
+  const String.fromEnvironment('SUBLIST_PREFS'),
 );
 
+/// `SUBLIST_DPR=2.0`：覆盖框架看到的 DPR（物理窗口不变，只改布局缩放），让不同
+/// 显示器缩放下的轮次可比。空 = 用显示器真实 DPR。
+final String _kDprOverride = _knob(
+  'SUBLIST_DPR',
+  const String.fromEnvironment('SUBLIST_DPR'),
+);
+
+/// `SUBLIST_CYCLES=10`：开 / 关循环次数（默认 3）。尖峰逐次波动大，比较变体要看分布。
+final int _kCycles =
+    int.tryParse(
+      _knob('SUBLIST_CYCLES', const String.fromEnvironment('SUBLIST_CYCLES')),
+    ) ??
+    3;
+
+/// `SUBLIST_LAYERS=true`：关列表的轮次逐帧抓 layer 树（离屏层 / 纹理 / 平台视图）。
+final bool _kLayers = _flag(
+  'SUBLIST_LAYERS',
+  const bool.fromEnvironment('SUBLIST_LAYERS'),
+);
+
+Map<String, String> _seedPrefs() {
+  if (_kSeedPrefsPath.isEmpty) return const <String, String>{};
+  final Map<String, dynamic> raw =
+      jsonDecode(File(_kSeedPrefsPath).readAsStringSync())
+          as Map<String, dynamic>;
+  return raw.map((String k, dynamic v) => MapEntry<String, String>(k, '$v'));
+}
+
 Future<Directory> _fixturesDir() async {
-  const String testRoot = String.fromEnvironment('FUSHI_TEST_ROOT');
+  final String testRoot = _knob(
+    'FUSHI_TEST_ROOT',
+    const String.fromEnvironment('FUSHI_TEST_ROOT'),
+  );
   final Directory dir = testRoot.isEmpty
       ? await Directory.systemTemp.createTemp('fushi_fixtures_')
       : Directory('$testRoot${Platform.pathSeparator}fixtures');
@@ -196,12 +264,21 @@ class _Ev {
 }
 
 /// 解析 Chrome trace 事件（'B'/'E' 配对与 'X' 完整事件），重建每线程嵌套。
+final Map<int, String> _threadNames = <int, String>{};
+
 List<_Ev> _parseTimeline(vm.Timeline tl) {
   final Map<int, List<Map<String, dynamic>>> byTid =
       <int, List<Map<String, dynamic>>>{};
   for (final vm.TimelineEvent e in tl.traceEvents ?? <vm.TimelineEvent>[]) {
     final Map<String, dynamic> j = e.json!;
     final String? ph = j['ph'] as String?;
+    if (ph == 'M' && j['name'] == 'thread_name') {
+      final Object? args = j['args'];
+      if (args is Map && args['name'] is String) {
+        _threadNames[j['tid'] as int? ?? 0] = args['name'] as String;
+      }
+      continue;
+    }
     if (ph != 'B' && ph != 'E' && ph != 'X') continue;
     (byTid[j['tid'] as int? ?? 0] ??= <Map<String, dynamic>>[]).add(j);
   }
@@ -303,9 +380,110 @@ void _reportTimeline(String label, vm.Timeline tl) {
         .map((_Ev e) => '${e.name}=${(e.self / 1000).toStringAsFixed(1)}')
         .join(', ');
     debugPrint(
-      '$_tag $label long +${(r.start - t0) ~/ 1000}ms heavySelf[$heavyText] tid=${r.tid} '
+      '$_tag $label long +${(r.start - t0) ~/ 1000}ms heavySelf[$heavyText] '
+      'tid=${r.tid}(${_threadNames[r.tid] ?? '?'}) '
       '${r.name}(${r.dur ~/ 1000}ms self=${r.self ~/ 1000})$chain',
     );
+  }
+}
+
+/// 原始 Chrome trace 落盘（`<测试根>/sublist-trace-<轮次>.json`），离线看全部线程
+/// 与 GPU 计时事件；探针里的汇总只挑长事件。
+Future<void> _dumpTimeline(String label, vm.Timeline tl) async {
+  final String root = _knob(
+    'FUSHI_TEST_ROOT',
+    const String.fromEnvironment('FUSHI_TEST_ROOT'),
+  );
+  if (root.isEmpty) return;
+  final String events = (tl.traceEvents ?? <vm.TimelineEvent>[])
+      .map((vm.TimelineEvent e) => jsonEncode(e.json))
+      .join(',\n');
+  final File out = File(
+    '$root${Platform.pathSeparator}sublist-trace-${label.replaceAll('#', '')}.json',
+  );
+  await out.writeAsString('{"traceEvents":[\n$events\n]}');
+  debugPrint('$_tag $label traceFile=${out.path}');
+}
+
+/// 关列表一轮的 layer 树报告：四个时点的全量清单（带 widget 归属）+ 逐帧计数与增删。
+void _reportLayers(
+  String label,
+  int t0,
+  LayerFrame before,
+  Map<int, String> beforeOwners,
+  LayerFrameRecorder rec,
+) {
+  final List<(int, bool, LayerFrame)> fs = rec.frames;
+  if (fs.isEmpty) {
+    debugPrint('$_tag $label layers frames=0');
+    return;
+  }
+  final int unmountIdx = fs.indexWhere(((int, bool, LayerFrame) f) => !f.$2);
+  final StringBuffer rows = StringBuffer();
+  LayerFrame prev = before;
+  for (int i = 0; i < fs.length; i++) {
+    final (int vs, bool panel, LayerFrame f) = fs[i];
+    final String diff = diffLayerFrames(prev, f, 5);
+    rows.write(
+      ' {#$i +${((vs - t0) / 1000).toStringAsFixed(0)} p=${panel ? 1 : 0} '
+      '${countsOf(f)}${diff.isEmpty ? '' : ' $diff'}}',
+    );
+    prev = f;
+  }
+  debugPrint('$_tag $label layers unmountAt=#$unmountIdx frames:$rows');
+
+  // 归属在录制时就地做（element 树还在）；这里把到第 idx 帧为止的归属合起来查。
+  Map<int, String> ownersUpTo(int idx) {
+    final Map<int, String> m = <int, String>{...beforeOwners};
+    final List<int> keys = rec.owners.keys.where((int k) => k <= idx).toList()
+      ..sort();
+    for (final int k in keys) {
+      m.addAll(rec.owners[k]!);
+    }
+    return m;
+  }
+
+  void snapshot(String phase, LayerFrame f, Map<int, String> owners) {
+    final List<ProbeLayer> sorted = f.layers.toList()
+      ..sort((ProbeLayer a, ProbeLayer b) => b.area.compareTo(a.area));
+    final String body = sorted
+        .where(
+          (ProbeLayer l) =>
+              l.kind != ProbeLayerKind.offscreen ||
+              l.area / f.rootArea * 100 >= 1,
+        )
+        .map((ProbeLayer l) => '${l.brief(f.rootArea)} <= ${owners[l.id]}')
+        .join(' || ');
+    debugPrint('$_tag $label layers@$phase ${countsOf(f)} :: $body');
+  }
+
+  snapshot('before', before, beforeOwners);
+  final int mid = unmountIdx > 0 ? unmountIdx ~/ 2 : fs.length ~/ 4;
+  snapshot('mid#$mid', fs[mid].$3, ownersUpTo(mid));
+  if (unmountIdx >= 0) {
+    snapshot('unmount#$unmountIdx', fs[unmountIdx].$3, ownersUpTo(unmountIdx));
+  }
+  final int last = fs.length - 1;
+  snapshot('after#$last', fs[last].$3, ownersUpTo(last));
+
+  // 有增删的帧逐条带归属列出（被删的层用删之前的归属）。
+  final List<int> changed = rec.owners.keys.where((int k) => k > 0).toList()
+    ..sort();
+  for (final int k in changed) {
+    final Map<int, String> owners = ownersUpTo(k);
+    final LayerFrame p = fs[k - 1].$3;
+    final LayerFrame c = fs[k].$3;
+    final String diff = diffLayerFrames(p, c, 5);
+    if (diff.isEmpty) continue;
+    final Set<int> ids = <int>{
+      for (final ProbeLayer l in c.layers) l.id,
+      for (final ProbeLayer l in p.layers) l.id,
+    };
+    final String who = ids
+        .where((int id) => diff.contains('#${id.toRadixString(16)}['))
+        .map((int id) => '${id.toRadixString(16)}=${owners[id]}')
+        .join(' | ');
+    debugPrint('$_tag $label layers change#$k $diff :: $who');
   }
 }
 
@@ -314,7 +492,7 @@ void main() {
       IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
   testWidgets('字幕列表开 / 关帧时', (WidgetTester tester) async {
-    await launchFushiTestApp();
+    await launchFushiTestApp(seedPrefs: _seedPrefs());
     expect(await waitForHome(tester), isTrue, reason: '主页应在 90s 内出现');
     await tester.pump(const Duration(seconds: 2));
     final AppModel appModel = await readyAppModel(tester);
@@ -329,7 +507,7 @@ void main() {
     expect(_videoMounted(), isTrue, reason: '视频应在 30s 内就绪');
     await tester.pump(const Duration(seconds: 2));
     final Video video = tester.widget<Video>(find.byType(Video));
-    await video.controller.player.pause();
+    if (!_kPlay) await video.controller.player.pause();
     await tester.pump(const Duration(seconds: 1));
 
     final FocusDriver driver = FocusDriver(tester);
@@ -337,9 +515,20 @@ void main() {
     await tester.pump(const Duration(milliseconds: 200));
 
     binding.framePolicy = LiveTestWidgetsFlutterBindingFramePolicy.fullyLive;
+    final double nativeDpr = tester.view.devicePixelRatio;
+    final double? dprOverride = double.tryParse(_kDprOverride);
+    if (dprOverride != null) {
+      tester.view.devicePixelRatio = dprOverride;
+      await tester.pump(const Duration(seconds: 1));
+    }
+    final LayerFrameRecorder layers = LayerFrameRecorder()
+      ..panelMounted = _panelMounted;
     debugPrint(
-      '$_tag size=${tester.view.physicalSize} dpr=${tester.view.devicePixelRatio} '
-      'probeVideo=${_kProbeVideo.isNotEmpty}',
+      '$_tag size=${tester.view.physicalSize.width.round()}x'
+      '${tester.view.physicalSize.height.round()} nativeDpr=$nativeDpr '
+      'dpr=${tester.view.devicePixelRatio} '
+      'probeVideo=${_kProbeVideo.isNotEmpty} play=$_kPlay '
+      'seedPrefs=${_seedPrefs().length} widgetTrace=$_kWidgetTrace',
     );
 
     Future<void> toggle(
@@ -347,16 +536,28 @@ void main() {
       required bool expectOpen,
       bool trace = false,
     }) async {
+      // 不置顶跑时窗口留在屏上，用户的鼠标路过会把焦点带走（`L` 落空、断言红）。
+      // 每轮按键前把焦点放回画面：只校正测试输入，不碰被测路径。
+      await driver.requestFocusInside(find.byType(Video));
+      await _wait(100);
       final _FrameLog log = _FrameLog()..start();
+      final bool recordLayers = _kLayers && !expectOpen;
+      LayerFrame? before;
+      Map<int, String> beforeOwners = const <int, String>{};
+      if (recordLayers) {
+        before = captureLayerFrame();
+        beforeOwners = attributeLayers(before.layers);
+        layers.start();
+      }
       await _wait(300);
       final int t0 = _nowMicros();
       vm.Timeline? tl;
       if (trace) {
         // widget 级事件（每个 build / layout / paint 一条）会放大 UI 线程耗时，
         // 本轮帧时只看相对占比；绝对帧时看后面不带 trace 的轮次。
-        debugProfileBuildsEnabled = true;
-        debugProfileLayoutsEnabled = true;
-        debugProfilePaintsEnabled = true;
+        debugProfileBuildsEnabled = _kWidgetTrace;
+        debugProfileLayoutsEnabled = _kWidgetTrace;
+        debugProfilePaintsEnabled = _kWidgetTrace;
         try {
           tl = await binding.traceTimeline(() async {
             await _pressL(tester);
@@ -372,19 +573,26 @@ void main() {
         await _wait(1500);
       }
       log.stop();
+      layers.active = false;
       expect(_panelMounted(), expectOpen, reason: '$label 后列表可见性');
       log.report(label, t0);
-      if (tl != null) _reportTimeline(label, tl);
+      if (recordLayers && before != null) {
+        _reportLayers(label, t0, before, beforeOwners, layers);
+      }
+      if (tl != null) {
+        _reportTimeline(label, tl);
+        await _dumpTimeline(label, tl);
+      }
     }
 
     // 1. 首次开 / 关带 timeline（首开含整轨行高测量等一次性开销，要看清是谁）；
     // 2. 之后两轮不带 trace，量稳态帧时。
     await toggle('open#1', expectOpen: true, trace: _kTraceFirstCycle);
     await toggle('close#1', expectOpen: false, trace: _kTraceFirstCycle);
-    await toggle('open#2', expectOpen: true);
-    await toggle('close#2', expectOpen: false);
-    await toggle('open#3', expectOpen: true);
-    await toggle('close#3', expectOpen: false);
+    for (int i = 2; i <= _kCycles; i++) {
+      await toggle('open#$i', expectOpen: true, trace: _kTraceAll);
+      await toggle('close#$i', expectOpen: false, trace: _kTraceAll);
+    }
 
     // 3. 关闭动画中段抓一帧真像素：看被收缩的那一列画的是什么（真时钟，不用假时间泵）。
     await _pressL(tester);

@@ -1180,7 +1180,7 @@ extension _VideoLayout on _VideoFushiPageState {
     // 开着时画面字幕查不了词（TODO-636 根因）。删 barrier 后画面区是裸 [video]，画面
     // 字幕命中恢复、可查词；关列表统一走 × / Esc / 控制条字幕按钮，三者都经
     // [_closeSubtitleJumpList]（单一真相源：清挖词选择 + 隐藏列表 + 唤回控制条 +
-    // 归还焦点；见 _subtitleJumpSidePanel.onClose 与 _toggleSubtitleJumpList 的关闭
+    // 归还焦点；见 _subtitleJumpSidePanel 里面板的 onClose 与 _toggleSubtitleJumpList 的关闭
     // 分支）。barrier 删除后列表锁定（TODO-611，原本
     // 唯一作用是把 barrier 门控成 no-op）失去意义，一并移除（TODO-634）。
     //
@@ -1205,14 +1205,12 @@ extension _VideoLayout on _VideoFushiPageState {
         return Stack(
           fit: StackFit.expand,
           children: <Widget>[
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                // 网页档：站点 WebView 垫在画面槽最底层（随字幕列表挤窄），
-                // 见 web_source.part.dart。
-                Expanded(child: _webMode ? _wrapWebVideoSurface(video) : video),
-                _subtitleJumpSidePanel(controller, visible),
-              ],
+            _subtitleJumpSidePanel(
+              controller,
+              visible,
+              // 网页档：站点 WebView 垫在画面槽最底层（随字幕列表挤窄），
+              // 见 web_source.part.dart。
+              _webMode ? _wrapWebVideoSurface(video) : video,
             ),
             // BUG-1501：选集横轨打开时，底部面板之外的视频区域就是点外关闭面。
             // barrier 放在视频之上、横轨之下：点视频只关选集且不穿透播放器手势；
