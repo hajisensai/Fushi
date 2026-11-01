@@ -1,11 +1,15 @@
 /// 复习页：问题面 →「显示答案」→ 四个评分（带间隔预览）→ 下一张，直到当天做完。
 ///
-/// - 键盘（只在本页焦点作用域里生效）：空格 / Enter = 显示答案，翻面后 = 「良好」；
-///   1–4 = 四个评分；Ctrl+Z = 撤销；手柄 A 同 Enter。全局的裸空格中和
-///   （`global_navigation.dart` 的 `_neutralizeBareSpace`）挂在根上，本页的
-///   [Focus.onKeyEvent] 更近、先消费，所以空格只在复习页有「翻面 / 良好」的含义。
-/// - WebView 卡面持有键盘焦点时，按键经键盘桥（[srsReviewKeyBridgeScript]）交回本页
-///   同一个处理入口；焦点回收走 [PageFocusOwnership]（不裸调 requestFocus）。
+/// - 键盘 / 手柄（只在本页焦点作用域里生效）按快捷键注册表的 [ShortcutScope.srsReview]
+///   解析（设置 → 快捷键 →「SRS 复习」可改键，反馈 itlb0djDq6）。默认：空格 / Enter /
+///   手柄 A = 显示答案，翻面后 = 「良好」；1–4 = 四个评分；R = 重播音频；Ctrl+Z = 撤销；
+///   Ctrl+= / - / 0 = 卡面缩放。本页没解析中的键（Esc / Alt+← / 手柄 B）冒泡到根，由
+///   universal 的「返回上一级」兜底。全局的裸空格中和（`global_navigation.dart` 的
+///   `_neutralizeBareSpace`）挂在根上，本页的 [Focus.onKeyEvent] 更近、先消费，所以空格
+///   只在复习页有「翻面 / 良好」的含义。
+/// - WebView 卡面持有键盘焦点时，按键经键盘桥交回本页（键表按注册表当前绑定导出，
+///   [srsReviewBridgeTokens]），与 Flutter 焦点路径同一个 `resolveKeyboard`；焦点回收走
+///   [PageFocusOwnership]（不裸调 requestFocus）。
 /// - 卡面音频：当前卡所在牌组（取参数继承的 own 祖先，[SrsDeckTree.paramsOwner]）开着
 ///   「自动播放音频」时，出题 / 翻面自动按顺序播卡上的音频；「重播音频」随时手动再播（规则见
 ///   srs_card_autoplay.dart，对齐 Anki 按预设的 autoplay / replayq）。
@@ -19,7 +23,7 @@ import 'dart:math' as math;
 import 'dart:ui'
     show FlutterView, ViewFocusDirection, ViewFocusEvent, ViewFocusState;
 
-import 'package:flutter/foundation.dart' show ValueListenable;
+import 'package:flutter/foundation.dart' show ValueListenable, listEquals;
 import 'package:flutter/gestures.dart'
     show
         GestureBinding,
@@ -30,7 +34,7 @@ import 'package:flutter/gestures.dart'
         kSecondaryMouseButton;
 import 'package:flutter/rendering.dart' show RenderProxyBox;
 import 'package:flutter/scheduler.dart' show SchedulerBinding;
-import 'package:flutter/services.dart';
+import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_core/fushi_core.dart' show SrsCardCacheRow;
@@ -56,6 +60,11 @@ import 'package:fushi/src/pages/implementations/srs/srs_review_gestures_page.dar
 import 'package:fushi/src/pages/implementations/srs/srs_review_layout_sheet.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_template_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
+import 'package:fushi/src/shortcuts/gamepad_service.dart'
+    show GamepadButtonIntent;
+import 'package:fushi/src/shortcuts/input_binding.dart';
+import 'package:fushi/src/shortcuts/shortcut_action.dart';
+import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 import 'package:fushi/src/srs/srs_card_appearance.dart'
     show SrsCardAppearance, SrsCardColorSource, srsCardColorScheme;
 import 'package:fushi/src/srs/srs_card_autoplay.dart';
@@ -145,6 +154,29 @@ class SrsReviewPage extends ConsumerStatefulWidget {
 
   @override
   ConsumerState<SrsReviewPage> createState() => _SrsReviewPageState();
+}
+
+/// 复习页卡面键盘桥要交回 Dart 的 token（[InputBinding.bridgeToken]），按注册表**当前**
+/// 绑定导出而不是写死：[ShortcutScope.srsReview] 的全部键盘绑定 + 「返回上一级」
+/// （universal 的 globalBack，WebView 持焦时 Esc 也要能退出复习）+ `Escape`（查词弹窗
+/// 关一层，用户把返回键改走了也照样要）。去重、保持顺序。
+List<String> srsReviewBridgeTokens(FushiShortcutRegistry registry) {
+  final List<String> tokens = <String>[];
+  void add(String token) {
+    if (!tokens.contains(token)) tokens.add(token);
+  }
+
+  for (final ShortcutAction action in <ShortcutAction>[
+    ...ShortcutAction.actionsForScope(ShortcutScope.srsReview),
+    ShortcutAction.globalBack,
+  ]) {
+    for (final InputBinding binding
+        in registry.bindingsFor(action).keyboardBindings) {
+      add(binding.bridgeToken);
+    }
+  }
+  add('Escape');
+  return tokens;
 }
 
 /// 卡面缩放：每档 10%，范围 60%–200%。
@@ -1052,77 +1084,100 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
 
   // ------------------------------------------------------------------ 键盘
 
+  FushiShortcutRegistry get _shortcuts =>
+      ref.read(appProvider).shortcutRegistry;
+
   KeyEventResult _onKey(FocusNode node, KeyEvent event) {
     // 查词弹窗开着：Esc 关一层，翻面 / 评分键吞掉。
     final KeyEventResult? lookup = _lookup.guardKey(event);
     if (lookup != null) return lookup;
     if (event is! KeyDownEvent) return KeyEventResult.ignored;
-    final LogicalKeyboardKey key = event.logicalKey;
-    final bool ctrl =
-        HardwareKeyboard.instance.isControlPressed ||
-        HardwareKeyboard.instance.isMetaPressed;
-    if (ctrl && key == LogicalKeyboardKey.keyZ) {
-      _undoLast();
-      return KeyEventResult.handled;
-    }
-    if (ctrl &&
-        (key == LogicalKeyboardKey.equal ||
-            key == LogicalKeyboardKey.add ||
-            key == LogicalKeyboardKey.numpadAdd)) {
-      _zoomBy(_kZoomStep);
-      return KeyEventResult.handled;
-    }
-    if (ctrl &&
-        (key == LogicalKeyboardKey.minus ||
-            key == LogicalKeyboardKey.numpadSubtract)) {
-      _zoomBy(-_kZoomStep);
-      return KeyEventResult.handled;
-    }
-    if (ctrl &&
-        (key == LogicalKeyboardKey.digit0 ||
-            key == LogicalKeyboardKey.numpad0)) {
-      _setZoom(1);
-      return KeyEventResult.handled;
-    }
-    if (ctrl ||
-        HardwareKeyboard.instance.isAltPressed ||
-        HardwareKeyboard.instance.isShiftPressed) {
-      return KeyEventResult.ignored;
-    }
-    if (key == LogicalKeyboardKey.space ||
-        key == LogicalKeyboardKey.enter ||
-        key == LogicalKeyboardKey.numpadEnter ||
-        key == LogicalKeyboardKey.gameButtonA) {
-      _primary();
-      return KeyEventResult.handled;
-    }
-    if (key == LogicalKeyboardKey.keyR) {
-      // 重播音频（对齐 Anki 的 R）。
-      _replayAudio();
-      return KeyEventResult.handled;
-    }
-    final int? rating = _ratingOfKey(key);
-    if (rating != null && _showingAnswer) {
-      _rate(rating);
-      return KeyEventResult.handled;
-    }
-    return KeyEventResult.ignored;
+    final ShortcutAction? action = _shortcuts.resolveKeyboard(
+      event.logicalKey,
+      modifiers: <ModifierKey>{
+        if (HardwareKeyboard.instance.isControlPressed) ModifierKey.ctrl,
+        if (HardwareKeyboard.instance.isShiftPressed) ModifierKey.shift,
+        if (HardwareKeyboard.instance.isAltPressed) ModifierKey.alt,
+        if (HardwareKeyboard.instance.isMetaPressed) ModifierKey.meta,
+      },
+      scope: ShortcutScope.srsReview,
+      physicalKey: event.physicalKey,
+    );
+    // 没命中的键（Esc / Alt+← 等）原样冒泡：根上的 universal「返回上一级」兜底。
+    // 手柄 gameButton* 键事件同样冒泡，由全局 wrapper 转成 GamepadButtonIntent 交回
+    // [_handleGamepadButton]（键盘绑定里没有它们）。
+    return action != null && _executeShortcut(action)
+        ? KeyEventResult.handled
+        : KeyEventResult.ignored;
   }
 
-  int? _ratingOfKey(LogicalKeyboardKey key) {
-    if (key == LogicalKeyboardKey.digit1 || key == LogicalKeyboardKey.numpad1) {
-      return 1;
+  /// 手柄按钮（桌面轮询的 [GamepadButtonIntent]，Android 的 gameButton* 键事件经全局
+  /// wrapper 汇合到同一 Intent）。返回 false 交回 GamepadService 的兜底（弹窗词条导航、
+  /// B = 返回上一级…）。
+  bool _handleGamepadButton(GamepadButton button) {
+    final ShortcutAction? action = _shortcuts.resolveGamepad(
+      button,
+      scope: ShortcutScope.srsReview,
+    );
+    if (action == null) return false;
+    // 查词弹窗开着时翻面 / 评分键让给弹窗的手柄兜底（与键盘一侧 guardKey 吞键同义：
+    // 不翻面、不评分）。
+    if (_lookup.isOpen && _flipsOrRates(action)) return false;
+    return _executeShortcut(action);
+  }
+
+  /// 会翻面 / 评分（换卡）的动作：查词弹窗开着时一律不执行。
+  static bool _flipsOrRates(ShortcutAction action) => switch (action) {
+    ShortcutAction.srsReviewPrimary ||
+    ShortcutAction.srsReviewAgain ||
+    ShortcutAction.srsReviewHard ||
+    ShortcutAction.srsReviewGood ||
+    ShortcutAction.srsReviewEasy => true,
+    _ => false,
+  };
+
+  /// 复习页动作的唯一执行体（键盘 / 卡面键盘桥 / 手柄三条入口共用）。返回是否消费。
+  bool _executeShortcut(ShortcutAction action) {
+    // 改了键的翻面 / 评分键不在 guardKey 的固定吞键表里：弹窗开着时在这里吞掉。
+    if (_lookup.isOpen && _flipsOrRates(action)) return true;
+    switch (action) {
+      case ShortcutAction.srsReviewPrimary:
+        _primary();
+        return true;
+      case ShortcutAction.srsReviewAgain:
+        return _rateByKey(1);
+      case ShortcutAction.srsReviewHard:
+        return _rateByKey(2);
+      case ShortcutAction.srsReviewGood:
+        return _rateByKey(3);
+      case ShortcutAction.srsReviewEasy:
+        return _rateByKey(4);
+      case ShortcutAction.srsReviewReplayAudio:
+        // 重播音频（对齐 Anki 的 R）。
+        _replayAudio();
+        return true;
+      case ShortcutAction.srsReviewUndo:
+        _undoLast();
+        return true;
+      case ShortcutAction.srsReviewZoomIn:
+        _zoomBy(_kZoomStep);
+        return true;
+      case ShortcutAction.srsReviewZoomOut:
+        _zoomBy(-_kZoomStep);
+        return true;
+      case ShortcutAction.srsReviewZoomReset:
+        _setZoom(1);
+        return true;
+      default:
+        return false;
     }
-    if (key == LogicalKeyboardKey.digit2 || key == LogicalKeyboardKey.numpad2) {
-      return 2;
-    }
-    if (key == LogicalKeyboardKey.digit3 || key == LogicalKeyboardKey.numpad3) {
-      return 3;
-    }
-    if (key == LogicalKeyboardKey.digit4 || key == LogicalKeyboardKey.numpad4) {
-      return 4;
-    }
-    return null;
+  }
+
+  /// 评分键只在答案面生效；问题面不消费（与改造前一致）。
+  bool _rateByKey(int rating) {
+    if (!_showingAnswer) return false;
+    _rate(rating);
+    return true;
   }
 
   /// 空格 / Enter / 手柄 A：问题面 → 显示答案；答案面 →「良好」。
@@ -1134,28 +1189,36 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     }
   }
 
-  /// WebView 持焦时经键盘桥回传的 token。
+  /// 卡面键盘桥的键表（按注册表当前绑定导出），内容没变时复用同一个实例：卡面 widget
+  /// 缓存（[_cardFace]）按身份比较输入。
+  List<String> _bridgeKeys = const <String>[];
+
+  List<String> _currentBridgeKeys() {
+    final List<String> fresh = srsReviewBridgeTokens(_shortcuts);
+    if (!listEquals(fresh, _bridgeKeys)) _bridgeKeys = fresh;
+    return _bridgeKeys;
+  }
+
+  /// WebView 持焦时经键盘桥回传的 token：反解析成绑定后走与 Flutter 焦点路径同一个
+  /// `resolveKeyboard`；本页没中的再按 universal 解析「返回上一级」（桥已
+  /// preventDefault 掐掉了这次按键，不自己兜底它就被吞了）。
   void _onBridgeKey(String token) {
     if (_lookup.guardBridgeToken(token)) return;
-    switch (token) {
-      case 'Space' || 'Enter' || 'NumpadEnter':
-        _primary();
-      case 'Ctrl+KeyZ' || 'Meta+KeyZ':
-        _undoLast();
-      case 'Ctrl+Equal' || 'Ctrl+NumpadAdd' || 'Meta+Equal':
-        _zoomBy(_kZoomStep);
-      case 'Ctrl+Minus' || 'Ctrl+NumpadSubtract' || 'Meta+Minus':
-        _zoomBy(-_kZoomStep);
-      case 'Ctrl+Digit0' || 'Meta+Digit0':
-        _setZoom(1);
-      case 'KeyR':
-        _replayAudio();
-      default:
-        final String digit = token.substring(token.length - 1);
-        final int? rating = int.tryParse(digit);
-        if (rating != null && rating >= 1 && rating <= 4 && _showingAnswer) {
-          _rate(rating);
-        }
+    final InputBinding? binding = InputBinding.fromBridgeToken(token);
+    if (binding == null) return;
+    final ShortcutAction? action = _shortcuts.resolveKeyboard(
+      binding.key,
+      modifiers: binding.modifiers,
+      scope: ShortcutScope.srsReview,
+    );
+    if (action != null && _executeShortcut(action)) return;
+    if (_shortcuts.resolveKeyboard(
+          binding.key,
+          modifiers: binding.modifiers,
+          scope: ShortcutScope.universal,
+        ) ==
+        ShortcutAction.globalBack) {
+      unawaited(Navigator.of(context).maybePop());
     }
   }
 
@@ -1619,56 +1682,66 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     // 悬浮顶栏：页头不占布局（空页头），两套设计系统都改由正文上层的悬浮胶囊栏
     // （[_buildTopBar]）承载，默认收起、点空白 / 右键唤出。
     final bool floating = ref.watch(srsReviewChromeFloatingProvider);
-    return Focus(
-      focusNode: _focusNode,
-      autofocus: true,
-      onKeyEvent: _onKey,
-      child: FushiPageScaffold(
-        title: _title,
-        header: floating
-            ? const SizedBox.shrink()
-            : (apple ? null : _buildTopBar(context)),
-        actions: apple && !floating ? _buildAppleActions() : const <Widget>[],
-        headerBottom:
-            apple &&
-                !floating &&
-                !_finished &&
-                ref.watch(srsReviewShowCountsProvider)
-            ? SrsCountTriple(
-                newCount: _newCount,
-                learnCount: _learnCount,
-                reviewCount: _reviewCount,
-                dense: true,
-              )
-            : null,
-        body: Builder(
-          builder: (BuildContext context) => _withFloatingChrome(
-            context,
-            floating: floating,
-            child: Padding(
-              // 正文从浮动页头底下开始：整面 WebView 的卡面滚不到页头下面，整体让位。
-              // 原生 Fushi 卡面例外：铺到页头底下、把让位高度当滚动内边距（见
-              // [SrsFushiCardView.topInset]），往下翻页头收起后不留一条空带。
-              padding: EdgeInsets.only(
-                top: _cardScrollsUnderHeader
-                    ? 0
-                    : MediaQuery.paddingOf(context).top,
-              ),
-              child: AnimatedSwitcher(
-                duration: fushiMotionDuration(context, FushiMotion.medium),
-                switchInCurve: FushiMotion.enter,
-                switchOutCurve: FushiMotion.exit,
-                child: KeyedSubtree(
-                  // 读首张卡期间与出卡后同一棵子树（'review'）：卡面平台视图在读库的同时
-                  // 就开始创建，不在数据到了之后才冷建（见 [_buildBody]）。
-                  key: ValueKey<String>(
-                    _error != null
-                        ? 'error'
-                        : _finished
-                        ? 'finished'
-                        : 'review',
+    // 手柄：Actions 必须是本页焦点节点的祖先——桌面轮询与 Android 键事件都从
+    // primaryFocus 往上派发 GamepadButtonIntent。
+    return Actions(
+      actions: <Type, Action<Intent>>{
+        GamepadButtonIntent: CallbackAction<GamepadButtonIntent>(
+          onInvoke: (GamepadButtonIntent intent) =>
+              _handleGamepadButton(intent.button),
+        ),
+      },
+      child: Focus(
+        focusNode: _focusNode,
+        autofocus: true,
+        onKeyEvent: _onKey,
+        child: FushiPageScaffold(
+          title: _title,
+          header: floating
+              ? const SizedBox.shrink()
+              : (apple ? null : _buildTopBar(context)),
+          actions: apple && !floating ? _buildAppleActions() : const <Widget>[],
+          headerBottom:
+              apple &&
+                  !floating &&
+                  !_finished &&
+                  ref.watch(srsReviewShowCountsProvider)
+              ? SrsCountTriple(
+                  newCount: _newCount,
+                  learnCount: _learnCount,
+                  reviewCount: _reviewCount,
+                  dense: true,
+                )
+              : null,
+          body: Builder(
+            builder: (BuildContext context) => _withFloatingChrome(
+              context,
+              floating: floating,
+              child: Padding(
+                // 正文从浮动页头底下开始：整面 WebView 的卡面滚不到页头下面，整体让位。
+                // 原生 Fushi 卡面例外：铺到页头底下、把让位高度当滚动内边距（见
+                // [SrsFushiCardView.topInset]），往下翻页头收起后不留一条空带。
+                padding: EdgeInsets.only(
+                  top: _cardScrollsUnderHeader
+                      ? 0
+                      : MediaQuery.paddingOf(context).top,
+                ),
+                child: AnimatedSwitcher(
+                  duration: fushiMotionDuration(context, FushiMotion.medium),
+                  switchInCurve: FushiMotion.enter,
+                  switchOutCurve: FushiMotion.exit,
+                  child: KeyedSubtree(
+                    // 读首张卡期间与出卡后同一棵子树（'review'）：卡面平台视图在读库的同时
+                    // 就开始创建，不在数据到了之后才冷建（见 [_buildBody]）。
+                    key: ValueKey<String>(
+                      _error != null
+                          ? 'error'
+                          : _finished
+                          ? 'finished'
+                          : 'review',
+                    ),
+                    child: _buildBody(context),
                   ),
-                  child: _buildBody(context),
                 ),
               ),
             ),
@@ -1848,7 +1921,9 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     required MediaQueryData media,
     required SrsCardGestureArming gestureArming,
   }) {
+    final List<String> bridgeKeys = _currentBridgeKeys();
     final Object inputs = (
+      bridgeKeys,
       gestureArming,
       detail?.card.id,
       detail?.noteType.builtinKey,
@@ -1874,6 +1949,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
       css: rendered?.css ?? '',
       languageCode: language.isEmpty ? null : language,
       onBridgeKey: _onBridgeKey,
+      bridgeKeys: bridgeKeys,
       fushiCard: detail?.noteType.builtinKey == kSrsBuiltinFushiCardKey,
       pageZoom: zoom == 1 ? null : zoom,
       onZoomWheel: _zoomWheel,

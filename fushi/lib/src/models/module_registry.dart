@@ -177,6 +177,7 @@ ModuleId? moduleOfShortcutScope(ShortcutScope scope) => switch (scope) {
   ShortcutScope.manga => ModuleId.manga,
   ShortcutScope.video => ModuleId.video,
   ShortcutScope.music => ModuleId.music,
+  ShortcutScope.srsReview => ModuleId.srs,
 };
 
 bool isShortcutScopeVisible(ShortcutScope scope, ModuleVisibility visibility) =>

@@ -24,6 +24,11 @@ import 'package:fushi/src/pages/implementations/srs/srs_note_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_review_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_review_layout_sheet.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
+import 'package:fushi/src/shortcuts/gamepad_service.dart'
+    show GamepadButtonIntent;
+import 'package:fushi/src/shortcuts/input_binding.dart'
+    show GamepadBinding, GamepadButton, InputBinding, ShortcutBindingSet;
+import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/srs/srs_card_autoplay.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
@@ -1050,6 +1055,147 @@ void main() {
     }))!;
     expect(queue, SrsQueue.newCard.wire);
     await _unmount(tester);
+  });
+
+  group('自定义按键（反馈 itlb0djDq6，ShortcutScope.srsReview）', () {
+    Future<SrsDbStore> pumpReview(WidgetTester tester, AppModel app) async {
+      final SrsDbStore store = await _openStore(tester);
+      await _addLapis(tester, store, '食べる');
+      await _pumpPage(
+        tester,
+        store: store,
+        apple: false,
+        app: app,
+        page: SrsReviewPage(deckId: store.defaultDeckId, deckName: 'Default'),
+      );
+      expect(
+        find.byKey(const ValueKey<String>('srs-face-question')),
+        findsOneWidget,
+      );
+      return store;
+    }
+
+    testWidgets('把「良好」改绑到 G：答案面按 G 评分，原来的 3 不再评分', (WidgetTester tester) async {
+      final SrsTestAppModel app = SrsTestAppModel();
+      app.shortcutRegistry.updateBinding(
+        ShortcutAction.srsReviewGood,
+        const ShortcutBindingSet(
+          keyboardBindings: <InputBinding>[
+            InputBinding(key: LogicalKeyboardKey.keyG),
+          ],
+        ),
+      );
+      await pumpReview(tester, app);
+
+      // 问题面按评分键不评分（评分键只在答案面生效）。
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyG);
+      await _settle(tester);
+      expect(
+        find.byKey(const ValueKey<String>('srs-face-question')),
+        findsOneWidget,
+      );
+
+      // 默认主键（空格）不受影响：翻面。
+      await tester.sendKeyEvent(LogicalKeyboardKey.space);
+      await _settle(tester);
+      expect(
+        find.byKey(const ValueKey<String>('srs-face-answer')),
+        findsOneWidget,
+      );
+
+      // 3 已不再绑定「良好」：不评分。
+      await tester.sendKeyEvent(LogicalKeyboardKey.digit3);
+      await _settle(tester);
+      expect(
+        find.byKey(const ValueKey<String>('srs-face-answer')),
+        findsOneWidget,
+      );
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.keyG);
+      await _settle(tester);
+      expect(
+        find.byKey(const ValueKey<String>('srs-review-finished')),
+        findsOneWidget,
+        reason: 'G 现在就是「良好」，评完唯一一张卡',
+      );
+      await _unmount(tester);
+    });
+
+    testWidgets('卡面键盘桥回传改过的键与小键盘 token 也按注册表执行', (WidgetTester tester) async {
+      final SrsTestAppModel app = SrsTestAppModel();
+      app.shortcutRegistry.updateBinding(
+        ShortcutAction.srsReviewPrimary,
+        const ShortcutBindingSet(
+          keyboardBindings: <InputBinding>[
+            InputBinding(key: LogicalKeyboardKey.keyF),
+          ],
+        ),
+      );
+      await pumpReview(tester, app);
+      SrsCardFace face() =>
+          tester.widget<SrsPlainCardFace>(find.byType(SrsPlainCardFace)).face;
+      expect(face().bridgeKeys, contains('KeyF'));
+      expect(face().bridgeKeys, isNot(contains('Space')));
+
+      face().onBridgeKey('KeyF');
+      await _settle(tester);
+      expect(
+        find.byKey(const ValueKey<String>('srs-face-answer')),
+        findsOneWidget,
+      );
+      face().onBridgeKey('Numpad4');
+      await _settle(tester);
+      expect(
+        find.byKey(const ValueKey<String>('srs-review-finished')),
+        findsOneWidget,
+      );
+      await _unmount(tester);
+    });
+
+    testWidgets('手柄：默认 A 翻面；改绑到 Y 后 A 交回兜底、Y 翻面', (WidgetTester tester) async {
+      final SrsTestAppModel app = SrsTestAppModel();
+      await pumpReview(tester, app);
+      bool press(GamepadButton button) =>
+          Actions.maybeInvoke<GamepadButtonIntent>(
+            FocusManager.instance.primaryFocus!.context!,
+            GamepadButtonIntent(button),
+          ) ==
+          true;
+
+      app.shortcutRegistry.updateBinding(
+        ShortcutAction.srsReviewPrimary,
+        const ShortcutBindingSet(
+          gamepadBindings: <GamepadBinding>[GamepadBinding(GamepadButton.y)],
+        ),
+      );
+      expect(press(GamepadButton.a), isFalse, reason: 'A 已不绑本页动作');
+      expect(press(GamepadButton.y), isTrue);
+      await _settle(tester);
+      expect(
+        find.byKey(const ValueKey<String>('srs-face-answer')),
+        findsOneWidget,
+      );
+      await _unmount(tester);
+    });
+
+    testWidgets('默认表下手柄 A 翻面（与改造前 Android 的 gameButtonA 同义）', (
+      WidgetTester tester,
+    ) async {
+      await pumpReview(tester, SrsTestAppModel());
+      final bool handled =
+          Actions.maybeInvoke<GamepadButtonIntent>(
+            FocusManager.instance.primaryFocus!.context!,
+            const GamepadButtonIntent(GamepadButton.a),
+          ) ==
+          true;
+      expect(handled, isTrue);
+      await _settle(tester);
+      expect(
+        find.byKey(const ValueKey<String>('srs-face-answer')),
+        findsOneWidget,
+      );
+      await _unmount(tester);
+    });
   });
 
   testWidgets('牌组列表：空的默认牌组在有别的顶层牌组时隐藏（Anki hide_default_deck）', (

@@ -589,6 +589,40 @@ class ShortcutDefaults {
     ShortcutAction.musicSeekBackward: _kb([
       _key(LogicalKeyboardKey.arrowLeft, {ModifierKey.shift}),
     ]),
+    // SRS 复习页：与改造前 `_onKey` 写死的键完全一致（反馈 itlb0djDq6 只要求可改键，
+    // 不改手感）。主键 = 空格 / Enter / 小键盘 Enter / 手柄 A；评分 = 数字 1–4 与小键盘
+    // 1–4；R 重播音频（对齐 Anki）；Ctrl+Z 撤销；Ctrl+= / + / 小键盘 + 放大、Ctrl+- /
+    // 小键盘 - 缩小、Ctrl+0 / 小键盘 0 复原。macOS 上 Ctrl 与 ⌘ 都认（改造前就是两者
+    // 都认），见 [_macOSKeyboardOverrides]。
+    ShortcutAction.srsReviewPrimary: _kb(
+      [
+        _key(LogicalKeyboardKey.space),
+        _key(LogicalKeyboardKey.enter),
+        _key(LogicalKeyboardKey.numpadEnter),
+      ],
+      [_gA],
+    ),
+    ShortcutAction.srsReviewAgain: _kb([
+      _key(LogicalKeyboardKey.digit1),
+      _key(LogicalKeyboardKey.numpad1),
+    ]),
+    ShortcutAction.srsReviewHard: _kb([
+      _key(LogicalKeyboardKey.digit2),
+      _key(LogicalKeyboardKey.numpad2),
+    ]),
+    ShortcutAction.srsReviewGood: _kb([
+      _key(LogicalKeyboardKey.digit3),
+      _key(LogicalKeyboardKey.numpad3),
+    ]),
+    ShortcutAction.srsReviewEasy: _kb([
+      _key(LogicalKeyboardKey.digit4),
+      _key(LogicalKeyboardKey.numpad4),
+    ]),
+    ShortcutAction.srsReviewReplayAudio: _kb([_key(LogicalKeyboardKey.keyR)]),
+    ShortcutAction.srsReviewUndo: _kb(_srsReviewUndoKeys),
+    ShortcutAction.srsReviewZoomIn: _kb(_srsReviewZoomInKeys),
+    ShortcutAction.srsReviewZoomOut: _kb(_srsReviewZoomOutKeys),
+    ShortcutAction.srsReviewZoomReset: _kb(_srsReviewZoomResetKeys),
     ShortcutAction.dpadUp: _kb([], [_gDpadUp]),
     ShortcutAction.dpadDown: _kb([], [_gDpadDown]),
     ShortcutAction.dpadLeft: _kb([], [_gDpadLeft]),
@@ -662,6 +696,41 @@ class ShortcutDefaults {
     ),
   };
 
+  // SRS 复习页的 Ctrl 组合键（桌面默认；macOS 另加 ⌘ 版本，见 [_withMetaTwins]）。
+  static final List<InputBinding> _srsReviewUndoKeys = <InputBinding>[
+    _key(LogicalKeyboardKey.keyZ, {ModifierKey.ctrl}),
+  ];
+  static final List<InputBinding> _srsReviewZoomInKeys = <InputBinding>[
+    _key(LogicalKeyboardKey.equal, {ModifierKey.ctrl}),
+    _key(LogicalKeyboardKey.add, {ModifierKey.ctrl}),
+    _key(LogicalKeyboardKey.numpadAdd, {ModifierKey.ctrl}),
+  ];
+  static final List<InputBinding> _srsReviewZoomOutKeys = <InputBinding>[
+    _key(LogicalKeyboardKey.minus, {ModifierKey.ctrl}),
+    _key(LogicalKeyboardKey.numpadSubtract, {ModifierKey.ctrl}),
+  ];
+  static final List<InputBinding> _srsReviewZoomResetKeys = <InputBinding>[
+    _key(LogicalKeyboardKey.digit0, {ModifierKey.ctrl}),
+    _key(LogicalKeyboardKey.numpad0, {ModifierKey.ctrl}),
+  ];
+
+  /// [keys] 原样保留，再为每条带 Ctrl 的绑定补一条 Ctrl→⌘ 的孪生绑定（⌘ 在前）。
+  ///
+  /// SRS 复习页改造前写死的判据是「Ctrl **或** ⌘」，macOS 上两者都能撤销 / 缩放；
+  /// 通用的 Ctrl→Meta 替换会丢掉 Ctrl 那一半，所以这几条在 macOS 走覆盖表。
+  static List<InputBinding> _withMetaTwins(List<InputBinding> keys) =>
+      <InputBinding>[
+        for (final InputBinding b in keys)
+          if (b.modifiers.contains(ModifierKey.ctrl))
+            InputBinding(
+              key: b.key,
+              modifiers: Set<ModifierKey>.of(b.modifiers)
+                ..remove(ModifierKey.ctrl)
+                ..add(ModifierKey.meta),
+            ),
+        ...keys,
+      ];
+
   /// BUG-2948：桌面默认里在 macOS 上**被系统先截走**、app 永远收不到的键，换成
   /// macOS 上空闲的同义键（只换键盘通道，手柄 / 鼠标照桌面默认）。
   /// * 有声书播放 / 暂停：桌面 Ctrl+Space 经 Ctrl→Meta 换成 Cmd+Space = Spotlight；
@@ -673,37 +742,42 @@ class ShortcutDefaults {
   ///   在 macOS 上同样认 Ctrl+Tab，另加 Apple 惯例 ⌘⇧] / ⌘⇧[。
   /// * 浏览器后退 / 前进：Apple 惯例 ⌘[ / ⌘]（Safari / Chrome 同键）。后退刻意不放
   ///   ⌥←（universal globalBack 的默认键，见 [_desktop] 的注释）。
-  static final Map<ShortcutAction, List<InputBinding>> _macOSKeyboardOverrides =
-      <ShortcutAction, List<InputBinding>>{
-        ShortcutAction.audiobookPlayPause: <InputBinding>[
-          _key(LogicalKeyboardKey.space, {ModifierKey.alt}),
-        ],
-        ShortcutAction.globalToggleFullscreen: <InputBinding>[
-          _key(LogicalKeyboardKey.keyF, {ModifierKey.ctrl, ModifierKey.meta}),
-        ],
-        ShortcutAction.webBrowserNextTab: <InputBinding>[
-          _key(LogicalKeyboardKey.tab, {ModifierKey.ctrl}),
-          _key(LogicalKeyboardKey.bracketRight, {
-            ModifierKey.meta,
-            ModifierKey.shift,
-          }),
-        ],
-        ShortcutAction.webBrowserPreviousTab: <InputBinding>[
-          _key(LogicalKeyboardKey.tab, {ModifierKey.ctrl, ModifierKey.shift}),
-          _key(LogicalKeyboardKey.bracketLeft, {
-            ModifierKey.meta,
-            ModifierKey.shift,
-          }),
-        ],
-        ShortcutAction.webBrowserBack: <InputBinding>[
-          _key(LogicalKeyboardKey.bracketLeft, {ModifierKey.meta}),
-          _key(LogicalKeyboardKey.browserBack),
-        ],
-        ShortcutAction.webBrowserForward: <InputBinding>[
-          _key(LogicalKeyboardKey.bracketRight, {ModifierKey.meta}),
-          _key(LogicalKeyboardKey.browserForward),
-        ],
-      };
+  static final Map<ShortcutAction, List<InputBinding>>
+  _macOSKeyboardOverrides = <ShortcutAction, List<InputBinding>>{
+    ShortcutAction.audiobookPlayPause: <InputBinding>[
+      _key(LogicalKeyboardKey.space, {ModifierKey.alt}),
+    ],
+    ShortcutAction.globalToggleFullscreen: <InputBinding>[
+      _key(LogicalKeyboardKey.keyF, {ModifierKey.ctrl, ModifierKey.meta}),
+    ],
+    ShortcutAction.webBrowserNextTab: <InputBinding>[
+      _key(LogicalKeyboardKey.tab, {ModifierKey.ctrl}),
+      _key(LogicalKeyboardKey.bracketRight, {
+        ModifierKey.meta,
+        ModifierKey.shift,
+      }),
+    ],
+    ShortcutAction.webBrowserPreviousTab: <InputBinding>[
+      _key(LogicalKeyboardKey.tab, {ModifierKey.ctrl, ModifierKey.shift}),
+      _key(LogicalKeyboardKey.bracketLeft, {
+        ModifierKey.meta,
+        ModifierKey.shift,
+      }),
+    ],
+    ShortcutAction.webBrowserBack: <InputBinding>[
+      _key(LogicalKeyboardKey.bracketLeft, {ModifierKey.meta}),
+      _key(LogicalKeyboardKey.browserBack),
+    ],
+    ShortcutAction.webBrowserForward: <InputBinding>[
+      _key(LogicalKeyboardKey.bracketRight, {ModifierKey.meta}),
+      _key(LogicalKeyboardKey.browserForward),
+    ],
+    // SRS 复习页：⌘ 与 Ctrl 都认（与改造前一致），见 [_withMetaTwins]。
+    ShortcutAction.srsReviewUndo: _withMetaTwins(_srsReviewUndoKeys),
+    ShortcutAction.srsReviewZoomIn: _withMetaTwins(_srsReviewZoomInKeys),
+    ShortcutAction.srsReviewZoomOut: _withMetaTwins(_srsReviewZoomOutKeys),
+    ShortcutAction.srsReviewZoomReset: _withMetaTwins(_srsReviewZoomResetKeys),
+  };
 
   static final Map<ShortcutAction, ShortcutBindingSet> _macOS = {
     for (final entry in _desktop.entries)
@@ -747,6 +821,9 @@ class ShortcutDefaults {
           case ShortcutScope.manga:
           case ShortcutScope.webBrowser:
           case ShortcutScope.music:
+          // SRS 复习页：平板 / 外接键盘上空格翻面、数字评分照样要用；手柄 A 翻面是
+          // Android 上改造前就有的行为。
+          case ShortcutScope.srsReview:
             return ShortcutBindingSet(
               keyboardBindings: desktop.keyboardBindings,
               gamepadBindings: desktop.gamepadBindings,

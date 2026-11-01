@@ -422,6 +422,55 @@ class InputBinding {
   String serialize() =>
       <String>[..._sortedModifierLabels, _keyToken(key)].join('+');
 
+  /// WebView 键盘桥专用的 DOM `KeyboardEvent.code` 名，只收 [_knownKeys] **刻意不收**
+  /// 的小键盘键。
+  ///
+  /// 这些键的持久化 token 是 `#<keyId>`（[serialize]，冻结：旧快照与旧版本都按它读），
+  /// 而键盘桥在页内按 DOM `key` / `code` 拼 token（`webViewKeyBridgeScript`），
+  /// `#<keyId>` 永远对不上——绑在小键盘上的动作在 WebView 持焦时就收不到。桥一侧
+  /// 改用 [bridgeToken] / [fromBridgeToken]，持久化格式一个字不动。
+  static final Map<LogicalKeyboardKey, String> _bridgeOnlyCodes =
+      <LogicalKeyboardKey, String>{
+        LogicalKeyboardKey.numpad0: 'Numpad0',
+        LogicalKeyboardKey.numpad1: 'Numpad1',
+        LogicalKeyboardKey.numpad2: 'Numpad2',
+        LogicalKeyboardKey.numpad3: 'Numpad3',
+        LogicalKeyboardKey.numpad4: 'Numpad4',
+        LogicalKeyboardKey.numpad5: 'Numpad5',
+        LogicalKeyboardKey.numpad6: 'Numpad6',
+        LogicalKeyboardKey.numpad7: 'Numpad7',
+        LogicalKeyboardKey.numpad8: 'Numpad8',
+        LogicalKeyboardKey.numpad9: 'Numpad9',
+        LogicalKeyboardKey.numpadEnter: 'NumpadEnter',
+        LogicalKeyboardKey.numpadAdd: 'NumpadAdd',
+        LogicalKeyboardKey.numpadSubtract: 'NumpadSubtract',
+        LogicalKeyboardKey.numpadMultiply: 'NumpadMultiply',
+        LogicalKeyboardKey.numpadDivide: 'NumpadDivide',
+        LogicalKeyboardKey.numpadDecimal: 'NumpadDecimal',
+      };
+
+  static final Map<String, LogicalKeyboardKey> _keyByBridgeOnlyCode =
+      <String, LogicalKeyboardKey>{
+        for (final MapEntry<LogicalKeyboardKey, String> e
+            in _bridgeOnlyCodes.entries)
+          e.value: e.key,
+      };
+
+  /// 本绑定在 WebView 键盘桥里的 token：与 [serialize] 相同，只是小键盘键用 DOM
+  /// `code`（`Numpad1` / `Ctrl+NumpadAdd`）而不是 `#<keyId>`。只喂给桥，不持久化。
+  String get bridgeToken => <String>[
+    ..._sortedModifierLabels,
+    _knownKeys[key] ?? _bridgeOnlyCodes[key] ?? '#${key.keyId}',
+  ].join('+');
+
+  /// [bridgeToken] 的反解析：键盘桥回传的 token → 绑定。认 [deserialize] 认的一切，
+  /// 外加小键盘的 DOM `code`。
+  static InputBinding? fromBridgeToken(String token) => _parse(
+    token,
+    (String keyPart) =>
+        _resolveKeyToken(keyPart) ?? _keyByBridgeOnlyCode[keyPart],
+  );
+
   /// 给用户看的分段（修饰键在前、主键在后），每段一枚键帽。显示快捷键的唯一
   /// 入口（BUG-3203）：修饰键名按平台走 [shortcutModifierDisplayLabels]，macOS
   /// 上是 ⌃ ⌥ ⇧ ⌘ 而不是持久化 token 的 Ctrl / Alt / Meta。
@@ -452,7 +501,12 @@ class InputBinding {
   InputBindingActivator toActivator({bool includeRepeats = true}) =>
       InputBindingActivator(this, includeRepeats: includeRepeats);
 
-  static InputBinding? deserialize(String s) {
+  static InputBinding? deserialize(String s) => _parse(s, _resolveKeyToken);
+
+  static InputBinding? _parse(
+    String s,
+    LogicalKeyboardKey? Function(String keyPart) resolveKey,
+  ) {
     if (s.isEmpty) return null;
     final parts = s.split('+');
     final mods = <ModifierKey>{};
@@ -466,7 +520,7 @@ class InputBinding {
       }
     }
     if (keyPart == null) return null;
-    final key = _resolveKeyToken(keyPart);
+    final key = resolveKey(keyPart);
     if (key == null) return null;
     return InputBinding(key: key, modifiers: mods);
   }

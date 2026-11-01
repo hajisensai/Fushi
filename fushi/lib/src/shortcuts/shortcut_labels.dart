@@ -254,6 +254,26 @@ extension ShortcutActionLabel on ShortcutAction {
         return t.shortcut_action_music_seek_forward;
       case ShortcutAction.musicSeekBackward:
         return t.shortcut_action_music_seek_backward;
+      case ShortcutAction.srsReviewPrimary:
+        return t.shortcut_action_srs_review_primary;
+      case ShortcutAction.srsReviewAgain:
+        return t.shortcut_action_srs_review_again;
+      case ShortcutAction.srsReviewHard:
+        return t.shortcut_action_srs_review_hard;
+      case ShortcutAction.srsReviewGood:
+        return t.shortcut_action_srs_review_good;
+      case ShortcutAction.srsReviewEasy:
+        return t.shortcut_action_srs_review_easy;
+      case ShortcutAction.srsReviewReplayAudio:
+        return t.shortcut_action_srs_review_replay_audio;
+      case ShortcutAction.srsReviewUndo:
+        return t.shortcut_action_srs_review_undo;
+      case ShortcutAction.srsReviewZoomIn:
+        return t.shortcut_action_srs_review_zoom_in;
+      case ShortcutAction.srsReviewZoomOut:
+        return t.shortcut_action_srs_review_zoom_out;
+      case ShortcutAction.srsReviewZoomReset:
+        return t.shortcut_action_srs_review_zoom_reset;
       case ShortcutAction.dpadUp:
         return t.shortcut_action_dpad_up;
       case ShortcutAction.dpadDown:
@@ -334,6 +354,8 @@ extension ShortcutScopeLabel on ShortcutScope {
         return t.shortcut_scope_dictionary_popup;
       case ShortcutScope.music:
         return t.shortcut_scope_music;
+      case ShortcutScope.srsReview:
+        return t.shortcut_scope_srs_review;
     }
   }
 }
