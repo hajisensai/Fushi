@@ -10,10 +10,16 @@
 /// `server_times.json` 给逐事件的 S(e)），与通用备份合并同一条路径；媒体取文件内嵌的 `media/<sha256>`，没内嵌
 /// （本机自动备份）就到旧备份根的共享池 `<srs_backups>/media/<sha256>` 找，一律按 SHA-256 校验。旧备份层本身
 /// 已删除，这里只保留最小的读取与转换。
+///
+/// **isolate 边界**：读包（读文件、解压、校验摘要、解析 JSON / 事件、写补进来的媒体）与写包（读媒体、组 zip、
+/// 写文件）都在后台 isolate（[Isolate.run]），主 isolate 只做必须碰数据库连接的几步——导出时取操作字节与被引用
+/// 媒体名、导入时打还原点并把解析好的操作 / 事件交给库。后台 isolate 只拿纯数据（路径、profile uid），不持有
+/// [SrsDbStore]，也不往回传文件句柄。
 library;
 
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
@@ -53,23 +59,50 @@ Future<SrsFushiSrsExport> srsExportFushiSrs(
   bool withMedia = true,
 }) async {
   final Uint8List ops = await store.sync2ExportOps();
-  final Archive zip = Archive();
-  zip.addFile(
-    ArchiveFile.string(
-      'manifest.json',
-      jsonEncode(<String, Object?>{
-        'v': kSrsFushiSrsVersion,
-        'profile': store.profileUid,
-        'exportedAt': store.now().$1,
-        'media': withMedia && mediaRoot != null,
-      }),
-    ),
+  final bool media = withMedia && mediaRoot != null;
+  final List<String> names = media
+      ? (await srsReferencedMedia(store)).toList()
+      : const <String>[];
+  return _runWriteFushiSrs(
+    ops: ops,
+    manifestJson: jsonEncode(<String, Object?>{
+      'v': kSrsFushiSrsVersion,
+      'profile': store.profileUid,
+      'exportedAt': store.now().$1,
+      'media': media,
+    }),
+    outPath: out.path,
+    mediaRootPath: mediaRoot?.path,
+    mediaNames: names,
   );
+}
+
+/// 单独一个函数作用域：交给 [Isolate.run] 的闭包只捕获这里的纯数据参数，捕获不到调用方的 [SrsDbStore]。
+Future<SrsFushiSrsExport> _runWriteFushiSrs({
+  required Uint8List ops,
+  required String manifestJson,
+  required String outPath,
+  required String? mediaRootPath,
+  required List<String> mediaNames,
+}) => Isolate.run(
+  () => _writeFushiSrs(ops, manifestJson, outPath, mediaRootPath, mediaNames),
+  debugName: 'srs-fushisrs-export',
+);
+
+Future<SrsFushiSrsExport> _writeFushiSrs(
+  Uint8List ops,
+  String manifestJson,
+  String outPath,
+  String? mediaRootPath,
+  List<String> mediaNames,
+) async {
+  final Archive zip = Archive();
+  zip.addFile(ArchiveFile.string('manifest.json', manifestJson));
   zip.addFile(ArchiveFile('ops.bin', ops.length, ops));
   int media = 0;
-  if (withMedia && mediaRoot != null) {
-    for (final String name in await srsReferencedMedia(store)) {
-      final File f = File(p.join(mediaRoot.path, name));
+  if (mediaRootPath != null) {
+    for (final String name in mediaNames) {
+      final File f = File(p.join(mediaRootPath, name));
       if (!f.existsSync()) continue;
       final Uint8List b = await f.readAsBytes();
       zip.addFile(ArchiveFile('media/$name', b.length, b));
@@ -77,10 +110,11 @@ Future<SrsFushiSrsExport> srsExportFushiSrs(
     }
   }
   final List<int> bytes = ZipEncoder().encode(zip)!;
+  final File out = File(outPath);
   await out.parent.create(recursive: true);
-  final File tmp = File('${out.path}.tmp');
+  final File tmp = File('$outPath.tmp');
   await tmp.writeAsBytes(bytes, flush: true);
-  await tmp.rename(out.path);
+  await tmp.rename(outPath);
   return SrsFushiSrsExport(bytes: bytes.length, mediaFiles: media);
 }
 
@@ -92,9 +126,80 @@ Future<SrsFushiSrsImport> srsImportFushiSrs(
   Directory? mediaRoot,
   Directory? legacyMediaPool,
 }) async {
+  final _ParsedFushiSrs parsed = await _runReadFushiSrs(
+    path: file.path,
+    profileUid: store.profileUid,
+    mediaRootPath: mediaRoot?.path,
+    poolPaths: <String>[
+      ?legacyMediaPool?.path,
+      // 本机旧备份的布局：`<备份根>/<profileUid>/<文件>`，共享池在 `<备份根>/media/`。
+      p.join(p.dirname(p.dirname(file.path)), 'media'),
+    ],
+  );
+  await store.sync2Checkpoint(p.basename(file.path), 'import');
+  switch (parsed) {
+    case _ParsedOps(:final Uint8List ops, :final int mediaFiles):
+      final int applied = await store.sync2ImportOps(ops);
+      return SrsFushiSrsImport(applied: applied, mediaFiles: mediaFiles);
+    case _ParsedLegacy(
+      :final List<SrsEvent> events,
+      :final Map<String, int> serverTimes,
+      :final int mediaFiles,
+    ):
+      final int before = store.revision;
+      await store.applyRemote(events, serverTimes: serverTimes);
+      // 修订号只随真正落进投影的事件推进（已有的、被支配的不算）：与新格式「并入条数」同一口径。
+      return SrsFushiSrsImport(
+        applied: store.revision - before,
+        mediaFiles: mediaFiles,
+      );
+  }
+}
+
+/// 后台 isolate 读包的结果：要交给库的数据 + 已补进本机的媒体数。只含可跨 isolate 传递的纯数据。
+sealed class _ParsedFushiSrs {
+  const _ParsedFushiSrs(this.mediaFiles);
+
+  final int mediaFiles;
+}
+
+/// 新格式：内核导出的操作字节。
+final class _ParsedOps extends _ParsedFushiSrs {
+  const _ParsedOps(this.ops, super.mediaFiles);
+
+  final Uint8List ops;
+}
+
+/// 旧格式：已校验摘要与条数的事件 + 服务器时间表。
+final class _ParsedLegacy extends _ParsedFushiSrs {
+  const _ParsedLegacy(this.events, this.serverTimes, super.mediaFiles);
+
+  final List<SrsEvent> events;
+  final Map<String, int> serverTimes;
+}
+
+/// 同 [_runWriteFushiSrs]：闭包只捕获纯数据参数。
+Future<_ParsedFushiSrs> _runReadFushiSrs({
+  required String path,
+  required String profileUid,
+  required String? mediaRootPath,
+  required List<String> poolPaths,
+}) => Isolate.run(
+  () => _readFushiSrs(path, profileUid, mediaRootPath, poolPaths),
+  debugName: 'srs-fushisrs-import',
+);
+
+/// 在后台 isolate 跑：解压、校验、解析，并把包里本机缺的媒体先写进 [mediaRootPath]（媒体先于引用它的操作
+/// 落地，与上传纪律一致）。任何校验失败抛 [FormatException]（[Isolate.run] 原样转抛给调用方），此时库没被碰过。
+Future<_ParsedFushiSrs> _readFushiSrs(
+  String path,
+  String profileUid,
+  String? mediaRootPath,
+  List<String> poolPaths,
+) async {
   final Archive zip;
   try {
-    zip = ZipDecoder().decodeBytes(await file.readAsBytes());
+    zip = ZipDecoder().decodeBytes(await File(path).readAsBytes());
   } on Object {
     throw const FormatException('not a .fushisrs file');
   }
@@ -108,18 +213,16 @@ Future<SrsFushiSrsImport> srsImportFushiSrs(
   } on FormatException {
     throw const FormatException('not a .fushisrs file');
   }
+  final Directory? mediaRoot = mediaRootPath == null
+      ? null
+      : Directory(mediaRootPath);
   if (m is Map && m['magic'] == kSrsLegacyBackupMagic) {
-    return _importLegacy(
-      store,
-      file,
+    return _readLegacy(
       zip,
       m.cast<String, Object?>(),
+      profileUid: profileUid,
       mediaRoot: mediaRoot,
-      pools: <Directory>[
-        ?legacyMediaPool,
-        // 本机旧备份的布局：`<备份根>/<profileUid>/<文件>`，共享池在 `<备份根>/media/`。
-        Directory(p.join(p.dirname(p.dirname(file.path)), 'media')),
-      ],
+      pools: <Directory>[for (final String d in poolPaths) Directory(d)],
     );
   }
   final ArchiveFile? ops = zip.findFile('ops.bin');
@@ -129,10 +232,9 @@ Future<SrsFushiSrsImport> srsImportFushiSrs(
   if (m is! Map || ((m['v'] as int?) ?? 0) > kSrsFushiSrsVersion) {
     throw const FormatException('unsupported .fushisrs version');
   }
-  if (m['profile'] != store.profileUid) {
+  if (m['profile'] != profileUid) {
     throw const FormatException('this .fushisrs belongs to another profile');
   }
-  // 先补媒体（媒体先于引用它的操作落地，与上传纪律一致）。
   int media = 0;
   if (mediaRoot != null) {
     for (final ArchiveFile f in zip.files) {
@@ -146,11 +248,7 @@ Future<SrsFushiSrsImport> srsImportFushiSrs(
       media++;
     }
   }
-  await store.sync2Checkpoint(p.basename(file.path), 'import');
-  final int applied = await store.sync2ImportOps(
-    Uint8List.fromList(ops.content as List<int>),
-  );
-  return SrsFushiSrsImport(applied: applied, mediaFiles: media);
+  return _ParsedOps(Uint8List.fromList(ops.content as List<int>), media);
 }
 
 // ---------------------------------------------------------------- 旧格式（v2 之前的备份）
@@ -193,11 +291,10 @@ List<int> _legacyContent(ArchiveFile f, int max, String what) {
   throw _corrupt(what);
 }
 
-Future<SrsFushiSrsImport> _importLegacy(
-  SrsDbStore store,
-  File file,
+Future<_ParsedLegacy> _readLegacy(
   Archive zip,
   Map<String, Object?> manifest, {
+  required String profileUid,
   required Directory? mediaRoot,
   required List<Directory> pools,
 }) async {
@@ -205,7 +302,7 @@ Future<SrsFushiSrsImport> _importLegacy(
   if (minReader is! int || minReader > _kLegacyReaderVersion) {
     throw const FormatException('unsupported .fushisrs version');
   }
-  if (manifest['profileUid'] != store.profileUid) {
+  if (manifest['profileUid'] != profileUid) {
     throw const FormatException('this .fushisrs belongs to another profile');
   }
   final Object? ev = manifest['events'];
@@ -276,11 +373,7 @@ Future<SrsFushiSrsImport> _importLegacy(
       media++;
     }
   }
-  await store.sync2Checkpoint(p.basename(file.path), 'import');
-  final int before = store.revision;
-  await store.applyRemote(events, serverTimes: serverTimes);
-  // 修订号只随真正落进投影的事件推进（已有的、被支配的不算）：与新格式「并入条数」同一口径。
-  return SrsFushiSrsImport(applied: store.revision - before, mediaFiles: media);
+  return _ParsedLegacy(events, serverTimes, media);
 }
 
 /// 旧格式媒体正文：先取文件内嵌的 `media/<sha256>`，再到各共享池找；一律按内容哈希校验，对不上当没有。

@@ -180,4 +180,7 @@ SRS 是事件溯源：事件只追加、按 ID 取并集，可编辑字段是带
 
 - iOS 真机「存储到文件」/ iCloud 与「从文件恢复」没有真机验证（走的是仓库既有的 `FushiShare` 与 `pickSystemFilePath` 通道）。
 - 恢复在主 isolate 的数据库连接上跑（drift 连接不跨 isolate）；上面的规模约 1.8 秒，期间备份页显示忙碌，更大的库未实测。
-- 读外部备份（解压、解析）仍在主 isolate（返回的对象持有文件句柄，供按需读内嵌媒体）。
+- ~~读外部备份（解压、解析）仍在主 isolate~~（2026-11-01 已修）：本文的备份层已被同步 v2 删除，旧格式备份现在经
+  `packages/fushi_engine/lib/srs/sync2/srs_fushisrs.dart` 导入。读包（读文件、解压、校验摘要与条数、解析事件、
+  写补进来的媒体）与导出组包都在后台 isolate（`Isolate.run`），只往回传纯数据（操作字节 / 事件 + 服务器时间表），
+  不再持有文件句柄；主 isolate 只打还原点并把结果交给库。守卫：`srs_fushisrs_test.dart` 末条。

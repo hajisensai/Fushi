@@ -1,5 +1,6 @@
 import Cocoa
 import FlutterMacOS
+import Security
 import WebKit
 
 // macOS app-external global lookup overlay — the macOS counterpart of
@@ -40,6 +41,9 @@ private let kPopupAssetScheme = "fushi-popup"
 private let kPopupAssetHost = "assets"
 private let kPopupHostDocument = "global_lookup_host.html"
 private let kScriptMessageName = "fushiOverlay"
+// Fushi bridge lock contract (global_lookup_host.js / global_lookup_window.cpp).
+private let kBridgeLockHandler = "_fushiLockBridge"
+private let kBridgeTokenField = "__fushiBridgeToken"
 
 /// Route identity bound to one lookup render (mirrors GlobalLookupWindow::
 /// RouteContext). Stamped on every reverse call so a late callback from an
@@ -238,6 +242,12 @@ final class GlobalLookupOverlayController: NSObject, WKScriptMessageHandler, WKN
   private var webViewReady = false
   private var recovering = false
   private var pendingScript: String?
+
+  // Fushi bridge lock (docs/specs/2026-10-23-dictionary-script-sandbox.md) —
+  // the macOS twin of global_lookup_window.cpp bridge_lock_token_. nil =
+  // unlocked (legacy behaviour). Set by `_fushiLockBridge`, cleared on every
+  // top-level document commit / host reload.
+  private var bridgeLockToken: String?
 
   private var route = GlobalLookupRouteContext()
   private var routeBound = false
@@ -529,6 +539,7 @@ final class GlobalLookupOverlayController: NSObject, WKScriptMessageHandler, WKN
   private func loadHostDocument() {
     guard let webView = webView else { return }
     webViewReady = false
+    bridgeLockToken = nil
     guard let url = URL(string: "\(kPopupAssetScheme)://\(kPopupAssetHost)/\(kPopupHostDocument)") else {
       return
     }
@@ -941,6 +952,14 @@ final class GlobalLookupOverlayController: NSObject, WKScriptMessageHandler, WKN
 
   // MARK: WKNavigationDelegate
 
+  /// Main-frame commits only (WKNavigationDelegate never reports sub-frame
+  /// navigations here). Mirrors the Windows ContentLoading reset: a new
+  /// top-level document starts unlocked; a merely *started* navigation does
+  /// not unlock, since it can still be cancelled while the locked page lives.
+  func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+    bridgeLockToken = nil
+  }
+
   func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
     webViewReady = true
     recovering = false
@@ -981,12 +1000,18 @@ final class GlobalLookupOverlayController: NSObject, WKScriptMessageHandler, WKN
   func userContentController(
     _ userContentController: WKUserContentController, didReceive message: WKScriptMessage
   ) {
-    guard message.name == kScriptMessageName, let body = message.body as? String else { return }
+    guard message.name == kScriptMessageName, var body = message.body as? String else { return }
     guard let data = body.data(using: .utf8),
           let object = try? JSONSerialization.jsonObject(with: data),
           let dict = object as? [String: Any]
     else { return }
     let handler = dict["handler"] as? String ?? ""
+    // Fushi bridge lock — handled natively, never forwarded to Dart.
+    if handler == kBridgeLockHandler {
+      handleBridgeLockRequest(message)
+      return
+    }
+    guard authorizeLockedBridgeMessage(message, dict: dict, body: &body) else { return }
     let messageRoute = routeForMessage(dict)
 
     switch handler {
@@ -1010,6 +1035,98 @@ final class GlobalLookupOverlayController: NSObject, WKScriptMessageHandler, WKN
        let bridgeId = (dict["__bridgeId"] as? NSNumber)?.int64Value {
       evaluate("window.__fushiBridgeResolve && window.__fushiBridgeResolve(\(bridgeId), null);")
     }
+  }
+
+  // MARK: Fushi bridge lock (docs/specs/2026-10-23-dictionary-script-sandbox.md)
+  //
+  // Same contract as global_lookup_window.cpp HandleBridgeLockRequest /
+  // AuthorizeLockedBridgeMessage. global_lookup_host.js (top-level host
+  // document) forwards a popup document's callHandler('_fushiLockBridge') as
+  // { handler: '_fushiLockBridge' }; the token goes back ONLY to the host
+  // closure via window.__fushiBridgeLockResult, and from then on the host
+  // stamps it first on every message it posts.
+  //
+  // Unlike WebView2, the chrome.webview shim (and so the WKScriptMessageHandler)
+  // exists in EVERY frame, including a dictionary's sandboxed srcdoc iframe.
+  // That iframe has an opaque origin, so it can neither read the host closure
+  // (token) nor pass the frame check: once locked, only the main frame of the
+  // fushi-popup:// host document is heard (the second gate, spec item 7).
+
+  private func isBridgeHostFrame(_ message: WKScriptMessage) -> Bool {
+    let frame = message.frameInfo
+    guard frame.isMainFrame else { return false }
+    let origin = frame.securityOrigin
+    guard origin.protocol == kPopupAssetScheme, origin.host == kPopupAssetHost else { return false }
+    return frame.request.url?.path == "/\(kPopupHostDocument)"
+  }
+
+  private func handleBridgeLockRequest(_ message: WKScriptMessage) {
+    var token: String?
+    if bridgeLockToken != nil {
+      globalLookupNativeLog("[bridge-lock][warn] refused _fushiLockBridge: already locked")
+    } else if !isBridgeHostFrame(message) {
+      globalLookupNativeLog(
+        "[bridge-lock][warn] refused _fushiLockBridge from frame "
+          + "\(message.frameInfo.request.url?.absoluteString ?? "?") "
+          + "main=\(message.frameInfo.isMainFrame)")
+    } else if let generated = GlobalLookupOverlayController.generateBridgeLockToken() {
+      bridgeLockToken = generated
+      token = generated
+    } else {
+      globalLookupNativeLog("[bridge-lock][warn] refused _fushiLockBridge: SecRandomCopyBytes failed")
+    }
+    // The token is lower-case hex, safe to splice as a JS string literal.
+    let arg = token.map { "'\($0)'" } ?? "false"
+    evaluate("window.__fushiBridgeLockResult && window.__fushiBridgeLockResult(\(arg));")
+  }
+
+  /// Unlocked: legacy behaviour, byte-for-byte. Locked: the message must come
+  /// from the host document's main frame and carry the token; the token
+  /// (which the host puts FIRST) is stripped so Dart never sees it.
+  private func authorizeLockedBridgeMessage(
+    _ message: WKScriptMessage, dict: [String: Any], body: inout String
+  ) -> Bool {
+    guard let expected = bridgeLockToken else { return true }
+    guard isBridgeHostFrame(message),
+          let token = dict[kBridgeTokenField] as? String,
+          GlobalLookupOverlayController.bridgeTokensEqual(token, expected)
+    else {
+      globalLookupNativeLog(
+        "[bridge-lock][warn] dropped message on locked bridge "
+          + "(missing/invalid token or unexpected frame "
+          + "\(message.frameInfo.request.url?.absoluteString ?? "?") "
+          + "main=\(message.frameInfo.isMainFrame))")
+      return false
+    }
+    let prefix = "{\"\(kBridgeTokenField)\":\"\(token)\""
+    if body.hasPrefix(prefix) {
+      let rest = body.dropFirst(prefix.count)
+      if rest.first == "," {
+        body = "{" + rest.dropFirst()
+      } else if rest.first == "}" {
+        body = "{" + rest
+      }
+    }
+    return true
+  }
+
+  /// >=128 bit random token: 32 bytes from the system CSPRNG, lower hex.
+  private static func generateBridgeLockToken() -> String? {
+    var bytes = [UInt8](repeating: 0, count: 32)
+    guard SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) == errSecSuccess else {
+      return nil
+    }
+    return bytes.map { String(format: "%02x", $0) }.joined()
+  }
+
+  /// Constant-time comparison (no early exit on the first differing byte).
+  private static func bridgeTokensEqual(_ a: String, _ b: String) -> Bool {
+    let x = Array(a.utf8)
+    let y = Array(b.utf8)
+    guard x.count == y.count else { return false }
+    var diff: UInt8 = 0
+    for i in 0..<x.count { diff |= x[i] ^ y[i] }
+    return diff == 0
   }
 
   private func routeForMessage(_ dict: [String: Any]) -> GlobalLookupRouteContext {

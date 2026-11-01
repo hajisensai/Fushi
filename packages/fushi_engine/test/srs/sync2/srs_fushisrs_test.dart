@@ -393,4 +393,48 @@ void main() {
     expect(await noteCount(b), notes);
     expect((await b.sync2Status())['ops'], ops, reason: '拒收前不打还原点、不并入');
   });
+
+  // 读 / 写包的重活（读整个文件、解压、摘要、解析事件、组 zip）不许回到调用方 isolate：调用方是 UI isolate，
+  // 大库导入 / 导出会卡帧。公开入口里只留碰数据库的几步，其余经 `_run*FushiSrs` → `Isolate.run`。
+  test('读包 / 写包的解压、解析、压缩都在后台 isolate，公开入口只碰数据库', () {
+    final String src = File(
+      'lib/srs/sync2/srs_fushisrs.dart',
+    ).readAsStringSync().replaceAll('\r\n', '\n');
+    String topLevelBody(String signature) {
+      final int start = src.indexOf(signature);
+      expect(start, greaterThanOrEqualTo(0), reason: signature);
+      final int end = src.indexOf('\n}\n', start);
+      return src.substring(start, end);
+    }
+
+    const List<String> heavy = <String>[
+      'ZipDecoder',
+      'ZipEncoder',
+      'readAsBytes',
+      'jsonDecode',
+      'LineSplitter',
+      'sha256',
+      'writeAsBytes',
+    ];
+    final String import = topLevelBody(
+      'Future<SrsFushiSrsImport> srsImportFushiSrs(',
+    );
+    final String export = topLevelBody(
+      'Future<SrsFushiSrsExport> srsExportFushiSrs(',
+    );
+    for (final String token in heavy) {
+      expect(import, isNot(contains(token)), reason: 'import: $token');
+      expect(export, isNot(contains(token)), reason: 'export: $token');
+    }
+    expect(import, contains('_runReadFushiSrs('));
+    expect(export, contains('_runWriteFushiSrs('));
+    expect(
+      topLevelBody('Future<_ParsedFushiSrs> _runReadFushiSrs('),
+      contains('Isolate.run('),
+    );
+    expect(
+      topLevelBody('Future<SrsFushiSrsExport> _runWriteFushiSrs('),
+      contains('Isolate.run('),
+    );
+  });
 }
