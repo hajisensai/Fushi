@@ -1180,6 +1180,15 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     return true;
   }
 
+  /// 按钮提示里的快捷键：取该动作**当前**的第一条键盘绑定（改了键提示跟着变，清空了就
+  /// 不挂）。
+  String _withKeyHint(String label, ShortcutAction action) {
+    final List<InputBinding> keys = _shortcuts
+        .bindingsFor(action)
+        .keyboardBindings;
+    return keys.isEmpty ? label : '$label (${keys.first.displayLabel})';
+  }
+
   /// 空格 / Enter / 手柄 A：问题面 → 显示答案；答案面 →「良好」。
   void _primary() {
     if (_showingAnswer) {
@@ -1283,7 +1292,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
         key: const ValueKey<String>('srs_review_undo'),
         icon: FushiIcons.undo,
         label: t.undo,
-        tooltip: '${t.undo} (Ctrl+Z)',
+        tooltip: _withKeyHint(t.undo, ShortcutAction.srsReviewUndo),
         onPressed: _busy ? null : _undoLast,
       ),
     if (_pendingDecision)
@@ -2183,7 +2192,10 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
           enabled: enabled,
           // 快捷键提示与评分按钮同一写法（空格 / Enter / 手柄 A 都翻面，见 _onKey）。
           child: FushiTooltip(
-            message: '${t.srs_review_show_answer} (Space)',
+            message: _withKeyHint(
+              t.srs_review_show_answer,
+              ShortcutAction.srsReviewPrimary,
+            ),
             child: SizedBox(
               width: double.infinity,
               child: FushiFilledButton.icon(
@@ -2248,7 +2260,9 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
       return FushiPressScale(
         enabled: onPressed != null,
         child: FushiTooltip(
-          message: split ? label : '$label (R)',
+          message: split
+              ? label
+              : _withKeyHint(label, ShortcutAction.srsReviewReplayAudio),
           child: SizedBox.square(
             dimension: extent,
             child: FushiFilledButton.tonal(
@@ -2358,7 +2372,12 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
         tone: tone,
         interval: showIntervals ? interval(rating) : '',
         label: label,
-        tooltip: '$label ($rating)',
+        tooltip: _withKeyHint(label, switch (rating) {
+          1 => ShortcutAction.srsReviewAgain,
+          2 => ShortcutAction.srsReviewHard,
+          3 => ShortcutAction.srsReviewGood,
+          _ => ShortcutAction.srsReviewEasy,
+        }),
         onPressed: _busy ? null : () => _rate(rating),
       ),
     );
