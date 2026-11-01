@@ -325,7 +325,7 @@ List<CtlRoute> buildSrsCtlRoutesFor(SrsCtlDeps deps) => <CtlRoute>[
     }
     SrsRegister? reg;
     for (final (SrsEntityKind k, String id, SrsRegister r)
-        in await store.syncConflicts()) {
+        in await store.syncConflicts(entity: (kind: kind, id: entity))) {
       if (k == kind && id == entity && r.key == key) reg = r;
     }
     if (reg == null) {
