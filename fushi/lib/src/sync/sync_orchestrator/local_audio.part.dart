@@ -54,7 +54,7 @@ extension _SyncOrchestratorLocalAudio on SyncOrchestrator {
       File? tmp;
       File? stagingDb;
       try {
-        tmp = _tmpFile(_localAudioAssetSuffix);
+        tmp = resumableTmpFile('localaudio', name, _localAudioAssetSuffix);
         await backend.getRemoteLocalAudio(
           name,
           tmp,

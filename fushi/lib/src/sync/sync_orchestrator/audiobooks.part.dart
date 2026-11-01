@@ -307,7 +307,7 @@ extension _SyncOrchestratorAudiobooks on SyncOrchestrator {
       );
       File? tmp;
       try {
-        tmp = _tmpFile('.fushiaudio');
+        tmp = resumableTmpFile('audiobook', key, '.fushiaudio');
         await backend.getRemoteAudiobook(
           key,
           tmp,

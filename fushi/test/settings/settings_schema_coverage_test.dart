@@ -1017,6 +1017,14 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 复习同步在跑，专项测试咬住「关掉后各自动口不跑、手动与进复习页照跑」。
   'syncBackup/Auto-sync review data': 'test/srs/srs_sync_scheduler_test.dart',
   'syncBackup/Sync statistics': 'test/sync/sync_gating_test.dart',
+  // 「同步设置」（反馈 AWp-0BtDDv）：写 sync_settings_enabled，生效点是同步一轮里的
+  // SyncPhase.settings（读对端快照 → LWW 采纳 → 写本机快照）；harness 里没有同步在跑，
+  // 排除清单与两台设备经同一资产存储往返由专项测试咬住。
+  'syncBackup/Sync settings': 'test/sync/portable_settings_sync_test.dart',
+  // 「合并导入时包含设置」：写 backup_merge_import_settings，生效点是 BackupMergeEngine
+  // 合并导入时按 LWW 套用备份里的可移植设置；harness 里不做真导入，专项测试咬住。
+  'syncBackup/Include settings when merging a backup':
+      'test/sync/backup_merge_import_test.dart',
   // 设备级「同步浏览历史」：生效点是聚合快照按族裁剪（云 / 互联 client / host 三条路径）。
   'syncBackup/Sync browsing history':
       'test/sync/aggregate_web_history_share_gate_test.dart',

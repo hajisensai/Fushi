@@ -130,6 +130,8 @@ String syncPhaseLabel(SyncPhase phase) {
       return t.sync_progress_statistics;
     case SyncPhase.collections:
       return t.sync_progress_collections;
+    case SyncPhase.settings:
+      return t.sync_progress_settings;
     case SyncPhase.deletions:
       return t.sync_progress_deletions;
     case SyncPhase.pendingMines:

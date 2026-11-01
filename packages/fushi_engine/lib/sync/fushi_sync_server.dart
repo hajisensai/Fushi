@@ -24,6 +24,7 @@ import 'package:fushi_engine/media/video/video_subtitle_source.dart'
         subtitleFormatForCodec;
 import 'package:fushi_engine/sync/aggregate_snapshot.dart';
 import 'package:fushi_engine/sync/collection_manifest.dart';
+import 'package:fushi_engine/sync/repr_digest.dart';
 import 'package:fushi_engine/sync/media_link_sync.dart';
 import 'package:fushi_engine/sync/tag_sync.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart'
@@ -1322,12 +1323,17 @@ ByteRange? parseByteRange(String? rangeHeader, int fileLength) {
 /// `If-Range`，必须照常 206；而带了 `If-Range` 的下载续传仍按验证器精确匹配，
 /// 不匹配（host 上文件已被替换）照样 200 全量（RFC 7233 §3.2 的原本语义）。
 ///
+/// [reprDigest]：整份表示（不是本次 Range 片段）的 RFC 9530 `Repr-Digest` 头值
+/// （`sha-256=:<base64>:`）。200 / 206 都带：续传的 client 把各段拼完后据它做整体
+/// 校验，判定「拼出来的就是 host 那份字节」（Sn4fYseBt4）。
+///
 /// 函数名无下划线前缀（公开），便于测试文件直接导入使用。
 Future<shelf.Response> serveFileWithRange(
   File file,
   shelf.Request request, {
   String? etag,
   bool ifRangeRequired = true,
+  String? reprDigest,
 }) async {
   // 一次 async stat 同时拿存在性与长度：视频流 / 漫画页 / 导出包都经这里，源文件
   // 可能在网络盘上，同步 existsSync + lengthSync 会冻结 host 所在 isolate（BUG-3756）。
@@ -1367,6 +1373,7 @@ Future<shelf.Response> serveFileWithRange(
         'Content-Length': '$fileLength',
         'Accept-Ranges': 'bytes',
         if (etag != null) 'ETag': etag,
+        if (reprDigest != null) kReprDigestHeader: reprDigest,
       },
     );
   }
@@ -1394,6 +1401,7 @@ Future<shelf.Response> serveFileWithRange(
       'Content-Range': 'bytes ${range.start}-${range.end}/$fileLength',
       'Accept-Ranges': 'bytes',
       if (etag != null) 'ETag': etag,
+      if (reprDigest != null) kReprDigestHeader: reprDigest,
     },
   );
 }
@@ -1427,6 +1435,15 @@ Future<String> videoFileEtag(File file) async {
 /// best-effort（Windows 上被正在流式的请求占用则删不掉，留给 [dispose] 整目录
 /// 清理——缓存目录是 `createTempSync` 的进程私有目录，进程退出后 OS 临时目录
 /// 策略兜底）。
+///
+/// **TTL 从最后一次使用起算**（Sn4fYseBt4）：旧实现按缓存文件 mtime（= 导出时刻）
+/// 判过期，一个大包（如几 GB 的本地音频库）传了 15 分钟以上再断，续传请求必然
+/// 撞上重导出 → ETag 换代 → 200 从 0 重下，断点续传对恰恰最需要它的大文件失效。
+/// 现在每次 [obtain] 命中、以及正在流式发送这份字节（[markUsed]）都把它续期，
+/// 只有「闲置满 [ttl]」才换代。
+///
+/// 每份导出同时算一次整包 SHA-256（[reprDigestFor]，后台 isolate 跑，不占 host
+/// 所在 isolate），随响应发 `Repr-Digest`，供 client 续传拼完后做整体校验。
 class ExportPackageCache {
   ExportPackageCache({this.ttl = const Duration(minutes: 15)});
 
@@ -1434,7 +1451,24 @@ class ExportPackageCache {
   Directory? _root;
   final Map<String, File> _latest = <String, File>{};
   final Map<String, Future<File>> _inFlight = <String, Future<File>>{};
+
+  /// key → 最后一次使用（命中 / 生产 / 流式发送）时刻；滑动 TTL 的依据。
+  final Map<String, DateTime> _lastUsed = <String, DateTime>{};
+
+  /// 缓存文件路径 → `Repr-Digest` 头值（`sha-256=:<base64>:`）。
+  final Map<String, String> _reprDigests = <String, String>{};
   int _seq = 0;
+
+  /// 把 (kind,id) 的当前缓存标记为「刚被用过」，滑动 TTL 续期。流式发送这份字节的
+  /// 响应体每出一块就调一次（O(1) 的 map 写），长传输期间缓存不会被判闲置换代。
+  void markUsed(String kind, String id) {
+    final String key = '$kind|$id';
+    if (_latest.containsKey(key)) _lastUsed[key] = DateTime.now();
+  }
+
+  /// [file]（必须是本缓存 [obtain] 交出的文件）的 `Repr-Digest` 头值；没算出来
+  /// （哈希失败）时 null，响应就不带该头，client 退回只做长度校验。
+  String? reprDigestFor(File file) => _reprDigests[file.path];
 
   Directory get _dir =>
       _root ??= Directory.systemTemp.createTempSync('fushi_export_cache');
@@ -1455,9 +1489,12 @@ class ExportPackageCache {
     if (hit != null) {
       try {
         final FileStat stat = await hit.stat();
+        final DateTime? lastUsed = _lastUsed[key];
         if (identical(_latest[key], hit) &&
             stat.type == FileSystemEntityType.file &&
-            DateTime.now().difference(stat.modified) < ttl) {
+            lastUsed != null &&
+            DateTime.now().difference(lastUsed) < ttl) {
+          _lastUsed[key] = DateTime.now();
           return hit;
         }
       } on FileSystemException {
@@ -1475,8 +1512,10 @@ class ExportPackageCache {
   /// 让 (kind,id) 的缓存导出作废，下一次 [obtain] 必定重新打包。旧文件 best-effort
   /// 删除（Windows 上被正在流式的请求占用则删不掉，留给 [dispose]）。
   Future<void> invalidate(String kind, String id) async {
+    _lastUsed.remove('$kind|$id');
     final File? old = _latest.remove('$kind|$id');
     if (old == null) return;
+    _reprDigests.remove(old.path);
     try {
       await old.delete();
     } catch (_) {
@@ -1521,9 +1560,19 @@ class ExportPackageCache {
     } catch (_) {
       // best-effort：导出方的临时父目录
     }
+    // 整包摘要只算这一次（同一份字节在 TTL 内被反复续传），放后台 isolate：
+    // 几 GB 的包同步哈希会冻住 host 所在 isolate（BUG-3756 同理）。
+    try {
+      _reprDigests[target.path] = await computeReprDigestSha256(target);
+    } catch (e, stack) {
+      // 只损失整体校验（client 退回长度校验），不影响下载本身。
+      engineLog.log('ExportPackageCache.reprDigest', e, stack);
+    }
     final File? old = _latest[key];
     _latest[key] = target;
+    _lastUsed[key] = DateTime.now();
     if (old != null) {
+      _reprDigests.remove(old.path);
       try {
         await old.delete();
       } catch (_) {
@@ -1537,6 +1586,8 @@ class ExportPackageCache {
   void dispose() {
     _latest.clear();
     _inFlight.clear();
+    _lastUsed.clear();
+    _reprDigests.clear();
     final Directory? root = _root;
     _root = null;
     if (root == null) return;
