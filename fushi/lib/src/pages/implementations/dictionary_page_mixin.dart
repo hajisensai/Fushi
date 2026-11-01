@@ -765,6 +765,20 @@ mixin DictionaryPageMixin {
     Map<String, String> fields,
   ) async => const QueuedOverwriteReply();
 
+  /// [buildNestedPopupLayer] 第 [index] 层制卡 / 覆写 / 已有卡操作 / 排队覆写之前，
+  /// 让宿主按层补上它知道而弹窗 JS 不知道的上下文。默认原样返回。
+  ///
+  /// 反馈 1Mwaro8UTC：主窗常驻查词宿主（悬浮球拍照查词 / iOS 截屏识字 / 悬浮字幕
+  /// 点字）的查词出自一整行原文，JS 制卡不带 `sentence`，此前这里没有任何入口能把那
+  /// 一行交回去，卡上就只有单词、没有例句。该宿主覆写本方法按
+  /// [withSourceLineSentence] 补基础层的例句。
+  @protected
+  Map<String, String> miningFieldsForLayer(
+    int index,
+    DictionaryPopupController controller,
+    Map<String, String> fields,
+  ) => fields;
+
   /// TODO-1360 / BUG-2051：已制卡的词旁 ↗「在 Anki 中打开卡片」按钮的车道入口
   /// （视频/首页/独立查词，与 reader 车道 [BaseSourcePageState.onOpenInAnkiFromPopup]
   /// 对称）。判据与画 ✓ 的查重同源，见 [BaseAnkiRepository.openWordInAnki]：直接把
@@ -1268,14 +1282,21 @@ mixin DictionaryPageMixin {
             query: query,
             autoRead: autoReadOnNavigate,
           ),
+          // 制卡四个出口都先过 [miningFieldsForLayer]：宿主按层补上它知道的上下文
+          // （主窗查词宿主补出自那一行原文的例句，反馈 1Mwaro8UTC）。
           onMineEntry: closePopupAfterAcceptedMine(
-            onMineEntry,
+            (Map<String, String> fields) =>
+                onMineEntry(miningFieldsForLayer(index, controller, fields)),
             enabled: () => ReaderFushiSource.instance.closePopupAfterMining,
             closeAll: () {
               if (mounted) onPop(0);
             },
           ),
-          onUpdateEntry: onUpdateEntry,
+          onUpdateEntry: (int noteId, Map<String, String> fields) =>
+              onUpdateEntry(
+                noteId,
+                miningFieldsForLayer(index, controller, fields),
+              ),
           // BUG-3652 续：制卡失败回包回来时这一层已关 / 停驻，原因就改由宿主 toast。
           isSessionOnScreen: () => controller.isEntryOnScreen(entry),
           // 用户建议 #fiwDIpFep7：顶栏就地切配置 / 牌组，随制卡模块开关。结果来自
@@ -1286,8 +1307,11 @@ mixin DictionaryPageMixin {
               popupResourceSource == null,
           onDuplicateCheck: checkDuplicate,
           onOverwriteTargetNoteId: findOverwriteTargetNoteId,
-          onMinedCardAction: onMinedCardAction,
-          onQueueOverwrite: onQueueOverwrite,
+          onMinedCardAction: (Map<String, String> fields) => onMinedCardAction(
+            miningFieldsForLayer(index, controller, fields),
+          ),
+          onQueueOverwrite: (Map<String, String> fields) =>
+              onQueueOverwrite(miningFieldsForLayer(index, controller, fields)),
           onOpenInAnki: onOpenInAnki,
           onFavoriteEntry: onFavoriteEntry,
           onFavoriteCheck: onFavoriteCheck,

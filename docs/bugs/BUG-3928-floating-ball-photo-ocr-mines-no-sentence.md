@@ -1,0 +1,13 @@
+## BUG-3928 · 悬浮球拍照查词、悬浮字幕点字制卡没有例句
+- **报告**：2026-11-01（用户反馈 1Mwaro8UTC，Android：应用外 OCR 查词制卡只有单词、没有例句；BUG-3487 修完截屏识字后追问入口，回复「悬浮球」）
+- **真实性**：✅ 真 bug（悬浮球上走主窗查词宿主的 OCR 入口）。悬浮球有两条 OCR 路：
+  - 「截屏识字」（Android）：`FloatingBallService.runAction` → `ScreenOcrService.onSelectionTap` → `PopupDictFlutterActivity`，带整行 + 所属块，app 外查词窗 `PopupDictionaryPage._withSourceSentence` 补例句——BUG-3487 已修，这条代码路径是通的。
+  - 「拍照查词」（Android / iOS，系统球与应用内球都有；iOS 的截屏识字、内置浏览器的识字查词也走这里）：`app_floating_ball_host._recognizeAndPick` → `ScreenOcrPickerPage` → `FloatingLyricLookupNotifier.requestLookup` → 主窗常驻 `FloatingLyricLookupHost`。悬浮字幕点字（无阅读器时，`app_model.dart` 两处 `onLookup`）也走这个宿主。
+  - 根因：这个宿主从请求到制卡**没有任何地方带句子**。
+    - `fushi/lib/src/media/audiobook/floating_lyric_lookup_host.dart:53`（develop `requestLookup`）：请求总线只有 `text` / `index` / 选区 / 卡图，没有句子字段；
+    - 同文件 `:188`（develop `_lookup`）：`lookupWordAtIndex(req.text, req.index)` 切出单词去查，整行原文就此丢掉；
+    - `fushi/lib/src/pages/implementations/dictionary_page_mixin.dart:1271`（develop `_buildNestedPopupLayerFor`）：制卡回调直接接 `onMineEntry`，宿主没有按层补字段的口子；popup.js 制卡不送 `sentence`，`AnkiMiningContext.sentence` 恒为空 → 卡上只有单词。
+  - 对比：桌面全局查词卡的悬浮字幕点字（`floating_lyric_lookup_routing.dart` `sentence: text.trim()`）与 app 外查词窗（截屏识字 / BUG-2900）都会补句子，只有这个主窗宿主漏了。
+- **[x] ① 已修复** — 请求总线加 `sentence`（`FloatingLyricLookupRequest.sentence`）；拍照查词选取页按 `ocrSentenceInLine` 取被点字在行里所在的那一句（系统 OCR 只给行，无块），悬浮字幕点字给整行（与全局查词卡同口径）；`DictionaryPageMixin` 新增按层改写制卡字段的 `miningFieldsForLayer`，制卡 / 覆写 / 已有卡操作 / 排队覆写四个出口都先过它；`FloatingLyricLookupHost` 覆写它补基础层例句。补句判据抽成 `fushi/lib/src/lookup/source_line_sentence.dart` 的 `withSourceLineSentence`，app 外查词窗与主窗宿主共用一份（只补基础层、且基础层查询串等于出自这行的查询串）。提交：见分支 `wip/a28-floatball`。
+- **[x] ② 已加自动化测试** — `fushi/test/lookup/source_line_sentence_test.dart`（补句判据 / 行内取句 / 总线带句）；`fushi/test/floating_ball/floating_ball_test.dart`「照片选取页」断言请求带句子；回归 `fushi/test/pages/popup_dictionary_source_line_test.dart`、`fushi/test/lookup/ocr_block_sentence_test.dart`。
+- **备注**：真机验证按规则取消，未在设备上走一遍「悬浮球 → 拍照查词 → 制卡」看卡片字段；若用户实际用的是 Android「截屏识字」而仍无例句，那条路径代码上已通，需要追问版本号（BUG-3487 是否已在其安装的版本里）。

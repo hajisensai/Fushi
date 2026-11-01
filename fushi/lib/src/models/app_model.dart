@@ -1734,7 +1734,13 @@ class AppModel with ChangeNotifier {
               )) {
                 return;
               }
-              FloatingLyricLookupNotifier.instance.requestLookup(text, index);
+              FloatingLyricLookupNotifier.instance.requestLookup(
+                text,
+                index,
+                // 反馈 1Mwaro8UTC：与全局查词卡同口径（floating_lyric_lookup_routing），
+                // 制卡例句取被点的这一整行。
+                sentence: text,
+              );
             }());
           },
           // 媒体会话与音乐互斥（音乐模块 §7.5）：音乐持有会话时，锁屏 / 耳机键不发给有声书。
@@ -1847,7 +1853,13 @@ class AppModel with ChangeNotifier {
             )) {
               return;
             }
-            FloatingLyricLookupNotifier.instance.requestLookup(text, index);
+            FloatingLyricLookupNotifier.instance.requestLookup(
+              text,
+              index,
+              // 反馈 1Mwaro8UTC：与全局查词卡同口径（floating_lyric_lookup_routing），
+              // 制卡例句取被点的这一整行。
+              sentence: text,
+            );
           }());
         },
         onPlayPause: () => unawaited(engine.togglePlayPause()),
