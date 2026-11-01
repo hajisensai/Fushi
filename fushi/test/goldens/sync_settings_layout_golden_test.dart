@@ -189,7 +189,7 @@ void main() {
       size
       in <({String name, double width, double height, double syncHeight})>[
         (name: 'wide', width: 900, height: 2400, syncHeight: 2640),
-        (name: 'narrow', width: 400, height: 3800, syncHeight: 4540),
+        (name: 'narrow', width: 400, height: 3800, syncHeight: 4640),
       ]) {
     testWidgets('sync & backup page · ${size.name}', (
       WidgetTester tester,
