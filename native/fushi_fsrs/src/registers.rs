@@ -381,6 +381,15 @@ impl<'e, 'a> Entity<'e, 'a> {
         }
     }
 
+    /// 这个键有没有值：生效值为 null 与没有记录是同一状态（「未设」）。带子键的映射（笔记 `f/`、笔记类型
+    /// `fieldDef/` `tmplDef/` `fieldDesc/`）按它决定这一项在不在——时间线恢复把「那一刻还没有的键」写回 null
+    /// （store/sync2/timeline.rs `restored_value`），这一项就回到不存在：之后才加的模板 / 字段消失，内置笔记类型被改过的
+    /// 模板 / 字段回到跟随代码的默认值，而不是变成一份全空的定义盖住它。
+    /// 例外：卡片标志的血统继承（[cards_group]）里自己的 null 是显式值（`buried = null` = 取消埋卡），不走这里。
+    fn is_set(&self, key: &str) -> bool {
+        !self.value(key).is_null()
+    }
+
     /// 删除优先：删除寄存器里第一条值为整数的候选的值。
     fn deleted_at(&self) -> Option<i64> {
         let r = self.reg(KEY_DELETED)?;
@@ -520,6 +529,9 @@ fn created_at(payload: &Value) -> Result<i64, String> {
 fn note_view(ent: &Entity<'_, '_>, payload: &Value, concurrent: &[usize]) -> Result<Value, String> {
     let mut fields: Vec<Value> = Vec::new();
     for r in &ent.regs {
+        if !ent.is_set(&r.key) {
+            continue;
+        }
         if let Some(id) = r.key.strip_prefix("f/") {
             let v = match ent.value(&r.key) {
                 Value::String(s) => s.clone(),
@@ -699,6 +711,9 @@ fn note_type_view(ent: &Entity<'_, '_>, payload: &Value, builtin: &Value) -> Res
     let mut edited_fields: Vec<FieldDef> = Vec::new();
     let mut edited_templates: Vec<TemplateDef> = Vec::new();
     for r in &ent.regs {
+        if !ent.is_set(&r.key) {
+            continue;
+        }
         if let Some(id) = r.key.strip_prefix("fieldDef/") {
             let mut d = field_def(id, ent.value(&r.key))?;
             if let Some((_, _, current)) = legacy_names.iter().find(|(lid, legacy, _)| lid == id && *legacy == d.name) {
@@ -1224,7 +1239,7 @@ pub(crate) fn note_browse_values(edits: &[StoredEdit<'_>]) -> Result<(Vec<(Strin
         if let Some(e) = winner {
             modified = Some(modified.map_or(e.physical, |m| m.max(e.physical)));
         }
-        if let Some(id) = r.key.strip_prefix("f/") {
+        if let Some(id) = r.key.strip_prefix("f/").filter(|_| winner.is_some_and(|e| !e.value.is_null())) {
             let v = winner.and_then(|e| e.value.as_str()).unwrap_or("");
             values.push((id.to_owned(), v.to_owned()));
         }
