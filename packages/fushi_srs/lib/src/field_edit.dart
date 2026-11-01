@@ -146,6 +146,10 @@ abstract final class SrsFieldKeys {
   /// 与 [deckLimits] 一样是牌组自己的值，不随参数继承。
   static const String deckNewPlan = 'newPlan';
 
+  /// 自定义学习「提升今日上限」（Map，见 [SrsDeckLimitExtension]）：`day` 写入日序、`new` / `review` 追加张数，
+  /// 只对那一天生效。牌组自己的值，不随参数继承；并发写不进冲突记录（[SrsFieldClass.viewState]）。
+  static const String deckExtendLimits = 'extendLimits';
+
   // profile
   static const String dayRolloverHour = 'dayRolloverHour';
   static const String utcOffsetMin = 'utcOffsetMin';
@@ -199,6 +203,7 @@ const Map<SrsEntityKind, _SrsFieldClassRule> _kSrsFieldClassRules =
         exceptions: <String, SrsFieldClass>{
           SrsFieldKeys.deckCollapsed: SrsFieldClass.viewState,
           SrsFieldKeys.deckPosition: SrsFieldClass.viewState,
+          SrsFieldKeys.deckExtendLimits: SrsFieldClass.viewState,
         },
       ),
       SrsEntityKind.profile: (

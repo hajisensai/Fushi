@@ -876,6 +876,8 @@ fn deck_view(ent: &Entity<'_, '_>, payload: &Value) -> Result<Value, String> {
         "rq": *ent.value("replayQuestion") != Value::Bool(false),
         "rw": ent.value("rwkvQueue"),
         "npl": ent.value("newPlan"),
+        // 自定义学习「提升今日上限」（`{"day", "new", "review"}`；store/study.rs `today_extension`）。
+        "ext": ent.value("extendLimits"),
         "ba": baseline_at,
         "bn": baseline_n,
         "da": ent.deleted_at(),

@@ -391,6 +391,7 @@ SrsDeckView _deckView(SrsEntitySource s, Map<String, Object?> r) {
     rwkvQueue: SrsRwkvQueueSettings.fromValue(v['rw']),
     newCardOrder: SrsNewCardOrder.fromWire(v['no'] as String?),
     newCardPlan: SrsNewCardPlan.fromValue(v['npl']),
+    limitExtension: SrsDeckLimitExtension.fromValue(v['ext']),
     optimizeBaselineAt: v['ba'] as int?,
     optimizeBaselineCount: v['bn'] as int?,
     deletedAt: v['da'] as int?,
