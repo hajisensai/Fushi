@@ -339,7 +339,12 @@ class FushiContinueEntry {
     this.orientationImage,
     this.landscapeCover,
     this.subtitleIcon,
+    this.colorSource,
   });
+
+  /// 取色卡（[FushiContinueCardRow]）的取色来源：通常就是封面那张图的
+  /// provider；null = 不取色，用中性卡面。
+  final ImageProvider? colorSource;
 
   /// 卡键（主卡 = 整卡，封面行 = 封面那张卡）。
   final Key key;
@@ -418,6 +423,7 @@ class FushiContinueEntry {
           progressKey: progressKey,
           onOpen: onOpen,
           onLongPress: onLongPress,
+          colorSource: colorSource,
         );
 }
 
@@ -500,8 +506,14 @@ class FushiContinueSpotlight extends StatelessWidget {
     this.narrowSideCoverHeight,
     this.sideRowKey = const ValueKey<String>('fushi-continue-side-row'),
     this.staggerEntrance = true,
+    this.sideBuilder,
     super.key,
   });
+
+  /// 自定义「其余条目」区（代替内置封面行）：宽屏并排时拿到主卡高度，窄屏挂在
+  /// 主卡下面时拿到 null。视频首页用它把其余条目排成取色并列卡
+  /// （[FushiContinueCardRow]）。给了它就不看 [side]。
+  final Widget Function(double? height)? sideBuilder;
 
   final FushiContinueEntry main;
   final List<FushiContinueEntry> side;
@@ -695,7 +707,7 @@ class FushiContinueSpotlight extends StatelessWidget {
             mainWidth = s.width;
             mainHeight = s.height;
             mainCard = SizedBox.fromSize(size: s, child: _stillMain(main));
-          } else if (side.isEmpty) {
+          } else if (side.isEmpty && sideBuilder == null) {
             return _coverMain(main, coverHeight: soloCoverHeight);
           } else {
             mainWidth = (width * 0.42).clamp(440.0, 640.0);
@@ -712,7 +724,8 @@ class FushiContinueSpotlight extends StatelessWidget {
               ),
             );
           }
-          if (side.isEmpty) {
+          final Widget Function(double? height)? custom = sideBuilder;
+          if (side.isEmpty && custom == null) {
             return Align(
               alignment: AlignmentDirectional.centerStart,
               child: mainCard,
@@ -722,7 +735,11 @@ class FushiContinueSpotlight extends StatelessWidget {
             children: <Widget>[
               SizedBox(width: mainWidth, child: mainCard),
               SizedBox(width: tokens.spacing.card),
-              Expanded(child: _sideRow(context, mainHeight, gap)),
+              Expanded(
+                child: custom != null
+                    ? custom(mainHeight)
+                    : _sideRow(context, mainHeight, gap),
+              ),
             ],
           );
         }
@@ -732,6 +749,18 @@ class FushiContinueSpotlight extends StatelessWidget {
                 child: _stillMain(main),
               )
             : _coverMain(main, coverHeight: soloCoverHeight);
+        final Widget Function(double? height)? custom = sideBuilder;
+        if (custom != null) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              mainCard,
+              SizedBox(height: gap),
+              custom(null),
+            ],
+          );
+        }
         if (!showSideWhenNarrow || side.isEmpty) return mainCard;
         final bool allStill = side.every((FushiContinueEntry e) => e.still);
         final double coverHeight = allStill

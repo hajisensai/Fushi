@@ -38,6 +38,7 @@ void main() {
       HomeTab.video,
       HomeTab.games,
       HomeTab.browse,
+      HomeTab.web,
     ]) {
       expect(
         homeShellTitleFor(tab, apple: false, compact: true),
