@@ -306,10 +306,20 @@ class _MusicServerListPageState extends ConsumerState<MusicServerListPage> {
 enum _BrowseSection { albums, artists }
 
 /// 一台服务器：专辑 / 艺人两个分区 + 搜索。
+///
+/// [embedded] 时不带页面外壳（曲库页「推荐」里选中单个服务器来源时就地显示），搜索钮与
+/// [trailing]（如 Apple Music 的地区选择）跟在分区切换后面。
 class MusicServerBrowsePage extends ConsumerStatefulWidget {
-  const MusicServerBrowsePage({super.key, required this.browser});
+  const MusicServerBrowsePage({
+    super.key,
+    required this.browser,
+    this.embedded = false,
+    this.trailing,
+  });
 
   final MusicServerBrowser browser;
+  final bool embedded;
+  final Widget? trailing;
 
   @override
   ConsumerState<MusicServerBrowsePage> createState() =>
@@ -412,6 +422,50 @@ class _MusicServerBrowsePageState extends ConsumerState<MusicServerBrowsePage> {
             },
       ),
     };
+    void openSearch() => unawaited(
+      Navigator.of(context).push<void>(
+        adaptivePageRoute<void>(
+          context: context,
+          builder: (_) => MusicServerSearchPage(browser: widget.browser),
+        ),
+      ),
+    );
+    final Widget animated = AnimatedSwitcher(
+      duration: fushiMotionDuration(context, FushiMotion.medium),
+      child: KeyedSubtree(
+        key: ValueKey<_BrowseSection>(_section),
+        child: content,
+      ),
+    );
+    if (widget.embedded) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Padding(
+            padding: EdgeInsets.symmetric(
+              horizontal: tokens.spacing.page,
+              vertical: tokens.spacing.gap / 2,
+            ),
+            child: Row(
+              spacing: tokens.spacing.gap,
+              children: <Widget>[
+                segmented,
+                const Spacer(),
+                ?widget.trailing,
+                FushiIconButton(
+                  key: const ValueKey<String>('music_server_search'),
+                  icon: FushiIcons.search,
+                  tooltip: t.music_server_search,
+                  padTouchTarget: true,
+                  onTap: openSearch,
+                ),
+              ],
+            ),
+          ),
+          Expanded(child: animated),
+        ],
+      );
+    }
     return musicBrowseScaffold(
       context,
       title: widget.browser.displayName,
@@ -420,14 +474,7 @@ class _MusicServerBrowsePageState extends ConsumerState<MusicServerBrowsePage> {
           key: const ValueKey<String>('music_server_search'),
           icon: FushiIcons.search,
           label: t.music_server_search,
-          onPressed: () => unawaited(
-            Navigator.of(context).push<void>(
-              adaptivePageRoute<void>(
-                context: context,
-                builder: (_) => MusicServerSearchPage(browser: widget.browser),
-              ),
-            ),
-          ),
+          onPressed: openSearch,
         ),
       ],
       body: Builder(
@@ -449,15 +496,7 @@ class _MusicServerBrowsePageState extends ConsumerState<MusicServerBrowsePage> {
                     child: segmented,
                   ),
                 ),
-                Expanded(
-                  child: AnimatedSwitcher(
-                    duration: fushiMotionDuration(context, FushiMotion.medium),
-                    child: KeyedSubtree(
-                      key: ValueKey<_BrowseSection>(_section),
-                      child: content,
-                    ),
-                  ),
-                ),
+                Expanded(child: animated),
               ],
             ),
           ),
