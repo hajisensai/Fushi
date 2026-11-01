@@ -5,7 +5,7 @@ import 'package:fushi_engine/sync/video_remote_service.dart'
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/video_remote_client.dart';
 import 'package:fushi/src/sync/video_remote_targets.dart'
-    show videoRemotePeerFor;
+    show interconnectHostPeerFor;
 
 /// 「在 PC 上打开」（远端原盘第二期第 1 项）：复用视频遥控通道，让提供这个远端库的
 /// 那台电脑自己进原盘会话——电脑上盘就在本地，菜单一定开得了，手机只当遥控。
@@ -13,7 +13,7 @@ import 'package:fushi/src/sync/video_remote_targets.dart'
 /// [hostIdentity] 是互联库当前所连 host 的身份（`InterconnectSyncBackend
 /// .connectedHostIdentity`：配对 hostId，老条目是地址）。找不到同一台 host 的已配对
 /// 地址（或缺凭据）返回 null。
-Future<FushiClientUrl?> videoRemotePeerForHost(
+Future<FushiClientUrl?> interconnectHostPeerForHost(
   SyncRepository repository,
   String hostIdentity,
 ) async {
@@ -25,7 +25,7 @@ Future<FushiClientUrl?> videoRemotePeerForHost(
         ? u.hostId == hostIdentity
         : u.url == hostIdentity;
     if (!same || interconnectTokenFor(u, fallbackToken) == null) continue;
-    return videoRemotePeerFor(u, urls, fallbackToken);
+    return interconnectHostPeerFor(u, urls, fallbackToken);
   }
   return null;
 }

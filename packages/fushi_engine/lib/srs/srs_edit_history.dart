@@ -8,6 +8,7 @@ library;
 import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_remote_store.dart';
 
 /// 历史里的一条。
 class SrsHistoryEntry {
@@ -61,6 +62,10 @@ extension SrsEditHistory on SrsDbStore {
     SrsEntityKind kind,
     String entityId,
   ) async {
+    final SrsDbStore self = this;
+    if (self is SrsRemoteForwarding) {
+      return (self as SrsRemoteForwarding).remoteEditHistory(kind, entityId);
+    }
     final SrsSync2Result r = await sync2Command(<String, Object?>{
       'op': 'history',
       'kind': kind.wire,
@@ -74,6 +79,10 @@ extension SrsEditHistory on SrsDbStore {
 
   /// 设备 ID → 设备名（各设备 head 里报的名字；没报过的不在表里）。
   Future<Map<String, String>> sync2DeviceNames() async {
+    final SrsDbStore self = this;
+    if (self is SrsRemoteForwarding) {
+      return (self as SrsRemoteForwarding).remoteDeviceNames();
+    }
     final Map<String, Object?> status = await sync2Status();
     return <String, String>{
       for (final Object? d in (status['devices'] as List?) ?? const <Object?>[])

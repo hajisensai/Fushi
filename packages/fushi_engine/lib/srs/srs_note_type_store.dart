@@ -19,6 +19,7 @@ import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_remote_store.dart';
 
 /// 新建笔记类型的起点（Anki「添加笔记类型」里的基础类型）。
 enum SrsStockNoteType {
@@ -120,6 +121,13 @@ extension SrsNoteTypeStoreOps on SrsDbStore {
   /// 某笔记类型下的笔记（未删除），按落库顺序。走 idx_srs_notes_cache_type、只读 id 列；
   /// [limit] 给了就只取前几条（取样本预览用）。
   Future<List<String>> noteIdsOfType(String noteTypeId, {int? limit}) async {
+    final SrsDbStore self = this;
+    if (self is SrsRemoteForwarding) {
+      return (self as SrsRemoteForwarding).remoteNoteIdsOfType(
+        noteTypeId,
+        limit: limit,
+      );
+    }
     final $SrsNotesCacheTable n = db.srsNotesCache;
     final JoinedSelectStatement<$SrsNotesCacheTable, SrsNoteCacheRow> q =
         db.selectOnly(n)
@@ -678,6 +686,15 @@ extension SrsNoteTypeStoreOps on SrsDbStore {
     required Map<String, String?> fieldMap,
     required Map<String, String?> templateMap,
   }) async {
+    final SrsDbStore self = this;
+    if (self is SrsRemoteForwarding) {
+      return (self as SrsRemoteForwarding).remotePreviewNoteTypeChange(
+        noteIds: noteIds,
+        targetTypeId: targetTypeId,
+        fieldMap: fieldMap,
+        templateMap: templateMap,
+      );
+    }
     // 笔记与它们的卡各按块一次读（以前每条笔记各读两遍笔记、一遍卡，BUG-3543）。
     final Map<String, SrsNoteView?> views = await notes(noteIds);
     final SrsNoteTypeView from = await _sourceTypeIn(noteIds, views);
@@ -714,6 +731,29 @@ extension SrsNoteTypeStoreOps on SrsDbStore {
   /// 复习日志一条不改；新卡的历史 = 自己 + 前身卡的日志（见 [SrsDbStore.history]）。
   /// 预演与写入在同一个独占区里：算计划时读到的现值就是落库时的现值。
   Future<void> changeNoteType({
+    required List<String> noteIds,
+    required String targetTypeId,
+    required Map<String, String?> fieldMap,
+    required Map<String, String?> templateMap,
+  }) {
+    final SrsDbStore self = this;
+    if (self is SrsRemoteForwarding) {
+      return (self as SrsRemoteForwarding).remoteChangeNoteType(
+        noteIds: noteIds,
+        targetTypeId: targetTypeId,
+        fieldMap: fieldMap,
+        templateMap: templateMap,
+      );
+    }
+    return _changeNoteTypeLocal(
+      noteIds: noteIds,
+      targetTypeId: targetTypeId,
+      fieldMap: fieldMap,
+      templateMap: templateMap,
+    );
+  }
+
+  Future<void> _changeNoteTypeLocal({
     required List<String> noteIds,
     required String targetTypeId,
     required Map<String, String?> fieldMap,

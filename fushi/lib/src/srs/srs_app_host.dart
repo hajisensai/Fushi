@@ -9,6 +9,7 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_remote_store.dart';
 import 'package:fushi_srs/fushi_srs.dart' show SrsTermQuery;
 import 'package:material_ui/material_ui.dart';
 
@@ -26,6 +27,7 @@ class SrsAppHost implements SrsExtensionApi {
     required this.readStore,
     required this.openNote,
     required this.openBrowse,
+    this.remoteStore,
   });
 
   /// 当前（复习模块开着时装上的）宿主入口；null = 模块关着。
@@ -39,6 +41,10 @@ class SrsAppHost implements SrsExtensionApi {
 
   /// 打开浏览页。
   final Future<bool> Function() openBrowse;
+
+  /// 互联主机的远程复习库（`/api/srs/remote/*`，docs/specs/2026-11-01-srs-remote-review-design.md）。
+  /// 只有 [current] 那份带它；按配置给浏览器扩展建的实例不带（null）。
+  final SrsRemoteStoreService? remoteStore;
 
   /// 弹窗 / 扩展的词状态回包（见 srs_term_status_bridge.dart）。
   @override

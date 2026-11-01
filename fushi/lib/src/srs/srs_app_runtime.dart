@@ -45,6 +45,7 @@ import 'package:fushi/src/srs/srs_app_host.dart';
 import 'package:fushi/src/srs/srs_legacy_backup_cleanup.dart';
 import 'package:fushi/src/srs/srs_directory_key.dart';
 import 'package:fushi/src/srs/srs_interconnect_watch.dart';
+import 'package:fushi_engine/srs/srs_remote_store.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_optimization_scheduler.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
@@ -313,6 +314,12 @@ class SrsAppRuntime {
       readStore: _readStore,
       openNote: (String noteId) => srsPushNoteEditor(navigator(), noteId),
       openBrowse: () => srsPushBrowse(navigator()),
+      remoteStore: SrsRemoteStoreService(
+        readStore: _readStore,
+        readMedia: (String name) async => (await _readMedia())?.load(name),
+        // 已配对设备的远程写入与本机写入一样：本机界面重读，互联推送照常发出。
+        onWrite: _bumpRevision,
+      ),
     );
     fushiAnkiConnectCompatInstanceId = instanceId;
     final SrsAnkiConnectEndpoint endpoint = buildAnkiConnectEndpoint();
