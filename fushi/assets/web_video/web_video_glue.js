@@ -60,6 +60,23 @@
       trackId: tilde >= 0 ? seg.slice(tilde + 1) : '',
     };
   }
+  // 轨的语言码 / 显示名（providers 的 fushiTrackLangCodes / fushiTrackLabels）：YouTube 的 key 语言段
+  // 是显示名（`lang` 照旧上报给面板当标签），Dart 的语言偏好匹配要的是语言码（`languageCode`）。
+  // 没有记录 = 语言段就是语言码。
+  function trackLangCode(key, fallback) {
+    try {
+      var codes = window.fushiTrackLangCodes;
+      if (codes && codes[key]) return String(codes[key]);
+    } catch (_) {}
+    return fallback;
+  }
+  function trackLabel(key) {
+    try {
+      var labels = window.fushiTrackLabels;
+      if (labels && labels[key]) return String(labels[key]);
+    } catch (_) {}
+    return '';
+  }
   function flushTracks() {
     flushTimer = null;
     var store = window.fushiEpisodeCues || {};
@@ -69,14 +86,15 @@
       var key = keys[i];
       var parts = splitTrackKey(key);
       var cues = store[key] || [];
-      // 按需加载的占位轨（providers 的 fushiLazyTracks，空 cue）只给浏览器扩展的菜单列轨用；
-      // app 有自己的站点轨清单与加载态，投个空轨过去会被当成「已加载、0 句」。
+      // 按需加载的占位轨（providers 的 fushiLazyTracks，空 cue）不当整轨投：投个空轨过去会被当成
+      // 「已加载、0 句」。它们经快照的 `lzt` 进 Dart 的站点轨清单（见 lazyTextTracks），点选再取。
       if (!cues.length && window.fushiLazyTracks && window.fushiLazyTracks[key]) continue;
       post({
         type: 'track',
         key: key,
         videoKey: parts.videoKey,
         lang: parts.lang,
+        languageCode: trackLangCode(key, parts.lang),
         trackId: parts.trackId,
         cues: cues.map(function (c) { return { s: c.startMs, e: c.endMs, t: c.text }; }),
       });
@@ -197,6 +215,7 @@
       vtitle: v ? videoTitle() : '',
       vimg: v ? pageImage() : '',
       nftt: v ? netflixTextTracks() : '',
+      lzt: v ? lazyTextTracks() : '',
       nfat: v ? netflixAudioTracks() : '',
       blk: v ? playbackBlocker(v) : '',
     };
@@ -256,6 +275,32 @@
       ].join('\t'));
     }
     rows.push('#' + (cur && !cur.isNoneTrack ? cur.trackId : ''));
+    return rows.join('\n');
+  }
+  // ── 按需加载的占位轨（providers 的 fushiLazyTracks：YouTube 等站点桥先发整份轨清单，只急取一条）──
+  // 与 nftt 同形：每轨一行 `store key 语言段\t语言码\t显示名\t\t0`，末行 `#`（没有「站点当前轨」）。
+  // 只列当前视频的；Netflix 的轨清单由 nftt 从播放器 API 给（选轨要让播放器切过去才下载），这里不重复。
+  // Dart 点选后调 __fushiWebVideo.requestLazyTrack(key)，整轨到了照常经 {type:'track'} 投递。
+  function lazyTextTracks() {
+    if (site() === 'netflix') return '';
+    var lazy = window.fushiLazyTracks;
+    if (!lazy) return '';
+    var prefix = videoKey() + '|';
+    var rows = [];
+    for (var key in lazy) {
+      if (!lazy[key] || key.indexOf(prefix) !== 0) continue;
+      var seg = key.slice(prefix.length);
+      if (!seg) continue;
+      rows.push([
+        seg.replace(/[\t\n]/g, ' '),
+        trackLangCode(key, 'und').replace(/[\t\n]/g, ' '),
+        trackLabel(key).replace(/[\t\n]/g, ' '),
+        '',
+        '0',
+      ].join('\t'));
+    }
+    if (!rows.length) return '';
+    rows.push('#');
     return rows.join('\n');
   }
   function netflixTextTracks() {
@@ -782,6 +827,17 @@
       }
     },
     selectNetflixTrack: selectNetflixTrack,
+    // 取一条占位轨（lazyTextTracks 列出的）：'requested' = 已请求，整轨随后 {type:'track'} 到、失败
+    // {type:'trackFailed'} 到；'not-lazy' = 已不是占位（整轨已到 / 换了视频），调用方按现有轨处理。
+    requestLazyTrack: function (key) {
+      try {
+        if (typeof window.fushiRequestLazyTrack === 'function' &&
+            window.fushiRequestLazyTrack(String(key || ''))) {
+          return 'requested';
+        }
+      } catch (_) {}
+      return 'not-lazy';
+    },
     selectNetflixAudioTrack: selectNetflixAudioTrack,
     fetchNetflixMetadata: fetchNetflixMetadata,
     // 原生播放器的音量控件（站点自己的音量键被藏起来了）：音量 0–1 + 静音一次设定。
