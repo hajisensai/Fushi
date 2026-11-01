@@ -1045,8 +1045,9 @@ void main() {
       await prefs.setAiProviders(<AiProviderConfig>[
         _config(
           id: 'p1',
-          name: 'LAN',
-          baseUrl: 'http://192.168.1.20:8000/v1',
+          // 公网明文 HTTP 才靠这个开关（局域网地址不需要，见 9_vP-OLetJ）。
+          name: 'Plain',
+          baseUrl: 'http://ai.example.com:8000/v1',
           allowInsecureHttp: true,
         ),
       ]);
@@ -1694,10 +1695,18 @@ void main() {
 
     test('ping：应答不是该协议的形状 → bad_response；HTTP 错误照常映射', () async {
       final AiChatClient wrongShape = clientReturning(<String, Object?>{
-        'error': 'gateway says hi',
+        'hello': 'gateway says hi',
       });
       addTearDown(wrongShape.close);
       await expectLater(wrongShape.ping(_config()), failsWith('bad_response'));
+
+      // 2xx 却只有 error（LM Studio 对不认识的路径「Returning 200 anyway」）：
+      // 单独报 endpoint_error，提示检查地址（反馈 GewyVIt5oo）。
+      final AiChatClient errorBody = clientReturning(<String, Object?>{
+        'error': 'Unexpected endpoint or method. (POST /chat/completions)',
+      });
+      addTearDown(errorBody.close);
+      await expectLater(errorBody.ping(_config()), failsWith('endpoint_error'));
 
       final AiChatClient notFound = clientReturning(<String, Object?>{
         'error': 'no such model',

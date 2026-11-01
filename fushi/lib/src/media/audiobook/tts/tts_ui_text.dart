@@ -230,7 +230,7 @@ String? ttsLanguageCodeToTag(String code) {
   };
 }
 
-final RegExp _kVoiceLocalePrefix = RegExp(r'^([a-z]{2,3})-[A-Z]{2}');
+final RegExp _kVoiceLocalePrefix = RegExp(r'^([a-z]{2,3})-[A-Z]{2}(?:-|$)');
 
 /// 从声音配置推断它要读的语言（试听文本跟着换）：GPT-SoVITS 看「文本语言」；
 /// 其余提供商看声音 id 前缀的地区代码（Edge / Azure / Google 的 `en-US-…`）。
