@@ -503,7 +503,6 @@ class BackupMergeEngine {
     final Map<String, PortableSettingValue> adopt = settingsToAdopt(
       local: await loadLocalPortableSettings(_db),
       remote: source,
-      firstAlignment: false,
     );
     for (final MapEntry<String, PortableSettingValue> e in adopt.entries) {
       await _db.customStatement(

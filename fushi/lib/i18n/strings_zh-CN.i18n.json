@@ -8942,7 +8942,7 @@
   "sync_server_tls_repair_hint": "切换后已配对设备需重新配对",
   "sync_server_token": "访问令牌",
   "sync_settings_sync": "同步设置",
-  "sync_settings_sync_hint": "让可移植的偏好设置（阅读器、外观、查词、制卡……）跨设备同步。本机路径、窗口布局、平台专属选项和外部工具连接仍留在各自设备上。首次开启时，本机以其它设备已同步的设置为准。",
+  "sync_settings_sync_hint": "让可移植的偏好设置（阅读器、外观、查词、制卡……）跨设备同步。本机路径、窗口布局、平台专属选项和外部工具连接仍留在各自设备上。每项设置以各设备上最近一次真正的修改为准；从没改过的默认值不会覆盖其它设备。",
   "sync_show_remote_entries": "显示远端条目",
   "sync_show_remote_entries_warning": "把 Fushi 互联服务端或云端有、本机没有的书籍和视频显示为可下载/流播的占位卡。",
   "sync_sign_in": "登录",

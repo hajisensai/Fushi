@@ -8942,7 +8942,7 @@
   "sync_server_tls_repair_hint": "切換後已配對設備需重新配對",
   "sync_server_token": "存取權杖",
   "sync_settings_sync": "Sync settings",
-  "sync_settings_sync_hint": "Carry portable preferences (reader, appearance, lookup, mining…) across devices. Device paths, window layout, platform-only options and external tool connections stay on each device. When first turned on, this device adopts the settings already synced from your other devices.",
+  "sync_settings_sync_hint": "Carry portable preferences (reader, appearance, lookup, mining…) across devices. Device paths, window layout, platform-only options and external tool connections stay on each device. For each setting the most recent real change on any device wins; defaults you never changed don't override your other devices.",
   "sync_show_remote_entries": "顯示遠端條目",
   "sync_show_remote_entries_warning": "把 Fushi 互聯服務端或雲端有、本機沒有的書籍和影片顯示為可下載/流播的佔位卡。",
   "sync_sign_in": "登入",

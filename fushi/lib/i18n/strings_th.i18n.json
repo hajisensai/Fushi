@@ -8942,7 +8942,7 @@
   "sync_server_tls_repair_hint": "การเปลี่ยนแปลงนี้ต้องให้อุปกรณ์ที่จับคู่ทำการจับคู่ใหม่",
   "sync_server_token": "โทเค็นการเข้าถึง",
   "sync_settings_sync": "Sync settings",
-  "sync_settings_sync_hint": "Carry portable preferences (reader, appearance, lookup, mining…) across devices. Device paths, window layout, platform-only options and external tool connections stay on each device. When first turned on, this device adopts the settings already synced from your other devices.",
+  "sync_settings_sync_hint": "Carry portable preferences (reader, appearance, lookup, mining…) across devices. Device paths, window layout, platform-only options and external tool connections stay on each device. For each setting the most recent real change on any device wins; defaults you never changed don't override your other devices.",
   "sync_show_remote_entries": "แสดงรายการระยะไกล",
   "sync_show_remote_entries_warning": "แสดงหนังสือและวิดีโอที่มีอยู่บนอุปกรณ์ที่จับคู่หรือคลาวด์เป็นการ์ดตัวยึดที่สามารถดาวน์โหลดหรือสตรีมได้",
   "sync_sign_in": "เข้าสู่ระบบ",

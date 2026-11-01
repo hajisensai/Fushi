@@ -1932,38 +1932,30 @@ void main() {
     addTearDown(() => cleanupTempDir(curDir));
     final cur = FushiDatabase(curDir.path);
     // 本机：一项比备份旧、一项比备份新、一项本机路径。
-    await cur.adoptPrefWithStamp(
-      'custom_themes',
-      's:local-old',
-      updatedAt: 100,
-    );
-    await cur.adoptPrefWithStamp(
+    await cur.setPrefIfNewer('custom_themes', 's:local-old', updatedAt: 100);
+    await cur.setPrefIfNewer(
       'hover_lookup_modifier',
       's:local-new',
       updatedAt: 900,
     );
-    await cur.adoptPrefWithStamp(
-      'download_save_root',
-      's:/local',
-      updatedAt: 100,
-    );
+    await cur.setPrefIfNewer('download_save_root', 's:/local', updatedAt: 100);
     await cur.close();
 
     final srcDir = await _tempDir('mg_src_');
     addTearDown(() => cleanupTempDir(srcDir));
     final src = FushiDatabase(srcDir.path);
-    await src.adoptPrefWithStamp('custom_themes', 's:backup', updatedAt: 500);
-    await src.adoptPrefWithStamp(
+    await src.setPrefIfNewer('custom_themes', 's:backup', updatedAt: 500);
+    await src.setPrefIfNewer(
       'hover_lookup_modifier',
       's:backup',
       updatedAt: 500,
     );
-    await src.adoptPrefWithStamp(
+    await src.setPrefIfNewer(
       'download_save_root',
       's:/other-device',
       updatedAt: 500,
     );
-    await src.adoptPrefWithStamp('theme_tint_app_logo', 'b:1', updatedAt: 500);
+    await src.setPrefIfNewer('theme_tint_app_logo', 'b:1', updatedAt: 500);
     final zipDir = await _tempDir('mg_zip_');
     addTearDown(() => cleanupTempDir(zipDir));
     final zip = p.join(zipDir.path, 'b.zip');

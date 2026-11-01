@@ -15,7 +15,8 @@
 /// 所以补的是两个开关，共用本文件这一个判定：
 /// 1. 同步页「同步设置」：每台设备在同步根 `__settings__/` 下写一份自己的可移植设置
 ///    快照（`settings-<deviceId>.json`，按设备分文件，两台设备并发写互不覆盖），读取
-///    时把所有对端快照按 key 取最新，再与本机按修改时刻 LWW。
+///    时把所有对端快照按 key 取最新，再与本机按修改时刻 LWW（任何一轮、任何设备
+///    同一规则，没有「首次开启以远端为准」）。
 /// 2. 备份页「合并导入时包含设置」：合并导入时按同一判定把备份里的可移植设置并进来，
 ///    同样按修改时刻取较新者。
 library;
@@ -221,28 +222,26 @@ Map<String, PortableSettingValue> foldSettingsSnapshots(
   return out;
 }
 
-/// 远端设置里该落到本机的那部分。
+/// 远端设置里该落到本机的那部分：**每项按真实修改时刻严格 LWW**，对哪台设备都一样。
 ///
-/// - [firstAlignment] 为 true（本设备第一次开设置同步）：远端每一项都采纳（值不同
-///   才算），时刻沿用远端的——新装的设备会以 `now` 写一批默认值，按时刻比会让这些
-///   默认值盖掉别处调了很久的设置。
-/// - 否则严格 LWW：本机没有这项、或远端时刻**严格更新**才采纳；平局保留本机
-///   （与 `FushiDatabase.setPrefIfNewer` 同一规则）。
+/// 本机没有这项、或远端时刻**严格更新**（且值不同）才采纳；平局保留本机（与
+/// `FushiDatabase.setPrefIfNewer` 同一规则）。
+///
+/// 没有「首次对齐以远端为准」的特例：那条规则让先开同步的新设备把它从没改过的
+/// 默认值整批盖到后开同步的老设备上，且关掉再开会重演。比较键 `updated_at` 记的是
+/// 「这项的值最后一次真正改变的时刻」（值没变的重写不刷新它，见
+/// `FushiDatabase.setPref`），从没被改过的默认值要么根本没有行、要么停在它当初
+/// 落下的时刻，不会凭「后开同步」压过别处真改过的设置。
 Map<String, PortableSettingValue> settingsToAdopt({
   required Map<String, PortableSettingValue> local,
   required Map<String, PortableSettingValue> remote,
-  required bool firstAlignment,
 }) {
   final Map<String, PortableSettingValue> out =
       <String, PortableSettingValue>{};
   remote.forEach((String k, PortableSettingValue r) {
     if (!PortableSettingsPolicy.isPortable(k)) return;
     final PortableSettingValue? l = local[k];
-    if (l == null) {
-      out[k] = r;
-    } else if (firstAlignment) {
-      if (l.value != r.value) out[k] = r;
-    } else if (r.updatedAt > l.updatedAt && l.value != r.value) {
+    if (l == null || (r.updatedAt > l.updatedAt && l.value != r.value)) {
       out[k] = r;
     }
   });
@@ -261,25 +260,18 @@ Future<Map<String, PortableSettingValue>> loadLocalPortableSettings(
   };
 }
 
-/// 把 [adopt] 写进本机；返回实际改动的行数。[firstAlignment] 见 [settingsToAdopt]。
+/// 把 [adopt] 写进本机（沿用对端时刻，严格更新才写）；返回实际改动的行数。
 Future<int> applyAdoptedSettings(
   FushiDatabase db,
-  Map<String, PortableSettingValue> adopt, {
-  required bool firstAlignment,
-}) async {
+  Map<String, PortableSettingValue> adopt,
+) async {
   int changed = 0;
   for (final MapEntry<String, PortableSettingValue> e in adopt.entries) {
-    final bool wrote = firstAlignment
-        ? await db.adoptPrefWithStamp(
-            e.key,
-            e.value.value,
-            updatedAt: e.value.updatedAt,
-          )
-        : await db.setPrefIfNewer(
-            e.key,
-            e.value.value,
-            updatedAt: e.value.updatedAt,
-          );
+    final bool wrote = await db.setPrefIfNewer(
+      e.key,
+      e.value.value,
+      updatedAt: e.value.updatedAt,
+    );
     if (wrote) changed++;
   }
   return changed;

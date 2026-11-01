@@ -8942,7 +8942,7 @@
   "sync_server_tls_repair_hint": "Изменение этой настройки потребует повторного сопряжения устройств",
   "sync_server_token": "Токен доступа",
   "sync_settings_sync": "Sync settings",
-  "sync_settings_sync_hint": "Carry portable preferences (reader, appearance, lookup, mining…) across devices. Device paths, window layout, platform-only options and external tool connections stay on each device. When first turned on, this device adopts the settings already synced from your other devices.",
+  "sync_settings_sync_hint": "Carry portable preferences (reader, appearance, lookup, mining…) across devices. Device paths, window layout, platform-only options and external tool connections stay on each device. For each setting the most recent real change on any device wins; defaults you never changed don't override your other devices.",
   "sync_show_remote_entries": "Показывать удалённые записи",
   "sync_show_remote_entries_warning": "Показывать книги и видео с сопряжённых устройств или облака в виде карточек-заглушек, которые можно скачать или транслировать.",
   "sync_sign_in": "Войти",

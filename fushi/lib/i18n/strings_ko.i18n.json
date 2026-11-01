@@ -8942,7 +8942,7 @@
   "sync_server_tls_repair_hint": "이 설정을 변경하면 페어링된 기기를 다시 페어링해야 합니다",
   "sync_server_token": "액세스 토큰",
   "sync_settings_sync": "Sync settings",
-  "sync_settings_sync_hint": "Carry portable preferences (reader, appearance, lookup, mining…) across devices. Device paths, window layout, platform-only options and external tool connections stay on each device. When first turned on, this device adopts the settings already synced from your other devices.",
+  "sync_settings_sync_hint": "Carry portable preferences (reader, appearance, lookup, mining…) across devices. Device paths, window layout, platform-only options and external tool connections stay on each device. For each setting the most recent real change on any device wins; defaults you never changed don't override your other devices.",
   "sync_show_remote_entries": "원격 항목 표시",
   "sync_show_remote_entries_warning": "페어링된 기기나 클라우드에 있는 도서 및 동영상을 다운로드하거나 스트리밍할 수 있는 플레이스홀더 카드로 표시합니다.",
   "sync_sign_in": "로그인",

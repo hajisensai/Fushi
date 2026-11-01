@@ -18,12 +18,17 @@ import 'sync_orchestrator_test.dart' show FakeSyncBackend;
 ///
 /// 1. 排除清单（[PortableSettingsPolicy]）：凭据、设备本地、本机路径、窗口几何、
 ///    平台专属、外部工具连接、内容注册表、本库状态标记一律不可移植；普通设置可移植。
-/// 2. 合并规则：首次对齐以远端为准；此后严格 LWW，平局保留本机。
+/// 2. 合并规则：每项按真实修改时刻严格 LWW，平局保留本机；没有「首次以远端为准」。
+///    值没变的重写不刷新修改时刻（`FushiDatabase.setPref`），从没改过的默认值不会
+///    凭「后开同步」压过别处真改过的设置。
 /// 3. 编排器「同步设置」阶段：两台设备经同一资产存储往返，只搬可移植项。
 FushiDatabase _memDb() => FushiDatabase.forTesting(NativeDatabase.memory());
 
-Future<void> _setPrefAt(FushiDatabase db, String key, String v, int t) =>
-    db.adoptPrefWithStamp(key, v, updatedAt: t);
+/// 以指定时刻写一行（只用于空行或更晚的时刻，[FushiDatabase.setPrefIfNewer]）。
+Future<void> _setPrefAt(FushiDatabase db, String key, String v, int t) async {
+  final bool wrote = await db.setPrefIfNewer(key, v, updatedAt: t);
+  expect(wrote, isTrue, reason: '测试前置：$key 应以时刻 $t 落盘');
+}
 
 void main() {
   group('PortableSettingsPolicy 排除清单', () {
@@ -35,7 +40,6 @@ void main() {
       'qb_connection_config': 'external tool connection with password',
       'sync_device_id': 'device identity',
       'sync_settings_enabled': 'the settings-sync switch itself',
-      'sync_settings_seeded': 'per-device alignment marker',
       'backup_merge_import_settings': 'device behaviour of backup import',
       // 本库状态标记 / 界面布局（ProfileKeys）
       'prefs_version': 'database change counter',
@@ -137,7 +141,6 @@ void main() {
           'reader_settings_panel_side': const PortableSettingValue('s:b', 300),
           'theme_tint_app_logo': const PortableSettingValue('s:v', 0),
         },
-        firstAlignment: false,
       );
       expect(adopt.keys.toSet(), <String>{
         'custom_themes',
@@ -145,15 +148,12 @@ void main() {
       });
     });
 
-    test('首次对齐：远端为准（新装设备的默认值时刻更新也不算数）', () {
+    test('没有「远端整批为准」：远端更旧的值不覆盖本机', () {
       final Map<String, PortableSettingValue> adopt = settingsToAdopt(
-        local: <String, PortableSettingValue>{
-          'custom_themes': const PortableSettingValue('s:default', 999999),
-        },
+        local: <String, PortableSettingValue>{'custom_themes': newer},
         remote: <String, PortableSettingValue>{'custom_themes': old},
-        firstAlignment: true,
       );
-      expect(adopt['custom_themes'], old);
+      expect(adopt, isEmpty);
     });
 
     test('多份对端快照按 key 取最新，与折叠顺序无关', () {
@@ -173,6 +173,56 @@ void main() {
         foldSettingsSnapshots(<SettingsSnapshot>[b, a])['custom_themes'],
         newer,
       );
+    });
+  });
+
+  group('修改时刻只记真实修改（值没变的重写不刷新 updated_at）', () {
+    late FushiDatabase db;
+    setUp(() {
+      db = _memDb();
+      addTearDown(db.close);
+    });
+
+    test('setPref：同值重写保留时刻，改值才前进', () async {
+      await _setPrefAt(db, 'custom_themes', 's:default', 500);
+      await db.setPref('custom_themes', 's:default');
+      expect(await db.getPrefUpdatedAt('custom_themes'), 500);
+      await db.setPref('custom_themes', 's:custom');
+      expect(await db.getPref('custom_themes'), 's:custom');
+      expect(await db.getPrefUpdatedAt('custom_themes'), greaterThan(500));
+    });
+
+    test('setPrefs：一组里值没变的键保留时刻，变了的键与新键取 now', () async {
+      await _setPrefAt(db, 'custom_themes', 's:a', 500);
+      await _setPrefAt(db, 'hover_lookup_modifier', 's:alt', 500);
+      await db.setPrefs(<String, String>{
+        'custom_themes': 's:a',
+        'hover_lookup_modifier': 's:ctrl',
+        'theme_tint_app_logo': 'b:1',
+      });
+      expect(await db.getPrefUpdatedAt('custom_themes'), 500);
+      expect(
+        await db.getPrefUpdatedAt('hover_lookup_modifier'),
+        greaterThan(500),
+      );
+      expect(
+        await db.getPrefUpdatedAt('theme_tint_app_logo'),
+        greaterThan(500),
+      );
+      expect(await db.getPref('hover_lookup_modifier'), 's:ctrl');
+    });
+
+    test('compareAndSetPref：同值不刷新时刻', () async {
+      await _setPrefAt(db, 'custom_themes', 's:a', 500);
+      expect(
+        await db.compareAndSetPref(
+          'custom_themes',
+          expectedValue: 's:a',
+          newValue: 's:a',
+        ),
+        isTrue,
+      );
+      expect(await db.getPrefUpdatedAt('custom_themes'), 500);
     });
   });
 
@@ -210,13 +260,52 @@ void main() {
       });
     });
 
-    test('A 发布 → B 首次对齐采纳可移植项、不碰不可移植项；之后按时刻双向 LWW', () async {
+    test('新设备先开同步：它没改过的默认值不覆盖老设备的自定义值，关掉再开也不重演', () async {
+      // 新设备 B：一行默认值落于 500（装机时），随后被 Profile 套用 / 设置页整组保存
+      // 以同一个值重写——这不是修改，时刻不得刷新成「现在」。
+      await _setPrefAt(dbB, 'custom_themes', 's:B-default', 500);
+      await dbB.setPref('custom_themes', 's:B-default');
+      // 老设备 A：用户真改过的设置（1000，晚于 B 的默认值落盘）。
+      await _setPrefAt(dbA, 'custom_themes', 's:A-custom', 1000);
+
+      // B 先开同步（云上还没有任何对端快照）→ 发出自己的默认值。
+      await SyncRepository(dbB).setSettingsSyncEnabled(true);
+      final SyncRunReport rb = SyncRunReport();
+      await orch(dbB, 'devB').syncPortableSettingsForTest(rb);
+      expect(rb.errors, isEmpty);
+
+      // A 随后开同步：自定义值必须保留。
+      await SyncRepository(dbA).setSettingsSyncEnabled(true);
+      final SyncRunReport ra = SyncRunReport();
+      await orch(dbA, 'devA').syncPortableSettingsForTest(ra);
+      expect(ra.errors, isEmpty);
+      expect(ra.settingsImported, 0);
+      expect(
+        await dbA.getPref('custom_themes'),
+        's:A-custom',
+        reason: '新设备没改过的默认值不能盖掉老设备真改过的设置',
+      );
+
+      // B 下一轮收敛到 A 的自定义值。
+      await orch(dbB, 'devB').syncPortableSettingsForTest(SyncRunReport());
+      expect(await dbB.getPref('custom_themes'), 's:A-custom');
+
+      // A 关掉再开：不重演，值不动。
+      await SyncRepository(dbA).setSettingsSyncEnabled(false);
+      await SyncRepository(dbA).setSettingsSyncEnabled(true);
+      final SyncRunReport ra2 = SyncRunReport();
+      await orch(dbA, 'devA').syncPortableSettingsForTest(ra2);
+      expect(ra2.settingsImported, 0);
+      expect(await dbA.getPref('custom_themes'), 's:A-custom');
+    });
+
+    test('A 发布 → B 采纳可移植项、不碰不可移植项；之后按时刻双向 LWW', () async {
       await _setPrefAt(dbA, 'custom_themes', 's:A-themes', 1000);
       await _setPrefAt(dbA, 'hover_lookup_modifier', 's:alt', 1000);
       await _setPrefAt(dbA, 'download_save_root', 's:/a/downloads', 1000);
       await _setPrefAt(dbA, 'app_ui_scale', 'd:1.5', 1000);
-      // B 是新装设备：默认值时刻更晚，首次对齐仍以 A 为准。
-      await _setPrefAt(dbB, 'custom_themes', 's:B-default', 5000);
+      // B 的默认值落盘早于 A 的修改；本机路径时刻再晚也不跨设备。
+      await _setPrefAt(dbB, 'custom_themes', 's:B-default', 500);
       await _setPrefAt(dbB, 'download_save_root', 's:/b/downloads', 5000);
 
       final SyncRunReport ra = SyncRunReport();
@@ -236,7 +325,6 @@ void main() {
         reason: '本机路径不可移植，绝不被别的设备覆盖',
       );
       expect(await dbB.getPref('app_ui_scale'), isNull);
-      expect(await SyncRepository(dbB).isSettingsSyncSeeded(), isTrue);
 
       // 对齐之后：B 改一项（更新的时刻）→ A 下一轮采纳；A 上更旧的值不回盖。
       await _setPrefAt(dbB, 'hover_lookup_modifier', 's:ctrl', 9000);

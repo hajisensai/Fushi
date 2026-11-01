@@ -8942,7 +8942,7 @@
   "sync_server_tls_repair_hint": "Thay đổi này yêu cầu các thiết bị đã ghép nối phải ghép nối lại",
   "sync_server_token": "Mã truy cập",
   "sync_settings_sync": "Sync settings",
-  "sync_settings_sync_hint": "Carry portable preferences (reader, appearance, lookup, mining…) across devices. Device paths, window layout, platform-only options and external tool connections stay on each device. When first turned on, this device adopts the settings already synced from your other devices.",
+  "sync_settings_sync_hint": "Carry portable preferences (reader, appearance, lookup, mining…) across devices. Device paths, window layout, platform-only options and external tool connections stay on each device. For each setting the most recent real change on any device wins; defaults you never changed don't override your other devices.",
   "sync_show_remote_entries": "Hiển thị mục từ xa",
   "sync_show_remote_entries_warning": "Hiển thị sách và video tồn tại trên thiết bị ghép nối hoặc đám mây dưới dạng thẻ giữ chỗ mà bạn có thể tải xuống hoặc phát trực tuyến.",
   "sync_sign_in": "Đăng nhập",

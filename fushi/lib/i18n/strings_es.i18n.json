@@ -8942,7 +8942,7 @@
   "sync_server_tls_repair_hint": "Cambiar esto requiere que los dispositivos emparejados se emparejen de nuevo",
   "sync_server_token": "Token de acceso",
   "sync_settings_sync": "Sync settings",
-  "sync_settings_sync_hint": "Carry portable preferences (reader, appearance, lookup, mining…) across devices. Device paths, window layout, platform-only options and external tool connections stay on each device. When first turned on, this device adopts the settings already synced from your other devices.",
+  "sync_settings_sync_hint": "Carry portable preferences (reader, appearance, lookup, mining…) across devices. Device paths, window layout, platform-only options and external tool connections stay on each device. For each setting the most recent real change on any device wins; defaults you never changed don't override your other devices.",
   "sync_show_remote_entries": "Mostrar entradas remotas",
   "sync_show_remote_entries_warning": "Muestra libros y vídeos que existen en dispositivos emparejados o la nube como tarjetas de marcador que puede descargar o transmitir.",
   "sync_sign_in": "Iniciar sesión",

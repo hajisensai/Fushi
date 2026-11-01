@@ -182,9 +182,6 @@ class FushiFingerprintMismatchException implements Exception {
 /// 设备级「同步设置」开关的 pref key（见 [SyncRepository.isSettingsSyncEnabled]）。
 const String kSyncSettingsEnabledPrefKey = 'sync_settings_enabled';
 
-/// 设置同步「首次对齐」完成标记（见 [SyncRepository.isSettingsSyncSeeded]）。
-const String kSyncSettingsSeededPrefKey = 'sync_settings_seeded';
-
 /// 合并导入备份时是否也并入可移植设置（反馈 AWp-0BtDDv，见
 /// [SyncRepository.isBackupMergeSettingsEnabled]）。
 const String kBackupMergeSettingsPrefKey = 'backup_merge_import_settings';
@@ -968,12 +965,12 @@ class SyncRepository {
   /// 从别的设备恢复备份不得替这台设备打开「接收别人的设置」。
   Future<bool> isSettingsSyncEnabled() =>
       _db.getPrefTyped<bool>(kSyncSettingsEnabledPrefKey, false);
-  Future<void> setSettingsSyncEnabled(bool v) async {
-    await _db.setPrefTyped<bool>(kSyncSettingsEnabledPrefKey, v);
-    // 每次重新打开都按「首次」处理：以已同步的设置为准拉一次，而不是让这台设备
-    // 关着期间攒下的默认值按时间戳盖掉别处的设置。
-    if (v) await _db.setPrefTyped<bool>(kSyncSettingsSeededPrefKey, false);
-  }
+
+  ///
+  /// 开关本身不携带合并状态：打开（含关掉再开）后每一轮都按每项的真实修改时刻
+  /// LWW（见 `settingsToAdopt`），没有「首次以远端为准」的重置。
+  Future<void> setSettingsSyncEnabled(bool v) =>
+      _db.setPrefTyped<bool>(kSyncSettingsEnabledPrefKey, v);
 
   /// 合并导入备份时是否也并入备份里的可移植设置（`PortableSettingsPolicy`，按每项
   /// 的修改时刻取较新者）。**缺行 = 关**：合并导入一直以来的承诺是「只添加内容、
@@ -982,12 +979,6 @@ class SyncRepository {
       _db.getPrefTyped<bool>(kBackupMergeSettingsPrefKey, false);
   Future<void> setBackupMergeSettingsEnabled(bool v) =>
       _db.setPrefTyped<bool>(kBackupMergeSettingsPrefKey, v);
-
-  /// 本设备是否已完成过一次设置同步的「首次对齐」（见 `settings_sync.dart`）。
-  Future<bool> isSettingsSyncSeeded() =>
-      _db.getPrefTyped<bool>(kSyncSettingsSeededPrefKey, false);
-  Future<void> setSettingsSyncSeeded(bool v) =>
-      _db.setPrefTyped<bool>(kSyncSettingsSeededPrefKey, v);
 
   /// 互联通道「共享收藏夹」：收藏词 + 收藏句（以及它们的删除墓碑，取消收藏要能
   /// 跨端传播）。与统计同为聚合快照的一半，但语义不同——收藏是用户挑出来的内容，
@@ -1873,10 +1864,8 @@ class SyncRepository {
     // 「同步浏览历史」是这台设备的隐私许可：从另一台设备恢复备份不得替这台设备
     // 打开浏览轨迹外流。
     kSyncWebHistoryPrefKey,
-    // 「同步设置」同理是这台设备「接收别处设置」的许可；首次对齐标记描述的是本机
-    // 状态，带到别的设备会让它跳过首次对齐。
+    // 「同步设置」同理是这台设备「接收别处设置」的许可。
     kSyncSettingsEnabledPrefKey,
-    kSyncSettingsSeededPrefKey,
     // app 内浏览器的版式 / 行为偏好（标签页样式、侧边栏开合……）：
     // 按这台设备的屏幕与习惯调，唯一清单在 web_browser_prefs.dart。
     ...kWebBrowserDeviceLocalPrefKeys,
