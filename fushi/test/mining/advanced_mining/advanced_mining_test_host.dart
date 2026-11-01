@@ -225,15 +225,22 @@ class FakeAdvancedMiningHost {
   /// 卡片字段分区（Lapis 风格的三个字段；默认显示释义）。
   AdvancedMiningFieldsSection fields({
     Set<String> visible = const <String>{'MainDefinition'},
+    AdvancedMiningFieldPreview? preview,
   }) => AdvancedMiningFieldsSection(
     fields: const <AdvancedMiningField>[
       AdvancedMiningField(name: 'Expression', template: '{expression}'),
       AdvancedMiningField(name: 'Sentence', template: '{sentence}'),
       AdvancedMiningField(name: 'MainDefinition', template: '{glossary-first}'),
+      AdvancedMiningField(
+        name: 'Picture',
+        template: '{card-image}',
+        generatedAtMining: true,
+      ),
     ],
     visibleFields: visible,
     setVisibleFields: (Set<String> names) async =>
         setVisibleFieldsCalls.add(names),
+    loadPreview: preview,
   );
 
   AdvancedMiningCapabilities capabilities({

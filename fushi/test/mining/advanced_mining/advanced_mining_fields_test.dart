@@ -26,6 +26,7 @@ void main() {
     WidgetTester tester,
     AdvancedMiningCapabilities caps, {
     Size size = const Size(1400, 900),
+    bool settle = true,
   }) async {
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1.0;
@@ -49,7 +50,13 @@ void main() {
       ),
     );
     await tester.tap(find.text('open'));
-    await tester.pumpAndSettle();
+    if (settle) {
+      await tester.pumpAndSettle();
+    } else {
+      // 预填还在生成：加载条是无限动画，pumpAndSettle 永远等不到静止。
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+    }
   }
 
   AdvancedMiningCapabilities videoWithFields({
@@ -164,5 +171,174 @@ void main() {
     await tester.tap(find.text(t.popup_advanced_mining_fields_section));
     await tester.pumpAndSettle();
     expect(fieldInput('MainDefinition'), findsOneWidget);
+  });
+
+  group('预填（与落卡同一条管线渲染出的值）', () {
+    const String gloss = '<ol><li>cat</li></ol>';
+
+    /// 记录每次预填请求收到的句子；按句子回一份「管线渲染结果」。
+    final List<String?> previewSentences = <String?>[];
+    setUp(previewSentences.clear);
+
+    Future<Map<String, String>?> pipeline(String? sentence) async {
+      previewSentences.add(sentence);
+      return <String, String>{
+        'Expression': '猫',
+        'Sentence': sentence ?? '',
+        'MainDefinition': gloss,
+        'Picture': '',
+      };
+    }
+
+    AdvancedMiningCapabilities withPreview(
+      AdvancedMiningFieldPreview preview, {
+      Set<String> visible = const <String>{'MainDefinition', 'Sentence'},
+    }) => host.capabilities(
+      deck: host.deck(),
+      fields: host.fields(visible: visible, preview: preview),
+      sentence: host.sentence(),
+      audio: host.audio(),
+      video: host.video(),
+    );
+
+    String inputText(WidgetTester tester, String name) =>
+        tester.widget<TextField>(fieldInput(name)).controller!.text;
+
+    testWidgets('输入框预填管线值；什么都不改直接确认 = 不写任何字段覆盖', (WidgetTester tester) async {
+      await open(tester, withPreview(pipeline));
+      expect(inputText(tester, 'MainDefinition'), gloss);
+      // 句子取对话框句子分区合成的那句（与宿主 composeText 同口径），不是 null。
+      expect(previewSentences, isNotEmpty);
+      expect(previewSentences.last, isNotNull);
+      expect(inputText(tester, 'Sentence'), previewSentences.last);
+      await confirm(tester);
+      expect(host.confirms.single.fieldValues, isEmpty);
+    });
+
+    testWidgets('只提交改过的字段（源码视图：HTML 原样）', (WidgetTester tester) async {
+      await open(tester, withPreview(pipeline));
+      const String edited = '<ol><li>cat (pet)</li></ol>';
+      await tester.enterText(fieldInput('MainDefinition'), edited);
+      await tester.pump();
+      await confirm(tester);
+      expect(host.confirms.single.fieldValues, <String, String>{
+        'MainDefinition': edited,
+      });
+    });
+
+    testWidgets('改回预填值 = 没改；清空 = 自动生成', (WidgetTester tester) async {
+      await open(tester, withPreview(pipeline));
+      await tester.enterText(fieldInput('MainDefinition'), 'x');
+      await tester.pump();
+      await tester.enterText(fieldInput('MainDefinition'), gloss);
+      await tester.pump();
+      await tester.enterText(fieldInput('Sentence'), '');
+      await tester.pump();
+      await confirm(tester);
+      expect(host.confirms.single.fieldValues, isEmpty);
+    });
+
+    testWidgets('加减句子后重新预填：没改的句子跟着变，改过的不动', (WidgetTester tester) async {
+      await open(tester, withPreview(pipeline));
+      final String before = inputText(tester, 'Sentence');
+      await tester.enterText(fieldInput('MainDefinition'), '手で直した');
+      await tester.pump();
+      await tester.tap(find.text(t.popup_ctx_prev_plus));
+      await tester.pumpAndSettle();
+      expect(host.setContextCalls.last, <int>[2, 1]);
+      final String after = inputText(tester, 'Sentence');
+      expect(after, isNot(before));
+      expect(after, previewSentences.last);
+      expect(inputText(tester, 'MainDefinition'), '手で直した');
+    });
+
+    testWidgets('预填生成中有加载态；生成完成后填入', (WidgetTester tester) async {
+      final Completer<Map<String, String>?> gate =
+          Completer<Map<String, String>?>();
+      await open(
+        tester,
+        withPreview(
+          (String? _) => gate.future,
+          visible: const <String>{'MainDefinition'},
+        ),
+        settle: false,
+      );
+      expect(find.text(t.popup_advanced_mining_fields_loading), findsOneWidget);
+      expect(inputText(tester, 'MainDefinition'), '');
+      gate.complete(<String, String>{'MainDefinition': gloss});
+      await tester.pumpAndSettle();
+      expect(find.text(t.popup_advanced_mining_fields_loading), findsNothing);
+      expect(inputText(tester, 'MainDefinition'), gloss);
+    });
+
+    testWidgets('生成中先手改的字段，预填到达后不被覆盖', (WidgetTester tester) async {
+      final Completer<Map<String, String>?> gate =
+          Completer<Map<String, String>?>();
+      await open(
+        tester,
+        withPreview(
+          (String? _) => gate.future,
+          visible: const <String>{'MainDefinition'},
+        ),
+        settle: false,
+      );
+      await tester.enterText(fieldInput('MainDefinition'), '先写的');
+      await tester.pump();
+      gate.complete(<String, String>{'MainDefinition': gloss});
+      await tester.pumpAndSettle();
+      expect(inputText(tester, 'MainDefinition'), '先写的');
+      await confirm(tester);
+      expect(host.confirms.single.fieldValues, <String, String>{
+        'MainDefinition': '先写的',
+      });
+    });
+
+    testWidgets('生成失败：空输入框 + 提示，对话框照常可确认', (WidgetTester tester) async {
+      await open(
+        tester,
+        withPreview(
+          (String? _) async => throw StateError('mapping broken'),
+          visible: const <String>{'MainDefinition'},
+        ),
+      );
+      expect(
+        find.text(t.popup_advanced_mining_fields_preview_failed),
+        findsOneWidget,
+      );
+      expect(inputText(tester, 'MainDefinition'), '');
+      await confirm(tester);
+      expect(host.confirms.single.isEmpty, isTrue);
+    });
+
+    testWidgets('落卡时才生成的字段只读，不给输入框、不提交', (WidgetTester tester) async {
+      await open(
+        tester,
+        withPreview(pipeline, visible: const <String>{'Picture'}),
+      );
+      expect(fieldInput('Picture'), findsNothing);
+      expect(
+        find.textContaining(t.popup_advanced_mining_fields_generated),
+        findsOneWidget,
+      );
+      await confirm(tester);
+      expect(host.confirms.single.fieldValues, isEmpty);
+    });
+
+    testWidgets('长释义可展开成大编辑框', (WidgetTester tester) async {
+      await open(
+        tester,
+        withPreview(pipeline, visible: const <String>{'MainDefinition'}),
+      );
+      expect(
+        tester.widget<TextField>(fieldInput('MainDefinition')).maxLines,
+        4,
+      );
+      await tester.tap(find.byTooltip(t.popup_advanced_mining_fields_expand));
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<TextField>(fieldInput('MainDefinition')).maxLines,
+        20,
+      );
+    });
   });
 }

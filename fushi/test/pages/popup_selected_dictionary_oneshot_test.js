@@ -248,6 +248,39 @@ async function payloadFor(sandbox, idx) {
       'an explicit long-press selection wins over the text selection');
   }
 
+  // Test 5 (feedback -K86qlwBg6): the advanced-mining field prefill fetches the
+  // payload of entry #idx's "+" button WITHOUT clicking it — same DOM order as
+  // fushiPopupMineEntryByIndex, and the button's own payload builder (the closure
+  // the real mine path uses). Missing entry / button → null, never throws.
+  {
+    const sb = loadPopup();
+    const clicks = [];
+    function fakeEntry(name) {
+      const button = {
+        disabled: false,
+        click() { clicks.push(name); },
+        __fushiBuildMinePayload: async () => ({ expression: name }),
+      };
+      return { querySelector(sel) { return sel === '.mine-button' ? button : null; } };
+    }
+    const entries = [fakeEntry('猫'), fakeEntry('犬')];
+    const container = {
+      querySelectorAll(sel) { return sel === ':scope > .entry' ? entries : []; },
+    };
+    entries.forEach(function(e) { e.parentNode = container; });
+    sb.window.__fushiRoot = {
+      querySelector(sel) { return sel === '.entry' ? entries[0] : null; },
+    };
+    assert.strictEqual(typeof sb.window.fushiPopupBuildMinePayloadByIndex, 'function',
+      'popup.js must expose window.fushiPopupBuildMinePayloadByIndex');
+    const p1 = await sb.window.fushiPopupBuildMinePayloadByIndex(1);
+    assert.deepStrictEqual(JSON.parse(JSON.stringify(p1)), { expression: '犬' },
+      'entry #1 payload must come from that entry\'s own mine button builder');
+    assert.deepStrictEqual(clicks, [], 'building the prefill payload must never click "+"');
+    assert.strictEqual(await sb.window.fushiPopupBuildMinePayloadByIndex(5), null,
+      'a missing entry yields null');
+  }
+
   console.log('popup_selected_dictionary_oneshot_test.js: all assertions passed');
 })().catch(function(e) {
   console.error(e && e.stack ? e.stack : e);
