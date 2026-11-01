@@ -9,6 +9,8 @@ import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_md3.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_theme_host.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart'
+    show FushiToast, FushiToastCornerAnchor;
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart'
     show FushiMotion, fushiMotionDuration;
 
@@ -94,6 +96,28 @@ class _ReaderLyricsPlayerOverlayState extends State<ReaderLyricsPlayerOverlay> {
   /// 侧栏 / 对话框 / 查词浮层）一起换成歌词模式配色。
   LyricsThemeHostState? _host;
 
+  /// 歌词 WebView 的矩形（本组件坐标），每次布局刷新；制卡结果卡贴它的底部
+  /// 起始角（见 [FushiToast.anchorMineToCorner]）。
+  Rect? _lyricsRect;
+
+  /// 歌词模式期间制卡结果改成角落小卡：正文铺满全屏，底部正中的大卡正好压在
+  /// 正文上（群反馈 2026-11-01「字卡提示好大，还挡正文」）。
+  late final FushiToastCornerAnchor _mineToastAnchor;
+
+  @override
+  void initState() {
+    super.initState();
+    _mineToastAnchor = FushiToast.anchorMineToCorner(_lyricsRegionGlobal);
+  }
+
+  Rect? _lyricsRegionGlobal() {
+    final Rect? rect = _lyricsRect;
+    if (!mounted || rect == null) return null;
+    final RenderObject? box = context.findRenderObject();
+    if (box is! RenderBox || !box.hasSize || !box.attached) return null;
+    return box.localToGlobal(rect.topLeft) & rect.size;
+  }
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -107,6 +131,7 @@ class _ReaderLyricsPlayerOverlayState extends State<ReaderLyricsPlayerOverlay> {
 
   @override
   void dispose() {
+    _mineToastAnchor.release();
     _host?.detach(this);
     super.dispose();
   }
@@ -231,6 +256,7 @@ class _ReaderLyricsPlayerOverlayState extends State<ReaderLyricsPlayerOverlay> {
               final Size size = constraints.biggest;
               final EdgeInsets padding = MediaQuery.paddingOf(context);
               final Rect rect = design.lyricsRect(context, size, padding);
+              _lyricsRect = rect;
               return FushiTitleBarColorScope(
                 colors: (background: topEdge, foreground: topEdgeForeground),
                 child: Stack(

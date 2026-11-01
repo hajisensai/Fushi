@@ -22,8 +22,13 @@ class FushiMineNoticeCard extends StatefulWidget {
     required this.message,
     required this.visibleFor,
     this.maxWidth = 440,
+    this.compact = false,
     super.key,
   });
+
+  /// 角落小号：图标块 28、单行消息（标题与消息并成一行）、字阶降到 label，
+  /// 给歌词模式这类「正文铺满全屏」的页面用——大卡会压住正文。
+  final bool compact;
 
   final MineToastStatus status;
 
@@ -90,6 +95,8 @@ class _FushiMineNoticeCardState extends State<FushiMineNoticeCard>
       parent: _iconIn,
       curve: FushiMotion.release,
     );
+    final bool compact = widget.compact;
+    final double iconBox = compact ? 28 : 40;
     final Widget iconBlock = AnimatedBuilder(
       animation: spring,
       builder: (BuildContext context, Widget? child) => Transform.rotate(
@@ -97,8 +104,8 @@ class _FushiMineNoticeCardState extends State<FushiMineNoticeCard>
         child: Transform.scale(scale: 0.4 + 0.6 * spring.value, child: child),
       ),
       child: Container(
-        width: 40,
-        height: 40,
+        width: iconBox,
+        height: iconBox,
         alignment: Alignment.center,
         decoration: ShapeDecoration(
           color: accent,
@@ -106,46 +113,75 @@ class _FushiMineNoticeCardState extends State<FushiMineNoticeCard>
               ? const CircleBorder()
               : MaterialShapeBorder(shape: MaterialShapes.cookie9Sided),
         ),
-        child: FushiIcon(tone.icon, color: Colors.white, size: 22),
+        child: FushiIcon(
+          tone.icon,
+          color: Colors.white,
+          size: compact ? 16 : 22,
+        ),
       ),
     );
 
-    final Widget texts = Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        if (title != null)
-          Text(
-            title,
+    final Widget texts = compact
+        ? Text(
+            widget.message,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
-            style: type.titleSmallEmphasized.copyWith(color: onContainer),
-          ),
-        Text(
-          widget.message,
-          maxLines: 3,
-          overflow: TextOverflow.ellipsis,
-          style: (title == null ? type.titleSmallEmphasized : type.bodyMedium)
-              .copyWith(
-                color: onContainer.withValues(alpha: title == null ? 1 : 0.8),
+            style: type.labelLarge.copyWith(color: onContainer),
+          )
+        : Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              if (title != null)
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: type.titleSmallEmphasized.copyWith(color: onContainer),
+                ),
+              Text(
+                widget.message,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+                style:
+                    (title == null
+                            ? type.titleSmallEmphasized
+                            : type.bodyMedium)
+                        .copyWith(
+                          color: onContainer.withValues(
+                            alpha: title == null ? 1 : 0.8,
+                          ),
+                        ),
               ),
-        ),
-      ],
-    );
+            ],
+          );
 
-    const BorderRadius radius = BorderRadius.all(Radius.circular(28));
+    final BorderRadius radius = BorderRadius.all(
+      Radius.circular(compact ? 20 : 28),
+    );
     return Semantics(
       liveRegion: true,
       label: title == null ? widget.message : '$title. ${widget.message}',
       excludeSemantics: true,
       child: Container(
-        constraints: BoxConstraints(minHeight: 56, maxWidth: widget.maxWidth),
+        constraints: BoxConstraints(
+          minHeight: compact ? 40 : 56,
+          maxWidth: widget.maxWidth,
+        ),
         decoration: BoxDecoration(
           color: container,
           borderRadius: radius,
           border: eink ? Border.all(color: Colors.black, width: 1.5) : null,
           boxShadow: eink
               ? null
+              : compact
+              ? const <BoxShadow>[
+                  BoxShadow(
+                    color: Color(0x33000000),
+                    blurRadius: 8,
+                    offset: Offset(0, 2),
+                  ),
+                ]
               : const <BoxShadow>[
                   BoxShadow(
                     color: Color(0x59000000),
@@ -164,12 +200,14 @@ class _FushiMineNoticeCardState extends State<FushiMineNoticeCard>
           child: Stack(
             children: <Widget>[
               Padding(
-                padding: const EdgeInsetsDirectional.fromSTEB(8, 8, 20, 8),
+                padding: compact
+                    ? const EdgeInsetsDirectional.fromSTEB(6, 6, 14, 6)
+                    : const EdgeInsetsDirectional.fromSTEB(8, 8, 20, 8),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: <Widget>[
                     iconBlock,
-                    const SizedBox(width: 12),
+                    SizedBox(width: compact ? 8 : 12),
                     Flexible(child: texts),
                   ],
                 ),
@@ -184,7 +222,7 @@ class _FushiMineNoticeCardState extends State<FushiMineNoticeCard>
                           FractionallySizedBox(
                             widthFactor: _countdown.value,
                             child: Container(
-                              height: 3,
+                              height: compact ? 2 : 3,
                               color: accent.withValues(alpha: 0.55),
                             ),
                           ),

@@ -221,11 +221,18 @@ class _FushiMeshBackdropState extends State<FushiMeshBackdrop> {
         builder: (BuildContext context, BoxConstraints constraints) {
           final Size size = constraints.biggest;
           final Rect? plate = widget.plateRect?.call(size, padding);
+          // 四团都取主色同色相（primary / secondary 两族）：tertiary 是 MD3
+          // 色相旋转 60° 的那一族，封面取色后常落到与主色不搭的色相（粉主色
+          // 配黄 tertiary），流到画面一侧就成了「左红右黄」的两截色。
           final _MeshColors target = _MeshColors(
             base: cs.surface,
             blobs: <Color>[
               cs.primaryContainer.withValues(alpha: dark ? 0.85 : 0.9),
-              cs.tertiaryContainer.withValues(alpha: dark ? 0.75 : 0.8),
+              Color.lerp(
+                cs.primaryContainer,
+                cs.secondaryContainer,
+                0.5,
+              )!.withValues(alpha: dark ? 0.75 : 0.8),
               cs.secondaryContainer.withValues(alpha: dark ? 0.7 : 0.75),
               cs.primary.withValues(alpha: dark ? 0.22 : 0.16),
             ],

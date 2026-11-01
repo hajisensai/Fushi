@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:ui' show ImageFilter;
 
 import 'package:material_ui/material_ui.dart';
@@ -115,6 +116,22 @@ abstract final class FushiToast {
     );
   }
 
+  /// 登记一块「制卡结果改到角落」的区域：登记期间（最后登记的那块生效）制卡
+  /// 结果卡改成小号（[FushiMineNoticeCard.compact]），贴在 [region] 的底部起始角
+  /// 内侧，而不是屏幕底部正中的大卡。给正文铺满全屏的页面用（歌词模式）——
+  /// 底部正中的大卡正好压在正文上。
+  ///
+  /// [region] 返回全局坐标矩形；返回 null（页面还没布局 / 已不可见）时退回默认
+  /// 位置与尺寸。返回的句柄在页面销毁时 [FushiToastCornerAnchor.release]。
+  static FushiToastCornerAnchor anchorMineToCorner(ValueGetter<Rect?> region) {
+    final FushiToastCornerAnchor anchor = FushiToastCornerAnchor._(region);
+    _cornerAnchors.add(anchor);
+    return anchor;
+  }
+
+  static final List<FushiToastCornerAnchor> _cornerAnchors =
+      <FushiToastCornerAnchor>[];
+
   static void _showMineOverlay({
     required OverlayState overlay,
     required String msg,
@@ -122,6 +139,9 @@ abstract final class FushiToast {
   }) {
     // pending 停留更久（等制卡结果覆盖它），结果 toast 用短时长。
     final int durationMs = status == MineToastStatus.pending ? 4000 : 2400;
+    final ValueGetter<Rect?>? corner = _cornerAnchors.isEmpty
+        ? null
+        : _cornerAnchors.last._region;
     // 制卡结果用 M3E tonal 结果卡（与视频页制卡 OSD 同一长相），进退场仍走
     // _FushiToastView 的同一套。
     _insertToastEntry(
@@ -131,10 +151,13 @@ abstract final class FushiToast {
         msg: msg,
         icon: mineToastPalette(status).icon,
         severity: mineToastSeverity(status),
+        cornerRegion: corner,
         body: FushiMineNoticeCard(
           status: status,
           message: msg,
           visibleFor: Duration(milliseconds: durationMs),
+          compact: corner != null,
+          maxWidth: corner != null ? 300 : 440,
         ),
       ),
     );
@@ -178,6 +201,16 @@ abstract final class FushiToast {
 
   static OverlayEntry? _currentEntry;
   static Timer? _dismissTimer;
+}
+
+/// [FushiToast.anchorMineToCorner] 的登记句柄。
+final class FushiToastCornerAnchor {
+  FushiToastCornerAnchor._(this._region);
+
+  final ValueGetter<Rect?> _region;
+
+  /// 撤销登记（可重复调用）。
+  void release() => FushiToast._cornerAnchors.remove(this);
 }
 
 /// overlay 条目与条目里 [_FushiToastView] 之间的退场握手：视图挂载后把自己的
@@ -282,10 +315,15 @@ class _FushiToastView extends StatefulWidget {
     this.backgroundColor,
     this.textColor,
     this.body,
+    this.cornerRegion,
   });
 
   /// 非空时代替默认浮条（制卡结果卡）；进退场与定位不变。
   final Widget? body;
+
+  /// 非空且能解析出矩形时，贴在这块区域（全局坐标）的底部起始角内侧，而不是
+  /// 屏幕底部正中（见 [FushiToast.anchorMineToCorner]）。
+  final ValueGetter<Rect?>? cornerRegion;
 
   final String msg;
   final IconData? icon;
@@ -364,24 +402,49 @@ class _FushiToastViewState extends State<_FushiToastView>
         (isGlassDesign(context)
             ? _buildApple(context)
             : _buildMaterial(context));
+    final Widget animated = FadeTransition(
+      opacity: _opacity,
+      child: SlideTransition(
+        position: _slide,
+        child: ScaleTransition(
+          scale: _scale,
+          child: Material(type: MaterialType.transparency, child: body),
+        ),
+      ),
+    );
+    final Positioned? corner = _cornerPositioned(context, animated);
+    if (corner != null) return corner;
     return Positioned(
       bottom: _toastBottomOffset(context),
       left: 16,
       right: 16,
-      child: IgnorePointer(
-        child: Center(
-          child: FadeTransition(
-            opacity: _opacity,
-            child: SlideTransition(
-              position: _slide,
-              child: ScaleTransition(
-                scale: _scale,
-                child: Material(type: MaterialType.transparency, child: body),
-              ),
-            ),
-          ),
-        ),
-      ),
+      child: IgnorePointer(child: Center(child: animated)),
+    );
+  }
+
+  /// 角落定位：把全局坐标的区域换到 overlay 本地坐标，贴底部起始角（LTR 左下、
+  /// RTL 右下）内缩 12。区域或 overlay 还没布局时返回 null，走默认位置。
+  Positioned? _cornerPositioned(BuildContext context, Widget child) {
+    final Rect? global = widget.cornerRegion?.call();
+    if (global == null || global.isEmpty) return null;
+    final RenderObject? overlayBox = Overlay.maybeOf(
+      context,
+    )?.context.findRenderObject();
+    if (overlayBox is! RenderBox || !overlayBox.hasSize) return null;
+    final Offset topLeft = overlayBox.globalToLocal(global.topLeft);
+    final Rect local = topLeft & global.size;
+    final Size size = overlayBox.size;
+    const double inset = 12;
+    final bool rtl = Directionality.of(context) == TextDirection.rtl;
+    final Widget aligned = IgnorePointer(
+      child: Align(alignment: AlignmentDirectional.bottomStart, child: child),
+    );
+    return Positioned(
+      left: rtl ? null : local.left + inset,
+      right: rtl ? size.width - local.right + inset : null,
+      bottom: size.height - local.bottom + inset,
+      width: math.max(0, local.width - 2 * inset),
+      child: aligned,
     );
   }
 
