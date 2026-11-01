@@ -31,6 +31,7 @@ class FushiApiServerManager {
     void Function(double maxWidth, double maxHeight)? onExtensionPopupSize,
     void Function(BrowserVideoSample sample)? onExtensionStudy,
     ExtensionFavoriteHandler? onExtensionFavorite,
+    ExtensionVideoFavoriteHandler? onExtensionVideoFavorite,
     void Function()? onExtensionSeen,
     void Function(String build, String? version)? onExtensionReport,
     Future<VideoSubtitleRegistry?> Function()? subtitleRegistryProvider,
@@ -53,6 +54,7 @@ class FushiApiServerManager {
        _onExtensionPopupSize = onExtensionPopupSize,
        _onExtensionStudy = onExtensionStudy,
        _onExtensionFavorite = onExtensionFavorite,
+       _onExtensionVideoFavorite = onExtensionVideoFavorite,
        _onExtensionSeen = onExtensionSeen,
        _onExtensionReport = onExtensionReport,
        _subtitleRegistryProvider = subtitleRegistryProvider,
@@ -85,6 +87,7 @@ class FushiApiServerManager {
   // 扩展视频沉浸时间样本的 sink，透传给 [FushiApiServer]（app 侧进学习统计）。
   final void Function(BrowserVideoSample sample)? _onExtensionStudy;
   final ExtensionFavoriteHandler? _onExtensionFavorite;
+  final ExtensionVideoFavoriteHandler? _onExtensionVideoFavorite;
   // 浏览器扩展连接探活回调，透传给 [FushiApiServer]（app 侧记录 last-seen）。
   final void Function()? _onExtensionSeen;
   // BUG-1079：扩展自报版本回调，透传给 [FushiApiServer]（app 侧记录浏览器中实际
@@ -143,6 +146,7 @@ class FushiApiServerManager {
       onExtensionPopupSize: _onExtensionPopupSize,
       onExtensionStudy: _onExtensionStudy,
       onExtensionFavorite: _onExtensionFavorite,
+      onExtensionVideoFavorite: _onExtensionVideoFavorite,
       onExtensionSeen: _onExtensionSeen,
       onExtensionReport: _onExtensionReport,
       subtitleRegistryProvider: _subtitleRegistryProvider,

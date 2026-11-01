@@ -159,13 +159,17 @@ class StatCounterFacts {
           .where(
             (FavoriteSentence s) => switch (source) {
               null => true,
-              StatSourceKind.video => s.source == kFavoriteSentenceSourceVideo,
+              // 浏览器扩展网页视频的收藏句（KGC1ifR1a3）计入视频域。
+              StatSourceKind.video =>
+                s.source == kFavoriteSentenceSourceVideo ||
+                    s.source == kFavoriteSentenceSourceWeb,
               StatSourceKind.game => s.source == kFavoriteSentenceSourceGame,
               // 音乐（v130）还没有收藏句来源值（歌词收藏句随 P1 歌词页一起加）；
               // 加的时候阅读域分支要同时把它排除，否则恒等式破掉。
               StatSourceKind.music => false,
               StatSourceKind.book =>
                 s.source != kFavoriteSentenceSourceVideo &&
+                    s.source != kFavoriteSentenceSourceWeb &&
                     s.source != kFavoriteSentenceSourceGame,
             },
           )

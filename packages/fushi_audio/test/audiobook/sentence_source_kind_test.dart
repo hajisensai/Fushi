@@ -56,6 +56,11 @@ void main() {
       expect(SentenceSourceKind.music.dbValue, kFavoriteSentenceSourceMusic);
     });
 
+    test('浏览器扩展网页视频（KGC1ifR1a3）的 web 落库值精确映射', () {
+      expect(sentenceSourceKindOf('web'), SentenceSourceKind.web);
+      expect(SentenceSourceKind.web.dbValue, kFavoriteSentenceSourceWeb);
+    });
+
     test('未知串/null/空串一律回退 book（向后兼容默认）', () {
       expect(sentenceSourceKindOf(null), SentenceSourceKind.book);
       expect(sentenceSourceKindOf(''), SentenceSourceKind.book);
