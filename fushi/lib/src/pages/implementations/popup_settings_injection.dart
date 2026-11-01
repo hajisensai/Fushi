@@ -1310,6 +1310,9 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     window.embedMedia = true;
     window.deduplicatePitchAccents = ${appModel.deduplicatePitchAccents};
     window.i18nPitchSourceCount = ${jsonEncode(t.dictionary_pitch_source_count(count: '{count}'))};
+    // 界面文案节点（popup.js uiText）挂的 lang：界面串按界面语言选字体，不吃词典内容的
+    // 兜底链（反馈 9GSrEkVLai：日文链下「音调」的「调」掉字形）。
+    window.__fushiUiLanguage = ${jsonEncode(localeTag)};
     window.harmonicFrequency = ${appModel.harmonicFrequency};
     window.showExpressionTags = ${appModel.showExpressionTags};
     window.collapseDictionaries = ${appModel.collapseDictionaries};

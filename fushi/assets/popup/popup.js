@@ -921,6 +921,17 @@ function buildSentenceContextPicker() {
 // fushiPopupMineEntryByIndex（见文件末尾）。
 
 
+// 界面文案（app 的 i18n 串，不是词典内容）挂**界面语言**的 lang。弹窗根节点不设 lang
+// （见 dictionary_language_css.dart），兜底字体链按「默认内容语言」建，学日语的用户就是
+// 日文链：中文界面串里日文字体没有的简体字（「音调」的「调」）掉到别的字体，同一枚药丸
+// 里两种字形（反馈 9GSrEkVLai）。标上界面语言后由 :lang(zh) / :lang(ja) 规则接管。
+// 浏览器扩展没有注入 __fushiUiLanguage → 不标，维持原样。
+function uiText(element) {
+    const lang = window.__fushiUiLanguage;
+    if (typeof lang === 'string' && lang) element.setAttribute('lang', lang);
+    return element;
+}
+
 function el(tag, props = {}, children = []) {
     const element = document.createElement(tag);
     for (const [key, value] of Object.entries(props)) {
@@ -2903,7 +2914,7 @@ function showMinedCardActionPanel(matches, options) {
         // 那里的 <html> 是别人的页面，既不该被我们挂 class，也没有窗口高度问题。
         const ownsDocument = !window.__fushiRoot;
         const rootEl = document.documentElement;
-        const panel = el('div', { className: 'mined-action-panel' });
+        const panel = uiText(el('div', { className: 'mined-action-panel' }));
         const backdrop = el('div', { className: 'mined-action-backdrop' }, [panel]);
         let settled = false;
         let busy = false;
@@ -4101,13 +4112,13 @@ function createPitchGroup(pitchData, reading) {
         // Windows WebView2 的 title 提示是一个独立的 Win32 顶层弹窗，视频页查词浮层关闭 /
         // 热槽 WebView 被藏起时它不随文档消失，残留在画面上关不掉（用户 10-09 反馈）。
         const sourceNames = sourcePills.map((pill) => pill.textContent).join(', ');
-        const countPill = el('span', {
+        const countPill = uiText(el('span', {
             className: 'pitch-dict-label pitch-dict-count',
             // 用户 10-09：「N 本辞典」看不出这是音调，改成「音调 · N」（标出是什么 + 保留来源数）。
             textContent: (window.i18nPitchSourceCount || '音调 · {count}')
                 .replace('{count}', String(sourcePills.length)),
             'data-sources': sourceNames,
-        });
+        }));
         countPill.setAttribute('aria-label', sourceNames);
         countPill.setAttribute('role', 'button');
         countPill.setAttribute('aria-expanded', 'false');
@@ -4974,12 +4985,12 @@ function renderAudioSourceMenuItems(menu, button, choices, reading) {
     menu.removeAttribute('aria-busy');
     menu.textContent = '';
     if (!choices.length) {
-        const empty = el('div', {
+        const empty = uiText(el('div', {
             className: 'fushi-audio-menu-item',
             role: 'menuitem',
             tabIndex: -1,
             textContent: window.i18nNoAudioAvailable || '暂无发音',
-        });
+        }));
         empty.setAttribute('aria-disabled', 'true');
         menu.appendChild(empty);
         return;
