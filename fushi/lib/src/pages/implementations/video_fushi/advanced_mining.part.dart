@@ -282,6 +282,7 @@ extension _VideoAdvancedMining on _VideoFushiPageState {
             await controller.stopPlayRange();
           }
         },
+        sources: _advancedMiningAudioSources(controller),
       ),
       videoImage: AdvancedMiningVideoImageSection(
         modes: modes,

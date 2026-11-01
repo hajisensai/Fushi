@@ -146,9 +146,10 @@ class SentenceAudioSourcePlan {
   final SentenceAudioFallbackReason? fallback;
 
   /// 与当前播放音轨不同（指定了另一条轨）：播放器缓冲副本里只有当前播放的那条，
-  /// 这种请求不能用副本抽。
+  /// 这种请求不能用副本抽。[playingIndex] 为 null（跟随默认：单轨，或多轨时 mpv 已
+  /// 对齐到第 0 条之外的轨前的默认）按第 0 条算。
   bool differsFromPlaying(int? playingIndex) =>
-      audioStreamIndex != null && audioStreamIndex != playingIndex;
+      audioStreamIndex != null && audioStreamIndex != (playingIndex ?? 0);
 }
 
 /// 定下这一次句子音频怎么抽。纯函数。
