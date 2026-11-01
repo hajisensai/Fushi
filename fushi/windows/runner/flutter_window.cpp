@@ -30,6 +30,7 @@
 #include "flutter/generated_plugin_registrant.h"
 #include "audio_loopback_capture.h"
 #include "clipboard_image_reader.h"
+#include "crash_dump.h"
 #include "voice_hook_reader.h"
 #include "foreground_selection.h"
 #include "game_client_extent.h"
@@ -4983,6 +4984,11 @@ LRESULT
 FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
                               WPARAM const wparam,
                               LPARAM const lparam) noexcept {
+  // BUG-3929：关机 / 注销 / 重启。返回后系统随时结束进程，Dart 走不到 exitApp 标 clean，
+  // 先同步记一行让下次启动别判成闪退。不消费消息，照常落到下面的默认处理。
+  if (message == WM_ENDSESSION && wparam) {
+    ::fushi::RecordSessionEnd(lparam);
+  }
   if (message == WM_TIMER && system_ocr_host_ &&
       system_ocr_host_->HandleTimer(wparam)) {
     return 0;

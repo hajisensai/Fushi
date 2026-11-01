@@ -206,6 +206,106 @@ void main() {
     expect(summary.readAsStringSync(), isEmpty);
   });
 
+  group('Windows 关机 / 注销（BUG-3929）', () {
+    void writeUncleanMarker({required int pid}) {
+      File(
+        '${tmp.path}${Platform.pathSeparator}session_marker.json',
+      ).writeAsStringSync(
+        jsonEncode(<String, Object?>{
+          'pid': pid,
+          'startedAt': 1000,
+          'version': 'v',
+          'lifecycle': 'resumed',
+          'lifecycleAt': 2000,
+          'clean': false,
+          'initialised': true,
+        }),
+      );
+    }
+
+    Future<List<ExitReportEntry>> collectWindows() => PreviousExitLog.collect(
+      appDir: tmp,
+      version: 'v',
+      isAndroid: false,
+      isWindows: true,
+      isMacOS: false,
+      isIOS: false,
+      localAppData: tmp.path,
+    );
+
+    File sessionEndLog(String content) {
+      final Directory dumps = Directory('${tmp.path}\\Fushi\\crashdumps')
+        ..createSync(recursive: true);
+      return File('${dumps.path}\\session_end.log')..writeAsStringSync(content);
+    }
+
+    test('停在前台时被关机结束：判成关机、不上报，并清空记录', () async {
+      writeUncleanMarker(pid: 4242);
+      final File log = sessionEndLog(
+        '999 1500 shutdown\r\n4242 2600 logoff\r\n',
+      );
+      final List<ExitReportEntry> entries = await collectWindows();
+      final PreviousExitVerdict v = classifyPreviousExit(
+        entries,
+        version: 'v',
+        nowMs: 9000,
+      )!;
+      expect(v.kind, PreviousExitKind.systemShutdown);
+      expect(v.worthReporting, isFalse);
+      expect(
+        entries
+            .firstWhere(
+              (ExitReportEntry e) => e.source == kWindowsSessionEndSource,
+            )
+            .text,
+        contains('reason=logoff'),
+      );
+      expect(log.readAsStringSync(), isEmpty);
+    });
+
+    test('记录的 pid 对不上上次会话：照旧判疑似闪退', () async {
+      writeUncleanMarker(pid: 4242);
+      sessionEndLog('999 1500 shutdown\n');
+      final PreviousExitVerdict v = classifyPreviousExit(
+        await collectWindows(),
+        version: 'v',
+        nowMs: 9000,
+      )!;
+      expect(v.kind, PreviousExitKind.unexpected);
+    });
+
+    test('同一次还有原生崩溃摘要：崩溃优先', () async {
+      writeUncleanMarker(pid: 4242);
+      sessionEndLog('4242 2600 shutdown\n');
+      File(
+        '${tmp.path}\\Fushi\\crashdumps\\crash_summary.log',
+      ).writeAsStringSync('time=x code=0xc0000005\n');
+      final PreviousExitVerdict v = classifyPreviousExit(
+        await collectWindows(),
+        version: 'v',
+        nowMs: 9000,
+      )!;
+      expect(v.kind, PreviousExitKind.nativeCrash);
+    });
+
+    test('runner 在 WM_ENDSESSION 时同步记录、不消费消息', () {
+      final String window = File(
+        'windows/runner/flutter_window.cpp',
+      ).readAsStringSync();
+      expect(
+        RegExp(
+          r'message == WM_ENDSESSION && wparam\)\s*\{\s*::fushi::RecordSessionEnd\(lparam\);\s*\}',
+        ).hasMatch(window),
+        isTrue,
+      );
+      final String dump = File(
+        'windows/runner/crash_dump.cpp',
+      ).readAsStringSync();
+      expect(dump, contains(r'L"\\session_end.log"'));
+      expect(dump, contains('FlushFileBuffers(file);'));
+    });
+  });
+
   test('macOS：.ips 摘要（异常、崩溃线程帧）+ 只取本进程、只取新的', () async {
     final Directory reports = Directory('${tmp.path}/DiagnosticReports')
       ..createSync();
