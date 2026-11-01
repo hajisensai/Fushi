@@ -18,6 +18,7 @@ const SOURCE = fs.readFileSync(path.join(__dirname, 'youtube-bridge.js'), 'utf8'
 
 function loadBridge(captionTracks, audioTrack) {
   const fetches = [];
+  let fetchStatus = 200; // setFetchStatus 改它模拟服务端失败
   const posted = [];
   const winListeners = {};
   const windowObject = {
@@ -50,6 +51,7 @@ function loadBridge(captionTracks, audioTrack) {
       // 断言按 json3 请求计数（每轨恰好一次）。
       if (!/fmt=json3/.test(u)) return Promise.resolve({ ok: false, status: 404 });
       fetches.push(u);
+      if (fetchStatus !== 200 || /broken=1/.test(u)) return Promise.resolve({ ok: false, status: fetchStatus === 200 ? 500 : fetchStatus });
       const lang = new URL(u).searchParams.get('lang') || 'und';
       return Promise.resolve({
         ok: true, status: 200,
@@ -61,6 +63,7 @@ function loadBridge(captionTracks, audioTrack) {
   const flush = async () => { for (let i = 0; i < 8; i++) await new Promise((r) => setImmediate(r)); };
   return {
     fetches, posted, flush,
+    setFetchStatus(status) { fetchStatus = status; },
     // 隔离世界 → 主世界的 postMessage（同一 window，source === window）。
     async send(data) {
       for (const fn of winListeners.message || []) fn({ source: windowObject, data });
@@ -132,4 +135,39 @@ test('BUG-2194：没有默认索引时按音轨语言码匹配急取；人工轨
   const tracks = h.posted.find((m) => m.__fushiStream === 'tracks').tracks.map((t) => t.lang);
   assert.strictEqual(tracks[0], 'en (auto)');
   assert.strictEqual(tracks[1], '中文（简体）', '人工轨紧随其后');
+});
+
+// app 的语言偏好匹配只认语言码：清单与 cue 消息都带 languageCode（store key 的语言段仍是显示名，
+// 同语言人工轨 / ASR 轨靠它区分）；按需取轨取不到时发 cuesFailed 回执，不静默。
+test('清单与 cue 消息带 languageCode；按需取轨失败发 cuesFailed', async () => {
+  const list = tracks25();
+  list[4].baseUrl = 'https://www.youtube.com/api/timedtext?v=vid1&lang=ja&kind=asr&broken=1';
+  const h = loadBridge(list, { defaultCaptionTrackIndex: 13, languageCode: 'en' });
+  await h.flush();
+  const tracks = h.posted.find((m) => m.__fushiStream === 'tracks').tracks;
+  assert.strictEqual(tracks[0].lang, 'en (auto)');
+  assert.strictEqual(tracks[0].languageCode, 'en');
+  assert.strictEqual(tracks.find((t) => t.lang === 'ja (auto)').languageCode, 'ja');
+  const cues = h.posted.find((m) => m.__fushiStream === 'cues');
+  assert.strictEqual(cues.languageCode, 'en');
+
+  await h.send({ __fushiStream: 'fetchTrack', videoKey: 'yt-vid1', lang: 'nope' });
+  const failed = h.posted.filter((m) => m.__fushiStream === 'cuesFailed');
+  assert.strictEqual(failed.length, 1, '清单里没有的轨：确定失败');
+  assert.strictEqual(failed[0].videoKey, 'yt-vid1');
+  assert.strictEqual(failed[0].lang, 'nope');
+});
+
+test('按需取轨请求失败 / 空轨：发 cuesFailed，不发 cues', async () => {
+  const h = loadBridge(tracks25(), { defaultCaptionTrackIndex: 13, languageCode: 'en' });
+  await h.flush();
+  const before = h.posted.length;
+  // 让下一次 json3 请求 500。
+  h.setFetchStatus(500);
+  await h.send({ __fushiStream: 'fetchTrack', videoKey: 'yt-vid1', lang: 'ta (auto)' });
+  const after = h.posted.slice(before);
+  assert.strictEqual(after.filter((m) => m.__fushiStream === 'cues').length, 0);
+  const failed = after.filter((m) => m.__fushiStream === 'cuesFailed');
+  assert.strictEqual(failed.length, 1);
+  assert.strictEqual(failed[0].lang, 'ta (auto)');
 });

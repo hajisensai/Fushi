@@ -105,3 +105,22 @@ test('Netflix 状态通道轨清单 → 占位轨（key=vid|lang~trackId，带�
   assert.strictEqual(store['81001|en~T:en'].length, 1);
   assert.strictEqual(h.windowObj.fushiLazyTracks['81001|en~T:en'], undefined, '真 cue 到了不再是占位');
 });
+
+// app 的 glue 按 fushiTrackLangCodes 上报语言码（偏好匹配），fushiTrackLabels 给显示名；
+// 桥的 cuesFailed 回执经 fushiSubtitlePanelOnTrackFailed 交给消费端（与 Netflix 同一出口）。
+test('YouTube 清单 / cue 带 languageCode → 记语言码与显示名；cuesFailed → 失败回执', () => {
+  const h = loadProviders();
+  const failed = [];
+  h.windowObj.fushiSubtitlePanelOnTrackFailed = (key, err) => failed.push([key, err]);
+  h.send({ __fushiStream: 'tracks', videoKey: 'yt-vid1', tracks: [
+    { lang: '日本語 (自動生成)', languageCode: 'ja' }, { lang: 'English', languageCode: 'en' }, { lang: 'x' },
+  ] });
+  assert.strictEqual(h.windowObj.fushiTrackLangCodes['yt-vid1|日本語 (自動生成)'], 'ja');
+  assert.strictEqual(h.windowObj.fushiTrackLabels['yt-vid1|日本語 (自動生成)'], '日本語 (自動生成)');
+  assert.strictEqual(h.windowObj.fushiTrackLangCodes['yt-vid1|x'], undefined, '没带语言码不记');
+  h.send({ __fushiStream: 'cues', videoKey: 'yt-vid1', lang: 'Deutsch', languageCode: 'de', format: 'cues',
+    cues: [{ startMs: 0, endMs: 1000, text: 'hallo' }] });
+  assert.strictEqual(h.windowObj.fushiTrackLangCodes['yt-vid1|Deutsch'], 'de');
+  h.send({ __fushiStream: 'cuesFailed', videoKey: 'yt-vid1', lang: 'English', err: 'no cues' });
+  assert.strictEqual(JSON.stringify(failed), JSON.stringify([['yt-vid1|English', 'no cues']]));
+});
