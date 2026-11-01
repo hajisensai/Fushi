@@ -764,6 +764,23 @@
       if (videoOnlyOn) applyQualityTarget();
       return 'ok';
     },
+    // 截当前画面（暂停 OCR / 识别画面文字用）：主视频画到 canvas 再导出 data URL。Netflix 走硬件
+    // DRM，canvas 只能拿到黑帧，直接不截（'drm'）；跨源被污染的画布 toDataURL 会抛，返回
+    // 'tainted'。成功返回 'data:image/...;base64,...'。
+    captureFrame: function (type) {
+      if (site() === 'netflix') return 'drm';
+      var v = video();
+      if (!v || !v.videoWidth || !v.videoHeight) return 'no-video';
+      try {
+        var c = document.createElement('canvas');
+        c.width = v.videoWidth;
+        c.height = v.videoHeight;
+        c.getContext('2d').drawImage(v, 0, 0, c.width, c.height);
+        return c.toDataURL(type === 'image/jpeg' ? 'image/jpeg' : 'image/png', 0.92);
+      } catch (_) {
+        return 'tainted';
+      }
+    },
     selectNetflixTrack: selectNetflixTrack,
     selectNetflixAudioTrack: selectNetflixAudioTrack,
     fetchNetflixMetadata: fetchNetflixMetadata,

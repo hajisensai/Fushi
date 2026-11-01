@@ -5,24 +5,28 @@ part of '../video_fushi_page.dart';
 const double _kVideoWebPageBarHeight = 52;
 
 /// 网页档（站点视频，[VideoPlayerController.isWebBackend]）能服务的控制条按钮：逐帧 /
-/// 截图 / 识别画面文字 / 片段导出 / 弹幕都要 libmpv 或本地媒体文件，一律不画；音轨只在站点上报了音轨时画
+/// 截图 / 片段导出 / 弹幕都要 libmpv 或本地媒体文件，一律不画；识别画面文字只在站点画面能
+/// 截帧时画（[canCaptureFrame]，Netflix DRM 不行）；音轨只在站点上报了音轨时画
 /// （[hasSiteAudioTracks]，目前只有 Netflix）；章节按钮交给通用门控（站点给了片头片尾标记才
 /// 有章节）。纯函数，控制条门控 `_shouldRenderControlItem` 与测试同源调用。
 @visibleForTesting
 bool videoWebBackendSupportsControlItem(
   VideoControlItem item, {
   bool hasSiteAudioTracks = false,
+  bool canCaptureFrame = false,
 }) {
   switch (item) {
     case VideoControlItem.frameBackward:
     case VideoControlItem.frameForward:
     case VideoControlItem.screenshot:
-    case VideoControlItem.ocrFrame:
     case VideoControlItem.clipExport:
     case VideoControlItem.danmaku:
       return false;
     case VideoControlItem.audioTrack:
       return hasSiteAudioTracks;
+    // 识别画面文字：站点画面能在页面里截帧（非 DRM，YouTube 等）才画。
+    case VideoControlItem.ocrFrame:
+      return canCaptureFrame;
     default:
       return true;
   }
