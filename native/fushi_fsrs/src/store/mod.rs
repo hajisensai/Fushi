@@ -241,7 +241,10 @@ fn configure(conn: &Connection) -> Result<(), String> {
         "PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = OFF; \
          PRAGMA mmap_size = 268435456; PRAGMA cache_size = -65536;",
     )
-    .map_err(|e| e.to_string())
+    .map_err(|e| e.to_string())?;
+    // 平常的临时库照旧（Android 放内存：没有可写的默认临时目录）；整库重写的那几段由 compact::set_temp_dir 切到
+    // 库所在目录的文件。
+    conn.execute_batch(compact::ORDINARY_TEMP_STORE).map_err(|e| e.to_string())
 }
 
 impl SrsCore {
@@ -504,7 +507,9 @@ impl SrsCore {
         if strip_device_local {
             let snap = Connection::open(target).map_err(|e| e.to_string())?;
             configure(&snap)?;
-            snap.execute_batch(
+            // 末尾的 VACUUM 整库重写：整理副本落快照所在目录的文件，不在内存里堆一份（大库会撑爆进程）。
+            compact::set_temp_dir(&snap, target.parent().unwrap_or(Path::new(".")));
+            let stripped = snap.execute_batch(
                 // srs_event_local 不删：它的 server_time 是迁移来的旧修改记录 / 外来带戳事件的排序键（S），
                 // 删了恢复出来的设备会按另一种顺序解寄存器、与其它设备分叉。发件箱列早已无人读写。
                 "BEGIN; UPDATE srs_event_local SET outbox_seq = NULL; DELETE FROM srs_local_state; \
@@ -515,8 +520,9 @@ impl SrsCore {
                  DELETE FROM sync2_locations; DELETE FROM sync2_rewrites; DELETE FROM sync2_obsolete; \
                  DELETE FROM srs_meta WHERE key LIKE 'sync2_digest/%'; \
                  COMMIT; VACUUM;",
-            )
-            .map_err(|e| e.to_string())?;
+            );
+            compact::clear_temp_dir(&snap);
+            stripped.map_err(|e| e.to_string())?;
         }
         Ok(())
     }

@@ -1,0 +1,6 @@
+## BUG-3928 · Android 打开大 srs.db 闪退（VACUUM 整理副本全进内存，SIGABRT 且每次打开重来）
+- **报告**：2026-11-01（用户：手机打开 Fushi 闪退，日志 SIGABRT，srs.db 约 1.3 GB）
+- **真实性**：✅ 真 bug。① rusqlite bundled 的 `libsqlite3-sys-0.35.0/build.rs:228-230` 给 Android 目标硬编码 `-DSQLITE_TEMP_STORE=3`：临时库一律放内存，`native/fushi_fsrs/src/store/compact.rs` 设的 `temp_store_directory` 形同虚设；`compact::run` 的 `VACUUM`（以及升级阶梯整表重建 / 建索引、`snapshot_into` 剥设备本地表后的 `VACUUM`）在内存里堆出 GB 级副本，撑爆进程。② `compact.rs` 的 `compact_pending` 只在成功后删，进程被杀后标记还在，下次打开又整理一遍 → 永远打不开。
+- **[x] ① 已修复** — `native/fushi_fsrs/.cargo/config.toml` 用 `LIBSQLITE3_FLAGS` 撤掉 `TEMP_STORE=3` 改回 1；整库重写的几段（`set_temp_dir`）显式 `PRAGMA temp_store = FILE` 落库所在目录，其余时间 Android 照旧放内存（`ORDINARY_TEMP_STORE`）；`snapshot_into` 的 VACUUM 也切到文件；编译成 `TEMP_STORE=3` 的库不整理；整理前记 `compact_attempts`，连着 2 次进程死在中途就放弃这次整理、库照常打开。`build_android_so.sh/.ps1` 构建后按产物编译选项字符串核对，含 `TEMP_STORE=3` 直接失败（CI native-fsrs-gate / release 都走它们）。
+- **[x] ② 已加自动化测试** — `native/fushi_fsrs/src/store/sync2/tests_footprint.rs`：`compaction_gives_up_after_interrupted_attempts`、`bundled_sqlite_lets_rewrites_spill_to_files`；Android 产物门禁在 `native/fushi_fsrs/build_android_so.sh`。
+- **备注**：本机 NDK 28.2 编 arm64 产物实测编译选项为 `TEMP_STORE=1`；未在真机上复测 1.3 GB 库的打开（无该用户的库）。

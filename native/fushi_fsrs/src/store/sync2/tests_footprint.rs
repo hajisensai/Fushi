@@ -374,3 +374,38 @@ fn compaction_waits_for_disk_space() {
     assert!(w.query_row("SELECT 1 FROM srs_meta WHERE key = 'compact_pending'", [], |_| Ok(())).is_err());
     assert!(crate::store::compact::free_bytes(&a._dir.0.join("srs.db")).is_some_and(|f| f > 0));
 }
+
+/// 进程死在整理中途（Android 上 1.3 GB 的库 VACUUM 被杀）：标记留着，下次打开又整理、又死。连着
+/// [MAX_ATTEMPTS] 次没正常结束就放弃这次整理，库照常打开；没到上限的照常整理并清掉计数。
+#[test]
+fn compaction_gives_up_after_interrupted_attempts() {
+    use crate::store::compact::{ATTEMPTS, MAX_ATTEMPTS, PENDING};
+    let a = busy_device("fp-interrupted");
+    let w = a.core.writer().unwrap();
+    let has = |key: &str| w.query_row("SELECT 1 FROM srs_meta WHERE key = ?1", [key], |_| Ok(())).is_ok();
+    // 上一次进程死在 VACUUM 里：计数已记、标记还在。
+    w.execute("INSERT INTO srs_meta (key, value) VALUES (?1, '18')", [PENDING]).unwrap();
+    w.execute("INSERT INTO srs_meta (key, value) VALUES (?1, ?2)", rusqlite::params![ATTEMPTS, (MAX_ATTEMPTS - 1).to_string()]).unwrap();
+    assert!(crate::store::compact::run(&w, &a._dir.0, Some(u64::MAX), 1));
+    assert!(!has(PENDING) && !has(ATTEMPTS));
+    // 已经连着死了 MAX_ATTEMPTS 次：不再碰 VACUUM，丢掉标记与计数，记下原因。
+    w.execute("INSERT INTO srs_meta (key, value) VALUES (?1, '18')", [PENDING]).unwrap();
+    w.execute("INSERT INTO srs_meta (key, value) VALUES (?1, ?2)", rusqlite::params![ATTEMPTS, MAX_ATTEMPTS.to_string()]).unwrap();
+    assert!(!crate::store::compact::run(&w, &a._dir.0, Some(u64::MAX), 2));
+    assert!(!has(PENDING) && !has(ATTEMPTS));
+    let last: String = w.query_row("SELECT value FROM srs_meta WHERE key = 'compact_last'", [], |r| r.get(0)).unwrap();
+    assert!(last.contains("\"reason\":\"interrupted\""), "{last}");
+}
+
+/// 整库重写（整理、升级阶梯、剥设备本地表的备份）的临时库必须能落文件：`SQLITE_TEMP_STORE=3` 的构建里
+/// `PRAGMA temp_store = FILE` 不起作用，副本全进内存。Android 产物由 build_android_so.* 按编译选项字符串核对。
+#[test]
+fn bundled_sqlite_lets_rewrites_spill_to_files() {
+    let a = busy_device("fp-temp-store");
+    let w = a.core.writer().unwrap();
+    assert!(!crate::store::compact::temp_store_forced_memory(&w));
+    crate::store::compact::set_temp_dir(&w, &a._dir.0);
+    let in_window: i64 = w.query_row("PRAGMA temp_store", [], |r| r.get(0)).unwrap();
+    crate::store::compact::clear_temp_dir(&w);
+    assert_eq!(in_window, 1, "temp_store = FILE while rewriting");
+}

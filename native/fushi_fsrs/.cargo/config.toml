@@ -1,0 +1,11 @@
+# rusqlite 的 bundled SQLite（libsqlite3-sys build.rs）给 Android 目标硬编码 `-DSQLITE_TEMP_STORE=3`：临时库
+# （VACUUM 的整理副本、升级阶梯整表重建 / 建索引的排序溢出）**一律放内存**，`PRAGMA temp_store` 与
+# `temp_store_directory` 都不起作用。srs.db 上 GB 时，一次 VACUUM 在内存里堆出等大的副本，把进程撑到 SIGABRT
+# （BUG：Android 打开大 srs.db 闪退）。这里撤掉那条定义改回 1（默认落文件，store/compact.rs 把目录指到库所在目录）。
+# `LIBSQLITE3_FLAGS` 的标志排在 build.rs 自己的 `-D` 之后，`-U` 再 `-D` 按命令行顺序生效。
+#
+# cargo 按**工作目录**找本文件：build_android_so.* 都 cd 到 native/fushi_fsrs 再构建；产物里的编译选项字符串由
+# 两个脚本构建后核对（含 `TEMP_STORE=3` 直接失败），CI 的 native-fsrs-gate / release 都走这两个脚本。
+# 桌面 / iOS 目标的默认本来就是 1，这条对它们无变化。
+[env]
+LIBSQLITE3_FLAGS = { value = "-USQLITE_TEMP_STORE -DSQLITE_TEMP_STORE=1", force = true }

@@ -28,5 +28,11 @@ for abi in "${ABIS[@]}"; do
   find "$OUT_DIR/$abi" -name '*.so' ! -name libfushi_fsrs.so -delete
   so="$OUT_DIR/$abi/libfushi_fsrs.so"
   [[ -f "$so" ]] || { echo "missing $so" >&2; exit 1; }
+  # libsqlite3-sys 给 Android 硬编码 TEMP_STORE=3（临时库全进内存，大库 VACUUM 撑爆进程）；.cargo/config.toml
+  # 改回 1。从别的目录构建会丢那份配置，这里按产物里的编译选项字符串核对。
+  if grep -aq 'TEMP_STORE=3' "$so" || ! grep -aq 'TEMP_STORE=1' "$so"; then
+    echo "$so: bundled SQLite is not built with SQLITE_TEMP_STORE=1 (see native/fushi_fsrs/.cargo/config.toml)" >&2
+    exit 1
+  fi
   echo "  $so $(wc -c < "$so") bytes"
 done
