@@ -228,7 +228,7 @@ class _EditKey extends StatelessWidget {
                 child: IconTheme.merge(
                   data: IconThemeData(color: fg),
                   child: DefaultTextStyle.merge(
-                    style: TextStyle(color: fg, fontSize: 18),
+                    style: context.fushiType.titleMedium.copyWith(color: fg),
                     child: child,
                   ),
                 ),

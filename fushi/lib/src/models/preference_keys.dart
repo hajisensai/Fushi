@@ -679,6 +679,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // String（SrsReviewImageSize.wire：'original' | 'fit_width' | 'large'，默认
   // 'original'）：复习卡面图片大小（牌组 CSS 限得太小 / 原图像素小时放大）。非凭据、跨设备。
   'srs_review_image_size',
+  // bool（默认 false）：复习时直接编辑——卡面选中文字后加粗 / 高亮 / 清除格式、按字段
+  // AI 改写（srsReviewInlineEdit）。非凭据、跨设备。
+  'srs_review_inline_edit',
   // String（SrsReviewReplayButton.wire：'off' | 'start' | 'end'，默认 'off'）：复习页
   // 底部操作行一端放一颗重播音频键（手机刷卡时拇指在屏幕下方，够不到顶栏）。非凭据、跨设备。
   'srs_review_replay_button',

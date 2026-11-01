@@ -470,7 +470,7 @@ const String kSrsCardEditSelectionScript = r'''
     for (var at = prefix.indexOf(text); at >= 0; at = prefix.indexOf(text, at + 1)) occ++;
     try {
       window.flutter_inappwebview.callHandler('onSrsEditSelection',
-        JSON.stringify({ text: sel.toString(), occ: occ }));
+        JSON.stringify({ text: text, occ: occ }));
     } catch (e) {}
   }
   document.addEventListener('selectionchange', function () {
