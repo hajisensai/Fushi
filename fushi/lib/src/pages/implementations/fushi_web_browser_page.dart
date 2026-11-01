@@ -63,7 +63,7 @@ import 'package:fushi/src/media/video/web_video_sites.dart'
     show webVideoSitesAvailable;
 import 'package:fushi/src/web_browser/web_browser_site_launch.dart';
 import 'package:fushi/src/web_browser/web_browser_sites.dart';
-import 'package:fushi_engine/media/video/video_book_repository.dart';
+
 import 'package:fushi/src/web_browser/web_browser_suggestions.dart';
 
 export 'package:fushi/src/pages/implementations/web_browser/web_browser_layout.dart';
@@ -214,17 +214,10 @@ class _FushiWebBrowserHomePageState
     if (mounted) setState(() => _sites = _loadWebBrowserSites(_appModel));
   }
 
-  /// 点站点：标了「用播放页打开」且本平台有播放页就进播放页，否则进浏览器。
-  Future<void> _openSite(WebBrowserSite site) async {
-    if (!webBrowserSiteOpensInPlayer(site)) return _open(site.url);
-    _addressFocus.unfocus();
-    await openInWebVideoPlayer(
-      context,
-      url: site.url,
-      title: site.name,
-      repo: VideoBookRepository(_appModel.database),
-    );
-  }
+  /// 点站点：一律进浏览器（用户只看到一个浏览器，`docs/specs/2026-11-01-one-browser.md`）。
+  /// 标了「用 Fushi 播放本站视频」的站点，观看页由浏览器自动交给播放器层
+  /// （[webBrowserSiteAutoPlays]）。
+  Future<void> _openSite(WebBrowserSite site) => _open(site.url);
 
   Future<void> _saveSites(List<WebBrowserSite> next) async {
     setState(() => _sites = next);
@@ -291,7 +284,7 @@ class _FushiWebBrowserHomePageState
     await _saveSites(replaceWebBrowserSite(_sites, site, next));
   }
 
-  /// 长按 / 右键站点：切换打开方式（只在有播放页的平台）、编辑或移除。
+  /// 长按 / 右键站点：切换「用 Fushi 播放本站视频」（只在有播放器层的平台）、编辑或移除。
   Future<void> _siteActions(WebBrowserSite site) async {
     final _SiteAction? action = await showFushiChoiceDialog<_SiteAction>(
       context: context,
@@ -301,11 +294,11 @@ class _FushiWebBrowserHomePageState
           FushiChoiceOption<_SiteAction>(
             value: _SiteAction.togglePlayer,
             label: site.openInPlayer
-                ? t.web_browser_site_open_in_browser
-                : t.web_browser_site_open_in_player,
+                ? t.web_browser_site_auto_play_off
+                : t.web_browser_site_auto_play_on,
             subtitle: site.openInPlayer
                 ? null
-                : t.web_browser_site_open_in_player_hint,
+                : t.web_browser_site_auto_play_hint,
             icon: site.openInPlayer ? FushiIcons.globe : FushiIcons.playCircle,
           ),
         FushiChoiceOption<_SiteAction>(
@@ -548,10 +541,10 @@ class _WebBrowserSiteTile extends StatelessWidget {
                   style: tokens.type.listTitle,
                 ),
               ),
-              // 点开进播放页的站点：标题后挂一个播放图标（只在有播放页的平台）。
-              if (webBrowserSiteOpensInPlayer(site))
+              // 标了「用 Fushi 播放本站视频」的站点：标题后挂一个播放图标（只在有播放器层的平台）。
+              if (site.openInPlayer && webVideoSitesAvailable())
                 FushiTooltip(
-                  message: t.web_browser_site_opens_in_player,
+                  message: t.web_browser_site_auto_play_on,
                   child: FushiIcon(
                     FushiIcons.playCircle,
                     key: ValueKey<String>(
@@ -1946,16 +1939,7 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
           itemBuilder: fushiStaggeredItemBuilder(
             (BuildContext context, int i) => _WebBrowserSiteTile(
               site: sites[i],
-              onOpen: () => webBrowserSiteOpensInPlayer(sites[i])
-                  ? unawaited(
-                      openInWebVideoPlayer(
-                        context,
-                        url: sites[i].url,
-                        title: sites[i].name,
-                        repo: VideoBookRepository(_appModel.database),
-                      ),
-                    )
-                  : _navigate(sites[i].url, tab: tab),
+              onOpen: () => _navigate(sites[i].url, tab: tab),
             ),
           ),
         ),

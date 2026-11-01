@@ -20,7 +20,6 @@ import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/focus/webview_key_bridge.dart';
-import 'package:fushi/src/media/manga/cookie/browser_cookie_import.dart';
 import 'package:fushi/src/media/manga/cookie/manga_web_view_environment.dart';
 import 'package:fushi/src/media/video/web_video_bridge.dart';
 import 'package:fushi/src/media/video/web_video_browser_settings.dart';
@@ -294,27 +293,6 @@ Future<int> _syncWebVideoLoginToBrowser(Uri uri) async {
   );
 }
 
-/// 浏览器扩展送来的站点会话（[BrowserCookieImportGate]，与漫画源登录同一条通道，即「从系统
-/// 浏览器导入登录」）写进共享 cookie 罐（app 内浏览器 = 原生播放器页网页档）。可捕获档下次开页
-/// 时从共享罐抄（[copyWebVideoLoginCookies]），不另写。逐条写、单条失败不中断（WebView2 会拒
-/// 个别属性组合）；返回写进的条数。非 Windows / 共享环境建不出来时返回 0。
-Future<int> importWebVideoBrowserCookies(
-  List<BrowserSiteCookie> cookies,
-) async {
-  final WebViewEnvironment? shared;
-  try {
-    shared = await MangaWebViewEnvironment.obtain();
-  } catch (e) {
-    ErrorLogService.instance.log('web_video', 'browser cookie env: $e');
-    return 0;
-  }
-  if (shared == null) return 0;
-  return writeBrowserSiteCookies(
-    CookieManager.instance(webViewEnvironment: shared),
-    cookies,
-  );
-}
-
 /// 页面地址是不是「正在看某一集」的播放页（自动进播放器档的判据）：Netflix 的
 /// `/watch/<id>`、YouTube 的 `/watch` `/shorts` `/live` `/embed` 与 youtu.be 短链。浏览 /
 /// 详情页上的预告片、悬停预览也是 `<video>`，但不算——那里用户是在选集。其它站点没有可靠的
@@ -362,27 +340,6 @@ class WebVideoNavState {
     canGoForward: canGoForward ?? this.canGoForward,
     loading: loading ?? this.loading,
   );
-}
-
-/// 地址栏输入 → 要打开的地址：像网址的补 `https://`；不像网址的（没有点、带空格）当
-/// 搜索词交给 Google。空串返回 null。
-String? webVideoAddressBarTarget(String input) {
-  final String s = input.trim();
-  if (s.isEmpty) return null;
-  final bool looksLikeUrl =
-      s.contains('://') || (!s.contains(' ') && s.contains('.'));
-  if (looksLikeUrl) {
-    final String withScheme = s.contains('://') ? s : 'https://$s';
-    final Uri? uri = Uri.tryParse(withScheme);
-    if (uri != null &&
-        (uri.scheme == 'http' || uri.scheme == 'https') &&
-        uri.host.isNotEmpty) {
-      return uri.toString();
-    }
-  }
-  return Uri.https('www.google.com', '/search', <String, String>{
-    'q': s,
-  }).toString();
 }
 
 // ── 会话（原生播放器页的网页档）──────────────────────────────────────────────

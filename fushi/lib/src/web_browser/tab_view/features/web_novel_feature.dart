@@ -7,24 +7,28 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/novel/web/web_novel_gate.dart';
 import 'package:fushi/src/media/novel/web/web_novel_reader_launch.dart';
-import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/web_browser/features/open_in_fushi/web_open_in_fushi_action.dart';
+import 'package:fushi/src/web_browser/features/open_in_fushi/web_page_content.dart';
 import 'package:fushi/src/web_browser/features/play_in_fushi/youtube_watch_page.dart';
 import 'package:fushi/src/web_browser/features/web_browser_feature.dart';
 import 'package:fushi/src/web_browser/tabs/web_browser_tab.dart';
 
-/// 网页小说：「用 Fushi 阅读（小说）」把当前页整页 HTML 交给 Rust 提取正文、并进
-/// 连载会话，预览确认后进书架并在阅读器打开（从旧单页浏览页迁来，行为不变）。
+/// 网页小说：「用 Fushi 阅读」把当前页整页 HTML 交给 Rust 提取正文、并进连载会话，预览确认
+/// 后进书架并在阅读器打开（从旧单页浏览页迁来）。入口走统一的 [webOpenInFushiAction]：
+/// [pageContent] 探出这页是小说正文时上工具栏，否则以「作为小说用 Fushi 阅读」收在「⋯」里。
 ///
 /// 合规：只在 [webNovelReaderActionAvailable]（`onlineNovelSource` 合规门）为真时
 /// 装配。
 class WebNovelFeature extends WebBrowserFeature {
-  WebNovelFeature({required WidgetRef ref})
+  WebNovelFeature({required WidgetRef ref, WebPageContentFeature? pageContent})
     : _ref = ref,
+      _pageContent = pageContent,
       _novelAvailable = webNovelReaderActionAvailable();
 
   final WidgetRef _ref;
+  final WebPageContentFeature? _pageContent;
   final bool _novelAvailable;
 
   /// 正在提取的标签页（防连点）。
@@ -46,14 +50,11 @@ class WebNovelFeature extends WebBrowserFeature {
     if (isWebBrowserVideoWatchPage(tab.url)) return const <WebBrowserAction>[];
     final bool busy = _extracting.contains(tab.id);
     return <WebBrowserAction>[
-      WebBrowserAction(
-        id: 'web_novel_read',
-        icon: FushiIcons.books,
-        label: t.novel_web_page_read,
-        placement: WebBrowserActionPlacement.toolbar,
-        priority: 60,
-        selected: busy,
-        onPressed: tab.controller != null && tab.url != null && !busy
+      webOpenInFushiAction(
+        kind: WebPageContentKind.novel,
+        primary: _pageContent?.kindOf(tab) == WebPageContentKind.novel,
+        busy: busy,
+        onPressed: tab.controller != null && tab.url != null
             ? () => unawaited(_read(context, tab))
             : null,
       ),

@@ -11,23 +11,41 @@ import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart'
     show adaptivePageRoute;
 import 'package:fushi/src/web_browser/web_browser_sites.dart';
 
-/// 站点在本平台点开时是否进播放页：站点标了 [WebBrowserSite.openInPlayer] 且本平台
-/// 有播放页（[webVideoSitesAvailable]，只有 Windows）。
-bool webBrowserSiteOpensInPlayer(
-  WebBrowserSite site, {
+/// [url] 所在站点在站点表 [sites] 里标了「用 Fushi 播放本站视频」（[WebBrowserSite.openInPlayer]，
+/// 持久化名冻结）且本平台有播放器层（[webVideoSitesAvailable]，只有 Windows）：这类站点的
+/// 观看页由浏览器自动交给播放器层（`PlayInFushiFeature`）。按 host 匹配，`www.` 与子域名算
+/// 同一站点。
+bool webBrowserSiteAutoPlays(
+  List<WebBrowserSite> sites,
+  Uri url, {
   TargetPlatform? platform,
-}) => site.openInPlayer && webVideoSitesAvailable(platform: platform);
+}) {
+  if (!webVideoSitesAvailable(platform: platform)) return false;
+  final String host = _siteHost(url.host);
+  if (host.isEmpty) return false;
+  for (final WebBrowserSite site in sites) {
+    if (!site.openInPlayer) continue;
+    final String siteHost = _siteHost(site.url.host);
+    if (siteHost.isEmpty) continue;
+    if (host == siteHost || host.endsWith('.$siteHost')) return true;
+  }
+  return false;
+}
 
-/// 在 Fushi 播放页（Windows 网页播放器）打开 [url]：站点自己的页面用来登录、选剧、
-/// 选集，播起某一集才切到播放器并落成一本书。拿不到底层合成时播放页自己退回 app 内
-/// 浏览器（见 `web_source.part.dart`）。[backToBrowser]：从 app 内浏览器交接过来的，播放页
-/// 按返回直接回浏览器（[VideoFushiPage.webBackToBrowser]）。
+String _siteHost(String host) {
+  final String h = host.toLowerCase();
+  return h.startsWith('www.') ? h.substring(4) : h;
+}
+
+/// 把浏览器标签页里的观看页 [url] 交给播放器层（Windows 网页站点后端，底层合成）：播起
+/// 某一集才落成一本书。播放器层只当播放器，返回 / 离开观看页都回到交接它的浏览器标签页
+/// （[VideoFushiPage.webBackToBrowser]）。拿不到底层合成时播放器层自己换成 app 内浏览器
+/// （见 `web_source.part.dart`）。
 Future<void> openInWebVideoPlayer(
   BuildContext context, {
   required Uri url,
   required String title,
   required VideoBookRepository repo,
-  bool backToBrowser = false,
 }) {
   final WebVideoSite site = WebVideoSite(
     title: title.trim().isEmpty ? webVideoSiteDefaultTitle('$url') : title,
@@ -41,7 +59,7 @@ Future<void> openInWebVideoPlayer(
         bookUid: row.bookUid,
         repo: repo,
         webSite: site,
-        webBackToBrowser: backToBrowser,
+        webBackToBrowser: true,
       ),
     ),
   );

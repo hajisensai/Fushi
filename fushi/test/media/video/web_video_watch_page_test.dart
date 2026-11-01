@@ -40,19 +40,6 @@ void main() {
     expect(webVideoIsWatchPage('https://tver.jp/episodes/ep1'), isTrue);
   });
 
-  test('地址栏：像网址的补 https，其它当搜索词', () {
-    expect(webVideoAddressBarTarget('netflix.com'), 'https://netflix.com');
-    expect(
-      webVideoAddressBarTarget('https://www.youtube.com/watch?v=x'),
-      'https://www.youtube.com/watch?v=x',
-    );
-    expect(
-      webVideoAddressBarTarget('日本語 ポッドキャスト'),
-      'https://www.google.com/search?q=%E6%97%A5%E6%9C%AC%E8%AA%9E+%E3%83%9D%E3%83%83%E3%83%89%E3%82%AD%E3%83%A3%E3%82%B9%E3%83%88',
-    );
-    expect(webVideoAddressBarTarget('   '), isNull);
-  });
-
   test('广告快照：ad 标记解析出来，缺省为 false', () {
     expect(parseWebVideoStatePayload(<String, Object>{'ad': true})!.ad, isTrue);
     expect(parseWebVideoStatePayload(<String, Object>{})!.ad, isFalse);

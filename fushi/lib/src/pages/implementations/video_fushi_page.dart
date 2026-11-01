@@ -69,8 +69,7 @@ import 'package:fushi_engine/media/tracking/media_tracking_service.dart'
     show kMediaTrackingEnabled;
 import 'package:fushi/src/pages/implementations/fushi_web_browser_page.dart'
     show fushiWebBrowserRoute;
-import 'package:fushi/src/pages/implementations/web_browser/web_browser_settings_page.dart'
-    show openWebBrowserSettings;
+
 import 'package:fushi/src/web_adblock/web_adblock_service.dart'
     show WebAdblockService, webAdblockServiceProvider;
 import 'package:fushi/src/pages/implementations/video_loading_overlay.dart';
@@ -208,7 +207,7 @@ import 'package:fushi/src/media/video/web_video_session.dart';
 import 'package:fushi_engine/sync/immersion_mine_payload.dart';
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart'
     show RemoteMineResult;
-import 'package:fushi/src/media/video/web_video_login_import.dart';
+import 'package:fushi/src/media/video/web_video_browser_return.dart';
 import 'package:fushi/src/media/video/web_video_sites.dart';
 import 'package:fushi/src/media/video/youtube_range_relay.dart'
     show relayYoutubeStreamUrl;
@@ -405,7 +404,7 @@ import 'package:fushi/src/mining/web_mine_queue_store.dart'
 import 'package:fushi/src/media/video/video_mine_queue_dialog.dart';
 import 'package:fushi_engine/mining/immersion_mining_request.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart'
-    show adaptivePageRoute, adaptiveSegmentedButton;
+    show adaptivePageRoute;
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
     show einkSafeDuration, isEinkTheme;
 import 'package:fushi/src/utils/app_ui_scale.dart';
@@ -813,9 +812,10 @@ class VideoFushiPage extends ConsumerStatefulWidget {
   /// 播起某一集时这一集才落库、本页身份换成它（web_source.part.dart `_bindWebEpisode`）。
   final WebVideoSite? webSite;
 
-  /// 本页是 app 内浏览器「用 Fushi 播放」交接过来的：返回直接关掉本页、回到浏览器里原来的
-  /// 站点页，不再一级一级退到本页自己的网页档（带地址栏和关闭钮的那份）——用户是在浏览器里
-  /// 选的集，本页网页档只是同一站点的第二份浏览器（BUG-3801）。
+  /// 本页是 app 内浏览器「用 Fushi 播放」交接过来的播放器层：返回 / 离开观看页都关掉本页、
+  /// 回到交接它的那个浏览器标签页（离开去的地址经 [WebVideoBrowserReturn] 交回标签页加载）。
+  /// 为 false（从视频库打开的网页书）时离开观看页换成一个浏览器页打开那个地址。用户只看到
+  /// 一个浏览器：`docs/specs/2026-11-01-one-browser.md`。
   final bool webBackToBrowser;
 
   /// 网页档：制卡队列在内置档重放完换回本页时带回的重放前状态（站点字幕轨 / 音轨 / 位置），
@@ -2295,25 +2295,18 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 本页持有一份底层合成（[acquireUnderlayComposition]），dispose 归还。
   bool _webUnderlayHeld = false;
 
-  /// 上一份站点快照是否处于页面全屏：[_onWebState] 只在「非全屏 → 全屏」边沿强制播放器档。
-  bool _webPageWasFullscreen = false;
-
   /// 持有底层合成期间让路由层页底（[FushiPageBackdrop]）整个让开的那条路由，dispose 恢复。
   Route<Object?>? _webTransparentRoute;
 
-  /// 播放器档（[_webPlayerModeFor]）：否则是网页档——WebView 收输入、整页原样，播放器控件
-  /// 不挂，只留顶部返回条。
+  /// 播放器档（[_webPlayerModeFor]）：否则露出站点页面（观看页还没有视频 / 站点弹层打断）
+  /// ——WebView 收输入、整页原样，播放器控件不挂，只留顶部一条细返回条。
   bool _webPlayerMode = false;
 
-  /// 站点页面里当前有没有 `<video>`（网页档返回条上的「在播放器里看」）。
-  bool _webPageHasVideo = false;
+  /// 正在因离开观看页 / 「在浏览器中打开」关掉本页（[_exitWebToBrowser] 只跑一次）。
+  bool _webExitingToBrowser = false;
 
   /// 站点正在放广告（glue 在跳 / 快进）：播放器档盖黑屏，快照不进播放器状态。
   bool _webAdShowing = false;
-
-  /// 用户对这一集（videoKey）点了「回到网页」/「在播放器里看」；换集即失效。
-  String? _webBrowseVideoKey;
-  String? _webForcePlayerKey;
 
   /// 网页档里播起的那一集落成的书（站点入口打开 / 站内换了集）；null = 仍是打开时那本。
   String? _webEpisodeBookUid;
@@ -2326,18 +2319,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 这一集的书名 / 封面已补全（或补全失败不再重试）的那一集；补全进行中不重入。
   String? _webEpisodeMetaDoneUrl;
   bool _webEpisodeMetaBusy = false;
-
-  /// 网页档工具条的地址栏（没在编辑时跟着当前地址走）。
-  final TextEditingController _webAddressController = TextEditingController();
-  final FocusNode _webAddressFocus = FocusNode(debugLabel: 'video-web-address');
-
-  /// 工具条的「关闭」：这一次返回不再一级一级退，直接关掉本页。
-  bool _webClosing = false;
-
-  /// 「从浏览器导入登录」的接入点（[WebVideoLoginImport]，内部是共用实现
-  /// [BrowserLoginImport]：一次即结束、等待时有可取消的状态条）。网页会话就绪时建、
-  /// 拆会话时 dispose。
-  WebVideoLoginImport? _webLoginImport;
 
   /// 站点当前视频身份（glue 的 `videoKey`；SPA 换集即变）与它名下的字幕轨。
   String _webVideoKey = '';
@@ -7916,9 +7897,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     if (_dismissTopForegroundLayer()) return;
     // 原盘会话：控制栏收着时「返回」只把它呼出来，开着时才真退出（回详情页）。
     if (_discSessionShowBarOnBack()) return;
-    // 网页档一级一级往外退：播放器档 → 网页 → 站内上一页 → … → 关掉本页（同步判定，
-    // 退出路径不 await，BUG-2119）。
-    if (_webBackStep()) return;
+    _exitVideoPage();
+  }
+
+  /// 关掉本页：先持久化进度 / 报远端停播，再 pop（同步判定，退出路径不 await，BUG-2119）。
+  /// 网页站点后端离开观看页回浏览器时也走这里（`_exitWebToBrowser`）。
+  void _exitVideoPage() {
     final NavigatorState nav = Navigator.of(context);
     final VideoPlayerController? controller = _controller;
     final int? remotePositionMs = controller?.positionMs;
@@ -9861,8 +9845,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     final List<VideoBarEntry> disc =
         lastTopRightSegment && controller.isBlurayNavigationSession
         ? _discNavigationBarEntries(desktop: desktop)
-        : lastTopRightSegment && _webMode
-        ? _webPageBarEntries(desktop: desktop)
         : const <VideoBarEntry>[];
     if (items.isEmpty && folded.isEmpty && disc.isEmpty) {
       return const SizedBox.shrink();
