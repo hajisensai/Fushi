@@ -15,6 +15,8 @@ import 'package:fushi/src/models/preferences_repository.dart'
         PreferencesRepository;
 import 'package:fushi_engine/media/torrent/bt_site_legacy_migration.dart'
     show kBtSitesLegacyMigrationPref;
+import 'package:fushi_engine/media/video/metadata/video_scrape_ignored_works.dart'
+    show kVideoScrapeIgnoredWorksPrefKey;
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi/src/media/video/media_server/media_server_config.dart';
 import 'package:fushi/src/media/video/media_server/media_server_registry.dart';
@@ -1891,6 +1893,9 @@ class SyncRepository {
     PreferencesRepository.srsLocationKeysKey,
     // BUG-3644 统计同步的 Profile 名字别名：键是本库自增 id，同上。
     kStudyProfileNameAliasesPrefKey,
+    // 待确认队列里「忽略」的作品：元素是本机合集自增 id / 书 uid 拼的作品键，
+    // 换一台设备就指向别的作品（反馈 Fbchzxuq6f）。
+    kVideoScrapeIgnoredWorksPrefKey,
     _keyBackendType,
     // 「新下载任务交给哪台互联 host 执行」指向的是本设备配的 host 地址，随备份
     // 到别的设备只会指错（PC 恢复手机的备份后把任务投给它自己）。

@@ -186,6 +186,35 @@ bool isLoopbackProviderHost(String host) {
   return parts.length == 4 && parts.first == '127';
 }
 
+/// [host] 是否是本机或局域网地址：回环、RFC 1918 私有段（10/8、172.16/12、
+/// 192.168/16）、IPv4 链路本地（169.254/16）、IPv6 ULA（fc00::/7）与链路本地
+/// （fe80::/10）、mDNS 名（`.local`）。明文 HTTP 到这些地址不出局域网。
+///
+/// 不含 CGNAT（100.64/10）：那是 Tailscale 一类隧道的地址，流量可能跨公网。
+bool isPrivateNetworkProviderHost(String host) {
+  String normalized = host.toLowerCase();
+  if (normalized.startsWith('[') && normalized.endsWith(']')) {
+    normalized = normalized.substring(1, normalized.length - 1);
+  }
+  if (isLoopbackProviderHost(normalized)) return true;
+  if (normalized.endsWith('.local')) return true;
+  if (normalized.contains(':')) {
+    return normalized.startsWith('fe80:') ||
+        normalized.startsWith('fc') ||
+        normalized.startsWith('fd');
+  }
+  final List<String> parts = normalized.split('.');
+  if (parts.length != 4) return false;
+  final List<int?> octets = parts.map(int.tryParse).toList(growable: false);
+  if (octets.any((int? o) => o == null || o < 0 || o > 255)) return false;
+  final int a = octets[0]!;
+  final int b = octets[1]!;
+  return a == 10 ||
+      (a == 192 && b == 168) ||
+      (a == 172 && b >= 16 && b <= 31) ||
+      (a == 169 && b == 254);
+}
+
 /// HTTPS is always accepted. Plain HTTP requires loopback, or an explicit
 /// opt-in suitable for a trusted LAN indexer configured by the user.
 bool isSafeExternalProviderEndpoint(

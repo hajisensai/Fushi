@@ -3,6 +3,8 @@ import 'dart:ui' show lerpDouble;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/focus/fushi_focus_scroll.dart';
+import 'package:fushi/src/ai/ai_saved_prompt_picker.dart';
+import 'package:fushi/src/ai/ai_saved_prompts.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_colorpicker/flutter_colorpicker.dart';
 import 'package:fushi/models.dart';
@@ -867,6 +869,11 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
                     textInputAction: TextInputAction.send,
                     onSubmitted: (_) => unawaited(_runAi()),
                   ),
+                ),
+                AiSavedPromptButton(
+                  scene: AiPromptScene.theme,
+                  controller: _aiRequestController,
+                  enabled: !_aiBusy,
                 ),
                 SizedBox(width: gap),
                 FushiFilledButton.icon(

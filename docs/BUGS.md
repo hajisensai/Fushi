@@ -76,6 +76,14 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-3928](bugs/BUG-3928-ai-agent-json-catalog-overflow.md) | ✅ | ✅ | AI 助手降级协议把整份工具 schema 塞进系统提示，小上下文本地模型超长 |
+> 共 3535 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-3931](bugs/BUG-3931-reader-lyrics-system-back-twice.md) | ✅ | ✅ | 歌词模式下系统返回要两次才回书架 |
+| [BUG-3930](bugs/BUG-3930-ai-2xx-error-body-empty-response.md) | ✅ | ✅ | 本地 LLM 回 200 错误体时 AI 助手只报「没有返回内容」 |
+| [BUG-3929](bugs/BUG-3929-floating-chrome-collapsed-top-band.md) | ✅ | ✅ | 顶栏收起后顶部留一条页面底色白边盖住背景 |
+| [BUG-3928](bugs/BUG-3928-ai-lan-http-base-url.md) | ✅ | ✅ | 自定义 OpenAI 兼容地址只接受 http://localhost，不接受局域网 IP |
 | [BUG-3927](bugs/BUG-3927-reader-jp-gothic-alias-theme-font.md) | ✅ | ✅ | 電書協书的章标题在换了主题字体的 Android 机上竖排叠字 |
 | [BUG-3926](bugs/BUG-3926-download-subtitle-retry-drops-anilist.md) | ✅ | ✅ | download-subtitle-retry-drops-anilist |
 | [BUG-3925](bugs/BUG-3925-ai-panel-tight-mode-hides-context-chip.md) | ✅ | ✅ | ai-panel-tight-mode-hides-context-chip |

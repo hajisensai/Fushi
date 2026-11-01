@@ -23,6 +23,7 @@ import 'package:fushi_engine/ai/web_knowledge.dart'
 import 'package:fushi/src/models/preference_keys.dart'
     show kLibraryManualOrderPrefKeyPrefix;
 import 'package:fushi/src/utils/adaptive/nav_bar_style.dart';
+import 'package:fushi/src/ai/ai_saved_prompts.dart';
 import 'package:fushi/src/dictionary/dict_style_rules.dart';
 import 'package:fushi/src/floating_ball/floating_ball_config.dart';
 import 'package:fushi/src/media/audiobook/audiobook_jump_threshold.dart';
@@ -202,7 +203,7 @@ enum FloatingLyricColorRole {
 }
 
 class PreferencesRepository extends ChangeNotifier
-    implements PrefStore, AiSettingsSource {
+    implements PrefStore, AiSettingsSource, AiSavedPromptStore {
   PreferencesRepository(this._db) : _readOnly = false;
 
   /// 反馈 biLEesNqWb：某个配置（Profile）的**只读**偏好视图——浏览器扩展选了一个不是
@@ -2360,6 +2361,31 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setAiProviders(Iterable<AiProviderConfig> providers) async {
     await setPref('ai_providers', encodeAiProviderConfigs(providers));
+    notifyListeners();
+  }
+
+  /// 用户保存的 AI 提示词（反馈 _LLhOKwmI3；全部场景，按保存顺序）。
+  ///
+  /// 逐条容错在 [decodeAiSavedPrompts] 里；整串坏掉记日志并当空列表，不让输入框
+  /// 旁的按钮打不开。
+  @override
+  List<AiSavedPrompt> get aiSavedPrompts {
+    final String raw = getPref('ai_saved_prompts', defaultValue: '') as String;
+    try {
+      return decodeAiSavedPrompts(raw);
+    } on FormatException catch (error, stack) {
+      ErrorLogService.instance.log(
+        'PreferencesRepository.aiSavedPrompts.decode',
+        error,
+        stack,
+      );
+      return const <AiSavedPrompt>[];
+    }
+  }
+
+  @override
+  Future<void> setAiSavedPrompts(Iterable<AiSavedPrompt> prompts) async {
+    await setPref('ai_saved_prompts', encodeAiSavedPrompts(prompts));
     notifyListeners();
   }
 

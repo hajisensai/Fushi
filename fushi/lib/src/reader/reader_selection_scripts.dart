@@ -3216,8 +3216,11 @@ window.fushiSelection = {
       // TODO-851：悬停查词（fromHover）命中空白只清选区，绝不 fire onTapEmpty——
       // 否则鼠标在正文空白移动会反复触发「点空白隐藏操作栏」让操作栏闪烁。
       // 真点击（fromHover falsy）仍 fire，保留点空白隐藏操作栏的旧行为。
+      // 带上点击坐标与视口尺寸：小说阅读器按「点击翻页区域」模板分发空白点击
+      // （reader_tap_zones.dart）；其余宿主的 onTapEmpty 不读参数。
       if (!fromHover) {
-        window.flutter_inappwebview.callHandler('onTapEmpty');
+        window.flutter_inappwebview.callHandler(
+          'onTapEmpty', x, y, window.innerWidth, window.innerHeight);
       }
       return null;
     }

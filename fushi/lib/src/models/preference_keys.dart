@@ -70,6 +70,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 同时登记在 kCredentialPreferenceKeys、PrefRedactionPolicy.sensitiveKeys
   // 与 deviceLocalPrefKeys。
   'ai_providers',
+  // String（JSON 列表）：用户保存的 AI 提示词（`ai/ai_saved_prompts.dart`），
+  // 每条 {id, name, text, scene?}。纯用户文本、非凭据，跨设备。
+  'ai_saved_prompts',
   // String：「AI 下视频」的码率偏好（只排序）。`''` 不限 / `high` 高码率优先 /
   // `low` 小体积优先。非凭据、跨设备。
   'ai_video_download_bitrate',
@@ -834,6 +837,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'video_resource_disabled_sources',
   'video_resource_torznab_config',
   'video_respect_ass_style',
+  // JSON 字符串数组：待确认队列里被用户「忽略、不再提示」的作品 stableKey
+  // （`collection:<id>` / `book:<uid>`，反馈 Fbchzxuq6f，引擎
+  // video_scrape_ignored_works.dart）。键里是本机自增 id，设备本地。
+  'video_scrape_ignored_works',
   'video_secondary_subtitle_blur',
   'video_secondary_subtitle_obscure_hide',
   // bool（未写过时继承 video_subtitle_obscure_reveal）：副字幕遮蔽态是否允许

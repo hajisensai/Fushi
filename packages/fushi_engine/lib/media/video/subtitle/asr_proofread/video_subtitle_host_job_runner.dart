@@ -379,6 +379,7 @@ class VideoSubtitleHostJobRunner implements HostJobRunner {
                 Directory(p.join(pipelineJobsRoot.path, 'glossaries')),
               ),
         webKnowledge: web,
+        proofreadConcurrency: provider.batchConcurrency,
         regenerateGlossary: params.regenerateGlossary,
       );
     }

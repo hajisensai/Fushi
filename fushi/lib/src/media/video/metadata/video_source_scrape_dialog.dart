@@ -25,6 +25,8 @@ Future<void> showVideoSourceScrapeTaskPanel({
   Future<void> Function(VideoSourceScrapeRunRow run)? onRetry,
   Future<SourceLibraryRow?> Function(int sourceId)? loadSource,
   Future<List<VideoPendingScrapeWork>> Function()? loadPendingWorks,
+  Future<List<VideoPendingScrapeWork>> Function()? loadIgnoredWorks,
+  VideoPendingWorkIgnoreSetter? onSetWorkIgnored,
   bool showAiIdentify = true,
 }) => showAppDialog<void>(
   context: context,
@@ -34,9 +36,18 @@ Future<void> showVideoSourceScrapeTaskPanel({
     onRetry: onRetry,
     loadSource: loadSource,
     loadPendingWorks: loadPendingWorks,
+    loadIgnoredWorks: loadIgnoredWorks,
+    onSetWorkIgnored: onSetWorkIgnored,
     showAiIdentify: showAiIdentify,
   ),
 );
+
+/// 把一部待确认作品标为忽略（`ignored: true`）或撤销忽略。
+typedef VideoPendingWorkIgnoreSetter =
+    Future<void> Function(
+      VideoPendingScrapeWork entry, {
+      required bool ignored,
+    });
 
 class _VideoSourceScrapeTaskPanel extends StatefulWidget {
   const _VideoSourceScrapeTaskPanel({
@@ -45,6 +56,8 @@ class _VideoSourceScrapeTaskPanel extends StatefulWidget {
     this.onRetry,
     this.loadSource,
     this.loadPendingWorks,
+    this.loadIgnoredWorks,
+    this.onSetWorkIgnored,
     this.showAiIdentify = true,
   });
 
@@ -55,6 +68,13 @@ class _VideoSourceScrapeTaskPanel extends StatefulWidget {
 
   /// 待确认队列数据源：当前计划里「从未刮出规范身份」的作品。null = 不展示。
   final Future<List<VideoPendingScrapeWork>> Function()? loadPendingWorks;
+
+  /// 用户「忽略、不再提示」过的作品（反馈 Fbchzxuq6f）：列在待确认清单之后，
+  /// 每行可撤销。null = 不展示。
+  final Future<List<VideoPendingScrapeWork>> Function()? loadIgnoredWorks;
+
+  /// 忽略 / 撤销忽略一部作品。null = 待确认行上不出「忽略」按钮。
+  final VideoPendingWorkIgnoreSetter? onSetWorkIgnored;
 
   /// 待确认行上的「AI 识别」按钮是否出现：AI 模块（`ModuleId.ai`）关掉时调用方传
   /// false，按钮整颗不渲染（判据 `isAiModuleEnabled`，由调用方求值，本面板不读
@@ -74,7 +94,11 @@ class _VideoSourceScrapeTaskPanelState
   VideoSourceScrapePhase _lastPhase = VideoSourceScrapePhase.idle;
   final Set<int> _retrying = <int>{};
   List<VideoPendingScrapeWork> _pendingWorks = const <VideoPendingScrapeWork>[];
+  List<VideoPendingScrapeWork> _ignoredWorks = const <VideoPendingScrapeWork>[];
   final Set<String> _bindingStableKeys = <String>{};
+
+  /// 正在切换忽略状态的作品（按钮防连点）。
+  final Set<String> _togglingIgnoreKeys = <String>{};
 
   /// 待确认页顶部的一行说明：手动指定 / AI 识别的失败原因或 AI 识别的结论。
   String? _pendingNotice;
@@ -129,8 +153,16 @@ class _VideoSourceScrapeTaskPanelState
     }
     try {
       final List<VideoPendingScrapeWork> pending = await load();
+      final Future<List<VideoPendingScrapeWork>> Function()? loadIgnored =
+          widget.loadIgnoredWorks;
+      final List<VideoPendingScrapeWork> ignored = loadIgnored == null
+          ? const <VideoPendingScrapeWork>[]
+          : await loadIgnored();
       if (!mounted || generation != _pendingLoadGeneration) return;
-      setState(() => _pendingWorks = pending);
+      setState(() {
+        _pendingWorks = pending;
+        _ignoredWorks = ignored;
+      });
     } on Object catch (error) {
       if (mounted && generation == _pendingLoadGeneration) {
         setState(() => _pendingError = error);
@@ -490,10 +522,17 @@ class _VideoSourceScrapeTaskPanelState
     final int count = status == null ? _pendingWorks.length : 1;
     final String? notice = _pendingNotice;
     final int lead = notice == null ? 0 : 1;
+    // 已忽略的作品接在待确认清单后面：一个分组头 + 每部一行（可撤销）。加载中 /
+    // 出错时不画，免得和状态占位互相打架。
+    final List<VideoPendingScrapeWork> ignored =
+        _loadingPending || _pendingError != null
+        ? const <VideoPendingScrapeWork>[]
+        : _ignoredWorks;
+    final int tail = ignored.isEmpty ? 0 : 1 + ignored.length;
     return FushiEntranceScope(
       child: ListView.builder(
         key: const PageStorageKey<String>('video-source-pending-list'),
-        itemCount: lead + count,
+        itemCount: lead + count + tail,
         itemBuilder: fushiStaggeredItemBuilder((
           BuildContext context,
           int position,
@@ -503,6 +542,12 @@ class _VideoSourceScrapeTaskPanelState
               padding: const EdgeInsets.only(bottom: 12),
               child: _buildPendingNoticeCard(notice),
             );
+          }
+          if (position >= lead + count) {
+            final int ignoredIndex = position - lead - count - 1;
+            return ignoredIndex < 0
+                ? _buildIgnoredHeader(ignored.length)
+                : _buildIgnoredWork(ignored, ignoredIndex);
           }
           if (status != null) return status;
           final int index = position - lead;
@@ -564,6 +609,22 @@ class _VideoSourceScrapeTaskPanelState
                           onPressed: () => unawaited(_bindPendingWork(entry)),
                           icon: const FushiIcon(FushiIcons.search),
                         ),
+                        if (widget.onSetWorkIgnored != null)
+                          FushiIconButtonControl(
+                            key: ValueKey<String>(
+                              'video-source-pending-ignore-${entry.work.stableKey}',
+                            ),
+                            tooltip: t.video_source_scrape_pending_ignore,
+                            onPressed:
+                                _togglingIgnoreKeys.contains(
+                                  entry.work.stableKey,
+                                )
+                                ? null
+                                : () => unawaited(
+                                    _setWorkIgnored(entry, ignored: true),
+                                  ),
+                            icon: const FushiIcon(FushiIcons.visibilityOff),
+                          ),
                       ],
                     ),
             ),
@@ -571,6 +632,80 @@ class _VideoSourceScrapeTaskPanelState
         }),
       ),
     );
+  }
+
+  /// 「已忽略（n）」分组头 + 一行说明：忽略意味着什么、适合什么。
+  Widget _buildIgnoredHeader(int n) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final FushiTypography type = context.fushiType;
+    return Padding(
+      key: const ValueKey<String>('video-source-ignored-header'),
+      padding: const EdgeInsets.fromLTRB(4, 20, 4, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(
+            t.video_source_scrape_pending_ignored_header(count: n),
+            style: type.titleSmall,
+          ),
+          const SizedBox(height: 4),
+          Text(
+            t.video_source_scrape_pending_ignored_hint,
+            style: type.bodySmall.copyWith(color: cs.onSurfaceVariant),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildIgnoredWork(List<VideoPendingScrapeWork> ignored, int index) {
+    final VideoPendingScrapeWork entry = ignored[index];
+    final String key = entry.work.stableKey;
+    return FushiGroupedListItem(
+      index: index,
+      count: ignored.length,
+      child: FushiListItem(
+        key: ValueKey<String>('video-source-ignored-work-$key'),
+        density: FushiListDensity.compact,
+        leading: const FushiListLeadingIcon(
+          FushiIcons.visibilityOff,
+          size: 36,
+          iconSize: 20,
+        ),
+        title: Text(entry.work.title),
+        subtitle: Text(entry.source.label),
+        trailing: FushiIconButtonControl(
+          key: ValueKey<String>('video-source-ignored-restore-$key'),
+          tooltip: t.video_source_scrape_pending_ignored_restore,
+          onPressed: _togglingIgnoreKeys.contains(key)
+              ? null
+              : () => unawaited(_setWorkIgnored(entry, ignored: false)),
+          icon: const FushiIcon(FushiIcons.undo),
+        ),
+      ),
+    );
+  }
+
+  /// 忽略 / 撤销忽略一部作品，然后重读两份清单（作品在两组之间挪动）。
+  Future<void> _setWorkIgnored(
+    VideoPendingScrapeWork entry, {
+    required bool ignored,
+  }) async {
+    final VideoPendingWorkIgnoreSetter? setIgnored = widget.onSetWorkIgnored;
+    if (setIgnored == null) return;
+    final String key = entry.work.stableKey;
+    setState(() {
+      _togglingIgnoreKeys.add(key);
+      _pendingNotice = null;
+    });
+    try {
+      await setIgnored(entry, ignored: ignored);
+      await _reloadPendingWorks();
+    } on Object catch (error) {
+      if (mounted) setState(() => _pendingNotice = error.toString());
+    } finally {
+      if (mounted) setState(() => _togglingIgnoreKeys.remove(key));
+    }
   }
 
   String _queuedSubtitle(

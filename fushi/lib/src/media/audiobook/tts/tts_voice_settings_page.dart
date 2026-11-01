@@ -62,9 +62,6 @@ const Set<String> _kUnofficialProviders = <String>{
   GoogleTranslateTtsDescriptor.providerId,
 };
 
-/// 试听默认文本（日语学习场景；用户可改）。
-const String _kDefaultTestText = 'こんにちは。これは朗読のテストです。';
-
 /// 参考音频能选的扩展名（GPT-SoVITS 经 librosa / ffmpeg 读，常见格式都认）。
 const Set<String> _kReferenceAudioExtensions = <String>{
   'wav',
@@ -602,9 +599,22 @@ class _TtsVoiceEditorPage extends StatefulWidget {
 class _TtsVoiceEditorPageState extends State<_TtsVoiceEditorPage> {
   final Map<String, TextEditingController> _controllers =
       <String, TextEditingController>{};
-  final TextEditingController _testText = TextEditingController(
-    text: _kDefaultTestText,
+  late final TextEditingController _testText = TextEditingController(
+    text: _autoTestText,
   );
+
+  /// 当前自动给出的试听文本（跟随所选语言 / 声音，见 [ttsSampleTextFor]）。
+  /// 输入框还是它时换语言 / 声音就跟着换；用户改过文字就不再覆盖。
+  late String _autoTestText = ttsSampleTextFor(ttsPresetLanguage(_preset));
+
+  void _followTestLanguage(String? languageTag) {
+    final String next = ttsSampleTextFor(languageTag);
+    if (_testText.text == _autoTestText && next != _autoTestText) {
+      _testText.text = next;
+    }
+    _autoTestText = next;
+  }
+
   bool _testing = false;
   bool _fetchingVoices = false;
   ({bool ok, String message})? _testResult;
@@ -797,6 +807,10 @@ class _TtsVoiceEditorPageState extends State<_TtsVoiceEditorPage> {
             : null,
       ),
     );
+    if (_preset.providerId == GptSovitsTtsDescriptor.providerId &&
+        spec.key == GptSovitsTtsDescriptor.textLangKey) {
+      _followTestLanguage(ttsLanguageCodeToTag(value));
+    }
     // 配置变了，上一次试听结论作废。
     if (_testResult != null) setState(() => _testResult = null);
   }
@@ -951,6 +965,8 @@ class _TtsVoiceEditorPageState extends State<_TtsVoiceEditorPage> {
       // 显示名只给界面用（不在参数表里，不进缓存键）：Irodori 的声音 id 是不透明串。
       params[spec.key] = picked;
       params['${spec.key}$_kVoiceNameSuffix'] = chosen.displayName;
+      // 声音带语言（Edge / Azure / 系统语音等）：试听文本换成该语言的示例句。
+      if (chosen.locale.isNotEmpty) _followTestLanguage(chosen.locale);
     }
     // 系统语音的声音属于某个引擎：换了引擎，旧引擎的声音名在新引擎里没有意义。
     if (_preset.providerId == SystemTtsDescriptor.providerId &&
