@@ -179,6 +179,28 @@ void main() {
   setUp(() => LocaleSettings.setLocale(AppLocale.en));
   tearDown(() => debugRealDirectoryPathOverride = null);
 
+  test('恢复预览只预演一次：不撤回复习的一份 = 撤回那份去掉复习数', () {
+    final SrsRestorePlanView retract = SrsRestorePlanView.fromJson(
+      <String, Object?>{
+        'fields': 3,
+        'revived': 1,
+        'removed': 2,
+        'tags': 4,
+        'reviews': 5,
+      },
+    );
+    final SrsRestorePlanView keep = retract.withoutReviews();
+    expect(
+      <int>[keep.fields, keep.revived, keep.removed, keep.tags, keep.reviews],
+      <int>[3, 1, 2, 4, 0],
+    );
+    final SrsRestorePlanView onlyReviews = SrsRestorePlanView.fromJson(
+      <String, Object?>{'reviews': 2},
+    );
+    expect(onlyReviews.isEmpty, isFalse);
+    expect(onlyReviews.withoutReviews().isEmpty, isTrue);
+  });
+
   for (final bool apple in <bool>[false, true]) {
     final String ds = apple ? 'Apple' : 'MD3';
 
