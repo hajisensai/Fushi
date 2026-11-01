@@ -87,6 +87,9 @@ enum PreviousExitKind {
   /// 用户主动强停（Android `USER_REQUESTED` / `USER_STOPPED`：设置里强行停止等）。
   userStopped,
 
+  /// 安装新版本时被系统 / 安装器结束（Android `PACKAGE_UPDATED`）：自动更新、手动装新包。
+  appUpdated,
+
   /// 停在前台时没了、平台没给原因（会话标记推断，疑似闪退 / 卡死后被强杀）。
   unexpected,
 
@@ -94,11 +97,11 @@ enum PreviousExitKind {
   backgroundReclaim;
 
   /// 这种退出值得问用户要不要把日志发给开发者。内存回收只在发生在前台时算（用户眼里
-  /// 就是闪退，且多半是 Fushi 自己吃内存）；用户强停与后台回收不算。
+  /// 就是闪退，且多半是 Fushi 自己吃内存）；用户强停、装新版本与后台回收不算。
   bool worthReporting({required bool foreground}) => switch (this) {
     nativeCrash || crash || anr || unexpected => true,
     memoryKill => foreground,
-    userStopped || backgroundReclaim => false,
+    userStopped || appUpdated || backgroundReclaim => false,
   };
 }
 
@@ -354,14 +357,17 @@ const Set<String> kSevereAndroidExitReasons = <String>{
   'FREEZER',
 };
 
-/// Android 退出原因 → [PreviousExitKind]；不说明问题的原因（自行退出、包更新、
+/// Android 退出原因 → [PreviousExitKind]；不说明问题的原因（自行退出、
 /// `SIGNALED`——lmkd 与 `Process.killProcess` 重启都报它，分不清）返回 null，交给会话标记。
+/// 包更新必须明确归类：安装器杀进程时 app 常停在前台（importance=100），交给会话标记
+/// 就成了「停在前台时没了，疑似闪退」，每次自动更新都弹一次闪退报告。
 PreviousExitKind? androidExitKind(String reason) => switch (reason) {
   'CRASH_NATIVE' => PreviousExitKind.nativeCrash,
   'CRASH' || 'INITIALIZATION_FAILURE' => PreviousExitKind.crash,
   'ANR' => PreviousExitKind.anr,
   'LOW_MEMORY' || 'EXCESSIVE_RESOURCE_USAGE' => PreviousExitKind.memoryKill,
   'USER_REQUESTED' || 'USER_STOPPED' => PreviousExitKind.userStopped,
+  'PACKAGE_UPDATED' => PreviousExitKind.appUpdated,
   _ => null,
 };
 
@@ -870,7 +876,7 @@ abstract final class PreviousExitLog {
   static void markAwaitingCrashReportDecision(bool awaiting) =>
       _marker?.recordAwaitingCrashReportDecision(awaiting);
 
-  /// 正常退出路径（`exitApp` / 重启）在退进程前调用：本次会话标 clean。
+  /// 正常退出路径（`exitApp` / 重启 / 把进程交给更新安装器）在退进程前调用：本次会话标 clean。
   static void markCleanExit() {
     _marker?.markCleanExit(nowMs: DateTime.now().millisecondsSinceEpoch);
   }

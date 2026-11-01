@@ -109,6 +109,35 @@ void main() {
       expect(v.worthReporting, isFalse);
     });
 
+    test('Android 安装新版本杀进程（自动更新）：停在前台也不算闪退（反馈 jmgMk1gHG2）', () {
+      final PreviousExitVerdict v = classifyPreviousExit(
+        <ExitReportEntry>[
+          _markerEntry(dir, lifecycle: 'launching'),
+          ...formatAndroidExitReports(<Object?, Object?>{
+            'reasons': <Object?>[
+              <Object?, Object?>{
+                'reason': 'PACKAGE_UPDATED',
+                'importance': 100,
+                'timestamp': 2500,
+                'description': 'stop app.fushi.reader due to installPackageLI',
+              },
+            ],
+          }),
+        ],
+        version: '1.2.3',
+        nowMs: 9000,
+      )!;
+      expect(v.kind, PreviousExitKind.appUpdated);
+      expect(v.worthReporting, isFalse);
+      expect(
+        (CrashReporter()
+              ..attach(dir, enabled: true)
+              ..recordVerdict(v))
+            .pendingCount,
+        0,
+      );
+    });
+
     test('Android 内存回收：前台算闪退，后台不算', () {
       PreviousExitVerdict lowMemory(int importance) => classifyPreviousExit(
         formatAndroidExitReports(<Object?, Object?>{
@@ -615,6 +644,121 @@ void main() {
       await runCrashReportStartupGate(r);
       expect(crashReportStartupPrompt.value, isNull);
       expect(r.handledThisSession, isFalse);
+      expect(r.pendingCount, 1);
+    });
+  });
+
+  group('首页出来后的提示（反馈 msySECp2Cy）', () {
+    /// 生产同构：宿主挂在 MaterialApp builder 里、导航之上，根 MaterialApp 外包一层
+    /// 按界面语言变 key 的 KeyedSubtree，首页 Scaffold 带 GlobalKey（重挂时被搬进新树）。
+    Widget app(String locale, GlobalKey scaffoldKey) => KeyedSubtree(
+      key: ValueKey<String>('app-locale-$locale'),
+      child: MaterialApp(
+        builder: (BuildContext context, Widget? child) =>
+            Stack(children: <Widget>[child!, const CrashReportPromptHost()]),
+        home: Scaffold(key: scaffoldKey, body: const Text('home')),
+      ),
+    );
+
+    Future<CrashReporter> offer(
+      WidgetTester tester,
+      GlobalKey scaffoldKey,
+      List<http.Request> requests,
+    ) async {
+      final CrashReporter r = CrashReporter()
+        ..attach(dir, enabled: true)
+        ..recordVerdict(_verdict());
+      final Directory root = Directory('${dir.path}/data')..createSync();
+      await tester.runAsync(
+        () => offerCrashReportAfterStartup(
+          context: () => scaffoldKey.currentContext!,
+          reporter: r,
+          service: _service(root, requests, (_) async => null),
+        ),
+      );
+      await tester.pumpAndSettle();
+      return r;
+    }
+
+    tearDown(() => crashReportHomePrompt.value = null);
+
+    testWidgets('根 MaterialApp 重挂后「不用了」照样收起、作废这批', (WidgetTester tester) async {
+      final GlobalKey scaffoldKey = GlobalKey();
+      await tester.pumpWidget(app('zh-CN', scaffoldKey));
+      final CrashReporter r = await offer(
+        tester,
+        scaffoldKey,
+        <http.Request>[],
+      );
+      final Finder card = find.byKey(
+        const ValueKey<String>('crash-report-prompt'),
+      );
+      expect(card, findsOneWidget);
+
+      // 界面语言 key 变了：整棵 app 重挂。
+      await tester.pumpWidget(app('ja-JP', scaffoldKey));
+      await tester.pumpAndSettle();
+      expect(card, findsOneWidget);
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('crash-report-decline')),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(card, findsNothing);
+      expect(r.pendingCount, 0);
+    });
+
+    testWidgets('根 MaterialApp 重挂后「发送」照样收起并真的提交', (WidgetTester tester) async {
+      final GlobalKey scaffoldKey = GlobalKey();
+      final List<http.Request> requests = <http.Request>[];
+      await tester.pumpWidget(app('zh-CN', scaffoldKey));
+      final CrashReporter r = await offer(tester, scaffoldKey, requests);
+      await tester.pumpWidget(app('ja-JP', scaffoldKey));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byKey(const ValueKey<String>('crash-report-send')));
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+      expect(
+        find.byKey(const ValueKey<String>('crash-report-failed')),
+        findsNothing,
+      );
+      expect(crashReportHomePrompt.value, isNull);
+      // 后台提交是在点按回调（假时钟 zone）里起的真异步（文件 + 假网络）：真等一会儿
+      // 让 IO 回来，再 pump 让回调接着跑。
+      for (int i = 0; i < 100 && r.pendingCount > 0; i++) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 20)),
+        );
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      expect(
+        find.byKey(const ValueKey<String>('crash-report-failed')),
+        findsNothing,
+        reason: '提交失败会弹失败提示',
+      );
+      expect(r.pendingCount, 0);
+      expect(
+        requests.where((http.Request q) => q.url.path == '/v1/feedback'),
+        hasLength(1),
+      );
+    });
+
+    testWidgets('不点就按时收起，这批留着下次启动再问', (WidgetTester tester) async {
+      final GlobalKey scaffoldKey = GlobalKey();
+      await tester.pumpWidget(app('zh-CN', scaffoldKey));
+      final CrashReporter r = await offer(
+        tester,
+        scaffoldKey,
+        <http.Request>[],
+      );
+      await tester.pump(kCrashReportPromptDuration);
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey<String>('crash-report-prompt')),
+        findsNothing,
+      );
       expect(r.pendingCount, 1);
     });
   });
