@@ -149,8 +149,13 @@ String videoRemoteMineSentence(
     ? selection.sentence
     : requestSentence ?? selection.sentence;
 
-/// 手机送来的词典媒体清单（`[{dictionary, path}]`）只留路径落在词典资源根内的
+/// 手机送来的词典媒体清单（`[{dictionary, path, filename}]`）只留路径落在词典资源根内的
 /// 条目：缓存文件名取自路径扩展名，越级路径不许进写盘那一步。
+///
+/// `filename` 是 popup.js 写进义项 HTML 的占位符（`fushi_dict_<序号>.<ext>`），落卡时
+/// 按它把 `<img src>` / `<a href>` 换成真实媒体名，必须原样保留；丢了它映射键就成了
+/// 空串，`replaceAll('', ref)` 会把媒体名插进字段的每个字符之间。只收 popup.js 的占位符
+/// 形态（前缀 + 不含引号 / 尖括号），不合格的只丢 `filename`（该条退回 alt 文本）。
 String sanitizeVideoRemoteDictionaryMediaJson(String raw) {
   if (raw.isEmpty || raw == '[]') return raw;
   final Object? decoded;
@@ -169,9 +174,16 @@ String sanitizeVideoRemoteDictionaryMediaJson(String raw) {
         <String, String>{
           'dictionary': item['dictionary'] as String,
           'path': safeDictionaryMediaPath(item['path'] as String)!,
+          if (_isPopupMediaPlaceholder(item['filename']))
+            'filename': item['filename'] as String,
         },
   ]);
 }
+
+bool _isPopupMediaPlaceholder(Object? filename) =>
+    filename is String &&
+    filename.startsWith('fushi_dict_') &&
+    !filename.contains(RegExp(r'''["'<>\s]'''));
 
 /// 收藏句在当前句子列表里的那一行：先按起点 + 文本，起点对得上但文本改过时退回只按起点。
 /// 多行同时匹配回 409 `favorite_subtitle_ambiguous`，找不到回 404 `favorite_subtitle_missing`。
