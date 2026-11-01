@@ -108,6 +108,55 @@ void main() {
       expect(swift, contains('global_lookup_host.html'));
     });
 
+    // docs/specs/2026-10-23-dictionary-script-sandbox.md：global_lookup_host.js
+    // 发 {handler:'_fushiLockBridge'} 后只等 window.__fushiBridgeLockResult；原生
+    // 不接就一直 pending，之后宿主发的每条消息都排队、整个 app 外查词哑掉。
+    test('answers the host bridge lock and enforces it natively', () {
+      final String hostJs = read('assets/popup/global_lookup_host.js');
+      expect(hostJs, contains("var BRIDGE_LOCK_HANDLER = '_fushiLockBridge';"));
+      expect(hostJs, contains('window.__fushiBridgeLockResult = function'));
+      expect(hostJs, contains('{__fushiBridgeToken: bridgeLock.token}'));
+
+      expect(
+        swift,
+        contains('private let kBridgeLockHandler = "_fushiLockBridge"'),
+      );
+      expect(
+        swift,
+        contains('private let kBridgeTokenField = "__fushiBridgeToken"'),
+      );
+      // 锁请求在原生处理、不转给 Dart；锁定后的消息先过令牌 + frame 校验再转。
+      // lastIndexOf：前面那个同签名的是 WeakScriptMessageProxy 的转发。
+      final int recv = swift.lastIndexOf(
+        'didReceive message: WKScriptMessage\n  ) {',
+      );
+      expect(recv, greaterThan(0));
+      final String handlerBody = swift.substring(recv);
+      final int lockIdx = handlerBody.indexOf('handler == kBridgeLockHandler');
+      final int authIdx = handlerBody.indexOf('authorizeLockedBridgeMessage(');
+      final int forwardIdx = handlerBody.indexOf(
+        'channel.invokeMethod("jsMessage"',
+      );
+      expect(lockIdx, greaterThan(0));
+      expect(authIdx, greaterThan(lockIdx));
+      expect(forwardIdx, greaterThan(authIdx));
+      // 回令牌只走宿主闭包的回调；令牌来自系统 CSPRNG、常量时间比较。
+      expect(swift, contains('window.__fushiBridgeLockResult('));
+      expect(swift, contains('SecRandomCopyBytes(kSecRandomDefault'));
+      expect(swift, contains('bridgeTokensEqual('));
+      // 第二道：shim 在所有 frame 都有，锁定后只认宿主文档的主 frame。
+      expect(swift, contains('guard frame.isMainFrame else { return false }'));
+      expect(swift, contains('origin.protocol == kPopupAssetScheme'));
+      // 顶层新文档提交 / 宿主重载即解锁。
+      expect(
+        swift,
+        contains(
+          'func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {\n'
+          '    bridgeLockToken = nil',
+        ),
+      );
+    });
+
     test('deferred bridge handlers match the Windows router', () {
       final String cpp = read('windows/runner/global_lookup_window.cpp');
       for (final String handler in <String>[

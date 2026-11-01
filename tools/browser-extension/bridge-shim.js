@@ -330,6 +330,27 @@ window.flutter_inappwebview = {
             return [];
           }
         })();
+      case 'getDictAsset':
+        // 带脚本词条的外链 <script src>：popup.js 的 __dictSandboxInlineScripts 经这里取源码、
+        // 内联进扩展沙箱文档（沙箱里 connect-src 'none'，取不了）。与图片同一条词典媒体端点；
+        // token 只在 fetch 参数里。配置未就绪 / 取不到 → null，与 app 内缺文件时一致（跳过该脚本）。
+        return (async function () {
+          try {
+            var a = args[0] || {};
+            var media = window.__fushiDictMedia;
+            if (!media || !media.base || !media.token || !a.path) return null;
+            var url = media.base + '/api/media/dictionary'
+              + '?dictionary=' + encodeURIComponent(a.dictionary || '')
+              + '&path=' + encodeURIComponent(a.path)
+              + '&token=' + encodeURIComponent(media.token);
+            var r = await fetch(url);
+            if (!r.ok) return null;
+            var text = await r.text();
+            return text.length ? text : null;
+          } catch (_) {
+            return null;
+          }
+        })();
       // 单词音频播放已统一到 popup.js 自身（playWordAudio 直接 new Audio(url).play()），
       // 三端同一路径，不再经 callHandler('playWordAudio')。故此处旧的 playWordAudio 桥
       // 已删除。resolveWordAudio 仍返回可直接播放的 URL（扩展侧是 sync server 的

@@ -1,0 +1,30 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+</head>
+<body>
+<!-- 带脚本词典词条的内层沙箱页（manifest sandbox.pages；CSP 见 content_security_policy.sandbox）。
+     不透明源、没有扩展 API、connect-src 'none'。只收外层（parent，扩展源）投来的一份文档，
+     document.open/write/close 渲染——同一个 Document，manifest 下发的 CSP 照旧生效；
+     document.open 同时清掉本监听器，之后词典脚本再发「render」也没人接。 -->
+<script>
+(function () {
+  var match = /^(chrome-extension:\/\/[^/]+)\//.exec(location.href);
+  if (!match || window.parent === window) return;
+  var relayOrigin = match[1];
+  function onMessage(event) {
+    if (event.source !== window.parent || event.origin !== relayOrigin) return;
+    var data = event.data;
+    if (!data || data.__fushiDictSandboxRender !== 1 || typeof data.html !== 'string') return;
+    window.removeEventListener('message', onMessage);
+    document.open();
+    document.write(data.html);
+    document.close();
+  }
+  window.addEventListener('message', onMessage);
+  window.parent.postMessage({ __fushiDictSandbox: 1, type: 'ready' }, relayOrigin);
+})();
+</script>
+</body>
+</html>

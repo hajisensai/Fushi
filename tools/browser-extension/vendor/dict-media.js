@@ -291,6 +291,50 @@ function resolveDictMediaPlaceholders(root) {
     }
 }
 
+// 带脚本词条的沙箱文档（popup.js 的 __dictSandboxMountExtensionFrame）：上面那套兑现方落的是
+// 本源 blob: URL，扩展的沙箱页（dict-sandbox.html）是不透明源，加载不了别的源建的 blob:；
+// 沙箱 CSP 也只认 data: / blob:（connect-src 'none'，沙箱里不能自己取）。所以在父侧把占位
+// 一次性兑现成 data:（<img>）或内联 <style>（<link>），再整串交给沙箱。token 只在 fetch 参数里，
+// 不进文档。在 <template> 里改写后再序列化——这串只在沙箱里重新解析（那边本就允许脚本），
+// 主文档从不解析它，没有 mXSS 问题。
+async function fushiDictSandboxInlineMedia(html) {
+    const media = (typeof window !== 'undefined') ? window.__fushiDictMedia : null;
+    const source = `${html}`;
+    if (!media || !media.base || !media.token || !source.includes('data-fushi-media-path')) return source;
+    const template = document.createElement('template');
+    template.innerHTML = source;
+    const nodes = [...template.content.querySelectorAll('[data-fushi-media-path]')];
+    await Promise.all(nodes.map(async (node) => {
+        const encodedDict = node.getAttribute('data-fushi-media-dict') || '';
+        const encodedPath = node.getAttribute('data-fushi-media-path') || '';
+        node.removeAttribute('data-fushi-media-path');
+        node.removeAttribute('data-fushi-media-dict');
+        if (!encodedPath) return;
+        const isLink = node.tagName === 'LINK';
+        try {
+            const response = await fetch(fushiDictMediaEndpoint(media, encodedDict, encodedPath));
+            if (!response.ok) return;
+            if (isLink) {
+                const css = await response.text();
+                const style = template.ownerDocument.createElement('style');
+                style.textContent = (typeof stripDictCssRemoteRefs === 'function')
+                    ? stripDictCssRemoteRefs(css) : css;
+                node.replaceWith(style);
+                return;
+            }
+            const blob = await response.blob();
+            const dataUrl = await new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = () => reject(reader.error);
+                reader.readAsDataURL(blob);
+            });
+            if (typeof dataUrl === 'string' && dataUrl.startsWith('data:')) node.setAttribute('src', dataUrl);
+        } catch (_) { /* 取不到就保持裂图/无样式，绝不阻断渲染 */ }
+    }));
+    return template.innerHTML;
+}
+
 // 弹窗内容是 popup.js 分批渲染的（懒展开、嵌套查词都会再插 DOM），所以不能只在一次渲染后扫一遍：
 // 在弹窗根上装一个 MutationObserver，任何新插入的占位都会被兑现。每个 root 只装一次。
 function installDictMediaPlaceholderResolver(root) {

@@ -52,9 +52,14 @@
     }
   ],
   "web_accessible_resources": [
-    { "resources": ["vendor/content.css", "nested-popup.html", "locales/*.json", "icon-32.png"], "matches": ["<all_urls>"] },
+    { "resources": ["vendor/content.css", "nested-popup.html", "dict-frame.html", "dict-sandbox.html", "locales/*.json", "icon-32.png"], "matches": ["<all_urls>"] },
     { "resources": ["side-panel.html", "side-panel.css", "side-panel.js", "video-favorite.js", "popup-size.js", "locales/en.js", "i18n.js", "material-color.js", "theme-palette.js", "theme.js", "icons.js", "theme.css", "material.css", "glass-select.js", "auto-read.js", "ruby-render.js", "vendor/selection.js", "vendor/dict-media.js", "vendor/popup.js"], "matches": ["<all_urls>"] }
   ],
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'self'; frame-src 'self'",
+    "sandbox": "sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval'; style-src 'unsafe-inline' data:; img-src data: blob:; font-src data:; media-src data: blob:; connect-src 'none'; form-action 'none'; base-uri 'none'; frame-src 'none'"
+  },
+  "sandbox": { "pages": ["dict-sandbox.html"] },
   "options_page": "options.html",
   "side_panel": { "default_path": "side-panel.html" },
   "action": { "default_title": "Fushi Reader Bridge", "default_popup": "vendor/action-popup.html", "default_icon": { "16": "icon-16.png", "32": "icon-32.png", "48": "icon-48.png", "128": "icon-128.png" } }
