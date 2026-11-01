@@ -219,6 +219,32 @@ class WindowsCookieManager extends PlatformCookieManager
     return await channel?.invokeMethod<bool>('deleteCookies', args) ?? false;
   }
 
+  /// 整个环境（user data folder）里的全部 cookie（含分区 cookie）。Fushi 用它把旧的独立
+  /// 窗口宿主档 profile 里的登录一次性迁到共享 cookie 罐。
+  @override
+  Future<List<Cookie>> getAllCookies() async {
+    Map<String, dynamic> args = <String, dynamic>{};
+    args.putIfAbsent(
+        'webViewEnvironmentId', () => params.webViewEnvironment?.id);
+    List<dynamic> cookieListMap =
+        await channel?.invokeMethod<List>('getAllCookies', args) ?? [];
+    cookieListMap = cookieListMap.cast<Map<dynamic, dynamic>>();
+    return <Cookie>[
+      for (final Map<dynamic, dynamic> cookieMap in cookieListMap)
+        Cookie(
+            name: cookieMap["name"],
+            value: cookieMap["value"],
+            expiresDate: cookieMap["expiresDate"],
+            isSessionOnly: cookieMap["isSessionOnly"],
+            domain: cookieMap["domain"],
+            sameSite:
+                HTTPCookieSameSitePolicy.fromNativeValue(cookieMap["sameSite"]),
+            isSecure: cookieMap["isSecure"],
+            isHttpOnly: cookieMap["isHttpOnly"],
+            path: cookieMap["path"]),
+    ];
+  }
+
   @override
   Future<bool> deleteAllCookies() async {
     Map<String, dynamic> args = <String, dynamic>{};
