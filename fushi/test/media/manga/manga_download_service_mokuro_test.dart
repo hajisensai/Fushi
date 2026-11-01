@@ -91,7 +91,14 @@ void main() {
 
   tearDown(() async {
     for (final _FakeDownloader downloader in downloaders) {
-      if (!downloader.ctrl.isClosed) await downloader.ctrl.close();
+      if (downloader.ctrl.isClosed) continue;
+      // 只为 discardStaging 建出来、从没 run 过的下载器没人订阅：close() 的
+      // future 要等订阅者收完 done 才完成，await 它会把 tearDown 挂死。
+      if (downloader.ctrl.hasListener) {
+        await downloader.ctrl.close();
+      } else {
+        unawaited(downloader.ctrl.close());
+      }
     }
     await db.close();
   });
