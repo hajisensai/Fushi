@@ -43,6 +43,7 @@ import 'package:fushi/src/srs/srs_import_task.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_import_tasks_bar.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/srs/srs_starter_packs_dialog.dart';
+import 'package:fushi/src/srs/srs_word_audio_backfill_dialog.dart';
 import 'package:fushi/src/sync/sync_progress_banner.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
@@ -65,6 +66,7 @@ enum _DeckAction {
   moveUp,
   moveDown,
   settings,
+  fillWordAudio,
   delete,
 }
 
@@ -359,6 +361,11 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
         srsRunLogged(
           'SrsDeckList.settings',
           () => _push<void>((_) => SrsDeckSettingsPage(deckId: deck.deck.id)),
+        );
+      case _DeckAction.fillWordAudio:
+        srsRunLogged(
+          'SrsDeckList.fillWordAudio',
+          () => openSrsWordAudioBackfill(context, ref, deckId: deck.deck.id),
         );
       case _DeckAction.delete:
         srsRunLogged('SrsDeckList.delete', () => _delete(deck));
@@ -1300,6 +1307,10 @@ class _DeckRow extends StatelessWidget {
         PopupMenuItem<_DeckAction>(
           value: _DeckAction.settings,
           child: Text(t.srs_deck_settings),
+        ),
+        PopupMenuItem<_DeckAction>(
+          value: _DeckAction.fillWordAudio,
+          child: Text(t.srs_word_audio_backfill_title),
         ),
         if (!isDefault)
           PopupMenuItem<_DeckAction>(
