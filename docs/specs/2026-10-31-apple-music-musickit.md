@@ -1,6 +1,6 @@
 # Apple Music 官方集成（MusicKit 播放后端）
 
-状态（2026-10-31）：**P1 基础设施已合入**（能力标志 + `MusicRoutingBackend`，路由表为空、行为不变；签发端 Worker 见 §3.6）；其余阶段（P0 spike 起，§6）**待所有者拍板**（§9），拍板前不动 P1 以外的代码。
+状态（2026-11-01）：**P1 基础设施已合入**（能力标志 + `MusicRoutingBackend`，路由表为空、行为不变；签发端 Worker 见 §3.6）；**P1b 已实现**（`AppleMusicTokenSource` + catalog 来源，见 §6）；其余阶段（P0 spike 起，§6）**待所有者拍板**（§9），拍板前不动 P1 / P1b 以外的代码。
 
 ## 0. 一句话
 
@@ -146,7 +146,7 @@ AppleMusicBridge (Dart 接口：授权 / 订阅状态 / 播放控制 / 事件流
 | P0 spike | ① Mac + iPhone：Flutter 宿主里 `ApplicationMusicPlayer` 整曲播放、进度、Now Playing 与 audio_service 共存；② Windows WebView2 + MusicKit JS：`authorize()`、整曲（非 30 s）播放、SMTC 是否多出会话；③ Android WebView 同②；每项记证据 | §9 ①② |
 | P1 ✅ | `MusicBackendCapabilities` + `MusicRoutingBackend`（`music_routing_backend.dart`；路由表暂空、行为不变；`test/media/music/music_routing_backend_test.dart` 钉跨后端接力） | — |
 | P2 | Apple 平台：Swift 桥 + `AppleMusicNativeBridge` + 来源浏览 + 设置页 | P0① 通过 |
-| P1b | `AppleMusicTokenSource` + catalog REST 来源（五端浏览 + 预览试听走 mpv） | #2712 合入并部署 |
+| P1b ✅ | `AppleMusicTokenSource` + catalog REST 来源（五端浏览 + 预览试听走 mpv）：`packages/fushi_engine/lib/media/music/apple_music/`，`MusicServerKind.appleMusic`；设置 › 音乐 › 服务器曲库里显式打开（`music_apple_music_enabled`，默认关）+ 选 storefront（`music_apple_music_storefront`，默认 `jp`）；专辑分区 = 热门专辑榜、艺人分区 = 榜单专辑的艺人、主入口是搜索；无预览的曲目不列出；不参与混排；测试 `packages/fushi_engine/test/media/music/apple_music/` | #2712 合入并部署 |
 | P3 | Windows：Worker 托管页 + `AppleMusicWebBridge` | P0② 通过、§9 ③ |
 | P4 | Android：复用 P3 的网页桥 | P0③ 通过 |
 

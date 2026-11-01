@@ -49,6 +49,8 @@ import 'package:fushi/src/media/manga/ocr/manga_ocr_job_registry.dart'
     show kMangaOcrMaxSelectableTasks;
 import 'package:fushi_engine/ocr/manga_ocr_local_model.dart'
     show kDefaultMangaOcrLocalModel, MangaOcrLocalModel;
+import 'package:fushi_engine/media/music/apple_music/apple_music_catalog_client.dart'
+    show normalizeAppleMusicStorefront;
 import 'package:fushi_engine/media/music/server/subsonic_server_config.dart';
 import 'package:fushi_engine/media/torrent/anime_download_config.dart';
 import 'package:fushi_engine/media/torrent/torznab_client.dart';
@@ -4903,6 +4905,33 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setMusicServerMaxBitrate(int kbps) async {
     await setPref('music_server_max_bitrate', kbps < 0 ? 0 : kbps);
+    notifyListeners();
+  }
+
+  /// 服务器曲库里显示 Apple Music catalog 来源（只浏览 + 30 秒试听）。默认关（显式 opt-in：
+  /// 开了才会向 Worker 取 developer token、向 Apple 发请求）。
+  bool get musicAppleMusicEnabled =>
+      getPref('music_apple_music_enabled', defaultValue: false) == true;
+
+  Future<void> setMusicAppleMusicEnabled(bool value) async {
+    await setPref('music_apple_music_enabled', value);
+    notifyListeners();
+  }
+
+  /// Apple Music catalog 的 storefront（两位小写国家码，缺省 `jp`）。
+  String get musicAppleMusicStorefront {
+    final Object? raw = getPref(
+      'music_apple_music_storefront',
+      defaultValue: '',
+    );
+    return normalizeAppleMusicStorefront(raw is String ? raw : null);
+  }
+
+  Future<void> setMusicAppleMusicStorefront(String storefront) async {
+    await setPref(
+      'music_apple_music_storefront',
+      normalizeAppleMusicStorefront(storefront),
+    );
     notifyListeners();
   }
 

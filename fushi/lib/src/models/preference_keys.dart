@@ -451,6 +451,11 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // `kBuiltinAcoustidApiKey`，两者都空 = AcoustID 不可用）。凭据：同时登记在
   // kCredentialPreferenceKeys 与 PrefRedactionPolicy.sensitiveKeys。
   'music_acoustid_api_key',
+  // bool（默认 false）：服务器曲库里显示 Apple Music catalog 来源（MusicKit 方案 P1b：
+  // 浏览 + 30 秒试听，developer token 由排行榜 Worker 代签）。显式 opt-in。
+  'music_apple_music_enabled',
+  // String（默认 'jp'）：Apple Music catalog 的 storefront（两位小写国家码）。
+  'music_apple_music_storefront',
   // String（默认 'auto'）：音乐输出设备（mpv audio-device 名；设备本地）。
   'music_audio_device',
   // int（默认 0 = 关）：交叉淡入时长毫秒（设计 §7.2）。

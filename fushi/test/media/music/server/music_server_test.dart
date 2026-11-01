@@ -324,4 +324,23 @@ void main() {
     expect(await loadMusicServerBrowsers(app), isEmpty);
     expect(await loadMixedServerAlbums(app), isEmpty);
   });
+
+  test('Apple Music：默认关、storefront 归一化往返；不参与混排', () async {
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    final PreferencesRepository prefs = PreferencesRepository(db);
+    await prefs.loadFromDb();
+    expect(prefs.musicAppleMusicEnabled, isFalse);
+    expect(prefs.musicAppleMusicStorefront, 'jp');
+    await prefs.setMusicAppleMusicEnabled(true);
+    await prefs.setMusicAppleMusicStorefront('US');
+    expect(prefs.musicAppleMusicEnabled, isTrue);
+    expect(prefs.musicAppleMusicStorefront, 'us');
+    await prefs.setMusicAppleMusicStorefront('not-a-storefront');
+    expect(prefs.musicAppleMusicStorefront, 'jp');
+
+    expect(musicServerSupportsLibraryMix(MusicServerKind.appleMusic), isFalse);
+    expect(musicServerSupportsLibraryMix(MusicServerKind.jellyfin), isTrue);
+    expect(musicServerSupportsLibraryMix(MusicServerKind.subsonic), isTrue);
+  });
 }
