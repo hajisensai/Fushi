@@ -8825,6 +8825,8 @@
   "texthooker": "文本钩子",
   "texthooker_enabled": "文本钩子（接收文本）",
   "texthooker_enabled_hint": "连接 Textractor/mpv/agent 并查询收到的文本",
+  "texthooker_urls": "文本端点地址",
+  "texthooker_urls_hint": "要接收文本的 WebSocket 地址，用逗号或空格分隔。LunaTranslator 填 ws://127.0.0.1:<端口>/api/ws/text/origin（原文）。",
   "theme_accent_auto_tone": "按明暗模式自动调整色调",
   "theme_accent_auto_tone_desc": "关闭：直接使用所选原色。开启：为浅色/深色模式各自生成色调，实际显示会与所选不同",
   "theme_accent_auto_tone_short": "浅色与深色各自生成色调",

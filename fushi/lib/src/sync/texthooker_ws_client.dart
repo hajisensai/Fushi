@@ -9,6 +9,23 @@ import 'package:fushi/src/sync/texthooker_service.dart';
 /// WS 连接工厂（注入以便测试）。
 typedef WsChannelFactory = WebSocketChannel Function(String url);
 
+/// 把设置里用户填写的端点文本解析成要连接的 URL 列表。
+///
+/// 端点不止默认三个端口：LunaTranslator 的 WS 输出挂在路径上
+/// （`ws://<ip>:<port>/api/ws/text/origin`），任意主机 / 端口 / 路径都必须能填。
+/// 分隔符接受逗号、分号、空白与全角逗号/顿号；没写协议的条目补 `ws://`；
+/// 重复条目只保留第一次出现（同一端点连两次会让每行文本进来两遍）。
+List<String> parseTexthookerEndpointInput(String raw) {
+  final List<String> urls = <String>[];
+  for (final String token in raw.split(RegExp(r'[\s,;，；、]+'))) {
+    final String trimmed = token.trim();
+    if (trimmed.isEmpty) continue;
+    final String url = trimmed.contains('://') ? trimmed : 'ws://$trimmed';
+    if (!urls.contains(url)) urls.add(url);
+  }
+  return urls;
+}
+
 /// 连接一个或多个 texthooker WS server（默认 6677/9001/2333），把收到的每条
 /// 消息经 [parseTexthookerMessage] 解析后 append 到 [TexthookerService]。
 /// 断线固定退避自动重连。

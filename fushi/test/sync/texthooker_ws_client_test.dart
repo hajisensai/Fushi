@@ -160,4 +160,56 @@ void main() {
 
     expect(escaped, isEmpty, reason: 'BUG-115：连接失败异常不得逃逸到全局 zone');
   });
+
+  group('自定义端点（LunaTranslator 的 WS 挂在路径上）', () {
+    test('parseTexthookerEndpointInput 按逗号/空白/全角分隔、补协议、去重', () {
+      expect(
+        parseTexthookerEndpointInput(
+          'ws://192.168.1.5:2333/api/ws/text/origin,  localhost:6677\n'
+          'wss://example.org/ws，ws://192.168.1.5:2333/api/ws/text/origin',
+        ),
+        <String>[
+          'ws://192.168.1.5:2333/api/ws/text/origin',
+          'ws://localhost:6677',
+          'wss://example.org/ws',
+        ],
+      );
+      expect(parseTexthookerEndpointInput('  ,, '), isEmpty);
+    });
+
+    test('带路径的端点能连上并收到文本', () async {
+      final HttpServer server = await HttpServer.bind('127.0.0.1', 0);
+      final List<String> paths = <String>[];
+      server.listen((HttpRequest request) async {
+        paths.add(request.uri.path);
+        if (request.uri.path != '/api/ws/text/origin') {
+          request.response.statusCode = HttpStatus.notFound;
+          await request.response.close();
+          return;
+        }
+        final WebSocket ws = await WebSocketTransformer.upgrade(request);
+        ws.add('原文テキスト');
+      });
+      final List<String> urls = parseTexthookerEndpointInput(
+        '127.0.0.1:${server.port}/api/ws/text/origin',
+      );
+      final TexthookerWsClient client = TexthookerWsClient(
+        urls: urls,
+        service: TexthookerService.instance,
+        channelFactory: (String u) => IOWebSocketChannel.connect(Uri.parse(u)),
+      );
+      client.start();
+      for (
+        int i = 0;
+        i < 200 && TexthookerService.instance.lines.isEmpty;
+        i++
+      ) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      expect(TexthookerService.instance.lines, <String>['原文テキスト']);
+      expect(paths, contains('/api/ws/text/origin'));
+      await client.stop();
+      await server.close(force: true);
+    });
+  });
 }

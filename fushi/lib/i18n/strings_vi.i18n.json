@@ -8825,6 +8825,8 @@
   "texthooker": "Texthooker",
   "texthooker_enabled": "Texthooker (nhận văn bản)",
   "texthooker_enabled_hint": "Kết nối Textractor/mpv/agent và tra văn bản nhận được",
+  "texthooker_urls": "Text endpoint URLs",
+  "texthooker_urls_hint": "WebSocket addresses to receive text from, separated by commas or spaces. For LunaTranslator use ws://127.0.0.1:<port>/api/ws/text/origin (original text).",
   "theme_accent_auto_tone": "Điều chỉnh tông màu cho chế độ sáng và tối",
   "theme_accent_auto_tone_desc": "Tắt: dùng đúng màu đã chọn. Bật: tạo tông sáng hơn hoặc tối hơn cho từng chế độ, nên màu bạn thấy sẽ khác với màu đã chọn.",
   "theme_accent_auto_tone_short": "Separate tones for light and dark",

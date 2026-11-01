@@ -46,6 +46,14 @@
 | [BUG-3930](bugs/BUG-3930-stale-snackbar-after-root-remount.md) | ✅ | ✅ | 根树重挂后闪退报告提示条冻结半透明、点按钮 Null check 关不掉 |
 | [BUG-3929](bugs/BUG-3929-update-exit-false-crash-report.md) | ✅ | ✅ | 应用内更新 / 安装新版本后误报「意外退出」 |
 | [BUG-3928](bugs/BUG-3928-desktop-prefs-corrupt-startup-fail.md) | ✅ | ✅ | Windows 偏好文件断电损坏后每次启动都 FormatException 失败 |
+> 共 3535 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-3931](bugs/BUG-3931-gal-lookup-card-keyboard-reaches-game.md) | ✅ | ✅ | gal-lookup-card-keyboard-reaches-game |
+| [BUG-3930](bugs/BUG-3930-gal-lookup-card-middle-button-and-left-click-leak.md) | ✅ | ✅ | gal-lookup-card-middle-button-and-left-click-leak |
+| [BUG-3929](bugs/BUG-3929-gal-unity-text-flood-freezes-ui.md) | ✅ | ✅ | gal-unity-text-flood-freezes-ui |
+| [BUG-3928](bugs/BUG-3928-texthooker-custom-endpoint-url.md) | ✅ | ✅ | texthooker-custom-endpoint-url |
 | [BUG-3927](bugs/BUG-3927-reader-jp-gothic-alias-theme-font.md) | ✅ | ✅ | 電書協书的章标题在换了主题字体的 Android 机上竖排叠字 |
 | [BUG-3926](bugs/BUG-3926-download-subtitle-retry-drops-anilist.md) | ✅ | ✅ | download-subtitle-retry-drops-anilist |
 | [BUG-3925](bugs/BUG-3925-ai-panel-tight-mode-hides-context-chip.md) | ✅ | ✅ | ai-panel-tight-mode-hides-context-chip |

@@ -8825,6 +8825,8 @@
   "texthooker": "텍스트 후커",
   "texthooker_enabled": "Texthooker(텍스트 수신)",
   "texthooker_enabled_hint": "Textractor/mpv/agent에 연결해 수신한 텍스트를 검색합니다",
+  "texthooker_urls": "Text endpoint URLs",
+  "texthooker_urls_hint": "WebSocket addresses to receive text from, separated by commas or spaces. For LunaTranslator use ws://127.0.0.1:<port>/api/ws/text/origin (original text).",
   "theme_accent_auto_tone": "라이트/다크 모드에 맞게 톤 조정",
   "theme_accent_auto_tone_desc": "꺼짐: 선택한 색을 그대로 사용합니다. 켜짐: 모드별로 더 밝거나 어두운 톤을 생성하므로 선택한 색과 실제 표시되는 색이 다를 수 있습니다.",
   "theme_accent_auto_tone_short": "Separate tones for light and dark",

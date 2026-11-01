@@ -30,6 +30,7 @@ import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/settings/settings_schema_local_services.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
+import 'package:fushi/src/sync/texthooker_ws_client.dart';
 import 'package:fushi/src/sync/texthooker_ws_client_manager.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
@@ -1202,6 +1203,30 @@ SettingsDestination buildLookupDestination() {
                 );
               } else {
                 await TexthookerWsClientManager.instance.stop();
+              }
+              settingsContext.refresh();
+            },
+          ),
+          // 要连的端点。此前只能用写死的三个默认端口，LunaTranslator 这类把 WS 输出挂在
+          // 路径上的服务端（/api/ws/text/origin）根本连不上，诊断页只会一直「重连」。
+          SettingsTextItem(
+            id: 'lookup.texthooker_urls',
+            title: t.texthooker_urls,
+            subtitle: t.texthooker_urls_hint,
+            icon: Icons.link,
+            placeholder: TexthookerWsClient.defaultUrls.join(', '),
+            keyboardType: TextInputType.url,
+            debounce: const Duration(milliseconds: 800),
+            value: (SettingsContext settingsContext) =>
+                settingsContext.appModel.texthookerUrls.join(', '),
+            resetValue: (SettingsContext settingsContext) =>
+                TexthookerWsClient.defaultUrls.join(', '),
+            onChanged: (SettingsContext settingsContext, String value) async {
+              final List<String> urls = parseTexthookerEndpointInput(value);
+              await settingsContext.appModel.setTexthookerUrls(urls);
+              // 开着时按新列表重连；关着时只落盘，下次打开开关自然用新列表。
+              if (settingsContext.appModel.texthookerEnabled) {
+                await TexthookerWsClientManager.instance.restart(urls);
               }
               settingsContext.refresh();
             },

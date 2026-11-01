@@ -8825,6 +8825,8 @@
   "texthooker": "テキストフッカー",
   "texthooker_enabled": "テキストフッカー（テキスト受信）",
   "texthooker_enabled_hint": "Textractor/mpv/agent に接続し、受信したテキストを辞書で引きます",
+  "texthooker_urls": "Text endpoint URLs",
+  "texthooker_urls_hint": "WebSocket addresses to receive text from, separated by commas or spaces. For LunaTranslator use ws://127.0.0.1:<port>/api/ws/text/origin (original text).",
   "theme_accent_auto_tone": "ライト/ダークモードに合わせて色調を調整",
   "theme_accent_auto_tone_desc": "オフ：選んだ色をそのまま使います。オン：各モード用に明るい、または暗い色調を生成するため、実際の表示は選んだ色と異なります。",
   "theme_accent_auto_tone_short": "Separate tones for light and dark",
