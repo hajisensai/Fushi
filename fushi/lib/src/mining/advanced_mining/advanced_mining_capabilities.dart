@@ -191,6 +191,7 @@ class AdvancedMiningAudioSection {
 
   /// 用户在对话框里换了步长：宿主据此记住，下次打开沿用。null = 不记。
   final void Function(int stepMs)? onNudgeStepChanged;
+
   /// 句子音频来源的临时切换（视频，反馈 pNF2ZL7Kfc）；null = 这个页面不给选。
   final AdvancedMiningAudioSources? sources;
 }
