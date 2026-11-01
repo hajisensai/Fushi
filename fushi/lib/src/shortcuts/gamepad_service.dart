@@ -308,6 +308,12 @@ class GamepadFrameBits {
 ///   1. [GamepadButtonIntent] → the active page's registry-resolved action;
 ///   2. else A → [ActivateIntent], B → global back (maybePop),
 ///      D-pad → directional focus (same as arrow keys).
+/// 硬件导航活动计数：手柄按键 / 摇杆 / 长按派发进 app、以及键盘方向导航时 +1。
+/// 桌面手柄走 [GamepadService] 轮询直接 `Actions.maybeInvoke`，**不产生
+/// KeyEvent**，只听 `HardwareKeyboard` 的「有人在操作」判断（如歌词底栏自动
+/// 隐藏）会漏掉手柄——订阅这个。
+final ValueNotifier<int> gamepadInputActivity = ValueNotifier<int>(0);
+
 class GamepadService {
   GamepadService({
     required this.navigatorKey,
@@ -662,6 +668,7 @@ class GamepadService {
   void _setHighlightForHardwareNav() {
     FocusManager.instance.highlightStrategy =
         FocusHighlightStrategy.alwaysTraditional;
+    gamepadInputActivity.value++;
   }
 
   void _onPointerGlobal(PointerEvent event) {

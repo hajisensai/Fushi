@@ -2,12 +2,15 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/gestures.dart' show PointerDeviceKind;
+import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_control_layout.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_illustration_view.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_illustrations.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_contract.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_overlay.dart';
+import 'package:fushi/src/shortcuts/gamepad_service.dart'
+    show gamepadInputActivity;
 import 'package:fushi/src/utils/components/fushi_m3e_player.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -291,23 +294,34 @@ void main() {
         )
         .opacity;
 
-    testWidgets('playing: bottom chrome auto-hides, lyrics extend, '
-        'mouse movement brings it back', (WidgetTester tester) async {
+    Future<void> waitForHide(WidgetTester tester) async {
+      await tester.pump(kLyricsChromeIdleHideDelay);
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pump(const Duration(milliseconds: 400));
+    }
+
+    testWidgets('playing: bottom chrome auto-hides, lyrics extend; '
+        'a click only wakes it, then a mouse move alone brings it back', (
+      WidgetTester tester,
+    ) async {
       await pumpAt(tester, const Size(1600, 900), app(playing: true));
       final Rect shown = tester.getRect(key('lyrics_view_probe'));
       expect(chromeOpacity(tester), 1);
 
-      await tester.pump(kLyricsChromeIdleHideDelay);
-      await tester.pump(const Duration(milliseconds: 400));
-      await tester.pump(const Duration(milliseconds: 400));
+      await waitForHide(tester);
       expect(chromeOpacity(tester), 0);
       final Rect hidden = tester.getRect(key('lyrics_view_probe'));
       expect(hidden.top, shown.top);
       expect(hidden.bottom, closeTo(900 - 16, 0.5));
-      // 隐藏时看不见的钮不吃点击。
+      // 隐藏时看不见的钮不吃点击：这一下只唤出底栏。
       await tester.tap(key('lyrics_close_button'), warnIfMissed: false);
+      await tester.pump();
       expect(calls, isNot(contains('exit')));
+      expect(chromeOpacity(tester), 1);
 
+      // 再次隐藏后单独测鼠标悬停移动（不带按下）。
+      await waitForHide(tester);
+      expect(chromeOpacity(tester), 0);
       final TestGesture mouse = await tester.createGesture(
         kind: PointerDeviceKind.mouse,
       );
@@ -318,6 +332,53 @@ void main() {
       expect(tester.getRect(key('lyrics_view_probe')), shown);
       await mouse.removePointer();
       expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('playing: a key press brings the hidden chrome back', (
+      WidgetTester tester,
+    ) async {
+      await pumpAt(tester, const Size(1600, 900), app(playing: true));
+      await waitForHide(tester);
+      expect(chromeOpacity(tester), 0);
+      await tester.sendKeyEvent(LogicalKeyboardKey.shiftLeft);
+      await tester.pump();
+      expect(chromeOpacity(tester), 1);
+    });
+
+    testWidgets('playing: desktop gamepad activity (no KeyEvent) brings '
+        'the hidden chrome back', (WidgetTester tester) async {
+      await pumpAt(tester, const Size(1600, 900), app(playing: true));
+      await waitForHide(tester);
+      expect(chromeOpacity(tester), 0);
+      // 桌面手柄轮询派发只经 gamepadInputActivity，不经 HardwareKeyboard。
+      gamepadInputActivity.value++;
+      await tester.pump();
+      expect(chromeOpacity(tester), 1);
+    });
+
+    testWidgets('pausing while hidden restores the chrome at once', (
+      WidgetTester tester,
+    ) async {
+      await pumpAt(tester, const Size(1600, 900), app(playing: true));
+      final Rect shown = tester.getRect(key('lyrics_view_probe'));
+      await waitForHide(tester);
+      expect(chromeOpacity(tester), 0);
+      await tester.pumpWidget(app());
+      await tester.pump();
+      expect(chromeOpacity(tester), 1);
+      expect(tester.getRect(key('lyrics_view_probe')), shown);
+    });
+
+    testWidgets('screen reader on: chrome never auto-hides (a 0-opacity '
+        'subtree leaves the semantics tree)', (WidgetTester tester) async {
+      tester.platformDispatcher.accessibilityFeaturesTestValue =
+          const FakeAccessibilityFeatures(accessibleNavigation: true);
+      addTearDown(
+        tester.platformDispatcher.clearAccessibilityFeaturesTestValue,
+      );
+      await pumpAt(tester, const Size(1600, 900), app(playing: true));
+      await tester.pump(kLyricsChromeIdleHideDelay * 3);
+      expect(chromeOpacity(tester), 1);
     });
 
     testWidgets('paused: bottom chrome never auto-hides', (

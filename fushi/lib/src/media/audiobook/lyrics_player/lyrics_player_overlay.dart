@@ -10,6 +10,8 @@ import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_apple.dart
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_contract.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_md3.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_theme_host.dart';
+import 'package:fushi/src/shortcuts/gamepad_service.dart'
+    show gamepadInputActivity;
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart'
@@ -114,16 +116,24 @@ class _ReaderLyricsPlayerOverlayState extends State<ReaderLyricsPlayerOverlay> {
     super.initState();
     GestureBinding.instance.pointerRouter.addGlobalRoute(_onGlobalPointer);
     HardwareKeyboard.instance.addHandler(_onKey);
+    // 桌面手柄走轮询直接派发 Actions，不产生 KeyEvent：单独订阅。
+    gamepadInputActivity.addListener(_registerActivity);
     WidgetsBinding.instance.addPostFrameCallback((_) => _syncIdle());
   }
 
-  /// 只有 MD3 新版布局播放中才自动隐藏（Apple / 经典 / 暂停一律常显）。宽窄由外观
-  /// 自己判断：窄屏忽略这两个标志。
+  /// 只有 MD3 新版布局宽屏播放中才自动隐藏（Apple / 经典 / 暂停 / 窄屏一律常显）。
+  /// 无障碍导航（读屏）开着时也常显：淡到 0 的子树会退出语义树，读屏的探索 /
+  /// 双击走无障碍动作、不产生指针事件，隐藏后既找不到也唤不回。
   bool get _autoHideEnabled =>
       mounted &&
       widget.data.isPlaying &&
       widget.data.controlsStyle == LyricsControlsStyle.modern &&
-      !isGlassDesign(context);
+      !isGlassDesign(context) &&
+      !MediaQuery.accessibleNavigationOf(context) &&
+      lyricsPlayerIsWide(MediaQuery.sizeOf(context));
+
+  /// 上次依赖变化时的 [_autoHideEnabled]：宽窄切换 / 读屏开关时重排计时器。
+  bool? _autoHideWas;
 
   void _onGlobalPointer(PointerEvent event) {
     if (event is PointerHoverEvent ||
@@ -193,12 +203,18 @@ class _ReaderLyricsPlayerOverlayState extends State<ReaderLyricsPlayerOverlay> {
       _host = host;
     }
     _resolveCoverScheme();
+    final bool autoHide = _autoHideEnabled;
+    if (_autoHideWas != null && autoHide != _autoHideWas) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _syncIdle());
+    }
+    _autoHideWas = autoHide;
   }
 
   @override
   void dispose() {
     GestureBinding.instance.pointerRouter.removeGlobalRoute(_onGlobalPointer);
     HardwareKeyboard.instance.removeHandler(_onKey);
+    gamepadInputActivity.removeListener(_registerActivity);
     _idleTimer?.cancel();
     _expandTimer?.cancel();
     _host?.detach(this);
