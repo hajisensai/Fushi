@@ -1199,6 +1199,18 @@ pub(crate) fn register_value(edits: &[StoredEdit<'_>], key: &str) -> Result<Valu
     Ok(ent.value(key).clone())
 }
 
+/// 测试用：一个实体全部寄存器的裁决（按记录 ID 而不是下标）——每个键的未被支配者（排序后，首个是胜者）、是否冲突、
+/// 可见败者，以及与删除并发的内容修改。两份只差 ctx 的记录集比这个就知道支配 / 胜负有没有变。
+#[cfg(test)]
+pub(crate) fn registers_report(edits: &[StoredEdit<'_>]) -> Result<Value, String> {
+    let parsed = parse_stored(edits)?;
+    let ent = Entity::build(&parsed);
+    let ids = |xs: &[usize]| -> Vec<&str> { xs.iter().map(|&i| parsed[i].id.as_str()).collect() };
+    let regs: Vec<Value> =
+        ent.regs.iter().map(|r| json!([r.key, ids(&r.live), r.conflicted, ids(&r.visible_losers)])).collect();
+    Ok(json!({"regs": regs, "concurrentWithDelete": ids(&ent.concurrent_with_delete())}))
+}
+
 /// 浏览（store/browse.rs）：一条笔记各字段的生效原文（`f/<字段 id>` 键；非字符串记成空串，与 Dart 浏览按需读同值），
 /// 以及各寄存器生效记录 HLC 物理时刻的最大值（Dart `srsEditsModifiedAt` 去掉创建时刻那一项；没有记录 = None）。
 /// [edits] 只给部分字段键时，最后改动时刻只对这些键成立（调用方只在给全部记录时用它）。

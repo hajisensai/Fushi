@@ -270,6 +270,97 @@ pub(crate) fn load_op(conn: &Connection, profile: &str, id: &OpId) -> Result<Opt
     .transpose()
 }
 
+// ---------------------------------------------------------------- 合成写入者不进因果上下文
+
+/// 合成写入者（`sync2:tags:<笔记>`，registers.rs [crate::registers::SYNTHETIC_WRITER_PREFIX]）不进任何因果上下文
+/// （BUG-3959）。理由：它的 dot 只属于那条笔记的合成 `tags` 行，而 `tags` 寄存器里永远只有这一行
+/// （semantics.rs `refresh_tags_row` 直接改写、删掉别的 `tags` 行，标签走 OR-Set 不经 [land_edit] 的支配裁剪）；
+/// 支配只在同一寄存器内判（registers.rs `land` / `resolve`），「与删除并发」本就跳过合成行。所以任何上下文里有没有
+/// 它，所有寄存器的胜者、可见败者、冲突与待裁决都不变——留着只会让本设备每条新修改的 ctx 带上整份闭包（一条
+/// 笔记一项，实测 15027 项 ≈ 780 KB / 条）。
+pub(crate) fn is_synthetic_writer(w: &str) -> bool {
+    w.starts_with(crate::registers::SYNTHETIC_WRITER_PREFIX)
+}
+
+/// 投影行 / 旧戳里的 ctx（JSON 原形）去掉合成写入者：vv 与 cloud 里删掉这些键，cloud 因此删空就整个去掉（与
+/// [Dvv::to_json] 不输出空 cloud 一致），其余逐字不动。没有可去的返回 `None`。迁移（[strip_synthetic_writers]）与
+/// 投影（[edit_row]）用同一个函数，所以旧行迁移后与新代码重新投影出来的逐字节相同。
+pub(crate) fn strip_synthetic_ctx(ctx: &Value) -> Option<Value> {
+    let Value::Object(m) = ctx else { return None };
+    let mut out = m.clone();
+    let mut changed = false;
+    for key in ["vv", "cloud"] {
+        if let Some(Value::Object(inner)) = out.get_mut(key) {
+            let before = inner.len();
+            inner.retain(|k, _| !is_synthetic_writer(k));
+            if inner.len() != before {
+                changed = true;
+                if key == "cloud" && inner.is_empty() {
+                    out.remove("cloud");
+                }
+            }
+        }
+    }
+    changed.then_some(Value::Object(out))
+}
+
+/// 外来 / 迁移的修改记录包成操作时的旧上下文原文：先去掉合成写入者（新操作的载荷里不再带它们）。
+fn legacy_ctx_json(x: &Value) -> String {
+    let empty = json!({"vv": {}});
+    let ctx = x.get("ctx").unwrap_or(&empty);
+    canonical(&strip_synthetic_ctx(ctx).unwrap_or_else(|| ctx.clone()))
+}
+
+/// srs.db v19：去掉存量因果上下文里的合成写入者（[is_synthetic_writer]）——`sync2_legacy.ctx` 与投影行
+/// `srs_field_edits` 的 `ctx`。确定性：只是对各设备逐位相同的投影套同一个函数，结果等于新代码从操作重新投影；
+/// 操作日志（`sync2_ops`，已上传的载荷）一个字节不动。摘要桶由 UPDATE 触发器随行增减（digest.rs）。可重放：
+/// 第二次什么也找不到。返回 `(改了的 legacy 行, 改了的投影行)`。
+pub(crate) fn strip_synthetic_writers(c: &Connection) -> Result<(usize, usize), String> {
+    // 合成写入者在 ctx 里只会以键 `"sync2:…"` 出现：先按子串筛，再解析确认。
+    let needle = format!("\"{}", crate::registers::SYNTHETIC_WRITER_PREFIX);
+    let legacy: Vec<(String, Vec<u8>, String)> = c
+        .prepare("SELECT srs_idt(profile_uid), device, ctx FROM sync2_legacy WHERE instr(ctx, ?1) > 0")
+        .map_err(sql)?
+        .query_map([&needle], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+        .map_err(sql)?
+        .collect::<Result<_, _>>()
+        .map_err(sql)?;
+    let mut n_legacy = 0;
+    for (profile, device, ctx) in legacy {
+        let mut d = Dvv::parse(&ctx);
+        if d.drop_writers(crate::registers::SYNTHETIC_WRITER_PREFIX) {
+            c.execute(
+                "UPDATE sync2_legacy SET ctx = ?3 WHERE profile_uid = srs_id(?1) AND device = ?2",
+                params![profile, device, d.to_json().to_string()],
+            )
+            .map_err(sql)?;
+            n_legacy += 1;
+        }
+    }
+    let rows: Vec<(String, String)> = c
+        .prepare("SELECT srs_idt(id), json FROM srs_field_edits WHERE instr(jslim, ?1) > 0")
+        .map_err(sql)?
+        .query_map([&needle], |r| Ok((r.get(0)?, r.get(1)?)))
+        .map_err(sql)?
+        .collect::<Result<_, _>>()
+        .map_err(sql)?;
+    let mut n_rows = 0;
+    for (id, text) in rows {
+        let Ok(mut v) = serde_json::from_str::<Value>(&text) else { continue };
+        let Some(ctx) = v.get("ctx").and_then(strip_synthetic_ctx) else { continue };
+        v["ctx"] = ctx;
+        c.prepare_cached(
+            // 不能 REPLACE（摘要桶，见 semantics.rs `refresh_tags_row`）：UPDATE 走触发器先减后加。
+            "UPDATE srs_field_edits SET jslim = srs_edit_pack(?2, id, profile_uid, entity_kind, entity_id, field_key, writer_id, seq)              WHERE id = srs_id(?1)",
+        )
+        .map_err(sql)?
+        .execute(params![id, canonical(&v)])
+        .map_err(sql)?;
+        n_rows += 1;
+    }
+    Ok((n_legacy, n_rows))
+}
+
 // ---------------------------------------------------------------- 旧修改记录的因果闭包
 
 /// `L(vv)`：这个版本向量覆盖的操作里，迁移进来的旧修改记录的旧 dot 与旧上下文之并（见 dvv.rs）。
@@ -297,10 +388,14 @@ pub(crate) fn legacy_closure(conn: &Connection, profile: &str, vv: &Vv) -> Resul
             let p: Vec<u8> = r.get(0).map_err(sql)?;
             if let Ok(Body::Edit(EditBody { legacy: Some(l), .. })) = Body::decode(op::KIND_EDIT, &p) {
                 out.merge(&Dvv::parse(&l.ctx_json));
-                out.add(&l.writer, l.seq);
+                if !is_synthetic_writer(&l.writer) {
+                    out.add(&l.writer, l.seq);
+                }
             }
         }
     }
+    // 已上传的旧操作载荷里可能带着合成写入者（BUG-3959 之前包的）：一律不收（[is_synthetic_writer]）。
+    out.drop_writers(crate::registers::SYNTHETIC_WRITER_PREFIX);
     Ok(out)
 }
 
@@ -313,7 +408,11 @@ fn note_legacy(conn: &Connection, profile: &str, device: &Id, seq: u64, l: &Lega
         .map_err(sql)?;
     let mut d = cur.map(|c| Dvv::parse(&c)).unwrap_or_default();
     d.merge(&Dvv::parse(&l.ctx_json));
-    d.add(&l.writer, l.seq);
+    // 合成写入者不进闭包（[is_synthetic_writer]）：既不记它自己的 dot，也不收旧载荷 ctx 里带着的。
+    if !is_synthetic_writer(&l.writer) {
+        d.add(&l.writer, l.seq);
+    }
+    d.drop_writers(crate::registers::SYNTHETIC_WRITER_PREFIX);
     conn.prepare_cached("INSERT OR REPLACE INTO sync2_legacy (profile_uid, device, upto, ctx) VALUES (srs_id(?1), ?2, ?3, ?4)")
         .map_err(sql)?
         .execute(params![profile, device.0.to_vec(), seq as i64, d.to_json().to_string()])
@@ -491,7 +590,11 @@ pub(crate) fn log_row(profile: &str, op: &Op, l: &LogBody) -> Value {
 /// 并上旧修改记录闭包；迁移进来的旧记录：原样的旧 dot / 旧 ctx / 旧 HLC。
 pub(crate) fn edit_row(conn: &Connection, profile: &str, op: &Op, e: &EditBody) -> Result<(String, Value), String> {
     let (writer, seq, ctx, hlc) = match &e.legacy {
-        Some(l) => (l.writer.clone(), l.seq, serde_json::from_str::<Value>(&l.ctx_json).unwrap_or(json!({"vv": {}})), l.hlc.clone()),
+        Some(l) => {
+            let ctx = serde_json::from_str::<Value>(&l.ctx_json).unwrap_or(json!({"vv": {}}));
+            // 旧载荷里的合成写入者不进投影行（[strip_synthetic_ctx]，与 v19 迁移同一个函数）。
+            (l.writer.clone(), l.seq, strip_synthetic_ctx(&ctx).unwrap_or(ctx), l.hlc.clone())
+        }
         None => {
             let full = op.ctx();
             let mut d = legacy_closure(conn, profile, &full)?;
@@ -1016,7 +1119,7 @@ pub(crate) fn body_of_event(ev: &Value, note: Option<&str>, stamped: bool, serve
                 legacy: Some(LegacyStamp {
                     writer: s("w").ok_or("edit writer")?.to_owned(),
                     seq: x["s"].as_i64().ok_or("edit seq")?,
-                    ctx_json: canonical(x.get("ctx").unwrap_or(&json!({"vv": {}}))),
+                    ctx_json: legacy_ctx_json(x),
                     hlc: s("hlc").ok_or("edit hlc")?.to_owned(),
                     server_time: server,
                 }),
@@ -1123,7 +1226,7 @@ fn legacy_body(c: &Connection, phase: i64, src: &str) -> Result<Option<Body>, St
                 legacy: Some(LegacyStamp {
                     writer: s("w").ok_or("edit writer")?.to_owned(),
                     seq: x["s"].as_i64().ok_or("edit seq")?,
-                    ctx_json: canonical(x.get("ctx").unwrap_or(&json!({"vv": {}}))),
+                    ctx_json: legacy_ctx_json(&x),
                     hlc: s("hlc").ok_or("edit hlc")?.to_owned(),
                     server_time: st,
                 }),
@@ -1579,6 +1682,8 @@ mod tests_digest;
 mod tests_replay_pending;
 #[cfg(test)]
 mod tests_footprint;
+#[cfg(test)]
+mod tests_synthetic_ctx;
 
 impl SrsCore {
     /// 评分预览（Dart `SrsCardOps.preview` 的 v2 实现）：在这张卡的归属组重放到此刻的状态上，用当前牌组配置与
