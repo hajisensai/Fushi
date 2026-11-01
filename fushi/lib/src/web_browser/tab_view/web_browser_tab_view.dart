@@ -411,8 +411,12 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
     if (controller == null) return;
     try {
       await controller.setSettings(settings: target);
-      await _replaceGroupScripts(controller);
-      await controller.evaluateJavascript(source: _pageStyleScripts());
+      await applyWebBrowserPageStyle(
+        controller,
+        platform: _platform,
+        textZoom: _appliedTextZoom,
+        forceDark: _appliedForceDark,
+      );
       if (reload) {
         _recorder?.onReload();
         await controller.reload();
@@ -426,34 +430,12 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
     }
   }
 
-  static const String _kStyleScriptGroup = 'fushi-browser-page-style';
-
-  /// 文字大小（非原生平台）+ 深色模式（非原生平台）的页内脚本。
-  String _pageStyleScripts() {
-    final StringBuffer out = StringBuffer();
-    final String? zoom = webBrowserTextZoomScript(
-      _appliedTextZoom,
-      webBrowserTextZoomModeOn(_platform),
-    );
-    if (zoom != null) out.writeln(zoom);
-    if (!webBrowserForceDarkNativeOn(_platform)) {
-      out.writeln(webBrowserForceDarkScript(enabled: _appliedForceDark));
-    }
-    return out.toString();
-  }
-
-  UserScript _styleUserScript() => UserScript(
-    groupName: _kStyleScriptGroup,
-    source: _pageStyleScripts(),
-    injectionTime: UserScriptInjectionTime.AT_DOCUMENT_END,
+  /// 文字大小 + 深色模式的页内样式（与网页播放器网页档共用 [webBrowserPageStyleUserScript]）。
+  UserScript _styleUserScript() => webBrowserPageStyleUserScript(
+    platform: _platform,
+    textZoom: _appliedTextZoom,
+    forceDark: _appliedForceDark,
   );
-
-  Future<void> _replaceGroupScripts(InAppWebViewController controller) async {
-    await controller.removeUserScriptsByGroupName(
-      groupName: _kStyleScriptGroup,
-    );
-    await controller.addUserScript(userScript: _styleUserScript());
-  }
 
   List<UserScript> _initialUserScripts(WebAdblockWiring adblock) {
     return <UserScript>[
@@ -570,7 +552,15 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
     _recorder?.onLoadStop(pageUrl, _tab.title);
     unawaited(_updateFavicon(controller));
     unawaited(_installLookup(controller));
-    unawaited(_evaluateQuiet(_pageStyleScripts()));
+    unawaited(
+      _evaluateQuiet(
+        webBrowserPageStyleScript(
+          platform: _platform,
+          textZoom: _appliedTextZoom,
+          forceDark: _appliedForceDark,
+        ),
+      ),
+    );
     unawaited(_checkHttpError(controller, pageUrl));
     for (final WebBrowserFeature f in widget.host.features) {
       unawaited(
@@ -755,38 +745,13 @@ class WebBrowserTabViewState extends ConsumerState<WebBrowserTabView>
 
   // ── 权限 ─────────────────────────────────────────────────────────────
 
-  Future<PermissionResponse> _onPermissionRequest(
-    PermissionRequest request,
-  ) async {
-    final List<WebBrowserSitePermission>? permissions =
-        webBrowserSitePermissionsFor(request.resources);
-    final String? origin = webBrowserOriginOf(
-      Uri.tryParse(request.origin.toString()) ?? Uri(),
-    );
-    bool allow = false;
-    if (permissions != null && origin != null && mounted) {
-      allow = await resolveWebBrowserPermission(
+  Future<PermissionResponse> _onPermissionRequest(PermissionRequest request) =>
+      resolveWebBrowserPermissionRequest(
         context: context,
         settings: WebBrowserSiteSettings(_prefs),
-        origin: origin,
-        permissions: permissions,
+        request: request,
+        platform: _platform,
       );
-      // 网页层允许了还要 app 自己有系统权限（Android 摄像头 / 麦克风），用户在
-      // 系统框里拒绝就整条拒绝。
-      if (allow) {
-        allow = await ensureWebBrowserSystemPermissions(
-          permissions,
-          platform: _platform,
-        );
-      }
-    }
-    return PermissionResponse(
-      resources: request.resources,
-      action: allow
-          ? PermissionResponseAction.GRANT
-          : PermissionResponseAction.DENY,
-    );
-  }
 
   Future<GeolocationPermissionShowPromptResponse> _onGeolocationPrompt(
     String rawOrigin,
