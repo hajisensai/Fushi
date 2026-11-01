@@ -1,0 +1,39 @@
+# Keeps pre-2026-11-01 history out of the repo.
+#
+# On 2026-11-01 the history was rewritten (git filter-repo): authors unified,
+# the generated fushi/lib/i18n/strings.g.dart (37 MB x ~2000 versions) and the
+# vendored binaries (now release assets, tool/vendored_binaries.json) purged
+# from every commit. A branch cut from an old clone still carries that history
+# (new SHAs share nothing with it), and merging or pushing it would bring the
+# whole ~3 GB back. Every old branch's history touches the generated i18n file
+# (fushi/lib/i18n/strings.g.dart, hibiki/lib/i18n/strings.g.dart before the
+# rename); no rewritten commit does (it is gitignored), so its presence in
+# HEAD's history identifies old history. Fix: rebase the branch's own commits onto the new origin/develop
+# (git rebase --onto origin/develop <old-develop> <branch>) or re-clone.
+name: History guard
+
+on:
+  pull_request:
+    branches: ['main', 'develop']
+  push:
+    branches: ['main', 'develop']
+
+permissions:
+  contents: read
+
+jobs:
+  no-old-history:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          filter: blob:none
+      - name: Reject pre-rewrite history
+        run: |
+          old="$(git rev-list -n 1 HEAD -- fushi/lib/i18n/strings.g.dart hibiki/lib/i18n/strings.g.dart)"
+          if [ -n "$old" ]; then
+            echo "::error title=History guard::This branch contains pre-rewrite history (commit $old touches the generated strings.g.dart). Rebase your own commits onto the current origin/develop or re-clone; see .github/workflows/history-guard.yml."
+            exit 1
+          fi

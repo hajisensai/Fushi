@@ -133,6 +133,7 @@
 
 ## 提交
 
+- **2026-11-01 起仓库历史已重写**（git filter-repo）：作者统一成 `hajisensai` / `W1ght`，`strings.g.dart` 与 vendored 二进制从全部历史清除，已合并分支删除。**重写前的 clone / worktree / 本地分支与新历史没有共同祖先**：报 `refusing to merge unrelated histories` 时不要加 `--allow-unrelated-histories` 硬合，也不要 merge / pull 旧 develop；用 `git rebase --onto origin/develop <旧 develop 上的分叉点> <分支>` 只搬自己的提交（或从新 `origin/develop` 重新开 worktree）。带旧历史的 PR / push 会被 `.github/workflows/history-guard.yml` 判红。
 - 完成代码/文档/测试/审查改动后默认提交本轮。
 - **提交并过了推送门就直接 push + 开 PR，不要问（用户 2026-10-24 拍板：「不要每次老问我要不要推送并开pr，直接推送+pr就行，除非要让我决策」）**：收尾时不再问「要我推送并开 PR 吗？」，也不出这类按钮；只有真要用户拍板的事（方案取舍、范围扩大、风险判断）才问。合并仍等用户明说（见「基本规则」worktree 条）。
 - push 前按 [docs/agent/build.md](docs/agent/build.md) 的版本号规则判断是否 bump `fushi/pubspec.yaml`：**`+build` 每次发布单调 +1**（可读发布序号，与语义版本无关，多数发布只 +build）；**语义版本 `X.Y.Z` 按里程碑升**——一批功能/大改升 minor 重置 patch、一批修复升 patch，不是每个 commit 都升；Android `versionCode` 由 CI `git rev-list --count HEAD` 自动，不靠 `+build`。
