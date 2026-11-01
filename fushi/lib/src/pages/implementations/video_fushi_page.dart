@@ -2338,7 +2338,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 站点当前视频身份（glue 的 `videoKey`；SPA 换集即变）与它名下的字幕轨。
   String _webVideoKey = '';
   final Map<String, WebVideoTrack> _webTracks = <String, WebVideoTrack>{};
+
+  /// 当前显示的轨（[chooseWebVideoTrackKey] 的结果，每次轨集变化重算）。
   String? _webActiveTrackKey;
+
+  /// 显式选定的轨：用户在面板点选的，或显式请求（用户点选 / 每集按语言偏好替用户开）后采到的
+  /// 那条。只有它钉住选择；自动结果不回写成「选择」，后到的整轨才能取代先到的 live 轨。
+  String? _webPinnedTrackKey;
 
   /// 用户在字幕面板选了「关闭」：不再自动挑轨。
   bool _webSubtitlesOff = false;
