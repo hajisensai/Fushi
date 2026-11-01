@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3532 条。点号进各自文件。
+> 共 3533 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3929](bugs/BUG-3929-srs-sync-conflicts-reads-note-content.md) | ✅ | ✅ | 牌组列表的冲突角标把整库笔记正文读回来，大库同步 / 导入后原生内存分配失败闪退 |
 | [BUG-3928](bugs/BUG-3928-stat-sessions-sheet-edit-jank.md) | ✅ | ✅ | stat-sessions-sheet-edit-jank |
 | [BUG-3927](bugs/BUG-3927-reader-jp-gothic-alias-theme-font.md) | ✅ | ✅ | 電書協书的章标题在换了主题字体的 Android 机上竖排叠字 |
 | [BUG-3926](bugs/BUG-3926-download-subtitle-retry-drops-anilist.md) | ✅ | ✅ | download-subtitle-retry-drops-anilist |
