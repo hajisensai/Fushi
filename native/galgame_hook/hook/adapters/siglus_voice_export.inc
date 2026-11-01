@@ -89,8 +89,11 @@ void ProcessSiglusVoiceTask(SiglusVoiceTask* task) {
         fushi_voice_hook::siglus::BuildOvkVoiceStorageName(base, entry);
     // BUG-2341: an intact source entry is not a successfully exported resource.
     // Publish capture only after the writer has completed write and close.
+    // A voice-proved identity wins; otherwise the silent lane's next line.
+    const uint64_t marker = task->text_event_id != 0
+        ? task->text_event_id : task->following_text_event_id;
     if (WriteVoiceOggAt(ogg, entry.byte_len, storage.c_str(), task->tick_ms,
-                        task->text_event_id)) {
+                        marker)) {
       task->exported = true;
       if (g_header != nullptr) {
         g_header->reserved_luna |= kDiagSiglusVoiceDumped;
