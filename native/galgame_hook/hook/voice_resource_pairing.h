@@ -14,6 +14,12 @@ constexpr uint64_t kAi6PrecedingTextWindowMs = 1500;
 // the host's event-ID tolerance (kGalVoicePairingWindowMs), or a marked
 // resource is refused outright.
 constexpr uint64_t kArtemisFollowingTextWindowMs = 1500;
+// A Siglus message lane without a script voice key (silent lane): the script's
+// koe command reads the OVK member, then the message command commits the line
+// (measured Rewrite Harvest festa!: voice 0..31 ms ahead).  The resource binds
+// to the first line the hook's own message lane commits after the read; same
+// host-tolerance bound as above.
+constexpr uint64_t kSiglusFollowingTextWindowMs = 1500;
 
 struct VoiceTextCandidate {
   uint64_t seq = 0;

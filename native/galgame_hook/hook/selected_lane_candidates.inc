@@ -1,16 +1,15 @@
-// Selected text-lane reader shared by worker adapters; needs the shared-memory
-// globals (g_header, g_text_base, TextSlot), so only dll_main.cpp includes it.
-// Copies the line candidates on the selected thread's text lane into `out`
-// (capacity kTextLaneSlotCount) for the voice-to-text resolvers in
-// voice_resource_pairing.h.  `selected_thread_id` is the selection sampled when
-// the voice read was observed; returns 0 when it has changed, nothing is
-// selected or its lane is missing, so the resolver leaves the resource
-// unmarked instead of guessing.  Worker-thread only.
-size_t CollectSelectedLaneCandidates(
-    uint64_t selected_thread_id, fushi_voice_hook::VoiceTextCandidate* out) {
+// Text-lane readers shared by worker adapters; need the shared-memory globals
+// (g_header, g_text_base, TextSlot), so only dll_main.cpp includes this file.
+// Both copy line candidates into `out` (capacity kTextLaneSlotCount) for the
+// voice-to-text resolvers in voice_resource_pairing.h.  Worker-thread only.
+
+// Copies the line candidates on `thread_id`'s text lane without consulting the
+// host selection.  Only for a lane the hook itself owns (a native message lane
+// carries dialogue alone), where a selection would prove nothing extra.
+size_t CollectLaneCandidates(uint64_t thread_id,
+                             fushi_voice_hook::VoiceTextCandidate* out) {
   if (out == nullptr || g_header == nullptr || g_text_base == nullptr ||
-      selected_thread_id == 0 ||
-      fushi_voice_hook::SelectedTextThreadId(g_header) != selected_thread_id) {
+      thread_id == 0) {
     return 0;
   }
   fushi_voice_hook::TextLane* lanes = fushi_voice_hook::TextLanesOf(g_header);
@@ -18,7 +17,7 @@ size_t CollectSelectedLaneCandidates(
   uint32_t lane_index = g_header->text_lane_count;
   for (uint32_t i = 0; i < g_header->text_lane_count; ++i) {
     if (fushi_voice_hook::AtomicLoadPreview64(&lanes[i].thread_id) ==
-        selected_thread_id) {
+        thread_id) {
       lane_index = i;
       break;
     }
@@ -52,4 +51,16 @@ size_t CollectSelectedLaneCandidates(
     out[count++] = candidate;
   }
   return count;
+}
+
+// `selected_thread_id` is the selection sampled when the voice read was
+// observed; returns 0 when it has changed, nothing is selected or its lane is
+// missing, so the resolver leaves the resource unmarked instead of guessing.
+size_t CollectSelectedLaneCandidates(
+    uint64_t selected_thread_id, fushi_voice_hook::VoiceTextCandidate* out) {
+  if (g_header == nullptr || selected_thread_id == 0 ||
+      fushi_voice_hook::SelectedTextThreadId(g_header) != selected_thread_id) {
+    return 0;
+  }
+  return CollectLaneCandidates(selected_thread_id, out);
 }

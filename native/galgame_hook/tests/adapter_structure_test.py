@@ -2112,8 +2112,26 @@ class AdapterStructureTest(unittest.TestCase):
         for required in ("task->proved_source", "entry.byte_len == task->source_length",
                          "SameSiglusArchiveFile(identity_before, identity_after)",
                          "ValidateSiglusMessageVoiceTask(*task, revision, entry)",
-                         "task->text_event_id))", "task->exported = true"):
+                         "task->exported = true"):
             self.assertIn(required, worker)
+        # A voice-proved identity outranks the silent lane's following line.
+        flat_worker = " ".join(worker.split())
+        self.assertIn("task->text_event_id != 0 ? task->text_event_id : task->following_text_event_id",
+                      flat_worker)
+        self.assertIn("task->tick_ms, marker))", flat_worker)
+        adapter = self._strip_comments((adapters / "siglus_adapter.inc").read_text(encoding="utf-8"))
+        # The silent lane samples its own lane and the global seq at the read,
+        # never the host selection, and holds the task until its line or expiry.
+        self.assertIn("SiglusMessageLaneThreadId()", queue)
+        self.assertIn("&g_header->text_write_count", queue)
+        follow = self._function_body(adapter, "bool ResolveSiglusFollowingText(")
+        self.assertIn("CollectLaneCandidates(task->following_lane_id, candidates)", follow)
+        self.assertNotIn("CollectSelectedLaneCandidates", follow)
+        self.assertIn("kSiglusFollowingTextWindowMs", follow)
+        self.assertIn("task->following_baseline_seq", follow)
+        drain = self._function_body(adapter, "void ProcessSiglusVoiceTasks(")
+        self.assertLess(drain.index("ResolveSiglusFollowingText("), drain.index("ProcessSiglusVoiceTask("))
+        self.assertIn("InterlockedExchange(&g_siglus_tasks[i].state, 2);", drain)
         source = self._strip_comments((adapters / "siglus_message_voice.inc").read_text(encoding="utf-8"))
         resource = self._function_body(source, "uint64_t ObserveSiglusMessageResource(")
         for required in ("GetFinalPathNameByHandleW", "component != expected_key / 100000u",

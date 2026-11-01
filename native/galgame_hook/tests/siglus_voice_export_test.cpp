@@ -20,6 +20,8 @@ struct SiglusVoiceTask {
   uint64_t tick_ms = 0, offset = 0, text_event_id = 0, archive_revision = 0;
   uint32_t voice_key = UINT32_MAX, source_length = 0;
   bool proved_source = false, exported = false;
+  uint64_t following_lane_id = 0, following_baseline_seq = 0;
+  uint64_t following_text_event_id = 0;
   wchar_t path[520] = {};
 };
 fushi_voice_hook::SharedHeader header{};
@@ -252,6 +254,18 @@ void TestSilentMessageLane(const std::wstring& source, const std::wstring& root)
     stray.exported = false; ++stray.offset;
     ProcessSiglusVoiceTask(&stray);
     assert(!stray.exported && output_attempts == 1);
+    // The line the silent lane committed after the read names the resource;
+    // the marker is a filename identity only and changes no admission rule.
+    SiglusVoiceTask followed = task;
+    followed.exported = false; followed.following_text_event_id = 15;
+    ProcessSiglusVoiceTask(&followed);
+    assert(followed.exported && output_attempts == 2);
+    CheckAndRemoveOutput(
+        root + L"\\fushi_gal_voice\\4321_fushi_textseq15_z0101.ovk_125.ogg");
+    SiglusVoiceTask stray_followed = followed;
+    stray_followed.exported = false; ++stray_followed.offset;
+    ProcessSiglusVoiceTask(&stray_followed);
+    assert(!stray_followed.exported && output_attempts == 2);
   }
 }
 

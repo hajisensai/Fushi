@@ -558,6 +558,13 @@ bool TryHookSiglusMessageText() {
   return InstallSiglusMessageHookGroup();
 }
 
+// The text-lane identity this message lane commits under; 0 until installed.
+uint64_t SiglusMessageLaneThreadId() {
+  if (!IsSiglusMessageTextInstalled()) return 0;
+  return (static_cast<uint64_t>(g_siglus_message_scenario_rva) << 32) ^
+         g_siglus_message_profile.scenario_return_rva;
+}
+
 void ProcessSiglusMessageTextTasks() {
   if (g_siglus_message_eightarg) SyncSiglusEightArgOccurrence();
   if (!g_siglus_message_capture_enabled.load(std::memory_order_acquire) ||
@@ -567,9 +574,7 @@ void ProcessSiglusMessageTextTasks() {
   for (uint32_t count = 0; count < kSiglusMessageTaskSlots; ++count) {
     if (!g_siglus_message_tasks.TryPop(&task)) break;
     if (g_siglus_message_eightarg && task.eightarg_epoch == 0) continue;
-    const uint64_t thread_id =
-        (static_cast<uint64_t>(g_siglus_message_scenario_rva) << 32) ^
-        g_siglus_message_profile.scenario_return_rva;
+    const uint64_t thread_id = SiglusMessageLaneThreadId();
     EnterCriticalSection(&g_text_cs);
     uint64_t committed_tick_ms = 0;
     const uint64_t event_id = WriteTextRingEntryLocked(
@@ -618,6 +623,7 @@ bool IsSiglusMessageTextInstalled() { return false; }
 bool IsSiglusMessageTextOwnershipBlocked() { return false; }
 bool IsSiglusMessageVoiceMappingProved() { return false; }
 bool IsSiglusMessageVoiceOwned() { return false; }
+uint64_t SiglusMessageLaneThreadId() { return 0; }
 void ProcessSiglusMessageTextTasks() {}
 void ShutdownSiglusMessageText() {}
 
