@@ -1311,7 +1311,7 @@ mixin DictionaryPageMixin {
               : null,
           headerWidget: buildPopupHeaderFor(index),
           topBarScale: dictionaryPopupTopBarScale(
-            appUiScale: mixinAppModel.appUiScale,
+            appUiScale: mixinAppModel.popupUiScale,
             dictionaryFontSize: mixinAppModel.dictionaryFontSize,
           ),
         ),

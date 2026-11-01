@@ -956,7 +956,7 @@ class _PopupStaticSettingsMemo {
     required this.themeVarsJs,
     required this.fontCacheKey,
     required this.fontArtifactToken,
-    required this.appUiScale,
+    required this.popupUiScale,
     required this.dictionaryFontSize,
     required this.popupWheelSpeed,
     required this.popupInstantScroll,
@@ -991,7 +991,7 @@ class _PopupStaticSettingsMemo {
   final String themeVarsJs;
   final String fontCacheKey;
   final Object fontArtifactToken;
-  final double appUiScale;
+  final double popupUiScale;
   final double dictionaryFontSize;
   final double popupWheelSpeed;
   final bool popupInstantScroll;
@@ -1159,7 +1159,7 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
       cached.themeVarsJs == themeVarsJs &&
       cached.fontCacheKey == fontStyle.cacheKey &&
       identical(cached.fontArtifactToken, fontStyle.cacheToken) &&
-      cached.appUiScale == appModel.appUiScale &&
+      cached.popupUiScale == appModel.popupUiScale &&
       cached.dictionaryFontSize == appModel.dictionaryFontSize &&
       cached.popupWheelSpeed == appModel.popupWheelSpeed &&
       cached.popupInstantScroll == appModel.popupInstantScroll &&
@@ -1199,8 +1199,10 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
   }
 
   final String fontStyleJs = fontStyle.js;
+  // 反馈 2jGkpD-iD6：内容 zoom 走弹窗生效缩放（界面大小 × 弹窗缩放系数），单一取值点
+  // AppModel.popupUiScale；盒子尺寸仍按界面大小。
   final double zoom = DictionaryPopupWebViewState.popupContentZoom(
-    appUiScale: appModel.appUiScale,
+    appUiScale: appModel.popupUiScale,
     dictionaryFontSize: appModel.dictionaryFontSize,
   );
 
@@ -1228,7 +1230,7 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     // 当前「界面大小」系数与「词典字号」暴露给弹窗（与上面 zoom 同源，每次注入刷新为
     // 最新真值）。滚轮监听器（dictionary_popup_webview 的 _zoomWheelJs，onLoadStop 装一次）
     // 读这两个全局算新字号 → 立即 documentElement.style.zoom，再回调 Dart 持久化。
-    window.__fushiPopupUiScale = ${appModel.appUiScale};
+    window.__fushiPopupUiScale = ${appModel.popupUiScale};
     window.__fushiPopupFontSize = ${appModel.dictionaryFontSize};
     // BUG-1026: 查词弹窗滚轮速度倍率。popup.js 的 wheel 监听器把 factor 乘以它
     // （缺省 1.0）。三种 in-app 弹窗都经此 head 注入；浏览器扩展走 theme 通道另发。
@@ -1349,7 +1351,7 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     themeVarsJs: themeVarsJs,
     fontCacheKey: fontStyle.cacheKey,
     fontArtifactToken: fontStyle.cacheToken,
-    appUiScale: appModel.appUiScale,
+    popupUiScale: appModel.popupUiScale,
     dictionaryFontSize: appModel.dictionaryFontSize,
     popupWheelSpeed: appModel.popupWheelSpeed,
     popupInstantScroll: appModel.popupInstantScroll,

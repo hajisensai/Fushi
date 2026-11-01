@@ -128,6 +128,7 @@ import 'package:fushi/src/lookup/effective_lookup_size.dart';
 import 'package:fushi/src/lookup/lookup_ime_channel.dart';
 import 'package:fushi/src/lookup/lookup_ime_language.dart';
 import 'package:fushi/src/lookup/overlay_stat_source.dart';
+import 'package:fushi/src/lookup/popup_ui_scale.dart';
 import 'package:fushi_engine/models/dictionary_directory.dart';
 import 'package:fushi/src/models/dictionary_repository.dart';
 import 'package:fushi/src/models/media_history_repository.dart';
@@ -5243,6 +5244,22 @@ class AppModel with ChangeNotifier {
   double get customAppUiScale => themeNotifier.customAppUiScale;
   double get autoAppUiScale => themeNotifier.autoAppUiScale;
   double get appUiScale => themeNotifier.appUiScale;
+
+  /// 查词弹窗独立缩放系数（偏好 `popup_ui_scale`，反馈 2jGkpD-iD6）。偏好还没装好
+  /// （独立弹窗 entry point 首帧 / 测试替身没跑 initialise）时按默认 1.0，与
+  /// [librarySentencesEnabled] 同律——判据放在 getter 自身，弹窗宿主不各自判空。
+  double get popupUiScaleFactor =>
+      _prefsRepo?.popupUiScale ?? kPopupUiScaleDefault;
+  Future<void> setPopupUiScaleFactor(double factor) =>
+      prefsRepo.setPopupUiScale(factor);
+
+  /// 查词弹窗**内容与弹窗 Dart 侧元素**的生效缩放 = 界面大小 × 弹窗缩放系数。所有弹窗
+  /// 宿主（内容 zoom 注入、顶栏按钮、`:popup` 进程）只从这里取，不各自乘一份。弹窗盒子
+  /// 尺寸仍按 [appUiScale] 算（见 `lookup/popup_ui_scale.dart`）。
+  double get popupUiScale => resolvePopupUiScale(
+    appUiScale: appUiScale,
+    popupScaleFactor: popupUiScaleFactor,
+  );
   Future<void> setAppUiScale(double value) =>
       themeNotifier.setAppUiScale(value);
   double resolveAppUiScaleForViewport({

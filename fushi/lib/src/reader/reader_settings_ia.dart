@@ -248,6 +248,7 @@ final List<ReaderSettingsSectionSpec> kReaderSettingsSections =
           'lookup.popup_max_height',
           'lookup.popup_size_preview',
           'lookup.dictionary_font_size',
+          'lookup.popup_ui_scale',
           'lookup.popup_bottom_docked_books_only',
         ],
         itemIdPrefixes: const <String>['lookup.popup_bottom_docked.'],

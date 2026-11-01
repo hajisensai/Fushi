@@ -4560,6 +4560,8 @@
   "lookup_popup_close_after_mining_hint": "Once a card is added (or queued), the whole lookup popup closes so it stops covering the text",
   "lookup_popup_size_preview_effective": "目前螢幕實際：$width × $height",
   "lookup_popup_size_shared_hint": "與漫畫、影片的查詞彈窗共用；拖動彈窗右下角也會修改。",
+  "lookup_popup_ui_scale": "Popup UI scale",
+  "lookup_popup_ui_scale_hint": "Scales popup content and buttons on top of the app UI size; the popup window size is unchanged",
   "lookup_recent_searches": "Recent searches",
   "low_memory_mode": "低記憶體模式",
   "low_memory_mode_hint": "減少快取和記憶體使用，適合低階裝置。部分變更需重啟後生效。",

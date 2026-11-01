@@ -566,6 +566,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'popup_instant_scroll_wheel_step',
   'popup_max_height',
   'popup_max_width',
+  // double（默认 1.0，0.5–2.0）：查词弹窗独立缩放，乘在 app_ui_scale 之上（反馈
+  // 2jGkpD-iD6，见 lookup/popup_ui_scale.dart）。阅读偏好，随 Profile 快照走。
+  'popup_ui_scale',
   'popup_wheel_speed',
   // int：绑定临时切换前用户自己选的 Profile id（缺失 = 无）。非 Profile 键。
   'profile_fallback_id',
