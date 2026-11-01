@@ -501,12 +501,16 @@
   // 4s 不到位也放行，绝不卡死批量）。
   // done(ok, err)：逼近目标 → ok；4 s 没到位 → ok=false（'timeout'），调用方据此记日志、放弃
   // 「跳转在途」状态，不再把旧位置当成 seek 的结果死等。
+  // 新 seek 到来时旧 seek 的轮询立即作废（回 superseded），不叠出成片 80 ms 轮询各等 4 s。
+  var nfSeekGen = 0;
   function nfSeek(ms, done) {
     var player = nfPlayer();
     if (!player) throw new Error('no watch player session');
+    var gen = ++nfSeekGen;
     player.seek(ms);
     var deadline = Date.now() + 4000;
     (function poll() {
+      if (gen !== nfSeekGen) { done(false, 'superseded'); return; }
       var cur = null;
       try { cur = player.getCurrentTime(); } catch (_) { cur = null; }
       if (cur != null && Math.abs(cur - ms) < 300) { done(true, ''); return; } // 已逼近目标：真重定位完成
