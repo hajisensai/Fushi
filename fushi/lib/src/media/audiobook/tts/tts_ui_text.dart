@@ -8,6 +8,7 @@ import 'package:fushi_engine/tts/providers/edge_tts_provider.dart';
 import 'package:fushi_engine/tts/providers/google_cloud_tts_provider.dart';
 import 'package:fushi_engine/tts/providers/gpt_sovits_tts_provider.dart';
 import 'package:fushi_engine/tts/providers/irodori_server_tts_provider.dart';
+import 'package:fushi_engine/tts/providers/openai_compatible_tts_provider.dart';
 import 'package:fushi_engine/tts/providers/irodori_tts_provider.dart';
 import 'package:fushi_engine/tts/providers/translate_tts_providers.dart';
 import 'package:fushi_engine/tts/providers/voicepeak_tts_provider.dart';
@@ -33,6 +34,8 @@ String ttsProviderLabel(String providerId) => switch (providerId) {
   IrodoriTtsDescriptor.providerId => t.audiobook_tts_provider_irodori,
   IrodoriServerTtsDescriptor.providerId =>
     t.audiobook_tts_provider_irodori_server,
+  OpenAiCompatibleTtsDescriptor.providerId =>
+    t.audiobook_tts_provider_openai_compatible,
   EdgeTtsDescriptor.providerId => t.audiobook_tts_provider_edge,
   MicrosoftTranslatorTtsDescriptor.providerId =>
     t.audiobook_tts_provider_ms_translator,
@@ -60,6 +63,8 @@ String? ttsProviderHint(String providerId) => switch (providerId) {
   AivisSpeechTtsDescriptor.providerId ||
   SharevoxTtsDescriptor.providerId => t.audiobook_tts_provider_voicevox_hint,
   VoicepeakTtsDescriptor.providerId => t.audiobook_tts_provider_voicepeak_hint,
+  OpenAiCompatibleTtsDescriptor.providerId =>
+    t.audiobook_tts_provider_openai_compatible_hint,
   _ => null,
 };
 
@@ -83,6 +88,7 @@ String ttsParamLabel(String key) => switch (key) {
   GptSovitsTtsDescriptor.promptLangKey => t.audiobook_tts_param_prompt_lang,
   AzureTtsDescriptor.regionKey => t.audiobook_tts_param_region,
   IrodoriServerTtsDescriptor.captionKey => t.audiobook_tts_param_caption,
+  OpenAiCompatibleTtsDescriptor.modelKey => t.audiobook_tts_param_model,
   'api_key' => t.audiobook_tts_param_api_key,
   'voice' => t.audiobook_tts_param_voice,
   SystemTtsDescriptor.engineKey => t.audiobook_tts_param_engine,
@@ -133,6 +139,11 @@ String? ttsParamHint(String providerId, String key) => switch ((
     t.audiobook_tts_param_ref_audio_hint,
   (GptSovitsTtsDescriptor.providerId, GptSovitsTtsDescriptor.apiKeyKey) =>
     t.audiobook_tts_param_bearer_hint,
+  (
+    OpenAiCompatibleTtsDescriptor.providerId,
+    OpenAiCompatibleTtsDescriptor.modelKey,
+  ) =>
+    t.audiobook_tts_param_model_hint,
   (IrodoriTtsDescriptor.providerId, IrodoriTtsDescriptor.endpointKey) =>
     t.audiobook_tts_param_irodori_endpoint_hint,
   (

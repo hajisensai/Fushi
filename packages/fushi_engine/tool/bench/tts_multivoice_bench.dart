@@ -10,12 +10,16 @@
 ///   dart run tool/bench/tts_multivoice_bench.dart --text <utf8 文本> \
 ///     [--sentences 100] [--concurrency 1,2,3] [--speeds 2,3,4] \
 ///     [--narrator ja-JP-NanamiNeural] [--voices ja-JP-KeitaNeural,ja-JP-AoiNeural]
+///
+/// OpenAI 兼容服务（如本机 VPTTS）：加 `--engine openai [--endpoint http://127.0.0.1:8000]
+/// [--model voicepeak]`，`--narrator` / `--voices` 填服务上的音色 id。
 library;
 
 import 'dart:async';
 import 'dart:io';
 
 import 'package:fushi_engine/tts/providers/edge_tts_provider.dart';
+import 'package:fushi_engine/tts/providers/openai_compatible_tts_provider.dart';
 import 'package:fushi_engine/tts/tts_audio_cache.dart';
 import 'package:fushi_engine/tts/tts_provider.dart';
 import 'package:fushi_engine/tts/tts_synthesis_scheduler.dart';
@@ -36,7 +40,16 @@ Future<void> main(List<String> argv) async {
     for (final String s in (args['speeds'] ?? '2,3,4').split(','))
       double.parse(s),
   ];
-  final String narrator = args['narrator'] ?? 'ja-JP-NanamiNeural';
+  final bool openai = args['engine'] == 'openai';
+  _engine = openai
+      ? _Engine.openAi(
+          endpoint:
+              args['endpoint'] ?? OpenAiCompatibleTtsDescriptor.defaultEndpoint,
+          model: args['model'] ?? '',
+        )
+      : const _Engine.edge();
+  final String narrator =
+      args['narrator'] ?? (openai ? 'asumi-shuo' : 'ja-JP-NanamiNeural');
   final List<String> characters = (args['voices'] ?? 'ja-JP-KeitaNeural').split(
     ',',
   );
@@ -107,6 +120,29 @@ Future<void> main(List<String> argv) async {
     }
   }
   exit(0);
+}
+
+/// 被测引擎（[main] 按参数选定一次）。
+late _Engine _engine;
+
+class _Engine {
+  const _Engine.edge() : descriptor = const EdgeTtsDescriptor(), _base = null;
+
+  _Engine.openAi({required String endpoint, required String model})
+    : descriptor = const OpenAiCompatibleTtsDescriptor(),
+      _base = <String, String>{
+        OpenAiCompatibleTtsDescriptor.endpointKey: endpoint,
+        OpenAiCompatibleTtsDescriptor.modelKey: model,
+      };
+
+  final TtsProviderDescriptor descriptor;
+  final Map<String, String>? _base;
+
+  /// 音色名 → 预设参数（两种引擎的声音参数键都是 `voice`）。
+  Map<String, String> paramsFor(String voice) => <String, String>{
+    ...?_base,
+    'voice': voice,
+  };
 }
 
 class _PlayResult {
@@ -205,7 +241,7 @@ class _Run {
   }) async {
     final Directory root = await Directory.systemTemp.createTemp('tts_bench_');
     final TtsAudioCache cache = TtsAudioCache(root: root);
-    const EdgeTtsDescriptor descriptor = EdgeTtsDescriptor();
+    final TtsProviderDescriptor descriptor = _engine.descriptor;
     final List<String> voiceNames = <String>[];
     final List<int> voiceOf = <int>[
       for (final _Sentence s in sentences)
@@ -221,9 +257,9 @@ class _Run {
     for (final String name in voiceNames) {
       final TtsVoicePreset preset = TtsVoicePreset(
         id: name,
-        providerId: EdgeTtsDescriptor.providerId,
+        providerId: descriptor.id,
         name: name,
-        params: <String, String>{EdgeTtsDescriptor.voiceKey: name},
+        params: _engine.paramsFor(name),
       );
       final _TimedProvider p = _TimedProvider(
         descriptor.create(preset, const TtsHost()),
