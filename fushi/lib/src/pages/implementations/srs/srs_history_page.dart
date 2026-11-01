@@ -34,6 +34,7 @@ import 'package:fushi/src/srs/srs_sync_progress_ui.dart';
 import 'package:fushi/src/srs/srs_sync_scheduler.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/sync/sync_progress_banner.dart';
+import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
@@ -138,6 +139,11 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
   Map<String, Object?> _status = const <String, Object?>{};
   List<SrsCheckpointView> _checkpoints = const <SrsCheckpointView>[];
 
+  /// 本机设备 ID 与已连 host 的名字（按 hostId）：互联位置的 ID 是 host 设备 ID，显示时换成人读名
+  /// （[srsChannelLocationTitle]）。
+  String? _ownDeviceId;
+  Map<String, String> _hostNames = const <String, String>{};
+
   /// 上一次看到的复习同步进度；从非 null 变回 null = 一轮刚跑完，要重读状态。
   SrsSyncProgress? _lastSyncProgress = srsSyncProgress.value;
 
@@ -178,8 +184,23 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
         ErrorLogService.instance.log('SrsHistoryPage.reload', e, stack);
       }
     }
+    String? ownDeviceId;
+    final Map<String, String> hostNames = <String, String>{};
+    final AppModel app = ref.read(appProvider);
+    if (app.isDatabaseReady) {
+      final SyncRepository repo = SyncRepository(app.database);
+      ownDeviceId = await repo.getOrCreateDeviceId();
+      for (final FushiClientUrl u in await repo.getFushiClientUrls()) {
+        final String? hostId = u.hostId;
+        final String? name = u.deviceName?.trim();
+        if (hostId == null || name == null || name.isEmpty) continue;
+        hostNames.putIfAbsent(hostId, () => name);
+      }
+    }
     if (!mounted) return;
     setState(() {
+      _ownDeviceId = ownDeviceId;
+      _hostNames = hostNames;
       _status = status;
       _checkpoints = checkpoints;
       _loading = false;
@@ -517,7 +538,11 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
         for (final String id in channels)
           AdaptiveSettingsRow(
             key: ValueKey<String>('srs_timeline_channel_$id'),
-            title: id.contains(':') ? id.substring(id.indexOf(':') + 1) : id,
+            title: srsChannelLocationTitle(
+              id,
+              ownDeviceId: _ownDeviceId,
+              hostNames: _hostNames,
+            ),
             subtitle: <String>[
               t.srs_timeline_location_channel,
               ?_cryptoLabel(id),
@@ -852,7 +877,11 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
       subtitle: meta.isEmpty ? srsShortDevice(id) : meta.join(' · '),
       icon: mismatch || (warning?.isNotEmpty ?? false)
           ? FushiIcons.warning
-          : (self ? FushiIcons.phone : FushiIcons.devices),
+          : (self
+                ? (Platform.isWindows || Platform.isMacOS || Platform.isLinux
+                      ? FushiIcons.laptop
+                      : FushiIcons.phone)
+                : FushiIcons.devices),
       showIcon: true,
       subtitleMaxLines: 3,
     );
