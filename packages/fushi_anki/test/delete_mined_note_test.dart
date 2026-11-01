@@ -136,8 +136,7 @@ void main() {
 }
 
 class _ConnectRepo extends AnkiConnectRepository {
-  _ConnectRepo({required AnkiConnectService service})
-    : super(service: service);
+  _ConnectRepo({required AnkiConnectService service}) : super(service: service);
 
   @override
   Future<AnkiSettings> loadSettings() async => const AnkiSettings();
