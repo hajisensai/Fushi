@@ -30,6 +30,41 @@ namespace flutter_inappwebview_plugin
     }
   }
 
+  std::string WebViewEnvironment::StripWindowedHostingSentinel(const std::string& arguments, bool& found)
+  {
+    found = false;
+    std::string out = arguments;
+    const std::string& token = kWindowedHostingSentinel;
+    const auto isSpace = [](char ch) { return ch == ' ' || ch == '\t'; };
+    size_t pos = 0;
+    while ((pos = out.find(token, pos)) != std::string::npos) {
+      const size_t end = pos + token.size();
+      const bool startOk = pos == 0 || isSpace(out[pos - 1]);
+      const bool endOk = end == out.size() || isSpace(out[end]);
+      if (!startOk || !endOk) {
+        // 只是某个更长开关的子串（如 `--fushi-windowed-hosting-x`），不是哨兵。
+        pos = end;
+        continue;
+      }
+      found = true;
+      size_t eraseStart = pos;
+      size_t eraseEnd = end;
+      if (pos > 0) {
+        while (eraseStart > 0 && isSpace(out[eraseStart - 1])) {
+          --eraseStart;
+        }
+      }
+      else {
+        while (eraseEnd < out.size() && isSpace(out[eraseEnd])) {
+          ++eraseEnd;
+        }
+      }
+      out.erase(eraseStart, eraseEnd - eraseStart);
+      pos = eraseStart;
+    }
+    return out;
+  }
+
   WebViewEnvironment::WebViewEnvironment(const FlutterInappwebviewWindowsPlugin* plugin, const std::string& id)
     : plugin(plugin), id(id),
     channelDelegate(std::make_unique<WebViewEnvironmentChannelDelegate>(this, plugin->registrar->messenger()))
@@ -55,8 +90,15 @@ namespace flutter_inappwebview_plugin
     auto options = Make<CoreWebView2EnvironmentOptions>();
     if (settings) {
       if (settings->additionalBrowserArguments.has_value()) {
-        options->put_AdditionalBrowserArguments(utf8_to_wide(settings->additionalBrowserArguments.value()).c_str());
-        windowedHosting = settings->additionalBrowserArguments.value().find(kWindowedHostingSentinel) != std::string::npos;
+        // 哨兵只给本插件看（决定 InAppWebView 用窗口宿主），不交给 WebView2：见
+        // StripWindowedHostingSentinel。剥完是空串时不设参数（与不传参数的环境保持一致）。
+        bool sentinel = false;
+        const std::string browserArguments =
+          StripWindowedHostingSentinel(settings->additionalBrowserArguments.value(), sentinel);
+        windowedHosting = sentinel;
+        if (!browserArguments.empty()) {
+          options->put_AdditionalBrowserArguments(utf8_to_wide(browserArguments).c_str());
+        }
       }
       if (settings->allowSingleSignOnUsingOSPrimaryAccount.has_value()) {
         options->put_AllowSingleSignOnUsingOSPrimaryAccount(settings->allowSingleSignOnUsingOSPrimaryAccount.value());
