@@ -1,8 +1,11 @@
-// 中文查词的简体 → 繁體回落（OpenCC STCharacters 全部候选 + 台/港字形）。
+// 中文查词的简繁双向回落：简体 → 繁體（OpenCC STCharacters 全部候选 + 台/港字形）与
+// 繁體 → 简体（OpenCC TSCharacters 全部候选）。
 //
 // 用户场景：查简体「这个」，而词典按繁體「這個」建索引——此前引擎没有任何简繁处理，
-// 永远查不到。繁體拼写作为额外的文本变体挂在 text_processor 链尾，只在调用方声明
-// 查询语言为中文（LookupOptions::chinese_simp_to_trad / process 的第二参）时才启用。
+// 永远查不到。反过来（反馈 3FY6vTqwV-）：查繁體「之間」只出 DrEye 的「之間」，不出按
+// 简体建索引的 ABC「之间」。另一种字形的拼写作为额外的文本变体挂在 text_processor 链尾，
+// 只在调用方判定按中文处理（LookupOptions::chinese_simp_to_trad / process 的第二参）
+// 时才启用。
 //
 // 本测试钉：
 //   1) 一简多繁全展开：发 → 發 + 髮，头发 → 頭髮（只取首选项会得到不存在的「頭發」），
@@ -13,7 +16,10 @@
 //   3) 开关开时原形变体保留且 steps=0，不含简体字的文本不多出变体；
 //   4) 端到端：词典只有繁體词条时开关开能命中，matched 回报原始简体串；「我们」命中
 //      更长的「我們」（所以不能做成「原文零结果才回落」——单字「我」总能命中）；开关
-//      关查不到；简繁词条并存时原形结果同长度排在繁體之前。
+//      关查不到；简繁词条并存时原形结果同长度排在繁體之前；
+//   5) 繁 → 简：之間 → 之间、乾燥 → 干燥（一繁多简全展开、原形不重复产出）、组合数
+//      上限；开关开时繁體查询多出简体变体，简繁混排各自收敛；端到端复现反馈：简体词典
+//      ABC「之间」+ 繁體词典 DrEye「之間」，查哪一种字形两本都出，原形词条排在前面。
 //
 // Usage: chinese_simp_trad_lookup_test (no args) -> exit 0 PASS, non-zero FAIL.
 #include <algorithm>
@@ -52,6 +58,14 @@ const TextVariant* find_variant(const std::vector<TextVariant>& vs, std::string_
 std::vector<std::string> spellings(std::string_view simplified) {
   std::vector<std::string> out;
   for (const auto& v : text_processor::simplified_to_traditional_variants(utf8::utf8to32(simplified))) {
+    out.push_back(utf8::utf32to8(v));
+  }
+  return out;
+}
+
+std::vector<std::string> simplified_spellings(std::string_view traditional) {
+  std::vector<std::string> out;
+  for (const auto& v : text_processor::traditional_to_simplified_variants(utf8::utf8to32(traditional))) {
     out.push_back(utf8::utf32to8(v));
   }
   return out;
@@ -117,10 +131,52 @@ void check_process_gating(Failures& f) {
   f.expect(find_variant(text_processor::process("国語", true), "國語") != nullptr,
            "国語 with the flag on should convert 国 -> 國 (table sanity)");
 
-  for (const char* s : {"這個", "たべる", "food", ""}) {
+  for (const char* s : {"たべる", "food", ""}) {
     f.expect(text_processor::process(s, true).size() == text_processor::process(s, false).size(),
-             std::string("flag on added variants to text without simplified chars: ") + s);
+             std::string("flag on added variants to text without Chinese table chars: ") + s);
   }
+}
+
+void check_reverse_spellings(Failures& f) {
+  const auto zhijian = simplified_spellings("之間");
+  f.expect(!zhijian.empty() && zhijian.front() == "之间", "之間: first simplified spelling must be 之间");
+  f.expect(simplified_spellings("這個") == std::vector<std::string>{"这个"}, "這個 must yield exactly 这个");
+  f.expect(contains(simplified_spellings("頭髮"), "头发"), "頭髮 must reach 头发");
+  f.expect(contains(simplified_spellings("關係"), "关系"), "關係 must reach 关系");
+
+  // 一繁多简：乾 → 干 / 乾（上游顺序 干 在前）。原形「乾燥」不得作为拼写重复产出。
+  const auto ganzao = simplified_spellings("乾燥");
+  f.expect(contains(ganzao, "干燥"), "乾燥 must reach 干燥");
+  f.expect(!contains(ganzao, "乾燥"), "the original spelling must not be returned as a variant");
+  f.expect(!ganzao.empty() && ganzao.front() == "干燥", "乾燥: OpenCC primary 干燥 must come first");
+
+  f.expect(simplified_spellings("a這b") == std::vector<std::string>{"a这b"}, "ASCII around a traditional char is untouched");
+  for (const char* s : {"这个", "之间", "たべる", "food", ""}) {
+    f.expect(simplified_spellings(s).empty(), std::string("text without traditional table chars must yield nothing: ") + s);
+  }
+
+  std::string many;
+  for (int i = 0; i < 20; ++i) many += "乾";
+  const auto capped = simplified_spellings(many);
+  f.expect(capped.size() <= text_processor::kMaxChineseSimplifiedVariants, "reverse variant count must respect the cap");
+  std::string primary;
+  for (int i = 0; i < 20; ++i) primary += "干";
+  f.expect(!capped.empty() && capped.front() == primary, "the all-primary simplified spelling must survive the cap first");
+}
+
+void check_reverse_process_gating(Failures& f) {
+  const auto on = text_processor::process("之間", true);
+  const TextVariant* simp = find_variant(on, "之间");
+  const TextVariant* orig = find_variant(on, "之間");
+  f.expect(simp != nullptr, "flag on: 之間 produced no 之间 variant");
+  f.expect(orig != nullptr && orig->steps == 0, "flag on: the original 之間 variant must stay with steps=0");
+  f.expect(simp == nullptr || simp->steps >= 1, "flag on: the simplified variant must cost at least one step");
+  f.expect(find_variant(text_processor::process("之間"), "之间") == nullptr, "flag off: 之間 must not produce 之间");
+
+  // 简繁混排：各自朝一种字形收敛。
+  const auto mixed = text_processor::process("头髮", true);
+  f.expect(find_variant(mixed, "頭髮") != nullptr, "mixed 头髮 must reach all-traditional 頭髮");
+  f.expect(find_variant(mixed, "头发") != nullptr, "mixed 头髮 must reach all-simplified 头发");
 }
 
 std::vector<LookupResult> lookup_zh(const Lookup& lookup, const std::string& text, bool zh) {
@@ -186,6 +242,32 @@ void check_end_to_end(Failures& f) {
            "at equal length the untransformed hit must rank before the traditional one");
 }
 
+// 反馈 3FY6vTqwV- 原样：ABC 按简体建索引（之间），DrEye 按繁體建索引（之間）。
+void check_feedback_two_dictionaries(Failures& f) {
+  DictionaryQuery q;
+  if (!write_dict(f, "AbcSimplified", {{"之间", "between (ABC)"}}, q)) return;
+  if (!write_dict(f, "DrEyeTraditional", {{"之間", "between (DrEye)"}}, q)) return;
+  Deinflector d;
+  Lookup lookup(q, d);
+
+  const auto by_trad = lookup_zh(lookup, "之間", true);
+  const LookupResult* abc = find_result(by_trad, "之间");
+  f.expect(find_result(by_trad, "之間") != nullptr, "之間: DrEye 之間 must be found");
+  f.expect(abc != nullptr, "之間: ABC 之间 must be found through the traditional -> simplified variant");
+  f.expect(abc == nullptr || abc->matched == "之間", "之間 -> 之间: matched must be the original traditional text");
+  f.expect(!by_trad.empty() && by_trad.front().term.expression == "之間",
+           "之間: the untransformed DrEye hit must rank first");
+
+  const auto by_simp = lookup_zh(lookup, "之间", true);
+  f.expect(find_result(by_simp, "之间") != nullptr, "之间: ABC 之间 must be found");
+  f.expect(find_result(by_simp, "之間") != nullptr, "之间: DrEye 之間 must be found through simplified -> traditional");
+  f.expect(!by_simp.empty() && by_simp.front().term.expression == "之间",
+           "之间: the untransformed ABC hit must rank first");
+
+  f.expect(find_result(lookup_zh(lookup, "之間", false), "之间") == nullptr, "flag off: 之間 must not reach 之间");
+  f.expect(find_result(lookup_zh(lookup, "之间", false), "之間") == nullptr, "flag off: 之间 must not reach 之間");
+}
+
 }  // namespace
 
 int main() {
@@ -193,6 +275,9 @@ int main() {
   check_spellings(f);
   check_process_gating(f);
   check_end_to_end(f);
+  check_reverse_spellings(f);
+  check_reverse_process_gating(f);
+  check_feedback_two_dictionaries(f);
   std::fprintf(stderr, "chinese_simp_trad_lookup_test: %s\n", f.count ? "FAILED" : "PASSED");
   return f.count ? 1 : 0;
 }
