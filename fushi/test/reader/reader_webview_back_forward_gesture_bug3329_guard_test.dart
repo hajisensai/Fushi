@@ -31,6 +31,8 @@ void main() {
         '浏览器类页面：历史就是用户的网页导航，后退手势合理',
     'lib/src/media/video/web_video_session.dart':
         '原生播放器页网页档的站点 WebView（Windows WebView2）：历史是用户在站点里的导航',
+    'lib/src/media/video/web_video_browser_settings.dart':
+        '原生播放器页网页档站点 WebView 的设置（会话 WebView 的 initialSettings 由这里构造）：历史是用户在站点里的导航',
     // #2500 把 WebView 从 fushi_web_browser_page.dart 拆进每标签页视图；加载失败页是
     // Flutter 侧状态、阅读模式就地换 body，都不往 WebView 历史压条目。
     'lib/src/web_browser/tab_view/web_browser_tab_view.dart':

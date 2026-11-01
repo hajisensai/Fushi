@@ -214,8 +214,6 @@ const Map<String, int> _legacy = <String, int>{
       1,
   'lib/src/pages/implementations/video_download_subscriptions_panel.dart|motion.spatialDefault.duration':
       1,
-  'lib/src/pages/implementations/video_fushi/subtitle.part.dart|einkSafeDuration(context,constDuration(milliseconds:200))':
-      1,
   'lib/src/reader/reader_control_layout_editor.dart|fushiMotionDuration(context,FushiMotion.short)':
       1,
   'lib/src/reader/reader_control_layout_editor.dart|fushiMotionDuration(context,FushiMotion.medium)':

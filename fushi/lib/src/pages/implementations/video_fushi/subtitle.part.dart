@@ -3634,7 +3634,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
       bottom: systemPadding.bottom,
     );
     final double columnWidth = panelWidth + panelSafeInsets.right;
-    return AnimatedSize(
+    return FushiAnimatedSize(
       // eink 下归零（墨水屏残影，UI 巡检 PR-4），与剧集侧栏同款。
       // 网页档（底层合成）也归零：列宽每帧一变，旁边画面列就每帧把 WebView2 子窗口
       // SetWindowPos + 重排整页一次（站点播放器跟着重量尺寸），开关字幕列表整段卡顿；
