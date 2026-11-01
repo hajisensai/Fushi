@@ -1179,7 +1179,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
     final MinedCardUndo? undo = overwrite || undoRepo == null
         ? null
         : MinedCardUndo.of(undoRepo, outcome, expression: expression);
-    _showMineOsd(described.message, described.status, undo: undo);
+    _showMineOsd(described.message, described.status, undo);
     return result;
   }
 

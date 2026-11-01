@@ -71,6 +71,24 @@ class _UnverifiableRepo extends _FakeRepo {
   }
 }
 
+/// 删得了卡的后端（AnkiConnect / AnkiDroid / Fushi 复习）：反馈 JNyykxvuY9。
+class _DeletableRepo extends _FakeRepo {
+  _DeletableRepo(super.matches, {this.fail = false});
+
+  final bool fail;
+  final List<int> deleted = <int>[];
+
+  @override
+  bool get canDeleteMinedNotes => true;
+
+  @override
+  Future<bool> deleteMinedNote(int noteId) async {
+    if (fail) throw StateError('AnkiConnect unreachable');
+    deleted.add(noteId);
+    return true;
+  }
+}
+
 Widget _host(Future<void> Function(BuildContext) onTapBody) {
   return TranslationProvider(
     child: MaterialApp(
@@ -577,6 +595,128 @@ void main() {
 
   testWidgets('反馈 -EruTk-rWo：覆写期间叠出降级提示，两个对话框都能关', (tester) async {
     await runWithFallbackNotice(tester, overwrite: true);
+  });
+
+  // 反馈 JNyykxvuY9：已制卡 ✓ 的对话框里删卡——次要动作、先确认，不改 ✓ 单击行为。
+  group('从 Anki 删除这张卡', () {
+    Future<AnkiCardMutationResult?> open(
+      WidgetTester tester,
+      BaseAnkiRepository repo,
+      List<int> mined,
+    ) async {
+      AnkiCardMutationResult? result;
+      await tester.pumpWidget(
+        _host((context) async {
+          result = await runAnkiMinedCardAction(
+            context: context,
+            repo: repo,
+            expression: '日本語',
+            reading: 'にほんご',
+            mineNew: () async {
+              mined.add(1);
+              return (ankiConnect: true, noteId: 999);
+            },
+            overwrite: (noteId) async => (ankiConnect: true, noteId: noteId),
+          );
+        }),
+      );
+      await tester.tap(find.text('open'));
+      await tester.pumpAndSettle();
+      return result;
+    }
+
+    testWidgets('删不了的后端不出删除按钮', (tester) async {
+      await open(
+        tester,
+        _FakeRepo(const [MinedNoteRef(noteId: 300, preview: '日本語 A')]),
+        <int>[],
+      );
+      expect(find.byIcon(FushiIcons.delete), findsNothing);
+    });
+
+    testWidgets('点删除先确认；取消回到列表、什么都不删', (tester) async {
+      final repo = _DeletableRepo(const [
+        MinedNoteRef(noteId: 300, preview: '日本語 A'),
+      ]);
+      await open(tester, repo, <int>[]);
+      await tester.tap(
+        find.byKey(const ValueKey<String>('anki-mined-delete-300')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text(t.anki_mined_delete_confirm_title), findsOneWidget);
+      await tester.tap(find.text(t.dialog_cancel));
+      await tester.pumpAndSettle();
+      expect(repo.deleted, isEmpty);
+      expect(find.text('日本語 A'), findsOneWidget);
+    });
+
+    testWidgets('删掉其中一张：留在列表、只剩另一张；删光：关对话框、不新增卡', (tester) async {
+      final repo = _DeletableRepo(const [
+        MinedNoteRef(noteId: 300, preview: '日本語 A'),
+        MinedNoteRef(noteId: 200, preview: '日本語 B'),
+      ]);
+      final List<int> mined = <int>[];
+      await open(tester, repo, mined);
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('anki-mined-delete-300')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey<String>('anki-mined-delete-confirm')),
+      );
+      await tester.pumpAndSettle();
+      expect(repo.deleted, <int>[300]);
+      expect(find.text('日本語 A'), findsNothing);
+      expect(find.text('日本語 B'), findsOneWidget);
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('anki-mined-delete-200')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey<String>('anki-mined-delete-confirm')),
+      );
+      await tester.pumpAndSettle(const Duration(seconds: 3));
+      expect(repo.deleted, <int>[300, 200]);
+      expect(find.text(t.anki_mined_card_title), findsNothing);
+      expect(mined, isEmpty, reason: '删卡不是制卡');
+    });
+
+    testWidgets('删除失败：报错、卡留在列表', (tester) async {
+      final repo = _DeletableRepo(const [
+        MinedNoteRef(noteId: 300, preview: '日本語 A'),
+      ], fail: true);
+      await open(tester, repo, <int>[]);
+      await tester.tap(
+        find.byKey(const ValueKey<String>('anki-mined-delete-300')),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey<String>('anki-mined-delete-confirm')),
+      );
+      await tester.pumpAndSettle(const Duration(seconds: 3));
+      expect(find.text('日本語 A'), findsOneWidget);
+      expect(find.text(t.anki_mined_card_title), findsOneWidget);
+    });
+  });
+
+  testWidgets('AnkiMobile 删不了：未核实对话框说明要去 AnkiMobile 里删', (tester) async {
+    await tester.pumpWidget(
+      _host((context) async {
+        await runAnkiMinedCardAction(
+          context: context,
+          repo: _UnverifiableRepo(),
+          expression: '見物',
+          reading: 'けんぶつ',
+          mineNew: () async => (ankiConnect: true, noteId: 1),
+          overwrite: (noteId) async => (ankiConnect: true, noteId: noteId),
+        );
+      }),
+    );
+    await tester.tap(find.text('open'));
+    await tester.pumpAndSettle();
+    expect(find.text(t.anki_mined_delete_in_ankimobile_hint), findsOneWidget);
   });
 
   // BUG-2051：↗「在 Anki 中打开」的编排已从本文件删除——它不再是 Flutter 层的

@@ -70,9 +70,9 @@ extension _VideoVolumeOsd on _VideoFushiPageState {
   /// 结局再用一条普通 OSD 说出来（视频页不走底部 toast，BUG-931）。
   void _showMineOsd(
     String message,
-    MineToastStatus status, {
+    MineToastStatus status, [
     MinedCardUndo? undo,
-  }) {
+  ]) {
     if (!MineNotices.shown(status)) return;
     _showOsd(
       message,
