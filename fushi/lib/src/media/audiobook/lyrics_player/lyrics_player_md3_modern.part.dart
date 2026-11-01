@@ -46,7 +46,8 @@ const double _kModernSeekBand = 24;
 const double _kModernImmersiveBottom = 16;
 
 /// 宽屏左岛 / 两端时间的字号档位：按窗口宽度分三档（与左岛最大宽同一套断点），
-/// 大屏上底栏文字跟着放大，不再是固定 14 / 11（大屏上看不清）。
+/// 大屏上底栏文字跟着放大，不再是固定 14 / 11（大屏上看不清）。档位只取
+/// [FushiTypography] 的角色（不写裸字号），跟随用户字体与字号缩放。
 @immutable
 class _ModernWideText {
   const _ModernWideText._({
@@ -60,8 +61,8 @@ class _ModernWideText {
     final FushiTypography type = context.fushiType;
     if (width >= 1900) {
       return _ModernWideText._(
-        title: type.titleMediumEmphasized.copyWith(fontSize: 18),
-        detail: type.labelLarge.copyWith(fontSize: 14),
+        title: type.titleLargeEmphasized,
+        detail: type.labelLarge,
         thumbHeight: 56,
         maxInfoWidth: 420,
       );
@@ -69,7 +70,7 @@ class _ModernWideText {
     if (width >= 1200) {
       return _ModernWideText._(
         title: type.titleMediumEmphasized,
-        detail: type.labelLarge.copyWith(fontSize: 13),
+        detail: type.labelLarge,
         thumbHeight: 52,
         maxInfoWidth: 340,
       );
