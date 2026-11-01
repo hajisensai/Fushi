@@ -151,6 +151,69 @@ String _styleScript(String id, String css) =>
 })();
 ''';
 
+/// 页内样式（文字大小 + 网页深色）user script 的分组名：换设置时按组整体替换。
+const String kWebBrowserPageStyleScriptGroup = 'fushi-browser-page-style';
+
+/// 文字大小（非原生平台）+ 网页深色（非原生平台）的页内脚本，幂等（按 style id 覆盖 /
+/// 撤销）。浏览器标签页与网页播放器的网页档共用这一份（同一个偏好在两边得到同一段脚本）。
+String webBrowserPageStyleScript({
+  required TargetPlatform platform,
+  required int textZoom,
+  required bool forceDark,
+}) {
+  final StringBuffer out = StringBuffer();
+  final String? zoom = webBrowserTextZoomScript(
+    textZoom,
+    webBrowserTextZoomModeOn(platform),
+  );
+  if (zoom != null) out.writeln(zoom);
+  if (!webBrowserForceDarkNativeOn(platform)) {
+    out.writeln(webBrowserForceDarkScript(enabled: forceDark));
+  }
+  return out.toString();
+}
+
+/// [webBrowserPageStyleScript] 包成每个文档 DOMContentLoaded 时注入的 user script。
+UserScript webBrowserPageStyleUserScript({
+  required TargetPlatform platform,
+  required int textZoom,
+  required bool forceDark,
+}) => UserScript(
+  groupName: kWebBrowserPageStyleScriptGroup,
+  source: webBrowserPageStyleScript(
+    platform: platform,
+    textZoom: textZoom,
+    forceDark: forceDark,
+  ),
+  injectionTime: UserScriptInjectionTime.AT_DOCUMENT_END,
+);
+
+/// 运行中改了样式设置：换掉以后每个文档的 user script，并对当前文档立即生效。
+Future<void> applyWebBrowserPageStyle(
+  InAppWebViewController controller, {
+  required TargetPlatform platform,
+  required int textZoom,
+  required bool forceDark,
+}) async {
+  await controller.removeUserScriptsByGroupName(
+    groupName: kWebBrowserPageStyleScriptGroup,
+  );
+  await controller.addUserScript(
+    userScript: webBrowserPageStyleUserScript(
+      platform: platform,
+      textZoom: textZoom,
+      forceDark: forceDark,
+    ),
+  );
+  await controller.evaluateJavascript(
+    source: webBrowserPageStyleScript(
+      platform: platform,
+      textZoom: textZoom,
+      forceDark: forceDark,
+    ),
+  );
+}
+
 /// 把桌面版 / 文字大小 / 深色模式落到一份 [InAppWebViewSettings] 上（建 WebView
 /// 与运行中 `setSettings` 共用）。
 void applyWebBrowserPageSettings(
