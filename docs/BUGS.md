@@ -71,6 +71,11 @@
 | [BUG-3928](bugs/BUG-3928-manga-spread-offset-ignored-after-wide-page.md) | ✅ | ✅ | manga-spread-offset-ignored-after-wide-page |
 | [BUG-3929](bugs/BUG-3929-srs-sync-conflicts-reads-note-content.md) | ✅ | ✅ | 牌组列表的冲突角标把整库笔记正文读回来，大库同步 / 导入后原生内存分配失败闪退 |
 | [BUG-3928](bugs/BUG-3928-stat-sessions-sheet-edit-jank.md) | ✅ | ✅ | stat-sessions-sheet-edit-jank |
+> 共 3532 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-3928](bugs/BUG-3928-ai-agent-json-catalog-overflow.md) | ✅ | ✅ | AI 助手降级协议把整份工具 schema 塞进系统提示，小上下文本地模型超长 |
 | [BUG-3927](bugs/BUG-3927-reader-jp-gothic-alias-theme-font.md) | ✅ | ✅ | 電書協书的章标题在换了主题字体的 Android 机上竖排叠字 |
 | [BUG-3926](bugs/BUG-3926-download-subtitle-retry-drops-anilist.md) | ✅ | ✅ | download-subtitle-retry-drops-anilist |
 | [BUG-3925](bugs/BUG-3925-ai-panel-tight-mode-hides-context-chip.md) | ✅ | ✅ | ai-panel-tight-mode-hides-context-chip |

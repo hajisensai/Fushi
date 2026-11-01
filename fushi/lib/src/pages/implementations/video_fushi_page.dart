@@ -51,6 +51,7 @@ import 'package:window_manager/window_manager.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
+import 'package:fushi/src/anki/mined_card_undo.dart';
 import 'package:fushi/src/anki/mined_state_signal.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.dart';
 import 'package:fushi/src/mining/advanced_mining/video_advanced_mining.dart';
@@ -1086,9 +1087,13 @@ class _VideoOsdMessage {
     this.prominent = false,
     this.severity = ToastSeverity.neutral,
     this.mineStatus,
+    this.mineAction,
   });
 
   final String message;
+
+  /// 制卡结果卡上的动作按钮（「撤销」，反馈 JNyykxvuY9）；非空时 OSD 接收指针。
+  final MineNoticeAction? mineAction;
 
   /// 非空 = 制卡结果 OSD，画成与底部制卡 toast 同一张 M3E 结果卡
   /// （[FushiMineNoticeCard]），而不是通用小角标。

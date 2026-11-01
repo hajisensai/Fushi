@@ -235,6 +235,22 @@ abstract class BaseAnkiRepository with AnkiNoteComposer {
   /// 返回是否真的划掉了（本来就没有记录 / 后端不需要 → `false`）。
   Future<bool> forgetMinedCard(String expression) async => false;
 
+  /// 反馈 JNyykxvuY9：这个后端能不能按 note id **删掉**一张已制卡（制卡成功提示上的
+  /// 「撤销」、已制卡 ✓ 对话框里的「从 Anki 删除这张卡」）。
+  ///
+  /// `true`：AnkiConnect（`deleteNotes`）、AnkiDroid（ContentProvider 删 note）、
+  /// Fushi 复习（Rust 核心删笔记，走同步墓碑）。`false`（默认）：AnkiMobile 只有
+  /// `anki://x-callback-url/addnote`，没有删卡入口；转发到互联主机的仓库也不删——
+  /// 界面据此不出「撤销」/「删除」按钮，而不是出一个点了只会失败的按钮。
+  bool get canDeleteMinedNotes => false;
+
+  /// 删掉 [noteId]（连同它的卡片）。返回 `true` = 删了，`false` = 后端明确回答
+  /// 这张 note 已不存在。后端不可达 / 出错照抛（调用方据此提示「删除失败」，不能把
+  /// 「问不到」当成「删掉了」）。[canDeleteMinedNotes] 为 `false` 的后端调用即抛
+  /// [UnsupportedError]。
+  Future<bool> deleteMinedNote(int noteId) async =>
+      throw UnsupportedError('$runtimeType cannot delete notes');
+
   /// TODO-1007/1008：读取一张已存在 note（[noteId]）的现有字段（字段名 → 值），供
   /// note viewer 只读展示。两后端各自覆写（AnkiConnect `notesInfo` / AnkiDroid
   /// ContentProvider getNote）。note 不存在 / 后端不支持时返回 `null`。

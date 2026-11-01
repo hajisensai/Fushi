@@ -213,6 +213,20 @@ public class AnkiChannelHandler {
                             }
                         }
                         break;
+                    case "deleteNote":
+                        // 反馈 JNyykxvuY9：撤回刚制的卡 / 在 ✓ 对话框里删卡。
+                        if (noteIdArg == null) {
+                            result.error("MISSING_ARG", "noteId is required", null);
+                        } else if (requirePermission(result)) {
+                            try {
+                                result.success(api
+                                    .deleteNote(noteIdArg.longValue()));
+                            } catch (Exception e) {
+                                result.error(providerErrorCode(e),
+                                    e.getMessage(), null);
+                            }
+                        }
+                        break;
                     case "findNotesBySourceId":
                         if (sourceId == null || !sourceId.matches(SOURCE_ID_PATTERN)) {
                             result.error("INVALID_ARG", "Invalid card source ID", null);

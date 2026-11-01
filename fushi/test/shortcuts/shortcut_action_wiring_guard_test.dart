@@ -68,6 +68,10 @@ void main() {
       // ShortcutAction.globalToggleFullscreen from the registry inside
       // wrapWithGlobalNavigation and flips WindowManager.setFullScreen on desktop.
       'lib/src/shortcuts/global_navigation.dart',
+      // 焦点导航（反馈 bjPjRHsaUy）：dpadUp/Down/Left/Right → TraversalDirection
+      // 的唯一映射（focusNavigationDirectionOf），键盘 wrapper 与 GamepadService
+      // 共用它派发移焦；focusActivate 的执行体在上面两个文件里。
+      'lib/src/shortcuts/focus_navigation_shortcuts.dart',
       // 查词弹窗「上/下一个词条」（popupNextEntry / popupPrevEntry）的执行体：弹窗
       // 内容是 WebView，滚轮事件先到 popup.js，故这里把注册表里的滚轮绑定序列化成
       // window.__fushiEntryWheelBindings 注入过去，popup.js 命中即调

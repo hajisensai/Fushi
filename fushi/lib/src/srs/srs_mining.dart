@@ -980,6 +980,21 @@ class SrsMiningAnkiRepository extends DelegatingAnkiRepository {
   @override
   Future<bool> forgetMinedCard(String expression) async => false;
 
+  /// 反馈 JNyykxvuY9：删复习笔记走 `SrsDbStore.deleteNote`（Rust 核心记一条删除
+  /// 操作，经复习同步 v2 成为墓碑传到各设备），不是物理删行。
+  @override
+  bool get canDeleteMinedNotes => true;
+
+  @override
+  Future<bool> deleteMinedNote(int noteId) async {
+    final SrsMiner miner = await _requireMiner();
+    final String? id = await _noteIdOf(miner, noteId);
+    if (id == null) return false;
+    await miner.store.deleteNote(id);
+    _onCardsAdded?.call();
+    return true;
+  }
+
   /// 只返回明确已不在复习里的句柄（复习不可用时返回空集：不知道 ≠ 已删）。
   @override
   Future<Set<int>> findDeletedNotes(Set<int> noteIds) async {

@@ -1,5 +1,24 @@
 # Fushi 快捷键清单（TODO-048a 统计）
 
+> **2026-11-01 增补（焦点导航进快捷键体系，反馈 bjPjRHsaUy）：**
+>
+> - 设置页新分组「焦点导航」= 原 `gamepad` scope（枚举名与动作名 `dpadUp/Down/Left/Right`、
+>   持久化 key `dpad_*` **冻结**，操作目录 / MCP 按名字收发）。四个移焦动作开放键盘通道，
+>   默认键盘 = 裸 ↑/↓/←/→、手柄 = dpad 四向；新增 `focusActivate`（确认，默认 Enter / 手柄 A）。
+>   默认值就是改造前的硬编码键，行为不变；schema v15 给老快照补上方向键（只换键盘）。
+> - 「返回」不另设动作，仍是 universal 的 `globalBack`（设置页分组「返回·退出」）。
+> - 优先级：焦点导航是**兜底** scope——页面 scope（阅读器翻页 / 有声书上下句 / 视频 seek …）先解析，
+>   页面没占用的键才落到焦点导航（键盘：`global_navigation.dart` 的 `_handleGlobalFocusNavigation`，
+>   排在 `globalBack` 之后；手柄：`GamepadService._dispatchButton`，排在页面 Actions / 弹窗 / 滚页 /
+>   B 返回之后，任何按钮都能绑）。所以要在 ←/→ 被句子导航占用的页面移焦，给焦点导航加一枚
+>   页面没占用的备选键。
+> - 设置页「焦点导航」分组顶部有两个**默认关闭**的一键预设开关：WASD、Shift+方向键（追加为
+>   备选键，不替换方向键）。W/A/S/D 在视频页仍是 seek / 截图，Shift+←/→ 在音乐页仍是 ±5 秒。
+> - 文本框持焦时，用户另加的移焦 / 确认键一律放行（WASD 照常打字、Shift+方向键照常扩选）；
+>   裸方向键仍是既有契约（实验焦点导航关 → 框架 `DirectionalFocusIntent`；开 → 受管控件门 +
+>   单行框逃逸）。裸 Enter / 手柄 A 的确认仍由框架完成（wrapper 不重复激活）。
+> - 守卫：`fushi/test/shortcuts/focus_navigation_shortcuts_test.dart`。
+
 > **2026-10-27 增补（视频页，反馈 Dbd86l4kA- / _Eb0txdN4H / Ix4j5SKUth）：**
 >
 > - 「重播当前句」`videoReplayCurrentSubtitle`（R / 手柄 LT）与「重播上一句」
@@ -136,6 +155,8 @@
 | B | 切换字幕模糊（`video_fushi_page.dart:3305`，内层 CallbackShortcuts，asbplayer 同款） |
 
 ### 2b. 全局焦点/导航（`global_navigation.dart`，仅实验性焦点导航开启时）
+
+> 2026-11-01 起方向由注册表「焦点导航」分组决定（见顶部增补），下表的裸方向键路径不变。
 
 | 键 | 功能 |
 |---|---|

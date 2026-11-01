@@ -489,6 +489,24 @@ void main() {
       return out.noteId!;
     }
 
+    test('撤回制卡（反馈 JNyykxvuY9）：按句柄删复习笔记（软删墓碑），判重随之变回否；再删报已不在', () async {
+      expect(repo.canDeleteMinedNotes, isTrue);
+      final int handle = await mine('霧', 'きり');
+      final SrsNoteView note = await noteOf('霧', 'きり');
+      expect(await repo.isDuplicate('霧', 'きり'), isTrue);
+
+      expect(await repo.deleteMinedNote(handle), isTrue);
+      expect(
+        (await store.note(note.id))?.deletedAt,
+        isNotNull,
+        reason: '走 SrsDbStore.deleteNote：记删除时刻（同步墓碑），不是物理删行',
+      );
+      expect(await repo.isDuplicate('霧', 'きり'), isFalse);
+      expect(await repo.findMatchingNotes('霧', 'きり'), isEmpty);
+      expect(await repo.deleteMinedNote(handle), isFalse);
+      expect(inner.ankiCalls, 0);
+    });
+
     test('覆写：按句柄改同一条复习笔记的字段，标签只增不减，不新建', () async {
       final int handle = await mine('雪', 'ゆき');
       final SrsNoteView before = await noteOf('雪', 'ゆき');

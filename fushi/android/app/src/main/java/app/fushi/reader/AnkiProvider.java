@@ -52,6 +52,15 @@ public interface AnkiProvider {
     /** 整体覆盖一条笔记的字段（按笔记类型的字段顺序）。 */
     boolean updateNoteFields(long noteId, String[] fields);
 
+    /**
+     * 删除一条笔记（连同它的卡片）。反馈 JNyykxvuY9「撤回制卡」：制卡成功提示上的
+     * 「撤销」与已制卡 ✓ 对话框里的「从 Anki 删除这张卡」。
+     *
+     * <p>AnkiDroid {@code CardContentProvider.delete} 支持 {@code notes/<id>}；返回
+     * 是否真的删掉了（笔记已不存在返回 false）。
+     */
+    boolean deleteNote(long noteId);
+
     /** 整体覆盖一条笔记的标签集合（BUG-2606；并集由调用方算好再传）。 */
     boolean updateNoteTags(long noteId, Set<String> tags);
 

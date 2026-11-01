@@ -9,6 +9,7 @@ import 'package:material_ui/material_ui.dart'
     show BuildContext, Color, ColorScheme, Theme, ThemeData;
 import 'package:fushi_anki/fushi_anki.dart';
 
+import 'package:fushi/src/anki/mined_card_undo.dart';
 import 'package:fushi/src/lookup/gal_attached_text_controller.dart';
 import 'package:fushi/src/lookup/gal_ingame_lookup_controller.dart';
 import 'package:fushi/src/lookup/gal_ingame_mining_binding.dart';
@@ -2912,7 +2913,17 @@ class GalHookTextOverlayController extends ChangeNotifier {
       outcome,
       overwrite: updateNoteId != null,
     );
-    FushiToast.showMine(msg: described.message, status: described.status);
+    FushiToast.showMine(
+      msg: described.message,
+      status: described.status,
+      // 反馈 JNyykxvuY9：成功提示带「撤销」，几秒内点一下删掉刚加的卡。
+      action: minedCardUndoToastAction(
+        repo,
+        outcome,
+        expression: fields['expression'],
+        overwrite: updateNoteId != null,
+      ),
+    );
     // BUG-1908：失败时把 describeMineOutcome 算出的**同一句**本地化文案回给浮窗。
     // 成功不带（浮窗靠 ➕→✓ 翻转表达成功，不需要多一条提示）。
     final String? failureMessage = described.success ? null : described.message;

@@ -16,6 +16,8 @@ export 'package:fluttertoast/fluttertoast.dart' show Toast, ToastGravity;
 // 语义与调色板住在 toast_severity.dart（视频页 OSD 也用，见该文件头注释），
 // 这里再导出一次，让既有 `import fushi_toast.dart` 的调用点无需改 import。
 export 'package:fushi/src/utils/misc/toast_severity.dart';
+export 'package:fushi/src/utils/components/fushi_mine_notice_card.dart'
+    show MineNoticeAction, kMineNoticeActionVisibleFor;
 
 /// Global navigator key used by the toast overlay.
 /// Must be assigned to the MaterialApp's navigatorKey.
@@ -97,11 +99,24 @@ abstract final class FushiToast {
   ///
   /// 先过 [mineNoticeFilter]：用户在「制卡提示」里关掉的那类结果直接不弹。所有制卡
   /// 结果 toast 都从这里出，所以开关只需在这一处生效。
-  static void showMine({required String msg, required MineToastStatus status}) {
+  ///
+  /// [action]（反馈 JNyykxvuY9：成功提示上的「撤销」）只在自绘 overlay 上画：卡片
+  /// 停留 [kMineNoticeActionVisibleFor]、可点，点下立即收起再执行。无 overlay 的
+  /// 降级原生 toast 点不了，按钮不出——调用方据此不能把动作当成必达。
+  static void showMine({
+    required String msg,
+    required MineToastStatus status,
+    MineNoticeAction? action,
+  }) {
     if (!mineNoticeFilter(status)) return;
     final overlay = _toastNavigatorKey?.currentState?.overlay;
     if (overlay != null) {
-      _showMineOverlay(overlay: overlay, msg: msg, status: status);
+      _showMineOverlay(
+        overlay: overlay,
+        msg: msg,
+        status: status,
+        action: action,
+      );
       return;
     }
     // pending 是过渡态（只有能被结果 toast 顶替时才有意义）。无 overlay 的降级路径
@@ -119,9 +134,24 @@ abstract final class FushiToast {
     required OverlayState overlay,
     required String msg,
     required MineToastStatus status,
+    MineNoticeAction? action,
   }) {
-    // pending 停留更久（等制卡结果覆盖它），结果 toast 用短时长。
-    final int durationMs = status == MineToastStatus.pending ? 4000 : 2400;
+    // pending 停留更久（等制卡结果覆盖它），结果 toast 用短时长；带动作按钮的
+    // 停得更久，留出去点的时间。
+    final int durationMs = action != null
+        ? kMineNoticeActionVisibleFor.inMilliseconds
+        : status == MineToastStatus.pending
+        ? 4000
+        : 2400;
+    final MineNoticeAction? tapAction = action == null
+        ? null
+        : MineNoticeAction(
+            label: action.label,
+            onPressed: () {
+              dismissCurrent();
+              action.onPressed();
+            },
+          );
     // 制卡结果用 M3E tonal 结果卡（与视频页制卡 OSD 同一长相），进退场仍走
     // _FushiToastView 的同一套。
     _insertToastEntry(
@@ -131,13 +161,23 @@ abstract final class FushiToast {
         msg: msg,
         icon: mineToastPalette(status).icon,
         severity: mineToastSeverity(status),
+        interactive: tapAction != null,
         body: FushiMineNoticeCard(
           status: status,
           message: msg,
           visibleFor: Duration(milliseconds: durationMs),
+          action: tapAction,
         ),
       ),
     );
+  }
+
+  /// 立即收起当前 toast（不播退场）：点了卡片上的动作按钮之后。
+  static void dismissCurrent() {
+    _dismissTimer?.cancel();
+    _dismissTimer = null;
+    _currentEntry?.remove();
+    _currentEntry = null;
   }
 
   static void _insertToastEntry({
@@ -282,10 +322,15 @@ class _FushiToastView extends StatefulWidget {
     this.backgroundColor,
     this.textColor,
     this.body,
+    this.interactive = false,
   });
 
   /// 非空时代替默认浮条（制卡结果卡）；进退场与定位不变。
   final Widget? body;
+
+  /// 卡片上有可点的按钮（「撤销」）时为 true：不再整体忽略指针。只有卡片本身
+  /// 接收指针（外层 Positioned 只有卡片那么高），不挡下面页面的点击。
+  final bool interactive;
 
   final String msg;
   final IconData? icon;
@@ -369,6 +414,7 @@ class _FushiToastViewState extends State<_FushiToastView>
       left: 16,
       right: 16,
       child: IgnorePointer(
+        ignoring: !widget.interactive,
         child: Center(
           child: FadeTransition(
             opacity: _opacity,

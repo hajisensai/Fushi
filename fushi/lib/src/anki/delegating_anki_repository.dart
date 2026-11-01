@@ -140,6 +140,12 @@ abstract class DelegatingAnkiRepository extends BaseAnkiRepository {
   bool get switchesAppPerNote => inner.switchesAppPerNote;
 
   @override
+  bool get canDeleteMinedNotes => inner.canDeleteMinedNotes;
+
+  @override
+  Future<bool> deleteMinedNote(int noteId) => inner.deleteMinedNote(noteId);
+
+  @override
   Future<bool> forgetMinedCard(String expression) =>
       inner.forgetMinedCard(expression);
 

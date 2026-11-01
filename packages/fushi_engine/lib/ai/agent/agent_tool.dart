@@ -74,6 +74,60 @@ String agentWireToolName(String id) => id.replaceAll('.', '__');
 /// 发给模型的工具名 → 目录 id。
 String agentToolIdFromWire(String wire) => wire.replaceAll('__', '.');
 
+/// 降级（无原生 tool calling）协议里一条工具描述最多带多少字摘要：完整描述与
+/// 参数 schema 由 `ops__describe` 按需取，常驻清单只当索引（反馈 GewyVIt5oo）。
+const int kAgentCompactDescriptionChars = 140;
+
+/// 把参数 JSON Schema 压成一行签名，如 `(id: string, value: any, limit?: integer)`。
+///
+/// 降级协议每轮都把工具清单塞进系统提示；整份 schema（属性说明、嵌套 items）
+/// 一条就上千字，十几条常驻工具就能把上下文 4k 的本地模型撑爆。签名只留参数名、
+/// 是否必填、类型与枚举值——够模型直接调常驻工具；要细节时调 `ops__describe`。
+String agentCompactSignature(Map<String, Object?> schema) {
+  final Object? props = schema['properties'];
+  if (props is! Map || props.isEmpty) return '()';
+  final Set<String> required = <String>{
+    if (schema['required'] case final List<Object?> list)
+      for (final Object? e in list) '$e',
+  };
+  final List<String> parts = <String>[
+    for (final MapEntry<Object?, Object?> e in props.entries)
+      '${e.key}${required.contains('${e.key}') ? '' : '?'}: '
+          '${_compactType(e.value)}',
+  ];
+  return '(${parts.join(', ')})';
+}
+
+String _compactType(Object? schema) {
+  if (schema is! Map) return 'any';
+  final Object? enumValues = schema['enum'];
+  if (enumValues is List && enumValues.isNotEmpty) {
+    return enumValues.map((Object? v) => _scalar(v)).join('|');
+  }
+  final Object? type = schema['type'];
+  return switch (type) {
+    'array' => '${_compactType(schema['items'])}[]',
+    'object' => 'object',
+    final String name => name,
+    final List<Object?> names => names.join('|'),
+    _ => 'any',
+  };
+}
+
+/// 枚举值的签名写法：字符串带引号，其余原样。
+String _scalar(Object? value) => value is String ? '"$value"' : '$value';
+
+/// 一条描述截到 [kAgentCompactDescriptionChars]（优先截在第一句末尾）。
+String agentCompactDescription(String description) {
+  final String text = description.trim().replaceAll(RegExp(r'\s+'), ' ');
+  final int sentenceEnd = text.indexOf('. ');
+  final String first = sentenceEnd > 0
+      ? text.substring(0, sentenceEnd + 1)
+      : text;
+  if (first.length <= kAgentCompactDescriptionChars) return first;
+  return '${first.substring(0, kAgentCompactDescriptionChars - 1)}…';
+}
+
 /// 一次工具执行请求。
 class AgentToolInvocation {
   const AgentToolInvocation({

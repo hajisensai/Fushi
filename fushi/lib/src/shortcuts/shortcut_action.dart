@@ -50,9 +50,20 @@ enum ShortcutScope {
   // 复习页只解析自己这一组绑定，未命中的键（Esc / Alt+← / 手柄 B）冒泡到根上由
   // universal 的「返回上一级」兜底，故自成 co-active 组。
   srsReview,
-  // TODO-700 T6：摇杆与 dpad 解耦后，dpad 四向成为「可绑触发键」，落在独立的
-  // gamepad 作用域（自成 co-active 组，不与 reader/home 等任何组冲突）。摇杆固定
-  // 做方向焦点移动、永不经注册表，故没有对应 action——只有 dpad 进这个 scope。
+  // 「焦点导航」：上 / 下 / 左 / 右移焦 + 确认（反馈 bjPjRHsaUy，所有者拍板）。
+  // 设置页里显示为「焦点导航」分组；枚举名 `gamepad` 与动作名 `dpad*` 是**冻结**
+  // 的历史名（操作目录 / MCP 的 `keys` 路由按 `scope.name` / `action.name` 收发，
+  // 持久化按 `dpad_*` key），不追改。
+  //
+  // 来历：TODO-700 T6 让 dpad 四向成为「可绑触发键」，落在本作用域；摇杆固定做方向
+  // 焦点移动、永不经注册表。2026-11 起本作用域开放**键盘**通道：方向键移焦从
+  // `global_navigation.dart` 的硬编码收进注册表，用户可给焦点移动加 WASD /
+  // Shift+方向键之类的备选键，在左右键被句子导航占用的媒体页里也能把焦点移到按钮上。
+  //
+  // 与页面的优先级：本作用域自成 co-active 组，与 universal 一样是**兜底**——页面
+  // scope（阅读器 / 有声书 / 视频…）先解析，页面没占用的键才落到焦点导航。所以
+  // 默认的裸方向键在媒体页仍是翻页 / seek / 句子导航（行为不变），用户要在这些页面
+  // 移焦就给焦点导航绑一个页面没占用的键。
   gamepad,
 
   // 查词弹窗内部的导航动作（Yomitan 式「上/下一个词条」）。这些动作**不经
@@ -218,13 +229,17 @@ enum ShortcutScope {
           ShortcutChannel.gamepad,
           ShortcutChannel.mouse,
         };
-      // dpad 四向：唯一消费者是 GamepadService._dispatchButton，按 `GamepadButton`
-      // 做 `resolveGamepad(scope: gamepad)`，且结果只被映射成 TraversalDirection。
-      // 键盘/鼠标绑定在这里**按构造不可读**（没有也不可能有 resolveKeyboard/
-      // resolveMouse(scope: gamepad)）；默认表也刻意把键盘留空——方向焦点移动由箭头键
-      // 与摇杆负责，见 shortcut_defaults 的 dpad* 注释。
+      // 焦点导航（枚举名 gamepad 冻结）：键盘 + 手柄。
+      //   · 手柄：GamepadService._dispatchButton 在页面 Actions / 弹窗 / 滚页兜底都
+      //     没消费后 `resolveGamepad(scope: gamepad)`，映射成移焦 / ActivateIntent；
+      //   · 键盘：app 根 `wrapWithGlobalNavigation` 的 `_handleGlobalFocusNavigation`
+      //     `resolveKeyboard(scope: gamepad)`（页面处理器都没消费才轮到它）。
+      // 鼠标不开：指针本身就能点按钮，没有「用鼠标键移焦」的派发点。
       case gamepad:
-        return const <ShortcutChannel>{ShortcutChannel.gamepad};
+        return const <ShortcutChannel>{
+          ShortcutChannel.keyboard,
+          ShortcutChannel.gamepad,
+        };
       // app 内浏览器：只开键盘。派发点是浏览器页的键事件节点
       // （`resolveKeyboard(event, scope: webBrowser)` → 未命中兜底 universal）。
       //   · 手柄**不开**：浏览器里手柄走普通焦点遍历（摇杆 / dpad → 焦点移动、A 确认），
@@ -732,10 +747,17 @@ enum ShortcutAction {
   // = 通用方向焦点移动（与摇杆同效果，但摇杆固定走 onStickMove 通道、不经注册表，
   // 故只有 dpad 进注册表）。用户可把 dpad 方向键改绑别的功能，或把别的键绑成方向
   // 焦点移动。
+  //
+  // 2026-11：这四个动作就是「焦点上 / 下 / 左 / 右移」（设置页文案已改），开放
+  // 键盘通道，默认键盘 = 对应裸方向键。名字与持久化 key 冻结（见
+  // [ShortcutScope.gamepad] 注释）。
   dpadUp(ShortcutScope.gamepad, 'dpad_up'),
   dpadDown(ShortcutScope.gamepad, 'dpad_down'),
   dpadLeft(ShortcutScope.gamepad, 'dpad_left'),
   dpadRight(ShortcutScope.gamepad, 'dpad_right'),
+  // 确认（激活当前焦点控件 = ActivateIntent）。默认 Enter / 手柄 A，与框架 / 手柄
+  // 服务的既有确认键一致（行为不变），用户可再加备选键。
+  focusActivate(ShortcutScope.gamepad, 'focus_activate'),
 
   // Global external lookup (TODO-1066)：桌面「app 外全局查词」的系统级触发热键。
   // 执行体是 GlobalLookupController（读本 action 的键盘绑定注册到 hotkey_manager，

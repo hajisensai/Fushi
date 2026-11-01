@@ -1019,6 +1019,8 @@ extension _VideoLookupMining on _VideoFushiPageState {
       statIdentity: statIdentity,
       silent: silent,
       onFailure: onFailure,
+      undoRepo: repo,
+      expression: fields['expression'],
     );
     if (onlineMode == VideoOnlineMiningMode.wait) return land(await job);
     // BUG-3492：后台**写入 Anki** 的这张卡（不是暂存、不是回看改卡）在落地前可以被排队
@@ -1106,6 +1108,8 @@ extension _VideoLookupMining on _VideoFushiPageState {
     required ({String bookKey, String title}) statIdentity,
     bool silent = false,
     void Function(String code)? onFailure,
+    BaseAnkiRepository? undoRepo,
+    String? expression,
   }) {
     // BUG-296 / TODO-390：应带句子音频却抽取失败 → 显式 OSD + 中止，不建无音频卡。
     if (res.aborted) {
@@ -1170,7 +1174,12 @@ extension _VideoLookupMining on _VideoFushiPageState {
     // describeMineOutcome 早就算出了 status，此前只被拿去选 prominent 布尔、颜色
     // 整个丢掉，于是视频页制卡成功与失败长得一模一样。透传语义即可对齐其它入口。
     // 经 _showMineOsd 过「制卡提示」开关（关掉成功 / 重复提示后不再弹）。
-    _showMineOsd(described.message, described.status);
+    // 反馈 JNyykxvuY9：新制成功的结果卡带「撤销」（覆写 / 暂存不带：撤销会删掉
+    // 原有的卡 / 卡还没进 Anki）。
+    final MinedCardUndo? undo = overwrite || undoRepo == null
+        ? null
+        : MinedCardUndo.of(undoRepo, outcome, expression: expression);
+    _showMineOsd(described.message, described.status, undo);
     return result;
   }
 
