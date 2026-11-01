@@ -3550,6 +3550,15 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  // 复习时直接编辑（卡面选中文字 → 加粗 / 高亮 / 清除，字段 AI 改写）。默认 false。
+  bool get srsReviewInlineEdit =>
+      getPref('srs_review_inline_edit', defaultValue: false) as bool;
+
+  Future<void> setSrsReviewInlineEdit(bool value) async {
+    await setPref('srs_review_inline_edit', value);
+    notifyListeners();
+  }
+
   // 复习卡面音频音量（0–1，手动点播与自动连播共用）。默认 1.0。
   double get srsReviewVolume {
     final Object? v = getPref('srs_review_volume', defaultValue: 1.0);

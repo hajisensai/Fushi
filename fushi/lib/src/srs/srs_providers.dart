@@ -169,6 +169,13 @@ final Provider<bool> srsReviewShowCountsProvider = Provider<bool>(
       ref.watch(appProvider.select((AppModel app) => app.srsReviewShowCounts)),
 );
 
+/// 复习时直接编辑（按 profile 偏好，默认关；反馈 cbzyXZlK-t / yrXhexdOaR）：开着时答案面底栏多一排
+/// 编辑键（加粗 / 高亮 / 清除格式 / 字段 AI 改写），作用于卡面上选中的文字所在的字段。
+final Provider<bool> srsReviewInlineEditProvider = Provider<bool>(
+  (Ref ref) =>
+      ref.watch(appProvider.select((AppModel app) => app.srsReviewInlineEdit)),
+);
+
 /// 复习卡面音频音量（0–1，按 profile 偏好，默认 1）：卡面点播与自动连播都按它播。
 final Provider<double> srsReviewVolumeProvider = Provider<double>(
   (Ref ref) =>

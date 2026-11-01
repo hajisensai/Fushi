@@ -734,6 +734,36 @@ class SrsMiner with AnkiNoteComposer {
     };
   }
 
+  /// 单词音频引用（`data:` URI / 本地路径 / 公网 URL，即 `resolveLookupAudioUrl` 解析出、
+  /// 制卡载荷 `audio` 里带的那种）落成文件、存进 SRS 媒体：成功给存储名（字段里写
+  /// `[sound:<名>]`），下载非 200 / 网络错误给可见失败原因，空引用 / 本地文件缺失为 none。
+  /// 制卡（[_render]）与「补全单词音频」（srs_word_audio_backfill.dart）共用这一处。
+  Future<AudioFetchOutcome> storeWordAudio(String ref) async {
+    if (ref.isEmpty) return const AudioFetchOutcome.none();
+    final AnkiLocalAudio local = await materializeAnkiWordAudio(
+      ref,
+      httpFailureReason: audioFetchHttpFailureReason,
+      errorReason: audioFetchErrorReason,
+    );
+    final String? failure = local.failureReason;
+    if (failure != null) return AudioFetchOutcome.failed(failure);
+    final File? file = local.file;
+    if (file == null) return const AudioFetchOutcome.none();
+    final String? name = await _storeMediaFile(file.path);
+    return name == null
+        ? const AudioFetchOutcome.none()
+        : AudioFetchOutcome.stored(name);
+  }
+
+  /// 本地文件存进 SRS 媒体（文件不存在 / 读不了时为 null）。
+  Future<String?> _storeMediaFile(String path) async {
+    try {
+      return await media.storeFile(File(path), name: p.basename(path));
+    } on FileSystemException {
+      return null;
+    }
+  }
+
   /// 与 Anki 同步客户端同一形状：四路媒体并发准备，交给 [renderMediaPayload] 统一渲染。
   Future<RenderedMinedFields> _render({
     required AnkiSettings settings,
@@ -741,30 +771,7 @@ class SrsMiner with AnkiNoteComposer {
     required AnkiMiningContext context,
     bool keepEmpty = false,
   }) async {
-    Future<String?> addFile(String path) async {
-      try {
-        return await media.storeFile(File(path), name: p.basename(path));
-      } on FileSystemException {
-        return null;
-      }
-    }
-
-    Future<AudioFetchOutcome> wordAudio() async {
-      if (payload.audio.isEmpty) return const AudioFetchOutcome.none();
-      final AnkiLocalAudio local = await materializeAnkiWordAudio(
-        payload.audio,
-        httpFailureReason: audioFetchHttpFailureReason,
-        errorReason: audioFetchErrorReason,
-      );
-      final String? failure = local.failureReason;
-      if (failure != null) return AudioFetchOutcome.failed(failure);
-      final File? file = local.file;
-      if (file == null) return const AudioFetchOutcome.none();
-      final String? name = await addFile(file.path);
-      return name == null
-          ? const AudioFetchOutcome.none()
-          : AudioFetchOutcome.stored(name);
-    }
+    Future<String?> addFile(String path) => _storeMediaFile(path);
 
     Future<String?> dictionaryMedia(DictionaryMedia m) async {
       final String name = ankiDictionaryMediaCacheFilename(
@@ -783,7 +790,7 @@ class SrsMiner with AnkiNoteComposer {
       context.sentenceAudioPath != null && !context.synchronizedVideo
           ? addFile(context.sentenceAudioPath!)
           : Future<String?>.value(),
-      wordAudio(),
+      storeWordAudio(payload.audio),
       buildDictionaryMediaTags(payload.dictionaryMedia, dictionaryMedia),
     ]);
     final String? cover = results[0] as String?;

@@ -350,11 +350,16 @@ fn count_tree(ctx: &Ctx<'_>, tallies: &HashMap<String, Tally>, ids: &[String], r
         let view = &ctx.tree.decks[id].view;
         // 新卡计划与每日上限一样只看牌组自己的值（不随参数继承）。
         let budget = new_card_budget(int(view, "np", 20), sub.due, ctx.logs.last30(), NewCardPlan::of(&view["npl"]));
-        let new_remaining = (budget.allowed - sub.new_done).max(0);
+        // 自定义学习「提升今日上限」：只对今天、只加在这个牌组自己这一层（子牌组的上限照旧截）。
+        let (ext_new, ext_review) = today_extension(&view["ext"], ctx.today);
+        let new_remaining = (budget.allowed + ext_new - sub.new_done).max(0);
         // RWKV 牌组开了「忽略每日复习上限」（上游 Anki 的 Ignore review limit）：按 R 合格的卡全部出，这一层不截断
         // （祖先没开的照样按自己的上限截）。
-        let review_remaining =
-            if ctx.tree.ignores_review_limit(id) { UNLIMITED_REVIEWS } else { (int(view, "rp", 200) - sub.review_done).max(0) };
+        let review_remaining = if ctx.tree.ignores_review_limit(id) {
+            UNLIMITED_REVIEWS
+        } else {
+            (int(view, "rp", 200) + ext_review - sub.review_done).max(0)
+        };
         let r = Count {
             sub,
             budget,
@@ -473,6 +478,248 @@ impl Picker<'_> {
     }
 }
 
+/// 牌组寄存器 `extendLimits`（视图键 `ext`，`{"day": 日序, "new": n, "review": n}`）里今天的追加量：
+/// Anki「自定义学习 → 提升今日新卡 / 复习上限」。不是今天写的不算（第二天自动失效，不用清）。
+pub(crate) fn today_extension(v: &Value, today: i64) -> (i64, i64) {
+    if v.get("day").and_then(Value::as_i64) != Some(today) {
+        return (0, 0);
+    }
+    let n = |k: &str| v.get(k).and_then(Value::as_i64).unwrap_or(0).clamp(0, MAX_EXTENSION);
+    (n("new"), n("review"))
+}
+
+/// 一天的上限追加量上限（与牌组设置里每日上限的输入范围同量级）。
+pub(crate) const MAX_EXTENSION: i64 = 9999;
+
+/// 自定义学习的临时会话（Anki Custom Study 里不改上限的几种）。不建筛选牌组、不挪卡、不改任何设置：只在排队时
+/// 换一套选卡条件，作答照常写日志、照常按 FSRS 排程（与 Anki 筛选牌组默认的「按作答重新排程」同义）。会话本身
+/// 无状态：「这次会话里答过的卡」= 子树里 [since] 之后有作答日志的卡；会话结束什么都不用清。
+///
+/// 请求 `"custom": {"since": 会话开始时刻, "mode": "forgotten" | "ahead" | "filter", "days"?: n, "limit"?: n,
+/// "states"?: ["new" | "learning" | "review" | "due"], "tags"?: [标签]}`：
+/// - forgotten：最近 [days] 天（含今天）里评过「重来」的卡；
+/// - ahead：[days] 天内到期（今天之后）的复习卡，按到期先后；
+/// - filter：按卡片状态（空 = 不限）与笔记标签（空 = 不限；不分大小写，`a` 也匹配层级标签 `a::b`）。
+///
+/// 出卡：会话里答过、现在到期的学习卡 → 还没答过的候选（最多 [limit] 张，按会话里已答的卡数扣）→ 20 分钟内到期
+/// 的会话学习卡。结果另带 `"custom": {"left": 剩余候选, "learn": 会话学习卡}`。
+struct CustomStudy {
+    since: i64,
+    mode: CustomMode,
+    days: i64,
+    limit: i64,
+    states: Vec<String>,
+    tags: Vec<String>,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum CustomMode {
+    Forgotten,
+    Ahead,
+    Filter,
+}
+
+/// 自定义学习一次最多出的卡（与 Anki 自定义学习的输入上限同量级）。
+const MAX_CUSTOM_CARDS: i64 = 9999;
+
+impl CustomStudy {
+    fn of(v: &Value) -> Result<CustomStudy, String> {
+        let mode = match v.get("mode").and_then(Value::as_str) {
+            Some("forgotten") => CustomMode::Forgotten,
+            Some("ahead") => CustomMode::Ahead,
+            Some("filter") => CustomMode::Filter,
+            m => return Err(format!("study: bad custom mode {m:?}")),
+        };
+        let strs = |k: &str| -> Vec<String> {
+            v.get(k).and_then(Value::as_array).into_iter().flatten().filter_map(Value::as_str).map(str::to_owned).collect()
+        };
+        Ok(CustomStudy {
+            since: v.get("since").and_then(Value::as_i64).ok_or("study: missing custom.since")?,
+            mode,
+            days: v.get("days").and_then(Value::as_i64).unwrap_or(1).clamp(1, 3650),
+            limit: v.get("limit").and_then(Value::as_i64).unwrap_or(100).clamp(0, MAX_CUSTOM_CARDS),
+            states: strs("states"),
+            tags: strs("tags").into_iter().map(|t| t.trim().to_lowercase()).filter(|t| !t.is_empty()).collect(),
+        })
+    }
+}
+
+/// 自定义学习的出卡（见 [CustomStudy]）。
+struct CustomPicker<'a> {
+    c: &'a Connection,
+    profile: &'a str,
+    ctx: &'a Ctx<'a>,
+    decks: &'a [String],
+    cu: &'a CustomStudy,
+}
+
+impl CustomPicker<'_> {
+    /// 子树里会话开始之后有作答日志的卡（子查询，绑定 profile、since）。
+    const ANSWERED: &'static str =
+        "id IN (SELECT card_id FROM srs_review_logs WHERE profile_uid = srs_id(?) AND kind = 'review' AND occurred_at >= ?)";
+
+    fn base_args(&self) -> Vec<Sql> {
+        let mut a = vec![Sql::Text(self.profile.to_owned()), Sql::Integer(self.ctx.today)];
+        a.extend(self.decks.iter().map(|d| Sql::Text(d.clone())));
+        a
+    }
+
+    fn answered_args(&self) -> [Sql; 2] {
+        [Sql::Text(self.profile.to_owned()), Sql::Integer(self.cu.since)]
+    }
+
+    fn base(&self) -> String {
+        format!("FROM srs_cards_cache WHERE profile_uid = srs_id(?) AND {LIVE} AND deck_id IN ({})", marks(self.decks.len()))
+    }
+
+    /// 会话里答过、仍在学习 / 重学队列的卡：(卡, due_at)，按到期先后。
+    fn learning(&self) -> Result<Vec<(String, i64)>, String> {
+        let q = format!(
+            "SELECT srs_idt(id), COALESCE(due_at, 0) {} AND queue IN ('learning', 'relearning') AND {} ORDER BY COALESCE(due_at, 0), id",
+            self.base(),
+            Self::ANSWERED
+        );
+        let mut args = self.base_args();
+        args.extend(self.answered_args());
+        let mut stmt = self.c.prepare_cached(&q).map_err(sql)?;
+        let rows = stmt.query_map(params_from_iter(args), |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))).map_err(sql)?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(sql)
+    }
+
+    /// 子树里会话开始之后答过的卡数（扣 [CustomStudy::limit]）。
+    fn done(&self) -> Result<i64, String> {
+        let q = format!(
+            "SELECT COUNT(*) FROM srs_cards_cache WHERE profile_uid = srs_id(?) AND deck_id IN ({}) AND {}",
+            marks(self.decks.len()),
+            Self::ANSWERED
+        );
+        let mut args: Vec<Sql> = vec![Sql::Text(self.profile.to_owned())];
+        args.extend(self.decks.iter().map(|d| Sql::Text(d.clone())));
+        args.extend(self.answered_args());
+        self.c.query_row(&q, params_from_iter(args), |r| r.get(0)).map_err(sql)
+    }
+
+    /// 候选条件、它的参数与顺序（不含「会话里没答过」与排除）。
+    fn condition(&self) -> (String, Vec<Sql>, &'static str) {
+        let today = self.ctx.today;
+        match self.cu.mode {
+            CustomMode::Forgotten => {
+                let from = self.ctx.day_start(today - self.cu.days + 1);
+                (
+                    "queue <> 'new' AND id IN (SELECT card_id FROM srs_stat_reviews WHERE profile_uid = srs_id(?) AND rating = 1 AND occurred_at >= ?)"
+                        .to_owned(),
+                    vec![Sql::Text(self.profile.to_owned()), Sql::Integer(from)],
+                    "last_reviewed_at, id",
+                )
+            }
+            CustomMode::Ahead => (
+                "queue = 'review' AND due_day > ? AND due_day <= ?".to_owned(),
+                vec![Sql::Integer(today), Sql::Integer(today + self.cu.days)],
+                "due_day, id",
+            ),
+            CustomMode::Filter => {
+                let mut parts: Vec<String> = Vec::new();
+                let mut args: Vec<Sql> = Vec::new();
+                let mut states: Vec<String> = Vec::new();
+                for s in &self.cu.states {
+                    match s.as_str() {
+                        "new" => states.push("queue NOT IN ('learning', 'relearning', 'review')".to_owned()),
+                        "learning" => states.push("queue IN ('learning', 'relearning')".to_owned()),
+                        "review" => states.push("queue = 'review'".to_owned()),
+                        "due" => {
+                            states.push("(queue = 'review' AND COALESCE(due_day, 0) <= ?)".to_owned());
+                            args.push(Sql::Integer(today));
+                        }
+                        _ => {}
+                    }
+                }
+                if !states.is_empty() {
+                    parts.push(format!("({})", states.join(" OR ")));
+                }
+                if !self.cu.tags.is_empty() {
+                    let each = vec!["(lower(t.value) = ? OR lower(t.value) LIKE ? ESCAPE '\\')"; self.cu.tags.len()].join(" OR ");
+                    parts.push(format!(
+                        "note_id IN (SELECT n.id FROM srs_notes_cache n, json_each(n.tags_json) t WHERE n.profile_uid = srs_id(?) AND ({each}))"
+                    ));
+                    args.push(Sql::Text(self.profile.to_owned()));
+                    for t in &self.cu.tags {
+                        let escaped = t.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
+                        args.push(Sql::Text(t.clone()));
+                        args.push(Sql::Text(format!("{escaped}::%")));
+                    }
+                }
+                let cond = if parts.is_empty() { "1".to_owned() } else { parts.join(" AND ") };
+                (cond, args, "queue NOT IN ('learning', 'relearning', 'review'), COALESCE(due_day, 0), new_position IS NULL, new_position, note_created_at, id")
+            }
+        }
+    }
+
+    /// 还没答过的候选（[ids]：Some((列表, true)) = 只在这些卡里找，Some((列表, false)) = 排除这些卡）：按顺序
+    /// 第一张与总数（数到 [cap] 为止）。
+    fn candidates(&self, ids: Option<(&[&str], bool)>, cap: i64) -> Result<(Option<String>, i64), String> {
+        let id_filter = match ids {
+            Some((l, true)) if l.is_empty() => return Ok((None, 0)),
+            Some((l, keep)) if !l.is_empty() => format!(" AND id {}IN ({})", if keep { "" } else { "NOT " }, marks(l.len())),
+            _ => String::new(),
+        };
+        let (cond, cond_args, order) = self.condition();
+        let tail = format!("{} AND {cond} AND NOT {}{id_filter}", self.base(), Self::ANSWERED);
+        let mut args = self.base_args();
+        args.extend(cond_args);
+        args.extend(self.answered_args());
+        args.extend(ids.into_iter().flat_map(|(l, _)| l.iter()).map(|e| Sql::Text((*e).to_owned())));
+        let first: Option<String> = {
+            let mut stmt = self.c.prepare_cached(&format!("SELECT srs_idt(id) {tail} ORDER BY {order} LIMIT 1")).map_err(sql)?;
+            let mut q = stmt.query(params_from_iter(args.clone())).map_err(sql)?;
+            match q.next().map_err(sql)? {
+                Some(r) => Some(r.get(0).map_err(sql)?),
+                None => None,
+            }
+        };
+        let mut count_args = args;
+        count_args.push(Sql::Integer(cap.max(0)));
+        let count: i64 = self
+            .c
+            .query_row(&format!("SELECT COUNT(*) FROM (SELECT 1 {tail} LIMIT ?)"), params_from_iter(count_args), |r| r.get(0))
+            .map_err(sql)?;
+        Ok((first, count))
+    }
+
+    /// (下一张, 再下一张, 剩余候选, 会话学习卡数)。
+    fn pick(&self, exclude: &[&str]) -> Result<(Option<String>, Option<String>, i64, i64), String> {
+        let learning = self.learning()?;
+        let room = (self.cu.limit - self.done()?).max(0);
+        let (_, left) = self.candidates(None, room)?;
+        let ahead = self.ctx.now + LEARN_AHEAD_MS;
+        let next_of = |ex: &[&str]| -> Result<Option<String>, String> {
+            let free = |id: &str| !ex.contains(&id);
+            if let Some((id, _)) = learning.iter().find(|(id, due)| *due <= self.ctx.now && free(id)) {
+                return Ok(Some(id.clone()));
+            }
+            // 被排除的卡里还是候选的（复习页排除的是正在显示 / 预取、马上要答的卡）先占掉 [room]，免得多出。
+            if room > 0 && left > 0 {
+                let (_, held) = self.candidates(Some((ex, true)), room)?;
+                if room - held > 0 {
+                    let (first, _) = self.candidates(Some((ex, false)), 1)?;
+                    if first.is_some() {
+                        return Ok(first);
+                    }
+                }
+            }
+            Ok(learning.iter().find(|(id, due)| *due <= ahead && free(id)).map(|(id, _)| id.clone()))
+        };
+        let mut ex: Vec<&str> = exclude.to_vec();
+        let next = next_of(&ex)?;
+        let mut after = None;
+        if let Some(n) = &next {
+            ex.push(n);
+            after = next_of(&ex)?;
+        }
+        let learn = learning.iter().filter(|(_, due)| *due <= ahead).count() as i64;
+        Ok((next, after, left, learn))
+    }
+}
+
 /// 请求里的「此刻」与日界。
 fn when(req: &Value) -> Result<(i64, Day), String> {
     let now = req.get("now").and_then(Value::as_i64).ok_or("study: missing now")?;
@@ -567,7 +814,22 @@ fn run(c: &Connection, src: &dyn Source, profile: &str, req: &Value) -> Result<V
     }
     let counts = count_tree(&ctx, &t, &ids, root);
     let (mut next, mut after) = (None, None);
-    if let (Some(r), true) = (root, req["pick"] == Value::Bool(true)) {
+    let mut custom_out = Value::Null;
+    let custom = match req.get("custom").filter(|v| v.is_object()) {
+        Some(v) => Some(CustomStudy::of(v)?),
+        None => None,
+    };
+    if let (Some(_), Some(cu)) = (root, &custom) {
+        // 自定义学习：不看每日上限、不出卡上的 RWKV 规则（[CustomStudy]）；计数照常给（牌组列表 / 复习页顶栏）。
+        let exclude: Vec<String> = req["exclude"].as_array().into_iter().flatten().filter_map(Value::as_str).map(str::to_owned).collect();
+        let ex: Vec<&str> = exclude.iter().map(String::as_str).collect();
+        let picker = CustomPicker { c, profile, ctx: &ctx, decks: &ids, cu };
+        let (n, a, left, learn) = picker.pick(&ex)?;
+        if req["pick"] == Value::Bool(true) {
+            (next, after) = (n, a);
+        }
+        custom_out = json!({"left": left, "learn": learn});
+    } else if let (Some(r), true) = (root, req["pick"] == Value::Bool(true)) {
         let exclude: Vec<String> = req["exclude"].as_array().into_iter().flatten().filter_map(Value::as_str).map(str::to_owned).collect();
         let picker = Picker {
             c,
@@ -601,6 +863,7 @@ fn run(c: &Connection, src: &dyn Source, profile: &str, req: &Value) -> Result<V
         "next": next,
         "after": after,
         "eligible": eligible.iter().map(|(id, _, _)| id.clone()).collect::<Vec<_>>(),
+        "custom": custom_out,
     }))
 }
 
@@ -1243,6 +1506,122 @@ mod tests {
             assert_eq!(lowest(&core).as_deref(), Some("weaker"), "rows committed after an earlier reread are reread again");
         }
         assert_eq!(lowest(&core).as_deref(), Some("weaker"));
+        core.close();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// 自定义学习：提升今日上限只对今天生效；提前复习 / 复习忘记的卡 / 按状态与标签的临时会话按条件出卡、扣上限、
+    /// 会话里答过的卡不再出（学习卡到期照样回来），排除的卡占名额。
+    #[test]
+    fn custom_study_sessions() {
+        let dir = std::env::temp_dir().join(format!("ffsrs_custom_study_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("srs.db");
+        let _ = std::fs::remove_file(&path);
+        let core = SrsCore::open(&path).unwrap();
+        let mut n = 0i64;
+        let mut logs = 0i64;
+        for d in ["R", "RA"] {
+            exec(&core, "INSERT INTO srs_entities (id, profile_uid, kind, payload_json) VALUES (srs_id(?), srs_id(?), 'deck', '{}')", vec![Sql::Text(d.into()), Sql::Text(P.into())]);
+        }
+        edit(&core, &mut n, "RA", "parent", json!("R"));
+        edit(&core, &mut n, "R", "limits", json!({"new": 1, "review": 1}));
+        let day = Day { utc_offset_min: 0, rollover_hour: 4 };
+        let now = 1_760_000_000_000i64;
+        let today = day.index(now);
+        let card = |id: &str, deck: &str, queue: &str, due_day: Option<i64>, due_at: Option<i64>, pos: i64| {
+            let opt = |v: Option<i64>| v.map_or(Sql::Null, Sql::Integer);
+            exec(
+                &core,
+                CARD_UPSERT,
+                vec![
+                    Sql::Text(id.into()),
+                    Sql::Text(P.into()),
+                    Sql::Text(deck.into()),
+                    Sql::Integer(0),
+                    Sql::Null,
+                    Sql::Integer(0),
+                    Sql::Text(queue.into()),
+                    opt(due_day),
+                    opt(due_at),
+                    Sql::Real(5.0),
+                    Sql::Integer(now - 3 * 86_400_000),
+                    Sql::Text("fushi".into()),
+                    Sql::Integer(pos),
+                    Sql::Integer(pos),
+                    Sql::Null,
+                ],
+            );
+        };
+        card("n1", "R", "new", None, None, 1);
+        card("n2", "RA", "new", None, None, 2);
+        card("n3", "R", "new", None, None, 3);
+        card("r1", "R", "review", Some(today), None, 10);
+        card("r2", "RA", "review", Some(today + 2), None, 11);
+        card("r3", "R", "review", Some(today + 5), None, 12);
+        card("f1", "RA", "review", Some(today + 9), None, 13);
+        exec(
+            &core,
+            "INSERT INTO srs_notes_cache (id, profile_uid, note_type_id, guid, created_at, tags_json) VALUES (srs_id('n3'), srs_id(?1), 'T', 'g3', 1, '[\"Grammar::N1\"]'), (srs_id('n1'), srs_id(?1), 'T', 'g1', 1, '[\"grammarian\"]')",
+            vec![Sql::Text(P.into())],
+        );
+        exec(
+            &core,
+            "INSERT INTO srs_stat_reviews (log_id, profile_uid, card_id, occurred_at, rating) VALUES (srs_id('s1'), srs_id(?1), srs_id('f1'), ?2, 1), (srs_id('s2'), srs_id(?1), srs_id('r3'), ?3, 1)",
+            vec![Sql::Text(P.into()), Sql::Integer(now - 86_400_000), Sql::Integer(now - 10 * 86_400_000)],
+        );
+        let base = json!({"now": now, "utcOff": 0, "rollover": 4, "deck": "R", "pick": true});
+        let study = |extra: Value| -> Value {
+            let mut req = base.clone();
+            for (k, v) in extra.as_object().unwrap() {
+                req[k] = v.clone();
+            }
+            core.study(P, &req).unwrap()
+        };
+
+        // 提升今日上限：今天的追加加在这一层；昨天写的不算。
+        assert_eq!(study(json!({}))["counts"]["R"][0], json!(1));
+        edit(&core, &mut n, "R", "extendLimits", json!({"day": today - 1, "new": 5, "review": 5}));
+        assert_eq!(study(json!({}))["counts"]["R"][0], json!(1));
+        edit(&core, &mut n, "R", "extendLimits", json!({"day": today, "new": 2, "review": 0}));
+        assert_eq!(study(json!({}))["counts"]["R"][0], json!(3));
+
+        let since = now - 60_000;
+        let custom = |c: Value| study(json!({"custom": c}));
+        // 提前复习 3 天：只有 r2（今天到期的 r1 不算「提前」，+5 天的 r3 超出）。
+        let r = custom(json!({"since": since, "mode": "ahead", "days": 3}));
+        assert_eq!((r["next"].clone(), r["after"].clone(), r["custom"].clone()), (json!("r2"), Value::Null, json!({"left": 1, "learn": 0})));
+        // 复习忘记的卡：2 天内评过「重来」的只有 f1。
+        let r = custom(json!({"since": since, "mode": "forgotten", "days": 2}));
+        assert_eq!((r["next"].clone(), r["after"].clone()), (json!("f1"), Value::Null));
+        // 按状态：新卡按新卡顺序；上限 2；排除的卡占名额。
+        let r = custom(json!({"since": since, "mode": "filter", "states": ["new"], "limit": 2}));
+        assert_eq!((r["next"].clone(), r["after"].clone(), r["custom"]["left"].clone()), (json!("n1"), json!("n2"), json!(2)));
+        let r = study(json!({"custom": {"since": since, "mode": "filter", "states": ["new"], "limit": 2}, "exclude": ["n1"]}));
+        assert_eq!((r["next"].clone(), r["after"].clone()), (json!("n2"), Value::Null));
+        // 按标签：不分大小写、匹配层级子标签，不匹配只是前缀相同的别的标签。
+        let r = custom(json!({"since": since, "mode": "filter", "tags": ["grammar"]}));
+        assert_eq!((r["next"].clone(), r["after"].clone()), (json!("n3"), Value::Null));
+        // 状态 due：今天到期的复习卡。
+        let r = custom(json!({"since": since, "mode": "filter", "states": ["due"]}));
+        assert_eq!((r["next"].clone(), r["after"].clone()), (json!("r1"), Value::Null));
+
+        // 会话里答过 r2 → 不再出、扣名额；答过 n1 后它进了学习队列且已到期 → 先出它。
+        log(&core, &mut logs, "r2", now - 1_000, "review", 3, "review");
+        let r = custom(json!({"since": since, "mode": "ahead", "days": 3}));
+        assert_eq!((r["next"].clone(), r["custom"].clone()), (Value::Null, json!({"left": 0, "learn": 0})));
+        log(&core, &mut logs, "n1", now - 1_000, "learn", 1, "review");
+        card("n1", "R", "learning", None, Some(now - 10), 1);
+        // 子树里会话开始后答过 r2、n1 两张：上限 3 还剩 1。
+        let r = custom(json!({"since": since, "mode": "filter", "states": ["new"], "limit": 3}));
+        assert_eq!((r["next"].clone(), r["after"].clone(), r["custom"].clone()), (json!("n1"), json!("n2"), json!({"left": 1, "learn": 1})));
+        // 名额用完：只剩会话学习卡。
+        let r = custom(json!({"since": since, "mode": "filter", "states": ["new"], "limit": 2}));
+        assert_eq!((r["next"].clone(), r["after"].clone()), (json!("n1"), Value::Null));
+        // 会话开始前的作答不算会话里答过。
+        let r = custom(json!({"since": now, "mode": "ahead", "days": 3}));
+        assert_eq!(r["next"], json!("r2"));
+        assert!(core.study(P, &json!({"now": now, "utcOff": 0, "rollover": 4, "deck": "R", "custom": {"since": 0, "mode": "bogus"}})).is_err());
         core.close();
         let _ = std::fs::remove_dir_all(&dir);
     }

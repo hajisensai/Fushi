@@ -38,7 +38,11 @@ import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_core/fushi_core.dart' show SrsCardCacheRow;
-import 'package:fushi_anki/fushi_anki_core.dart' show CardSourceLink;
+import 'package:fushi_anki/fushi_anki_core.dart'
+    show CardSourceLink, FushiCardBlock;
+import 'package:fushi_engine/ai/ai_chat_client.dart';
+import 'package:fushi_engine/ai/ai_feature.dart';
+import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_rwkv_service.dart';
@@ -48,14 +52,18 @@ import 'package:fushi/src/anki/card_source_origin.dart'
     show cardSourceKindIcon, cardSourceLinkOfFields;
 import 'package:fushi/src/anki/card_source_router.dart' show openCardSource;
 import 'package:fushi/src/focus/page_focus_ownership.dart';
+import 'package:fushi/src/ai/ai_srs_field_assistant.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_browse_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_appearance_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_deck_settings_page.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_field_ai_sheet.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_fushi_card_view.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_note_editor_page.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_review_edit_bar.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_review_gestures_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_review_layout_sheet.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_template_editor_page.dart';
@@ -70,7 +78,9 @@ import 'package:fushi/src/srs/srs_card_appearance.dart'
 import 'package:fushi/src/srs/srs_card_autoplay.dart';
 import 'package:fushi/src/srs/srs_card_media.dart' show srsMediaNameFromUrl;
 import 'package:fushi/src/srs/srs_change_note_type.dart';
+import 'package:fushi/src/srs/srs_field_catalog.dart' as catalog;
 import 'package:fushi/src/srs/srs_providers.dart';
+import 'package:fushi/src/srs/srs_review_edit.dart';
 import 'package:fushi/src/srs/srs_review_gestures.dart';
 import 'package:fushi/src/srs/srs_review_layout.dart';
 import 'package:fushi/src/sync/desktop_foreground_guard.dart';
@@ -129,10 +139,15 @@ class SrsReviewPage extends ConsumerStatefulWidget {
     super.key,
     required this.deckId,
     required this.deckName,
+    this.custom,
   });
 
   final String deckId;
   final String deckName;
+
+  /// 自定义学习的临时会话（[SrsCustomStudy]）：出卡换成会话的选卡条件（Rust 排队内核），作答照常排程；
+  /// null = 正常复习。
+  final SrsCustomStudy? custom;
 
   /// 集成测试探针：打开首张卡的各阶段（null = 不记）。
   @visibleForTesting
@@ -263,7 +278,15 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
   /// 牌组当前的全名（随计数一起现读；复习中在牌组设置里改了名立即换标题）。
   String? _deckTitle;
 
-  String get _title => _deckTitle ?? widget.deckName;
+  String get _title => widget.custom == null
+      ? _deckTitle ?? widget.deckName
+      : '${t.srs_custom_study_title} · ${_deckTitle ?? widget.deckName}';
+
+  /// 复习时编辑：卡面上最后一次选中的文字（换卡清空；[SrsCardFace.onEditSelection]）。
+  SrsCardSelection? _editSelection;
+
+  /// 自定义学习会话的进度（[SrsStudyState.custom]，随每次排队更新）。
+  SrsCustomStudyProgress? _customProgress;
   int _reviewedThisSession = 0;
 
   final List<_UndoStep> _undo = <_UndoStep>[];
@@ -408,7 +431,17 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     }
   }
 
-  Future<SrsDeckSummary?> _deckSummary() => _store!.deckSummary(widget.deckId);
+  Future<SrsDeckSummary?> _deckSummary() async {
+    final SrsCustomStudy? custom = widget.custom;
+    if (custom == null) return _store!.deckSummary(widget.deckId);
+    // 自定义学习：进度只有排队结果里有（同一次命令也给计数）。
+    final SrsStudyState? s = await _store!.studyState(
+      widget.deckId,
+      custom: custom,
+    );
+    _customProgress = s?.custom;
+    return s?.summary;
+  }
 
   void _applyCounts(SrsDeckSummary? sum) {
     _newCount = sum?.newCount ?? 0;
@@ -448,6 +481,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
             : await store.nextCard(
                 widget.deckId,
                 exclude: <String>{currentCardId},
+                custom: widget.custom,
               );
         SrsReviewPage.debugPhase?.call('prefetch:nextCard');
         if (id == null) return null;
@@ -515,7 +549,12 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     try {
       final SrsStudyState? plan =
           planned ??
-          (cardId == null ? await store.studyState(widget.deckId) : null);
+          (cardId == null
+              ? await store.studyState(widget.deckId, custom: widget.custom)
+              : null);
+      if (plan != null && widget.custom != null) {
+        _customProgress = plan.custom;
+      }
       final String? id = cardId ?? plan?.next;
       // 排队给的「再下一张」只对它排出的那张有效（指定了 [cardId] 时不是）。
       final bool afterKnown = cardId == null && plan != null;
@@ -631,6 +670,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
       _audioOwner = audioOwner;
       _showingAnswer = false;
       _missingMedia = const <String>{};
+      _editSelection = null;
     });
     unawaited(_probeMedia(_shownGeneration));
     _answerClock
@@ -835,6 +875,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
             kSrsMaxAnswerDurationMs,
           ),
           studyDeckId: widget.deckId,
+          custom: widget.custom,
         );
         SrsReviewPage.debugPhase?.call('answer:done');
         _undo.add(_UndoStep(cardId: detail.card.id, logId: out.log.id));
@@ -997,6 +1038,209 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
           await _loadNext();
         });
     }
+  }
+
+  // ------------------------------------------------------------------ 复习时编辑
+
+  void _onEditSelection(SrsCardSelection selection) {
+    if (!mounted || selection.key.isEmpty) return;
+    final SrsCardSelection? prev = _editSelection;
+    if (prev != null &&
+        prev.text == selection.text &&
+        prev.occurrence == selection.occurrence &&
+        prev.definitionsOnly == selection.definitionsOnly) {
+      return;
+    }
+    setState(() => _editSelection = selection);
+  }
+
+  /// 能写文字的字段（文字 / 富文本类，按笔记类型字段顺序）：字段 id → 当前值。
+  /// [definitionsOnly] = 只要 Fushi 卡片释义区的字段。
+  Map<String, String> _textFieldsOf(
+    SrsCardDetail detail, {
+    bool definitionsOnly = false,
+  }) {
+    final Set<String>? defs = definitionsOnly
+        ? FushiCardBlock.definitions.fields.toSet()
+        : null;
+    return <String, String>{
+      for (final SrsFieldDef f in detail.noteType.fields)
+        if ((defs == null || defs.contains(f.name)) &&
+            switch (catalog.srsFieldKind(f)) {
+              catalog.SrsFieldKind.text || catalog.SrsFieldKind.rich => true,
+              _ => false,
+            })
+          f.id: detail.note.field(f.id),
+    };
+  }
+
+  /// 可 AI 改写的字段（AI 模块开着时；与编辑页字段旁的 AI 键同一判据）。
+  List<SrsFieldDef> _aiFieldsOf(SrsCardDetail detail) {
+    if (!isAiModuleEnabled(ref.read(appProvider).moduleVisibility)) {
+      return const <SrsFieldDef>[];
+    }
+    final Map<String, String> text = _textFieldsOf(detail);
+    return <SrsFieldDef>[
+      for (final SrsFieldDef f in detail.noteType.fields)
+        if (text.containsKey(f.id)) f,
+    ];
+  }
+
+  /// 几个字段里选一个（选区同时出现在几个字段里 / AI 改写没有选区时）；只有一个直接用。
+  Future<SrsFieldDef?> _pickField(
+    SrsCardDetail detail,
+    List<String> fieldIds,
+    String title,
+  ) async {
+    if (fieldIds.isEmpty) return null;
+    final Map<String, SrsFieldDef> byId = <String, SrsFieldDef>{
+      for (final SrsFieldDef f in detail.noteType.fields) f.id: f,
+    };
+    if (fieldIds.length == 1) return byId[fieldIds.single];
+    final String? picked = await _focusOwnership.guardOverlay(
+      () => showSrsReviewFieldPicker(
+        context,
+        title: title,
+        fields: <(String, String)>[
+          for (final String id in fieldIds)
+            if (byId[id] != null) (id, catalog.srsFieldDisplayName(byId[id]!)),
+        ],
+      ),
+    );
+    return picked == null ? null : byId[picked];
+  }
+
+  /// 写一个字段并压一步「改回原值」进撤销栈，原地刷新卡面（保持答案面）。
+  Future<void> _writeField(
+    SrsCardDetail detail,
+    String fieldId,
+    String before,
+    String after,
+  ) async {
+    final SrsDbStore? store = _store;
+    if (store == null || before == after) return;
+    await store.updateNote(
+      detail.note.id,
+      fieldsById: <String, String>{fieldId: after},
+    );
+    _undo.add(
+      _UndoStep(
+        cardId: detail.card.id,
+        revert: (SrsDbStore s) => s.updateNote(
+          detail.note.id,
+          fieldsById: <String, String>{fieldId: before},
+        ),
+      ),
+    );
+    if (mounted) setState(() => _editSelection = null);
+    bumpSrsRevision(ref);
+    await _reloadCurrent();
+  }
+
+  /// 卡面选区 → 对应字段加粗 / 高亮 / 清除格式（srs_review_edit.dart）。
+  Future<void> _quickFormat(SrsQuickFormat format) async {
+    final SrsCardDetail? detail = _detail;
+    final SrsCardSelection? sel = _editSelection;
+    if (detail == null || sel == null || sel.key.isEmpty) {
+      FushiToast.show(msg: t.srs_review_edit_select_hint);
+      return;
+    }
+    await _guarded('quickFormat', () async {
+      final Map<String, String> fields = _textFieldsOf(
+        detail,
+        definitionsOnly: sel.definitionsOnly,
+      );
+      final List<String> hits = srsFieldsContaining(fields, sel);
+      if (hits.isEmpty) {
+        FushiToast.show(
+          msg: t.srs_review_edit_not_found,
+          severity: ToastSeverity.warning,
+        );
+        return;
+      }
+      final SrsFieldDef? field = await _pickField(
+        detail,
+        hits,
+        t.srs_review_edit_pick_field,
+      );
+      if (field == null || !mounted) return;
+      final String before = fields[field.id]!;
+      final String? after = srsApplyQuickFormat(before, sel, format);
+      if (after == null) {
+        FushiToast.show(
+          msg: t.srs_review_edit_not_found,
+          severity: ToastSeverity.warning,
+        );
+        return;
+      }
+      await _writeField(detail, field.id, before, after);
+    });
+  }
+
+  /// 字段 AI 改写（复用编辑页的字段 AI 抽屉与请求，不新增 AI 能力）：有选区时改选区所在的字段，否则选一个。
+  Future<void> _reviewFieldAi() async {
+    final SrsCardDetail? detail = _detail;
+    if (detail == null) return;
+    final AiProviderConfig? provider = ref
+        .read(appProvider)
+        .prefsRepo
+        .resolveAiFeatureProvider(AiFeature.srsNoteField);
+    if (provider == null) {
+      FushiToast.show(msg: t.ai_assist_no_provider);
+      return;
+    }
+    final List<SrsFieldDef> candidates = _aiFieldsOf(detail);
+    final SrsCardSelection? sel = _editSelection;
+    List<String> ids = <String>[for (final SrsFieldDef f in candidates) f.id];
+    if (sel != null && sel.key.isNotEmpty) {
+      final List<String> hits = srsFieldsContaining(
+        _textFieldsOf(detail, definitionsOnly: sel.definitionsOnly),
+        sel,
+      );
+      if (hits.isNotEmpty) ids = hits;
+    }
+    final SrsFieldDef? field = await _pickField(
+      detail,
+      ids,
+      t.srs_review_edit_pick_field,
+    );
+    if (field == null || !mounted) return;
+    final String before = detail.note.field(field.id);
+    final String? value = await _focusOwnership.guardOverlay(
+      () => showSrsFieldAiSheet(
+        context,
+        fieldLabel: catalog.srsFieldDisplayName(field),
+        fieldName: field.name,
+        current: before,
+        run: (AiSrsFieldTask task, String instruction) async {
+          final AiChatClient client = AiChatClient();
+          try {
+            return await requestAiSrsField(
+              client: client,
+              provider: provider,
+              noteType: detail.noteType,
+              valuesById: <String, String>{
+                for (final SrsFieldDef f in detail.noteType.fields)
+                  f.id: detail.note.field(f.id),
+              },
+              targetFieldId: field.id,
+              task: task,
+              instruction: instruction,
+              outputLanguage: LocaleSettings.currentLocale.languageTag,
+            );
+          } finally {
+            client.close();
+          }
+        },
+      ),
+    );
+    if (value == null || !mounted || _detail?.card.id != detail.card.id) {
+      return;
+    }
+    await _guarded(
+      'fieldAi',
+      () => _writeField(detail, field.id, before, value),
+    );
   }
 
   /// 编辑笔记；有改动时压一步「改回原值」进撤销栈。
@@ -1271,9 +1515,15 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
 
   // ------------------------------------------------------------------ 界面
 
-  String get _countsText =>
-      '${t.srs_count_new} $_newCount · ${t.srs_count_learn} $_learnCount · '
-      '${t.srs_count_review} $_reviewCount';
+  String get _countsText {
+    final SrsCustomStudyProgress? custom = _customProgress;
+    if (widget.custom != null && custom != null) {
+      return '${t.srs_custom_study_left} ${custom.left} · '
+          '${t.srs_count_learn} ${custom.learn}';
+    }
+    return '${t.srs_count_new} $_newCount · ${t.srs_count_learn} $_learnCount · '
+        '${t.srs_count_review} $_reviewCount';
+  }
 
   bool get _pendingDecision => _detail?.note.hasPendingDecision ?? false;
 
@@ -1931,7 +2181,9 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     required SrsCardGestureArming gestureArming,
   }) {
     final List<String> bridgeKeys = _currentBridgeKeys();
+    final bool inlineEdit = ref.watch(srsReviewInlineEditProvider);
     final Object inputs = (
+      inlineEdit,
       bridgeKeys,
       gestureArming,
       detail?.card.id,
@@ -1972,6 +2224,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
       onPlayAudio: _playNames,
       onCardGesture: _onCardGesture,
       gestureArming: gestureArming,
+      onEditSelection: inlineEdit ? _onEditSelection : null,
     );
     // 内置 Fushi 卡片（模板未改）走原生 + 释义 WebView 的混合渲染；其余整面 WebView。
     final Widget built = rendered?.fushiCardDefinitions != null
@@ -2118,7 +2371,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
                           switchInCurve: FushiMotion.enter,
                           switchOutCurve: FushiMotion.exit,
                           child: _showingAnswer
-                              ? _buildRatingRow(context)
+                              ? _buildAnswerBar(context)
                               : _buildShowAnswer(context),
                         ),
                       ),
@@ -2338,6 +2591,37 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
         ),
         row,
       ],
+    );
+  }
+
+  /// 答案面底栏：评分按钮；开着「复习时直接编辑」时上面多一排编辑键（[SrsReviewEditBar]）。
+  Widget _buildAnswerBar(BuildContext context) {
+    final Widget rating = _buildRatingRow(context);
+    final bool inlineEdit = ref.watch(srsReviewInlineEditProvider);
+    final SrsCardDetail? detail = _detail;
+    return FushiAnimatedSize(
+      key: const ValueKey<String>('srs-answer-bar'),
+      duration: fushiMotionDuration(context, FushiMotion.short),
+      curve: FushiMotion.standard,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          if (inlineEdit && detail != null) ...<Widget>[
+            SrsReviewEditBar(
+              hasSelection: (_editSelection?.key ?? '').isNotEmpty,
+              enabled: !_busy,
+              onFormat: (SrsQuickFormat f) => unawaited(_quickFormat(f)),
+              onAi: _aiFieldsOf(detail).isEmpty
+                  ? null
+                  : () => unawaited(_reviewFieldAi()),
+              onEditNote: () => unawaited(_editNote(detail)),
+            ),
+            SizedBox(height: FushiDesignTokens.of(context).spacing.gap),
+          ],
+          rating,
+        ],
+      ),
     );
   }
 

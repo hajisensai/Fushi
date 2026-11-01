@@ -10440,6 +10440,9 @@ class AppModel with ChangeNotifier {
   bool get srsReviewShowCounts => _prefsRepo?.srsReviewShowCounts ?? true;
   Future<void> setSrsReviewShowCounts(bool value) =>
       prefsRepo.setSrsReviewShowCounts(value);
+  bool get srsReviewInlineEdit => _prefsRepo?.srsReviewInlineEdit ?? false;
+  Future<void> setSrsReviewInlineEdit(bool value) =>
+      prefsRepo.setSrsReviewInlineEdit(value);
   double get srsReviewVolume => _prefsRepo?.srsReviewVolume ?? 1.0;
   Future<void> setSrsReviewVolume(double value) =>
       prefsRepo.setSrsReviewVolume(value);
