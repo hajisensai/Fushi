@@ -1926,4 +1926,66 @@ void main() {
       reason: '别人设备的备份 merge 进来不该改本机设置（这是 merge 的既有语义）',
     );
   });
+
+  test('mergePortableSettings（AWp-0BtDDv）：可移植设置按修改时刻并入，不可移植项不动', () async {
+    final curDir = await _tempDir('mg_cur_');
+    addTearDown(() => cleanupTempDir(curDir));
+    final cur = FushiDatabase(curDir.path);
+    // 本机：一项比备份旧、一项比备份新、一项本机路径。
+    await cur.adoptPrefWithStamp(
+      'custom_themes',
+      's:local-old',
+      updatedAt: 100,
+    );
+    await cur.adoptPrefWithStamp(
+      'hover_lookup_modifier',
+      's:local-new',
+      updatedAt: 900,
+    );
+    await cur.adoptPrefWithStamp(
+      'download_save_root',
+      's:/local',
+      updatedAt: 100,
+    );
+    await cur.close();
+
+    final srcDir = await _tempDir('mg_src_');
+    addTearDown(() => cleanupTempDir(srcDir));
+    final src = FushiDatabase(srcDir.path);
+    await src.adoptPrefWithStamp('custom_themes', 's:backup', updatedAt: 500);
+    await src.adoptPrefWithStamp(
+      'hover_lookup_modifier',
+      's:backup',
+      updatedAt: 500,
+    );
+    await src.adoptPrefWithStamp(
+      'download_save_root',
+      's:/other-device',
+      updatedAt: 500,
+    );
+    await src.adoptPrefWithStamp('theme_tint_app_logo', 'b:1', updatedAt: 500);
+    final zipDir = await _tempDir('mg_zip_');
+    addTearDown(() => cleanupTempDir(zipDir));
+    final zip = p.join(zipDir.path, 'b.zip');
+    await _exportZip(src, srcDir.path, zip);
+    await src.close();
+
+    await BackupRestoreService.mergeRestoreBackup(
+      dbDirectory: curDir.path,
+      zipPath: zip,
+      mergePortableSettings: true,
+    );
+
+    final after = FushiDatabase(curDir.path);
+    addTearDown(after.close);
+    final Map<String, String> prefs = await after.getAllPrefs();
+    expect(prefs['custom_themes'], 's:backup', reason: '备份那份更新 → 采纳');
+    expect(prefs['hover_lookup_modifier'], 's:local-new', reason: '本机更新 → 保留');
+    expect(prefs['theme_tint_app_logo'], 'b:1', reason: '本机没有 → 采纳');
+    expect(
+      prefs['download_save_root'],
+      's:/local',
+      reason: '本机路径不可移植，合并导入绝不覆盖',
+    );
+  });
 }

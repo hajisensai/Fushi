@@ -239,6 +239,43 @@ mixin _FushiDbPrefsMedia
     });
   }
 
+  /// Adopts a preference value from another device **unconditionally**, keeping
+  /// that device's [updatedAt] stamp. Returns whether the row changed.
+  ///
+  /// Only for the one place where "the other side wins regardless of stamps" is
+  /// the explicit contract: the first alignment of settings sync on a device
+  /// (feedback AWp-0BtDDv). A fresh install writes defaults with `now` stamps,
+  /// so a plain [setPrefIfNewer] would let those defaults beat the settings the
+  /// user actually tuned on the other device last month. Everything after the
+  /// first alignment goes through [setPrefIfNewer].
+  Future<bool> adoptPrefWithStamp(
+    String key,
+    String value, {
+    required int updatedAt,
+  }) async {
+    return transaction(() async {
+      final PreferenceRow? existing = await (select(
+        preferences,
+      )..where((t) => t.key.equals(key))).getSingleOrNull();
+      if (existing != null &&
+          existing.value == value &&
+          existing.updatedAt == updatedAt) {
+        return false;
+      }
+      await into(preferences).insertOnConflictUpdate(
+        PreferencesCompanion.insert(
+          key: key,
+          value: value,
+          updatedAt: Value<int>(updatedAt),
+        ),
+      );
+      if (key != FushiDatabase.prefsVersionKey) {
+        await _bumpPrefsVersion();
+      }
+      return true;
+    });
+  }
+
   /// The LWW stamp of one preference row (BUG-1502); null when the row is
   /// absent. 0 means "written before v84 / by a device that had no clock" —
   /// see [Preferences.updatedAt].

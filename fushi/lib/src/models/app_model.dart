@@ -1264,6 +1264,13 @@ class AppModel with ChangeNotifier {
       _mediaTrackingService?.notifyStatusChanged();
     }
 
+    if (report.settingsImported > 0 && report.serviceConfigsImported == 0) {
+      // 「同步设置」（AWp-0BtDDv）写进了别的设备的设置：偏好缓存、各媒体源设置、
+      // 主题、快捷键都要从 DB 重读，否则要等下次冷启动才生效。
+      await refreshPrefCache();
+      notifyListeners();
+    }
+
     if (report.dictionariesImported > 0) {
       // BUG-2752：同步导入直接写 dictionary_metadata，内存缓存不知道新词典；
       // 必须从 DB 整表重载再重建引擎。此前先 clearDictionariesCache() 再按

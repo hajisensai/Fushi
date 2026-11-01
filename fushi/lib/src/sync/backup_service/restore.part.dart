@@ -1534,6 +1534,7 @@ class BackupRestoreService {
     String? gameCoversRootDirectory,
     void Function(double progress)? onProgress,
     bool adoptSourcePreferences = false,
+    bool mergePortableSettings = false,
   }) async {
     // Per-category merge selection (import dialog, merge mode). null = merge
     // every category (legacy full merge). Gates BOTH the DB row merge (via the
@@ -1657,6 +1658,7 @@ class BackupRestoreService {
                 meta?.videoFiles.keys.toSet() ?? const <String>{},
             enabledCategoryNames: enabledCategoryNames,
             adoptSourcePreferences: adoptSourcePreferences,
+            mergePortableSettings: mergePortableSettings,
             localSrs: localSrs,
             sourceSrs: sourceSrs?.db,
           ).merge();

@@ -818,14 +818,20 @@ const List<String> _profilesLayerTablesChildFirst = <String>[
 /// a `settings`-excluded backup and its restore never diverge.
 final String settingsPrefPredicate = _buildSettingsPrefPredicate();
 
+/// 住在 `preferences` 里、但属于**内容注册表**而不是设置的 key：收藏句、本地音频库
+/// 清单、音频来源配置、字体目录（含旧字体键）。它们各有自己的资产通道（并且值里是
+/// 本机文件路径），[settingsPrefPredicate] 与可移植设置判定（`PortableSettingsPolicy`）
+/// 共用这一份清单。
+const List<String> backupContentRegistryPrefKeys = <String>[
+  _favoriteSentencesPrefKey,
+  _localAudioDbsPrefKey,
+  _audioSourceConfigsPrefKey,
+  _fontCatalogPrefKey,
+  ..._legacyFontPrefKeys,
+];
+
 String _buildSettingsPrefPredicate() {
-  final List<String> preservedExactKeys = <String>[
-    _favoriteSentencesPrefKey,
-    _localAudioDbsPrefKey,
-    _audioSourceConfigsPrefKey,
-    _fontCatalogPrefKey,
-    ..._legacyFontPrefKeys,
-  ];
+  const List<String> preservedExactKeys = backupContentRegistryPrefKeys;
   final String notIn = preservedExactKeys
       .map((String k) => "'${k.replaceAll("'", "''")}'")
       .join(', ');

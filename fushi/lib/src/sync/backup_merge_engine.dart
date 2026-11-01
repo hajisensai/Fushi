@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:fushi/src/sync/settings_sync.dart';
 import 'package:drift/drift.dart' show QueryRow, Variable;
 import 'package:fushi_engine/media/override_title_key.dart';
 import 'package:fushi_engine/media/video/strm_file.dart'
@@ -66,9 +67,11 @@ class BackupMergeEngine {
     Set<String> carriedVideoSourcePaths = const <String>{},
     Set<String>? enabledCategoryNames,
     bool adoptSourcePreferences = false,
+    bool mergePortableSettings = false,
     SrsStorage? localSrs,
     SrsDatabase? sourceSrs,
   }) : _srcAlias = srcAlias,
+       _mergePortableSettings = mergePortableSettings,
        _carriedVideoSourcePaths = carriedVideoSourcePaths,
        _enabledCategoryNames = enabledCategoryNames,
        _adoptSourcePreferences = adoptSourcePreferences,
@@ -96,6 +99,11 @@ class BackupMergeEngine {
   /// `preferences` 的全部处理，
   /// 而迁移声明的 `BackupCategory.settings` 在这条路径上从来没有消费方。
   final bool _adoptSourcePreferences;
+
+  /// 备份页「合并导入时包含设置」（反馈 AWp-0BtDDv）：把源库里的**可移植**设置
+  /// （`PortableSettingsPolicy`）按修改时刻 LWW 并进来。默认关 = 合并导入一贯的
+  /// 「不动本机设置」。
+  final bool _mergePortableSettings;
 
   /// Per-category merge gate (the `BackupCategory.name`s the user kept ticked in
   /// the import dialog); null = merge every category (legacy full merge). Only
@@ -293,6 +301,9 @@ class BackupMergeEngine {
       if (_wants('music')) await _mergeMusicUserData();
       // 迁移专用，放在全部点名 pref 合并之后：那几处是「按内容语义合并」（可能
       // 覆盖/取较新），这里只补它们没管的 key，不能反过来盖掉它们的结果。
+      if (_mergePortableSettings && _wants('settings')) {
+        await _mergePortableSettingsFromSource();
+      }
       if (_adoptSourcePreferences) await _adoptMissingPreferences();
       await _db.customStatement('DROP TABLE IF EXISTS $_gameMapTable');
     });
@@ -466,6 +477,44 @@ class BackupMergeEngine {
   Future<List<String>> _allColumns(String table) async {
     final rows = await _db.customSelect('PRAGMA table_info($table)').get();
     return rows.map((r) => '"${r.data['name'] as String}"').toList();
+  }
+
+  /// 把源库里的可移植设置按修改时刻并进来（反馈 AWp-0BtDDv）。
+  ///
+  /// 判定与同步页「同步设置」是同一个 [PortableSettingsPolicy]；合并规则同
+  /// [FushiDatabase.setPrefIfNewer]：本机没有这项、或备份那份**严格更新**才写，平局保留
+  /// 本机，写入时沿用备份那份的时刻。放在点名内容 pref 合并之后：判定已把那几类
+  /// 内容键排除在外，两者不会争同一行。
+  Future<void> _mergePortableSettingsFromSource() async {
+    final List<QueryRow> rows = await _db
+        .customSelect(
+          'SELECT "key", "value", "updated_at" FROM $_srcAlias.preferences',
+        )
+        .get();
+    final Map<String, PortableSettingValue> source =
+        <String, PortableSettingValue>{
+          for (final QueryRow r in rows)
+            if (PortableSettingsPolicy.isPortable(r.read<String>('key')))
+              r.read<String>('key'): PortableSettingValue(
+                r.read<String>('value'),
+                r.read<int>('updated_at'),
+              ),
+        };
+    final Map<String, PortableSettingValue> adopt = settingsToAdopt(
+      local: await loadLocalPortableSettings(_db),
+      remote: source,
+      firstAlignment: false,
+    );
+    for (final MapEntry<String, PortableSettingValue> e in adopt.entries) {
+      await _db.customStatement(
+        'INSERT INTO preferences ("key", "value", "updated_at") '
+        'VALUES (?, ?, ?) '
+        'ON CONFLICT("key") DO UPDATE SET "value" = excluded."value", '
+        '"updated_at" = excluded."updated_at" '
+        'WHERE excluded."updated_at" > preferences."updated_at"',
+        <Object>[e.key, e.value.value, e.value.updatedAt],
+      );
+    }
   }
 
   /// 把源库里**本机还没有**的 `preferences` 行补进来（insert-if-absent）。
