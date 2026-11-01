@@ -91,6 +91,9 @@ const Set<String> kSrsSyncLocalStateErrors = <String>{
 /// 复习同步一轮的活动面包屑名（[ActivityBreadcrumb]）。
 const String kSrsSyncActivity = 'srs_sync';
 
+/// 旧根媒体后台迁移的活动面包屑名：进程死在迁移里时，下次启动报出死在第几个文件。
+const String kSrsV1MigrateActivity = 'srs_v1_migrate';
+
 /// [SrsSyncScheduler.syncWithBackend] 的轮次统计：排队数、在跑数、被合并的请求数、连续
 /// 失败数与上次失败时刻。只用于诊断（面包屑 / 失败日志）。
 class SrsSyncRoundStats {
@@ -132,8 +135,11 @@ int? srsMaxConcurrentWritesOf(SyncAssetStore backend) {
 final SrsLocationMigrationMemo _srsMigrationMemo = SrsLocationMigrationMemo();
 
 /// 生产实现：现有同步后端上的集合根（`fushi-srs/<profileUid>/v3/`）跑一轮同步 v2。先 [srsPrepareLocation]：立住
-/// 旧根 `v2/` 上让旧版本停下的围栏，旧根上有协议 1 的数据就迁过来。[directoryKey] 就是这个位置的稳定身份（本机按
-/// 它记每个位置传到了哪）。
+/// 旧根 `v2/` 上让旧版本停下的围栏，旧根上的设备段迁过来。[directoryKey] 就是这个位置的稳定身份（本机按它记每个位置
+/// 传到了哪）。
+///
+/// 一轮成功之后旧根还有媒体残留：交给 [v1MediaMigrations] 在后台搬（[srsMigrateV1Media]，不挡这一轮、不占调度器的
+/// 串行队列；[onV1Bound] = 补了绑定、请一轮同步把它发出去）；没给就在这一轮里搬。
 Future<SrsSync2Report> srsDefaultSyncRunner(
   SyncAssetStore backend,
   SrsDbStore store,
@@ -144,28 +150,29 @@ Future<SrsSync2Report> srsDefaultSyncRunner(
   Future<void> Function(String? keyHex)? beforeUpload,
   bool Function()? shouldStop,
   SrsSyncStepCallback? onStep,
+  SrsV1MediaMigrations? v1MediaMigrations,
+  Future<void> Function()? onV1Bound,
 }) async {
-  final SrsLocationStore location = SrsAssetLocationStore(
+  SrsLocationStore currentRoot() => SrsAssetLocationStore(
     store: backend,
     profileUid: store.profileUid,
     maxConcurrentWrites: srsMaxConcurrentWritesOf(backend),
   );
-  final SrsLocationStore v1 = SrsAssetLocationStore(
+  SrsLocationStore v1Root() => SrsAssetLocationStore(
     store: backend,
     profileUid: store.profileUid,
     maxConcurrentWrites: srsMaxConcurrentWritesOf(backend),
     folder: kSrsSync2V1Folder,
   );
-  final SrsV1Writers writers = SrsAssetV1Writers(backend, store.profileUid);
+  final SrsLocationStore location = currentRoot();
   final SrsLocationPrepared prepared = await srsPrepareLocation(
     host: store,
-    v1: v1,
+    v1: v1Root(),
     current: location,
     locationId: directoryKey,
     key: locationKey,
     nowMs: () => store.now().$1,
-    recordPresence: true,
-    writers: writers,
+    writers: SrsAssetV1Writers(backend, store.profileUid),
     memo: _srsMigrationMemo,
     onStep: onStep,
   );
@@ -191,19 +198,37 @@ Future<SrsSync2Report> srsDefaultSyncRunner(
     onStep: onStep,
   );
   if (r.needsUpgrade) r.error = kSrsSyncNeedsUpgrade;
-  if (r.error == null) {
-    // 按名字存的旧媒体：这一轮把补上的绑定发布到这个位置之后才删。
-    await srsFinishLocationMigration(
-      host: store,
-      v1: v1,
-      prepared: prepared,
-      progressId: srsLocationProgressId(
-        directoryKey,
-        r.encrypted ? locationKey?.keyHex : null,
-      ),
-      writers: writers,
+  if (r.error == null && prepared.mediaLeftover) {
+    // 本机这一轮在新根上读全了（没有缺段 / 坏段）才看得到已有的全部绑定；按名字存的旧文件等本位置的上传水位到了才删。
+    final bool canBind =
+        prepared.devicesSettled && r.missing == 0 && r.errors.isEmpty;
+    final String progressId = srsLocationProgressId(
+      directoryKey,
+      r.encrypted ? locationKey?.keyHex : null,
     );
-    srsLogMigrationCleanup(prepared, directoryKey);
+    Future<SrsV1MediaReport> job(void Function(int, int)? onProgress) =>
+        srsMigrateV1Media(
+          host: store,
+          // 自己的实例：一轮的目录缓存不跟后台迁移共用。
+          v1: v1Root(),
+          current: currentRoot(),
+          locationId: directoryKey,
+          key: locationKey,
+          nowMs: () => store.now().$1,
+          canBind: canBind,
+          progressId: progressId,
+          recordPresence: true,
+          writers: SrsAssetV1Writers(backend, store.profileUid),
+          memo: _srsMigrationMemo,
+          onProgress: onProgress,
+          shouldStop: shouldStop,
+          onBound: onV1Bound,
+        );
+    if (v1MediaMigrations == null) {
+      srsLogV1MediaReport(await job(null), directoryKey);
+    } else {
+      v1MediaMigrations.start(directoryKey, job);
+    }
   }
   return r;
 }
@@ -219,16 +244,16 @@ void srsLogMigrationLeftover(SrsLocationPrepared prepared, String locationId) {
   );
 }
 
-/// 迁移收尾删旧文件时逐个出的错：那些文件留着下一轮再删，这一轮的同步照样算成功，但每个错都记日志。
-void srsLogMigrationCleanup(SrsLocationPrepared prepared, String locationId) {
-  for (final (Object e, StackTrace stack) in prepared.cleanupErrors) {
+/// 旧根媒体迁移删旧文件时逐个出的错：那些文件留着下一次再删，同步照样算成功，但每个错都记日志。
+void srsLogV1MediaReport(SrsV1MediaReport report, String locationId) {
+  for (final (Object e, StackTrace stack) in report.cleanupErrors) {
     ErrorLogService.instance.log(
-      'srsFinishLocationMigration',
-      StateError('srs v1 cleanup on $locationId: $e'),
+      'srsMigrateV1Media.cleanup',
+      StateError('srs v1 media cleanup on $locationId: $e'),
       stack,
     );
   }
-  prepared.cleanupErrors.clear();
+  report.cleanupErrors.clear();
 }
 
 /// 本机直接读写的同步目录：本机作为互联 host 时，别的设备经互联写进来的就是这块目录，
@@ -436,6 +461,7 @@ class SrsSyncScheduler {
     SrsDbStore store,
     String directoryKey, {
     SrsLocationKey? locationKey,
+    Future<void> Function()? onV1Bound,
   }) =>
       _injectedRunner?.call(
         backend,
@@ -461,7 +487,58 @@ class SrsSyncScheduler {
             _mediaBeforeUpload(backend, store, directoryKey, keyHex),
         shouldStop: () => _halted,
         onStep: _step,
+        v1MediaMigrations: _v1Media,
+        onV1Bound: onV1Bound,
       );
+
+  /// 旧根媒体残留的后台迁移（[srsMigrateV1Media]）：不进 [_serially]，迁移期间别的位置照常同步。
+  late final SrsV1MediaMigrations _v1Media = SrsV1MediaMigrations(
+    onProgress: _onV1MediaProgress,
+    onReport: (String locationId, SrsV1MediaReport r) =>
+        srsLogV1MediaReport(r, locationId),
+    onError: (String locationId, Object e, StackTrace stack) =>
+        ErrorLogService.instance.log(
+          'srsMigrateV1Media',
+          StateError('srs v1 media migration on $locationId: $e'),
+          stack,
+        ),
+  );
+
+  @visibleForTesting
+  SrsV1MediaMigrations get v1MediaMigrations => _v1Media;
+
+  /// 迁移进度：给界面（[srsMigrationProgress]，阶段 [SrsSyncStage.migrating]）与活动面包屑（进程死在迁移里时
+  /// 下次启动报出死在哪、那一刻的内存）。
+  void _onV1MediaProgress(SrsV1MediaProgress? p) {
+    if (p == null) {
+      srsMigrationProgress.value = null;
+      ActivityBreadcrumb.clear(kSrsV1MigrateActivity);
+      return;
+    }
+    srsMigrationProgress.value = SrsSyncProgress(
+      stage: SrsSyncStage.migrating,
+      done: p.done,
+      total: p.total,
+    );
+    ActivityBreadcrumb.mark(
+      kSrsV1MigrateActivity,
+      'done=${p.done} total=${p.total} ${_memoryDescription()}',
+    );
+  }
+
+  /// 后台迁移补了一批绑定：请一轮同步把它发到这个位置（发布了旧文件才能删）。排着的同一轮会被合并
+  /// （[syncWithBackend]），不会越排越长；自动同步关着时不请，等用户 / 下一个触发点的那一轮。
+  Future<void> _publishV1Bindings(
+    SyncAssetStore backend,
+    String? directoryKey,
+  ) async {
+    if (_halted || !await isAutoSyncEnabled()) return;
+    try {
+      await syncWithBackend(backend, directoryKey: directoryKey);
+    } catch (e, stack) {
+      ErrorLogService.instance.log('SrsSyncScheduler.publishV1', e, stack);
+    }
+  }
 
   /// 当前这一轮的细分步骤写进活动面包屑（[_trackRound] 装上、跑完卸下）：进程死在一轮里时，下次启动报
   /// 「上次进程在 srs_sync 进行中没了」带上死在哪一步、那一刻的内存（反馈 i8qNDs_V_D：大库上卡在「开始」
@@ -632,6 +709,20 @@ class SrsSyncScheduler {
     _hostWriteTimer?.cancel();
     _hostWriteTimer = null;
     await _tail;
+    // 后台迁移也持着 store：在下一个文件之前看到 [_halted] 收手，等它退出。
+    await _v1Media.idle();
+  }
+
+  /// 等排队的轮次与后台迁移都停下来（迁移请的发布轮又会再交一次迁移，来回直到都空）。
+  @visibleForTesting
+  Future<void> settle() async {
+    do {
+      await _tail;
+      await _v1Media.idle();
+      await Future<void>.delayed(Duration.zero);
+    } while (_queuedRounds.isNotEmpty ||
+        _roundStats.running > 0 ||
+        _v1Media.progress != null);
   }
 
   /// 已配对设备往本机 host 的 SRS 目录写了文件：去抖后只跑本机目录（见文件头第 4 条）。自动同步关着时
@@ -872,6 +963,8 @@ class SrsSyncScheduler {
       store,
       key,
       locationKey: locKey,
+      onV1Bound: () async =>
+          unawaited(_publishV1Bindings(backend, directoryKey)),
     );
     await _noteCrypto(key, report);
     if (linker != null && report.error == null && !_halted) {
@@ -1046,11 +1139,13 @@ class SrsSyncScheduler {
           mediaRoot: mediaRoot,
           key: _locationKey?.call(l.locationId),
           migrationMemo: _srsMigrationMemo,
+          v1MediaMigrations: _v1Media,
+          onV1Bound: () async => unawaited(_publishFolderV1Bindings()),
+          shouldStop: () => _halted,
         );
         final SrsLocationPrepared? prepared = r.prepared;
         if (prepared != null) {
           srsLogMigrationLeftover(prepared, l.locationId);
-          srsLogMigrationCleanup(prepared, l.locationId);
         }
         await _noteCrypto(l.locationId, r.crypto);
         _noteMediaKey(l.locationId, r.media);
@@ -1080,6 +1175,16 @@ class SrsSyncScheduler {
     if (changed) _onDataChanged();
     return SrsSyncNowResult(ran: ran);
   });
+
+  /// 文件夹位置的后台迁移补了一批绑定：请一轮把它发出去（同 [_publishV1Bindings]）。
+  Future<void> _publishFolderV1Bindings() async {
+    if (_halted || !await isAutoSyncEnabled()) return;
+    try {
+      await syncFolderLocations();
+    } catch (e, stack) {
+      ErrorLogService.instance.log('SrsSyncScheduler.publishV1', e, stack);
+    }
+  }
 
   /// 只跑本机直接读写的目录（本机作为互联 host 时）。
   Future<SrsSyncNowResult> syncLocalDirectories() async {

@@ -2,8 +2,10 @@
 // - 旧版本（冻结在 v1_client/ 的 develop@d407ae22ca 代码，真实跑一轮）碰到新版本用过的位置：在写任何东西之前报错
 //   停下，位置目录逐字节不变——明文 / 加密文件夹位置、只做媒体 / 归档的文件夹位置、云盘 / 互联通道；同步工具只带过来
 //   一部分变化的每种中间态同样安全；
-// - 新版本把旧版本写的 v1 位置一次性迁进新根：内容核对过才删旧文件，按名字的旧媒体等绑定发布后才删，归档只复制；
-// - 迁移中断后接着做、两台新版本设备同时迁移同一个位置、读失败、新根上有半截副本，都不丢数据；
+// - 新版本把旧版本写的 v1 位置一次性迁进新根：同步一轮里只搬设备段、写新根 meta；媒体残留另由 srsMigrateV1Media
+//   分批搬（调度器在后台跑）：内容核对过才删旧文件，按名字的旧媒体等绑定发布后才删，归档只复制；
+// - 迁移中断后接着做（已删的不再搬、已传的不再传，旧根越迁越小）、两台新版本设备同时迁移同一个位置、读失败、新根上有
+//   半截副本，都不丢数据；
 // - 迁移完成的判据持久在位置上：之后的进程不再拉旧段、不再重新封。
 import 'dart:convert';
 import 'dart:io';
@@ -142,6 +144,54 @@ void main() {
     } on FileSystemException catch (e) {
       return e;
     }
+  }
+
+  /// 旧根媒体迁移（调度器里是后台任务）：[canBind] 默认按「本机已在新根上读全一轮」。
+  Future<SrsV1MediaReport> migrateMedia(
+    SrsFolderLocation loc,
+    SrsDbStore s, {
+    SrsLocationStore? v1Store,
+    SrsLocationStore? current,
+    bool canBind = true,
+    SrsLocationKey? key,
+    SrsLocationMigrationMemo? memo,
+    int batchSize = kSrsV1MediaBatch,
+    Future<void> Function()? onBound,
+    SrsSyncStepCallback? onStep,
+    SrsSync2Host? host,
+  }) {
+    final Directory v1Dir = srsFolderV1CollectionRoot(loc, kProfile);
+    return srsMigrateV1Media(
+      host: host ?? s,
+      v1: v1Store ?? SrsDirectoryLocationStore(v1Dir),
+      current:
+          current ??
+          SrsDirectoryLocationStore(srsFolderCollectionRoot(loc, kProfile)),
+      locationId: loc.locationId,
+      key: key,
+      nowMs: () => t,
+      canBind: canBind,
+      progressId: loc.locationId,
+      removeEmptyDirs: () => srsRemoveEmptyV1FolderDirs(v1Dir),
+      memo: memo,
+      archive: loc.archive,
+      batchSize: batchSize,
+      onBound: onBound,
+      onStep: onStep,
+    );
+  }
+
+  /// 本机在新根上跑一轮（发布迁移补的绑定）。
+  Future<SrsSync2Report> roundOn(SrsFolderLocation loc, SrsDbStore s) {
+    t += 1000;
+    return srsSync2Round(
+      host: s,
+      location: SrsDirectoryLocationStore(
+        srsFolderCollectionRoot(loc, kProfile),
+      ),
+      locationId: loc.locationId,
+      nowMs: () => t,
+    );
   }
 
   /// 旧版本在握手就报错返回（围栏 meta 解析不了）——不是 needsUpgrade：旧文件夹位置在 needsUpgrade 时仍会跑明文
@@ -325,10 +375,10 @@ void main() {
         locationId: 'cloud',
         key: null,
         nowMs: () => t,
-        recordPresence: true,
         writers: SrsAssetV1Writers(backend, kProfile),
       );
       expect(prepared.error, isNull);
+      expect(prepared.mediaLeftover, isFalse, reason: '全新的位置不为媒体迁移起后台任务');
       final SrsSync2Report ra = await srsSync2Round(
         host: a,
         location: v3,
@@ -568,7 +618,7 @@ void main() {
       final Directory mediaB = dir('media_b');
       final SrsFolderSyncReport rb = await runNew(v.loc, b, media: mediaB);
       expect(rb.prepared?.migrated, isTrue);
-      expect(rb.prepared?.bound, 1);
+      expect(rb.v1Media?.bound, 1);
       expect(rb.ops?.error, isNull);
       await runNew(v.loc, b, media: mediaB);
       await expectMigrated(v.loc, b, mediaB, v.note);
@@ -611,28 +661,23 @@ void main() {
           onStep: steps.add,
         );
         expect(prep.error, isNull);
-        expect(prep.bound, 1);
+        expect(prep.devicesSettled, isTrue);
+        expect(prep.mediaLeftover, isTrue);
         // 迁移的每一步都报给调用方（调度器写进活动面包屑，反馈 i8qNDs_V_D：死在「开始」阶段时要知道是哪一步）。
-        String? first(String prefix) =>
-            steps.where((String s) => s.startsWith(prefix)).firstOrNull;
-        int at(String prefix) => steps.indexOf(first(prefix)!);
+        String? first(List<String> of, String prefix) =>
+            of.where((String s) => s.startsWith(prefix)).firstOrNull;
+        int at(String prefix) => steps.indexOf(first(steps, prefix)!);
         for (final String prefix in <String>[
           'migrate:meta',
           'migrate:fence',
-          'migrate:listed files=',
-          'migrate:pull:heads',
-          'migrate:pull:planned fetch=',
+          'migrate:listed devices=',
           'migrate:copy 0/',
-          'migrate:media ',
-          'migrate:bind',
           'migrate:delete ',
         ]) {
-          expect(first(prefix), isNotNull, reason: '$prefix in $steps');
+          expect(first(steps, prefix), isNotNull, reason: '$prefix in $steps');
         }
-        expect(at('migrate:fence'), lessThan(at('migrate:pull:heads')));
-        expect(at('migrate:pull:heads'), lessThan(at('migrate:copy 0/')));
-        expect(at('migrate:copy 0/'), lessThan(at('migrate:media ')));
-        expect(at('migrate:bind'), lessThan(at('migrate:delete ')));
+        expect(at('migrate:fence'), lessThan(at('migrate:copy 0/')));
+        expect(at('migrate:copy 0/'), lessThan(at('migrate:delete ')));
         final String copied = steps.lastWhere(
           (String s) => s.startsWith('migrate:copy '),
         );
@@ -640,23 +685,36 @@ void main() {
             .substring('migrate:copy '.length)
             .split('/');
         expect(nm[0], nm[1], reason: 'copy progress ends at n/n: $steps');
-        expect(prep.deferred.keys, <String>['media/cat.png']);
+        // 同步一轮里不碰媒体：新根先能用（有 meta），媒体留在旧根等后台迁移。
         expect(filesOf(v1Dir), contains('media/cat.png'));
+        expect(
+          File(p.join(v3Root(v.loc).path, 'meta.json')).existsSync(),
+          isTrue,
+        );
         expect(
           filesOf(v1Dir).where((String f) => f.startsWith('devices/')),
           isEmpty,
           reason: '内容核对过的段立刻删',
         );
-        // 绑定还在本机发件箱里：不删。
-        expect(
-          await srsFinishLocationMigration(
-            host: b,
-            v1: SrsDirectoryLocationStore(v1Dir),
-            prepared: prep,
-            progressId: v.loc.locationId,
-          ),
-          0,
+        // 本机先在新根上读全一轮（看得到全部已有绑定），再搬媒体：绑定还在本机发件箱里，不删。
+        expect((await roundOn(v.loc, b)).error, isNull);
+        final List<String> mediaSteps = <String>[];
+        final SrsV1MediaReport m = await migrateMedia(
+          v.loc,
+          b,
+          onStep: mediaSteps.add,
         );
+        expect(m.bound, 1);
+        expect(m.uploaded, 1);
+        expect(m.awaitingPublish, 1);
+        expect(m.finished, isFalse);
+        for (final String prefix in <String>[
+          'migrate:media:list',
+          'migrate:media:present ',
+          'migrate:media:bind 1',
+        ]) {
+          expect(first(mediaSteps, prefix), isNotNull, reason: '$mediaSteps');
+        }
         expect(filesOf(v1Dir), contains('media/cat.png'));
         // 一轮同步把绑定发出去之后才删。
         final List<String> roundSteps = <String>[];
@@ -676,16 +734,10 @@ void main() {
         ], reason: '$roundSteps');
         expect(roundSteps, contains(startsWith('planned fetch=')));
         expect(roundSteps.last, 'beforeUpload');
-        expect(
-          await srsFinishLocationMigration(
-            host: b,
-            v1: SrsDirectoryLocationStore(v1Dir),
-            prepared: prep,
-            progressId: v.loc.locationId,
-            removeEmptyDirs: () => srsRemoveEmptyV1FolderDirs(v1Dir),
-          ),
-          1,
-        );
+        final SrsV1MediaReport done = await migrateMedia(v.loc, b);
+        expect(done.deleted, 1);
+        expect(done.uploaded, 0, reason: '已在新根上的不再传');
+        expect(done.finished, isTrue);
         expectOnlyFence(v1Dir);
         // 第三台设备只从新根拿得到这张图（绑定在位置上）。
         final SrsDbStore c = await device('c');
@@ -740,12 +792,177 @@ void main() {
           }
           expect(failAt, lessThan(60));
         }
-        await runNew(v.loc, b, media: mediaB);
+        // 媒体迁移同样依次在第 1、2、3……次写时断掉（每次都像新进程：新的 memo、重新列目录），直到做完。
+        for (int failAt = 1; ; failAt++) {
+          final SrsLocationStore oldStore = SrsDirectoryLocationStore(v1Dir);
+          final SrsLocationStore newStore = SrsDirectoryLocationStore(
+            v3Root(v.loc),
+          );
+          try {
+            expect((await roundOn(v.loc, b)).error, isNull);
+            final SrsV1MediaReport m = await migrateMedia(
+              v.loc,
+              b,
+              v1Store: failOld ? _FailingStore(oldStore, failAt) : oldStore,
+              current: failOld ? newStore : _FailingStore(newStore, failAt),
+            );
+            if (m.finished) break;
+          } on _Interrupted {
+            // 接着做。
+          }
+          expect(failAt, lessThan(60));
+        }
         await runNew(v.loc, b, media: mediaB);
         await expectMigrated(v.loc, b, mediaB, v.note);
         expectOnlyFence(v1Dir);
       }
     });
+
+    test(
+      'a large media leftover moves in batches; a process killed mid-way resumes without redoing the moved part',
+      () async {
+        // 用户实测：旧根有 40,493 个按名字存的媒体，旧实现逐个下载 → 算哈希 → 下载新根副本核对 → 上传 → 再下载核对，
+        // 全部处理完才一次补绑定、一轮成功之后才删，进程一换从头再来（10-31 起 4 次「进程在 srs_sync 进行中没了」）。
+        final ({SrsFolderLocation loc, SrsDbStore old, String note}) v =
+            await v1Location('big');
+        final Directory v1Dir = v2Root(v.loc);
+        const int extra = 23;
+        for (int i = 0; i < extra; i++) {
+          mediaFile(
+            Directory(p.join(v1Dir.path, kSrsMediaFolder)),
+            'big$i.png',
+            <int>[100 + i, i],
+          );
+        }
+        final SrsDbStore b = await device('b');
+        final SrsLocationPrepared prep = await srsPrepareLocation(
+          host: b,
+          v1: SrsDirectoryLocationStore(v1Dir),
+          current: SrsDirectoryLocationStore(v3Root(v.loc)),
+          locationId: v.loc.locationId,
+          key: null,
+          nowMs: () => t,
+          removeEmptyDirs: () => srsRemoveEmptyV1FolderDirs(v1Dir),
+        );
+        expect(prep.error, isNull);
+        expect((await roundOn(v.loc, b)).error, isNull);
+        int mediaLeft() => filesOf(
+          v1Dir,
+        ).where((String f) => f.startsWith('$kSrsMediaFolder/')).length;
+        expect(mediaLeft(), extra + 1);
+        // 第一个进程：每批补完绑定，调度器请的那一轮把绑定发出去（这里直接跑一轮）；第 3 批中途进程没了。
+        int batches = 0;
+        final _CountingWrites firstWrites = _CountingWrites(
+          SrsDirectoryLocationStore(v3Root(v.loc)),
+          failAt: 13,
+        );
+        await expectLater(
+          migrateMedia(
+            v.loc,
+            b,
+            current: firstWrites,
+            batchSize: 5,
+            onBound: () async {
+              batches++;
+              expect((await roundOn(v.loc, b)).error, isNull);
+            },
+          ),
+          throwsA(isA<_Interrupted>()),
+        );
+        expect(batches, 2);
+        // 已核对、绑定已发布的两批按批删掉了：旧根越迁越小。
+        expect(mediaLeft(), extra + 1 - 10);
+        // 新进程（新的 memo、新的列表）：接着做，已传的不再传。
+        final _CountingWrites secondWrites = _CountingWrites(
+          SrsDirectoryLocationStore(v3Root(v.loc)),
+        );
+        final List<(int, int)> progress = <(int, int)>[];
+        SrsV1MediaReport m = await srsMigrateV1Media(
+          host: b,
+          v1: SrsDirectoryLocationStore(v1Dir),
+          current: secondWrites,
+          locationId: v.loc.locationId,
+          key: null,
+          nowMs: () => t,
+          canBind: true,
+          progressId: v.loc.locationId,
+          removeEmptyDirs: () => srsRemoveEmptyV1FolderDirs(v1Dir),
+          memo: SrsLocationMigrationMemo(),
+          batchSize: 5,
+          onProgress: (int done, int total) => progress.add((done, total)),
+          onBound: () async {
+            expect((await roundOn(v.loc, b)).error, isNull);
+          },
+        );
+        expect(m.total, extra + 1 - 10);
+        expect(progress.last, (m.total, m.total));
+        // 断之前已经传上去的不再传：两个进程落盘的写加起来正好每个对象一次（断的那一次没落盘）。
+        expect(firstWrites.writes - 1 + secondWrites.writes, extra + 1);
+        expect(secondWrites.writes, lessThan(m.total));
+        expect(m.bound, m.total, reason: '断在第 3 批补绑定之前：那一批这次才绑');
+        expect(m.finished, isTrue);
+        expectOnlyFence(v1Dir);
+        // 全部对象都在新根的内容目录里。
+        for (int i = 0; i < extra; i++) {
+          expect(
+            File(
+              p.join(
+                v3Root(v.loc).path,
+                srsMediaContentPath(
+                  kSrsMediaFolder,
+                  srsMediaSha256(<int>[100 + i, i]),
+                ),
+              ),
+            ).existsSync(),
+            isTrue,
+          );
+        }
+        m = await migrateMedia(v.loc, b, memo: SrsLocationMigrationMemo());
+        expect(m.finished, isTrue);
+        expect(m.total, 0, reason: '完成标记：下个进程只比清单');
+      },
+    );
+
+    test(
+      'a location whose new root is not in use yet becomes usable before its media moves',
+      () async {
+        final ({SrsFolderLocation loc, SrsDbStore old, String note}) v =
+            await v1Location('first');
+        final SrsDbStore b = await device('b');
+        final Map<String, String> v1Media = <String, String>{
+          for (final MapEntry<String, String> e in snapshot(
+            v2Root(v.loc),
+          ).entries)
+            if (e.key.startsWith('$kSrsMediaFolder/')) e.key: e.value,
+        };
+        final SrsLocationPrepared prep = await srsPrepareLocation(
+          host: b,
+          v1: SrsDirectoryLocationStore(v2Root(v.loc)),
+          current: SrsDirectoryLocationStore(v3Root(v.loc)),
+          locationId: v.loc.locationId,
+          key: null,
+          nowMs: () => t,
+        );
+        expect(prep.error, isNull);
+        expect(
+          File(p.join(v3Root(v.loc).path, 'meta.json')).existsSync(),
+          isTrue,
+        );
+        final Map<String, String> left = snapshot(v2Root(v.loc));
+        for (final MapEntry<String, String> e in v1Media.entries) {
+          expect(left[e.key], e.value, reason: '同步一轮里不碰媒体：${e.key}');
+        }
+        expect(
+          filesOf(
+            v3Root(v.loc),
+          ).where((String f) => f.startsWith('$kSrsMediaFolder/')),
+          isEmpty,
+        );
+        // 新根马上能同步：笔记先到。
+        expect((await roundOn(v.loc, b)).error, isNull);
+        expect((await b.note(v.note))!.field(expr(b)), '猫');
+      },
+    );
 
     test('two new devices migrating the same location at once', () async {
       final ({SrsFolderLocation loc, SrsDbStore old, String note}) v =
@@ -837,12 +1054,22 @@ void main() {
           );
           expect(r.error, isNull, reason: 'archive=$archive');
           expect(r.migrated, isFalse, reason: 'archive=$archive');
+          final SrsV1MediaReport m = await migrateMedia(
+            v.loc,
+            b,
+            host: counting,
+            key: kb,
+            memo: SrsLocationMigrationMemo(),
+          );
+          expect(m.finished, isTrue, reason: 'archive=$archive');
+          expect(m.total, 0, reason: 'archive=$archive');
           expect(
             counting.ops,
             isNot(contains('plan')),
             reason: 'archive=$archive',
           );
           expect(counting.ops, isNot(contains('seal_file')));
+          expect(counting.ops, isNot(contains('media_bind_unbound')));
           expect(snapshot(Directory(v.loc.path)), before);
         }
       },
@@ -855,7 +1082,7 @@ void main() {
             await v1Location('swap');
         final SrsDbStore b = await device('b');
         final Directory v1Dir = v2Root(v.loc);
-        final SrsLocationPrepared prep = await srsPrepareLocation(
+        await srsPrepareLocation(
           host: b,
           v1: SrsDirectoryLocationStore(v1Dir),
           current: SrsDirectoryLocationStore(v3Root(v.loc)),
@@ -863,47 +1090,37 @@ void main() {
           key: null,
           nowMs: () => t,
         );
-        expect(prep.deferred, <String, String>{
-          'media/cat.png': srsMediaSha256(<int>[1, 2, 3]),
-        });
-        // 收尾之前，同步工具把同名文件换成了别的内容：搬进新根的是旧内容，这份没人搬过。
-        File(
-          p.join(v1Dir.path, 'media', 'cat.png'),
-        ).writeAsBytesSync(<int>[4, 4]);
-        final SrsSync2Report r = await srsSync2Round(
-          host: b,
-          location: SrsDirectoryLocationStore(v3Root(v.loc)),
-          locationId: v.loc.locationId,
-          nowMs: () => t,
+        expect((await roundOn(v.loc, b)).error, isNull);
+        final SrsV1MediaReport m = await migrateMedia(
+          v.loc,
+          b,
+          onBound: () async {
+            // 删之前，同步工具把同名文件换成了别的内容：搬进新根的是旧内容，这份没人搬过。
+            File(
+              p.join(v1Dir.path, 'media', 'cat.png'),
+            ).writeAsBytesSync(<int>[4, 4]);
+            expect((await roundOn(v.loc, b)).error, isNull);
+          },
         );
-        expect(r.error, isNull);
-        expect(
-          await srsFinishLocationMigration(
-            host: b,
-            v1: SrsDirectoryLocationStore(v1Dir),
-            prepared: prep,
-            progressId: v.loc.locationId,
-          ),
-          0,
-        );
+        expect(m.deleted, 0);
         expect(
           File(p.join(v1Dir.path, 'media', 'cat.png')).readAsBytesSync(),
           <int>[4, 4],
         );
-        expect(prep.skipped, contains('media/cat.png'));
-        expect(prep.deferred, isEmpty);
-        // 下一次准备把新内容当成新文件重新搬（按它自己的 sha 排删）。
-        final SrsLocationPrepared again = await srsPrepareLocation(
-          host: b,
-          v1: SrsDirectoryLocationStore(v1Dir),
-          current: SrsDirectoryLocationStore(v3Root(v.loc)),
-          locationId: v.loc.locationId,
-          key: null,
-          nowMs: () => t,
+        expect(m.skipped, contains('media/cat.png'));
+        expect(m.finished, isFalse);
+        // 下一次把新内容当成新文件重新搬（按它自己的 sha 核对、删）。
+        final SrsV1MediaReport again = await migrateMedia(v.loc, b);
+        expect(again.uploaded, 1);
+        expect(
+          File(
+            p.join(
+              v3Root(v.loc).path,
+              srsMediaContentPath(kSrsMediaFolder, srsMediaSha256(<int>[4, 4])),
+            ),
+          ).readAsBytesSync(),
+          <int>[4, 4],
         );
-        expect(again.deferred, <String, String>{
-          'media/cat.png': srsMediaSha256(<int>[4, 4]),
-        });
       },
     );
 
@@ -938,7 +1155,7 @@ void main() {
     );
 
     test(
-      'by-name v1 media is neither bound nor queued when the v1 pull is incomplete',
+      'by-name v1 media is neither bound nor queued when the round on the new root is incomplete',
       () async {
         final ({SrsFolderLocation loc, SrsDbStore old, String note}) v =
             await v1Location('partial');
@@ -949,20 +1166,13 @@ void main() {
         ).firstWhere((String f) => p.posix.basename(f).startsWith('seg-'));
         File(p.join(v1Dir.path, seg)).deleteSync();
         final SrsDbStore b = await device('b');
-        final SrsLocationPrepared r = await srsPrepareLocation(
-          host: b,
-          v1: SrsDirectoryLocationStore(v1Dir),
-          current: SrsDirectoryLocationStore(v3Root(v.loc)),
-          locationId: v.loc.locationId,
-          key: null,
-          nowMs: () => t,
-        );
-        expect(r.error, isNull);
-        expect(r.errors, isNotEmpty);
-        expect(r.bound, 0);
-        expect(r.deferred, isEmpty);
-        expect(r.publishSeq, isNull);
-        expect(r.skipped, contains('media/cat.png'));
+        final SrsFolderSyncReport r = await runNew(v.loc, b, media: dir('mb'));
+        expect(r.ops?.error, isNull);
+        expect(r.ops!.missing, greaterThan(0));
+        final SrsV1MediaReport m = r.v1Media!;
+        expect(m.bound, 0);
+        expect(m.awaitingPublish, 0);
+        expect(m.skipped, contains('media/cat.png'));
         expect(filesOf(v1Dir), contains('media/cat.png'));
         expect(filesOf(v1Dir), isNot(contains(kSrsV1SweepMarker)));
       },
@@ -1016,9 +1226,13 @@ void main() {
           nowMs: () => t,
         );
         expect(r.skipped, contains(seg));
+        expect(r.devicesSettled, isFalse);
         expect(File(p.join(v1Dir.path, seg)).readAsBytesSync(), original);
+        // 内容目录的对象按列目录的大小认：大小不对的按内容覆盖（这里只看覆盖，按「读全了绑定」跑）。
+        final SrsV1MediaReport m = await migrateMedia(loc, b);
         expect(badObject.readAsBytesSync(), <int>[1, 2, 3]);
-        expect(r.deferred.keys, <String>['media/cat.png']);
+        expect(m.uploaded, 1);
+        expect(m.awaitingPublish, 1);
       },
     );
 
@@ -1124,26 +1338,22 @@ void main() {
           profileUid: kProfile,
           folder: kSrsSync2V1Folder,
         );
-        // 新根还没在用：迁移是前提，读失败整轮失败。
-        await expectLater(
-          srsPrepareLocation(
-            host: b,
-            v1: v1Store(),
-            current: v3,
-            locationId: 'remote',
-            key: null,
-            nowMs: () => t,
-            recordPresence: true,
-            writers: SrsAssetV1Writers(backend, kProfile),
-          ),
-          throwsA(isA<FileSystemException>()),
+        // 新根还没在用：同步一轮只立围栏、写新根 meta，写入者目录的媒体不碰（读不到也不挡这一轮）。
+        final SrsLocationPrepared prep = await srsPrepareLocation(
+          host: b,
+          v1: v1Store(),
+          current: v3,
+          locationId: 'remote',
+          key: null,
+          nowMs: () => t,
+          writers: SrsAssetV1Writers(backend, kProfile),
         );
+        expect(prep.error, isNull);
+        expect(prep.mediaLeftover, isTrue);
         Set<String> writerFiles() => filesOf(
           Directory(p.join(remote.path, kSrsSync2Namespace, kProfile, 'a#1')),
         );
         expect(writerFiles(), <String>{'media/one.png', 'media/two.png'});
-        // 新根在用之后：同样的读失败只记成残留错误，不挡新根的一轮。
-        backend.broken = null;
         final SrsSync2Report round = await srsSync2Round(
           host: b,
           location: v3,
@@ -1151,37 +1361,27 @@ void main() {
           nowMs: () => t,
         );
         expect(round.error, isNull);
-        backend.broken = 'two.png';
-        final SrsLocationPrepared ready = await srsPrepareLocation(
+        Future<SrsV1MediaReport> migrate() => srsMigrateV1Media(
           host: b,
           v1: v1Store(),
           current: v3,
           locationId: 'remote',
           key: null,
           nowMs: () => t,
+          canBind: true,
+          progressId: 'remote',
           recordPresence: true,
+          // 新实例：自己列目录。
           writers: SrsAssetV1Writers(backend, kProfile),
         );
-        expect(ready.error, isNull);
-        expect(ready.leftoverError, isNotNull);
-        // 不吞：原始错误与栈交给调用方记日志。
-        expect(ready.leftoverCause, isA<FileSystemException>());
-        expect(ready.leftoverStack, isNotNull);
+        // 读失败：迁移照常抛出（调度器记日志、下一轮再交），什么都不删。
+        await expectLater(migrate(), throwsA(isA<FileSystemException>()));
         expect(writerFiles(), <String>{'media/one.png', 'media/two.png'});
         // 读好了：搬完、绑定发布之后逐个文件删，目录里别的东西（这里没有）不碰。
         backend.broken = null;
-        final SrsLocationPrepared ok = await srsPrepareLocation(
-          host: b,
-          v1: v1Store(),
-          current: v3,
-          locationId: 'remote',
-          key: null,
-          nowMs: () => t,
-          recordPresence: true,
-          writers: SrsAssetV1Writers(backend, kProfile),
-        );
-        expect(ok.leftoverError, isNull);
-        expect(ok.deferredWriters.length, 2);
+        final SrsV1MediaReport ok = await migrate();
+        expect(ok.bound, 2);
+        expect(ok.awaitingPublish, 2);
         expect(writerFiles().length, 2);
         await srsSync2Round(
           host: b,
@@ -1189,17 +1389,8 @@ void main() {
           locationId: 'remote',
           nowMs: () => t,
         );
-        expect(
-          await srsFinishLocationMigration(
-            host: b,
-            v1: v1Store(),
-            prepared: ok,
-            progressId: 'remote',
-            // 新实例：收尾自己列目录。
-            writers: SrsAssetV1Writers(backend, kProfile),
-          ),
-          2,
-        );
+        final SrsV1MediaReport cleaned = await migrate();
+        expect(cleaned.deleted, 2);
         expect(writerFiles(), isEmpty);
       },
     );
@@ -1377,41 +1568,54 @@ void main() {
         await addNote(old, '鳥');
         await runOld(loc, old, media: dir('mo'));
         final Directory v1Dir = v2Root(loc);
+        // 一个内容寻址的旧对象：迁移会删它（删的那一刻同步工具带来了晚到的文件）。
+        final List<int> early = <int>[1, 2];
+        File(
+            p.join(
+              v1Dir.path,
+              srsMediaContentPath(kSrsMediaFolder, srsMediaSha256(early)),
+            ),
+          )
+          ..parent.createSync(recursive: true)
+          ..writeAsBytesSync(early);
         final List<int> lateBytes = <int>[9, 8, 7, 6];
         final String latePath = srsMediaContentPath(
           kSrsMediaFolder,
           srsMediaSha256(lateBytes),
         );
         final SrsDbStore b = await device('b');
-        final SrsLocationPrepared first = await srsPrepareLocation(
-          host: b,
-          v1: _OnFirstDeleteStore(SrsDirectoryLocationStore(v1Dir), () {
-            File(p.join(v1Dir.path, latePath))
-              ..parent.createSync(recursive: true)
-              ..writeAsBytesSync(lateBytes);
-          }),
-          current: SrsDirectoryLocationStore(v3Root(loc)),
-          locationId: loc.locationId,
-          key: null,
-          nowMs: () => t,
-          memo: SrsLocationMigrationMemo(),
-        );
-        expect(first.error, isNull);
-        expect(first.migrated, isTrue);
-        expect(first.deleted, greaterThan(0));
-        expect(filesOf(v1Dir), contains(latePath));
-        // 新进程：完成标记不能挡住它。
-        final SrsLocationPrepared second = await srsPrepareLocation(
+        final SrsLocationPrepared prep = await srsPrepareLocation(
           host: b,
           v1: SrsDirectoryLocationStore(v1Dir),
           current: SrsDirectoryLocationStore(v3Root(loc)),
           locationId: loc.locationId,
           key: null,
           nowMs: () => t,
+        );
+        expect(prep.error, isNull);
+        expect(prep.migrated, isTrue);
+        final SrsV1MediaReport first = await migrateMedia(
+          loc,
+          b,
+          v1Store: _OnFirstDeleteStore(SrsDirectoryLocationStore(v1Dir), () {
+            File(p.join(v1Dir.path, latePath))
+              ..parent.createSync(recursive: true)
+              ..writeAsBytesSync(lateBytes);
+          }),
           memo: SrsLocationMigrationMemo(),
         );
-        expect(second.error, isNull);
-        expect(second.migrated, isTrue);
+        expect(first.deleted, greaterThan(0));
+        expect(first.finished, isFalse);
+        expect(filesOf(v1Dir), contains(latePath));
+        expect(filesOf(v1Dir), isNot(contains(kSrsV1SweepMarker)));
+        // 新进程：完成标记不能挡住它。
+        final SrsV1MediaReport second = await migrateMedia(
+          loc,
+          b,
+          memo: SrsLocationMigrationMemo(),
+        );
+        expect(second.finished, isTrue);
+        expect(second.uploaded, 1);
         expect(
           File(p.join(v3Root(loc).path, latePath)).readAsBytesSync(),
           lateBytes,
@@ -1439,53 +1643,58 @@ void main() {
           locationId: 'w',
           key: null,
           nowMs: () => t,
-          recordPresence: true,
-          writers: ws,
         );
         expect(prep.error, isNull);
-        expect(prep.deferredWriters.keys.toSet(), <(String, String)>{
-          ('a#1', 'one.png'),
-          ('a#1', 'two.png'),
-        });
-        final SrsSync2Report round = await srsSync2Round(
+        Future<SrsSync2Report> round() => srsSync2Round(
           host: b,
           location: v3,
           locationId: 'w',
           nowMs: () => t,
         );
-        expect(round.error, isNull);
-        // 迁移之后 two.png 被换成了别的内容：搬过、绑上的是旧内容，新内容不能删。
-        ws.files['a#1']!['two.png'] = <int>[7, 7, 7];
-        ws.failDelete = true;
-        expect(
-          await srsFinishLocationMigration(
-            host: b,
-            v1: v1Store,
-            prepared: prep,
-            progressId: 'w',
-            writers: ws,
-          ),
-          0,
+        expect((await round()).error, isNull);
+        Future<SrsV1MediaReport> migrate({Future<void> Function()? onBound}) =>
+            srsMigrateV1Media(
+              host: b,
+              v1: v1Store,
+              current: v3,
+              locationId: 'w',
+              key: null,
+              nowMs: () => t,
+              canBind: true,
+              progressId: 'w',
+              recordPresence: true,
+              writers: ws,
+              onBound: onBound,
+            );
+        final SrsV1MediaReport m = await migrate(
+          onBound: () async {
+            // 搬完之后 two.png 被换成了别的内容：搬过、绑上的是旧内容，新内容不能删；one.png 删的时候限流。
+            ws.files['a#1']!['two.png'] = <int>[7, 7, 7];
+            ws.failDelete = true;
+            expect((await round()).error, isNull);
+          },
         );
-        expect(prep.cleanupErrors, hasLength(1));
-        expect(prep.deferredWriters.keys, <(String, String)>[
-          ('a#1', 'one.png'),
-        ]);
-        expect(prep.skipped, contains('a#1/media/two.png'));
+        expect(m.bound, 2);
+        expect(m.deleted, 0);
+        expect(m.cleanupErrors, hasLength(1));
+        expect(m.skipped, contains('a#1/media/two.png'));
+        expect(m.finished, isFalse);
         expect(ws.files['a#1']!.keys.toSet(), <String>{'one.png', 'two.png'});
         ws.failDelete = false;
+        // 下一次：one.png 重新核对后删；换过的 two.png 按它自己的内容搬进新根（名字已有绑定，不抢）再删。
+        final SrsV1MediaReport again = await migrate();
+        expect(again.bound, 0);
+        expect(again.deleted, 2);
+        expect(ws.files['a#1'], isEmpty);
         expect(
-          await srsFinishLocationMigration(
-            host: b,
-            v1: v1Store,
-            prepared: prep,
-            progressId: 'w',
-            writers: ws,
+          await v3.get(
+            srsMediaContentPath(
+              kSrsMediaFolder,
+              srsMediaSha256(<int>[7, 7, 7]),
+            ),
           ),
-          1,
+          <int>[7, 7, 7],
         );
-        expect(ws.files['a#1']!.keys, <String>['two.png']);
-        expect(ws.files['a#1']!['two.png'], <int>[7, 7, 7]);
       },
     );
   });
@@ -1571,6 +1780,43 @@ class _FailingStore implements SrsLocationStore {
     _tick();
     await inner.delete(path);
   }
+}
+
+/// 数新根上的写；第 [failAt] 次写时抛 [_Interrupted]（模拟进程没了），之前的写照常落盘。
+class _CountingWrites implements SrsLocationStore {
+  _CountingWrites(this.inner, {this.failAt});
+
+  final SrsLocationStore inner;
+  final int? failAt;
+  int writes = 0;
+
+  void _tick() {
+    if (++writes == failAt) throw _Interrupted();
+  }
+
+  @override
+  Future<List<SrsLocationEntry>> list(String dir) => inner.list(dir);
+
+  @override
+  Future<Uint8List?> get(String path) => inner.get(path);
+
+  @override
+  Future<bool> exists(String path) => inner.exists(path);
+
+  @override
+  Future<void> put(String path, Uint8List bytes) async {
+    _tick();
+    await inner.put(path, bytes);
+  }
+
+  @override
+  Future<void> putNew(String path, Uint8List bytes) async {
+    _tick();
+    await inner.putNew(path, bytes);
+  }
+
+  @override
+  Future<void> delete(String path) => inner.delete(path);
 }
 
 /// 第一次删文件之前调一次 [hook]（模拟迁移期间同步工具带来新文件）。

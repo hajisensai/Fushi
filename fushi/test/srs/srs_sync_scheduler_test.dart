@@ -11,6 +11,7 @@ import 'package:drift/native.dart';
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/diagnostics/previous_exit_log.dart';
+import 'package:fushi/src/srs/srs_sync_progress.dart';
 import 'package:fushi/src/srs/srs_sync_scheduler.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
@@ -23,6 +24,7 @@ import 'package:fushi_engine/srs/srs_media_sync.dart';
 import 'package:fushi_engine/srs/srs_profile_link.dart';
 import 'package:fushi_engine/srs/sync2/srs_folder_location.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_crypto.dart';
+import 'package:fushi_engine/srs/sync2/srs_location_migration.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
 import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
 import 'package:fushi_engine/sync/local_directory_asset_store.dart';
@@ -107,6 +109,27 @@ class _AssetBackend extends _NoTimeStore implements SyncBackend {
   @override
   dynamic noSuchMethod(Invocation invocation) =>
       throw UnimplementedError('unexpected ${invocation.memberName}');
+}
+
+/// 下载旧根（`v2/`）媒体时卡在 [gate] 上的本地目录后端：模拟大库上几个小时的迁移。
+class _GatedBackend extends LocalDirectoryAssetStore {
+  _GatedBackend(super.root);
+
+  final Completer<void> gate = Completer<void>();
+
+  @override
+  Future<void> getAsset(
+    String assetId,
+    File destination, {
+    void Function(double progress)? onProgress,
+  }) async {
+    if (assetId
+        .replaceAll(r'\', '/')
+        .contains('/$kSrsSync2V1Folder/$kSrsMediaFolder/')) {
+      await gate.future;
+    }
+    return super.getAsset(assetId, destination, onProgress: onProgress);
+  }
 }
 
 /// 记录每次关联判定的假 linker：[conflictFor] 里的 uid 判成冲突，其余判成「已关联上」。
@@ -1217,6 +1240,151 @@ void main() {
           s.syncWithBackend(LocalDirectoryAssetStore(root)),
       ]);
       expect(maxRunning, 1);
+    });
+  });
+
+  group('旧根媒体的后台迁移（大库上跑几个小时）', () {
+    test('通道那一轮不等它、互联 host 目录照常同步、进度可见；搬完绑定发布后旧文件删光', () async {
+      final Directory cloudRoot = Directory(p.join(root.path, 'cloud'))
+        ..createSync();
+      final _GatedBackend cloud = _GatedBackend(cloudRoot);
+      // 旧版本（同步协议 1）留下的旧根：v1 meta + 一批按名字存的明文媒体。
+      final Directory v1 = Directory(
+        p.join(
+          cloudRoot.path,
+          kSrsSync2Namespace,
+          store.profileUid,
+          kSrsSync2V1Folder,
+        ),
+      );
+      File(p.join(v1.path, 'meta.json'))
+        ..createSync(recursive: true)
+        ..writeAsStringSync(
+          jsonEncode(<String, Object?>{
+            'v': 1,
+            'minReader': 1,
+            'collection': 'c1',
+            'createdAt': 1,
+          }),
+        );
+      const int n = 12;
+      for (int i = 0; i < n; i++) {
+        File(p.join(v1.path, kSrsMediaFolder, 'old$i.png'))
+          ..createSync(recursive: true)
+          ..writeAsBytesSync(<int>[i, 7]);
+      }
+      final Directory hostRoot = Directory(p.join(root.path, 'host'))
+        ..createSync();
+      final SrsSyncScheduler s = scheduler(
+        channels: (Future<void> Function(SyncAssetStore) body) async {
+          await body(cloud);
+          return (ran: 1, errors: const <Object>[]);
+        },
+        localDirectories: () async => <SrsLocalDirectory>[
+          SrsLocalDirectory(
+            directoryKey: 'interconnect:host',
+            store: LocalDirectoryAssetStore(hostRoot),
+          ),
+        ],
+      );
+      final List<SrsSyncProgress> seen = <SrsSyncProgress>[];
+      void listen() {
+        final SrsSyncProgress? v = srsMigrationProgress.value;
+        if (v != null) seen.add(v);
+      }
+
+      srsMigrationProgress.addListener(listen);
+      addTearDown(() => srsMigrationProgress.removeListener(listen));
+      final List<String> breadcrumbs = <String>[];
+      final Directory crumbs = Directory(p.join(root.path, 'crumbs'))
+        ..createSync();
+      final Directory? Function() oldResolver =
+          ActivityBreadcrumb.directoryResolver;
+      ActivityBreadcrumb.directoryResolver = () => crumbs;
+      addTearDown(() => ActivityBreadcrumb.directoryResolver = oldResolver);
+
+      // 迁移卡在第一个文件上：通道那一轮照样返回，本机 host 目录照样跑完。
+      final SrsSyncNowResult r = await s.syncNow();
+      expect(r.errors, isEmpty);
+      expect(r.ran, 2);
+      expect(s.v1MediaMigrations.isRunning('local:${cloudRoot.path}'), isTrue);
+      expect(ownSegments(hostRoot, store), greaterThan(0));
+      expect(ownSegments(cloudRoot, store), greaterThan(0), reason: '新根先能用');
+      expect(srsMigrationProgress.value?.stage, SrsSyncStage.migrating);
+      expect(srsMigrationProgress.value?.total, n);
+      expect(srsSyncProgress.value, isNull, reason: '迁移不占同步一轮');
+      for (final FileSystemEntity e in crumbs.listSync()) {
+        breadcrumbs.add(File(e.path).readAsStringSync());
+      }
+      expect(breadcrumbs.join('\n'), contains('total=$n'));
+      // 迁移期间同一个通道再同步一轮也不排在它后面。
+      expect((await s.syncWithBackend(cloud)).error, isNull);
+
+      cloud.gate.complete();
+      await s.settle();
+      expect(srsMigrationProgress.value, isNull);
+      expect(seen.last.done, n);
+      expect(
+        crumbs.listSync().where(
+          (FileSystemEntity e) =>
+              p.basename(e.path).contains(kSrsV1MigrateActivity),
+        ),
+        isEmpty,
+        reason: '迁移跑完卸下面包屑',
+      );
+      // 旧根只剩围栏与完成标记；每个文件都按内容在新根上。
+      expect(
+        <String>{
+          for (final FileSystemEntity e in v1.listSync(recursive: true))
+            if (e is File)
+              p.relative(e.path, from: v1.path).replaceAll(r'\', '/'),
+        },
+        <String>{'meta.json', kSrsV1SweepMarker},
+      );
+      for (int i = 0; i < n; i++) {
+        expect(
+          File(
+            p.join(
+              cloudRoot.path,
+              kSrsSync2Namespace,
+              store.profileUid,
+              kSrsSync2Folder,
+              srsMediaContentPath(kSrsMediaFolder, srsMediaSha256(<int>[i, 7])),
+            ),
+          ).readAsBytesSync(),
+          <int>[i, 7],
+        );
+      }
+    });
+
+    test('关库前 quiesce 等后台迁移收手（不在半截迁移上关库）', () async {
+      bool open = true;
+      final Completer<void> gate = Completer<void>();
+      final SrsSyncScheduler s = SrsSyncScheduler(
+        readStore: () async => store,
+        channels: (Future<void> Function(SyncAssetStore) body) async =>
+            (ran: 0, errors: const <Object>[]),
+        directoryKeyOf: (SyncAssetStore b) async => 'k',
+        onDataChanged: () {},
+        onNotice: (SrsSyncNotice _) {},
+        canRun: () => open,
+      );
+      bool stopped = false;
+      s.v1MediaMigrations.start('k', (void Function(int, int) progress) async {
+        progress(0, 3);
+        await gate.future;
+        stopped = true;
+        return SrsV1MediaReport();
+      });
+      open = false;
+      bool quiesced = false;
+      final Future<void> q = s.quiesce().then((_) => quiesced = true);
+      await Future<void>.delayed(Duration.zero);
+      expect(quiesced, isFalse);
+      gate.complete();
+      await q;
+      expect(stopped, isTrue);
+      expect(srsMigrationProgress.value, isNull);
     });
   });
 

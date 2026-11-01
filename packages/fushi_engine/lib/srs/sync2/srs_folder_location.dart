@@ -8,7 +8,8 @@
 ///   彻底清除会重写段），默认不开。
 ///
 /// 目录布局与云盘的集合根相同（`<文件夹>/fushi-srs/<profileUid>/v3/`），所以归档位置随时能改成同步位置直接用。
-/// 协议 1 的旧根 `v2/` 只剩围栏（srs_location_migration.dart）：每一轮先 [srsPrepareLocation]，旧根上有数据就迁过来。
+/// 协议 1 的旧根 `v2/` 只剩围栏（srs_location_migration.dart）：每一轮先 [srsPrepareLocation]（围栏、设备段），一轮
+/// 成功之后旧根的媒体残留交给 [srsMigrateV1Media]（给了 [SrsV1MediaMigrations] 就在后台跑，不挡这一轮）。
 library;
 
 import 'dart:io';
@@ -89,7 +90,13 @@ Directory srsFolderV1CollectionRoot(
 
 /// 一个文件夹位置这一轮的结果（[ops] 里带加密握手的结论：kdf / encryptionEnabled / 口令错误）。
 class SrsFolderSyncReport {
-  SrsFolderSyncReport({this.ops, this.media, this.handshake, this.prepared});
+  SrsFolderSyncReport({
+    this.ops,
+    this.media,
+    this.handshake,
+    this.prepared,
+    this.v1Media,
+  });
 
   /// 操作同步这一轮的结果（只做媒体的位置：握手没过时带着错误，否则为 null）。
   final SrsSync2Report? ops;
@@ -101,18 +108,27 @@ class SrsFolderSyncReport {
   /// 这一轮开头的位置准备 / v1 迁移结论（[srsPrepareLocation]）。
   final SrsLocationPrepared? prepared;
 
+  /// 这一轮里同步跑完的旧根媒体迁移（没给 [SrsV1MediaMigrations] 时）；交给后台 / 没有残留为 null。
+  final SrsV1MediaReport? v1Media;
+
   /// 这个位置这一轮的加密结论（调度器据此记加密状态、把本机刚开的加密标成已生效）。
   SrsSync2Report? get crypto => ops ?? handshake;
 }
 
 /// 对一个文件夹位置跑一轮：同步 / 归档用途跑操作同步，媒体 / 归档用途跑媒体镜像。文件夹不在（U 盘没插）时
 /// 抛 [FileSystemException]，调用方记一次、下次再试。
+///
+/// 旧根的媒体残留：给了 [v1MediaMigrations] 就交给它在后台跑（[onV1Bound] = 补了绑定、请一轮同步发出去；
+/// [shouldStop] = 库要关了），否则在这一轮里跑完（只搬能搬的，按名字存的旧文件等下一轮发布了绑定再删）。
 Future<SrsFolderSyncReport> srsSyncFolderLocation({
   required SrsFolderLocation location,
   required SrsDbStore store,
   Directory? mediaRoot,
   SrsLocationKey? key,
   SrsLocationMigrationMemo? migrationMemo,
+  SrsV1MediaMigrations? v1MediaMigrations,
+  Future<void> Function()? onV1Bound,
+  bool Function()? shouldStop,
 }) async {
   if (location.idle) return SrsFolderSyncReport();
   if (!Directory(location.path).existsSync()) {
@@ -210,6 +226,21 @@ Future<SrsFolderSyncReport> srsSyncFolderLocation({
     }
     mediaKey = h.keyHex;
   }
+  final SrsV1MediaReport? v1Media = await _migrateV1Media(
+    location: location,
+    store: store,
+    root: root,
+    v1Dir: v1Dir,
+    key: key,
+    prepared: prepared,
+    ops: ops,
+    handshake: handshake,
+    mediaKey: mediaKey,
+    memo: migrationMemo,
+    migrations: v1MediaMigrations,
+    onBound: onV1Bound,
+    shouldStop: shouldStop,
+  );
   SrsMediaSyncReport? media;
   if (mediaRoot != null && (location.media || location.archive)) {
     media = await srsSyncMedia(
@@ -221,24 +252,81 @@ Future<SrsFolderSyncReport> srsSyncFolderLocation({
     );
   }
   media?.uploaded += uploadedEarly;
-  // 按名字存的旧文件：这一轮把补上的绑定发布出去之后才删（同步用途按本位置的上传水位，只做媒体的按任一位置）。
-  final bool roundOk = ops == null || (ops.error == null && !ops.needsUpgrade);
-  if (roundOk && !location.archive) {
-    final String? keyHex = (ops?.encrypted ?? false) ? key!.keyHex : null;
-    await srsFinishLocationMigration(
-      host: store,
-      v1: SrsDirectoryLocationStore(v1Dir),
-      prepared: prepared,
-      progressId: ops == null
-          ? null
-          : srsLocationProgressId(location.locationId, keyHex),
-      removeEmptyDirs: () => srsRemoveEmptyV1FolderDirs(v1Dir),
-    );
-  }
   return SrsFolderSyncReport(
     ops: ops,
     media: media,
     handshake: handshake,
     prepared: prepared,
+    v1Media: v1Media,
   );
+}
+
+/// 这一轮成功之后的旧根媒体残留（见 [srsSyncFolderLocation]）。同步用途：本机这一轮在新根上读全了（没有缺段 / 坏段）
+/// 才看得到已有的全部绑定，按名字存的旧文件等本位置的上传水位到了才删；只做媒体的位置没有操作同步，先只读把新根的段
+/// 拉一遍（不记进度）再判断，删除按任一位置的水位。
+Future<SrsV1MediaReport?> _migrateV1Media({
+  required SrsFolderLocation location,
+  required SrsDbStore store,
+  required SrsLocationStore root,
+  required Directory v1Dir,
+  required SrsLocationKey? key,
+  required SrsLocationPrepared prepared,
+  required SrsSync2Report? ops,
+  required SrsSync2Report? handshake,
+  required String? mediaKey,
+  required SrsLocationMigrationMemo? memo,
+  required SrsV1MediaMigrations? migrations,
+  required Future<void> Function()? onBound,
+  required bool Function()? shouldStop,
+}) async {
+  if (!prepared.mediaLeftover) return null;
+  // 只做媒体、这一轮没握手（没给媒体目录）：这一轮什么都没碰，残留也不碰。
+  if (ops == null && handshake == null) return null;
+  // 只做媒体的位置判断绑定要整份重拉新根：已经在跑就不再交（同步用途照交，跑完接着跑一次、删掉刚发布的）。
+  if (ops == null && (migrations?.isRunning(location.locationId) ?? false)) {
+    return null;
+  }
+  bool canBind = prepared.devicesSettled;
+  String? progressId;
+  if (ops != null) {
+    canBind = canBind && ops.missing == 0 && ops.errors.isEmpty;
+    progressId = srsLocationProgressId(
+      location.locationId,
+      ops.encrypted ? key!.keyHex : null,
+    );
+  } else if (canBind) {
+    final SrsSync2Report pulled = SrsSync2Report();
+    final bool whole = await srsSync2Pull(
+      host: store,
+      location: root,
+      progressId: null,
+      keyHex: mediaKey,
+      report: pulled,
+    );
+    canBind =
+        whole &&
+        pulled.errors.isEmpty &&
+        pulled.missing == 0 &&
+        pulled.error == null;
+  }
+  Future<SrsV1MediaReport> job(void Function(int, int)? onProgress) =>
+      srsMigrateV1Media(
+        host: store,
+        v1: SrsDirectoryLocationStore(v1Dir),
+        current: root,
+        locationId: location.locationId,
+        key: key,
+        nowMs: () => store.now().$1,
+        canBind: canBind,
+        progressId: progressId,
+        removeEmptyDirs: () => srsRemoveEmptyV1FolderDirs(v1Dir),
+        memo: memo,
+        archive: location.archive,
+        onProgress: onProgress,
+        shouldStop: shouldStop,
+        onBound: onBound,
+      );
+  if (migrations == null) return job(null);
+  migrations.start(location.locationId, job);
+  return null;
 }
