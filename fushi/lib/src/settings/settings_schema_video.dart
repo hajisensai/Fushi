@@ -1196,7 +1196,7 @@ SettingsDestination buildVideoDestination() {
             id: 'video.subtitle.preferred_languages',
             title: t.video_setting_subtitle_preferred_languages,
             subtitle: t.video_setting_subtitle_preferred_languages_hint,
-            icon: Icons.translate,
+            icon: FushiIcons.language,
             placeholder: 'jpn, ja, japanese',
             value: (SettingsContext c) =>
                 c.appModel.videoSubtitlePreferredLanguages,
@@ -1211,7 +1211,7 @@ SettingsDestination buildVideoDestination() {
             title: t.video_setting_secondary_subtitle_preferred_languages,
             subtitle:
                 t.video_setting_secondary_subtitle_preferred_languages_hint,
-            icon: Icons.subtitles_outlined,
+            icon: FushiIcons.subtitles,
             placeholder: 'chs, chi, zh, eng',
             value: (SettingsContext c) =>
                 c.appModel.videoSecondarySubtitlePreferredLanguages,
