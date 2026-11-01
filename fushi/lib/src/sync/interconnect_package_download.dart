@@ -184,8 +184,19 @@ void _deleteQuietly(File file) {
 /// 把 dart:io 响应包成 [ResumableDownloadResponse]（多值头以逗号拼接）。
 ResumableDownloadResponse wrapResumableResponse(HttpClientResponse res) {
   final Map<String, String> responseHeaders = <String, String>{};
+  // HttpClient 自动解压 gzip 时，流里是解码后的字节，而 Content-Length 描述的是
+  // 编码后的线上长度（小 JSON 压缩后反而更长：109 线上 vs 99 解码）。把它交给
+  // 下载器会被当成「声明总长」做截断 / 超长校验，必然误判，所以解压时不转交。
+  final bool decoded =
+      res.compressionState == HttpClientResponseCompressionState.decompressed;
   res.headers.forEach((String name, List<String> values) {
-    if (values.isNotEmpty) responseHeaders[name] = values.join(',');
+    if (values.isEmpty) return;
+    if (decoded &&
+        (name == HttpHeaders.contentLengthHeader ||
+            name == HttpHeaders.contentEncodingHeader)) {
+      return;
+    }
+    responseHeaders[name] = values.join(',');
   });
   return ResumableDownloadResponse(
     statusCode: res.statusCode,

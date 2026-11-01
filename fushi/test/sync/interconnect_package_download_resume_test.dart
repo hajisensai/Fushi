@@ -280,6 +280,44 @@ void main() {
       expect(dest.existsSync(), isFalse, reason: '截断的包绝不能被提升为成品');
       expect(File('${dest.path}.part').lengthSync(), 1000);
     });
+
+    test('gzip 响应（Content-Length 是编码后长度）不被误判为截断', () async {
+      // host 的 _gzipTextMiddleware 压缩小 JSON：编码后反而比原文长，HttpClient
+      // 自动解压后流里只有原文字节。旧实现把线上 Content-Length 当声明总长 → 误报截断。
+      final List<int> body = utf8.encode('{"v":3,"profile":"p"}');
+      final List<int> wire = gzip.encode(body);
+      expect(wire.length, greaterThan(body.length));
+      final HttpServer srv = await HttpServer.bind(
+        InternetAddress.loopbackIPv4,
+        0,
+      );
+      addTearDown(() => srv.close(force: true));
+      srv.listen((HttpRequest req) async {
+        req.response.headers
+          ..set(HttpHeaders.contentEncodingHeader, 'gzip')
+          ..set(HttpHeaders.etagHeader, '"meta-1"')
+          ..contentLength = wire.length;
+        req.response.add(wire);
+        await req.response.close();
+      });
+      final HttpClient client = HttpClient();
+      addTearDown(() => client.close(force: true));
+      final File dest = File(p.join(dir.path, 'meta.json'));
+      await downloadWithResumeSidecar(
+        url: 'http://127.0.0.1:${srv.port}/meta.json',
+        destination: dest,
+        firstByteTimeout: const Duration(seconds: 5),
+        stallTimeout: const Duration(seconds: 5),
+        verifyResponseIntegrity: true,
+        resumeInCall: false,
+        open: (Uri uri, Map<String, String> headers) async {
+          final HttpClientRequest req = await client.getUrl(uri);
+          headers.forEach(req.headers.set);
+          return wrapResumableResponse(await req.close());
+        },
+      );
+      expect(dest.readAsBytesSync(), body);
+    });
   });
 
   group('后台 isolate 下载（真 HTTP）', () {
