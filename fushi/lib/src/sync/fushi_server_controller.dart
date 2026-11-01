@@ -6,7 +6,7 @@ import 'package:drift/drift.dart' show Value;
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi_engine/foundation/pref_store.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
-import 'package:fushi_engine/srs/srs_remote_review.dart';
+import 'package:fushi_engine/srs/srs_remote_store.dart';
 import 'package:fushi/src/platform/desktop/desktop_device_info_service.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/fushi_manga_ocr_host.dart';
@@ -103,7 +103,7 @@ class FushiSyncServerController extends ChangeNotifier {
     GraphicSubtitleTrackExporter? graphicSubtitleTrackExporter,
     HostSelfUpdater Function()? hostSelfUpdater,
     InterconnectLeaderboardLinkHost Function()? leaderboardLinkHost,
-    SrsRemoteReviewService? Function()? srsRemoteReview,
+    SrsRemoteStoreService? Function()? srsRemoteStore,
     PrefStore Function()? prefsStore,
     PlatformDeviceInfoService? deviceInfo,
   }) : _navigatorKey = navigatorKey,
@@ -127,7 +127,7 @@ class FushiSyncServerController extends ChangeNotifier {
            exportGraphicSubtitleTrackForInterconnect,
        _hostSelfUpdater = hostSelfUpdater,
        _leaderboardLinkHost = leaderboardLinkHost,
-       _srsRemoteReview = srsRemoteReview,
+       _srsRemoteStore = srsRemoteStore,
        _prefsStore = prefsStore,
        // Headless/test construction without an injected service falls back to
        // the desktop (machine-hostname) source; production wires the real
@@ -182,8 +182,8 @@ class FushiSyncServerController extends ChangeNotifier {
   /// 不接线，`/api/interconnect/leaderboard-link` 404、能力位不声明。
   final InterconnectLeaderboardLinkHost Function()? _leaderboardLinkHost;
 
-  /// 复习远程刷卡：按请求现取（复习模块关着时 null → 端点 404、不声明能力）。
-  final SrsRemoteReviewService? Function()? _srsRemoteReview;
+  /// 远程复习库：按请求现取（复习模块关着时 null → 端点 404、不声明能力）。
+  final SrsRemoteStoreService? Function()? _srsRemoteStore;
 
   /// host 偏好读侧（`PreferencesRepository`）。null（单测 / 老调用方）= 引擎按默认值
   /// 走，行为与接线前一致。
@@ -812,8 +812,8 @@ class FushiSyncServerController extends ChangeNotifier {
           ..hostSelfUpdater = _hostSelfUpdater?.call()
           // 已配对设备跟随本机账户自动登录（开关在实现里按请求实时读）。
           ..leaderboardLinkHost = _leaderboardLinkHost?.call()
-          // 复习远程刷卡（docs/specs/2026-11-01-srs-remote-review-design.md）。
-          ..srsRemoteReviewProvider = _srsRemoteReview;
+          // 远程复习库（docs/specs/2026-11-01-srs-remote-review-design.md）。
+          ..srsRemoteStoreProvider = _srsRemoteStore;
     publish(server);
     // Fushi 改名迁移（host 侧）：host 的 WebDAV 根映射到 server.syncDataDir，
     // client 的同步根是其下的 `fushi-data/` 子目录。旧安装磁盘上还留着

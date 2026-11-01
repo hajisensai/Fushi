@@ -17,6 +17,8 @@ import 'dart:typed_data';
 import 'package:fushi_core/fushi_core.dart' show SrsCardCacheRow;
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_edit_history.dart';
+import 'package:fushi_engine/srs/srs_legacy_lapis_migration.dart';
 import 'package:fushi_engine/srs/srs_note_type_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
@@ -62,6 +64,33 @@ class SrsRemoteStoreError implements Exception {
 /// 客户端的远程复习库实现它：几个扩展方法直接读库（`db`），在客户端跑不了，开头按它转发到主机。
 abstract interface class SrsRemoteForwarding {
   Future<List<String>> remoteNoteIdsOfType(String noteTypeId, {int? limit});
+
+  Future<SrsNoteTypeChangePreview> remotePreviewNoteTypeChange({
+    required List<String> noteIds,
+    required String targetTypeId,
+    required Map<String, String?> fieldMap,
+    required Map<String, String?> templateMap,
+  });
+
+  Future<void> remoteChangeNoteType({
+    required List<String> noteIds,
+    required String targetTypeId,
+    required Map<String, String?> fieldMap,
+    required Map<String, String?> templateMap,
+  });
+
+  Future<int> remoteMigrateLegacyLapis(
+    String sourceTypeId, {
+    List<String>? noteIds,
+    String? targetDeckId,
+  });
+
+  Future<List<SrsHistoryEntry>> remoteEditHistory(
+    SrsEntityKind kind,
+    String entityId,
+  );
+
+  Future<Map<String, String>> remoteDeviceNames();
 }
 
 /// 线格式（两端共用；编码在主机，解码在客户端）。
@@ -549,6 +578,7 @@ class SrsRemoteStoreService {
       'ts': source.wire,
       'sched': store.canSchedule,
       'rwkv': store.rwkv?.ready ?? false,
+      'dev': store.sync2Device,
       'result': result,
     };
   }
@@ -737,6 +767,35 @@ class SrsRemoteStoreService {
     'instantDueCardIds': _Op(
       (SrsDbStore s, _Args a) async => (await s.instantDueCardIds())?.toList(),
     ),
+    'previewNoteTypeChange': _Op((SrsDbStore s, _Args a) async {
+      final SrsNoteTypeChangePreview p = await s.previewNoteTypeChange(
+        noteIds: a.strings('notes'),
+        targetTypeId: a.str('target'),
+        fieldMap: _nullableMap(a.raw('fieldMap')),
+        templateMap: _nullableMap(a.raw('templateMap')),
+      );
+      return <String, Object?>{
+        'from': (await _typeRefs(s, <String>[p.from.id])).single,
+        'to': (await _typeRefs(s, <String>[p.to.id])).single,
+        'plans': <Object?>[
+          for (final SrsNoteTypeChangePlan x in p.plans)
+            <String, Object?>{
+              'note': x.noteId,
+              'fields': x.fieldValues,
+              'links': x.cardLinks,
+              'dropped': x.droppedCards,
+            },
+        ],
+      };
+    }),
+    'editHistory': _Op(
+      (SrsDbStore s, _Args a) async => (await s.sync2Command(<String, Object?>{
+        'op': 'history',
+        'kind': SrsRemoteWire.kindFrom(a.raw('kind')).wire,
+        'entity': a.str('id'),
+      })).json,
+    ),
+    'deviceNames': _Op((SrsDbStore s, _Args a) async => s.sync2DeviceNames()),
     'noteIdsOfType': _Op(
       (SrsDbStore s, _Args a) async =>
           s.noteIdsOfType(a.str('type'), limit: a.optInt('limit')),
@@ -792,6 +851,31 @@ class SrsRemoteStoreService {
         for (final SrsReviewLog l in await s.setDueDays(days)) l.toJson(),
       ];
     }),
+    'extendTodayLimits': _Op(write: true, (SrsDbStore s, _Args a) async {
+      final ({int newCards, int reviews}) total = await s.extendTodayLimits(
+        a.str('deck'),
+        newCards: a.optInt('newCards') ?? 0,
+        reviews: a.optInt('reviews') ?? 0,
+      );
+      return <String, Object?>{'n': total.newCards, 'r': total.reviews};
+    }),
+    'changeNoteType': _Op(write: true, (SrsDbStore s, _Args a) async {
+      await s.changeNoteType(
+        noteIds: a.strings('notes'),
+        targetTypeId: a.str('target'),
+        fieldMap: _nullableMap(a.raw('fieldMap')),
+        templateMap: _nullableMap(a.raw('templateMap')),
+      );
+      return null;
+    }),
+    'migrateLegacyLapis': _Op(
+      write: true,
+      (SrsDbStore s, _Args a) async => s.migrateLegacyLapis(
+        a.str('source'),
+        noteIds: a.raw('notes') == null ? null : a.strings('notes'),
+        targetDeckId: a.optStr('deck'),
+      ),
+    ),
     'rescheduleDeck': _Op(
       write: true,
       (SrsDbStore s, _Args a) async => s.rescheduleDeck(a.str('deck')),
@@ -883,6 +967,22 @@ class SrsRemoteStoreService {
           SrsRemoteWire.sync2Result(await s.browseCommand(a.map('request'))),
     ),
   };
+
+  static Map<String, String?> _nullableMap(Object? json) {
+    if (json is! Map) {
+      throw const SrsRemoteStoreError(400, SrsRemoteStoreError.badRequest);
+    }
+    final Map<String, String?> out = <String, String?>{};
+    for (final MapEntry<Object?, Object?> e in json.entries) {
+      final Object? k = e.key;
+      final Object? v = e.value;
+      if (k is! String || (v != null && v is! String)) {
+        throw const SrsRemoteStoreError(400, SrsRemoteStoreError.badRequest);
+      }
+      out[k] = v as String?;
+    }
+    return out;
+  }
 
   /// 全部操作名（守卫测试据此核对客户端覆盖了哪些）。
   static Iterable<String> get operations => _ops.keys;

@@ -928,7 +928,7 @@ class AppModel with ChangeNotifier {
     // 公钥，由本机账户代绑。
     // 排行榜服务是 Riverpod 单例（随 Profile 重建），经全局 navigatorKey 的容器现取。
     // 复习远程刷卡：已配对设备在本机复习上出卡 / 作答（复习模块关着时 SrsAppHost.current 为 null）。
-    srsRemoteReview: () => SrsAppHost.current?.remoteReview,
+    srsRemoteStore: () => SrsAppHost.current?.remoteStore,
     leaderboardLinkHost: () => AppLeaderboardLinkHost(
       enabled: () =>
           SyncRepository(database).isInterconnectLeaderboardLinkHostEnabled(),

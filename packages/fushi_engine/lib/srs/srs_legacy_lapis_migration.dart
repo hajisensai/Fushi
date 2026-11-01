@@ -33,6 +33,7 @@ import 'package:meta/meta.dart' show visibleForTesting;
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_note_type_store.dart';
+import 'package:fushi_engine/srs/srs_remote_store.dart';
 
 /// 旧 Lapis 变体的识别依据。
 enum SrsLapisVariantKind {
@@ -727,6 +728,28 @@ extension SrsLegacyLapisMigrationOps on SrsDbStore {
     List<String>? noteIds,
     String? targetDeckId,
     @visibleForTesting Future<void> Function(String stage)? debugOnStage,
+  }) {
+    final SrsDbStore self = this;
+    if (self is SrsRemoteForwarding) {
+      return (self as SrsRemoteForwarding).remoteMigrateLegacyLapis(
+        sourceTypeId,
+        noteIds: noteIds,
+        targetDeckId: targetDeckId,
+      );
+    }
+    return _migrateLegacyLapisLocal(
+      sourceTypeId,
+      noteIds: noteIds,
+      targetDeckId: targetDeckId,
+      debugOnStage: debugOnStage,
+    );
+  }
+
+  Future<int> _migrateLegacyLapisLocal(
+    String sourceTypeId, {
+    List<String>? noteIds,
+    String? targetDeckId,
+    Future<void> Function(String stage)? debugOnStage,
   }) => runExclusive(() async {
     final SrsNoteTypeView? from = await noteType(sourceTypeId);
     if (from == null || srsDetectLapisVariant(from) == null) {
