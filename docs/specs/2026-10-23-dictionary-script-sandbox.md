@@ -32,8 +32,16 @@
    插件内部若有绕过包装直接调原生入口的脚本，要改走同一个附令牌的内部函数。
 4. **已锁定时再请求锁定**：拒绝（resolve `false`），保持原令牌。
 
-其它加载 popup.js 的宿主（Android `PopupDictActivity` 的 `androidBridge`、macOS `GlobalLookupOverlay`、
-浏览器扩展）暂不实现锁定：它们对 `_fushiLockBridge` 回不出专用值，页面就不执行词典脚本，安全降级。
+其它加载 popup.js 的宿主（2026-11-01 补齐）：
+- Android `:popup` 进程：原生 `PopupDictActivity` / `androidBridge` 已删（`1aea1ef0d9`），外部查词弹窗现在就是
+  `PopupDictFlutterActivity` 里的 flutter_inappwebview，走上面 Android 插件那一套锁定，无需另做。
+- app 外查词宿主（Windows `global_lookup_window.cpp`、macOS `GlobalLookupOverlay.swift`）：锁由顶层宿主页
+  `global_lookup_host.js` 代 popup 子 frame 申请并持有令牌，原生按同一契约发令牌、校验、剥令牌后才转给 Dart，
+  顶层新文档提交 / 宿主重载即解锁。macOS 的 `chrome.webview` 垫片在所有 frame 都有，第二道校验是
+  `frameInfo.isMainFrame` + `fushi-popup://assets/global_lookup_host.html`。此前 macOS 原生不认锁请求、永远不回，
+  宿主卡在 pending、之后的消息全部排队，整个 app 外查词哑掉——守卫 `macos_global_lookup_overlay_guard_static_test.dart`。
+
+浏览器扩展没有原生桥，不走锁定：词典脚本跑在扩展自己的两层沙箱 frame 里（见下「浏览器扩展：两层沙箱 frame」）。
 5. **解锁**：顶层 frame 开始新的导航 / 新文档提交时清空令牌（回到未锁定 = 旧行为）。子 frame 导航不影响。
 6. **未锁定**：行为与改动前完全一致（其它页面零影响）。
 7. **能拿到发送方 frame 信息的平台额外校验**：iOS / macOS 的 `WKScriptMessage.frameInfo.isMainFrame`、
@@ -51,7 +59,39 @@
 - 含 `<script>` 的 HTML 释义：整块放进 `<iframe sandbox="allow-scripts" srcdoc>`，脚本源码由父页面
   经 `getDictAsset` 取回后内联进 srcdoc；iframe 内由我们注入的小脚本把高度、链接点击、点词查词经
   `postMessage` 交给父页面，父页面按 `event.source` 认 iframe、按白名单处理消息。
-- 浏览器扩展（content script 上下文）不执行词典脚本，只渲染净化后的静态内容。
+- 浏览器扩展（`chrome.runtime.getURL` 给出 `chrome-extension://` 地址时）：不锁桥，`mountDictScriptSandbox`
+  先放净化后的静态内容，再换成扩展的两层沙箱 frame（下节）；消息回来仍走同一个 `__dictSandboxHandleMessage`。
+
+## 浏览器扩展：两层沙箱 frame
+
+扩展里不能照搬 srcdoc 沙箱：弹窗挂在**别人的网页**里，嵌入方是宿主网页，它的 CSP 我们插不进 `frame-src 'none'`，
+沙箱自导航外联没人在请求前拦（第二轮第 2 条）；manifest 里 `all_frames + match_about_blank + match_origin_as_fallback`
+的 `frame-gate.js` 还会被注进 about:srcdoc。所以扩展用两层 frame（`tools/browser-extension/`）：
+
+1. **外层 `dict-frame.html` + `dict-frame.js`**：普通扩展页（web_accessible_resources）。manifest
+   `content_security_policy.extension_pages` = `script-src 'self'; object-src 'self'; frame-src 'self'`——它是内层的嵌入方，
+   内层自导航到外网在请求发出前就被拦（落成错误页）。只做中继：父窗口（popup.js）在外层 load 后
+   `postMessage({__fushiDictFrame:1,type:'connect'}, 扩展源, [port])`，外层只认第一份、来自 `window.parent` 的 connect，
+   之后与父窗口只走这个 port，不理会父窗口（宿主网页脚本也能发）的 window message；port 上收一次 `render`，
+   内层来的消息（origin `'null'`、source 是内层 window）按白名单 `height / error / link / select` 逐字段重建、封顶后转给 port。
+   内层 iframe 带 `sandbox="allow-scripts"`（导航到本扩展别的页面也照样是沙箱）；渲染后超过两次 load（页面本身 +
+   document.close 完成）即视为被导航走，拆掉。
+2. **内层 `dict-sandbox.html`**：manifest `sandbox.pages`，`content_security_policy.sandbox` =
+   `sandbox allow-scripts; default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval'; style-src 'unsafe-inline' data:;
+   img-src data: blob:; font-src data:; media-src data: blob:; connect-src 'none'; form-action 'none'; base-uri 'none'; frame-src 'none'`。
+   内联引导脚本只收扩展源 parent 的一次 render，`document.open/write/close` 渲染（同一个 Document，manifest CSP 照旧生效；
+   document.open 同时清掉引导监听）。文档仍是 `__dictSandboxDocument` 产出的那份（带 meta CSP 与 `DICT_SANDBOX_HELPER_JS`，
+   helper 的 `parent` 就是外层）。Chrome 对网页里的嵌套扩展 frame 也查 web_accessible_resources，所以它也列进 WAR
+   （网页直接嵌它拿不到任何东西：引导脚本只认扩展源 parent，页面里没有扩展 API）。
+3. **媒体与外链脚本**：扩展分叉 `dict-media.js` 的占位媒体在主文档里兑现成本源 `blob:`，不透明源的沙箱页加载不了；
+   `fushiDictSandboxInlineMedia` 在父侧把字节取回，`<img>` 内联成 `data:`、`<link>` 换成内联 `<style>`，再交给沙箱
+   （token 只在 fetch 参数里）。外链 `<script src>` 经 bridge-shim 的 `getDictAsset`（同一条 `/api/media/dictionary` 端点）
+   取源码，由 `__dictSandboxInlineScripts` 内联。
+
+headless Chromium（playwright chromium-1208，`--load-extension`）实测：宿主页带 / 不带 `frame-src 'none'` CSP 都能挂上外层；
+沙箱里 `origin=null`、无 `chrome.runtime`、`eval` 可用，`fetch` / 外网 `<img>` 被 CSP 拦、`data:` 图可加载，弹窗 / 顶层导航被
+sandbox 拦，`location.href = 外网` 被外层 `frame-src 'self'` 在请求前拦（本地 HTTP 服务器零命中）且内层随即被拆；
+非白名单类型与多余字段不出外层，宿主页抢发的第二个 connect 不被理会。
 
 ## 外联（BUG-3765）
 
@@ -89,10 +129,12 @@
 - **主文档 CSP 不管 `script-src`**：Windows / iOS 内联注入 `<script>`、其余平台走 `file://` / 自定义 scheme，
   没有真机覆盖就收紧脚本来源可能让弹窗在某个平台整页白屏。主文档脚本由「惰性树净化 + DOM 直挂」兜住。
 - **WebKit 不认 iframe `csp` 属性**（Chromium 专有）：iOS / macOS / Linux 上沙箱自导航只靠主文档 `frame-src`。
-- **未实现锁定的宿主不跑词典脚本**：Android `PopupDictActivity`（`androidBridge`）、macOS `GlobalLookupOverlay`、
-  浏览器扩展。这些表面上依赖脚本的 MDX 词典只显示静态内容。
+- **锁定失败仍降级为静态内容**：所有加载 popup.js 的宿主都已实现锁定（或扩展的两层沙箱）；只有插件旧 / 原生拒锁时
+  才不跑词典脚本。macOS 原生锁定没有真机验证（本机无 Mac，Swift 只过源码守卫）。
 - **bfcache 恢复**：原生已清令牌、页面桥闭包仍持旧令牌。页面在 `pagehide` 拆掉全部沙箱，恢复后再锁会被拒，
   不再挂新沙箱（偏安全侧）。
+- **扩展外层 connect 可被宿主页抢先**：宿主网页脚本能在 popup.js 之前往外层发 connect；外层只认第一份，
+  被抢后真正的文档投不进去、词条停在静态内容（宿主页只能让自己页面上的弹窗降级，拿不到文档内容）。
 - **沙箱内的交互是简化版**：点词只取点击处所在文本节点（最多 20 字），不走主文档 selection.js 的跨节点扫描；
   复制、键盘导航、瀑布流测高不进 iframe。只影响带脚本的 MDX 词条。
 

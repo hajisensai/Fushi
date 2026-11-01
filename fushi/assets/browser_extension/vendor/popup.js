@@ -3503,6 +3503,14 @@ function __dictSandboxOnMessage(event) {
     if (event.origin !== 'null') return;
     const frame = __dictSandboxFrameFor(event.source);
     if (!frame) return;
+    __dictSandboxHandleMessage(frame, data);
+}
+
+// 沙箱消息的统一处理：app 内 srcdoc 沙箱（window message，上面按 event.source 认 frame）
+// 与浏览器扩展的两层 frame（MessageChannel port，见 __dictSandboxMountExtensionFrame）
+// 都走这里——类型白名单、长度封顶、用户激活与限频只有这一份。
+function __dictSandboxHandleMessage(frame, data) {
+    if (!data || typeof data !== 'object') return;
     const dictName = frame.getAttribute('data-dictionary') || '';
     if (data.type === 'height') {
         const height = Number(data.value);
@@ -3608,9 +3616,99 @@ function __dictSandboxDocument(bodyHtml, dictName, host) {
         `</head><body>${bodyHtml}</body></html>`;
 }
 
+// 浏览器扩展（Chrome MV3）里外层 frame 的地址；不在扩展里（app 内各宿主）回 null。
+// 只认 chrome-extension: —— app 内浏览器的扩展宿主模式垫了 chrome.runtime（getURL 给
+// fushi-ext:// 地址），那里不加载 popup.js，即便将来加载也不会误走这条路。
+function __dictSandboxExtensionFrameUrl() {
+    try {
+        if (typeof chrome === 'undefined' || !chrome || !chrome.runtime || !chrome.runtime.id ||
+            typeof chrome.runtime.getURL !== 'function') return null;
+        const url = chrome.runtime.getURL('dict-frame.html');
+        return /^chrome-extension:\/\//i.test(`${url}`) ? `${url}` : null;
+    } catch (_) {
+        return null;
+    }
+}
+
+const __dictSandboxExtensionFrames = new Set();
+let __dictSandboxExtensionPagehide = false;
+
+// 浏览器扩展：popup.js 跑在别人的网页（content script）或扩展页里，没有原生桥可锁，也不能
+// 往宿主网页塞 frame-src。改成两层 frame（manifest 声明）：
+//   外层 dict-frame.html —— 扩展页，CSP `frame-src 'self'`：内层自导航到外网在请求发出前就被拦；
+//                           只做中继，只认我们交给它的 MessageChannel port。
+//   内层 dict-sandbox.html —— manifest sandbox 页（不透明源、CSP 同 DICT_SANDBOX_CSP 收紧），
+//                           document.write 渲染我们投递的文档，词典脚本在这里跑。
+// 内层消息经外层白名单过滤后从 port 回来，仍交 __dictSandboxHandleMessage 做激活 / 限频检查。
+function __dictSandboxMountExtensionFrame(wrapper, html, dictName, frameUrl) {
+    (async () => {
+        let body = await __dictSandboxInlineScripts(dictSandboxHtml(html, dictName), dictName);
+        // 扩展分叉 dict-media.js 的占位媒体（data-fushi-media-path）在主文档里由 MutationObserver
+        // 兑现成 blob:——那是 content script 所在源的 blob，不透明源的沙箱页加载不了；这里先在
+        // 父侧把字节取回、内联成 data: / <style>，再整份交给沙箱。
+        if (typeof fushiDictSandboxInlineMedia === 'function') {
+            body = await fushiDictSandboxInlineMedia(body);
+        }
+        if (!wrapper.isConnected) return;
+        const documentHtml = __dictSandboxDocument(body, dictName, wrapper);
+        // 不用 new URL().origin：非特殊 scheme 在不少 URL 实现里算出 'null'，postMessage 就投不出去。
+        const frameOrigin = /^chrome-extension:\/\/[^/]+/i.exec(frameUrl)[0];
+        const frame = document.createElement('iframe');
+        frame.setAttribute('referrerpolicy', 'no-referrer');
+        frame.setAttribute('data-dictionary', dictName);
+        frame.className = 'dict-script-sandbox';
+        frame.style.cssText = 'display:block;width:100%;height:0;border:0;background:transparent;';
+        let port = null;
+        const drop = (message) => {
+            __dictSandboxExtensionFrames.delete(frame);
+            if (port) port.close();
+            frame.remove();
+            reportDictScriptError(dictName, 'sandbox', { message });
+        };
+        frame.addEventListener('load', () => {
+            // 外层只加载一次；再 load 说明它被换了地址（宿主页能改这个 iframe 的 src），
+            // 那已不是我们的中继，拆掉。
+            if (port) {
+                drop('sandbox relay frame reloaded; removed');
+                return;
+            }
+            const channel = new MessageChannel();
+            port = channel.port1;
+            port.onmessage = (event) => {
+                if (!frame.isConnected) {
+                    __dictSandboxExtensionFrames.delete(frame);
+                    port.close();
+                    return;
+                }
+                __dictSandboxHandleMessage(frame, event.data);
+            };
+            // targetOrigin 钉扩展源：frame 若已被换成别的页面，port 与文档都投不过去。
+            frame.contentWindow.postMessage(
+                { __fushiDictFrame: 1, type: 'connect' }, frameOrigin, [channel.port2]);
+            port.postMessage({ type: 'render', html: documentHtml });
+        });
+        frame.src = frameUrl;
+        __dictSandboxExtensionFrames.add(frame);
+        if (!__dictSandboxExtensionPagehide) {
+            __dictSandboxExtensionPagehide = true;
+            window.addEventListener('pagehide', () => {
+                for (const item of __dictSandboxExtensionFrames) item.remove();
+                __dictSandboxExtensionFrames.clear();
+            });
+        }
+        wrapper.replaceChildren(frame);
+    })().catch((error) => reportDictScriptError(dictName, 'sandbox', error));
+}
+
 // 带脚本的 HTML 释义：先放净化后的静态内容，桥锁定成功后再换成沙箱 iframe。
+// 浏览器扩展里不锁桥，换成扩展自己的两层沙箱 frame（__dictSandboxMountExtensionFrame）。
 function mountDictScriptSandbox(wrapper, html, dictName) {
     wrapper.replaceChildren(dictHtmlFragment(html, dictName));
+    const extensionFrameUrl = __dictSandboxExtensionFrameUrl();
+    if (extensionFrameUrl) {
+        __dictSandboxMountExtensionFrame(wrapper, html, dictName, extensionFrameUrl);
+        return;
+    }
     fushiLockBridge().then(async (locked) => {
         if (!locked) return;
         const body = await __dictSandboxInlineScripts(dictSandboxHtml(html, dictName), dictName);
