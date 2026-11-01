@@ -1020,6 +1020,7 @@
   // 覆盖字幕逻辑，但不创建列表节点、不修改宿主页面布局。
   function refreshHeadless() {
     st.videoId = videoKey();
+    if (st.externalRestoredFor !== st.videoId) restoreExternalTracks(st.videoId);
     var tracks = tracksForVideo();
     var active = fushiResolveActiveSubtitleTrack(tracks, st.activeLang, LIVE_LANG);
     st.activeLang = active ? active.lang : null;
@@ -1037,6 +1038,113 @@
   }
   function isExternalLang(lang) {
     return typeof lang === 'string' && lang.indexOf(EXT_PREFIX) === 0;
+  }
+
+  // ── 外挂字幕持久化（反馈 HlBC5BcpED：「查字幕」/ 拖入 / 选文件装上的外挂轨刷新后消失）──
+  // 根因：外挂轨只写进页面内存 window.fushiEpisodeCues（applyExternalSubtitle），页面一刷新
+  // content script 重建、store 归空。现按视频身份（videoKey()，与轨 key 同一把）存进
+  // chrome.storage.local：账本 EXTERNAL_INDEX_KEY（LRU，规则见 subtitle-adapters.js
+  // fushiPlanExternalSubtitleSave）+ 每轨一条正文键；偏移随轨一起记。
+  var EXTERNAL_INDEX_KEY = 'externalSubtitleIndex';
+  var EXTERNAL_DATA_PREFIX = 'externalSubtitle:';
+  var EXTERNAL_LIMITS = { maxEntries: 40, maxBytes: 4 * 1024 * 1024, maxEntryBytes: 1536 * 1024 };
+  function storageGet(keys, cb) {
+    try {
+      var p = chrome.storage.local.get(keys);
+      if (p && typeof p.then === 'function') {
+        p.then(function (v) { cb(v || {}); }, function () { cb({}); });
+      } else {
+        chrome.storage.local.get(keys, function (v) { cb(v || {}); });
+      }
+    } catch (_) { cb({}); }
+  }
+  function utf8Bytes(text) {
+    if (typeof TextEncoder === 'function') return new TextEncoder().encode(text).length;
+    return text.length * 3;
+  }
+  function persistExternalTrack(video, label, cues) {
+    if (typeof fushiPlanExternalSubtitleSave !== 'function') return;
+    var id = EXTERNAL_DATA_PREFIX + video + '|' + label;
+    var json;
+    try { json = JSON.stringify(cues); } catch (_) { return; }
+    var entry = { id: id, video: video, label: label, bytes: utf8Bytes(json), at: Date.now(), offsetMs: 0 };
+    storageGet(EXTERNAL_INDEX_KEY, function (got) {
+      var plan = fushiPlanExternalSubtitleSave(got[EXTERNAL_INDEX_KEY], entry, EXTERNAL_LIMITS);
+      var patch = {};
+      patch[EXTERNAL_INDEX_KEY] = plan.index;
+      if (plan.stored) patch[id] = { video: video, label: label, cues: cues };
+      try {
+        if (plan.evicted.length) chrome.storage.local.remove(plan.evicted);
+        chrome.storage.local.set(patch);
+      } catch (_) {}
+    });
+  }
+  // 轨 key 的偏移变了：若是已落盘的外挂轨，把偏移写回账本（刷新后连同偏移一起恢复）。
+  function persistExternalOffset(key) {
+    if (typeof key !== 'string' || key.indexOf('|' + EXT_PREFIX) < 0) return;
+    var id = EXTERNAL_DATA_PREFIX + key;
+    var value = st.trackOffsets[key] || 0;
+    storageGet(EXTERNAL_INDEX_KEY, function (got) {
+      var index = got[EXTERNAL_INDEX_KEY];
+      if (!Array.isArray(index)) return;
+      var hit = false;
+      for (var i = 0; i < index.length; i++) {
+        if (index[i] && index[i].id === id) { index[i].offsetMs = value; hit = true; }
+      }
+      if (!hit) return;
+      var patch = {};
+      patch[EXTERNAL_INDEX_KEY] = index;
+      try { chrome.storage.local.set(patch); } catch (_) {}
+    });
+  }
+  // 当前视频的外挂轨从 storage 装回 store；每个视频身份只装一次（refreshHeadless 入口调用）。
+  // 装回后若用户还没选外挂轨，切到最近装的那条——刷新前看的就是它。
+  function restoreExternalTracks(video) {
+    st.externalRestoredFor = video;
+    storageGet(EXTERNAL_INDEX_KEY, function (got) {
+      var index = Array.isArray(got[EXTERNAL_INDEX_KEY]) ? got[EXTERNAL_INDEX_KEY] : [];
+      var mine = [];
+      for (var i = 0; i < index.length; i++) {
+        var e = index[i];
+        if (e && e.video === video && typeof e.id === 'string' && typeof e.label === 'string') mine.push(e);
+      }
+      if (!mine.length) return;
+      storageGet(mine.map(function (e) { return e.id; }), function (data) {
+        if (videoKey() !== video) return; // 读盘期间已切走（SPA 换集）
+        var store = window.fushiEpisodeCues || (window.fushiEpisodeCues = Object.create(null));
+        var restored = null;
+        var missing = [];
+        var now = Date.now();
+        for (var j = 0; j < mine.length; j++) {
+          var entry = mine[j];
+          var saved = data[entry.id];
+          if (!saved || !Array.isArray(saved.cues) || !saved.cues.length) { missing.push(entry.id); continue; }
+          var key = video + '|' + entry.label;
+          if (!store[key]) store[key] = saved.cues;
+          if (typeof entry.offsetMs === 'number' && entry.offsetMs && st.trackOffsets[key] == null) {
+            st.trackOffsets[key] = entry.offsetMs;
+          }
+          entry.at = now;
+          restored = entry; // 账本从旧到新：最后一条 = 最近装的
+        }
+        // 账本自愈 + LRU 续命：正文缺失（写盘失败 / 被外部清掉）的条目剔除，本视频的条目挪到最新端。
+        var next = [];
+        for (var k = 0; k < index.length; k++) {
+          var item = index[k];
+          if (!item || item.video === video) continue;
+          next.push(item);
+        }
+        for (var m = 0; m < mine.length; m++) {
+          if (missing.indexOf(mine[m].id) < 0) next.push(mine[m]);
+        }
+        var patch = {};
+        patch[EXTERNAL_INDEX_KEY] = next;
+        try { chrome.storage.local.set(patch); } catch (_) {}
+        if (!restored) return;
+        if (!isExternalLang(st.activeLang)) st.activeLang = restored.label;
+        if (st.enabled) refreshHeadless();
+      });
+    });
   }
   function loadSubtitleFile(file) {
     if (file && typeof file.size === 'number' && file.size > 8 * 1024 * 1024) {
@@ -1074,11 +1182,14 @@
     }
     if (!base.length) { toast(tr('subtitle_empty')); return; }
     var label = EXT_PREFIX + String(filename).replace(/\|/g, '_');
-    var key = videoKey() + '|' + label;
+    var video = videoKey();
+    var key = video + '|' + label;
     // 外挂轨与检测轨同构：store 存原始 cue，偏移走统一的读取侧 trackOffsets（重新加载即归零）。
     var store = window.fushiEpisodeCues || (window.fushiEpisodeCues = Object.create(null));
     store[key] = base;
     delete st.trackOffsets[key];
+    // 反馈 HlBC5BcpED：store 只是页面内存，刷新即丢——按视频身份落盘，刷新后 refreshHeadless 自动装回。
+    persistExternalTrack(video, label, base);
     st.activeLang = label;
     // BUG-3145：装外挂轨 = 用户明确要在这个视频上看 Fushi 字幕。字幕能力总门（SETTING_KEY，
     // 缺省关）没开时 tick() 直接返回、覆盖层一个字都不画——从 Chrome 自己的侧边栏入口或
@@ -1221,6 +1332,7 @@
     if (!key || !st.cues.length) return false;
     if (deltaMs === 0) delete st.trackOffsets[key];
     else st.trackOffsets[key] = (st.trackOffsets[key] || 0) + deltaMs;
+    persistExternalOffset(key);
     recomputeShortcutCues();
     toast(tr('subtitle_offset_toast', { offset: fmtOffset(trackOffset(key)) }));
     return true;
@@ -1393,6 +1505,7 @@
     if (!key || !isFinite(value)) return false;
     if (value === 0) delete st.trackOffsets[key];
     else st.trackOffsets[key] = value;
+    persistExternalOffset(key);
     refreshHeadless();
     toast(tr('subtitle_offset_toast', { offset: fmtOffset(trackOffset(key)) }));
     return true;
@@ -1694,6 +1807,7 @@
             if (abs === 0) delete st.trackOffsets[key];
             else st.trackOffsets[key] = abs;
           } else st.trackOffsets[key] = (st.trackOffsets[key] || 0) + (Number(msg.deltaMs) || 0);
+          persistExternalOffset(key);
         }
         sendResponse(sidePanelState(true));
         return false;
