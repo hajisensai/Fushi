@@ -8732,6 +8732,8 @@
   "sync_client_connected": "Đã kết nối",
   "sync_client_token": "Mã truy cập thiết bị ngang hàng",
   "sync_client_token_manual": "Nhập mã thủ công",
+  "sync_cloud_enable": "Enable cloud backup",
+  "sync_cloud_enable_hint": "Back up and sync through the cloud service below. Turning it off stops all cloud sync on this device; your account stays signed in, so you can turn it back on anytime.",
   "sync_compare": "So sánh dữ liệu",
   "sync_compare_all_books": "Tất cả sách",
   "sync_compare_all_local": "Tất cả → Cục bộ",

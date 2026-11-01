@@ -544,7 +544,9 @@ String _renderSyncLs(Object? data) {
     '',
     '可同步通道（sync run <通道>）：'
         '${channels.isEmpty ? '（无）' : channels.join('、')}',
-    '云同步自动同步：${data['autoSync'] == true ? '开' : '关'}'
+    // 云备份通道总开关；旧 app 不带此字段：不显示。
+    '${data.containsKey('cloudEnabled') ? '云备份：${data['cloudEnabled'] == true ? '开' : '关'}  ' : ''}'
+        '云同步自动同步：${data['autoSync'] == true ? '开' : '关'}'
         '  互联同步：${data['interconnectEnabled'] == true ? '开' : '关'}'
         // 旧 app 不带此字段：不显示，免得把「不知道」说成「关」。
         '${data.containsKey('interconnectAutoSync') ? '  互联自动同步：${data['interconnectAutoSync'] == true ? '开' : '关'}' : ''}'

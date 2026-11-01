@@ -409,6 +409,8 @@ List<CtlRoute> _syncRoutes(OpContext context) => <CtlRoute>[
       'autoSync': await repo.isAutoSyncEnabled(),
       'interconnectAutoSync': await repo.isInterconnectAutoSyncEnabled(),
       'interconnectEnabled': await repo.isInterconnectEnabled(),
+      // 云备份通道总开关（关 = channels 里不出现云通道，凭据保留）。
+      'cloudEnabled': await repo.isCloudSyncEnabled(),
       'running': syncInProgress.value,
       'lastFullSweep': syncOutcomeToWire(lastFullSweepOutcome.value),
       // 「立即同步」会跑的通道（与同步编排同一份枚举），`sync run <通道>` 认这些名。
