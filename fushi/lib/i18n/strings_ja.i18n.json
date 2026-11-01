@@ -743,6 +743,7 @@
   "anki_sync_client_enable_warn_body": "Don't enable this unless you know what you're doing. Syncing to AnkiWeb is not allowed for third-party clients and may fail or put your account at risk.",
   "anki_sync_client_enable_warn_confirm": "I understand, enable",
   "anki_sync_client_enable_warn_title": "Enable Anki sync?",
+  "anki_sync_client_error_ankiweb_intercepted": "AnkiWeb's reply did not arrive in the Anki sync format, so something between this device and AnkiWeb changed it: antivirus HTTPS or web scanning, a proxy, VPN or network accelerator, DNS filtering, or a school or work network. Turn off HTTPS scanning in your antivirus (or add an exception for ankiweb.net), or try another network. If Anki desktop on this device cannot sync either, the network is the cause; otherwise switch to AnkiConnect with Anki desktop. Details: $detail",
   "anki_sync_client_error_not_sync_server": "The server did not answer with the Anki sync protocol (the anki-original-size response header is missing). Make sure the address points at an Anki sync server (the official anki-sync-server, or the one built into Anki desktop) rather than a web page; a reverse proxy must keep this header. Details: $detail",
   "anki_sync_client_has_unsynced": "未同期のカードが $count 枚あります。アカウントを切り替えるかサインアウトする前に同期してください。",
   "anki_sync_client_password_title": "パスワード",

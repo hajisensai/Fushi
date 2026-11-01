@@ -78,6 +78,17 @@ void main() {
       expect(msg, contains(raw));
     });
 
+    test('AnkiWeb 上同一个错误：说是网络中间层改写，不叫用户查服务器地址', () {
+      final String msg = describeAnkiSyncError(
+        const FushiAnkiSyncException(raw),
+        ankiWeb: true,
+      );
+      expect(msg, t.anki_sync_client_error_ankiweb_intercepted(detail: raw));
+      expect(msg, isNot(contains('anki-original-size')));
+      expect(msg, contains('ankiweb.net'));
+      expect(msg, contains(raw));
+    });
+
     test('认不出的错误原样给出、去掉异常类名', () {
       expect(
         describeAnkiSyncError(const FushiAnkiSyncException('boom')),

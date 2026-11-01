@@ -743,6 +743,7 @@
   "anki_sync_client_enable_warn_body": "除非你知道你在做什么，否则不要启用此功能。同步到 AnkiWeb 不允许第三方客户端，可能失败，也可能影响你的账号。",
   "anki_sync_client_enable_warn_confirm": "我明白，仍然启用",
   "anki_sync_client_enable_warn_title": "要启用 Anki 同步吗？",
+  "anki_sync_client_error_ankiweb_intercepted": "AnkiWeb 的回复到达时已不是 Anki 同步格式，说明本机与 AnkiWeb 之间有东西改写了它：杀毒软件的 HTTPS / 网页扫描、代理、VPN 或网络加速器、DNS 过滤，或学校 / 公司网络。请在杀毒软件里关闭 HTTPS 扫描（或把 ankiweb.net 加入例外），或换一个网络再试。如果这台设备上的 Anki 桌面版也同步不了，就是网络问题；否则可改用 AnkiConnect 配合 Anki 桌面版。原始信息：$detail",
   "anki_sync_client_error_not_sync_server": "服务器的回复不是 Anki 同步协议（缺少 anki-original-size 响应头）。请确认地址指向 Anki 同步服务器（官方 anki-sync-server，或 Anki 桌面版自带的同步服务），而不是网页；经反向代理时须保留这个响应头。原始信息：$detail",
   "anki_sync_client_has_unsynced": "还有 $count 张卡没有同步，请先同步再切换账号或退出登录。",
   "anki_sync_client_password_title": "密码",
