@@ -30,8 +30,10 @@ for abi in "${ABIS[@]}"; do
   [[ -f "$so" ]] || { echo "missing $so" >&2; exit 1; }
   # libsqlite3-sys 给 Android 硬编码 TEMP_STORE=3（临时库全进内存，大库 VACUUM 撑爆进程）；.cargo/config.toml
   # 改回 1。从别的目录构建会丢那份配置，这里按产物里的编译选项字符串核对。
-  if grep -aq 'TEMP_STORE=3' "$so" || ! grep -aq 'TEMP_STORE=1' "$so"; then
-    echo "$so: bundled SQLite is not built with SQLITE_TEMP_STORE=1 (see native/fushi_fsrs/.cargo/config.toml)" >&2
+  # 按字节找（LC_ALL=C：UTF-8 locale 下 grep 对二进制里的非法序列另有处理）；sqlite3azCompileOpt 里恰有一条。
+  temp_store="$(LC_ALL=C grep -aoE 'TEMP_STORE=[0-9]' "$so" | sort -u | tr '\n' ' ')"
+  if [[ "$temp_store" != "TEMP_STORE=1 " ]]; then
+    echo "$so: bundled SQLite compile options say '${temp_store}', expected 'TEMP_STORE=1' (see native/fushi_fsrs/.cargo/config.toml)" >&2
     exit 1
   fi
   echo "  $so $(wc -c < "$so") bytes"

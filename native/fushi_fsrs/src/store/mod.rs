@@ -256,22 +256,30 @@ impl SrsCore {
     /// [open]，库所在卷的空闲空间由 [free] 给（测试注入）：升级前空间不够就不升级、报
     /// [schema::UPGRADE_NO_SPACE]（库不动）。
     pub(crate) fn open_with_free_space(path: &Path, free: impl Fn(&Path) -> Option<u64>) -> Result<Self, String> {
-        let mut writer = Connection::open_with_flags(
-            path,
-            OpenFlags::SQLITE_OPEN_READ_WRITE
-                | OpenFlags::SQLITE_OPEN_CREATE
-                | OpenFlags::SQLITE_OPEN_NO_MUTEX,
-        )
-        .map_err(|e| format!("open {}: {e}", path.display()))?;
-        configure(&writer)?;
-        #[cfg(any(test, feature = "id_audit"))]
-        ids::audit::install(&mut writer);
-        let mode: String = writer
-            .query_row("PRAGMA journal_mode = WAL", [], |r| r.get(0))
-            .map_err(|e| e.to_string())?;
-        if !mode.eq_ignore_ascii_case("wal") {
-            return Err(format!("srs.db journal_mode is {mode}, expected wal"));
-        }
+        let open_writer = || -> Result<Connection, String> {
+            #[allow(unused_mut)]
+            let mut writer = Connection::open_with_flags(
+                path,
+                OpenFlags::SQLITE_OPEN_READ_WRITE
+                    | OpenFlags::SQLITE_OPEN_CREATE
+                    | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+            )
+            .map_err(|e| format!("open {}: {e}", path.display()))?;
+            configure(&writer)?;
+            #[cfg(any(test, feature = "id_audit"))]
+            ids::audit::install(&mut writer);
+            // 新库建表前定成 INCREMENTAL：升级腾出的页以后原地收缩（store/compact.rs），不用整库重写。老库上这句只
+            // 是记下「下次整库重写时改成 INCREMENTAL」，由 compact 的重写换文件那一步落实。
+            writer.execute_batch("PRAGMA auto_vacuum = INCREMENTAL;").map_err(|e| e.to_string())?;
+            let mode: String = writer
+                .query_row("PRAGMA journal_mode = WAL", [], |r| r.get(0))
+                .map_err(|e| e.to_string())?;
+            if !mode.eq_ignore_ascii_case("wal") {
+                return Err(format!("srs.db journal_mode is {mode}, expected wal"));
+            }
+            Ok(writer)
+        };
+        let mut writer = open_writer()?;
         schema::check_upgrade_space(&writer, free(path))?;
         let dir = path.parent().unwrap_or(Path::new("."));
         // 升级阶梯整表重建、建索引，大库的排序会溢出到临时文件：与整理一样放在库所在目录（Android 没有默认临时目录）。
@@ -279,9 +287,9 @@ impl SrsCore {
         let migrated = schema::migrate(&mut writer);
         compact::clear_temp_dir(&writer);
         migrated?;
-        // 格式升级后的一次性整理（读连接还没开；空间不够 / 失败都不影响打开，下次再试）。
+        // 格式升级后的一次性整理（读连接还没开；空间不够 / 失败都不影响打开，下次再试）。重写换文件时会换掉写连接。
         let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_millis() as i64);
-        compact::run(&writer, dir, free(path), now);
+        let writer = compact::run(writer, path, free(path), now, &open_writer)?;
         let study_hub = Arc::new(queue::StudyHub::default());
         queue::StudyHub::install(&study_hub, &writer)?;
         let reader = Connection::open_with_flags(
@@ -507,9 +515,7 @@ impl SrsCore {
         if strip_device_local {
             let snap = Connection::open(target).map_err(|e| e.to_string())?;
             configure(&snap)?;
-            // 末尾的 VACUUM 整库重写：整理副本落快照所在目录的文件，不在内存里堆一份（大库会撑爆进程）。
-            compact::set_temp_dir(&snap, target.parent().unwrap_or(Path::new(".")));
-            let stripped = snap.execute_batch(
+            snap.execute_batch(
                 // srs_event_local 不删：它的 server_time 是迁移来的旧修改记录 / 外来带戳事件的排序键（S），
                 // 删了恢复出来的设备会按另一种顺序解寄存器、与其它设备分叉。发件箱列早已无人读写。
                 "BEGIN; UPDATE srs_event_local SET outbox_seq = NULL; DELETE FROM srs_local_state; \
@@ -519,10 +525,23 @@ impl SrsCore {
                  DELETE FROM sync2_self; DELETE FROM sync2_pending; DELETE FROM sync2_segments; \
                  DELETE FROM sync2_locations; DELETE FROM sync2_rewrites; DELETE FROM sync2_obsolete; \
                  DELETE FROM srs_meta WHERE key LIKE 'sync2_digest/%'; \
-                 COMMIT; VACUUM;",
-            );
-            compact::clear_temp_dir(&snap);
-            stripped.map_err(|e| e.to_string())?;
+                 COMMIT;",
+            )
+            .map_err(|e| e.to_string())?;
+            // 收回清掉的页。快照随源库的 auto_vacuum：INCREMENTAL（整理过 / 新建的库）就原地收缩；老库才整库
+            // VACUUM，整理副本落快照所在目录的文件，不在内存里堆一份（大库会撑爆进程）。
+            let incremental = snap
+                .query_row("PRAGMA auto_vacuum", [], |r| r.get::<_, i64>(0))
+                .map_err(|e| e.to_string())?
+                == 2;
+            if incremental {
+                snap.execute_batch("PRAGMA incremental_vacuum;").map_err(|e| e.to_string())?;
+            } else {
+                compact::set_temp_dir(&snap, target.parent().unwrap_or(Path::new(".")));
+                let vacuumed = snap.execute_batch("VACUUM;");
+                compact::clear_temp_dir(&snap);
+                vacuumed.map_err(|e| e.to_string())?;
+            }
         }
         Ok(())
     }
