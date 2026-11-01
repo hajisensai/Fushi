@@ -507,7 +507,8 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
       label: t.srs_note_types_title,
       onPressed: () => srsRunLogged('SrsDeckList.noteTypes', _openNoteTypes),
     ),
-    // 复习远程刷卡：不下载卡组，在已配对电脑的复习上刷（docs/specs/2026-11-01-srs-remote-review-design.md）。
+    // 远程复习：不下载卡组，直接在已配对设备（互联主机）的复习库上刷，功能与本机复习一致
+    // （docs/specs/2026-11-01-srs-remote-review-design.md）。
     FushiToolbarItem(
       key: const ValueKey<String>('srs_remote_review'),
       icon: FushiIcons.devices,

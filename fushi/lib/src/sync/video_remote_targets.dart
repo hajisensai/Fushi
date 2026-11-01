@@ -5,9 +5,10 @@ import 'package:fushi/src/sync/interconnect_peer_addresses.dart'
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/video_remote_client.dart';
 
-/// 一台可以从手机上操作的电脑：已配对、此刻可达、`/api/capabilities` 声明了所要的能力
-/// （视频遥控 `videoRemoteControlV1`、复习远程刷卡 `srsRemoteReviewV1`）。[peer] 已补好凭据与
-/// 证书指纹，可直接交给 [VideoRemoteClient] / `SrsRemoteReviewClient`。
+/// 一台可以从本机操作的互联主机（不限是电脑还是手机 / 平板）：已配对、此刻可达、
+/// `/api/capabilities` 声明了所要的能力（视频遥控 `videoRemoteControlV1`、远程复习库
+/// `srsRemoteStoreV1`）。[peer] 已补好凭据与证书指纹，可直接交给 [VideoRemoteClient] /
+/// `SrsRemoteHostClient`。
 class InterconnectHostTarget {
   const InterconnectHostTarget({
     required this.hostId,
@@ -15,7 +16,7 @@ class InterconnectHostTarget {
     required this.peer,
   });
 
-  /// host 的稳定设备 id（同一台电脑的多条地址共用）。记住上次选择用它。
+  /// host 的稳定设备 id（同一台主机的多条地址共用）。记住上次选择用它。
   final String hostId;
 
   /// 给用户看的名字：配对时记下的设备名，没有就用地址的主机部分。
@@ -72,12 +73,12 @@ Future<List<VideoRemoteTarget>> probeVideoRemoteTargets({
   timeout: timeout,
 );
 
-/// 列出此刻声明了某项能力（[probe]）的电脑（每台 host 只一条，顺序同配对清单）。
+/// 列出此刻声明了某项能力（[probe]）的互联主机（每台 host 只一条，顺序同配对清单）。
 ///
 /// 互联未启用、本机正在做互联 host（`serverEnabled`：host 本身不能再作为客户端
 /// 连出去）时直接返回空。各 host 并发探测，单台超过 [timeout] 或探测抛错都静默
 /// 视为不可用——入口只在确认可用时出现，不报错。没有 hostId 的老条目无法稳定
-/// 认出是哪台电脑，不列。
+/// 认出是哪台主机，不列。
 Future<List<InterconnectHostTarget>> probeInterconnectHostTargets({
   required SyncRepository repository,
   required InterconnectCapabilityProbe probe,

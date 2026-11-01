@@ -20,7 +20,6 @@ import 'package:fushi/src/pages/implementations/srs/srs_remote_review_page.dart'
 import 'package:fushi/src/pages/implementations/srs/srs_review_page.dart';
 import 'package:fushi/src/srs/srs_card_media.dart';
 import 'package:fushi/src/srs/srs_remote_store_client.dart';
-import 'package:fushi/src/sync/interconnect_host_client.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
