@@ -4,6 +4,7 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/video/audio_energy_probe.dart';
 import 'package:fushi/src/media/video/subtitle_delay_input_debounce.dart';
+import 'package:fushi/src/media/video/subtitle_delay_slider_range.dart';
 import 'package:fushi/src/media/video/subtitle_waveform_painter.dart';
 import 'package:fushi/src/media/video/video_m3e_panel_theme.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -427,10 +428,9 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
   /// 放大波形区高度（逻辑像素）。
   static const double _waveHeight = 200.0;
 
-  /// 调轴细调滑条范围（正负 10 秒）与 clamp 上界（正负 600 秒），与
-  /// [VideoQuickSettingsSheet] / VideoPlayerController 一致。
-  static const int _sliderRangeMs = 10000;
-  static const int _clampMs = 600000;
+  /// 调轴 clamp 上界（正负 600 秒），与 VideoPlayerController 一致；滑条范围与调轴行
+  /// 同一条扩展规则（[subtitleDelaySliderRangeMs]）。
+  static const int _clampMs = kSubtitleDelayClampMs;
 
   /// TODO-1244：波形下方 cue 文本条**单 lane 时**的高度（逻辑像素）。BUG-1729 起条带
   /// 高度随实际 lane 数伸缩：1 lane 保持此值观感不变，多 lane 每行 [_multiLaneHeight]。
@@ -1441,8 +1441,9 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
   ) {
     final int shownMs = _dragMs ?? _delayMs;
     final String label = '${shownMs >= 0 ? '+' : ''}$shownMs ms';
+    final int sliderRangeMs = subtitleDelaySliderRangeMs(_delayMs);
     final double sliderValue = shownMs
-        .clamp(-_sliderRangeMs, _sliderRangeMs)
+        .clamp(-sliderRangeMs, sliderRangeMs)
         .toDouble();
     final double gap = tokens.spacing.gap;
 
@@ -1556,14 +1557,14 @@ class _SubtitleWaveformZoomViewState extends State<SubtitleWaveformZoomView> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         if (autoAlignButton != null) autoAlignButton,
-        // 细调滑条（正负 10s）：拖动只本地预览，松手才落盘+实时生效。走 adaptiveSlider
+        // 细调滑条（范围随当前值扩展）：拖动只本地预览，松手才落盘+实时生效。走 adaptiveSlider
         // 修全局 UI-scale 下裸 Slider 值指示器水平钳制错位（TODO-742 同款）。
         adaptiveSlider(
           context: context,
           value: sliderValue,
-          min: -_sliderRangeMs.toDouble(),
-          max: _sliderRangeMs.toDouble(),
-          divisions: _sliderRangeMs ~/ 50,
+          min: -sliderRangeMs.toDouble(),
+          max: sliderRangeMs.toDouble(),
+          divisions: subtitleDelaySliderDivisions(sliderRangeMs),
           label: label,
           onChanged: (double v) => setState(() => _dragMs = v.round()),
           onChangeEnd: (double v) {
