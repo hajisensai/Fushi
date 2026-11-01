@@ -348,7 +348,23 @@ bool ScriptResultIsTrue(HRESULT error_code, LPCWSTR result_json) {
 //     defaulting to application/octet-stream.
 // The page only references dictmedia:// for the dictionary's own <link>
 // stylesheets, so text/css is the faithful type; image:// covers gaiji/<img>.
+// 大结果词条的取回地址（Dart `GlobalLookupEntriesStore.urlPrefix`，两处字面量由
+// fushi/test/lookup/global_lookup_entries_fetch_test.dart 钉成一致）。卡片 iframe 的
+// 文档在 https://hibiki.popup，这是跨源 fetch：响应必须带
+// Access-Control-Allow-Origin，且一次性字节不进 HTTP 缓存。
+constexpr char kGlobalLookupEntriesUrlPrefix[] =
+    "https://fushi.local/popup-entries/glookup/";
+
+bool IsGlobalLookupEntriesUrl(const std::string& url) {
+  return url.rfind(kGlobalLookupEntriesUrlPrefix, 0) == 0;
+}
+
 std::wstring MediaContentTypeHeader(const std::string& url) {
+  if (IsGlobalLookupEntriesUrl(url)) {
+    return L"Content-Type: application/json; charset=utf-8\r\n"
+           L"Access-Control-Allow-Origin: *\r\n"
+           L"Cache-Control: no-store";
+  }
   const bool is_dictmedia = url.rfind("dictmedia://", 0) == 0;
   if (is_dictmedia) {
     return L"Content-Type: text/css";
@@ -3507,7 +3523,9 @@ void GlobalLookupWindow::ConfigureWebView() {
             // the virtual host.
             const bool is_image = url.rfind("image://", 0) == 0;
             const bool is_dictmedia = url.rfind("dictmedia://", 0) == 0;
-            if (!is_image && !is_dictmedia) {
+            // 大结果词条的取回（in-app P1-B 的应用外版本）走同一个 Dart 解析器。
+            const bool is_entries = IsGlobalLookupEntriesUrl(url);
+            if (!is_image && !is_dictmedia && !is_entries) {
               return S_OK;  // Let the virtual host serve popup assets.
             }
             if (!media_resolver_) {

@@ -185,6 +185,9 @@ class GlobalLookupController {
   // a whole-WebView recovery via `staticSettingsRequired`.
   final PopupStaticRevisionCache _hostStaticRevisions =
       PopupStaticRevisionCache();
+  // 大结果词条的取回投递（in-app P1-B 的应用外版本）。两个物理宿主共用一份：令牌
+  // 进程内唯一，字节只按仍在栈里的帧保留。
+  final GlobalLookupEntriesStore _entriesStore = GlobalLookupEntriesStore();
   int _desktopLookupEpoch = 0;
   // Last physical size pushed to the overlay; used to converge the page's
   // resize -> re-measure loop (see _onJsMessage 'overlaySize'). Reset per
@@ -1637,6 +1640,9 @@ class GlobalLookupController {
   /// URL (see global_lookup_window.cpp MediaContentTypeHeader); this side only
   /// supplies the bytes.
   Future<Uint8List> _resolveMedia(String url) async {
+    // 大结果词条的取回（同一条拦截通道，见 [GlobalLookupEntriesStore]）。
+    final Uint8List? entries = _entriesStore.bytesFor(url);
+    if (entries != null) return entries;
     try {
       final GlobalLookupMediaRequest? request = resolveGlobalLookupMedia(url);
       if (request == null) {
@@ -1798,6 +1804,19 @@ class GlobalLookupController {
         handler != 'favoriteCheck' &&
         handler != 'duplicateCheck') {
       glog('js: handler=$handler args=${message['args']}');
+    }
+    if (handler == 'popupEntriesFetchFailed') {
+      // 与 in-app 同一回退：本进程的应用外宿主取不回词条（拦截没接住 / 跨源被拒），
+      // 此后一律字面量投递，并按当前栈重渲——等着取回的卡片仍被显示门挡着。
+      if (!_entriesStore.fetchUnavailable) {
+        _entriesStore.fetchUnavailable = true;
+        ErrorLogService.instance.log(
+          'global_lookup.entries_fetch',
+          'fetch failed, falling back to inline entries: ${message['args']}',
+        );
+      }
+      unawaited(_renderStack());
+      return;
     }
     if (handler == 'staticSettingsRequired') {
       final ({int? revision, int? hostGeometryEpoch}) req =
@@ -2588,6 +2607,12 @@ class GlobalLookupController {
       clampRootShellToWorkArea: route.source != 'galCard',
       staticRevisions: _hostStaticRevisions,
       hostKey: hostKey,
+      entriesStore: _entriesStore,
+    );
+    _entriesStore.retain(
+      payloads.map(
+        (GlobalLookupFramePayload p) => _entriesStore.tokenFor(p.result),
+      ),
     );
     // Cold-create and process-recovery paths cache exactly one complete script
     // until NavigationCompleted.  Keep beginLookup + renderStack indivisible so

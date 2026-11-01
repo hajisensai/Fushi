@@ -211,6 +211,7 @@ void main() {
                     maxHeight: 600,
                     staticRevisions: revisions,
                     hostKey: hostKey,
+                    entriesStore: GlobalLookupEntriesStore(),
                   );
                   // 模拟平台侧 render 调用成功——只有此时才允许记账。
                   revisions.commit(hostKey, cold.pendingRevisions);
@@ -224,6 +225,7 @@ void main() {
                     maxHeight: 600,
                     staticRevisions: revisions,
                     hostKey: hostKey,
+                    entriesStore: GlobalLookupEntriesStore(),
                   );
                 }
                 return const SizedBox.shrink();

@@ -11,6 +11,7 @@
 // no BuildContext needs to be threaded from the (UI-less) controller.
 
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -69,13 +70,13 @@ GlobalLookupFrameSettingsJs buildFrameSettingsJsParts({
   required BuildContext context,
   required AppModel appModel,
   required DictionarySearchResult result,
+  GlobalLookupEntriesStore? entriesStore,
 }) {
   final PopupStaticSettingsJs staticSettings = buildPopupStaticSettingsJs(
     appModel: appModel,
     theme: Theme.of(context),
     options: const PopupSettingsOptions(globalLookup: true),
   );
-  final String entriesJs = buildPopupEntriesJs(result);
   // TODO-1231 P1 — `window.__hasChildPopup` is DELIBERATELY NOT part of this body
   // anymore. The flag flips whenever a child card opens/closes on top of THIS
   // frame, but everything else in the body (theme/zoom/entries) is
@@ -113,13 +114,97 @@ GlobalLookupFrameSettingsJs buildFrameSettingsJsParts({
     if (window.resetSelectedDictionaries) window.resetSelectedDictionaries();
     window.renderPopup && window.renderPopup();
 ''';
+  if (entriesStore == null) {
+    return GlobalLookupFrameSettingsJs(
+      staticHeadJs: staticSettings.head,
+      staticTailJs: staticSettings.tail,
+      staticRevision: staticSettings.revision,
+      entriesJs: buildPopupEntriesJs(result),
+      renderJs: renderJs,
+    );
+  }
+  // 应用外宿主的词条投递（见 [GlobalLookupEntriesStore]）。两条路都先写令牌：
+  // 同一个 iframe realm 跨查词复用，上一张大卡的取回若晚于这次的字面量渲染才回来，
+  // 只有令牌变了它才会自行作废，不会把旧词条盖到新卡上。令牌按结果对象稳定，
+  // 同一帧同一结果重渲时这段字节不变，宿主照旧跳过父卡重渲。
+  final int token = entriesStore.tokenFor(result);
+  final String entriesJson = popupEntriesJsonOf(result);
+  final String? url = entriesStore.register(token, entriesJson);
+  final String tokenJs = '    window.__fushiRenderToken = $token;\n';
+  if (url == null) {
+    return GlobalLookupFrameSettingsJs(
+      staticHeadJs: staticSettings.head,
+      staticTailJs: staticSettings.tail,
+      staticRevision: staticSettings.revision,
+      entriesJs: '$tokenJs${buildPopupEntriesJs(result)}',
+      renderJs: renderJs,
+    );
+  }
+  // 取回是异步的，渲染体随取回结果一起执行（与 in-app P1-B 同一段脚本）；宿主的
+  // 显示门本来就等 popupRendered，不依赖注入那一刻同步出卡。
   return GlobalLookupFrameSettingsJs(
     staticHeadJs: staticSettings.head,
     staticTailJs: staticSettings.tail,
     staticRevision: staticSettings.revision,
-    entriesJs: entriesJs,
-    renderJs: renderJs,
+    entriesJs:
+        '$tokenJs${buildPopupFetchedEntriesJs(result: result, url: url, renderToken: token, pending: false, idle: false, afterEntriesJs: renderJs)}',
+    renderJs: '',
   );
+}
+
+/// 应用外宿主（桌面全局查词窗 / 游戏内查词卡片）的**大结果词条投递**，即 in-app
+/// 弹窗 P1-B 在裸 WebView2 上的同一做法。
+///
+/// 词条 JSON 达到 [kPopupEntriesFetchMinChars] 时不再写进渲染脚本——那样几 MB 词条
+/// 要先被 `jsonEncode` 成 JS 字面量、再整个嵌进 renderStack 的载荷再转义一遍、过平台
+/// 通道、ExecuteScript 解析一遍、iframe 里 eval 再解析一遍。改为卡片页面用
+/// [buildPopupFetchedEntriesJs]（in-app 同一段）去取 [urlFor] 这个地址；原生窗口的
+/// 资源拦截（与外字 / 词典样式同一条通道）把请求交给 Dart，由 [bytesFor] 回字节。
+///
+/// 取回失败（`popupEntriesFetchFailed`）后 [fetchUnavailable] 置位，此后一律走字面量，
+/// 与 in-app 的回退语义一致。
+class GlobalLookupEntriesStore {
+  /// 原生拦截按这个前缀把请求转给 Dart（`global_lookup_window.cpp`
+  /// `kGlobalLookupEntriesUrlPrefix`，两处字面量由守卫测试钉成一致）。
+  static const String urlPrefix = 'https://fushi.local/popup-entries/glookup/';
+
+  static final Expando<int> _tokens = Expando<int>('globalLookupEntriesToken');
+  static int _tokenSeq = 0;
+
+  final Map<int, Uint8List> _bytes = <int, Uint8List>{};
+
+  /// 这个 WebView 宿主上取回失败过：此后不再走取回。
+  bool fetchUnavailable = false;
+
+  /// [result] 的投递令牌：同一个结果对象恒为同一个值，进程内全局递增。
+  int tokenFor(DictionarySearchResult result) =>
+      _tokens[result] ??= ++_tokenSeq;
+
+  static String urlFor(int token) => '$urlPrefix$token.json';
+
+  /// 结果够大且取回可用时登记字节并返回取回地址；否则 null（走字面量）。
+  String? register(int token, String entriesJson) {
+    if (fetchUnavailable || entriesJson.length < kPopupEntriesFetchMinChars) {
+      return null;
+    }
+    _bytes.putIfAbsent(token, () => utf8.encode(entriesJson));
+    return urlFor(token);
+  }
+
+  /// 拦截器侧：[url] 是登记过的取回地址时返回字节，否则 null。
+  Uint8List? bytesFor(String url) {
+    if (!url.startsWith(urlPrefix) || !url.endsWith('.json')) return null;
+    final int? token = int.tryParse(
+      url.substring(urlPrefix.length, url.length - '.json'.length),
+    );
+    return token == null ? null : _bytes[token];
+  }
+
+  /// 只留仍在栈里的帧的字节（帧关掉 / 换词后其字节不会再被取）。
+  void retain(Iterable<int> liveTokens) {
+    final Set<int> live = liveTokens.toSet();
+    _bytes.removeWhere((int token, _) => !live.contains(token));
+  }
 }
 
 String buildFrameSettingsJs({
@@ -382,6 +467,9 @@ StackRenderScript buildStackRenderScript({
   // 必填之后，少传就是编译错误。本次真正发出去的版本从返回值的 pendingRevisions
   // 带出，调用方在 render 成功后 commit。
   required PopupStaticRevisionCache staticRevisions,
+  // 大结果词条走取回（见 [GlobalLookupEntriesStore]）。必填，理由同上：漏传就是
+  // 静默退回「几 MB 词条塞进脚本」。
+  required GlobalLookupEntriesStore entriesStore,
   required String hostKey,
 }) {
   // 本次渲染开始时宿主已装载的版本（副本）；下面每发出一个新版本就往里加，
@@ -420,6 +508,7 @@ StackRenderScript buildStackRenderScript({
       context: context,
       appModel: appModel,
       result: p.result,
+      entriesStore: entriesStore,
     );
     final Map<String, Object?> map = p.frame.toRenderMap();
     map['theme'] = shellTheme;
