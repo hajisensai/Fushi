@@ -566,9 +566,6 @@ class ShortcutDefaults {
     ShortcutAction.webBrowserZoomReset: _kb([
       _key(LogicalKeyboardKey.digit0, {ModifierKey.ctrl}),
     ]),
-    // TODO-700 T6：dpad 四向可绑触发键。默认各绑对应 dpad 键；键盘留空（方向焦点
-    // 移动由箭头键 / 摇杆负责，避免与各页面方向键语义重复）。执行体 = 通用方向焦点
-    // 移动（gamepadMoveFocusInDirection），见 gamepad_service._dispatchButton。
     // 音乐：K 播放暂停（与视频页同一习惯键）、N / P 上下曲、Shift+←/→ ±5 秒，外加媒体键。
     ShortcutAction.musicTogglePlayPause: _kb([
       _key(LogicalKeyboardKey.keyK),
@@ -589,10 +586,27 @@ class ShortcutDefaults {
     ShortcutAction.musicSeekBackward: _kb([
       _key(LogicalKeyboardKey.arrowLeft, {ModifierKey.shift}),
     ]),
-    ShortcutAction.dpadUp: _kb([], [_gDpadUp]),
-    ShortcutAction.dpadDown: _kb([], [_gDpadDown]),
-    ShortcutAction.dpadLeft: _kb([], [_gDpadLeft]),
-    ShortcutAction.dpadRight: _kb([], [_gDpadRight]),
+    // 焦点导航（scope 枚举名 gamepad 冻结）：上 / 下 / 左 / 右移焦 + 确认。默认值
+    // 就是改造前的硬编码键——裸方向键（键盘，`global_navigation.dart`）、dpad 四向
+    // （手柄，TODO-700 T6）、Enter / 手柄 A（确认）——所以默认安装行为不变，只是
+    // 可改键、可加备选键。WASD / Shift+方向键是设置页里**默认关闭**的一键预设
+    // （`focus_navigation_shortcuts.dart`），不进默认表：W/A/S/D 在视频页是 seek /
+    // 截图，Shift+←/→ 在音乐页是 ±5 秒。执行体：键盘 `_handleGlobalFocusNavigation`，
+    // 手柄 `GamepadService._dispatchButton`。
+    ShortcutAction.dpadUp: _kb([_key(LogicalKeyboardKey.arrowUp)], [_gDpadUp]),
+    ShortcutAction.dpadDown: _kb(
+      [_key(LogicalKeyboardKey.arrowDown)],
+      [_gDpadDown],
+    ),
+    ShortcutAction.dpadLeft: _kb(
+      [_key(LogicalKeyboardKey.arrowLeft)],
+      [_gDpadLeft],
+    ),
+    ShortcutAction.dpadRight: _kb(
+      [_key(LogicalKeyboardKey.arrowRight)],
+      [_gDpadRight],
+    ),
+    ShortcutAction.focusActivate: _kb([_key(LogicalKeyboardKey.enter)], [_gA]),
     // TODO-1066：桌面「app 外全局查词」系统级触发热键，默认 Ctrl+Alt+D（与旧硬
     // 编码一致，行为不变，只是变成可改键）。GlobalLookupController 读此绑定注册到
     // hotkey_manager；macOS 表把 Ctrl 换成 Meta（见 _macOS）。globalExternal 是独立
@@ -769,9 +783,15 @@ class ShortcutDefaults {
               gamepadBindings: desktop.gamepadBindings,
               mouseBindings: desktop.mouseBindings,
             );
+          // 焦点导航（枚举名 gamepad）：平板 / DeX 的外接键盘同样用方向键移焦，键盘
+          // 默认（与桌面同一组裸方向键 / Enter）保留，没有外接键盘的设备上永不触发。
+          case ShortcutScope.gamepad:
+            return ShortcutBindingSet(
+              keyboardBindings: desktop.keyboardBindings,
+              gamepadBindings: desktop.gamepadBindings,
+            );
           case ShortcutScope.home:
           case ShortcutScope.global:
-          case ShortcutScope.gamepad:
             return ShortcutBindingSet(
               gamepadBindings: desktop.gamepadBindings,
               // Android 可接鼠标（平板 / DeX / 桌面模式），与 audiobook 的中键

@@ -254,14 +254,17 @@ extension ShortcutActionLabel on ShortcutAction {
         return t.shortcut_action_music_seek_forward;
       case ShortcutAction.musicSeekBackward:
         return t.shortcut_action_music_seek_backward;
+      // 焦点导航四向（动作名 dpad* 冻结，语义是「焦点往该方向移」）。
       case ShortcutAction.dpadUp:
-        return t.shortcut_action_dpad_up;
+        return t.shortcut_action_focus_move_up;
       case ShortcutAction.dpadDown:
-        return t.shortcut_action_dpad_down;
+        return t.shortcut_action_focus_move_down;
       case ShortcutAction.dpadLeft:
-        return t.shortcut_action_dpad_left;
+        return t.shortcut_action_focus_move_left;
       case ShortcutAction.dpadRight:
-        return t.shortcut_action_dpad_right;
+        return t.shortcut_action_focus_move_right;
+      case ShortcutAction.focusActivate:
+        return t.shortcut_action_focus_activate;
       case ShortcutAction.globalExternalLookup:
         return t.shortcut_action_global_external_lookup;
       case ShortcutAction.globalExternalOpenLookupPage:
@@ -326,8 +329,9 @@ extension ShortcutScopeLabel on ShortcutScope {
       // 复用浏览器页标题（「浏览器」），与页面上看到的名字一致。
       case ShortcutScope.webBrowser:
         return t.web_browser_title;
+      // 枚举名 gamepad 冻结；它承载的是「焦点导航」（键盘 + 手柄）。
       case ShortcutScope.gamepad:
-        return t.shortcut_scope_gamepad;
+        return t.shortcut_scope_focus_navigation;
       case ShortcutScope.globalExternal:
         return t.shortcut_scope_global_external;
       case ShortcutScope.dictionaryPopup:
