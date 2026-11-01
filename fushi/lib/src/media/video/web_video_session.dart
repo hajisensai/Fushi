@@ -25,6 +25,7 @@ import 'package:fushi/src/media/manga/cookie/manga_web_view_environment.dart';
 import 'package:fushi/src/media/video/web_video_bridge.dart';
 import 'package:fushi/src/media/video/web_video_browser_settings.dart';
 import 'package:fushi/src/media/video/web_video_hosting.dart';
+import 'package:fushi/src/media/video/web_video_login_migration.dart';
 import 'package:fushi/src/media/video/underlay_composition.dart'
     show UnderlayInputExclusion, underlayInputExclusions;
 import 'package:fushi/src/media/video/web_video_shaders.dart';
@@ -51,12 +52,13 @@ const String kWebVideoKeyBridgeHandler = 'fushiWebVideoKeys';
 /// 同口径）：播放头不足 5 秒不算「看过」，不覆盖已有进度。
 const int kWebVideoMinPersistPositionMs = 5000;
 
-// ── WebView2 环境（单例，按宿主档分目录）──────────────────────────────────────
+// ── WebView2 环境 ─────────────────────────────────────────────────────────────
 
 /// 可捕获 WebView2 环境单例：`--disable-direct-composition`。fork 的显示链路本身就是 WGC 捕获，
 /// Chromium 把 DRM 视频放进 DComp overlay 时纹理里是黑的（真机：默认环境视频区纯黑、加该参数
 /// 清晰可见）。environment 级参数不能运行期切换，且同 user data folder 的多个 env 参数必须逐字
-/// 一致，故用独立目录（独立 cookie 罐：站点登录在网页播放器里做一次即可）。
+/// 一致，故用独立目录（独立 cookie 罐）：登录态开页时从共享罐按需抄
+/// （[copyWebVideoLoginCookies]），页面关掉时抄回（[syncWebVideoLoginToBrowser]）。
 Future<WebViewEnvironment>? _capturableEnv;
 
 /// 目录：测试 runner 给了 `FUSHI_WEBVIEW2_USER_DATA_FOLDER` 就放它旁边（隔离），否则
@@ -82,41 +84,33 @@ Future<WebViewEnvironment> webVideoCapturableEnvironment() {
 }
 
 /// 窗口宿主档（4K）环境：**不带** `--disable-direct-composition`（硬件 PlayReady 的受保护输出
-/// 要走 DComp overlay），带 fork 的窗口宿主哨兵；浏览器参数与可捕获环境不同 → 必须独立 user
-/// data folder（同目录的环境参数必须逐字一致）→ 独立 cookie 罐，登录态从内置档复制。
-Future<WebViewEnvironment>? _windowedEnv;
-
-String webVideoWindowedUserDataFolder() {
-  // 硬件 PlayReady（MF CDM）要求 profile 住在 %LOCALAPPDATA% 下：真机实测 profile 放在仓库目录
-  // （itest 隔离根）时 Netflix 报 D7702-1003，同一份代码 profile 挪到 LOCALAPPDATA 即起播；
-  // 生产默认路径本来就在 LOCALAPPDATA（[webVideoCapturableUserDataFolder]），itest 用此覆盖指到
-  // LOCALAPPDATA 下的独立测试目录（不碰用户真实 profile）。
-  final String? override =
-      Platform.environment['FUSHI_WEB_VIDEO_4K_USER_DATA_FOLDER'];
-  if (override != null && override.isNotEmpty) return override;
-  return '${webVideoCapturableUserDataFolder()}-4k';
-}
-
-Future<WebViewEnvironment> webVideoWindowedEnvironment() {
-  return _windowedEnv ??= WebViewEnvironment.create(
-    settings: WebViewEnvironmentSettings(
-      userDataFolder: webVideoWindowedUserDataFolder(),
-      additionalBrowserArguments:
-          '--autoplay-policy=no-user-gesture-required '
-          '$kWebVideoWindowedHostingSentinel',
-    ),
-  );
+/// 要走 DComp overlay），带 fork 的窗口宿主哨兵。与 app 内浏览器**同一 user data folder、同一
+/// 套 Chromium 参数**（fork 把哨兵剥掉再交给 WebView2），所以是同一个 cookie 罐：浏览器里登录
+/// 的站点播放页直接是登录态，反之亦然。环境由 [MangaWebViewEnvironment.obtainWindowedHosting]
+/// 统一提供（代理设置变化时随浏览器环境一起换）。
+///
+/// 首次调用时把旧版独立 4K profile 里的登录迁进共享罐（[migrateWebVideoLegacyLogin]，一次性，
+/// 只补缺）。
+Future<WebViewEnvironment> webVideoWindowedEnvironment() async {
+  final WebViewEnvironment env =
+      await MangaWebViewEnvironment.obtainWindowedHosting();
+  final String? sharedFolder = MangaWebViewEnvironment.currentUserDataFolder;
+  if (sharedFolder != null) {
+    await migrateWebVideoLegacyLogin(
+      shared: env,
+      sharedFolder: sharedFolder,
+      capturableFolder: webVideoCapturableUserDataFolder(),
+    );
+  }
+  return env;
 }
 
 /// 窗口宿主档环境的浏览器进程没了（WebView2 ProcessFailed，fork 转成 onRenderProcessGone）：
-/// 丢掉单例，下次 [webVideoWindowedEnvironment] 重建。同目录同参数的新环境在旧浏览器进程还活着
-/// 时会直接接到它上面（WebView2 的环境共享规则），所以只是渲染进程死了也照样可用。返回被换下
-/// 的旧环境（调用方负责释放）。
-Future<WebViewEnvironment>? discardWebVideoWindowedEnvironment() {
-  final Future<WebViewEnvironment>? old = _windowedEnv;
-  _windowedEnv = null;
-  return old;
-}
+/// 丢掉缓存，下次 [webVideoWindowedEnvironment] 在同一目录 / 同一参数上重建。同目录同参数的新
+/// 环境在旧浏览器进程还活着时会直接接到它上面（WebView2 的环境共享规则），所以只是渲染进程死了
+/// 也照样可用。返回被换下的旧环境（调用方负责释放）。
+Future<WebViewEnvironment>? discardWebVideoWindowedEnvironment() =>
+    MangaWebViewEnvironment.discardWindowedHosting();
 
 // ── 注入脚本 / cookie ───────────────────────────────────────────────────────
 
@@ -179,21 +173,15 @@ Future<UnmodifiableListView<UserScript>> loadWebVideoUserScripts({
   ]);
 }
 
-/// 登录 cookie 的来源环境，按顺序抄（后抄的同名 cookie 盖掉先抄的；与目标是同一个环境的
-/// 跳过）：内置档 → 窗口宿主档 → app 内浏览器（[MangaWebViewEnvironment]，「浏览」里的标签页
-/// 都在它里面）。浏览器排最后：站点并进浏览器之后（2026-10-26）用户是在浏览器里登录、再点
-/// 「用 Fushi 播放」进播放页的；只抄内置档的话播放页拿不到浏览器里的登录态，要求重新登录
-/// （2026-10-27 用户报 Netflix）。窗口宿主档也是来源：制卡队列在内置档里重放，要带上用户在
-/// 播放页里登录的那份。站点登出后不留登录 cookie，后抄的登出态盖不掉先抄的登录 cookie。
+/// 登录 cookie 的来源：共享 cookie 罐（app 内浏览器 = 原生播放器页网页档，见
+/// [MangaWebViewEnvironment]）。只有可捕获档（内置档）还是独立罐，开页时从这里按需抄一份；
+/// 制卡队列在内置档里重放，用户在浏览器 / 播放页里登录的都在共享罐里。
 const List<Future<WebViewEnvironment?> Function()> kWebVideoLoginCookieSources =
-    <Future<WebViewEnvironment?> Function()>[
-      webVideoCapturableEnvironment,
-      webVideoWindowedEnvironment,
-      MangaWebViewEnvironment.obtain,
-    ];
+    <Future<WebViewEnvironment?> Function()>[MangaWebViewEnvironment.obtain];
 
-/// 各环境独立 cookie 罐（浏览器参数不同 → 独立 user data folder）：把 [sources]（默认
-/// [kWebVideoLoginCookieSources]）里已登录的站点 cookie 复制到 [to]，用户不用登录两次。
+/// 可捕获档是独立 cookie 罐（`--disable-direct-composition` 与共享罐参数不同 → 独立 user data
+/// folder）：把 [sources]（默认 [kWebVideoLoginCookieSources]）里已登录的站点 cookie 复制到
+/// [to]，用户不用登录两次。目标是共享罐（浏览器 / 窗口宿主档）时不要调——同一个罐。
 /// 尽力而为：单个来源失败只记日志、不挡其它来源（最坏是站点要求登录）。返回 [to] 里原本
 /// 没有、这次新加上的 cookie 名数（> 0 通常意味着目标从未登录变成已登录，调用方据此决定
 /// 要不要刷新已打开的页面）。
@@ -243,10 +231,11 @@ Future<int> copyWebVideoLoginCookies({
   return added.length;
 }
 
-/// 反方向：播放页（窗口宿主档 / 内置档）里的站点登录态抄回 app 内浏览器
-/// （[MangaWebViewEnvironment]）。登录入口主要在浏览器，但用户也会在播放页里登录；不抄
-/// 回去的话回到浏览器看同一个站点还是未登录（BUG-3801）。播放页关掉时调；返回浏览器新加
-/// 的 cookie 名数（见 [copyWebVideoLoginCookies]）。非 Windows / 浏览器环境建不出来时返回 0。
+/// 反方向：可捕获档（内置档）页里的站点登录态抄回共享 cookie 罐（[MangaWebViewEnvironment]）。
+/// 用户也会在内置档页里登录；不抄回去的话浏览器与原生播放器页看同一个站点还是未登录
+/// （BUG-3801）。**只在内置档页关掉时调**：窗口宿主档就住在共享罐里，没东西可抄，抄可捕获档
+/// 反而会拿它开页时的旧值盖掉共享罐里的新值。返回共享罐新加的 cookie 名数（见
+/// [copyWebVideoLoginCookies]）。非 Windows / 共享环境建不出来时返回 0。
 Future<int> syncWebVideoLoginToBrowser(Uri uri) {
   final String host = uri.host.toLowerCase();
   if (host.isEmpty) return Future<int>.value(0);
@@ -299,39 +288,31 @@ Future<int> _syncWebVideoLoginToBrowser(Uri uri) async {
   return copyWebVideoLoginCookies(
     uri: uri,
     to: browser,
-    // 窗口宿主档排后面：用户在播放页里登录的就是它。
     sources: const <Future<WebViewEnvironment?> Function()>[
       webVideoCapturableEnvironment,
-      webVideoWindowedEnvironment,
     ],
   );
 }
 
-/// 浏览器扩展送来的站点会话（[BrowserCookieImportGate]，与漫画源登录同一条通道）写进视频
-/// 的两个 WebView2 环境：窗口宿主档是站点页面真正用的那份；内置档也写，因为每次开页
-/// [copyWebVideoLoginCookies] 会把内置档的同名 cookie 抄过去，只写一边会被旧值盖回。
-/// 逐条写、单条失败不中断（WebView2 会拒个别属性组合）；返回写进窗口宿主档的条数。
+/// 浏览器扩展送来的站点会话（[BrowserCookieImportGate]，与漫画源登录同一条通道，即「从系统
+/// 浏览器导入登录」）写进共享 cookie 罐（app 内浏览器 = 原生播放器页网页档）。可捕获档下次开页
+/// 时从共享罐抄（[copyWebVideoLoginCookies]），不另写。逐条写、单条失败不中断（WebView2 会拒
+/// 个别属性组合）；返回写进的条数。非 Windows / 共享环境建不出来时返回 0。
 Future<int> importWebVideoBrowserCookies(
   List<BrowserSiteCookie> cookies,
 ) async {
-  int written = 0;
-  for (final Future<WebViewEnvironment> Function() env
-      in <Future<WebViewEnvironment> Function()>[
-        webVideoCapturableEnvironment,
-        webVideoWindowedEnvironment,
-      ]) {
-    final bool primary = env == webVideoWindowedEnvironment;
-    final CookieManager manager;
-    try {
-      manager = CookieManager.instance(webViewEnvironment: await env());
-    } catch (e) {
-      ErrorLogService.instance.log('web_video', 'browser cookie env: $e');
-      continue;
-    }
-    final int count = await writeBrowserSiteCookies(manager, cookies);
-    if (primary) written = count;
+  final WebViewEnvironment? shared;
+  try {
+    shared = await MangaWebViewEnvironment.obtain();
+  } catch (e) {
+    ErrorLogService.instance.log('web_video', 'browser cookie env: $e');
+    return 0;
   }
-  return written;
+  if (shared == null) return 0;
+  return writeBrowserSiteCookies(
+    CookieManager.instance(webViewEnvironment: shared),
+    cookies,
+  );
 }
 
 /// 页面地址是不是「正在看某一集」的播放页（自动进播放器档的判据）：Netflix 的
@@ -516,7 +497,7 @@ class WebVideoSession {
 
   /// 渲染 / 浏览器进程死后、表面重建前（[WebViewDeathGuard] 的 flushBeforeRebuild）：换一个新的
   /// 窗口宿主档环境（浏览器进程没了旧环境就是废的；只是渲染进程没了新环境会接回同一个浏览器
-  /// 进程）、重新抄登录 cookie，并记下重建后要回到的地址。失败抛出由 death guard 记录——重建
+  /// 进程），并记下重建后要回到的地址。登录态在共享罐里，不用抄。失败抛出由 death guard 记录——重建
   /// 照样进行，最坏是新 WebView 在旧环境里建不出来，与修复前一样停在死页面。
   Future<void> recoverFromProcessGone() async {
     if (_disposed) return;
@@ -527,7 +508,6 @@ class WebVideoSession {
     final Future<WebViewEnvironment>? old =
         discardWebVideoWindowedEnvironment();
     final WebViewEnvironment env = await webVideoWindowedEnvironment();
-    await copyWebVideoLoginCookies(uri: Uri.parse(surfaceUrl), to: env);
     if (_disposed) return;
     _environment = env;
     if (old != null) {
@@ -540,10 +520,10 @@ class WebVideoSession {
     }
   }
 
-  /// 建 WebView 之前的异步准备：注入脚本、窗口宿主档环境、从内置档复制登录 cookie。
+  /// 建 WebView 之前的异步准备：注入脚本、窗口宿主档环境（与 app 内浏览器共享 cookie 罐，
+  /// 登录态天然一致）。
   /// 资产缺失 / WebView2 Runtime 缺失会抛（调用方落失败态，不吞）。
   Future<void> prepare({required FushiShortcutRegistry shortcuts}) async {
-    final Uri uri = Uri.parse(pageUrl);
     final UnmodifiableListView<UserScript> scripts =
         await loadWebVideoUserScripts(
           // 窗口宿主档就是为硬件 DRM 开的，不装软件 DRM 垫片。
@@ -557,7 +537,6 @@ class WebVideoSession {
           hideNativeSubtitles: true,
         );
     final WebViewEnvironment env = await webVideoWindowedEnvironment();
-    await copyWebVideoLoginCookies(uri: uri, to: env);
     final WebAdblockPolicy? policy = adblock;
     _adblock = policy == null ? null : webVideoSurfaceWiring(policy: policy);
     _userScripts = scripts;
