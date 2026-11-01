@@ -58,6 +58,12 @@ namespace flutter_inappwebview_plugin
               result_->Success(cookies);
             });
         }
+        else if (string_equals(methodName, "getAllCookies")) {
+          getAllCookies(webViewEnvironment, [result_](const flutter::EncodableList& cookies)
+            {
+              result_->Success(cookies);
+            });
+        }
         else if (string_equals(methodName, "deleteCookie")) {
           auto url = get_fl_map_value<std::string>(arguments, "url");
           auto name = get_fl_map_value<std::string>(arguments, "name");
@@ -229,10 +235,12 @@ namespace flutter_inappwebview_plugin
     };
   }
 
-  // 对 `url` 生效的全部 cookie（含分区 cookie），见 [cookieMatchesUrl]。
-  static void collectCookiesForUrl(WebViewEnvironment* webViewEnvironment, const std::string& url, std::function<void(std::vector<nlohmann::json>)> completionHandler)
+  // 对 `url` 生效的全部 cookie（含分区 cookie），见 [cookieMatchesUrl]；`url` 为 nullopt 时
+  // 不筛，返回整个 browser context 的 cookie（getAllCookies）。
+  static void collectCookiesForUrl(WebViewEnvironment* webViewEnvironment, const std::optional<std::string>& url, std::function<void(std::vector<nlohmann::json>)> completionHandler)
   {
-    const ParsedCookieUrl parsed = parseCookieUrl(url);
+    const std::optional<ParsedCookieUrl> parsed =
+      url.has_value() ? std::optional<ParsedCookieUrl>(parseCookieUrl(url.value())) : std::nullopt;
     auto hr = webViewEnvironment->getWebView()->CallDevToolsProtocolMethod(L"Storage.getCookies", L"{}", Callback<ICoreWebView2CallDevToolsProtocolMethodCompletedHandler>(
       [completionHandler, parsed](HRESULT errorCode, LPCWSTR returnObjectAsJson)
       {
@@ -241,7 +249,7 @@ namespace flutter_inappwebview_plugin
           nlohmann::json json = nlohmann::json::parse(wide_to_utf8(returnObjectAsJson));
           if (json.contains("cookies") && json["cookies"].is_array()) {
             for (auto& jsonCookie : json["cookies"]) {
-              if (cookieMatchesUrl(jsonCookie, parsed)) {
+              if (!parsed.has_value() || cookieMatchesUrl(jsonCookie, parsed.value())) {
                 matched.push_back(jsonCookie);
               }
             }
@@ -356,6 +364,27 @@ namespace flutter_inappwebview_plugin
       {
         std::vector<flutter::EncodableValue> cookies = {};
         for (auto& jsonCookie : matched) {
+          cookies.push_back(cookieToEncodableMap(jsonCookie));
+        }
+        if (completionHandler) {
+          completionHandler(cookies);
+        }
+      });
+  }
+
+  void CookieManager::getAllCookies(WebViewEnvironment* webViewEnvironment, std::function<void(const flutter::EncodableList&)> completionHandler) const
+  {
+    if (!plugin || !plugin->webViewEnvironmentManager) {
+      if (completionHandler) {
+        completionHandler({});
+      }
+      return;
+    }
+
+    collectCookiesForUrl(webViewEnvironment, std::nullopt, [completionHandler](std::vector<nlohmann::json> all)
+      {
+        std::vector<flutter::EncodableValue> cookies = {};
+        for (auto& jsonCookie : all) {
           cookies.push_back(cookieToEncodableMap(jsonCookie));
         }
         if (completionHandler) {
