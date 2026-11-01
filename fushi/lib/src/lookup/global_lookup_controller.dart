@@ -1072,6 +1072,18 @@ class GlobalLookupController {
     if (physicalPlacement != null && !physicalPlacement.isValid) return false;
     _activateRoute(GlobalLookupChannel.currentRoute);
     glog('lookupText: "$term"');
+    // [rubySpans] 以 [text] 为坐标系：跟着 trim 掉的句首空白平移到 [term]。
+    final List<FushiRubySpan> termRubySpans = shiftRubySpans(
+      rubySpans,
+      leadingStrip: text.length - text.trimLeft().length,
+      length: term.length,
+    );
+    // 词典搜索跑在常驻后台 isolate 上，与下面两次 hide 往返互不依赖：先发起，让它和
+    // 覆盖窗复位重叠，而不是等复位完才开始搜。hide 的次数与顺序不变。
+    final Future<DictionarySearchResult> search = _startSearch(
+      term,
+      termRubySpans,
+    );
     // TODO-1268 / BUG — mirror _onHotKey's TODO-1079(D) preamble on the
     // programmatic (desktop floating-lyric tap) path: AWAIT a leading
     // hide(notify:false) so the overlay collapses to a confirmed-hidden state
@@ -1094,13 +1106,22 @@ class GlobalLookupController {
       autoRead: autoRead,
       miningHandler: miningHandler,
       consumeOutsideClicksOwnerHwnd: consumeOutsideClicksOwnerHwnd,
-      // [rubySpans] 以 [text] 为坐标系：跟着 trim 掉的句首空白平移到 [term]。
-      rubySpans: shiftRubySpans(
-        rubySpans,
-        leadingStrip: text.length - text.trimLeft().length,
-        length: term.length,
-      ),
+      rubySpans: termRubySpans,
+      pendingSearch: search,
     );
+  }
+
+  /// 发起一次词典搜索并立即返回 Future。错误照常在 `await` 处抛出（由
+  /// [_lookupExternal] 的 try/catch 收口）；调用方中途因 route 作废提前返回、不再
+  /// await 时，`ignore` 保证它不会变成未处理的异步错误。
+  Future<DictionarySearchResult> _startSearch(
+    String text,
+    List<FushiRubySpan> rubySpans,
+  ) {
+    final Future<DictionarySearchResult> search = _appModel!
+        .searchDictionaryWithRuby(searchTerm: text, rubySpans: rubySpans);
+    search.ignore();
+    return search;
   }
 
   /// 游戏内嵌查词的耗时打点：只记 galCard route，桌面查词不受影响。
@@ -1174,12 +1195,18 @@ class GlobalLookupController {
     OverlayMiningHandler? miningHandler,
     int? consumeOutsideClicksOwnerHwnd,
     List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
+    Future<DictionarySearchResult>? pendingSearch,
   }) async {
     final AppModel? model = _appModel;
     if (model == null) {
       glog('lookup: appModel null — abort');
       return false;
     }
+    // 与 hide 往返重叠的搜索（见 [_lookupTextRouted]）；热键入口在这里发起。
+    // 原文自带振假名（texthooker 行的 ruby 等）随查词带进引擎；查询串是 [text] 原样，
+    // AppModel 清洗查询串时会把区间对齐（alignRubySpansToSearchTerm）。
+    final Future<DictionarySearchResult> search =
+        pendingSearch ?? _startSearch(text, rubySpans);
     try {
       // TODO-1079 (D) — reset native + Dart reveal state from zero every
       // lookup. The native visible_/revealed_ and this controller's
@@ -1211,10 +1238,7 @@ class GlobalLookupController {
       // is host-global and is intentionally NOT reset here.
       _resetGeometryHandshakeForLookup();
 
-      // 原文自带振假名（texthooker 行的 ruby 等）随查词带进引擎；查询串是 [text] 原样，
-      // AppModel 清洗查询串时会把区间对齐（alignRubySpansToSearchTerm）。
-      final DictionarySearchResult result = await model
-          .searchDictionaryWithRuby(searchTerm: text, rubySpans: rubySpans);
+      final DictionarySearchResult result = await search;
       if (!_isCurrentRoute) return false;
       glog('lookup: searched "$text" -> entries=${result.entries.length}');
       _traceGal(
