@@ -317,6 +317,12 @@ class ExtensionVideoFavoriteState {
   };
 }
 
+/// 扩展网页视频收藏的 app 侧实现（[handleExtensionVideoFavorite] 绑好仓库后的形状）。
+typedef ExtensionVideoFavoriteHandler =
+    Future<ExtensionVideoFavoriteState> Function(
+      ExtensionVideoFavoriteRequest request,
+    );
+
 /// 读写收藏夹（扩展端点的 app 侧实现）。切换：已收藏 → 删（写删除墓碑，跨设备同步删除），
 /// 未收藏 → 加（今日 dateKey 计入视频统计）；只读：回这个视频的状态。
 Future<ExtensionVideoFavoriteState> handleExtensionVideoFavorite({

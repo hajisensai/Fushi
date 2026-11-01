@@ -249,6 +249,33 @@ void main() {
       expect(r['error'], 'Missing filename/content');
     });
 
+    // 反馈 KGC1ifR1a3：app 内浏览器宿主同一份扩展脚本，网页视频收藏走同一个核心端点。
+    test('videoFavorite → 核心 video-favorite 端点，只透传契约字段', () async {
+      final Map<String, Object?> r =
+          await routeWebBrowserExtensionMessage(<String, dynamic>{
+            'type': 'videoFavorite',
+            'op': 'toggle',
+            'kind': 'sentence',
+            'url': 'https://youtu.be/abc',
+            'title': 't',
+            'text': '夏',
+            'startMs': 1200,
+            'endMs': 1800,
+            'extra': 'drop',
+          }, services);
+      expect(apiCalls.single.$1, FushiExtensionApiCore.videoFavoritePath);
+      expect(apiCalls.single.$2, <String, dynamic>{
+        'op': 'toggle',
+        'kind': 'sentence',
+        'url': 'https://youtu.be/abc',
+        'title': 't',
+        'text': '夏',
+        'startMs': 1200,
+        'endMs': 1800,
+      });
+      expect(r['ok'], isTrue);
+    });
+
     test('subtitleSearch 只透传扩展给的字段', () async {
       await routeWebBrowserExtensionMessage(<String, dynamic>{
         'type': 'subtitleSearch',

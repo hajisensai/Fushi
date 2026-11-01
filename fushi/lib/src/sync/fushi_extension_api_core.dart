@@ -7,6 +7,8 @@ import 'package:fushi_engine/media/video/video_subtitle_source.dart'
     show buildParsedSubtitleResponse;
 import 'package:fushi_engine/media/video/youtube_source_resolver.dart'
     show resolveYoutubeCaptionsForExtension;
+import 'package:fushi/src/media/favorites/web_video_favorite.dart'
+    show ExtensionVideoFavoriteHandler, ExtensionVideoFavoriteRequest;
 import 'package:fushi/src/media/video/browser_video_study_bridge.dart'
     show BrowserVideoSample;
 import 'package:fushi/src/sync/extension_font_api.dart';
@@ -53,8 +55,10 @@ class FushiExtensionApiCore {
     ExtensionFontApi? fontApi,
     void Function(double maxWidth, double maxHeight)? onExtensionPopupSize,
     void Function(BrowserVideoSample sample)? onExtensionStudy,
+    ExtensionVideoFavoriteHandler? onVideoFavorite,
     YoutubeCaptionsResolver? youtubeCaptionsResolver,
   }) : _subtitleRegistryProvider = subtitleRegistryProvider,
+       _onVideoFavorite = onVideoFavorite,
        _fontApi = fontApi,
        _onExtensionPopupSize = onExtensionPopupSize,
        _onExtensionStudy = onExtensionStudy,
@@ -71,6 +75,9 @@ class FushiExtensionApiCore {
   static const String popupSizePath = '/api/extension/popup-size';
   static const String studyPath = '/api/extension/study';
 
+  /// 反馈 KGC1ifR1a3：看网页视频时收藏当前句 / 视频本身（写 App 收藏夹同一份收藏句）。
+  static const String videoFavoritePath = '/api/extension/video-favorite';
+
   /// 本核心认的全部路径（含 jimaku 两条旧路径）。
   static const Set<String> paths = <String>{
     youtubeCaptionsPath,
@@ -82,12 +89,14 @@ class FushiExtensionApiCore {
     fontsPath,
     popupSizePath,
     studyPath,
+    videoFavoritePath,
   };
 
   final Future<VideoSubtitleRegistry?> Function()? _subtitleRegistryProvider;
   final ExtensionFontApi? _fontApi;
   final void Function(double maxWidth, double maxHeight)? _onExtensionPopupSize;
   final void Function(BrowserVideoSample sample)? _onExtensionStudy;
+  final ExtensionVideoFavoriteHandler? _onVideoFavorite;
   final YoutubeCaptionsResolver _youtubeCaptionsResolver;
 
   static Future<Map<String, dynamic>> _defaultYoutubeCaptionsResolver(
@@ -134,6 +143,13 @@ class FushiExtensionApiCore {
         if (_onExtensionStudy == null) {
           return const FushiExtensionApiResponse.error(404, 'Study sink off');
         }
+      case videoFavoritePath:
+        if (_onVideoFavorite == null) {
+          return const FushiExtensionApiResponse.error(
+            404,
+            'Video favorite sink off',
+          );
+        }
     }
     return null;
   }
@@ -173,6 +189,8 @@ class FushiExtensionApiCore {
         return _popupSize(body);
       case studyPath:
         return _study(body);
+      case videoFavoritePath:
+        return _videoFavorite(body);
       default:
         return const FushiExtensionApiResponse.error(404, 'Unknown endpoint');
     }
@@ -275,6 +293,25 @@ class FushiExtensionApiCore {
   }
 
   /// 扩展视频沉浸时间样本（体见 [BrowserVideoSample]）：不合契约 400，成功 `{ok:true}`。
+  /// 反馈 KGC1ifR1a3：body `{op: 'toggle'|'state', kind: 'sentence'|'video', url, title?,
+  /// text?, startMs?, endMs?}` → `{favorite?: bool, video: bool, sentences: [{text, startMs}]}`。
+  /// 地址不是网页 / 切换句子却没句子 400（写收藏夹的入口，HTTP 层与查词同一鉴权）。
+  Future<FushiExtensionApiResponse> _videoFavorite(
+    Map<String, dynamic> body,
+  ) async {
+    final ExtensionVideoFavoriteRequest? request =
+        ExtensionVideoFavoriteRequest.tryParse(body);
+    if (request == null) {
+      return const FushiExtensionApiResponse.error(
+        400,
+        'Invalid video favorite',
+      );
+    }
+    return FushiExtensionApiResponse.json(
+      (await _onVideoFavorite!(request)).toJson(),
+    );
+  }
+
   FushiExtensionApiResponse _study(Map<String, dynamic> body) {
     final BrowserVideoSample? sample = BrowserVideoSample.tryParse(body);
     if (sample == null) {

@@ -131,6 +131,21 @@ Future<Map<String, Object?>> routeWebBrowserExtensionMessage(
         sample,
       );
       return <String, Object?>{'ok': r.ok, 'status': r.status};
+    // 反馈 KGC1ifR1a3：网页视频收藏（video-favorite.js）。与扩展 background.js 同形转发。
+    case 'videoFavorite':
+      return _apiReply(
+        s,
+        FushiExtensionApiCore.videoFavoritePath,
+        <String, dynamic>{
+          'op': message['op'] == 'toggle' ? 'toggle' : 'state',
+          'kind': message['kind'] == 'video' ? 'video' : 'sentence',
+          'url': _str(message['url']),
+          'title': _str(message['title']),
+          'text': _str(message['text']),
+          if (message['startMs'] case final num startMs) 'startMs': startMs,
+          if (message['endMs'] case final num endMs) 'endMs': endMs,
+        },
+      );
     case 'openSubtitleSidePanel':
       s.openSidePanel();
       return <String, Object?>{'ok': true};

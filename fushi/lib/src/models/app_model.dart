@@ -11247,6 +11247,13 @@ class AppModel with ChangeNotifier {
         fontApi: _browserExtensionFontCatalog,
         onExtensionPopupSize: _applyExtensionPopupSize,
         onExtensionStudy: _ensureBrowserVideoStudyBridge().onSample,
+        // 反馈 KGC1ifR1a3：扩展 / app 内浏览器看网页视频时收藏当前句 / 视频本身，写 App
+        // 收藏夹同一份收藏句（FavoriteSentenceRepository，来源 web）。
+        onVideoFavorite: (ExtensionVideoFavoriteRequest request) =>
+            handleExtensionVideoFavorite(
+              repository: FavoriteSentenceRepository(database),
+              request: request,
+            ),
       );
 
   FushiApiServerManager _ensureYomitanManager() {
@@ -11291,12 +11298,6 @@ class AppModel with ChangeNotifier {
       // BUG-3141：扩展查词弹窗 ☆/★ 收藏。浏览器同属「app 外查词表面」，与 app 外浮窗 /
       // 剪贴板面板的 favoriteEntry / favoriteCheck 走同一份读写（跨源判 / 跨源删 / 单源写）。
       onExtensionFavorite: _browserExtensionFavorite,
-      // 反馈 KGC1ifR1a3：扩展看网页视频时收藏当前句 / 视频本身，写 App 收藏夹同一份收藏句。
-      onExtensionVideoFavorite: (ExtensionVideoFavoriteRequest request) =>
-          handleExtensionVideoFavorite(
-            repository: FavoriteSentenceRepository(database),
-            request: request,
-          ),
       // 浏览器扩展连接探活：扩展任一端点命中即刷新 last-seen 时间戳，供扩展管理页
       // 的「验证插件已正常启用」连接检测显示（扩展 SW 启动时主动打 /api/extension/status，
       // 故装完扩展即刷新，无需用户先划词）。

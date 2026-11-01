@@ -11,7 +11,7 @@ import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart'
     show VideoSubtitleRegistry;
 import 'package:fushi/src/media/manga/cookie/browser_cookie_import.dart';
 import 'package:fushi/src/media/favorites/web_video_favorite.dart'
-    show ExtensionVideoFavoriteRequest, ExtensionVideoFavoriteState;
+    show ExtensionVideoFavoriteHandler;
 import 'package:fushi/src/media/video/browser_video_study_bridge.dart'
     show BrowserVideoSample;
 import 'package:fushi/src/srs/srs_term_status_bridge.dart'
@@ -131,13 +131,6 @@ class ExtensionFavoriteRequest {
 typedef ExtensionFavoriteHandler =
     Future<bool> Function(ExtensionFavoriteRequest request);
 
-/// 反馈 KGC1ifR1a3：扩展看网页视频时收藏当前句 / 视频本身的 app 侧实现
-/// （`/api/extension/video-favorite`），回这个视频在收藏夹里的状态。
-typedef ExtensionVideoFavoriteHandler =
-    Future<ExtensionVideoFavoriteState> Function(
-      ExtensionVideoFavoriteRequest request,
-    );
-
 /// 复习（Fushi SRS）给浏览器扩展弹窗的端点（`/api/srs/term-status`、
 /// `/api/srs/term-status-batch`、`/api/srs/open`）。复习模块关着时供给器回 null → 都 404。
 abstract interface class SrsExtensionApi {
@@ -200,7 +193,6 @@ class FushiApiServer {
        _appLocaleProvider = appLocaleProvider,
        _popupDictionaryCssProvider = popupDictionaryCssProvider,
        _onExtensionFavorite = onExtensionFavorite,
-       _onExtensionVideoFavorite = onExtensionVideoFavorite,
        _onExtensionSeen = onExtensionSeen,
        _onExtensionReport = onExtensionReport,
        _extensionTestPageProvider = extensionTestPageProvider,
@@ -217,6 +209,7 @@ class FushiApiServer {
              fontApi: fontApi,
              onExtensionPopupSize: onExtensionPopupSize,
              onExtensionStudy: onExtensionStudy,
+             onVideoFavorite: onExtensionVideoFavorite,
            );
 
   final int _requestedPort;
@@ -254,9 +247,6 @@ class FushiApiServer {
   // BUG-3141：扩展查词弹窗 ☆/★ 收藏（POST `/api/extension/favorite`）。app 侧与 app 外
   // 浮窗的 favoriteEntry / favoriteCheck 两个桥同一份收藏读写。未注入时端点 404。
   final ExtensionFavoriteHandler? _onExtensionFavorite;
-  // 反馈 KGC1ifR1a3：扩展网页视频的收藏句 / 收藏视频（POST `/api/extension/video-favorite`），
-  // 写的是 App 收藏夹同一份收藏句。未注入时端点 404（扩展据此提示更新 Fushi）。
-  final ExtensionVideoFavoriteHandler? _onExtensionVideoFavorite;
   // 浏览器扩展连接探活：任一扩展端点被命中即回调（app 侧记录 last-seen 时间戳，
   // 供「安装 → 验证插件已正常启用」的连接检测显示）。扩展 background 在 SW 启动时
   // 主动打 /api/extension/status，故装完扩展即刷新 last-seen，无需用户先划词。
@@ -658,8 +648,6 @@ class FushiApiServer {
         return _routesFor(services).handleOpenInAnki(request);
       case '/api/extension/favorite':
         return _handleExtensionFavorite(request);
-      case '/api/extension/video-favorite':
-        return _handleExtensionVideoFavorite(request);
       case '/api/srs/term-status':
         return _handleSrsTermStatus(request, services.srsApiProvider);
       case '/api/srs/term-status-batch':
@@ -935,28 +923,6 @@ class FushiApiServer {
     }
     final bool state = await handler(favorite);
     return jsonResponse(<String, dynamic>{'favorite': state});
-  }
-
-  /// 反馈 KGC1ifR1a3：扩展网页视频的收藏（POST `/api/extension/video-favorite`）。body
-  /// `{op: 'toggle'|'state', kind: 'sentence'|'video', url, title?, text?, startMs?, endMs?}`
-  /// → `{favorite?: bool, video: bool, sentences: [{text, startMs}]}`。与查词同一鉴权（写收藏夹
-  /// 的入口）。地址不是网页 / 切换句子却没句子 400；未注入 handler 404。
-  Future<shelf.Response> _handleExtensionVideoFavorite(
-    shelf.Request request,
-  ) async {
-    final ExtensionVideoFavoriteHandler? handler = _onExtensionVideoFavorite;
-    if (handler == null) {
-      return shelf.Response.notFound('Video favorite sink off');
-    }
-    final Map<String, dynamic>? body = await readJsonObjectBody(request);
-    if (body == null) return shelf.Response(400, body: 'Invalid JSON');
-    final ExtensionVideoFavoriteRequest? favorite =
-        ExtensionVideoFavoriteRequest.tryParse(body);
-    if (favorite == null) {
-      return shelf.Response(400, body: 'Invalid video favorite');
-    }
-    final ExtensionVideoFavoriteState state = await handler(favorite);
-    return jsonResponse(state.toJson());
   }
 
   /// 复习词状态（扩展弹窗的复习标记）：body `{expression, reading}` → `{status: null | {...}}`。
