@@ -167,7 +167,27 @@ function fushiCollectCueSegments(node, out) {
   return out;
 }
 
-// 当前屏幕上的字幕：{ text: 正文（不含读音）, ruby: 段序列 }。
+// 屏上字幕按「行」分组：YouTube 自绘字幕每个 .caption-visual-line 是一行（一行里可能有多个
+// .ytp-caption-segment）；滚动自动字幕上下两行是**两句**，必须分开采，拼成一句的话每条 cue 都
+// 带着上一行，回拖后又对不上历史，live 轨只增不删地越叠越多。Netflix 的 .player-timedtext 是
+// 站点整句替换的一块，整块算一行（多行排版也是同一句）。
+function fushiCaptionLineGroups(sel, nodes) {
+  const list = Array.from(nodes);
+  if (sel === '.player-timedtext') return [list];
+  if (sel !== '.ytp-caption-segment') return list.map((n) => [n]);
+  const groups = [];
+  let lastLine = null;
+  for (const n of list) {
+    const line = typeof n.closest === 'function' ? n.closest('.caption-visual-line') : null;
+    if (line && line === lastLine) groups[groups.length - 1].push(n);
+    else groups.push([n]);
+    lastLine = line;
+  }
+  return groups;
+}
+
+// 当前屏幕上的字幕：{ text: 正文（不含读音，全部行拼接）, ruby: 段序列, lines: 每行 {text, ruby} }。
+// text / ruby 给制卡取词等「屏上现在是什么」的消费者；live 采样只看 lines（见 fushiSamplerView）。
 function fushiSubtitleSegmentsNow() {
   // Netflix: .player-timedtext；YouTube: .ytp-caption-segment / .captions-text。
   const sels = ['.player-timedtext', '.ytp-caption-segment', '.captions-text'];
@@ -175,11 +195,18 @@ function fushiSubtitleSegmentsNow() {
     const nodes = document.querySelectorAll(sel);
     if (!nodes.length) continue;
     const segments = [];
-    for (const n of nodes) fushiCollectCueSegments(n, segments);
+    const lines = [];
+    for (const group of fushiCaptionLineGroups(sel, nodes)) {
+      const lineSegments = [];
+      for (const n of group) fushiCollectCueSegments(n, lineSegments);
+      for (const seg of lineSegments) segments.push(seg);
+      const lineText = lineSegments.map((seg) => seg.text).join('').trim();
+      if (lineText) lines.push({ text: lineText, ruby: lineSegments });
+    }
     const text = segments.map((seg) => seg.text).join('');
-    if (text.trim()) return { text: text.trim(), ruby: segments };
+    if (text.trim()) return { text: text.trim(), ruby: segments, lines: lines };
   }
-  return { text: '', ruby: [] };
+  return { text: '', ruby: [], lines: [] };
 }
 
 function fushiSubtitleTextNow() {
@@ -187,6 +214,8 @@ function fushiSubtitleTextNow() {
 }
 const FUSHI_LIVE_CUE_MAX_MS = 12000;
 const FUSHI_LIVE_LANG = 'live';
+// 最近定格过的行文本（滚动字幕里它们会挪到上一行继续留在屏上）只记这么多条。
+const FUSHI_RECENT_LINES_MAX = 4;
 let fushiSamplerGeneration = 0;
 let fushiSamplerState = null;
 
@@ -201,10 +230,18 @@ function fushiNewSamplerState(video, key, replayPending) {
     lastSampleV: 0,
     cueHist: [],
     liveCue: null,
-    liveCueReplay: false,
+    // liveCue 接手时已定格的终点：命中历史的那条只增不减，新句为它的起点。
+    liveCueBaseEnd: 0,
     justEndedCue: null,
     lastSegments: null,
+    recentLines: [],
     replayPending: !!replayPending,
+    // 本代还没接受过任何快照：第一份快照与 seek 后一样从最后一行起采（打开页面 / 开字幕时
+    // 滚动字幕可能已经是两行，上面那行的起点不在这里）。
+    awaitingFirstSnapshot: true,
+    // seek 那一刻屏上的字幕：seek 后 DOM 要过一会儿才换成目标位置的字幕，这段时间里的快照
+    // 是旧位置的残留，按新时间入轨就是错位的一句（见 fushiSampleCue 的 replay 门）。
+    seekStaleText: '',
     seeking: false,
     onSeeking: null,
     onSeeked: null,
@@ -224,6 +261,33 @@ function fushiIsProgressiveCueUpdate(previousText, nextText) {
   // 新快照，不是新 cue；否则列表会留下「NVIDIA / NVIDIAの / NVIDIAのCEO…」一整串。
   return nextText.indexOf(previousText) === 0;
 }
+function fushiRememberLine(state, text) {
+  if (!text) return;
+  const i = state.recentLines.indexOf(text);
+  if (i >= 0) state.recentLines.splice(i, 1);
+  state.recentLines.push(text);
+  if (state.recentLines.length > FUSHI_RECENT_LINES_MAX) state.recentLines.shift();
+}
+
+// 采样视图：去掉屏幕顶部「已经采过、只是滚到上一行」的行，剩下的才是正在出现的这一句。
+// 判据是行文本等于刚定格 / 正在采的那一行（滚动字幕），所以 pop-on 的两行一句（两行都是新的）
+// 照旧整块成句。最后一行永远保留。顶上那行若是正在采的那一行又长了几个字（YouTube 在换行
+// 那一帧把末尾补齐），用 extendTo 交回去先补进当前句，再处理下面的新行。
+function fushiSamplerView(state, snapshot) {
+  const lines = snapshot.lines || [];
+  let i = 0;
+  let extendTo = '';
+  while (i < lines.length - 1) {
+    const t = lines[i].text;
+    if (t === state.lastDomText || state.recentLines.indexOf(t) >= 0) { i++; continue; }
+    if (fushiIsProgressiveCueUpdate(state.lastDomText, t)) { extendTo = t; i++; continue; }
+    break;
+  }
+  const rest = lines.slice(i);
+  const ruby = [];
+  for (const line of rest) for (const seg of line.ruby) ruby.push(seg);
+  return { text: rest.map((line) => line.text).join(''), ruby: ruby, extendTo: extendTo };
+}
 
 function fushiFinishSamplerCue(state, endV) {
   if (!state) return;
@@ -236,6 +300,18 @@ function fushiFinishSamplerCue(state, endV) {
   state.curStartV = 0;
 }
 
+// 进入 seek：定格旧句、记下此刻屏上的字幕（残留判据）、清掉滚动行记忆（目标位置的上一行
+// 与这里无关），等 seek 后第一份真实快照。
+function fushiEnterSeek(state) {
+  if (!state.seeking) {
+    state.seekStaleText = fushiSubtitleSegmentsNow().text;
+    fushiFinishSamplerCue(state, state.lastSampleV);
+    state.recentLines = [];
+  }
+  state.seeking = true;
+  state.replayPending = true;
+}
+
 function fushiDetachSamplerVideo(state) {
   if (!state || !state.video || typeof state.video.removeEventListener !== 'function') return;
   try { state.video.removeEventListener('seeking', state.onSeeking); } catch (_) {}
@@ -246,17 +322,14 @@ function fushiBindSamplerVideo(state) {
   if (!state || !state.video || typeof state.video.addEventListener !== 'function') return;
   state.onSeeking = function () {
     if (fushiSamplerState !== state) return;
-    if (!state.seeking) fushiFinishSamplerCue(state, state.lastSampleV);
-    state.seeking = true;
-    state.replayPending = true;
+    fushiEnterSeek(state);
   };
   state.onSeeked = function () {
     if (fushiSamplerState !== state) return;
     // 某些播放器会在 content script 绑定较晚时只被我们观察到 seeked；仍须用
     // 最后一个真实采样时间定格旧 cue，不能把目标时间当旧句 end。
-    if (!state.seeking) fushiFinishSamplerCue(state, state.lastSampleV);
+    fushiEnterSeek(state);
     state.seeking = false;
-    state.replayPending = true;
   };
   try { state.video.addEventListener('seeking', state.onSeeking); } catch (_) {}
   try { state.video.addEventListener('seeked', state.onSeeked); } catch (_) {}
@@ -290,7 +363,7 @@ function fushiSyncSamplerLifecycle() {
       fushiFinishSamplerCue(previous, previous.lastSampleV);
       fushiDetachSamplerVideo(previous);
     }
-    // 同 key remount，或 A→B→A 回到已有 live 轨时，首个真实快照按只读 replay
+    // 同 key remount，或 A→B→A 回到已有 live 轨时，首个真实快照按 replay
     // 对照旧轨；真正未见过的 key 则建立新轨，不能复用旧代引用。
     fushiSamplerState = fushiNewSamplerState(video, key, replayKnownTrack);
     fushiBindSamplerVideo(fushiSamplerState);
@@ -298,53 +371,16 @@ function fushiSyncSamplerLifecycle() {
   return fushiSamplerState;
 }
 
-function fushiSampleCue() {
-  const state = fushiSyncSamplerLifecycle();
-  if (!state) return;
-  state.justEndedCue = null; // 只在本次采样内有效（见 fushiLiveCueEnd）
-  const nowV = fushiVideoTimeMs(state.video);
-  if (nowV === null) return;
-
-  // seek 只认播放器生命周期信号。采样停顿/后台节流造成的正向时间间隔不是 seek，
-  // 不能把正常逐字后缀扔进只读 replay。
-  if (state.video.seeking === true) {
-    if (!state.seeking) fushiFinishSamplerCue(state, state.lastSampleV);
-    state.seeking = true;
-    state.replayPending = true;
-    return;
-  }
-  if (state.seeking) {
-    state.seeking = false;
-    state.replayPending = true;
-  }
-  state.lastSampleV = nowV;
-  const snapshot = fushiSubtitleSegmentsNow();
-  const text = snapshot.text;
-  state.lastSegments = snapshot.ruby;
-
-  if (state.replayPending) {
-    // seek/remount 后字幕 DOM 可能短暂为空；等第一份真实快照再消费 replay 门。
-    if (!text) return;
-    state.replayPending = false;
-    state.lastDomText = text;
-    state.curText = text;
-    state.curStartV = nowV;
-    fushiLiveCueStart(state, text, nowV);
-    return;
-  }
+// 采样视图里「正在出现的这一句」变了：逐字扩长并进当前句，否则定格旧句、开新句。
+function fushiSamplerApplyText(state, text, nowV) {
   if (text === state.lastDomText) return;
   if (fushiIsProgressiveCueUpdate(state.lastDomText, text)) {
     const addedText = text.slice(state.lastDomText.length);
     state.lastDomText = text;
-    // 回放已经采过的区间：只跟进页面快照，不改旧 cue，也不把逐字扩长误插成新行。
-    if (state.liveCueReplay) {
-      state.curText += addedText;
-      return;
-    }
     // YouTube 自动字幕在同一 DOM 节点中逐字扩长；12 秒内追加到当前行。
-    if (state.liveCue && nowV - state.liveCue.startMs < FUSHI_LIVE_CUE_MAX_MS) {
+    if (state.curText && nowV - state.curStartV < FUSHI_LIVE_CUE_MAX_MS) {
       state.curText += addedText;
-      fushiLiveCueAppend(state, addedText, nowV);
+      fushiLiveCueAppend(state, nowV);
       return;
     }
     // DOM 长时间不换节点时，按新增后缀切成下一行，避免整段视频被吞进一个超长 cue。
@@ -361,10 +397,61 @@ function fushiSampleCue() {
     fushiPushCueV(state, state.curText, state.curStartV, nowV); // 上一句定格
     fushiLiveCueEnd(state, nowV); // TODO-1363：live 轨同句定格真实 end
   }
+  fushiRememberLine(state, state.lastDomText);
   state.lastDomText = text;
   state.curText = text;
   state.curStartV = text ? nowV : 0;
   if (text) fushiLiveCueStart(state, text, nowV); // TODO-1363：新句出现即入 live 轨（暂定 end）
+}
+
+function fushiSampleCue() {
+  const state = fushiSyncSamplerLifecycle();
+  if (!state) return;
+  state.justEndedCue = null; // 只在本次采样内有效（见 fushiLiveCueEnd）
+  const nowV = fushiVideoTimeMs(state.video);
+  if (nowV === null) return;
+
+  // seek 只认播放器生命周期信号。采样停顿/后台节流造成的正向时间间隔不是 seek，
+  // 不能把正常逐字后缀扔进 replay。
+  if (state.video.seeking === true) {
+    fushiEnterSeek(state);
+    return;
+  }
+  if (state.seeking) {
+    state.seeking = false;
+    state.replayPending = true;
+  }
+  state.lastSampleV = nowV;
+  const snapshot = fushiSubtitleSegmentsNow();
+
+  if (state.replayPending || state.awaitingFirstSnapshot) {
+    // seek/remount 后字幕 DOM 可能短暂为空，也可能还挂着 seek 前那一句：等第一份**在 seek 之后
+    // 变过**的真实快照再消费 replay 门，否则旧位置的句子会按新时间入轨。
+    if (!snapshot.text) return;
+    if (state.seekStaleText && snapshot.text === state.seekStaleText) return;
+    state.seekStaleText = '';
+    state.replayPending = false;
+    state.awaitingFirstSnapshot = false;
+    // 落点上屏上可能已有两行（滚动字幕）：上面的行是更早的句子，起点不在这里，只记成「已见过」，
+    // 采样从最后一行起（pop-on 两行一句只采到后半句时，写入端按包含关系并回完整的那条）。
+    const lines = snapshot.lines;
+    const last = lines[lines.length - 1];
+    state.recentLines = [];
+    for (let i = 0; i < lines.length - 1; i++) fushiRememberLine(state, lines[i].text);
+    state.lastSegments = last.ruby;
+    state.lastDomText = last.text;
+    state.curText = last.text;
+    state.curStartV = nowV;
+    fushiLiveCueStart(state, last.text, nowV);
+    return;
+  }
+  const view = fushiSamplerView(state, snapshot);
+  if (view.extendTo) {
+    state.lastSegments = null;
+    fushiSamplerApplyText(state, view.extendTo, nowV);
+  }
+  state.lastSegments = view.ruby;
+  fushiSamplerApplyText(state, view.text, nowV);
 }
 // 当前句的视频时间窗：命中历史（倒退回看过的句）用其完整 [startV,endV]；否则用当前 start +
 // 现在的视频时间作暂定 end（Netflix 回放时会按字幕变化重新定 end；YouTube 用此窗即可）。
@@ -528,6 +615,18 @@ function fushiFullTrackLangSegment(msg) {
 // 轨的站点显示名（「English [CC]」）：key → 名字。面板列轨时优先显示它，裸语言段只作兜底。
 const fushiTrackLabels = Object.create(null);
 window.fushiTrackLabels = fushiTrackLabels;
+// 轨的语言码：key → `en` / `ja`。key 的语言段是站点显示名时（youtube-bridge：同语言人工轨与
+// ASR 轨靠名字区分）语言偏好匹配认不出它，桥随消息带上 languageCode 记在这里，消费端
+// （app 的 glue）据此上报语言。没有记录 = 语言段本身就是语言码。
+const fushiTrackLangCodes = Object.create(null);
+window.fushiTrackLangCodes = fushiTrackLangCodes;
+// 桥带了语言码的轨：语言段就是显示名，记进 fushiTrackLabels 供消费端显示。
+function fushiNoteStreamTrackLang(key, lang, languageCode) {
+  const code = String(languageCode || '').replace(/\|/g, '_');
+  if (!code) return;
+  fushiTrackLangCodes[key] = code;
+  if (!fushiTrackLabels[key]) fushiTrackLabels[key] = lang;
+}
 function fushiOnFullEpisodeCuesFailed(msg) {
   try {
     const vid = String(msg.videoId || netflixVideoIdFromPath(location.pathname) || '');
@@ -610,6 +709,7 @@ function fushiOnStreamCues(msg) {
       (location.hostname + (msg.path || location.pathname))).replace(/\|/g, '_');
     const lang = String(msg.lang || 'und').replace(/\|/g, '_');
     const key = vidKey + '|' + lang;
+    fushiNoteStreamTrackLang(key, lang, msg.languageCode);
     fushiEpisodeCues[key] = cues;
     delete fushiLazyTracks[key]; // 占位轨拿到真 cue 就不再是「待加载」
     fushiNotifyPanel(key);
@@ -630,11 +730,23 @@ function fushiOnStreamTracks(msg) {
       const lang = String((t && t.lang) || '').replace(/\|/g, '_');
       if (!lang) continue;
       const key = vidKey + '|' + lang;
+      fushiNoteStreamTrackLang(key, lang, t.languageCode);
       if (fushiEpisodeCues[key] && fushiEpisodeCues[key].length) continue; // 已有真 cue
       if (fushiLazyTracks[key]) continue; // 已登记
       fushiEpisodeCues[key] = [];
       fushiLazyTracks[key] = true;
       fushiNotifyPanel(key);
+    }
+  } catch (_) {}
+}
+// 桥按需取轨失败（{__fushiStream:'cuesFailed'}）：与 Netflix 的 cuesFailed 同一条失败回执出口。
+function fushiOnStreamCuesFailed(msg) {
+  try {
+    const vidKey = String(msg.videoKey || '').replace(/\|/g, '_');
+    const lang = String(msg.lang || '').replace(/\|/g, '_');
+    if (!vidKey || !lang) return;
+    if (typeof window.fushiSubtitlePanelOnTrackFailed === 'function') {
+      window.fushiSubtitlePanelOnTrackFailed(vidKey + '|' + lang, String(msg.err || ''));
     }
   } catch (_) {}
 }
@@ -665,6 +777,7 @@ window.addEventListener('message', (e) => {
   if (e.source !== window || !e.data) return;
   if (e.data.__fushiStream === 'cues') fushiOnStreamCues(e.data);
   else if (e.data.__fushiStream === 'tracks') fushiOnStreamTracks(e.data);
+  else if (e.data.__fushiStream === 'cuesFailed') fushiOnStreamCuesFailed(e.data);
 });
 try { window.postMessage({ __fushiStream: 'replayCues' }, '/'); } catch (_) {}
 // ── TODO-1363：通用字幕轨 provider（所有站点） ──
@@ -698,8 +811,8 @@ function fushiNotifyPanel(key) {
   } catch (_) {}
 }
 // 有序插入 + 去重：同文本且句首相差 <windowMs 视为同一句（倒退/回放重看不重复入轨）。
-// windowMs 缺省 750（DOM 采样 live 轨的时间轴本就有采样抖动）；textTracks 收割传 1（精确
-// 时间轴，只有 startMs 完全相同才算同一条——连续两声相同短句是真实台词，不能被宽窗误杀）。
+// windowMs 缺省 750；textTracks 收割传 1（精确时间轴，只有 startMs 完全相同才算同一条——连续
+// 两声相同短句是真实台词，不能被宽窗误杀）。DOM 采样 live 轨不走这里，按区间合并（fushiNormalizeLiveCue）。
 // 返回是否真插入。
 function fushiSortedCueInsert(cues, cue, windowMs) {
   const win = windowMs > 0 ? windowMs : 750;
@@ -719,56 +832,106 @@ function fushiSortedCueInsert(cues, cue, windowMs) {
   return true;
 }
 
-// live cue/replay 引用只保存在 fushiSamplerState 当前代际；SPA/video remount 后旧引用不可达。
+// live cue 引用只保存在 fushiSamplerState 当前代际；SPA/video remount 后旧引用不可达。
+//
+// live 轨不变式：cue 按 startMs 有序、两两**不重叠**；同一句（时间相交且文本相关）只留一条。
+// DOM 采样看到的只是「这句话此刻在屏上」：seek 落在句中采到的起点偏晚、逐字扩长前后文本不同、
+// 来回拖动会把同一句采到好几次——写入一律按时间区间合并（更早的起点、更完整的文本、更晚的
+// 终点），而不是只按「句首相差 <750ms 且全文相等」去重后插入（那样回拖一次就多叠一条）。
+// 文本相关：一方包含另一方（逐字扩长、半句 / 全句）。前缀关系是其中更强的一种（同一句从头长），
+// 时间判据可以放宽；仅「中间包含」只在时间真的相交时才算同一句。
 function fushiCueTextRelated(a, b) {
-  return a === b || a.indexOf(b) === 0 || b.indexOf(a) === 0;
+  return !!a && !!b && (a.indexOf(b) >= 0 || b.indexOf(a) >= 0);
+}
+function fushiCueTextPrefixRelated(a, b) {
+  return !!a && !!b && (a.indexOf(b) === 0 || b.indexOf(a) === 0);
+}
+function fushiLiveTrackKey(state) {
+  return state.key + '|' + FUSHI_LIVE_LANG;
+}
+// 把 cue 放回 track 并恢复不变式：吸收与它时间相交且文本相关的其它条，按 startMs 有序插回，
+// 再把与它相交的不相关邻居裁边（前一条的尾巴收到它的起点，它的尾巴收到后一条的起点）。
+function fushiNormalizeLiveCue(state, track, cue) {
+  const at = track.indexOf(cue);
+  if (at >= 0) track.splice(at, 1);
+  for (let i = track.length - 1; i >= 0; i--) {
+    const other = track[i];
+    if (other.endMs <= cue.startMs || other.startMs >= cue.endMs) continue;
+    if (!fushiCueTextRelated(other.text, cue.text)) continue;
+    cue.startMs = Math.min(cue.startMs, other.startMs);
+    cue.endMs = Math.max(cue.endMs, other.endMs);
+    if (other.text.length > cue.text.length) {
+      cue.text = other.text;
+      if (other.ruby) cue.ruby = other.ruby; else delete cue.ruby;
+    }
+    if (state.liveCueBaseEnd < other.endMs) state.liveCueBaseEnd = other.endMs;
+    track.splice(i, 1);
+  }
+  let lo = 0;
+  let hi = track.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (track[mid].startMs <= cue.startMs) lo = mid + 1; else hi = mid;
+  }
+  track.splice(lo, 0, cue);
+  const prev = track[lo - 1];
+  if (prev && prev.endMs > cue.startMs) prev.endMs = Math.max(prev.startMs + 1, cue.startMs);
+  const next = track[lo + 1];
+  if (next && cue.endMs > next.startMs) cue.endMs = Math.max(cue.startMs + 1, next.startMs);
+}
+// 当前句的完整快照文本并进 cue：快照包含旧文本（逐字扩长 / 这次从句首看到了全句）就换成快照，
+// 旧文本更完整（这次只看到半句）就保留。
+function fushiMergeLiveCueText(cue, text, segments) {
+  if (!text || text === cue.text || cue.text.indexOf(text) >= 0) return;
+  if (text.indexOf(cue.text) < 0) return; // 不相关：不改
+  cue.text = text;
+  delete cue.ruby;
+  fushiAttachCueRuby(cue, segments);
 }
 function fushiLiveCueStart(state, text, startV) {
-  if (!text) {
-    state.liveCue = null;
-    state.liveCueReplay = false;
-    return;
-  }
+  state.liveCue = null;
+  if (!text) return;
   // 整轨优先：已有整集拦截/textTracks 收割的真语言轨时，DOM 实时采样退居兜底，不再往
   // `|live` 伪轨写——两条来源并存会让面板多出一条重复的抖动轨（用户诉求：实时采集只能
   // 是降级）。注意 cueHist 仍照常采样，fushiCurrentCueWindowV 是整轨查不中（字幕间隙、
   // 整轨尚未到达）时的最后退路，所以这是降级不是砍掉退路。
-  if (fushiHasFullEpisodeTrack(state.key)) {
-    state.liveCue = null;
-    state.liveCueReplay = false;
-    return;
-  }
-  const key = state.key + '|' + FUSHI_LIVE_LANG;
+  if (fushiHasFullEpisodeTrack(state.key)) return;
+  const key = fushiLiveTrackKey(state);
   const track = fushiEpisodeCues[key] || (fushiEpisodeCues[key] = []);
-  // 「这句我采过吗」：文本相关（逐字扩长的前缀关系）且落进已有那条的整段时间窗
-  // [startMs-750, endMs+750]。判据用整段区间而不是 fushiSortedCueInsert 的「句首相差 <750ms」
-  // 窄窗，是因为 startMs 记的是**这句在 DOM 里被我们看到的时刻**：上一次经过若是 seek 落在句
-  // 中，它就比真实句首晚了一两秒；下一次正常播放从句首采到它，两个起点差出窄窗，同一句于是
-  // 在轨里留下两条（用户截图：来回跳转后 12:49 同一句两行）。
+  // 「这句我采过吗」：前缀相关且落进已有那条的整段时间窗 [startMs-3000, endMs+750]，或仅中间
+  // 包含且起点落在那条的 [startMs, endMs) 之内。判据用整段区间而不是「句首相差 <750ms」窄窗，是
+  // 因为 startMs 记的是**这句在 DOM 里被我们看到的时刻**：上一次经过若是 seek 落在句中，它就比真实
+  // 句首晚了一两秒。向后容差 750ms 只是采样抖动；向前 3s 是因为这一次从句首采到它，新起点反而更早。
+  // 中间包含（只看到两行一句的后一行、或别的位置恰好含这几个字）没有这层「同一句从头长」的
+  // 保证，必须时间真的相交才并。
   // 例外只有一个：同一次采样里刚定格的上一条要跳过——DOM 在同一时刻把 abcdef 更正/缩短成
   // abc 是**新句**而不是历史重复（justEndedCue 每次采样开头清空，只在本次采样内有效）。
+  let cue = null;
   for (const existing of track) {
     if (existing === state.justEndedCue) continue;
-    // 向后容差 750ms、**向前 3s**：两个方向的偏差成因不同。向后只是采样抖动；向前是因为上一次
-    // 经过时 seek 落在句中，那条的 startMs 比真实句首晚了一截，这一次从句首采到它，新起点反而
-    // 更早——只留 750ms 的话正好从窗口前沿漏出去，于是同一句入轨两次。
-    if (startV < existing.startMs - 3000 || startV > existing.endMs + 750) continue;
-    if (!fushiCueTextRelated(existing.text, text)) continue;
-    // 命中历史：只读跟随页面快照，既不重复入轨也不动旧句的窗。
-    state.liveCue = null;
-    state.liveCueReplay = true;
-    return;
+    const prefix = fushiCueTextPrefixRelated(existing.text, text);
+    if (prefix) {
+      if (startV < existing.startMs - 3000 || startV > existing.endMs + 750) continue;
+    } else {
+      if (!fushiCueTextRelated(existing.text, text)) continue;
+      if (startV < existing.startMs || startV >= existing.endMs) continue;
+    }
+    cue = existing;
+    break;
   }
-  const cue = { startMs: startV, endMs: startV + 1500, text: text };
-  fushiAttachCueRuby(cue, state.lastSegments);
-  if (fushiSortedCueInsert(track, cue)) {
-    state.liveCue = cue;
-    state.liveCueReplay = false;
-    fushiNotifyPanel(key);
+  if (cue) {
+    // 命中历史：并进那一条（起点取更早，文本取更完整），已定格的终点只增不减。
+    state.liveCueBaseEnd = cue.endMs;
+    cue.startMs = Math.min(cue.startMs, startV);
+    fushiMergeLiveCueText(cue, text, state.lastSegments);
   } else {
-    state.liveCue = null; // 已见过的句：不重复入轨，也不动旧句窗
-    state.liveCueReplay = true;
+    cue = { startMs: startV, endMs: startV + 1500, text: text };
+    fushiAttachCueRuby(cue, state.lastSegments);
+    state.liveCueBaseEnd = startV;
   }
+  fushiNormalizeLiveCue(state, track, cue);
+  state.liveCue = cue;
+  fushiNotifyPanel(key);
 }
 // 段序列只有在拼接结果与 cue 正文完全一致时才挂上去：DOM 快照是**整句**，而逐字扩长被切成
 // 下一行时 cue.text 只是后缀，两者错位就会把振假名标到别的字上。宁可这行不画振假名。
@@ -780,25 +943,36 @@ function fushiAttachCueRuby(cue, segments) {
   cue.ruby = segments;
 }
 
-function fushiLiveCueAppend(state, addedText, nowV) {
-  if (!state.liveCue || state.liveCueReplay || !addedText) return false;
-  state.liveCue.text += addedText;
-  fushiAttachCueRuby(state.liveCue, state.lastSegments);
+// 当前句逐字扩长：把采样器的完整当前句（state.curText）并进 live cue。
+function fushiLiveCueAppend(state, nowV) {
+  const cue = state.liveCue;
+  if (!cue) return false;
+  const key = fushiLiveTrackKey(state);
+  const track = fushiEpisodeCues[key];
+  if (!track) return false;
+  fushiMergeLiveCueText(cue, state.curText, state.lastSegments);
   // 句子仍在屏幕上时保持一个向后的暂定窗；真正换句/清空时由 fushiLiveCueEnd 定格。
-  state.liveCue.endMs = Math.max(state.liveCue.endMs, nowV + 1500);
-  const key = state.key + '|' + FUSHI_LIVE_LANG;
+  cue.endMs = Math.max(cue.endMs, nowV + 1500);
+  fushiNormalizeLiveCue(state, track, cue);
   fushiNotifyPanel(key);
   return true;
 }
 
 function fushiLiveCueEnd(state, endV) {
-  if (state.liveCue && typeof endV === 'number' && endV > state.liveCue.startMs) {
-    state.liveCue.endMs = endV;
+  const cue = state.liveCue;
+  if (cue && typeof endV === 'number' && endV > cue.startMs) {
+    // 暂定窗收回到真实终点；命中历史的那条不短于它原本定格的终点。
+    cue.endMs = Math.max(state.liveCueBaseEnd, endV);
+    const key = fushiLiveTrackKey(state);
+    const track = fushiEpisodeCues[key];
+    if (track) {
+      fushiNormalizeLiveCue(state, track, cue);
+      fushiNotifyPanel(key);
+    }
   }
   // 本次采样内刚定格的这条：紧随其后的 fushiLiveCueStart 不得把它当成「历史里的同一句」。
-  state.justEndedCue = state.liveCue;
+  state.justEndedCue = cue;
   state.liveCue = null;
-  state.liveCueReplay = false;
 }
 // a) textTracks 全量收割：轮询归并。kind 只收 subtitles/captions。两条完整性规则：
 //   ① disabled 轨浏览器根本不加载 cues → 以前直接跳过 = 只有播放器当前开着的那条轨能进
