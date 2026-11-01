@@ -83,6 +83,25 @@ class AdvancedMiningAudioWindow {
   int get durationMs => endMs - startMs;
 }
 
+/// 高级制卡句子音频起止微调可选的步长（毫秒），反馈 3_VB7kAeHj：原先只有固定
+/// 0.25 s，对不准短促的句首 / 句尾。
+const List<int> kAdvancedMiningAudioNudgeStepsMs = <int>[
+  50,
+  100,
+  250,
+  500,
+  1000,
+];
+
+/// 默认步长（原有固定值，老用户行为不变）。
+const int kAdvancedMiningAudioNudgeStepDefaultMs = 250;
+
+/// 把存储值规整到 [kAdvancedMiningAudioNudgeStepsMs] 之一；未知值回退默认。
+int normalizeAdvancedMiningAudioNudgeStepMs(int? ms) =>
+    ms != null && kAdvancedMiningAudioNudgeStepsMs.contains(ms)
+    ? ms
+    : kAdvancedMiningAudioNudgeStepDefaultMs;
+
 /// 句子音频分区。所有回调都收**本次的起止偏移**（对话框持有，确认时并进覆盖项），
 /// 宿主据此算出与写卡完全一致的区间——试听与写卡同源（BUG-2196 ②）。
 class AdvancedMiningAudioSection {
@@ -90,7 +109,8 @@ class AdvancedMiningAudioSection {
     required this.describe,
     required this.preview,
     required this.stopPreview,
-    this.nudgeStepMs = 250,
+    this.nudgeStepMs = kAdvancedMiningAudioNudgeStepDefaultMs,
+    this.onNudgeStepChanged,
   });
 
   /// 当前会写进卡片的区间；null = 这句没有可用音频（对话框显示「无音频」，不给微调）。
@@ -112,8 +132,12 @@ class AdvancedMiningAudioSection {
 
   final Future<void> Function() stopPreview;
 
-  /// 起止微调的步长。
+  /// 起止微调的初始步长（宿主传用户上次选的值，见
+  /// [kAdvancedMiningAudioNudgeStepsMs]）。
   final int nudgeStepMs;
+
+  /// 用户在对话框里换了步长：宿主据此记住，下次打开沿用。null = 不记。
+  final void Function(int stepMs)? onNudgeStepChanged;
 }
 
 /// 视频图片分区。

@@ -5732,6 +5732,16 @@ class AppModel with ChangeNotifier {
   /// 是否尊重 .ass 字幕自带样式（TODO-1105；默认 true）。
   bool get videoRespectAssStyle => prefsRepo.videoRespectAssStyle;
 
+  /// 主 / 副字幕轨默认语言偏好原文（反馈 Fz9HXThdSW）。
+  String get videoSubtitlePreferredLanguages =>
+      prefsRepo.videoSubtitlePreferredLanguages;
+  Future<void> setVideoSubtitlePreferredLanguages(String value) =>
+      prefsRepo.setVideoSubtitlePreferredLanguages(value);
+  String get videoSecondarySubtitlePreferredLanguages =>
+      prefsRepo.videoSecondarySubtitlePreferredLanguages;
+  Future<void> setVideoSecondarySubtitlePreferredLanguages(String value) =>
+      prefsRepo.setVideoSecondarySubtitlePreferredLanguages(value);
+
   Future<void> setVideoRespectAssStyle(bool value) =>
       prefsRepo.setVideoRespectAssStyle(value);
 
@@ -10473,6 +10483,12 @@ class AppModel with ChangeNotifier {
   MiningClipFormat get galMiningClipFormat => prefsRepo.galMiningClipFormat;
   void setGalMiningClipFormat(MiningClipFormat format) =>
       prefsRepo.setGalMiningClipFormat(format);
+
+  /// 高级制卡句子音频起止微调步长（毫秒，反馈 3_VB7kAeHj），各宿主共用。
+  int get advancedMiningAudioNudgeStepMs =>
+      prefsRepo.advancedMiningAudioNudgeStepMs;
+  void setAdvancedMiningAudioNudgeStepMs(int ms) =>
+      unawaited(prefsRepo.setAdvancedMiningAudioNudgeStepMs(ms));
 
   /// 制卡句子音频头/尾 padding（毫秒），视频字幕与有声书两条制卡链共用。
   int get miningAudioHeadPadMs => prefsRepo.miningAudioHeadPadMs;

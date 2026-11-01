@@ -4252,10 +4252,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
           // （Escape 关弹窗 / 全屏 / 打开字幕列表 / 沉浸锁 / 再次打开对轴弹窗——避免递归叠栈）。
           keyboardShortcuts: buildVideoPlayerShortcutsFromRegistry(
             appModel.shortcutRegistry,
-            _buildVideoShortcutActions(
-              controller,
-              input: VideoActionInput.keyboard,
-            ),
+            _buildVideoShortcutActions(controller),
             exclude: const <ShortcutAction>{
               ShortcutAction.globalBack,
               ShortcutAction.videoToggleFullscreen,

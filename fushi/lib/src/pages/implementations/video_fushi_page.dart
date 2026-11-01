@@ -5892,6 +5892,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         remoteDiscTitle: remoteDiscTitle,
         remoteDisc: remoteDisc,
         onEmbeddedSubtitleAutoLoad: _handleEmbeddedSubtitleAutoLoad,
+        preferredSubtitleLanguages: parseSubtitleLanguagePreferences(
+          appModel.videoSubtitlePreferredLanguages,
+        ),
       );
     } catch (e, stack) {
       debugPrint('[VideoFushiPage] video load failed: $e\n$stack');
@@ -6087,8 +6090,69 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         }
       }
     } else {
-      unawaited(_restoreSecondarySubtitle(controller));
+      unawaited(_restoreOrDefaultSecondarySubtitle(controller));
     }
+  }
+
+  /// 恢复已记住的副字幕；这集从没选过副字幕、主字幕又是用户显式选定的（不会走
+  /// [_handleEmbeddedSubtitleAutoLoad] 那条自动挑轨路径）时，按副字幕默认语言挑一条
+  /// （反馈 Fz9HXThdSW）。
+  Future<void> _restoreOrDefaultSecondarySubtitle(
+    VideoPlayerController controller,
+  ) async {
+    await _restoreSecondarySubtitle(controller);
+    final String? primary = _currentSubtitleSource;
+    if (primary == null || primary.isEmpty || SubtitleSource.isOff(primary)) {
+      return;
+    }
+    await _applyDefaultSecondarySubtitle(controller, primarySource: primary);
+  }
+
+  /// 副字幕默认语言（反馈 Fz9HXThdSW，参考 PotPlayer「次字幕语言」）：这集没记住过副字幕
+  /// （null，不含「显式关闭」）且用户填了偏好时，从本地可选源里按偏好挑第一条命中、
+  /// 能转文本、且不是主字幕那条的源挂成副字幕。只是本次默认，**不持久化**——改了偏好
+  /// 下次打开就按新偏好挑；用户在菜单里显式选择才记住。
+  Future<void> _applyDefaultSecondarySubtitle(
+    VideoPlayerController controller, {
+    required String primarySource,
+    List<SubtitleSource>? sources,
+  }) async {
+    if (_isRemote || controller.isBlurayNavigationSession) return;
+    if (_currentSecondarySubtitleSource != null) return;
+    final List<String> preferences = parseSubtitleLanguagePreferences(
+      appModel.videoSecondarySubtitlePreferredLanguages,
+    );
+    if (preferences.isEmpty) return;
+    final String? videoPath = _currentVideoPath;
+    if (videoPath == null) return;
+    final String bookUid = _activeBookUid;
+    final int generation = _episodeLoadSeq;
+    bool current() =>
+        mounted &&
+        generation == _episodeLoadSeq &&
+        bookUid == _activeBookUid &&
+        identical(_controller, controller) &&
+        _currentSecondarySubtitleSource == null;
+    final List<SubtitleSource> all =
+        sources ??
+        await listAllSubtitleSources(videoPath, langCode: _targetLangCode);
+    if (!current()) return;
+    final SubtitleSource? pick = pickSubtitleSourceByPreference(
+      all,
+      preferences,
+      accept: (SubtitleSource s) =>
+          s.toPersistedValue() != primarySource &&
+          (!s.isEmbedded || isTextEmbeddedSubtitleSource(s)),
+    );
+    if (pick == null) return;
+    final SubtitleCueLoadResult result = await loadSubtitleCueResult(
+      pick,
+      videoPath,
+      bookUid,
+    );
+    if (!current() || result.isFailure || result.cues.isEmpty) return;
+    controller.setSecondaryCues(result.cues);
+    _rebuild(() => _currentSecondarySubtitleSource = pick.toPersistedValue());
   }
 
   /// 观看统计的身份 `(uid, episodeIndex)` = 本页此刻播的那个视频：书架书（本地视频 /
@@ -6331,6 +6395,15 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       final SubtitleSource? source = result.source;
       if (source != null) {
         setState(() => _currentSubtitleSource = source.toPersistedValue());
+        final VideoPlayerController? controller = _controller;
+        if (controller != null) {
+          unawaited(
+            _applyDefaultSecondarySubtitle(
+              controller,
+              primarySource: source.toPersistedValue(),
+            ),
+          );
+        }
       }
       return;
     }
@@ -8127,12 +8200,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 通道命中完全一致的执行体（含 [_runWhenImmersiveAllowsShortcuts] 沉浸门控与控制
   /// 条唤醒），不产生两套语义、不引入手柄专属特例分支。
   ///
-  /// [input]：本次派发来自哪类输入（BUG-3339）。只有「上一句字幕」随它变——键盘是
-  /// 方向键心智（太远退化成回退），手柄 / 鼠标侧键 / 屏幕按钮是按钮心智（恒跳句）。
+  /// 「上一句字幕」在所有输入上同一语义（恒跳句，反馈 yNNhNgXm_M 删掉了键盘 Ctrl+←
+  /// 「太远退 3 秒」的特例，BUG-3339 的手柄 / 键盘分叉也随之消失）。
   VideoPlayerShortcutActions _buildVideoShortcutActions(
-    VideoPlayerController controller, {
-    required VideoActionInput input,
-  }) {
+    VideoPlayerController controller,
+  ) {
     // 网页档（站点视频）：截图 / 逐帧 / 小窗 / 着色器对比 / 章节都要 libmpv，诚实 no-op。
     final bool web = controller.isWebBackend;
     void unsupported() {}
@@ -8144,10 +8216,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           _runWhenImmersiveAllowsShortcuts(() => unawaited(controller.play())),
       pause: () =>
           _runWhenImmersiveAllowsShortcuts(() => unawaited(controller.pause())),
-      // Ctrl+←/→ = 上/下一句字幕（TODO-090）。**键盘方向键**语义：上一句太远时 Ctrl+←
-      // 退化成回退 seekSeconds 秒（TODO-085）；无 cue 时也直接当回退键。下一句保持纯
-      // 句子跳（无 cue 时前进 seekSeconds 秒）。手柄 / 鼠标侧键 / 屏幕按钮是按钮心智，
-      // 恒跳句不退化（BUG-942 / BUG-3339），由 [input] 决定，见 [VideoActionInput]。
+      // Ctrl+←/→ = 上/下一句字幕（TODO-090）：有 cue 时恒跳到相邻上 / 下一句开头（不论
+      // 离得多远，反馈 yNNhNgXm_M），无 cue 时当回退 / 前进 seekSeconds 秒。
       // 键盘 / 手柄跳句只**续命**控制条、不唤起（BUG-2030）：控制条本就在显示时连按跳句
       // 不该让它 2 秒消失（BUG-176 ②/BUG-215 的诉求），但它隐藏时按快捷键也不该把底栏弹
       // 出来 + 顶一次字幕（用户报「快捷键上下句字幕会弹出 OSC」）。两者的分界就是
@@ -8159,7 +8229,6 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           unawaited(
             controller.skipToPrevCueOrSeekBack(
               seekSeconds: _asbConfig.seekSeconds,
-              degradeFarCueToTimeSeek: videoPrevSubtitleDegradesFarCue(input),
             ),
           );
         });
@@ -8283,8 +8352,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         () => unawaited(_replayCurrentCueAndKeepControls()),
       ),
       // 重播上一句（TODO-378，BUG-287，默认 Shift+R）：纯句子后退到上一条 cue 起点
-      // 并播放（skipToPrevCue，不退化回退）。与「上一句字幕」(Ctrl+←) 区分——后者
-      // gap 太远时按 BUG-185/TODO-085 退化时间 seek，是用户另一项有意设计，不动它。
+      // 并起播。与「上一句字幕」(Ctrl+←) 的区别是起播与否——两者认定的上一句相同。
       replayPreviousSubtitle: () => _runWhenImmersiveAllowsShortcuts(
         () => unawaited(_replayPreviousCueAndKeepControls()),
       ),
@@ -8453,7 +8521,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       return true;
     }
     final VoidCallback? callback = videoActionCallbacks(
-      _buildVideoShortcutActions(controller, input: VideoActionInput.button),
+      _buildVideoShortcutActions(controller),
     )[action];
     if (callback == null) return false;
     callback();
@@ -8694,7 +8762,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       if (controller == null) return false;
       // 动作不在回调表里（例如 popupMineEntry 这类页面另行分流的）就不算本层派发过。
       final VoidCallback? run = videoActionCallbacks(
-        _buildVideoShortcutActions(controller, input: VideoActionInput.button),
+        _buildVideoShortcutActions(controller),
       )[action];
       if (run == null) return false;
       run();
@@ -8776,12 +8844,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         // controller——播放器还没建好时那些动作本来也无事可做。不消费，交回既有路径。
         if (controller == null) return false;
         final Map<ShortcutAction, VoidCallback> callbacks =
-            videoActionCallbacks(
-              _buildVideoShortcutActions(
-                controller,
-                input: VideoActionInput.keyboard,
-              ),
-            );
+            videoActionCallbacks(_buildVideoShortcutActions(controller));
         final VoidCallback? callback = callbacks[action];
         // 解析到了但本页没接线（universal scope 里 globalBack 之外的动作）：不消费，
         // 交回既有路径——与 [_handleVideoGamepadButton] 的 `callback == null` 同款。
@@ -10128,7 +10191,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         return;
       }
       final VoidCallback? callback = videoActionCallbacks(
-        _buildVideoShortcutActions(controller, input: VideoActionInput.button),
+        _buildVideoShortcutActions(controller),
       )[action];
       // 表里没有该动作（动作在新版被删）时静默 no-op，不崩。
       if (callback == null) return;
@@ -11317,8 +11380,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _pokeControlsVisible();
     final VideoPlayerController? controller = _controller;
     if (controller == null) return;
-    // 按钮 / 双击语义：有字幕时恒跳到相邻上/下一句（**不**因上一句太远退化成 3 秒
-    // seek，BUG-942——skipToPrevCueOrSeekBack 默认 degradeFarCueToTimeSeek:false）。
+    // 有字幕时恒跳到相邻上/下一句（不因上一句太远退化成时间 seek，BUG-942）。
     // 无字幕/转场段：下一句前进 seekSeconds 秒(TODO-073)、上一句对称回退 seekSeconds
     // 秒(TODO-119，BUG-198)，两侧都不再在没字幕时 no-op 卡住。
     await (forward
@@ -11627,10 +11689,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           ? null
           : buildVideoPlayerShortcutsFromRegistry(
               appModel.shortcutRegistry,
-              _buildVideoShortcutActions(
-                _controller!,
-                input: VideoActionInput.keyboard,
-              ),
+              _buildVideoShortcutActions(_controller!),
               exclude: const <ShortcutAction>{
                 ShortcutAction.globalBack,
                 ShortcutAction.videoToggleFullscreen,

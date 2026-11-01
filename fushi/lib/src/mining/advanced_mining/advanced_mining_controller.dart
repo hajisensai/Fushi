@@ -331,6 +331,20 @@ class AdvancedMiningController extends ChangeNotifier {
   int audioStartDeltaMs = 0;
   int audioEndDeltaMs = 0;
 
+  /// 起止微调当前步长（毫秒），初值取宿主给的 [AdvancedMiningAudioSection.nudgeStepMs]。
+  late int audioNudgeStepMs = normalizeAdvancedMiningAudioNudgeStepMs(
+    audioSection?.nudgeStepMs,
+  );
+
+  /// 换微调步长（反馈 3_VB7kAeHj）：只换步长，不动已调好的偏移；宿主记住选择。
+  void setAudioNudgeStep(int stepMs) {
+    final int next = normalizeAdvancedMiningAudioNudgeStepMs(stepMs);
+    if (next == audioNudgeStepMs) return;
+    audioNudgeStepMs = next;
+    audioSection?.onNudgeStepChanged?.call(next);
+    _notify();
+  }
+
   /// 最近一次 describe 的结果；null 且 [audioLoaded] = 这几句没有音频。
   AdvancedMiningAudioWindow? audioWindow;
   bool audioLoaded = false;

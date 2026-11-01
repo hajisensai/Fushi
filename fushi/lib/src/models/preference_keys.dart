@@ -46,6 +46,9 @@ const String kLibrarySentencesEnabledPrefKey = 'lookup_library_sentences';
 /// 已知的静态偏好键全集（守卫强制）。按字母序。
 const Set<String> kKnownPreferenceKeys = <String>{
   'active_profile_id',
+  // int（ms，默认 250）：高级制卡句子音频起止微调步长（反馈 3_VB7kAeHj），
+  // 取值见 kAdvancedMiningAudioNudgeStepsMs。
+  'advanced_mining_audio_nudge_step_ms',
   // bool（默认 false）：本机当互联 host 时，是否允许已配对设备经 `/api/assistant`
   // 远程使用 AI 助手（会用本机的 AI 指派、调本机操作目录）。与服务端
   // `ai.agent_for_peers` 同一判据：默认关、用户在设置里亲手打开（设备本地）。
@@ -835,6 +838,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // bool（未写过时继承 video_subtitle_obscure_reveal）：副字幕遮蔽态是否允许
   // 暂停 / 查词 / 悬停 / 点击临时显形，与主字幕分开配置。
   'video_secondary_subtitle_obscure_reveal',
+  // string（默认空）：副字幕轨默认语言偏好（反馈 Fz9HXThdSW），格式同
+  // video_subtitle_preferred_languages。
+  'video_secondary_subtitle_preferred_languages',
   'video_shaders_enabled',
   // bool（默认 false）：控制条淡出后，在视频最下方留一条主题色细进度条
   // （B 站 / YouTube 同款）。默认关——控制条淡出就是要把画面让干净。小窗档不受
@@ -872,6 +878,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 遮蔽在整句期间恒定生效，不被误触破功。
   'video_subtitle_obscure_reveal',
   'video_subtitle_opensubtitles_config',
+  // string（默认空）：主字幕轨默认语言偏好（反馈 Fz9HXThdSW，参考 PotPlayer）：逗号 /
+  // 空白分隔，按顺序挑第一条命中的内封轨，见 parseSubtitleLanguagePreferences。
+  'video_subtitle_preferred_languages',
   // string（默认 auto）：生成日语字幕的分段方式 auto/moss/window；设备本地。
   'video_subtitle_segmenter',
   'video_subtitle_style',

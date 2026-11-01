@@ -1492,6 +1492,7 @@ synthetic subtitle
                   required String videoPath,
                   required String bookUid,
                   String langCode = 'ja',
+                  List<String> preferredLanguages = const <String>[],
                 }) async {
                   loadCalls++;
                   if (loadCalls == 1) {
@@ -1530,6 +1531,7 @@ synthetic subtitle
                   required String videoPath,
                   required String bookUid,
                   String langCode = 'ja',
+                  List<String> preferredLanguages = const <String>[],
                 }) async {
                   loadCalls++;
                   return resultFor(
@@ -1561,6 +1563,7 @@ synthetic subtitle
                   required String videoPath,
                   required String bookUid,
                   String langCode = 'ja',
+                  List<String> preferredLanguages = const <String>[],
                 }) async {
                   loadCalls++;
                   return resultFor(
@@ -1588,6 +1591,7 @@ synthetic subtitle
                   required String videoPath,
                   required String bookUid,
                   String langCode = 'ja',
+                  List<String> preferredLanguages = const <String>[],
                 }) async {
                   loadCalls++;
                   return resultFor(
@@ -1620,6 +1624,7 @@ synthetic subtitle
                   required String videoPath,
                   required String bookUid,
                   String langCode = 'ja',
+                  List<String> preferredLanguages = const <String>[],
                 }) async {
                   loadCalls++;
                   return resultFor(
@@ -1653,6 +1658,7 @@ synthetic subtitle
                   required String videoPath,
                   required String bookUid,
                   String langCode = 'ja',
+                  List<String> preferredLanguages = const <String>[],
                 }) async {
                   loadCalls++;
                   return resultFor(

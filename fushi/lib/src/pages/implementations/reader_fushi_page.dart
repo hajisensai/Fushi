@@ -5033,6 +5033,8 @@ $liveConfigJs
                     endDeltaMs: endDeltaMs,
                   ),
               stopPreview: onStopSentenceAudioPreview,
+              nudgeStepMs: appModel.advancedMiningAudioNudgeStepMs,
+              onNudgeStepChanged: appModel.setAdvancedMiningAudioNudgeStepMs,
             )
           : null,
       onClosed: hasAudiobook ? onStopSentenceAudioPreview : null,

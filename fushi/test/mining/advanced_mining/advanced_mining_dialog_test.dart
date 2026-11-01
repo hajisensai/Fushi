@@ -9,6 +9,8 @@ import 'package:fushi/src/media/range_playback.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_dialog.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_manga_panels.dart';
+import 'package:fushi/src/mining/advanced_mining/advanced_mining_sections.dart'
+    show formatAdvancedMiningStepSize;
 import 'package:fushi/src/mining/advanced_mining/manga_crop_selector.dart';
 import 'package:fushi/src/utils/components/fushi_floating_page_chrome.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
@@ -316,6 +318,33 @@ void main() {
       expect(host.describeCalls.last, <int>[0, 250]);
       await confirm(tester);
       expect(host.confirms.single.audioEndDeltaMs, 250);
+    });
+
+    testWidgets('换步长 0.1s（反馈 3_VB7kAeHj）：按钮按新步长挪，偏移进覆盖项', (
+      WidgetTester tester,
+    ) async {
+      await open(tester, host.videoPage());
+      await tester.ensureVisible(find.text('0.1s').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('0.1s').last);
+      await tester.pumpAndSettle();
+      expect(find.text('+0.25s'), findsNothing);
+      await tester.ensureVisible(find.text('+0.1s').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('+0.1s').last);
+      await tester.pumpAndSettle();
+      expect(host.describeCalls.last, <int>[0, 100]);
+      await confirm(tester);
+      expect(host.confirms.single.audioEndDeltaMs, 100);
+    });
+
+    test('步长文案去尾零', () {
+      expect(formatAdvancedMiningStepSize(50), '0.05s');
+      expect(formatAdvancedMiningStepSize(100), '0.1s');
+      expect(formatAdvancedMiningStepSize(250), '0.25s');
+      expect(formatAdvancedMiningStepSize(1000), '1s');
+      expect(normalizeAdvancedMiningAudioNudgeStepMs(123), 250);
+      expect(normalizeAdvancedMiningAudioNudgeStepMs(null), 250);
     });
 
     testWidgets('换卡组 + 设为默认：先持久化默认再制卡', (WidgetTester tester) async {

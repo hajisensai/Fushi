@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi_engine/media/video/subtitle/subtitle_language_preference.dart';
 import 'package:fushi_engine/media/video/video_duration_probe.dart';
+import 'package:fushi_engine/media/video/video_subtitle_source.dart';
 
 class _Cand {
   const _Cand(this.name, this.language);
@@ -239,6 +240,107 @@ void main() {
     test('表外回退原码大写', () {
       expect(subtitleLanguageNativeName('gsw-ch'), 'GSW-CH');
       expect(subtitleLanguageNativeName('xx'), 'XX');
+    });
+  });
+
+  // 反馈 Fz9HXThdSW：主 / 副字幕轨默认语言（PotPlayer 式偏好串）。
+  group('字幕轨默认语言偏好', () {
+    SubtitleSource emb(int i, String? lang, String codec, {String? title}) =>
+        SubtitleSource.embedded(
+          streamIndex: i,
+          language: lang,
+          codec: codec,
+          label: embeddedSubtitleTrackLabel(
+            EmbeddedSubtitleTrack(
+              streamIndex: i,
+              codec: codec,
+              language: lang,
+              title: title,
+            ),
+          ),
+        );
+
+    final List<SubtitleSource> tracks = <SubtitleSource>[
+      emb(0, 'eng', 'ass', title: 'Signs & Songs'),
+      emb(1, 'eng', 'ass', title: 'Full Subtitles'),
+      emb(2, 'chi', 'subrip', title: '简体中文'),
+      emb(3, 'jpn', 'hdmv_pgs_subtitle'),
+      emb(4, 'jpn', 'ass'),
+    ];
+
+    test('解析：逗号 / 分号 / 空白分隔，小写去空', () {
+      expect(
+        parseSubtitleLanguagePreferences(' Jpn, ja;English  chs '),
+        <String>['jpn', 'ja', 'english', 'chs'],
+      );
+      expect(parseSubtitleLanguagePreferences(''), isEmpty);
+      expect(parseSubtitleLanguagePreferences(null), isEmpty);
+    });
+
+    test('按偏好顺序挑第一条命中的文本轨，图形轨跳过', () {
+      final SubtitleSource? pick = pickSubtitleSourceByPreference(
+        tracks,
+        parseSubtitleLanguagePreferences('japanese, eng'),
+        accept: isTextEmbeddedSubtitleSource,
+      );
+      expect(pick?.streamIndex, 4, reason: 'PGS 日语轨不能抽文本，取 ass 日语轨');
+    });
+
+    test('前一个条目不命中就看下一个', () {
+      final SubtitleSource? pick = pickSubtitleSourceByPreference(
+        tracks,
+        parseSubtitleLanguagePreferences('kor, chs'),
+        accept: isTextEmbeddedSubtitleSource,
+      );
+      expect(pick?.streamIndex, 2);
+    });
+
+    test('& 连接：语言与标题词同时满足', () {
+      final SubtitleSource? pick = pickSubtitleSourceByPreference(
+        tracks,
+        parseSubtitleLanguagePreferences('full&english'),
+        accept: isTextEmbeddedSubtitleSource,
+      );
+      expect(pick?.streamIndex, 1, reason: '跳过同为英语的 Signs & Songs');
+    });
+
+    test('accept 排除主字幕那条', () {
+      final SubtitleSource? pick = pickSubtitleSourceByPreference(
+        tracks,
+        parseSubtitleLanguagePreferences('eng'),
+        accept: (SubtitleSource s) =>
+            s.streamIndex != 0 && isTextEmbeddedSubtitleSource(s),
+      );
+      expect(pick?.streamIndex, 1);
+    });
+
+    test('外挂文件名里的语言标记也能命中', () {
+      final List<SubtitleSource> ext = <SubtitleSource>[
+        const SubtitleSource.external(
+          externalPath: '/v/ep1.en.srt',
+          label: 'ep1.en.srt',
+        ),
+        const SubtitleSource.external(
+          externalPath: '/v/ep1.ja.srt',
+          label: 'ep1.ja.srt',
+        ),
+      ];
+      expect(
+        pickSubtitleSourceByPreference(ext, <String>['jpn'])?.externalPath,
+        '/v/ep1.ja.srt',
+      );
+    });
+
+    test('普通单词不被当成语言；短词不做子串匹配', () {
+      expect(trackPreferenceLanguageCode('forced'), isNull);
+      expect(trackPreferenceLanguageCode('eng'), 'en');
+      expect(trackPreferenceLanguageCode('日本語'), 'ja');
+      expect(
+        pickSubtitleSourceByPreference(tracks, <String>['xx']),
+        isNull,
+        reason: '都不命中返回 null，调用方回退第一条文本轨',
+      );
+      expect(pickSubtitleSourceByPreference(tracks, const <String>[]), isNull);
     });
   });
 }
