@@ -27,6 +27,7 @@ import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_sync_settings.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
+import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/srs/srs_app_runtime.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_sync_progress.dart';
@@ -330,6 +331,69 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
     await ref.read(srsAppRuntimeProvider)?.sync.syncFolderLocations();
   }
 
+  /// 开 / 关一个同步通道位置的复习同步（只停复习，通道的常规同步照常）。打开时立刻跑一轮全部位置。
+  Future<void> _setChannelEnabled(String id, bool enabled) async {
+    await ref.read(appProvider).setSrsLocationEnabled(id, enabled);
+    if (!mounted) return;
+    setState(() {});
+    if (enabled) {
+      unawaited(ref.read(srsAppRuntimeProvider)?.sync.syncNow());
+    }
+  }
+
+  Widget _locationSwitch(
+    BuildContext context, {
+    required Key key,
+    required bool value,
+    required ValueChanged<bool>? onChanged,
+  }) => KeyedSubtree(
+    key: key,
+    child: isGlassDesign(context) && !isCupertinoPlatform(context)
+        ? glassSettingsSwitch(
+            context: context,
+            value: value,
+            onChanged: onChanged,
+          )
+        : adaptiveSwitch(context: context, value: value, onChanged: onChanged),
+  );
+
+  /// 「添加存储位置」：文件夹在这里直接选；云盘与 Fushi 互联去各自的设置页配置（配好后复习数据自动随它们同步）。
+  Future<void> _addLocation() async {
+    final List<SettingsDestination> destinations = srsSyncDestinations(
+      ref.read(appProvider).moduleVisibility,
+    );
+    const Object folder = Object();
+    final Object? picked = await showAppDialog<Object>(
+      context: context,
+      builder: (BuildContext dialogContext) => FushiAlertDialog(
+        icon: const FushiDialogHeroIcon(icon: FushiIcons.add),
+        title: Text(t.srs_timeline_location_add_any),
+        actions: <Widget>[
+          FushiDialogAction(
+            key: const ValueKey<String>('srs_timeline_location_add_folder'),
+            label: t.srs_timeline_location_add,
+            kind: FushiDialogActionKind.primary,
+            autofocus: true,
+            onPressed: () => Navigator.of(dialogContext).pop(folder),
+          ),
+          for (final SettingsDestination d in destinations)
+            FushiDialogAction(
+              key: ValueKey<String>('srs_timeline_location_add_${d.id.name}'),
+              label: srsSyncDestinationLabel(d),
+              kind: FushiDialogActionKind.secondary,
+              onPressed: () => Navigator.of(dialogContext).pop(d),
+            ),
+        ],
+      ),
+    );
+    if (!mounted || picked == null) return;
+    if (identical(picked, folder)) return _addFolder();
+    if (picked is SettingsDestination) {
+      await openSrsSyncDestination(context, picked);
+      if (mounted) unawaited(_reload());
+    }
+  }
+
   Future<void> _addFolder() async {
     final String? path = await pickRealDirectoryPath(
       context: context,
@@ -528,8 +592,9 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
     final Map<String, Object> errors =
         ref.read(srsAppRuntimeProvider)?.sync.folderErrors ??
         const <String, Object>{};
+    final Set<String> disabled = ref.watch(appProvider).srsDisabledLocations;
     final List<String> channels = <String>[
-      for (final String id in lastOk.keys)
+      for (final String id in <String>{...lastOk.keys, ...disabled})
         if (!id.startsWith('folder:')) id,
     ]..sort();
     return AdaptiveSettingsSection(
@@ -545,14 +610,32 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
             ),
             subtitle: <String>[
               t.srs_timeline_location_channel,
-              ?_cryptoLabel(id),
-              _lastOkLabel(context, lastOk[id]),
+              if (disabled.contains(id))
+                t.srs_timeline_location_off
+              else ...<String>[
+                ?_cryptoLabel(id),
+                _lastOkLabel(context, lastOk[id]),
+              ],
             ].join(' · '),
             icon: _cryptoLabel(id) == null
                 ? FushiIcons.cloudSync
                 : FushiIcons.lock,
             showIcon: true,
             subtitleMaxLines: 2,
+            trailing: Semantics(
+              label: t.srs_timeline_location_toggle,
+              child: _locationSwitch(
+                context,
+                key: ValueKey<String>('srs_timeline_channel_toggle_$id'),
+                value: !disabled.contains(id),
+                onChanged: _busy
+                    ? null
+                    : (bool v) => srsRunLogged(
+                        'SrsHistory.toggleChannel',
+                        () => _setChannelEnabled(id, v),
+                      ),
+              ),
+            ),
             onTap: _busy
                 ? null
                 : () => srsRunLogged(
@@ -612,12 +695,12 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
           ),
         AdaptiveSettingsNavigationRow(
           key: const ValueKey<String>('srs_timeline_location_add'),
-          title: t.srs_timeline_location_add,
-          subtitle: t.srs_timeline_location_add_hint,
+          title: t.srs_timeline_location_add_any,
+          subtitle: t.srs_timeline_location_add_any_hint,
           icon: FushiIcons.add,
           showIcon: true,
           onTap: () {
-            if (!_busy) srsRunLogged('SrsHistory.addFolder', _addFolder);
+            if (!_busy) srsRunLogged('SrsHistory.addLocation', _addLocation);
           },
         ),
       ],

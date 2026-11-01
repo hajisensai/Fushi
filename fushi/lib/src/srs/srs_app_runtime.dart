@@ -183,6 +183,8 @@ class SrsAppRuntime {
     onEncryptionEnabled: app.setSrsLocationKey,
     // 设置 › 同步「自动同步复习数据」（反馈 VNz9dsLeIy）：关掉后只剩手动同步与进复习页的节流同步。
     autoSyncEnabled: () => SyncRepository(app.database).isSrsAutoSyncEnabled(),
+    // 同步与历史页「存储位置」上逐个关掉的通道位置（只停复习同步，通道本身照常）。
+    locationDisabled: (String id) => app.srsDisabledLocations.contains(id),
   );
 
   /// 互联快速通道（srs_interconnect_watch.dart）：长轮询所连 host，有新数据立刻同步这一条通道。

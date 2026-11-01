@@ -1876,6 +1876,8 @@ class SyncRepository {
     kStatLegacyProfileIdPrefKey,
     // 复习同步 v2 的文件夹存储位置：路径是这台设备的磁盘 / 挂载点，换设备恢复带过去没有意义。
     PreferencesRepository.srsFolderLocationsKey,
+    // 复习同步 v2 里关掉的通道位置：是这台设备「在不在那里同步」的选择，别的设备恢复备份不能替它关 / 开。
+    PreferencesRepository.srsDisabledLocationsKey,
     // 首次 v2 同步的确认是这台设备做的：别的设备恢复备份带过来不能替它确认。
     PreferencesRepository.srsSync2MergeConfirmedKey,
     // 复习同步 v2 存储位置的加密密钥：凭据，绝不随备份 / Profile 出境（换设备时重新输入口令）。

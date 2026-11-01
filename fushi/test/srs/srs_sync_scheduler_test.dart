@@ -181,6 +181,7 @@ void main() {
     Future<List<SrsLocalDirectory>> Function()? localDirectories,
     Future<List<SrsFolderLocation>> Function()? folderLocations,
     DateTime Function()? clock,
+    bool Function(String locationId)? locationDisabled,
   }) => SrsSyncScheduler(
     readStore: () async => s ?? store,
     channels:
@@ -198,6 +199,7 @@ void main() {
     onDataChanged: () => changed++,
     onNotice: notices.add,
     clock: clock,
+    locationDisabled: locationDisabled,
   );
 
   /// 本机在 [r] 下的 v2 设备目录（`fushi-srs/<profileUid>/v2/devices/<DeviceId>/`）。
@@ -233,6 +235,24 @@ void main() {
             l.cast<String, Object?>(),
     ];
   }
+
+  // 用户截图：谷歌云盘位置卡在一次性迁移里、也关不掉。关掉的位置整轮跳过（不建目录、不迁移），不算成功也不算失败。
+  test('关掉的位置：整轮跳过、不报错；打开后照常同步', () async {
+    final Set<String> disabled = <String>{'local:${root.path}'};
+    final SrsSyncScheduler s = scheduler(locationDisabled: disabled.contains);
+    addTearDown(s.dispose);
+    final SrsSyncNowResult off = await s.syncNow();
+    expect(off.ran, 0);
+    expect(off.errors, isEmpty, reason: '关掉不是失败');
+    expect(ownSegments(root, store), 0, reason: '关掉的位置一个文件都不写');
+    expect(root.listSync(), isEmpty);
+
+    disabled.clear();
+    final SrsSyncNowResult on = await s.syncNow();
+    expect(on.ran, 1);
+    expect(on.errors, isEmpty);
+    expect(await uploadedLocations(store), isNotEmpty);
+  });
 
   // 反馈「媒体同步那么慢」：媒体对账每轮都全量列远端媒体目录、逐个看本机文件、扫三遍笔记引用。
   test('媒体对账：没有新操作进出的一轮跳过，有新笔记 / 到期 / 用户主动同步时照跑', () async {
