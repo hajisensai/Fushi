@@ -44,6 +44,7 @@
 #include <vector>
 
 #include "il2cpp_thread_scope.h"
+#include "immediate_text_repeat_filter.h"
 #include "adapters/unity_mono_text.h"
 #include "adapters/unity_mono_lookup_core.h"
 #include "adapters/unity_mono_audio.h"
