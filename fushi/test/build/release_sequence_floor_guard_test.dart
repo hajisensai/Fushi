@@ -31,11 +31,12 @@ void main() {
 
   /// 历史上真实出现过的最大序号。
   ///
-  /// 10405 = 已发布到 `fushi-debug-rolling` 并装到用户机器上的最大值；
-  /// 10546 = 重写前 develop 曾推上去（并跑过发布 workflow）的最大计数。
-  /// 取两者较大者当下限：地板必须让**任何分支**的新序号都越过它，否则老装机
-  /// 永远收不到更新。再次重写历史后要重新核这个数（见 docs/agent/build.md）。
-  const int historicalMaxSequence = 10546;
+  /// 第一次重写（2026-08-12）时是 10546；第二次重写（2026-11-01）前最后一次
+  /// 发布的序号是 22671（develop 4b14ceff00：计数 20671 + 旧地板 2000，GitHub
+  /// Release 资产名里的最大 `-debug.<seq>`），重写剪掉 54 个空提交后计数倒退。
+  /// 地板必须让**任何分支**的新序号都越过它，否则老装机永远收不到更新。
+  /// 再次重写历史后要重新核这个数（见 docs/agent/build.md）。
+  const int historicalMaxSequence = 22671;
 
   test('前置：序号脚本与 workflows 目录都在', () {
     expect(
