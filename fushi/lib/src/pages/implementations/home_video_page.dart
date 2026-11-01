@@ -132,6 +132,7 @@ import 'package:fushi/src/pages/implementations/media_sources_dialog.dart';
 import 'package:fushi/src/pages/implementations/library_filter_dropdown.dart';
 import 'package:fushi/src/pages/implementations/library_filter_panel.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_bar.dart';
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_header_search.dart';
 import 'package:fushi/src/pages/implementations/tag_filter_sheet.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
@@ -4934,7 +4935,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// 淡入淡出过渡。
   Widget _buildPendingScrapeBanner() {
     final Duration duration = fushiMotionDuration(context, FushiMotion.medium);
-    return AnimatedSize(
+    return FushiAnimatedSize(
       duration: duration,
       curve: FushiMotion.standard,
       alignment: Alignment.topCenter,

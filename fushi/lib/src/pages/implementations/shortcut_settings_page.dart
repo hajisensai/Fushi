@@ -505,14 +505,14 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
         AdaptiveSettingsRow(
           title: ShortcutAction.globalExternalLookup.label,
           subtitle: t.shortcut_scope_global_external_mobile_note,
-          icon: Icons.info_outline,
+          icon: FushiIcons.info,
           showIcon: true,
         ),
       // 纯弹窗内滚轮触发，用户看不到「在哪儿按」时会以为没生效，故给一行说明。
       if (scope == ShortcutScope.dictionaryPopup)
         AdaptiveSettingsRow(
           title: t.shortcut_scope_dictionary_popup_note,
-          icon: Icons.info_outline,
+          icon: FushiIcons.info,
           showIcon: true,
         ),
       // 焦点导航（反馈 bjPjRHsaUy）：先讲清优先级（页面已占用的键在该页面优先），
@@ -521,7 +521,7 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
       if (scope == ShortcutScope.gamepad) ...<Widget>[
         AdaptiveSettingsRow(
           title: t.shortcut_focus_navigation_note,
-          icon: Icons.info_outline,
+          icon: FushiIcons.info,
           showIcon: true,
         ),
         _buildFocusPresetRow(
@@ -541,7 +541,7 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
       if (scope == ShortcutScope.globalExternal && !_isMobilePlatform)
         AdaptiveSettingsRow(
           title: t.shortcut_scope_global_external_desktop_note,
-          icon: Icons.info_outline,
+          icon: FushiIcons.info,
           showIcon: true,
         ),
       // 用户请求（Flow Launcher 式用法）：「置顶并打开查词页」热键的另一半——查完
@@ -575,7 +575,7 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
       key: ValueKey<String>('shortcut-focus-preset-${preset.name}'),
       title: title,
       subtitle: subtitle,
-      icon: Icons.keyboard_outlined,
+      icon: FushiIcons.keyboard,
       showIcon: true,
       value: isFocusNavigationPresetEnabled(_registry, preset),
       onChanged: (bool value) async {
@@ -650,7 +650,7 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
       // `system`——壳的身份不该冒充真正的系统分类。
       id: SettingsDestinationId.shortcuts,
       title: t.shortcut_settings_title,
-      icon: Icons.keyboard_outlined,
+      icon: FushiIcons.keyboard,
       sections: const <SettingsSection>[],
       // 浏览器自己管滚动：吸顶工具区、宽屏左栏导航、粘性分组标题都要占满视口。
       bodyFillsViewport: true,

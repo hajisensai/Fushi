@@ -734,7 +734,7 @@ class SyncOrchestrator {
   @visibleForTesting
   File resumableTmpFile(String kind, String name, String suffix) {
     final String id = sha1
-        .convert(utf8.encode('$kind $name'))
+        .convert(utf8.encode('$kind\u0000$name'))
         .toString()
         .substring(0, 24);
     return File(p.join(_tempDir.path, 'fushi_sync_pull_$id$suffix'));

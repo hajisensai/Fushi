@@ -511,14 +511,13 @@ class GamepadService {
     // (statistics/logs) which has no focus geometry for D-pad edge takeover.
     if (_tryScrollPage(ctx, button)) return;
 
-    // TODO-700 T1：B 不再裸 maybePop。仅当注册表把 B 解析成全局
-    // ShortcutAction.globalBack 时才返回，使「返回」键可改键（约束3/5）。页面自己的
+    // TODO-700 T1：不再裸判 B 键。按钮由注册表解析成全局 ShortcutAction.globalBack
+    // 时才返回（默认绑 B），用户把「返回」改绑到别的键也照样生效（约束3/5）。页面自己的
     // globalBack（home）已在上面的 GamepadButtonIntent 分派里消费，这里只兜未自解析
     // 的页面。globalBack 住在 universal scope（全 app 唯一的「返回上一级」）。
     // 排在焦点导航之前：与键盘 wrapper 同序（页面 → 返回上一级 → 焦点导航）。
-    if (button == GamepadButton.b &&
-        registry?.resolveGamepad(button, scope: ShortcutScope.universal) ==
-            ShortcutAction.globalBack) {
+    if (registry?.resolveGamepad(button, scope: ShortcutScope.universal) ==
+        ShortcutAction.globalBack) {
       // BUG-2953：查词浮层自带导航层里开着菜单时只关菜单（菜单不在根栈上）。
       if (LookupOverlayNavigator.popActiveMenu()) return;
       navigatorKey.currentState?.maybePop();
