@@ -191,7 +191,7 @@
   "ai_provider_accepts_images_summary": "视觉模型才开。开了之后 AI 助手附上屏幕时会连截图一起发给模型",
   "ai_provider_add": "添加提供商",
   "ai_provider_allow_http": "允许明文 HTTP",
-  "ai_provider_allow_http_summary": "本地模型服务（http://localhost）需要打开",
+  "ai_provider_allow_http_summary": "局域网以外的 http:// 地址需要打开；本机和局域网地址（如 192.168.x.x）无需打开",
   "ai_provider_api_key": "API 密钥",
   "ai_provider_api_key_cooling": "末尾 ${tail} · 冷却中，${time} 后再用（${reason}）",
   "ai_provider_api_key_disable": "停用此密钥",

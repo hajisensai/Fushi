@@ -191,7 +191,7 @@
   "ai_provider_accepts_images_summary": "Turn on for vision models. The AI assistant then sends a screenshot along with the screen text.",
   "ai_provider_add": "Tambah penyedia",
   "ai_provider_allow_http": "Izinkan HTTP biasa",
-  "ai_provider_allow_http_summary": "Diperlukan untuk server lokal di http://localhost",
+  "ai_provider_allow_http_summary": "Diperlukan untuk alamat http:// di luar jaringan lokal; localhost dan alamat LAN (mis. 192.168.x.x) berfungsi tanpanya",
   "ai_provider_api_key": "Kunci API",
   "ai_provider_api_key_cooling": "Ends in ${tail} · cooling down until ${time} (${reason})",
   "ai_provider_api_key_disable": "Stop using this key",

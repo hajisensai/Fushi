@@ -15,7 +15,7 @@ import 'dart:math' as math;
 
 import 'package:fushi_engine/ai/ai_model_pricing.dart';
 import 'package:fushi_engine/media/torrent/torznab_client.dart'
-    show isSafeExternalProviderEndpoint;
+    show isPrivateNetworkProviderHost, isSafeExternalProviderEndpoint;
 
 /// 请求/响应的 wire 协议。
 enum AiWireProtocol {
@@ -356,13 +356,17 @@ class AiProviderConfig {
         'AI provider base URL must have a host and carry no user info',
       );
     }
+    // 本机与局域网地址（Ollama / LM Studio / 局域网里另一台电脑上的推理服务）
+    // 的明文 HTTP 不出局域网，与 localhost 同等放行；公网地址的明文 HTTP 才要
+    // 用户显式打开 [allowInsecureHttp]。
     if (!isSafeExternalProviderEndpoint(
       baseUrl,
-      allowInsecureHttp: allowInsecureHttp,
+      allowInsecureHttp:
+          allowInsecureHttp || isPrivateNetworkProviderHost(baseUrl.host),
     )) {
       throw ArgumentError(
         'AI provider base URL must use HTTPS unless plain HTTP is explicitly '
-        'allowed or the host is loopback',
+        'allowed or the host is on the local network',
       );
     }
   }
@@ -448,8 +452,8 @@ class AiProviderConfig {
   final AiReasoningEffort reasoningEffort;
   final bool enabled;
 
-  /// 明文 HTTP 的显式放行。本地推理服务（Ollama / LM Studio）跑在
-  /// `http://localhost`，不给这个开关等于把本地模型挡在门外。
+  /// 公网地址明文 HTTP 的显式放行。本机 / 局域网地址（`http://localhost`、
+  /// `http://192.168.x.x` 等，见 `isPrivateNetworkProviderHost`）不需要它。
   final bool allowInsecureHttp;
 
   /// 每分钟最多发几次请求（这家所有功能合计，见 `AiRateLimiter`）；0 = 不限。

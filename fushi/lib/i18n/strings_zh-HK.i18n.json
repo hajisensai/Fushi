@@ -191,7 +191,7 @@
   "ai_provider_accepts_images_summary": "Turn on for vision models. The AI assistant then sends a screenshot along with the screen text.",
   "ai_provider_add": "新增提供商",
   "ai_provider_allow_http": "允許明文 HTTP",
-  "ai_provider_allow_http_summary": "本地模型服務（http://localhost）需要開啟",
+  "ai_provider_allow_http_summary": "區域網路以外的 http:// 位址需要開啟；本機和區域網路位址（如 192.168.x.x）無需開啟",
   "ai_provider_api_key": "API 金鑰",
   "ai_provider_api_key_cooling": "Ends in ${tail} · cooling down until ${time} (${reason})",
   "ai_provider_api_key_disable": "Stop using this key",

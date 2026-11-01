@@ -191,7 +191,7 @@
   "ai_provider_accepts_images_summary": "Turn on for vision models. The AI assistant then sends a screenshot along with the screen text.",
   "ai_provider_add": "Provider toevoegen",
   "ai_provider_allow_http": "Gewone HTTP toestaan",
-  "ai_provider_allow_http_summary": "Vereist voor lokale servers op http://localhost",
+  "ai_provider_allow_http_summary": "Nodig voor http://-adressen buiten je lokale netwerk; localhost en LAN-adressen (bijv. 192.168.x.x) werken zonder",
   "ai_provider_api_key": "API-sleutel",
   "ai_provider_api_key_cooling": "Ends in ${tail} · cooling down until ${time} (${reason})",
   "ai_provider_api_key_disable": "Stop using this key",

@@ -191,7 +191,7 @@
   "ai_provider_accepts_images_summary": "Turn on for vision models. The AI assistant then sends a screenshot along with the screen text.",
   "ai_provider_add": "Thêm nhà cung cấp",
   "ai_provider_allow_http": "Cho phép HTTP thuần",
-  "ai_provider_allow_http_summary": "Cần cho máy chủ cục bộ trên http://localhost",
+  "ai_provider_allow_http_summary": "Cần cho địa chỉ http:// bên ngoài mạng nội bộ; localhost và địa chỉ LAN (vd. 192.168.x.x) không cần bật",
   "ai_provider_api_key": "Khóa API",
   "ai_provider_api_key_cooling": "Ends in ${tail} · cooling down until ${time} (${reason})",
   "ai_provider_api_key_disable": "Stop using this key",

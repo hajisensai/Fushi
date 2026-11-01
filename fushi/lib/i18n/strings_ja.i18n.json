@@ -191,7 +191,7 @@
   "ai_provider_accepts_images_summary": "Turn on for vision models. The AI assistant then sends a screenshot along with the screen text.",
   "ai_provider_add": "プロバイダーを追加",
   "ai_provider_allow_http": "平文の HTTP を許可",
-  "ai_provider_allow_http_summary": "http://localhost のローカルサーバーで必要です",
+  "ai_provider_allow_http_summary": "ローカルネットワーク外の http:// アドレスに必要です。localhost や LAN アドレス（192.168.x.x など）は不要です",
   "ai_provider_api_key": "API キー",
   "ai_provider_api_key_cooling": "Ends in ${tail} · cooling down until ${time} (${reason})",
   "ai_provider_api_key_disable": "Stop using this key",

@@ -191,7 +191,7 @@
   "ai_provider_accepts_images_summary": "Turn on for vision models. The AI assistant then sends a screenshot along with the screen text.",
   "ai_provider_add": "Añadir proveedor",
   "ai_provider_allow_http": "Permitir HTTP sin cifrar",
-  "ai_provider_allow_http_summary": "Necesario para servidores locales en http://localhost",
+  "ai_provider_allow_http_summary": "Necesario para direcciones http:// fuera de tu red local; localhost y las direcciones de la red local (p. ej. 192.168.x.x) funcionan sin ello",
   "ai_provider_api_key": "Clave de API",
   "ai_provider_api_key_cooling": "Ends in ${tail} · cooling down until ${time} (${reason})",
   "ai_provider_api_key_disable": "Stop using this key",

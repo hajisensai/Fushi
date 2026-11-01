@@ -191,7 +191,7 @@
   "ai_provider_accepts_images_summary": "Turn on for vision models. The AI assistant then sends a screenshot along with the screen text.",
   "ai_provider_add": "إضافة مزود",
   "ai_provider_allow_http": "السماح بـ HTTP العادي",
-  "ai_provider_allow_http_summary": "مطلوب للخوادم المحلية على http://localhost",
+  "ai_provider_allow_http_summary": "مطلوب لعناوين http:// خارج شبكتك المحلية؛ يعمل localhost وعناوين الشبكة المحلية (مثل 192.168.x.x) دونه",
   "ai_provider_api_key": "مفتاح API",
   "ai_provider_api_key_cooling": "Ends in ${tail} · cooling down until ${time} (${reason})",
   "ai_provider_api_key_disable": "Stop using this key",

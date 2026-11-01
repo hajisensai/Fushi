@@ -191,7 +191,7 @@
   "ai_provider_accepts_images_summary": "Turn on for vision models. The AI assistant then sends a screenshot along with the screen text.",
   "ai_provider_add": "Sağlayıcı ekle",
   "ai_provider_allow_http": "Düz HTTP'ye izin ver",
-  "ai_provider_allow_http_summary": "http://localhost üzerindeki yerel sunucular için gereklidir",
+  "ai_provider_allow_http_summary": "Yerel ağınız dışındaki http:// adresleri için gerekir; localhost ve yerel ağ adresleri (ör. 192.168.x.x) bunsuz çalışır",
   "ai_provider_api_key": "API Anahtarı",
   "ai_provider_api_key_cooling": "Ends in ${tail} · cooling down until ${time} (${reason})",
   "ai_provider_api_key_disable": "Stop using this key",

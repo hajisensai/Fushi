@@ -191,7 +191,7 @@
   "ai_provider_accepts_images_summary": "Turn on for vision models. The AI assistant then sends a screenshot along with the screen text.",
   "ai_provider_add": "เพิ่มผู้ให้บริการ",
   "ai_provider_allow_http": "อนุญาต HTTP แบบธรรมดา",
-  "ai_provider_allow_http_summary": "จำเป็นสำหรับเซิร์ฟเวอร์ในเครื่องที่ http://localhost",
+  "ai_provider_allow_http_summary": "จำเป็นสำหรับที่อยู่ http:// นอกเครือข่ายภายใน ส่วน localhost และที่อยู่ LAN (เช่น 192.168.x.x) ใช้ได้โดยไม่ต้องเปิด",
   "ai_provider_api_key": "คีย์ API",
   "ai_provider_api_key_cooling": "Ends in ${tail} · cooling down until ${time} (${reason})",
   "ai_provider_api_key_disable": "Stop using this key",

@@ -28,6 +28,8 @@ import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_key_rotation.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
+import 'package:fushi_engine/media/torrent/torznab_client.dart'
+    show isPrivateNetworkProviderHost;
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/ai_provider_settings_section.dart';
@@ -135,6 +137,34 @@ void main() {
       expect(back.single.allowInsecureHttp, isTrue);
       // ollama 预设不要求 key，所以没填 key 也算「配全了」。
       expect(back.single.isUsable, isTrue);
+    });
+
+    test('明文 HTTP：局域网地址与 localhost 同等放行（反馈 9_vP-OLetJ）', () {
+      // 局域网里另一台电脑上的 Ollama / LM Studio 用户填的是 http://192.168.x.x，
+      // 不需要也不应要求勾「允许明文 HTTP」；公网明文 HTTP 仍要显式勾选。
+      for (final String url in <String>[
+        'http://192.168.0.178:1234/v1',
+        'http://10.0.0.5:11434/v1',
+        'http://172.20.1.2:8000/v1',
+        'http://169.254.10.10/v1',
+        'http://nas.local:1234/v1',
+        'http://[fd12:3456::1]:1234/v1',
+        'http://[fe80::1]:1234/v1',
+      ]) {
+        expect(_config(baseUrl: url).baseUrl.scheme, 'http', reason: url);
+      }
+      for (final String url in <String>[
+        'http://172.32.0.1/v1',
+        'http://100.64.1.2/v1',
+        'http://8.8.8.8/v1',
+        'http://192.169.0.1/v1',
+        'http://[2001:db8::1]/v1',
+      ]) {
+        expect(() => _config(baseUrl: url), throwsArgumentError, reason: url);
+      }
+      expect(isPrivateNetworkProviderHost('192.168.1.1'), isTrue);
+      expect(isPrivateNetworkProviderHost('192.168.1'), isFalse);
+      expect(isPrivateNetworkProviderHost('example.com'), isFalse);
     });
 
     test('坏一条只丢一条，不让整份清单消失', () {

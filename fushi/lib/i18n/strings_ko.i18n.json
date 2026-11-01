@@ -191,7 +191,7 @@
   "ai_provider_accepts_images_summary": "Turn on for vision models. The AI assistant then sends a screenshot along with the screen text.",
   "ai_provider_add": "제공자 추가",
   "ai_provider_allow_http": "일반 HTTP 허용",
-  "ai_provider_allow_http_summary": "http://localhost의 로컬 서버에 필요합니다",
+  "ai_provider_allow_http_summary": "로컬 네트워크 밖의 http:// 주소에 필요합니다. localhost와 LAN 주소(예: 192.168.x.x)는 필요하지 않습니다",
   "ai_provider_api_key": "API 키",
   "ai_provider_api_key_cooling": "Ends in ${tail} · cooling down until ${time} (${reason})",
   "ai_provider_api_key_disable": "Stop using this key",
