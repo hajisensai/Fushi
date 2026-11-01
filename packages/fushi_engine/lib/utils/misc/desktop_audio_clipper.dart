@@ -15,6 +15,8 @@ import 'package:fushi_engine/mining/immersion_mining_request.dart'
 import 'package:http/http.dart' as http;
 import 'package:meta/meta.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
+import 'package:fushi_engine/utils/net/app_proxy.dart'
+    show resolveAppProxyUrlForExternalClient;
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/sync/tls/fushi_pinning_http.dart'
     show canonicalSha256Fingerprint;
@@ -318,7 +320,10 @@ List<String> buildFfmpegRemoteInputArgs(
   final FfmpegRemoteInputRoute? route = ffmpegRemoteInputRouteResolver?.call(
     inputPath,
   );
-  final String? httpProxy = route?.httpProxy;
+  // 宿主中继优先（那时输入地址已是中继认识的明文形式）；否则与 Dart 出站同一份 app
+  // 代理裁决（反馈 vhW6OpRy2H：ffmpeg 直连 googlevideo 过去完全绕过用户设的代理）。
+  final String? httpProxy =
+      route?.httpProxy ?? _appProxyForFfmpegInput(inputPath);
   final String? pin = ffmpegTlsPinArg(tlsPinSha256);
   final _FfmpegHttpHeaderArgs headers = _FfmpegHttpHeaderArgs.from(
     httpHeaders,
@@ -356,8 +361,8 @@ List<String> buildFfmpegRemoteInputArgs(
     '1',
     '-reconnect_delay_max',
     '5',
-    // 经宿主本机中继取字节（见 [FfmpegRemoteInputRoute]）：hls demuxer 会把 http_proxy
-    // 沿用到每个分片请求，与播放器走同一条归一化路径。
+    // 经宿主本机中继取字节（见 [FfmpegRemoteInputRoute]），或经 app 代理设置出站（见
+    // [_appProxyForFfmpegInput]）：hls demuxer 会把 http_proxy 沿用到每个分片请求。
     if (httpProxy != null && httpProxy.isNotEmpty) ...<String>[
       '-http_proxy',
       httpProxy,
@@ -375,6 +380,65 @@ List<String> buildFfmpegRemoteInputArgs(
       '0',
     ],
   ];
+}
+
+/// 制卡抽取层上报的一条失败摘要（[FfmpegFailureReporter] 收到的串，或拼进中止原因的
+/// 那段根因）是不是「连不上远端媒体服务器」——网络 / 代理问题，而不是缺 ffmpeg、编码器
+/// 不支持、时间窗不对这类本机问题。
+///
+/// 反馈 vhW6OpRy2H：中止原因原样是
+/// `required audio missing (HandshakeException: Connection terminated during handshake)`，
+/// 浏览器扩展照样弹出来了，但普通用户读不出「这是网络连不上 YouTube、该去查代理」。
+/// 判据只认本文件自己产出的两种摘要形状（是契约，不是猜外部文本）：
+/// * Dart 出站异常（[_reportFfmpegUnexpectedException] 以 `$error` 开头）：`HandshakeException`
+///   / `TlsException` / `SocketException` / `ClientException`（package:http）/ `HttpException`
+///   / `TimeoutException`；
+/// * ffmpeg 退出码（[FfmpegRunResult.failureSummary] 的 `ffmpeg exit -N`）里的网络 errno：
+///   连接超时 / 被拒 / 被重置 / 中止 / 网络或主机不可达。errno 数值随平台的 C 运行库而变
+///   （Windows 捆绑 ffmpeg 的 ETIMEDOUT 是 138，Linux/Android 是 110，macOS/iOS 是 60），
+///   所以按本进程平台取表，不混用——混用会把 Linux 的 `ENODATA(61)` 之类误判成网络问题。
+bool isRemoteFetchNetworkFailure(String summary) {
+  if (RegExp(
+    r'\b(HandshakeException|TlsException|SocketException|ClientException|'
+    r'HttpException|TimeoutException)\b',
+  ).hasMatch(summary)) {
+    return true;
+  }
+  final Set<int> networkErrnos = Platform.isWindows
+      ? const <int>{106, 107, 108, 110, 116, 118, 138}
+      : (Platform.isMacOS || Platform.isIOS)
+      ? const <int>{50, 51, 53, 54, 60, 61, 65}
+      : const <int>{100, 101, 103, 104, 110, 111, 113};
+  for (final RegExpMatch m in RegExp(
+    r'ffmpeg exit -(\d+)\b',
+  ).allMatches(summary)) {
+    if (networkErrnos.contains(int.parse(m.group(1)!))) return true;
+  }
+  return false;
+}
+
+/// ffmpeg 读远端 [inputPath] 时该用的 app 代理（`-http_proxy` 实参），直连 → null。
+///
+/// 反馈 vhW6OpRy2H：制卡句子音频的 Dart range 物化走 app 代理，失败后回退的 ffmpeg
+/// 直读却不走——用户在 app 里配的代理（手动地址 / 自动模式下的系统代理）只覆盖了一半，
+/// 连不上 googlevideo 的网络里两程一起失败（`HandshakeException` → `ffmpeg exit -138`）。
+/// 裁决只有一份实现：[resolveAppProxyUrlForExternalClient]（与 Dart `findProxy` 同答案）。
+///
+/// 直连裁决不传 `-http_proxy`：ffmpeg 此时按自己的老规矩读继承来的 `http_proxy` 环境变量
+/// （与改动前一致）。SOCKS 环境变量代理 ffmpeg 不支持，记诊断后直连，不冒充支持。
+String? _appProxyForFfmpegInput(String inputPath) {
+  final Uri? uri = Uri.tryParse(inputPath);
+  if (uri == null || uri.host.isEmpty) return null;
+  final ({String? proxyUrl, bool socksUnsupported}) decision =
+      resolveAppProxyUrlForExternalClient(uri);
+  if (decision.socksUnsupported) {
+    engineLog.logDiagnostic(
+      'ffmpeg-app-proxy',
+      'app proxy for ${uri.host} is a SOCKS proxy from the environment; '
+          'ffmpeg -http_proxy only speaks HTTP proxies, connecting directly',
+    );
+  }
+  return decision.proxyUrl;
 }
 
 /// TODO-1314（B5，借鉴 yt-dlp 分片 range 下载）：把 googlevideo 流 URL 追加/覆盖

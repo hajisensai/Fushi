@@ -397,7 +397,7 @@ import 'package:fushi/src/sync/extension_profile_api.dart'
     show ExtensionProfileApi, ExtensionRequestServices;
 import 'package:fushi/src/profile/profile_settings_view.dart';
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart'
-    show kMiningAnimatedPlayOnceZoneKey;
+    show isRemoteFetchNetworkFailure, kMiningAnimatedPlayOnceZoneKey;
 import 'package:fushi/src/sync/fushi_api_server_manager.dart';
 import 'package:fushi/src/sync/fushi_extension_api_core.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart';
@@ -12280,6 +12280,23 @@ RemoteMineResult remoteMineError(
   );
 }
 
+/// 浏览器扩展 YouTube 制卡中止时回给扩展 toast 的那句话。
+///
+/// 反馈 vhW6OpRy2H：原样回的是 `YouTube 制卡失败：required audio missing
+/// (HandshakeException: Connection terminated during handshake)`——扩展照样弹出来了，
+/// 但普通用户读不出这是「app 连不上 YouTube 的视频服务器」，更不知道该去查代理。
+/// 中止根因是网络类失败（[isRemoteFetchNetworkFailure]）时先说人话、指出能做什么，
+/// 技术原因仍附在后面供排查；其它中止原因（缺 ffmpeg 等）保持原样。
+String youtubeMineAbortMessage(String? abortReason) {
+  final String reason = abortReason ?? '媒体抽取失败';
+  if (abortReason != null && isRemoteFetchNetworkFailure(abortReason)) {
+    return 'YouTube 制卡失败：Fushi 连不上 YouTube 的视频服务器，取不到句子音频'
+        '（网络或代理问题）。请在 Fushi 设置的网络代理里配置能访问 YouTube 的代理后重试。'
+        '\n原因：$reason';
+  }
+  return 'YouTube 制卡失败：$reason';
+}
+
 class _AppModelRemoteLookupService
     implements
         FushiRemoteLookupService,
@@ -12596,7 +12613,7 @@ class _AppModelRemoteLookupService
       if (ytRes.aborted) {
         return remoteMineError(
           'Anki.mineImmersion.youtube',
-          'YouTube 制卡失败：${ytRes.abortReason ?? '媒体抽取失败'}',
+          youtubeMineAbortMessage(ytRes.abortReason),
           detail: ytRes.abortReason,
         );
       }

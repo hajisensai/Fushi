@@ -2,6 +2,8 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
+import 'package:fushi_engine/utils/net/app_proxy.dart'
+    show appUserProxyModeReader, kProxyModeDirect;
 
 /// 只回 `-h demuxer=hls` 帮助文本的假后端（能力探测用）。
 class _HelpBackend implements FfmpegBackend {
@@ -39,7 +41,18 @@ void main() {
   const String relayed = 'http://cdn.hoster.example:443/hls/index.m3u8';
   const String local = r'D:\videos\ep01.mkv';
 
-  tearDown(() => ffmpegRemoteInputRouteResolver = null);
+  // 反馈 vhW6OpRy2H 起未登记中继的远端输入会按 app 代理裁决带 `-http_proxy`；本文件只
+  // 断言中继那一层，钉成「直连」，免得跑测试的机器上的 `HTTPS_PROXY` 环境变量混进来。
+  // app 代理那一层见 `ffmpeg_app_proxy_args_test.dart`。
+  late String Function() savedMode;
+  setUp(() {
+    savedMode = appUserProxyModeReader;
+    appUserProxyModeReader = () => kProxyModeDirect;
+  });
+  tearDown(() {
+    ffmpegRemoteInputRouteResolver = null;
+    appUserProxyModeReader = savedMode;
+  });
 
   test('① 没有装配点 / 未登记：参数与改动前逐字节相同', () {
     final List<String> before = buildFfmpegRemoteInputArgs(relayed);
