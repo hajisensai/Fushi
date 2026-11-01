@@ -296,7 +296,7 @@ void main() {
   });
 
   group('runner: VoiceHookReader 回调安全发布', () {
-    test('Popup owner、try_lock、无 HWND 查询、release 不带 Left 位', () {
+    test('Popup owner、只拿映射寿命共享锁、无 HWND 查询、release 不带 Left 位', () {
       final String header = compactCode(readerHeader);
       expect(
         header.contains(
@@ -310,7 +310,18 @@ void main() {
           'uint32_t VoiceHookReader::TryPublishOverlayClickShieldTransaction(',
         ),
       );
-      expect(body.contains('std::try_to_lock'), isTrue);
+      // 反馈 -AynHxzwNe：reader 的 st.mutex 在 PCM 抓取 / 写查词帧 / PollText 期间
+      // 整段持有，try_lock 失败就 fail-open，左键偶发漏给采样型引擎。回调只拿映射
+      // 寿命的共享锁；写入方之间由共享内存 seq 上的 CAS 串行。
+      expect(
+        body.contains('MappingLifetimeShared mapping(st);'.replaceAll(' ', '')),
+        isTrue,
+      );
+      expect(
+        body.contains('st.mutex'),
+        isFalse,
+        reason: '回调发布不能再与 PCM / 查词帧争 reader 主锁',
+      );
       expect(body.contains('std::lock_guard'), isFalse);
       expect(
         body.contains('IsWindow('),
@@ -326,6 +337,25 @@ void main() {
       );
       // 常规（会重试一秒）的发布入口仍把 Popup 列在白名单里——host 侧另一条路
       // （窗口线程）若将来要用，契约是同一个。
+      final String lifetime = compactCode(readerSource);
+      expect(
+        lifetime.contains(
+          'AcquireSRWLockExclusive(&st.mapping_lifetime);UnmapViewOfFile(st.header);',
+        ),
+        isTrue,
+        reason: '解除映射必须在寿命锁的独占模式下，共享端才能安全读 header',
+      );
+      expect(
+        lifetime.contains(
+          'AcquireSRWLockExclusive(&st.mapping_lifetime);st.header=header;',
+        ),
+        isTrue,
+      );
+      expect(
+        lifetime.contains('TryAcquireSRWLockShared(lock_)'),
+        isTrue,
+        reason: 'WH_MOUSE_LL 回调绝不能阻塞等锁',
+      );
       final String regular = compactCode(
         methodBody(
           readerSource,
@@ -338,7 +368,7 @@ void main() {
       );
     });
 
-    test('孤儿判定：try_lock、gate 关或槽位易主才算孤儿、写入中不算', () {
+    test('孤儿判定：映射寿命共享锁、gate 关或槽位易主才算孤儿、写入中不算', () {
       final String header = compactCode(readerHeader);
       expect(
         header.contains(
@@ -352,10 +382,10 @@ void main() {
           'bool VoiceHookReader::OverlayClickShieldTransactionOrphaned(',
         ),
       );
-      expect(body.contains('std::try_to_lock'), isTrue);
+      expect(body.contains('st.mutex'), isFalse);
       expect(body.contains('std::lock_guard'), isFalse);
       expect(
-        body.contains('if(!lock.owns_lock())returnfalse;'),
+        body.contains('if(!mapping.owned())returnfalse;'),
         isTrue,
         reason: '拿不到锁只是忙，不能判孤儿',
       );
