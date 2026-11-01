@@ -33,10 +33,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3531 条。点号进各自文件。
+> 共 3533 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3929](bugs/BUG-3929-video-player-window-not-draggable.md) | ✅ | ✅ | Windows 进入视频播放器后窗口拖不动（主界面正常，上一版正常） |
+| [BUG-3928](bugs/BUG-3928-secondary-subtitle-embedded-restore-lost.md) | ✅ | ✅ | 退出视频再进，内封副字幕不显示（菜单仍高亮该轨，得重选一遍） |
 | [BUG-3927](bugs/BUG-3927-reader-jp-gothic-alias-theme-font.md) | ✅ | ✅ | 電書協书的章标题在换了主题字体的 Android 机上竖排叠字 |
 | [BUG-3926](bugs/BUG-3926-download-subtitle-retry-drops-anilist.md) | ✅ | ✅ | download-subtitle-retry-drops-anilist |
 | [BUG-3925](bugs/BUG-3925-ai-panel-tight-mode-hides-context-chip.md) | ✅ | ✅ | ai-panel-tight-mode-hides-context-chip |

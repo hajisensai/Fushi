@@ -11862,8 +11862,14 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           // 压一条浅色带。零布局。
           child: FushiTitleBarColorScope(
             colors: _desktopTitleBarColors(controller, videoController, cs),
-            child: _wrapDiscLaunchTransition(
-              _buildScaffold(controller, videoController, cs),
+            // 控制条浮出时沉浸标题行一起浮出：窗口按钮与拖动区随控制条出现，
+            // 不必先摸到窗口顶边停留（反馈 BEX2_5K1zV「播放器里窗口拖不动」，
+            // BUG-3929）。用控制条真实可见态，不用字幕避让那份门控派生值。
+            child: FushiTitleBarRevealScope(
+              revealed: _mediaKitControlsVisible,
+              child: _wrapDiscLaunchTransition(
+                _buildScaffold(controller, videoController, cs),
+              ),
             ),
           ),
         ),

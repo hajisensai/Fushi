@@ -81,4 +81,26 @@ void main() {
       reason: '内嵌轨恢复路径仍须保留',
     );
   });
+
+  test('副字幕内嵌轨恢复从真实枚举取源（带 codec），不凭持久化串自拼', () {
+    final String src = source.readAsStringSync();
+    final String body = methodBody(
+      src,
+      'Future<void> _restoreSecondarySubtitle(',
+    );
+
+    // 回归（反馈 XcV2TsgvMz / 666SKnuUTb）：自拼的 SubtitleSource.embedded 没有 codec，
+    // loadCuesForSource 判「格式不支持」返回空 → 重开视频副字幕静默不显示。
+    expect(
+      body.contains('SubtitleSource.embedded('),
+      isFalse,
+      reason: '不得凭 embedded:<n> 自拼内嵌源（缺 codec，抽不出 cue）',
+    );
+    expect(
+      body.contains('listAllSubtitleSources(') &&
+          body.contains('_firstMatching('),
+      isTrue,
+      reason: '内嵌副字幕恢复须与主字幕同走真实枚举 + 精确匹配',
+    );
+  });
 }
