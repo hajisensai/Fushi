@@ -49,7 +49,7 @@ void main() {
     final sqlite.Database raw = sqlite.sqlite3.open(path);
     raw.execute('DROP TABLE video_subtitle_text_overrides');
     raw.execute(
-      "INSERT INTO video_books (book_uid, title, video_path) "
+      'INSERT INTO video_books (book_uid, title, video_path) '
       "VALUES ('vid-uid', 'Video', '/v/ep01.mkv')",
     );
     raw.execute('PRAGMA user_version = 142');

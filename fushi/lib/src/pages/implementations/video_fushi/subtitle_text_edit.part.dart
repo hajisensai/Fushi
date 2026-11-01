@@ -53,7 +53,7 @@ extension _VideoSubtitleTextEdit on _VideoFushiPageState {
     // 打字时视频别往前跑：编辑期间暂停，关掉对话框后按原状态恢复。
     final bool wasPlaying = controller.isPlaying;
     if (wasPlaying) await controller.pause();
-    if (!mounted) return;
+    if (!context.mounted) return;
     final String original = cue.sourceText;
     final String? edited = await showFushiTextInputDialog(
       context: context,
