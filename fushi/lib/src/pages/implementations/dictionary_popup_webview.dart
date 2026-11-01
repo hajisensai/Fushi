@@ -1742,24 +1742,48 @@ JSON.stringify((function(){
     required String expression,
     required String reading,
     Duration timeout = _kMineRoundTripTimeout,
+  }) => _buildPayloadViaJs(
+    // 参数经 jsonEncode 内联成 JS 字面量（与本文件其余注入同法），不依赖各平台
+    // `arguments` 通道的实现差异。
+    functionBody:
+        'return await (window.fushiPopupBuildMinePayloadFor'
+        ' ? window.fushiPopupBuildMinePayloadFor('
+        '${jsonEncode(expression)}, ${jsonEncode(reading)})'
+        ' : null);',
+    logTag: 'DictPopupWebview.buildMinePayloadFor',
+    timeout: timeout,
+  );
+
+  /// 「高级制卡」字段预填（反馈 -K86qlwBg6）：取回第 [idx] 个词条（与
+  /// [mineEntryByIndex] 同一套 DOM 序）的「+」**点下去会发出的那份** payload
+  /// （popup.js `fushiPopupBuildMinePayloadByIndex`），不点按钮、不走 `mineEntry` 桥。
+  /// 失败 → null（失败原因写 [ErrorLogService]）。
+  Future<Map<String, String>?> buildMinePayloadByIndex(
+    int idx, {
+    Duration timeout = _kMineRoundTripTimeout,
+  }) => _buildPayloadViaJs(
+    functionBody:
+        'return await (window.fushiPopupBuildMinePayloadByIndex'
+        ' ? window.fushiPopupBuildMinePayloadByIndex($idx) : null);',
+    logTag: 'DictPopupWebview.buildMinePayloadByIndex',
+    timeout: timeout,
+  );
+
+  /// 跑一段返回 payload 对象的 JS，值一律折成字符串（与 `mineEntry` 桥同形）。
+  Future<Map<String, String>?> _buildPayloadViaJs({
+    required String functionBody,
+    required String logTag,
+    required Duration timeout,
   }) async {
     final InAppWebViewController? controller = _controller;
     if (controller == null) return null;
     try {
       final CallAsyncJavaScriptResult? result = await controller
-          .callAsyncJavaScript(
-            // 参数经 jsonEncode 内联成 JS 字面量（与本文件其余注入同法），不依赖各平台
-            // `arguments` 通道的实现差异。
-            functionBody:
-                'return await (window.fushiPopupBuildMinePayloadFor'
-                ' ? window.fushiPopupBuildMinePayloadFor('
-                '${jsonEncode(expression)}, ${jsonEncode(reading)})'
-                ' : null);',
-          )
+          .callAsyncJavaScript(functionBody: functionBody)
           .timeout(timeout);
       if (result?.error != null) {
         ErrorLogService.instance.log(
-          'DictPopupWebview.buildMinePayloadFor',
+          logTag,
           'popup.js threw while building the payload: ${result!.error}',
           StackTrace.current,
         );
@@ -1774,11 +1798,7 @@ JSON.stringify((function(){
         ),
       );
     } catch (e, stack) {
-      ErrorLogService.instance.log(
-        'DictPopupWebview.buildMinePayloadFor',
-        e,
-        stack,
-      );
+      ErrorLogService.instance.log(logTag, e, stack);
       return null;
     }
   }

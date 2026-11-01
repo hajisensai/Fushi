@@ -535,6 +535,7 @@ class SrsMiner with AnkiNoteComposer {
         source: context.source,
         includeHibiki: settings.tagIncludeHibiki,
         includeCategory: settings.tagIncludeCategory,
+        nestTitleUnderCategory: settings.tagNestTitleUnderCategory,
         titleTag: context.bookTitleTag,
         collectionTag: context.collectionTag,
         charPositionTag: context.charPositionTag,

@@ -14,7 +14,8 @@
 /// `Isolate.spawn` + `InputFileStream` + 4MB 分块 + SendPort 回报进度）。
 ///
 /// 多卷排队由 UI 层顺序 await，本类只管一卷；[cancel] 置标志、循环内检查，
-/// 取消保留 `.part` 以便续传。
+/// 中止时保留 `.part` 以便续传；用户真正取消任务时由下载服务再调
+/// [MokuroMoeVolumeDownloader.discardStaging] 清掉半成品。
 library;
 
 import 'dart:async';
@@ -106,6 +107,32 @@ class MokuroMoeVolumeDownloader {
   /// [MokuroMoeDownloadCancelled]；`.part` 保留。
   void cancel() => _cancelled = true;
 
+  /// 一卷的确定性 staging 目录（`<根>/<系列>/<卷>/`，跨次运行可续传）。
+  Directory stagingDirectoryFor({
+    required String seriesName,
+    required String volumeName,
+  }) => Directory(
+    p.join(
+      _stagingRoot.path,
+      sanitizeTtuFilename(seriesName),
+      sanitizeTtuFilename(volumeName),
+    ),
+  );
+
+  /// 用户**取消**任务（不可恢复）时丢掉这一卷的全部半成品：`.part`、已下完
+  /// 未导入的 `.cbz` / `.mokuro`、解包残留。失败 / 服务停止不走这里——那两种
+  /// 要留 `.part` 供重试续传。已导入进库的卷不在 staging 里，不受影响。
+  Future<void> discardStaging({
+    required String seriesName,
+    required String volumeName,
+  }) async {
+    final Directory staging = stagingDirectoryFor(
+      seriesName: seriesName,
+      volumeName: volumeName,
+    );
+    if (await staging.exists()) await staging.delete(recursive: true);
+  }
+
   /// 入库标题：`<系列> <卷>`；卷名已含系列名时直接用卷名（照
   /// [MangaImporter] `_deriveTitle` 的去重口径）。
   static String volumeTitle(String series, String volume) {
@@ -148,12 +175,9 @@ class MokuroMoeVolumeDownloader {
     required String seriesName,
     required String volumeName,
   }) async {
-    final Directory staging = Directory(
-      p.join(
-        _stagingRoot.path,
-        sanitizeTtuFilename(seriesName),
-        sanitizeTtuFilename(volumeName),
-      ),
+    final Directory staging = stagingDirectoryFor(
+      seriesName: seriesName,
+      volumeName: volumeName,
     );
     await staging.create(recursive: true);
     final File mokuroFile = File(p.join(staging.path, 'volume.mokuro'));

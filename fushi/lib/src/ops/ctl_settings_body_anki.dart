@@ -12,6 +12,7 @@ import 'package:fushi/src/anki/ankiconnect_port_repair.dart'
 import 'package:fushi/src/anki/lapis_style_editor_page.dart'
     show LapisVisualEditorResult, applyLapisVisualEditorResult;
 import 'package:fushi/src/anki/lapis_template_service.dart';
+import 'package:fushi/src/anki/mining_media_quality_labels.dart';
 import 'package:fushi/src/mining/video_online_mining_mode.dart';
 import 'package:fushi/src/mining/sentence_audio_source_text.dart';
 import 'package:fushi_engine/mining/sentence_audio_source.dart'
@@ -432,6 +433,14 @@ CtlBodyPage _tagsPage() => CtlBodyPage(
       onChanged: (SettingsContext c, bool v) =>
           _vm(c).updateTagIncludeCategory(v),
     ),
+    SettingsSwitchItem(
+      id: _id('tag_nest_title_under_category'),
+      title: t.anki_tag_nest_title_under_category,
+      subtitle: t.anki_tag_nest_title_under_category_hint,
+      value: (SettingsContext c) => _cfg(c).tagNestTitleUnderCategory,
+      onChanged: (SettingsContext c, bool v) =>
+          _vm(c).updateTagNestTitleUnderCategory(v),
+    ),
     // 页面里这两项是 toggle 语义：只在目标值与当前值不同时翻转。
     SettingsSwitchItem(
       id: _id('tag_book_name'),
@@ -557,17 +566,8 @@ CtlBodyPage _lapisPage() => CtlBodyPage(
 );
 
 CtlBodyPage _mediaPage() {
-  final List<String> imageTiers = <String>[
-    t.mining_image_quality_thrift,
-    t.mining_image_quality_standard,
-    t.mining_image_quality_hd,
-    t.mining_image_quality_max,
-  ];
-  final List<String> audioTiers = <String>[
-    t.mining_audio_quality_standard,
-    t.mining_audio_quality_high,
-    t.mining_audio_quality_max,
-  ];
+  final List<String> imageTiers = miningImageQualityTierNames();
+  final List<String> audioTiers = miningAudioQualityTierNames();
   return CtlBodyPage(
     breadcrumb: _crumb(t.settings_anki_media),
     items: <SettingsItem>[
@@ -579,8 +579,10 @@ CtlBodyPage _mediaPage() {
         max: (imageTiers.length - 1).toDouble(),
         divisions: imageTiers.length - 1,
         step: 1,
-        label: (double v) =>
-            imageTiers[v.round().clamp(0, imageTiers.length - 1)],
+        label: (double v) {
+          final int tier = v.round().clamp(0, imageTiers.length - 1);
+          return '${imageTiers[tier]} · ${miningImageQualityTierDetail(tier)}';
+        },
         value: (SettingsContext c) => c.appModel.miningImageQuality
             .clamp(0, imageTiers.length - 1)
             .toDouble(),
@@ -595,8 +597,10 @@ CtlBodyPage _mediaPage() {
         max: (audioTiers.length - 1).toDouble(),
         divisions: audioTiers.length - 1,
         step: 1,
-        label: (double v) =>
-            audioTiers[v.round().clamp(0, audioTiers.length - 1)],
+        label: (double v) {
+          final int tier = v.round().clamp(0, audioTiers.length - 1);
+          return '${audioTiers[tier]} · ${miningAudioQualityTierDetail(tier)}';
+        },
         value: (SettingsContext c) => c.appModel.miningAudioQuality
             .clamp(0, audioTiers.length - 1)
             .toDouble(),

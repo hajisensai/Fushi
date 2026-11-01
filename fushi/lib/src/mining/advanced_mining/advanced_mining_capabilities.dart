@@ -48,6 +48,56 @@ class AdvancedMiningDeckSection {
   final Future<void> Function(String deckName)? setDefaultDeck;
 }
 
+/// 卡片字段分区里的一个字段：Anki 字段名 + 它在字段映射里的占位符模板。
+class AdvancedMiningField {
+  const AdvancedMiningField({
+    required this.name,
+    required this.template,
+    this.generatedAtMining = false,
+  });
+
+  /// Anki 字段名（字段映射的键，也是 [MiningRequestOverrides.fieldValues] 的键）。
+  final String name;
+
+  /// 一键制卡会写进它的模板（`{glossary-first}` 等），留空时照它自动生成。
+  final String template;
+
+  /// 模板里有落卡时才生成的占位符（媒体 / 出处 / 时间窗，见
+  /// `AnkiNoteComposer.isLateBoundTemplate`）：对话框里只读，不给手改——手改会把
+  /// 它们冻结成预览时的空值。
+  final bool generatedAtMining;
+}
+
+/// 取「这张卡此刻会自动生成的字段值」（字段名 → 值）。[sentence] 是对话框句子分区
+/// 合成的句子（与宿主落卡时 `MiningSentenceDraft.composeText` 同口径）；没有句子分区时
+/// 为 null，宿主用自己的当前句。返回 null = 生成失败（对话框退回空输入框 + 提示）。
+typedef AdvancedMiningFieldPreview =
+    Future<Map<String, String>?> Function(String? sentence);
+
+/// 卡片字段分区（反馈 -K86qlwBg6）：对话框里可手改当前笔记类型映射的字段，改了的
+/// 字段经 [MiningRequestOverrides.fieldValues] 只替换这一张卡的对应字段。
+class AdvancedMiningFieldsSection {
+  const AdvancedMiningFieldsSection({
+    required this.fields,
+    required this.visibleFields,
+    this.setVisibleFields,
+    this.loadPreview,
+  });
+
+  /// 字段映射里的全部字段（映射顺序）。空 = 还没配置字段映射，分区不渲染。
+  final List<AdvancedMiningField> fields;
+
+  /// 用户选了在对话框里显示（可编辑）的字段名。
+  final Set<String> visibleFields;
+
+  /// 记住「显示哪些字段」；null = 该表面不持久化（只对这次对话框生效）。
+  final Future<void> Function(Set<String> names)? setVisibleFields;
+
+  /// 字段预填：与落卡同一条管线渲染出的值（`AnkiNoteComposer.previewMinedFields`）。
+  /// null = 这个表面给不出预览，输入框一律从空开始。
+  final AdvancedMiningFieldPreview? loadPreview;
+}
+
 /// 句子分区：沿用原「调整上下文」对话框的宿主回调（语义不变，见 [MiningSentenceDraft]）。
 class AdvancedMiningSentenceSection {
   const AdvancedMiningSentenceSection({
@@ -303,7 +353,11 @@ class AdvancedMiningCapabilities {
     required this.sections,
     required this.onConfirm,
     this.expression,
+    this.fields,
   });
+
+  /// 卡片字段分区；null = 这个表面不能改字段（例如远端制卡：映射在另一台机器上）。
+  final AdvancedMiningFieldsSection? fields;
 
   /// 查到的词在句中的表现形（当前句高亮用）。
   final String matched;

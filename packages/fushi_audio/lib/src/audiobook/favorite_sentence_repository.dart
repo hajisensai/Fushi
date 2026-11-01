@@ -26,6 +26,13 @@ const String kFavoriteSentenceSourceManga = 'manga';
 /// `music_tracks.track_uid` + 时间轴位置。
 const String kFavoriteSentenceSourceMusic = 'music';
 
+/// 浏览器扩展看网页视频（YouTube / niconico / Netflix / 任意 `<video>` 站）时收藏的句子
+/// 或视频本身（反馈 KGC1ifR1a3）。出处身份 [FavoriteSentence.bookKey] = 规范化后的网页
+/// 地址（去掉时间参数），[FavoriteSentence.chapterLabel] = 站点名，锚点同视频口径
+/// （[FavoriteSentence.normCharOffset] / [FavoriteSentence.normCharLength] = cue 起点 /
+/// 时长毫秒）；[FavoriteSentence.text] 为空串 = 收藏的是视频本身（无锚点）。统计归视频桶。
+const String kFavoriteSentenceSourceWeb = 'web';
+
 /// 收藏句来源的**内存态**枚举（BUG-1120）。持久化 JSON 的 `source` 字段仍存
 /// 上面的原字符串常量（wire 契约字节不变），本枚举只在读取后解析使用，
 /// 供 UI 层穷尽 switch——消除「video vs 其它」的 bool 降维把 audiobook/lyrics
@@ -37,7 +44,8 @@ enum SentenceSourceKind {
   lyrics(kFavoriteSentenceSourceLyrics),
   game(kFavoriteSentenceSourceGame),
   manga(kFavoriteSentenceSourceManga),
-  music(kFavoriteSentenceSourceMusic);
+  music(kFavoriteSentenceSourceMusic),
+  web(kFavoriteSentenceSourceWeb);
 
   const SentenceSourceKind(this.dbValue);
 

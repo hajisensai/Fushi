@@ -14,6 +14,7 @@ import 'package:fushi_engine/sync/fushi_remote_api_handlers.dart'
     show RemoteThemeColorsProvider;
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
 import 'package:fushi_engine/sync/immersion_mine_payload.dart';
+import 'package:fushi/src/media/favorites/web_video_favorite.dart';
 import 'package:fushi/src/media/video/browser_video_study_bridge.dart';
 import 'package:fushi/src/sync/fushi_api_server.dart';
 import 'package:fushi/src/sync/yomitan_tokenize_adapter.dart';
@@ -207,6 +208,7 @@ void main() {
       void Function(double maxWidth, double maxHeight)? onExtensionPopupSize,
       void Function(BrowserVideoSample sample)? onExtensionStudy,
       ExtensionFavoriteHandler? onExtensionFavorite,
+      ExtensionVideoFavoriteHandler? onExtensionVideoFavorite,
     }) async {
       lookup = _FakeLookup();
       mining = _FakeMining();
@@ -222,6 +224,7 @@ void main() {
         onExtensionPopupSize: onExtensionPopupSize,
         onExtensionStudy: onExtensionStudy,
         onExtensionFavorite: onExtensionFavorite,
+        onExtensionVideoFavorite: onExtensionVideoFavorite,
         apiKey: apiKey,
       );
       await server.start();
@@ -1251,6 +1254,103 @@ void main() {
         );
         expect(denied.statusCode, 401);
         await denied.drain<void>();
+      });
+    });
+
+    // 反馈 KGC1ifR1a3：扩展看网页视频时收藏当前句 / 视频本身（App 收藏夹同一份收藏句）。
+    group('/api/extension/video-favorite (KGC1ifR1a3)', () {
+      test('切换体解析后交 handler，回 {favorite, video, sentences}', () async {
+        final List<ExtensionVideoFavoriteRequest> got =
+            <ExtensionVideoFavoriteRequest>[];
+        await startServer(
+          apiKey: 'k123',
+          onExtensionVideoFavorite: (ExtensionVideoFavoriteRequest r) async {
+            got.add(r);
+            return const ExtensionVideoFavoriteState(
+              favorite: true,
+              video: false,
+              sentences: <WebVideoFavoritedLine>[
+                WebVideoFavoritedLine(text: '夏が来た', startMs: 83000),
+              ],
+            );
+          },
+        );
+        final HttpClientResponse resp = await _post(
+          server.port,
+          '/api/extension/video-favorite',
+          <String, dynamic>{
+            'op': 'toggle',
+            'kind': 'sentence',
+            'url': 'https://youtu.be/abc?t=5',
+            'title': '歌 - YouTube',
+            'text': '夏が来た',
+            'startMs': 83000,
+            'endMs': 85000,
+          },
+          auth: _basic('k123'),
+        );
+        expect(resp.statusCode, 200);
+        expect(await _json(resp), <String, dynamic>{
+          'favorite': true,
+          'video': false,
+          'sentences': <dynamic>[
+            <String, dynamic>{'text': '夏が来た', 'startMs': 83000},
+          ],
+        });
+        expect(got.single.toggle, isTrue);
+        expect(got.single.url, 'https://www.youtube.com/watch?v=abc');
+        expect(got.single.title, '歌');
+      });
+
+      test('不合契约 400 不触发 handler；未注入 404；错 token 401', () async {
+        int called = 0;
+        await startServer(
+          apiKey: 'k123',
+          onExtensionVideoFavorite: (ExtensionVideoFavoriteRequest r) async {
+            called++;
+            return const ExtensionVideoFavoriteState(
+              video: false,
+              sentences: <WebVideoFavoritedLine>[],
+            );
+          },
+        );
+        for (final Map<String, dynamic> body in <Map<String, dynamic>>[
+          <String, dynamic>{'op': 'toggle', 'kind': 'video'},
+          <String, dynamic>{
+            'op': 'toggle',
+            'kind': 'sentence',
+            'url': 'https://a.jp/v',
+          },
+        ]) {
+          final HttpClientResponse resp = await _post(
+            server.port,
+            '/api/extension/video-favorite',
+            body,
+            auth: _basic('k123'),
+          );
+          expect(resp.statusCode, 400, reason: jsonEncode(body));
+          await resp.drain<void>();
+        }
+        expect(called, 0);
+        final HttpClientResponse denied = await _post(
+          server.port,
+          '/api/extension/video-favorite',
+          <String, dynamic>{'url': 'https://a.jp/v'},
+          auth: _basic('WRONG'),
+        );
+        expect(denied.statusCode, 401);
+        await denied.drain<void>();
+        await server.stop();
+
+        await startServer(apiKey: 'k123');
+        final HttpClientResponse missing = await _post(
+          server.port,
+          '/api/extension/video-favorite',
+          <String, dynamic>{'url': 'https://a.jp/v'},
+          auth: _basic('k123'),
+        );
+        expect(missing.statusCode, 404);
+        await missing.drain<void>();
       });
     });
   });

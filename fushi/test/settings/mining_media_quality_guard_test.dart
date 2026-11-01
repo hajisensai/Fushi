@@ -248,8 +248,15 @@ void main() {
     // 已是封顶档（只有截图仍是原图），音频满档 192k AAC 本就是有损重编码。统一改叫
     // 「最高 / Maximum」（只承诺是滑块顶格，不承诺保真度）。钉死不许滑回旧名。
     test('BUG-1039：两滑块满档标签是「最高」而非名不副实的「原片」', () {
-      final String src = File(
+      // 档名表已收进 mining_media_quality_labels.dart（设置页与控制通道共用一份，
+      // 反馈 28v5dFPrr0 加档位参数说明时抽出）；设置页必须经它取档名。
+      final String page = File(
         'lib/src/pages/implementations/anki_settings_page.dart',
+      ).readAsStringSync();
+      expect(page.contains('miningImageQualityTierNames()'), isTrue);
+      expect(page.contains('miningAudioQualityTierNames()'), isTrue);
+      final String src = File(
+        'lib/src/anki/mining_media_quality_labels.dart',
       ).readAsStringSync();
       expect(
         src.contains('t.mining_image_quality_max'),

@@ -309,9 +309,10 @@ test('menuModel：总开关关掉时从属项置灰，隐藏字幕不受影响',
   const on = PC.menuModel({ overlayOn: true });
   assert.deepStrictEqual(
     on.map((i) => i.id),
-    ['overlay', 'replaceNative', 'allTracks', 'background', 'hidden', 'study', 'track', 'list', 'offset', 'style', 'settings'],
+    ['overlay', 'replaceNative', 'allTracks', 'background', 'hidden', 'study', 'favLine', 'favVideo', 'track', 'list', 'offset', 'style', 'settings'],
   );
-  assert.ok(on.every((i) => !i.disabled));
+  // 「收藏当前句」只在有当前句时可点（KGC1ifR1a3），其余项开总开关时全可用。
+  assert.ok(on.every((i) => i.id === 'favLine' || !i.disabled));
 
   const off = PC.menuModel({ overlayOn: false });
   const byId = Object.fromEntries(off.map((i) => [i.id, i]));
@@ -321,6 +322,23 @@ test('menuModel：总开关关掉时从属项置灰，隐藏字幕不受影响',
   // 隐藏字幕藏的是站点原生字幕，与我们的覆盖层开关无关，任何时候都可用。
   assert.ok(!byId.hidden.disabled);
   assert.ok(!byId.overlay.disabled);
+});
+
+test('menuModel：收藏当前句 / 收藏视频反映已收藏状态（KGC1ifR1a3）', () => {
+  const byId = (s) => Object.fromEntries(PC.menuModel(s).map((i) => [i.id, i]));
+  const none = byId({ overlayOn: true });
+  assert.strictEqual(none.favLine.disabled, true, '没有当前句不能收藏');
+  assert.strictEqual(none.favLine.icon, 'star');
+  assert.strictEqual(none.favVideo.on, false);
+  const fav = byId({ overlayOn: true, lineText: '夏が来た', lineFavorited: true, videoFavorited: true });
+  assert.strictEqual(fav.favLine.disabled, false);
+  assert.strictEqual(fav.favLine.icon, 'star_fill');
+  assert.notStrictEqual(fav.favLine.label, none.favLine.label, '已收藏时换成「取消收藏」文案');
+  assert.strictEqual(fav.favLine.detail, '夏が来た');
+  assert.strictEqual(fav.favVideo.on, true);
+  const long = byId({ overlayOn: true, lineText: 'あ'.repeat(50) });
+  assert.strictEqual(long.favLine.detail, 'あ'.repeat(40) + '…');
+  assert.strictEqual(long.favLine.label, none.favLine.label);
 });
 
 test('menuModel：只有「开着却什么都不画」那一种状态才给提示，其余一律不出现', () => {

@@ -472,6 +472,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
         source: context.source,
         includeHibiki: settings.tagIncludeHibiki,
         includeCategory: settings.tagIncludeCategory,
+        nestTitleUnderCategory: settings.tagNestTitleUnderCategory,
         // TODO-681 / BUG-393：调用方按「自动添加书名到标签」开关注入已清洗书名/番名标签
         // （书籍/视频同语义）；关闭或无标题时为 null，buildNoteTags 不追加。
         titleTag: context.bookTitleTag,
@@ -803,6 +804,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
         source: context.source,
         includeHibiki: settings.tagIncludeHibiki,
         includeCategory: settings.tagIncludeCategory,
+        nestTitleUnderCategory: settings.tagNestTitleUnderCategory,
         titleTag: context.bookTitleTag,
         collectionTag: context.collectionTag,
         charPositionTag: context.charPositionTag,

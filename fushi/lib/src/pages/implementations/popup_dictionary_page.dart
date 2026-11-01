@@ -10,8 +10,7 @@ import 'package:fushi/src/lookup/lookup_ime_binding.dart';
 import 'package:fushi/src/lookup/effective_lookup_size.dart'
     show kLookupPopupDefaultWidth;
 import 'package:fushi/src/lookup/ocr_block_sentence.dart';
-import 'package:fushi/src/lookup/overlay_bridge_handlers.dart'
-    show resolveMineSentence;
+import 'package:fushi/src/lookup/source_line_sentence.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
@@ -458,17 +457,14 @@ class _PopupDictionaryPageState extends ConsumerState<PopupDictionaryPage>
   /// 基础层原地跳到释义里的别的词（链接 / 词头 / 汉字）后，当前词条不再出自这行，同样
   /// 不补；判据是「基础层当前查询串**等于**最近一次出自这行的查询串」
   /// （[_sourceLineQuery]），后退回原词条时自然又成立。
-  Map<String, String> _withSourceSentence(Map<String, String> fields) {
-    if (_sourceSentence.isEmpty || _sourceLineQuery.isEmpty) return fields;
-    final String baseTerm = _popup.entries.isEmpty
-        ? ''
-        : _popup.entries.first.searchTerm.trim();
-    if (baseTerm != _sourceLineQuery) return fields;
-    return <String, String>{
-      ...fields,
-      'sentence': resolveMineSentence(fields, _sourceSentence),
-    };
-  }
+  Map<String, String> _withSourceSentence(Map<String, String> fields) =>
+      withSourceLineSentence(
+        fields,
+        layerIndex: 0,
+        baseTerm: _popup.entries.isEmpty ? '' : _popup.entries.first.searchTerm,
+        sourceQuery: _sourceLineQuery,
+        sentence: _sourceSentence,
+      );
 
   Future<MinePopupResult> _mineBaseEntry(Map<String, String> fields) =>
       onMineEntry(_withSourceSentence(fields));

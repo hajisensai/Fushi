@@ -1760,6 +1760,31 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           data,
           ...(!r.ok && r.status !== 404 ? { connection: await diagnoseConnectionCapped(base) } : {}),
         });
+      } else if (msg.type === 'videoFavorite') {
+        // 反馈 KGC1ifR1a3：看网页视频时收藏当前句 / 视频本身（video-favorite.js 构造消息）。
+        // POST {op,kind,url,title,text,startMs,endMs} → server /api/extension/video-favorite，
+        // 写 App 收藏夹同一份收藏句，回 {favorite?, video, sentences:[{text,startMs}]}。
+        // 旧 app 没有这个端点 → 404 → ok:false（页面据此提示更新 Fushi）。
+        const r = await fushiRequest(({ base, token }) => fetch(base + '/api/extension/video-favorite', {
+          method: 'POST',
+          signal: AbortSignal.timeout(8000),
+          headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
+          body: JSON.stringify({
+            op: msg.op === 'toggle' ? 'toggle' : 'state',
+            kind: msg.kind === 'video' ? 'video' : 'sentence',
+            url: msg.url || '',
+            title: msg.title || '',
+            text: msg.text || '',
+            startMs: typeof msg.startMs === 'number' ? msg.startMs : null,
+            endMs: typeof msg.endMs === 'number' ? msg.endMs : null,
+          }),
+        }));
+        const data = r.ok ? await responseJson(r) : null;
+        sendResponse({
+          ok: r.ok && !!data && typeof data.video === 'boolean' && Array.isArray(data.sentences),
+          status: r.status,
+          data,
+        });
       } else if (msg.type === 'openInAnki') {
         // Issue #1409：弹窗 ↗「在 Anki 中打开这个词的卡」。POST {expression,reading}
         // → server /api/anki/open，与 app 内 openInAnki 桥同一 repo.openWordInAnki，

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -7,11 +8,13 @@ import 'package:fushi/src/media/manga/online/mokuro_moe_client.dart';
 import 'package:fushi/src/media/manga/online/mokuro_moe_volume_downloader.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-/// 假下载器：`run` 回传测试受控的事件流并记录 `(系列, 卷)`；`cancel` 只计数。
+/// 假下载器：`run` 回传测试受控的事件流并记录 `(系列, 卷)`；`cancel` 只计数；
+/// `discardStaging` 只记录 `(系列, 卷)`，不碰真实临时目录。
 class _FakeDownloader extends MokuroMoeVolumeDownloader {
-  _FakeDownloader(this.calls) : super(client: MokuroMoeClient());
+  _FakeDownloader(this.calls, this.discards) : super(client: MokuroMoeClient());
 
   final List<(String, String)> calls;
+  final List<(String, String)> discards;
   final StreamController<MokuroMoeVolumeDownloadEvent> ctrl =
       StreamController<MokuroMoeVolumeDownloadEvent>();
   int cancelCalls = 0;
@@ -28,6 +31,14 @@ class _FakeDownloader extends MokuroMoeVolumeDownloader {
 
   @override
   void cancel() => cancelCalls++;
+
+  @override
+  Future<void> discardStaging({
+    required String seriesName,
+    required String volumeName,
+  }) async {
+    discards.add((seriesName, volumeName));
+  }
 
   Future<void> finish(MokuroMoeVolumeDownloadEvent last) async {
     ctrl.add(last);
@@ -48,6 +59,7 @@ void main() {
   late FushiDatabase db;
   late List<Duration> waits;
   late List<(String, String)> calls;
+  late List<(String, String)> discards;
   late List<_FakeDownloader> downloaders;
 
   int tick = 0;
@@ -59,7 +71,7 @@ void main() {
     serviceFor: (_) => throw UnimplementedError('章节任务不在本测试范围'),
     clock: () => DateTime.fromMillisecondsSinceEpoch(++tick),
     mokuroDownloader: () {
-      final _FakeDownloader downloader = _FakeDownloader(calls);
+      final _FakeDownloader downloader = _FakeDownloader(calls, discards);
       downloaders.add(downloader);
       return downloader;
     },
@@ -73,12 +85,20 @@ void main() {
     tick = 0;
     waits = <Duration>[];
     calls = <(String, String)>[];
+    discards = <(String, String)>[];
     downloaders = <_FakeDownloader>[];
   });
 
   tearDown(() async {
     for (final _FakeDownloader downloader in downloaders) {
-      if (!downloader.ctrl.isClosed) await downloader.ctrl.close();
+      if (downloader.ctrl.isClosed) continue;
+      // 只为 discardStaging 建出来、从没 run 过的下载器没人订阅：close() 的
+      // future 要等订阅者收完 done 才完成，await 它会把 tearDown 挂死。
+      if (downloader.ctrl.hasListener) {
+        await downloader.ctrl.close();
+      } else {
+        unawaited(downloader.ctrl.close());
+      }
     }
     await db.close();
   });
@@ -246,6 +266,7 @@ void main() {
     expect(failed.status, MangaDownloadJobStatus.failed);
     expect(failed.attemptCount, kMangaDownloadMaxAttempts);
     expect(failed.lastError, contains('boom 2'));
+    expect(discards, isEmpty, reason: '失败要留 `.part` 给重试续传，不清 staging');
     expect(downloaders, hasLength(3), reason: '每次重试都新建一个下载器');
     expect(waits, <Duration>[
       kMangaDownloadRetryBackoff[0],
@@ -288,6 +309,9 @@ void main() {
       await downloads.whenIdle;
       expect((await row(_vol1)).status, MangaDownloadJobStatus.cancelled);
       expect(waits, isEmpty, reason: '用户取消不走退避重试');
+      expect(discards, <(String, String)>[
+        (_series, _vol1),
+      ], reason: '#2720：用户取消要清掉这一卷的 `.part` 半成品');
 
       downloads.dispose();
       await downloads.retry(jobId);
@@ -298,6 +322,48 @@ void main() {
       expect(await db.listMangaDownloadJobs(), hasLength(1));
     },
   );
+
+  test('queued 的卷取消（#2720）→ 行 cancelled、不起下载、staging 被清', () async {
+    final MangaDownloadService downloads = build();
+    final String jobId = (await downloads.enqueueMokuroVolume(
+      seriesName: _series,
+      volumeName: _vol2,
+    )).row.jobId;
+    await downloads.cancel(jobId);
+    expect((await row(_vol2)).status, MangaDownloadJobStatus.cancelled);
+    expect(calls, isEmpty, reason: '排队中取消不该真的开始下载');
+    expect(discards, <(String, String)>[(_series, _vol2)]);
+    downloads.dispose();
+  });
+
+  test('discardStaging 只删这一卷的 staging（含 .part），别的卷不动', () async {
+    final Directory root = await Directory.systemTemp.createTemp(
+      'fushi-mokuro-staging-',
+    );
+    addTearDown(() async {
+      if (await root.exists()) await root.delete(recursive: true);
+    });
+    final MokuroMoeVolumeDownloader downloader = MokuroMoeVolumeDownloader(
+      client: MokuroMoeClient(),
+      stagingRoot: root,
+    );
+    final Directory v1 = downloader.stagingDirectoryFor(
+      seriesName: _series,
+      volumeName: _vol1,
+    );
+    final Directory v2 = downloader.stagingDirectoryFor(
+      seriesName: _series,
+      volumeName: _vol2,
+    );
+    await File('${v1.path}/volume.cbz.part').create(recursive: true);
+    await File('${v2.path}/volume.cbz.part').create(recursive: true);
+
+    await downloader.discardStaging(seriesName: _series, volumeName: _vol1);
+    expect(v1.existsSync(), isFalse);
+    expect(File('${v2.path}/volume.cbz.part').existsSync(), isTrue);
+    // 幂等：目录已不在也不报错。
+    await downloader.discardStaging(seriesName: _series, volumeName: _vol1);
+  });
 
   test('流没发 done 就正常关闭 → 行 cancelled（旧队列语义）', () async {
     final MangaDownloadService downloads = build();

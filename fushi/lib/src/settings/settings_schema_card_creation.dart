@@ -63,6 +63,7 @@ SettingsDestination buildCardCreationDestination() {
           AnkiSectionRow.tagIncludeFushi,
           AnkiSectionRow.tagIncludeCategory,
           AnkiSectionRow.tagBookName,
+          AnkiSectionRow.tagNestTitleUnderCategory,
           AnkiSectionRow.tagCharPosition,
         ],
       ),
@@ -275,6 +276,12 @@ SettingsDestination buildCardCreationDestination() {
         id: 'card_creation.anki.tag_include_category',
         hasRevealTarget: true,
         title: t.anki_tag_include_category,
+        subtitle: t.anki_tag_default_section,
+      ),
+      SettingsBodySearchEntry(
+        id: 'card_creation.anki.tag_nest_title_under_category',
+        hasRevealTarget: true,
+        title: t.anki_tag_nest_title_under_category,
         subtitle: t.anki_tag_default_section,
       ),
       SettingsBodySearchEntry(

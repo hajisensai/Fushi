@@ -341,6 +341,8 @@ import 'package:fushi/src/media/music/mpv_music_output_backend.dart';
 import 'package:fushi_music/fushi_music.dart'
     show InstalledMusicPlugin, MusicPluginManager;
 import 'package:fushi/src/media/music/plugin/music_plugin_gate.dart';
+import 'package:fushi/src/media/favorites/web_video_favorite.dart'
+    show ExtensionVideoFavoriteRequest, handleExtensionVideoFavorite;
 import 'package:fushi/src/media/music/plugin/music_plugin_favorites.dart';
 import 'package:fushi/src/media/music/plugin/music_plugins.dart';
 import 'package:fushi/src/media/music/plugin/music_plugin_vault_key.dart';
@@ -1800,7 +1802,13 @@ class AppModel with ChangeNotifier {
               )) {
                 return;
               }
-              FloatingLyricLookupNotifier.instance.requestLookup(text, index);
+              FloatingLyricLookupNotifier.instance.requestLookup(
+                text,
+                index,
+                // 反馈 1Mwaro8UTC：与全局查词卡同口径（floating_lyric_lookup_routing），
+                // 制卡例句取被点的这一整行。
+                sentence: text,
+              );
             }());
           },
           // 媒体会话与音乐互斥（音乐模块 §7.5）：音乐持有会话时，锁屏 / 耳机键不发给有声书。
@@ -1913,7 +1921,13 @@ class AppModel with ChangeNotifier {
             )) {
               return;
             }
-            FloatingLyricLookupNotifier.instance.requestLookup(text, index);
+            FloatingLyricLookupNotifier.instance.requestLookup(
+              text,
+              index,
+              // 反馈 1Mwaro8UTC：与全局查词卡同口径（floating_lyric_lookup_routing），
+              // 制卡例句取被点的这一整行。
+              sentence: text,
+            );
           }());
         },
         onPlayPause: () => unawaited(engine.togglePlayPause()),
@@ -10533,6 +10547,12 @@ class AppModel with ChangeNotifier {
   MiningAnimatedFormat get galMiningAnimatedFormat =>
       prefsRepo.galMiningAnimatedFormat;
 
+  /// 「高级制卡」卡片字段分区里显示的字段名（反馈 -K86qlwBg6）；null = 从没选过。
+  List<String>? get advancedMiningVisibleFields =>
+      prefsRepo.advancedMiningVisibleFields;
+  Future<void> setAdvancedMiningVisibleFields(List<String> names) =>
+      prefsRepo.setAdvancedMiningVisibleFields(names);
+
   /// 制卡动图只播放一次（反馈 ZxyIMK-C5V）。
   bool get miningAnimatedPlayOnce => prefsRepo.miningAnimatedPlayOnce;
   Future<void> setMiningAnimatedPlayOnce(bool value) =>
@@ -11335,6 +11355,13 @@ class AppModel with ChangeNotifier {
         fontApi: _browserExtensionFontCatalog,
         onExtensionPopupSize: _applyExtensionPopupSize,
         onExtensionStudy: _ensureBrowserVideoStudyBridge().onSample,
+        // 反馈 KGC1ifR1a3：扩展 / app 内浏览器看网页视频时收藏当前句 / 视频本身，写 App
+        // 收藏夹同一份收藏句（FavoriteSentenceRepository，来源 web）。
+        onVideoFavorite: (ExtensionVideoFavoriteRequest request) =>
+            handleExtensionVideoFavorite(
+              repository: FavoriteSentenceRepository(database),
+              request: request,
+            ),
       );
 
   FushiApiServerManager _ensureYomitanManager() {

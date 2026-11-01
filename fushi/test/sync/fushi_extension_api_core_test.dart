@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
+import 'package:fushi/src/media/favorites/web_video_favorite.dart';
 import 'package:fushi/src/media/video/browser_video_study_bridge.dart'
     show BrowserVideoSample;
 import 'package:fushi/src/sync/fushi_api_server.dart';
@@ -174,14 +175,63 @@ void main() {
     expect(res.text, 'Not Found');
   });
 
-  test('未知路径 → 404 Unknown endpoint；paths 含全部 9 条', () async {
+  // 反馈 KGC1ifR1a3：网页视频收藏端点在核心里（HTTP 与 app 内浏览器共用）。
+  test(
+    '/api/extension/video-favorite：未注入 404；坏体 400；正常交 handler 回状态',
+    () async {
+      final FushiExtensionApiResponse off = await FushiExtensionApiCore()
+          .handle(FushiExtensionApiCore.videoFavoritePath, <String, dynamic>{
+            'url': 'https://a.jp/v',
+          });
+      expect(off.status, 404);
+      expect(off.text, 'Video favorite sink off');
+
+      final List<ExtensionVideoFavoriteRequest> got =
+          <ExtensionVideoFavoriteRequest>[];
+      final FushiExtensionApiCore core = FushiExtensionApiCore(
+        onVideoFavorite: (ExtensionVideoFavoriteRequest r) async {
+          got.add(r);
+          return const ExtensionVideoFavoriteState(
+            favorite: true,
+            video: true,
+            sentences: <WebVideoFavoritedLine>[],
+          );
+        },
+      );
+      final FushiExtensionApiResponse bad = await core.handle(
+        FushiExtensionApiCore.videoFavoritePath,
+        <String, dynamic>{
+          'op': 'toggle',
+          'kind': 'video',
+          'url': 'about:blank',
+        },
+      );
+      expect(bad.status, 400);
+      expect(got, isEmpty);
+
+      final FushiExtensionApiResponse ok = await core
+          .handle(FushiExtensionApiCore.videoFavoritePath, <String, dynamic>{
+            'op': 'toggle',
+            'kind': 'video',
+            'url': 'https://www.netflix.com/watch/1?trackId=2',
+          });
+      expect(ok.json, <String, dynamic>{
+        'favorite': true,
+        'video': true,
+        'sentences': <Object?>[],
+      });
+      expect(got.single.url, 'https://www.netflix.com/watch/1');
+    },
+  );
+
+  test('未知路径 → 404 Unknown endpoint；paths 含全部 10 条', () async {
     final FushiExtensionApiResponse res = await FushiExtensionApiCore().handle(
       '/api/nope',
       <String, dynamic>{},
     );
     expect(res.status, 404);
     expect(res.text, 'Unknown endpoint');
-    expect(FushiExtensionApiCore.paths, hasLength(9));
+    expect(FushiExtensionApiCore.paths, hasLength(10));
     expect(
       FushiExtensionApiCore.paths,
       containsAll(<String>[

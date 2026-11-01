@@ -56,10 +56,23 @@
           <div class="setting-list">
             <label class="setting-row" for="shiftHoverLookup">
               <span class="setting-copy">
-                <strong data-i18n="opt_shiftHoverLookup_title">Shift 悬停查词</strong>
-                <small data-i18n-html="opt_shiftHoverLookup_desc">按住 <kbd>Shift</kbd> 指向文字即可查词。</small>
+                <strong data-i18n="opt_shiftHoverLookup_title">悬停查词</strong>
+                <small data-i18n="opt_shiftHoverLookup_desc">按住查词按键并指向文字即可查词。</small>
               </span>
               <span class="switch"><input id="shiftHoverLookup" type="checkbox"><span aria-hidden="true"></span></span>
+            </label>
+            <label class="setting-row" for="scanModifier">
+              <span class="setting-copy">
+                <strong data-i18n="opt_scanModifier_title">查词按键</strong>
+                <small data-i18n="opt_scanModifier_desc">悬停查词时要按住的键。选「不按键」则指针停在文字上即查词。</small>
+              </span>
+              <select class="select-input" id="scanModifier">
+                <option value="shift" data-i18n="opt_scanModifier_option_shift">Shift</option>
+                <option value="ctrl" data-i18n="opt_scanModifier_option_ctrl">Ctrl</option>
+                <option value="alt" data-i18n="opt_scanModifier_option_alt">Alt</option>
+                <option value="meta" data-i18n="opt_scanModifier_option_meta">Meta（⌘ / Win）</option>
+                <option value="none" data-i18n="opt_scanModifier_option_none">不按键</option>
+              </select>
             </label>
             <label class="setting-row" for="subtitlePauseOnLookup">
               <span class="setting-copy">
@@ -82,18 +95,18 @@
               </span>
               <span class="switch"><input id="subtitleOverlayAutoLookup" type="checkbox"><span aria-hidden="true"></span></span>
             </label>
-            <label class="setting-row" for="popupFontSize">
-              <span class="setting-copy">
-                <strong data-i18n="opt_popupFontSize_title">词典字号</strong>
-                <small data-i18n="opt_popupFontSize_desc">查词框里的字号（10–40 像素），只影响浏览器。留空则跟随 Fushi 的词典字号。</small>
-              </span>
-              <input class="size-input" id="popupFontSize" type="number" min="10" max="40" step="1"
-                     inputmode="numeric" placeholder="跟随 Fushi" data-i18n-placeholder="opt_popupFontSize_placeholder">
-            </label>
           </div>
           <details class="more" id="moreLookup">
-            <summary><span class="more-label" data-i18n="opt_more_options">更多选项</span><span class="more-count">5</span><span class="more-chevron msr-slot" data-fushi-icon="expand_more" data-fushi-icon-size="20" aria-hidden="true"></span></summary>
+            <summary><span class="more-label" data-i18n="opt_more_options">更多选项</span><span class="more-count">6</span><span class="more-chevron msr-slot" data-fushi-icon="expand_more" data-fushi-icon-size="20" aria-hidden="true"></span></summary>
             <div class="setting-list">
+              <label class="setting-row" for="popupFontSize">
+                <span class="setting-copy">
+                  <strong data-i18n="opt_popupFontSize_title">词典字号</strong>
+                  <small data-i18n="opt_popupFontSize_desc">查词框里的字号（10–40 像素），只影响浏览器。留空则跟随 Fushi 的词典字号。</small>
+                </span>
+                <input class="size-input" id="popupFontSize" type="number" min="10" max="40" step="1"
+                       inputmode="numeric" placeholder="跟随 Fushi" data-i18n-placeholder="opt_popupFontSize_placeholder">
+              </label>
               <label class="setting-row" for="touchLookupTap">
                 <span class="setting-copy">
                   <strong data-i18n="opt_touchLookupTap_title">点按查词（触屏）</strong>
@@ -596,6 +609,11 @@
               <button class="keycap keycap-edit" type="button" data-shortcut-action="copy-cue" data-i18n-title="opt_shortcut_edit_title" title="点击后按下新的组合键；Backspace 恢复默认，Esc 取消">Ctrl+Shift+Z</button>
               <span class="setting-copy"><strong data-i18n="opt_videoShortcutCopyCue_title">复制当前字幕</strong></span>
               <span class="switch"><input id="videoShortcutCopyCue" type="checkbox"><span aria-hidden="true"></span></span>
+            </label>
+            <label class="setting-row shortcut-row" for="videoShortcutFavoriteCue">
+              <button class="keycap keycap-edit" type="button" data-shortcut-action="favorite-cue" data-i18n-title="opt_shortcut_edit_title" title="点击后按下新的组合键；Backspace 恢复默认，Esc 取消">Ctrl+Shift+F</button>
+              <span class="setting-copy"><strong data-i18n="opt_videoShortcutFavoriteCue_title">收藏当前字幕到 Fushi</strong></span>
+              <span class="switch"><input id="videoShortcutFavoriteCue" type="checkbox"><span aria-hidden="true"></span></span>
             </label>
             <label class="setting-row shortcut-row" for="videoShortcutOffsetMinus">
               <button class="keycap keycap-edit" type="button" data-shortcut-action="offset-minus" data-i18n-title="opt_shortcut_edit_title" title="点击后按下新的组合键；Backspace 恢复默认，Esc 取消">Ctrl+Shift+←</button>

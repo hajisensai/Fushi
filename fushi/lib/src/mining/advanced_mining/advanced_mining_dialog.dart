@@ -91,7 +91,7 @@ class AdvancedMiningDialog extends StatefulWidget {
 }
 
 /// 窄屏里折叠成摘要行的分区。
-enum _Fold { deck, audio, image }
+enum _Fold { deck, fields, audio, image }
 
 class _AdvancedMiningDialogState extends State<AdvancedMiningDialog> {
   late final AdvancedMiningController _c = AdvancedMiningController(
@@ -222,6 +222,12 @@ class _AdvancedMiningDialogState extends State<AdvancedMiningDialog> {
       return KeyEventResult.ignored;
     }
     if (_c.sentenceSection == null || _c.locked) return KeyEventResult.ignored;
+    // 焦点在输入框里（卡片字段分区）：方括号是要打进字段的字，不是增减句子。
+    final BuildContext? focused = FocusManager.instance.primaryFocus?.context;
+    if (focused != null &&
+        focused.findAncestorWidgetOfExactType<EditableText>() != null) {
+      return KeyEventResult.ignored;
+    }
     final HardwareKeyboard kb = HardwareKeyboard.instance;
     if (kb.isControlPressed || kb.isAltPressed || kb.isMetaPressed) {
       return KeyEventResult.ignored;
@@ -268,6 +274,7 @@ class _AdvancedMiningDialogState extends State<AdvancedMiningDialog> {
     final bool hasLeft = _c.sentenceSection != null || _c.mangaSection != null;
     final bool hasRight =
         _c.deckSection != null ||
+        _c.fieldsSection != null ||
         _c.audioSection != null ||
         _c.videoSection != null ||
         _c.stillSection != null ||
@@ -396,6 +403,7 @@ class _AdvancedMiningDialogState extends State<AdvancedMiningDialog> {
           );
     final List<Widget> right = <Widget>[
       if (_c.deckSection != null) AdvancedMiningDeckPanel(controller: _c),
+      if (_c.fieldsSection != null) AdvancedMiningFieldsPanel(controller: _c),
       if (manga && _c.sentenceSection != null)
         AdvancedMiningSentencePanel(
           controller: _c,
@@ -484,6 +492,7 @@ class _AdvancedMiningDialogState extends State<AdvancedMiningDialog> {
         ),
       if (!fold) ...<Widget>[
         if (_c.deckSection != null) AdvancedMiningDeckPanel(controller: _c),
+        if (_c.fieldsSection != null) AdvancedMiningFieldsPanel(controller: _c),
         if (_c.audioSection != null)
           AdvancedMiningAudioPanel(
             controller: _c,
@@ -558,6 +567,14 @@ class _AdvancedMiningDialogState extends State<AdvancedMiningDialog> {
         onTap: () => _toggleFold(_Fold.deck),
         child: AdvancedMiningDeckPanel(controller: _c, embedded: true),
       ),
+    if (foldInline && _c.fieldsSection != null)
+      _FoldRow(
+        label: t.popup_advanced_mining_fields_section,
+        value: _fieldsSummary(),
+        expanded: _expanded.contains(_Fold.fields),
+        onTap: () => _toggleFold(_Fold.fields),
+        child: AdvancedMiningFieldsPanel(controller: _c, embedded: true),
+      ),
     if (foldInline && _c.audioSection != null)
       _FoldRow(
         label: t.popup_advanced_mining_audio_section,
@@ -605,6 +622,14 @@ class _AdvancedMiningDialogState extends State<AdvancedMiningDialog> {
             : () => unawaited(MangaCropFullscreenPage.open(context, _c)),
       ),
   ];
+
+  /// 显示中的字段名（「Sentence · MainDefinition」）；一个都没选时是「—」。
+  String _fieldsSummary() {
+    final List<String> names = <String>[
+      for (final AdvancedMiningField f in _c.shownFields) f.name,
+    ];
+    return names.isEmpty ? '—' : names.join(' · ');
+  }
 
   String _audioSummary() {
     if (_c.omitAudio) return t.popup_advanced_mining_audio_none;

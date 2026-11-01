@@ -229,6 +229,13 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
     state = state.copyWith(settings: updated);
   }
 
+  Future<void> updateTagNestTitleUnderCategory(bool value) async {
+    final updated = await _repository.updateSettings(
+      (s) => s.copyWith(tagNestTitleUnderCategory: value),
+    );
+    state = state.copyWith(settings: updated);
+  }
+
   Future<void> updateAllowDupes(bool value) async {
     final updated = await _repository.updateSettings(
       (s) => s.copyWith(allowDupes: value),
