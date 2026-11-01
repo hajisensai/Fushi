@@ -133,8 +133,13 @@ class WebVideoFushiPage extends ConsumerStatefulWidget {
     this.idleAutoMining = false,
     this.mineReturnState,
     this.closeAfterMining = false,
+    this.returnToBrowser = false,
     super.key,
   });
+
+  /// 交接来源是浏览器交接过来的播放器层（`VideoFushiPage.webBackToBrowser`）：换回原生播放器页
+  /// 时原样带回，那边离开观看页才知道该回到下面那个浏览器标签页、而不是再压一个浏览器。
+  final bool returnToBrowser;
 
   /// 本页是后台空闲自动制卡打开的（[WebMineBackgroundRunner]：用户没开着播放页）：
   /// 跑完 / 让位 / 放弃后直接关页，不恢复播放状态。
@@ -188,6 +193,7 @@ class WebVideoFushiPage extends ConsumerStatefulWidget {
     bool idleAutoMining = false,
     WebMineReturnState? mineReturnState,
     bool closeAfterMining = false,
+    bool returnToBrowser = false,
   }) => FushiAppUiScaleNeutralizer(
     child: WebVideoFushiPage(
       bookUid: bookUid,
@@ -198,6 +204,7 @@ class WebVideoFushiPage extends ConsumerStatefulWidget {
       idleAutoMining: idleAutoMining,
       mineReturnState: mineReturnState,
       closeAfterMining: closeAfterMining,
+      returnToBrowser: returnToBrowser,
     ),
   );
 
@@ -1931,6 +1938,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
                 bookUid: widget.bookUid,
                 repo: widget.repo,
                 webReturnState: mineReturnState,
+                webBackToBrowser: widget.returnToBrowser,
               )
             : WebVideoFushiPage.neutralized(
                 bookUid: widget.bookUid,
@@ -1940,6 +1948,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
                 returnHostingAfterMining: returnHostingAfterMining,
                 idleAutoMining: idleAutoMining,
                 mineReturnState: mineReturnState,
+                returnToBrowser: widget.returnToBrowser,
               ),
       ),
     );
