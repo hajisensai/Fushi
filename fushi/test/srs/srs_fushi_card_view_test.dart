@@ -493,6 +493,42 @@ void main() {
     expect(find.byKey(const ValueKey<String>('srs-fushi-pitch-1')), findsOne);
   });
 
+  group('声调图逐拍画法与模板一致（反馈 kP5GJ0pahv）', () {
+    const SrsPitchMoraMark low = SrsPitchMoraMark(high: false, drop: false);
+    const SrsPitchMoraMark high = SrsPitchMoraMark(high: true, drop: false);
+    const SrsPitchMoraMark highDrop = SrsPitchMoraMark(high: true, drop: true);
+
+    test('平板 [0]：首拍低、其余高，没有降调符', () {
+      expect(srsPitchMoraMarks(0, 4), <SrsPitchMoraMark>[
+        low,
+        high,
+        high,
+        high,
+      ]);
+    });
+
+    test('中高 [3]：か低 すれ高、れ后降、る低', () {
+      expect(srsPitchMoraMarks(3, 4), <SrsPitchMoraMark>[
+        low,
+        high,
+        highDrop,
+        low,
+      ]);
+    });
+
+    test('头高 [1]：首拍高并降', () {
+      expect(srsPitchMoraMarks(1, 3), <SrsPitchMoraMark>[highDrop, low, low]);
+    });
+
+    test('尾高 [2]（2 拍）：末拍降 + 尾拍', () {
+      expect(srsPitchMoraMarks(2, 2), <SrsPitchMoraMark>[
+        low,
+        highDrop,
+        const SrsPitchMoraMark(high: false, drop: false, tail: true),
+      ]);
+    });
+  });
+
   testWidgets('没有可解析的声调：只画一份读音', (WidgetTester tester) async {
     await pump(
       tester,
