@@ -106,6 +106,7 @@
   "ai_assist_section": "Perguntar à IA",
   "ai_assist_working": "Consultando a IA…",
   "ai_error_bad_response": "Resposta inesperada",
+  "ai_error_context_overflow": "The request is longer than the model's context window. Increase the context length in your AI server (for example LM Studio or Ollama), use a model with a larger context, or start a new conversation.",
   "ai_error_empty_response": "O modelo não retornou nada",
   "ai_error_http": "O serviço retornou um erro (${code})",
   "ai_error_network": "Erro de rede",

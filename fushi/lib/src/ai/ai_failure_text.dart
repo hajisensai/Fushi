@@ -19,6 +19,8 @@ String aiFailureText(String code) {
     'bad_response' => t.ai_error_bad_response,
     'empty_response' => t.ai_error_empty_response,
     'provider_not_configured' => t.ai_error_not_configured,
+    // `kAiContextOverflowCode`：请求超出模型上下文窗口（反馈 GewyVIt5oo）。
+    'context_overflow' => t.ai_error_context_overflow,
     // `kAiTranscriptionUnsupportedProtocol`：云端转录只认 OpenAI 兼容协议。
     'unsupported_protocol' => t.ai_error_unsupported_protocol,
     _ => code,

@@ -106,6 +106,7 @@
   "ai_assist_section": "AI に頼む",
   "ai_assist_working": "AI に問い合わせ中…",
   "ai_error_bad_response": "想定外のレスポンス",
+  "ai_error_context_overflow": "The request is longer than the model's context window. Increase the context length in your AI server (for example LM Studio or Ollama), use a model with a larger context, or start a new conversation.",
   "ai_error_empty_response": "モデルから何も返されませんでした",
   "ai_error_http": "サービスがエラーを返しました（${code}）",
   "ai_error_network": "ネットワークエラー",

@@ -106,6 +106,7 @@
   "ai_assist_section": "Demander à l'IA",
   "ai_assist_working": "Demande à l'IA…",
   "ai_error_bad_response": "Réponse inattendue",
+  "ai_error_context_overflow": "The request is longer than the model's context window. Increase the context length in your AI server (for example LM Studio or Ollama), use a model with a larger context, or start a new conversation.",
   "ai_error_empty_response": "Le modèle n'a rien renvoyé",
   "ai_error_http": "Le service a renvoyé une erreur (${code})",
   "ai_error_network": "Erreur réseau",

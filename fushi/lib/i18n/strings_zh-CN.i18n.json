@@ -106,6 +106,7 @@
   "ai_assist_section": "让 AI 帮忙",
   "ai_assist_working": "正在询问 AI…",
   "ai_error_bad_response": "响应格式异常",
+  "ai_error_context_overflow": "请求超出了模型的上下文长度。请在 AI 服务端（如 LM Studio、Ollama）调大上下文长度、换用上下文更大的模型，或开始新对话。",
   "ai_error_empty_response": "模型没有返回内容",
   "ai_error_http": "服务返回错误（${code}）",
   "ai_error_network": "网络错误",

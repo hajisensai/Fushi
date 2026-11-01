@@ -106,6 +106,7 @@
   "ai_assist_section": "Спросить ИИ",
   "ai_assist_working": "Запрос к ИИ…",
   "ai_error_bad_response": "Неожиданный ответ",
+  "ai_error_context_overflow": "The request is longer than the model's context window. Increase the context length in your AI server (for example LM Studio or Ollama), use a model with a larger context, or start a new conversation.",
   "ai_error_empty_response": "Модель ничего не вернула",
   "ai_error_http": "Сервис вернул ошибку (${code})",
   "ai_error_network": "Ошибка сети",

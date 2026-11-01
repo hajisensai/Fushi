@@ -106,6 +106,7 @@
   "ai_assist_section": "Ask AI",
   "ai_assist_working": "Asking AI…",
   "ai_error_bad_response": "Unexpected response",
+  "ai_error_context_overflow": "The request is longer than the model's context window. Increase the context length in your AI server (for example LM Studio or Ollama), use a model with a larger context, or start a new conversation.",
   "ai_error_empty_response": "The model returned nothing",
   "ai_error_http": "Service returned an error (${code})",
   "ai_error_network": "Network error",

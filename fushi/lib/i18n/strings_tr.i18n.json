@@ -106,6 +106,7 @@
   "ai_assist_section": "Yapay zekaya sor",
   "ai_assist_working": "Yapay zekaya soruluyor…",
   "ai_error_bad_response": "Beklenmeyen yanıt",
+  "ai_error_context_overflow": "The request is longer than the model's context window. Increase the context length in your AI server (for example LM Studio or Ollama), use a model with a larger context, or start a new conversation.",
   "ai_error_empty_response": "Model hiçbir şey döndürmedi",
   "ai_error_http": "Hizmet bir hata döndürdü (${code})",
   "ai_error_network": "Ağ hatası",

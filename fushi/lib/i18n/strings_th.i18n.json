@@ -106,6 +106,7 @@
   "ai_assist_section": "ถาม AI",
   "ai_assist_working": "กำลังถาม AI…",
   "ai_error_bad_response": "การตอบกลับที่ไม่คาดคิด",
+  "ai_error_context_overflow": "The request is longer than the model's context window. Increase the context length in your AI server (for example LM Studio or Ollama), use a model with a larger context, or start a new conversation.",
   "ai_error_empty_response": "โมเดลไม่ส่งอะไรกลับมา",
   "ai_error_http": "บริการส่งข้อผิดพลาดกลับมา (${code})",
   "ai_error_network": "ข้อผิดพลาดเครือข่าย",

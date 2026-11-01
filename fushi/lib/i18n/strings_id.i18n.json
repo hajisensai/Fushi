@@ -106,6 +106,7 @@
   "ai_assist_section": "Tanya AI",
   "ai_assist_working": "Bertanya ke AI…",
   "ai_error_bad_response": "Respons tak terduga",
+  "ai_error_context_overflow": "The request is longer than the model's context window. Increase the context length in your AI server (for example LM Studio or Ollama), use a model with a larger context, or start a new conversation.",
   "ai_error_empty_response": "Model tidak mengembalikan apa pun",
   "ai_error_http": "Layanan mengembalikan galat (${code})",
   "ai_error_network": "Galat jaringan",

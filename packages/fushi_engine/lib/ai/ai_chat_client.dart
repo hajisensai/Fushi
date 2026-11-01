@@ -1645,6 +1645,33 @@ const List<String> _kQuotaMarkers = <String>[
   '欠费',
 ];
 
+/// 请求超出模型上下文窗口的失败短码（反馈 GewyVIt5oo：本地小上下文模型被 AI 助手
+/// 的系统提示 + 对话撑爆）。界面据此提示调大服务端上下文长度或开新对话，而不是
+/// 只报一个看不懂的 `http_400`。不是临时性失败：原样重发还是超长。
+const String kAiContextOverflowCode = 'context_overflow';
+
+/// 上下文超长的特征词（小写比较）：
+/// - OpenAI / 兼容层：`context_length_exceeded`、「maximum context length」；
+/// - llama.cpp server：「the request exceeds the available context size」；
+/// - LM Studio：「…context length of only 4096 tokens」「context the overflows」；
+/// - Ollama / vLLM：「context window」「n_ctx」；Anthropic：「prompt is too long」；
+/// - Gemini：「exceeds the maximum number of tokens」。
+///
+/// 只认 400 / 413 / 422 / 500：OpenAI 的 TPM 限流是 429「Request too large … tokens
+/// per min」，那是限流不是窗口，交给 `rate_limited`。
+const List<String> _kContextOverflowMarkers = <String>[
+  'context_length_exceeded',
+  'context length',
+  'context size',
+  'context window',
+  'maximum context',
+  'context the overflows',
+  'context overflow',
+  'n_ctx',
+  'prompt is too long',
+  'maximum number of tokens',
+];
+
 /// key 本身无效的特征词：Gemini 对坏 key 回的是 **400** `API_KEY_INVALID`
 /// （「API key not valid」），只看状态码认不出是鉴权问题。
 const List<String> _kInvalidKeyMarkers = <String>[
@@ -1659,6 +1686,7 @@ const List<String> _kInvalidKeyMarkers = <String>[
 ///
 /// - 402，或 400/403/429 且体里有余额特征词 → `quota_exhausted`（换 key 重试）；
 /// - 401 / 403，或 400 且体里有坏 key 特征词 → `unauthorized`（换 key 重试）；
+/// - 400/413/422/500 且体里有上下文超长特征词 → [kAiContextOverflowCode]（不重试）；
 /// - 429 → `rate_limited`，带上 `Retry-After`（换 key 重试，这把按它冷却）；
 /// - 其余 → `http_<状态码>`（与 key 无关，不换 key）。
 ///
@@ -1688,6 +1716,13 @@ AiChatFailure classifyAiHttpFailure({
       statusCode == 403 ||
       (statusCode == 400 && has(_kInvalidKeyMarkers))) {
     return const AiChatFailure('unauthorized');
+  }
+  if ((statusCode == 400 ||
+          statusCode == 413 ||
+          statusCode == 422 ||
+          statusCode == 500) &&
+      has(_kContextOverflowMarkers)) {
+    return const AiChatFailure(kAiContextOverflowCode);
   }
   if (statusCode == 429) {
     return AiChatFailure(

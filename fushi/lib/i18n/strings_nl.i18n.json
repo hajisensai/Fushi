@@ -106,6 +106,7 @@
   "ai_assist_section": "Vraag AI",
   "ai_assist_working": "AI vragen…",
   "ai_error_bad_response": "Onverwacht antwoord",
+  "ai_error_context_overflow": "The request is longer than the model's context window. Increase the context length in your AI server (for example LM Studio or Ollama), use a model with a larger context, or start a new conversation.",
   "ai_error_empty_response": "Het model gaf niets terug",
   "ai_error_http": "De service gaf een fout terug (${code})",
   "ai_error_network": "Netwerkfout",
