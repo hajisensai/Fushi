@@ -2291,6 +2291,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 本页持有一份底层合成（[acquireUnderlayComposition]），dispose 归还。
   bool _webUnderlayHeld = false;
 
+  /// 上一份站点快照是否处于页面全屏：[_onWebState] 只在「非全屏 → 全屏」边沿强制播放器档。
+  bool _webPageWasFullscreen = false;
+
   /// 持有底层合成期间让路由层页底（[FushiPageBackdrop]）整个让开的那条路由，dispose 恢复。
   Route<Object?>? _webTransparentRoute;
 
