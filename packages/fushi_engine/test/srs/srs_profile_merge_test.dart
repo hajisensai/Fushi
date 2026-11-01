@@ -250,6 +250,20 @@ void main() {
       ))?.field(srsLapisFieldId(aUid, 'Expression')),
       '霧',
     );
+    // BUG-3959：并入带过来的合成标签行（写入者 `sync2:tags:<笔记>`）不进任何因果上下文——以前它进了 B 的
+    // legacy 闭包，此后 B 的每条新修改 ctx 都带上一条笔记一项（真实库 15027 项、≈780 KB / 条）。
+    for (final _Device d in <_Device>[a, b]) {
+      final QueryRow bloat = await d.srs.db
+          .customSelect(
+            'SELECT (SELECT COUNT(*) FROM srs_field_edits '
+            "WHERE instr(json_extract(json, '\$.ctx'), '\"sync2:') > 0) AS e, "
+            '(SELECT COUNT(*) FROM sync2_legacy '
+            "WHERE instr(ctx, '\"sync2:') > 0) AS l",
+          )
+          .getSingle();
+      expect(bloat.read<int>('e'), 0, reason: '${d.deviceId}：修改记录 ctx');
+      expect(bloat.read<int>('l'), 0, reason: '${d.deviceId}：legacy 闭包');
+    }
   });
 
   test('ID 映射：内置实体与笔记 / 卡片按新 uid 重算，重跑幂等、不重复落操作', () async {
