@@ -12,6 +12,7 @@
   var statusEl = document.getElementById('video-status');
   var fileEl = document.getElementById('subtitle-file');
   var autoButton = document.getElementById('auto-scroll');
+  var favVideoButton = document.getElementById('fav-video');
   var toastEl = document.getElementById('toast');
   var lookupPaneEl = document.getElementById('lookup-pane');
   // 与宿主页 Shift 查词使用同一种 Shadow DOM host 结构；Side Panel 进一步让它在面板
@@ -106,6 +107,10 @@
   var currentState = null;
   var cues = [];
   var rows = [];
+  // 反馈 KGC1ifR1a3：这个视频在 Fushi 收藏夹里的状态（来自标签页 video-favorite.js 的快照）。
+  var favoriteKeys = Object.create(null);
+  var favoriteVideo = false;
+  var favoriteRev = -1;
   var currentIndex = -1;
   var scrollIndex = -1;
   var stateSignature = '';
@@ -162,18 +167,49 @@
   // 「按住 Shift 悬停查词」总开关（与 content.js 同一个 storage.shiftHoverLookup，默认开）。
   // 关掉后字幕行上的 Shift 悬停与「按下 Shift 立即查」都不再触发；点击查词不受影响。
   var shiftHoverLookup = true;
+  // 触发键（反馈 ulS75hVkAK）：与 content.js 同一个 storage.scanModifier。下面三个函数是
+  // content.js 同名函数的副本（扩展页不装 content.js），scan-modifier.test.js 逐例交叉比对。
+  var scanModifier = 'shift';
+  var FUSHI_SCAN_MODIFIER_KEYS = { shift: 'Shift', ctrl: 'Control', alt: 'Alt', meta: 'Meta' };
+  function fushiNormalizeScanModifier(value) {
+    return value === 'none' || Object.prototype.hasOwnProperty.call(FUSHI_SCAN_MODIFIER_KEYS, value) ? value : 'shift';
+  }
+  function fushiScanModifierHeld(event, modifier) {
+    if (!event) return false;
+    var mod = fushiNormalizeScanModifier(modifier);
+    if (mod === 'none') return true;
+    return event[mod + 'Key'] === true;
+  }
+  function fushiScanModifierKeydown(event, modifier) {
+    if (!event || event.repeat) return false;
+    var mod = fushiNormalizeScanModifier(modifier);
+    if (mod === 'none' || event.key !== FUSHI_SCAN_MODIFIER_KEYS[mod]) return false;
+    var others = Object.keys(FUSHI_SCAN_MODIFIER_KEYS);
+    for (var i = 0; i < others.length; i++) {
+      if (others[i] !== mod && event[others[i] + 'Key'] === true) return false;
+    }
+    return true;
+  }
+  function fushiScanModifierKeyup(event, modifier) {
+    var mod = fushiNormalizeScanModifier(modifier);
+    return !!(event && mod !== 'none' && event.key === FUSHI_SCAN_MODIFIER_KEYS[mod]);
+  }
   try {
-    chrome.storage.local.get('shiftHoverLookup', function (saved) {
+    chrome.storage.local.get(['shiftHoverLookup', 'scanModifier'], function (saved) {
       try { if (chrome.runtime.lastError) return; } catch (_) { return; }
       if (saved && typeof saved.shiftHoverLookup === 'boolean') {
         shiftHoverLookup = saved.shiftHoverLookup;
       }
+      if (saved && typeof saved.scanModifier === 'string') {
+        scanModifier = fushiNormalizeScanModifier(saved.scanModifier);
+      }
     });
     chrome.storage.onChanged.addListener(function (changes, area) {
-      if (area !== 'local' || !changes || !changes.shiftHoverLookup) return;
-      shiftHoverLookup = changes.shiftHoverLookup.newValue !== false;
+      if (area !== 'local' || !changes) return;
+      if (changes.shiftHoverLookup) shiftHoverLookup = changes.shiftHoverLookup.newValue !== false;
+      if (changes.scanModifier) scanModifier = fushiNormalizeScanModifier(changes.scanModifier.newValue);
     });
-  } catch (_) { /* storage 不可用：按默认（开）走 */ }
+  } catch (_) { /* storage 不可用：按默认（开、Shift）走 */ }
   // 复杂词的 popupJson 可超过 2 MB，解析后的对象树通常还会膨胀数倍。只按“48 个词”
   // 淘汰会让 Side Panel 很快常驻数百 MB，并在后续查词时触发秒级 GC。双门槛保留常用
   // 小词，同时让超大结果最多只占少量槽位；最新一条即使单独超预算也保留以支持复查。
@@ -1045,7 +1081,7 @@
         lastPointer = {
           x: event.clientX, y: event.clientY, cue: cue, index: index, textEl: text,
         };
-        if (event.shiftKey && shiftHoverLookup) schedulePointerLookup(lastPointer);
+        if (shiftHoverLookup && fushiScanModifierHeld(event, scanModifier)) schedulePointerLookup(lastPointer);
       }
       text.addEventListener('pointerenter', rememberPointer, { passive: true });
       text.addEventListener('pointermove', rememberPointer, { passive: true });
@@ -1067,11 +1103,80 @@
       });
       row.appendChild(timestamp);
       row.appendChild(text);
+      row.appendChild(cueFavoriteButton(cue));
       rows[index] = row;
       fragment.appendChild(row);
     });
     listEl.appendChild(fragment);
     updateCurrent(currentState && currentState.currentTimeMs);
+  }
+
+  // ── 收藏进 Fushi 收藏夹（反馈 KGC1ifR1a3）──
+  // 执行端在标签页的 video-favorite.js（它知道页面地址 / 标题，并持有收藏状态缓存）；这里只画
+  // ☆/★ 并经 tab 消息转发点击。身份口径与它同一个 cueKey（起点毫秒 + 文本）。
+  function favoriteCueKey(cue) {
+    var mod = window.FUSHI_VIDEO_FAVORITE;
+    return mod && typeof mod.cueKey === 'function' ? mod.cueKey(cue.text, cue.startMs) : '';
+  }
+  function paintCueFavorite(button, on) {
+    button.classList.toggle('is-favorited', on);
+    button.setAttribute('aria-pressed', on ? 'true' : 'false');
+    var label = tr(on ? 'sp_fav_line_remove_title' : 'sp_fav_line_add_title');
+    button.title = label;
+    button.setAttribute('aria-label', label);
+    button.textContent = '';
+    var glyph = typeof window.fushiIcon === 'function' ? window.fushiIcon(on ? 'star_fill' : 'star', { size: 18 }) : null;
+    if (glyph) button.appendChild(glyph);
+    else button.textContent = on ? '★' : '☆';
+  }
+  function cueFavoriteButton(cue) {
+    var button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'cue-fav';
+    button.dataset.favKey = favoriteCueKey(cue);
+    paintCueFavorite(button, !!favoriteKeys[button.dataset.favKey]);
+    button.addEventListener('click', function (event) {
+      event.stopPropagation(); // 不触发整行的 seek
+      sendToTab({
+        type: 'fushiVideoFavoriteToggleCue',
+        cue: { text: cue.text, startMs: cue.startMs, endMs: cue.endMs },
+      }).then(function (response) {
+        if (response && response.ok) applyFavorites(response.favorites, true);
+      });
+    });
+    return button;
+  }
+  function applyFavorites(snapshot, force) {
+    if (!snapshot || typeof snapshot !== 'object') return;
+    if (!force && snapshot.rev === favoriteRev) return;
+    favoriteRev = snapshot.rev;
+    favoriteKeys = Object.create(null);
+    var keys = Array.isArray(snapshot.keys) ? snapshot.keys : [];
+    for (var i = 0; i < keys.length; i++) favoriteKeys[keys[i]] = true;
+    favoriteVideo = snapshot.video === true;
+    for (var r = 0; r < rows.length; r++) {
+      var button = rows[r] && typeof rows[r].querySelector === 'function' ? rows[r].querySelector('.cue-fav') : null;
+      if (button) paintCueFavorite(button, !!favoriteKeys[button.dataset.favKey]);
+    }
+    paintVideoFavorite();
+  }
+  function paintVideoFavorite() {
+    if (!favVideoButton) return;
+    favVideoButton.classList.toggle('is-on', favoriteVideo);
+    favVideoButton.setAttribute('aria-pressed', favoriteVideo ? 'true' : 'false');
+    var label = tr(favoriteVideo ? 'sp_fav_video_remove_title' : 'sp_fav_video_title');
+    favVideoButton.title = label;
+    favVideoButton.setAttribute('aria-label', label);
+    var slot = favVideoButton.querySelector('.msr-slot') || favVideoButton;
+    var glyph = typeof window.fushiIcon === 'function' ? window.fushiIcon(favoriteVideo ? 'star_fill' : 'star', { size: 20 }) : null;
+    if (glyph) { slot.textContent = ''; slot.appendChild(glyph); }
+  }
+  if (favVideoButton) {
+    favVideoButton.addEventListener('click', function () {
+      sendToTab({ type: 'fushiVideoFavoriteToggleVideo' }).then(function (response) {
+        if (response && response.ok) applyFavorites(response.favorites, true);
+      });
+    });
   }
 
   // 高亮只属于正在显示的字幕；列表定位还需覆盖字幕间隙、片头和片尾。
@@ -1109,6 +1214,8 @@
 
   function applyState(state, includesCues) {
     currentState = state;
+    if (includesCues) favoriteRev = -1; // 行重建后按最新快照重画一遍星
+
     statusEl.textContent = tr(state.hasVideo
       ? ((state.tracks || []).length ? 'sp_status_connected' : 'sp_status_waiting_subtitles')
       : 'sp_status_no_video');
@@ -1119,6 +1226,7 @@
     } else {
       updateCurrent(state.currentTimeMs);
     }
+    applyFavorites(state.favorites, false);
   }
 
   async function refresh(forceCues) {
@@ -1347,6 +1455,38 @@
     notice.appendChild(copy);
     return notice;
   }
+  // 结果文件名里的集号（反馈 auJaOKXl3W：超长番名把「- 01」挤出可视区，用户分不清哪条是哪集）。
+  // 认 ` - 01`、`[01]`、`E01` / `EP01` / `S01E01`、`第1話/集/话`、`#01`；返回 {episode, index}
+  // （index = 集号标记在原串里的起点，供中段省略保住它及其后的 [WebRip 1080p] 等关键信息）。
+  function findSubsEpisode(name) {
+    var text = String(name == null ? '' : name);
+    var patterns = [
+      /[\s_]-[\s_]*(\d{1,4}(?:\.\d)?)(?:v\d)?(?=[\s_\[\(.]|$)/,
+      /S\d{1,2}[\s_.]*E[Pp]?(\d{1,4})/i,
+      /(?:^|[\s_.\[\(])EP?[\s_.]?(\d{1,4})(?=[\s_\]\).v]|$)/i,
+      /第\s*(\d{1,4})\s*[話话集回]/,
+      /\[(\d{1,4})(?:v\d)?\]/,
+      /#(\d{1,4})(?!\d)/,
+    ];
+    for (var i = 0; i < patterns.length; i++) {
+      var m = patterns[i].exec(text);
+      if (m) return { episode: String(Number(m[1])), index: m.index };
+    }
+    return null;
+  }
+  // 超长文件名做中段省略：保留开头（字幕组 + 番名起头）与集号起的整段尾巴，中间用 … 代替。
+  // 认不出集号时保留末尾 24 个字符（扩展名 + 版本标签通常在那）。完整名放 title 提示里。
+  function compactSubsName(name, maxChars) {
+    var text = String(name == null ? '' : name);
+    var limit = maxChars > 0 ? maxChars : 72;
+    if (text.length <= limit) return text;
+    var hit = findSubsEpisode(text);
+    var tailStart = hit ? hit.index : text.length - 24;
+    var tail = text.slice(tailStart);
+    var headLen = Math.max(12, limit - tail.length - 1);
+    if (headLen >= tailStart) return text;
+    return text.slice(0, headLen).replace(/[\s_.\-]+$/, '') + '…' + tail;
+  }
   function renderSubsResults(candidates, truncated) {
     subsResultsEl.textContent = '';
     if (!candidates.length) {
@@ -1360,15 +1500,25 @@
       row.className = 'subs-item';
       var name = document.createElement('span');
       name.className = 'subs-item-name';
-      name.textContent = candidate.fileName;
+      name.textContent = compactSubsName(candidate.fileName, 72);
+      row.title = String(candidate.fileName || '');
       var meta = document.createElement('span');
       meta.className = 'subs-item-meta';
+      // 集号放在 meta 行最前、单独成块（不随番名换行 / 省略被挤掉）：来源给了用来源的，
+      // 没给就从文件名里认。
+      var hit = candidate.episode != null ? null : findSubsEpisode(candidate.fileName);
+      var episode = candidate.episode != null ? candidate.episode : (hit ? hit.episode : null);
+      if (episode != null) {
+        var ep = document.createElement('span');
+        ep.className = 'subs-item-ep';
+        ep.textContent = tr('subs_episode_label', { n: episode });
+        row.appendChild(ep);
+      }
       var parts = [];
       var label = providerLabel(candidate.provider);
       if (label) parts.push(label);
       if (candidate.entryName) parts.push(candidate.entryName);
       if (candidate.language) parts.push(candidate.language);
-      if (candidate.episode != null) parts.push(tr('subs_episode_label', { n: candidate.episode }));
       // 机翻档与人工档并排时质量差一个数量级，来源既然标了就得显示出来。
       if (candidate.aiTranslated === true) parts.push(tr('subs_machine_translated'));
       meta.textContent = parts.join(' · ');
@@ -1452,15 +1602,17 @@
     }
     // Yomitan 的 modifier-on-keydown 路径：指针已经停在词上时，按下 Shift 就用最后
     // 一次 pointer 坐标立即查，不要求用户再晃动鼠标，也不 preventDefault。
-    if (event.key === 'Shift' && !event.repeat && lastPointer && shiftHoverLookup) {
+    if (lastPointer && shiftHoverLookup && fushiScanModifierKeydown(event, scanModifier)) {
       lookupAtPointer(lastPointer, { explicit: true, announceMissing: true });
     }
   }, true);
   document.addEventListener('keyup', function (event) {
-    if (event.key === 'Shift') activeScanKey = '';
+    if (fushiScanModifierKeyup(event, scanModifier)) activeScanKey = '';
   }, true);
   document.addEventListener('mousedown', function (event) {
-    if (!event.shiftKey && !lookupPaneEl.hidden &&
+    // 按着触发键点下去是在继续扫词，不关面板（none 模式无键可按，照常关）。
+    var scanKeyDown = scanModifier !== 'none' && fushiScanModifierHeld(event, scanModifier);
+    if (!scanKeyDown && !lookupPaneEl.hidden &&
         event.target !== lookupPaneEl && !lookupPaneEl.contains(event.target)) {
       closeLookup();
     }

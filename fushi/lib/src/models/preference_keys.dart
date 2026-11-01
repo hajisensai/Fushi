@@ -46,6 +46,12 @@ const String kLibrarySentencesEnabledPrefKey = 'lookup_library_sentences';
 /// 已知的静态偏好键全集（守卫强制）。按字母序。
 const Set<String> kKnownPreferenceKeys = <String>{
   'active_profile_id',
+  // int（ms，默认 250）：高级制卡句子音频起止微调步长（反馈 3_VB7kAeHj），
+  // 取值见 kAdvancedMiningAudioNudgeStepsMs。
+  'advanced_mining_audio_nudge_step_ms',
+  // String（JSON 字符串数组，缺键 = 从没选过）：「高级制卡」卡片字段分区里显示（可编辑）
+  // 的 Anki 字段名（反馈 -K86qlwBg6）。缺键时对话框按映射挑释义类字段作默认。
+  'advanced_mining_visible_fields',
   // bool（默认 false）：本机当互联 host 时，是否允许已配对设备经 `/api/assistant`
   // 远程使用 AI 助手（会用本机的 AI 指派、调本机操作目录）。与服务端
   // `ai.agent_for_peers` 同一判据：默认关、用户在设置里亲手打开（设备本地）。
@@ -67,6 +73,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 同时登记在 kCredentialPreferenceKeys、PrefRedactionPolicy.sensitiveKeys
   // 与 deviceLocalPrefKeys。
   'ai_providers',
+  // String（JSON 列表）：用户保存的 AI 提示词（`ai/ai_saved_prompts.dart`），
+  // 每条 {id, name, text, scene?}。纯用户文本、非凭据，跨设备。
+  'ai_saved_prompts',
   // String：「AI 下视频」的码率偏好（只排序）。`''` 不限 / `high` 高码率优先 /
   // `low` 小体积优先。非凭据、跨设备。
   'ai_video_download_bitrate',
@@ -368,6 +377,7 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'manga_mining_crop_to_panel',
   'manga_ocr_ai_mode',
   'manga_ocr_engine_preference',
+  'manga_ocr_ignore_furigana',
   'manga_ocr_lens_language',
   'manga_ocr_local_model',
   'manga_ocr_paired_host_model',
@@ -441,6 +451,11 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // `kBuiltinAcoustidApiKey`，两者都空 = AcoustID 不可用）。凭据：同时登记在
   // kCredentialPreferenceKeys 与 PrefRedactionPolicy.sensitiveKeys。
   'music_acoustid_api_key',
+  // bool（默认 false）：服务器曲库里显示 Apple Music catalog 来源（MusicKit 方案 P1b：
+  // 浏览 + 30 秒试听，developer token 由排行榜 Worker 代签）。显式 opt-in。
+  'music_apple_music_enabled',
+  // String（默认 'jp'）：Apple Music catalog 的 storefront（两位小写国家码）。
+  'music_apple_music_storefront',
   // String（默认 'auto'）：音乐输出设备（mpv audio-device 名；设备本地）。
   'music_audio_device',
   // int（默认 0 = 关）：交叉淡入时长毫秒（设计 §7.2）。
@@ -566,6 +581,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'popup_instant_scroll_wheel_step',
   'popup_max_height',
   'popup_max_width',
+  // double（默认 1.0，0.5–2.0）：查词弹窗独立缩放，乘在 app_ui_scale 之上（反馈
+  // 2jGkpD-iD6，见 lookup/popup_ui_scale.dart）。阅读偏好，随 Profile 快照走。
+  'popup_ui_scale',
   'popup_wheel_speed',
   // int：绑定临时切换前用户自己选的 Profile id（缺失 = 无）。非 Profile 键。
   'profile_fallback_id',
@@ -661,6 +679,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // String（SrsReviewImageSize.wire：'original' | 'fit_width' | 'large'，默认
   // 'original'）：复习卡面图片大小（牌组 CSS 限得太小 / 原图像素小时放大）。非凭据、跨设备。
   'srs_review_image_size',
+  // bool（默认 false）：复习时直接编辑——卡面选中文字后加粗 / 高亮 / 清除格式、按字段
+  // AI 改写（srsReviewInlineEdit）。非凭据、跨设备。
+  'srs_review_inline_edit',
   // String（SrsReviewReplayButton.wire：'off' | 'start' | 'end'，默认 'off'）：复习页
   // 底部操作行一端放一颗重播音频键（手机刷卡时拇指在屏幕下方，够不到顶栏）。非凭据、跨设备。
   'srs_review_replay_button',
@@ -804,6 +825,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 500 条。非凭据、跨设备（服务器条目 id 在哪台设备上都一样）。
   'video_media_server_version_choices',
   'video_mining_animated_format',
+  // String（`SentenceAudioSourcePick.wireName`）：视频制卡句子音频来源——当前播放
+  // 音轨（默认）/ 指定第 N 条音轨 `track:<N>` / 中置声道 `front_center`。
+  'video_mining_audio_source',
   'video_mining_clip_format',
   'video_mining_image_mode',
   'video_mining_still_format',
@@ -830,11 +854,18 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'video_resource_disabled_sources',
   'video_resource_torznab_config',
   'video_respect_ass_style',
+  // JSON 字符串数组：待确认队列里被用户「忽略、不再提示」的作品 stableKey
+  // （`collection:<id>` / `book:<uid>`，反馈 Fbchzxuq6f，引擎
+  // video_scrape_ignored_works.dart）。键里是本机自增 id，设备本地。
+  'video_scrape_ignored_works',
   'video_secondary_subtitle_blur',
   'video_secondary_subtitle_obscure_hide',
   // bool（未写过时继承 video_subtitle_obscure_reveal）：副字幕遮蔽态是否允许
   // 暂停 / 查词 / 悬停 / 点击临时显形，与主字幕分开配置。
   'video_secondary_subtitle_obscure_reveal',
+  // string（默认空）：副字幕轨默认语言偏好（反馈 Fz9HXThdSW），格式同
+  // video_subtitle_preferred_languages。
+  'video_secondary_subtitle_preferred_languages',
   'video_shaders_enabled',
   // bool（默认 false）：控制条淡出后，在视频最下方留一条主题色细进度条
   // （B 站 / YouTube 同款）。默认关——控制条淡出就是要把画面让干净。小窗档不受
@@ -872,6 +903,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 遮蔽在整句期间恒定生效，不被误触破功。
   'video_subtitle_obscure_reveal',
   'video_subtitle_opensubtitles_config',
+  // string（默认空）：主字幕轨默认语言偏好（反馈 Fz9HXThdSW，参考 PotPlayer）：逗号 /
+  // 空白分隔，按顺序挑第一条命中的内封轨，见 parseSubtitleLanguagePreferences。
+  'video_subtitle_preferred_languages',
   // string（默认 auto）：生成日语字幕的分段方式 auto/moss/window；设备本地。
   'video_subtitle_segmenter',
   'video_subtitle_style',

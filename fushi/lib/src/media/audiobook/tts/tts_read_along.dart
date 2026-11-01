@@ -8,6 +8,9 @@
 /// 2. 一句合成完才知道真实时长：就地更新那条 cue 的 `endMs` 并让控制器重算时间轴，
 ///    未合成的句子用按字数估计的时长占位；
 /// 3. 断点不存全书毫秒（估计时长会变），存「章 + 句首匹配坐标 + 句内毫秒 + 缓存键」。
+///
+/// 多声优：书在制作台配过角色声音时按句换声音（分派规则见
+/// `tts_read_along_voices.dart`）；预取窗口覆盖当前章剩余 + 下一章（提前生成）。
 library;
 
 import 'dart:async';
@@ -17,6 +20,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_engine/epub/epub_book.dart';
+import 'package:fushi_engine/tts/render/tts_cast.dart';
 import 'package:fushi_engine/tts/tts_audio_cache.dart';
 import 'package:fushi_engine/tts/tts_provider.dart';
 import 'package:fushi_engine/tts/tts_synthesis_scheduler.dart';
@@ -25,7 +29,10 @@ import 'package:fushi_engine/tts/tts_voice_preset.dart';
 
 import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session.dart';
+import 'package:fushi/src/media/audiobook/tts/studio/tts_studio_service.dart'
+    show kStudioSentenceMaxLength;
 import 'package:fushi/src/media/audiobook/tts/tts_book_plan.dart';
+import 'package:fushi/src/media/audiobook/tts/tts_read_along_voices.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_sentence_audio_source.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
 
@@ -56,7 +63,15 @@ class TtsStartAtResume extends TtsStartPoint {
 }
 
 /// 启动失败的原因（UI 按它出文案）。
-enum TtsStartProblem { noVoice, voiceIncomplete, emptyBook }
+enum TtsStartProblem {
+  noVoice,
+  voiceIncomplete,
+  emptyBook,
+
+  /// 选角表里某个角色的声音被删了 / 引擎在本平台不可用 / 配置不完整。不悄悄换成
+  /// 默认声音（那样角色会用错声音读），提示用户去改。
+  castVoiceUnavailable,
+}
 
 class TtsStartException implements Exception {
   const TtsStartException(this.problem);
@@ -105,16 +120,18 @@ class TtsReadAlong extends ChangeNotifier {
     required this.plan,
     required TtsVoicePreset preset,
     required TtsProviderDescriptor descriptor,
-    required TtsProvider provider,
-    required TtsSynthesisScheduler scheduler,
+    required _TtsVoiceRig rig,
+    required List<String> slots,
+    required Map<String, TtsResolvedVoice> slotVoices,
     required TtsPresetStore store,
     required TtsAudioCache cache,
     required TtsHost host,
     required this.cues,
   }) : _preset = preset,
        _descriptor = descriptor,
-       _provider = provider,
-       _scheduler = scheduler,
+       _rig = rig,
+       _slots = slots,
+       _slotVoices = slotVoices,
        _store = store,
        _cache = cache,
        _host = host;
@@ -129,21 +146,28 @@ class TtsReadAlong extends ChangeNotifier {
     required TtsHost host,
     required TtsPresetStore store,
     String bookKey = 'debug',
+    TtsCast? cast,
+    Map<String, TtsResolvedVoice> slotVoices =
+        const <String, TtsResolvedVoice>{},
   }) {
-    final TtsProvider provider = descriptor.create(preset, host);
+    final List<String> slots = <String>[
+      for (final TtsPlanSentence s in plan.sentences) ttsVoiceSlotOf(cast, s),
+    ];
     return TtsReadAlong._(
       bookKey: bookKey,
       plan: plan,
       preset: preset,
       descriptor: descriptor,
-      provider: provider,
-      scheduler: _newScheduler(
+      rig: _TtsVoiceRig.build(
         plan: plan,
-        provider: provider,
+        slots: slots,
+        defaultVoice: (preset: preset, descriptor: descriptor),
+        slotVoices: slotVoices,
         cache: cache,
-        preset: preset,
-        descriptor: descriptor,
+        host: host,
       ),
+      slots: slots,
+      slotVoices: slotVoices,
       store: store,
       cache: cache,
       host: host,
@@ -158,22 +182,6 @@ class TtsReadAlong extends ChangeNotifier {
       ],
     );
   }
-
-  static TtsSynthesisScheduler _newScheduler({
-    required TtsBookPlan plan,
-    required TtsProvider provider,
-    required TtsAudioCache cache,
-    required TtsVoicePreset preset,
-    required TtsProviderDescriptor descriptor,
-  }) => TtsSynthesisScheduler(
-    provider: provider,
-    cache: cache,
-    texts: <String>[
-      for (final TtsPlanSentence s in plan.sentences) s.spokenText,
-    ],
-    audioIdentity: descriptor.audioIdentity(preset),
-    concurrency: ttsEffectiveConcurrency(descriptor, preset),
-  );
 
   /// 当前正在进行的朗读会话（全应用至多一个，随有声书会话释放而清空）。
   static TtsReadAlong? get active => _active;
@@ -198,8 +206,29 @@ class TtsReadAlong extends ChangeNotifier {
   /// 每句一条，与播放列表一一对应（`audioFileIndex == sentenceIndex == 下标`）。
   final List<AudioCue> cues;
 
-  TtsProvider _provider;
-  TtsSynthesisScheduler _scheduler;
+  /// 当前的调度器连同它用的引擎实例（换默认声音时整套换掉）。
+  _TtsVoiceRig _rig;
+  TtsSynthesisScheduler get _scheduler => _rig.scheduler;
+
+  /// 每句的声音槽（与计划等长，会话内不变）与非默认槽的声音（单声音朗读时为空）。
+  final List<String> _slots;
+  final Map<String, TtsResolvedVoice> _slotVoices;
+
+  /// 本会话按角色换声音（书有选角表且至少一句落在配了声音的角色上）。
+  bool get isMultiVoice => _rig.voices.length > 1;
+
+  /// 第 [index] 句用的声音。
+  TtsResolvedVoice voiceAt(int index) =>
+      _rig.voices[_scheduler.voiceIndexOf(index)];
+
+  /// 调度停下时出错的那一句用的声音（失败提示里带声音名）；没有失败时为当前默认声音。
+  TtsResolvedVoice get failedVoice {
+    final int? index = _scheduler.failedIndex;
+    return index == null
+        ? (preset: _preset, descriptor: _descriptor)
+        : voiceAt(index);
+  }
+
   final TtsPresetStore _store;
   final TtsAudioCache _cache;
   final TtsHost _host;
@@ -238,6 +267,7 @@ class TtsReadAlong extends ChangeNotifier {
     required SessionBookInfo info,
     required TtsStartPoint startPoint,
     bool autoplay = true,
+    TtsCast? cast,
   }) async {
     final TtsServices tts = services;
     final ({TtsVoicePreset preset, TtsProviderDescriptor descriptor})? voice =
@@ -246,29 +276,49 @@ class TtsReadAlong extends ChangeNotifier {
     if (voice.descriptor.validate(voice.preset).isNotEmpty) {
       throw const TtsStartException(TtsStartProblem.voiceIncomplete);
     }
-    final int maxLength = voice.descriptor.capabilities.maxInputLength;
+    final TtsCast? castInUse = cast == null || cast.voices.isEmpty
+        ? null
+        : cast;
+    // 多声优：分句必须与制作台同一口径（选角表按制作台计划的句首坐标记说话人），
+    // 否则坐标对不上、查不到角色。
+    final TtsBookPlan basePlan = await buildTtsBookPlan(
+      book,
+      maxLength: castInUse == null
+          ? voice.descriptor.capabilities.maxInputLength
+          : kStudioSentenceMaxLength,
+      pronunciation: tts.pronunciation.load(),
+    );
+    final Map<String, TtsResolvedVoice> slotVoices = castInUse == null
+        ? const <String, TtsResolvedVoice>{}
+        : _resolveSlotVoices(tts, castInUse, basePlan);
+    int maxLength = voice.descriptor.capabilities.maxInputLength;
+    for (final TtsResolvedVoice v in slotVoices.values) {
+      final int limit = v.descriptor.capabilities.maxInputLength;
+      if (limit < maxLength) maxLength = limit;
+    }
     final TtsBookPlan plan = mergeShortTtsSentences(
-      await buildTtsBookPlan(
-        book,
-        maxLength: maxLength,
-        pronunciation: tts.pronunciation.load(),
-      ),
+      basePlan,
       maxLength: maxLength,
+      voiceSlotOf: castInUse == null
+          ? null
+          : (TtsPlanSentence s) => ttsVoiceSlotOf(castInUse, s),
     );
     if (plan.isEmpty) throw const TtsStartException(TtsStartProblem.emptyBook);
+    final List<String> slots = <String>[
+      for (final TtsPlanSentence s in plan.sentences)
+        ttsVoiceSlotOf(castInUse, s),
+    ];
 
     final TtsAudioCache cache = await tts.cache();
-    final TtsProvider provider = voice.descriptor.create(
-      voice.preset,
-      tts.host,
-    );
-    final TtsSynthesisScheduler scheduler = _newScheduler(
+    final _TtsVoiceRig rig = _TtsVoiceRig.build(
       plan: plan,
-      provider: provider,
+      slots: slots,
+      defaultVoice: voice,
+      slotVoices: slotVoices,
       cache: cache,
-      preset: voice.preset,
-      descriptor: voice.descriptor,
+      host: tts.host,
     );
+    final TtsSynthesisScheduler scheduler = rig.scheduler;
     final List<AudioCue> cues = <AudioCue>[
       for (int i = 0; i < plan.length; i++)
         AudioCue()
@@ -290,8 +340,9 @@ class TtsReadAlong extends ChangeNotifier {
       plan: plan,
       preset: voice.preset,
       descriptor: voice.descriptor,
-      provider: provider,
-      scheduler: scheduler,
+      rig: rig,
+      slots: slots,
+      slotVoices: slotVoices,
       store: tts.store,
       cache: cache,
       host: tts.host,
@@ -341,6 +392,37 @@ class TtsReadAlong extends ChangeNotifier {
       await controller.playCueAndContinue(cues[start.index]);
     }
     return readAlong;
+  }
+
+  /// 计划里实际用到的角色槽 → 声音。任何一个解析不到（预设被删 / 引擎不可用 /
+  /// 配置不完整，或单次长度上限放不下制作台口径的分句）都抛
+  /// [TtsStartProblem.castVoiceUnavailable]。
+  static Map<String, TtsResolvedVoice> _resolveSlotVoices(
+    TtsServices tts,
+    TtsCast cast,
+    TtsBookPlan plan,
+  ) {
+    final Map<String, TtsVoicePreset> presets = <String, TtsVoicePreset>{
+      for (final TtsVoicePreset p in tts.store.loadPresets()) p.id: p,
+    };
+    final Map<String, TtsResolvedVoice> out = <String, TtsResolvedVoice>{};
+    for (final TtsPlanSentence s in plan.sentences) {
+      final String slot = ttsVoiceSlotOf(cast, s);
+      if (slot == kTtsDefaultVoiceSlot || out.containsKey(slot)) continue;
+      final TtsVoicePreset? preset = presets[cast.voices[slot]];
+      final TtsProviderDescriptor? descriptor = preset == null
+          ? null
+          : tts.registry[preset.providerId];
+      if (preset == null ||
+          descriptor == null ||
+          !descriptor.isAvailable ||
+          descriptor.validate(preset).isNotEmpty ||
+          descriptor.capabilities.maxInputLength < kStudioSentenceMaxLength) {
+        throw const TtsStartException(TtsStartProblem.castVoiceUnavailable);
+      }
+      out[slot] = (preset: preset, descriptor: descriptor);
+    }
+    return out;
   }
 
   ({int index, int offsetMs}) _resolveStart(TtsStartPoint point) {
@@ -449,22 +531,23 @@ class TtsReadAlong extends ChangeNotifier {
     final AudiobookPlayerController? controller = _controller;
     final int index = currentIndex;
     final bool wasPlaying = controller?.isPlaying ?? false;
-    final TtsProvider oldProvider = _provider;
-    final TtsSynthesisScheduler oldScheduler = _scheduler;
+    final _TtsVoiceRig oldRig = _rig;
+    final TtsSynthesisScheduler oldScheduler = oldRig.scheduler;
     final StreamSubscription<TtsSegmentEvent>? oldEvents = _eventsSub;
 
-    final TtsProvider provider = descriptor.create(preset, _host);
-    final TtsSynthesisScheduler scheduler = _newScheduler(
+    // 只换默认声音；角色声音不变（缓存键不变，已合成的角色台词直接命中缓存）。
+    final _TtsVoiceRig rig = _TtsVoiceRig.build(
       plan: plan,
-      provider: provider,
+      slots: _slots,
+      defaultVoice: (preset: preset, descriptor: descriptor),
+      slotVoices: _slotVoices,
       cache: _cache,
-      preset: preset,
-      descriptor: descriptor,
+      host: _host,
     );
+    final TtsSynthesisScheduler scheduler = rig.scheduler;
     _preset = preset;
     _descriptor = descriptor;
-    _provider = provider;
-    _scheduler = scheduler;
+    _rig = rig;
     _eventsSub = scheduler.events.listen(_onSegmentEvent);
     // 新调度器已经接管：旧调度器 / 旧引擎此后不再被本会话引用，无论换源成功、
     // 失败（超时 / 长度校验）还是中途会话被释放（[_release] 只释放当前的新调度器），
@@ -494,8 +577,7 @@ class TtsReadAlong extends ChangeNotifier {
         );
       }
     } finally {
-      await oldScheduler.dispose();
-      await oldProvider.dispose();
+      await oldRig.dispose();
     }
     if (_released) return TtsVoiceSwitchOutcome.unchanged;
     notifyListeners();
@@ -555,24 +637,51 @@ class TtsReadAlong extends ChangeNotifier {
     onFailure?.call(failure);
   }
 
-  /// 预取缓冲按「播放时长」而不是句数算：2 倍速下同样 3 句只够 1/2 的时间，合成
-  /// 稍有波动（自建 GPU 服务单句延迟忽高忽低）就断。目标是当前句之后至少
-  /// [kBufferPlaybackSeconds] 秒（按当前倍速换算）的音频都在合成或已合成。
+  /// 预取窗口取两者中大的那个：
+  /// - 按「播放时长」算的缓冲：2 倍速下同样 3 句只够 1/2 的时间，合成稍有波动
+  ///   （自建 GPU 服务单句延迟忽高忽低）就断。当前句之后至少
+  ///   [kBufferPlaybackSeconds] 秒（按当前倍速换算）的音频都在合成或已合成；
+  /// - **提前生成**：当前章剩余 + 下一章（[ttsPrerenderEnd]）。合成比听得快时缓冲
+  ///   一路攒到下一章末，倍速 / 网络抖动吃的是攒下的余量。
   static const int kBufferPlaybackSeconds = 60;
   static const int _kMinLookahead = 3;
-  static const int _kMaxLookahead = 60;
+
+  /// 窗口上限（一章几百句 + 下一章；超长章节只提前生成这么多句）。
+  static const int kMaxLookahead = 1500;
 
   void _updateLookahead(AudiobookPlayerController c) {
-    final double speed = c.speed > 0 ? c.speed : 1.0;
-    final int targetMs = (kBufferPlaybackSeconds * 1000 * speed).round();
-    final int from = (c.currentCue?.audioFileIndex ?? _scheduler.cursor) + 1;
+    _scheduler.setLookahead(
+      lookaheadFor(
+        current: c.currentCue?.audioFileIndex ?? _scheduler.cursor,
+        speed: c.speed,
+      ),
+    );
+  }
+
+  /// 播放器停在 [current]、倍速 [speed] 时的预取句数。
+  @visibleForTesting
+  int lookaheadFor({required int current, required double speed}) {
+    final double rate = speed > 0 ? speed : 1.0;
+    final int targetMs = (kBufferPlaybackSeconds * 1000 * rate).round();
     int sum = 0;
-    int count = 0;
-    for (int i = from; i < cues.length && sum < targetMs; i++) {
+    int byTime = 0;
+    for (int i = current + 1; i < cues.length && sum < targetMs; i++) {
       sum += cues[i].endMs - cues[i].startMs;
-      count++;
+      byTime++;
     }
-    _scheduler.setLookahead(count.clamp(_kMinLookahead, _kMaxLookahead));
+    final int byChapter = ttsPrerenderEnd(plan.sentences, current) - current;
+    final int count = byTime > byChapter ? byTime : byChapter;
+    return count.clamp(_kMinLookahead, kMaxLookahead);
+  }
+
+  /// 当前句之后已经合成好、连续可播的音频时长（毫秒，按 1 倍速）：提前生成攒下的余量。
+  int get bufferedAheadMs {
+    int sum = 0;
+    for (int i = currentIndex + 1; i < cues.length; i++) {
+      if (_scheduler.readyAudio(i) == null) break;
+      sum += cues[i].endMs - cues[i].startMs;
+    }
+    return sum;
   }
 
   void _onSegmentEvent(TtsSegmentEvent event) {
@@ -622,8 +731,65 @@ class TtsReadAlong extends ChangeNotifier {
     _controller = null;
     await _eventsSub?.cancel();
     _eventsSub = null;
-    await _scheduler.dispose();
-    await _provider.dispose();
+    await _rig.dispose();
     notifyListeners();
+  }
+}
+
+/// 一套调度器 + 它用到的引擎实例（每份预设一个）。换默认声音时整套替换。
+class _TtsVoiceRig {
+  _TtsVoiceRig._(this.scheduler, this.voices, this.providers);
+
+  factory _TtsVoiceRig.build({
+    required TtsBookPlan plan,
+    required List<String> slots,
+    required TtsResolvedVoice defaultVoice,
+    required Map<String, TtsResolvedVoice> slotVoices,
+    required TtsAudioCache cache,
+    required TtsHost host,
+  }) {
+    final ({List<TtsResolvedVoice> voices, List<int> voiceOf}) assigned =
+        assignTtsVoices(
+          slots: slots,
+          defaultVoice: defaultVoice,
+          slotVoices: slotVoices,
+        );
+    final List<TtsProvider> providers = <TtsProvider>[
+      for (final TtsResolvedVoice v in assigned.voices)
+        v.descriptor.create(v.preset, host),
+    ];
+    final TtsSynthesisScheduler scheduler = TtsSynthesisScheduler.voices(
+      voices: <TtsSchedulerVoice>[
+        for (int i = 0; i < assigned.voices.length; i++)
+          TtsSchedulerVoice(
+            provider: providers[i],
+            audioIdentity: assigned.voices[i].descriptor.audioIdentity(
+              assigned.voices[i].preset,
+            ),
+            concurrency: ttsEffectiveConcurrency(
+              assigned.voices[i].descriptor,
+              assigned.voices[i].preset,
+            ),
+          ),
+      ],
+      voiceOf: assigned.voiceOf,
+      cache: cache,
+      texts: <String>[
+        for (final TtsPlanSentence s in plan.sentences) s.spokenText,
+      ],
+    );
+    return _TtsVoiceRig._(scheduler, assigned.voices, providers);
+  }
+
+  final TtsSynthesisScheduler scheduler;
+  final List<TtsResolvedVoice> voices;
+  final List<TtsProvider> providers;
+
+  /// 先停调度（等在途合成收尾），再关引擎连接。
+  Future<void> dispose() async {
+    await scheduler.dispose();
+    for (final TtsProvider provider in providers) {
+      await provider.dispose();
+    }
   }
 }

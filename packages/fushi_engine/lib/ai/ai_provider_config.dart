@@ -15,7 +15,7 @@ import 'dart:math' as math;
 
 import 'package:fushi_engine/ai/ai_model_pricing.dart';
 import 'package:fushi_engine/media/torrent/torznab_client.dart'
-    show isSafeExternalProviderEndpoint;
+    show isPrivateNetworkProviderHost, isSafeExternalProviderEndpoint;
 
 /// 请求/响应的 wire 协议。
 enum AiWireProtocol {
@@ -268,6 +268,16 @@ const List<AiProviderPreset> kAiProviderPresets = <AiProviderPreset>[
   ),
 ];
 
+/// [AiProviderConfig.batchConcurrency]：每把 key 同时在途的批数。
+const int kAiBatchConcurrencyPerKey = 4;
+
+/// [AiProviderConfig.batchConcurrency] 的上限。
+const int kAiBatchConcurrencyMax = 12;
+
+/// [AiProviderConfig.batchConcurrency]：每分钟请求上限折算成并发时，每个在途批
+/// 每分钟约占几次请求（一批约 10 秒）。
+const int kAiBatchSecondsPerMinuteSlot = 6;
+
 /// 按 id 找内置预设；找不到返回 null（存档里的 presetId 可能来自更新的版本）。
 AiProviderPreset? aiProviderPresetById(String? id) {
   if (id == null) {
@@ -356,13 +366,17 @@ class AiProviderConfig {
         'AI provider base URL must have a host and carry no user info',
       );
     }
+    // 本机与局域网地址（Ollama / LM Studio / 局域网里另一台电脑上的推理服务）
+    // 的明文 HTTP 不出局域网，与 localhost 同等放行；公网地址的明文 HTTP 才要
+    // 用户显式打开 [allowInsecureHttp]。
     if (!isSafeExternalProviderEndpoint(
       baseUrl,
-      allowInsecureHttp: allowInsecureHttp,
+      allowInsecureHttp:
+          allowInsecureHttp || isPrivateNetworkProviderHost(baseUrl.host),
     )) {
       throw ArgumentError(
         'AI provider base URL must use HTTPS unless plain HTTP is explicitly '
-        'allowed or the host is loopback',
+        'allowed or the host is on the local network',
       );
     }
   }
@@ -434,6 +448,22 @@ class AiProviderConfig {
       if (key.isActive) key.trimmed,
   ];
 
+  /// 批量 AI 任务（视频字幕校对、转录稿 AI 校对）同时在途的批数。
+  ///
+  /// 按这家的承载能力推：每把参与轮换的 key [kAiBatchConcurrencyPerKey] 批、
+  /// 封顶 [kAiBatchConcurrencyMax]；填了每分钟请求上限时再压到
+  /// `rpm / [kAiBatchSecondsPerMinuteSlot]`（一批约 10 秒，在途 n 批 ≈ 6n 次 / 分），
+  /// 至少 1。真正的限频仍由 `AiRateLimiter` 把关——这里只决定排多少批同时等，
+  /// 不让并发大到全在限频器里干排队，也不让多 key / 不限速的提供商只跑 2 批。
+  int get batchConcurrency {
+    final int keys = math.max(1, activeApiKeys.length);
+    int n = math.min(kAiBatchConcurrencyPerKey * keys, kAiBatchConcurrencyMax);
+    if (requestsPerMinute > 0) {
+      n = math.min(n, requestsPerMinute ~/ kAiBatchSecondsPerMinuteSlot);
+    }
+    return math.max(1, n);
+  }
+
   /// 第一把参与请求的 key；一把都没有时为空串。
   ///
   /// 单 key 时代的读口（服务端配置、旧调用方）。多 key 轮换只在调用层
@@ -448,8 +478,8 @@ class AiProviderConfig {
   final AiReasoningEffort reasoningEffort;
   final bool enabled;
 
-  /// 明文 HTTP 的显式放行。本地推理服务（Ollama / LM Studio）跑在
-  /// `http://localhost`，不给这个开关等于把本地模型挡在门外。
+  /// 公网地址明文 HTTP 的显式放行。本机 / 局域网地址（`http://localhost`、
+  /// `http://192.168.x.x` 等，见 `isPrivateNetworkProviderHost`）不需要它。
   final bool allowInsecureHttp;
 
   /// 每分钟最多发几次请求（这家所有功能合计，见 `AiRateLimiter`）；0 = 不限。

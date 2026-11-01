@@ -65,6 +65,55 @@ console.log(JSON.stringify($expr));
     expect(await run('p.sentenceAt("abc", 5)'), isNull);
   }, skip: !hasNode);
 
+  // 极简假 DOM：元素 {tagName, display, children}，文本 {data}；TreeWalker 按文档序
+  // 只吐文本节点（与 NodeFilter.SHOW_TEXT 一致），getComputedStyle 读 display。
+  const String fakeDom = r'''
+function E(tag, display, children) {
+  const e = { nodeType: 1, tagName: tag, display: display, children: children, parentElement: null };
+  children.forEach((c) => { c.parentElement = e; });
+  return e;
+}
+function T(data) { return { nodeType: 3, data: data, parentElement: null }; }
+globalThis.getComputedStyle = (el) => ({ display: el.display });
+document.body = E('BODY', 'block', []);
+document.createTreeWalker = (root) => {
+  const out = [];
+  (function walk(n) { if (n.nodeType === 3) out.push(n); else n.children.forEach(walk); })(root);
+  let i = 0;
+  return { nextNode: () => (i < out.length ? out[i++] : null) };
+};
+const hit = T('字');
+const rtHit = T('かん');
+const block = E('DIV', 'block', [
+  T('今日は'),
+  E('RUBY', 'ruby', [T('漢'), E('RT', 'ruby-text', [rtHit]), hit, E('RT', 'ruby-text', [T('じ')])]),
+  T('を読む。次の文。'),
+]);
+block.parentElement = document.body;
+const d = window.__fushiPageLookup._dom;
+''';
+
+  test('ruby 注音不进取词文本：句子跨 <ruby> 拼正文、剔除 <rt>（反馈 flt5vvT-5X）', () async {
+    final Object? flat = await run(
+      '(function(){$fakeDom return d.blockText(hit, 0); })()',
+    );
+    expect(flat, <String, Object>{'text': '今日は漢字を読む。次の文。', 'offset': 4});
+    expect(
+      await run(
+        '(function(){$fakeDom const f = d.blockText(hit, 0); '
+        'return p.sentenceAt(f.text, f.offset); })()',
+      ),
+      <String, Object>{'sentence': '今日は漢字を読む。', 'index': 4},
+    );
+  }, skip: !hasNode);
+
+  test('光标落在 <rt> 注音上不查', () async {
+    expect(
+      await run('(function(){$fakeDom return d.blockText(rtHit, 0); })()'),
+      isNull,
+    );
+  }, skip: !hasNode);
+
   test('表情等多码元字形算一个', () async {
     const String text = '😀猫です';
     final int offset = text.indexOf('猫');

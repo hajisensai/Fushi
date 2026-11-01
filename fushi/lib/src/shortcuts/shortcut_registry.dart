@@ -16,7 +16,7 @@ import 'package:fushi/src/shortcuts/shortcut_defaults.dart';
 /// 过快捷键设置的用户，其快照里该 action 仍是「旧版本的完整默认」（仅 F），覆盖后新键
 /// （F12）永久丢失 —— 表现为「按 F12 没反应」。迁移只对「用户从未动过该 action（键集
 /// 恰等于旧默认全集）」的快照补回新键，绝不碰用户主动改/删过的绑定。
-const int kShortcutSchemaVersion = 14;
+const int kShortcutSchemaVersion = 15;
 
 /// 持久化 JSON 里记录写入时 schema 版本的保留 key（不是某个 action 的绑定，故单独
 /// 处理，不进 _unknownEntries，也不会被 [ShortcutAction.fromKey] 误解析）。
@@ -342,6 +342,26 @@ class FushiShortcutRegistry extends ChangeNotifier {
         ],
         defaults: defaults,
       );
+    }
+    // v14 -> v15（反馈 bjPjRHsaUy：焦点导航进快捷键体系）：焦点四向（动作名 dpad*，
+    // gamepad scope）开放键盘通道，默认键盘 = 对应裸方向键。此前该 scope 的键盘
+    // 通道**按构造不可录**，快照里的键盘集必为空——空集不可能是用户自定义，补上零
+    // 误伤；只换键盘，用户改过的手柄 dpad 绑定原样保留。focusActivate 是全新 action，
+    // loadDefaults 已播种。即便不迁移，未绑到焦点动作的裸方向键也按物理方向回退
+    // （`_handleGlobalFocusNavigation`），这里只是让设置页显示与实际一致。
+    if (from < 15) {
+      for (final ShortcutAction action in const <ShortcutAction>[
+        ShortcutAction.dpadUp,
+        ShortcutAction.dpadDown,
+        ShortcutAction.dpadLeft,
+        ShortcutAction.dpadRight,
+      ]) {
+        _replaceKeyboardIfUntouched(
+          action,
+          oldDefaultKeyboard: const <InputBinding>[],
+          defaults: defaults,
+        );
+      }
     }
   }
 

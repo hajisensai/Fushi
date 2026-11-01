@@ -148,9 +148,13 @@ bool ResolveLiveSiglusVoiceSource(HMODULE module, uintptr_t proved_voice_entry,
     fushi_voice_hook::SiglusResourceMappingProfile* profile) {
   __try {
     fushi_voice_hook::exact_lookup::LoadedPeImage image;
+    // The admitted message profile already chose the code generation.
+    const bool plain = g_siglus_message_profile.direct_scenario_call;
     return fushi_voice_hook::OpenSiglusLoadedImage(module, &image) &&
-        fushi_voice_hook::ResolveSiglusResourceMappingProfile(
-            image, proved_voice_entry, profile) &&
+        (plain ? fushi_voice_hook::ResolvePlainFrameResourceMappingProfile(
+                     image, proved_voice_entry, profile)
+               : fushi_voice_hook::ResolveSiglusResourceMappingProfile(
+                     image, proved_voice_entry, profile)) &&
         // Do not take ownership of an external detour, even if a future pure
         // resolver permits it as a read-only diagnostic observation.
         image.base[profile->ogg_open_rva] == 0x55;
@@ -234,7 +238,8 @@ bool TryHookSiglusVoiceSource() {
       profile.resource_key_frame_offset, profile.resource_key_copy_frame_displacement,
       profile.resource_path_frame_displacement, profile.resource_reader_frame_displacement,
       profile.ogg_path_argument_offset, profile.ogg_offset_argument_offset,
-      profile.ogg_length_argument_offset};
+      profile.ogg_length_argument_offset,
+      profile.resource_length_frame_displacement};
   g_siglus_voice_source_target = reinterpret_cast<void*>(base + profile.ogg_open_rva);
   return InstallSiglusVoiceSourceHook();
 }

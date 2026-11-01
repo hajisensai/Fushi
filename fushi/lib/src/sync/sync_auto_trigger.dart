@@ -370,6 +370,7 @@ class ChannelSyncFlags {
     required this.syncStats,
     required this.syncFavorites,
     this.syncWebHistory = false,
+    this.syncSettings = false,
     required this.syncAudioBookPosition,
     required this.syncContent,
     required this.syncMangaContent,
@@ -386,6 +387,10 @@ class ChannelSyncFlags {
   /// 浏览器历史是否参与聚合同步：设备级「同步浏览历史」，两条通道读同一个键
   /// （默认关；历史不跟收藏走，见 `kSyncWebHistoryPrefKey`）。
   final bool syncWebHistory;
+
+  /// 可移植偏好设置是否同步：设备级「同步设置」，两条通道读同一个键（默认关，
+  /// 见 [SyncRepository.isSettingsSyncEnabled]）。
+  final bool syncSettings;
   final bool syncAudioBookPosition;
   final bool syncContent;
 
@@ -427,6 +432,7 @@ Future<ChannelSyncFlags> resolveChannelSyncFlags(
         ? await repo.isInterconnectSyncFavoritesEnabled()
         : await repo.isSyncStatsEnabled(),
     syncWebHistory: await repo.isWebHistorySyncEnabled(),
+    syncSettings: await repo.isSettingsSyncEnabled(),
     syncAudioBookPosition: await repo.isSyncAudioBookEnabled(),
     syncContent: isInterconnect
         ? await repo.isInterconnectSyncContentEnabled()
@@ -519,6 +525,7 @@ Future<SyncRunReport?> _runSyncChannelInner({
     syncStats: flags.syncStats,
     syncFavorites: flags.syncFavorites,
     syncWebHistory: flags.syncWebHistory,
+    syncSettings: flags.syncSettings,
     syncAudioBookPosition: flags.syncAudioBookPosition,
     syncContent: flags.syncContent,
     syncMangaContent: flags.syncMangaContent,

@@ -24,13 +24,21 @@ const String kAnkiSyncClientSearchTargetId = 'card_creation.anki.sync_client';
 /// `missing original size`：服务器回了 200 却没带 `anki-original-size` 头——回话的
 /// 不是 Anki 同步服务（地址指到了网页 / 反代的别的站点 / 反代剥了这个头 / 不支持
 /// 当前协议的旧第三方服务器）。原文照样附在后面，排查时用得上。
+///
+/// [ankiWeb] 为 true（同步对象是 AnkiWeb，地址不是用户填的）时同一个错误要换一种
+/// 说法：AnkiWeb 本身一定说同步协议，回来的却不是——是本机与 AnkiWeb 之间有东西
+/// 改写了响应（杀毒软件的 HTTPS 扫描 / 代理 / 加速器 / DNS 过滤 / 公司或学校网络把
+/// AnkiWeb 分片地址 `syncN.ankiweb.net` 换成了网页）。叫用户「检查服务器地址」是
+/// 误导（反馈 xpAtBYv9-k：用户登录 AnkiWeb 成功、同步却报这句）。
 @visibleForTesting
-String describeAnkiSyncError(Object error) {
+String describeAnkiSyncError(Object error, {bool ankiWeb = false}) {
   final String raw = error is FushiAnkiSyncException
       ? error.message
       : '$error'.replaceFirst('FushiAnkiSyncException: ', '');
   if (raw.contains('missing original size')) {
-    return t.anki_sync_client_error_not_sync_server(detail: raw);
+    return ankiWeb
+        ? t.anki_sync_client_error_ankiweb_intercepted(detail: raw)
+        : t.anki_sync_client_error_not_sync_server(detail: raw);
   }
   return raw;
 }
@@ -291,7 +299,10 @@ class _AnkiSyncClientSectionState extends ConsumerState<AnkiSyncClientSection> {
         // 限流（HTTP 429）给人话与自动重试时刻，不给 helper 的 Rust 原文。
         AnkiSyncPhase.failed when rateLimit != null => rateLimit,
         AnkiSyncPhase.failed => t.anki_sync_client_status_failed(
-          error: describeAnkiSyncError(state.message ?? ''),
+          error: describeAnkiSyncError(
+            state.message ?? '',
+            ankiWeb: _account!.isAnkiWeb,
+          ),
         ),
         _ =>
           state.unsynced == 0
@@ -367,7 +378,9 @@ class _AnkiSyncClientSectionState extends ConsumerState<AnkiSyncClientSection> {
       _toast(t.anki_sync_client_has_unsynced(count: e.count));
     } catch (e) {
       _toast(
-        t.anki_sync_client_sign_in_failed(error: describeAnkiSyncError(e)),
+        t.anki_sync_client_sign_in_failed(
+          error: describeAnkiSyncError(e, ankiWeb: endpoint == null),
+        ),
       );
     }
   }

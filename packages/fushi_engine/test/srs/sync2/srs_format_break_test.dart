@@ -599,6 +599,7 @@ void main() {
             await v1Location('defer');
         final SrsDbStore b = await device('b');
         final Directory v1Dir = v2Root(v.loc);
+        final List<String> steps = <String>[];
         final SrsLocationPrepared prep = await srsPrepareLocation(
           host: b,
           v1: SrsDirectoryLocationStore(v1Dir),
@@ -607,9 +608,38 @@ void main() {
           key: null,
           nowMs: () => t,
           removeEmptyDirs: () => srsRemoveEmptyV1FolderDirs(v1Dir),
+          onStep: steps.add,
         );
         expect(prep.error, isNull);
         expect(prep.bound, 1);
+        // 迁移的每一步都报给调用方（调度器写进活动面包屑，反馈 i8qNDs_V_D：死在「开始」阶段时要知道是哪一步）。
+        String? first(String prefix) =>
+            steps.where((String s) => s.startsWith(prefix)).firstOrNull;
+        int at(String prefix) => steps.indexOf(first(prefix)!);
+        for (final String prefix in <String>[
+          'migrate:meta',
+          'migrate:fence',
+          'migrate:listed files=',
+          'migrate:pull:heads',
+          'migrate:pull:planned fetch=',
+          'migrate:copy 0/',
+          'migrate:media ',
+          'migrate:bind',
+          'migrate:delete ',
+        ]) {
+          expect(first(prefix), isNotNull, reason: '$prefix in $steps');
+        }
+        expect(at('migrate:fence'), lessThan(at('migrate:pull:heads')));
+        expect(at('migrate:pull:heads'), lessThan(at('migrate:copy 0/')));
+        expect(at('migrate:copy 0/'), lessThan(at('migrate:media ')));
+        expect(at('migrate:bind'), lessThan(at('migrate:delete ')));
+        final String copied = steps.lastWhere(
+          (String s) => s.startsWith('migrate:copy '),
+        );
+        final List<String> nm = copied
+            .substring('migrate:copy '.length)
+            .split('/');
+        expect(nm[0], nm[1], reason: 'copy progress ends at n/n: $steps');
         expect(prep.deferred.keys, <String>['media/cat.png']);
         expect(filesOf(v1Dir), contains('media/cat.png'));
         expect(
@@ -629,13 +659,23 @@ void main() {
         );
         expect(filesOf(v1Dir), contains('media/cat.png'));
         // 一轮同步把绑定发出去之后才删。
+        final List<String> roundSteps = <String>[];
         final SrsSync2Report r = await srsSync2Round(
           host: b,
           location: SrsDirectoryLocationStore(v3Root(v.loc)),
           locationId: v.loc.locationId,
           nowMs: () => t,
+          onStep: roundSteps.add,
         );
         expect(r.error, isNull);
+        expect(roundSteps.take(4), <Object>[
+          'identity',
+          'handshake',
+          'heads',
+          startsWith('plan heads='),
+        ], reason: '$roundSteps');
+        expect(roundSteps, contains(startsWith('planned fetch=')));
+        expect(roundSteps.last, 'beforeUpload');
         expect(
           await srsFinishLocationMigration(
             host: b,

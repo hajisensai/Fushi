@@ -46,33 +46,81 @@ class TtsSegmentFailed extends TtsSegmentEvent {
   final bool blocking;
 }
 
+/// 一份声音：合成实例 + 进缓存键的音色身份 + 同时在途的请求上限。
+///
+/// 多声优朗读时一本书用好几份声音，每句指定一份（[TtsSynthesisScheduler.voices]）；
+/// 并发按声音分别计（同一份预设共用一个上限，与制作台同口径），不同声音互不占名额。
+class TtsSchedulerVoice {
+  const TtsSchedulerVoice({
+    required this.provider,
+    required this.audioIdentity,
+    required this.concurrency,
+  }) : assert(concurrency > 0);
+
+  final TtsProvider provider;
+  final Map<String, Object?> audioIdentity;
+  final int concurrency;
+}
+
 class TtsSynthesisScheduler {
-  TtsSynthesisScheduler({
+  /// 单声音：全部句子用 [provider]。
+  factory TtsSynthesisScheduler({
     required TtsProvider provider,
     required TtsAudioCache cache,
     required List<String> texts,
     required Map<String, Object?> audioIdentity,
     int lookahead = 3,
-    this.keepPinned = 8,
+    int keepPinned = 8,
     int? concurrency,
     TtsRetryPolicy retryPolicy = const TtsRetryPolicy(),
-  }) : _provider = provider,
+  }) => TtsSynthesisScheduler.voices(
+    voices: <TtsSchedulerVoice>[
+      TtsSchedulerVoice(
+        provider: provider,
+        audioIdentity: audioIdentity,
+        concurrency: concurrency ?? provider.capabilities.maxConcurrency,
+      ),
+    ],
+    voiceOf: List<int>.filled(texts.length, 0),
+    cache: cache,
+    texts: texts,
+    lookahead: lookahead,
+    keepPinned: keepPinned,
+    retryPolicy: retryPolicy,
+  );
+
+  /// 多声音：第 i 句用 `voices[voiceOf[i]]`。
+  TtsSynthesisScheduler.voices({
+    required List<TtsSchedulerVoice> voices,
+    required List<int> voiceOf,
+    required TtsAudioCache cache,
+    required List<String> texts,
+    int lookahead = 3,
+    this.keepPinned = 8,
+    TtsRetryPolicy retryPolicy = const TtsRetryPolicy(),
+  }) : assert(voices.isNotEmpty),
+       assert(voiceOf.length == texts.length),
+       _voices = List<TtsSchedulerVoice>.unmodifiable(voices),
+       _voiceOf = List<int>.unmodifiable(voiceOf),
+       _voiceInFlight = List<int>.filled(voices.length, 0),
        _retryPolicy = retryPolicy,
        _cache = cache,
        _texts = texts,
        _keys = <String>[
-         for (final String text in texts)
-           TtsAudioCache.keyFor(audioIdentity, text),
+         for (int i = 0; i < texts.length; i++)
+           TtsAudioCache.keyFor(voices[voiceOf[i]].audioIdentity, texts[i]),
        ],
-       _lookahead = lookahead,
-       _concurrency = concurrency ?? provider.capabilities.maxConcurrency;
+       _lookahead = lookahead;
 
-  final TtsProvider _provider;
+  final List<TtsSchedulerVoice> _voices;
+  final List<int> _voiceOf;
+
+  /// 每份声音当前在途的请求数（按 [TtsSchedulerVoice.concurrency] 限流）。
+  final List<int> _voiceInFlight;
   final TtsRetryPolicy _retryPolicy;
   final TtsAudioCache _cache;
   final List<String> _texts;
   final List<String> _keys;
-  final int _concurrency;
   int _lookahead;
 
   /// 往后预取多少句。倍速播放时由调用方调大（消耗得快，缓冲要按播放时长而不是句数算）。
@@ -114,6 +162,9 @@ class TtsSynthesisScheduler {
   bool _disposed = false;
 
   int get length => _texts.length;
+
+  /// 第 [index] 句用哪份声音（[TtsSchedulerVoice] 下标）。
+  int voiceIndexOf(int index) => _voiceOf[index];
   int get cursor => _cursor;
   Stream<TtsSegmentEvent> get events => _events.stream;
 
@@ -204,6 +255,7 @@ class TtsSynthesisScheduler {
     int? best;
     for (final int i in _demanded) {
       if (_ready.containsKey(i) || _inFlight.containsKey(i)) continue;
+      if (!_voiceHasRoom(i)) continue;
       if (best == null || (i - _cursor).abs() < (best - _cursor).abs()) {
         best = i;
       }
@@ -213,7 +265,8 @@ class TtsSynthesisScheduler {
     for (int i = _cursor; i <= _cursor + lookahead && i < _texts.length; i++) {
       if (_ready.containsKey(i) ||
           _inFlight.containsKey(i) ||
-          _prefetchFailed.containsKey(i)) {
+          _prefetchFailed.containsKey(i) ||
+          !_voiceHasRoom(i)) {
         continue;
       }
       return i;
@@ -221,9 +274,14 @@ class TtsSynthesisScheduler {
     return null;
   }
 
+  bool _voiceHasRoom(int index) {
+    final int v = _voiceOf[index];
+    return _voiceInFlight[v] < _voices[v].concurrency;
+  }
+
   void _pump() {
     if (_disposed || _failure != null) return;
-    while (_inFlight.length < _concurrency) {
+    while (true) {
       final int? index = _nextIndex();
       if (index == null) return;
       final Future<void> run = _run(index);
@@ -234,13 +292,15 @@ class TtsSynthesisScheduler {
 
   Future<void> _run(int index) async {
     final TtsCancelToken token = TtsCancelToken();
+    final int voice = _voiceOf[index];
     _inFlight[index] = token;
+    _voiceInFlight[voice]++;
     try {
       // 每次尝试走一遍缓存的「写 .part → 校验 → 发布」，失败的半成品由缓存清掉。
       final TtsCachedAudio audio = await ttsWithRetry(
         () => _cache.obtain(
           _keys[index],
-          (String outputPath) => _provider.synthesize(
+          (String outputPath) => _voices[voice].provider.synthesize(
             _texts[index],
             outputPath: outputPath,
             cancel: token,
@@ -267,6 +327,7 @@ class TtsSynthesisScheduler {
         TtsFailure(TtsFailureCode.badResponse, error.runtimeType.toString()),
       );
     } finally {
+      _voiceInFlight[voice]--;
       if (identical(_inFlight[index], token)) _inFlight.remove(index);
       _pump();
     }

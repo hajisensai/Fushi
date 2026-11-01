@@ -62,8 +62,10 @@ VideoPendingScrapeWork _pending(int index, {VideoScrapePendingNote? note}) =>
 Future<void> _open(
   WidgetTester tester,
   VideoSourceScrapeTaskController controller,
-  Future<List<VideoPendingScrapeWork>> Function() load,
-) async {
+  Future<List<VideoPendingScrapeWork>> Function() load, {
+  Future<List<VideoPendingScrapeWork>> Function()? loadIgnored,
+  VideoPendingWorkIgnoreSetter? onSetWorkIgnored,
+}) async {
   await tester.pumpWidget(
     MaterialApp(
       theme: ThemeData(
@@ -82,6 +84,8 @@ Future<void> _open(
                 controller: controller,
                 loadRuns: () async => const <VideoSourceScrapeRunRow>[],
                 loadPendingWorks: load,
+                loadIgnoredWorks: loadIgnored,
+                onSetWorkIgnored: onSetWorkIgnored,
               ),
             ),
             child: const Text('Open tasks'),
@@ -242,4 +246,123 @@ void main() {
     expect(find.text('Unmatched video 7'), findsOneWidget);
     expect(find.text('Unmatched video 9'), findsNothing);
   });
+
+  // 反馈 Fbchzxuq6f：确认界面以前只有「搜索作品」「AI 识别」，特典这类本来就没有
+  // 条目的作品永远清不掉。每行加「忽略」；被忽略的作品列在「已忽略」里，可撤销。
+  testWidgets(
+    'ignoring a pending work moves it to the ignored group and back',
+    (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(1100, 1000));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final VideoSourceScrapeTaskController controller =
+          VideoSourceScrapeTaskController(_IdleRunner());
+      addTearDown(controller.dispose);
+      final List<VideoPendingScrapeWork> all = <VideoPendingScrapeWork>[
+        _pending(1),
+        _pending(2),
+      ];
+      final Set<String> ignoredKeys = <String>{};
+      final List<(String, bool)> calls = <(String, bool)>[];
+      await _open(
+        tester,
+        controller,
+        () async => <VideoPendingScrapeWork>[
+          for (final VideoPendingScrapeWork e in all)
+            if (!ignoredKeys.contains(e.work.stableKey)) e,
+        ],
+        loadIgnored: () async => <VideoPendingScrapeWork>[
+          for (final VideoPendingScrapeWork e in all)
+            if (ignoredKeys.contains(e.work.stableKey)) e,
+        ],
+        onSetWorkIgnored:
+            (VideoPendingScrapeWork entry, {required bool ignored}) async {
+              calls.add((entry.work.stableKey, ignored));
+              if (ignored) {
+                ignoredKeys.add(entry.work.stableKey);
+              } else {
+                ignoredKeys.remove(entry.work.stableKey);
+              }
+            },
+      );
+      expect(
+        find.byKey(const ValueKey<String>('video-source-ignored-header')),
+        findsNothing,
+        reason: 'no ignored works, no ignored group',
+      );
+
+      await tester.tap(
+        find.byKey(
+          const ValueKey<String>('video-source-pending-ignore-book:video-2'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(calls, <(String, bool)>[('book:video-2', true)]);
+      expect(
+        find.byKey(
+          const ValueKey<String>('video-source-pending-work-book:video-2'),
+        ),
+        findsNothing,
+        reason: 'the ignored work leaves the pending list',
+      );
+      // 已忽略分组在清单末尾，懒加载列表里可能还在视口之外：先滚过去。
+      await tester.ensureVisible(
+        find.byKey(
+          const ValueKey<String>('video-source-ignored-restore-book:video-2'),
+          skipOffstage: false,
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(
+          const ValueKey<String>('video-source-ignored-work-book:video-2'),
+        ),
+        findsOneWidget,
+        reason: 'and stays visible in the ignored group',
+      );
+      expect(find.text('Ignored (1)'), findsOneWidget);
+      expect(
+        find.text('1'),
+        findsOneWidget,
+        reason: 'pending count badge drops',
+      );
+
+      await tester.tap(
+        find.byKey(
+          const ValueKey<String>('video-source-ignored-restore-book:video-2'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(calls.last, ('book:video-2', false));
+      expect(
+        find.byKey(
+          const ValueKey<String>('video-source-pending-work-book:video-2'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('video-source-ignored-header')),
+        findsNothing,
+      );
+    },
+  );
+
+  testWidgets(
+    'without an ignore port the pending rows offer no ignore button',
+    (WidgetTester tester) async {
+      final VideoSourceScrapeTaskController controller =
+          VideoSourceScrapeTaskController(_IdleRunner());
+      addTearDown(controller.dispose);
+      await _open(
+        tester,
+        controller,
+        () async => <VideoPendingScrapeWork>[_pending(1)],
+      );
+      expect(
+        find.byKey(
+          const ValueKey<String>('video-source-pending-ignore-book:video-1'),
+        ),
+        findsNothing,
+      );
+    },
+  );
 }

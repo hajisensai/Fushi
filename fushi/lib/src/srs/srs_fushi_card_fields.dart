@@ -5,6 +5,8 @@ library;
 
 import 'package:flutter/foundation.dart';
 
+import 'package:fushi/src/srs/srs_field_markup.dart' show srsParseCssColor;
+import 'package:fushi/src/srs/srs_rich_format.dart' show kSrsHighlightDefault;
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// 一段行内文字（可带注音与强调）。`text == '\n'` 表示换行。
@@ -16,6 +18,7 @@ class SrsInline {
     this.bold = false,
     this.italic = false,
     this.underline = false,
+    this.highlight,
   });
 
   final String text;
@@ -24,11 +27,19 @@ class SrsInline {
   final bool italic;
   final bool underline;
 
+  /// 高亮底色（ARGB；`<mark>` / `<span style="background-color: …">`，复习时编辑的「高亮」写的就是后者）。
+  final int? highlight;
+
   bool get isBreak => text == '\n' && ruby == null;
 
   /// 去掉注音（基字照常）。
-  SrsInline withoutRuby() =>
-      SrsInline(text, bold: bold, italic: italic, underline: underline);
+  SrsInline withoutRuby() => SrsInline(
+    text,
+    bold: bold,
+    italic: italic,
+    underline: underline,
+    highlight: highlight,
+  );
 
   SrsInline copyWith({String? text, String? ruby}) => SrsInline(
     text ?? this.text,
@@ -36,6 +47,7 @@ class SrsInline {
     bold: bold,
     italic: italic,
     underline: underline,
+    highlight: highlight,
   );
 
   @override
@@ -45,10 +57,12 @@ class SrsInline {
       other.ruby == ruby &&
       other.bold == bold &&
       other.italic == italic &&
-      other.underline == underline;
+      other.underline == underline &&
+      other.highlight == highlight;
 
   @override
-  int get hashCode => Object.hash(text, ruby, bold, italic, underline);
+  int get hashCode =>
+      Object.hash(text, ruby, bold, italic, underline, highlight);
 
   @override
   String toString() =>
@@ -70,12 +84,24 @@ const Set<String> _allowedTags = <String>{
   'div',
   'p',
   'font',
+  'mark',
 };
 const Set<String> _blockTags = <String>{'div', 'p'};
 
 final RegExp _tag = RegExp(r'<(/?)([a-zA-Z][a-zA-Z0-9]*)([^>]*)>');
 final RegExp _sound = RegExp(r'\[sound:([^\]]+)\]');
 final RegExp _ankiFurigana = RegExp(r' ?([^ >\[\]\n]+?)\[([^\]\[]+?)\]');
+
+final RegExp _backgroundDecl = RegExp(
+  r"""background(?:-color)?\s*:\s*([^;"']+)""",
+  caseSensitive: false,
+);
+
+/// span 属性里的高亮底色（`style="background-color: …"`；认不出的颜色 = null）。
+int? srsInlineHighlightOf(String attrs) {
+  final Match? m = _backgroundDecl.firstMatch(attrs);
+  return m == null ? null : srsParseCssColor(m.group(1)!);
+}
 
 /// HTML 实体（常见几个 + 数字实体）。
 String srsDecodeEntities(String s) => s
@@ -204,6 +230,15 @@ List<SrsInline> srsParseInline(String html, {bool ankiFurigana = true}) {
   }
   final List<SrsInline> out = <SrsInline>[];
   int bold = 0, italic = 0, underline = 0;
+  // 每个打开的 span / mark 一项：它带的高亮色（不带 = null），关闭时弹出。
+  final List<int?> highlights = <int?>[];
+  int? highlight() {
+    for (int i = highlights.length - 1; i >= 0; i--) {
+      if (highlights[i] != null) return highlights[i];
+    }
+    return null;
+  }
+
   bool inRuby = false, inRt = false, inRp = false;
   final StringBuffer rubyBase = StringBuffer();
   final StringBuffer rubyText = StringBuffer();
@@ -230,6 +265,7 @@ List<SrsInline> srsParseInline(String html, {bool ankiFurigana = true}) {
         bold: bold > 0,
         italic: italic > 0,
         underline: underline > 0,
+        highlight: highlight(),
       ),
     );
   }
@@ -250,6 +286,16 @@ List<SrsInline> srsParseInline(String html, {bool ankiFurigana = true}) {
         italic += closing ? -1 : 1;
       case 'u':
         underline += closing ? -1 : 1;
+      case 'span' || 'mark':
+        if (closing) {
+          if (highlights.isNotEmpty) highlights.removeLast();
+        } else {
+          highlights.add(
+            name == 'mark'
+                ? kSrsHighlightDefault
+                : srsInlineHighlightOf(m.group(3) ?? ''),
+          );
+        }
       case 'br':
         lineBreak();
       case 'ruby':
@@ -268,6 +314,7 @@ List<SrsInline> srsParseInline(String html, {bool ankiFurigana = true}) {
                 bold: bold > 0,
                 italic: italic > 0,
                 underline: underline > 0,
+                highlight: highlight(),
               ),
             );
           }

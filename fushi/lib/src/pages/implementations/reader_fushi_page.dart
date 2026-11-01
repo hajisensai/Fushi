@@ -1,3 +1,4 @@
+import 'package:fushi/src/anki/mined_card_undo.dart';
 import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
@@ -61,6 +62,7 @@ import 'package:fushi/src/media/audiobook/tts/studio/tts_studio_page.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_studio_service.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_book_plan.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_read_along.dart';
+import 'package:fushi/src/media/audiobook/tts/tts_read_along_voices.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_ui_text.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_voice_quick_switch.dart';
@@ -138,6 +140,8 @@ import 'package:fushi/src/reader/reader_content_styles.dart';
 import 'package:fushi/src/reader/image_reveal_key.dart';
 import 'package:fushi/src/reader/reader_resource_sanitizer.dart';
 import 'package:fushi/src/reader/reader_exit_flush.dart';
+import 'package:fushi/src/reader/reader_back_ladder.dart';
+import 'package:fushi/src/reader/reader_tap_zones.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
 import 'package:fushi/src/srs/srs_sync_progress.dart' show srsSyncProgress;
 import 'package:fushi/src/reader/reader_pagination_scripts.dart';
@@ -2192,9 +2196,9 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     },
   );
 
-  /// 程序化「退出书籍」在途（[_exitReaderBook]）。PopScope 的歌词层拦截只针对
-  /// 用户的系统返回手势（Android 返回键 / 手势）——那是「退一级」；面板「退出」、
-  /// 重导入后正文作废这类显式退书路径不能被它截成「关歌词层」。
+  /// 程序化「退出书籍」在途（[_exitReaderBook]）。PopScope 的返回阶梯（词典弹窗
+  /// 先关，见 [resolveReaderBackStep]）只针对用户的路由返回；面板「退出」、
+  /// 重导入后正文作废这类显式退书路径不能被它截成「关弹窗」。
   bool _exitBookRequested = false;
   // BUG-380: 滚动进度刷新的「在飞 + 待重跑」守卫。rAF 节流后滚动回传可能高频到来，
   // 每次 _refreshProgress 都 evaluateJavascript 跑较重的 fushiProgressDetails（遍历全章
@@ -4155,13 +4159,25 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
                 canPop: false,
                 onPopInvokedWithResult: (didPop, dynamic result) {
                   if (didPop) return;
-                  // 歌词覆盖层在场：系统返回（Android 返回键 / 手势）先掀开覆盖层回到
-                  // 正文，与 Esc 同一阶梯；正文从未离开，不需要任何落库。程序化退书
-                  // （[_exitReaderBook]：面板「退出」、重导入后正文作废）带着
-                  // [_exitBookRequested] 进来，不拦、直接走下面的退出链。
-                  if (_lyricsMode && !_exitBookRequested) {
-                    unawaited(_toggleLyricsMode());
-                    return;
+                  // 路由返回（Android 返回键 / 侧滑手势、iOS 侧滑、根 maybePop）的
+                  // 阶梯与 Esc 不同（NJIIDAhIZL）：词典弹窗先关；歌词覆盖层**不**拦，
+                  // 系统返回在歌词模式下直接退书回书架。判定单点在
+                  // [resolveReaderBackStep]；程序化退书（[_exitReaderBook]）带着
+                  // [_exitBookRequested] 进来，整条阶梯跳过。
+                  switch (resolveReaderBackStep(
+                    source: ReaderBackSource.route,
+                    dictionaryShown: isDictionaryShown,
+                    lyricsMode: _lyricsMode,
+                    explicitExit: _exitBookRequested,
+                  )) {
+                    case ReaderBackStep.closeDictionary:
+                      clearDictionaryResult();
+                      return;
+                    case ReaderBackStep.closeLyrics:
+                      unawaited(_toggleLyricsMode());
+                      return;
+                    case ReaderBackStep.exitBook:
+                      break;
                   }
                   // BUG-782 加固：窗口期内第二次退出触发（ESC/手柄 B 连按、退出
                   // 按钮后再 ESC）会再跑一条退出——首条 pop 掉阅读器后，第二条的
@@ -5033,6 +5049,8 @@ $liveConfigJs
                     endDeltaMs: endDeltaMs,
                   ),
               stopPreview: onStopSentenceAudioPreview,
+              nudgeStepMs: appModel.advancedMiningAudioNudgeStepMs,
+              onNudgeStepChanged: appModel.setAdvancedMiningAudioNudgeStepMs,
             )
           : null,
       onClosed: hasAudiobook ? onStopSentenceAudioPreview : null,

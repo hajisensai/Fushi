@@ -301,11 +301,17 @@ splitTtsTextWithPronunciation(
 /// 实时率 2 以上），倍速朗读时短句一多就跟不上。并句只发生在同一章、同一段落内，
 /// 不跨段 / 场景分隔，合并后合成文本不超过 [maxLength]；高亮覆盖合并后的整段。
 ///
-/// **制作有声书不用它**：选角表按单句记说话人，并句会让两个角色的台词共用一个声音。
+/// 多声优朗读传 [voiceSlotOf]（每句归哪个声音槽：配了声音的角色 / 默认声音）：只有
+/// 同一个槽的相邻句才并，否则两个角色的台词会共用一个声音。槽按「角色」而不是按
+/// 预设 id 分：播放中换默认声音后，原来与某角色同预设而并在一起的句子不会读串。
+/// 合并句沿用首句的句首坐标，按坐标再查槽仍落在同一个槽。
+///
+/// **制作有声书不用它**：制作台按单句生成、逐句校对，不需要摊薄请求开销。
 TtsBookPlan mergeShortTtsSentences(
   TtsBookPlan plan, {
   required int maxLength,
   int minLength = 16,
+  String Function(TtsPlanSentence sentence)? voiceSlotOf,
 }) {
   final List<TtsPlanSentence> out = <TtsPlanSentence>[];
   for (final TtsPlanSentence s in plan.sentences) {
@@ -317,7 +323,8 @@ TtsBookPlan mergeShortTtsSentences(
         !last.sceneBreakAfter &&
         (last.spokenText.length < minLength ||
             s.spokenText.length < minLength) &&
-        last.spokenText.length + s.spokenText.length <= maxLength;
+        last.spokenText.length + s.spokenText.length <= maxLength &&
+        (voiceSlotOf == null || voiceSlotOf(last) == voiceSlotOf(s));
     if (!canMerge) {
       out.add(s);
       continue;

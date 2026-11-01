@@ -280,6 +280,9 @@ abstract final class AgentMetaTool {
   static const String search = 'ops.search';
   static const String describe = 'ops.describe';
   static const String askChoice = 'ui.ask_choice';
+
+  static bool isMeta(String id) =>
+      id == search || id == describe || id == askChoice;
 }
 
 /// 把不可信内容包进分隔块。内容里出现的结束标记被转义，注入的文字逃不出块。
@@ -311,8 +314,34 @@ const String _kJsonProtocol = '''
 This provider has no native tool calling. Reply with exactly ONE JSON object and nothing else:
 - to call a tool: {"tool": "<tool name>", "args": {...}}
 - to answer the user: {"reply": "<text>"}
-Available tools (name, description, JSON schema of args):
+Tools are listed as name(args): summary; "?" marks an optional arg. If you are unsure about a tool's arguments, call ops__describe with its name first to get the full schema.
+Available tools:
 ''';
+
+/// 降级协议（无原生 tool calling）的系统提示。
+///
+/// 分两层（反馈 GewyVIt5oo）：元工具（`ops__search` / `ops__describe` /
+/// `ui__ask_choice`）带完整 schema；常驻工具、技能和本场 describe 过的工具只给一行
+/// 签名 + 截短摘要——完整 schema 在 `ops__describe` 的结果里，已经进了对话历史。
+/// 旧实现每轮把每条工具的完整 JSON Schema 全文写进系统提示，十几条就上万字，
+/// 上下文 4k 的本地模型（LM Studio 默认值）第一轮就超长。
+String buildAgentJsonSystemPrompt(List<AgentToolSpec> tools) {
+  final StringBuffer prompt = StringBuffer(_kSystemPrompt)
+    ..writeln()
+    ..writeln(_kJsonProtocol);
+  for (final AgentToolSpec t in tools) {
+    final String wire = agentWireToolName(t.name);
+    if (AgentMetaTool.isMeta(t.name)) {
+      prompt.writeln('- $wire: ${t.description} ${jsonEncode(t.parameters)}');
+    } else {
+      prompt.writeln(
+        '- $wire${agentCompactSignature(t.parameters)}: '
+        '${agentCompactDescription(t.description)}',
+      );
+    }
+  }
+  return prompt.toString();
+}
 
 /// 一场 AI 助手对话。
 class AgentSession {
@@ -653,16 +682,8 @@ class AgentSession {
 
   /// 降级协议：把工具清单写进 system，让模型只回一个 JSON 动作。
   Future<AiChatTurn> _jsonTurn(List<AgentToolSpec> tools) async {
-    final StringBuffer prompt = StringBuffer(_kSystemPrompt)
-      ..writeln()
-      ..writeln(_kJsonProtocol);
-    for (final AgentToolSpec t in tools) {
-      prompt.writeln(
-        '- ${agentWireToolName(t.name)}: ${t.description} ${jsonEncode(t.parameters)}',
-      );
-    }
     final AiChatTurn raw = await _llm.chat(<AiChatMessage>[
-      AiChatMessage.system(prompt.toString()),
+      AiChatMessage.system(buildAgentJsonSystemPrompt(tools)),
       ..._history,
     ], const <AiChatToolSpec>[]);
     final Map<String, Object?>? action = decodeAiJsonObject(raw.text);
@@ -720,7 +741,9 @@ class AgentSession {
         );
       case AgentMetaTool.describe:
         final String target = agentToolIdFromWire('${args['id'] ?? ''}');
-        final AgentToolSpec? spec = _toolbox.describeTool(target);
+        // 技能不在目录里，但降级协议只给它一行签名，模型要细节时也会 describe 它。
+        final AgentToolSpec? spec =
+            _toolbox.describeTool(target) ?? _skill(target)?.spec;
         if (spec == null) {
           return (
             wrapAgentUntrusted('ops.describe', '{"error":"not_found"}'),

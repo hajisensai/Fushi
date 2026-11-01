@@ -143,6 +143,7 @@ Future<SrsSync2Report> srsDefaultSyncRunner(
   void Function()? onUploadStart,
   Future<void> Function(String? keyHex)? beforeUpload,
   bool Function()? shouldStop,
+  SrsSyncStepCallback? onStep,
 }) async {
   final SrsLocationStore location = SrsAssetLocationStore(
     store: backend,
@@ -166,6 +167,7 @@ Future<SrsSync2Report> srsDefaultSyncRunner(
     recordPresence: true,
     writers: writers,
     memo: _srsMigrationMemo,
+    onStep: onStep,
   );
   if (prepared.needsUpgrade || prepared.error != null) {
     final SrsSync2Report r = SrsSync2Report()
@@ -186,6 +188,7 @@ Future<SrsSync2Report> srsDefaultSyncRunner(
     onUploadStart: onUploadStart,
     beforeUpload: beforeUpload,
     shouldStop: shouldStop,
+    onStep: onStep,
   );
   if (r.needsUpgrade) r.error = kSrsSyncNeedsUpgrade;
   if (r.error == null) {
@@ -457,7 +460,14 @@ class SrsSyncScheduler {
         beforeUpload: (String? keyHex) =>
             _mediaBeforeUpload(backend, store, directoryKey, keyHex),
         shouldStop: () => _halted,
+        onStep: _step,
       );
+
+  /// 当前这一轮的细分步骤写进活动面包屑（[_trackRound] 装上、跑完卸下）：进程死在一轮里时，下次启动报
+  /// 「上次进程在 srs_sync 进行中没了」带上死在哪一步、那一刻的内存（反馈 i8qNDs_V_D：大库上卡在「开始」
+  /// 4.5 分钟后被系统杀，原本只知道阶段名）。
+  void _step(String step) => _stepSink?.call(step);
+  void Function(String step)? _stepSink;
 
   /// 发段之前先把本机的媒体传上去（设计 §6.1 写入纪律 3，审查 S-10）：本机新加 / 改过的媒体的绑定随这一轮的段
   /// 发出，读到这些段的设备马上就能拿到内容。只在本机内容可能变了（内容指纹与本位置上次对账时不同）或本位置还没
@@ -760,6 +770,10 @@ class SrsSyncScheduler {
     }
 
     ActivityBreadcrumb.mark(kSrsSyncActivity, describe('start'));
+    _stepSink = (String step) => ActivityBreadcrumb.mark(
+      kSrsSyncActivity,
+      describe('${lastStage?.name ?? 'start'}:$step'),
+    );
     srsSyncProgress.addListener(onProgress);
     try {
       final SrsSync2Report report = await body();
@@ -774,6 +788,7 @@ class SrsSyncScheduler {
       rethrow;
     } finally {
       srsSyncProgress.removeListener(onProgress);
+      _stepSink = null;
       stats.running--;
       ActivityBreadcrumb.clear(kSrsSyncActivity);
     }
@@ -804,10 +819,12 @@ class SrsSyncScheduler {
       _noticeOnce(SrsSyncNotice.awaitingConfirm);
       return SrsSync2Report()..error = kSrsSyncAwaitingConfirm;
     }
+    _step('store');
     SrsDbStore? store = await _readStore();
     if (store == null || _halted) {
       return SrsSync2Report()..error = kSrsSyncStoreUnavailable;
     }
+    _step('directoryKey');
     final String? key = directoryKey ?? await _directoryKeyOf(backend);
     if (key == null) {
       // 位置身份拿不到：上传进度按身份记，换个身份只是多传一遍（段名唯一、内容不变），但宁可这轮不同步。
@@ -823,6 +840,7 @@ class SrsSyncScheduler {
         (decided.conflict == null ||
             _clock().difference(decided.at) < kSrsProfileConflictRecheck);
     if (linker != null && !reuseLink) {
+      _step('link');
       final SrsProfileLinkOutcome link = await linker.link(backend, store);
       adopted = !identical(link.store, store);
       store = link.store;

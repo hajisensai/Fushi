@@ -7,6 +7,7 @@
 //   Ctrl+Enter  制卡（等同点查词弹窗里的「＋」；判定不在本文件，见 vendor/popup.js）
 //   Ctrl+Shift+←/→/↓  字幕时轴偏移 −100ms / ＋100ms / 重置
 //   Ctrl+Shift+Z      复制当前字幕句到剪贴板（配合 Fushi 剪贴板监看即查词）
+//   Ctrl+Shift+F      收藏 / 取消收藏当前字幕句（进 Fushi 收藏夹，见 video-favorite.js）
 //   Ctrl+Shift+[ / ]  播放速度 −0.25x / ＋0.25x
 // 判定是纯函数 decide()（node 可测）；执行端是 subtitle-panel.js 暴露的
 // window.fushiSubtitleShortcut(action)（控制器持有轨/偏移/模式状态），播放速度直接操作 <video>。
@@ -38,6 +39,7 @@
     'offset-plus': 'Ctrl+Shift+ArrowRight',
     'offset-reset': 'Ctrl+Shift+ArrowDown',
     'copy-cue': 'Ctrl+Shift+KeyZ',
+    'favorite-cue': 'Ctrl+Shift+KeyF',
     'rate-down': 'Ctrl+Shift+BracketLeft',
     'rate-up': 'Ctrl+Shift+BracketRight',
   };
@@ -46,7 +48,7 @@
   // 隐藏字幕 / 变速与轨无关（见 Shift+H 的说明：它藏的是站点原生字幕）。
   var NEEDS_TRACK = {
     'prev-cue': 1, 'next-cue': 1, 'replay-cue': 1, 'toggle-panel': 1,
-    'offset-minus': 1, 'offset-plus': 1, 'offset-reset': 1, 'copy-cue': 1,
+    'offset-minus': 1, 'offset-plus': 1, 'offset-reset': 1, 'copy-cue': 1, 'favorite-cue': 1,
   };
   // 不能单独当快捷键的键：修饰键本身。
   var MODIFIER_CODES = {
@@ -185,6 +187,7 @@
     'offset-plus': 'videoShortcutOffsetPlus',
     'offset-reset': 'videoShortcutOffsetReset',
     'copy-cue': 'videoShortcutCopyCue',
+    'favorite-cue': 'videoShortcutFavoriteCue',
     'rate-down': 'videoShortcutRateDown',
     'rate-up': 'videoShortcutRateUp',
   };

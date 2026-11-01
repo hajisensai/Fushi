@@ -5,6 +5,7 @@ import 'package:fushi/src/mining/galgame_japanese_locale.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/mining/galgame_audio_encode.dart';
 import 'package:fushi/src/mining/galgame_audio_source.dart';
+import 'package:fushi/src/mining/window_capture_channel.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
 import 'package:fushi/src/sync/texthooker_ws_client.dart';
 
@@ -161,9 +162,11 @@ void main() {
       required TexthookerService service,
       required Listenable endpoints,
       required _FakeEngine engine,
+      GalTargetImagePathProbe? targetImagePathProbe,
     }) => GalHookSessionController(
       textService: service,
       isWindows: true,
+      targetImagePathProbe: targetImagePathProbe,
       targetWow64Probe: (_) async => false,
       injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
       engineSourceFactory:
@@ -379,6 +382,123 @@ void main() {
         controller.selectedSessionLines,
         isEmpty,
         reason: '未选线程时浮窗、配对和制卡不得消费任何来源',
+      );
+
+      await controller.close();
+      endpoints.dispose();
+    });
+
+    // 反馈 BxbznkOEfM：附着（不是从库里启动）同一款游戏时，记忆此前按 launchExe 锚定，
+    // 附着会话 launchExe 为空 → 每次都要重新手选台词线程。附着按 PID 反查出的 exe
+    // 全路径就是同一个游戏身份，记忆必须同样生效（恢复 + 用户手选写回）。
+    test('文本线程记忆：附着会话按 PID 反查的 exe 恢复与写回', () async {
+      final TexthookerService service = TexthookerService.test();
+      final ChangeNotifier endpoints = ChangeNotifier();
+      final _FakeEngine engine = _FakeEngine(readyFormat: kPcm);
+      final GalHookSessionController controller = build(
+        service: service,
+        endpoints: endpoints,
+        engine: engine,
+        targetImagePathProbe: (int pid) =>
+            pid == 4242 ? r'D:\Games\Fake.exe' : null,
+      );
+      final Map<String, GalCaptureMemory> store = <String, GalCaptureMemory>{
+        r'd:\games\fake.exe': const GalCaptureMemory(
+          textThreadFingerprint: 'code:HB4@459F50',
+        ),
+      };
+      controller.attachCaptureMemory(
+        load: (String gameKey) => store[gameKey] ?? const GalCaptureMemory(),
+        save: (String gameKey, GalCaptureMemory memory) =>
+            store[gameKey] = memory,
+      );
+      await controller.startAttachedCapture(
+        const ExternalWindowInfo(hwnd: 21, pid: 4242, title: 'Fake game'),
+      );
+      expect(controller.currentLaunchExecutable, isNull);
+      for (int i = 1; i <= 3; i++) {
+        engine.enqueue(
+          GalHookedLine(
+            seq: i,
+            timestampMs: 1000 * i,
+            text: 'せりふ$i',
+            threadId: 7,
+            sourceKind: 2,
+            hookName: 'CodeX',
+            hookCode: 'HB4@459F50',
+          ),
+        );
+      }
+      await waitUntil(() => controller.selectedTextThreadKey != null);
+      expect(
+        controller.selectedNativeTextThreadId,
+        7,
+        reason: '附着会话也必须按记忆自动选回上次的台词线程',
+      );
+
+      // 用户手动取消选择：写回同一个游戏 key（证明附着会话的写入也落在 exe 身份上）。
+      await controller.selectTextThread(null, remember: true);
+      expect(store[r'd:\games\fake.exe']!.textThreadFingerprint, isNull);
+
+      await controller.close();
+      endpoints.dispose();
+    });
+
+    // 反馈 bfaVEbHL_s：Unity 游戏各组件每帧重写 set_text，一次轮询带回几百条未选中
+    // 线程的行。线程目录观测曾逐行 notifyListeners，每行都让工作台 / 浮窗 / 控制器
+    // 同步重算一遍，UI isolate 被压满、整个 Fushi 点不动。整批只能通知常数次。
+    test('线程目录观测：一批几百条未选中线程的行只通知常数次', () async {
+      final TexthookerService service = TexthookerService.test();
+      final ChangeNotifier endpoints = ChangeNotifier();
+      final _FakeEngine engine = _FakeEngine(readyFormat: kPcm);
+      final GalHookSessionController controller = build(
+        service: service,
+        endpoints: endpoints,
+        engine: engine,
+      );
+      await controller.launchGame(r'D:\Games\flood.exe');
+      const int threads = 16;
+      const int perThread = 24;
+      int seq = 0;
+      for (int i = 0; i < perThread; i++) {
+        for (int t = 1; t <= threads; t++) {
+          seq++;
+          engine.enqueue(
+            GalHookedLine(
+              seq: seq,
+              timestampMs: seq,
+              text: 'UI テキスト $t',
+              threadId: t,
+              sourceKind: 2,
+              hookName: 'Unity UI.Text',
+              hookCode: 'UnityEngine.UI.Text.set_text',
+            ),
+          );
+        }
+      }
+      int notifications = 0;
+      void count() => notifications++;
+      service.addListener(count);
+      await waitUntil(
+        () =>
+            service.textThreads.fold<int>(
+              0,
+              (int sum, TexthookerTextThread t) => sum + t.observedLineCount,
+            ) ==
+            threads * perThread,
+      );
+      service.removeListener(count);
+      expect(
+        service.textThreads.fold<int>(
+          0,
+          (int sum, TexthookerTextThread t) => sum + t.observedLineCount,
+        ),
+        threads * perThread,
+      );
+      expect(
+        notifications,
+        lessThan(8),
+        reason: '${threads * perThread} 条观测行逐行通知会把 UI isolate 压满（bfaVEbHL_s）',
       );
 
       await controller.close();

@@ -37,7 +37,7 @@ extension _SyncOrchestratorDictionaries on SyncOrchestrator {
       );
       File? tmp;
       try {
-        tmp = _tmpFile(_dictionaryAssetSuffix);
+        tmp = resumableTmpFile('dictionary', name, _dictionaryAssetSuffix);
         await backend.getRemoteDictionary(
           name,
           tmp,

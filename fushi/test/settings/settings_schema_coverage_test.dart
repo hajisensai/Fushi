@@ -106,6 +106,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 开关值经 MusicScrapeService 的 vgmdbEnabled 读取器交给 VgmdbProvider（关 = 不发请求）。
   'music/VGMdb lookup':
       'test/media/music/metadata/music_scrape_service_test.dart',
+  // 开关值由 loadMusicServerBrowsers 读：开 = 来源清单里加 AppleMusicCatalogClient（带设置的
+  // storefront），关 = 不加、不发请求。
+  'music/Apple Music catalog': 'test/media/music/server/music_server_test.dart',
+  // storefront 同一条测试咬住：开着时 catalog 客户端用的就是设置里的区域。
+  'music/Storefront': 'test/media/music/server/music_server_test.dart',
   'music/Pause while looking up words':
       'test/media/music/lyrics/music_lyrics_page_logic_test.dart',
   // 服务器曲库的码率上限：生效点是播放服务器曲目时向服务器要的流（直出 / 转码），harness
@@ -324,6 +329,17 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/media/manga/manga_mining_crop_test.dart'
       '（cropToPanelByDefault 决策 + 阅读器接线守卫）',
   'manga/Reading direction': 'test/media/manga/manga_overlay_html_test.dart',
+  // 「OCR 忽略振假名」（漫画页 / 模型页两处入口同一偏好）：生效点是 CtcColumnOcrRecognizer
+  // 识别前裁注音带（开关两态逐列断言）与缓存签名 `_noruby` 后缀；harness 设置页没有 OCR 会话。
+  'manga/Ignore furigana': 'test/ocr/ocr_ruby_trim_test.dart',
+  'models/Ignore furigana': 'test/ocr/ocr_ruby_trim_test.dart',
+  // 作品名挂到分类标签下：开关由 Anki 标签组装读取（开 = `<分类>::<作品名>`，关 = 平级）；
+  // 默认受「加来源分类标签」门控 disabled，harness 驱动不动属预期。
+  'cardCreation/Nest title tags under the category tag':
+      '../packages/fushi_anki/test/note_tags_nested_title_test.dart',
+  // 句子音频来源：生效点在制卡 ffmpeg 抽音参数（中置声道 pan 滤镜 / 音轨选择）。
+  'cardCreation/Sentence audio source':
+      'test/mining/sentence_audio_source_test.dart',
   'manga/Default zoom': 'test/media/manga/manga_overlay_html_test.dart',
   'manga/Zoom sensitivity': 'test/media/manga/manga_overlay_html_test.dart',
   'manga/Page turn animation': 'test/media/manga/manga_overlay_html_test.dart',
@@ -813,6 +829,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 层没有可观测探针；由专项测试逐环锁死注入链路（偏好 → 注入/theme 下发 → 三份
   // popup.js 读取并乘进 factor）。
   'lookup/Popup scroll speed': 'test/reader/popup_wheel_speed_asset_test.dart',
+  // 反馈 2jGkpD-iD6：查词弹窗独立缩放。生效面是弹窗 WebView 的 CSS zoom 注入与弹窗
+  // 顶栏缩放（非 reader CSS / 主题树），由取值 / zoom 纯函数 + 偏好往返 + 注入 memo
+  // 失效用例咬住。
+  'lookup/Popup UI scale':
+      'test/lookup/popup_ui_scale_test.dart + test/pages/popup_settings_injection_memo_test.dart',
   // 瞬时滚动步长（滚轮 / 触摸）：生效面同样在 popup.js 的 wheel / touch 监听器，由
   // 专项守卫逐环锁死（偏好 clamp → 注入 / theme 下发 → 三份 popup.js 读取并替代常量）。
   'lookup/Instant scroll wheel step':
@@ -1017,6 +1038,14 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 复习同步在跑，专项测试咬住「关掉后各自动口不跑、手动与进复习页照跑」。
   'syncBackup/Auto-sync review data': 'test/srs/srs_sync_scheduler_test.dart',
   'syncBackup/Sync statistics': 'test/sync/sync_gating_test.dart',
+  // 「同步设置」（反馈 AWp-0BtDDv）：写 sync_settings_enabled，生效点是同步一轮里的
+  // SyncPhase.settings（读对端快照 → LWW 采纳 → 写本机快照）；harness 里没有同步在跑，
+  // 排除清单与两台设备经同一资产存储往返由专项测试咬住。
+  'syncBackup/Sync settings': 'test/sync/portable_settings_sync_test.dart',
+  // 「合并导入时包含设置」：写 backup_merge_import_settings，生效点是 BackupMergeEngine
+  // 合并导入时按 LWW 套用备份里的可移植设置；harness 里不做真导入，专项测试咬住。
+  'syncBackup/Include settings when merging a backup':
+      'test/sync/backup_merge_import_test.dart',
   // 设备级「同步浏览历史」：生效点是聚合快照按族裁剪（云 / 互联 client / host 三条路径）。
   'syncBackup/Sync browsing history':
       'test/sync/aggregate_web_history_share_gate_test.dart',
@@ -1327,6 +1356,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'reading/Follow finger while dragging':
       'test/settings/reader_page_turn_animation_settings_test.dart'
       ' + test/reader/page_turn_animation_behavior_test.dart',
+  // indZkg2A0I 点击翻页区域：消费端在点击时现读 ReaderFushiSource，不进渲染输入；
+  // 模板几何 / 偏好 / 宿主接线（空白才分发、弹窗与 VN 点击前进优先）由专项测试守，
+  // 真实点按翻页是 WebView 设备项。
+  'reading/Tap zones to turn pages':
+      'test/reader/reader_tap_zones_test.dart (DEVICE for real WebView taps)',
   'reading/Keep screen awake': 'DEVICE: WakelockPlus channel',
   'reading/Volume button page turning': 'DEVICE: native VolumeKeyChannel',
   'reading/Invert volume buttons': 'DEVICE: native volume-key direction',

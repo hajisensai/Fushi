@@ -209,6 +209,23 @@ SettingsDestination buildSyncBackupDestination() {
               ).setWebHistorySyncEnabled(value);
             },
           ),
+          // 设备级「同步设置」（反馈 AWp-0BtDDv，默认关）：可移植的偏好设置随云备份与
+          // 互联两条通道同步，不可移植项（本机路径 / 窗口 / 平台专属 / 外部工具连接）
+          // 的判定在 PortableSettingsPolicy。两条通道共用，同上不设 visible 门控。
+          SettingsSwitchItem(
+            id: 'sync.settings',
+            title: t.sync_settings_sync,
+            subtitle: t.sync_settings_sync_hint,
+            icon: FushiIcons.settings,
+            value: (SettingsContext ctx) =>
+                _syncSettings(ctx).syncPortableSettings,
+            onChanged: (SettingsContext ctx, bool value) async {
+              _syncSettings(ctx).syncPortableSettings = value;
+              await SyncRepository(
+                ctx.appModel.database,
+              ).setSettingsSyncEnabled(value);
+            },
+          ),
           // 「上传X文件」三个开关都是 OUTBOUND：把本机资产推给**云备份**后端。BUG-988
           // 起互联通道不再复用这套共享开关——互联的内容上传由「上传到互联对端」分项开关
           // 单独控制（见 buildInterconnectDestination），二者互不牵连。故这三个开关只在
@@ -450,6 +467,22 @@ SettingsDestination buildSyncBackupDestination() {
             icon: FushiIcons.download,
             builder: (SettingsContext ctx) =>
                 _BackupImportWidget(settingsContext: ctx),
+          ),
+          // 合并导入默认「只添加内容、不动本机设置」；开了这项才把备份里的可移植设置
+          // 按修改时刻并进来（反馈 AWp-0BtDDv，默认关）。覆盖导入有自己的「导入设置」。
+          SettingsSwitchItem(
+            id: 'sync.backup_merge_settings',
+            title: t.backup_merge_import_settings,
+            subtitle: t.backup_merge_import_settings_hint,
+            icon: FushiIcons.settings,
+            value: (SettingsContext ctx) =>
+                _syncSettings(ctx).backupMergeSettings,
+            onChanged: (SettingsContext ctx, bool value) async {
+              _syncSettings(ctx).backupMergeSettings = value;
+              await SyncRepository(
+                ctx.appModel.database,
+              ).setBackupMergeSettingsEnabled(value);
+            },
           ),
           // 第三方阅读器（Hoshi Reader iOS / Android）的 `.hoshi` 书库备份：
           // 书 + 阅读位置 + 统计。五端都给——备份文件本身跨端通用。
@@ -1339,6 +1372,12 @@ class _SyncSettingsState {
   bool srsAutoSync = true;
   bool syncStats = true;
   bool syncWebHistory = false;
+
+  /// 设备级「同步设置」（`sync.settings`，默认关，AWp-0BtDDv）。
+  bool syncPortableSettings = false;
+
+  /// 合并导入时包含可移植设置（`sync.backup_merge_settings`，默认关，AWp-0BtDDv）。
+  bool backupMergeSettings = false;
   bool syncContent = false;
   bool syncMangaContent = false;
   bool syncAudioBookFiles = false;
@@ -1463,6 +1502,8 @@ class _SyncSettingsState {
       srsAutoSync = await _repo.isSrsAutoSyncEnabled();
       syncStats = await _repo.isSyncStatsEnabled();
       syncWebHistory = await _repo.isWebHistorySyncEnabled();
+      syncPortableSettings = await _repo.isSettingsSyncEnabled();
+      backupMergeSettings = await _repo.isBackupMergeSettingsEnabled();
       syncContent = await _repo.isSyncContentEnabled();
       syncMangaContent = await _repo.isSyncMangaContentEnabled();
       syncAudioBookFiles = await _repo.isSyncAudioBookFilesEnabled();

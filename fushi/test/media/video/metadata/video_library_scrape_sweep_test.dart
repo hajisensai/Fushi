@@ -7,6 +7,7 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi_engine/media/video/metadata/video_library_scrape_sweep.dart';
+import 'package:fushi_engine/media/video/metadata/video_scrape_ignored_works.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_pending_note.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_sweep_ledger.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
@@ -593,6 +594,110 @@ void main() {
     // 每一轮 sweep 重新塞进批次，白占 AniDB 的进程级限流队列。
     expect(runner.sourceIds, hasLength(1));
     expect(runner.plannedTitles.single, <String>['Unscraped Movie']);
+  });
+
+  // 反馈 Fbchzxuq6f：特典（SP / OVA / 预告片）在任何资料源上都没有条目，待确认
+  // 判据对它们永远成立。用户「忽略」后：不计入待确认清单（提醒条）、不进自动补刮，
+  // 只在已忽略清单里列出；忽略落库（跨调度器实例 = 跨进程），可撤销。
+  group('忽略待确认作品', () {
+    test('忽略的作品移出待确认清单与自动补刮，列进已忽略清单', () async {
+      final int sourceId = await addSource('D:/A');
+      await addVideo(
+        'movie-a',
+        'D:/A/Unscraped Movie (2020).mkv',
+        sourceId,
+        title: 'Unscraped Movie',
+      );
+      await addVideo(
+        'sp-01',
+        'D:/A/Bonus Feature (2019).mkv',
+        sourceId,
+        title: 'Bonus Feature',
+      );
+
+      final VideoLibraryScrapeSweep first = sweep();
+      final List<VideoPendingScrapeWork> before = await first.pendingWorks();
+      expect(
+        before.map((VideoPendingScrapeWork e) => e.work.stableKey),
+        containsAll(<String>['book:movie-a', 'book:sp-01']),
+      );
+
+      await first.setWorksIgnored(<String>['book:sp-01'], ignored: true);
+
+      // 新实例 = 重启：忽略必须落库，不是进程内记账。
+      final VideoLibraryScrapeSweep service = sweep();
+      final List<VideoPendingScrapeWork> pending = await service
+          .sweepAndListPending();
+      expect(
+        pending.map((VideoPendingScrapeWork e) => e.work.stableKey),
+        <String>['book:movie-a'],
+        reason: '忽略的作品不再计入提醒条',
+      );
+      expect(runner.plannedTitles.single, <String>[
+        'Unscraped Movie',
+      ], reason: '忽略的作品不再被自动补刮联网白查');
+      final List<VideoPendingScrapeWork> ignored = await service.ignoredWorks();
+      expect(
+        ignored.map((VideoPendingScrapeWork e) => e.work.stableKey),
+        <String>['book:sp-01'],
+        reason: '待确认队列里要能看到被忽略的作品，才谈得上撤销',
+      );
+    });
+
+    test('撤销忽略后作品回到待确认清单；键清空时偏好行被删掉', () async {
+      final int sourceId = await addSource('D:/A');
+      await addVideo(
+        'sp-01',
+        'D:/A/Bonus Feature (2019).mkv',
+        sourceId,
+        title: 'Bonus Feature',
+      );
+      final VideoLibraryScrapeSweep service = sweep(isEnabled: () => false);
+      await service.setWorksIgnored(<String>['book:sp-01'], ignored: true);
+      expect(await service.pendingWorks(), isEmpty);
+      expect(
+        jsonDecode((await db.getPref(kVideoScrapeIgnoredWorksPrefKey))!),
+        <String>['book:sp-01'],
+      );
+
+      await service.setWorksIgnored(<String>['book:sp-01'], ignored: false);
+      expect(
+        (await service.pendingWorks()).map(
+          (VideoPendingScrapeWork e) => e.work.stableKey,
+        ),
+        <String>['book:sp-01'],
+      );
+      expect(await service.ignoredWorks(), isEmpty);
+      expect(await db.getPref(kVideoScrapeIgnoredWorksPrefKey), isNull);
+    });
+
+    test('忽略不影响已识别作品；偏好值损坏时当作没忽略任何作品', () async {
+      final int sourceId = await addSource('D:/A');
+      await addVideo(
+        'movie-a',
+        'D:/A/Unscraped Movie (2020).mkv',
+        sourceId,
+        title: 'Unscraped Movie',
+      );
+      await db.setPref(kVideoScrapeIgnoredWorksPrefKey, '{not json');
+      final VideoLibraryScrapeSweep service = sweep(isEnabled: () => false);
+      expect(
+        (await service.pendingWorks()).map(
+          (VideoPendingScrapeWork e) => e.work.stableKey,
+        ),
+        <String>['book:movie-a'],
+        reason: '宁可多提醒，也不能因为坏值静默吞掉待确认作品',
+      );
+
+      await seedIdentityForBook('movie-a');
+      await service.setWorksIgnored(<String>['book:movie-a'], ignored: true);
+      expect(await service.pendingWorks(), isEmpty);
+      expect(
+        await service.ignoredWorks(),
+        isEmpty,
+        reason: '已有身份的作品不是待确认，也就不出现在已忽略里',
+      );
+    });
   });
 
   test('临时失败（504 / 握手失败）按短间隔退避：间隔内不重认领，过了就重试，'

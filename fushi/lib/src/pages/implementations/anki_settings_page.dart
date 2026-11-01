@@ -22,6 +22,7 @@ import 'package:path_provider/path_provider.dart' show getTemporaryDirectory;
 import 'package:fushi/src/anki/anki_media_dedup_dialogs.dart';
 import 'package:fushi/src/anki/anki_settings_actions.dart';
 import 'package:fushi/src/anki/lapis_backup_retention.dart';
+import 'package:fushi/src/anki/mining_media_quality_labels.dart';
 import 'package:fushi/src/anki/lapis_style_editor_page.dart';
 import 'package:fushi/src/anki/anki_config_controls.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
@@ -41,6 +42,9 @@ import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/mining/video_online_mining_mode.dart';
+import 'package:fushi/src/mining/sentence_audio_source_text.dart';
+import 'package:fushi_engine/mining/sentence_audio_source.dart'
+    show SentenceAudioSourcePick;
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/profile/profile_selector.dart';
@@ -93,6 +97,7 @@ enum AnkiSectionRow {
   tagIncludeFushi,
   tagIncludeCategory,
   tagBookName,
+  tagNestTitleUnderCategory,
   tagCharPosition,
 }
 
@@ -550,6 +555,15 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
           subtitle: t.anki_tag_include_category_hint,
           value: settings.tagIncludeCategory,
           onChanged: vm.updateTagIncludeCategory,
+        ),
+      ),
+      AnkiSectionRow.tagNestTitleUnderCategory => SettingsSearchTarget(
+        id: 'card_creation.anki.tag_nest_title_under_category',
+        child: AdaptiveSettingsSwitchRow(
+          title: t.anki_tag_nest_title_under_category,
+          subtitle: t.anki_tag_nest_title_under_category_hint,
+          value: settings.tagNestTitleUnderCategory,
+          onChanged: vm.updateTagNestTitleUnderCategory,
         ),
       ),
       AnkiSectionRow.tagBookName => SettingsSearchTarget(
@@ -1178,6 +1192,11 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
             },
           ),
         ),
+        // 反馈 pNF2ZL7Kfc：视频卡句子音频从哪里取（当前播放音轨 / 中置声道 / 指定音轨）。
+        SettingsSearchTarget(
+          id: 'card_creation.anki.video_mining_audio_source',
+          child: _buildVideoMiningAudioSourcePicker(),
+        ),
         SettingsSearchTarget(
           id: 'card_creation.anki.video_mining_image_mode',
           child: _buildVideoMiningImageModePicker(),
@@ -1240,20 +1259,16 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
   /// TODO-1650 图片/GIF 清晰度滑块（4 档 0..3，透传 [AppModel.miningImageQuality]）。
   /// 只管截图分辨率/质量 + GIF 帧率/宽度；满档=最高（截图原图直通，GIF 封顶）。滑块值即档位下标，
   /// `divisions/step=1` 让它按档吸附，`readout`/`label` 显示当前档名。
+  ///
+  /// 副标题首行给出当前档的具体参数（截图长边 / GIF 宽度与帧率），用户不用猜
+  /// 「省流」「高清」到底多清楚（反馈 28v5dFPrr0）。
   Widget _buildMiningImageQualityRow() {
-    final List<String> labels = <String>[
-      t.mining_image_quality_thrift,
-      t.mining_image_quality_standard,
-      t.mining_image_quality_hd,
-      // BUG-1039：满档过去叫「原片」，但它对 GIF 已不是源分辨率/源帧率（见
-      // [MiningMediaCompression.imageTiers]），只有截图仍是原图直通——名不副实，
-      // 改叫「最高」：只承诺是滑块顶格，不承诺具体保真度。
-      t.mining_image_quality_max,
-    ];
+    final List<String> labels = miningImageQualityTierNames();
     final int tier = appModel.miningImageQuality.clamp(0, labels.length - 1);
     return AdaptiveSettingsSliderRow(
       title: t.mining_image_quality,
-      subtitle: t.mining_image_quality_hint,
+      subtitle:
+          '${miningImageQualityTierDetail(tier)}\n${t.mining_image_quality_hint}',
       icon: FushiIcons.image,
       value: tier.toDouble(),
       min: 0,
@@ -1272,17 +1287,12 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
   /// TODO-1650 音频质量滑块（3 档 0..2，透传 [AppModel.miningAudioQuality]）。只管句子/cue
   /// 音频声道 + 比特率；满档=最高（立体声 192k）。
   Widget _buildMiningAudioQualityRow() {
-    final List<String> labels = <String>[
-      t.mining_audio_quality_standard,
-      t.mining_audio_quality_high,
-      // BUG-1039：满档过去也叫「原片」，但 192k 立体声 AAC 是有损重编码、不是原片；
-      // 与图片滑块统一改叫「最高」（只承诺是滑块顶格）。
-      t.mining_audio_quality_max,
-    ];
+    final List<String> labels = miningAudioQualityTierNames();
     final int tier = appModel.miningAudioQuality.clamp(0, labels.length - 1);
     return AdaptiveSettingsSliderRow(
       title: t.mining_audio_quality,
-      subtitle: t.mining_audio_quality_hint,
+      subtitle:
+          '${miningAudioQualityTierDetail(tier)}\n${t.mining_audio_quality_hint}',
       icon: FushiIcons.audio,
       value: tier.toDouble(),
       min: 0,
@@ -1364,6 +1374,32 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
       onChanged: (VideoMiningImageMode mode) {
         appModel.setVideoMiningImageMode(mode);
         setState(_resetClipSupportProbe);
+      },
+    );
+  }
+
+  /// 视频制卡句子音频来源（反馈 pNF2ZL7Kfc）：当前播放音轨（默认 = 改动前）/ 多声道的
+  /// 中置声道（人声）/ 指定第 N 条音轨。某个视频没有所选来源时制卡回退当前播放音轨并
+  /// OSD 提示。高级制卡对话框可只对这一张卡临时改，不动这里。透传
+  /// [AppModel.videoMiningAudioSource]。
+  Widget _buildVideoMiningAudioSourcePicker() {
+    return AdaptiveSettingsPickerRow<SentenceAudioSourcePick>(
+      title: t.video_mining_audio_source,
+      subtitle: t.video_mining_audio_source_hint,
+      icon: FushiIcons.audio,
+      controlBelow: true,
+      selected: appModel.videoMiningAudioSource,
+      options: <AdaptiveSettingsPickerOption<SentenceAudioSourcePick>>[
+        for (final SentenceAudioSourcePick pick
+            in sentenceAudioSourceSettingChoices())
+          AdaptiveSettingsPickerOption<SentenceAudioSourcePick>(
+            value: pick,
+            label: sentenceAudioSourceLabel(pick),
+          ),
+      ],
+      onChanged: (SentenceAudioSourcePick value) async {
+        await appModel.setVideoMiningAudioSource(value);
+        if (mounted) setState(() {});
       },
     );
   }

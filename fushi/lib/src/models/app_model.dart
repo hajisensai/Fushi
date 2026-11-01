@@ -9,6 +9,7 @@ import 'dart:ui';
 import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
+import 'package:fushi/src/anki/mined_card_undo.dart';
 import 'package:fushi/src/corpus/library_corpus_service.dart';
 import 'package:fushi/src/models/preference_keys.dart'
     show kLibrarySentencesEnabledPrefKey;
@@ -128,6 +129,7 @@ import 'package:fushi/src/lookup/effective_lookup_size.dart';
 import 'package:fushi/src/lookup/lookup_ime_channel.dart';
 import 'package:fushi/src/lookup/lookup_ime_language.dart';
 import 'package:fushi/src/lookup/overlay_stat_source.dart';
+import 'package:fushi/src/lookup/popup_ui_scale.dart';
 import 'package:fushi_engine/models/dictionary_directory.dart';
 import 'package:fushi/src/models/dictionary_repository.dart';
 import 'package:fushi/src/models/media_history_repository.dart';
@@ -339,6 +341,8 @@ import 'package:fushi/src/media/music/mpv_music_output_backend.dart';
 import 'package:fushi_music/fushi_music.dart'
     show InstalledMusicPlugin, MusicPluginManager;
 import 'package:fushi/src/media/music/plugin/music_plugin_gate.dart';
+import 'package:fushi/src/media/favorites/web_video_favorite.dart'
+    show ExtensionVideoFavoriteRequest, handleExtensionVideoFavorite;
 import 'package:fushi/src/media/music/plugin/music_plugin_favorites.dart';
 import 'package:fushi/src/media/music/plugin/music_plugins.dart';
 import 'package:fushi/src/media/music/plugin/music_plugin_vault_key.dart';
@@ -375,6 +379,8 @@ import 'package:fushi/src/mining/galgame_repository.dart';
 import 'package:fushi/src/mining/immersion_mining_engine.dart';
 import 'package:fushi/src/mining/mining_image_mode_target.dart';
 import 'package:fushi/src/mining/video_online_mining_mode.dart';
+import 'package:fushi_engine/mining/sentence_audio_source.dart'
+    show SentenceAudioSourcePick;
 import 'package:fushi/src/media/video/video_pause_ocr_scope.dart';
 import 'package:fushi_engine/mining/immersion_mining_request.dart';
 import 'package:fushi/src/mining/immersion_capture_channel.dart';
@@ -397,7 +403,7 @@ import 'package:fushi/src/sync/extension_profile_api.dart'
     show ExtensionProfileApi, ExtensionRequestServices;
 import 'package:fushi/src/profile/profile_settings_view.dart';
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart'
-    show kMiningAnimatedPlayOnceZoneKey;
+    show isRemoteFetchNetworkFailure, kMiningAnimatedPlayOnceZoneKey;
 import 'package:fushi/src/sync/fushi_api_server_manager.dart';
 import 'package:fushi/src/sync/fushi_extension_api_core.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart';
@@ -572,6 +578,28 @@ String buildSearchCacheKey({
   bool chineseSimpToTrad = false,
 }) {
   return '${term.length}:$term/$maxTerms/$maxResults${chineseSimpToTrad ? '/zh' : ''}';
+}
+
+/// 「按中文处理（引擎双向展开简体 ↔ 繁體拼写）」的唯一判据（反馈 3FY6vTqwV-）。
+///
+/// * 查词语言已知（[lookupLanguage] 非空：远端声明 / 媒体页登记 / 全局默认内容语言）→
+///   只看它是不是中文。日语书里查「学生」不会因为装了中文词典就多出繁體变体。
+/// * 查词语言未知 → 看启用的 term 词典里有没有声明为中文的
+///   （[DictionaryLookupFilters.hasChineseTermDictionary]）。首页 / 查词页的独立查词
+///   没有任何媒体页登记语言，全局默认内容语言出厂为空——此前这里一律 false，学中文、
+///   没去设「默认内容语言」的用户在查词页永远查不到另一种字形的词条。
+///   语言未知时查词集合里的中文词典就是「这次可能是中文」的唯一可读证据；App 里
+///   不存在「学习语言 / Profile 目标语言」这一设置（`targetLanguage` 已于 2026-07-26
+///   删除，Profile 的语言绑定是「内容语言 → 打开哪个 Profile」的反向映射）。
+@visibleForTesting
+bool lookupUsesChineseScriptVariants({
+  required String? lookupLanguage,
+  required DictionaryLookupFilters filters,
+}) {
+  if (lookupLanguage != null && lookupLanguage.trim().isNotEmpty) {
+    return isChineseLanguageTag(lookupLanguage);
+  }
+  return filters.hasChineseTermDictionary;
 }
 
 /// 把阅读器传来的原文振假名区间（以清洗前的 [raw] 为坐标系）对齐到 [normalizeSearchTerm]
@@ -1264,6 +1292,13 @@ class AppModel with ChangeNotifier {
       _mediaTrackingService?.notifyStatusChanged();
     }
 
+    if (report.settingsImported > 0 && report.serviceConfigsImported == 0) {
+      // 「同步设置」（AWp-0BtDDv）写进了别的设备的设置：偏好缓存、各媒体源设置、
+      // 主题、快捷键都要从 DB 重读，否则要等下次冷启动才生效。
+      await refreshPrefCache();
+      notifyListeners();
+    }
+
     if (report.dictionariesImported > 0) {
       // BUG-2752：同步导入直接写 dictionary_metadata，内存缓存不知道新词典；
       // 必须从 DB 整表重载再重建引擎。此前先 clearDictionariesCache() 再按
@@ -1294,6 +1329,21 @@ class AppModel with ChangeNotifier {
   GlobalKey<NavigatorState> get navigatorKey => _navigatorKey;
   late final GlobalKey<NavigatorState> _navigatorKey =
       GlobalKey<NavigatorState>();
+
+  /// 主 [MaterialApp] 的 [ScaffoldMessenger] 钉一把全局 key（与 [navigatorKey] 同理）。
+  ///
+  /// 根 build 会整棵重挂 MaterialApp（界面语言切换的 locale `KeyedSubtree`、启动 /
+  /// 迁移 / 备份导入分支切回主树）。没有 key 时 MaterialApp 内部的 messenger 随之
+  /// dispose、新建一个空的：已经显示在 Scaffold 上的 SnackBar 留在原地（新 messenger
+  /// 注册 Scaffold 时不清旧条），它的动画控制器却已被旧 messenger 销毁——提示条冻在
+  /// 半透明的入场帧上、看着像压在界面底下，按钮再调旧 messenger 的
+  /// `hideCurrentSnackBar` 直接 `Null check operator`，永远关不掉（反馈
+  /// jmgMk1gHG2 / msySECp2Cy）。带 GlobalKey 的 messenger 在重挂时被 reparent，
+  /// 状态与控制器原样保留。
+  GlobalKey<ScaffoldMessengerState> get scaffoldMessengerKey =>
+      _scaffoldMessengerKey;
+  late final GlobalKey<ScaffoldMessengerState> _scaffoldMessengerKey =
+      GlobalKey<ScaffoldMessengerState>();
 
   BuildContext? get _ctx => _navigatorKey.currentContext;
 
@@ -1651,10 +1701,10 @@ class AppModel with ChangeNotifier {
   /// 启动）；app 外查词（剪贴板/扩展）保持 null → 落到全局默认。
   String? currentLookupLanguage;
 
-  /// 当前查词是否按中文处理（引擎额外试简体 → 繁體变体，见 `FushiDicts.lookup` 的
+  /// 当前查词是否按中文处理（引擎额外试简体 ↔ 繁體双向变体，见 `FushiDicts.lookup` 的
   /// `chineseSimpToTrad`）。语言取查词来源语言 [currentLookupLanguage]，缺省落到
   /// 全局默认内容语言——与词头字体链同一套解析（[resolveContentLanguage]）。
-  /// 语言未知时为 false：不对日语等其它语言的查词做任何改动。
+  /// 语言未知时看启用的词典里有没有中文词典（[lookupUsesChineseScriptVariants]）。
   bool get lookupChineseSimpToTrad => lookupChineseSimpToTradFor(null);
 
   /// 本次查词实际按哪种语言处理：[requested]（远端请求方声明的查词语言，非空时优先）→
@@ -1673,14 +1723,32 @@ class AppModel with ChangeNotifier {
     globalDefault: prefs?.defaultContentLanguage ?? defaultContentLanguage,
   );
 
-  /// 「按中文处理（开简体 → 繁體回落）」的唯一判据；[requested] 见
-  /// [effectiveLookupLanguage]。本机查词传 null，替对端查词传对端声明的语言。
+  /// 「按中文处理（简体 ↔ 繁體双向展开）」；[requested] 见 [effectiveLookupLanguage]。
+  /// 本机查词传 null，替对端查词传对端声明的语言。判据本身在
+  /// [lookupUsesChineseScriptVariants]：语言已知看语言，未知看启用词典里有没有中文词典。
+  ///
+  /// [filters]：按哪份词典过滤快照判「有没有中文词典」；null = App 当前生效的词典
+  /// （浏览器扩展所选非激活配置传它的 `lookupFilters`，与查词用的过滤同一份）。
   bool lookupChineseSimpToTradFor(
     String? requested, {
     PreferencesRepository? prefs,
-  }) => isChineseLanguageTag(
-    effectiveLookupLanguage(requested: requested, prefs: prefs),
-  );
+    DictionaryLookupFilters? filters,
+  }) {
+    final DictionaryLookupFilters? effectiveFilters =
+        filters ?? (_dictionaryRepoReady ? dictRepo.lookupFilters : null);
+    return lookupUsesChineseScriptVariants(
+      lookupLanguage: effectiveLookupLanguage(
+        requested: requested,
+        prefs: prefs,
+      ),
+      filters:
+          effectiveFilters ??
+          const DictionaryLookupFilters(
+            hiddenDictionaryNames: <String>{},
+            termDictionaryOrder: <String>[],
+          ),
+    );
+  }
 
   /// 进入一个游戏时登记查词来源语言：[gameLanguage] 是游戏卡上声明的语言
   /// （`GalgameEntry.language`），未声明 / 不在库里落全局默认。hook 台词没有任何语言
@@ -1734,7 +1802,13 @@ class AppModel with ChangeNotifier {
               )) {
                 return;
               }
-              FloatingLyricLookupNotifier.instance.requestLookup(text, index);
+              FloatingLyricLookupNotifier.instance.requestLookup(
+                text,
+                index,
+                // 反馈 1Mwaro8UTC：与全局查词卡同口径（floating_lyric_lookup_routing），
+                // 制卡例句取被点的这一整行。
+                sentence: text,
+              );
             }());
           },
           // 媒体会话与音乐互斥（音乐模块 §7.5）：音乐持有会话时，锁屏 / 耳机键不发给有声书。
@@ -1847,7 +1921,13 @@ class AppModel with ChangeNotifier {
             )) {
               return;
             }
-            FloatingLyricLookupNotifier.instance.requestLookup(text, index);
+            FloatingLyricLookupNotifier.instance.requestLookup(
+              text,
+              index,
+              // 反馈 1Mwaro8UTC：与全局查词卡同口径（floating_lyric_lookup_routing），
+              // 制卡例句取被点的这一整行。
+              sentence: text,
+            );
           }());
         },
         onPlayPause: () => unawaited(engine.togglePlayPause()),
@@ -5203,6 +5283,22 @@ class AppModel with ChangeNotifier {
   double get customAppUiScale => themeNotifier.customAppUiScale;
   double get autoAppUiScale => themeNotifier.autoAppUiScale;
   double get appUiScale => themeNotifier.appUiScale;
+
+  /// 查词弹窗独立缩放系数（偏好 `popup_ui_scale`，反馈 2jGkpD-iD6）。偏好还没装好
+  /// （独立弹窗 entry point 首帧 / 测试替身没跑 initialise）时按默认 1.0，与
+  /// [librarySentencesEnabled] 同律——判据放在 getter 自身，弹窗宿主不各自判空。
+  double get popupUiScaleFactor =>
+      _prefsRepo?.popupUiScale ?? kPopupUiScaleDefault;
+  Future<void> setPopupUiScaleFactor(double factor) =>
+      prefsRepo.setPopupUiScale(factor);
+
+  /// 查词弹窗**内容与弹窗 Dart 侧元素**的生效缩放 = 界面大小 × 弹窗缩放系数。所有弹窗
+  /// 宿主（内容 zoom 注入、顶栏按钮、`:popup` 进程）只从这里取，不各自乘一份。弹窗盒子
+  /// 尺寸仍按 [appUiScale] 算（见 `lookup/popup_ui_scale.dart`）。
+  double get popupUiScale => resolvePopupUiScale(
+    appUiScale: appUiScale,
+    popupScaleFactor: popupUiScaleFactor,
+  );
   Future<void> setAppUiScale(double value) =>
       themeNotifier.setAppUiScale(value);
   double resolveAppUiScaleForViewport({
@@ -5716,6 +5812,16 @@ class AppModel with ChangeNotifier {
 
   /// 是否尊重 .ass 字幕自带样式（TODO-1105；默认 true）。
   bool get videoRespectAssStyle => prefsRepo.videoRespectAssStyle;
+
+  /// 主 / 副字幕轨默认语言偏好原文（反馈 Fz9HXThdSW）。
+  String get videoSubtitlePreferredLanguages =>
+      prefsRepo.videoSubtitlePreferredLanguages;
+  Future<void> setVideoSubtitlePreferredLanguages(String value) =>
+      prefsRepo.setVideoSubtitlePreferredLanguages(value);
+  String get videoSecondarySubtitlePreferredLanguages =>
+      prefsRepo.videoSecondarySubtitlePreferredLanguages;
+  Future<void> setVideoSecondarySubtitlePreferredLanguages(String value) =>
+      prefsRepo.setVideoSecondarySubtitlePreferredLanguages(value);
 
   Future<void> setVideoRespectAssStyle(bool value) =>
       prefsRepo.setVideoRespectAssStyle(value);
@@ -8892,6 +8998,7 @@ class AppModel with ChangeNotifier {
     final bool simpToTrad = lookupChineseSimpToTradFor(
       lookupLanguage,
       prefs: profileView?.prefs,
+      filters: profileView?.lookupFilters,
     );
     // 原文振假名改变同长度候选的先后：带 ruby 的查询单独成键（无 ruby 时后缀为空，
     // 键与此前逐字相同）。
@@ -10347,6 +10454,9 @@ class AppModel with ChangeNotifier {
   bool get srsReviewShowCounts => _prefsRepo?.srsReviewShowCounts ?? true;
   Future<void> setSrsReviewShowCounts(bool value) =>
       prefsRepo.setSrsReviewShowCounts(value);
+  bool get srsReviewInlineEdit => _prefsRepo?.srsReviewInlineEdit ?? false;
+  Future<void> setSrsReviewInlineEdit(bool value) =>
+      prefsRepo.setSrsReviewInlineEdit(value);
   double get srsReviewVolume => _prefsRepo?.srsReviewVolume ?? 1.0;
   Future<void> setSrsReviewVolume(double value) =>
       prefsRepo.setSrsReviewVolume(value);
@@ -10406,6 +10516,12 @@ class AppModel with ChangeNotifier {
   void setVideoMiningImageMode(VideoMiningImageMode mode) =>
       prefsRepo.setVideoMiningImageMode(mode);
 
+  // 视频制卡句子音频来源（当前播放音轨 / 指定音轨 / 中置声道，透传 prefsRepo）。默认当前播放音轨。
+  SentenceAudioSourcePick get videoMiningAudioSource =>
+      prefsRepo.videoMiningAudioSource;
+  Future<void> setVideoMiningAudioSource(SentenceAudioSourcePick pick) =>
+      prefsRepo.setVideoMiningAudioSource(pick);
+
   // 在线视频制卡弹窗等不等（后台 / 看完再制卡 / 等待完成，透传 prefsRepo）。默认后台。
   VideoOnlineMiningMode get videoOnlineMiningMode =>
       prefsRepo.videoOnlineMiningMode;
@@ -10430,6 +10546,12 @@ class AppModel with ChangeNotifier {
 
   MiningAnimatedFormat get galMiningAnimatedFormat =>
       prefsRepo.galMiningAnimatedFormat;
+
+  /// 「高级制卡」卡片字段分区里显示的字段名（反馈 -K86qlwBg6）；null = 从没选过。
+  List<String>? get advancedMiningVisibleFields =>
+      prefsRepo.advancedMiningVisibleFields;
+  Future<void> setAdvancedMiningVisibleFields(List<String> names) =>
+      prefsRepo.setAdvancedMiningVisibleFields(names);
 
   /// 制卡动图只播放一次（反馈 ZxyIMK-C5V）。
   bool get miningAnimatedPlayOnce => prefsRepo.miningAnimatedPlayOnce;
@@ -10458,6 +10580,12 @@ class AppModel with ChangeNotifier {
   MiningClipFormat get galMiningClipFormat => prefsRepo.galMiningClipFormat;
   void setGalMiningClipFormat(MiningClipFormat format) =>
       prefsRepo.setGalMiningClipFormat(format);
+
+  /// 高级制卡句子音频起止微调步长（毫秒，反馈 3_VB7kAeHj），各宿主共用。
+  int get advancedMiningAudioNudgeStepMs =>
+      prefsRepo.advancedMiningAudioNudgeStepMs;
+  void setAdvancedMiningAudioNudgeStepMs(int ms) =>
+      unawaited(prefsRepo.setAdvancedMiningAudioNudgeStepMs(ms));
 
   /// 制卡句子音频头/尾 padding（毫秒），视频字幕与有声书两条制卡链共用。
   int get miningAudioHeadPadMs => prefsRepo.miningAudioHeadPadMs;
@@ -11227,6 +11355,13 @@ class AppModel with ChangeNotifier {
         fontApi: _browserExtensionFontCatalog,
         onExtensionPopupSize: _applyExtensionPopupSize,
         onExtensionStudy: _ensureBrowserVideoStudyBridge().onSample,
+        // 反馈 KGC1ifR1a3：扩展 / app 内浏览器看网页视频时收藏当前句 / 视频本身，写 App
+        // 收藏夹同一份收藏句（FavoriteSentenceRepository，来源 web）。
+        onVideoFavorite: (ExtensionVideoFavoriteRequest request) =>
+            handleExtensionVideoFavorite(
+              repository: FavoriteSentenceRepository(database),
+              request: request,
+            ),
       );
 
   FushiApiServerManager _ensureYomitanManager() {
@@ -11895,7 +12030,12 @@ class AppModel with ChangeNotifier {
           })
           described = describeMineOutcome(outcome);
           // 制卡结果走 showMine：过「制卡提示」开关。
-          FushiToast.showMine(msg: described.message, status: described.status);
+          FushiToast.showMine(
+            msg: described.message,
+            status: described.status,
+            // 反馈 JNyykxvuY9：成功提示带「撤销」，几秒内点一下删掉刚加的卡。
+            action: minedCardUndoToastAction(repo, outcome, expression: word),
+          );
         } catch (e, stack) {
           ErrorLogService.instance.log('FloatingDict.ankiExport', e, stack);
           FushiToast.show(
@@ -11988,6 +12128,10 @@ class AppModel with ChangeNotifier {
   int get mangaOcrParallelTasks => prefsRepo.mangaOcrParallelTasks;
   Future<void> setMangaOcrParallelTasks(int value) =>
       prefsRepo.setMangaOcrParallelTasks(value);
+
+  bool get mangaOcrIgnoreFurigana => prefsRepo.mangaOcrIgnoreFurigana;
+  Future<void> setMangaOcrIgnoreFurigana(bool value) =>
+      prefsRepo.setMangaOcrIgnoreFurigana(value);
 
   String get mangaOcrAiMode => prefsRepo.mangaOcrAiMode;
   Future<void> setMangaOcrAiMode(String value) =>
@@ -12265,6 +12409,23 @@ RemoteMineResult remoteMineError(
   );
 }
 
+/// 浏览器扩展 YouTube 制卡中止时回给扩展 toast 的那句话。
+///
+/// 反馈 vhW6OpRy2H：原样回的是 `YouTube 制卡失败：required audio missing
+/// (HandshakeException: Connection terminated during handshake)`——扩展照样弹出来了，
+/// 但普通用户读不出这是「app 连不上 YouTube 的视频服务器」，更不知道该去查代理。
+/// 中止根因是网络类失败（[isRemoteFetchNetworkFailure]）时先说人话、指出能做什么，
+/// 技术原因仍附在后面供排查；其它中止原因（缺 ffmpeg 等）保持原样。
+String youtubeMineAbortMessage(String? abortReason) {
+  final String reason = abortReason ?? '媒体抽取失败';
+  if (abortReason != null && isRemoteFetchNetworkFailure(abortReason)) {
+    return 'YouTube 制卡失败：Fushi 连不上 YouTube 的视频服务器，取不到句子音频'
+        '（网络或代理问题）。请在 Fushi 设置的网络代理里配置能访问 YouTube 的代理后重试。'
+        '\n原因：$reason';
+  }
+  return 'YouTube 制卡失败：$reason';
+}
+
 class _AppModelRemoteLookupService
     implements
         FushiRemoteLookupService,
@@ -12385,6 +12546,9 @@ class _AppModelRemoteLookupService
     return withMaterializedMiningContext<T>(
       payload,
       (String raw, AnkiMiningContext context) => action(repo, raw, context),
+      // 瘦客户端经本机查词时词典只在本机：客户端搬不来字节的插图由本机词典补齐，
+      // 与 /api/mine（[mineEntry]）同一步骤（反馈 PDgaHL5qmj）。
+      writeHostDictionaryMedia: writeDictionaryMediaCache,
     );
   }
 
@@ -12581,7 +12745,7 @@ class _AppModelRemoteLookupService
       if (ytRes.aborted) {
         return remoteMineError(
           'Anki.mineImmersion.youtube',
-          'YouTube 制卡失败：${ytRes.abortReason ?? '媒体抽取失败'}',
+          youtubeMineAbortMessage(ytRes.abortReason),
           detail: ytRes.abortReason,
         );
       }
@@ -13032,6 +13196,7 @@ class _AppModelRemoteLookupService
       final bool simpToTrad = _appModel.lookupChineseSimpToTradFor(
         language,
         prefs: view?.prefs,
+        filters: view?.lookupFilters,
       );
       // 与 _searchLocalDictionary 同键：带 ruby 的查询单独成键（无 ruby 后缀为空）；
       // 按配置视图查时带它的命名空间（App 自己的键不变）。

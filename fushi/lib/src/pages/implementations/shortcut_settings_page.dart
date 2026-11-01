@@ -28,6 +28,7 @@ import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
+import 'package:fushi/src/shortcuts/focus_navigation_shortcuts.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
@@ -504,16 +505,35 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
         AdaptiveSettingsRow(
           title: ShortcutAction.globalExternalLookup.label,
           subtitle: t.shortcut_scope_global_external_mobile_note,
-          icon: Icons.info_outline,
+          icon: FushiIcons.info,
           showIcon: true,
         ),
       // 纯弹窗内滚轮触发，用户看不到「在哪儿按」时会以为没生效，故给一行说明。
       if (scope == ShortcutScope.dictionaryPopup)
         AdaptiveSettingsRow(
           title: t.shortcut_scope_dictionary_popup_note,
-          icon: Icons.info_outline,
+          icon: FushiIcons.info,
           showIcon: true,
         ),
+      // 焦点导航（反馈 bjPjRHsaUy）：先讲清优先级（页面已占用的键在该页面优先），
+      // 再给两组**默认关闭**的一键备选键。开关状态直接从注册表读（四个移焦动作都带
+      // 着该预设的键才算开），用户手动删掉其中一枚键后开关自然回到关。
+      if (scope == ShortcutScope.gamepad) ...<Widget>[
+        AdaptiveSettingsRow(
+          title: t.shortcut_focus_navigation_note,
+          icon: FushiIcons.info,
+          showIcon: true,
+        ),
+        _buildFocusPresetRow(
+          FocusNavigationPreset.wasd,
+          title: t.shortcut_focus_navigation_preset_wasd,
+          subtitle: t.shortcut_focus_navigation_preset_wasd_hint,
+        ),
+        _buildFocusPresetRow(
+          FocusNavigationPreset.shiftArrows,
+          title: t.shortcut_focus_navigation_preset_shift_arrows,
+        ),
+      ],
       // TODO-1066 — 桌面 app 外查词开了鼠标通道，但**只有侧键**能当全局触发：
       // 这条触发不拦截原事件（native 走 RawInput，见 global_mouse_trigger.h），
       // 右键/中键有全系统级默认语义（上下文菜单 / 自动滚动），绑上去等于两件事
@@ -521,7 +541,7 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
       if (scope == ShortcutScope.globalExternal && !_isMobilePlatform)
         AdaptiveSettingsRow(
           title: t.shortcut_scope_global_external_desktop_note,
-          icon: Icons.info_outline,
+          icon: FushiIcons.info,
           showIcon: true,
         ),
       // 用户请求（Flow Launcher 式用法）：「置顶并打开查词页」热键的另一半——查完
@@ -542,6 +562,28 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
           },
         ),
     ];
+  }
+
+  /// 焦点导航的一键备选键开关（WASD / Shift+方向键）。写穿路径与行内改键相同：
+  /// 注册表 → [saveShortcutRegistry]。
+  Widget _buildFocusPresetRow(
+    FocusNavigationPreset preset, {
+    required String title,
+    String? subtitle,
+  }) {
+    return AdaptiveSettingsSwitchRow(
+      key: ValueKey<String>('shortcut-focus-preset-${preset.name}'),
+      title: title,
+      subtitle: subtitle,
+      icon: FushiIcons.keyboard,
+      showIcon: true,
+      value: isFocusNavigationPresetEnabled(_registry, preset),
+      onChanged: (bool value) async {
+        setFocusNavigationPreset(_registry, preset, enabled: value);
+        await _save();
+        if (mounted) setState(() {});
+      },
+    );
   }
 
   /// 键位图模式下替换分组的行列表：键盘设备画键盘图、手柄设备画手柄图（TODO-942
@@ -608,7 +650,7 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
       // `system`——壳的身份不该冒充真正的系统分类。
       id: SettingsDestinationId.shortcuts,
       title: t.shortcut_settings_title,
-      icon: Icons.keyboard_outlined,
+      icon: FushiIcons.keyboard,
       sections: const <SettingsSection>[],
       // 浏览器自己管滚动：吸顶工具区、宽屏左栏导航、粘性分组标题都要占满视口。
       bodyFillsViewport: true,

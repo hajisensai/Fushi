@@ -133,3 +133,29 @@ class TtsResult {
 - macOS 27.2（Apple 芯片，cpu extra）：uv / Python / 锁定依赖 / 模型下载（经系统代理）/ 删除都通过；**服务启动失败**：官方锁文件钉的 `scipy==1.15.3`（Python 3.10 能用的最后一版）的 `_spropack` 扩展在 macOS 27 的 dyld 下加载失败（`__DATA/__thread_bss has a zero-fill section type, but offset field is not zero`），`irodori_tts` 导入 transformers 时连带失败。这是上游锁文件 × 新 macOS 的不兼容，要修只能偏离官方锁（换 Python 3.11+ 并升级 scipy，需重新解析依赖），待所有者拍板；app 内表现为「服务启动时退出了，请查看日志」。
 - Linux：只做了静态分析（引擎是纯 Dart，Linux 分支由单测的非 Windows 路径覆盖），未真机安装。
 - 部署页 UI 只过了 `flutter analyze`，未在真 app 里人工过一遍。
+
+## 实时朗读多声优 + 提前生成（2026-11-01）
+
+- **多声优**：书在制作台标过说话人、给角色配过声音（选角表 `TtsCast`）时，阅读器实时朗读按句换声音。句子先归「声音槽」（`tts_read_along_voices.dart`）：配了声音的角色各一个槽，其余（旁白、没配声音的角色、没标注的句子）归默认槽，用当前朗读声音；同一份预设只建一个引擎实例、共用一个并发上限。
+- 分句与制作台同口径（`kStudioSentenceMaxLength` = 120），选角表的句首坐标才对得上；并句（`mergeShortTtsSentences`）只在同一声音槽内进行。槽按角色分而不按预设 id 分：播放中换默认声音不会把并在一起的句子读串，角色台词的缓存键不变、直接命中。
+- 角色声音被删 / 引擎不可用 / 配置不完整 → 起会话失败（`TtsStartProblem.castVoiceUnavailable`），提示并打开制作台；不悄悄换成默认声音。
+- 调度器（`TtsSynthesisScheduler.voices`）：每句指定声音，缓存键按该声音的音色身份算，并发按声音分别计（`TtsSchedulerVoice.concurrency`，取 `ttsEffectiveConcurrency`）。
+- **提前生成**：预取窗口取「60 秒 × 倍速」与「当前章剩余 + 下一章」（`ttsPrerenderEnd`）中的大者，上限 1500 句。付费云引擎（Azure / Google）同样会提前生成到下一章末，暂无开关。
+
+### 微软 Edge 实测（2026-11-01，本机网络，`packages/fushi_engine/tool/bench/tts_multivoice_bench.dart`）
+
+素材：《やはり俺の青春ラブコメはまちがっている。》正文前 120 句 / 3276 字；旁白 Nanami（90 句）+ 台词 Keita（30 句）；每轮全新冷缓存。
+
+| 每声音并发 | 总在途 | 耗时 s | 音频 s | 吞吐（×实时） | 单句延迟 p50 / p90 ms | 单次请求失败（均被重试救回） |
+|---|---|---|---|---|---|---|
+| 1 | 2 | 77.0 | 652.7 | 8.48 | 782 / 1055 | 0 |
+| 2（默认） | 4 | 40.3 | 652.7 | 16.19 | 813 / 1068 | 1 |
+| 3 | 6 | 27.5 | 652.7 | 23.71 | 793 / 1093 | 6 |
+
+倍速播放模拟（每声音并发 2，播放器按真实音频时长 ÷ 倍速消费 120 句）：2× / 3× / 4× 下「提前生成」与旧「60 秒窗口」**卡顿均为 0**，首句等待 0.8～1.0 s。Edge 吞吐远大于消耗，两种预取在这里没有差别；提前生成的收益在网络抖动 / 慢引擎时才显出来，未实测。
+
+结论与限制：
+
+- Edge 多声优 4× 倍速可行；并发 3 起单次失败明显增多（限流前兆），默认保持 2。
+- **Edge 免费接口的日语声音只有 Nanami、Keita 可用**（`tts_edge_voice_probe.dart` 实测：Aoi / Daichi / Mayu / Naoki 连接即被关闭 `closed early`，随后 429）。Edge provider 的 SSML 把 pitch / rate 写死为 +0，要用同一底子派生更多角色需另开参数。
+- 只做了引擎层真实网络实测（真实 Edge + 真实调度器 + 模拟播放器）；未在真 app 里用带选角表的书端到端朗读。

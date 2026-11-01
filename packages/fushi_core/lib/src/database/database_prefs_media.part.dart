@@ -31,6 +31,35 @@ mixin _FushiDbPrefsMedia
     };
   }
 
+  /// `ON CONFLICT DO UPDATE` for every local preference write: the value is
+  /// replaced, but `updated_at` only advances when the value **actually
+  /// changes**.
+  ///
+  /// `updated_at` is the cross-device LWW key (BUG-1502, settings sync
+  /// AWp-0BtDDv), so it must mean "when this value was last changed", not "when
+  /// some code path last rewrote it". Profile switches, settings pages that
+  /// persist a whole group via [setPrefs], and migrations all rewrite rows whose
+  /// value did not change; stamping those with `now` made a never-touched
+  /// default on a freshly set-up device look newer than the setting the user
+  /// really tuned on another device, and LWW then overwrote the real one.
+  static final DoUpdate<$PreferencesTable, PreferenceRow>
+  _keepStampIfUnchanged =
+      DoUpdate<$PreferencesTable, PreferenceRow>.withExcluded(
+        ($PreferencesTable old, $PreferencesTable excluded) =>
+            PreferencesCompanion.custom(
+              value: excluded.value,
+              updatedAt: CaseWhenExpression<int>(
+                cases: <CaseWhen<bool, int>>[
+                  CaseWhen<bool, int>(
+                    old.value.equalsExp(excluded.value),
+                    then: old.updatedAt,
+                  ),
+                ],
+                orElse: excluded.updatedAt,
+              ),
+            ),
+      );
+
   Future<void> setPref(String key, String value) async {
     // BUG-906 (A): the business write and the version bump MUST land in one
     // transaction. Previously these were two independent awaits, so two
@@ -42,16 +71,15 @@ mixin _FushiDbPrefsMedia
     // transactional pref write: no lost increments, and a cross-process reader
     // never observes the new value paired with a stale version.
     await transaction(() async {
-      await into(preferences).insertOnConflictUpdate(
+      await into(preferences).insert(
         PreferencesCompanion.insert(
           key: key,
           value: value,
-          // BUG-1502: every local write stamps `now`. Without it the upsert
-          // would leave `updated_at` at whatever it was (DO UPDATE SET only
-          // touches columns present in the companion), so a locally renamed
-          // book would keep an ancient stamp and lose the cross-device LWW.
+          // BUG-1502: a write that changes the value stamps `now`; one that
+          // rewrites the same value keeps the old stamp ([_keepStampIfUnchanged]).
           updatedAt: Value<int>(DateTime.now().millisecondsSinceEpoch),
         ),
+        onConflict: _keepStampIfUnchanged,
       );
       // Bump the cross-process change signal for every real pref write. Skip
       // the version key itself (a direct write of it — e.g. a sync/backup
@@ -86,12 +114,14 @@ mixin _FushiDbPrefsMedia
       // written atomically, so its rows must not disagree on when that was.
       final int now = DateTime.now().millisecondsSinceEpoch;
       for (final MapEntry<String, String> entry in entries.entries) {
-        await into(preferences).insertOnConflictUpdate(
+        await into(preferences).insert(
           PreferencesCompanion.insert(
             key: entry.key,
             value: entry.value,
             updatedAt: Value<int>(now),
           ),
+          // Keys of the group whose value did not change keep their stamp.
+          onConflict: _keepStampIfUnchanged,
         );
       }
       if (entries.keys.any(
@@ -117,16 +147,19 @@ mixin _FushiDbPrefsMedia
   }) async {
     return transaction(() async {
       final int updated =
-          await (update(
-            preferences,
-          )..where((t) => t.key.equals(key) & t.value.equals(expectedValue))).write(
-            PreferencesCompanion(
-              value: Value<String>(newValue),
-              // BUG-1502: same rule as [setPref] — a successful local write is a
-              // write, and must advance the LWW stamp.
-              updatedAt: Value<int>(DateTime.now().millisecondsSinceEpoch),
-            ),
-          );
+          await (update(preferences)..where(
+                (t) => t.key.equals(key) & t.value.equals(expectedValue),
+              ))
+              .write(
+                PreferencesCompanion(
+                  value: Value<String>(newValue),
+                  // BUG-1502: same rule as [setPref] — a write that changes the
+                  // value advances the LWW stamp; a same-value write keeps it.
+                  updatedAt: newValue == expectedValue
+                      ? const Value<int>.absent()
+                      : Value<int>(DateTime.now().millisecondsSinceEpoch),
+                ),
+              );
       if (updated != 1) return false;
       if (key != FushiDatabase.prefsVersionKey) {
         await _bumpPrefsVersion();

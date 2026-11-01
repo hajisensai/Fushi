@@ -9,6 +9,7 @@ import 'package:fushi/src/pages/implementations/font_preview/font_file_metadata.
 import 'package:fushi/src/reader/font_catalog.dart';
 import 'package:fushi/src/reader/highlight_stroke_style.dart';
 import 'package:fushi/src/reader/page_turn_animation.dart';
+import 'package:fushi/src/reader/reader_tap_zones.dart';
 import 'package:fushi/src/reader/reader_chrome_floating.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:path/path.dart' as p;
@@ -767,6 +768,18 @@ class ReaderSettings {
       _get<bool>(pageTurnFollowDragKey, defaultPageTurnFollowDrag);
   Future<void> setPageTurnFollowDrag(bool v) =>
       _set<bool>(pageTurnFollowDragKey, v);
+
+  // ── 点击翻页区域（indZkg2A0I）：三种 view mode 共用，语义见 reader_tap_zones.dart。
+  static const String tapZoneLayoutKey = 'tap_zone_layout';
+
+  /// 出厂默认关闭：保持「点空白只管工具栏」的旧行为。
+  static const ReaderTapZoneLayout defaultTapZoneLayout =
+      ReaderTapZoneLayout.disabled;
+
+  ReaderTapZoneLayout get tapZoneLayout =>
+      ReaderTapZoneLayout.fromKey(_cache[tapZoneLayoutKey]?.toString());
+  Future<void> setTapZoneLayout(ReaderTapZoneLayout v) =>
+      _set<String>(tapZoneLayoutKey, v.key);
 
   bool get highlightOnTap => _get<bool>('highlight_on_tap', true);
   Future<void> toggleHighlightOnTap() =>

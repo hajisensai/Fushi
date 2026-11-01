@@ -208,9 +208,10 @@ void main() {
         reason: 'run from the fushi/ package root',
       );
       final String src = f.readAsStringSync();
-      // 白名单（7 处，全部有自己的超时/长传输语义）：
-      // - downloadContentFile 的 open 回调 1 处（ResumableDownloader 的
-      //   firstByteTimeout/bodyTimeout 负责停顿封顶）；
+      // 白名单（6 处，全部有自己的超时/长传输语义）：
+      // - （downloadContentFile 的 open 回调已搬到 interconnect_package_download.dart
+      //   的 openInterconnectPackageGet——Sn4fYseBt4 后台 isolate 下载与主 isolate 共用，
+      //   由 ResumableDownloader 的 firstByteTimeout/bodyTimeout 负责停顿封顶）；
       // - 流式上传 6 处：putRemoteDictionary / putRemoteBook /
       //   putRemoteLocalAudio / putRemoteAudiobook / putRemoteVideo /
       //   _sendVideoSubtitle（putRemoteVideoSubtitle / AsDefault 共用；body 发送时长与文件大小成正比、host 侧收尾
@@ -220,7 +221,7 @@ void main() {
       final int bareCloses = 'await req.close()'.allMatches(src).length;
       expect(
         bareCloses,
-        7,
+        6,
         reason:
             '发现未封顶的 req.close() 裸调用（或白名单计数过期）——'
             '小型端点必须用 _sendBounded 包裹（BUG-1567）',

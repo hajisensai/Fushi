@@ -4,6 +4,7 @@ import 'package:fushi_dictionary/fushi_dictionary.dart' show FushiRubySpan;
 import 'package:fushi/models.dart';
 import 'package:fushi/src/floating_ball/screen_ocr_card_image.dart';
 import 'package:fushi/src/lookup/latin_word_lookup.dart';
+import 'package:fushi/src/lookup/source_line_sentence.dart';
 import 'package:fushi/src/pages/implementations/dictionary_page_mixin.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
@@ -15,10 +16,16 @@ class FloatingLyricLookupRequest {
     required this.index,
     this.selectionRect,
     this.cardImage,
+    this.sentence = '',
   });
 
   final String text;
   final int index;
+
+  /// 这次查词出自的那一句原文，制卡时补进基础层的 `{sentence}`（反馈 1Mwaro8UTC）。
+  /// 截屏识字 / 拍照查词给被点字所在的那一句，悬浮字幕点字给整行；手动输入 / 剪贴板
+  /// 查词没有出处，为空（不补）。
+  final String sentence;
 
   /// 截屏识字 / 拍照查词这次点字的卡图来源（反馈 Gz7z6Y6Mbr）；悬浮字幕点词为 null。
   final ScreenOcrCardImage? cardImage;
@@ -55,6 +62,7 @@ class FloatingLyricLookupNotifier extends ChangeNotifier {
     int index, {
     Rect? selectionRect,
     ScreenOcrCardImage? cardImage,
+    String sentence = '',
   }) {
     if (text.trim().isEmpty) return;
     _pending = FloatingLyricLookupRequest(
@@ -62,6 +70,7 @@ class FloatingLyricLookupNotifier extends ChangeNotifier {
       index: index,
       selectionRect: selectionRect,
       cardImage: cardImage,
+      sentence: sentence.trim(),
     );
     notifyListeners();
   }
@@ -141,6 +150,26 @@ class _FloatingLyricLookupHostState
   @override
   ScreenOcrCardImage? get miningCardImage => _cardImage;
 
+  /// 最近一次顶层查词出自的那一句原文与当时的查询串（反馈 1Mwaro8UTC）。基础层制卡
+  /// 时据此补 `{sentence}`，判据见 [withSourceLineSentence]。
+  String _sourceSentence = '';
+  String _sourceQuery = '';
+
+  @override
+  Map<String, String> miningFieldsForLayer(
+    int index,
+    DictionaryPopupController controller,
+    Map<String, String> fields,
+  ) => withSourceLineSentence(
+    fields,
+    layerIndex: index,
+    baseTerm: controller.entries.isEmpty
+        ? ''
+        : controller.entries.first.searchTerm,
+    sourceQuery: _sourceQuery,
+    sentence: _sourceSentence,
+  );
+
   @override
   ThemeData get mixinTheme => Theme.of(context);
 
@@ -187,6 +216,8 @@ class _FloatingLyricLookupHostState
     _ensureWarmPopup();
     final String word = lookupWordAtIndex(req.text, req.index).trim();
     final String searchTerm = word.isNotEmpty ? word : trimmed;
+    _sourceSentence = req.sentence;
+    _sourceQuery = searchTerm;
     // 无 WebView 选区可定位，用屏幕中心 1×1 选区兜底（与 reader 的
     // _lookupFromFloatingLyric / 歌词模式同款）；底部固定模式时 mixin 自走 dock。
     final Size screen = MediaQuery.sizeOf(context);

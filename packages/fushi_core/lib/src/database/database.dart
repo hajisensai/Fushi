@@ -845,6 +845,7 @@ void _requireOneVideoMetadataOwner({
     VideoEpisodeBindingOverrides,
     PendingMineQueue,
     VideoSubtitleGlossaries,
+    VideoSubtitleTextOverrides,
     MediaPrivacyFlags,
     LibraryOrganizeRuns,
     LibraryOrganizeChanges,
@@ -917,7 +918,7 @@ class FushiDatabase extends _$FushiDatabase
   final bool _isMainProcess;
 
   @override
-  int get schemaVersion => 142;
+  int get schemaVersion => 143;
 
   /// v125–v128 四步的产物（全部幂等）：SRS 写路径索引、
   /// `collection_member_tombstones.published_at`、`bookmarks.char_offset` /
@@ -2836,6 +2837,13 @@ class FushiDatabase extends _$FushiDatabase
               await m.addColumn(syncDeletionTombstones, column);
             }
           }
+        }
+      }
+      if (from < 143) {
+        // v143：video_subtitle_text_overrides——用户在字幕列表里手改的单条字幕文本
+        // （反馈 gleDreKAvo / dpAsMkUjKT）。纯新增、无回填；幂等守卫同 v137。
+        if (!await _tableExists('video_subtitle_text_overrides')) {
+          await m.createTable(videoSubtitleTextOverrides);
         }
       }
     },

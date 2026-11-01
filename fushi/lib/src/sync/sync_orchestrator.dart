@@ -1,4 +1,7 @@
+import 'dart:convert';
 import 'dart:io';
+
+import 'package:crypto/crypto.dart' show sha1;
 import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
 import 'package:fushi/src/anki/pending_mining/pending_mine_relay.dart';
 import 'package:fushi/src/epub/book_css_repository.dart';
@@ -41,6 +44,7 @@ import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_remote_listing.dart';
 import 'package:fushi/src/sync/sync_manager.dart';
+import 'package:fushi/src/sync/settings_sync.dart';
 import 'package:fushi/src/sync/sync_progress.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/sync_state_apply_lock.dart';
@@ -64,6 +68,7 @@ part 'sync_orchestrator/videos.part.dart';
 part 'sync_orchestrator/audiobooks.part.dart';
 part 'sync_orchestrator/dictionaries.part.dart';
 part 'sync_orchestrator/local_audio.part.dart';
+part 'sync_orchestrator/settings.part.dart';
 
 /// Reserved top-level folder (under the backend root) that holds dictionary
 /// packages. It lives alongside the per-book folders, so every place that
@@ -311,6 +316,10 @@ class SyncRunReport {
   /// even though no media row was imported.
   int serviceConfigsImported = 0;
 
+  /// 本轮从别的设备采纳、写进本机的可移植设置项数（反馈 AWp-0BtDDv，「同步设置」）。
+  /// 与 [serviceConfigsImported] 同理：没有媒体行变化，但 AppModel 的偏好缓存要刷新。
+  int settingsImported = 0;
+
   /// 本机（落地设备）经跨设备中转新收到、待交给 Anki 的卡数。
   int pendingMinesReceived = 0;
 
@@ -410,7 +419,8 @@ class SyncRunReport {
       collectionsUpdated > 0 ||
       tagsUpdated > 0 ||
       videoMetadataUpdated > 0 ||
-      serviceConfigsImported > 0;
+      serviceConfigsImported > 0 ||
+      settingsImported > 0;
 
   /// 合并另一条通道的报告到本报告（option B 双通道：云备份 + 互联并行各跑一轮后，
   /// 汇总成单一报告返回）。累加所有计数、拼接错误与冲突列表。
@@ -432,6 +442,7 @@ class SyncRunReport {
     mediaLinksUpdated += other.mediaLinksUpdated;
     videoMetadataUpdated += other.videoMetadataUpdated;
     serviceConfigsImported += other.serviceConfigsImported;
+    settingsImported += other.settingsImported;
     errors.addAll(other.errors);
     for (final SyncAuthFailure f in other.authFailures) {
       _addAuthFailure(f);
@@ -577,6 +588,7 @@ class SyncOrchestrator {
     required this.syncStats,
     this.syncFavorites = true,
     this.syncWebHistory = false,
+    this.syncSettings = false,
     required this.syncAudioBookPosition,
     required this.syncContent,
     required this.syncMangaContent,
@@ -630,6 +642,10 @@ class SyncOrchestrator {
   /// 浏览器历史是否参与聚合同步（设备级「同步浏览历史」，两条通道共用，见
   /// `kSyncWebHistoryPrefKey`）。默认 false：历史不跟收藏走，省略该参数即不外流。
   final bool syncWebHistory;
+
+  /// 可移植偏好设置是否参与本轮同步（设备级「同步设置」，两条通道共用，见
+  /// `settings_sync.dart`）。默认 false：省略该参数即不碰设置。
+  final bool syncSettings;
   final bool syncAudioBookPosition;
 
   /// 「上传书籍文件」：EPUB 等非漫画格式的书文件是否上传（漫画看 [syncMangaContent]）。
@@ -706,6 +722,22 @@ class SyncOrchestrator {
   File _tmpFile(String suffix) {
     _tmpCounter++;
     return File(p.join(_tempDir.path, 'fushi_sync_$_tmpCounter$suffix'));
+  }
+
+  /// 互联 live 拉取用的**稳定**临时文件：同一 ([kind], [name]) 每一轮都落在同一路径。
+  ///
+  /// Sn4fYseBt4：下载器的断点（`<dest>.part` + `.part.etag` 侧车）挂在目标路径上，
+  /// 而 [_tmpFile] 每次给新序号——上一轮断在 90% 的本地音频库，下一轮换了个名字，
+  /// 断点永远对不上号，只能从 0 重来。换成按内容身份定名后，下一轮同一项直接带
+  /// `If-Range` 续上；host 那份字节变了（ETag 不符）时 host 回 200，下载器丢弃旧
+  /// 断点重下，不会拼错。成功后 finally 照旧删掉成品；失败只留 `.part` 供续传。
+  @visibleForTesting
+  File resumableTmpFile(String kind, String name, String suffix) {
+    final String id = sha1
+        .convert(utf8.encode('$kind\u0000$name'))
+        .toString()
+        .substring(0, 24);
+    return File(p.join(_tempDir.path, 'fushi_sync_pull_$id$suffix'));
   }
 
   /// Runs the full sweep. File-content switches are upload-only: remote-only
@@ -942,6 +974,13 @@ class SyncOrchestrator {
     }
     mark('aggregate');
 
+    // 可移植设置（反馈 AWp-0BtDDv）：云与互联同走资产层 `__settings__/` 按设备分文件。
+    if (syncSettings && deviceId.isNotEmpty) {
+      _emitPhaseStart(SyncPhase.settings);
+      await _syncPortableSettings(report);
+      mark('settings');
+    }
+
     // 合集双向同步（多端库联合视图 §2.3）：
     // - 云后端走 sync 根下 `__collections__/collections.json` 共享清单的读-合并-写；
     // - 互联（InterconnectSyncBackend）走 host API `/api/library/collections` 端点
@@ -1020,6 +1059,11 @@ class SyncOrchestrator {
   /// 整轮超过这么久才把分阶段耗时写进诊断日志（快的同步每分钟都可能跑一次，
   /// 不该刷屏；慢到用户会来反馈的那种一定留下记录）。
   static const Duration slowRunDiagnosticThreshold = Duration(seconds: 30);
+
+  /// 测试入口：直接调用 [_syncPortableSettings]（「同步设置」阶段）。
+  @visibleForTesting
+  Future<void> syncPortableSettingsForTest(SyncRunReport report) =>
+      _syncPortableSettings(report);
 
   /// 测试入口：直接调用 [_syncAggregateLive]（private 方法对测试文件不可见）。
   @visibleForTesting

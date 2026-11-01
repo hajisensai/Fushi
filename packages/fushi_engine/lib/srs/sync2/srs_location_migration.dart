@@ -387,8 +387,10 @@ Future<SrsLocationPrepared> srsPrepareLocation({
   Future<void> Function()? removeEmptyDirs,
   SrsLocationMigrationMemo? memo,
   bool archive = false,
+  SrsSyncStepCallback? onStep,
 }) async {
   final SrsLocationPrepared out = SrsLocationPrepared();
+  onStep?.call('migrate:meta');
   final Object? cur = await _readMeta(current);
   if (identical(cur, _kBadMeta)) {
     out.error = kSrsSync2MetaUnavailable;
@@ -415,6 +417,7 @@ Future<SrsLocationPrepared> srsPrepareLocation({
     archive: archive,
     v3Meta: v3Meta,
     out: out,
+    onStep: onStep,
   );
   if (v3Meta == null) {
     await m.run();
@@ -599,6 +602,7 @@ class _Migration {
     required this.archive,
     required this.v3Meta,
     required this.out,
+    this.onStep,
   });
 
   final SrsSync2Host host;
@@ -617,6 +621,11 @@ class _Migration {
   final Map<String, Object?>? v3Meta;
   final SrsLocationPrepared out;
 
+  /// 诊断用的细分步骤（见 [SrsSyncStepCallback]），一律带 `migrate:` 前缀。
+  final SrsSyncStepCallback? onStep;
+
+  void _step(String step) => onStep?.call('migrate:$step');
+
   bool get ready => v3Meta != null;
 
   Future<Object?> _identity() async => (await host.sync2Command(
@@ -627,6 +636,7 @@ class _Migration {
 
   Future<void> run() async {
     // 1. 围栏。
+    _step('fence');
     final ({_V1Kind kind, Map<String, Object?> meta}) old = await _readV1(v1);
     final Map<String, Object?> fence;
     switch (old.kind) {
@@ -676,6 +686,7 @@ class _Migration {
     }
 
     // 旧根上还有什么（只列目录）。
+    _step('list');
     final Map<String, List<String>> writerMedia = <String, List<String>>{};
     final SrsV1Writers? ws = writers;
     if (ws != null) {
@@ -703,6 +714,7 @@ class _Migration {
       _markSwept();
       return;
     }
+    _step('listed files=${files.length} writers=${writerMedia.length}');
     final String listing = _fingerprint(files, writerMedia);
     if (ready && await _markerOf(v1) == listing) {
       // 上次完整处理之后旧根没变（归档位置 / 解不开留下的）：不拉段、不封、不重写。
@@ -752,6 +764,7 @@ class _Migration {
         progressId: null,
         keyHex: readKey,
         report: pulled,
+        onStep: onStep == null ? null : (String s) => _step('pull:$s'),
       );
       out.errors.addAll(pulled.errors);
       if (pulled.missing > 0) {
@@ -798,17 +811,28 @@ class _Migration {
         untouched.add(f);
       }
     }
+    int copiedFiles = 0;
+    _step('copy 0/${deviceFiles.length}');
     await srsRunPooled(deviceFiles, kSrsSync2Concurrency, (String path) async {
       final Uint8List? bytes = await v1.get(path);
-      if (bytes == null) return; // 别的设备搬完删了：它核对过新副本。
-      if (await _ensureBytes(path, bytes)) {
-        doomed.add(path);
-      } else {
-        out.skipped.add(path);
+      if (bytes != null) {
+        // bytes == null：别的设备搬完删了，它核对过新副本。
+        if (await _ensureBytes(path, bytes)) {
+          doomed.add(path);
+        } else {
+          out.skipped.add(path);
+        }
+      }
+      if (++copiedFiles % 25 == 0 || copiedFiles == deviceFiles.length) {
+        _step('copy $copiedFiles/${deviceFiles.length}');
       }
     });
 
     // 4. 媒体。
+    _step(
+      'media flat=${plainFlat.length} objects=${plainObjects.length} '
+      'sealedDirs=${sealedDirs.length} writers=${writerMedia.length}',
+    );
     await mover.plainFlat(plainFlat);
     await mover.plainObjects(plainObjects, doomed);
     for (final MapEntry<String, List<String>> d in sealedDirs.entries) {
@@ -817,6 +841,7 @@ class _Migration {
     for (final MapEntry<String, List<String>> w in writerMedia.entries) {
       await mover.writer(ws!, w.key, w.value);
     }
+    _step('bind');
     await mover.bind(recordPresence ? locationId : null);
 
     // 5. 新根的 meta：段与媒体都到位之后才写，没有它的新根别的设备不会当成可用（它们接着迁移）。
@@ -830,6 +855,7 @@ class _Migration {
     }
 
     // 6. 删旧文件（归档位置一个不删）：核对过的立刻删；按名字存的等绑定发布（srsFinishLocationMigration）。
+    _step('delete ${doomed.length}');
     if (!archive) {
       await srsRunPooled(doomed, kSrsSync2Concurrency, (String path) async {
         if (await _deleteOld(v1, path)) {

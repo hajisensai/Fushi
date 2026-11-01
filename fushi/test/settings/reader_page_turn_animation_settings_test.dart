@@ -203,7 +203,9 @@ void main() {
     });
   });
 
-  testWidgets('设置项：存在于翻页与手势分组末尾，非翻页模式置灰并说明', (WidgetTester tester) async {
+  testWidgets('设置项：存在于翻页与手势分组（点击翻页区域之前），非翻页模式置灰并说明', (
+    WidgetTester tester,
+  ) async {
     late SettingsContext settingsContext;
     late List<SettingsItem> items;
     await tester.pumpWidget(
@@ -234,16 +236,20 @@ void main() {
     );
 
     final List<String> ids = items.map((SettingsItem i) => i.id).toList();
-    expect(ids.sublist(ids.length - 3), <String>[
+    // 翻页动画三项连排；其后是点击翻页区域（indZkg2A0I，三种模式都生效，不置灰）。
+    final int first = ids.indexOf('reading_controls.page_turn_animation');
+    expect(first, greaterThanOrEqualTo(0));
+    expect(ids.sublist(first), <String>[
       'reading_controls.page_turn_animation',
       'reading_controls.page_turn_animation_speed',
       'reading_controls.page_turn_follow_drag',
+      'reading_controls.tap_zone_layout',
     ]);
     final SettingsSegmentedItem<Object> effect =
-        items[ids.length - 3] as SettingsSegmentedItem<Object>;
+        items[first] as SettingsSegmentedItem<Object>;
     final SettingsSegmentedItem<Object> speed =
-        items[ids.length - 2] as SettingsSegmentedItem<Object>;
-    final SettingsSwitchItem follow = items.last as SettingsSwitchItem;
+        items[first + 1] as SettingsSegmentedItem<Object>;
+    final SettingsSwitchItem follow = items[first + 2] as SettingsSwitchItem;
     expect(effect.options.map((o) => o.value), PageTurnAnimation.values);
     expect(effect.defaultValue, PageTurnAnimation.fade);
     expect(speed.defaultValue, PageTurnAnimationSpeed.normal);

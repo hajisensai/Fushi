@@ -55,6 +55,8 @@ class MangaOcrSettingsSection extends ConsumerStatefulWidget {
     this.enginePreferenceSetter,
     this.parallelTasksGetter,
     this.parallelTasksSetter,
+    this.ignoreFuriganaGetter,
+    this.ignoreFuriganaSetter,
     this.localModelGetter,
     this.localModelSetter,
     this.lensLanguageGetter,
@@ -97,6 +99,10 @@ class MangaOcrSettingsSection extends ConsumerStatefulWidget {
   /// 桌面跨书任务并发：0 自动，1～4 手动。
   final int Function()? parallelTasksGetter;
   final Future<void> Function(int value)? parallelTasksSetter;
+
+  /// 「OCR 忽略振假名」（本机 Manga CTC 识别前裁掉正文旁的注音带）；宿主不接时不显示。
+  final bool Function()? ignoreFuriganaGetter;
+  final Future<void> Function(bool value)? ignoreFuriganaSetter;
 
   final String Function()? localModelGetter;
   final Future<void> Function(String value)? localModelSetter;
@@ -148,6 +154,7 @@ class _MangaOcrSettingsSectionState
   late final TextEditingController _pathCtrl;
   late MangaOcrEnginePreference _enginePreference;
   late int _parallelTasks;
+  late bool _ignoreFurigana;
 
   /// 本机手动档上限（逻辑核 / 每任务线程数，见 `mangaOcrMaxParallelTasks`）。
   late int _maxParallelTasks;
@@ -225,6 +232,7 @@ class _MangaOcrSettingsSectionState
     _localModel = MangaOcrLocalModel.forPlatform(
       widget.localModelGetter?.call() ?? kDefaultMangaOcrLocalModel.key,
     );
+    _ignoreFurigana = widget.ignoreFuriganaGetter?.call() ?? false;
     _downloads = ref.read(mangaOcrModelDownloadsProvider);
     _wasDownloading = _downloading;
     _downloads.addListener(_onDownloadsChanged);
@@ -669,6 +677,7 @@ class _MangaOcrSettingsSectionState
       children: <Widget>[
         _buildEngineRow(theme),
         if (widget.lensLanguageGetter != null) _buildPanelLensLanguage(),
+        if (widget.ignoreFuriganaGetter != null) _buildIgnoreFurigana(),
       ],
     );
     final Widget performance = MangaPanelGroup(
@@ -1154,6 +1163,7 @@ class _MangaOcrSettingsSectionState
       if (isDesktopPlatform && widget.parallelTasksGetter != null)
         _buildPanelParallelTasks(),
       if (widget.lensLanguageGetter != null) _buildPanelLensLanguage(),
+      if (widget.ignoreFuriganaGetter != null) _buildIgnoreFurigana(),
       if (widget.aiModeGetter != null) _buildPanelAiMode(theme),
     ];
     return Column(
@@ -1214,6 +1224,24 @@ class _MangaOcrSettingsSectionState
                 unawaited(_selectEngine(value));
               },
       ),
+    );
+  }
+
+  /// 「OCR 忽略振假名」开关（反馈 ZBJTgLuPIb）：只裁来源自带的注音，不生成读音。
+  Widget _buildIgnoreFurigana() {
+    return AdaptiveSettingsSwitchRow(
+      key: const ValueKey<String>('manga_ocr_ignore_furigana'),
+      title: t.manga_ocr_ignore_furigana,
+      subtitle: t.manga_ocr_ignore_furigana_desc,
+      icon: FushiIcons.ocr,
+      showIcon: true,
+      value: _ignoreFurigana,
+      onChanged: widget.ignoreFuriganaSetter == null
+          ? null
+          : (bool value) async {
+              setState(() => _ignoreFurigana = value);
+              await widget.ignoreFuriganaSetter!(value);
+            },
     );
   }
 

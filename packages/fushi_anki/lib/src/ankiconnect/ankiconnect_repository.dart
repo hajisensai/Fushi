@@ -472,6 +472,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
         source: context.source,
         includeHibiki: settings.tagIncludeHibiki,
         includeCategory: settings.tagIncludeCategory,
+        nestTitleUnderCategory: settings.tagNestTitleUnderCategory,
         // TODO-681 / BUG-393：调用方按「自动添加书名到标签」开关注入已清洗书名/番名标签
         // （书籍/视频同语义）；关闭或无标题时为 null，buildNoteTags 不追加。
         titleTag: context.bookTitleTag,
@@ -803,6 +804,7 @@ class AnkiConnectRepository extends BaseAnkiRepository {
         source: context.source,
         includeHibiki: settings.tagIncludeHibiki,
         includeCategory: settings.tagIncludeCategory,
+        nestTitleUnderCategory: settings.tagNestTitleUnderCategory,
         titleTag: context.bookTitleTag,
         collectionTag: context.collectionTag,
         charPositionTag: context.charPositionTag,
@@ -1114,6 +1116,19 @@ class AnkiConnectRepository extends BaseAnkiRepository {
   // 真正持有窗口的是 venv 里的 pythonw.exe，按名字找必然落空、整套让渡空转。
   @override
   bool get canOpenMinedNote => true;
+
+  @override
+  Future<bool> deleteMinedNote(int noteId) async {
+    final AnkiConnectService service = await _getService();
+    // `deleteNotes` 不回「原本在不在」：先问一次，删一张已经不在的 note 报 false，
+    // 界面据此说「卡已经不在了」而不是「已删除」。
+    if (await service.notesInfo(noteId) == null) return false;
+    await service.deleteNotes(<int>[noteId]);
+    return true;
+  }
+
+  @override
+  bool get canDeleteMinedNotes => true;
 
   @override
   Future<bool> openNoteInAnki(int noteId) async {

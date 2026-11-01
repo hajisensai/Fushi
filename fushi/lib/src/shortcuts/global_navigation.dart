@@ -10,6 +10,7 @@ import 'package:fushi/src/lookup/lookup_overlay_navigator.dart';
 import 'package:fushi/src/utils/window_caption_channel.dart';
 
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
+import 'package:fushi/src/shortcuts/focus_navigation_shortcuts.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/mouse_binding_dispatch.dart';
 import 'package:fushi/src/shortcuts/page_scroll_shortcuts.dart';
@@ -19,7 +20,6 @@ import 'package:fushi/src/shortcuts/window_fullscreen_hosts.dart';
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show
-        arrowFocusMoveDirection,
         arrowKeyClaimedByFocus,
         arrowTraversalDirection,
         directionalFocusOrigin,
@@ -108,13 +108,16 @@ bool _topRouteIsPopup(GlobalKey<NavigatorState> navigatorKey) {
 ///    BUG-1266：门控范围已收窄到**只剩方向键移焦这一件事**——同一个 `if` 里原本还
 ///    压着手柄按钮分发与注册表 globalBack，它们与「实验性焦点导航」无关，现已移到
 ///    门控之外常驻生效。
+///
+///    2026-11（反馈 bjPjRHsaUy）：「往哪个方向」改由注册表的焦点导航动作决定
+///    （[_handleGlobalFocusNavigation] 解析后传入 [dir]），本函数只保留裸方向键的
+///    既有判据，不再自己读硬编码的方向表。
 KeyEventResult _handleGlobalArrowFocus(
   GlobalKey<NavigatorState> navigatorKey,
   FushiShortcutRegistry? registry,
   KeyEvent event,
+  TraversalDirection dir,
 ) {
-  final TraversalDirection? dir = arrowFocusMoveDirection(event);
-  if (dir == null) return KeyEventResult.ignored;
   final EditableText? editable = focusedEditableText();
 
   if (editable == null) {
@@ -125,9 +128,9 @@ KeyEventResult _handleGlobalArrowFocus(
     // page-turn / char cursor, video seek, raw page sink); those surfaces
     // consume the arrow in their own nearer handler first, and a container sink
     // that wraps other focusables is never a candidate.
-    // [arrowFocusMoveDirection] already returns non-null only for a KeyDown or
-    // KeyRepeat (never a KeyUp), so both edges flow through the
-    // single shared move below — press and repeat can never diverge.
+    // [_handleGlobalFocusNavigation] only calls in for a KeyDown or KeyRepeat
+    // (never a KeyUp), so both edges flow through the single shared move
+    // below — press and repeat can never diverge.
     //
     // Resolve the controller from the FOCUSED context (the FushiFocusRoot sits
     // below the Navigator, so navigatorKey.currentContext is ABOVE the scope and
@@ -202,6 +205,121 @@ bool _caretKeepsArrow(EditableText editable, TraversalDirection dir) {
   }
   final int? maxLines = editable.maxLines;
   return maxLines == null || maxLines > 1; // null = unbounded = multi-line
+}
+
+/// 焦点导航（[ShortcutScope.gamepad]：上 / 下 / 左 / 右移焦 + 确认）的键盘派发，
+/// 反馈 bjPjRHsaUy。
+///
+/// **优先级**：本处理器挂在 app 根，键事件从焦点节点向上冒泡，页面自己的处理器
+/// （阅读器 / 有声书 / 视频 / 漫画按各自 scope 解析）先拿到——页面 scope 绑了这个键
+/// 就是页面动作（翻页 / seek / 上一句下一句），页面没占用的键才落到这里。所以默认
+/// 的裸 ←/→ 在媒体页仍是句子导航 / seek（行为不变），用户给焦点导航加一枚页面没
+/// 占用的备选键（Shift+←/→、A/D …）后，在这些页面里也能左右移焦到两侧按钮。
+/// 「返回上一级」（universal）也排在它前面（见 wrapper 的调用顺序）。
+///
+/// 三类键，三条路径：
+///   1. **裸方向键**（[isBareArrowKey]）——内建契约原样保留：实验性焦点导航关闭时
+///      交给框架 `DirectionalFocusIntent`（ignored）；开启时走既有的
+///      [_handleGlobalArrowFocus]（受管控件门 + 单行框逃逸 + 尽头滚页）。注册表只
+///      决定方向；裸方向键没绑到任何焦点动作时按物理方向（与手柄 dpad 未绑定时的
+///      回退同口径），保证「改键改坏了」也不会让方向键整个失灵。
+///   2. **用户另加的移焦键**（WASD / Shift+方向键 / 任意组合）——文本框持焦时一律
+///      放行（WASD 要能打字、Shift+方向键要能扩选）；否则用与手柄 dpad 同一个引擎
+///      [gamepadMoveFocusInDirection] 移焦并消费。不受实验开关门控：这是用户显式绑
+///      的键，与手柄 dpad 移焦同档。
+///   3. **确认**（[ShortcutAction.focusActivate]）——只接管用户另加的确认键：框架
+///      本来就会把裸 Enter / 手柄 A 映射成 `ActivateIntent`（[isFrameworkActivateKey]），
+///      这里再激活一次就是双重确认。文本框持焦时放行。
+KeyEventResult _handleGlobalFocusNavigation(
+  GlobalKey<NavigatorState> navigatorKey,
+  FushiShortcutRegistry? registry,
+  KeyEvent event, {
+  required bool focusNavigationEnabled,
+}) {
+  if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+    return KeyEventResult.ignored;
+  }
+  final Set<ModifierKey> modifiers = _pressedModifiers();
+  final EditableText? editable = focusedEditableText();
+  final ShortcutAction? action = _resolveFocusNavigationAction(
+    registry,
+    event,
+    modifiers,
+    imeFallbackPhysicalKey: editable == null ? event.physicalKey : null,
+  );
+  final bool bareArrow = isBareArrowKey(event.logicalKey, modifiers);
+  TraversalDirection? dir = focusNavigationDirectionOf(action);
+  if (bareArrow && action == null) {
+    dir = arrowTraversalDirection(event.logicalKey);
+  }
+
+  if (dir == null) {
+    if (action != ShortcutAction.focusActivate) return KeyEventResult.ignored;
+    if (event is! KeyDownEvent ||
+        editable != null ||
+        isFrameworkActivateKey(event.logicalKey, modifiers)) {
+      return KeyEventResult.ignored;
+    }
+    return _activatePrimaryFocus();
+  }
+
+  if (bareArrow) {
+    if (!focusNavigationEnabled) return KeyEventResult.ignored;
+    return _handleGlobalArrowFocus(navigatorKey, registry, event, dir);
+  }
+
+  if (editable != null) return KeyEventResult.ignored;
+  final BuildContext? context =
+      FocusManager.instance.primaryFocus?.context ??
+      navigatorKey.currentContext;
+  if (context == null) return KeyEventResult.ignored;
+  // 焦点环跟随「硬件导航」点亮：GamepadService 的键盘监听只认方向键 / Tab
+  // （`gamepadKeyDrivesFocusRing`，字母键不该点亮，BUG-398），而这枚键恰恰是被
+  // 绑成了移焦——只有这里知道，所以由这里点亮，与手柄 dpad 移焦同一策略。
+  FocusManager.instance.highlightStrategy =
+      FocusHighlightStrategy.alwaysTraditional;
+  gamepadMoveFocusInDirection(context, dir);
+  return KeyEventResult.handled;
+}
+
+/// 按焦点导航 scope 解析一次键事件：先按键盘绑定，再按手柄键（Android 的手柄按钮
+/// 以 `gameButton*` 键事件到达这里，桌面轮询走 `GamepadService`）。dpad 在 Android
+/// 上是方向键事件，已由键盘那一侧覆盖，故手柄侧只看非 dpad 按钮。
+ShortcutAction? _resolveFocusNavigationAction(
+  FushiShortcutRegistry? registry,
+  KeyEvent event,
+  Set<ModifierKey> modifiers, {
+  required PhysicalKeyboardKey? imeFallbackPhysicalKey,
+}) {
+  if (registry == null) return null;
+  final ShortcutAction? keyboard = registry.resolveKeyboard(
+    event.logicalKey,
+    modifiers: modifiers,
+    scope: ShortcutScope.gamepad,
+    physicalKey: imeFallbackPhysicalKey,
+  );
+  if (keyboard != null) return keyboard;
+  final GamepadButton? button = GamepadButton.fromKeyEvent(event);
+  if (button == null || button.isDpad) return null;
+  return registry.resolveGamepad(button, scope: ShortcutScope.gamepad);
+}
+
+/// 对当前主焦点调用 `ActivateIntent`（与框架 Enter / 手柄 A 同一个 intent，同一套
+/// 「找最近的 Action、启用才执行」语义）。焦点上没有启用的激活动作时返回 ignored，
+/// 键继续冒泡，不做「绑了键却吞掉」的黑洞。
+KeyEventResult _activatePrimaryFocus() {
+  final BuildContext? context = FocusManager.instance.primaryFocus?.context;
+  if (context == null) return KeyEventResult.ignored;
+  const ActivateIntent intent = ActivateIntent();
+  final Action<ActivateIntent>? action = Actions.maybeFind<ActivateIntent>(
+    context,
+    intent: intent,
+  );
+  if (action == null) return KeyEventResult.ignored;
+  final (bool enabled, Object? _) = Actions.of(
+    context,
+  ).invokeActionIfEnabled(action, intent, context);
+  return enabled ? KeyEventResult.handled : KeyEventResult.ignored;
 }
 
 /// Outermost fallback for the remappable [ShortcutAction.globalBack] key
@@ -869,14 +987,6 @@ Widget wrapWithGlobalNavigation({
           return KeyEventResult.handled;
         }
       }
-      if (focusNavigationEnabled) {
-        final KeyEventResult arrowResult = _handleGlobalArrowFocus(
-          navigatorKey,
-          registry,
-          event,
-        );
-        if (arrowResult == KeyEventResult.handled) return arrowResult;
-      }
       // TODO-700 T1：注册表驱动的全局返回回退（Esc / Alt+← / B，或用户改键后的
       // 「返回」键）。仅对未自解析 globalBack 的页面（设置/对话框）生效；
       // home/reader/manga/video 已在更近的处理器消费。
@@ -887,6 +997,19 @@ Widget wrapWithGlobalNavigation({
           event,
         );
         if (backResult == KeyEventResult.handled) return backResult;
+      }
+      // 焦点导航（反馈 bjPjRHsaUy）：注册表驱动的上 / 下 / 左 / 右移焦 + 确认。排在
+      // 「返回上一级」之后——媒体页在自己的处理器里也是先页面 scope、再 universal，
+      // 焦点导航作为最后一层兜底，同序。裸方向键仍受 [focusNavigationEnabled] 门控
+      // （既有契约），用户另加的移焦键不受（与手柄 dpad 同档），见该函数文档。
+      final KeyEventResult focusResult = _handleGlobalFocusNavigation(
+        navigatorKey,
+        registry,
+        event,
+        focusNavigationEnabled: focusNavigationEnabled,
+      );
+      if (focusResult == KeyEventResult.handled) return focusResult;
+      if (registry != null) {
         // TODO-1093 / BUG-1886：注册表驱动的窗口级全屏切换（默认 F11）。放在 globalBack
         // 之后、Escape 之前；仅桌面有窗口时真正 toggle，移动端 no-op（见下）。
         // **不受 [focusNavigationEnabled] 门控**——理由同 globalBack 与手柄分发

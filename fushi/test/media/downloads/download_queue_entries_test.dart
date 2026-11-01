@@ -253,4 +253,62 @@ void main() {
       expect(entries!.first.builder(context), isA<DownloadTaskCard>());
     },
   );
+
+  testWidgets(
+    'manga card shows cancel on the collapsed card and cancelling flips it to retry (#2720)',
+    (WidgetTester tester) async {
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
+      final MangaDownloadService service = _service(db);
+      addTearDown(() async {
+        service.dispose();
+        await db.close();
+      });
+      await _pump(
+        tester,
+        MangaDownloadTasksSection(
+          downloadsOverride: service,
+          tasksBuilder: (BuildContext context, List<DownloadTaskEntry> tasks) =>
+              Column(
+                children: <Widget>[
+                  for (final DownloadTaskEntry task in tasks)
+                    task.builder(context),
+                ],
+              ),
+        ),
+      );
+      final String jobId = (await service.enqueueMokuroVolume(
+        seriesName: 'Series',
+        volumeName: '01',
+      )).row.jobId;
+      await tester.pump();
+      await tester.pump();
+
+      // 卡片默认折叠：取消必须在折叠态的行尾主操作位，不能藏在展开详情里。
+      final Finder cancel = find.byKey(
+        ValueKey<String>('manga-download-quick-cancel-$jobId'),
+      );
+      expect(cancel, findsOneWidget);
+      await tester.tap(cancel);
+      await tester.runAsync(() async {
+        final DateTime deadline = DateTime.now().add(
+          const Duration(seconds: 5),
+        );
+        while ((await db.getMangaDownloadJob(jobId))!.status !=
+            MangaDownloadJobStatus.cancelled) {
+          if (DateTime.now().isAfter(deadline)) fail('cancel 没落库');
+          await Future<void>.delayed(const Duration(milliseconds: 5));
+        }
+      });
+      await tester.pump();
+      await tester.pump();
+
+      expect(cancel, findsNothing);
+      expect(
+        find.byKey(ValueKey<String>('manga-download-quick-retry-$jobId')),
+        findsOneWidget,
+      );
+    },
+  );
 }

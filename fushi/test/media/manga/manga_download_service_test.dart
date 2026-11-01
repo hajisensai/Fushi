@@ -384,6 +384,89 @@ void main() {
     downloads.dispose();
   });
 
+  test('取消（#2720）：只删未完成章的半成品，已下完的章原样保留', () async {
+    final MangaDownloadService downloads = build();
+    // 先把第 2 章完整下完。
+    await downloads.enqueueChapter(
+      entry: _entry(),
+      chapter: _chapters.first,
+      autoOcr: false,
+    );
+    await downloads.start();
+    await downloads.whenIdle;
+    final Directory doneDir = mangaChapterDirectory(bookDir, '/chapter/2');
+    expect(await isChapterDownloaded(bookDir, '/chapter/2'), isTrue);
+
+    // 第 1 章跑到一半（取页卡住）时取消。
+    adapter.gate = Completer<void>();
+    final MangaDownloadJobRow running = await downloads.enqueueChapter(
+      entry: _entry(),
+      chapter: _chapters.last,
+      autoOcr: false,
+    );
+    while ((adapter.fetchCounts[0] ?? 0) < 2) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    final Directory partialDir = mangaChapterDirectory(bookDir, '/chapter/1');
+    expect(partialDir.existsSync(), isTrue);
+    final int fetchesAtCancel = adapter.fetchCounts.values.fold<int>(
+      0,
+      (int sum, int count) => sum + count,
+    );
+    await downloads.cancel(running.jobId);
+    adapter.gate!.complete();
+    await downloads.whenIdle;
+
+    expect(
+      (await jobOf('/chapter/1')).status,
+      MangaDownloadJobStatus.cancelled,
+    );
+    expect(partialDir.existsSync(), isFalse, reason: '半成品页 / .tmp 一并删掉');
+    expect(
+      adapter.fetchCounts.values.fold<int>(
+        0,
+        (int sum, int count) => sum + count,
+      ),
+      fetchesAtCancel,
+      reason: '取消后不再发起新的取页',
+    );
+    expect(doneDir.existsSync(), isTrue, reason: '已下完的章不受取消影响');
+    expect(await isChapterDownloaded(bookDir, '/chapter/2'), isTrue);
+    downloads.dispose();
+  });
+
+  test('取消一条排队中、但章已完整在盘的任务 → 只改状态，不删章内容', () async {
+    final MangaDownloadService first = build();
+    final MangaDownloadJobRow job = await first.enqueueChapter(
+      entry: _entry(),
+      chapter: _chapters.last,
+      autoOcr: false,
+    );
+    await first.start();
+    await first.whenIdle;
+    first.dispose();
+    expect(await isChapterDownloaded(bookDir, '/chapter/1'), isTrue);
+
+    // 行被复位成 queued（如重下请求）但服务还没领到它。
+    await db.updateMangaDownloadJobStatus(
+      job.jobId,
+      status: MangaDownloadJobStatus.queued,
+      updatedAt: 1,
+    );
+    final MangaDownloadService second = build();
+    await second.cancel(job.jobId);
+    expect(
+      (await jobOf('/chapter/1')).status,
+      MangaDownloadJobStatus.cancelled,
+    );
+    expect(
+      await isChapterDownloaded(bookDir, '/chapter/1'),
+      isTrue,
+      reason: '完整的章是用户内容，取消任务不能把它抹掉',
+    );
+    second.dispose();
+  });
+
   test('重启：running 行复位成 queued 续跑', () async {
     final MangaDownloadService first = build();
     final MangaDownloadJobRow job = await first.enqueueChapter(

@@ -106,11 +106,24 @@ bool isMangaWidePage({
 /// 用于宽页（见开き）——一张本来就横跨两页的图若还被塞进半个槽，会缩到只有一半
 /// 宽，而且它之后的所有页都会错开一位配对（左右页全反）。宽页独占既让它满宽显示，
 /// 也自动把后续页序重新对齐。
+///
+/// 配对按「段」进行：独占页把整卷切成若干段连续普通页，每段各自决定段首页
+/// 独占还是直接配对（段尾落单的页独占）：
+/// - 含 [anchorPage] 的段：锚点页做一对的**前页**（阅读方向上先读的那侧）；
+/// - 否则从第 0 页起的首段：封面独占（日漫惯例）；
+/// - 否则（宽页之后的段）：段首直接配对（宽页把页序重新对齐）。
+///
+/// [spreadOffset] 为 0（「错开一页」关）时把**首段与锚点段**的配对整体错开一页。
+/// 此前偏移只作用于首段：卷首附近只要有一张宽页，之后整卷的配对与偏移无关，
+/// 读到后面发现配对不对时拨开关毫无反应（反馈 haetN22fJI）。锚点由阅读器在会话里
+/// 设定（旋转进双页时取当前页；在宽页之后的段里拨「错开一页」时取当前对的前页），
+/// 让偏移作用到读者眼前这一段。
 List<MangaSpreadEntry> buildMangaSpreads(
   int pageCount, {
   required MangaPageLayout layout,
   required int spreadOffset,
   List<bool> soloPages = const <bool>[],
+  int anchorPage = -1,
 }) {
   if (pageCount <= 0) {
     return <MangaSpreadEntry>[];
@@ -124,27 +137,81 @@ List<MangaSpreadEntry> buildMangaSpreads(
 
   bool solo(int index) =>
       index >= 0 && index < soloPages.length && soloPages[index];
+  final bool shifted = spreadOffset < 1;
 
   final List<MangaSpreadEntry> entries = <MangaSpreadEntry>[];
   int cursor = 0;
-
-  // Optional solo cover page when offset 1.
-  if (spreadOffset >= 1) {
-    entries.add(MangaSpreadEntry(<int>[cursor]));
-    cursor += 1;
-  }
-
   while (cursor < pageCount) {
-    // 本页是宽页 → 独占；下一页是宽页 → 本页也只能独占（否则宽页会被拉进配对，
-    // 失去满宽显示，并把后续页序整体错开一位）。
-    if (solo(cursor) || cursor + 1 >= pageCount || solo(cursor + 1)) {
+    if (solo(cursor)) {
       entries.add(MangaSpreadEntry(<int>[cursor]));
       cursor += 1;
-    } else {
-      entries.add(MangaSpreadEntry(<int>[cursor, cursor + 1]));
-      cursor += 2;
+      continue;
     }
+    final int start = cursor;
+    int end = start;
+    while (end < pageCount && !solo(end)) {
+      end += 1;
+    }
+    final bool anchored = anchorPage >= start && anchorPage < end;
+    final bool leadSolo;
+    if (anchored) {
+      leadSolo = (anchorPage - start).isOdd != shifted;
+    } else if (start == 0) {
+      leadSolo = !shifted;
+    } else {
+      leadSolo = false;
+    }
+    int i = start;
+    if (leadSolo) {
+      entries.add(MangaSpreadEntry(<int>[i]));
+      i += 1;
+    }
+    while (i < end) {
+      if (i + 1 < end) {
+        entries.add(MangaSpreadEntry(<int>[i, i + 1]));
+        i += 2;
+      } else {
+        entries.add(MangaSpreadEntry(<int>[i]));
+        i += 1;
+      }
+    }
+    cursor = end;
   }
 
   return entries;
+}
+
+/// 连续普通页段 `[start, end)`（见 [buildMangaSpreads]）；[page] 自己是独占页
+/// 或越界时返回 null。
+(int, int)? mangaSpreadRunOf(int page, int pageCount, List<bool> soloPages) {
+  bool solo(int index) =>
+      index >= 0 && index < soloPages.length && soloPages[index];
+  if (page < 0 || page >= pageCount || solo(page)) return null;
+  int start = page;
+  while (start > 0 && !solo(start - 1)) {
+    start -= 1;
+  }
+  int end = page + 1;
+  while (end < pageCount && !solo(end)) {
+    end += 1;
+  }
+  return (start, end);
+}
+
+/// 让 [page] 在当前 [spreadOffset] 下做一对**前页**的锚点值（传给
+/// [buildMangaSpreads] 的 `anchorPage`）。偏移为 0 时锚点所在奇偶类会被错开成
+/// 后页，所以要取同段里相邻的一页当锚点。[page] 是独占页 / 越界 / 所在段只有
+/// 一页（没有配对可言）时返回 -1。
+int mangaSpreadAnchorLeading(
+  int page, {
+  required int pageCount,
+  required int spreadOffset,
+  List<bool> soloPages = const <bool>[],
+}) {
+  final (int, int)? run = mangaSpreadRunOf(page, pageCount, soloPages);
+  if (run == null) return -1;
+  final (int start, int end) = run;
+  if (end - start < 2) return -1;
+  if (spreadOffset >= 1) return page;
+  return page + 1 < end ? page + 1 : page - 1;
 }

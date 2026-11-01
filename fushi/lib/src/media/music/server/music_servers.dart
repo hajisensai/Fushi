@@ -6,8 +6,12 @@
 ///   凭据键、设备本地）；
 /// - 混排进本地曲库是每台服务器的显式 opt-in（`music_server_library_mix`），混进去的是专辑卡，
 ///   点开仍走服务器专辑页（按需取曲目）。
+/// - **Apple Music catalog**（MusicKit 方案 P1b）：设置里显式打开后出现；只浏览 + 30 秒试听，
+///   不参与混排（没有「整库」可混，专辑分区只是热门榜）。
 library;
 
+import 'package:fushi_engine/media/music/apple_music/apple_music_catalog_client.dart';
+import 'package:fushi_engine/media/music/apple_music/apple_music_token_source.dart';
 import 'package:fushi_engine/media/music/server/music_server.dart';
 import 'package:fushi_engine/media/music/server/subsonic_music_client.dart';
 import 'package:fushi_engine/media/music/server/subsonic_server_config.dart';
@@ -19,6 +23,9 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/sync/jellyfin_video_client.dart'
     show JellyfinServerConfig;
 import 'package:fushi/src/sync/sync_repository.dart';
+
+/// app 内共享的 developer token 来源：浏览器实例每次新建，token 缓存要跨实例复用。
+final AppleMusicTokenSource appleMusicTokenSource = AppleMusicTokenSource();
 
 /// 本机配置的全部音乐服务器（每次调用新建浏览器，不缓存实例：设置页登入 / 登出立即反映）。
 Future<List<MusicServerBrowser>> loadMusicServerBrowsers(AppModel app) async {
@@ -35,9 +42,23 @@ Future<List<MusicServerBrowser>> loadMusicServerBrowsers(AppModel app) async {
     for (final SubsonicServerConfig c in app.prefsRepo.musicSubsonicServers) {
       if (c.enabled) out.add(SubsonicMusicClient(c));
     }
+    if (app.prefsRepo.musicAppleMusicEnabled) {
+      out.add(
+        AppleMusicCatalogClient(
+          tokens: appleMusicTokenSource,
+          storefront: app.prefsRepo.musicAppleMusicStorefront,
+        ),
+      );
+    }
   }
   return out;
 }
+
+/// 这类来源能不能混排进本地曲库（Apple Music 只有热门榜、没有「整库」，不混）。
+bool musicServerSupportsLibraryMix(MusicServerKind kind) => switch (kind) {
+  MusicServerKind.jellyfin || MusicServerKind.subsonic => true,
+  MusicServerKind.appleMusic => false,
+};
 
 /// 设置里可选的转码码率上限（kbps）；0（原样直出）另列。
 const List<int> kMusicServerBitrateChoices = <int>[320, 192, 128];
@@ -102,7 +123,9 @@ Future<List<MusicServerAlbumRef>> loadMixedServerAlbums(
   if (mix.isEmpty) return const <MusicServerAlbumRef>[];
   final List<MusicServerAlbumRef> out = <MusicServerAlbumRef>[];
   for (final MusicServerBrowser b in await loadMusicServerBrowsers(app)) {
-    if (!mix.contains(b.serverId)) continue;
+    if (!mix.contains(b.serverId) || !musicServerSupportsLibraryMix(b.kind)) {
+      continue;
+    }
     try {
       int offset = 0;
       while (out.where((MusicServerAlbumRef r) => r.browser == b).length <

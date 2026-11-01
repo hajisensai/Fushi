@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io' show Directory;
+import 'package:fushi/src/anki/mined_card_undo.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -322,6 +323,17 @@ mixin DictionaryPageMixin {
           popupResourceSource == null && advancedMiningDeckChoiceAvailable
           ? await loadAdvancedMiningDeckSection(ref)
           : null;
+      // 卡片字段与卡组同一门槛：远端制卡（popupResourceSource）的字段映射在另一台
+      // 机器上，这里的映射对不上，不给改。
+      final AdvancedMiningFieldsSection? fields =
+          popupResourceSource == null && advancedMiningDeckChoiceAvailable
+          ? await loadAdvancedMiningFieldsSection(
+              ref,
+              fetchPayload: () async =>
+                  webViewKey.currentState?.buildMinePayloadByIndex(entryIndex),
+              fallbackSentence: () => favoriteLookupContext?.sentence ?? '',
+            )
+          : null;
       final AdvancedMiningSections sections = await buildAdvancedMiningSections(
         matched: matched,
       );
@@ -335,6 +347,7 @@ mixin DictionaryPageMixin {
           matched: matched,
           expression: expression.isEmpty ? null : expression,
           deck: deck,
+          fields: fields,
           sections: sections,
           // BUG-2627：回传「有没有真的点到制卡按钮」。弹窗层在这次往返途中被关栈
           // （或 State 已卸载）时为 false，对话框据此提示，不再静默关窗。
@@ -616,7 +629,16 @@ mixin DictionaryPageMixin {
     // TODO-1325 #6：MD3 着色 + 图标 toast。着色状态由 describeMineOutcome 单一真相
     // 带出（added 绿 / duplicate 橙 / failed 红），此处不再本地 switch。
     if (described.success) {
-      FushiToast.showMine(msg: described.message, status: described.status);
+      FushiToast.showMine(
+        msg: described.message,
+        status: described.status,
+        // 反馈 JNyykxvuY9：成功提示带「撤销」，几秒内点一下删掉刚加的卡。
+        action: minedCardUndoToastAction(
+          repo,
+          outcome,
+          expression: fields['expression'],
+        ),
+      );
       // TODO-270 D：带回 note id 让弹窗把刚制的这张标记为「最新可改」第三态
       // （AnkiConnect 非空，AnkiDroid 恒 null = 优雅降级进不了第三态）。
       return MinePopupResult.mined(outcome);
@@ -764,6 +786,20 @@ mixin DictionaryPageMixin {
   Future<QueuedOverwriteReply> onQueueOverwrite(
     Map<String, String> fields,
   ) async => const QueuedOverwriteReply();
+
+  /// [buildNestedPopupLayer] 第 [index] 层制卡 / 覆写 / 已有卡操作 / 排队覆写之前，
+  /// 让宿主按层补上它知道而弹窗 JS 不知道的上下文。默认原样返回。
+  ///
+  /// 反馈 1Mwaro8UTC：主窗常驻查词宿主（悬浮球拍照查词 / iOS 截屏识字 / 悬浮字幕
+  /// 点字）的查词出自一整行原文，JS 制卡不带 `sentence`，此前这里没有任何入口能把那
+  /// 一行交回去，卡上就只有单词、没有例句。该宿主覆写本方法按
+  /// [withSourceLineSentence] 补基础层的例句。
+  @protected
+  Map<String, String> miningFieldsForLayer(
+    int index,
+    DictionaryPopupController controller,
+    Map<String, String> fields,
+  ) => fields;
 
   /// TODO-1360 / BUG-2051：已制卡的词旁 ↗「在 Anki 中打开卡片」按钮的车道入口
   /// （视频/首页/独立查词，与 reader 车道 [BaseSourcePageState.onOpenInAnkiFromPopup]
@@ -1268,14 +1304,21 @@ mixin DictionaryPageMixin {
             query: query,
             autoRead: autoReadOnNavigate,
           ),
+          // 制卡四个出口都先过 [miningFieldsForLayer]：宿主按层补上它知道的上下文
+          // （主窗查词宿主补出自那一行原文的例句，反馈 1Mwaro8UTC）。
           onMineEntry: closePopupAfterAcceptedMine(
-            onMineEntry,
+            (Map<String, String> fields) =>
+                onMineEntry(miningFieldsForLayer(index, controller, fields)),
             enabled: () => ReaderFushiSource.instance.closePopupAfterMining,
             closeAll: () {
               if (mounted) onPop(0);
             },
           ),
-          onUpdateEntry: onUpdateEntry,
+          onUpdateEntry: (int noteId, Map<String, String> fields) =>
+              onUpdateEntry(
+                noteId,
+                miningFieldsForLayer(index, controller, fields),
+              ),
           // BUG-3652 续：制卡失败回包回来时这一层已关 / 停驻，原因就改由宿主 toast。
           isSessionOnScreen: () => controller.isEntryOnScreen(entry),
           // 用户建议 #fiwDIpFep7：顶栏就地切配置 / 牌组，随制卡模块开关。结果来自
@@ -1286,8 +1329,11 @@ mixin DictionaryPageMixin {
               popupResourceSource == null,
           onDuplicateCheck: checkDuplicate,
           onOverwriteTargetNoteId: findOverwriteTargetNoteId,
-          onMinedCardAction: onMinedCardAction,
-          onQueueOverwrite: onQueueOverwrite,
+          onMinedCardAction: (Map<String, String> fields) => onMinedCardAction(
+            miningFieldsForLayer(index, controller, fields),
+          ),
+          onQueueOverwrite: (Map<String, String> fields) =>
+              onQueueOverwrite(miningFieldsForLayer(index, controller, fields)),
           onOpenInAnki: onOpenInAnki,
           onFavoriteEntry: onFavoriteEntry,
           onFavoriteCheck: onFavoriteCheck,
@@ -1311,7 +1357,7 @@ mixin DictionaryPageMixin {
               : null,
           headerWidget: buildPopupHeaderFor(index),
           topBarScale: dictionaryPopupTopBarScale(
-            appUiScale: mixinAppModel.appUiScale,
+            appUiScale: mixinAppModel.popupUiScale,
             dictionaryFontSize: mixinAppModel.dictionaryFontSize,
           ),
         ),

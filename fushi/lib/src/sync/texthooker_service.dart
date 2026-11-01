@@ -214,12 +214,11 @@ enum TexthookerLineFilter { all, withAudio, mined, favorited }
 /// 引擎适配器自产的**精确文本线程**：hook code 以 `ENGINE:` 为前缀，与 Luna 启发式
 /// hook 的 `HQFN-24@...` 一类码区分。
 ///
-/// **目前只有 SGRE 一家**用这个前缀（`ENGINE:SGRE:wind3d11`，见
-/// `native/galgame_hook/hook/adapters/sgre_lookup.inc` 的 `kSgreTextHookCode`）。
-/// Siglus 的 TextRender 发的是 `EXBWX0@%llX:SiglusEngine.exe`、Unity 发的是
-/// `UnityEngine.TextMesh.set_text(glyphs)`，两者都**不**带该前缀，因此不走这条
-/// 自动选中路径——别把它们写成同样受益，那会让人以为覆盖面比实际大。
-/// native 侧命名契约见各 adapter 的 `k*TextHookCode`。
+/// 带这个前缀的是各引擎适配器在已证明边界上产出的线程（SGRE / BGI / Artemis /
+/// YU-RIS / FVP / Luca / Malie / Siglus 原生消息 `ENGINE:SIGLUS:message` 等，
+/// native 侧命名契约见各 adapter 的 hook code 常量）。Siglus 的 TextRender
+/// （`EXBWX0@%llX:SiglusEngine.exe`）与 Unity（`UnityEngine.TextMesh.set_text(glyphs)`）
+/// **不**带该前缀、不走自动选中——别把它们写成同样受益。
 bool isEngineExactTextThread(TexthookerTextThread thread) =>
     (thread.hookCode ?? '').startsWith('ENGINE:');
 
@@ -790,6 +789,12 @@ class TexthookerService extends ChangeNotifier {
   /// 重放，某些自定义 hook 也可能已经不在新的 helper 预览快照里；此时正文行本身就是
   /// 唯一仍可靠的线程目录证据。正文仍由控制器的选中线程过滤器决定是否发布，这里只
   /// 补目录和观测计数，不能把未选中的文本塞进 [_entries]。
+  ///
+  /// [notify] = false 供批量观测用：引擎一次轮询能带回几百条**所有线程**的行
+  /// （v13 每线程一道，64 道 × 8 槽），逐行通知会让每个监听者（工作台、浮窗、控制器
+  /// 转发）每行都同步跑一遍——Unity 这类每帧重写 set_text 的游戏会因此把 UI isolate
+  /// 压满、整个 Fushi 点不动（反馈 bfaVEbHL_s）。批量调用方在整批结束后调一次
+  /// [notifyTextThreadsObserved]。
   void observeTextThreadLine({
     required String key,
     required String label,
@@ -797,6 +802,7 @@ class TexthookerService extends ChangeNotifier {
     String? hookCode,
     int? nativeThreadId,
     DateTime? observedAt,
+    bool notify = true,
   }) {
     final String normalizedKey = key.trim();
     final String normalizedText = text.trim();
@@ -821,8 +827,11 @@ class TexthookerService extends ChangeNotifier {
       previewIsArtifact: false,
       recentPreviewTexts: previous?.recentPreviewTexts ?? const <String>[],
     );
-    notifyListeners();
+    if (notify) notifyListeners();
   }
+
+  /// 一批 `observeTextThreadLine(notify: false)` 结束后的单次通知。
+  void notifyTextThreadsObserved() => notifyListeners();
 
   /// [threadKey] 为 null 时返回所有行；否则只返回指定 Hook 线程的文本。
   List<TexthookerLineEntry> entriesForTextThread(String? threadKey) {

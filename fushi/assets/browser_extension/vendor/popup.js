@@ -867,6 +867,31 @@ window.resetSelectedDictionaries = function() {
     }
 };
 
+// 这张卡用哪本词典作主释义（payload.selectedDictionary → Dart 渲染器的
+// {glossary-first} 选中优先 / {selected-glossary}，BUG-1035）。
+//   1. 长按词典标题的显式选择优先；
+//   2. 没长按时，用户在某本词典的释义里选中了文本（制卡前的选区快照
+//      lastSelectionSpans，义项下标 → entry.glossaries[gloss].dictionary）→ 选区所在
+//      的那本当主词典。否则选中段只在 {glossary} 里有 <mark>，主释义却仍是第一本，
+//      卡片上看不到用户选的那段。跨多本拖选取文档序第一段所在词典。
+// 只作用于本次制卡：选区快照随换词渲染清掉、每次制卡前重新快照，不改全局词典顺序。
+function miningDictionaryFor(idx) {
+    const explicit = selectedDictionaries[idx]?.name;
+    if (explicit) return explicit;
+    const entry = window.lookupEntries?.[idx];
+    const glossaries = entry && Array.isArray(entry.glossaries) ? entry.glossaries : null;
+    if (!glossaries) return '';
+    const hidden = window.hiddenDictionaryNames || [];
+    for (const span of lastSelectionSpans) {
+        if (span.entry !== idx) continue;
+        const dictName = glossaries[span.gloss]?.dictionary;
+        if (typeof dictName === 'string' && dictName && !hidden.includes(dictName)) {
+            return dictName;
+        }
+    }
+    return '';
+}
+
 // 构造一个句子上下文步进器：两行「上 [➖][N][➕]」+「下 [➖][N][➕]」。点➕该方向 n+=1、点
 // ➖该方向 max(0, n-1)，把该方向的上下文句数整组重发宿主。无 JS 硬上限——由宿主的段落/
 // cue 边界天然封顶（镜像可继续升、宿主合成时按真句封顶）。
@@ -920,6 +945,17 @@ function buildSentenceContextPicker() {
 // callHandler('openAdvancedMining', {entryIndex, matched, expression})，与确认制卡回点用的
 // fushiPopupMineEntryByIndex（见文件末尾）。
 
+
+// 界面文案（app 的 i18n 串，不是词典内容）挂**界面语言**的 lang。弹窗根节点不设 lang
+// （见 dictionary_language_css.dart），兜底字体链按「默认内容语言」建，学日语的用户就是
+// 日文链：中文界面串里日文字体没有的简体字（「音调」的「调」）掉到别的字体，同一枚药丸
+// 里两种字形（反馈 9GSrEkVLai）。标上界面语言后由 :lang(zh) / :lang(ja) 规则接管。
+// 浏览器扩展没有注入 __fushiUiLanguage → 不标，维持原样。
+function uiText(element) {
+    const lang = window.__fushiUiLanguage;
+    if (typeof lang === 'string' && lang) element.setAttribute('lang', lang);
+    return element;
+}
 
 function el(tag, props = {}, children = []) {
     const element = document.createElement(tag);
@@ -2797,14 +2833,19 @@ async function buildMinePayload(expression, reading, frequencies, pitches, rules
         popupSelectionText,
         glossarySelectionHighlighted,
         audio,
-        selectedDictionary: selectedDictionaries[idx]?.name || '',
+        selectedDictionary: miningDictionaryFor(idx),
         dictionaryMedia: JSON.stringify([...dictionaryMedia.values()])
     };
 }
 
-async function mineEntry(expression, reading, frequencies, pitches, rules, matched, entryIndex, popupSelectionText) {
+// [allowDuplicate]：用户已被告知「卡已在 Anki」并明确选了「新增为重复卡」。与 app 内原生
+// 对话框的 AnkiMiningPayload.withAllowDuplicate（BUG-2605）同一 wire 键 / 同一字符串值：
+// 三个后端的 addNote 以 `settings.allowDupes || payload.allowDuplicate` 放行，单次裁决、
+// 不改全局偏好。不带这个键时 payload 与旧版逐字节一致。
+async function mineEntry(expression, reading, frequencies, pitches, rules, matched, entryIndex, popupSelectionText, allowDuplicate) {
     const payload = await buildMinePayload(
         expression, reading, frequencies, pitches, rules, matched, entryIndex, popupSelectionText);
+    if (allowDuplicate === true) payload.allowDuplicate = 'true';
     return await window.flutter_inappwebview.callHandler('mineEntry', payload);
 }
 
@@ -2862,13 +2903,15 @@ function hasNativeMinedCardAction() {
     return window.__fushiMinedCardActionNative === true;
 }
 
-// 反查 Anki 里这个词的全部命中卡。永不抛：拿不到就当没有命中，调用方按「卡已不在」
+// 反查 Anki 里这个词的全部命中卡。永不抛：桥抛了就当没有命中，调用方按「卡已不在」
 // 走重新制卡（与 app 内 runAnkiMinedCardAction 的 matches.isEmpty 分支同语义）。
+// 宿主回的不是数组（null）= 这个宿主**列不出**命中卡（浏览器扩展：服务端没有反查笔记的
+// 端点，shim 未接这根桥）→ 返回 null，与「查了，确实没有」的 [] 区分开（反馈 _3tWQR6J2G）。
 async function findMinedMatches(expression, reading) {
     try {
         const reply = await window.flutter_inappwebview.callHandler(
             'findMinedMatches', { expression, reading });
-        if (!Array.isArray(reply)) return [];
+        if (!Array.isArray(reply)) return null;
         return reply
             .map((row) => ({
                 noteId: (row && typeof row.noteId === 'number' && Number.isFinite(row.noteId))
@@ -2903,7 +2946,7 @@ function showMinedCardActionPanel(matches, options) {
         // 那里的 <html> 是别人的页面，既不该被我们挂 class，也没有窗口高度问题。
         const ownsDocument = !window.__fushiRoot;
         const rootEl = document.documentElement;
-        const panel = el('div', { className: 'mined-action-panel' });
+        const panel = uiText(el('div', { className: 'mined-action-panel' }));
         const backdrop = el('div', { className: 'mined-action-backdrop' }, [panel]);
         let settled = false;
         let busy = false;
@@ -3098,8 +3141,24 @@ async function openWordInAnki(button, expression, reading) {
 //   'fallthrough' —— Anki 里其实已经没有这张卡（别处删了），按普通新卡制卡。
 async function runInPageMinedCardAction(
         expression, reading, frequencies, pitches, rules, matched, entryIndex, popupSelectionText) {
-    const matches = await findMinedMatches(expression, reading);
-    if (!matches.length) {
+    let matches = await findMinedMatches(expression, reading);
+    if (matches === null) {
+        // 宿主列不出命中卡（浏览器扩展）：用画 ✓ 的同一判据再核一次「卡还在不在」。还在就
+        // 照样问用户——面板只剩「新增为重复卡 / 取消」（没有可覆写的行），对齐 app 交互式
+        // 单条制卡的 DuplicatePolicy.ask；此前这里一律当「卡已不在」重制，后端判重复拒掉，
+        // 用户只看到「已存在」，根本没有加重复卡的机会（反馈 _3tWQR6J2G）。
+        let stillMined = false;
+        try {
+            stillMined = await window.flutter_inappwebview.callHandler(
+                'duplicateCheck', { expression, reading }) === true;
+        } catch (_) {
+            stillMined = false;
+        }
+        if (!stillMined) {
+            return { outcome: 'fallthrough', result: { ankiConnect: false, noteId: null } };
+        }
+        matches = [];
+    } else if (!matches.length) {
         return { outcome: 'fallthrough', result: { ankiConnect: false, noteId: null } };
     }
     const choice = await showMinedCardActionPanel(matches);
@@ -3110,8 +3169,11 @@ async function runInPageMinedCardAction(
         return { outcome: 'handled', result: parseMineResult(reply) };
     }
     if (choice.action === 'duplicate') {
+        // 反馈 _3tWQR6J2G：页内车道（浏览器扩展 / app 外裸窗）此前不带重复标记，后端按全局
+        // allowDupes（默认关）把这次判成重复拒掉——用户选了「新增为重复卡」却只得到「已存在」。
         const reply = await mineEntry(
-            expression, reading, frequencies, pitches, rules, matched, entryIndex, popupSelectionText);
+            expression, reading, frequencies, pitches, rules, matched, entryIndex, popupSelectionText,
+            true);
         return { outcome: 'handled', result: parseMineResult(reply) };
     }
     return { outcome: 'handled', result: { ankiConnect: false, noteId: null } };
@@ -4199,13 +4261,13 @@ function createPitchGroup(pitchData, reading) {
         // Windows WebView2 的 title 提示是一个独立的 Win32 顶层弹窗，视频页查词浮层关闭 /
         // 热槽 WebView 被藏起时它不随文档消失，残留在画面上关不掉（用户 10-09 反馈）。
         const sourceNames = sourcePills.map((pill) => pill.textContent).join(', ');
-        const countPill = el('span', {
+        const countPill = uiText(el('span', {
             className: 'pitch-dict-label pitch-dict-count',
             // 用户 10-09：「N 本辞典」看不出这是音调，改成「音调 · N」（标出是什么 + 保留来源数）。
             textContent: (window.i18nPitchSourceCount || '音调 · {count}')
                 .replace('{count}', String(sourcePills.length)),
             'data-sources': sourceNames,
-        });
+        }));
         countPill.setAttribute('aria-label', sourceNames);
         countPill.setAttribute('role', 'button');
         countPill.setAttribute('aria-expanded', 'false');
@@ -5072,12 +5134,12 @@ function renderAudioSourceMenuItems(menu, button, choices, reading) {
     menu.removeAttribute('aria-busy');
     menu.textContent = '';
     if (!choices.length) {
-        const empty = el('div', {
+        const empty = uiText(el('div', {
             className: 'fushi-audio-menu-item',
             role: 'menuitem',
             tabIndex: -1,
             textContent: window.i18nNoAudioAvailable || '暂无发音',
-        });
+        }));
         empty.setAttribute('aria-disabled', 'true');
         menu.appendChild(empty);
         return;
@@ -5738,6 +5800,11 @@ function createEntryHeader(entry, idx) {
             }
         }
     });
+    // 反馈 -K86qlwBg6：「高级制卡」字段预填要的是**这颗按钮点下去会发出的那份** payload
+    // ——同一组闭包参数、同一个 buildMinePayload、同一份选区快照（lastSelection），
+    // 只是不走 mineEntry 桥、不改按钮状态。见 fushiPopupBuildMinePayloadByIndex。
+    mineButton.__fushiBuildMinePayload = () => buildMinePayload(
+        expression, reading, frequencies, pitches, rules, matched, idx, lastSelection);
     if (miningEnabled) {
         buttonsContainer.appendChild(mineButton);
     }
@@ -6083,6 +6150,20 @@ window.fushiPopupMineEntryByIndex = function(idx) {
     // Dart await 到 mineEntry 回执再关窗。三条 `return false` 保持同步（没点到）。
     const result = typeof b.onclick === 'function' ? b.onclick() : b.click();
     return Promise.resolve(result).then(() => true);
+};
+
+// 反馈 -K86qlwBg6：「高级制卡」的卡片字段预填。按与 fushiPopupMineEntryByIndex 相同的
+// DOM 序（:scope > .entry）找到第 idx 个词条的「+」，取回它点下去会发出的 payload
+// （按钮上挂的 __fushiBuildMinePayload），不点按钮、不走桥。找不到 → null。
+window.fushiPopupBuildMinePayloadByIndex = async function(idx) {
+    const root = __fushiRootNode();
+    const first = root && root.querySelector('.entry');
+    const container = first && first.parentNode;
+    if (!container) return null;
+    const entry = container.querySelectorAll(':scope > .entry')[idx];
+    const b = entry && entry.querySelector('.mine-button');
+    if (!b || typeof b.__fushiBuildMinePayload !== 'function') return null;
+    return await b.__fushiBuildMinePayload();
 };
 
 // 收藏夹一键制卡：为 (expression, reading) 在当前 window.lookupEntries 里挑一个词条，
@@ -9703,7 +9784,11 @@ function __fushiPopupClick(e) {
 var _popupShiftLastX = -1, _popupShiftLastY = -1;
 function __fushiPopupMouseMove(e) {
     if (!__fushiEventInsidePopup(e)) return;
-    if (!e.shiftKey) { _popupShiftLastX = -1; _popupShiftLastY = -1; return; }
+    // 浏览器扩展里查词触发键可配置（content.js 注入 __fushiScanModifierHeld，反馈 ulS75hVkAK）；
+    // app 内没有这个钩子，仍是 Shift。
+    var scanHeld = typeof window.__fushiScanModifierHeld === 'function'
+        ? window.__fushiScanModifierHeld(e) : e.shiftKey;
+    if (!scanHeld) { _popupShiftLastX = -1; _popupShiftLastY = -1; return; }
     var dx = e.clientX - _popupShiftLastX, dy = e.clientY - _popupShiftLastY;
     if (dx * dx + dy * dy < 64) return;
     _popupShiftLastX = e.clientX; _popupShiftLastY = e.clientY;

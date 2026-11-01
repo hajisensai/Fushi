@@ -81,6 +81,8 @@ function loadPanel(opts) {
     pause() { this.paused = true; this.pauseCount++; },
     getBoundingClientRect() { return { left: 100, top: 50, width: 800, height: 450 }; },
   };
+  // 有状态的 chrome.storage.local：set / remove 真改这份内存（外挂字幕持久化要能「刷新」后读回）。
+  const mem = Object.assign({}, opts.stored || {});
   const storageListeners = [];
   const runtimeListeners = [];
   const documentListeners = {};
@@ -124,7 +126,11 @@ function loadPanel(opts) {
     FileReader: FileReaderStub,
     chrome: {
       storage: {
-        local: { get: (key, cb) => { if (typeof cb === 'function') { cb(opts.stored || {}); return undefined; } return { then(res) { res(opts.stored || {}); } }; } },
+        local: {
+          get: (key, cb) => { if (typeof cb === 'function') { cb(mem); return undefined; } return { then(res) { res(mem); } }; },
+          set: (patch) => { Object.assign(mem, JSON.parse(JSON.stringify(patch))); },
+          remove: (keys) => { for (const k of [].concat(keys)) delete mem[k]; },
+        },
         onChanged: { addListener: (fn) => storageListeners.push(fn) },
       },
       runtime: {
@@ -149,7 +155,7 @@ function loadPanel(opts) {
   }
   function fireToggle(v) { for (const fn of storageListeners) fn({ netflixSubtitlePanel: { newValue: v } }, 'local'); }
   return {
-    body,
+    body, mem,
     html: htmlRoot, video, windowObj, createdInputs, toasts,
     enable: () => fireToggle(true),
     panel: () => findByIdDeep(body, 'fushi-subtitle-panel'),
@@ -287,4 +293,82 @@ test('⑦ 覆盖层坐标按父级包含块折算（video-target.js fushiFixedOr
   assert.strictEqual(overlay.style.left, '400px', '视口 x=500 → 包含块里 400');
   // 视频 top 50 + 450×0.88 = 446 → 包含块里 486。
   assert.strictEqual(overlay.style.top, (50 + 450 * 0.88 + 40) + 'px');
+});
+
+// ── 反馈 HlBC5BcpED：外挂字幕刷新后消失 ────────────────────────────────────────
+// 根因：外挂轨只写进页面内存 window.fushiEpisodeCues，刷新即丢。现按视频身份落盘 + 刷新后自动装回。
+const { fushiPlanExternalSubtitleSave } = require('./subtitle-adapters.js');
+
+test('外挂轨按视频身份落盘；「刷新」（新 content script 读同一份 storage）后自动装回并成为当前轨', () => {
+  const cues = [{ text: '走り出した', startMs: 1500, endMs: 3500 }, { text: 'こんにちは', startMs: 4000, endMs: 5000 }];
+  const first = loadPanel({
+    hostname: 'www.nicovideo.jp', pathname: '/watch/so46975082', stored: { netflixSubtitlePanel: true },
+    response: OK(cues),
+  });
+  first.loadFile('ep04.ja.srt', 'dummy');
+  const id = 'externalSubtitle:www.nicovideo.jp/watch/so46975082|外挂:ep04.ja.srt';
+  assert.ok(Array.isArray(first.mem.externalSubtitleIndex), '账本必须落盘');
+  assert.strictEqual(first.mem.externalSubtitleIndex.length, 1);
+  assert.strictEqual(first.mem.externalSubtitleIndex[0].id, id);
+  assert.deepStrictEqual(first.mem[id].cues.map((c) => c.text), ['走り出した', 'こんにちは']);
+
+  // 偏移随轨记账。
+  first.message({ type: 'fushiSubtitleSidePanelOffset', absoluteMs: 1200 });
+  assert.strictEqual(first.mem.externalSubtitleIndex[0].offsetMs, 1200);
+
+  // 刷新：全新页面内存，只剩 storage。
+  const reloaded = loadPanel({ hostname: 'www.nicovideo.jp', pathname: '/watch/so46975082', stored: first.mem });
+  const key = 'www.nicovideo.jp/watch/so46975082|外挂:ep04.ja.srt';
+  assert.ok(reloaded.windowObj.fushiEpisodeCues[key], '刷新后外挂轨必须自动装回 store');
+  const state = reloaded.message({ type: 'fushiSubtitleSidePanelState', includeCues: true });
+  assert.strictEqual(state.activeLang, '外挂:ep04.ja.srt', '刷新前看的外挂轨仍是当前轨');
+  assert.strictEqual(state.cues.length, 2);
+  assert.strictEqual(state.offsetMs, 1200, '偏移一起恢复');
+  assert.strictEqual(state.cues[0].startMs, 1500 + 1200);
+});
+
+test('别的视频不会装回这条外挂轨', () => {
+  const first = loadPanel({
+    hostname: 'www.nicovideo.jp', pathname: '/watch/so1', stored: { netflixSubtitlePanel: true },
+    response: OK([{ text: 'a', startMs: 0, endMs: 1000 }]),
+  });
+  first.loadFile('a.srt', 'dummy');
+  const other = loadPanel({ hostname: 'www.nicovideo.jp', pathname: '/watch/so2', stored: first.mem });
+  assert.deepStrictEqual(Object.keys(other.windowObj.fushiEpisodeCues), []);
+  // 账本里本视频以外的条目原样保留。
+  assert.strictEqual(other.mem.externalSubtitleIndex.length, 1);
+});
+
+test('账本条目的正文缺失（被清 / 写盘失败）：跳过并自愈剔除，不造空轨', () => {
+  const index = [{ id: 'externalSubtitle:example.com/video/1|外挂:x.srt', video: 'example.com/video/1', label: '外挂:x.srt', bytes: 10, at: 1, offsetMs: 0 }];
+  const h = loadPanel({ stored: { netflixSubtitlePanel: true, externalSubtitleIndex: index } });
+  assert.deepStrictEqual(Object.keys(h.windowObj.fushiEpisodeCues), []);
+  assert.deepStrictEqual(h.mem.externalSubtitleIndex, []);
+});
+
+test('LRU 账本：条数 / 总字节封顶从最旧淘汰，新条目绝不淘汰；超大单条不存；同 id 覆盖不算淘汰', () => {
+  const limits = { maxEntries: 3, maxBytes: 100, maxEntryBytes: 60 };
+  const mk = (id, bytes, at) => ({ id, video: 'v' + id, label: 'L', bytes, at, offsetMs: 0 });
+  let plan = fushiPlanExternalSubtitleSave([mk('a', 10, 1), mk('b', 10, 2), mk('c', 10, 3)], mk('d', 10, 4), limits);
+  assert.deepStrictEqual(plan.index.map((e) => e.id), ['b', 'c', 'd']);
+  assert.deepStrictEqual(plan.evicted, ['a']);
+  assert.strictEqual(plan.stored, true);
+
+  plan = fushiPlanExternalSubtitleSave([mk('a', 40, 1), mk('b', 40, 2)], mk('c', 50, 3), limits);
+  assert.deepStrictEqual(plan.index.map((e) => e.id), ['b', 'c']);
+  assert.deepStrictEqual(plan.evicted, ['a']);
+
+  plan = fushiPlanExternalSubtitleSave([mk('a', 10, 1)], mk('big', 61, 2), limits);
+  assert.strictEqual(plan.stored, false);
+  assert.deepStrictEqual(plan.index.map((e) => e.id), ['a']);
+
+  plan = fushiPlanExternalSubtitleSave([mk('a', 10, 1), mk('big', 10, 2)], mk('big', 61, 3), limits);
+  assert.deepStrictEqual(plan.evicted, ['big'], '同 id 新档太大：旧档也删，免得刷新装回过期正文');
+
+  plan = fushiPlanExternalSubtitleSave([mk('a', 10, 1), mk('b', 10, 2)], mk('a', 20, 3), limits);
+  assert.deepStrictEqual(plan.index.map((e) => e.id), ['b', 'a'], '重存挪到最新端');
+  assert.deepStrictEqual(plan.evicted, [], '同 id 重存不能把刚写的正文删掉');
+
+  plan = fushiPlanExternalSubtitleSave('garbage', mk('a', 10, 1), limits);
+  assert.deepStrictEqual(plan.index.map((e) => e.id), ['a']);
 });

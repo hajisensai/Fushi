@@ -63,6 +63,7 @@ SettingsDestination buildCardCreationDestination() {
           AnkiSectionRow.tagIncludeFushi,
           AnkiSectionRow.tagIncludeCategory,
           AnkiSectionRow.tagBookName,
+          AnkiSectionRow.tagNestTitleUnderCategory,
           AnkiSectionRow.tagCharPosition,
         ],
       ),
@@ -275,6 +276,12 @@ SettingsDestination buildCardCreationDestination() {
         id: 'card_creation.anki.tag_include_category',
         hasRevealTarget: true,
         title: t.anki_tag_include_category,
+        subtitle: t.anki_tag_default_section,
+      ),
+      SettingsBodySearchEntry(
+        id: 'card_creation.anki.tag_nest_title_under_category',
+        hasRevealTarget: true,
+        title: t.anki_tag_nest_title_under_category,
         subtitle: t.anki_tag_default_section,
       ),
       SettingsBodySearchEntry(
@@ -495,6 +502,12 @@ SettingsDestination _buildAnkiPanel(AnkiSettingsPanel panel, String title) {
           hasRevealTarget: true,
           title: t.mining_audio_follow_playback_speed,
           subtitle: t.mining_audio_follow_playback_speed_hint,
+        ),
+        SettingsBodySearchEntry(
+          id: 'card_creation.anki.video_mining_audio_source',
+          hasRevealTarget: true,
+          title: t.video_mining_audio_source,
+          subtitle: t.video_mining_audio_source_hint,
         ),
         SettingsBodySearchEntry(
           id: 'card_creation.anki.video_mining_image_mode',

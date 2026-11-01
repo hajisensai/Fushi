@@ -894,8 +894,12 @@ void main() {
     // 行内带实时百分比读数（与有声书音量行同款）；row.title 保持裸标题作身份。
     // MD3 重设计后读数常驻在滑条右侧读数槽，不再拼进标题。
     expect(find.text(t.lookup_audio_volume), findsOneWidget);
-    expect(find.text('100%'), findsOneWidget);
     expect(sliderFinder(), findsOneWidget);
+    // 读数限定在音量行内：同页的「查词弹窗缩放」滑条默认读数也是 100%。
+    expect(
+      find.descendant(of: sliderFinder(), matching: find.text('100%')),
+      findsOneWidget,
+    );
     AdaptiveSettingsSliderRow row = tester.widget<AdaptiveSettingsSliderRow>(
       sliderFinder(),
     );

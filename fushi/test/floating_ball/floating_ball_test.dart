@@ -699,6 +699,8 @@ void main() {
       expect(request!.text, '今日は晴れ');
       expect(request.index, 2); // は
       expect(request.selectionRect, const Rect.fromLTWH(180, 350, 40, 20));
+      // 反馈 1Mwaro8UTC：悬浮球拍照查词制卡要有例句——请求带上被点字所在的那一句。
+      expect(request.sentence, '今日は晴れ');
     });
   });
 

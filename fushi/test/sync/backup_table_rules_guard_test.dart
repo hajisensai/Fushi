@@ -31,6 +31,7 @@ void main() {
     'video_metadata_characters',
     'video_metadata_terms',
     'video_subtitle_glossaries',
+    'video_subtitle_text_overrides',
     'series',
     'media_tracking_mappings',
     'revealed_images',

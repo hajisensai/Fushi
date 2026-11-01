@@ -61,6 +61,8 @@ class MangaOcrSettingsPage extends ConsumerWidget {
               enginePreferenceSetter: appModel.setMangaOcrEnginePreference,
               parallelTasksGetter: () => appModel.mangaOcrParallelTasks,
               parallelTasksSetter: appModel.setMangaOcrParallelTasks,
+              ignoreFuriganaGetter: () => appModel.mangaOcrIgnoreFurigana,
+              ignoreFuriganaSetter: appModel.setMangaOcrIgnoreFurigana,
               localModelGetter: () => appModel.mangaOcrLocalModel,
               localModelSetter: appModel.setMangaOcrLocalModel,
               lensLanguageGetter: () => appModel.mangaOcrLensLanguage,

@@ -596,6 +596,60 @@ String? resolveAppProxyHostPort() =>
   return (username: username, password: appUserProxyPasswordReader());
 }
 
+/// 给**只吃一个代理 URL** 的外部 HTTP 客户端（制卡 / 导出用的 ffmpeg `-http_proxy`）
+/// 翻译同一份代理裁决：[uri] 该走的 HTTP 代理，形如 `http://[user:pass@]host:port`；
+/// 直连 → `proxyUrl == null`。
+///
+/// 反馈 vhW6OpRy2H：浏览器扩展 YouTube 制卡时，句子音频先经 Dart（已接本层）按 range
+/// 物化，失败再由 ffmpeg 直接读 googlevideo——而 ffmpeg 那一程从来不知道 app 的代理设置，
+/// 用户在 app 里配好的代理只覆盖了一半，墙内 / 网络受限时两程一起失败，整张卡中止。
+/// 这里不另立判据：地址取 [resolveAppProxyDirective] 的首选 `PROXY`，凭据取
+/// [resolveAppProxyCredentials]（只有手动模式有），与 Dart 出站逐 URI 同答案（本机 /
+/// 局域网、`no_proxy`、直连模式一律直连）。用户名密码按 URL userinfo 百分号编码，
+/// ffmpeg 的 httpauth 会先解码再做 Basic。
+///
+/// **SOCKS 不假装支持**：本层的裁决本身只有 HTTP 代理（Dart `HttpClient` 不会 SOCKS，
+/// 手动模式也只收 `host:port` 的 HTTP 代理）。唯一能混进 SOCKS 的是自动模式下用户自己
+/// 设的环境变量（`https_proxy=socks5://…`）——Dart 会剥掉 scheme 当 HTTP 代理用，ffmpeg
+/// 的 `-http_proxy` 只认 `http://`。这种情况返回 `socksUnsupported=true`、不给 URL，由调用方
+/// 记诊断并直连，而不是把一个 SOCKS 端点当 HTTP 代理塞给 ffmpeg 换来一个更难懂的错误。
+({String? proxyUrl, bool socksUnsupported}) resolveAppProxyUrlForExternalClient(
+  Uri uri,
+) {
+  final String? hostPort = proxyHostPortFromDirective(
+    resolveAppProxyDirective(uri),
+  );
+  if (hostPort == null) return (proxyUrl: null, socksUnsupported: false);
+  if (_resolveProxyDecision(null).mode == kProxyModeAuto &&
+      envProxySchemeIsSocks(uri, Platform.environment)) {
+    return (proxyUrl: null, socksUnsupported: true);
+  }
+  final ({String username, String password})? credentials =
+      resolveAppProxyCredentials(uri);
+  final String userInfo = credentials == null
+      ? ''
+      : '${Uri.encodeComponent(credentials.username)}:'
+            '${Uri.encodeComponent(credentials.password)}@';
+  return (proxyUrl: 'http://$userInfo$hostPort', socksUnsupported: false);
+}
+
+/// 自动模式下 Dart 会为 [uri] 采用的那条环境变量代理是不是 SOCKS（`socks://` /
+/// `socks4://` / `socks5://` / `socks5h://`）。查找顺序与
+/// `HttpClient.findProxyFromEnvironment` 一致：http 目标看 `http_proxy` / `HTTP_PROXY`，
+/// https 目标看 `https_proxy` / `HTTPS_PROXY`。
+@visibleForTesting
+bool envProxySchemeIsSocks(Uri uri, Map<String, String> environment) {
+  final List<String> keys = uri.scheme == 'https'
+      ? const <String>['https_proxy', 'HTTPS_PROXY']
+      : const <String>['http_proxy', 'HTTP_PROXY'];
+  for (final String key in keys) {
+    final String value = (environment[key] ?? '').trim();
+    if (value.isEmpty) continue;
+    return value.toLowerCase().startsWith('socks');
+  }
+  return false;
+}
+
 final Uri _kPublicProbeUri = Uri.parse('https://example.com/');
 
 /// P2P（torrent）传输该用的代理：开关关 → null（直连，**默认**）；开 → 与

@@ -15,6 +15,8 @@ import 'package:fushi_engine/mining/immersion_mining_request.dart'
 import 'package:http/http.dart' as http;
 import 'package:meta/meta.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
+import 'package:fushi_engine/utils/net/app_proxy.dart'
+    show resolveAppProxyUrlForExternalClient;
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/sync/tls/fushi_pinning_http.dart'
     show canonicalSha256Fingerprint;
@@ -318,7 +320,10 @@ List<String> buildFfmpegRemoteInputArgs(
   final FfmpegRemoteInputRoute? route = ffmpegRemoteInputRouteResolver?.call(
     inputPath,
   );
-  final String? httpProxy = route?.httpProxy;
+  // 宿主中继优先（那时输入地址已是中继认识的明文形式）；否则与 Dart 出站同一份 app
+  // 代理裁决（反馈 vhW6OpRy2H：ffmpeg 直连 googlevideo 过去完全绕过用户设的代理）。
+  final String? httpProxy =
+      route?.httpProxy ?? _appProxyForFfmpegInput(inputPath);
   final String? pin = ffmpegTlsPinArg(tlsPinSha256);
   final _FfmpegHttpHeaderArgs headers = _FfmpegHttpHeaderArgs.from(
     httpHeaders,
@@ -356,8 +361,8 @@ List<String> buildFfmpegRemoteInputArgs(
     '1',
     '-reconnect_delay_max',
     '5',
-    // 经宿主本机中继取字节（见 [FfmpegRemoteInputRoute]）：hls demuxer 会把 http_proxy
-    // 沿用到每个分片请求，与播放器走同一条归一化路径。
+    // 经宿主本机中继取字节（见 [FfmpegRemoteInputRoute]），或经 app 代理设置出站（见
+    // [_appProxyForFfmpegInput]）：hls demuxer 会把 http_proxy 沿用到每个分片请求。
     if (httpProxy != null && httpProxy.isNotEmpty) ...<String>[
       '-http_proxy',
       httpProxy,
@@ -375,6 +380,65 @@ List<String> buildFfmpegRemoteInputArgs(
       '0',
     ],
   ];
+}
+
+/// 制卡抽取层上报的一条失败摘要（[FfmpegFailureReporter] 收到的串，或拼进中止原因的
+/// 那段根因）是不是「连不上远端媒体服务器」——网络 / 代理问题，而不是缺 ffmpeg、编码器
+/// 不支持、时间窗不对这类本机问题。
+///
+/// 反馈 vhW6OpRy2H：中止原因原样是
+/// `required audio missing (HandshakeException: Connection terminated during handshake)`，
+/// 浏览器扩展照样弹出来了，但普通用户读不出「这是网络连不上 YouTube、该去查代理」。
+/// 判据只认本文件自己产出的两种摘要形状（是契约，不是猜外部文本）：
+/// * Dart 出站异常（[_reportFfmpegUnexpectedException] 以 `$error` 开头）：`HandshakeException`
+///   / `TlsException` / `SocketException` / `ClientException`（package:http）/ `HttpException`
+///   / `TimeoutException`；
+/// * ffmpeg 退出码（[FfmpegRunResult.failureSummary] 的 `ffmpeg exit -N`）里的网络 errno：
+///   连接超时 / 被拒 / 被重置 / 中止 / 网络或主机不可达。errno 数值随平台的 C 运行库而变
+///   （Windows 捆绑 ffmpeg 的 ETIMEDOUT 是 138，Linux/Android 是 110，macOS/iOS 是 60），
+///   所以按本进程平台取表，不混用——混用会把 Linux 的 `ENODATA(61)` 之类误判成网络问题。
+bool isRemoteFetchNetworkFailure(String summary) {
+  if (RegExp(
+    r'\b(HandshakeException|TlsException|SocketException|ClientException|'
+    r'HttpException|TimeoutException)\b',
+  ).hasMatch(summary)) {
+    return true;
+  }
+  final Set<int> networkErrnos = Platform.isWindows
+      ? const <int>{106, 107, 108, 110, 116, 118, 138}
+      : (Platform.isMacOS || Platform.isIOS)
+      ? const <int>{50, 51, 53, 54, 60, 61, 65}
+      : const <int>{100, 101, 103, 104, 110, 111, 113};
+  for (final RegExpMatch m in RegExp(
+    r'ffmpeg exit -(\d+)\b',
+  ).allMatches(summary)) {
+    if (networkErrnos.contains(int.parse(m.group(1)!))) return true;
+  }
+  return false;
+}
+
+/// ffmpeg 读远端 [inputPath] 时该用的 app 代理（`-http_proxy` 实参），直连 → null。
+///
+/// 反馈 vhW6OpRy2H：制卡句子音频的 Dart range 物化走 app 代理，失败后回退的 ffmpeg
+/// 直读却不走——用户在 app 里配的代理（手动地址 / 自动模式下的系统代理）只覆盖了一半，
+/// 连不上 googlevideo 的网络里两程一起失败（`HandshakeException` → `ffmpeg exit -138`）。
+/// 裁决只有一份实现：[resolveAppProxyUrlForExternalClient]（与 Dart `findProxy` 同答案）。
+///
+/// 直连裁决不传 `-http_proxy`：ffmpeg 此时按自己的老规矩读继承来的 `http_proxy` 环境变量
+/// （与改动前一致）。SOCKS 环境变量代理 ffmpeg 不支持，记诊断后直连，不冒充支持。
+String? _appProxyForFfmpegInput(String inputPath) {
+  final Uri? uri = Uri.tryParse(inputPath);
+  if (uri == null || uri.host.isEmpty) return null;
+  final ({String? proxyUrl, bool socksUnsupported}) decision =
+      resolveAppProxyUrlForExternalClient(uri);
+  if (decision.socksUnsupported) {
+    engineLog.logDiagnostic(
+      'ffmpeg-app-proxy',
+      'app proxy for ${uri.host} is a SOCKS proxy from the environment; '
+          'ffmpeg -http_proxy only speaks HTTP proxies, connecting directly',
+    );
+  }
+  return decision.proxyUrl;
 }
 
 /// TODO-1314（B5，借鉴 yt-dlp 分片 range 下载）：把 googlevideo 流 URL 追加/覆盖
@@ -795,6 +859,15 @@ void _reportFfmpegUnexpectedException(
 /// historical byte-identical output. The range is still expressed in **source**
 /// time (`-ss`/`-t` precede `-i`, so `-t` is the input duration); only the
 /// output shrinks/grows by the factor.
+///
+/// [frontCenterOnly] keeps only the front-centre channel FC of a multichannel
+/// track (`-af pan=mono|c0=FC`, chained before any atempo stage), which is where
+/// film / anime mixes put the dialogue — the sentence clip loses most of the
+/// music and effects (feedback pNF2ZL7Kfc). The output is then mono whatever
+/// [audioChannels] says. The caller must have checked the track really has FC
+/// (`channelLayoutHasFrontCenter` / [probeAudioStreamChannelLayout]): `pan` on a
+/// layout without FC silently produces a silent clip. false (default) leaves the
+/// argument list byte-identical to before.
 List<String> buildFfmpegClipArgs({
   required String inputPath,
   required int startMs,
@@ -811,6 +884,8 @@ List<String> buildFfmpegClipArgs({
   Map<String, String> httpHeaders = const {},
   // 有声书倍速制卡：句子音频按播放倍速变速不变调（`-af atempo=…`）。null / 1.0 不加滤镜。
   double? tempo,
+  // 视频制卡只取多声道的中置声道 FC（人声）。false = 现状（逐字节不变）。
+  bool frontCenterOnly = false,
 }) {
   final double startSeconds = startMs / 1000.0;
   final double durationSeconds = (endMs - startMs) / 1000.0;
@@ -818,7 +893,10 @@ List<String> buildFfmpegClipArgs({
     audioStreamIndex: audioStreamIndex,
     audioStreamCount: audioStreamCount,
   );
-  final String? tempoFilter = buildFfmpegAtempoFilter(tempo);
+  final String? tempoFilter = buildFfmpegSentenceAudioFilter(
+    tempo: tempo,
+    frontCenterOnly: frontCenterOnly,
+  );
   return <String>[
     '-y',
     ...buildFfmpegRemoteInputArgs(
@@ -861,11 +939,108 @@ List<String> buildFfmpegClipArgs({
     // Android 原生 AacAdtsCueAudioRewriter 是无损 re-mux（跟源、不重编码），不经此
     // 路径、不受压缩开关影响。
     '-ac',
-    '$audioChannels',
+    // 中置声道已是单声道：`-ac 2` 只会把同一路复制成两路，白占一倍体积。
+    frontCenterOnly ? '1' : '$audioChannels',
     '-b:a',
     audioBitrate,
     outputPath,
   ];
+}
+
+/// `-af` 里取中置声道 FC 的那一段（输出单声道）。
+const String kFfmpegFrontCenterFilter = 'pan=mono|c0=FC';
+
+/// 句子音频的整条 `-af` 链：先取中置声道（[frontCenterOnly]），再变速
+/// （[buildFfmpegAtempoFilter]）。两样都不要时返回 null（不加 `-af`，= 现状）。纯函数。
+String? buildFfmpegSentenceAudioFilter({
+  double? tempo,
+  bool frontCenterOnly = false,
+}) {
+  final String? atempo = buildFfmpegAtempoFilter(tempo);
+  final List<String> stages = <String>[
+    if (frontCenterOnly) kFfmpegFrontCenterFilter,
+    if (atempo != null) atempo,
+  ];
+  return stages.isEmpty ? null : stages.join(',');
+}
+
+/// ffprobe 参数：只读 [inputPath] 第 [audioStreamIndex] 条音轨（`a:N`）的声道布局与
+/// 声道数，JSON 输出。远端输入带上与裁剪同一组连接参数（UA / Referer / TLS 钉扎）。纯函数。
+List<String> buildFfprobeAudioChannelLayoutArgs({
+  required String inputPath,
+  required int audioStreamIndex,
+  String? tlsPinSha256,
+  Map<String, String> httpHeaders = const {},
+}) => <String>[
+  ...buildFfmpegRemoteInputArgs(
+    inputPath,
+    tlsPinSha256: tlsPinSha256,
+    httpHeaders: httpHeaders,
+  ),
+  '-v',
+  'error',
+  '-select_streams',
+  'a:${audioStreamIndex < 0 ? 0 : audioStreamIndex}',
+  '-show_entries',
+  'stream=channels,channel_layout',
+  '-of',
+  'json',
+  inputPath,
+];
+
+/// 解析 [buildFfprobeAudioChannelLayoutArgs] 的输出：首条流的 `(layout, channels)`；
+/// 解析不了 / 没有流时两者都是 null。纯函数，绝不抛。
+({String? layout, int? channels}) parseFfprobeAudioChannelLayout(
+  String stdout,
+) {
+  try {
+    final Object? decoded = jsonDecode(stdout.trim());
+    if (decoded is! Map) return (layout: null, channels: null);
+    final Object? streams = decoded['streams'];
+    if (streams is! List || streams.isEmpty) {
+      return (layout: null, channels: null);
+    }
+    final Object? first = streams.first;
+    if (first is! Map) return (layout: null, channels: null);
+    final Object? layout = first['channel_layout'];
+    final Object? channels = first['channels'];
+    return (
+      layout: layout is String && layout.trim().isNotEmpty
+          ? layout.trim()
+          : null,
+      channels: channels is num ? channels.toInt() : null,
+    );
+  } catch (_) {
+    return (layout: null, channels: null);
+  }
+}
+
+/// 探测 [inputPath] 第 [audioStreamIndex] 条音轨的声道布局（中置声道取音前的确认，
+/// 播放器没报布局时才用）。ffprobe 不可用 / 超时 / 解析不了时两者都是 null，绝不抛。
+Future<({String? layout, int? channels})> probeAudioStreamChannelLayout({
+  required String inputPath,
+  required int audioStreamIndex,
+  String? tlsPinSha256,
+  Map<String, String> httpHeaders = const {},
+  Duration timeout = const Duration(seconds: 20),
+}) async {
+  try {
+    final FfmpegRunResult result = await resolveFfmpegBackend().runProbe(
+      buildFfprobeAudioChannelLayoutArgs(
+        inputPath: inputPath,
+        audioStreamIndex: audioStreamIndex,
+        tlsPinSha256: tlsPinSha256,
+        httpHeaders: httpHeaders,
+      ),
+      timeout,
+    );
+    if (result.returnCode != 0) return (layout: null, channels: null);
+    return parseFfprobeAudioChannelLayout(result.output);
+  } catch (e) {
+    // 缺 ffprobe / 远端打不开是正常降级（调用方按「布局未知」回退并提示），不是错误。
+    engineLog.logDiagnostic('probeAudioStreamChannelLayout', e);
+    return (layout: null, channels: null);
+  }
 }
 
 /// [buildFfmpegAtempoFilter] treats a tempo this close to 1.0 as "no change".
@@ -1884,6 +2059,8 @@ Future<String?> extractAudioSegmentViaFfmpeg({
   Map<String, String> httpHeaders = const {},
   // 有声书倍速制卡：句子音频按播放倍速变速不变调；null / 1.0 = 原速（现状）。
   double? tempo,
+  // 视频制卡只取多声道的中置声道 FC（见 [buildFfmpegClipArgs]）；false = 现状。
+  bool frontCenterOnly = false,
   // 句子级片段默认 120s 足够；整集音轨（远端对轴 / 重定时）由调用方按时长放大。
   Duration timeout = const Duration(seconds: 120),
 }) async {
@@ -1929,6 +2106,7 @@ Future<String?> extractAudioSegmentViaFfmpeg({
         tlsPinSha256: tlsPinSha256,
         httpHeaders: httpHeaders,
         tempo: tempo,
+        frontCenterOnly: frontCenterOnly,
       ),
       timeout,
     );

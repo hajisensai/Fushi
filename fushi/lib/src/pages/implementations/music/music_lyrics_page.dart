@@ -33,6 +33,7 @@ import 'package:fushi_engine/mining/immersion_mining_request.dart'
     show immersionMiningAudioExtension;
 import 'package:fushi_music/fushi_music.dart';
 
+import 'package:fushi/src/anki/mined_card_undo.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_channel.dart';
 import 'package:fushi/src/media/favorites/favorite_lookup_context.dart';
@@ -575,7 +576,12 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
         );
       }
       if (described.success) {
-        FushiToast.showMine(msg: described.message, status: described.status);
+        FushiToast.showMine(
+          msg: described.message,
+          status: described.status,
+          // 反馈 JNyykxvuY9：成功提示带「撤销」，几秒内点一下删掉刚加的卡。
+          action: minedCardUndoToastAction(repo, outcome),
+        );
         return MinePopupResult.mined(outcome);
       }
       return MinePopupResult.failed(outcome, message: described.message);

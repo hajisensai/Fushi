@@ -2707,6 +2707,10 @@ async function testAppExternalMinedClickShowsInPagePanelAndCanAddDuplicate() {
   await flush();
 
   assert.equal(calls.mineEntry.length, 1, '「新增为重复卡」 mines a new card');
+  // 反馈 _3tWQR6J2G / BUG-2605 同口径：用户明确选了「新增为重复卡」，请求必须带单次放行标记，
+  // 否则后端按全局 allowDupes（默认关）判重复拒掉。
+  assert.equal(calls.mineEntry[0].allowDuplicate, 'true',
+    'an explicit duplicate add carries allowDuplicate');
   assert.equal(context.document.querySelector('.mined-action-panel'), null,
     'the panel closes after the action');
   assert.equal(mineButton.disabled, false, 'the button is never left disabled');
@@ -2777,6 +2781,88 @@ async function testAppExternalMinedClickReminesWhenCardIsGone() {
     'no panel when there is nothing to choose between');
   assert.equal(calls.mineEntry.length, 1, 'a vanished card is re-mined, not silently ignored');
 }
+
+// 反馈 _3tWQR6J2G：浏览器扩展的 shim 列不出命中卡（findMinedMatches 回 null）。此前 null
+// 被当成「卡已不在」直接重制 → 后端判重复拒掉，用户只看到「已存在」、没有任何选择。现在：
+// 卡仍在（duplicateCheck 真）就照样弹面板问（只剩「新增为重复卡 / 取消」），选了新增带
+// allowDuplicate；卡真不在了才重制。
+async function testExtensionHostWithoutMatchListStillAsksBeforeDuplicate() {
+  const context = loadPopup();
+  context.window.allowDupes = false;
+  const calls = newCalls();
+  stubAppExternalHost(context, { matches: null, calls });
+
+  const mineButton = buildMineHeader(context);
+  await flush();
+  assert.equal(mineButton.dataset.mined, '1');
+  const click = mineButton.onclick();
+  // 多一次 duplicateCheck 再核：多排几轮微任务。
+  await flush();
+  await flush();
+
+  assert.ok(context.document.querySelector('.mined-action-panel'),
+    'a host that cannot list matches must still ask instead of silently re-mining');
+  assert.equal(calls.mineEntry.length, 0, 'nothing is mined before the user decides');
+  findPanelButton(context, '新增为重复卡').onclick();
+  await click;
+  await flush();
+  assert.equal(calls.mineEntry.length, 1);
+  assert.equal(calls.mineEntry[0].allowDuplicate, 'true');
+}
+
+async function testExtensionHostWithoutMatchListCancelWritesNothing() {
+  const context = loadPopup();
+  context.window.allowDupes = false;
+  const calls = newCalls();
+  stubAppExternalHost(context, { matches: null, calls });
+
+  const mineButton = buildMineHeader(context);
+  await flush();
+  const click = mineButton.onclick();
+  // 多一次 duplicateCheck 再核：多排几轮微任务。
+  await flush();
+  await flush();
+  findPanelButton(context, '取消').onclick();
+  await click;
+  await flush();
+  assert.equal(calls.mineEntry.length, 0, 'cancel must not create a card');
+  assert.equal(mineButton.dataset.mined, '1');
+}
+
+async function testExtensionHostWithoutMatchListReminesWhenCardIsGone() {
+  const context = loadPopup();
+  context.window.allowDupes = false;
+  const calls = newCalls();
+  stubAppExternalHost(context, { matches: null, calls });
+  const mineButton = buildMineHeader(context);
+  await flush();
+  assert.equal(mineButton.dataset.mined, '1');
+  // 查词后卡在 Anki 里被删了：点 ✓ 时再核为假 → 不弹面板，按新卡重制（不带重复标记）。
+  const original = context.window.flutter_inappwebview.callHandler;
+  context.window.flutter_inappwebview.callHandler = (name, payload) =>
+    (name === 'duplicateCheck' ? Promise.resolve(false) : original(name, payload));
+  await mineButton.onclick();
+  await flush();
+  assert.equal(context.document.querySelector('.mined-action-panel'), null);
+  assert.equal(calls.mineEntry.length, 1);
+  assert.equal(calls.mineEntry[0].allowDuplicate, undefined,
+    'a plain re-mine must not carry the duplicate override');
+}
+
+testExtensionHostWithoutMatchListStillAsksBeforeDuplicate().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+
+testExtensionHostWithoutMatchListCancelWritesNothing().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+
+testExtensionHostWithoutMatchListReminesWhenCardIsGone().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
 
 testAppExternalMinedClickShowsInPagePanelAndCanAddDuplicate().catch((error) => {
   console.error(error);

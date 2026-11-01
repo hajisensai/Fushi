@@ -29,6 +29,7 @@ import 'package:fushi_engine/media/video/bitmap_subtitle/bitmap_subtitle_cue.dar
 import 'package:fushi_engine/media/video/bitmap_subtitle/graphic_subtitle_track_extract.dart'
     show extractGraphicSubtitleTrack, readGraphicSubtitleTrackInBackground;
 import 'package:fushi/src/media/video/player_decoded_subtitle_cues.dart';
+import 'package:fushi/src/media/video/subtitle_text_override.dart';
 import 'package:fushi/src/media/video/video_graphic_subtitle_regions.dart';
 import 'package:fushi/src/media/video/video_playback_source.dart';
 import 'package:fushi/src/media/video/video_shader_manager.dart';
@@ -97,45 +98,6 @@ bool isWindowsUncPath(String path, {required bool windows}) {
 /// 纯函数，无副作用，是 [VideoPlayerController.updateCueForPosition] 与单测的共享真相源。
 int effectiveSubtitlePositionMs(int posMs, int delayMs) =>
     (posMs - delayMs).clamp(0, 1 << 30);
-
-/// 「上一句」seek 决策结果（TODO-085，[VideoPlayerController.prevSeekDecisionFor] 返回）。
-///
-/// 三态：跳到某条 cue（句子 seek）／回退固定毫秒（时间 seek 退化）／无动作。
-/// 用不可变值对象而非裸 record，便于在 [VideoPlayerController.skipToPrevCue] 与单测中
-/// 明确区分意图。
-@immutable
-class PrevSeekDecision {
-  const PrevSeekDecision._({this.cueIndex, this.timeSeekDeltaMs});
-
-  /// 跳到第 [index] 条 cue（句子 seek）。
-  const PrevSeekDecision.cue(int index) : this._(cueIndex: index);
-
-  /// 回退（或前进）[deltaMs] 毫秒的相对时间 seek（TODO-085 退化分支恒为负）。
-  const PrevSeekDecision.timeSeek(int deltaMs)
-    : this._(timeSeekDeltaMs: deltaMs);
-
-  /// 无可后退的上一句：不动（保持原 no-op 语义）。
-  static const PrevSeekDecision none = PrevSeekDecision._();
-
-  /// 目标 cue 下标；非 null 表示句子 seek。
-  final int? cueIndex;
-
-  /// 相对时间 seek 的毫秒偏移；非 null 表示时间 seek（退化分支）。
-  final int? timeSeekDeltaMs;
-
-  @override
-  bool operator ==(Object other) =>
-      other is PrevSeekDecision &&
-      other.cueIndex == cueIndex &&
-      other.timeSeekDeltaMs == timeSeekDeltaMs;
-
-  @override
-  int get hashCode => Object.hash(cueIndex, timeSeekDeltaMs);
-
-  @override
-  String toString() =>
-      'PrevSeekDecision(cueIndex: $cueIndex, timeSeekDeltaMs: $timeSeekDeltaMs)';
-}
 
 /// mkv/mp4 内封章节（chapter）的一条记录（TODO-424）。只读值对象：序号 + 标题 +
 /// 起始位置，由 [VideoPlayerController.refreshChapters] 从 libmpv `chapter-list`
@@ -290,6 +252,11 @@ class VideoPlayerController extends ChangeNotifier
 
   List<AudioCue> _cues = <AudioCue>[];
   AudioCue? _currentCue;
+
+  /// 主字幕的用户手改文本覆盖（反馈 gleDreKAvo / dpAsMkUjKT）。[setCues] 与 libmpv
+  /// 回流的每一句都按它套一遍；页面在「视频 + 字幕源」变化时经
+  /// [setCueTextOverrides] 换成对应那份。
+  SubtitleTextOverrides _cueTextOverrides = SubtitleTextOverrides.empty;
   int _currentCueIndex = -1;
 
   /// TODO-1312：当前**主字幕**活动集（区间 [startMs,endMs] 覆盖 effective 位置的所有
@@ -2328,13 +2295,15 @@ class VideoPlayerController extends ChangeNotifier
         text.replaceAll('\r\n', '\n').trim()) {
       return;
     }
-    final AudioCue? cue = buildPlayerDecodedCue(
+    final AudioCue? decoded = buildPlayerDecodedCue(
       text: text,
       startMs: startMs,
       endMs: endMs,
       positionMs: positionAtEvent,
     );
-    if (cue == null) return;
+    if (decoded == null) return;
+    // 用户手改过的句子回流时同样换成改后文本（暂定时长收尾改的是列表里这份副本）。
+    final AudioCue cue = applySubtitleTextOverride(decoded, _cueTextOverrides);
     if (endMs == null || endMs <= cue.startMs) {
       _playerDecodedProvisionalCue = cue;
     }
@@ -2592,10 +2561,13 @@ class VideoPlayerController extends ChangeNotifier
     // 否则迟到的 sub-text 会把旧轨的句子插进新 cue 列表。
     _stopPlayerDecodedText();
     // `\p` 绘图事件分流到渲染专用流（[_drawingCues]），对白流只留可读字幕。
-    _cues = _sortedByStart(<AudioCue>[
-      for (final AudioCue c in cues)
-        if (!c.isRenderOnly) c,
-    ]);
+    _cues = applySubtitleTextOverrides(
+      _sortedByStart(<AudioCue>[
+        for (final AudioCue c in cues)
+          if (!c.isRenderOnly) c,
+      ]),
+      _cueTextOverrides,
+    );
     _drawingCues = _sortedByStart(<AudioCue>[
       for (final AudioCue c in cues)
         if (c.isRenderOnly) c,
@@ -2627,6 +2599,32 @@ class VideoPlayerController extends ChangeNotifier
     if (_cues.isNotEmpty) onCuesReplaced?.call(_cues);
     notifyListeners();
   }
+
+  /// 换一份主字幕文本覆盖（用户手改的单条字幕，见 `subtitle_text_override.dart`），
+  /// 并就地套到当前 [cues] 上。只换文本、不动起止时间：下标类状态（当前句 / 活动集 /
+  /// 单句停 / 循环）全部仍指向同一句，不复位播放态。之后 [setCues] 装进来的新列表与
+  /// libmpv 回流的句子也都按它套。
+  void setCueTextOverrides(SubtitleTextOverrides overrides) {
+    _cueTextOverrides = overrides;
+    final List<AudioCue> next = applySubtitleTextOverrides(_cues, overrides);
+    if (identical(next, _cues)) return;
+    final AudioCue? provisional = _playerDecodedProvisionalCue;
+    if (provisional != null) {
+      final int at = _cues.indexWhere(
+        (AudioCue c) => identical(c, provisional),
+      );
+      _playerDecodedProvisionalCue = at >= 0 ? next[at] : provisional;
+    }
+    _cues = next;
+    if (_currentCueIndex >= 0 && _currentCueIndex < _cues.length) {
+      _currentCue = _cues[_currentCueIndex];
+    }
+    _scheduleLuaSubtitleMirrorSync();
+    notifyListeners();
+  }
+
+  /// 当前生效的主字幕文本覆盖。
+  SubtitleTextOverrides get cueTextOverrides => _cueTextOverrides;
 
   /// 主字幕 cue 列表整体换成了一份非空的新列表（加载 / 换轨 / 换集）。页面接到
   /// 「我库里的例句」的语料喂入（LibraryCorpusService.feedVideoCues）；null = 不关心。
@@ -3218,6 +3216,9 @@ class VideoPlayerController extends ChangeNotifier
     String? externalAudioTrackUrl,
     void Function(DefaultEmbeddedSubtitleLoadResult result)?
     onEmbeddedSubtitleAutoLoad,
+    // 主字幕默认语言偏好（反馈 Fz9HXThdSW，见 parseSubtitleLanguagePreferences）：
+    // 自动抽内封文本轨时按它挑轨，空 = 第一条文本轨（旧行为）。
+    List<String> preferredSubtitleLanguages = const <String>[],
   }) async {
     assert(
       (videoFile == null) != (mediaUri == null),
@@ -3868,6 +3869,7 @@ class VideoPlayerController extends ChangeNotifier
       subtitleExplicitlyOff: subtitleExplicitlyOff,
       externalSubtitlePath: externalSubtitlePath,
       onEmbeddedSubtitleAutoLoad: onEmbeddedSubtitleAutoLoad,
+      preferredSubtitleLanguages: preferredSubtitleLanguages,
     );
   }
 
@@ -3944,6 +3946,7 @@ class VideoPlayerController extends ChangeNotifier
     required String? externalSubtitlePath,
     required void Function(DefaultEmbeddedSubtitleLoadResult result)?
     onEmbeddedSubtitleAutoLoad,
+    required List<String> preferredSubtitleLanguages,
   }) async {
     // 恢复「图形内封字幕」选择（BUG-122）：上次选的是 PGS 等位图轨，没有文本 cue，
     // 交给 libmpv 当画面字幕渲染。不阻塞首帧（轨列表 open 后才就绪，方法内等待）。
@@ -3964,6 +3967,7 @@ class VideoPlayerController extends ChangeNotifier
           loadToken: loadToken,
           bookUid: bookUid,
           onResult: onEmbeddedSubtitleAutoLoad,
+          preferredLanguages: preferredSubtitleLanguages,
         ),
       );
     }
@@ -4241,6 +4245,7 @@ class VideoPlayerController extends ChangeNotifier
     required int loadToken,
     required String bookUid,
     void Function(DefaultEmbeddedSubtitleLoadResult result)? onResult,
+    List<String> preferredLanguages = const <String>[],
   }) async {
     // 桌面走系统 ffmpeg、移动端走捆绑 ffmpeg-kit（见 resolveFfmpegBackend），两端都能
     // 抽内封字幕，故不再按平台门控（早先「移动端无 ffmpeg」的限制已随捆绑解除）。
@@ -4259,6 +4264,7 @@ class VideoPlayerController extends ChangeNotifier
             bookUid: bookUid,
             waitForReady: () => _waitUntilSubtitleTracksReady(player),
             isStillCurrent: () => _isCurrentLoad(player, loadToken),
+            preferredLanguages: preferredLanguages,
           );
       if (!_isCurrentLoad(player, loadToken)) return;
 
@@ -6316,38 +6322,20 @@ class VideoPlayerController extends ChangeNotifier
     await playFromCue(_cues[prev]);
   }
 
-  /// 跳上一句字幕。无 cue 时退化成回退 [seekSeconds] 秒（当回退键，让用户跨过没字幕的
-  /// 转场段，TODO-119/BUG-198）；有 cue 时的行为由 [degradeFarCueToTimeSeek] 决定：
+  /// 跳上一句字幕：有 cue 时**恒跳到相邻上一句**的开头（[skipToPrevCue]，不论上一句
+  /// 离当前多远）；无 cue 时退化成回退 [seekSeconds] 秒（当回退键，让用户跨过没字幕的
+  /// 转场段，TODO-119/BUG-198）。
   ///
-  /// - `false`（**默认**，按钮 / 手柄 / 双击 / 控制项语义，BUG-942）：**恒跳到相邻上一句**，
-  ///   哪怕上一句距当前很远也不退化——「上一句字幕」按钮就该跳句，不该悄悄变成 3 秒 seek。
-  /// - `true`（键盘 Ctrl+← 语义，TODO-085）：上一句说完到当前句之间静默 > `seekSeconds` 秒时退化成
-  ///   回退 `seekSeconds` 秒（方向键的 seek 心智；纯时间 seek 另有 ←/→）。
-  ///
-  /// 决策集中在纯函数 [prevSeekDecisionFor]。无 cue / 已在首句时 no-op 安全。
-  Future<void> skipToPrevCueOrSeekBack({
-    required int seekSeconds,
-    bool degradeFarCueToTimeSeek = false,
-  }) async {
+  /// 反馈 yNNhNgXm_M：BUG-185/TODO-085 曾让键盘 Ctrl+← 在「上一句太远」时改成回退
+  /// seekSeconds 秒，用户按了没跳到上一句，以为快捷键坏了。该特例已删除——所有输入
+  /// （键盘 / 手柄 / 按钮 / 双击 / 远程）同一语义；纯时间回退另有 ←。转场 / 长 gap 里
+  /// 按「上一句」跳到 gap 之前刚播完那句（[prevCueIndexFor]），不会 no-op 卡住（BUG-200）。
+  Future<void> skipToPrevCueOrSeekBack({required int seekSeconds}) async {
     if (_cues.isEmpty) {
-      // 无字幕：当回退键，直接回退 seekSeconds 秒（与页面层「无 cue 走时间 seek」一致，
-      // 集中决策便于单测）。
       await seekRelative(-seekSeconds * 1000);
       return;
     }
-    final PrevSeekDecision decision = prevSeekDecisionFor(
-      cues: _cues,
-      positionMs: effectiveSubtitleClockMs,
-      seekSeconds: seekSeconds,
-      anchorIndex: _seekTargetCueIndex,
-      degradeFarCueToTimeSeek: degradeFarCueToTimeSeek,
-    );
-    if (decision.cueIndex != null) {
-      await skipToCue(_cues[decision.cueIndex!]);
-    } else if (decision.timeSeekDeltaMs != null) {
-      await seekRelative(decision.timeSeekDeltaMs!);
-    }
-    // PrevSeekDecision.none：已在首句，保持 no-op（不强行回退到负位置）。
+    await skipToPrevCue();
   }
 
   /// 「下一句」按钮 / 键盘用：跳到下一句字幕，但**无字幕时退化成前进 [seekSeconds]
@@ -6431,7 +6419,7 @@ class VideoPlayerController extends ChangeNotifier
   ///   当前句句首「重播本句」是另一条独立路径（[skipToCue]），不走这里。
   /// - **gap / 早于首句**（findCueIndex 返回 -1）：此刻没有正在播放的句子，「上一句」=
   ///   gap 之前刚播完那条（最近一条起点 < 位置的 cue）；早于全部 cue 时落首句（索引 0）。
-  ///   这保留了 TODO-085/119 转场 gap 回退决策赖以计算「上一句距当前多远」的参照。
+  ///   转场 / 长 gap 里按「上一句」因此总有落点，不会 no-op（BUG-200）。
   ///
   /// [anchorIndex]（TODO-571）：上一次主动跳转（[skipToCue]）落定的目标句下标，由
   /// 调用方传 [_seekTargetCueIndex]。非空且在范围内时，**直接 `anchor - 1`**，绕过按
@@ -6497,55 +6485,6 @@ class VideoPlayerController extends ChangeNotifier
         : prevCueIndexFor(cues: cues, positionMs: effPos);
     if (idx == null || idx < 0 || idx >= cues.length) return null;
     return positionMs - cues[idx].startMs;
-  }
-
-  /// 纯函数：「上一句」seek 决策。目标上一句由 [prevCueIndexFor] 决定；
-  /// [degradeFarCueToTimeSeek] 控制「上一句太远」时的行为：
-  ///
-  /// - `true`（**默认**，键盘 Ctrl+← 语义，TODO-085）：目标上一句结束到当前语境的静默
-  ///   大于 [seekSeconds] 秒时**退化成回退 [seekSeconds] 秒的时间 seek**，而不是一脚跳到
-  ///   很远的上一句——对照用户诉求「如果上一句话距离很远了，左右键就回退到回退 3 秒的模式」。
-  /// - `false`（按钮 / 手柄 / 双击 / 控制项语义，BUG-942）：**永远跳句**，不因太远退化——
-  ///   「上一句字幕」按钮就该跳到相邻上一句。
-  ///
-  /// 具体：
-  /// - 无上一句（已在首句 / 空列表）：返回 [PrevSeekDecision.none]（保持原 no-op 不强行 seek）。
-  /// - `degradeFarCueToTimeSeek == false`，或 [seekSeconds] <= 0（阈值失效，防御性）：跳到该 cue。
-  /// - 目标上一句**结束**到当前语境起点（当前句起点，gap 里则为当前位置）的静默
-  ///   `<= seekSeconds*1000` ms：跳到该 cue（句子 seek）。
-  /// - 静默 `> seekSeconds*1000` ms：返回 [PrevSeekDecision.timeSeek]（回退 `seekSeconds` 秒）。
-  static PrevSeekDecision prevSeekDecisionFor({
-    required List<AudioCue> cues,
-    required int? positionMs,
-    required int seekSeconds,
-    int? anchorIndex,
-    bool degradeFarCueToTimeSeek = true,
-  }) {
-    final int? prev = prevCueIndexFor(
-      cues: cues,
-      positionMs: positionMs,
-      anchorIndex: anchorIndex,
-    );
-    if (prev == null) return PrevSeekDecision.none;
-    if (!degradeFarCueToTimeSeek || seekSeconds <= 0) {
-      return PrevSeekDecision.cue(prev);
-    }
-    final int pos = positionMs ?? 0;
-    // 「上一句很远」量的是上一句**说完**到当前语境之间的静默段，不是上一句**起点**到
-    // 当前位置（BUG：旧判据 `pos - prev.startMs` = 上一句时长 + 句间间隙 + 当前句已播
-    // 时长，普通对话里几乎恒 > 3s，键盘 Ctrl+← 于是几乎总退化成回退 3 秒）。当前语境
-    // 起点：落在 prev 的下一句里时取该句起点（当前句已播多久与「上一句远不远」无关），
-    // 落在 gap 里（或 prev 已是末句）时取当前位置。
-    final int contextStartMs =
-        prev + 1 < cues.length && cues[prev + 1].startMs < pos
-        ? cues[prev + 1].startMs
-        : pos;
-    final int gapMs = contextStartMs - cues[prev].endMs;
-    final int thresholdMs = seekSeconds * 1000;
-    if (gapMs > thresholdMs) {
-      return PrevSeekDecision.timeSeek(-thresholdMs);
-    }
-    return PrevSeekDecision.cue(prev);
   }
 
   /// 二分求「起点 <= [positionMs] 的最后一条 cue」的下标（floor 语义）；位置早于

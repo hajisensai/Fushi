@@ -258,7 +258,9 @@ class _VideoStatisticsPageState extends BasePageState<VideoStatisticsPage> {
       final List<FavoriteSentence> videoFavSentences = counterFacts
           .favoriteSentences
           .where(
-            (FavoriteSentence s) => s.source == kFavoriteSentenceSourceVideo,
+            (FavoriteSentence s) =>
+                s.source == kFavoriteSentenceSourceVideo ||
+                s.source == kFavoriteSentenceSourceWeb,
           )
           .toList();
       // counters 也算有数据（review4-6）：只在视频域查过词（无观看/收藏/制卡）

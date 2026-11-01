@@ -282,6 +282,9 @@ extension _VideoAdvancedMining on _VideoFushiPageState {
             await controller.stopPlayRange();
           }
         },
+        nudgeStepMs: appModel.advancedMiningAudioNudgeStepMs,
+        onNudgeStepChanged: appModel.setAdvancedMiningAudioNudgeStepMs,
+        sources: _advancedMiningAudioSources(controller),
       ),
       videoImage: AdvancedMiningVideoImageSection(
         modes: modes,

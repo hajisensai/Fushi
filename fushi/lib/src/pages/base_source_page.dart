@@ -1185,7 +1185,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
               },
         headerWidget: index == 0 ? buildPopupAudioControls() : null,
         topBarScale: dictionaryPopupTopBarScale(
-          appUiScale: appModel.appUiScale,
+          appUiScale: appModel.popupUiScale,
           dictionaryFontSize: appModel.dictionaryFontSize,
         ),
         overlayWidget: isTop ? buildDictionaryLoading() : null,
@@ -1370,6 +1370,13 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
     await runWithLookupPopupHidden<void>(() async {
       final AdvancedMiningDeckSection deck =
           await loadAdvancedMiningDeckSection(ref);
+      final AdvancedMiningFieldsSection? fields =
+          await loadAdvancedMiningFieldsSection(
+            ref,
+            fetchPayload: () async =>
+                webViewKey.currentState?.buildMinePayloadByIndex(entryIndex),
+            fallbackSentence: () => favoriteLookupContext?.sentence ?? '',
+          );
       final AdvancedMiningSections sections = await buildAdvancedMiningSections(
         matched: matched,
       );
@@ -1383,6 +1390,7 @@ abstract class BaseSourcePageState<T extends BaseSourcePage>
           matched: matched,
           expression: expression.isEmpty ? null : expression,
           deck: deck,
+          fields: fields,
           sections: sections,
           // BUG-2627：回传「有没有真的点到制卡按钮」，对话框据此提示，不再静默关窗。
           onConfirm: (MiningRequestOverrides overrides) async =>

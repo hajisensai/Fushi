@@ -31,6 +31,8 @@ import 'package:fushi_engine/srs/srs_note_type_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi/src/ai/ai_failure_text.dart';
+import 'package:fushi/src/ai/ai_saved_prompt_picker.dart';
+import 'package:fushi/src/ai/ai_saved_prompts.dart';
 import 'package:fushi/src/ai/ai_srs_template_assistant.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_registry.dart';
@@ -543,6 +545,12 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
       cancelLabel: t.cancel,
       icon: FushiIcons.aiAssistant,
       maxLines: 4,
+      fieldAccessoryBuilder: (TextEditingController controller) =>
+          AiSavedPromptButton(
+            scene: AiPromptScene.srsTemplate,
+            controller: controller,
+            showLabel: true,
+          ),
     );
     if (request == null || request.trim().isEmpty || !mounted) return;
     final String? message = await _runAi(request.trim());

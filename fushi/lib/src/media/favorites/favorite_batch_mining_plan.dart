@@ -210,7 +210,9 @@ FavoriteMiningMediaPlan planAudioFavoriteMedia({
 /// 按原始 [FavoriteMiningItem.source] 字符串判（与 [statSourceOf] 同形）。
 AnkiMiningSource ankiMiningSourceOf(FavoriteMiningItem item) =>
     switch (item.source) {
-      kFavoriteSentenceSourceVideo => AnkiMiningSource.video,
+      // 浏览器扩展网页视频收藏句（KGC1ifR1a3）也是看视频的语境。
+      kFavoriteSentenceSourceVideo ||
+      kFavoriteSentenceSourceWeb => AnkiMiningSource.video,
       kFavoriteSentenceSourceGame => AnkiMiningSource.game,
       kFavoriteSentenceSourceMusic => AnkiMiningSource.music,
       _ => AnkiMiningSource.book,
@@ -218,7 +220,8 @@ AnkiMiningSource ankiMiningSourceOf(FavoriteMiningItem item) =>
 
 /// 制卡统计的来源桶（`StatSourceKind` 值域）。
 String statSourceOf(FavoriteMiningItem item) => switch (item.source) {
-  kFavoriteSentenceSourceVideo => kStatSourceVideo,
+  kFavoriteSentenceSourceVideo ||
+  kFavoriteSentenceSourceWeb => kStatSourceVideo,
   kFavoriteSentenceSourceGame => kStatSourceGame,
   kFavoriteSentenceSourceMusic => kStatSourceMusic,
   _ => kStatSourceBook,
@@ -232,7 +235,8 @@ String minedSentenceSourceOf(FavoriteMiningItem item) =>
       SentenceSourceKind.video ||
       SentenceSourceKind.game ||
       SentenceSourceKind.manga ||
-      SentenceSourceKind.music => item.sourceKind.dbValue,
+      SentenceSourceKind.music ||
+      SentenceSourceKind.web => item.sourceKind.dbValue,
       SentenceSourceKind.book ||
       SentenceSourceKind.audiobook ||
       SentenceSourceKind.lyrics => kFavoriteSentenceSourceBook,

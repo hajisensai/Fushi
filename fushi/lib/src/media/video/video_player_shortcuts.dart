@@ -46,23 +46,6 @@ class VideoGamepadSecondaryTapDeduper {
   }
 }
 
-/// 一次视频动作是从哪类输入来的。同一张动作表（[videoActionCallbacks]）服务所有输入
-/// 通道，但「上一句字幕」在两类输入上的语义是用户分别拍板过的，不同：
-///
-/// - [keyboard]：Ctrl+← 是**方向键**心智（TODO-085）——上一句起点离得太远时退化成回退
-///   seekSeconds 秒。字幕对轴弹窗那张 activator 表也是键盘。
-/// - [button]：手柄 / 鼠标侧键 / 屏幕自定义按钮——**按钮**心智（BUG-942），恒跳到相邻
-///   上一句，与底栏按钮、屏幕双击同一语义。
-///
-/// BUG-3339：手柄通道曾直接复用键盘那份执行体，于是手柄「上一句」在上一句离得远时只退
-/// 3 秒（用户：「连跳一两下才到句首」），而屏幕双击一直正常。输入种类必须作为构造动作表
-/// 的参数显式给出，不能由「谁先写了这份闭包」隐式决定。
-enum VideoActionInput { keyboard, button }
-
-/// 「上一句字幕」在 [input] 下是否把太远的上一句退化成时间回退（见 [VideoActionInput]）。
-bool videoPrevSubtitleDegradesFarCue(VideoActionInput input) =>
-    input == VideoActionInput.keyboard;
-
 class VideoPlayerShortcutActions {
   const VideoPlayerShortcutActions({
     required this.togglePlayPause,

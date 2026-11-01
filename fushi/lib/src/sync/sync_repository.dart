@@ -15,6 +15,8 @@ import 'package:fushi/src/models/preferences_repository.dart'
         PreferencesRepository;
 import 'package:fushi_engine/media/torrent/bt_site_legacy_migration.dart'
     show kBtSitesLegacyMigrationPref;
+import 'package:fushi_engine/media/video/metadata/video_scrape_ignored_works.dart'
+    show kVideoScrapeIgnoredWorksPrefKey;
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi/src/media/video/media_server/media_server_config.dart';
 import 'package:fushi/src/media/video/media_server/media_server_registry.dart';
@@ -176,6 +178,13 @@ class FushiFingerprintMismatchException implements Exception {
       'FushiFingerprintMismatchException($url: stored=$storedFingerprint '
       'incoming=$incomingFingerprint)';
 }
+
+/// 设备级「同步设置」开关的 pref key（见 [SyncRepository.isSettingsSyncEnabled]）。
+const String kSyncSettingsEnabledPrefKey = 'sync_settings_enabled';
+
+/// 合并导入备份时是否也并入可移植设置（反馈 AWp-0BtDDv，见
+/// [SyncRepository.isBackupMergeSettingsEnabled]）。
+const String kBackupMergeSettingsPrefKey = 'backup_merge_import_settings';
 
 /// 同步配置和缓存的持久化层（基于 Preferences 表）。
 ///
@@ -949,6 +958,27 @@ class SyncRepository {
   Future<bool> isWebHistorySyncEnabled() => readWebHistorySyncEnabled(_db);
   Future<void> setWebHistorySyncEnabled(bool v) =>
       _db.setPrefTyped<bool>(kSyncWebHistoryPrefKey, v);
+
+  /// 设备级「同步设置」（反馈 AWp-0BtDDv）：可移植的偏好设置（见
+  /// `PortableSettingsPolicy`）是否随云备份 / 互联两条通道跨设备同步。**缺行 = 关**：
+  /// 开了以后别的设备上改的设置会覆盖这台的，升级不能替用户默默打开。设备本地键——
+  /// 从别的设备恢复备份不得替这台设备打开「接收别人的设置」。
+  Future<bool> isSettingsSyncEnabled() =>
+      _db.getPrefTyped<bool>(kSyncSettingsEnabledPrefKey, false);
+
+  ///
+  /// 开关本身不携带合并状态：打开（含关掉再开）后每一轮都按每项的真实修改时刻
+  /// LWW（见 `settingsToAdopt`），没有「首次以远端为准」的重置。
+  Future<void> setSettingsSyncEnabled(bool v) =>
+      _db.setPrefTyped<bool>(kSyncSettingsEnabledPrefKey, v);
+
+  /// 合并导入备份时是否也并入备份里的可移植设置（`PortableSettingsPolicy`，按每项
+  /// 的修改时刻取较新者）。**缺行 = 关**：合并导入一直以来的承诺是「只添加内容、
+  /// 不动本机设置」，升级不能悄悄改掉这条语义。覆盖导入的「导入设置」不受它影响。
+  Future<bool> isBackupMergeSettingsEnabled() =>
+      _db.getPrefTyped<bool>(kBackupMergeSettingsPrefKey, false);
+  Future<void> setBackupMergeSettingsEnabled(bool v) =>
+      _db.setPrefTyped<bool>(kBackupMergeSettingsPrefKey, v);
 
   /// 互联通道「共享收藏夹」：收藏词 + 收藏句（以及它们的删除墓碑，取消收藏要能
   /// 跨端传播）。与统计同为聚合快照的一半，但语义不同——收藏是用户挑出来的内容，
@@ -1834,6 +1864,8 @@ class SyncRepository {
     // 「同步浏览历史」是这台设备的隐私许可：从另一台设备恢复备份不得替这台设备
     // 打开浏览轨迹外流。
     kSyncWebHistoryPrefKey,
+    // 「同步设置」同理是这台设备「接收别处设置」的许可。
+    kSyncSettingsEnabledPrefKey,
     // app 内浏览器的版式 / 行为偏好（标签页样式、侧边栏开合……）：
     // 按这台设备的屏幕与习惯调，唯一清单在 web_browser_prefs.dart。
     ...kWebBrowserDeviceLocalPrefKeys,
@@ -1850,6 +1882,9 @@ class SyncRepository {
     PreferencesRepository.srsLocationKeysKey,
     // BUG-3644 统计同步的 Profile 名字别名：键是本库自增 id，同上。
     kStudyProfileNameAliasesPrefKey,
+    // 待确认队列里「忽略」的作品：元素是本机合集自增 id / 书 uid 拼的作品键，
+    // 换一台设备就指向别的作品（反馈 Fbchzxuq6f）。
+    kVideoScrapeIgnoredWorksPrefKey,
     _keyBackendType,
     // 「新下载任务交给哪台互联 host 执行」指向的是本设备配的 host 地址，随备份
     // 到别的设备只会指错（PC 恢复手机的备份后把任务投给它自己）。

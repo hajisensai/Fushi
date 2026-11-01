@@ -6,6 +6,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/ai/ai_saved_prompt_picker.dart';
+import 'package:fushi/src/ai/ai_saved_prompts.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi/src/ai/ai_dict_style_assistant.dart';
 import 'package:fushi_engine/ai/ai_feature.dart';
@@ -988,6 +990,11 @@ class _DictCssEditorDialogState extends State<DictCssEditorDialog> {
                 minLines: 1,
                 maxLines: 2,
               ),
+            ),
+            AiSavedPromptButton(
+              scene: AiPromptScene.dictStyle,
+              controller: _aiRequestController,
+              enabled: !_aiBusy && !_isSaving,
             ),
             SizedBox(width: tokens.spacing.gap),
             FushiFilledButton.icon(

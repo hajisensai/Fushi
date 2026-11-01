@@ -25,6 +25,71 @@ try {
       check(fc && fc.classList.contains('fushi-srs-defs-grid'), 'host layout ran');
       const more = root.querySelector('.fc-more');
       check(more && more.open, 'other dictionaries section open');
+      const frame0 = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      const mode = ${JSON.stringify(page.mode ?? null)};
+      if (mode === 'limit') {
+        // 「释义显示的词典」= 前 N 本（含主词典）：截掉的不显示、不参与开合；调回全部原样回来。
+        const shownNow = () => Array.from(root.querySelectorAll('.fc-more .fc-dicts > .fc-dict'))
+          .filter((g) => getComputedStyle(g).display !== 'none');
+        const shown = shownNow();
+        const names = shown.map((g) => g.getAttribute('data-fc-dict'));
+        check(JSON.stringify(names) === JSON.stringify(${JSON.stringify(page.visible ?? [])}),
+          'visible dictionaries ' + JSON.stringify(names));
+        check(JSON.stringify(shown.map((g) => g.open)) === JSON.stringify(${JSON.stringify(page.open)}),
+          'open states ' + JSON.stringify(shown.map((g) => g.open)));
+        const empty = names.length === 0;
+        check((getComputedStyle(more).display === 'none') === empty, 'section hidden only when empty');
+        const count = more.querySelector('.fc-more-count');
+        check(!count || count.textContent === String(names.length), 'count ' + (count && count.textContent));
+        const btn = more.querySelector(':scope > summary > .fushi-srs-more-toggle');
+        if (btn && !empty) {
+          btn.click();
+          await frame0();
+          const hidden = Array.from(root.querySelectorAll('.fc-more .fushi-srs-dict-over'));
+          check(hidden.every((g) => !g.open || getComputedStyle(g).display === 'none'), 'expand-all ignores cut groups');
+        }
+        document.documentElement.style.setProperty('--fushi-srs-gloss-dicts', '0');
+        window.__fushiSrsHostLayout();
+        await frame0();
+        check(shownNow().length === 4, 'back to all: ' + shownNow().length);
+        check(getComputedStyle(more).display !== 'none', 'section back');
+        check(!count || count.textContent === '4', 'count back ' + (count && count.textContent));
+        return fails;
+      }
+      if (mode === 'main') {
+        // 主词典标题行尾的收起 / 展开：显眼的按钮，一键开合主词典；主题重排不改它。
+        const mainEl = root.querySelector('.fc-gloss--main');
+        const mainBtn = mainEl && mainEl.querySelector('.fc-dict-label > .fushi-srs-main-toggle');
+        check(!!mainBtn, 'main toggle present');
+        if (!mainBtn) return fails;
+        check(getComputedStyle(mainBtn).pointerEvents === 'auto', 'main toggle clickable');
+        check(mainBtn.lang === 'zh-CN', 'main toggle lang');
+        const mainGroups = Array.from(mainEl.querySelectorAll('.fc-dict'));
+        const state = (open) => mainBtn.getAttribute('aria-expanded') === String(open) &&
+          mainBtn.getAttribute('aria-label') === (open ? 'Collapse main' : 'Expand main');
+        check(mainGroups.length > 0 && mainGroups.every((g) => g.open), 'main open initially');
+        check(state(true), 'main toggle initial ' + mainBtn.getAttribute('aria-label'));
+        const before = mainEl.getBoundingClientRect().height;
+        mainBtn.click();
+        await frame0();
+        check(mainGroups.every((g) => !g.open), 'main collapsed');
+        check(state(false), 'main toggle after collapse');
+        check(mainEl.getBoundingClientRect().height < before - 20,
+          'main shrinks ' + before + ' -> ' + mainEl.getBoundingClientRect().height);
+        // 其他词典的开合不受影响。
+        const others = Array.from(root.querySelectorAll('.fc-more .fc-dicts > .fc-dict'));
+        check(JSON.stringify(others.map((g) => g.open)) === JSON.stringify(${JSON.stringify(page.open)}),
+          'others untouched ' + JSON.stringify(others.map((g) => g.open)));
+        window.__fushiSrsHostLayout();
+        await frame0();
+        check(mainGroups.every((g) => !g.open), 'collapse kept after re-layout');
+        check(mainEl.querySelectorAll('.fushi-srs-main-toggle').length === 1, 'one main toggle');
+        mainBtn.click();
+        await frame0();
+        check(mainGroups.every((g) => g.open), 'main expanded again');
+        check(state(true), 'main toggle after expand');
+        return fails;
+      }
       const groups = Array.from(root.querySelectorAll('.fc-more .fc-dicts > .fc-dict'));
       const open = groups.map((g) => g.open);
       check(JSON.stringify(open) === JSON.stringify(${JSON.stringify(page.open)}),

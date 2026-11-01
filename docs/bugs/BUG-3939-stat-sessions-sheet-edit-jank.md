@@ -1,0 +1,6 @@
+## BUG-3939 · stat-sessions-sheet-edit-jank
+- **报告**：2026-11-01（用户：应用内反馈 bXmmmN1vLZ，Android，约 600 条沉浸记录——「全部会话」里点开一条记录，编辑弹窗一打开就卡）
+- **真实性**：✅ 真 bug。根因 `fushi/lib/src/pages/implementations/stat_session_list.dart:401`（修前）：「全部会话」sheet（`showStatSessionsSheet`）是 `SingleChildScrollView` + `Column`，会话有多少条就全量建多少行（每行带封面槽 / 合集名 / 封面解析）。点行弹编辑框（`stat_session_edit_dialog.dart:150` 日期栏 `autofocus: true`）拉起软键盘，键盘动画每帧改 `MediaQuery.viewInsets`；底部 sheet 路由的 `buildPage` 用 `MediaQuery.removePadding(context: …)` 依赖整份 MediaQuery（`material_ui-1.8.0/lib/src/bottom_sheet.dart:1168`），于是 sheet builder 每帧重跑、600 行每帧整批重建。实测（widget test，600 条）：修前打开 sheet 建 600 行、开编辑框 + 5 帧键盘动画共调 `titleOf` 3001 次（每帧 600 行）；修后分别是 12 次与 61 次。日志里无相关帧率记录，证据来自代码路径 + 测试复现。
+- **[x] ① 已修复** — `StatSessionList` 新增 `sliver` 形态（懒加载 `SliverList.builder`，按会话 key 的 `findChildIndexCallback`），`showStatSessionsSheet` 改成 `CustomScrollView(shrinkWrap: true)`：表头一个 `SliverToBoxAdapter`，会话行是懒列表，只建视口内（含缓存区）的行；任何重建（键盘 inset、编辑后回写）只碰可见行。区块里最多 limit 行的 box 形态不变。
+- **[x] ② 已加自动化测试** — `fushi/test/pages/stat_session_list_test.dart`「反馈 bXmmmN1vLZ：600 条会话的 sheet 懒加载，开编辑框 + 键盘弹出不整批重建」：断言打开 sheet 建行 < 100、开编辑框 + 键盘逐帧升起期间建行 < 150，且最后一条仍能滚到（修前 600 / 3001 红）。
+- **备注**：桌面端「全部会话」走居中对话框（`showStatDetailSurface`），同一个 builder，也一并变成懒加载。

@@ -25,6 +25,7 @@ bool ReadSiglusLegacyMemory(void*, uint32_t address, void* output, size_t bytes)
 }
 
 #include "siglus_lookup_eightarg.inc"
+#include "siglus_lookup_ninearg.inc"
 
 bool ReadSiglusLegacySnapshot(siglus_legacy_live::Snapshot* snapshot) {
   return siglus_legacy_live::ReadSnapshot(
@@ -39,6 +40,7 @@ bool ReadSiglusLookupEngineView(HWND game,
   const auto* profile = ActiveSiglusLookupProfile();
   if (profile == nullptr) return false;
   if (IsEightArgSiglusLookup(*profile)) return ReadSiglusEightArgView(game, *profile, view);
+  if (IsNineArgSiglusLookup(*profile)) return ReadSiglusNineArgView(game, *profile, view);
   if (!IsLegacySiglusLookup(*profile)) return true;
   DWORD window_process = 0;
   if (game == nullptr || GetWindowThreadProcessId(game, &window_process) == 0 ||
@@ -69,6 +71,7 @@ bool SiglusLookupViewAllowsInput(HWND game) {
 bool RefreshSiglusLegacyGlyphOwners() {
   const auto* profile = ActiveSiglusLookupProfile();
   if (profile == nullptr) return false;
+  if (IsNineArgSiglusLookup(*profile)) return RefreshSiglusNineArgGlyphOwners();
   if (!IsLegacySiglusLookup(*profile)) return true;
   const uintptr_t base = reinterpret_cast<uintptr_t>(GetModuleHandleW(nullptr));
   auto read = [](uint32_t address, void* output, size_t bytes) {
@@ -89,6 +92,7 @@ bool IsSiglusLookupGlyphOwned(void* self) {
   const auto* profile = ActiveSiglusLookupProfile();
   if (profile == nullptr) return false;
   if (IsEightArgSiglusLookup(*profile)) return IsSiglusEightArgGlyphOwned(self);
+  if (IsNineArgSiglusLookup(*profile)) return IsSiglusNineArgGlyphOwned(self);
   if (profile->glyph_abi ==
       fushi_voice_hook::SiglusGlyphLayoutAbi::kEcxTenArguments) return true;
   // New ABI families must install their own occurrence-bound owner proof.

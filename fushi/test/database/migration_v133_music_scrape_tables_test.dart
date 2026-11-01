@@ -43,7 +43,7 @@ void main() {
       path,
       isMainProcess: false,
     );
-    expect(migrated.schemaVersion, 142);
+    expect(migrated.schemaVersion, 143);
     await migrated.writeMusicScanBatch(
       MusicScanBatchWrite(
         tracks: <MusicTracksCompanion>[_track('t1', album: 'a1')],
@@ -56,7 +56,7 @@ void main() {
     await migrated.close();
 
     final sqlite.Database probe = sqlite.sqlite3.open(path);
-    expect(probe.select('PRAGMA user_version').first.values.first, 142);
+    expect(probe.select('PRAGMA user_version').first.values.first, 143);
     for (final String table in scrapeTables) {
       expect(tableExists(probe, table), isTrue, reason: table);
     }

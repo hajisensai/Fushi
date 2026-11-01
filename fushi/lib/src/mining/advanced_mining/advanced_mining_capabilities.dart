@@ -6,6 +6,8 @@ import 'package:fushi/src/media/range_playback.dart';
 import 'package:fushi_anki/fushi_anki_core.dart';
 import 'package:fushi_engine/mining/immersion_mining_request.dart'
     show VideoMiningImageMode;
+import 'package:fushi_engine/mining/sentence_audio_source.dart'
+    show SentenceAudioSourcePick;
 
 /// 「高级制卡」对话框（查词弹窗里「+」旁边的按钮）的**能力契约**。
 ///
@@ -46,6 +48,56 @@ class AdvancedMiningDeckSection {
   final Future<void> Function(String deckName)? setDefaultDeck;
 }
 
+/// 卡片字段分区里的一个字段：Anki 字段名 + 它在字段映射里的占位符模板。
+class AdvancedMiningField {
+  const AdvancedMiningField({
+    required this.name,
+    required this.template,
+    this.generatedAtMining = false,
+  });
+
+  /// Anki 字段名（字段映射的键，也是 [MiningRequestOverrides.fieldValues] 的键）。
+  final String name;
+
+  /// 一键制卡会写进它的模板（`{glossary-first}` 等），留空时照它自动生成。
+  final String template;
+
+  /// 模板里有落卡时才生成的占位符（媒体 / 出处 / 时间窗，见
+  /// `AnkiNoteComposer.isLateBoundTemplate`）：对话框里只读，不给手改——手改会把
+  /// 它们冻结成预览时的空值。
+  final bool generatedAtMining;
+}
+
+/// 取「这张卡此刻会自动生成的字段值」（字段名 → 值）。[sentence] 是对话框句子分区
+/// 合成的句子（与宿主落卡时 `MiningSentenceDraft.composeText` 同口径）；没有句子分区时
+/// 为 null，宿主用自己的当前句。返回 null = 生成失败（对话框退回空输入框 + 提示）。
+typedef AdvancedMiningFieldPreview =
+    Future<Map<String, String>?> Function(String? sentence);
+
+/// 卡片字段分区（反馈 -K86qlwBg6）：对话框里可手改当前笔记类型映射的字段，改了的
+/// 字段经 [MiningRequestOverrides.fieldValues] 只替换这一张卡的对应字段。
+class AdvancedMiningFieldsSection {
+  const AdvancedMiningFieldsSection({
+    required this.fields,
+    required this.visibleFields,
+    this.setVisibleFields,
+    this.loadPreview,
+  });
+
+  /// 字段映射里的全部字段（映射顺序）。空 = 还没配置字段映射，分区不渲染。
+  final List<AdvancedMiningField> fields;
+
+  /// 用户选了在对话框里显示（可编辑）的字段名。
+  final Set<String> visibleFields;
+
+  /// 记住「显示哪些字段」；null = 该表面不持久化（只对这次对话框生效）。
+  final Future<void> Function(Set<String> names)? setVisibleFields;
+
+  /// 字段预填：与落卡同一条管线渲染出的值（`AnkiNoteComposer.previewMinedFields`）。
+  /// null = 这个表面给不出预览，输入框一律从空开始。
+  final AdvancedMiningFieldPreview? loadPreview;
+}
+
 /// 句子分区：沿用原「调整上下文」对话框的宿主回调（语义不变，见 [MiningSentenceDraft]）。
 class AdvancedMiningSentenceSection {
   const AdvancedMiningSentenceSection({
@@ -83,6 +135,25 @@ class AdvancedMiningAudioWindow {
   int get durationMs => endMs - startMs;
 }
 
+/// 高级制卡句子音频起止微调可选的步长（毫秒），反馈 3_VB7kAeHj：原先只有固定
+/// 0.25 s，对不准短促的句首 / 句尾。
+const List<int> kAdvancedMiningAudioNudgeStepsMs = <int>[
+  50,
+  100,
+  250,
+  500,
+  1000,
+];
+
+/// 默认步长（原有固定值，老用户行为不变）。
+const int kAdvancedMiningAudioNudgeStepDefaultMs = 250;
+
+/// 把存储值规整到 [kAdvancedMiningAudioNudgeStepsMs] 之一；未知值回退默认。
+int normalizeAdvancedMiningAudioNudgeStepMs(int? ms) =>
+    ms != null && kAdvancedMiningAudioNudgeStepsMs.contains(ms)
+    ? ms
+    : kAdvancedMiningAudioNudgeStepDefaultMs;
+
 /// 句子音频分区。所有回调都收**本次的起止偏移**（对话框持有，确认时并进覆盖项），
 /// 宿主据此算出与写卡完全一致的区间——试听与写卡同源（BUG-2196 ②）。
 class AdvancedMiningAudioSection {
@@ -90,7 +161,9 @@ class AdvancedMiningAudioSection {
     required this.describe,
     required this.preview,
     required this.stopPreview,
-    this.nudgeStepMs = 250,
+    this.nudgeStepMs = kAdvancedMiningAudioNudgeStepDefaultMs,
+    this.onNudgeStepChanged,
+    this.sources,
   });
 
   /// 当前会写进卡片的区间；null = 这句没有可用音频（对话框显示「无音频」，不给微调）。
@@ -112,8 +185,28 @@ class AdvancedMiningAudioSection {
 
   final Future<void> Function() stopPreview;
 
-  /// 起止微调的步长。
+  /// 起止微调的初始步长（宿主传用户上次选的值，见
+  /// [kAdvancedMiningAudioNudgeStepsMs]）。
   final int nudgeStepMs;
+
+  /// 用户在对话框里换了步长：宿主据此记住，下次打开沿用。null = 不记。
+  final void Function(int stepMs)? onNudgeStepChanged;
+  /// 句子音频来源的临时切换（视频，反馈 pNF2ZL7Kfc）；null = 这个页面不给选。
+  final AdvancedMiningAudioSources? sources;
+}
+
+/// 句子音频来源的可选项（只对这一张卡生效，不改设置）。
+class AdvancedMiningAudioSources {
+  const AdvancedMiningAudioSources({
+    required this.choices,
+    required this.defaultPick,
+  });
+
+  /// 对话框里列出的来源（顺序即显示顺序），总包含 [defaultPick]。
+  final List<SentenceAudioSourcePick> choices;
+
+  /// 设置里的来源（一键「+」的行为）。
+  final SentenceAudioSourcePick defaultPick;
 }
 
 /// 视频图片分区。
@@ -260,7 +353,11 @@ class AdvancedMiningCapabilities {
     required this.sections,
     required this.onConfirm,
     this.expression,
+    this.fields,
   });
+
+  /// 卡片字段分区；null = 这个表面不能改字段（例如远端制卡：映射在另一台机器上）。
+  final AdvancedMiningFieldsSection? fields;
 
   /// 查到的词在句中的表现形（当前句高亮用）。
   final String matched;

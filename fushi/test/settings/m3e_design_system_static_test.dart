@@ -747,6 +747,8 @@ class AnotherPopupPart {
           'Library panorama book flip: the opened page lays out vertical body text sized from the page height (book content), not page chrome.',
       'lib/src/pages/implementations/srs/srs_field_editors.dart':
           'Ruby format key icon draws the reading glyph at 0.6x the body size (the icon is the ruby itself); derived from context.fushiType, not a free-standing size.',
+      'lib/src/pages/implementations/srs/srs_fushi_card_view.dart':
+          'Card-face pitch accent badge digit scales with the card term size (0.42x, floor 9) and follows the user card text size; card content typography, not page chrome.',
       'lib/src/pages/implementations/srs/srs_html_layout_editor.dart':
           'Layout editor renders note content at the per-field user size scale (look.scale x body size); content typography, not page chrome.',
       'lib/src/utils/adaptive/nav_rail/apple_sidebar_tabs.part.dart':
@@ -1342,6 +1344,9 @@ class AnotherPopupPart {
       'lib/src/media/panorama/panorama_atlas.dart': <String>{'fontSize:'},
       'lib/src/media/panorama/panorama_book_flip.dart': <String>{'fontSize:'},
       'lib/src/pages/implementations/srs/srs_field_editors.dart': <String>{
+        'fontSize:',
+      },
+      'lib/src/pages/implementations/srs/srs_fushi_card_view.dart': <String>{
         'fontSize:',
       },
       'lib/src/pages/implementations/srs/srs_html_layout_editor.dart': <String>{

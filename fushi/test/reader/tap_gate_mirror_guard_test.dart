@@ -52,7 +52,7 @@ void main() {
       'window.fushiSelection.selectText(x, y, tapGate.maxLen || 400, false);',
     );
     final int fallback = webviewPart.indexOf(
-      "window.flutter_inappwebview.callHandler('onTap', x, y, shiftTap);",
+      "window.flutter_inappwebview.callHandler('onTap', x, y, shiftTap,",
     );
     expect(gateCheck, greaterThan(-1), reason: '门控判定必须存在');
     expect(

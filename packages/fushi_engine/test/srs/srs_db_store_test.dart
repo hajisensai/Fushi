@@ -1,4 +1,4 @@
-import 'package:drift/drift.dart' show driftRuntimeOptions;
+import 'package:drift/drift.dart' show Variable, driftRuntimeOptions;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
@@ -267,6 +267,57 @@ void main() {
     await syncAll(<SrsDbStore>[a, b]);
     expect(await b.syncConflicts(), isEmpty);
     expect((await b.cardRow(cardId))!.suspended, isTrue);
+  });
+
+  test('同步冲突只读标志 / 设置类：两台设备各自写下同样的笔记正文，正文记录不被读回（BUG-3947）', () async {
+    final SrsDbStore a = await device('a');
+    final SrsDbStore b = await device('b');
+    final String sentence = srsLapisFieldId(kProfile, 'Sentence');
+    final List<String> notes = <String>[
+      for (int i = 0; i < 20; i++)
+        await a.createNote(
+          noteTypeId: a.lapisNoteTypeId,
+          fieldsById: lapis('語$i'),
+        ),
+    ];
+    await syncAll(<SrsDbStore>[a, b]);
+    final String cardId = (await a.cardsOfNote(notes.first)).single.id;
+    // 两台设备离线各自写下同样的正文（同一个包各导入一次就是这样）：值相同不待裁决，但两条记录互不支配、都留着。
+    for (final String n in notes) {
+      final String body = '長い例文' * 200;
+      await a.updateNote(n, fieldsById: <String, String>{sentence: body});
+      await b.updateNote(n, fieldsById: <String, String>{sentence: body});
+    }
+    // 外加一个真正的标志类冲突。
+    await a.setSuspended(cardId, true);
+    t += 1000;
+    await b.setSuspended(cardId, false);
+    await syncAll(<SrsDbStore>[a, b]);
+
+    final int concurrentContent =
+        (await a.db
+                .customSelect(
+                  'SELECT COUNT(*) AS c FROM (SELECT 1 FROM srs_field_edits '
+                  "WHERE entity_kind = 'note' AND field_key = ? "
+                  'GROUP BY entity_id HAVING COUNT(*) > 1)',
+                  variables: <Variable<Object>>[
+                    Variable<String>('f/$sentence'),
+                  ],
+                )
+                .getSingle())
+            .read<int>('c');
+    expect(concurrentContent, notes.length, reason: '前提：每条笔记的正文都留着两条并发记录');
+    expect(await a.notesPendingDecision(), isEmpty, reason: '值相同不待裁决');
+
+    final List<(SrsEntityKind, String, SrsRegister)> c = await a
+        .syncConflicts();
+    expect(c.single.$1, SrsEntityKind.card);
+    expect(c.single.$2, cardId);
+    expect(
+      a.debugSyncConflictRowsRead,
+      2,
+      reason: '只读回那张卡的两条 suspended 记录，笔记正文一条都不读',
+    );
   });
 
   test('词状态：按词形 + 读音，同形异读不合并（第六轮审查第 20 条）', () async {

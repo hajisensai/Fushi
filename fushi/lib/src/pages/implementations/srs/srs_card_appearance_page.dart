@@ -46,6 +46,12 @@ const List<int> kSrsCardAccentSwatches = <int>[
   0xFF5D5F5F,
 ];
 
+/// 「释义显示的词典」的选项（0 = 全部；对齐 Lapis 的 `{glossary-first-2}` / `-3}`）。
+const List<int> kSrsCardGlossaryDictChoices = <int>[0, 2, 3];
+
+/// 首行缩进的选项（字数，0 = 不缩进）。
+const List<int> kSrsCardIndentChoices = <int>[0, 1, 2];
+
 /// 预览里用哪张卡。
 enum SrsCardPreviewSource { sample, mine }
 
@@ -658,6 +664,67 @@ class _SrsCardAppearancePageState extends ConsumerState<SrsCardAppearancePage> {
             divisions: 9,
             onChanged: (double v) => _set(a.copyWith(lineSpacing: v)),
           ),
+          // 正反面字号分开：关 = 上面两项正反面共用（旧行为）。
+          AdaptiveSettingsSwitchRow(
+            key: const ValueKey<String>('srs-card-separate-front-size'),
+            title: t.srs_card_appearance_separate_front_size,
+            subtitle: t.srs_card_appearance_separate_front_size_hint,
+            value: a.separateFrontSize,
+            onChanged: (bool v) => _set(
+              a.copyWith(
+                separateFrontSize: v,
+                // 打开时从当前共用值起步，预览不跳变。
+                frontTextScale: v ? a.textScale : null,
+                frontTermScale: v ? a.termScale : null,
+              ),
+            ),
+          ),
+          if (a.separateFrontSize) ...<Widget>[
+            AdaptiveSettingsSliderRow(
+              key: const ValueKey<String>('srs-card-front-text-scale'),
+              title: t.srs_card_appearance_front_text_size,
+              readout: pct(a.frontTextScale),
+              value: a.frontTextScale,
+              min: SrsCardAppearance.minTextScale,
+              max: SrsCardAppearance.maxTextScale,
+              divisions: 11,
+              onChanged: (double v) => _set(a.copyWith(frontTextScale: v)),
+            ),
+            AdaptiveSettingsSliderRow(
+              key: const ValueKey<String>('srs-card-front-term-scale'),
+              title: t.srs_card_appearance_front_term_size,
+              readout: pct(a.frontTermScale),
+              value: a.frontTermScale,
+              min: SrsCardAppearance.minTermScale,
+              max: SrsCardAppearance.maxTermScale,
+              divisions: 12,
+              onChanged: (double v) => _set(a.copyWith(frontTermScale: v)),
+            ),
+          ],
+          _alignRow(
+            'sentence-align',
+            t.srs_card_appearance_sentence_align,
+            a.sentenceAlign,
+            (SrsCardTextAlign v) => a.copyWith(sentenceAlign: v),
+          ),
+          _indentRow(
+            'sentence-indent',
+            t.srs_card_appearance_sentence_indent,
+            a.sentenceIndent,
+            (int v) => a.copyWith(sentenceIndent: v),
+          ),
+          _alignRow(
+            'glossary-align',
+            t.srs_card_appearance_glossary_align,
+            a.glossaryAlign,
+            (SrsCardTextAlign v) => a.copyWith(glossaryAlign: v),
+          ),
+          _indentRow(
+            'glossary-indent',
+            t.srs_card_appearance_glossary_indent,
+            a.glossaryIndent,
+            (int v) => a.copyWith(glossaryIndent: v),
+          ),
         ],
       ),
       AdaptiveSettingsSection(
@@ -767,6 +834,27 @@ class _SrsCardAppearancePageState extends ConsumerState<SrsCardAppearancePage> {
             a.showSource,
             (bool v) => a.copyWith(showSource: v),
           ),
+          // 释义只显示前 N 本词典（对齐 Lapis {glossary-first-N}）：只改显示，旧卡同样生效。
+          AdaptiveSettingsSegmentedRow<int>(
+            key: const ValueKey<String>('srs-card-glossary-dicts'),
+            title: t.srs_card_appearance_glossary_dicts,
+            subtitle: t.srs_card_appearance_glossary_dicts_hint,
+            selected: kSrsCardGlossaryDictChoices.contains(a.glossaryDictLimit)
+                ? a.glossaryDictLimit
+                : 0,
+            segments: <ButtonSegment<int>>[
+              for (final int n in kSrsCardGlossaryDictChoices)
+                ButtonSegment<int>(
+                  value: n,
+                  label: Text(
+                    n == 0
+                        ? t.srs_card_appearance_glossary_dicts_all
+                        : t.srs_card_appearance_glossary_dicts_first(count: n),
+                  ),
+                ),
+            ],
+            onChanged: (int v) => _set(a.copyWith(glossaryDictLimit: v)),
+          ),
           _switch(
             'glossary-expanded',
             t.srs_card_appearance_glossary_expanded,
@@ -815,6 +903,57 @@ class _SrsCardAppearancePageState extends ConsumerState<SrsCardAppearancePage> {
       ),
     );
   }
+
+  /// 文字区块对齐：默认（模板原样）/ 左对齐 / 居中。
+  Widget _alignRow(
+    String key,
+    String title,
+    SrsCardTextAlign value,
+    SrsCardAppearance Function(SrsCardTextAlign v) change,
+  ) => AdaptiveSettingsSegmentedRow<SrsCardTextAlign>(
+    key: ValueKey<String>('srs-card-$key'),
+    title: title,
+    selected: value,
+    segments: <ButtonSegment<SrsCardTextAlign>>[
+      ButtonSegment<SrsCardTextAlign>(
+        value: SrsCardTextAlign.auto,
+        label: Text(t.srs_card_appearance_align_auto),
+      ),
+      ButtonSegment<SrsCardTextAlign>(
+        value: SrsCardTextAlign.start,
+        label: Text(t.srs_card_appearance_align_start),
+      ),
+      ButtonSegment<SrsCardTextAlign>(
+        value: SrsCardTextAlign.center,
+        label: Text(t.srs_card_appearance_align_center),
+      ),
+    ],
+    onChanged: (SrsCardTextAlign v) => _set(change(v)),
+  );
+
+  /// 首行缩进：无 / 1 字 / 2 字。
+  Widget _indentRow(
+    String key,
+    String title,
+    int value,
+    SrsCardAppearance Function(int v) change,
+  ) => AdaptiveSettingsSegmentedRow<int>(
+    key: ValueKey<String>('srs-card-$key'),
+    title: title,
+    selected: kSrsCardIndentChoices.contains(value) ? value : 0,
+    segments: <ButtonSegment<int>>[
+      for (final int n in kSrsCardIndentChoices)
+        ButtonSegment<int>(
+          value: n,
+          label: Text(
+            n == 0
+                ? t.srs_card_appearance_indent_none
+                : t.srs_card_appearance_indent_chars(count: n),
+          ),
+        ),
+    ],
+    onChanged: (int v) => _set(change(v)),
+  );
 
   Widget _switch(
     String key,

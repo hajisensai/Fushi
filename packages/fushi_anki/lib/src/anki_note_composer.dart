@@ -445,13 +445,20 @@ mixin AnkiNoteComposer {
   /// - [charPositionTag]（「自动添加制卡位置到标签」开关）非空时追加**制卡所在字符数
   ///   标签**（`chars_12345`，由 [formatCharPositionTag] 产出）：小说阅读器制卡时这张
   ///   卡在全书第几个学习字处制的。只有书籍来源会注入；开关关闭或锚点取不到时为 `null`。
-  /// - 两 backend（AnkiConnect / AnkiDroid）共用同一逻辑，避免一端漏加或漂移。
+  /// - [nestTitleUnderCategory]（「作品名标签挂在分类下」开关，默认关）为 `true` 且
+  ///   [source] 有分类时，[titleTag] / [collectionTag] 输出为 Anki 层级标签
+  ///   `<分类>::<作品名>`（如 `video::<番名>`，同 GameSentenceMiner 的 `game::<名>`），
+  ///   Anki 标签树里作品名挂在分类下。与 [includeCategory] 互不依赖：后者只管要不要
+  ///   **另外**单独打一个分类标签。[source] 为 `null`（无分类）时照旧输出平级作品名。
+  /// - 所有后端（AnkiConnect / AnkiDroid / AnkiMobile / Anki 同步）与 SRS 制卡共用
+  ///   同一逻辑，避免一端漏加或漂移。
   @protected
   List<String> buildNoteTags(
     String userTags, {
     AnkiMiningSource? source,
     bool includeHibiki = true,
     bool includeCategory = true,
+    bool nestTitleUnderCategory = false,
     String? titleTag,
     String? collectionTag,
     String? charPositionTag,
@@ -470,12 +477,17 @@ mixin AnkiNoteComposer {
     // TODO-681 / BUG-393：「自动添加书名到标签」开启时调用方注入已清洗书名/番名标签
     // （书籍/视频同语义）。去重 [seen] 保证：经卡片创建器 `TagsField` 走 [userTags] 已带过
     // 同一标题标签时不会重复追加（两处清洗规则同源故字面量相同）。
-    final clean = sanitizeTitleTag(titleTag);
+    final String? titleParent = nestTitleUnderCategory
+        ? _categoryTagForSource(source)
+        : null;
+    String? nested(String? tag) =>
+        tag == null || titleParent == null ? tag : '$titleParent::$tag';
+    final clean = nested(sanitizeTitleTag(titleTag));
     if (clean != null && seen.add(clean)) result.add(clean);
     // 合集/系列名标签（与 titleTag 同「自动添加书名到标签」开关）：视频=播放列表系列名、
     // 书籍=所属合集名。调用方读开关 + 取合集名 + 清洗后注入；与书名标签并列，字面量相同时
     // 由 [seen] 去重合并（如单视频合集名==剧集名时不重复追加）。
-    final cleanCollection = sanitizeTitleTag(collectionTag);
+    final cleanCollection = nested(sanitizeTitleTag(collectionTag));
     if (cleanCollection != null && seen.add(cleanCollection)) {
       result.add(cleanCollection);
     }
@@ -540,6 +552,9 @@ mixin AnkiNoteComposer {
   ) async {
     final tags = <String, String>{};
     for (final m in media) {
+      // 没有占位符就没有可替换的位置；空键进映射会让 buildMinedFields 的
+      // `replaceAll('', ref)` 把媒体名插进字段每个字符之间，整张卡变乱码。
+      if (m.filename.isEmpty) continue;
       final ref = await storeBareRef(m);
       if (ref != null && ref.isNotEmpty) {
         tags[m.filename] = ref;
@@ -590,6 +605,7 @@ mixin AnkiNoteComposer {
     required Map<String, String> dictionaryMediaTags,
     String? noteTypeName,
     bool keepEmpty = false,
+    bool keepDictionaryMediaPlaceholders = false,
   }) {
     final bool yieldSelectionText = shouldYieldSelectionText(
       payload: payload,
@@ -597,17 +613,29 @@ mixin AnkiNoteComposer {
       fieldMappings: fieldMappings,
     );
     final fields = <String, String>{};
+    // 「高级制卡」里手改过的字段（反馈 -K86qlwBg6）：整段替换该字段的渲染结果，只对
+    // 映射里有的字段生效。手写内容不是占位符模板，不走 handlebar 渲染；但它是从
+    // [previewMinedFields] 的预填值改出来的，里面的词典媒体占位符（`fushi_dict_N`）
+    // 照常换成本次真正落进 Anki 的媒体引用——不然改了一个字的释义就丢了外字图片。
+    final Map<String, String> edited =
+        payload.overrides?.fieldValues ?? const <String, String>{};
     for (final entry in fieldMappings.entries) {
-      var value = AnkiHandlebarRenderer.render(
-        entry.value,
-        payload,
-        context,
-        yieldSelectionText: yieldSelectionText,
-      );
+      final String? manual = edited[entry.key];
+      var value = manual != null && manual.trim().isNotEmpty
+          ? manual
+          : AnkiHandlebarRenderer.render(
+              entry.value,
+              payload,
+              context,
+              yieldSelectionText: yieldSelectionText,
+            );
       for (final mediaEntry in dictionaryMediaTags.entries) {
         value = value.replaceAll(mediaEntry.key, mediaEntry.value);
       }
-      value = degradeUnresolvedDictionaryMedia(value);
+      // 预览（[previewMinedFields]）保留占位符：它要原样回到确认后的这一步再替换。
+      if (!keepDictionaryMediaPlaceholders) {
+        value = degradeUnresolvedDictionaryMedia(value);
+      }
       // 旧格式（仍带 gloss-* class）释义的外字中和兜底；新导出不命中门控，原样通过。
       value = normalizeAnkiDictionaryHtml(value);
       // 判空与写入用同一个 trim 口径。此前判空 trim、写入却是原值，于是一个字段里
@@ -766,6 +794,45 @@ mixin AnkiNoteComposer {
         .replaceAll('&amp;', '&');
   }
 
+  /// 落卡时才生成、预览里拿不到真值的占位符：媒体（卡图 / 片段 / 句子音频 / 单词音频）
+  /// 与制卡那一刻才定下来的语境（出处链接、片段时间窗、标题）。
+  static const List<String> lateBoundPlaceholders = <String>[
+    '{audio}',
+    '{card-video}',
+    '{card-image}',
+    '{book-cover}',
+    '{video-clip}',
+    '{sentence-audio}',
+    '{source-link}',
+    '{clip-timestamp}',
+    '{document-title}',
+  ];
+
+  /// [template] 里有 [lateBoundPlaceholders]：这个字段只能在落卡时生成，「高级制卡」
+  /// 里不给手改（手改等于把媒体 / 语境冻结成预览时的空值）。
+  static bool isLateBoundTemplate(String template) =>
+      lateBoundPlaceholders.any(template.contains);
+
+  /// 「高级制卡」字段预填（反馈 -K86qlwBg6）：与落卡**同一条**
+  /// [renderMediaPayload] → [buildMinedFields] 管线渲染，只是媒体引用一律空（它们在
+  /// 确认后才生成），词典媒体占位符原样保留（确认后由落卡路径替换，见
+  /// [buildMinedFields] 的手改分支）。返回映射里每个字段（空值也在）。
+  Map<String, String> previewMinedFields({
+    required AnkiSettings settings,
+    required AnkiMiningPayload payload,
+    required AnkiMiningContext context,
+  }) => renderMediaPayload(
+    settings: settings,
+    payload: payload,
+    context: context,
+    coverRef: null,
+    sentenceAudioRef: null,
+    processedAudio: '',
+    dictionaryMediaTags: const <String, String>{},
+    keepEmpty: true,
+    keepDictionaryMediaPlaceholders: true,
+  ).fields;
+
   /// 用已备好的媒体引用把 [payload] + [context] 组装成最终渲染结果。
   ///
   /// 两 backend 的差异只在「媒体引用怎么准备」（AnkiConnect 远程上传后内联
@@ -786,6 +853,7 @@ mixin AnkiNoteComposer {
     required Map<String, String> dictionaryMediaTags,
     String? audioWarning,
     bool keepEmpty = false,
+    bool keepDictionaryMediaPlaceholders = false,
   }) {
     // A muxed video owns sentence playback. Keep only one native sound tag:
     // Lapis renders Picture three times, but SentenceAudio is interpolated once
@@ -886,6 +954,8 @@ mixin AnkiNoteComposer {
       audio: processedAudio,
       selectedDictionary: payload.selectedDictionary,
       dictionaryMedia: payload.dictionaryMedia,
+      // 「高级制卡」的手改字段要跟到渲染那一步（buildMinedFields 读它）。
+      overrides: payload.overrides,
     );
 
     return RenderedMinedFields(
@@ -896,6 +966,7 @@ mixin AnkiNoteComposer {
         dictionaryMediaTags: dictionaryMediaTags,
         noteTypeName: settings.selectedNoteTypeName,
         keepEmpty: keepEmpty,
+        keepDictionaryMediaPlaceholders: keepDictionaryMediaPlaceholders,
       ),
       audioWarning: audioWarning,
     );

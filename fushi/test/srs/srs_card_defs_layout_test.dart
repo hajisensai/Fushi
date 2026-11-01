@@ -48,6 +48,8 @@ SrsDefsLayoutConfig _config({
   othersLabel: 'Others',
   expandAllLabel: 'Expand all',
   collapseAllLabel: 'Collapse all',
+  mainCollapseLabel: 'Collapse main',
+  mainExpandLabel: 'Expand main',
   uiLanguageTag: 'zh-CN',
 );
 
@@ -57,7 +59,12 @@ SrsCardFaceDocument _doc(
   SrsDefsLayoutConfig config, {
   bool withMain = true,
   bool glossExpanded = false,
+  int glossaryDictLimit = 0,
 }) {
+  final SrsCardAppearance appearance = SrsCardAppearance(
+    glossaryExpanded: glossExpanded,
+    glossaryDictLimit: glossaryDictLimit,
+  );
   final Map<String, String> fields = <String, String>{
     ...srsSampleCardFields(),
     'Glossary': _glossary,
@@ -82,13 +89,14 @@ SrsCardFaceDocument _doc(
       fushiCard: true,
       hostCss:
           '.fc.fc-back.fc-defs-only{flex-direction:column;align-items:stretch;'
-          'max-width:none;margin:0;}${srsDefsLayoutCss(config)}',
+          'max-width:none;margin:0;}${srsDefsLayoutCss(config)}'
+          '${srsDefsAppearanceCss(appearance)}',
       hostScript: kSrsDefsLayoutScript,
     ),
     theme: ThemeData(
       colorScheme: ColorScheme.fromSeed(seedColor: Colors.indigo),
     ),
-    appearance: SrsCardAppearance(glossaryExpanded: glossExpanded),
+    appearance: appearance,
     labels: _labels,
     mediaUrlPrefix: 'https://srs.local/media/',
     themedScrollbar: false,
@@ -135,6 +143,39 @@ void main() {
           contains('--fushi-srs-dict-collapse:0;'),
         ),
       );
+    });
+  });
+
+  group('卡面外观 → 释义页 CSS', () {
+    test('默认外观：全部词典、不改对齐与缩进（旧用户外观不变）', () {
+      final String css = srsDefsAppearanceCss(const SrsCardAppearance());
+      expect(css, ':root{--fushi-srs-gloss-dicts:0;}');
+    });
+
+    test('前 N 本词典进变量；对齐压过词典行内 text-align；首行缩进按字数', () {
+      final String css = srsDefsAppearanceCss(
+        const SrsCardAppearance(
+          glossaryDictLimit: 3,
+          glossaryAlign: SrsCardTextAlign.center,
+          glossaryIndent: 2,
+        ),
+      );
+      expect(css, contains('--fushi-srs-gloss-dicts:3;'));
+      expect(css, contains('text-align:center !important;'));
+      expect(css, contains('.fc-dict-items>li{text-indent:2em;}'));
+      expect(
+        srsDefsAppearanceCss(
+          const SrsCardAppearance(glossaryAlign: SrsCardTextAlign.start),
+        ),
+        contains('text-align:start !important;'),
+      );
+    });
+
+    test('主词典收起 / 展开按钮的标签进变量', () {
+      final String css = srsDefsLayoutCss(_config());
+      expect(css, contains('--fushi-srs-label-main-collapse:"Collapse main";'));
+      expect(css, contains('--fushi-srs-label-main-expand:"Expand main";'));
+      expect(css, contains('.fushi-srs-main-toggle{pointer-events:auto;'));
     });
   });
 
@@ -203,12 +244,16 @@ void main() {
         bool withMain = true,
         bool glossExpanded = false,
         int cols = 2,
+        int limit = 0,
+        String? mode,
+        List<String>? visible,
         List<int>? columnOf,
       }) {
         final SrsCardFaceDocument d = _doc(
           config,
           withMain: withMain,
           glossExpanded: glossExpanded,
+          glossaryDictLimit: limit,
         );
         return <String, Object?>{
           'shell': d.shellHtml,
@@ -218,6 +263,8 @@ void main() {
           'cols': cols,
           'main': withMain,
           'columnOf': columnOf,
+          'mode': mode,
+          'visible': visible,
         };
       }
 
@@ -273,6 +320,46 @@ void main() {
           false,
         ], cols: 1),
         // 没有主释义：第一本通栏当主词典，1 行 = 只展开它。
+        // 主词典标题行尾的收起 / 展开：一键开合主词典，重排不改它，再点展开回来。
+        'main toggle': page(_config(), <bool>[
+          false,
+          false,
+          false,
+          false,
+        ], mode: 'main'),
+        // 释义只显示前 N 本（含主词典）：主词典占 1 本，「其他词典」只留前 N-1 本；
+        // 调回全部原样回来（只改显示）。
+        'first 2 with main': page(
+          _config(rows: 6),
+          <bool>[true],
+          limit: 2,
+          mode: 'limit',
+          visible: <String>['DictA'],
+        ),
+        'first 3 with main': page(
+          _config(rows: 6),
+          <bool>[true, true],
+          limit: 3,
+          mode: 'limit',
+          visible: <String>['DictA', 'DictB'],
+        ),
+        // 前 1 本 = 只剩主词典：「其他词典」整个分区不显示。
+        'first 1 with main': page(
+          _config(),
+          <bool>[],
+          limit: 1,
+          mode: 'limit',
+          visible: <String>[],
+        ),
+        // 没有主释义：前 N 本全部来自「全部释义」（第一本通栏当主词典）。
+        'first 2 no main': page(
+          _config(),
+          <bool>[true, false],
+          withMain: false,
+          limit: 2,
+          mode: 'limit',
+          visible: <String>['DictA', 'DictB'],
+        ),
         'no main': page(_config(), <bool>[
           true,
           false,

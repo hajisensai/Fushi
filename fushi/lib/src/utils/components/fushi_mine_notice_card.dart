@@ -2,8 +2,23 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/misc/toast_severity.dart';
+
+/// 制卡结果卡片上的一颗动作按钮（反馈 JNyykxvuY9：成功提示上的「撤销」）。
+@immutable
+class MineNoticeAction {
+  const MineNoticeAction({required this.label, required this.onPressed});
+
+  final String label;
+
+  /// 点下后调用；宿主（toast / 视频 OSD）同时立即收起这张卡。
+  final VoidCallback onPressed;
+}
+
+/// 带动作按钮的结果卡停留多久：普通结果卡只停 2.4 秒，来不及去点按钮。
+const Duration kMineNoticeActionVisibleFor = Duration(seconds: 6);
 
 /// 制卡结果卡片：底部制卡 toast（`FushiToast.showMine`）与视频页左上角制卡 OSD
 /// （`_showMineOsd`）共用的唯一长相。
@@ -22,8 +37,12 @@ class FushiMineNoticeCard extends StatefulWidget {
     required this.message,
     required this.visibleFor,
     this.maxWidth = 440,
+    this.action,
     super.key,
   });
+
+  /// 卡片右侧的动作按钮（如「撤销」）；为 null 时不画。
+  final MineNoticeAction? action;
 
   final MineToastStatus status;
 
@@ -137,7 +156,8 @@ class _FushiMineNoticeCardState extends State<FushiMineNoticeCard>
     return Semantics(
       liveRegion: true,
       label: title == null ? widget.message : '$title. ${widget.message}',
-      excludeSemantics: true,
+      // 有动作按钮时不能吞掉子树语义，否则读屏 / 键盘用户够不到「撤销」。
+      excludeSemantics: widget.action == null,
       child: Container(
         constraints: BoxConstraints(minHeight: 56, maxWidth: widget.maxWidth),
         decoration: BoxDecoration(
@@ -171,6 +191,15 @@ class _FushiMineNoticeCardState extends State<FushiMineNoticeCard>
                     iconBlock,
                     const SizedBox(width: 12),
                     Flexible(child: texts),
+                    if (widget.action case final MineNoticeAction action) ...[
+                      const SizedBox(width: 8),
+                      FushiTextButton(
+                        key: const ValueKey<String>('mine-notice-action'),
+                        onPressed: action.onPressed,
+                        style: TextButton.styleFrom(foregroundColor: accent),
+                        child: Text(action.label),
+                      ),
+                    ],
                   ],
                 ),
               ),

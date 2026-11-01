@@ -1028,6 +1028,13 @@ class AnkiConnectService {
   ///
   /// 不做版本判断：那要多一次 `version` 往返，还得硬编码一张「哪个版本起回列表」
   /// 的表，而任何代理 / fork 都能让这张表失效。按语义处理没有版本假设。
+  /// 反馈 JNyykxvuY9：删除 note（连同卡片）。AnkiConnect `deleteNotes` 成功回
+  /// `null`，不说明 note 原本在不在；出错由 [_request] 照抛。
+  Future<void> deleteNotes(List<int> noteIds) async {
+    if (noteIds.isEmpty) return;
+    await _request('deleteNotes', {'notes': noteIds});
+  }
+
   Future<List<int>?> guiBrowseQuery(String query) async {
     final dynamic result = await _request('guiBrowse', {'query': query});
     if (result is! List) return null;

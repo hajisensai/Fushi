@@ -1053,8 +1053,8 @@ void main() {
       ),
     );
     expect(slider.value, 1200);
-    expect(slider.min, -10000);
-    expect(slider.max, 10000);
+    expect(slider.min, -30000);
+    expect(slider.max, 30000);
 
     // 「当前延迟」与「手动输入」合成一行（反馈 nGxUGtYot9）：不再有单独的输入框，
     // 读数胶囊本身点按即原地变成数字输入，初值回显当前延迟。

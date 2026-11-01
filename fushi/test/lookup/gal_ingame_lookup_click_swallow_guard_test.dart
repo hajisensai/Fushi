@@ -432,9 +432,25 @@ void main() {
       reason: '④ 只有事务真的开起来了才吞 down，且吞之前先置位',
     );
 
+    // ⑤ 反馈 -AynHxzwNe：中键 / 侧键落在登记的覆盖窗口上，吞掉并改投给我方窗口。
+    final int relayLookup = hookProc.indexOf(
+      'OverlayButtonRelayWindowAt(info->pt)',
+    );
+    final int relayMark = hookProc.indexOf(
+      'g_swallowed_buttons.fetch_or(button_bit',
+      relayLookup,
+    );
+    final int relaySwallow = hookProc.indexOf(
+      'PostRelayedButton(relay,wparam,info,true);return1;',
+      relayLookup,
+    );
+    expect(relayLookup, greaterThanOrEqualTo(0));
+    expect(relayMark, greaterThan(relayLookup));
+    expect(relaySwallow, greaterThan(relayMark), reason: '⑤ 吞 down 前必须先置同键事务位');
+
     expect(
       'g_swallowed_buttons.fetch_or('.allMatches(hookProc).length,
-      4,
+      5,
       reason: '新增吞 down 的路径必须同时在本守卫里补上顺序断言',
     );
     final int tailFailSwallow = hookProc.indexOf(
