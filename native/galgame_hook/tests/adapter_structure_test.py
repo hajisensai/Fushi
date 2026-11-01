@@ -2100,6 +2100,11 @@ class AdapterStructureTest(unittest.TestCase):
         export = self._strip_comments((adapters / "siglus_voice_export.inc").read_text(encoding="utf-8"))
         worker = self._function_body(export, "void ProcessSiglusVoiceTask(")
         self.assertLess(worker.index("IsSiglusMessageTextInstalled()"), worker.index("g_orig_CreateFileW("))
+        self.assertLess(worker.index("IsSiglusMessageVoiceOwned()"), worker.index("g_orig_CreateFileW("))
+        queue = self._function_body(
+            self._strip_comments((adapters / "siglus_adapter.inc").read_text(encoding="utf-8")),
+            "void QueueSiglusVoice(")
+        self.assertIn("IsSiglusMessageVoiceOwned()", queue)
         for required in ("task->proved_source", "entry.byte_len == task->source_length",
                          "SameSiglusArchiveFile(identity_before, identity_after)",
                          "ValidateSiglusMessageVoiceTask(*task, revision, entry)",

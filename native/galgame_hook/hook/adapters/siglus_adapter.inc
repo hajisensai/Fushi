@@ -34,6 +34,7 @@ struct SiglusVoiceTask {
 
 bool IsSiglusMessageVoiceMappingProved();
 bool IsSiglusMessageTextInstalled();
+bool IsSiglusMessageVoiceOwned();
 bool SameSiglusArchiveFile(const BY_HANDLE_FILE_INFORMATION& a,
                            const BY_HANDLE_FILE_INFORMATION& b);
 uint64_t ObserveSiglusMessageResource(HANDLE file, const uint8_t* index,
@@ -254,7 +255,7 @@ LPVOID WINAPI Detour_MapViewOfFile(HANDLE mapping, DWORD desired_access,
 }
 
 void QueueSiglusVoice(const wchar_t* path, uint64_t offset) {
-  if (path == nullptr || IsSiglusMessageTextInstalled()) return;
+  if (path == nullptr || IsSiglusMessageVoiceOwned()) return;
   const uint64_t now = GetTickCount64();
   for (int i = 0; i < kSiglusTaskSlots; ++i) {
     if (InterlockedCompareExchange(&g_siglus_tasks[i].state, 1, 0) != 0) {

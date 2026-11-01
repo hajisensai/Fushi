@@ -294,10 +294,14 @@ void TestReservedGapKnownPrefixNeverRevivesOldGeometry() {
         assert(!ProcessSiglusLookupClickSubmissions());
         PublishReservedGlyph(second, u'B', 140); Glyph(u'C', 180);
       } else {
-        // Transport is fully consumed, but its semantic tail is partial.
-        Consume(); assert(!g_siglus_lookup_layout.current_valid);
-        assert(!ProcessSiglusLookupClickSubmissions());
-        Glyph(u'B', 140); Glyph(u'C', 180);
+        // Transport is fully consumed and its tail repeats the committed pass
+        // glyph for glyph: an identical redraw in progress (engines that lay
+        // the line out every frame) keeps the press current and submits.
+        Consume(); assert(g_siglus_lookup_layout.current_valid);
+        assert(g_siglus_lookup_layout.snapshot_epoch == payload.snapshot_epoch);
+        assert(ProcessSiglusLookupClickSubmissions());
+        assert(g_header->lookup_hit_count == 1);
+        continue;
       }
     }
     Consume();
@@ -405,17 +409,33 @@ void TestNoProgressAndContinuingCompleteRedraws() {
 }
 
 void TestPartialRedrawPermanentlyRejectsOldRelease() {
+  {
+    // An identical redraw sliced mid-pass is the same line being drawn again
+    // (every-frame layout engines): the release stays eligible.
+    Fixture fixture;
+    Begin();
+    const auto payload = Press();
+    QueueSiglusLookupClickSubmit(payload);
+    Glyph(u'A', 100);
+    Consume();
+    assert(g_siglus_lookup_layout.current_valid);
+    assert(g_siglus_lookup_layout.snapshot_epoch == payload.snapshot_epoch);
+    assert(ProcessSiglusLookupClickSubmissions());
+    assert(g_header->lookup_hit_count == 1);
+  }
+  // A divergent partial (other anchor) permanently rejects the old release,
+  // even when the complete pass that follows restores the same geometry.
   Fixture fixture;
   Begin();
   const auto payload = Press();
   QueueSiglusLookupClickSubmit(payload);
-  Glyph(u'A', 100);
+  Glyph(u'A', 104);
   assert(!ProcessSiglusLookupClickSubmissions());
   Consume();
   assert(g_siglus_lookup_layout.snapshot_epoch != payload.snapshot_epoch);
   assert(!ProcessSiglusLookupClickSubmissions());
   assert(g_siglus_lookup_click_processed_seq == 1);
-  Glyph(u'B', 140); Glyph(u'C', 180);
+  Glyph(u'A', 100); Glyph(u'B', 140); Glyph(u'C', 180);
   Consume();
   assert(g_siglus_lookup_layout.generation == payload.geometry_generation);
   assert(!ProcessSiglusLookupClickSubmissions());

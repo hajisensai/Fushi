@@ -1,9 +1,10 @@
 // Worker-only archive IO and export; included after the file API broker.
 void ProcessSiglusVoiceTask(SiglusVoiceTask* task) {
   task->exported = false;
-  // The message family must never route an unproved ReadFile/prefetch event
-  // into the legacy time matcher, even if its audio-source hook was rejected.
-  if (IsSiglusMessageTextInstalled() &&
+  // A message lane that owns voice must never route an unproved ReadFile or
+  // prefetch event into the legacy time matcher, even if its audio-source hook
+  // was rejected. A silent lane (no script voice key) leaves the matcher on.
+  if (IsSiglusMessageTextInstalled() && IsSiglusMessageVoiceOwned() &&
       (!IsSiglusMessageVoiceMappingProved() ||
        (task->text_event_id == 0 && !task->proved_source))) return;
   HANDLE file = g_orig_CreateFileW(

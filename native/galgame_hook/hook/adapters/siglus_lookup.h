@@ -696,6 +696,28 @@ inline void ResetSiglusLookupLayout(SiglusLookupLayoutState* state) {
   state->line_has_complete_layout = false;
 }
 
+// Engines that lay the same line out on every frame are routinely sliced by
+// the worker mid-pass. A tail that repeats the newest complete pass glyph for
+// glyph (unit, anchor and extent) is that pass being drawn again: it carries
+// no evidence of change. Any divergent glyph, or a tail as long as a pass,
+// is not a redraw in progress.
+inline bool IsSiglusLookupIdenticalRedrawTail(
+    const SiglusLookupGlyphCaptureBuffer& captures, size_t pass_start,
+    size_t pass_end) {
+  if (pass_end <= pass_start || pass_end >= captures.count ||
+      captures.count - pass_end >= pass_end - pass_start)
+    return false;
+  for (size_t index = 0; pass_end + index < captures.count; ++index) {
+    const auto* drawn = SiglusLookupGlyphCaptureAt(captures, pass_start + index);
+    const auto* again = SiglusLookupGlyphCaptureAt(captures, pass_end + index);
+    if (drawn == nullptr || again == nullptr ||
+        drawn->code_unit != again->code_unit || drawn->x != again->x ||
+        drawn->y != again->y || drawn->extent != again->extent)
+      return false;
+  }
+  return true;
+}
+
 inline bool UpdateSiglusLookupLayout(
     const SiglusLookupProfile& profile,
     const SiglusLookupGlyphCaptureBuffer& captures,
@@ -704,7 +726,10 @@ inline bool UpdateSiglusLookupLayout(
   SiglusLookupGeometry candidate;
   size_t matched_end = 0;
   if (!BuildSiglusLookupGeometry(profile, captures, line, units, &candidate,
-                                 &matched_end) || matched_end != captures.count) {
+                                 &matched_end) ||
+      (matched_end != captures.count &&
+       !IsSiglusLookupIdenticalRedrawTail(
+           captures, matched_end - candidate.glyph_count, matched_end))) {
     InvalidateSiglusLookupCurrentLayout(state);
     return false;
   }
