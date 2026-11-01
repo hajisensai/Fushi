@@ -445,13 +445,20 @@ mixin AnkiNoteComposer {
   /// - [charPositionTag]（「自动添加制卡位置到标签」开关）非空时追加**制卡所在字符数
   ///   标签**（`chars_12345`，由 [formatCharPositionTag] 产出）：小说阅读器制卡时这张
   ///   卡在全书第几个学习字处制的。只有书籍来源会注入；开关关闭或锚点取不到时为 `null`。
-  /// - 两 backend（AnkiConnect / AnkiDroid）共用同一逻辑，避免一端漏加或漂移。
+  /// - [nestTitleUnderCategory]（「作品名标签挂在分类下」开关，默认关）为 `true` 且
+  ///   [source] 有分类时，[titleTag] / [collectionTag] 输出为 Anki 层级标签
+  ///   `<分类>::<作品名>`（如 `video::<番名>`，同 GameSentenceMiner 的 `game::<名>`），
+  ///   Anki 标签树里作品名挂在分类下。与 [includeCategory] 互不依赖：后者只管要不要
+  ///   **另外**单独打一个分类标签。[source] 为 `null`（无分类）时照旧输出平级作品名。
+  /// - 所有后端（AnkiConnect / AnkiDroid / AnkiMobile / Anki 同步）与 SRS 制卡共用
+  ///   同一逻辑，避免一端漏加或漂移。
   @protected
   List<String> buildNoteTags(
     String userTags, {
     AnkiMiningSource? source,
     bool includeHibiki = true,
     bool includeCategory = true,
+    bool nestTitleUnderCategory = false,
     String? titleTag,
     String? collectionTag,
     String? charPositionTag,
@@ -470,12 +477,17 @@ mixin AnkiNoteComposer {
     // TODO-681 / BUG-393：「自动添加书名到标签」开启时调用方注入已清洗书名/番名标签
     // （书籍/视频同语义）。去重 [seen] 保证：经卡片创建器 `TagsField` 走 [userTags] 已带过
     // 同一标题标签时不会重复追加（两处清洗规则同源故字面量相同）。
-    final clean = sanitizeTitleTag(titleTag);
+    final String? titleParent = nestTitleUnderCategory
+        ? _categoryTagForSource(source)
+        : null;
+    String? nested(String? tag) =>
+        tag == null || titleParent == null ? tag : '$titleParent::$tag';
+    final clean = nested(sanitizeTitleTag(titleTag));
     if (clean != null && seen.add(clean)) result.add(clean);
     // 合集/系列名标签（与 titleTag 同「自动添加书名到标签」开关）：视频=播放列表系列名、
     // 书籍=所属合集名。调用方读开关 + 取合集名 + 清洗后注入；与书名标签并列，字面量相同时
     // 由 [seen] 去重合并（如单视频合集名==剧集名时不重复追加）。
-    final cleanCollection = sanitizeTitleTag(collectionTag);
+    final cleanCollection = nested(sanitizeTitleTag(collectionTag));
     if (cleanCollection != null && seen.add(cleanCollection)) {
       result.add(cleanCollection);
     }

@@ -213,6 +213,7 @@ class AnkiSettings {
     this.globalTags = '',
     this.tagIncludeHibiki = true,
     this.tagIncludeCategory = true,
+    this.tagNestTitleUnderCategory = false,
     this.allowDupes = false,
     this.compactGlossaries = false,
     this.embedMedia = true,
@@ -272,6 +273,8 @@ class AnkiSettings {
     globalTags: json['globalTags'] as String? ?? '',
     tagIncludeHibiki: json['tagIncludeHibiki'] as bool? ?? true,
     tagIncludeCategory: json['tagIncludeCategory'] as bool? ?? true,
+    tagNestTitleUnderCategory:
+        json['tagNestTitleUnderCategory'] as bool? ?? false,
     allowDupes: json['allowDupes'] as bool? ?? false,
     compactGlossaries: json['compactGlossaries'] as bool? ?? false,
     embedMedia: json['embedMedia'] as bool? ?? true,
@@ -351,6 +354,10 @@ class AnkiSettings {
   /// 是否按制卡来源追加分类默认标签（书籍→`book` / 视频→`video`，TODO-117/TODO-185）。
   /// 默认 `true`（保持 TODO-115 现状）。来源为 `null` 时本就不追加分类标签。
   final bool tagIncludeCategory;
+
+  /// 作品名（书名 / 番名 / 游戏名）与合集名标签是否挂在分类标签下，输出 Anki 层级标签
+  /// `<分类>::<作品名>`（如 `video::<番名>`）。默认 `false`（保持平级标签现状）。
+  final bool tagNestTitleUnderCategory;
   final bool allowDupes;
   final bool compactGlossaries;
   final bool embedMedia;
@@ -554,6 +561,7 @@ class AnkiSettings {
     String? globalTags,
     bool? tagIncludeHibiki,
     bool? tagIncludeCategory,
+    bool? tagNestTitleUnderCategory,
     bool? allowDupes,
     bool? compactGlossaries,
     bool? embedMedia,
@@ -606,6 +614,8 @@ class AnkiSettings {
     globalTags: globalTags ?? this.globalTags,
     tagIncludeHibiki: tagIncludeHibiki ?? this.tagIncludeHibiki,
     tagIncludeCategory: tagIncludeCategory ?? this.tagIncludeCategory,
+    tagNestTitleUnderCategory:
+        tagNestTitleUnderCategory ?? this.tagNestTitleUnderCategory,
     allowDupes: allowDupes ?? this.allowDupes,
     compactGlossaries: compactGlossaries ?? this.compactGlossaries,
     embedMedia: embedMedia ?? this.embedMedia,
@@ -661,6 +671,7 @@ class AnkiSettings {
     'globalTags': globalTags,
     'tagIncludeHibiki': tagIncludeHibiki,
     'tagIncludeCategory': tagIncludeCategory,
+    'tagNestTitleUnderCategory': tagNestTitleUnderCategory,
     'allowDupes': allowDupes,
     'compactGlossaries': compactGlossaries,
     'embedMedia': embedMedia,
