@@ -8278,6 +8278,8 @@
   "srs_sync_progress_downloading": "Syncing review data",
   "srs_sync_progress_downloading_count": "Syncing review data (${done}/${total})",
   "srs_sync_progress_media": "Syncing card media",
+  "srs_sync_progress_migrating": "Moving old review sync files",
+  "srs_sync_progress_migrating_count": "Moving old review sync files (${done}/${total})",
   "srs_sync_progress_preparing": "Preparing review sync",
   "srs_sync_progress_uploading": "Uploading review changes",
   "srs_sync_setup_body": "Review data syncs along with cloud sync (Sync & backup) and Fushi Interconnect; there is no separate switch. Neither is set up on this device yet.",
