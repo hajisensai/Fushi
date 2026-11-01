@@ -4244,6 +4244,14 @@ LRESULT GlobalLookupWindow::HandleMessage(UINT message, WPARAM wparam,
         return 0;
       }
       return DefWindowProc(hwnd_, message, wparam, lparam);
+    case fushi::kLowLevelKeyboardCopyMessage:
+      // 反馈 4c0IeCpSjb — 游戏内查词卡在屏时键盘护盾吞掉了 Ctrl+C（游戏看不到 Ctrl，
+      // 不再触发快进），热键因此收不到；改由钩子线程投这条消息，走同一个复制出口。
+      // 没有选区时与热键未注册时一致：什么都不做。
+      if (selection_present_ && IsShowing()) {
+        CopyOverlaySelectionToClipboard();
+      }
+      return 0;
     case kShowContextMenuMessage:
       ShowPendingContextMenu();
       return 0;

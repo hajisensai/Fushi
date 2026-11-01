@@ -50,6 +50,14 @@ struct ReaderState {
   std::mutex mutex;
   HANDLE mapping = nullptr;
   SharedHeader* header = nullptr;
+  // 反馈 -AynHxzwNe（左键偶发穿透）— 映射寿命锁。WH_MOUSE_LL 回调发布覆盖窗口护盾
+  // 只需要「header 此刻有效」，不需要 [mutex]：护盾请求的写者互斥靠共享内存里 seq 的
+  // write-in-progress CAS。此前回调 try_lock [mutex]，而平台线程持 [mutex] 做 PCM
+  // 拷贝（GrabRecent / GrabClipNear / GrabUtterance）、写查词帧位图、PollText 等
+  // 毫秒级工作——撞上就发布失败、fail-open，这一下左键漏给采样型引擎，表现为「点查词
+  // 窗口任何位置都偶发跳文本」。映射只在 Open / Close 时变，回调改拿共享锁（只在
+  // 正在开 / 关段时才拿不到），header 的赋值与解除映射在这把锁的独占模式下进行。
+  SRWLOCK mapping_lifetime = SRWLOCK_INIT;
   uint32_t pid = 0;
   // ── v14 查词通道游标（与上面同一把锁）───────────────────────────────────────
   // 三个游标都在 Open 时对齐到「现在」而不是 0：会话重开时把注入侧遗留的旧 hit
@@ -353,8 +361,10 @@ void ResetLookupCursorsLocked(ReaderState& st, const SharedHeader* h) {
 // 解除映射、清句柄。调用方持锁。
 void CloseLocked(ReaderState& st) {
   if (st.header != nullptr) {
+    AcquireSRWLockExclusive(&st.mapping_lifetime);
     UnmapViewOfFile(st.header);
     st.header = nullptr;
+    ReleaseSRWLockExclusive(&st.mapping_lifetime);
   }
   if (st.mapping != nullptr) {
     CloseHandle(st.mapping);
@@ -1373,7 +1383,9 @@ VoiceHookOpenResult VoiceHookReader::Open(uint32_t pid) {
     return out;
   }
   st.mapping = mapping;
+  AcquireSRWLockExclusive(&st.mapping_lifetime);
   st.header = header;
+  ReleaseSRWLockExclusive(&st.mapping_lifetime);
   st.pid = pid;
   // v14：查词游标对齐到「现在」。不这么做，会话重开时注入侧遗留的旧 hit 会被当成
   // 新命中重放，用户会看到一张莫名其妙的卡片弹出来。
@@ -2312,12 +2324,34 @@ uint32_t VoiceHookReader::PublishLookupShieldTransaction(
       transaction_id, active_buttons, allow_risk);
 }
 
+namespace {
+// 映射寿命锁的共享端（见 ReaderState::mapping_lifetime）。只在 Open / Close 正在
+// 进行时拿不到；拿到期间 st.header 不会被解除映射。
+class MappingLifetimeShared {
+ public:
+  explicit MappingLifetimeShared(ReaderState& st)
+      : lock_(&st.mapping_lifetime),
+        owned_(TryAcquireSRWLockShared(lock_) != FALSE) {}
+  ~MappingLifetimeShared() {
+    if (owned_) ReleaseSRWLockShared(lock_);
+  }
+  MappingLifetimeShared(const MappingLifetimeShared&) = delete;
+  MappingLifetimeShared& operator=(const MappingLifetimeShared&) = delete;
+  bool owned() const { return owned_; }
+
+ private:
+  SRWLOCK* lock_;
+  bool owned_;
+};
+}  // namespace
+
 uint32_t VoiceHookReader::TryPublishOverlayClickShieldTransaction(
     HWND game, uint64_t transaction_id, bool down) {
   if (game == nullptr || transaction_id == 0) return 0;
   ReaderState& st = State();
-  std::unique_lock<std::mutex> lock(st.mutex, std::try_to_lock);
-  if (!lock.owns_lock() ||
+  // 不拿 [mutex]：见 ReaderState::mapping_lifetime（左键偶发穿透的根因）。
+  MappingLifetimeShared mapping(st);
+  if (!mapping.owned() ||
       LookupGateLocked(st.header, false) != VoiceHookLookupError::kNone) {
     return 0;
   }
@@ -2335,8 +2369,8 @@ bool VoiceHookReader::OverlayClickShieldTransactionOrphaned(
     HWND game, uint64_t transaction_id) {
   if (game == nullptr || transaction_id == 0) return true;
   ReaderState& st = State();
-  std::unique_lock<std::mutex> lock(st.mutex, std::try_to_lock);
-  if (!lock.owns_lock()) return false;
+  MappingLifetimeShared mapping(st);
+  if (!mapping.owned()) return false;
   if (LookupGateLocked(st.header, false) != VoiceHookLookupError::kNone) {
     return true;
   }

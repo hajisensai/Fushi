@@ -289,6 +289,22 @@ add_custom_target(fushi_windows_attached_glyph_latch_gate
 )
 add_dependencies(${BINARY_NAME} fushi_windows_attached_glyph_latch_gate)
 
+# 反馈 4c0IeCpSjb — 游戏内查词卡在屏时 WH_KEYBOARD_LL 吞键盘的判据：只吞新按下、
+# down/up 成对、系统修饰键放行、Ctrl+C 由宿主复制。卡键（游戏只见 down 不见 up）
+# 是这条规则最危险的回归，必须可执行地钉住。
+add_executable(fushi_windows_lookup_keyboard_shield_test
+  "tests/lookup_keyboard_shield_test.cpp"
+)
+apply_standard_settings(fushi_windows_lookup_keyboard_shield_test)
+target_compile_definitions(fushi_windows_lookup_keyboard_shield_test PRIVATE
+  "NOMINMAX")
+add_custom_target(fushi_windows_lookup_keyboard_shield_gate
+  COMMAND "$<TARGET_FILE:fushi_windows_lookup_keyboard_shield_test>"
+  DEPENDS fushi_windows_lookup_keyboard_shield_test
+  VERBATIM
+)
+add_dependencies(${BINARY_NAME} fushi_windows_lookup_keyboard_shield_gate)
+
 # v19 lookup hits are untrusted shared-memory payloads. Compile and run strict
 # UTF-8/UTF-16 span, production provider-pair and bounded geometry validation
 # before the runner target may link.
