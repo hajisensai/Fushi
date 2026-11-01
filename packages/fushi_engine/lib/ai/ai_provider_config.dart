@@ -268,6 +268,16 @@ const List<AiProviderPreset> kAiProviderPresets = <AiProviderPreset>[
   ),
 ];
 
+/// [AiProviderConfig.batchConcurrency]：每把 key 同时在途的批数。
+const int kAiBatchConcurrencyPerKey = 4;
+
+/// [AiProviderConfig.batchConcurrency] 的上限。
+const int kAiBatchConcurrencyMax = 12;
+
+/// [AiProviderConfig.batchConcurrency]：每分钟请求上限折算成并发时，每个在途批
+/// 每分钟约占几次请求（一批约 10 秒）。
+const int kAiBatchSecondsPerMinuteSlot = 6;
+
 /// 按 id 找内置预设；找不到返回 null（存档里的 presetId 可能来自更新的版本）。
 AiProviderPreset? aiProviderPresetById(String? id) {
   if (id == null) {
@@ -437,6 +447,22 @@ class AiProviderConfig {
     for (final AiApiKey key in apiKeys)
       if (key.isActive) key.trimmed,
   ];
+
+  /// 批量 AI 任务（视频字幕校对、转录稿 AI 校对）同时在途的批数。
+  ///
+  /// 按这家的承载能力推：每把参与轮换的 key [kAiBatchConcurrencyPerKey] 批、
+  /// 封顶 [kAiBatchConcurrencyMax]；填了每分钟请求上限时再压到
+  /// `rpm / [kAiBatchSecondsPerMinuteSlot]`（一批约 10 秒，在途 n 批 ≈ 6n 次 / 分），
+  /// 至少 1。真正的限频仍由 `AiRateLimiter` 把关——这里只决定排多少批同时等，
+  /// 不让并发大到全在限频器里干排队，也不让多 key / 不限速的提供商只跑 2 批。
+  int get batchConcurrency {
+    final int keys = math.max(1, activeApiKeys.length);
+    int n = math.min(kAiBatchConcurrencyPerKey * keys, kAiBatchConcurrencyMax);
+    if (requestsPerMinute > 0) {
+      n = math.min(n, requestsPerMinute ~/ kAiBatchSecondsPerMinuteSlot);
+    }
+    return math.max(1, n);
+  }
 
   /// 第一把参与请求的 key；一把都没有时为空串。
   ///

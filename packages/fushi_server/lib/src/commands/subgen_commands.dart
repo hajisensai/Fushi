@@ -438,6 +438,7 @@ Future<int> runSubgen(
                   AiChatTextCompleter(client: client!, provider: provider),
               glossaryStore: glossaryStore,
               webKnowledge: web,
+              proofreadConcurrency: provider.batchConcurrency,
               regenerateGlossary: options.regenerateGlossary,
             ),
     );

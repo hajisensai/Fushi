@@ -1055,6 +1055,7 @@ class AppVideoSubtitleService {
           completer: ai.completer,
           glossaryStore: glossaryStore,
           webKnowledge: web,
+          proofreadConcurrency: provider.batchConcurrency,
           regenerateGlossary: job.options.regenerateGlossary,
         );
       }
