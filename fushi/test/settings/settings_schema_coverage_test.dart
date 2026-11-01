@@ -106,6 +106,11 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   // 开关值经 MusicScrapeService 的 vgmdbEnabled 读取器交给 VgmdbProvider（关 = 不发请求）。
   'music/VGMdb lookup':
       'test/media/music/metadata/music_scrape_service_test.dart',
+  // 开关值由 loadMusicServerBrowsers 读：开 = 来源清单里加 AppleMusicCatalogClient（带设置的
+  // storefront），关 = 不加、不发请求。
+  'music/Apple Music catalog': 'test/media/music/server/music_server_test.dart',
+  // storefront 同一条测试咬住：开着时 catalog 客户端用的就是设置里的区域。
+  'music/Storefront': 'test/media/music/server/music_server_test.dart',
   'music/Pause while looking up words':
       'test/media/music/lyrics/music_lyrics_page_logic_test.dart',
   // 服务器曲库的码率上限：生效点是播放服务器曲目时向服务器要的流（直出 / 转码），harness
@@ -324,6 +329,17 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/media/manga/manga_mining_crop_test.dart'
       '（cropToPanelByDefault 决策 + 阅读器接线守卫）',
   'manga/Reading direction': 'test/media/manga/manga_overlay_html_test.dart',
+  // 「OCR 忽略振假名」（漫画页 / 模型页两处入口同一偏好）：生效点是 CtcColumnOcrRecognizer
+  // 识别前裁注音带（开关两态逐列断言）与缓存签名 `_noruby` 后缀；harness 设置页没有 OCR 会话。
+  'manga/Ignore furigana': 'test/ocr/ocr_ruby_trim_test.dart',
+  'models/Ignore furigana': 'test/ocr/ocr_ruby_trim_test.dart',
+  // 作品名挂到分类标签下：开关由 Anki 标签组装读取（开 = `<分类>::<作品名>`，关 = 平级）；
+  // 默认受「加来源分类标签」门控 disabled，harness 驱动不动属预期。
+  'cardCreation/Nest title tags under the category tag':
+      '../packages/fushi_anki/test/note_tags_nested_title_test.dart',
+  // 句子音频来源：生效点在制卡 ffmpeg 抽音参数（中置声道 pan 滤镜 / 音轨选择）。
+  'cardCreation/Sentence audio source':
+      'test/mining/sentence_audio_source_test.dart',
   'manga/Default zoom': 'test/media/manga/manga_overlay_html_test.dart',
   'manga/Zoom sensitivity': 'test/media/manga/manga_overlay_html_test.dart',
   'manga/Page turn animation': 'test/media/manga/manga_overlay_html_test.dart',

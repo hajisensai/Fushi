@@ -36,8 +36,14 @@ class _MusicServerSettingsBodyState extends State<MusicServerSettingsBody> {
     widget.appModel,
   );
 
-  void _reload() =>
-      setState(() => _servers = loadMusicServerBrowsers(widget.appModel));
+  // setState 的回调不能返回 Future：赋值表达式的值就是那个 Future，箭头写法会被
+  // 框架判成「async 回调」直接抛断言（偏好写完、组件已卸载时也不再重建）。
+  void _reload() {
+    if (!mounted) return;
+    setState(() {
+      _servers = loadMusicServerBrowsers(widget.appModel);
+    });
+  }
 
   Future<void> _toggleMix(MusicServerBrowser server, bool on) async {
     final Set<String> mix = <String>{
