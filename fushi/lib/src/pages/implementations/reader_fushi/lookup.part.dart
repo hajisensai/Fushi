@@ -99,7 +99,7 @@ extension _ReaderLookup on _ReaderFushiPageState {
           ).then((_) {
             if (!mounted || !_lookupResumeInFlight) return;
             // 覆盖层读 playbackHeldForLookup：撤掉按住要重建，不靠控制器之后碰巧 notify。
-            setState(() => _lookupResumeInFlight = false);
+            _rebuild(() => _lookupResumeInFlight = false);
           }),
         );
       }
