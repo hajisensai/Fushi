@@ -8,6 +8,8 @@ import 'package:fushi/src/models/game_stream_button_profile.dart';
 import 'package:fushi/src/models/game_stream_lookup_layout.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
+import 'package:fushi/src/pages/implementations/game_stream_page.dart'
+    show gameStreamFitLineFontSize;
 import 'package:fushi/src/sync/game_stream_companion_bridge.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
@@ -341,8 +343,54 @@ class _GameStreamCompanionPageState extends State<GameStreamCompanionPage> {
       );
     }
     final bool lookupMode = state.mode == GameStreamInputMode.lookup;
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints box) => _buildLineRow(
+        theme,
+        state,
+        lineId,
+        text,
+        lookupMode,
+        box,
+        lineHeight,
+      ),
+    );
+  }
+
+  /// The line grows to fill its area, like the inline rail's line (a short
+  /// line at the proportional size left most of the bottom screen empty).
+  double _lineFontSize(String text, BoxConstraints box, double lineHeight) {
+    final ThemeData theme = Theme.of(context);
+    return gameStreamFitLineFontSize(
+      text: text,
+      styleFor: (double size) => subtitleTranscriptTextStyle(
+        fontSize: size,
+        selected: true,
+        fontFamily: theme.textTheme.bodyMedium?.fontFamily,
+      ),
+      width:
+          box.maxWidth -
+          kSubtitleRowPaddingLeft -
+          kSubtitleRowPaddingRight -
+          kSubtitleRowScrollbarGutter -
+          _copyActionExtent,
+      height: lineHeight - kSubtitleRowPaddingVertical - _lineScrollPadding * 2,
+      floor: GameStreamLookupLayout.fontSizeFor(lineHeight),
+      textScaler: MediaQuery.textScalerOf(context),
+      textDirection: Directionality.of(context),
+    );
+  }
+
+  Widget _buildLineRow(
+    ThemeData theme,
+    GameStreamCompanionState state,
+    String lineId,
+    String text,
+    bool lookupMode,
+    BoxConstraints box,
+    double lineHeight,
+  ) {
     return SingleChildScrollView(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.symmetric(vertical: _lineScrollPadding),
       child: SubtitleTranscriptRow(
         colorScheme: theme.colorScheme,
         selected: true,
@@ -351,7 +399,7 @@ class _GameStreamCompanionPageState extends State<GameStreamCompanionPage> {
           textKey: GameStreamCompanionPage.lineTextKey,
           text: text,
           style: subtitleTranscriptTextStyle(
-            fontSize: GameStreamLookupLayout.fontSizeFor(lineHeight),
+            fontSize: _lineFontSize(text, box, lineHeight),
             selected: true,
             fontFamily: theme.textTheme.bodyMedium?.fontFamily,
             color: SubtitleTranscriptRow.textColorOf(
@@ -374,7 +422,7 @@ class _GameStreamCompanionPageState extends State<GameStreamCompanionPage> {
             theme.colorScheme,
             selected: true,
           ),
-          size: 16,
+          size: _copyIconSize,
           onPressed: () =>
               unawaited(Clipboard.setData(ClipboardData(text: text))),
         ),
@@ -422,3 +470,10 @@ class _GameStreamCompanionPageState extends State<GameStreamCompanionPage> {
     );
   }
 }
+
+/// The line row's copy action: icon plus its 2px padding on both sides.
+const double _copyIconSize = 16;
+const double _copyActionExtent = _copyIconSize + 4;
+
+/// Vertical padding around the scrollable line.
+const double _lineScrollPadding = 4;

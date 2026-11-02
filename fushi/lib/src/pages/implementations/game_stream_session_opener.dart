@@ -6,6 +6,8 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/game_stream_button_profile.dart';
 import 'package:fushi/src/models/game_stream_lookup_layout.dart';
 import 'package:fushi/src/pages/implementations/game_stream_page.dart';
+import 'package:fushi/src/utils/app_ui_scale.dart'
+    show FushiAppUiScaleNeutralizer;
 import 'package:fushi/src/platform/game_stream_companion_display_channel.dart';
 import 'package:fushi/src/sync/game_stream_client.dart';
 import 'package:fushi/src/sync/game_stream_receiver.dart';
@@ -101,22 +103,28 @@ Future<void> openGameStreamSession({
     companion = activeCompanion;
     await navigator.push<void>(
       MaterialPageRoute<void>(
-        builder: (BuildContext context) => GameStreamPage(
-          sessionId: session.sessionId,
-          clientId: activeClientId,
-          inputComposer: activeInput,
-          lookupController: activeLookup,
-          receiver: activeReceiver,
-          session: joined,
-          settings: settings,
-          onSettingsChanged: onSettingsChanged,
-          lookupLayout: lookupLayout,
-          onLookupLayoutChanged: onLookupLayoutChanged,
-          buttonProfile: buttonProfile,
-          onButtonProfileChanged: onButtonProfileChanged,
-          companionDisplay: activeCompanion,
-          secondScreen: secondScreen,
-          onSecondScreenChanged: onSecondScreenChanged,
+        // The rail's dictionary is a WebView: it must render at net scale 1
+        // (DictionaryPopupWebView asserts it), so the whole page is
+        // neutralized from the route like the reader, keeping the popup and
+        // its selection rects in one coordinate space.
+        builder: (BuildContext context) => FushiAppUiScaleNeutralizer(
+          child: GameStreamPage(
+            sessionId: session.sessionId,
+            clientId: activeClientId,
+            inputComposer: activeInput,
+            lookupController: activeLookup,
+            receiver: activeReceiver,
+            session: joined,
+            settings: settings,
+            onSettingsChanged: onSettingsChanged,
+            lookupLayout: lookupLayout,
+            onLookupLayoutChanged: onLookupLayoutChanged,
+            buttonProfile: buttonProfile,
+            onButtonProfileChanged: onButtonProfileChanged,
+            companionDisplay: activeCompanion,
+            secondScreen: secondScreen,
+            onSecondScreenChanged: onSecondScreenChanged,
+          ),
         ),
       ),
     );

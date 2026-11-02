@@ -20,6 +20,7 @@ import android.view.InputDevice;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.WindowManager;
+import android.webkit.WebView;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -93,8 +94,34 @@ public class GameStreamCompanionActivity extends FlutterActivity
         }
     };
 
+    /** Whether this process already chose its WebView data directory. */
+    private static boolean webViewDataDirConfigured = false;
+
+    /**
+     * The panel renders the dictionary in a flutter_inappwebview WebView inside
+     * the :companion process, while the main process (stream page, reader, ...)
+     * already uses WebView. Android forbids two processes sharing one WebView
+     * data directory (crbug.com/558377): without its own suffix the panel's
+     * WebView fails to create and the dictionary stays blank. Must run before
+     * anything in this process touches WebView, so before the engine starts
+     * in super.onCreate. Same as the :popup process.
+     */
+    private static void configureWebViewDataDir() {
+        if (webViewDataDirConfigured) return;
+        webViewDataDirConfigured = true;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            try {
+                WebView.setDataDirectorySuffix("companion");
+            } catch (IllegalStateException e) {
+                // WebView was already initialised in this process; it keeps the
+                // directory it started with.
+            }
+        }
+    }
+
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
+        configureWebViewDataDir();
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         super.onCreate(savedInstanceState);
         targetDisplayId = getIntent().getIntExtra(EXTRA_DISPLAY_ID, Display.INVALID_DISPLAY);

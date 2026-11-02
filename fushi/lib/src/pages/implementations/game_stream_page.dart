@@ -2605,7 +2605,6 @@ const double _lineCopyActionExtent = _lineCopyIconSize + 4;
 /// Largest font size in [floor]..[GameStreamLookupLayout.maxFitFontSize] at
 /// which [text] laid out [width] wide stays within [height]. A line that does
 /// not fit even at [floor] keeps [floor] (the area scrolls). Half-point steps.
-@visibleForTesting
 double gameStreamFitLineFontSize({
   required String text,
   required TextStyle Function(double size) styleFor,
