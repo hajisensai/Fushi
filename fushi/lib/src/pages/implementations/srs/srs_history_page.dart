@@ -123,6 +123,16 @@ class SrsRestorePlanView {
 
   bool get isEmpty =>
       fields == 0 && revived == 0 && removed == 0 && tags == 0 && reviews == 0;
+
+  /// 不撤回复习的同一次恢复：撤回复习只多出 [reviews]，其余各项与之相同（内核 `timeline.rs` `plan`），
+  /// 所以预览只跑一次带撤回的预演（大库上一次预演要十几秒），不撤回的一份由它推出。
+  SrsRestorePlanView withoutReviews() => SrsRestorePlanView(
+    fields: fields,
+    revived: revived,
+    removed: removed,
+    tags: tags,
+    reviews: 0,
+  );
 }
 
 class SrsHistoryPage extends ConsumerStatefulWidget {
@@ -242,13 +252,6 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
     final SrsRestorePlanView keep;
     final SrsRestorePlanView retract;
     try {
-      keep = SrsRestorePlanView.fromJson(
-        await store.sync2PlanRestore(
-          atMs,
-          retractReviews: false,
-          checkpoint: cp,
-        ),
-      );
       retract = SrsRestorePlanView.fromJson(
         await store.sync2PlanRestore(
           atMs,
@@ -256,6 +259,7 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
           checkpoint: cp,
         ),
       );
+      keep = retract.withoutReviews();
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsHistoryPage.plan', e, stack);
       FushiToast.show(

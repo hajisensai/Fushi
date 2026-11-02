@@ -3,7 +3,7 @@
 use serde_json::{json, Value};
 
 use super::super::tests::{deck_entity, edit, Device, P};
-use super::{value_at, vv_at, RestoreTarget};
+use super::{target_cut, value_at, RestoreTarget};
 use crate::sync2::op::EntKind;
 
 const T0: i64 = 1_700_000_000_000;
@@ -208,7 +208,7 @@ fn restore_brings_every_register_back_to_the_moment() {
     assert!(regs.len() > 20, "{regs:?}");
     let then: Vec<Value> = {
         let w = a.core.writer().unwrap();
-        let target = vv_at(&w, P, t1).unwrap();
+        let target = target_cut(&w, P, &RestoreTarget::At(t1)).unwrap();
         regs.iter()
             .skip(1)
             .map(|r| value_at(&w, P, EntKind::parse(&r[0]).unwrap(), &r[1], &r[2], Some(&target)).unwrap().unwrap_or(Value::Null))
@@ -221,4 +221,72 @@ fn restore_brings_every_register_back_to_the_moment() {
         assert!(crate::registers::same_value(&got, &want), "{r:?}: got {got}, want {want}");
     }
     assert_eq!(super::super::semantics::current_tags(&w, P, "N1").unwrap(), vec!["a".to_owned()]);
+}
+
+/// 旧库（v1）：直接写投影表，再迁移。迁移操作的墙钟是 [mig]，内容本身的旧 HLC 远早于它。
+fn migrated_library(mig: i64) -> Device {
+    let a = Device::new("tl-legacy");
+    let w = a.core.writer().unwrap();
+    for (id, kind) in [("NT", "notetype"), ("N1", "note"), ("N2", "note")] {
+        w.execute(
+            "INSERT INTO srs_entities (id, profile_uid, kind, payload_json, created_at) VALUES (srs_id(?1), srs_id(?2), ?3, ?4, 1)",
+            rusqlite::params![id, P, kind, r#"{"createdAt":1,"guid":"g","noteTypeId":"NT"}"#],
+        )
+        .unwrap();
+    }
+    // (seq, 实体种类, 实体, 键, 值, 旧 HLC 物理时刻, 旧上下文)
+    let edits: [(i64, &str, &str, &str, Value, i64, Value); 4] = [
+        (1, "note", "N1", "f/x", json!("legacy v1"), T0 + 100, json!({})),
+        (2, "notetype", "NT", "tmplDef/t1", json!({"name": "表", "ord": 0, "front": "{{fld:x}}", "back": "b"}), T0 + 100, json!({"old": 1})),
+        (3, "note", "N1", "f/x", json!("legacy v2"), T0 + 300, json!({"old": 2})),
+        (4, "note", "N2", "f/x", json!("added later"), T0 + 300, json!({"old": 3})),
+    ];
+    for (s, kind, e, f, v, at, ctx) in edits {
+        let id = crate::registers::edit_id("old", s);
+        let j = json!({"ctx": {"vv": ctx}, "e": e, "f": f, "hlc": format!("{at}:0:old"), "id": id, "k": kind, "p": P, "s": s, "ts": "wall", "v": v, "w": "old"});
+        w.execute(
+            "INSERT INTO srs_field_edits (id, profile_uid, entity_kind, entity_id, field_key, writer_id, seq, jslim) \
+             VALUES (srs_id(?1), srs_id(?2), ?3, srs_id(?4), ?5, 'old', ?6, ?7)",
+            rusqlite::params![id, P, kind, e, f, s, j.to_string()],
+        )
+        .unwrap();
+    }
+    let log = json!({
+        "id": "L1", "p": P, "card": "C1", "kind": "review", "rating": 3, "hlc": format!("{}:0:old", T0 + 300), "at": T0 + 300,
+        "ts": "anchored", "origin": "fushi", "rtype": "learn", "utcOff": 0, "rollover": 4, "fv": 1,
+        "res": {"queue": "learn", "ivl": 0, "step": 1, "reps": 1, "lapses": 0, "scheduler": "fushi"}
+    });
+    w.execute(
+        "INSERT INTO srs_review_logs (id, profile_uid, card_id, kind, rating, occurred_at, review_type, origin, jslim) \
+         VALUES (srs_id('L1'), srs_id(?1), 'C1', 'review', 3, ?2, 'learn', 'fushi', ?3)",
+        rusqlite::params![P, T0 + 300, log.to_string()],
+    )
+    .unwrap();
+    drop(w);
+    a.core.sync2_migrate(P, mig, None).unwrap();
+    a
+}
+
+/// 迁移来的历史按旧记录自己的时刻截断（用户库实测：选到迁移之前的时刻，旧实现把迁移来的 15250 个实体全删、
+/// 字段全清）：迁移之前、全部旧内容之后的时刻 = 什么都不用改；旧内容中途的时刻只改回那之后的旧修改、只删那之后才有
+/// 内容的实体、只撤回那之后的旧复习。
+#[test]
+fn restore_cuts_migrated_history_at_its_original_time() {
+    let mig = T0 + 10_000;
+    let a = migrated_library(mig);
+    a.apply(mig + 1000, vec![edit("note", "N1", "f/x", json!("native"))]);
+    let plan = |t: i64| a.core.sync2_plan_restore(P, &RestoreTarget::At(t), true, mig + 5000).unwrap();
+    // 全部旧内容之后、迁移之前：只改回迁移之后本机的那一条，不删、不撤回任何东西。
+    assert_eq!(plan(T0 + 500), json!({"fields": 1, "removed": 0, "reviews": 0, "revived": 0, "tags": 0}));
+    // 旧内容中途：N1 改回 legacy v1，N2 那时还没有内容 → 删除；那之后的旧复习撤回。NT 的模板那时已在，不动。
+    assert_eq!(plan(T0 + 200), json!({"fields": 1, "removed": 1, "reviews": 1, "revived": 0, "tags": 0}));
+    // 早于一切旧内容：三个实体都还不存在。
+    assert_eq!(plan(T0)["removed"], json!(3));
+    a.core.sync2_restore(P, &RestoreTarget::At(T0 + 200), false, mig + 5000).unwrap();
+    let w = a.core.writer().unwrap();
+    assert_eq!(value_at(&w, P, EntKind::Note, "N1", "f/x", None).unwrap(), Some(json!("legacy v1")));
+    assert!(value_at(&w, P, EntKind::Note, "N2", "deleted", None).unwrap().is_some_and(|v| v.is_i64()));
+    assert_eq!(value_at(&w, P, EntKind::Note, "N1", "deleted", None).unwrap(), None);
+    let t1 = value_at(&w, P, EntKind::NoteType, "NT", "tmplDef/t1", None).unwrap().unwrap();
+    assert_eq!(t1["front"], json!("{{fld:x}}"));
 }

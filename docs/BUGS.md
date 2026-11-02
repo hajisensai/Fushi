@@ -33,10 +33,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 3563 条。点号进各自文件。
+> 共 3565 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-3960](bugs/BUG-3960-srs-restore-legacy-original-time.md) | ✅ | ✅ | srs-restore-legacy-original-time |
+| [BUG-3959](bugs/BUG-3959-srs-timeline-restore-empty-templates.md) | ✅ | ✅ | srs-timeline-restore-empty-templates |
 | [BUG-3959](bugs/BUG-3959-srs-sync2-synthetic-writer-ctx-bloat.md) | ✅ | ✅ | 复习同步 v2：合成写入者 `sync2:` 进了因果上下文，本机每条新修改 ctx ≈ 780 KB |
 | [BUG-3959](bugs/BUG-3959-srs-timeline-restore-empty-templates.md) | ✅ | ✅ | srs-timeline-restore-empty-templates |
 | [BUG-3958](bugs/BUG-3958-floating-ball-photo-ocr-mines-no-sentence.md) | ✅ | ✅ | 悬浮球拍照查词、悬浮字幕点字制卡没有例句 |
