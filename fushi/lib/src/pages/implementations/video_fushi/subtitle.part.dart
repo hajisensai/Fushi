@@ -195,7 +195,6 @@ extension _VideoSubtitle on _VideoFushiPageState {
     // 选中行前景：M3E 交给面板列表主题（secondaryContainer 色块 +
     // onSecondaryContainer），Apple 照旧强调色。
     final Color? selectedFg = videoPanelSelectedForeground(context);
-    final String? hostSub = _remoteSubtitlePath;
     final List<Widget> rows = <Widget>[
       if (_subtitleMenuLoading) const FushiLinearProgressIndicator(),
       // TODO-573：「自动获取字幕(Jimaku)」对本地和远端视频都显示。Jimaku 只需要一个
@@ -320,18 +319,31 @@ extension _VideoSubtitle on _VideoFushiPageState {
                 ? null
                 : () => unawaited(_applyYoutubeCaptionTrack(controller, track)),
           ),
-      if (_isRemote && hostSub != null)
-        FushiListTileControl(
-          leading: const FushiIcon(Icons.cloud_done_outlined),
-          title: Text(t.video_subtitle_remote_host),
-          subtitle: Text(p.basename(hostSub)),
-          selected: _currentSubtitleSource == hostSub,
-          selectedColor: selectedFg,
-          enabled: !_subtitleLoadingShown,
-          onTap: _subtitleLoadingShown
-              ? null
-              : () => unawaited(_applyRemoteSubtitle(controller, hostSub)),
-        ),
+      // Xt3RCTPKhX：后端默认字幕 + 本机字幕档，与副字幕菜单 / 手机遥控字幕列表同一份
+      // 行模型（[_remoteSubtitleFileRows]）；本机档可长按删除。
+      if (_isRemote)
+        for (final RemoteSubtitleFileEntry entry in _remoteSubtitleFileRows)
+          _remoteSubtitleFileTile(
+            context,
+            controller,
+            entry,
+            selected: entry.local == null
+                ? _currentSubtitleSource == entry.path
+                : subtitleSourceMatchesPersistedForMenu(
+                    entry.local!,
+                    _currentSubtitleSource,
+                  ),
+            selectedColor: selectedFg,
+            onTap: _subtitleLoadingShown
+                ? null
+                : () => unawaited(
+                    _applyRemoteSubtitle(
+                      controller,
+                      entry.path,
+                      label: entry.local == null ? null : entry.label,
+                    ),
+                  ),
+          ),
       if (_isRemote)
         for (final RemoteVideoEmbeddedSubtitleTrack track
             in _remoteEmbeddedSubtitleTracks) ...<Widget>[
@@ -386,39 +398,6 @@ extension _VideoSubtitle on _VideoFushiPageState {
                     ),
             ),
         ],
-      // BUG-1861：远端模式下本机落盘的字幕档（Jimaku 下载 / 手动导入）也要有自己的行。
-      // 远端字幕轨行原本只覆盖 YouTube 轨 / host sidecar / host 内封轨三类，本机档案
-      // 经 [_applyRemoteSubtitle] 应用后只改 `_currentSubtitleSource`，列表里没有任何
-      // 行能承载它——「字幕明明应用上了、列表里却没有它」。与 host sidecar 行按路径去重
-      // （重进时的持久化重放会把同一档案挂到 `_remoteSubtitlePath` 上，见 [_loadRemoteEpisode]）。
-      if (_isRemote)
-        for (final SubtitleSource source in _importedSubtitleSources)
-          if (hostSub == null ||
-              !sameExternalSubtitlePathForMenu(source, hostSub))
-            _withSubtitleFileMenu(
-              context,
-              controller,
-              source,
-              FushiListTileControl(
-                leading: const FushiIcon(Icons.subtitles),
-                title: Text(source.label),
-                selected: subtitleSourceMatchesPersistedForMenu(
-                  source,
-                  _currentSubtitleSource,
-                ),
-                selectedColor: selectedFg,
-                enabled: !_subtitleLoadingShown,
-                onTap: _subtitleLoadingShown
-                    ? null
-                    : () => unawaited(
-                        _applyRemoteSubtitle(
-                          controller,
-                          source.externalPath!,
-                          label: source.label,
-                        ),
-                      ),
-              ),
-            ),
       if (!_isRemote)
         for (final SubtitleSource source in _menuSubtitleSources) ...<Widget>[
           _withSubtitleFileMenu(
@@ -508,7 +487,6 @@ extension _VideoSubtitle on _VideoFushiPageState {
     // host 内嵌文本轨（抽取下载）+ 本地字幕文件导入；全部归一成本地文件 → cue →
     // setSecondaryCues。选中高亮按持久化编码（文件路径 / `embedded:<n>`）比对。
     if (_isRemote) {
-      final String? hostSub = _remoteSubtitlePath;
       return <Widget>[
         FushiListTileControl(
           leading: const FushiIcon(Icons.subtitles_off),
@@ -533,18 +511,28 @@ extension _VideoSubtitle on _VideoFushiPageState {
                   _pickAndImportRemoteSecondarySubtitle(controller),
                 ),
         ),
-        if (hostSub != null)
-          FushiListTileControl(
-            leading: const FushiIcon(Icons.cloud_done_outlined),
-            title: Text(t.video_subtitle_remote_host),
-            subtitle: Text(p.basename(hostSub)),
-            selected: _currentSecondarySubtitleSource == hostSub,
+        // Xt3RCTPKhX：与主字幕菜单 / 手机遥控字幕列表同一份行模型
+        // （[_remoteSubtitleFileRows]）：后端默认字幕 + 本机字幕档（可长按删除）。
+        for (final RemoteSubtitleFileEntry entry in _remoteSubtitleFileRows)
+          _remoteSubtitleFileTile(
+            context,
+            controller,
+            entry,
+            selected: entry.local == null
+                ? _currentSecondarySubtitleSource == entry.path
+                : subtitleSourceMatchesPersistedForMenu(
+                    entry.local!,
+                    _currentSecondarySubtitleSource,
+                  ),
             selectedColor: selectedFg,
-            enabled: !_subtitleLoadingShown,
             onTap: _subtitleLoadingShown
                 ? null
                 : () => unawaited(
-                    _applyRemoteSecondarySubtitle(controller, hostSub),
+                    _applyRemoteSecondarySubtitle(
+                      controller,
+                      entry.path,
+                      label: entry.local == null ? null : entry.label,
+                    ),
                   ),
           ),
         for (final RemoteVideoEmbeddedSubtitleTrack track
@@ -572,37 +560,6 @@ extension _VideoSubtitle on _VideoFushiPageState {
                   )
                 : null,
           ),
-        // BUG-1861：与远端**主**字幕轨行完全同形——本机落盘的字幕档
-        // （[_pickAndImportRemoteSecondarySubtitle] 拷进 video_subtitles/）也要有自己的
-        // 行。否则「导入成功、副字幕生效、列表里找不到它、也切不回来」，正是主字幕那半
-        // 已修掉的同一个洞。与 host sidecar 行按路径去重。
-        for (final SubtitleSource source in _importedSubtitleSources)
-          if (hostSub == null ||
-              !sameExternalSubtitlePathForMenu(source, hostSub))
-            _withSubtitleFileMenu(
-              context,
-              controller,
-              source,
-              FushiListTileControl(
-                leading: const FushiIcon(Icons.subtitles),
-                title: Text(source.label),
-                selected: subtitleSourceMatchesPersistedForMenu(
-                  source,
-                  _currentSecondarySubtitleSource,
-                ),
-                selectedColor: selectedFg,
-                enabled: !_subtitleLoadingShown,
-                onTap: _subtitleLoadingShown
-                    ? null
-                    : () => unawaited(
-                        _applyRemoteSecondarySubtitle(
-                          controller,
-                          source.externalPath!,
-                          label: source.label,
-                        ),
-                      ),
-              ),
-            ),
       ];
     }
     return <Widget>[
@@ -813,6 +770,15 @@ extension _VideoSubtitle on _VideoFushiPageState {
           .where(notDeleted)
           .toList();
     });
+    if (_isRemote) {
+      unawaited(
+        _persistRemoteLocalSubtitleFile(
+          path,
+          add: false,
+          episode: _currentEpisode,
+        ),
+      );
+    }
     _showOsd(t.video_subtitle_deleted(label: source.label));
   }
 
@@ -1007,6 +973,139 @@ extension _VideoSubtitle on _VideoFushiPageState {
         ..._importedSubtitleSources,
       ];
     });
+    // Xt3RCTPKhX：远端没有本地视频文件可枚举，本机档按集持久化，换集 / 重进时据此
+    // 重建列表（见 [_loadRemoteEpisode]）。
+    if (_isRemote) {
+      unawaited(
+        _persistRemoteLocalSubtitleFile(
+          path,
+          add: true,
+          episode: _currentEpisode,
+        ),
+      );
+    }
+  }
+
+  /// 远端：本集持久化的本机字幕档 → 字幕轨列表（只留磁盘上还在的）。
+  Future<List<SubtitleSource>> _restoreRemoteLocalSubtitleFiles(
+    int index,
+  ) async {
+    final (String uid, int ep) = _remotePositionKeyForIndex(index);
+    final List<String> persisted = appModel.prefsRepo.remoteSubtitleFiles(
+      uid,
+      episodeIndex: ep,
+    );
+    if (persisted.isEmpty) return const <SubtitleSource>[];
+    final Set<String> existing = <String>{
+      for (final String path in persisted)
+        if (await File(path).exists()) path,
+    };
+    return restoreRemoteLocalSubtitleFiles(
+      persisted,
+      exists: existing.contains,
+    );
+  }
+
+  /// 远端：[path] 是不是本机落盘的字幕档（本集列表里登记过，或位于本机字幕目录）。
+  /// 后端默认字幕下载到的临时档不算。
+  Future<bool> _isRemoteLocalSubtitleFile(String path) async {
+    if (_importedSubtitleSources.any(
+      (SubtitleSource s) => sameExternalSubtitlePathForMenu(s, path),
+    )) {
+      return true;
+    }
+    final Directory dir = await AppPaths.videoSubtitlesDirectory();
+    return p.isWithin(p.normalize(dir.path), p.normalize(path));
+  }
+
+  /// 远端：把本机字幕档登记进 / 移出第 [episode] 集的持久化列表。
+  Future<void> _persistRemoteLocalSubtitleFile(
+    String path, {
+    required bool add,
+    required int episode,
+  }) async {
+    final (String uid, int ep) = _remotePositionKeyForIndex(episode);
+    final List<String> current = appModel.prefsRepo.remoteSubtitleFiles(
+      uid,
+      episodeIndex: ep,
+    );
+    final List<String> next = add
+        ? addRemoteLocalSubtitleFile(current, path)
+        : removeRemoteLocalSubtitleFile(current, path);
+    await appModel.prefsRepo.setRemoteSubtitleFiles(uid, ep, next);
+  }
+
+  /// 后端默认外挂字幕的来源（行文案按它给，Xt3RCTPKhX）。
+  RemoteDefaultSubtitleOrigin get _remoteDefaultSubtitleOrigin {
+    final Object? client = _effectiveRemoteClient;
+    if (client is InterconnectSyncBackend) {
+      return RemoteDefaultSubtitleOrigin.interconnect;
+    }
+    if (client is MediaServerBrowser) {
+      return RemoteDefaultSubtitleOrigin.mediaServer;
+    }
+    if (client is AnimeSourceVideoClient) {
+      return RemoteDefaultSubtitleOrigin.onlineSource;
+    }
+    return RemoteDefaultSubtitleOrigin.stream;
+  }
+
+  /// 后端默认外挂字幕行的标题。
+  String get _remoteDefaultSubtitleTitle =>
+      switch (_remoteDefaultSubtitleOrigin) {
+        RemoteDefaultSubtitleOrigin.interconnect =>
+          t.video_subtitle_remote_host,
+        RemoteDefaultSubtitleOrigin.mediaServer =>
+          t.video_subtitle_remote_default_media_server,
+        RemoteDefaultSubtitleOrigin.onlineSource =>
+          t.video_subtitle_remote_default_online_source,
+        RemoteDefaultSubtitleOrigin.stream =>
+          t.video_subtitle_remote_default_stream,
+      };
+
+  /// 远端字幕**文件**行（后端默认 + 本机档）：主 / 副字幕菜单与手机遥控字幕列表
+  /// 共用同一份，见 [remoteSubtitleFileEntries]。
+  List<RemoteSubtitleFileEntry> get _remoteSubtitleFileRows =>
+      remoteSubtitleFileEntries(
+        backendDefaultPath: _remoteSubtitlePath,
+        localFiles: _importedSubtitleSources,
+      );
+
+  /// 远端字幕文件行 → 字幕菜单里的一行。本机档包删除菜单（长按 / 右键删除），
+  /// 后端默认字幕不可删。[selected] / [onTap] 由主、副字幕各自给。
+  Widget _remoteSubtitleFileTile(
+    BuildContext context,
+    VideoPlayerController controller,
+    RemoteSubtitleFileEntry entry, {
+    required bool selected,
+    required Color? selectedColor,
+    required VoidCallback? onTap,
+  }) {
+    final SubtitleSource? local = entry.local;
+    if (local == null) {
+      return FushiListTileControl(
+        leading: const FushiIcon(Icons.cloud_done_outlined),
+        title: Text(_remoteDefaultSubtitleTitle),
+        subtitle: Text(entry.label),
+        selected: selected,
+        selectedColor: selectedColor,
+        enabled: onTap != null,
+        onTap: onTap,
+      );
+    }
+    return _withSubtitleFileMenu(
+      context,
+      controller,
+      local,
+      FushiListTileControl(
+        leading: const FushiIcon(Icons.subtitles),
+        title: Text(entry.label),
+        selected: selected,
+        selectedColor: selectedColor,
+        enabled: onTap != null,
+        onTap: onTap,
+      ),
+    );
   }
 
   /// 字幕轨 / 副字幕轨行共用的**最终可选列表**：枚举结果（内封轨 + 视频同目录 sidecar）

@@ -168,14 +168,24 @@ GlobalLookupFrameSettingsJs buildFrameSettingsJsParts({
 /// 资源拦截（与外字 / 词典样式同一条通道）把请求交给 Dart，由 [bytesFor] 回字节。
 ///
 /// 取回失败（`popupEntriesFetchFailed`）后 [fetchUnavailable] 置位，此后一律走字面量，
-/// 与 in-app 的回退语义一致。
+/// 与 in-app 的回退语义一致（in-app 也是按 WebView 各自回退）。
+///
+/// **一个物理宿主一份**（PR #2763 审查）：桌面查词窗与游戏内卡片是两个 WebView2 realm，
+/// 旧实现共用一份——[retain] 只看当前宿主的栈，桌面一渲染就把游戏卡片还没取走的字节删掉
+/// （反之亦然），对面随即取回 404，又把 [fetchUnavailable] 置成全进程永久生效。现在地址
+/// 里带宿主键（`<prefix><hostKey>/<token>.json`），字节、保留与回退都只作用于本宿主。
 class GlobalLookupEntriesStore {
+  GlobalLookupEntriesStore({this.hostKey = 'desktop'});
+
   /// 原生拦截按这个前缀把请求转给 Dart（`global_lookup_window.cpp`
   /// `kGlobalLookupEntriesUrlPrefix`，两处字面量由守卫测试钉成一致）。
   static const String urlPrefix = 'https://fushi.local/popup-entries/glookup/';
 
   static final Expando<int> _tokens = Expando<int>('globalLookupEntriesToken');
   static int _tokenSeq = 0;
+
+  /// 物理宿主键（`desktop` / galCard 的 route target），与静态段修订缓存同一口径。
+  final String hostKey;
 
   final Map<int, Uint8List> _bytes = <int, Uint8List>{};
 
@@ -186,7 +196,9 @@ class GlobalLookupEntriesStore {
   int tokenFor(DictionarySearchResult result) =>
       _tokens[result] ??= ++_tokenSeq;
 
-  static String urlFor(int token) => '$urlPrefix$token.json';
+  String get _hostPrefix => '$urlPrefix${Uri.encodeComponent(hostKey)}/';
+
+  String urlFor(int token) => '$_hostPrefix$token.json';
 
   /// 结果够大且取回可用时登记字节并返回取回地址；否则 null（走字面量）。
   String? register(int token, String entriesJson) {
@@ -197,11 +209,12 @@ class GlobalLookupEntriesStore {
     return urlFor(token);
   }
 
-  /// 拦截器侧：[url] 是登记过的取回地址时返回字节，否则 null。
+  /// 拦截器侧：[url] 是本宿主登记过的取回地址时返回字节，否则 null。
   Uint8List? bytesFor(String url) {
-    if (!url.startsWith(urlPrefix) || !url.endsWith('.json')) return null;
+    final String prefix = _hostPrefix;
+    if (!url.startsWith(prefix) || !url.endsWith('.json')) return null;
     final int? token = int.tryParse(
-      url.substring(urlPrefix.length, url.length - '.json'.length),
+      url.substring(prefix.length, url.length - '.json'.length),
     );
     return token == null ? null : _bytes[token];
   }

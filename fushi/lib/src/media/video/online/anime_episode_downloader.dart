@@ -433,6 +433,127 @@ class AnimeEpisodeDownloader {
     if (cancelled) throw const RemoteDownloadCancelled();
   }
 
+  /// DASH 分离流（EXlaIL2eKQ）：画面流 + 扩展给的外挂音轨各自下载（直链 / HLS 同
+  /// [download]，各自 `.part` 断点续传），再本地 `ffmpeg -c copy` 合成一个文件。
+  ///
+  /// 映射顺序：画面、画面自带音轨（若有，`0:a?`）、外挂音轨按序——与播放时
+  /// `audio-add ... auto` 的默认选轨一致：自带原声的流仍默认放原声，纯视频流默认
+  /// 放第一条外挂音频（轨标题不写：画面是否自带音轨要合成后才知道，输出流序号
+  /// 事先定不下来）。输出用 Matroska（任意编码组合都装得下；mpv 按内容识别
+  /// 容器，不看扩展名）。合成失败**如实抛错**——留一个无声视频当「下载成功」正是
+  /// 本问题本身。
+  Future<void> downloadWithExternalAudio({
+    required String url,
+    required List<String> audioUrls,
+    required Map<String, String> headers,
+    required File dest,
+    void Function(double progress)? onProgress,
+    void Function(int received, int? total)? onBytes,
+    Future<void>? cancelSignal,
+  }) async {
+    if (audioUrls.isEmpty) {
+      await download(
+        url: url,
+        headers: headers,
+        dest: dest,
+        onProgress: onProgress,
+        onBytes: onBytes,
+        cancelSignal: cancelSignal,
+      );
+      return;
+    }
+    final File video = File('${dest.path}.video');
+    final List<File> audios = <File>[
+      for (int i = 0; i < audioUrls.length; i++) File('${dest.path}.audio$i'),
+    ];
+    // 上一轮留下的**完整**分量不复用：流地址每次现解析，可能换了画质 / 线路，
+    // 与新分量拼在一起会音画错位。`.part` 续传仍由 [download] 按验证器判定。
+    for (final File component in <File>[video, ...audios]) {
+      if (await component.exists()) await component.delete();
+    }
+    const double videoShare = 0.8;
+    final double audioShare = (0.95 - videoShare) / audioUrls.length;
+    await download(
+      url: url,
+      headers: headers,
+      dest: video,
+      onProgress: onProgress == null
+          ? null
+          : (double value) => onProgress(value * videoShare),
+      onBytes: onBytes,
+      cancelSignal: cancelSignal,
+    );
+    for (int i = 0; i < audioUrls.length; i++) {
+      final double base = videoShare + audioShare * i;
+      await download(
+        url: audioUrls[i],
+        headers: headers,
+        dest: audios[i],
+        onProgress: onProgress == null
+            ? null
+            : (double value) => onProgress(base + value * audioShare),
+        cancelSignal: cancelSignal,
+      );
+    }
+    final File muxed = File('${dest.path}.mux.mkv');
+    if (await muxed.exists()) await muxed.delete();
+    final FfmpegRunResult result = await _ffmpeg().run(
+      buildExternalAudioMuxArgs(
+        videoPath: video.path,
+        audioPaths: <String>[for (final File f in audios) f.path],
+        outputPath: muxed.path,
+      ),
+      const Duration(minutes: 30),
+    );
+    if (result.returnCode != 0 ||
+        !await muxed.exists() ||
+        await muxed.length() == 0) {
+      if (await muxed.exists()) await muxed.delete();
+      final String output = result.output;
+      throw StateError(
+        'ffmpeg mux of separate audio for ${dest.path} failed '
+        '(exit ${result.returnCode}): '
+        '${output.length > 2000 ? output.substring(output.length - 2000) : output}',
+      );
+    }
+    if (await dest.exists()) await dest.delete();
+    await muxed.rename(dest.path);
+    for (final File component in <File>[video, ...audios]) {
+      if (await component.exists()) await component.delete();
+    }
+    onProgress?.call(1.0);
+  }
+
+  /// 纯函数：画面 + 外挂音轨的 `ffmpeg -c copy` 合成参数（见
+  /// [downloadWithExternalAudio]）。
+  @visibleForTesting
+  static List<String> buildExternalAudioMuxArgs({
+    required String videoPath,
+    required List<String> audioPaths,
+    required String outputPath,
+  }) {
+    return <String>[
+      '-hide_banner',
+      '-y',
+      '-i',
+      videoPath,
+      for (final String audio in audioPaths) ...<String>['-i', audio],
+      '-map',
+      '0:v',
+      '-map',
+      '0:a?',
+      for (int i = 0; i < audioPaths.length; i++) ...<String>[
+        '-map',
+        '${i + 1}:a',
+      ],
+      '-c',
+      'copy',
+      '-f',
+      'matroska',
+      outputPath,
+    ];
+  }
+
   Future<void> _downloadDirect(
     HttpClient client,
     String url,

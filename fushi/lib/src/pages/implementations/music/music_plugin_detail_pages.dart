@@ -258,6 +258,56 @@ class _MusicPluginCollectionPageState
     extends ConsumerState<MusicPluginCollectionPage> {
   late Future<_Collection> _data = _load();
 
+  /// 歌单模式下订阅的收藏状态：这张歌单是该插件账号的喜欢歌单时，喜欢集合一变就重拉
+  /// 曲目（喜欢 / 取消喜欢后列表要跟着变）。专辑模式不订阅。
+  MusicPluginFavorites? _favorites;
+
+  /// 上次看到的喜欢集合修订号；null = 还没认出这是喜欢歌单。
+  int? _seenLikedRevision;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.playlist == null) return;
+    final MusicPluginFavorites? favorites = ref
+        .read(appProvider)
+        .musicSession
+        .favorites;
+    if (favorites == null) return;
+    _favorites = favorites..addListener(_onFavoritesChanged);
+    _seenLikedRevision = _likedRevision();
+  }
+
+  @override
+  void dispose() {
+    _favorites?.removeListener(_onFavoritesChanged);
+    super.dispose();
+  }
+
+  /// 这张歌单是喜欢歌单时返回喜欢集合修订号，否则 null。
+  int? _likedRevision() {
+    final MusicPluginFavorites? favorites = _favorites;
+    final MusicPluginPlaylist? playlist = widget.playlist;
+    if (favorites == null || playlist == null) return null;
+    if (!favorites.isLikedPlaylist(widget.manifest.id, playlist.id)) {
+      return null;
+    }
+    return favorites.likedRevisionOf(widget.manifest.id);
+  }
+
+  void _onFavoritesChanged() {
+    final int? revision = _likedRevision();
+    final int? seen = _seenLikedRevision;
+    if (revision == null) return;
+    _seenLikedRevision = revision;
+    // 第一次认出是喜欢歌单只记基线；之后修订号变了才重拉。重拉期间 FutureBuilder
+    // 保留旧列表（不闪成加载态）。
+    if (seen == null || seen == revision || !mounted) return;
+    setState(() {
+      _data = _load();
+    });
+  }
+
   Future<_Collection> _load() async {
     final MusicPluginSource src = ref
         .read(appProvider)

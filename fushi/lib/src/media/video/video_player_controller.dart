@@ -15,6 +15,9 @@ import 'package:fushi/src/media/video/bluray_aacs_module.dart';
 import 'package:fushi/src/media/video/bluray_java_runtime.dart';
 import 'package:fushi/src/media/video/disc/remote_disc_menu_source.dart';
 import 'package:fushi/src/media/video/video_episode_start_policy.dart';
+import 'package:fushi/src/media/video/video_external_audio_tracks.dart';
+import 'package:fushi_engine/sync/fushi_library_host_service.dart'
+    show RemoteVideoExternalAudioTrack;
 import 'package:fushi/src/startup/media_handle_registry.dart';
 import 'package:fushi/src/media/video/video_lua_script_manager.dart';
 import 'package:fushi/src/media/video/video_hdr_output.dart';
@@ -1161,8 +1164,29 @@ class VideoPlayerController extends ChangeNotifier
   void setMiningAudioSourceOverride(String? source) =>
       _miningAudioSourceOverride = source;
 
-  /// 制卡音频抽取源；null 时引擎回落 [miningSource]。
-  String? get miningAudioSource => _miningAudioSourceOverride;
+  /// 制卡音频抽取源；null 时引擎回落 [miningSource]。当前在放的是本次 load 外挂的
+  /// 可选音轨（[load] 的 `externalAudioTracks`）时，从那条音轨的原地址裁。
+  String? get miningAudioSource =>
+      _externalAudioMiningSource ?? _miningAudioSourceOverride;
+
+  /// 本次 load 经 `audio-add ... auto` 外挂的可选音轨：mpv 轨标题 → 原地址
+  /// （EXlaIL2eKQ）。每次 load 开头清空。
+  Map<String, String> _externalAudioSourcesByTitle = const <String, String>{};
+
+  String? get _externalAudioMiningSource {
+    final Player? player = _player;
+    if (player == null || _externalAudioSourcesByTitle.isEmpty) return null;
+    final AudioTrack selected = player.state.track.audio;
+    return externalAudioMiningSource(
+      sourcesByTitle: _externalAudioSourcesByTitle,
+      selectedIsAuto: selected.id == 'auto',
+      selectedTitle: selected.title,
+      realTrackTitles: <String?>[
+        for (final AudioTrack t in player.state.tracks.audio)
+          if (t.id != 'auto' && t.id != 'no') t.title,
+      ],
+    );
+  }
 
   /// 测试可注入的播放态：widget 测试用的 controller 没有真实 [Player]
   /// （[_player]==null → isPlaying 恒 false），无法驱动「播放中才模糊」
@@ -2525,6 +2549,13 @@ class VideoPlayerController extends ChangeNotifier
     if (selectedId == null || selectedId == 'auto' || selectedId == 'no') {
       return null;
     }
+    // 选中的是外挂可选音轨：制卡从它自己的地址裁（[miningAudioSource]），那个
+    // 文件只有一条音轨，不能再按播放器的轨序号 `-map`。
+    if (_externalAudioSourcesByTitle.containsKey(
+      player.state.track.audio.title,
+    )) {
+      return null;
+    }
     if (isBlurayNavigationSession) {
       return videoDiscResolvedTrackOrdinal(
         selectedId,
@@ -3208,6 +3239,11 @@ class VideoPlayerController extends ChangeNotifier
     BlurayRemoteTitle? remoteDiscTitle,
     // 流式原盘会话的盘源（与 [openBlurayMenu] 同时给；[mediaUri] 给它的设备串）。
     RemoteDiscMenuSource? remoteDisc,
+    // EXlaIL2eKQ：可选外挂音轨（在线源扩展的 `Video.audioTracks`）。与
+    // [externalAudioTrackUrl] 同一时机（play / 恢复 seek 之前）以 `audio-add ... auto`
+    // 外挂，不强制选中：流自带原声时仍放原声，DASH 纯视频流由 mpv 自动选中外挂音频。
+    List<RemoteVideoExternalAudioTrack> externalAudioTracks =
+        const <RemoteVideoExternalAudioTrack>[],
     // TODO-1280：YouTube 等分离流（video-only 主流 + audio-only 外挂）的 audio-only 流 URL。
     // 必须在本次 load 内、恢复 seek + play() **之前**经 `audio-add ... select` 外挂，libmpv
     // 才会让它随首个 seek / 起播与视频时间轴同步；若等 load 返回后再挂（play 已开始），新加的
@@ -3230,6 +3266,7 @@ class VideoPlayerController extends ChangeNotifier
     // 上一片的外挂音轨判定作废（见 [externalAudioTrackFailed]）。
     _externalAudioNativeUri = null;
     _externalAudioTrackFailed = false;
+    _externalAudioSourcesByTitle = const <String, String>{};
     // iOS：来源文件夹里的视频是原地引用，libmpv 打开前必须处在安全作用域访问窗口内
     // （BUG-3697）。其它平台 / 不在任何来源下的文件 no-op。
     if (videoFile != null) {
@@ -3718,6 +3755,28 @@ class VideoPlayerController extends ChangeNotifier
       _externalAudioNativeUri = audioNativeUri;
       await player.setAudioTrack(AudioTrack.uri(audioNativeUri));
       if (!_isCurrentLoad(player, loadToken)) return; // 外挂音轨后换片/销毁。
+    }
+    if (externalAudioTracks.isNotEmpty) {
+      final dynamic native = player.platform;
+      if (native != null) {
+        final Map<String, String> sources = <String, String>{};
+        for (final VideoExternalAudioAdd add in buildExternalAudioAddCommands(
+          externalAudioTracks,
+          nativeUri: nativePlaybackUri,
+        )) {
+          try {
+            await native.command(add.command);
+            sources[add.title] = add.sourceUrl;
+          } catch (e) {
+            // 单条音轨打不开（403 / 失效）：mpv 已报错进日志，其余音轨照挂。
+            debugPrint('[VideoPlayerController] audio-add ${add.title}: $e');
+          }
+          if (!_isCurrentLoad(player, loadToken)) return;
+        }
+        _externalAudioSourcesByTitle = Map<String, String>.unmodifiable(
+          sources,
+        );
+      }
     }
     // mpv 沿用上一个文件选过的 `aid`，media_kit 却在 open 时把选轨重置成 auto：对齐
     // 回实际在放的轨，制卡 / 音轨面板才和耳朵里的一致（见 [adoptNativeAudioSelection]）。

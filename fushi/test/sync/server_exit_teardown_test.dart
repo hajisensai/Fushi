@@ -177,39 +177,53 @@ void main() {
       },
     );
 
-    test(
-      'exit teardown is bounded by a timeout so close-X can never freeze',
-      () {
-        final String main = File('lib/main.dart').readAsStringSync();
-        // Match on comment-masked, whitespace-collapsed source: main.dart is
-        // `dart format`ed, which may split the call chain across lines and add
-        // a trailing comma inside `.timeout(...)`.
-        final String body = compactCode(
-          methodBody(main, 'Future<void> _flushAndExitForWindowClose() async'),
-        );
-        // TODO-086: Bonsoir exit timeout tightened from 3s to 1.5s (the fast
-        // variant already backgrounds the native stop).
-        expect(
-          RegExp(
-            r'_guardedExitStep\([^;]*?shutdownForExitFast\(\)'
-            r'\.timeout\(constDuration\(milliseconds:1500\),?\)',
-          ).hasMatch(body),
-          isTrue,
-          reason:
-              'a hung bonsoir native stop must not block exit forever: '
-              'the fast teardown await must carry a 1.5s timeout and run '
-              'inside _guardedExitStep (TODO-086)',
-        );
-        final String step = methodBody(main, 'Future<void> _guardedExitStep(');
-        expect(
-          step.contains('on TimeoutException'),
-          isTrue,
-          reason:
-              'the timeout must be logged and swallowed, never escape '
-              'the close path',
-        );
-      },
-    );
+    test('exit teardown is bounded by a timeout so close-X can never freeze', () {
+      final String main = File('lib/main.dart').readAsStringSync();
+      // Match on comment-masked, whitespace-collapsed source: main.dart is
+      // `dart format`ed, which may split the call chain across lines and add
+      // a trailing comma inside `.timeout(...)`.
+      final String body = compactCode(
+        methodBody(main, 'Future<void> _flushAndExitForWindowClose() async'),
+      );
+      // TODO-086: Bonsoir exit timeout tightened from 3s to 1.5s (the fast
+      // variant already backgrounds the native stop).
+      expect(
+        RegExp(
+          r'_guardedExitStep\([^;]*?shutdownForExitFast\(\)'
+          r'\.timeout\(_exitBonsoirStopTimeout,?\)',
+        ).hasMatch(body),
+        isTrue,
+        reason: 'the fast teardown await must run inside _guardedExitStep',
+      );
+      expect(
+        compactCode(main).contains(
+          'staticconstDuration_exitBonsoirStopTimeout=Duration(milliseconds:1500);',
+        ),
+        isTrue,
+        reason:
+            'a hung bonsoir native stop must not block exit forever: '
+            'the fast teardown await must carry a 1.5s timeout and run '
+            'inside _guardedExitStep (TODO-086)',
+      );
+      // _guardedExitStep 委托退出协调器的 runStep（同时记退出阶段）。
+      expect(
+        compactCode(
+          main,
+        ).contains('AppExitCoordinator.instance.runStep(label,run)'),
+        isTrue,
+      );
+      final String step = methodBody(
+        File('lib/src/platform/app_exit_coordinator.dart').readAsStringSync(),
+        'Future<void> runStep(',
+      );
+      expect(
+        step.contains('on TimeoutException'),
+        isTrue,
+        reason:
+            'the timeout must be logged and swallowed, never escape '
+            'the close path',
+      );
+    });
 
     test('detached lifecycle is a fallback teardown path', () {
       final String main = File('lib/main.dart').readAsStringSync();

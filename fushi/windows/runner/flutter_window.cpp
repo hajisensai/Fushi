@@ -26,6 +26,7 @@
 
 #include <flutter/method_result_functions.h>
 
+#include "crash_dump.h"
 #include "external_video_handoff.h"
 #include "flutter/generated_plugin_registrant.h"
 #include "audio_loopback_capture.h"
@@ -5122,6 +5123,14 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
       }
       return 0;
     }
+    case WM_ENDSESSION:
+      // 系统结束会话（关机 / 注销 / Restart Manager）：引擎与 runner 都不会再走
+      // Dart 退出链，返回后进程随时被终止。同步留下会话结束标记，下次启动不把它
+      // 误报成「停在前台时没了」。不消费消息。
+      if (wparam) {
+        fushi::RecordSessionEnd(lparam);
+      }
+      break;
     case WM_COPYDATA: {
       // TODO-904 P0 回归：第二实例转交「用 Fushi 打开视频」的路径。解出 UTF-8 路径
       // （dwData magic 不匹配则 DecodeExternalVideoPath 返回空串，忽略非本协议消息），

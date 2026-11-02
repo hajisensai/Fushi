@@ -785,6 +785,31 @@ void main() {
     }
   });
 
+  testWidgets('无痕快捷键过同一道支持门：Android 不支持无痕时不开标签、不消费按键', (
+    WidgetTester tester,
+  ) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    try {
+      await pumpBrowser(tester, const Size(390, 844));
+      final FushiWebBrowserPageState state = page(tester);
+      expect(
+        state.runShortcut(ShortcutAction.webBrowserNewIncognitoTab),
+        isFalse,
+      );
+      await tester.pumpAndSettle();
+      expect(state.tabsController.length, 1);
+      expect(
+        state.tabsController.tabs.any((WebBrowserTab t) => t.incognito),
+        isFalse,
+      );
+      FocusManager.instance.primaryFocus?.unfocus();
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
+
   testWidgets('浏览页抵消全局界面缩放：路由整页包在中和层里，网页按真实视口排版', (WidgetTester tester) async {
     tester.view.physicalSize = const Size(411, 800);
     tester.view.devicePixelRatio = 1;

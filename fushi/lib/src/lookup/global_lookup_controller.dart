@@ -185,9 +185,14 @@ class GlobalLookupController {
   // a whole-WebView recovery via `staticSettingsRequired`.
   final PopupStaticRevisionCache _hostStaticRevisions =
       PopupStaticRevisionCache();
-  // 大结果词条的取回投递（in-app P1-B 的应用外版本）。两个物理宿主共用一份：令牌
-  // 进程内唯一，字节只按仍在栈里的帧保留。
-  final GlobalLookupEntriesStore _entriesStore = GlobalLookupEntriesStore();
+  // 大结果词条的取回投递（in-app P1-B 的应用外版本）。**每个物理宿主一份**（键与
+  // [_hostStaticRevisions] 同一口径）：令牌进程内唯一，字节按本宿主仍在栈里的帧保留，
+  // 取回失败也只让本宿主退回字面量。
+  final Map<String, GlobalLookupEntriesStore> _entriesStores =
+      <String, GlobalLookupEntriesStore>{};
+
+  GlobalLookupEntriesStore _entriesStoreFor(String hostKey) =>
+      _entriesStores[hostKey] ??= GlobalLookupEntriesStore(hostKey: hostKey);
   int _desktopLookupEpoch = 0;
   // Last physical size pushed to the overlay; used to converge the page's
   // resize -> re-measure loop (see _onJsMessage 'overlaySize'). Reset per
@@ -470,9 +475,16 @@ class GlobalLookupController {
   /// 桌面查词窗的同一种预热：台词文本浮窗一显示就调用，浮窗里第一次点词不必再
   /// 现场灌静态段。查词窗正显示着时不做（换路由上下文会打断在场的卡片）；宿主
   /// 已装过同一版静态段时直接跳过，所以反复调用只是一次比对。
+  ///
+  /// 查词在途时也不做（PR #2763 审查）：桌面查词在 `hide(notify:false)` 与重新显示之间
+  /// `isShowing` 为 false，这时铸一个更新的 desktop 路由，原生 SetRouteContext 就会把
+  /// 在途查词的 showAt / render / revealStack 当成旧 epoch 丢掉——与游戏内
+  /// `_prewarmCardIfIdle` 查 `_activeRoute / _pendingLookup / _draining` 同一纪律。
+  /// 判断放在 `isShowing` 的 await **之后**、铸路由之前：await 期间开始的查词也拦得住。
   Future<void> prewarmDesktopStatic() async {
     if (!isSupported || !_started) return;
     if (await GlobalLookupChannel.isShowing()) return;
+    if (desktopLookupInFlight) return;
     await _prewarmHostStatic(
       GlobalLookupRoute.desktop(lookupEpoch: ++_desktopLookupEpoch),
     );
@@ -1218,6 +1230,17 @@ class GlobalLookupController {
     _activeRoute = route;
   }
 
+  /// 桌面查词窗上是否有一次查词在途或在场：当前路由是 desktop 且仍有效（真正关窗
+  /// [_onOverlayHidden] 与下一次查词都会作废它）。查词入口在第一个 await 之前就
+  /// [_activateRoute]，所以「刚发起、还在 hide→show 之间」也算。
+  @visibleForTesting
+  bool get desktopLookupInFlight {
+    final GlobalLookupRoute? active = _activeRoute;
+    return active != null &&
+        active.source == 'desktop' &&
+        GlobalLookupChannel.isRouteValid(active);
+  }
+
   bool get _isCurrentRoute {
     final GlobalLookupRoute route = GlobalLookupChannel.currentRoute;
     return route == _activeRoute && GlobalLookupChannel.isRouteValid(route);
@@ -1668,9 +1691,12 @@ class GlobalLookupController {
   /// URL (see global_lookup_window.cpp MediaContentTypeHeader); this side only
   /// supplies the bytes.
   Future<Uint8List> _resolveMedia(String url) async {
-    // 大结果词条的取回（同一条拦截通道，见 [GlobalLookupEntriesStore]）。
-    final Uint8List? entries = _entriesStore.bytesFor(url);
-    if (entries != null) return entries;
+    // 大结果词条的取回（同一条拦截通道，见 [GlobalLookupEntriesStore]）。地址里带宿主键，
+    // 只有登记它的那个宿主的 store 认得。
+    for (final GlobalLookupEntriesStore store in _entriesStores.values) {
+      final Uint8List? entries = store.bytesFor(url);
+      if (entries != null) return entries;
+    }
     try {
       final GlobalLookupMediaRequest? request = resolveGlobalLookupMedia(url);
       if (request == null) {
@@ -1834,10 +1860,15 @@ class GlobalLookupController {
       glog('js: handler=$handler args=${message['args']}');
     }
     if (handler == 'popupEntriesFetchFailed') {
-      // 与 in-app 同一回退：本进程的应用外宿主取不回词条（拦截没接住 / 跨源被拒），
-      // 此后一律字面量投递，并按当前栈重渲——等着取回的卡片仍被显示门挡着。
-      if (!_entriesStore.fetchUnavailable) {
-        _entriesStore.fetchUnavailable = true;
+      // 与 in-app 同一回退：**这个**应用外宿主取不回词条（拦截没接住 / 跨源被拒），
+      // 此后它一律字面量投递，并按当前栈重渲——等着取回的卡片仍被显示门挡着。另一个
+      // 宿主不受影响（各自一份 store）。
+      final GlobalLookupRoute failedRoute = GlobalLookupChannel.currentRoute;
+      final GlobalLookupEntriesStore failedStore = _entriesStoreFor(
+        failedRoute.target.isEmpty ? 'desktop' : failedRoute.target,
+      );
+      if (!failedStore.fetchUnavailable) {
+        failedStore.fetchUnavailable = true;
         ErrorLogService.instance.log(
           'global_lookup.entries_fetch',
           'fetch failed, falling back to inline entries: ${message['args']}',
@@ -2607,6 +2638,7 @@ class GlobalLookupController {
     final double screenH = pickScreenDim(_screenWorkH, _layoutBoundsH, cardH);
     final GlobalLookupRoute route = GlobalLookupChannel.currentRoute;
     final String hostKey = route.target.isEmpty ? 'desktop' : route.target;
+    final GlobalLookupEntriesStore entriesStore = _entriesStoreFor(hostKey);
     final StackRenderScript stackRender = buildStackRenderScript(
       context: ctx,
       appModel: model,
@@ -2635,11 +2667,11 @@ class GlobalLookupController {
       clampRootShellToWorkArea: route.source != 'galCard',
       staticRevisions: _hostStaticRevisions,
       hostKey: hostKey,
-      entriesStore: _entriesStore,
+      entriesStore: entriesStore,
     );
-    _entriesStore.retain(
+    entriesStore.retain(
       payloads.map(
-        (GlobalLookupFramePayload p) => _entriesStore.tokenFor(p.result),
+        (GlobalLookupFramePayload p) => entriesStore.tokenFor(p.result),
       ),
     );
     // Cold-create and process-recovery paths cache exactly one complete script

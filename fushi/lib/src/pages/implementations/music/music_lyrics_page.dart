@@ -44,6 +44,7 @@ import 'package:fushi/src/media/music/lyrics/music_lyrics_learning.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_service.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_sources.dart'
     show pickCdgCompanion;
+import 'package:fushi/src/media/music/music_clip_source.dart';
 import 'package:fushi/src/media/music/music_mining_origin.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
@@ -52,6 +53,8 @@ import 'package:fushi/src/floating_ball/floating_ball_config.dart'
 import 'package:fushi/src/floating_ball/floating_ball_scene.dart';
 import 'package:fushi/src/media/music/music_session.dart';
 import 'package:fushi/src/media/music/plugin/music_plugin_favorites.dart';
+import 'package:fushi/src/media/music/plugin/music_plugins.dart'
+    show MusicPluginStreamResolver, resolveMusicPluginStream;
 import 'package:fushi/src/media/shared/lyrics_shell/lyrics_shell_layout.dart';
 import 'package:fushi/src/models/theme_notifier.dart'
     show rethemeFushiWithScheme;
@@ -179,9 +182,13 @@ bool musicLyricsShouldPauseForLookup({
 
 /// 截一段音频（制卡句子音频）。生产 = ffmpeg（[TtsChannel.extractAudioSegment]）；widget
 /// 测试换成不起子进程的替身。失败返回 null，原因经 [onFailure] 带出。
+///
+/// [inputPath] 已经是 [resolveMusicClipSource] 解析过的可读源（本机路径或插件流 URL），
+/// [httpHeaders] 是流的请求头（本机文件为空）。
 typedef MusicLyricsClipExtractor =
     Future<String?> Function({
       required String inputPath,
+      required Map<String, String> httpHeaders,
       required int startMs,
       required int endMs,
       required String outputPath,
@@ -192,6 +199,7 @@ typedef MusicLyricsClipExtractor =
 
 Future<String?> _ffmpegClip({
   required String inputPath,
+  required Map<String, String> httpHeaders,
   required int startMs,
   required int endMs,
   required String outputPath,
@@ -206,10 +214,16 @@ Future<String?> _ffmpegClip({
   audioChannels: audioChannels,
   audioBitrate: audioBitrate,
   onFailure: onFailure,
+  httpHeaders: httpHeaders,
 );
 
 @visibleForTesting
 MusicLyricsClipExtractor musicLyricsClipExtractor = _ffmpegClip;
+
+/// 制卡截音频时插件曲目的取流（null = 全局装配点 [resolveMusicPluginStream]）；
+/// widget 测试注入替身。
+@visibleForTesting
+MusicPluginStreamResolver? musicLyricsClipPluginResolver;
 
 class MusicLyricsPage extends BaseSourcePage {
   const MusicLyricsPage({super.key, this.startWithLyrics = true})
@@ -489,8 +503,23 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
     try {
       String? audioPath;
       if (item != null && window != null && window.durationMs > 0) {
+        // 逻辑曲目路径（插件 / CD / 光盘章节）不能直接交给 ffmpeg：先解析成可读源。
+        final MusicClipSource source;
+        try {
+          source = await resolveMusicClipSource(
+            item,
+            pluginResolver: musicLyricsClipPluginResolver,
+          );
+        } on MusicClipSourceUnavailable catch (e, st) {
+          final String reason = 'sentence audio export failed: ${e.message}';
+          ErrorLogService.instance.log('MusicLyricsPage.mineAudio', e, st);
+          return MinePopupResult.failed(
+            MineOutcome(MineResult.error, errorDetail: reason),
+            message: reason,
+          );
+        }
         final ({int startMs, int endMs}) clip = window.clipInFile(
-          fileOffsetMs: item.startMs ?? 0,
+          fileOffsetMs: source.fileOffsetMs,
           trackDurationMs: item.durationMs,
         );
         final MiningMediaCompression compression =
@@ -504,7 +533,8 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
         );
         String? failure;
         audioPath = await musicLyricsClipExtractor(
-          inputPath: item.path,
+          inputPath: source.inputPath,
+          httpHeaders: source.httpHeaders,
           startMs: clip.startMs,
           endMs: clip.endMs,
           outputPath: p.join(

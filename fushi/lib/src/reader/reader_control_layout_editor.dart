@@ -9,6 +9,7 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/controls/control_layout.dart';
 import 'package:fushi/src/controls/control_layout_editor.dart';
+import 'package:fushi/src/controls/drag_auto_scroll_region.dart';
 import 'package:fushi/src/reader/reader_panel_chrome_kit.dart';
 import 'package:fushi/src/reader/reader_control_layout.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
@@ -362,21 +363,24 @@ class ReaderControlLayoutEditor extends StatelessWidget {
           ),
         ),
     ];
-    return DefaultTextStyle.merge(
-      style: TextStyle(
-        color: glass
-            ? appleColorsOf(context).label
-            : theme.colorScheme.onSurface,
-      ),
-      child: FushiEntranceScope(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            for (int i = 0; i < sections.length; i++) ...<Widget>[
-              if (i > 0) const SizedBox(height: 12),
-              readerPanelStagger(i, sections[i]),
+    // Wn1SZdlyhl：拖拽时外层设置列表收不到滚动手势，拖到视口边缘自动滚。
+    return DragAutoScrollRegion(
+      child: DefaultTextStyle.merge(
+        style: TextStyle(
+          color: glass
+              ? appleColorsOf(context).label
+              : theme.colorScheme.onSurface,
+        ),
+        child: FushiEntranceScope(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              for (int i = 0; i < sections.length; i++) ...<Widget>[
+                if (i > 0) const SizedBox(height: 12),
+                readerPanelStagger(i, sections[i]),
+              ],
             ],
-          ],
+          ),
         ),
       ),
     );
@@ -663,17 +667,30 @@ class _DraggableChip extends StatelessWidget {
       ),
     );
     final Widget ghost = Opacity(opacity: 0.35, child: chip);
+    final DragAutoScrollRegionState? autoScroll = DragAutoScrollRegion.maybeOf(
+      context,
+    );
     final Widget draggable = touch
         ? LongPressDraggable<ReaderControlItem>(
             data: item,
             feedback: feedback,
             childWhenDragging: ghost,
+            onDragUpdate: (DragUpdateDetails d) =>
+                autoScroll?.updateDrag(d.globalPosition),
+            onDragEnd: (DraggableDetails _) => autoScroll?.endDrag(),
+            onDraggableCanceled: (Velocity _, Offset __) =>
+                autoScroll?.endDrag(),
             child: chip,
           )
         : Draggable<ReaderControlItem>(
             data: item,
             feedback: feedback,
             childWhenDragging: ghost,
+            onDragUpdate: (DragUpdateDetails d) =>
+                autoScroll?.updateDrag(d.globalPosition),
+            onDragEnd: (DraggableDetails _) => autoScroll?.endDrag(),
+            onDraggableCanceled: (Velocity _, Offset __) =>
+                autoScroll?.endDrag(),
             child: chip,
           );
     return Builder(

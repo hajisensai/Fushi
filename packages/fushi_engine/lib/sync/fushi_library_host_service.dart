@@ -2573,6 +2573,39 @@ List<RemoteVideoEmbeddedSubtitleTrack> _jsonEmbeddedSubtitleTracks(
 
 bool _isNonEmpty(String? value) => value != null && value.isNotEmpty;
 
+/// 一条**可选**外挂音轨（EXlaIL2eKQ：Aniyomi `Video.audioTracks`）。
+///
+/// 与 [RemoteVideoStreamUrls.audioStreamUrl]（必须选中的 audio-only 分离流）不同：
+/// 播放器以 `audio-add <url> auto` 外挂、不强制选中，交给 mpv 默认选轨——流自带
+/// 音轨时仍放原声（这些是替代配音），纯视频流（DASH 分离）没有自带音轨时 mpv
+/// 自动选中外挂音频。两种语义在同一字段下共存，与上游 Aniyomi 一致。
+class RemoteVideoExternalAudioTrack {
+  const RemoteVideoExternalAudioTrack({
+    required this.url,
+    this.label,
+    this.language,
+  });
+
+  final String url;
+
+  /// 给人看的名字（扩展给的语言标签，如 `日本語`）。
+  final String? label;
+
+  /// 语言码（若来源给得出）；扩展只给标签时为 null。
+  final String? language;
+
+  static RemoteVideoExternalAudioTrack? fromJson(Object? value) {
+    if (value is! Map) return null;
+    final String url = value['url']?.toString() ?? '';
+    if (url.isEmpty) return null;
+    return RemoteVideoExternalAudioTrack(
+      url: url,
+      label: _jsonString(value['label']),
+      language: _jsonString(value['language']),
+    );
+  }
+}
+
 /// client 向 host 申请到的视频播放 URL。
 ///
 /// [streamUrl] 是可直接交给播放器的短时 token URL；[subtitleUrl] 仅表示 host 有
@@ -2584,6 +2617,7 @@ class RemoteVideoStreamUrls {
     this.subtitleUrl,
     this.subtitleFileName,
     this.audioStreamUrl,
+    this.externalAudioTracks = const <RemoteVideoExternalAudioTrack>[],
     this.miningVideoUrl,
     this.miningVideoHasAudio = false,
     this.embeddedSubtitleTracks = const <RemoteVideoEmbeddedSubtitleTrack>[],
@@ -2616,6 +2650,10 @@ class RemoteVideoStreamUrls {
   /// `AudioTrack.uri` 外挂、制卡音频从它裁。同轨/muxed 时为 null。
   final String? audioStreamUrl;
 
+  /// 可选外挂音轨（`audio-add ... auto`，不强制选中），见
+  /// [RemoteVideoExternalAudioTrack]。在线源扩展的 `Video.audioTracks` 走这里。
+  final List<RemoteVideoExternalAudioTrack> externalAudioTracks;
+
   /// TODO-1000（BUG-528）：制卡 GIF/帧专用的低分辨率视频流 URL（muxed 360p 等）。播放
   /// 用的 [streamUrl] 可达 4K，从它抽 GIF 会网络超时；制卡封面只需小图，故另取小流。
   /// null=从 [streamUrl] 抽（本地文件 / 已是低分辨率流）。
@@ -2645,6 +2683,11 @@ class RemoteVideoStreamUrls {
       subtitleUrl: subtitleUrl,
       subtitleFileName: subtitleFileName,
       audioStreamUrl: audioStreamUrl,
+      externalAudioTracks: <RemoteVideoExternalAudioTrack>[
+        if (json['externalAudioTracks'] case final List<Object?> tracks)
+          for (final Object? item in tracks)
+            ?RemoteVideoExternalAudioTrack.fromJson(item),
+      ],
       miningVideoUrl: miningVideoUrl,
       miningVideoHasAudio: miningVideoHasAudio,
       embeddedSubtitleTracks: embeddedSubtitleTracks,

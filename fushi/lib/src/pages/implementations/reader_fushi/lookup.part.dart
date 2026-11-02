@@ -77,7 +77,18 @@ extension _ReaderLookup on _ReaderFushiPageState {
   void _clearLookupState() {
     if (_pausedForLookup) {
       _pausedForLookup = false;
-      _audiobookController?.play();
+      final AudiobookPlayerController? ctrl = _audiobookController;
+      if (ctrl != null) {
+        // 恢复是异步的（激活链 + 等播放器真正起播）：在途期间仍算查词「按住」，
+        // 否则歌词覆盖层会在「已不按住、还没在播」的间隙里把它当成用户暂停、复位
+        // 底栏并重排（awLXfD49Ep）。起播落定（或失败）后撤掉。
+        _lookupResumeInFlight = true;
+        unawaited(
+          ctrl.play().whenComplete(() {
+            _lookupResumeInFlight = false;
+          }),
+        );
+      }
     }
     // BUG-1344：DOM/CSS 选区由整栈关闭的异步收尾显式 await；不能在这里
     // fire-and-forget 后马上 reclaim 焦点，否则 macOS WKWebView 会把失焦灰选区绘在

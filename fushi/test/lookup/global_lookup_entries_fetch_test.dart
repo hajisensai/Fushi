@@ -24,10 +24,10 @@ void main() {
 
       final String big = jsonEncode(<String>['x' * kPopupEntriesFetchMinChars]);
       final String? url = store.register(7, big);
-      expect(url, '${GlobalLookupEntriesStore.urlPrefix}7.json');
+      expect(url, '${GlobalLookupEntriesStore.urlPrefix}desktop/7.json');
       expect(utf8.decode(store.bytesFor(url!)!), big);
       expect(
-        store.bytesFor('${GlobalLookupEntriesStore.urlPrefix}8.json'),
+        store.bytesFor('${GlobalLookupEntriesStore.urlPrefix}desktop/8.json'),
         isNull,
       );
       expect(store.bytesFor('image://x.png'), isNull);
@@ -47,6 +47,25 @@ void main() {
       final GlobalLookupEntriesStore store = GlobalLookupEntriesStore()
         ..fetchUnavailable = true;
       expect(store.register(3, 'z' * kPopupEntriesFetchMinChars), isNull);
+    });
+
+    // PR #2763 审查：桌面窗与游戏卡片是两个 WebView2 宿主，共用一份 store 时桌面的
+    // retain 会删掉游戏卡片还没取走的字节，对面 404 又把回退置成全进程永久生效。
+    test('每个宿主一份：一方 retain / 回退不影响另一方，地址互不相认', () {
+      final GlobalLookupEntriesStore desktop = GlobalLookupEntriesStore();
+      final GlobalLookupEntriesStore card = GlobalLookupEntriesStore(
+        hostKey: 'gal:1234',
+      );
+      final String big = 'w' * kPopupEntriesFetchMinChars;
+      final String cardUrl = card.register(5, big)!;
+      final String desktopUrl = desktop.register(6, big)!;
+      desktop.retain(<int>[6]);
+      expect(card.bytesFor(cardUrl), isNotNull, reason: '桌面渲染不得删游戏卡片的字节');
+      expect(desktop.bytesFor(cardUrl), isNull);
+      expect(card.bytesFor(desktopUrl), isNull);
+      desktop.fetchUnavailable = true;
+      expect(desktop.register(7, big), isNull);
+      expect(card.register(8, big), isNotNull, reason: '回退只作用于取回失败的宿主');
     });
   });
 
@@ -80,11 +99,17 @@ void main() {
       );
       expect(resolve, isNonNegative);
       expect(
-        controller.indexOf('_entriesStore.bytesFor(url)', resolve),
+        controller.indexOf('store.bytesFor(url)', resolve),
         greaterThan(resolve),
       );
-      expect(controller, contains('entriesStore: _entriesStore,'));
-      expect(controller, contains('_entriesStore.retain('));
+      expect(
+        controller,
+        contains(
+          'final GlobalLookupEntriesStore entriesStore = _entriesStoreFor(hostKey);',
+        ),
+      );
+      expect(controller, contains('entriesStore: entriesStore,'));
+      expect(controller, contains('entriesStore.retain('));
     });
 
     test('异步取回的帧在描述里标明，宿主据此等根卡渲染完再报尺寸', () {
@@ -114,7 +139,8 @@ void main() {
         start,
         controller.indexOf('return;', start),
       );
-      expect(body, contains('_entriesStore.fetchUnavailable = true'));
+      expect(body, contains('failedStore.fetchUnavailable = true'));
+      expect(body, contains('_entriesStoreFor('), reason: '只回退取回失败的那个宿主');
       expect(body, contains('unawaited(_renderStack())'));
     });
   });

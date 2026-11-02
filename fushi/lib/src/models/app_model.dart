@@ -26,6 +26,8 @@ import 'package:fushi/src/updates/usage_heartbeat.dart';
 import 'package:fushi_engine/media/video/media_server/media_server_client_identity.dart'
     show mediaServerClientIdentity, resolveMediaServerClientIdentity;
 import 'package:fushi_engine/media/video/video_member_file.dart';
+import 'package:fushi_engine/media/video/youtube_source_resolver.dart'
+    show YoutubeManifestException;
 import 'package:fushi_engine/updates/update_feed_kind.dart';
 import 'package:fushi/src/updates/update_feed_service.dart';
 import 'package:fushi/src/updates/update_probes.dart';
@@ -12408,14 +12410,24 @@ RemoteMineResult remoteMineError(
   String? detail,
   Object? error,
   StackTrace? stackTrace,
+  RemoteMineErrorKind errorKind = RemoteMineErrorKind.transient,
 }) {
   ErrorLogService.instance.log(source, error ?? detail ?? reason, stackTrace);
   return RemoteMineResult(
     result: MineResult.error.name,
     message: reason,
     detail: detail,
+    errorKind: errorKind,
   );
 }
+
+/// EMI05fe8RJ：YouTube 制卡解析失败的分型。全部 client 都明确回答「视频放不了」（需购买 /
+/// 已删除 / 不可用）是永久失败——扩展据此把该项移出待生成队列，不再每次生成都重跑 5 个
+/// client 的网络请求；其余（网络、超时、判 bot、限流）按可重试。
+RemoteMineErrorKind youtubeMineResolveErrorKind(Object error) =>
+    error is YoutubeManifestException && error.isPermanentlyUnavailable
+    ? RemoteMineErrorKind.permanent
+    : RemoteMineErrorKind.transient;
 
 /// 浏览器扩展 YouTube 制卡中止时回给扩展 toast 的那句话。
 ///
@@ -12687,6 +12699,8 @@ class _AppModelRemoteLookupService
           detail:
               'clip window <= 0 '
               '(${payload.clipStartMs}..${payload.clipEndMs})',
+          // 同一请求重发仍是同一个无效时间窗。
+          errorKind: RemoteMineErrorKind.permanent,
         );
       }
       final YoutubeClipRequest yt;
@@ -12710,6 +12724,7 @@ class _AppModelRemoteLookupService
           detail: 'resolve failed: $e',
           error: e,
           stackTrace: st,
+          errorKind: youtubeMineResolveErrorKind(e),
         );
       }
       final ImmersionMiningResult ytRes = await ImmersionMiningEngine().mine(

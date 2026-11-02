@@ -3,6 +3,54 @@ part of '../reader_fushi_page.dart';
 
 const int kLyricsModeMaxInitialCues = 600;
 
+/// 歌词文档键桥（`onLyricsKey`）里裸 Space 的 token：按 `KeyboardEvent.key` 匹配，
+/// 回到 Dart 后走与正文 `onSpaceKey` 同一个 `_resolveWebViewSpaceAction`（有声书激活 →
+/// 播放 / 暂停）。
+const String kLyricsKeyBridgeSpaceToken = ' ';
+
+/// 歌词文档要交回 Dart 的动作集（反馈 NmpRV-amTY / PHs18V7U3K）。歌词模式下 Flutter
+/// `_focusNode` 仍是唯一键盘入口，但 WebView 抢走 OS 焦点后按键只到歌词 DOM：这些动作
+/// 的键必须经桥回 Dart，否则 Space 播放 / 暂停、Esc 关查词弹窗 / 退出歌词全部失灵。
+///
+/// 顺序决定反解析的 scope 次序（[spreadKeyBridgeScopes] 从本表导出）：reader →
+/// audiobook → universal，与 `_handleKeyEvent` 的「页面专属键优先、返回上一级兜底」同构。
+const List<ShortcutAction> kLyricsBridgedActions = <ShortcutAction>[
+  ShortcutAction.readerDismissDict,
+  ShortcutAction.audiobookPlayPause,
+  ShortcutAction.audiobookPrevSentence,
+  ShortcutAction.audiobookNextSentence,
+  ShortcutAction.audiobookReplaySentence,
+  ShortcutAction.audiobookSeekBackward,
+  ShortcutAction.audiobookSeekForward,
+  ShortcutAction.audiobookSpeedUp,
+  ShortcutAction.audiobookSpeedDown,
+  ShortcutAction.audiobookToggleLyricsMode,
+  ShortcutAction.audiobookToggleLyricsMask,
+  ShortcutAction.globalBack,
+];
+
+/// 歌词文档键桥的 token 表：裸 Space 恒在（[kLyricsKeyBridgeSpaceToken]），其余按注册表
+/// **当前**绑定导出 [kLyricsBridgedActions]（改键后下一次装载歌词文档即生效）。绑定成
+/// 裸 Space 的动作不另出 token——Space 统一走 Space 解析，同一次按下只回传一次。
+List<String> lyricsKeyBridgeTokens(FushiShortcutRegistry registry) => <String>[
+  kLyricsKeyBridgeSpaceToken,
+  ...spreadKeyBridgeTokens(registry, actions: kLyricsBridgedActions),
+];
+
+/// `onLyricsKey` 回传 token 的分类：裸 Space（交给 Space 解析）或一条按键绑定。
+/// 解析不了的 token 返回 null（调用方不执行）。
+({bool space, InputBinding? binding})? parseLyricsKeyBridgeToken(String token) {
+  if (token == kLyricsKeyBridgeSpaceToken) {
+    return (space: true, binding: null);
+  }
+  final InputBinding? binding = InputBinding.deserialize(token);
+  if (binding == null) return null;
+  if (binding.key == LogicalKeyboardKey.space && binding.modifiers.isEmpty) {
+    return (space: true, binding: null);
+  }
+  return (space: false, binding: binding);
+}
+
 class LyricsCueWindow {
   const LyricsCueWindow({
     required this.cues,
@@ -267,6 +315,10 @@ extension _ReaderLyrics on _ReaderFushiPageState {
       contentLanguage: _contentLanguage,
       verticalTextOrientation:
           ReaderFushiSource.readerSettings?.verticalTextOrientation ?? 'mixed',
+      keyBridgeScript: webViewKeyBridgeScript(
+        handlerName: 'onLyricsKey',
+        keys: lyricsKeyBridgeTokens(appModel.shortcutRegistry),
+      ),
     );
 
     if (!mounted ||
@@ -534,6 +586,9 @@ extension _ReaderLyrics on _ReaderFushiPageState {
       title: _book?.title ?? '',
       cover: cover,
       isPlaying: ctrl.isPlaying,
+      // 查词临时暂停 + 关弹窗后恢复在途（播放器异步起播）都算「按住」：这期间覆盖层
+      // 布局冻结（awLXfD49Ep / M8YDOqJ5Bm）。
+      playbackHeldForLookup: _pausedForLookup || _lookupResumeInFlight,
       speed: ctrl.speed,
       lyricsMasked: ReaderFushiSource.instance.lyricsBlur,
       clock: _ReaderLyricsClock(this),
@@ -1333,6 +1388,40 @@ extension _ReaderLyrics on _ReaderFushiPageState {
               _lyricsCueList,
             );
             if (cue != null) _audiobookController!.playCueAndContinue(cue);
+            // 中键 / 侧键点句同样是把 OS 焦点交给 WebView 的指针手势（NmpRV-amTY）。
+            _focusOwnership.reclaim(FocusReclaimCause.gesture);
+          },
+        );
+        // 「↺ 跟随音频」胶囊：纯 JS 恢复跟随，回 Dart 只为收回焦点（NmpRV-amTY：点完
+        // 胶囊后 Space / Esc 只到 DOM）。
+        controller.addJavaScriptHandler(
+          handlerName: 'onLyricsFollowResume',
+          callback: (List<dynamic> _) {
+            if (!_lyricsMode) return;
+            _focusOwnership.reclaim(FocusReclaimCause.gesture);
+          },
+        );
+        // 歌词文档键桥落地点（NmpRV-amTY / PHs18V7U3K）：token 由
+        // [lyricsKeyBridgeTokens] 按注册表当前绑定导出，这里只做反解析——裸 Space 走与
+        // 正文 onSpaceKey 同一个 [_resolveWebViewSpaceAction]，其余走与 spread 桥同一个
+        // [resolveSpreadKeyBridgeAction]（scope 次序由动作集导出）。执行后收回焦点，让后续
+        // 按键直接回到 `_handleKeyEvent`。
+        controller.addJavaScriptHandler(
+          handlerName: 'onLyricsKey',
+          callback: (List<dynamic> args) {
+            if (args.isEmpty || !_lyricsMode) return;
+            final ({bool space, InputBinding? binding})? parsed =
+                parseLyricsKeyBridgeToken('${args[0]}');
+            if (parsed == null) return;
+            final ShortcutAction? action = parsed.space
+                ? _resolveWebViewSpaceAction()
+                : resolveSpreadKeyBridgeAction(
+                    appModel.shortcutRegistry,
+                    parsed.binding!,
+                    actions: kLyricsBridgedActions,
+                  );
+            if (action != null) _executeShortcutAction(action);
+            _focusOwnership.reclaim(FocusReclaimCause.gesture);
           },
         );
         // 点在行的字形之外 = 跳到这一句播放（Apple Music / Niratan 点行跳转）。

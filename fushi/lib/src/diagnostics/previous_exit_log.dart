@@ -92,6 +92,17 @@ enum PreviousExitKind {
   /// 更新装完都弹一次「意外退出」（反馈 8z1tk0jEna / U_gWy3lDbx / jmgMk1gHG2）。
   appUpdated,
 
+  /// 系统结束了会话（Windows 关机 / 注销 / 重启安装更新，或 Restart Manager 关应用）：
+  /// runner 收到 `WM_ENDSESSION` 时同步写 `session_end.log`，pid 与上次会话对得上。
+  /// 系统发起的终止，不是闪退。
+  systemSessionEnd,
+
+  /// 退出意图已在退出链**第一步**同步落盘（关窗 / ⌘Q / 托盘退出 / 更新交接 / 重启），
+  /// 链跑到一半进程没了：被安装器强杀、被系统结束、或退出期原生死亡但没留证据。不是
+  /// 「停在前台时没了」，不上报；卡在哪一步写进诊断段，用来追「关闭慢」。真有原生崩溃
+  /// 摘要时 [nativeCrash] 按优先级压过它，照常上报。
+  exitInterrupted,
+
   /// 停在前台时没了、平台没给原因（会话标记推断，疑似闪退 / 卡死后被强杀）。
   unexpected,
 
@@ -103,7 +114,11 @@ enum PreviousExitKind {
   bool worthReporting({required bool foreground}) => switch (this) {
     nativeCrash || crash || anr || unexpected => true,
     memoryKill => foreground,
-    userStopped || appUpdated || backgroundReclaim => false,
+    userStopped ||
+    appUpdated ||
+    systemSessionEnd ||
+    exitInterrupted ||
+    backgroundReclaim => false,
   };
 }
 
@@ -155,9 +170,22 @@ class PreviousSession {
     this.awaitingCrashReportDecision = false,
     this.memoryPressureAt,
     this.memoryPressureCount = 0,
+    this.exitReason,
+    this.exitStage,
+    this.terminatedBy,
   });
 
   final int pid;
+
+  /// 上次进程在退出链第一步写下的退出意图（`windowClose` / `updateHandoff` /
+  /// `restart`…，[SessionMarker.recordExitRequested]）；没发起过退出为 null。
+  final String? exitReason;
+
+  /// 退出链最后进入的阶段（并行阶段为在飞步骤的 `+` 连接）；没发起过退出为 null。
+  final String? exitStage;
+
+  /// 标 clean 时由谁结束的进程（`exitApp` / `exitWatchdog` / `updateHandoff`…）。
+  final String? terminatedBy;
   final int startedAt;
   final String version;
   final String lifecycle;
@@ -186,6 +214,7 @@ class PreviousSession {
       final Object? decoded = jsonDecode(raw);
       if (decoded is! Map) return null;
       int asInt(Object? v) => v is int ? v : 0;
+      String? asString(Object? v) => v is String && v.isNotEmpty ? v : null;
       return PreviousSession(
         pid: asInt(decoded['pid']),
         startedAt: asInt(decoded['startedAt']),
@@ -200,6 +229,9 @@ class PreviousSession {
             ? decoded['memoryPressureAt'] as int
             : null,
         memoryPressureCount: asInt(decoded['memoryPressureCount']),
+        exitReason: asString(decoded['exitReason']),
+        exitStage: asString(decoded['exitStage']),
+        terminatedBy: asString(decoded['terminatedBy']),
       );
     } on FormatException {
       return null;
@@ -223,6 +255,9 @@ class SessionMarker {
   bool _awaitingCrashReportDecision = false;
   int? _memoryPressureAt;
   int _memoryPressureCount = 0;
+  String? _exitReason;
+  String? _exitStage;
+  String? _terminatedBy;
 
   /// 读出上次会话（没有 / 损坏返回 null），然后写入本次会话的初始标记。
   PreviousSession? start({required int nowMs}) {
@@ -267,10 +302,30 @@ class SessionMarker {
     _write();
   }
 
-  void markCleanExit({required int nowMs}) {
+  /// 退出意图：退出链的**第一步**、在任何 await 之前同步调用。此后进程不论怎么没的
+  /// （看门狗、安装器强杀、系统结束会话），下次启动都不会再判成「停在前台时没了」。
+  /// 只记第一次的原因（链尾的 `exitApp` 再调一次是 no-op）。
+  void recordExitRequested(String reason) {
+    if (_exitReason != null) return;
+    _exitReason = reason;
+    _exitStage = 'requested';
+    _write();
+  }
+
+  /// 退出链进入新阶段（没发起过退出时忽略）。
+  void recordExitStage(String stage) {
+    if (_exitReason == null || _exitStage == stage) return;
+    _exitStage = stage;
+    _write();
+  }
+
+  /// 进程马上就要被有意结束：标 clean。[terminatedBy] 记由谁结束（看门狗强杀也是有意的
+  /// 结束，但下次启动会据此记一条「关闭超预算」诊断）。
+  void markCleanExit({required int nowMs, String? terminatedBy}) {
     _clean = true;
     _lifecycle = 'exit';
     _lifecycleAt = nowMs;
+    _terminatedBy = terminatedBy;
     _write();
   }
 
@@ -288,6 +343,9 @@ class SessionMarker {
           'awaitingCrashReportDecision': _awaitingCrashReportDecision,
           'memoryPressureAt': _memoryPressureAt,
           'memoryPressureCount': _memoryPressureCount,
+          'exitReason': _exitReason,
+          'exitStage': _exitStage,
+          'terminatedBy': _terminatedBy,
         }),
         flush: true,
       );
@@ -314,6 +372,25 @@ ExitReportEntry? describeUncleanPreviousSession(PreviousSession? previous) {
     );
   }
   if (!previous.initialised) b.write(' 启动初始化未完成');
+  final String? exitReason = previous.exitReason;
+  if (exitReason != null) {
+    // 退出意图在链首已同步落盘：进程是在用户 / 更新 / 重启发起的退出途中没的（安装器
+    // 强杀、系统结束会话、退出链被打断），不是停在前台时闪退。真有原生崩溃摘要时由
+    // [classifyPreviousExit] 按优先级升级为 nativeCrash。
+    b.write(
+      ' exitRequested=$exitReason exitStage=${previous.exitStage ?? '?'}'
+      '（已发起退出、退出链未走完时没了，按退出被打断处理）',
+    );
+    return ExitReportEntry(
+      kPreviousExitUncleanSource,
+      b.toString(),
+      severe: false,
+      kind: PreviousExitKind.exitInterrupted,
+      foreground: previous.diedInForeground,
+      duringStartup: !previous.initialised,
+      atMs: previous.lifecycleAt,
+    );
+  }
   if (previous.awaitingCrashReportDecision) {
     // 停在闪退报告提示上（初始化还没开始跑）时没了：用户直接关掉 / 杀掉了 app。
     // 平台另有崩溃证据（Windows 摘要、Android CRASH…）时由 [classifyPreviousExit] 按
@@ -342,6 +419,28 @@ ExitReportEntry? describeUncleanPreviousSession(PreviousSession? previous) {
     atMs: previous.lifecycleAt,
   );
 }
+
+/// 日志 source：上次退出链超出预算、被退出看门狗结束（有意退出，只作诊断）。
+const String kPreviousExitForcedSource = 'Process.previousExitForced';
+
+/// 上次进程正常（clean）结束、但结束者是退出看门狗时的诊断摘要：退出链超出了各步预算
+/// 之和，卡在 [PreviousSession.exitStage]。不说明退出方式（kind 为 null），只给「关闭慢」
+/// 留线索。其余情况返回 null。
+ExitReportEntry? describeForcedPreviousExit(PreviousSession? previous) {
+  if (previous == null || !previous.clean) return null;
+  if (previous.terminatedBy != kExitTerminatedByWatchdog) return null;
+  return ExitReportEntry(
+    kPreviousExitForcedSource,
+    '上次退出链超出预算，被退出看门狗结束：pid=${previous.pid} '
+    'version=${previous.version} exitRequested=${previous.exitReason ?? '?'} '
+    'stuckAt=${previous.exitStage ?? '?'} at=${_iso(previous.lifecycleAt)}',
+    severe: false,
+    atMs: previous.lifecycleAt,
+  );
+}
+
+/// [SessionMarker.markCleanExit] 的 terminatedBy：退出看门狗到点强制结束。
+const String kExitTerminatedByWatchdog = 'exitWatchdog';
 
 // ───────────────────────── Android ─────────────────────────
 
@@ -478,6 +577,83 @@ String? readAndClearTextFile(File file) {
     return null;
   }
 }
+
+/// 日志 source：Windows 会话结束（关机 / 注销 / Restart Manager）时进程被系统结束。
+const String kWindowsSessionEndSource = 'Process.windowsSessionEnd';
+
+/// `%LOCALAPPDATA%\Fushi\crashdumps\session_end.log`：runner 在 `WM_ENDSESSION`
+/// （wParam=TRUE）时同步覆写一行 `pid=<pid> lparam=0x<hex>`（与 `crash_dump.cpp` 的
+/// `RecordSessionEnd` 硬钉同一路径、同一格式）。
+File? resolveWindowsSessionEndFile({
+  required bool isWindows,
+  required String? localAppData,
+}) {
+  if (!isWindows || localAppData == null || localAppData.isEmpty) return null;
+  return File('$localAppData\\Fushi\\crashdumps\\session_end.log');
+}
+
+/// `WM_ENDSESSION` 的 lParam 位（winuser.h）。
+const int _kEndSessionCloseApp = 0x00000001;
+const int _kEndSessionCritical = 0x40000000;
+const int _kEndSessionLogoff = 0x80000000;
+
+/// 把 `session_end.log` 的内容对上上次会话：pid 相同且上次没标 clean → 系统结束会话
+/// （[PreviousExitKind.systemSessionEnd]，不上报）；pid 不符（更早进程的残留）/ 解析不了
+/// 返回 null，交回会话标记判定。
+ExitReportEntry? formatWindowsSessionEnd(
+  String content, {
+  required PreviousSession? previous,
+}) {
+  if (previous == null || previous.clean) return null;
+  final RegExpMatch? m = RegExp(
+    r'pid=(\d+)\s+lparam=0x([0-9a-fA-F]+)',
+  ).firstMatch(content);
+  if (m == null) return null;
+  final int? pidValue = int.tryParse(m.group(1)!);
+  final int? lparam = int.tryParse(m.group(2)!, radix: 16);
+  if (pidValue == null || lparam == null || pidValue != previous.pid) {
+    return null;
+  }
+  final String why = (lparam & _kEndSessionCloseApp) != 0
+      ? 'Restart Manager 关闭应用（安装程序 / 系统更新）'
+      : (lparam & _kEndSessionLogoff) != 0
+      ? '用户注销'
+      : (lparam & _kEndSessionCritical) != 0
+      ? '系统强制结束会话'
+      : '关机 / 重启';
+  return ExitReportEntry(
+    kWindowsSessionEndSource,
+    '上次进程随 Windows 会话结束被系统终止（$why）：pid=$pidValue '
+    'lparam=0x${lparam.toRadixString(16)} '
+    'lastLifecycle=${previous.lifecycle}@${_iso(previous.lifecycleAt)}',
+    severe: false,
+    kind: PreviousExitKind.systemSessionEnd,
+    foreground: previous.diedInForeground,
+    duringStartup: !previous.initialised,
+    atMs: previous.lifecycleAt,
+  );
+}
+
+/// 上次进程是在有意的退出（链首已写退出意图）或系统结束会话途中没的：遗留的活动
+/// 面包屑只是「活动被退出打断」，不是「原生崩溃 / 被系统杀」，降为诊断并改写说明。
+List<ExitReportEntry> reclassifyBreadcrumbsForIntentionalExit(
+  List<ExitReportEntry> entries, {
+  required String why,
+}) => <ExitReportEntry>[
+  for (final ExitReportEntry e in entries)
+    if (e.source == kActivityCrashRecoveredSource)
+      ExitReportEntry(
+        e.source,
+        '（$why，活动随退出被终止，不是崩溃）${e.text}',
+        severe: false,
+        kind: e.kind,
+        foreground: e.foreground,
+        duringStartup: e.duringStartup,
+        atMs: e.atMs,
+      )
+    else
+      e,
+];
 
 List<ExitReportEntry> formatWindowsCrashSummary(String content) {
   final List<String> lines = content
@@ -877,9 +1053,21 @@ abstract final class PreviousExitLog {
   static void markAwaitingCrashReportDecision(bool awaiting) =>
       _marker?.recordAwaitingCrashReportDecision(awaiting);
 
-  /// 正常退出路径（`exitApp` / 重启）在退进程前调用：本次会话标 clean。
-  static void markCleanExit() {
-    _marker?.markCleanExit(nowMs: DateTime.now().millisecondsSinceEpoch);
+  /// 退出链第一步（任何 await 之前）调用：同步落盘退出意图。由
+  /// `AppExitCoordinator.begin` 统一调用，别处不要直接调。
+  static void markExitRequested(String reason) =>
+      _marker?.recordExitRequested(reason);
+
+  /// 退出链进入新阶段（`AppExitCoordinator` 的阶段跟踪调用）。
+  static void markExitStage(String stage) => _marker?.recordExitStage(stage);
+
+  /// 进程马上要被有意结束时调用：本次会话标 clean。桌面由 `AppExitCoordinator.terminate`
+  /// 统一调用；[terminatedBy] 记由谁结束。
+  static void markCleanExit({String? terminatedBy}) {
+    _marker?.markCleanExit(
+      nowMs: DateTime.now().millisecondsSinceEpoch,
+      terminatedBy: terminatedBy,
+    );
   }
 
   /// 生产入口：按平台收集上次退出证据并折进错误日志，再开始记录本次会话。
@@ -917,6 +1105,16 @@ abstract final class PreviousExitLog {
       if (marker != null && _observer == null) {
         _observer = _ExitEvidenceObserver(marker);
         WidgetsBinding.instance.addObserver(_observer!);
+        // 观察者挂上之前发生的生命周期变化收不到：不补记的话标记会一直停在
+        // `launching`（算前台），之后被后台回收也会判成「启动即闪退」。
+        final AppLifecycleState? current =
+            WidgetsBinding.instance.lifecycleState;
+        if (current != null) {
+          marker.recordLifecycle(
+            current.name,
+            nowMs: DateTime.now().millisecondsSinceEpoch,
+          );
+        }
       }
     } on Object catch (e, st) {
       ErrorLogService.instance.log('PreviousExitLog.fold', e, st);
@@ -954,6 +1152,8 @@ abstract final class PreviousExitLog {
     _previous = previous;
     final ExitReportEntry? unclean = describeUncleanPreviousSession(previous);
     if (unclean != null) out.add(unclean);
+    final ExitReportEntry? forced = describeForcedPreviousExit(previous);
+    if (forced != null) out.add(forced);
     _marker = marker;
 
     if (isAndroid ?? Platform.isAndroid) {
@@ -981,6 +1181,20 @@ abstract final class PreviousExitLog {
       );
       final String? content = file == null ? null : readAndClearTextFile(file);
       if (content != null) out.addAll(formatWindowsCrashSummary(content));
+      final File? sessionEndFile = resolveWindowsSessionEndFile(
+        isWindows: true,
+        localAppData: localAppData ?? Platform.environment['LOCALAPPDATA'],
+      );
+      final String? sessionEnd = sessionEndFile == null
+          ? null
+          : readAndClearTextFile(sessionEndFile);
+      if (sessionEnd != null) {
+        final ExitReportEntry? ended = formatWindowsSessionEnd(
+          sessionEnd,
+          previous: previous,
+        );
+        if (ended != null) out.add(ended);
+      }
     }
 
     if (isMacOS ?? Platform.isMacOS) {
@@ -1075,6 +1289,18 @@ abstract final class PreviousExitLog {
           }
         }
       }
+    }
+    final String? intentionalExit = previous?.exitReason != null
+        ? '上次进程已发起退出（${previous!.exitReason}）'
+        : previous?.clean ?? false
+        ? '上次进程正常退出'
+        : out.any(
+            (ExitReportEntry e) => e.kind == PreviousExitKind.systemSessionEnd,
+          )
+        ? '上次进程随 Windows 会话结束被系统终止'
+        : null;
+    if (intentionalExit != null) {
+      return reclassifyBreadcrumbsForIntentionalExit(out, why: intentionalExit);
     }
     return out;
   }

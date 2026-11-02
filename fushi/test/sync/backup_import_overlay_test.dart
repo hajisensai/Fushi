@@ -412,8 +412,10 @@ void main() {
         reason: '应委托经过验证的 restartApp 真重启，而非本文件里 ad-hoc Process.start',
       );
       // never-break 兜底: restartApp 失败/不支持时仍退回原平台纯退出分支。
-      expect(fnBody.contains('FlutterExitApp.exitApp()'), isTrue);
-      expect(fnBody.contains('exit(0)'), isTrue);
+      // 纯退出兜底经生命周期服务（退出协调器标 clean），不再裸 exit / FlutterExitApp。
+      expect(fnBody.contains('lifecycle.exitApp()'), isTrue);
+      expect(fnBody.contains('exit(0)'), isFalse);
+      expect(fnBody.contains('FlutterExitApp.exitApp()'), isFalse);
     });
 
     test('backup.part：导入成功后延时自动重启，失败态不自动（TODO-1151 自动重启）', () {

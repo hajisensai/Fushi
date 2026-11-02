@@ -220,3 +220,47 @@ test('cards removed from the queue mid-batch are not mined and are not counted a
   const last = bg.toasts[bg.toasts.length - 1].msg.text;
   assert.ok(!last.includes('gen_done_failed_suffix'), '用户删掉的不算失败：' + last);
 });
+
+// EMI05fe8RJ：付费电影的卡（服务端 errorKind:permanent）旧实现永远留在待生成队列里，每次生成都
+// 先把它们重新解析一遍（每条都走 5 个 client 的网络请求），拖慢并淹没新卡。
+test('permanent failure leaves the pending queue for the Failed group and is not re-mined next run', async () => {
+  const bg = loadBackground([yt('paid', 'vidPaid'), yt('ok', 'vidOk')],
+    (body) => (body.youtubeVideoId === 'vidPaid'
+      ? { result: 'error', message: 'YouTube 视频流解析失败，未制卡', errorKind: 'permanent' }
+      : { result: 'success' }));
+  bg.send({ type: 'fushiIconAction', tab: { id: 7, url: 'https://example.com/' } });
+  await flush();
+  assert.deepStrictEqual(bg.posts.map((b) => b.youtubeVideoId), ['vidPaid', 'vidOk']);
+  assert.strictEqual(bg.store.fushiQueue.length, 1, '失败项留在存储里（失败分组），成功项出队');
+  const failed = bg.store.fushiQueue[0];
+  assert.strictEqual(failed.id, 'paid');
+  assert.strictEqual(failed.failed, true);
+  assert.strictEqual(failed.lastError, 'YouTube 视频流解析失败，未制卡');
+  const summary = bg.toasts[bg.toasts.length - 1].msg.text;
+  assert.ok(summary.includes('gen_done_moved_failed_suffix'), summary);
+
+  // 第二次生成：失败分组里的项不再 POST /api/mine。
+  bg.send({ type: 'fushiIconAction', tab: { id: 7, url: 'https://example.com/' } });
+  await flush();
+  assert.strictEqual(bg.posts.length, 2, '失败项不应再次制卡');
+});
+
+test('transient server errors escalate to Failed after the attempt cap; unreachable app never counts', async () => {
+  let down = true;
+  const bg = loadBackground([yt('t', 'vidT')],
+    () => (down ? { __status: 502 } : { result: 'error', message: 'timeout' }));
+  for (let i = 0; i < 4; i++) {
+    bg.send({ type: 'fushiIconAction', tab: { id: 1, url: 'https://example.com/' } });
+    await flush();
+  }
+  assert.strictEqual(bg.store.fushiQueue[0].failed, undefined, '环境类失败（app 不可达 / 5xx）不计入该项');
+  assert.strictEqual(bg.store.fushiQueue[0].attempts, undefined);
+  down = false;
+  const before = bg.posts.length;
+  for (let i = 0; i < 5; i++) {
+    bg.send({ type: 'fushiIconAction', tab: { id: 1, url: 'https://example.com/' } });
+    await flush();
+  }
+  assert.strictEqual(bg.posts.length - before, 3, '达到 3 次后移入失败分组，不再重试');
+  assert.strictEqual(bg.store.fushiQueue[0].failed, true);
+});

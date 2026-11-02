@@ -543,10 +543,9 @@ class AppPaths {
   ///    `dictionaryImportWorkingDirectory` / `webArchive` ——
   ///    `AppModel` 运行时目录系列派生。
   ///
-  /// **刻意不收**：`error_log.txt` / `*_breadcrumb.txt`（`ErrorLogService` 直连
-  /// `getApplicationDocumentsDirectory()`，固定落平台 Documents、不随数据根走，搬走
-  /// 反而让服务失去续写目标）；`video_clips` 与桌面导出目录 `Hibiki`（同样直连
-  /// path_provider 的用户可见导出物，属用户文件语义）。
+  /// **刻意不收**：`video_clips` 与桌面导出目录 `Hibiki`（直连 path_provider 的用户可见
+  /// 导出物，属用户文件语义）。错误日志 / 面包屑 / 诊断日志不在 documents 下，见
+  /// [diagnosticsDirectory]（4w_veZGiQ7：它们曾直落平台 Documents 根）。
   ///
   /// 守卫测试 `test/storage/documents_whitelist_guard_test.dart` 扫描源码派生点，
   /// 新增 `<documents>/<child>` 派生而漏加这里会红。
@@ -625,6 +624,125 @@ class AppPaths {
     return !ownedEntries.any(
       (String owned) => owned.toLowerCase() == firstSegment,
     );
+  }
+
+  // ---- 诊断目录（错误日志 / 崩溃面包屑 / 诊断日志） ----
+
+  /// 诊断文件（`error_log.txt`、各 `*_breadcrumb.txt`、`crash_report_state.json`、
+  /// `previous_exit_state.json`、`session_marker.json`、`activity_*`、视频 / 学习诊断
+  /// 日志）的唯一落点。
+  ///
+  /// 4w_veZGiQ7：这些文件曾由 `ErrorLogService` / `VideoDiagLog` / `StudyDiagLog` 各自直连
+  /// `getApplicationDocumentsDirectory()`。桌面上（macOS 已去沙盒、Windows、Linux）那就是
+  /// 用户自己的 `~/Documents` 根——Fushi 的内容早已收进 `<Documents>/Fushi/data`
+  /// （BUG-1115），日志却摊在用户文档根里。「不随数据根迁移」是对的（启动最早期就要写、
+  /// 数据根可能不可达），但目录选错了：
+  /// - 桌面：`<ApplicationSupport>/logs`（macOS `~/Library/Application Support/<bundle>/logs`），
+  ///   app 私有、与数据根无关、启动最早期可用；
+  /// - Android / iOS：沿用 app 沙盒内的 documents 目录（用户看不到，iOS 原生 MetricKit
+  ///   落盘 `Documents/metrickit/` 与它同目录约定，见 `AppDelegate.swift`）。
+  ///
+  /// 测试分支与旧实现同一个键（`app-documents`），测试注入不变。首次解析时把旧位置
+  /// （平台 Documents 根）残留的诊断文件搬过来（[migrateLegacyDiagnostics]），再交给
+  /// `ErrorLogService.init` 读面包屑做崩溃恢复——顺序保证上次的崩溃现场不丢。
+  static Future<Directory> diagnosticsDirectory() async {
+    final Directory? test = fushiTestDirectory('app-documents');
+    if (test != null) return test;
+    // 生产分支只解析 + 搬迁一次（多个日志服务并发 init 共用同一个 future）。
+    return _diagnosticsDirectory ??= _resolveDiagnosticsDirectory();
+  }
+
+  static Future<Directory>? _diagnosticsDirectory;
+
+  /// 启动期把旧诊断文件搬进 [diagnosticsDirectory] 时失败的条目（`文件名: 原因`）。
+  /// 搬迁跑在错误日志就绪之前，由 `ErrorLogService.init` 读出写进错误日志，不吞。
+  static List<String> get diagnosticsMigrationFailures =>
+      List<String>.unmodifiable(_diagnosticsMigrationFailures);
+  static final List<String> _diagnosticsMigrationFailures = <String>[];
+
+  @visibleForTesting
+  static void resetDiagnosticsDirectoryForTesting() {
+    _diagnosticsDirectory = null;
+    _diagnosticsMigrationFailures.clear();
+  }
+
+  static Future<Directory> _resolveDiagnosticsDirectory() async {
+    if (!isDesktopPlatform) return getApplicationDocumentsDirectory();
+    final Directory support = await getApplicationSupportDirectory();
+    final Directory dir = Directory(p.join(support.path, 'logs'));
+    await dir.create(recursive: true);
+    _diagnosticsMigrationFailures.addAll(
+      await migrateLegacyDiagnostics(
+        from: await getApplicationDocumentsDirectory(),
+        to: dir,
+      ),
+    );
+    return dir;
+  }
+
+  /// 旧位置（平台 Documents 根）上属于 Fushi 的诊断文件名。只认这些确切的名字 /
+  /// `activity_` 前缀——这是用户自己的文档目录，绝不扫别的东西。
+  static const Set<String> legacyDiagnosticFileNames = <String>{
+    'error_log.txt',
+    'import_crash_breadcrumb.txt',
+    'import_step_breadcrumb.txt',
+    'lookup_crash_breadcrumb.txt',
+    'init_step_breadcrumb.txt',
+    'crash_report_state.json',
+    'previous_exit_state.json',
+    'session_marker.json',
+    'video_diag_log.txt',
+    'video_mpv_log.txt',
+    'study_diag_log.txt',
+  };
+
+  /// `ActivityBreadcrumb` 的文件名前缀（`previous_exit_log.dart` `_kActivityBreadcrumbPrefix`）。
+  static const String legacyActivityBreadcrumbPrefix = 'activity_';
+
+  /// 把 [from] 根下的 Fushi 诊断文件搬进 [to]。返回失败条目（`文件名: 原因`），成功 / 无需
+  /// 搬为空。目标已有同名文件（新位置已在用）时以新位置为准、删掉旧文件。
+  @visibleForTesting
+  static Future<List<String>> migrateLegacyDiagnostics({
+    required Directory from,
+    required Directory to,
+  }) async {
+    final List<String> failures = <String>[];
+    if (p.equals(from.path, to.path)) return failures;
+    final List<File> candidates = <File>[];
+    try {
+      if (!await from.exists()) return failures;
+      await for (final FileSystemEntity e in from.list(followLinks: false)) {
+        if (e is! File) continue;
+        final String name = p.basename(e.path);
+        if (legacyDiagnosticFileNames.contains(name) ||
+            name.startsWith(legacyActivityBreadcrumbPrefix)) {
+          candidates.add(e);
+        }
+      }
+    } catch (e) {
+      failures.add('${from.path}: list failed: $e');
+      return failures;
+    }
+    for (final File legacy in candidates) {
+      final String name = p.basename(legacy.path);
+      final File target = File(p.join(to.path, name));
+      try {
+        if (await target.exists()) {
+          await legacy.delete();
+          continue;
+        }
+        try {
+          await legacy.rename(target.path);
+        } on FileSystemException {
+          // 跨卷（自定义 Documents 重定向到别的盘）rename 不成：复制后删源。
+          await legacy.copy(target.path);
+          await legacy.delete();
+        }
+      } catch (e) {
+        failures.add('$name: $e');
+      }
+    }
+    return failures;
   }
 
   // ---- 静态便捷层（给无 AppModel 实例的 static 存储助手） ----

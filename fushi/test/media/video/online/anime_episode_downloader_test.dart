@@ -236,6 +236,70 @@ void main() {
       stallTimeout: stallTimeout,
     );
 
+    group('DASH 分离流：画面 + 外挂音轨合成（EXlaIL2eKQ）', () {
+      void serve(String path, List<int> bytes) {
+        server.routes[path] = (HttpRequest request) async {
+          request.response.contentLength = bytes.length;
+          request.response.add(bytes);
+          await request.response.close();
+        };
+      }
+
+      test('两路都下完后 ffmpeg -c copy 合成，画面自带音轨在前、外挂音轨随后', () async {
+        serve('/v.m4s', List<int>.filled(4000, 1));
+        serve('/a.m4a', List<int>.filled(3000, 2));
+        final File dest = File(p.join(tmp.path, 'out', 'ep.mkv'));
+        final _FakeFfmpeg ffmpeg = _FakeFfmpeg.succeeding(<int>[7, 7, 7]);
+        final List<double> progress = <double>[];
+        await downloader(ffmpeg).downloadWithExternalAudio(
+          url: server.url('/v.m4s'),
+          audioUrls: <String>[server.url('/a.m4a')],
+          headers: <String, String>{'Referer': 'https://site.example/'},
+          dest: dest,
+          onProgress: progress.add,
+        );
+        expect(await dest.readAsBytes(), <int>[7, 7, 7]);
+        final List<String> args = ffmpeg.calls.single;
+        expect(args.where((String a) => a == '-i').length, 2);
+        expect(
+          args,
+          containsAllInOrder(<String>[
+            '-map',
+            '0:v',
+            '-map',
+            '0:a?',
+            '-map',
+            '1:a',
+            '-c',
+            'copy',
+          ]),
+        );
+        expect(server.requests.map((_Req r) => r.referer).toSet(), <String?>{
+          'https://site.example/',
+        });
+        // 分量文件合成后清掉。
+        expect(await File('${dest.path}.video').exists(), isFalse);
+        expect(await File('${dest.path}.audio0').exists(), isFalse);
+        expect(progress.last, 1.0);
+      });
+
+      test('合成失败如实抛错，不留一个无声视频当下载成功', () async {
+        serve('/v.m4s', List<int>.filled(4000, 1));
+        serve('/a.m4a', List<int>.filled(3000, 2));
+        final File dest = File(p.join(tmp.path, 'out', 'ep.mkv'));
+        await expectLater(
+          downloader(_FakeFfmpeg.failing()).downloadWithExternalAudio(
+            url: server.url('/v.m4s'),
+            audioUrls: <String>[server.url('/a.m4a')],
+            headers: const <String, String>{},
+            dest: dest,
+          ),
+          throwsStateError,
+        );
+        expect(await dest.exists(), isFalse);
+      });
+    });
+
     test('direct file download writes the body and forwards headers', () async {
       final Uint8List body = Uint8List.fromList(
         List<int>.generate(200000, (int i) => (i * 13) & 0xff),

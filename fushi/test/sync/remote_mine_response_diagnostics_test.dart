@@ -1,9 +1,15 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/models/app_model.dart'
+    show youtubeMineResolveErrorKind;
+import 'package:fushi_engine/media/video/youtube_source_resolver.dart';
 import 'package:fushi_engine/sync/forwarded_mine_payload.dart';
 import 'package:fushi_engine/sync/fushi_remote_api_handlers.dart';
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
 import 'package:fushi_engine/sync/immersion_mine_payload.dart';
 import 'package:fushi_anki/fushi_anki.dart';
+import 'package:youtube_explode_dart/youtube_explode_dart.dart' as yt;
 
 /// TODO-1303 契约守卫：`/api/mine` 响应体现在除 `result` 外，还摊开诊断
 /// `message`（失败原因 / 音频落空警告）与 `detail`（技术细节）——浏览器扩展 content.js
@@ -135,6 +141,61 @@ void main() {
       expect(out['result'], 'error');
       expect(out['message'], contains('required audio missing'));
       expect(out['detail'], 'required audio missing');
+    });
+  });
+
+  // EMI05fe8RJ：失败分型——扩展据 errorKind 把永久失败移出待生成队列。
+  group('EMI05fe8RJ errorKind 分型', () {
+    test('errorKind 摊进 /api/mine 响应体；未分型不带该字段', () async {
+      final mining = _DiagMining()
+        ..entryResult = const RemoteMineResult(
+          result: 'error',
+          message: 'YouTube 视频流解析失败，未制卡',
+          errorKind: RemoteMineErrorKind.permanent,
+        );
+      final Map<String, dynamic> out = await buildRemoteMineResponse(
+        _entryBody(),
+        mining: mining,
+      );
+      expect(out['errorKind'], 'permanent');
+      mining.entryResult = const RemoteMineResult(result: 'error');
+      final Map<String, dynamic> legacy = await buildRemoteMineResponse(
+        _entryBody(),
+        mining: mining,
+      );
+      expect(legacy.containsKey('errorKind'), isFalse);
+    });
+
+    test('全部 client 都回「需购买 / 不可用」→ permanent；混入传输层失败 → transient', () {
+      final yt.VideoId id = yt.VideoId('dQw4w9WgXcQ');
+      final YoutubeManifestException paid =
+          YoutubeManifestException(id.value, <YoutubeClientFailure>[
+            YoutubeClientFailure(
+              'ANDROID_VR',
+              yt.VideoRequiresPurchaseException(id),
+            ),
+            YoutubeClientFailure(
+              'IOS',
+              yt.VideoUnavailableException.unavailable(id),
+            ),
+          ]);
+      expect(paid.isPermanentlyUnavailable, isTrue);
+      expect(youtubeMineResolveErrorKind(paid), RemoteMineErrorKind.permanent);
+
+      final YoutubeManifestException mixed =
+          YoutubeManifestException(id.value, <YoutubeClientFailure>[
+            YoutubeClientFailure(
+              'ANDROID_VR',
+              yt.VideoRequiresPurchaseException(id),
+            ),
+            YoutubeClientFailure('IOS', TimeoutException('slow')),
+          ]);
+      expect(mixed.isPermanentlyUnavailable, isFalse);
+      expect(youtubeMineResolveErrorKind(mixed), RemoteMineErrorKind.transient);
+      expect(
+        youtubeMineResolveErrorKind(StateError('x')),
+        RemoteMineErrorKind.transient,
+      );
     });
   });
 }

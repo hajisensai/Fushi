@@ -38,9 +38,12 @@ function makeElement(tag) {
       return child;
     },
     insertBefore(child) { return this.appendChild(child); },
-    setAttribute() {},
-    getAttribute() { return null; },
-    removeAttribute() {},
+    // 属性真存：content.js 用 data-fushi-session-host 判定「属于查词会话的顶层宿主」。
+    attrs: Object.create(null),
+    setAttribute(name, value) { this.attrs[name] = String(value); },
+    getAttribute(name) { return name in this.attrs ? this.attrs[name] : null; },
+    hasAttribute(name) { return name in this.attrs; },
+    removeAttribute(name) { delete this.attrs[name]; },
     remove() { this.isConnected = false; },
     contains(node) { return node === this; },
     closest() { return null; },

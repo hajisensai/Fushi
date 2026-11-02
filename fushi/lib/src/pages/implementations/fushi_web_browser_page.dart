@@ -1295,6 +1295,9 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
       case ShortcutAction.webBrowserSelectLastTab:
         _selectTabAt(-1);
       case ShortcutAction.webBrowserNewIncognitoTab:
+        // 与菜单 / 标签网格入口同一道门：不支持无痕（Android 系统 WebView 无 MULTI_PROFILE）
+        // 时不开一个打着无痕标记、实际没有隔离的标签页，也不吞掉这次按键。
+        if (!webBrowserIncognitoSupported()) return false;
         _newTab(incognito: true);
       case ShortcutAction.webBrowserHistoryOpen:
         _openDataPage(WebBrowserDataPage.history);

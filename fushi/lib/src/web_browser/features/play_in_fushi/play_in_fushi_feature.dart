@@ -43,6 +43,83 @@ const String kWebBrowserReleaseMediaScript =
     'document.removeEventListener("play",h,true);'
     'window.__fushiMediaHold=null;}})();';
 
+/// JS → Dart 交接 handler 名（[kWebBrowserWatchHandoffScript] 调它）。
+const String kWebBrowserWatchHandoffHandler = 'fushiHandoffWatch';
+
+/// G-Vr-zkb5L：在 Netflix 观看页**导航提交之前**就把它交给播放页，浏览器标签页根本不建
+/// Netflix 播放会话。
+///
+/// 旧实现在 `onUpdateVisitedHistory`（地址已提交、SPA 已进 /watch 路由）才交接：标签页里的
+/// Netflix 已经在拉 manifest / license、建会话心跳，播放页紧接着在另一个 WebView2 环境里再开
+/// 同一部片——同账号几乎同时两次起播（用户报「先在网页里开，再开播放器就被限流」）。
+///
+/// 本脚本在每个 Netflix 文档开始时（document-start）装：
+/// - 捕获阶段拦「指向 /watch/ 的链接」点击（选集页 / 详情页的播放按钮都是这种链接），取消这次
+///   导航并交给 Dart；
+/// - 文档本身就是观看页（地址栏输入 / 书签 / 外链整页进来）：`window.stop()` 停住后续解析与
+///   播放器脚本，再交给 Dart。
+/// Dart 回答「交不了」（无痕标签页 / 本平台没有播放页）时脚本按原样放行：点击 → 整页打开
+/// 该地址并写一次性放行标记（sessionStorage），新文档见标记不再拦。
+const String kWebBrowserWatchHandoffScript = r'''
+(function () {
+  if (window.__fushiWatchHandoffInstalled) return;
+  window.__fushiWatchHandoffInstalled = true;
+  var BYPASS = '__fushiWatchHandoffBypass';
+  function isNetflixHost(h) {
+    h = String(h || '').toLowerCase();
+    return h === 'netflix.com' || /\.netflix\.com$/.test(h);
+  }
+  if (!isNetflixHost(location.hostname)) return;
+  function watchUrl(u) {
+    try {
+      var x = new URL(u, location.href);
+      return isNetflixHost(x.hostname) && /^\/watch\/[^/]+/.test(x.pathname) ? x.toString() : null;
+    } catch (e) {
+      return null;
+    }
+  }
+  function ask(url) {
+    var bridge = window.flutter_inappwebview;
+    if (bridge && typeof bridge.callHandler === 'function') {
+      return Promise.resolve(bridge.callHandler('fushiHandoffWatch', url)).then(function (r) {
+        return r === true;
+      }, function () { return false; });
+    }
+    return new Promise(function (resolve) {
+      window.addEventListener('flutterInAppWebViewPlatformReady', function () {
+        ask(url).then(resolve);
+      }, { once: true });
+    });
+  }
+  function proceed(url) {
+    try { sessionStorage.setItem(BYPASS, url); } catch (e) {}
+    location.assign(url);
+  }
+  var bypass = null;
+  try {
+    bypass = sessionStorage.getItem(BYPASS);
+    sessionStorage.removeItem(BYPASS);
+  } catch (e) {}
+  var here = watchUrl(location.href);
+  if (here && bypass !== here) {
+    try { window.stop(); } catch (e) {}
+    ask(here).then(function (handled) { if (!handled) proceed(here); });
+    return;
+  }
+  document.addEventListener('click', function (e) {
+    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    var t = e.target;
+    var a = t && t.closest ? t.closest('a[href]') : null;
+    if (!a) return;
+    var url = watchUrl(a.getAttribute('href'));
+    if (!url) return;
+    e.preventDefault();
+    e.stopImmediatePropagation();
+    ask(url).then(function (handled) { if (!handled) proceed(url); });
+  }, true);
+})();
+''';
+
 /// 浏览器标签页播不了、一进观看页就该直接交给播放页的地址：Netflix 的 `/watch/<id>`。
 ///
 /// 浏览器标签页的画面是捕获合成出来的，DRM 视频走 DComp overlay，捕获到的是纯黑，4K 捕获
@@ -56,6 +133,13 @@ bool webBrowserWatchPageNeedsPlayer(Uri? url) {
   );
   return drmSite && webVideoIsWatchPage(url.toString());
 }
+
+/// 这一次导航是否该交给播放页（导航前拦截与地址提交后补交共用同一判据）。
+bool webBrowserShouldHandOffWatchPage(
+  Uri? url, {
+  required bool incognito,
+  required bool playerAvailable,
+}) => !incognito && playerAvailable && webBrowserWatchPageNeedsPlayer(url);
 
 /// 「用 Fushi 播放」：在 YouTube 观看页把当前视频交给 Fushi 自己的视频播放页。
 ///
@@ -77,8 +161,10 @@ bool webBrowserWatchPageNeedsPlayer(Uri? url) {
 /// 播放页靠按钮而不是另开一个列表）。已知视频站（[isKnownWebPageVideoUrl]）放工具栏，
 /// 其它网页收在「⋯」里。无痕标签页不给：播放页用的是常规登录存储，还会把看过的集落库。
 ///
-/// 浏览器播不了的观看页（[webBrowserWatchPageNeedsPlayer]）不等用户点：地址一变到那里就自动
-/// 交给播放页，标签页退回上一页（回来时停在选集页，而不是一张黑掉的观看页）。
+/// 浏览器播不了的观看页（[webBrowserWatchPageNeedsPlayer]）不等用户点：导航提交之前就由
+/// [kWebBrowserWatchHandoffScript] 拦下交给播放页（G-Vr-zkb5L），标签页停在选集页、不建会话。
+/// 站点不经链接、直接用脚本 pushState 进观看页的少数路径拦不到，仍由 [onUrlChanged] 在地址
+/// 提交后补交（并退回上一页），保证不会停在一张黑掉的观看页上。
 class PlayInFushiFeature extends WebBrowserFeature {
   PlayInFushiFeature({
     required VideoBookRepository Function() repository,
@@ -99,6 +185,55 @@ class PlayInFushiFeature extends WebBrowserFeature {
   /// 原地，同一地址不再自动交第二次。
   final Map<String, String> _autoHandedOff = <String, String>{};
 
+  /// 每个标签页最近一次可用的 [BuildContext]（[actions] / [onUrlChanged] 时记下）：JS 交接
+  /// handler 由 WebView 回调，自身没有 context，推播放页要用它。
+  final Map<String, BuildContext> _contexts = <String, BuildContext>{};
+
+  // 没有播放页的平台不装：那里观看页照常在浏览器里播，拦下来只会多一次往返。
+  @override
+  List<UserScript> userScripts() => _playerAvailable()
+      ? <UserScript>[
+          UserScript(
+            source: kWebBrowserWatchHandoffScript,
+            injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
+          ),
+        ]
+      : const <UserScript>[];
+
+  @override
+  void onWebViewCreated(WebBrowserTab tab, InAppWebViewController controller) {
+    controller.addJavaScriptHandler(
+      handlerName: kWebBrowserWatchHandoffHandler,
+      callback: (List<dynamic> args) =>
+          _handoffBeforeCommit(tab, controller, args.isEmpty ? null : args[0]),
+    );
+  }
+
+  /// 导航提交前的交接（[kWebBrowserWatchHandoffScript]）。返回 true = 已交给播放页、页面
+  /// 不再前往该地址；false = 交不了（无痕 / 没有播放页 / 不是需要播放页的地址），脚本放行。
+  bool _handoffBeforeCommit(
+    WebBrowserTab tab,
+    InAppWebViewController controller,
+    Object? rawUrl,
+  ) {
+    final Uri? url = rawUrl is String ? Uri.tryParse(rawUrl) : null;
+    final BuildContext? context = _contexts[tab.id];
+    if (!webBrowserShouldHandOffWatchPage(
+          url,
+          incognito: tab.incognito,
+          playerAvailable: _playerAvailable(),
+        ) ||
+        context == null ||
+        !context.mounted) {
+      return false;
+    }
+    // 交接后若站点仍经 pushState 把地址推到同一观看页，[onUrlChanged] 不再交第二次。
+    final Uri watch = url!;
+    _autoHandedOff[tab.id] = watch.toString();
+    unawaited(_openPage(context, tab, watch, controller));
+    return true;
+  }
+
   @override
   void onUrlChanged(
     BuildContext context,
@@ -106,16 +241,19 @@ class PlayInFushiFeature extends WebBrowserFeature {
     InAppWebViewController controller,
     Uri? url,
   ) {
-    if (url == null ||
-        tab.incognito ||
-        !_playerAvailable() ||
-        !webBrowserWatchPageNeedsPlayer(url)) {
+    _contexts[tab.id] = context;
+    if (!webBrowserShouldHandOffWatchPage(
+      url,
+      incognito: tab.incognito,
+      playerAvailable: _playerAvailable(),
+    )) {
       return;
     }
-    final String key = url.toString();
+    final Uri watch = url!;
+    final String key = watch.toString();
     if (_autoHandedOff[tab.id] == key) return;
     _autoHandedOff[tab.id] = key;
-    unawaited(_openPage(context, tab, url, controller, leaveWatchPage: true));
+    unawaited(_openPage(context, tab, watch, controller, leaveWatchPage: true));
   }
 
   /// 媒体被按住的标签页（播放页还在前面）。
@@ -136,6 +274,7 @@ class PlayInFushiFeature extends WebBrowserFeature {
   @override
   void onTabClosed(WebBrowserTab tab) {
     _autoHandedOff.remove(tab.id);
+    _contexts.remove(tab.id);
     _held.remove(tab.id);
   }
 
@@ -144,6 +283,7 @@ class PlayInFushiFeature extends WebBrowserFeature {
 
   @override
   List<WebBrowserAction> actions(BuildContext context, WebBrowserTab tab) {
+    _contexts[tab.id] = context;
     final String? videoId = youtubeWatchVideoIdOf(tab.url);
     if (videoId == null) return _pageActions(context, tab);
     return <WebBrowserAction>[
