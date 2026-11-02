@@ -83,4 +83,62 @@ void main() {
     expect(find.text(t.srt_import_pick_audio_files), findsOneWidget);
     expect(find.text(t.srt_import_pick_subtitle_files), findsOneWidget);
   });
+
+  testWidgets('SRT book reimport dialog offers server subtitles only for '
+      'Audiobookshelf-bound books', (WidgetTester tester) async {
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    SrtBook bookFor(String uid) => SrtBook()
+      ..uid = uid
+      ..title = 'Book'
+      ..srtPath = ''
+      ..bookKey = '';
+    await tester.runAsync(
+      () => RemoteAudioBindingRepository(db).save(
+        const RemoteAudioBinding(
+          srtBookUid: 'srtbook_remote',
+          provider: RemoteAudioBinding.providerAudiobookshelf,
+          serverConfigId: 'srv',
+          itemId: 'item_1',
+          tracks: <RemoteAudioTrack>[
+            RemoteAudioTrack(ino: '1', startOffsetMs: 0, durationMs: 1000),
+          ],
+          createdAt: 1,
+          updatedAt: 1,
+        ),
+      ),
+    );
+
+    Future<void> open(String uid) async {
+      await tester.pumpWidget(
+        buildApp(
+          ProviderScope(
+            child: SrtBookReimportDialog(
+              key: ValueKey<String>(uid),
+              book: bookFor(uid),
+              db: db,
+              repo: SrtBookRepository(db),
+            ),
+          ),
+        ),
+      );
+      // 绑定是 initState 里异步读出来的。
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 50)),
+      );
+      await tester.pump();
+    }
+
+    await open('srtbook_remote');
+    expect(
+      find.byTooltip(t.srt_book_reimport_subtitle_from_server),
+      findsOneWidget,
+    );
+
+    await open('srtbook_local');
+    expect(
+      find.byTooltip(t.srt_book_reimport_subtitle_from_server),
+      findsNothing,
+    );
+  });
 }

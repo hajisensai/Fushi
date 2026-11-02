@@ -9,10 +9,12 @@ import 'dart:io';
 
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart' show JapaneseLanguage;
 import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_api.dart';
 import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_models.dart';
 import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_subtitle_book.dart';
+import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_subtitle_match.dart';
 import 'package:fushi_engine/media/audiobook/standalone_subtitle_book.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:http/http.dart' as http;
@@ -40,36 +42,17 @@ class ServerSubtitleChoice extends AudiobookshelfSubtitleChoice {
   final AudiobookshelfLibraryFile file;
 }
 
-/// 为一本书在服务器字幕文件里挑最像的那个：文件名主干与音频文件名主干相同的优先，
-/// 其次与条目标题相同的，再其次只有一个字幕文件就是它。挑不出返回 null（让用户选）。
+/// app 侧的服务器字幕推荐：规则见 [matchAudiobookshelfSubtitle]；学习语言取日语（全
+/// app 没有别的学习语言，与视频 sidecar 同源）。非 null = 流式建书时直接挂上、下载
+/// 单集时随附；null = 让用户选。
 AudiobookshelfLibraryFile? suggestServerSubtitle(
   AudiobookshelfItemDetail detail, {
   AudiobookshelfEpisode? episode,
-}) {
-  final List<AudiobookshelfLibraryFile> candidates = detail.subtitleFiles;
-  if (candidates.isEmpty) return null;
-  String stem(String name) {
-    final String base = p.basenameWithoutExtension(name).toLowerCase().trim();
-    // `book.ja` / `book.en` 这类语言后缀去掉再比。
-    return base.replaceFirst(RegExp(r'\.[a-z]{2,3}(-[a-z0-9]{2,4})?$'), '');
-  }
-
-  final Set<String> audioStems = <String>{
-    for (final AudiobookshelfTrack t in detail.tracks)
-      if (t.filename != null) stem(t.filename!),
-    if (episode?.track.filename case final String name) stem(name),
-  };
-  for (final AudiobookshelfLibraryFile file in candidates) {
-    if (audioStems.contains(stem(file.filename))) return file;
-  }
-  final String title = (episode?.title ?? detail.item.title)
-      .toLowerCase()
-      .trim();
-  for (final AudiobookshelfLibraryFile file in candidates) {
-    if (stem(file.filename) == title) return file;
-  }
-  return candidates.length == 1 ? candidates.single : null;
-}
+}) => matchAudiobookshelfSubtitle(
+  detail,
+  episode: episode,
+  langCode: JapaneseLanguage.instance.languageCode,
+);
 
 class AudiobookshelfStreamService {
   AudiobookshelfStreamService({

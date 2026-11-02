@@ -9,24 +9,16 @@ import 'package:fushi/src/media/audiobook/remote/audiobookshelf_stream_service.d
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi_engine/media/audiobook/audiobook_subtitle_formats.dart';
 import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_models.dart';
 import 'package:path/path.dart' as p;
-
-/// 能解析成 cue 的字幕格式（与导入对话框一致）。
-const Set<String> kAudiobookshelfSubtitleExtensions = <String>{
-  'srt',
-  'lrc',
-  'vtt',
-  'ass',
-  'ssa',
-};
 
 /// 「从本机选」的哨兵值（选项值类型是 [Object]，服务器文件用 [ServerSubtitleChoice]）。
 const Object _kPickFromDevice = Object();
 const Object _kNoSubtitle = Object();
 
-/// 选项的排列：推荐的服务器字幕在最前，其余服务器字幕按原序，最后是「从本机选」。
-@visibleForTesting
+/// 服务器字幕的排列：推荐的（[suggestServerSubtitle]）在最前，其余按服务器原序。
+/// 流式建书的选择框与字幕书「重新导入」的「从服务器选」共用。
 List<AudiobookshelfLibraryFile> orderedServerSubtitles(
   AudiobookshelfItemDetail detail, {
   AudiobookshelfEpisode? episode,
@@ -42,6 +34,31 @@ List<AudiobookshelfLibraryFile> orderedServerSubtitles(
   ];
 }
 
+FushiChoiceOption<T> _serverFileOption<T>(
+  AudiobookshelfLibraryFile file,
+  T value,
+) => FushiChoiceOption<T>(
+  value: value,
+  label: file.filename,
+  subtitle: t.audiobookshelf_subtitle_on_server,
+  icon: FushiIcons.subtitles,
+);
+
+/// 只在服务器字幕里选一份（字幕书「重新导入」的「从服务器选」）。[files] 由调用方
+/// 按 [orderedServerSubtitles] 排好；返回 null = 取消。
+Future<AudiobookshelfLibraryFile?> chooseAudiobookshelfServerSubtitleFile({
+  required BuildContext context,
+  required List<AudiobookshelfLibraryFile> files,
+}) => showFushiChoiceDialog<AudiobookshelfLibraryFile>(
+  context: context,
+  title: t.audiobookshelf_subtitle_title,
+  icon: FushiIcons.subtitles,
+  options: <FushiChoiceOption<AudiobookshelfLibraryFile>>[
+    for (final AudiobookshelfLibraryFile file in files)
+      _serverFileOption<AudiobookshelfLibraryFile>(file, file),
+  ],
+);
+
 Future<AudiobookshelfSubtitleChoice?> chooseAudiobookshelfSubtitle({
   required BuildContext context,
   required AudiobookshelfItemDetail detail,
@@ -53,12 +70,7 @@ Future<AudiobookshelfSubtitleChoice?> chooseAudiobookshelfSubtitle({
   );
   final List<FushiChoiceOption<Object>> options = <FushiChoiceOption<Object>>[
     for (final AudiobookshelfLibraryFile file in serverFiles)
-      FushiChoiceOption<Object>(
-        value: ServerSubtitleChoice(file),
-        label: file.filename,
-        subtitle: t.audiobookshelf_subtitle_on_server,
-        icon: FushiIcons.subtitles,
-      ),
+      _serverFileOption<Object>(file, ServerSubtitleChoice(file)),
     FushiChoiceOption<Object>(
       value: _kPickFromDevice,
       label: t.audiobookshelf_subtitle_from_device,
@@ -88,11 +100,11 @@ Future<AudiobookshelfSubtitleChoice?> chooseAudiobookshelfSubtitle({
 
   final String? path = await pickSystemFilePath(
     context: context,
-    allowedExtensions: kAudiobookshelfSubtitleExtensions,
+    allowedExtensions: kAudiobookSubtitleExtensions,
   );
   if (path == null) return null;
   final String ext = p.extension(path).toLowerCase().replaceFirst('.', '');
-  if (!kAudiobookshelfSubtitleExtensions.contains(ext)) {
+  if (!kAudiobookSubtitleExtensions.contains(ext)) {
     FushiToast.show(
       msg: t.import_unsupported_file_format(ext: '.$ext'),
       severity: ToastSeverity.error,

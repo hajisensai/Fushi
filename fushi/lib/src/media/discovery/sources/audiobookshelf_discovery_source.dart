@@ -13,6 +13,8 @@ library;
 import 'package:http/http.dart' as http;
 
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/audiobook/remote/audiobookshelf_stream_service.dart'
+    show suggestServerSubtitle;
 import 'package:fushi/src/media/discovery/audiobookshelf_server_config.dart';
 import 'package:fushi/src/media/discovery/media_discovery_source.dart';
 import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_api.dart';
@@ -341,9 +343,12 @@ class AudiobookshelfDiscoverySource extends MediaDiscoverySource {
   }
 }
 
-/// 服务器上与这一集随附的文件：字幕或 EPUB，且文件名主干（去掉 `.ja` 之类语言后缀、
-/// 不分大小写）与这一集音频文件的主干**完全相同**。宁缺毋滥：一个播客文件夹里常有
-/// 很多集，挑错了会把别集的字幕挂上来，所以不做「只有一个就是它」的猜测。
+/// 服务器上与这一集随附的文件：字幕 + EPUB，各至多一份。
+///
+/// 字幕走与流式建书同一条推荐规则（[suggestServerSubtitle]：单集只认文件名主干与音频
+/// **完全相同**的，学习语言标记 > 无标记，同名次按格式优先级）。EPUB 同样要求主干
+/// （去掉 `.ja` 之类语言后缀、不分大小写）完全相同。宁缺毋滥：一个播客文件夹里常有
+/// 很多集，挑错了会把别集的文件挂上来，所以不做「只有一个就是它」的猜测。
 List<AudiobookshelfLibraryFile> audiobookshelfEpisodeCompanions(
   AudiobookshelfItemDetail detail,
   AudiobookshelfEpisode episode,
@@ -359,20 +364,19 @@ List<AudiobookshelfLibraryFile> audiobookshelfEpisodeCompanions(
   }
 
   final String audioStem = stem(audioName);
-  final List<AudiobookshelfLibraryFile> out = <AudiobookshelfLibraryFile>[];
-  bool haveSubtitle = false;
-  bool haveEpub = false;
-  for (final AudiobookshelfLibraryFile file in detail.libraryFiles) {
-    if (stem(file.filename) != audioStem) continue;
-    if (file.isSubtitle && !haveSubtitle) {
-      haveSubtitle = true;
-      out.add(file);
-    } else if (file.extension == 'epub' && !haveEpub) {
-      haveEpub = true;
-      out.add(file);
-    }
-  }
-  return out;
+  return <AudiobookshelfLibraryFile>[
+    if (suggestServerSubtitle(detail, episode: episode)
+        case final AudiobookshelfLibraryFile subtitle)
+      subtitle,
+    if (detail.libraryFiles
+            .where(
+              (AudiobookshelfLibraryFile file) =>
+                  file.extension == 'epub' && stem(file.filename) == audioStem,
+            )
+            .firstOrNull
+        case final AudiobookshelfLibraryFile epub)
+      epub,
+  ];
 }
 
 /// 单集落盘文件名：服务器上的原文件名；没有就用标题 + 按 MIME 推的扩展名。

@@ -8,16 +8,14 @@ library;
 
 import 'package:fushi_audio/fushi_audio_core.dart';
 
+import 'package:fushi_engine/media/audiobook/audiobook_subtitle_formats.dart';
 import 'package:fushi_engine/media/audiobook/text_to_epub.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
 
-/// 字幕扩展名（`book_import_dialog.dart` 的选择器同集合；有声书对齐的输入）。
-const Set<String> kDiscoverySubtitleExtensions = <String>{
-  '.srt',
-  '.lrc',
-  '.vtt',
-  '.ass',
-  '.ssa',
+/// 字幕扩展名（带点，`p.extension` 的形状）：有声书字幕唯一真相源
+/// [kAudiobookSubtitleExtensions] 的派生，不另写一份。
+final Set<String> kDiscoverySubtitleExtensions = <String>{
+  for (final String ext in kAudiobookSubtitleExtensions) '.$ext',
 };
 
 /// 需要先解压的压缩包扩展名。zip 走内置解码，7z/rar 依赖 7-Zip 命令行。

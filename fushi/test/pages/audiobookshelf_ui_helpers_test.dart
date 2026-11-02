@@ -214,4 +214,17 @@ void main() {
       expect(entrySpec, isNot(contains('externalDiscovery')));
     });
   });
+
+  test('流式建书：服务器上有对得上的字幕就直接挂上，对不上才弹选择框（源码守卫）', () {
+    final String source = File(
+      'lib/src/pages/implementations/audiobookshelf/audiobookshelf_item_page.dart',
+    ).readAsStringSync().replaceAll(RegExp(r'\s+'), '');
+    expect(
+      source,
+      contains(
+        'finalAudiobookshelfLibraryFile?matched=suggestServerSubtitle(detail,episode:episode,);'
+        'finalAudiobookshelfSubtitleChoice?choice=matched!=null?ServerSubtitleChoice(matched):awaitchooseAudiobookshelfSubtitle(',
+      ),
+    );
+  });
 }

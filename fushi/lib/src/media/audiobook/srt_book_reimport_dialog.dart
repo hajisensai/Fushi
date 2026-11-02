@@ -1,12 +1,24 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
+import 'package:fushi_engine/media/audiobook/audiobook_subtitle_formats.dart';
+import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_api.dart';
+import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_models.dart';
+import 'package:fushi_engine/media/audiobook/audiobookshelf/audiobookshelf_subtitle_book.dart'
+    show downloadAudiobookshelfSubtitle;
 import 'package:fushi_engine/media/import/epub_backed_srt_book.dart';
 import 'package:fushi/src/media/audiobook/book_import_dialog.dart'
     show ImportProgressCard;
+import 'package:fushi/src/pages/implementations/audiobookshelf/audiobookshelf_subtitle_dialog.dart'
+    show chooseAudiobookshelfServerSubtitleFile, orderedServerSubtitles;
+import 'package:fushi/src/pages/implementations/audiobookshelf/audiobookshelf_ui_helpers.dart'
+    show audiobookshelfDescribeError;
 import 'package:fushi/src/media/import/import_dialog_frame.dart';
 import 'package:fushi/src/media/import/import_flow_mixin.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
@@ -43,18 +55,36 @@ class SrtBookReimportDialog extends StatefulWidget {
 
 class _SrtBookReimportDialogState extends State<SrtBookReimportDialog>
     with ImportFlowMixin<SrtBookReimportDialog> {
-  static const Set<String> _subtitleExtensions = <String>{
-    'srt',
-    'lrc',
-    'vtt',
-    'ass',
-    'ssa',
-  };
+  static const Set<String> _subtitleExtensions = kAudiobookSubtitleExtensions;
 
   List<String>? _audioPaths;
   String? _subtitlePath;
   String? _subtitleName;
   bool _pickerActive = false;
+
+  /// 这本书绑在 Audiobookshelf 服务器上时的绑定；只有它在时才出「从服务器选」字幕。
+  RemoteAudioBinding? _serverBinding;
+
+  /// 选中的字幕取自服务器时记下的来源（`server:<ino>`），落到绑定上；本机文件为 null。
+  String? _subtitleOrigin;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_loadServerBinding());
+  }
+
+  Future<void> _loadServerBinding() async {
+    final RemoteAudioBinding? binding = await RemoteAudioBindingRepository(
+      widget.db,
+    ).get(widget.book.uid);
+    if (!mounted ||
+        binding == null ||
+        binding.provider != RemoteAudioBinding.providerAudiobookshelf) {
+      return;
+    }
+    setState(() => _serverBinding = binding);
+  }
 
   bool get _hasChanges =>
       (_audioPaths != null && _audioPaths!.isNotEmpty) || _subtitlePath != null;
@@ -129,6 +159,13 @@ class _SrtBookReimportDialogState extends State<SrtBookReimportDialog>
                       enabled: !importing,
                       onTap: _pickSubtitle,
                       actions: <Widget>[
+                        if (_serverBinding != null)
+                          FushiIconButton(
+                            icon: FushiIcons.cloudDownload,
+                            tooltip: t.srt_book_reimport_subtitle_from_server,
+                            isWideTapArea: true,
+                            onTap: _pickServerSubtitle,
+                          ),
                         FushiIconButton(
                           icon: FushiIcons.folderOpen,
                           tooltip: t.srt_import_pick_subtitle_files,
@@ -236,7 +273,80 @@ class _SrtBookReimportDialogState extends State<SrtBookReimportDialog>
       setState(() {
         _subtitlePath = path;
         _subtitleName = p.basename(path);
+        _subtitleOrigin = null;
       });
+    } finally {
+      _pickerActive = false;
+    }
+  }
+
+  /// 「从服务器选」：列出服务器条目里的字幕（推荐的排第一），取回选中的那份到临时
+  /// 目录，与本机选的字幕走同一条 [reimportSrtBook]，绑定上记成服务器来源。
+  Future<void> _pickServerSubtitle() async {
+    final RemoteAudioBinding? binding = _serverBinding;
+    if (binding == null || _pickerActive || importing) return;
+    final AudiobookshelfApi? api = ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(appProvider).audiobookshelfApiForBinding(binding);
+    if (api == null) {
+      FushiToast.show(
+        msg: t.discovery_audiobookshelf_session_expired,
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
+    _pickerActive = true;
+    try {
+      final String? episodeId = binding.episodeId;
+      // 播客请求非展开形状（与条目页同口径：展开的单集清单大、慢服务器会超时）。
+      final AudiobookshelfItemDetail detail = await api.itemDetail(
+        binding.itemId,
+        expanded: episodeId == null,
+      );
+      final AudiobookshelfEpisode? episode = episodeId == null
+          ? null
+          : detail.episodes
+                .where((AudiobookshelfEpisode e) => e.id == episodeId)
+                .firstOrNull;
+      final List<AudiobookshelfLibraryFile> files = orderedServerSubtitles(
+        detail,
+        episode: episode,
+      );
+      if (!mounted) return;
+      if (files.isEmpty) {
+        FushiToast.show(
+          msg: t.srt_book_reimport_server_no_subtitles,
+          severity: ToastSeverity.info,
+        );
+        return;
+      }
+      final AudiobookshelfLibraryFile? picked =
+          await chooseAudiobookshelfServerSubtitleFile(
+            context: context,
+            files: files,
+          );
+      if (picked == null || !mounted) return;
+      final File downloaded = await downloadAudiobookshelfSubtitle(
+        api: api,
+        itemId: binding.itemId,
+        file: picked,
+      );
+      if (!mounted) return;
+      setState(() {
+        _subtitlePath = downloaded.path;
+        _subtitleName = picked.filename;
+        _subtitleOrigin = RemoteAudioBinding.subtitleOriginServer(picked.ino);
+      });
+    } catch (e) {
+      if (mounted) {
+        FushiToast.show(
+          msg: t.srt_book_reimport_server_failed(
+            reason: audiobookshelfDescribeError(e),
+          ),
+          severity: ToastSeverity.error,
+        );
+      }
     } finally {
       _pickerActive = false;
     }
@@ -271,6 +381,7 @@ class _SrtBookReimportDialogState extends State<SrtBookReimportDialog>
           uid: widget.book.uid,
           audioPaths: _audioPaths,
           subtitlePath: _subtitlePath,
+          subtitleOrigin: _subtitleOrigin,
           onProgress: reportProgress,
           messages: SrtBookReimportMessages(
             parsing: t.import_step_parsing,

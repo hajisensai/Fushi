@@ -1,3 +1,4 @@
+import 'package:fushi_engine/media/audiobook/audiobook_subtitle_formats.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_disc.dart'
     show blurayDiscRootForFile;
 import 'package:path/path.dart' as p;
@@ -25,14 +26,8 @@ const Set<String> kDragBookExtensions = <String>{
   'xml',
 };
 
-/// 字幕扩展名（不带点，小写）。
-const Set<String> kDragSubtitleExtensions = <String>{
-  'srt',
-  'vtt',
-  'ass',
-  'ssa',
-  'lrc',
-};
+/// 字幕扩展名（不带点，小写）= 有声书字幕唯一真相源 [kAudiobookSubtitleExtensions]。
+const Set<String> kDragSubtitleExtensions = kAudiobookSubtitleExtensions;
 
 /// 视频扩展名（不带点，小写）。镜像 [kVideoExtensions]（media_extensions.dart
 /// 共享真相源，文件夹扫描 / 刮削同用一份），守卫测试钉死两者同步——否则拖入

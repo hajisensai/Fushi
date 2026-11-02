@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi_engine/media/audiobook/audiobook_subtitle_formats.dart';
 import 'package:path/path.dart' as p;
 
 /// 导入时在主文件同目录扫描到的同名 sidecar：字幕 + 音频（绝对路径）。
@@ -16,24 +17,13 @@ class SidecarMatch {
   bool get isEmpty => subtitlePath == null && audioPaths.isEmpty;
 }
 
-/// 字幕扩展名优先级（靠前者优先），用于同目录有多个同名字幕时择一。
-const List<String> _subtitleExtPriority = <String>[
-  'srt',
-  'vtt',
-  'ass',
-  'ssa',
-  'lrc',
-];
+/// 字幕扩展名优先级（靠前者优先），用于同目录有多个同名字幕时择一：有声书字幕
+/// 唯一真相源 [kAudiobookSubtitleExtensions] 的迭代顺序（srt > vtt > ass > ssa > lrc）。
+final List<String> _subtitleExtPriority = kAudiobookSubtitleExtensions.toList();
 
 /// 默认字幕扩展集（书籍导入用，含 lrc）。视频导入传入不含 lrc 的子集，与视频
 /// 手选字幕白名单（srt/vtt/ass/ssa）保持一致——避免"自动挂载接受手选拒绝的格式"。
-const Set<String> defaultSubtitleExts = <String>{
-  'srt',
-  'vtt',
-  'ass',
-  'ssa',
-  'lrc',
-};
+const Set<String> defaultSubtitleExts = kAudiobookSubtitleExtensions;
 
 /// 同前缀多段音频判定：stem 之后的余部以分隔符（空白/`.`/`_`/`-`）或数字开头，
 /// 如 `book 01` / `book-02` / `book_03` / `book01`，借此收多段、排除 `bookkeeping`。
