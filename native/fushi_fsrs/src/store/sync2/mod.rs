@@ -1693,6 +1693,8 @@ mod tests_replay_pending;
 #[cfg(test)]
 mod tests_footprint;
 #[cfg(test)]
+mod bootstrap_probe;
+#[cfg(test)]
 mod tests_synthetic_ctx;
 #[cfg(test)]
 mod tests_delivery_window;
