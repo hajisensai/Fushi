@@ -27,7 +27,6 @@ import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
-import 'package:fushi/src/srs/srs_app_host.dart' show srsInheritProviderScope;
 import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi/src/ai/ai_srs_field_assistant.dart';
@@ -47,6 +46,7 @@ import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/srs/srs_navigation.dart';
 
 class SrsNoteEditorPage extends ConsumerStatefulWidget {
   const SrsNoteEditorPage({super.key, this.noteId, this.initialDeckId});
@@ -471,14 +471,9 @@ class _SrsNoteEditorPageState extends ConsumerState<SrsNoteEditorPage> {
           label: t.srs_note_history,
           onPressed: () => srsRunLogged(
             'SrsNoteEditor.history',
-            () => Navigator.of(context).push<void>(
-              adaptivePageRoute<void>(
-                context: context,
-                builder: (_) => srsInheritProviderScope(
-                  context,
-                  SrsEditHistoryPage(noteId: _note!.id),
-                ),
-              ),
+            () => srsPushPage<void>(
+              context,
+              (_) => SrsEditHistoryPage(noteId: _note!.id),
             ),
           ),
         );

@@ -56,6 +56,7 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/srs/srs_change_note_type.dart';
 import 'package:fushi/src/srs/srs_custom_study_flow.dart';
+import 'package:fushi/src/srs/srs_navigation.dart';
 
 /// 行内菜单动作。
 enum _DeckAction {
@@ -162,9 +163,7 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
   }
 
   Future<T?> _push<T>(Widget Function(BuildContext context) builder) async {
-    final T? result = await Navigator.of(
-      context,
-    ).push<T>(adaptivePageRoute<T>(context: context, builder: builder));
+    final T? result = await srsPushPage<T>(context, builder);
     // 子页里写过数据（复习 / 编辑 / 设置）：回来时重读计数。
     if (mounted) bumpSrsRevision(ref);
     return result;
@@ -672,6 +671,26 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
       );
     }
     final SrsDeckListData? list = data.valueOrNull;
+    if (list == null && data.hasValue) {
+      // 读完了但没有库（复习模块关着 / 库不可用）：明说，不当成「还在读」一直转圈。
+      return SafeArea(
+        bottom: false,
+        child: Center(
+          child: FushiPlaceholderMessage(
+            key: const ValueKey<String>('srs-deck-list-unavailable'),
+            icon: FushiIcons.error,
+            tone: FushiPlaceholderTone.error,
+            message: t.srs_engine_unavailable,
+            action: FushiFilledButton.tonalIcon(
+              key: const ValueKey<String>('srs-load-retry'),
+              onPressed: () => ref.invalidate(srsStoreProvider),
+              icon: const FushiIcon(FushiIcons.refresh),
+              label: Text(t.retry),
+            ),
+          ),
+        ),
+      );
+    }
     if (list == null) {
       return const SafeArea(bottom: false, child: FushiLoadingView());
     }

@@ -76,6 +76,7 @@ import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 import 'package:fushi/src/srs/srs_card_appearance.dart'
     show SrsCardAppearance, SrsCardColorSource, srsCardColorScheme;
 import 'package:fushi/src/srs/srs_card_autoplay.dart';
+import 'package:fushi/src/srs/srs_fushi_card_plan.dart' show srsFushiCardPlan;
 import 'package:fushi/src/srs/srs_card_media.dart' show srsMediaNameFromUrl;
 import 'package:fushi/src/srs/srs_change_note_type.dart';
 import 'package:fushi/src/srs/srs_field_catalog.dart' as catalog;
@@ -91,6 +92,7 @@ import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/srs/srs_navigation.dart';
 
 /// 评分按钮上的间隔文案：按界面语言给单位（文案照 Anki 答题按钮：英文 m / h / d /
 /// mo / y，中文 分钟 / 小时 / 天 / 个月 / 年），不再让「1m」与「11.1mo」混着读。
@@ -365,6 +367,15 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
   /// 当前卡上引用了、但媒体库里没有的文件（换卡后异步探一次）：不给它们出重播键，自动
   /// 播放也跳过（#15）。
   Set<String> _missingMedia = const <String>{};
+
+  /// 整面 WebView 卡面上报的「这一面看得见的发音键」（[SrsCardFace.onVisibleSounds]）：
+  /// 问题面 / 答案面各一份，只属于 [_pageSoundsCard] 这张卡；null = 那一面还没上报。
+  String? _pageSoundsCard;
+  List<String>? _pageQuestionSounds;
+  List<String>? _pageAnswerSounds;
+
+  /// 这一面该自动播、但页面还没上报可见发音：等上报到了再播。
+  bool _autoplayPending = false;
 
   @override
   void initState() {
@@ -667,6 +678,12 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
       _showingAnswer = false;
       _missingMedia = const <String>{};
       _editSelection = null;
+      // 换了一张卡：上一张卡页面上报的可见发音作废（同一张卡重新上屏时卡面不一定重报，留着）。
+      if (_pageSoundsCard != detail?.card.id) {
+        _pageSoundsCard = null;
+        _pageQuestionSounds = null;
+        _pageAnswerSounds = null;
+      }
     });
     unawaited(_probeMedia(_shownGeneration));
     _answerClock
@@ -754,24 +771,62 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
   /// 一张卡两面的媒体清单（问题面、答案面，按卡面从上到下的顺序，保留重复以便按次数
   /// 扣掉 `{{FrontSide}}` 带过来的）。
   ///
-  /// 原生 Fushi 卡面按字段取它**实际画出来**的发音键与片段（[srsFushiCardMedia]）——不再扫
-  /// 整面答案 HTML：释义区里词典自带的音频、模板复制的多份容器都不是卡面上的按钮（#15）。
-  /// 整面 WebView 卡面按 Anki 的 `[sound:]` 标记。
+  /// 只收卡面上**看得见**的（HrB0STYm3E），与卡面同一来源：
+  /// - 原生 Fushi 卡面：[srsFushiCardPlan]（字段 + 外观区块显隐），与 `SrsFushiCardView` 画发音键
+  ///   / 片段用的是同一份计划——关了「显示图片」的片段、没画出来的例句块里的例句音频都不在里面；
+  ///   释义区里词典自带的音频、模板复制的多份容器也不是卡面上的按钮（#15）。
+  /// - 整面 WebView 卡面：页面渲染后上报的可见发音键（[SrsCardFace.onVisibleSounds]），不再用
+  ///   正则扫整张 HTML（CSS 隐藏的容器、收起的 `<details>` 里的也会被扫进来）。还没上报的那一面
+  ///   按空算。
   ({List<String> question, List<String> answer}) _mediaOf(
     SrsRenderedCard rendered,
   ) {
     if (rendered.fushiCardDefinitions != null) {
-      final SrsFushiCardMedia media = srsFushiCardMedia(
+      final SrsFushiCardMedia media = srsFushiCardPlan(
         rendered.fields,
-        audioCardFront:
-            srsFushiFrontKind(rendered.fields) == SrsFushiFrontKind.audio,
-      );
+        ref.read(srsCardAppearanceProvider),
+      ).media;
       return (question: media.front, answer: media.back);
     }
+    final bool current =
+        _pageSoundsCard != null && _pageSoundsCard == _detail?.card.id;
     return (
-      question: srsCardSoundNames(rendered.question),
-      answer: srsCardSoundNames(rendered.answer),
+      question: current
+          ? _pageQuestionSounds ?? const <String>[]
+          : const <String>[],
+      answer: current
+          ? _pageAnswerSounds ?? const <String>[]
+          : const <String>[],
     );
+  }
+
+  /// 这一面的可见发音页面报上来没有（原生卡面不靠上报，总是现成的）。
+  bool _faceSoundsKnown(SrsRenderedCard rendered, {required bool answerSide}) {
+    if (rendered.fushiCardDefinitions != null) return true;
+    if (_pageSoundsCard == null || _pageSoundsCard != _detail?.card.id) {
+      return false;
+    }
+    return (answerSide ? _pageAnswerSounds : _pageQuestionSounds) != null;
+  }
+
+  /// 整面 WebView 卡面上报这一面看得见的发音键（[SrsCardFace.onVisibleSounds]）。
+  void _onVisibleSounds(String cardId, bool answerSide, List<String> names) {
+    if (!mounted || cardId != _detail?.card.id) return;
+    setState(() {
+      if (_pageSoundsCard != cardId) {
+        _pageSoundsCard = cardId;
+        _pageQuestionSounds = null;
+        _pageAnswerSounds = null;
+      }
+      if (answerSide) {
+        _pageAnswerSounds = List<String>.unmodifiable(names);
+      } else {
+        _pageQuestionSounds = List<String>.unmodifiable(names);
+      }
+    });
+    unawaited(_probeMedia(_shownGeneration));
+    // 这一面正等着上报才能自动播：现在播（换主题后的重报不会再触发自动播放）。
+    if (_autoplayPending && answerSide == _showingAnswer) _autoplayAudio();
   }
 
   /// 去掉媒体库里没有的文件。
@@ -810,8 +865,16 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
 
   /// 当前这一面的音频要不要自动播：开关关着时只打断上一张卡还在播的序列。
   void _autoplayAudio() {
+    _autoplayPending = false;
     final SrsRenderedCard? rendered = _rendered;
     if (rendered == null || !_autoplayEnabled) {
+      srsRunLogged('SrsReviewPage.stopAudio', _audio.cancel);
+      return;
+    }
+    if (!_faceSoundsKnown(rendered, answerSide: _showingAnswer)) {
+      // 整面 WebView 卡面还没报上这一面看得见哪些发音：先停掉上一面的序列，上报到了再播
+      // （[_onVisibleSounds]）。
+      _autoplayPending = true;
       srsRunLogged('SrsReviewPage.stopAudio', _audio.cancel);
       return;
     }
@@ -1258,11 +1321,9 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     };
     final List<String> tagsBefore = List<String>.of(detail.note.tags);
     await _focusOwnership.guardOverlay(
-      () => Navigator.of(context).push<void>(
-        adaptivePageRoute<void>(
-          context: context,
-          builder: (_) => SrsNoteEditorPage(noteId: detail.note.id),
-        ),
+      () => srsPushPage<void>(
+        context,
+        (_) => SrsNoteEditorPage(noteId: detail.note.id),
       ),
     );
     if (!mounted) return;
@@ -1589,14 +1650,12 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
   Future<void> _openBrowse() async {
     final SrsCardDetail? detail = _detail;
     if (detail == null) return;
-    await Navigator.of(context).push<void>(
-      adaptivePageRoute<void>(
-        context: context,
-        builder: (_) => SrsBrowsePage(
-          initialCardId: detail.card.id,
-          onChangeNoteType: showSrsChangeNoteTypeFlow,
-          onMigrateToFushiCard: srsMigrateNotesToFushiCard,
-        ),
+    await srsPushPage<void>(
+      context,
+      (_) => SrsBrowsePage(
+        initialCardId: detail.card.id,
+        onChangeNoteType: showSrsChangeNoteTypeFlow,
+        onMigrateToFushiCard: srsMigrateNotesToFushiCard,
       ),
     );
     if (mounted) await _reloadCurrent();
@@ -1626,13 +1685,11 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
       icon: FushiIcons.code,
       label: t.srs_card_edit_template(name: detail.noteType.name),
       onPressed: () => srsRunLogged('SrsReview.editTemplate', () async {
-        await Navigator.of(context).push<void>(
-          adaptivePageRoute<void>(
-            context: context,
-            builder: (_) => SrsTemplateEditorPage(
-              noteTypeId: detail.noteType.id,
-              templateId: tpl.id,
-            ),
+        await srsPushPage<void>(
+          context,
+          (_) => SrsTemplateEditorPage(
+            noteTypeId: detail.noteType.id,
+            templateId: tpl.id,
           ),
         );
         if (mounted) bumpSrsRevision(ref);
@@ -1728,11 +1785,9 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
 
   Future<void> _openDeckSettings(String deckId) async {
     await _focusOwnership.guardOverlay(
-      () => Navigator.of(context).push<void>(
-        adaptivePageRoute<void>(
-          context: context,
-          builder: (_) => SrsDeckSettingsPage(deckId: deckId),
-        ),
+      () => srsPushPage<void>(
+        context,
+        (_) => SrsDeckSettingsPage(deckId: deckId),
       ),
     );
     if (!mounted) return;
@@ -2229,6 +2284,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
       // （BUG-3546）；`[sound:]` 由 [_autoplayAudio] 按同一开关处理。
       autoplayMedia: _autoplayEnabled,
       onPlayAudio: _playNames,
+      onVisibleSounds: _onVisibleSounds,
       onCardGesture: _onCardGesture,
       gestureArming: gestureArming,
       onEditSelection: inlineEdit ? _onEditSelection : null,

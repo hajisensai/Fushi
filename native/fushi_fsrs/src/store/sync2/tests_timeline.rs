@@ -290,3 +290,121 @@ fn restore_cuts_migrated_history_at_its_original_time() {
     let t1 = value_at(&w, P, EntKind::NoteType, "NT", "tmplDef/t1", None).unwrap().unwrap();
     assert_eq!(t1["front"], json!("{{fld:x}}"));
 }
+
+/// 迁移来的、一条修改都没有的内置实体（审查 PR #2775）：内置牌组 / 内置笔记类型的名字、字段、模板跟随代码，旧库里
+/// 没有任何修改记录；迁移的身份记录墙钟是迁移时刻。恢复到迁移之前的任意时刻都不能把它们当成「之后才建的」删掉
+/// （迁移之后本机才改过的也一样，那次修改照常改回）。有内容的非内置实体仍按内容的原始时刻判。
+#[test]
+fn restore_before_migration_keeps_migrated_builtins_without_edits() {
+    let mig = T0 + 10_000;
+    let a = Device::new("tl-legacy-bare");
+    let deck = super::super::config::default_deck_id(P);
+    {
+        let w = a.core.writer().unwrap();
+        let rows: [(&str, &str, &str); 4] = [
+            (&deck, "deck", r#"{"builtin":"default"}"#),
+            (
+                "NT-lapis",
+                "notetype",
+                r#"{"builtin":"lapis","ntKind":"standard"}"#,
+            ),
+            (
+                "NT-fushi",
+                "notetype",
+                r#"{"ankiNum":1,"builtin":"fushi_card","ntKind":"standard"}"#,
+            ),
+            (
+                "N1",
+                "note",
+                r#"{"createdAt":1,"guid":"g1","noteTypeId":"NT-lapis"}"#,
+            ),
+        ];
+        for (id, kind, payload) in rows {
+            w.execute(
+                "INSERT INTO srs_entities (id, profile_uid, kind, payload_json, created_at) VALUES (srs_id(?1), srs_id(?2), ?3, ?4, 1)",
+                rusqlite::params![id, P, kind, payload],
+            )
+            .unwrap();
+        }
+        let eid = crate::registers::edit_id("old", 1);
+        let j = json!({"ctx": {"vv": {}}, "e": "N1", "f": "f/x", "hlc": format!("{}:0:old", T0 + 100), "id": eid,
+            "k": "note", "p": P, "s": 1, "ts": "wall", "v": "legacy", "w": "old"});
+        w.execute(
+            "INSERT INTO srs_field_edits (id, profile_uid, entity_kind, entity_id, field_key, writer_id, seq, jslim) \
+             VALUES (srs_id(?1), srs_id(?2), 'note', srs_id('N1'), 'f/x', 'old', 1, ?3)",
+            rusqlite::params![eid, P, j.to_string()],
+        )
+        .unwrap();
+    }
+    a.core.sync2_migrate(P, mig, None).unwrap();
+    // 迁移之后本机才改了内置牌组的名字。
+    a.apply(
+        mig + 1000,
+        vec![edit("deck", &deck, "name", json!("Renamed"))],
+    );
+    let plan = |t: i64| {
+        a.core
+            .sync2_plan_restore(P, &RestoreTarget::At(t), true, mig + 5000)
+            .unwrap()
+    };
+    // 早于一切旧内容：只删内容全在那之后的 N1；三个内置实体都留下，内置牌组的名字改回「没有记录」（跟随代码）。
+    assert_eq!(
+        plan(T0),
+        json!({"fields": 1, "removed": 1, "reviews": 0, "revived": 0, "tags": 0})
+    );
+    // 旧内容之后、迁移之前：什么都不删。
+    assert_eq!(
+        plan(T0 + 500),
+        json!({"fields": 1, "removed": 0, "reviews": 0, "revived": 0, "tags": 0})
+    );
+    a.core
+        .sync2_restore(P, &RestoreTarget::At(T0 + 500), false, mig + 5000)
+        .unwrap();
+    let w = a.core.writer().unwrap();
+    for (kind, id) in [
+        (EntKind::Deck, deck.as_str()),
+        (EntKind::NoteType, "NT-lapis"),
+        (EntKind::NoteType, "NT-fushi"),
+        (EntKind::Note, "N1"),
+    ] {
+        assert_eq!(
+            value_at(&w, P, kind, id, "deleted", None).unwrap(),
+            None,
+            "{id}"
+        );
+    }
+    assert_eq!(
+        value_at(&w, P, EntKind::Deck, &deck, "name", None).unwrap(),
+        Some(Value::Null)
+    );
+}
+
+/// 本机新建的实体：身份记录与内容都不在截面里就是之后才建的，照删（含没有任何内容的）；内置的不删。
+#[test]
+fn restore_removes_native_entities_created_after_but_never_builtins() {
+    let a = Device::new("tl-bare-native");
+    a.apply(
+        T0,
+        vec![entity(
+            "note",
+            "N0",
+            json!({"createdAt": T0, "guid": "N0", "noteTypeId": "NT"}),
+        )],
+    );
+    a.apply(
+        T0 + 1000,
+        vec![
+            entity(
+                "note",
+                "N1",
+                json!({"createdAt": 1, "guid": "N1", "noteTypeId": "NT"}),
+            ),
+            entity("deck", "D-bi", json!({"builtin": "other"})),
+        ],
+    );
+    let p = a
+        .core
+        .sync2_plan_restore(P, &RestoreTarget::At(T0 + 500), false, T0 + 2000)
+        .unwrap();
+    assert_eq!(p["removed"], json!(1), "{p}");
+}

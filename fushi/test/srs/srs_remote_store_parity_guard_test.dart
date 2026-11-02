@@ -197,4 +197,55 @@ void main() {
     expect(hostOps, contains('answerAndStudy'), reason: '操作表解析失效');
     expect(clientOps.difference(hostOps), isEmpty);
   });
+
+  // 复习页面可能跑在子作用域里（远程复习 / 浏览器扩展选的别的配置）：路由建在导航器 overlay 里、不在调用方
+  // 子树下，裸压页面会落回根作用域、读写本机激活配置的库（PR #2767 审查的阻断项）。复习模块里压页面只经
+  // srs_navigation.dart 的 srsPushPage / srsPageRoute。srs_app_host.dart 是 Riverpod 图外的宿主入口（查词窗
+  // 桥 / API 服务器），用根导航器并显式带 overrides，不算。
+  test('复习模块里压页面一律经 srsPushPage（沿用调用方的 provider 作用域）', () {
+    const Set<String> exempt = <String>{
+      'lib/src/srs/srs_navigation.dart',
+      'lib/src/srs/srs_app_host.dart',
+    };
+    final RegExp raw = RegExp(
+      r'adaptivePageRoute\s*[<(]|\b(Material|Cupertino)PageRoute\s*[<(]|'
+      r'PageRouteBuilder\s*[<(]|Navigator\s*\.\s*push\w*\s*[<(]|'
+      r'Navigator\s*\.\s*(?:of|maybeOf)\s*\(\s*context\s*,?\s*\)\s*[.!?]*\s*push\w*\s*[<(]',
+    );
+    final List<String> files = <String>[
+      for (final String dir in <String>[
+        'lib/src/pages/implementations/srs',
+        'lib/src/srs',
+      ])
+        for (final FileSystemEntity e in Directory(dir).listSync())
+          if (e is File && e.path.endsWith('.dart'))
+            e.path.replaceAll(r'\', '/'),
+    ];
+    expect(
+      files,
+      contains('lib/src/pages/implementations/srs/srs_review_page.dart'),
+    );
+    final List<String> offenders = <String>[];
+    for (final String path in files) {
+      if (exempt.contains(path)) continue;
+      final List<String> lines = _read(path).split('\n');
+      for (int i = 0; i < lines.length; i++) {
+        final String code = lines[i].split('//').first;
+        if (raw.hasMatch(code)) {
+          offenders.add('$path:${i + 1}: ${lines[i].trim()}');
+        }
+      }
+    }
+    // 跨行写法（`Navigator.of(\n context,\n ).push`）：整文件去注释后再扫一遍。
+    for (final String path in files) {
+      if (exempt.contains(path)) continue;
+      final String src = _read(path).replaceAll(RegExp(r'//[^\n]*'), '');
+      if (RegExp(
+        r'Navigator\s*\.\s*(?:of|maybeOf)\s*\([^;]*?\)\s*\.\s*push\w*\s*[<(]',
+      ).hasMatch(src)) {
+        offenders.add('$path: Navigator.of(...).push');
+      }
+    }
+    expect(offenders, isEmpty, reason: '改用 srsPushPage(context, builder)');
+  });
 }

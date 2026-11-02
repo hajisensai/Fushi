@@ -19,6 +19,7 @@ import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_remote_review_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_review_page.dart';
 import 'package:fushi/src/srs/srs_card_media.dart';
+import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/srs/srs_remote_store_client.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
@@ -408,6 +409,134 @@ void main() {
         () => host.store.history(first),
       ))!;
       expect(afterStale.lastEffective?.rating, 4, reason: '这次评分没记');
+
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pump(const Duration(seconds: 1));
+    });
+
+    // 远程牌组列表压出的页面（复习 / 浏览 / 牌组设置 / 添加笔记）必须沿用远程作用域：路由建在导航器的
+    // overlay 里，不经 srsPushPage 就会落回根作用域、读写本机库（PR #2767 审查的阻断项）。
+    testWidgets('远程牌组列表压出的复习 / 浏览 / 牌组设置 / 添加笔记都读写主机的库，不碰本机库', (
+      WidgetTester tester,
+    ) async {
+      tester.view.physicalSize = const Size(1200, 1400);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final _Host host = (await tester.runAsync(
+        () => _openHost(<String>['犬', '猫']),
+      ))!;
+      addTearDown(() => tester.runAsync(host.db.close));
+      // 根作用域里另有一份本机库（同一 profile、同 ID 的默认牌组，但没有卡）：页面若落回根作用域会读写它。
+      final (FushiDatabase localDb, SrsDbStore local) = (await tester.runAsync(
+        () => openSrsTestStore(deviceId: 'local'),
+      ))!;
+      addTearDown(() => tester.runAsync(localDb.close));
+      final Directory dir = Directory.systemTemp.createTempSync('srs_rd_');
+      addTearDown(() => dir.deleteSync(recursive: true));
+      final SrsRemoteHostClient client = host.client();
+      final SrsRemoteMediaStore media = SrsRemoteMediaStore(dir, client);
+      final SrsRemoteStore remote = (await tester.runAsync(
+        () => SrsRemoteStore.connect(client, prefetchMedia: media.prefetch),
+      ))!;
+      final int localRevision = local.revision;
+      final AppModel app = AppModel(testPlatformServices())
+        ..shortcutRegistry.loadDefaults(TargetPlatform.windows);
+      final List<SrsCardFace> faces = <SrsCardFace>[];
+      final GlobalKey<NavigatorState> nav = GlobalKey<NavigatorState>();
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: <Override>[
+            appProvider.overrideWith((Ref ref) => app),
+            srsStoreProvider.overrideWith((Ref ref) async => local),
+            srsCardFaceBuilderProvider.overrideWithValue((
+              BuildContext context,
+              SrsCardFace face,
+            ) {
+              faces.add(face);
+              return SrsPlainCardFace(face: face);
+            }),
+          ],
+          child: TranslationProvider(
+            child: MaterialApp(
+              navigatorKey: nav,
+              theme: buildFushiThemeData(
+                scheme: ColorScheme.fromSeed(seedColor: Colors.teal),
+                textTheme: Typography.material2021().black,
+                designSystem: FushiDesignSystem.material,
+                glass: FushiGlassMaterial.off,
+                glassDesign: false,
+              ),
+              builder: (BuildContext context, Widget? child) =>
+                  FushiGlassScope(child: child!),
+              home: SrsRemoteCollectionScope(
+                store: remote,
+                media: media,
+                child: const SrsRemoteDeckListPage(hostName: 'Host'),
+              ),
+            ),
+          ),
+        ),
+      );
+      await settle(tester);
+
+      /// 压出的页面打开期间主机收到的操作（页面经远程库读数据才会有）。
+      Future<List<String>> opsWhileOpen(Future<void> Function() open) async {
+        final int before = host.ops.length;
+        await open();
+        await settle(tester);
+        final List<String> during = host.ops.sublist(before);
+        nav.currentState!.pop();
+        await settle(tester);
+        return during;
+      }
+
+      // 复习：点牌组 → 出的是主机的卡，评分记在主机库。
+      final Finder deckRow = find.byKey(
+        ValueKey<String>('srs_remote_deck_${remote.defaultDeckId}'),
+      );
+      expect(deckRow, findsOneWidget);
+      await tester.tap(deckRow);
+      await settle(tester);
+      expect(find.byType(SrsReviewPage), findsOneWidget);
+      expect(faces, isNotEmpty, reason: '复习页读到的是主机库的卡（本机库没有卡）');
+      final String first = faces.last.cardId;
+      await tester.sendKeyEvent(LogicalKeyboardKey.space);
+      await settle(tester, rounds: 6);
+      await tester.sendKeyEvent(LogicalKeyboardKey.digit3);
+      await settle(tester);
+      final SrsCardHistory rated = (await tester.runAsync(
+        () => host.store.history(first),
+      ))!;
+      expect(rated.all, hasLength(1), reason: '评分记在主机库');
+      expect(host.ops, contains('answerAndStudy'));
+      nav.currentState!.pop();
+      await settle(tester);
+
+      // 浏览、添加笔记（顶栏）与牌组设置（⋯）：页面打开期间的读取都打到主机。
+      final List<String> browseOps = await opsWhileOpen(
+        () =>
+            tester.tap(find.byKey(const ValueKey<String>('srs_remote_browse'))),
+      );
+      expect(browseOps, contains('browseCommand'), reason: '浏览会话跑在主机库上');
+      final List<String> addOps = await opsWhileOpen(
+        () => tester.tap(
+          find.byKey(const ValueKey<String>('srs_remote_add_note')),
+        ),
+      );
+      expect(addOps, isNotEmpty, reason: '添加笔记页读的是主机库');
+      final List<String> settingsOps = await opsWhileOpen(() async {
+        await tester.tap(
+          find.byKey(
+            ValueKey<String>('srs_remote_deck_menu_${remote.defaultDeckId}'),
+          ),
+        );
+        await settle(tester, rounds: 6);
+        await tester.tap(find.text(t.srs_deck_settings).last);
+      });
+      expect(settingsOps, isNotEmpty, reason: '牌组设置页读的是主机库');
+
+      expect(local.revision, localRevision, reason: '本机库没被写过');
+      expect((await tester.runAsync(() => local.history(first)))!.all, isEmpty);
 
       await tester.pumpWidget(const SizedBox.shrink());
       await tester.pump(const Duration(seconds: 1));

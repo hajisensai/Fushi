@@ -14,6 +14,7 @@
 library;
 
 import 'dart:async';
+import 'dart:convert' show jsonEncode;
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -21,8 +22,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/srs/srs_card_video_channel.dart';
-import 'package:fushi/src/srs/srs_fushi_card_fields.dart'
-    show srsAudioSources, srsVideoSources;
 import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/misc/desktop_audio_playback.dart';
@@ -156,7 +155,9 @@ List<String> srsReplayOf({
 
 // ------------------------------------------------------------------ 原生 Fushi 卡面
 
-/// 原生 Fushi 卡面上**实际画出来**的媒体（按字段，不扫整面 HTML）。
+/// 原生 Fushi 卡面上**实际画出来**的媒体（按字段，不扫整面 HTML）。只由
+/// `srsFushiCardPlan`（srs_fushi_card_plan.dart）构造：那里按区块显隐过滤，卡面上没画的区块
+/// 里的媒体不进来（HrB0STYm3E：关了「显示图片」片段照样出声、例句为空例句音频照样自动播）。
 ///
 /// 原生卡面只画三样会出声的东西：词条旁的单词音频键（`ExpressionAudio`）、Picture 里的视频
 /// 片段、例句卡里的例句音频键（`SentenceAudio`）。以前复习页按整张背面 HTML 收集媒体
@@ -205,26 +206,6 @@ class SrsFushiCardMedia {
   /// 时它只陪播画面（静音），不单独进序列——否则例句音频之后片段再出一遍声。
   List<String> get back =>
       srsDedupeMediaNames(<String>[...word, ...sentenceUnit]);
-}
-
-/// 从笔记字段（按字段名）算出原生 Fushi 卡面的媒体。[audioCardFront] = 卡型是听力卡
-/// （正面放一颗发音键：有例句音频播例句，否则播单词音频，与模板 `{{#SentenceAudio}}` 同义）。
-SrsFushiCardMedia srsFushiCardMedia(
-  Map<String, String> fields, {
-  required bool audioCardFront,
-}) {
-  final List<String> word = srsAudioSources(fields['TermAudio'] ?? '');
-  final List<String> sentence = srsAudioSources(fields['SentenceAudio'] ?? '');
-  final String? clip = srsVideoSources(fields['Media'] ?? '').firstOrNull;
-  final List<String> front = !audioCardFront
-      ? const <String>[]
-      : <String>[?(sentence.isNotEmpty ? sentence.first : word.firstOrNull)];
-  return SrsFushiCardMedia(
-    front: front,
-    word: word,
-    clip: clip,
-    sentence: sentence,
-  );
 }
 
 /// 答案面「新出现」的音频：从答案面音频里按次数扣掉问题面的（`{{FrontSide}}` 带过来的）。
@@ -576,3 +557,72 @@ const String kSrsCardAutoplayGateScript = r'''
 /// 下发自动播放开关的调用（见 [kSrsCardAutoplayGateScript]）。
 String srsCardSetAutoplayScript({required bool autoplay}) =>
     'if(window.__fushiSrsSetAutoplay)window.__fushiSrsSetAutoplay($autoplay);';
+
+// ------------------------------------------------------------------ 页内可见发音上报
+
+/// 页面 → 宿主：这一面卡**渲染后看得见**的 `[sound:]` 发音键（HrB0STYm3E）。
+const String kSrsVisibleSoundsHandler = 'onSrsVisibleSounds';
+
+/// 换卡时随卡片一起下发的「这是哪一面」标记：页面上报可见发音时原样带回，宿主据此丢掉
+/// 已经换走的那一面的迟到上报。
+String srsCardFaceMediaToken({
+  required String cardId,
+  required bool showingAnswer,
+}) => '${showingAnswer ? 'a' : 'q'}|$cardId';
+
+/// 写入 [srsCardFaceMediaToken]（JSON 字面量，卡号里的引号 / 反斜杠逃不出字符串）。
+String srsCardSetFaceTokenScript(String token) =>
+    'window.__fushiSrsFaceToken=${jsonEncode(token)};';
+
+/// 整面 WebView 卡面：收集卡面根下**渲染后可见**的 `[sound:]` 发音键（`data-sound`），按文档
+/// 顺序、保留重复（宿主按次数扣掉 `{{FrontSide}}` 带过来的）。
+///
+/// 以前宿主用正则扫整张答案 HTML 的 `[sound:]`：CSS 隐藏的容器（Lapis 把音频容器复制多份、
+/// 只显示一处）、收起的 `<details>` 里的音频全被收进自动播放与重播（「隐藏的也播」）。可见性
+/// 只有页面自己知道，所以由页面判定：没有布局盒（`display:none` 祖先 / 收起的 `<details>`
+/// 内容 / 不在文档里）、自身 `visibility:hidden`、祖先链上 `opacity:0` 的都不算。
+/// 外壳在卡片脚本与钩子都跑完后（以及换主题后）调用一次，经 [kSrsVisibleSoundsHandler] 上报。
+const String kSrsCardVisibleSoundsScript = r'''
+(function(){
+  if (window.__fushiSrsVisibleSounds) return;
+  function styleOf(n){
+    try { return window.getComputedStyle ? window.getComputedStyle(n) : null; }
+    catch (e) { return null; }
+  }
+  function inClosedDetails(el){
+    var child = el;
+    for (var d = el.parentElement; d; child = d, d = d.parentElement) {
+      if (d.tagName !== 'DETAILS' || d.open) continue;
+      // 收起的 <details> 只渲染它直属的 <summary>。
+      if (!(child.tagName === 'SUMMARY' && child.parentElement === d)) return true;
+    }
+    return false;
+  }
+  function shown(el){
+    if (typeof el.getClientRects !== 'function') return false;
+    if (el.getClientRects().length === 0) return false;
+    if (inClosedDetails(el)) return false;
+    var own = styleOf(el);
+    if (own && (own.visibility === 'hidden' || own.visibility === 'collapse')) {
+      return false;
+    }
+    for (var n = el; n && n.nodeType === 1; n = n.parentElement) {
+      var cs = n === el ? own : styleOf(n);
+      if (!cs) continue;
+      if (cs.display === 'none') return false;
+      if (parseFloat(cs.opacity) === 0) return false;
+    }
+    return true;
+  }
+  window.__fushiSrsVisibleSounds = function(root){
+    var out = [];
+    if (!root || typeof root.querySelectorAll !== 'function') return out;
+    var list = root.querySelectorAll('[data-sound]');
+    for (var i = 0; i < list.length; i++) {
+      var name = list[i].getAttribute('data-sound');
+      if (name && shown(list[i])) out.push(name);
+    }
+    return out;
+  };
+})();
+''';

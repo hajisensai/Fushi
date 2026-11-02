@@ -119,7 +119,8 @@ class SrsFolderSyncReport {
 /// 抛 [FileSystemException]，调用方记一次、下次再试。
 ///
 /// 旧根的媒体残留：给了 [v1MediaMigrations] 就交给它在后台跑（[onV1Bound] = 补了绑定、请一轮同步发出去；
-/// [shouldStop] = 库要关了），否则在这一轮里跑完（只搬能搬的，按名字存的旧文件等下一轮发布了绑定再删）。
+/// [shouldStop] = 库要关了 / 位置被关掉），否则在这一轮里跑完（只搬能搬的，按名字存的旧文件等下一轮发布了绑定再删）。
+/// [shouldStop] 也管这一轮本身：操作同步每批之后、完整媒体对账开头前看一次，为真就以 [kSrsSync2Stopped] 交回。
 Future<SrsFolderSyncReport> srsSyncFolderLocation({
   required SrsFolderLocation location,
   required SrsDbStore store,
@@ -172,6 +173,7 @@ Future<SrsFolderSyncReport> srsSyncFolderLocation({
       key: key,
       // 勾了归档就一个旧 head 也不删（归档位置永不删除，§10.3）。
       archive: location.archive,
+      shouldStop: shouldStop,
       // 媒体先于引用它的段（设计 §6.1 写入纪律 3，审查 S-10）：发段之前先把本机的媒体传上去。这一步出错不拦操作
       // 同步——同一个错误在下面的完整媒体对账里照样抛给调用方。
       beforeUpload: mediaRoot != null && (location.media || location.archive)
@@ -241,6 +243,13 @@ Future<SrsFolderSyncReport> srsSyncFolderLocation({
     onBound: onV1Bound,
     shouldStop: shouldStop,
   );
+  if (shouldStop?.call() ?? false) {
+    // 收手了（库要关 / 位置被关掉）：完整媒体对账不开头，按「收手」交回（调度器不记成这个位置的错）。
+    return SrsFolderSyncReport(
+      ops: (ops ?? handshake ?? SrsSync2Report())..error = kSrsSync2Stopped,
+      prepared: prepared,
+    );
+  }
   SrsMediaSyncReport? media;
   if (mediaRoot != null && (location.media || location.archive)) {
     media = await srsSyncMedia(

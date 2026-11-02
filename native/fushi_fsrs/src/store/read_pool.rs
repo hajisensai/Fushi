@@ -372,6 +372,37 @@ mod tests {
         assert_eq!(core.drift_readers.live(), cap);
     }
 
+    /// 查询道把池借满（几条长读各占一条）时，写那一路（mode 2，[SrsCore::select]）的事务外查询不在池上等：
+    /// 它有自己的一条只读连接，立即返回（PR 2771 审查：否则写 isolate 上排在它后面的所有写都跟着等长读）。
+    #[test]
+    fn writer_lane_query_does_not_wait_for_a_full_pool() {
+        let core = Arc::new(open("writer_lane"));
+        insert(&core, "a");
+        let cap = core.read_concurrency();
+        let held: Vec<_> = (0..cap)
+            .map(|_| core.drift_readers.get().unwrap())
+            .collect();
+        let (tx, rx) = mpsc::channel::<Value>();
+        let t = {
+            let core = Arc::clone(&core);
+            std::thread::spawn(move || tx.send(scalar(&core.select(COUNT, &[]).unwrap())).unwrap())
+        };
+        let seen = rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("writer-lane query waited for the full read pool");
+        assert_eq!(seen, Value::Integer(1));
+        t.join().unwrap();
+        assert_eq!(
+            core.drift_readers.live(),
+            cap,
+            "writer-lane query borrowed from the read pool"
+        );
+        // 写后立即读：写那一路的专用连接同样看得见刚提交的行。
+        insert(&core, "b");
+        assert_eq!(scalar(&core.select(COUNT, &[]).unwrap()), Value::Integer(2));
+        drop(held);
+    }
+
     /// 关闭等借出的连接放回再返回；返回时池子开过的连接全关了，之后的查询报「已关闭」。
     #[test]
     fn close_waits_for_borrowed_connections_and_closes_them_all() {

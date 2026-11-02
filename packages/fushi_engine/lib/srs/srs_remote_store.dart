@@ -506,7 +506,8 @@ class SrsRemoteStoreService {
   /// 卡面引用的媒体字节；名字不合法 / 不存在时 null。
   Future<Uint8List?> media(String name) => _readMedia(name);
 
-  /// 执行一次调用。[profile] 是客户端以为的 profile（null = 握手，不核对）；[request] 是写操作的幂等 id。
+  /// 执行一次调用。[profile] 是客户端以为的 profile（读操作可为 null = 握手，不核对；写操作必须带，
+  /// 主机切了配置时拒绝写入，不靠客户端自觉）；[request] 是写操作的幂等 id。
   ///
   /// 回包：`{profile, rev, fp, tt, now, ts, sched, rwkv, result}`——`rev` / `fp` 是主机的修订号与统计指纹，
   /// `tt` 是牌组树标签（客户端据此判断缓存的树还新不新），`now` / `ts` 是主机此刻的复习时钟。
@@ -523,7 +524,10 @@ class SrsRemoteStoreService {
       );
     }
     if (!spec.write) return _run(spec, profile, args);
-    if (request == null || request.isEmpty) {
+    if (request == null ||
+        request.isEmpty ||
+        profile == null ||
+        profile.isEmpty) {
       return Future<Map<String, Object?>>.error(
         const SrsRemoteStoreError(400, SrsRemoteStoreError.badRequest),
       );
@@ -742,8 +746,17 @@ class SrsRemoteStoreService {
       ),
     ),
     'syncConflicts': _Op((SrsDbStore s, _Args a) async {
+      // 只查一个实体（牌组设置页）：`entityKind` / `entityId` 同时给。
+      final String? entityId = a.optStr('entityId');
       final List<(SrsEntityKind, String, SrsRegister)> all = await s
-          .syncConflicts();
+          .syncConflicts(
+            entity: entityId == null
+                ? null
+                : (
+                    kind: SrsRemoteWire.kindFrom(a.raw('entityKind')),
+                    id: entityId,
+                  ),
+          );
       final Map<String, Object?> edits = <String, Object?>{};
       for (final (SrsEntityKind kind, String id, _) in all) {
         final String k = '${kind.wire}/$id';
@@ -803,19 +816,31 @@ class SrsRemoteStoreService {
     // ------------------------------------------------------------ 写
     'answerAndStudy': _Op(write: true, (SrsDbStore s, _Args a) async {
       final String card = a.str('card');
-      if (a.raw('checkBase') == true) {
-        final SrsCardCacheRow? row = await s.cardRow(card);
-        if (row == null || row.lastLogId != a.optStr('base')) {
-          throw const SrsRemoteStoreError(409, SrsRemoteStoreError.stale);
-        }
-      }
-      final SrsAnswerOutcome out = await s.answerAndStudy(
-        card,
-        a.integer('rating'),
-        durationMs: a.integer('durationMs').clamp(0, kSrsMaxAnswerDurationMs),
-        studyDeckId: a.optStr('deck'),
-        custom: SrsRemoteWire.customStudyFrom(a.raw('custom')),
+      final int rating = a.integer('rating');
+      final int durationMs = a
+          .integer('durationMs')
+          .clamp(0, kSrsMaxAnswerDurationMs);
+      final String? deck = a.optStr('deck');
+      final SrsCustomStudy? custom = SrsRemoteWire.customStudyFrom(
+        a.raw('custom'),
       );
+      // 核对基准与记日志在同一个写独占区里：否则两次 await 之间主机本机（或另一台客户端）作答落库，
+      // 同一张卡会记两条日志——基准要防的正是这个。runExclusive 可重入，内层 answerAndStudy 直接执行。
+      final SrsAnswerOutcome out = await s.runExclusive(() async {
+        if (a.raw('checkBase') == true) {
+          final SrsCardCacheRow? row = await s.cardRow(card);
+          if (row == null || row.lastLogId != a.optStr('base')) {
+            throw const SrsRemoteStoreError(409, SrsRemoteStoreError.stale);
+          }
+        }
+        return s.answerAndStudy(
+          card,
+          rating,
+          durationMs: durationMs,
+          studyDeckId: deck,
+          custom: custom,
+        );
+      });
       final SrsStudyState? study = out.study;
       return <String, Object?>{
         'log': out.log.toJson(),
@@ -962,10 +987,15 @@ class SrsRemoteStoreService {
       ],
     ),
     // 浏览命令是查询会话（结果可能很大），不进幂等缓存；浏览里的批量改走上面的写操作。
-    'browseCommand': _Op(
-      (SrsDbStore s, _Args a) async =>
-          SrsRemoteWire.sync2Result(await s.browseCommand(a.map('request'))),
-    ),
+    // 只放行浏览会话命令（[SrsDbStore.kSrsBrowseOps]）：其余 sync2 内核命令（`seal_file` / `open_file`
+    // 按请求给的路径读写主机文件、`apply` 等改库命令）一律 400，不进 store。
+    'browseCommand': _Op((SrsDbStore s, _Args a) async {
+      final Map<String, Object?> request = a.map('request');
+      if (!SrsDbStore.kSrsBrowseOps.contains(request['op'])) {
+        throw const SrsRemoteStoreError(400, SrsRemoteStoreError.badRequest);
+      }
+      return SrsRemoteWire.sync2Result(await s.browseCommand(request));
+    }),
   };
 
   static Map<String, String?> _nullableMap(Object? json) {

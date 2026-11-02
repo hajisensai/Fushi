@@ -26,6 +26,7 @@ import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
+import 'package:fushi_engine/srs/srs_builtin_template_restore.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_note_type_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
@@ -36,6 +37,7 @@ import 'package:fushi/src/ai/ai_saved_prompts.dart';
 import 'package:fushi/src/ai/ai_srs_template_assistant.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_registry.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_builtin_template_restore_action.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_note_preview.dart'
     show SrsStablePreviewFace, srsNotePreviewNativeFushiCard;
@@ -512,6 +514,31 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
     );
   }
 
+  /// 「恢复内置模板」：只在内置笔记类型的模板 / 样式偏离内置版本时出现（确认后写回，可撤销；
+  /// 恢复后编辑框重读，未保存的改动随之放弃）。
+  FushiToolbarItem? get _restoreItem {
+    final SrsDbStore? store = _store;
+    final SrsNoteTypeView? type = _type;
+    if (store == null || type == null || _saving) return null;
+    if (!store.builtinTemplatesModified(type)) return null;
+    return FushiToolbarItem(
+      key: const ValueKey<String>('srs_template_restore_builtin'),
+      icon: FushiIcons.refresh,
+      label: t.srs_note_types_builtin_restore,
+      onPressed: () => srsRunLogged(
+        'SrsTemplateEditor.restoreBuiltin',
+        () => confirmAndRestoreBuiltinTemplates(
+          context,
+          store: store,
+          noteTypeId: type.id,
+          onChanged: () {
+            if (mounted) unawaited(_load());
+          },
+        ),
+      ),
+    );
+  }
+
   FushiToolbarItem get _saveItem => FushiToolbarItem(
     key: const ValueKey<String>('srs_template_save'),
     icon: FushiIcons.save,
@@ -590,6 +617,7 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
             ? <Widget>[
                 for (final FushiToolbarItem item in <FushiToolbarItem>[
                   ?_aiItem,
+                  ?_restoreItem,
                   _insertItem,
                   _saveItem,
                 ])
@@ -628,7 +656,7 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
             ),
         ],
         actions: <List<FushiToolbarItem>>[
-          <FushiToolbarItem>[?_aiItem, _insertItem, _saveItem],
+          <FushiToolbarItem>[?_aiItem, ?_restoreItem, _insertItem, _saveItem],
         ],
       ),
     );

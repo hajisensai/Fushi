@@ -10,7 +10,13 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart' show sha1;
 import 'package:flutter/foundation.dart';
-import 'package:flutter/gestures.dart' show PointerHoverEvent;
+import 'package:flutter/gestures.dart'
+    show
+        HorizontalDragGestureRecognizer,
+        LongPressGestureRecognizer,
+        OneSequenceGestureRecognizer,
+        PointerHoverEvent,
+        VerticalDragGestureRecognizer;
 import 'package:flutter/services.dart' show HardwareKeyboard;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
@@ -29,7 +35,14 @@ import 'package:fushi/src/reader/reader_selection_scripts.dart';
 import 'package:fushi/src/reader/reader_settings.dart' show ReaderCustomFontCss;
 import 'package:fushi/src/srs/srs_card_appearance.dart';
 import 'package:fushi/src/srs/srs_card_autoplay.dart'
-    show kSrsCardAutoplayGateScript, srsCardSetAutoplayScript;
+    show
+        kSrsCardAutoplayGateScript,
+        kSrsCardVisibleSoundsScript,
+        kSrsVisibleSoundsHandler,
+        srsCardFaceMediaToken,
+        srsCardSetAutoplayScript,
+        srsCardSetFaceTokenScript,
+        srsCardSoundNames;
 import 'package:fushi/src/srs/srs_card_design_skin.dart';
 import 'package:fushi/src/srs/srs_card_dict_style.dart';
 import 'package:fushi/src/srs/srs_card_media.dart';
@@ -70,6 +83,7 @@ class SrsCardFace {
     this.gestureArming = SrsCardGestureArming.none,
     this.onImageTap,
     this.onEditSelection,
+    this.onVisibleSounds,
   });
 
   final String cardId;
@@ -158,6 +172,13 @@ class SrsCardFace {
   /// WebView 经页内 `selectionchange` 脚本 [kSrsCardEditSelectionScript]）。null = 不上报。
   final void Function(SrsCardSelection selection)? onEditSelection;
 
+  /// 这一面卡**渲染后看得见**的 `[sound:]` 发音键（按文档顺序、保留重复），由页面判定后上报
+  /// （[kSrsCardVisibleSoundsScript]）。复习页的自动播放、底栏重播与 R 重播只播这份清单，不再
+  /// 用正则扫整张 HTML 猜（HrB0STYm3E：CSS 隐藏的容器、收起的释义里的音频也被播了）。
+  /// 回调带上报来自哪一面（[cardId] / [showingAnswer]），宿主据此丢掉已换走那一面的迟到上报。
+  final void Function(String cardId, bool showingAnswer, List<String> names)?
+  onVisibleSounds;
+
   /// 同一面卡，换版式 / 页面 zoom。
   SrsCardFace withLayout(SrsCardLayout layout, {double? pageZoom}) =>
       SrsCardFace(
@@ -183,8 +204,30 @@ class SrsCardFace {
         gestureArming: gestureArming,
         onImageTap: onImageTap,
         onEditSelection: onEditSelection,
+        onVisibleSounds: onVisibleSounds,
       );
 }
+
+/// 卡面 WebView 平台视图自己认领的手势（eo2pH56Ont / Z9APuG_imH）：谁渲染谁吃手势，与查词弹窗
+/// （dictionary_popup_webview.dart）同一做法。
+///
+/// 不声明时 Android 上退化成空集合：平台视图不主动认领，长按被祖先上的 Flutter 识别器赢走、
+/// 拖动要等祖先识别器越过触摸阈值放弃后才补发给 WebView（滚动一顿一跳）。
+/// - 长按、横向拖：页内选区 / 页内手势脚本自己处理。
+/// - 纵向拖只在页面**自己滚动**时认领（[scrollsInPage]：整面卡、宽版式释义栏）；窄版式释义
+///   跟内容等高、由外层 Flutter 滚动时不认领，否则外层滚不动。
+Set<Factory<OneSequenceGestureRecognizer>> srsCardFaceGestureRecognizers({
+  required bool scrollsInPage,
+}) => <Factory<OneSequenceGestureRecognizer>>{
+  Factory<LongPressGestureRecognizer>(() => LongPressGestureRecognizer()),
+  Factory<HorizontalDragGestureRecognizer>(
+    () => HorizontalDragGestureRecognizer(),
+  ),
+  if (scrollsInPage)
+    Factory<VerticalDragGestureRecognizer>(
+      () => VerticalDragGestureRecognizer(),
+    ),
+};
 
 /// 页面 → 宿主的内容高度 / 滚轮转交（见 [SrsCardFace.onContentHeight] / [SrsCardFace.onWheel]）。
 const String kSrsContentHeightHandler = 'onSrsContentHeight';
@@ -821,6 +864,17 @@ const String kSrsCardShellScript = r'''
       if (window.console) console.error(e);
     }
   }
+  // 这一面渲染后看得见的发音键上报宿主（srs_card_autoplay.dart 的
+  // kSrsCardVisibleSoundsScript / kSrsVisibleSoundsHandler）：宿主的自动播放与重播只播它们。
+  function reportSounds(){
+    try {
+      if (!window.__fushiSrsVisibleSounds || !window.flutter_inappwebview) return;
+      window.flutter_inappwebview.callHandler('onSrsVisibleSounds',
+        window.__fushiSrsFaceToken || '', window.__fushiSrsVisibleSounds(root()));
+    } catch (e) {
+      if (window.console) console.error(e);
+    }
+  }
   function finish(my, ok){
     if (ok !== true || my !== seq) return;
     dictStyle();
@@ -829,6 +883,7 @@ const String kSrsCardShellScript = r'''
     designSkin();
     translationBlur();
     hostLayout();
+    reportSounds();
   }
   window.__fushiSrsSetTheme = function(themeCss, classes){
     document.getElementById('fushi-theme-css').textContent = themeCss;
@@ -841,6 +896,8 @@ const String kSrsCardShellScript = r'''
       document.dispatchEvent(new CustomEvent('fushi-srs-theme', { detail: classes }));
     } catch (e) {}
     hostLayout();
+    // 主题 / 外观类名可能改变哪些发音键看得见：重报一次（宿主只更新重播清单，不重新自动播）。
+    reportSounds();
   };
   // 样式注册表：每段样式（笔记类型 CSS / 卡片正文里抽出的 <style>）按内容哈希只建一次
   // <style data-fushi-css>，之后换卡只传哈希引用；当前卡没引用的全部 disabled（词典样式
@@ -907,6 +964,7 @@ String srsCardShellHtml({
       '<style id="fushi-theme-css">$themeCss</style>'
       '<style>$kSrsCardMediaCss</style>'
       '<script>$kSrsCardMediaScript</script>'
+      '<script>$kSrsCardVisibleSoundsScript</script>'
       // 自动播放闸门要在卡片内容与卡片脚本之前装好（BUG-3546）。
       '<script>$kSrsCardAutoplayGateScript</script>'
       // 样式注册表的两个锚点：模板 / 笔记类型 CSS 在前，卡片正文里抽出的样式在后
@@ -1173,6 +1231,10 @@ class SrsCardFaceDocument {
   /// 见 [SrsCardFace.autoplayMedia]。
   final bool autoplayMedia;
 
+  /// 这一面的标记（[srsCardFaceMediaToken]），页面上报可见发音时带回。
+  String get mediaToken =>
+      srsCardFaceMediaToken(cardId: cardId, showingAnswer: showingAnswer);
+
   /// 随主题下发、先于 `__fushiSrsSetTheme` 执行的宿主脚本（幂等定义；空 = 不下发）：设计系统
   /// 样式覆盖的判定脚本、Fushi 卡片的例句翻译模糊脚本。开关关着时外壳里连脚本都没有（零注入）。
   final String hostScript;
@@ -1193,6 +1255,7 @@ class SrsCardFaceDocument {
     return <String>[
       for (final SrsCardStyle st in all) srsCardDefineCssScript(st),
       srsCardSetAutoplayScript(autoplay: autoplayMedia),
+      srsCardSetFaceTokenScript(mediaToken),
       srsCardSetCardScript(
         styleRefs: <String>[for (final SrsCardStyle st in all) st.hash],
         bodyHtml: bodyHtml,
@@ -1295,6 +1358,8 @@ class SrsCardFaceSync {
       }
       // 开关先于换卡下发：新内容插入、卡片脚本重放时闸门已是这张卡的设置。
       card.write(srsCardSetAutoplayScript(autoplay: doc.autoplayMedia));
+      // 「这是哪一面」先于换卡下发：页面上报可见发音时带回（见 [SrsCardFace.onVisibleSounds]）。
+      card.write(srsCardSetFaceTokenScript(doc.mediaToken));
       steps.add(card.toString());
       steps.add(
         srsCardSetCardScript(
@@ -2106,6 +2171,27 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
     );
   }
 
+  void _onVisibleSounds(List<dynamic> arguments) {
+    final SrsCardFace face = widget.face;
+    final void Function(String, bool, List<String>)? report =
+        face.onVisibleSounds;
+    if (report == null || arguments.length < 2) return;
+    final Object? token = arguments[0];
+    final Object? names = arguments[1];
+    if (token !=
+            srsCardFaceMediaToken(
+              cardId: face.cardId,
+              showingAnswer: face.showingAnswer,
+            ) ||
+        names is! List) {
+      return;
+    }
+    report(face.cardId, face.showingAnswer, <String>[
+      for (final Object? n in names)
+        if (n is String && n.trim().isNotEmpty) n.trim(),
+    ]);
+  }
+
   Future<void> _injectBridge(InAppWebViewController controller) async {
     try {
       // 外壳 `<head>` 已装好桥；这里重放只刷新键表（脚本幂等，listener 只装一次）。
@@ -2143,6 +2229,11 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
     final Widget webView = KeyedSubtree(
       key: ValueKey<(Key, int)>((_deathGuard.rebuildKey, _creationAttempt)),
       child: InAppWebView(
+        // 平台视图自己认领长按 / 拖动（见 [srsCardFaceGestureRecognizers]）；页面跟内容等高、
+        // 由外层 Flutter 滚动（[SrsCardFace.onContentHeight]）时不认领纵向拖。
+        gestureRecognizers: srsCardFaceGestureRecognizers(
+          scrollsInPage: widget.face.onContentHeight == null,
+        ),
         // 只在平台视图创建时读一次：外壳页，内容由 _sync 在 onLoadStop 后下发。
         initialData: InAppWebViewInitialData(
           data: _docCache?.shellHtml ?? _document(context).shellHtml,
@@ -2320,6 +2411,14 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
               return null;
             },
           );
+          // 这一面看得见的发音键（[SrsCardFace.onVisibleSounds]）：只认当前这一面的上报。
+          controller.addJavaScriptHandler(
+            handlerName: kSrsVisibleSoundsHandler,
+            callback: (List<dynamic> arguments) {
+              if (mounted) _onVisibleSounds(arguments);
+              return null;
+            },
+          );
           controller.addJavaScriptHandler(
             handlerName: kSrsCardLinkHandler,
             callback: (List<dynamic> arguments) {
@@ -2409,13 +2508,51 @@ class _SrsWebCardFaceState extends ConsumerState<SrsWebCardFace>
 }
 
 /// 纯文本卡面（测试 / 无 WebView 环境用）：把 HTML 去标签后直接显示。
-class SrsPlainCardFace extends StatelessWidget {
+///
+/// 正文整段都画出来了，所以 `[sound:]` 一律算「看得见」：与 WebView 卡面一样在这一面上屏后
+/// 经 [SrsCardFace.onVisibleSounds] 上报（帧尾，模拟页面在卡片脚本跑完后上报）。
+class SrsPlainCardFace extends StatefulWidget {
   const SrsPlainCardFace({super.key, required this.face});
 
   final SrsCardFace face;
 
   @override
+  State<SrsPlainCardFace> createState() => _SrsPlainCardFaceState();
+}
+
+class _SrsPlainCardFaceState extends State<SrsPlainCardFace> {
+  @override
+  void initState() {
+    super.initState();
+    _scheduleReport();
+  }
+
+  @override
+  void didUpdateWidget(SrsPlainCardFace old) {
+    super.didUpdateWidget(old);
+    if (old.face.cardId != widget.face.cardId ||
+        old.face.showingAnswer != widget.face.showingAnswer ||
+        old.face.bodyHtml != widget.face.bodyHtml) {
+      _scheduleReport();
+    }
+  }
+
+  void _scheduleReport() {
+    final SrsCardFace face = widget.face;
+    if (face.onVisibleSounds == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((Duration _) {
+      if (!mounted) return;
+      face.onVisibleSounds?.call(
+        face.cardId,
+        face.showingAnswer,
+        srsCardSoundNames(face.bodyHtml),
+      );
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final SrsCardFace face = widget.face;
     final String text = face.bodyHtml
         .replaceAll(RegExp(r'<br\s*/?>', caseSensitive: false), '\n')
         .replaceAll(RegExp(r'<[^>]+>'), '')

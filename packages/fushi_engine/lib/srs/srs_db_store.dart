@@ -1168,8 +1168,29 @@ class SrsDbStore implements SrsSync2Host {
 
   /// 卡片浏览的常驻会话命令（native/fushi_fsrs/src/store/browse.rs；srs_browse.dart 的 `SrsBrowseSession` 发）。
   /// 只读（读快照；写连接上有事务时在它的 SAVEPOINT 里读，看得见未提交的行），不进写锁，在后台 isolate 跑。
-  Future<SrsSync2Result> browseCommand(Map<String, Object?> request) =>
-      _sync2Raw(request);
+  ///
+  /// 只接受 [kSrsBrowseOps] 里的命令：这个入口不进写锁、不走 [sync2Command] 的分流，且会被远程复习原样转给
+  /// 已配对设备调用；放任意 op 进来等于把 `seal_file` / `open_file`（按请求给的路径读写文件）与改库命令都开放了。
+  Future<SrsSync2Result> browseCommand(Map<String, Object?> request) {
+    final Object? op = request['op'];
+    if (!kSrsBrowseOps.contains(op)) {
+      throw ArgumentError.value(op, 'op', 'not a browse command');
+    }
+    return _sync2Raw(request);
+  }
+
+  /// [browseCommand] 接受的命令：与原生 `store/ffi.rs` 里分派到 `browse` 会话的那一组相同。
+  static const Set<String> kSrsBrowseOps = <String>{
+    'browse_query',
+    'browse_rows',
+    'browse_ids',
+    'browse_targets',
+    'browse_close',
+    'browse_stats',
+    'anki_find',
+    'anki_tags',
+    'anki_dupes',
+  };
 
   /// 不进写锁的 v2 命令（见 [sync2Command]）。判据：结果不依赖写连接上还没提交的行，也不在别的写入的
   /// 中途改本机状态。

@@ -1002,16 +1002,22 @@ class _MediaMigration {
   }
 
   Future<void> run() async {
+    // 整树列目录（旧根、新根内容目录）在大库的网盘上要很久：开列之前、列完之后都先看一眼要不要收手（关库 / 切
+    // profile / 用户关掉了这个位置），不为一次马上要扔掉的迁移把两棵树列完。
+    if (_halt()) return;
     _step('list');
     final Map<String, List<String>> writerMedia = <String, List<String>>{};
     final SrsV1Writers? ws = writers;
     if (ws != null) {
       for (final String w in await ws.writers()) {
+        if (_halt()) return;
         final List<String> names = await ws.mediaNames(w);
         if (names.isNotEmpty) writerMedia[w] = names;
       }
     }
+    if (_halt()) return;
     final List<_V1File> files = await _files(v1, '');
+    if (_halt()) return;
     final String listing = _fingerprint(files, writerMedia);
     if (await _markerOf(v1) == listing) {
       // 上次完整处理之后旧根没变（归档位置 / 留下的不认识的文件）：不下载、不封、不重写。
@@ -1064,6 +1070,7 @@ class _MediaMigration {
     if (out.total > 0) {
       onProgress?.call(0, out.total);
       await _listPresent();
+      if (_halt()) return;
       _step('present ${_present.length}');
       await _batches(plainObjects, (_V1File f) => f.path, _plainObject);
       await _batches(
@@ -1527,8 +1534,20 @@ typedef SrsV1MediaJob =
 /// 几万个文件、跑几个小时，不能挡住别的位置（互联 host 目录等）的同步。一个跑完 / 失败之后不按时间重试：位置的下一轮
 /// 同步成功后调用方再交一次（失败的原因记日志，进度在位置上，接着做）。在跑的时候又交来的（迁移请的发布轮跑完了）
 /// 记下最新的那一个，跑完接着跑一次：最后一批绑定发布之后，旧文件靠它删掉。
+///
+/// [shouldStop]（关库 / 切 profile / 用户关掉了这个位置）为真时：不再起新的，排着的那一个丢掉——它一开头就要把旧根
+/// 和新根内容目录整树列一遍，关库时 [idle] 会被它多拖两次全量列目录（PR #2768 审查）。在跑的那一个由 job 自己的
+/// 收手判据在下一个检查点停下（调用方给 job 的 `shouldStop` 与这里同一个判据）。
 class SrsV1MediaMigrations {
-  SrsV1MediaMigrations({this.onProgress, this.onReport, this.onError});
+  SrsV1MediaMigrations({
+    this.onProgress,
+    this.onReport,
+    this.onError,
+    this.shouldStop,
+  });
+
+  /// [locationId] 的迁移此刻该收手（null = 从不）。
+  final bool Function(String locationId)? shouldStop;
 
   /// 全部在跑的迁移合起来的进度；都跑完了为 null。
   final void Function(SrsV1MediaProgress? progress)? onProgress;
@@ -1563,7 +1582,13 @@ class SrsV1MediaMigrations {
   void _emit() => onProgress?.call(progress);
 
   /// 在后台跑 [job]。[locationId] 已有一个在跑：记下 [job]，那一个跑完接着跑它（只留最新交来的一个），交回 false。
+  ///
+  /// [shouldStop] 此刻为真：什么都不起、不记，交回 false（下一次同步成功后调用方再交）。
   bool start(String locationId, SrsV1MediaJob job) {
+    if (shouldStop?.call(locationId) ?? false) {
+      _again.remove(locationId);
+      return false;
+    }
     if (_running.containsKey(locationId)) {
       _again[locationId] = job;
       return false;
@@ -1584,7 +1609,11 @@ class SrsV1MediaMigrations {
         onError?.call(locationId, e, stack);
       } finally {
         _running.remove(locationId);
-        final SrsV1MediaJob? next = _again.remove(locationId);
+        final SrsV1MediaJob? queued = _again.remove(locationId);
+        // 收手了：排着的不再起（它开头就要整树列两遍目录）。
+        final SrsV1MediaJob? next = (shouldStop?.call(locationId) ?? false)
+            ? null
+            : queued;
         if (next == null) {
           _progress.remove(locationId);
           _emit();

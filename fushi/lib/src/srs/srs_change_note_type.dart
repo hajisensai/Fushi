@@ -11,6 +11,7 @@ import 'package:fushi_srs/fushi_srs.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_change_note_type_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_legacy_lapis_migration_page.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
+import 'package:fushi/src/srs/srs_navigation.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
@@ -56,21 +57,16 @@ Future<bool> showSrsChangeNoteTypeFlow(
     return false;
   }
   if (!context.mounted) return false;
-  final bool? changed = await Navigator.of(context).push<bool>(
-    adaptivePageRoute<bool>(
-      context: context,
-      // 沿用调用方的复习作用域（别的配置的笔记编辑页里改类型，见 srsInheritProviderScope）。
-      builder: (_) => UncontrolledProviderScope(
-        container: container,
-        child: SrsChangeNoteTypePage(
-          noteIds: List<String>.unmodifiable(noteIds),
-          from: from,
-          targets: targets,
-          initialTargetId: initialTargetId,
-          initialFieldMap: initialFieldMap,
-          initialTemplateMap: initialTemplateMap,
-        ),
-      ),
+  // 沿用调用方的复习作用域（别的配置的笔记编辑页 / 远程复习里改类型，见 srs_navigation.dart）。
+  final bool? changed = await srsPushPage<bool>(
+    context,
+    (_) => SrsChangeNoteTypePage(
+      noteIds: List<String>.unmodifiable(noteIds),
+      from: from,
+      targets: targets,
+      initialTargetId: initialTargetId,
+      initialFieldMap: initialFieldMap,
+      initialTemplateMap: initialTemplateMap,
     ),
   );
   return changed ?? false;

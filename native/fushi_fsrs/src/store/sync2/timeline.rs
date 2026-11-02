@@ -37,8 +37,9 @@ pub enum RestoreTarget {
 /// - 带 `LegacyStamp` 的修改：旧 HLC 的物理时刻。旧 HLC 是旧协议给这条修改盖的时刻，旧版本的「谁覆盖谁」也是按它排的，
 ///   是迁移能拿到的唯一可信时刻。
 /// - 日志：发生时刻 `at`（「撤回此后的复习」按复习发生在不在那一刻之后算，迁移来的旧复习因此不会被当成新复习撤回）。
-/// - 迁移来的身份记录没有自己的原始时刻（`srs_entities.created_at` 对导入的 Anki 内容是 Anki 里的创建时刻，早于进这个
-///   集合）：不单独判，实体「那一刻在不在」由 [plan] 看它的身份记录**或任一条内容修改**在不在截面里——内容在，实体就在。
+/// - 迁移来的身份记录没有自己的原始时刻：旧协议的身份事件不带 HLC；载荷里的 `createdAt` 也不是「进这个集合」的时刻
+///   （导入的 Anki 内容是 Anki 里的创建时刻，牌组一律写 0，内置牌组没有）。所以身份记录只按墙钟 / 因果截，实体「那一刻
+///   在不在」由 [plan] 看身份记录**或任一条内容**在不在截面里，内置实体一直在（见 [plan] 里 `created_after`）。
 ///
 /// 取 min 而不是只取原始时刻：一条操作不可能晚于它进日志的时刻（时钟偏差的旧 HLC 不会把已有的内容推到未来）。于是墙钟
 /// ≤ 时刻的操作一定在截面里（就是原来的版本向量前缀），只需对墙钟在后的修改 / 日志看原始时刻。
@@ -55,9 +56,9 @@ impl Cut {
     }
 }
 
-/// 旧 HLC 文本（`physical:counter:writer`）的物理时刻。
+/// 旧 HLC 文本（`physical:counter:writer`）的物理时刻（解析与字段寄存器同一份 [crate::history::parse_hlc]）。
 fn hlc_physical(hlc: &str) -> Option<i64> {
-    hlc.split(':').next()?.parse().ok()
+    crate::history::parse_hlc(hlc).ok().map(|(p, _, _)| p)
 }
 
 /// 按时刻 [t] 的截面：墙钟前缀 + 墙钟在后但原始时刻 ≤ [t] 的修改 / 日志。整张操作表只顺序扫一遍（墙钟没有索引，
@@ -155,8 +156,12 @@ pub(crate) fn plan(conn: &Connection, profile: &str, target: &Cut, retract_revie
             touched.entry((k, e)).or_default().insert(w);
         }
     }
-    // 此后才有的实体（身份记录与内容都在截面之外）：恢复 = 删除它。迁移来的实体身份记录的墙钟是迁移时刻，
-    // 它那一刻在不在看内容（[Cut] 的说明）。
+    // 此后才有的实体（身份记录与内容都在截面之外）：恢复 = 删除它。
+    // - 身份记录或任一条内容（字段修改 / 标签操作）在截面里：那时已在。迁移来的身份记录墙钟是迁移时刻，它那一刻在不在
+    //   看内容——内容不会早于实体（Dart 建实体与它的首批修改同一事务落库），迁移来的内容按原始时刻截（[Cut]）。
+    // - 内置牌组 / 笔记类型（任一条身份载荷带 `builtin`）由代码定义、随 profile 一直在，从不当成「之后才建的」：迁移来的
+    //   内置实体多半一条修改都没有（名字 / 字段 / 模板跟随代码），身份记录又只有迁移时刻，只看上一条会在恢复到迁移之前时
+    //   把默认牌组和没改过的内置笔记类型全删掉（审查 PR #2775）。
     let mut created_after: BTreeSet<(String, String)> = BTreeSet::new();
     {
         let mut stmt = conn
@@ -167,25 +172,38 @@ pub(crate) fn plan(conn: &Connection, profile: &str, target: &Cut, retract_revie
                 Ok((r.get::<_, Vec<u8>>(0)?, r.get::<_, i64>(1)?, r.get::<_, Vec<u8>>(2)?, r.get::<_, i64>(3)?))
             })
             .map_err(sql)?;
-        let mut before: BTreeSet<(String, String)> = BTreeSet::new();
-        let mut after: BTreeSet<(String, String)> = BTreeSet::new();
+        // (实体种类, 实体) → (任一条身份记录在截面里, 内置)。
+        let mut idents: BTreeMap<(String, String), (bool, bool)> = BTreeMap::new();
         for r in rows {
             let (d, s, payload, purged) = r.map_err(sql)?;
             if purged != 0 {
                 continue;
             }
-            let id = OpId { device: Id(d.try_into().map_err(|_| "bad device".to_string())?), seq: s as u64 };
-            if let Ok(Body::Entity { kind, id: eid, .. }) = Body::decode(crate::sync2::op::KIND_ENTITY, &payload) {
-                let key = (kind.wire().to_owned(), eid.text());
-                if target.contains(&id) {
-                    before.insert(key);
-                } else {
-                    after.insert(key);
-                }
+            let id = OpId {
+                device: Id(d.try_into().map_err(|_| "bad device".to_string())?),
+                seq: s as u64,
+            };
+            if let Ok(Body::Entity {
+                kind,
+                id: eid,
+                data,
+            }) = Body::decode(crate::sync2::op::KIND_ENTITY, &payload)
+            {
+                let builtin = serde_json::from_str::<Value>(&data)
+                    .is_ok_and(|d| d.get("builtin").is_some_and(|b| !b.is_null()));
+                let e = idents
+                    .entry((kind.wire().to_owned(), eid.text()))
+                    .or_default();
+                e.0 |= target.contains(&id);
+                e.1 |= builtin;
             }
         }
-        for k in after {
-            if !before.contains(&k) && matches!(k.0.as_str(), "note" | "deck" | "notetype") && !has_content_in(conn, profile, &k.0, &k.1, target)? {
+        for (k, (in_cut, builtin)) in idents {
+            if !in_cut
+                && !builtin
+                && matches!(k.0.as_str(), "note" | "deck" | "notetype")
+                && !has_content_in(conn, profile, &k.0, &k.1, target)?
+            {
                 created_after.insert(k);
             }
         }
@@ -537,10 +555,7 @@ impl SrsCore {
             let entry = match op.body().map_err(|e| e.to_string())? {
                 Body::Edit(e) => {
                     let (writer, at) = match &e.legacy {
-                        Some(l) => (
-                            l.writer.clone(),
-                            l.hlc.split(':').next().and_then(|x| x.parse::<i64>().ok()).unwrap_or(wall),
-                        ),
+                        Some(l) => (l.writer.clone(), hlc_physical(&l.hlc).unwrap_or(wall)),
                         None => (device.clone(), wall),
                     };
                     json!({

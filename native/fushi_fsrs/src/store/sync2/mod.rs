@@ -586,6 +586,16 @@ pub(crate) fn log_row(profile: &str, op: &Op, l: &LogBody) -> Value {
     Value::Object(m)
 }
 
+/// 修改记录投影行的 ID（与 [edit_row] 的 `id` 相同）：只看 dot，不读旧闭包、不拼 ctx。只要 ID 的地方用它——以前
+/// 每收一条修改操作，投影前为取 ID 先整份算一遍 [edit_row]（解析、合并旧修改记录闭包 [legacy_closure]），落地时
+/// 再算一遍，收段时同样大小的临时分配翻倍。
+pub(crate) fn edit_row_id(op: &Op, e: &EditBody) -> String {
+    match &e.legacy {
+        Some(l) => crate::registers::edit_id(&l.writer, l.seq),
+        None => crate::registers::edit_id(&op.id.device.text(), op.id.seq as i64),
+    }
+}
+
 /// 修改记录投影行（Dart `SrsFieldEdit.toJson`）。v2 写入：dot = (设备, seq)、ctx = 作者已应用的版本向量
 /// 并上旧修改记录闭包；迁移进来的旧记录：原样的旧 dot / 旧 ctx / 旧 HLC。
 pub(crate) fn edit_row(conn: &Connection, profile: &str, op: &Op, e: &EditBody) -> Result<(String, Value), String> {
@@ -815,7 +825,7 @@ fn project_edit(conn: &Connection, profile: &str, op: &Op, e: &EditBody, now: i6
     if let Some(l) = &e.legacy {
         note_legacy(conn, profile, &op.id.device, op.id.seq, l)?;
     }
-    let (eid, _) = edit_row(conn, profile, op, e)?;
+    let eid = edit_row_id(op, e);
     conn.prepare_cached("INSERT OR REPLACE INTO sync2_edit_ops (edit_id, profile_uid, device, seq) VALUES (srs_id(?1), srs_id(?2), ?3, ?4)")
         .map_err(sql)?
         .execute(params![eid, profile, op.id.device.0.to_vec(), op.id.seq as i64])
@@ -1684,6 +1694,8 @@ mod tests_replay_pending;
 mod tests_footprint;
 #[cfg(test)]
 mod tests_synthetic_ctx;
+#[cfg(test)]
+mod tests_delivery_window;
 
 impl SrsCore {
     /// 评分预览（Dart `SrsCardOps.preview` 的 v2 实现）：在这张卡的归属组重放到此刻的状态上，用当前牌组配置与

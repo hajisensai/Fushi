@@ -20,6 +20,7 @@ import 'package:drift/backends.dart';
 import 'package:drift/drift.dart';
 import 'package:drift/isolate.dart';
 import 'package:fushi_srs/fushi_srs.dart';
+import 'package:meta/meta.dart' show visibleForTesting;
 
 import 'package:fushi_engine/srs/srs_core_workers.dart';
 
@@ -167,9 +168,26 @@ final class SrsSplitExecutor implements QueryExecutor {
   final int _address;
   final SrsCoreWorkers _workers;
 
-  /// 在途的事务外查询（[close] 等它们结束再关写那一路，之后装配层才关内核句柄）。
-  final Set<Future<void>> _inFlight = <Future<void>>{};
+  /// 在 worker 上在途的事务外查询数（[close] 等它归零再关写那一路，之后装配层才关内核句柄）。
+  ///
+  /// 只在根 zone 里维护：提交时同步加一，worker 回执到了在池子的根 zone 回调里（[SrsCoreWorkers.run] 的
+  /// `onSettled`）同步减一。不能挂在调用方 zone 的 Future 上——调用方的 zone 可能再也不跑微任务（widget 测试里
+  /// 页面在 FakeAsync zone 发的流查询），那样 [close] 永远等不到（PR 2771 审查：unit-tests 分片挂满 60 分钟）。
+  int _inFlight = 0;
+
+  /// [close] 在等在途查询归零时建的 Completer（建在根 zone：完成时的微任务进根队列，真实事件循环与
+  /// `runAsync` 都冲刷得到）。
+  Completer<void>? _drained;
   bool _closed = false;
+
+  /// 测试：worker 上在途的事务外查询数。
+  @visibleForTesting
+  int get debugInFlight => _inFlight;
+
+  void _settled() {
+    _inFlight--;
+    if (_inFlight == 0) _drained?.complete();
+  }
 
   @override
   SqlDialect get dialect => _write.dialect;
@@ -187,25 +205,24 @@ final class SrsSplitExecutor implements QueryExecutor {
         StateError('srs database is closed'),
       );
     }
-    final Future<List<Map<String, Object?>>> result = _select(statement, args);
-    final Future<void> settled = result.then<void>(
-      (_) {},
-      onError: (Object _) {},
-    );
-    _inFlight.add(settled);
-    settled.whenComplete(() => _inFlight.remove(settled));
-    return result;
-  }
-
-  Future<List<Map<String, Object?>>> _select(
-    String statement,
-    List<Object?> args,
-  ) async {
-    final SrsQueryPage? page = await _workers.run(
+    // 同步登记、同步提交：计数只覆盖 worker 那一段（结束时由池子在根 zone 里减）。之后改发写那一路的回退发生在
+    // 调用方 zone 的 await 之后，由 [_write] 自己的关闭语义收尾，不算在这里。
+    _inFlight++;
+    final Future<SrsQueryPage?> page = _workers.run(
       _address,
       _snapshotQueryJob(statement, args),
       lane: SrsCoreLane.query,
+      onSettled: _settled,
     );
+    return _select(page, statement, args);
+  }
+
+  Future<List<Map<String, Object?>>> _select(
+    Future<SrsQueryPage?> pending,
+    String statement,
+    List<Object?> args,
+  ) async {
+    final SrsQueryPage? page = await pending;
     if (page == null) return _write.runSelect(statement, args);
     final (List<String> names, List<List<Object?>> rows) = page;
     return QueryResult(names, rows).asMap.toList();
@@ -240,7 +257,11 @@ final class SrsSplitExecutor implements QueryExecutor {
   @override
   Future<void> close() async {
     _closed = true;
-    await Future.wait(_inFlight.toList());
+    if (_inFlight > 0) {
+      final Completer<void> drained = _drained ??= Zone.root
+          .run<Completer<void>>(() => Completer<void>());
+      await drained.future;
+    }
     await _write.close();
   }
 }

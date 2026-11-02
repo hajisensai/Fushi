@@ -727,11 +727,15 @@ fn note_type_view(ent: &Entity<'_, '_>, payload: &Value, builtin: &Value) -> Res
             templates.put(id, t, |x| &x.id);
         }
     }
-    // 字段说明是独立键，定义都物化完再并进去。
+    // 字段说明是独立键，定义都物化完再并进去。生效值为 null = 未设（[Entity::is_set]）：内置字段留代码默认说明，
+    // 不被一份空说明盖住。
     for r in &ent.regs {
         let Some(id) = r.key.strip_prefix("fieldDesc/") else {
             continue;
         };
+        if !ent.is_set(&r.key) {
+            continue;
+        }
         let desc = match ent.value(&r.key) {
             Value::String(s) => s.clone(),
             _ => String::new(),

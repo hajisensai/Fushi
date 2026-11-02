@@ -2,7 +2,9 @@
 // - 线格式还原出的视图（笔记 / 笔记类型 / 牌组树 / 历史 / 预览 / 牌组行）与主机上直接读到的逐项相同；
 // - 写操作同一请求 id 重发只执行一次；作答带基准时卡变了回 stale；
 // - 主机切了配置回 profile_changed；路由的错误码。
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:fushi_core/fushi_core.dart' show SrsCardCacheRow;
@@ -359,6 +361,7 @@ void main() {
     );
     expect(
       await err(<String, Object?>{
+        'profile': _uid,
         'op': 'answerAndStudy',
         'request': 'x',
         'args': <String, Object?>{
@@ -398,5 +401,120 @@ void main() {
       2,
       3,
     ]);
+  });
+
+  test('写操作不带 profile 一律 400，不执行', () async {
+    final (SrsDbStore store, SrsRemoteStoreService service, String deck) =
+        await _setUp();
+    final String cardId = (await store.studyState(deck))!.next!;
+    final (int status, Map<String, Object?> body) = await _route(
+      service,
+      <String, Object?>{
+        'op': 'setFlag',
+        'request': 'no-profile',
+        'args': <String, Object?>{'card': cardId, 'flag': 3},
+      },
+    );
+    expect(status, 400);
+    expect(body['error'], SrsRemoteStoreError.badRequest);
+    expect((await store.cardRow(cardId))!.flag, isNot(3));
+  });
+
+  test('作答的基准核对与记日志在同一个写独占区：中途主机本机作答不会记两条', () async {
+    final (SrsDbStore store, SrsRemoteStoreService service, String deck) =
+        await _setUp();
+    final String cardId = (await store.studyState(deck))!.next!;
+    final String? base = (await store.cardRow(cardId))!.lastLogId;
+    final int before = (await store.history(cardId)).all.length;
+    // 主机本机占着写锁、还没提交作答时，远程作答已经发出。
+    final Completer<void> gate = Completer<void>();
+    final Future<void> local = store.runExclusive(() async {
+      await gate.future;
+      await store.answer(cardId, 4);
+    });
+    final Future<(int, Map<String, Object?>)> remote = _route(
+      service,
+      <String, Object?>{
+        'profile': _uid,
+        'op': 'answerAndStudy',
+        'request': 'r-race',
+        'args': <String, Object?>{
+          'card': cardId,
+          'rating': 1,
+          'durationMs': 1000,
+          'checkBase': true,
+          'base': base,
+        },
+      },
+    );
+    // 让远程请求先跑到它的第一个等待点（修复前：已在锁外读完基准、正排队等记日志）。
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    gate.complete();
+    await local;
+    final (int status, Map<String, Object?> body) = await remote;
+    expect(status, 409, reason: '$body');
+    expect(body['error'], SrsRemoteStoreError.stale);
+    expect((await store.history(cardId)).all.length, before + 1);
+  });
+
+  test('browseCommand 只放行浏览会话命令：seal_file / open_file / 改库命令一律拒绝', () async {
+    final (SrsDbStore store, SrsRemoteStoreService service, _) = await _setUp();
+    final Directory tmp = await Directory.systemTemp.createTemp('srs_remote_');
+    addTearDown(() => tmp.delete(recursive: true));
+    final File src = File('${tmp.path}/secret.txt')
+      ..writeAsStringSync('secret');
+    final String dst = '${tmp.path}/leak.bin';
+    final List<Map<String, Object?>> forbidden = <Map<String, Object?>>[
+      <String, Object?>{
+        'op': 'seal_file',
+        'key': List<int>.filled(32, 7),
+        'name': 'leak.bin',
+        'src': src.path,
+        'dst': dst,
+      },
+      <String, Object?>{
+        'op': 'open_file',
+        'key': List<int>.filled(32, 7),
+        'src': src.path,
+        'dst': dst,
+      },
+      <String, Object?>{'op': 'apply'},
+      <String, Object?>{'op': 'migrate'},
+      <String, Object?>{'op': 'replay_all'},
+      <String, Object?>{'op': 'status'},
+      <String, Object?>{},
+    ];
+    for (final Map<String, Object?> request in forbidden) {
+      final (int status, Map<String, Object?> body) = await _route(
+        service,
+        <String, Object?>{
+          'profile': _uid,
+          'op': 'browseCommand',
+          'args': <String, Object?>{'request': request},
+        },
+      );
+      expect(status, 400, reason: '${request['op']} → $body');
+      expect(body['error'], SrsRemoteStoreError.badRequest);
+      // 本机入口同一判据：这个入口不进写锁，不许被拿来绕开 sync2Command。
+      expect(
+        () => store.browseCommand(request),
+        throwsA(isA<ArgumentError>()),
+        reason: '${request['op']}',
+      );
+    }
+    expect(File(dst).existsSync(), isFalse);
+
+    // 浏览会话命令照常可用。
+    final Object? stats = await _call(
+      service,
+      'browseCommand',
+      <String, Object?>{
+        'request': <String, Object?>{'op': 'browse_stats'},
+      },
+    );
+    expect(stats, isNotNull);
+    await _call(service, 'browseCommand', <String, Object?>{
+      'request': <String, Object?>{'op': 'browse_close'},
+    });
   });
 }

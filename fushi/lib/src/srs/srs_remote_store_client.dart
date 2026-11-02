@@ -502,9 +502,16 @@ class SrsRemoteStore implements SrsDbStore, SrsRemoteForwarding {
           .cast<String, String>();
 
   @override
-  Future<List<(SrsEntityKind, String, SrsRegister)>> syncConflicts() async {
-    final Map<String, Object?> m = ((await _read('syncConflicts'))! as Map)
-        .cast<String, Object?>();
+  Future<List<(SrsEntityKind, String, SrsRegister)>> syncConflicts({
+    ({SrsEntityKind kind, String id})? entity,
+  }) async {
+    final Map<String, Object?> m =
+        ((await _read('syncConflicts', <String, Object?>{
+                  if (entity != null) 'entityKind': entity.kind.wire,
+                  if (entity != null) 'entityId': entity.id,
+                }))!
+                as Map)
+            .cast<String, Object?>();
     final Map<String, Object?> rawEdits = (m['edits']! as Map)
         .cast<String, Object?>();
     final Map<String, SrsEntityEdits> edits = <String, SrsEntityEdits>{

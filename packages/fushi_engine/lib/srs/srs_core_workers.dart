@@ -122,18 +122,30 @@ final class SrsCoreWorkers {
   bool debugFailSpawns = false;
 
   /// 在 worker 里对 [address] 的句柄执行 [job]，走 [lane] 那条道。
+  ///
+  /// [onSettled]：这条命令结束（成功、报错、worker 退出、起 worker 失败，每条命令恰好一次）时、在把结果交给
+  /// 调用方之前**同步**调用，跑在池子自己的根 zone 回调里，不经调用方的 zone。调用方要按「命令在途」做簿记
+  /// （如 [SrsSplitExecutor.close] 等在途查询）时用它：调用方的 zone 可能再也不跑微任务（见库注释），挂在返回的
+  /// Future 上的回调就可能永远不来。
   Future<T> run<T>(
     int address,
     SrsCoreJob<T> job, {
     SrsCoreLane lane = SrsCoreLane.bulk,
+    void Function()? onSettled,
   }) {
     final Completer<T> done = Completer<T>();
     _lanes[lane]!.submit(
       _Job<Object?>(
         address,
         job,
-        (Object? value) => done.complete(value as T),
-        done.completeError,
+        (Object? value) {
+          onSettled?.call();
+          done.complete(value as T);
+        },
+        (Object error, StackTrace stack) {
+          onSettled?.call();
+          done.completeError(error, stack);
+        },
       ),
     );
     return done.future;

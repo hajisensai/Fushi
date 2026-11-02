@@ -36,6 +36,7 @@ import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/srs/srs_navigation.dart';
 
 /// 远程复习失败的提示文案（主机的机读码 / 连接层的码）。
 String srsRemoteReviewErrorText(InterconnectHostError e) => switch (e.message) {
@@ -167,14 +168,12 @@ class _SrsRemoteReviewEntryPageState
     }
     if (!mounted || _connecting != client) return;
     setState(() => _loading = false);
-    await Navigator.of(context).push<void>(
-      adaptivePageRoute<void>(
-        context: context,
-        builder: (_) => SrsRemoteCollectionScope(
-          store: store,
-          media: media,
-          child: SrsRemoteDeckListPage(hostName: target.displayName),
-        ),
+    await srsPushPage<void>(
+      context,
+      (_) => SrsRemoteCollectionScope(
+        store: store,
+        media: media,
+        child: SrsRemoteDeckListPage(hostName: target.displayName),
       ),
     );
   }
@@ -301,9 +300,7 @@ class _SrsRemoteDeckListPageState extends ConsumerState<SrsRemoteDeckListPage> {
   }
 
   Future<void> _push(WidgetBuilder builder) async {
-    await Navigator.of(
-      context,
-    ).push<void>(adaptivePageRoute<void>(context: context, builder: builder));
+    await srsPushPage<void>(context, builder);
     // 回来时重读计数（这一轮复习掉的卡、改过的设置）。
     if (mounted) await _load();
   }

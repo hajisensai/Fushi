@@ -51,6 +51,10 @@ pub struct SrsCore {
     reader: Mutex<Option<Connection>>,
     /// Drift 执行器事务外查询专用的只读连接池（[SrsCore::snapshot_select]）。
     drift_readers: read_pool::ReadPool,
+    /// Drift 写那一路（顺序执行器，`ffsrs_store_exec` mode 2）在事务外的查询专用的一条只读连接（[SrsCore::select]）。
+    /// 不从 [SrsCore::drift_readers] 借：Dart 查询道的 worker 数等于池上限，几条长读就能把池借满，写 isolate 上的
+    /// 查询若去池里等连接，排在它后面的所有写都跟着等（PR 2771 审查）。写那一路一次只跑一条语句，一条连接就不会等。
+    drift_write_reader: Mutex<Option<Connection>>,
     writer: Mutex<Option<Connection>>,
     /// Drift 在写连接上开着事务（它用 BEGIN / SAVEPOINT 语句经 [SrsCore::exec] 开关）。每条经 [SrsCore::exec] /
     /// [SrsCore::exec_batch] 跑完的语句之后按写连接的 autocommit 状态更新；只有这两个入口能让事务跨命令留着
@@ -308,11 +312,14 @@ impl SrsCore {
         configure(&reader)?;
         #[cfg(any(test, feature = "id_audit"))]
         let reader = ids::audit::installed(reader);
-        let drift_readers = read_pool::ReadPool::new(path, read_pool::read_concurrency(), open_drift_reader)?;
+        let drift_readers =
+            read_pool::ReadPool::new(path, read_pool::read_concurrency(), open_drift_reader)?;
+        let drift_write_reader = open_drift_reader(path)?;
         Ok(Self {
             writer: Mutex::new(Some(writer)),
             reader: Mutex::new(Some(reader)),
             drift_readers,
+            drift_write_reader: Mutex::new(Some(drift_write_reader)),
             drift_tx: AtomicBool::new(false),
             legacy_open: AtomicBool::new(false),
             path: path.to_path_buf(),
@@ -373,7 +380,15 @@ impl SrsCore {
         drop(reader);
         // 等在途的 Drift 事务外查询把连接放回（放回即关）。
         self.drift_readers.close();
-        let sessions = std::mem::take(&mut *self.sessions.lock().unwrap_or_else(|e| e.into_inner()));
+        // 写那一路的事务外查询连接：拿锁即等在途的那条查询跑完。
+        let drift_write_reader = self
+            .drift_write_reader
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take();
+        drop(drift_write_reader);
+        let sessions =
+            std::mem::take(&mut *self.sessions.lock().unwrap_or_else(|e| e.into_inner()));
         for s in sessions.iter().filter_map(Weak::upgrade) {
             s.close();
         }
@@ -551,8 +566,8 @@ impl SrsCore {
 
     /// Drift 写连接那一路的查询（`ffsrs_store_exec` mode 2：事务里的查询、`RETURNING`、PRAGMA、内联执行器）：
     /// Drift 事务开着（[SrsCore::writer_tx_open]）时在写连接上跑，看得见那笔事务里未提交的行；否则只读查询走
-    /// [SrsCore::snapshot_select] 的只读连接，不排写锁（Rust 的长写命令、收段投递进行中照样能读），读到的是此刻
-    /// 已提交的数据。
+    /// 写那一路专用的只读连接（[SrsCore::drift_write_reader]，不进查询道的连接池、不在池上限上等），不排写锁（Rust
+    /// 的长写命令、收段投递进行中照样能读），读到的是此刻已提交的数据。
     ///
     /// 写后立即读成立：Drift 的写语句（autocommit）与 COMMIT 都在 [SrsCore::exec] 返回前提交完；读连接每条语句
     /// 自成一个读事务（语句跑完即复位，不留跨调用的读事务），开读事务时取最新的 WAL 尾，所以 Dart 等到写返回后
@@ -566,7 +581,15 @@ impl SrsCore {
             return Err("legacy import in progress".into());
         }
         if !self.writer_tx_open() {
-            match self.snapshot_select(sql, params) {
+            let done = {
+                let guard = self
+                    .drift_write_reader
+                    .lock()
+                    .map_err(|_| "srs drift write reader poisoned".to_string())?;
+                let r = guard.as_ref().ok_or_else(|| CLOSED.to_string())?;
+                Self::snapshot_on(r, sql, params)
+            };
+            match done {
                 Err(e) if e == NOT_SNAPSHOT => {}
                 done => return done,
             }
@@ -592,13 +615,24 @@ impl SrsCore {
             return Err(NOT_SNAPSHOT.into());
         }
         let r = self.drift_readers.get()?;
-        let readonly = r.prepare_cached(sql).map_err(|e| format!("{e} in {sql}"))?.readonly();
+        Self::snapshot_on(&r, sql, params)
+    }
+
+    /// 在只读连接 [r] 上执行一条事务外查询；不是 SQLite 判为只读的查询报 [NOT_SNAPSHOT]（不执行）。
+    fn snapshot_on(r: &Connection, sql: &str, params: &[Value]) -> Result<Vec<u8>, String> {
+        if !snapshot_query(sql) {
+            return Err(NOT_SNAPSHOT.into());
+        }
+        let readonly = r
+            .prepare_cached(sql)
+            .map_err(|e| format!("{e} in {sql}"))?
+            .readonly();
         if !readonly {
             return Err(NOT_SNAPSHOT.into());
         }
-        let out = Self::exec_on(&r, sql, params, true);
+        let out = Self::exec_on(r, sql, params, true);
         #[cfg(feature = "id_audit")]
-        ids::audit::take(&r, sql)?;
+        ids::audit::take(r, sql)?;
         out
     }
 

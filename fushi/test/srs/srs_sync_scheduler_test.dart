@@ -132,6 +132,25 @@ class _GatedBackend extends LocalDirectoryAssetStore {
   }
 }
 
+/// 第一次列目录卡在 [gate] 上的本地目录后端：一轮同步跑到一半（用户在这时关掉位置）。
+class _GatedListBackend extends LocalDirectoryAssetStore {
+  _GatedListBackend(super.root);
+
+  Completer<void>? gate;
+  final Completer<void> reached = Completer<void>();
+
+  @override
+  Future<List<AssetEntry>> listChildren(String namespaceId) async {
+    final Completer<void>? g = gate;
+    if (g != null) {
+      gate = null;
+      if (!reached.isCompleted) reached.complete();
+      await g.future;
+    }
+    return super.listChildren(namespaceId);
+  }
+}
+
 /// 记录每次关联判定的假 linker：[conflictFor] 里的 uid 判成冲突，其余判成「已关联上」。
 class _RecordingLinker implements SrsProfileLinker {
   _RecordingLinker({this.conflictFor = const <String>{}});
@@ -1405,6 +1424,164 @@ void main() {
       await q;
       expect(stopped, isTrue);
       expect(srsMigrationProgress.value, isNull);
+    });
+  });
+
+  group('按位置收手与发布轮合并（PR #2768 / #2764 审查）', () {
+    test('文件夹位置的发布轮：排着还没开跑的合并成一轮，已开跑的不复用', () async {
+      final Completer<void> gate = Completer<void>();
+      int folderReads = 0;
+      final SrsSyncScheduler s = SrsSyncScheduler(
+        readStore: () async => store,
+        channels: (Future<void> Function(SyncAssetStore) body) async =>
+            (ran: 0, errors: const <Object>[]),
+        directoryKeyOf: (SyncAssetStore b) async => 'k',
+        onDataChanged: () {},
+        onNotice: (SrsSyncNotice _) {},
+        folderLocations: () async {
+          folderReads++;
+          return const <SrsFolderLocation>[];
+        },
+        runner:
+            (
+              SyncAssetStore b,
+              SrsDbStore st,
+              String key, {
+              SrsLocationKey? locationKey,
+            }) async {
+              await gate.future;
+              return SrsSync2Report();
+            },
+      );
+      addTearDown(s.dispose);
+      // 一轮通道同步占着串行队列；后台迁移这时每补一批绑定就请一轮文件夹发布。
+      final Future<SrsSync2Report> busy = s.syncWithBackend(
+        LocalDirectoryAssetStore(root),
+      );
+      final List<Future<SrsSyncNowResult>> asked = <Future<SrsSyncNowResult>>[
+        for (int i = 0; i < 6; i++) s.syncFolderLocations(),
+      ];
+      for (final Future<SrsSyncNowResult> f in asked) {
+        expect(identical(f, asked.first), isTrue, reason: '排着的请求复用同一轮');
+      }
+      gate.complete();
+      await busy;
+      await Future.wait(asked);
+      expect(folderReads, 1, reason: '六次请求只跑一轮');
+      await s.syncFolderLocations();
+      expect(folderReads, 2, reason: '上一轮跑完之后再请：新起一轮');
+    });
+
+    test('一轮跑到一半关掉位置：按关掉交回，之后的媒体对账不做；打开后照常', () async {
+      final Directory loc = Directory(p.join(root.path, 'loc'))..createSync();
+      final Directory media = Directory(p.join(root.path, '_media'))
+        ..createSync();
+      final _GatedListBackend backend = _GatedListBackend(loc);
+      final Set<String> disabled = <String>{};
+      int mediaRuns = 0;
+      final SrsSyncScheduler s = SrsSyncScheduler(
+        readStore: () async => store,
+        channels: (Future<void> Function(SyncAssetStore) body) async =>
+            (ran: 0, errors: const <Object>[]),
+        directoryKeyOf: (SyncAssetStore b) async => 'local:loc',
+        onDataChanged: () {},
+        onNotice: (SrsSyncNotice _) {},
+        readMediaRoot: () async => media,
+        locationDisabled: disabled.contains,
+        mediaRunner:
+            (
+              SyncAssetStore b,
+              SrsDbStore st,
+              Directory mediaRoot, {
+              SrsMediaCipher? cipher,
+              required String locationId,
+            }) async {
+              mediaRuns++;
+              return SrsMediaSyncReport();
+            },
+      );
+      addTearDown(s.dispose);
+      final Completer<void> gate = Completer<void>();
+      backend.gate = gate;
+      final Future<SrsSync2Report> round = s.syncWithBackend(backend);
+      await backend.reached.future;
+      disabled.add('local:loc');
+      gate.complete();
+      expect((await round).error, kSrsSyncLocationDisabled);
+      expect(mediaRuns, 0, reason: '关掉之后不再开媒体对账');
+
+      disabled.clear();
+      expect((await s.syncWithBackend(backend)).error, isNull);
+      expect(mediaRuns, 1);
+    });
+
+    test('关掉位置：它的后台迁移在下一个文件收手，排着的不再起；立即同步不报错', () async {
+      final Directory cloudRoot = Directory(p.join(root.path, 'cloud'))
+        ..createSync();
+      final _GatedBackend cloud = _GatedBackend(cloudRoot);
+      final Directory v1 = Directory(
+        p.join(
+          cloudRoot.path,
+          kSrsSync2Namespace,
+          store.profileUid,
+          kSrsSync2V1Folder,
+        ),
+      );
+      File(p.join(v1.path, 'meta.json'))
+        ..createSync(recursive: true)
+        ..writeAsStringSync(
+          jsonEncode(<String, Object?>{
+            'v': 1,
+            'minReader': 1,
+            'collection': 'c1',
+            'createdAt': 1,
+          }),
+        );
+      const int n = 24;
+      for (int i = 0; i < n; i++) {
+        File(p.join(v1.path, kSrsMediaFolder, 'old$i.png'))
+          ..createSync(recursive: true)
+          ..writeAsBytesSync(<int>[i, 9]);
+      }
+      final String key = 'local:${cloudRoot.path}';
+      final Set<String> disabled = <String>{};
+      final SrsSyncScheduler s = scheduler(
+        channels: (Future<void> Function(SyncAssetStore) body) async {
+          await body(cloud);
+          return (ran: 1, errors: const <Object>[]);
+        },
+        locationDisabled: disabled.contains,
+      );
+      addTearDown(s.dispose);
+      expect((await s.syncNow()).errors, isEmpty);
+      expect(s.v1MediaMigrations.isRunning(key), isTrue);
+      // 迁移在跑时又成功一轮：交来的下一次排着，等这一次跑完接着跑。
+      expect((await s.syncWithBackend(cloud)).error, isNull);
+
+      disabled.add(key);
+      cloud.gate.complete();
+      await s.settle();
+      expect(s.v1MediaMigrations.isRunning(key), isFalse);
+      expect(srsMigrationProgress.value, isNull);
+      int moved = 0;
+      for (int i = 0; i < n; i++) {
+        if (File(
+          p.join(
+            cloudRoot.path,
+            kSrsSync2Namespace,
+            store.profileUid,
+            kSrsSync2Folder,
+            srsMediaContentPath(kSrsMediaFolder, srsMediaSha256(<int>[i, 9])),
+          ),
+        ).existsSync()) {
+          moved++;
+        }
+      }
+      expect(moved, lessThan(n), reason: '关掉之后剩下的文件不再搬');
+
+      final SrsSyncNowResult off = await s.syncNow();
+      expect(off.errors, isEmpty, reason: '关掉不是失败');
+      expect(off.ran, 0);
     });
   });
 
