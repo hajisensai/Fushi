@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 
 /// 顶部悬浮条按宽度自适应溢出（2026-10-06）：宽时全部平铺、不画「⋯」；骤缩到
@@ -353,6 +354,70 @@ void main() {
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull, reason: '预算多算会溢出');
       expect(more, findsOneWidget);
+    });
+  });
+
+  group('titleFirst：标题 / 副标题优先完整显示（复习页卡片计数，2026-11-03）', () {
+    const String subtitle = 'New 0 · Learning 12 · Review 345 · Due today 999';
+
+    Widget titled(double width, {required bool titleFirst}) => MaterialApp(
+      home: Scaffold(
+        body: Center(
+          child: SizedBox(
+            width: _outerWidth(width),
+            child: FushiFloatingTopBar(
+              leading: <FushiToolbarItem>[
+                FushiToolbarItem(
+                  icon: Icons.arrow_back,
+                  label: 'Back',
+                  onPressed: () {},
+                ),
+              ],
+              title: 'Fushi',
+              subtitle: subtitle,
+              titleFirst: titleFirst,
+              actions: <List<FushiToolbarItem>>[actions],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    bool subtitleTruncated(WidgetTester tester) => tester
+        .renderObject<RenderParagraph>(
+          find.descendant(
+            of: find.byKey(
+              const ValueKey<String>('fushi_floating_top_bar_subtitle_text'),
+            ),
+            matching: find.byType(RichText),
+          ),
+        )
+        .didExceedMaxLines;
+
+    testWidgets('默认：标题胶囊封顶保底宽，长副标题被省略', (WidgetTester tester) async {
+      await tester.pumpWidget(titled(720, titleFirst: false));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(subtitleTruncated(tester), isTrue);
+    });
+
+    testWidgets('开启：动作先收进 ⋯，副标题完整显示且不溢出', (WidgetTester tester) async {
+      await tester.pumpWidget(titled(720, titleFirst: true));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(more, findsOneWidget);
+      expect(subtitleTruncated(tester), isFalse);
+    });
+
+    testWidgets('开启但宽度足够：全部平铺，不画 ⋯', (WidgetTester tester) async {
+      tester.view.physicalSize = const Size(1600, 600);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(titled(1400, titleFirst: true));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(more, findsNothing);
+      expect(subtitleTruncated(tester), isFalse);
     });
   });
 }
