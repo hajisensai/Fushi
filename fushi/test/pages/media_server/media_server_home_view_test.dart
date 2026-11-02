@@ -410,4 +410,30 @@ void main() {
     expect(detail.item.type, MediaServerItemType.series);
     expect(detail.initialSeasonId, 'sea1');
   });
+
+  testWidgets('BUG-3959：独立路由（不在库页外壳里）时页头让开状态栏，正文在页头下方', (
+    WidgetTester tester,
+  ) async {
+    const double statusBar = 47;
+    tester.view.physicalSize = const Size(1200, 2400);
+    tester.view.devicePixelRatio = 1.0;
+    tester.view.padding = const FakeViewPadding(top: statusBar);
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPadding);
+    browser.libraries.add(movies);
+
+    await tester.pumpWidget(harness());
+    await tester.pumpAndSettle();
+
+    final Rect search = tester.getRect(
+      find.byKey(const ValueKey<String>('media-server-home-search')),
+    );
+    expect(search.top, greaterThanOrEqualTo(statusBar));
+    // 正文让位跟着页头实测高度走：「媒体库」标题不被页头盖住。
+    final Rect libraries = tester.getRect(
+      find.text(t.media_server_libraries_title),
+    );
+    expect(libraries.top, greaterThanOrEqualTo(search.bottom));
+  });
 }
