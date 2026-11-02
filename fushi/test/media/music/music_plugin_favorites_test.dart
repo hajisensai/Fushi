@@ -196,4 +196,47 @@ void main() {
     expect(f.isFavorite(_plugin('ne', '1')), isFalse);
     expect(f.states, isEmpty);
   });
+  test('喜欢歌单按 id 认出；喜欢集合内容变了修订号才 +1（详情页据此重拉）', () async {
+    final _FakeHost host = _FakeHost();
+    final MusicPluginFavorites f = MusicPluginFavorites(host);
+    await f.refresh();
+    expect(f.likedPlaylistOf('ne')?.id, 'fav-ne');
+    expect(f.isLikedPlaylist('ne', 'fav-ne'), isTrue);
+    expect(f.isLikedPlaylist('ne', 'other'), isFalse);
+    expect(f.isLikedPlaylist('qq', 'fav-ne'), isFalse);
+    final int r0 = f.likedRevisionOf('ne');
+
+    await f.toggle(_plugin('ne', '2'));
+    final int r1 = f.likedRevisionOf('ne');
+    expect(r1, greaterThan(r0), reason: '喜欢后修订号变');
+
+    await f.toggle(_plugin('ne', '2'));
+    final int r2 = f.likedRevisionOf('ne');
+    expect(r2, greaterThan(r1), reason: '取消喜欢后修订号变');
+
+    // 重拉到相同内容：不算变化（不让详情页白白重拉）。
+    await f.refreshPlugin('ne');
+    expect(f.likedRevisionOf('ne'), r2);
+
+    // 别处（平台网页端）改了喜欢集合，重拉到不同内容：算变化。
+    host.liked['ne']!.add('7');
+    await f.refreshPlugin('ne');
+    expect(f.likedRevisionOf('ne'), greaterThan(r2));
+
+    // 失败的 toggle 不动修订号。
+    final int r3 = f.likedRevisionOf('ne');
+    host.setError = const MusicPluginException('风控');
+    await expectLater(
+      f.toggle(_plugin('ne', '8')),
+      throwsA(isA<MusicPluginException>()),
+    );
+    expect(f.likedRevisionOf('ne'), r3);
+
+    // 退出登录：集合清空也算变化，喜欢歌单不再可认。
+    host.setError = null;
+    host.liked.remove('ne');
+    await f.refreshPlugin('ne');
+    expect(f.likedRevisionOf('ne'), greaterThan(r3));
+    expect(f.likedPlaylistOf('ne'), isNull);
+  });
 }

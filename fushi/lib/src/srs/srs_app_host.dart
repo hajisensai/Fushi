@@ -9,6 +9,7 @@ import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_remote_store.dart';
 import 'package:fushi_srs/fushi_srs.dart' show SrsTermQuery;
 import 'package:material_ui/material_ui.dart';
 
@@ -21,11 +22,14 @@ import 'package:fushi/src/sync/fushi_api_server.dart' show SrsExtensionApi;
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/srs/srs_change_note_type.dart';
 
+export 'package:fushi/src/srs/srs_navigation.dart' show srsInheritProviderScope;
+
 class SrsAppHost implements SrsExtensionApi {
   SrsAppHost({
     required this.readStore,
     required this.openNote,
     required this.openBrowse,
+    this.remoteStore,
   });
 
   /// 当前（复习模块开着时装上的）宿主入口；null = 模块关着。
@@ -39,6 +43,10 @@ class SrsAppHost implements SrsExtensionApi {
 
   /// 打开浏览页。
   final Future<bool> Function() openBrowse;
+
+  /// 互联主机的远程复习库（`/api/srs/remote/*`，docs/specs/2026-11-01-srs-remote-review-design.md）。
+  /// 只有 [current] 那份带它；按配置给浏览器扩展建的实例不带（null）。
+  final SrsRemoteStoreService? remoteStore;
 
   /// 弹窗 / 扩展的词状态回包（见 srs_term_status_bridge.dart）。
   @override
@@ -124,15 +132,6 @@ List<Override> srsProfileScopeOverrides(SrsMiner miner) => <Override>[
   srsStoreProvider.overrideWith((Ref ref) async => miner.store),
   srsMediaStoreProvider.overrideWith((Ref ref) async => miner.media),
 ];
-
-/// 从 [from] 所在的 provider 作用域再压页面 / 抽屉时，把同一个作用域带过去：路由建在导航器的
-/// overlay 里，不在 [from] 的子树下，不带的话会落回根作用域（App 激活配置的复习）。
-/// [from] 就在根作用域里时这层包装是透明的。
-Widget srsInheritProviderScope(BuildContext from, Widget child) =>
-    UncontrolledProviderScope(
-      container: ProviderScope.containerOf(from, listen: false),
-      child: child,
-    );
 
 /// 在复习里打开 [miner] 那份配置的笔记 [noteId]（浏览器扩展所选的非激活配置）。
 Future<bool> srsPushProfileNoteEditor(

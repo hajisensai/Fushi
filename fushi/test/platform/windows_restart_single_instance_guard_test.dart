@@ -84,7 +84,7 @@ void main() {
             'must also count as taking over single-instance ownership',
       );
       expect(
-        src.contains('single_instance_mutex.Wait(10000)'),
+        src.contains('single_instance_mutex.Wait(kPreviousInstanceWaitMs)'),
         isTrue,
         reason:
             'the wait must be bounded so a stuck old process cannot hang '

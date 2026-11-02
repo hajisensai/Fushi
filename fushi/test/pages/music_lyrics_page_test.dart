@@ -384,6 +384,7 @@ void main() {
     musicLyricsClipExtractor =
         ({
           required String inputPath,
+          required Map<String, String> httpHeaders,
           required int startMs,
           required int endMs,
           required String outputPath,
@@ -392,6 +393,7 @@ void main() {
           required void Function(String summary) onFailure,
         }) async {
           clips.add((input: inputPath, startMs: startMs, endMs: endMs));
+          expect(httpHeaders, isEmpty, reason: '本机文件不带请求头');
           File(outputPath).writeAsBytesSync(<int>[1, 2, 3]);
           return outputPath;
         };
@@ -424,6 +426,7 @@ void main() {
               })
               as Future<Object?>,
     );
+    expect(clips.single.input, item().path, reason: '本机文件原样交给 ffmpeg');
     expect(clips.single.startMs, 3500, reason: '行 [4 s, 8 s) 前后各扩 0.5 s');
     expect(clips.single.endMs, 8500);
     final AnkiMiningContext ctx = anki.mined.single;

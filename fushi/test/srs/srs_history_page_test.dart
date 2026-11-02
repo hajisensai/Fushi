@@ -179,6 +179,28 @@ void main() {
   setUp(() => LocaleSettings.setLocale(AppLocale.en));
   tearDown(() => debugRealDirectoryPathOverride = null);
 
+  test('恢复预览只预演一次：不撤回复习的一份 = 撤回那份去掉复习数', () {
+    final SrsRestorePlanView retract = SrsRestorePlanView.fromJson(
+      <String, Object?>{
+        'fields': 3,
+        'revived': 1,
+        'removed': 2,
+        'tags': 4,
+        'reviews': 5,
+      },
+    );
+    final SrsRestorePlanView keep = retract.withoutReviews();
+    expect(
+      <int>[keep.fields, keep.revived, keep.removed, keep.tags, keep.reviews],
+      <int>[3, 1, 2, 4, 0],
+    );
+    final SrsRestorePlanView onlyReviews = SrsRestorePlanView.fromJson(
+      <String, Object?>{'reviews': 2},
+    );
+    expect(onlyReviews.isEmpty, isFalse);
+    expect(onlyReviews.withoutReviews().isEmpty, isTrue);
+  });
+
   for (final bool apple in <bool>[false, true]) {
     final String ds = apple ? 'Apple' : 'MD3';
 
@@ -371,6 +393,43 @@ void main() {
       });
     }
 
+    testWidgets('[$ds] 存储位置：通道位置有开关，关掉显示「已关闭」，打开写回 prefs', (
+      WidgetTester tester,
+    ) async {
+      final _Env env = await _open(tester);
+      const String id = 'obfuscated:googleDrive:a@example.com';
+      await _io(tester, () => env.prefs.setSrsLocationEnabled(id, false));
+      await _pump(tester, env, apple: apple);
+      final Finder row = find.byKey(
+        const ValueKey<String>('srs_timeline_channel_$id'),
+      );
+      await _pumpUntil(tester, row);
+      expect(
+        find.descendant(
+          of: row,
+          matching: find.text('${t.sync_backend_google_drive} · a@example.com'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: row,
+          matching: find.textContaining(t.srs_timeline_location_off),
+        ),
+        findsOneWidget,
+      );
+      await tester.tap(
+        find.byKey(const ValueKey<String>('srs_timeline_channel_toggle_$id')),
+      );
+      await _pumpUntilTrue(
+        tester,
+        () async => !env.prefs.srsDisabledLocations.contains(id),
+        reason: 'toggle on',
+      );
+      expect(tester.takeException(), isNull);
+      await _close(tester, env);
+    });
+
     testWidgets('[$ds] 存储位置：添加文件夹 / 改用途停用 / 移除，都写进 prefs', (
       WidgetTester tester,
     ) async {
@@ -391,11 +450,21 @@ void main() {
       await _pumpUntil(tester, usbRow);
       expect(find.text(usb), findsOneWidget);
 
-      // 添加：目录选择器返回 nas。
+      // 添加：「添加存储位置」里选文件夹，目录选择器返回 nas。
       debugRealDirectoryPathOverride = nas;
       await tester.tap(
         find.byKey(const ValueKey<String>('srs_timeline_location_add')),
       );
+      final Finder pickFolder = find.byKey(
+        const ValueKey<String>('srs_timeline_location_add_folder'),
+      );
+      await _pumpUntil(tester, pickFolder);
+      expect(
+        find.text(t.settings_destination_sync_backup),
+        findsAtLeastNWidgets(1),
+        reason: '云盘也能从这里加',
+      );
+      await tester.tap(pickFolder);
       await _pumpUntilTrue(
         tester,
         () async => env.prefs.srsFolderLocations.length == 2,

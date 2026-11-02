@@ -640,6 +640,59 @@ void main() {
     );
   });
 
+  test('video_remote_subtitle_files：按集的本机字幕档列表随数据根改写，外部路径不动', () {
+    const DocumentsPathRebaser rebaser = DocumentsPathRebaser(
+      oldRoot: '/home/u/Documents',
+      newRoot: '/home/u/Documents/Hibiki/data',
+      scopeTopLevelNames: AppPaths.fushiOwnedDocumentsEntries,
+    );
+    final String raw = jsonEncode(<String, List<String>>{
+      'remote/1#ep0': <String>[
+        '/home/u/Documents/video_subtitles/a.srt',
+        '/mnt/ext/subs/b.ass',
+      ],
+      'remote/1#ep1': <String>['/home/u/Documents/video_subtitles/c.vtt'],
+    });
+    final String once = rebaseMigratedPrefValue(
+      'video_remote_subtitle_files',
+      raw,
+      documents: rebaser,
+      newSupportRoot: '/support',
+    );
+    expect(
+      jsonDecode(once),
+      equals(<String, dynamic>{
+        'remote/1#ep0': <dynamic>[
+          '/home/u/Documents/Hibiki/data/video_subtitles/a.srt',
+          '/mnt/ext/subs/b.ass',
+        ],
+        'remote/1#ep1': <dynamic>[
+          '/home/u/Documents/Hibiki/data/video_subtitles/c.vtt',
+        ],
+      }),
+    );
+    // 新根落在旧根内部：再跑一次是 no-op。
+    expect(
+      rebaseMigratedPrefValue(
+        'video_remote_subtitle_files',
+        once,
+        documents: rebaser,
+        newSupportRoot: '/support',
+      ),
+      equals(once),
+    );
+    // 坏值原样返回，不中断迁移。
+    expect(
+      rebaseMigratedPrefValue(
+        'video_remote_subtitle_files',
+        'not json',
+        documents: rebaser,
+        newSupportRoot: '/support',
+      ),
+      equals('not json'),
+    );
+  });
+
   test('rebaseMigratedPrefValue 不动未登记的 key（profile_settings 里躺着全部 pref）', () {
     const DocumentsPathRebaser rebaser = DocumentsPathRebaser(
       oldRoot: '/home/u/Documents',

@@ -24,6 +24,7 @@ import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/srs/srs_navigation.dart';
 
 /// 同步 v2 扣住的一次删除（内核 `sync2_conflicts` 的一行）。
 class _HeldDelete {
@@ -292,12 +293,7 @@ class _SrsConflictsPageState extends ConsumerState<SrsConflictsPage> {
   }
 
   Future<void> _openNote(SrsNoteCacheRow row) async {
-    await Navigator.of(context).push<void>(
-      adaptivePageRoute<void>(
-        context: context,
-        builder: (_) => SrsNoteEditorPage(noteId: row.id),
-      ),
-    );
+    await srsPushPage<void>(context, (_) => SrsNoteEditorPage(noteId: row.id));
     if (mounted) await _reload();
   }
 

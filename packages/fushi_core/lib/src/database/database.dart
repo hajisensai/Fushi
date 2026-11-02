@@ -988,6 +988,38 @@ class FushiDatabase extends _$FushiDatabase
     }
   }
 
+  /// 还原被「按位置复制」写错位的 profiles 行（备份覆盖恢复的旧实现
+  /// `INSERT INTO profiles SELECT * FROM bak.profiles`，源库与目标库物理列序不同：
+  /// onCreate 建的表 uid 在中间，v117 `addColumn` 补的 uid 在表尾）。
+  ///
+  /// - 目标 uid 在尾、源 uid 在中：created_at = UUID（INTEGER 亲和列存成 text），
+  ///   updated_at = 源 created_at，uid = 源 updated_at（TEXT 亲和列存成数字串）。
+  /// - 目标 uid 在中、源 uid 在尾：uid = 源 created_at（数字串），created_at = 源
+  ///   updated_at，updated_at = UUID（text）。
+  ///
+  /// UUID 带 `-`，绝不是合法整数；判据只命中真被写错位的行，正常库零行受影响。
+  /// UPDATE 右侧读的是旧值，三列轮换一次完成。
+  Future<void> _repairProfilesColumnShift() async {
+    if (!await _tableExists('profiles') ||
+        !await _columnExists('profiles', 'uid')) {
+      return;
+    }
+    const String uidIsDigits =
+        "uid IS NOT NULL AND uid <> '' AND uid NOT GLOB '*[^0-9]*'";
+    await customStatement(
+      'UPDATE profiles SET uid = created_at, created_at = updated_at, '
+      'updated_at = CAST(uid AS INTEGER) '
+      "WHERE typeof(created_at) = 'text' AND typeof(updated_at) = 'integer' "
+      'AND $uidIsDigits',
+    );
+    await customStatement(
+      'UPDATE profiles SET uid = updated_at, created_at = CAST(uid AS INTEGER), '
+      'updated_at = created_at '
+      "WHERE typeof(updated_at) = 'text' AND typeof(created_at) = 'integer' "
+      'AND $uidIsDigits',
+    );
+  }
+
   /// BUG-2335: version 97 also exists in a parallel migration history without
   /// the v96 expansion column. Reuse the additive migration on open so a
   /// matching user_version cannot skip the column required by the mapper.
@@ -2892,6 +2924,11 @@ class FushiDatabase extends _$FushiDatabase
       // Keep it after downgrade refusal and before any generated query;
       // do not rewrite user_version or replay unrelated migration steps.
       await _ensureDictionaryExpandedLanguagesColumn(createMigrator());
+
+      // 覆盖恢复曾按位置复制 profiles，把 uid / created_at / updated_at 写错了位
+      // （推荐包导入后每次启动 `Invalid radix-10 number`）。必须在任何生成的
+      // ProfileRow 读取之前把已写坏的行还原。
+      await _repairProfilesColumnShift();
 
       // A hard process exit cannot run HomePage.dispose, so a scrape run
       // left in `running` would otherwise remain active forever. Reconcile

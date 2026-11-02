@@ -105,6 +105,11 @@ class MusicPluginFavorites extends ChangeNotifier {
   /// 每个插件的缓存版本：喜欢 / 取消喜欢后 +1，在途的旧拉取结果不再覆盖。
   final Map<String, int> _versions = <String, int>{};
 
+  /// 每个插件「喜欢集合内容」的修订号：集合真的变了（toggle 成功、重拉到不同内容、
+  /// 退出登录）就 +1。平台喜欢歌单的详情页订阅它，变了就重拉曲目（BUG：喜欢 / 取消
+  /// 喜欢后已打开的「我喜欢」歌单不刷新）。
+  final Map<String, int> _likedRevisions = <String, int>{};
+
   Future<void>? _loading;
   bool _loaded = false;
   bool _disposed = false;
@@ -150,6 +155,21 @@ class MusicPluginFavorites extends ChangeNotifier {
     ];
   }
 
+  /// 该插件账号平台上的「我喜欢的音乐」歌单（未登录 / 平台没有 / 没拉到为 null）。
+  MusicPluginPlaylist? likedPlaylistOf(String pluginId) => _playlists[pluginId];
+
+  /// [playlistId] 是不是该插件账号的喜欢歌单。不管从哪个入口（推荐页快捷格、用户歌单
+  /// 列表、搜索）打开的，都按 id 认出来。
+  bool isLikedPlaylist(String pluginId, String playlistId) =>
+      _playlists[pluginId]?.id == playlistId;
+
+  /// 该插件喜欢集合内容的修订号（单调递增；从没变过为 0）。
+  int likedRevisionOf(String pluginId) => _likedRevisions[pluginId] ?? 0;
+
+  void _bumpLikedRevision(String pluginId) {
+    _likedRevisions[pluginId] = likedRevisionOf(pluginId) + 1;
+  }
+
   /// 重拉插件列表与全部插件的喜欢集合（装卸 / 启停插件后调）。并发调用合并成一次。
   Future<void> refresh() => _loading ??= _refreshAll().whenComplete(() {
     _loading = null;
@@ -189,12 +209,18 @@ class MusicPluginFavorites extends ChangeNotifier {
       return;
     }
     if (_disposed || (_versions[pluginId] ?? 0) != version) return;
+    final Set<String>? before = _liked[pluginId];
     if (r == null) {
       _liked.remove(pluginId);
       _playlists.remove(pluginId);
+      if (before != null) _bumpLikedRevision(pluginId);
     } else {
-      _liked[pluginId] = <String>{...r.trackIds};
+      final Set<String> next = <String>{...r.trackIds};
+      _liked[pluginId] = next;
       _playlists[pluginId] = r.playlist;
+      if (before != null && !setEquals(before, next)) {
+        _bumpLikedRevision(pluginId);
+      }
     }
     notifyListeners();
   }
@@ -223,6 +249,7 @@ class MusicPluginFavorites extends ChangeNotifier {
       now.remove(ref.trackId);
     }
     _liked[ref.pluginId] = now;
+    _bumpLikedRevision(ref.pluginId);
     notifyListeners();
   }
 

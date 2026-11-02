@@ -241,7 +241,6 @@ class _VideoPagePlaybackRemote
   List<_RemoteSubtitleRow> _remoteRows(VideoPlayerController controller) {
     final String? primary = _state._currentSubtitleSource;
     final String? secondary = _state._currentSecondarySubtitleSource;
-    final String? hostSub = _state._remoteSubtitlePath;
     final List<_RemoteSubtitleRow> rows = <_RemoteSubtitleRow>[];
     for (final YoutubeCaptionTrack track in _state._youtubeCaptionTracks) {
       rows.add(
@@ -262,20 +261,36 @@ class _VideoPagePlaybackRemote
         ),
       );
     }
-    if (hostSub != null) {
+    // Xt3RCTPKhX：后端默认字幕 + 本机字幕档，与主 / 副字幕菜单同一份行模型
+    // （[_VideoSubtitle._remoteSubtitleFileRows]）。
+    for (final RemoteSubtitleFileEntry entry
+        in _state._remoteSubtitleFileRows) {
+      final SubtitleSource? local = entry.local;
+      final String path = entry.path;
+      final String? label = local == null ? null : entry.label;
       rows.add(
         _RemoteSubtitleRow(
           track: VideoRemoteSubtitleTrack(
-            source: hostSub,
-            label: p.basename(hostSub),
-            kind: VideoRemoteSubtitleKind.host,
-            primary: primary == hostSub,
-            secondary: secondary == hostSub,
+            source: path,
+            label: entry.label,
+            kind: local == null
+                ? VideoRemoteSubtitleKind.host
+                : VideoRemoteSubtitleKind.external,
+            primary: local == null
+                ? primary == path
+                : subtitleSourceMatchesPersistedForMenu(local, primary),
+            secondary: local == null
+                ? secondary == path
+                : subtitleSourceMatchesPersistedForMenu(local, secondary),
             ocrAvailable: false,
           ),
-          applyPrimary: () => _state._applyRemoteSubtitle(controller, hostSub),
-          applySecondary: () =>
-              _state._applyRemoteSecondarySubtitle(controller, hostSub),
+          applyPrimary: () =>
+              _state._applyRemoteSubtitle(controller, path, label: label),
+          applySecondary: () => _state._applyRemoteSecondarySubtitle(
+            controller,
+            path,
+            label: label,
+          ),
         ),
       );
     }
@@ -312,34 +327,6 @@ class _VideoPagePlaybackRemote
                 )
               : null,
           remoteTrack: track,
-        ),
-      );
-    }
-    for (final SubtitleSource source in _state._importedSubtitleSources) {
-      if (hostSub != null && sameExternalSubtitlePathForMenu(source, hostSub)) {
-        continue;
-      }
-      final String path = source.externalPath!;
-      rows.add(
-        _RemoteSubtitleRow(
-          track: VideoRemoteSubtitleTrack(
-            source: path,
-            label: source.label,
-            kind: VideoRemoteSubtitleKind.external,
-            primary: subtitleSourceMatchesPersistedForMenu(source, primary),
-            secondary: subtitleSourceMatchesPersistedForMenu(source, secondary),
-            ocrAvailable: false,
-          ),
-          applyPrimary: () => _state._applyRemoteSubtitle(
-            controller,
-            path,
-            label: source.label,
-          ),
-          applySecondary: () => _state._applyRemoteSecondarySubtitle(
-            controller,
-            path,
-            label: source.label,
-          ),
         ),
       );
     }

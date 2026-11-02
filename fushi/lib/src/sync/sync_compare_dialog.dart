@@ -1,6 +1,7 @@
 import 'dart:developer' as developer;
 import 'dart:io';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -1953,45 +1954,17 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
             ],
           ),
           const SizedBox(height: 8),
-          // 本地 / 远端两栏对比：宽时并排（相邻内角收小成一对分段块），窄时上下
-          // 堆叠。将被应用的那一侧铺 primaryContainer 色块 + 勾选徽标，差异一眼
-          // 可见；另一侧保持中性 surfaceContainerHigh。
-          LayoutBuilder(
-            builder: (BuildContext context, BoxConstraints constraints) {
-              final bool stacked = constraints.maxWidth < 360;
-              final Widget local = _dataColumn(
-                entry,
-                isLocal: true,
-                highlighted: winnerLocal == true,
-                stacked: stacked,
-              );
-              final Widget remote = _dataColumn(
-                entry,
-                isLocal: false,
-                highlighted: winnerLocal == false,
-                stacked: stacked,
-              );
-              if (stacked) {
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: <Widget>[local, const SizedBox(height: 2), remote],
-                );
-              }
-              return IntrinsicHeight(
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: <Widget>[
-                    Expanded(child: local),
-                    const SizedBox(width: 2),
-                    Expanded(child: remote),
-                  ],
-                ),
-              );
-            },
-          ),
+          // 本地 / 远端两栏对比：宽时并排，窄时上下堆叠。将被应用的那一侧铺
+          // primaryContainer 色块，差异一眼可见；另一侧保持中性 surfaceContainerHigh。
+          // 需要人工裁决的条目里这两张卡本身就是选择控件（点哪张用哪侧），见
+          // [_choicePair]；其余条目只做展示。
+          if (entry.bookKey != null && entry.needsManualChoice)
+            _choicePair(entry, choice)
+          else
+            _comparePair(entry, winnerLocal: winnerLocal),
           if (entry.bookKey != null && entry.needsManualChoice) ...[
-            const SizedBox(height: 10),
-            _choiceRow(entry.title, choice, theme),
+            const SizedBox(height: 4),
+            _skipRow(entry.title, choice),
           ] else if (entry.isDownloadableRemoteOnly) ...[
             const SizedBox(height: 10),
             _downloadRow(entry, theme),
@@ -2155,13 +2128,63 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
     );
   }
 
-  Widget _choiceRow(String title, SyncChoice choice, ThemeData theme) {
-    // Wrap as a single gamepad/keyboard focus stop (D-pad Left/Right cycles the
-    // conflict resolution). A bare per-entry segmented button is an unregistered
-    // native cluster; with only the header overflow menu registered, directional
-    // nav would never land here and the user could not pick a choice or reach
-    // Apply.
-    // M3E：连接式按钮组（FushiSegmentedButton，Apple 下为 iOS 分段控件）。
+  /// 本地 / 远端两张卡的排布：宽时并排，窄时上下堆叠。
+  Widget _comparePair(
+    SyncCompareEntry entry, {
+    required bool? winnerLocal,
+    ValueChanged<SyncChoice>? onSelected,
+  }) {
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final bool stacked = constraints.maxWidth < 360;
+        final Widget local = _dataColumn(
+          entry,
+          isLocal: true,
+          highlighted: winnerLocal == true,
+          stacked: stacked,
+          onSelected: onSelected == null
+              ? null
+              : () => onSelected(SyncChoice.useLocal),
+        );
+        final Widget remote = _dataColumn(
+          entry,
+          isLocal: false,
+          highlighted: winnerLocal == false,
+          stacked: stacked,
+          onSelected: onSelected == null
+              ? null
+              : () => onSelected(SyncChoice.useRemote),
+        );
+        if (stacked) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[local, const SizedBox(height: 2), remote],
+          );
+        }
+        return IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Expanded(child: local),
+              const SizedBox(width: 2),
+              Expanded(child: remote),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  /// 人工裁决条目的选择控件：本地 / 远端两张卡就是「用这一侧」的按钮（一对分段块 + 勾选徽标），
+  /// 不再另画一条同义的三段按钮（以前卡片只能看、下面的三段条才能点，同一个状态画了两遍）。
+  ///
+  /// 手柄 / 键盘：整对卡片仍是一个焦点站（[FushiAdjustableSegmented]），左右键按
+  /// 本地 / 跳过 / 远端循环；每张卡本身也可聚焦，Enter 选中。
+  Widget _choicePair(SyncCompareEntry entry, SyncChoice choice) {
+    void select(SyncChoice value) {
+      setState(() => _choices[entry.title] = value);
+    }
+
     return FushiAdjustableSegmented<SyncChoice>(
       focusIdPrefix: 'sync-choice',
       values: const <SyncChoice>[
@@ -2170,53 +2193,56 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
         SyncChoice.useRemote,
       ],
       selected: choice,
-      onChanged: (SyncChoice value) {
-        setState(() => _choices[title] = value);
-      },
-      child: FushiSegmentedButton<SyncChoice>(
-        expandedInsets: EdgeInsets.zero,
-        showSelectedIcon: false,
-        style: FushiSegmentedButton.styleFrom(
-          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-          textStyle: context.fushiType.labelMedium,
-        ),
-        segments: [
-          ButtonSegment(
-            value: SyncChoice.useLocal,
-            icon: const FushiIcon(FushiIcons.devices, size: 16),
-            label: Text(t.sync_compare_use_local),
-            tooltip: t.sync_compare_use_local,
-          ),
-          ButtonSegment(
-            value: SyncChoice.skip,
-            icon: const FushiIcon(FushiIcons.block, size: 16),
-            label: Text(t.sync_compare_skip),
-            tooltip: t.sync_compare_skip,
-          ),
-          ButtonSegment(
-            value: SyncChoice.useRemote,
-            icon: const FushiIcon(FushiIcons.cloud, size: 16),
-            label: Text(t.sync_compare_use_remote),
-            tooltip: t.sync_compare_use_remote,
-          ),
-        ],
-        selected: {choice},
-        onSelectionChanged: (Set<SyncChoice> sel) {
-          setState(() => _choices[title] = sel.first);
+      onChanged: select,
+      child: _comparePair(
+        entry,
+        winnerLocal: switch (choice) {
+          SyncChoice.useLocal => true,
+          SyncChoice.useRemote => false,
+          SyncChoice.skip => null,
         },
+        onSelected: select,
+      ),
+    );
+  }
+
+  /// 卡片下方的「跳过」：撤销已选的一侧（这一条不同步）；还没选时不可点。
+  Widget _skipRow(String title, SyncChoice choice) {
+    final bool skipped = choice == SyncChoice.skip;
+    return Align(
+      alignment: AlignmentDirectional.centerEnd,
+      child: FushiTextButton(
+        key: ValueKey<String>('sync-choice-skip-$title'),
+        onPressed: skipped
+            ? null
+            : () => setState(() => _choices[title] = SyncChoice.skip),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            const FushiIcon(FushiIcons.block, size: 16),
+            const SizedBox(width: 6),
+            Text(t.sync_compare_skip),
+          ],
+        ),
       ),
     );
   }
 
   /// 两栏对比卡的一侧：标题行（设备 / 云图标 + 本地 / 远端）、进度大号等宽数字、
   /// 时间与统计 / 有声书位置。[highlighted] = 这一侧将被应用：M3E 铺
-  /// primaryContainer + 勾选徽标（颜色弹簧过渡），Apple 用强调色淡染。
+  /// primaryContainer（颜色弹簧过渡），Apple 用强调色淡染。
+  ///
+  /// [onSelected] 非 null = 这张卡是选择控件（人工裁决条目）：可点、可聚焦、button 语义，
+  /// 与另一张收成一对分段块（相邻内角收小）并在选中时弹出勾选徽标。为 null 时只做展示：
+  /// 四角同圆角、没有勾选徽标，不装成可选的样子。
   Widget _dataColumn(
     SyncCompareEntry e, {
     required bool isLocal,
     bool highlighted = false,
     bool stacked = false,
+    VoidCallback? onSelected,
   }) {
+    final bool selectable = onSelected != null;
     final progress = isLocal ? e.localProgress : e.remoteProgress;
     final int? page = isLocal ? e.localPage : e.remotePage;
     final updatedAt = isLocal ? e.localUpdatedAt : e.remoteUpdatedAt;
@@ -2247,10 +2273,12 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
       container = eink ? cs.surface : cs.surfaceContainerHigh;
       onContainer = cs.onSurfaceVariant;
     }
-    // 一对分段块：外侧 16、相邻内侧 4（宽时左右相邻，窄时上下相邻）。
+    // 一对分段块：外侧 16、相邻内侧 4（宽时左右相邻，窄时上下相邻）；只展示的卡四角同圆角。
     const Radius outer = Radius.circular(16);
     const Radius inner = Radius.circular(4);
-    final BorderRadius radius = stacked
+    final BorderRadius radius = !selectable
+        ? const BorderRadius.all(Radius.circular(12))
+        : stacked
         ? (isLocal
               ? const BorderRadius.vertical(top: outer, bottom: inner)
               : const BorderRadius.vertical(top: inner, bottom: outer))
@@ -2265,43 +2293,31 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
                 ).resolve(Directionality.of(context)));
 
     final TextStyle detail = type.bodySmall.copyWith(color: onContainer);
-    return AnimatedContainer(
-      duration: motion.effectsDefault.duration,
-      curve: motion.effectsDefault.curve,
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-      decoration: BoxDecoration(
-        color: container,
-        borderRadius: radius,
-        border: eink
-            ? Border.all(color: highlighted ? cs.onSurface : cs.outline)
-            : null,
-      ),
-      child: DefaultTextStyle(
-        style: detail,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
-              children: <Widget>[
-                FushiIcon(
-                  isLocal ? FushiIcons.devices : FushiIcons.cloud,
-                  size: 16,
-                  color: onContainer,
+    final Widget content = DefaultTextStyle(
+      style: detail,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: <Widget>[
+              FushiIcon(
+                isLocal ? FushiIcons.devices : FushiIcons.cloud,
+                size: 16,
+                color: onContainer,
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  isLocal ? t.sync_compare_local : t.sync_compare_remote,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: type.labelLargeEmphasized.copyWith(color: onContainer),
                 ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    isLocal ? t.sync_compare_local : t.sync_compare_remote,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: type.labelLargeEmphasized.copyWith(
-                      color: onContainer,
-                    ),
-                  ),
-                ),
-                // 出现走 spatial 弹簧（轻回弹），收起走 effects（不过冲，避免
-                // 缩放越过 0 翻面）。
+              ),
+              // 出现走 spatial 弹簧（轻回弹），收起走 effects（不过冲，避免
+              // 缩放越过 0 翻面）。只展示的卡没有勾选徽标。
+              if (selectable)
                 AnimatedScale(
                   scale: highlighted ? 1 : 0,
                   duration: highlighted
@@ -2316,44 +2332,76 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
                     color: onContainer,
                   ),
                 ),
-              ],
+            ],
+          ),
+          const SizedBox(height: 4),
+          if (progress != null)
+            Text(
+              '${(progress * 100).toStringAsFixed(1)}%',
+              style: type.titleLargeEmphasized.tabular.copyWith(
+                color: highlighted ? onContainer : cs.onSurface,
+              ),
+            )
+          else if (page == null)
+            Text(t.sync_compare_no_data),
+          // 页式书（漫画 / PDF）：百分比之外给出具体页码；在线漫画没有总页数时
+          // 只有页码，这时它就是主数字。
+          if (page != null)
+            Text(
+              e.pageCount != null
+                  ? t.sync_compare_page_of_total(
+                      page: page + 1,
+                      total: e.pageCount!,
+                    )
+                  : t.sync_compare_page(page: page + 1),
+              style: progress == null
+                  ? type.titleLargeEmphasized.tabular.copyWith(
+                      color: highlighted ? onContainer : cs.onSurface,
+                    )
+                  : null,
             ),
-            const SizedBox(height: 4),
-            if (progress != null)
-              Text(
-                '${(progress * 100).toStringAsFixed(1)}%',
-                style: type.titleLargeEmphasized.tabular.copyWith(
-                  color: highlighted ? onContainer : cs.onSurface,
-                ),
-              )
-            else if (page == null)
-              Text(t.sync_compare_no_data),
-            // 页式书（漫画 / PDF）：百分比之外给出具体页码；在线漫画没有总页数时
-            // 只有页码，这时它就是主数字。
-            if (page != null)
-              Text(
-                e.pageCount != null
-                    ? t.sync_compare_page_of_total(
-                        page: page + 1,
-                        total: e.pageCount!,
-                      )
-                    : t.sync_compare_page(page: page + 1),
-                style: progress == null
-                    ? type.titleLargeEmphasized.tabular.copyWith(
-                        color: highlighted ? onContainer : cs.onSurface,
-                      )
-                    : null,
-              ),
-            if (updatedAt != null) Text(_formatTime(updatedAt)),
-            if (statsCount != null && statsCount > 0)
-              Text('${t.sync_statistics}: $statsCount ${t.sync_compare_days}'),
-            if (hasAudio)
-              Text(
-                '${t.sync_audiobook}: ${isLocal ? _formatDuration(e.localAudioPosMs! ~/ 1000) : _formatDuration(e.remoteAudioPosSec!.round())}',
-              ),
-          ],
-        ),
+          if (updatedAt != null) Text(_formatTime(updatedAt)),
+          if (statsCount != null && statsCount > 0)
+            Text('${t.sync_statistics}: $statsCount ${t.sync_compare_days}'),
+          if (hasAudio)
+            Text(
+              '${t.sync_audiobook}: ${isLocal ? _formatDuration(e.localAudioPosMs! ~/ 1000) : _formatDuration(e.remoteAudioPosSec!.round())}',
+            ),
+        ],
       ),
+    );
+    const EdgeInsets padding = EdgeInsets.fromLTRB(12, 10, 12, 10);
+    final Widget card = AnimatedContainer(
+      duration: motion.effectsDefault.duration,
+      curve: motion.effectsDefault.curve,
+      padding: selectable ? EdgeInsets.zero : padding,
+      decoration: BoxDecoration(
+        color: container,
+        borderRadius: radius,
+        border: eink
+            ? Border.all(color: highlighted ? cs.onSurface : cs.outline)
+            : null,
+      ),
+      child: !selectable
+          ? content
+          : Material(
+              type: MaterialType.transparency,
+              child: InkWell(
+                key: ValueKey<String>(
+                  'sync-choice-${isLocal ? 'local' : 'remote'}-${e.title}',
+                ),
+                borderRadius: radius,
+                onTap: onSelected,
+                child: Padding(padding: padding, child: content),
+              ),
+            ),
+    );
+    if (!selectable) return card;
+    return Semantics(
+      button: true,
+      selected: highlighted,
+      label: isLocal ? t.sync_compare_use_local : t.sync_compare_use_remote,
+      child: FushiPressScale(child: card),
     );
   }
 

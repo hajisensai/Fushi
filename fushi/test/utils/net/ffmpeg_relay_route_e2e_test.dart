@@ -18,7 +18,9 @@ import '../../helpers/unified_ffmpeg.dart';
 /// 播放列表挂在一个**解析不了的域名**上，只有中继（经用户代理出网，本地服务就是那个
 /// 代理）能取到——所以「本地服务收到了请求」本身就证明 ffmpeg 走了中继，而不是碰巧
 /// 直连成功。三组对照：
-///  - 不改道：直连解析不了域名，失败（改动前制卡的样子）；
+///  - 不改道：失败（改动前制卡的样子）。ffmpeg 跟随 app 代理（vhW6OpRy2H），播放列表
+///    可能经用户代理取到，但伪装分片读不出；所以这一组之后清空请求记录，后两组的
+///    「本地服务收到了请求」只记经中继那一程；
 ///  - 改道但不放开扩展名：FFmpeg 7.1 按白名单拒掉 `.jpg` 分片（`Invalid data`）；
 ///  - 改道 + 放开：抽出句子音频，本地服务先后收到播放列表与分片。
 ///
@@ -137,9 +139,17 @@ void main() {
             onFailure: failures.add,
           );
 
-      // 不改道：直连解析不了域名。
+      // 不改道：ffmpeg 跟随 app 代理裁决（反馈 vhW6OpRy2H，PR #2753 起制卡 ffmpeg 的远端
+      // 输入与 Dart 出站同一份代理）——这里用户代理就是本地服务，所以播放列表可能经它
+      // 取到；但没有中继放开扩展名、剥 PNG 前缀，伪装分片照样读不出（改动前制卡的样子）。
       expect(await cut(source, 'direct'), isNull);
-      expect(seen, isEmpty, reason: '直连不该经过中继');
+      expect(
+        seen,
+        isNot(contains('/hls/seg0.jpg')),
+        reason: '不经中继时 `.jpg` 分片在请求前就被扩展名白名单拒掉',
+      );
+      // 下面两组只看经中继那一程收到的请求。
+      seen.clear();
 
       // 改道但不放开扩展名：`.jpg` 分片被白名单拒掉。
       final ({String url, Future<void> ready}) strict = relayFfmpegRemoteInput(

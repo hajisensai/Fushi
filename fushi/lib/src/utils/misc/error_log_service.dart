@@ -2,11 +2,10 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/startup/test_environment.dart';
+import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/utils/misc/frame_safe_notifier.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi_anki/fushi_anki.dart';
-import 'package:path_provider/path_provider.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
 
 class ErrorLogEntry {
@@ -214,12 +213,11 @@ class ErrorLogService extends ChangeNotifier
   }
 
   /// [directoryOverride] 仅供测试注入临时目录（端到端验面包屑恢复，不碰
-  /// path_provider）；生产不传，走 [fushiTestDirectory] / 应用文档目录。
+  /// path_provider）；生产不传，走 [AppPaths.diagnosticsDirectory]（4w_veZGiQ7：
+  /// 不再直落平台 Documents 根；旧位置的残留在那里先搬过来，再读面包屑做崩溃恢复）。
   Future<void> init({Directory? directoryOverride}) async {
-    final dir =
-        directoryOverride ??
-        fushiTestDirectory('app-documents') ??
-        await getApplicationDocumentsDirectory();
+    final Directory dir =
+        directoryOverride ?? await AppPaths.diagnosticsDirectory();
     _appDir = dir;
     _logFile = File('${dir.path}/error_log.txt');
     _breadcrumbFile = File('${dir.path}/import_crash_breadcrumb.txt');
@@ -299,6 +297,13 @@ class ErrorLogService extends ChangeNotifier
     } catch (e) {
       debugPrint('[ErrorLogService] init-step breadcrumb recovery failed: $e');
     }
+    // 4w_veZGiQ7：旧位置（平台 Documents 根）的诊断文件搬迁跑在本服务就绪之前，失败条目
+    // 留到这里写进错误日志——搬不走的残留要能被看见，不能静默留在用户文档根。
+    if (directoryOverride == null) {
+      for (final String failure in AppPaths.diagnosticsMigrationFailures) {
+        log('ErrorLog.diagnosticsMigrationFailed', failure);
+      }
+    }
   }
 
   /// 在调用 native 词典导入 FFI 之前**同步**落盘一条面包屑。[detail] 应能唯一
@@ -307,11 +312,11 @@ class ErrorLogService extends ChangeNotifier
   /// 写入内容带时间戳：用户「正常强杀」恰好命中某本 FFI 执行中时，下次启动会
   /// 把残留误报为崩溃（与真硬崩在文件层不可区分）；带上时间戳让人工读日志时
   /// 能判断这条残留有多旧，区分「刚导一半被杀」和「很久以前的残留」。
-  /// TODO-892：native 词典导入步进面包屑要写入的固定目录（应用文档目录）。导入管理器
+  /// TODO-892：native 词典导入步进面包屑要写入的固定目录（[AppPaths.diagnosticsDirectory]）。导入管理器
   /// 把它经 FFI 透传给 native；[init] 未跑完（极早期）时返回 `''`，native 视为禁用。
   String get importStepBreadcrumbDir => _appDir?.path ?? '';
 
-  /// 面包屑 / 会话标记所在的应用文档目录；[init] 跑完前为 null。
+  /// 面包屑 / 会话标记所在的诊断目录（[AppPaths.diagnosticsDirectory]）；[init] 跑完前为 null。
   Directory? get appDirectory => _appDir;
 
   void markImportStart(String detail) {

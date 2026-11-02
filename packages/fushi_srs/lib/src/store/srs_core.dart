@@ -300,6 +300,9 @@ final class SrsCoreBindings {
       inTransaction = lib.lookupFunction<_StateC, _StateDart>(
         'ffsrs_store_in_transaction',
       ),
+      readConcurrency = lib.lookupFunction<_StateC, _StateDart>(
+        'ffsrs_store_read_concurrency',
+      ),
       historyStates = lib.lookupFunction<_HistC, _HistDart>(
         'ffsrs_store_history_states',
       ),
@@ -332,6 +335,7 @@ final class SrsCoreBindings {
   final _ExecDart exec;
   final _PageDart execBatch;
   final _StateDart inTransaction;
+  final _StateDart readConcurrency;
   final _HistDart historyStates;
   final _CmdDart optimizerItems;
   final _CmdDart rwkvRows;
@@ -382,6 +386,9 @@ final class SrsCoreBindings {
 }
 
 /// 一个打开的 srs.db。
+/// [SrsCore.snapshotQuery] 拒绝非只读查询时的错误消息（与 Rust `store::NOT_SNAPSHOT` 相同）。
+const String kSrsNotSnapshotQuery = 'srs: not a snapshot query';
+
 final class SrsCore {
   SrsCore._(this._b, this._handle, {required this.owned});
 
@@ -557,7 +564,15 @@ final class SrsCore {
   Uint8List execQuery(String sql, List<Object?> params) =>
       _exec(sql, params, 2);
 
-  /// [mode]：0 = 写语句，1 = 写连接上返回结果行的语句，2 = 选路查询（ffi.rs `ffsrs_store_exec`）。
+  /// Drift 事务**外**的查询（fushi_engine `srs_database_executor.dart` 的读查询那一路）：一律在内核的只读连接池
+  /// 里执行，并发的查询各占一条连接、互不排队，只看已提交的数据（native/fushi_fsrs/src/store/mod.rs
+  /// `SrsCore::snapshot_select`）。不是只读查询（PRAGMA、`… RETURNING` 等）不执行、抛 [SrsCoreException]，
+  /// 消息为 [kSrsNotSnapshotQuery]，调用方改走 [execQuery]。返回页同 [execQuery]。
+  Uint8List snapshotQuery(String sql, List<Object?> params) =>
+      _exec(sql, params, 3);
+
+  /// [mode]：0 = 写语句，1 = 写连接上返回结果行的语句，2 = 选路查询，3 = 事务外快照查询
+  /// （ffi.rs `ffsrs_store_exec`）。
   Uint8List _exec(String sql, List<Object?> params, int mode) =>
       using((Arena arena) {
         final (ffi.Pointer<ffi.Uint8> s, int sn) = _utf8(arena, sql);
@@ -814,6 +829,16 @@ final class SrsCore {
     );
     _b._freeBytes(out.value, len);
     return bytes;
+  });
+
+  /// Drift 事务外查询（[snapshotQuery]）的并发上限：内核只读连接池的连接数上限，按本机核数算
+  /// （native/fushi_fsrs/src/store/read_pool.rs `read_concurrency`）。查询道的 worker 数取它，不另写常量。
+  int get readConcurrency => using((Arena arena) {
+    final ffi.Pointer<ffi.Int32> out = arena();
+    final ffi.Pointer<ffi.Pointer<ffi.Char>> err = arena();
+    err.value = ffi.nullptr;
+    _check(_b, _b.readConcurrency(_h, out, err), err);
+    return out.value;
   });
 
   /// 写连接当前是否在事务里。

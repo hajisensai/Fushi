@@ -1168,8 +1168,29 @@ class SrsDbStore implements SrsSync2Host {
 
   /// 卡片浏览的常驻会话命令（native/fushi_fsrs/src/store/browse.rs；srs_browse.dart 的 `SrsBrowseSession` 发）。
   /// 只读（读快照；写连接上有事务时在它的 SAVEPOINT 里读，看得见未提交的行），不进写锁，在后台 isolate 跑。
-  Future<SrsSync2Result> browseCommand(Map<String, Object?> request) =>
-      _sync2Raw(request);
+  ///
+  /// 只接受 [kSrsBrowseOps] 里的命令：这个入口不进写锁、不走 [sync2Command] 的分流，且会被远程复习原样转给
+  /// 已配对设备调用；放任意 op 进来等于把 `seal_file` / `open_file`（按请求给的路径读写文件）与改库命令都开放了。
+  Future<SrsSync2Result> browseCommand(Map<String, Object?> request) {
+    final Object? op = request['op'];
+    if (!kSrsBrowseOps.contains(op)) {
+      throw ArgumentError.value(op, 'op', 'not a browse command');
+    }
+    return _sync2Raw(request);
+  }
+
+  /// [browseCommand] 接受的命令：与原生 `store/ffi.rs` 里分派到 `browse` 会话的那一组相同。
+  static const Set<String> kSrsBrowseOps = <String>{
+    'browse_query',
+    'browse_rows',
+    'browse_ids',
+    'browse_targets',
+    'browse_close',
+    'browse_stats',
+    'anki_find',
+    'anki_tags',
+    'anki_dupes',
+  };
 
   /// 不进写锁的 v2 命令（见 [sync2Command]）。判据：结果不依赖写连接上还没提交的行，也不在别的写入的
   /// 中途改本机状态。
@@ -1892,6 +1913,48 @@ class SrsDbStore implements SrsSync2Host {
     }
     return out;
   }
+
+  /// 一组实体的物化输入（身份记录 + 全部修改记录），按输入顺序、跳过不存在的 ID；[ids] 为 null = 本 profile 该类的
+  /// 全部实体。远程复习库把它交给客户端，客户端用同一个物化内核得出与这里逐字相同的视图（srs_remote_store.dart）。
+  Future<List<SrsEntitySource>> entitySources(
+    SrsEntityKind kind, {
+    Iterable<String>? ids,
+  }) async {
+    final List<String> wanted =
+        ids?.toSet().toList() ??
+        <String>[
+          for (final SrsEntityRow r
+              in await (db.select(db.srsEntities)..where(
+                    (t) =>
+                        t.profileUid.equals(profileUid) &
+                        t.kind.equals(kind.wire),
+                  ))
+                  .get())
+            r.id,
+        ];
+    final List<SrsEntitySource> out = <SrsEntitySource>[];
+    for (final List<String> chunk in _chunks(wanted)) {
+      final _RefreshPrefetch pre = _RefreshPrefetch();
+      await _prefetchEntities(pre, chunk);
+      await _prefetchEdits(pre, kind, chunk);
+      await _readWith(pre, () async {
+        for (final String id in chunk) {
+          final SrsEntityRow? row = await _entityRow(id);
+          if (row == null) continue;
+          out.add(
+            SrsEntitySource(id, row.payloadJson, await _editItems(kind, id)),
+          );
+        }
+      });
+    }
+    return out;
+  }
+
+  /// [deckTree] 缓存所认的键：键不变，牌组树不变。
+  String get deckTreeKey => _structureKey;
+
+  /// 库已关（底下的 Rust 句柄已释放）。
+  bool get isClosed => core.isClosed;
 
   /// 牌组树：身份记录一次读、全部牌组的修改记录分块一次预读（以前每个牌组各查两次，
   /// 导入几百个牌组的包时每建一个牌组都重读一遍整棵树，BUG-3543）。
@@ -4269,7 +4332,14 @@ class SrsDbStore implements SrsSync2Host {
   /// 正文）的并发候选不进这份清单（它们走待裁决），以前却连同正文全部读回来再丢掉。两台设备各自导入同一个
   /// 包（笔记 ID 由 guid 确定）后，每条笔记的每个字段都留着两条互不支配的记录——这条查询一次读回整库正文两遍
   /// （1.9 万张卡的库上过 GB），牌组列表的冲突角标每次重读都跑，原生分配失败闪退（BUG-3947）。
-  Future<List<(SrsEntityKind, String, SrsRegister)>> syncConflicts() async {
+  ///
+  /// 只关心一个实体（牌组设置页标「此项有同步冲突」）时传 [entity]：按
+  /// `idx_srs_field_edits_profile_register` 直接定位这一个实体的记录。不传则 GROUP BY 要扫本 profile
+  /// 的全部修改记录索引——两台设备各导入过同一个包的库上每条笔记的「所属牌组」都有两条记录，
+  /// 1.5 万条笔记的真实库上热缓存 2.3 s、冷缓存近 10 s，牌组设置页每次打开都付一遍。
+  Future<List<(SrsEntityKind, String, SrsRegister)>> syncConflicts({
+    ({SrsEntityKind kind, String id})? entity,
+  }) async {
     final String tracked = srsFieldClassSqlFilter(
       _kSyncConflictClasses,
       kindColumn: 'entity_kind',
@@ -4279,15 +4349,22 @@ class SrsDbStore implements SrsSync2Host {
         .customSelect(
           'SELECT e.entity_kind AS k, e.entity_id AS i, e.field_key AS f, '
           'CAST(e.json AS BLOB) AS j, s.server_time AS st '
-          'FROM srs_field_edits e '
-          'JOIN (SELECT entity_kind AS k, entity_id AS i, field_key AS f '
+          // CROSS JOIN 钉死连接顺序：先挑出多记录的字段键（m），再按完整索引键逐个取记录。
+          // 写成普通 JOIN 时 SQLite 把 e 放外层、按 profile_uid 扫本 profile 全部修改记录
+          // 再去探 m，[entity] 只筛一个实体也付整表的代价。
+          'FROM (SELECT entity_kind AS k, entity_id AS i, field_key AS f '
           'FROM srs_field_edits WHERE profile_uid = ? AND $tracked '
+          '${entity == null ? '' : 'AND entity_kind = ? AND entity_id = ? '}'
           'GROUP BY entity_kind, entity_id, field_key HAVING COUNT(*) > 1) m '
-          'ON e.entity_kind = m.k AND e.entity_id = m.i AND e.field_key = m.f '
-          'LEFT JOIN srs_event_local s ON s.event_id = e.id '
-          'WHERE e.profile_uid = ?',
+          'CROSS JOIN srs_field_edits e ON e.profile_uid = ? '
+          'AND e.entity_kind = m.k AND e.entity_id = m.i AND e.field_key = m.f '
+          'LEFT JOIN srs_event_local s ON s.event_id = e.id',
           variables: <Variable<Object>>[
             Variable<String>(profileUid, srsIdType),
+            if (entity != null) ...<Variable<Object>>[
+              Variable<String>(entity.kind.wire),
+              Variable<String>(entity.id, srsIdType),
+            ],
             Variable<String>(profileUid, srsIdType),
           ],
           readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
@@ -4982,6 +5059,21 @@ class SrsStudyState {
   /// 子树里有 RWKV 牌组而 RWKV 还没准备好（下载 / 回放 / 出错）：这些牌组的复习卡这一次一张没出，等就绪后
   /// 再排一次。[next] 为 null 时界面据此说「等 RWKV」，不说「今天复习完了」。与 [summary] 的同名标志同源。
   bool get rwkvPending => summary.rwkvPending;
+}
+
+/// 单次作答记入日志的最长用时（与 Anki「最长作答秒数」默认 60 秒同口径）：走神、切出去之类的长停顿
+/// 不该把复习用时统计撑爆。本机复习页与远程复习库主机端（srs_remote_store.dart）共用。
+const int kSrsMaxAnswerDurationMs = 60000;
+
+/// [SrsDbStore.answerAndStudy] 拒绝作答：这张卡出题之后已在别处被复习过（只有远程复习库会抛——
+/// 本机库没有「出题之后」这一说）。没记日志；调用方跳过这张、重新排队。
+class SrsCardChangedError implements Exception {
+  const SrsCardChangedError(this.cardId);
+
+  final String cardId;
+
+  @override
+  String toString() => 'SrsCardChangedError($cardId)';
 }
 
 /// [SrsDbStore.answerAndStudy] 的结果：写出的日志（撤销栈用）与评分之后的排队（没要求排队时 null）。

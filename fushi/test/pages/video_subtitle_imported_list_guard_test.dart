@@ -148,10 +148,23 @@ void main() {
     }
 
     test('登记新档没有任何前置门', () {
-      final String body = region(
+      final String body = methodBody(
+        code,
         'void _registerImportedSubtitleSource(String path) {',
-        '/// 字幕轨 / 副字幕轨行共用',
       );
+      // BUG-3984：登记**之后**远端要把本机档按集持久化（`if (_isRemote)` 包着
+      // `_persistRemoteLocalSubtitleFile`），那是登记成功后的副作用，不是前置门。
+      // 所以前置门只在「写进列表」之前那段里找。
+      const String listWrite = '_importedSubtitleSources = <SubtitleSource>[';
+      final int writeAt = body.indexOf(listWrite);
+      expect(
+        writeAt,
+        greaterThanOrEqualTo(0),
+        reason:
+            '新档写进独立的导入档列表，而不是枚举缓存——后到的枚举结果会整体覆盖'
+            '枚举缓存，写那里等于让新档随时可能被冲掉（BUG-1861）',
+      );
+      final String gates = body.substring(0, writeAt);
       // 「这个档案就在盘上、刚被应用」不依赖枚举是否跑过、跑成没跑成，也不分本地/远端。
       // 任一符号回到这里都意味着又给登记加回了一个会静默丢档的前置条件（BUG-1861）。
       for (final String gate in <String>[
@@ -160,41 +173,43 @@ void main() {
         '_isRemote',
       ]) {
         expect(
-          body.contains(gate),
+          gates.contains(gate),
           isFalse,
           reason:
               '$gate 不得成为登记的前置条件：枚举在途 / 枚举失败 / 换集失配 / 远端'
               '四种情况下它都会把用户刚下载的字幕静默丢掉（BUG-1861）',
         );
       }
-      expect(
-        body.contains('_importedSubtitleSources = <SubtitleSource>['),
-        isTrue,
-        reason:
-            '新档写进独立的导入档列表，而不是枚举缓存——后到的枚举结果会整体覆盖'
-            '枚举缓存，写那里等于让新档随时可能被冲掉（BUG-1861）',
-      );
+      // 远端分支只许出现在写入之后，且只做持久化（BUG-3984）。
+      final String after = body.substring(writeAt);
+      if (after.contains('_isRemote')) {
+        expect(
+          after.substring(after.indexOf('_isRemote')),
+          contains('_persistRemoteLocalSubtitleFile('),
+          reason: '登记后的远端分支只做按集持久化',
+        );
+      }
       // 扩展名同样不得成为登记的前置条件：provider 给的 fileName 不受白名单约束，
       // `.sup` / `.smi` / `.ttml` 一样落进 video_subtitles/，被扩展名门吃掉就等于
       // 「下完之后列表里连名字都看不到」，与两个调用点「坏档也该列出来」的约定矛盾。
       expect(
-        body.contains('isImportedExternalSubtitlePath'),
+        gates.contains('isImportedExternalSubtitlePath'),
         isFalse,
         reason:
             '登记不按扩展名门控（BUG-1861）；那条判据是给「持久化值能否按路径'
             '重放」用的，两者不得互相取代',
       );
       expect(
-        body.contains('isExternalSubtitleFilePathForMenu(path)'),
+        gates.contains('isExternalSubtitleFilePathForMenu(path)'),
         isTrue,
         reason: '登记只滤掉源指针 / 哨兵 / 空串（BUG-1861）',
       );
     });
 
     test('登记首行判 mounted（四个调用点全在 await 之后）', () {
-      final String body = region(
+      final String body = methodBody(
+        code,
         'void _registerImportedSubtitleSource(String path) {',
-        '/// 字幕轨 / 副字幕轨行共用',
       );
       final int mountedGate = body.indexOf('if (!mounted) return;');
       expect(
@@ -232,14 +247,26 @@ void main() {
     });
 
     test('远端主 / 副字幕轨列表都给本机导入档留了行', () {
-      // 只断「语料里有这一行」不够：主字幕那半修了、副字幕那半没修，`contains` 照样绿。
-      // 两处各自切窗口断，再用总数钉死不多不少。
+      // BUG-3984：远端两处不再各自遍历 `_importedSubtitleSources`，而是遍历共享行模型
+      // `_remoteSubtitleFileRows`（= remoteSubtitleFileEntries(后端默认, 本机档)，本机档
+      // 总是成行——纯函数单测见 video_remote_subtitle_catalog_test）。不变量不变：
+      // 主、副两处都要有承载本机导入档的行。只断「语料里有这一行」不够：主字幕那半修了、
+      // 副字幕那半没修，`contains` 照样绿。两处各自切窗口断，再用总数钉死不多不少。
       const String row =
-          'for (final SubtitleSource source in _importedSubtitleSources)';
+          'for (final RemoteSubtitleFileEntry entry in _remoteSubtitleFileRows)';
       expect(
         row.allMatches(code).length,
         2,
         reason: '远端主字幕轨行 + 远端副字幕轨行，各一处（BUG-1861）',
+      );
+      final String getter = region(
+        'List<RemoteSubtitleFileEntry> get _remoteSubtitleFileRows =>',
+        'Widget _remoteSubtitleFileTile(',
+      );
+      expect(
+        getter,
+        contains('localFiles: _importedSubtitleSources,'),
+        reason: '行模型的本机档必须来自导入档列表，否则新下载的档仍然没有行（BUG-1861）',
       );
       final String primary = region(
         'Widget _buildSubtitleTrackRows(',
@@ -319,10 +346,11 @@ void main() {
           clear.allMatches(code).length - decl.allMatches(code).length;
       expect(
         clears,
-        3,
+        2,
         reason:
-            '恰好三处清空：本地 _applyLoad 的换源分支、远端 '
-            '_loadRemoteEpisode、原盘 _bindDiscPlaylist；每条路径均须清理旧源（BUG-1861）',
+            '恰好两处清空：本地 _applyLoad 的换源分支、原盘 _bindDiscPlaylist；'
+            '远端 _loadRemoteEpisode 改为按集从持久化**整体重建**（BUG-3984），'
+            '同样不让上一集的档留在新集列表里（BUG-1861）',
       );
 
       // 本地：清空必须落在 `clipExportSourceChanged` 那个块里（与枚举缓存同一作用域），
@@ -350,12 +378,18 @@ void main() {
         '_remoteSubtitleUserDismissed = false;',
         'final int initialPositionMs =',
       );
+      // 远端换集：整体替换成本集持久化列表（不是追加），上一集的档因此出局。
       expect(
-        remote.contains(clear),
+        remote.contains('_importedSubtitleSources = restoredLocalSubtitles;'),
         isTrue,
         reason:
-            '远端换集必须清导入档（远端 _currentVideoPath 恒 null，走不到本地换源'
-            '分支的那次清空）',
+            '远端换集必须整体替换导入档（远端 _currentVideoPath 恒 null，走不到本地'
+            '换源分支的那次清空；BUG-3984 起按集重建而不是清空）',
+      );
+      expect(
+        remote.contains('..._importedSubtitleSources'),
+        isFalse,
+        reason: '换集不得把上一集的导入档并进新列表',
       );
 
       final String disc = methodBody(code, 'Future<void> _bindDiscPlaylist(');

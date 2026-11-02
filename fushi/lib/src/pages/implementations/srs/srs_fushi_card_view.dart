@@ -37,8 +37,7 @@ import 'package:fushi/src/pages/implementations/srs/srs_card_video_clip.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
 import 'package:fushi/src/srs/srs_card_appearance.dart';
 import 'package:fushi/src/srs/srs_review_edit.dart';
-import 'package:fushi/src/srs/srs_card_autoplay.dart'
-    show SrsFushiCardMedia, srsFushiCardMedia;
+import 'package:fushi/src/srs/srs_fushi_card_plan.dart';
 import 'package:fushi/src/srs/srs_card_video_channel.dart';
 import 'package:fushi/src/srs/srs_card_defs_layout.dart';
 import 'package:fushi/src/srs/srs_card_tokens.dart';
@@ -54,6 +53,9 @@ import 'package:fushi/src/utils/cover_image.dart'
 import 'package:fushi/src/utils/animated_avif_image.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
+
+export 'package:fushi/src/srs/srs_fushi_card_plan.dart'
+    show SrsFushiFrontKind, srsFushiBlockVisible, srsFushiFrontKind;
 
 /// 注音字号 / 基字字号（与模板 `rt` 的 0.36em 同一比例）。
 const double _kSrsRubyRatio = 0.36;
@@ -73,44 +75,6 @@ Color srsPitchColor(String type, {required bool dark}) => switch (type) {
   'odaka' => dark ? const Color(0xFF7FCC58) : const Color(0xFF4F9A2F),
   _ => dark ? const Color(0xFFB592F6) : const Color(0xFF7E53C4),
 };
-
-/// 区块的原生可见性（外观开关 + 字段是否有内容），与模板条件段同一判据。
-@visibleForTesting
-bool srsFushiBlockVisible(
-  FushiCardBlock block,
-  Map<String, String> fields,
-  SrsCardAppearance a,
-) {
-  bool any(List<String> names) =>
-      names.any((String n) => srsFieldFilled(fields[n]));
-  return switch (block) {
-    FushiCardBlock.term => true,
-    FushiCardBlock.reading => any(block.fields) || any(<String>['Term']),
-    FushiCardBlock.picture => a.showPicture && any(block.fields),
-    FushiCardBlock.sentence => srsFieldFilled(fields['Sentence']),
-    FushiCardBlock.definitions => any(block.fields),
-    // 跟随查词的「词频聚合」：聚合且有平均值（FreqSort）时只在读音行显示平均值，
-    // 不出明细区；否则出按词典合并的明细区。两者永不同时出现（模板同一规则）。
-    FushiCardBlock.frequency =>
-      a.showFrequency &&
-          any(block.fields) &&
-          !(a.aggregateFrequency && srsFieldFilled(fields['FrequencyRank'])),
-    FushiCardBlock.source => a.showSource && any(block.fields),
-  };
-}
-
-/// 卡型（正面）：与模板的 Lapis 卡型开关同一语义，都空 = 单词卡。
-enum SrsFushiFrontKind { word, sentence, wordAndSentence, click, audio }
-
-SrsFushiFrontKind srsFushiFrontKind(Map<String, String> f) {
-  if (srsFieldFilled(f['IsSentenceCard'])) return SrsFushiFrontKind.sentence;
-  if (srsFieldFilled(f['IsWordAndSentenceCard'])) {
-    return SrsFushiFrontKind.wordAndSentence;
-  }
-  if (srsFieldFilled(f['IsClickCard'])) return SrsFushiFrontKind.click;
-  if (srsFieldFilled(f['IsAudioCard'])) return SrsFushiFrontKind.audio;
-  return SrsFushiFrontKind.word;
-}
 
 // ---------------------------------------------------------------- 例句目标词（#9）
 
@@ -288,6 +252,13 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     skipTraversal: true,
   );
 
+  /// 窄版式页脚（词频 / 来源）那块选区的焦点：与标题区不是同一个 SelectionArea（中间隔着
+  /// 释义 WebView），各自一个焦点。
+  final FocusNode _footerSelectionFocus = FocusNode(
+    debugLabel: 'srs-fushi-selection-footer',
+    skipTraversal: true,
+  );
+
   /// 释义 WebView 的子树：正面时在 Offstage 里预建 / 保活（GlobalKey 换父不重建平台
   /// 视图），翻面只是换父，不用现起 WebView。
   final GlobalKey _defsKey = GlobalKey(debugLabel: 'srs-fushi-defs');
@@ -312,20 +283,24 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     srsCardVideoChannelProvider,
   );
 
-  /// 这张卡实际画出来的发音键 / 片段（与复习页的自动播放、底栏重播同一份，#10 / #15）。
-  SrsFushiCardMedia get _media => srsFushiCardMedia(
-    widget.fields,
-    audioCardFront: srsFushiFrontKind(widget.fields) == SrsFushiFrontKind.audio,
-  );
+  /// 这一帧的卡面计划：画哪些区块、画出来的发音键 / 片段（与复习页的自动播放、底栏重播
+  /// 同一份，#10 / #15 / HrB0STYm3E）。每次 build 开头按当前外观重算。
+  late SrsFushiCardPlan _plan;
 
   /// 只在复习页（卡面发音交给宿主序列时）声明陪播例句音频：外观页预览等别的卡面不碰复习页
-  /// 的通道。
+  /// 的通道。外观变了（例句区 / 图片区显隐）跟着重新声明。
   void _declareSentenceAudio() {
     if (widget.face.onPlayAudio == null) {
       _channel.clearSentenceAudio(this);
       return;
     }
-    _channel.setSentenceAudio(this, _media.companionSentence);
+    _channel.setSentenceAudio(
+      this,
+      srsFushiCardPlan(
+        widget.fields,
+        ref.read(srsCardAppearanceProvider),
+      ).media.companionSentence,
+    );
   }
 
   /// 底栏让位高度（[SrsFushiCardView.bottomInset]）。
@@ -339,6 +314,10 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
   void initState() {
     super.initState();
     _declareSentenceAudio();
+    ref.listenManual<SrsCardAppearance>(
+      srsCardAppearanceProvider,
+      (SrsCardAppearance? _, SrsCardAppearance _) => _declareSentenceAudio(),
+    );
     widget.bottomInset?.addListener(_onBottomInset);
   }
 
@@ -367,6 +346,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     _channel.clearSentenceAudio(this);
     _scroll.dispose();
     _selectionFocus.dispose();
+    _footerSelectionFocus.dispose();
     super.dispose();
   }
 
@@ -413,6 +393,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
   @override
   Widget build(BuildContext context) {
     final SrsCardAppearance a = ref.watch(srsCardAppearanceProvider);
+    _plan = srsFushiCardPlan(widget.fields, a);
     final List<String> families = ref.watch(srsCardFontFamiliesProvider);
     final ThemeData base = Theme.of(context);
     final ColorScheme scheme = srsCardColorScheme(a, base.colorScheme);
@@ -426,61 +407,72 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     );
     return Theme(
       data: base.copyWith(colorScheme: scheme),
-      // 原生绘制的文字可拖选 / 复制（与 WebView 释义区一致）；点按手势不受影响。
-      child: SelectionArea(
-        focusNode: _selectionFocus,
-        // 复习时编辑：原生区选中的文字交给复习页（没有序号；整页清空选区不报）。
-        onSelectionChanged: widget.face.onEditSelection == null
-            ? null
-            : (SelectedContent? content) {
-                final String text = content?.plainText ?? '';
-                if (text.trim().isEmpty) return;
-                widget.face.onEditSelection!(SrsCardSelection(text));
-              },
-        // 包在取词区外面：抬起时取词区先处理（[SrsNativeLookupRegionState.tookTap] 已定）。
-        child: SrsCardGestureRegion(
-          onGesture: widget.face.onCardGesture,
-          arming: widget.face.gestureArming,
-          tapTookLookup: () => _tapTookLookup,
-          scrollController: _scroll,
-          child: SrsNativeLookupRegion(
-            key: _lookupRegion,
-            child: ColoredBox(
-              // 跟随 app 主题时不铺底，透出复习页背景（与 WebView 外壳同一判据）。
-              color: srsCardPaintsOwnSurface(widget.face, a)
-                  ? scheme.surface
-                  : Colors.transparent,
-              child: LayoutBuilder(
-                builder: (BuildContext context, BoxConstraints c) {
-                  if (c.maxHeight.isFinite) {
-                    _viewport = math.max(
-                      0,
-                      c.maxHeight - widget.topInset - _bottomInset,
-                    );
-                  }
-                  final bool wide = switch (widget.face.layout) {
-                    SrsCardLayout.wide => true,
-                    SrsCardLayout.narrow => false,
-                    SrsCardLayout.auto =>
-                      c.maxWidth >= kSrsFushiCardWideBreakpoint,
-                  };
-                  return FushiEntranceScope(
-                    replayKey:
-                        '${widget.face.cardId}-${widget.face.showingAnswer}-$wide',
-                    child: widget.face.showingAnswer
-                        ? (wide
-                              ? _buildWideBack(context, style, c)
-                              : _buildNarrowBack(context, style, c))
-                        : _frontWithWarmDefs(context, style, c, wide: wide),
+      // 原生绘制的文字可拖选 / 复制（与 WebView 释义区一致）：选区只包原生文字列
+      // （[_selectable]），不包释义 WebView 与留白——见 [_selectable] 的说明。
+      // 包在取词区外面：抬起时取词区先处理（[SrsNativeLookupRegionState.tookTap] 已定）。
+      child: SrsCardGestureRegion(
+        onGesture: widget.face.onCardGesture,
+        arming: widget.face.gestureArming,
+        tapTookLookup: () => _tapTookLookup,
+        scrollController: _scroll,
+        child: SrsNativeLookupRegion(
+          key: _lookupRegion,
+          child: ColoredBox(
+            // 跟随 app 主题时不铺底，透出复习页背景（与 WebView 外壳同一判据）。
+            color: srsCardPaintsOwnSurface(widget.face, a)
+                ? scheme.surface
+                : Colors.transparent,
+            child: LayoutBuilder(
+              builder: (BuildContext context, BoxConstraints c) {
+                if (c.maxHeight.isFinite) {
+                  _viewport = math.max(
+                    0,
+                    c.maxHeight - widget.topInset - _bottomInset,
                   );
-                },
-              ),
+                }
+                final bool wide = switch (widget.face.layout) {
+                  SrsCardLayout.wide => true,
+                  SrsCardLayout.narrow => false,
+                  SrsCardLayout.auto =>
+                    c.maxWidth >= kSrsFushiCardWideBreakpoint,
+                };
+                return FushiEntranceScope(
+                  replayKey:
+                      '${widget.face.cardId}-${widget.face.showingAnswer}-$wide',
+                  child: widget.face.showingAnswer
+                      ? (wide
+                            ? _buildWideBack(context, style, c)
+                            : _buildNarrowBack(context, style, c))
+                      : _frontWithWarmDefs(context, style, c, wide: wide),
+                );
+              },
             ),
           ),
         ),
       ),
     );
   }
+
+  /// 原生文字的选区（eo2pH56Ont / Z9APuG_imH）：谁渲染谁吃手势。
+  ///
+  /// 以前一个 SelectionArea 包住整个视口——释义 WebView 平台视图、空白、底部留白都在它下面。
+  /// SelectableRegion 的长按 / 拖动识别器挂在这些位置的祖先上，一律进手势竞技场：长按释义或
+  /// 留白时 Flutter 赢下长按，落点下没有原生 Selectable，就按「夹到最近的 selectable」兜底
+  /// 选中了上方的例句；平台视图要等这些识别器放弃（越过触摸阈值）才拿到拖动，释义滚动一顿
+  /// 一跳。现在选区只包原生文字列（mainAxisSize.min，不含留白），释义 WebView 是它的兄弟、
+  /// 不在它的子树里；WebView 自己声明手势（[srsCardFaceGestureRecognizers]）。
+  Widget _selectable(Widget child, {FocusNode? focusNode}) => SelectionArea(
+    focusNode: focusNode ?? _selectionFocus,
+    // 复习时编辑：原生区选中的文字交给复习页（没有序号；整页清空选区不报）。
+    onSelectionChanged: widget.face.onEditSelection == null
+        ? null
+        : (SelectedContent? content) {
+            final String text = content?.plainText ?? '';
+            if (text.trim().isEmpty) return;
+            widget.face.onEditSelection!(SrsCardSelection(text));
+          },
+    child: child,
+  );
 
   // ---------------------------------------------------------------- 正面
 
@@ -502,7 +494,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
           _frontSentence(s, c, masked: true),
           _AudioButton(
             key: const ValueKey<String>('srs-fushi-front-audio'),
-            name: _media.front.firstOrNull ?? '',
+            name: _plan.media.front.firstOrNull ?? '',
             large: true,
             style: s,
             onPlay: (String name) => _playNames(<String>[name]),
@@ -529,15 +521,17 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
         padding: EdgeInsets.all(
           s.pad,
         ).copyWith(top: s.pad + widget.topInset, bottom: s.pad + _bottomInset),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            for (int i = 0; i < blocks.length; i++)
-              Padding(
-                padding: EdgeInsets.only(top: i == 0 ? 0 : s.gap),
-                child: FushiStaggeredEntrance(index: i, child: blocks[i]),
-              ),
-          ],
+        child: _selectable(
+          Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              for (int i = 0; i < blocks.length; i++)
+                Padding(
+                  padding: EdgeInsets.only(top: i == 0 ? 0 : s.gap),
+                  child: FushiStaggeredEntrance(index: i, child: blocks[i]),
+                ),
+            ],
+          ),
         ),
       ),
     );
@@ -739,7 +733,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
         // 平均词频（聚合）：关了「显示词频」不出；下方明细区在时不重复。
         if (s.appearance.showFrequency &&
             srsFieldFilled(f['FrequencyRank']) &&
-            !srsFushiBlockVisible(FushiCardBlock.frequency, f, s.appearance))
+            !_plan.shows(FushiCardBlock.frequency))
           _Chip(
             key: const ValueKey<String>('srs-fushi-frequency-aggregate'),
             text: srsPlainText(f['FrequencyRank']!),
@@ -753,9 +747,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
   /// 元信息缩进一个卡片内边距，发音键与例句卡里的发音键落在同一条竖线上、后面的文字
   /// 也从同一个 x 起头。词条独占整行宽：手机上不再与右侧缩略图抢宽度（短词被折成两行）。
   Widget _header(_SrsCardStyle s, BoxConstraints c) {
-    final List<String> audio = srsAudioSources(
-      widget.fields['TermAudio'] ?? '',
-    );
+    final List<String> audio = _plan.media.word;
     final Widget main = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
@@ -826,13 +818,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
   /// 宽），怪比例限高完整显示。窄版式以前是标题右侧 126×118 的缩略图，手机上视频片段
   /// 小得看不清、播放 / 放大 / 重播三个角标挤在一起。
   Widget? _picture(_SrsCardStyle s) {
-    if (!srsFushiBlockVisible(
-      FushiCardBlock.picture,
-      widget.fields,
-      s.appearance,
-    )) {
-      return null;
-    }
+    if (!_plan.shows(FushiCardBlock.picture)) return null;
     final String picture = widget.fields['Media']!;
     final SrsPictureLimits limits = srsPictureLimits(
       ref.watch(srsReviewImageSizeProvider),
@@ -841,7 +827,8 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     final double maxHeight = limits.maxHeight;
     // 视频片段（WebM `<video>` / MP4 `[sound:]`）：在卡面上原生播，复习页的音频序列经
     // 片段通道驱动它（先单词音频、再片段）。
-    final String? clip = srsVideoSources(picture).firstOrNull;
+    // 片段与自动播放 / 重播清单同一份（[SrsFushiCardPlan.media]）。
+    final String? clip = _plan.media.clip;
     if (clip != null) {
       // 尺寸与图片同一套规则：常见比例铺满栏宽、超过高度上限等比缩小。
       return SrsCardVideoClip(
@@ -870,9 +857,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
 
   Widget? _sentence(_SrsCardStyle s) {
     final Map<String, String> f = widget.fields;
-    if (!srsFushiBlockVisible(FushiCardBlock.sentence, f, s.appearance)) {
-      return null;
-    }
+    if (!_plan.shows(FushiCardBlock.sentence)) return null;
     final bool showRuby = _sentenceRuby;
     final String raw = f['Sentence']!;
     // 目标词强调（#9）：显示的那份没带 `<b>` 时按字段标记 / 词条写法重新定位。
@@ -889,7 +874,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     final bool hasRuby = segs.any((SrsInline x) => x.ruby != null);
     // 例句发音键：片段自带例句声音时它控制片段（画面上从头播、有声），否则播例句音频
     // （画面上的动图 / 静音片段从头陪播），两者不再各出一路声音（#7 / #10）。
-    final List<String> audio = _media.sentenceUnit;
+    final List<String> audio = _plan.media.sentenceUnit;
     // 注音收起时第一下点按是「显示注音」（原有操作），不取词；注音显示后点在字上 =
     // 查词，点在字外 = 收起注音。
     final bool rubyToggle = hasRuby;
@@ -1049,7 +1034,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     final Map<String, String> f = widget.fields;
     final SrsCardLabels labels = srsCardLabels();
     return <Widget>[
-      if (srsFushiBlockVisible(FushiCardBlock.frequency, f, s.appearance))
+      if (_plan.shows(FushiCardBlock.frequency))
         _MetaRow(
           key: const ValueKey<String>('srs-fushi-frequency'),
           label: labels.frequency,
@@ -1064,7 +1049,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
             ],
           ),
         ),
-      if (srsFushiBlockVisible(FushiCardBlock.source, f, s.appearance))
+      if (_plan.shows(FushiCardBlock.source))
         _MetaRow(
           key: const ValueKey<String>('srs-fushi-source'),
           label: labels.source,
@@ -1161,7 +1146,10 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     hostScript: kSrsDefsLayoutScript,
     onWheel: wide ? null : _onDefsWheel,
     onSourceLink: widget.face.onSourceLink,
-    autoplayMedia: widget.face.autoplayMedia,
+    // 释义区不在自动播放清单里（[SrsFushiCardPlan] 只收原生区画出来的媒体）：词典 HTML 里
+    // 收起 / 隐藏的 `<audio autoplay>` 不许自己出声，自动播放只走宿主序列（HrB0STYm3E）。
+    // 用户在释义里点按发音照常放行（闸门只拦手势外的播放）。
+    autoplayMedia: false,
     // 释义里的发音按钮同样交给复习页的序列（同一时刻只出一路声音）。
     onPlayAudio: widget.face.onPlayAudio,
     // 释义区的卡面手势由页内指针脚本回报（原生区那一层见 [SrsCardGestureRegion]）。
@@ -1180,13 +1168,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
   );
 
   Widget? _definitions(BuildContext context, {required bool wide}) {
-    if (!srsFushiBlockVisible(
-      FushiCardBlock.definitions,
-      widget.fields,
-      ref.read(srsCardAppearanceProvider),
-    )) {
-      return null;
-    }
+    if (!_plan.shows(FushiCardBlock.definitions)) return null;
     final SrsCardFaceBuilder builder = ref.watch(srsCardFaceBuilderProvider);
     return KeyedSubtree(
       key: _defsKey,
@@ -1243,7 +1225,9 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
         ? viewport
         : reported;
     // 自上而下与宽版式左栏同序：词条 → 图片 / 视频（通栏）→ 例句 → 释义 → 元信息。
-    final List<Widget> blocks = <Widget>[
+    // 原生文字分成「标题区」与「页脚」两块选区，释义 WebView 夹在中间、不在任何选区里
+    // （见 [_selectable]）。
+    final List<Widget> head = <Widget>[
       Padding(
         padding: EdgeInsets.fromLTRB(s.pad, s.pad, s.pad, 0),
         child: _header(s, c),
@@ -1262,20 +1246,53 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
           padding: EdgeInsets.symmetric(horizontal: s.pad),
           child: sentence,
         ),
-      if (defs != null)
-        // WebView 自带 16px 页边距（外壳 body padding），这里不再加水平边距。
-        AnimatedContainer(
-          duration: fushiMotionDuration(context, FushiMotion.short),
-          curve: FushiMotion.enter,
-          height: defsHeight,
-          child: defs,
-        ),
+    ];
+    final List<Widget> footer = <Widget>[
       ..._footer(s).map(
         (Widget w) => Padding(
           padding: EdgeInsets.symmetric(horizontal: s.pad),
           child: w,
         ),
       ),
+    ];
+    Widget column(List<Widget> items, int first) => Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        for (int i = 0; i < items.length; i++)
+          Padding(
+            padding: EdgeInsets.only(top: i + first == 0 ? 0 : s.gap),
+            child: FushiStaggeredEntrance(index: i + first, child: items[i]),
+          ),
+      ],
+    );
+    final List<Widget> blocks = <Widget>[
+      KeyedSubtree(
+        key: const ValueKey<String>('srs-fushi-selection-head'),
+        child: _selectable(column(head, 0)),
+      ),
+      if (defs != null)
+        Padding(
+          padding: EdgeInsets.only(top: s.gap),
+          child: FushiStaggeredEntrance(
+            index: head.length,
+            // WebView 自带 16px 页边距（外壳 body padding），这里不再加水平边距。
+            child: AnimatedContainer(
+              duration: fushiMotionDuration(context, FushiMotion.short),
+              curve: FushiMotion.enter,
+              height: defsHeight,
+              child: defs,
+            ),
+          ),
+        ),
+      if (footer.isNotEmpty)
+        KeyedSubtree(
+          key: const ValueKey<String>('srs-fushi-selection-footer'),
+          child: _selectable(
+            column(footer, head.length + 1),
+            focusNode: _footerSelectionFocus,
+          ),
+        ),
     ];
     return SingleChildScrollView(
       key: const ValueKey<String>('srs-fushi-back-narrow'),
@@ -1286,13 +1303,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          for (int i = 0; i < blocks.length; i++)
-            Padding(
-              padding: EdgeInsets.only(top: i == 0 ? 0 : s.gap),
-              child: FushiStaggeredEntrance(index: i, child: blocks[i]),
-            ),
-        ],
+        children: blocks,
       ),
     );
   }
@@ -1335,15 +1346,21 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
               top: s.pad + widget.topInset,
               bottom: s.pad + _bottomInset,
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                for (int i = 0; i < left.length; i++)
-                  Padding(
-                    padding: EdgeInsets.only(top: i == 0 ? 0 : s.gap),
-                    child: FushiStaggeredEntrance(index: i, child: left[i]),
-                  ),
-              ],
+            // 选区只包左栏原生文字列（不含内边距与列下方的留白）；右栏释义 WebView 是
+            // 兄弟节点，不在选区子树里（见 [_selectable]）。
+            child: _selectable(
+              Column(
+                key: const ValueKey<String>('srs-fushi-selection-left'),
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  for (int i = 0; i < left.length; i++)
+                    Padding(
+                      padding: EdgeInsets.only(top: i == 0 ? 0 : s.gap),
+                      child: FushiStaggeredEntrance(index: i, child: left[i]),
+                    ),
+                ],
+              ),
             ),
           ),
         ),

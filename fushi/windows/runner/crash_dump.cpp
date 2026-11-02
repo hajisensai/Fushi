@@ -3,6 +3,7 @@
 #include <windows.h>
 #include <dbghelp.h>
 #include <shlobj.h>
+#include <cstdio>
 #include <cwchar>
 
 namespace fushi
@@ -364,6 +365,26 @@ namespace fushi
       for (size_t i = 0; i <= fp; ++i) out_path[i] = path[i];
     }
     return written;
+  }
+
+  void RecordSessionEnd(LPARAM lparam)
+  {
+    wchar_t path[MAX_PATH];
+    if (!ResolveCrashDumpDirectory(path)) return;
+    size_t p = wcsnlen(path, MAX_PATH);
+    if (!AppendSegmentW(path, &p, L"\\session_end.log")) return;
+    char line[96];
+    const int n = std::snprintf(line, sizeof(line), "pid=%lu lparam=0x%llx",
+      static_cast<unsigned long>(GetCurrentProcessId()),
+      static_cast<unsigned long long>(static_cast<ULONG_PTR>(lparam)));
+    if (n <= 0 || n >= static_cast<int>(sizeof(line))) return;
+    HANDLE file = CreateFileW(path, GENERIC_WRITE, FILE_SHARE_READ, nullptr,
+      CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL | FILE_FLAG_WRITE_THROUGH, nullptr);
+    if (file == INVALID_HANDLE_VALUE) return;
+    DWORD written = 0;
+    WriteFile(file, line, static_cast<DWORD>(n), &written, nullptr);
+    FlushFileBuffers(file);
+    CloseHandle(file);
   }
 
   void InstallCrashDumpHandler()

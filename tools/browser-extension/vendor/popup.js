@@ -5030,6 +5030,10 @@ function __fushiAudioMenuMount() {
     if (!host || !host.shadowRoot) {
         host = document.createElement('div');
         host.id = 'fushi-audio-menu-host';
+        // 菜单宿主挂在弹窗宿主之外（与 fushiHost 平级），但属于同一个查词会话：扩展 content.js 的
+        // 外部点击 / 悬停离开判据只认 data-fushi-session-host（fWIaHFV1qD）。没有这个标记，右键
+        // 音频菜单里点选项会被当成点在弹窗外，整窗关掉、点击被吞、不播放。
+        if (typeof host.setAttribute === 'function') host.setAttribute('data-fushi-session-host', '');
         host.style.cssText = 'position:fixed;top:0;left:0;width:0;height:0;z-index:2147483647;';
         const shadow = host.attachShadow({ mode: 'open' });
         for (const node of Array.from(root.children || [])) {

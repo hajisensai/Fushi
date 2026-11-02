@@ -20,6 +20,7 @@ import 'package:fushi/src/srs/srs_sync_scheduler.dart' show SrsProfileConflict;
 import 'package:fushi/src/sync/sync_settings_schema.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/srs/srs_navigation.dart';
 
 /// 复习数据随之同步的设置分类（按模块可见性过滤：同步模块关掉时一个也没有）。
 List<SettingsDestination> srsSyncDestinations(ModuleVisibility modules) =>
@@ -42,11 +43,9 @@ String srsSyncDestinationLabel(SettingsDestination d) =>
 Future<void> openSrsSyncDestination(
   BuildContext context,
   SettingsDestination destination,
-) => Navigator.of(context).push<void>(
-  adaptivePageRoute<void>(
-    context: context,
-    builder: (_) => SettingsDetailPage(destination: destination),
-  ),
+) => srsPushPage<void>(
+  context,
+  (_) => SettingsDetailPage(destination: destination),
 );
 
 /// 「立即同步」没有任何可用通道时：说明复习数据怎么同步，并直达两个设置分类。

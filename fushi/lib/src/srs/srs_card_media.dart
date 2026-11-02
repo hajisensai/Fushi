@@ -99,6 +99,26 @@ String srsLocalizeCardCss(String css, {required String urlPrefix}) =>
       return 'url("${_mediaUrl(urlPrefix, value)}")';
     });
 
+/// [text]（卡面正文 / CSS / 字段值）引用的媒体库文件名：`[sound:]`、`src` / `poster`、CSS `url()`
+/// 里的裸文件名，与 [srsLocalizeCardHtml] 改写的是同一批（远程刷卡据此先把媒体拉进缓存）。
+Set<String> srsCardReferencedMedia(String text) {
+  final Set<String> names = <String>{};
+  void add(String raw) {
+    if (srsIsBareMediaName(raw)) names.add(_htmlUnescape(raw.trim()));
+  }
+
+  for (final Match m in _soundTag.allMatches(text)) {
+    add(m.group(1)!);
+  }
+  for (final Match m in _srcAttr.allMatches(text)) {
+    add(m.group(3)!);
+  }
+  for (final Match m in _cssUrl.allMatches(text)) {
+    add(m.group(2)!);
+  }
+  return names;
+}
+
 /// 拦截到的 URL 是不是卡面媒体请求；是则返回解码后的文件名，否则 null。
 String? srsMediaNameFromUrl(Uri url) {
   if (url.host != kSrsMediaHost) return null;

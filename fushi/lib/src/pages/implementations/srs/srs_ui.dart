@@ -340,6 +340,52 @@ String srsShortDevice(String writerId) {
   return device.length <= 8 ? device : device.substring(0, 8);
 }
 
+/// 同步通道位置的人读名（位置 ID 的格式见 `fushi/lib/src/srs/srs_directory_key.dart`）：
+/// `后端名 · 账户 / 地址`。互联位置的 ID 是 host 的设备 ID（一长串 base64），不能直接显示：
+/// 是本机（本机就是互联 host）就写「本机」，否则用配对时记下的 host 名（[hostNames]，按 hostId），
+/// 都没有才退到前 8 位。认不出的种类原样显示去掉种类前缀的部分。
+String srsChannelLocationTitle(
+  String locationId, {
+  String? ownDeviceId,
+  Map<String, String> hostNames = const <String, String>{},
+}) {
+  const String obfuscated = 'obfuscated:';
+  final String id = locationId.startsWith(obfuscated)
+      ? locationId.substring(obfuscated.length)
+      : locationId;
+  final int colon = id.indexOf(':');
+  if (colon < 0) return id;
+  final String kind = id.substring(0, colon);
+  final String rest = id.substring(colon + 1);
+  String server() {
+    final int bar = rest.lastIndexOf('|');
+    if (bar < 0) return rest;
+    final String user = rest.substring(bar + 1);
+    final String host = rest.substring(0, bar);
+    return user.isEmpty ? host : '$user@$host';
+  }
+
+  final (String, String)? named = switch (kind) {
+    'interconnect' => (
+      t.sync_backend_fushi_server,
+      rest == ownDeviceId
+          ? t.srs_timeline_this_device
+          : (hostNames[rest]?.trim().isNotEmpty ?? false)
+          ? hostNames[rest]!.trim()
+          : srsShortDevice(rest),
+    ),
+    'googleDrive' => (t.sync_backend_google_drive, rest),
+    'oneDrive' => (t.sync_backend_onedrive, rest),
+    'dropbox' => (t.sync_backend_dropbox, rest),
+    'webDav' => (t.sync_backend_webdav, server()),
+    'ftp' => (t.sync_backend_ftp, server()),
+    'sftp' => (t.sync_backend_sftp, server()),
+    _ => null,
+  };
+  if (named == null) return rest;
+  return '${named.$1} · ${named.$2}';
+}
+
 /// 冲突值的人读形式（布尔 / 空 / 结构化值）。
 String srsFormatValue(Object? value) => switch (value) {
   null => '—',

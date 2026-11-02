@@ -437,6 +437,7 @@ import 'package:fushi/src/utils/net/ffmpeg_relay_route.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_language_preference.dart';
 import 'package:fushi_engine/media/video/anime_source_video_path.dart';
 import 'package:fushi/src/media/video/online/anime_source_video_client.dart';
+import 'package:fushi/src/media/video/remote_subtitle_catalog.dart';
 import 'package:fushi/src/media/video/online/anime_source_library.dart';
 import 'package:fushi/src/media/video/online/video_online_sources_gate.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
@@ -3254,10 +3255,15 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   final SubtitleEmbeddedFontLoader _embeddedFontLoader =
       SubtitleEmbeddedFontLoader();
 
-  /// 远端模式（[_isRemote]）下 host 下发并下载到本地临时文件的那条外挂字幕路径；
-  /// 无 host 字幕时为 null。远端没有本地视频文件，字幕菜单不能走 [_currentVideoPath]
-  /// 的同目录枚举（恒 null → 早返回 → 点了没反应，#2），故单独记下这条 host 字幕，
-  /// 让远端字幕菜单可在「关闭 / host 字幕 / 本地导入」三者间切换。
+  /// 远端模式（[_isRemote]）下**后端下发**并下载到本地临时文件的那条默认外挂字幕
+  /// 路径；无后端默认字幕时为 null。远端没有本地视频文件，字幕菜单不能走
+  /// [_currentVideoPath] 的同目录枚举（恒 null → 早返回 → 点了没反应，#2），故单独
+  /// 记下这条字幕。
+  ///
+  /// Xt3RCTPKhX：**只放后端默认字幕**。本机落盘的档案（在线下载 / 手动导入）一律在
+  /// [_importedSubtitleSources]（按集持久化、重进重建），重放上次选择时也不再写进
+  /// 这里——否则它会被画成不可删的「服务端字幕」行。三处渲染（主 / 副字幕菜单、
+  /// 手机遥控字幕列表）统一经 [remoteSubtitleFileEntries] 拼行。每集起播先清空。
   String? _remoteSubtitlePath;
   List<RemoteVideoEmbeddedSubtitleTrack> _remoteEmbeddedSubtitleTracks =
       const <RemoteVideoEmbeddedSubtitleTrack>[];
@@ -3313,6 +3319,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   String? _hlsMasterUri;
   List<HlsVariant> _hlsVariants = const <HlsVariant>[];
   int _selectedHlsVariantIndex = -1;
+
+  /// 当前这条流随载入外挂的可选音轨（在线源 `Video.audioTracks`，EXlaIL2eKQ）。与
+  /// [_hlsMasterUri] 同一生命周期：每次常规载入（`detectHls: true`，新视频 / 换集）按
+  /// 本次参数重记，画质切档等「同一条流换 URL 重载」的 [_applyLoad] 从这里取回并原样
+  /// 传下去——控制器每次 load 都会清空上一片的外挂轨，不传就丢（纯视频流切档后无声）。
+  List<RemoteVideoExternalAudioTrack> _streamExternalAudioTracks =
+      const <RemoteVideoExternalAudioTrack>[];
 
   /// 互联「自动」画质档的自适应：每秒喂一拍播放器状态，卡了就降档、一直富余就升档。
   /// 判据全在 [AdaptiveQualityController]（纯逻辑、可单测），这里只负责采样与执行。
@@ -3602,6 +3615,18 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     if (mounted) setState(() {});
   }
 
+  /// 字幕列表可见性变化 → 诊断流水标记（BUG-3888）。
+  void _logSubtitleListToggleForDiag() {
+    if (!videoDiagEnabledFor(VideoDiagCategory.video, VideoDiagLevel.info)) {
+      return;
+    }
+    videoDiag(
+      VideoDiagCategory.video,
+      VideoDiagLevel.info,
+      _subtitleListVisible.value ? 'subtitle list open' : 'subtitle list close',
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -3647,6 +3672,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _videoSidePanel.addListener(_applyControlsVisibilityFromMediaKit);
     _videoControlPopover.addListener(_applyControlsVisibilityFromMediaKit);
     _subtitleListVisible.addListener(_applyControlsVisibilityFromMediaKit);
+    // BUG-3888：字幕列表开 / 关落一行诊断标记，导出的流水才能把每秒一窗的帧耗时
+    // 与开关时刻逐秒对上。诊断关着时监听里只有一次 isLoggable 判断（常量字符串，
+    // 不拼接）。
+    _subtitleListVisible.addListener(_logSubtitleListToggleForDiag);
     _episodeListVisible.addListener(_applyControlsVisibilityFromMediaKit);
     _videoControlEditMode.addListener(_applyControlsVisibilityFromMediaKit);
     // BUG-1798：查词浮层也是 [_hasVideoOverlay] 的输入，与上面六个门控同等订阅——否则弹窗
@@ -4611,10 +4640,20 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // TODO-1307：新一集起播重置「用户已关字幕」标记（字幕后置自动应用的门控，见
     // [_resolveDeferredYoutubeCaptions]）。
     _remoteSubtitleUserDismissed = false;
-    // BUG-1861：本会话导入 / 下载的字幕档按视频源作用域，远端换集一并清空（上一集下的
-    // 档案不该继续挂在新集的字幕轨列表里）。本地换源在 [_applyLoad] 的
-    // `clipExportSourceChanged` 分支清（远端 `_currentVideoPath` 恒 null，走不到那里）。
-    _importedSubtitleSources = const <SubtitleSource>[];
+    // BUG-1861：导入 / 下载的字幕档按集作用域——上一集下的档案不该挂在新集的列表里。
+    // Xt3RCTPKhX：远端没有本地视频文件可枚举，所以本机档按集持久化
+    // （[PreferencesRepository.remoteSubtitleFiles]），换集 / 重进时从那里**重建**本集的
+    // 列表，而不是清空了事（此前切走再切回、或退出重进，之前下的字幕全部从列表消失，
+    // 再下一次就落成带 (x) 序号的副本）。后端默认字幕也按集重新下发，先清掉上一集的。
+    // 本地换源在 [_applyLoad] 的 `clipExportSourceChanged` 分支清（远端
+    // `_currentVideoPath` 恒 null，走不到那里）。
+    _remoteSubtitlePath = null;
+    // 先查完再按集序号落：重建要逐个 `File.exists`，快速连切时较早那集的查询可能晚于
+    // 后一集回来——直接 `= await` 会让作废的那一程把它那集的档覆盖到当前集列表上。
+    final List<SubtitleSource> restoredLocalSubtitles =
+        await _restoreRemoteLocalSubtitleFiles(index);
+    if (seq != _episodeLoadSeq || !mounted) return;
+    _importedSubtitleSources = restoredLocalSubtitles;
     // YouTube 画质档是 per-video 懒解析：新一集起播先复位（下次点开画质菜单再懒解析）。
     _youtubeVariants = const <YoutubeVideoVariant>[];
     _selectedYoutubeVariantIndex = -1;
@@ -4661,15 +4700,54 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           // 上次显式关闭 → 保持关闭，不加载 host 默认字幕（尊重用户选择）。
           _currentSubtitleSource = null;
           subtitleResolved = true;
-        } else if (subtitleFormatForPath(persistedSub) != null &&
-            await File(persistedSub).exists()) {
-          // 本地已下载/导入的字幕文件仍在磁盘（Jimaku / 手动导入落 video_subtitles/）→ 重放。
-          _setLoadingPhase(_VideoLoadPhase.downloadingSubtitle);
-          cues = await _loadExternalSubtitleCues(persistedSub, info.id);
+        } else if (isExternalSubtitleFilePathForMenu(persistedSub) &&
+            await _isRemoteLocalSubtitleFile(persistedSub)) {
+          // 本机已下载 / 导入的字幕档（Jimaku / 手动导入落 video_subtitles/）→ 重放成
+          // 「本机字幕」行的选中态（Xt3RCTPKhX：不再挂到后端默认字幕槽上）。旧版本只记了
+          // 选择、没记档案列表：在这里补登记，让它有自己可删的行。上次选的若是后端默认
+          // 字幕的临时档（不在本机字幕目录、也不在本集列表里），不走这里——落回下方
+          // 后端默认分支重新下发，它仍是那条「服务端字幕」行。
+          final bool exists =
+              subtitleFormatForPath(persistedSub) != null &&
+              await File(persistedSub).exists();
+          if (exists) {
+            _setLoadingPhase(_VideoLoadPhase.downloadingSubtitle);
+            cues = await _loadExternalSubtitleCues(persistedSub, info.id);
+          }
+          if (seq != _episodeLoadSeq || !mounted) return;
           if (cues.isNotEmpty) {
             externalSub = persistedSub;
-            _remoteSubtitlePath = persistedSub;
             subtitleResolved = true;
+            if (!_importedSubtitleSources.any(
+              (SubtitleSource s) =>
+                  sameExternalSubtitlePathForMenu(s, persistedSub),
+            )) {
+              _importedSubtitleSources = <SubtitleSource>[
+                SubtitleSource.external(
+                  externalPath: persistedSub,
+                  label: p.basename(persistedSub),
+                ),
+                ..._importedSubtitleSources,
+              ];
+              unawaited(
+                _persistRemoteLocalSubtitleFile(
+                  persistedSub,
+                  add: true,
+                  episode: index,
+                ),
+              );
+            }
+          } else {
+            // 重放失败不再静默：文件不在 / 格式认不出 / 解析出 0 条，各打一条日志
+            // 并提示一次，然后照常落回后端默认字幕分支。
+            debugPrint(
+              '[VideoFushiPage] remote subtitle replay failed '
+              'path=$persistedSub exists=$exists cues=${cues.length}',
+            );
+            _showOsd(
+              t.video_subtitle_restore_failed(label: p.basename(persistedSub)),
+              severity: ToastSeverity.warning,
+            );
           }
         } else if (persistedSub.startsWith(SubtitleSource.embeddedPrefix)) {
           // 远端内嵌轨选择重放（互联完整支持批次）：此前 `embedded:<n>` 不重放、
@@ -4712,8 +4790,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
               );
               cues = await _loadExternalSubtitleCues(subtitle.path, info.id);
               if (cues.isNotEmpty) {
+                // 内嵌轨的临时抽取档由它自己的 `embedded:<n>` 行承载，不占后端默认
+                // 字幕槽（此前写进 [_remoteSubtitlePath]，多出一条同内容的「服务端字幕」行）。
                 externalSub = subtitle.path;
-                _remoteSubtitlePath = subtitle.path;
                 restoredPrimarySource = persistedSub;
                 subtitleResolved = true;
               } else if (track != null &&
@@ -4820,6 +4899,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           // 外挂，libmpv 才会让它与视频时间轴同步出声（修「初始无声、跳转后才有声」）；不再等
           // load 返回后才挂（那时 play 已开始，新加音轨不会自动 seek 到当前位置 → 无声）。
           externalAudioTrackUrl: urls.audioStreamUrl,
+          // EXlaIL2eKQ：在线源扩展的可选外挂音轨（DASH 分离流的唯一音频 / 替代配音），
+          // 同一时机 `audio-add ... auto` 外挂，交给 mpv 默认选轨。
+          externalAudioTracks: urls.externalAudioTracks,
           // 蓝光标题：host 下发段表，按本地蓝光同一套 EDL 播放（光盘菜单远端不可用）。
           remoteDiscTitle: urls.discTitle,
         ),
@@ -5774,6 +5856,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // TODO-1280：YouTube 分离流的 audio-only 流 URL，透传给 controller.load 在 seek/play 之前
     // 外挂（null=无分离音轨）。
     String? externalAudioTrackUrl,
+    // 可选外挂音轨（见 [VideoPlayerController.load] 的同名参数）。
+    List<RemoteVideoExternalAudioTrack> externalAudioTracks =
+        const <RemoteVideoExternalAudioTrack>[],
     // TODO-1158：常规载入（新视频/换集）默认探测 HLS master 画质档；画质切档自身的
     // 重载传 false，避免用 variant（media playlist）URL 重探测把档位列表清空。
     bool detectHls = true,
@@ -5782,6 +5867,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 流式原盘会话的盘源（见 [VideoPlayerController.load] 的同名参数）。
     RemoteDiscMenuSource? remoteDisc,
   }) async {
+    // 常规载入换了一条流：记下它的外挂音轨，供同一条流的切档重载沿用（见
+    // [_streamExternalAudioTracks]）。切档重载（detectHls=false）自己就是从这里取的。
+    if (detectHls) _streamExternalAudioTracks = externalAudioTracks;
     _unregisterVideoRemote();
     // 新一次载入作废上一次的网络流「没打开」判定（换集 / 重试共用同一 controller，
     // 旧定时器不得给新一程判死）。
@@ -5910,6 +5998,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         httpHeaderFields: _streamHttpHeaderFields,
         autoPlay: !_sourceReviewActive,
         externalAudioTrackUrl: externalAudioTrackUrl,
+        externalAudioTracks: externalAudioTracks,
         remoteDiscTitle: remoteDiscTitle,
         remoteDisc: remoteDisc,
         onEmbeddedSubtitleAutoLoad: _handleEmbeddedSubtitleAutoLoad,
@@ -6690,6 +6779,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _videoSidePanel.removeListener(_applyControlsVisibilityFromMediaKit);
     _videoControlPopover.removeListener(_applyControlsVisibilityFromMediaKit);
     _subtitleListVisible.removeListener(_applyControlsVisibilityFromMediaKit);
+    _subtitleListVisible.removeListener(_logSubtitleListToggleForDiag);
     _episodeListVisible.removeListener(_applyControlsVisibilityFromMediaKit);
     _videoControlEditMode.removeListener(_applyControlsVisibilityFromMediaKit);
     // BUG-1798：与上面六个门控同批摘监听（顺序同理——回调读多个 notifier，先摘再 dispose）。
