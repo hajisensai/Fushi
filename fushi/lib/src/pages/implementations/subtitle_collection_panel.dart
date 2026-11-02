@@ -23,7 +23,7 @@ import 'package:fushi/src/media/video/anilist_failure_notice.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
 import 'package:fushi_engine/media/video/jimaku_client.dart'
-    show jimakuLanguageLabel;
+    show jimakuLanguageLabel, jimakuLanguageRank;
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/src/media/video/stream_video_launch.dart';
 import 'package:fushi/src/media/video/subtitle/scraped_subtitle_targets.dart';
@@ -32,7 +32,10 @@ import 'package:fushi/src/media/video/subtitle/subtitle_episode_matching.dart';
 import 'package:fushi_engine/media/video/subtitle/embedded_reference_subtitle_sync.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_language_preference.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_series_season.dart';
+import 'package:fushi/src/media/video/episode_span_format.dart';
+import 'package:fushi/src/media/video/subtitle/subtitle_content_language.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_version_groups.dart';
+import 'package:fushi/src/media/video/subtitle/subtitle_version_language_probe.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_archive.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
@@ -136,6 +139,81 @@ List<SubtitleCollectionSource> groupSubtitleCollectionSources(
         label: labels[e.key]!,
         candidates: e.value,
         preferredLanguage: preferredLanguage,
+      ),
+  ];
+}
+
+/// 聚合列表里的一行版本：版本卡 + 实际参与排名的语言 + 对本合集的覆盖。
+class SubtitleCollectionVersion {
+  const SubtitleCollectionVersion({
+    required this.group,
+    required this.language,
+    required this.contentLanguage,
+    required this.coveredEpisodes,
+  });
+
+  final SubtitleVersionGroup group;
+
+  /// 参与排名的粗语言码：文件名声明的，否则正文判出的；都没有为 null。
+  final String? language;
+
+  /// 正文判出的细分语言（文件名没写语言时才有）；用于展示「正文：中日双语」。
+  final SubtitleContentLanguage? contentLanguage;
+
+  /// 本合集成员里这个版本能配上的集号。
+  final Set<int> coveredEpisodes;
+}
+
+/// 一个来源的版本列表，按**批量下载的同一判据**排好（[SubtitleEpisodeIndex.rankVersions]：
+/// 语言 → 覆盖本合集集数 → ASS 先于 SRT）：首行就是「自动」会用的版本。纯函数。
+///
+/// 没进排名的版本（只有未编号文件 / 整季包）按版本卡原顺序接在后面。
+List<SubtitleCollectionVersion> rankSubtitleCollectionVersions(
+  SubtitleCollectionSource source, {
+  required Iterable<int> targetEpisodes,
+  String? preferredLanguage,
+  Map<String, SubtitleContentLanguage> probedLanguages =
+      const <String, SubtitleContentLanguage>{},
+}) {
+  final Set<int> targets = targetEpisodes.toSet();
+  String? languageOf(VideoSubtitleCandidate c) {
+    if (c.language.isNotEmpty) return c.language;
+    final SubtitleContentLanguage? probed =
+        probedLanguages[subtitleVersionKeyOf(c)];
+    return probed == null ? null : coarseLanguageCode(probed);
+  }
+
+  final List<SubtitleVersionGroup> groups = buildSubtitleVersionGroups(
+    source.candidates,
+    preferredLanguage: preferredLanguage,
+  );
+  final List<String> ranked = source.index.rankVersions(
+    targetEpisodes: targets,
+    versionOf: subtitleVersionKeyOf,
+    languageRankOf: (VideoSubtitleCandidate c) =>
+        jimakuLanguageRank(languageOf(c), preferred: preferredLanguage),
+    fileNameOf: (VideoSubtitleCandidate c) => c.fileName,
+  );
+  final Map<String, int> order = <String, int>{
+    for (int i = 0; i < ranked.length; i++) ranked[i]: i,
+  };
+  final List<SubtitleVersionGroup> sorted =
+      <SubtitleVersionGroup>[
+        ...groups.where((SubtitleVersionGroup g) => order.containsKey(g.key)),
+      ]..sort(
+        (SubtitleVersionGroup a, SubtitleVersionGroup b) =>
+            order[a.key]!.compareTo(order[b.key]!),
+      );
+  return <SubtitleCollectionVersion>[
+    for (final SubtitleVersionGroup g in <SubtitleVersionGroup>[
+      ...sorted,
+      ...groups.where((SubtitleVersionGroup g) => !order.containsKey(g.key)),
+    ])
+      SubtitleCollectionVersion(
+        group: g,
+        language: languageOf(g.members.first),
+        contentLanguage: g.language.isEmpty ? probedLanguages[g.key] : null,
+        coveredEpisodes: g.episodes.intersection(targets),
       ),
   ];
 }
@@ -249,6 +327,23 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
 
   /// 合集偏好的版本组键（`SubtitleVersionGroup.key`）；null = 不限版本。
   String? _releaseGroup;
+
+  /// 文件名没写语言的版本按正文判出的语言（版本键 → 检测值），搜索后后台补。
+  Map<String, SubtitleContentLanguage> _probedLanguages =
+      const <String, SubtitleContentLanguage>{};
+  SubtitleVersionLanguageProbe? _probe;
+  int _probeGeneration = 0;
+
+  /// 版本列表已展开「显示全部」的来源键。
+  final Set<String> _expandedSources = <String>{};
+
+  /// [_versionsOf] 的记忆：来源 / 探测结果 / 语言任一变化即作废。
+  final Map<String, List<SubtitleCollectionVersion>> _versionsCache =
+      <String, List<SubtitleCollectionVersion>>{};
+  Object? _versionsCacheKey;
+
+  /// 本次 build 的各集计划（[_plannedIndex]）：成员行逐行读，build 里算一次。
+  SubtitleEpisodeIndex<VideoSubtitleCandidate>? _plan;
 
   final Map<String, SubtitleBatchItem> _statusByUid =
       <String, SubtitleBatchItem>{};
@@ -402,27 +497,167 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
     globalDefaultContentLanguage: widget.globalDefaultContentLanguage,
   );
 
-  /// 选中来源里的版本组（版本选择器同一聚类）。
-  List<SubtitleVersionGroup> get _versionGroups {
-    final SubtitleCollectionSource? source = _selectedSource;
-    if (source == null) return const <SubtitleVersionGroup>[];
-    return buildSubtitleVersionGroups(
-      source.candidates,
+  /// 本合集成员的集号（与批量下载同一解析）。
+  List<int> get _targetEpisodes => <int>[
+    for (int i = 0; i < widget.members.length; i++)
+      resolveSubtitleBatchEpisode(_targetAt(i)),
+  ];
+
+  /// [source] 的版本列表（已按批量判据排好，首行 = 「自动」会用的版本）。
+  List<SubtitleCollectionVersion> _versionsOf(SubtitleCollectionSource source) {
+    final Object cacheKey = Object.hash(
+      identityHashCode(_sources),
+      identityHashCode(_probedLanguages),
+      _effectiveLanguage,
+      widget.members.length,
+    );
+    if (cacheKey != _versionsCacheKey) {
+      _versionsCache.clear();
+      _versionsCacheKey = cacheKey;
+    }
+    return _versionsCache[source.key] ??= rankSubtitleCollectionVersions(
+      source,
+      targetEpisodes: _targetEpisodes,
       preferredLanguage: _effectiveLanguage,
+      probedLanguages: _probedLanguages,
     );
   }
 
-  /// 批量下载用的候选：偏好版本组命中时只用该组，否则整个来源。
+  /// 选中来源里用户点名的版本；「自动」或该版本已不在来源里为 null。
+  SubtitleCollectionVersion? get _pinnedVersion {
+    final SubtitleCollectionSource? source = _selectedSource;
+    final String? key = _releaseGroup;
+    if (source == null || key == null) return null;
+    for (final SubtitleCollectionVersion v in _versionsOf(source)) {
+      if (v.group.key == key) return v;
+    }
+    return null;
+  }
+
+  /// 批量下载用的候选：点名了版本只用该版本，否则整个来源（由批量按整季一致自动挑）。
   List<VideoSubtitleCandidate> get _batchCandidates {
     final SubtitleCollectionSource? source = _selectedSource;
     if (source == null) return const <VideoSubtitleCandidate>[];
-    final String? key = _releaseGroup;
-    if (key != null) {
-      for (final SubtitleVersionGroup g in _versionGroups) {
-        if (g.key == key) return g.members;
+    return _pinnedVersion?.group.members ?? source.candidates;
+  }
+
+  /// 正文探测结果投影成批量排名用的粗码（交给 [runSubtitleBatch]，不重下）。
+  Map<String, String> get _probedCoarseLanguages => <String, String>{
+    for (final MapEntry<String, SubtitleContentLanguage> e
+        in _probedLanguages.entries)
+      if (coarseLanguageCode(e.value) != null)
+        e.key: coarseLanguageCode(e.value)!,
+  };
+
+  /// 各集实际会用的候选：与 [runSubtitleBatch] 同一判据（整季版本一致）。
+  SubtitleEpisodeIndex<VideoSubtitleCandidate>? get _plannedIndex {
+    if (_selectedSource == null) return null;
+    final Map<String, String> probed = _probedCoarseLanguages;
+    final String? preferred = _effectiveLanguage;
+    return SubtitleEpisodeIndex.fromCandidates(
+      _batchCandidates,
+      preferredLanguage: preferred,
+    ).preferConsistentVersion(
+      targetEpisodes: _targetEpisodes,
+      versionOf: subtitleVersionKeyOf,
+      languageRankOf: (VideoSubtitleCandidate c) => jimakuLanguageRank(
+        c.language.isNotEmpty ? c.language : probed[subtitleVersionKeyOf(c)],
+        preferred: preferred,
+      ),
+      fileNameOf: (VideoSubtitleCandidate c) => c.fileName,
+    );
+  }
+
+  /// 版本的短名：组名（或发行平台）· 容器。
+  String _versionShortLabel(SubtitleVersionGroup group) => <String>[
+    group.releaseGroupTag ?? t.video_subtitle_collection_version_no_group,
+    if (group.container.isNotEmpty) group.container.toUpperCase(),
+  ].join(' · ');
+
+  /// 版本行标题：短名 · 语言（文件名没写、靠正文判出的标「正文：」）· 机翻。
+  String _versionTitle(SubtitleCollectionVersion version) {
+    final SubtitleContentLanguage? content = version.contentLanguage;
+    final String language = content != null
+        ? '${t.subtitle_version_content_language}: '
+              '${subtitleContentLanguageNativeLabel(content)}'
+        : (version.language == null
+              ? t.video_jimaku_language_unknown
+              : jimakuLanguageLabel(version.language!));
+    return <String>[
+      _versionShortLabel(version.group),
+      language,
+      if (version.group.aiTranslated) t.subtitle_version_ai_translated,
+    ].join(' · ');
+  }
+
+  /// 版本行副标题：覆盖本合集几集（部分覆盖时列出集号段）· 文件数。
+  String _versionCoverage(SubtitleCollectionVersion version) {
+    final int total = _targetEpisodes.toSet().length;
+    final String coverage = t.video_subtitle_collection_version_coverage(
+      covered: version.coveredEpisodes.length,
+      total: total,
+      files: version.group.members.length,
+    );
+    final bool partial =
+        version.coveredEpisodes.isNotEmpty &&
+        version.coveredEpisodes.length < total;
+    return partial
+        ? '$coverage · ${formatEpisodeSpans(version.coveredEpisodes)}'
+        : coverage;
+  }
+
+  /// 文件名没写语言的版本：每个下一个代表文件按正文判语言（BUG-3993），结果回填
+  /// 到版本列表并交给批量下载。只探覆盖本合集某集的版本；有下载配额的源不探
+  /// （同单集面板的纪律）；按 generation 丢弃迟到结果。
+  Future<void> _probeVersionLanguages() async {
+    final int generation = ++_probeGeneration;
+    final VideoSubtitleRegistry? registry = await widget.subtitleRegistry();
+    if (registry == null || !mounted || generation != _probeGeneration) return;
+    final Set<int> targets = _targetEpisodes.toSet();
+    final SubtitleVersionLanguageProbe probe = _probe ??=
+        SubtitleVersionLanguageProbe(download: _downloadForProbe);
+    for (final SubtitleCollectionSource source in _sources) {
+      for (final SubtitleVersionGroup group in buildSubtitleVersionGroups(
+        source.candidates,
+      )) {
+        if (group.language.isNotEmpty) continue;
+        if (_probedLanguages.containsKey(group.key)) continue;
+        if (group.members.every(
+          (VideoSubtitleCandidate c) => c.isArchivePack,
+        )) {
+          continue;
+        }
+        final VideoSubtitleCandidate? representative = group.members
+            .where(
+              (VideoSubtitleCandidate c) =>
+                  c.episode != null && targets.contains(c.episode),
+            )
+            .firstOrNull;
+        if (representative == null) continue;
+        if (!registry.allowsFreeProbeDownload(representative)) continue;
+        final SubtitleContentLanguage? detected = await probe.probe(
+          representative,
+        );
+        if (!mounted || generation != _probeGeneration) return;
+        if (detected == null) continue;
+        setState(() {
+          _probedLanguages = <String, SubtitleContentLanguage>{
+            ..._probedLanguages,
+            group.key: detected,
+          };
+        });
       }
     }
-    return source.candidates;
+  }
+
+  /// 探测用下载：**每次现取** registry（改 API key 会重建 provider runtime，
+  /// 早绑的实例正是坑——同单集面板）。
+  Future<VideoSubtitleDownload> _downloadForProbe(
+    VideoSubtitleCandidate candidate,
+  ) async {
+    final VideoSubtitleRegistry? registry = await widget.subtitleRegistry();
+    if (registry == null) throw StateError('no subtitle registry');
+    return registry.download(candidate);
   }
 
   void _setNotice(String? message, {bool error = false}) {
@@ -609,17 +844,30 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
       final ExternalProviderFailure? failure = sources.isEmpty
           ? primarySubtitleFailure(result.failures)
           : null;
+      // 合集记着点名的版本：落在哪个来源就选中哪个来源（版本键含来源合集段）。
+      final String? pinnedSourceKey = _releaseGroup == null
+          ? null
+          : sources
+                .where(
+                  (SubtitleCollectionSource s) => buildSubtitleVersionGroups(
+                    s.candidates,
+                  ).any((SubtitleVersionGroup g) => g.key == _releaseGroup),
+                )
+                .firstOrNull
+                ?.key;
       setState(() {
         _searched = true;
         _sources = sources;
         _selectedSourceKey =
-            sources.any(
-              (SubtitleCollectionSource s) => s.key == _selectedSourceKey,
-            )
-            ? _selectedSourceKey
-            : (sources.isEmpty ? null : sources.first.key);
+            pinnedSourceKey ??
+            (sources.any(
+                  (SubtitleCollectionSource s) => s.key == _selectedSourceKey,
+                )
+                ? _selectedSourceKey
+                : (sources.isEmpty ? null : sources.first.key));
         _statusByUid.clear();
       });
+      unawaited(_probeVersionLanguages());
       if (failure != null) {
         _setNotice(
           describeSubtitleFailure(t.video_jimaku_search_failed, failure),
@@ -652,11 +900,19 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
     }
   }
 
-  Future<void> _selectReleaseGroup(String? key) async {
-    setState(() => _releaseGroup = key);
+  /// 聚合列表里点一行：选中 [source]，[versionKey] 为 null = 「自动」（整季一致
+  /// 自动挑），否则点名该版本。版本写合集列（下次打开仍是它）。
+  Future<void> _selectVersion(
+    SubtitleCollectionSource source,
+    String? versionKey,
+  ) async {
+    setState(() {
+      _selectedSourceKey = source.key;
+      _releaseGroup = versionKey;
+    });
     await widget.database.updateMediaCollectionSubtitleReleaseGroup(
       widget.collection.id,
-      key,
+      versionKey,
     );
   }
 
@@ -697,6 +953,7 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
         saveDirectory: widget.saveDirectory,
         preferredLanguage: _effectiveLanguage,
         subtitleAligner: widget.subtitleAligner,
+        knownVersionLanguages: _probedCoarseLanguages,
         onItemStart: (SubtitleBatchItem item) async {
           if (!mounted) return;
           setState(() => _statusByUid[item.target.bookUid] = item);
@@ -784,7 +1041,7 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
     final SubtitleCollectionSource? source = _selectedSource;
     if (source == null) return const FushiIcon(FushiIcons.moreHoriz, size: 18);
     final int episode = resolveSubtitleBatchEpisode(_targetAt(memberIndex));
-    return (source.index.byEpisode[episode]?.isEmpty ?? true) &&
+    return (_plan?.byEpisode[episode]?.isEmpty ?? true) &&
             source.unpackablePackFormat == null
         ? const FushiIcon(FushiIcons.searchOff, size: 18)
         : FushiIcon(
@@ -843,8 +1100,10 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
     final SubtitleCollectionSource? source = _selectedSource;
     if (source == null) return Text(t.video_subtitle_collection_members_hint);
     final int episode = resolveSubtitleBatchEpisode(_targetAt(memberIndex));
+    final SubtitleEpisodeIndex<VideoSubtitleCandidate> plan =
+        _plan ?? source.index;
     final List<VideoSubtitleCandidate> matches =
-        source.index.byEpisode[episode] ?? const <VideoSubtitleCandidate>[];
+        plan.byEpisode[episode] ?? const <VideoSubtitleCandidate>[];
     if (matches.isEmpty) {
       // 整季包（BUG-3000 跟进）：没有单集文件的集，下载时从包里按集号拆。
       final SubtitleArchiveFormat? pack = source.unpackablePackFormat;
@@ -857,32 +1116,35 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
         );
       }
       final SubtitleArchiveFormat? unsupported = source.unsupportedPackFormat;
-      if (unsupported != null && source.index.unnumbered.isEmpty) {
+      if (unsupported != null && plan.unnumbered.isEmpty) {
         return Text(
           t.video_subtitle_archive_pack_unsupported(format: unsupported.label),
         );
       }
-      if (source.index.unnumbered.isNotEmpty) {
+      if (plan.unnumbered.isNotEmpty) {
         return Text(
           t.video_jimaku_episode_unlabeled(
             episode: episode,
-            count: source.index.unnumbered.length,
+            count: plan.unnumbered.length,
           ),
         );
       }
       return Text(t.video_jimaku_episode_unavailable(episode: episode));
     }
-    final Set<String> languages = <String>{
-      for (final VideoSubtitleCandidate c in matches)
-        if (c.language.isNotEmpty) c.language,
-    };
+    // 首个 = 整季一致判据下这一集实际会用的那份（与批量下载同一判据）。
+    final String versionKey = subtitleVersionKeyOf(matches.first);
+    final SubtitleCollectionVersion? version = _versionsOf(source)
+        .where((SubtitleCollectionVersion v) => v.group.key == versionKey)
+        .firstOrNull;
     return Text(
-      t.video_jimaku_episode_available(
+      t.video_subtitle_collection_episode_planned(
         count: matches.length,
-        languages: languages.isEmpty
-            ? t.video_jimaku_language_unknown
-            : languages.map(jimakuLanguageLabel).join(' / '),
+        version: version == null
+            ? matches.first.fileName
+            : _versionTitle(version),
       ),
+      maxLines: 2,
+      overflow: TextOverflow.ellipsis,
     );
   }
 
@@ -908,19 +1170,27 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
     );
   }
 
-  /// 来源选择：每个来源一行（provider + 条目名 + 文件数/集数/语言），单选。
+  /// 收起状态下每个来源最多显示几个版本（「自动」行另计）。
+  static const int _kCollapsedVersionCount = 5;
+
+  /// 聚合的版本列表：来源 → 该来源的字幕版本（组名 / 平台 · 容器 · 语言 · 覆盖），
+  /// 每行可直接点选；每个来源的首行是「自动：整季统一版本」，副标题写明它会用哪个
+  /// 版本——列表顺序与「自动」实际挑的出自同一判据（[rankSubtitleCollectionVersions]）。
   ///
-  /// 空列表**不再整块隐藏**：合集没绑 AniList id 时首搜根本不发（见 [initState]），
+  /// 取代原来的「来源」chip + 「偏好版本」下拉：两处分开选时，chip 上看不到组合，
+  /// 下拉里又看不到覆盖几集、哪个是自动会用的。
+  ///
+  /// 空列表**不整块隐藏**：合集没绑 AniList id 时首搜根本不发（见 [initState]），
   /// 用户面对的就是一排 `Icons.remove` 占位 + 灰掉的「下载全部」+ 零解释，无从知道
   /// 还要先点「查找字幕」。三种空态各说一句话。
-  Widget _buildSourcePicker(ThemeData theme) {
+  Widget _buildVersionPicker(ThemeData theme) {
     if (_sources.isEmpty) {
       final String message = _searching || _resolving
           ? t.video_jimaku_source_loading
           : (_searched
                 ? t.video_jimaku_no_results
                 : t.video_subtitle_source_search_hint);
-      return _chipSection(t.video_subtitle_source_label, <Widget>[
+      return _chipSection(t.video_subtitle_collection_versions, <Widget>[
         Text(
           message,
           key: const ValueKey<String>('subtitle-source-empty'),
@@ -930,33 +1200,155 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
         ),
       ]);
     }
-    return _chipSection(t.video_subtitle_source_label, <Widget>[
-      for (final SubtitleCollectionSource source in _sources)
-        ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 320),
-          child: FushiChoiceChip(
-            key: ValueKey<String>('subtitle-source-${source.key}'),
-            label: Text(
-              '${source.label} · ${source.providerId} · '
-              '${t.video_jimaku_source_summary(files: source.index.totalFiles, episodes: source.episodeCount, languages: source.languages.isEmpty ? t.video_jimaku_language_unknown : source.languages.map(jimakuLanguageLabel).join('/'))}',
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
+    int entrance = 0;
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6, left: 2),
+            child: Text(
+              t.video_subtitle_collection_versions,
+              style: theme.textTheme.labelMedium?.copyWith(
+                color: theme.colorScheme.onSurfaceVariant,
+              ),
             ),
-            selected: _selectedSourceKey == source.key,
-            onSelected: _running
-                ? null
-                : (_) => setState(() => _selectedSourceKey = source.key),
           ),
-        ),
-    ]);
+          for (final SubtitleCollectionSource source in _sources)
+            ..._buildSourceVersions(theme, source, () => entrance++),
+        ],
+      ),
+    );
   }
 
-  /// 合集级配置：默认语言（写列 + prefs）与偏好版本组（写列）。
-  Widget _buildCollectionSettings(ThemeData theme) {
-    final List<SubtitleVersionGroup> groups = _versionGroups;
-    final bool releaseGroupPresent = groups.any(
-      (SubtitleVersionGroup g) => g.key == _releaseGroup,
+  /// 一个来源的分组：来源标题 + 「自动」行 + 版本行（超过上限时可展开）。
+  List<Widget> _buildSourceVersions(
+    ThemeData theme,
+    SubtitleCollectionSource source,
+    int Function() nextEntrance,
+  ) {
+    final List<SubtitleCollectionVersion> versions = _versionsOf(source);
+    final bool expanded = _expandedSources.contains(source.key);
+    final List<SubtitleCollectionVersion> shown =
+        expanded || versions.length <= _kCollapsedVersionCount
+        ? versions
+        : versions.sublist(0, _kCollapsedVersionCount);
+    final bool canToggle = versions.length > _kCollapsedVersionCount;
+    final bool sourceSelected = _selectedSourceKey == source.key;
+    final String? pinnedKey = sourceSelected ? _pinnedVersion?.group.key : null;
+    final int count = 1 + shown.length + (canToggle ? 1 : 0);
+    final SubtitleCollectionVersion? autoPick = versions.firstOrNull;
+
+    Widget row({
+      required int index,
+      required Key key,
+      required bool selected,
+      required Widget title,
+      Widget? subtitle,
+      VoidCallback? onTap,
+      Widget? leading,
+    }) {
+      return FushiStaggeredEntrance(
+        index: nextEntrance(),
+        child: FushiGroupedListItem(
+          index: index,
+          count: count,
+          child: FushiListItem(
+            key: key,
+            density: FushiListDensity.compact,
+            selected: selected,
+            onTap: _running ? null : onTap,
+            leading: leading ?? _selectionMark(theme, selected),
+            title: title,
+            subtitle: subtitle,
+            titleMaxLines: 2,
+          ),
+        ),
+      );
+    }
+
+    return <Widget>[
+      Padding(
+        padding: const EdgeInsets.only(top: 6, bottom: 6, left: 2),
+        child: Text(
+          '${source.label} · ${source.providerId}',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: theme.textTheme.titleSmall,
+        ),
+      ),
+      row(
+        index: 0,
+        key: ValueKey<String>('subtitle-source-${source.key}'),
+        selected: sourceSelected && pinnedKey == null,
+        title: Text(t.video_subtitle_collection_version_auto),
+        subtitle: Text(
+          autoPick == null
+              ? t.video_jimaku_no_results
+              : t.video_subtitle_collection_version_auto_detail(
+                  version: _versionTitle(autoPick),
+                ),
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
+        onTap: () => unawaited(_selectVersion(source, null)),
+      ),
+      for (int i = 0; i < shown.length; i++)
+        row(
+          index: i + 1,
+          key: ValueKey<String>('subtitle-version-${shown[i].group.key}'),
+          selected: pinnedKey == shown[i].group.key,
+          title: Text(_versionTitle(shown[i])),
+          subtitle: Text(
+            _versionCoverage(shown[i]),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          onTap: () => unawaited(_selectVersion(source, shown[i].group.key)),
+        ),
+      if (canToggle)
+        row(
+          index: count - 1,
+          key: ValueKey<String>('subtitle-versions-toggle-${source.key}'),
+          selected: false,
+          leading: FushiIcon(
+            expanded ? FushiIcons.expandLess : FushiIcons.expandMore,
+            size: 20,
+          ),
+          title: Text(
+            expanded
+                ? t.video_subtitle_collection_version_show_less
+                : t.video_subtitle_collection_version_show_all(
+                    n: versions.length,
+                  ),
+          ),
+          onTap: () => setState(() {
+            if (!_expandedSources.add(source.key)) {
+              _expandedSources.remove(source.key);
+            }
+          }),
+        ),
+    ];
+  }
+
+  /// 行首单选标记：选中 = 实心勾，未选 = 空心圆；切换走 effects 短时长交叉淡化。
+  Widget _selectionMark(ThemeData theme, bool selected) {
+    return AnimatedSwitcher(
+      duration: fushiMotionDuration(context, FushiMotion.short),
+      child: FushiIcon(
+        selected ? FushiIcons.success : FushiIcons.radioUnchecked,
+        key: ValueKey<bool>(selected),
+        size: 20,
+        color: selected
+            ? theme.colorScheme.primary
+            : theme.colorScheme.onSurfaceVariant,
+      ),
     );
+  }
+
+  /// 合集级配置：默认语言（写列 + prefs）。版本在上方聚合列表里直接选。
+  Widget _buildCollectionSettings(ThemeData theme) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
@@ -983,39 +1375,6 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
             ),
           ),
         ),
-        if (groups.isNotEmpty)
-          FushiDropdownButtonFormField<String>(
-            key: const ValueKey<String>('subtitle-collection-release-group'),
-            // 缺 isExpanded 时按内容固有宽度排版，长标签在紧凑布局横向溢出。
-            isExpanded: true,
-            initialValue: releaseGroupPresent ? _releaseGroup : null,
-            decoration: InputDecoration(
-              labelText: t.video_subtitle_collection_release_group,
-              helperText: t.video_subtitle_collection_release_group_hint,
-              helperMaxLines: 3,
-              isDense: true,
-              border: const OutlineInputBorder(),
-            ),
-            items: <DropdownMenuItem<String>>[
-              DropdownMenuItem<String>(
-                value: null,
-                child: Text(t.video_subtitle_collection_release_group_any),
-              ),
-              for (final SubtitleVersionGroup g in groups)
-                DropdownMenuItem<String>(
-                  value: g.key,
-                  child: Text(
-                    '${g.collectionLabel} · ${g.container.toUpperCase()}'
-                    '${g.language.isEmpty ? '' : ' · ${jimakuLanguageLabel(g.language)}'}'
-                    ' · ${g.members.length}',
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-            ],
-            onChanged: _running
-                ? null
-                : (String? key) => unawaited(_selectReleaseGroup(key)),
-          ),
       ],
     );
   }
@@ -1039,6 +1398,7 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    _plan = _plannedIndex;
     final bool canDownload =
         canRunSubtitleCollectionBatch(
           selected: _selectedSource,
@@ -1115,7 +1475,7 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
                               ),
                             ),
                         ]),
-                      _buildSourcePicker(theme),
+                      _buildVersionPicker(theme),
                       _buildCollectionSettings(theme),
                       const FushiDividerControl(height: 20),
                     ],

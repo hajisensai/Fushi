@@ -29,6 +29,46 @@ String? subtitleReleaseGroupTag(String fileName) {
   return tag;
 }
 
+/// 文件名里的发行平台 token（scene 命名惯例：`.Netflix.` / `.NF.` / `.AMZN.` …）
+/// → 规范平台名。只认被分隔符（`.` / 空格 / 括号 / `_` / `-`）包住的整词。
+const Map<String, String> _kPlatformTokens = <String, String>{
+  'netflix': 'Netflix',
+  'nf': 'Netflix',
+  'amazon': 'Amazon',
+  'amzn': 'Amazon',
+  'crunchyroll': 'Crunchyroll',
+  'cr': 'Crunchyroll',
+  'disney+': 'Disney+',
+  'dsnp': 'Disney+',
+  'hulu': 'Hulu',
+  'hidive': 'HIDIVE',
+  'abema': 'ABEMA',
+  'u-next': 'U-NEXT',
+  'bilibili': 'Bilibili',
+  'b-global': 'Bilibili',
+  'iqiyi': 'iQIYI',
+  'baha': 'Baha',
+  'youtube': 'YouTube',
+};
+
+/// 版本的「名字」：文件名开头的发布组标签（[subtitleReleaseGroupTag]），没有时
+/// 退到发行平台 token（`….WEBRip.Netflix.ja[cc].srt` → `Netflix`）。
+///
+/// 没有组名的官方抽轨字幕（Netflix / Amazon CC）过去全落进同一个「无组名」版本，
+/// 两家的时间轴、断句完全不同却被当成一套；用户在版本列表里也只能看到一张没名字
+/// 的卡。认不出返回 null。
+String? subtitleVersionTag(String fileName) {
+  final String? group = subtitleReleaseGroupTag(fileName);
+  if (group != null) return group;
+  for (final String token in fileName.toLowerCase().split(
+    RegExp(r'[.\s\[\]\(\)_]+'),
+  )) {
+    final String? platform = _kPlatformTokens[token];
+    if (platform != null) return platform;
+  }
+  return null;
+}
+
 /// 小写扩展名（不含点）；认不出为空串。
 String subtitleFormatOf(String fileName) {
   final int dot = fileName.lastIndexOf('.');
@@ -61,8 +101,7 @@ class SubtitleVersionGroup {
   /// `.format`」。两个毫不相干的概念共用一个词，只会让那条守卫在这里误报、又诱使
   /// 后来人去削弱它。
   String get container => subtitleFormatOf(members.first.fileName);
-  String? get releaseGroupTag =>
-      subtitleReleaseGroupTag(members.first.fileName);
+  String? get releaseGroupTag => subtitleVersionTag(members.first.fileName);
   bool get hearingImpaired => members.first.hearingImpaired;
   bool get aiTranslated => members.first.aiTranslated;
   bool get fromTrusted =>
@@ -126,7 +165,7 @@ String subtitleVersionKeyOf(VideoSubtitleCandidate candidate) => <String>[
   candidate.collectionId ?? '',
   subtitleFormatOf(candidate.fileName),
   candidate.language,
-  subtitleReleaseGroupTag(candidate.fileName) ?? '',
+  subtitleVersionTag(candidate.fileName) ?? '',
   candidate.hearingImpaired ? 'hi' : '',
   candidate.aiTranslated ? 'ai' : '',
 ].join('\u001f');

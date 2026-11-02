@@ -108,6 +108,37 @@ class SubtitleEpisodeIndex<T> {
     required int Function(T) languageRankOf,
     required String Function(T) fileNameOf,
   }) {
+    final List<String> ranked = rankVersions(
+      targetEpisodes: targetEpisodes,
+      versionOf: versionOf,
+      languageRankOf: languageRankOf,
+      fileNameOf: fileNameOf,
+    );
+    final Map<String, int> versionRank = <String, int>{
+      for (int i = 0; i < ranked.length; i++) ranked[i]: i,
+    };
+    return SubtitleEpisodeIndex<T>(
+      byEpisode: <int, List<T>>{
+        for (final MapEntry<int, List<T>> entry in byEpisode.entries)
+          entry.key: _stableSortBy(
+            entry.value,
+            (T file) => versionRank[versionOf(file)]!,
+          ),
+      },
+      unnumbered: unnumbered,
+    );
+  }
+
+  /// 整批版本排名（最优在前），规则见 [preferConsistentVersion]。
+  ///
+  /// 单独暴露给 UI：版本列表的顺序与「自动」实际会用的版本必须出自同一份判据，
+  /// 不能列表一套排序、下载另一套。只含**带集号**的版本（未编号文件不参与按集配）。
+  List<String> rankVersions({
+    required Iterable<int> targetEpisodes,
+    required String Function(T) versionOf,
+    required int Function(T) languageRankOf,
+    required String Function(T) fileNameOf,
+  }) {
     final Set<int> targets = targetEpisodes.toSet();
     final Map<String, int> languageRank = <String, int>{};
     final Map<String, Set<int>> covered = <String, Set<int>>{};
@@ -143,20 +174,7 @@ class SubtitleEpisodeIndex<T> {
       return firstSeen[a]!.compareTo(firstSeen[b]!);
     }
 
-    final List<String> ranked = firstSeen.keys.toList()..sort(compareVersions);
-    final Map<String, int> versionRank = <String, int>{
-      for (int i = 0; i < ranked.length; i++) ranked[i]: i,
-    };
-    return SubtitleEpisodeIndex<T>(
-      byEpisode: <int, List<T>>{
-        for (final MapEntry<int, List<T>> entry in byEpisode.entries)
-          entry.key: _stableSortBy(
-            entry.value,
-            (T file) => versionRank[versionOf(file)]!,
-          ),
-      },
-      unnumbered: unnumbered,
-    );
+    return firstSeen.keys.toList()..sort(compareVersions);
   }
 
   /// 字幕侧是否**存在**带集号的文件。

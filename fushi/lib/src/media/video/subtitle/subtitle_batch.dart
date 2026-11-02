@@ -270,6 +270,7 @@ Future<List<SubtitleBatchItem>> runSubtitleBatch({
   SubtitleBatchItemCallback? onItemStart,
   SubtitleBatchItemCallback? onItemDone,
   AutomaticSubtitleAligner? subtitleAligner,
+  Map<String, String> knownVersionLanguages = const <String, String>{},
 }) async {
   final List<SubtitleBatchItem> results = <SubtitleBatchItem>[];
   final Directory dir = Directory(saveDirectory);
@@ -284,16 +285,26 @@ Future<List<SubtitleBatchItem>> runSubtitleBatch({
   Future<VideoSubtitleDownload> download(VideoSubtitleCandidate c) =>
       downloads[c.identityKey] ??= registry.download(c);
   // 文件名没写语言的版本按正文判语言——否则它们在语言排名里垫底，整季会被
-  // 一个「文件名带了 ja 标记」的版本抢走（BUG-3993）。
-  final Map<String, String> probedLanguage =
-      await probeUnlabeledVersionLanguages<VideoSubtitleCandidate>(
-        files: candidates.where((VideoSubtitleCandidate c) => !c.isArchivePack),
-        targetEpisodes: episodes,
-        versionOf: subtitleVersionKeyOf,
-        declaredLanguageOf: (VideoSubtitleCandidate c) => c.language,
-        episodeOf: (VideoSubtitleCandidate c) => c.episode,
-        fetch: (VideoSubtitleCandidate c) async => (await download(c)).bytes,
-      );
+  // 一个「文件名带了 ja 标记」的版本抢走（BUG-3993）。调用方已经探过的
+  // （[knownVersionLanguages]，合集面板列版本时探的）不再重下。
+  final Map<String, String> probedLanguage = <String, String>{
+    ...knownVersionLanguages,
+    ...await probeUnlabeledVersionLanguages<VideoSubtitleCandidate>(
+      // 有下载配额的源（OpenSubtitles：免费账号一天 5~20 次）不为排名去探——
+      // 那等于拿用户的配额换一个排序依据。
+      files: candidates.where(
+        (VideoSubtitleCandidate c) =>
+            !c.isArchivePack &&
+            registry.allowsFreeProbeDownload(c) &&
+            !knownVersionLanguages.containsKey(subtitleVersionKeyOf(c)),
+      ),
+      targetEpisodes: episodes,
+      versionOf: subtitleVersionKeyOf,
+      declaredLanguageOf: (VideoSubtitleCandidate c) => c.language,
+      episodeOf: (VideoSubtitleCandidate c) => c.episode,
+      fetch: (VideoSubtitleCandidate c) async => (await download(c)).bytes,
+    ),
+  };
   String? languageOf(VideoSubtitleCandidate c) => c.language.isNotEmpty
       ? c.language
       : probedLanguage[subtitleVersionKeyOf(c)];
