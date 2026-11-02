@@ -484,15 +484,8 @@ class SrsSyncScheduler {
         store,
         directoryKey,
         locationKey: locationKey,
-        onFetchProgress: (int done, int total) =>
-            srsSyncProgress.value = SrsSyncProgress(
-              stage: SrsSyncStage.downloading,
-              done: done,
-              total: total,
-            ),
-        onUploadStart: () => srsSyncProgress.value = const SrsSyncProgress(
-          stage: SrsSyncStage.uploading,
-        ),
+        onFetchProgress: _reportFetchProgress,
+        onUploadStart: _reportUploadStart,
         beforeUpload: (String? keyHex) =>
             _mediaBeforeUpload(backend, store, directoryKey, keyHex),
         shouldStop: () => _locationStopped(directoryKey),
@@ -552,6 +545,20 @@ class SrsSyncScheduler {
     }
   }
 
+  /// 一轮的阶段进度（云盘 / 互联 / 文件夹位置三条路径共用）：拉段 + 收段按段数报、开始发件报一次、开始传媒体报一次。
+  static void _reportFetchProgress(int done, int total) =>
+      srsSyncProgress.value = SrsSyncProgress(
+        stage: SrsSyncStage.downloading,
+        done: done,
+        total: total,
+      );
+
+  static void _reportUploadStart() => srsSyncProgress.value =
+      const SrsSyncProgress(stage: SrsSyncStage.uploading);
+
+  static void _reportMediaStart() =>
+      srsSyncProgress.value = const SrsSyncProgress(stage: SrsSyncStage.media);
+
   /// 当前这一轮的细分步骤写进活动面包屑（[_trackRound] 装上、跑完卸下）：进程死在一轮里时，下次启动报
   /// 「上次进程在 srs_sync 进行中没了」带上死在哪一步、那一刻的内存（反馈 i8qNDs_V_D：大库上卡在「开始」
   /// 4.5 分钟后被系统杀，原本只知道阶段名）。
@@ -576,7 +583,7 @@ class SrsSyncScheduler {
     try {
       final Directory? root = await readMediaRoot();
       if (root == null) return;
-      srsSyncProgress.value = const SrsSyncProgress(stage: SrsSyncStage.media);
+      _reportMediaStart();
       await srsDefaultMediaSyncRunner(
         backend,
         store,
@@ -847,6 +854,7 @@ class SrsSyncScheduler {
       return _trackRound(
         backend.runtimeType.toString(),
         () => _syncWithBackend(backend, directoryKey),
+        errorOf: (SrsSync2Report r) => r.error,
       );
     });
     _queuedRounds[requestKey] = round;
@@ -867,10 +875,13 @@ class SrsSyncScheduler {
   /// 覆写，跑完删掉——进程死在同步里（三次小米闪退都在补传积压期间、Dart 零日志），下次
   /// 启动 [PreviousExitLog] 会报「上次进程在 srs_sync 进行中没了」+ 当时的阶段与内存。
   /// 失败时把队列 / 失败计数 / 内存写进诊断段，随反馈上传。
-  Future<SrsSync2Report> _trackRound(
+  ///
+  /// [errorOf] 从这一轮的结果里取错误（null = 成功），用来记连续失败。
+  Future<T> _trackRound<T>(
     String backendLabel,
-    Future<SrsSync2Report> Function() body,
-  ) async {
+    Future<T> Function() body, {
+    required String? Function(T result) errorOf,
+  }) async {
     final SrsSyncRoundStats stats = _roundStats;
     stats.running++;
     String describe(String stage) =>
@@ -891,13 +902,14 @@ class SrsSyncScheduler {
     );
     srsSyncProgress.addListener(onProgress);
     try {
-      final SrsSync2Report report = await body();
-      if (report.error == null) {
+      final T result = await body();
+      final String? error = errorOf(result);
+      if (error == null) {
         stats.consecutiveFailures = 0;
       } else {
-        _noteRoundFailure(describe, 'report error: ${report.error}');
+        _noteRoundFailure(describe, 'report error: $error');
       }
-      return report;
+      return result;
     } catch (e) {
       _noteRoundFailure(describe, e);
       rethrow;
@@ -1053,9 +1065,7 @@ class SrsSyncScheduler {
       try {
         final Directory? root = await readMediaRoot();
         if (root != null) {
-          srsSyncProgress.value = const SrsSyncProgress(
-            stage: SrsSyncStage.media,
-          );
+          _reportMediaStart();
           final SrsMediaSyncReport media = await _mediaRunner(
             backend,
             store,
@@ -1194,15 +1204,31 @@ class SrsSyncScheduler {
     for (final SrsFolderLocation l in await read()) {
       if (l.idle || _locationStopped(l.locationId)) continue;
       try {
-        final SrsFolderSyncReport r = await srsSyncFolderLocation(
-          location: l,
-          store: store,
-          mediaRoot: mediaRoot,
-          key: _locationKey?.call(l.locationId),
-          migrationMemo: _srsMigrationMemo,
-          v1MediaMigrations: _v1Media,
-          onV1Bound: () async => unawaited(_publishFolderV1Bindings()),
-          shouldStop: () => _locationStopped(l.locationId),
+        // 每个位置从「准备」重新报起；进度 / 面包屑与云盘、互联那条路径同一套（以前这里一个都不接：大库首次从
+        // 文件夹收几百个段跑好几分钟，界面全程停在「正在准备」，进程死在里面也不留面包屑）。
+        srsSyncProgress.value = const SrsSyncProgress();
+        final SrsFolderSyncReport r = await _trackRound(
+          'folder',
+          () => srsSyncFolderLocation(
+            location: l,
+            store: store,
+            mediaRoot: mediaRoot,
+            key: _locationKey?.call(l.locationId),
+            migrationMemo: _srsMigrationMemo,
+            v1MediaMigrations: _v1Media,
+            onV1Bound: () async => unawaited(_publishFolderV1Bindings()),
+            onFetchProgress: _reportFetchProgress,
+            onUploadStart: _reportUploadStart,
+            onMediaStart: _reportMediaStart,
+            shouldStop: () => _locationStopped(l.locationId),
+            onStep: _step,
+          ),
+          // 收手（库要关 / 位置被关掉）不算失败，与下面的分流一致。
+          errorOf: (SrsFolderSyncReport r) => (r.crypto?.needsUpgrade ?? false)
+              ? kSrsSyncNeedsUpgrade
+              : r.ops?.error == kSrsSync2Stopped
+              ? null
+              : r.crypto?.error,
         );
         final SrsLocationPrepared? prepared = r.prepared;
         if (prepared != null) {

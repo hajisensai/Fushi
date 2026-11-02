@@ -1985,6 +1985,75 @@ void main() {
       expect(crumb().existsSync(), isFalse, reason: '跑完删掉面包屑');
     });
 
+    test(
+      '文件夹位置与云盘同一套进度 / 面包屑：报到「下载 n/总数」「上传」，跑的时候有 backend=folder 的面包屑',
+      () async {
+        // 真机（小米平板 5，3 GB 真实库）：首次从文件夹收 125 个段跑了好几分钟，界面全程停在「正在准备」、
+        // 进程死在里面也不留面包屑——文件夹这条路径以前一个进度回调都没接。
+        final Directory folder = Directory.systemTemp.createTempSync(
+          'fushi_srs_folder_progress_',
+        );
+        addTearDown(() => folder.deleteSync(recursive: true));
+        final SrsFolderLocation loc = SrsFolderLocation(
+          id: 'usb',
+          path: folder.path,
+        );
+        final (FushiDatabase otherDb, SrsDbStore other) =
+            await openSrsTestStore(deviceId: 'other');
+        addTearDown(otherDb.close);
+        final String rain = await other.createNote(
+          noteTypeId: other.lapisNoteTypeId,
+          fieldsById: <String, String>{
+            srsLapisFieldId(kSrsTestProfile, 'Expression'): '雨',
+          },
+        );
+        await srsSyncFolderLocation(location: loc, store: other);
+
+        final List<SrsSyncProgress> seen = <SrsSyncProgress>[];
+        final List<String> crumbsSeen = <String>[];
+        void onProgress() {
+          final SrsSyncProgress? v = srsSyncProgress.value;
+          if (v == null) return;
+          seen.add(v);
+          if (crumb().existsSync()) crumbsSeen.add(crumb().readAsStringSync());
+        }
+
+        srsSyncProgress.addListener(onProgress);
+        addTearDown(() => srsSyncProgress.removeListener(onProgress));
+        final SrsSyncScheduler s = SrsSyncScheduler(
+          readStore: () async => store,
+          channels: (Future<void> Function(SyncAssetStore) body) async =>
+              (ran: 0, errors: const <Object>[]),
+          directoryKeyOf: (SyncAssetStore b) async => 'k',
+          folderLocations: () async => <SrsFolderLocation>[loc],
+          onDataChanged: () {},
+          onNotice: (SrsSyncNotice _) {},
+        );
+        final SrsSyncNowResult r = await s.syncFolderLocations();
+        expect(r.ran, 1);
+        expect(s.folderErrors, isEmpty);
+        final List<SrsSyncProgress> downloads = <SrsSyncProgress>[
+          for (final SrsSyncProgress v in seen)
+            if (v.stage == SrsSyncStage.downloading) v,
+        ];
+        expect(downloads, isNotEmpty, reason: '收段要报「下载 n/总数」，不能停在「准备」');
+        expect(downloads.last.total, greaterThan(0));
+        expect(downloads.last.done, downloads.last.total);
+        expect(
+          seen.map((SrsSyncProgress v) => v.stage),
+          contains(SrsSyncStage.uploading),
+        );
+        expect(
+          crumbsSeen.any((String c) => c.contains('backend=folder')),
+          isTrue,
+          reason: '跑的时候要有活动面包屑',
+        );
+        expect(crumb().existsSync(), isFalse, reason: '跑完删掉面包屑');
+        expect(srsSyncProgress.value, isNull);
+        expect(await store.note(rain), isNotNull, reason: '段确实收进了本机');
+      },
+    );
+
     test('失败轮次累计连续失败数；成功清零；面包屑不残留', () async {
       int runs = 0;
       final SrsSyncScheduler s = SrsSyncScheduler(
