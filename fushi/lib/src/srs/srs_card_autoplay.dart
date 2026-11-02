@@ -329,7 +329,12 @@ class _DefaultSrsCardAudioOutput implements SrsCardAudioOutput {
 }
 
 final Provider<SrsCardAudioOutput> srsCardAudioOutputProvider =
-    Provider<SrsCardAudioOutput>(_DefaultSrsCardAudioOutput.new);
+    Provider<SrsCardAudioOutput>(srsDefaultCardAudioOutput);
+
+/// 生产实现：经 [ref] 所在容器的 `srsMediaStoreProvider` 取文件。远程刷卡在子作用域里覆盖了媒体库，
+/// 要在同一个子作用域里用它再覆盖 [srsCardAudioOutputProvider]，否则读到的还是根容器的媒体库。
+SrsCardAudioOutput srsDefaultCardAudioOutput(Ref ref) =>
+    _DefaultSrsCardAudioOutput(ref);
 
 /// 一段一段播一组音频；新的 [play] / [cancel] 打断上一组。
 class SrsCardAudioSequencer {

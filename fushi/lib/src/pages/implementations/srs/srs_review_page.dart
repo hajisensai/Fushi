@@ -92,10 +92,6 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
-/// 单次作答记入日志的最长用时（与 Anki「最长作答秒数」默认 60 秒同口径）：走神、
-/// 切出去之类的长停顿不该把复习用时统计撑爆。
-const int kSrsMaxAnswerDurationMs = 60000;
-
 /// 评分按钮上的间隔文案：按界面语言给单位（文案照 Anki 答题按钮：英文 m / h / d /
 /// mo / y，中文 分钟 / 小时 / 天 / 个月 / 年），不再让「1m」与「11.1mo」混着读。
 String srsIntervalLabel(({String amount, SrsIntervalUnit unit}) p) =>
@@ -867,16 +863,27 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
         // 不把显示问题面时算的预览传进去：预览的时刻是出题那一刻，日志的发生时刻
         // 必须是现在（学习步长按分钟算，差几十秒就差一档）。
         // 评分与排出下一张是一次调用（落库 + 计数 + 下一张 + 再下一张，SrsDbStore.answerAndStudy）。
-        final SrsAnswerOutcome out = await store.answerAndStudy(
-          detail.card.id,
-          rating,
-          durationMs: math.min(
-            _answerClock.elapsedMilliseconds,
-            kSrsMaxAnswerDurationMs,
-          ),
-          studyDeckId: widget.deckId,
-          custom: widget.custom,
-        );
+        final SrsAnswerOutcome out;
+        try {
+          out = await store.answerAndStudy(
+            detail.card.id,
+            rating,
+            durationMs: math.min(
+              _answerClock.elapsedMilliseconds,
+              kSrsMaxAnswerDurationMs,
+            ),
+            studyDeckId: widget.deckId,
+            custom: widget.custom,
+          );
+        } on SrsCardChangedError {
+          // 远程复习：这张卡出题后已在别处复习过，这次没记。跳过它、按最新状态重排。
+          FushiToast.show(
+            msg: t.srs_remote_review_card_changed,
+            severity: ToastSeverity.warning,
+          );
+          await _loadNext();
+          return;
+        }
         SrsReviewPage.debugPhase?.call('answer:done');
         _undo.add(_UndoStep(cardId: detail.card.id, logId: out.log.id));
         _reviewedThisSession++;

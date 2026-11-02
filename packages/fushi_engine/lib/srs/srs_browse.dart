@@ -422,7 +422,7 @@ class SrsBrowseSession {
   /// 关闭排在关库之后）就什么都不用做：会话住在内核里，随内核一起释放了。
   Future<void> close() async {
     _last = null;
-    if (store.core.isClosed) return;
+    if (store.isClosed) return;
     try {
       await store.browseCommand(<String, Object?>{
         'op': 'browse_close',
