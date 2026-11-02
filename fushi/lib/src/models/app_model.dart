@@ -11229,9 +11229,13 @@ class AppModel with ChangeNotifier {
 
   /// 游戏串流主机侧制卡适配器：游戏工作台「开始串流」与接收端远程启动共用这一份，
   /// 两个入口读同一组 gal 制卡偏好。
+  ///
+  /// 串流卡是替接收端制的，与互联转发 / 浏览器扩展同走 [hostMiningAnkiRepository]：
+  /// 遵守本机挖词目标（目标是 Fushi 复习时落复习）。曾直接用裸 Anki 后端，挖词目标
+  /// 是复习、又没配 Anki 牌组的主机上每张串流卡都失败。
   FushiGameStreamMiningAdapter createGameStreamMiningAdapter() {
     return FushiGameStreamMiningAdapter(
-      repository: () => platformServices.createAnkiRepository(),
+      repository: () => hostMiningAnkiRepository,
       compression: () => MiningMediaCompression.resolve(
         imageTier: miningImageQuality,
         audioTier: miningAudioQuality,

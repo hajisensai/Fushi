@@ -6,6 +6,7 @@ import 'package:fushi/src/mining/gal_hook_mining_coordinator.dart';
 import 'package:fushi/src/mining/window_capture_channel.dart';
 import 'package:fushi/src/sync/game_stream_mining.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
@@ -152,6 +153,39 @@ void main() {
       expect(mined.single.pngBytes, <int>[2]);
     },
   );
+
+  test('a backend rejection is logged on the host with its reason', () async {
+    // The Anki / review backend reports failures in the outcome, not in
+    // failureReason; they used to leave the host log empty.
+    adapter = FushiGameStreamMiningAdapter(
+      repository: () => throw StateError('unexpected repository'),
+      compression: () => MiningMediaCompression.compressed,
+      isWindows: () => true,
+      lineLookup: text.entryById,
+      currentLineId: () => text.lastEntry?.id,
+      lineValidator: (_) => true,
+      captureStill: (int hwnd) => capture(hwnd),
+      mineSnapshot: (_, _) async => const GalHookMiningResult(
+        outcome: MineOutcome(
+          MineResult.error,
+          errorDetail: 'deck "Mining" was not found',
+        ),
+      ),
+    );
+    final GameStreamTextEvent line = event(text.appendLine('line')!);
+    expect(await adapter.captureLine(line, hwnd: 1), isTrue);
+    final int before = ErrorLogService.instance.entries.length;
+
+    final GameStreamMineResult result = await adapter.mine(request(line), line);
+
+    expect(result.ok, isFalse);
+    expect(result.detail, GameStreamMineDetail.hostError);
+    final List<ErrorLogEntry> logged = ErrorLogService.instance.entries
+        .skip(before)
+        .where((ErrorLogEntry e) => e.source == 'GameStream.mine')
+        .toList();
+    expect(logged.single.error, contains('deck "Mining" was not found'));
+  });
 
   test('clear prevents a queued progressive capture from restarting', () async {
     text.foldProgressiveLines = true;

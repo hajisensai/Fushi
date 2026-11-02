@@ -242,11 +242,22 @@ class FushiGameStreamMiningAdapter {
     // 本机绝对路径（FileSystemException）、AnkiConnect 的主机名/端口（SocketException）
     // 之类。这条结果随后原样回给手机，等于把主机内情推到局域网对端。原文只进本机
     // 日志，远端拿到的是通用文案 + 枚举化 detail。
-    if (!result.success && !result.duplicate && result.failureReason != null) {
+    // 后端（Anki / 复习）拒卡时原因在 outcome 里、failureReason 为空；两处都得记，
+    // 否则主机日志一片空白、手机只看到通用文案。
+    final MineOutcome? outcome = result.outcome;
+    final String? failure =
+        result.failureReason ??
+        (outcome == null
+            ? null
+            : <String>[
+                outcome.result.name,
+                if (outcome.errorDetail != null) outcome.errorDetail!,
+              ].join(': '));
+    if (!result.success && !result.duplicate && failure != null) {
       ErrorLogService.instance.log(
         'GameStream.mine',
-        'host mining failed: ${result.failureReason}',
-        StackTrace.current,
+        'host mining failed: $failure',
+        result.outcome?.stackTrace ?? StackTrace.current,
       );
     }
     return GameStreamMineResult(
