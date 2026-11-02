@@ -587,7 +587,11 @@ impl SrsCore {
                     .lock()
                     .map_err(|_| "srs drift write reader poisoned".to_string())?;
                 let r = guard.as_ref().ok_or_else(|| CLOSED.to_string())?;
-                Self::snapshot_on(r, sql, params)
+                let out = Self::snapshot_on(r, sql, params);
+                // 常驻的这条只读连接和 Conn / 读连接池放回时同一约定：查询之间页缓存收到 IDLE_CACHE_BYTES 以内，
+                // 写那一路做过一次大读后不常驻最多 64 MB（cache_size）。
+                trim_idle_cache(r);
+                out
             };
             match done {
                 Err(e) if e == NOT_SNAPSHOT => {}
@@ -1229,6 +1233,49 @@ mod read_routing_tests {
     /// `last_insert_rowid()` 是每条连接自己的：写连接上刚插过行就非 0，读连接上恒为 0。用它看查询落在哪条连接上。
     fn on_writer(core: &SrsCore) -> bool {
         scalar(&core.select("SELECT last_insert_rowid()", &[]).unwrap()) != Value::Integer(0)
+    }
+
+    fn cache_used(c: &Connection) -> i32 {
+        let (mut used, mut high) = (0, 0);
+        // SAFETY: 测试独占这条连接，只读一项统计。
+        let rc = unsafe {
+            rusqlite::ffi::sqlite3_db_status(c.handle(), rusqlite::ffi::SQLITE_DBSTATUS_CACHE_USED, &mut used, &mut high, 0)
+        };
+        assert_eq!(rc, rusqlite::ffi::SQLITE_OK);
+        used
+    }
+
+    /// 写那一路的常驻只读连接（drift_write_reader）和 Conn / 读连接池同一约定：一条大查询跑完，页缓存收到
+    /// IDLE_CACHE_BYTES（8 MB）以内，不常驻到 cache_size（64 MB）。对照：同样的查询在一条不收缓存的只读连接上
+    /// 跑完会留 8 MB 以上，证明这条查询确实把缓存撑过了上限。
+    #[test]
+    fn select_trims_the_write_path_reader_cache_after_a_large_read() {
+        let core = open("write_reader_trim");
+        core.writer()
+            .unwrap()
+            .execute_batch(
+                // 不自动 checkpoint：行留在 WAL 里。主文件里的页走 mmap、不占页缓存；WAL 里的帧（以及超出 mmap
+                // 256 MB 的部分）才读进页缓存——那正是一条连接会常驻几十 MB 的情形。
+                "PRAGMA wal_autocheckpoint = 0;
+                 CREATE TABLE cache_probe (b BLOB);
+                 INSERT INTO cache_probe SELECT randomblob(3500) FROM
+                   (WITH RECURSIVE c(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM c WHERE x < 6000) SELECT x FROM c);",
+            )
+            .unwrap();
+        let scan = "SELECT COUNT(*) FROM cache_probe WHERE b IS NOT NULL";
+        let control = open_drift_reader(&core.path).unwrap();
+        let n: i64 = control.query_row(scan, [], |r| r.get(0)).unwrap();
+        assert_eq!(n, 6000);
+        assert!(
+            cache_used(&control) > IDLE_CACHE_BYTES,
+            "scan did not grow an untrimmed page cache past the idle cap ({} bytes)",
+            cache_used(&control)
+        );
+        assert_eq!(scalar(&core.select(scan, &[]).unwrap()), Value::Integer(6000));
+        core.writer().unwrap().execute_batch("PRAGMA wal_autocheckpoint = 1000").unwrap();
+        let guard = core.drift_write_reader.lock().unwrap();
+        let used = cache_used(guard.as_ref().unwrap());
+        assert!(used <= IDLE_CACHE_BYTES, "write-path reader kept {used} bytes of page cache after select");
     }
 
     #[test]

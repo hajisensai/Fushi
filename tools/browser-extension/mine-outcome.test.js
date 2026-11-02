@@ -41,15 +41,17 @@ test('HTTP/network failures retry with a reason; only token-type errors point at
 });
 
 // EMI05fe8RJ：永久失败分型——付费电影的卡不能永远留在待生成队列里、每次生成都重跑一遍。
-test('server errorKind permanent and HTTP 400/422 classify as failed; transient stays retry', () => {
+test('server errorKind permanent and HTTP 400/422 classify as failed; transient stays retry and is not the item fault', () => {
   const perm = fushiMineOutcome(ok({ result: 'error', message: 'YouTube 视频流解析失败，未制卡', errorKind: 'permanent' }), t);
   assert.strictEqual(perm.cls, 'failed');
   assert.strictEqual(perm.itemFault, true);
   assert.strictEqual(perm.reason, 'YouTube 视频流解析失败，未制卡');
   const trans = fushiMineOutcome(ok({ result: 'error', message: 'x', errorKind: 'transient' }), t);
   assert.strictEqual(trans.cls, 'retry');
-  assert.strictEqual(trans.itemFault, true);
-  assert.strictEqual(fushiMineOutcome(ok({ result: 'error' }), t).cls, 'retry', '旧服务端不回 errorKind：按可重试');
+  assert.strictEqual(trans.itemFault, false, '服务端标 transient（判 bot / 限流 / AnkiConnect 不可达）是环境问题');
+  const legacy = fushiMineOutcome(ok({ result: 'error' }), t);
+  assert.strictEqual(legacy.cls, 'retry', '旧服务端不回 errorKind：按可重试');
+  assert.strictEqual(legacy.itemFault, true, '旧服务端无从区分：走计次兜底');
   assert.strictEqual(fushiMineOutcome({ ok: false, status: 400, data: null }, t).cls, 'failed');
   assert.strictEqual(fushiMineOutcome({ ok: false, status: 422, data: null }, t).cls, 'failed');
   for (const st of [401, 403, 404, 500, 502]) {
@@ -74,6 +76,16 @@ test('queue bookkeeping: failed moves out of pending; item-fault retries escalat
   const down = fushiMineOutcome({ ok: false, error: 'Failed to fetch' }, t);
   assert.deepStrictEqual(fushiQueueAfterMineFailure(q, 'b', down).queue, q, 'app 没开不算该项失败');
 
+  const transient = fushiMineOutcome(ok({ result: 'error', message: 'AnkiConnect 不可达', errorKind: 'transient' }), t);
+  let env = q;
+  for (let i = 0; i < FUSHI_MINE_MAX_ITEM_ATTEMPTS + 2; i++) {
+    const step = fushiQueueAfterMineFailure(env, 'b', transient);
+    assert.strictEqual(step.movedToFailed, false, 'transient 永不把该项移进失败分组');
+    env = step.queue;
+  }
+  assert.deepStrictEqual(env, q, 'transient 不计入该项尝试次数');
+
+  // 旧服务端（不回 errorKind）：计次兜底。
   const trans = fushiMineOutcome(ok({ result: 'error', message: 'timeout' }), t);
   let cur = q;
   for (let i = 1; i < FUSHI_MINE_MAX_ITEM_ATTEMPTS; i++) {

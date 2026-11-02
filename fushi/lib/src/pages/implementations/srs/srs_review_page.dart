@@ -777,10 +777,17 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
   ///   释义区里词典自带的音频、模板复制的多份容器也不是卡面上的按钮（#15）。
   /// - 整面 WebView 卡面：页面渲染后上报的可见发音键（[SrsCardFace.onVisibleSounds]），不再用
   ///   正则扫整张 HTML（CSS 隐藏的容器、收起的 `<details>` 里的也会被扫进来）。还没上报的那一面
-  ///   按空算。
+  ///   按空算，两处例外（都不依赖「上报赶在翻面之前」这种时序）：
+  ///   - 答案面已上报、问题面清单却没有（慢卡：问题面卡片脚本还没跑完用户就翻面了，问题面那次
+  ///     上报被换卡作废、之后也不会再来）：问题面退回问题 HTML 的 `[sound:]` 作扣减基准，
+  ///     `{{FrontSide}}` 带过来的正面音频不被当成答案新出现的再自动播 / 重播一遍。
+  ///   - [layout]（底栏逐段键排键位）且答案面还没上屏：答案面看得见什么只有它渲染后才知道，
+  ///     键位先按答案 HTML 的 `[sound:]` 预排「答案新出现」的那几段（两份 HTML 同口径相减），
+  ///     接在问题面可见清单之后——翻面前后同一位置、同样多，正面还没有的那段先不可点。
   ({List<String> question, List<String> answer}) _mediaOf(
-    SrsRenderedCard rendered,
-  ) {
+    SrsRenderedCard rendered, {
+    bool layout = false,
+  }) {
     if (rendered.fushiCardDefinitions != null) {
       final SrsFushiCardMedia media = srsFushiCardPlan(
         rendered.fields,
@@ -790,13 +797,25 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     }
     final bool current =
         _pageSoundsCard != null && _pageSoundsCard == _detail?.card.id;
+    final List<String>? pageQuestion = current ? _pageQuestionSounds : null;
+    final List<String>? pageAnswer = current ? _pageAnswerSounds : null;
+    if (pageAnswer == null) {
+      final List<String> question = pageQuestion ?? const <String>[];
+      if (!layout || _showingAnswer) {
+        return (question: question, answer: const <String>[]);
+      }
+      final List<String> predictedAnswerOnly = srsAnswerOnlyOf(
+        srsCardSoundNames(rendered.question),
+        srsCardSoundNames(rendered.answer),
+      );
+      return (
+        question: question,
+        answer: <String>[...question, ...predictedAnswerOnly],
+      );
+    }
     return (
-      question: current
-          ? _pageQuestionSounds ?? const <String>[]
-          : const <String>[],
-      answer: current
-          ? _pageAnswerSounds ?? const <String>[]
-          : const <String>[],
+      question: pageQuestion ?? srsCardSoundNames(rendered.question),
+      answer: pageAnswer,
     );
   }
 
@@ -839,7 +858,11 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
   Future<void> _probeMedia(int generation) async {
     final SrsRenderedCard? rendered = _rendered;
     if (rendered == null) return;
-    final ({List<String> question, List<String> answer}) m = _mediaOf(rendered);
+    // 连底栏预排的答案面键位一起探（[_mediaOf] 的 layout）：库里没有的那段翻面前就不出键。
+    final ({List<String> question, List<String> answer}) m = _mediaOf(
+      rendered,
+      layout: true,
+    );
     final SrsCardAudioOutput output = ref.read(srsCardAudioOutputProvider);
     final Set<String> missing = <String>{};
     try {
@@ -890,13 +913,19 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
   }
 
   /// 手动「重播音频」该播的那几段（这一面没有音频时为空）。
+  ///
+  /// [layout]：给底栏逐段键排键位用（答案面还没上屏时按答案 HTML 预排，见 [_mediaOf]）。
   List<String> _replayNames({
     required bool includeQuestion,
     bool answerSide = false,
+    bool layout = false,
   }) {
     final SrsRenderedCard? rendered = _rendered;
     if (rendered == null) return const <String>[];
-    final ({List<String> question, List<String> answer}) m = _mediaOf(rendered);
+    final ({List<String> question, List<String> answer}) m = _mediaOf(
+      rendered,
+      layout: layout,
+    );
     return _present(
       srsReplayOf(
         question: m.question,
@@ -2555,6 +2584,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     final List<String> slots = _replayNames(
       includeQuestion: true,
       answerSide: true,
+      layout: true,
     );
     final Set<String> playable = _replayNames(includeQuestion: true).toSet();
     final bool canReplayFace = _replayNames(

@@ -113,7 +113,8 @@ void main() {
       isNonNegative,
       reason: '等到名字让出后必须再按首实例启动一次',
     );
-    expect(main, contains('kPreviousInstanceWaitMs = 10000'));
+    // 上界数值与退出看门狗的关系由 exit_watchdog_runner_wait_guard_test.dart 钉。
+    expect(main, contains('kPreviousInstanceWaitMs'));
   });
 
   // BUG-3089：Dart 处理器注册前到达的转交参数要排队，ready 后按序冲出；首帧前不

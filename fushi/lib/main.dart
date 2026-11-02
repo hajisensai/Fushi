@@ -23,7 +23,7 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:just_audio_media_kit/just_audio_media_kit.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 import 'package:media_kit/media_kit.dart';
-import 'package:flutter/foundation.dart' show kDebugMode;
+import 'package:flutter/foundation.dart' show kDebugMode, visibleForTesting;
 import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_logs/flutter_logs.dart';
@@ -895,6 +895,12 @@ void main([List<String> args = const <String>[]]) {
 
 /// Encapsulates theming, spacing and other configurable options pertaining to
 /// the entire app, with some parameters dependent on the [AppModel].
+/// 桌面退出看门狗时长（退出中的进程最长存活时间）。Windows / Linux runner 等「正在
+/// 退出的旧实例」的上界必须不小于它，守卫测试经此读出推导值与 runner 常量比对。
+@visibleForTesting
+Duration get desktopExitWatchdogTimeout =>
+    _FushiReaderAppState._exitWatchdogTimeout;
+
 class FushiReaderApp extends ConsumerStatefulWidget {
   /// Initialises an instance of the app.
   const FushiReaderApp({super.key});

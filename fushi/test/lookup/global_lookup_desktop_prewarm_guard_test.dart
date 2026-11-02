@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/lookup/global_lookup_controller.dart';
 
 /// PR #2763 审查：台词浮窗一显示就调 `prewarmDesktopStatic`。桌面查词在
 /// `hide(notify:false)` 与重新显示之间 `isShowing` 为 false，旧实现只看它就铸一个更新
@@ -8,6 +9,8 @@ import 'package:flutter_test/flutter_test.dart';
 /// 当成旧 epoch 丢掉——查词窗不出现。与游戏内 `_prewarmCardIfIdle` 同一纪律：在途就不做，
 /// 且判断必须在 `isShowing` 的 await 之后、铸路由之前（await 期间开始的查词也拦住）。
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   final String controller = File(
     'lib/src/lookup/global_lookup_controller.dart',
   ).readAsStringSync();
@@ -38,5 +41,16 @@ void main() {
     );
     expect(body, contains("active.source == 'desktop'"));
     expect(body, contains('GlobalLookupChannel.isRouteValid(active)'));
+  });
+
+  // 「路由仍有效」≠「查词在途」：查词半路中止（这里走的是 appModel 未就绪的那条中止；
+  // 空选区 / 无辅助功能权限 / showAt 被拒 / 异常同一个 finally 收口）时窗没显示、
+  // 不会有 overlayHidden 来作废路由。旧实现路由一直有效 → desktopLookupInFlight 恒真，
+  // prewarmDesktopStatic 被静默跳过，直到下一次查词真正显示又被关掉。
+  test('桌面查词半路中止后不再算「在途」，预热不被永久挡住', () async {
+    final GlobalLookupController lookup = GlobalLookupController.instance;
+    expect(lookup.desktopLookupInFlight, isFalse);
+    await lookup.triggerSelectionLookup(source: 'test');
+    expect(lookup.desktopLookupInFlight, isFalse, reason: '中止的查词必须结束自己的路由生命周期');
   });
 }

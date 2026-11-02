@@ -225,7 +225,8 @@ Future<String> _srsEnsureOnce(
 ///   不只是本实例——一轮同步、发段前的媒体上传、后台旧根迁移各自建实例，并发往新根的 `media/<前2>/` 建目录时
 ///   以前会各建一个（PR #2768 审查）。
 /// - 读：一个路径解析成**全部**同名文件夹（别的设备 / 旧版本已经建重了的照样在），列目录取并集、读 / 查 / 删在
-///   每一个里找；按路径只认第一个会让另一个里的对象对所有读者都不可见。
+///   每一个里找；按路径只认第一个会让另一个里的对象对所有读者都不可见。集合根 `<profileUid>/<folder>` 两级同样（[_rootDirs]）；
+///   顶层 `fushi-srs` 例外：[SyncAssetStore] 没有列后端根目录的接口，只能认 `ensureNamespace` 给的那一个。
 class SrsAssetLocationStore implements SrsLocationStore, SrsLocationFileStore {
   SrsAssetLocationStore({
     required this.store,
@@ -272,20 +273,58 @@ class SrsAssetLocationStore implements SrsLocationStore, SrsLocationFileStore {
     });
   }
 
-  Future<String> _root() => _once('', () async {
+  /// 集合根 `fushi-srs/<profileUid>/<folder>` 的全部同名文件夹（按定位符排序，第一个是写目标）；在途的也在这里，
+  /// 失败不缓存。
+  Future<List<String>>? _roots;
+
+  Future<List<String>> _rootDirs() {
+    final Future<List<String>>? known = _roots;
+    if (known != null) return known;
+    final Future<List<String>> f = _resolveRootDirs();
+    _roots = f;
+    f.ignore();
+    return f.catchError((Object e, StackTrace s) {
+      if (identical(_roots, f)) _roots = null;
+      Error.throwWithStackTrace(e, s);
+    });
+  }
+
+  /// 根下这两级（`<profileUid>`、`<folder>`）和集合根以下同一规则：两台设备首次同步并发建出的同名文件夹全都认，
+  /// 不按 `ensureFolder` 只取一个（Google Drive 取 `files.list` 的第一个，各设备、各轮选中哪个不确定）。
+  ///
+  /// 顶层命名空间 `fushi-srs` 仍只认 [SyncAssetStore.ensureNamespace] 给的那一个：契约没有列后端根目录的接口。
+  Future<List<String>> _resolveRootDirs() async {
     final String ns = await srsEnsureNamespaceShared(
       store,
       backendIdentity,
       kSrsSync2Namespace,
     );
-    final String profile = await srsEnsureFolderShared(
-      store,
-      backendIdentity,
+    final List<String> profiles = await _childFoldersOrCreate(<String>[
       ns,
-      profileUid,
-    );
-    return srsEnsureFolderShared(store, backendIdentity, profile, folder);
-  });
+    ], profileUid);
+    return _childFoldersOrCreate(profiles, folder);
+  }
+
+  /// [parents] 下所有名为 [name] 的子文件夹（并集，按定位符排序：各设备、各轮对同一组同名文件夹选同一个写目标，
+  /// 不依赖后端列目录的顺序）；一个都没有就在第一个父目录下建（后端上进程内单飞）。
+  Future<List<String>> _childFoldersOrCreate(
+    List<String> parents,
+    String name,
+  ) async {
+    final List<String> ids = <String>[];
+    for (final String parent in parents) {
+      for (final AssetEntry e in await store.listChildren(parent)) {
+        if (e.isFolder && e.name == name && !ids.contains(e.id)) ids.add(e.id);
+      }
+    }
+    if (ids.isNotEmpty) return ids..sort();
+    return <String>[
+      await srsEnsureFolderShared(store, backendIdentity, parents.first, name),
+    ];
+  }
+
+  /// 集合根的写目标：全部同名集合根里排第一的那个。
+  Future<String> _root() => _rootDirs().then((List<String> ids) => ids.first);
 
   Future<T> _write<T>(Future<T> Function() body) async {
     final int? cap = maxConcurrentWrites;
@@ -313,7 +352,7 @@ class SrsAssetLocationStore implements SrsLocationStore, SrsLocationFileStore {
 
   /// [dir]（已规范化）的全部同名文件夹定位符；不存在为空列表。
   Future<List<String>> _dirs(String key) {
-    if (key.isEmpty) return _root().then((String id) => <String>[id]);
+    if (key.isEmpty) return _rootDirs();
     final Future<List<String>>? known = _found[key];
     if (known != null) return known;
     final Future<List<String>> f = _resolveDirs(key);

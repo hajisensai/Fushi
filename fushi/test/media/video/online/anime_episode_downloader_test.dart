@@ -298,6 +298,283 @@ void main() {
         );
         expect(await dest.exists(), isFalse);
       });
+
+      /// 带 ETag、支持 `Range: bytes=0-0` 探身份的直链分量。
+      void serveVersioned(
+        String path,
+        List<int> bytes,
+        String Function() etag,
+      ) {
+        server.routes[path] = (HttpRequest request) async {
+          request.response.headers.set(HttpHeaders.etagHeader, etag());
+          final String? range = request.headers.value(HttpHeaders.rangeHeader);
+          if (range == 'bytes=0-0') {
+            request.response.statusCode = HttpStatus.partialContent;
+            request.response.headers.set(
+              HttpHeaders.contentRangeHeader,
+              'bytes 0-0/${bytes.length}',
+            );
+            request.response.contentLength = 1;
+            request.response.add(bytes.sublist(0, 1));
+          } else {
+            request.response.contentLength = bytes.length;
+            request.response.add(bytes);
+          }
+          await request.response.close();
+        };
+      }
+
+      void serveForbidden(String path) {
+        server.routes[path] = (HttpRequest request) async {
+          request.response.statusCode = HttpStatus.forbidden;
+          await request.response.close();
+        };
+      }
+
+      int fullGets(String path) => server.requests
+          .where((_Req r) => r.path == path && r.range == null)
+          .length;
+
+      test('画面自带原声时，替代配音 403 只跳过这一条，整集照常带原声下完', () async {
+        serve('/v.m4s', List<int>.filled(4000, 1));
+        serveForbidden('/dub.m4a');
+        final File dest = File(p.join(tmp.path, 'out', 'ep.mkv'));
+        final _FakeFfmpeg ffmpeg = _FakeFfmpeg.succeeding(<int>[
+          9,
+        ], videoHasAudio: true);
+        await downloader(ffmpeg).downloadWithExternalAudio(
+          url: server.url('/v.m4s'),
+          audioUrls: <String>[server.url('/dub.m4a')],
+          headers: const <String, String>{},
+          dest: dest,
+        );
+        expect(await dest.readAsBytes(), <int>[9]);
+        final List<String> args = ffmpeg.calls.single;
+        // 只剩画面一路输入：自带原声经 `0:a?` 保留，失败的配音不进合成。
+        expect(args.where((String a) => a == '-i').length, 1);
+        expect(args, isNot(contains('1:a')));
+        expect(ffmpeg.probes, hasLength(1));
+        expect(ffmpeg.probes.single.last, '${dest.path}.video');
+        // 成功后分量与断点文件全部清掉。
+        final List<String> left = <String>[
+          for (final FileSystemEntity e in dest.parent.listSync())
+            p.basename(e.path),
+        ];
+        expect(left, <String>['ep.mkv']);
+      });
+
+      test('多条外挂音轨里一条失败：跳过它，其余照常合成', () async {
+        serve('/v.m4s', List<int>.filled(4000, 1));
+        serve('/a0.m4a', List<int>.filled(3000, 2));
+        serveForbidden('/a1.m4a');
+        final File dest = File(p.join(tmp.path, 'out', 'ep.mkv'));
+        final _FakeFfmpeg ffmpeg = _FakeFfmpeg.succeeding(<int>[
+          9,
+        ], videoHasAudio: false);
+        await downloader(ffmpeg).downloadWithExternalAudio(
+          url: server.url('/v.m4s'),
+          audioUrls: <String>[server.url('/a0.m4a'), server.url('/a1.m4a')],
+          headers: const <String, String>{},
+          dest: dest,
+        );
+        final List<String> args = ffmpeg.calls.single;
+        expect(args.where((String a) => a == '-i').length, 2);
+        expect(args, contains('${dest.path}.audio0'));
+        expect(args, isNot(contains('${dest.path}.audio1')));
+      });
+
+      test('纯视频流（无自带音轨）外挂音频全部失败：如实报错，不出无声成品', () async {
+        serve('/v.m4s', List<int>.filled(4000, 1));
+        serveForbidden('/a.m4a');
+        final File dest = File(p.join(tmp.path, 'out', 'ep.mkv'));
+        final _FakeFfmpeg ffmpeg = _FakeFfmpeg.succeeding(<int>[
+          9,
+        ], videoHasAudio: false);
+        await expectLater(
+          downloader(ffmpeg).downloadWithExternalAudio(
+            url: server.url('/v.m4s'),
+            audioUrls: <String>[server.url('/a.m4a')],
+            headers: const <String, String>{},
+            dest: dest,
+          ),
+          throwsA(isA<HttpException>()),
+        );
+        expect(await dest.exists(), isFalse);
+        expect(ffmpeg.calls, isEmpty);
+      });
+
+      test('探不出画面有没有音轨（缺 ffprobe）且外挂音频全部失败：同样如实报错', () async {
+        serve('/v.m4s', List<int>.filled(4000, 1));
+        serveForbidden('/a.m4a');
+        final File dest = File(p.join(tmp.path, 'out', 'ep.mkv'));
+        final _FakeFfmpeg ffmpeg = _FakeFfmpeg.succeeding(<int>[9]);
+        await expectLater(
+          downloader(ffmpeg).downloadWithExternalAudio(
+            url: server.url('/v.m4s'),
+            audioUrls: <String>[server.url('/a.m4a')],
+            headers: const <String, String>{},
+            dest: dest,
+          ),
+          throwsA(isA<HttpException>()),
+        );
+        expect(await dest.exists(), isFalse);
+      });
+
+      test('画面下完、下音频时暂停：继续时复用已校验的完整画面分量，不整段重下', () async {
+        final List<int> videoBytes = List<int>.filled(4000, 1);
+        serveVersioned('/v.m4s', videoBytes, () => '"v1"');
+        final Completer<void> audioGate = Completer<void>();
+        final Completer<void> audioStarted = Completer<void>();
+        addTearDown(() {
+          if (!audioGate.isCompleted) audioGate.complete();
+        });
+        server.routes['/a.m4a'] = (HttpRequest request) async {
+          if (!audioStarted.isCompleted) audioStarted.complete();
+          await audioGate.future;
+          request.response.contentLength = 3;
+          request.response.add(<int>[2, 2, 2]);
+          await request.response.close();
+        };
+        final File dest = File(p.join(tmp.path, 'out', 'ep.mkv'));
+        final _FakeFfmpeg ffmpeg = _FakeFfmpeg.succeeding(<int>[
+          9,
+        ], videoHasAudio: false);
+        final Completer<void> pause = Completer<void>();
+        final Future<void> first = downloader(ffmpeg).downloadWithExternalAudio(
+          url: server.url('/v.m4s'),
+          audioUrls: <String>[server.url('/a.m4a')],
+          headers: const <String, String>{},
+          dest: dest,
+          cancelSignal: pause.future,
+        );
+        await audioStarted.future;
+        pause.complete();
+        await expectLater(first, throwsA(isA<RemoteDownloadCancelled>()));
+        expect(await File('${dest.path}.video').readAsBytes(), videoBytes);
+        expect(await File('${dest.path}.video.done').exists(), isTrue);
+        expect(fullGets('/v.m4s'), 1);
+
+        // 继续：同一份画面（ETag / 总长不变）只发一次 `bytes=0-0` 探身份。
+        audioGate.complete();
+        await downloader(ffmpeg).downloadWithExternalAudio(
+          url: server.url('/v.m4s'),
+          audioUrls: <String>[server.url('/a.m4a')],
+          headers: const <String, String>{},
+          dest: dest,
+        );
+        expect(fullGets('/v.m4s'), 1);
+        expect(
+          server.requests.where(
+            (_Req r) => r.path == '/v.m4s' && r.range == 'bytes=0-0',
+          ),
+          hasLength(1),
+        );
+        expect(await dest.readAsBytes(), <int>[9]);
+      });
+
+      test('继续时画面流已换（ETag 变了）：完整分量作废，整段重下', () async {
+        String etag = '"v1"';
+        serveVersioned('/v.m4s', List<int>.filled(4000, 1), () => etag);
+        serveForbidden('/a.m4a');
+        final File dest = File(p.join(tmp.path, 'out', 'ep.mkv'));
+        final _FakeFfmpeg ffmpeg = _FakeFfmpeg.succeeding(<int>[
+          9,
+        ], videoHasAudio: false);
+        await expectLater(
+          downloader(ffmpeg).downloadWithExternalAudio(
+            url: server.url('/v.m4s'),
+            audioUrls: <String>[server.url('/a.m4a')],
+            headers: const <String, String>{},
+            dest: dest,
+          ),
+          throwsA(isA<HttpException>()),
+        );
+        expect(fullGets('/v.m4s'), 1);
+
+        etag = '"v2"';
+        serve('/a.m4a', <int>[2, 2, 2]);
+        await downloader(ffmpeg).downloadWithExternalAudio(
+          url: server.url('/v.m4s'),
+          audioUrls: <String>[server.url('/a.m4a')],
+          headers: const <String, String>{},
+          dest: dest,
+        );
+        expect(fullGets('/v.m4s'), 2);
+        expect(await dest.readAsBytes(), <int>[9]);
+      });
+
+      test('下载中心放弃一个合成失败的分离流任务：分量与中间件一个不留', () async {
+        serve('/v.m4s', List<int>.filled(4000, 1));
+        serve('/a0.m4a', List<int>.filled(3000, 2));
+        final Completer<void> hold = Completer<void>();
+        addTearDown(() {
+          if (!hold.isCompleted) hold.complete();
+        });
+        // 第二条音轨下到一半就卡住 → 超时失败，留下 `.audio1.part`。
+        server.routes['/a1.m4a'] = (HttpRequest request) async {
+          request.response.headers.set(HttpHeaders.etagHeader, '"a1"');
+          request.response.contentLength = 3000;
+          request.response.add(List<int>.filled(1000, 3));
+          await request.response.flush();
+          await hold.future;
+          await request.response.close();
+        };
+        final Directory dir = Directory(p.join(tmp.path, 'dl'));
+        final File dest = File(p.join(dir.path, 'ep1.mkv'));
+        // 同目录下别的集的文件不能被误删（前缀相同）。
+        await dir.create(recursive: true);
+        final File sibling = File(p.join(dir.path, 'ep1.mkv2.part'));
+        await sibling.writeAsBytes(<int>[1]);
+        final AnimeEpisodeDownloader dl = downloader(
+          _FakeFfmpeg.failing(videoHasAudio: false),
+          stallTimeout: const Duration(milliseconds: 300),
+        );
+        final InterconnectDownloadManager manager =
+            InterconnectDownloadManager();
+        addTearDown(manager.dispose);
+        await expectLater(
+          manager.startVideoDownload(
+            id: 'anime-source:x:1:/ep/dash',
+            title: 'Episode 1',
+            dest: dest,
+            run:
+                (
+                  File target, {
+                  void Function(double progress)? onProgress,
+                  void Function(int received, int? total)? onBytes,
+                  Future<void>? cancelSignal,
+                }) => dl.downloadWithExternalAudio(
+                  url: server.url('/v.m4s'),
+                  audioUrls: <String>[
+                    server.url('/a0.m4a'),
+                    server.url('/a1.m4a'),
+                  ],
+                  headers: const <String, String>{},
+                  dest: target,
+                  cancelSignal: cancelSignal,
+                ),
+          ),
+          throwsStateError,
+        );
+        final Set<String> before = <String>{
+          for (final FileSystemEntity e in dir.listSync()) p.basename(e.path),
+        };
+        expect(
+          before,
+          containsAll(<String>[
+            'ep1.mkv.video',
+            'ep1.mkv.audio0',
+            'ep1.mkv.audio1.part',
+          ]),
+        );
+        expect(await manager.discard('anime-source:x:1:/ep/dash'), isTrue);
+        expect(
+          <String>[
+            for (final FileSystemEntity e in dir.listSync()) p.basename(e.path),
+          ],
+          <String>['ep1.mkv2.part'],
+        );
+      });
     });
 
     test('direct file download writes the body and forwards headers', () async {
@@ -833,7 +1110,10 @@ void main() {
     test('discarding a failed episode download in the download center '
         'removes every leftover next to its destination', () async {
       final File dest = File(p.join(tmp.path, 'ep1.mp4'));
-      final List<File> leftovers = animeEpisodeDownloadLeftovers(dest);
+      final List<File> leftovers = animeEpisodeDownloadLeftovers(
+        dest,
+        audioComponents: 2,
+      );
       expect(
         leftovers.map((File f) => p.basename(f.path)),
         containsAll(<String>[
@@ -842,7 +1122,27 @@ void main() {
           'ep1.mp4.hls.part',
           'ep1.mp4.hls.progress',
           'ep1.mp4.remux.mp4',
+          'ep1.mp4.mux.mkv',
+          'ep1.mp4.video',
+          'ep1.mp4.video.done',
+          'ep1.mp4.video.part',
+          'ep1.mp4.video.hls.progress',
+          'ep1.mp4.audio0',
+          'ep1.mp4.audio1$kAnimeDirectValidatorSuffix',
+          'ep1.mp4.audio1.remux.mp4',
         ]),
+      );
+      for (final File f in leftovers) {
+        expect(
+          isAnimeEpisodeDownloadLeftoverName('ep1.mp4', p.basename(f.path)),
+          isTrue,
+          reason: f.path,
+        );
+      }
+      expect(isAnimeEpisodeDownloadLeftoverName('ep1.mp4', 'ep1.mp4'), isFalse);
+      expect(
+        isAnimeEpisodeDownloadLeftoverName('ep1.mp4', 'ep1.mp40.part'),
+        isFalse,
       );
       final InterconnectDownloadManager manager = InterconnectDownloadManager();
       addTearDown(manager.dispose);
@@ -1027,10 +1327,15 @@ class _FakeFfmpeg implements FfmpegBackend {
   Future<FfmpegRunResult> runQuery(List<String> args, Duration timeout) =>
       run(args, timeout);
 
-  _FakeFfmpeg.failing() : _output = null;
-  _FakeFfmpeg.succeeding(List<int> output) : _output = output;
+  _FakeFfmpeg.failing({this.videoHasAudio}) : _output = null;
+  _FakeFfmpeg.succeeding(List<int> output, {this.videoHasAudio})
+    : _output = output;
 
   final List<int>? _output;
+
+  /// ffprobe 列画面分量音频流的结果；null = 没有 ffprobe（探测抛错）。
+  final bool? videoHasAudio;
+  final List<List<String>> probes = <List<String>>[];
   final List<List<String>> calls = <List<String>>[];
 
   @override
@@ -1045,6 +1350,12 @@ class _FakeFfmpeg implements FfmpegBackend {
   }
 
   @override
-  Future<FfmpegRunResult> runProbe(List<String> args, Duration timeout) =>
-      throw UnimplementedError();
+  Future<FfmpegRunResult> runProbe(List<String> args, Duration timeout) async {
+    probes.add(args);
+    final bool? hasAudio = videoHasAudio;
+    if (hasAudio == null) {
+      throw const ProcessException('ffprobe', <String>[], 'not installed');
+    }
+    return FfmpegRunResult(returnCode: 0, output: hasAudio ? '1' : '');
+  }
 }

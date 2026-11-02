@@ -12379,10 +12379,14 @@ RemoteMineResult remoteMineResultFromOutcome(MineOutcome outcome) {
     case MineResult.error:
       // logMineFailure：把完整诊断写进错误日志（用户可查/可导出），返回简短本地化文案。
       final String reason = logMineFailure(outcome);
+      // 落卡阶段的失败（AnkiConnect 不可达 / 牌组·笔记类型缺失等）是环境问题，与这一项本身无关：
+      // 显式标 transient，扩展据此不计该项尝试次数——否则 AnkiConnect 没开时连点几次生成，
+      // 整条待生成队列都会被移进失败分组。
       return RemoteMineResult(
         result: outcome.result.name,
         message: reason,
         detail: outcome.errorDetail,
+        errorKind: RemoteMineErrorKind.transient,
       );
     case MineResult.success:
       final String? warn = outcome.audioWarning;
@@ -12812,6 +12816,8 @@ class _AppModelRemoteLookupService
           detail:
               'clip window <= 0 '
               '(${payload.clipStartMs}..${payload.clipEndMs})',
+          // 同一请求重发仍是同一个无效时间窗（与 YouTube 那条同一分型）。
+          errorKind: RemoteMineErrorKind.permanent,
         );
       }
       final BilibiliClipRequest bi;

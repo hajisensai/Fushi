@@ -1169,21 +1169,22 @@ class VideoPlayerController extends ChangeNotifier
   String? get miningAudioSource =>
       _externalAudioMiningSource ?? _miningAudioSourceOverride;
 
-  /// 本次 load 经 `audio-add ... auto` 外挂的可选音轨：mpv 轨标题 → 原地址
-  /// （EXlaIL2eKQ）。每次 load 开头清空。
-  Map<String, String> _externalAudioSourcesByTitle = const <String, String>{};
+  /// 本次 load 经 `audio-add ... auto` 外挂、且确认真挂上了的可选音轨：mpv 轨 id →
+  /// 原地址（EXlaIL2eKQ；见 [resolveExternalAudioTracks]）。按 id 认，不按标题——流
+  /// 自带音轨可能与外挂轨同名。每次 load 开头清空。
+  Map<String, String> _externalAudioSourcesByTrackId = const <String, String>{};
 
   String? get _externalAudioMiningSource {
     final Player? player = _player;
-    if (player == null || _externalAudioSourcesByTitle.isEmpty) return null;
+    if (player == null || _externalAudioSourcesByTrackId.isEmpty) return null;
     final AudioTrack selected = player.state.track.audio;
     return externalAudioMiningSource(
-      sourcesByTitle: _externalAudioSourcesByTitle,
+      sourcesByTrackId: _externalAudioSourcesByTrackId,
       selectedIsAuto: selected.id == 'auto',
-      selectedTitle: selected.title,
-      realTrackTitles: <String?>[
+      selectedId: selected.id,
+      realTrackIds: <String>[
         for (final AudioTrack t in player.state.tracks.audio)
-          if (t.id != 'auto' && t.id != 'no') t.title,
+          if (t.id != 'auto' && t.id != 'no') t.id,
       ],
     );
   }
@@ -2551,9 +2552,7 @@ class VideoPlayerController extends ChangeNotifier
     }
     // 选中的是外挂可选音轨：制卡从它自己的地址裁（[miningAudioSource]），那个
     // 文件只有一条音轨，不能再按播放器的轨序号 `-map`。
-    if (_externalAudioSourcesByTitle.containsKey(
-      player.state.track.audio.title,
-    )) {
+    if (_externalAudioSourcesByTrackId.containsKey(selectedId)) {
       return null;
     }
     if (isBlurayNavigationSession) {
@@ -2870,14 +2869,39 @@ class VideoPlayerController extends ChangeNotifier
   String? _externalAudioNativeUri;
 
   /// 本次 load 的外挂分离音轨被 libmpv 拒绝打开（反馈 s3sOy3sD1J：googlevideo 对音频流
-  /// 403 → mpv `Can not open external file` → 音轨被丢、画面照放、完全无声）。每次 load
-  /// 开头复位；置真的同时调一次 [onExternalAudioTrackFailed]。
+  /// 403 → mpv `Can not open external file` → 音轨被丢、画面照放、完全无声），或可选外挂
+  /// 音轨（`externalAudioTracks`）一条都没挂上而主流又没有自带音轨。每次 load 开头复位；
+  /// 置真的同时调一次 [onExternalAudioTrackFailed]。
   bool get externalAudioTrackFailed => _externalAudioTrackFailed;
   bool _externalAudioTrackFailed = false;
 
   /// 外挂分离音轨打开失败时调一次（每次 load 至多一次）。页面据此回退到自带音轨的流
   /// 或明确提示无声——此前这条错误只进日志，用户只看到「有画面没声音」。
   void Function()? onExternalAudioTrackFailed;
+
+  /// 记下 `audio-add` 之后认出的可选外挂音轨（[resolveExternalAudioTracks]）。
+  ///
+  /// 一条都没挂上、主流又没有自带音轨（DASH 纯视频流的唯一音频全部打不开）时，与
+  /// [load] 的 `externalAudioTrackUrl` 那条路径同一信号：置 [externalAudioTrackFailed]
+  /// 并调 [onExternalAudioTrackFailed]（页面回退或 OSD 明说无声），不再静默无声播放。
+  /// `track-list` 读不懂（[resolution] 为 null）时不下结论。
+  void _applyExternalAudioResolution(ExternalAudioTrackResolution? resolution) {
+    if (resolution == null) {
+      debugPrint(
+        '[VideoPlayerController] external audio: track-list unreadable',
+      );
+      _externalAudioSourcesByTrackId = const <String, String>{};
+      return;
+    }
+    _externalAudioSourcesByTrackId = resolution.sourcesByTrackId;
+    for (final VideoExternalAudioAdd add in resolution.failed) {
+      debugPrint('[VideoPlayerController] audio-add ${add.title} did not open');
+    }
+    if (resolution.silent && !_externalAudioTrackFailed) {
+      _externalAudioTrackFailed = true;
+      onExternalAudioTrackFailed?.call();
+    }
+  }
 
   /// 纯函数：libmpv 错误 [message] 是否表示外挂音轨 [externalAudioNativeUri] 打不开。
   ///
@@ -3266,7 +3290,7 @@ class VideoPlayerController extends ChangeNotifier
     // 上一片的外挂音轨判定作废（见 [externalAudioTrackFailed]）。
     _externalAudioNativeUri = null;
     _externalAudioTrackFailed = false;
-    _externalAudioSourcesByTitle = const <String, String>{};
+    _externalAudioSourcesByTrackId = const <String, String>{};
     // iOS：来源文件夹里的视频是原地引用，libmpv 打开前必须处在安全作用域访问窗口内
     // （BUG-3697）。其它平台 / 不在任何来源下的文件 no-op。
     if (videoFile != null) {
@@ -3759,22 +3783,26 @@ class VideoPlayerController extends ChangeNotifier
     if (externalAudioTracks.isNotEmpty) {
       final dynamic native = player.platform;
       if (native != null) {
-        final Map<String, String> sources = <String, String>{};
-        for (final VideoExternalAudioAdd add in buildExternalAudioAddCommands(
+        final List<VideoExternalAudioAdd> adds = buildExternalAudioAddCommands(
           externalAudioTracks,
           nativeUri: nativePlaybackUri,
-        )) {
+        );
+        for (final VideoExternalAudioAdd add in adds) {
+          // media_kit 的 `command` 遇到 mpv 错误（403 / 失效）只记日志、不抛：成没成功
+          // 下面统一从 `track-list` 认。这里只会因 dispose 竞态抛（AssertionError）：
+          // 本程已作废就干净放弃，否则如实上抛。
           try {
             await native.command(add.command);
-            sources[add.title] = add.sourceUrl;
-          } catch (e) {
-            // 单条音轨打不开（403 / 失效）：mpv 已报错进日志，其余音轨照挂。
-            debugPrint('[VideoPlayerController] audio-add ${add.title}: $e');
+          } catch (_) {
+            if (!_isCurrentLoad(player, loadToken)) return;
+            rethrow;
           }
           if (!_isCurrentLoad(player, loadToken)) return;
         }
-        _externalAudioSourcesByTitle = Map<String, String>.unmodifiable(
-          sources,
+        final String trackList = await _getMpvProperty('track-list');
+        if (!_isCurrentLoad(player, loadToken)) return;
+        _applyExternalAudioResolution(
+          resolveExternalAudioTracks(trackListJson: trackList, adds: adds),
         );
       }
     }

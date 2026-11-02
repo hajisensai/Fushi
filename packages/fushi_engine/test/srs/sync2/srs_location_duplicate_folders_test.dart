@@ -123,6 +123,56 @@ void main() {
       expect(await location(drive).get('media/ab/z'), <int>[7]);
     });
   });
+
+  group('集合根这两级（<profileUid> / <folder>）建重了：同样看全部', () {
+    late String ns;
+    late String profileA;
+    late String profileB;
+
+    setUp(() {
+      // 两台设备首次同步并发：各建了一个 `p/`，其中一个下面又并发建了两个 `v3/`。
+      ns = drive.rawFolder(_DriveLikeStore.rootId, 'fushi-srs');
+      profileA = drive.rawFolder(ns, 'p');
+      profileB = drive.rawFolder(ns, 'p');
+      final String v3a = drive.rawFolder(profileA, 'v3');
+      final String v3b1 = drive.rawFolder(profileB, 'v3');
+      final String v3b2 = drive.rawFolder(profileB, 'v3');
+      drive.rawFile(v3a, 'head-a', <int>[1]);
+      drive.rawFile(v3b1, 'head-b', <int>[2]);
+      final String segs = drive.rawFolder(v3b2, 'segs');
+      drive.rawFile(segs, 's1', <int>[3]);
+    });
+
+    test('列集合根取三个根的并集；每个根里的对象读得到', () async {
+      expect(
+        (await location(drive).list('')).map((SrsLocationEntry e) => e.name),
+        unorderedEquals(<String>['head-a', 'head-b', 'segs']),
+      );
+      expect(await location(drive).get('head-a'), <int>[1]);
+      expect(await location(drive).get('head-b'), <int>[2]);
+      expect(await location(drive).get('segs/s1'), <int>[3]);
+      expect(await location(drive).exists('segs/s1'), isTrue);
+    });
+
+    test('不再建新的根；删在每个根里找', () async {
+      await location(drive).put('head-c', bytes(4));
+      expect(drive.foldersNamed('p'), 2);
+      expect(drive.foldersNamed('v3'), 3);
+      expect(await location(drive).get('head-c'), <int>[4]);
+      await location(drive).delete('head-b');
+      expect(drive.filesNamed('head-b'), 0);
+    });
+
+    test('写目标与后端列目录的顺序无关：不同顺序的读者写进同一个根', () async {
+      await location(drive).put('w1', bytes(5));
+      drive.reverseListings = true;
+      await location(drive).put('w2', bytes(6));
+      String parentOf(String name) => drive.nodes.values
+          .singleWhere((_Node n) => !n.isFolder && n.name == name)
+          .parent;
+      expect(parentOf('w1'), parentOf('w2'));
+    });
+  });
 }
 
 class _Node {
@@ -139,6 +189,9 @@ class _DriveLikeStore implements SyncAssetStore {
   static const String rootId = 'root';
   final Map<String, _Node> nodes = <String, _Node>{};
   int _next = 0;
+
+  /// 列目录 / 按名找文件夹倒序返回（Drive `files.list` 不带 orderBy 时顺序不确定）。
+  bool reverseListings = false;
 
   String _add(_Node n) {
     final String id = 'n${_next++}';
@@ -170,24 +223,28 @@ class _DriveLikeStore implements SyncAssetStore {
             e.value.name == name)
           e.key,
     ];
-    if (found.isNotEmpty) return found.first;
+    if (found.isNotEmpty) {
+      return reverseListings ? found.last : found.first;
+    }
     // 查完到建之间的网络往返：并发的调用都看到「没有」，各建一个。
     await Future<void>.delayed(const Duration(milliseconds: 2));
     return rawFolder(parentId, name);
   }
 
   @override
-  Future<List<AssetEntry>> listChildren(String namespaceId) async =>
-      <AssetEntry>[
-        for (final MapEntry<String, _Node> e in nodes.entries)
-          if (e.value.parent == namespaceId)
-            AssetEntry(
-              id: e.key,
-              name: e.value.name,
-              isFolder: e.value.isFolder,
-              sizeBytes: e.value.bytes?.length,
-            ),
-      ];
+  Future<List<AssetEntry>> listChildren(String namespaceId) async {
+    final List<AssetEntry> out = <AssetEntry>[
+      for (final MapEntry<String, _Node> e in nodes.entries)
+        if (e.value.parent == namespaceId)
+          AssetEntry(
+            id: e.key,
+            name: e.value.name,
+            isFolder: e.value.isFolder,
+            sizeBytes: e.value.bytes?.length,
+          ),
+    ];
+    return reverseListings ? out.reversed.toList() : out;
+  }
 
   @override
   Future<AssetEntry?> findAsset(String namespaceId, String name) async {

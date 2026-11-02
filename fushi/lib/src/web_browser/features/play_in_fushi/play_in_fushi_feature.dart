@@ -46,6 +46,22 @@ const String kWebBrowserReleaseMediaScript =
 /// JS → Dart 交接 handler 名（[kWebBrowserWatchHandoffScript] 调它）。
 const String kWebBrowserWatchHandoffHandler = 'fushiHandoffWatch';
 
+/// [kWebBrowserWatchHandoffHandler] 的第二个参数：这次交接从哪来。
+/// - [kWebBrowserWatchHandoffFromLink]：拦下的链接点击，导航**没有**提交，标签页仍在选集页；
+/// - [kWebBrowserWatchHandoffFromDocument]：文档本身就是观看页（地址栏 / 书签 / 外链整页
+///   进来），导航**已经**提交、地址已在 /watch、页面被 `window.stop()` 停成空白——交接后
+///   必须退回上一页（与 [PlayInFushiFeature.onUrlChanged] 补交同一语义），否则这条回调先于
+///   onUrlChanged 到达时，后者因同一地址被跳过，标签页就停在那张空白观看页上。
+const String kWebBrowserWatchHandoffFromLink = 'link';
+
+/// 见 [kWebBrowserWatchHandoffFromLink]。
+const String kWebBrowserWatchHandoffFromDocument = 'document';
+
+/// 交接 handler 的参数里是否声明「观看页文档已提交」（需要退回上一页）。缺省（旧脚本 /
+/// 只传了地址）按链接点击处理。
+bool webBrowserWatchHandoffCommitted(List<dynamic> args) =>
+    args.length > 1 && args[1] == kWebBrowserWatchHandoffFromDocument;
+
 /// G-Vr-zkb5L：在 Netflix 观看页**导航提交之前**就把它交给播放页，浏览器标签页根本不建
 /// Netflix 播放会话。
 ///
@@ -78,16 +94,16 @@ const String kWebBrowserWatchHandoffScript = r'''
       return null;
     }
   }
-  function ask(url) {
+  function ask(url, from) {
     var bridge = window.flutter_inappwebview;
     if (bridge && typeof bridge.callHandler === 'function') {
-      return Promise.resolve(bridge.callHandler('fushiHandoffWatch', url)).then(function (r) {
+      return Promise.resolve(bridge.callHandler('fushiHandoffWatch', url, from)).then(function (r) {
         return r === true;
       }, function () { return false; });
     }
     return new Promise(function (resolve) {
       window.addEventListener('flutterInAppWebViewPlatformReady', function () {
-        ask(url).then(resolve);
+        ask(url, from).then(resolve);
       }, { once: true });
     });
   }
@@ -103,7 +119,7 @@ const String kWebBrowserWatchHandoffScript = r'''
   var here = watchUrl(location.href);
   if (here && bypass !== here) {
     try { window.stop(); } catch (e) {}
-    ask(here).then(function (handled) { if (!handled) proceed(here); });
+    ask(here, 'document').then(function (handled) { if (!handled) proceed(here); });
     return;
   }
   document.addEventListener('click', function (e) {
@@ -115,7 +131,7 @@ const String kWebBrowserWatchHandoffScript = r'''
     if (!url) return;
     e.preventDefault();
     e.stopImmediatePropagation();
-    ask(url).then(function (handled) { if (!handled) proceed(url); });
+    ask(url, 'link').then(function (handled) { if (!handled) proceed(url); });
   }, true);
 })();
 ''';
@@ -204,18 +220,25 @@ class PlayInFushiFeature extends WebBrowserFeature {
   void onWebViewCreated(WebBrowserTab tab, InAppWebViewController controller) {
     controller.addJavaScriptHandler(
       handlerName: kWebBrowserWatchHandoffHandler,
-      callback: (List<dynamic> args) =>
-          _handoffBeforeCommit(tab, controller, args.isEmpty ? null : args[0]),
+      callback: (List<dynamic> args) => _handoffBeforeCommit(
+        tab,
+        controller,
+        args.isEmpty ? null : args[0],
+        committed: webBrowserWatchHandoffCommitted(args),
+      ),
     );
   }
 
   /// 导航提交前的交接（[kWebBrowserWatchHandoffScript]）。返回 true = 已交给播放页、页面
   /// 不再前往该地址；false = 交不了（无痕 / 没有播放页 / 不是需要播放页的地址），脚本放行。
+  /// [committed]：观看页文档已提交（整页直接进来，见 [kWebBrowserWatchHandoffFromDocument]），
+  /// 交接后退回上一页，与 [onUrlChanged] 补交同一语义。
   bool _handoffBeforeCommit(
     WebBrowserTab tab,
     InAppWebViewController controller,
-    Object? rawUrl,
-  ) {
+    Object? rawUrl, {
+    required bool committed,
+  }) {
     final Uri? url = rawUrl is String ? Uri.tryParse(rawUrl) : null;
     final BuildContext? context = _contexts[tab.id];
     if (!webBrowserShouldHandOffWatchPage(
@@ -230,7 +253,9 @@ class PlayInFushiFeature extends WebBrowserFeature {
     // 交接后若站点仍经 pushState 把地址推到同一观看页，[onUrlChanged] 不再交第二次。
     final Uri watch = url!;
     _autoHandedOff[tab.id] = watch.toString();
-    unawaited(_openPage(context, tab, watch, controller));
+    unawaited(
+      _openPage(context, tab, watch, controller, leaveWatchPage: committed),
+    );
     return true;
   }
 

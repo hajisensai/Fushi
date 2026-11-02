@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/diagnostics/previous_exit_log.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:path/path.dart' as p;
@@ -31,7 +32,7 @@ void main() {
       p.join(legacy.path, 'crash_report_state.json'),
     ).writeAsStringSync('{}');
     File(
-      p.join(legacy.path, 'activity_sync_breadcrumb.json'),
+      p.join(legacy.path, 'activity_srs_sync.breadcrumb'),
     ).writeAsStringSync('x');
     File(p.join(legacy.path, 'resume.docx')).writeAsStringSync('user file');
     Directory(p.join(legacy.path, 'Fushi', 'data')).createSync(recursive: true);
@@ -51,7 +52,7 @@ void main() {
       isTrue,
     );
     expect(
-      File(p.join(target.path, 'activity_sync_breadcrumb.json')).existsSync(),
+      File(p.join(target.path, 'activity_srs_sync.breadcrumb')).existsSync(),
       isTrue,
     );
     expect(File(p.join(legacy.path, 'error_log.txt')).existsSync(), isFalse);
@@ -64,6 +65,98 @@ void main() {
       Directory(p.join(legacy.path, 'Fushi', 'data')).existsSync(),
       isTrue,
     );
+  });
+
+  test('activity_ 前缀但不是面包屑形态的用户文件原地不动', () async {
+    // 真实面包屑由 ActivityBreadcrumb.mark 写出（名字形态与读取端共用一个判据）。
+    ActivityBreadcrumb.directoryResolver = () => legacy;
+    addTearDown(() {
+      ActivityBreadcrumb.directoryResolver = () =>
+          ErrorLogService.instance.appDirectory;
+    });
+    ActivityBreadcrumb.mark('srs_sync', 'phase=push');
+    const List<String> userFiles = <String>[
+      'activity_report.xlsx',
+      'activity_log.txt',
+      'activity_.breadcrumb',
+      'activity_Trip-Plan.breadcrumb',
+    ];
+    for (final String name in userFiles) {
+      File(p.join(legacy.path, name)).writeAsStringSync('user file');
+    }
+
+    final List<String> failures = await AppPaths.migrateLegacyDiagnostics(
+      from: legacy,
+      to: target,
+    );
+
+    expect(failures, isEmpty);
+    expect(
+      File(p.join(target.path, 'activity_srs_sync.breadcrumb')).existsSync(),
+      isTrue,
+    );
+    for (final String name in userFiles) {
+      expect(
+        File(p.join(legacy.path, name)).readAsStringSync(),
+        'user file',
+        reason: '$name 是用户文件，不能被搬走',
+      );
+      expect(File(p.join(target.path, name)).existsSync(), isFalse);
+    }
+    // 搬过去的面包屑仍能被读取端认出。
+    final List<ExitReportEntry> recovered = collectActivityBreadcrumbs(target);
+    expect(recovered, hasLength(1));
+    expect(recovered.single.source, kActivityCrashRecoveredSource);
+  });
+
+  test('搬迁成功后写完成标记，之后启动不再扫 Documents 根', () async {
+    File(p.join(legacy.path, 'error_log.txt')).writeAsStringSync('old log');
+
+    expect(
+      await AppPaths.migrateLegacyDiagnostics(from: legacy, to: target),
+      isEmpty,
+    );
+    expect(
+      File(
+        p.join(target.path, AppPaths.legacyDiagnosticsMigratedMarker),
+      ).existsSync(),
+      isTrue,
+    );
+
+    // 第二次启动：旧位置又出现同名文件（例如别的程序写的），不再碰它。
+    File(p.join(legacy.path, 'error_log.txt')).writeAsStringSync('not ours');
+    expect(
+      await AppPaths.migrateLegacyDiagnostics(from: legacy, to: target),
+      isEmpty,
+    );
+    expect(
+      File(p.join(legacy.path, 'error_log.txt')).readAsStringSync(),
+      'not ours',
+    );
+    expect(
+      File(p.join(target.path, 'error_log.txt')).readAsStringSync(),
+      'old log',
+    );
+  });
+
+  test('有失败条目时不写完成标记，下次启动重试', () async {
+    // 目标位置被同名目录占住：rename / copy 都失败。
+    File(p.join(legacy.path, 'error_log.txt')).writeAsStringSync('old log');
+    Directory(p.join(target.path, 'error_log.txt')).createSync();
+
+    final List<String> failures = await AppPaths.migrateLegacyDiagnostics(
+      from: legacy,
+      to: target,
+    );
+
+    expect(failures, isNotEmpty);
+    expect(
+      File(
+        p.join(target.path, AppPaths.legacyDiagnosticsMigratedMarker),
+      ).existsSync(),
+      isFalse,
+    );
+    expect(File(p.join(legacy.path, 'error_log.txt')).existsSync(), isTrue);
   });
 
   test('新位置已有同名文件：以新位置为准，删掉旧残留', () async {

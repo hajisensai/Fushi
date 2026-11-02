@@ -3320,6 +3320,13 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   List<HlsVariant> _hlsVariants = const <HlsVariant>[];
   int _selectedHlsVariantIndex = -1;
 
+  /// 当前这条流随载入外挂的可选音轨（在线源 `Video.audioTracks`，EXlaIL2eKQ）。与
+  /// [_hlsMasterUri] 同一生命周期：每次常规载入（`detectHls: true`，新视频 / 换集）按
+  /// 本次参数重记，画质切档等「同一条流换 URL 重载」的 [_applyLoad] 从这里取回并原样
+  /// 传下去——控制器每次 load 都会清空上一片的外挂轨，不传就丢（纯视频流切档后无声）。
+  List<RemoteVideoExternalAudioTrack> _streamExternalAudioTracks =
+      const <RemoteVideoExternalAudioTrack>[];
+
   /// 互联「自动」画质档的自适应：每秒喂一拍播放器状态，卡了就降档、一直富余就升档。
   /// 判据全在 [AdaptiveQualityController]（纯逻辑、可单测），这里只负责采样与执行。
   final AdaptiveQualityController _adaptiveQuality =
@@ -5856,6 +5863,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 流式原盘会话的盘源（见 [VideoPlayerController.load] 的同名参数）。
     RemoteDiscMenuSource? remoteDisc,
   }) async {
+    // 常规载入换了一条流：记下它的外挂音轨，供同一条流的切档重载沿用（见
+    // [_streamExternalAudioTracks]）。切档重载（detectHls=false）自己就是从这里取的。
+    if (detectHls) _streamExternalAudioTracks = externalAudioTracks;
     _unregisterVideoRemote();
     // 新一次载入作废上一次的网络流「没打开」判定（换集 / 重试共用同一 controller，
     // 旧定时器不得给新一程判死）。

@@ -36,7 +36,7 @@ globalThis.document = { addEventListener: (type, fn, cap) => listeners.push({ ty
 globalThis.window = globalThis;
 window.addEventListener = () => {};
 window.stop = () => { out.stopped = true; };
-window.flutter_inappwebview = { callHandler: (name, url) => { out.handoffs.push([name, url]); return Promise.resolve(${handled ? 'true' : 'false'}); } };
+window.flutter_inappwebview = { callHandler: (name, url, from) => { out.handoffs.push([name, url, from]); return Promise.resolve(${handled ? 'true' : 'false'}); } };
 eval(${jsonEncode(kWebBrowserWatchHandoffScript)});
 const click = ${clickHref == null ? 'null' : jsonEncode(clickHref)};
 if (click !== null) {
@@ -72,6 +72,7 @@ setTimeout(() => process.stdout.write(JSON.stringify(out)), 20);
       <String>[
         kWebBrowserWatchHandoffHandler,
         'https://www.netflix.com/watch/80117470?trackId=14170286',
+        kWebBrowserWatchHandoffFromLink,
       ],
     ]);
   }, skip: skip);
@@ -93,8 +94,47 @@ setTimeout(() => process.stdout.write(JSON.stringify(out)), 20);
       handled: true,
     );
     expect(out['stopped'], isTrue, reason: '播放器脚本不得开跑（不建会话）');
-    expect((out['handoffs'] as List<dynamic>).length, 1);
+    // 导航已提交：交接必须声明来自观看页文档，Dart 侧据此退回上一页——否则这条回调先于
+    // onUrlChanged 到达时，标签页会停在被 window.stop() 停住的空白观看页上。
+    expect(out['handoffs'], <List<String>>[
+      <String>[
+        kWebBrowserWatchHandoffHandler,
+        'https://www.netflix.com/watch/42',
+        kWebBrowserWatchHandoffFromDocument,
+      ],
+    ]);
+    // handler 收到的 args 是 callHandler 去掉 handler 名之后的部分。
+    expect(
+      webBrowserWatchHandoffCommitted(
+        (out['handoffs'][0] as List<dynamic>).sublist(1),
+      ),
+      isTrue,
+    );
   }, skip: skip);
+
+  test('交接 handler 参数：只有观看页文档算已提交，链接点击 / 旧脚本只传地址都不算', () {
+    expect(
+      webBrowserWatchHandoffCommitted(<dynamic>[
+        'https://www.netflix.com/watch/1',
+        kWebBrowserWatchHandoffFromDocument,
+      ]),
+      isTrue,
+    );
+    expect(
+      webBrowserWatchHandoffCommitted(<dynamic>[
+        'https://www.netflix.com/watch/1',
+        kWebBrowserWatchHandoffFromLink,
+      ]),
+      isFalse,
+    );
+    expect(
+      webBrowserWatchHandoffCommitted(<dynamic>[
+        'https://www.netflix.com/watch/1',
+      ]),
+      isFalse,
+    );
+    expect(webBrowserWatchHandoffCommitted(<dynamic>[]), isFalse);
+  });
 
   test('带放行标记的观看页文档照常加载；非观看页链接与非 Netflix 站点不拦', () async {
     final Map<String, dynamic> bypassed = await run(

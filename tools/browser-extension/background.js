@@ -1042,7 +1042,10 @@ async function fushiIconClick(tab) {
   // 现成，最稳）；其余集靠导航（导航时**不录**，到位再录，避开「加载中录屏」的 M7375）。
   const episodes = [];
   for (const it of q) {
-    if (it && it.site === 'netflix' && it.netflixId && episodes.indexOf(it.netflixId) < 0) episodes.push(it.netflixId);
+    // 与上面进 Netflix 分支同一判据：失败分组里的项不参与生成——只剩失败项的剧集不进批，否则会白导航、
+    // 等播放器 / 片头门、开一次录屏，再因没有待生成项空跑一趟（EMI05fe8RJ）。
+    if (it && it.site === 'netflix' && it.netflixId && self.fushiQueueItemPending(it)
+      && episodes.indexOf(it.netflixId) < 0) episodes.push(it.netflixId);
   }
   if (!episodes.length) {
     try { await chrome.tabs.sendMessage(tab.id, { type: 'fushiToastMsg', text: bgT('bg_no_netflix_pending') }, { frameId: 0 }); } catch (_) {}

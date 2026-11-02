@@ -7,6 +7,8 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:fushi/src/diagnostics/previous_exit_log.dart'
+    show activityNameFromBreadcrumbFileName;
 import 'package:fushi/src/startup/test_environment.dart';
 import 'package:fushi/src/storage/macos_data_root_access.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
@@ -681,7 +683,8 @@ class AppPaths {
   }
 
   /// 旧位置（平台 Documents 根）上属于 Fushi 的诊断文件名。只认这些确切的名字 /
-  /// `activity_` 前缀——这是用户自己的文档目录，绝不扫别的东西。
+  /// `ActivityBreadcrumb` 的完整文件名形态（`activity_<名>.breadcrumb`，判据与读取端
+  /// 共用 [activityNameFromBreadcrumbFileName]）——这是用户自己的文档目录，绝不扫别的东西。
   static const Set<String> legacyDiagnosticFileNames = <String>{
     'error_log.txt',
     'import_crash_breadcrumb.txt',
@@ -696,11 +699,21 @@ class AppPaths {
     'study_diag_log.txt',
   };
 
-  /// `ActivityBreadcrumb` 的文件名前缀（`previous_exit_log.dart` `_kActivityBreadcrumbPrefix`）。
-  static const String legacyActivityBreadcrumbPrefix = 'activity_';
+  /// 搬迁完成标记（落在 [migrateLegacyDiagnostics] 的 `to` 里）。全部条目都搬成功后写入，
+  /// 之后启动不再扫用户的 Documents 根——旧位置只可能有升级前留下的文件，扫一次就够；
+  /// 有失败条目时不写，下次启动重试。
+  static const String legacyDiagnosticsMigratedMarker =
+      '.legacy_documents_diagnostics_migrated';
+
+  /// [name] 是否是 Fushi 旧版写在 Documents 根的诊断文件。
+  @visibleForTesting
+  static bool isLegacyDiagnosticFileName(String name) =>
+      legacyDiagnosticFileNames.contains(name) ||
+      activityNameFromBreadcrumbFileName(name) != null;
 
   /// 把 [from] 根下的 Fushi 诊断文件搬进 [to]。返回失败条目（`文件名: 原因`），成功 / 无需
   /// 搬为空。目标已有同名文件（新位置已在用）时以新位置为准、删掉旧文件。
+  /// [to] 里已有 [legacyDiagnosticsMigratedMarker] 时直接返回，不再列 [from]。
   @visibleForTesting
   static Future<List<String>> migrateLegacyDiagnostics({
     required Directory from,
@@ -708,15 +721,16 @@ class AppPaths {
   }) async {
     final List<String> failures = <String>[];
     if (p.equals(from.path, to.path)) return failures;
+    final File marker = File(p.join(to.path, legacyDiagnosticsMigratedMarker));
+    if (await marker.exists()) return failures;
     final List<File> candidates = <File>[];
     try {
-      if (!await from.exists()) return failures;
-      await for (final FileSystemEntity e in from.list(followLinks: false)) {
-        if (e is! File) continue;
-        final String name = p.basename(e.path);
-        if (legacyDiagnosticFileNames.contains(name) ||
-            name.startsWith(legacyActivityBreadcrumbPrefix)) {
-          candidates.add(e);
+      if (await from.exists()) {
+        await for (final FileSystemEntity e in from.list(followLinks: false)) {
+          if (e is! File) continue;
+          if (isLegacyDiagnosticFileName(p.basename(e.path))) {
+            candidates.add(e);
+          }
         }
       }
     } catch (e) {
@@ -740,6 +754,13 @@ class AppPaths {
         }
       } catch (e) {
         failures.add('$name: $e');
+      }
+    }
+    if (failures.isEmpty) {
+      try {
+        await marker.writeAsString(DateTime.now().toIso8601String());
+      } catch (e) {
+        failures.add('$legacyDiagnosticsMigratedMarker: $e');
       }
     }
     return failures;

@@ -16,7 +16,8 @@
 // - notice：要给用户看的一句（'✗ 原因' / '⚠ 音频落空警告'），无则 null（TODO-1303 / TODO-1331）。
 // - settingsFixable：401 / 其它 4xx 的文案是让用户去扩展设置核对 token，提示可点直达设置页。
 // - itemFault：失败是否归咎于这一项本身（服务端答复了、但这张卡制不出来）。连不上 app / 401 /
-//   5xx 是环境问题，不计入该项的尝试次数——否则 app 没开时点几次生成，整队都会被判失败。
+//   5xx / 服务端 errorKind:'transient'（网络、判 bot、AnkiConnect 不可达）是环境问题，不计入该项的
+//   尝试次数——否则 app 或 AnkiConnect 没开时点几次生成，整队都会被判失败。
 // - reason：失败原因原文（无 '✗ ' 前缀），记进队列项 lastError 给失败分组显示；成功为 null。
 (function (g) {
   'use strict';
@@ -73,17 +74,22 @@
       return { cls: 'unconfigured', notice: null, settingsFixable: false, itemFault: false, reason: null };
     }
     const why = reason || t('mine_err_failed_retry');
+    // 是否归咎于该项只看服务端分型：permanent → 直接失败；transient（网络 / 超时 / 判 bot / 限流 /
+    // AnkiConnect 不可达）是环境问题，不计入该项尝试次数——否则 AnkiConnect 没开或 YouTube 持续判
+    // bot 时连点 3 次生成，整条队列都会被移进失败分组。只有不回 errorKind 的旧服务端无从区分，
+    // 才走计次兜底（FUSHI_MINE_MAX_ITEM_ATTEMPTS）。
+    const kind = d.errorKind;
     return {
-      cls: d.errorKind === 'permanent' ? 'failed' : 'retry',
+      cls: kind === 'permanent' ? 'failed' : 'retry',
       notice: '✗ ' + why,
       settingsFixable: false,
-      itemFault: true,
+      itemFault: kind !== 'transient',
       reason: why,
     };
   }
 
-  // 服务端答复了、但同一项连续这么多次都没制出来（未分型的 transient 错误）：降级为失败项，
-  // 不再让它每次生成都排在前面重跑（EMI05fe8RJ：旧服务端不回 errorKind 时的兜底）。
+  // 服务端答复了 error 但没给 errorKind（旧服务端）、同一项连续这么多次都没制出来：降级为失败项，
+  // 不再让它每次生成都排在前面重跑（EMI05fe8RJ 的兜底）。服务端明确标 transient 的不计次。
   const FUSHI_MINE_MAX_ITEM_ATTEMPTS = 3;
 
   /**

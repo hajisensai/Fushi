@@ -769,6 +769,10 @@ const String kSrsCardShellScript = r'''
 (function(){
   if (window.__fushiSrsSetCard) return;
   var seq = 0;
+  // 当前卡面内容属于哪一面（换卡时从 __fushiSrsFaceToken 取定）：上报可见发音时带回这份，
+  // 不读上报那一刻的全局值——慢卡（外部脚本）上报前宿主已下发下一面的标记，读全局会把这一面
+  // 的清单标成下一面。
+  var faceToken = '';
   window.onUpdateHook = [];
   window.onShownHook = [];
   function root(){ return document.getElementById('fushi-card-root'); }
@@ -870,7 +874,7 @@ const String kSrsCardShellScript = r'''
     try {
       if (!window.__fushiSrsVisibleSounds || !window.flutter_inappwebview) return;
       window.flutter_inappwebview.callHandler('onSrsVisibleSounds',
-        window.__fushiSrsFaceToken || '', window.__fushiSrsVisibleSounds(root()));
+        faceToken, window.__fushiSrsVisibleSounds(root()));
     } catch (e) {
       if (window.console) console.error(e);
     }
@@ -923,6 +927,7 @@ const String kSrsCardShellScript = r'''
   }
   window.__fushiSrsSetCard = function(refs, html, classes){
     var my = ++seq;
+    faceToken = window.__fushiSrsFaceToken || '';
     var r = root();
     window.onUpdateHook = [];
     window.onShownHook = [];

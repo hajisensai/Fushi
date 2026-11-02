@@ -76,6 +76,7 @@ import 'package:fushi_engine/tts/tts_voice_preset.dart';
 import 'package:fushi/src/media/audiobook/audiobook_speed_slider.dart'
     show AudiobookSpeedSlider;
 import 'package:fushi/src/media/audiobook/lyrics_mode_html.dart';
+import 'package:fushi/src/media/audiobook/lookup_resume_hold.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_control_layout.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_control_layout_editor.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_illustration_view.dart';
@@ -2495,7 +2496,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
 
   bool _pausedForLookup = false;
 
-  /// 关查词弹窗后的「恢复播放」还在途（见 `_clearLookupState`）。
+  /// 关查词弹窗后的「恢复播放」还在途、播放器尚未起播（见 `_clearLookupState`）。
   bool _lookupResumeInFlight = false;
 
   /// v92：本页**唯一**的阅读时钟兼累计器（时长 / 字数同一段同一 uid），取代旧的

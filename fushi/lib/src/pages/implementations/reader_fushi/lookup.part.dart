@@ -81,11 +81,25 @@ extension _ReaderLookup on _ReaderFushiPageState {
       if (ctrl != null) {
         // 恢复是异步的（激活链 + 等播放器真正起播）：在途期间仍算查词「按住」，
         // 否则歌词覆盖层会在「已不按住、还没在播」的间隙里把它当成用户暂停、复位
-        // 底栏并重排（awLXfD49Ep）。起播落定（或失败）后撤掉。
+        // 底栏并重排（awLXfD49Ep）。播放器真的起播、或这次激活不会起播（被拒 /
+        // 已请求停止）时撤掉——不能等 `play()` 的 Future：原生后端上它挂到下一次
+        // 暂停才完成，会把恢复后的整段播放都记成「按住」（见 lookupResumeHoldReleased）。
         _lookupResumeInFlight = true;
+        final Future<void> resume = ctrl.play();
         unawaited(
-          ctrl.play().whenComplete(() {
-            _lookupResumeInFlight = false;
+          resume.catchError((Object e, StackTrace stack) {
+            ErrorLogService.instance.log('ReaderFushi.lookupResume', e, stack);
+          }),
+        );
+        unawaited(
+          lookupResumeHoldReleased(
+            playback: ctrl,
+            isPlaying: () => ctrl.isPlaying,
+            resume: resume,
+          ).then((_) {
+            if (!mounted || !_lookupResumeInFlight) return;
+            // 覆盖层读 playbackHeldForLookup：撤掉按住要重建，不靠控制器之后碰巧 notify。
+            setState(() => _lookupResumeInFlight = false);
           }),
         );
       }

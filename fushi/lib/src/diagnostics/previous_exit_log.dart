@@ -820,6 +820,22 @@ String? summarizeMetricKitCrash(String json, {int maxFrames = 12}) {
 const String kActivityCrashRecoveredSource = 'Process.activityCrashRecovered';
 const String _kActivityBreadcrumbPrefix = 'activity_';
 const String _kActivityBreadcrumbSuffix = '.breadcrumb';
+final RegExp _kActivityNamePattern = RegExp(r'^[a-z0-9_]+$');
+
+/// [fileName] 是 [ActivityBreadcrumb] 写的文件名（`activity_<[a-z0-9_]+>.breadcrumb`）时
+/// 返回其中的活动名，否则 null。读面包屑与旧位置搬迁（`AppPaths.migrateLegacyDiagnostics`）
+/// 共用这一个判据，不另抄前后缀。
+String? activityNameFromBreadcrumbFileName(String fileName) {
+  if (!fileName.startsWith(_kActivityBreadcrumbPrefix) ||
+      !fileName.endsWith(_kActivityBreadcrumbSuffix)) {
+    return null;
+  }
+  const int start = _kActivityBreadcrumbPrefix.length;
+  final int end = fileName.length - _kActivityBreadcrumbSuffix.length;
+  if (end <= start) return null;
+  final String activity = fileName.substring(start, end);
+  return _kActivityNamePattern.hasMatch(activity) ? activity : null;
+}
 
 /// 「进程没的时候正在做什么」：长活动（复习同步一轮等）开始时**同步**写一个小文件、
 /// 阶段变化时覆写、结束时删掉。下次启动还在 = 进程死在这次活动里（Dart 接不到的
@@ -833,7 +849,7 @@ abstract final class ActivityBreadcrumb {
       ErrorLogService.instance.appDirectory;
 
   static File? _file(String activity) {
-    assert(RegExp(r'^[a-z0-9_]+$').hasMatch(activity), activity);
+    assert(_kActivityNamePattern.hasMatch(activity), activity);
     final Directory? dir = directoryResolver();
     if (dir == null) return null;
     return File(
@@ -873,14 +889,8 @@ List<ExitReportEntry> collectActivityBreadcrumbs(Directory dir) {
   for (final FileSystemEntity e in dir.listSync(followLinks: false)) {
     if (e is! File) continue;
     final String name = e.uri.pathSegments.last;
-    if (!name.startsWith(_kActivityBreadcrumbPrefix) ||
-        !name.endsWith(_kActivityBreadcrumbSuffix)) {
-      continue;
-    }
-    final String activity = name.substring(
-      _kActivityBreadcrumbPrefix.length,
-      name.length - _kActivityBreadcrumbSuffix.length,
-    );
+    final String? activity = activityNameFromBreadcrumbFileName(name);
+    if (activity == null) continue;
     try {
       final String detail = e.readAsStringSync().trim();
       e.deleteSync();

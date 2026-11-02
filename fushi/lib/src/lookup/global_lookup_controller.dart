@@ -855,6 +855,10 @@ class GlobalLookupController {
   Future<void> _onHotKeyRouted(GlobalLookupRoute route, String source) async {
     _activateRoute(route);
     glog('hotkey: FIRED (source=$source)');
+    // 只有查词窗真正显示出来，这条路由才继续活着（之后由关窗 [_onOverlayHidden] 作废）；
+    // 任何中止（空选区 / 无辅助功能权限 / showAt 被拒 / 异常）都要在 finally 里结束它的
+    // 生命周期，否则 [desktopLookupInFlight] 永远为真、台词浮窗预热被静默跳过。
+    bool shown = false;
     try {
       // Re-press ALWAYS does a fresh lookup of the current selection (no
       // toggle): the user selects a new word and presses the hotkey expecting
@@ -919,7 +923,7 @@ class GlobalLookupController {
         return;
       }
       // 整句只进制卡 `{sentence}` 兜底（sentenceContext），卡上不显示。
-      await _lookupExternal(
+      shown = await _lookupExternal(
         text,
         sentence: sentence,
         physicalPlacement: null,
@@ -928,6 +932,8 @@ class GlobalLookupController {
       );
     } catch (e, st) {
       glog('hotkey: EXCEPTION $e\n$st');
+    } finally {
+      if (!shown) _endAbortedRoute(route);
     }
   }
 
@@ -1180,19 +1186,26 @@ class GlobalLookupController {
     // emitted overlaySize — the card revealed blank via the READY-SAFETY
     // fallback ("点击悬浮字幕文字没有出现查词窗口"). notify:false so this
     // between-lookups reset is not seen as a user dismissal (TODO-1233).
-    await GlobalLookupChannel.hide(notify: false);
-    if (!_isCurrentRoute) return false;
-    return _lookupExternal(
-      term,
-      sentence: sentence,
-      anchorScreenRect: anchorScreenRect,
-      physicalPlacement: physicalPlacement,
-      autoRead: autoRead,
-      miningHandler: miningHandler,
-      consumeOutsideClicksOwnerHwnd: consumeOutsideClicksOwnerHwnd,
-      rubySpans: termRubySpans,
-      pendingSearch: search,
-    );
+    final GlobalLookupRoute route = GlobalLookupChannel.currentRoute;
+    bool shown = false;
+    try {
+      await GlobalLookupChannel.hide(notify: false);
+      if (!_isCurrentRoute) return false;
+      shown = await _lookupExternal(
+        term,
+        sentence: sentence,
+        anchorScreenRect: anchorScreenRect,
+        physicalPlacement: physicalPlacement,
+        autoRead: autoRead,
+        miningHandler: miningHandler,
+        consumeOutsideClicksOwnerHwnd: consumeOutsideClicksOwnerHwnd,
+        rubySpans: termRubySpans,
+        pendingSearch: search,
+      );
+      return shown;
+    } finally {
+      if (!shown) _endAbortedRoute(route);
+    }
   }
 
   /// 发起一次词典搜索并立即返回 Future。错误照常在 `await` 处抛出（由
@@ -1230,9 +1243,18 @@ class GlobalLookupController {
     _activeRoute = route;
   }
 
+  /// 桌面查词在半路中止（空选区 / 无权限 / showAt 被拒 / 异常）时结束它的路由：窗没显示，
+  /// 不会有 [_onOverlayHidden] 来作废它。只动仍是当前路由的 desktop 路由——已被新查词
+  /// 取代的不用管（[_activateRoute] 已作废），游戏卡片路由归 galCard 控制器管理。
+  void _endAbortedRoute(GlobalLookupRoute route) {
+    if (route.source != 'desktop' || _activeRoute != route) return;
+    GlobalLookupChannel.invalidateRoute(route);
+    _activeRoute = null;
+  }
+
   /// 桌面查词窗上是否有一次查词在途或在场：当前路由是 desktop 且仍有效（真正关窗
-  /// [_onOverlayHidden] 与下一次查词都会作废它）。查词入口在第一个 await 之前就
-  /// [_activateRoute]，所以「刚发起、还在 hide→show 之间」也算。
+  /// [_onOverlayHidden]、下一次查词与查词中止 [_endAbortedRoute] 都会作废它）。查词入口在
+  /// 第一个 await 之前就 [_activateRoute]，所以「刚发起、还在 hide→show 之间」也算。
   @visibleForTesting
   bool get desktopLookupInFlight {
     final GlobalLookupRoute? active = _activeRoute;
