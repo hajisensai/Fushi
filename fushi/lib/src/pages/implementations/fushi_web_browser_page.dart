@@ -597,7 +597,9 @@ class _ShortcutKeyBridge extends WebBrowserFeature {
     ))
       for (final InputBinding binding
           in registry.bindingsFor(action).keyboardBindings)
-        binding.serialize(),
+        // bridgeToken 而非 serialize()：小键盘键（Ctrl+小键盘 + / - / 0）的持久化
+        // token 是 `#<keyId>`，页内按 DOM code 拼出的 token 永远对不上它。
+        binding.bridgeToken,
   ];
 
   @override
@@ -674,6 +676,12 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
   late final WebBrowserTabsController _tabs;
   late final WebBrowserSuggestionsController _suggestions;
   final FocusNode _addressFocus = FocusNode(debugLabel: 'web-browser-address');
+
+  /// 查找条按标签页各一份 state（切标签不串查找词），壳经它调 step / focusQuery。
+  static GlobalObjectKey<WebBrowserFindBarState> _findBarKey(
+    WebBrowserTab tab,
+  ) => GlobalObjectKey<WebBrowserFindBarState>(tab);
+
   final GlobalKey<WebBrowserAddressBarState> _addressBar =
       GlobalKey<WebBrowserAddressBarState>();
   final FushiTopBarOverflowFit _toolbarFit = FushiTopBarOverflowFit();
@@ -1034,7 +1042,36 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
 
   void _setTextZoom(int value) => _tabs.activeTab?.update(textZoom: value);
 
-  void _openFind() => _tabs.activeTab?.update(findOpen: true);
+  void _openFind() {
+    final WebBrowserTab? tab = _tabs.activeTab;
+    if (tab == null) return;
+    if (tab.findOpen) {
+      _findBarKey(tab).currentState?.focusQuery();
+    } else {
+      tab.update(findOpen: true);
+    }
+  }
+
+  /// F3 / Ctrl+G：查找条开着就跳结果，没开就先打开（与桌面浏览器一致）。
+  void _findStep({required bool forward}) {
+    final WebBrowserTab? tab = _tabs.activeTab;
+    if (tab == null) return;
+    if (!tab.findOpen) {
+      tab.update(findOpen: true);
+      return;
+    }
+    _findBarKey(tab).currentState?.step(forward: forward);
+  }
+
+  /// Ctrl+1…8 跳到第 [index] 个（0 起）标签页，越界不动；[index] 为 -1 = 最后一个。
+  void _selectTabAt(int index) {
+    final List<WebBrowserTab> tabs = _tabs.tabs;
+    if (tabs.isEmpty) return;
+    final int i = index < 0 ? tabs.length - 1 : index;
+    if (i >= tabs.length) return;
+    setState(() => _gridOpen = false);
+    _tabs.activate(tabs[i]);
+  }
 
   void _newTab({bool incognito = false}) {
     setState(() => _gridOpen = false);
@@ -1206,7 +1243,7 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
   /// WebView 持焦时键盘桥回传的 token → 注册表解析（与 Flutter 持焦同一条路）。
   void _onBridgeToken(WebBrowserTab tab, String token) {
     if (!mounted || !isActive(tab)) return;
-    final InputBinding? binding = InputBinding.deserialize(token);
+    final InputBinding? binding = InputBinding.fromBridgeToken(token);
     if (binding == null) return;
     final ShortcutAction? action = _appModel.shortcutRegistry.resolveKeyboard(
       binding.key,
@@ -1235,6 +1272,36 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
         _tabs.activateRelative(-1);
       case ShortcutAction.webBrowserFindInPage:
         _openFind();
+      case ShortcutAction.webBrowserFindNext:
+        _findStep(forward: true);
+      case ShortcutAction.webBrowserFindPrevious:
+        _findStep(forward: false);
+      case ShortcutAction.webBrowserSelectTab1:
+        _selectTabAt(0);
+      case ShortcutAction.webBrowserSelectTab2:
+        _selectTabAt(1);
+      case ShortcutAction.webBrowserSelectTab3:
+        _selectTabAt(2);
+      case ShortcutAction.webBrowserSelectTab4:
+        _selectTabAt(3);
+      case ShortcutAction.webBrowserSelectTab5:
+        _selectTabAt(4);
+      case ShortcutAction.webBrowserSelectTab6:
+        _selectTabAt(5);
+      case ShortcutAction.webBrowserSelectTab7:
+        _selectTabAt(6);
+      case ShortcutAction.webBrowserSelectTab8:
+        _selectTabAt(7);
+      case ShortcutAction.webBrowserSelectLastTab:
+        _selectTabAt(-1);
+      case ShortcutAction.webBrowserNewIncognitoTab:
+        _newTab(incognito: true);
+      case ShortcutAction.webBrowserHistoryOpen:
+        _openDataPage(WebBrowserDataPage.history);
+      case ShortcutAction.webBrowserBookmarksOpen:
+        _openDataPage(WebBrowserDataPage.bookmarks);
+      case ShortcutAction.webBrowserDownloadsOpen:
+        _openDataPage(WebBrowserDataPage.downloads);
       case ShortcutAction.webBrowserBack:
         _goBack();
       case ShortcutAction.webBrowserForward:
@@ -2013,10 +2080,7 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         if (findTab != null)
-          WebBrowserFindBar(
-            key: ValueKey<String>('web-browser-find-${findTab.id}'),
-            tab: findTab,
-          ),
+          WebBrowserFindBar(key: _findBarKey(findTab), tab: findTab),
         // 功能的进行中状态（可取消）：出现 / 消失走尺寸动画，时长取 FushiMotion。
         FushiAnimatedSize(
           duration: fushiMotionDuration(context, FushiMotion.short),
@@ -2485,9 +2549,14 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
         onPopInvokedWithResult: (bool didPop, Object? _) {
           if (!didPop) _onBackBlocked();
         },
-        child: Focus(
+        // 快捷键的承接点必须是**能持焦的 scope**：Flutter 侧按键从 primaryFocus 往上
+        // 冒泡，曾经这里是 `canRequestFocus: false` 的裸 Focus，地址栏回车 / Esc 后
+        // `unfocus()` 把焦点交给路由 scope（在本节点之外），此后 Ctrl+F / Ctrl+T 等一律
+        // 收不到。FocusScope 自己 autofocus，页内任何 unfocus 都落回它身上。
+        // WebView 持 OS 焦点期间的按键仍走 DOM 键盘桥（[_ShortcutKeyBridge]）。
+        child: FocusScope(
           debugLabel: 'web-browser-shortcuts',
-          canRequestFocus: false,
+          autofocus: true,
           skipTraversal: true,
           onKeyEvent: _onKeyEvent,
           child: SrsCardLookupHost(
