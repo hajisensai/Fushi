@@ -82,10 +82,14 @@ const String kSrsSyncStoreUnavailable = 'srs store unavailable';
 /// 升级到同步 v2 后还没确认过首次同步（设计 §13 第 5 条：首次 v2 同步弹窗确认一次，说明「并入、不覆盖」）。
 const String kSrsSyncAwaitingConfirm = 'srs first v2 sync not confirmed';
 
+/// 用户在同步与历史页关掉了这个位置的复习同步：这一轮跳过它（不算成功，也不算失败）。
+const String kSrsSyncLocationDisabled = 'srs sync location disabled';
+
 /// 只说明「本机此刻不该同步」、与网络 / 对端无关的报告错误：推送不为它们退避。
 const Set<String> kSrsSyncLocalStateErrors = <String>{
   kSrsSyncStoreUnavailable,
   kSrsSyncAwaitingConfirm,
+  kSrsSyncLocationDisabled,
 };
 
 /// 复习同步一轮的活动面包屑名（[ActivityBreadcrumb]）。
@@ -391,7 +395,9 @@ class SrsSyncScheduler {
     Future<void> Function(String locationId, SrsLocationKey key)?
     onEncryptionEnabled,
     Future<bool> Function()? autoSyncEnabled,
+    bool Function(String locationId)? locationDisabled,
   }) : _profileLinker = profileLinker,
+       _locationDisabled = locationDisabled,
        _autoSyncEnabled = autoSyncEnabled,
        _locationKey = locationKey,
        _onEncryptionEnabled = onEncryptionEnabled,
@@ -536,6 +542,9 @@ class SrsSyncScheduler {
 
   /// 自动同步开关（null = 恒开）。见文件头。
   final Future<bool> Function()? _autoSyncEnabled;
+
+  /// 用户关掉了复习同步的位置（按位置身份；null = 都开着）。每轮现读，改了下一轮生效。
+  final bool Function(String locationId)? _locationDisabled;
 
   /// 复习数据的自动同步此刻是否开着（每次触发时现读，改设置立即生效）。
   Future<bool> isAutoSyncEnabled() async =>
@@ -830,6 +839,9 @@ class SrsSyncScheduler {
       // 位置身份拿不到：上传进度按身份记，换个身份只是多传一遍（段名唯一、内容不变），但宁可这轮不同步。
       return SrsSync2Report()..error = kSrsSyncDirectoryIdentityUnavailable;
     }
+    if (_locationDisabled?.call(key) ?? false) {
+      return SrsSync2Report()..error = kSrsSyncLocationDisabled;
+    }
     final SrsProfileLinker? linker = _profileLinker;
     bool adopted = false;
     final String linkKey = _linkKey(key, store.profileUid);
@@ -1003,15 +1015,18 @@ class SrsSyncScheduler {
       (String _, ({DateTime at, SrsProfileConflict? conflict}) d) =>
           d.conflict != null,
     );
-    int reportFailures = 0;
+    // 通道跑完、但报告带错的轮次（runner 已把它记成跑成功）：关掉的位置只扣数、不算错。
+    int notSynced = 0;
     final List<Object> errors = <Object>[];
     final ({int ran, List<Object> errors}) channels = await _channels((
       SyncAssetStore backend,
     ) async {
       final String? error = (await syncWithBackend(backend)).error;
       if (error != null) {
-        reportFailures++;
-        errors.add(SrsSyncReportError(error));
+        notSynced++;
+        if (error != kSrsSyncLocationDisabled) {
+          errors.add(SrsSyncReportError(error));
+        }
       }
     });
     errors.addAll(channels.errors);
@@ -1020,7 +1035,7 @@ class SrsSyncScheduler {
     final SrsSyncNowResult folders = await syncFolderLocations();
     errors.addAll(folders.errors);
     return SrsSyncNowResult(
-      ran: channels.ran - reportFailures + local.ran + folders.ran,
+      ran: channels.ran - notSynced + local.ran + folders.ran,
       errors: errors,
     );
   }
@@ -1094,6 +1109,7 @@ class SrsSyncScheduler {
           directoryKey: d.directoryKey,
         );
         final String? error = report.error;
+        if (error == kSrsSyncLocationDisabled) continue;
         if (error != null) {
           errors.add(SrsSyncReportError(error));
         } else {

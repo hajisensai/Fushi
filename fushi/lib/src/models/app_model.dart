@@ -10468,6 +10468,12 @@ class AppModel with ChangeNotifier {
   Future<void> setSrsFolderLocations(List<SrsFolderLocation> value) =>
       prefsRepo.setSrsFolderLocations(value);
 
+  /// 复习同步 v2 里这台设备关掉的通道位置（设备本地；透传 prefsRepo）。
+  Set<String> get srsDisabledLocations =>
+      _prefsRepo?.srsDisabledLocations ?? const <String>{};
+  Future<void> setSrsLocationEnabled(String locationId, bool enabled) =>
+      prefsRepo.setSrsLocationEnabled(locationId, enabled);
+
   /// 复习同步 v2 各存储位置的加密密钥（设备本地凭据；透传 prefsRepo）。
   Map<String, SrsLocationKey> get srsLocationKeys =>
       _prefsRepo?.srsLocationKeys ?? const <String, SrsLocationKey>{};

@@ -3612,6 +3612,39 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// 复习同步 v2 里这台设备关掉的同步通道位置（JSON 字符串数组，元素是位置身份 = `srs_directory_key.dart`）。
+  /// 只管复习同步：通道本身（书 / 视频等常规同步）照常跑。设备本地：是这台设备「在不在那里同步」的选择。
+  static const String srsDisabledLocationsKey = 'srs_sync2_disabled_locations';
+
+  Set<String> get srsDisabledLocations {
+    final Object? raw = getPref(srsDisabledLocationsKey, defaultValue: '');
+    if (raw is! String || raw.isEmpty) return const <String>{};
+    try {
+      final Object? j = jsonDecode(raw);
+      if (j is! List) return const <String>{};
+      return <String>{
+        for (final Object? e in j)
+          if (e is String && e.isNotEmpty) e,
+      };
+    } on FormatException {
+      return const <String>{};
+    }
+  }
+
+  Future<void> setSrsLocationEnabled(String locationId, bool enabled) async {
+    final Set<String> disabled = <String>{...srsDisabledLocations};
+    if (enabled) {
+      disabled.remove(locationId);
+    } else {
+      disabled.add(locationId);
+    }
+    await setPref(
+      srsDisabledLocationsKey,
+      jsonEncode(disabled.toList()..sort()),
+    );
+    notifyListeners();
+  }
+
   /// 复习同步 v2 各存储位置的端到端加密密钥（JSON：位置身份 → [SrsLocationKey]）。**凭据**：设备本地，
   /// 不进备份 / 同步 / Profile 快照，不写日志。
   static const String srsLocationKeysKey = 'srs_sync2_location_keys';
