@@ -87,7 +87,13 @@ void main() {
     // 把 manual 丢了。
     expect(
       readerSource,
-      contains('await _jumpToChapterAnchor(link.chapterIndex, link.fragment);'),
+      // 第三个实参是「跳转记录」的来源（JumpSource.link），折不折行只是格式。
+      matches(
+        RegExp(
+          r'await _jumpToChapterAnchor\(\s*link\.chapterIndex,\s*'
+          r'link\.fragment,',
+        ),
+      ),
       reason: 'Internal links must go through the shared anchor entry point.',
     );
     expect(

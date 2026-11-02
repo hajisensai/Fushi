@@ -31,8 +31,8 @@ import 'package:fushi/src/media/discovery/alist_site_config.dart';
 import 'package:fushi/src/media/discovery/audiobookshelf_server_config.dart';
 import 'package:fushi/src/media/discovery/opds_server_config.dart';
 import 'package:fushi/src/media/kavita/kavita_server_config.dart';
-import 'package:fushi/src/media/video/video_jump_pill_hover.dart'
-    show kVideoJumpPillAutoHideDefaultSeconds;
+import 'package:fushi/src/utils/misc/jump_history.dart'
+    show migrateLegacyJumpPillAutoHide;
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/lookup/popup_ui_scale.dart';
 import 'package:fushi/src/utils/misc/toast_severity.dart'
@@ -2083,17 +2083,39 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
-  /// 「返回跳转前位置」胶囊自动隐藏秒数（0 = 不自动隐藏，只随控制条显隐）。
-  /// 超时后控制条再出现也不画胶囊，下一次跳转再亮；默认 10 秒。
-  int get videoJumpPillAutoHideSeconds =>
-      getPref(
-            'video_jump_pill_auto_hide_seconds',
-            defaultValue: kVideoJumpPillAutoHideDefaultSeconds,
-          )
-          as int;
+  /// 「跳转记录」顶栏返回 / 前进图标的自动隐藏秒数（0 = 不自动隐藏，默认）。到时
+  /// 只隐藏图标，记录、面板与进度条刻度保留；下一次跳转再出现。
+  ///
+  /// 迁移：新键缺失时读一次旧的视频专用键 `video_jump_pill_auto_hide_seconds`
+  /// ——用户显式设过「不隐藏」(0) 保留 0，设过任意秒数折到最短的新档位；旧键
+  /// 也缺失（从没改过，旧默认 10 秒）= 新默认 0。
+  int get jumpHistoryAutoHideSeconds {
+    final Object? current = getPref('jump_history_auto_hide_seconds');
+    if (current is int) return current;
+    final Object? legacy = getPref('video_jump_pill_auto_hide_seconds');
+    return migrateLegacyJumpPillAutoHide(legacy is int ? legacy : null);
+  }
 
-  Future<void> setVideoJumpPillAutoHideSeconds(int value) async {
-    await setPref('video_jump_pill_auto_hide_seconds', value);
+  Future<void> setJumpHistoryAutoHideSeconds(int value) async {
+    await setPref('jump_history_auto_hide_seconds', value);
+    notifyListeners();
+  }
+
+  /// 顶栏显示返回 / 前进图标（默认开）。关掉照样记录跳转。
+  bool get jumpHistoryToolbar =>
+      getPref('jump_history_toolbar', defaultValue: true) as bool;
+
+  Future<void> setJumpHistoryToolbar(bool value) async {
+    await setPref('jump_history_toolbar', value);
+    notifyListeners();
+  }
+
+  /// 进度条 / 页码滑块上画跳转点刻度（默认开）。
+  bool get jumpHistoryProgressMarks =>
+      getPref('jump_history_progress_marks', defaultValue: true) as bool;
+
+  Future<void> setJumpHistoryProgressMarks(bool value) async {
+    await setPref('jump_history_progress_marks', value);
     notifyListeners();
   }
 

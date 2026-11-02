@@ -157,7 +157,11 @@ void main() {
     int bodyOf(String signature) {
       final int start = src.indexOf(signature);
       expect(start, greaterThanOrEqualTo(0), reason: '找不到 $signature');
-      final int braceOpen = src.indexOf('{', start);
+      // 方法体的开括号：参数表收尾 `)` 之后的那个（命名参数自己的 `{` 不算）。
+      final Match close = RegExp(
+        r'\)\s*(async\s*)?\{',
+      ).allMatches(src, start).first;
+      final int braceOpen = close.end - 1;
       int depth = 0;
       for (int i = braceOpen; i < src.length; i++) {
         if (src[i] == '{') depth++;
@@ -171,10 +175,10 @@ void main() {
 
     // seekMs 只负责报「跳转回退」再委托 _seekWithinFile（seekRelative / seekGlobalMs
     // 同文件分支也走它），物理 seek 与抑制窗复位都在那一份本体里。
-    final int seekMsStart = src.indexOf('Future<void> seekMs(int positionMs)');
+    final int seekMsStart = src.indexOf('Future<void> seekMs(');
     final String seekMsBody = src.substring(
       seekMsStart,
-      bodyOf('Future<void> seekMs(int positionMs)'),
+      bodyOf('Future<void> seekMs('),
     );
     final int withinStart = src.indexOf(
       'Future<void> _seekWithinFile(int positionMs)',

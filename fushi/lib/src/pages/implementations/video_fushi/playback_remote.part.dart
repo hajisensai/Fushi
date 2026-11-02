@@ -67,7 +67,7 @@ class _VideoPagePlaybackRemote
     final VideoPlayerController? controller = _controller;
     if (controller == null) return;
     // 绝对 seek 是一次跳转（进「跳转回退」历史，跨度不够自动不算）；seekByMs 是步进。
-    _state._recordVideoJumpDeparture(positionMs);
+    _state._recordVideoJumpDeparture(positionMs, source: JumpSource.remote);
     await controller.seekMs(positionMs);
   }
 

@@ -94,6 +94,8 @@ class FushiToolbarItem {
     this.key,
     this.semanticsId,
     this.tooltip,
+    this.onLongPress,
+    this.emphasized = false,
   });
 
   final IconData icon;
@@ -107,6 +109,14 @@ class FushiToolbarItem {
   final bool selected;
   final Key? key;
   final String? semanticsId;
+
+  /// 长按 / 右键（桌面 secondary tap）的次要动作；null = 没有。收进「⋯」溢出菜单
+  /// 时只保留 [onPressed]。
+  final VoidCallback? onLongPress;
+
+  /// 强调态：不是「选中」，只给图标按钮垫一层 secondaryContainer 底，让临时出现的
+  /// 动作（跳转记录的返回 / 前进）和常驻按钮区分开。语义上不报 selected。
+  final bool emphasized;
 }
 
 /// 悬浮工具栏配色。null 字段回落到主题：MD3 standard = surfaceContainer /
@@ -379,10 +389,13 @@ class FushiToolbarButton extends StatelessWidget {
         iconSize: apple ? (fushiAppleCompact(context) ? 18 : 20) : iconSize,
         tooltip: tooltip,
         isSelected: apple ? null : item.selected,
-        style: item.selected && !apple
+        style: (item.selected || item.emphasized) && !apple
             ? IconButton.styleFrom(backgroundColor: selectedContainer)
             : null,
         onPressed: item.onPressed,
+        // 长按交给按钮自己（在 tooltip 里层，手势竞技场里先于 tooltip 的长按
+        // 识别器登记，长按才不会被 tooltip 抢走）；右键在外层补。
+        onLongPress: item.onLongPress,
       );
       // 纯图标：无障碍名称恒为功能名本身（[FushiToolbarItem.label]）——tooltip
       // 只进语义的「提示」槽，带快捷键时更不该顶替名称。
@@ -448,8 +461,31 @@ class FushiToolbarButton extends StatelessWidget {
         ),
       );
     }
-    if (item.semanticsId == null) return button;
-    return Semantics(identifier: item.semanticsId, child: button);
+    final VoidCallback? longPress = item.onLongPress;
+    // 强调态按钮是临时插进栏里的（跳转记录）：插入时 M3E 弹簧缩放 + 淡入，墨水屏 /
+    // 减弱动态效果下时长归零即瞬时。
+    final Widget shown = item.emphasized
+        ? TweenAnimationBuilder<double>(
+            tween: Tween<double>(begin: 0, end: 1),
+            duration: fushiMotionDuration(context, FushiMotion.medium),
+            curve: FushiMotion.release,
+            builder: (BuildContext context, double v, Widget? child) =>
+                Opacity(
+                  opacity: v.clamp(0.0, 1.0),
+                  child: Transform.scale(scale: 0.6 + 0.4 * v, child: child),
+                ),
+            child: button,
+          )
+        : button;
+    final Widget withLongPress = longPress == null
+        ? shown
+        : GestureDetector(
+            onLongPress: showLabel || inlineLabel ? longPress : null,
+            onSecondaryTap: longPress,
+            child: shown,
+          );
+    if (item.semanticsId == null) return withLongPress;
+    return Semantics(identifier: item.semanticsId, child: withLongPress);
   }
 }
 

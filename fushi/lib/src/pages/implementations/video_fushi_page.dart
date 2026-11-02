@@ -229,7 +229,6 @@ import 'package:fushi_engine/media/video/youtube_source_resolver.dart'
 import 'package:fushi/src/media/video/video_resource_check.dart';
 import 'package:fushi/src/media/video/video_long_press_speed_badge.dart';
 import 'package:fushi/src/media/video/video_long_press_session_detector.dart';
-import 'package:fushi/src/media/video/video_jump_pill_hover.dart';
 import 'package:fushi/src/media/video/video_double_tap_center_action.dart';
 import 'package:fushi/src/media/video/video_horizontal_seek_gesture.dart';
 import 'package:fushi/src/media/video/video_seek_indicator_label.dart';
@@ -351,7 +350,7 @@ import 'package:fushi_engine/media/video/video_sidecar.dart';
 import 'package:fushi/src/media/video/video_subtitle_jump_panel.dart';
 import 'package:fushi/src/media/video/subtitle_text_override.dart';
 import 'package:fushi/src/media/video/video_jump_history.dart';
-import 'package:fushi/src/utils/components/fushi_jump_history_pill.dart';
+import 'package:fushi/src/utils/components/fushi_jump_history_controls.dart';
 import 'package:fushi/src/utils/misc/jump_history.dart';
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
 import 'package:fushi/src/media/video/video_subtitle_overlay.dart';
@@ -1634,11 +1633,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 由下面两个来源合成：
   /// - [_controlsHoldMenuOpen]：「⋯」溢出菜单开着——菜单路由的 barrier 盖住控制条，
   ///   否则菜单锚定的「⋯」按钮连同整条控制条在菜单弹出的同一帧消失；
-  /// - [_controlsHoldJumpPill]：鼠标停在「返回跳转前位置」胶囊上（qUeubxE-fM）——胶囊
-  ///   盖在控制条之上，不按住就会「收起 → 胶囊移开 → 重新显示 → 胶囊回来」自激振荡。
+  /// - [_controlsHoldJumpPanel]：「跳转记录」面板开着——面板期间控制条保持显示
+  ///   （所有者 2026-11-02 定稿：面板与进度条刻度对照着看）。
   final ValueNotifier<bool> _controlsHeld = ValueNotifier<bool>(false);
   bool _controlsHoldMenuOpen = false;
-  bool _controlsHoldJumpPill = false;
+  bool _controlsHoldJumpPanel = false;
 
   static const double _volumeStep = 5.0;
 
@@ -2521,22 +2520,15 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// media_kit 进度条拖动的出发点记账（进度条 seek 绕过 controller）。
   final VideoSeekBarJumpTracker _seekBarJumpTracker = VideoSeekBarJumpTracker();
 
-  /// 历史变化计数：胶囊在全屏路由里也要跟着重建，走 notifier 而非 setState。
+  /// 历史变化计数：顶栏按钮 / 「⋯」菜单行 / 进度条刻度在全屏路由里也要跟着重建，
+  /// 走 notifier 而非 setState。
   final ValueNotifier<int> _videoJumpHistoryRevision = ValueNotifier<int>(0);
 
-  /// 跳转 / 返回 / 前进后的 6 秒闪现窗口。
-  final ValueNotifier<bool> _videoJumpPillFlashing = ValueNotifier<bool>(false);
-
-  /// 鼠标是否停在胶囊上（qUeubxE-fM）：悬停期间胶囊布局冻结在 [_videoJumpPillLayout]。
-  final ValueNotifier<bool> _videoJumpPillHovered = ValueNotifier<bool>(false);
-
-  /// 胶囊上一帧实际用的布局（悬停开始时的那一帧即冻结值）。
-  VideoJumpPillLayout? _videoJumpPillLayout;
-  Timer? _videoJumpFlashTimer;
-
-  /// 自上次跳转 / 返回 / 前进起超过自动隐藏时长：胶囊不再随控制条出现，下次跳转复位。
-  final ValueNotifier<bool> _videoJumpPillExpired = ValueNotifier<bool>(false);
-  Timer? _videoJumpPillExpireTimer;
+  /// 顶栏「跳转记录」图标的自动隐藏计时（时长现读 `jumpHistoryAutoHideSeconds`，
+  /// 默认 0 = 不隐藏；只藏图标，记录 / 面板 / 刻度保留，下次跳转再出现）。
+  late final JumpHistoryAutoHide _videoJumpAutoHide = JumpHistoryAutoHide(
+    secondsOf: () => appModel.jumpHistoryAutoHideSeconds,
+  );
 
   /// 鼠标当前是否悬停在右 / 左浮动学习按钮 rail 上（BUG-283）。
   ///
@@ -6728,13 +6720,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _mediaKitControlsVisible.dispose();
     _restartHideTimerSignal.dispose();
     _controlsHeld.dispose();
-    _videoJumpPillHovered.dispose();
     _videoControlsVisible.dispose();
-    _videoJumpFlashTimer?.cancel();
-    _videoJumpPillExpireTimer?.cancel();
+    _videoJumpAutoHide.dispose();
     _videoJumpHistoryRevision.dispose();
-    _videoJumpPillFlashing.dispose();
-    _videoJumpPillExpired.dispose();
     _railHovered.dispose();
     _cursorHidden.dispose();
     super.dispose();
@@ -8392,13 +8380,23 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           ? unsupported
           : () => _runWhenImmersiveAllowsShortcuts(() {
               _keepControlsAliveIfVisible();
-              unawaited(_recordVideoJumpAround(controller.previousChapter));
+              unawaited(
+                _recordVideoJumpAround(
+                  controller.previousChapter,
+                  source: JumpSource.chapter,
+                ),
+              );
             }),
       nextChapter: web
           ? unsupported
           : () => _runWhenImmersiveAllowsShortcuts(() {
               _keepControlsAliveIfVisible();
-              unawaited(_recordVideoJumpAround(controller.nextChapter));
+              unawaited(
+                _recordVideoJumpAround(
+                  controller.nextChapter,
+                  source: JumpSource.chapter,
+                ),
+              );
             }),
       // 字幕对轴/匹配（用户请求）：Shift+A 一键弹波形对轴放大视图；z/x 整体平移字幕延迟
       // ±_kSubtitleDelayNudgeMs（走 _setDelayMs 写穿 delayMs 落盘 + OSD）。都过沉浸门控，
@@ -9158,7 +9156,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   /// [_controlsHeld] 的唯一写入点：任一来源要求按住即按住。
   void _syncControlsHold() {
-    _controlsHeld.value = _controlsHoldMenuOpen || _controlsHoldJumpPill;
+    _controlsHeld.value = _controlsHoldMenuOpen || _controlsHoldJumpPanel;
   }
 
   /// MD3 Expressive chrome 是否生效（Apple 设计系统之外的一切，含墨水屏）。
@@ -9877,13 +9875,48 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// windows. When squeezed, the group collapses its lowest-priority buttons into
   /// a trailing "⋯" menu ([VideoControlBar], BUG-2832) instead of scrolling /
   /// clipping them, so every visible button stays whole and full size.
+  ///
+  /// 右上组挂「⋯」的那一段（[_isLastTopRightSegment]）同时挂「跳转记录」：段头一枚
+  /// 独立的「↶ / ↷」按钮胶囊（[_videoJumpHistoryTopBarGroup]），「⋯」里有历史时多
+  /// 一行「跳转记录」。两者随历史 / 自动隐藏 / 小窗 / 沉浸锁变化，全屏路由不随页面
+  /// setState 重建，所以这一段包一层 [ListenableBuilder]。
   Widget _topBarSlotGroup(
     VideoControlSlot slot,
     VideoPlayerController controller, {
     required VideoControlLayout layout,
     required bool desktop,
     required VideoTopBarSegment segment,
+    BuildContext? jumpContext,
   }) {
+    // 挂「⋯」的那一段：先包一层 [ListenableBuilder]，在它里面带着 jumpContext 再进
+    // 本方法一次（同一份按钮组构建，不另抄一份）。
+    final bool jumpSegment = _isLastTopRightSegment(slot, layout, segment);
+    if (jumpSegment && jumpContext == null) {
+      return ListenableBuilder(
+        listenable: _videoJumpToolbarListenable,
+        builder: (BuildContext jumpContext, Widget? _) {
+          final Widget group = _topBarSlotGroup(
+            slot,
+            controller,
+            layout: layout,
+            desktop: desktop,
+            segment: segment,
+            jumpContext: jumpContext,
+          );
+          if (!_videoJumpToolbarShown) return group;
+          return Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              _videoJumpHistoryTopBarGroup(jumpContext, desktop: desktop),
+              Flexible(child: group),
+            ],
+          );
+        },
+      );
+    }
+    final VideoBarEntry? jumpMenu = jumpContext == null
+        ? null
+        : _videoJumpHistoryMenuEntry(jumpContext);
     final List<VideoControlItem> rawItems = layout.itemsIn(slot);
     // 标题项被拖进按钮槽时，它在槽内的索引位置有语义（`VideoControlLayout` 保序），
     // 所以按标题把该槽切成 lead / tail 两段按钮，标题本身由顶栏的 title 槽渲染、
@@ -9912,19 +9945,22 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     ];
     // 右上按钮组的最后一段挂「⋯」：移出播放器、又不属于右下传输 / 学习组的动作
     // （音轨、片段导出、上下集、上下章……）常驻这里。
-    final bool lastTopRightSegment =
-        slot == VideoControlSlot.topRight &&
-        (titleIndex < 0
-            ? segment == VideoTopBarSegment.lead
-            : segment == VideoTopBarSegment.tail);
+    final bool lastTopRightSegment = _isLastTopRightSegment(
+      slot,
+      layout,
+      segment,
+    );
     final List<VideoBarEntry> folded = lastTopRightSegment
-        ? _foldedBarEntries(
-            layout,
-            controller,
-            slot: slot,
-            include: (VideoControlItem item) =>
-                !_kVideoBottomFoldedItems.contains(item),
-          )
+        ? <VideoBarEntry>[
+            ..._foldedBarEntries(
+              layout,
+              controller,
+              slot: slot,
+              include: (VideoControlItem item) =>
+                  !_kVideoBottomFoldedItems.contains(item),
+            ),
+            if (jumpMenu != null) jumpMenu,
+          ]
         : const <VideoBarEntry>[];
     // 原盘会话播放正片时，「主菜单 / 弹出菜单」挂在右上组头部：与其它顶栏按钮同一
     // 显隐（随控制条淡出）、同一外观，窄屏同样收进「⋯」。
@@ -10011,6 +10047,20 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           : EdgeInsets.zero,
       child: buttonGroup(),
     );
+  }
+
+  /// [slot] / [segment] 是不是右上组挂「⋯」的最后一段（槽里没有标题时是 lead，有
+  /// 标题时是标题之后的 tail）。
+  bool _isLastTopRightSegment(
+    VideoControlSlot slot,
+    VideoControlLayout layout,
+    VideoTopBarSegment segment,
+  ) {
+    if (slot != VideoControlSlot.topRight) return false;
+    final bool hasTitle = layout.itemsIn(slot).contains(VideoControlItem.title);
+    return hasTitle
+        ? segment == VideoTopBarSegment.tail
+        : segment == VideoTopBarSegment.lead;
   }
 
   String get _clipExportTooltip {
@@ -10318,11 +10368,21 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         break;
       case VideoControlItem.previousChapter:
         _pokeControlsVisible();
-        unawaited(_recordVideoJumpAround(controller.previousChapter));
+        unawaited(
+          _recordVideoJumpAround(
+            controller.previousChapter,
+            source: JumpSource.chapter,
+          ),
+        );
         break;
       case VideoControlItem.nextChapter:
         _pokeControlsVisible();
-        unawaited(_recordVideoJumpAround(controller.nextChapter));
+        unawaited(
+          _recordVideoJumpAround(
+            controller.nextChapter,
+            source: JumpSource.chapter,
+          ),
+        );
         break;
       case VideoControlItem.chapterList:
         _showChapterPanel(controller, sourceSlot: sourceSlot);
@@ -11391,7 +11451,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     final int? durationMs = controller?.durationMs;
     if (controller == null || durationMs == null || durationMs <= 0) return;
     final int targetMs = (durationMs * fraction.clamp(0.0, 1.0)).round();
-    _recordVideoJumpDeparture(targetMs);
+    _recordVideoJumpDeparture(targetMs, source: JumpSource.progressBar);
     await controller.seekMs(targetMs);
   }
 

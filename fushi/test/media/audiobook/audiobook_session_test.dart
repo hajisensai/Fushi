@@ -9,6 +9,7 @@ import 'package:drift/native.dart';
 import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session.dart';
 import 'package:fushi/src/utils/misc/fushi_audio_handler.dart';
+import 'package:fushi/src/utils/misc/jump_history.dart' show JumpSource;
 import 'package:fushi/src/media/audiobook/floating_lyric_channel.dart';
 import 'package:fushi/src/media/audiobook/remote/audiobook_remote_playback.dart';
 import 'package:fushi/src/media/range_playback.dart';
@@ -978,7 +979,7 @@ class _FakeReader implements ReaderAudiobookView {
   void onExplicitCueJump(AudioCue cue) {}
 
   @override
-  void onBeforeAudioJump(int fromGlobalMs) {}
+  void onBeforeAudioJump(int fromGlobalMs, JumpSource source) {}
 
   @override
   void onReaderCueChanged() {

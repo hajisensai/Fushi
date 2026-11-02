@@ -13,6 +13,10 @@ import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_player_contract.d
 import 'package:fushi/src/media/shared/lyrics_shell/lyrics_shell_backgrounds.dart';
 import 'package:fushi/src/media/shared/lyrics_shell/lyrics_shell_layout.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_speed_panel.dart';
+import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
+    show FushiFloatingToolbarColors, FushiToolbarItem;
+import 'package:fushi/src/utils/components/fushi_jump_history_controls.dart'
+    show FushiJumpHistoryActions;
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
@@ -154,6 +158,11 @@ class _WideChrome extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
+              // 跳转记录的返回 / 前进排在动作区最前。
+              if (data.jumpActions.isNotEmpty) ...<Widget>[
+                _AppleJumpActions(items: data.jumpActions),
+                const SizedBox(width: 8),
+              ],
               // 布局「顶部」区的按钮（出厂 书籍模式 / 左右互换）；有退书回调时
               // × 直接退书回书架、「书籍模式」键回正文（反馈 QvYpZODImz）。
               for (final Widget button in _appleControlButtons(
@@ -664,6 +673,9 @@ class _NarrowChrome extends StatelessWidget {
                   child: _NarrowHeader(title: data.title, clock: data.clock),
                 ),
               ),
+              // 跳转记录的返回 / 前进排在动作区最前。
+              if (data.jumpActions.isNotEmpty)
+                _AppleJumpActions(items: data.jumpActions),
               // 布局「顶部」区的按钮（出厂 遮罩 / Aa / 统计）。
               ..._appleControlButtons(
                 data.compactControls.itemsIn(LyricsControlSlot.top),
@@ -1174,6 +1186,22 @@ List<Widget> _appleControlButtons(
   }
 
   return <Widget>[for (final LyricsControlItem item in items) ?build(item)];
+}
+
+/// 歌词页顶栏的跳转记录图标：与同排的白色线框图标同一前景色。
+class _AppleJumpActions extends StatelessWidget {
+  const _AppleJumpActions({required this.items});
+
+  final List<FushiToolbarItem> items;
+
+  @override
+  Widget build(BuildContext context) => FushiJumpHistoryActions(
+    items: items,
+    iconSize: 20,
+    colors: FushiFloatingToolbarColors(
+      foreground: Colors.white.withValues(alpha: 0.74),
+    ),
+  );
 }
 
 class _MoreButton extends StatelessWidget {

@@ -84,7 +84,7 @@ import 'package:fushi/src/media/manga/reader/manga_control_layout_editor.dart'
 import 'package:fushi/src/media/manga/reader/manga_reader_bookmarks.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
-    show FushiToolbarFab;
+    show FushiToolbarFab, FushiToolbarItem;
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart'
     show FushiTitleBarColorScope, FushiTitleBarColors, fushiTitleBarColorsOn;
 import 'package:fushi/src/media/manga/reader/manga_reader_settings_sheet.dart';
@@ -147,7 +147,7 @@ import 'package:fushi/src/webview/webview_death_guard.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/media/video/video_exit_flush.dart';
 import 'package:fushi/src/media/manga/reader/manga_jump_point.dart';
-import 'package:fushi/src/utils/components/fushi_jump_history_pill.dart';
+import 'package:fushi/src/utils/components/fushi_jump_history_controls.dart';
 import 'package:fushi/src/utils/misc/jump_history.dart';
 import 'package:fushi/src/media/manga/download/online_manga_download_gate.dart';
 import 'package:fushi/src/media/kavita/kavita_api_registry.dart';
@@ -1252,13 +1252,16 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// 正在执行返回 / 前进：期间的跳转不再入栈。
   bool _jumpHistoryRestoring = false;
 
-  /// 跳转 / 返回 / 前进后的短暂闪现（chrome 收起时胶囊也亮着）。
-  bool _jumpPillFlashing = false;
-  Timer? _jumpPillFlashTimer;
+  /// 顶栏跳转图标的自动隐藏计时（时长现读设置；到时只藏图标，历史 / 面板 / 刻度
+  /// 照旧）。到点通知时重建 chrome。
+  late final JumpHistoryAutoHide _jumpHistoryAutoHide = JumpHistoryAutoHide(
+    secondsOf: () => appModel.jumpHistoryAutoHideSeconds,
+  )..addListener(_markMangaJumpHistoryDirty);
 
-  /// 胶囊闪现开关（setState 只能在 State 成员里调，扩展 [_MangaJumpBack] 经此）。
-  void _setJumpPillFlashing(bool value) {
-    if (mounted) setState(() => _jumpPillFlashing = value);
+  /// 跳转历史 / 图标显隐变了：重建 chrome（setState 只能在 State 成员里调，扩展
+  /// [_MangaJumpBack] 经此）。
+  void _markMangaJumpHistoryDirty() {
+    if (mounted) setState(() {});
   }
 
   int _lastSavedPage = -1;
@@ -1698,7 +1701,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     unawaited(_downloadWatch?.cancel());
     _downloadWatch = null;
     _dictionaryTurnDismissTimer?.cancel();
-    _jumpPillFlashTimer?.cancel();
+    _jumpHistoryAutoHide.dispose();
     // BUG-2449：这里只是不再观察；整卷 OCR 任务归注册表所有，退出页面照跑。
     unawaited(_wholeVolumeOcrSubscription?.cancel());
     _wholeVolumeOcrSubscription = null;
@@ -3656,8 +3659,6 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       }
     } finally {
       if (mounted) setState(() => _switchingChapter = false);
-      // 跳章的闪现计时从入栈那一刻起；换章装载可能就吃掉大半，落地后重新亮满。
-      if (mounted && _jumpPillFlashing) _onMangaJumpHistoryChanged();
     }
   }
 
@@ -5695,7 +5696,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       ),
     );
     if (target != null && target >= 0) {
-      if (target != _shelfChapterIndex) _recordMangaJumpDeparture();
+      if (target != _shelfChapterIndex) {
+        _recordMangaJumpDeparture(source: JumpSource.chapter);
+      }
       await _switchToChapter(target);
     }
   }
@@ -6023,7 +6026,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       total: total,
     );
     if (page != null) {
-      _recordMangaJumpDeparture(targetPage: page - 1);
+      _recordMangaJumpDeparture(
+        source: JumpSource.pageDialog,
+        targetPage: page - 1,
+      );
       await _jumpToPage(page);
     }
   }
@@ -6084,7 +6090,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       thumbnail: _pageThumbnail,
     );
     if (page != null && mounted) {
-      _recordMangaJumpDeparture(targetPage: page);
+      _recordMangaJumpDeparture(source: JumpSource.gallery, targetPage: page);
       await _jumpToPage(page + 1);
     }
   }
@@ -6153,7 +6159,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       );
       return;
     }
-    _recordMangaJumpDeparture();
+    _recordMangaJumpDeparture(source: JumpSource.chapter);
     await _switchToChapter(target);
   }
 
@@ -6516,18 +6522,6 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                       ),
                     ),
                   ),
-                  // 「跳转回退」胶囊：顶部居中，chrome 显示时坐在顶栏下方；没
-                  // 跳转过不画（[_buildMangaJumpHistoryPill]）。
-                  _buildMangaJumpHistoryPill(
-                    chromeShown:
-                        _chromeContentReady &&
-                        mangaChromeBarPainted(
-                          floating: _chromeFloating,
-                          chromeVisible: _chromeVisible,
-                          transientVisible: _chrome.transientVisible,
-                          contentReady: _chromeActionsEnabled,
-                        ),
-                  ),
                   // 换章装载中：正文上盖一层加载指示（BUG-3221）。章末不再弹「下一章」
                   // 卡片——翻过末页本来就直接换章，卡片只是多余的一步（用户反馈）；
                   // 换章真正缺的是「正在加载」的反馈，否则用户以为没翻动、会多滑。
@@ -6749,7 +6743,11 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           : t.manga_reader_page_grid,
       status: ready ? _buildChromeStatus() : null,
       actions: plan.top,
-      overflowActions: plan.overflow,
+      overflowActions: <MangaChromeAction>[
+        if (_mangaJumpHistoryMenuAction() case final MangaChromeAction a) a,
+        ...plan.overflow,
+      ],
+      jumpItems: _mangaJumpToolbarItems(),
     );
   }
 
@@ -6766,7 +6764,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           currentPage: () => _pageNotifier.value,
           rtl: _spreadDirection == 'rtl',
           onPageCommitted: (int pageIndex) {
-            _recordMangaJumpDeparture(targetPage: pageIndex);
+            _recordMangaJumpDeparture(
+              source: JumpSource.progressBar,
+              targetPage: pageIndex,
+            );
             unawaited(_jumpToPage(pageIndex + 1));
           },
           onPageTap: () => unawaited(_showPageJumpDialog()),
@@ -6781,6 +6782,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           nextChapterTooltip: t.manga_series_next_chapter,
           pagePreview: _pageThumbnail,
           bubbleLabel: _pageLabelFor,
+          jumpMarks: _mangaJumpMarks(),
         ),
       ),
       toolbar: MangaReaderToolbar(
@@ -7121,7 +7123,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           slot: slot,
           priority: priority,
           onPressed: () {
-            _recordMangaJumpDeparture(targetPage: 0);
+            _recordMangaJumpDeparture(
+              source: JumpSource.restart,
+              targetPage: 0,
+            );
             unawaited(_jumpToPage(1));
           },
         );
@@ -7994,7 +7999,10 @@ class _MangaPageSessionRemote implements ReaderSessionRemote {
         pageIndex >= payload.images.length) {
       return false;
     }
-    _state._recordMangaJumpDeparture(targetPage: pageIndex);
+    _state._recordMangaJumpDeparture(
+      source: JumpSource.remote,
+      targetPage: pageIndex,
+    );
     await _state._jumpToPage(pageIndex + 1);
     return true;
   }
@@ -8009,7 +8017,7 @@ class _MangaPageSessionRemote implements ReaderSessionRemote {
       return false;
     }
     if (chapterIndex != _state._shelfChapterIndex) {
-      _state._recordMangaJumpDeparture();
+      _state._recordMangaJumpDeparture(source: JumpSource.remote);
     }
     await _state._switchToChapter(chapterIndex);
     return _state.mounted && _state._shelfChapterIndex == chapterIndex;

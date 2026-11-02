@@ -25,7 +25,7 @@ void main() {
     test('_jumpToChapterAnchor 在歌词模式先分流到 _jumpToChapterInLyricsMode', () {
       final String body = methodBody(
         src,
-        '  Future<void> _jumpToChapterAnchor(int index, String? fragment)',
+        '  Future<void> _jumpToChapterAnchor(',
       );
       final int gate = body.indexOf('if (_lyricsMode)');
       final int textNav = body.indexOf('_navigateToChapter(');
@@ -44,7 +44,7 @@ void main() {
     test('歌词模式跳章 = 音频定位到该章首句；没有 cue 的章才退回正文', () {
       final String body = methodBody(
         src,
-        '  Future<void> _jumpToChapterInLyricsMode(int index)',
+        '  Future<void> _jumpToChapterInLyricsMode(',
       );
       expect(
         containsIdentifierCall(body, '_firstCueOfSection'),

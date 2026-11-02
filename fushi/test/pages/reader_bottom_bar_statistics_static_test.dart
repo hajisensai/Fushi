@@ -134,16 +134,15 @@ void main() {
         contains('_readerControlActionsIn(ReaderControlSlot.topLeft)'),
       );
       // 2026-10：布局的「更多」槽恒进 ⋮；悬浮样式顶栏同样从槽位取按钮。
-      expect(header, contains('overflowActions: _overflowControlActions()'));
+      // 跳转记录（↶ / ↷ 与 ⋮ 里的入口）排在槽位按钮前后，槽位本身照旧取自布局。
+      expect(header, contains('..._overflowControlActions()'));
       expect(
         header,
         contains('_renderableControlsIn(ReaderControlSlot.topRight)'),
       );
       expect(
         header,
-        contains(
-          'trailing: _readerControlActionsIn(ReaderControlSlot.topRight)',
-        ),
+        contains('..._readerControlActionsIn(ReaderControlSlot.topRight)'),
       );
       final String bottom = _member(
         src,

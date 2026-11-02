@@ -61,3 +61,19 @@ class VideoSeekBarJumpTracker {
     return origin;
   }
 }
+
+/// 媒体时间轴位置的文案：满一小时 `h:mm:ss`，否则 `m:ss`（视频播放位置、有声书全书
+/// 时间共用；「跳转记录」顶栏 tooltip 与面板行都用它）。
+String formatJumpHistoryTime(int ms) {
+  final Duration d = Duration(milliseconds: ms < 0 ? 0 : ms);
+  final int h = d.inHours;
+  final String m = (d.inMinutes % 60).toString().padLeft(h > 0 ? 2 : 1, '0');
+  final String s = (d.inSeconds % 60).toString().padLeft(2, '0');
+  return h > 0 ? '$h:$m:$s' : '$m:$s';
+}
+
+/// 进度条刻度用的落点比例：时长未知（未 load / 直播流）时不画（null）。
+double? videoJumpMarkFraction(int pointMs, int? durationMs) {
+  if (durationMs == null || durationMs <= 0) return null;
+  return pointMs / durationMs;
+}

@@ -507,11 +507,6 @@ extension _ReaderLyrics on _ReaderFushiPageState {
                 data: _lyricsPlayerData(ctrl),
                 callbacks: _lyricsPlayerCallbacks(ctrl),
                 onHtmlThemeChanged: _applyLyricsHtmlTheme,
-                // 跳转回退胶囊：覆盖层常驻 chrome，有历史就显示；坐在底栏上方
-                // 让出的带子里，从下往上滑入（反馈 0AwuVqrNFn）。
-                navigationAccessory: _jumpHistory.isEmpty
-                    ? null
-                    : _jumpHistoryPill(visible: true, from: AxisDirection.down),
               );
             },
           ),
@@ -537,6 +532,8 @@ extension _ReaderLyrics on _ReaderFushiPageState {
       speed: ctrl.speed,
       lyricsMasked: ReaderFushiSource.instance.lyricsBlur,
       clock: _ReaderLyricsClock(this),
+      // 跳转记录的 ↶ / ↷：覆盖层顶栏右侧最前（覆盖层本身就是常驻 chrome）。
+      jumpActions: _jumpHistoryToolbarItems(),
       // 覆盖层期间正文强制跟随音频，_currentChapter 就是音频所在章。
       chapterLabel: _book == null ? null : _currentChapterLabel(),
       statsTimerPaused: _studyClockManualPause,
@@ -813,6 +810,7 @@ extension _ReaderLyrics on _ReaderFushiPageState {
           ?_lyricsControlMenuAction(item, ctrl, menuAnchor, wide: wide),
       for (final ReaderControlItem item in kLyricsOverlayMenuItems)
         if (_shouldRenderReaderControl(item)) _readerControlAction(item),
+      ..._jumpHistoryMenuActions(),
     ];
     if (actions.isEmpty || !mounted || !menuContext.mounted) return;
     final RenderBox overlay =

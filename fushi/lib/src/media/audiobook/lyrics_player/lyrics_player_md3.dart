@@ -13,6 +13,8 @@ import 'package:fushi/src/media/shared/lyrics_shell/lyrics_shell_layout.dart';
 import 'package:fushi/src/media/audiobook/lyrics_player/lyrics_speed_panel.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
+import 'package:fushi/src/utils/components/fushi_jump_history_controls.dart'
+    show FushiJumpHistoryActions;
 import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart'
     show FushiM3eShape;
 import 'package:fushi/src/utils/components/fushi_m3e_player.dart';
@@ -301,6 +303,11 @@ class Md3LyricsPlayerDesign extends LyricsPlayerDesign {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
+                // 跳转记录的返回 / 前进排在动作区最前。
+                if (data.jumpActions.isNotEmpty) ...<Widget>[
+                  FushiJumpHistoryActions(items: data.jumpActions),
+                  const SizedBox(width: 8),
+                ],
                 for (final Widget button in corner) ...<Widget>[
                   button,
                   const SizedBox(width: 8),
@@ -1366,6 +1373,9 @@ class _NarrowTopBar extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
+              // 跳转记录的返回 / 前进排在动作区最前。
+              if (data.jumpActions.isNotEmpty)
+                FushiJumpHistoryActions(items: data.jumpActions),
               // 布局「顶部」区的按钮（出厂 遮罩 / Aa / 统计）。
               ..._md3ControlButtons(
                 data.compactControls.itemsIn(LyricsControlSlot.top),

@@ -1,6 +1,9 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi/src/media/video/video_jump_history.dart';
+import 'package:fushi/src/utils/components/fushi_jump_history_controls.dart';
 import 'package:fushi/src/utils/misc/jump_history.dart';
 
 void main() {
@@ -25,7 +28,9 @@ void main() {
     final JumpHistory<int> history = createVideoJumpHistory();
     expect(history.recordDeparture(60000), isTrue);
     expect(history.recordDeparture(60900), isFalse);
-    expect(history.recordDeparture(61000), isTrue);
+    expect(history.backEntries, hasLength(1));
+    expect(history.recordDeparture(62000), isTrue);
+    expect(history.backEntries, hasLength(2));
   });
 
   group('VideoSeekBarJumpTracker', () {
@@ -59,6 +64,69 @@ void main() {
       tracker.begin(60000, relativeBaseCaptureCount: 0);
       tracker.cancel();
       expect(tracker.commit(600000, relativeBaseCaptureCount: 0), isNull);
+    });
+  });
+
+  test('formatJumpHistoryTime：满一小时 h:mm:ss，否则 m:ss，负数按 0', () {
+    expect(formatJumpHistoryTime(0), '0:00');
+    expect(formatJumpHistoryTime(-5), '0:00');
+    expect(formatJumpHistoryTime(754000), '12:34');
+    expect(formatJumpHistoryTime(3723000), '1:02:03');
+  });
+
+  test('videoJumpMarkFraction：时长未知不画，否则按时长换算', () {
+    expect(videoJumpMarkFraction(60000, null), isNull);
+    expect(videoJumpMarkFraction(60000, 0), isNull);
+    expect(videoJumpMarkFraction(60000, 240000), 0.25);
+  });
+
+  test('刻度落点：返回点 / 前进点分开，按时长换算', () {
+    final JumpHistory<int> history = createVideoJumpHistory();
+    history.recordDeparture(60000, source: JumpSource.progressBar);
+    history.recordDeparture(120000, source: JumpSource.cue);
+    expect(history.goBack(180000), 120000);
+    final ({List<double> back, List<double> forward}) marks =
+        jumpHistoryMarkFractions<int>(
+          history,
+          (int ms) => videoJumpMarkFraction(ms, 240000),
+        );
+    expect(marks.back, <double>[0.25]);
+    expect(marks.forward, <double>[0.75]);
+    expect(history.backEntries.single.source, JumpSource.progressBar);
+  });
+
+  group('视频页接线（2026-11-02 胶囊改顶栏图标）', () {
+    const String dir = 'lib/src/pages/implementations';
+    String read(String path) => File(path).readAsStringSync();
+
+    test('不再挂浮动胶囊、不再闪现 / 悬停冻结', () {
+      final String page = read('$dir/video_fushi_page.dart');
+      final String part = read('$dir/video_fushi/jump_history.part.dart');
+      final String layout = read('$dir/video_fushi/layout.part.dart');
+      for (final String src in <String>[page, part, layout]) {
+        expect(src, isNot(contains('FushiJumpHistoryPill')));
+        expect(src, isNot(contains('fushi_jump_history_pill.dart')));
+        expect(src, isNot(contains('video_jump_pill_hover.dart')));
+        expect(src, isNot(contains('videoJumpPillAutoHideSeconds')));
+        expect(src, isNot(contains('_videoJumpFlash')));
+      }
+    });
+
+    test('顶栏按钮 / 「⋯」入口 / 刻度 / 面板都接上了', () {
+      final String page = read('$dir/video_fushi_page.dart');
+      final String part = read('$dir/video_fushi/jump_history.part.dart');
+      final String theme = read('$dir/video_fushi/controls_theme.part.dart');
+      final String mini = read('$dir/video_fushi/mini_window.part.dart');
+      expect(page, contains('_videoJumpHistoryTopBarGroup('));
+      expect(page, contains('_videoJumpHistoryMenuEntry(jumpContext)'));
+      expect(part, contains('jumpHistoryToolbarItems('));
+      expect(part, contains('jumpHistoryPanelMenuItem('));
+      expect(part, contains('showJumpHistoryPanel<int>('));
+      expect(part, contains('appModel.jumpHistoryToolbar'));
+      expect(part, contains('appModel.jumpHistoryProgressMarks'));
+      expect(page, contains('appModel.jumpHistoryAutoHideSeconds'));
+      expect(theme, contains('_videoJumpProgressMarks('));
+      expect(mini, contains('_videoJumpProgressMarks('));
     });
   });
 }
