@@ -498,7 +498,8 @@ void main() {
     // prominent 变体（见 video_osd_card_created_alignment_guard_test）。
     expect(
       compactCode(mineImpl).contains(
-        compactCode('_showMineOsd(described.message, described.status);'),
+        // 允许尾随可选实参（新制成功带撤销：`_showMineOsd(..., undo)`）。
+        compactCode('_showMineOsd(described.message, described.status'),
       ),
       isTrue,
       reason: 'TODO-971：制卡成功须走突出 OSD（prominent: true），不再是易忽略的小角标。',
