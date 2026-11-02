@@ -54,11 +54,16 @@ class DiscoveryImportExecutor {
   DiscoveryImportExecutor({
     required DiscoveryDomainImporters importers,
     DiscoveryArchiveExtractor? extractor,
+    this.subtitleLangCode = '',
   }) : _importers = importers,
        _extractor = extractor ?? DiscoveryArchiveExtractor();
 
   final DiscoveryDomainImporters _importers;
   final DiscoveryArchiveExtractor _extractor;
+
+  /// 有声书包里有几份字幕时优先的学习语言（宿主注入；空 = 没有语言偏好），
+  /// 见 [classifyDiscoveryDirectory]。
+  final String subtitleLangCode;
 
   /// [DiscoveryDownloadQueue] 的 importer 端口（`DiscoveryDownloadImporter`）。
   Future<DiscoveryImportOutcome> importDownload(
@@ -91,6 +96,7 @@ class DiscoveryImportExecutor {
       kind,
       filePaths,
       fileSizes: sizes,
+      subtitleLangCode: subtitleLangCode,
     );
     // 只有音频也算「还没凑齐」：包里的压缩包可能装着字幕/正文，先解开再判，
     // 免得白跑几个小时转录（这一档以前就是 UnsupportedPlan，走同一条解压路）。
@@ -121,7 +127,12 @@ class DiscoveryImportExecutor {
             sizes[entity.path] = entity.lengthSync();
           }
         }
-        plan = classifyDiscoveryDirectory(kind, merged, fileSizes: sizes);
+        plan = classifyDiscoveryDirectory(
+          kind,
+          merged,
+          fileSizes: sizes,
+          subtitleLangCode: subtitleLangCode,
+        );
       }
     }
     return _execute(plan);
@@ -131,7 +142,11 @@ class DiscoveryImportExecutor {
     DiscoveryMediaKind kind,
     File file,
   ) async {
-    DiscoveryImportPlan plan = classifyDiscoveryFile(kind, file.path);
+    DiscoveryImportPlan plan = classifyDiscoveryFile(
+      kind,
+      file.path,
+      subtitleLangCode: subtitleLangCode,
+    );
     if (plan is ExtractArchivePlan) {
       final String stem = _stemOf(file.path);
       final Directory extracted = await _extractor.extract(
@@ -149,7 +164,12 @@ class DiscoveryImportExecutor {
           sizes[entity.path] = entity.lengthSync();
         }
       }
-      plan = classifyDiscoveryDirectory(kind, paths, fileSizes: sizes);
+      plan = classifyDiscoveryDirectory(
+        kind,
+        paths,
+        fileSizes: sizes,
+        subtitleLangCode: subtitleLangCode,
+      );
     }
     return _execute(plan);
   }

@@ -68,10 +68,26 @@ class _SrtBookReimportDialogState extends State<SrtBookReimportDialog>
   /// 选中的字幕取自服务器时记下的来源（`server:<ino>`），落到绑定上；本机文件为 null。
   String? _subtitleOrigin;
 
+  /// 「从服务器选」取到临时目录的那份字幕。重新导入会把它复制进持久目录，所以换选
+  /// 别的字幕或对话框关闭（导入完 / 取消）时就删掉，不在临时目录里越堆越多。
+  File? _serverDownload;
+
   @override
   void initState() {
     super.initState();
     unawaited(_loadServerBinding());
+  }
+
+  @override
+  void dispose() {
+    _discardServerDownload();
+    super.dispose();
+  }
+
+  void _discardServerDownload() {
+    final File? file = _serverDownload;
+    _serverDownload = null;
+    if (file != null) unawaited(_deleteTempFile(file));
   }
 
   Future<void> _loadServerBinding() async {
@@ -271,6 +287,7 @@ class _SrtBookReimportDialogState extends State<SrtBookReimportDialog>
         return;
       }
       setState(() {
+        _discardServerDownload();
         _subtitlePath = path;
         _subtitleName = p.basename(path);
         _subtitleOrigin = null;
@@ -332,8 +349,13 @@ class _SrtBookReimportDialogState extends State<SrtBookReimportDialog>
         itemId: binding.itemId,
         file: picked,
       );
-      if (!mounted) return;
+      if (!mounted) {
+        await _deleteTempFile(downloaded);
+        return;
+      }
       setState(() {
+        _discardServerDownload();
+        _serverDownload = downloaded;
         _subtitlePath = downloaded.path;
         _subtitleName = picked.filename;
         _subtitleOrigin = RemoteAudioBinding.subtitleOriginServer(picked.ino);
@@ -402,5 +424,15 @@ class _SrtBookReimportDialogState extends State<SrtBookReimportDialog>
         }
       },
     );
+  }
+}
+
+/// 删临时目录里的一份文件。临时目录本身就会被系统清理，删不掉（被占用 / 已不在）
+/// 不影响任何功能，所以只吞文件系统错误。
+Future<void> _deleteTempFile(File file) async {
+  try {
+    if (await file.exists()) await file.delete();
+  } on FileSystemException {
+    // 见上：临时文件，删不掉无妨。
   }
 }

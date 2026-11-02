@@ -113,6 +113,12 @@ void main() {
       expect(_bookPick(<String>['part1.en.srt', 'part1.srt']), 'part1.srt');
       expect(_bookPick(<String>['part1.en.srt']), isNull);
       expect(_bookPick(<String>['part1.ja-JP.srt']), 'part1.ja-JP.srt');
+      // 常见的日语别名：jpn / jp 也算学习语言。
+      expect(
+        _bookPick(<String>['part1.en.srt', 'part1.jpn.srt']),
+        'part1.jpn.srt',
+      );
+      expect(_bookPick(<String>['part1.jp.ass']), 'part1.jp.ass');
     });
 
     test('分属不同主干 → null（每个音轨一份 / 互不相干的文件）', () {

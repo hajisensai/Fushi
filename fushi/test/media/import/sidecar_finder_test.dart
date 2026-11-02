@@ -22,6 +22,33 @@ void main() {
       expect(r.subtitle, 'book.srt');
     });
 
+    test('带学习语言标记的同名字幕也命中；别的语言的不挂', () {
+      expect(
+        selectSidecarNames(
+          mainFileName: 'book.epub',
+          siblingNames: <String>['book.en.srt', 'book.ja.srt'],
+          langCode: 'ja',
+        ).subtitle,
+        'book.ja.srt',
+      );
+      expect(
+        selectSidecarNames(
+          mainFileName: 'book.epub',
+          siblingNames: <String>['book.jpn.vtt'],
+          langCode: 'ja',
+        ).subtitle,
+        'book.jpn.vtt',
+      );
+      expect(
+        selectSidecarNames(
+          mainFileName: 'book.epub',
+          siblingNames: <String>['book.en.srt', 'other.srt'],
+          langCode: 'ja',
+        ).subtitle,
+        isNull,
+      );
+    });
+
     test('无 srt 时退到 vtt', () {
       final r = selectSidecarNames(
         mainFileName: 'book.epub',

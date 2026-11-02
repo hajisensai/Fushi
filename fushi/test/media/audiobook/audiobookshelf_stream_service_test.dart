@@ -228,6 +228,13 @@ void main() {
       () => SrtBookRepository(db).cuesFor(book.uid),
     ))!;
     expect(cues, hasLength(4));
+    // 下载到临时目录的那份已复制进书的持久目录，临时副本要删掉。
+    final List<String> leftovers = work
+        .listSync()
+        .map((FileSystemEntity e) => p.basename(e.path))
+        .where((String name) => name.startsWith('abs_'))
+        .toList();
+    expect(leftovers, isEmpty);
   });
 
   testWidgets('封面取不到不影响建书', (WidgetTester tester) async {

@@ -124,6 +124,8 @@ class AudiobookshelfStreamService {
 
     final String? subtitlePath;
     final String origin;
+    // 从服务器取下来的临时字幕：导入时会复制进这本书的持久目录，导完（成败都）删掉。
+    File? downloaded;
     switch (subtitle) {
       case LocalSubtitleChoice(:final String path):
         subtitlePath = path;
@@ -132,7 +134,7 @@ class AudiobookshelfStreamService {
         subtitlePath = null;
         origin = RemoteAudioBinding.subtitleOriginNone;
       case ServerSubtitleChoice(:final AudiobookshelfLibraryFile file):
-        final File downloaded = await downloadAudiobookshelfSubtitle(
+        downloaded = await downloadAudiobookshelfSubtitle(
           api: api,
           itemId: item.id,
           file: file,
@@ -145,24 +147,30 @@ class AudiobookshelfStreamService {
     final String title = episode == null
         ? item.title
         : '${item.title} – ${episode.title}';
-    return importAudiobookshelfSubtitleBook(
-      db: db,
-      repo: _books,
-      bindings: _bindings,
-      serverConfigId: serverConfigId,
-      itemId: item.id,
-      episodeId: episode?.id,
-      tracks: tracks,
-      title: title,
-      author: item.authorName,
-      subtitlePath: subtitlePath,
-      subtitleOrigin: origin,
-      policy: policy,
-      tempDir: _tempDir,
-      persistCover: (Directory persistDir) =>
-          _persistCover(persistDir, item.id),
-      onProgress: onProgress,
-    );
+    try {
+      return await importAudiobookshelfSubtitleBook(
+        db: db,
+        repo: _books,
+        bindings: _bindings,
+        serverConfigId: serverConfigId,
+        itemId: item.id,
+        episodeId: episode?.id,
+        tracks: tracks,
+        title: title,
+        author: item.authorName,
+        subtitlePath: subtitlePath,
+        subtitleOrigin: origin,
+        policy: policy,
+        tempDir: _tempDir,
+        persistCover: (Directory persistDir) =>
+            _persistCover(persistDir, item.id),
+        onProgress: onProgress,
+      );
+    } finally {
+      if (downloaded != null && await downloaded.exists()) {
+        await downloaded.delete();
+      }
+    }
   }
 
   /// 封面是免鉴权路由（`/api/items/:id/cover`）。取不到不算失败——书没封面照样能用。

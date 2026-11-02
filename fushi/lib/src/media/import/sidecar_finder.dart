@@ -1,7 +1,9 @@
 import 'dart:io';
 
 import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart' show JapaneseLanguage;
 import 'package:fushi_engine/media/audiobook/audiobook_subtitle_formats.dart';
+import 'package:fushi_engine/media/audiobook/audiobook_subtitle_pick.dart';
 import 'package:path/path.dart' as p;
 
 /// 导入时在主文件同目录扫描到的同名 sidecar：字幕 + 音频（绝对路径）。
@@ -16,10 +18,6 @@ class SidecarMatch {
 
   bool get isEmpty => subtitlePath == null && audioPaths.isEmpty;
 }
-
-/// 字幕扩展名优先级（靠前者优先），用于同目录有多个同名字幕时择一：有声书字幕
-/// 唯一真相源 [kAudiobookSubtitleExtensions] 的迭代顺序（srt > vtt > ass > ssa > lrc）。
-final List<String> _subtitleExtPriority = kAudiobookSubtitleExtensions.toList();
 
 /// 默认字幕扩展集（书籍导入用，含 lrc）。视频导入传入不含 lrc 的子集，与视频
 /// 手选字幕白名单（srt/vtt/ass/ssa）保持一致——避免"自动挂载接受手选拒绝的格式"。
@@ -52,20 +50,23 @@ bool _isSidecarAudio(String name) {
 /// 拼回绝对路径。
 ///
 /// 匹配规则见 `docs/superpowers/specs/2026-06-06-import-sidecar-auto-attach-design.md`：
-/// - 字幕：去扩展名后完全等于主文件 stem，多命中按 [_subtitleExtPriority] 择一；
+/// - 字幕：与主文件同主干（`book.srt`，或带语言标记的 `book.ja.srt` / `book.jpn.srt`），
+///   按有声书字幕唯一规则 [pickAudiobookSubtitle] 择一：学习语言 [langCode] 标记的 >
+///   无标记的，别的语言的不挂；同名次按格式优先级（srt > vtt > ass > ssa > lrc）。
+///   [langCode] 缺省为日语（全 app 唯一的学习语言）；
 /// - 音频：完全同名，或同前缀多段（[_multipartSuffix]）。
 ({String? subtitle, List<String> audio}) selectSidecarNames({
   required String mainFileName,
   required List<String> siblingNames,
   bool wantAudio = true,
   Set<String> subtitleExts = defaultSubtitleExts,
+  String? langCode,
 }) {
   final String stem = p.basenameWithoutExtension(mainFileName).toLowerCase();
   if (stem.isEmpty) return (subtitle: null, audio: const <String>[]);
   final String selfName = p.basename(mainFileName).toLowerCase();
 
-  String? bestSubtitle;
-  int bestSubtitleRank = 1 << 30;
+  final List<String> subtitles = <String>[];
   final List<String> audio = <String>[];
 
   for (final String name in siblingNames) {
@@ -73,15 +74,8 @@ bool _isSidecarAudio(String name) {
     final String ext = p.extension(name).toLowerCase().replaceFirst('.', '');
     final String base = p.basenameWithoutExtension(name).toLowerCase();
 
-    // 字幕：要求完全同名。
     if (subtitleExts.contains(ext)) {
-      if (base == stem) {
-        final int rank = _subtitleExtPriority.indexOf(ext);
-        if (rank >= 0 && rank < bestSubtitleRank) {
-          bestSubtitleRank = rank;
-          bestSubtitle = name;
-        }
-      }
+      subtitles.add(name);
       continue;
     }
 
@@ -97,7 +91,16 @@ bool _isSidecarAudio(String name) {
   }
 
   audio.sort(compareAudioFilePath);
-  return (subtitle: bestSubtitle, audio: audio);
+  final int? subtitle = pickAudiobookSubtitle(
+    audioNames: <String>[mainFileName],
+    subtitleNames: subtitles,
+    langCode: langCode ?? JapaneseLanguage.instance.languageCode,
+    strictPerAudio: true,
+  );
+  return (
+    subtitle: subtitle == null ? null : subtitles[subtitle],
+    audio: audio,
+  );
 }
 
 /// 薄 IO 包装：列出 [mainFilePath] 所在目录 → [selectSidecarNames] → 拼回绝对路径。

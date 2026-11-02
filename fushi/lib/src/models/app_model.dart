@@ -7647,6 +7647,8 @@ class AppModel with ChangeNotifier {
   /// 发现页自动导入执行器（懒建；域导入器全接生产原语）。
   DiscoveryImportExecutor get discoveryImportExecutor =>
       _discoveryImportExecutor ??= DiscoveryImportExecutor(
+        // 包里有几份字幕时挑学习语言的那份（全 app 只有日语，与视频 sidecar 同源）。
+        subtitleLangCode: JapaneseLanguage.instance.languageCode,
         importers: buildProductionDiscoveryImporters(
           db: database,
           srtBookRepo: SrtBookRepository(database),

@@ -336,8 +336,10 @@ void main() {
       }
     });
 
-    test('有声书:多份正文/字幕时恒取字典序最小,与输入顺序无关', () {
-      const List<String> files = <String>[
+    test('有声书:多份正文恒取字典序最小;字幕按唯一规则挑,都与输入顺序无关', () {
+      // 两份互不相干的字幕（主干不同、都对不上音频）：挑哪份都是瞎猜，当作没有
+      // 字幕交转录——此前恒取字典序最小那份去当整本书的时间轴。
+      const List<String> unrelated = <String>[
         '/d/z-later.epub',
         '/d/a-first.epub',
         '/d/z-later.srt',
@@ -345,17 +347,82 @@ void main() {
         '/d/02.mp3',
         '/d/01.mp3',
       ];
-      for (final List<String> input in <List<String>>[
-        files,
-        files.reversed.toList(),
-      ]) {
+      // 同一主干的几种格式：按格式优先级挑 srt。
+      const List<String> sameStem = <String>[
+        '/d/book.epub',
+        '/d/book.vtt',
+        '/d/book.srt',
+        '/d/01.mp3',
+      ];
+      for (final bool reversed in <bool>[false, true]) {
+        List<String> order(List<String> l) =>
+            reversed ? l.reversed.toList() : l;
+        final TranscribeAudiobookPlan transcribe =
+            classifyDiscoveryDirectory(
+                  DiscoveryMediaKind.audiobook,
+                  order(unrelated),
+                  subtitleLangCode: 'ja',
+                )
+                as TranscribeAudiobookPlan;
+        expect(transcribe.contentPath, '/d/a-first.epub');
+        expect(transcribe.audioPaths, <String>['/d/01.mp3', '/d/02.mp3']);
         final AlignAudiobookPlan plan =
-            classifyDiscoveryDirectory(DiscoveryMediaKind.audiobook, input)
+            classifyDiscoveryDirectory(
+                  DiscoveryMediaKind.audiobook,
+                  order(sameStem),
+                  subtitleLangCode: 'ja',
+                )
                 as AlignAudiobookPlan;
-        expect(plan.contentPath, '/d/a-first.epub', reason: input.join(','));
-        expect(plan.subtitlePath, '/d/a-first.srt', reason: input.join(','));
-        expect(plan.audioPaths, <String>['/d/01.mp3', '/d/02.mp3']);
+        expect(plan.subtitlePath, '/d/book.srt');
       }
+    });
+
+    test('有声书:几份字幕时挑学习语言的;别的语言 / 每个音轨各一份不乱挑', () {
+      String? subtitleOf(DiscoveryImportPlan plan) => switch (plan) {
+        AlignAudiobookPlan(:final String subtitlePath) => subtitlePath,
+        SubtitleAudiobookPlan(:final String subtitlePath) => subtitlePath,
+        _ => null,
+      };
+      DiscoveryImportPlan classify(List<String> files) =>
+          classifyDiscoveryDirectory(
+            DiscoveryMediaKind.audiobook,
+            files,
+            subtitleLangCode: 'ja',
+          );
+
+      // 字典序里 en 排在 ja 前面：旧实现挂上英文。
+      expect(
+        subtitleOf(
+          classify(<String>['/d/book.en.srt', '/d/book.ja.srt', '/d/book.mp3']),
+        ),
+        '/d/book.ja.srt',
+      );
+      expect(
+        subtitleOf(classify(<String>['/d/book.jpn.vtt', '/d/book.mp3'])),
+        '/d/book.jpn.vtt',
+      );
+      // 跟音频同名的优先于不相干的。
+      expect(
+        subtitleOf(
+          classify(<String>['/d/aaa.srt', '/d/book.srt', '/d/book.mp3']),
+        ),
+        '/d/book.srt',
+      );
+      // 只有别的语言的字幕：不拿它当日语书的正文。
+      expect(
+        classify(<String>['/d/book.en.srt', '/d/book.mp3']),
+        isA<TranscribeAudiobookPlan>(),
+      );
+      // 每个音轨各一份字幕：拿 part1 当整本书的时间轴是错的，交给转录。
+      expect(
+        classify(<String>[
+          '/d/part1.mp3',
+          '/d/part2.mp3',
+          '/d/part1.srt',
+          '/d/part2.srt',
+        ]),
+        isA<TranscribeAudiobookPlan>(),
+      );
     });
 
     test('游戏:同层同体积平局按路径定二,与输入顺序无关', () {
