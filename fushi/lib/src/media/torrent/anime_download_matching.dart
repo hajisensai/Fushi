@@ -334,6 +334,7 @@ List<ResolvedSubtitleMatch> matchJimakuFilesToVideoNames(
   List<String> videoFileNames,
   List<JimakuFile> jimakuFiles, {
   String? preferredLanguage,
+  Map<String, String> contentLanguageByVersion = const <String, String>{},
 }) {
   if (videoFileNames.isEmpty || jimakuFiles.isEmpty) {
     return const <ResolvedSubtitleMatch>[];
@@ -354,6 +355,7 @@ List<ResolvedSubtitleMatch> matchJimakuFilesToVideoNames(
             ?parseVideoFilename(p.basename(path)).episode,
         ],
         preferredLanguage: preferredLanguage,
+        contentLanguageByVersion: contentLanguageByVersion,
       );
 
   // ① 按集号严格相等逐个视频反查。判据本身走共享原语

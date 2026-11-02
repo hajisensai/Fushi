@@ -66,7 +66,10 @@ final Set<int> _traditionalOnly = _kTraditionalOnlyChars.runes.toSet();
 
 bool _isKana(int rune) =>
     (rune >= 0x3041 && rune <= 0x3096) || // 平假名
-    (rune >= 0x30A1 && rune <= 0x30FA); // 片假名（不含长音符/中点等标点）
+    (rune >= 0x30A1 && rune <= 0x30FA) || // 片假名（不含长音符/中点等标点）
+    // 半角片假名（ｦ–ﾝ）：广播 CC 抽轨常见（`(ｲﾘｱ)ﾕﾌｨﾘｱ様｡`），不算进来
+    // 纯半角片假名的日语字幕会被汉字计数判成中文。
+    (rune >= 0xFF66 && rune <= 0xFF9D);
 
 bool _isHan(int rune) =>
     (rune >= 0x4E00 && rune <= 0x9FFF) ||

@@ -15,6 +15,8 @@ import 'package:fushi_engine/media/video/jimaku_client.dart'
 import 'package:fushi/src/media/video/subtitle/subtitle_episode_matching.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_version_groups.dart'
     show subtitleVersionKeyOf;
+import 'package:fushi/src/media/video/subtitle/subtitle_version_language_probe.dart'
+    show probeUnlabeledVersionLanguages;
 import 'package:fushi_engine/media/video/subtitle/embedded_reference_subtitle_sync.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_archive.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
@@ -276,6 +278,25 @@ Future<List<SubtitleBatchItem>> runSubtitleBatch({
     for (final SubtitleBatchTarget target in targets)
       resolveSubtitleBatchEpisode(target),
   ];
+  // 同一候选只下一次：语言探测下过的代表文件，被选中时直接复用。
+  final Map<String, Future<VideoSubtitleDownload>> downloads =
+      <String, Future<VideoSubtitleDownload>>{};
+  Future<VideoSubtitleDownload> download(VideoSubtitleCandidate c) =>
+      downloads[c.identityKey] ??= registry.download(c);
+  // 文件名没写语言的版本按正文判语言——否则它们在语言排名里垫底，整季会被
+  // 一个「文件名带了 ja 标记」的版本抢走（BUG-3993）。
+  final Map<String, String> probedLanguage =
+      await probeUnlabeledVersionLanguages<VideoSubtitleCandidate>(
+        files: candidates.where((VideoSubtitleCandidate c) => !c.isArchivePack),
+        targetEpisodes: episodes,
+        versionOf: subtitleVersionKeyOf,
+        declaredLanguageOf: (VideoSubtitleCandidate c) => c.language,
+        episodeOf: (VideoSubtitleCandidate c) => c.episode,
+        fetch: (VideoSubtitleCandidate c) async => (await download(c)).bytes,
+      );
+  String? languageOf(VideoSubtitleCandidate c) => c.language.isNotEmpty
+      ? c.language
+      : probedLanguage[subtitleVersionKeyOf(c)];
   // 整批共用一个版本（缺集由次选版本补），而不是逐集各挑各的——否则同一季会
   // `.ass` / `.srt`、不同发布组混排。
   final SubtitleEpisodeIndex<VideoSubtitleCandidate> index =
@@ -285,10 +306,8 @@ Future<List<SubtitleBatchItem>> runSubtitleBatch({
       ).preferConsistentVersion(
         targetEpisodes: episodes,
         versionOf: subtitleVersionKeyOf,
-        languageRankOf: (VideoSubtitleCandidate c) => jimakuLanguageRank(
-          c.language.isEmpty ? null : c.language,
-          preferred: preferredLanguage,
-        ),
+        languageRankOf: (VideoSubtitleCandidate c) =>
+            jimakuLanguageRank(languageOf(c), preferred: preferredLanguage),
         fileNameOf: (VideoSubtitleCandidate c) => c.fileName,
       );
   final _ArchivePackSplitter packs = _ArchivePackSplitter(
@@ -322,27 +341,28 @@ Future<List<SubtitleBatchItem>> runSubtitleBatch({
         // 别全压成一句「无匹配」。
         item.message = packs.failureReason ?? match.failureReason;
       } else {
-        final VideoSubtitleDownload download =
-            fromPack ?? await registry.download(best!);
-        if (download.bytes.isEmpty) {
+        final VideoSubtitleDownload fetched = fromPack ?? await download(best!);
+        if (fetched.bytes.isEmpty) {
           item.status = SubtitleBatchStatus.failed;
           item.message = 'download';
         } else {
           if (!dir.existsSync()) dir.createSync(recursive: true);
           final String dest = p.join(
             dir.path,
-            batchSubtitleFileName(target.bookUid, download.fileName),
+            batchSubtitleFileName(target.bookUid, fetched.fileName),
           );
           // 流媒体没有本地文件可读内嵌轨，对齐器自己会原样返回。网络路径
           // （UNC / smb:// …）是后台批量，不抽内嵌轨——整片 demux 走网络等于把整部
           // 视频拉一遍，原样写。
           await File(dest).writeAsBytes(
             subtitleAligner == null || isNetworkMediaPath(target.videoPath)
-                ? download.bytes
-                : await subtitleAligner(download.bytes, target.videoPath),
+                ? fetched.bytes
+                : await subtitleAligner(fetched.bytes, target.videoPath),
           );
           item.subtitlePath = dest;
-          item.language = download.language.isEmpty ? null : download.language;
+          item.language = fetched.language.isNotEmpty
+              ? fetched.language
+              : (best == null ? null : languageOf(best));
           item.status = SubtitleBatchStatus.done;
         }
       }

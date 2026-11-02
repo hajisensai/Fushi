@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -22,9 +23,15 @@ class _Cand extends VideoSubtitleCandidate {
 }
 
 class _FakeProvider implements VideoSubtitleProvider {
-  _FakeProvider({this.failNames = const <String>{}});
+  _FakeProvider({
+    this.failNames = const <String>{},
+    this.bodies = const <String, String>{},
+  });
 
   final Set<String> failNames;
+
+  /// 文件名 → 正文；未列出的回一段不含可判语言文字的 SRT。
+  final Map<String, String> bodies;
   final List<String> downloaded = <String>[];
 
   @override
@@ -58,7 +65,9 @@ class _FakeProvider implements VideoSubtitleProvider {
     }
     return VideoSubtitleDownload(
       bytes: Uint8List.fromList(
-        '1\n00:00:01,000 --> 00:00:02,000\nx\n'.codeUnits,
+        utf8.encode(
+          bodies[candidate.fileName] ?? '1\n00:00:01,000 --> 00:00:02,000\nx\n',
+        ),
       ),
       fileName: candidate.fileName,
       language: candidate.language,
@@ -241,7 +250,74 @@ void main() {
       ]);
     });
 
-    test('语言偏好仍高于覆盖：未知语言的全季版本不压过 ja 版本', () async {
+    String assBody(String line) => <String>[
+      '[Events]',
+      'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, '
+          'Effect, Text',
+      for (int i = 0; i < 6; i++)
+        'Dialogue: 0,0:00:0$i.00,0:00:0$i.90,Default,,0,0,0,,$line',
+    ].join('\n');
+
+    test('文件名没写语言的版本按正文判语言：日语正文的全季 ASS 拿下整季，代表文件不重下', () async {
+      final _FakeProvider provider = _FakeProvider(
+        bodies: <String, String>{
+          for (int ep = 1; ep <= 3; ep++)
+            shincaps(ep, 'ass'): assBody('サーカスは　みんなを幸せにするんだ'),
+        },
+      );
+      final List<SubtitleBatchItem> results = await runSubtitleBatch(
+        registry: VideoSubtitleRegistry(<VideoSubtitleProvider>[provider]),
+        candidates: <VideoSubtitleCandidate>[
+          _Cand(
+            '[Nekomoe kissaten&LoliHouse] Grow Up Show - 01 [WebRip][JPN].ass',
+            episode: 1,
+          ),
+          for (int ep = 1; ep <= 3; ep++) ...<VideoSubtitleCandidate>[
+            _Cand(shincaps(ep, 'ass'), episode: ep, language: ''),
+            _Cand(netflix(ep), episode: ep),
+          ],
+        ],
+        targets: targets(3),
+        saveDirectory: tmp.path,
+      );
+      // 探测下的第 1 集代表文件就是第 1 集要用的那份：只下一次。
+      expect(provider.downloaded, <String>[
+        shincaps(1, 'ass'),
+        shincaps(2, 'ass'),
+        shincaps(3, 'ass'),
+      ]);
+      expect(
+        results.map((SubtitleBatchItem i) => i.language).toList(),
+        <String>['ja', 'ja', 'ja'],
+      );
+    });
+
+    test('正文是中文的未标语言版本不压过 ja 版本', () async {
+      final _FakeProvider provider = _FakeProvider(
+        bodies: <String, String>{
+          for (int ep = 1; ep <= 3; ep++)
+            shincaps(ep, 'ass'): assBody('马戏团会让所有人都幸福的'),
+        },
+      );
+      await runSubtitleBatch(
+        registry: VideoSubtitleRegistry(<VideoSubtitleProvider>[provider]),
+        candidates: <VideoSubtitleCandidate>[
+          for (int ep = 1; ep <= 3; ep++)
+            _Cand(shincaps(ep, 'ass'), episode: ep, language: ''),
+          for (int ep = 1; ep <= 3; ep++) _Cand(netflix(ep), episode: ep),
+        ],
+        targets: targets(3),
+        saveDirectory: tmp.path,
+      );
+      expect(provider.downloaded, <String>[
+        shincaps(1, 'ass'), // 探测
+        netflix(1),
+        netflix(2),
+        netflix(3),
+      ]);
+    });
+
+    test('正文也判不出的版本：语言偏好仍高于覆盖，不压过 ja 版本', () async {
       final _FakeProvider provider = _FakeProvider();
       await runSubtitleBatch(
         registry: VideoSubtitleRegistry(<VideoSubtitleProvider>[provider]),
@@ -254,7 +330,7 @@ void main() {
         saveDirectory: tmp.path,
       );
       expect(provider.downloaded, <String>[
-        shincaps(1, 'ass'),
+        shincaps(1, 'ass'), // 探测（同时就是第 1 集要用的那份）
         netflix(2),
         netflix(3),
       ]);

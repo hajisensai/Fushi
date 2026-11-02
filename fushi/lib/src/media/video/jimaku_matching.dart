@@ -76,15 +76,20 @@ String jimakuVersionKeyOf(JimakuFile file) => <String>[
 
 /// [index] 按整批 [targetEpisodes] 做版本一致性重排（见
 /// [SubtitleEpisodeIndex.preferConsistentVersion]）。
+///
+/// [contentLanguageByVersion]：文件名认不出语言的版本按正文判出的语言
+/// （`probeUnlabeledVersionLanguages`，键 = [jimakuVersionKeyOf]）。
 SubtitleEpisodeIndex<JimakuFile> preferConsistentJimakuVersion(
   SubtitleEpisodeIndex<JimakuFile> index, {
   required Iterable<int> targetEpisodes,
   String? preferredLanguage,
+  Map<String, String> contentLanguageByVersion = const <String, String>{},
 }) => index.preferConsistentVersion(
   targetEpisodes: targetEpisodes,
   versionOf: jimakuVersionKeyOf,
   languageRankOf: (JimakuFile file) => jimakuLanguageRank(
-    detectSubtitleLanguage(file.name),
+    detectSubtitleLanguage(file.name) ??
+        contentLanguageByVersion[jimakuVersionKeyOf(file)],
     preferred: preferredLanguage,
   ),
   fileNameOf: (JimakuFile file) => file.name,

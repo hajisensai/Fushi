@@ -1,6 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi/src/media/torrent/anime_download_matching.dart';
+import 'package:fushi/src/media/video/jimaku_matching.dart'
+    show jimakuVersionKeyOf;
 import 'package:fushi_engine/media/torrent/nyaa_client.dart';
 import 'package:fushi_engine/media/video/jimaku_client.dart';
 
@@ -498,6 +500,32 @@ void main() {
           'Test Anime - 02.ja.ass',
           'Test Anime - 03.ja.ass',
         ],
+      );
+    });
+
+    test('文件名没写语言、正文判为日语的版本参与语言排名（BUG-3993）', () {
+      String ep2(int ep) => ep.toString().padLeft(2, '0');
+      final List<JimakuFile> files = <JimakuFile>[
+        for (int ep = 1; ep <= 3; ep++) ...<JimakuFile>[
+          _file('テスト.S01E${ep2(ep)}.WEBRip.Netflix.ja[cc].srt'),
+          _file('[shincaps] Test Anime - ${ep2(ep)} (AT-X).ass'),
+        ],
+      ];
+      List<String> picked(Map<String, String> probed) =>
+          matchJimakuFilesToVideoNames(
+            packVideos(<int>[1, 2, 3]),
+            files,
+            contentLanguageByVersion: probed,
+          ).map((ResolvedSubtitleMatch m) => m.file.name).toList();
+      // 不探测：shincaps 语言未知，整包落在 Netflix（一致但不是 ass）。
+      expect(
+        picked(const <String, String>{}),
+        everyElement(contains('Netflix')),
+      );
+      // 正文判为日语后：同语言同覆盖，ASS 版本拿下整包。
+      expect(
+        picked(<String, String>{jimakuVersionKeyOf(files[1]): 'ja'}),
+        everyElement(startsWith('[shincaps]')),
       );
     });
 
