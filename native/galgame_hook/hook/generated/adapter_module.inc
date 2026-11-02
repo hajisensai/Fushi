@@ -19,3 +19,4 @@
         kogado_hy_.onModuleLoaded(entry.szModule);
         luca_.onModuleLoaded(entry.szModule);
         knife_.onModuleLoaded(entry.szModule);
+        softpal_.onModuleLoaded(entry.szModule);

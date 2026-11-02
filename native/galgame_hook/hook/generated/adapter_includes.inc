@@ -19,3 +19,4 @@
 #include "../adapters/kogado_hy_adapter.inc"
 #include "../adapters/luca_adapter.inc"
 #include "../adapters/knife_adapter.inc"
+#include "../adapters/softpal_adapter.inc"

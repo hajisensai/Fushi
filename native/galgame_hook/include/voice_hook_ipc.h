@@ -388,6 +388,10 @@ constexpr uint32_t kTextSourceKnife = 13;
 // FVP (Favorite View Point) exact text published by the native TextPrint
 // (text object Print) hook.
 constexpr uint32_t kTextSourceFvp = 10;
+// SoftPal ADV System (Pal.dll) exact text: the page one PalSpriteLock ..
+// PalSpriteUnlock transaction lays out with PalFontDrawText, speaker plate
+// excluded (16 = first unused id on every local branch, checked 2026-11-03).
+constexpr uint32_t kTextSourceSoftpal = 16;
 constexpr uint32_t kTextEventLine = 0;
 constexpr uint32_t kTextEventThreadDiscovered = 1;
 // Some Luna engine hooks expose scenario text and system controls from the
@@ -951,6 +955,9 @@ constexpr uint32_t kLookupGeometryProviderIdMalie = 28u;
 // FVP (Favorite View Point) text-buffer print exact layout provider
 // (append-only id).
 constexpr uint32_t kLookupGeometryProviderIdFvp = 23u;
+// SoftPal ADV System (Pal.dll) sprite text-transaction exact layout provider
+// (append-only id; 29 = first unused id on every local branch, 2026-11-03).
+constexpr uint32_t kLookupGeometryProviderIdSoftpal = 29u;
 
 constexpr uint32_t kLookupGeometryStatusUnavailable = 0u;
 constexpr uint32_t kLookupGeometryStatusReady = 1u;

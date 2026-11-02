@@ -117,6 +117,11 @@ add_library(fushi_voice_hook SHARED
   "hook/adapters/knife_adapter.inc"
   "hook/adapters/knife_core.h"
   "hook/adapters/knife_profile.h"
+  "hook/adapters/softpal_adapter.inc"
+  "hook/adapters/softpal_core.h"
+  "hook/adapters/softpal_lookup.inc"
+  "hook/adapters/softpal_profile.h"
+  "hook/adapters/softpal_text.inc"
   "hook/adapters/fvp_adapter.inc"
   "hook/adapters/fvp_profile.h"
   "hook/adapters/fvp_lookup.inc"
@@ -1251,3 +1256,7 @@ add_executable(fushi_knife_adapter_test "tests/knife_adapter_test.cpp")
 target_include_directories(fushi_knife_adapter_test PRIVATE "hook" "hook/adapters")
 target_compile_definitions(fushi_knife_adapter_test PRIVATE UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
 add_test(NAME fushi_knife_adapter_test COMMAND fushi_knife_adapter_test)
+add_executable(fushi_softpal_adapter_test "tests/softpal_adapter_test.cpp")
+target_include_directories(fushi_softpal_adapter_test PRIVATE "hook" "hook/adapters")
+target_compile_definitions(fushi_softpal_adapter_test PRIVATE UNICODE NOMINMAX WIN32_LEAN_AND_MEAN)
+add_test(NAME fushi_softpal_adapter_test COMMAND fushi_softpal_adapter_test)
