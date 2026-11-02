@@ -138,7 +138,7 @@
 - **提交并过了推送门就直接 push + 开 PR，不要问（用户 2026-10-24 拍板：「不要每次老问我要不要推送并开pr，直接推送+pr就行，除非要让我决策」）**：收尾时不再问「要我推送并开 PR 吗？」，也不出这类按钮；只有真要用户拍板的事（方案取舍、范围扩大、风险判断）才问。合并仍等用户明说（见「基本规则」worktree 条）。
 - push 前按 [docs/agent/build.md](docs/agent/build.md) 的版本号规则判断是否 bump `fushi/pubspec.yaml`：**`+build` 每次发布单调 +1**（可读发布序号，与语义版本无关，多数发布只 +build）；**语义版本 `X.Y.Z` 按里程碑升**——一批功能/大改升 minor 重置 patch、一批修复升 patch，不是每个 commit 都升；Android `versionCode` 由 CI `git rev-list --count HEAD` 自动，不靠 `+build`。
 - 发布通道硬规则：默认 `main` / `develop` push 只能进入 debug / prerelease / non-Latest 通道；测试版和正式版只能通过手动 `workflow_dispatch` 或手动发布 GitHub Release 触发；push 不得创建或更新 Latest/正式 release。
-- **每次大合并进 `develop` 后必须有一次 TestFlight（debug 通道）上传**：发布序列 `% 3 == 0` 时 push 的 `release-desktop.yml` 会自动传（确认没被后续 push 顶掉），否则补发 `gh workflow run release-desktop.yml --repo hajisensai/fushi --ref develop -f channel=debug -f testflight_only=true`。序列算法见细则。（[细则](docs/agent/rules-detail.md#大合并后-testflight)）
+- **TestFlight 不用人管**：`develop` / `main` 每次 push 的 `release-desktop.yml` 都自动传 debug 包到 TestFlight（用户 2026-11-02 拍板，取代旧「大合并后核序列 `% 3`、不整除手动补发」），合并后不用查序列、不用补发。（[细则](docs/agent/rules-detail.md#testflight-每次-push-自动传)）
 - Android / Windows debug/beta 发布必须按 [docs/agent/build.md](docs/agent/build.md) 使用跨 workflow 统一 release 序列；同一 commit/语义版本不得用各自 workflow run number 拆成两个同版本预发布入口，发布 workflow 会先跑 `tool/check_release_policy.ps1` 守卫。
 - 提交前 `git status --short`，**只 stage 本轮相关文件**（禁止 `git add -A`——本工作区可能有并发 agent 的无关改动）；再 `git diff --cached --check`。
 - 提交信息简洁说明真实改动（如 `docs: rewrite agent rules` / `fix(reader): preserve restore position`）。

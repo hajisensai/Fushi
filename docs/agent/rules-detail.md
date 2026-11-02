@@ -70,6 +70,6 @@
 
 - 集成测试操作真 app **一律焦点驱动（`FocusDriver` / `tester.sendKeyEvent`，禁止 `tester.tap` 或坐标点击）**：`Tab` 遍历→检测控件类型→Switch/按钮确认用 `Enter`（**不要用空格**——App 已把裸空格中和为 `DoNothingIntent`，焦点确认统一走 Enter / 手柄 A，见 `fushi/lib/src/shortcuts/global_navigation.dart`）、Slider/Stepper/Segmented 用方向键→断言真写穿 DB/真生效→还原。同一份测试两端可跑（模拟器 `-d emulator-<port>` / Windows 离屏 `fushi/tool/run_windows_itest.ps1`），完整流程见 [docs/agent/integration-testing.md](docs/agent/integration-testing.md) 的「焦点驱动操作」。
 
-## 大合并后 TestFlight
+## TestFlight 每次 push 自动传
 
-- **每次大合并进 `develop` 后必须有一次 TestFlight（debug 通道）上传**（用户 2026-10-14 拍板）。「大合并」= 一次批量合入多条 PR，或一条大型功能 PR 合入 `develop`。合并 push 后核对该 push 的发布序列（`git rev-list --count HEAD + 2000`；本地浅克隆算不准，用 `gh api -i "repos/hajisensai/fushi/commits?sha=develop&per_page=1"` 的 Link 头 `page=N; rel="last"` 取真 commit 数）：`% 3 == 0` 时 push 的 `release-desktop.yml` 会自动传 TF（仍要确认那条 run 没被后续 push 顶掉）；否则补发 `gh workflow run release-desktop.yml --repo hajisensai/fushi --ref develop -f channel=debug -f testflight_only=true`（只传 TF、不发 Release）。细节见 [docs/agent/build.md](docs/agent/build.md)「Apple 签名与 TestFlight」。
+- **`develop` / `main` 每次 push 的 `release-desktop.yml` 都自动把 debug 包传 TestFlight**（用户 2026-11-02 拍板「删掉这个设定吧，改成每次 ci 自动推 tf，不用每次看」）。取代 2026-10-14 的「大合并后必须有一次 TF：核发布序列 `% 3 == 0`，不整除就手动补发 `testflight_only`」——合并后不再查序列、不再补发。被后续 push 顶掉的 pending run 不传，由顶掉它的那轮（更新的 commit）传。`testflight_only=true` 的手动 dispatch 仍保留作补传，但同一 sha 上已自动传过就会撞构建号被 ASC 拒（见 [docs/agent/build.md](docs/agent/build.md)「Apple 签名与 TestFlight」）。
