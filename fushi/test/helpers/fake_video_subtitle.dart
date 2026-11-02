@@ -1,7 +1,6 @@
 /// 视频字幕管线 app 层测试共用的替身（服务 / 面板 / 专名表页 / ctl 路由）。
 library;
 
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:fushi/src/media/video/subtitle/app_video_subtitle_service.dart';
@@ -9,6 +8,7 @@ import 'package:fushi/src/media/video/subtitle/video_subtitle_model_ports.dart';
 import 'package:fushi_asr_core/asr_core.dart' show ModelDownloadEvent;
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/ai/web_knowledge.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/ai_text_completer.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_draft.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_glossary.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_pipeline_cancel.dart';
@@ -109,7 +109,7 @@ AiProviderConfig testProvider() => AiProviderConfig(
 /// 专名表 / 校对 / 写法统一都按提示词答出合法回复。
 String answerAll(String prompt, int call) {
   if (prompt.contains('誤認識されやすい固有名詞の表')) {
-    return jsonEncode(<Map<String, Object?>>[
+    return glossaryReply(<Map<String, Object?>>[
       <String, Object?>{
         'ja': '唯',
         'reading': 'ゆい',
@@ -121,8 +121,9 @@ String answerAll(String prompt, int call) {
   final List<int> ids = targetIdsOf(prompt);
   if (ids.isNotEmpty) return replyForIds(prompt, (int id) => '唯が来た');
   final RegExp main = RegExp(r'^id=(\d+) \[[^\]]*\] 主: (.*)$', multiLine: true);
-  return jsonEncode(<String, String>{
+  return <String>[
     for (final RegExpMatch m in main.allMatches(prompt))
-      m.group(1)!: m.group(2)!,
-  });
+      '${m.group(1)!}\t${m.group(2)!}',
+    kAiLineReplyEnd,
+  ].join('\n');
 }

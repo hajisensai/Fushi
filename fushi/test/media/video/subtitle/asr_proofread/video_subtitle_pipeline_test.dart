@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -52,7 +51,7 @@ final RegExp _kClipId = RegExp(r'^id=([0-9a-f]{40})$', multiLine: true);
 /// 按提示词种类作答：S0 专名表 / S3 原样返回 / S4 结衣→唯 / 短片段一律 song。
 String _answer(String prompt, int call) {
   if (prompt.contains('誤認識されやすい固有名詞の表')) {
-    return jsonEncode(<Map<String, Object?>>[
+    return glossaryReply(<Map<String, Object?>>[
       <String, Object?>{
         'ja': '唯',
         'reading': 'ゆい',
@@ -62,19 +61,21 @@ String _answer(String prompt, int call) {
     ]);
   }
   if (prompt.startsWith('あなたは日本語アニメ字幕の校正者')) {
-    return jsonEncode(<String, String>{
+    return <String>[
       for (final RegExpMatch m in _kMain.allMatches(prompt))
-        m.group(1)!: m.group(2)!,
-    });
+        '${m.group(1)!}\t${m.group(2)!}',
+      kAiLineReplyEnd,
+    ].join('\n');
   }
   if (prompt.startsWith('あなたは日本語アニメ「')) {
     return replyForIds(prompt, (int id) => '唯が来た!');
   }
   if (prompt.contains('特典映像・短編')) {
-    return jsonEncode(<String, String>{
+    return <String>[
       for (final RegExpMatch m in _kClipId.allMatches(prompt))
-        m.group(1)!: 'song',
-    });
+        '${m.group(1)!}\tsong',
+      kAiLineReplyEnd,
+    ].join('\n');
   }
   throw StateError('unexpected prompt: ${prompt.substring(0, 40)}');
 }

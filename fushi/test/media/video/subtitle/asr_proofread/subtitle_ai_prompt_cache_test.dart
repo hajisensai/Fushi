@@ -237,7 +237,7 @@ void main() {
 
     test('歌曲判定：前缀是规则 + 作品名，片段在本批', () async {
       final FakeAiCompleter ai = FakeAiCompleter(
-        (String prompt, int call) => '{"a": "song"}',
+        (String prompt, int call) => 'a\tsong\nEND',
       );
       await SubtitleClipClassifier(completer: ai).classify(
         clips: <String, List<String>>{
@@ -262,9 +262,8 @@ void main() {
         call++;
         // 第一次给一张对不上音频的表（触发身份重做），第二次给对的。
         return call == 1
-            ? '[{"ja":"ア","kind":"人名"},{"ja":"イ","kind":"人名"},'
-                  '{"ja":"ウ","kind":"人名"},{"ja":"エ","kind":"人名"}]'
-            : '[{"ja":"唯","reading":"ゆい","kind":"人名"}]';
+            ? 'ア\t\t人名\nイ\t\t人名\nウ\t\t人名\nエ\t\t人名\nEND'
+            : '唯\tゆい\t人名\nEND';
       });
       await SubtitleGlossaryBuilder(completer: ai).build(
         // 无刮削身份：只有这条路会做身份重做（有刮削时覆盖率低只警告）。
@@ -280,7 +279,7 @@ void main() {
       expect(ai.bodies[0], contains('唯ちゃん'));
       expect(ai.bodies[1], contains('前回作った表の人名はほとんど音声に出てこなかった'));
       expect(ai.prompts[0], startsWith('日本のアニメ「けいおん!」'));
-      expect(ai.prompts[0], endsWith(']'));
+      expect(ai.prompts[0], endsWith(kSubtitleGlossaryLineFormat));
     });
   });
 

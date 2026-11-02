@@ -6,21 +6,20 @@
 ///    （「ルシファ」⊂「ルシファー」）。
 /// 2. [subtitleLyricLike]：疑似唱段（7 行窗口内 ≥6 条 ≤14 字、说话人 ≤1 种、最大
 ///    间隔 <0.8 s）。
-/// 3. 只把被标出的行连同前后 2 行交给 AI，每批 40 行，回复必须覆盖全部 id。
-///    结果缓存 `consistency.json`。
+/// 3. 只把被标出的行连同前后 2 行交给 AI，每批 40 行；回复走行协议
+///    （[runAiLineExchange]），只写要改的行 + 结束标记。结果缓存 `consistency.json`。
 library;
 
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/ai_text_completer.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_draft.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_glossary.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_pipeline_cancel.dart';
 
-/// S4 提示词（`consistency.py` 的 `RULES`，逐字照搬）。占位符：`{title}` /
-/// `{glossary}` / `{lines}`。
+/// S4 提示词（`consistency.py` 的 `RULES`；除输出格式一句外逐字照搬——基准要求 JSON
+/// 写全部 id，这里只写改动的行）。占位符：`{title}` / `{glossary}` / `{lines}`。
 const String kSubtitleConsistencyRules =
     '''あなたは日本語アニメ「{title}」字幕の最終校正者です。下の各行は、固有名詞表の表記と食い違う可能性がある語、
 または歌唱(歌詞)の可能性がある行として機械的に抽出されたものです。前後の行を参考に、各対象行について判断してください。
@@ -28,7 +27,7 @@ const String kSubtitleConsistencyRules =
 - 表の語を指していない(一般語、別の人物、偶然の一致)なら、そのままにする。
 - 歌唱中の歌詞と判断できる行は、本文はそのまま、先頭に「♪」を付ける(既に付いていれば何もしない)。台詞なら付けない。
 - それ以外の箇所は変えない。
-出力は JSON オブジェクトのみ: {"<id>": "<修正後の行>", ...}。全ての対象 id を含める。
+出力は変更する行だけを 1 行 1 件で書く: <id><TAB><修正後の行>。変更しない行は書かない。id の昇順に書き、最後の行に END とだけ書く(変更が無ければ END だけ)。説明文は書かない。
 
 固有名詞表:
 {glossary}
@@ -208,7 +207,7 @@ class SubtitleConsistencyPass {
   final int maxAttempts;
 
   /// [cacheFile] 存在即复用（`{"fix": {...}, "usage": {...}}`）；否则只问被标出的行，
-  /// 全部批次都覆盖了全部 id 才写缓存（没有被标出的行也写一份空缓存，标记完成）。
+  /// 全部批次的回复都写完才写缓存（没有被标出的行也写一份空缓存，标记完成）。
   Future<SubtitleConsistencyResult> run({
     required List<SubtitleDraftCue> cues,
     required String title,
@@ -289,47 +288,43 @@ class SubtitleConsistencyPass {
           '  疑い: ${flagged[i]!.join('、')}';
     }
 
-    String bodyFor(Iterable<int> ids) => ids.map(lineFor).join('\n');
-    final String prefix = buildConsistencyStablePrefix(
-      title: title,
-      glossaryText: glossaryText,
-    );
-    // 同 S3：答到的 id 跨次累积，只补问剩下的（截断 / 漏写时原样重发只会再错一次）；
-    // 连续 [maxAttempts] 次没有新 id 才失败。
-    final Set<String> want = <String>{for (final int i in chunk) '$i'};
+    // 同 S3：改动跨轮累积；回复按 id 升序只写改动的行，没写完时下一轮只问最后一条
+    // 之后的 id。
     final Map<String, Object?> answered = <String, Object?>{};
-    int fruitless = 0;
-    while (true) {
-      throwIfSubtitleCancelled(cancel);
-      final List<int> ask = <int>[
+    int next = chunk.first;
+    await runAiLineExchange(
+      completer: completer,
+      stablePrefix: buildConsistencyStablePrefix(
+        title: title,
+        glossaryText: glossaryText,
+      ),
+      body: () => <String>[
         for (final int i in chunk)
-          if (!answered.containsKey('$i')) i,
-      ];
-      final AiChatCompletion reply = await completer.complete(
-        bodyFor(ask),
-        stablePrefix: prefix,
-      );
-      usage.addCall(reply.usage);
-      final Object? got = decodeAiJsonReply(reply.text);
-      final int before = answered.length;
-      if (got is Map) {
-        got.forEach((Object? k, Object? v) {
-          if (want.contains('$k')) answered['$k'] = v;
-        });
-      }
-      if (answered.length == want.length) return answered;
-      if (answered.length > before) {
-        fruitless = 0;
-      } else if (++fruitless >= maxAttempts) {
-        break;
-      }
-    }
-    throw SubtitleAiRequestFailure(
-      kSubtitleAiReplyIncomplete,
-      detail:
+          if (i >= next) lineFor(i),
+      ].join('\n'),
+      absorb: (List<String> lines) {
+        final int from = next;
+        int added = 0;
+        for (final String line in lines) {
+          final (String, String)? record = splitAiLineRecord(line);
+          final int? id = record == null ? null : int.tryParse(record.$1);
+          if (id == null || id < from || !flagged.containsKey(id)) continue;
+          if (!chunk.contains(id) || answered.containsKey('$id')) continue;
+          answered['$id'] = record!.$2;
+          added++;
+          if (id >= next) next = id + 1;
+        }
+        return added;
+      },
+      done: (AiLineReply reply) => reply.complete || next > chunk.last,
+      failureDetail: () =>
           'consistency batch ${chunk.first}-${chunk.last}: '
-          'reply missing ids',
+          'no complete reply from id $next',
+      usage: usage,
+      cancel: cancel,
+      maxAttempts: maxAttempts,
     );
+    return answered;
   }
 
   static Map<String, Object?>? _readCache(

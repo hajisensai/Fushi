@@ -42,7 +42,7 @@ class SubtitleAiRequestFailure implements Exception {
       'SubtitleAiRequestFailure($reason${detail == null ? '' : ': $detail'})';
 }
 
-/// 回复反复不合格（缺 id / 不是 JSON）。
+/// 回复反复不合格：连续几轮一条新记录都没拿到（[runAiLineExchange]）。
 const String kSubtitleAiReplyIncomplete = 'reply_incomplete';
 
 /// 开了 AI 校对，但「字幕校对」功能解析不出可用的提供商。
@@ -220,59 +220,100 @@ Object? decodeLooseAiJson(String reply) {
   }
 }
 
-/// [decodeLooseAiJson] 解析不出时的退路：回复里第一个 JSON 对象 / 数组若没写完
-/// （输出撞上 `max_tokens` 截断、模型写坏了尾巴），抢救出其中**写完整的顶层成员**，
-/// 返回只含这些成员的 Map / List；一个完整成员都没有返回 null。
+/// 字幕各阶段的回复协议：**一行一条记录，最后一行写 [kAiLineReplyEnd]**。
 ///
-/// 截断回复原样重发只会在同一处再截一次——各阶段把抢救出的部分记下，只再问剩下的。
-Object? salvageTruncatedAiJson(String reply) {
-  final int start = reply.indexOf(RegExp(r'[\[{]'));
-  if (start < 0) return null;
-  final String close = reply[start] == '{' ? '}' : ']';
-  final List<int> cuts = <int>[];
-  int depth = 0;
-  bool inString = false;
-  bool escaped = false;
-  for (int i = start; i < reply.length; i++) {
-    final String ch = reply[i];
-    if (inString) {
-      if (escaped) {
-        escaped = false;
-      } else if (ch == r'\') {
-        escaped = true;
-      } else if (ch == '"') {
-        inString = false;
-      }
-      continue;
-    }
-    switch (ch) {
-      case '"':
-        inString = true;
-      case '{' || '[':
-        depth++;
-      case '}' || ']':
-        depth--;
-        if (depth == 0) return _tryDecode(reply.substring(start, i + 1));
-      case ',' when depth == 1:
-        // 逗号前的顶层成员是完整的。
-        cuts.add(i);
-    }
-  }
-  for (final int cut in cuts.reversed) {
-    final Object? got = _tryDecode('${reply.substring(start, cut)}$close');
-    if (got != null) return got;
-  }
-  return null;
+/// 不用 JSON：输出撞上 `max_tokens` 截断时 JSON 整段不闭合、解析不出；一行一条
+/// 时只丢最后半行，前面写完的行照用，接着只问剩下的。结束标记让「写完了」成为
+/// 显式信号——S3 / S4 只写改动的行，没有它就分不清「这批不用改」和「没写完」。
+const String kAiLineReplyEnd = 'END';
+
+/// 一次回复按行协议解析的结果。
+class AiLineReply {
+  const AiLineReply({required this.lines, required this.complete});
+
+  /// 写完整的记录行（去掉空行、代码围栏、[kAiLineReplyEnd] 及其后的内容；回复
+  /// 没写完时，没有换行收尾的最后一行可能被截了半截，也丢掉）。
+  final List<String> lines;
+
+  /// 回复确实写完了：没有被截断，且写了 [kAiLineReplyEnd]，或提供商报了正常
+  /// 结束的停止原因（停止原因是权威信号；结束标记是拿不到停止原因时的退路）。
+  final bool complete;
 }
 
-Object? _tryDecode(String json) {
-  try {
-    return jsonDecode(json);
-  } on FormatException {
-    return null;
+/// 按行协议解析 [reply]。
+AiLineReply parseAiLineReply(AiChatCompletion reply) {
+  final String text = reply.text;
+  final List<String> raw = text.split('\n');
+  final List<String> lines = <String>[];
+  bool sawEnd = false;
+  for (int k = 0; k < raw.length; k++) {
+    String line = raw[k];
+    if (line.endsWith('\r')) line = line.substring(0, line.length - 1);
+    final String trimmed = line.trim();
+    if (trimmed == kAiLineReplyEnd) {
+      sawEnd = true;
+      break;
+    }
+    if (trimmed.isEmpty || trimmed.startsWith('```')) continue;
+    lines.add(line);
   }
+  final bool complete =
+      !reply.truncated && (sawEnd || reply.stopReason != null);
+  if (!complete && !sawEnd && lines.isNotEmpty && !text.endsWith('\n')) {
+    lines.removeLast();
+  }
+  return AiLineReply(lines: lines, complete: complete);
 }
 
-/// 各阶段解析 AI 回复的统一入口：先整段宽松解析，不行再抢救截断回复里完整的部分。
-Object? decodeAiJsonReply(String reply) =>
-    decodeLooseAiJson(reply) ?? salvageTruncatedAiJson(reply);
+final RegExp _kAiLineRecord = RegExp(
+  r'^\s*(?:id=)?([^\s:：|]+)(?:\t|\s*[:：|]\s*|\s+)(.*)$',
+);
+
+/// `<键><TAB><值>` 记录拆成键与值（值可为空：`12<TAB>` = 把第 12 行清空）。模型偶尔
+/// 把 TAB 写成空格 / 冒号 / 竖线，一并接受；只在第一个分隔处拆，值里的分隔符原样
+/// 保留。不是记录的行（说明文）返回 null。
+(String, String)? splitAiLineRecord(String line) {
+  final RegExpMatch? m = _kAiLineRecord.firstMatch(line);
+  if (m == null) return null;
+  return (m.group(1)!, m.group(2)!.trimRight());
+}
+
+/// 各阶段共用的问答循环：问 [body]（每轮重新构造，只含还没答到的部分）→ 按行协议
+/// 解析 → [absorb] 收下新记录（返回新增条数）→ [done] 判定是否结束。
+///
+/// 回复截断 / 漏写时已收下的记录跨轮保留、下一轮只问剩下的，所以每轮都有进展就一直
+/// 问下去；只有连续 [maxAttempts] 轮一条新记录都没拿到才抛
+/// [kSubtitleAiReplyIncomplete]（[failureDetail] 进 `detail`）。请求本身失败（额度 /
+/// 鉴权 / 网络）由 [AiTextCompleter] 原样抛出，不在这里重试。
+Future<void> runAiLineExchange({
+  required AiTextCompleter completer,
+  required String stablePrefix,
+  required String Function() body,
+  required int Function(List<String> lines) absorb,
+  required bool Function(AiLineReply reply) done,
+  required String Function() failureDetail,
+  required SubtitleAiUsageTally usage,
+  required SubtitleCancelToken cancel,
+  int maxAttempts = 3,
+}) async {
+  int fruitless = 0;
+  while (true) {
+    throwIfSubtitleCancelled(cancel);
+    final AiChatCompletion reply = await completer.complete(
+      body(),
+      stablePrefix: stablePrefix,
+    );
+    usage.addCall(reply.usage);
+    final AiLineReply parsed = parseAiLineReply(reply);
+    final int added = absorb(parsed.lines);
+    if (done(parsed)) return;
+    if (added > 0) {
+      fruitless = 0;
+    } else if (++fruitless >= maxAttempts) {
+      throw SubtitleAiRequestFailure(
+        kSubtitleAiReplyIncomplete,
+        detail: failureDetail(),
+      );
+    }
+  }
+}

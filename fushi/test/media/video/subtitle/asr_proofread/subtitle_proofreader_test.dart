@@ -122,11 +122,10 @@ void main() {
     expect(middle, isNot(contains('固有名詞表:\n')), reason: '空表不出这一段');
   });
 
-  test('缺 id：不缓存，只补问剩下的 id；凑齐才落盘，用量两次都计', () async {
+  test('回复没写完（无 END、无停止原因）：不缓存，只问最后一条之后的 id；写完才落盘，用量两次都计', () async {
     final FakeAiCompleter ai = FakeAiCompleter((String prompt, int call) {
-      if (call == 0) {
-        return jsonEncode(<String, String>{'0': 'x'}); // 缺 1..4
-      }
+      if (call == 0) return '0\tx\n'; // 没写 END
+
       return replyForIds(prompt, (int id) => 'fixed$id');
     }, usage: const AiChatUsage(outputTokens: 7));
     final SubtitleProofreadResult r = await SubtitleProofreader(completer: ai)
@@ -146,10 +145,10 @@ void main() {
   });
 
   test(
-    '连续 3 次没有新 id（不是 JSON / 只答批外的 id）：抛 reply_incomplete，批缓存一个都不写',
+    '连续 3 次没写完且没有新 id（说明文 / 只答批外的 id）：抛 reply_incomplete，批缓存一个都不写',
     () async {
       final FakeAiCompleter ai = FakeAiCompleter(
-        (String prompt, int call) => call.isEven ? '修正はありません' : '{"99": "x"}',
+        (String prompt, int call) => call.isEven ? '修正はありません' : '99\tx\n',
       );
       await expectLater(
         SubtitleProofreader(completer: ai).proofread(
@@ -217,11 +216,7 @@ void main() {
       rateLimiter: AiRateLimiter(),
       client: MockClient((http.Request request) async {
         calls++;
-        final String content = calls == 1
-            ? ''
-            : jsonEncode(<String, String>{
-                for (int i = 0; i < 3; i++) '$i': 'ok$i',
-              });
+        final String content = calls == 1 ? '' : '0\tok0\n1\tok1\n2\tok2\nEND';
         return http.Response.bytes(
           utf8.encode(
             jsonEncode(<String, Object?>{
@@ -330,7 +325,7 @@ void main() {
   test('回复撞上 max_tokens 被截断：留下写完的 id，只补问剩下的，不原样重发整批', () async {
     final FakeAiCompleter ai = FakeAiCompleter(
       (String prompt, int call) => call == 0
-          ? '```json\n{"0": "fixed0", "1": "fixed1", "2": "fix'
+          ? '```\n0\tfixed0\n1\tfixed1\n2\tfix'
           : replyForIds(prompt, (int id) => 'fixed$id'),
       stopReason: (int call) => call == 0 ? 'max_tokens' : 'end_turn',
     );
@@ -352,7 +347,7 @@ void main() {
   test('每次都截断但每次都有新 id：超过 3 次也能凑齐，不判失败', () async {
     final FakeAiCompleter ai = FakeAiCompleter((String prompt, int call) {
       final int first = targetIdsOf(prompt).first;
-      return '{"$first": "fixed$first", "trunc';
+      return '$first\tfixed$first\n${first + 1}\ttrunc';
     }, stopReason: (int call) => 'max_tokens');
     final SubtitleProofreadResult r = await SubtitleProofreader(completer: ai)
         .proofread(
@@ -365,27 +360,46 @@ void main() {
     expect(r.cues.last.text, 'fixed4');
   });
 
-  test('salvageTruncatedAiJson：只留写完整的顶层成员', () {
-    expect(
-      salvageTruncatedAiJson('ok:\n{"0": "a,}", "1": "b\\"c", "2": "d'),
-      <String, Object?>{'0': 'a,}', '1': 'b"c'},
+  test('只写改动的行 + END：一次请求结束，没写的行原样保留', () async {
+    final FakeAiCompleter ai = FakeAiCompleter(
+      (String prompt, int call) => '2\t改めた\n4\t\nEND',
     );
-    expect(
-      salvageTruncatedAiJson(
-        '[{"ja": "唯", "m": ["結衣", "悠依"]}, {"ja": "澪", "m": ["',
-      ),
-      <Object?>[
-        <String, Object?>{
-          'ja': '唯',
-          'm': <Object?>['結衣', '悠依'],
-        },
-      ],
-    );
-    expect(salvageTruncatedAiJson('{"0": "a"} 以上'), <String, Object?>{
-      '0': 'a',
-    });
-    expect(salvageTruncatedAiJson('{"0": "abc'), isNull);
-    expect(salvageTruncatedAiJson('修正なし'), isNull);
+    final SubtitleProofreadResult r = await SubtitleProofreader(completer: ai)
+        .proofread(
+          cues: cues(5),
+          title: 't',
+          glossary: SubtitleGlossary.empty,
+          cacheDir: cacheDir,
+        );
+    expect(ai.calls, 1);
+    expect(r.cues.map((SubtitleDraftCue c) => c.text), <String>[
+      'line0',
+      'line1',
+      '改めた',
+      'line3',
+    ]);
+    expect(r.changedCount, 2);
+    expect(r.removedCount, 1);
+    expect(cacheFiles(), <String>['00000.json']);
+  });
+
+  test('parseAiLineReply：END / 停止原因判写完，没写完时丢掉没换行收尾的末行', () {
+    AiLineReply parse(String text, [String? stop]) =>
+        parseAiLineReply(AiChatCompletion(text: text, stopReason: stop));
+    final AiLineReply ended = parse('```\n1\ta\n\n2\tb\nEND\n3\tafter\n```');
+    expect(ended.complete, isTrue);
+    expect(ended.lines, <String>['1\ta', '2\tb']);
+    expect(parse('1\ta', 'end_turn').complete, isTrue, reason: '停止原因正常即写完');
+    expect(parse('1\ta', 'end_turn').lines, <String>['1\ta']);
+    final AiLineReply cut = parse('1\ta\n2\tb', 'max_tokens');
+    expect(cut.complete, isFalse);
+    expect(cut.lines, <String>['1\ta']);
+    expect(parse('1\ta\nEND', 'max_tokens').complete, isFalse);
+    expect(parse('1\ta\n2\tb').complete, isFalse, reason: '无 END 无停止原因');
+    expect(splitAiLineRecord('12\t唯: 来た'), ('12', '唯: 来た'));
+    expect(splitAiLineRecord('id=12\t'), ('12', ''));
+    expect(splitAiLineRecord('12: 唯'), ('12', '唯'));
+    expect(splitAiLineRecord('修正なし'), isNull);
   });
 
   test('formatProofreadTime 同 fmt_t（mm:ss.ss）', () {
