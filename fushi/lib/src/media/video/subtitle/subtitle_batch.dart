@@ -13,6 +13,8 @@ import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
 import 'package:fushi_engine/media/video/jimaku_client.dart'
     show detectSubtitleLanguage, jimakuLanguageRank, parseSubtitleEpisode;
 import 'package:fushi/src/media/video/subtitle/subtitle_episode_matching.dart';
+import 'package:fushi/src/media/video/subtitle/subtitle_version_groups.dart'
+    show subtitleVersionKeyOf;
 import 'package:fushi_engine/media/video/subtitle/embedded_reference_subtitle_sync.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_archive.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
@@ -270,20 +272,35 @@ Future<List<SubtitleBatchItem>> runSubtitleBatch({
   final List<SubtitleBatchItem> results = <SubtitleBatchItem>[];
   final Directory dir = Directory(saveDirectory);
   final bool soleTarget = targets.length == 1;
+  final List<int> episodes = <int>[
+    for (final SubtitleBatchTarget target in targets)
+      resolveSubtitleBatchEpisode(target),
+  ];
+  // 整批共用一个版本（缺集由次选版本补），而不是逐集各挑各的——否则同一季会
+  // `.ass` / `.srt`、不同发布组混排。
   final SubtitleEpisodeIndex<VideoSubtitleCandidate> index =
       SubtitleEpisodeIndex.fromCandidates(
         candidates,
         preferredLanguage: preferredLanguage,
+      ).preferConsistentVersion(
+        targetEpisodes: episodes,
+        versionOf: subtitleVersionKeyOf,
+        languageRankOf: (VideoSubtitleCandidate c) => jimakuLanguageRank(
+          c.language.isEmpty ? null : c.language,
+          preferred: preferredLanguage,
+        ),
+        fileNameOf: (VideoSubtitleCandidate c) => c.fileName,
       );
   final _ArchivePackSplitter packs = _ArchivePackSplitter(
     registry: registry,
     candidates: candidates,
     preferredLanguage: preferredLanguage,
   );
-  for (final SubtitleBatchTarget target in targets) {
+  for (int i = 0; i < targets.length; i++) {
+    final SubtitleBatchTarget target = targets[i];
     final SubtitleBatchItem item = SubtitleBatchItem(
       target: target,
-      episode: resolveSubtitleBatchEpisode(target),
+      episode: episodes[i],
     );
     item.status = SubtitleBatchStatus.downloading;
     if (onItemStart != null) await onItemStart(item);

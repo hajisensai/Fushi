@@ -119,7 +119,9 @@ class SubtitleVersionGroup {
   );
 }
 
-String _groupKeyOf(VideoSubtitleCandidate candidate) => <String>[
+/// 候选所属「版本」的键（同来源合集 + 同容器 + 同语言 + 同发布组 + CC/机翻标记）。
+/// 版本卡聚类与合集批量下载的整批版本一致性（`preferConsistentVersion`）共用。
+String subtitleVersionKeyOf(VideoSubtitleCandidate candidate) => <String>[
   candidate.providerId,
   candidate.collectionId ?? '',
   subtitleFormatOf(candidate.fileName),
@@ -144,7 +146,10 @@ List<SubtitleVersionGroup> buildSubtitleVersionGroups(
       <String, List<VideoSubtitleCandidate>>{};
   for (final VideoSubtitleCandidate candidate in candidates) {
     byKey
-        .putIfAbsent(_groupKeyOf(candidate), () => <VideoSubtitleCandidate>[])
+        .putIfAbsent(
+          subtitleVersionKeyOf(candidate),
+          () => <VideoSubtitleCandidate>[],
+        )
         .add(candidate);
   }
   final List<SubtitleVersionGroup> groups = <SubtitleVersionGroup>[

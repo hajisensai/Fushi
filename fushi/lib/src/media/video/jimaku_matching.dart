@@ -15,6 +15,8 @@ library;
 
 import 'package:fushi_engine/media/video/jimaku_client.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_episode_matching.dart';
+import 'package:fushi/src/media/video/subtitle/subtitle_version_groups.dart'
+    show subtitleFormatOf, subtitleReleaseGroupTag, subtitleVersionKeyOf;
 
 /// 从 Jimaku 文件列表构建的按集索引（[SubtitleEpisodeIndex] 的 `JimakuFile` 实例）。
 ///
@@ -63,6 +65,30 @@ int compareJimakuByLanguagePreference(
   if (rankA != rankB) return rankA.compareTo(rankB);
   return a.name.toLowerCase().compareTo(b.name.toLowerCase());
 }
+
+/// Jimaku 文件所属「版本」的键：发布组标签 + 容器 + 语言（与版本卡
+/// [subtitleVersionKeyOf] 同一维度，Jimaku 条目内无需再带来源/合集段）。
+String jimakuVersionKeyOf(JimakuFile file) => <String>[
+  subtitleReleaseGroupTag(file.name) ?? '',
+  subtitleFormatOf(file.name),
+  detectSubtitleLanguage(file.name) ?? '',
+].join('\u001f');
+
+/// [index] 按整批 [targetEpisodes] 做版本一致性重排（见
+/// [SubtitleEpisodeIndex.preferConsistentVersion]）。
+SubtitleEpisodeIndex<JimakuFile> preferConsistentJimakuVersion(
+  SubtitleEpisodeIndex<JimakuFile> index, {
+  required Iterable<int> targetEpisodes,
+  String? preferredLanguage,
+}) => index.preferConsistentVersion(
+  targetEpisodes: targetEpisodes,
+  versionOf: jimakuVersionKeyOf,
+  languageRankOf: (JimakuFile file) => jimakuLanguageRank(
+    detectSubtitleLanguage(file.name),
+    preferred: preferredLanguage,
+  ),
+  fileNameOf: (JimakuFile file) => file.name,
+);
 
 /// 单集选字幕的结论（同 [SubtitleEpisodeMatchKind]，保留旧名）。
 typedef JimakuEpisodeMatchKind = SubtitleEpisodeMatchKind;

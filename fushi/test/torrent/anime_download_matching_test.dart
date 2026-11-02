@@ -478,6 +478,29 @@ void main() {
       ];
     }
 
+    test('整包落在同一字幕版本：只有第 1 集的发布组不抢第 1 集，同覆盖 ASS 优先', () {
+      String ep2(int ep) => ep.toString().padLeft(2, '0');
+      final List<ResolvedSubtitleMatch> matches = matchJimakuFilesToVideoNames(
+        packVideos(<int>[1, 2, 3]),
+        <JimakuFile>[
+          _file('[Nekomoe kissaten] Test Anime - 01 [WebRip][JPN].ass'),
+          for (int ep = 1; ep <= 3; ep++) ...<JimakuFile>[
+            _file('テスト.S01E${ep2(ep)}.WEBRip.Netflix.ja[cc].srt'),
+            _file('Test Anime - ${ep2(ep)}.ja.srt'),
+            _file('Test Anime - ${ep2(ep)}.ja.ass'),
+          ],
+        ],
+      );
+      expect(
+        matches.map((ResolvedSubtitleMatch m) => m.file.name).toList(),
+        <String>[
+          'Test Anime - 01.ja.ass',
+          'Test Anime - 02.ja.ass',
+          'Test Anime - 03.ja.ass',
+        ],
+      );
+    });
+
     test('错季不再配上：S2 包 01-12 遇绝对编号条目 13-24 → 一条都不配', () {
       // 这正是改前静默配错的形状：旧的 season 分支按「取最前 cap 个」交出
       // 13-24 的字幕并画成「有字幕」。按真实文件名反查后集号集合交集为空。

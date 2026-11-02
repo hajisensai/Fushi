@@ -171,6 +171,96 @@ void main() {
     expect(results.single.language, 'en');
   });
 
+  group('整批版本一致（Jimaku 12217 实测形状）', () {
+    // 某发布组只出了第 1 集、文件名字母序又靠前（`[` < `グ`）：改前逐集独立挑，
+    // 第 1 集拿它的 .ass、其余集拿 Netflix .srt，同一季混排。
+    String netflix(int ep) =>
+        'グロウアップショウ.S01E${ep.toString().padLeft(2, '0')}.WEBRip.Netflix.ja[cc].srt';
+    String shincaps(int ep, String ext) =>
+        '[shincaps] Grow Up Show - ${ep.toString().padLeft(2, '0')} (AT-X).$ext';
+    List<SubtitleBatchTarget> targets(int count) => <SubtitleBatchTarget>[
+      for (int ep = 1; ep <= count; ep++)
+        _target(ep - 1, 'Show - ${ep.toString().padLeft(2, '0')}'),
+    ];
+
+    test('只覆盖第 1 集的版本不再抢走第 1 集：整批落在同一版本', () async {
+      final _FakeProvider provider = _FakeProvider();
+      await runSubtitleBatch(
+        registry: VideoSubtitleRegistry(<VideoSubtitleProvider>[provider]),
+        candidates: <VideoSubtitleCandidate>[
+          _Cand(
+            '[Nekomoe kissaten&LoliHouse] Grow Up Show - 01 [WebRip][JPN].ass',
+            episode: 1,
+          ),
+          for (int ep = 1; ep <= 3; ep++) _Cand(netflix(ep), episode: ep),
+        ],
+        targets: targets(3),
+        saveDirectory: tmp.path,
+      );
+      expect(provider.downloaded, <String>[netflix(1), netflix(2), netflix(3)]);
+    });
+
+    test('同语言同覆盖：ASS 版本优先于 SRT 版本，整季都是 .ass', () async {
+      final _FakeProvider provider = _FakeProvider();
+      await runSubtitleBatch(
+        registry: VideoSubtitleRegistry(<VideoSubtitleProvider>[provider]),
+        candidates: <VideoSubtitleCandidate>[
+          for (int ep = 1; ep <= 3; ep++) ...<VideoSubtitleCandidate>[
+            _Cand(shincaps(ep, 'srt'), episode: ep),
+            _Cand(shincaps(ep, 'ass'), episode: ep),
+            _Cand(netflix(ep), episode: ep),
+          ],
+        ],
+        targets: targets(3),
+        saveDirectory: tmp.path,
+      );
+      expect(provider.downloaded, <String>[
+        shincaps(1, 'ass'),
+        shincaps(2, 'ass'),
+        shincaps(3, 'ass'),
+      ]);
+    });
+
+    test('首选版本缺的集由次选版本补，其余集不受影响', () async {
+      final _FakeProvider provider = _FakeProvider();
+      await runSubtitleBatch(
+        registry: VideoSubtitleRegistry(<VideoSubtitleProvider>[provider]),
+        candidates: <VideoSubtitleCandidate>[
+          for (final int ep in <int>[1, 2, 4])
+            _Cand(shincaps(ep, 'ass'), episode: ep),
+          for (final int ep in <int>[3, 4]) _Cand(netflix(ep), episode: ep),
+        ],
+        targets: targets(4),
+        saveDirectory: tmp.path,
+      );
+      expect(provider.downloaded, <String>[
+        shincaps(1, 'ass'),
+        shincaps(2, 'ass'),
+        netflix(3),
+        shincaps(4, 'ass'),
+      ]);
+    });
+
+    test('语言偏好仍高于覆盖：未知语言的全季版本不压过 ja 版本', () async {
+      final _FakeProvider provider = _FakeProvider();
+      await runSubtitleBatch(
+        registry: VideoSubtitleRegistry(<VideoSubtitleProvider>[provider]),
+        candidates: <VideoSubtitleCandidate>[
+          for (int ep = 1; ep <= 3; ep++)
+            _Cand(shincaps(ep, 'ass'), episode: ep, language: ''),
+          for (int ep = 2; ep <= 3; ep++) _Cand(netflix(ep), episode: ep),
+        ],
+        targets: targets(3),
+        saveDirectory: tmp.path,
+      );
+      expect(provider.downloaded, <String>[
+        shincaps(1, 'ass'),
+        netflix(2),
+        netflix(3),
+      ]);
+    });
+  });
+
   test('未编号字幕只在唯一目标时采用；多目标 → ambiguousUnnumbered', () async {
     final _FakeProvider provider = _FakeProvider();
     final List<VideoSubtitleCandidate> movie = <VideoSubtitleCandidate>[
