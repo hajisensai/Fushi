@@ -7,6 +7,7 @@ import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_continue_hero.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 
 /// 所有库页与首页共用的「继续」区（[FushiContinueSpotlight]，2026-10-31 合一）：
 /// 主卡皮只看封面方向——横图剧照是叠层主卡，竖图（书 / 游戏 / 只有竖海报的
@@ -187,6 +188,33 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(position.pixels, greaterThan(0));
+  });
+
+  testWidgets('窄屏剧照封面行：卡下只留一行片名的高度，不按竖卡留副行 / 进度条位', (
+    WidgetTester tester,
+  ) async {
+    // 用户 2026-11-02「窄屏间隙大」：剧照小卡的副标题与进度压在剧照上，卡下
+    // 只有片名；文字块按竖封面卡「两行标题 + 副行 + 进度条」留高时，封面行
+    // 下面到下一区块空出一大截。
+    await pumpAt(tester, 400, stills(6));
+    final Finder meta = find.byKey(
+      const ValueKey<String>('fushi-continue-tile-meta'),
+    );
+    final BuildContext context = tester.element(meta.first);
+    final double compact = ShelfCardMeta.heightFor(
+      context,
+      titleLines: kContinueStillTileTitleLines,
+      titleOnly: true,
+    );
+    expect(tester.getSize(meta.first).height, closeTo(compact, 0.01));
+    expect(compact, lessThan(ShelfCardMeta.heightFor(context) - 20));
+    // 行高 = 剧照 + 一行片名 + 上下悬停余量，行底不再拖着空白。
+    final Rect row = tester.getRect(
+      find.byKey(const ValueKey<String>('fushi-continue-side-row')),
+    );
+    final Rect tileMeta = tester.getRect(meta.first);
+    expect(row.bottom - tileMeta.bottom, lessThan(16));
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('库页窄屏不挂封面行（下面有自己的「最近」行）', (WidgetTester tester) async {

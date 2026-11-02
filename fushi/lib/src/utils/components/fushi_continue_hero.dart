@@ -555,11 +555,23 @@ class FushiContinueSpotlight extends StatelessWidget {
       ? _wideStillSize(width)
       : Size(width, math.min(width * 9 / 16, _narrowStillMaxHeight));
 
+  /// 封面行小卡文字块高：全是剧照卡时只有一行片名（副标题与进度压在剧照上，
+  /// [FushiContinueSideTile]），不按竖封面卡的「两行标题 + 副行 + 进度条」
+  /// 留高——否则窄屏封面行下面平白空出一截（用户 2026-11-02「窄屏间隙大」）。
+  double _sideMetaHeight(BuildContext context) =>
+      side.every((FushiContinueEntry e) => e.still)
+      ? ShelfCardMeta.heightFor(
+          context,
+          titleLines: kContinueStillTileTitleLines,
+          titleOnly: true,
+        )
+      : ShelfCardMeta.heightFor(context);
+
   /// 封面行：与首页其它横滚行同一套——鼠标 / 触控板可拖（每处各包
   /// [HorizontalDragScrollable]，守卫按文件逐处计数），滑到边缘交给分区级联
   /// （[SectionSwipeCascade]）。不接裸滚轮横滚：外层是纵向滚动，滚轮留给它。
   Widget _sideRow(BuildContext context, double height, double gap) {
-    final double metaHeight = ShelfCardMeta.heightFor(context);
+    final double metaHeight = _sideMetaHeight(context);
     final bool allStill = side.every((FushiContinueEntry e) => e.still);
     const double scale = kFushiHoverLiftScale;
     const double rise = kShelfMaterialHoverRise * scale;
@@ -737,8 +749,7 @@ class FushiContinueSpotlight extends StatelessWidget {
         final double coverHeight = allStill
             ? 168 * 9 / 16
             : (narrowSideCoverHeight ?? 132);
-        final double tileHeight =
-            coverHeight + ShelfCardMeta.heightFor(context);
+        final double tileHeight = coverHeight + _sideMetaHeight(context);
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           mainAxisSize: MainAxisSize.min,
@@ -995,6 +1006,10 @@ class FushiContinueSideTile extends StatelessWidget {
                       height: metaHeight,
                       child: ShelfCardMeta(
                         title: entry.title,
+                        titleMaxLines: entry.still
+                            ? kContinueStillTileTitleLines
+                            : kShelfCardMetaTitleLines,
+                        titleOnly: entry.still,
                         subtitle: entry.still ? null : subtitle,
                         leadingIcon: entry.still ? null : entry.subtitleIcon,
                         progress: entry.still
@@ -1017,6 +1032,10 @@ class FushiContinueSideTile extends StatelessWidget {
 /// 版面，但 1.01 几乎看不出「抬起」（用户 2026-10-31：视频继续观看缺抬起的
 /// 金属效果），取 1.025 配合投影 / 扫光读出抬升。
 const double _kStillMainHoverLiftScale = 1.025;
+
+/// 封面行剧照小卡的片名行数：副标题 / 进度在剧照上，卡下只留一行片名
+/// （长片名省略，完整名在读屏标签与长按菜单里）。
+const int kContinueStillTileTitleLines = 1;
 
 /// 单行封面行里剧照封面的最高高度（16:9 → 宽 320）。
 const double _kStillSideMaxHeight = 180;
