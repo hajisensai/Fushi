@@ -1,6 +1,6 @@
 # Apple Music 官方集成（MusicKit 播放后端）
 
-状态（2026-11-01）：**P1 基础设施已合入**（能力标志 + `MusicRoutingBackend`，路由表为空、行为不变；签发端 Worker 见 §3.6）；**P1b 已实现**（`AppleMusicTokenSource` + catalog 来源，见 §6）；其余阶段（P0 spike 起，§6）**待所有者拍板**（§9），拍板前不动 P1 / P1b 以外的代码。
+状态（2026-11-02）：P1 / P1b 已合入；**P2 / P3 / P4 已实现**（原生 MusicKit 桥、网页桥、登录 / 订阅、整曲播放后端、资料库来源、设置页，见 §6 与 §10）；Windows 网页桥未登录链路已真 app 验证，登录后整曲与 Apple 平台真机验证待做（§10.3）。
 
 ## 0. 一句话
 
@@ -145,10 +145,10 @@ AppleMusicBridge (Dart 接口：授权 / 订阅状态 / 播放控制 / 事件流
 |---|---|---|
 | P0 spike | ① Mac + iPhone：Flutter 宿主里 `ApplicationMusicPlayer` 整曲播放、进度、Now Playing 与 audio_service 共存；② Windows WebView2 + MusicKit JS：`authorize()`、整曲（非 30 s）播放、SMTC 是否多出会话；③ Android WebView 同②；每项记证据 | §9 ①② |
 | P1 ✅ | `MusicBackendCapabilities` + `MusicRoutingBackend`（`music_routing_backend.dart`；路由表暂空、行为不变；`test/media/music/music_routing_backend_test.dart` 钉跨后端接力） | — |
-| P2 | Apple 平台：Swift 桥 + `AppleMusicNativeBridge` + 来源浏览 + 设置页 | P0① 通过 |
+| P2 ✅ | Apple 平台：`fushi/apple/FushiAppleMusic.swift`（iOS / macOS 共用）+ `AppleMusicNativeBridge`；macOS < 14 不建桥 | Mac / iPhone 真机待验（§10.3） |
 | P1b ✅ | `AppleMusicTokenSource` + catalog REST 来源（五端浏览 + 预览试听走 mpv）：`packages/fushi_engine/lib/media/music/apple_music/`，`MusicServerKind.appleMusic`；设置 › 音乐 › 服务器曲库里显式打开（`music_apple_music_enabled`，默认关）+ 选 storefront（`music_apple_music_storefront`，默认 `jp`）；专辑分区 = 热门专辑榜、艺人分区 = 榜单专辑的艺人、主入口是搜索；无预览的曲目不列出；不参与混排；测试 `packages/fushi_engine/test/media/music/apple_music/` | #2712 合入并部署 |
-| P3 | Windows：Worker 托管页 + `AppleMusicWebBridge` | P0② 通过、§9 ③ |
-| P4 | Android：复用 P3 的网页桥 | P0③ 通过 |
+| P3 ✅ | Windows：Worker 托管页（已部署）+ `AppleMusicWebBridge` + `AppleMusicWebLoginPage` | 登录后整曲待有订阅的 Apple ID 实测 |
+| P4 ✅ | Android：复用 P3 的网页桥（`PROTECTED_MEDIA_ID` 只授托管页源） | 真机待验 |
 
 验证：每阶段在真机走「搜索 → 播放整曲 → 歌词逐字跟随 → 点词查词 → 学习统计入账」；
 Apple 平台按全局规则在 `ssh mac` 上验（iPhone 真机 + macOS 14+），不以模拟器代替（模拟器无 Apple Music 播放）。
@@ -188,3 +188,45 @@ Apple 平台按全局规则在 `ssh mac` 上验（iPhone 真机 + macOS 14+）�
 - macOS ApplicationMusicPlayer：https://developer.apple.com/forums/thread/707436 、https://developer.apple.com/forums/thread/731343 、https://developer.apple.com/forums/thread/744128
 - MusicKit JS 社区实践：https://github.com/simonepelosi/vibez 、https://github.com/Laellekoenig/musik
 - WebView2 Widevine：https://github.com/microsoft/live-share-sdk/issues/14
+
+## 10. 实现记录（2026-11-02）
+
+### 10.1 结构
+
+- 引擎（纯 Dart）：`AppleMusicCatalogClient(fullTracks:)`——整曲模式列出带 `playParams` 的曲目（含无预览的），
+  `streamFor` 给 `fushi-apple-music://song/<catalogId>`（`appleMusicSongUri` / `appleMusicSongIdFromPath`）；
+  `AppleMusicLibraryClient`——`/v1/me/library/*`，`Authorization` + `Music-User-Token` 两枚 token 由 app 侧给，
+  资料库曲目经 `playParams.catalogId` 对到 catalog 整曲，没有 catalogId 的（用户上传）不列出。
+- App（`fushi/lib/src/media/music/apple_music/`）：
+  - `AppleMusicBridge`（授权 / 订阅 / 单曲播放 / 事件流）+ `createAppleMusicBridge()`：iOS、macOS 14+ → 原生；
+    Windows、Android → 网页；Linux、macOS 13 → null（只浏览 + 试听）。
+  - `AppleMusicAccount`（`AppModel.appleMusicAccount`）：桥 + 「已连接」偏好（`music_apple_music_connected`，
+    设备本地、不同步）+ 状态快照（缓存 5 分钟；网页桥读状态要起隐藏 WebView）。
+  - `AppleMusicOutputBackend` + `appleMusicBackendRoute`：装进 `MusicRoutingBackend`（`app_model.dart` 的
+    `_createMusicSession`）；能力 `signalPath:false / abLoop:false`；同后端下一首在 `Ended` 后 `play(next)` 并补发
+    `Advanced`（不无缝）；桥事件按 songId 对位，过期事件丢弃。
+  - `AppleMusicWebLoginPage`：可见 WebView 加载托管页并调 `authorize()`，MusicKit 的 `window.open` 弹窗用
+    `windowId` 接成页内第二个 WebView（保住 opener）；token 存托管页源的 localStorage，登录后重建隐藏 WebView。
+- 原生：`FushiAppleMusic.swift`——`MusicAuthorization` / `MusicSubscription` / `MusicDataRequest.currentCountryCode`；
+  `ApplicationMusicPlayer` 单曲队列 + 250 ms 轮询进度，自然播完判据「刚才在放、现在停、且到尾部或队列空、不是 Dart 叫停」；
+  资料库 token 用 `DefaultMusicTokenProvider`（系统按 App ID 生成的 developer token 配用户 token）。
+  macOS `Info.plist` 新增 `NSAppleMusicUsageDescription`。
+- 界面：设置 › 音乐 › 服务器曲库 的 Apple Music 下多一行账号（连接 / 断开 + 授权 / 订阅 / 地区 / 平台不支持说明）；
+  连接后 catalog 按账号地区浏览并整曲播放，来源列表多「Apple Music 资料库」；歌词制卡遇 Apple Music 曲目不截音频并提示（§3.5）。
+- 托管页 `rank.fushi.moe/musickit/` 已于 2026-11-02 部署（`leaderboard-worker-deploy` 跑 develop）。桥接脚本未改：
+  「只排不播」、token / `previewOnly` / `storefrontId` 由宿主对 `MusicKit.getInstance()` 求值（宿主注入不受页面 CSP 约束）。
+
+### 10.2 已验证
+
+- WebView2 156（本机）EME：`com.widevine.alpha` / `com.microsoft.playready.recommendation` / `org.w3.clearkey` 均可
+  `requestMediaKeySystemAccess` + `createMediaKeys`（pywebview 宿主探针）。
+- 单测：引擎 `test/media/music/apple_music/`（含新 `apple_music_library_client_test.dart`）；app
+  `test/media/music/apple_music/apple_music_output_backend_test.dart`（后端接力 / 过期事件 / 打开失败 / 两种桥事件解析）。
+- 真 app（Windows 离屏 runner）：`integration_test/apple_music_web_bridge_itest.dart`，结果见 PR 描述。
+
+### 10.3 待验（需要人 / 设备）
+
+- 有 Apple Music 订阅的 Apple ID 在 Windows / Android 登录后整曲（非 30 秒）播放、`previewOnly` 判订阅是否准确。
+- iOS 真机 / macOS 14+：系统授权框、整曲播放、进度、自然播完判定，以及 `ApplicationMusicPlayer` 与 audio_service 的
+  Now Playing / 远程命令谁覆盖谁（§3.4；本轮保留 audio_service 为会话所有者）。
+- 未做：「喜欢」（ratings API）同步、资料库混排进本地曲库（§4 v1 不做）、歌词按 ISRC 检索。

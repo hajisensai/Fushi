@@ -33,6 +33,8 @@ import 'package:fushi_engine/mining/immersion_mining_request.dart'
     show immersionMiningAudioExtension;
 import 'package:fushi_music/fushi_music.dart';
 
+import 'package:fushi_engine/media/music/apple_music/apple_music_catalog_client.dart'
+    show isAppleMusicTrackPath;
 import 'package:fushi/src/anki/mined_card_undo.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_channel.dart';
@@ -488,7 +490,16 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
     Directory? tempDir;
     try {
       String? audioPath;
-      if (item != null && window != null && window.durationMs > 0) {
+      // Apple Music 整曲在 Apple 授权的播放器里解密，拿不到 PCM；录制输出违反 MusicKit 条款
+      // （方案 §3.5）：卡片只有文本 + 封面，并说明原因。
+      final bool drmTrack = item != null && isAppleMusicTrackPath(item.path);
+      if (drmTrack) {
+        FushiToast.show(msg: t.music_apple_music_card_audio_unavailable);
+      }
+      if (item != null &&
+          !drmTrack &&
+          window != null &&
+          window.durationMs > 0) {
         final ({int startMs, int endMs}) clip = window.clipInFile(
           fileOffsetMs: item.startMs ?? 0,
           trackDurationMs: item.durationMs,

@@ -327,6 +327,11 @@ import 'package:fushi/src/media/music/lyrics/music_desktop_lyrics_surface.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_live.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_service.dart';
 import 'package:fushi/src/media/music/metadata/music_scrape_service.dart';
+import 'package:fushi/src/media/music/apple_music/apple_music_account.dart';
+import 'package:fushi/src/media/music/apple_music/apple_music_bridge.dart'
+    show createAppleMusicBridge;
+import 'package:fushi/src/media/music/apple_music/apple_music_output_backend.dart'
+    show appleMusicBackendRoute;
 import 'package:fushi/src/media/music/music_crossfade.dart';
 import 'package:fushi/src/media/music/music_routing_backend.dart';
 import 'package:fushi/src/media/music/music_equalizer.dart';
@@ -1773,6 +1778,13 @@ class AppModel with ChangeNotifier {
 
   /// Extracted sub-managers.
   late final AudioController audioCtrl = AudioController();
+
+  /// Apple Music 账号与本平台的 MusicKit 桥（MusicKit 方案 §3.1 / §4）：播放后端与设置页共用。
+  late final AppleMusicAccount appleMusicAccount = AppleMusicAccount(
+    bridge: createAppleMusicBridge,
+    connected: () => isPreferencesReady && prefsRepo.musicAppleMusicConnected,
+    setConnected: (bool v) => prefsRepo.setMusicAppleMusicConnected(v),
+  );
   late final AnkiIntegration ankiIntegration = AnkiIntegration();
 
   /// 进程级常驻有声书会话（TODO-291 阶段2）：唯一持有 AudiobookPlayerController +
@@ -1868,9 +1880,13 @@ class AppModel with ChangeNotifier {
         ),
       );
     }
-    // 由专用后端播放的曲目（托管播放，如 MusicKit）；其余走默认链路。目前还没有专用后端，
-    // 路由层原样转发（docs/specs/2026-10-31-apple-music-musickit.md §3.3）。
-    const List<MusicBackendRoute> backendRoutes = <MusicBackendRoute>[];
+    // 由专用后端播放的曲目（托管播放）；其余走默认链路（docs/specs/2026-10-31-apple-music-musickit.md
+    // §3.3）。Apple Music 整曲：本平台有 MusicKit 播放器才装（Linux / macOS 13 没有，这类曲目
+    // 落到 mpv 打不开、按单曲失败）。
+    final List<MusicBackendRoute> backendRoutes = <MusicBackendRoute>[
+      if (appleMusicAccount.platformSupported)
+        appleMusicBackendRoute(() => appleMusicAccount.bridge!),
+    ];
     final MusicPlayerEngine engine = MusicPlayerEngine(
       backendFactory: () => MusicRoutingBackend(
         routes: backendRoutes,
