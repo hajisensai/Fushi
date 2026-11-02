@@ -6322,6 +6322,7 @@
   "page_progress": "Pagina $current / $total",
   "page_turn_animation": "Animazione cambio pagina",
   "page_turn_animation_cover": "Cover",
+  "page_turn_animation_curl": "Arriccia",
   "page_turn_animation_fade": "Dissolvenza",
   "page_turn_animation_none": "Nessuna",
   "page_turn_animation_paginated_only": "Only applies in paginated mode",

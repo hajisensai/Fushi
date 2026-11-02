@@ -6322,6 +6322,7 @@
   "page_progress": "Страница $current / $total",
   "page_turn_animation": "Анимация перелистывания",
   "page_turn_animation_cover": "Cover",
+  "page_turn_animation_curl": "Загиб",
   "page_turn_animation_fade": "Затухание",
   "page_turn_animation_none": "Нет",
   "page_turn_animation_paginated_only": "Only applies in paginated mode",

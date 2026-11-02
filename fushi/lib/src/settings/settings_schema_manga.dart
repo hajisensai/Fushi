@@ -151,6 +151,10 @@ SettingsSection _mangaPagingSection() {
             value: MangaPageAnimation.fade.key,
             label: t.page_turn_animation_fade,
           ),
+          SettingsSegmentOption<String>(
+            value: MangaPageAnimation.curl.key,
+            label: t.page_turn_animation_curl,
+          ),
         ],
         selected: (SettingsContext c) =>
             mangaPageAnimationFromKey(c.appModel.mangaPageAnimation).key,

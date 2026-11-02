@@ -6322,6 +6322,7 @@
   "page_progress": "Halaman $current / $total",
   "page_turn_animation": "Animasi pergantian halaman",
   "page_turn_animation_cover": "Cover",
+  "page_turn_animation_curl": "Lipat",
   "page_turn_animation_fade": "Pudar",
   "page_turn_animation_none": "Tidak ada",
   "page_turn_animation_paginated_only": "Only applies in paginated mode",

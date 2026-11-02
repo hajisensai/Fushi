@@ -756,6 +756,10 @@ SettingsDestination buildReadingDestination() {
                 value: PageTurnAnimation.fade,
                 label: t.page_turn_animation_fade,
               ),
+              SettingsSegmentOption<PageTurnAnimation>(
+                value: PageTurnAnimation.curl,
+                label: t.page_turn_animation_curl,
+              ),
             ],
             selected: (SettingsContext c) => c.readerSource.pageTurnAnimation,
             onChanged: (SettingsContext c, PageTurnAnimation value) async {

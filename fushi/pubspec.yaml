@@ -295,6 +295,7 @@ flutter:
   shaders:
     - shaders/panorama_backdrop.frag
     - shaders/music_backdrop_pixi.frag
+    - shaders/page_curl.frag
 
   # M3E 语义图标（lib/src/utils/fushi_icons.dart）：Material Symbols Rounded 可变字体
   # 的子集，由 tool/icons/gen_fushi_symbols.py 生成。线框 / 实心各一个字族——选中态在

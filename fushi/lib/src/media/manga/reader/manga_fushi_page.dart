@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
 import 'dart:math' as math;
+import 'dart:ui' as ui show Image;
 
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter/foundation.dart' show compute, kDebugMode;
@@ -120,6 +121,7 @@ import 'package:fushi/src/focus/webview_key_bridge.dart';
 import 'package:fushi/src/media/manga/reader/manga_window_load_gate.dart';
 import 'package:fushi/src/pages/base_source_page.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
+import 'package:fushi/src/reader/page_curl/page_curl.dart';
 import 'package:fushi/src/reader/reader_chrome_controller.dart';
 import 'package:fushi/src/media/manga/library/manga_resume_point.dart';
 import 'package:fushi/src/media/manga/reader/manga_chapter_drawer.dart';
@@ -159,6 +161,7 @@ import 'package:fushi_engine/media/kavita/kavita_models.dart'
 
 part 'manga_jump_history.part.dart';
 part 'manga_fushi/kavita.part.dart';
+part 'manga_fushi/page_curl.part.dart';
 
 /// Manga reader implementation owned by the standalone manga module.
 ///
@@ -1185,6 +1188,13 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   PageTurnAnimationSpeed _pageAnimationSpeed = PageTurnAnimationSpeed.normal;
   bool _pageTurnFollowDrag = kMangaPageTurnFollowDragDefault;
 
+  // 卷页翻页（manga_fushi/page_curl.part.dart）：首次用到时创建，覆盖层按这个
+  // key 量视口尺寸。
+  PageCurlController? _pageCurl;
+  final GlobalKey _pageCurlOverlayKey = GlobalKey(
+    debugLabel: 'manga_page_curl_overlay',
+  );
+
   /// [pageTurnMotionEnabledOf]（墨水屏主题 / 系统「减弱动态效果」；阅读器自身的
   /// 墨水屏开关在 [_effectivePageAnimation] 里另判，它随偏好变而非依赖变），在
   /// [didChangeDependencies] 里跟随系统设置变化。
@@ -1659,6 +1669,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
 
   @override
   void dispose() {
+    _pageCurl?.dispose();
+    _pageCurl = null;
     _panelGeneration++;
     _panelCursor.reset();
     _panelResults.clear();
@@ -3415,7 +3427,10 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     }
   }
 
-  Future<void> _applyMangaTurnStepStages(int delta) async {
+  Future<void> _applyMangaTurnStepStages(
+    int delta, {
+    bool allowCurl = true,
+  }) async {
     if (_splitWidePages && !_mode.isContinuous) {
       final InAppWebViewController? controller = _controller;
       final MangaReaderSession? session = _pageSession;
@@ -3453,13 +3468,23 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       await _onReachedChapterEdge(delta);
       return;
     }
+    // 卷页：Flutter 覆盖层播动画，提交那一刻才走 [_commitMangaSpread] 记账。
+    if (allowCurl && _mangaCurlEnabled) {
+      _turnStage = 'curl';
+      await _mangaCurlTurn(forward: delta > 0);
+      return;
+    }
+    await _commitMangaSpread(target);
+  }
+
+  /// 落到相邻跨页并记账（翻页一步的尾段；卷页提交也走这里）。卷页预览已经把 JS
+  /// 落到 [target] 时，`__mangaApplyTranslate` 是同位重放（瞬时、无副作用）。
+  Future<void> _commitMangaSpread(int target) async {
     _currentSpread = target;
     _panelCursor.reset();
     _turnStage = 'applyTranslate';
     await _controller?.evaluateJavascript(
-      source:
-          'window.__mangaApplyTranslate && '
-          'window.__mangaApplyTranslate($target);',
+      source: mangaApplyTranslateInvocation(target),
     );
     _turnStage = 'replaceOcr';
     await _replaceSpreadOcr(target);
@@ -6437,6 +6462,13 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
                     bottom: _chromeBottomInset,
                     child: _buildBody(),
                   ),
+                  // 卷页覆盖层（与 WebView 同框，不吃指针）。
+                  if (_mangaCurlEnabled)
+                    Positioned.fill(
+                      top: _chromeTopInset,
+                      bottom: _chromeBottomInset,
+                      child: _buildMangaCurlOverlay(),
+                    ),
                   // 全局悬浮球的场景按钮（零尺寸，见 [_buildMangaFloatingBallScene]）。
                   Positioned(
                     left: 0,
@@ -7711,6 +7743,11 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
           },
         );
         // 翻页：JS 手势机报方向（'next'/'prev'，页序语义），Dart 推进 spread。
+        // 卷页跟手（JS 手势转发手指位置，manga_fushi/page_curl.part.dart）。
+        controller.addJavaScriptHandler(
+          handlerName: 'onPageCurlDrag',
+          callback: (List<dynamic> args) => _onMangaPageCurlDrag(args),
+        );
         controller.addJavaScriptHandler(
           handlerName: 'onMangaTurn',
           callback: (List<dynamic> args) {

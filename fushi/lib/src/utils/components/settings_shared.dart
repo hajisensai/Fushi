@@ -2237,6 +2237,8 @@ class AdaptiveSettingsSegmentedRow<T extends Object> extends StatelessWidget {
             ],
             selectedIndex: currentIndex < 0 ? null : currentIndex,
             onChanged: selectAt,
+            // 分段条整条禁用（每段 enabled=false）时，换成菜单行也要同样置灰。
+            enabled: segments.any((ButtonSegment<T> s) => s.enabled),
           );
         }
         return AdaptiveSettingsRow(
@@ -2421,6 +2423,7 @@ class SettingsChoiceMenuRow extends StatefulWidget {
     this.icon,
     this.showIcon = false,
     this.placeholder,
+    this.enabled = true,
   });
 
   final String title;
@@ -2431,6 +2434,10 @@ class SettingsChoiceMenuRow extends StatefulWidget {
   final int? selectedIndex;
   final ValueChanged<int> onChanged;
   final String? placeholder;
+
+  /// false = 该偏好在当前设置组合下不生效：整行置灰、点不开菜单（与分段条
+  /// 全段 disabled 同一语义，原因写在 [subtitle] 里）。
+  final bool enabled;
 
   @override
   State<SettingsChoiceMenuRow> createState() => _SettingsChoiceMenuRowState();
@@ -2491,15 +2498,18 @@ class _SettingsChoiceMenuRowState extends State<SettingsChoiceMenuRow> {
     final String summary = description == null || description.isEmpty
         ? value
         : (value.isEmpty ? description : '$value\n$description');
+    final Widget row = AdaptiveSettingsRow(
+      title: widget.title,
+      subtitle: summary.isEmpty ? null : summary,
+      icon: widget.icon,
+      showIcon: widget.showIcon,
+      onTap: widget.enabled ? _openMenu : null,
+    );
     return KeyedSubtree(
       key: _rowKey,
-      child: AdaptiveSettingsRow(
-        title: widget.title,
-        subtitle: summary.isEmpty ? null : summary,
-        icon: widget.icon,
-        showIcon: widget.showIcon,
-        onTap: _openMenu,
-      ),
+      child: widget.enabled
+          ? row
+          : ExcludeFocus(child: Opacity(opacity: 0.38, child: row)),
     );
   }
 }

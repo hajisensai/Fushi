@@ -43,6 +43,7 @@ import 'package:fushi/src/reader/page_turn_animation.dart';
 const String kReaderPageTurnJs =
     '''
   _pageTurn: null,
+  _curl: null,
   _followDrag: null,
   _followDragRelease: null,
   _followDragReleaseTimer: null,
@@ -96,7 +97,7 @@ const String kReaderPageTurnJs =
   pageTurnBusy: function() {
     var pt = this._pageTurn;
     return !!(pt && !pt.applied) || !!this._followDrag ||
-      !!this._followDragRelease || !!this._followRebound;
+      !!this._followDragRelease || !!this._followRebound || !!this._curl;
   },
   // 待落定的目标位置（没有在途翻页时 undefined）。
   pendingPageTurnTarget: function() {

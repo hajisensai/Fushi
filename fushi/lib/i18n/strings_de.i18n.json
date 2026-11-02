@@ -6322,6 +6322,7 @@
   "page_progress": "Seite $current / $total",
   "page_turn_animation": "Seitenumblätter-Animation",
   "page_turn_animation_cover": "Cover",
+  "page_turn_animation_curl": "Umblättern",
   "page_turn_animation_fade": "Verblassen",
   "page_turn_animation_none": "Keine",
   "page_turn_animation_paginated_only": "Only applies in paginated mode",

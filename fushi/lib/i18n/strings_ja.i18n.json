@@ -6322,6 +6322,7 @@
   "page_progress": "ページ $current / $total",
   "page_turn_animation": "ページめくりアニメーション",
   "page_turn_animation_cover": "Cover",
+  "page_turn_animation_curl": "めくり",
   "page_turn_animation_fade": "フェード",
   "page_turn_animation_none": "なし",
   "page_turn_animation_paginated_only": "Only applies in paginated mode",

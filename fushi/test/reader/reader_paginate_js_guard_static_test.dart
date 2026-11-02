@@ -90,8 +90,9 @@ void main() {
     test('forward 翻不动时直接 return "limit"，不再走 _stepWithFreshMetrics', () {
       expect(
         paginate.contains(
-          'if (targetForward <= stepScroll + 1) return "limit"',
-        ),
+              'if (targetForward <= stepScroll + 1) return null;',
+            ) &&
+            paginate.contains('if (!step) return "limit";'),
         isTrue,
         reason:
             'forward 末页应直接 return "limit"（安卓式），单一量纲下 metrics 与对齐量'
@@ -101,7 +102,8 @@ void main() {
 
     test('backward 翻不动时直接 return "limit"', () {
       expect(
-        paginate.contains('if (targetBack >= stepScroll - 1) return "limit"'),
+        paginate.contains('if (targetBack >= stepScroll - 1) return null;') &&
+            paginate.contains('if (!step) return "limit";'),
         isTrue,
         reason: 'backward 章首应直接 return "limit"',
       );

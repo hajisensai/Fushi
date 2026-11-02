@@ -969,6 +969,36 @@ install: function(C) {
   // 松手由 followDragEnd 决定提交（回传 onSwipe，与普通滑动走同一条 Dart 路径）或回弹。
   var _fushiFollowActive = false;
   var _fushiFollowSamples = [];
+  // 卷页（C.pageTurnAnimation === 'curl'）的跟手：纸面画在 Flutter 覆盖层
+  // （page_curl.dart），这里只把手指位置（视口比例）转发给 Dart 的 onPageCurlDrag，
+  // 正文由 Dart 经 fushiReader.curlPreview 瞬时预览到相邻页。移动按 rAF 合并。
+  var _fushiFollowCurl = false;
+  var _fushiCurlMoveRaf = 0;
+  var _fushiCurlLastX = 0, _fushiCurlLastY = 0;
+  function _fushiCurlFollowEnabled() {
+    var r = window.fushiReader;
+    if (fushiContinuousMode || fushiVnMode || !r) return false;
+    if (C.pageTurnAnimation !== 'curl' || C.pageTurnFollowDrag !== true) return false;
+    if (typeof r.isEinkMode === 'function' && r.isEinkMode()) return false;
+    return true;
+  }
+  function _fushiCurlSend(phase, x, y, velocity) {
+    if (!window.flutter_inappwebview || !window.flutter_inappwebview.callHandler) return;
+    var w = window.innerWidth || 1, h = window.innerHeight || 1;
+    window.flutter_inappwebview.callHandler('onPageCurlDrag', phase,
+      x / w, y / h, (velocity || 0) / w, startX / w, startY / h);
+  }
+  function _fushiCurlMove(x, y) {
+    _fushiCurlLastX = x;
+    _fushiCurlLastY = y;
+    if (_fushiCurlMoveRaf) return;
+    _fushiCurlMoveRaf = requestAnimationFrame(function() {
+      _fushiCurlMoveRaf = 0;
+      if (_fushiFollowActive && _fushiFollowCurl) {
+        _fushiCurlSend('move', _fushiCurlLastX, _fushiCurlLastY, 0);
+      }
+    });
+  }
   function _fushiFollowReader() {
     var r = window.fushiReader;
     if (fushiContinuousMode || fushiVnMode || !r) return null;
@@ -992,6 +1022,11 @@ install: function(C) {
   function _fushiFollowCancel() {
     _fushiFollowActive = false;
     _fushiFollowSamples = [];
+    if (_fushiFollowCurl) {
+      _fushiFollowCurl = false;
+      _fushiCurlSend('cancel', 0, 0, 0);
+      return;
+    }
     var r = window.fushiReader;
     if (r && typeof r.followDragCancel === 'function') r.followDragCancel();
   }
@@ -1004,12 +1039,22 @@ install: function(C) {
     var dy = y - startY;
     if (!_fushiFollowActive) {
       if (Math.abs(dx) <= 6 || Math.abs(dx) <= Math.abs(dy)) return;
-      var r = _fushiFollowReader();
-      if (!r) return;
       _fushiFollowSamples = [];
-      if (!r.followDragUpdate(dx)) return;
-      _fushiFollowActive = true;
-      clearImageLongPressTimer();
+      if (_fushiCurlFollowEnabled()) {
+        _fushiFollowCurl = true;
+        _fushiFollowActive = true;
+        clearImageLongPressTimer();
+        _fushiCurlSend('start', x, y, 0);
+      } else {
+        var r = _fushiFollowReader();
+        if (!r) return;
+        if (!r.followDragUpdate(dx)) return;
+        _fushiFollowCurl = false;
+        _fushiFollowActive = true;
+        clearImageLongPressTimer();
+      }
+    } else if (_fushiFollowCurl) {
+      _fushiCurlMove(x, y);
     } else {
       window.fushiReader.followDragUpdate(dx);
     }
@@ -1307,6 +1352,13 @@ install: function(C) {
       var followDx = x - startX;
       var followVelocity = _fushiFollowVelocity(x);
       _fushiFollowSamples = [];
+      if (_fushiFollowCurl) {
+        // 卷页：提交 / 回卷由 Dart 控制器判（同一组阈值），这里只交出松手。
+        _fushiFollowCurl = false;
+        if (e && e.preventDefault) e.preventDefault();
+        _fushiCurlSend('end', x, y, followVelocity);
+        return;
+      }
       var followDir = window.fushiReader && window.fushiReader.followDragEnd
         ? window.fushiReader.followDragEnd(followDx, followVelocity) : null;
       if (e && e.preventDefault) e.preventDefault();
@@ -2568,6 +2620,15 @@ updateLive: function(patch) {
             if (action == null) return;
             _executeShortcutAction(action);
             _focusOwnership.reclaim(FocusReclaimCause.gesture);
+          },
+        );
+
+        // 卷页跟手（JS 手势转发手指位置，page_curl.part.dart）。
+        controller.addJavaScriptHandler(
+          handlerName: 'onPageCurlDrag',
+          callback: (List<dynamic> args) {
+            if (_lyricsMode) return;
+            _onPageCurlDrag(args);
           },
         );
 

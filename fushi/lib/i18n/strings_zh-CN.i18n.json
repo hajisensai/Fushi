@@ -6322,6 +6322,7 @@
   "page_progress": "第 $current / $total 页",
   "page_turn_animation": "翻页动画",
   "page_turn_animation_cover": "覆盖",
+  "page_turn_animation_curl": "卷页",
   "page_turn_animation_fade": "淡入淡出",
   "page_turn_animation_none": "无",
   "page_turn_animation_paginated_only": "只在翻页模式下生效",

@@ -6322,6 +6322,7 @@
   "page_progress": "صفحة $current / $total",
   "page_turn_animation": "حركة تقليب الصفحة",
   "page_turn_animation_cover": "Cover",
+  "page_turn_animation_curl": "طي الصفحة",
   "page_turn_animation_fade": "تلاشي",
   "page_turn_animation_none": "بدون",
   "page_turn_animation_paginated_only": "Only applies in paginated mode",
