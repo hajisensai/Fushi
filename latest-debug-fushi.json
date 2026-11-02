@@ -8,33 +8,6 @@
   "notes": "Automated desktop debug-channel build from develop @ a22b426. Push releases are always prerelease and never Latest.",
   "assets": [
     {
-      "name": "fushi-3.3.0-debug.23079-ios.ipa",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.3.0-debug.23079-ios.ipa",
-      "releaseSequence": 23079,
-      "tag": "v3.3.0-debug.23079+8e68e40",
-      "version": "3.3.0-debug.23079",
-      "size": 96523562,
-      "sha256": "217f18d09ea293df7a348255801802f0a8709f5c72adad27d1bf1816708c8523"
-    },
-    {
-      "name": "fushi-3.3.0-debug.23079-macos-arm64.dmg",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.3.0-debug.23079-macos-arm64.dmg",
-      "releaseSequence": 23079,
-      "tag": "v3.3.0-debug.23079+8e68e40",
-      "version": "3.3.0-debug.23079",
-      "size": 271859571,
-      "sha256": "167eb2207ad0a5a07db9a935edb8d277ee3abf01fb0a513bb763ae80e26c78f1"
-    },
-    {
-      "name": "fushi-3.3.0-debug.23079-macos-arm64.zip",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.3.0-debug.23079-macos-arm64.zip",
-      "releaseSequence": 23079,
-      "tag": "v3.3.0-debug.23079+8e68e40",
-      "version": "3.3.0-debug.23079",
-      "size": 258532392,
-      "sha256": "f28290b23a6252c167ba3476f4a39aade6650913b17ef08a065a03685152937b"
-    },
-    {
       "name": "fushi-3.3.0-debug.23080-a22b426-debug.apk",
       "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.3.0-debug.23080-a22b426-debug.apk",
       "releaseSequence": 23080,
@@ -42,6 +15,33 @@
       "version": "3.3.0-debug.23080",
       "size": 260693231,
       "sha256": "4963772ec00fd888940fb075c28e5cc4b98dc8275248d3a957544d28c88afa49"
+    },
+    {
+      "name": "fushi-3.3.0-debug.23080-ios.ipa",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.3.0-debug.23080-ios.ipa",
+      "releaseSequence": 23080,
+      "tag": "v3.3.0-debug.23080+a22b426",
+      "version": "3.3.0-debug.23080",
+      "size": 96523231,
+      "sha256": "460166ea0e94fc95647068b128448e3e5b4198c235542f0bc6e18b233eb8acd7"
+    },
+    {
+      "name": "fushi-3.3.0-debug.23080-macos-arm64.dmg",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.3.0-debug.23080-macos-arm64.dmg",
+      "releaseSequence": 23080,
+      "tag": "v3.3.0-debug.23080+a22b426",
+      "version": "3.3.0-debug.23080",
+      "size": 271779221,
+      "sha256": "b7c6ff526068014833253aab4283b792b61a55b4732e459a3fd7d0b41ac6114d"
+    },
+    {
+      "name": "fushi-3.3.0-debug.23080-macos-arm64.zip",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.3.0-debug.23080-macos-arm64.zip",
+      "releaseSequence": 23080,
+      "tag": "v3.3.0-debug.23080+a22b426",
+      "version": "3.3.0-debug.23080",
+      "size": 258532590,
+      "sha256": "feea0652836d6e305b8cf0aa25f8c958f9ab9f6cc5f858d5ca93e9126894278d"
     },
     {
       "name": "fushi-3.3.0-debug.23080-windows-setup.exe",
