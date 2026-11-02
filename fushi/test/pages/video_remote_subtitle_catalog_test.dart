@@ -9,7 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/video/video_subtitle_source.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
-import 'package:fushi/src/pages/implementations/video_fushi/remote_subtitle_catalog.dart';
+import 'package:fushi/src/media/video/remote_subtitle_catalog.dart';
 
 SubtitleSource _local(String path) =>
     SubtitleSource.external(externalPath: path, label: path.split('/').last);
@@ -142,11 +142,22 @@ void main() {
     test('换集 / 重进从持久化重建本机档列表，不再清空了事；后端默认槽先清空', () {
       final String body = loadRemoteEpisodeBody();
       expect(body, contains('_remoteSubtitlePath = null;'));
+      final String compact = body.replaceAll(RegExp(r'\s+'), '');
+      const String restore =
+          'finalList<SubtitleSource>restoredLocalSubtitles=await_restoreRemoteLocalSubtitleFiles(index);';
+      const String staleGate = 'if(seq!=_episodeLoadSeq||!mounted)return;';
+      const String assign = '_importedSubtitleSources=restoredLocalSubtitles;';
+      final int restoreAt = compact.indexOf(restore);
+      expect(restoreAt, greaterThanOrEqualTo(0), reason: '按本集持久化重建');
+      // 作废门必须夹在 await 与落列表之间：快速连切时较早那集的 `File.exists` 可能晚回，
+      // 先落再判会把它那集的档覆盖到当前集列表上。
+      final int gateAt = compact.indexOf(staleGate, restoreAt);
+      expect(gateAt, greaterThan(restoreAt));
+      expect(compact.indexOf(assign, gateAt), greaterThan(gateAt));
       expect(
-        body,
-        contains(
-          '_importedSubtitleSources = await _restoreRemoteLocalSubtitleFiles(index);',
-        ),
+        compact.contains('_importedSubtitleSources=await'),
+        isFalse,
+        reason: '不得在集序号校验之前直接落列表',
       );
       expect(
         body.contains('_importedSubtitleSources = const <SubtitleSource>[];'),

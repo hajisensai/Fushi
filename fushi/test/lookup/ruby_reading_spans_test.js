@@ -75,13 +75,26 @@ const src = fs.readFileSync(readerPath, 'utf8');
   assert.deepStrictEqual(r.spans, [{ s: 0, e: 2, r: 'きょう' }]);
 }
 
-// ④ 从多字基字中间起点：基字只被扫到一部分，读音无法按字拆分 → 不报。
+// ④ 从多字基字中间起点（BUG-3978 / chj2rZn89F）：selectionStartFor 把起点吸附到 ruby
+// 基字段开头，取词串含完整基字，读音照常带出——查的、亮的、读音三者同一范围。
 {
   const base = text('今日');
   const p = el('p', [el('ruby', [base, el('rt', ['きょう'])]), 'は晴れ。']);
   const r = scan(src, p, base, 1);
-  assert.strictEqual(r.text, '日は晴れ');
-  assert.deepStrictEqual(r.spans, [], '残缺基字不得报读音');
+  assert.strictEqual(r.text, '今日は晴れ', '点基字中间也从整组基字起查');
+  assert.deepStrictEqual(r.spans, [{ s: 0, e: 2, r: 'きょう' }]);
+}
+
+// ④' 选区只覆盖基字的一部分（如拖拽选区 / 手柄从中间起）：读音无法按字拆分 → 不报。
+{
+  const base = text('今日');
+  const p = el('p', [el('ruby', [base, el('rt', ['きょう'])]), 'は晴れ。']);
+  const sel = load(src, p);
+  assert.deepStrictEqual(
+    structuredClone(sel.rubyReadingSpans([{ node: base, start: 1, end: 2 }], '日')),
+    [],
+    '残缺基字不得报读音',
+  );
 }
 
 // ⑤ 没有 ruby 的正文：空数组。

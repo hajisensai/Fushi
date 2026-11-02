@@ -81,6 +81,9 @@ enum PathValueShape {
   /// JSON map，value 是 subtitleSource 四态编码（本地已下载 = 绝对路径）。
   subtitleSourceMapJson,
 
+  /// JSON map，value 是绝对路径的字符串数组（`{key: [path, ...]}`）。
+  stringListMapJson,
+
   /// 字体 catalog：{version, fonts:[{id,name,path}]}。
   fontCatalogJson,
 
@@ -1287,6 +1290,15 @@ final List<PathRebasePref> kPathRebasePrefs = <PathRebasePref>[
         'value 是 subtitleSource 四态编码，本地已下载态是 <documents>/video_subtitles '
         '下的绝对路径（jimaku_batch_dialog.dart:268 等）。与 video_books.subtitle_source '
         '同型，只是落在 KV 而非列上。',
+  ),
+  PathRebasePref(
+    'video_remote_subtitle_files',
+    PathRebaseKind.documentsRooted,
+    PathValueShape.stringListMapJson,
+    'Xt3RCTPKhX：远端视频按集记下的本机字幕档列表（`{集 key: [绝对路径...]}`），在线'
+        '下载 / 手动导入的字幕落 <documents>/video_subtitles。不改写 → 迁移后播放页按'
+        '「文件还在不在」过滤，本机字幕行整批消失。列表里若有用户外部路径，作用域'
+        '谓词天然跳过。',
   ),
   PathRebasePref(
     'download_save_root',

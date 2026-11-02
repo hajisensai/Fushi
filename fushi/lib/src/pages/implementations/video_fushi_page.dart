@@ -437,7 +437,7 @@ import 'package:fushi/src/utils/net/ffmpeg_relay_route.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_language_preference.dart';
 import 'package:fushi_engine/media/video/anime_source_video_path.dart';
 import 'package:fushi/src/media/video/online/anime_source_video_client.dart';
-import 'package:fushi/src/pages/implementations/video_fushi/remote_subtitle_catalog.dart';
+import 'package:fushi/src/media/video/remote_subtitle_catalog.dart';
 import 'package:fushi/src/media/video/online/anime_source_library.dart';
 import 'package:fushi/src/media/video/online/video_online_sources_gate.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
@@ -4648,8 +4648,12 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 本地换源在 [_applyLoad] 的 `clipExportSourceChanged` 分支清（远端
     // `_currentVideoPath` 恒 null，走不到那里）。
     _remoteSubtitlePath = null;
-    _importedSubtitleSources = await _restoreRemoteLocalSubtitleFiles(index);
+    // 先查完再按集序号落：重建要逐个 `File.exists`，快速连切时较早那集的查询可能晚于
+    // 后一集回来——直接 `= await` 会让作废的那一程把它那集的档覆盖到当前集列表上。
+    final List<SubtitleSource> restoredLocalSubtitles =
+        await _restoreRemoteLocalSubtitleFiles(index);
     if (seq != _episodeLoadSeq || !mounted) return;
+    _importedSubtitleSources = restoredLocalSubtitles;
     // YouTube 画质档是 per-video 懒解析：新一集起播先复位（下次点开画质菜单再懒解析）。
     _youtubeVariants = const <YoutubeVideoVariant>[];
     _selectedYoutubeVariantIndex = -1;

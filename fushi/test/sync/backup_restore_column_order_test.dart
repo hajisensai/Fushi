@@ -7,6 +7,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 import 'package:sqlite3/sqlite3.dart' as sqlite;
 
+import '../helpers/source_guard.dart';
 import 'temp_dir_cleanup.dart';
 
 /// 推荐包导入后 Windows 启动 `FormatException: Invalid radix-10 number`（反馈
@@ -192,11 +193,9 @@ void main() {
     final List<String> offenders = <String>[];
     for (final FileSystemEntity e in dir.listSync()) {
       if (e is! File || !e.path.endsWith('.dart')) continue;
-      final List<String> lines = e.readAsLinesSync();
+      final List<String> lines = maskComments(e.readAsStringSync()).split('\n');
       for (int i = 0; i < lines.length; i++) {
-        final String line = lines[i].trimLeft();
-        if (line.startsWith('//')) continue;
-        if (positional.hasMatch(line)) offenders.add('${e.path}:${i + 1}');
+        if (positional.hasMatch(lines[i])) offenders.add('${e.path}:${i + 1}');
       }
     }
     expect(

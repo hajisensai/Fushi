@@ -11,6 +11,8 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/source_guard.dart';
+
 const String _engine = '../packages/fushi_engine/lib/srs';
 
 /// 远程复习会话里可达的页面与它们调用的引擎流程。新页面能从复习页 / 远程牌组列表打开时加进来。
@@ -229,8 +231,9 @@ void main() {
     for (final String path in files) {
       if (exempt.contains(path)) continue;
       final List<String> lines = _read(path).split('\n');
+      final List<String> codeLines = maskComments(_read(path)).split('\n');
       for (int i = 0; i < lines.length; i++) {
-        final String code = lines[i].split('//').first;
+        final String code = codeLines[i];
         if (raw.hasMatch(code)) {
           offenders.add('$path:${i + 1}: ${lines[i].trim()}');
         }
@@ -239,7 +242,7 @@ void main() {
     // 跨行写法（`Navigator.of(\n context,\n ).push`）：整文件去注释后再扫一遍。
     for (final String path in files) {
       if (exempt.contains(path)) continue;
-      final String src = _read(path).replaceAll(RegExp(r'//[^\n]*'), '');
+      final String src = maskComments(_read(path));
       if (RegExp(
         r'Navigator\s*\.\s*(?:of|maybeOf)\s*\([^;]*?\)\s*\.\s*push\w*\s*[<(]',
       ).hasMatch(src)) {

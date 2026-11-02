@@ -6,6 +6,8 @@ import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:path/path.dart' as p;
 
+import '../helpers/source_guard.dart';
+
 /// 4w_veZGiQ7：macOS（去沙盒后）/ Windows / Linux 上，错误日志、崩溃面包屑、闪退待报状态
 /// 等诊断文件直落用户 `~/Documents` 根，与 Fushi 自己的 `<Documents>/Fushi/data` 分家。
 /// 现在统一走 [AppPaths.diagnosticsDirectory]，旧位置的残留在首次解析时搬过去——搬迁
@@ -228,10 +230,7 @@ void main() {
     ).listSync(recursive: true)) {
       if (e is! File || !e.path.endsWith('.dart')) continue;
       final String rel = p.posix.joinAll(p.split(e.path));
-      final bool hits = e.readAsLinesSync().any((String line) {
-        final String code = line.trimLeft();
-        return !code.startsWith('//') && call.hasMatch(code);
-      });
+      final bool hits = call.hasMatch(maskComments(e.readAsStringSync()));
       if (hits && !allowed.contains(rel)) offenders.add(rel);
     }
     expect(
