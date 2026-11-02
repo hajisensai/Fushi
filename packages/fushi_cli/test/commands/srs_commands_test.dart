@@ -254,4 +254,105 @@ void main() {
       allOf(contains('共 1 条'), contains('魚')),
     );
   });
+
+  test('card-type / set-field / find-replace：目标必给、参数原样进 body', () {
+    final CtlRequestSpec type = _build('card-type', <String>[
+      'word-and-sentence',
+      '--q',
+      '-IsWordAndSentenceCard:_*',
+      '--dry-run',
+    ]);
+    expect(
+      (type.method, type.path),
+      ('POST', '/api/admin/srs/notes/batch/card-type'),
+    );
+    expect(type.body, <String, Object?>{
+      'type': 'word-and-sentence',
+      'q': '-IsWordAndSentenceCard:_*',
+      'dryRun': true,
+    });
+    expect(() => _build('card-type', <String>['word']), _usageError());
+    expect(
+      () => _build('card-type', <String>['nope', '--note', 'n1']),
+      _usageError(),
+    );
+
+    final CtlRequestSpec set = _build('set-field', <String>[
+      'Hint',
+      '--value',
+      ' a b ',
+      '--note',
+      'n1',
+      '--note',
+      'n2',
+    ]);
+    expect(set.path, '/api/admin/srs/notes/batch/set-field');
+    expect(set.body, <String, Object?>{
+      'targetField': 'Hint',
+      'value': ' a b ',
+      'notes': <String>['n1', 'n2'],
+    });
+    expect(
+      _build('set-field', <String>['Hint', '--deck', 'JP']).body!['value'],
+      '',
+    );
+    expect(
+      () => _build('set-field', <String>['Hint', '--field', 'Term']),
+      _usageError(),
+    );
+
+    final CtlRequestSpec fr = _build('find-replace', <String>[
+      r'(\w+)',
+      r'<b>$1</b>',
+      '--note',
+      'n1',
+      '--in-field',
+      'Sentence',
+      '--regex',
+      '--ignore-case',
+    ]);
+    expect(fr.path, '/api/admin/srs/notes/batch/find-replace');
+    expect(fr.body, <String, Object?>{
+      'find': r'(\w+)',
+      'replace': r'<b>$1</b>',
+      'targetField': 'Sentence',
+      'regex': true,
+      'caseSensitive': false,
+      'notes': <String>['n1'],
+    });
+    expect(
+      () => _build('find-replace', <String>['a', '--note', 'n1']),
+      _usageError(),
+    );
+    expect(
+      _build('find-replace', <String>[
+        'a',
+        '',
+        '--note',
+        'n1',
+      ]).body!['replace'],
+      '',
+    );
+  });
+
+  test('批量改笔记 render：预演 / 已改 + 跳过 + 样例', () {
+    final String text = _render('card-type', <String, Object?>{
+      'dryRun': true,
+      'notes': 2,
+      'fieldChanges': 3,
+      'skipped': 1,
+      'unchanged': 0,
+      'sample': <Object?>[
+        <String, Object?>{
+          'note': 'n1',
+          'field': 'IsWordAndSentenceCard',
+          'before': '',
+          'after': 'x',
+        },
+      ],
+    });
+    expect(text, contains('预演：将修改 2 条笔记'));
+    expect(text, contains('1 条笔记的类型没有所需字段'));
+    expect(text, contains('n1  IsWordAndSentenceCard: "" → "x"'));
+  });
 }

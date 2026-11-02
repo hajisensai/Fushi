@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:args/args.dart';
 
 import '../ctl_commands.dart';
@@ -81,11 +83,46 @@ const List<CtlCommandGroup> srsCommandGroups = <CtlCommandGroup>[
         build: _buildDismiss,
         render: _renderDismiss,
       ),
+      CtlCommandSpec(
+        name: 'card-type',
+        summary:
+            '批量设卡型（Lapis / Fushi 卡片正面开关）：word / sentence / word-and-sentence / click / audio',
+        usage: '<卡型> (--note <id>... | --q <查询>) [--dry-run]',
+        configure: _configureNoteBatch,
+        build: _buildCardType,
+        render: _renderNoteBatch,
+      ),
+      CtlCommandSpec(
+        name: 'set-field',
+        summary: '批量给某个字段设值（--value 省略 = 清空）；类型没有这个字段的笔记跳过',
+        usage: '<字段名> [--value <值>] (--note <id>... | --q <查询>) [--dry-run]',
+        configure: _configureSetField,
+        build: _buildSetField,
+        render: _renderNoteBatch,
+      ),
+      CtlCommandSpec(
+        name: 'find-replace',
+        summary: '批量查找替换字段原文（--in-field 限定字段，--regex 用正则，替换里 \$1 引用分组）',
+        usage:
+            '<查找> <替换为> (--note <id>... | --q <查询>) [--in-field 字段] [--regex] [--ignore-case] [--dry-run]',
+        configure: _configureFindReplace,
+        build: _buildFindReplace,
+        render: _renderNoteBatch,
+      ),
     ],
   ),
 ];
 
 const String _root = '/api/admin/srs';
+
+/// `card-type` 的卡型（app 侧 `SrsCardType.wire`）。
+const List<String> kSrsCardTypes = <String>[
+  'word',
+  'sentence',
+  'word-and-sentence',
+  'click',
+  'audio',
+];
 
 /// `conflict-resolve` 的实体类型（app 侧 `SrsEntityKind.wire`）。
 const List<String> kSrsEntityKinds = <String>[
@@ -416,4 +453,115 @@ String _renderDismiss(Object? data) {
   if (data is! Map) return renderCtlJson(data);
   final Object? notes = data['dismissed'];
   return '已标记不是重复：${notes is List ? notes.join(', ') : notes}';
+}
+
+// ── 批量改笔记 ───────────────────────────────────────────────────────
+
+void _configureNoteBatch(ArgParser parser) {
+  parser
+    ..addMultiOption('note', help: '要改的笔记 id（可重复；与 --q 二选一）')
+    ..addOption('q', help: '用搜索选笔记（Anki 搜索语法，同 srs notes）')
+    ..addOption('field', help: '与 --q 连用：只选这个字段包含查询文本的笔记')
+    ..addOption('deck', help: '与 --q 连用：只选这个牌组（全名，含子牌组）')
+    ..addFlag('dry-run', negatable: false, help: '只预演：条数、跳过的笔记与改动样例，不写入');
+}
+
+void _configureSetField(ArgParser parser) {
+  _configureNoteBatch(parser);
+  parser.addOption('value', help: '新值（可含 HTML）；省略 = 清空');
+}
+
+void _configureFindReplace(ArgParser parser) {
+  _configureNoteBatch(parser);
+  parser
+    ..addOption('in-field', help: '只在这个字段里替换（缺省所有字段）')
+    ..addFlag('regex', negatable: false, help: '<查找> 是正则')
+    ..addFlag('ignore-case', negatable: false, help: '不区分大小写');
+}
+
+/// 目标与预演参数 → body。没给 --note 也没给 --q / --field / --deck 时报用法错（不允许改全库）。
+Map<String, Object?> _noteBatchBody(CtlCommandContext c) {
+  final List<String> notes = <String>[
+    for (final String id in c.multiOption('note'))
+      if (id.trim().isNotEmpty) id.trim(),
+  ];
+  final String? q = c.option('q');
+  final String? field = c.option('field');
+  final String? deck = c.option('deck');
+  if (notes.isEmpty && q == null && deck == null) {
+    throw const CtlUsageError('用 --note <id> 或 --q <查询> / --deck 指定要改的笔记');
+  }
+  if (field != null && q == null) {
+    throw const CtlUsageError('--field 需要和 --q 一起用');
+  }
+  return <String, Object?>{
+    if (notes.isNotEmpty) 'notes': notes,
+    'q': ?q,
+    'field': ?field,
+    'deck': ?deck,
+    if (c.flag('dry-run')) 'dryRun': true,
+  };
+}
+
+CtlRequestSpec _buildCardType(CtlCommandContext c) {
+  final String type = c.positional(0, '卡型');
+  if (!kSrsCardTypes.contains(type)) {
+    throw CtlUsageError('卡型只能是 ${kSrsCardTypes.join(' / ')}：$type');
+  }
+  return CtlRequestSpec.post(
+    '$_root/notes/batch/card-type',
+    body: <String, Object?>{'type': type, ..._noteBatchBody(c)},
+  );
+}
+
+CtlRequestSpec _buildSetField(CtlCommandContext c) => CtlRequestSpec.post(
+  '$_root/notes/batch/set-field',
+  body: <String, Object?>{
+    'targetField': c.positional(0, '字段名'),
+    // 原样传（不 trim）：值里的空白有意义。
+    'value': c.args['value'] as String? ?? '',
+    ..._noteBatchBody(c),
+  },
+);
+
+CtlRequestSpec _buildFindReplace(CtlCommandContext c) {
+  final String find = c.positional(0, '查找');
+  if (c.rest.length < 2) throw const CtlUsageError('缺少参数 <替换为>（替换成空串写 ""）');
+  return CtlRequestSpec.post(
+    '$_root/notes/batch/find-replace',
+    body: <String, Object?>{
+      'find': find,
+      'replace': c.rest[1],
+      'targetField': ?c.option('in-field'),
+      if (c.flag('regex')) 'regex': true,
+      if (c.flag('ignore-case')) 'caseSensitive': false,
+      ..._noteBatchBody(c),
+    },
+  );
+}
+
+String _renderNoteBatch(Object? data) {
+  if (data is! Map) return renderCtlJson(data);
+  final bool dryRun = data['dryRun'] == true;
+  final StringBuffer out = StringBuffer(
+    dryRun
+        ? '预演：将修改 ${data['notes']} 条笔记（${data['fieldChanges']} 个字段）'
+        : '已修改 ${data['notes']} 条笔记（${data['fieldChanges']} 个字段；可在 AI 操作记录里撤销）',
+  );
+  final num skipped = data['skipped'] as num? ?? 0;
+  if (skipped > 0) out.write('，$skipped 条笔记的类型没有所需字段、已跳过');
+  final num unchanged = data['unchanged'] as num? ?? 0;
+  if (unchanged > 0) out.write('，$unchanged 条本来就是目标值');
+  final Object? sample = data['sample'];
+  if (sample is List && sample.isNotEmpty) {
+    out.write('\n样例：');
+    for (final Object? row in sample) {
+      if (row is! Map) continue;
+      out.write(
+        '\n  ${row['note']}  ${row['field']}: '
+        '${jsonEncode(row['before'])} → ${jsonEncode(row['after'])}',
+      );
+    }
+  }
+  return out.toString();
 }

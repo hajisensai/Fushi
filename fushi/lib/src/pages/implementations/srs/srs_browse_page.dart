@@ -23,6 +23,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_engine/srs/srs_browse.dart';
 import 'package:fushi_engine/srs/srs_browse_ops.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_note_batch_edit.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -583,6 +584,9 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
     SrsBrowseBatchAction.move,
     SrsBrowseBatchAction.addTags,
     SrsBrowseBatchAction.removeTags,
+    SrsBrowseBatchAction.setCardType,
+    SrsBrowseBatchAction.setField,
+    SrsBrowseBatchAction.findReplace,
     if (_canSchedule) SrsBrowseBatchAction.reset,
     if (_canSchedule) SrsBrowseBatchAction.setDue,
     if (widget.onChangeNoteType != null) SrsBrowseBatchAction.changeNoteType,
@@ -670,6 +674,67 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
           add: add ? tags : const <String>[],
           remove: add ? const <String>[] : tags,
         );
+      case SrsBrowseBatchAction.setCardType:
+        final SrsCardType? type = await _focusOwnership.guardOverlay(
+          () => pickSrsCardType(context),
+        );
+        if (type == null || !mounted) return;
+        run = await _confirmFieldPlan(
+          store,
+          t.srs_browse_card_type_set,
+          await srsPlanCardType(store, noteIds, type),
+        );
+        if (run == null) return;
+      case SrsBrowseBatchAction.setField:
+        final List<String> fieldNames = _fieldNames;
+        if (fieldNames.isEmpty) return;
+        final String? field = await _focusOwnership.guardOverlay(
+          () => pickSrsBrowseField(
+            context,
+            fieldNames: fieldNames,
+            selected: null,
+            title: t.srs_browse_field_set,
+            allowAll: false,
+          ),
+        );
+        if (field == null || !mounted) return;
+        final String? value = await _focusOwnership.guardOverlay(
+          () => showFushiTextInputDialog(
+            context: context,
+            title: t.srs_browse_field_value_title(field: field),
+            hintText: t.srs_browse_field_value_hint,
+            icon: FushiIcons.edit,
+            allowEmpty: true,
+            trim: false,
+            maxLines: 4,
+          ),
+        );
+        if (value == null || !mounted) return;
+        run = await _confirmFieldPlan(
+          store,
+          t.srs_browse_field_set,
+          await srsPlanSetField(store, noteIds, field, value),
+        );
+        if (run == null) return;
+      case SrsBrowseBatchAction.findReplace:
+        final SrsNoteFieldPlan? plan = await _focusOwnership.guardOverlay(
+          () => showSrsFindReplaceDialog<SrsNoteFieldPlan>(
+            context,
+            fieldNames: _fieldNames,
+            onSubmit: (SrsFindReplaceRequest r) => srsPlanFindReplace(
+              store,
+              noteIds,
+              fieldName: r.fieldName,
+              find: r.find,
+              replace: r.replace,
+              regex: r.regex,
+              caseSensitive: r.caseSensitive,
+            ),
+          ),
+        );
+        if (plan == null || !mounted) return;
+        run = await _confirmFieldPlan(store, t.srs_browse_find_replace, plan);
+        if (run == null) return;
       case SrsBrowseBatchAction.reset:
         final bool ok = await _focusOwnership.guardOverlay(
           () => showFushiConfirmDialog(
@@ -751,6 +816,25 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  /// 批量改笔记字段的计划 → 确认。空计划给「没有改动」、取消返回 null；确认后返回落库动作
+  /// （结果交给 [_runBatch] 的撤销栈与 toast）。
+  Future<Future<SrsBatchOutcome> Function()?> _confirmFieldPlan(
+    SrsDbStore store,
+    String title,
+    SrsNoteFieldPlan plan,
+  ) async {
+    if (!mounted) return null;
+    if (plan.isEmpty) {
+      FushiToast.show(msg: t.srs_browse_nothing_changed);
+      return null;
+    }
+    final bool ok = await _focusOwnership.guardOverlay(
+      () => confirmSrsNoteFieldPlan(context, title: title, plan: plan),
+    );
+    if (!ok || !mounted) return null;
+    return () => srsApplyNoteFieldPlan(store, plan);
   }
 
   void _undoLast() {
