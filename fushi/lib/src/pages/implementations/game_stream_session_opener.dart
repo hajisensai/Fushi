@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/models/game_stream_button_profile.dart';
 import 'package:fushi/src/models/game_stream_lookup_layout.dart';
 import 'package:fushi/src/pages/implementations/game_stream_page.dart';
 import 'package:fushi/src/sync/game_stream_client.dart';
@@ -42,6 +43,8 @@ Future<void> openGameStreamSession({
   ValueChanged<GameStreamVideoSettings>? onSettingsChanged,
   GameStreamLookupLayout lookupLayout = const GameStreamLookupLayout(),
   ValueChanged<GameStreamLookupLayout>? onLookupLayoutChanged,
+  GameStreamButtonProfile buttonProfile = const GameStreamButtonProfile(),
+  ValueChanged<GameStreamButtonProfile>? onButtonProfileChanged,
 }) async {
   final NavigatorState navigator = Navigator.of(context);
   final String requestedClientId = clientId ?? gameStreamReceiverClientId;
@@ -101,6 +104,8 @@ Future<void> openGameStreamSession({
           onSettingsChanged: onSettingsChanged,
           lookupLayout: lookupLayout,
           onLookupLayoutChanged: onLookupLayoutChanged,
+          buttonProfile: buttonProfile,
+          onButtonProfileChanged: onButtonProfileChanged,
         ),
       ),
     );

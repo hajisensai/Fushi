@@ -8,6 +8,7 @@ import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/game_stream_button_profile.dart';
 import 'package:fushi/src/models/game_stream_lookup_layout.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/game_stream_session_opener.dart';
@@ -108,6 +109,9 @@ class GameStreamLibraryServices {
             lookupLayout: prefs.gameStreamLookupLayout,
             onLookupLayoutChanged: (GameStreamLookupLayout next) =>
                 unawaited(prefs.setGameStreamLookupLayout(next)),
+            buttonProfile: prefs.gameStreamButtonProfile,
+            onButtonProfileChanged: (GameStreamButtonProfile next) =>
+                unawaited(prefs.setGameStreamButtonProfile(next)),
           ),
       readSettings: () => prefs.gameStreamVideoSettings,
       writeSettings: prefs.setGameStreamVideoSettings,

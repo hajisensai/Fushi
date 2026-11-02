@@ -1,11 +1,13 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:ui' show KeyEventDeviceType;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
+import 'package:fushi/src/models/game_stream_button_profile.dart';
 import 'package:fushi/src/models/game_stream_lookup_layout.dart';
 import 'package:fushi/src/pages/implementations/game_stream_settings_sheet.dart';
 import 'package:fushi/src/sync/game_stream_client.dart';
@@ -98,20 +100,6 @@ String? gameStreamHostKeyName(LogicalKeyboardKey key) {
   };
 }
 
-/// Physical controller button → on-screen pad button, so a paired gamepad
-/// drives the same mapping (and key rebinding) as the touch pad.
-GameStreamVirtualButton? gameStreamPadButtonFor(
-  LogicalKeyboardKey key,
-) => switch (key) {
-  LogicalKeyboardKey.gameButtonA => GameStreamVirtualButton.confirm,
-  LogicalKeyboardKey.gameButtonB => GameStreamVirtualButton.cancel,
-  LogicalKeyboardKey.gameButtonLeft1 => GameStreamVirtualButton.shoulderLeft,
-  LogicalKeyboardKey.gameButtonRight1 => GameStreamVirtualButton.shoulderRight,
-  LogicalKeyboardKey.gameButtonStart ||
-  LogicalKeyboardKey.gameButtonSelect => GameStreamVirtualButton.menu,
-  _ => null,
-};
-
 class GameStreamPage extends StatefulWidget {
   const GameStreamPage({
     required this.sessionId,
@@ -125,6 +113,8 @@ class GameStreamPage extends StatefulWidget {
     this.onSettingsChanged,
     this.lookupLayout = const GameStreamLookupLayout(),
     this.onLookupLayoutChanged,
+    this.buttonProfile = const GameStreamButtonProfile(),
+    this.onButtonProfileChanged,
     super.key,
   });
 
@@ -150,6 +140,12 @@ class GameStreamPage extends StatefulWidget {
 
   /// Persists a rail resize once the drag (or key press) that made it ends.
   final ValueChanged<GameStreamLookupLayout>? onLookupLayoutChanged;
+
+  /// What each physical controller button does (persisted by the caller).
+  final GameStreamButtonProfile buttonProfile;
+
+  /// Persists a change made in the controls sheet.
+  final ValueChanged<GameStreamButtonProfile>? onButtonProfileChanged;
 
   static const Key videoKey = ValueKey<String>('game-stream-video');
   static const Key transcriptKey = ValueKey<String>('game-stream-transcript');
@@ -196,6 +192,12 @@ class _GameStreamPageState extends State<GameStreamPage>
   final Map<GameStreamVirtualButton, String> _keyBindings =
       <GameStreamVirtualButton, String>{};
   final Set<GameStreamVirtualButton> _heldButtons = <GameStreamVirtualButton>{};
+  late GameStreamButtonProfile _buttonProfile = widget.buttonProfile;
+
+  /// Physical buttons currently down, with the action their press started:
+  /// the release must undo that action even if the profile changed meanwhile.
+  final Map<GameStreamPhysicalButton, GameStreamButtonAction> _heldPhysical =
+      <GameStreamPhysicalButton, GameStreamButtonAction>{};
   GameStreamTouchInterpreter? _touch;
   GameStreamMouseInterpreter? _mouse;
   ({Rect bounds, Rect content})? _mouseGeometry;
@@ -285,6 +287,7 @@ class _GameStreamPageState extends State<GameStreamPage>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     unawaited(_releasePointer());
+    unawaited(_releasePhysicalButtons());
     _lookupController?.removeListener(_onLookupChanged);
     widget.receiver?.removeListener(_onReceiverChanged);
     widget.receiver?.renderer.removeListener(_schedulePointerGeometryCheck);
@@ -354,6 +357,7 @@ class _GameStreamPageState extends State<GameStreamPage>
         (receiver.backgrounded ||
             receiver.state != GameStreamReceiverState.connected)) {
       unawaited(_releasePointer());
+      unawaited(_releasePhysicalButtons());
     }
     if (mounted) setState(() {});
   }
@@ -705,9 +709,131 @@ class _GameStreamPageState extends State<GameStreamPage>
         _ => FushiIcons.keyboard,
       };
 
+  static String _physicalLabel(GameStreamPhysicalButton button) =>
+      switch (button) {
+        GameStreamPhysicalButton.dpadUp => '↑',
+        GameStreamPhysicalButton.dpadDown => '↓',
+        GameStreamPhysicalButton.dpadLeft => '←',
+        GameStreamPhysicalButton.dpadRight => '→',
+        GameStreamPhysicalButton.a => 'A',
+        GameStreamPhysicalButton.b => 'B',
+        GameStreamPhysicalButton.x => 'X',
+        GameStreamPhysicalButton.y => 'Y',
+        GameStreamPhysicalButton.l1 => 'L1',
+        GameStreamPhysicalButton.r1 => 'R1',
+        GameStreamPhysicalButton.l2 => 'L2',
+        GameStreamPhysicalButton.r2 => 'R2',
+        GameStreamPhysicalButton.l3 => 'L3',
+        GameStreamPhysicalButton.r3 => 'R3',
+        GameStreamPhysicalButton.start => 'Start',
+        GameStreamPhysicalButton.select => 'Select',
+      };
+
+  String _actionLabel(GameStreamButtonAction action) => switch (action) {
+    GameStreamPadAction(:final GameStreamVirtualButton button) =>
+      t.game_stream_action_pad(button: _buttonLabel(button)),
+    GameStreamHostKeyAction(:final String key) => t.game_stream_action_key(
+      key: key,
+    ),
+    GameStreamMouseButtonAction(:final GameStreamMouseAction mouse) =>
+      switch (mouse) {
+        GameStreamMouseAction.leftClick => t.game_stream_action_left_click,
+        GameStreamMouseAction.rightClick => t.game_stream_action_right_click,
+        GameStreamMouseAction.middleClick => t.game_stream_action_middle_click,
+        GameStreamMouseAction.wheelUp => t.game_stream_action_wheel_up,
+        GameStreamMouseAction.wheelDown => t.game_stream_action_wheel_down,
+      },
+    GameStreamAppAction(:final GameStreamReceiverAction action) =>
+      switch (action) {
+        GameStreamReceiverAction.toggleLookupPanel =>
+          t.game_stream_action_lookup_panel_toggle,
+        GameStreamReceiverAction.toggleOnScreenPad =>
+          t.game_stream_action_on_screen_pad_toggle,
+      },
+    GameStreamNoAction() => t.game_stream_action_none,
+  };
+
+  /// Every action a controller button can take on this host, in menu order.
+  /// Mouse actions the host does not support are left out.
+  List<GameStreamButtonAction> get _availableButtonActions =>
+      <GameStreamButtonAction>[
+        const GameStreamNoAction(),
+        for (final GameStreamVirtualButton button
+            in GameStreamVirtualButton.values)
+          GameStreamPadAction(button),
+        for (final GameStreamMouseAction mouse in GameStreamMouseAction.values)
+          if (_canRun(GameStreamMouseButtonAction(mouse)))
+            GameStreamMouseButtonAction(mouse),
+        for (final GameStreamReceiverAction action
+            in GameStreamReceiverAction.values)
+          GameStreamAppAction(action),
+        for (final String key in GameStreamHostKeyAction.keys)
+          GameStreamHostKeyAction(key),
+      ];
+
+  void _updateButtonProfile(GameStreamButtonProfile next) {
+    if (next == _buttonProfile) return;
+    setState(() => _buttonProfile = next);
+    widget.onButtonProfileChanged?.call(next);
+  }
+
+  Widget _keysSectionHeader(BuildContext context, String label) => Padding(
+    padding: const EdgeInsets.fromLTRB(4, 16, 4, 8),
+    child: Text(
+      label,
+      style: Theme.of(context).textTheme.titleSmall?.copyWith(
+        color: Theme.of(context).colorScheme.primary,
+      ),
+    ),
+  );
+
+  Widget _controllerButtonRow(
+    GameStreamPhysicalButton button,
+    List<GameStreamButtonAction> actions,
+    StateSetter updateSheet,
+  ) {
+    final GameStreamButtonAction current = _buttonProfile.actionFor(button);
+    // A saved action this host cannot run (e.g. right click on an older
+    // host) still shows, so the row never displays a choice it does not list.
+    final List<GameStreamButtonAction> items = <GameStreamButtonAction>[
+      ...actions,
+      if (!actions.contains(current)) current,
+    ];
+    return FushiListItem(
+      key: ValueKey<String>('game-stream-controller-${button.name}'),
+      leading: FushiListLeadingIcon(
+        FushiIcons.games,
+        tone: _buttonProfile.isCustomized(button)
+            ? FushiCardTone.primary
+            : FushiCardTone.secondary,
+      ),
+      title: Text(_physicalLabel(button)),
+      trailing: FushiDropdownButton<String>(
+        key: ValueKey<String>('game-stream-controller-action-${button.name}'),
+        value: current.toWire(),
+        items: <DropdownMenuItem<String>>[
+          for (final GameStreamButtonAction action in items)
+            DropdownMenuItem<String>(
+              value: action.toWire(),
+              child: Text(_actionLabel(action)),
+            ),
+        ],
+        onChanged: (String? wire) {
+          final GameStreamButtonAction? action =
+              GameStreamButtonAction.tryParse(wire);
+          if (action == null) return;
+          updateSheet(
+            () =>
+                _updateButtonProfile(_buttonProfile.withAction(button, action)),
+          );
+        },
+      ),
+    );
+  }
+
   Future<void> _configureKeys() async {
     // A held control must retain its down/up mapping until it is released.
-    if (_heldButtons.isNotEmpty) return;
+    if (_heldButtons.isNotEmpty || _heldPhysical.isNotEmpty) return;
     final bool restoreLookup = _lookupVisible;
     setState(() => _lookupVisible = false);
     try {
@@ -715,16 +841,17 @@ class _GameStreamPageState extends State<GameStreamPage>
         context: context,
         builder: (BuildContext context) => StatefulBuilder(
           builder: (BuildContext context, StateSetter updateSheet) =>
-              // M3E 底部弹层：共享弹层框（标题 + 说明），按键映射是一组分段
-              // 列表行，行尾下拉选主机按键。
+              // M3E 底部弹层：共享弹层框（标题 + 说明）。上组是屏幕手柄（仅本次
+              // 会话），下组是实体手柄按键（保存在本设备），行尾下拉选动作。
               FushiModalSheetFrame(
                 title: t.game_stream_keys,
-                subtitle: t.game_stream_keys_hint,
+                subtitle: t.game_stream_keys_scope_hint,
                 leadingIcon: FushiIcons.games,
-                maxHeightFactor: 0.7,
+                maxHeightFactor: 0.8,
                 body: ListView(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                   children: <Widget>[
+                    _keysSectionHeader(context, t.game_stream_keys_pad_section),
                     FushiGroupedList(
                       children: <Widget>[
                         for (final GameStreamVirtualButton button
@@ -765,6 +892,40 @@ class _GameStreamPageState extends State<GameStreamPage>
                             ),
                       ],
                     ),
+                    _keysSectionHeader(
+                      context,
+                      t.game_stream_keys_controller_section,
+                    ),
+                    FushiGroupedList(
+                      children: <Widget>[
+                        for (final GameStreamPhysicalButton button
+                            in GameStreamPhysicalButton.values)
+                          _controllerButtonRow(
+                            button,
+                            _availableButtonActions,
+                            updateSheet,
+                          ),
+                      ],
+                    ),
+                    Align(
+                      alignment: AlignmentDirectional.centerEnd,
+                      child: Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: FushiTextButton(
+                          key: const ValueKey<String>(
+                            'game-stream-controller-reset',
+                          ),
+                          onPressed: _buttonProfile.overrides.isEmpty
+                              ? null
+                              : () => updateSheet(
+                                  () => _updateButtonProfile(
+                                    const GameStreamButtonProfile(),
+                                  ),
+                                ),
+                          child: Text(t.game_stream_keys_controller_reset),
+                        ),
+                      ),
+                    ),
                   ],
                 ),
               ),
@@ -775,23 +936,29 @@ class _GameStreamPageState extends State<GameStreamPage>
     }
   }
 
-  /// Physical controller buttons always drive the pad; keyboard keys are sent
-  /// to the host only while the video itself holds focus, so typing into the
-  /// transcript or popup never leaks into the game.
+  /// Physical controller buttons always run their profile action; keyboard
+  /// keys are sent to the host only while the video itself holds focus, so
+  /// typing into the transcript or popup never leaks into the game.
+  ///
+  /// Android reports a controller D-pad as arrow keys. Those count as the
+  /// D-pad when Android names a controller as their source; arrows from a
+  /// keyboard keep moving focus (the transcript cursor) unless the video
+  /// holds focus.
   KeyEventResult _onHardwareKey(FocusNode node, KeyEvent event) {
     final bool down = event is KeyDownEvent;
     final bool up = event is KeyUpEvent;
-    final GameStreamVirtualButton? button = gameStreamPadButtonFor(
-      event.logicalKey,
-    );
-    if (button != null) {
-      if (down) unawaited(_sendButton(button, GameStreamInputAction.down));
-      if (up) unawaited(_sendButton(button, GameStreamInputAction.up));
+    final bool videoFocused = FocusManager.instance.primaryFocus == _videoFocus;
+    final GameStreamPhysicalButton? physical =
+        GameStreamPhysicalButton.gameButtonFor(event.logicalKey) ??
+        (_isControllerSource(event.deviceType)
+            ? GameStreamPhysicalButton.dpadFor(event.logicalKey)
+            : null);
+    if (physical != null) {
+      if (down) unawaited(_pressPhysical(physical));
+      if (up) unawaited(_releasePhysical(physical));
       return KeyEventResult.handled;
     }
-    if (FocusManager.instance.primaryFocus != _videoFocus) {
-      return KeyEventResult.ignored;
-    }
+    if (!videoFocused) return KeyEventResult.ignored;
     final String? key = gameStreamHostKeyName(event.logicalKey);
     if (key == null) return KeyEventResult.ignored;
     if (down || up) {
@@ -803,6 +970,97 @@ class _GameStreamPageState extends State<GameStreamPage>
       );
     }
     return KeyEventResult.handled;
+  }
+
+  static bool _isControllerSource(KeyEventDeviceType type) => switch (type) {
+    KeyEventDeviceType.gamepad ||
+    KeyEventDeviceType.joystick ||
+    KeyEventDeviceType.directionalPad => true,
+    _ => false,
+  };
+
+  Future<void> _pressPhysical(GameStreamPhysicalButton button) async {
+    // Key repeat arrives as repeated downs on some controllers; the first
+    // press already holds the action.
+    if (_heldPhysical.containsKey(button)) return;
+    final GameStreamButtonAction action = _buttonProfile.actionFor(button);
+    _heldPhysical[button] = action;
+    await _runButtonAction(action, GameStreamInputAction.down);
+  }
+
+  Future<void> _releasePhysical(GameStreamPhysicalButton button) async {
+    final GameStreamButtonAction? action = _heldPhysical.remove(button);
+    if (action == null) return;
+    await _runButtonAction(action, GameStreamInputAction.up);
+  }
+
+  /// Lifts every held physical button, e.g. when the app goes to the
+  /// background or the connection drops.
+  Future<void> _releasePhysicalButtons() async {
+    final List<GameStreamButtonAction> held = _heldPhysical.values.toList();
+    _heldPhysical.clear();
+    for (final GameStreamButtonAction action in held) {
+      await _runButtonAction(action, GameStreamInputAction.up);
+    }
+  }
+
+  /// Whether this host can perform [action] (newer pointer kinds are gated
+  /// by the session's features).
+  bool _canRun(GameStreamButtonAction action) => switch (action) {
+    GameStreamMouseButtonAction(:final GameStreamMouseAction mouse) =>
+      mouse.isWheel
+          ? _supports(GameStreamFeature.wheel)
+          : mouse == GameStreamMouseAction.leftClick ||
+                _supports(GameStreamFeature.pointerButtons),
+    _ => true,
+  };
+
+  Future<void> _runButtonAction(
+    GameStreamButtonAction action,
+    GameStreamInputAction phase,
+  ) async {
+    if (!_canRun(action)) return;
+    final bool down = phase == GameStreamInputAction.down;
+    switch (action) {
+      case GameStreamPadAction(:final GameStreamVirtualButton button):
+        await _sendButton(button, phase);
+      case GameStreamHostKeyAction(:final String key):
+        await widget.inputComposer.key(key: key, action: phase);
+      case GameStreamMouseButtonAction(:final GameStreamMouseAction mouse):
+        final Offset at = _trackpadCursor;
+        if (mouse.isWheel) {
+          if (down) {
+            await widget.inputComposer.wheel(
+              normalized: at,
+              dy: mouse.wheelNotches,
+            );
+          }
+          return;
+        }
+        if (down) {
+          await widget.inputComposer.pointer(
+            action: GameStreamInputAction.move,
+            normalized: at,
+          );
+        }
+        await widget.inputComposer.pointer(
+          action: phase,
+          normalized: at,
+          button: mouse.pointerButton ?? 'left',
+        );
+      case GameStreamAppAction(:final GameStreamReceiverAction action):
+        if (!down || !mounted) return;
+        setState(() {
+          switch (action) {
+            case GameStreamReceiverAction.toggleLookupPanel:
+              _lookupVisible = !_lookupVisible;
+            case GameStreamReceiverAction.toggleOnScreenPad:
+              _controlsVisible = !_controlsVisible;
+          }
+        });
+      case GameStreamNoAction():
+        return;
+    }
   }
 
   /// Soft keyboard: every typed ASCII letter/digit/space becomes a key tap;
@@ -947,7 +1205,15 @@ class _GameStreamPageState extends State<GameStreamPage>
       colors: fushiTitleBarColorsOn(Colors.black),
       child: Scaffold(
         backgroundColor: Colors.black,
-        body: Focus(onKeyEvent: _onHardwareKey, child: _buildBody(theme)),
+        // Autofocus: controller buttons must reach the game as soon as the
+        // stream opens, before anything inside the page was tapped. Kept out
+        // of traversal so Tab / D-pad focus moves skip this wrapper.
+        body: Focus(
+          autofocus: true,
+          skipTraversal: true,
+          onKeyEvent: _onHardwareKey,
+          child: _buildBody(theme),
+        ),
       ),
     );
   }

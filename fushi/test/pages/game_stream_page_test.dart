@@ -323,7 +323,9 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Enter').last);
     await tester.pumpAndSettle();
-    Navigator.of(tester.element(find.text(t.game_stream_keys_hint))).pop();
+    Navigator.of(
+      tester.element(find.text(t.game_stream_keys_scope_hint)),
+    ).pop();
     await tester.pumpAndSettle();
     await tester.tap(find.byIcon(Icons.keyboard_arrow_up));
     await tester.pump();

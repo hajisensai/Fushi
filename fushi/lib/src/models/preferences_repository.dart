@@ -59,6 +59,7 @@ import 'package:fushi_engine/media/torrent/bt_site_config.dart';
 import 'package:fushi_engine/sync/interconnect_transcode_prefs.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart'
     show GameStreamVideoSettings;
+import 'package:fushi/src/models/game_stream_button_profile.dart';
 import 'package:fushi/src/models/game_stream_lookup_layout.dart';
 import 'package:fushi/src/lookup/effective_lookup_size.dart'
     show kLookupPopupDefaultHeight, kLookupPopupDefaultWidth;
@@ -180,6 +181,11 @@ const String kGameStreamVideoSettingsPrefKey = 'game_stream_video_overrides';
 /// `SyncRepository.deviceLocalPrefKeys`）：合适的尺寸取决于这台设备的屏幕，
 /// 平板上调大的值随备份到手机 / 电脑只会不合身。
 const String kGameStreamLookupLayoutPrefKey = 'game_stream_lookup_layout';
+
+/// 串流时实体手柄按键的映射（只存改过的键，JSON）。设备本地（见
+/// `SyncRepository.deviceLocalPrefKeys`）：有哪些键、哪个键顺手取决于这台设备
+/// 的手柄，掌机上的映射恢复到手机上没有意义。
+const String kGameStreamButtonProfilePrefKey = 'game_stream_button_profile';
 
 /// Windows 悬浮字幕窗口矩形（本机**物理像素**坐标 JSON）。设备本地（见
 /// `SyncRepository.deviceLocalPrefKeys`）：坐标只对这台机器的显示器布局 / DPI
@@ -6406,6 +6412,22 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setGameStreamLookupLayout(GameStreamLookupLayout value) async {
     await setPref(kGameStreamLookupLayoutPrefKey, jsonEncode(value.toJson()));
+    notifyListeners();
+  }
+
+  GameStreamButtonProfile get gameStreamButtonProfile {
+    final String raw =
+        getPref(kGameStreamButtonProfilePrefKey, defaultValue: '') as String;
+    if (raw.isEmpty) return const GameStreamButtonProfile();
+    try {
+      return GameStreamButtonProfile.fromJson(jsonDecode(raw));
+    } on FormatException {
+      return const GameStreamButtonProfile();
+    }
+  }
+
+  Future<void> setGameStreamButtonProfile(GameStreamButtonProfile value) async {
+    await setPref(kGameStreamButtonProfilePrefKey, jsonEncode(value.toJson()));
     notifyListeners();
   }
 
