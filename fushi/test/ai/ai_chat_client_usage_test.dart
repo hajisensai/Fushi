@@ -234,6 +234,56 @@ void main() {
     );
   });
 
+  test('停止原因：三家的「撞上 max_tokens」都判成截断', () async {
+    final AiChatCompletion anthropic = await ask(
+      AiWireProtocol.anthropicMessages,
+      <String, Object?>{
+        'content': <Object?>[
+          <String, Object?>{'type': 'text', 'text': '[{"ja": "唯"'},
+        ],
+        'stop_reason': 'max_tokens',
+      },
+    );
+    expect(anthropic.stopReason, 'max_tokens');
+    expect(anthropic.truncated, isTrue);
+
+    final AiChatCompletion openAi = await ask(
+      AiWireProtocol.openAiCompatible,
+      <String, Object?>{
+        'choices': <Object?>[
+          <String, Object?>{
+            'message': <String, Object?>{'content': '{"0"'},
+            'finish_reason': 'length',
+          },
+        ],
+      },
+    );
+    expect(openAi.truncated, isTrue);
+
+    final AiChatCompletion gemini = await ask(
+      AiWireProtocol.geminiGenerateContent,
+      <String, Object?>{
+        'candidates': <Object?>[
+          <String, Object?>{
+            'content': <String, Object?>{
+              'parts': <Object?>[
+                <String, Object?>{'text': '{"0"'},
+              ],
+            },
+            'finishReason': 'MAX_TOKENS',
+          },
+        ],
+      },
+    );
+    expect(gemini.truncated, isTrue);
+
+    final AiChatCompletion done = await ask(
+      AiWireProtocol.openAiCompatible,
+      openAiBody(null),
+    );
+    expect(done.truncated, isFalse);
+  });
+
   test('AiChatUsage JSON 往返只带非 null 项', () {
     const AiChatUsage u = AiChatUsage(inputTokens: 3, cacheReadTokens: 0);
     expect(u.toJson(), <String, Object?>{'input': 3, 'cacheRead': 0});

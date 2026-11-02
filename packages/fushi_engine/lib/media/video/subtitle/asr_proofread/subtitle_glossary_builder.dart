@@ -82,6 +82,13 @@ const String kSubtitleGlossaryRecheck =
 {table}
 出力は JSON 配列のみ(説明文なし)。''';
 
+/// 回复撞上输出上限被截断后的续写要求（追加在本次内容之后；`{done}` = 已收到的
+/// 条目的 `ja`）。
+const String kSubtitleGlossaryContinue =
+    '前回の出力は長さの上限で途中で切れました。出力済みの項目(ja): {done}\n'
+    'これらは繰り返さず、残りの項目だけを同じ形式の JSON 配列で出力してください'
+    '(説明文なし)。残りが無ければ [] だけを出力してください。';
+
 final RegExp _kKatakanaRun = RegExp('[ァ-ヺー]{2,}');
 final RegExp _kReadingNoise = RegExp(r'[\s・]');
 
@@ -620,27 +627,67 @@ class SubtitleGlossaryBuilder {
     );
   }
 
-  /// 问一次、解析成条目；解析不出（不是 JSON 数组 / 没有一条有效条目）重试。
+  /// 问一张表、解析成条目。
+  ///
+  /// 表长（整季、多季的作品动辄上百条）会让输出撞上 `max_tokens` 被截断：原样重发
+  /// 只会在同一处再截一次。所以截断时抢救出已写完整的条目，接着发「续写」请求只要
+  /// 剩下的（[kSubtitleGlossaryContinue]），直到某次回复完整写完。连续
+  /// [maxParseAttempts] 次一条新条目都没拿到才抛 [kSubtitleAiReplyIncomplete]。
   Future<List<SubtitleGlossaryEntry>> _ask(
     _Prompt prompt,
     SubtitleAiUsageTally usage,
     SubtitleCancelToken cancel,
   ) async {
-    for (int attempt = 0; attempt < maxParseAttempts; attempt++) {
+    final List<SubtitleGlossaryEntry> all = <SubtitleGlossaryEntry>[];
+    final Set<String> seen = <String>{};
+    String body = prompt.body;
+    int fruitless = 0;
+    while (fruitless < maxParseAttempts) {
       throwIfSubtitleCancelled(cancel);
       final AiChatCompletion reply = await completer.complete(
-        prompt.body,
+        body,
         stablePrefix: prompt.prefix,
       );
       usage.addCall(reply.usage);
-      final List<SubtitleGlossaryEntry>? items = parseSubtitleGlossaryReply(
-        reply.text,
-      );
-      if (items != null && items.isNotEmpty) return items;
+      List<SubtitleGlossaryEntry>? items = reply.truncated
+          ? null
+          : parseSubtitleGlossaryReply(reply.text);
+      final bool partial = items == null;
+      if (partial) {
+        final Object? salvaged = salvageTruncatedAiJson(reply.text);
+        items = salvaged is List
+            ? subtitleGlossaryEntriesFromJson(salvaged)
+            : null;
+      }
+      int added = 0;
+      for (final SubtitleGlossaryEntry e
+          in items ?? const <SubtitleGlossaryEntry>[]) {
+        if (seen.add(e.ja)) {
+          all.add(e);
+          added++;
+        }
+      }
+      // 完整写完的一次回复：首轮要有条目；续写轮回 `[]` 表示没有剩下的了。
+      if (!partial && all.isNotEmpty) return all;
+      if (added > 0) {
+        fruitless = 0;
+      } else {
+        fruitless++;
+      }
+      if (all.isNotEmpty) {
+        final String done = all
+            .map((SubtitleGlossaryEntry e) => e.ja)
+            .join('、');
+        body =
+            '${prompt.body}\n\n'
+            '${kSubtitleGlossaryContinue.replaceAll('{done}', done)}';
+      }
     }
-    throw const SubtitleAiRequestFailure(
+    throw SubtitleAiRequestFailure(
       kSubtitleAiReplyIncomplete,
-      detail: 'glossary: reply is not a JSON array of entries',
+      detail:
+          'glossary: reply is not a complete JSON array of entries '
+          '(${all.length} entries salvaged)',
     );
   }
 }
@@ -670,6 +717,14 @@ List<SubtitleGlossaryEntry>? parseSubtitleGlossaryReply(String reply) {
     return null;
   }
   if (decoded is! List) return null;
+  return subtitleGlossaryEntriesFromJson(decoded);
+}
+
+/// 解析出的 JSON 数组 → 条目：不是对象的项与 `ja` 为空的条目丢弃，同一 `ja` 只留
+/// 第一条。
+List<SubtitleGlossaryEntry> subtitleGlossaryEntriesFromJson(
+  List<Object?> decoded,
+) {
   final Set<String> seen = <String>{};
   final List<SubtitleGlossaryEntry> out = <SubtitleGlossaryEntry>[];
   for (final Object? item in decoded) {

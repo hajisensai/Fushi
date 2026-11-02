@@ -290,6 +290,50 @@ void main() {
     expect(ai.calls, 3);
   });
 
+  test('表太长输出被截断：留下写完的条目，续写只要剩下的，拼成整张表', () async {
+    final FakeAiCompleter ai = FakeAiCompleter(
+      (String prompt, int call) => switch (call) {
+        0 =>
+          '[{"ja": "唯", "reading": "ゆい", "kind": "人名", "misrecognitions": ["結衣"]}, '
+              '{"ja": "澪", "reading": "みお", "kind": "人名"}, {"ja": "律", "rea',
+        1 =>
+          '[{"ja": "律", "reading": "りつ", "kind": "人名"}, '
+              '{"ja": "澪", "reading": "みお", "kind": "人名"}, {"ja": "紬", "rea',
+        _ => '[{"ja": "紬", "reading": "つむぎ", "kind": "人名"}]',
+      },
+      stopReason: (int call) => call < 2 ? 'max_tokens' : 'end_turn',
+    );
+    final SubtitleGlossaryBuildResult r = await SubtitleGlossaryBuilder(
+      completer: ai,
+    ).build(context: bare, episodeTexts: const <List<String>>[]);
+    expect(ai.calls, 3);
+    expect(r.glossary.entries.map((SubtitleGlossaryEntry e) => e.ja), <String>[
+      '唯',
+      '澪',
+      '律',
+      '紬',
+    ]);
+    expect(ai.bodies[1], contains('出力済みの項目(ja): 唯、澪\n'));
+    expect(ai.bodies[2], contains('出力済みの項目(ja): 唯、澪、律\n'));
+    expect(ai.prefixes.toSet(), hasLength(1), reason: '续写不动可缓存的前缀');
+  });
+
+  test('续写轮回 []：表已写完，直接用已收到的条目', () async {
+    final FakeAiCompleter ai = FakeAiCompleter(
+      (String prompt, int call) => call == 0
+          ? '[{"ja": "唯", "reading": "ゆい", "kind": "人名"}, {"ja": "澪"'
+          : '[]',
+      stopReason: (int call) => call == 0 ? 'max_tokens' : null,
+    );
+    final SubtitleGlossaryBuildResult r = await SubtitleGlossaryBuilder(
+      completer: ai,
+    ).build(context: bare, episodeTexts: const <List<String>>[]);
+    expect(ai.calls, 2);
+    expect(r.glossary.entries.map((SubtitleGlossaryEntry e) => e.ja), <String>[
+      '唯',
+    ]);
+  });
+
   test('userEdited 条目原样保留、生成的同名条目丢弃；未编辑的旧条目被替换', () async {
     final SubtitleGlossary existing = SubtitleGlossary(
       entries: const <SubtitleGlossaryEntry>[

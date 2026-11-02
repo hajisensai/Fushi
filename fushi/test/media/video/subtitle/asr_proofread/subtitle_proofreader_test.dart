@@ -122,7 +122,7 @@ void main() {
     expect(middle, isNot(contains('固有名詞表:\n')), reason: '空表不出这一段');
   });
 
-  test('缺 id：不缓存、重试；第 2 次覆盖全部 id 才落盘，用量两次都计', () async {
+  test('缺 id：不缓存，只补问剩下的 id；凑齐才落盘，用量两次都计', () async {
     final FakeAiCompleter ai = FakeAiCompleter((String prompt, int call) {
       if (call == 0) {
         return jsonEncode(<String, String>{'0': 'x'}); // 缺 1..4
@@ -137,33 +137,39 @@ void main() {
           cacheDir: cacheDir,
         );
     expect(ai.calls, 2);
-    expect(r.cues.first.text, 'fixed0');
+    expect(targetIdsOf(ai.prompts[1]), <int>[1, 2, 3, 4]);
+    expect(ai.prompts[1], contains('  参考 [00:00.00] line0'));
+    expect(r.cues.first.text, 'x');
+    expect(r.cues[1].text, 'fixed1');
     expect(r.usage.calls, 2);
     expect(r.usage.outputTokens, 14);
   });
 
-  test('3 次都缺 id / 不是 JSON：抛 reply_incomplete，批缓存一个都不写', () async {
-    final FakeAiCompleter ai = FakeAiCompleter(
-      (String prompt, int call) => call.isEven ? '修正はありません' : '{"0": "x"}',
-    );
-    await expectLater(
-      SubtitleProofreader(completer: ai).proofread(
-        cues: cues(5),
-        title: 't',
-        glossary: SubtitleGlossary.empty,
-        cacheDir: cacheDir,
-      ),
-      throwsA(
-        isA<SubtitleAiRequestFailure>().having(
-          (SubtitleAiRequestFailure f) => f.reason,
-          'reason',
-          kSubtitleAiReplyIncomplete,
+  test(
+    '连续 3 次没有新 id（不是 JSON / 只答批外的 id）：抛 reply_incomplete，批缓存一个都不写',
+    () async {
+      final FakeAiCompleter ai = FakeAiCompleter(
+        (String prompt, int call) => call.isEven ? '修正はありません' : '{"99": "x"}',
+      );
+      await expectLater(
+        SubtitleProofreader(completer: ai).proofread(
+          cues: cues(5),
+          title: 't',
+          glossary: SubtitleGlossary.empty,
+          cacheDir: cacheDir,
         ),
-      ),
-    );
-    expect(ai.calls, 3);
-    expect(cacheFiles(), isEmpty);
-  });
+        throwsA(
+          isA<SubtitleAiRequestFailure>().having(
+            (SubtitleAiRequestFailure f) => f.reason,
+            'reason',
+            kSubtitleAiReplyIncomplete,
+          ),
+        ),
+      );
+      expect(ai.calls, 3);
+      expect(cacheFiles(), isEmpty);
+    },
+  );
 
   test('额度耗尽（真 AiChatClient 收到 402）：抛 quota_exhausted，不当成空修改缓存', () async {
     final AiChatClient client = AiChatClient(
@@ -319,6 +325,67 @@ void main() {
     );
     expect(good.calls, 1);
     expect(targetIdsOf(good.prompts.single).first, 30);
+  });
+
+  test('回复撞上 max_tokens 被截断：留下写完的 id，只补问剩下的，不原样重发整批', () async {
+    final FakeAiCompleter ai = FakeAiCompleter(
+      (String prompt, int call) => call == 0
+          ? '```json\n{"0": "fixed0", "1": "fixed1", "2": "fix'
+          : replyForIds(prompt, (int id) => 'fixed$id'),
+      stopReason: (int call) => call == 0 ? 'max_tokens' : 'end_turn',
+    );
+    final SubtitleProofreadResult r = await SubtitleProofreader(completer: ai)
+        .proofread(
+          cues: cues(5),
+          title: 't',
+          glossary: SubtitleGlossary.empty,
+          cacheDir: cacheDir,
+        );
+    expect(ai.calls, 2);
+    expect(targetIdsOf(ai.prompts[1]), <int>[2, 3, 4]);
+    expect(r.cues.map((SubtitleDraftCue c) => c.text), <String>[
+      for (int i = 0; i < 5; i++) 'fixed$i',
+    ]);
+    expect(cacheFiles(), <String>['00000.json']);
+  });
+
+  test('每次都截断但每次都有新 id：超过 3 次也能凑齐，不判失败', () async {
+    final FakeAiCompleter ai = FakeAiCompleter((String prompt, int call) {
+      final int first = targetIdsOf(prompt).first;
+      return '{"$first": "fixed$first", "trunc';
+    }, stopReason: (int call) => 'max_tokens');
+    final SubtitleProofreadResult r = await SubtitleProofreader(completer: ai)
+        .proofread(
+          cues: cues(5),
+          title: 't',
+          glossary: SubtitleGlossary.empty,
+          cacheDir: cacheDir,
+        );
+    expect(ai.calls, 5);
+    expect(r.cues.last.text, 'fixed4');
+  });
+
+  test('salvageTruncatedAiJson：只留写完整的顶层成员', () {
+    expect(
+      salvageTruncatedAiJson('ok:\n{"0": "a,}", "1": "b\\"c", "2": "d'),
+      <String, Object?>{'0': 'a,}', '1': 'b"c'},
+    );
+    expect(
+      salvageTruncatedAiJson(
+        '[{"ja": "唯", "m": ["結衣", "悠依"]}, {"ja": "澪", "m": ["',
+      ),
+      <Object?>[
+        <String, Object?>{
+          'ja': '唯',
+          'm': <Object?>['結衣', '悠依'],
+        },
+      ],
+    );
+    expect(salvageTruncatedAiJson('{"0": "a"} 以上'), <String, Object?>{
+      '0': 'a',
+    });
+    expect(salvageTruncatedAiJson('{"0": "abc'), isNull);
+    expect(salvageTruncatedAiJson('修正なし'), isNull);
   });
 
   test('formatProofreadTime 同 fmt_t（mm:ss.ss）', () {

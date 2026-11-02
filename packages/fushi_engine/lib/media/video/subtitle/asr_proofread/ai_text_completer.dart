@@ -18,8 +18,8 @@ import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_pipelin
 /// - `AiChatClient` 的失败码原样带过：`quota_exhausted` / `unauthorized` /
 ///   `rate_limited` / `network_error` / `http_<状态码>` / `provider_not_configured` /
 ///   `bad_response` / `empty_response`；
-/// - 管线自己的：[kSubtitleAiReplyIncomplete]（重试 3 次回复仍没覆盖全部 id 或解析
-///   不出）、[kSubtitleAiNotConfigured]（开了 AI 却没解析出提供商）。
+/// - 管线自己的：[kSubtitleAiReplyIncomplete]（连续 3 次回复都没带来任何新的 id /
+///   条目；截断与漏写的部分各阶段会保留已答的、只补问剩下的）、[kSubtitleAiNotConfigured]（开了 AI 却没解析出提供商）。
 class SubtitleAiRequestFailure implements Exception {
   const SubtitleAiRequestFailure(this.reason, {this.detail, this.usage});
 
@@ -219,3 +219,60 @@ Object? decodeLooseAiJson(String reply) {
     return null;
   }
 }
+
+/// [decodeLooseAiJson] 解析不出时的退路：回复里第一个 JSON 对象 / 数组若没写完
+/// （输出撞上 `max_tokens` 截断、模型写坏了尾巴），抢救出其中**写完整的顶层成员**，
+/// 返回只含这些成员的 Map / List；一个完整成员都没有返回 null。
+///
+/// 截断回复原样重发只会在同一处再截一次——各阶段把抢救出的部分记下，只再问剩下的。
+Object? salvageTruncatedAiJson(String reply) {
+  final int start = reply.indexOf(RegExp(r'[\[{]'));
+  if (start < 0) return null;
+  final String close = reply[start] == '{' ? '}' : ']';
+  final List<int> cuts = <int>[];
+  int depth = 0;
+  bool inString = false;
+  bool escaped = false;
+  for (int i = start; i < reply.length; i++) {
+    final String ch = reply[i];
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (ch == r'\') {
+        escaped = true;
+      } else if (ch == '"') {
+        inString = false;
+      }
+      continue;
+    }
+    switch (ch) {
+      case '"':
+        inString = true;
+      case '{' || '[':
+        depth++;
+      case '}' || ']':
+        depth--;
+        if (depth == 0) return _tryDecode(reply.substring(start, i + 1));
+      case ',' when depth == 1:
+        // 逗号前的顶层成员是完整的。
+        cuts.add(i);
+    }
+  }
+  for (final int cut in cuts.reversed) {
+    final Object? got = _tryDecode('${reply.substring(start, cut)}$close');
+    if (got != null) return got;
+  }
+  return null;
+}
+
+Object? _tryDecode(String json) {
+  try {
+    return jsonDecode(json);
+  } on FormatException {
+    return null;
+  }
+}
+
+/// 各阶段解析 AI 回复的统一入口：先整段宽松解析，不行再抢救截断回复里完整的部分。
+Object? decodeAiJsonReply(String reply) =>
+    decodeLooseAiJson(reply) ?? salvageTruncatedAiJson(reply);

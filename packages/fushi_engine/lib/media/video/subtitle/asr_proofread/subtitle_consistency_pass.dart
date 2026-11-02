@@ -274,8 +274,7 @@ class SubtitleConsistencyPass {
     SubtitleAiUsageTally usage,
     SubtitleCancelToken cancel,
   ) async {
-    final List<String> lines = <String>[];
-    for (final int i in chunk) {
+    String lineFor(int i) {
       final int from = i - contextLines < 0 ? 0 : i - contextLines;
       final int to = i + 1 + contextLines > cues.length
           ? cues.length
@@ -286,30 +285,43 @@ class SubtitleConsistencyPass {
       final String nxt = <String>[
         for (int j = i + 1; j < to; j++) cues[j].text,
       ].join(' / ');
-      lines.add(
-        'id=$i 前: $ctx\n  対象: ${cues[i].text}\n  後: $nxt\n'
-        '  疑い: ${flagged[i]!.join('、')}',
-      );
+      return 'id=$i 前: $ctx\n  対象: ${cues[i].text}\n  後: $nxt\n'
+          '  疑い: ${flagged[i]!.join('、')}';
     }
+
+    String bodyFor(Iterable<int> ids) => ids.map(lineFor).join('\n');
     final String prefix = buildConsistencyStablePrefix(
       title: title,
       glossaryText: glossaryText,
     );
-    final String body = lines.join('\n');
+    // 同 S3：答到的 id 跨次累积，只补问剩下的（截断 / 漏写时原样重发只会再错一次）；
+    // 连续 [maxAttempts] 次没有新 id 才失败。
     final Set<String> want = <String>{for (final int i in chunk) '$i'};
-    for (int attempt = 0; attempt < maxAttempts; attempt++) {
+    final Map<String, Object?> answered = <String, Object?>{};
+    int fruitless = 0;
+    while (true) {
       throwIfSubtitleCancelled(cancel);
+      final List<int> ask = <int>[
+        for (final int i in chunk)
+          if (!answered.containsKey('$i')) i,
+      ];
       final AiChatCompletion reply = await completer.complete(
-        body,
+        bodyFor(ask),
         stablePrefix: prefix,
       );
       usage.addCall(reply.usage);
-      final Object? got = decodeLooseAiJson(reply.text);
+      final Object? got = decodeAiJsonReply(reply.text);
+      final int before = answered.length;
       if (got is Map) {
-        final Map<String, Object?> map = got.map(
-          (Object? k, Object? v) => MapEntry<String, Object?>('$k', v),
-        );
-        if (want.difference(map.keys.toSet()).isEmpty) return map;
+        got.forEach((Object? k, Object? v) {
+          if (want.contains('$k')) answered['$k'] = v;
+        });
+      }
+      if (answered.length == want.length) return answered;
+      if (answered.length > before) {
+        fruitless = 0;
+      } else if (++fruitless >= maxAttempts) {
+        break;
       }
     }
     throw SubtitleAiRequestFailure(

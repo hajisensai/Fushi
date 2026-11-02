@@ -82,24 +82,30 @@ class SubtitleClipClassifier {
     if (todo.isEmpty) {
       return SubtitleClipClassification(kinds: kinds, usage: usage);
     }
-    final String body = <String>[
-      for (final String id in todo) 'id=$id\n${clips[id]!.join('\n')}',
-    ].join('\n\n');
     final String prefix = buildClipClassifyStablePrefix(title);
     final SubtitleAiUsageTally fresh = SubtitleAiUsageTally();
-    for (int attempt = 0; attempt < maxAttempts; attempt++) {
+    // 判到的 id 跨次累积，只补问剩下的（截断 / 漏写时原样重发只会再错一次）；
+    // 连续 [maxAttempts] 次没有新判定才失败。
+    final Map<String, SubtitleClipKind> parsed = <String, SubtitleClipKind>{};
+    int fruitless = 0;
+    while (true) {
       throwIfSubtitleCancelled(cancel);
+      final String body = <String>[
+        for (final String id in todo)
+          if (!parsed.containsKey(id)) 'id=$id\n${clips[id]!.join('\n')}',
+      ].join('\n\n');
       final AiChatCompletion reply = await completer.complete(
         body,
         stablePrefix: prefix,
       );
       fresh.addCall(reply.usage);
-      final Object? got = decodeLooseAiJson(reply.text);
-      if (got is! Map) continue;
-      final Map<String, SubtitleClipKind> parsed = <String, SubtitleClipKind>{};
-      for (final String id in todo) {
-        final SubtitleClipKind? k = SubtitleClipKind.fromName(got[id]);
-        if (k != null) parsed[id] = k;
+      final Object? got = decodeAiJsonReply(reply.text);
+      final int before = parsed.length;
+      if (got is Map) {
+        for (final String id in todo) {
+          final SubtitleClipKind? k = SubtitleClipKind.fromName(got[id]);
+          if (k != null) parsed.putIfAbsent(id, () => k);
+        }
       }
       if (parsed.length == todo.length) {
         kinds.addAll(parsed);
@@ -107,10 +113,17 @@ class SubtitleClipClassifier {
         await _writeCache(cacheFile, kinds, usage);
         return SubtitleClipClassification(kinds: kinds, usage: usage);
       }
+      if (parsed.length > before) {
+        fruitless = 0;
+      } else if (++fruitless >= maxAttempts) {
+        break;
+      }
     }
     throw SubtitleAiRequestFailure(
       kSubtitleAiReplyIncomplete,
-      detail: 'clip classification: reply missing ${todo.length} ids',
+      detail:
+          'clip classification: reply missing '
+          '${todo.length - parsed.length} ids',
     );
   }
 

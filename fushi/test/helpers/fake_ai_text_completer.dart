@@ -8,10 +8,13 @@ import 'package:fushi_engine/media/video/subtitle/asr_proofread/ai_text_complete
 /// [prompts] 记的是**拼回去的完整提示词**（`joinAiTextPrompt(前缀, 本批)`，与拆分
 /// 之前逐字相同），[prefixes] / [bodies] 分别记两段，供提示缓存相关的断言用。
 class FakeAiCompleter implements AiTextCompleter {
-  FakeAiCompleter(this.answer, {this.usage});
+  FakeAiCompleter(this.answer, {this.usage, this.stopReason});
 
   final String Function(String prompt, int call) answer;
   final AiChatUsage? usage;
+
+  /// 第 call 次应答的停止原因（`max_tokens` = 被截断）；null = 都正常结束。
+  final String? Function(int call)? stopReason;
   final List<String> prompts = <String>[];
   final List<String> prefixes = <String>[];
   final List<String> bodies = <String>[];
@@ -27,9 +30,11 @@ class FakeAiCompleter implements AiTextCompleter {
     prompts.add(full);
     prefixes.add(stablePrefix);
     bodies.add(prompt);
+    final int call = prompts.length - 1;
     return AiChatCompletion(
-      text: answer(full, prompts.length - 1),
+      text: answer(full, call),
       usage: usage,
+      stopReason: stopReason?.call(call),
     );
   }
 }

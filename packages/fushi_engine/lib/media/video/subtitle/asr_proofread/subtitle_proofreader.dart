@@ -3,9 +3,9 @@
 ///
 /// - 每批 [SubtitleProofreader.batchSize] 句，附前后各 [SubtitleProofreader.contextLines]
 ///   句只读上下文；每句给主稿、候选稿（[SubtitleDraftCue.alternatives]）与专名表。
-/// - **回复必须覆盖本批全部 id 才写批缓存**；缺 id / 解析失败重试，最多
-///   [SubtitleProofreader.maxAttempts] 次，仍不行抛 [SubtitleAiRequestFailure]
-///   （[kSubtitleAiReplyIncomplete]）。请求本身失败（额度 / 鉴权 / 网络）不重试、
+/// - **回复必须覆盖本批全部 id 才写批缓存**；缺 id / 截断 / 解析失败时保留已拿到
+///   的修正、只补问剩下的 id，连续 [SubtitleProofreader.maxAttempts] 次没有新进展
+///   才抛 [SubtitleAiRequestFailure]（[kSubtitleAiReplyIncomplete]）。请求本身失败（额度 / 鉴权 / 网络）不重试、
 ///   原样抛出——绝不当成「没有修改」。
 /// - 批缓存 `<cacheDir>/<批起点 5 位>.json`（`{"fix": {...}, "usage": {...}}`）：
 ///   重跑时已缓存的批直接复用。
@@ -202,32 +202,44 @@ class SubtitleProofreader {
       title: title,
       glossaryText: glossaryText,
     );
-    final String body = buildProofreadBatchBody(
-      cues: cues,
-      lo: range.$1,
-      hi: range.$2,
-      contextLines: contextLines,
-    );
+    // 已拿到的修正跨次累积，下一次只问还缺的 id：输出撞上 max_tokens 截断、或模型
+    // 漏写几个 id 时，原样重发整批只会在同一处再错一次。只有连续 [maxAttempts] 次
+    // 一个新 id 都没拿到才算失败。只收本批的 id（模型顺手改的上下文行不收，否则会
+    // 盖掉相邻批对同一行的修正）。
+    final Map<String, Object?> got = <String, Object?>{};
     Set<String> missing = want;
-    for (int attempt = 0; attempt < maxAttempts; attempt++) {
+    int fruitless = 0;
+    while (true) {
       throwIfSubtitleCancelled(cancel);
       final AiChatCompletion reply = await completer.complete(
-        body,
+        buildProofreadBatchBody(
+          cues: cues,
+          lo: range.$1,
+          hi: range.$2,
+          contextLines: contextLines,
+          only: identical(missing, want)
+              ? null
+              : <int>{for (final String id in missing) int.parse(id)},
+        ),
         stablePrefix: prefix,
       );
       usage.addCall(reply.usage);
-      final Object? fix = decodeLooseAiJson(reply.text);
+      final Object? fix = decodeAiJsonReply(reply.text);
+      final int before = missing.length;
       if (fix is Map) {
-        final Map<String, Object?> map = fix.map(
-          (Object? k, Object? v) => MapEntry<String, Object?>('$k', v),
-        );
-        missing = want.difference(map.keys.toSet());
-        if (missing.isEmpty) {
-          await _writeBatchCache(cache, map, usage);
-          return (map, usage);
-        }
-      } else {
-        missing = want;
+        fix.forEach((Object? k, Object? v) {
+          if (missing.contains('$k')) got['$k'] = v;
+        });
+        missing = want.difference(got.keys.toSet());
+      }
+      if (missing.isEmpty) {
+        await _writeBatchCache(cache, got, usage);
+        return (got, usage);
+      }
+      if (missing.length < before) {
+        fruitless = 0;
+      } else if (++fruitless >= maxAttempts) {
+        break;
       }
     }
     final List<String> sample =
@@ -316,12 +328,14 @@ String buildProofreadStablePrefix({
   return lines.join('\n');
 }
 
-/// 一批自己的内容：前后只读上下文 + 待校对的行。
+/// 一批自己的内容：前后只读上下文 + 待校对的行。[only] 非 null 时只把其中的 id 列为
+/// 校对对象（补问上一次没答到的行），批内其余行原位写成只读参考。
 String buildProofreadBatchBody({
   required List<SubtitleDraftCue> cues,
   required int lo,
   required int hi,
   int contextLines = 3,
+  Set<int>? only,
 }) {
   final List<String> lines = <String>['\n参考(直前の行、修正不要):'];
   for (int i = lo - contextLines < 0 ? 0 : lo - contextLines; i < lo; i++) {
@@ -330,6 +344,11 @@ String buildProofreadBatchBody({
   lines.add('\n対象:');
   for (int i = lo; i < hi; i++) {
     final SubtitleDraftCue c = cues[i];
+    if (only != null && !only.contains(i)) {
+      // 补问剩下的 id 时，已答过的行留在原位当只读上下文。
+      lines.add('  参考 [${formatProofreadTime(c.startMs)}] ${c.text}');
+      continue;
+    }
     lines.add(
       'id=$i [${formatProofreadTime(c.startMs)}-'
       '${formatProofreadTime(c.endMs)}] 主: ${c.text}',

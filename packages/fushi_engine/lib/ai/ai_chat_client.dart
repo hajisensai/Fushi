@@ -169,11 +169,25 @@ int? _jsonInt(Object? value) => switch (value) {
 
 /// [AiChatClient.completeWithUsage] 的结果：正文 + 用量（取不到为 null）。
 class AiChatCompletion {
-  const AiChatCompletion({required this.text, this.usage});
+  const AiChatCompletion({required this.text, this.usage, this.stopReason});
 
   final String text;
   final AiChatUsage? usage;
+
+  /// 原样的停止原因（同 [AiChatTurn.stopReason]）；应答里没有时为 null。
+  final String? stopReason;
+
+  /// 输出撞上 `max_tokens` 被截断：[text] 只是回复的前半截。原样重发同一请求只会
+  /// 在同一处再截一次，调用方要缩小这次要的输出（只问剩下的 / 接着往下写）。
+  bool get truncated => isAiChatStopTruncated(stopReason);
 }
+
+/// 三家协议「输出到上限被截断」的停止原因：OpenAI `length`、Anthropic
+/// `max_tokens`、Gemini `MAX_TOKENS`。
+bool isAiChatStopTruncated(String? stopReason) => switch (stopReason) {
+  'length' || 'max_tokens' || 'MAX_TOKENS' => true,
+  _ => false,
+};
 
 /// 一个给模型调用的工具。[parameters] 是 JSON Schema（object 类型）。
 ///
@@ -557,6 +571,7 @@ class AiChatClient {
     return AiChatCompletion(
       text: text,
       usage: parseAiChatUsage(provider.protocol, body),
+      stopReason: _stopReason(provider.protocol, body),
     );
   }
 
@@ -591,17 +606,17 @@ class AiChatClient {
       AiWireProtocol.openAiCompatible => (
         _openAiText(body),
         _openAiToolCalls(body),
-        _openAiStopReason(body),
+        _stopReason(provider.protocol, body),
       ),
       AiWireProtocol.anthropicMessages => (
         _anthropicText(body),
         _anthropicToolCalls(body),
-        body['stop_reason'] is String ? body['stop_reason'] as String : null,
+        _stopReason(provider.protocol, body),
       ),
       AiWireProtocol.geminiGenerateContent => (
         _geminiText(body),
         _geminiToolCalls(body),
-        _geminiStopReason(body),
+        _stopReason(provider.protocol, body),
       ),
     };
     final String content = text ?? '';
@@ -1334,6 +1349,16 @@ class AiChatClient {
     final Object? first = choices.first;
     return first is Map ? first : null;
   }
+
+  static String? _stopReason(
+    AiWireProtocol protocol,
+    Map<Object?, Object?> body,
+  ) => switch (protocol) {
+    AiWireProtocol.openAiCompatible => _openAiStopReason(body),
+    AiWireProtocol.anthropicMessages =>
+      body['stop_reason'] is String ? body['stop_reason'] as String : null,
+    AiWireProtocol.geminiGenerateContent => _geminiStopReason(body),
+  };
 
   static String? _openAiStopReason(Map<Object?, Object?> body) {
     final Object? reason = _openAiFirstChoice(body)?['finish_reason'];
