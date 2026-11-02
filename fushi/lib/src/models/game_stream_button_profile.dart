@@ -88,7 +88,24 @@ enum GameStreamMouseAction {
 }
 
 /// Actions handled on the receiver itself instead of being sent to the game.
-enum GameStreamReceiverAction { toggleLookupPanel, toggleOnScreenPad }
+enum GameStreamReceiverAction {
+  toggleLookupPanel,
+  toggleOnScreenPad,
+
+  /// Switches between [GameStreamInputMode.game] and
+  /// [GameStreamInputMode.lookup].
+  toggleLookupMode,
+}
+
+/// Where controller buttons go.
+enum GameStreamInputMode {
+  /// Buttons run their [GameStreamButtonProfile] action (play the game).
+  game,
+
+  /// Buttons drive the lookup panel: the D-pad moves a cursor through the
+  /// current line, A looks the word up, Y mines it, B goes back to [game].
+  lookup,
+}
 
 /// What one physical button does.
 ///
@@ -286,8 +303,9 @@ class GameStreamButtonProfile {
   }
 
   /// Buttons that already worked before profiles existed keep doing what
-  /// they did (the pad mapping, so SGRE's native confirm still applies); the
-  /// rest get common visual-novel controls.
+  /// they did (the pad mapping, so SGRE's native confirm still applies),
+  /// except Select, which switches to lookup mode (Start still opens the
+  /// game menu); the rest get common visual-novel controls.
   static const Map<GameStreamPhysicalButton, GameStreamButtonAction> defaults =
       <GameStreamPhysicalButton, GameStreamButtonAction>{
         GameStreamPhysicalButton.dpadUp: GameStreamPadAction(
@@ -333,8 +351,8 @@ class GameStreamButtonProfile {
         GameStreamPhysicalButton.start: GameStreamPadAction(
           GameStreamVirtualButton.menu,
         ),
-        GameStreamPhysicalButton.select: GameStreamPadAction(
-          GameStreamVirtualButton.menu,
+        GameStreamPhysicalButton.select: GameStreamAppAction(
+          GameStreamReceiverAction.toggleLookupMode,
         ),
       };
 

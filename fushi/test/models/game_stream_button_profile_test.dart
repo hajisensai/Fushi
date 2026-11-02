@@ -22,7 +22,7 @@ void main() {
     }
   });
 
-  test('buttons that existed before profiles keep their pad mapping', () {
+  test('old buttons keep their pad mapping; Select switches lookup mode', () {
     const GameStreamButtonProfile profile = GameStreamButtonProfile();
     expect(
       profile.actionFor(GameStreamPhysicalButton.a),
@@ -46,7 +46,7 @@ void main() {
     );
     expect(
       profile.actionFor(GameStreamPhysicalButton.select),
-      const GameStreamPadAction(GameStreamVirtualButton.menu),
+      const GameStreamAppAction(GameStreamReceiverAction.toggleLookupMode),
     );
   });
 

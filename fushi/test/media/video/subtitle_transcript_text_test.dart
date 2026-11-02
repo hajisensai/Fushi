@@ -140,4 +140,44 @@ void main() {
     expect(lookups.single.$1, 5);
     expect(lookups.single.$2.contains(render.localToGlobal(local)), isTrue);
   });
+
+  testWidgets('an owner-driven caret shows without focus and clamps', (
+    WidgetTester tester,
+  ) async {
+    const Key paragraph = ValueKey<String>('paragraph');
+    Future<void> pumpCaret(int? caret) => tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SubtitleTranscriptText(
+            text: '😀日本語',
+            textKey: paragraph,
+            style: subtitleTranscriptTextStyle(fontSize: 14, selected: true),
+            keyboardLookup: true,
+            caret: caret,
+            onLookup: (int index, Rect _) {},
+          ),
+        ),
+      ),
+    );
+    List<String> spans() {
+      final InlineSpan text = tester
+          .widget<RichText>(find.byKey(paragraph))
+          .text;
+      final List<String> parts = <String>[];
+      text.visitChildren((InlineSpan span) {
+        if (span is TextSpan && span.text != null) parts.add(span.text!);
+        return true;
+      });
+      return parts;
+    }
+
+    await pumpCaret(null);
+    expect(spans(), <String>['😀日本語'], reason: 'No caret without focus');
+
+    await pumpCaret(2);
+    expect(spans(), <String>['😀日', '本', '語']);
+
+    await pumpCaret(99);
+    expect(spans(), <String>['😀日本', '語', '']);
+  });
 }
