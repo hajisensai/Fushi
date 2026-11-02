@@ -1,4 +1,4 @@
-## BUG-3959 · srs-v1-media-migration-never-finishes
+## BUG-3989 · srs-v1-media-migration-never-finishes
 - **报告**：2026-11-01（用户：桌面端与手机牌组到期数不一致；手机经互联写进电脑 host 目录的复习记录合不进电脑）
 - **真实性**：✅ 真 bug。用户桌面端实测：活动面包屑停在 `stage=start:migrate:media flat=40493 objects=0 sealedDirs=0 writers=1`；自 10-31 装上含迁移的版本（`98c087d1b4`）起 error_log 里 4 次「上次进程在 srs_sync 进行中没了 … stage=start」；谷歌云盘位置 lastOk 停在 10-31 08:01。网络没挂、重试封顶 4 次——不是失败，是工作量结构性过大。根因：
   - `packages/fushi_engine/lib/srs/sync2/srs_location_migration.dart`（旧 `_MediaMover.plainFlat` / `_store` / `_verified`）：旧根 `v2/media/` 的按名字存的媒体逐个「下载 → 算 sha → 把新根对象整份下载核对 → 上传 → 再下载核对」，每个文件 7–9 次请求；

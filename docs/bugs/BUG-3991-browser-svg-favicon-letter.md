@@ -1,4 +1,4 @@
-## BUG-3960 · 浏览器标签页图标退回首字母（站点声明 SVG favicon）
+## BUG-3991 · 浏览器标签页图标退回首字母（站点声明 SVG favicon）
 - **报告**：2026-11-01（用户：截图「没有 icon」，jiten.moe 标签只有首字母色块）
 - **真实性**：✅ 真 bug。jiten.moe `<head>` 同时声明 `favicon.svg`（`sizes="any"`）、96px png、48px ico；`fushi/lib/src/web_browser/tab_view/web_browser_page_scripts.dart` `kWebBrowserFaviconScript` 按「声明尺寸接近 32」打分，`sizes="any"` 记默认 16 分，与 48px ico 同分且先出现，选中了 SVG。`WebBrowserFavicon` 用 Flutter `Image`（`AppHttpImage`）解码，不认 SVG → errorBuilder 退回首字母色块。
 - **[x] ① 已修复** — 脚本跳过 SVG 候选（`type` 含 svg / href 以 `.svg(z)` 结尾 / `data:image/svg`），在位图里挑；全是 SVG 时退到 `/favicon.ico`。

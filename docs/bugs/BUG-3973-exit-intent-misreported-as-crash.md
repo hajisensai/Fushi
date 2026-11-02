@@ -1,0 +1,10 @@
+## BUG-3973 · exit-intent-misreported-as-crash
+- **报告**：2026-11-02（用户：应用内反馈 GrZ_kLCjue / WwuPr8PwDY / 24q7Ni3J4G / _SA2_Gv53t / gHzSzIXe_C / ARPH1nBpyP 残余 / zFOsXNAQoO / N19hY3X00Y / COHjV1rwU6 / RgaeV2JF62，自动「闪退报告：意外退出」）
+- **真实性**：✅ 真 bug（误报）。证据只有会话标记推断（无 crash_summary / hang dump / Dart 异常），lastLifecycle 多为 inactive（hide 窗口后 Windows 报 inactive）。根因：
+  - 退出意图 / clean 只在退出链**末尾**写：`fushi/lib/src/platform/desktop/desktop_lifecycle_service.dart:85`（`exitApp`），而关窗链 `fushi/lib/main.dart` `_flushAndExitForWindowClose` 先 hide 再跑 flush / book-exit drain(5s) / 关库(3s)。
+  - 退出看门狗 `fushi/lib/main.dart:977` 只有 6s，短于各步超时之和（~11s），到点 `exit(0)`（`main.dart:1380`）不标 clean。
+  - 安装器 WM_CLOSE 后 2s 强杀、Windows 关机 / 注销（runner 不处理 `WM_ENDSESSION`）、备份导入 / 数据根迁移兜底 `exit(0)`（`backup.part.dart:183`、`data_root.part.dart:92`）同样不标 clean。
+  - 观察者晚挂不补记当前生命周期，标记长期停在 `launching`（`previous_exit_log.dart` `foldIntoErrorLog`）。
+- **[x] ① 已修复** — 新增唯一退出协调器 `fushi/lib/src/platform/app_exit_coordinator.dart`：每条有意退出的第一步（任何 await 之前）`begin(reason)` 同步写 `exitRequested`，每步 `runStep` 记 `exitStage`，终止只经 `terminate`（先标 clean + terminatedBy 再 exit）/ 移动端 `terminateVia`。看门狗时长由各步预算推出（`AppExitCoordinator.watchdogTimeoutFor`，现约 14.6s），到点经协调器结束（terminatedBy=exitWatchdog，下次启动记带卡住阶段的诊断）。`previous_exit_log.dart` 新增 `PreviousExitKind.exitInterrupted` / `systemSessionEnd`（不上报；原生崩溃摘要仍按优先级压过）；runner `flutter_window.cpp` 处理 `WM_ENDSESSION` → `crash_dump.cpp` `RecordSessionEnd` 写 `session_end.log`；有意 / 系统终止时遗留的活动面包屑降为诊断；挂观察者时补记当前生命周期。桌面 / 移动 lifecycle、更新交接（Windows / macOS）、备份导入 / 数据根迁移兜底全部改走协调器。（未提交，由编排者提交）
+- **[x] ② 已加自动化测试** — `fushi/test/platform/app_exit_coordinator_test.dart`（意图先于第一个 await 落盘、并行阶段、terminate 顺序、看门狗预算推导、真会话标记 exitInterrupted / watchdog 诊断）、`fushi/test/diagnostics/previous_exit_session_end_test.dart`（session_end pid 匹配 / 不匹配、原生崩溃仍上报、面包屑降级）、棘轮守卫 `fushi/test/build/process_exit_single_exit_guard_test.dart`（lib/ 除协调器外禁裸 exit / 插件式结束进程须经 terminateVia）。
+- **备注**：C++ 改动只做了 `crash_dump.cpp` 单文件 `cl /W4 /WX` 编译验证，未整包构建、未实机验证关机路径。`fushi/windows/installer/fushi.iss` 的 2s 宽限期未改：意图已在链首落盘，强杀会归为 exitInterrupted 而不再误报。abort / std::terminate / __fastfail 绕过 SEH 过滤器的取证缺口（BUG-3831 续作）不在本条范围。

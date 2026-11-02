@@ -1,4 +1,4 @@
-## BUG-3959 · srs-timeline-restore-empty-templates
+## BUG-3987 · srs-timeline-restore-empty-templates
 - **报告**：2026-11-01（用户：Windows 安装版，「同步历史」时间线恢复后打开笔记类型编辑页，Styling 恢复了，Front / Back template 两个编辑框都空，预览提示「正面为空，这张卡不会出现」，模板名 Card 1）
 - **真实性**：✅ 真 bug（机制在内核测试里复现；用户本机活库副本里没有找到这次恢复，见备注）。
   根因：时间线恢复把「那一刻这个键还没有任何记录」写成一条值为 `null` 的补偿修改，而读路径只在标量读取里把 null 当「没有」，
