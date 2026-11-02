@@ -4269,7 +4269,14 @@ class SrsDbStore implements SrsSync2Host {
   /// 正文）的并发候选不进这份清单（它们走待裁决），以前却连同正文全部读回来再丢掉。两台设备各自导入同一个
   /// 包（笔记 ID 由 guid 确定）后，每条笔记的每个字段都留着两条互不支配的记录——这条查询一次读回整库正文两遍
   /// （1.9 万张卡的库上过 GB），牌组列表的冲突角标每次重读都跑，原生分配失败闪退（BUG-3947）。
-  Future<List<(SrsEntityKind, String, SrsRegister)>> syncConflicts() async {
+  ///
+  /// 只关心一个实体（牌组设置页标「此项有同步冲突」）时传 [entity]：按
+  /// `idx_srs_field_edits_profile_register` 直接定位这一个实体的记录。不传则 GROUP BY 要扫本 profile
+  /// 的全部修改记录索引——两台设备各导入过同一个包的库上每条笔记的「所属牌组」都有两条记录，
+  /// 1.5 万条笔记的真实库上热缓存 2.3 s、冷缓存近 10 s，牌组设置页每次打开都付一遍。
+  Future<List<(SrsEntityKind, String, SrsRegister)>> syncConflicts({
+    ({SrsEntityKind kind, String id})? entity,
+  }) async {
     final String tracked = srsFieldClassSqlFilter(
       _kSyncConflictClasses,
       kindColumn: 'entity_kind',
@@ -4279,15 +4286,22 @@ class SrsDbStore implements SrsSync2Host {
         .customSelect(
           'SELECT e.entity_kind AS k, e.entity_id AS i, e.field_key AS f, '
           'CAST(e.json AS BLOB) AS j, s.server_time AS st '
-          'FROM srs_field_edits e '
-          'JOIN (SELECT entity_kind AS k, entity_id AS i, field_key AS f '
+          // CROSS JOIN 钉死连接顺序：先挑出多记录的字段键（m），再按完整索引键逐个取记录。
+          // 写成普通 JOIN 时 SQLite 把 e 放外层、按 profile_uid 扫本 profile 全部修改记录
+          // 再去探 m，[entity] 只筛一个实体也付整表的代价。
+          'FROM (SELECT entity_kind AS k, entity_id AS i, field_key AS f '
           'FROM srs_field_edits WHERE profile_uid = ? AND $tracked '
+          '${entity == null ? '' : 'AND entity_kind = ? AND entity_id = ? '}'
           'GROUP BY entity_kind, entity_id, field_key HAVING COUNT(*) > 1) m '
-          'ON e.entity_kind = m.k AND e.entity_id = m.i AND e.field_key = m.f '
-          'LEFT JOIN srs_event_local s ON s.event_id = e.id '
-          'WHERE e.profile_uid = ?',
+          'CROSS JOIN srs_field_edits e ON e.profile_uid = ? '
+          'AND e.entity_kind = m.k AND e.entity_id = m.i AND e.field_key = m.f '
+          'LEFT JOIN srs_event_local s ON s.event_id = e.id',
           variables: <Variable<Object>>[
             Variable<String>(profileUid, srsIdType),
+            if (entity != null) ...<Variable<Object>>[
+              Variable<String>(entity.kind.wire),
+              Variable<String>(entity.id, srsIdType),
+            ],
             Variable<String>(profileUid, srsIdType),
           ],
           readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
