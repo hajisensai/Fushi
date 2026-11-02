@@ -193,10 +193,19 @@ void main() {
     final String delegating = java('AddContentApiProvider.java');
     // 纯委托的判据：没有 ContentResolver、没有 Cursor —— 一旦有人在这里写逻辑，
     // 「支持并行版不碰主包路径」这条保证就没了。
+    // 唯一例外：上游 AddContentApi 没有删笔记的方法，deleteNote 只能对 AAR 编译进去
+    // 的 Note.CONTENT_URI 发一次直白的 delete——authority 仍是 AAR 常量，不加逻辑。
+    // 查询 / 插入 / 更新一律不许绕过 AddContentApi。
     expect(
-      delegating.contains('ContentResolver'),
+      RegExp(r'resolver\.(?!delete\()').hasMatch(delegating),
       isFalse,
       reason: '主包实现必须是对 AddContentApi 的直白转发，不许有自己的查询逻辑',
+    );
+    expect(RegExp(r'resolver\.delete\(').allMatches(delegating).length, 1);
+    expect(
+      delegating.contains('FlashCardsContract.Note.CONTENT_URI'),
+      isTrue,
+      reason: '删笔记只能打 AAR 自带的主包 authority，不许自己拼',
     );
     expect(delegating.contains('Cursor'), isFalse);
   });

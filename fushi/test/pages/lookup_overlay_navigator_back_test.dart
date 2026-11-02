@@ -299,7 +299,11 @@ void main() {
     final String gamepad = File(
       'lib/src/shortcuts/gamepad_service.dart',
     ).readAsStringSync();
-    final int caseB = gamepad.indexOf('case GamepadButton.b:');
+    // TODO-700 T1：返回键不再裸判 `case GamepadButton.b:`，由注册表解析成
+    // ShortcutAction.globalBack 时才返回（用户可改绑）。
+    final int caseB = gamepad.indexOf(
+      'scope: ShortcutScope.universal) ==\n        ShortcutAction.globalBack',
+    );
     final int ask = gamepad.indexOf(
       'LookupOverlayNavigator.popActiveMenu()',
       caseB,

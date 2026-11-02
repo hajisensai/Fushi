@@ -207,7 +207,7 @@ void main() {
     });
 
     test('calls Flutter InAppWebView handler for empty tap', () {
-      expect(js, contains("callHandler('onTapEmpty'"));
+      expect(js, matches(RegExp(r"callHandler\(\s*'onTapEmpty'")));
     });
 
     // TODO-851：selectText 签名带第 4 参 fromHover。
@@ -220,12 +220,15 @@ void main() {
     // 不能 fire onTapEmpty（否则反复 toggle 操作栏导致闪烁）；真点击仍 fire。
     test('onTapEmpty only fires on the non-hover (tap) path', () {
       // 全脚本仅一处 onTapEmpty 调用（selectText 空白分支）。
-      final int emitters = "callHandler('onTapEmpty'".allMatches(js).length;
+      final int emitters = RegExp(
+        r"callHandler\(\s*'onTapEmpty'",
+      ).allMatches(js).length;
       expect(emitters, 1);
       // 该调用紧跟在 `if (!fromHover) {` 守卫之后。
       final RegExp guard = RegExp(
         r'if\s*\(\s*!fromHover\s*\)\s*\{\s*'
-        r"window\.flutter_inappwebview\.callHandler\('onTapEmpty'\);",
+        // 允许带实参（点击坐标 + 视口尺寸，供点击翻页区域分发）。
+        r"window\.flutter_inappwebview\.callHandler\(\s*'onTapEmpty'[^;]*\);",
       );
       expect(
         guard.hasMatch(js),
