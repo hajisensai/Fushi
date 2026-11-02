@@ -475,7 +475,7 @@ fn plan(c: &Connection, profile: &str, heads: &[Vec<u8>], location: Option<&str>
         }
     }
     // 上一次收段会话没收尾（被打断）留下的待重放卡 / 已找到的分叉点：这一轮没段可拉也要开会话收个尾（S-4 / S-12）。
-    let finish = replay_is_pending(c, profile)? || (fork && known_fork.is_some());
+    let finish = replay_is_pending(c, profile)? || cache_is_pending(c, profile)? || (fork && known_fork.is_some());
     Ok(Some(json!({"fetch": fetch, "fork": fork, "rejected": rejected, "finishPending": finish, "needsUpgrade": needs_upgrade})))
 }
 
@@ -990,8 +990,13 @@ enum Outcome {
     Bad(String),
     /// 链已对上的、还没投递的操作与各自的链值，按 seq 升序（投递从队首取走）。
     Ops(VecDeque<(Op, Chain)>),
-    /// 校验已过、操作没留（超大旧段或超出 [PREPARED_RAW_BUDGET]）：投递时重开流式解。
+    /// 校验已过、操作没留（超大旧段）：投递时每片重开流式解、跳过已处理的前缀。
     Deferred,
+    /// 校验已过、整段不超过 [segment::SEGMENT_MAX_RAW_BYTES]，但超出 [PREPARED_RAW_BUDGET] 没留：投递轮到它时解一次、
+    /// 剩下的留在会话里（变成 [Outcome::Ops]），之后各片从队首取。以前与超大旧段一样每片重开：每片都要验签、解压整段、
+    /// 再把已处理的前缀解码一遍跳过，一段被切成几十上百片时这是段内平方级，是新设备收段投递的大头。轮到它时同一批
+    /// 前面的段已经投完、内存已放，峰值不超过预处理的预算加一段。
+    Later,
 }
 
 struct PreparedSegment {
@@ -1098,7 +1103,7 @@ fn verify_segment(bytes: &[u8], header: &segment::SegmentHeader, public: Option<
     };
     let raw: u64 = ops.as_slice().iter().map(|op| held_bytes(op) as u64).sum();
     if raw > *budget {
-        return Outcome::Deferred;
+        return Outcome::Later;
     }
     *budget -= raw;
     let mut chain = seg.header.prev_chain;
@@ -1193,13 +1198,27 @@ fn deliver_prepared(
                 *next += 1;
                 continue;
             }
-            Outcome::Ops(_) | Outcome::Deferred => public.ok_or("verified segment without a public key")?,
+            Outcome::Ops(_) | Outcome::Deferred | Outcome::Later => public.ok_or("verified segment without a public key")?,
         };
         if header.device != local.device && item.consumed == 0 {
             // 签名与链都已验过：还有位置缺这台设备的这个段就留下原文，之后原样转发过去（relay.rs）。
             super::relay::keep(c, profile, local, &header, bytes, ck.as_ref())?;
         }
         let stream_err = |e: segment::SegmentError| format!("{}: {e}", header.device.text());
+        if matches!(item.outcome, Outcome::Later) {
+            // 解一次，已处理的前缀（[PreparedSegment::consumed]）不留。
+            let seg = segment::open_verified(bytes, &public, ck.as_ref()).map_err(stream_err)?;
+            let mut chain = header.prev_chain;
+            let mut q = VecDeque::new();
+            for (i, op) in seg.ops().map_err(stream_err)?.enumerate() {
+                let op = op.map_err(stream_err)?;
+                chain = chain_next(&chain, &op);
+                if i >= item.consumed {
+                    q.push_back((op, chain));
+                }
+            }
+            item.outcome = Outcome::Ops(q);
+        }
         let mut consumed = item.consumed;
         let mut exhausted = false;
         {
@@ -1408,6 +1427,62 @@ pub(crate) fn replay_pending(c: &Connection, profile: &str, budget: &mut CommitB
 /// 待重放集合非空（收段会话没收尾就被打断过）。
 pub(crate) fn replay_is_pending(c: &Connection, profile: &str) -> Result<bool, String> {
     c.query_row("SELECT EXISTS(SELECT 1 FROM sync2_replay_pending WHERE profile_uid = srs_id(?1))", [profile], |r| r.get(0)).map_err(sql)
+}
+
+/// 待刷新缓存的种类（`sync2_cache_pending.kind`）：取的时候按这个序，笔记类型与笔记先于卡。
+const CACHE_NOTE_TYPE: i64 = 0;
+const CACHE_NOTE: i64 = 1;
+const CACHE_CARD: i64 = 2;
+
+/// 把这一片投影变化要刷新的缓存记进待刷新集合（与投递同一事务），收尾时 [take_cache_pending] 一次刷完。
+///
+/// 以前分发器在每一片（[COMMIT_SLICE]）之后当场刷新：卡的缓存行与有效复习投影要读这张卡的全部日志
+/// （caches.rs `card_materials` / `refresh_stats`），新设备追赶时同一张卡在几百片里各被刷一遍、每遍的日志还越来越多，
+/// 近平方级（真机：3 GB 库首次收段约 50 分钟，九成时间在缓存刷新）。现在一次收段会话里每个实体只在收尾刷一次。
+/// 片与片之间新收的笔记 / 卡还没有缓存行（浏览、复习队列看不到它们），已有的行停在收段前的状态，收尾后一致。
+pub(crate) fn defer_cache_refresh(c: &Connection, profile: &str, dirty: &crate::store::caches::Dirty) -> Result<(), String> {
+    let mut stmt = c
+        .prepare_cached("INSERT OR IGNORE INTO sync2_cache_pending (profile_uid, kind, entity_id) VALUES (srs_id(?1), ?2, srs_id(?3))")
+        .map_err(sql)?;
+    for (kind, ids) in [(CACHE_NOTE_TYPE, &dirty.note_types), (CACHE_NOTE, &dirty.notes), (CACHE_CARD, &dirty.cards)] {
+        for id in ids {
+            stmt.execute(params![profile, kind, id]).map_err(sql)?;
+        }
+    }
+    Ok(())
+}
+
+/// 从待刷新集合取出至多 [limit] 个实体（笔记类型、笔记、卡的顺序）并删掉，返回要刷新的部分与是否还有剩下的。
+/// 调用方在同一个 savepoint 里接着刷新（ffi.rs 分发器），刷新失败就连同删除一起回滚。
+pub(crate) fn take_cache_pending(c: &Connection, profile: &str, limit: usize) -> Result<(crate::store::caches::Dirty, bool), String> {
+    let rows: Vec<(i64, String)> = c
+        .prepare_cached(
+            "SELECT kind, srs_idt(entity_id) AS entity_id FROM sync2_cache_pending WHERE profile_uid = srs_id(?1) ORDER BY kind, entity_id LIMIT ?2",
+        )
+        .map_err(sql)?
+        .query_map(params![profile, limit as i64 + 1], |r| Ok((r.get(0)?, r.get(1)?)))
+        .map_err(sql)?
+        .collect::<Result<_, _>>()
+        .map_err(sql)?;
+    let more = rows.len() > limit;
+    let mut d = crate::store::caches::Dirty::default();
+    let mut del = c
+        .prepare_cached("DELETE FROM sync2_cache_pending WHERE profile_uid = srs_id(?1) AND kind = ?2 AND entity_id = srs_id(?3)")
+        .map_err(sql)?;
+    for (kind, id) in rows.into_iter().take(limit) {
+        del.execute(params![profile, kind, id]).map_err(sql)?;
+        match kind {
+            CACHE_NOTE_TYPE => d.note_types.insert(id),
+            CACHE_NOTE => d.notes.insert(id),
+            _ => d.cards.insert(id),
+        };
+    }
+    Ok((d, more))
+}
+
+/// 待刷新集合非空（收段会话没收尾就被打断过）。
+pub(crate) fn cache_is_pending(c: &Connection, profile: &str) -> Result<bool, String> {
+    c.query_row("SELECT EXISTS(SELECT 1 FROM sync2_cache_pending WHERE profile_uid = srs_id(?1))", [profile], |r| r.get(0)).map_err(sql)
 }
 
 // 本机身份分叉（设计 §7.3）：换新身份，把旧身份 seq > [keep] 的本机操作撤出投影、以新身份重签发
@@ -1903,6 +1978,7 @@ impl SrsCore {
         let fork_at = recorded_fork(&w, profile, &local.device)?;
         *self.ingest_session.lock().map_err(|_| "ingest session poisoned")? =
             Some(IngestSession { profile: profile.to_owned(), device: local.device, fork_at, prepared: None, delivery: None });
+        self.set_ingest_hold_cache(true);
         Ok(json!({}))
     }
 
@@ -2023,6 +2099,9 @@ impl SrsCore {
                 hook(self);
             }
             let r = ingest_result(c, profile, t, BTreeSet::new(), applied_n, errors, false, !done, Some(pending))?;
+            // 这一片的缓存刷新推迟到收尾（[defer_cache_refresh]）：分发器不再逐片刷新 `ingest_commit`。
+            let projection: serde_json::Value = serde_json::from_str(&r).map_err(|e| e.to_string())?;
+            defer_cache_refresh(c, profile, &crate::store::caches::Dirty::of_projection(&projection))?;
             let r = persist_local_state(c, profile, local_state, r)?;
             Ok((r, fork_at, done))
         });

@@ -72,6 +72,10 @@ pub struct SrsCore {
     ingest_session: Mutex<Option<sync2::transport::IngestSession>>,
     /// 有写入在等写锁，正在投的收段那一片尽快收（[SrsCore::sync2_ingest_yield]）。
     ingest_yield: AtomicBool,
+    /// 分批收段会话从开到收尾刷完缓存之间为真：写连接放回时不还页缓存（[trim_idle_cache]），每 150 ms 一片的投递
+    /// 与收尾的各块就不反复从盘上读回同一批索引页。[SrsCore::sync2_ingest_begin] 置位，分发器在收尾不再 `more`
+    /// 时清掉（ffi.rs `sync2_dispatch`），丢弃 profile 时也清；没清掉（会话被打断）最多常驻一份 `cache_size`。
+    ingest_hold_cache: AtomicBool,
     /// 常驻复习队列（store/queue.rs）：写连接上的触发器记下写过的卡 / 日志，`study` 按 profile 增量排队。
     study_hub: Arc<queue::StudyHub>,
     /// 浏览页与 AnkiConnect 共用的常驻会话（store/browse.rs，按 profile）：搜索语料、列数据随写入增量更新；
@@ -100,7 +104,7 @@ pub struct ReadSession {
 /// 这一步晚于 COMMIT 对别的连接可见，且没法与 COMMIT 原子：SQLite 的 commit hook 在提交可见之前调（提前挪会让读快照
 /// 取走 id 却看不到提交 → 永远漏读），提交之后才有的回调与这里一样晚。所以正确性不靠挪的时机：排队的读路径连
 /// 「未提交」的 id 一起重读（只读不清，store/queue.rs `with_session`），这里只负责尽早把它们挪成可清的。
-pub(crate) struct Conn<'a>(MutexGuard<'a, Option<Connection>>, Option<&'a queue::StudyHub>);
+pub(crate) struct Conn<'a>(MutexGuard<'a, Option<Connection>>, Option<&'a queue::StudyHub>, Option<&'a AtomicBool>);
 
 impl<'a> Conn<'a> {
     fn of(guard: MutexGuard<'a, Option<Connection>>) -> Result<Self, String> {
@@ -111,7 +115,7 @@ impl<'a> Conn<'a> {
         if guard.is_none() {
             return Err(CLOSED.to_string());
         }
-        Ok(Self(guard, hub))
+        Ok(Self(guard, hub, None))
     }
 }
 
@@ -143,7 +147,10 @@ impl Drop for Conn<'_> {
                 hub.settle();
             }
         }
-        trim_idle_cache(c);
+        // 收段会话开着时留着页缓存（[SrsCore] `ingest_hold_cache`）。
+        if !self.2.is_some_and(|h| h.load(std::sync::atomic::Ordering::Relaxed)) {
+            trim_idle_cache(c);
+        }
     }
 }
 
@@ -326,6 +333,7 @@ impl SrsCore {
             sessions: Mutex::new(Vec::new()),
             ingest_session: Mutex::new(None),
             ingest_yield: AtomicBool::new(false),
+            ingest_hold_cache: AtomicBool::new(false),
             study_hub,
             browse: Mutex::new(browse::Sessions::default()),
             #[cfg(test)]
@@ -336,7 +344,14 @@ impl SrsCore {
     }
 
     pub(crate) fn writer(&self) -> Result<Conn<'_>, String> {
-        Conn::with_hub(self.writer.lock().map_err(|_| "srs writer poisoned".to_string())?, Some(&self.study_hub))
+        let mut w = Conn::with_hub(self.writer.lock().map_err(|_| "srs writer poisoned".to_string())?, Some(&self.study_hub))?;
+        w.2 = Some(&self.ingest_hold_cache);
+        Ok(w)
+    }
+
+    /// 收段会话期间写连接放回时是否留着页缓存（见 `ingest_hold_cache`）。
+    pub(crate) fn set_ingest_hold_cache(&self, hold: bool) {
+        self.ingest_hold_cache.store(hold, std::sync::atomic::Ordering::Relaxed);
     }
 
     pub(crate) fn reader(&self) -> Result<Conn<'_>, String> {

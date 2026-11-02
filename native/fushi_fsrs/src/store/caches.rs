@@ -89,6 +89,15 @@ impl Dirty {
         d
     }
 
+    /// 并入另一份。
+    pub(crate) fn merge(&mut self, o: Dirty) {
+        self.notes.extend(o.notes);
+        self.cards.extend(o.cards);
+        self.note_types.extend(o.note_types);
+        self.all_notes |= o.all_notes;
+        self.all_stats |= o.all_stats;
+    }
+
     pub(crate) fn is_empty(&self) -> bool {
         self.notes.is_empty() && self.cards.is_empty() && self.note_types.is_empty() && !self.all_notes && !self.all_stats
     }
@@ -113,7 +122,8 @@ impl Written {
 
 /// 丢掉本 profile 的全部缓存行，由事件重建（Dart `rebuildCaches`）。
 pub(crate) fn rebuild(c: &Connection, profile: &str, cfg: &CacheConfig) -> Result<Written, String> {
-    for t in ["srs_cards_cache", "srs_notes_cache", "srs_stat_reviews"] {
+    // 全量重建覆盖收段会话记下的待刷新实体。
+    for t in ["srs_cards_cache", "srs_notes_cache", "srs_stat_reviews", "sync2_cache_pending"] {
         c.execute(&format!("DELETE FROM {t} WHERE profile_uid = srs_id(?1)"), [profile]).map_err(sql)?;
     }
     refresh(c, profile, cfg, Dirty { all_notes: true, all_stats: true, ..Dirty::default() })

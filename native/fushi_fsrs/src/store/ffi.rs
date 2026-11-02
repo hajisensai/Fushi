@@ -769,7 +769,7 @@ fn key32(v: &serde_json::Value) -> Result<Option<[u8; 32]>, String> {
     }
 }
 
-fn sync2_dispatch(c: &SrsCore, req: &serde_json::Value, blobs: &mut Vec<Vec<u8>>, files: &mut Vec<(String, Vec<u8>)>) -> Result<serde_json::Value, String> {
+pub(crate) fn sync2_dispatch(c: &SrsCore, req: &serde_json::Value, blobs: &mut Vec<Vec<u8>>, files: &mut Vec<(String, Vec<u8>)>) -> Result<serde_json::Value, String> {
     use serde_json::{json, Value};
     let s = |k: &str| req.get(k).and_then(Value::as_str).ok_or_else(|| format!("sync2: missing {k}"));
     let i = |k: &str| req.get(k).and_then(Value::as_i64).ok_or_else(|| format!("sync2: missing {k}"));
@@ -809,7 +809,11 @@ fn sync2_dispatch(c: &SrsCore, req: &serde_json::Value, blobs: &mut Vec<Vec<u8>>
             }
             _ => sync2_command(c, op, profile, req, blobs, files)?,
         };
-        let mut dirty = crate::store::caches::Dirty::of_projection(&v);
+        // 分批收段的一片只把要刷新的记进待刷新集合（transport.rs `defer_cache_refresh`，与投递同一事务），这里不刷。
+        let mut dirty =
+            if op == "ingest_commit" { crate::store::caches::Dirty::default() } else { crate::store::caches::Dirty::of_projection(&v) };
+        // 收尾（重放放完之后）：按块刷新各片记下的缓存，还有剩的就回报 `more`，Dart 放开写锁后用 `replay_pending` 接着刷。
+        let drain = matches!(op, "ingest_finish" | "replay_pending") && v["more"] != Value::Bool(true);
         if op == "refresh_caches" {
             let ids = |k: &str, into: &mut std::collections::BTreeSet<String>| {
                 for x in req.get(k).and_then(Value::as_array).into_iter().flatten() {
@@ -825,7 +829,21 @@ fn sync2_dispatch(c: &SrsCore, req: &serde_json::Value, blobs: &mut Vec<Vec<u8>>
             dirty.all_stats = req["allStats"] == Value::Bool(true);
         }
         let w = c.writer()?;
-        let written = crate::store::sync2::in_savepoint(&w, |conn| crate::store::caches::refresh(conn, profile, &cfg, dirty))?;
+        let mut cache_more = false;
+        let written = crate::store::sync2::in_savepoint(&w, |conn| {
+            if drain {
+                let (pending, more) = crate::store::sync2::transport::take_cache_pending(conn, profile, CACHE_PENDING_CHUNK)?;
+                dirty.merge(pending);
+                cache_more = more;
+            }
+            crate::store::caches::refresh(conn, profile, &cfg, std::mem::take(&mut dirty))
+        })?;
+        if cache_more {
+            v["more"] = Value::Bool(true);
+        } else if drain {
+            // 会话收完：这次放回写连接起照常还页缓存。
+            c.set_ingest_hold_cache(false);
+        }
         // 本机作答：落库、刷新缓存之后接着在同一条写连接上排队（下一张 + 牌组计数，store/study.rs），复习页一次
         // 评分一次命令。看得见这笔还没提交的写入。
         let study = match req.get("study").filter(|s| s.is_object()) {
@@ -854,7 +872,11 @@ fn slice_budget<'a>(c: &'a SrsCore, req: &serde_json::Value) -> crate::store::sy
     }
 }
 
-/// 改投影的 v2 命令（结果带 `marks`）：分发器在同一次调用里刷新缓存行。
+/// 收尾时一次命令最多刷新多少个待刷新实体（笔记类型 / 笔记 / 卡）：一块的锁内时间与重放的一片同量级，排队的
+/// 作答只等这一块。
+const CACHE_PENDING_CHUNK: usize = 512;
+
+/// 改投影的 v2 命令（结果带 `marks`）：分发器在同一次调用里刷新缓存行；`ingest_commit` 例外（只记待刷新）。
 const PROJECTING_OPS: [&str; 11] =
     ["apply", "ingest", "ingest_batch", "ingest_commit", "ingest_finish", "replay_pending", "import", "resolve", "purge", "checkpoint", "restore"];
 

@@ -108,6 +108,7 @@ impl SrsCore {
         let mut session = self.ingest_session.lock().map_err(|_| "ingest session poisoned")?;
         if session.as_ref().is_some_and(|s| s.belongs_to(profile)) {
             *session = None;
+            self.set_ingest_hold_cache(false);
         }
         Ok(out)
     }

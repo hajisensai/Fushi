@@ -878,14 +878,17 @@ pub(crate) fn land_edit(conn: &Connection, profile: &str, op: &Op, e: &EditBody,
     let (eid, row) = edit_row(conn, profile, op, e)?;
     let ent = e.entity.text();
     // 现存记录读 `jslim` + 列（store/slim.rs `EDIT_READ`），不经逐行拼回的 `json`：每收一条修改记录都读一遍。
+    // 只读同一字段键的（支配只在同一 (种类, 实体, 字段键) 里比，registers.rs `land`）加上同 ID 的那行（「同 ID 已在
+    // 就不落」），结果与读整个实体相同。以前读整个实体：一条笔记的每次修改都把它全部字段的正文读出来、拼回再解析，
+    // 新设备追赶时随字段数与修改次数放大，是收段投递的大头。
     let existing: Vec<(String, String, Option<i64>, Option<crate::registers::EditCols>)> = conn
         .prepare_cached(
             "SELECT srs_idt(f.id) AS id, l.server_time, f.jslim, f.id, f.profile_uid, f.entity_kind, f.entity_id, f.field_key, f.writer_id, f.seq \
              FROM srs_field_edits f LEFT JOIN srs_event_local l ON l.event_id = f.id \
-             WHERE f.entity_kind = ?1 AND f.entity_id = srs_id(?2)",
+             WHERE f.entity_kind = ?1 AND f.entity_id = srs_id(?2) AND (f.field_key = ?3 OR f.id = srs_id(?4))",
         )
         .map_err(sql)?
-        .query_map(params![e.kind.wire(), ent], |r| {
+        .query_map(params![e.kind.wire(), ent, e.key, eid], |r| {
             let (j, cols) = crate::store::slim::edit_row(r, 2)?;
             Ok((r.get(0)?, j, r.get(1)?, cols))
         })
@@ -1690,6 +1693,10 @@ mod tests_break;
 mod tests_digest;
 #[cfg(test)]
 mod tests_replay_pending;
+#[cfg(test)]
+mod tests_cache_pending;
+#[cfg(test)]
+mod real_folder_bench;
 #[cfg(test)]
 mod tests_footprint;
 #[cfg(test)]

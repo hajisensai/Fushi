@@ -1,0 +1,11 @@
+## BUG-3993 · srs-new-device-ingest-slow
+- **报告**：2026-11-03（用户：平板新设备从同步文件夹收复习数据「同步复习数据 (0/56)」几十分钟不动；「这个量级的卡片不可能这么久」）
+- **真实性**：✅ 真 bug。真实数据（1.5 万笔记 / 4.5 万卡 / 30 万复习，65 万条操作，段 74 MB）在 Xiaomi Pad 5 上新设备收齐约 44 分钟（修缓存刷新前 51 分钟），桌面 release 同样的分片路径 13.6 分钟；解码验签只占 3 秒，几乎全在逐片投递。按段计时（`native/fushi_fsrs/src/store/sync2/real_folder_bench.rs`，默认不跑）+ SQL 逐语句计时 + 分阶段计时拆出五处结构性浪费：
+  1. 每片投递后分发器当场刷新缓存（`native/fushi_fsrs/src/store/ffi.rs` `sync2_dispatch` → `caches::refresh` → `card_materials` / `logs_of`）：同一张卡在几百片里各刷一遍、每遍读的日志越来越多，近平方级。
+  2. 写连接每片放回时还页缓存（`native/fushi_fsrs/src/store/mod.rs` `trim_idle_cache`），下一片从盘上读回同一批索引页。
+  3. 每收一条字段修改读整个实体的全部修改行（`native/fushi_fsrs/src/store/sync2/mod.rs` `land_edit` 的 `WHERE f.entity_kind = ?1 AND f.entity_id = srs_id(?2)`）：一条笔记每改一次就把它全部字段的正文读出、拼回、解析；支配只在同一字段键里比（`registers.rs` `land`）。
+  4. 超出预处理内存预算的正常段标成 `Deferred`（`native/fushi_fsrs/src/store/sync2/transport.rs` `verify_segment`），投递时**每片**重开：验签、解压整段、把已处理的前缀解码一遍跳过——段内平方级；分阶段计时里约占投递的六成。
+  5. Dart 每片之后都在另开的连接上并回 WAL（`packages/fushi_engine/lib/srs/srs_db_store.dart` `sync2IngestBatch`）：同一批热页每片拷回主库一遍；模拟生产的基准里 173 次并回占投递 36%。收尾（重放 + 刷缓存）不在 `bulkWrites` 里，写连接按 1000 页阈值几乎每块都并。
+- **[x] ① 已修复** — ① 各片只把要刷新的实体记进 `sync2_cache_pending`（srs.db v20），收尾 `ingest_finish` / `replay_pending` 按块（512）刷完，被打断时 `plan` 报 `finishPending`；② 收段会话期间写连接不还页缓存（`ingest_hold_cache`，收尾 / 丢弃 profile 时清）；③ `land_edit` 只读同字段键 + 同 ID 的行（结果逐位相同）；④ 新增 `Outcome::Later`：轮到时解一次、剩下的留在会话里，超大旧段仍流式；⑤ `SrsWalCheckpointPacer` 按内核回报的 WAL 帧数定并回间隔（攒约 8192 页），收尾也包进 `bulkWrites`。
+- **[x] ② 已加自动化测试** — `native/fushi_fsrs/src/store/sync2/tests_cache_pending.rs`（经生产分发器分片收齐后三张缓存表与全量重建逐行相同 / 打断后下一轮收尾补齐 / 重建清待刷新集合 / 会话期间留页缓存、收尾与丢弃 profile 放开）；Later 路径由测试构建下 4 KB 预算的分片端到端用例覆盖（`tests_replay_pending.rs` 等，与一次收完逐字节相同）；`packages/fushi_engine/test/srs/sync2/srs_wal_checkpoint_pacer_test.dart`。
+- **备注**：性能对比都在桌面用同一份真实文件夹、交替运行（单次计时受本机负载影响能差三成，不作数）：③④ 合计前 6 段投递 60.4 / 57.5 s → 36.8 / 37.8 s；⑤ 64 MB 阈值 vs 每片并回 54–65 s → 40–46 s。平板端到端复测见 PR。仍未做：字段修改落库路径里同一份正文被序列化 / 解析约五次（`edit_row` → `canonical` → `land_stored` → `srs_edit_pack` → 摘要触发器的 `srs_edit_json`），单条 300 µs 上下；新设备首次加入的批量通道（追平 Anki 整库下载的量级）需另行设计。收完仍有 34,984 条在等更早的改动：它们依赖只在互联位置上的两台桌面设备，测试包关了互联、转发拉不到原段，属测试隔离；「互联断开、只靠文件夹的新设备」的转发链路待单独实测。

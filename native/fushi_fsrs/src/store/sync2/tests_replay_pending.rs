@@ -151,6 +151,9 @@ fn interrupted_session_resumes_the_pending_replay() {
     let r: Value = serde_json::from_str(&d.core.sync2_ingest_finish(P, now).unwrap()).unwrap();
     assert_eq!(r["more"], json!(false), "{r}");
     assert_eq!(d.rows("SELECT COUNT(*) FROM sync2_replay_pending")[1][0], "0");
+    // 待刷新缓存（`sync2_cache_pending`）由分发器收尾时按缓存配置刷（tests_cache_pending.rs）；这条直接调内核的路径
+    // 不刷，`plan` 照样为它报 `finishPending`。清掉它之后，重放这一侧已经没有要收的尾。
+    d.core.writer().unwrap().execute("DELETE FROM sync2_cache_pending", []).unwrap();
     assert_eq!(d.core.sync2_plan(P, &heads(&bucket)).unwrap()["finishPending"], json!(false));
     assert_eq!(logs(&d), logs(&one));
 }

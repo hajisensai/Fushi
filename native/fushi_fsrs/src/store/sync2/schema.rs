@@ -295,6 +295,18 @@ CREATE TABLE IF NOT EXISTS sync2_replay_pending (
 ) WITHOUT ROWID;
 "#;
 
+/// V20：分批收段会话里还没刷新的本机缓存（kind 0 = 笔记类型 / 1 = 笔记 / 2 = 卡）。每一片只把投影变化记进来
+/// （与投递同一事务），收尾（[super::transport] `take_cache_pending`）按块刷新一次再删；崩溃 / 中途收手后表还在，
+/// 下一次收尾接着刷。以前每一片当场刷新：新设备追赶时同一张卡在几百片里各重读一遍越来越长的日志，近平方级。
+pub const V20_CACHE_PENDING: &str = r#"
+CREATE TABLE IF NOT EXISTS sync2_cache_pending (
+  profile_uid TEXT NOT NULL,
+  kind INTEGER NOT NULL,
+  entity_id TEXT NOT NULL,
+  PRIMARY KEY (profile_uid, kind, entity_id)
+) WITHOUT ROWID;
+"#;
+
 /// V14（集成审查【中】）：转发清理两段式（relay.rs `sync2_relay_ack`）。被新转发 head 取代的旧转发件 / 旧转发 head
 /// 从 `sync2_relay_out` 挪到这里等删，Dart 删成功后发 `obsolete_ack` 才移除；删除中途失败的下一轮照样再删。
 pub const V14_RELAY_GONE: &str = r#"
