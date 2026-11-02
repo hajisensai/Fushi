@@ -254,6 +254,22 @@
             android:configChanges="orientation|keyboardHidden|keyboard|navigation|screenSize|smallestScreenSize|screenLayout|density|uiMode"/>
         <!-- 互联下载保活：下载进行期间的 dataSync 前台服务（进度通知），
              防止切到后台后进程被杀、下载随之中断。 -->
+        <!-- 串流第二块屏（双屏掌机下屏 / 外接显示器）上的查词面板：独立进程（与 :popup
+             同理，里面跑完整的查词 AppModel），由主进程 GameStreamCompanionDisplay 用
+             ActivityOptions.setLaunchDisplayId 拉到那块屏上。落到这块屏上的按键 / 手柄
+             事件一律转发给串流页，按钮始终操作游戏。 -->
+        <activity
+            android:name=".GameStreamCompanionActivity"
+            android:process=":companion"
+            android:theme="@style/NormalTheme"
+            android:taskAffinity="app.fushi.reader.companion"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:resizeableActivity="true"
+            android:hardwareAccelerated="true"
+            android:configChanges="orientation|keyboardHidden|keyboard|navigation|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"/>
+        <service android:name=".GameStreamCompanionRelayService"
+            android:exported="false"/>
         <service android:name=".DownloadKeepAliveService"
             android:exported="false"
             android:foregroundServiceType="dataSync"/>

@@ -1,0 +1,171 @@
+import 'dart:async';
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
+import 'package:fushi/src/sync/game_stream_companion_bridge.dart';
+import 'package:fushi/src/utils/misc/channel_constants.dart';
+
+/// A display other than the one the app runs on.
+@immutable
+class GameStreamCompanionDisplayInfo {
+  const GameStreamCompanionDisplayInfo({
+    required this.id,
+    required this.name,
+    required this.width,
+    required this.height,
+  });
+
+  static GameStreamCompanionDisplayInfo? fromMap(Object? value) {
+    if (value is! Map) return null;
+    final Object? id = value['id'];
+    if (id is! int) return null;
+    final Object? name = value['name'];
+    final Object? width = value['width'];
+    final Object? height = value['height'];
+    return GameStreamCompanionDisplayInfo(
+      id: id,
+      name: name is String ? name : '',
+      width: width is int ? width : 0,
+      height: height is int ? height : 0,
+    );
+  }
+
+  final int id;
+  final String name;
+
+  /// Physical pixels.
+  final int width;
+  final int height;
+
+  @override
+  bool operator ==(Object other) =>
+      other is GameStreamCompanionDisplayInfo &&
+      other.id == id &&
+      other.name == name &&
+      other.width == width &&
+      other.height == height;
+
+  @override
+  int get hashCode => Object.hash(id, name, width, height);
+}
+
+/// The stream page's handle on the second display: which displays exist,
+/// whether the companion panel is up on one, and the message pipe to it.
+///
+/// Only Android has an implementation ([forCurrentPlatform] is null
+/// elsewhere); widget tests pass a fake.
+abstract class GameStreamCompanionDisplay {
+  /// The Android implementation, or null where a second display is not
+  /// supported.
+  static GameStreamCompanionDisplay? forCurrentPlatform() =>
+      !kIsWeb && Platform.isAndroid
+      ? MethodChannelGameStreamCompanionDisplay()
+      : null;
+
+  /// Displays the companion could go on (never the app's own display).
+  ValueListenable<List<GameStreamCompanionDisplayInfo>> get displays;
+
+  /// The companion panel is up on a display and can receive messages.
+  ValueListenable<bool> get attached;
+
+  /// Messages the companion sends.
+  Stream<GameStreamCompanionMessage> get messages;
+
+  /// Starts watching displays. Call once before anything else.
+  Future<void> start();
+
+  /// Shows the companion panel on [displayId]; [attached] turns true once it
+  /// is up.
+  Future<void> show(int displayId);
+
+  /// Closes the companion panel ([attached] turns false).
+  Future<void> dismiss();
+
+  Future<void> send(GameStreamCompanionHostMessage message);
+
+  /// Stops watching and closes the companion.
+  void dispose();
+}
+
+/// Android: `GameStreamCompanionDisplay.java` launches the companion as its
+/// own activity on the second display and relays messages and controller
+/// keys between the two processes.
+class MethodChannelGameStreamCompanionDisplay
+    implements GameStreamCompanionDisplay {
+  MethodChannelGameStreamCompanionDisplay({
+    MethodChannel channel = FushiChannels.gameStreamCompanion,
+  }) : _channel = channel;
+
+  final MethodChannel _channel;
+  final ValueNotifier<List<GameStreamCompanionDisplayInfo>> _displays =
+      ValueNotifier<List<GameStreamCompanionDisplayInfo>>(
+        const <GameStreamCompanionDisplayInfo>[],
+      );
+  final ValueNotifier<bool> _attached = ValueNotifier<bool>(false);
+  final StreamController<GameStreamCompanionMessage> _messages =
+      StreamController<GameStreamCompanionMessage>.broadcast();
+
+  @override
+  ValueListenable<List<GameStreamCompanionDisplayInfo>> get displays =>
+      _displays;
+
+  @override
+  ValueListenable<bool> get attached => _attached;
+
+  @override
+  Stream<GameStreamCompanionMessage> get messages => _messages.stream;
+
+  @override
+  Future<void> start() async {
+    _channel.setMethodCallHandler(_onCall);
+    _displays.value = _parseDisplays(
+      await _channel.invokeMethod<List<Object?>>('listDisplays'),
+    );
+  }
+
+  Future<Object?> _onCall(MethodCall call) async {
+    switch (call.method) {
+      case 'displaysChanged':
+        _displays.value = _parseDisplays(call.arguments as List<Object?>?);
+      case 'companionAttached':
+        _attached.value = call.arguments == true;
+      case 'companionMessage':
+        _messages.add(
+          GameStreamCompanionMessage.decode(call.arguments as String),
+        );
+    }
+    return null;
+  }
+
+  static List<GameStreamCompanionDisplayInfo> _parseDisplays(
+    List<Object?>? raw,
+  ) => <GameStreamCompanionDisplayInfo>[
+    for (final Object? entry in raw ?? const <Object?>[])
+      ?GameStreamCompanionDisplayInfo.fromMap(entry),
+  ];
+
+  @override
+  Future<void> show(int displayId) => _channel.invokeMethod<void>(
+    'show',
+    <String, Object?>{'displayId': displayId},
+  );
+
+  @override
+  Future<void> dismiss() async {
+    await _channel.invokeMethod<void>('dismiss');
+  }
+
+  @override
+  Future<void> send(GameStreamCompanionHostMessage message) =>
+      _channel.invokeMethod<void>('send', message.encode());
+
+  @override
+  void dispose() {
+    _channel.setMethodCallHandler(null);
+    unawaited(_channel.invokeMethod<void>('dismiss'));
+    _displays.dispose();
+    _attached.dispose();
+    unawaited(_messages.close());
+  }
+}

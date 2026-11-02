@@ -112,6 +112,9 @@ class GameStreamLibraryServices {
             buttonProfile: prefs.gameStreamButtonProfile,
             onButtonProfileChanged: (GameStreamButtonProfile next) =>
                 unawaited(prefs.setGameStreamButtonProfile(next)),
+            secondScreen: prefs.gameStreamSecondScreen,
+            onSecondScreenChanged: (GameStreamSecondScreen next) =>
+                unawaited(prefs.setGameStreamSecondScreen(next)),
           ),
       readSettings: () => prefs.gameStreamVideoSettings,
       writeSettings: prefs.setGameStreamVideoSettings,

@@ -187,6 +187,11 @@ const String kGameStreamLookupLayoutPrefKey = 'game_stream_lookup_layout';
 /// 的手柄，掌机上的映射恢复到手机上没有意义。
 const String kGameStreamButtonProfilePrefKey = 'game_stream_button_profile';
 
+/// 串流时是否把查词面板放到第二块屏幕（双屏掌机的下屏 / 手机外接的显示器）。
+/// 设备本地（见 `SyncRepository.deviceLocalPrefKeys`）：有没有第二块屏取决于这台
+/// 设备，掌机上的选择恢复到手机上没有意义。
+const String kGameStreamSecondScreenPrefKey = 'game_stream_second_screen';
+
 /// Windows 悬浮字幕窗口矩形（本机**物理像素**坐标 JSON）。设备本地（见
 /// `SyncRepository.deviceLocalPrefKeys`）：坐标只对这台机器的显示器布局 / DPI
 /// 有意义，随备份 / 同步 / Profile 带到别的设备会把窗口放到屏幕外或尺寸错位。
@@ -6428,6 +6433,16 @@ class PreferencesRepository extends ChangeNotifier
 
   Future<void> setGameStreamButtonProfile(GameStreamButtonProfile value) async {
     await setPref(kGameStreamButtonProfilePrefKey, jsonEncode(value.toJson()));
+    notifyListeners();
+  }
+
+  GameStreamSecondScreen get gameStreamSecondScreen =>
+      GameStreamSecondScreen.fromName(
+        getPref(kGameStreamSecondScreenPrefKey, defaultValue: '') as String,
+      );
+
+  Future<void> setGameStreamSecondScreen(GameStreamSecondScreen value) async {
+    await setPref(kGameStreamSecondScreenPrefKey, value.name);
     notifyListeners();
   }
 

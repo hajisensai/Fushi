@@ -757,6 +757,10 @@ SettingsDestination buildInterconnectDestination() {
                     ctx.appModel.prefsRepo.gameStreamButtonProfile,
                 writeButtonProfile:
                     ctx.appModel.prefsRepo.setGameStreamButtonProfile,
+                readSecondScreen: () =>
+                    ctx.appModel.prefsRepo.gameStreamSecondScreen,
+                writeSecondScreen:
+                    ctx.appModel.prefsRepo.setGameStreamSecondScreen,
               ),
             ),
           ),

@@ -31,6 +31,8 @@ class GameStreamJoinPage extends StatefulWidget {
     this.writeLookupLayout,
     this.readButtonProfile,
     this.writeButtonProfile,
+    this.readSecondScreen,
+    this.writeSecondScreen,
     super.key,
   });
 
@@ -46,6 +48,8 @@ class GameStreamJoinPage extends StatefulWidget {
   final GameStreamButtonProfile Function()? readButtonProfile;
   final Future<void> Function(GameStreamButtonProfile profile)?
   writeButtonProfile;
+  final GameStreamSecondScreen Function()? readSecondScreen;
+  final Future<void> Function(GameStreamSecondScreen value)? writeSecondScreen;
 
   @override
   State<GameStreamJoinPage> createState() => _GameStreamJoinPageState();
@@ -142,6 +146,12 @@ class _GameStreamJoinPageState extends State<GameStreamJoinPage> {
             ? null
             : (GameStreamButtonProfile next) =>
                   unawaited(widget.writeButtonProfile!(next)),
+        secondScreen:
+            widget.readSecondScreen?.call() ?? GameStreamSecondScreen.auto,
+        onSecondScreenChanged: widget.writeSecondScreen == null
+            ? null
+            : (GameStreamSecondScreen next) =>
+                  unawaited(widget.writeSecondScreen!(next)),
       );
     } on GameStreamLeaveError catch (error) {
       if (mounted) {

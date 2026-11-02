@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui' show KeyEventDeviceType;
 
@@ -10,7 +11,11 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 import 'package:fushi/src/models/game_stream_button_profile.dart';
 import 'package:fushi/src/models/game_stream_lookup_layout.dart';
 import 'package:fushi/src/pages/implementations/game_stream_settings_sheet.dart';
+import 'package:fushi/src/platform/game_stream_companion_display_channel.dart';
 import 'package:fushi/src/sync/game_stream_client.dart';
+import 'package:fushi/src/sync/game_stream_companion_bridge.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/sync/game_stream_receiver.dart';
 import 'package:fushi/src/sync/game_stream_touch.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
@@ -22,6 +27,7 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_resource_source.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
@@ -133,6 +139,9 @@ class GameStreamPage extends StatefulWidget {
     this.onLookupLayoutChanged,
     this.buttonProfile = const GameStreamButtonProfile(),
     this.onButtonProfileChanged,
+    this.companionDisplay,
+    this.secondScreen = GameStreamSecondScreen.auto,
+    this.onSecondScreenChanged,
     super.key,
   });
 
@@ -165,7 +174,20 @@ class GameStreamPage extends StatefulWidget {
   /// Persists a change made in the controls sheet.
   final ValueChanged<GameStreamButtonProfile>? onButtonProfileChanged;
 
+  /// The second display, where the lookup panel goes while one is connected
+  /// (null where the platform has none). The caller owns and disposes it.
+  final GameStreamCompanionDisplay? companionDisplay;
+
+  /// Whether to use a second display (persisted by the caller).
+  final GameStreamSecondScreen secondScreen;
+
+  /// Persists a change made in the controls sheet.
+  final ValueChanged<GameStreamSecondScreen>? onSecondScreenChanged;
+
   static const Key videoKey = ValueKey<String>('game-stream-video');
+  static const Key secondScreenKey = ValueKey<String>(
+    'game-stream-second-screen',
+  );
   static const Key modeChipKey = ValueKey<String>('game-stream-mode-chip');
   static const Key lookupModeHintKey = ValueKey<String>(
     'game-stream-lookup-mode-hint',
@@ -236,6 +258,26 @@ class _GameStreamPageState extends State<GameStreamPage>
       <GameStreamVirtualButton, String>{};
   final Set<GameStreamVirtualButton> _heldButtons = <GameStreamVirtualButton>{};
   late GameStreamButtonProfile _buttonProfile = widget.buttonProfile;
+  late GameStreamSecondScreen _secondScreen = widget.secondScreen;
+
+  /// The lookup panel is up on the second display: the video takes the whole
+  /// page and the inline rail is gone.
+  bool _companionActive = false;
+  bool _companionStarted = false;
+
+  /// Display the panel was asked onto; null when none was.
+  int? _companionDisplayId;
+
+  /// The on-screen pad's visibility before the panel moved to the second
+  /// display (which hides it); restored when the panel comes back.
+  bool? _controlsBeforeCompanion;
+  StreamSubscription<GameStreamCompanionMessage>? _companionMessages;
+  GameStreamCompanionState? _sentCompanionState;
+  bool _companionResultSent = false;
+  DictionarySearchResult? _sentCompanionResult;
+  Map<String, String>? _sentCompanionStyles;
+  int _companionRevision = 0;
+  bool _companionSyncScheduled = false;
 
   /// Physical buttons currently down, with the action their press started:
   /// the release must undo that action even if the profile changed meanwhile.
@@ -297,9 +339,11 @@ class _GameStreamPageState extends State<GameStreamPage>
     WidgetsBinding.instance.addObserver(this);
     _lookupController = widget.lookupController;
     _lookupController?.addListener(_onLookupChanged);
+    _caretLine = _currentCaretLine();
     widget.receiver?.addListener(_onReceiverChanged);
     widget.receiver?.renderer.addListener(_schedulePointerGeometryCheck);
     widget.inputComposer.addListener(_onReceiverChanged);
+    unawaited(_startCompanion());
   }
 
   @override
@@ -314,6 +358,7 @@ class _GameStreamPageState extends State<GameStreamPage>
       oldWidget.lookupController?.removeListener(_onLookupChanged);
       _lookupController = widget.lookupController;
       _lookupController?.addListener(_onLookupChanged);
+      _onLookupChanged();
     }
     if (oldWidget.receiver != widget.receiver) {
       unawaited(_releasePointer());
@@ -335,6 +380,7 @@ class _GameStreamPageState extends State<GameStreamPage>
     widget.receiver?.removeListener(_onReceiverChanged);
     widget.receiver?.renderer.removeListener(_schedulePointerGeometryCheck);
     widget.inputComposer.removeListener(_onReceiverChanged);
+    _stopCompanion();
     _statsTimer?.cancel();
     _videoFocus.dispose();
     _keyboardFocus.dispose();
@@ -342,11 +388,257 @@ class _GameStreamPageState extends State<GameStreamPage>
     super.dispose();
   }
 
-  void _onLookupChanged() {
+  // ---- Second display -----------------------------------------------------
+
+  Future<void> _startCompanion() async {
+    final GameStreamCompanionDisplay? display = widget.companionDisplay;
+    if (display == null) return;
+    display.displays.addListener(_placeCompanion);
+    display.attached.addListener(_onCompanionAttached);
+    _companionMessages = display.messages.listen(_onCompanionMessage);
+    try {
+      await display.start();
+    } catch (error, stack) {
+      // No second display support on this device build: stay single-screen.
+      ErrorLogService.instance.log(
+        'GameStreamPage.startCompanion',
+        error,
+        stack,
+      );
+      return;
+    }
+    if (!mounted) return;
+    _companionStarted = true;
+    _placeCompanion();
+  }
+
+  void _stopCompanion() {
+    final GameStreamCompanionDisplay? display = widget.companionDisplay;
+    if (display == null) return;
+    display.displays.removeListener(_placeCompanion);
+    display.attached.removeListener(_onCompanionAttached);
+    unawaited(_companionMessages?.cancel());
+    if (_companionDisplayId != null) unawaited(display.dismiss());
+    _companionDisplayId = null;
+  }
+
+  /// Puts the panel on the first second display when the setting allows it,
+  /// or takes it down when it does not (or the display went away).
+  void _placeCompanion() {
+    final GameStreamCompanionDisplay? display = widget.companionDisplay;
+    if (display == null || !_companionStarted || !mounted) return;
+    final List<GameStreamCompanionDisplayInfo> displays =
+        display.displays.value;
+    final int? target =
+        _secondScreen == GameStreamSecondScreen.auto && displays.isNotEmpty
+        ? displays.first.id
+        : null;
+    if (target == _companionDisplayId) return;
+    _companionDisplayId = target;
+    unawaited(
+      _runCompanionCall(
+        'place',
+        target == null ? display.dismiss() : display.show(target),
+      ),
+    );
+  }
+
+  Future<void> _runCompanionCall(String what, Future<void> call) async {
+    try {
+      await call;
+    } catch (error, stack) {
+      ErrorLogService.instance.log(
+        'GameStreamPage.companion.$what',
+        error,
+        stack,
+      );
+    }
+  }
+
+  void _onCompanionAttached() {
+    final bool active = widget.companionDisplay?.attached.value ?? false;
+    if (!mounted || active == _companionActive) return;
+    _sentCompanionState = null;
+    _companionResultSent = false;
+    setState(() {
+      _companionActive = active;
+      if (active) {
+        // The top screen is the game: no pad over it unless asked for.
+        _controlsBeforeCompanion = _controlsVisible;
+        _controlsVisible = false;
+      } else {
+        _controlsVisible = _controlsBeforeCompanion ?? _controlsVisible;
+        _controlsBeforeCompanion = null;
+      }
+    });
+  }
+
+  void _setSecondScreen(GameStreamSecondScreen value) {
+    if (value == _secondScreen) return;
+    setState(() => _secondScreen = value);
+    widget.onSecondScreenChanged?.call(value);
+    _placeCompanion();
+  }
+
+  /// What the panel shows; compared with the last one sent after each build.
+  GameStreamCompanionState _companionState() {
+    final GameStreamLookupController? controller = _lookupController;
+    final GameStreamTextEvent? line = controller?.currentLine;
+    final bool lookupMode = _inputMode == GameStreamInputMode.lookup;
+    final int matched = _matchedLength;
+    return GameStreamCompanionState(
+      lineId: line?.lineId,
+      lineText: line?.text,
+      caret: lookupMode && line != null ? _lookupCaret : null,
+      highlightStart: matched > 0 ? _lookupStart : null,
+      highlightCount: matched > 0 ? matched : null,
+      mode: _inputMode,
+      controllerUsed: _controllerUsed,
+      searching: controller?.searching ?? false,
+      error: controller?.error,
+      mineMessage: _mineMessage,
+      mineFailed: _mineFailed,
+    );
+  }
+
+  void _scheduleCompanionSync() {
+    if (!_companionActive || _companionSyncScheduled) return;
+    _companionSyncScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((Duration _) {
+      _companionSyncScheduled = false;
+      _syncCompanion();
+    });
+  }
+
+  /// Sends the panel whatever changed since the last push: the light state
+  /// on any change, the result only when it (or its styles) changed.
+  void _syncCompanion() {
+    final GameStreamCompanionDisplay? display = widget.companionDisplay;
+    if (display == null || !_companionActive || !mounted) return;
+    final GameStreamCompanionState state = _companionState();
+    if (state != _sentCompanionState) {
+      _sentCompanionState = state;
+      unawaited(_runCompanionCall('state', display.send(state)));
+    }
+    final GameStreamLookupController? controller = _lookupController;
+    final DictionarySearchResult? result = controller?.result;
+    final Map<String, String> styles =
+        result?.remoteDictionaryStyles ??
+        controller?.popupResources?.dictionaryStyles ??
+        const <String, String>{};
+    if (_companionResultSent &&
+        identical(result, _sentCompanionResult) &&
+        identical(styles, _sentCompanionStyles)) {
+      return;
+    }
+    _companionResultSent = true;
+    _sentCompanionResult = result;
+    _sentCompanionStyles = styles;
+    unawaited(
+      _runCompanionCall(
+        'result',
+        display.send(
+          GameStreamCompanionResult(
+            revision: ++_companionRevision,
+            resultJson: result?.toJson(),
+            popupJson: result?.popupJson,
+            dictionaryStyles: styles,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _onCompanionMessage(GameStreamCompanionMessage message) async {
+    if (!mounted) return;
+    final GameStreamLookupController? controller = _lookupController;
+    switch (message) {
+      case GameStreamCompanionReady():
+        // A fresh panel: send everything again.
+        _sentCompanionState = null;
+        _companionResultSent = false;
+        _syncCompanion();
+      case GameStreamCompanionLookupAt(:final String lineId, :final int index):
+        final GameStreamTextEvent? line = controller?.currentLine;
+        if (line == null || line.lineId != lineId) return;
+        _lookupAt(line, index);
+        // Toggle + touch, as on the inline rail.
+        if (_controllerUsed) _setInputMode(GameStreamInputMode.lookup);
+      case GameStreamCompanionLookupText(:final String text):
+        unawaited(controller?.lookup(text));
+      case GameStreamCompanionSetMode(:final GameStreamInputMode mode):
+        _setInputMode(mode);
+      case GameStreamCompanionRequest():
+        await _answerCompanion(message);
+    }
+  }
+
+  Future<void> _answerCompanion(GameStreamCompanionRequest request) async {
+    final GameStreamCompanionDisplay? display = widget.companionDisplay;
+    if (display == null) return;
+    final GameStreamLookupController? controller = _lookupController;
+    final DictionaryPopupResourceSource? resources = controller?.popupResources;
+    Object? value;
+    try {
+      value = switch (request) {
+        GameStreamCompanionMineRequest(:final Map<String, String> fields) =>
+          _mineOutcomeOf(await _mine(fields)).name,
+        GameStreamCompanionDuplicateRequest(
+          :final String expression,
+          :final String reading,
+        ) =>
+          await controller?.isDuplicate(expression, reading) ?? false,
+        GameStreamCompanionMediaRequest(
+          :final String dictionary,
+          :final String path,
+        ) =>
+          await encodeGameStreamCompanionMedia(
+            await resources?.mediaFile(dictionary, path),
+            spillDirectory: Directory(
+              '${Directory.systemTemp.path}${Platform.pathSeparator}'
+              'game_stream_companion',
+            ),
+          ),
+        GameStreamCompanionAudioRequest(
+          :final String expression,
+          :final String reading,
+        ) =>
+          await resources?.wordAudioRef(expression, reading),
+      };
+    } catch (error, stack) {
+      // The panel still gets an answer (missing media, no audio, a failed
+      // card) so its request does not hang; the cause goes to the log.
+      ErrorLogService.instance.log(
+        'GameStreamPage.companionRequest',
+        error,
+        stack,
+      );
+      value = request is GameStreamCompanionMineRequest
+          ? GameStreamCompanionMineOutcome.error.name
+          : null;
+    }
+    await _runCompanionCall(
+      'reply',
+      display.send(GameStreamCompanionReply(id: request.id, value: value)),
+    );
+  }
+
+  static GameStreamCompanionMineOutcome _mineOutcomeOf(
+    MinePopupResult result,
+  ) => result.ankiConnect
+      ? GameStreamCompanionMineOutcome.ok
+      : result.duplicate
+      ? GameStreamCompanionMineOutcome.duplicate
+      : GameStreamCompanionMineOutcome.error;
+
+  /// The current line as [_caretLine] tracks it.
+  ({String lineId, String text})? _currentCaretLine() {
     final GameStreamTextEvent? line = _lookupController?.currentLine;
-    final ({String lineId, String text})? current = line == null
-        ? null
-        : (lineId: line.lineId, text: line.text);
+    return line == null ? null : (lineId: line.lineId, text: line.text);
+  }
+
+  void _onLookupChanged() {
+    final ({String lineId, String text})? current = _currentCaretLine();
     if (current != _caretLine) {
       _caretLine = current;
       _lookupCaret = 0;
@@ -917,6 +1209,30 @@ class _GameStreamPageState extends State<GameStreamPage>
                 body: ListView(
                   padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                   children: <Widget>[
+                    if (widget.companionDisplay != null) ...<Widget>[
+                      _keysSectionHeader(
+                        context,
+                        t.game_stream_second_screen_section,
+                      ),
+                      AdaptiveSettingsSegmentedRow<GameStreamSecondScreen>(
+                        key: GameStreamPage.secondScreenKey,
+                        title: t.game_stream_second_screen,
+                        subtitle: t.game_stream_second_screen_hint,
+                        segments: <ButtonSegment<GameStreamSecondScreen>>[
+                          ButtonSegment<GameStreamSecondScreen>(
+                            value: GameStreamSecondScreen.auto,
+                            label: Text(t.game_stream_second_screen_auto),
+                          ),
+                          ButtonSegment<GameStreamSecondScreen>(
+                            value: GameStreamSecondScreen.off,
+                            label: Text(t.game_stream_second_screen_off),
+                          ),
+                        ],
+                        selected: _secondScreen,
+                        onChanged: (GameStreamSecondScreen value) =>
+                            updateSheet(() => _setSecondScreen(value)),
+                      ),
+                    ],
                     _keysSectionHeader(context, t.game_stream_keys_pad_section),
                     FushiGroupedList(
                       children: <Widget>[
@@ -1220,6 +1536,31 @@ class _GameStreamPageState extends State<GameStreamPage>
       return;
     }
     final DictionaryPopupWebViewState? dictionary = _dictionaryKey.currentState;
+    // The dictionary lives in the panel on the second display while it is up.
+    final GameStreamCompanionDictionaryCommand? companionCommand =
+        _companionActive
+        ? switch (button) {
+            GameStreamPhysicalButton.dpadUp =>
+              GameStreamCompanionDictionaryCommand.entryPrevious,
+            GameStreamPhysicalButton.dpadDown =>
+              GameStreamCompanionDictionaryCommand.entryNext,
+            GameStreamPhysicalButton.y =>
+              GameStreamCompanionDictionaryCommand.mineFirstVisible,
+            GameStreamPhysicalButton.x =>
+              GameStreamCompanionDictionaryCommand.playFirstVisibleAudio,
+            _ => null,
+          }
+        : null;
+    if (companionCommand != null) {
+      final GameStreamCompanionDisplay? display = widget.companionDisplay;
+      if (display != null) {
+        await _runCompanionCall(
+          'command',
+          display.send(GameStreamCompanionCommand(companionCommand)),
+        );
+      }
+      return;
+    }
     switch (button) {
       case GameStreamPhysicalButton.dpadLeft:
         _moveLookupCaret(_lookupCaret - 1);
@@ -1395,6 +1736,7 @@ class _GameStreamPageState extends State<GameStreamPage>
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
+    _scheduleCompanionSync();
     // 串流页整页黑底：桌面自绘顶栏（挂在 Navigator 外、只认根主题 surface）
     // 跟着变黑，否则画面顶上压一条浅色带。
     return FushiTitleBarColorScope(
@@ -1473,6 +1815,16 @@ class _GameStreamPageState extends State<GameStreamPage>
                     ),
                   ),
                 if (_controlsVisible) _buildGamepadOverlay(theme),
+                // With the panel on the second display, this screen still
+                // says which mode the buttons are in.
+                if (_companionActive && _controllerUsed)
+                  Align(
+                    alignment: Alignment.bottomRight,
+                    child: Padding(
+                      padding: const EdgeInsets.all(12),
+                      child: _buildModeChip(theme),
+                    ),
+                  ),
                 Align(
                   alignment: Alignment.topLeft,
                   child: Column(
@@ -1581,18 +1933,19 @@ class _GameStreamPageState extends State<GameStreamPage>
                             icon: const FushiIcon(FushiIcons.settings),
                             onPressed: _configureKeys,
                           ),
-                          FushiIconButtonControl(
-                            tooltip: t.game_stream_lookup_toggle,
-                            icon: FushiIcon(
-                              FushiIcons.resolve(
-                                FushiIcons.dictionary,
-                                filled: _lookupVisible,
+                          if (!_companionActive)
+                            FushiIconButtonControl(
+                              tooltip: t.game_stream_lookup_toggle,
+                              icon: FushiIcon(
+                                FushiIcons.resolve(
+                                  FushiIcons.dictionary,
+                                  filled: _lookupVisible,
+                                ),
+                              ),
+                              onPressed: () => setState(
+                                () => _lookupVisible = !_lookupVisible,
                               ),
                             ),
-                            onPressed: () => setState(
-                              () => _lookupVisible = !_lookupVisible,
-                            ),
-                          ),
                           FushiIconButtonControl(
                             tooltip: t.game_stream_controls_toggle,
                             icon: FushiIcon(
@@ -1613,6 +1966,13 @@ class _GameStreamPageState extends State<GameStreamPage>
               ],
             ),
           );
+          if (_companionActive) {
+            // The lookup panel is on the second display: all video here.
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[video],
+            );
+          }
           if (compact) {
             // Video and panel share what the boundary strip leaves.
             _bodyHeight = constraints.maxHeight - _railEdgeWidth;

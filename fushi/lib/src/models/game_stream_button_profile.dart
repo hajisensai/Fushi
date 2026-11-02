@@ -107,6 +107,21 @@ enum GameStreamInputMode {
   lookup,
 }
 
+/// Whether the stream puts the lookup panel on a second display (the bottom
+/// screen of a dual-screen handheld, or a display plugged into a phone).
+enum GameStreamSecondScreen {
+  /// Use the first second display Android reports, whenever there is one.
+  auto,
+
+  /// Keep everything on the main display.
+  off;
+
+  /// [auto] for anything unknown, so a stored value from a newer version
+  /// never turns the feature off by accident.
+  static GameStreamSecondScreen fromName(String? name) =>
+      name == off.name ? off : auto;
+}
+
 /// What one physical button does.
 ///
 /// Encoded as a short string (`pad:confirm`, `key:Enter`, `mouse:rightClick`,

@@ -293,6 +293,7 @@ public class MainActivity extends AudioServiceActivity {
             floatingDictChannel = null;
         }
         FloatingBallChannel.detach(getFlutterEngine());
+        GameStreamCompanionDisplay.detach();
         ioExecutor.shutdownNow();
         super.onDestroy();
     }
@@ -616,6 +617,8 @@ public class MainActivity extends AudioServiceActivity {
         // 全局悬浮球（系统常驻球 + 截屏 OCR）。传 Activity：申请悬浮窗权限 / 发起截屏确认
         // 都要从 Activity 起，不必再补 NEW_TASK。
         FloatingBallChannel.registerWith(flutterEngine, this);
+        // 串流第二块屏：列显示器、把查词面板拉到另一块屏上并转发消息与手柄键。
+        GameStreamCompanionDisplay.registerWith(flutterEngine, this);
 
         volumeKeyChannel = new MethodChannel(
                 flutterEngine.getDartExecutor().getBinaryMessenger(), VOLUME_KEY_CHANNEL);
