@@ -1,6 +1,6 @@
 # Apple Music 官方集成（MusicKit 播放后端）
 
-状态（2026-11-02）：P1 / P1b 已合入；**P2 / P3 / P4 已实现**（原生 MusicKit 桥、网页桥、登录 / 订阅、整曲播放后端、资料库来源、设置页，见 §6 与 §10）；Windows 网页桥未登录链路已真 app 验证，登录后整曲与 Apple 平台真机验证待做（§10.3）。
+状态（2026-11-02）：P1 / P1b 已合入；**P2 / P3 / P4 已实现**（原生 MusicKit 桥、网页桥、登录 / 订阅、整曲播放后端、资料库来源、设置页，见 §6 与 §10）；Windows 网页桥未登录链路（configure / 试听出声 / 暂停 / 登录弹窗）与 macOS 原生桥通道已真 app 验证；订阅账号登录后的整曲播放、系统授权框与 iOS 真机待做（§10.3）。
 
 ## 0. 一句话
 
@@ -222,7 +222,14 @@ Apple 平台按全局规则在 `ssh mac` 上验（iPhone 真机 + macOS 14+）�
   `requestMediaKeySystemAccess` + `createMediaKeys`（pywebview 宿主探针）。
 - 单测：引擎 `test/media/music/apple_music/`（含新 `apple_music_library_client_test.dart`）；app
   `test/media/music/apple_music/apple_music_output_backend_test.dart`（后端接力 / 过期事件 / 打开失败 / 两种桥事件解析）。
-- 真 app（Windows 离屏 runner）：`integration_test/apple_music_web_bridge_itest.dart`，结果见 PR 描述。
+- 真 app（Windows 离屏 runner，2026-11-02，`+1 All tests passed`）：`integration_test/apple_music_web_bridge_itest.dart`
+  - 托管页加载 + MusicKit configure，未登录账号状态读回 `notDetermined`；
+  - 「夜に駆ける」（1542182776）经音乐引擎 → 路由后端 → MusicKit 后端出声推进（4 s 时 `playing=true`，未登录即 30 秒试听，
+    与整曲同一条链路），能力位 `signalPath` / `abLoop` 为 false；暂停后 2 s 位置不动；
+  - 登录页 `authorize()` 打开的 Apple ID 弹窗接成页内第二个 WebView（截图可见 Apple 登录页加载）。
+- 真 app（macOS，Mac 本机 debug 构建，2026-11-02，`+1 All tests passed`）：`integration_test/apple_music_native_bridge_itest.dart`
+  选中原生桥，Swift `FushiAppleMusic` 方法 / 事件通道接通，`accountState` 读回 `notDetermined`。
+- Swift 侧另在 Mac 上用 Flutter 桩对 macOS 13.4 / iOS 15.1 目标 typecheck，0 错 0 警告；macOS app `flutter build macos --debug` 编过。
 
 ### 10.3 待验（需要人 / 设备）
 
