@@ -215,6 +215,7 @@ void main() {
       syncProgress.value = null;
       syncActivity.value = null;
       srsSyncProgress.value = null;
+      srsMigrationProgress.value = null;
     });
 
     Future<void> pumpBanner(WidgetTester tester) => tester.pumpWidget(
@@ -278,6 +279,41 @@ void main() {
         }.length,
         SrsSyncStage.values.length,
       );
+    });
+
+    testWidgets('旧版本同步文件在后台迁移：没有一轮在跑时这一行显示迁移进度（确定进度条），一轮开跑时让位', (
+      WidgetTester tester,
+    ) async {
+      const SrsSyncProgress migrating = SrsSyncProgress(
+        stage: SrsSyncStage.migrating,
+        done: 1200,
+        total: 40493,
+      );
+      srsMigrationProgress.value = migrating;
+      await pumpBanner(tester);
+      final String line = srsSyncProgressLine(migrating);
+      expect(line, contains('1200'));
+      expect(line, contains('40493'));
+      expect(find.text(line), findsOneWidget);
+      expect(
+        barValue(tester, 'sync-progress-banner-srs'),
+        closeTo(1200 / 40493, 1e-9),
+      );
+      const SrsSyncProgress round = SrsSyncProgress(
+        stage: SrsSyncStage.downloading,
+        done: 3,
+        total: 9,
+      );
+      srsSyncProgress.value = round;
+      // 文字切换走 AnimatedSwitcher 淡入淡出：等旧文字淡出完再断言。
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+      expect(find.text(srsSyncProgressLine(round)), findsOneWidget);
+      expect(find.text(line), findsNothing);
+      srsSyncProgress.value = null;
+      srsMigrationProgress.value = null;
+      await tester.pump(const Duration(seconds: 1));
+      expect(find.byType(FushiLinearProgressIndicator), findsNothing);
     });
 
     testWidgets('与常规同步并存：两行都在，各配各的进度', (WidgetTester tester) async {

@@ -51,6 +51,11 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-3961](bugs/BUG-3961-srs-concurrent-reads-serialized.md) | ✅ | ✅ | 同步跑着时打开卡片 / 牌组设置很慢：srs.db 的读全排在一条队列里 |
+> 共 3563 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-3959](bugs/BUG-3959-srs-v1-media-migration-never-finishes.md) | ✅ | ✅ | srs-v1-media-migration-never-finishes |
 | [BUG-3958](bugs/BUG-3958-floating-ball-photo-ocr-mines-no-sentence.md) | ✅ | ✅ | 悬浮球拍照查词、悬浮字幕点字制卡没有例句 |
 | [BUG-3957](bugs/BUG-3957-srs-native-pitch-graph-notation.md) | ✅ | ✅ | 复习卡原生声调图给低拍画下划线，与模板记法不一致 |
 | [BUG-3956](bugs/BUG-3956-reader-lyrics-system-back-twice.md) | ✅ | ✅ | 歌词模式下系统返回要两次才回书架 |

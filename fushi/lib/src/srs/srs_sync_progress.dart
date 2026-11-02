@@ -18,10 +18,11 @@ class SrsSyncProgress {
 
   final SrsSyncStage stage;
 
-  /// [SrsSyncStage.downloading]：已下载（并已收进本机）的段数；其它阶段为 0。
+  /// [SrsSyncStage.downloading]：已下载（并已收进本机）的段数；[SrsSyncStage.migrating]：已处理的旧文件数；其它
+  /// 阶段为 0。
   final int done;
 
-  /// [SrsSyncStage.downloading]：这一轮要下载的段总数；未知为 0。
+  /// [SrsSyncStage.downloading]：这一轮要下载的段总数；[SrsSyncStage.migrating]：旧根上要搬的文件数；未知为 0。
   final int total;
 
   @override
@@ -48,8 +49,16 @@ enum SrsSyncStage {
 
   /// 补齐卡片引用的媒体文件。
   media,
+
+  /// 把旧版本（同步协议 1）留在位置上的媒体搬进新格式（[srsMigrationProgress]，后台跑、不挡同步一轮）。
+  migrating,
 }
 
 /// 当前在跑的那一轮复习同步；没在跑为 null。
 final ValueNotifier<SrsSyncProgress?> srsSyncProgress =
+    ValueNotifier<SrsSyncProgress?>(null);
+
+/// 旧根媒体的后台迁移（阶段恒为 [SrsSyncStage.migrating]）；没在迁移为 null。与 [srsSyncProgress] 分开：迁移不在
+/// 同步一轮里跑，两者可能同时在走。
+final ValueNotifier<SrsSyncProgress?> srsMigrationProgress =
     ValueNotifier<SrsSyncProgress?>(null);

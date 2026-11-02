@@ -8278,6 +8278,8 @@
   "srs_sync_progress_downloading": "同步复习数据",
   "srs_sync_progress_downloading_count": "同步复习数据 (${done}/${total})",
   "srs_sync_progress_media": "同步卡片媒体",
+  "srs_sync_progress_migrating": "正在迁移旧版复习同步文件",
+  "srs_sync_progress_migrating_count": "正在迁移旧版复习同步文件 (${done}/${total})",
   "srs_sync_progress_preparing": "正在准备同步复习数据",
   "srs_sync_progress_uploading": "上传复习改动",
   "srs_sync_setup_body": "复习数据随「同步与备份」里的云盘和「Fushi 互联」一起同步，没有单独的开关。这台设备上两者都还没配置好。",

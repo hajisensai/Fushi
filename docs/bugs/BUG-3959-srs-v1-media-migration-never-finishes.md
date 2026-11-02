@@ -1,0 +1,10 @@
+## BUG-3959 · srs-v1-media-migration-never-finishes
+- **报告**：2026-11-01（用户：桌面端与手机牌组到期数不一致；手机经互联写进电脑 host 目录的复习记录合不进电脑）
+- **真实性**：✅ 真 bug。用户桌面端实测：活动面包屑停在 `stage=start:migrate:media flat=40493 objects=0 sealedDirs=0 writers=1`；自 10-31 装上含迁移的版本（`98c087d1b4`）起 error_log 里 4 次「上次进程在 srs_sync 进行中没了 … stage=start」；谷歌云盘位置 lastOk 停在 10-31 08:01。网络没挂、重试封顶 4 次——不是失败，是工作量结构性过大。根因：
+  - `packages/fushi_engine/lib/srs/sync2/srs_location_migration.dart`（旧 `_MediaMover.plainFlat` / `_store` / `_verified`）：旧根 `v2/media/` 的按名字存的媒体逐个「下载 → 算 sha → 把新根对象整份下载核对 → 上传 → 再下载核对」，每个文件 7–9 次请求；
+  - 同文件旧 `_Migration.run` 第 4–6 步：绑定全攒在内存里，全部处理完才一次 `media_bind_unbound`；旧文件要一轮同步成功后才由 `srsFinishLocationMigration` 删；`SrsLocationMigrationMemo` 只在进程内——进程一换从头再来，旧根一个文件都没少；
+  - 新根还没有 meta 时，媒体搬完才写 meta：这个位置一直不能同步；
+  - `fushi/lib/src/srs/srs_sync_scheduler.dart` `srsDefaultSyncRunner` 在同步一轮开头同步执行迁移，而 `_serially` 把所有位置串行化——一个永远跑不完的迁移把本机互联 host 目录等所有位置的同步一起挡住（手机写进来的合不进来）；UI 只显示「正在准备同步复习数据」。
+- **[x] ① 已修复** — 迁移拆两段：`srsPrepareLocation` 只立围栏、搬 `devices/` 下的段（字节核对）、写新根 meta（媒体不再是前提）；媒体残留改由 `srsMigrateV1Media` 分批搬：先分页列一次新根内容目录建 sha 集合（已在的不再下载核对，新传的用本机明文哈希核对），每批一次 `media_bind_unbound`、请一轮发布、按批删（内容寻址的写进去就删；按名字的等绑定发布、重新列目录核对大小 + 修改时间后删）——进度落在位置与本机日志上，进程重启只重下没删的那几批，旧根越迁越小。调度器把它交给 `SrsV1MediaMigrations` 在后台跑，不进 `_serially`；`quiesce` 等它收手；新阶段 `SrsSyncStage.migrating`（`srsMigrationProgress`，done/total）进同步进度条，活动面包屑 `srs_v1_migrate` 记进度与内存。
+- **[x] ② 已加自动化测试** — `packages/fushi_engine/test/srs/sync2/srs_format_break_test.dart`（「a large media leftover moves in batches; a process killed mid-way resumes without redoing the moved part」：第 3 批中途进程没了，已发布的两批已删、新进程不重传已传的；「a location whose new root is not in use yet becomes usable before its media moves」；原有迁移用例改到两段式）、`packages/fushi_engine/test/srs/srs_media_sync_test.dart`、`fushi/test/srs/srs_sync_scheduler_test.dart`（「通道那一轮不等它、互联 host 目录照常同步、进度可见；搬完绑定发布后旧文件删光」：真生产 runner，迁移被闸住时通道与 host 目录照常同步；「关库前 quiesce 等后台迁移收手」）。
+- **备注**：已知取舍——① 归档位置从不删旧文件，迁移中途进程没了时下一次要把还没写完成标记的旧媒体重新下载一遍（不重传）；② 后台迁移与同一后端上的同步一轮可能并发发请求（Dropbox 的写并发上限按实例算，撞上 429 走既有的临时错误重试）；③ 只做媒体的文件夹位置判断能否补绑定时要只读重拉一遍新根的段。
