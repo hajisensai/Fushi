@@ -94,6 +94,35 @@ int main() {
   passed &= Expect(!PinWindowPosOrigin(nullptr, kOffscreen, false),
                    "null WINDOWPOS is ignored");
 
+  // --- FUSHI_TEST_WINDOW_RECT size pin (BUG-3888) ---
+  passed &= Expect(!ResolveTestWindowSizePin(false, SIZE{2880, 1920}),
+                   "the rect without FUSHI_TEST_HIDDEN pins no size");
+  passed &= Expect(!ResolveTestWindowSizePin(true, std::nullopt),
+                   "hidden mode without the rect pins no size");
+  passed &= Expect(!ResolveTestWindowSizePin(true, SIZE{0, 1920}),
+                   "an empty rect pins no size");
+  {
+    const auto pin = ResolveTestWindowSizePin(true, SIZE{2880, 1920});
+    passed &= Expect(pin.has_value() && pin->cx == 2880 && pin->cy == 1920,
+                     "hidden mode pins the rect size");
+    // Shape of applyInitialPlacement's work-area-sized setBounds.
+    WINDOWPOS pos = Move(840, 360);
+    passed &= Expect(PinWindowPosSize(&pos, pin, false),
+                     "a startup resize is rewritten");
+    passed &= Expect(pos.cx == 2880 && pos.cy == 1920,
+                     "the rewritten resize lands at the pinned size");
+    passed &= Expect(pos.x == 840 && pos.y == 360,
+                     "the size pin leaves the origin to the origin pin");
+    WINDOWPOS keep = Move(840, 360, SWP_NOSIZE);
+    passed &= Expect(!PinWindowPosSize(&keep, pin, false),
+                     "SWP_NOSIZE is not a resize");
+    WINDOWPOS iconic = Move(840, 360);
+    passed &= Expect(!PinWindowPosSize(&iconic, pin, true),
+                     "an iconic window is left to the system");
+  }
+  passed &= Expect(!PinWindowPosSize(nullptr, SIZE{1, 1}, false),
+                   "null WINDOWPOS is ignored by the size pin");
+
   if (!passed) {
     return 1;
   }

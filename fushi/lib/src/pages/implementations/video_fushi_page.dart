@@ -3602,6 +3602,18 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     if (mounted) setState(() {});
   }
 
+  /// 字幕列表可见性变化 → 诊断流水标记（BUG-3888）。
+  void _logSubtitleListToggleForDiag() {
+    if (!videoDiagEnabledFor(VideoDiagCategory.video, VideoDiagLevel.info)) {
+      return;
+    }
+    videoDiag(
+      VideoDiagCategory.video,
+      VideoDiagLevel.info,
+      _subtitleListVisible.value ? 'subtitle list open' : 'subtitle list close',
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -3647,6 +3659,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _videoSidePanel.addListener(_applyControlsVisibilityFromMediaKit);
     _videoControlPopover.addListener(_applyControlsVisibilityFromMediaKit);
     _subtitleListVisible.addListener(_applyControlsVisibilityFromMediaKit);
+    // BUG-3888：字幕列表开 / 关落一行诊断标记，导出的流水才能把每秒一窗的帧耗时
+    // 与开关时刻逐秒对上。诊断关着时监听里只有一次 isLoggable 判断（常量字符串，
+    // 不拼接）。
+    _subtitleListVisible.addListener(_logSubtitleListToggleForDiag);
     _episodeListVisible.addListener(_applyControlsVisibilityFromMediaKit);
     _videoControlEditMode.addListener(_applyControlsVisibilityFromMediaKit);
     // BUG-1798：查词浮层也是 [_hasVideoOverlay] 的输入，与上面六个门控同等订阅——否则弹窗
@@ -6690,6 +6706,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _videoSidePanel.removeListener(_applyControlsVisibilityFromMediaKit);
     _videoControlPopover.removeListener(_applyControlsVisibilityFromMediaKit);
     _subtitleListVisible.removeListener(_applyControlsVisibilityFromMediaKit);
+    _subtitleListVisible.removeListener(_logSubtitleListToggleForDiag);
     _episodeListVisible.removeListener(_applyControlsVisibilityFromMediaKit);
     _videoControlEditMode.removeListener(_applyControlsVisibilityFromMediaKit);
     // BUG-1798：与上面六个门控同批摘监听（顺序同理——回调读多个 notifier，先摘再 dispose）。
