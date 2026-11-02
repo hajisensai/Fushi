@@ -175,6 +175,7 @@ import 'package:fushi/src/reader/reader_statistics_sheet.dart';
 import 'package:fushi/src/reader/reader_status_footer.dart';
 import 'package:fushi/src/stats/read_unit_ledger.dart';
 import 'package:fushi/src/stats/reader_study_clock_start_mode.dart';
+import 'package:fushi/src/stats/study_cover_tracker.dart';
 import 'package:fushi/src/stats/study_diag_log.dart';
 import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:fushi/src/reader/reader_top_progress.dart';
@@ -1697,7 +1698,7 @@ class ReaderFushiPage extends BaseSourcePage {
 }
 
 class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
-    with WidgetsBindingObserver, RouteAware
+    with WidgetsBindingObserver
     implements ReaderAudiobookView, DictionaryCaretHost {
   InAppWebViewController? _controller;
 
@@ -2465,17 +2466,17 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// 外观参数、翻目录、搜书、看插图都不是阅读。经 [_withStudyClockPaused] 增减。
   int _studyClockModalDepth = 0;
 
-  /// 有整页路由盖在阅读器上（[RouteAware.didPushNext] / [didPopNext]）。与
-  /// [_studyClockModalDepth] 一起进判据（BUG-2208 的「全页路由压住正文」）：从页面
-  /// 外推上来的路由——悬浮球的反馈中心、通知点进的反馈详情——不经任何
-  /// [_withStudyClockPaused] 入口，阅读器只能靠路由监听看见它们。只认 [PageRoute]
-  /// （`appModel.routeObserver` 的类型参数）：侧板 / 对话框 / 查词浮层不触发，统计
-  /// 侧栏与制卡「不停表」的拍板不受影响。bool 而非计数：叠几层页面也只在直接盖住
-  /// / 揭开这一层时各通知一次。
-  bool _studyClockCoveredByRoute = false;
-
-  /// 已向 `appModel.routeObserver` 订阅的本页路由（换路由时重订）。
-  ModalRoute<Object?>? _studyClockRoute;
+  /// 根导航上有没有路由压住阅读器（[studyCoverTracker] 的统一判据）。与
+  /// [_studyClockModalDepth] 一起进判据：整页路由、对话框、侧板、菜单——不管是阅读器
+  /// 自己弹的、悬浮球 / 通知 / 全局快捷键从页面外推上来的，还是以后新加的入口——都
+  /// 默认停表；只有声明了 [StudyClockTransparentRoute] 的弹层（统计侧板、制卡操作单）
+  /// 不停。旧实现只认 [PageRoute]、其余靠各入口自己包 [_withStudyClockPaused]，新入口
+  /// 一漏就照计（BUG-3959）。
+  late final StudyCoverWatch _studyCoverWatch = StudyCoverWatch(
+    onChanged: () {
+      if (mounted) _syncStudyClockRunState();
+    },
+  );
 
   /// 上一次喂给 [_noteAudiobookPlayingForStudyClock] 的有声书播放态镜像（BUG-2558）。
   ///
@@ -3596,7 +3597,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
 
   @override
   void dispose() {
-    appModelNoUpdate.routeObserver.unsubscribe(this);
+    _studyCoverWatch.dispose();
     _stopFollowingScrollDismissPointer();
     _sourceReviewClosed = _sourceReviewActive;
     _sourceReviewSession?.removeListener(_onSourceReviewChanged);
@@ -3994,27 +3995,9 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   }
 
   @override
-  void didPushNext() {
-    _studyClockCoveredByRoute = true;
-    _syncStudyClockRunState();
-  }
-
-  @override
-  void didPopNext() {
-    _studyClockCoveredByRoute = false;
-    _syncStudyClockRunState();
-  }
-
-  @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final ModalRoute<Object?>? route = ModalRoute.of(context);
-    if (route is PageRoute && !identical(route, _studyClockRoute)) {
-      appModelNoUpdate.routeObserver
-        ..unsubscribe(this)
-        ..subscribe(this, route);
-      _studyClockRoute = route;
-    }
+    _studyCoverWatch.attach(ModalRoute.of(context));
     final LyricsThemeHostState? themeHost = LyricsThemeHost.maybeOf(context);
     if (!identical(themeHost, _lyricsThemeHost)) {
       _lyricsThemeHost?.themeChanges.removeListener(_onLyricsThemeHostChanged);

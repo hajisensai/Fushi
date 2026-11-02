@@ -62,7 +62,10 @@ bool webStudyClockMayRun({
   required bool japanesePage,
   required bool interacted,
   bool videoPlaying = false,
+  bool pageCovered = false,
 }) =>
+    // 浏览页被任何路由盖住（整页 / 对话框 / 侧板 / 菜单，BUG-3959）：不是在读。
+    !pageCovered &&
     tabActive &&
     appForeground &&
     pageVisible &&
@@ -110,6 +113,7 @@ class WebStudySession {
   bool _japanese = false;
   bool _interacted = false;
   bool _videoPlaying = false;
+  bool _pageCovered = false;
 
   /// 当前页面身份（测试 / 诊断）。
   String? get mediaKey => _key;
@@ -125,6 +129,7 @@ class WebStudySession {
         japanesePage: _japanese,
         interacted: _interacted,
         videoPlaying: _videoPlaying,
+        pageCovered: _pageCovered,
       );
 
   /// 主框架换了页面（加载完成 / SPA 改地址）。身份没变不动；变了封上一页的时钟，
@@ -154,6 +159,13 @@ class WebStudySession {
 
   void setAppForeground(bool foreground) {
     _appForeground = foreground;
+    _sync();
+  }
+
+  /// 浏览页被路由盖住 / 重新露出（[studyCoverTracker] 判据，BUG-3959）。
+  void setPageCovered(bool covered) {
+    if (covered == _pageCovered) return;
+    _pageCovered = covered;
     _sync();
   }
 

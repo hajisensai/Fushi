@@ -82,6 +82,7 @@ import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:fushi/src/startup/desktop_window_placement.dart';
 import 'package:fushi/src/diagnostics/previous_exit_log.dart';
 import 'package:fushi/src/diagnostics/video_diag_log.dart';
+import 'package:fushi/src/stats/study_cover_tracker.dart';
 import 'package:fushi/src/stats/study_diag_log.dart';
 import 'package:fushi_audio/fushi_audio.dart' show StudyClock;
 import 'package:fushi/src/settings/settings_schema.dart'
@@ -2900,6 +2901,9 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
             feedbackRouteTransitions,
             // 阅读器靠它看见「整页路由盖住正文」（悬浮球打开反馈中心等），停表。
             appModel.routeObserver,
+            // 学习计时的「被盖住」判据：学习页之上压着任何未豁免的模态路由就停表
+            // （BUG-3959；整页 / 对话框 / 侧板 / 菜单一视同仁，新入口无需各自接线）。
+            studyCoverTracker,
             // 页面离场时核对 Windows 拖入注册、丢了才重注册并记诊断（BUOxDR9WIJ）。
             desktopDropRouteObserver,
           ],

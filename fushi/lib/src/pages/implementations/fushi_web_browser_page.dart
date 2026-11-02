@@ -18,6 +18,7 @@ import 'package:fushi/src/pages/implementations/web_browser/web_browser_routes.d
 import 'package:fushi/src/pages/implementations/web_browser/web_browser_tab_lists.dart';
 import 'package:fushi/src/pages/implementations/web_browser/web_browser_settings_page.dart';
 import 'package:fushi/src/settings/settings_schema_web_browser.dart';
+import 'package:fushi/src/stats/study_cover_tracker.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show focusedEditableText;
 import 'package:fushi/src/shortcuts/input_binding.dart';
@@ -787,6 +788,7 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
   void didChangeDependencies() {
     super.didChangeDependencies();
     final ModalRoute<Object?>? route = ModalRoute.of(context);
+    _studyCoverWatch.attach(route);
     if (route is PageRoute<Object?> && !identical(route, _observedRoute)) {
       _routeObserver
         ..unsubscribe(this)
@@ -794,6 +796,16 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
       _observedRoute = route;
     }
   }
+
+  /// 学习计时的「被盖住」（任何未豁免的模态路由，BUG-3959）：转告各功能。
+  late final StudyCoverWatch _studyCoverWatch = StudyCoverWatch(
+    onChanged: () {
+      if (!mounted) return;
+      for (final WebBrowserFeature f in _features) {
+        f.onStudyCoverChanged(covered: _studyCoverWatch.covered);
+      }
+    },
+  );
 
   /// 浏览页被整页路由盖住 / 重新露出：转告各功能（手机遥控据此不在被盖住时抢登记）。
   void _setCovered(bool covered) {
@@ -811,6 +823,7 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
   @override
   void dispose() {
     if (_observedRoute != null) _routeObserver.unsubscribe(this);
+    _studyCoverWatch.dispose();
     WidgetsBinding.instance.removeObserver(this);
     if (_systemUiHidden) {
       unawaited(SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge));

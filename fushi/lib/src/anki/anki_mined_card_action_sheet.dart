@@ -1,4 +1,6 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/stats/study_cover_tracker.dart'
+    show StudyClockTransparentRoute;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 
@@ -80,12 +82,15 @@ Future<AnkiMinedCardActionResult> showAnkiMinedCardActionSheet({
     context: context,
     // 制卡/覆写是有副作用的选择，误触 barrier 就丢掉整次操作——只允许显式取消。
     barrierDismissible: false,
-    builder: (dialogContext) => _MinedCardActionDialog(
-      matches: matches,
-      repo: repo,
-      mineNew: mineNew,
-      overwrite: overwrite,
-      expression: expression,
+    // 制卡是阅读的一部分：操作单盖着学习页也照常计时（BUG-3959）。
+    builder: (dialogContext) => StudyClockTransparentRoute(
+      child: _MinedCardActionDialog(
+        matches: matches,
+        repo: repo,
+        mineNew: mineNew,
+        overwrite: overwrite,
+        expression: expression,
+      ),
     ),
   );
   return result ?? const AnkiMinedCardActionResult.unchanged();
@@ -415,8 +420,13 @@ Future<AnkiMinedCardActionResult?> showAnkiNoteViewer({
   return showAppDialog<AnkiMinedCardActionResult>(
     context: context,
     barrierDismissible: false,
-    builder: (_) =>
-        _AnkiNoteViewerDialog(repo: repo, noteId: noteId, overwrite: overwrite),
+    builder: (_) => StudyClockTransparentRoute(
+      child: _AnkiNoteViewerDialog(
+        repo: repo,
+        noteId: noteId,
+        overwrite: overwrite,
+      ),
+    ),
   );
 }
 
@@ -645,8 +655,12 @@ Future<Map<String, String>?> showAnkiSourceNoteChanges({
 }) => showAppDialog<Map<String, String>>(
   context: context,
   barrierDismissible: false,
-  builder: (_) =>
-      _AnkiSourceNoteChangesDialog(original: original, candidate: candidate),
+  builder: (_) => StudyClockTransparentRoute(
+    child: _AnkiSourceNoteChangesDialog(
+      original: original,
+      candidate: candidate,
+    ),
+  ),
 );
 
 class _AnkiSourceNoteChangesDialog extends StatefulWidget {
@@ -761,10 +775,12 @@ Future<AnkiMinedCardActionResult> showAnkiUnverifiedMinedCardDialog({
         context: context,
         // 与同族操作单同口径：有副作用的选择，误触 barrier 不该丢掉整次操作。
         barrierDismissible: false,
-        builder: (dialogContext) => _UnverifiedMinedCardDialog(
-          repo: repo,
-          expression: expression,
-          mineNew: mineNew,
+        builder: (dialogContext) => StudyClockTransparentRoute(
+          child: _UnverifiedMinedCardDialog(
+            repo: repo,
+            expression: expression,
+            mineNew: mineNew,
+          ),
         ),
       );
   // 取消 = 什么都没发生，制卡态保持原样（账本仍记着这个词）。

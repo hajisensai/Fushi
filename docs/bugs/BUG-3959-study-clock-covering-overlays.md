@@ -1,0 +1,9 @@
+## BUG-3959 · study-clock-covering-overlays
+- **报告**：2026-11-02（用户：「歌词模式有声书好像跳转 srs 这种二级界面或者跳转反馈计时还在继续，而且每次新功能加入后会覆盖界面的操作都没有自动加上暂停计时」）
+- **真实性**：✅ 真 bug（结构性缺口；用户描述的 SRS / 反馈那一条具体路径未在真机复现）。
+  - 小说阅读器的「被盖住」判据只认 `PageRoute`：`reader_fushi_page.dart` 订阅 `appModel.routeObserver`（`RouteObserver<PageRoute>`，`app_model.dart:1352`）。`RouteObserver.didPush` 只在**被压的那条也是 PageRoute** 时才通知，所以：① 对话框 / 侧板 / 菜单（`showGeneralDialog` / `DialogRoute` / `PopupRoute`）从页面外弹上来——悬浮球的 AI 侧板、同步、切换配置、图片操作单、Kavita 冲突框——一律不停表；② 先开了这类弹层、再从里面跳整页（AI 助手侧板里跳 SRS 等），被压的是弹层而不是阅读器路由，阅读器收不到 `didPushNext`，整页 SRS / 反馈期间照计。其余弹层要靠各入口手动包 `_withStudyClockPaused`，新功能不包就漏。
+  - 漫画（`manga_fushi_page.dart` `_ensureStudyClock` / `didChangeAppLifecycleState`）与 PDF（`reader_pdf_page.dart` `_load` / `didChangeAppLifecycleState`）阅读器**完全没有**被盖住判据，只看生命周期：开着整页 SRS / 设置 / 反馈中心照计，直到 10 分钟空闲门。
+  - 网页浏览器学习计时（`web_study_session.dart` `webStudyClockMayRun`）只看页内 `visibilitychange`：桌面上路由盖住浏览页时 WebView 文档仍可见，照计。
+- **[x] ① 已修复** — 新增唯一判据 `fushi/lib/src/stats/study_cover_tracker.dart`：根导航观察器 `studyCoverTracker`（挂进 `main.dart` 的 `navigatorObservers`）记下根栈，学习页路由之上压着任何未豁免的 `ModalRoute`（整页 / 对话框 / 侧板 / 菜单）即「被盖住」；默认停表，新入口零接线。真正属于阅读的弹层用 `StudyClockTransparentRoute` 声明豁免：阅读器侧板原地切到统计页时、查词后的制卡操作单 / 笔记查看 / 来源改动确认（`anki_mined_card_action_sheet.dart`）。小说阅读器以 `StudyCoverWatch` 取代 `RouteAware`；漫画 / PDF 接入「生命周期 + 被盖住」统一判据；浏览器经新钩子 `WebBrowserFeature.onStudyCoverChanged` 把被盖住喂给 `webStudyClockMayRun(pageCovered:)`。视频以播放态计时（所有者拍板），不在本次范围。
+- **[x] ② 已加自动化测试** — `fushi/test/stats/study_cover_tracker_test.dart`（真 Navigator：整页 / 对话框 / 侧板路由盖住即停、豁免可切换、豁免层上再压对话框照停、replace / remove）；`fushi/test/web_browser/features/web_study_test.dart`（被盖住停表、期间不记字数、露出续表）；`fushi/test/pages/reader_study_clock_gate_guard_static_test.dart`（阅读器接线与统计侧板豁免）。
+- **备注**：未在真机上走一遍「歌词模式 → 悬浮球 / AI → SRS」的原始路径；判据层由 widget 测试覆盖真 Navigator 行为。阅读器自有面板仍经 `_withStudyClockPaused`（同时负责清选区），与新判据叠加无副作用（任一 >0 即停）。

@@ -2488,35 +2488,40 @@ extension _ReaderChrome on _ReaderFushiPageState {
         builder: (_) => ValueListenableBuilder<String>(
           valueListenable: notifier,
           builder: (BuildContext ctx, String current, Widget? _) {
-            return AnimatedSwitcher(
-              duration: fushiMotionDuration(ctx, FushiMotion.medium),
-              switchInCurve: FushiMotion.enter,
-              switchOutCurve: FushiMotion.exit,
-              transitionBuilder: (Widget child, Animation<double> a) =>
-                  FadeTransition(
-                    opacity: a,
-                    child: SlideTransition(
-                      position: Tween<Offset>(
-                        begin: const Offset(0.04, 0),
-                        end: Offset.zero,
-                      ).animate(a),
-                      child: child,
+            // 统计侧板不停表（它自己画实时秒表）：侧板路由原地切到统计页时向
+            // studyCoverTracker 声明豁免，切走即撤销（BUG-3959）。
+            return StudyClockTransparentRoute(
+              enabled: current == _kReaderPanelStatistics,
+              child: AnimatedSwitcher(
+                duration: fushiMotionDuration(ctx, FushiMotion.medium),
+                switchInCurve: FushiMotion.enter,
+                switchOutCurve: FushiMotion.exit,
+                transitionBuilder: (Widget child, Animation<double> a) =>
+                    FadeTransition(
+                      opacity: a,
+                      child: SlideTransition(
+                        position: Tween<Offset>(
+                          begin: const Offset(0.04, 0),
+                          end: Offset.zero,
+                        ).animate(a),
+                        child: child,
+                      ),
                     ),
+                child: KeyedSubtree(
+                  key: ValueKey<String>('fushi_reader_panel_$current'),
+                  child: _buildReaderPanelContent(
+                    current,
+                    favorites: favorites,
+                    favRepo: favRepo,
+                    bookmarks: bookmarks,
+                    openBookmarks: () {
+                      if (current != _kReaderPanelNavigation) return false;
+                      final bool pending = openBookmarksPending;
+                      openBookmarksPending = false;
+                      return pending;
+                    },
+                    initialSettingsTab: initialSettingsTab,
                   ),
-              child: KeyedSubtree(
-                key: ValueKey<String>('fushi_reader_panel_$current'),
-                child: _buildReaderPanelContent(
-                  current,
-                  favorites: favorites,
-                  favRepo: favRepo,
-                  bookmarks: bookmarks,
-                  openBookmarks: () {
-                    if (current != _kReaderPanelNavigation) return false;
-                    final bool pending = openBookmarksPending;
-                    openBookmarksPending = false;
-                    return pending;
-                  },
-                  initialSettingsTab: initialSettingsTab,
                 ),
               ),
             );

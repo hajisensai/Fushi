@@ -128,6 +128,20 @@ void main() {
       expect(clocks, isEmpty);
     });
 
+    test('浏览页被路由盖住（对话框 / 侧板 / 整页）停表，露出续表（BUG-3959）', () async {
+      final WebStudySession s = session()..setTabActive(true);
+      await s.navigate(Uri.parse('https://a.jp/1'));
+      s.report(report(), title: 'T');
+      final FakeClock c = clocks.single;
+      s.setPageCovered(true);
+      expect(s.running, isFalse);
+      s.report(report(chars: 12), title: 'T');
+      expect(c.chars, 0, reason: '盖住期间的上报不记字数');
+      s.setPageCovered(false);
+      expect(s.running, isTrue);
+      expect(c.log, <String>['start', 'touch', 'stop', 'start']);
+    });
+
     test('切到后台标签页 / app 退后台 / 页面隐藏都停表，回来续表', () async {
       final WebStudySession s = session()..setTabActive(true);
       await s.navigate(Uri.parse('https://a.jp/1'));
