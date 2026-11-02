@@ -1,9 +1,9 @@
 //! SRS 事件库：Rust 独占的 `srs.db`（docs/specs/2026-10-23-srs-rust-store.md）。
 //!
 //! 一条写连接 + 两条读连接，各在一把 Mutex 里：写命令 = 写连接上的一个事务（这把锁就是 SRS 的
-//! 写锁），读命令走读连接上的 WAL 快照，不被长写挡住；Drift 执行器在事务外的查询走它自己的那条读连接
-//! （[SrsCore::select]），不与 Rust 的读命令（备份 `VACUUM INTO`、投影扫描）互相排队。对象可以从任意
-//! 线程 / isolate 调用。
+//! 写锁），读命令走读连接上的 WAL 快照，不被长写挡住；Drift 执行器在事务外的查询走它自己的只读连接池
+//! （[SrsCore::snapshot_select]，store/read_pool.rs：并发的查询各占一条、互不排队），也不与 Rust 的读命令
+//! （备份 `VACUUM INTO`、投影扫描）互相排队。对象可以从任意线程 / isolate 调用。
 //!
 //! 关闭（[SrsCore::close]）与在途调用互斥：它先后拿读、写两把锁再丢掉连接，所以会等别的线程手上
 //! 的命令跑完；之后的命令（含另开只读会话 [SrsCore::read_session]）一律报「已关闭」。还没结束的只读
@@ -25,6 +25,7 @@ pub mod rows;
 mod profile_data;
 mod projections;
 pub(crate) mod queue;
+mod read_pool;
 pub mod schema;
 pub mod study;
 pub mod sync2;
@@ -48,8 +49,8 @@ pub struct SrsCore {
     // 并删掉 -wal；只读连接做不了，让它最后关会把整段 WAL 留在磁盘上（拷库 / 换库时丢数据）。
     // `None` = 已关闭（[SrsCore::close]）。
     reader: Mutex<Option<Connection>>,
-    /// Drift 执行器事务外查询专用的读连接（[SrsCore::select]）。
-    drift_reader: Mutex<Option<Connection>>,
+    /// Drift 执行器事务外查询专用的只读连接池（[SrsCore::snapshot_select]）。
+    drift_readers: read_pool::ReadPool,
     writer: Mutex<Option<Connection>>,
     /// Drift 在写连接上开着事务（它用 BEGIN / SAVEPOINT 语句经 [SrsCore::exec] 开关）。每条经 [SrsCore::exec] /
     /// [SrsCore::exec_batch] 跑完的语句之后按写连接的 autocommit 状态更新；只有这两个入口能让事务跨命令留着
@@ -115,6 +116,21 @@ impl<'a> Conn<'a> {
 /// 大命令跑完不常驻几十 MB。
 const IDLE_CACHE_BYTES: i32 = 8 * 1024 * 1024;
 
+/// 一条命令跑完、连接放回时：页缓存超过 [IDLE_CACHE_BYTES] 就把能丢的页还掉。
+pub(crate) fn trim_idle_cache(c: &Connection) {
+    let (mut used, mut high) = (0, 0);
+    // SAFETY: 句柄属于调用方独占着的这条连接，只读一项统计。
+    let rc = unsafe {
+        rusqlite::ffi::sqlite3_db_status(c.handle(), rusqlite::ffi::SQLITE_DBSTATUS_CACHE_USED, &mut used, &mut high, 0)
+    };
+    if rc == rusqlite::ffi::SQLITE_OK && used > IDLE_CACHE_BYTES {
+        let _ = c.release_memory();
+    }
+}
+
+/// [SrsCore::snapshot_select] 拒绝的语句（不是能放到只读连接上的查询）的错误文本：Dart 侧据此把它改发写连接那一路。
+pub const NOT_SNAPSHOT: &str = "srs: not a snapshot query";
+
 impl Drop for Conn<'_> {
     fn drop(&mut self) {
         let Some(c) = self.0.as_ref() else { return };
@@ -123,14 +139,7 @@ impl Drop for Conn<'_> {
                 hub.settle();
             }
         }
-        let (mut used, mut high) = (0, 0);
-        // SAFETY: 句柄属于这条仍持着锁的连接，只读一项统计。
-        let rc = unsafe {
-            rusqlite::ffi::sqlite3_db_status(c.handle(), rusqlite::ffi::SQLITE_DBSTATUS_CACHE_USED, &mut used, &mut high, 0)
-        };
-        if rc == rusqlite::ffi::SQLITE_OK && used > IDLE_CACHE_BYTES {
-            let _ = c.release_memory();
-        }
+        trim_idle_cache(c);
     }
 }
 
@@ -226,6 +235,16 @@ impl Drop for SrsCore {
     }
 }
 
+/// [read_pool::ReadPool] 的开连接函数：只读打开、配置同读连接。
+fn open_drift_reader(path: &Path) -> Result<Connection, String> {
+    let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX)
+        .map_err(|e| format!("open drift reader {}: {e}", path.display()))?;
+    configure(&conn)?;
+    #[cfg(any(test, feature = "id_audit"))]
+    let conn = ids::audit::installed(conn);
+    Ok(conn)
+}
+
 fn configure(conn: &Connection) -> Result<(), String> {
     conn.busy_timeout(Duration::from_millis(5000))
         .map_err(|e| e.to_string())?;
@@ -289,18 +308,11 @@ impl SrsCore {
         configure(&reader)?;
         #[cfg(any(test, feature = "id_audit"))]
         let reader = ids::audit::installed(reader);
-        let drift_reader = Connection::open_with_flags(
-            path,
-            OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
-        )
-        .map_err(|e| format!("open drift reader {}: {e}", path.display()))?;
-        configure(&drift_reader)?;
-        #[cfg(any(test, feature = "id_audit"))]
-        let drift_reader = ids::audit::installed(drift_reader);
+        let drift_readers = read_pool::ReadPool::new(path, read_pool::read_concurrency(), open_drift_reader)?;
         Ok(Self {
             writer: Mutex::new(Some(writer)),
             reader: Mutex::new(Some(reader)),
-            drift_reader: Mutex::new(Some(drift_reader)),
+            drift_readers,
             drift_tx: AtomicBool::new(false),
             legacy_open: AtomicBool::new(false),
             path: path.to_path_buf(),
@@ -324,9 +336,6 @@ impl SrsCore {
         Conn::of(self.reader.lock().map_err(|_| "srs reader poisoned".to_string())?)
     }
 
-    fn drift_reader(&self) -> Result<Conn<'_>, String> {
-        Conn::of(self.drift_reader.lock().map_err(|_| "srs drift reader poisoned".to_string())?)
-    }
 
     /// 写连接上是否挂着跨命令的事务（Drift 的事务或旧库搬迁）：挂着时只读命令也必须在写连接上读，
     /// 才看得见那笔事务里未提交的行。
@@ -362,8 +371,8 @@ impl SrsCore {
         // 先关读连接：此后 read_session 报已关闭，下面拿到的会话清单就是全部。
         let reader = self.reader.lock().unwrap_or_else(|e| e.into_inner()).take();
         drop(reader);
-        let drift_reader = self.drift_reader.lock().unwrap_or_else(|e| e.into_inner()).take();
-        drop(drift_reader);
+        // 等在途的 Drift 事务外查询把连接放回（放回即关）。
+        self.drift_readers.close();
         let sessions = std::mem::take(&mut *self.sessions.lock().unwrap_or_else(|e| e.into_inner()));
         for s in sessions.iter().filter_map(Weak::upgrade) {
             s.close();
@@ -540,9 +549,10 @@ impl SrsCore {
         out
     }
 
-    /// Drift 的查询（`QueryDelegate.runSelect`）：Drift 事务开着（[SrsCore::writer_tx_open]）时在写连接上跑，
-    /// 看得见那笔事务里未提交的行；否则只读查询走 Drift 专用读连接的 WAL 快照，不排写锁（Rust 的长写命令、
-    /// 收段投递进行中照样能读），读到的是此刻已提交的数据。
+    /// Drift 写连接那一路的查询（`ffsrs_store_exec` mode 2：事务里的查询、`RETURNING`、PRAGMA、内联执行器）：
+    /// Drift 事务开着（[SrsCore::writer_tx_open]）时在写连接上跑，看得见那笔事务里未提交的行；否则只读查询走
+    /// [SrsCore::snapshot_select] 的只读连接，不排写锁（Rust 的长写命令、收段投递进行中照样能读），读到的是此刻
+    /// 已提交的数据。
     ///
     /// 写后立即读成立：Drift 的写语句（autocommit）与 COMMIT 都在 [SrsCore::exec] 返回前提交完；读连接每条语句
     /// 自成一个读事务（语句跑完即复位，不留跨调用的读事务），开读事务时取最新的 WAL 尾，所以 Dart 等到写返回后
@@ -555,17 +565,41 @@ impl SrsCore {
         if self.legacy_open.load(Ordering::SeqCst) {
             return Err("legacy import in progress".into());
         }
-        if !self.writer_tx_open() && snapshot_query(sql) {
-            let r = self.drift_reader()?;
-            let readonly = r.prepare_cached(sql).map_err(|e| format!("{e} in {sql}"))?.readonly();
-            if readonly {
-                let out = Self::exec_on(&r, sql, params, true);
-                #[cfg(feature = "id_audit")]
-                ids::audit::take(&r, sql)?;
-                return out;
+        if !self.writer_tx_open() {
+            match self.snapshot_select(sql, params) {
+                Err(e) if e == NOT_SNAPSHOT => {}
+                done => return done,
             }
         }
         self.exec(sql, params, true)
+    }
+
+    /// Drift 事务外查询的并发上限（只读连接池的连接数上限，store/read_pool.rs `read_concurrency`）：Dart 侧
+    /// 查询道的 worker 数取它（`ffsrs_store_read_concurrency`），两边不各写一份常量。
+    pub fn read_concurrency(&self) -> usize {
+        self.drift_readers.cap()
+    }
+
+    /// Drift 事务**外**的查询（`ffsrs_store_exec` mode 3，Dart 读查询那一路）：一律在只读连接池
+    /// （store/read_pool.rs）里借一条连接执行，不看 Drift 事务开没开、不碰写连接——事务外的读本来就只该看已提交
+    /// 的数据；并发的查询各占一条连接并行执行。语句不是以 SELECT / WITH / VALUES 开头、或 SQLite 判为非只读，
+    /// 报 [NOT_SNAPSHOT]（不执行），由调用方改走写连接那一路（[SrsCore::select]）。
+    pub fn snapshot_select(&self, sql: &str, params: &[Value]) -> Result<Vec<u8>, String> {
+        if self.legacy_open.load(Ordering::SeqCst) {
+            return Err("legacy import in progress".into());
+        }
+        if !snapshot_query(sql) {
+            return Err(NOT_SNAPSHOT.into());
+        }
+        let r = self.drift_readers.get()?;
+        let readonly = r.prepare_cached(sql).map_err(|e| format!("{e} in {sql}"))?.readonly();
+        if !readonly {
+            return Err(NOT_SNAPSHOT.into());
+        }
+        let out = Self::exec_on(&r, sql, params, true);
+        #[cfg(feature = "id_audit")]
+        ids::audit::take(&r, sql)?;
+        out
     }
 
     fn exec_on(conn: &Connection, sql: &str, params: &[Value], select: bool) -> Result<Vec<u8>, String> {
