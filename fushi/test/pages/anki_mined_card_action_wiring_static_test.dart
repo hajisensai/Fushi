@@ -225,7 +225,15 @@ void main() {
       ),
       isTrue,
     );
-    expect(mixin.contains('onMinedCardAction: onMinedCardAction'), isTrue);
+    // 允许直传或包一层闭包（先 miningFieldsForLayer 补层级字段）再转给它。
+    expect(
+      RegExp(
+        r'onMinedCardAction:\s*(onMinedCardAction\b|'
+        r'\([^)]*\)\s*=>\s*onMinedCardAction\()',
+      ).hasMatch(mixin),
+      isTrue,
+      reason: 'mixin 车道必须把 onMinedCardAction 接进弹窗层',
+    );
     expect(mixin.contains('runAnkiMinedCardAction('), isTrue);
 
     final base = read('lib/src/pages/base_source_page.dart');

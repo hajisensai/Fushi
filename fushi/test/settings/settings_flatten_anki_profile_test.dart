@@ -265,9 +265,9 @@ void main() {
     );
     expect(
       find.byType(AdaptiveSettingsSwitchRow),
-      findsNWidgets(11),
+      findsNWidgets(12),
       reason:
-          '常用开关（卡片内容 2 + 制卡提示 2 + 标签 4）与 Anki 分组的批量制卡 + '
+          '常用开关（卡片内容 2 + 制卡提示 2 + 标签 5（含「标题嵌在分类下」））与 Anki 分组的批量制卡 + '
           '连不上时暂存 + 落地设备直接可见，维护开关属于独立子页',
     );
     for (final String notice in <String>[
