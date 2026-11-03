@@ -458,10 +458,8 @@ Future<void> _dragChecks(
   final Map<String, dynamic> pd1 = await _settled(tester);
   r.evidence['$wm/shading'] = shading;
   r.check(
-    ((shading['backSamples'] as int?) ?? 0) >= 30 &&
-        ((shading['backSpread'] as int?) ?? 999) <= 3 &&
-        (shading['backColor'] as List<Object?>?)?.last == 255,
-    '$wm: page back is plain paper, no bleed-through ($shading)',
+    pageCurlBackShowsMirroredText(shading),
+    '$wm: page back shows the mirrored page text ($shading)',
   );
   r.check(
     pd1['pagePos'] == pd0['pagePos'] && _clean(pd1),

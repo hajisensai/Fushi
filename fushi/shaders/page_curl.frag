@@ -14,8 +14,10 @@
 // 背面平铺 → 圆柱背面 → 圆柱正面 → 平铺正面 → 底图（uHasBase = 0 时透明，露出下面
 // 活的 WebView）。
 //
-// 纸背不透出正文（透字看起来像穿帮）：背面是纸色略暗，翻起的那片靠背面明暗、
-// 卷边一道细线和它投在下面的阴影与正面区分开。
+// 纸背像苹果图书那样透出镜像的正文：采样被翻起那一点的快照（qBack 本身就是镜像
+// 位置），再蒙一层纸色。明暗只随圆柱表面朝向连续变化——平铺背面与圆柱顶（法向都
+// 朝向读者）同一亮度，往圆柱侧面平滑变暗，正反两半在轮廓处（k = 1）取同一值；
+// 不画卷边描线，所以卷轴处、纸边转过圆柱处都不会出现一道「折痕」。
 //
 // 拎起的角 uCorner 当前在 uPoint：轴线是两点连线的「卷曲中垂线」——取
 // a = (|C − F| − πr)/2，使角点刚好落在 F（r 随拖动距离收缩，避免起手时角点跳动）。
@@ -35,7 +37,7 @@ uniform vec2 uPoint;
 uniform float uRadius;
 uniform float uMirror;
 uniform float uHasBase;
-// 纸背：rgb = 纸色（0..1），a = 纸背相对纸色的明度。
+// 纸背：rgb = 纸色（0..1），a = 蒙在镜像正文上的纸色比例（0 = 正文原样透出）。
 uniform vec4 uBack;
 uniform sampler2D uSheet;
 uniform sampler2D uBase;
@@ -51,12 +53,6 @@ float outside(vec2 q) {
   return max(max(lo.x, lo.y), max(hi.x, hi.y));
 }
 
-// 纸面内离最近一条纸边多远（纸面外为 0）。
-float inside(vec2 q) {
-  vec2 m = min(q, uSize - q);
-  return max(0.0, min(m.x, m.y));
-}
-
 // 纸面局部坐标 → 快照纹理坐标。
 vec2 sheetUv(vec2 q) {
   vec2 c = clamp(q, vec2(0.0), uSize);
@@ -70,10 +66,21 @@ vec3 sheetAt(vec2 q) {
   return texture(uSheet, sheetUv(q)).rgb;
 }
 
-// 纸背：纸色 × 明度。卷边（纸的外缘）压一道细线，翻起的那片在同色纸上也看得出轮廓。
+// 纸背：镜像正文蒙一层纸色，再乘表面明暗。
 vec4 backAt(vec2 q, float shade) {
-  float edge = mix(0.86, 1.0, smoothstep(0.0, 1.5, inside(q)));
-  return vec4(uBack.rgb * (uBack.a * shade * edge), 1.0);
+  vec3 ink = mix(sheetAt(q), uBack.rgb, uBack.a);
+  return vec4(ink * shade, 1.0);
+}
+
+// 圆柱表面明暗：k = 离轴线距离 / r（0 = 圆柱顶 / 底，法向朝读者；1 = 轮廓，法向
+// 水平）。k² 在 0 处导数为 0，与平铺部分（明度 1）无缝接续。
+float rollShade(float k) {
+  return mix(1.0, 0.84, k * k);
+}
+
+// 圆柱背面的一道柔和高光（偏向轮廓一侧），k = 0 与 k = 1 处都为 0。
+float rollSheen(float k) {
+  return 0.06 * smoothstep(0.2, 0.55, k) * (1.0 - smoothstep(0.6, 0.95, k));
 }
 
 vec4 under(vec2 frag, float shadow) {
@@ -112,12 +119,11 @@ void main() {
   float d = dot(p - axisPoint, n);
 
   if (d <= 0.0) {
-    // 最上层：卷过来平铺的背面。贴近卷起处略暗（纸从这里弯下去）。
+    // 最上层：卷过来平铺的背面，法向朝读者，与圆柱顶同一亮度。
     vec2 qBack = p + n * (PI * r - 2.0 * d);
     float outBack = outside(qBack);
     if (outBack <= 0.0) {
-      float shade = mix(0.94, 1.0, smoothstep(0.0, r * 1.2, -d));
-      fragColor = backAt(qBack, shade);
+      fragColor = backAt(qBack, 1.0);
       return;
     }
     // 翻起的那片投在下面的软阴影（贴着它的外缘最浓）。
@@ -130,16 +136,17 @@ void main() {
     float k = d / r;
     float theta = asin(clamp(k, 0.0, 1.0));
     // 圆柱上半圈（背面朝上，盖在最上面）：顶上与平铺的背面接续，往圆柱侧面
-    // （k → 1）转离视线渐暗。
+    // （k → 1）转离视线渐暗，中段一道柔和高光。
     vec2 qBack = p + n * (r * (PI - theta) - d);
     if (outside(qBack) <= 0.0) {
-      fragColor = backAt(qBack, mix(0.94, 0.8, k * k));
+      vec4 c = backAt(qBack, rollShade(k));
+      fragColor = vec4(mix(c.rgb, vec3(1.0), rollSheen(k)), 1.0);
       return;
     }
-    // 圆柱下半圈（正面，向上翘起）：底部与平铺的正面接续，越往侧面越背光。
+    // 圆柱下半圈（正面，向上翘起）：底部与平铺的正面接续，轮廓处与上半圈同一明度。
     vec2 qFront = p + n * (r * theta - d);
     if (outside(qFront) <= 0.0) {
-      fragColor = vec4(sheetAt(qFront) * mix(1.0, 0.78, k * k), 1.0);
+      fragColor = vec4(sheetAt(qFront) * rollShade(k), 1.0);
       return;
     }
     fragColor = under(frag, 0.0);
@@ -152,5 +159,5 @@ void main() {
   float along = outside(qEdge - n * dot(qEdge - axisPoint, n));
   float fall = 1.0 - smoothstep(0.0, r * 0.9 + 8.0, d - r);
   float alongFade = 1.0 - smoothstep(0.0, 24.0, along);
-  fragColor = under(frag, 0.22 * fall * fall * alongFade);
+  fragColor = under(frag, 0.18 * fall * fall * alongFade);
 }

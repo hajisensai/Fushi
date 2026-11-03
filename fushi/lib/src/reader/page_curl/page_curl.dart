@@ -166,9 +166,9 @@ class PageCurlGeometry {
   final Rect paper;
 }
 
-/// 纸背相对纸色的明度。纸背不透出正文（用户 2026-11-03：透字看着像穿帮），只靠
-/// 略暗的底色 + 卷边阴影和正面区分开。
-const double kPageCurlBackTone = 0.95;
+/// 纸背蒙在镜像正文上的纸色比例：纸背像苹果图书那样透出镜像的正文（用户
+/// 2026-11-04），0.6 = 正文以约四成浓度透出。
+const double kPageCurlBackVeil = 0.6;
 
 /// 卷页圆柱半径：纸面短边的 12%。
 double pageCurlRadiusFor(Size size) => size.shortestSide * 0.12;
@@ -1003,8 +1003,8 @@ class _PageCurlPainter extends CustomPainter {
       ..setFloat(13, paperColor.r)
       ..setFloat(14, paperColor.g)
       ..setFloat(15, paperColor.b)
-      // 纸背的明度（相对纸色）：背面不透字，只比正面略暗，翻起的那片才分得出来。
-      ..setFloat(16, kPageCurlBackTone)
+      // 纸背：镜像正文上蒙的纸色比例。
+      ..setFloat(16, kPageCurlBackVeil)
       ..setImageSampler(0, sheet)
       ..setImageSampler(1, base ?? sheet);
     canvas.drawRect(Offset.zero & size, Paint()..shader = shader);

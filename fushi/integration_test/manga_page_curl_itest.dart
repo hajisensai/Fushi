@@ -476,10 +476,8 @@ Future<void> _runDirection(
       '$direction: paper narrowed to the page image ($shading)',
     );
     r.check(
-      ((shading['backSamples'] as int?) ?? 0) >= 30 &&
-          ((shading['backSpread'] as int?) ?? 999) <= 3 &&
-          (shading['backColor'] as List<Object?>?)?.last == 255,
-      '$direction: page back is plain paper, no bleed-through ($shading)',
+      pageCurlBackShowsMirroredText(shading),
+      '$direction: page back shows the mirrored page text ($shading)',
     );
     r.check(
       ((shading['outsideSamples'] as int?) ?? 0) >= 30 &&
