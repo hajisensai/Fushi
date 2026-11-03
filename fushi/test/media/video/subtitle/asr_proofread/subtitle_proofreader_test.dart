@@ -122,7 +122,7 @@ void main() {
     expect(middle, isNot(contains('固有名詞表:\n')), reason: '空表不出这一段');
   });
 
-  test('回复没写完（无 END、无停止原因）：不缓存，只问最后一条之后的 id；写完才落盘，用量两次都计', () async {
+  test('回复没写完（停止原因正常但无 END）：不缓存，只问最后一条之后的 id；写完才落盘，用量两次都计', () async {
     final FakeAiCompleter ai = FakeAiCompleter((String prompt, int call) {
       if (call == 0) return '0\tx\n'; // 没写 END
 
@@ -383,14 +383,90 @@ void main() {
     expect(cacheFiles(), <String>['00000.json']);
   });
 
-  test('parseAiLineReply：END / 停止原因判写完，没写完时丢掉没换行收尾的末行', () {
+  test(
+    '停止原因正常但回了 JSON / 说明文 / 拒答（没写 END）：不算写完，批缓存不写，3 轮后抛 reply_incomplete',
+    () async {
+      for (final String bad in <String>[
+        '{"0": "x", "1": "y"}',
+        '修正はありません。',
+        '申し訳ありませんが、この依頼には対応できません。',
+      ]) {
+        final Directory dir = Directory(
+          p.join(cacheDir.path, 'case${bad.length}'),
+        );
+        final FakeAiCompleter ai = FakeAiCompleter(
+          (String prompt, int call) => bad,
+        );
+        await expectLater(
+          SubtitleProofreader(completer: ai).proofread(
+            cues: cues(5),
+            title: 't',
+            glossary: SubtitleGlossary.empty,
+            cacheDir: dir,
+          ),
+          throwsA(
+            isA<SubtitleAiRequestFailure>().having(
+              (SubtitleAiRequestFailure f) => f.reason,
+              'reason',
+              kSubtitleAiReplyIncomplete,
+            ),
+          ),
+          reason: bad,
+        );
+        expect(ai.calls, 3, reason: bad);
+        expect(
+          dir.existsSync()
+              ? dir.listSync().whereType<File>().toList()
+              : const <File>[],
+          isEmpty,
+          reason: '$bad：没写 END 绝不能落成「本批无修正」',
+        );
+      }
+    },
+  );
+
+  test('内容过滤 / 拒答停止原因：即使写了 END 也不算写完，收下写完的行、只补问剩下的', () async {
+    final FakeAiCompleter ai = FakeAiCompleter(
+      (String prompt, int call) => call == 0
+          ? '0\tfixed0\n1\tfix'
+          : replyForIds(prompt, (int id) => 'fixed$id'),
+      stopReason: (int call) => call == 0 ? 'content_filter' : 'end_turn',
+    );
+    final SubtitleProofreadResult r = await SubtitleProofreader(completer: ai)
+        .proofread(
+          cues: cues(5),
+          title: 't',
+          glossary: SubtitleGlossary.empty,
+          cacheDir: cacheDir,
+        );
+    expect(ai.calls, 2);
+    expect(targetIdsOf(ai.prompts[1]), <int>[1, 2, 3, 4]);
+    expect(r.cues.map((SubtitleDraftCue c) => c.text), <String>[
+      for (int i = 0; i < 5; i++) 'fixed$i',
+    ]);
+  });
+
+  test('parseAiLineReply：只有 END 判写完，截断 / 非正常停止否决；可能被掐断时丢掉没换行收尾的末行', () {
     AiLineReply parse(String text, [String? stop]) =>
         parseAiLineReply(AiChatCompletion(text: text, stopReason: stop));
     final AiLineReply ended = parse('```\n1\ta\n\n2\tb\nEND\n3\tafter\n```');
     expect(ended.complete, isTrue);
     expect(ended.lines, <String>['1\ta', '2\tb']);
-    expect(parse('1\ta', 'end_turn').complete, isTrue, reason: '停止原因正常即写完');
-    expect(parse('1\ta', 'end_turn').lines, <String>['1\ta']);
+    expect(
+      parse('1\ta', 'end_turn').complete,
+      isFalse,
+      reason: '停止原因正常不等于守了协议：没写 END 就不算写完',
+    );
+    expect(parse('1\ta', 'end_turn').lines, <String>[
+      '1\ta',
+    ], reason: '正常停止的末行是完整的，照收');
+    expect(parse('{"12": "x"}\n', 'stop').complete, isFalse);
+    expect(parse('1\ta\nEND', 'end_turn').complete, isTrue);
+    expect(parse('1\ta\nEND', 'STOP').complete, isTrue);
+    expect(parse('1\ta\nEND', 'content_filter').complete, isFalse);
+    expect(parse('1\ta\nEND', 'refusal').complete, isFalse);
+    expect(parse('1\ta\nEND', 'SAFETY').complete, isFalse);
+    expect(parse('1\ta\n2\tb', 'content_filter').lines, <String>['1\ta']);
     final AiLineReply cut = parse('1\ta\n2\tb', 'max_tokens');
     expect(cut.complete, isFalse);
     expect(cut.lines, <String>['1\ta']);

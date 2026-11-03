@@ -235,10 +235,33 @@ class AiLineReply {
   /// 没写完时，没有换行收尾的最后一行可能被截了半截，也丢掉）。
   final List<String> lines;
 
-  /// 回复确实写完了：没有被截断，且写了 [kAiLineReplyEnd]，或提供商报了正常
-  /// 结束的停止原因（停止原因是权威信号；结束标记是拿不到停止原因时的退路）。
+  /// 回复确实写完了：写了 [kAiLineReplyEnd]，且提供商没报截断 / 非正常结束。
+  ///
+  /// **只认结束标记这个正向信号**：S3 / S4 的协议是「不写 = 不改」，停止原因正常
+  /// 只说明模型自己停了，不说明它守了协议——回了 JSON、说明文、拒答也都是
+  /// `end_turn` / `stop`，把它们当写完会把「本批无修正」永久落进缓存。停止原因只用来
+  /// 否决：截断（[AiChatCompletion.truncated]）与内容过滤 / 拒答这类非正常结束
+  /// （[isAiLineStopAbnormal]）即使带了结束标记也不算写完。
   final bool complete;
 }
+
+/// 三家协议「模型正常写完」的停止原因：OpenAI `stop`、Anthropic `end_turn` /
+/// `stop_sequence`、Gemini `STOP`。
+const Set<String> kAiLineNormalStopReasons = <String>{
+  'stop',
+  'end_turn',
+  'stop_sequence',
+  'STOP',
+};
+
+/// 停止原因既不是正常写完、也不是截断：内容过滤（`content_filter` / `SAFETY` /
+/// `RECITATION` / `PROHIBITED_CONTENT`…）、拒答（`refusal`）、调了工具等。这种回复
+/// 是被中途掐掉或根本没按协议答，不能当写完；null（应答里没有停止原因）不算——那时
+/// 只能靠结束标记判断。
+bool isAiLineStopAbnormal(String? stopReason) =>
+    stopReason != null &&
+    !isAiChatStopTruncated(stopReason) &&
+    !kAiLineNormalStopReasons.contains(stopReason);
 
 /// 按行协议解析 [reply]。
 AiLineReply parseAiLineReply(AiChatCompletion reply) {
@@ -257,9 +280,14 @@ AiLineReply parseAiLineReply(AiChatCompletion reply) {
     if (trimmed.isEmpty || trimmed.startsWith('```')) continue;
     lines.add(line);
   }
-  final bool complete =
-      !reply.truncated && (sawEnd || reply.stopReason != null);
-  if (!complete && !sawEnd && lines.isNotEmpty && !text.endsWith('\n')) {
+  final bool abnormal = isAiLineStopAbnormal(reply.stopReason);
+  final bool complete = sawEnd && !reply.truncated && !abnormal;
+  // 末行可能被截了半截：输出被掐断（截断 / 非正常结束），或拿不到停止原因、也没写
+  // 结束标记（分不清是否被掐断，按被掐断处理）。正常停止却漏了结束标记时末行是
+  // 写完整的，照收。
+  final bool maybeCut =
+      reply.truncated || abnormal || (reply.stopReason == null && !sawEnd);
+  if (maybeCut && !sawEnd && lines.isNotEmpty && !text.endsWith('\n')) {
     lines.removeLast();
   }
   return AiLineReply(lines: lines, complete: complete);
@@ -285,6 +313,10 @@ final RegExp _kAiLineRecord = RegExp(
 /// 问下去；只有连续 [maxAttempts] 轮一条新记录都没拿到才抛
 /// [kSubtitleAiReplyIncomplete]（[failureDetail] 进 `detail`）。请求本身失败（额度 /
 /// 鉴权 / 网络）由 [AiTextCompleter] 原样抛出，不在这里重试。
+///
+/// 记录集合有限的阶段（S3 / S4 / 短片分类按 id 问）每轮有进展就必然收敛；记录集合
+/// 开放的阶段（专名表，模型可以一直编新条目）必须给 [maxRounds]：总轮数到了还没写完
+/// 同样抛 [kSubtitleAiReplyIncomplete]。
 Future<void> runAiLineExchange({
   required AiTextCompleter completer,
   required String stablePrefix,
@@ -295,10 +327,19 @@ Future<void> runAiLineExchange({
   required SubtitleAiUsageTally usage,
   required SubtitleCancelToken cancel,
   int maxAttempts = 3,
+  int? maxRounds,
 }) async {
   int fruitless = 0;
+  int rounds = 0;
   while (true) {
     throwIfSubtitleCancelled(cancel);
+    if (maxRounds != null && rounds >= maxRounds) {
+      throw SubtitleAiRequestFailure(
+        kSubtitleAiReplyIncomplete,
+        detail: '${failureDetail()}; gave up after $rounds rounds',
+      );
+    }
+    rounds++;
     final AiChatCompletion reply = await completer.complete(
       body(),
       stablePrefix: stablePrefix,

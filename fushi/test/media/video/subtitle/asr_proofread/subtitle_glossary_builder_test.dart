@@ -321,6 +321,26 @@ void main() {
     expect(r.glossary.entries.first.misrecognitions, <String>['結衣']);
   });
 
+  test('续写每轮都被截断、又每轮都编出新条目：问满轮数上限就抛 reply_incomplete，不无限续写', () async {
+    final FakeAiCompleter ai = FakeAiCompleter(
+      (String prompt, int call) => '新$call\tしん\t人名\n途中',
+      stopReason: (int call) => 'max_tokens',
+    );
+    await expectLater(
+      SubtitleGlossaryBuilder(
+        completer: ai,
+      ).build(context: bare, episodeTexts: const <List<String>>[]),
+      throwsA(
+        isA<SubtitleAiRequestFailure>().having(
+          (SubtitleAiRequestFailure f) => f.reason,
+          'reason',
+          kSubtitleAiReplyIncomplete,
+        ),
+      ),
+    );
+    expect(ai.calls, kSubtitleGlossaryMaxRounds);
+  });
+
   test('行格式往返：formatSubtitleGlossaryLines → parseSubtitleGlossaryLine', () {
     const List<SubtitleGlossaryEntry> src = <SubtitleGlossaryEntry>[
       SubtitleGlossaryEntry(

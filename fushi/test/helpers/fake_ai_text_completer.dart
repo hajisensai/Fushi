@@ -6,13 +6,15 @@ import 'package:fushi_engine/media/video/subtitle/asr_proofread/ai_text_complete
 /// [prompts] 记的是**拼回去的完整提示词**（`joinAiTextPrompt(前缀, 本批)`，与拆分
 /// 之前逐字相同），[prefixes] / [bodies] 分别记两段，供提示缓存相关的断言用。
 class FakeAiCompleter implements AiTextCompleter {
-  FakeAiCompleter(this.answer, {this.usage, this.stopReason});
+  FakeAiCompleter(this.answer, {this.usage, this.stopReason = normalAiStop});
 
   final String Function(String prompt, int call) answer;
   final AiChatUsage? usage;
 
-  /// 第 call 次应答的停止原因（`max_tokens` = 被截断）；null = 都正常结束。
-  final String? Function(int call)? stopReason;
+  /// 第 call 次应答的停止原因（`max_tokens` = 被截断）。默认每次都是
+  /// [normalAiStop]（`end_turn`），与生产 completer 一致——生产路径每次都带停止原因；
+  /// 要模拟「应答里没有停止原因」就显式返回 null。
+  final String? Function(int call) stopReason;
   final List<String> prompts = <String>[];
   final List<String> prefixes = <String>[];
   final List<String> bodies = <String>[];
@@ -32,10 +34,13 @@ class FakeAiCompleter implements AiTextCompleter {
     return AiChatCompletion(
       text: answer(full, call),
       usage: usage,
-      stopReason: stopReason?.call(call),
+      stopReason: stopReason(call),
     );
   }
 }
+
+/// [FakeAiCompleter] 默认的停止原因：正常写完（Anthropic `end_turn`）。
+String? normalAiStop(int call) => 'end_turn';
 
 /// 一调用就失败（用来断言「走了缓存、没发请求」）。
 class ExplodingAiCompleter implements AiTextCompleter {

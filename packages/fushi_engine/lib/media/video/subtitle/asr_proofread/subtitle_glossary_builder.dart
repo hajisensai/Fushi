@@ -93,6 +93,15 @@ const String kSubtitleGlossaryRecheck =
 {table}
 $kSubtitleGlossaryLineFormat''';
 
+/// 专名表一次 [SubtitleGlossaryBuilder] 请求（首轮 + 续写）最多问几轮。
+///
+/// 表的条目集合是开放的（模型可以一直编新条目），不像 S3 / S4 按 id 问必然收敛，所以
+/// 必须封顶。续写只在上一轮撞上输出上限时才发生；每轮上限
+/// [kSubtitleAiMaxOutputTokens]（实测 60 条 ~5k token，一轮 ~100 条），5 轮 ≈ 500 条，
+/// 远超单部作品（含全季、剧场版）的真实表；这张表还要整张放进 S3 / S4 每一批的稳定
+/// 前缀，比这更长也没法用。封顶同时限住了续写提示里 `{done}` 清单的长度。
+const int kSubtitleGlossaryMaxRounds = 5;
+
 /// 回复撞上输出上限被截断后的续写要求（追加在本次内容之后；`{done}` = 已收到的
 /// 条目的 `ja`）。
 const String kSubtitleGlossaryContinue =
@@ -638,7 +647,8 @@ class SubtitleGlossaryBuilder {
   /// 表长（整季、多季的作品动辄上百条）会让输出撞上 `max_tokens` 被截断：行协议下
   /// 写完的行照收，接着发「续写」请求只要剩下的（[kSubtitleGlossaryContinue]），直到
   /// 某次回复写完（首轮要有条目；续写轮只回结束标记 = 没有剩下的了）。连续
-  /// [maxParseAttempts] 轮一条新条目都没拿到才抛 [kSubtitleAiReplyIncomplete]。
+  /// [maxParseAttempts] 轮一条新条目都没拿到、或问满 [kSubtitleGlossaryMaxRounds] 轮
+  /// 仍没写完，抛 [kSubtitleAiReplyIncomplete]。
   Future<List<SubtitleGlossaryEntry>> _ask(
     _Prompt prompt,
     SubtitleAiUsageTally usage,
@@ -670,6 +680,7 @@ class SubtitleGlossaryBuilder {
       usage: usage,
       cancel: cancel,
       maxAttempts: maxParseAttempts,
+      maxRounds: kSubtitleGlossaryMaxRounds,
     );
     return all;
   }
