@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 import 'dart:ui' show ImageFilter;
 
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter/scheduler.dart' show SchedulerBinding;
 import 'package:fluttertoast/fluttertoast.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
@@ -131,6 +133,47 @@ abstract final class FushiToast {
     );
   }
 
+  /// 登记一块「制卡结果改到角落」的区域：登记期间（最后登记的那块生效）制卡
+  /// 结果卡改成小号（[FushiMineNoticeCard.compact]），贴在 [region] 的底部起始角
+  /// 内侧，而不是屏幕底部正中的大卡。给正文铺满全屏的页面用（歌词模式）——
+  /// 底部正中的大卡正好压在正文上。
+  ///
+  /// [region] 返回全局坐标矩形；返回 null（页面还没布局 / 已不可见）时退回默认
+  /// 位置与尺寸。返回的句柄在页面销毁时 [FushiToastCornerAnchor.release]。
+  static FushiToastCornerAnchor anchorMineToCorner(ValueGetter<Rect?> region) {
+    final FushiToastCornerAnchor anchor = FushiToastCornerAnchor._(region);
+    _cornerAnchors.add(anchor);
+    return anchor;
+  }
+
+  static final List<FushiToastCornerAnchor> _cornerAnchors =
+      <FushiToastCornerAnchor>[];
+
+  /// 此刻生效的角落区域（全局坐标）：最后登记的那块；没有登记、页面被盖住 /
+  /// 还没布局（region 返回 null）或矩形为空时为 null。
+  ///
+  /// 每次 [_FushiToastView] 重建都重新解析一次，并且「小卡还是大卡」与「贴角还是
+  /// 默认位置」只取这一次的结果——不能只换位置不换尺寸，也不能贴到已经看不见
+  /// 的区域角上（显示期间退出歌词模式时，下一次重建就整张退回默认大卡）。
+  static Rect? _activeCornerRect() {
+    if (_cornerAnchors.isEmpty) return null;
+    final Rect? rect = _cornerAnchors.last._region();
+    if (rect == null || rect.isEmpty) return null;
+    return rect;
+  }
+
+  /// 锚点集合变了（页面销毁撤销登记）：让正在显示的 toast 下一帧按新的锚点重新
+  /// 解析尺寸与位置，而不是停在已经消失的区域角上。撤销通常发生在页面 dispose
+  /// （树卸载阶段，此时不能 setState），所以挪到帧后再标脏。
+  static void _onCornerAnchorsChanged() {
+    final OverlayEntry? entry = _currentEntry;
+    if (entry == null) return;
+    SchedulerBinding.instance.addPostFrameCallback((Duration _) {
+      if (_currentEntry == entry && entry.mounted) entry.markNeedsBuild();
+    });
+    SchedulerBinding.instance.ensureVisualUpdate();
+  }
+
   static void _showMineOverlay({
     required OverlayState overlay,
     required String msg,
@@ -138,7 +181,7 @@ abstract final class FushiToast {
     MineNoticeAction? action,
   }) {
     // pending 停留更久（等制卡结果覆盖它），结果 toast 用短时长；带动作按钮的
-    // 停得更久，留出去点的时间。
+    // 停得更久，留出去点的时间（角落小卡同样适用）。
     final int durationMs = action != null
         ? kMineNoticeActionVisibleFor.inMilliseconds
         : status == MineToastStatus.pending
@@ -154,7 +197,7 @@ abstract final class FushiToast {
             },
           );
     // 制卡结果用 M3E tonal 结果卡（与视频页制卡 OSD 同一长相），进退场仍走
-    // _FushiToastView 的同一套。
+    // _FushiToastView 的同一套。小卡 / 大卡由视图每次重建时与位置一起决定。
     _insertToastEntry(
       overlay: overlay,
       durationMs: durationMs,
@@ -163,11 +206,14 @@ abstract final class FushiToast {
         icon: mineToastPalette(status).icon,
         severity: mineToastSeverity(status),
         interactive: tapAction != null,
-        body: FushiMineNoticeCard(
+        cornerRegion: _activeCornerRect,
+        bodyBuilder: (bool compact) => FushiMineNoticeCard(
           status: status,
           message: msg,
           visibleFor: Duration(milliseconds: durationMs),
           action: tapAction,
+          compact: compact,
+          maxWidth: compact ? 300 : 440,
         ),
       ),
     );
@@ -219,6 +265,20 @@ abstract final class FushiToast {
 
   static OverlayEntry? _currentEntry;
   static Timer? _dismissTimer;
+}
+
+/// [FushiToast.anchorMineToCorner] 的登记句柄。
+final class FushiToastCornerAnchor {
+  FushiToastCornerAnchor._(this._region);
+
+  final ValueGetter<Rect?> _region;
+
+  /// 撤销登记（可重复调用）。正在显示的 toast 随后按剩下的锚点重新定尺寸与位置。
+  void release() {
+    if (FushiToast._cornerAnchors.remove(this)) {
+      FushiToast._onCornerAnchorsChanged();
+    }
+  }
 }
 
 /// overlay 条目与条目里 [_FushiToastView] 之间的退场握手：视图挂载后把自己的
@@ -320,6 +380,10 @@ const Curve _kToastSpatialCurve = Cubic(0.42, 1.67, 0.21, 0.90);
 ///   单色 SF 图标，与 Apple 版 SnackBar 同一视觉。
 ///
 /// 位置恒为底部居中（全部调用点都是 BOTTOM），淡入 + 轻微上浮。
+/// 角落定位的 overlay 本地几何：起始边距（LTR 为 left、RTL 为 right）、底边距、
+/// 可用宽度。
+typedef _CornerGeometry = ({double start, double bottom, double width});
+
 class _FushiToastView extends StatefulWidget {
   const _FushiToastView({
     required this.msg,
@@ -327,16 +391,24 @@ class _FushiToastView extends StatefulWidget {
     required this.severity,
     this.backgroundColor,
     this.textColor,
-    this.body,
+    this.bodyBuilder,
     this.interactive = false,
+    this.cornerRegion,
   });
 
-  /// 非空时代替默认浮条（制卡结果卡）；进退场与定位不变。
-  final Widget? body;
+  /// 非空时代替默认浮条（制卡结果卡）；进退场不变。参数 `compact`：这次重建贴角
+  /// （true，画小卡）还是默认位置（false，画大卡），与定位取同一次区域解析。
+  final Widget Function(bool compact)? bodyBuilder;
 
   /// 卡片上有可点的按钮（「撤销」）时为 true：不再整体忽略指针。只有卡片本身
-  /// 接收指针（外层 Positioned 只有卡片那么高），不挡下面页面的点击。
+  /// 接收指针（外层 Positioned 只有卡片那么高），不挡下面页面的点击。默认位置与
+  /// 角落位置同一口径。
   final bool interactive;
+
+  /// 每次重建解析一次：非空且能换算到 overlay 坐标时，贴在这块区域（全局坐标）的
+  /// 底部起始角内侧并画小卡，否则默认位置画大卡（见
+  /// [FushiToast.anchorMineToCorner]）。
+  final ValueGetter<Rect?>? cornerRegion;
 
   final String msg;
   final IconData? icon;
@@ -410,30 +482,73 @@ class _FushiToastViewState extends State<_FushiToastView>
 
   @override
   Widget build(BuildContext context) {
-    final Widget body =
-        widget.body ??
-        (isGlassDesign(context)
-            ? _buildApple(context)
-            : _buildMaterial(context));
+    // 区域只解析一次，尺寸（小卡 / 大卡）与位置（贴角 / 默认）都取这次的结果。
+    final _CornerGeometry? corner = _cornerGeometry(context);
+    final Widget Function(bool compact)? bodyBuilder = widget.bodyBuilder;
+    final Widget body = bodyBuilder != null
+        ? bodyBuilder(corner != null)
+        : isGlassDesign(context)
+        ? _buildApple(context)
+        : _buildMaterial(context);
+    final Widget animated = FadeTransition(
+      opacity: _opacity,
+      child: SlideTransition(
+        position: _slide,
+        child: ScaleTransition(
+          scale: _scale,
+          child: Material(type: MaterialType.transparency, child: body),
+        ),
+      ),
+    );
+    if (corner != null) {
+      final bool rtl = Directionality.of(context) == TextDirection.rtl;
+      return Positioned(
+        left: rtl ? null : corner.start,
+        right: rtl ? corner.start : null,
+        bottom: corner.bottom,
+        width: corner.width,
+        child: IgnorePointer(
+          ignoring: !widget.interactive,
+          child: Align(
+            alignment: AlignmentDirectional.bottomStart,
+            child: animated,
+          ),
+        ),
+      );
+    }
     return Positioned(
       bottom: _toastBottomOffset(context),
       left: 16,
       right: 16,
       child: IgnorePointer(
         ignoring: !widget.interactive,
-        child: Center(
-          child: FadeTransition(
-            opacity: _opacity,
-            child: SlideTransition(
-              position: _slide,
-              child: ScaleTransition(
-                scale: _scale,
-                child: Material(type: MaterialType.transparency, child: body),
-              ),
-            ),
-          ),
-        ),
+        child: Center(child: animated),
       ),
+    );
+  }
+
+  /// 角落几何：把全局坐标的区域换到 overlay 本地坐标，贴底部起始角（LTR 左下、
+  /// RTL 右下）内缩 12。没有区域、区域为空或 overlay 还没布局时返回 null——此时
+  /// 调用方整张卡走默认位置与默认大卡。
+  ///
+  /// 指针口径与默认位置一致（[_FushiToastView.interactive]）：带「撤销」时卡片
+  /// 可点；[Align] 本身不命中空白处，区域里卡片以外的地方照样点穿到下面的歌词。
+  _CornerGeometry? _cornerGeometry(BuildContext context) {
+    final Rect? global = widget.cornerRegion?.call();
+    if (global == null || global.isEmpty) return null;
+    final RenderObject? overlayBox = Overlay.maybeOf(
+      context,
+    )?.context.findRenderObject();
+    if (overlayBox is! RenderBox || !overlayBox.hasSize) return null;
+    final Offset topLeft = overlayBox.globalToLocal(global.topLeft);
+    final Rect local = topLeft & global.size;
+    final Size size = overlayBox.size;
+    const double inset = 12;
+    final bool rtl = Directionality.of(context) == TextDirection.rtl;
+    return (
+      start: rtl ? size.width - local.right + inset : local.left + inset,
+      bottom: size.height - local.bottom + inset,
+      width: math.max(0, local.width - 2 * inset),
     );
   }
 
