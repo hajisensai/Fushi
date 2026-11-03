@@ -1470,6 +1470,7 @@
   "av_sync": "A/V-sync",
   "av_sync_reset": "Herstellen",
   "back": "Terug",
+  "background_tasks_empty": "No background tasks running",
   "backup_category_audiobooks": "Luisterboekaudio",
   "backup_category_audiobooks_desc": "Luisterboek-audio en uitlijning",
   "backup_category_books": "Boeken",

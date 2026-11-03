@@ -1470,6 +1470,7 @@
   "av_sync": "A/V Sync",
   "av_sync_reset": "Reset",
   "back": "Back",
+  "background_tasks_empty": "No background tasks running",
   "backup_category_audiobooks": "Audiobook audio",
   "backup_category_audiobooks_desc": "Audiobook audio and alignment",
   "backup_category_books": "Books",

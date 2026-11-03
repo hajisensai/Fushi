@@ -58,7 +58,6 @@ import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/src/sync/sync_progress_banner.dart';
 import 'package:fushi/utils.dart';
 
 /// 曲库分区（浏览维度）。格式 / 来源 / 有无逐字歌词是筛选条件，不做成分区（§11.2）。
@@ -840,11 +839,6 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
                             ),
                             child: hero,
                           ),
-                        // 常规同步 / 复习同步在跑时的进度条（全局状态，不只本页触发的）；没在跑时零高度。
-                        SyncProgressBanner(
-                          key: const ValueKey<String>('music-sync-progress'),
-                          margin: EdgeInsets.only(bottom: tokens.spacing.gap),
-                        ),
                         if (_scanning) const FushiLinearProgressIndicator(),
                         Expanded(
                           // 触屏横滑切相邻分区，序即两级页签的视觉序（曲库各分区 →

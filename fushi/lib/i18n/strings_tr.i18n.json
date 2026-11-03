@@ -1470,6 +1470,7 @@
   "av_sync": "A/V Senkronizasyonu",
   "av_sync_reset": "Sıfırla",
   "back": "Geri",
+  "background_tasks_empty": "No background tasks running",
   "backup_category_audiobooks": "Sesli kitap sesi",
   "backup_category_audiobooks_desc": "Sesli kitap sesleri ve hizalama",
   "backup_category_books": "Kitaplar",

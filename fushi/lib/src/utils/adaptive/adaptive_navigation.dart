@@ -1193,7 +1193,7 @@ class _MaterialNavCluster extends StatelessWidget {
 
 /// MD3 悬浮底栏右侧那颗独立 FAB 的内容（应用级主操作）。默认由
 /// [adaptiveBottomBar] 用「查词」目的地生成；调用方可以换成当前页自己的主操作
-/// （例如视频源后台补刮任务），保证同一时刻屏幕上只有这一颗。
+/// （例如首页「后台任务」入口），保证同一时刻屏幕上只有这一颗。
 @immutable
 class AdaptiveNavFab {
   const AdaptiveNavFab({
@@ -1203,10 +1203,15 @@ class AdaptiveNavFab {
     this.selectedIcon,
     this.selected = false,
     this.experimentalBadge = false,
+    this.glyph,
   });
 
   final IconData icon;
   final IconData? selectedIcon;
+
+  /// 自绘的 FAB 内容（如「后台任务」的进度环 + 图标），代替 [icon] 画在 FAB
+  /// 中心；前景色从 [IconTheme] 取。null = 画 [icon]。
+  final Widget? glyph;
 
   /// tooltip / 读屏名（FAB 本身不画字）。
   final String label;
@@ -1674,12 +1679,19 @@ class _NavBarFab extends StatelessWidget {
         ? (fab.selectedIcon ?? fab.icon)
         : fab.icon;
     final Duration duration = fushiMotionDuration(context, FushiMotion.short);
-    final Widget glyph = FushiIcon(
-      icon,
-      key: ValueKey<(IconData, bool)>((icon, fab.selected)),
-      size: 28,
-      color: foreground,
-    );
+    final Widget? custom = fab.glyph;
+    final Widget glyph = custom != null
+        ? IconTheme.merge(
+            key: const ValueKey<String>('nav-bar-fab-custom-glyph'),
+            data: IconThemeData(color: foreground),
+            child: custom,
+          )
+        : FushiIcon(
+            icon,
+            key: ValueKey<(IconData, bool)>((icon, fab.selected)),
+            size: 28,
+            color: foreground,
+          );
     return FushiTooltip(
       message: fab.label,
       child: Semantics(

@@ -103,49 +103,49 @@ void main() {
     expect(src, contains('await backend.signOut(repo: repo)'));
   });
 
-  test('三页都挂了同步进度条（下拉可能跑几十秒）', () {
+  // 2026-11-03 顶栏让位：同步进度不再在各库页顶部铺两行横幅（常驻挤掉近一行
+  // 封面），改由首页外壳的「后台任务」入口（右下 FAB / MD3 底栏 FAB / Apple
+  // 大标题行，外圈分段进度环）统一承载——它听全局状态，对任何在飞的同步都亮。
+  test('首页各 tab 不再挂同步横幅，进度归外壳的「后台任务」入口', () {
     for (final String file in <String>[
       'lib/src/pages/implementations/reader_fushi_history_page.dart',
       'lib/src/pages/implementations/home_video_page.dart',
       'lib/src/pages/implementations/home_dictionary_page.dart',
-    ]) {
-      expect(
-        read(file),
-        contains(
-          file.endsWith('reader_fushi_history_page.dart')
-              ? 'SyncProgressBanner(compact: _compactLibraryToolbar)'
-              : 'const SyncProgressBanner()',
-        ),
-        reason: '$file 缺同步进度条：光一个 RefreshIndicator 转圈看不出跑到哪一步',
-      );
-    }
-  });
-
-  test('其余库页 / 首页 / 复习页也挂同步进度条（复习同步一轮可能跑十几分钟）', () {
-    // 漫画书架复用 reader_fushi_history_page（上一条已钉）。这些页没有下拉同步，
-    // 但后台 / 「立即同步」/ 进复习 tab 触发的同步照样要看得见进度。
-    for (final String file in <String>[
       'lib/src/pages/implementations/srs/srs_deck_list_page.dart',
-      'lib/src/pages/implementations/srs/srs_history_page.dart',
       'lib/src/pages/implementations/music/music_library_page.dart',
       'lib/src/pages/implementations/home_game_page.dart',
       'lib/src/pages/implementations/home_dashboard_page.dart',
     ]) {
       expect(
         read(file),
-        contains('SyncProgressBanner('),
-        reason: '$file 缺同步进度条：后台同步在跑时页面毫无反馈',
+        isNot(contains('SyncProgressBanner(')),
+        reason: '$file 又挂回了顶部同步横幅：进度已由外壳「后台任务」入口承载',
       );
     }
+    final String home = read('lib/src/pages/implementations/home_page.dart');
+    expect(home, contains('syncBackgroundTasksListenable'));
+    expect(home, contains('...syncBackgroundTasks(),'));
+    expect(home, contains('BackgroundTasksGlyph('));
   });
 
-  test('同步进度条也听复习同步的进度', () {
-    final String src = read('lib/src/sync/sync_progress_banner.dart');
+  test('推出去的「同步与历史」页看不到外壳入口，仍挂同步横幅', () {
     expect(
-      src,
-      contains('srsSyncProgress'),
-      reason: '复习同步不经 syncInProgress，不听它就会出现「同步十几分钟、界面零反馈」',
+      read('lib/src/pages/implementations/srs/srs_history_page.dart'),
+      contains('const SyncProgressBanner()'),
     );
+  });
+
+  test('同步进度（横幅与后台任务入口）也听复习同步的进度', () {
+    for (final String file in <String>[
+      'lib/src/sync/sync_progress_banner.dart',
+      'lib/src/sync/background_tasks_indicator.dart',
+    ]) {
+      expect(
+        read(file),
+        contains('srsSyncProgress'),
+        reason: '$file：复习同步不经 syncInProgress，不听它就会出现「同步十几分钟、界面零反馈」',
+      );
+    }
   });
 
   test('词典页查询结果屏不叠下拉刷新（手势与「清空查询」冲突）', () {

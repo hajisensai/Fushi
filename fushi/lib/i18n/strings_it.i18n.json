@@ -1470,6 +1470,7 @@
   "av_sync": "Sinc. A/V",
   "av_sync_reset": "Reimposta",
   "back": "Indietro",
+  "background_tasks_empty": "No background tasks running",
   "backup_category_audiobooks": "Audio degli audiolibri",
   "backup_category_audiobooks_desc": "Audio e allineamento degli audiolibri",
   "backup_category_books": "Libri",

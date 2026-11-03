@@ -1470,6 +1470,7 @@
   "av_sync": "A/V синхр.",
   "av_sync_reset": "Сброс",
   "back": "Назад",
+  "background_tasks_empty": "No background tasks running",
   "backup_category_audiobooks": "Аудио аудиокниг",
   "backup_category_audiobooks_desc": "Аудио и привязки аудиокниг",
   "backup_category_books": "Книги",

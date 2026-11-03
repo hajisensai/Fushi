@@ -1470,6 +1470,7 @@
   "av_sync": "音画同步",
   "av_sync_reset": "归零",
   "back": "返回",
+  "background_tasks_empty": "没有正在进行的后台任务",
   "backup_category_audiobooks": "有声书音频",
   "backup_category_audiobooks_desc": "有声书音频与对齐数据",
   "backup_category_books": "书籍内容",

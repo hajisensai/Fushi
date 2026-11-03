@@ -26,7 +26,6 @@ import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/src/sync/manual_sync_ui.dart';
-import 'package:fushi/src/sync/sync_progress_banner.dart';
 import 'package:fushi/src/utils/misc/lookup_dismiss_barrier.dart';
 import 'package:fushi/src/utils/components/clipboard_lookup_text_panel.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
@@ -789,8 +788,6 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
         return Column(
           children: [
             _buildSearchRegion(),
-            // 下拉同步可能跑几十秒，光一个转圈看不出进展；没同步在飞时零高度。
-            const SyncProgressBanner(),
             Expanded(child: _buildBody()),
           ],
         );
@@ -834,7 +831,6 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
           child: Column(
             children: <Widget>[
               _buildSearchRegion(),
-              const SyncProgressBanner(),
               Expanded(
                 child: FushiRefreshIndicator(
                   onRefresh: _pullToRefreshDictionary,
