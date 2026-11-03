@@ -1544,6 +1544,36 @@ class SrsDbStore implements SrsSync2Host {
   Future<Map<String, Object?>> sync2Status() async =>
       (await sync2Command(<String, Object?>{'op': 'status'})).map;
 
+  /// 本机设备信息（native/fushi_fsrs/src/store/sync2/devices.rs）：给了哪个改哪个，[nick] 给空串 = 清掉昵称、回到
+  /// 型号。人读名 = 昵称或型号，随下一次写 head 发布（型号 / 版本 / 平台进 head 的扩展）。没变时内核不进写锁。
+  Future<Map<String, Object?>> sync2DeviceInfo({
+    String? model,
+    String? app,
+    String? platform,
+    String? nick,
+  }) async => (await sync2Command(<String, Object?>{
+    'op': 'device_info',
+    'now': now().$1,
+    'model': ?model,
+    'app': ?app,
+    'platform': ?platform,
+    'nick': ?nick,
+  })).map;
+
+  /// 给没有自报名字的设备 [device] 记一个补充名（互联 host 认出了直接写它的段的已配对对端）。
+  Future<void> sync2DeviceHint(String device, String hint) => sync2Command(
+    <String, Object?>{'op': 'device_hint', 'device': device, 'hint': hint},
+  );
+
+  /// 停用 / 取消停用一台别的设备（「这台设备不用了」）：停用后因等它的数据而卡在缓冲里的操作立即投递，同一次
+  /// 调用里接进缓存。不删任何数据；它之后又同步过来会自动取消停用。
+  Future<void> sync2Retire(String device, {required bool retire}) =>
+      _sync2Write(<String, Object?>{
+        'op': 'retire',
+        'device': device,
+        'retire': retire,
+      });
+
   /// 算并记下状态摘要（写 head 时带上；两台设备在同一版本向量下摘要不同 = 确定性 bug）。
   Future<Map<String, Object?>> sync2Digest() async =>
       (await sync2Command(<String, Object?>{'op': 'digest'})).map;
@@ -1618,6 +1648,7 @@ class SrsDbStore implements SrsSync2Host {
     'ingest_finish',
     'replay_pending',
     'import',
+    'retire',
     'resolve',
     'purge',
     'checkpoint',

@@ -39,6 +39,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:fushi/src/diagnostics/previous_exit_log.dart';
+import 'package:fushi/src/srs/srs_device_identity.dart';
 import 'package:fushi/src/srs/srs_sync_progress.dart';
 import 'package:fushi/src/sync/dropbox_sync_backend.dart';
 import 'package:fushi/src/sync/obfuscating_sync_backend.dart';
@@ -196,6 +197,8 @@ Future<SrsSync2Report> srsDefaultSyncRunner(
     return r;
   }
   srsLogMigrationLeftover(prepared, directoryKey);
+  // 本机型号 / 版本 / 平台随这一轮的 head 发布（别的设备的同步页 / 冲突中心据此认出这台设备）。
+  await srsPublishDeviceInfo(store);
   final SrsSync2Report r = await srsSync2Round(
     host: store,
     location: location,
@@ -1275,6 +1278,7 @@ class SrsSyncScheduler {
           kSrsFolderRoundLabel,
           folderRoundStats,
           () async {
+            await srsPublishDeviceInfo(store);
             final SrsFolderSyncReport report = await srsSyncFolderLocation(
               location: l,
               store: store,

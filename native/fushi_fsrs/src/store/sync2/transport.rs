@@ -287,12 +287,16 @@ fn trust_head(conn: &Connection, profile: &str, h: &Head) -> Result<bool, String
 }
 
 fn record_head(conn: &Connection, profile: &str, h: &Head) -> Result<(), String> {
-    conn.execute(
+    let n = conn.execute(
         "UPDATE sync2_devices SET head_gen = ?3, head_seq = ?4, head_at = ?5, ack = ?6, digest = ?7, name = ?8 \
          WHERE profile_uid = srs_id(?1) AND device = ?2 AND head_gen <= ?3",
         params![profile, h.device.0.to_vec(), h.gen as i64, h.seq as i64, h.at_ms, h.ack.encode(), h.digest, h.name],
     )
     .map_err(sql)?;
+    if n > 0 {
+        // 型号 / 版本 / 协议（设备可识别，devices.rs）。
+        super::devices::record_ext(conn, profile, h)?;
+    }
     Ok(())
 }
 
@@ -587,6 +591,8 @@ struct Delivery {
     epoch: u64,
     /// 新设备收段通道的追加阶段（channel.rs）：有它就只追加、不逐条投影。只有收段会话设它。
     channel: Option<super::channel::Append>,
+    /// 停用了的设备（devices.rs）：别的设备的操作对它们的因果要求不再等。
+    retired: BTreeSet<Id>,
 }
 
 /// 收段会话之外的投递（一次收完、导入、换身份）每做一次加一：会话里跨片留着的 [Delivery] 据此知道缓冲表 / 设备
@@ -615,6 +621,7 @@ impl Delivery {
         match cached {
             Some(mut d) if d.epoch == DELIVERY_EPOCH.load(std::sync::atomic::Ordering::SeqCst) => {
                 d.vv = applied_vv(c, profile)?;
+                d.retired = super::devices::retired_set(c, profile)?;
                 Ok(d)
             }
             _ => Delivery::load(c, profile),
@@ -651,6 +658,7 @@ impl Delivery {
             ahead: BTreeSet::new(),
             epoch: DELIVERY_EPOCH.load(std::sync::atomic::Ordering::SeqCst),
             channel: None,
+            retired: super::devices::retired_set(c, profile)?,
         })
     }
 
@@ -758,7 +766,7 @@ impl Delivery {
     }
 
     fn deliver_ready(&mut self, c: &Connection, profile: &str, now: i64, t: &mut Touched, budget: &mut CommitBudget<'_>) -> Result<(), String> {
-        let Delivery { vv, queues, loaded, stored_rows, chains, applied, forked, held: mem, seen, ahead, channel, .. } = self;
+        let Delivery { vv, queues, loaded, stored_rows, chains, applied, forked, held: mem, seen, ahead, channel, retired, .. } = self;
         let mut dropped: Vec<Id> = Vec::new();
         'all: loop {
             let mut progress = false;
@@ -817,7 +825,7 @@ impl Delivery {
                         dropped.push(*device);
                         break;
                     }
-                    if !op.deps.le(&vv) {
+                    if !super::devices::deps_ready(&op.deps, vv, retired) {
                         break;
                     }
                     if !budget.take() {
@@ -1973,6 +1981,7 @@ impl SrsCore {
                 digest: digest.unwrap_or_default(),
                 at_ms: now,
                 name: local.name.clone(),
+                ext: super::devices::self_ext(c, profile)?,
             };
             let sig = head.content_sig();
             // 不算 ack / 摘要的内容签名：只有它们变了（收到别人的操作、摘要重算）不急着写（审查 S-8）。
@@ -2557,6 +2566,7 @@ impl SrsCore {
             .query_row("SELECT value FROM srs_meta WHERE key = ?1", [format!("sync2_digest/{profile}")], |x| x.get(0))
             .optional()
             .map_err(sql)?;
+        let (extras, self_info) = super::devices::status_extras(&r, profile, &local)?;
         let mut devices = Vec::new();
         let mut stmt = r
             .prepare(
@@ -2577,7 +2587,7 @@ impl SrsCore {
                 }
                 _ => false,
             };
-            devices.push(json!({
+            let mut row = json!({
                 "device": hex_id(&dev),
                 "self": dev == local.device.0.to_vec(),
                 "applied": applied,
@@ -2587,7 +2597,11 @@ impl SrsCore {
                 "frozen": x.get::<_, i64>(6).map_err(sql)? != 0,
                 "warning": x.get::<_, Option<String>>(7).map_err(sql)?,
                 "digestMismatch": same_vv_mismatch,
-            }));
+            });
+            if let (Some(m), Some(Value::Object(x))) = (row.as_object_mut(), extras.get(&hex_id(&dev))) {
+                m.extend(x.clone());
+            }
+            devices.push(row);
         }
         let pending: i64 = r
             .query_row("SELECT COUNT(*) FROM sync2_pending WHERE profile_uid = srs_id(?1)", [profile], |x| x.get(0))
@@ -2613,6 +2627,7 @@ impl SrsCore {
             "pending": pending,
             "unpublished": (local.next_seq - 1) as i64 - locations.iter().filter_map(|l| l["uploaded"].as_i64()).min().unwrap_or(0),
             "devices": devices,
+            "selfInfo": self_info,
             "locations": locations,
         }))
     }

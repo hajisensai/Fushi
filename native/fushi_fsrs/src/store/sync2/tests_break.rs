@@ -27,6 +27,7 @@ fn forged_head(collection: Id, protocol: u32, min_reader: u32) -> Vec<u8> {
         digest: String::new(),
         at_ms: T0,
         name: "future".into(),
+        ext: None,
     }
     .encode(&key)
 }

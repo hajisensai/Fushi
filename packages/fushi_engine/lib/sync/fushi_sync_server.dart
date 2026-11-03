@@ -497,6 +497,10 @@ class FushiSyncServer {
   /// 一轮本机同步。host 经本机文件系统写，不走这里，所以不会自己触发自己。
   void Function(String relativePath)? onClientWrite;
 
+  /// 同 [onClientWrite]，只在写入（PUT）成功时回调，并带上这次请求鉴权用的口令（per-peer token；共享 token / 没有
+  /// 时为 null）。host 据此认出是哪个已配对对端写的（复习同步：没自报名字的设备用对端名补全，devices.rs）。
+  void Function(String relativePath, String? peerToken)? onClientUpload;
+
   /// 复习同步的「有新段」通知（`GET /api/srs/changes` 长轮询，srs_change_feed.dart）。对端写进 `fushi-srs/`
   /// 时这里自己 bump；host 自己的复习数据发布到本机目录后由 app 调 [notifySrsChanged]。
   final SrsChangeFeed srsChanges = SrsChangeFeed();
@@ -1095,6 +1099,7 @@ class FushiSyncServer {
           reqPath,
           await _serializeDavWrite(fsPath, () => _handlePut(request, fsPath)),
           published: true,
+          authHeader: request.headers['authorization'],
         );
       case 'MKCOL':
         return _serializeDavWrite(fsPath, () => _handleMkcol(fsPath));
@@ -1125,6 +1130,7 @@ class FushiSyncServer {
     String reqPath,
     shelf.Response response, {
     bool published = false,
+    String? authHeader,
   }) {
     if (published &&
         response.statusCode >= 200 &&
@@ -1141,6 +1147,23 @@ class FushiSyncServer {
         cb(reqPath.startsWith('/') ? reqPath.substring(1) : reqPath);
       } catch (e, stack) {
         engineLog.log('FushiSyncServer.onClientWrite', e, stack);
+      }
+    }
+    final void Function(String, String?)? upload = onClientUpload;
+    if (published &&
+        upload != null &&
+        response.statusCode >= 200 &&
+        response.statusCode < 300) {
+      final String? password = authHeader == null
+          ? null
+          : _basicPassword(authHeader);
+      try {
+        upload(
+          reqPath.startsWith('/') ? reqPath.substring(1) : reqPath,
+          password == null || password == _token ? null : password,
+        );
+      } catch (e, stack) {
+        engineLog.log('FushiSyncServer.onClientUpload', e, stack);
       }
     }
     return response;

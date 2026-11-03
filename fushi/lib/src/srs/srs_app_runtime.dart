@@ -299,6 +299,25 @@ class SrsAppRuntime {
   }
 
   StreamSubscription<String>? _hostWrites;
+  StreamSubscription<({String path, String peerName})>? _hostUploads;
+
+  /// 本进程里已交给内核的补充名（设备 → 名字），每个段一次 PUT，不必每次都过 FFI。
+  final Map<String, String> _hintedDevices = <String, String>{};
+
+  /// 已配对对端直接写了某台设备自己的段：用对端名给这台设备补名字（老版本没有自报名字时同步页 / 冲突中心显示它）。
+  void _onHostClientUpload(({String path, String peerName}) u) {
+    final String? device = srsHostUploadedSegmentDevice(u.path);
+    if (device == null || _hintedDevices[device] == u.peerName) return;
+    _hintedDevices[device] = u.peerName;
+    unawaited(() async {
+      try {
+        await (await _readStore())?.sync2DeviceHint(device, u.peerName);
+      } catch (e, stack) {
+        _hintedDevices.remove(device);
+        ErrorLogService.instance.log('SrsAppRuntime.deviceHint', e, stack);
+      }
+    }());
+  }
 
   /// 已配对设备往本机 host 的 SRS 目录写了文件（只看 SRS 命名空间，书 / 视频等同步不触发）。
   void _onHostClientWrite(String relativePath) {
@@ -336,6 +355,9 @@ class SrsAppRuntime {
     _hostWrites = app.syncServerController.clientSyncWrites.listen(
       _onHostClientWrite,
     );
+    _hostUploads = app.syncServerController.clientUploads.listen(
+      _onHostClientUpload,
+    );
     interconnectWatch.start();
     // 旧版定时备份已由同步 v2 的时间线 / 归档 / 手动导出取代：本机旧备份文件（仍可经「导入」恢复）从升级后
     // 第一次看到起留 30 天再清（起算时刻持久化在目录里的标记文件，见 srs_legacy_backup_cleanup.dart）。
@@ -358,6 +380,8 @@ class SrsAppRuntime {
     app.removeDatabaseCloseQuiescer(_quiesceSync);
     unawaited(_hostWrites?.cancel());
     _hostWrites = null;
+    unawaited(_hostUploads?.cancel());
+    _hostUploads = null;
     interconnectWatch.stop();
     localPush.dispose();
     sync.dispose();
