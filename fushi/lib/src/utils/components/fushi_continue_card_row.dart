@@ -233,9 +233,9 @@ class FushiContinueCardRow extends StatelessWidget {
                 minHeight: height + extend * 2,
                 maxHeight: height + extend * 2,
                 child: SectionSwipeCascade(
-                  child: HorizontalDragScrollable(
-                    child: rows == 1
-                        ? ListView.separated(
+                  child: rows == 1
+                      ? HorizontalDragScrollable(
+                          child: ListView.separated(
                             scrollDirection: Axis.horizontal,
                             physics: desktopAwareScrollPhysics(),
                             padding: padding,
@@ -243,8 +243,10 @@ class FushiContinueCardRow extends StatelessWidget {
                             separatorBuilder: (BuildContext _, int __) =>
                                 SizedBox(width: gap),
                             itemBuilder: (BuildContext _, int i) => card(i),
-                          )
-                        : GridView.builder(
+                          ),
+                        )
+                      : HorizontalDragScrollable(
+                          child: GridView.builder(
                             scrollDirection: Axis.horizontal,
                             physics: desktopAwareScrollPhysics(),
                             padding: padding,
@@ -258,7 +260,7 @@ class FushiContinueCardRow extends StatelessWidget {
                                 ),
                             itemBuilder: (BuildContext _, int i) => card(i),
                           ),
-                  ),
+                        ),
                 ),
               ),
             );
