@@ -35,6 +35,7 @@ import 'package:path/path.dart' as p;
 import 'helpers/generate_test_image.dart';
 import 'helpers/library_fixture.dart';
 import 'helpers/observe_capture.dart';
+import 'helpers/page_curl_probe.dart';
 import 'support/test_app_launcher.dart';
 import 'test_helpers.dart';
 
@@ -191,27 +192,37 @@ Future<Map<String, Object?>> _drag(
   required double x0,
   required double y,
   required double dx,
+  double dy = 0,
   required int steps,
   required int stepMs,
   required int holdMs,
+  String? probe,
+  Uint8List? baseline,
+  bool returnBeforeUp = false,
 }) async {
-  String ev(String type, double x) =>
-      '''
+  String ev(String type, double x, [double? atY]) {
+    final double yy = atY ?? y;
+    return '''
     (function () {
-      var t = document.elementFromPoint($x, $y) || document.body;
+      var t = document.elementFromPoint($x, $yy) || document.body;
       t.dispatchEvent(new PointerEvent('$type', {
         bubbles: true, cancelable: true, composed: true, pointerId: 7,
         pointerType: 'touch', isPrimary: true, button: 0,
-        buttons: ${type == 'pointerup' ? 0 : 1}, clientX: $x, clientY: $y
+        buttons: ${type == 'pointerup' ? 0 : 1}, clientX: $x, clientY: $yy
       }));
       return 'ok';
     })();
   ''';
+  }
+
   await _evalRaw(tester, ev('pointerdown', x0));
   await _pumpFor(tester, Duration(milliseconds: stepMs));
   bool sawVisible = false;
   for (int i = 1; i <= steps; i++) {
-    await _evalRaw(tester, ev('pointermove', x0 + dx * i / steps));
+    await _evalRaw(
+      tester,
+      ev('pointermove', x0 + dx * i / steps, y + dy * i / steps),
+    );
     await _pumpFor(tester, Duration(milliseconds: stepMs));
     final PageCurlController? c = _curl();
     if (c != null && c.visible) sawVisible = true;
@@ -223,8 +234,23 @@ Future<Map<String, Object?>> _drag(
     'pointX': c?.geometry.point.dx.round(),
     'mirror': c?.geometry.mirror,
   };
-  await _evalRaw(tester, ev('pointerup', x0 + dx));
-  return <String, Object?>{'sawVisible': sawVisible, 'held': held};
+  Map<String, Object?>? shading;
+  if (probe != null && c != null && c.visible) {
+    shading = await probePageCurlShading(tester, c, probe, baseline: baseline);
+  }
+  if (returnBeforeUp) {
+    // 手指拖回起点再松手：回卷，页不变。
+    await _evalRaw(tester, ev('pointermove', x0, y));
+    await _pumpFor(tester, Duration(milliseconds: stepMs));
+    await _evalRaw(tester, ev('pointerup', x0, y));
+  } else {
+    await _evalRaw(tester, ev('pointerup', x0 + dx, y + dy));
+  }
+  return <String, Object?>{
+    'sawVisible': sawVisible,
+    'held': held,
+    'shading': ?shading,
+  };
 }
 
 Future<void> _runDirection(
@@ -376,6 +402,51 @@ Future<void> _runDirection(
     final double fwd = direction == 'rtl' ? 1 : -1;
     final double fwdStart = direction == 'rtl' ? w * 0.1 : w * 0.9;
     final double backStart = direction == 'rtl' ? w * 0.9 : w * 0.1;
+
+    // 3a. 斜拖停在半途：纸面只有页图（黑边不卷），纸背不透字。拖回起点松手回卷。
+    final Uint8List? before = await capturePageCurlBaseline(tester);
+    final Map<String, Object?> diag = await _drag(
+      tester,
+      x0: fwdStart,
+      y: h * 0.85,
+      dx: fwd * w * 0.45,
+      dy: -h * 0.3,
+      steps: 12,
+      stepMs: 32,
+      holdMs: 200,
+      probe: 'manga-curl-shading-$direction',
+      baseline: before,
+      returnBeforeUp: true,
+    );
+    final Map<String, Object?> vDiag = await _settled(tester);
+    r.evidence['$direction/shading'] = diag['shading'];
+    final Map<String, Object?> shading =
+        (diag['shading'] as Map<String, Object?>?) ?? <String, Object?>{};
+    final List<Object?> paperBox =
+        (shading['paper'] as List<Object?>?) ?? <Object?>[];
+    final List<Object?> overlayBox =
+        (shading['overlay'] as List<Object?>?) ?? <Object?>[];
+    r.check(
+      paperBox.length == 4 &&
+          overlayBox.length == 4 &&
+          ((paperBox[2]! as num) < (overlayBox[2]! as num) - 4 ||
+              (paperBox[3]! as num) < (overlayBox[3]! as num) - 4),
+      '$direction: paper narrowed to the page image ($shading)',
+    );
+    r.check(
+      ((shading['backSamples'] as int?) ?? 0) >= 30 &&
+          ((shading['backSpread'] as int?) ?? 999) <= 3,
+      '$direction: page back is plain paper, no bleed-through ($shading)',
+    );
+    r.check(
+      ((shading['outsideSamples'] as int?) ?? 0) >= 30 &&
+          shading['outsideLight'] == 0,
+      '$direction: nothing paper-coloured outside the page image ($shading)',
+    );
+    r.check(
+      _page(vDiag) == _page(v4) && _clean(vDiag),
+      '$direction: probe drag curled back ($v4 -> $vDiag)',
+    );
     final Map<String, Object?> long = await _drag(
       tester,
       x0: fwdStart,

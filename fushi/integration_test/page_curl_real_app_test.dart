@@ -14,6 +14,7 @@ import 'package:integration_test/integration_test.dart';
 import 'helpers/library_fixture.dart'
     show openBookViaProductionPath, readyAppModel, seedReaderBook;
 import 'helpers/observe_capture.dart';
+import 'helpers/page_curl_probe.dart';
 import 'support/itest_startup_guard.dart';
 import 'support/test_app_launcher.dart';
 import 'test_helpers.dart';
@@ -408,6 +409,38 @@ Future<void> _dragChecks(
   final double fwd = leftIsForward ? -1 : 1;
   final double fwdStart = leftIsForward ? w * 0.9 : w * 0.1;
   final double backStart = leftIsForward ? w * 0.1 : w * 0.9;
+
+  // 斜拖停在半途（用户视频里的卷法）：纸背不透出镜像正文；拖回起点松手回卷。
+  final Map<String, dynamic> pd0 = await _settled(tester);
+  await _touch('touchStart', fwdStart, h * 0.85);
+  await _pumpFor(tester, const Duration(milliseconds: 32));
+  for (int i = 1; i <= 12; i++) {
+    await _touch(
+      'touchMove',
+      fwdStart + fwd * w * 0.45 * i / 12,
+      h * 0.85 - h * 0.3 * i / 12,
+    );
+    await _pumpFor(tester, const Duration(milliseconds: 32));
+  }
+  await _pumpFor(tester, const Duration(milliseconds: 200));
+  final PageCurlController? held = _curl();
+  final Map<String, Object?> shading = held != null && held.visible
+      ? await probePageCurlShading(tester, held, 'curl-shading-$wm')
+      : <String, Object?>{'error': 'curl not visible'};
+  await _touch('touchMove', fwdStart, h * 0.85);
+  await _pumpFor(tester, const Duration(milliseconds: 32));
+  await _touch('touchEnd', fwdStart, h * 0.85);
+  final Map<String, dynamic> pd1 = await _settled(tester);
+  r.evidence['$wm/shading'] = shading;
+  r.check(
+    ((shading['backSamples'] as int?) ?? 0) >= 30 &&
+        ((shading['backSpread'] as int?) ?? 999) <= 3,
+    '$wm: page back is plain paper, no bleed-through ($shading)',
+  );
+  r.check(
+    pd1['pagePos'] == pd0['pagePos'] && _clean(pd1),
+    '$wm: probe drag curled back ($pd0 -> $pd1)',
+  );
 
   final Map<String, dynamic> p0 = await _settled(tester);
   final Map<String, dynamic> long = await _drag(

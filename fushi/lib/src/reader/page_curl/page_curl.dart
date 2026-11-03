@@ -49,6 +49,11 @@ abstract interface class PageCurlHost {
   /// 截当前视口（WebView 截图后解码）。失败返回 null。
   Future<ui.Image?> capturePage();
 
+  /// 此刻正文显示的页面在覆盖层里的矩形（屏幕坐标，逻辑像素）。只有这块是「纸」：
+  /// 卷起来的只有它，矩形外（漫画的黑边）不卷、直接露出下面。null = 整个视口都是
+  /// 纸（小说）。往回翻时在预览到上一页之后调用，量的是上一页。
+  Future<Rect?> paperRect();
+
   /// 把正文**瞬时**落到相邻页，只做预览、不记翻页账。返回 false = 那个方向没有
   /// 相邻页（章首 / 章末），本次不卷页。
   Future<bool> previewNeighbour({required bool forward});
@@ -136,13 +141,15 @@ Future<ui.Image?> decodePageCurlSnapshot(Uint8List? bytes) async {
   }
 }
 
-/// 卷页的几何快照（全部在「未镜像空间」：书脊在左，拎起的角在右）。
+/// 卷页的几何快照（[corner] / [point] 在纸面局部的「未镜像空间」：书脊在左，拎起的角
+/// 在右）。
 @immutable
 class PageCurlGeometry {
   const PageCurlGeometry({
     required this.corner,
     required this.point,
     required this.mirror,
+    required this.paper,
   });
 
   /// 被拎起的角（纸面上的原位置）。
@@ -151,11 +158,19 @@ class PageCurlGeometry {
   /// 那个角当前所在的位置。等于 [corner] = 纸面平铺；在书脊另一侧一整页宽 = 完全翻过。
   final Offset point;
 
-  /// 从右往左读：整套几何水平镜像。
+  /// 从右往左读：整套几何水平镜像（在纸面矩形内镜像）。
   final bool mirror;
+
+  /// 纸面在覆盖层里的矩形（屏幕坐标）。[corner] / [point] 是相对它的局部坐标：
+  /// 原点在书脊那一侧的上角，x 朝拎起的角。
+  final Rect paper;
 }
 
-/// 卷页圆柱半径：视口短边的 12%。
+/// 纸背相对纸色的明度。纸背不透出正文（用户 2026-11-03：透字看着像穿帮），只靠
+/// 略暗的底色 + 卷边阴影和正面区分开。
+const double kPageCurlBackTone = 0.95;
+
+/// 卷页圆柱半径：纸面短边的 12%。
 double pageCurlRadiusFor(Size size) => size.shortestSide * 0.12;
 
 /// 书脊约束：纸面不能被拉长，拎起的角离书脊（同一高度上的 x = 0）不超过一整页宽。
@@ -282,13 +297,29 @@ class PageCurlController extends ChangeNotifier {
 
   _CurlPhase _phase = _CurlPhase.idle;
   int _generation = 0;
-  Size _size = Size.zero;
+
+  /// 覆盖层（视口）尺寸。
+  Size _view = Size.zero;
+
+  /// 纸面在覆盖层里的矩形（屏幕坐标）。会话开始时是整个视口，准备阶段由
+  /// [PageCurlHost.paperRect] 收窄到真正的页面（漫画留黑边时只卷页图本身）。
+  Rect _paper = Rect.zero;
   bool _forward = true;
   bool _mirror = false;
+
+  /// 以下几何量都在「纸面局部、未镜像」空间：原点是纸面左上角（镜像时是右上角），
+  /// 书脊在 x = 0，拎起的角在 x = 纸面宽。
   double _y0 = 0;
-  Offset _start = Offset.zero;
-  Offset _finger = Offset.zero;
+
+  /// 按下点 / 手指当前位置（屏幕坐标）。纸面矩形在准备阶段才确定，所以存屏幕坐标、
+  /// 用时再换算。
+  Offset _startScreen = Offset.zero;
+  Offset _fingerScreen = Offset.zero;
   Offset _point = Offset.zero;
+
+  Size get _size => _paper.size;
+  Offset get _start => _toPaper(_startScreen);
+  Offset get _finger => _toPaper(_fingerScreen);
   ui.Image? _sheet;
   ui.Image? _base;
   bool _visible = false;
@@ -312,6 +343,7 @@ class PageCurlController extends ChangeNotifier {
     corner: Offset(_size.width, _y0),
     point: _point,
     mirror: _mirror,
+    paper: _paper,
   );
 
   /// 开始一次手指拖动。[position] 为按下点（覆盖层坐标，逻辑像素），[mirror] 为从右
@@ -366,13 +398,9 @@ class PageCurlController extends ChangeNotifier {
     _beginSession(size: drag.size, forward: drag.forward, mirror: drag.mirror);
     _sessionDrag = drag;
     drag._role = _DragRole.session;
-    final Offset p = _unmirror(drag.start);
-    _start = p;
-    _finger = _unmirror(drag._end?.position ?? drag.latest);
-    _y0 = p.dy.clamp(0.0, drag.size.height);
-    _point = drag.forward
-        ? Offset(drag.size.width, _y0)
-        : pageCurlTurnedPoint(drag.size, _y0);
+    _startScreen = drag.start;
+    _fingerScreen = drag._end?.position ?? drag.latest;
+    _anchorToPaper();
     unawaited(_prepare(_generation));
   }
 
@@ -386,7 +414,7 @@ class PageCurlController extends ChangeNotifier {
     if (_phase != _CurlPhase.preparing && _phase != _CurlPhase.dragging) {
       return;
     }
-    _finger = _unmirror(position);
+    _fingerScreen = position;
     if (_phase == _CurlPhase.dragging) _followFinger();
   }
 
@@ -404,7 +432,7 @@ class PageCurlController extends ChangeNotifier {
         return;
       case _DragRole.session:
         if (!_owns(drag)) return;
-        _finger = _unmirror(position);
+        _fingerScreen = position;
         // 准备中：[_prepare] 就绪后读 drag._end 接着松手。
         if (_phase != _CurlPhase.dragging) return;
         drag._role = _DragRole.done;
@@ -485,10 +513,10 @@ class PageCurlController extends ChangeNotifier {
     }
     _completeTurn();
     _beginSession(size: size, forward: forward, mirror: mirror);
-    _y0 = size.height * 0.88;
-    _start = Offset(size.width, _y0);
-    _finger = _start;
-    _point = forward ? Offset(size.width, _y0) : pageCurlTurnedPoint(size, _y0);
+    // 点按 / 按键没有手指：起止点重合，卷曲完全由落定动画驱动。
+    _startScreen = Offset(size.width, size.height);
+    _fingerScreen = _startScreen;
+    _anchorToPaper();
     final Completer<void> committed = Completer<void>();
     _turnCommitted = committed;
     unawaited(_prepare(_generation));
@@ -527,14 +555,44 @@ class PageCurlController extends ChangeNotifier {
     _generation++;
     _phase = _CurlPhase.preparing;
     _sessionDrag = null;
-    _size = size;
+    _view = size;
+    _paper = Offset.zero & size;
     _forward = forward;
     _mirror = mirror;
     _jumpToEnd = false;
     _settled = Completer<void>();
   }
 
-  Offset _unmirror(Offset p) => _mirror ? Offset(_size.width - p.dx, p.dy) : p;
+  /// 屏幕坐标 → 纸面局部、未镜像坐标。
+  Offset _toPaper(Offset p) {
+    final double x = p.dx - _paper.left;
+    return Offset(_mirror ? _paper.width - x : x, p.dy - _paper.top);
+  }
+
+  /// 按当前纸面矩形定卷曲的起点：拖动从按下点的高度拎起，点按 / 按键从靠下的
+  /// 角拎起；角点回到「平铺」（前进）或「完全翻过」（后退）。
+  void _anchorToPaper() {
+    _y0 = _sessionDrag == null
+        ? _size.height * 0.88
+        : _start.dy.clamp(0.0, _size.height);
+    _point = _forward
+        ? Offset(_size.width, _y0)
+        : pageCurlTurnedPoint(_size, _y0);
+  }
+
+  /// 收窄纸面到宿主报告的页面矩形（与视口取交集；拿不到 / 太小就保持整个视口）。
+  Future<void> _resolvePaper() async {
+    Rect? rect;
+    try {
+      rect = await host.paperRect();
+    } catch (e, stack) {
+      ErrorLogService.instance.log('PageCurl.paperRect', e, stack);
+    }
+    final Rect view = Offset.zero & _view;
+    final Rect paper = rect == null ? view : rect.intersect(view);
+    _paper = paper.width >= 8 && paper.height >= 8 ? paper : view;
+    _anchorToPaper();
+  }
 
   /// 沿翻页方向拖过的距离（未镜像空间里前进 = 往左拖）。
   double get _progressPx =>
@@ -564,6 +622,11 @@ class PageCurlController extends ChangeNotifier {
         }
         if (sheet == null) {
           await _abort(generation);
+          return;
+        }
+        await _resolvePaper();
+        if (stale()) {
+          sheet.dispose();
           return;
         }
         _sheet = sheet;
@@ -600,6 +663,9 @@ class PageCurlController extends ChangeNotifier {
         }
         if (stale()) return;
         await host.waitForPaint();
+        if (stale()) return;
+        // 卷的是上一页：纸面矩形按上一页量。
+        await _resolvePaper();
         if (stale()) return;
         final ui.Image? sheet = await host.capturePage();
         if (stale()) {
@@ -919,21 +985,26 @@ class _PageCurlPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    final Rect paper = geometry.paper;
     shader
       ..setFloat(0, size.width)
       ..setFloat(1, size.height)
-      ..setFloat(2, geometry.corner.dx)
-      ..setFloat(3, geometry.corner.dy)
-      ..setFloat(4, geometry.point.dx)
-      ..setFloat(5, geometry.point.dy)
-      ..setFloat(6, pageCurlRadiusFor(size))
-      ..setFloat(7, geometry.mirror ? 1 : 0)
-      ..setFloat(8, base != null ? 1 : 0)
-      ..setFloat(9, paperColor.r)
-      ..setFloat(10, paperColor.g)
-      ..setFloat(11, paperColor.b)
-      // 背面透出正文的程度（实体纸背只隐约透字）。
-      ..setFloat(12, 0.07)
+      ..setFloat(2, paper.left)
+      ..setFloat(3, paper.top)
+      ..setFloat(4, paper.width)
+      ..setFloat(5, paper.height)
+      ..setFloat(6, geometry.corner.dx)
+      ..setFloat(7, geometry.corner.dy)
+      ..setFloat(8, geometry.point.dx)
+      ..setFloat(9, geometry.point.dy)
+      ..setFloat(10, pageCurlRadiusFor(paper.size))
+      ..setFloat(11, geometry.mirror ? 1 : 0)
+      ..setFloat(12, base != null ? 1 : 0)
+      ..setFloat(13, paperColor.r)
+      ..setFloat(14, paperColor.g)
+      ..setFloat(15, paperColor.b)
+      // 纸背的明度（相对纸色）：背面不透字，只比正面略暗，翻起的那片才分得出来。
+      ..setFloat(16, kPageCurlBackTone)
       ..setImageSampler(0, sheet)
       ..setImageSampler(1, base ?? sheet);
     canvas.drawRect(Offset.zero & size, Paint()..shader = shader);
