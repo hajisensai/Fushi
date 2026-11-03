@@ -693,6 +693,26 @@ void main() {
       (await db.getMediaCollectionById(collection.id))!.subtitleReleaseGroup,
       subtitleVersionKeyOf(netflix),
     );
+    // 没静默退回「自动」（自动会挑 ASS）：成员行用的是点名的 Netflix 版本。
+    // 成员行在版本列表下方的惰性 SliverList 里：两个版本 + 「自动」行把它推出
+    // 800×600 视口，不滚过去它根本不会被 build。
+    final Finder plannedNetflix = find.text(
+      t.video_subtitle_collection_episode_planned(
+        count: 1,
+        version: 'Netflix · SRT · 日本語',
+      ),
+    );
+    await tester.scrollUntilVisible(
+      plannedNetflix,
+      200,
+      scrollable: find
+          .descendant(
+            of: find.byType(CustomScrollView),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    );
+    expect(plannedNetflix, findsOneWidget);
   });
 
   testWidgets('聚合版本列表：点版本行写合集列，点「自动」清空', (WidgetTester tester) async {

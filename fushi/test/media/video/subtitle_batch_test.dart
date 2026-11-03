@@ -8,6 +8,7 @@ import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_batch.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_content_language.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_version_groups.dart';
+import 'package:fushi/src/media/video/subtitle/subtitle_version_language_probe.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 
 /// 来源无关的合集批量编排：判据委托 `chooseSubtitleForEpisode`、下载走 registry、
@@ -403,6 +404,26 @@ void main() {
       );
       // 没有探测下载：只下了两集实际要用的 Netflix。
       expect(provider.downloaded, <String>[netflix(1), netflix(2)]);
+    });
+
+    test('代表文件下载失败（抛错 / 空字节）不记为已探，下到但判不出才记 null', () async {
+      final Map<String, SubtitleContentLanguage?> probed =
+          await probeUnlabeledVersionLanguages<String>(
+            files: <String>['throws', 'empty', 'opaque'],
+            targetEpisodes: <int>[1],
+            versionOf: (String f) => f,
+            declaredLanguageOf: (String _) => '',
+            episodeOf: (String _) => 1,
+            fetch: (String f) async {
+              if (f == 'throws') throw const SocketException('reset');
+              if (f == 'empty') return Uint8List(0);
+              return Uint8List.fromList(
+                utf8.encode('1\n00:00:01,000 --> 00:00:02,000\n123\n'),
+              );
+            },
+          );
+      // 暂时性下载失败留给下一次探测重试；判不出是结论，不再重探。
+      expect(probed, <String, SubtitleContentLanguage?>{'opaque': null});
     });
   });
 

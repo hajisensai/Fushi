@@ -27,11 +27,13 @@ import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 /// 结果没有影响，不值得为它下载。批量编排、合集面板、番剧下载三处共用这一个判据。
 ///
 /// [fetch] 由调用方提供并**自行缓存**：探过的文件若最终被选中，不应再下第二次。
-/// 超过 [maxProbeBytes] 的文件不探（[sizeOf] 已知时下载前就跳过）。单个版本探测
-/// 失败（网络 / 解码 / 正文判不出）只让那个版本保持未知，不影响其余。
+/// 超过 [maxProbeBytes] 的文件不探（[sizeOf] 已知时下载前就跳过）。单个版本失败
+/// 不影响其余。
 ///
-/// 返回 版本键 → 正文语言；**探过但判不出的版本也在里面（值为 null）**，调用方据此
-/// 区分「探过、结论未知」与「还没探」，不再重探。[onProbed] 每探完一个版本回调一次
+/// 返回 版本键 → 正文语言；**键在 = 已有结论**：下到了正文但判不出 / 解不开 / 超限
+/// 的版本值为 null，调用方据此不再重探。**下载失败（抛错 / 空字节）不入表**——那是
+/// 暂时性失败（调用方的下载缓存同样会把失败的下载移出），留给下一次探测重试；若记成
+/// null，一次网络抖动就会让该版本在本面板 / 本批里永远按「语言未知」排名。[onProbed] 每探完一个版本回调一次
 /// （面板逐个回填）；[isCancelled] 返回 true 时停止后续探测。
 Future<Map<String, SubtitleContentLanguage?>>
 probeUnlabeledVersionLanguages<T>({
@@ -59,38 +61,52 @@ probeUnlabeledVersionLanguages<T>({
       <String, SubtitleContentLanguage?>{};
   for (final MapEntry<String, T> entry in representative.entries) {
     if (isCancelled?.call() ?? false) break;
-    final SubtitleContentLanguage? detected = await _probeOne(
-      entry.value,
-      fetch: fetch,
-      sizeOf: sizeOf,
-      maxProbeBytes: maxProbeBytes,
-    );
+    final ({bool concluded, SubtitleContentLanguage? language}) result =
+        await _probeOne(
+          entry.value,
+          fetch: fetch,
+          sizeOf: sizeOf,
+          maxProbeBytes: maxProbeBytes,
+        );
     if (isCancelled?.call() ?? false) break;
-    out[entry.key] = detected;
-    onProbed?.call(entry.key, detected);
+    if (!result.concluded) continue; // 下载失败：不记为已探，下次重试。
+    out[entry.key] = result.language;
+    onProbed?.call(entry.key, result.language);
   }
   return out;
 }
 
-Future<SubtitleContentLanguage?> _probeOne<T>(
+/// 探一个代表文件。`concluded` = false 表示下载失败（暂时性，不该记为已探）；
+/// 其余情况（超限 / 调用方不给字节 / 解不开 / 判不出 / 判出）都是结论。
+Future<({bool concluded, SubtitleContentLanguage? language})> _probeOne<T>(
   T file, {
   required Future<Uint8List?> Function(T) fetch,
   required int? Function(T)? sizeOf,
   required int maxProbeBytes,
 }) async {
+  const ({bool concluded, SubtitleContentLanguage? language}) unknown = (
+    concluded: true,
+    language: null,
+  );
   final int? size = sizeOf?.call(file);
-  if (size != null && size > maxProbeBytes) return null;
+  if (size != null && size > maxProbeBytes) return unknown;
+  final Uint8List? bytes;
   try {
-    final Uint8List? bytes = await fetch(file);
-    if (bytes == null || bytes.isEmpty || bytes.length > maxProbeBytes) {
-      return null;
-    }
+    bytes = await fetch(file);
+  } on Object {
+    return (concluded: false, language: null);
+  }
+  if (bytes == null || bytes.length > maxProbeBytes) return unknown;
+  if (bytes.isEmpty) return (concluded: false, language: null);
+  try {
     final SubtitleContentLanguage detected = detectSubtitleContentLanguage(
       await decodeTextBytes(bytes),
     );
-    return detected == SubtitleContentLanguage.unknown ? null : detected;
+    return detected == SubtitleContentLanguage.unknown
+        ? unknown
+        : (concluded: true, language: detected);
   } on Object {
-    return null; // 该版本保持未知，其余照探。
+    return unknown; // 下到了但解不开：等同判不出，不再重探。
   }
 }
 

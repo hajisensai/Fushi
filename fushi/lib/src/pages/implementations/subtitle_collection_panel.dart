@@ -886,6 +886,8 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
       _searching = true;
       _notice = null;
     });
+    // 列里的旧版本键迁成的新键（见下方 resolvePinnedSubtitleVersion）；搜索收尾后写回。
+    String? migratedPin;
     try {
       // 规范身份优先（BUG-2008），构造见 [_searchIdentity]。
       final ProviderBatchResult<VideoSubtitleCandidate> result = await registry
@@ -908,7 +910,6 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
       final ExternalProviderFailure? failure = sources.isEmpty
           ? primarySubtitleFailure(result.failures)
           : null;
-      String? migratedPin;
       setState(() {
         _searched = true;
         _sources = sources;
@@ -938,7 +939,6 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
         _statusByUid.clear();
         _rederive();
       });
-      if (migratedPin != null) unawaited(_persistMigratedPin(migratedPin!));
       unawaited(_probeVersionLanguages());
       if (failure != null) {
         _setNotice(
@@ -958,19 +958,14 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
         setState(() => _searching = false);
       }
     }
-  }
-
-  /// 旧版本键迁成新键后改写合集列（一次性：改写后列值直接命中新键，不再走迁移）。
-  Future<void> _persistMigratedPin(String versionKey) async {
-    try {
+    // 旧键迁成新键后改写合集列（一次性：改写后列值直接命中新键，不再走迁移）。
+    // 放在搜索的 try 之外：写库失败不是「搜索失败」，不该冒充成搜索失败的提示，
+    // 也不吞——与点版本行写列（[_selectVersion]）一样向调用方传播。
+    final String? pinToPersist = migratedPin;
+    if (pinToPersist != null) {
       await widget.database.updateMediaCollectionSubtitleReleaseGroup(
         widget.collection.id,
-        versionKey,
-      );
-    } on Object catch (error) {
-      ErrorLogService.instance.logDiagnostic(
-        'SubtitleCollectionPanel.persistMigratedPin',
-        error,
+        pinToPersist,
       );
     }
   }
