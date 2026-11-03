@@ -160,15 +160,27 @@ class SubtitleVersionGroup {
 
 /// 候选所属「版本」的键（同来源合集 + 同容器 + 同语言 + 同发布组 + CC/机翻标记）。
 /// 版本卡聚类与合集批量下载的整批版本一致性（`preferConsistentVersion`）共用。
-String subtitleVersionKeyOf(VideoSubtitleCandidate candidate) => <String>[
-  candidate.providerId,
-  candidate.collectionId ?? '',
-  subtitleFormatOf(candidate.fileName),
-  candidate.language,
-  subtitleVersionTag(candidate.fileName) ?? '',
-  candidate.hearingImpaired ? 'hi' : '',
-  candidate.aiTranslated ? 'ai' : '',
-].join('\u001f');
+String subtitleVersionKeyOf(VideoSubtitleCandidate candidate) =>
+    _versionKeyOf(candidate, subtitleVersionTag(candidate.fileName));
+
+/// BUG-3993 之前的版本键：名字段只认发布组标签（[subtitleReleaseGroupTag]），
+/// 没有组名的平台抽轨（Netflix / Amazon）末段是空串。
+///
+/// 这个键曾原样写进 `MediaCollections.subtitleReleaseGroup`（合集点名的版本）。
+/// **只用于把旧列值一次性改写成 [subtitleVersionKeyOf]**，不得用于新的聚类或比较。
+String legacySubtitleVersionKeyOf(VideoSubtitleCandidate candidate) =>
+    _versionKeyOf(candidate, subtitleReleaseGroupTag(candidate.fileName));
+
+String _versionKeyOf(VideoSubtitleCandidate candidate, String? nameTag) =>
+    <String>[
+      candidate.providerId,
+      candidate.collectionId ?? '',
+      subtitleFormatOf(candidate.fileName),
+      candidate.language,
+      nameTag ?? '',
+      candidate.hearingImpaired ? 'hi' : '',
+      candidate.aiTranslated ? 'ai' : '',
+    ].join('\u001f');
 
 int _compareMembers(VideoSubtitleCandidate a, VideoSubtitleCandidate b) {
   final int byEpisode = (a.episode ?? 1 << 30).compareTo(b.episode ?? 1 << 30);

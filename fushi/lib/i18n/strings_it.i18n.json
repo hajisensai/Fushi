@@ -9585,7 +9585,6 @@
   "video_jimaku_downloaded": "Sottotitoli scaricati e applicati",
   "video_jimaku_enabled_hint": "Disattivato significa che Jimaku viene saltato anche quando una chiave API è salvata.",
   "video_jimaku_episode": "Episodio (opzionale)",
-  "video_jimaku_episode_available": "$count sottotitoli disponibili · $languages",
   "video_jimaku_episode_hint": "Lascia vuoto per elencare tutti",
   "video_jimaku_episode_unavailable": "Nessun sottotitolo trovato per l'episodio $episode",
   "video_jimaku_episode_unlabeled": "Nessun sottotitolo etichettato episodio $episode; $count file senza etichetta potrebbero corrispondere",

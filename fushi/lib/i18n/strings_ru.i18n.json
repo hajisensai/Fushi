@@ -9585,7 +9585,6 @@
   "video_jimaku_downloaded": "Субтитры загружены и применены",
   "video_jimaku_enabled_hint": "Если выключено, Jimaku пропускается, даже если API-ключ сохранён.",
   "video_jimaku_episode": "Эпизод (необязательно)",
-  "video_jimaku_episode_available": "$count субтитров доступно · $languages",
   "video_jimaku_episode_hint": "Оставьте пустым для отображения всех",
   "video_jimaku_episode_unavailable": "Субтитры для эпизода $episode не найдены",
   "video_jimaku_episode_unlabeled": "Нет субтитров с пометкой эпизод $episode; $count файлов без пометки могут подойти",

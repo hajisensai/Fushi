@@ -9585,7 +9585,6 @@
   "video_jimaku_downloaded": "Altyazı indirildi ve uygulandı",
   "video_jimaku_enabled_hint": "Kapalı, bir API anahtarı kaydedilmiş olsa bile Jimaku'nun atlanacağı anlamına gelir.",
   "video_jimaku_episode": "Bölüm (isteğe bağlı)",
-  "video_jimaku_episode_available": "$count altyazı mevcut · $languages",
   "video_jimaku_episode_hint": "Tümünü listelemek için boş bırakın",
   "video_jimaku_episode_unavailable": "$episode bölümü için altyazı bulunamadı",
   "video_jimaku_episode_unlabeled": "$episode bölümü olarak etiketlenmiş altyazı yok; $count etiketsiz dosya yine de eşleşebilir",

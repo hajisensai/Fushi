@@ -19,54 +19,92 @@ import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 /// 批量选字幕前，把**文件名认不出语言**的版本按正文判出语言（BUG-3993）。
 ///
 /// 整批版本排名第一位是语言；文件名不带语言标记（`[shincaps] … - 01.ass`）
-/// 不等于语言未知——正文就在那里。每个未标语言的版本只下一个代表文件（优先
-/// 覆盖 [targetEpisodes] 的那个），解码后 [detectSubtitleContentLanguage]，
-/// 结论投影成粗码（[coarseLanguageCode]）作用于整个版本。
+/// 不等于语言未知——正文就在那里。每个未标语言的版本只下一个代表文件，解码后
+/// [detectSubtitleContentLanguage]，结论作用于整个版本。
+///
+/// 代表文件只从**集号落在 [targetEpisodes] 里**的文件中挑：一集目标都不覆盖的
+/// 版本（别季、剧场版、未编号单文件）永远不会被选给任何目标集，它的语言排名对
+/// 结果没有影响，不值得为它下载。批量编排、合集面板、番剧下载三处共用这一个判据。
 ///
 /// [fetch] 由调用方提供并**自行缓存**：探过的文件若最终被选中，不应再下第二次。
-/// 单个版本探测失败（网络 / 解码 / 正文判不出）只让那个版本保持未知，不影响其余。
-/// 返回 版本键 → 粗语言码（只含判出来的版本）。
-Future<Map<String, String>> probeUnlabeledVersionLanguages<T>({
+/// 超过 [maxProbeBytes] 的文件不探（[sizeOf] 已知时下载前就跳过）。单个版本探测
+/// 失败（网络 / 解码 / 正文判不出）只让那个版本保持未知，不影响其余。
+///
+/// 返回 版本键 → 正文语言；**探过但判不出的版本也在里面（值为 null）**，调用方据此
+/// 区分「探过、结论未知」与「还没探」，不再重探。[onProbed] 每探完一个版本回调一次
+/// （面板逐个回填）；[isCancelled] 返回 true 时停止后续探测。
+Future<Map<String, SubtitleContentLanguage?>>
+probeUnlabeledVersionLanguages<T>({
   required Iterable<T> files,
   required Iterable<int> targetEpisodes,
   required String Function(T) versionOf,
   required String? Function(T) declaredLanguageOf,
   required int? Function(T) episodeOf,
   required Future<Uint8List?> Function(T) fetch,
+  int? Function(T)? sizeOf,
+  int maxProbeBytes = kSubtitleProbeMaxBytes,
+  void Function(String version, SubtitleContentLanguage? language)? onProbed,
+  bool Function()? isCancelled,
 }) async {
   final Set<int> targets = targetEpisodes.toSet();
   final Map<String, T> representative = <String, T>{};
   for (final T file in files) {
     final String? declared = declaredLanguageOf(file);
     if (declared != null && declared.isNotEmpty) continue;
-    final String version = versionOf(file);
-    final T? current = representative[version];
     final int? episode = episodeOf(file);
-    final bool inTargets = episode != null && targets.contains(episode);
-    if (current == null) {
-      representative[version] = file;
-    } else if (inTargets) {
-      final int? currentEpisode = episodeOf(current);
-      if (currentEpisode == null || !targets.contains(currentEpisode)) {
-        representative[version] = file;
-      }
-    }
+    if (episode == null || !targets.contains(episode)) continue;
+    representative.putIfAbsent(versionOf(file), () => file);
   }
-  final Map<String, String> out = <String, String>{};
+  final Map<String, SubtitleContentLanguage?> out =
+      <String, SubtitleContentLanguage?>{};
   for (final MapEntry<String, T> entry in representative.entries) {
-    try {
-      final Uint8List? bytes = await fetch(entry.value);
-      if (bytes == null || bytes.isEmpty) continue;
-      final String? code = coarseLanguageCode(
-        detectSubtitleContentLanguage(await decodeTextBytes(bytes)),
-      );
-      if (code != null) out[entry.key] = code;
-    } on Object {
-      continue; // 该版本保持未知，其余照探。
-    }
+    if (isCancelled?.call() ?? false) break;
+    final SubtitleContentLanguage? detected = await _probeOne(
+      entry.value,
+      fetch: fetch,
+      sizeOf: sizeOf,
+      maxProbeBytes: maxProbeBytes,
+    );
+    if (isCancelled?.call() ?? false) break;
+    out[entry.key] = detected;
+    onProbed?.call(entry.key, detected);
   }
   return out;
 }
+
+Future<SubtitleContentLanguage?> _probeOne<T>(
+  T file, {
+  required Future<Uint8List?> Function(T) fetch,
+  required int? Function(T)? sizeOf,
+  required int maxProbeBytes,
+}) async {
+  final int? size = sizeOf?.call(file);
+  if (size != null && size > maxProbeBytes) return null;
+  try {
+    final Uint8List? bytes = await fetch(file);
+    if (bytes == null || bytes.isEmpty || bytes.length > maxProbeBytes) {
+      return null;
+    }
+    final SubtitleContentLanguage detected = detectSubtitleContentLanguage(
+      await decodeTextBytes(bytes),
+    );
+    return detected == SubtitleContentLanguage.unknown ? null : detected;
+  } on Object {
+    return null; // 该版本保持未知，其余照探。
+  }
+}
+
+/// 探测结果投影成批量排名用的粗码（只含判出来的版本）。
+Map<String, String> coarseVersionLanguages(
+  Map<String, SubtitleContentLanguage?> probed,
+) => <String, String>{
+  for (final MapEntry<String, SubtitleContentLanguage?> e in probed.entries)
+    if (e.value != null && coarseLanguageCode(e.value!) != null)
+      e.key: coarseLanguageCode(e.value!)!,
+};
+
+/// 正文探测的单文件上限：整季包没必要为一个标签下几 MB。
+const int kSubtitleProbeMaxBytes = 2 * 1024 * 1024;
 
 class SubtitleVersionLanguageProbe {
   SubtitleVersionLanguageProbe({
@@ -74,7 +112,7 @@ class SubtitleVersionLanguageProbe {
       VideoSubtitleCandidate candidate,
     )
     download,
-    this.maxProbeBytes = 2 * 1024 * 1024,
+    this.maxProbeBytes = kSubtitleProbeMaxBytes,
   }) : _download = download;
 
   final Future<VideoSubtitleDownload> Function(VideoSubtitleCandidate candidate)

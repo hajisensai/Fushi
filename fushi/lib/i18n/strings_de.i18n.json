@@ -9585,7 +9585,6 @@
   "video_jimaku_downloaded": "Untertitel heruntergeladen und angewendet",
   "video_jimaku_enabled_hint": "Aus bedeutet, dass Jimaku übersprungen wird, auch wenn ein API-Schlüssel gespeichert ist.",
   "video_jimaku_episode": "Folge (optional)",
-  "video_jimaku_episode_available": "$count Untertitel verfügbar · $languages",
   "video_jimaku_episode_hint": "Leer lassen, um alle anzuzeigen",
   "video_jimaku_episode_unavailable": "Kein Untertitel für Episode $episode gefunden",
   "video_jimaku_episode_unlabeled": "Kein Untertitel für Episode $episode gekennzeichnet; $count nicht gekennzeichnete Dateien könnten trotzdem passen",

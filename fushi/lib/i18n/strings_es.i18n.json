@@ -9585,7 +9585,6 @@
   "video_jimaku_downloaded": "Subtítulo descargado y aplicado",
   "video_jimaku_enabled_hint": "Apagado significa que Jimaku se omite incluso cuando se ha guardado una clave API.",
   "video_jimaku_episode": "Episodio (opcional)",
-  "video_jimaku_episode_available": "$count subtítulos disponibles · $languages",
   "video_jimaku_episode_hint": "Deje vacío para listar todos",
   "video_jimaku_episode_unavailable": "No se encontró subtítulo para episodio $episode",
   "video_jimaku_episode_unlabeled": "Sin subtítulo etiquetado para episodio $episode; $count archivos sin etiquetar pueden coincidir",

@@ -172,8 +172,8 @@ List<SubtitleCollectionVersion> rankSubtitleCollectionVersions(
   SubtitleCollectionSource source, {
   required Iterable<int> targetEpisodes,
   String? preferredLanguage,
-  Map<String, SubtitleContentLanguage> probedLanguages =
-      const <String, SubtitleContentLanguage>{},
+  Map<String, SubtitleContentLanguage?> probedLanguages =
+      const <String, SubtitleContentLanguage?>{},
 }) {
   final Set<int> targets = targetEpisodes.toSet();
   String? languageOf(VideoSubtitleCandidate c) {
@@ -216,6 +216,43 @@ List<SubtitleCollectionVersion> rankSubtitleCollectionVersions(
         coveredEpisodes: g.episodes.intersection(targets),
       ),
   ];
+}
+
+/// 合集列 `subtitleReleaseGroup` 里存的版本键 → 当前要选中的（来源键, 版本键）。纯函数。
+///
+/// 列值能直接命中某来源的版本键就原样用（[migrated] = false）。命中不了时按 BUG-3993
+/// 之前的键组成（[legacySubtitleVersionKeyOf]：名字段只认发布组、没组名的平台抽轨
+/// 末段为空）再找一遍——用户在旧下拉里点名的 `….WEBRip.Netflix.ja[cc].srt` 一类版本
+/// 就这样落回它现在的版本（[migrated] = true，调用方把列改写成新键，只改一次）。
+/// 旧键现在拆成了多个版本（同时有 Netflix 与 Amazon 的无组名抽轨）时取 [rankedOf]
+/// 排名最靠前的那个——与「自动」同一判据。都对不上返回 null。
+({String sourceKey, String versionKey, bool migrated})?
+resolvePinnedSubtitleVersion(
+  List<SubtitleCollectionSource> sources,
+  String storedKey, {
+  required List<SubtitleCollectionVersion> Function(
+    SubtitleCollectionSource source,
+  )
+  rankedOf,
+}) {
+  for (final SubtitleCollectionSource source in sources) {
+    for (final SubtitleCollectionVersion v in rankedOf(source)) {
+      if (v.group.key == storedKey) {
+        return (sourceKey: source.key, versionKey: storedKey, migrated: false);
+      }
+    }
+  }
+  for (final SubtitleCollectionSource source in sources) {
+    for (final SubtitleCollectionVersion v in rankedOf(source)) {
+      if (v.group.members.any(
+        (VideoSubtitleCandidate c) =>
+            legacySubtitleVersionKeyOf(c) == storedKey,
+      )) {
+        return (sourceKey: source.key, versionKey: v.group.key, migrated: true);
+      }
+    }
+  }
+  return null;
 }
 
 /// 批量下载能否开放：选中来源存在且确有可解析字幕、没在搜索/下载中。纯函数。
@@ -329,20 +366,37 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
   String? _releaseGroup;
 
   /// 文件名没写语言的版本按正文判出的语言（版本键 → 检测值），搜索后后台补。
-  Map<String, SubtitleContentLanguage> _probedLanguages =
-      const <String, SubtitleContentLanguage>{};
-  SubtitleVersionLanguageProbe? _probe;
+  /// **探过但判不出的版本值为 null**：「判不出」也是结论，批量不再重探。
+  Map<String, SubtitleContentLanguage?> _probedLanguages =
+      const <String, SubtitleContentLanguage?>{};
   int _probeGeneration = 0;
+
+  /// 候选下载缓存（identityKey → 下载）：**面板探测与批量下载共用这一份**。探测下过
+  /// 的代表文件被批量选中时不再从网络重下；探测还没跑完就点「下载全部」也只下一份。
+  /// 失败的下载会被移出，下一次照常重试。
+  final Map<String, Future<VideoSubtitleDownload>> _downloads =
+      <String, Future<VideoSubtitleDownload>>{};
 
   /// 版本列表已展开「显示全部」的来源键。
   final Set<String> _expandedSources = <String>{};
 
-  /// [_versionsOf] 的记忆：来源 / 探测结果 / 语言任一变化即作废。
-  final Map<String, List<SubtitleCollectionVersion>> _versionsCache =
-      <String, List<SubtitleCollectionVersion>>{};
-  Object? _versionsCacheKey;
+  // ── 派生状态（[_rederive] 在输入变化处显式重算，build 只读）──────────────
+  // 输入：成员（集号 / 内容语言）、来源、探测结果、语言、选中来源、点名版本。
 
-  /// 本次 build 的各集计划（[_plannedIndex]）：成员行逐行读，build 里算一次。
+  /// 本合集成员的集号（与批量下载同一解析）。
+  List<int> _targetEpisodes = const <int>[];
+
+  /// 去重后的目标集数。
+  int _targetEpisodeCount = 0;
+
+  /// 各来源的版本列表（已按批量判据排好，首行 = 「自动」会用的版本）。
+  Map<String, List<SubtitleCollectionVersion>> _versionsBySource =
+      const <String, List<SubtitleCollectionVersion>>{};
+
+  /// 选中来源里用户点名的版本；「自动」或该版本已不在来源里为 null。
+  SubtitleCollectionVersion? _pinnedVersion;
+
+  /// 各集实际会用的候选：与 [runSubtitleBatch] 同一判据（整季版本一致）。
   SubtitleEpisodeIndex<VideoSubtitleCandidate>? _plan;
 
   final Map<String, SubtitleBatchItem> _statusByUid =
@@ -361,6 +415,7 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
         widget.collection.subtitleLanguage ?? widget.initialPreferredLanguage;
     _releaseGroup = widget.collection.subtitleReleaseGroup;
     _selectedSeriesId = widget.collection.anilistId;
+    _rederive();
     // 首搜由 [_loadCanonicalIdentity] 在读回规范身份**之后**发起（BUG-2008）：
     // `_searchSources` 在第一个 await 之前就把请求身份同步构造好了，先发后读
     // 等于「已绑定 AniList 的合集」——也就是绝大多数刮削过的合集——首搜永远
@@ -464,6 +519,17 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
   }
 
   @override
+  void didUpdateWidget(covariant SubtitleCollectionPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 成员（集号 / 内容语言）与全局默认语言都是派生状态的输入。
+    if (!identical(oldWidget.members, widget.members) ||
+        oldWidget.globalDefaultContentLanguage !=
+            widget.globalDefaultContentLanguage) {
+      _rederive();
+    }
+  }
+
+  @override
   void dispose() {
     _apiKeyCtrl.dispose();
     _queryCtrl.dispose();
@@ -497,75 +563,66 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
     globalDefaultContentLanguage: widget.globalDefaultContentLanguage,
   );
 
-  /// 本合集成员的集号（与批量下载同一解析）。
-  List<int> get _targetEpisodes => <int>[
-    for (int i = 0; i < widget.members.length; i++)
-      resolveSubtitleBatchEpisode(_targetAt(i)),
-  ];
-
-  /// [source] 的版本列表（已按批量判据排好，首行 = 「自动」会用的版本）。
-  List<SubtitleCollectionVersion> _versionsOf(SubtitleCollectionSource source) {
-    final Object cacheKey = Object.hash(
-      identityHashCode(_sources),
-      identityHashCode(_probedLanguages),
-      _effectiveLanguage,
-      widget.members.length,
-    );
-    if (cacheKey != _versionsCacheKey) {
-      _versionsCache.clear();
-      _versionsCacheKey = cacheKey;
-    }
-    return _versionsCache[source.key] ??= rankSubtitleCollectionVersions(
-      source,
-      targetEpisodes: _targetEpisodes,
-      preferredLanguage: _effectiveLanguage,
-      probedLanguages: _probedLanguages,
-    );
-  }
-
-  /// 选中来源里用户点名的版本；「自动」或该版本已不在来源里为 null。
-  SubtitleCollectionVersion? get _pinnedVersion {
+  /// 重算全部派生状态（集号 / 各来源版本排名 / 点名版本 / 各集计划）。
+  ///
+  /// 只在输入变化处调用：初始化、成员变化（[didUpdateWidget]）、搜索完成、探测
+  /// 回填、改语言、选版本。build 与成员行只读字段，不再每帧重排。
+  void _rederive() {
+    final List<int> targets = <int>[
+      for (int i = 0; i < widget.members.length; i++)
+        resolveSubtitleBatchEpisode(_targetAt(i)),
+    ];
+    final String? preferred = _effectiveLanguage;
+    _targetEpisodes = targets;
+    _targetEpisodeCount = targets.toSet().length;
+    _versionsBySource = <String, List<SubtitleCollectionVersion>>{
+      for (final SubtitleCollectionSource source in _sources)
+        source.key: rankSubtitleCollectionVersions(
+          source,
+          targetEpisodes: targets,
+          preferredLanguage: preferred,
+          probedLanguages: _probedLanguages,
+        ),
+    };
     final SubtitleCollectionSource? source = _selectedSource;
-    final String? key = _releaseGroup;
-    if (source == null || key == null) return null;
-    for (final SubtitleCollectionVersion v in _versionsOf(source)) {
-      if (v.group.key == key) return v;
+    final String? pinnedKey = _releaseGroup;
+    _pinnedVersion = source == null || pinnedKey == null
+        ? null
+        : _versionsOf(source)
+              .where((SubtitleCollectionVersion v) => v.group.key == pinnedKey)
+              .firstOrNull;
+    if (source == null) {
+      _plan = null;
+      return;
     }
-    return null;
+    final Map<String, String> probed = coarseVersionLanguages(_probedLanguages);
+    _plan =
+        SubtitleEpisodeIndex.fromCandidates(
+          _batchCandidates,
+          preferredLanguage: preferred,
+        ).preferConsistentVersion(
+          targetEpisodes: targets,
+          versionOf: subtitleVersionKeyOf,
+          languageRankOf: (VideoSubtitleCandidate c) => jimakuLanguageRank(
+            c.language.isNotEmpty
+                ? c.language
+                : probed[subtitleVersionKeyOf(c)],
+            preferred: preferred,
+          ),
+          fileNameOf: (VideoSubtitleCandidate c) => c.fileName,
+        );
   }
+
+  /// [source] 的版本列表（[_rederive] 算好的）。
+  List<SubtitleCollectionVersion> _versionsOf(
+    SubtitleCollectionSource source,
+  ) => _versionsBySource[source.key] ?? const <SubtitleCollectionVersion>[];
 
   /// 批量下载用的候选：点名了版本只用该版本，否则整个来源（由批量按整季一致自动挑）。
   List<VideoSubtitleCandidate> get _batchCandidates {
     final SubtitleCollectionSource? source = _selectedSource;
     if (source == null) return const <VideoSubtitleCandidate>[];
     return _pinnedVersion?.group.members ?? source.candidates;
-  }
-
-  /// 正文探测结果投影成批量排名用的粗码（交给 [runSubtitleBatch]，不重下）。
-  Map<String, String> get _probedCoarseLanguages => <String, String>{
-    for (final MapEntry<String, SubtitleContentLanguage> e
-        in _probedLanguages.entries)
-      if (coarseLanguageCode(e.value) != null)
-        e.key: coarseLanguageCode(e.value)!,
-  };
-
-  /// 各集实际会用的候选：与 [runSubtitleBatch] 同一判据（整季版本一致）。
-  SubtitleEpisodeIndex<VideoSubtitleCandidate>? get _plannedIndex {
-    if (_selectedSource == null) return null;
-    final Map<String, String> probed = _probedCoarseLanguages;
-    final String? preferred = _effectiveLanguage;
-    return SubtitleEpisodeIndex.fromCandidates(
-      _batchCandidates,
-      preferredLanguage: preferred,
-    ).preferConsistentVersion(
-      targetEpisodes: _targetEpisodes,
-      versionOf: subtitleVersionKeyOf,
-      languageRankOf: (VideoSubtitleCandidate c) => jimakuLanguageRank(
-        c.language.isNotEmpty ? c.language : probed[subtitleVersionKeyOf(c)],
-        preferred: preferred,
-      ),
-      fileNameOf: (VideoSubtitleCandidate c) => c.fileName,
-    );
   }
 
   /// 版本的短名：组名（或发行平台）· 容器。
@@ -592,7 +649,7 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
 
   /// 版本行副标题：覆盖本合集几集（部分覆盖时列出集号段）· 文件数。
   String _versionCoverage(SubtitleCollectionVersion version) {
-    final int total = _targetEpisodes.toSet().length;
+    final int total = _targetEpisodeCount;
     final String coverage = t.video_subtitle_collection_version_coverage(
       covered: version.coveredEpisodes.length,
       total: total,
@@ -607,57 +664,63 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
   }
 
   /// 文件名没写语言的版本：每个下一个代表文件按正文判语言（BUG-3993），结果回填
-  /// 到版本列表并交给批量下载。只探覆盖本合集某集的版本；有下载配额的源不探
-  /// （同单集面板的纪律）；按 generation 丢弃迟到结果。
+  /// 到版本列表并交给批量下载。代表文件的挑法与批量 / 番剧下载同一个共享判据
+  /// （[probeUnlabeledVersionLanguages]：只挑覆盖本合集某集的文件）；有下载配额的
+  /// 源不探（同单集面板的纪律）；按 generation 丢弃迟到结果。
   Future<void> _probeVersionLanguages() async {
     final int generation = ++_probeGeneration;
     final VideoSubtitleRegistry? registry = await widget.subtitleRegistry();
     if (registry == null || !mounted || generation != _probeGeneration) return;
-    final Set<int> targets = _targetEpisodes.toSet();
-    final SubtitleVersionLanguageProbe probe = _probe ??=
-        SubtitleVersionLanguageProbe(download: _downloadForProbe);
-    for (final SubtitleCollectionSource source in _sources) {
-      for (final SubtitleVersionGroup group in buildSubtitleVersionGroups(
-        source.candidates,
-      )) {
-        if (group.language.isNotEmpty) continue;
-        if (_probedLanguages.containsKey(group.key)) continue;
-        if (group.members.every(
-          (VideoSubtitleCandidate c) => c.isArchivePack,
-        )) {
-          continue;
-        }
-        final VideoSubtitleCandidate? representative = group.members
-            .where(
-              (VideoSubtitleCandidate c) =>
-                  c.episode != null && targets.contains(c.episode),
-            )
-            .firstOrNull;
-        if (representative == null) continue;
-        if (!registry.allowsFreeProbeDownload(representative)) continue;
-        final SubtitleContentLanguage? detected = await probe.probe(
-          representative,
-        );
-        if (!mounted || generation != _probeGeneration) return;
-        if (detected == null) continue;
+    bool stale() => !mounted || generation != _probeGeneration;
+    await probeUnlabeledVersionLanguages<VideoSubtitleCandidate>(
+      files: <VideoSubtitleCandidate>[
+        for (final SubtitleCollectionSource source in _sources)
+          for (final VideoSubtitleCandidate c in source.candidates)
+            if (!c.isArchivePack &&
+                registry.allowsFreeProbeDownload(c) &&
+                !_probedLanguages.containsKey(subtitleVersionKeyOf(c)))
+              c,
+      ],
+      targetEpisodes: _targetEpisodes,
+      versionOf: subtitleVersionKeyOf,
+      declaredLanguageOf: (VideoSubtitleCandidate c) => c.language,
+      episodeOf: (VideoSubtitleCandidate c) => c.episode,
+      sizeOf: (VideoSubtitleCandidate c) => c.fileSize,
+      fetch: (VideoSubtitleCandidate c) async => (await _download(c)).bytes,
+      isCancelled: stale,
+      onProbed: (String version, SubtitleContentLanguage? language) {
+        if (stale()) return;
         setState(() {
-          _probedLanguages = <String, SubtitleContentLanguage>{
+          _probedLanguages = <String, SubtitleContentLanguage?>{
             ..._probedLanguages,
-            group.key: detected,
+            version: language,
           };
+          _rederive();
         });
-      }
-    }
+      },
+    );
   }
 
-  /// 探测用下载：**每次现取** registry（改 API key 会重建 provider runtime，
-  /// 早绑的实例正是坑——同单集面板）。
-  Future<VideoSubtitleDownload> _downloadForProbe(
-    VideoSubtitleCandidate candidate,
-  ) async {
-    final VideoSubtitleRegistry? registry = await widget.subtitleRegistry();
-    if (registry == null) throw StateError('no subtitle registry');
-    return registry.download(candidate);
+  /// 候选下载（探测与批量共用，见 [_downloads]）：**每次现取** registry（改 API key
+  /// 会重建 provider runtime，早绑的实例正是坑——同单集面板）。
+  Future<VideoSubtitleDownload> _download(VideoSubtitleCandidate candidate) {
+    final String key = candidate.identityKey;
+    final Future<VideoSubtitleDownload>? cached = _downloads[key];
+    if (cached != null) return cached;
+    final Future<VideoSubtitleDownload> future = () async {
+      final VideoSubtitleRegistry? registry = await widget.subtitleRegistry();
+      if (registry == null) throw StateError('no subtitle registry');
+      return registry.download(candidate);
+    }();
+    _downloads[key] = future;
+    // 失败不留在缓存里：网络抖一下不该让这份字幕在本面板里永远下不成。
+    future.then<void>(
+      (_) {},
+      onError: (Object _) {
+        if (identical(_downloads[key], future)) _downloads.remove(key);
+      },
+    );
+    return future;
   }
 
   void _setNotice(String? message, {bool error = false}) {
@@ -814,6 +877,7 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
         _sources = const <SubtitleCollectionSource>[];
         _selectedSourceKey = null;
         _searched = true;
+        _rederive();
       });
       _setNotice(_noSourceMessage(), error: true);
       return;
@@ -844,29 +908,37 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
       final ExternalProviderFailure? failure = sources.isEmpty
           ? primarySubtitleFailure(result.failures)
           : null;
-      // 合集记着点名的版本：落在哪个来源就选中哪个来源（版本键含来源合集段）。
-      final String? pinnedSourceKey = _releaseGroup == null
-          ? null
-          : sources
-                .where(
-                  (SubtitleCollectionSource s) => buildSubtitleVersionGroups(
-                    s.candidates,
-                  ).any((SubtitleVersionGroup g) => g.key == _releaseGroup),
-                )
-                .firstOrNull
-                ?.key;
+      String? migratedPin;
       setState(() {
         _searched = true;
         _sources = sources;
+        _rederive();
+        // 合集记着点名的版本：落在哪个来源就选中哪个来源（版本键含来源合集段）。
+        // 列里还是 BUG-3993 之前的旧键时就地迁成新键（见 resolvePinnedSubtitleVersion）。
+        final String? stored = _releaseGroup;
+        final ({String sourceKey, String versionKey, bool migrated})? pin =
+            stored == null
+            ? null
+            : resolvePinnedSubtitleVersion(
+                sources,
+                stored,
+                rankedOf: _versionsOf,
+              );
+        if (pin != null && pin.migrated) {
+          _releaseGroup = pin.versionKey;
+          migratedPin = pin.versionKey;
+        }
         _selectedSourceKey =
-            pinnedSourceKey ??
+            pin?.sourceKey ??
             (sources.any(
                   (SubtitleCollectionSource s) => s.key == _selectedSourceKey,
                 )
                 ? _selectedSourceKey
                 : (sources.isEmpty ? null : sources.first.key));
         _statusByUid.clear();
+        _rederive();
       });
+      if (migratedPin != null) unawaited(_persistMigratedPin(migratedPin!));
       unawaited(_probeVersionLanguages());
       if (failure != null) {
         _setNotice(
@@ -888,9 +960,27 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
     }
   }
 
+  /// 旧版本键迁成新键后改写合集列（一次性：改写后列值直接命中新键，不再走迁移）。
+  Future<void> _persistMigratedPin(String versionKey) async {
+    try {
+      await widget.database.updateMediaCollectionSubtitleReleaseGroup(
+        widget.collection.id,
+        versionKey,
+      );
+    } on Object catch (error) {
+      ErrorLogService.instance.logDiagnostic(
+        'SubtitleCollectionPanel.persistMigratedPin',
+        error,
+      );
+    }
+  }
+
   /// 选语言：更新筛选 + 写合集列（本合集的决定）+ 系列 prefs 记忆（老路径兼容）。
   Future<void> _selectLanguage(String? lang) async {
-    setState(() => _language = lang);
+    setState(() {
+      _language = lang;
+      _rederive();
+    });
     await widget.database.updateMediaCollectionSubtitleLanguage(
       widget.collection.id,
       lang,
@@ -909,6 +999,7 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
     setState(() {
       _selectedSourceKey = source.key;
       _releaseGroup = versionKey;
+      _rederive();
     });
     await widget.database.updateMediaCollectionSubtitleReleaseGroup(
       widget.collection.id,
@@ -953,7 +1044,8 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
         saveDirectory: widget.saveDirectory,
         preferredLanguage: _effectiveLanguage,
         subtitleAligner: widget.subtitleAligner,
-        knownVersionLanguages: _probedCoarseLanguages,
+        download: _download,
+        probedVersionLanguages: _probedLanguages,
         onItemStart: (SubtitleBatchItem item) async {
           if (!mounted) return;
           setState(() => _statusByUid[item.target.bookUid] = item);
@@ -1398,7 +1490,6 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
-    _plan = _plannedIndex;
     final bool canDownload =
         canRunSubtitleCollectionBatch(
           selected: _selectedSource,

@@ -9585,7 +9585,6 @@
   "video_jimaku_downloaded": "Legenda baixada e aplicada",
   "video_jimaku_enabled_hint": "Desligado significa que o Jimaku é ignorado mesmo quando uma chave de API está salva.",
   "video_jimaku_episode": "Episódio (opcional)",
-  "video_jimaku_episode_available": "$count legendas disponíveis · $languages",
   "video_jimaku_episode_hint": "Deixe vazio para listar todos",
   "video_jimaku_episode_unavailable": "Nenhuma legenda encontrada para o episódio $episode",
   "video_jimaku_episode_unlabeled": "Nenhuma legenda rotulada como episódio $episode; $count arquivos sem rótulo podem corresponder",

@@ -10,7 +10,7 @@ import 'package:fushi/src/media/torrent/anime_download_plan.dart';
 import 'package:fushi/src/media/video/jimaku_matching.dart'
     show jimakuVersionKeyOf;
 import 'package:fushi/src/media/video/subtitle/subtitle_version_language_probe.dart'
-    show probeUnlabeledVersionLanguages;
+    show coarseVersionLanguages, probeUnlabeledVersionLanguages;
 import 'package:fushi_engine/media/video/jimaku_client.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_language_preference.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_timing_check.dart';
@@ -102,17 +102,20 @@ class JimakuPlanSubtitleResolver {
       Future<Uint8List?> fetch(JimakuFile file) =>
           fetched[file.url] ??= client.downloadFile(file.url);
       final Map<String, String> contentLanguageByVersion =
-          await probeUnlabeledVersionLanguages<JimakuFile>(
-            files: files.where((JimakuFile file) => file.isTextSubtitle),
-            targetEpisodes: <int>[
-              for (final String path in videoAbsolutePaths)
-                ?parseVideoFilename(p.basename(path)).episode,
-            ],
-            versionOf: jimakuVersionKeyOf,
-            declaredLanguageOf: (JimakuFile file) =>
-                detectSubtitleLanguage(file.name),
-            episodeOf: (JimakuFile file) => file.episode,
-            fetch: fetch,
+          coarseVersionLanguages(
+            await probeUnlabeledVersionLanguages<JimakuFile>(
+              files: files.where((JimakuFile file) => file.isTextSubtitle),
+              targetEpisodes: <int>[
+                for (final String path in videoAbsolutePaths)
+                  ?parseVideoFilename(p.basename(path)).episode,
+              ],
+              versionOf: jimakuVersionKeyOf,
+              declaredLanguageOf: (JimakuFile file) =>
+                  detectSubtitleLanguage(file.name),
+              episodeOf: (JimakuFile file) => file.episode,
+              sizeOf: (JimakuFile file) => file.size,
+              fetch: fetch,
+            ),
           );
       final List<ResolvedSubtitleMatch> matches = matchJimakuFilesToVideoNames(
         videoAbsolutePaths,

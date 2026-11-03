@@ -9585,7 +9585,6 @@
   "video_jimaku_downloaded": "자막을 다운로드해 적용했습니다",
   "video_jimaku_enabled_hint": "끄면 API 키가 저장되어 있어도 Jimaku를 건너뜁니다.",
   "video_jimaku_episode": "에피소드 (선택 사항)",
-  "video_jimaku_episode_available": "자막 $count개 사용 가능 · $languages",
   "video_jimaku_episode_hint": "비워두면 전체 목록 표시",
   "video_jimaku_episode_unavailable": "에피소드 $episode에 대한 자막을 찾을 수 없습니다",
   "video_jimaku_episode_unlabeled": "에피소드 $episode으로 표시된 자막이 없습니다. 라벨 없는 파일 $count개가 일치할 수 있습니다",

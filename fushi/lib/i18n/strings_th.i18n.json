@@ -9585,7 +9585,6 @@
   "video_jimaku_downloaded": "ดาวน์โหลดและใช้คำบรรยายแล้ว",
   "video_jimaku_enabled_hint": "ปิดหมายถึง Jimaku จะถูกข้ามแม้ว่าจะบันทึกคีย์ API ไว้แล้ว",
   "video_jimaku_episode": "ตอน (ไม่บังคับ)",
-  "video_jimaku_episode_available": "$count คำบรรยายที่มี · $languages",
   "video_jimaku_episode_hint": "เว้นว่างเพื่อแสดงทั้งหมด",
   "video_jimaku_episode_unavailable": "ไม่พบคำบรรยายสำหรับตอน $episode",
   "video_jimaku_episode_unlabeled": "ไม่มีคำบรรยายที่ระบุตอน $episode; $count ไฟล์ที่ไม่ได้ระบุอาจยังตรงกัน",

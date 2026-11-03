@@ -9585,7 +9585,6 @@
   "video_jimaku_downloaded": "Subtitle diunduh dan diterapkan",
   "video_jimaku_enabled_hint": "Nonaktif berarti Jimaku dilewati meskipun kunci API tersimpan.",
   "video_jimaku_episode": "Episode (opsional)",
-  "video_jimaku_episode_available": "$count subtitle tersedia · $languages",
   "video_jimaku_episode_hint": "Biarkan kosong untuk menampilkan semua",
   "video_jimaku_episode_unavailable": "Tidak ditemukan subtitle untuk episode $episode",
   "video_jimaku_episode_unlabeled": "Tidak ada subtitle berlabel episode $episode; $count file tanpa label mungkin masih cocok",

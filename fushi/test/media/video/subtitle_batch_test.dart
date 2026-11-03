@@ -6,6 +6,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_batch.dart';
+import 'package:fushi/src/media/video/subtitle/subtitle_content_language.dart';
+import 'package:fushi/src/media/video/subtitle/subtitle_version_groups.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 
 /// 来源无关的合集批量编排：判据委托 `chooseSubtitleForEpisode`、下载走 registry、
@@ -334,6 +336,73 @@ void main() {
         netflix(2),
         netflix(3),
       ]);
+    });
+
+    test('一集目标都不覆盖的未标语言版本（别季 / 未编号）不下载探测', () async {
+      final _FakeProvider provider = _FakeProvider();
+      await runSubtitleBatch(
+        registry: VideoSubtitleRegistry(<VideoSubtitleProvider>[provider]),
+        candidates: <VideoSubtitleCandidate>[
+          _Cand('[Other] Grow Up Show S2 - 20.ass', episode: 20, language: ''),
+          _Cand('[Movie] Grow Up Show The Movie.srt', language: ''),
+          for (int ep = 1; ep <= 2; ep++) _Cand(netflix(ep), episode: ep),
+        ],
+        targets: targets(2),
+        saveDirectory: tmp.path,
+      );
+      expect(provider.downloaded, <String>[netflix(1), netflix(2)]);
+    });
+
+    test('调用方传入的下载入口被探测与落盘共用：探测下过的文件不再走网络', () async {
+      final _FakeProvider provider = _FakeProvider(
+        bodies: <String, String>{
+          for (int ep = 1; ep <= 2; ep++)
+            shincaps(ep, 'ass'): assBody('サーカスは　みんなを幸せにするんだ'),
+        },
+      );
+      final VideoSubtitleRegistry registry = VideoSubtitleRegistry(
+        <VideoSubtitleProvider>[provider],
+      );
+      final Map<String, Future<VideoSubtitleDownload>> shared =
+          <String, Future<VideoSubtitleDownload>>{};
+      Future<VideoSubtitleDownload> download(VideoSubtitleCandidate c) =>
+          shared[c.identityKey] ??= registry.download(c);
+      final List<VideoSubtitleCandidate> candidates = <VideoSubtitleCandidate>[
+        for (int ep = 1; ep <= 2; ep++)
+          _Cand(shincaps(ep, 'ass'), episode: ep, language: ''),
+      ];
+      // 面板先探过第 1 集的代表文件（同一缓存）。
+      await download(candidates.first);
+      await runSubtitleBatch(
+        registry: registry,
+        candidates: candidates,
+        targets: targets(2),
+        saveDirectory: tmp.path,
+        download: download,
+      );
+      expect(provider.downloaded, <String>[
+        shincaps(1, 'ass'),
+        shincaps(2, 'ass'),
+      ]);
+    });
+
+    test('调用方探过但判不出的版本（值 null）不再重探', () async {
+      final _FakeProvider provider = _FakeProvider();
+      await runSubtitleBatch(
+        registry: VideoSubtitleRegistry(<VideoSubtitleProvider>[provider]),
+        candidates: <VideoSubtitleCandidate>[
+          for (int ep = 1; ep <= 2; ep++)
+            _Cand(shincaps(ep, 'ass'), episode: ep, language: ''),
+          for (int ep = 1; ep <= 2; ep++) _Cand(netflix(ep), episode: ep),
+        ],
+        targets: targets(2),
+        saveDirectory: tmp.path,
+        probedVersionLanguages: <String, SubtitleContentLanguage?>{
+          subtitleVersionKeyOf(_Cand(shincaps(1, 'ass'), language: '')): null,
+        },
+      );
+      // 没有探测下载：只下了两集实际要用的 Netflix。
+      expect(provider.downloaded, <String>[netflix(1), netflix(2)]);
     });
   });
 

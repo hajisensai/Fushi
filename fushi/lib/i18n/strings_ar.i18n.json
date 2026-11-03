@@ -9585,7 +9585,6 @@
   "video_jimaku_downloaded": "تم تنزيل الترجمة وتطبيقها",
   "video_jimaku_enabled_hint": "الإيقاف يعني تجاوز Jimaku حتى لو كان مفتاح API محفوظاً.",
   "video_jimaku_episode": "الحلقة (اختياري)",
-  "video_jimaku_episode_available": "$count ترجمة متوفرة · $languages",
   "video_jimaku_episode_hint": "اتركه فارغاً لعرض الكل",
   "video_jimaku_episode_unavailable": "لم يُعثر على ترجمة للحلقة $episode",
   "video_jimaku_episode_unlabeled": "لا توجد ترجمة بعلامة الحلقة $episode؛ $count ملف بدون علامة قد يطابق",

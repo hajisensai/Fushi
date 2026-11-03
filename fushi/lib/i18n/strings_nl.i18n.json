@@ -9585,7 +9585,6 @@
   "video_jimaku_downloaded": "Ondertitel gedownload en toegepast",
   "video_jimaku_enabled_hint": "Uit betekent dat Jimaku wordt overgeslagen, zelfs als een API-sleutel is opgeslagen.",
   "video_jimaku_episode": "Aflevering (optioneel)",
-  "video_jimaku_episode_available": "$count ondertitels beschikbaar · $languages",
   "video_jimaku_episode_hint": "Leeg laten om alles te tonen",
   "video_jimaku_episode_unavailable": "Geen ondertitel gevonden voor aflevering $episode",
   "video_jimaku_episode_unlabeled": "Geen ondertitel gelabeld als aflevering $episode; $count ongelabelde bestanden kunnen nog overeenkomen",

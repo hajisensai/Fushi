@@ -9585,7 +9585,6 @@
   "video_jimaku_downloaded": "Subtitle downloaded and applied",
   "video_jimaku_enabled_hint": "Off means Jimaku is skipped even when an API key is saved.",
   "video_jimaku_episode": "Episode (optional)",
-  "video_jimaku_episode_available": "$count subtitles available · $languages",
   "video_jimaku_episode_hint": "Leave empty to list all",
   "video_jimaku_episode_unavailable": "No subtitle found for episode $episode",
   "video_jimaku_episode_unlabeled": "No subtitle labeled episode $episode; $count unlabeled files may still match",

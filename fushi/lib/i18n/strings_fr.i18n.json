@@ -9585,7 +9585,6 @@
   "video_jimaku_downloaded": "Sous-titre téléchargé et appliqué",
   "video_jimaku_enabled_hint": "Désactivé signifie que Jimaku est ignoré même quand une clé API est enregistrée.",
   "video_jimaku_episode": "Épisode (optionnel)",
-  "video_jimaku_episode_available": "$count sous-titres disponibles · $languages",
   "video_jimaku_episode_hint": "Laissez vide pour tout lister",
   "video_jimaku_episode_unavailable": "Aucun sous-titre trouvé pour l'épisode $episode",
   "video_jimaku_episode_unlabeled": "Aucun sous-titre étiqueté épisode $episode ; $count fichiers non étiquetés peuvent correspondre",

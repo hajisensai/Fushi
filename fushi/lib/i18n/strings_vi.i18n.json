@@ -9585,7 +9585,6 @@
   "video_jimaku_downloaded": "Đã tải và áp dụng phụ đề",
   "video_jimaku_enabled_hint": "Tắt nghĩa là Jimaku sẽ bị bỏ qua ngay cả khi đã lưu khóa API.",
   "video_jimaku_episode": "Tập (tùy chọn)",
-  "video_jimaku_episode_available": "$count phụ đề khả dụng · $languages",
   "video_jimaku_episode_hint": "Để trống để liệt kê tất cả",
   "video_jimaku_episode_unavailable": "Không tìm thấy phụ đề cho tập $episode",
   "video_jimaku_episode_unlabeled": "Không có phụ đề ghi nhãn tập $episode; $count tệp không nhãn có thể phù hợp",

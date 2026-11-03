@@ -9585,7 +9585,6 @@
   "video_jimaku_downloaded": "字幕已下載並套用",
   "video_jimaku_enabled_hint": "關閉後即使已填 API key 也不再搜索 Jimaku。",
   "video_jimaku_episode": "集數（可選）",
-  "video_jimaku_episode_available": "有 $count 個字幕 · $languages",
   "video_jimaku_episode_hint": "留空列出全部",
   "video_jimaku_episode_unavailable": "沒有找到第 $episode 集字幕",
   "video_jimaku_episode_unlabeled": "未發現標為第 $episode 集的字幕；另有 $count 個未標集號檔案可嘗試",

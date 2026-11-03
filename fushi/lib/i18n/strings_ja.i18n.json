@@ -9585,7 +9585,6 @@
   "video_jimaku_downloaded": "字幕をダウンロードして適用しました",
   "video_jimaku_enabled_hint": "オフにすると、APIキーが保存されていてもJimakuはスキップされます。",
   "video_jimaku_episode": "エピソード（任意）",
-  "video_jimaku_episode_available": "$count件の字幕が利用可能 · $languages",
   "video_jimaku_episode_hint": "空欄で全エピソードを表示",
   "video_jimaku_episode_unavailable": "エピソード$episodeの字幕が見つかりません",
   "video_jimaku_episode_unlabeled": "エピソード$episodeのラベル付き字幕がありません。$count件のラベルなしファイルが一致する可能性があります",

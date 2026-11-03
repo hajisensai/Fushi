@@ -15,6 +15,8 @@ import 'package:fushi_engine/media/video/jimaku_client.dart'
 import 'package:fushi/src/media/video/subtitle/subtitle_episode_matching.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_version_groups.dart'
     show subtitleVersionKeyOf;
+import 'package:fushi/src/media/video/subtitle/subtitle_content_language.dart'
+    show SubtitleContentLanguage, coarseLanguageCode;
 import 'package:fushi/src/media/video/subtitle/subtitle_version_language_probe.dart'
     show probeUnlabeledVersionLanguages;
 import 'package:fushi_engine/media/video/subtitle/embedded_reference_subtitle_sync.dart';
@@ -260,6 +262,13 @@ typedef SubtitleBatchItemCallback =
 /// 文本字幕候选，整批只列一次，见 BUG-1695）里按集号选一个 → 经 [registry] 下载 →
 /// 落 [saveDirectory]。每集处理前后各回调一次（[onItemStart] / [onItemDone]）。
 ///
+/// [download]：候选下载入口，**由调用方持有缓存**时传入（合集面板：探测下过的代表
+/// 文件被选中时不再下第二次，探测与批量并发时也只下一份）；不传则本次批量内按
+/// identityKey 去重后经 [registry] 下载。
+///
+/// [probedVersionLanguages]：调用方已经探过的版本（版本键 → 正文语言，null = 探过
+/// 但判不出）。这些版本不再重探——「判不出」也是结论。
+///
 /// 尽力而为：单集失败/无匹配不中断整批（记该集状态后继续）。返回全部集的结果。
 Future<List<SubtitleBatchItem>> runSubtitleBatch({
   required VideoSubtitleRegistry registry,
@@ -270,7 +279,10 @@ Future<List<SubtitleBatchItem>> runSubtitleBatch({
   SubtitleBatchItemCallback? onItemStart,
   SubtitleBatchItemCallback? onItemDone,
   AutomaticSubtitleAligner? subtitleAligner,
-  Map<String, String> knownVersionLanguages = const <String, String>{},
+  Future<VideoSubtitleDownload> Function(VideoSubtitleCandidate candidate)?
+  download,
+  Map<String, SubtitleContentLanguage?> probedVersionLanguages =
+      const <String, SubtitleContentLanguage?>{},
 }) async {
   final List<SubtitleBatchItem> results = <SubtitleBatchItem>[];
   final Directory dir = Directory(saveDirectory);
@@ -280,34 +292,44 @@ Future<List<SubtitleBatchItem>> runSubtitleBatch({
       resolveSubtitleBatchEpisode(target),
   ];
   // 同一候选只下一次：语言探测下过的代表文件，被选中时直接复用。
-  final Map<String, Future<VideoSubtitleDownload>> downloads =
+  final Map<String, Future<VideoSubtitleDownload>> localDownloads =
       <String, Future<VideoSubtitleDownload>>{};
-  Future<VideoSubtitleDownload> download(VideoSubtitleCandidate c) =>
-      downloads[c.identityKey] ??= registry.download(c);
+  final Future<VideoSubtitleDownload> Function(VideoSubtitleCandidate)
+  fetchCandidate =
+      download ??
+      (VideoSubtitleCandidate c) =>
+          localDownloads[c.identityKey] ??= registry.download(c);
   // 文件名没写语言的版本按正文判语言——否则它们在语言排名里垫底，整季会被
   // 一个「文件名带了 ja 标记」的版本抢走（BUG-3993）。调用方已经探过的
-  // （[knownVersionLanguages]，合集面板列版本时探的）不再重下。
-  final Map<String, String> probedLanguage = <String, String>{
-    ...knownVersionLanguages,
-    ...await probeUnlabeledVersionLanguages<VideoSubtitleCandidate>(
-      // 有下载配额的源（OpenSubtitles：免费账号一天 5~20 次）不为排名去探——
-      // 那等于拿用户的配额换一个排序依据。
-      files: candidates.where(
-        (VideoSubtitleCandidate c) =>
-            !c.isArchivePack &&
-            registry.allowsFreeProbeDownload(c) &&
-            !knownVersionLanguages.containsKey(subtitleVersionKeyOf(c)),
-      ),
-      targetEpisodes: episodes,
-      versionOf: subtitleVersionKeyOf,
-      declaredLanguageOf: (VideoSubtitleCandidate c) => c.language,
-      episodeOf: (VideoSubtitleCandidate c) => c.episode,
-      fetch: (VideoSubtitleCandidate c) async => (await download(c)).bytes,
-    ),
-  };
-  String? languageOf(VideoSubtitleCandidate c) => c.language.isNotEmpty
-      ? c.language
-      : probedLanguage[subtitleVersionKeyOf(c)];
+  // （[probedVersionLanguages]，含判不出的）不再重下。
+  final Map<String, SubtitleContentLanguage?> probedLanguage =
+      <String, SubtitleContentLanguage?>{
+        ...probedVersionLanguages,
+        ...await probeUnlabeledVersionLanguages<VideoSubtitleCandidate>(
+          // 有下载配额的源（OpenSubtitles：免费账号一天 5~20 次）不为排名去探——
+          // 那等于拿用户的配额换一个排序依据。
+          files: candidates.where(
+            (VideoSubtitleCandidate c) =>
+                !c.isArchivePack &&
+                registry.allowsFreeProbeDownload(c) &&
+                !probedVersionLanguages.containsKey(subtitleVersionKeyOf(c)),
+          ),
+          targetEpisodes: episodes,
+          versionOf: subtitleVersionKeyOf,
+          declaredLanguageOf: (VideoSubtitleCandidate c) => c.language,
+          episodeOf: (VideoSubtitleCandidate c) => c.episode,
+          sizeOf: (VideoSubtitleCandidate c) => c.fileSize,
+          fetch: (VideoSubtitleCandidate c) async =>
+              (await fetchCandidate(c)).bytes,
+        ),
+      };
+  String? languageOf(VideoSubtitleCandidate c) {
+    if (c.language.isNotEmpty) return c.language;
+    final SubtitleContentLanguage? probed =
+        probedLanguage[subtitleVersionKeyOf(c)];
+    return probed == null ? null : coarseLanguageCode(probed);
+  }
+
   // 整批共用一个版本（缺集由次选版本补），而不是逐集各挑各的——否则同一季会
   // `.ass` / `.srt`、不同发布组混排。
   final SubtitleEpisodeIndex<VideoSubtitleCandidate> index =
@@ -352,7 +374,8 @@ Future<List<SubtitleBatchItem>> runSubtitleBatch({
         // 别全压成一句「无匹配」。
         item.message = packs.failureReason ?? match.failureReason;
       } else {
-        final VideoSubtitleDownload fetched = fromPack ?? await download(best!);
+        final VideoSubtitleDownload fetched =
+            fromPack ?? await fetchCandidate(best!);
         if (fetched.bytes.isEmpty) {
           item.status = SubtitleBatchStatus.failed;
           item.message = 'download';

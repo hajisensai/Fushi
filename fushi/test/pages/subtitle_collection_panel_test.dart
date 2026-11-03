@@ -14,7 +14,7 @@ import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_content_language.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_version_groups.dart'
-    show subtitleVersionKeyOf;
+    show legacySubtitleVersionKeyOf, subtitleVersionKeyOf;
 import 'package:fushi/src/pages/implementations/subtitle_collection_panel.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:http/http.dart' as http;
@@ -587,6 +587,112 @@ void main() {
       expect(versions.first.group.releaseGroupTag, 'Netflix');
       expect(versions.last.language, isNull);
     });
+  });
+
+  group('resolvePinnedSubtitleVersion（旧版本键迁移）', () {
+    // 旧键组成的名字段只认发布组：无组名的 Netflix / Amazon 抽轨末段都是空串。
+    final VideoSubtitleCandidate netflix = _Cand(
+      'グロウアップショウ.S01E01.WEBRip.Netflix.ja[cc].srt',
+      source: 'E',
+      episode: 1,
+    );
+    final VideoSubtitleCandidate amazon = _Cand(
+      'グロウアップショウ.S01E02.WEBRip.Amazon.ja[cc].srt',
+      source: 'E',
+      episode: 2,
+    );
+    List<SubtitleCollectionVersion> ranked(SubtitleCollectionSource s) =>
+        rankSubtitleCollectionVersions(s, targetEpisodes: <int>[1, 2]);
+
+    test('新键直接命中：不迁移', () {
+      final List<SubtitleCollectionSource> sources =
+          groupSubtitleCollectionSources(<VideoSubtitleCandidate>[netflix]);
+      final String key = subtitleVersionKeyOf(netflix);
+      expect(resolvePinnedSubtitleVersion(sources, key, rankedOf: ranked), (
+        sourceKey: sources.single.key,
+        versionKey: key,
+        migrated: false,
+      ));
+    });
+
+    test('旧键（无组名平台末段为空）落到 Netflix 版本，标记需改写', () {
+      final String legacy = legacySubtitleVersionKeyOf(netflix);
+      expect(legacy, isNot(subtitleVersionKeyOf(netflix)));
+      final List<SubtitleCollectionSource> sources =
+          groupSubtitleCollectionSources(<VideoSubtitleCandidate>[netflix]);
+      expect(resolvePinnedSubtitleVersion(sources, legacy, rankedOf: ranked), (
+        sourceKey: sources.single.key,
+        versionKey: subtitleVersionKeyOf(netflix),
+        migrated: true,
+      ));
+    });
+
+    test('旧键拆成多个版本时取排名第一的那个', () {
+      final List<SubtitleCollectionSource> sources =
+          groupSubtitleCollectionSources(<VideoSubtitleCandidate>[
+            amazon,
+            netflix,
+          ]);
+      final String expected = ranked(sources.single).first.group.key;
+      expect(
+        resolvePinnedSubtitleVersion(
+          sources,
+          legacySubtitleVersionKeyOf(netflix),
+          rankedOf: ranked,
+        )?.versionKey,
+        expected,
+      );
+    });
+
+    test('都对不上：null（退回自动）', () {
+      expect(
+        resolvePinnedSubtitleVersion(
+          groupSubtitleCollectionSources(<VideoSubtitleCandidate>[netflix]),
+          'nope',
+          rankedOf: ranked,
+        ),
+        isNull,
+      );
+    });
+  });
+
+  testWidgets('合集列里的旧版本键：搜索后选中 Netflix 版本并把列改写成新键', (
+    WidgetTester tester,
+  ) async {
+    final VideoBookRow member = await seedMember();
+    final MediaCollectionRow seeded = await seedCollection(anilistId: 21);
+    final VideoSubtitleCandidate netflix = _Cand(
+      'グロウアップショウ.S01E01.WEBRip.Netflix.ja[cc].srt',
+      source: 'Source',
+      episode: 1,
+    );
+    final VideoSubtitleCandidate ass = _Cand(
+      '[Grp] Show - 01.ja.ass',
+      source: 'Source',
+      episode: 1,
+    );
+    await db.updateMediaCollectionSubtitleReleaseGroup(
+      seeded.id,
+      legacySubtitleVersionKeyOf(netflix),
+    );
+    final MediaCollectionRow collection = (await db.getMediaCollectionById(
+      seeded.id,
+    ))!;
+    await tester.pumpWidget(
+      wrap(
+        collection: collection,
+        member: member,
+        onSearch: (_) async =>
+            ProviderBatchResult<VideoSubtitleCandidate>.success(
+              <VideoSubtitleCandidate>[netflix, ass],
+            ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      (await db.getMediaCollectionById(collection.id))!.subtitleReleaseGroup,
+      subtitleVersionKeyOf(netflix),
+    );
   });
 
   testWidgets('聚合版本列表：点版本行写合集列，点「自动」清空', (WidgetTester tester) async {
