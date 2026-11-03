@@ -6322,6 +6322,7 @@
   "page_progress": "Pagina $current / $total",
   "page_turn_animation": "Paginaomslag-animatie",
   "page_turn_animation_cover": "Cover",
+  "page_turn_animation_curl": "Krul",
   "page_turn_animation_fade": "Vervagen",
   "page_turn_animation_none": "Geen",
   "page_turn_animation_paginated_only": "Only applies in paginated mode",

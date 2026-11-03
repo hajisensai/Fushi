@@ -6322,6 +6322,7 @@
   "page_progress": "หน้า $current / $total",
   "page_turn_animation": "แอนิเมชันการพลิกหน้า",
   "page_turn_animation_cover": "Cover",
+  "page_turn_animation_curl": "พลิกม้วน",
   "page_turn_animation_fade": "จางหาย",
   "page_turn_animation_none": "ไม่มี",
   "page_turn_animation_paginated_only": "Only applies in paginated mode",

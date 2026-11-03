@@ -14,6 +14,8 @@ import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_schema.dart';
 import 'package:fushi/src/settings/settings_schema_widgets.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart'
+    show SettingsChoiceMenuRow;
 import 'package:fushi_core/fushi_core.dart';
 
 import '../helpers/test_platform_services.dart';
@@ -62,7 +64,7 @@ void main() {
       expect(restored.pageTurnAnimationSpeed, PageTurnAnimationSpeed.slow);
       expect(restored.pageTurnFollowDrag, isFalse);
 
-      await db.setPref('src:reader_fushi:page_turn_animation', 'curl');
+      await db.setPref('src:reader_fushi:page_turn_animation', 'flip');
       await db.setPref('src:reader_fushi:page_turn_animation_speed', 'warp');
       await restored.refreshFromDb();
       expect(restored.pageTurnAnimation, PageTurnAnimation.fade);
@@ -308,18 +310,13 @@ void main() {
     await tester.pump();
     final Switch toggle = tester.widget<Switch>(find.byType(Switch).first);
     expect(toggle.onChanged, isNull);
-    // 渲染器以 `SettingsSegmentedItem<Object>` 派发，分段条的类型参数是 Object。
-    final Finder strips = find.byWidgetPredicate(
-      (Widget w) => w is SegmentedButton,
+    // 五个效果（含卷页）超过分段条上限，MD3 下渲染成单选菜单行：整行置灰、
+    // 点不开菜单。
+    final SettingsChoiceMenuRow menu = tester.widget<SettingsChoiceMenuRow>(
+      find.byType(SettingsChoiceMenuRow),
     );
-    expect(strips, findsWidgets);
-    final SegmentedButton<Object> strip = tester
-        .widget<SegmentedButton<Object>>(strips.first);
-    expect(strip.segments, hasLength(PageTurnAnimation.values.length));
-    expect(
-      strip.segments.every((ButtonSegment<Object> s) => !s.enabled),
-      isTrue,
-    );
+    expect(menu.labels, hasLength(PageTurnAnimation.values.length));
+    expect(menu.enabled, isFalse);
     expect(find.text(t.page_turn_animation_paginated_only), findsWidgets);
   });
 }

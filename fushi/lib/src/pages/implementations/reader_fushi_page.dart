@@ -8,6 +8,7 @@ import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:ui' as ui show Image;
 import 'dart:ui' show ImageFilter;
 
 import 'package:file_picker/file_picker.dart';
@@ -133,6 +134,7 @@ import 'package:fushi/src/reader/reader_audio_position.dart';
 import 'package:fushi/src/reader/reader_audio_cue_offset_index.dart';
 import 'package:fushi/src/reader/reader_chapter_perf_trace.dart';
 import 'package:fushi/src/reader/reader_engine_config.dart';
+import 'package:fushi/src/reader/page_curl/page_curl.dart';
 import 'package:fushi/src/reader/page_turn_animation.dart';
 import 'package:fushi/src/reader/reader_script_compactor.dart';
 import 'package:fushi/src/reader/reader_chrome_scaler.dart';
@@ -270,6 +272,7 @@ part 'reader_fushi/tts.part.dart';
 part 'reader_fushi/session_remote.part.dart';
 part 'reader_fushi/jump_history.part.dart';
 part 'reader_fushi/kavita.part.dart';
+part 'reader_fushi/page_curl.part.dart';
 
 /// TODO-904: native WebView2 实例创建失败时，fork 经 onReceivedError 合成的
 /// [WebResourceError] 描述里携带的 sentinel 前缀（须与
@@ -1914,6 +1917,14 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   // 这张图只跨一次章节导航存活；不用于分页/手动跳转，也不落盘。
   MemoryImage? _chapterTransitionSnapshot;
   bool _chapterTransitionCaptureInFlight = false;
+  // 卷页翻页（page_curl.part.dart）：首次用到时创建，覆盖层按这个 key 量视口尺寸。
+  PageCurlController? _pageCurl;
+
+  /// 当前这次 JS 转发的卷页手势（`onPageCurlDrag` start → end / cancel）。
+  PageCurlDrag? _pageCurlDrag;
+  final GlobalKey _pageCurlOverlayKey = GlobalKey(
+    debugLabel: 'reader_page_curl_overlay',
+  );
   bool _hasEverLoaded = false;
   bool _readerTextContextMenuActive = false;
   // BUG-1236：移动端长按拖选后的非模态选区操作条。旧 showMenu 的全屏
@@ -3656,6 +3667,9 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   @override
   void dispose() {
     _studyCoverWatch.dispose();
+    _pageCurlDrag = null;
+    _pageCurl?.dispose();
+    _pageCurl = null;
     _stopFollowingScrollDismissPointer();
     _sourceReviewClosed = _sourceReviewActive;
     _sourceReviewSession?.removeListener(_onSourceReviewChanged);
@@ -4286,6 +4300,10 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
                       fit: StackFit.expand,
                       children: <Widget>[
                         Positioned.fill(child: _buildBody()),
+                        if (_pageCurlEnabled)
+                          Positioned.fill(
+                            child: _buildPageCurlOverlay(bgColor),
+                          ),
                         if (!_readerContentReady ||
                             _chapterTransitionSnapshot != null ||
                             _chapterFadeInPending)

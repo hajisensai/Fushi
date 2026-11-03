@@ -801,6 +801,17 @@ class ReaderPaginationScripts {
   static String paginateInvocation(ReaderNavigationDirection direction) =>
       "window.fushiReader && window.fushiReader.paginate('${direction.jsValue}')";
 
+  /// 卷页预览（page_curl.dart）：正文瞬时落到相邻页、不记账。返回 'ok' / 'limit'；
+  /// 不是分页 shell（没有 curlPreview）时返回 'limit'，调用方回落普通翻页。
+  static String curlPreviewInvocation(ReaderNavigationDirection direction) =>
+      "(window.fushiReader && typeof window.fushiReader.curlPreview === 'function')"
+      " ? window.fushiReader.curlPreview('${direction.jsValue}') : 'limit'";
+
+  /// 撤销卷页预览，正文回到原页。
+  static const String curlRevertInvocation =
+      "window.fushiReader && typeof window.fushiReader.curlRevert === 'function'"
+      ' && window.fushiReader.curlRevert()';
+
   static String progressInvocation() =>
       'window.fushiReader && window.fushiReader.calculateProgress()';
 
@@ -1326,6 +1337,12 @@ window.__fushiInstallShell = function(C) {
     return typeof this.scrollToChapterEnd === 'function';
   },
   reapplyImageLateAnchor: function() {
+    // 卷页预览中（正文暂时落在相邻页、用户还没决定翻不翻）：先记下，提交即作废、
+    // 回卷后由 curlRevert 补做，不在预览页上把视口拽走。
+    if (this._curl) {
+      this._curlLateAnchorPending = true;
+      return false;
+    }
     // 迟到图片按已登记目标重新定位；旧的几何采样锚不再拥有当前位置。
     if ((this.__imgReanchorTarget || this.__imgReanchorFragment ||
         (typeof this.__imgReanchorCharOffset === 'number' && this.__imgReanchorCharOffset > 0) ||
@@ -3335,13 +3352,68 @@ $kReaderPageTurnJs
     return true;
   },
   paginate: function(direction) {
+    // 卷页（Flutter 覆盖层，page_curl.dart）已经把正文预览到了相邻页：这次 paginate 是
+    // 它的提交，消费预览、不再多翻一页。方向对不上就先撤销预览再照常翻。
+    var curl = this._curl;
+    if (curl) {
+      this._curl = null;
+      this._curlLateAnchorPending = false;
+      if (curl.direction === direction) {
+        // 卷页提交 = 用户真翻了页：这里才放弃图片 late-load 重锚资格（预览不放弃）。
+        this.clearImageLateAnchor();
+        // 先回原位再经 setPagePosition 落到目标：清选区等收口按「真换了页」照常
+        // 触发一次。两次赋值在同一个 JS 任务里，中间不会画出原页。
+        this.assignPagePosition(curl.context, curl.base);
+        this.setPagePosition(curl.context, curl.target);
+        return "scrolled";
+      }
+      this.assignPagePosition(curl.context, curl.base);
+    }
+    var step = this.adjacentPageStep(direction);
+    // TODO-1229 案B：用户翻页即放弃图片 late-load 重锚资格——避免把用户已翻走的位置
+    // 拽回恢复锚（重锚只在恢复落地后、用户尚未翻页的窗口内有效）。放在
+    // adjacentPageStep 之后：它先落定待决的几何重锚，清资格会把待决 token 一并作废。
+    this.clearImageLateAnchor();
+    if (!step) return "limit";
+    this.turnPageAnimated(step.context, step.target, direction === "forward");
+    return "scrolled";
+  },
+  // 卷页预览：正文瞬时落到相邻页，不记账、不广播进度（pageTurnBusy 期间进度采样
+  // 返 null）。返回 'limit' = 那个方向没有相邻页（章首 / 章末）。
+  curlPreview: function(direction) {
+    this.finishPageTurnAnimation();
+    this._resetFollowDragVisual();
+    this.curlRevert();
+    var step = this.adjacentPageStep(direction);
+    if (!step) return "limit";
+    this._curl = {
+      context: step.context,
+      base: this.getPagePosition(step.context),
+      target: step.target,
+      direction: direction
+    };
+    this.assignPagePosition(step.context, step.target);
+    return "ok";
+  },
+  curlRevert: function() {
+    var curl = this._curl;
+    if (!curl) return;
+    this._curl = null;
+    this.assignPagePosition(curl.context, curl.base);
+    // 预览期间到达的迟到图片重锚：回到原页后补做（用户没翻页，资格仍在）。
+    if (this._curlLateAnchorPending) {
+      this._curlLateAnchorPending = false;
+      this.reapplyImageLateAnchor();
+    }
+  },
+  // 相邻整页的落点（paginate 与卷页预览共用）。null = 那个方向已到章首 / 章末。
+  // 只算落点、不记翻页账：放弃图片 late-load 重锚资格属于「用户真翻了页」，在
+  // paginate 里做，卷页预览后回卷不能把资格弄丢。
+  adjacentPageStep: function(direction) {
     // 相对翻页先落定自己的几何补偿；reflow 若暂时把 scroll 归零，不能从章首翻。
     this._settleGeometryReanchor();
-    // TODO-1229 案B：用户翻页即放弃图片 late-load 重锚资格——避免把用户已翻走的位置
-    // 拽回恢复锚（重锚只在恢复落地后、用户尚未翻页的窗口内有效）。
-    this.clearImageLateAnchor();
     var context = this.getScrollContext();
-    if (context.pageSize <= 0) return "limit";
+    if (context.pageSize <= 0) return null;
     var currentScroll = this.getPagePosition(context);
     var metrics = this.paginationMetrics || this.buildPaginationMetrics();
     var minAlignedScroll = metrics.minScroll;
@@ -3374,17 +3446,14 @@ $kReaderPageTurnJs
       var targetForward = (Math.floor(pageCoordinate) + 1) * pitch;
       if (targetForward > maxAlignedScroll) targetForward = maxAlignedScroll;
       if (targetForward < minAlignedScroll) targetForward = minAlignedScroll;
-      if (targetForward <= stepScroll + 1) return "limit";
-      this.turnPageAnimated(context, targetForward, true);
-      return "scrolled";
-    } else {
-      var targetBack = (Math.ceil(pageCoordinate) - 1) * pitch;
-      if (targetBack < minAlignedScroll) targetBack = minAlignedScroll;
-      if (targetBack > maxAlignedScroll) targetBack = maxAlignedScroll;
-      if (targetBack >= stepScroll - 1) return "limit";
-      this.turnPageAnimated(context, targetBack, false);
-      return "scrolled";
+      if (targetForward <= stepScroll + 1) return null;
+      return { context: context, target: targetForward };
     }
+    var targetBack = (Math.ceil(pageCoordinate) - 1) * pitch;
+    if (targetBack < minAlignedScroll) targetBack = minAlignedScroll;
+    if (targetBack > maxAlignedScroll) targetBack = maxAlignedScroll;
+    if (targetBack >= stepScroll - 1) return null;
+    return { context: context, target: targetBack };
   },
   getFirstVisibleCharOffset: function() {
     var context = this.getScrollContext();

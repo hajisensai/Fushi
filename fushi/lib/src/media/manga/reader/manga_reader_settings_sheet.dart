@@ -1116,6 +1116,7 @@ class _MangaReaderSettingsSheetState extends State<MangaReaderSettingsSheet>
                   PageTurnAnimation.slide => t.page_turn_animation_slide,
                   PageTurnAnimation.cover => t.page_turn_animation_cover,
                   PageTurnAnimation.fade => t.page_turn_animation_fade,
+                  PageTurnAnimation.curl => t.page_turn_animation_curl,
                 },
                 key: ValueKey<String>('manga_page_turn_animation_${a.key}'),
               ),

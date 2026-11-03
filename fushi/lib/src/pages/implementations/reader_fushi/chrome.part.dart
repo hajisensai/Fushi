@@ -136,7 +136,20 @@ extension _ReaderChrome on _ReaderFushiPageState {
       }
       return;
     }
-    final dynamic result = await _controller!.evaluateJavascript(
+    // 卷页：Flutter 覆盖层播动画，记账（下面的 _paginateStep）在提交那一刻走一次。
+    if (_pageCurlEnabled) {
+      await _pageCurlTurn(direction);
+      return;
+    }
+    await _paginateStep(direction);
+  }
+
+  /// 分页模式的一步翻页（闸门已过）：JS paginate + 进度刷新 + caret 重锚，翻不动
+  /// 就跨章。卷页的提交 / 回落也只走这里。
+  Future<void> _paginateStep(ReaderNavigationDirection direction) async {
+    final InAppWebViewController? controller = _controller;
+    if (controller == null) return;
+    final dynamic result = await controller.evaluateJavascript(
       source: ReaderPaginationScripts.paginateInvocation(direction),
     );
     if (!mounted || _controller == null) return;
