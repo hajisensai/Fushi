@@ -302,7 +302,11 @@ extension _VideoJumpBack on _VideoFushiPageState {
           key: const ValueKey<String>('video_jump_history_top_bar'),
           fill: false,
           clusterStyle: _m3eFloatingBarStyle(verticalAlignment: 0),
-          moreButtonBuilder: (VoidCallback _) => const SizedBox.shrink(),
+          moreButtonBuilder: (VoidCallback open) =>
+              _videoBarMoreButton(open, desktop: desktop),
+          singleActionButtonBuilder: (VideoBarMenuAction action) =>
+              _videoBarSingleActionButton(action, desktop: desktop),
+          onMenuOpenChanged: _onVideoBarMenuOpenChanged,
           entries: <VideoBarEntry>[
             for (final FushiToolbarItem item in items)
               VideoBarEntry(

@@ -7,6 +7,7 @@ import 'package:fushi_srs/fushi_srs.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 
@@ -469,9 +470,9 @@ class _SrsFindReplaceDialogState<T extends Object>
       icon: const FushiDialogHeroIcon(icon: FushiIcons.search),
       title: Text(t.srs_browse_find_replace),
       scrollable: true,
-      content: AnimatedSize(
+      content: FushiAnimatedSize(
         duration: fushiMotionDuration(context, FushiMotion.short),
-        curve: Curves.easeOutCubic,
+        curve: FushiMotion.standard,
         alignment: Alignment.topCenter,
         child: Column(
           mainAxisSize: MainAxisSize.min,

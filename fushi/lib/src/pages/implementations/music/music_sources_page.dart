@@ -27,6 +27,7 @@ import 'package:fushi/src/pages/implementations/music/music_plugin_pages.dart'
     show openMusicPluginManagement;
 import 'package:fushi/src/pages/implementations/music/music_server_pages.dart';
 import 'package:fushi/src/pages/implementations/music/music_server_settings.dart';
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -338,11 +339,12 @@ class _MusicSourcesPageState extends ConsumerState<MusicSourcesPage> {
                           ),
                         ],
                       ),
-                      AnimatedSize(
+                      FushiAnimatedSize(
                         duration: fushiMotionDuration(
                           context,
                           FushiMotion.short,
                         ),
+                        curve: FushiMotion.standard,
                         alignment: Alignment.topCenter,
                         child: am && on
                             ? Padding(
