@@ -284,7 +284,7 @@ struct Fold {
     today: bool,
     reviewed: bool,
     introduced: bool,
-    /// `review_type = 'review'`（不论哪天）：最近 30 天各牌组的复习数（[LogState::reviews_by_card]）。
+    /// `review_type = 'review'`（不论哪天）：落在 30 天窗口里时计入 [LogState::reviews_by_card]。
     review: bool,
 }
 
@@ -295,6 +295,8 @@ pub(crate) struct LogState {
     last30: Vec<i64>,
     introduced: HashMap<String, u32>,
     reviewed: HashMap<String, u32>,
+    /// 最近 30 天（含今天）每张卡 `review_type = 'review'` 的作答数（学习 / 重学步不算），随日志增量维护。
+    reviews30: HashMap<String, u32>,
     /// 今天的作答：日志 id → (卡, 时刻)。
     answers: HashMap<String, (String, i64)>,
     folded: HashMap<String, Fold>,
@@ -342,15 +344,9 @@ impl LogState {
     }
 
     /// 最近 30 天（含今天）每张卡的复习数（`review_type = 'review'` 的作答；学习 / 重学步不算）。RWKV 牌组没有到期数，
-    /// 牌组列表那一格改显示这个的日均（study.rs `reviews30`）。
-    pub(crate) fn reviews_by_card(&self) -> HashMap<&String, i64> {
-        let mut out: HashMap<&String, i64> = HashMap::new();
-        for f in self.folded.values() {
-            if f.review && f.slot.is_some() {
-                *out.entry(&f.card).or_default() += 1;
-            }
-        }
-        out
+    /// 牌组列表那一格改显示 RWKV 牌组这一项的日均（study.rs `reviews30`）。
+    pub(crate) fn reviews_by_card(&self) -> &HashMap<String, u32> {
+        &self.reviews30
     }
 
     /// 今天的全部作答 (卡, 时刻)。
@@ -394,6 +390,9 @@ impl LogState {
     fn apply(&mut self, id: String, f: Fold) {
         if let Some(s) = f.slot {
             self.last30[s] += 1;
+            if f.review {
+                *self.reviews30.entry(f.card.clone()).or_default() += 1;
+            }
         }
         if f.today {
             if f.reviewed {
@@ -409,9 +408,6 @@ impl LogState {
 
     fn unapply(&mut self, id: &str) {
         let Some(f) = self.folded.remove(id) else { return };
-        if let Some(s) = f.slot {
-            self.last30[s] -= 1;
-        }
         let dec = |m: &mut HashMap<String, u32>, k: &str| {
             if let Some(n) = m.get_mut(k) {
                 *n -= 1;
@@ -420,6 +416,12 @@ impl LogState {
                 }
             }
         };
+        if let Some(s) = f.slot {
+            self.last30[s] -= 1;
+            if f.review {
+                dec(&mut self.reviews30, &f.card);
+            }
+        }
         if f.today {
             if f.reviewed {
                 dec(&mut self.reviewed, &f.card);

@@ -1417,6 +1417,7 @@ class _DeckRow extends StatelessWidget {
                           learnCount: deck.learnCount,
                           reviewCount: deck.reviewCount,
                           reviewPending: deck.rwkvPending,
+                          fsrsDue: deck.fsrsDue,
                           rwkvDailyReviews: deck.rwkvDailyReviews,
                         )
                       : Row(
@@ -1428,6 +1429,7 @@ class _DeckRow extends StatelessWidget {
                               learnCount: deck.learnCount,
                               reviewCount: deck.reviewCount,
                               reviewPending: deck.rwkvPending,
+                              fsrsDue: deck.fsrsDue,
                               rwkvDailyReviews: deck.rwkvDailyReviews,
                             ),
                             FushiPopupMenuButton<_DeckAction>(
