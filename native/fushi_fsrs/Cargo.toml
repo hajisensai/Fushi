@@ -13,6 +13,11 @@ crate-type = ["cdylib", "staticlib", "rlib"]
 # 测试构建之外也装 ID 绑定审计（store/ids.rs `audit`）：Dart 经桥跑的语句绑了文本 UUID 就报错。只给测试用的库。
 id_audit = ["rusqlite/trace"]
 
+# `srs_probe`：冷启动探针（src/store/sync2/bootstrap_probe.rs）的构建，`RUSTFLAGS="--cfg srs_probe"`。测试构建里
+# 压小的切片 / 缓冲常量取生产值，量到的耗时才与 app 一致；这个构建只用来跑探针。
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ["cfg(srs_probe)"] }
+
 [dependencies]
 # FSRS-7 还没发版：钉 fsrs-rs 主干的 git rev（Cargo.lock 锁死）。
 # 这个 rev 的 Cargo.toml 版本号仍写 6.6.2；FSRS-6 的数值要与 6.6.2 / Anki 26.09.3 一致（第 0 步对拍）。

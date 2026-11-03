@@ -274,12 +274,7 @@ fn conflict_kind(what: &str, entity_kind: &str) -> &'static str {
 pub(crate) fn evaluate_holds(conn: &Connection, profile: &str, kind: &str, entity: &str, now: i64, t: &mut Touched) -> Result<(), String> {
     // 每条碰到实体的写入都会走这里；绝大多数实体从没被删过。先走 (实体, 键) 索引问一句「有没有删除」，
     // 没有就返回——否则每条写入都要把这个实体的全部操作读一遍，同一实体上的操作越多越慢（平方级）。
-    let any_delete: bool = conn
-        .prepare_cached("SELECT 1 FROM sync2_ent_ops WHERE profile_uid = srs_id(?1) AND kind = ?2 AND entity = srs_id(?3) AND what = 'deleted' LIMIT 1")
-        .map_err(sql)?
-        .exists(params![profile, kind, entity])
-        .map_err(sql)?;
-    if !any_delete {
+    if !any_delete(conn, profile, kind, entity)? {
         return Ok(());
     }
     let all = ops_of(conn, profile, kind, entity)?;
@@ -364,6 +359,14 @@ pub(crate) fn evaluate_holds(conn: &Connection, profile: &str, kind: &str, entit
     Ok(())
 }
 
+/// 实体上有没有过 `deleted` 写入（[evaluate_holds] 的快速出口；批量投影据此判「简单实体」，bulk.rs）。
+pub(crate) fn any_delete(conn: &Connection, profile: &str, kind: &str, entity: &str) -> Result<bool, String> {
+    conn.prepare_cached("SELECT 1 FROM sync2_ent_ops WHERE profile_uid = srs_id(?1) AND kind = ?2 AND entity = srs_id(?3) AND what = 'deleted' LIMIT 1")
+        .map_err(sql)?
+        .exists(params![profile, kind, entity])
+        .map_err(sql)
+}
+
 /// 这条删除现在要不要扣住（落投影之前问）。
 pub(crate) fn should_hold(conn: &Connection, profile: &str, kind: &str, entity: &str, d: &Op) -> Result<bool, String> {
     if is_delete(d).is_none() {
@@ -392,7 +395,7 @@ pub(crate) fn should_hold(conn: &Connection, profile: &str, kind: &str, entity: 
 
 // ---------------------------------------------------------------- 彻底清除
 
-fn is_purged(conn: &Connection, profile: &str, kind: &str, entity: &str) -> Result<bool, String> {
+pub(crate) fn is_purged(conn: &Connection, profile: &str, kind: &str, entity: &str) -> Result<bool, String> {
     conn.prepare_cached("SELECT 1 FROM sync2_purged WHERE profile_uid = srs_id(?1) AND kind = ?2 AND entity = srs_id(?3)")
         .map_err(sql)?
         .exists(params![profile, kind, entity])

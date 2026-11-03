@@ -788,6 +788,11 @@ pub(crate) fn sync2_dispatch(c: &SrsCore, req: &serde_json::Value, blobs: &mut V
     }
     let profile = s("profile")?;
     let op = s("op")?;
+    // 新设备收段通道（store/sync2/channel.rs）没做完时，投影里还缺已收下的操作：要改投影 / 读完整投影的命令先把它
+    // 做完。收段命令自己推进通道；其余只读或不碰投影的命令照常。
+    if !CHANNEL_TRANSPARENT.contains(&op) {
+        c.sync2_channel_settle(profile)?;
+    }
     // 改投影的命令：同一次调用里接着刷新本机缓存行（store/caches.rs），Dart 只收写过哪些笔记 / 卡。缓存配置
     // （内置笔记类型的代码默认值、默认牌组）只有 Dart 知道，随命令带来；缺了是调用方的 bug，不跳过刷新。
     if PROJECTING_OPS.contains(&op) || op == "refresh_caches" || op == "rebuild_caches" || op == "backfill_dupe_norms" {
@@ -879,11 +884,62 @@ fn slice_budget<'a>(c: &'a SrsCore, req: &serde_json::Value) -> crate::store::sy
 
 /// 收尾时一次命令最多刷新多少个待刷新实体（笔记类型 / 笔记 / 卡）：一块的锁内时间与重放的一片同量级，排队的
 /// 作答只等这一块。
-#[cfg(not(test))]
+#[cfg(any(not(test), srs_probe))]
 const CACHE_PENDING_CHUNK: usize = 512;
-/// 测试里压到很小：笔记与它的卡、前身与后继落在不同的块里（tests_cache_pending.rs）。
-#[cfg(test)]
+/// 测试里压到很小：笔记与它的卡、前身与后继落在不同的块里（tests_cache_pending.rs）。冷启动探针
+/// （bootstrap_probe.rs，`--cfg srs_probe` 构建）用生产值。
+#[cfg(all(test, not(srs_probe)))]
 const CACHE_PENDING_CHUNK: usize = 5;
+
+/// 新设备收段通道没做完时不必先做完它的命令（[sync2_dispatch]）：收段命令本身（推进通道）、只读命令（读到的投影
+/// 与逐条投递收段途中一样不全，收尾后一致），以及不碰投影的传输记账。不在表里的一律先做完通道——漏列只多花时间，
+/// 不会错。`digest` / `digest_buckets` 不在表里：摘要按已应用的版本向量发布，投影不全时算出来的会被别的设备当成分歧。
+const CHANNEL_TRANSPARENT: [&str; 44] = [
+    "identity",
+    "plan",
+    "ingest_begin",
+    "ingest_batch",
+    "ingest_prepare",
+    "ingest_commit",
+    "ingest_finish",
+    "replay_pending",
+    "status",
+    "conflicts",
+    "checkpoints",
+    "history",
+    "study",
+    "card_columns",
+    "stats_bundle",
+    "anki_resolve",
+    "anki_notes_info",
+    "lineages",
+    "preview",
+    "browse_query",
+    "browse_rows",
+    "browse_ids",
+    "browse_targets",
+    "browse_close",
+    "anki_find",
+    "anki_dupes",
+    "anki_tags",
+    "browse_stats",
+    "outbox",
+    "outbox_ack",
+    "head",
+    "relay_outbox",
+    "obsolete_ack",
+    "relay_ack",
+    "media_known",
+    "profile_footprint",
+    "profile_purge",
+    "derive_key",
+    "seal",
+    "open",
+    "seal_file",
+    "open_file",
+    "refresh_caches",
+    "rebuild_caches",
+];
 
 /// 改投影的 v2 命令（结果带 `marks`）：分发器在同一次调用里刷新缓存行；`ingest_commit` 例外（只记待刷新）。
 const PROJECTING_OPS: [&str; 11] =

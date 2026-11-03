@@ -122,7 +122,8 @@ fn join_sliced(d: &Device, deck: &str, bucket: &Bucket, batch: usize, slice: usi
         }
     }
     assert_eq!(count(d, "SELECT COUNT(*) FROM srs_cards_cache"), 0, "no cache rows before the session finishes");
-    assert!(count(d, "SELECT COUNT(*) FROM sync2_cache_pending") > 0);
+    // 逐条投递：各片记下待刷新；新设备收段通道：各片只追加，待刷新在收尾折叠时才记。
+    assert!(count(d, "SELECT COUNT(*) FROM sync2_cache_pending") > 0 || count(d, "SELECT COUNT(*) FROM sync2_boot") == 1);
     assert!(hold(d), "a session keeps the writer page cache between slices");
     if finish {
         finish_session(d, deck, now);
@@ -142,6 +143,15 @@ fn finish_session(d: &Device, deck: &str, now: i64) -> usize {
     assert_eq!(count(d, "SELECT COUNT(*) FROM sync2_replay_pending"), 0);
     assert!(!hold(d), "a finished session trims the writer page cache again");
     calls
+}
+
+/// [sequential] = 关掉新设备收段通道（channel.rs），按逐条投递收。
+fn in_mode<T>(sequential: bool, f: impl FnOnce() -> T) -> T {
+    if sequential {
+        super::channel::sequential(f)
+    } else {
+        f()
+    }
 }
 
 fn hold(d: &Device) -> bool {
@@ -165,10 +175,13 @@ fn deferred_cache_refresh_matches_a_full_rebuild() {
     let reference = join_rebuilt(&deck, &bucket);
     assert!(count(&reference, "SELECT COUNT(*) FROM srs_cards_cache") > 0);
     assert!(count(&reference, "SELECT COUNT(*) FROM srs_stat_reviews") > 0);
-    for (batch, slice) in [(1, 3), (2, 7), (3, 1)] {
-        let d = Device::new("cp-join");
-        join_sliced(&d, &deck, &bucket, batch, slice, true);
-        assert_eq!(caches(&d), caches(&reference), "batch={batch} slice={slice}");
+    // 新设备收段通道与逐条投递两种收法都要刷到与全量重建相同。
+    for sequential in [false, true] {
+        for (batch, slice) in [(1, 3), (2, 7), (3, 1)] {
+            let d = Device::new("cp-join");
+            in_mode(sequential, || join_sliced(&d, &deck, &bucket, batch, slice, true));
+            assert_eq!(caches(&d), caches(&reference), "batch={batch} slice={slice} sequential={sequential}");
+        }
     }
 }
 
@@ -176,10 +189,15 @@ fn deferred_cache_refresh_matches_a_full_rebuild() {
 /// 收尾，就把缓存刷到与全量重建相同。
 #[test]
 fn interrupted_session_refreshes_pending_caches_on_the_next_finish() {
+    interrupted_session_refreshes(true);
+    interrupted_session_refreshes(false);
+}
+
+fn interrupted_session_refreshes(sequential: bool) {
     let (bucket, deck) = world(8, 4);
     let reference = join_rebuilt(&deck, &bucket);
     let d = Device::new("cp-int");
-    join_sliced(&d, &deck, &bucket, 2, 5, false);
+    in_mode(sequential, || join_sliced(&d, &deck, &bucket, 2, 5, false));
     // 会话丢掉：重开一个会话（旧会话里的分叉点 / 预处理批次都没了），库里只剩各片已提交的部分。
     let plan = cmd(&d, &deck, json!({"op": "plan"}), heads(&bucket));
     assert_eq!(plan["finishPending"], json!(true), "{plan}");
@@ -195,7 +213,9 @@ fn interrupted_session_refreshes_pending_caches_on_the_next_finish() {
 fn rebuild_clears_the_pending_set() {
     let (bucket, deck) = world(4, 2);
     let d = Device::new("cp-rb");
-    join_sliced(&d, &deck, &bucket, 1, 4, false);
+    // 逐条投递的各片才记待刷新（新设备收段通道在收尾折叠时才记）。
+    super::channel::sequential(|| join_sliced(&d, &deck, &bucket, 1, 4, false));
+    assert!(count(&d, "SELECT COUNT(*) FROM sync2_cache_pending") > 0);
     cmd(&d, &deck, json!({"op": "rebuild_caches"}), vec![]);
     assert_eq!(count(&d, "SELECT COUNT(*) FROM sync2_cache_pending"), 0);
 }
@@ -266,4 +286,5 @@ fn purging_the_profile_releases_the_held_cache() {
     join_sliced(&d, &deck, &bucket, 1, 4, false);
     d.core.profile_purge(P).unwrap();
     assert!(!hold(&d));
+    assert_eq!(count(&d, "SELECT COUNT(*) FROM sync2_boot") + count(&d, "SELECT COUNT(*) FROM sync2_boot_order"), 0, "the channel goes with the profile");
 }

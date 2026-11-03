@@ -111,8 +111,15 @@ proptest! {
 
 /// 收尾之前被打断（会话丢了、库重开）：待重放集合留在库里，下一轮会话一收尾（没有新段也一样）就接着重放完，
 /// 结果与一次收完相同。`plan` 报 `finishPending` 让 Dart 侧知道要收这个尾。
+///
+/// 两种收法都验：逐条投递（各片记下待重放）与新设备收段通道（各片只追加，被打断时通道停在追加阶段）。
 #[test]
 fn interrupted_session_resumes_the_pending_replay() {
+    super::channel::sequential(|| interrupted_session_resumes(true));
+    interrupted_session_resumes(false);
+}
+
+fn interrupted_session_resumes(sequential: bool) {
     let reviews: Vec<(usize, usize, i64, i64)> = vec![
         (0, 0, 2 * DAY, 3),
         (1, 0, DAY, 2),
@@ -143,7 +150,11 @@ fn interrupted_session_resumes_the_pending_replay() {
         // 「被杀」：不收尾。
     }
     let d = Device { core: crate::store::SrsCore::open(&path).unwrap(), _dir: dir };
-    assert_ne!(d.rows("SELECT COUNT(*) FROM sync2_replay_pending")[1][0], "0");
+    if sequential {
+        assert_ne!(d.rows("SELECT COUNT(*) FROM sync2_replay_pending")[1][0], "0");
+    } else {
+        assert_eq!(d.rows("SELECT COUNT(*) FROM sync2_boot")[1][0], "1", "the channel stopped while appending");
+    }
     let plan = d.core.sync2_plan(P, &heads(&bucket)).unwrap();
     assert_eq!(plan["fetch"], json!([]), "{plan}");
     assert_eq!(plan["finishPending"], json!(true), "{plan}");

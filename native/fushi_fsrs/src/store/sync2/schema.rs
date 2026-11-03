@@ -307,6 +307,46 @@ CREATE TABLE IF NOT EXISTS sync2_cache_pending (
 ) WITHOUT ROWID;
 "#;
 
+/// V22：新设备收段通道（channel.rs，先追加后折叠）。`sync2_boot` 一个 profile 一行：阶段（0 追加 / 1 折叠 / 2 逐条）、
+/// 下一个投递序号、游标（折叠 = 下一个分区，逐条 = 已投的最大序号）。`sync2_boot_order` 是追加阶段记下的投递顺序与
+/// 折叠分区（分区 64 = 逐条）；`sync2_boot_complex` 是要逐条投影的实体（删除 / 清除 / 合成写入者 / 移进复杂牌组的卡）；
+/// `sync2_boot_moves` 是追加阶段的移卡记录（追加结束时据此补复杂实体）。通道做完四张表的行全删。
+pub const V22_BOOT: &str = r#"
+CREATE TABLE IF NOT EXISTS sync2_boot (
+  profile_uid TEXT NOT NULL PRIMARY KEY,
+  phase INTEGER NOT NULL,
+  next_rank INTEGER NOT NULL,
+  cursor INTEGER NOT NULL
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS sync2_boot_order (
+  profile_uid TEXT NOT NULL,
+  part INTEGER NOT NULL,
+  rank INTEGER NOT NULL,
+  device BLOB NOT NULL,
+  seq INTEGER NOT NULL,
+  PRIMARY KEY (profile_uid, part, rank)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS sync2_boot_complex (
+  profile_uid TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  entity TEXT NOT NULL,
+  PRIMARY KEY (profile_uid, kind, entity)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS sync2_boot_moves (
+  profile_uid TEXT NOT NULL,
+  deck TEXT NOT NULL,
+  card TEXT NOT NULL,
+  PRIMARY KEY (profile_uid, deck, card)
+) WITHOUT ROWID;
+-- 折叠算出的投影行（存储形态），归并时按表一次写进投影（channel.rs `TARGETS`）。rowid 表：按分区顺序追加。
+CREATE TABLE IF NOT EXISTS sync2_boot_rows (
+  profile_uid TEXT NOT NULL,
+  tbl INTEGER NOT NULL,
+  c1, c2, c3, c4, c5, c6, c7, c8, c9
+);
+CREATE INDEX IF NOT EXISTS idx_sync2_boot_rows ON sync2_boot_rows (profile_uid, tbl);
+"#;
+
 /// V14（集成审查【中】）：转发清理两段式（relay.rs `sync2_relay_ack`）。被新转发 head 取代的旧转发件 / 旧转发 head
 /// 从 `sync2_relay_out` 挪到这里等删，Dart 删成功后发 `obsolete_ack` 才移除；删除中途失败的下一轮照样再删。
 pub const V14_RELAY_GONE: &str = r#"
