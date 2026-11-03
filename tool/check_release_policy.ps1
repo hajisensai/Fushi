@@ -200,8 +200,8 @@ Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'fushi-*-i
 Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'Publish mirror update manifest (Apple assets)' 'Apple release assets must merge into the update manifest'
 # Apple 签名链路：细粒度不变式由 fushi/test/tools/apple_signing_workflow_guard_test.dart
 # 守（每个 PR 都跑）。这里只锁发布策略层面的一条：手动 dispatch 那条门必须显式判事件。
-# push 的 debug 通道每次都传（2026-11-02 用户拍板，取代「发布序列 % 3 == 0 才传」），
-# 构建号 = 共享发布序列，每次 push 单调递增。
+# develop 的 push debug 通道每次都传（2026-11-02 用户拍板，取代「发布序列 % 3 == 0 才传」），
+# 构建号 = 共享发布序列，沿 develop 单调递增；main 的 push 不传（序列低于 develop 已传号段）。
 Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow '[ "$GITHUB_EVENT_NAME" = workflow_dispatch ]' 'manual TestFlight upload must be gated on workflow_dispatch'
 Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'native/galgame_hook/tools/build_distribution.ps1 -RunTests' 'Windows releases must build the bundled offline galgame helper from the in-tree source'
 # BUG-1449: the helper is no longer shipped as zip + sidecar for the runtime to

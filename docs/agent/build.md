@@ -175,7 +175,7 @@ Android / Windows / macOS / iOS debug/beta workflow 必须使用跨 workflow 统
 `${{ (github.event_name == 'workflow_dispatch' && (github.event.inputs.channel == 'formal' || github.event.inputs.channel == 'beta')) && 'release-publish' || 'release-auto' }}`：
 
 - `release-publish`（id `24572755799`）：必需审批人 hajisensai，`prevent_self_review=false`（自己 dispatch 的自己能批），不限分支。formal / beta 的 dispatch 跑完构建后发布 job 显示 **Waiting**。
-- `release-auto`（id `24572756532`）：无任何保护规则。push 滚动 debug、手动发 GitHub Release（`release` 事件，本身就是发布动作）、`testflight_only` 补传、push 每次的 debug TestFlight 都走它，**不等人**，行为与改动前一致。
+- `release-auto`（id `24572756532`）：无任何保护规则。push 滚动 debug、手动发 GitHub Release（`release` 事件，本身就是发布动作）、`testflight_only` 补传、develop push 每次的 debug TestFlight 都走它，**不等人**，行为与改动前一致。
 - 没用「表达式算出空串 = 不挂环境」：官方文档没有写这条语义，而 push 发布每天跑十几次，赌错就是全停；两个具名环境的行为都有文档保证。代价是 push 发布会在 `release-auto` 下留部署记录（纯展示）。
 - `build_only=true`：两条 workflow 的发布 job 都整个跳过，不弹审批（`testflight` job 也因签名门关闭而跳过）。
 - 期限：待审批 job 最长挂 **30 天**后自动失败（GitHub 上限；整条 run 上限 35 天）。审批 run 的 run artifact 保留期因此从 14 天提到 30 天（非审批 run 不变；签名 IPA artifact 非审批 run 只留 1 天）。超过 30 天没批，就重新 dispatch 构建。
@@ -227,7 +227,7 @@ Android / Windows / macOS / iOS debug/beta workflow 必须使用跨 workflow 统
   要等审批门批准，见下「正式版预构建与审批发布」），debug 只在 `testflight_only=true` 时放行；**push 的 debug 通道
   每次都传**（2026-11-02 用户拍板「改成每次 ci 自动推 tf，不用每次看」，取代 09-16 的「发布
   序列 % 3 == 0 才传」与 10-14 的「大合并后核序列、不整除手动补发」）。构建号 = 共享发布序列
-  （commit 计数），每次 push 单调递增。代价：每条 push 多一趟约 15 分钟签名构建，TestFlight 列表
+  （commit 计数），沿 develop 每次 push 单调递增。只认 develop：`main` 的 push 不传（main 的 commit 数远低于 develop，序列落在已传号段下面，快进到已传过的 sha 时必撞号，见下条）。代价：每条 push 多一趟约 15 分钟签名构建，TestFlight 列表
   debug 构建变多（每个挂 90 天）。缺任一 Apple 密钥 push 门直接关（fork 照常绿）。被后续 push
   顶掉的 pending run 不传，由更新的那轮传。09-14 ~ 09-16 的定时通道 `testflight-debug.yml`
   已撤（两条节律并存会重复上传），守卫钉着不得回潮。
@@ -246,8 +246,8 @@ Android / Windows / macOS / iOS debug/beta workflow 必须使用跨 workflow 统
 
 - **GitHub Release 里的 `fushi-<版本>-ios.ipa` 仍是未签名包**，走的还是
   `flutter build ios --release --no-codesign`。老用户自签侧载的就是它，不能换成
-  App Store 签名包。TestFlight 用的是另一次签名构建（手动 beta/formal，或每次 debug
-  push），产物不进 Release 资产 —— 代价是这种 run 下 iOS 构建两次。
+  App Store 签名包。TestFlight 用的是另一次签名构建（手动 beta/formal，或每次 develop
+  debug push），产物不进 Release 资产 —— 代价是这种 run 下 iOS 构建两次。
 - macOS 走 **Developer ID + 公证**，不进 Mac App Store：`Release.entitlements` 已刻意
   去沙盒以支持应用内自动更新替换 `/Applications/fushi.app`，商店强制沙盒，两者不可兼得。
 

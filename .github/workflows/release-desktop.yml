@@ -89,7 +89,7 @@ on:
         required: false
       # TestFlight 上传两条路（见 ios job 的 "Resolve Apple signing mode"）：
       # 手动 workflow_dispatch 的 beta/formal 直接放行、debug 只在 testflight_only=true
-      # 时放行；push 的 debug 通道每次都传（2026-11-02 起）。
+      # 时放行；develop 的 push debug 通道每次都传（2026-11-02 起；main 的 push 不传）。
       upload_testflight:
         description: 'Upload a signed iOS build to TestFlight (beta/formal only; needs the Apple secrets).'
         required: false
@@ -2855,7 +2855,7 @@ jobs:
       # 上面的未签名 IPA 是 GitHub Release 资产，**保持不变**：老用户用自签工具
       # （AltStore / Sideloadly 等）侧载的就是它，换成 App Store 签名的包会直接
       # 打断他们。TestFlight 走的是下面这个额外的签名 IPA（手动 beta/formal、
-      # testflight_only 与每次 debug push 才产出），它不进 Release 资产。
+      # testflight_only 与每次 develop debug push 才产出），它不进 Release 资产。
       #
       # 每一项 Apple 凭据都是可选的：缺任何一项就整段跳过，未签名 IPA 照常发布，
       # fork 与无账号状态下发布链路不受影响（tool/check_release_policy.ps1 守卫
@@ -2889,7 +2889,12 @@ jobs:
           #   2. push 的 debug 通道：每次都传（2026-11-02 用户拍板「改成每次 CI 自动推 TF，
           #      不用每次看」，取代 09-16 的「发布序列 % 3 == 0 才传」——那条让大合并后
           #      要人工核序列、不整除就手动补发）。构建号 = 发布序列（commit 计数，
-          #      tool/release_sequence.sh），每次 push 至少涨一格，天然单调不撞号。
+          #      tool/release_sequence.sh），沿 develop 每次 push 至少涨一格，天然单调不撞号。
+          #      **只认 develop**：本 workflow 的 push 也覆盖 main，但 main 的 commit 数远低于
+          #      develop（序列落在 develop 早已传过的号段下面），main 快进到 develop 上已传过
+          #      的 sha 时序列完全相同，必撞 ASC 的 409 DUPLICATE（build.md「同一个 commit
+          #      不能重复传 TestFlight」）；main 的 pubspec 版本线也落后于 develop。所以 main
+          #      的 push 只发 GitHub Release，不传 TestFlight。
           #      （09-14 ~ 09-16 曾用定时通道 testflight-debug.yml 每 8 小时查 App Store
           #      Connect 补传，已撤：两条节律并存会重复上传。）
           # build_only 也必须挡住这条：TestFlight 上传是**不可回收**的外发——
@@ -2908,12 +2913,14 @@ jobs:
              && [ "${INPUT_UPLOAD_TESTFLIGHT:-true}" != false ]; then
             TESTFLIGHT=true
           fi
-          # push 的 debug 通道：每次都传。缺密钥就关门（fork 照常绿），不警告不红。
+          # push 的 debug 通道：develop 每次都传，main 不传。缺密钥就关门（fork 照常绿），不警告不红。
           if [ "$GITHUB_EVENT_NAME" = push ] && [ "$RELEASE_CHANNEL" = debug ]; then
             # 这句不用 `[ … ] && echo … || echo …`：守卫
             # release_workflow_bash_portability_guard_test 禁掉了该惯用法，因为它在
             # pipefail 管道 / brace-group 末尾且 test 为假时会把整步静默杀掉。
-            if [ "$CREDS" = true ]; then
+            if [ "$GITHUB_REF" != refs/heads/develop ]; then
+              TESTFLIGHT_NOTE="skipped, only develop pushes upload (this push is $GITHUB_REF)"
+            elif [ "$CREDS" = true ]; then
               TESTFLIGHT_NOTE=enabled
             else
               TESTFLIGHT_NOTE='skipped, Apple secrets incomplete'
@@ -2921,6 +2928,7 @@ jobs:
             echo "debug push, build $RELEASE_SEQUENCE: TestFlight upload $TESTFLIGHT_NOTE"
           fi
           if [ "$CREDS" = true ] && [ "$GITHUB_EVENT_NAME" = push ] \
+             && [ "$GITHUB_REF" = refs/heads/develop ] \
              && [ "$RELEASE_CHANNEL" = debug ]; then
             TESTFLIGHT=true
           fi

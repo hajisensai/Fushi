@@ -1,7 +1,7 @@
 // 守卫：release-desktop.yml 的 Apple 签名 / TestFlight 链路不变式。
 //
 // 这条链路的失败模式全是「构建照样绿，但产物错了」，靠人肉 review 挡不住：
-//   1. TestFlight 上传门：push 的 debug 通道每次都传（2026-11-02 用户拍板「每次 CI
+//   1. TestFlight 上传门：develop 的 push debug 通道每次都传（2026-11-02 用户拍板「每次 CI
 //      自动推 TF」，取代 09-16 的「发布序列 % 3 == 0 才传」），但必须密钥齐全，缺密钥
 //      时 fork 照常绿；手动 dispatch 只放行 beta / formal 与 testflight_only 的 debug，
 //      普通 debug 重发不得顺手上传。
@@ -53,14 +53,42 @@ void main() {
       isTrue,
       reason: 'TestFlight 门必须显式要求 workflow_dispatch 事件',
     );
-    // push 那条门：必须同时钉住密钥齐全、push 事件、debug 通道，少一项就是「fork 上红」
-    // 或「beta/formal 之外的通道也被 push 带着传」。不再按序列限频（2026-11-02）。
+    // push 那条门：必须同时钉住密钥齐全、push 事件、develop 分支、debug 通道，少一项就是
+    // 「fork 上红」、「beta/formal 之外的通道也被 push 带着传」或「main 的 push 也传」。
+    // 不再按序列限频（2026-11-02），但只认 develop：workflow 的 push 也覆盖 main，main 的
+    // commit 数远低于 develop，序列落在 develop 已传号段下面，快进到已传过的 sha 时序列
+    // 相同、必撞 App Store Connect 的 409 DUPLICATE。
     expect(
       RegExp(
-        r'if \[ "\$CREDS" = true \] && \[ "\$GITHUB_EVENT_NAME" = push \] \\\n\s+&& \[ "\$RELEASE_CHANNEL" = debug \]; then\n\s+TESTFLIGHT=true',
+        r'if \[ "\$CREDS" = true \] && \[ "\$GITHUB_EVENT_NAME" = push \] \\\n\s+&& \[ "\$GITHUB_REF" = refs/heads/develop \] \\\n\s+&& \[ "\$RELEASE_CHANNEL" = debug \]; then\n\s+TESTFLIGHT=true',
       ).hasMatch(content),
       isTrue,
-      reason: 'push 门必须是 CREDS && push && debug 三件套',
+      reason: 'push 门必须是 CREDS && push && refs/heads/develop && debug 四件套',
+    );
+    // 门禁日志 `debug push, build $RELEASE_SEQUENCE: ...` 是排查「这次 push 传没传、
+    // 构建号是几」的入口（apple-signing.md 指向它）；env 映射一丢，日志变成 `build :`。
+    // 只在 signing 步骤（step 名到门禁日志之间）里找，别被其它 job 的同名映射蒙过去。
+    final int signingStepAt = content.indexOf(
+      '- name: Resolve Apple signing mode',
+    );
+    expect(signingStepAt, greaterThan(-1), reason: '找不到 signing 步骤');
+    final int gateLogAt = content.indexOf(
+      r'echo "debug push, build $RELEASE_SEQUENCE: TestFlight upload $TESTFLIGHT_NOTE"',
+      signingStepAt,
+    );
+    expect(
+      gateLogAt,
+      greaterThan(signingStepAt),
+      reason: 'push 门必须打印构建号与上传结论，排查入口不能丢',
+    );
+    expect(
+      content
+          .substring(signingStepAt, gateLogAt)
+          .contains(
+            r'RELEASE_SEQUENCE: ${{ steps.channel.outputs.release_sequence }}',
+          ),
+      isTrue,
+      reason: 'signing 步骤必须把共享发布序列喂进 env，门禁日志的构建号要靠它',
     );
     expect(
       content.contains('RELEASE_SEQUENCE % 3'),

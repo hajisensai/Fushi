@@ -139,11 +139,11 @@ Actions → **Build Desktop and Apple Release Artifacts** → Run workflow：
 
 ### debug 包每次 push 都上 TestFlight
 
-push 触发的 debug 通道（`develop` / `main` push）**每次都传**：ios job 在未签名 IPA 之外
+`develop` push 触发的 debug 通道**每次都传**：ios job 在未签名 IPA 之外
 再做一趟签名构建 + `altool` 上传（2026-11-02 用户拍板「改成每次 ci 自动推 tf，不用每次看」，
 取代 09-16 的「发布序列能被 3 整除才传」）。构建号 = 发布序列（commit 计数，
 `tool/release_sequence.sh`，不是 run 号——`tool/check_release_policy.ps1` 整个禁用
-`GITHUB_RUN_NUMBER` / `github.run_number`），每次 push 单调递增。代价：每条 push 多一趟约 15
+`GITHUB_RUN_NUMBER` / `github.run_number`），沿 develop 每次 push 单调递增。`main` 的 push 不传（门里钉 `$GITHUB_REF = refs/heads/develop`）：main 的 commit 数远低于 develop，序列落在已传号段下面，快进到 develop 上已传过的 sha 时序列相同必撞 409 DUPLICATE。代价：每条 push 多一趟约 15
 分钟签名构建，TestFlight 列表里 debug 构建变多（每个挂 90 天）。被后续 push 顶掉的 pending run
 不传，由更新的那轮传。日志见 ios job「Resolve Apple signing mode」那一行 `debug push, build N ...`。
 
@@ -167,9 +167,9 @@ debug 包在 TestFlight 里的短版本与 beta 相同（Apple 只收三段）�
 Release 里挂的 `fushi-<版本>-ios.ipa` **仍然是未签名包**，走的还是原来的
 `flutter build ios --release --no-codesign` + 手工打 Payload。老用户用 AltStore /
 Sideloadly 自签侧载的就是它，换成 App Store 签名包会直接打断他们。TestFlight 用的是
-另外一次签名构建（手动 beta/formal，或每次 debug push），产物不进 Release 资产。
+另外一次签名构建（手动 beta/formal，或每次 develop debug push），产物不进 Release 资产。
 
-代价是这种 run 下 iOS 会构建两次（每条 debug push 都多这一趟，2026-11-02 用户接受）。
+代价是这种 run 下 iOS 会构建两次（每条 develop debug push 都多这一趟，2026-11-02 用户接受）。
 
 ## 实现要点（改之前先读）
 

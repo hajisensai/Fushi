@@ -72,4 +72,4 @@
 
 ## TestFlight 每次 push 自动传
 
-- **`develop` / `main` 每次 push 的 `release-desktop.yml` 都自动把 debug 包传 TestFlight**（用户 2026-11-02 拍板「删掉这个设定吧，改成每次 ci 自动推 tf，不用每次看」）。取代 2026-10-14 的「大合并后必须有一次 TF：核发布序列 `% 3 == 0`，不整除就手动补发 `testflight_only`」——合并后不再查序列、不再补发。被后续 push 顶掉的 pending run 不传，由顶掉它的那轮（更新的 commit）传。`testflight_only=true` 的手动 dispatch 仍保留作补传，但同一 sha 上已自动传过就会撞构建号被 ASC 拒（见 [docs/agent/build.md](docs/agent/build.md)「Apple 签名与 TestFlight」）。
+- **`develop` 每次 push 的 `release-desktop.yml` 都自动把 debug 包传 TestFlight**（用户 2026-11-02 拍板「删掉这个设定吧，改成每次 ci 自动推 tf，不用每次看」）。取代 2026-10-14 的「大合并后必须有一次 TF：核发布序列 `% 3 == 0`，不整除就手动补发 `testflight_only`」——合并后不再查序列、不再补发。`main` 的 push 不传：main 的 commit 数远低于 develop，算出的序列落在 develop 已传号段下面，main 快进到 develop 上已传过的 sha 时序列完全相同，必撞 ASC 409 DUPLICATE；上传门钉 `refs/heads/develop`（守卫 `apple_signing_workflow_guard_test.dart`）。被后续 push 顶掉的 pending run 不传，由顶掉它的那轮（更新的 commit）传。`testflight_only=true` 的手动 dispatch 仍保留作补传，但同一 sha 上已自动传过就会撞构建号被 ASC 拒（见 [docs/agent/build.md](docs/agent/build.md)「Apple 签名与 TestFlight」）。
