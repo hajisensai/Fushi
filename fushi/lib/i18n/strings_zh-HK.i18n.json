@@ -7574,6 +7574,8 @@
   "srs_count_learn": "Learning",
   "srs_count_new": "New",
   "srs_count_review": "Due",
+  "srs_count_review_rwkv": "Review (RWKV)",
+  "srs_count_review_rwkv_hint": "RWKV picks reviews by live recall, so there is no due count. The icon is highlighted when cards are ready to review.",
   "srs_custom_study_cards_value": "$n cards",
   "srs_custom_study_days_ahead": "Due within the next",
   "srs_custom_study_days_forgotten": "Forgotten within the last",

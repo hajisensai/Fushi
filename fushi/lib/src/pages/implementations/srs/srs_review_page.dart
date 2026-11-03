@@ -273,6 +273,9 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
   int _learnCount = 0;
   int _reviewCount = 0;
 
+  /// 这个牌组（子树）的复习卡由 RWKV 实时挑（[SrsDeckSummary.rwkvScheduled]）：[_reviewCount] 不是到期数，不显示数字。
+  bool _reviewByRwkv = false;
+
   /// 牌组当前的全名（随计数一起现读；复习中在牌组设置里改了名立即换标题）。
   String? _deckTitle;
 
@@ -454,6 +457,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
     _newCount = sum?.newCount ?? 0;
     _learnCount = sum?.learnCount ?? 0;
     _reviewCount = sum?.reviewCount ?? 0;
+    _reviewByRwkv = sum?.rwkvScheduled ?? false;
     _deckTitle = sum?.fullName;
   }
 
@@ -1619,7 +1623,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
           '${t.srs_count_learn} ${custom.learn}';
     }
     return '${t.srs_count_new} $_newCount · ${t.srs_count_learn} $_learnCount · '
-        '${t.srs_count_review} $_reviewCount';
+        '${_reviewByRwkv ? t.srs_count_review_rwkv : '${t.srs_count_review} $_reviewCount'}';
   }
 
   bool get _pendingDecision => _detail?.note.hasPendingDecision ?? false;
@@ -2060,6 +2064,7 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
                   newCount: _newCount,
                   learnCount: _learnCount,
                   reviewCount: _reviewCount,
+                  reviewByRwkv: _reviewByRwkv,
                   dense: true,
                 )
               : null,

@@ -299,6 +299,7 @@ void main() {
     );
     expect(root.reviewCount, 0);
     expect(root.rwkvPending, isTrue);
+    expect(root.rwkvScheduled, isTrue);
     expect(pending.rwkvPending, isTrue);
     expect(pending.hasWorkToday, isFalse);
     expect(
@@ -362,5 +363,49 @@ void main() {
     expect(after.rwkvPending, isFalse);
     expect(after.reviewCount, 2);
     expect(ready.rwkvPending, isFalse);
+
+    // 就绪后 RWKV 牌组的「到期」是此刻回忆率的快照、不是到期数：第三格只显示 RWKV 图标，不显示数字。
+    expect(after.rwkvScheduled, isTrue);
+    expect(ready.rwkvScheduled, isTrue);
+    expect(
+      srsNavPeekCountsLabel(
+        newCount: 0,
+        learnCount: 0,
+        reviewCount: after.reviewCount,
+        reviewByRwkv: after.rwkvScheduled,
+      ),
+      t.srs_count_review_rwkv,
+    );
+    await tester.pumpWidget(
+      TranslationProvider(
+        child: MaterialApp(
+          theme: buildFushiThemeData(
+            scheme: ColorScheme.fromSeed(seedColor: Colors.teal),
+            textTheme: Typography.material2021().black,
+            designSystem: FushiDesignSystem.material,
+            glass: FushiGlassMaterial.off,
+            glassDesign: false,
+          ),
+          home: Scaffold(
+            body: SrsCountTriple(
+              newCount: after.newCount,
+              learnCount: after.learnCount,
+              reviewCount: after.reviewCount,
+              reviewPending: after.rwkvPending,
+              reviewByRwkv: after.rwkvScheduled,
+            ),
+          ),
+        ),
+      ),
+    );
+    expect(
+      find.byKey(const ValueKey<String>('srs-count-review-rwkv')),
+      findsOneWidget,
+    );
+    expect(find.text('${after.reviewCount}'), findsNothing);
+    expect(
+      find.bySemanticsLabel(RegExp(RegExp.escape(t.srs_count_review_rwkv))),
+      findsOneWidget,
+    );
   });
 }

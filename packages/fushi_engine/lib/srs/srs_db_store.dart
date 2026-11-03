@@ -110,6 +110,7 @@ class SrsDeckSummary {
     required this.totalCards,
     this.parentId,
     this.rwkvPending = false,
+    this.rwkvScheduled = false,
   });
 
   final SrsDeckView deck;
@@ -127,6 +128,11 @@ class SrsDeckSummary {
   /// 子树里有 RWKV 牌组而 RWKV 还没准备好（下载 / 回放 / 出错）：这些牌组的复习卡这一次一张没算进
   /// [reviewCount]（也不出），所以 [reviewCount] 不是「今天没有到期」。界面据此显示「准备中」，不显示 0。
   final bool rwkvPending;
+
+  /// 子树里有按 RWKV-Instant 排队的牌组（就绪与否都算）：这些牌组的复习卡不看到期日，按**此刻**的回忆率
+  /// 实时挑（低于目标保留率的出），[reviewCount] 里它们那部分只是这一刻的快照、过一会儿就变，不是到期数。
+  /// 界面据此不把 [reviewCount] 当「到期 N」显示（只表示有没有可复习的卡）；[reviewCount] 本身照旧给出卡判断用。
+  final bool rwkvScheduled;
 }
 
 /// 复习页一张卡的全部信息。
@@ -3471,6 +3477,7 @@ class SrsDbStore implements SrsSync2Host {
     SrsDeckTree tree,
     Object? row, {
     Set<String> rwkvPendingDecks = const <String>{},
+    Set<String> rwkvDecks = const <String>{},
   }) {
     final List<Object?> c = (row as List?) ?? const <Object?>[];
     int at(int i, int fallback) =>
@@ -3496,7 +3503,22 @@ class SrsDbStore implements SrsSync2Host {
       rwkvPending:
           rwkvPendingDecks.isNotEmpty &&
           tree.subtree(d.id).any(rwkvPendingDecks.contains),
+      rwkvScheduled:
+          rwkvDecks.isNotEmpty && tree.subtree(d.id).any(rwkvDecks.contains),
     );
+  }
+
+  /// 排队请求（[_studyRequest]）里按 RWKV-Instant 排队的牌组（[_instantInput] 的 `decks`，就绪与否都有）。
+  static Set<String> _rwkvDecks(Map<String, Object?> request) {
+    final Map<Object?, Object?>? rw = request['rwkv'] as Map<Object?, Object?>?;
+    if (rw == null) return const <String>{};
+    return <String>{
+      for (final Object? d
+          in (rw['decks'] as Map<Object?, Object?>? ??
+                  const <Object?, Object?>{})
+              .keys)
+        d! as String,
+    };
   }
 
   /// 排队请求（[_studyRequest]）里因 RWKV 没准备好而一张复习卡都没交的 RWKV 牌组（[_instantInput] 的 `pending`）。
@@ -3529,6 +3551,7 @@ class SrsDbStore implements SrsSync2Host {
         rwkvPendingDecks: request == null
             ? const <String>{}
             : _rwkvPendingDecks(request),
+        rwkvDecks: request == null ? const <String>{} : _rwkvDecks(request),
       ),
       next: r['next'] as String?,
       after: r['after'] as String?,
@@ -3563,6 +3586,7 @@ class SrsDbStore implements SrsSync2Host {
     final SrsDeckTree tree = await deckTree();
     final Map<String, Object?> request = await _studyRequest(tree, null);
     final Set<String> pending = _rwkvPendingDecks(request);
+    final Set<String> rwkvDecks = _rwkvDecks(request);
     final Map<Object?, Object?> counts =
         ((await _sync2(request))['counts'] as Map?) ??
         const <Object?, Object?>{};
@@ -3579,7 +3603,15 @@ class SrsDbStore implements SrsSync2Host {
       final List<SrsDeckView> level = (children[parent] ?? <SrsDeckView>[])
         ..sort(SrsDeckView.compareSiblings);
       for (final SrsDeckView d in level) {
-        out.add(_summaryFrom(d, tree, counts[d.id], rwkvPendingDecks: pending));
+        out.add(
+          _summaryFrom(
+            d,
+            tree,
+            counts[d.id],
+            rwkvPendingDecks: pending,
+            rwkvDecks: rwkvDecks,
+          ),
+        );
         visit(d.id);
       }
     }

@@ -574,6 +574,11 @@ class SrsDeckListData {
   bool get rwkvPending =>
       decks.any((SrsDeckSummary d) => d.depth == 0 && d.rwkvPending);
 
+  /// 有顶层牌组按 RWKV 排队（[SrsDeckSummary.rwkvScheduled]）：[todayReview] 含 RWKV 此刻的快照，不是到期数，
+  /// 首页不显示这个数字。
+  bool get rwkvScheduled =>
+      decks.any((SrsDeckSummary d) => d.depth == 0 && d.rwkvScheduled);
+
   /// 「开始复习」落到的牌组：按牌组列表顺序第一个还有待复习卡（或到期数在等 RWKV）的顶层牌组；没有时为
   /// null。等 RWKV 的牌组进复习页会看到准备进度，就绪后自动出卡。
   SrsDeckSummary? get firstRootWithWork {
