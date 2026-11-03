@@ -74,10 +74,10 @@ void main() {
     expect(formatJumpHistoryTime(3723000), '1:02:03');
   });
 
-  test('videoJumpMarkFraction：时长未知不画，否则按时长换算', () {
-    expect(videoJumpMarkFraction(60000, null), isNull);
-    expect(videoJumpMarkFraction(60000, 0), isNull);
-    expect(videoJumpMarkFraction(60000, 240000), 0.25);
+  test('timelineJumpMarkFraction：时长未知不画，否则按时长换算', () {
+    expect(timelineJumpMarkFraction(60000, null), isNull);
+    expect(timelineJumpMarkFraction(60000, 0), isNull);
+    expect(timelineJumpMarkFraction(60000, 240000), 0.25);
   });
 
   test('刻度落点：返回点 / 前进点分开，按时长换算', () {
@@ -88,7 +88,7 @@ void main() {
     final ({List<double> back, List<double> forward}) marks =
         jumpHistoryMarkFractions<int>(
           history,
-          (int ms) => videoJumpMarkFraction(ms, 240000),
+          (int ms) => timelineJumpMarkFraction(ms, 240000),
         );
     expect(marks.back, <double>[0.25]);
     expect(marks.forward, <double>[0.75]);
@@ -122,9 +122,21 @@ void main() {
       expect(part, contains('jumpHistoryToolbarItems('));
       expect(part, contains('jumpHistoryPanelMenuItem('));
       expect(part, contains('showJumpHistoryPanel<int>('));
-      expect(part, contains('appModel.jumpHistoryToolbar'));
-      expect(part, contains('appModel.jumpHistoryProgressMarks'));
-      expect(page, contains('appModel.jumpHistoryAutoHideSeconds'));
+      // 三项设置经只在它们变化时通知的选择器接进重建源（设置一改立刻生效）。
+      expect(
+        page,
+        contains(
+          'JumpHistoryPrefsListenable.fromRepository(appModel.prefsRepo)',
+        ),
+      );
+      expect(page, contains('prefs: _videoJumpPrefs'));
+      expect(part, contains('_videoJumpPrefs.value.toolbar'));
+      expect(part, contains('_videoJumpPrefs.value.progressMarks'));
+      final int merge = part.indexOf('_videoJumpToolbarListenable =>');
+      expect(
+        part.substring(merge, part.indexOf(']);', merge)),
+        contains('_videoJumpPrefs'),
+      );
       expect(theme, contains('_videoJumpProgressMarks('));
       expect(mini, contains('_videoJumpProgressMarks('));
     });

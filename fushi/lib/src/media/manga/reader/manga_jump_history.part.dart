@@ -155,7 +155,7 @@ extension _MangaJumpBack on _MangaFushiPageState {
   List<FushiToolbarItem> _mangaJumpToolbarItems() {
     if (!_chromeActionsEnabled ||
         !jumpHistoryToolbarVisible(
-          enabled: appModel.jumpHistoryToolbar,
+          enabled: _jumpHistoryPrefs.value.toolbar,
           hasHistory: !_jumpHistory.isEmpty,
           expired: _jumpHistoryAutoHide.expired,
         )) {
@@ -189,7 +189,7 @@ extension _MangaJumpBack on _MangaFushiPageState {
 
   /// 页码滑块上的落点刻度：只画本话内的点（跨话的只在面板里）；设置关了为 null。
   ({List<double> back, List<double> forward})? _mangaJumpMarks() {
-    if (!appModel.jumpHistoryProgressMarks || _jumpHistory.isEmpty) {
+    if (!_jumpHistoryPrefs.value.progressMarks || _jumpHistory.isEmpty) {
       return null;
     }
     final int pageCount = _payload?.images.length ?? 0;

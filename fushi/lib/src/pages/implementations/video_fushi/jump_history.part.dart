@@ -27,7 +27,7 @@ part of '../video_fushi_page.dart';
 ///
 /// 顶栏与进度条都在 controls builder 里（窗口与全屏同一 builder），全屏路由不随页面
 /// setState 重建，所以一切显隐都走 notifier（[_videoJumpHistoryRevision] /
-/// [_videoJumpAutoHide]）。
+/// [_videoJumpPrefs] 设置 / [_videoJumpAutoHide]）。
 extension _VideoJumpBack on _VideoFushiPageState {
   /// 历史所属的「哪一集」：换集 / 换片后旧集的毫秒在新集上没有意义，作废整段历史。
   String get _videoJumpScopeKey => '$_activeBookUid#$_currentEpisode';
@@ -206,6 +206,7 @@ extension _VideoJumpBack on _VideoFushiPageState {
   /// 顶栏「跳转记录」那组按钮与「⋯」菜单行要跟着重建的状态源。
   Listenable get _videoJumpToolbarListenable => Listenable.merge(<Listenable>[
     _videoJumpHistoryRevision,
+    _videoJumpPrefs,
     _videoJumpAutoHide,
     _miniSurface,
     _immersiveLocked,
@@ -214,7 +215,7 @@ extension _VideoJumpBack on _VideoFushiPageState {
   /// 顶栏图标此刻该不该画（共用判据 + 小窗 / 画中画 / 沉浸锁）。
   bool get _videoJumpToolbarShown =>
       jumpHistoryToolbarVisible(
-        enabled: appModel.jumpHistoryToolbar,
+        enabled: _videoJumpPrefs.value.toolbar,
         hasHistory: _videoJumpHasHistory,
         expired: _videoJumpAutoHide.expired,
       ) &&
@@ -241,8 +242,9 @@ extension _VideoJumpBack on _VideoFushiPageState {
   }
 
   /// 顶栏右上角动作区最前面的「↶ / ↷」按钮胶囊（不画时零尺寸）。按钮定义取共用件
-  /// [jumpHistoryToolbarItems]（tooltip / 长按 / key 三页同源），外观走控制条统一的
-  /// [_chromeIconButton]（secondary tonal 强调，插入时弹簧缩放 + 淡入）。
+  /// [jumpHistoryToolbarItems]（tooltip / 长按 / key 三页同源），经
+  /// [FushiToolbarButton.iconBuilder] 套上控制条统一的 [_chromeIconButton]
+  /// （secondary tonal 强调，插入时弹簧缩放 + 淡入）。
   Widget _videoJumpHistoryTopBarGroup(
     BuildContext from, {
     required bool desktop,
@@ -264,43 +266,30 @@ extension _VideoJumpBack on _VideoFushiPageState {
       onOpenPanel: () => unawaited(_openVideoJumpHistoryPanel(from)),
     );
     if (items.isEmpty) return const SizedBox.shrink();
-    Widget buttonFor(FushiToolbarItem item) {
-      final Widget button = _chromeIconButton(
-        icon: item.icon,
-        desktop: desktop,
-        tone: _m3eChrome
-            ? VideoM3eButtonTone.secondary
-            : VideoM3eButtonTone.neutral,
-        onPressed: () => item.onPressed?.call(),
-      );
-      return KeyedSubtree(
-        key: item.key,
-        child: FushiTooltip(
-          message: item.tooltip ?? item.label,
-          child: GestureDetector(
-            onLongPress: item.onLongPress,
-            onSecondaryTap: item.onLongPress,
-            child: TweenAnimationBuilder<double>(
-              tween: Tween<double>(begin: 0, end: 1),
-              duration: fushiMotionDuration(context, FushiMotion.medium),
-              curve: FushiMotion.release,
-              builder: (BuildContext _, double v, Widget? child) => Opacity(
-                opacity: v.clamp(0.0, 1.0),
-                child: Transform.scale(scale: 0.6 + 0.4 * v, child: child),
-              ),
-              child: Semantics(
-                label: item.label,
-                excludeSemantics: true,
-                button: true,
-                onTap: item.onPressed,
-                onLongPress: item.onLongPress,
-                child: button,
-              ),
-            ),
+    // 外观走控制条统一的 [_chromeIconButton]；强调态插入动效、长按 / 右键、
+    // 提示、语义由 [FushiToolbarButton] 统一（与阅读器 / 漫画顶栏同一份装配）。
+    final ({
+      Color container,
+      Color foreground,
+      Color selectedContainer,
+      Color selectedForeground,
+    })
+    palette = fushiFloatingToolbarPalette(context);
+    Widget buttonFor(FushiToolbarItem item) => FushiToolbarButton(
+      item: item,
+      foreground: palette.foreground,
+      selectedContainer: palette.selectedContainer,
+      selectedForeground: palette.selectedForeground,
+      iconBuilder: (BuildContext _, FushiToolbarItem it, Color _) =>
+          _chromeIconButton(
+            icon: it.icon,
+            desktop: desktop,
+            tone: _m3eChrome
+                ? VideoM3eButtonTone.secondary
+                : VideoM3eButtonTone.neutral,
+            onPressed: () => it.onPressed?.call(),
           ),
-        ),
-      );
-    }
+    );
 
     return Padding(
       padding: EdgeInsetsDirectional.only(end: 8 * _videoUiScale),
@@ -335,15 +324,18 @@ extension _VideoJumpBack on _VideoFushiPageState {
     bool rtl = false,
   }) {
     return ListenableBuilder(
-      listenable: _videoJumpHistoryRevision,
+      listenable: Listenable.merge(<Listenable>[
+        _videoJumpHistoryRevision,
+        _videoJumpPrefs,
+      ]),
       builder: (BuildContext _, Widget? __) {
-        if (!appModel.jumpHistoryProgressMarks || !_videoJumpHasHistory) {
+        if (!_videoJumpPrefs.value.progressMarks || !_videoJumpHasHistory) {
           return const SizedBox.shrink();
         }
         final int? durationMs = controller.durationMs;
         final ({List<double> back, List<double> forward}) marks =
             jumpHistoryMarkFractions<int>(_videoJumpHistory, (int ms) {
-              final double? f = videoJumpMarkFraction(ms, durationMs);
+              final double? f = timelineJumpMarkFraction(ms, durationMs);
               return f == null || !rtl ? f : 1 - f;
             });
         return FushiJumpProgressMarks(

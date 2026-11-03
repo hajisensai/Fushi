@@ -1308,7 +1308,6 @@ double mangaSliderPosition({
   return (rtl ? pageCount - 1 - clamped : clamped).toDouble();
 }
 
-/// [mangaSliderPosition] 的逆：slider 位置 → 0-based 真实页号。
 /// 页号在页码滑块轴上的 0..1 位置（0 = 物理左端；RTL 镜像同 [mangaSliderPosition]），
 /// 给「跳转记录」刻度用。1 页及以下没有轴，返回 null。
 double? mangaJumpMarkFraction({
@@ -1325,6 +1324,7 @@ double? mangaJumpMarkFraction({
       (pageCount - 1);
 }
 
+/// [mangaSliderPosition] 的逆：slider 位置 → 0-based 真实页号。
 int mangaSliderPageIndex({
   required double position,
   required int pageCount,

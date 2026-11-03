@@ -1252,10 +1252,16 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   /// 正在执行返回 / 前进：期间的跳转不再入栈。
   bool _jumpHistoryRestoring = false;
 
-  /// 顶栏跳转图标的自动隐藏计时（时长现读设置；到时只藏图标，历史 / 面板 / 刻度
-  /// 照旧）。到点通知时重建 chrome。
+  /// 「跳转记录」三项设置（顶栏图标 / 刻度 / 自动隐藏）：只在这三项变化时通知，
+  /// 据此重建 chrome，设置一改图标与刻度立刻跟上。
+  late final JumpHistoryPrefsListenable _jumpHistoryPrefs =
+      JumpHistoryPrefsListenable.fromRepository(appModelNoUpdate.prefsRepo)
+        ..addListener(_markMangaJumpHistoryDirty);
+
+  /// 顶栏跳转图标的自动隐藏计时（时长取 [_jumpHistoryPrefs]；到时只藏图标，
+  /// 历史 / 面板 / 刻度照旧）。到点通知时重建 chrome。
   late final JumpHistoryAutoHide _jumpHistoryAutoHide = JumpHistoryAutoHide(
-    secondsOf: () => appModel.jumpHistoryAutoHideSeconds,
+    prefs: _jumpHistoryPrefs,
   )..addListener(_markMangaJumpHistoryDirty);
 
   /// 跳转历史 / 图标显隐变了：重建 chrome（setState 只能在 State 成员里调，扩展
@@ -1702,6 +1708,7 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     _downloadWatch = null;
     _dictionaryTurnDismissTimer?.cancel();
     _jumpHistoryAutoHide.dispose();
+    _jumpHistoryPrefs.dispose();
     // BUG-2449：这里只是不再观察；整卷 OCR 任务归注册表所有，退出页面照跑。
     unawaited(_wholeVolumeOcrSubscription?.cancel());
     _wholeVolumeOcrSubscription = null;

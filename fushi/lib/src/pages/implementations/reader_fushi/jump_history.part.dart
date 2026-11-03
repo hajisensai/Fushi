@@ -78,7 +78,7 @@ extension _ReaderJumpBack on _ReaderFushiPageState {
   /// 正文跳转入口在动手**之前** await 它。歌词模式下的「跳章 / 跳收藏」实际是音频
   /// 跳转，由 [_recordAudioJumpDeparture] 记，这里不重复记。
   Future<void> _recordTextJumpDeparture({required JumpSource source}) async {
-    if (_jumpHistoryRestoring || _lyricsMode) return;
+    if (_jumpWalker.busy || _lyricsMode) return;
     final ({int chapter, double progress, int charOffset})? at =
         await _sampleTextPosition();
     if (at == null || !mounted) return;
@@ -98,7 +98,7 @@ extension _ReaderJumpBack on _ReaderFushiPageState {
   /// [AudiobookPlayerController.onBeforeAudioJump] 的接收端（同步：物理 seek
   /// 之前触发，此刻当前句仍是出发句）。
   void _recordAudioJumpDeparture(int fromGlobalMs, JumpSource source) {
-    if (_jumpHistoryRestoring || !mounted) return;
+    if (_jumpWalker.busy || !mounted) return;
     final DateTime? textAt = _lastTextJumpRecordedAt;
     _lastTextJumpRecordedAt = null;
     final List<JumpHistoryEntry<ReaderJumpPoint>> back =
@@ -149,8 +149,9 @@ extension _ReaderJumpBack on _ReaderFushiPageState {
     );
   }
 
-  /// 顶栏图标自动隐藏到时 / 重新计时：重建（图标收起或重新出现）。
-  void _onJumpAutoHideChanged() {
+  /// 顶栏图标自动隐藏到时 / 重新计时、或「跳转记录」设置变了：重建（图标 / 刻度
+  /// 收起或重新出现）。
+  void _onJumpChromeInputsChanged() {
     if (!mounted) return;
     _rebuild(() {});
   }
@@ -198,28 +199,16 @@ extension _ReaderJumpBack on _ReaderFushiPageState {
 
   /// 走 [steps] 步：负 = 返回 |steps| 步，正 = 前进 [steps] 步（面板里点某一条；
   /// 顶栏 ↶ / ↷ 是 ±1）。落点按它自己的 [ReaderJumpKind] 恢复。
-  Future<void> _walkJumpHistory(int steps) async {
-    if (_jumpHistoryRestoring || steps == 0) return;
-    final List<JumpHistoryEntry<ReaderJumpPoint>> entries = steps < 0
-        ? _jumpHistory.backEntries
-        : _jumpHistory.forwardEntries;
-    final int n = steps.abs();
-    if (n > entries.length) return;
-    final ReaderJumpPoint peek = entries[entries.length - n].point;
-    final ReaderJumpPoint? here = await _currentJumpPoint(peek.kind);
-    if (here == null || !mounted) return;
-    final ReaderJumpPoint? target = steps < 0
-        ? _jumpHistory.goBackSteps(here, n)
-        : _jumpHistory.goForwardSteps(here, n);
-    if (target == null) return;
-    _jumpHistoryRestoring = true;
-    _jumpAutoHide.markJump();
-    try {
-      await _restoreJumpPoint(target);
-    } finally {
-      _jumpHistoryRestoring = false;
-    }
-  }
+  Future<void> _walkJumpHistory(int steps) => _jumpWalker.walk(
+    _jumpHistory,
+    steps,
+    here: (ReaderJumpPoint destination) async {
+      final ReaderJumpPoint? here = await _currentJumpPoint(destination.kind);
+      return mounted ? here : null;
+    },
+    onStepped: _jumpAutoHide.markJump,
+    restore: _restoreJumpPoint,
+  );
 
   Future<void> _restoreJumpPoint(ReaderJumpPoint point) async {
     final AudiobookPlayerController? ctrl = _audiobookController;
@@ -352,9 +341,8 @@ extension _ReaderJumpBack on _ReaderFushiPageState {
   /// 隐藏到时返回空表。
   List<FushiToolbarItem> _jumpHistoryToolbarItems() {
     if (!_hasEverLoaded) return const <FushiToolbarItem>[];
-    final AppModel model = appModelNoUpdate;
     if (!jumpHistoryToolbarVisible(
-      enabled: model.jumpHistoryToolbar,
+      enabled: _jumpPrefs.value.toolbar,
       hasHistory: !_jumpHistory.isEmpty,
       expired: _jumpAutoHide.expired,
     )) {
@@ -408,7 +396,7 @@ extension _ReaderJumpBack on _ReaderFushiPageState {
 
   /// 刻度开关（设置「进度条刻度」）。
   bool get _jumpMarksEnabled =>
-      appModelNoUpdate.jumpHistoryProgressMarks && !_jumpHistory.isEmpty;
+      _jumpPrefs.value.progressMarks && !_jumpHistory.isEmpty;
 
   /// 有声书全书时间轴上的落点（迷你播放条、有声书面板整书进度条）：只有音频点
   /// 有时间；正文点不在这条轴上，不画。刻度关掉 / 时长未知返回 null。
@@ -421,7 +409,9 @@ extension _ReaderJumpBack on _ReaderFushiPageState {
       ReaderJumpPoint p,
     ) {
       final int? ms = p.audioGlobalMs;
-      return p.kind == ReaderJumpKind.audio && ms != null ? ms / totalMs : null;
+      return p.kind == ReaderJumpKind.audio && ms != null
+          ? timelineJumpMarkFraction(ms, totalMs)
+          : null;
     });
   }
 

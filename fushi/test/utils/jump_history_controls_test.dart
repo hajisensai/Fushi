@@ -1,3 +1,7 @@
+import 'dart:async';
+
+import 'package:fake_async/fake_async.dart';
+import 'package:flutter/gestures.dart' show kSecondaryButton;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -73,42 +77,6 @@ void main() {
       expect(migrateLegacyJumpPillAutoHide(15), 30);
       expect(kJumpHistoryAutoHideDefaultSeconds, 0);
       expect(kJumpHistoryAutoHideOptions.first, 0);
-    });
-
-    test('expiry only with a positive timeout after a jump', () {
-      final DateTime t0 = DateTime(2026);
-      expect(
-        jumpHistoryToolbarExpired(
-          lastJumpAt: t0,
-          autoHideSeconds: 0,
-          now: t0.add(const Duration(days: 1)),
-        ),
-        isFalse,
-      );
-      expect(
-        jumpHistoryToolbarExpired(
-          lastJumpAt: null,
-          autoHideSeconds: 30,
-          now: t0,
-        ),
-        isFalse,
-      );
-      expect(
-        jumpHistoryToolbarExpired(
-          lastJumpAt: t0,
-          autoHideSeconds: 30,
-          now: t0.add(const Duration(seconds: 29)),
-        ),
-        isFalse,
-      );
-      expect(
-        jumpHistoryToolbarExpired(
-          lastJumpAt: t0,
-          autoHideSeconds: 30,
-          now: t0.add(const Duration(seconds: 30)),
-        ),
-        isTrue,
-      );
     });
 
     test('toolbar visibility needs setting, history and no expiry', () {
@@ -254,5 +222,295 @@ void main() {
       ).every((FushiToolbarItem i) => i.emphasized && i.onLongPress != null),
       isTrue,
     );
+  });
+
+  group('JumpHistoryAutoHide (single-source timer)', () {
+    const JumpHistoryPrefs base = JumpHistoryPrefs(
+      toolbar: true,
+      progressMarks: true,
+      autoHideSeconds: 30,
+    );
+    JumpHistoryPrefs withSeconds(int s) => JumpHistoryPrefs(
+      toolbar: base.toolbar,
+      progressMarks: base.progressMarks,
+      autoHideSeconds: s,
+    );
+
+    test('expires exactly when its timer fires, once', () {
+      fakeAsync((FakeAsync async) {
+        final ValueNotifier<JumpHistoryPrefs> prefs =
+            ValueNotifier<JumpHistoryPrefs>(base);
+        final JumpHistoryAutoHide hide = JumpHistoryAutoHide(
+          prefs: prefs,
+          stopwatch: () => async.getClock(DateTime(2026)).stopwatch(),
+        );
+        int notified = 0;
+        hide.addListener(() => notified++);
+        expect(hide.expired, isFalse);
+        hide.markJump();
+        expect(notified, 1);
+        async.elapse(const Duration(seconds: 29));
+        expect(hide.expired, isFalse);
+        async.elapse(const Duration(seconds: 1));
+        expect(hide.expired, isTrue);
+        expect(notified, 2);
+        async.elapse(const Duration(minutes: 5));
+        expect(notified, 2);
+        // 下一次跳转：图标回来、重新计时。
+        hide.markJump();
+        expect(hide.expired, isFalse);
+        hide.dispose();
+      });
+    });
+
+    test('setting changed to "never" cancels the timer and shows again', () {
+      fakeAsync((FakeAsync async) {
+        final ValueNotifier<JumpHistoryPrefs> prefs =
+            ValueNotifier<JumpHistoryPrefs>(base);
+        final JumpHistoryAutoHide hide = JumpHistoryAutoHide(
+          prefs: prefs,
+          stopwatch: () => async.getClock(DateTime(2026)).stopwatch(),
+        )..markJump();
+        async.elapse(const Duration(seconds: 10));
+        prefs.value = withSeconds(0);
+        async.elapse(const Duration(minutes: 10));
+        expect(hide.expired, isFalse, reason: '改成不隐藏后旧计时器不得到点');
+        prefs.value = withSeconds(30);
+        expect(hide.expired, isTrue, reason: '距上次跳转已过 10 分钟 ≥ 30 秒');
+        // 已经藏了再改成不隐藏：图标回来。
+        prefs.value = withSeconds(0);
+        expect(hide.expired, isFalse);
+        hide.dispose();
+      });
+    });
+
+    test('setting changed mid-wait reschedules from monotonic elapsed', () {
+      fakeAsync((FakeAsync async) {
+        final ValueNotifier<JumpHistoryPrefs> prefs =
+            ValueNotifier<JumpHistoryPrefs>(withSeconds(0));
+        final JumpHistoryAutoHide hide = JumpHistoryAutoHide(
+          prefs: prefs,
+          stopwatch: () => async.getClock(DateTime(2026)).stopwatch(),
+        )..markJump();
+        async.elapse(const Duration(seconds: 20));
+        expect(hide.expired, isFalse);
+        // 0 → 60：从「已过去 20 秒」起算，再 40 秒到点；不是随下一次重建随机消失。
+        prefs.value = withSeconds(60);
+        async.elapse(const Duration(seconds: 39));
+        expect(hide.expired, isFalse);
+        async.elapse(const Duration(seconds: 1));
+        expect(hide.expired, isTrue);
+        hide.dispose();
+      });
+    });
+
+    test('reset stops the timer; no jump yet never expires', () {
+      fakeAsync((FakeAsync async) {
+        final ValueNotifier<JumpHistoryPrefs> prefs =
+            ValueNotifier<JumpHistoryPrefs>(base);
+        final JumpHistoryAutoHide hide = JumpHistoryAutoHide(
+          prefs: prefs,
+          stopwatch: () => async.getClock(DateTime(2026)).stopwatch(),
+        );
+        prefs.value = withSeconds(5);
+        async.elapse(const Duration(minutes: 1));
+        expect(hide.expired, isFalse);
+        hide.markJump();
+        hide.reset();
+        async.elapse(const Duration(minutes: 1));
+        expect(hide.expired, isFalse);
+        hide.dispose();
+      });
+    });
+  });
+
+  group('JumpHistoryPrefsListenable', () {
+    test('notifies only when one of the three jump settings changes', () {
+      // 偏好仓库的替身：写任何偏好都会通知。
+      final ValueNotifier<int> source = ValueNotifier<int>(0);
+      JumpHistoryPrefs current = const JumpHistoryPrefs(
+        toolbar: true,
+        progressMarks: true,
+        autoHideSeconds: 0,
+      );
+      final JumpHistoryPrefsListenable prefs = JumpHistoryPrefsListenable(
+        source: source,
+        read: () => current,
+      );
+      int notified = 0;
+      prefs.addListener(() => notified++);
+      // 写了别的偏好：值没变，不连带重建。
+      source.value++;
+      expect(notified, 0);
+      current = const JumpHistoryPrefs(
+        toolbar: false,
+        progressMarks: true,
+        autoHideSeconds: 0,
+      );
+      source.value++;
+      expect(notified, 1);
+      expect(prefs.value.toolbar, isFalse);
+      prefs.dispose();
+      // dispose 后不再监听源。
+      source.value++;
+      source.dispose();
+    });
+
+    testWidgets(
+      'toggling the toolbar setting hides / shows the buttons at once',
+      (WidgetTester tester) async {
+        final ValueNotifier<int> source = ValueNotifier<int>(0);
+        bool toolbar = true;
+        final JumpHistoryPrefsListenable prefs = JumpHistoryPrefsListenable(
+          source: source,
+          read: () => JumpHistoryPrefs(
+            toolbar: toolbar,
+            progressMarks: true,
+            autoHideSeconds: 0,
+          ),
+        );
+        addTearDown(source.dispose);
+        addTearDown(prefs.dispose);
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: Center(
+                child: ListenableBuilder(
+                  listenable: prefs,
+                  builder: (BuildContext context, Widget? _) =>
+                      FushiJumpHistoryActions(
+                        items:
+                            jumpHistoryToolbarVisible(
+                              enabled: prefs.value.toolbar,
+                              hasHistory: true,
+                              expired: false,
+                            )
+                            ? jumpHistoryToolbarItems(
+                                backLabel: '1:00',
+                                forwardLabel: null,
+                                onBack: () {},
+                                onForward: () {},
+                                onOpenPanel: () {},
+                              )
+                            : const <FushiToolbarItem>[],
+                      ),
+                ),
+              ),
+            ),
+          ),
+        );
+        const Key back = ValueKey<String>('fushi_jump_back');
+        expect(find.byKey(back), findsOneWidget);
+        toolbar = false;
+        source.value++;
+        await tester.pump();
+        expect(find.byKey(back), findsNothing, reason: '关掉开关后立即消失，不等下一次跳转');
+        toolbar = true;
+        source.value++;
+        await tester.pump();
+        expect(find.byKey(back), findsOneWidget);
+      },
+    );
+  });
+
+  testWidgets(
+    'custom iconBuilder: long-press / right-click open the panel, tap walks',
+    (WidgetTester tester) async {
+      int back = 0;
+      int panel = 0;
+      final List<FushiToolbarItem> items = jumpHistoryToolbarItems(
+        backLabel: '1:00',
+        forwardLabel: null,
+        onBack: () => back++,
+        onForward: () {},
+        onOpenPanel: () => panel++,
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: FushiToolbarButton(
+                item: items.single,
+                foreground: Colors.black,
+                selectedContainer: Colors.grey,
+                selectedForeground: Colors.black,
+                iconBuilder: (BuildContext _, FushiToolbarItem it, Color _) =>
+                    IconButton(
+                      key: const ValueKey<String>('bare'),
+                      icon: const Icon(Icons.undo),
+                      onPressed: it.onPressed,
+                    ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final Finder target = find.byKey(const ValueKey<String>('bare'));
+      await tester.tap(target);
+      await tester.pumpAndSettle();
+      expect(back, 1);
+      await tester.longPress(target);
+      await tester.pumpAndSettle();
+      expect(panel, 1, reason: '提示在外、长按在里：长按不能被提示抢走');
+      await tester.tap(target, buttons: kSecondaryButton);
+      await tester.pumpAndSettle();
+      expect(panel, 2);
+      expect(back, 1);
+    },
+  );
+
+  group('JumpHistoryWalker', () {
+    test('a second walk while the first is sampling is dropped', () async {
+      final JumpHistory<int> h = history();
+      h.recordDeparture(1);
+      h.recordDeparture(2);
+      h.recordDeparture(3);
+      final JumpHistoryWalker<int> walker = JumpHistoryWalker<int>();
+      final Completer<int?> sample = Completer<int?>();
+      final List<int> restored = <int>[];
+      int samples = 0;
+      Future<bool> walk() => walker.walk(
+        h,
+        -1,
+        here: (int _) {
+          samples++;
+          return sample.future;
+        },
+        restore: (int target) async => restored.add(target),
+      );
+      final Future<bool> first = walk();
+      expect(walker.busy, isTrue, reason: '第一个 await 之前就占住');
+      final Future<bool> second = walk();
+      sample.complete(10);
+      expect(await first, isTrue);
+      expect(await second, isFalse);
+      expect(samples, 1);
+      expect(restored, <int>[3]);
+      expect(h.backEntries.map((JumpHistoryEntry<int> e) => e.point), <int>[
+        1,
+        2,
+      ]);
+      expect(h.forwardEntries.map((JumpHistoryEntry<int> e) => e.point), <int>[
+        10,
+      ]);
+      expect(walker.busy, isFalse);
+    });
+
+    test('sampling failure leaves stacks untouched and releases', () async {
+      final JumpHistory<int> h = history()..recordDeparture(1);
+      final JumpHistoryWalker<int> walker = JumpHistoryWalker<int>();
+      expect(
+        await walker.walk(
+          h,
+          -1,
+          here: (int _) async => null,
+          restore: (int _) async {},
+        ),
+        isFalse,
+      );
+      expect(h.backTarget, 1);
+      expect(walker.busy, isFalse);
+    });
   });
 }

@@ -145,11 +145,15 @@ void main() {
           await tester.tap(find.byKey(_backKey));
           await tester.pump();
           expect(backs, 1);
-          // 右键（桌面）开面板。触屏长按见报告：共用件 FushiToolbarButton 的
-          // Tooltip 长按识别器先胜出，这里不在本页修。
+          // 右键（桌面）与触屏长按都开面板：提示在外、长按在里的手势装配只在
+          // FushiToolbarLongPressTarget 一处，长按不会被提示抢走。
           await tester.tap(find.byKey(_backKey), buttons: kSecondaryButton);
           await tester.pump();
           expect(panels, 1);
+          expect(backs, 1);
+          await tester.longPress(find.byKey(_backKey));
+          await tester.pump(const Duration(milliseconds: 600));
+          expect(panels, 2);
           expect(backs, 1);
 
           await tester.pumpWidget(app(withJump: false));

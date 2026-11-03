@@ -411,7 +411,12 @@ import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
     show einkSafeDuration, isEinkTheme;
 import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
-    show FushiFloatingTopBar, FushiToolbarItem, kFushiFloatingToolbarEdgeMargin;
+    show
+        FushiFloatingTopBar,
+        FushiToolbarButton,
+        FushiToolbarItem,
+        fushiFloatingToolbarPalette,
+        kFushiFloatingToolbarEdgeMargin;
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
     show FushiChoiceOption, showFushiChoiceDialog, showFushiTextInputDialog;
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
@@ -2524,10 +2529,15 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 走 notifier 而非 setState。
   final ValueNotifier<int> _videoJumpHistoryRevision = ValueNotifier<int>(0);
 
-  /// 顶栏「跳转记录」图标的自动隐藏计时（时长现读 `jumpHistoryAutoHideSeconds`，
-  /// 默认 0 = 不隐藏；只藏图标，记录 / 面板 / 刻度保留，下次跳转再出现）。
+  /// 「跳转记录」三项设置（顶栏图标 / 刻度 / 自动隐藏）：只在这三项变化时通知，
+  /// 并进顶栏按钮与刻度的重建源，设置一改立刻生效（全屏路由同样跟随）。
+  late final JumpHistoryPrefsListenable _videoJumpPrefs =
+      JumpHistoryPrefsListenable.fromRepository(appModel.prefsRepo);
+
+  /// 顶栏「跳转记录」图标的自动隐藏计时（时长取 [_videoJumpPrefs]，默认 0 = 不
+  /// 隐藏；只藏图标，记录 / 面板 / 刻度保留，下次跳转再出现）。
   late final JumpHistoryAutoHide _videoJumpAutoHide = JumpHistoryAutoHide(
-    secondsOf: () => appModel.jumpHistoryAutoHideSeconds,
+    prefs: _videoJumpPrefs,
   );
 
   /// 鼠标当前是否悬停在右 / 左浮动学习按钮 rail 上（BUG-283）。
@@ -6722,6 +6732,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     _controlsHeld.dispose();
     _videoControlsVisible.dispose();
     _videoJumpAutoHide.dispose();
+    _videoJumpPrefs.dispose();
     _videoJumpHistoryRevision.dispose();
     _railHovered.dispose();
     _cursorHidden.dispose();

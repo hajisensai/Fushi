@@ -1,7 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/reader/reader_jump_history.dart';
-import 'package:fushi/src/media/video/video_jump_history.dart'
-    show formatJumpHistoryTime;
 import 'package:fushi/src/utils/misc/jump_history.dart';
 
 ReaderJumpPoint _text(int chapter, int offset) => ReaderJumpPoint(

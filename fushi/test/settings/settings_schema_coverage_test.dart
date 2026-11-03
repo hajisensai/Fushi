@@ -578,7 +578,7 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       '（jumpHistoryMarkFractions / 刻度几何）',
   'appearance/Auto-hide top bar jump buttons':
       'test/utils/jump_history_controls_test.dart'
-      '（jumpHistoryToolbarExpired：默认 0 不隐藏、旧视频设置折算）',
+      '（JumpHistoryAutoHide：单调计时到点收起、改时长即时重排；默认 0 不隐藏、旧视频设置折算）',
   'video/Auto-align downloaded subtitles':
       'test/media/video/embedded_reference_subtitle_sync_test.dart'
       '（gatedAutomaticSubtitleAligner：开关每次现读）',

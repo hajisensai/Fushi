@@ -179,6 +179,53 @@ class JumpHistory<T> {
   }
 }
 
+/// 「走 N 步」的单飞执行器：返回 / 前进 / 面板跳转共用。
+///
+/// 采样「当前在哪」可能是异步的（小说阅读器要经 WebView 读视口位置），所以**在第
+/// 一个 await 之前**就占住 [busy]，采样、改栈、恢复都在同一段 try/finally 里，
+/// 结束统一放开。连点两下 ↶、或面板跳转与顶栏按钮几乎同时触发时，后来的那次直接
+/// 落空——不会两次都越过守卫、各自改栈（连退两步、前进栈压两份同一位置、两个恢复
+/// 并发）。[busy] 期间宿主的「记录出发点」也应当跳过（恢复带出的跳转不入栈）。
+class JumpHistoryWalker<T> {
+  bool _busy = false;
+
+  /// 正在走（采样 / 改栈 / 恢复中）。
+  bool get busy => _busy;
+
+  /// 在 [history] 上走 [steps] 步（负 = 返回，正 = 前进）。[here] 按要去的那一点
+  /// 采样当前位置（返回 null = 采不到，放弃且不改栈）；改栈后先调 [onStepped]
+  /// （图标重新计时等），再 await [restore] 落地。真的走了返回 true。
+  Future<bool> walk(
+    JumpHistory<T> history,
+    int steps, {
+    required Future<T?> Function(T destination) here,
+    required Future<void> Function(T target) restore,
+    void Function()? onStepped,
+  }) async {
+    if (_busy || steps == 0) return false;
+    final List<JumpHistoryEntry<T>> entries = steps < 0
+        ? history.backEntries
+        : history.forwardEntries;
+    final int n = steps.abs();
+    if (n > entries.length) return false;
+    _busy = true;
+    try {
+      final T destination = entries[entries.length - n].point;
+      final T? current = await here(destination);
+      if (current == null) return false;
+      final T? target = steps < 0
+          ? history.goBackSteps(current, n)
+          : history.goForwardSteps(current, n);
+      if (target == null) return false;
+      onStepped?.call();
+      await restore(target);
+      return true;
+    } finally {
+      _busy = false;
+    }
+  }
+}
+
 /// 「跳转记录」顶栏图标自动隐藏的可选秒数（设置分段选项；0 = 不自动隐藏）。
 const List<int> kJumpHistoryAutoHideOptions = <int>[0, 30, 60, 300];
 
@@ -194,13 +241,19 @@ int migrateLegacyJumpPillAutoHide(int? legacySeconds) {
   return kJumpHistoryAutoHideOptions.firstWhere((int s) => s > 0);
 }
 
-/// 自上次跳转起是否已超过自动隐藏时长（[autoHideSeconds] 为 0 永不过期；
-/// [lastJumpAt] 为 null = 还没跳转过，不算过期）。
-bool jumpHistoryToolbarExpired({
-  required DateTime? lastJumpAt,
-  required int autoHideSeconds,
-  required DateTime now,
-}) {
-  if (autoHideSeconds <= 0 || lastJumpAt == null) return false;
-  return now.difference(lastJumpAt) >= Duration(seconds: autoHideSeconds);
+/// 媒体时间轴位置的文案：满一小时 `h:mm:ss`，否则 `m:ss`（视频播放位置、有声书全书
+/// 时间共用；「跳转记录」顶栏 tooltip 与面板行都用它）。
+String formatJumpHistoryTime(int ms) {
+  final Duration d = Duration(milliseconds: ms < 0 ? 0 : ms);
+  final int h = d.inHours;
+  final String m = (d.inMinutes % 60).toString().padLeft(h > 0 ? 2 : 1, '0');
+  final String s = (d.inSeconds % 60).toString().padLeft(2, '0');
+  return h > 0 ? '$h:$m:$s' : '$m:$s';
+}
+
+/// 时间轴落点在进度条上的比例（视频播放位置、有声书全书时间共用）：时长未知
+/// （未 load / 直播流）时不画（null）。
+double? timelineJumpMarkFraction(int pointMs, int? durationMs) {
+  if (durationMs == null || durationMs <= 0) return null;
+  return pointMs / durationMs;
 }

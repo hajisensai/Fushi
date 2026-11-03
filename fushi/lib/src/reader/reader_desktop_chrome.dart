@@ -255,6 +255,7 @@ class ReaderDesktopHeader extends StatelessWidget {
   Widget _button(ReaderHeaderAction a) => ReaderDesktopHeaderButton(
     key: a.key,
     icon: a.icon,
+    label: a.label,
     tooltip: a.tooltipText,
     color: textColor,
     semanticsId: a.semanticsId,
@@ -418,10 +419,15 @@ class ReaderDesktopHeaderButton extends StatelessWidget {
     required this.onPressed,
     this.semanticsId,
     this.onLongPress,
+    this.label,
   });
 
   final IconData icon;
   final String tooltip;
+
+  /// 无障碍名称（只在有 [onLongPress] 时用：此时提示由
+  /// [FushiToolbarLongPressTarget] 出，名称不该是整段提示）。null 时取 [tooltip]。
+  final String? label;
   final Color color;
   final VoidCallback? onPressed;
   final String? semanticsId;
@@ -435,24 +441,18 @@ class ReaderDesktopHeaderButton extends StatelessWidget {
     Widget button = FushiIconButtonControl(
       icon: FushiIcon(icon, color: color),
       iconSize: 22,
-      // 有长按动作时提示改由外层只认鼠标悬停的 Tooltip 出：触屏长按触发的 Tooltip
-      // 自带长按识别器，会在手势竞技场里先于外层长按胜出，长按就只弹提示、打不开
-      // 面板。
+      // 有长按动作时提示 / 长按 / 右键 / 语义统一交给 [FushiToolbarLongPressTarget]
+      // （与悬浮顶栏、视频控制条同一份手势装配）。
       tooltip: longPress == null ? tooltip : null,
       onPressed: onPressed,
     );
     if (longPress != null) {
-      button = Semantics(
+      button = FushiToolbarLongPressTarget(
+        label: label ?? tooltip,
+        tooltip: tooltip,
+        onPressed: onPressed,
         onLongPress: longPress,
-        child: GestureDetector(
-          onLongPress: longPress,
-          onSecondaryTap: longPress,
-          child: Tooltip(
-            message: tooltip,
-            triggerMode: TooltipTriggerMode.manual,
-            child: button,
-          ),
-        ),
+        child: button,
       );
     }
     if (semanticsId == null) return button;

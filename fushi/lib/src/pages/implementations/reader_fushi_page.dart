@@ -151,8 +151,6 @@ import 'package:fushi/src/reader/reader_search_navigation.dart';
 import 'package:fushi/src/reader/reader_jump_history.dart';
 import 'package:fushi/src/utils/misc/jump_history.dart';
 import 'package:fushi/src/utils/components/fushi_jump_history_controls.dart';
-import 'package:fushi/src/media/video/video_jump_history.dart'
-    show formatJumpHistoryTime;
 import 'package:fushi/src/reader/reader_selection_data.dart';
 import 'package:fushi/src/reader/reader_selection_toolbar_layout.dart';
 import 'package:fushi/src/reader/reader_selection_scripts.dart';
@@ -2273,17 +2271,25 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// 「跳转回退」历史（见 jump_history.part.dart）：本次阅读会话内存态，不落库。
   final JumpHistory<ReaderJumpPoint> _jumpHistory = newReaderJumpHistory();
 
-  /// 正在执行返回 / 前进：期间触发的跳转（含音频 seek 回调）不再入栈。
-  bool _jumpHistoryRestoring = false;
+  /// 返回 / 前进 / 面板跳转的单飞执行器：[JumpHistoryWalker.busy] 期间（采样、
+  /// 改栈、恢复全程）触发的跳转（含音频 seek 回调）不再入栈，重入的走法直接落空。
+  final JumpHistoryWalker<ReaderJumpPoint> _jumpWalker =
+      JumpHistoryWalker<ReaderJumpPoint>();
 
   /// 最近一次正文跳转入栈的时刻：紧随其后的音频跳转视作同一次动作。
   DateTime? _lastTextJumpRecordedAt;
 
+  /// 「跳转记录」三项设置（顶栏图标 / 刻度 / 自动隐藏）：只在这三项变化时通知，
+  /// 页面据此重建，设置一改图标与刻度立刻跟上。
+  late final JumpHistoryPrefsListenable _jumpPrefs =
+      JumpHistoryPrefsListenable.fromRepository(appModelNoUpdate.prefsRepo)
+        ..addListener(_onJumpChromeInputsChanged);
+
   /// 顶栏返回 / 前进图标的自动隐藏计时（设置「自动隐藏」，默认不隐藏）：只管
   /// 图标，记录 / 面板 / 刻度不受它影响。
   late final JumpHistoryAutoHide _jumpAutoHide = JumpHistoryAutoHide(
-    secondsOf: () => appModelNoUpdate.jumpHistoryAutoHideSeconds,
-  )..addListener(_onJumpAutoHideChanged);
+    prefs: _jumpPrefs,
+  )..addListener(_onJumpChromeInputsChanged);
 
   // TODO-1289：图片防剧透遮罩「点击揭开」的本次阅读会话真相源。揭开只删 WebView 内
   // DOM class，章节 (重)载 / 布局设置切换会重跑分页脚本重新遮罩；把已揭开图片的稳定
@@ -3672,6 +3678,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     _removeSelectionActionBar();
     _progressPollTimer?.cancel();
     _jumpAutoHide.dispose();
+    _jumpPrefs.dispose();
     _revealProgressRefreshTimer?.cancel();
     _saveDebounce?.cancel();
     _scrollProgressThrottleTimer?.cancel();

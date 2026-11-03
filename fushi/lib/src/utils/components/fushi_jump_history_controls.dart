@@ -3,6 +3,8 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/models/preferences_repository.dart'
+    show PreferencesRepository;
 import 'package:fushi/src/reader/reader_desktop_chrome.dart'
     show ReaderSideSheet, ReaderSideSheetSide, showReaderSideSheet;
 import 'package:fushi/src/reader/reader_panel_chrome_kit.dart'
@@ -125,37 +127,118 @@ bool jumpHistoryToolbarVisible({
   required bool expired,
 }) => enabled && hasHistory && !expired;
 
-/// 顶栏图标的自动隐藏计时：每次跳转 / 返回 / 前进调 [markJump]，过了
-/// [secondsOf] 秒后 [expired] 变 true 并通知一次（页面据此重建、图标收起）。
-/// 时长每次现读设置；0 = 永不过期。只管图标，不碰历史。
-class JumpHistoryAutoHide extends ChangeNotifier {
-  JumpHistoryAutoHide({
-    required int Function() secondsOf,
-    DateTime Function()? clock,
-  }) : _secondsOf = secondsOf,
-       _clock = clock ?? DateTime.now;
+/// 「跳转记录」三项设置的一份快照（顶栏图标开关、刻度开关、自动隐藏秒数）。
+@immutable
+class JumpHistoryPrefs {
+  const JumpHistoryPrefs({
+    required this.toolbar,
+    required this.progressMarks,
+    required this.autoHideSeconds,
+  });
 
-  final int Function() _secondsOf;
-  final DateTime Function() _clock;
-  DateTime? _lastJumpAt;
-  Timer? _timer;
-
-  DateTime? get lastJumpAt => _lastJumpAt;
-
-  bool get expired => jumpHistoryToolbarExpired(
-    lastJumpAt: _lastJumpAt,
-    autoHideSeconds: _secondsOf(),
-    now: _clock(),
+  /// 从偏好仓库读当前值。
+  factory JumpHistoryPrefs.of(PreferencesRepository prefs) => JumpHistoryPrefs(
+    toolbar: prefs.jumpHistoryToolbar,
+    progressMarks: prefs.jumpHistoryProgressMarks,
+    autoHideSeconds: prefs.jumpHistoryAutoHideSeconds,
   );
+
+  final bool toolbar;
+  final bool progressMarks;
+
+  /// 0 = 不自动隐藏。
+  final int autoHideSeconds;
+
+  @override
+  bool operator ==(Object other) =>
+      other is JumpHistoryPrefs &&
+      other.toolbar == toolbar &&
+      other.progressMarks == progressMarks &&
+      other.autoHideSeconds == autoHideSeconds;
+
+  @override
+  int get hashCode => Object.hash(toolbar, progressMarks, autoHideSeconds);
+}
+
+/// 只在「跳转记录」三项设置变化时才通知的偏好选择器：订阅 [source]（偏好仓库，
+/// 写任何偏好都会通知），每次重读 [read]，值真的变了才 notify——页面把它并进
+/// 顶栏 / 刻度的重建源，设置一改图标与刻度立刻跟上，写别的偏好不连带重建。
+class JumpHistoryPrefsListenable extends ChangeNotifier
+    implements ValueListenable<JumpHistoryPrefs> {
+  JumpHistoryPrefsListenable({
+    required Listenable source,
+    required JumpHistoryPrefs Function() read,
+  }) : _source = source,
+       _read = read,
+       _value = read() {
+    _source.addListener(_onSourceChanged);
+  }
+
+  /// 订阅 [prefs] 本身（它是 ChangeNotifier，`setJumpHistory*` 写完会通知）。
+  factory JumpHistoryPrefsListenable.fromRepository(
+    PreferencesRepository prefs,
+  ) => JumpHistoryPrefsListenable(
+    source: prefs,
+    read: () => JumpHistoryPrefs.of(prefs),
+  );
+
+  final Listenable _source;
+  final JumpHistoryPrefs Function() _read;
+  JumpHistoryPrefs _value;
+
+  @override
+  JumpHistoryPrefs get value => _value;
+
+  void _onSourceChanged() {
+    final JumpHistoryPrefs next = _read();
+    if (next == _value) return;
+    _value = next;
+    notifyListeners();
+  }
+
+  @override
+  void dispose() {
+    _source.removeListener(_onSourceChanged);
+    super.dispose();
+  }
+}
+
+/// 顶栏图标的自动隐藏计时：每次跳转 / 返回 / 前进调 [markJump]，过了设置的秒数后
+/// [expired] 变 true 并通知一次（页面据此重建、图标收起）。只管图标，不碰历史。
+///
+/// 过期状态只有一个来源：计时器到点置位的 [expired] 标志（不在重建时拿墙钟重算，
+/// 墙钟回拨 / 计时器比墙钟差值早到几毫秒都不会让图标卡住不藏）。距上次跳转的时长
+/// 用单调的 [Stopwatch] 量；页面开着时改了时长（[prefs] 通知），按「已过去的单调
+/// 时长」重新安排或取消计时器：改成不隐藏 = 取消并让图标回来，改成 N 秒 = 剩余
+/// 时长到点再藏（已超过则立即藏）。
+class JumpHistoryAutoHide extends ChangeNotifier {
+  /// [stopwatch] 只给测试注入假时钟的秒表（默认真 [Stopwatch]）。
+  JumpHistoryAutoHide({
+    required ValueListenable<JumpHistoryPrefs> prefs,
+    Stopwatch Function()? stopwatch,
+  }) : _prefs = prefs,
+       _newStopwatch = stopwatch ?? Stopwatch.new,
+       _seconds = prefs.value.autoHideSeconds {
+    _prefs.addListener(_onPrefsChanged);
+  }
+
+  final ValueListenable<JumpHistoryPrefs> _prefs;
+  final Stopwatch Function() _newStopwatch;
+  int _seconds;
+
+  /// 自上次跳转起的单调计时；null = 还没跳转过（或已 [reset]）。
+  Stopwatch? _sinceJump;
+  Timer? _timer;
+  bool _expired = false;
+
+  /// 图标是否已到时收起。
+  bool get expired => _expired;
 
   /// 刚发生一次跳转（含返回 / 前进 / 面板跳转）：重新计时，图标重新出现。
   void markJump() {
-    _lastJumpAt = _clock();
-    _timer?.cancel();
-    final int seconds = _secondsOf();
-    if (seconds > 0) {
-      _timer = Timer(Duration(seconds: seconds), notifyListeners);
-    }
+    _sinceJump = _newStopwatch()..start();
+    _expired = false;
+    _schedule();
     notifyListeners();
   }
 
@@ -163,12 +246,48 @@ class JumpHistoryAutoHide extends ChangeNotifier {
   void reset() {
     _timer?.cancel();
     _timer = null;
-    _lastJumpAt = null;
+    _sinceJump = null;
+    _expired = false;
     notifyListeners();
+  }
+
+  /// 按当前时长与已过去的单调时长（重新）安排计时器；已到时直接置位。
+  void _schedule() {
+    _timer?.cancel();
+    _timer = null;
+    final Stopwatch? since = _sinceJump;
+    if (since == null || _seconds <= 0) {
+      _expired = false;
+      return;
+    }
+    final Duration remaining = Duration(seconds: _seconds) - since.elapsed;
+    if (remaining <= Duration.zero) {
+      _expired = true;
+      return;
+    }
+    _expired = false;
+    _timer = Timer(remaining, _expire);
+  }
+
+  void _expire() {
+    _timer = null;
+    if (_expired) return;
+    _expired = true;
+    notifyListeners();
+  }
+
+  void _onPrefsChanged() {
+    final int seconds = _prefs.value.autoHideSeconds;
+    if (seconds == _seconds) return;
+    _seconds = seconds;
+    final bool before = _expired;
+    _schedule();
+    if (_expired != before) notifyListeners();
   }
 
   @override
   void dispose() {
+    _prefs.removeListener(_onPrefsChanged);
     _timer?.cancel();
     super.dispose();
   }
