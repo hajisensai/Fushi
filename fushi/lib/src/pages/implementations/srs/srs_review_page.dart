@@ -2003,6 +2003,8 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
             ),
         ],
         actions: <List<FushiToolbarItem>>[_actionItems()],
+        // 牌组名与卡片计数优先完整显示，动作放不下先收进「⋯」（用户 2026-11-03）。
+        titleFirst: true,
         // 默认平铺、宽度不够才按优先级收进「⋯」（自适应溢出，CLAUDE.md 工具栏规则）。
         overflow: _menuItems(),
       ),

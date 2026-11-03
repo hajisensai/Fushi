@@ -10,6 +10,7 @@
 // 走真实路径：内存库 + 确定性假排程内核 → SrsReviewPage。数据库读写放 tester.runAsync。
 
 import 'package:flutter/gestures.dart';
+import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -81,8 +82,9 @@ Future<void> _pumpReview(
   bool apple = false,
   bool? floating,
   List<SrsCardFace>? faces,
+  Size size = const Size(1100, 900),
 }) async {
-  tester.view.physicalSize = const Size(1100, 900);
+  tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
   final AppModel app = AppModel(testPlatformServices());
@@ -287,6 +289,45 @@ void main() {
     expect(find.byType(FushiFloatingTopBar), findsOneWidget);
     await _unmount(tester);
   });
+
+  // 窄窗口、动作多、显示计数：卡片计数（副标题）必须完整显示，动作先收进「⋯」
+  // （用户 2026-11-03：计数被压成「新卡 0 …」）。
+  for (final bool apple in <bool>[false, true]) {
+    testWidgets('窄宽：页头卡片计数完整显示（${apple ? 'Apple' : 'Material'}）', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      await _addLapis(tester, store);
+      await _pumpReview(
+        tester,
+        store: store,
+        apple: apple,
+        size: const Size(420, 900),
+      );
+      // 悬浮页头（复习页默认）：右键唤出。
+      await _rightClick(tester, tester.getCenter(_surface));
+      expect(_floatingBar, findsOneWidget);
+
+      final FushiFloatingTopBar bar = tester.widget<FushiFloatingTopBar>(
+        _floatingBar,
+      );
+      expect(bar.titleFirst, isTrue);
+      expect(bar.subtitle, isNotEmpty, reason: '默认显示计数');
+      final Finder subtitle = find.descendant(
+        of: find.byKey(
+          const ValueKey<String>('fushi_floating_top_bar_subtitle_text'),
+        ),
+        matching: find.byType(RichText),
+      );
+      expect(
+        tester.renderObject<RenderParagraph>(subtitle).didExceedMaxLines,
+        isFalse,
+        reason: '卡片计数被省略号截断',
+      );
+      expect(tester.takeException(), isNull);
+      await _unmount(tester);
+    });
+  }
 
   group('SrsCardGestureRegion：点空白', () {
     Future<List<String>> pumpRegion(WidgetTester tester) async {
