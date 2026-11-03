@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/video/online/anime_episode_downloader.dart'
+    show deleteAnimeEpisodeDownloadLeftovers;
 import 'package:fushi/src/platform/mobile/android_download_keep_alive.dart';
 import 'package:fushi/src/platform/mobile/download_keep_alive_hub.dart';
 import 'package:fushi/src/sync/interconnect_video_resume_store.dart';
@@ -838,25 +840,24 @@ class InterconnectDownloadManager extends ChangeNotifier {
     if (leftovers != null) return leftovers();
     final String destPath = spec.dest.path;
     bool deleted = false;
-    for (final File f in <File>[
-      File('$destPath.part'),
-      File('$destPath.part.etag'),
-      // 在线视频源（Aniyomi）集下载的半成品（见 anime_episode_downloader.dart 的
-      // animeEpisodeDownloadLeftovers，测试按那份清单比对）：直链验证器侧车、HLS
-      // 分片流 + 断点记录、转封装中间件。
-      File('$destPath.part.validator'),
-      File('$destPath.hls.part'),
-      File('$destPath.hls.progress'),
-      File('$destPath.remux.mp4'),
-    ]) {
-      try {
-        if (await f.exists()) {
-          await f.delete();
-          deleted = true;
-        }
-      } catch (e) {
-        debugPrint('[interconnect-download] discard ${f.path} failed: $e');
+    // 互联下载自己的 ETag 侧车。
+    final File etag = File('$destPath.part.etag');
+    try {
+      if (await etag.exists()) {
+        await etag.delete();
+        deleted = true;
       }
+    } catch (e) {
+      debugPrint('[interconnect-download] discard ${etag.path} failed: $e');
+    }
+    // `.part` 及在线视频源（Aniyomi）集下载的全部半成品：直链验证器侧车、HLS
+    // 分片流 + 断点记录、转封装中间件，以及 DASH 分离流的画面 / 外挂音轨分量（各带
+    // 自己的断点文件与 `.done` 侧车）和合成中间件——唯一清单在
+    // anime_episode_downloader.dart，不在这里手抄。
+    try {
+      if (await deleteAnimeEpisodeDownloadLeftovers(spec.dest)) deleted = true;
+    } catch (e) {
+      debugPrint('[interconnect-download] discard leftovers of $destPath: $e');
     }
     _queueRecordClear(destPath);
     await flushResumeManifests();

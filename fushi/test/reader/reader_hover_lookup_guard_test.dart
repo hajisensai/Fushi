@@ -97,9 +97,10 @@ void main() {
           'lib/src/reader/reader_selection_scripts.dart',
         ).readAsStringSync().replaceAll('\r\n', '\n');
         // 同词分支：命中的还是当前选区起点 → fromHover 时必须先 return null，且这个
-        // return 出现在 clearSelection() 之前（保留高亮）。
+        // return 出现在 clearSelection() 之前（保留高亮）。BUG-3978 起同词判据比的是
+        // selectionStartFor 归一后的起点（tapStart），不再是原始 hit。
         final RegExp re = RegExp(
-          r'hit\.offset === this\.selection\.startOffset\)\s*\{'
+          r'tapStart\.offset === this\.selection\.startOffset\)\s*\{'
           r'[\s\S]*?if\s*\(\s*fromHover\s*\)\s*\{\s*return null;\s*\}'
           r'[\s\S]*?this\.clearSelection\(\);',
         );

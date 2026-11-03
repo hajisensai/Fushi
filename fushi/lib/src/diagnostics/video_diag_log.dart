@@ -3,10 +3,9 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:fushi/src/startup/test_environment.dart';
+import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/utils/net/app_native_proxy.dart'
     show redactAppNativeProxySecrets;
-import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 /// 视频 / 查词性能诊断日志（用户 2026-09-22：「视频模块加入日志用于分析视频为什么
@@ -126,7 +125,7 @@ class VideoDiagLog {
   }
 
   /// [directoryOverride] / [prefsOverride] 仅供测试；生产走
-  /// [fushiTestDirectory] / 应用文档目录 + 真实 SharedPreferences。
+  /// [AppPaths.diagnosticsDirectory] + 真实 SharedPreferences。
   ///
   /// 失败**不抛**：诊断日志起不来绝不能拦住启动，退化成纯内存环即可。
   Future<void> init({
@@ -142,10 +141,9 @@ class VideoDiagLog {
       debugPrint('[VideoDiagLog] prefs read failed: $e');
     }
     try {
+      // 4w_veZGiQ7：诊断日志与错误日志同一目录（AppPaths.diagnosticsDirectory），不落用户文档根。
       final Directory dir =
-          directoryOverride ??
-          fushiTestDirectory('app-documents') ??
-          await getApplicationDocumentsDirectory();
+          directoryOverride ?? await AppPaths.diagnosticsDirectory();
       _dir = dir;
       _file = File('${dir.path}/$fileName');
       await _trimFile();

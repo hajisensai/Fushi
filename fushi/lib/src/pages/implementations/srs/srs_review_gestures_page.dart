@@ -12,6 +12,7 @@ import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/srs/srs_navigation.dart';
 
 /// 手势的界面名。
 String srsReviewGestureLabel(SrsReviewGesture g) => switch (g) {
@@ -63,12 +64,7 @@ IconData? srsReviewGestureActionIcon(SrsReviewGestureAction a) => switch (a) {
 
 /// 打开「手势」设置页。
 Future<void> openSrsReviewGesturesPage(BuildContext context) =>
-    Navigator.of(context).push<void>(
-      adaptivePageRoute<void>(
-        context: context,
-        builder: (_) => const SrsReviewGesturesPage(),
-      ),
-    );
+    srsPushPage<void>(context, (_) => const SrsReviewGesturesPage());
 
 /// 「手势」设置页：两面各一组，每个手势一行选动作。
 class SrsReviewGesturesPage extends ConsumerWidget {

@@ -850,6 +850,10 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 手机字幕遥控器控制卡按钮布局 JSON（VideoRemoteControlLayout，v1 槽位表）。
   'video_remote_control_layout',
   'video_remote_subtitle',
+  // JSON map `{remoteSubtitleKey: [绝对路径...]}`：远端视频按集记下的本机字幕档
+  // （在线下载 / 手动导入，落 <documents>/video_subtitles），重进 / 换集时重建字幕轨
+  // 列表里的「本机字幕」行（Xt3RCTPKhX）。数据根迁移按 kPathRebasePrefs 改写。
+  'video_remote_subtitle_files',
   // 旧「内置视频资源索引器」停用清单（逗号分隔）。内置 BT 站已整体移除（用户
   // 自己添加 BT 站，见 resource_bt_sites），存量键冻结、不再写；只有一次性升级迁移
   // （引擎 bt_site_legacy_migration.dart）读它决定迁出站点的启停。留在这里也为键名

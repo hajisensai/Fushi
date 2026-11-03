@@ -1829,6 +1829,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
 
     final AppModel appModel = ref.read(appProvider);
     final SyncRepository syncRepo = SyncRepository(appModel.database);
+    // 云备份通道被用户关掉：不读云盘视频目录（与同步通道枚举同一判据）。
+    if (!await syncRepo.isCloudSyncEnabled()) return null;
     final SyncBackendType type = await syncRepo.getBackendType();
     // 互联后端不在此处理（已由 _resolveRemoteVideoClient 覆盖）。
     if (type == SyncBackendType.fushiServer) return null;
@@ -9837,7 +9839,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     Future<VideoRemoteClient?> hostClient() async {
       if (source is! InterconnectSyncBackend) return null;
       final String identity = await source.connectedHostIdentity();
-      final FushiClientUrl? peer = await videoRemotePeerForHost(
+      final FushiClientUrl? peer = await interconnectHostPeerForHost(
         repository,
         identity,
       );

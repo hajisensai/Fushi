@@ -151,6 +151,7 @@ class LyricsModeHtml {
     String verticalTextOrientation = 'mixed',
     TargetPlatform? platform,
     bool showSkippedText = true,
+    String keyBridgeScript = '',
   }) {
     // 覆盖层主题：内联进 :root 与 body class，首帧即是最终观感（不等热更）。
     // 无主题（旧调用 / 单测）时变量全部缺省，CSS 的 var() 回落值与改动前逐值相同。
@@ -487,17 +488,20 @@ body.ly-themed::-webkit-scrollbar { width: 0; height: 0; }
 body.ly-browsing .cue:not(.current) { opacity: var(--ly-op-browse, 0.6); }
 /* 已读句淡化（M3E）：当前句之前的行在对称阶梯上再乘 --ly-past-k，读过的退到背景、
    要读的更清楚。只认「不是当前句、也不在当前句之后」的兄弟（:not 复杂选择器，
-   WebView2 / Android WebView / WKWebView 均支持）；手动浏览态让位给统一透明度。 */
-body.ly-past-dim:not(.ly-browsing) .cue:not(.current):not(.current ~ .cue) {
+   WebView2 / Android WebView / WKWebView 均支持）；手动浏览态让位给统一透明度。
+   悬停是一个状态、直接写进判据（:not(:hover)）：「已读且没被悬停」才淡化。:not(.current ~ .cue)
+   按参数计 (0,2,0)，这几条整体 (0,6,1) 高过悬停规则 (0,4,1)，不排除 :hover 的话已读行
+   悬停永远不高亮（反馈 M8YDOqJ5Bm）；不靠堆优先级 / !important。 */
+body.ly-past-dim:not(.ly-browsing) .cue:not(.current):not(.current ~ .cue):not(:hover) {
   opacity: calc(var(--ly-op4, 0.15) * var(--ly-past-k, 1));
 }
-body.ly-past-dim:not(.ly-browsing) .cue.near-1:not(.current ~ .cue) {
+body.ly-past-dim:not(.ly-browsing) .cue.near-1:not(.current ~ .cue):not(:hover) {
   opacity: calc(var(--ly-op1, 0.55) * var(--ly-past-k, 1));
 }
-body.ly-past-dim:not(.ly-browsing) .cue.near-2:not(.current ~ .cue) {
+body.ly-past-dim:not(.ly-browsing) .cue.near-2:not(.current ~ .cue):not(:hover) {
   opacity: calc(var(--ly-op2, 0.35) * var(--ly-past-k, 1));
 }
-body.ly-past-dim:not(.ly-browsing) .cue.near-3:not(.current ~ .cue) {
+body.ly-past-dim:not(.ly-browsing) .cue.near-3:not(.current ~ .cue):not(:hover) {
   opacity: calc(var(--ly-op3, 0.25) * var(--ly-past-k, 1));
 }
 /* 系统「减弱动态效果」/ 墨水屏：行切换的放大 / 淡入淡出直接落值（滚动已由
@@ -1386,7 +1390,16 @@ window.__lyricsApplyTheme = function(vars, classes) {
 (function() {
   var pill = document.getElementById('ly-follow');
   if (!pill) return;
-  function resume(e) { if (e) e.preventDefault(); _lyResume(); }
+  // 胶囊是 #lc 的兄弟节点、不经 _lyTapEnd：点它同样是一次把 OS 焦点交给 WebView 的
+  // 指针手势，必须回 Dart 收回焦点（否则 Space / Esc 从此只到 DOM，反馈 NmpRV-amTY）。
+  function resume(e) {
+    if (e) e.preventDefault();
+    _lyResume();
+    var bridge = window.flutter_inappwebview;
+    if (bridge && typeof bridge.callHandler === 'function') {
+      bridge.callHandler('onLyricsFollowResume');
+    }
+  }
   pill.addEventListener('pointerup', function(e) {
     if (e.pointerType === 'touch') return;
     resume(e);
@@ -1655,6 +1668,12 @@ function _lyInitialPosition() {
   if (el) _lyricsScrollByAxis(_lyricsCenterDelta(el));
 }
 _lyInitialPosition();
+
+// ── 键桥（反馈 NmpRV-amTY / PHs18V7U3K）：歌词文档与正文同为一等输入公民 ──
+// 桌面 WebView2 / WKWebView 一被指针碰到就抢走 OS 键盘焦点，此后按键只到这份 DOM。
+// 宿主按快捷键注册表当前绑定生成 webViewKeyBridgeScript（handler onLyricsKey），命中的
+// 键回 Dart 走与 _focusNode 同一套解析执行，再把焦点收回 Flutter。
+$keyBridgeScript
 </script>
 </body>
 </html>

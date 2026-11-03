@@ -522,13 +522,23 @@ fn mark_fork(c: &Connection, profile: &str, device: &Id) -> Result<(), String> {
     Ok(())
 }
 
-fn unstore(c: &Connection, profile: &str, device: &Id, seq: u64) -> Result<(), String> {
-    c.prepare_cached("DELETE FROM sync2_pending WHERE profile_uid = srs_id(?1) AND device = ?2 AND seq = ?3")
+/// 删一行缓冲；返回删掉的行数。
+fn unstore(c: &Connection, profile: &str, device: &Id, seq: u64) -> Result<i64, String> {
+    let n = c
+        .prepare_cached("DELETE FROM sync2_pending WHERE profile_uid = srs_id(?1) AND device = ?2 AND seq = ?3")
         .map_err(sql)?
         .execute(params![profile, device.0.to_vec(), seq as i64])
         .map_err(sql)?;
-    Ok(())
+    Ok(n as i64)
 }
+
+/// 投递队列每台设备在内存里最多留多少条缓冲表的行（见 [Delivery] 的分窗）：队首只用 seq 最小的几条，一窗投完再读
+/// 下一窗。每条在内存里约两百字节，一台设备一窗约 1 MB。
+#[cfg(not(test))]
+const DELIVERY_WINDOW: usize = 4096;
+/// 测试里压到很小：全部端到端用例都会反复走「一窗投完、读下一窗」「截窗后再读回」，结果必须与整表在内存里一样。
+#[cfg(test)]
+pub(crate) const DELIVERY_WINDOW: usize = 3;
 
 /// 因果投递：缓冲表里留着的 + 本轮刚收的远端操作（`(操作, 链值)`，任意顺序、可重复），按设备排成队，能接上的
 /// （seq = applied + 1、链接得上、依赖都已应用）就应用，直到哪个队首都动不了。投递不了的写进缓冲等下一轮。
@@ -536,13 +546,27 @@ fn unstore(c: &Connection, profile: &str, device: &Id, seq: u64) -> Result<(), S
 /// 在内存里按设备排队：每一遍只看各设备的队首，整体是 O(操作数 + 遍数 × 设备数)。（逐遍重扫整张缓冲表在
 /// 新设备追赶两台互相同步过上千次的设备时是平方级的。）
 ///
-/// 一次收段调用里只开一个：缓冲表只读一次，每投一段就 [Delivery::push] + [Delivery::drain]，投上的操作当场
-/// 释放，[Delivery::finish] 最后一次写设备进度、把没投上的写进缓冲。所以收段的内存是「锁外预处理留下的操作
-/// （有上限 [PREPARED_RAW_BUDGET]）+ 等依赖的操作」，不随一批的解压后体积增长；结果与整批一起投相同（等价于
+/// 一次收段调用里只开一个：每投一段就 [Delivery::push] + [Delivery::drain]，投上的操作当场释放，
+/// [Delivery::finish] 最后一次写设备进度、把没投上的写进缓冲。所以收段的内存是「锁外预处理留下的操作
+/// （有上限 [PREPARED_RAW_BUDGET]）+ 等依赖的操作（有上限 [DELIVERY_HELD_BYTES]）+ 每台设备至多
+/// [DELIVERY_WINDOW] 条队列项」，不随一批的解压后体积、也不随缓冲表的行数增长；结果与整批一起投相同（等价于
 /// 每批只收一段，Dart 侧本来就按任意段边界切批）。
+///
+/// 缓冲表按设备分窗读（[Delivery::refill]）：以前开会话时把整张缓冲表的 (设备, seq, 链值) 全读进队列，等依赖的
+/// 操作越积越多（某台设备依赖的段一直到不了这个位置），每一轮同步一开始就整表进内存、每条约两百字节，几十万行就是
+/// 上百 MB，正撞上移动端收段时的原生 OOM（反馈 6fSVptGebt / IUS9S0lWiZ / P8Kaf1_y0c）。队首只看 seq 最小的那几条，
+/// 所以每台设备只在内存里留缓冲表里最前面的一窗，投完再读下一窗。
+///
+/// 不变式：对每台设备，缓冲表里 seq ≤ `loaded[设备]`（缺省 = 全部）的行都在队列里；队列里 seq 更大的只会是本轮刚收、
+/// 还没写进缓冲表的（或已写进、留着正文免得再读的）。队首超出这条线之前先读下一窗，缓冲表里同一 (设备, seq) 的
+/// 以表里为准（与原先「缓冲表全读进来、INSERT OR IGNORE」相同）。
 struct Delivery {
     vv: Vv,
     queues: BTreeMap<Id, BTreeMap<u64, Held>>,
+    /// 各设备缓冲表读到了哪个 seq（见类型文档的不变式）；不在里面 = 缓冲表里这台设备的行都已在队列里。
+    loaded: BTreeMap<Id, u64>,
+    /// 缓冲表的行数（随写入 / 删除增减；[Delivery::pending] 不再整表 COUNT）。
+    stored_rows: i64,
     chains: BTreeMap<Id, Chain>,
     /// 本次调用里判定分叉的设备：它这一支后面再来的操作也不收（与整批投递时 `q.clear()` 一并清掉相同）。
     forked: BTreeSet<Id>,
@@ -566,9 +590,15 @@ fn bump_delivery_epoch() {
 }
 
 impl Delivery {
-    /// 队列里（缓冲表 + 本轮刚收、还投不上的）等着的操作条数 = 这一片收尾后缓冲表的行数（不再每片 COUNT(*)）。
+    /// 等着的操作条数（缓冲表 + 本轮刚收、还没写进去的）= 这一片收尾后缓冲表的行数（不再每片 COUNT(*)）。
     fn pending(&self) -> i64 {
-        self.queues.values().map(|q| q.len() as i64).sum()
+        self.stored_rows + self.queues.values().flat_map(|q| q.values()).filter(|h| !h.stored).count() as i64
+    }
+
+    /// 内存里的队列项数（测试断言分窗上限用）。
+    #[cfg(test)]
+    fn resident(&self) -> usize {
+        self.queues.values().map(BTreeMap::len).sum()
     }
 
     /// 收段会话的下一片接着用上一片的队列（审查 S-6：以前每片整表读一遍缓冲表）。别处投递过就重新载入；设备进度
@@ -583,21 +613,28 @@ impl Delivery {
         }
     }
 
-    /// 缓冲表只读 (设备, seq, 链值)：操作正文轮到它投递时才按主键读出（[Held::op]），缓冲表再大也不整张进内存。
+    /// 缓冲表此刻只读有哪些设备与行数：各设备的 (seq, 链值) 轮到它的队首时才按窗读（[Delivery::refill]），操作正文
+    /// 轮到它投递时才按主键读出（[Held::op]），缓冲表再大也不整张进内存。
     fn load(c: &Connection, profile: &str) -> Result<Delivery, String> {
         let vv = applied_vv(c, profile)?;
         let mut queues: BTreeMap<Id, BTreeMap<u64, Held>> = BTreeMap::new();
-        let mut stmt = c.prepare_cached("SELECT device, seq, chain FROM sync2_pending WHERE profile_uid = srs_id(?1)").map_err(sql)?;
+        let mut loaded: BTreeMap<Id, u64> = BTreeMap::new();
+        let mut stored_rows = 0i64;
+        let mut stmt = c
+            .prepare_cached("SELECT device, COUNT(*) FROM sync2_pending WHERE profile_uid = srs_id(?1) GROUP BY device")
+            .map_err(sql)?;
         let mut q = stmt.query([profile]).map_err(sql)?;
         while let Some(r) = q.next().map_err(sql)? {
             let device = Id(r.get::<_, Vec<u8>>(0).map_err(sql)?.try_into().map_err(|_| "bad device")?);
-            let seq = r.get::<_, i64>(1).map_err(sql)? as u64;
-            let chain: Chain = r.get::<_, Vec<u8>>(2).map_err(sql)?.try_into().map_err(|_| "bad chain")?;
-            queues.entry(device).or_default().insert(seq, Held { op: None, chain, stored: true });
+            stored_rows += r.get::<_, i64>(1).map_err(sql)?;
+            queues.insert(device, BTreeMap::new());
+            loaded.insert(device, 0);
         }
         Ok(Delivery {
             vv,
             queues,
+            loaded,
+            stored_rows,
             chains: BTreeMap::new(),
             forked: BTreeSet::new(),
             applied: 0,
@@ -638,22 +675,94 @@ impl Delivery {
             for (seq, held) in q.iter_mut() {
                 let Some(op) = held.op.take() else { continue };
                 if !held.stored {
-                    store_pending(c, profile, device, *seq, &op, &held.chain)?;
+                    self.stored_rows += store_pending(c, profile, device, *seq, &op, &held.chain)?;
                     held.stored = true;
                 }
             }
         }
         self.held = 0;
+        self.trim();
+        Ok(())
+    }
+
+    /// 队列项都已在缓冲表里之后（[Delivery::spill] / [Delivery::checkpoint]）：每台设备只留最前面 [DELIVERY_WINDOW]
+    /// 条，其余丢掉、`loaded` 退到留下的最后一条（它们在表里，轮到时 [Delivery::refill] 再读）。
+    fn trim(&mut self) {
+        for (device, q) in self.queues.iter_mut() {
+            if q.len() <= DELIVERY_WINDOW {
+                continue;
+            }
+            debug_assert!(q.values().all(|h| h.stored), "trim before every queued op is stored");
+            let cut = *q.keys().nth(DELIVERY_WINDOW - 1).expect("longer than the window");
+            let upto = self.loaded.get(device).map_or(cut, |&l| l.min(cut));
+            for (_, held) in q.split_off(&(upto + 1)) {
+                self.held -= held.op.as_ref().map_or(0, held_bytes);
+            }
+            self.loaded.insert(*device, upto);
+        }
+    }
+
+    /// 读 [device] 缓冲表里 `loaded` 之后的下一窗（至多 [DELIVERY_WINDOW] 条）进队列。表里的以表为准：队列里同一
+    /// seq 的本轮刚收项链值相同就留着正文（同一链值 = 同一条操作），不同就换成表里的。
+    fn refill(
+        c: &Connection,
+        profile: &str,
+        device: &Id,
+        q: &mut BTreeMap<u64, Held>,
+        loaded: &mut BTreeMap<Id, u64>,
+        mem: &mut usize,
+    ) -> Result<(), String> {
+        let Some(&from) = loaded.get(device) else { return Ok(()) };
+        let mut stmt = c
+            .prepare_cached(
+                "SELECT seq, chain FROM sync2_pending WHERE profile_uid = srs_id(?1) AND device = ?2 AND seq > ?3 ORDER BY seq LIMIT ?4",
+            )
+            .map_err(sql)?;
+        let mut rows = stmt.query(params![profile, device.0.to_vec(), from as i64, DELIVERY_WINDOW as i64]).map_err(sql)?;
+        let mut n = 0usize;
+        let mut last = from;
+        while let Some(r) = rows.next().map_err(sql)? {
+            let seq = r.get::<_, i64>(0).map_err(sql)? as u64;
+            let chain: Chain = r.get::<_, Vec<u8>>(1).map_err(sql)?.try_into().map_err(|_| "bad chain")?;
+            match q.entry(seq) {
+                std::collections::btree_map::Entry::Vacant(v) => {
+                    v.insert(Held { op: None, chain, stored: true });
+                }
+                std::collections::btree_map::Entry::Occupied(mut o) => {
+                    let h = o.get_mut();
+                    if h.chain != chain {
+                        *mem -= h.op.take().as_ref().map_or(0, held_bytes);
+                        h.chain = chain;
+                    }
+                    h.stored = true;
+                }
+            }
+            n += 1;
+            last = seq;
+        }
+        if n < DELIVERY_WINDOW {
+            loaded.remove(device);
+        } else {
+            loaded.insert(*device, last);
+        }
         Ok(())
     }
 
     fn deliver_ready(&mut self, c: &Connection, profile: &str, now: i64, t: &mut Touched, budget: &mut CommitBudget<'_>) -> Result<(), String> {
-        let Delivery { vv, queues, chains, applied, forked, held: mem, seen, ahead, .. } = self;
+        let Delivery { vv, queues, loaded, stored_rows, chains, applied, forked, held: mem, seen, ahead, .. } = self;
         let mut dropped: Vec<Id> = Vec::new();
         'all: loop {
             let mut progress = false;
             for (device, q) in queues.iter_mut() {
-                while let Some(mut entry) = q.first_entry() {
+                loop {
+                    // 队首超出已读的那一窗（或这一窗投完了）：先读下一窗，缓冲表里更小的 seq 可能还没进队列。
+                    if let Some(&upto) = loaded.get(device) {
+                        if q.first_key_value().is_none_or(|(&s, _)| s > upto) {
+                            Delivery::refill(c, profile, device, q, loaded, mem)?;
+                            continue;
+                        }
+                    }
+                    let Some(mut entry) = q.first_entry() else { break };
                     let seq = *entry.key();
                     let have = vv.get(device);
                     if seq <= have {
@@ -667,7 +776,7 @@ impl Delivery {
                             mark_fork(c, profile, device)?;
                         }
                         if held.stored {
-                            unstore(c, profile, device, seq)?;
+                            *stored_rows -= unstore(c, profile, device, seq)?;
                         }
                         continue;
                     }
@@ -687,13 +796,15 @@ impl Delivery {
                     if chain_next(&prev, op) != chain {
                         // 接不上本机已有的前缀：那台设备分叉过，这一支不收。
                         mark_fork(c, profile, device)?;
-                        c.execute(
-                            "DELETE FROM sync2_pending WHERE profile_uid = srs_id(?1) AND device = ?2 AND seq >= ?3",
-                            params![profile, device.0.to_vec(), seq as i64],
-                        )
-                        .map_err(sql)?;
+                        *stored_rows -= c
+                            .execute(
+                                "DELETE FROM sync2_pending WHERE profile_uid = srs_id(?1) AND device = ?2 AND seq >= ?3",
+                                params![profile, device.0.to_vec(), seq as i64],
+                            )
+                            .map_err(sql)? as i64;
                         *mem -= q.values().filter_map(|h| h.op.as_ref()).map(held_bytes).sum::<usize>();
                         q.clear();
+                        loaded.remove(device);
                         dropped.push(*device);
                         break;
                     }
@@ -711,7 +822,7 @@ impl Delivery {
                         *seen = Some(op.hlc);
                     }
                     if held.stored {
-                        unstore(c, profile, device, seq)?;
+                        *stored_rows -= unstore(c, profile, device, seq)?;
                     }
                     *mem -= held_bytes(op);
                     entry.remove();
@@ -749,20 +860,24 @@ impl Delivery {
         for (device, q) in self.queues.iter_mut() {
             for (seq, held) in q.iter_mut().filter(|(_, h)| !h.stored) {
                 let op = held.op.as_ref().ok_or("unstored pending op without body")?;
-                store_pending(c, profile, device, *seq, op, &held.chain)?;
+                self.stored_rows += store_pending(c, profile, device, *seq, op, &held.chain)?;
                 held.stored = true;
             }
         }
+        // 会话跨片留着这份队列：也只留每台设备一窗。
+        self.trim();
         Ok(std::mem::take(&mut self.applied))
     }
 }
 
-fn store_pending(c: &Connection, profile: &str, device: &Id, seq: u64, op: &Op, chain: &Chain) -> Result<(), String> {
-    c.prepare_cached("INSERT OR IGNORE INTO sync2_pending (profile_uid, device, seq, op, chain) VALUES (srs_id(?1), ?2, ?3, ?4, ?5)")
+/// 写进缓冲表；返回新增的行数（同一 (设备, seq) 已在表里 = 0，以表里的为准）。
+fn store_pending(c: &Connection, profile: &str, device: &Id, seq: u64, op: &Op, chain: &Chain) -> Result<i64, String> {
+    let n = c
+        .prepare_cached("INSERT OR IGNORE INTO sync2_pending (profile_uid, device, seq, op, chain) VALUES (srs_id(?1), ?2, ?3, ?4, ?5)")
         .map_err(sql)?
         .execute(params![profile, device.0.to_vec(), seq as i64, op.encode(), chain.to_vec()])
         .map_err(sql)?;
-    Ok(())
+    Ok(n as i64)
 }
 
 /// 一次 [SrsCore::sync2_ingest_commit] 在写锁里最多做多少（一片）：处理的操作条数、时间上限，以及「有别的写入在
@@ -848,6 +963,12 @@ impl IngestSession {
     /// 这个会话收的是不是 [profile] 的段（删 profile 时作废它，store/profile_data.rs）。
     pub(crate) fn belongs_to(&self, profile: &str) -> bool {
         self.profile == profile
+    }
+
+    /// 会话跨片留着的投递队列在内存里的项数（测试断言分窗上限用；还没投过 = None）。
+    #[cfg(test)]
+    pub(crate) fn delivery_resident(&self) -> Option<usize> {
+        self.delivery.as_ref().map(Delivery::resident)
     }
 }
 

@@ -562,24 +562,32 @@ extension _VideoQuality on _VideoFushiPageState {
     _hideVideoSidePanel();
     // 乐观更新选中档（菜单高亮即时反映）。
     _rebuild(() => _selectedHlsVariantIndex = index);
+    final int seq = _episodeLoadSeq;
     // explicitCue：不做近尾重置，精确 seek 回当前位置。detectHls=false：不拿
     // variant（media playlist）URL 重探测把档位列表清空。字幕经现有 cue + 当前 source
     // 保留（externalSubtitlePath 非空即让 controller 跳过内嵌自动抽取，避免重复）。
-    await _applyLoad(
-      videoPath: null,
-      mediaUri: target,
-      cues: cues,
-      title: _title ?? '',
-      initialPositionMs: posMs,
-      startIntent: EpisodeStartIntent.explicitCue,
-      externalSubtitlePath: _currentSubtitleSource,
-      detectHls: false,
+    // 同一条流的外挂音轨（DASH 风格分离音频 / 替代配音）原样带上：控制器每次 load
+    // 都清空上一片的外挂轨，不带就是切档后无声 / 配音从音轨菜单消失。
+    await _separatedAudio.runLoad<void>(
+      () => _applyLoad(
+        videoPath: null,
+        mediaUri: target,
+        cues: cues,
+        title: _title ?? '',
+        initialPositionMs: posMs,
+        startIntent: EpisodeStartIntent.explicitCue,
+        externalSubtitlePath: _currentSubtitleSource,
+        externalAudioTracks: _streamExternalAudioTracks,
+        detectHls: false,
+      ),
     );
-    if (!mounted) return;
+    if (!mounted || !_separatedAudio.isCurrent(seq)) return;
     final String label = index < 0
         ? t.video_quality_auto
         : _hlsVariants[index].qualityLabel;
     _showOsd(t.video_quality_switched(label: label), icon: Icons.high_quality);
+    // 外挂音轨在切档那程里一条都没挂上（且流无自带音轨）：载入在途时只记了账，收尾处理。
+    unawaited(_recoverFromExternalAudioFailure());
   }
 
   /// 多条可播候选（扩展线路 / 媒体服务器版本）各一行，正在播的打勾；点了按

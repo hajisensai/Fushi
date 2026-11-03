@@ -26,6 +26,8 @@ import 'package:fushi/src/updates/usage_heartbeat.dart';
 import 'package:fushi_engine/media/video/media_server/media_server_client_identity.dart'
     show mediaServerClientIdentity, resolveMediaServerClientIdentity;
 import 'package:fushi_engine/media/video/video_member_file.dart';
+import 'package:fushi_engine/media/video/youtube_source_resolver.dart'
+    show YoutubeManifestException;
 import 'package:fushi_engine/updates/update_feed_kind.dart';
 import 'package:fushi/src/updates/update_feed_service.dart';
 import 'package:fushi/src/updates/update_probes.dart';
@@ -932,6 +934,8 @@ class AppModel with ChangeNotifier {
     // 标记为「我的设备」的已配对设备跟随本机 Fushi 账户自动登录：对端只交来它自己的
     // 公钥，由本机账户代绑。
     // 排行榜服务是 Riverpod 单例（随 Profile 重建），经全局 navigatorKey 的容器现取。
+    // 复习远程刷卡：已配对设备在本机复习上出卡 / 作答（复习模块关着时 SrsAppHost.current 为 null）。
+    srsRemoteStore: () => SrsAppHost.current?.remoteStore,
     leaderboardLinkHost: () => AppLeaderboardLinkHost(
       enabled: () =>
           SyncRepository(database).isInterconnectLeaderboardLinkHostEnabled(),
@@ -10484,6 +10488,12 @@ class AppModel with ChangeNotifier {
   Future<void> setSrsFolderLocations(List<SrsFolderLocation> value) =>
       prefsRepo.setSrsFolderLocations(value);
 
+  /// 复习同步 v2 里这台设备关掉的通道位置（设备本地；透传 prefsRepo）。
+  Set<String> get srsDisabledLocations =>
+      _prefsRepo?.srsDisabledLocations ?? const <String>{};
+  Future<void> setSrsLocationEnabled(String locationId, bool enabled) =>
+      prefsRepo.setSrsLocationEnabled(locationId, enabled);
+
   /// 复习同步 v2 各存储位置的加密密钥（设备本地凭据；透传 prefsRepo）。
   Map<String, SrsLocationKey> get srsLocationKeys =>
       _prefsRepo?.srsLocationKeys ?? const <String, SrsLocationKey>{};
@@ -12385,10 +12395,14 @@ RemoteMineResult remoteMineResultFromOutcome(MineOutcome outcome) {
     case MineResult.error:
       // logMineFailure：把完整诊断写进错误日志（用户可查/可导出），返回简短本地化文案。
       final String reason = logMineFailure(outcome);
+      // 落卡阶段的失败（AnkiConnect 不可达 / 牌组·笔记类型缺失等）是环境问题，与这一项本身无关：
+      // 显式标 transient，扩展据此不计该项尝试次数——否则 AnkiConnect 没开时连点几次生成，
+      // 整条待生成队列都会被移进失败分组。
       return RemoteMineResult(
         result: outcome.result.name,
         message: reason,
         detail: outcome.errorDetail,
+        errorKind: RemoteMineErrorKind.transient,
       );
     case MineResult.success:
       final String? warn = outcome.audioWarning;
@@ -12416,14 +12430,24 @@ RemoteMineResult remoteMineError(
   String? detail,
   Object? error,
   StackTrace? stackTrace,
+  RemoteMineErrorKind errorKind = RemoteMineErrorKind.transient,
 }) {
   ErrorLogService.instance.log(source, error ?? detail ?? reason, stackTrace);
   return RemoteMineResult(
     result: MineResult.error.name,
     message: reason,
     detail: detail,
+    errorKind: errorKind,
   );
 }
+
+/// EMI05fe8RJ：YouTube 制卡解析失败的分型。全部 client 都明确回答「视频放不了」（需购买 /
+/// 已删除 / 不可用）是永久失败——扩展据此把该项移出待生成队列，不再每次生成都重跑 5 个
+/// client 的网络请求；其余（网络、超时、判 bot、限流）按可重试。
+RemoteMineErrorKind youtubeMineResolveErrorKind(Object error) =>
+    error is YoutubeManifestException && error.isPermanentlyUnavailable
+    ? RemoteMineErrorKind.permanent
+    : RemoteMineErrorKind.transient;
 
 /// 浏览器扩展 YouTube 制卡中止时回给扩展 toast 的那句话。
 ///
@@ -12695,6 +12719,8 @@ class _AppModelRemoteLookupService
           detail:
               'clip window <= 0 '
               '(${payload.clipStartMs}..${payload.clipEndMs})',
+          // 同一请求重发仍是同一个无效时间窗。
+          errorKind: RemoteMineErrorKind.permanent,
         );
       }
       final YoutubeClipRequest yt;
@@ -12718,6 +12744,7 @@ class _AppModelRemoteLookupService
           detail: 'resolve failed: $e',
           error: e,
           stackTrace: st,
+          errorKind: youtubeMineResolveErrorKind(e),
         );
       }
       final ImmersionMiningResult ytRes = await ImmersionMiningEngine().mine(
@@ -12805,6 +12832,8 @@ class _AppModelRemoteLookupService
           detail:
               'clip window <= 0 '
               '(${payload.clipStartMs}..${payload.clipEndMs})',
+          // 同一请求重发仍是同一个无效时间窗（与 YouTube 那条同一分型）。
+          errorKind: RemoteMineErrorKind.permanent,
         );
       }
       final BilibiliClipRequest bi;

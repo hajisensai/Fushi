@@ -8,12 +8,14 @@ import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi_engine/srs/srs_builtin_template_restore.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_note_type_store.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi/src/pages/implementations/srs/srs_note_types_page.dart'
     show srsNameProblemText;
+import 'package:fushi/src/pages/implementations/srs/srs_builtin_template_restore_action.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_field_info_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_template_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_visual_template_panel.dart'
@@ -27,6 +29,7 @@ import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
+import 'package:fushi/src/srs/srs_navigation.dart';
 
 enum _ItemAction { rename, moveUp, moveDown, delete }
 
@@ -76,6 +79,20 @@ class _SrsNoteTypeEditorPageState extends ConsumerState<SrsNoteTypeEditorPage> {
         });
       }
     }
+  }
+
+  /// 「恢复内置模板」：确认后把内置模板 / 样式写回内置版本（可撤销），写完重读。
+  Future<void> _restoreBuiltin(SrsNoteTypeView type) async {
+    final SrsDbStore? store = _store;
+    if (store == null) return;
+    await confirmAndRestoreBuiltinTemplates(
+      context,
+      store: store,
+      noteTypeId: type.id,
+      onChanged: () {
+        if (mounted) unawaited(_reload());
+      },
+    );
   }
 
   /// 写操作统一入口：执行 → 刷新信号 → 重读；失败给提示并记日志。
@@ -197,12 +214,9 @@ class _SrsNoteTypeEditorPageState extends ConsumerState<SrsNoteTypeEditorPage> {
   }
 
   Future<void> _openField(SrsNoteTypeView type, SrsFieldDef field) async {
-    await Navigator.of(context).push<void>(
-      adaptivePageRoute<void>(
-        context: context,
-        builder: (_) =>
-            SrsFieldInfoPage(noteTypeId: type.id, fieldId: field.id),
-      ),
+    await srsPushPage<void>(
+      context,
+      (_) => SrsFieldInfoPage(noteTypeId: type.id, fieldId: field.id),
     );
     if (mounted) await _reload();
   }
@@ -299,14 +313,12 @@ class _SrsNoteTypeEditorPageState extends ConsumerState<SrsNoteTypeEditorPage> {
     String templateId, {
     SrsTemplateEditorTab tab = SrsTemplateEditorTab.visual,
   }) async {
-    await Navigator.of(context).push<void>(
-      adaptivePageRoute<void>(
-        context: context,
-        builder: (_) => SrsTemplateEditorPage(
-          noteTypeId: type.id,
-          templateId: templateId,
-          initialTab: tab,
-        ),
+    await srsPushPage<void>(
+      context,
+      (_) => SrsTemplateEditorPage(
+        noteTypeId: type.id,
+        templateId: templateId,
+        initialTab: tab,
       ),
     );
     if (!mounted) return;
@@ -673,6 +685,22 @@ class _SrsNoteTypeEditorPageState extends ConsumerState<SrsNoteTypeEditorPage> {
                     t.srs_note_types_builtin_hint,
                     key: const ValueKey<String>('srs-note-type-builtin-hint'),
                     style: context.fushiType.bodySmall,
+                  ),
+                // 内置模板 / 样式被改过（自己改的、回滚带回的旧版）：一键恢复成内置版本。
+                if (_store?.builtinTemplatesModified(type) ?? false)
+                  Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    child: FushiFilledButton.tonalIcon(
+                      key: const ValueKey<String>(
+                        'srs-note-type-restore-builtin',
+                      ),
+                      onPressed: () => srsRunLogged(
+                        'SrsNoteTypeEditor.restoreBuiltin',
+                        () => _restoreBuiltin(type),
+                      ),
+                      icon: const FushiIcon(FushiIcons.refresh),
+                      label: Text(t.srs_note_types_builtin_restore),
+                    ),
                   ),
               ],
             ),

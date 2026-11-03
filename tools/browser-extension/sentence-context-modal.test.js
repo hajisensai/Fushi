@@ -31,8 +31,9 @@ class Element {
   }
   contains(node) { return node === this || this.children.some((child) => child.contains(node)); }
   closest() { return null; }
-  setAttribute() {}
-  getAttribute() { return null; }
+  setAttribute(name, value) { (this.attrs = this.attrs || new Map()).set(name, String(value)); }
+  getAttribute(name) { return this.attrs && this.attrs.has(name) ? this.attrs.get(name) : null; }
+  hasAttribute(name) { return !!(this.attrs && this.attrs.has(name)); }
   focus() {}
   attachShadow() { this.shadowRoot = new Element('shadow-root'); this.shadowRoot.host = this; return this.shadowRoot; }
   set textContent(value) {
@@ -127,7 +128,7 @@ function loadContent() {
     { startMs: 7000, endMs: 8000, text: '第五句' },
   ] });
   // 仅布置已打开的词典宿主；上下文 UI、暂停所有权和关闭逻辑仍使用真实实现。
-  vm.runInContext("fushiHost = document.createElement('div'); fushiHost.id = 'fushi-host'; document.body.appendChild(fushiHost); fushiMarkPausedForLookup(video);", ctx);
+  vm.runInContext("fushiHost = fushiMarkSessionHost(document.createElement('div')); fushiHost.id = 'fushi-host'; document.body.appendChild(fushiHost); fushiMarkPausedForLookup(video);", ctx);
   const base = document.getElementById('fushi-host');
   const modal = () => document.getElementById('fushi-ctx-modal-host');
   const buttons = () => descendants(modal().shadowRoot).filter((node) => node.tagName === 'BUTTON');

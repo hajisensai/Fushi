@@ -399,6 +399,8 @@ class RemoteAudioLookup {
 ///   （部分成功）时是音频警告——让扩展区分「真成功」与「卡建了但没音频」。
 /// * [detail]：更长的技术细节（如引擎中止原因 / errorDetail 原文），可空。
 ///
+/// * [errorKind]：`error` 时的失败分型（`permanent` / `transient`），可空。
+///
 /// 由 [buildRemoteMineResponse] 摊进 `/api/mine` 响应体（`{result, message?, detail?}`），
 /// 浏览器扩展 content.js 读 `resp.data.message` 弹 toast 显因。
 class RemoteMineResult {
@@ -407,14 +409,30 @@ class RemoteMineResult {
     this.message,
     this.detail,
     this.deckName,
+    this.errorKind,
   });
 
   final String result;
   final String? message;
   final String? detail;
 
+  /// EMI05fe8RJ：`error` 时的失败分型，wire 值见 [RemoteMineErrorKind]。浏览器扩展的
+  /// YouTube 批量队列据此区分「再试也没用」（付费 / 已删除 / 不可用视频、无效时间窗）与
+  /// 「下次可能成功」（网络、超时、限流）：前者移出待生成队列进失败分组，不再每次生成都
+  /// 重新解析一遍。null = 未分型（旧实现 / 非 error），扩展按可重试处理。旧客户端忽略即可。
+  final RemoteMineErrorKind? errorKind;
+
   /// BUG-1549：`success` 时主机**实际落卡**的牌组名（主机侧配置的 deck），随
   /// `/api/mine/forward` 响应回传给客户端的成功 toast；失败为 `null`。旧客户端
   /// 忽略此字段即旧行为（向后兼容）。
   final String? deckName;
+}
+
+/// [RemoteMineResult.errorKind] 的取值（wire 上用 [name]）。
+enum RemoteMineErrorKind {
+  /// 同一请求再发也不会成功：视频需购买 / 已删除 / 不可用、字幕时间窗无效等。
+  permanent,
+
+  /// 可能自行恢复：网络、超时、限流、Anki 暂不可达等。
+  transient,
 }

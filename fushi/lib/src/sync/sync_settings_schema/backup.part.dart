@@ -162,7 +162,7 @@ const Set<BackupCategory> importMergeSelectableCategories =
 /// `supportsRestart==true`）。消除了旧实现在本文件里 ad-hoc `Process.start(resolvedExecutable)`
 /// 的劣质重复（缺前台标志、macOS 会崩）。
 /// **兜底 never-break**：`restartApp` 起新进程失败或平台不支持时，退回旧的纯退出分支（移动端
-/// [FlutterExitApp.exitApp]、桌面端 `exit(0)`），至少让用户手动重开，绝不制造「老进程没了、新
+/// `lifecycle.exitApp()`，经退出协调器标 clean），至少让用户手动重开，绝不制造「老进程没了、新
 /// 进程也没起来」的假崩溃。抽成顶层函数供 `main.dart` 注入为 `onRestart`。
 Future<void> backupImportRestart(AppModel appModel) async {
   final PlatformLifecycleService lifecycle =
@@ -177,11 +177,9 @@ Future<void> backupImportRestart(AppModel appModel) async {
       debugPrint('Backup import: restartApp failed, fall back to exit: $e');
     }
   }
-  if (Platform.isAndroid || Platform.isIOS) {
-    FlutterExitApp.exitApp();
-  } else {
-    exit(0);
-  }
+  // 纯退出兜底也走生命周期服务的 exitApp：经退出协调器标 clean（过去这里裸 exit，
+  // 下次启动被误报成闪退）。
+  await lifecycle.exitApp();
 }
 
 class _BackupExportWidget extends StatefulWidget {

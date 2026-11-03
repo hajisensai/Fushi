@@ -343,6 +343,8 @@
       // 同级挂在 body（全屏时 fullscreenElement）下，不嵌进第一层，祖先链上没有 Backdrop Root。
       const box = document.createElement('div');
       box.className = 'fushi-nested-layer';
+      // 递归查词子层也是查词会话的顶层宿主：content.js 的外部点击判据只认这个属性（fWIaHFV1qD）。
+      if (typeof box.setAttribute === 'function') box.setAttribute('data-fushi-session-host', '');
       const glass = fushiNestedGlass(response.data.theme) && fushiNestedBackdropUsable();
       box.style.cssText = 'position:fixed;z-index:2147483647;visibility:hidden;overflow:hidden;' +
         fushiNestedLayerSkin(response.data.theme) +

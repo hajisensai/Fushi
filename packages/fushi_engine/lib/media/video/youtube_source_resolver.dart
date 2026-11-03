@@ -725,6 +725,13 @@ class YoutubeClientFailure {
         e is http.ClientException;
   }
 
+  /// YouTube 明确拒绝播放这个视频本身（需购买 / 不可用 / 已删除），与出口、限流无关。
+  bool get isPermanentlyUnavailable {
+    final Object? e = error;
+    return e is yt.VideoRequiresPurchaseException ||
+        e is yt.VideoUnavailableException;
+  }
+
   @override
   String toString() {
     final Object? e = error;
@@ -746,6 +753,13 @@ class YoutubeManifestException implements Exception {
   bool get isTransportFailure =>
       failures.isNotEmpty &&
       failures.every((YoutubeClientFailure f) => f.isTransport);
+
+  /// 每个 client 都明确回答「这个视频放不了」：需购买（付费电影 / 会员专享）或已删除 /
+  /// 私享 / 不可用（EMI05fe8RJ）。同一视频再解析多少次结果都一样，调用方应按永久失败处理。
+  /// 混入任一传输层 / 判 bot / 空流表的失败都不算——那些可能换个时间就好了。
+  bool get isPermanentlyUnavailable =>
+      failures.isNotEmpty &&
+      failures.every((YoutubeClientFailure f) => f.isPermanentlyUnavailable);
 
   @override
   String toString() =>

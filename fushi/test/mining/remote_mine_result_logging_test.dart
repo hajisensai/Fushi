@@ -23,6 +23,9 @@ void main() {
     expect(entries.length, greaterThan(before));
     expect(entries.last.source, 'Anki.mineEntry');
     expect(entries.last.error, contains('boom'));
+    // 落卡阶段失败（AnkiConnect 不可达等）是环境问题：必须显式标 transient，扩展据此
+    // 不计该项尝试次数，不会把整条队列移进失败分组。
+    expect(r.errorKind, RemoteMineErrorKind.transient);
   });
 
   test('remoteMineError 写日志并回带 reason/detail', () {

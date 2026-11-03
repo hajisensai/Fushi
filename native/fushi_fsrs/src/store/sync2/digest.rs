@@ -22,7 +22,9 @@ use super::sql;
 pub const BUCKETS: usize = 4096;
 
 /// 摘要串里版本向量部分的格式前缀（见文件头）。
-pub const VV_PREFIX: &str = "2:";
+/// `3:`（srs.db v19，BUG-3959）：修改记录投影的 ctx 不再含合成写入者，与之前的版本同一进度下根也不同；换前缀让
+/// 新旧版本互不比较（不误报「数据不一致」），也让本机按旧前缀缓存的摘要在同一 vv 下重算。
+pub const VV_PREFIX: &str = "3:";
 
 /// 一个桶的值：4 个 u64 分量的回绕加法和（小端存成 32 字节）。
 type Sum = [u64; 4];

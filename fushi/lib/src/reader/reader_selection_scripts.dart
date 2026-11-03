@@ -2060,6 +2060,45 @@ window.fushiSelection = {
     });
     this.selectionRubyElements = [];
   },
+  // ranges（{node,start,end}）完整覆盖了全部基字文本的 <ruby> 元素列表（chj2rZn89F）。
+  // 基字 = 各 rt 段累积的文本节点（rubySegmentOf 同一口径，跳过纯空白 / rt / rp）。
+  rubiesFullyCoveredBy: function(ranges) {
+    var covered = [];
+    var candidates = [];
+    for (var i = 0; i < ranges.length; i++) {
+      var ruby = this.rubyForNode(ranges[i].node);
+      if (ruby && candidates.indexOf(ruby) < 0) candidates.push(ruby);
+    }
+    for (var c = 0; c < candidates.length; c++) {
+      var ruby = candidates[c];
+      var baseNodes = [];
+      var trailing = [];
+      var collect = function(n) {
+        if (n.nodeType === Node.TEXT_NODE) {
+          if (!/^[\s　]*$/.test(n.nodeValue || '')) trailing.push(n);
+          return;
+        }
+        if (n.nodeType !== Node.ELEMENT_NODE) return;
+        if (n.tagName === 'RT') {
+          baseNodes = baseNodes.concat(trailing);
+          trailing = [];
+          return;
+        }
+        if (n.tagName === 'RP' || n.tagName === 'RTC') return;
+        for (var k = n.firstChild; k; k = k.nextSibling) collect(k);
+      };
+      for (var child = ruby.firstChild; child; child = child.nextSibling) collect(child);
+      // rt 之后没有配对的尾随基字同样属于 ruby 的可见基字。
+      baseNodes = baseNodes.concat(trailing);
+      if (!baseNodes.length) continue;
+      var all = baseNodes.every(function(node) {
+        var len = (node.nodeValue || '').length;
+        return ranges.some(function(r) { return r.node === node && r.start === 0 && r.end >= len; });
+      });
+      if (all) covered.push(ruby);
+    }
+    return covered;
+  },
   // TODO-956：从选区节点解析「界定句子游走范围」的块级祖先。原实现只认
   // p/.glossary-content/.cue，落在 h1-h6 / div / li / figcaption / blockquote /
   // section / td / dd 里的词解析不到段落 → getSentenceContext 回退到 document.body
@@ -3232,16 +3271,14 @@ window.fushiSelection = {
       });
       var wrapper = hit.node.parentElement && hit.node.parentElement.closest('.fushi-dict-highlight');
       if (insideMatch || (wrapper && this.highlightWrappers.indexOf(wrapper) >= 0)) return null;
-      // Before lookup finishes, normalize Latin hits just as selectFromPosition
-      // does so hovering a different letter does not enqueue the same lookup.
-      var content = hit.node.textContent;
-      var offset = hit.offset;
-      if (offset < content.length && !this.isCodePointJapanese(content.codePointAt(offset))) {
-        while (offset > 0 && !this.isTokenStartBoundary(content[offset - 1])) offset--;
-      }
-      if (hit.node === this.selection.startNode && offset === this.selection.startOffset) return null;
+      // Before lookup finishes, normalize hits just as selectFromPosition does
+      // (Latin token start / ruby base start) so hovering a different letter of
+      // the same word does not enqueue the same lookup.
+      var hoverStart = this.selectionStartFor(hit.node, hit.offset);
+      if (hoverStart.node === this.selection.startNode && hoverStart.offset === this.selection.startOffset) return null;
     }
-    if (this.selection && hit.node === this.selection.startNode && hit.offset === this.selection.startOffset) {
+    var tapStart = this.selectionStartFor(hit.node, hit.offset);
+    if (this.selection && tapStart.node === this.selection.startNode && tapStart.offset === this.selection.startOffset) {
       // 悬停连续查词（fromHover）命中的还是同一个词：什么都不做，保留当前选区
       // 高亮与弹窗——这是「按住 Shift 一路滑，弹窗跟着光标走」的去重基石。滑过一
       // 个词只查一次，同词内继续移动不重复 fire onTextSelected，不闪、不刷 FFI /
@@ -3262,7 +3299,14 @@ window.fushiSelection = {
   // caret path. x/y are optional — the caret path omits them, in which case the
   // selection rect falls back to the first character's bounding box. The caller
   // is responsible for clearing any prior selection first.
-  selectFromPosition: function(node, offset, maxLength, x, y, fromHover) {
+  // 查词起点归一（selectFromPosition 与悬停 / 点击去重共用同一判据）：
+  // - 非日文命中回退到词首（Latin 等空格分词语言）；
+  // - chj2rZn89F：命中 <ruby> 基字（不含 rt / rp）时吸附到该 ruby 基字段的首个文本节点、
+  //   偏移 0。ruby 是作者标注的读音单位（近衛 / このえ 属于整组基字），旧实现从点中的码点
+  //   起扫——点「衛」只查「衛」，高亮却按整个 <ruby> 元素画（BUG-110 的整元素加类），
+  //   查的和亮的不是同一段。吸附后查词从整组开始，与来源振假名排序（rubyReadingSpans
+  //   只认完整基字）对齐。多对基字的 ruby（漢<rt>かん</rt>字<rt>じ</rt>）按段吸附。
+  selectionStartFor: function(node, offset) {
     var startNode = node;
     var startOffset = offset;
     var hitContent = startNode.textContent;
@@ -3270,7 +3314,20 @@ window.fushiSelection = {
       while (startOffset > 0 && !this.isTokenStartBoundary(hitContent[startOffset - 1])) {
         startOffset--;
       }
+      return { node: startNode, offset: startOffset };
     }
+    if (startNode && startNode.nodeType === Node.TEXT_NODE) {
+      var segment = this.rubySegmentOf(startNode, new Map());
+      if (segment && segment.nodes.length) {
+        return { node: segment.nodes[0], offset: 0 };
+      }
+    }
+    return { node: startNode, offset: startOffset };
+  },
+  selectFromPosition: function(node, offset, maxLength, x, y, fromHover) {
+    var normalizedStart = this.selectionStartFor(node, offset);
+    var startNode = normalizedStart.node;
+    var startOffset = normalizedStart.offset;
     var container = this.findParagraph(startNode) || document.body;
     var walker = this.createWalker(container);
     var text = '';
@@ -4040,12 +4097,16 @@ window.fushiSelection = {
     if (window.__fushiCssHighlightsSupported) {
       // BUG-110：<ruby> 内的字不放进 ::highlight（竖排下 ::highlight 把 ruby 基字盒
       // 画两遍 → 半透明叠加成深色带遮字），改给 <ruby> 元素加 class 单次绘背景。
+      // chj2rZn89F：整元素加类只在裁剪后的段**完整覆盖**该 ruby 全部基字时才成立；部分覆盖
+      // （匹配在 ruby 中途结束 / 多对基字只查到其中一对）按字符范围画，绝不整元素超画——
+      // 高亮必须等于实际查词的范围。
       var highlights = [];
       this.clearSelectionRubyHighlights();
+      var fullyCoveredRubies = this.rubiesFullyCoveredBy(trimmedRanges);
       for (var i = 0; i < trimmedRanges.length; i++) {
         var seg = trimmedRanges[i];
         var ruby = this.rubyForNode(seg.node);
-        if (ruby) {
+        if (ruby && fullyCoveredRubies.indexOf(ruby) >= 0) {
           if (this.selectionRubyElements.indexOf(ruby) < 0) {
             ruby.classList.add('fushi-selection-ruby-active');
             this.selectionRubyElements.push(ruby);

@@ -151,7 +151,9 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
       if (deck == null) throw StateError('deck ${widget.deckId} not found');
       final Set<String> conflictKeys = <String>{
         for (final (SrsEntityKind kind, String id, SrsRegister reg)
-            in await store.syncConflicts())
+            in await store.syncConflicts(
+              entity: (kind: SrsEntityKind.deck, id: widget.deckId),
+            ))
           if (kind == SrsEntityKind.deck && id == widget.deckId) reg.key,
       };
       if (!mounted) return;

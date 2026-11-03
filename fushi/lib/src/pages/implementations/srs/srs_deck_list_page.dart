@@ -31,6 +31,7 @@ import 'package:fushi/src/pages/implementations/srs/srs_deck_settings_page.dart'
 import 'package:fushi/src/pages/implementations/srs/srs_legacy_lapis_migration_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_note_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_note_types_page.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_remote_review_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_review_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_sync_settings.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
@@ -54,7 +55,8 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/utils.dart';
 import 'package:fushi/src/srs/srs_change_note_type.dart';
-import 'package:fushi/src/srs/srs_custom_study_dialog.dart';
+import 'package:fushi/src/srs/srs_custom_study_flow.dart';
+import 'package:fushi/src/srs/srs_navigation.dart';
 
 /// 行内菜单动作。
 enum _DeckAction {
@@ -161,9 +163,7 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
   }
 
   Future<T?> _push<T>(Widget Function(BuildContext context) builder) async {
-    final T? result = await Navigator.of(
-      context,
-    ).push<T>(adaptivePageRoute<T>(context: context, builder: builder));
+    final T? result = await srsPushPage<T>(context, builder);
     // 子页里写过数据（复习 / 编辑 / 设置）：回来时重读计数。
     if (mounted) bumpSrsRevision(ref);
     return result;
@@ -190,45 +190,20 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
   );
 
   /// 「自定义学习」（Anki Custom Study）：提升今日上限后照常复习，或开一个临时会话（[SrsCustomStudy]）。
-  Future<void> _customStudy(SrsDeckSummary deck) async {
-    final SrsDbStore? store = await readSrsStore(ref);
-    if (store == null || !mounted) return;
-    final SrsDayContext day = await store.dayContext();
-    final int today = day.dayIndexOf(store.now().$1);
-    if (!mounted) return;
-    final SrsCustomStudyChoice? choice = await showSrsCustomStudyDialog(
-      context: context,
-      deckName: deck.fullName,
-      todayExtension:
-          deck.deck.limitExtension?.on(today) ?? (newCards: 0, reviews: 0),
-    );
-    if (choice == null || !mounted) return;
-    if (choice.isExtension) {
-      final ({int newCards, int reviews}) total = await store.extendTodayLimits(
-        deck.deck.id,
-        newCards: choice.extendNew,
-        reviews: choice.extendReviews,
-      );
-      if (!mounted) return;
-      bumpSrsRevision(ref);
-      FushiToast.show(
-        msg: t.srs_custom_study_extended(
-          newCards: total.newCards,
-          reviews: total.reviews,
-        ),
-        severity: ToastSeverity.success,
-      );
-      await _openReview(deck);
-      return;
-    }
-    await _push<void>(
-      (_) => SrsReviewPage(
-        deckId: deck.deck.id,
-        deckName: deck.fullName,
-        custom: choice.sessionAt(store.now().$1),
-      ),
-    );
-  }
+  Future<void> _customStudy(SrsDeckSummary deck) => srsRunCustomStudy(
+    context,
+    ref,
+    deck,
+    openReview: (SrsCustomStudy? custom) => custom == null
+        ? _openReview(deck)
+        : _push<void>(
+            (_) => SrsReviewPage(
+              deckId: deck.deck.id,
+              deckName: deck.fullName,
+              custom: custom,
+            ),
+          ),
+  );
 
   Future<void> _createDeck({String? parentId}) async {
     final String? name = await showFushiTextInputDialog(
@@ -531,6 +506,17 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
       label: t.srs_note_types_title,
       onPressed: () => srsRunLogged('SrsDeckList.noteTypes', _openNoteTypes),
     ),
+    // 远程复习：不下载卡组，直接在已配对设备（互联主机）的复习库上刷，功能与本机复习一致
+    // （docs/specs/2026-11-01-srs-remote-review-design.md）。
+    FushiToolbarItem(
+      key: const ValueKey<String>('srs_remote_review'),
+      icon: FushiIcons.devices,
+      label: t.srs_remote_review_title,
+      onPressed: () => srsRunLogged(
+        'SrsDeckList.remoteReview',
+        () => _push<void>((_) => const SrsRemoteReviewEntryPage()),
+      ),
+    ),
     FushiToolbarItem(
       key: const ValueKey<String>('srs_timeline'),
       icon: FushiIcons.history,
@@ -685,6 +671,26 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
       );
     }
     final SrsDeckListData? list = data.valueOrNull;
+    if (list == null && data.hasValue) {
+      // 读完了但没有库（复习模块关着 / 库不可用）：明说，不当成「还在读」一直转圈。
+      return SafeArea(
+        bottom: false,
+        child: Center(
+          child: FushiPlaceholderMessage(
+            key: const ValueKey<String>('srs-deck-list-unavailable'),
+            icon: FushiIcons.error,
+            tone: FushiPlaceholderTone.error,
+            message: t.srs_engine_unavailable,
+            action: FushiFilledButton.tonalIcon(
+              key: const ValueKey<String>('srs-load-retry'),
+              onPressed: () => ref.invalidate(srsStoreProvider),
+              icon: const FushiIcon(FushiIcons.refresh),
+              label: Text(t.retry),
+            ),
+          ),
+        ),
+      );
+    }
     if (list == null) {
       return const SafeArea(bottom: false, child: FushiLoadingView());
     }

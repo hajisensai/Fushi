@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
 
 import 'package:fushi/src/controls/control_layout.dart';
+import 'package:fushi/src/controls/drag_auto_scroll_region.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
@@ -511,6 +512,12 @@ class _ControlLayoutEditorState<
     skipTraversal: true,
   );
 
+  /// 拖拽边缘自动滚动区：编辑器嵌在设置页 ListView 里（舞台在上、调色板在下），
+  /// 拖动时外层视口收不到滚动手势，靠它把指针位置接给 EdgeDraggingAutoScroller
+  /// （Wn1SZdlyhl）。
+  final GlobalKey<DragAutoScrollRegionState> _autoScrollKey =
+      GlobalKey<DragAutoScrollRegionState>();
+
   S get _hiddenSlot => _layout.scheme.hiddenSlot;
 
   bool _chipRenderable(I item) => widget.canRenderChip?.call(item) ?? true;
@@ -552,69 +559,72 @@ class _ControlLayoutEditorState<
     final ControlEditorStyle style = ControlEditorStyle.of(context);
     final String? message = _rejectionMessage;
     final bool overlay = message != null && _showRejectOverlay;
-    return Focus(
-      focusNode: _rootFocus,
-      includeSemantics: false,
-      onKeyEvent: _handleEditorKey,
-      child: FocusTraversalGroup(
-        child: Padding(
-          padding: EdgeInsets.all(tokens.spacing.card),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              Stack(
-                children: <Widget>[
-                  widget.stageBuilder(context, _buildSlotRegion),
-                  // 拖动中的驳回原因浮在舞台正中（正文区，没有放置区），不挤动
-                  // 下方托盘——拖动时布局一跳，手指下的目标就换了。
-                  Positioned.fill(
-                    child: IgnorePointer(
-                      child: Align(
-                        alignment: Alignment.center,
-                        child: AnimatedSwitcher(
-                          duration: style.duration(160),
-                          child: overlay
-                              ? _buildMessagePill(message, style)
-                              : const SizedBox.shrink(),
+    return DragAutoScrollRegion(
+      key: _autoScrollKey,
+      child: Focus(
+        focusNode: _rootFocus,
+        includeSemantics: false,
+        onKeyEvent: _handleEditorKey,
+        child: FocusTraversalGroup(
+          child: Padding(
+            padding: EdgeInsets.all(tokens.spacing.card),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Stack(
+                  children: <Widget>[
+                    widget.stageBuilder(context, _buildSlotRegion),
+                    // 拖动中的驳回原因浮在舞台正中（正文区，没有放置区），不挤动
+                    // 下方托盘——拖动时布局一跳，手指下的目标就换了。
+                    Positioned.fill(
+                      child: IgnorePointer(
+                        child: Align(
+                          alignment: Alignment.center,
+                          child: AnimatedSwitcher(
+                            duration: style.duration(160),
+                            child: overlay
+                                ? _buildMessagePill(message, style)
+                                : const SizedBox.shrink(),
+                          ),
                         ),
                       ),
                     ),
-                  ),
+                  ],
+                ),
+                if (!_dragging && message != null) ...<Widget>[
+                  SizedBox(height: tokens.spacing.gap),
+                  _buildMessageLine(message, style),
                 ],
-              ),
-              if (!_dragging && message != null) ...<Widget>[
-                SizedBox(height: tokens.spacing.gap),
-                _buildMessageLine(message, style),
-              ],
-              SizedBox(height: tokens.spacing.gap * 2),
-              LayoutBuilder(
-                builder: (BuildContext context, BoxConstraints constraints) {
-                  final Widget palette = _buildPalette();
-                  final Widget removal = _buildSlotRegion(
-                    _hiddenSlot,
-                    tray: true,
-                  );
-                  if (constraints.maxWidth >= 640) {
-                    return Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                SizedBox(height: tokens.spacing.gap * 2),
+                LayoutBuilder(
+                  builder: (BuildContext context, BoxConstraints constraints) {
+                    final Widget palette = _buildPalette();
+                    final Widget removal = _buildSlotRegion(
+                      _hiddenSlot,
+                      tray: true,
+                    );
+                    if (constraints.maxWidth >= 640) {
+                      return Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Expanded(child: palette),
+                          SizedBox(width: tokens.spacing.gap * 2),
+                          SizedBox(width: 232, child: removal),
+                        ],
+                      );
+                    }
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: <Widget>[
-                        Expanded(child: palette),
-                        SizedBox(width: tokens.spacing.gap * 2),
-                        SizedBox(width: 232, child: removal),
+                        palette,
+                        SizedBox(height: tokens.spacing.gap * 1.5),
+                        removal,
                       ],
                     );
-                  }
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: <Widget>[
-                      palette,
-                      SizedBox(height: tokens.spacing.gap * 1.5),
-                      removal,
-                    ],
-                  );
-                },
-              ),
-            ],
+                  },
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -882,7 +892,7 @@ class _ControlLayoutEditorState<
                         ),
                         child: SingleChildScrollView(
                           primary: false,
-                          child: chips,
+                          child: DragAutoScrollTarget(child: chips),
                         ),
                       ),
                     ],
@@ -1116,8 +1126,16 @@ class _ControlLayoutEditorState<
       feedback: _buildDragFeedback(item, style),
       childWhenDragging: Opacity(opacity: 0.3, child: chip),
       onDragStarted: () => _handlePointerDragStarted(payload),
-      onDragEnd: (DraggableDetails _) => _handlePointerDragEnded(),
-      onDraggableCanceled: (_, __) => _handleDragCanceled(item),
+      onDragUpdate: (DragUpdateDetails details) =>
+          _autoScrollKey.currentState?.updateDrag(details.globalPosition),
+      onDragEnd: (DraggableDetails _) {
+        _autoScrollKey.currentState?.endDrag();
+        _handlePointerDragEnded();
+      },
+      onDraggableCanceled: (_, __) {
+        _autoScrollKey.currentState?.endDrag();
+        _handleDragCanceled(item);
+      },
       child: chip,
     );
     return widget.wrapChip?.call(context, item, draggable) ?? draggable;

@@ -3377,6 +3377,59 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
+  /// Xt3RCTPKhX：远端视频**本机落盘**的字幕档（在线下载 / 手动导入，存在
+  /// `video_subtitles/`），按集（[remoteSubtitleKey]）记成路径列表。
+  ///
+  /// 与 [remoteSubtitleSources]（「当前选中哪一条」）是两份互不覆盖的真相：重进 /
+  /// 换集回来时播放页据此重建字幕轨列表里的「本机字幕」行，不再只剩当前那一条、
+  /// 也不再把它挂到「服务端默认字幕」行上。
+  Map<String, List<String>> get _remoteSubtitleFileLists {
+    final String raw =
+        getPref('video_remote_subtitle_files', defaultValue: '') as String;
+    if (raw.isEmpty) return <String, List<String>>{};
+    try {
+      final dynamic decoded = jsonDecode(raw);
+      if (decoded is Map) {
+        return <String, List<String>>{
+          for (final MapEntry<dynamic, dynamic> e in decoded.entries)
+            if (e.value is List)
+              e.key.toString(): <String>[
+                for (final dynamic v in e.value as List) v.toString(),
+              ],
+        };
+      }
+    } catch (e, stack) {
+      ErrorLogService.instance.log(
+        'PreferencesRepository.remoteSubtitleFiles.decode',
+        e,
+        stack,
+      );
+    }
+    return <String, List<String>>{};
+  }
+
+  /// 读某远端集记下的本机字幕档路径（按登记先后，新的在前）；无记录返回空。
+  List<String> remoteSubtitleFiles(String bookUid, {int episodeIndex = 0}) =>
+      _remoteSubtitleFileLists[remoteSubtitleKey(bookUid, episodeIndex)] ??
+      const <String>[];
+
+  /// 整体写回某远端集的本机字幕档列表；空列表删除该 key。
+  Future<void> setRemoteSubtitleFiles(
+    String bookUid,
+    int episodeIndex,
+    List<String> paths,
+  ) async {
+    final Map<String, List<String>> map = _remoteSubtitleFileLists;
+    final String key = remoteSubtitleKey(bookUid, episodeIndex);
+    if (paths.isEmpty) {
+      if (!map.containsKey(key)) return;
+      map.remove(key);
+    } else {
+      map[key] = List<String>.of(paths);
+    }
+    await setPref('video_remote_subtitle_files', jsonEncode(map));
+  }
+
   // ── tags & card export ───────────────────────────────────────────────
 
   String get savedTags => getPref('saved_tags', defaultValue: '') as String;
@@ -3608,6 +3661,39 @@ class PreferencesRepository extends ChangeNotifier
       jsonEncode(<Object?>[
         for (final SrsFolderLocation l in value) l.toJson(),
       ]),
+    );
+    notifyListeners();
+  }
+
+  /// 复习同步 v2 里这台设备关掉的同步通道位置（JSON 字符串数组，元素是位置身份 = `srs_directory_key.dart`）。
+  /// 只管复习同步：通道本身（书 / 视频等常规同步）照常跑。设备本地：是这台设备「在不在那里同步」的选择。
+  static const String srsDisabledLocationsKey = 'srs_sync2_disabled_locations';
+
+  Set<String> get srsDisabledLocations {
+    final Object? raw = getPref(srsDisabledLocationsKey, defaultValue: '');
+    if (raw is! String || raw.isEmpty) return const <String>{};
+    try {
+      final Object? j = jsonDecode(raw);
+      if (j is! List) return const <String>{};
+      return <String>{
+        for (final Object? e in j)
+          if (e is String && e.isNotEmpty) e,
+      };
+    } on FormatException {
+      return const <String>{};
+    }
+  }
+
+  Future<void> setSrsLocationEnabled(String locationId, bool enabled) async {
+    final Set<String> disabled = <String>{...srsDisabledLocations};
+    if (enabled) {
+      disabled.remove(locationId);
+    } else {
+      disabled.add(locationId);
+    }
+    await setPref(
+      srsDisabledLocationsKey,
+      jsonEncode(disabled.toList()..sort()),
     );
     notifyListeners();
   }

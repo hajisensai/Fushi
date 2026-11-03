@@ -49,6 +49,8 @@ String crashKindLabel(PreviousExitKind kind) => switch (kind) {
   PreviousExitKind.unexpected ||
   PreviousExitKind.userStopped ||
   PreviousExitKind.appUpdated ||
+  PreviousExitKind.systemSessionEnd ||
+  PreviousExitKind.exitInterrupted ||
   PreviousExitKind.backgroundReclaim => t.feedback_crash_kind_unexpected,
 };
 

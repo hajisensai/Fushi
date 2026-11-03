@@ -156,19 +156,34 @@ void main() {
       expect(start, greaterThanOrEqualTo(0), reason: '应有统一焦点判据，含指针弹窗回收分支');
       final int end = pageSrc.indexOf('\n  }', start);
       final String body = pageSrc.substring(start, end);
+      // 判据已抽成纯函数 readerCanOwnFocus（矩阵单测见
+      // test/pages/reader_lyrics_key_bridge_test.dart）；页面只做委托。
+      expect(body.contains('readerCanOwnFocus('), isTrue, reason: '页面判据委托给纯函数');
+      final int pure = pageSrc.indexOf('bool readerCanOwnFocus(');
+      expect(pure, greaterThanOrEqualTo(0));
+      final String pureBody = pageSrc.substring(
+        pure,
+        pageSrc.indexOf('\n}\n', pure),
+      );
       expect(
-        body.contains('FocusReclaimCause.popupRendered'),
+        pureBody.contains(
+          'case FocusReclaimCause.popupRendered:\n      return dictionaryShown;',
+        ),
         isTrue,
-        reason: '判据必须有 popupRendered 分支（指针唤出弹窗后收回焦点）',
+        reason: '判据必须有 popupRendered 分支（指针唤出弹窗后收回焦点），歌词模式不例外',
       );
       expect(
         pageSrc.contains('node: _focusNode'),
         isTrue,
         reason: '必须把焦点收回正文 _focusNode，否则 Esc 到不了 _handleKeyEvent',
       );
-      // 歌词态不动（自有焦点路径）；无弹窗 no-op。
-      expect(body.contains('_lyricsMode'), isTrue, reason: '歌词态必须门控，不夺歌词焦点');
-      expect(body.contains('isDictionaryShown'), isTrue, reason: '无弹窗时 no-op');
+      // 歌词态也以 _focusNode 为唯一键盘入口（PHs18V7U3K）：判据要拿到歌词态与弹窗态。
+      expect(body.contains('lyricsMode: _lyricsMode'), isTrue);
+      expect(
+        body.contains('dictionaryShown: isDictionaryShown'),
+        isTrue,
+        reason: '无弹窗时 no-op',
+      );
     });
 
     test('onDictionaryPopupRendered 仅在指针路径(CaretSurface.none)调回收 helper', () {

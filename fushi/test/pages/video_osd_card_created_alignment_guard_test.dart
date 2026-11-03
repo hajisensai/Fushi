@@ -34,7 +34,8 @@ void main() {
     // _showMineOsd（先过「制卡提示」开关，反馈 iH6RY1kqQn），由它发 prominent OSD。
     expect(
       compactCode(src).contains(
-        compactCode('_showMineOsd(described.message, described.status);'),
+        // 允许尾随可选实参（新制成功带撤销：`_showMineOsd(..., undo)`）。
+        compactCode('_showMineOsd(described.message, described.status'),
       ),
       isTrue,
       reason: '制卡结果必须经 _showMineOsd 出（内容 / 触发不得改）',
