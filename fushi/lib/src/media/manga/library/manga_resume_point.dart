@@ -50,7 +50,7 @@ bool mangaChapterStoppedAtEnd(MangaChapterStateRow state) {
   return state.lastPage >= pageCount - 1;
 }
 
-/// 「继续阅读」落到哪一章（续播三层的「选条目」，见 CLAUDE.md 命名术语表）。
+/// 「继续阅读」落到哪一章（续播三层的「选条目」，见 docs/agent/naming.md 命名术语表）。
 ///
 /// 先找**最近动过**的那一章（`updatedAt` 最大）；一次没读过就走
 /// [mangaInitialChapterIndex]。之后按 [target]：

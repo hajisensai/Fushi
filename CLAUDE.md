@@ -45,7 +45,7 @@
 
 - 增删改 key **禁止手动编辑 json**，只用 `dart fushi/tool/i18n_sync.dart`：`--add <key> <en> <zh>` / `--remove <key>` / `--rename <old> <new>` / `--sort`，可重复混用。**改名只能 `--rename`**（`--remove`+`--add` 会把 16 种语言翻译降级成英文）。批量删 key 后按带引号的精确键名复核。17 份 json 顶层 key 全排序。（[细则](docs/agent/rules-detail.md#i18n-全排序与合并驱动)）
 - key 命名 `<域>_<子域名词>_<动作/状态>`，英文 sentence case。
-- 改完跑 `dart fushi/tool/gen_i18n.dart`；`strings.g.dart` 不入库、不手改、不提交。
+- 改完 key、或刚 rebase / 解完冲突后要不经 heavy.dart 直接跑 `flutter test` 时，先跑 `dart fushi/tool/gen_i18n.dart`（`strings.g.dart` 不入库，旧生成文件会编出伪红）；生成文件不手改、不提交。
 
 ## 验证
 
@@ -60,7 +60,7 @@
 
 ## 提交与发布
 
-- **2026-11-01 仓库历史已用 filter-repo 重写**：旧 clone / 分支与新历史无共同祖先，报 `unrelated histories` 时禁止 `--allow-unrelated-histories`，用 `git rebase --onto origin/develop <旧分叉点> <分支>` 只搬自己的提交。
+- **2026-11-01 仓库历史已用 filter-repo 重写**：旧 clone / 分支与新历史无共同祖先，报 `unrelated histories` 时禁止 `--allow-unrelated-histories`，用 `git rebase --onto origin/develop <旧分叉点> <分支>` 只搬自己的提交（或从新 `origin/develop` 重开 worktree）；带旧历史的 PR / push 会被 `.github/workflows/history-guard.yml` 判红。
 - 提交前 `git status --short`，**只 stage 本轮相关文件（禁止 `git add -A`）**，再 `git diff --cached --check`；提交信息简洁写真实改动；提交后回复里给出哈希和仍存在的无关未提交改动。
 - 过了推送门就直接 push + 开 PR，**不问**；只有方案取舍、范围扩大、风险判断才问。
 - 合并 PR 看作者：只有 `hajisensai` 与 `W1ght` 的 PR 可审查后直接合，其他人一律先问用户（许可形态是 `merge-approved` 标签）。批量合并不逐条等 PR CI，合完看 `develop` 尖端整体 CI，红了按根因修，不回滚、不跳过。（[细则](docs/agent/rules-detail.md#合并-pr-看作者)）
