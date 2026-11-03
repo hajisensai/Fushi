@@ -1,4 +1,4 @@
-// 互联主机**替别的设备**制卡（收转发 / 浏览器扩展）遵守本机挖词目标：
+// 互联主机**替别的设备**制卡（收转发 / 浏览器扩展 / 游戏串流接收端，BUG-3993）遵守本机挖词目标：
 // `hostMiningAnkiRepositoryProvider` → `AppModel.hostMiningAnkiRepository` →
 // `_AppModelRemoteLookupService`。目标是 Fushi 复习时落复习、不写 Anki；目标是 Anki
 // （或复习模块关着）时与原来一样直接写本机 Anki。
@@ -17,6 +17,7 @@ import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_mining_target.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
+import 'package:fushi/src/sync/game_stream_mining.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
@@ -237,6 +238,26 @@ void main() {
       expect(await notes.readSourceNote(CardSourceLink.newSourceId()), isNull);
       expect(anki.sourceReads, 1);
     });
+    test('BUG-3993：游戏串流主机制卡适配器落复习、不写 Anki', () async {
+      // 串流卡是替接收端制的：AppModel 的生产工厂给出的适配器每次制卡读的仓库，
+      // 必须是遵守挖词目标的主机制卡仓库，而不是裸 Anki 后端（旧实现在挖词目标是
+      // 复习、又没配 Anki 牌组的主机上每张串流卡都失败）。
+      final FushiGameStreamMiningAdapter adapter = wiredAppModel(
+        srsEnabled: true,
+        target: SrsMiningTarget.srs,
+      ).createGameStreamMiningAdapter();
+
+      final MineOutcome out = await adapter.repository().mineEntry(
+        rawPayloadJson: jsonEncode(_fields('霧', 'きり')),
+        context: const AnkiMiningContext(sentence: '霧が出た。'),
+      );
+
+      expect(out.result, MineResult.success);
+      expect(anki.minedPayloads, isEmpty, reason: '目标是复习时串流卡不得写主机 Anki');
+      final SrsTermStatus? hit = await srsStatus('霧', 'きり');
+      expect(hit, isNotNull, reason: '串流卡应落进主机的 Fushi 复习');
+      expect(hit!.cardCount, greaterThan(0));
+    });
   });
 
   group('目标 = Anki（与原行为一致）', () {
@@ -253,6 +274,11 @@ void main() {
           target: c.target,
         );
         expect(app.hostMiningAnkiRepository, same(anki), reason: '裸本机后端');
+        expect(
+          app.createGameStreamMiningAdapter().repository(),
+          same(anki),
+          reason: '游戏串流卡与互联转发同走主机制卡仓库',
+        );
         final FushiRemoteMiningService service = app
             .createRemoteMiningService();
 

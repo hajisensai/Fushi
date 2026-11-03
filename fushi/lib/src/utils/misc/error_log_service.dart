@@ -573,11 +573,7 @@ void recordLookupStackDepth(int depth, String? topTerm) {
 /// floating_dict_page / video_fushi_page / app_model）都走这里，避免「记日志 +
 /// 文案」逻辑被复制 5 份后各自漂移。[outcome] 应满足 `result == MineResult.error`。
 String logMineFailure(MineOutcome outcome) {
-  ErrorLogService.instance.log(
-    'Anki.mineEntry',
-    outcome.error ?? outcome.errorDetail ?? 'unknown card export error',
-    outcome.stackTrace,
-  );
+  logMineOutcomeDiagnostics(outcome);
   // TODO-752a：失败已分类（errorCode 非空）时，用与 locale 无关的稳定码映射本地化
   // toast——绝不把后端带回的 errorDetail（可能含 socket/http 的英文/latin1 乱码原文）
   // 直接喂给用户。errorDetail/error 仍写进上面的诊断日志。未分类失败维持旧行为。
@@ -587,6 +583,26 @@ String logMineFailure(MineOutcome outcome) {
   return detail != null && detail.isNotEmpty
       ? t.card_export_failed_detail(reason: detail)
       : t.card_export_failed;
+}
+
+/// BUG-089 / BUG-3993：把一次没制成的 [MineOutcome] 的**完整诊断**写进
+/// [ErrorLogService]——原始异常 [MineOutcome.error] 优先，其次后端的简短原因
+/// [MineOutcome.errorDetail]，都没有时记结果枚举本身。[logMineFailure] 与游戏串流
+/// 主机侧（`GameStream.mine`，结果回给对端、不出 toast）共用这一处，[source] 区分来源。
+/// 不能只记 errorDetail：AnkiConnect 非网络异常时它固定是通用英文文案，真因只在 error 里。
+void logMineOutcomeDiagnostics(
+  MineOutcome outcome, {
+  String source = 'Anki.mineEntry',
+}) {
+  ErrorLogService.instance.log(
+    source,
+    outcome.error ??
+        outcome.errorDetail ??
+        (outcome.result == MineResult.error
+            ? 'unknown card export error'
+            : 'card export ${outcome.result.name}'),
+    outcome.stackTrace,
+  );
 }
 
 /// TODO-752a：把 [MineOutcome.errorCode] 映射成本地化的制卡失败 toast 文案；

@@ -187,6 +187,53 @@ void main() {
     expect(logged.single.error, contains('deck "Mining" was not found'));
   });
 
+  test(
+    'a backend rejection logs the raw exception, not just the generic detail',
+    () async {
+      // AnkiConnect's non-network failures carry a fixed generic errorDetail;
+      // the real cause lives only in MineOutcome.error and must reach the log.
+      final StackTrace origin = StackTrace.current;
+      adapter = FushiGameStreamMiningAdapter(
+        repository: () => throw StateError('unexpected repository'),
+        compression: () => MiningMediaCompression.compressed,
+        isWindows: () => true,
+        lineLookup: text.entryById,
+        currentLineId: () => text.lastEntry?.id,
+        lineValidator: (_) => true,
+        captureStill: (int hwnd) => capture(hwnd),
+        mineSnapshot: (_, _) async => GalHookMiningResult(
+          outcome: MineOutcome.failure(
+            'AnkiConnect: unexpected error.',
+            error: const FormatException('handlebar {{Glossary}} missing'),
+            stackTrace: origin,
+          ),
+        ),
+      );
+      final GameStreamTextEvent line = event(text.appendLine('line')!);
+      expect(await adapter.captureLine(line, hwnd: 1), isTrue);
+      final int before = ErrorLogService.instance.entries.length;
+
+      final GameStreamMineResult result = await adapter.mine(
+        request(line),
+        line,
+      );
+
+      expect(result.ok, isFalse);
+      expect(result.detail, GameStreamMineDetail.hostError);
+      expect(
+        result.message,
+        isNot(contains('handlebar')),
+        reason: 'the raw cause stays on the host',
+      );
+      final List<ErrorLogEntry> logged = ErrorLogService.instance.entries
+          .skip(before)
+          .where((ErrorLogEntry e) => e.source == 'GameStream.mine')
+          .toList();
+      expect(logged.single.error, contains('handlebar {{Glossary}} missing'));
+      expect(logged.single.stackTrace, origin.toString());
+    },
+  );
+
   test('clear prevents a queued progressive capture from restarting', () async {
     text.foldProgressiveLines = true;
     final Completer<WindowCaptureResult> pending =
