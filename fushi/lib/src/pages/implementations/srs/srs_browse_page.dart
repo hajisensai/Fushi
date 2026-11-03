@@ -621,6 +621,15 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
 
     Future<SrsBatchOutcome> Function()? run;
     String? doneMessage;
+    // 批量改笔记字段：落库是条件写，计划之后又被改过的笔记不覆盖；条数随结果 toast 提示。
+    int conflicts = 0;
+    Future<SrsBatchOutcome> Function() fieldRun(
+      Future<SrsNoteFieldApplied> Function() apply,
+    ) => () async {
+      final SrsNoteFieldApplied applied = await apply();
+      conflicts = applied.conflicts;
+      return applied.outcome;
+    };
     switch (action) {
       case SrsBrowseBatchAction.toggleSuspend:
         final bool suspend = !targets.allSuspended;
@@ -679,12 +688,15 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
           () => pickSrsCardType(context),
         );
         if (type == null || !mounted) return;
-        run = await _confirmFieldPlan(
-          store,
-          t.srs_browse_card_type_set,
-          await srsPlanCardType(store, noteIds, type),
+        final SrsNoteFieldPlan? plan = await _planFieldEdit(
+          action,
+          () => srsPlanCardType(store, noteIds, type),
         );
-        if (run == null) return;
+        if (plan == null) return;
+        final Future<SrsNoteFieldApplied> Function()? apply =
+            await _confirmFieldPlan(store, t.srs_browse_card_type_set, plan);
+        if (apply == null) return;
+        run = fieldRun(apply);
       case SrsBrowseBatchAction.setField:
         final List<String> fieldNames = _fieldNames;
         if (fieldNames.isEmpty) return;
@@ -710,12 +722,15 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
           ),
         );
         if (value == null || !mounted) return;
-        run = await _confirmFieldPlan(
-          store,
-          t.srs_browse_field_set,
-          await srsPlanSetField(store, noteIds, field, value),
+        final SrsNoteFieldPlan? plan = await _planFieldEdit(
+          action,
+          () => srsPlanSetField(store, noteIds, field, value),
         );
-        if (run == null) return;
+        if (plan == null) return;
+        final Future<SrsNoteFieldApplied> Function()? apply =
+            await _confirmFieldPlan(store, t.srs_browse_field_set, plan);
+        if (apply == null) return;
+        run = fieldRun(apply);
       case SrsBrowseBatchAction.findReplace:
         final SrsNoteFieldPlan? plan = await _focusOwnership.guardOverlay(
           () => showSrsFindReplaceDialog<SrsNoteFieldPlan>(
@@ -733,8 +748,10 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
           ),
         );
         if (plan == null || !mounted) return;
-        run = await _confirmFieldPlan(store, t.srs_browse_find_replace, plan);
-        if (run == null) return;
+        final Future<SrsNoteFieldApplied> Function()? apply =
+            await _confirmFieldPlan(store, t.srs_browse_find_replace, plan);
+        if (apply == null) return;
+        run = fieldRun(apply);
       case SrsBrowseBatchAction.reset:
         final bool ok = await _focusOwnership.guardOverlay(
           () => showFushiConfirmDialog(
@@ -800,10 +817,15 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
     try {
       final SrsBatchOutcome out = await run();
       if (!mounted) return;
-      if (out.changed == 0) {
+      if (out.revert != null) _undo.add(_UndoEntry(out.revert!));
+      if (conflicts > 0) {
+        FushiToast.show(
+          msg: t.srs_browse_field_edit_conflicts(n: conflicts),
+          severity: ToastSeverity.warning,
+        );
+      } else if (out.changed == 0) {
         FushiToast.show(msg: t.srs_browse_nothing_changed);
       } else {
-        if (out.revert != null) _undo.add(_UndoEntry(out.revert!));
         FushiToast.show(msg: doneMessage ?? t.srs_browse_done(n: out.changed));
       }
       bumpSrsRevision(ref);
@@ -818,16 +840,42 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
     }
   }
 
-  /// 批量改笔记字段的计划 → 确认。空计划给「没有改动」、取消返回 null；确认后返回落库动作
-  /// （结果交给 [_runBatch] 的撤销栈与 toast）。
-  Future<Future<SrsBatchOutcome> Function()?> _confirmFieldPlan(
+  /// 算批量改笔记字段的计划（要物化整份结果集的笔记）：计划期间置 [_busy]（批量菜单、Delete、
+  /// 撤销都不能插进来），出错与落库同样记日志 + 失败 toast，返回 null。
+  Future<SrsNoteFieldPlan?> _planFieldEdit(
+    SrsBrowseBatchAction action,
+    Future<SrsNoteFieldPlan> Function() plan,
+  ) async {
+    if (!mounted) return null;
+    setState(() => _busy = true);
+    try {
+      return await plan();
+    } catch (e, stack) {
+      ErrorLogService.instance.log('SrsBrowse.plan.${action.name}', e, stack);
+      FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
+      return null;
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// 批量改笔记字段的计划 → 确认。空计划：有笔记因类型没有所需字段被跳过就报跳过条数，否则
+  /// 「没有改动」；取消返回 null；确认后返回落库动作（结果交给 [_runBatch] 的撤销栈与 toast）。
+  Future<Future<SrsNoteFieldApplied> Function()?> _confirmFieldPlan(
     SrsDbStore store,
     String title,
     SrsNoteFieldPlan plan,
   ) async {
     if (!mounted) return null;
     if (plan.isEmpty) {
-      FushiToast.show(msg: t.srs_browse_nothing_changed);
+      final ({String message, bool warning}) notice =
+          srsNoteFieldPlanEmptyNotice(plan);
+      FushiToast.show(
+        msg: notice.message,
+        severity: notice.warning
+            ? ToastSeverity.warning
+            : ToastSeverity.neutral,
+      );
       return null;
     }
     final bool ok = await _focusOwnership.guardOverlay(

@@ -11,13 +11,30 @@ const String kCtlOpsPath = '/api/admin/ops';
 const String kCtlOpsDescribePath = '/api/admin/ops/describe/:id';
 const String kCtlOpsCallPath = '/api/admin/ops/call';
 
+/// `/ops/call` 结果里撤销记录的 id（`fushi_cli ai undo <id>` / 操作记录页撤销）。
+const String kCtlOpsUndoActionIdKey = 'undoActionId';
+
+/// 把一次以用户身份经 `/ops/call` 执行的可撤销操作记进操作记录（与 AI 助手的操作记录同一张表），
+/// 返回记录 id。
+typedef OpUndoRecorder =
+    Future<int> Function(
+      FushiOp op,
+      Map<String, Object?> args,
+      OpUndoRecord undo,
+    );
+
 /// 目录的三条路由。[invoker] 现取（app 初始化后才有完整目录）。
 ///
 /// - `GET  /api/admin/ops?q=`：列出当前可用的操作（带 `q` 时按检索排序）。
 /// - `GET  /api/admin/ops/describe/:id`：完整描述（含不可用原因）。
 /// - `POST /api/admin/ops/call` `{id, args, yes?}`：以用户身份调用；`yes=true`
 ///   等于用户在终端里把该操作的全部表态参数都敲上了。只在进程内有意义的操作拒绝。
-List<CtlRoute> buildOpCatalogRoutes(OpInvoker Function() invoker) => <CtlRoute>[
+///   给了 [recordUndo] 时，可撤销操作（`op.undo != null`）执行前抓快照、执行后把撤销载荷
+///   记进操作记录，结果（Map）里带 [kCtlOpsUndoActionIdKey]——CLI 的写操作与 AI 一样能撤销。
+List<CtlRoute> buildOpCatalogRoutes(
+  OpInvoker Function() invoker, {
+  OpUndoRecorder? recordUndo,
+}) => <CtlRoute>[
   CtlRoute.get(kCtlOpsPath, (CtlCall call) async {
     final OpCatalog catalog = invoker().catalog;
     final String? query = call.optString('q');
@@ -63,11 +80,13 @@ List<CtlRoute> buildOpCatalogRoutes(OpInvoker Function() invoker) => <CtlRoute>[
     if (rawArgs != null && rawArgs is! Map) {
       throw const CtlFailure.badRequest('args 必须是 JSON 对象');
     }
+    final Map<String, Object?> args = rawArgs == null
+        ? const <String, Object?>{}
+        : Map<String, Object?>.from(rawArgs as Map);
     final OpInvocation result = await inv.invoke(
       id,
-      rawArgs == null
-          ? const <String, Object?>{}
-          : Map<String, Object?>.from(rawArgs as Map),
+      args,
+      captureUndo: recordUndo != null && op.undo != null,
       grantedGates: call.optBool('yes') == true
           ? <String>{
               for (final OpParam p in op.params.where(
@@ -77,6 +96,16 @@ List<CtlRoute> buildOpCatalogRoutes(OpInvoker Function() invoker) => <CtlRoute>[
             }
           : const <String>{},
     );
-    return result.result ?? const <String, Object?>{'ok': true};
+    final Object data = result.result ?? const <String, Object?>{'ok': true};
+    final OpUndoRecord? undo = result.undo;
+    if (undo == null || recordUndo == null) return data;
+    final int actionId = await recordUndo(op, args, undo);
+    return data is Map
+        ? <String, Object?>{
+            for (final MapEntry<Object?, Object?> e in data.entries)
+              '${e.key}': e.value,
+            kCtlOpsUndoActionIdKey: actionId,
+          }
+        : data;
   }),
 ];

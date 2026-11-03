@@ -15,6 +15,7 @@ export 'src/ctl_paths.dart';
 export 'src/ctl_protocol.dart';
 export 'src/ctl_routes.dart';
 export 'src/ctl_command_registry.dart';
+export 'src/commands/srs_commands.dart' show kSrsCardTypes;
 export 'src/ctl_commands.dart';
 export 'src/ctl_server.dart';
 export 'src/mcp/mcp_http.dart';

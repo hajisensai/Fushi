@@ -351,30 +351,24 @@ const List<OpParam> _noteBatchTargetParams = <OpParam>[
   ),
 ];
 
-/// 批量改笔记 → 撤销 = 改过的字段写回原值（之后又被改过的不动，计 superseded）。
+/// 批量改笔记 → 撤销 = 实际写下的字段写回原值（之后又被改过的不动，计 superseded）。
 ///
-/// 快照在执行前用同一组参数再算一遍计划（[srsCtlPlanNoteBatch]，只读），完整改动清单只进
-/// 撤销记录、不回给调用方（回给调用方的只有样例）。预演不写入，快照为空。
+/// 载荷取路由实际写下的改动清单（[srsCtlAppliedNoteChanges]，按这次调用挂），不在执行前另算
+/// 一遍计划：只算一次，撤销载荷与落库的改动一一对应。完整清单只进撤销记录、不回给调用方
+/// （回给调用方的只有样例）。预演 / 空计划不写入，载荷为空。
 OpUndo _noteBatchUndo(SrsCtlDeps deps, SrsCtlNoteBatch op) => opCustomUndo(
-  capture: (CtlCall call) async {
-    if (call.optBool('dryRun') ?? false) {
-      return const <String, Object?>{'changes': <Object?>[]};
-    }
-    final SrsDbStore store = await requireSrsCtlStore(deps);
-    final (SrsNoteFieldPlan plan, _) = await srsCtlPlanNoteBatch(
-      store,
-      call,
-      op,
-    );
+  payloadOf: (CtlCall call, Map<String, Object?> before, Object? result) {
+    final List<SrsNoteFieldChange> applied =
+        srsCtlAppliedNoteChanges[call] ?? const <SrsNoteFieldChange>[];
     return <String, Object?>{
-      'notes': plan.noteCount,
+      'notes': <String>{
+        for (final SrsNoteFieldChange c in applied) c.noteId,
+      }.length,
       'changes': <Map<String, Object?>>[
-        for (final SrsNoteFieldChange c in plan.changes) c.toJson(),
+        for (final SrsNoteFieldChange c in applied) c.toJson(),
       ],
     };
   },
-  payloadOf: (CtlCall call, Map<String, Object?> before, Object? result) =>
-      before,
   describe: (Map<String, Object?> p) => '${op.wire}：${p['notes'] ?? 0} 条笔记',
   revert: (Map<String, Object?> payload) async {
     final List<SrsNoteFieldChange> changes = <SrsNoteFieldChange>[

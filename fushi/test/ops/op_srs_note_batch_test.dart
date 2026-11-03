@@ -18,6 +18,7 @@ import 'package:fushi_cli/fushi_cli.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_note_batch_edit.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
 import '../srs/srs_test_support.dart';
@@ -270,5 +271,101 @@ void main() {
         isA<CtlFailure>().having((CtlFailure e) => e.status, 'status', 400),
       ),
     );
+  });
+
+  test('落库是条件写：计划之后字段又被改过的笔记不覆盖、计 conflicts，撤销载荷只含实际写下的', () async {
+    final (FushiDatabase db, SrsDbStore store) = await openSrsTestStore();
+    addTearDown(db.close);
+    final _Ops ops = _Ops(store);
+    final String a = await _addFushiCard(store, '魚', sentence: '魚を食べる');
+    final String b = await _addFushiCard(store, '肉', sentence: '肉を食べる');
+
+    final SrsNoteFieldPlan plan = await srsPlanSetField(
+      store,
+      <String>[a, b],
+      'Hint',
+      'h',
+    );
+    expect(plan.noteCount, 2);
+    // 计划与确认之间 b 被别处改了（同步拉下 / 并发写）。
+    await store.updateNote(b, fieldsById: <String, String>{_fc('Hint'): '别处'});
+    final SrsNoteFieldApplied applied = await srsApplyNoteFieldPlan(
+      store,
+      plan,
+    );
+    expect(applied.conflicts, 1);
+    expect(applied.noteCount, 1);
+    expect((await _byName(store, a))['Hint'], 'h');
+    expect((await _byName(store, b))['Hint'], '别处');
+    expect(await applied.outcome.revert!(store), 0);
+    expect((await _byName(store, a))['Hint'], '');
+
+    // 经操作目录：撤销载荷 = 实际写下的改动（不在执行前另算一遍计划）。
+    final (Map<String, Object?> done, OpUndoRecord record) = await ops.run(
+      'srs.notes.set-field',
+      <String, Object?>{
+        'targetField': 'Hint',
+        'value': 'z',
+        'notes': <String>[a],
+      },
+    );
+    expect(done['notes'], 1);
+    expect(done.containsKey('conflicts'), isFalse);
+    final List<Object?> changes = record.payload['changes']! as List<Object?>;
+    expect(changes, hasLength(1));
+    expect((changes.single! as Map<String, Object?>)['after'], 'z');
+  });
+
+  test('CLI 经 /ops/call 执行：撤销记录落进操作记录，按记录能撤销', () async {
+    final (FushiDatabase db, SrsDbStore store) = await openSrsTestStore();
+    addTearDown(db.close);
+    final _Ops ops = _Ops(store);
+    final String a = await _addFushiCard(store, '魚', sentence: '魚を食べる');
+    final List<CtlRoute> routes = buildOpCatalogRoutes(
+      () => ops.invoker,
+      recordUndo: (FushiOp op, Map<String, Object?> args, OpUndoRecord undo) =>
+          recordCliOpUndo(db, op, args, undo),
+    );
+    final CtlRoute call = routes.singleWhere(
+      (CtlRoute r) => r.method == 'POST' && r.pattern == kCtlOpsCallPath,
+    );
+    final Object? result = await call.handler(
+      CtlCall(
+        method: 'POST',
+        path: kCtlOpsCallPath,
+        body: <String, Object?>{
+          'id': 'srs.notes.card-type',
+          'args': <String, Object?>{
+            'type': 'word-and-sentence',
+            'notes': <String>[a],
+          },
+        },
+      ),
+    );
+    final Map<String, Object?> data = result! as Map<String, Object?>;
+    expect(data['notes'], 1);
+    final int actionId = data[kCtlOpsUndoActionIdKey]! as int;
+    expect(
+      srsFushiFrontKind(await _byName(store, a)),
+      SrsFushiFrontKind.wordAndSentence,
+    );
+
+    final AiAgentActionRow row = (await db.getAiAgentAction(actionId))!;
+    expect(row.sessionId, kCliOpSessionId);
+    expect(row.opId, 'srs.notes.card-type');
+    expect(row.confirmation, 'user');
+    final Map<String, Object?> payload =
+        jsonDecode(row.undoPayloadJson!) as Map<String, Object?>;
+    expect(
+      (await ops.catalog[row.opId]!.undo!.revert(payload)).status,
+      OpUndoStatus.done,
+    );
+    expect(srsFushiFrontKind(await _byName(store, a)), SrsFushiFrontKind.word);
+  });
+
+  test('CLI 卡型值域与引擎 SrsCardType.wire 一致', () {
+    expect(kSrsCardTypes, <String>[
+      for (final SrsCardType t in SrsCardType.values) t.wire,
+    ]);
   });
 }

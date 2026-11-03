@@ -2,7 +2,8 @@
 ///
 /// 浏览页的批量菜单与控制通道（`fushi/lib/src/ops/ctl_srs_routes.dart`，供 AI / `fushi_cli`）
 /// 调同一组函数：先 `srsPlan*` 算出一份 [SrsNoteFieldPlan]（只读，可当预览 / dry-run），
-/// 再 [srsApplyNoteFieldPlan] 一个批次落库（[SrsDbStore.editFieldsBatch]，走同步日志）。
+/// 再 [srsApplyNoteFieldPlan] 一个批次条件写落库（[SrsDbStore.editFieldsBatch]，走同步日志；计划之后
+/// 又被改过的字段不覆盖）。
 ///
 /// 字段按**名字**指定、按每条笔记自己的笔记类型解析成 fieldId：同一批里可以混着 Lapis、
 /// Fushi 卡片和导入的 Anki 类型；某条笔记的类型没有这个字段就记进 [SrsNoteFieldPlan.skipped]，
@@ -311,26 +312,72 @@ String _expand(String replace, Match m) {
   return out.toString();
 }
 
-/// 一个批次写下 [plan]；结果里的撤销按 [srsRevertNoteFieldChanges] 写回原值。
-Future<SrsBatchOutcome> srsApplyNoteFieldPlan(
+/// 一次落库的结果（[srsApplyNoteFieldPlan]）。
+class SrsNoteFieldApplied {
+  const SrsNoteFieldApplied({required this.changes, required this.conflicts});
+
+  /// 实际写下的修改（计划里、落库时当前值仍是 `before` 的那些）。撤销就按它写回。
+  final List<SrsNoteFieldChange> changes;
+
+  /// 计划算好之后、落库之前字段又被改过（同步拉下 / 别处并发改）因而**没写**的笔记数。
+  final int conflicts;
+
+  /// 实际改到的笔记数。
+  int get noteCount =>
+      <String>{for (final SrsNoteFieldChange c in changes) c.noteId}.length;
+
+  /// 交给浏览页撤销栈的形状。
+  SrsBatchOutcome get outcome => SrsBatchOutcome(
+    changed: noteCount,
+    revert: changes.isEmpty
+        ? null
+        : (SrsDbStore s) => srsRevertNoteFieldChanges(s, changes),
+  );
+}
+
+/// 一个批次写下 [plan]，条件写（compare-and-set）：在写锁里重读这批笔记，只写当前值仍是
+/// 计划时的 `before` 的字段；计划之后又被改过（同步拉下、AI / 控制通道并发改）的字段不覆盖，
+/// 整条笔记计入 [SrsNoteFieldApplied.conflicts]（同一笔记的几个字段要么一起写、要么都不写，
+/// 不把卡型开关写成半套）。与撤销的「当前值 == after 才写回」对称。
+Future<SrsNoteFieldApplied> srsApplyNoteFieldPlan(
   SrsDbStore store,
   SrsNoteFieldPlan plan,
 ) async {
-  if (plan.isEmpty) return const SrsBatchOutcome(changed: 0);
-  final List<SrsNoteFieldChange> changes = plan.changes;
-  await store.editFieldsBatch(<SrsFieldChange>[
-    for (final SrsNoteFieldChange c in changes)
-      SrsFieldChange(
-        SrsEntityKind.note,
-        c.noteId,
-        SrsFieldKeys.noteField(c.fieldId),
-        c.after,
-      ),
-  ]);
-  return SrsBatchOutcome(
-    changed: plan.noteCount,
-    revert: (SrsDbStore s) => srsRevertNoteFieldChanges(s, changes),
-  );
+  if (plan.isEmpty) {
+    return const SrsNoteFieldApplied(
+      changes: <SrsNoteFieldChange>[],
+      conflicts: 0,
+    );
+  }
+  return store.runExclusive(() async {
+    final Map<String, SrsNoteView?> notes = await store.notes(<String>{
+      for (final SrsNoteFieldChange c in plan.changes) c.noteId,
+    });
+    final Set<String> conflicted = <String>{
+      for (final SrsNoteFieldChange c in plan.changes)
+        if (notes[c.noteId] case final SrsNoteView? n
+            when n == null ||
+                n.deletedAt != null ||
+                n.field(c.fieldId) != c.before)
+          c.noteId,
+    };
+    final List<SrsNoteFieldChange> changes = <SrsNoteFieldChange>[
+      for (final SrsNoteFieldChange c in plan.changes)
+        if (!conflicted.contains(c.noteId)) c,
+    ];
+    if (changes.isNotEmpty) {
+      await store.editFieldsBatch(<SrsFieldChange>[
+        for (final SrsNoteFieldChange c in changes)
+          SrsFieldChange(
+            SrsEntityKind.note,
+            c.noteId,
+            SrsFieldKeys.noteField(c.fieldId),
+            c.after,
+          ),
+      ]);
+    }
+    return SrsNoteFieldApplied(changes: changes, conflicts: conflicted.length);
+  });
 }
 
 /// 把 [changes] 写回原值。字段当前值已不是 `after`（之后又被改过 / 笔记被删）的不动；

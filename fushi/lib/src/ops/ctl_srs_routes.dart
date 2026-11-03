@@ -404,13 +404,24 @@ List<CtlRoute> buildSrsCtlRoutesFor(SrsCtlDeps deps) => <CtlRoute>[
       final (SrsNoteFieldPlan plan, Map<String, Object?> echo) =
           await srsCtlPlanNoteBatch(store, call, op);
       final bool dryRun = call.optBool('dryRun') ?? false;
-      if (!dryRun && !plan.isEmpty) {
-        await srsApplyNoteFieldPlan(store, plan);
-        deps.changed();
+      if (dryRun || plan.isEmpty) {
+        return srsCtlNotePlanJson(plan, echo, dryRun: dryRun);
       }
-      return srsCtlNotePlanJson(plan, echo, dryRun: dryRun);
+      final SrsNoteFieldApplied applied = await srsApplyNoteFieldPlan(
+        store,
+        plan,
+      );
+      srsCtlAppliedNoteChanges[call] = applied.changes;
+      if (applied.changes.isNotEmpty) deps.changed();
+      return srsCtlNotePlanJson(plan, echo, dryRun: false, applied: applied);
     }),
 ];
+
+/// 这次调用实际写下的完整改动清单（按 [CtlCall] 实例挂，随调用对象回收）。撤销快照
+/// （`op_descriptions_srs.dart` 的 `_noteBatchUndo`）从这里取：撤销载荷 = 实际写下的改动，
+/// 不再在执行前另算一遍计划；完整清单也不进回给调用方 / 模型的结果。
+final Expando<List<SrsNoteFieldChange>> srsCtlAppliedNoteChanges =
+    Expando<List<SrsNoteFieldChange>>('srsCtlAppliedNoteChanges');
 
 /// 三种批量改笔记（路由段名 = [wire]）。
 enum SrsCtlNoteBatch {
@@ -465,7 +476,7 @@ Future<List<String>> _batchTargets(SrsDbStore store, CtlCall call) async {
   ];
 }
 
-/// 按 [call] 的参数算出 [op] 的修改计划（路由与撤销快照共用，撤销在写入前用同一参数再算一遍）。
+/// 按 [call] 的参数算出 [op] 的修改计划（只读；路由里算一次，预演就到此为止）。
 Future<(SrsNoteFieldPlan, Map<String, Object?>)> srsCtlPlanNoteBatch(
   SrsDbStore store,
   CtlCall call,
@@ -524,23 +535,26 @@ Future<(SrsNoteFieldPlan, Map<String, Object?>)> srsCtlPlanNoteBatch(
 }
 
 /// 回给调用方的摘要：改动只给前 [kSrsCtlBatchSampleSize] 条样例（字段值截短），不把整批
-/// HTML 塞给模型；完整的改动清单只进撤销快照。
+/// HTML 塞给模型；完整的改动清单只进撤销快照。[applied] 非空 = 已落库：条数按实际写下的算，
+/// `conflicts` = 计划之后又被改过、因而没写的笔记数。
 Map<String, Object?> srsCtlNotePlanJson(
   SrsNoteFieldPlan plan,
   Map<String, Object?> echo, {
   required bool dryRun,
+  SrsNoteFieldApplied? applied,
 }) => <String, Object?>{
   ...echo,
   'dryRun': dryRun,
-  'notes': plan.noteCount,
-  'fieldChanges': plan.changes.length,
+  'notes': applied?.noteCount ?? plan.noteCount,
+  'fieldChanges': applied?.changes.length ?? plan.changes.length,
+  if (applied != null && applied.conflicts > 0) 'conflicts': applied.conflicts,
   'unchanged': plan.unchanged,
   'skipped': plan.skipped.length,
   if (plan.skipped.isNotEmpty)
     'skippedSample': plan.skipped.take(kSrsCtlBatchSampleSize).toList(),
   if (plan.missing.isNotEmpty) 'missing': plan.missing,
   'sample': <Map<String, Object?>>[
-    for (final SrsNoteFieldChange c in plan.changes.take(
+    for (final SrsNoteFieldChange c in (applied?.changes ?? plan.changes).take(
       kSrsCtlBatchSampleSize,
     ))
       <String, Object?>{

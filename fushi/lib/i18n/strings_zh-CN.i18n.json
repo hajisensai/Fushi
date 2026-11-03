@@ -7403,6 +7403,7 @@
   "srs_browse_empty": "没有找到笔记",
   "srs_browse_field_edit_apply": "应用修改",
   "srs_browse_field_edit_confirm": "将修改 $n 条笔记。",
+  "srs_browse_field_edit_conflicts": "$n 条笔记在此期间已被别处改过，保留未动。",
   "srs_browse_field_edit_skipped": "$n 条笔记的类型没有这个字段，已跳过。",
   "srs_browse_field_set": "设置字段",
   "srs_browse_field_value_hint": "留空即清空该字段",

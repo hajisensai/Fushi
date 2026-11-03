@@ -10,6 +10,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/models.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_browse_dialogs.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_browse_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
@@ -18,6 +19,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_note_batch_edit.dart';
 import 'package:fushi_srs/fushi_srs.dart'
     show FushiFsrs, SrsNoteView, kFushiFsrsLibEnv;
 import 'package:material_ui/material_ui.dart';
@@ -251,5 +253,29 @@ void main() {
     await _undo(tester);
     expect(await _field(tester, store, id, 'MainDefinition'), 'to eat food');
     await _unmount(tester);
+  });
+
+  test('空计划提示：全被跳过报跳过条数，只有都已是目标值才「没有改动」', () {
+    final ({String message, bool warning}) skipped =
+        srsNoteFieldPlanEmptyNotice(
+          const SrsNoteFieldPlan(
+            changes: <SrsNoteFieldChange>[],
+            skipped: <String>['a', 'b'],
+            unchanged: 0,
+            missing: <String>[],
+          ),
+        );
+    expect(skipped.message, t.srs_browse_field_edit_skipped(n: 2));
+    expect(skipped.warning, isTrue);
+    final ({String message, bool warning}) same = srsNoteFieldPlanEmptyNotice(
+      const SrsNoteFieldPlan(
+        changes: <SrsNoteFieldChange>[],
+        skipped: <String>[],
+        unchanged: 3,
+        missing: <String>[],
+      ),
+    );
+    expect(same.message, t.srs_browse_nothing_changed);
+    expect(same.warning, isFalse);
   });
 }

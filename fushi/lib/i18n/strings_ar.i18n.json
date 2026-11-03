@@ -7403,6 +7403,7 @@
   "srs_browse_empty": "No notes found",
   "srs_browse_field_edit_apply": "Apply changes",
   "srs_browse_field_edit_confirm": "$n notes will be changed.",
+  "srs_browse_field_edit_conflicts": "$n notes were changed elsewhere in the meantime and were left as they are.",
   "srs_browse_field_edit_skipped": "$n notes were skipped because their note type has no such field.",
   "srs_browse_field_set": "Set field",
   "srs_browse_field_value_hint": "Leave empty to clear the field",

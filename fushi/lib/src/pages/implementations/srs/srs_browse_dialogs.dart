@@ -316,6 +316,17 @@ Future<SrsCardType?> pickSrsCardType(BuildContext context) =>
       ],
     );
 
+/// 空计划（没有要写的字段）给用户的提示：有笔记因类型没有所需字段被跳过就报跳过条数（不然用户
+/// 会以为数据已经是目标值），只有确实都已是目标值时才是「没有改动」。
+({String message, bool warning}) srsNoteFieldPlanEmptyNotice(
+  SrsNoteFieldPlan plan,
+) => plan.skipped.isNotEmpty
+    ? (
+        message: t.srs_browse_field_edit_skipped(n: plan.skipped.length),
+        warning: true,
+      )
+    : (message: t.srs_browse_nothing_changed, warning: false);
+
 /// 批量改字段前的确认：「将修改 N 条笔记」，有跳过的再说明一句。
 Future<bool> confirmSrsNoteFieldPlan(
   BuildContext context, {

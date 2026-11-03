@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:args/args.dart';
 
 import '../ctl_commands.dart';
+import '../ops/op_routes.dart';
 
 /// `fushi_cli srs …`：复习：牌组 / 笔记 / 统计 / 冲突 / 重复笔记合并（app 侧路由见 `fushi/lib/src/ops/ctl_srs_routes.dart`）。
 ///
@@ -503,51 +504,64 @@ Map<String, Object?> _noteBatchBody(CtlCommandContext c) {
   };
 }
 
+/// 批量改笔记：真改经操作目录（`/api/admin/ops/call`，op id = `srs.notes.<wire>`）调，与 AI 助手同一条
+/// 执行路径——执行后撤销载荷记进操作记录（结果里带 [kCtlOpsUndoActionIdKey]），`fushi_cli ai undo <id>`
+/// 或 app 的操作记录页可撤销。预演不写入、不留记录，直接打 `notes/batch/<wire>` 路由。
+CtlRequestSpec _noteBatchCall(String wire, Map<String, Object?> args) =>
+    args['dryRun'] == true
+    ? CtlRequestSpec.post('$_root/notes/batch/$wire', body: args)
+    : CtlRequestSpec.post(
+        kCtlOpsCallPath,
+        body: <String, Object?>{'id': 'srs.notes.$wire', 'args': args},
+      );
+
 CtlRequestSpec _buildCardType(CtlCommandContext c) {
   final String type = c.positional(0, '卡型');
   if (!kSrsCardTypes.contains(type)) {
     throw CtlUsageError('卡型只能是 ${kSrsCardTypes.join(' / ')}：$type');
   }
-  return CtlRequestSpec.post(
-    '$_root/notes/batch/card-type',
-    body: <String, Object?>{'type': type, ..._noteBatchBody(c)},
-  );
+  return _noteBatchCall('card-type', <String, Object?>{
+    'type': type,
+    ..._noteBatchBody(c),
+  });
 }
 
-CtlRequestSpec _buildSetField(CtlCommandContext c) => CtlRequestSpec.post(
-  '$_root/notes/batch/set-field',
-  body: <String, Object?>{
-    'targetField': c.positional(0, '字段名'),
-    // 原样传（不 trim）：值里的空白有意义。
-    'value': c.args['value'] as String? ?? '',
-    ..._noteBatchBody(c),
-  },
-);
+CtlRequestSpec _buildSetField(CtlCommandContext c) =>
+    _noteBatchCall('set-field', <String, Object?>{
+      'targetField': c.positional(0, '字段名'),
+      // 原样传（不 trim）：值里的空白有意义。
+      'value': c.args['value'] as String? ?? '',
+      ..._noteBatchBody(c),
+    });
 
 CtlRequestSpec _buildFindReplace(CtlCommandContext c) {
   final String find = c.positional(0, '查找');
   if (c.rest.length < 2) throw const CtlUsageError('缺少参数 <替换为>（替换成空串写 ""）');
-  return CtlRequestSpec.post(
-    '$_root/notes/batch/find-replace',
-    body: <String, Object?>{
-      'find': find,
-      'replace': c.rest[1],
-      'targetField': ?c.option('in-field'),
-      if (c.flag('regex')) 'regex': true,
-      if (c.flag('ignore-case')) 'caseSensitive': false,
-      ..._noteBatchBody(c),
-    },
-  );
+  return _noteBatchCall('find-replace', <String, Object?>{
+    'find': find,
+    'replace': c.rest[1],
+    'targetField': ?c.option('in-field'),
+    if (c.flag('regex')) 'regex': true,
+    if (c.flag('ignore-case')) 'caseSensitive': false,
+    ..._noteBatchBody(c),
+  });
 }
 
 String _renderNoteBatch(Object? data) {
   if (data is! Map) return renderCtlJson(data);
   final bool dryRun = data['dryRun'] == true;
+  final Object? actionId = data[kCtlOpsUndoActionIdKey];
+  final num changedNotes = data['notes'] as num? ?? 0;
+  final String undoHint = actionId != null && changedNotes > 0
+      ? '；撤销：fushi_cli ai undo $actionId'
+      : '';
   final StringBuffer out = StringBuffer(
     dryRun
         ? '预演：将修改 ${data['notes']} 条笔记（${data['fieldChanges']} 个字段）'
-        : '已修改 ${data['notes']} 条笔记（${data['fieldChanges']} 个字段；可在 AI 操作记录里撤销）',
+        : '已修改 ${data['notes']} 条笔记（${data['fieldChanges']} 个字段$undoHint）',
   );
+  final num conflicts = data['conflicts'] as num? ?? 0;
+  if (conflicts > 0) out.write('，$conflicts 条笔记在此期间被别处改过、保留未动');
   final num skipped = data['skipped'] as num? ?? 0;
   if (skipped > 0) out.write('，$skipped 条笔记的类型没有所需字段、已跳过');
   final num unchanged = data['unchanged'] as num? ?? 0;
