@@ -1,15 +1,15 @@
 // 新设备收段通道（native/fushi_fsrs/src/store/sync2/channel.rs）没做完时的本机写入：SrsDbStore 在开 Drift 事务
-// 之前先发 `channel_settle`，内核按片做完（每片一个事务），不把整段塞进写入的那笔 Drift 事务。之后照常逐条投递，
-// 结果与没插写入的设备收到的远端操作相同。
-import 'dart:async';
+// 之前先发 `channel_settle`，内核按片做完（每片一个事务），不让写命令在那笔 Drift 事务里把整段做完（内核的兜底
+// 路径）。上次 App 在收尾途中退出的通道由打开时的 `identity` 回报。
+import 'dart:io';
 
 import 'package:drift/drift.dart' show driftRuntimeOptions;
+import 'package:fushi_core/fushi_core.dart' show SrsDatabase;
 import 'package:fushi_engine/srs/srs_builtin.dart';
+import 'package:fushi_engine/srs/srs_database_executor.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
-import 'package:fushi_engine/srs/srs_storage.dart';
-import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
-import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
 import 'package:fushi_srs/fushi_srs.dart';
+import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
 import '../support/srs_test_storage.dart';
@@ -19,16 +19,13 @@ const String kProfile = '01928c3e-0000-7000-8000-0000000000ee';
 void main() {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
 
-  Future<SrsDbStore> device(String id) async {
-    final SrsStorage st = await openTestSrsStorage();
-    return SrsDbStore.open(
-      db: st.db,
-      core: st.core,
-      profileUid: kProfile,
-      deviceId: id,
-      engine: FfiFsrsEngine.tryCreate(),
-    );
-  }
+  Future<SrsDbStore> store(SrsDatabase db, SrsCore core) => SrsDbStore.open(
+    db: db,
+    core: core,
+    profileUid: kProfile,
+    deviceId: 'B',
+    engine: FfiFsrsEngine.tryCreate(),
+  );
 
   Future<String> addNote(SrsDbStore s, String expression) => s.createNote(
     noteTypeId: s.lapisNoteTypeId,
@@ -37,14 +34,6 @@ void main() {
     },
   );
 
-  Future<SrsSync2Report> round(SrsDbStore s, SrsLocationStore loc) =>
-      srsSync2Round(
-        host: s,
-        location: loc,
-        locationId: 'loc',
-        nowMs: () => DateTime.now().millisecondsSinceEpoch,
-      );
-
   Future<bool> channelInCore(SrsDbStore s) async =>
       (await s.sync2Command(<String, Object?>{
         'op': 'identity',
@@ -52,44 +41,44 @@ void main() {
       })).map['channel'] ==
       true;
 
-  test('新设备首同步途中本机新建笔记：开事务前先按片做完通道，之后照常收完', () async {
-    final SrsMemoryLocationStore loc = SrsMemoryLocationStore();
-    final SrsDbStore a = await device('A');
-    for (int i = 0; i < 30; i++) {
-      final String n = await addNote(a, '語$i');
-      await a.answer((await a.cardsOfNote(n)).first.id, 3);
+  test('上次收尾做到一半的通道：打开时回报，第一次本机写入在开事务前先按片做完', () async {
+    final Directory dir = Directory.systemTemp.createTempSync('srs_channel_');
+    addTearDown(() {
+      try {
+        dir.deleteSync(recursive: true);
+      } on FileSystemException {
+        // 句柄晚释放。
+      }
+    });
+    final String path = p.join(dir.path, 'srs.db');
+    // 第一次打开：留下一个折叠到一半的通道（收尾途中 App 被杀），再关库。
+    {
+      final SrsCore core = SrsCore.open(path);
+      final SrsDatabase db = SrsDatabase(srsInlineExecutor(core));
+      await store(db, core);
+      await db.customStatement(
+        'INSERT INTO sync2_boot (profile_uid, phase, next_rank, cursor) '
+        "VALUES (srs_id('$kProfile'), 1, 0, 0)",
+      );
+      await db.close();
+      core.close();
     }
-    expect((await round(a, loc)).error, isNull);
 
-    final SrsDbStore b = await device('B');
+    final TestSrs t = await openTestSrsAt(path);
+    final SrsDbStore b = await store(t.db, t.core);
+    expect(b.debugChannelLive, isTrue);
+    expect(await channelInCore(b), isTrue);
+
+    int before = b.debugCoreCommands;
+    await addNote(b, '一');
+    final int first = b.debugCoreCommands - before;
     expect(b.debugChannelLive, isFalse);
-    final List<bool> seen = <bool>[];
-    Future<void>? wrote;
-    b.debugOnIngestSlice = () {
-      if (wrote != null) return;
-      // 第一片投完：新设备在通道的追加阶段。钩子在独占区里，从根 zone 发起才是真的排队写入。
-      seen.add(b.debugChannelLive);
-      wrote = Zone.root.run(() async {
-        await addNote(b, '途中');
-        seen.add(b.debugChannelLive);
-        seen.add(await channelInCore(b));
-      });
-    };
-    final SrsSync2Report r = await round(b, loc);
-    await wrote;
-    expect(r.error, isNull);
-    expect(seen, <bool>[true, false, false]);
     expect(await channelInCore(b), isFalse);
 
-    // B 的笔记回到 A、两边再各同步一轮：两台设备的操作集合相同。
-    expect((await round(a, loc)).error, isNull);
-    expect((await round(b, loc)).error, isNull);
-    final Set<String> idsA = <String>{
-      for (final SrsEvent e in await a.exportAll()) e.id,
-    };
-    final Set<String> idsB = <String>{
-      for (final SrsEvent e in await b.exportAll()) e.id,
-    };
-    expect(idsB, idsA);
+    before = b.debugCoreCommands;
+    await addNote(b, '二');
+    final int second = b.debugCoreCommands - before;
+    // 多出来的那一条就是开事务前的 `channel_settle`；之后不再发。
+    expect(first, second + 1);
   });
 }
