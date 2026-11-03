@@ -287,6 +287,9 @@ class _MediaItem {
 /// [uploadOnly] = 只把本机有的内容传上去（不下载、不清理）：发段之前先跑这一步，媒体先于引用它的段到位置上
 /// （设计 §6.1 写入纪律 3，审查 S-10）。
 ///
+/// [onTransferStart] 在真有内容要传 / 要查（筛掉本机与位置都已一致的之后还剩下）时、开始做之前调一次；什么都不用做
+/// 的一轮不调——调用方据此报「媒体」阶段，不在每轮发件前都闪一下。
+///
 /// [locationId]（位置的稳定身份，各设备相同）给出时，位置上有什么读日志投影（内核 `media_known`），不列目录：
 /// - 日志里还没有任何设备对这个位置的内容目录完整列举过 → 列一次（256 个前缀子目录），结果带「已列举」写进日志；
 /// - 之后只对投影里不认识的内容逐个查，确认结果同样写回日志；读取时发现投影说在、实际不在 → 记「不在」，持有它的
@@ -300,6 +303,7 @@ Future<SrsMediaSyncReport> srsSyncMedia({
   SrsMediaCipher? cipher,
   String? locationId,
   bool uploadOnly = false,
+  void Function()? onTransferStart,
 }) async {
   final SrsMediaSyncReport report = SrsMediaSyncReport();
   // 加密媒体按密钥指纹分目录（换了密钥 = 新目录，全部按新密钥重传）。
@@ -510,6 +514,7 @@ Future<SrsMediaSyncReport> srsSyncMedia({
       if (!it.have || content.stateOf(it.sha!) != _Remote.present)
         if (it.have || !uploadOnly) it,
   ];
+  if (work.isNotEmpty) onTransferStart?.call();
 
   try {
     await _reconcile(
