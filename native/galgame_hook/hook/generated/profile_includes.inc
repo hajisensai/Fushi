@@ -18,3 +18,4 @@
 #include "../adapters/kogado_hy_profile.h"
 #include "../adapters/luca_profile.h"
 #include "../adapters/knife_profile.h"
+#include "../adapters/softpal_profile.h"

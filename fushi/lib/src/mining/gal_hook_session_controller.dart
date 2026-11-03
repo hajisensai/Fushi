@@ -3328,7 +3328,12 @@ class GalHookSessionController extends ChangeNotifier {
   /// - 伪影主导的线程不参与（BUG-2112）；
   /// - 记忆里有典型行长时，按行长比值最接近者优先，出行数只作平手判据；最接近者
   ///   仍相差两倍以上时**宁可暂不恢复**——此时往往只有名字牌线程先够了行数，
-  ///   正文线程还没出够，提前恢复就会把名字牌钉成本会话的文本线程。
+  ///   正文线程还没出够，提前恢复就会把名字牌钉成本会话的文本线程；
+  /// - native 声明 hook code 只对应一条 lane 的线程
+  ///   （[TexthookerTextThread.hookCodeLaneUnique]，如 SoftPal 把精灵尺寸编进了
+  ///   hook code）不比行长：它没有同指纹的兄弟可混淆。`ENGINE:` 前缀**不**等于
+  ///   唯一——FVP / Luca / BGI / YU-RIS / Kogado Hy 一个 hook code 下有正文与名字牌
+  ///   等多条 lane，它们照常按行长消歧。
   @visibleForTesting
   static TexthookerTextThread? pickRememberedTextThread(
     Iterable<TexthookerTextThread> threads, {
@@ -3345,6 +3350,9 @@ class GalHookSessionController extends ChangeNotifier {
     ];
     if (candidates.isEmpty) return null;
     double distance(TexthookerTextThread thread) {
+      // native 声明 lane 唯一的线程没有要靠行长区分的兄弟；短句扎堆时行长对不上
+      // 就不恢复，会让它一整局都选不上。
+      if (thread.hookCodeLaneUnique) return 0;
       final int? length = textThreadTypicalLength(thread);
       if (typicalLength == null || typicalLength <= 0) return 0;
       if (length == null || length <= 0) return double.infinity;
@@ -5603,6 +5611,7 @@ class GalHookSessionController extends ChangeNotifier {
               label: threadLabel,
               text: line.text,
               hookCode: line.hookCode.isEmpty ? null : line.hookCode,
+              hookCodeLaneUnique: line.hookCodeIsLaneUnique,
               nativeThreadId: line.threadId == 0 ? null : line.threadId,
               notify: false,
             );
@@ -5627,6 +5636,7 @@ class GalHookSessionController extends ChangeNotifier {
               key: threadKey,
               label: threadLabel,
               hookCode: line.hookCode.isEmpty ? null : line.hookCode,
+              hookCodeLaneUnique: line.hookCodeIsLaneUnique,
               nativeThreadId: line.threadId,
             );
           }

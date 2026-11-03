@@ -234,6 +234,7 @@ class TexthookerTextThread {
     required this.lineCount,
     required this.latestAt,
     this.hookCode,
+    this.hookCodeLaneUnique = false,
     this.nativeThreadId,
     this.latestText,
     this.audioLineCount = 0,
@@ -260,6 +261,7 @@ class TexthookerTextThread {
     key: key,
     label: label ?? this.label,
     hookCode: hookCode,
+    hookCodeLaneUnique: hookCodeLaneUnique,
     nativeThreadId: nativeThreadId,
     lineCount: lineCount,
     latestAt: latestAt,
@@ -275,6 +277,13 @@ class TexthookerTextThread {
   final String key;
   final String label;
   final String? hookCode;
+
+  /// native 声明 [hookCode] 只对应这一条 lane（`kTextEventFlagLaneUniqueHookCode`，
+  /// 见 [GalHookedLine.hookCodeIsLaneUnique]）。只有它为 true 时，跨会话记忆才能
+  /// 只凭 hook code 认回线程、不做行长消歧；`ENGINE:` 前缀本身**不**代表唯一——
+  /// FVP / Luca / BGI / YU-RIS / Kogado Hy 都是一个 hook code 下多条 lane（正文 +
+  /// 名字牌）。
+  final bool hookCodeLaneUnique;
   final int? nativeThreadId;
 
   /// 已**发布**到文本环的行数（即当前生效线程的行）。v12 起未被选中的线程恒为 0，
@@ -575,6 +584,7 @@ class TexthookerService extends ChangeNotifier {
         key: key,
         label: entry.textThreadLabel ?? previous?.label ?? key,
         hookCode: entry.textHookCode ?? previous?.hookCode,
+        hookCodeLaneUnique: previous?.hookCodeLaneUnique ?? false,
         nativeThreadId: entry.nativeTextThreadId ?? previous?.nativeThreadId,
         lineCount: (previous?.lineCount ?? 0) + 1,
         latestAt: entry.receivedAt,
@@ -753,6 +763,7 @@ class TexthookerService extends ChangeNotifier {
     required String key,
     required String label,
     String? hookCode,
+    bool hookCodeLaneUnique = false,
     int? nativeThreadId,
     DateTime? discoveredAt,
   }) {
@@ -767,6 +778,8 @@ class TexthookerService extends ChangeNotifier {
           ? previous?.label ?? normalizedKey
           : label.trim(),
       hookCode: hookCode ?? previous?.hookCode,
+      hookCodeLaneUnique:
+          hookCodeLaneUnique || (previous?.hookCodeLaneUnique ?? false),
       nativeThreadId: nativeThreadId ?? previous?.nativeThreadId,
       lineCount: 0,
       latestAt: previous != null && previous.latestAt.isAfter(observedAt)
@@ -800,6 +813,7 @@ class TexthookerService extends ChangeNotifier {
     required String label,
     required String text,
     String? hookCode,
+    bool hookCodeLaneUnique = false,
     int? nativeThreadId,
     DateTime? observedAt,
     bool notify = true,
@@ -816,6 +830,8 @@ class TexthookerService extends ChangeNotifier {
           ? previous?.label ?? normalizedKey
           : label.trim(),
       hookCode: hookCode ?? previous?.hookCode,
+      hookCodeLaneUnique:
+          hookCodeLaneUnique || (previous?.hookCodeLaneUnique ?? false),
       nativeThreadId: nativeThreadId ?? previous?.nativeThreadId,
       lineCount: previous?.lineCount ?? 0,
       latestAt: now,

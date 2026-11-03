@@ -1228,11 +1228,15 @@ void SetSiglusLookupRuntimeEnabled(bool enabled) {
 
 
 // A tick that does not put a frame up clears it, covering every early return
-// (lookup off, geometry retired, window or view lost, cursor elsewhere).
+// (lookup off, geometry retired, window or view lost, cursor elsewhere).  The
+// highlight window is shared and this tick runs in every game: the clear is
+// owned (lookup_hover_highlight_state.h), so it only takes down a frame
+// Siglus put up.
 struct SiglusLookupHighlightScope {
   bool keep = false;
   ~SiglusLookupHighlightScope() {
-    if (!keep) ClearLookupHoverHighlight();
+    if (!keep) ClearLookupHoverHighlight(
+        fushi_voice_hook::kLookupGeometryProviderIdSiglus);
   }
 };
 
@@ -1270,7 +1274,9 @@ bool UpdateSiglusLookupHighlight(HWND game, const POINT& origin,
             client_height, &box))
       return false;
   }
-  RequestLookupHoverHighlight(origin.x + box.x, origin.y + box.y, box.width,
+  RequestLookupHoverHighlight(
+      fushi_voice_hook::kLookupGeometryProviderIdSiglus,
+      origin.x + box.x, origin.y + box.y, box.width,
                               box.height);
   return true;
 }

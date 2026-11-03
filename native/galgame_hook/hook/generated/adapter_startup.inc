@@ -14,3 +14,4 @@
     kogado_hy_.install();
     luca_.install();
     knife_.install();
+    softpal_.install();

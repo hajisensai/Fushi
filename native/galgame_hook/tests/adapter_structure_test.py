@@ -574,7 +574,8 @@ class AdapterStructureTest(unittest.TestCase):
             )
             self.assertIn("g_geometry_provider_registry.Retire", lifecycle_source)
 
-        self.assertEqual(19, len(publishers), publishers)
+        self.assertEqual(20, len(publishers), publishers)
+        self.assertIn("softpal_lookup.inc", publishers)
         self.assertIn("luca_lookup.inc", publishers)
         self.assertIn("luca_x64_lookup.inc", publishers)
         self.assertIn("kogado_hy_lookup.inc", publishers)
@@ -641,7 +642,10 @@ class AdapterStructureTest(unittest.TestCase):
             )
             seen[name] = spaces[0]
 
-        self.assertEqual(19, len(seen), seen)
+        self.assertEqual(20, len(seen), seen)
+        self.assertEqual(
+            "kLookupCoordinateSpaceClientPhysicalPixels", seen["softpal_lookup.inc"]
+        )
         self.assertEqual(
             "kLookupCoordinateSpaceClientPhysicalPixels", seen["luca_lookup.inc"]
         )

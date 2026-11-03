@@ -19,3 +19,4 @@
   KogadoHyAdapter kogado_hy_;
   LucaAdapter luca_;
   KnifeAdapter knife_;
+  SoftpalAdapter softpal_;

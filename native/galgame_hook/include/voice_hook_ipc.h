@@ -388,6 +388,10 @@ constexpr uint32_t kTextSourceKnife = 13;
 // FVP (Favorite View Point) exact text published by the native TextPrint
 // (text object Print) hook.
 constexpr uint32_t kTextSourceFvp = 10;
+// SoftPal ADV System (Pal.dll) exact text: the page one PalSpriteLock ..
+// PalSpriteUnlock transaction lays out with PalFontDrawText, speaker plate
+// excluded (16 = first unused id on every local branch, checked 2026-11-03).
+constexpr uint32_t kTextSourceSoftpal = 16;
 constexpr uint32_t kTextEventLine = 0;
 constexpr uint32_t kTextEventThreadDiscovered = 1;
 // Some Luna engine hooks expose scenario text and system controls from the
@@ -395,6 +399,13 @@ constexpr uint32_t kTextEventThreadDiscovered = 1;
 // not apply the usual same-face fallback to lines carrying this flag. Bit 0 is
 // already used by thread-discovery events for Luna's embedable attribute.
 constexpr uint32_t kTextEventFlagExactThreadContext = 0x00000002u;
+// The writer declares that its hook code names exactly one lane: no other
+// lane of this process ever writes under the same hook code.  Consumers may
+// then recognise the lane by its hook code alone (cross-session thread
+// memory does not need line-length disambiguation).  Engine adapters that
+// keep one hook code for several lanes (FVP per text buffer, Luca, BGI,
+// YU-RIS, Kogado Hy per identity) must not set it.
+constexpr uint32_t kTextEventFlagLaneUniqueHookCode = 0x00000004u;
 
 // 语音 clip 索引：最近 kClipCount 条语音片段的位置记录（按 source voice / DirectSound buffer
 // 的一次提交切一条；galgame 一句台词≈一条语音）。指向音频环形里的 [ring_offset, byte_len)。
@@ -704,7 +715,8 @@ struct TextSlot {
   uint32_t hook_name_len;   // hook_name 有效字节数（不含结尾 0）
   uint32_t hook_code_len;   // hook_code 有效 wchar 数（不含结尾 0）
   uint32_t event_kind;      // kTextEvent*；0 保持旧写者默认语义为台词行
-  uint32_t event_flags;     // bit 0: discovery embedable; bit 1: exact ctx only
+  uint32_t event_flags;     // bit 0: discovery embedable; bit 1: exact ctx only;
+                            // bit 2: hook code names exactly one lane
   // hook「面」id（不含 ctx，见 luna_text_selector.h 的 LunaTextFaceIdFrom）。
   //
   // v13 把选定线程的过滤从采集期挪到消费期，这个字段是**挪过去还能等价**的前提：旧的
@@ -951,6 +963,9 @@ constexpr uint32_t kLookupGeometryProviderIdMalie = 28u;
 // FVP (Favorite View Point) text-buffer print exact layout provider
 // (append-only id).
 constexpr uint32_t kLookupGeometryProviderIdFvp = 23u;
+// SoftPal ADV System (Pal.dll) sprite text-transaction exact layout provider
+// (append-only id; 29 = first unused id on every local branch, 2026-11-03).
+constexpr uint32_t kLookupGeometryProviderIdSoftpal = 29u;
 
 constexpr uint32_t kLookupGeometryStatusUnavailable = 0u;
 constexpr uint32_t kLookupGeometryStatusReady = 1u;
