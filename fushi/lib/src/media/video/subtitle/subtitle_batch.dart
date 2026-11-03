@@ -300,7 +300,7 @@ Future<List<SubtitleBatchItem>> runSubtitleBatch({
       (VideoSubtitleCandidate c) =>
           localDownloads[c.identityKey] ??= registry.download(c);
   // 文件名没写语言的版本按正文判语言——否则它们在语言排名里垫底，整季会被
-  // 一个「文件名带了 ja 标记」的版本抢走（BUG-3993）。调用方已经探过的
+  // 一个「文件名带了 ja 标记」的版本抢走（BUG-3998）。调用方已经探过的
   // （[probedVersionLanguages]，含判不出的）不再重下。
   final Map<String, SubtitleContentLanguage?> probedLanguage =
       <String, SubtitleContentLanguage?>{

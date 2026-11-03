@@ -115,7 +115,7 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
   StudyClock? _studyClock;
 
   /// 学习计时门（与 PDF 阅读器共用一份判据，[StudyClockRunGate]）：在前台（BUG-892
-  /// 切屏暂停）且没被根导航上的路由压住（整页 / 对话框 / 侧板 / 菜单，BUG-3993：此前
+  /// 切屏暂停）且没被根导航上的路由压住（整页 / 对话框 / 侧板 / 菜单，BUG-3994：此前
   /// 本页只看生命周期，开着整页 SRS / 设置 / 反馈中心也照计）才走。
   late final StudyClockRunGate _studyClockGate = StudyClockRunGate.forClock(
     () => _studyClock,
@@ -193,7 +193,7 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
       unawaited(_flushPosition());
     } else if (state == AppLifecycleState.resumed) {
       // BUG-892 / BUG-1052: 后台那段靠「时钟停着」丢弃，不再重锚墙钟基准。
-      // 仍被路由盖着时不续表（BUG-3993）。
+      // 仍被路由盖着时不续表（BUG-3994）。
       _studyClockGate.setLifecycleStopped(false);
     }
   }
@@ -250,7 +250,7 @@ class _ReaderPdfPageState extends BaseSourcePageState<ReaderPdfPage>
           ErrorLogService.instance.log('StudyClock.write(pdf)', e, st),
       deferWrite: ExitFlushRegistry.instance.defer,
     );
-    // 建表时已在后台 / 已被盖住就不起表（BUG-3993）。
+    // 建表时已在后台 / 已被盖住就不起表（BUG-3994）。
     _studyClockGate.sync();
     return _PdfBookLoad(path: path, row: row);
   }

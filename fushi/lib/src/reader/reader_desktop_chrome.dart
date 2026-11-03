@@ -814,7 +814,7 @@ Future<T?> showReaderSideSheet<T>({
         : Theme.of(context).colorScheme.scrim.withValues(alpha: scrim),
     transitionDuration: motion ? FushiMotion.long : Duration.zero,
     // 侧板随 [studyClockTransparentWhen] 豁免学习计时（统计侧板），见
-    // StudyClockTransparentSettings（BUG-3993）。
+    // StudyClockTransparentSettings（BUG-3994）。
     routeSettings: studyClockRouteSettings(
       transparentWhen: studyClockTransparentWhen,
     ),

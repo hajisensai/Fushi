@@ -8,7 +8,7 @@ import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart'
     show adaptiveModalSheet;
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
-/// BUG-3993：学习页之上压着任何未豁免的模态路由（整页 / 对话框 / 弹出菜单 / 侧板）
+/// BUG-3994：学习页之上压着任何未豁免的模态路由（整页 / 对话框 / 弹出菜单 / 侧板）
 /// 都算「被盖住」；路由构造时带 [StudyClockTransparentSettings] 的弹层不算。
 void main() {
   late StudyCoverTracker tracker;

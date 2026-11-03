@@ -47,7 +47,7 @@ enum AdvancedMiningPresentation {
 ///
 /// 高级制卡是查词后制卡流程的一部分（与 `anki_mined_card_action_sheet.dart` 的
 /// 操作单同族）：两种形态都在路由构造时声明豁免学习计时，盖在阅读器 / 漫画 / PDF
-/// / 浏览器上照常计时；调用方不必各自包（BUG-3993）。
+/// / 浏览器上照常计时；调用方不必各自包（BUG-3994）。
 Future<void> showAdvancedMiningDialog({
   required BuildContext context,
   required AdvancedMiningCapabilities capabilities,

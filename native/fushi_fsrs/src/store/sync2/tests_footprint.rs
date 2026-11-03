@@ -361,7 +361,7 @@ fn upgrade_refuses_to_start_without_disk_space() {
 }
 
 
-// ------------------------------------------------------------ 打开时的整理（store/compact.rs，BUG-3993）
+// ------------------------------------------------------------ 打开时的整理（store/compact.rs，BUG-4001）
 
 /// 关掉 [a] 的 core（库文件留着）；返回库路径与目录（目录随返回值活着）。
 fn closed(a: Device) -> (std::path::PathBuf, super::tests::tempdir::Dir) {

@@ -2918,7 +2918,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
             // 阅读器靠它看见「整页路由盖住正文」（悬浮球打开反馈中心等），停表。
             appModel.routeObserver,
             // 学习计时的「被盖住」判据：学习页之上压着任何未豁免的模态路由就停表
-            // （BUG-3993；整页 / 对话框 / 侧板 / 菜单一视同仁，新入口无需各自接线）。
+            // （BUG-3994；整页 / 对话框 / 侧板 / 菜单一视同仁，新入口无需各自接线）。
             studyCoverTracker,
             // 页面离场时核对 Windows 拖入注册、丢了才重注册并记诊断（BUOxDR9WIJ）。
             desktopDropRouteObserver,

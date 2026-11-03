@@ -351,7 +351,7 @@ void main() {
       final String fg = body.substring(resumed);
       // 三个阅读面的 start / stop 决策都收敛到统一判据：EPUB 是 BUG-2209 的
       // studyClockMayRun（生命周期分支只置旗再 _syncStudyClockRunState()）；漫画 / PDF
-      // 自 BUG-3993 起共用 StudyClockRunGate（「生命周期 + 被路由盖住」，回前台时仍被
+      // 自 BUG-3994 起共用 StudyClockRunGate（「生命周期 + 被路由盖住」，回前台时仍被
       // 盖住就不续表，行为由 study_clock_run_gate_test 钉）。
       final bool novel = path.endsWith('reader_fushi_page.dart');
       expect(

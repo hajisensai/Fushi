@@ -826,7 +826,7 @@ class FushiWebBrowserPageState extends ConsumerState<FushiWebBrowserPage>
     }
   }
 
-  /// 学习计时的「被盖住」（任何未豁免的模态路由，BUG-3993）：转告各功能。
+  /// 学习计时的「被盖住」（任何未豁免的模态路由，BUG-3994）：转告各功能。
   late final StudyCoverWatch _studyCoverWatch = StudyCoverWatch(
     onChanged: () {
       if (!mounted) return;

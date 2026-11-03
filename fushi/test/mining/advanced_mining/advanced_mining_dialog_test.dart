@@ -160,7 +160,7 @@ void main() {
     });
   });
 
-  group('BUG-3993：高级制卡属于阅读，盖在学习页上不停学习计时', () {
+  group('BUG-3994：高级制卡属于阅读，盖在学习页上不停学习计时', () {
     for (final (String name, Size size) in <(String, Size)>[
       ('宽屏对话框', const Size(1400, 900)),
       ('手机底部面板', const Size(390, 844)),

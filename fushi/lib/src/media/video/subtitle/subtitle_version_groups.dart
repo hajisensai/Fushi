@@ -163,7 +163,7 @@ class SubtitleVersionGroup {
 String subtitleVersionKeyOf(VideoSubtitleCandidate candidate) =>
     _versionKeyOf(candidate, subtitleVersionTag(candidate.fileName));
 
-/// BUG-3993 之前的版本键：名字段只认发布组标签（[subtitleReleaseGroupTag]），
+/// BUG-3998 之前的版本键：名字段只认发布组标签（[subtitleReleaseGroupTag]），
 /// 没有组名的平台抽轨（Netflix / Amazon）末段是空串。
 ///
 /// 这个键曾原样写进 `MediaCollections.subtitleReleaseGroup`（合集点名的版本）。

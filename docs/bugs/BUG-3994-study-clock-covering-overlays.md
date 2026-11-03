@@ -1,4 +1,4 @@
-## BUG-3993 · 盖住学习页的弹层 / 整页不停学习计时（只认 PageRoute，漫画 / PDF / 浏览器无判据）
+## BUG-3994 · 盖住学习页的弹层 / 整页不停学习计时（只认 PageRoute，漫画 / PDF / 浏览器无判据）
 - **报告**：2026-11-02（用户：「歌词模式有声书好像跳转 srs 这种二级界面或者跳转反馈计时还在继续，而且每次新功能加入后会覆盖界面的操作都没有自动加上暂停计时」）
 - **真实性**：✅ 真 bug（结构性缺口；用户描述的 SRS / 反馈那一条具体路径未在真机复现）。
   - 小说阅读器的「被盖住」判据只认 `PageRoute`：`reader_fushi_page.dart` 订阅 `appModel.routeObserver`（`RouteObserver<PageRoute>`，`app_model.dart:1352`）。`RouteObserver.didPush` 只在**被压的那条也是 PageRoute** 时才通知，所以：① 对话框 / 侧板 / 菜单（`showGeneralDialog` / `DialogRoute` / `PopupRoute`）从页面外弹上来——悬浮球的 AI 侧板、同步、切换配置、图片操作单、Kavita 冲突框——一律不停表；② 先开了这类弹层、再从里面跳整页（AI 助手侧板里跳 SRS 等），被压的是弹层而不是阅读器路由，阅读器收不到 `didPushNext`，整页 SRS / 反馈期间照计。其余弹层要靠各入口手动包 `_withStudyClockPaused`，新功能不包就漏。

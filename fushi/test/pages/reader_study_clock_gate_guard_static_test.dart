@@ -275,7 +275,7 @@ void main() {
     }
 
     test('任何路由盖住阅读器都停表（悬浮球 / 通知 / 快捷键推上来的、以后新加的入口）', () {
-      // BUG-3993：判据是根导航观察器 studyCoverTracker——阅读器路由之上压着任何未豁免
+      // BUG-3994：判据是根导航观察器 studyCoverTracker——阅读器路由之上压着任何未豁免
       // 的模态路由（整页 / 对话框 / 侧板 / 菜单）即停表，新入口不必各自接线。旧实现
       // 只认 PageRoute（RouteAware），对话框 / 侧板从页面外弹上来就照计。
       final String main = maskComments(
@@ -351,7 +351,7 @@ void main() {
         contains('_syncPanelClockHold(null)'),
       );
       // 侧板路由本身也是盖住阅读器的模态路由：切到统计页时必须豁免，否则统一判据
-      // 照样把表停住（BUG-3993）。豁免随路由构造带上（开关在事件里切），推路由当帧
+      // 照样把表停住（BUG-3994）。豁免随路由构造带上（开关在事件里切），推路由当帧
       // 生效，不在 build 里补登记。
       final String compactPanel = compactCode(panel);
       expect(

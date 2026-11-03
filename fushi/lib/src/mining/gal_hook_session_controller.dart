@@ -792,7 +792,7 @@ class GalHookSessionController extends ChangeNotifier {
     List<TexthookerEndpointStatus> Function()? endpointStatusLoader,
     Duration activityFlushDebounce = kGalActivityFlushDebounce,
     GalgamePlayTrackerFactory? playTrackerFactory,
-    // BUG-3993：游戏进程退出监视。null = 用默认 Windows probe（非 Windows 不监视）。
+    // BUG-4002：游戏进程退出监视。null = 用默认 Windows probe（非 Windows 不监视）。
     GalgameProcessProbe? gameProcessProbe,
     Duration gameExitPollInterval = const Duration(seconds: 1),
     int gameExitConfirmSamples = 3,
@@ -1023,7 +1023,7 @@ class GalHookSessionController extends ChangeNotifier {
 
   final ValueNotifier<int> _gameExitedCount = ValueNotifier<int>(0);
 
-  /// 每当会话因**游戏进程退出**而自动结束就 +1（BUG-3993）。游戏页据此把停在
+  /// 每当会话因**游戏进程退出**而自动结束就 +1（BUG-4002）。游戏页据此把停在
   /// 捕获工作台上的用户送回游戏首页；手动停止不计（用户自己点的停，留在原页）。
   ValueListenable<int> get gameExitedCount => _gameExitedCount;
 
@@ -1569,7 +1569,7 @@ class GalHookSessionController extends ChangeNotifier {
       identity: identity,
       mainPid: window.pid,
     );
-    // 同理，游戏退出就该结束会话，与 hook 走哪条分支无关（BUG-3993）。
+    // 同理，游戏退出就该结束会话，与 hook 走哪条分支无关（BUG-4002）。
     _startGameExitWatch(
       generation: generation,
       pid: window.pid,
@@ -2066,7 +2066,7 @@ class GalHookSessionController extends ChangeNotifier {
     return const GalHookLaunchResult.launched();
   }
 
-  /// 游戏进程存活监视（BUG-3993）：整条捕获会话「游戏还在不在」的**唯一**来源。
+  /// 游戏进程存活监视（BUG-4002）：整条捕获会话「游戏还在不在」的**唯一**来源。
   ///
   /// 旧实现里「游戏退出」只有游玩计时器看得到，它结算完就自停，会话本身没人收：
   /// 游戏关了、工作台还停在「正在监听」，只能手动点停止。现在判活只此一路
@@ -4352,7 +4352,7 @@ class GalHookSessionController extends ChangeNotifier {
 
   /// 释放会话自持的监听源。放在 [dispose] 而不是 [shutdown] 里：任何直接
   /// dispose 控制器的路径（测试、未来的重建）都不会漏掉退出监视定时器和
-  /// [gameExitedCount] 通知器（BUG-3993 移植时补）。
+  /// [gameExitedCount] 通知器（BUG-4002 移植时补）。
   @override
   void dispose() {
     _gameExitTimer?.cancel();

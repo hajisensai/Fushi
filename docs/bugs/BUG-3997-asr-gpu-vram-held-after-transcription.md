@@ -1,4 +1,4 @@
-## BUG-3993 · 每次转录漏一个不退出的后台 isolate（「GPU 转录后显存常驻」未复现）
+## BUG-3997 · 每次转录漏一个不退出的后台 isolate（「GPU 转录后显存常驻」未复现）
 - **报告**：2026-11-02（用户排查内存：私有内存稳定在 7.0–7.3 GB，不持续上涨；怀疑用过一次 GPU 转录后进程显存一直挂着约 4.4 GB，另有大量 1–64 MB 的锁页内存块，推测原因是 CUDA 插件 EP 只注册不注销、共享显存池挂在全局 `OrtEnv` 上）
 - **真实性**：
   - ✅ **isolate 泄漏是真的**。上游 `fushi_asr_core` 的 `asr_transcribe_isolate.dart` 里，`_isolateMain` 收尾时只关自己的端口，等 isolate 自然退出。但宿主 bootstrap（`fushi/lib/src/asr_host/asr_host.dart:63`）挂的 `BackgroundIsolateBinaryMessenger` 持有一个没有公开关闭方法的端口，isolate 因此永远不退，每转录一次漏一个。生产路径上实测：两轮转录的 isolate 都没有退出（`exited=false`）。

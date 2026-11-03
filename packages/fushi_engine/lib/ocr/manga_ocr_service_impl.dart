@@ -597,7 +597,7 @@ Future<void> _openIsolateOcrEngine(
 ///
 /// 必须显式 [Isolate.exit]，不能靠「返回即退出」：宿主 bootstrap 挂的
 /// `BackgroundIsolateBinaryMessenger` 持有一个没有关闭入口的 `ReceivePort`，
-/// isolate 永远等不到自然退出，每跑一卷就漏一个（BUG-3993 同根因）。终局消息
+/// isolate 永远等不到自然退出，每跑一卷就漏一个（BUG-3997 同根因）。终局消息
 /// （完成 / 取消 / 出错）随 [Isolate.exit] 一起发出：主 isolate 收到时推理会话
 /// 已经关闭、isolate 正在退出。
 Future<void> _volumeJobIsolateMain(_JobIsolateArgs args) async {
@@ -802,7 +802,7 @@ Future<OcrRecognition> _recognizeIsolateTextImage(
 /// 直到收到关闭，再带 [_PageSessionExitedMessage] 显式 [Isolate.exit]。
 ///
 /// 不能靠「返回即退出」：宿主 bootstrap 挂的 `BackgroundIsolateBinaryMessenger`
-/// 持有一个关不掉的 `ReceivePort`，isolate 永远不会自然退出（BUG-3993 同根因），
+/// 持有一个关不掉的 `ReceivePort`，isolate 永远不会自然退出（BUG-3997 同根因），
 /// 主 isolate 的 close() 也就永远等不到。
 Future<void> _pageSessionIsolateMain(_PageSessionIsolateArgs args) async {
   final ReceivePort control = ReceivePort();

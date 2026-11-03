@@ -8,7 +8,7 @@ import 'package:fushi/src/stats/study_cover_tracker.dart';
 /// 漫画 / PDF 阅读器学习计时「此刻可跑」的唯一判据：在前台、且没被路由盖住。
 ///
 /// 小说阅读器的同类判据是 `studyClockMayRun`（多了手动暂停 / 面板层数 / 有声书豁免）；
-/// 漫画与 PDF 没有那些状态，只剩这两条（BUG-892 切屏暂停 + BUG-3993 被盖住停表）。
+/// 漫画与 PDF 没有那些状态，只剩这两条（BUG-892 切屏暂停 + BUG-3994 被盖住停表）。
 bool studyClockGateMayRun({
   required bool lifecycleStopped,
   required bool covered,

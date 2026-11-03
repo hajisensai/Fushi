@@ -6,7 +6,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/stats/study_clock_run_gate.dart';
 import 'package:fushi/src/stats/study_cover_tracker.dart';
 
-/// BUG-3993：漫画 / PDF 共用的学习计时门（生命周期 + 被路由盖住）。真 Navigator 驱动
+/// BUG-3994：漫画 / PDF 共用的学习计时门（生命周期 + 被路由盖住）。真 Navigator 驱动
 /// 「被盖住」，`apply` 回调记下每次结论。
 void main() {
   test('判据：前台且没被盖住才可跑', () {

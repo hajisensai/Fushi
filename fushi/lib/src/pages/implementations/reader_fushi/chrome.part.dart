@@ -2474,7 +2474,7 @@ extension _ReaderChrome on _ReaderFushiPageState {
     final ValueNotifier<String> notifier = ValueNotifier<String>(kind);
     // 侧板路由本身也是盖住阅读器的模态路由：原地切到统计页（它自己画实时秒表）时
     // 豁免学习计时。豁免随路由构造带上（StudyClockTransparentSettings.when），推路由
-    // 当帧生效，切种类在事件里改这个开关，不在 build 里补登记（BUG-3993）。
+    // 当帧生效，切种类在事件里改这个开关，不在 build 里补登记（BUG-3994）。
     final ValueNotifier<bool> statisticsShown = ValueNotifier<bool>(
       kind == _kReaderPanelStatistics,
     );

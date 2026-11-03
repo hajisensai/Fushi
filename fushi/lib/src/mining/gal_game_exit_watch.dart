@@ -21,7 +21,7 @@ enum GalGameExitStatus {
   exited,
 }
 
-/// 一局游戏「游戏进程还在不在」的**唯一**判据（BUG-3993）。纯状态机，不持定时器，
+/// 一局游戏「游戏进程还在不在」的**唯一**判据（BUG-4002）。纯状态机，不持定时器，
 /// 由 `GalHookSessionController` 周期调用 [sample]；同一个结论既驱动会话结束 /
 /// 跟随接手进程，也驱动游玩计时（计时器自己不判活，见
 /// [GalgamePlaySessionMachine.followMainProcess]）——两边不会再各下各的结论。

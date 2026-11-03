@@ -2550,7 +2550,7 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// 自己弹的、悬浮球 / 通知 / 全局快捷键从页面外推上来的，还是以后新加的入口——都
   /// 默认停表；只有路由构造时带了 [StudyClockTransparentSettings] 的弹层（统计侧板、
   /// 制卡操作单 / 高级制卡）不停。旧实现只认 [PageRoute]、其余靠各入口自己包 [_withStudyClockPaused]，新入口
-  /// 一漏就照计（BUG-3993）。
+  /// 一漏就照计（BUG-3994）。
   late final StudyCoverWatch _studyCoverWatch = StudyCoverWatch(
     onChanged: () {
       if (mounted) _syncStudyClockRunState();

@@ -16,7 +16,7 @@ import 'package:fushi_audio/fushi_audio.dart' show decodeTextBytes;
 import 'package:fushi/src/media/video/subtitle/subtitle_content_language.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 
-/// 批量选字幕前，把**文件名认不出语言**的版本按正文判出语言（BUG-3993）。
+/// 批量选字幕前，把**文件名认不出语言**的版本按正文判出语言（BUG-3998）。
 ///
 /// 整批版本排名第一位是语言；文件名不带语言标记（`[shincaps] … - 01.ass`）
 /// 不等于语言未知——正文就在那里。每个未标语言的版本只下一个代表文件，解码后

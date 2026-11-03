@@ -220,7 +220,7 @@ List<SubtitleCollectionVersion> rankSubtitleCollectionVersions(
 
 /// 合集列 `subtitleReleaseGroup` 里存的版本键 → 当前要选中的（来源键, 版本键）。纯函数。
 ///
-/// 列值能直接命中某来源的版本键就原样用（[migrated] = false）。命中不了时按 BUG-3993
+/// 列值能直接命中某来源的版本键就原样用（[migrated] = false）。命中不了时按 BUG-3998
 /// 之前的键组成（[legacySubtitleVersionKeyOf]：名字段只认发布组、没组名的平台抽轨
 /// 末段为空）再找一遍——用户在旧下拉里点名的 `….WEBRip.Netflix.ja[cc].srt` 一类版本
 /// 就这样落回它现在的版本（[migrated] = true，调用方把列改写成新键，只改一次）。
@@ -663,7 +663,7 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
         : coverage;
   }
 
-  /// 文件名没写语言的版本：每个下一个代表文件按正文判语言（BUG-3993），结果回填
+  /// 文件名没写语言的版本：每个下一个代表文件按正文判语言（BUG-3998），结果回填
   /// 到版本列表并交给批量下载。代表文件的挑法与批量 / 番剧下载同一个共享判据
   /// （[probeUnlabeledVersionLanguages]：只挑覆盖本合集某集的文件）；有下载配额的
   /// 源不探（同单集面板的纪律）；按 generation 丢弃迟到结果。
@@ -915,7 +915,7 @@ class _SubtitleCollectionPanelState extends State<SubtitleCollectionPanel> {
         _sources = sources;
         _rederive();
         // 合集记着点名的版本：落在哪个来源就选中哪个来源（版本键含来源合集段）。
-        // 列里还是 BUG-3993 之前的旧键时就地迁成新键（见 resolvePinnedSubtitleVersion）。
+        // 列里还是 BUG-3998 之前的旧键时就地迁成新键（见 resolvePinnedSubtitleVersion）。
         final String? stored = _releaseGroup;
         final ({String sourceKey, String versionKey, bool migrated})? pin =
             stored == null

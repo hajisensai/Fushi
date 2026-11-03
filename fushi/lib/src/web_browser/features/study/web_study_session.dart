@@ -64,7 +64,7 @@ bool webStudyClockMayRun({
   bool videoPlaying = false,
   bool pageCovered = false,
 }) =>
-    // 浏览页被任何路由盖住（整页 / 对话框 / 侧板 / 菜单，BUG-3993）：不是在读。
+    // 浏览页被任何路由盖住（整页 / 对话框 / 侧板 / 菜单，BUG-3994）：不是在读。
     !pageCovered &&
     tabActive &&
     appForeground &&
@@ -162,7 +162,7 @@ class WebStudySession {
     _sync();
   }
 
-  /// 浏览页被路由盖住 / 重新露出（[studyCoverTracker] 判据，BUG-3993）。
+  /// 浏览页被路由盖住 / 重新露出（[studyCoverTracker] 判据，BUG-3994）。
   void setPageCovered(bool covered) {
     if (covered == _pageCovered) return;
     _pageCovered = covered;

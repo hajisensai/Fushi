@@ -89,7 +89,7 @@ void main() {
     expect(find.byIcon(Icons.sports_esports_outlined), findsWidgets);
   });
 
-  testWidgets('BUG-3993: game exit returns the workbench to the dashboard', (
+  testWidgets('BUG-4002: game exit returns the workbench to the dashboard', (
     WidgetTester tester,
   ) async {
     // 走真实链路：附着 → 进程存活监视判定退出 → stopCapture → idle →
@@ -469,7 +469,7 @@ class _TestMonitorState extends State<_TestMonitor> {
   }
 }
 
-/// BUG-3993 页面链路用的假进程表：`alive` 里的 PID 活着，不枚举任何进程。
+/// BUG-4002 页面链路用的假进程表：`alive` 里的 PID 活着，不枚举任何进程。
 class _ExitProbe implements GalgameProcessProbe {
   final Set<int> alive = <int>{};
 

@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
-/// 契约守卫（BUG-3993 同根因）：凡是 `Isolate.spawn` 时带宿主 bootstrap
+/// 契约守卫（BUG-3997 同根因）：凡是 `Isolate.spawn` 时带宿主 bootstrap
 /// （app 里会在后台 isolate 挂 `BackgroundIsolateBinaryMessenger`，它持有一个没有
 /// 关闭入口的 `ReceivePort`）的 isolate 入口，都必须显式 `Isolate.exit`——
 /// 「入口返回即退出」在这种 isolate 上永远不成立，每跑一次就漏一个 isolate。

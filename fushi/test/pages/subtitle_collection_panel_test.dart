@@ -527,7 +527,7 @@ void main() {
     });
   });
 
-  group('rankSubtitleCollectionVersions（BUG-3993 聚合版本列表）', () {
+  group('rankSubtitleCollectionVersions（BUG-3998 聚合版本列表）', () {
     // Jimaku 12217 的形状：Nekomoe 只有第 1 集；Netflix 文件名带 ja；shincaps
     // 文件名不写语言。
     List<VideoSubtitleCandidate> growUpShow() => <VideoSubtitleCandidate>[

@@ -18,7 +18,7 @@ import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 ///
 /// [studyClockTransparent]：这个对话框属于学习面本身（查词后的制卡流程），盖在
 /// 阅读器 / 漫画 / PDF / 浏览器上也不停学习计时。豁免随路由构造一起带上
-/// （`StudyClockTransparentSettings`），推路由当帧就生效（BUG-3993）。
+/// （`StudyClockTransparentSettings`），推路由当帧就生效（BUG-3994）。
 Future<T?> showAppDialog<T>({
   required BuildContext context,
   required WidgetBuilder builder,

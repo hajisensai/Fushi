@@ -1,4 +1,4 @@
-## BUG-3993 · SRS 文件夹位置同步整轮停在「正在准备」、不留面包屑
+## BUG-3996 · SRS 文件夹位置同步整轮停在「正在准备」、不留面包屑
 - **报告**：2026-11-02（用户：真机实测同步时问「怎么准备同步数据这么久」——小米平板 5 上用 3 GB 真实库的数据，新设备首次从文件夹位置收 125 个段，界面 10 分钟以上一直是「正在准备同步复习数据」，实际 srs.db 从 58 MB 持续涨到 500 MB+，一直在收段）
 - **真实性**：✅ 真 bug。调度器开跑时把进度置成「准备」（`fushi/lib/src/srs/srs_sync_scheduler.dart` `_serially`），之后全靠 `onFetchProgress` / `onUploadStart` 切到「下载 n/总数」「上传」。云盘 / 互联走 `srsDefaultSyncRunner` 都传了；文件夹位置走 `syncFolderLocations` → `srsSyncFolderLocation`（`packages/fushi_engine/lib/srs/sync2/srs_folder_location.dart` 调 `srsSync2Round`）只传了 `shouldStop`：没进度（整轮停在「准备」）、没 `onStep` 且没包 `_trackRound`（进程死在文件夹同步里，下次启动不报死在哪一步；真机上确认运行中没有 srs_sync 面包屑文件）。
 - **[x] ① 已修复** — `srsSyncFolderLocation` 新增 `onFetchProgress` / `onUploadStart` / `onMediaStart` / `onStep`，原样交给 `srsSync2Round` 与 `srsPrepareLocation`，传媒体前报一次；调度器的 `syncFolderLocations` 每个位置先把进度重置成「准备」，再包进 `_trackRound('folder', …)`（改成泛型 + `errorOf`，收手不算失败），进度回调与云盘路径共用 `_reportFetchProgress` / `_reportUploadStart` / `_reportMediaStart`。

@@ -3,7 +3,7 @@ import 'package:fushi/src/mining/gal_game_exit_watch.dart';
 import 'package:fushi/src/mining/galgame_play_tracker.dart';
 import 'package:fushi/src/mining/galgame_process_group.dart';
 
-/// BUG-3993：游戏进程存活的唯一判据 [GalGameExitWatch] 与共用归属判据
+/// BUG-4002：游戏进程存活的唯一判据 [GalGameExitWatch] 与共用归属判据
 /// [GalgameProcessGroup] 的纯逻辑守卫（不碰 Win32，Linux CI 照跑）。
 void main() {
   const int selfPid = 1;

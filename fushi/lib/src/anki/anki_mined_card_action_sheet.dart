@@ -80,7 +80,7 @@ Future<AnkiMinedCardActionResult> showAnkiMinedCardActionSheet({
     context: context,
     // 制卡/覆写是有副作用的选择，误触 barrier 就丢掉整次操作——只允许显式取消。
     barrierDismissible: false,
-    // 制卡是阅读的一部分：操作单盖着学习页也照常计时（BUG-3993）。
+    // 制卡是阅读的一部分：操作单盖着学习页也照常计时（BUG-3994）。
     studyClockTransparent: true,
     builder: (dialogContext) => _MinedCardActionDialog(
       matches: matches,

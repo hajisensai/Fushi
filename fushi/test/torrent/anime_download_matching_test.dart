@@ -503,7 +503,7 @@ void main() {
       );
     });
 
-    test('文件名没写语言、正文判为日语的版本参与语言排名（BUG-3993）', () {
+    test('文件名没写语言、正文判为日语的版本参与语言排名（BUG-3998）', () {
       String ep2(int ep) => ep.toString().padLeft(2, '0');
       final List<JimakuFile> files = <JimakuFile>[
         for (int ep = 1; ep <= 3; ep++) ...<JimakuFile>[

@@ -332,7 +332,7 @@ Widget adaptiveIndicator({
 /// 返回与弹层内的按钮仍照常关闭——那些是明确的关闭意图，不是误触。
 ///
 /// [studyClockTransparent]：弹层属于学习面本身（高级制卡），盖在学习页上也不停
-/// 学习计时；豁免随路由构造带上，推路由当帧生效（BUG-3993）。
+/// 学习计时；豁免随路由构造带上，推路由当帧生效（BUG-3994）。
 Future<T?> adaptiveModalSheet<T>({
   required BuildContext context,
   required WidgetBuilder builder,

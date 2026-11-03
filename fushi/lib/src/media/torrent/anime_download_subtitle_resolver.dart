@@ -95,7 +95,7 @@ class JimakuPlanSubtitleResolver {
         )).primaryAudioLanguage,
         globalDefaultContentLanguage: _defaultContentLanguage(),
       );
-      // 文件名没写语言的版本按正文判语言（BUG-3993）；下过的字节留给落盘复用。
+      // 文件名没写语言的版本按正文判语言（BUG-3998）；下过的字节留给落盘复用。
       final Map<String, Future<Uint8List?>> fetched =
           <String, Future<Uint8List?>>{};
       final JimakuClient client = jimaku;

@@ -9,7 +9,7 @@ import 'package:fushi_engine/ocr/ocr_inference.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
 
-/// BUG-3993 同根因：宿主 bootstrap（app 里是
+/// BUG-3997 同根因：宿主 bootstrap（app 里是
 /// `BackgroundIsolateBinaryMessenger.ensureInitialized`）在后台 isolate 里留下一个
 /// 没有关闭入口的 `ReceivePort`，靠「入口返回即退出」的 isolate 永远不退。
 ///
