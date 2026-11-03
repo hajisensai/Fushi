@@ -134,7 +134,11 @@ Future<Map<String, Object?>> _visible(WidgetTester tester) async {
       });
     })();
   ''');
-  return (jsonDecode(raw! as String) as Map).cast<String, Object?>();
+  if (raw == null) {
+    // 刚打开阅读器时 WebView 的 JS 环境可能还没就绪（Windows 偶发回 null）。
+    return <String, Object?>{'page': null, 'jsNotReady': true};
+  }
+  return (jsonDecode(raw as String) as Map).cast<String, Object?>();
 }
 
 /// 等控制器空闲后读可见页。
@@ -145,7 +149,11 @@ Future<Map<String, Object?>> _settled(WidgetTester tester) async {
     await tester.pump(const Duration(milliseconds: 20));
   }
   await _pumpFor(tester, const Duration(milliseconds: 600));
-  final Map<String, Object?> v = await _visible(tester);
+  Map<String, Object?> v = await _visible(tester);
+  for (int i = 0; i < 40 && v['jsNotReady'] == true; i++) {
+    await _pumpFor(tester, const Duration(milliseconds: 250));
+    v = await _visible(tester);
+  }
   final PageCurlController? c = _curl();
   v['ctlActive'] = c?.active;
   v['ctlVisible'] = c?.visible;

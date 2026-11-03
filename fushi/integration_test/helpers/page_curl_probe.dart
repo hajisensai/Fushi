@@ -244,5 +244,7 @@ bool pageCurlBackShowsMirroredText(Map<String, Object?> shading) {
   final double corr = (shading['backCorrelation'] as double?) ?? 0;
   final double slope = (shading['backSlope'] as double?) ?? 0;
   const double expected = 1 - kPageCurlBackVeil;
-  return corr >= 0.8 && (slope - expected).abs() <= 0.15;
+  // 探针按最近像素取快照，着色器按双线性过滤采样，细笔画上两者错半像素，
+  // 暗色主题下（字是亮的细线）相关性实测 0.72～0.97。
+  return corr >= 0.6 && (slope - expected).abs() <= 0.15;
 }

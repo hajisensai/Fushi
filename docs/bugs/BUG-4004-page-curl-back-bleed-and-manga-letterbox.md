@@ -11,6 +11,6 @@
   - 漫画：`PageCurlHost.paperRect()` 经 `window.__mangaCurlPaperRect(spread)` 量当前（往回翻时为预览中）跨页 `.manga-page` 的外接框，几何改在纸面局部空间计算，纸面外直接露出下面。
 - **[x] ② 已加自动化测试**：
   - 单测：`fushi/test/reader/page_curl_controller_test.dart`（纸面矩形 4 例）+ `fushi/test/media/manga/manga_page_curl_paper_rect_test.dart`。
-  - 真 app 像素探针 `fushi/integration_test/helpers/page_curl_probe.dart`：卷到一半停住抓 Flutter 图层，用与着色器同一套几何判两件事。① 平铺纸背不透明，且各通道随快照里镜像位置的同一通道线性变化（相关系数 ≥ 0.8，斜率 ≈ 1 − veil ± 0.15）。② 纸面外除翻起那片自身的投影外，不比卷页前更亮。
+  - 真 app 像素探针 `fushi/integration_test/helpers/page_curl_probe.dart`：卷到一半停住抓 Flutter 图层，用与着色器同一套几何判两件事。① 平铺纸背不透明，且各通道随快照里镜像位置的同一通道线性变化（相关系数 ≥ 0.6，斜率 ≈ 1 − veil ± 0.15）。② 纸面外除翻起那片自身的投影外，不比卷页前更亮。
   - 探针接进 `page_curl_real_app_test.dart` / `manga_page_curl_itest.dart`。
 - **备注**：iOS 上漫画 itest 改用本地导入卷（在线漫画源在 iOS 被商店合规拿掉，原夹具打不开阅读器），小说 itest 的 CDP 触摸段在 WKWebView 上跳过（无 CDP）。
