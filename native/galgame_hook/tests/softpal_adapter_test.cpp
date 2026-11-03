@@ -177,6 +177,33 @@ void TestComposePage() {
   assert(text == L"\x6f22\x5b57" && glyphs.size() == 2);
   assert(glyphs[0].w == 26 && glyphs[1].source_index == 1);
 
+  // Ruby drawn as one long string (2026: 「Ｍａｔｕｒｅ」 over 成木級) keeps
+  // its head only and stays out of the text; the page is still published.
+  sp::GlyphDraw long_ruby;
+  assert(sp::CopyDrawString(
+      "\x82\x6c\x82\x81\x82\x94\x82\x95\x82\x92\x82\x85", &long_ruby));
+  assert(long_ruby.truncated && long_ruby.length == sp::kMaxGlyphBytes - 1u);
+  long_ruby.x = 2;
+  long_ruby.font_size = 12;
+  const sp::GlyphDraw ruby_run[] = {
+      Draw("\x90\xac", 0, 20, 24),  // 成
+      long_ruby,
+      Draw("\x96\xd8", 26, 20, 24),  // 木
+  };
+  assert(sp::ComposePage(ruby_run, 3, &text, &glyphs) ==
+         sp::PageResult::kComposed);
+  assert(text == L"\x6210\x6728" && glyphs.size() == 2);
+  // A body-size string that did not fit: the page is not guessed.
+  sp::GlyphDraw long_body = long_ruby;
+  long_body.font_size = 24;
+  const sp::GlyphDraw body_run[] = {Draw("\x90\xac", 0, 20, 24), long_body};
+  assert(sp::ComposePage(body_run, 2, &text, &glyphs) ==
+         sp::PageResult::kRejected);
+  sp::GlyphDraw short_draw;
+  assert(sp::CopyDrawString("\x90\xac", &short_draw) &&
+         !short_draw.truncated && short_draw.length == 2u);
+  assert(!sp::CopyDrawString("", &short_draw));
+
   // A string of several characters is laid out evenly over its cell.
   const sp::GlyphDraw run[] = {Draw("AB", 10, 0, 20)};
   assert(sp::ComposePage(run, 1, &text, &glyphs) ==

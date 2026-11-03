@@ -1228,11 +1228,21 @@ void SetSiglusLookupRuntimeEnabled(bool enabled) {
 
 
 // A tick that does not put a frame up clears it, covering every early return
-// (lookup off, geometry retired, window or view lost, cursor elsewhere).
+// (lookup off, geometry retired, window or view lost, cursor elsewhere).  The
+// highlight window is shared and this tick runs in every game: only a frame
+// Siglus put up is Siglus's to clear, or it would blank another engine's
+// hover every tick (seen as flicker on SoftPal).
+bool g_siglus_lookup_highlight_owned = false;
+
 struct SiglusLookupHighlightScope {
   bool keep = false;
   ~SiglusLookupHighlightScope() {
-    if (!keep) ClearLookupHoverHighlight();
+    if (keep) {
+      g_siglus_lookup_highlight_owned = true;
+    } else if (g_siglus_lookup_highlight_owned) {
+      g_siglus_lookup_highlight_owned = false;
+      ClearLookupHoverHighlight();
+    }
   }
 };
 

@@ -219,8 +219,25 @@ struct GlyphDraw {
   int32_t y = 0;
   int32_t font_size = 0;
   uint8_t length = 0u;
+  // The string ran past kMaxGlyphBytes: `bytes` holds only its head.
+  bool truncated = false;
   char bytes[kMaxGlyphBytes] = {};
 };
+
+// The string of one PalFontDrawText call into `draw` (NUL-terminated source).
+// A string longer than the cell keeps its head and is marked truncated: ruby
+// arrives as one string (2026: 「Ｍａｔｕｒｅ」, 12 bytes) and is dropped as
+// an annotation anyway, so it must not cost the page.
+inline bool CopyDrawString(const char* source, GlyphDraw* draw) {
+  uint32_t length = 0u;
+  while (length + 1u < kMaxGlyphBytes && source[length] != '\0') {
+    draw->bytes[length] = source[length];
+    ++length;
+  }
+  draw->length = static_cast<uint8_t>(length);
+  draw->truncated = source[length] != '\0';
+  return length > 0u;
+}
 
 // One character of a composed page, sprite-local pixels.
 struct PageGlyph {
@@ -280,6 +297,8 @@ inline PageResult ComposePage(const GlyphDraw* draws, size_t count,
     }
     // Annotation: under 70% of the body size.
     if (draw.font_size * 10 < body_size * 7) continue;
+    // Body text whose string did not fit: the page cannot be told.
+    if (draw.truncated) return PageResult::kRejected;
     uint32_t starts[kMaxGlyphBytes] = {};
     const uint32_t chars =
         SplitCp932(draw.bytes, draw.length, starts, kMaxGlyphBytes);

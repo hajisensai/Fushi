@@ -332,14 +332,8 @@ uintptr_t __cdecl SoftpalDrawDetour(uintptr_t buffer, uintptr_t text,
       softpal::GlyphDraw& draw = tx->draws[tx->count];
       bool ok = false;
       __try {
-        const char* source = reinterpret_cast<const char*>(text);
-        uint32_t length = 0u;
-        while (length < softpal::kMaxGlyphBytes && source[length] != '\0') {
-          draw.bytes[length] = source[length];
-          ++length;
-        }
-        ok = length > 0u && length < softpal::kMaxGlyphBytes;
-        draw.length = static_cast<uint8_t>(length);
+        ok = softpal::CopyDrawString(reinterpret_cast<const char*>(text),
+                                     &draw);
       } __except (EXCEPTION_EXECUTE_HANDLER) {
       }
       if (ok) {
