@@ -97,6 +97,12 @@ class MusicSession extends ChangeNotifier {
 
   final MusicPlayerEngine engine;
   final AudioController _audio;
+
+  /// audio_service 只在 Android / iOS / macOS 有平台实现（系统媒体会话 + 通知 / 锁屏
+  /// 控制）；其余平台不为音乐单独起它。测试可覆盖。
+  @visibleForTesting
+  static bool hasSystemMediaSession =
+      !kIsWeb && (Platform.isAndroid || Platform.isIOS || Platform.isMacOS);
   final AudiobookSession _audiobook;
   final FushiDatabase? Function() _database;
   final bool Function() _showMediaNotification;
@@ -215,6 +221,13 @@ class MusicSession extends ChangeNotifier {
       ),
     );
     _audio.claimSession(MediaSessionOwner.music);
+    // audio_service 之前只在开书 / 有声书时才起（openMedia）：先放音乐的话 handler 还是
+    // null，_publishMediaSession 直接返回——没有锁屏 / 通知控制，桌面小组件的原生按钮也
+    // 连不上会话。这里起跑同一份记忆化初始化，就绪后补发一次当前状态。只在 audio_service
+    // 有平台实现（系统媒体会话）的平台上起。
+    if (hasSystemMediaSession) {
+      unawaited(_audio.initialiseHandler().then((_) => _publishMediaSession()));
+    }
     final controller = _audiobook.controller;
     if (controller != null && controller.isPlaying) {
       unawaited(controller.pause());
