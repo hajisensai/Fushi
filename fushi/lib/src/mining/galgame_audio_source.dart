@@ -3001,6 +3001,13 @@ class GalHookedLine {
   /// because its hook-face id matches the selected thread.
   static const int flagExactThreadContext = 0x2;
 
+  /// Native event flag (`kTextEventFlagLaneUniqueHookCode`): the writer
+  /// declares that its [hookCode] names exactly one lane. Only then may a
+  /// consumer recognise the lane by hook code alone; engines that keep one
+  /// hook code for several lanes (FVP per text buffer, Luca, BGI, YU-RIS,
+  /// Kogado Hy) do not set it.
+  static const int flagLaneUniqueHookCode = 0x4;
+
   const GalHookedLine({
     required this.seq,
     required this.timestampMs,
@@ -3045,6 +3052,8 @@ class GalHookedLine {
 
   bool get requiresExactThreadContext =>
       (eventFlags & flagExactThreadContext) != 0;
+
+  bool get hookCodeIsLaneUnique => (eventFlags & flagLaneUniqueHookCode) != 0;
 
   String? get textThreadKey {
     if (threadId == 0) return null;

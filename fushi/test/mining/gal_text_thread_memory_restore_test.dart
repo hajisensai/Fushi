@@ -9,12 +9,14 @@ TexthookerTextThread _thread(
   List<String> previews, {
   int observed = 10,
   String hookCode = 'HS-14*@415B00',
+  bool laneUnique = false,
 }) => TexthookerTextThread(
   key: key,
   label: 'RealLive · 0x415b00 · #$key',
   lineCount: 0,
   latestAt: DateTime(2026, 9, 27),
   hookCode: hookCode,
+  hookCodeLaneUnique: laneUnique,
   nativeThreadId: key.hashCode,
   previewText: previews.isEmpty ? null : previews.last,
   recentPreviewTexts: previews,
@@ -84,14 +86,15 @@ void main() {
     expect(picked, isNull);
   });
 
-  test('restores an engine exact thread whatever its recent line length', () {
+  test('restores a lane-unique thread whatever its recent line length', () {
     // SoftPal 魔女こいにっき 实测：开场几句是「くーくー」这类短句，记住的行长
-    // 是长句——引擎精确线路只有一条线程，照样恢复。
-    final TexthookerTextThread exact = _thread('exact', <String>[
-      '「くーくー」',
-      'くー',
-      '「くー」',
-    ], hookCode: 'ENGINE:SOFTPAL:text_1024x256');
+    // 是长句——native 声明这个 hook code 只有一条 lane，照样恢复。
+    final TexthookerTextThread exact = _thread(
+      'exact',
+      <String>['「くーくー」', 'くー', '「くー」'],
+      hookCode: 'ENGINE:SOFTPAL:text_1024x256',
+      laneUnique: true,
+    );
     final TexthookerTextThread? picked =
         GalHookSessionController.pickRememberedTextThread(
           <TexthookerTextThread>[exact],
@@ -100,6 +103,50 @@ void main() {
           minObservedLines: 3,
         );
     expect(picked?.key, 'exact');
+  });
+
+  test('FVP body and name-plate lanes share one hook code: the name lane is '
+      'not restored', () {
+    // FVP 一个 hook code（ENGINE:FVP:text_print）按 text buffer 分多条 lane，
+    // native 不声明 lane 唯一。名字牌 lane 先出够行数时，也不能被钉成文本线程。
+    const String fvp = 'ENGINE:FVP:text_print';
+    final TexthookerTextThread fvpName = _thread(
+      'fvp-name',
+      <String>['智代', '朋也', '智代'],
+      observed: 12,
+      hookCode: fvp,
+    );
+    final TexthookerTextThread fvpBody = _thread('fvp-body', <String>[
+      '俺は子供のように、自慢してしまっていた。',
+      '「いいじゃないか。記念となる日を増やしていこう」',
+      '「うん、いつもあるな」',
+    ], hookCode: fvp);
+    final String fvpFingerprint =
+        GalHookSessionController.textThreadFingerprint(fvpBody)!;
+    expect(
+      GalHookSessionController.textThreadFingerprint(fvpName),
+      fvpFingerprint,
+    );
+    // 只有名字牌出够了行：宁可不恢复。
+    expect(
+      GalHookSessionController.pickRememberedTextThread(
+        <TexthookerTextThread>[fvpName],
+        fingerprint: fvpFingerprint,
+        typicalLength: 20,
+        minObservedLines: 3,
+      ),
+      isNull,
+    );
+    // 两条都出够：按行长挑回正文，不看谁出得多。
+    expect(
+      GalHookSessionController.pickRememberedTextThread(
+        <TexthookerTextThread>[fvpName, fvpBody],
+        fingerprint: fvpFingerprint,
+        typicalLength: 20,
+        minObservedLines: 3,
+      )?.key,
+      'fvp-body',
+    );
   });
 
   test('legacy memory without a length falls back to the busiest thread', () {

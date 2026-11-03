@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/mining/galgame_audio_source.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
 
 TexthookerThreadPreview preview({
@@ -216,8 +217,60 @@ void main() {
       expect(thread.nativeThreadId, 0x1234);
       expect(thread.observedLineCount, 3);
       expect(thread.previewText, '台詞3');
+      expect(thread.hookCodeLaneUnique, isFalse);
     },
   );
+
+  test('native lane-unique declaration survives into the thread directory', () {
+    final DateTime at = DateTime(2026, 11, 3, 12);
+    TexthookerService.instance.observeTextThreadLine(
+      key: 'engine:softpal',
+      label: 'SoftPal exact',
+      hookCode: 'ENGINE:SOFTPAL:text_1024x256',
+      hookCodeLaneUnique: true,
+      nativeThreadId: 0x77,
+      text: '台詞',
+      observedAt: at,
+    );
+    // A later observation without the flag (a discovery event) keeps it.
+    TexthookerService.instance.registerTextThread(
+      key: 'engine:softpal',
+      label: 'SoftPal exact',
+      nativeThreadId: 0x77,
+      discoveredAt: at,
+    );
+    // A published line rebuilds the thread from its entry.
+    TexthookerService.instance.appendLine(
+      '台詞',
+      textThreadKey: 'engine:softpal',
+      textThreadLabel: 'SoftPal exact',
+      textHookCode: 'ENGINE:SOFTPAL:text_1024x256',
+      nativeTextThreadId: 0x77,
+      receivedAt: at.add(const Duration(seconds: 1)),
+    );
+    expect(
+      TexthookerService.instance.textThreads.single.hookCodeLaneUnique,
+      isTrue,
+    );
+    expect(
+      const GalHookedLine(
+        seq: 1,
+        timestampMs: 0,
+        text: 'x',
+        eventFlags: GalHookedLine.flagLaneUniqueHookCode,
+      ).hookCodeIsLaneUnique,
+      isTrue,
+    );
+    expect(
+      const GalHookedLine(
+        seq: 1,
+        timestampMs: 0,
+        text: 'x',
+        eventFlags: GalHookedLine.flagExactThreadContext,
+      ).hookCodeIsLaneUnique,
+      isFalse,
+    );
+  });
 
   test(
     'text-bearing threads sort before freshly-discovered 0-line threads',
