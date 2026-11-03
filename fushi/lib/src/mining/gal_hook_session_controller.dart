@@ -1646,7 +1646,7 @@ class GalHookSessionController extends ChangeNotifier {
     _record(
       GalHookEventSeverity.warning,
       'helper',
-      helperMissing ? 'helper.missing' : 'pid_unavailable',
+      helperMissing ? 'helper.missing' : 'window.pid_unavailable',
       helperMissing
           ? 'Matching voice-hook helper is unavailable; using loopback'
           : 'The bound window exposes no process id; using loopback',
