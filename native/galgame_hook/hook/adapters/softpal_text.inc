@@ -108,15 +108,8 @@ struct SoftpalTextRuntime {
   uintptr_t get_window = 0u;
   uintptr_t get_parameters = 0u;
 
-  // ── game-thread-owned ──
-  bool tx_open = false;
-  bool tx_overflow = false;
-  uintptr_t tx_sprite = 0u;
-  uintptr_t tx_buffer = 0u;
-  int32_t tx_w = 0;
-  int32_t tx_h = 0;
-  uint32_t tx_count = 0u;
-  softpal::GlyphDraw tx_draws[softpal::kMaxPageGlyphs] = {};
+  // ── game threads, under page_lock ──
+  SRWLOCK page_lock = SRWLOCK_INIT;
   uint32_t last_page_setpos = 0u;
   uint64_t next_page_seq = 0u;
 
@@ -131,7 +124,40 @@ struct SoftpalTextRuntime {
   std::atomic<uint32_t> voice_hits{0u};
 };
 
+// One PalSpriteLock .. PalSpriteUnlock transaction.  Pal draws from more
+// than one thread (2026: the body on one, small sprites on another, both
+// mid-page) and nests locks on one thread, so each thread keeps its own open
+// transactions and a draw joins the one whose buffer it writes.
+struct SoftpalTransaction {
+  bool open = false;
+  bool overflow = false;
+  uintptr_t sprite = 0u;
+  uintptr_t buffer = 0u;
+  int32_t w = 0;
+  int32_t h = 0;
+  uint32_t count = 0u;
+  softpal::GlyphDraw draws[softpal::kMaxPageGlyphs] = {};
+};
+
+constexpr uint32_t kSoftpalOpenTransactions = 4u;
+
+struct SoftpalThreadTransactions {
+  SoftpalTransaction slots[kSoftpalOpenTransactions] = {};
+};
+
 SoftpalTextRuntime g_softpal;
+thread_local SoftpalThreadTransactions g_softpal_tx;
+
+SoftpalTransaction* FindSoftpalTransaction(uintptr_t sprite,
+                                           uintptr_t buffer) {
+  for (auto& tx : g_softpal_tx.slots) {
+    if (tx.open && (sprite == 0u || tx.sprite == sprite) &&
+        (buffer == 0u || tx.buffer == buffer)) {
+      return &tx;
+    }
+  }
+  return nullptr;
+}
 volatile LONG g_softpal_diag = 0;
 
 SoftpalFn g_softpal_lock_original = nullptr;
@@ -259,9 +285,10 @@ uintptr_t __cdecl SoftpalLockDetour(uintptr_t sprite, uintptr_t out_w,
                                     uintptr_t a5, uintptr_t a6, uintptr_t a7) {
   const uintptr_t buffer =
       g_softpal_lock_original(sprite, out_w, out_h, a3, a4, a5, a6, a7);
-  auto& rt = g_softpal;
-  if (!rt.live.load(std::memory_order_acquire)) return buffer;
-  rt.tx_open = false;
+  if (!g_softpal.live.load(std::memory_order_acquire)) return buffer;
+  // A relock of a sprite still open on this thread replaces that transaction.
+  SoftpalTransaction* tx = FindSoftpalTransaction(sprite, 0u);
+  if (tx != nullptr) tx->open = false;
   if (buffer == 0u) return buffer;
   int32_t w = 0, h = 0;
   __try {
@@ -270,26 +297,39 @@ uintptr_t __cdecl SoftpalLockDetour(uintptr_t sprite, uintptr_t out_w,
   } __except (EXCEPTION_EXECUTE_HANDLER) {
     return buffer;
   }
-  rt.tx_open = true;
-  rt.tx_overflow = false;
-  rt.tx_sprite = sprite;
-  rt.tx_buffer = buffer;
-  rt.tx_w = w;
-  rt.tx_h = h;
-  rt.tx_count = 0u;
+  if (tx == nullptr) {
+    for (auto& slot : g_softpal_tx.slots) {
+      if (!slot.open) {
+        tx = &slot;
+        break;
+      }
+    }
+  }
+  // More nested locks than slots: that sprite's text is not tracked.
+  if (tx == nullptr) return buffer;
+  tx->open = true;
+  tx->overflow = false;
+  tx->sprite = sprite;
+  tx->buffer = buffer;
+  tx->w = w;
+  tx->h = h;
+  tx->count = 0u;
   return buffer;
 }
 
 uintptr_t __cdecl SoftpalDrawDetour(uintptr_t buffer, uintptr_t text,
                                     uintptr_t x, uintptr_t y, uintptr_t a4,
                                     uintptr_t a5, uintptr_t a6, uintptr_t a7) {
-  auto& rt = g_softpal;
-  if (rt.live.load(std::memory_order_acquire) && rt.tx_open &&
-      buffer == rt.tx_buffer && text != 0u) {
-    if (rt.tx_count >= softpal::kMaxPageGlyphs) {
-      rt.tx_overflow = true;
+  SoftpalTransaction* tx =
+      g_softpal.live.load(std::memory_order_acquire) && buffer != 0u &&
+              text != 0u
+          ? FindSoftpalTransaction(0u, buffer)
+          : nullptr;
+  if (tx != nullptr) {
+    if (tx->count >= softpal::kMaxPageGlyphs) {
+      tx->overflow = true;
     } else {
-      softpal::GlyphDraw& draw = rt.tx_draws[rt.tx_count];
+      softpal::GlyphDraw& draw = tx->draws[tx->count];
       bool ok = false;
       __try {
         const char* source = reinterpret_cast<const char*>(text);
@@ -305,10 +345,11 @@ uintptr_t __cdecl SoftpalDrawDetour(uintptr_t buffer, uintptr_t text,
       if (ok) {
         draw.x = static_cast<int32_t>(x);
         draw.y = static_cast<int32_t>(y);
-        draw.font_size = rt.font_size != nullptr ? rt.font_size() : 0;
-        ++rt.tx_count;
+        draw.font_size =
+            g_softpal.font_size != nullptr ? g_softpal.font_size() : 0;
+        ++tx->count;
       } else {
-        rt.tx_overflow = true;
+        tx->overflow = true;
       }
     }
   }
@@ -320,15 +361,18 @@ uintptr_t __cdecl SoftpalUnlockDetour(uintptr_t sprite, uintptr_t a1,
                                       uintptr_t a5, uintptr_t a6,
                                       uintptr_t a7) {
   auto& rt = g_softpal;
-  if (rt.live.load(std::memory_order_acquire) && rt.tx_open &&
-      sprite == rt.tx_sprite) {
-    rt.tx_open = false;
+  SoftpalTransaction* tx = rt.live.load(std::memory_order_acquire)
+                               ? FindSoftpalTransaction(sprite, 0u)
+                               : nullptr;
+  if (tx != nullptr) {
+    tx->open = false;
     // A transaction without glyphs (the typewriter reveal) changes no text.
-    if (rt.tx_count != 0u && !rt.tx_overflow) {
+    if (tx->count != 0u && !tx->overflow) {
       rt.page_hits.fetch_add(1u, std::memory_order_relaxed);
+      AcquireSRWLockExclusive(&rt.page_lock);
       const uint32_t setpos = rt.setpos_calls.load(std::memory_order_relaxed);
       SoftpalSpriteSlot* slot = ClaimSoftpalSprite(sprite);
-      const uint64_t hash = HashSoftpalDraws(rt.tx_draws, rt.tx_count);
+      const uint64_t hash = HashSoftpalDraws(tx->draws, tx->count);
       const uint64_t previous = slot->page_seq.load(std::memory_order_relaxed);
       const uint64_t page_seq = previous != 0u && slot->content_hash == hash
                                     ? previous
@@ -338,17 +382,18 @@ uintptr_t __cdecl SoftpalUnlockDetour(uintptr_t sprite, uintptr_t a1,
       SoftpalEvent* event = BeginSoftpalEvent(&sequence);
       event->kind = kSoftpalEventPage;
       event->sprite = sprite;
-      event->buffer_w = rt.tx_w;
-      event->buffer_h = rt.tx_h;
+      event->buffer_w = tx->w;
+      event->buffer_h = tx->h;
       event->page_seq = page_seq;
       event->setpos_before = setpos - rt.last_page_setpos;
       event->setpos_at = setpos;
-      event->count = rt.tx_count;
-      std::memcpy(event->draws, rt.tx_draws,
-                  sizeof(softpal::GlyphDraw) * rt.tx_count);
+      event->count = tx->count;
+      std::memcpy(event->draws, tx->draws,
+                  sizeof(softpal::GlyphDraw) * tx->count);
       CommitSoftpalEvent(event, sequence);
       rt.last_page_setpos = setpos;
       slot->page_seq.store(page_seq, std::memory_order_release);
+      ReleaseSRWLockExclusive(&rt.page_lock);
     }
   }
   return g_softpal_unlock_original(sprite, a1, a2, a3, a4, a5, a6, a7);

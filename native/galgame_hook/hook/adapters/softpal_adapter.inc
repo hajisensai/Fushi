@@ -29,6 +29,10 @@ class SoftpalAdapter final : public fushi_voice_hook::EngineAdapter {
     ProcessSoftpalTextTick();
     ProcessSoftpalLookupTick();
   }
+  // The hover highlight follows the cursor on the HookWorker tick.
+  bool lookup_sensor_available() const {
+    return installed_ && SoftpalLookupSensorInstalled();
+  }
   fushi_voice_hook::LookupAdmissionReport lookupAdmission() const override {
     fushi_voice_hook::LookupAdmissionReport report;
     report.state = SoftpalLookupSensorInstalled()

@@ -84,6 +84,24 @@ void main() {
     expect(picked, isNull);
   });
 
+  test('restores an engine exact thread whatever its recent line length', () {
+    // SoftPal 魔女こいにっき 实测：开场几句是「くーくー」这类短句，记住的行长
+    // 是长句——引擎精确线路只有一条线程，照样恢复。
+    final TexthookerTextThread exact = _thread('exact', <String>[
+      '「くーくー」',
+      'くー',
+      '「くー」',
+    ], hookCode: 'ENGINE:SOFTPAL:text_1024x256');
+    final TexthookerTextThread? picked =
+        GalHookSessionController.pickRememberedTextThread(
+          <TexthookerTextThread>[exact],
+          fingerprint: GalHookSessionController.textThreadFingerprint(exact)!,
+          typicalLength: 30,
+          minObservedLines: 3,
+        );
+    expect(picked?.key, 'exact');
+  });
+
   test('legacy memory without a length falls back to the busiest thread', () {
     final TexthookerTextThread? picked =
         GalHookSessionController.pickRememberedTextThread(

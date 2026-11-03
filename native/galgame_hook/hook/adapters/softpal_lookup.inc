@@ -618,12 +618,15 @@ bool EvaluateSoftpalPress(HWND hwnd, int32_t x, int32_t y,
   }
   if (!fushi_voice_hook::g_geometry_provider_registry.NativeInputAllowed(
           g_header, fushi_voice_hook::kLookupGeometryProviderEngineExactLayout,
-          fushi_voice_hook::kLookupGeometryProviderIdSoftpal) ||
-      SoftpalCardVisible(hwnd) || GetForegroundWindow() != hwnd ||
-      (GetKeyState(VK_SHIFT) & 0x8000) != 0 ||
+          fushi_voice_hook::kLookupGeometryProviderIdSoftpal)) {
+    return RejectSoftpalPress(4u);
+  }
+  if (SoftpalCardVisible(hwnd)) return RejectSoftpalPress(7u);
+  if (GetForegroundWindow() != hwnd) return RejectSoftpalPress(8u);
+  if ((GetKeyState(VK_SHIFT) & 0x8000) != 0 ||
       (GetKeyState(VK_CONTROL) & 0x8000) != 0 ||
       (GetKeyState(VK_MENU) & 0x8000) != 0) {
-    return RejectSoftpalPress(4u);
+    return RejectSoftpalPress(9u);
   }
   RECT client = {};
   if (!GetClientRect(hwnd, &client) ||

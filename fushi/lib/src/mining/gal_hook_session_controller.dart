@@ -3137,7 +3137,9 @@ class GalHookSessionController extends ChangeNotifier {
   /// - 伪影主导的线程不参与（BUG-2112）；
   /// - 记忆里有典型行长时，按行长比值最接近者优先，出行数只作平手判据；最接近者
   ///   仍相差两倍以上时**宁可暂不恢复**——此时往往只有名字牌线程先够了行数，
-  ///   正文线程还没出够，提前恢复就会把名字牌钉成本会话的文本线程。
+  ///   正文线程还没出够，提前恢复就会把名字牌钉成本会话的文本线程；
+  /// - 引擎精确线程（[isEngineExactTextThread]）不比行长：它的 hook code 只对应
+  ///   一条线程。
   @visibleForTesting
   static TexthookerTextThread? pickRememberedTextThread(
     Iterable<TexthookerTextThread> threads, {
@@ -3154,6 +3156,9 @@ class GalHookSessionController extends ChangeNotifier {
     ];
     if (candidates.isEmpty) return null;
     double distance(TexthookerTextThread thread) {
+      // 引擎精确线程一条 hook code 只有一条线程，没有要靠行长区分的兄弟；
+      // 短句扎堆时行长对不上就不恢复，会让它一整局都选不上。
+      if (isEngineExactTextThread(thread)) return 0;
       final int? length = textThreadTypicalLength(thread);
       if (typicalLength == null || typicalLength <= 0) return 0;
       if (length == null || length <= 0) return double.infinity;
