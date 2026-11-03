@@ -851,6 +851,11 @@ fn successor_closure(c: &Connection, links: &mut Links, seeds: impl IntoIterator
     Ok(closure)
 }
 
+/// [seeds] 与沿后继链接能走到的全部卡（收尾按块刷新时补刷后继用，transport.rs `settle_refreshed_cards`）。
+pub(crate) fn successors_of(c: &Connection, seeds: &BTreeSet<String>) -> Result<BTreeSet<String>, String> {
+    successor_closure(c, &mut Links::default(), seeds.iter().cloned())
+}
+
 /// [seeds] 所在的「前身 ↔ 后继」连通分量（沿链接双向扩，广度优先、每一层两次批量查询）；返回里的每张卡前身 /
 /// 后继都已查过（[Links::successors] / [Links::predecessors] 可直接用）。
 fn link_family(c: &Connection, links: &mut Links, seeds: &BTreeSet<String>) -> Result<HashSet<String>, String> {

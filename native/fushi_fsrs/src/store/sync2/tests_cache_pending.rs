@@ -51,6 +51,12 @@ fn world(notes: usize, reviews: usize) -> (Bucket, String) {
                 if wave == 0 {
                     input.push(json!({"e": json!({"t": "entity", "x": {"id": note, "p": P, "k": "note", "d": {"createdAt": 1, "guid": note, "noteTypeId": "NT"}}}), "note": note}));
                     input.push(json!({"e": edit("note", &note, "f/fa", json!(format!("語{n}"))), "note": note}));
+                    // 每四条笔记里一张卡继承前一条笔记（另一台设备的）那张卡的历史：前身有新日志时后继也要刷。
+                    if n % 4 == 3 {
+                        let card = crate::registers::card_id(&note, "t1", 0).unwrap();
+                        let from = crate::registers::card_id(&note_id(n - 1), "t1", 0).unwrap();
+                        input.push(json!({"e": edit("card", &card, &format!("historyFrom/{from}"), json!(true)), "note": note}));
+                    }
                 }
                 for r in 0..reviews as i64 {
                     let at = T0 + (wave * reviews as i64 + r) * DAY + i as i64 * 3_600_000;
@@ -192,6 +198,64 @@ fn rebuild_clears_the_pending_set() {
     join_sliced(&d, &deck, &bucket, 1, 4, false);
     cmd(&d, &deck, json!({"op": "rebuild_caches"}), vec![]);
     assert_eq!(count(&d, "SELECT COUNT(*) FROM sync2_cache_pending"), 0);
+}
+
+/// 每台设备 gen 最大的 head（同 tests.rs `Device::sync`）。
+fn top_heads(b: &Bucket) -> Vec<Vec<u8>> {
+    let mut by_dev: std::collections::BTreeMap<String, Vec<(u64, Vec<u8>)>> = std::collections::BTreeMap::new();
+    for (path, bytes) in &b.0 {
+        let parts: Vec<&str> = path.split('/').collect();
+        if let Some(g) = parts.last().and_then(|p| crate::sync2::segment::parse_head_file_name(p)) {
+            by_dev.entry(parts[parts.len() - 2].to_owned()).or_default().push((g, bytes.clone()));
+        }
+    }
+    let mut out = Vec::new();
+    for (_, hs) in by_dev {
+        let top = hs.iter().map(|x| x.0).max().unwrap();
+        out.extend(hs.into_iter().filter(|x| x.0 == top).map(|x| x.1));
+    }
+    out
+}
+
+/// 老设备追赶：前身卡所在的笔记被改、前身卡有新复习，后继卡（继承前身历史，属于另一条笔记）自己没有新事件。收尾
+/// 先在笔记块里刷前身卡（transport.rs `settle_refreshed_cards` 把它从之后的卡块里去掉），后继卡缓存行里继承的历史
+/// 仍要跟着刷新——与全量重建逐行相同。
+#[test]
+fn catch_up_refreshes_successors_of_cards_refreshed_through_their_notes() {
+    let (mut bucket, deck) = world(8, 3);
+    let d = Device::new("cp-catch");
+    join_sliced(&d, &deck, &bucket, 2, 5, true);
+    // 另一台设备加入后改笔记 0、1、2、4、5、6，暂停笔记 2 的卡（不触发重放：重放改写的卡会进第一块）；笔记 3 的卡
+    // 继承笔记 2 那张卡的历史与标志（[world]）。待刷新集合按 (种类, ID) 取：第一块是笔记 0–5（刷笔记 2 时重算前身卡），
+    // 第二块是笔记 6 与前身卡。
+    let w = Device::new("cp-writer");
+    let now = T0 + 60 * DAY;
+    w.sync(&mut bucket, "loc", now);
+    let note = note_id(2);
+    let pred = crate::registers::card_id(&note, "t1", 0).unwrap();
+    let mut input: Vec<Value> =
+        [0, 1, 2, 4, 5, 6].iter().map(|&n| json!({"e": edit("note", &note_id(n), "f/fa", json!(format!("改{n}"))), "note": note_id(n)})).collect();
+    input.push(json!({"e": edit("card", &pred, "suspended", json!(true)), "note": note}));
+    w.core.sync2_apply_local(P, now, &Value::Array(input).to_string()).unwrap();
+    w.sync(&mut bucket, "loc", now + 1);
+    let succ = crate::registers::card_id(&note_id(3), "t1", 0).unwrap();
+    let row = |x: &Device| x.rows(&format!("SELECT * FROM srs_cards_cache WHERE id = srs_id('{succ}')"))[1][1..].to_vec();
+    let before = row(&d);
+
+    let later = now + DAY;
+    cmd(&d, &deck, json!({"op": "plan"}), top_heads(&bucket));
+    cmd(&d, &deck, json!({"op": "ingest_begin"}), vec![]);
+    cmd(&d, &deck, json!({"op": "ingest_prepare"}), segs(&bucket));
+    while cmd(&d, &deck, json!({"op": "ingest_commit", "now": later, "sliceOps": 2}), vec![])["more"] == json!(true) {}
+    finish_session(&d, &deck, later);
+
+    let reference = join_rebuilt(&deck, &bucket);
+    assert_ne!(
+        row(&reference),
+        before,
+        "the successor inherits the predecessor's flags"
+    );
+    assert_eq!(caches(&d), caches(&reference));
 }
 
 /// 丢弃 profile 时连同收段会话一起放掉留着的页缓存。

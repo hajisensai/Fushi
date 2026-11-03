@@ -1516,6 +1516,43 @@ pub(crate) fn take_cache_pending(c: &Connection, profile: &str, limit: usize) ->
     Ok((d, more))
 }
 
+/// 收尾一块刷完之后：这一块里笔记刷新已经整行重算过的卡（[written]：卡缓存行与它的有效复习投影，按同一时刻的
+/// 事件算的）从待刷新集合里去掉，不在之后的卡块里再算一遍（新设备收齐时笔记与它的卡全都在待刷新集合里，原来每张
+/// 卡算两遍：真实库收尾 87 s 里约 30 s）。卡块刷新还会顺带重算它的后继闭包（继承它历史的卡，caches.rs
+/// `successor_closure`），笔记刷新不会：闭包里这一块没刷到的卡补进待刷新集合，结果与逐块刷相同。
+pub(crate) fn settle_refreshed_cards(c: &Connection, profile: &str, written: &[String]) -> Result<(), String> {
+    let mut covered: BTreeSet<String> = BTreeSet::new();
+    for chunk in written.chunks(400) {
+        let q = format!(
+            "SELECT srs_idt(entity_id) AS entity_id FROM sync2_cache_pending WHERE profile_uid = srs_id(?) AND kind = {CACHE_CARD} \
+             AND entity_id IN ({})",
+            vec!["srs_id(?)"; chunk.len()].join(", ")
+        );
+        let mut stmt = c.prepare_cached(&q).map_err(sql)?;
+        let args = std::iter::once(profile).chain(chunk.iter().map(String::as_str));
+        let mut rows = stmt.query(rusqlite::params_from_iter(args)).map_err(sql)?;
+        while let Some(r) = rows.next().map_err(sql)? {
+            covered.insert(r.get(0).map_err(sql)?);
+        }
+    }
+    if covered.is_empty() {
+        return Ok(());
+    }
+    let refreshed: std::collections::HashSet<&str> = written.iter().map(String::as_str).collect();
+    let rest: BTreeSet<String> = crate::store::caches::successors_of(c, &covered)?
+        .into_iter()
+        .filter(|s| !refreshed.contains(s.as_str()))
+        .collect();
+    defer_cache_refresh(c, profile, &crate::store::caches::Dirty { cards: rest, ..Default::default() })?;
+    let mut del = c
+        .prepare_cached("DELETE FROM sync2_cache_pending WHERE profile_uid = srs_id(?1) AND kind = ?2 AND entity_id = srs_id(?3)")
+        .map_err(sql)?;
+    for id in &covered {
+        del.execute(params![profile, CACHE_CARD, id]).map_err(sql)?;
+    }
+    Ok(())
+}
+
 /// 待刷新集合非空（收段会话没收尾就被打断过）。
 pub(crate) fn cache_is_pending(c: &Connection, profile: &str) -> Result<bool, String> {
     c.query_row("SELECT EXISTS(SELECT 1 FROM sync2_cache_pending WHERE profile_uid = srs_id(?1))", [profile], |r| r.get(0)).map_err(sql)

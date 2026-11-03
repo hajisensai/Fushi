@@ -832,11 +832,16 @@ pub(crate) fn sync2_dispatch(c: &SrsCore, req: &serde_json::Value, blobs: &mut V
         let mut cache_more = false;
         let written = crate::store::sync2::in_savepoint(&w, |conn| {
             if drain {
-                let (pending, more) = crate::store::sync2::transport::take_cache_pending(conn, profile, CACHE_PENDING_CHUNK)?;
+                let (pending, _) = crate::store::sync2::transport::take_cache_pending(conn, profile, CACHE_PENDING_CHUNK)?;
                 dirty.merge(pending);
-                cache_more = more;
             }
-            crate::store::caches::refresh(conn, profile, &cfg, std::mem::take(&mut dirty))
+            let written = crate::store::caches::refresh(conn, profile, &cfg, std::mem::take(&mut dirty))?;
+            if drain {
+                // 笔记刷新已整行重算过的卡不再单独刷一遍（之后的卡块里）。
+                crate::store::sync2::transport::settle_refreshed_cards(conn, profile, &written.cards)?;
+                cache_more = crate::store::sync2::transport::cache_is_pending(conn, profile)?;
+            }
+            Ok(written)
         })?;
         if cache_more {
             v["more"] = Value::Bool(true);
@@ -874,7 +879,11 @@ fn slice_budget<'a>(c: &'a SrsCore, req: &serde_json::Value) -> crate::store::sy
 
 /// 收尾时一次命令最多刷新多少个待刷新实体（笔记类型 / 笔记 / 卡）：一块的锁内时间与重放的一片同量级，排队的
 /// 作答只等这一块。
+#[cfg(not(test))]
 const CACHE_PENDING_CHUNK: usize = 512;
+/// 测试里压到很小：笔记与它的卡、前身与后继落在不同的块里（tests_cache_pending.rs）。
+#[cfg(test)]
+const CACHE_PENDING_CHUNK: usize = 5;
 
 /// 改投影的 v2 命令（结果带 `marks`）：分发器在同一次调用里刷新缓存行；`ingest_commit` 例外（只记待刷新）。
 const PROJECTING_OPS: [&str; 11] =

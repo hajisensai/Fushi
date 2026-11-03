@@ -9,6 +9,9 @@
 //! - `probe_sliced`：生产形态端到端（8 MiB 一批、默认时间片、按节奏并回 WAL、收尾重放），`PROBE_SLICE_MS` 改片长；
 //!   末尾逐表打印行数与内容哈希，不同实现之间对比即真实数据上的等价回归。
 //! - `probe_ops_store`：只写操作日志（`sync2_ops`）的耗时与体积。
+//! - `probe_finish` / `probe_finish_floor`：收尾（重放 + 缓存）。先用 `probe_sliced` 加 `PROBE_KEEP=<路径>` 留下「投递完、
+//!   收尾前」的库，再在它的副本上反复跑：`probe_finish` 走生产的收尾函数（`PROBE_FINISH=prod|one|rebuild`），
+//!   `probe_finish_floor` 是下限（日志与笔记修改记录各整表顺扫一遍、内存里算，不写库）。
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -371,6 +374,11 @@ fn probe_sliced() {
         if !batch.is_empty() {
             flush(batch);
         }
+        if let Ok(keep) = std::env::var("PROBE_KEEP") {
+            core.writer().unwrap().execute_batch("PRAGMA wal_checkpoint(TRUNCATE)").unwrap();
+            std::fs::copy(&db, &keep).unwrap();
+            println!("PROBE kept pre-finish db at {keep} ({}MB)", size_mb(Path::new(&keep)));
+        }
         let t = Instant::now();
         let mut r = cmd(serde_json::json!({"op": "ingest_finish", "now": now}), vec![]);
         while r["more"] == serde_json::json!(true) {
@@ -407,4 +415,190 @@ fn probe_sliced() {
         }
         println!("PROBE table {t} rows={n} hash={sum:032x}");
     }
+}
+
+/// 收尾的下限：日志与笔记修改记录各整表顺扫一遍进内存（按卡 / 按笔记分组），在内存里算重放、卡状态、有效复习投影
+/// 与笔记视图，不写库。对照生产收尾（逐卡 / 逐块回读）。库同 [probe_finish]（`PROBE_FINISH_DB`）。
+#[test]
+#[ignore]
+fn probe_finish_floor() {
+    use crate::sync2::replay::{infer_intent, Row};
+    let src = PathBuf::from(std::env::var("PROBE_FINISH_DB").expect("PROBE_FINISH_DB"));
+    let tmp = super::tests::tempdir::new("probe-finish-floor");
+    let db = tmp.0.join("srs.db");
+    std::fs::copy(&src, &db).unwrap();
+    let core = crate::store::SrsCore::open(&db).unwrap();
+    let w = core.writer().unwrap();
+    w.execute_batch("PRAGMA cache_size = -262144").unwrap();
+
+    // 1. 日志整表顺扫（连服务器时刻、意图、拼回的 json）。
+    let t = Instant::now();
+    type L = (String, Option<i64>, Option<crate::history::LogCols>, String, Option<i64>, Option<i64>);
+    let mut logs: HashMap<String, Vec<L>> = HashMap::new();
+    let mut bytes = 0usize;
+    {
+        let q = format!(
+            "SELECT srs_idt(l.card_id) AS card_id, e.server_time, {}, l.json, m.intent, m.arg FROM srs_review_logs l \
+             LEFT JOIN srs_event_local e ON e.event_id = l.id LEFT JOIN sync2_log_meta m ON m.log_id = l.id",
+            crate::store::slim::LOG_READ
+        );
+        let mut s = w.prepare(&q).unwrap();
+        let mut it = s.query([]).unwrap();
+        while let Some(r) = it.next().unwrap() {
+            let card: String = r.get(0).unwrap();
+            let (j, cols) = crate::store::slim::log_row(r, 2).unwrap();
+            let json: String = r.get(12).unwrap();
+            bytes += j.len() + json.len();
+            logs.entry(card).or_default().push((j, r.get(1).unwrap(), cols, json, r.get(13).unwrap(), r.get(14).unwrap()));
+        }
+    }
+    let scan_logs = ms(t);
+    let n_logs: usize = logs.values().map(Vec::len).sum();
+
+    // 2. 重放（每张卡单独一组：真实库里前身链接极少，下限不算血统）。
+    let t = Instant::now();
+    let mut changed = 0usize;
+    for rows in logs.values() {
+        let input: Vec<Row<'_>> = rows
+            .iter()
+            .map(|(_, s, _, json, code, arg)| Row {
+                json,
+                server_time: *s,
+                intent: match code {
+                    Some(k) => super::intent_of(*k, *arg),
+                    None => infer_intent(&serde_json::from_str(json).unwrap_or(serde_json::Value::Null)),
+                },
+            })
+            .collect();
+        changed += crate::sync2::replay::replay(&input).unwrap().rows.iter().filter(|r| r.is_some()).count();
+    }
+    let replay = ms(t);
+
+    // 3. 卡状态 + 有效复习投影（同一份日志）。
+    let t = Instant::now();
+    let mut stat_rows = 0usize;
+    for rows in logs.values() {
+        let stored: Vec<crate::history::StoredLog<'_>> = rows.iter().map(|(j, s, c, ..)| (j.as_str(), *s, c.as_ref())).collect();
+        let _ = crate::history::state_from_stored(&stored).unwrap();
+        stat_rows += crate::history::stats_from_stored(&stored).unwrap().len();
+    }
+    let card_compute = ms(t);
+    let n_cards = logs.len();
+    drop(logs);
+
+    // 4. 笔记：身份记录 + 修改记录整表顺扫，按笔记分组，物化视图。
+    let t = Instant::now();
+    let mut notes: HashMap<String, (Option<serde_json::Value>, Vec<(String, Option<i64>, Option<crate::registers::EditCols>)>)> = HashMap::new();
+    {
+        let mut s = w.prepare("SELECT srs_idt(id) AS id, payload_json FROM srs_entities WHERE kind = 'note'").unwrap();
+        let mut it = s.query([]).unwrap();
+        while let Some(r) = it.next().unwrap() {
+            let id: String = r.get(0).unwrap();
+            let p: String = r.get(1).unwrap();
+            notes.entry(id).or_default().0 = Some(serde_json::from_str(&p).unwrap());
+        }
+        let q = format!(
+            "SELECT srs_idt(f.entity_id) AS entity_id, e.server_time, {} FROM srs_field_edits f LEFT JOIN srs_event_local e ON e.event_id = f.id \
+             WHERE f.entity_kind = 'note'",
+            crate::store::slim::EDIT_READ
+        );
+        let mut s = w.prepare(&q).unwrap();
+        let mut it = s.query([]).unwrap();
+        while let Some(r) = it.next().unwrap() {
+            let id: String = r.get(0).unwrap();
+            let (j, cols) = crate::store::slim::edit_row(r, 2).unwrap();
+            notes.entry(id).or_default().1.push((j, r.get(1).unwrap(), cols));
+        }
+    }
+    let scan_notes = ms(t);
+    let t = Instant::now();
+    let mut views = 0usize;
+    for (payload, es) in notes.values() {
+        let Some(p) = payload else { continue };
+        let stored: Vec<crate::registers::StoredEdit<'_>> = es.iter().map(|(j, s, c)| (j.as_str(), *s, c.as_ref())).collect();
+        let _ = crate::registers::note_view_of(p, &stored).unwrap();
+        views += 1;
+    }
+    let note_views = ms(t);
+    println!(
+        "PROBE finish_floor logs={n_logs} cards={} log_bytes={}MB scan_logs={scan_logs}ms replay={replay}ms (changed {changed}) \
+         card_state+stats={card_compute}ms (stat rows {stat_rows}) scan_notes={scan_notes}ms note_views={note_views}ms ({views} notes) total={}ms",
+        n_cards,
+        bytes >> 20,
+        scan_logs + replay + card_compute + scan_notes + note_views
+    );
+}
+
+/// 收尾（重放 + 缓存）分解：在 `probe_sliced` 用 `PROBE_KEEP=<路径>` 留下的「投递完、收尾前」的库副本上跑。
+/// `PROBE_FINISH=prod`（默认）= 生产形态：一次重放完，再按 512 个实体一块从待刷新集合刷缓存；`one` = 待刷新
+/// 集合一次刷完；`rebuild` = 丢掉缓存全量重建（全部笔记 + 全部有日志的卡）。
+#[test]
+#[ignore]
+fn probe_finish() {
+    use super::transport::{replay_pending, take_cache_pending, CommitBudget};
+    let dir = PathBuf::from(std::env::var("SRS_BENCH_DIR").expect("SRS_BENCH_DIR"));
+    let profile = dir.parent().unwrap().file_name().unwrap().to_string_lossy().into_owned();
+    let src = PathBuf::from(std::env::var("PROBE_FINISH_DB").expect("PROBE_FINISH_DB"));
+    let mode = std::env::var("PROBE_FINISH").unwrap_or_else(|_| "prod".to_owned());
+    let tmp = super::tests::tempdir::new("probe-finish");
+    let db = tmp.0.join("srs.db");
+    std::fs::copy(&src, &db).unwrap();
+    let core = crate::store::SrsCore::open(&db).unwrap();
+    let w = core.writer().unwrap();
+    let n = |q: &str| -> i64 { w.query_row(q, [], |r| r.get(0)).unwrap() };
+    println!(
+        "PROBE finish mode={mode} replay_pending={} cache_pending={} (types {} notes {} cards {}) logs={} log_cards={} notes={} cards={}",
+        n("SELECT count(*) FROM sync2_replay_pending"),
+        n("SELECT count(*) FROM sync2_cache_pending"),
+        n("SELECT count(*) FROM sync2_cache_pending WHERE kind = 0"),
+        n("SELECT count(*) FROM sync2_cache_pending WHERE kind = 1"),
+        n("SELECT count(*) FROM sync2_cache_pending WHERE kind = 2"),
+        n("SELECT count(*) FROM srs_review_logs"),
+        n("SELECT count(DISTINCT card_id) FROM srs_review_logs"),
+        n("SELECT count(*) FROM srs_entities WHERE kind = 'note'"),
+        n("SELECT count(*) FROM srs_entities WHERE kind = 'card'"),
+    );
+    let cfg = crate::store::caches::CacheConfig::parse(&serde_json::json!({"defaultDeck": super::config::default_deck_id(&profile)}))
+        .unwrap();
+    let t0 = Instant::now();
+    let (replayed, _) = super::in_savepoint(&w, |c| replay_pending(c, &profile, &mut CommitBudget::unlimited())).unwrap();
+    let replay = ms(t0);
+    println!("PROBE finish replay={replay}ms changed_cards={}", replayed.len());
+    let t = Instant::now();
+    let mut chunks = 0;
+    match mode.as_str() {
+        "rebuild" => {
+            super::in_savepoint(&w, |c| crate::store::caches::rebuild(c, &profile, &cfg)).unwrap();
+            chunks = 1;
+        }
+        "one" => {
+            super::in_savepoint(&w, |c| {
+                let (d, _) = take_cache_pending(c, &profile, usize::MAX >> 1)?;
+                crate::store::caches::refresh(c, &profile, &cfg, d)
+            })
+            .unwrap();
+            chunks = 1;
+        }
+        _ => loop {
+            let more = super::in_savepoint(&w, |c| {
+                let (d, _) = take_cache_pending(c, &profile, 512)?;
+                let written = crate::store::caches::refresh(c, &profile, &cfg, d)?;
+                super::transport::settle_refreshed_cards(c, &profile, &written.cards)?;
+                super::transport::cache_is_pending(c, &profile)
+            })
+            .unwrap();
+            chunks += 1;
+            if !more {
+                break;
+            }
+        },
+    }
+    let caches = ms(t);
+    println!(
+        "PROBE finish total={}ms replay={replay}ms caches={caches}ms chunks={chunks} notes_cache={} cards_cache={} stat_reviews={}",
+        ms(t0),
+        n("SELECT count(*) FROM srs_notes_cache"),
+        n("SELECT count(*) FROM srs_cards_cache"),
+        n("SELECT count(*) FROM srs_stat_reviews"),
+    );
 }
