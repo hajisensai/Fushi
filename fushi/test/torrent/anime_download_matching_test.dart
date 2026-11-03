@@ -1,6 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi/src/media/torrent/anime_download_matching.dart';
+import 'package:fushi/src/media/video/jimaku_matching.dart'
+    show jimakuVersionKeyOf;
 import 'package:fushi_engine/media/torrent/nyaa_client.dart';
 import 'package:fushi_engine/media/video/jimaku_client.dart';
 
@@ -477,6 +479,55 @@ void main() {
           '[$group] $series - ${ep.toString().padLeft(2, '0')} [1080p].mkv',
       ];
     }
+
+    test('整包落在同一字幕版本：只有第 1 集的发布组不抢第 1 集，同覆盖 ASS 优先', () {
+      String ep2(int ep) => ep.toString().padLeft(2, '0');
+      final List<ResolvedSubtitleMatch> matches = matchJimakuFilesToVideoNames(
+        packVideos(<int>[1, 2, 3]),
+        <JimakuFile>[
+          _file('[Nekomoe kissaten] Test Anime - 01 [WebRip][JPN].ass'),
+          for (int ep = 1; ep <= 3; ep++) ...<JimakuFile>[
+            _file('テスト.S01E${ep2(ep)}.WEBRip.Netflix.ja[cc].srt'),
+            _file('Test Anime - ${ep2(ep)}.ja.srt'),
+            _file('Test Anime - ${ep2(ep)}.ja.ass'),
+          ],
+        ],
+      );
+      expect(
+        matches.map((ResolvedSubtitleMatch m) => m.file.name).toList(),
+        <String>[
+          'Test Anime - 01.ja.ass',
+          'Test Anime - 02.ja.ass',
+          'Test Anime - 03.ja.ass',
+        ],
+      );
+    });
+
+    test('文件名没写语言、正文判为日语的版本参与语言排名（BUG-3993）', () {
+      String ep2(int ep) => ep.toString().padLeft(2, '0');
+      final List<JimakuFile> files = <JimakuFile>[
+        for (int ep = 1; ep <= 3; ep++) ...<JimakuFile>[
+          _file('テスト.S01E${ep2(ep)}.WEBRip.Netflix.ja[cc].srt'),
+          _file('[shincaps] Test Anime - ${ep2(ep)} (AT-X).ass'),
+        ],
+      ];
+      List<String> picked(Map<String, String> probed) =>
+          matchJimakuFilesToVideoNames(
+            packVideos(<int>[1, 2, 3]),
+            files,
+            contentLanguageByVersion: probed,
+          ).map((ResolvedSubtitleMatch m) => m.file.name).toList();
+      // 不探测：shincaps 语言未知，整包落在 Netflix（一致但不是 ass）。
+      expect(
+        picked(const <String, String>{}),
+        everyElement(contains('Netflix')),
+      );
+      // 正文判为日语后：同语言同覆盖，ASS 版本拿下整包。
+      expect(
+        picked(<String, String>{jimakuVersionKeyOf(files[1]): 'ja'}),
+        everyElement(startsWith('[shincaps]')),
+      );
+    });
 
     test('错季不再配上：S2 包 01-12 遇绝对编号条目 13-24 → 一条都不配', () {
       // 这正是改前静默配错的形状：旧的 season 分支按「取最前 cap 个」交出

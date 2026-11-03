@@ -3,6 +3,7 @@ import 'package:path/path.dart' as p;
 import 'package:fushi_engine/media/torrent/nyaa_client.dart';
 import 'package:fushi_engine/media/video/jimaku_client.dart';
 import 'package:fushi/src/media/video/jimaku_matching.dart';
+import 'package:fushi/src/media/video/subtitle/subtitle_episode_matching.dart';
 import 'package:fushi_engine/media/video/video_filename_parser.dart';
 
 // 按集索引与单集判据已抽到 media/video/jimaku_matching.dart（BUG-1695）——它同时
@@ -333,6 +334,7 @@ List<ResolvedSubtitleMatch> matchJimakuFilesToVideoNames(
   List<String> videoFileNames,
   List<JimakuFile> jimakuFiles, {
   String? preferredLanguage,
+  Map<String, String> contentLanguageByVersion = const <String, String>{},
 }) {
   if (videoFileNames.isEmpty || jimakuFiles.isEmpty) {
     return const <ResolvedSubtitleMatch>[];
@@ -343,16 +345,29 @@ List<ResolvedSubtitleMatch> matchJimakuFilesToVideoNames(
   );
   if (index.isEmpty) return const <ResolvedSubtitleMatch>[];
 
+  // 整包共用一个字幕版本（缺集由次选版本补），而不是逐集各挑各的——否则同一季
+  // 会 `.ass` / `.srt`、不同发布组混排。
+  final SubtitleEpisodeIndex<JimakuFile> consistent =
+      preferConsistentJimakuVersion(
+        index,
+        targetEpisodes: <int>[
+          for (final String path in videoFileNames)
+            ?parseVideoFilename(p.basename(path)).episode,
+        ],
+        preferredLanguage: preferredLanguage,
+        contentLanguageByVersion: contentLanguageByVersion,
+      );
+
   // ① 按集号严格相等逐个视频反查。判据本身走共享原语
-  // （[chooseJimakuFileForEpisode]，BUG-1695），这里只负责「有几个视频、集号从
+  // （[chooseSubtitleForEpisode]，BUG-1695），这里只负责「有几个视频、集号从
   // 文件名怎么来」——即本函数相对批量路径多出来的那部分信息。
   final List<ResolvedSubtitleMatch> out = <ResolvedSubtitleMatch>[];
   for (final String path in videoFileNames) {
     final String name = p.basename(path);
     final int? episode = parseVideoFilename(name).episode;
     if (episode == null) continue;
-    final JimakuEpisodeMatch match = chooseJimakuFileForEpisode(
-      index,
+    final JimakuEpisodeMatch match = chooseSubtitleForEpisode<JimakuFile>(
+      consistent,
       episode: episode,
       // 未编号字幕的 1v1 兜底由下面 ② 统一处理（它还要看视频侧集号），这里
       // 只取精确命中，故一律 false。

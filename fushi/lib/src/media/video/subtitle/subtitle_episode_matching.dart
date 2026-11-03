@@ -86,12 +86,121 @@ class SubtitleEpisodeIndex<T> {
   /// 索引是否为空（无任何可用字幕）。
   bool get isEmpty => totalFiles == 0;
 
+  /// 为**一批**目标集重排每集候选，让整批尽量落在同一个字幕版本上。
+  ///
+  /// 逐集独立地按「语言 → 文件名」挑，会让同一季东拼西凑：某个版本只有第 1 集
+  /// （或第 1 集文件名字母序恰好靠前），第 1 集就拿它，其余集拿另一个版本——用户
+  /// 看到的是同一合集里 `.ass` 与 `.srt`、不同发布组混排。版本是整批的决定，不是
+  /// 每集各自的决定。
+  ///
+  /// 版本（[versionOf]，同发布组 + 同容器 + 同语言等）的整批排名：
+  /// 1. 语言权重（[languageRankOf]，取版本内最优）——语言偏好仍是第一位；
+  /// 2. 覆盖 [targetEpisodes] 的集数降序——能配满整批的版本优先；
+  /// 3. 容器：ASS/SSA 先于 SRT 等纯文本（同覆盖下保留排版/特效的那版）；
+  /// 4. 原有每集顺序（[build] 的 `compare`）里该版本首次出现的位置——稳定。
+  ///
+  /// 每集按版本排名重排（同版本内保持原顺序），于是 [chooseSubtitleForEpisode]
+  /// 取首个 = 「排名最高、且有这一集的版本」：首选版本缺的集由次选版本补，不会
+  /// 因为缺一集就整集落空。判据本身不变，只改「同一集里谁排前面」。
+  SubtitleEpisodeIndex<T> preferConsistentVersion({
+    required Iterable<int> targetEpisodes,
+    required String Function(T) versionOf,
+    required int Function(T) languageRankOf,
+    required String Function(T) fileNameOf,
+  }) {
+    final List<String> ranked = rankVersions(
+      targetEpisodes: targetEpisodes,
+      versionOf: versionOf,
+      languageRankOf: languageRankOf,
+      fileNameOf: fileNameOf,
+    );
+    final Map<String, int> versionRank = <String, int>{
+      for (int i = 0; i < ranked.length; i++) ranked[i]: i,
+    };
+    return SubtitleEpisodeIndex<T>(
+      byEpisode: <int, List<T>>{
+        for (final MapEntry<int, List<T>> entry in byEpisode.entries)
+          entry.key: _stableSortBy(
+            entry.value,
+            (T file) => versionRank[versionOf(file)]!,
+          ),
+      },
+      unnumbered: unnumbered,
+    );
+  }
+
+  /// 整批版本排名（最优在前），规则见 [preferConsistentVersion]。
+  ///
+  /// 单独暴露给 UI：版本列表的顺序与「自动」实际会用的版本必须出自同一份判据，
+  /// 不能列表一套排序、下载另一套。只含**带集号**的版本（未编号文件不参与按集配）。
+  List<String> rankVersions({
+    required Iterable<int> targetEpisodes,
+    required String Function(T) versionOf,
+    required int Function(T) languageRankOf,
+    required String Function(T) fileNameOf,
+  }) {
+    final Set<int> targets = targetEpisodes.toSet();
+    final Map<String, int> languageRank = <String, int>{};
+    final Map<String, Set<int>> covered = <String, Set<int>>{};
+    final Map<String, int> containerRank = <String, int>{};
+    final Map<String, int> firstSeen = <String, int>{};
+    int order = 0;
+    final List<int> episodes = byEpisode.keys.toList()..sort();
+    for (final int episode in episodes) {
+      for (final T file in byEpisode[episode]!) {
+        final String version = versionOf(file);
+        final int rank = languageRankOf(file);
+        final int? known = languageRank[version];
+        if (known == null || rank < known) languageRank[version] = rank;
+        if (targets.contains(episode)) {
+          covered.putIfAbsent(version, () => <int>{}).add(episode);
+        }
+        containerRank.putIfAbsent(
+          version,
+          () => _containerRank(fileNameOf(file)),
+        );
+        firstSeen.putIfAbsent(version, () => order++);
+      }
+    }
+    int compareVersions(String a, String b) {
+      final int byLanguage = languageRank[a]!.compareTo(languageRank[b]!);
+      if (byLanguage != 0) return byLanguage;
+      final int byCoverage = (covered[b]?.length ?? 0).compareTo(
+        covered[a]?.length ?? 0,
+      );
+      if (byCoverage != 0) return byCoverage;
+      final int byContainer = containerRank[a]!.compareTo(containerRank[b]!);
+      if (byContainer != 0) return byContainer;
+      return firstSeen[a]!.compareTo(firstSeen[b]!);
+    }
+
+    return firstSeen.keys.toList()..sort(compareVersions);
+  }
+
   /// 字幕侧是否**存在**带集号的文件。
   ///
   /// 这是「集号对不上」与「字幕侧根本没编号」的分界线，也是 BUG-1695 的核心区分：
   /// 前者是冲突（错季 / 绝对集号 / 选错条目），后者是信息不足（剧场版 / 整季单文件）。
   /// 两者必须走不同分支——把后者的宽容度错用到前者身上，就是那个静默错配。
   bool get hasNumberedFiles => byEpisode.isNotEmpty;
+}
+
+/// ASS/SSA（带样式、定位、特效）= 0，其余文本字幕 = 1。
+int _containerRank(String fileName) {
+  final String lower = fileName.toLowerCase();
+  return lower.endsWith('.ass') || lower.endsWith('.ssa') ? 0 : 1;
+}
+
+/// 按 [keyOf] 升序的**稳定**排序（同键保持原相对顺序）。
+List<T> _stableSortBy<T>(List<T> items, int Function(T) keyOf) {
+  final List<(int, T)> indexed = <(int, T)>[
+    for (int i = 0; i < items.length; i++) (i, items[i]),
+  ];
+  indexed.sort(((int, T) a, (int, T) b) {
+    final int byKey = keyOf(a.$2).compareTo(keyOf(b.$2));
+    return byKey != 0 ? byKey : a.$1.compareTo(b.$1);
+  });
+  return <T>[for (final (int, T) entry in indexed) entry.$2];
 }
 
 /// registry 候选排序键：语言权重升序（[preferredLanguage] 优先，其次 ja）→

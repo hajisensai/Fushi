@@ -29,6 +29,46 @@ String? subtitleReleaseGroupTag(String fileName) {
   return tag;
 }
 
+/// 文件名里的发行平台 token（scene 命名惯例：`.Netflix.` / `.NF.` / `.AMZN.` …）
+/// → 规范平台名。只认被分隔符（`.` / 空格 / 括号 / `_` / `-`）包住的整词。
+const Map<String, String> _kPlatformTokens = <String, String>{
+  'netflix': 'Netflix',
+  'nf': 'Netflix',
+  'amazon': 'Amazon',
+  'amzn': 'Amazon',
+  'crunchyroll': 'Crunchyroll',
+  'cr': 'Crunchyroll',
+  'disney+': 'Disney+',
+  'dsnp': 'Disney+',
+  'hulu': 'Hulu',
+  'hidive': 'HIDIVE',
+  'abema': 'ABEMA',
+  'u-next': 'U-NEXT',
+  'bilibili': 'Bilibili',
+  'b-global': 'Bilibili',
+  'iqiyi': 'iQIYI',
+  'baha': 'Baha',
+  'youtube': 'YouTube',
+};
+
+/// 版本的「名字」：文件名开头的发布组标签（[subtitleReleaseGroupTag]），没有时
+/// 退到发行平台 token（`….WEBRip.Netflix.ja[cc].srt` → `Netflix`）。
+///
+/// 没有组名的官方抽轨字幕（Netflix / Amazon CC）过去全落进同一个「无组名」版本，
+/// 两家的时间轴、断句完全不同却被当成一套；用户在版本列表里也只能看到一张没名字
+/// 的卡。认不出返回 null。
+String? subtitleVersionTag(String fileName) {
+  final String? group = subtitleReleaseGroupTag(fileName);
+  if (group != null) return group;
+  for (final String token in fileName.toLowerCase().split(
+    RegExp(r'[.\s\[\]\(\)_]+'),
+  )) {
+    final String? platform = _kPlatformTokens[token];
+    if (platform != null) return platform;
+  }
+  return null;
+}
+
 /// 小写扩展名（不含点）；认不出为空串。
 String subtitleFormatOf(String fileName) {
   final int dot = fileName.lastIndexOf('.');
@@ -61,8 +101,7 @@ class SubtitleVersionGroup {
   /// `.format`」。两个毫不相干的概念共用一个词，只会让那条守卫在这里误报、又诱使
   /// 后来人去削弱它。
   String get container => subtitleFormatOf(members.first.fileName);
-  String? get releaseGroupTag =>
-      subtitleReleaseGroupTag(members.first.fileName);
+  String? get releaseGroupTag => subtitleVersionTag(members.first.fileName);
   bool get hearingImpaired => members.first.hearingImpaired;
   bool get aiTranslated => members.first.aiTranslated;
   bool get fromTrusted =>
@@ -119,15 +158,29 @@ class SubtitleVersionGroup {
   );
 }
 
-String _groupKeyOf(VideoSubtitleCandidate candidate) => <String>[
-  candidate.providerId,
-  candidate.collectionId ?? '',
-  subtitleFormatOf(candidate.fileName),
-  candidate.language,
-  subtitleReleaseGroupTag(candidate.fileName) ?? '',
-  candidate.hearingImpaired ? 'hi' : '',
-  candidate.aiTranslated ? 'ai' : '',
-].join('\u001f');
+/// 候选所属「版本」的键（同来源合集 + 同容器 + 同语言 + 同发布组 + CC/机翻标记）。
+/// 版本卡聚类与合集批量下载的整批版本一致性（`preferConsistentVersion`）共用。
+String subtitleVersionKeyOf(VideoSubtitleCandidate candidate) =>
+    _versionKeyOf(candidate, subtitleVersionTag(candidate.fileName));
+
+/// BUG-3993 之前的版本键：名字段只认发布组标签（[subtitleReleaseGroupTag]），
+/// 没有组名的平台抽轨（Netflix / Amazon）末段是空串。
+///
+/// 这个键曾原样写进 `MediaCollections.subtitleReleaseGroup`（合集点名的版本）。
+/// **只用于把旧列值一次性改写成 [subtitleVersionKeyOf]**，不得用于新的聚类或比较。
+String legacySubtitleVersionKeyOf(VideoSubtitleCandidate candidate) =>
+    _versionKeyOf(candidate, subtitleReleaseGroupTag(candidate.fileName));
+
+String _versionKeyOf(VideoSubtitleCandidate candidate, String? nameTag) =>
+    <String>[
+      candidate.providerId,
+      candidate.collectionId ?? '',
+      subtitleFormatOf(candidate.fileName),
+      candidate.language,
+      nameTag ?? '',
+      candidate.hearingImpaired ? 'hi' : '',
+      candidate.aiTranslated ? 'ai' : '',
+    ].join('\u001f');
 
 int _compareMembers(VideoSubtitleCandidate a, VideoSubtitleCandidate b) {
   final int byEpisode = (a.episode ?? 1 << 30).compareTo(b.episode ?? 1 << 30);
@@ -144,7 +197,10 @@ List<SubtitleVersionGroup> buildSubtitleVersionGroups(
       <String, List<VideoSubtitleCandidate>>{};
   for (final VideoSubtitleCandidate candidate in candidates) {
     byKey
-        .putIfAbsent(_groupKeyOf(candidate), () => <VideoSubtitleCandidate>[])
+        .putIfAbsent(
+          subtitleVersionKeyOf(candidate),
+          () => <VideoSubtitleCandidate>[],
+        )
         .add(candidate);
   }
   final List<SubtitleVersionGroup> groups = <SubtitleVersionGroup>[

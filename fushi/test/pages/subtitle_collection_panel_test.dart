@@ -12,6 +12,9 @@ import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
+import 'package:fushi/src/media/video/subtitle/subtitle_content_language.dart';
+import 'package:fushi/src/media/video/subtitle/subtitle_version_groups.dart'
+    show legacySubtitleVersionKeyOf, subtitleVersionKeyOf;
 import 'package:fushi/src/pages/implementations/subtitle_collection_panel.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:http/http.dart' as http;
@@ -22,17 +25,21 @@ import '../helpers/glass_unwrap.dart';
 /// 搜索失败 → 提示 + 下载禁用；搜索中禁用、非空后开放；快速切系列时迟到的旧响应
 /// 不覆盖新结果、DB 保留最新系列。
 class _Cand extends VideoSubtitleCandidate {
-  _Cand(String name, {required String source, int? episode})
-    : super(
-        providerId: 'fake',
-        remoteId: '$source:$name',
-        fileName: name,
-        language: 'ja',
-        providerPriority: 1,
-        episode: episode,
-        collectionId: source,
-        collectionLabel: source,
-      );
+  _Cand(
+    String name, {
+    required String source,
+    int? episode,
+    String language = 'ja',
+  }) : super(
+         providerId: 'fake',
+         remoteId: '$source:$name',
+         fileName: name,
+         language: language,
+         providerPriority: 1,
+         episode: episode,
+         collectionId: source,
+         collectionLabel: source,
+       );
 }
 
 typedef _Search =
@@ -518,6 +525,262 @@ void main() {
         isFalse,
       );
     });
+  });
+
+  group('rankSubtitleCollectionVersions（BUG-3993 聚合版本列表）', () {
+    // Jimaku 12217 的形状：Nekomoe 只有第 1 集；Netflix 文件名带 ja；shincaps
+    // 文件名不写语言。
+    List<VideoSubtitleCandidate> growUpShow() => <VideoSubtitleCandidate>[
+      _Cand(
+        '[Nekomoe kissaten&LoliHouse] Grow Up Show - 01 [WebRip][JPN].ass',
+        source: 'E',
+        episode: 1,
+      ),
+      for (int ep = 1; ep <= 3; ep++) ...<VideoSubtitleCandidate>[
+        _Cand(
+          'グロウアップショウ.S01E0$ep.WEBRip.Netflix.ja[cc].srt',
+          source: 'E',
+          episode: ep,
+        ),
+        _Cand(
+          '[shincaps] Grow Up Show - 0$ep (AT-X).ass',
+          source: 'E',
+          episode: ep,
+          language: '',
+        ),
+      ],
+    ];
+
+    test('首行 = 自动会用的版本：正文判为日语后全季 ASS 排第一，并标出正文语言与覆盖', () {
+      final List<VideoSubtitleCandidate> candidates = growUpShow();
+      final SubtitleCollectionSource source = groupSubtitleCollectionSources(
+        candidates,
+      ).single;
+      final String shincapsKey = subtitleVersionKeyOf(candidates[2]);
+      final List<SubtitleCollectionVersion> versions =
+          rankSubtitleCollectionVersions(
+            source,
+            targetEpisodes: <int>[1, 2, 3],
+            probedLanguages: <String, SubtitleContentLanguage>{
+              shincapsKey: SubtitleContentLanguage.japanese,
+            },
+          );
+      expect(versions.first.group.key, shincapsKey);
+      expect(versions.first.language, 'ja');
+      expect(versions.first.contentLanguage, SubtitleContentLanguage.japanese);
+      expect(versions.first.coveredEpisodes, <int>{1, 2, 3});
+      expect(versions[1].group.releaseGroupTag, 'Netflix');
+      expect(versions.last.coveredEpisodes, <int>{
+        1,
+      }, reason: 'Nekomoe 只覆盖第 1 集');
+    });
+
+    test('正文还没判出：未知语言的版本排在 ja 版本之后（与批量判据一致）', () {
+      final SubtitleCollectionSource source = groupSubtitleCollectionSources(
+        growUpShow(),
+      ).single;
+      final List<SubtitleCollectionVersion> versions =
+          rankSubtitleCollectionVersions(
+            source,
+            targetEpisodes: <int>[1, 2, 3],
+          );
+      expect(versions.first.group.releaseGroupTag, 'Netflix');
+      expect(versions.last.language, isNull);
+    });
+  });
+
+  group('resolvePinnedSubtitleVersion（旧版本键迁移）', () {
+    // 旧键组成的名字段只认发布组：无组名的 Netflix / Amazon 抽轨末段都是空串。
+    final VideoSubtitleCandidate netflix = _Cand(
+      'グロウアップショウ.S01E01.WEBRip.Netflix.ja[cc].srt',
+      source: 'E',
+      episode: 1,
+    );
+    final VideoSubtitleCandidate amazon = _Cand(
+      'グロウアップショウ.S01E02.WEBRip.Amazon.ja[cc].srt',
+      source: 'E',
+      episode: 2,
+    );
+    List<SubtitleCollectionVersion> ranked(SubtitleCollectionSource s) =>
+        rankSubtitleCollectionVersions(s, targetEpisodes: <int>[1, 2]);
+
+    test('新键直接命中：不迁移', () {
+      final List<SubtitleCollectionSource> sources =
+          groupSubtitleCollectionSources(<VideoSubtitleCandidate>[netflix]);
+      final String key = subtitleVersionKeyOf(netflix);
+      expect(resolvePinnedSubtitleVersion(sources, key, rankedOf: ranked), (
+        sourceKey: sources.single.key,
+        versionKey: key,
+        migrated: false,
+      ));
+    });
+
+    test('旧键（无组名平台末段为空）落到 Netflix 版本，标记需改写', () {
+      final String legacy = legacySubtitleVersionKeyOf(netflix);
+      expect(legacy, isNot(subtitleVersionKeyOf(netflix)));
+      final List<SubtitleCollectionSource> sources =
+          groupSubtitleCollectionSources(<VideoSubtitleCandidate>[netflix]);
+      expect(resolvePinnedSubtitleVersion(sources, legacy, rankedOf: ranked), (
+        sourceKey: sources.single.key,
+        versionKey: subtitleVersionKeyOf(netflix),
+        migrated: true,
+      ));
+    });
+
+    test('旧键拆成多个版本时取排名第一的那个', () {
+      final List<SubtitleCollectionSource> sources =
+          groupSubtitleCollectionSources(<VideoSubtitleCandidate>[
+            amazon,
+            netflix,
+          ]);
+      final String expected = ranked(sources.single).first.group.key;
+      expect(
+        resolvePinnedSubtitleVersion(
+          sources,
+          legacySubtitleVersionKeyOf(netflix),
+          rankedOf: ranked,
+        )?.versionKey,
+        expected,
+      );
+    });
+
+    test('都对不上：null（退回自动）', () {
+      expect(
+        resolvePinnedSubtitleVersion(
+          groupSubtitleCollectionSources(<VideoSubtitleCandidate>[netflix]),
+          'nope',
+          rankedOf: ranked,
+        ),
+        isNull,
+      );
+    });
+  });
+
+  testWidgets('合集列里的旧版本键：搜索后选中 Netflix 版本并把列改写成新键', (
+    WidgetTester tester,
+  ) async {
+    final VideoBookRow member = await seedMember();
+    final MediaCollectionRow seeded = await seedCollection(anilistId: 21);
+    final VideoSubtitleCandidate netflix = _Cand(
+      'グロウアップショウ.S01E01.WEBRip.Netflix.ja[cc].srt',
+      source: 'Source',
+      episode: 1,
+    );
+    final VideoSubtitleCandidate ass = _Cand(
+      '[Grp] Show - 01.ja.ass',
+      source: 'Source',
+      episode: 1,
+    );
+    await db.updateMediaCollectionSubtitleReleaseGroup(
+      seeded.id,
+      legacySubtitleVersionKeyOf(netflix),
+    );
+    final MediaCollectionRow collection = (await db.getMediaCollectionById(
+      seeded.id,
+    ))!;
+    await tester.pumpWidget(
+      wrap(
+        collection: collection,
+        member: member,
+        onSearch: (_) async =>
+            ProviderBatchResult<VideoSubtitleCandidate>.success(
+              <VideoSubtitleCandidate>[netflix, ass],
+            ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      (await db.getMediaCollectionById(collection.id))!.subtitleReleaseGroup,
+      subtitleVersionKeyOf(netflix),
+    );
+    // 没静默退回「自动」（自动会挑 ASS）：成员行用的是点名的 Netflix 版本。
+    // 成员行在版本列表下方的惰性 SliverList 里：两个版本 + 「自动」行把它推出
+    // 800×600 视口，不滚过去它根本不会被 build。
+    final Finder plannedNetflix = find.text(
+      t.video_subtitle_collection_episode_planned(
+        count: 1,
+        version: 'Netflix · SRT · 日本語',
+      ),
+    );
+    await tester.scrollUntilVisible(
+      plannedNetflix,
+      200,
+      scrollable: find
+          .descendant(
+            of: find.byType(CustomScrollView),
+            matching: find.byType(Scrollable),
+          )
+          .first,
+    );
+    expect(plannedNetflix, findsOneWidget);
+  });
+
+  testWidgets('聚合版本列表：点版本行写合集列，点「自动」清空', (WidgetTester tester) async {
+    final VideoBookRow member = await seedMember();
+    final MediaCollectionRow collection = await seedCollection(anilistId: 21);
+    final VideoSubtitleCandidate srt = _Cand(
+      'Show - 01.ja.srt',
+      source: 'Source',
+      episode: 1,
+    );
+    final VideoSubtitleCandidate ass = _Cand(
+      '[Grp] Show - 01.ja.ass',
+      source: 'Source',
+      episode: 1,
+    );
+    await tester.pumpWidget(
+      wrap(
+        collection: collection,
+        member: member,
+        onSearch: (_) async =>
+            ProviderBatchResult<VideoSubtitleCandidate>.success(
+              <VideoSubtitleCandidate>[srt, ass],
+            ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 「自动」行写明会用哪个版本：同语言同覆盖，ASS 先于 SRT。
+    expect(
+      find.text(
+        t.video_subtitle_collection_version_auto_detail(
+          version: 'Grp · ASS · 日本語',
+        ),
+      ),
+      findsOneWidget,
+    );
+    final Finder srtRow = find.byKey(
+      ValueKey<String>('subtitle-version-${subtitleVersionKeyOf(srt)}'),
+    );
+    await tester.ensureVisible(srtRow);
+    await tester.tap(srtRow);
+    await tester.pumpAndSettle();
+    expect(
+      (await db.getMediaCollectionById(collection.id))!.subtitleReleaseGroup,
+      subtitleVersionKeyOf(srt),
+    );
+    // 成员行跟着变成点名的版本。
+    expect(
+      find.text(
+        t.video_subtitle_collection_episode_planned(
+          count: 1,
+          version:
+              '${t.video_subtitle_collection_version_no_group} · SRT · 日本語',
+        ),
+      ),
+      findsOneWidget,
+    );
+
+    final Finder autoRow = find.byKey(
+      const ValueKey<String>('subtitle-source-fake:Source'),
+    );
+    await tester.ensureVisible(autoRow);
+    await tester.tap(autoRow);
+    await tester.pumpAndSettle();
+    expect(
+      (await db.getMediaCollectionById(collection.id))!.subtitleReleaseGroup,
+      isNull,
+    );
   });
 
   testWidgets('没绑 AniList 的合集也自动首搜：来源直接可选', (WidgetTester tester) async {
